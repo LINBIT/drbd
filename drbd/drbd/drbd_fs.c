@@ -549,9 +549,10 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	if ( wait_event_interruptible( mdev->cstate_wait,
 			atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
 ONLY_IN_26(
-		if ( newstate & Secondary )
+		if ( newstate & Secondary ) {
 			D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 			bd_release(mdev->this_bdev);
+		}
 )
 		return -EINTR;
 	}
