@@ -572,14 +572,18 @@ u64 bdev_size(int fd)
  * regardless of sizeof(long) */
 void printf_bm(const le_u64 * bm, const unsigned int n)
 {
-	int i;
+	unsigned int i;
 	printf("bm {");
 	for (i = 0; i < n; i++) {
-		if ((i & 3) == 0)
-			printf("\n   ");
+		if ((i & 3) == 0) {
+			if ((i & 31) == 0)
+				printf("\n   # %llukB\n   ", (256LLU * i));
+			else
+				printf("\n   ");
+		}
 		printf(FMT, le64_to_cpu(bm[i].le));
 	}
-	printf("\n }\n");
+	printf("\n}\n");
 }
 
 #undef FMT
@@ -892,7 +896,7 @@ int v07_md_initialize(struct format *cfg)
 	u64 al_offset, bm_offset;
 
 	cfg->md.la_sect = 0;
-	cfg->md.gc[Flags] = MDF_FullSync;
+	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
 	cfg->md.gc[TimeoutCnt] = 1;
 	cfg->md.gc[ConnectedCnt] = 1;
@@ -930,7 +934,7 @@ int v07_md_initialize(struct format *cfg)
 	}
 
 	memset(cfg->on_disk.al, MD_AL_MAX_SIZE_07, 0);
-	memset(cfg->on_disk.bm, MD_BM_MAX_SIZE_07, 0);
+	memset(cfg->on_disk.bm, MD_BM_MAX_SIZE_07, 0xff);
 	return 0;
 }
 
@@ -971,7 +975,7 @@ int v08_md_initialize(struct format *cfg)
 	u64 al_offset, bm_offset;
 
 	cfg->md.la_sect = 0;
-	cfg->md.gc[Flags] = MDF_FullSync;
+	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
 	cfg->md.gc[TimeoutCnt] = 1;
 	cfg->md.gc[ConnectedCnt] = 1;
@@ -1011,7 +1015,7 @@ int v08_md_initialize(struct format *cfg)
 
 	/* do you want to initilize al to something more usefull? */
 	memset(cfg->on_disk.al, MD_AL_MAX_SIZE_07, 0);
-	memset(cfg->on_disk.bm, MD_BM_MAX_SIZE_07, 0);
+	memset(cfg->on_disk.bm, MD_BM_MAX_SIZE_07, 0xff);
 	return 0;
 }
 
