@@ -107,10 +107,7 @@ struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr)
 	BUG_ON(!lc);
 	BUG_ON(!lc->nr_elements);
 	hlist_for_each_entry(e, n, lc->slot + lc_hash_fn(lc, enr), colision) {
-		if (e->lc_number == enr) {
-			if( likely(e != lc->changing_element) ) return e;
-			return NULL;
-		}
+		if (e->lc_number == enr) return e;
 	}
 	return NULL;
 }
