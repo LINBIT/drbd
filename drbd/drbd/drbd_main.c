@@ -1257,7 +1257,10 @@ int __init drbd_init(void)
 	if (!drbd_blocksizes || !drbd_sizes)
 		goto Enomem;
 #else
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0) && defined(CONFIG_DEVFS_FS)
 	devfs_mk_dir(DEVICE_NAME);
+#endif
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
@@ -1414,10 +1417,13 @@ void cleanup_module(void)
 {
 	int i;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
+#ifdef CONFIG_DEVFS_FS
+# if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	devfs_unregister(devfs_handle);
+# else
+	devfs_remove(DEVICE_NAME);
+# endif
 #endif
-	ONLY_IN_26( devfs_remove("nbd"); )
 
 #warning "FIXME increase module refcount with each setup device"
 	/* then you need to tear down all devices
