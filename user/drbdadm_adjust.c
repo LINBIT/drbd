@@ -36,9 +36,6 @@
 #include "drbdadm.h"
 #include "drbdtool_common.h"
 
-#define PERROR(fmt, args...) \
-do { fprintf(stderr,fmt ": ", ##args); perror(0); } while (0)
-
 /******
  This is a bit uggly.
  If you think you are clever, then consider to contribute a nicer

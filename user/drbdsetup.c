@@ -378,7 +378,7 @@ int scan_disk_options(char **argv,
 
       PRINT_ARGV;
       next_option:
-      c = getopt_long(argc,argv,make_optstring(options),options,0);
+      c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -426,7 +426,7 @@ int scan_net_options(char **argv,
 
       PRINT_ARGV;
       next_option:
-      c = getopt_long(argc,argv,make_optstring(options),options,0);
+      c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -681,7 +681,7 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	  PRINT_ARGV;
 	  /* only --timeout-expired may be abbreviated to -t
 	   * --human and --do-what-I-say have to be spelled out */
-	  c = getopt_long_only(argc,argv,make_optstring(options),options,0);
+	  c = getopt_long_only(argc,argv,make_optstring(options,'-'),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -733,7 +733,7 @@ int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options)
 
 	  PRINT_ARGV;
 
-	  c = getopt_long(argc,argv,make_optstring(options),options,0);
+	  c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -778,7 +778,7 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	  int c;
 
 	  PRINT_ARGV;
-	  c = getopt_long(argc,argv,make_optstring(options),options,0);
+	  c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -847,7 +847,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	  int c;
 
 	  PRINT_ARGV;
-	  c = getopt_long(argc,argv,make_optstring(options),options,0);
+	  c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -1014,7 +1014,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 	  int c;
 
 	  PRINT_ARGV;
-	  c = getopt_long(argc,argv,make_optstring(options),options,0);
+	  c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {

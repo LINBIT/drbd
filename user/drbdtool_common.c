@@ -25,7 +25,7 @@ char* ppsize(char* buf, size_t size)
 	return buf;
 }
 
-const char* make_optstring(struct option *options)
+const char* make_optstring(struct option *options,char startc)
 {
   static char buffer[200];
   static struct option* buffer_valid_for=NULL;
@@ -35,7 +35,7 @@ const char* make_optstring(struct option *options)
   if(options==buffer_valid_for) return buffer;
   opt=buffer_valid_for=options;
   c=buffer;
-  *c++='-';
+  if(startc) *c++=startc;
   while(opt->name)
     {
       *c++=opt->val;

@@ -89,6 +89,7 @@ static int sh_dev(struct d_resource* ,char* );
 static int sh_ll_dev(struct d_resource* ,char* );
 static int sh_md_dev(struct d_resource* ,char* );
 static int sh_md_idx(struct d_resource* ,char* );
+static int admm_generic(struct d_resource* ,char* );
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -101,6 +102,7 @@ int nr_resources;
 int config_valid=1;
 int dry_run;
 char* drbdsetup;
+char* drbdmeta;
 char* setup_opts[10];
 int soi=0;
 volatile int alarm_raised;
@@ -109,6 +111,7 @@ struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
   { "config-file",  required_argument,0, 'c' },
   { "drbdsetup",    required_argument,0, 's' },
+  { "drbdmeta",     required_argument,0, 'm' },
   { 0,              0,                0, 0   }
 };
 
@@ -130,6 +133,10 @@ struct adm_cmd cmds[] = {
   { "state",             adm_generic_s,"state"           ,1,1 },
   { "cstate",            adm_generic_s,"cstate"          ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
+  { "create-md",         admm_generic, "create-md"       ,1,1 },
+  { "show-gc",           admm_generic, "show-gc"         ,1,1 },
+  { "get-gc",            admm_generic, "get-gc"          ,1,1 },
+  { "dump-md",           admm_generic, "dump-md"         ,1,1 },
   { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
   { "sh-resources",      sh_resources,0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
@@ -326,7 +333,7 @@ static void free_config(struct d_resource* res)
   }
 }
 
-static void find_drbdsetup(char** pathes)
+static void find_drbdcmd(char** cmd, char** pathes)
 {
   struct stat buf;
   char **path;
@@ -334,13 +341,13 @@ static void find_drbdsetup(char** pathes)
   path=pathes;
   while(*path) {
     if(stat(*path,&buf)==0) {
-      drbdsetup=*path;
+      *cmd=*path;
       return;
     }
     path++;
   }
 
-  fprintf(stderr,"Can not find drbdsetup");
+  fprintf(stderr,"Can not find command (drbdsetup/drbdmeta)");
   exit(E_exec_error);
 }
 
@@ -487,6 +494,26 @@ int adm_resize(struct d_resource* res,char* unused)
   argv[argc++]="resize";
   opt=find_opt(res->disk_options,"size");
   if(opt) ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
+  argv[argc++]=0;
+
+  return m_system(argv,SLEEPS_SHORT);
+}
+
+static int admm_generic(struct d_resource* res ,char* cmd)
+{
+  char* argv[20];
+  int argc=0;
+
+  argv[argc++]=drbdmeta;
+  argv[argc++]=res->me->device;
+  argv[argc++]="v08";
+  if(!strcmp(res->me->meta_disk,"internal")) {
+    argv[argc++]=res->me->disk;
+  } else {
+    argv[argc++]=res->me->meta_disk;
+  }
+  argv[argc++]=res->me->meta_index;
+  argv[argc++]=cmd;
   argv[argc++]=0;
 
   return m_system(argv,SLEEPS_SHORT);
@@ -1022,6 +1049,7 @@ int main(int argc, char** argv)
   struct d_resource *res,*tmp;
 
   drbdsetup=NULL;
+  drbdmeta=NULL;
   dry_run=0;
   yyin=NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
@@ -1038,7 +1066,7 @@ int main(int argc, char** argv)
     {
       int c;
 
-      c = getopt_long(argc,argv,make_optstring(admopt),admopt,0);
+      c = getopt_long(argc,argv,make_optstring(admopt,0),admopt,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -1063,7 +1091,15 @@ int main(int argc, char** argv)
 	    char* pathes[2];
 	    pathes[0]=optarg;
 	    pathes[1]=0;
-	    find_drbdsetup(pathes);
+	    find_drbdcmd(&drbdsetup,pathes);
+	  }
+	  break;
+	case 'm':
+	  {
+	    char* pathes[2];
+	    pathes[0]=optarg;
+	    pathes[1]=0;
+	    find_drbdcmd(&drbdmeta,pathes);
 	  }
 	  break;
 	case '?':
@@ -1151,7 +1187,11 @@ int main(int argc, char** argv)
   }
 
   if(drbdsetup == NULL) {
-    find_drbdsetup((char *[]){"./drbdsetup", "/sbin/drbdsetup", 0 });
+    find_drbdcmd(&drbdsetup,(char *[]){"./drbdsetup", "/sbin/drbdsetup", 0 });
+  }
+
+  if(drbdmeta == NULL) {
+    find_drbdcmd(&drbdmeta,(char *[]){"./drbdmeta", "/sbin/drbdmeta", 0 });
   }
 
   if(cmd->res_name_required)
