@@ -546,7 +546,7 @@ STATIC int drbd_thread_setup(void* arg)
 STATIC void drbd_thread_init(drbd_dev *mdev, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
-	thi->t_lock  = SPIN_LOCK_UNLOCKED;
+	spin_lock_init(&thi->t_lock);
 	thi->task    = NULL;
 	thi->t_state = None;
 	init_completion(&thi->startstop);
@@ -1382,12 +1382,12 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	sema_init(&mdev->data.work.s,0);
 	sema_init(&mdev->meta.work.s,0);
 
-	mdev->al_lock        = SPIN_LOCK_UNLOCKED;
-	mdev->tl_lock        = SPIN_LOCK_UNLOCKED;
-	mdev->ee_lock        = SPIN_LOCK_UNLOCKED;
-	mdev->req_lock       = SPIN_LOCK_UNLOCKED;
-	mdev->pr_lock        = SPIN_LOCK_UNLOCKED;
-	mdev->send_task_lock = SPIN_LOCK_UNLOCKED;
+	spin_lock_init(&mdev->al_lock);
+	spin_lock_init(&mdev->tl_lock);
+	spin_lock_init(&mdev->ee_lock);
+	spin_lock_init(&mdev->req_lock);
+	spin_lock_init(&mdev->pr_lock);
+	spin_lock_init(&mdev->send_task_lock);
 
 	INIT_LIST_HEAD(&mdev->free_ee);
 	INIT_LIST_HEAD(&mdev->active_ee);

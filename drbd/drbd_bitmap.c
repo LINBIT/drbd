@@ -229,7 +229,7 @@ int drbd_bm_init(drbd_dev *mdev)
 	if (!b)
 		return -ENOMEM;
 	memset(b,0,sizeof(*b));
-	b->bm_lock = SPIN_LOCK_UNLOCKED;
+	spin_lock_init(&b->bm_lock);
 	init_MUTEX(&b->bm_change);
 	mdev->bitmap = b;
 	return 0;
