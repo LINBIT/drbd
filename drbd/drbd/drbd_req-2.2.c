@@ -252,12 +252,13 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			bh->b_this_page=0;
 			bh->b_dev_id = req;
 			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
-			
+
+			/*			
 #ifdef BH_JWrite
 			if (test_bit(BH_JWrite, &req->bh->b_state))
 				set_bit(BH_JWrite, &bh->b_state);
 #endif			
-
+			*/
 			
 			if(req->cmd == WRITE) 
 				drbd_conf[minor].writ_cnt+=size_kb;
