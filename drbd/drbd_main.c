@@ -1843,7 +1843,7 @@ void drbd_md_write(drbd_dev *mdev)
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
 		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
-	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev)>>1);
+	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
@@ -1878,8 +1878,8 @@ void drbd_md_write(drbd_dev *mdev)
 		}
 	}
 
-	// why is this here?? please EXPLAIN.
-	mdev->la_size = drbd_get_capacity(mdev->this_bdev)>>1;
+	// Update mdev->la_size, since we updated it on metadata.
+	mdev->la_size = drbd_get_capacity(mdev->this_bdev);
 
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);

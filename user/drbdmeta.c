@@ -90,6 +90,8 @@
 #define MD_RESERVED_SIZE_07 ( (__u64)128 * (1<<20) )
 #define MD_BM_MAX_SIZE_07  ( MD_RESERVED_SIZE_07 - MD_BM_OFFSET_07*512 )
 
+#define DRBD_MD_MAGIC_08   (DRBD_MAGIC+4)
+
 #define DRBD_MD_MAGIC_06   (DRBD_MAGIC+2)
 
 enum MetaDataFlags {
@@ -118,13 +120,13 @@ enum MetaDataIndex {
 struct meta_data {
 	__u32 gc[GEN_CNT_SIZE];   /* v06 */
 
-	__u64 la_size;            /* v07 */
-	int bm_size;            /* v07 */
-	unsigned long *bitmap;  /* v07 */
-	int al_size;            /* v07 */
-	unsigned int  *act_log; /* not yet implemented... */
+	__u64 la_size;            /* v07  [ units of KB ] */
+	int bm_size;              /* v07 */
+	unsigned long *bitmap;    /* v07 */
+	int al_size;              /* v07 */
+	unsigned int  *act_log;   /* not yet implemented... */
 
-	unsigned long bits_set; /* additional info, set by fopts->read() */
+	unsigned long bits_set;   /* additional info, set by fopts->read() */
 };
 
 /*
@@ -473,6 +475,125 @@ int v07_write(struct format * config, struct meta_data * m, int init_al)
  ******************************************/
 
 /******************************************
+ begin of v08 {
+ ******************************************/
+
+int v08_read(struct format * config, struct meta_data *);
+int v08_write(struct format * config, struct meta_data *, int init_al);
+
+int v08_read(struct format * config, struct meta_data * m)
+{
+	struct format_07* cfg = &config->d.f07;
+	struct meta_data_on_disk_07 buffer;
+	int rr,i,bmw;
+	__u64 offset = v07_offset(cfg);
+
+	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		return 0;
+	}
+
+	rr = read(cfg->fd, &buffer, sizeof(struct meta_data_on_disk_07));
+	if( rr != sizeof(struct meta_data_on_disk_07)) {
+		PERROR("read failed");
+		return 0;
+	}
+
+	if( __be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_08 ) {
+		fprintf(stderr,"Magic number not found\n");
+		return 0;
+	}
+
+	if( __be32_to_cpu(buffer.al_offset) != MD_AL_OFFSET_07 ) {
+		fprintf(stderr,"Magic number (al_offset) not found\n");
+		return 0;
+	}
+
+	if( __be32_to_cpu(buffer.bm_offset) != MD_BM_OFFSET_07 ) {
+		fprintf(stderr,"Magic number (bm_offset) not found\n");
+		return 0;
+	}
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
+		m->gc[i] = __be32_to_cpu(buffer.gc[i]);
+
+	m->la_size = __be64_to_cpu(buffer.la_size) / 2 ;
+
+	if(m->bitmap) {
+		bmw = bm_words(m->la_size);
+
+		offset = offset + 512 * MD_BM_OFFSET_07;
+		if(lseek64(cfg->fd, offset, SEEK_SET) == -1) {
+			PERROR("lseek() failed");
+			return 0;
+		}
+
+		rr = read(cfg->fd, m->bitmap, bmw*sizeof(long));
+		if( rr != bmw*sizeof(long) ) {
+			PERROR("read failed");
+			return 0;
+		}
+
+		m->bm_size = bmw*sizeof(long);
+		m->bits_set = from_lel(m->bitmap,bmw);
+	}
+
+	return 1;
+}
+
+int v08_write(struct format * config, struct meta_data * m, int init_al)
+{
+	struct format_07* cfg = &config->d.f07;
+	struct meta_data_on_disk_07 buffer;
+	int rr,i;
+	__u64 offset = v07_offset(cfg);
+
+	buffer.magic = __cpu_to_be32( DRBD_MD_MAGIC_08 );
+	buffer.al_offset = __cpu_to_be32( MD_AL_OFFSET_07 );
+	buffer.bm_offset = __cpu_to_be32( MD_BM_OFFSET_07 );
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
+		buffer.gc[i] = __cpu_to_be32(m->gc[i]);
+
+	buffer.la_size = __cpu_to_be64(m->la_size * 2);
+
+	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		return 0;
+	}
+
+	rr = write(cfg->fd, &buffer, sizeof(struct meta_data_on_disk_07));
+	if( rr != sizeof(struct meta_data_on_disk_07)) {
+		PERROR("write failed");
+		return 0;
+	}
+
+	if(lseek64(cfg->fd,offset + 512 * MD_BM_OFFSET_07 ,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		return 0;
+	}
+
+	to_lel(m->bitmap, m->bm_size/sizeof(long) );
+
+	rr = write(cfg->fd, m->bitmap, m->bm_size);
+	if( rr != m->bm_size) {
+		PERROR("write failed");
+		return 0;
+	}
+
+	from_lel(m->bitmap, m->bm_size/sizeof(long) );
+
+	if( init_al ) {
+		/* TODO; */
+	}
+
+	return 1;
+}
+/******************************************
+ } end of v08
+ ******************************************/
+
+/******************************************
  begin of v06 {
  ******************************************/
 struct __attribute__((packed)) meta_data_on_disk_06 {
@@ -619,7 +740,18 @@ struct format_ops formats[] = {
 	  v07_md_alloc,
 	  v07_read,
 	  v07_write
+	},
+	{ "v08",
+	  (char *[]) { "device","index",0 },
+	  sizeof(struct format_07),
+	  v07_parse,
+	  v07_open,
+	  v07_close,
+	  v07_md_alloc,
+	  v08_read,
+	  v08_write
 	}
+
 };
 
 struct meta_cmd {

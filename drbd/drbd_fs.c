@@ -85,10 +85,7 @@ char* ppsize(char* buf, size_t size)
 
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
 /*
- * THINK do we want the size to be KB or sectors ?
- * note, *_capacity operates in 512 byte sectors!!
- *
- * currently *_size is in KB.
+ * *_size is in sectors.
  *
  * FIXME
  * since this is done by drbd receiver as well as from drbdsetup,
@@ -99,19 +96,19 @@ char* ppsize(char* buf, size_t size)
  */
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	sector_t p_size = mdev->p_size;  // partner's disk size.
+	sector_t p_size = mdev->p_size <<1;  // partner's disk size.
 	sector_t la_size = mdev->la_size; // last agreed size.
 	sector_t m_size; // my size
-	sector_t u_size = mdev->lo_usize; // size requested by user.
+	sector_t u_size = mdev->lo_usize <<1; // size requested by user.
 	sector_t size=0;
 	int rv;
 	char ppb[10];
 
-	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
+	m_size = drbd_get_capacity(mdev->backing_bdev);
 
 	if (mdev->md_index == -1 && m_size) {// internal metadata
 		D_ASSERT(m_size > MD_RESERVED_SIZE);
-		m_size = drbd_md_ss(mdev)>>1;
+		m_size = drbd_md_ss(mdev);
 	}
 
 	if(p_size && m_size) {
@@ -142,18 +139,18 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		}
 	}
 
-	if( (drbd_get_capacity(mdev->this_bdev)>>1) != size ) {
+	if( drbd_get_capacity(mdev->this_bdev) != size ) {
 		int err;
-		err = drbd_bm_resize(mdev,size<<1); // wants sectors
+		err = drbd_bm_resize(mdev,size);
 		if (unlikely(err)) {
 			ERR("BM resizing failed. "
-			    "Leaving size unchanged at size = %lu KB\n", 
-			    (unsigned long)size);
+			    "Size unchanged = %s (%lu sect)\n", 
+			    ppsize(ppb,size>>1),(unsigned long)size);
 		} else {
 			// racy, see comments above.
 			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
-			INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
+			INFO("size = %s (%lu sect)\n",ppsize(ppb,size>>1),
 			     (unsigned long)size);
 		}
 	}

@@ -265,7 +265,7 @@ enum MetaDataIndex {
 	GEN_CNT_SIZE	// MUST BE LAST! (and Flags must stay first...)
 };
 
-#define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
+#define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
 
 #define DRBD_PANIC 2
 /* do_panic alternatives:
@@ -685,7 +685,7 @@ struct Drbd_Conf {
 	volatile Drbd_CState cstate;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
 	Drbd_State o_state;
-	sector_t la_size; // last agreed disk size
+	sector_t la_size;     // last agreed disk size in sectors.
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
