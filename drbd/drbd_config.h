@@ -20,9 +20,9 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre4"
-#define API_VERSION 71
-#define PRO_VERSION 71
+#define REL_VERSION "0.7-pre5"
+#define API_VERSION 72
+#define PRO_VERSION 72
 
 //#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
