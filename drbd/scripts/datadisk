@@ -12,6 +12,7 @@
 #
 # Copyright (C) 2000, Thomas Mangin <thomas.mangin@free.fr>
 # Major rewrite for new sections (init,mount,umount,fsck,...)
+# Added full resync from slave node option (resync)
 # Better heartbeat/script integration
 #
 # Some ideas and inspiration from Joe Hartley <jh@brainiac.com>
@@ -73,14 +74,19 @@ action()
 }
 
 if [ ! -x /usr/sbin/drbdsetup ]; then
-	echo -n "drbdsetup not found! "
-	failure
+	failed "drbdsetup not found!"
 	exit 1
 fi
 
 # Check for our config directory
 if [ ! -d /etc/sysconfig/drbd ]; then
 	failed "configuration directory not found!"
+	exit 1
+fi
+
+# Check for fuser command
+if [ ! -f "`which fuser 2>/dev/null`" ]; then
+	failed "$0 needs the fuser command"
 	exit 1
 fi
 
@@ -100,15 +106,23 @@ if [ $# -eq 2 ]; then
 fi
 CONFIG="/etc/sysconfig/drbd"
 
+# Check if the node is primary
 # Param : The resource
 # Return "1" or "0"
 isPrimary()
 {
-	#  Only do it if we are primary on the device
 	NUMBER=`echo $1 | cut -b5`
 	return `cat /proc/drbd | grep ":Primary/" | grep "^$NUMBER" | wc -l | cut -b7`
 }
 
+# Check if the node is in a connected state
+# Param : The resource
+# Return "1" or "0"
+isConnected()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "Connected" | grep "^$NUMBER" | wc -l | cut -b7`
+}
 
 
 # set LOCAL_DEVICE : The device to mount / umount
@@ -131,11 +145,48 @@ setLocal()
 	fi
 }
 
-
+# Return a boolean
 isMounted()
 {
 	[ "`mount | grep $LOCAL_DEVICE | cut -f1 -d\ `" = "$LOCAL_DEVICE" ] && \
 		return 1 || return 0
+}
+
+# unmount the device set by setLocal
+# $1 = RESOURCE
+# $2 = LOCAL_DEVICE
+# Return if the device is still mounted
+rudeUnMount()
+{
+	isMounted $1
+	MOUNTED=$?
+		
+	if [ $MOUNTED -eq 1 ]; then
+		$0 $1 umount
+
+		isMounted $1
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then
+			fuser -km $2
+			sleep 1
+			$0 $1 umount
+		fi
+ 
+		isMounted $1
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then
+			fuser -km -9 $2
+			sleep 1
+			$0 $1 umount
+		fi
+
+		isMounted $1
+		MOUNTED=$?
+	fi
+
+	return $MOUNTED
 }
 
 runForAll ()
@@ -267,35 +318,16 @@ case "$1" in
 		MOUNTED=$?
 
 		if [ $MOUNTED -eq 1 ]; then
-			$0 $RESOURCE umount
+			rudeUnMount $RESOURCE $LOCAL_DEVICE
 			RETVAL=$?
-
-			isMounted $RESOURCE
-			MOUNTED=$?
-
-			if [ $MOUNTED -eq 1 ]; then
-				fuser -km $LOCAL_DEVICE
-                                sleep 3
-                                $0 $RESOURCE umount
-                                RETVAL=$?
-                        fi
- 
-                        isMounted $RESOURCE
-                        MOUNTED=$?
-
-                        if [ $MOUNTED -eq 1 ]; then
-                                fuser -km -9 $LOCAL_DEVICE
-                                sleep 3
-				$0 $RESOURCE umount
-				RETVAL=$?
-			fi
 		fi
 
-		# If there was an error umounting, don't become secondary
+		# Only become secondary if umount succed
 		if [ $RETVAL -eq 0 ]; then
 			$0 $RESOURCE secondary
 			setLocal
 			drbdsetup $LOCAL_DEVICE wait
+			RETVAL=$?
 		fi
 		;;
 
@@ -391,6 +423,44 @@ case "$1" in
 		fi
 		;;	
 
+	resync)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll resync
+			exit $RETVAL
+		fi
+
+		isPrimary
+		PRIMARY=$?
+
+		if [ $PRIMARY -eq 0 ]; then
+			# TODO:DRDB sometimes lies about its connection status !!
+			isConnected
+			CONNECTED=$?
+
+			if [ $CONNECTED -eq 1 ]; then
+				setLocal
+
+				rudeUnMount $RESOURCE $LOCAL_DEVICE
+				MOUNTED=$?
+
+				if [ $MOUNTED -eq 0 ]; then
+					drbdsetup $LOCAL_DEVICE repl
+					RETVAL=$?
+				else
+					failed "unmount failed, you must have a SERIOUS problem"
+				fi
+			else
+				failed "The node is not connected to the primary"
+				RETVAL=1
+			fi
+		else
+			failed "$LOCAL_DEVICE is primary. The command must be run from a connected slave"
+			RETVAL=1
+		fi
+		;;
+		
 	start)
 		if [ -n "$RESOURCE" ]; then
 			$0 $RESOURCE master
