@@ -1552,6 +1552,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	bm_fill_bm(mdev->mbds_id,-1);
 	mdev->rs_total = blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1;
+	drbd_write_bm(mdev);
 	drbd_start_resync(mdev,SyncTarget);
 	return TRUE; // cannot fail ?
 }
@@ -1560,6 +1561,7 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
 	bm_fill_bm(mdev->mbds_id,-1);
 	mdev->rs_total = blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1;
+	drbd_write_bm(mdev);
 	drbd_start_resync(mdev,SyncSource);
 	return TRUE; // cannot fail ?
 }

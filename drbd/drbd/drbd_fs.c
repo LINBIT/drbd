@@ -676,6 +676,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		bm_fill_bm(mdev->mbds_id,-1);
 		mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
+		drbd_write_bm(mdev);
 		drbd_start_resync(mdev,SyncTarget);
 		drbd_send_short_cmd(mdev,BecomeSyncSource);
 		break;
@@ -688,6 +689,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		bm_fill_bm(mdev->mbds_id,-1);
 		mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
+		drbd_write_bm(mdev);
 		drbd_start_resync(mdev,SyncSource);
 		drbd_send_short_cmd(mdev,BecomeSyncTarget);
 		break;

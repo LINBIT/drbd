@@ -382,6 +382,19 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 }
 
 /**
+ * drbd_write_bm: Writes the whole bitmap to its on disk location.
+ */
+void drbd_write_bm(struct Drbd_Conf *mdev)
+{
+	unsigned int exts,i;
+	exts = div_ceil(mdev->mbds_id->size,BM_EXTENT_SIZE);
+
+	for(i=0;i<exts;i++) {
+		drbd_update_on_disk_bm(mdev,i,1);
+	}
+}
+
+/**
  * drbd_read_bm: Read the whole bitmap from its on disk location.
  */
 void drbd_read_bm(struct Drbd_Conf *mdev)
