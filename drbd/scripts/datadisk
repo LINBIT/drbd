@@ -13,7 +13,11 @@
 # Copyright (C) 2000, Thomas Mangin <thomas.mangin@free.fr>
 # Losts of changes in the code
 # moved the most of the code to drbdc only keep the start, stop, restart section
-# Heartbeat integration
+# Heartbeat integration, much more
+#
+# Copyright (C) 2000, Omar Kilani <omar@aurore.net>
+# Bug fixing.
+
 
 INSTALL="/etc/ha.d/resource.d"
 . $INSTALL/drbd_common $*
