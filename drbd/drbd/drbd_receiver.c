@@ -1768,9 +1768,10 @@ int drbd_asender(struct Drbd_thread *thi)
 
 		if( mdev->state == Primary ) {
 			if(!drbd_try_send_barrier(mdev)) goto err;
-		} else { //Secondary
-			if(!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
 		}
+		
+		if(!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
+		
 	} //while
 
 	if(0) {
