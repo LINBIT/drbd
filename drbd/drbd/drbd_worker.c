@@ -181,29 +181,6 @@ STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 	return 1;
 }
 
-STATIC int w_start_resync(drbd_dev *mdev, struct drbd_work *w)
-{
-	PARANOIA_BUG_ON(w != &mdev->resync_work);
-
-	if(mdev->cstate == SyncTarget) {
-		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-		bm_reset(mdev->mbds_id);
-		w->cb = w_make_resync_request;
-		__drbd_queue_work(mdev,&mdev->data.work,w);
-	} else {
-		// If we are SyncSource we must be consistent :)
-		w->cb = w_resync_inactive;
-		mdev->gen_cnt[Flags] |= MDF_Consistent;
-		if ( mdev->rs_total == 0 ) {
-			w->cb = w_resync_finished;
-			__drbd_queue_work(mdev,&mdev->data.work,w);
-		}
-	}
-	drbd_md_write(mdev);
-
-	return 1;
-}
-
 int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
 {
 	unsigned long dt;
@@ -277,8 +254,23 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));
 	PARANOIA_BUG_ON(mdev->resync_work.cb != w_resync_inactive);
 
-	mdev->resync_work.cb = w_start_resync;
-	__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	if ( mdev->rs_left == 0 ) {
+		mdev->resync_work.cb = w_resync_finished;
+		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		return;
+	}
+
+	if(mdev->cstate == SyncTarget) {
+		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
+		bm_reset(mdev->mbds_id);
+		mdev->resync_work.cb = w_make_resync_request;
+		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	} else {
+		// If we are SyncSource we must be consistent :)
+		mdev->gen_cnt[Flags] |= MDF_Consistent;
+	}
+
+	drbd_md_write(mdev);
 }
 
 int drbd_worker(struct Drbd_thread *thi)
