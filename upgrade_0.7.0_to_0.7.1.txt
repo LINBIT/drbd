@@ -1,0 +1,20 @@
+
+DRBD upgrade instructions from 0.7.0 to 0.7.1
+
+With drbd-0.7.1 we have our own major number, and our own device
+files. (=No longer misuse /dev/nbX)
+
+* Start on the node, on which all devices are secondary.
+* /etc/init.d/drbd stop
+* Install drbd-0.7.1
+* Run these commands as root:
+
+sed -e "s/\/dev\/nb/\/dev\/drbd/" < /etc/drbd.conf > /etc/drbd.conf_new
+mv /etc/drbd.conf /etc/drbd.conf_old ; mv /etc/drbd.conf_new /etc/drbd.conf
+sed -e "s/\/dev\/nb/\/dev\/drbd/" < /etc/fstab > /etc/fstab_new
+mv /etc/fstab /etc/fstab_old ; mv /etc/fstab_new /etc/fstab
+for ((i=0;i<16;i++)); do mknod /dev/drbd$i b 147 $i; done
+
+* /etc/init.d/drbd start
+* migrate all services to the just upgraded node and 
+  upgrade the other node.

@@ -1,0 +1,45 @@
+
+DRBD upgrade instructions from 0.6.x to 0.7.0
+
+* Since drbd-0.7.x is protocol incompatile to drbd-0.6.x you need
+  to do a offline upgrade. I.e. no "rolling" upgrade possible.
+
+  Make sure that the devices are in sync, make both sides secondary
+  first and then stop DRBD on both nodes.
+
+* In drbd-0.7.0 each DRBD resource needs 128MB of storage on
+  some block device for its meta data. (With this /var/lib/drbd
+  disappeared.)
+
+  In order to do this upgrade you either need to
+
+   A) shrink your filesystems on the DRBD devices by at least 128MB
+   B) grow the backing_storage of the DRBD devices by at leas 128MB
+   C) have one seperate block_device for all meta data
+
+  A)
+  ext2/ext3   resize2fs
+  reiserfs    resize_reiserfs     
+  xfs         xfsdump, xfsrestore ; xfs can only grow
+
+  B)
+  lvresize    in case you run DRBD on LVM
+  (fdisk)     (Only do this if you know what you are doing.)
+
+  C)
+  The device needs to be n*128MB, where n is the number of 
+  DRBD resources.
+
+* Update you configurate file:
+  - Change it to the new syntax.
+  - Remove the disk-size parameter from you drbd.conf
+  - Add the meta-disk settings
+  - Remove tl-size
+  - Change sync-min & sync-max to sync { rate }
+  - Add the al-extents setting
+
+* Start DRBD on both nodes
+
+* Tune the al-extents setting to balance the number of updates
+  to the metadata per minute (see cat /proc/drbd umber "al:") vs
+  the expected resync time. 

@@ -56,7 +56,7 @@
 #include "drbd_int.h"
 
 #ifndef CONFIG_DRBD_MAJOR
-#define CONFIG_DRBD_MAJOR NBD_MAJOR
+#define CONFIG_DRBD_MAJOR 147
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)

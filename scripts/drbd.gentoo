@@ -18,11 +18,11 @@ depend() {
 
 start() {
 	ebegin "Starting DRBD"
-	if [ ! -e /dev/nb0 ] ; then
-	   /bin/mknod /dev/nb0 b 43 0
+	if [ ! -e /dev/drbd0 ] ; then
+	   /bin/mknod /dev/drbd0 b 43 0
 	fi
-	if [ ! -e /dev/nb1 ] ; then
-	   /bin/mknod /dev/nb1 b 43 1
+	if [ ! -e /dev/drbd1 ] ; then
+	   /bin/mknod /dev/drbd1 b 43 1
 	fi
 	${DRBDADM} up all
 #	/sbin/drbdadm wait_connect all

@@ -34,13 +34,13 @@ resource drbd0 {
   incon-degr-cmd "halt -f";
 
   on thost1 {
-    device    /dev/nb1;
+    device    /dev/drbd1;
     disk      /dev/hda7;
     address   10.1.1.31:7789;
   }
 
   on thost2 {
-    device    /dev/nb1;
+    device    /dev/drbd1;
     disk      /dev/hda7;
     address   10.1.1.32:7789;
   }
@@ -51,7 +51,7 @@ resource drbd0 {
  protocol C for the connection between its devices.
  The device which runs
  on host <replaceable>thost1</replaceable> uses
- <replaceable>/dev/nb1</replaceable> as devices for its application, and
+ <replaceable>/dev/drbd1</replaceable> as devices for its application, and
  <replaceable>/dev/hda7</replaceable> as low level storage for the data.
  The IP addresses are used to specify the networking interfaces to use.
  </para>
@@ -281,13 +281,15 @@ resource drbd0 {
   </para>
   <para>
     The device nodes must have the same major number as the DRBD
-    driver has. With the current implementation major 43 is used
+    driver has. With the current implementation major 147 is used
     and the corresponding device nodes are usually named 
-    <option>/dev/nb0</option>, <option>/dev/nb1</option>, etc.
+    <option>/dev/drbd0</option>, <option>/dev/drbd1</option>, etc.
+    ( All releases before drbd-0.7.1 used major 43 and the device
+    files /dev/nb*. )
   </para>
   <para>Installation scripts of the DRBD package provide, that
-  <option>/dev/nb0</option> to <option>/dev/nb8</option> are
-  predefined in your system. To be sure, issue something like ls /dev/nb*.
+  <option>/dev/drbd0</option> to <option>/dev/drbd8</option> are
+  predefined in your system. To be sure, issue something like ls /dev/drbd*.
   </para>
   </listitem>
 </varlistentry>
