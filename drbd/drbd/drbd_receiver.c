@@ -147,8 +147,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	// we could use pbh.b_private now for mdev
-	mdev=drbd_mdev_of_bh(bh);
+	mdev=bh->b_private;
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	e = container_of(bh,struct Tl_epoch_entry,pbh);
@@ -203,58 +202,25 @@ You must not have the ee_lock:
  drbd_wait_ee()
 */
 
-STATIC void _drbd_alloc_ee(drbd_dev *mdev,struct page* page)
+STATIC int _drbd_alloc_ee(drbd_dev *mdev,struct page* page,int mask)
 {
 	struct Tl_epoch_entry* e;
-	struct buffer_head *bh,*lbh,*fbh;
-	int number,buffer_size,i;
 
-	buffer_size=BM_BLOCK_SIZE;
-	/*
-	 * I suggest to allways allocate full pages, even for b_size smaller
-	 * than PAGE_SIZE, otherwise we need to dump all EEs // realloc them
-	 * on each blocksize change. This won't work well for XFS.
-	 *
-	 * If we want do do it this way, the loop below can be replaced,
-	 * and the free_ee case simplyfies also.
-	 * We then of course waste much memory for blocksizes of 1K :(
-	 *
-	 * Alternative would be to have the EE lists as "arrays",
-	 * indexed by order of b_size.
-	 */
-	// number=PAGE_SIZE/buffer_size;
-	number=1;
-	lbh=NULL;
-	bh=NULL;
-	fbh=NULL;
+	e = kmem_cache_alloc(drbd_ee_cache, mask);
+	if( e == NULL ) return FALSE;
 
-	for(i=0;i<number;i++) {
+	drbd_init_bh(&e->pbh, BM_BLOCK_SIZE); // BM_BLOCK_SIZE == PAGE_SIZE !
+	set_bh_page(&e->pbh,page,0);          // sets b_data and b_page
 
-		e = kmem_cache_alloc(drbd_ee_cache, GFP_KERNEL);
-
-		if( e == NULL ) {
-			ERR("could not kmem_cache_alloc() new ee\n");
-			BUG();
-		}
-
-		drbd_init_bh(&e->pbh, buffer_size);
-		set_bh_page(&e->pbh,page,i*buffer_size); // sets b_data and b_page
-
-		bh->b_private=e;
-
-		e->block_id = ID_VACANT;
-		spin_lock_irq(&mdev->ee_lock);
-		list_add(&e->w.list,&mdev->free_ee);
-		mdev->ee_vacant++;
-		spin_unlock_irq(&mdev->ee_lock);
-		if (lbh) {
-			lbh->b_this_page = bh;
-		} else {
-			fbh = bh;
-		}
-		lbh=bh;
-	}
-	bh->b_this_page=fbh;
+	e->block_id = ID_VACANT;
+	spin_lock_irq(&mdev->ee_lock);
+	list_add(&e->w.list,&mdev->free_ee);
+	mdev->ee_vacant++;
+	spin_unlock_irq(&mdev->ee_lock);
+	
+	e->pbh.b_this_page=&e->pbh;
+	
+	return TRUE;
 }
 
 /* bool */
@@ -263,64 +229,38 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 	struct page *page;
 
 	page=alloc_page(mask);
-	ERR_IF(!page) return FALSE;
+	if(!page) return FALSE;
 
-	_drbd_alloc_ee(mdev,page);
-	/*
-	printk(KERN_ERR DEVICE_NAME "%d: vacant=%d in_use=%d sum=%d\n",
-	       (int)(mdev-drbd_conf),mdev->ee_vacant,mdev->ee_in_use,
-	       mdev->ee_vacant+mdev->ee_in_use);
-	*/
+	if(!_drbd_alloc_ee(mdev,page,mask)) {
+		__free_page(page);
+		return FALSE;
+	}
+	  
 	return TRUE;
 }
 
 STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 {
-	struct list_head *le;
 	struct Tl_epoch_entry* e;
-	struct buffer_head *bh,*nbh;
-	int freeable=0;
 	struct page* page;
 
 	MUST_HOLD(&mdev->ee_lock);
 
-	/* for "one bh per page" regardless of b_size,
-	 * this could be simplified.	-lge
-	 */
+	e = list_entry(list->next, struct Tl_epoch_entry, w.list);
 
-	list_for_each(le,list) {
-		bh=&list_entry(le, struct Tl_epoch_entry, w.list)->pbh;
-		nbh=bh->b_this_page;
-		freeable=1;
-		while( nbh != bh ) {
-			e=nbh->b_private;
-			if(e->block_id != ID_VACANT) freeable=0;
-			nbh=nbh->b_this_page;
-		}
-		if(freeable) goto free_it;
-	}
-	return 0;
- free_it:
-	nbh=bh;
-	page=bh->b_page;
-	do {
-		e=nbh->b_private;
-		list_del(&e->w.list);
-		mdev->ee_vacant--;
-		D_ASSERT(nbh->b_page == page);
-		nbh=nbh->b_this_page;
-		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
-		  (int)(mdev-drbd_conf),e);*/
-		kmem_cache_free(drbd_ee_cache, e);
-	} while(nbh != bh);
-
+	page = e->pbh.b_page;
+	kmem_cache_free(drbd_ee_cache, e);
+	
 	return page;
-}
+}	
 
 void drbd_init_ee(drbd_dev *mdev)
 {
 	while(mdev->ee_vacant < EE_MININUM ) {
-		drbd_alloc_ee(mdev,GFP_USER);
+		if(!drbd_alloc_ee(mdev,GFP_USER)) {
+			ERR("Failed to allocate %d EEs !",EE_MININUM);
+			break;
+		}
 	}
 }
 

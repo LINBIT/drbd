@@ -1050,17 +1050,6 @@ static inline void dec_unacked(drbd_dev* mdev,const char* where)
 		    atomic_read(&mdev->unacked_cnt));
 }
 
-static inline struct Drbd_Conf* drbd_mdev_of_bh(struct buffer_head *bh)
-{
-#ifdef DBG_BH_SECTOR
-	if((bh->b_dev & 0xff00) != 0xab00) {
-		printk(KERN_ERR DEVICE_NAME" bh->b_dev != 0xabxx\n");
-		return drbd_conf;
-	}
-#endif
-	return drbd_conf + ( bh->b_dev & 0x00ff ) ;
-}
-
 static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 					sector_t sector, int blk_size)
 {
@@ -1088,7 +1077,8 @@ static inline void drbd_set_md_bh(drbd_dev *mdev,
 {
 	bh->b_blocknr = sector;  // We abuse b_blocknr here.
 	bh->b_size = size;
-	bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
+	// bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
+	bh->b_private = mdev;
 
 	// we skip submit_bh, but use generic_make_request.
 	set_bit(BH_Req, &bh->b_state);
@@ -1104,7 +1094,8 @@ static inline void drbd_set_bh(drbd_dev *mdev,
 {
 	bh->b_blocknr = sector;  // We abuse b_blocknr here.
 	bh->b_size = size;
-	bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
+	// bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
+	bh->b_private = mdev;
 
 	// we skip submit_bh, but use generic_make_request.
 	set_bit(BH_Req, &bh->b_state);
@@ -1116,15 +1107,15 @@ static inline void drbd_set_bh(drbd_dev *mdev,
 #ifdef DBG_BH_SECTOR
 static inline sector_t DRBD_BH_SECTOR(struct buffer_head *bh)
 {
-	if((bh->b_dev & 0xff00) != 0xab00) {
-		printk(KERN_ERR DEVICE_NAME" bh->b_dev != 0xabxx\n");
+	if(!IS_VALID_MDEV(bh->b_private)) {
+		printk(KERN_ERR DEVICE_NAME" !IS_VALID_MDEV(bh->b_private)\n");
 	}
 	return bh->b_blocknr;
 }
 static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 {
-	if((bh->b_dev & 0xff00) == 0xab00) {
-		printk(KERN_ERR DEVICE_NAME" bh->b_dev == 0xabxx\n");
+	if(IS_VALID_MDEV(bh->b_private)) {
+		printk(KERN_ERR DEVICE_NAME" IS_VALID_MDEV(bh->b_private)\n");
 	}
 	return bh->b_blocknr * (bh->b_size>>9) ;
 }

@@ -53,8 +53,7 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	// we could use pbh.b_private now for mdev
-	mdev=drbd_mdev_of_bh(bh);
+	mdev=bh->b_private;
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	e = container_of(bh,struct Tl_epoch_entry,pbh);
