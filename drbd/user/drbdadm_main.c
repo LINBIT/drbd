@@ -121,6 +121,7 @@ struct adm_cmd cmds[] = {
   { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },
   { "wait_connect",      adm_wait_c,  0                  ,1,1 },
+  { "state",             adm_generic, "state"            ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
   { "sh-devices",        sh_devices,  0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },

@@ -177,10 +177,12 @@ struct ioctl_get_config {
 	OUT int               lower_device_minor;
 	OUT unsigned int      disk_size_user;
 	OUT enum io_error_handler on_io_error;
-	OUT Drbd_CState       cstate;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
        	OUT int               meta_index;
+	OUT Drbd_CState       cstate;
+	OUT Drbd_State        state;
+	OUT Drbd_State        peer_state;
 };
 
 #define DRBD_MAGIC 0x83740267

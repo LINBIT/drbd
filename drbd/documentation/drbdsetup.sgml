@@ -398,15 +398,6 @@ pair are in secondary state.
 </para>
 </refsect2>
 <refsect2>
-<title>secondary_remote</title>
-<para>
-Tries to set the partner of <replaceable>device</replaceable> into secondary 
-state. This command will return successfully as long as it is possible
-to communicate with the partner. Its return value does not indicate if the
-partner device could change its state.
-</para>
-</refsect2>
-<refsect2>
 <title>replicate</title>
 <para>
 This forces the pair of connected DRBD devices into SyncAll state, which
@@ -473,6 +464,13 @@ state and that it will no longer listen for incoming connections.
 Removes all configuration information from the 
 <replaceable>device</replaceable> and forces it back to 
 unconfigured state. 
+</para>
+</refsect2>
+<refsect2>
+<title>state</title>
+<para>
+Shows the current states of the <replaceable>device</replaceable> and 
+its peer. (local/peer). 
 </para>
 </refsect2>
 <refsect2>

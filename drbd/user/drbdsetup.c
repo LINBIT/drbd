@@ -106,6 +106,7 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_state(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
@@ -156,6 +157,7 @@ struct drbd_cmd commands[] = {
      { "size",  required_argument,      0, 'd' },
      { 0,            0,                 0, 0 } } },
   {"disconnect", cmd_disconnect,     0, 0, },
+  {"state", cmd_state,               0, 0, },
   {"show", cmd_show,                 0, 0, }
 };
 
@@ -1131,6 +1133,35 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 
   if( cn.sconf.skip ) printf(" skip-sync\n");
   if( cn.sconf.use_csums ) printf(" use-csums\n");
+
+  return 0;
+}
+
+int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  static const char *state_names[] = {
+    [Primary]   = "Primary",
+    [Secondary] = "Secondary",
+    [Unknown]   = "Unknown"
+  };
+
+  struct ioctl_get_config cn;
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
+  if(err)
+    {
+      perror("ioctl() failed");
+      return 20;
+    }
+
+  if( cn.cstate < StandAlone )
+    {
+      printf("Not configured\n");
+      return 0;
+    }
+
+  printf("%s/%s\n",state_names[cn.state],state_names[cn.peer_state]);
 
   return 0;
 }

@@ -424,6 +424,8 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	cn.meta_device_minor=MINOR(mdev->md_bdev);
 #endif
 	cn.cstate=mdev->cstate;
+	cn.state=mdev->state;
+	cn.peer_state=mdev->o_state;
 	cn.disk_size_user=mdev->lo_usize;
 	cn.meta_index=mdev->md_index;
 	cn.on_io_error=mdev->on_io_error;

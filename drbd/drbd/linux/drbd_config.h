@@ -20,8 +20,8 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre7 cvs $Date: 2004/05/19 19:53:20 $"
-#define API_VERSION 72
+#define REL_VERSION "0.7-pre7 cvs $Date: 2004/05/24 11:39:45 $"
+#define API_VERSION 73
 #define PRO_VERSION 72
 
 #define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces

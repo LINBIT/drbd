@@ -168,6 +168,13 @@
         </para></listitem>
       </varlistentry>
       <varlistentry>
+        <term>state</term>
+        <listitem><para>
+	  Shows the current states of the devices (local/peer). 
+	  E.g. primary/secondary        
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
         <term>dump</term>
         <listitem><para>
           Just parse the configuration file and dump it to stdout. Might

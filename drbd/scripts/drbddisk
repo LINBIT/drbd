@@ -24,7 +24,17 @@ case "$CMD" in
 	$DRBDADM secondary $RES
 	;;
     status)
-	echo soon...
+	if [ "$RES" = "all" ]; then
+	    echo "A resource name is required for status inquiries."
+	    exit 10
+        fi
+	ST=$( $DRBDADM state $RES 2> /dev/null )
+	ST=${ST%/*}
+	if [ "$ST" = "Primary" ]; then
+	    echo "running"
+	else
+	    echo "stopped"
+        fi
 	;;
     *)
 	echo "Usage: drbddisk [resource] {start|stop|status}"
