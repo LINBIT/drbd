@@ -142,7 +142,20 @@ void drbd_bm_unlock(drbd_dev *mdev)
 #endif
 // }
 
+/* debugging aid 
+STATIC void bm_end_info(drbd_dev *mdev)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	size_t w = b->bm_bits >> LN2_BPL;
 
+	INFO("bm_set=%lu\n",b->bm_set);
+	INFO("bm[%d]=0x%lX\n",w,b->bm[w++]);
+
+	if ( w < b->bm_words ) {
+		INFO("bm[%d]=0x%lX\n",w,b->bm[w++]);
+	}
+}
+*/
 
 /* long word offset of _bitmap_ sector */
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
@@ -195,11 +208,23 @@ void drbd_bm_cleanup(drbd_dev *mdev)
 /*
  * since (b->bm_bits % BITS_PER_LONG) != 0,
  * this masks out the remaining bits.
+ * Rerturns the number of bits cleared.
  */
-static inline void bm_clear_surplus(struct drbd_bitmap * b)
+STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 {
 	const unsigned long mask = (1 << (b->bm_bits & (BITS_PER_LONG-1))) -1;
-	if (mask) b->bm[b->bm_words-1] &= mask;
+	size_t w = b->bm_bits >> LN2_BPL;
+	int cleared;
+
+	cleared = hweight_long(b->bm[w] & ~mask);
+	b->bm[w++] &= mask;
+
+	if ( w < b->bm_words ) {
+		cleared += hweight_long(b->bm[w]);
+		b->bm[w++]=0;
+	}
+	
+	return cleared;
 }
 
 #define BM_SECTORS_PER_BIT (BM_BLOCK_SIZE/512)
@@ -243,7 +268,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		bits  = ALIGN(capacity,BM_SECTORS_PER_BIT)
 		      >> (BM_BLOCK_SIZE_B-9);
 
-		/* if we would use 
+		/* if we would use
 		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
 		   a 32bit host could present the wrong number of words
 		   to a 64bit host.
@@ -253,7 +278,6 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		D_ASSERT(bits < ((MD_RESERVED_SIZE<<1)-MD_BM_OFFSET)<<12 );
 
 		if ( words == b->bm_words ) {
-			int i;
 			/* optimize: capacity has changed,
 			 * but only within one long word worth of bits.
 			 * just update the bm_dev_capacity and bm_bits members.
@@ -261,13 +285,11 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 			spin_lock_irq(&b->bm_lock);
 			b->bm_bits    = bits;
 			b->bm_dev_capacity = capacity;
-			i = hweight_long(b->bm[words-1]);
-			bm_clear_surplus(b);
-			b->bm_set += hweight_long(b->bm[words-1]) - i;
+			b->bm_set -= bm_clear_surplus(b);
 			spin_unlock_irq(&b->bm_lock);
 			goto out;
 		} else {
-			/* one extra long to catch off by one errors */
+		        /* one extra long to catch off by one errors */
 			bytes = (words+1)*sizeof(long);
 			nbm = vmalloc(bytes);
 			if (!nbm) {
@@ -348,6 +370,7 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
 	unsigned long word, bits;
+	size_t n = number;
 
 	D_BUG_ON(!(b && b->bm));
 	D_BUG_ON(offset        >= b->bm_words);
@@ -359,16 +382,14 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 	spin_lock_irq(&b->bm_lock);
 	// BM_PARANOIA_CHECK(); no.
 	bm = b->bm + offset;
-	while(number--) {
+	while(n--) {
 		bits = hweight_long(*bm);
 		word = *bm | lel_to_cpu(*buffer++);
 		*bm++ = word;
 		b->bm_set += hweight_long(word) - bits;
 	}
 	if (offset+number == b->bm_words) {
-		bits = hweight_long(b->bm[b->bm_words-1]);
-		bm_clear_surplus(b);
-		b->bm_set -= bits - hweight_long(b->bm[b->bm_words-1]);
+		b->bm_set -= bm_clear_surplus(b);
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -382,6 +403,7 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
 	unsigned long word, bits;
+	size_t n = number;
 
 	D_BUG_ON(!(b && b->bm));
 	D_BUG_ON(offset        >= b->bm_words);
@@ -393,16 +415,14 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 	spin_lock_irq(&b->bm_lock);
 	// BM_PARANOIA_CHECK(); no.
 	bm = b->bm + offset;
-	while(number--) {
+	while(n--) {
 		bits = hweight_long(*bm);
 		word = lel_to_cpu(*buffer++);
 		*bm++ = word;
 		b->bm_set += hweight_long(word) - bits;
 	}
 	if (offset+number == b->bm_words) {
-		bits = hweight_long(b->bm[b->bm_words-1]);
-		bm_clear_surplus(b);
-		b->bm_set -= bits - hweight_long(b->bm[b->bm_words-1]);
+		b->bm_set -= bm_clear_surplus(b);
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -784,10 +804,8 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 		n = e-s;
 		memset(b->bm+s,-1,n*sizeof(long));
 		b->bm_set += n*BITS_PER_LONG - count;
-		if (e == b->bm_words) {
-			bm_clear_surplus(b);
-			b->bm_set -= BITS_PER_LONG -
-				(b->bm_bits & (BITS_PER_LONG-1));
+		if (e == b->bm_bits >> LN2_BPL) {
+			b->bm_set -= bm_clear_surplus(b);
 		}
 	} else {
 		D_ASSERT(0);
