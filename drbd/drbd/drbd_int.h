@@ -612,17 +612,6 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
         ({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
 #endif
 
-#ifdef __arch_um__
-#define waitpid(A,B,C) 0
-static inline void set_bh_page (struct buffer_head *bh, struct page *page, unsigned long offset)
-{
-	bh->b_page = page;
-	if (offset >= PAGE_SIZE)
-		BUG();
-	bh->b_data = page_address(page) + offset;
-}
-#endif
-
 #if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
 #define bh_kmap(bh)	((bh)->b_data)
 #define bh_kunmap(bh)	do { } while (0)

@@ -1299,8 +1299,8 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
    the  number  of ones  among  these  sixty-four  bit positions  in  the
    original n. That is what we wanted to compute. */
 
-#define TWO(c) (0x1u << (c))
-#define MASK(c) (((unsigned int)(-1)) / (TWO(TWO(c)) + 1u))
+#define TWO(c) (0x1lu << (c))
+#define MASK(c) (((unsigned long)(-1)) / (TWO(TWO(c)) + 1lu))
 #define COUNT(x,c) ((x) & MASK(c)) + (((x) >> (TWO(c))) & MASK(c))
 
 static inline unsigned long parallel_bitcount (unsigned long n)

@@ -214,6 +214,7 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
+	list_del(&b->requests);
 
 	write_unlock_irq(&mdev->tl_lock);
 
@@ -491,7 +492,7 @@ int drbd_send_bitmap(struct Drbd_Conf *mdev)
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: short send ret=%d want=%d head=%d\n",
 			       (int)(mdev-drbd_conf),
-			       ret,want,sizeof(head));
+			       ret,want,(int)sizeof(head));
 			goto out;
 		}
 	}
