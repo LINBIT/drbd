@@ -449,7 +449,7 @@ DRBD 0.8 Roadmap
 
   Upon start of resync:
    Clear the consistent-flag on the SyncTarget. The SyncTarget sets its
-   bitmap-UUID to the peer's current-UUID.
+   current-UUID to the peer's bitmap-UUID.
 
   Upon finish of resync:
    Set the bitmap-UUID to 0. The SyncTarget addopts the current-UUID
