@@ -1,8 +1,8 @@
 /*
-  drbd.c
+  drbd.h
   Kernel module for 2.2.x Kernels
   
-  This file is part of drbd Philipp Reisner.
+  This file is part of drbd by Philipp Reisner.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -65,7 +65,9 @@ struct ioctl_drbd_config
   IN char     my_addr[MAX_SOCK_ADDR];
   IN int      my_addr_len;
   IN int      timeout;
+  IN int      sync_rate; /* KB/sec */
   IN int      hardbeat; /* obsolete */
+  IN int      skip_sync; 
 };
 
 /* This is the layout for a Packet on the wire! 
@@ -75,7 +77,7 @@ typedef struct
 {
   __u32 magic;
   __u16 command;
-  __u16 length;
+  __u16 length;    /* obsolete ?? hmmm, maybe ... */
   __u64 block_nr;  /* 64 Bits Block number */
 } Drbd_Packet;
 

@@ -2,7 +2,7 @@
   drbd.c
   Kernel module for 2.2.x Kernels
   
-  This file is part of drbd Philipp Reisner.
+  This file is part of drbd by Philipp Reisner.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -76,6 +76,7 @@ struct Drbd_Conf
   int                      rpid;
   struct semaphore         tsem;
   struct timer_list        s_timeout_t;
+  unsigned long            synced_to;
 };
 
 
@@ -138,7 +139,7 @@ MODULE_DESCRIPTION("drbd - Network block device");
 	NULL                    /* lock */
 };
 
-/************************* PROC FS struff begin */
+/************************* PROC FS stuff begin */
 #include <linux/proc_fs.h>
   
 struct proc_dir_entry drbd_proc_dir = 
@@ -373,12 +374,12 @@ int drbd_ll_blocksize(int minor)
   return size;  
 }
 
+/* these defines should go into blkdev.h 
+   (if it will be ever includet into linus'es linux) */
 #define RQ_DRBD_NOTHING	  0xf100
 #define RQ_DRBD_SENT	  0xf200
 #define RQ_DRBD_WRITTEN   0xf300
 #define RQ_DRBD_SEC_WRITE 0xf400
-
-/* FIXME, the uptodate value should get processed correct */
 
 void drbd_end_req(struct request *req,int nextstate,int uptodate)
 {
@@ -397,12 +398,12 @@ void drbd_end_req(struct request *req,int nextstate,int uptodate)
 #endif
 
   if(req->cmd == READ) goto end_it;
-  switch(req->rq_status)
+  switch( req->rq_status & 0xfffe )
     {
     case RQ_DRBD_SEC_WRITE: 
       goto end_it;
     case RQ_DRBD_NOTHING:
-      req->rq_status = nextstate; 
+      req->rq_status = nextstate | (uptodate ? 1 : 0) ; 
       break;
     case RQ_DRBD_SENT:
       if(nextstate == RQ_DRBD_WRITTEN) goto end_it;
@@ -417,8 +418,12 @@ void drbd_end_req(struct request *req,int nextstate,int uptodate)
     }
   return;
 
+/* We only report uptodate == TRUE it both operations (WRITE && SEND)
+   reported uptodate == TRUE 
+*/
+
  end_it:
-  if(!end_that_request_first(req, uptodate, DEVICE_NAME))
+  if(!end_that_request_first(req, uptodate && (req->rq_status&1), DEVICE_NAME))
     end_that_request_last(req);  
 }
 
@@ -519,9 +524,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	sending = 0;
 
-	if( req->cmd == WRITE && drbd_conf[minor].state == Primary
-	    && ( drbd_conf[minor].cstate == Connected || 
-		 drbd_conf[minor].cstate == Syncing ) )
+	if( req->cmd == WRITE && drbd_conf[minor].state == Primary &&
+	     ( drbd_conf[minor].cstate == Connected || 
+	        ( drbd_conf[minor].cstate == Syncing && 
+	          req->sector < drbd_conf[minor].synced_to ) ) )
 	  sending = 1;
 
 	/* Do disk - IO */
@@ -986,6 +992,9 @@ void drbdd(int minor)
 
 	    mark_buffer_uptodate(bh, 1);
 	    mark_buffer_dirty(bh, 0);
+	    ll_rw_block(WRITE, 1, bh);
+	    /* The ll_rw_block() ensures the correct write order, 
+	       which is of major importance for journaling FSs    */
 	    brelse(bh);	  	      
 
 	    break;
@@ -1066,7 +1075,7 @@ int drbdd_init(void *arg)
   current->pgrp = 1;
   current->fs->umask = 0;
 
-  sprintf(current->comm, "drbd_r_%d",minor);
+  sprintf(current->comm, "drbdd_%d",minor);
 
   down( &drbd_conf[minor].tsem ); /* wait until parent has written its
 				     rpid variable */
@@ -1162,4 +1171,45 @@ void drbdd_stop(int minor,int restart)
     }
 }
 
+/* ********* the syncer ******** */
+
+int drbd_syncer(void *arg)
+{
+  int minor = (int)((long)arg);
+  int interval;
+  int amount = 32; 
+  /* FIXME: get the half of the size of the socket write buffer */
+  int blocks;
+
+  exit_mm(current);    /* give up UL-memory context */
+  exit_files(current); /* give up open filedescriptors */
+  current->session = 1;
+  current->pgrp = 1;
+  current->fs->umask = 0;
+
+  sprintf(current->comm, "drbd_syncer_%d",minor);
+
+  down( &drbd_conf[minor].tsem ); /* wait until parent has written its
+				     rpid variable */
+
+  printk(KERN_ERR DEVICE_NAME ": thread living/m=%d\n",minor);
+
+  interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
+  blocks = amount * 1024 / blksize_size[MAJOR_NR][minor];
+
+  while(TRUE)
+    {
+      schedule_timeout(interval);
+      /* find block */
+      /* send block */
+      synced_to++; /* Atomic inc ? */
+    }
+
+
+  printk(KERN_ERR DEVICE_NAME ": thread exiting/m=%d\n",minor);
+
+  drbd_conf[minor].rpid=0;
+  up( &drbd_conf[minor].tsem );
+  return 0;
+}
 
