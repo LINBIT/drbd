@@ -377,9 +377,8 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 
 	bh_kunmap(mdev->md_io_bh);
 
-	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1)+MD_AL_OFFSET+
-		mdev->al_tr_pos ;
-	
+	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
+
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
@@ -409,8 +408,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	u32 xor_sum=0;
 
 	down(&mdev->md_io_mutex);
-	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1)+MD_AL_OFFSET+
-		index;
+	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + index;
 
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);

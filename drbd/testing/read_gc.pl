@@ -11,7 +11,7 @@ use constant BLKFLSBUF => 0x1261; # 0x1261 is BLKFLSBUF on intel.
 sub read_print_gc_file($$)
   {
     my ($ll_dev,$resource)=@_;
-    my ($rr,$buffer,$pos,$sector);
+    my ($rr,$buffer,$pos,$md_start,$sector);
 
     sysopen (GCF,$ll_dev,O_RDONLY)
       or die "can not open GC file";
@@ -22,11 +22,11 @@ sub read_print_gc_file($$)
     # this we would simply the same values at subsequent calls, that
     # we saw at the first call.
 
-    $pos=sysseek(GCF, 0, SEEK_END);
-    $pos = (int($pos / (4*1024)) - 1) * (4*1024);
+    $pos = sysseek(GCF, 0, SEEK_END);
+    $md_start = (int($pos / (4*1024)) * (4*1024) - 128 *1024*1024;
 
-    $rr=sysseek(GCF, $pos, SEEK_SET);
-    die "2nd seek failed rr=$rr pos=$pos" if ($rr != $pos) ;
+    $rr=sysseek(GCF, $md_start, SEEK_SET);
+    die "2nd seek failed rr=$rr md_start=$md_start" if ($rr != $md_start) ;
 
     $rr=sysread(GCF,$buffer,F_SIZE);
     die "can not read " if( $rr != F_SIZE );

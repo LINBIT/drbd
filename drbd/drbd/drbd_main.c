@@ -1664,13 +1664,12 @@ void drbd_generic_end_io(struct buffer_head *bh, int uptodate)
 
 void drbd_md_write(drbd_dev *mdev)
 {
-	kdev_t ll_dev = mdev->lo_device;
 	struct meta_data_on_disk * buffer;
 	u32 flags;
 	sector_t sector;
 	int i;
 
-	if( ll_dev == 0) return;
+	if( mdev->lo_device == 0) return;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)bh_kmap(mdev->md_io_bh);
@@ -1692,7 +1691,7 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
 	bh_kunmap(mdev->md_io_bh);
-	sector = ((blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]>>2)-1)<<3;
+	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
@@ -1705,16 +1704,16 @@ void drbd_md_write(drbd_dev *mdev)
 
 void drbd_md_read(drbd_dev *mdev)
 {
-	kdev_t ll_dev = mdev->lo_device;
 	struct meta_data_on_disk * buffer;
 	sector_t sector;
 	int i;
 
-	if( ll_dev == 0) return;
+	if( mdev->lo_device == 0) return;
 
 	down(&mdev->md_io_mutex);
 
-	sector = ((blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]>>2)-1)<<3;
+	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
+	DUMPLU(sector);
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);

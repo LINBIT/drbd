@@ -80,8 +80,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	m_size = ll_dev ? blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] : 0;
 
 	if( 1 /* metadata on ll_dev */ ) {
-		if(m_size) m_size -= MD_RESERVED_SIZE;
-		if(p_size) p_size -= MD_RESERVED_SIZE;
+		if(m_size) m_size = md_start_s(m_size<<1)>>1;
+		if(p_size) p_size = md_start_s(p_size<<1)>>1;
 	}
 
 	if(p_size && m_size) {
@@ -135,8 +135,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	struct inode *inode;
 	kdev_t ll_dev;
 
+	/*
 	if (!capable(CAP_SYS_ADMIN)) //MAYBE: Move this to the drbd_ioctl()
 		return -EACCES;
+	*/
 
 	minor=(int)(mdev-drbd_conf);
 

@@ -662,10 +662,31 @@ extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int ha
 #define BM_IN_SYNC       0
 #define BM_OUT_OF_SYNC   1
 
-#define MD_RESERVED_SIZE 128 * (1<<10) // 128 MB  ( in units of 1 KB )
-#define MD_AL_OFFSET 8                 // 8 Sectors after start of meta area
-#define MD_AL_MAX_SIZE 64              // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
-#define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) // Allows up to about 3.8TB
+
+/* Meta data layout
+   We reserve a 128MB Block (4k aligned)
+   * either at the end of the backing device
+   * or on a seperate meta data device. */
+
+#define MD_RESERVED_SIZE ( 128 * (1<<10) )  // 128 MB  ( in units of kb )
+// The following numbers are sectors
+#define MD_GC_OFFSET 0      
+#define MD_AL_OFFSET 8      // 8 Sectors after start of meta area
+#define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
+#define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
+
+/* Returns the number of sectors of a block device. */
+static inline unsigned long capacity(kdev_t dev) {
+	return blk_size[MAJOR(dev)][MINOR(dev)]<<1;
+}
+/* Returns the start sector for meta data for a device size in sectors */
+static inline sector_t md_start_s(unsigned long size) {
+	return (size & ~7L) - (MD_RESERVED_SIZE<<1);
+}
+/* Returns the start sector for metadata */
+static inline sector_t drbd_md_ss(drbd_dev *mdev) {
+	return md_start_s(capacity(mdev->lo_device));
+}
 
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5
