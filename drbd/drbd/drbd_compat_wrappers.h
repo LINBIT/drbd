@@ -511,10 +511,8 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 
 static inline void drbd_blk_run_queue(request_queue_t *q)
 {
-	if (q && q->queue_lock && q->request_fn)
-		blk_run_queue(q);
-	else
-		blk_run_queues();
+	if (q && q->unplug_fn)
+		q->unplug_fn(q);
 }
 
 static inline void drbd_kick_lo(drbd_dev *mdev)

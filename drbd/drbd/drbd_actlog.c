@@ -77,8 +77,12 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	init_completion(&event);
 	bio.bi_private = &event;
 	bio.bi_end_io = drbd_md_io_complete;
+#ifdef BIO_RW_SYNC
+	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
+#else
 	submit_bio(rw, &bio);
 	drbd_blk_run_queue(bdev_get_queue(mdev->md_bdev));
+#endif
 	wait_for_completion(&event);
 
 	return test_bit(BIO_UPTODATE, &bio.bi_flags);
