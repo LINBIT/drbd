@@ -814,6 +814,10 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 	Drbd_Header h;
 	int ok;
 
+	h.magic   = BE_DRBD_MAGIC;
+	h.command = cpu_to_be16(cmd);
+	h.length  = cpu_to_be16(size);
+
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -821,7 +825,7 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 
 	old_blocked = drbd_block_all_signals();
 
-	ok = _drbd_send_cmd(mdev,mdev->data.socket,cmd,&h,size,0);
+	ok = ( sizeof(h) == drbd_send(mdev,mdev->data.socket,&h,sizeof(h),0) );
 	ok = ok && ( size == drbd_send(mdev,mdev->data.socket,data,size,0) );
 
 	restore_old_sigset(old_blocked);

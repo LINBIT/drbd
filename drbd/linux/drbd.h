@@ -284,7 +284,6 @@ struct ioctl_get_gen_cnt {
 	OUT __u64        current_size;
 	OUT __u32        gen_cnt[GEN_CNT_SIZE];	/* generation counter */
 	OUT unsigned int bits_set;
-	int              _pad;
 };
 
 #define DRBD_MAGIC 0x83740267

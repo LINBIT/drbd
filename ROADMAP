@@ -15,10 +15,10 @@ DRBD 0.8 Roadmap
   40% DONE
 
 3 Authenticate the peer upon connect by using a shared secret. 
-  Configuration file syntax:  net { auth-secret "secret-word" }
-  Using a challenge-response authentication within the new
-  handshake.
-  0% ASSIGNED TO rodrigo@corporacionlinux.cl 
+  Configuration file syntax:  net { cram-hmac-alg "sha1"; 
+  shared-secret "secret-word"; }
+  Using a challenge-response authentication.
+  99% DONE
 
 4 Consolidate state changes into a central function, that makes
   sure that the new state is valid. Replace set_cstate() with

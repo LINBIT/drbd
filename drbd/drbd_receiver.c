@@ -701,7 +701,7 @@ int drbd_connect(drbd_dev *mdev)
 
 	if ( mdev->cram_hmac_tfm ) {
 		if (!drbd_do_auth(mdev)) {
-			ERR("Authentication of Peer failed.");
+			ERR("Authentication of peer failed\n");
 			return 0;
 		}
 	}
@@ -1951,7 +1951,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	}
 
 	if (p.length != resp_size ) {
-		ERR( "expected AuthResponse payload of wrong size.\n" );
+		ERR( "expected AuthResponse payload of wrong size\n" );
 		return 0;
 	}
 
@@ -1978,6 +1978,11 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	
 	kfree(response);
 	kfree(right_response);
+
+	if(rv) {
+		INFO("Peer authenticated usind %d bytes of '%s' HMAC\n",
+		     resp_size,mdev->conf.cram_hmac_alg);
+	}
 
 	return rv;
 }
