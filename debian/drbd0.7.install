@@ -1,5 +1,0 @@
-user/drbdsetup sbin
-user/drbdadm sbin
-scripts/drbd etc/init.d
-scripts/drbddisk etc/ha.d/resource.d
-scripts/drbd.conf etc
