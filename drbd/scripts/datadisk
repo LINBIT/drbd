@@ -23,7 +23,7 @@ case "$1" in
 		#setLocal
 
 		#if [ isMasterBoot $RESOURCE ]; then
-			param=`echo $* | sed -e"s/stop/master/g"`
+			param=`echo $* | sed -e"s/start/master/g"`
 			$INSTALL/drbdc $param
 		#else
 		#	$INSTALL/drbdc $RESOURCE slave
