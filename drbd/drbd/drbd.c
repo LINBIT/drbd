@@ -236,6 +236,7 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 /*static */ int *drbd_blocksizes;
 /*static */ int *drbd_sizes;
 /*static */ struct Drbd_Conf *drbd_conf;
+/*static */ struct fs_struct dummy_fs;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
 /*static */ struct block_device_operations drbd_ops = {
@@ -585,9 +586,17 @@ int drbd_thread_setup(void* arg)
 	lock_kernel();
 	exit_mm(current);	/* give up UL-memory context */
 	exit_files(current);	/* give up open filedescriptors */
+
+	exit_fs(current);      /* give up filesystem context (root,pwd) */
+	current->fs=&dummy_fs; /* point fs context to dummy fs context,
+				  is needed for further calls to do_fork() */
+	atomic_set(&dummy_fs.count,10);
+	                       /* Since childs are decrementing dummy_fs's 
+                                  refcount (by calling exit_fs(), every child 
+				  resets the count back to 10 :)
+			       */
 	current->session = 1;
 	current->pgrp = 1;
-	current->fs->umask = 0;
 
 	if (!thi->pid) sleep_on(&thi->wait);
 
@@ -616,7 +625,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	if (thi->pid == 0) {
 		thi->t_state = Running;
 
-		pid = kernel_thread(drbd_thread_setup, (void *) thi, 0);
+		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 
 		if (pid < 0) {
 			printk(KERN_ERR DEVICE_NAME
@@ -1588,6 +1597,11 @@ int __init drbd_init(void)
 #endif
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
+
+	atomic_set(&dummy_fs.count,10);
+	dummy_fs.umask=0;
+	dummy_fs.root=0;
+	dummy_fs.pwd=0;
 
 	return 0;
 }
