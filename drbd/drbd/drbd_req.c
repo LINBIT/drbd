@@ -152,7 +152,20 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	struct buffer_head *nbh;
 	drbd_request_t *req;
 	int cbs = 1 << mdev->blk_size_b;
-	int size_kb = 1<<(mdev->blk_size_b-10);
+	int size_kb;
+
+	if (bh->b_size != cbs) {
+		/* If someone called set_blocksize() from fs/buffer.c ... */
+
+		cbs = bh->b_size;
+		set_blocksize(mdev->lo_device,cbs);
+		mdev->blk_size_b = drbd_log2(cbs);
+
+		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",
+		       (int)(mdev-drbd_conf),cbs);
+	}
+
+	size_kb = 1<<(mdev->blk_size_b-10);
 
 	/* Do disk - IO */
 	nbh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
@@ -173,21 +186,21 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 
-#if 0
+#if 1
+	{
+		static const char *strs[3] = 
 		{
-			static const char *strs[3] = 
-			{
-			  [READ]="READ",
-			  [READA]="READA",
-			  [WRITE]="WRITE",
-			};
-
-			printk(KERN_ERR DEVICE_NAME "%d: make_request(cmd=%s,"
-			       "sec=%ld, size=%d)\n",
-			       (int)(mdev-drbd_conf),
-			       strs[rw],bh->b_rsector,bh->b_size);
-
-		}
+			[READ]="READ",
+			[READA]="READA",
+			[WRITE]="WRITE",
+		};
+		
+		printk(KERN_ERR DEVICE_NAME "%d: make_request(cmd=%s,"
+		       "sec=%ld, size=%d)\n",
+		       (int)(mdev-drbd_conf),
+		       strs[rw],bh->b_rsector,bh->b_size);
+		
+	}
 #endif
 
 	
@@ -200,7 +213,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	nbh->b_dev = mdev->lo_device;
 	nbh->b_rdev = mdev->lo_device;
 	nbh->b_rsector = bh->b_rsector;          
-	nbh->b_end_io = drbd_dio_end;
 	nbh->b_page=bh->b_page;
 	atomic_set(&nbh->b_count, 0);
 	nbh->b_private = req;
