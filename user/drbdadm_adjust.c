@@ -202,6 +202,13 @@ int m_fscanf(FILE *stream,const char *fmt, ...)
 }
 
 
+/* NOTE
+ * return before waitpit is a BUG. "goto out;" instead!
+ *
+ * calling drbdsetup again before waitpid("drbdsetup show") has a race with
+ * the next ioctl failing because of the zombie still holding an open_cnt on
+ * the drbd device. so don't do that.
+ */
 int adm_adjust(struct d_resource* res,char* unused)
 {
   char* argv[20];
@@ -218,6 +225,7 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   struct stat sb;
   int major, minor;
+  int err = 10;
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
@@ -236,11 +244,11 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   if (stat(res->me->disk, &sb)) {
     PERROR("stat '%s' failed:", res->me->device);
-    return 10;
+    goto out;
   }
   if (!S_ISBLK(sb.st_mode)) {
     fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
-    return 10;
+    goto out;
   }
   rv=m_fscanf(in,"Lower device: %d:%d (%*[^)])\n",&major,&minor);
   if( (rv!=2) || (((major<<8)|minor) != (int)sb.st_rdev)) do_attach=1;
@@ -248,11 +256,11 @@ int adm_adjust(struct d_resource* res,char* unused)
   if (strcmp("internal", res->me->meta_disk)) {
     if (stat(res->me->meta_disk, &sb)) {
       PERROR("stat '%s' failed:", res->me->meta_disk);
-      return 10;
+      goto out;
     }
     if (!S_ISBLK(sb.st_mode)) {
       fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
-      return 10;
+      goto out;
     }
   } else {
     sb.st_rdev = 0;
@@ -265,7 +273,7 @@ int adm_adjust(struct d_resource* res,char* unused)
 	do_attach = 1;
     } else {
       fprintf(stderr, "parse error, '%s' read, 'internal' expected\n", str1);
-      return 10;
+      goto out;
     }
   }
   if (rv == 2) {
@@ -278,7 +286,7 @@ int adm_adjust(struct d_resource* res,char* unused)
 	do_attach = 1;
     } else {
       fprintf(stderr, "parse error\n");
-      return 10;
+      goto out;
     }
   }
 
@@ -345,10 +353,15 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_syncer |= complete(res->sync_options);
   } else do_syncer=1;
 
+ do_up:
+  err = 0;
+ out:
+  // drain, close, wait for drbdsetup to "officially die".
+  { static char drain[1024]; while (fgets(drain,1024,in)); }
   fclose(in);
   waitpid(pid,0,0);
+  if (err) return err;
 
- do_up:
   if(do_attach) {
     if( (rv=adm_attach(res,0)) ) return rv;
     do_resize=0;

@@ -1277,6 +1277,7 @@ int main(int argc, char** argv)
   int drbd_fd,i;
   int num_of_args;
   int help = 0;
+  int err;
   char **args;
 
   if ( (basename = strrchr(argv[0],'/')) )
@@ -1320,8 +1321,10 @@ int main(int argc, char** argv)
 
 	  opterr = 1; /* let getopt() print error messages */
 	  optind = 3+num_of_args;
-	  return commands[i].function(drbd_fd,argv,argc,
+	  err =  commands[i].function(drbd_fd,argv,argc,
 				      commands[i].options);
+	  close(drbd_fd); // explicit close on drbd device!
+	  return err;
 	}
     }
   fprintf(stderr,"%s is not a command\n",argv[2]);

@@ -156,7 +156,7 @@ KVER := $(shell \
         gcc -nostdinc -E -P -I$(KDIR)/include - 2>&1 | \
         sed -ne 's/^drbd_kernel_release "\(.*\)".*/\1/p')
 
-kernel-patch:
+kernel-patch: drbd/drbd_buildtag.c
 	set -o errexit; \
 	kbase=$$(basename $(KDIR)); \
 	d=patch-$$kbase-drbd-$(DIST_VERSION); \

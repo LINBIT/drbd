@@ -67,7 +67,7 @@ clean:
 
 	sed 's/(KERNEL_VERSION)/dummy/g' debian/control.in > debian/control
 
-	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) clean
+	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) KDIR=$(KSRC) clean
 
 # This target builds the kernel module.
 build: build-stamp
@@ -75,7 +75,7 @@ build-stamp: check clean
 	dh_testdir
 	dh_testroot
 
-	cd drbd && $(MAKE)  DRBDSRC=`pwd` SUBDIRS=`pwd`
+	cd drbd && $(MAKE)  DRBDSRC=`pwd` SUBDIRS=`pwd` KDIR=$(KSRC)
 
 	touch build-stamp
 

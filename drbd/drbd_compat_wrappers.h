@@ -291,6 +291,14 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	}
 }
 
+/* for increased performance,
+ * we try to use zero copy network send whenever possible.
+ *
+ * maybe TODO:
+ * find out whether we can use zero copy network recv, too, somehow.
+ * we'd need to define some sk_read_actor_t, and then use
+ * tcp_read_sock ...
+ */
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 {
 	struct page *page = bh->b_page;
@@ -305,6 +313,11 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 	return _drbd_send_page(mdev,page,offset,size);
 }
 
+/* for proto A, we cannot use zero copy network send:
+ * we don't want to "ack" a send when we put a reference to it on the socket,
+ * but when it actually has reached the sendbuffer (so is likely to actually be
+ * on the wire in a couple of jiffies).
+ */
 static inline int _drbd_send_bio(drbd_dev *mdev, struct buffer_head *bh)
 {
 	struct page *page = bh->b_page;

@@ -869,22 +869,25 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	return drop_it; /* && (mdev->state == Primary) */;
 }
 
-/* The idea of sendpage seems to be to put some kind of reference 
-   to the page into the skb, and to hand it over to the NIC. In 
+/* The idea of sendpage seems to be to put some kind of reference
+   to the page into the skb, and to hand it over to the NIC. In
    this process get_page() gets called.
 
    As soon as the page was really sent over the network put_page()
    gets called by some part of the network layer. [ NIC driver? ]
 
-   [ get_page() / put_page() increment/decrement the count. If count 
+   [ get_page() / put_page() increment/decrement the count. If count
      reaches 0 the page will be freed. ]
 
-   This works nicely with pages from FSs. 
+   This works nicely with pages from FSs.
    But this means that in protocol A we might signal IO completion too early !
 
-   In order not to corrupt data during a full sync we must make sure
+   In order not to corrupt data during a resync we must make sure
    that we do not reuse our own buffer pages (EEs) to early, therefore
-   we have the net_ee list. 
+   we have the net_ee list.
+
+   XFS seems to have problems, still, it submits pages with page_count == 0!
+   As a workaround, we disable sendpage on pages with page_count == 0 or PageSlab.
 */
 int _drbd_no_send_page(drbd_dev *mdev, struct page *page,
                    int offset, size_t size)
@@ -916,7 +919,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	if (fallback && time_before(last_rep+3600*HZ, now)) {
 		last_rep = now;
 		printk(KERN_INFO DEVICE_NAME
-		       " :sendpage() omitted: %lu/%lu "
+		       ": sendpage() omitted: %lu/%lu "
 		       "[XFS' broken IO requests?]\n", fallback, total);
 	}
 
@@ -1024,7 +1027,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		tl_add(mdev,req);
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
-		ok = drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p);
+		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 		if(ok) {
 			if(mdev->conf.wire_protocol == DRBD_PROT_A) {
 				ok = _drbd_send_bio(mdev,&req->private_bio);
@@ -1076,8 +1079,8 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	spin_unlock(&mdev->send_task_lock);
 
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
-	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
-	   && _drbd_send_zc_bio(mdev,&e->private_bio);
+	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
+	if (ok) ok = _drbd_send_zc_bio(mdev,&e->private_bio);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
