@@ -133,7 +133,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	/* This callback will be called in irq context by the IDE drivers,
 	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
 	   Try to get the locking right :) */
-	int wake_asender=0;
+  //	int wake_asender=0;
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
@@ -172,8 +172,8 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	if (waitqueue_active(&bh->b_wait))
 		wake_up(&bh->b_wait); //must be within the lock!
 
-	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-	   e->block_id == ID_SYNCER ) wake_asender=1;
+	//	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+	//	   e->block_id == ID_SYNCER ) wake_asender=1;
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
@@ -181,9 +181,10 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	if(wake_asender) {
+	//	if(wake_asender) {
 		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
-	}
+	//	}
+	// TODO: Think if we should implement a short-cut here.
 }
 
 /*

@@ -1059,6 +1059,7 @@ int __init init_module()
 void cleanup_module()
 {
 	int i;
+	int rr;
 
 #ifdef CONFIG_DEVFS_FS
 	devfs_unregister(devfs_handle);
@@ -1077,12 +1078,25 @@ void cleanup_module()
 		// free the receiver's stuff
 
 		drbd_release_ee(drbd_conf+i,&drbd_conf[i].free_ee);
-		if(drbd_release_ee(drbd_conf+i,&drbd_conf[i].active_ee) || 
-		   drbd_release_ee(drbd_conf+i,&drbd_conf[i].sync_ee)   ||
-		   drbd_release_ee(drbd_conf+i,&drbd_conf[i].done_ee) ) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: EEs in active/sync/done list found!\n",i);
-		}
+		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].active_ee);
+		if(rr) printk(KERN_ERR DEVICE_NAME
+			       "%d: %d EEs in active list found!\n",i,rr);
+
+		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].sync_ee);
+		if(rr) printk(KERN_ERR DEVICE_NAME
+			       "%d: %d EEs in sync list found!\n",i,rr);
+
+		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].done_ee);
+		if(rr) printk(KERN_ERR DEVICE_NAME
+			       "%d: %d EEs in done list found!\n",i,rr);
+
+		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].rdone_ee);
+		if(rr) printk(KERN_ERR DEVICE_NAME
+			       "%d: %d EEs in rdone list found!\n",i,rr);
+
+		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].read_ee);
+		if(rr) printk(KERN_ERR DEVICE_NAME
+			       "%d: %d EEs in read list found!\n",i,rr);
 	}
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)

@@ -212,6 +212,10 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 
 			if(pr) {
+				printk(KERN_ERR DEVICE_NAME
+				       "%d: Will discard a resync_read\n",
+				       (int)(mdev-drbd_conf));
+
 				pr->cause = Discard; 
 				// list del as well ?
 			}
@@ -224,6 +228,11 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			spin_lock(&mdev->pr_lock); 	
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 			if(pr) {
+				printk(KERN_ERR DEVICE_NAME
+				       "%d: Uprgraded a resync read to an "
+				       "app read\n",
+				       (int)(mdev-drbd_conf));
+
 				pr->cause |= Application;
 				pr->d.bh=bh;
 				list_del(&pr->list);
