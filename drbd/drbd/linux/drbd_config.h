@@ -20,12 +20,11 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre8" //" cvs $Date: 2004/06/18 12:45:07 $"
+#define REL_VERSION "0.7-pre8 cvs $Date: 2004/06/24 15:26:08 $"
 #define API_VERSION 74
 #define PRO_VERSION 72
 
-#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
-                        // for now, please leave it on.
+//#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
