@@ -5,7 +5,7 @@
 
 HOST=`hostname -s`
 CONFIG="/etc/sysconfig/drbd"
-STATE="/var/state/drbd"
+STATE="/var/lib/drbd"
 
 # RETVAL will work as a "stuck bit" for any error. The construct
 # RV=$?
