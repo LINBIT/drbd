@@ -1021,9 +1021,11 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->unacked_cnt,0);
 
 	init_MUTEX(&mdev->device_mutex);
+	init_MUTEX(&mdev->md_io_mutex);
 	init_MUTEX(&mdev->data.mutex);
 	init_MUTEX(&mdev->meta.mutex);
-	init_MUTEX(&mdev->md_io_mutex);
+	sema_init(&mdev->data.work,0);
+	sema_init(&mdev->meta.work,0);
 
 	mdev->rs_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->al_lock        = SPIN_LOCK_UNLOCKED;
@@ -1043,6 +1045,8 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->busy_blocks);
 	INIT_LIST_HEAD(&mdev->app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
+	INIT_LIST_HEAD(&mdev->data.work_q);
+	INIT_LIST_HEAD(&mdev->meta.work_q);
 
 	init_waitqueue_head(&mdev->state_wait);
 	init_waitqueue_head(&mdev->cstate_wait);

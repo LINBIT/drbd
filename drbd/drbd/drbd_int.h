@@ -637,11 +637,18 @@ struct drbd_hook {
 // TODO sort members for performance
 // MAYBE group them further
 
-/*
+/* If Philipp agrees, we remove the "mutex", and make_request will only
+ * (throttle on "queue full" condition and) queue it to the worker thread...
+ * which then is free to do whatever is needed, and has exclusive send access
+ * to the data socket ...
+ * 
+ * I want to see how this works first. I have the feeling in my guts that
+ * it will lead to OOM deadlock.
  */
 struct drbd_socket {
 	struct semaphore  mutex;
-	struct list_head  send_q;
+	struct semaphore  work;      // producers up it, worker down()s it
+	struct list_head  work_q;
 	struct socket    *socket;
 	Drbd_Polymorph_Packet sbuf;  // this way we get our
 	Drbd_Polymorph_Packet rbuf;  // send/receive buffers off the stack
@@ -658,6 +665,7 @@ struct Drbd_Conf {
 	struct drbd_socket data; // for data/barrier/cstate/parameter packets
 	struct drbd_socket meta; // for ping/ack (metadata) packets
 	volatile unsigned long last_received; // in jiffies, either socket
+	struct drbd_work  resync_work;
 	kdev_t lo_device;         // backing device
 	struct file *lo_file;
 	kdev_t md_device;         // device for meta-data.

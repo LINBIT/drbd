@@ -1581,12 +1581,7 @@ static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
 STATIC void drbdd(drbd_dev *mdev)
 {
 	drbd_cmd_handler_f handler;
-	/* now I have enough space on the stack for the biggest packet
-	 * (ReportParams). Data and Bitmap are handled different
-	 * anyways. Maybe this should be allocated nevertheless?
-	 */
-	Drbd_Polymorph_Packet packet;
-	Drbd_Header *header = (Drbd_Header*)&packet;
+	Drbd_Header *header = &mdev->data.rbuf.head;
 
 	for (;;) {
 		drbd_collect_zombies(mdev); // in case a syncer exited.
