@@ -155,7 +155,7 @@ int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv)
 	max = (chunk_sectors - (sector & (chunk_sectors - 1))) << 9;
 	max = min(lo_max,max);
 	// if (max < 0) max = 0; /* bio_add cannot handle a negative return */
-	return min(PAGE_SIZE,max);
+	return min((int)PAGE_SIZE,max);
 }
 #endif
 

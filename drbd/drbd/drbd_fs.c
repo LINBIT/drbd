@@ -77,7 +77,7 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	sector_t long pmdss; // previous meta data start sector
+	sector_t pmdss; // previous meta data start sector
 	int rv;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -167,8 +167,8 @@ STATIC
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
-	int err,i; // unused in 26 ?? cannot believe it ...
-	int minor;
+	NOT_IN_26(int err;) // unused in 26 ?? cannot believe it ...
+	int i,minor;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
@@ -315,11 +315,11 @@ ONLY_IN_26({
 	request_queue_t * const q = mdev->rq_queue;
 	request_queue_t * const b = bdev->bd_disk->queue;
 
-	q->max_sectors = min_not_zero(PAGE_SIZE >> 9, b->max_sectors);
+	q->max_sectors = min_not_zero((unsigned short)(PAGE_SIZE >> 9), b->max_sectors);
 	q->max_phys_segments = 1;
 	q->max_hw_segments   = 1;
-	q->max_segment_size  = min(PAGE_SIZE,b->max_segment_size);
-	q->hardsect_size     = max(512,b->hardsect_size);
+	q->max_segment_size  = min((unsigned)PAGE_SIZE,b->max_segment_size);
+	q->hardsect_size     = max((unsigned short)512,b->hardsect_size);
 	q->seg_boundary_mask = b->seg_boundary_mask;
 	q->merge_bvec_fn     = drbd_merge_bvec_fn;
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
@@ -386,6 +386,7 @@ STATIC
 int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 {
 	struct ioctl_get_config cn;
+	memset(&cn,0,sizeof(cn));
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
 	cn.lower_device_major = MAJOR(mdev->backing_bdev ?

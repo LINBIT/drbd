@@ -78,6 +78,9 @@ else
   # called from command line in current directory
   DRBDSRC := $(shell pwd)
   export DRBDSRC
+
+  KDIR_Makefile_PATCHLEVEL = $(shell grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3)
+
   # to be overridden on command line:
   PREFIX := /
   ifeq ($(wildcard ../build-for-uml),../build-for-uml)
@@ -90,27 +93,34 @@ else
 
   .PHONY: drbd.o default all greeting clean kbuild install dep
 
-  drbd.o: greeting dep kbuild
+  drbd.o: greeting kbuild
   default: drbd.o
   all:     drbd.o
 
   greeting:
 	@echo "" ;\
 	echo "    Calling toplevel makefile of kernel source tree, which I believe is in" ;\
-	echo "    KDIR=$(KDIR)" ;\
-	echo "    NOTE: please ignore warnings regarding overriding of SUBDIRS" ;\
-	echo ""
+	echo "    KDIR=$(KDIR)"
+  ifeq ($(KDIR_Makefile_PATCHLEVEL),6)
+	@echo "    NOTE: please ignore warnings regarding overriding of SUBDIRS"
+  endif
+	@echo ""
 
   kbuild:
 	@rm -f .kernelrelease*
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 	@mv .kernelrelease.new .kernelrelease
 
-  # obsolete in 2.6 ...
-  dep:
-	@echo "make dep ..."
-	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) dep
+  ifneq ($(KDIR_Makefile_PATCHLEVEL),6)
+    # obsolete in 2.6 ...
+    dep:
+	@echo "tying to make dep ..."
+	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) dep || \
+         echo "I'll ignore this error, but this can cause inconsistencies!"
 	@echo "done."
+
+    kbuild: dep
+  endif
 
   clean:
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernelrelease
