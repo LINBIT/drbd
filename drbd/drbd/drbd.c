@@ -86,7 +86,7 @@
 #define DEVICE_NAME "drbd"
 
 #define DRBD_SIG SIGXCPU
-
+#define SYNC_LOG_S 20
 
 struct Drbd_thread {
 	int pid;
@@ -99,6 +99,11 @@ struct Drbd_thread {
 struct Tl_entry {
         struct request* req;
         unsigned long sector_nr;
+};
+
+struct Tl_epoch_entry {
+	struct buffer_head* bh;
+	u64    block_id;
 };
 
 struct Drbd_Conf {
@@ -126,6 +131,8 @@ struct Drbd_Conf {
 	struct timer_list a_timeout;
 	struct semaphore send_mutex;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
+	struct buffer_head* sync_log[SYNC_LOG_S];
+	spinlock_t sl_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
         struct Drbd_thread asender;
@@ -1153,7 +1160,12 @@ __initfunc(int drbd_init(void))
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
 		drbd_conf[i].es_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
+		drbd_conf[i].sl_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].asender_wait= NULL;
+		{
+			int j;
+			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
+		}
 	}
 #if LINUX_VERSION_CODE > 0x20330
 	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
@@ -1397,11 +1409,6 @@ int drbd_connect(int minor)
 	return 1;
 }
 
-struct Tl_epoch_entry {
-	struct buffer_head* bh;
-	u64    block_id;
-};
-
 inline int receive_barrier(int minor)
 {
 	struct Tl_epoch_entry *epoch = 
@@ -1487,10 +1494,16 @@ inline int receive_data(int minor,int data_size)
 		if (ep_size > drbd_conf[minor].conf.tl_size)
 			printk(KERN_ERR DEVICE_NAME ": tl_size too small"
 			       " (ep_size > tl_size)\n");
-	} else {
-		// FIXME. Should send the ack on write completion.
-	        drbd_send_ack(&drbd_conf[minor], RecvAck,
-			      block_nr,header.block_id);
+	} else {	       
+		int i;
+		for(i=0;i<SYNC_LOG_S;i++) {
+			if(!drbd_conf[minor].sync_log[i]) {
+				drbd_conf[minor].sync_log[i]=bh;
+				break;
+			}
+		}
+		if(i==SYNC_LOG_S)
+			printk(KERN_ERR DEVICE_NAME ": sl_size too small");
 	}
 
 
@@ -1572,7 +1585,7 @@ inline int receive_param(int minor,int command)
 	if (drbd_recv(drbd_conf[minor].sock, &param, sizeof(param)) <= 0)
 	        return FALSE;
 
-	if(be32_to_cpu(param.h.state) == Primary &&
+	if(be32_to_cpu(param.state) == Primary &&
 	   drbd_conf[minor].state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME": incompatible states \n");
 		return FALSE;
@@ -1932,6 +1945,8 @@ int drbd_asender(void *arg)
 	struct Tl_epoch_entry *epoch = 
 	  (struct Tl_epoch_entry *)drbd_conf[minor].transfer_log;
 
+	struct buffer_head **sync_log = drbd_conf[minor].sync_log;
+
 
 	lock_kernel();
 	exit_mm(current);	// give up UL-memory context 
@@ -1955,6 +1970,17 @@ int drbd_asender(void *arg)
 	  if(test_and_clear_bit(0,&drbd_conf[minor].need_to_issue_barrier)) {
 		  drbd_send_barrier(&drbd_conf[minor],
 				    tl_add_barrier(&drbd_conf[minor]));
+	  }
+
+	  for(i=0;i<SYNC_LOG_S;i++) {
+		  if(sync_log[i]) {
+			  if(buffer_uptodate(sync_log[i])) {
+				  unsigned long bnr;
+				  bnr = sync_log[i]->b_blocknr;
+				  drbd_send_ack(&drbd_conf[minor],WriteAck,
+						bnr,ID_SYNCER);
+			  }
+		  }		  
 	  }
 
 	  if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_C) continue;

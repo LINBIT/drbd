@@ -43,5 +43,5 @@ dev:
 
 tgz:    
 	tar -czvf drbd-$(VERSION).tar.gz \
-	--exclude *.o  --exclude CVS --exclude drbd \
+	--exclude *.o  --exclude CVS \
 	--exclude *~ --exclude .deps --exclude *.tar.gz -C .. drbd

@@ -1,17 +1,47 @@
+0.5
+---
+The code was considerably changed and enlarged.
+
+There are now three wire protocols.
+A) A write operation is complete as soon as the data is
+   written to disk and sent to the network.
+B) A write operation is complete as soon as a reception 
+   acknowledgement arrived.
+c) A write operation is complete as soon as a write
+   acknowledgement arrived.
+
+The basic syncer was replaced by a bitmap-based syncer. The new
+one only updates the blocks which were modified during the
+absence of the newly joined node.
+
+A huge load of bug fixes.
+
+Finally I cleaned up the drbdsetup utility. Now all the
+features are accessible with command line options.
+
+0.4
+---
+There is a basic syncer now. It will bring a newly joined
+secondary node up to date by copying each block.
+It is working at 250KB/second (hard coded in drbdsetup for now).
+
+IO errors on the local disk are now reported as if there
+was an io error on drbd.
+
+
 0.3
 ---
-
 There is a new timeout. If the primary node cannot send (TCP!)
 within the timeout, it falls back into unconnected operation.
 
 You can also disable the timeout (by setting it to zero), but in
 case of a failure of the secondary node, your primary node will block!
 
-Currently the timeout is hardcoded into drbdsetup (3 Seconds).
+Currently the timeout is hard coded into drbdsetup (3 Seconds).
+
 
 0.2
 ---
-
 This time I worked a lot looking into all possible deadlocks...
 I think if you do not use any loop-back device it should
 work without deadlocking. It is not working on top of the loop
@@ -21,16 +51,14 @@ This time it should handle all block size issues, and thus
 reiserfs is feeling happy on top of drbd.
 
 
-
 Status of drbd-0.1.tar.gz
 -------------------------
-
 This is a proof-it-is-no-vapo-ware-release and not more!
 It is the first time it is somehow working without immediately crashing
 my machine (you can "even" unload the module). It is not able to 
-handle blocksized other than 1024 and there is not a single line of code
+handle block sizes other than 1024 and there is not a single line of code
 of the sync-a-new-secondary stuff yet.
-The used port is hardcoded into drbdsetup (7788) for now.
-I have tested it on an intel box and an alpha machine.
+The used port is hard coded into drbdsetup (7788) for now.
+I have tested it on an Intel box and an alpha machine.
 
 
