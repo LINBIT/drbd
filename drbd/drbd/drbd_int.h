@@ -26,6 +26,7 @@
 #include <linux/timer.h>
 #include <linux/version.h>
 #include <linux/list.h>
+#include <linux/completion.h>
 
 /* #define MAJOR_NR 240 */
 #define MAJOR_NR 43
