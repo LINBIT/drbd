@@ -324,11 +324,14 @@ inline void tl_release(struct Drbd_Conf* mdev,u64 old_nr,int rp)
   spin_unlock_irqrestore(&mdev->tl_lock, flags);
 } 
 
-inline void tl_send_ack(int minor)
+inline void tl_send_ack(int minor, u64 sector)
 {
   int len;
   struct Drbd_Conf* mdev = &drbd_conf[minor];
   unsigned long flags;
+
+  tl_add(mdev, sector);
+
   spin_lock_irqsave(&mdev->tl_lock, flags);
 
   if(mdev->tl_end >= mdev->tl_begin) len = mdev->tl_end - mdev->tl_begin;
@@ -454,7 +457,7 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 
   if(err == len+sizeof(packet_header) )
     {
-      if(len >= 512)
+      if(len >= 512 && be16_to_cpu(packet_header.command) == 0)
 	tl_add(&drbd_conf[minor],sect_nr);
     }
   else
@@ -513,7 +516,6 @@ void drbd_end_req(struct request *req,int nextstate,int uptodate,
   switch( req->rq_status & 0xfffe )
     {
     case RQ_DRBD_SEC_WRITE:
-      tl_add(mdev,req->sector);
       goto end_it;
     case RQ_DRBD_NOTHING:
       req->rq_status = nextstate | (uptodate ? 1 : 0) ; 
@@ -1168,7 +1170,8 @@ void drbdd(int minor)
 	    brelse(bh);
 
 	    /**** transfer log ...***/
-	    tl_send_ack(minor);
+	    tl_send_ack(minor, be64_to_cpu(packet_header.block_nr));
+
 
 	    break;
 	  }
