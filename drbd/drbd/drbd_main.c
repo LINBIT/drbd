@@ -355,6 +355,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 				dec_pending(mdev);
 			}
 		}
+		if(*p == TL_BARRIER) dec_pending(mdev);
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
 		        p = mdev->transfer_log;	    
@@ -621,10 +622,11 @@ static void drbd_timeout(unsigned long arg)
 			drbd_queue_signal(DRBD_SIG, ti->task);
 		}
 	} else {
+		/*
 		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
 		       " (pid=%d) requesting ping\n",
 		       (int)(ti->mdev-drbd_conf),ti->task->pid);
-
+		*/
 		set_bit(SEND_PING,&ti->mdev->flags);
 		wake_up_interruptible(&ti->mdev->asender_wait);
 		if(ti->restart) {
@@ -639,9 +641,11 @@ void drbd_a_timeout(unsigned long arg)
 {
 	struct Drbd_Conf *mdev = (struct Drbd_Conf *) arg;
 
-	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected (pc=%d)!\n",
-	       (int)(mdev-drbd_conf),mdev->pending_cnt);
-
+	/*
+	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected (pc=%d)"
+	       " requesting ping\n",
+	       (int)(mdev-drbd_conf),atomic_read(&mdev->pending_cnt));
+	*/
 	set_bit(SEND_PING,&mdev->flags);
 	wake_up_interruptible(&mdev->asender_wait);
 }
@@ -703,8 +707,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		init_timer(&ti.s_timeout);
 		ti.s_timeout.function = drbd_timeout;
 		ti.s_timeout.data = (unsigned long) &ti;
-		ti.s_timeout.expires = jiffies + 
-		  (via_msock ? (mdev->artt*4) : (mdev->conf.timeout*HZ/10));
+		ti.s_timeout.expires = jiffies + mdev->conf.timeout*HZ/20;
 		add_timer(&ti.s_timeout);
 	}
 
@@ -729,9 +732,6 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
 				if(ti.timeout_happened) {
-				  printk(KERN_ERR DEVICE_NAME
-					 "%d: leaving while(1)\n",
-					 (int)(mdev-drbd_conf));
 					break;
 				} else {
 					app_got_sig=1;
@@ -744,9 +744,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		sent += rv;
 		if (sent == header_size+data_size) break;
 
-		printk(KERN_ERR DEVICE_NAME
+		/*printk(KERN_ERR DEVICE_NAME
 		       "%d: calling sock_sendmsg again\n",
-		       (int)(mdev-drbd_conf));
+		       (int)(mdev-drbd_conf));*/
 
 		if( rv < header_size ) {
 			iov[0].iov_base += rv;
@@ -897,7 +897,6 @@ int __init drbd_init(void)
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), FALSE /*TRUE */ );
 		drbd_conf[i].do_panic = 0;
-		drbd_conf[i].artt = HZ/10; // 100ms 
 		drbd_conf[i].sock = 0;
 		drbd_conf[i].msock = 0;
 		drbd_conf[i].lo_file = 0;
@@ -910,8 +909,8 @@ int __init drbd_init(void)
 		drbd_conf[i].recv_cnt = 0;
 		drbd_conf[i].writ_cnt = 0;
 		drbd_conf[i].read_cnt = 0;
-		drbd_conf[i].pending_cnt = 0;
-		drbd_conf[i].unacked_cnt = 0;
+		atomic_set(&drbd_conf[i].pending_cnt,0);
+		atomic_set(&drbd_conf[i].unacked_cnt,0);
 		drbd_conf[i].transfer_log = 0;
 		drbd_conf[i].mbds_id = 0;
 		drbd_conf[i].flags=0;

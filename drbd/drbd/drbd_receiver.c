@@ -57,25 +57,25 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev);
 
 inline void inc_unacked(struct Drbd_Conf* mdev)
 {
-	mdev->unacked_cnt++;	
+	atomic_inc(&mdev->unacked_cnt);
 }
 
 inline void dec_unacked(struct Drbd_Conf* mdev)
 {
-	mdev->unacked_cnt--;
-	if(mdev->unacked_cnt<0)  /* CHK */
+	if(atomic_dec_and_test(&mdev->unacked_cnt))
+		wake_up_interruptible(&mdev->state_wait);
+
+	if(atomic_read(&mdev->unacked_cnt)<0)  /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt <0 !!!\n",
 		       (int)(mdev-drbd_conf));
-
-	if(mdev->unacked_cnt==0)
-		wake_up_interruptible(&mdev->state_wait);
 }
 
 inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
 #define PARANOIA
-#ifdef PARANOIA
+#ifdef PARANOIA 
+	/* Use this code if you are working with a VIA based moard :) */
 	if ( (long)block_id == (long)-1) {
 		printk(KERN_ERR DEVICE_NAME 
 		       "%d: strange block_id %lx%lx\n",(int)(mdev-drbd_conf),
@@ -108,10 +108,7 @@ int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 		if(!is_syncer_blk(mdev,e->block_id)) mdev->epoch_size++;
 		bforget(e->bh);
 		list_add(le,&mdev->free_ee);
-		if(r != sizeof(Drbd_BlockAck_Packet )) {
-			spin_unlock_irq(&mdev->ee_lock);
-			return FALSE;
-		}
+		if(r != sizeof(Drbd_BlockAck_Packet )) return FALSE;
 	}
 
 	return TRUE;
@@ -296,19 +293,14 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 
 	while(1) {
 		rv = sock_recvmsg(mdev->sock, &msg, size, msg.msg_flags);
-		if(rv == -ECONNRESET) {
-			printk(KERN_ERR DEVICE_NAME 
-			       "%d: sock_recvmsg returned %d r\n",
-			       (int)(mdev-drbd_conf),rv);
-			continue;
-		} 
+
 		if(rv <= 0) break;
 		done +=rv;
 		if (done == size) break;
 
-		printk(KERN_ERR DEVICE_NAME
+		/*printk(KERN_ERR DEVICE_NAME
 		       "%d: calling sock_recvmsg again\n",
-		       (int)(mdev-drbd_conf));
+		       (int)(mdev-drbd_conf));*/
 
 		iov.iov_len -= rv;
 		iov.iov_base += rv;
@@ -324,8 +316,9 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 		ti.idle_timeout.function=0;
 	}
 
-
-	if (rv < 0) {
+	/* ECONNRESET = other side closed the connection
+	   ERESTARTSYS = we got a signal. */
+	if (rv < 0 && ( rv != -ECONNRESET || rv != -ERESTARTSYS)) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 		return rv;
@@ -514,6 +507,7 @@ inline int receive_barrier(int minor)
 {
   	Drbd_Barrier_P header;
 	int rv;
+	int epoch_size;
 
 	if(drbd_conf[minor].state != Secondary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n",
@@ -528,11 +522,16 @@ inline int receive_barrier(int minor)
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
 	drbd_wait_active_ee(drbd_conf+minor);
-	rv=drbd_process_done_ee(drbd_conf+minor);
 
-	drbd_send_b_ack(&drbd_conf[minor], header.barrier,
-			drbd_conf[minor].epoch_size );
+	spin_lock_irq(&drbd_conf[minor].ee_lock);
+	rv=_drbd_process_done_ee(drbd_conf+minor);
+
+	epoch_size=drbd_conf[minor].epoch_size;
 	drbd_conf[minor].epoch_size=0;
+	spin_unlock_irq(&drbd_conf[minor].ee_lock);
+
+	drbd_send_b_ack(&drbd_conf[minor], header.barrier, epoch_size );
+
 	dec_unacked(drbd_conf+minor);
 
 	return rv;
@@ -909,8 +908,9 @@ void drbdd(int minor)
 
       out:
 	printk(KERN_INFO DEVICE_NAME "%d: Connection lost."
-	       "(pc=%d,uc=%d)\n",minor,drbd_conf[minor].pending_cnt,
-	       drbd_conf[minor].unacked_cnt);
+	       "(pc=%d,uc=%d)\n",minor,
+	       atomic_read(&drbd_conf[minor].pending_cnt),
+	       atomic_read(&drbd_conf[minor].unacked_cnt));
 
 	del_timer_sync(&drbd_conf[minor].a_timeout);
 
@@ -937,12 +937,21 @@ void drbdd(int minor)
 		drbd_wait_active_ee(drbd_conf+minor);
 		drbd_wait_sync_ee(drbd_conf+minor);
 		drbd_clear_done_ee(drbd_conf+minor);
-		drbd_conf[minor].unacked_cnt=0;		
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
 	}
-	drbd_conf[minor].pending_cnt = 0;
+
+	if(atomic_read(&drbd_conf[minor].unacked_cnt)) {
+		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt!=0\n",minor);
+		atomic_set(&drbd_conf[minor].unacked_cnt,0);
+	}		
+
+	if(atomic_read(&drbd_conf[minor].pending_cnt)) {
+		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt!=0\n",minor);
+		atomic_set(&drbd_conf[minor].pending_cnt,0);
+	}		
+
 	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 }
 
@@ -1006,11 +1015,12 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 
 inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
 {
-	down(&mdev->send_mutex);
-	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-	        _drbd_send_barrier(mdev);
+	if(down_trylock(&mdev->send_mutex)==0) {
+		if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
+			_drbd_send_barrier(mdev);
+		}
+		up(&mdev->send_mutex);
 	}
-	up(&mdev->send_mutex);
 }     
 
 void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
@@ -1047,7 +1057,7 @@ void drbd_ping_timeout(unsigned long arg)
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
 	struct send_timer_info *ti;
 
-	printk(KERN_ERR DEVICE_NAME"%d: ping ack did not arrive in time\n",
+	printk(KERN_ERR DEVICE_NAME"%d: ping ack did not arrive\n",
 	       (int)(mdev-drbd_conf));
 
 	drbd_thread_restart_nowait(&mdev->receiver);
@@ -1086,7 +1096,7 @@ int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 
 	if( rv == -EAGAIN) rv=0;
 
-	if (rv < 0 ) {
+	if (rv < 0 && ( rv != -ECONNRESET || rv != -ERESTARTSYS)) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 	}
@@ -1100,8 +1110,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	static Drbd_Packet header;
 	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	struct timer_list ping_timeout;
-	unsigned long ping_sent_at=0;
-	int rtt,rr,rsize=0;
+	unsigned long ping_sent_at;
+	int rtt=0,rr,rsize=0;
 
 	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
 
@@ -1111,6 +1121,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	init_timer(&ping_timeout);
 	ping_timeout.function = drbd_ping_timeout;
 	ping_timeout.data = (unsigned long) mdev;
+
+	ping_sent_at=0;
 
 	while(thi->t_state == Running) {
 	  drbd_double_sleep_on(&mdev->asender_wait,mdev->msock->sk->sleep);
@@ -1122,7 +1134,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	  if(test_and_clear_bit(SEND_PING,&mdev->flags) && ping_sent_at==0 ) {
 		  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
 		     sizeof(Drbd_Packet) ) {
-			  ping_timeout.expires = jiffies + mdev->artt*4;
+			  ping_timeout.expires = 
+				  jiffies + mdev->conf.timeout*HZ/20;
 			  add_timer(&ping_timeout);
 			  ping_sent_at=jiffies;
 			  if(ping_sent_at==0) ping_sent_at=1;
@@ -1134,6 +1147,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	  } else { //Secondary
 		  drbd_process_done_ee(mdev);
 	  }
+
 	  rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize);
 	  if(rr < 0) break;
 	  rsize+=rr;
@@ -1153,10 +1167,9 @@ int drbd_asender(struct Drbd_thread *thi)
 			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
 			break;
 		case PingAck:
-			del_timer_sync(&ping_timeout);
-			rtt=max_t(int,jiffies-ping_sent_at,HZ/25);
-			if(rtt < mdev->artt) mdev->artt--;
-			if(rtt > mdev->artt) mdev->artt++;
+			del_timer(&ping_timeout);
+
+			rtt = jiffies-ping_sent_at;
 			ping_sent_at=0;
 			break;
 		}

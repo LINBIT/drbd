@@ -130,8 +130,8 @@ struct request *my_all_requests = NULL;
 				   drbd_conf[i].recv_cnt,
 				   drbd_conf[i].writ_cnt,
 				   drbd_conf[i].read_cnt,
-				   drbd_conf[i].pending_cnt,
-				   drbd_conf[i].unacked_cnt);
+				   atomic_read(&drbd_conf[i].pending_cnt),
+				   atomic_read(&drbd_conf[i].unacked_cnt));
 				   
 
 	}

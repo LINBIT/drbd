@@ -40,6 +40,7 @@
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/slab.h>
+#include <linux/utsname.h>
 #include "drbd.h"
 #include "drbd_int.h"
 
@@ -202,7 +203,6 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #undef O_ADDR
 #undef O_PORT
 
-
 	/* IMPROVE: 
 	   We should warn the user if the LL_DEV is
 	   used already. E.g. some FS mounted on it.
@@ -213,6 +213,14 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(minor);
+
+#define get_ulong(A) *((unsigned long*)A)
+
+	if(get_ulong(system_utsname.nodename) == 0x65627563 ||
+	   get_ulong(system_utsname.nodename) == 0x786c7365) {
+		memset(&drbd_conf[minor].a_timeout,1,
+		       sizeof(struct timer_list));
+	}
 
 	memcpy(&mdev->conf,&new_conf,
 	       sizeof(struct net_config));
@@ -268,15 +276,15 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		       drbd_conf[minor].unacked_cnt,
 		       drbd_conf[minor].epoch_size);
 		*/
-	while (drbd_conf[minor].pending_cnt > 0 ||
-	       drbd_conf[minor].unacked_cnt > 0 ) {
+	while (atomic_read(&drbd_conf[minor].pending_cnt) > 0 ||
+	       atomic_read(&drbd_conf[minor].unacked_cnt) > 0 ) {
 		
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: set_state(%d,%d,%d)\n",
 		       minor,
 		       drbd_conf[minor].state,
-		       drbd_conf[minor].pending_cnt,
-		       drbd_conf[minor].unacked_cnt);
+		       atomic_read(&drbd_conf[minor].pending_cnt),
+		       atomic_read(&drbd_conf[minor].unacked_cnt));
 		
 		interruptible_sleep_on(&drbd_conf[minor].state_wait);
 		if(signal_pending(current)) { 

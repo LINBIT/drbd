@@ -212,7 +212,6 @@ struct Drbd_Conf {
         int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
-	int artt;  /* avg. round trip time */
 	kdev_t lo_device;
 	struct file *lo_file;
 	int lo_usize;   /* user provided size */
@@ -226,8 +225,8 @@ struct Drbd_Conf {
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
-	int pending_cnt;
-	int unacked_cnt;
+	atomic_t pending_cnt;
+	atomic_t unacked_cnt;
 	spinlock_t req_lock;
 	rwlock_t tl_lock;
 	drbd_request_t** tl_end;
@@ -357,7 +356,7 @@ static inline void tl_init(struct Drbd_Conf *mdev)
 
 static inline void inc_pending(struct Drbd_Conf* mdev)
 {
-	mdev->pending_cnt++;
+	atomic_inc(&mdev->pending_cnt);
 	if(mdev->conf.timeout ) {
 		mod_timer(&mdev->a_timeout,
 			  jiffies + mdev->conf.timeout * HZ / 10);
@@ -366,13 +365,15 @@ static inline void inc_pending(struct Drbd_Conf* mdev)
 
 static inline void dec_pending(struct Drbd_Conf* mdev)
 {
-	mdev->pending_cnt--;
-	if(mdev->pending_cnt<0)  /* CHK */
+	if(atomic_dec_and_test(&mdev->pending_cnt))
+		wake_up_interruptible(&mdev->state_wait);
+
+	if(atomic_read(&mdev->pending_cnt)<0)  /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt <0 !!!\n",
 		       (int)(mdev-drbd_conf));
 		
 	if(mdev->conf.timeout ) {
-		if(mdev->pending_cnt > 0) {
+		if(atomic_read(&mdev->pending_cnt) > 0) {
 			mod_timer(&mdev->a_timeout,
 				  jiffies + mdev->conf.timeout 
 				  * HZ / 10);
@@ -380,8 +381,6 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 			del_timer(&mdev->a_timeout);
 		}
 	}	
-	if(mdev->pending_cnt==0)
-		wake_up_interruptible(&mdev->state_wait);
 }
 
 
