@@ -1024,21 +1024,21 @@ void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
 	current->state = TASK_INTERRUPTIBLE;
 
 	wq_write_lock_irqsave(&q1->lock,flags);
-	add_wait_queue(q1, &wait1);
+	__add_wait_queue(q1, &wait1);
 	wq_write_unlock(&q1->lock);
 
 	wq_write_lock_irq(&q1->lock);
-	add_wait_queue(q2, &wait2);
+	__add_wait_queue(q2, &wait2);
 	wq_write_unlock(&q2->lock);
 
 	schedule();
 
 	wq_write_lock_irq(&q1->lock);
-	remove_wait_queue(q1, &wait1);
+	__remove_wait_queue(q1, &wait1);
 	wq_write_unlock(&q1->lock);
 
 	wq_write_lock_irq(&q2->lock);
-	remove_wait_queue(q2, &wait2);
+	__remove_wait_queue(q2, &wait2);
 	wq_write_unlock_irqrestore(&q2->lock,flags);
 }
 
