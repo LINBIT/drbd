@@ -501,8 +501,10 @@ inline int receive_data(int minor,int data_size)
 	}
 
 	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
-	    != data_size)
-	        return FALSE;
+	    != data_size) {
+		bforget(bh);
+		return FALSE;
+	}
 
 	mark_buffer_uptodate(bh, 0);
 	mark_buffer_dirty(bh);
