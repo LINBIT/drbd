@@ -929,9 +929,6 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
 
-	mdev->resync_timer.function = resync_timer_fn;
-	mdev->resync_timer.data = (unsigned long) mdev;
-
 	for (;;) {
 		intr = down_interruptible(&mdev->data.work.s);
 
