@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.4 2004/05/28 11:38:34 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.5 2004/05/28 11:52:43 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -439,6 +439,7 @@ _gen_comp()
 #complete -v -X '!Node_*' Node_State Crash_Node Wait_for_boot
 #complete -v -X '!Link_*' Fail_Link Heal_Link
 #complete -v -X '!Disk_*' Fail_Disk Heal_Disk
+complete -v -X '![DLN][ior]*' Dump Dump_long
 complete -v -X '!RS_*'   Stop
 complete -F _gen_comp Fail_Disk Heal_Disk Fail_Link Heal_Link
 complete -F _gen_comp Crash_Node Node_State Wait_for_boot

@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.4 2004/05/28 11:38:34 lars Exp $
+# $Id: CTH_bash.sh,v 1.1.2.5 2004/05/28 11:52:43 lars Exp $
 
 # example for scripting failures
 # 
@@ -44,14 +44,13 @@ ___
 if [[ -e $CASE ]] ; then
 	echo "now run CASE=$CASE"
 	( source $CASE )
+elif [[ $- == *i* ]] ; then
+	set +errexit # disable this again.
+	cat <<-___
+	#
+	# now you can:
+	#
+	___
+	Help
+	Dump_RS
 fi
-
-set +errexit # disable this again.
-cat <<___
-#
-# now you can:
-#
-___
-Help
-Dump_RS
-
