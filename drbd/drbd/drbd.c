@@ -952,7 +952,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	struct Drbd_Conf* mdev = &drbd_conf[MINOR(req->rq_dev)];
 
 	if (req->cmd == READ)
-		goto end_it;
+		goto end_it_unlocked;
 
 	/* This was a hard one! Can you see the race?
 	   (It hit me about once out of 20000 blocks) 
@@ -994,8 +994,10 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
    reported uptodate == TRUE 
  */
 
-      end_it:
+	end_it:
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	end_it_unlocked:
 
 	if(mdev->state == Primary && mdev->cstate != Unconnected) {
 	  /* If we are unconnected we may not call tl_dependece, since
