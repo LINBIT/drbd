@@ -40,14 +40,6 @@
 
 #include "drbdadm.h"
 
-#define for_each_resource(res,tmp,config)                 \
-	for (res = (config), tmp = 0;                     \
-	     ({ tmp != (config) && (tmp = res->next); }); \
-	     res = tmp)
-
-#define for_completed(res,tmp,config)                     \
-            ( (res) == (tmp) ) 
-
 // basic format
 #define INDENT "    "
 #define FMT    INDENT "%-12s"
@@ -689,9 +681,25 @@ int main(int argc, char** argv)
 
   yyparse();
 
+  { // check uniqueness of resource names.
+    struct d_resource *res2,*tmp2;
+    char *name;
+    
+    for_each_resource(res,tmp,config) {
+      name = res->name;
+      for_each_resource(res2,tmp2,config) {
+	if( res != res2 && !strcmp(res2->name, name) ) {
+	  fprintf(stderr,"Multiple definitions of resource '%s' found.\n",
+		  name);
+	  exit(10);
+	}
+      }
+    }
+  }
+
   if(!config_valid) exit(10);
 
-  { // check if minor_count is sane.
+  {
     int mc=global_options.minor_count;
 
     for_each_resource(res,tmp,config) nr_resources++;

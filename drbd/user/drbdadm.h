@@ -66,15 +66,22 @@ extern char ss_buffer[255];
    freed automatically */
 
 /*
+  // This is the nicer version, that does not need the ss_buffer. 
+  // But it only works with very new glibcs.
+   
 #define ssprintf(...) \
          ({ int _ss_size = snprintf(0, 0, ##__VA_ARGS__);        \
          char *_ss_ret = __builtin_alloca(_ss_size+1);           \
          snprintf(_ss_ret, _ss_size+1, ##__VA_ARGS__);           \
          _ss_ret; })
-#endif
 */
 
 #define ssprintf(ptr,...) \
   ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer)
+
+#define for_each_resource(res,tmp,config)                 \
+	for (res = (config), tmp = 0;                     \
+	     ({ tmp != (config) && (tmp = res->next); }); \
+	     res = tmp)
 
 #endif
