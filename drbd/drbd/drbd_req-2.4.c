@@ -127,7 +127,7 @@ drbd_find_read(sector_t sector, struct list_head *in)
 STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 {
 	struct Pending_read *pr;
-	pr = kmalloc(sizeof(struct Pending_read), GFP_DRBD);
+	pr = mempool_alloc(drbd_pending_read_mempool, GFP_DRBD);
 
 	if (!pr) {
 		printk(KERN_ERR DEVICE_NAME
@@ -184,7 +184,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 		// Fail READA ??
 		if( rw == WRITE ) {
-			req = kmalloc(sizeof(drbd_request_t), GFP_DRBD);
+			req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
 
 			if (!req) {
 				printk(KERN_ERR DEVICE_NAME

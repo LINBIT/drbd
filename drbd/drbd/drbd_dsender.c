@@ -166,12 +166,12 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		struct Pending_read *pr;
 		int size=BM_BLOCK_SIZE;
 	
-		pr = kmalloc(sizeof(struct Pending_read), GFP_USER );
+		pr = mempool_alloc(drbd_pending_read_mempool, GFP_USER);
 		if (!pr) return TRUE;
 
 		sector = bm_get_sector(mdev->mbds_id,&size);
 		if(sector == MBDS_DONE) {
-			kfree(pr);
+			mempool_free(pr,drbd_pending_read_mempool);
 			return FALSE;
 		}
 

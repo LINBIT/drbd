@@ -226,10 +226,11 @@ STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
 	fbh=NULL;
 
 	for(i=0;i<number;i++) {
-		e=kmalloc(sizeof(struct Tl_epoch_entry)+
-			  sizeof(struct buffer_head),GFP_KERNEL);
-
-		if( e == NULL ) {
+	  
+		e = kmem_cache_alloc(drbd_epoch_entry_cache, GFP_KERNEL);
+		bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
+		
+		if( e == NULL || bh == NULL ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: could not kmalloc() new ee\n",
 			       (int)(mdev-drbd_conf));
@@ -309,7 +310,8 @@ STATIC struct page* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
 		nbh=nbh->b_this_page;
 		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
 		  (int)(mdev-drbd_conf),e);*/
-		kfree(e);
+		kmem_cache_free(bh_cachep, e->bh);
+		kmem_cache_free(drbd_epoch_entry_cache, e);
 	} while(nbh != bh);
 
 	return page;
@@ -1037,7 +1039,7 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
 
-	kfree(pr);
+	mempool_free(pr,drbd_pending_read_mempool);
 
 	return ok;
 }
@@ -1377,7 +1379,7 @@ STATIC int receive_in_sync(struct Drbd_Conf* mdev)
 	spin_lock(&mdev->pr_lock);
 	list_del(&pr->list);
 	spin_unlock(&mdev->pr_lock);
-	kfree(pr);
+	mempool_free(pr,drbd_pending_read_mempool);
 
 	dec_pending(mdev);
 	
@@ -1416,7 +1418,7 @@ STATIC void drbd_fail_pending_reads(struct Drbd_Conf* mdev)
 		bh->b_end_io(bh,0);
 		dec_pending(mdev);
 
-		kfree(pr);
+		mempool_free(pr,drbd_pending_read_mempool);
 	}
 
 	spin_lock(&mdev->pr_lock);
@@ -1429,7 +1431,7 @@ STATIC void drbd_fail_pending_reads(struct Drbd_Conf* mdev)
 		le = workset.next;
 		list_del(le);
 		pr = list_entry(le, struct Pending_read, list);
-		kfree(pr);
+		mempool_free(pr,drbd_pending_read_mempool);
 	}
 }
 

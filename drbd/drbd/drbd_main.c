@@ -103,7 +103,9 @@ struct Drbd_Conf *drbd_conf;
 int minor_count=2;
 int disable_io_hints=0;
 kmem_cache_t *drbd_request_cache;
+kmem_cache_t *drbd_pending_read_cache;
 mempool_t *drbd_request_mempool;
+mempool_t *drbd_pending_read_mempool;
 
 STATIC struct block_device_operations drbd_ops = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,10)
@@ -1052,12 +1054,33 @@ int __init drbd_init(void)
 	if (drbd_request_cache == NULL)
 		return -ENOMEM;
 
+	drbd_pending_read_cache = kmem_cache_create("drbd_pending_read_cache",
+						 sizeof(struct Pending_read),
+						    0, SLAB_NO_REAP, 
+						    NULL, NULL);
+	if (drbd_pending_read_cache == NULL)
+		return -ENOMEM;
+
+	drbd_epoch_entry_cache = kmem_cache_create("drbd_epoch_entry_cache",
+						 sizeof(struct Tl_epoch_entry),
+						    0, SLAB_NO_REAP, 
+						    NULL, NULL);
+	if (drbd_epoch_entry_cache == NULL)
+		return -ENOMEM;
+
+
 	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
 					      mempool_alloc_slab,
 					      mempool_free_slab,
 					      drbd_request_cache); 
-
 	if (drbd_request_mempool == NULL)
+		return -ENOMEM;
+
+	drbd_pending_read_mempool = mempool_create(16, //TODO; reasonable value
+						   mempool_alloc_slab,
+						   mempool_free_slab,
+						   drbd_pending_read_cache); 
+	if (drbd_pending_read_mempool == NULL)
 		return -ENOMEM;
 
 	return 0;
@@ -1131,7 +1154,10 @@ void cleanup_module()
 	kfree(drbd_conf);
 
 	mempool_destroy(drbd_request_mempool);
+	mempool_destroy(drbd_pending_read_mempool);
 	kmem_cache_destroy(drbd_request_cache);
+	kmem_cache_destroy(drbd_pending_read_cache);
+	kmem_cache_destroy(drbd_epoch_entry_cache);
 }
 
 
