@@ -961,6 +961,7 @@ void drbdd(int minor)
 		drbd_wait_active_ee(drbd_conf+minor);
 		drbd_wait_sync_ee(drbd_conf+minor);
 		drbd_clear_done_ee(drbd_conf+minor);
+		drbd_conf[minor].epoch_size=0;
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
