@@ -110,7 +110,7 @@ static __inline__ int find_next_bit(const unsigned long *addr, int size, int off
 #endif
 
 #ifndef ALIGN
-#define ALIGN(x,s) (((x) + (s - 1)) & ~(s - 1))
+#define ALIGN(x,a) ( ((x) + (a)-1) &~ ((a)-1) )
 #endif
 
 #ifndef BUG_ON
