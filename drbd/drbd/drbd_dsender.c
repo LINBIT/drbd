@@ -644,7 +644,9 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 	_set_cstate(mdev,ns);
 
 	if(mdev->cstate == SyncTarget) {
-		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+		}
 		D_ASSERT(mdev->rs_left > 0);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
