@@ -1857,9 +1857,9 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 	bnr = sbm->gs_bitnr;
 
 	// optimization possible, search word != 0 first...
-	while (!test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) {
+	while( (bnr>>3) < sbm->size ) {
+		if(test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) break;
 		bnr++;
-		if((bnr>>3) >= sbm->size) break;
 	}
 
 	ret=bnr<<BM_SS;
