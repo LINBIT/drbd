@@ -372,8 +372,9 @@ $ mount /dev/nb0 /mnt/mountpoint
 <title>Snapshot a device to a third machine</title>
 <para>In this example the hosts, <replaceable>tc1</replaceable>
 and <replaceable>tc2</replaceable>, are connected and
-tc2 is primary on the /dev/nb0 device. The resource should
-be snapshotted to <replaceable>tc3's /dev/hda6</replaceable>.</para>
+<replaceable>tc2</replaceable> is primary on the /dev/nb0 device. 
+The resource should be snapshotted to 
+<replaceable>tc3's /dev/hda6</replaceable>.</para>
 <para>We need to prepare tc3:</para>
 <screen>
 $ drbdsetup /dev/nb0 disk /dev/hda6
@@ -382,7 +383,7 @@ $ drbdsetup /dev/nb0 net tc3 tc2 B
 <para>On tc2 we have to issue:</para>
 <screen>
 $ drbdsetup /dev/nb0 disconnect
-$ drbdsetup /dev/nb0 net tc2 tac3 B --sync-rate 4M
+$ drbdsetup /dev/nb0 net tc2 tc3 B --sync-rate 4M
 $ #drbdsetup /dev/nb0 replicate
 $ drbdsetup /dev/nb0 wait_sync
 $ drbdsetup /dev/nb0 disconnect
