@@ -163,7 +163,7 @@ case "$ACTION" in
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 	status)
-		$INSTALL/drbdc $*
+		$INSTALL/drbdc status $RESOURCE
 		RETVAL=$?
 		;;
 
