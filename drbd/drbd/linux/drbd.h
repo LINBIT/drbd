@@ -170,6 +170,10 @@ typedef enum {
 	PausedSyncT,    // is sync target, but higher priority groups first
 } Drbd_CState;
 
+#ifndef BDEVNAME_SIZE
+# define BDEVNAME_SIZE 32
+#endif
+
 struct ioctl_get_config {
 	struct net_config     nconf;
 	struct syncer_config  sconf;
@@ -179,7 +183,9 @@ struct ioctl_get_config {
 	OUT enum io_error_handler on_io_error;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
-       	OUT int               meta_index;
+	OUT int               meta_index;
+	OUT char              lower_device_name[BDEVNAME_SIZE];
+	OUT char              meta_device_name[BDEVNAME_SIZE];
 	OUT Drbd_CState       cstate;
 	OUT Drbd_State        state;
 	OUT Drbd_State        peer_state;

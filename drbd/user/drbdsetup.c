@@ -1090,6 +1090,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   printf("Lower device: %02d:%02d   (%s)\n",
 	 cn.lower_device_major,
 	 cn.lower_device_minor,
+	 cn.lower_device_name[0] ? cn.lower_device_name :
 	 guess_dev_name("/dev",cn.lower_device_major,cn.lower_device_minor));
   if( cn.lower_device_major == cn.meta_device_major && 
        cn.lower_device_minor == cn.meta_device_minor ) {
@@ -1098,6 +1099,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
     printf("Meta device: %02d:%02d   (%s)\n",
 	   cn.meta_device_major,
 	   cn.meta_device_minor,
+	   cn.meta_device_name[0] ? cn.meta_device_name :
 	   guess_dev_name("/dev",cn.meta_device_major,cn.meta_device_minor));
     printf("Meta index: %d\n",cn.meta_index);
   }

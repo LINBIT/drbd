@@ -224,7 +224,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     goto do_up;
   }
 
-  rv=m_fscanf(in,"Lower device: %*02d:%*02d   (%[^)])\n",str1);
+  rv=m_fscanf(in,"Lower device: %*3d:%*3d   (%[^)])\n",str1);
   if( (rv!=1) || strcmp(str1,res->me->disk)) {
     do_attach=1;
   }

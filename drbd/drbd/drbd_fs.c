@@ -412,19 +412,29 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	memset(&cn,0,sizeof(cn));
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
-	cn.lower_device_major = MAJOR(mdev->backing_bdev ?
-				      mdev->backing_bdev->bd_dev : 0);
-	cn.lower_device_minor = MINOR(mdev->backing_bdev ?
-				      mdev->backing_bdev->bd_dev : 0);
-	cn.meta_device_major  = MAJOR(mdev->md_bdev ?
-				      mdev->md_bdev->bd_dev : 0);
-	cn.meta_device_minor  = MINOR(mdev->md_bdev ?
-				      mdev->md_bdev->bd_dev : 0);
+	if (mdev->backing_bdev) {
+		cn.lower_device_major = MAJOR(mdev->backing_bdev->bd_dev);
+		cn.lower_device_minor = MINOR(mdev->backing_bdev->bd_dev);
+		bdevname(mdev->backing_bdev,cn.lower_device_name);
+	}
+	if (mdev->md_bdev) {
+		cn.meta_device_major  = MAJOR(mdev->md_bdev->bd_dev);
+		cn.meta_device_minor  = MINOR(mdev->md_bdev->bd_dev);
+		bdevname(mdev->md_bdev,cn.meta_device_name);
+	}
 #else
 	cn.lower_device_major=MAJOR(mdev->backing_bdev);
 	cn.lower_device_minor=MINOR(mdev->backing_bdev);
 	cn.meta_device_major=MAJOR(mdev->md_bdev);
 	cn.meta_device_minor=MINOR(mdev->md_bdev);
+	if (mdev->backing_bdev) {
+		strncpy(cn.lower_device_name,
+				bdevname(mdev->backing_bdev), BDEVNAME_SIZE);
+	}
+	if (mdev->md_bdev) {
+		strncpy(cn.meta_device_name,
+				bdevname(mdev->md_bdev), BDEVNAME_SIZE);
+	}
 #endif
 	cn.cstate=mdev->cstate;
 	cn.state=mdev->state;
