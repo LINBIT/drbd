@@ -167,6 +167,7 @@ struct ioctl_get_config {
 #define DRBD_MD_FILES  DRBD_MD_PATH"/drbd%d"
 
 #define DRBD_MAGIC 0x83740267
+#define BE_DRBD_MAGIC __constant_cpu_to_be32(DRBD_MAGIC)
 
 #define DRBD_IOCTL_GET_VERSION   _IOR( 'D', 0x00, int )
 #define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )

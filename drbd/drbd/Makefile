@@ -102,6 +102,11 @@ all: check_kernel_config $(NEEDNEW) drbd.o
 # error, if running or commandline specified kernel version
 # and version from the kernel source config do not match
 check_kernel_config:
+ifeq ($(CONFIGURED_KERNVER),)
+	@echo 
+	@echo "Kernel configuration problem, see warnings above."
+	@false
+else
 ifneq ($(CONFIGURED_KERNVER),$(KERNVER))
 	@echo "Version of running kernel and kernel config differ:"
 	@echo "  $(KERNVER) <uname -r or specified on command line>"
@@ -110,6 +115,7 @@ ifneq ($(CONFIGURED_KERNVER),$(KERNVER))
 	@echo "  make KERNVER=2.4.XY LINUX=/path/to/kernel/source "
 	@echo "  to override this"
 	@false
+endif
 endif
 
 drbd.o: $(OBJS)
@@ -121,7 +127,19 @@ clean:
 
 distclean: clean
 
-install: drbd.o
+install:
+	@[ -e .flags ] && [ -e drbd.o ] || $(MAKE) all
+	@COMPILED_KERNVER=`sed -e 's/;.*//;q' .flags` ; \
+	if [ "$$COMPILED_KERNVER" != "$(KERNVER)" ]; then \
+	  echo ; \
+	  echo "kernel version mismatch:" ; \
+	  echo "  current drbd.o compiled for: $$COMPILED_KERNVER" ; \
+	  echo "  requested kernel version:    $(KERNVER)" ; \
+	  echo "either make all && make install, or override with" ; \
+	  echo "make KERNVER=$$COMPILED_KERNVER" ; \
+	  echo ; \
+	  false; \
+	fi
 	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
 	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
 	install -d $(PREFIX)var/lib/drbd

@@ -96,9 +96,7 @@ int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
 
-// XXX inline ?
-inline
-int drbd_send(struct Drbd_Conf*,struct socket*,char*,size_t,unsigned);
+STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
 
 #ifdef DEVICE_REQUEST
 #undef DEVICE_REQUEST
@@ -153,7 +151,7 @@ int drbd_log2(int i)
 
 
 /************************* The transfer log start */
-STATIC void tl_init(struct Drbd_Conf *mdev)
+STATIC void tl_init(drbd_dev *mdev)
 {
 	struct drbd_barrier *b;
 
@@ -167,14 +165,14 @@ STATIC void tl_init(struct Drbd_Conf *mdev)
 	mdev->newest_barrier = b;
 }
 
-STATIC void tl_cleanup(struct Drbd_Conf *mdev)
+STATIC void tl_cleanup(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 
 	kfree(mdev->oldest_barrier);
 }
 
-STATIC void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
+STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 {
 	struct drbd_barrier *b;
 
@@ -194,7 +192,7 @@ STATIC void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
-STATIC unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
+STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 {
 	unsigned int bnr;
 	static int barrier_nr_issue=1;
@@ -219,7 +217,7 @@ STATIC unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 	return bnr;
 }
 
-void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
+void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size)
 {
 	struct drbd_barrier *b;
@@ -250,7 +248,8 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
    in case tl_clear has to be called due to interruption of the
    communication)
 */
-int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
+/* bool */
+int tl_dependence(drbd_dev *mdev, drbd_request_t * item)
 {
 	unsigned long flags;
 	int r=TRUE;
@@ -265,7 +264,8 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 }
 
 // Returns true if this sector is currently on the fly to our ll_disk
-int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector)
+/* bool */
+int tl_check_sector(drbd_dev *mdev, sector_t sector)
 {
 	struct list_head *le;
 	struct drbd_barrier *b;
@@ -292,7 +292,7 @@ int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 	return rv;
 }
 
-void tl_clear(struct Drbd_Conf *mdev)
+void tl_clear(drbd_dev *mdev)
 {
 	struct list_head *le,*tle;
 	struct drbd_barrier *b,*f,*new_first;
@@ -366,19 +366,19 @@ STATIC int drbd_thread_setup(void* arg)
 	retval = thi->function(thi);
 
 	thi->task = 0;
-	set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
+	set_bit(COLLECT_ZOMBIES,&(thi->mdev->flags));
 	up(&thi->mutex); //allow thread_stop to proceed
 
 	return retval;
 }
 
-STATIC void drbd_thread_init(int minor, struct Drbd_thread *thi,
+STATIC void drbd_thread_init(drbd_dev *mdev, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
 	thi->task = NULL;
 	init_MUTEX(&thi->mutex);
 	thi->function = func;
-	thi->minor = minor;
+	thi->mdev = mdev;
 }
 
 void drbd_thread_start(struct Drbd_thread *thi)
@@ -393,8 +393,8 @@ void drbd_thread_start(struct Drbd_thread *thi)
 
 		if (pid < 0) {
 			printk(KERN_ERR DEVICE_NAME
-			       "%d: Couldn't start thread (%d)\n", thi->minor,
-			       pid);
+			       "%d: Couldn't start thread (%d)\n",
+			       (int)(thi->mdev-drbd_conf), pid);
 			return;
 		}
 		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
@@ -426,38 +426,43 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
-int drbd_send_cmd(struct Drbd_Conf *mdev, struct socket *sock,
-		  Drbd_Packet_Cmd cmd, char* buf, size_t payload)
+STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+		  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size)
 {
 	int sent,ok;
-	Drbd_Packet head;
 
-	head.magic   = BE_DRBD_MAGIC;
-	head.command = cpu_to_be16(cmd);
-	head.length  = cpu_to_be16(payload);
+	D_ASSERT(h);
+	D_ASSERT(size);
+	if (!h || !size) return FALSE;
 
-	down(sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
-	sent = drbd_send(mdev,sock,(char*)&head,sizeof(head),
-			 payload ? MSG_MORE : 0);
-	D_ASSERT(sent == sizeof(head));
-	ok = ( sent == sizeof(head) );
-	if (ok && payload) {
-		sent = drbd_send(mdev, sock, buf,payload, 0);
-		D_ASSERT(sent == payload);
-		ok = (sent == payload);
-		if(!ok) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: short send cmd=%d payload=%d sent=%d\n",
-			       (int)(mdev-drbd_conf), cmd, payload, sent);
-		}
+	h->magic   = BE_DRBD_MAGIC;
+	h->command = cpu_to_be16(cmd);
+	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
+
+	sent = drbd_send(mdev,sock,h,size,0);
+	D_ASSERT(sent == size);
+	ok = ( sent == size );
+	if(!ok) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: short send cmd=%d size=%d sent=%d\n",
+		       (int)(mdev-drbd_conf), cmd, size, sent);
 	}
+	return ok;
+}
+
+STATIC int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
+{
+	int ok;
+	down(sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
+	ok = _drbd_send_cmd(mdev,sock,cmd,h,size);
 	up  (sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
 	return ok;
 }
 
-int drbd_send_sync_param(struct Drbd_Conf *mdev)
+int drbd_send_sync_param(drbd_dev *mdev)
 {
-	Drbd_SyncParam_P p;
+	Drbd_SyncParam_Packet p;
 	int ok;
 
 	p.rate      = cpu_to_be32(mdev->sync_conf.rate);
@@ -465,7 +470,7 @@ int drbd_send_sync_param(struct Drbd_Conf *mdev)
 	p.skip      = cpu_to_be32(mdev->sync_conf.skip);
 	p.group     = cpu_to_be32(mdev->sync_conf.group);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,SetSyncParam,(char*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->sock,SetSyncParam,(Drbd_Header*)&p,sizeof(p));
 	if ( ok
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !mdev->sync_conf.skip )
@@ -476,9 +481,9 @@ int drbd_send_sync_param(struct Drbd_Conf *mdev)
 	return ok;
 }
 
-int drbd_send_param(struct Drbd_Conf *mdev)
+int drbd_send_param(drbd_dev *mdev)
 {
-	Drbd_Parameter_P p;
+	Drbd_Parameter_Packet p;
 	int ok,i;
 	kdev_t ll_dev = mdev->lo_device;
 
@@ -494,27 +499,30 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 		p.gen_cnt[i]     = cpu_to_be32(mdev->gen_cnt[i]);
 		p.bit_map_gen[i] = cpu_to_be32(mdev->bit_map_gen[i]);
 	}
-	p.sync_conf.rate      = cpu_to_be32(mdev->sync_conf.rate);
-	p.sync_conf.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
-	p.sync_conf.skip      = cpu_to_be32(mdev->sync_conf.skip);
-	p.sync_conf.group     = cpu_to_be32(mdev->sync_conf.group);
+	p.sync_rate      = cpu_to_be32(mdev->sync_conf.rate);
+	p.sync_use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
+	p.skip_sync      = cpu_to_be32(mdev->sync_conf.skip);
+	p.sync_group     = cpu_to_be32(mdev->sync_conf.group);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,ReportParams,(char*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->sock,ReportParams,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
-int drbd_send_bitmap(struct Drbd_Conf *mdev)
+/* bool */
+int drbd_send_bitmap(drbd_dev *mdev)
 {
 	int buf_i,want;
 	int ok=TRUE, bm_i=0;
 	size_t bm_words;
 	u32 *buffer,*bm;
+	Drbd_Header *p;
 
 	if(!mdev->mbds_id) return FALSE;
 
 	bm_words = mdev->mbds_id->size/sizeof(u32);
 	bm = (u32*)mdev->mbds_id->bm;
-	buffer = vmalloc(MBDS_PACKET_SIZE); // sleeps. cannot fail.
+	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
+	buffer = (u32*)p->payload;
 
 	/*
 	 * maybe TODO use some simple compression scheme, nowadays there are
@@ -524,75 +532,68 @@ int drbd_send_bitmap(struct Drbd_Conf *mdev)
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(u32));
 		for(buf_i=0;buf_i<want/sizeof(u32);buf_i++)
 			buffer[buf_i] = cpu_to_be32(bm[bm_i++]);
-		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,(char*)buffer,want);
+		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,
+				   p, sizeof(*p) + want);
 	} while (ok && want);
-	vfree(buffer);
+	vfree(p);
 	return ok;
 }
 
-int _drbd_send_barrier(struct Drbd_Conf *mdev)
+int _drbd_send_barrier(drbd_dev *mdev)
 {
-	int sent,ok;
-	Drbd_Barrier_Packet head;
+	int ok;
+	Drbd_Barrier_Packet p;
 
 	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
-
-	head.p.magic   = BE_DRBD_MAGIC;
-	head.p.command = cpu_to_be16(Barrier);
-	head.p.length  = cpu_to_be16(sizeof(Drbd_Barrier_P));
-
 	/* tl_add_barrier() must be called with the sock_mutex aquired */
-	head.h.barrier=tl_add_barrier(mdev);
+	p.barrier=tl_add_barrier(mdev);
 
-	sent = drbd_send(mdev,mdev->sock,(char*)&head,sizeof(head), 0);
-	D_ASSERT(sent == sizeof(head));
-	ok = (sent == sizeof(head));
+	ok = _drbd_send_cmd(mdev,mdev->sock,Barrier,(Drbd_Header*)&p,sizeof(p));
 	if (ok) inc_pending(mdev);
 	return ok;
 }
 
-int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
+int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
 {
 	int ok;
-	Drbd_BarrierAck_P p;
+	Drbd_BarrierAck_Packet p;
 
 	p.barrier  = barrier_nr; // CHECK cpu_to_be32 ?
 	p.set_size = cpu_to_be32(set_size);
 
-	ok = drbd_send_cmd(mdev,mdev->msock,BarrierAck,(char*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->msock,BarrierAck,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
 
-int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
-		  struct buffer_head *bh, u64 block_id)
+int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 {
 	int ok;
-	Drbd_BlockAck_P p;
+	Drbd_BlockAck_Packet p;
 
-	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(bh));
-	p.block_id = block_id;
-	p.blksize  = cpu_to_be32(bh->b_size);
+	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
+	p.block_id = e->block_id;
+	p.blksize  = cpu_to_be32(e->bh->b_size);
 
-	ok = drbd_send_cmd(mdev,mdev->msock,cmd,(char*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->msock,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
-int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
+int drbd_send_drequest(drbd_dev *mdev, int cmd,
 		       sector_t sector,int size, u64 block_id)
 {
 	int ok;
-	Drbd_BlockRequest_P p;
+	Drbd_BlockRequest_Packet p;
 
 	p.sector   = cpu_to_be64(sector);
 	p.block_id = block_id;
 	p.blksize  = cpu_to_be32(size);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,cmd,(char*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->sock,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
-int _drbd_send_zc_bh(struct Drbd_Conf *mdev, struct buffer_head *bh)
+int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 {
 	int sent,ok;
 	struct page *page = bh->b_page;
@@ -621,20 +622,21 @@ int _drbd_send_zc_bh(struct Drbd_Conf *mdev, struct buffer_head *bh)
 }
 
 // Used to send write requests: bh->b_rsector !!
-int drbd_send_dblock(struct Drbd_Conf *mdev, drbd_request_t *req)
+int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 {
-	int sent,ok;
-	struct buffer_head *bh = req->bh;
-	Drbd_Data_Packet head;
+	int ok;
+	Drbd_Data_Packet p;
 
-	D_ASSERT(bh->b_reqnext == NULL);
+	D_ASSERT(req && req->bh );
+	D_ASSERT(req->bh->b_reqnext == NULL);
 
-	head.p.magic   = BE_DRBD_MAGIC;
-	head.p.command = cpu_to_be16(Data);
-	head.p.length  = cpu_to_be16(sizeof(Drbd_Data_P)+bh->b_size);
+	p.head.magic   = BE_DRBD_MAGIC;
+	p.head.command = cpu_to_be16(Data);
+	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
+				     + req->bh->b_size );
 
-	head.h.sector   = cpu_to_be64(bh->b_rsector);
-	head.h.block_id = (unsigned long)req;
+	p.sector   = cpu_to_be64(req->bh->b_rsector);
+	p.block_id = (unsigned long)req;
 
 	/* About tl_add():
 	1. This must be within the semaphor,
@@ -654,34 +656,32 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, drbd_request_t *req)
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		_drbd_send_barrier(mdev);
 	tl_add(mdev,req);
-
-	sent = drbd_send(mdev,mdev->sock,(char*)&head,sizeof(head),MSG_MORE);
-	ok = (sent == sizeof(head));
-	if (likely(ok))
-		ok = _drbd_send_zc_bh(mdev,bh);
+	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
+	   && _drbd_send_zc_bh(mdev,req->bh);
 	up(&mdev->sock_mutex);
 	return ok;
 }
 
 // Used to send answer to read requests, DRBD_BH_SECTOR(bh) !!
-int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
-		    u64 block_id)
+int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
+		    struct Tl_epoch_entry *e)
 {
-	int sent,ok;
-	Drbd_Data_Packet head;
+	int ok;
+	Drbd_Data_Packet p;
 
-	head.p.magic   = BE_DRBD_MAGIC;
-	head.p.command = cpu_to_be16(cmd);
-	head.p.length  = cpu_to_be16(sizeof(Drbd_Data_P)+bh->b_size);
+	// D_ASSERT(FIXME)
 
-	head.h.sector   = cpu_to_be64(DRBD_BH_SECTOR(bh));
-	head.h.block_id = block_id;
+	p.head.magic   = BE_DRBD_MAGIC;
+	p.head.command = cpu_to_be16(cmd);
+	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
+				     + e->bh->b_size );
+
+	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
+	p.block_id = e->block_id;
 
 	down(&mdev->sock_mutex);
-	sent = drbd_send(mdev,mdev->sock,(char*)&head,sizeof(head),MSG_MORE);
-	ok = (sent == sizeof(head));
-	if (likely(ok))
-		ok = _drbd_send_zc_bh(mdev,bh);
+	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
+	   && _drbd_send_zc_bh(mdev,e->bh);
 	up(&mdev->sock_mutex);
 	return ok;
 }
@@ -723,7 +723,7 @@ STATIC void drbd_timeout(unsigned long arg)
 
 STATIC void drbd_a_timeout(unsigned long arg)
 {
-	struct Drbd_Conf *mdev = (struct Drbd_Conf *) arg;
+	struct Drbd_Conf *mdev = (drbd_dev *) arg;
 
 	/*
 	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected (pc=%d)"
@@ -750,8 +750,8 @@ STATIC void drbd_a_timeout(unsigned long arg)
 /*
  * you should have down()ed the appropriate [m]sock_mutex elsewhere!
  */
-int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
-	      char* buf, size_t size, unsigned msg_flags)
+int drbd_send(drbd_dev *mdev, struct socket *sock,
+	      void* buf, size_t size, unsigned msg_flags)
 {
 	mm_segment_t oldfs;
 	sigset_t oldset;
@@ -840,7 +840,8 @@ int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
 			}
 			UNLOCK_SIGMASK(current,flags);
 		}
-		if (rv <= 0) break;
+		D_ASSERT(rv != 0);
+		if (rv < 0) break;
 		sent += rv;
 		iov.iov_base += rv;
 		iov.iov_len  -= rv;
@@ -941,7 +942,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 
 STATIC void drbd_send_write_hint(void *data)
 {
-	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
+	struct Drbd_Conf* mdev = (drbd_dev*)data;
 	int i;
 
 	/* In case the receiver calls run_task_queue(&tq_disk) itself,
@@ -997,7 +998,7 @@ int __init drbd_init(void)
 
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	drbd_conf = kmalloc(sizeof(struct Drbd_Conf)*minor_count,GFP_KERNEL);
+	drbd_conf = kmalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
 
 	drbd_request_cache = kmem_cache_create("drbd_req_cache",
 					       sizeof(drbd_request_t),
@@ -1084,9 +1085,9 @@ int __init drbd_init(void)
 		init_MUTEX(&drbd_conf[i].ctl_mutex);
 		drbd_conf[i].send_proc=NULL;
 		drbd_conf[i].send_proc_lock = SPIN_LOCK_UNLOCKED;
-		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);
-		drbd_thread_init(i, &drbd_conf[i].dsender, drbd_dsender);
-		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
+		drbd_thread_init(drbd_conf+i, &drbd_conf[i].receiver, drbdd_init);
+		drbd_thread_init(drbd_conf+i, &drbd_conf[i].dsender, drbd_dsender);
+		drbd_thread_init(drbd_conf+i, &drbd_conf[i].asender, drbd_asender);
 		init_waitqueue_head(&drbd_conf[i].dsender_wait);
 		drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
@@ -1183,13 +1184,13 @@ void cleanup_module()
 #endif
 
 	for (i = 0; i < minor_count; i++) {
-		drbd_set_state(i,Secondary);
+		drbd_set_state(drbd_conf+i,Secondary);
 		fsync_dev(MKDEV(MAJOR_NR, i));
 		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[i].flags);
 		drbd_thread_stop(&drbd_conf[i].dsender);
 		drbd_thread_stop(&drbd_conf[i].receiver);
 		drbd_thread_stop(&drbd_conf[i].asender);
-		drbd_free_resources(i);
+		drbd_free_resources(drbd_conf+i);
 		tl_cleanup(drbd_conf+i);
 		if (drbd_conf[i].mbds_id) bm_cleanup(drbd_conf[i].mbds_id);
 		// free the receiver's stuff
@@ -1257,37 +1258,33 @@ void cleanup_module()
 }
 
 
-
-void drbd_free_ll_dev(int minor)
+void drbd_free_ll_dev(drbd_dev *mdev)
 {
-	if (drbd_conf[minor].lo_file) {
-		blkdev_put(drbd_conf[minor].lo_file->f_dentry->d_inode->i_bdev,
-			   BDEV_FILE);
-
-		fput(drbd_conf[minor].lo_file);
-		drbd_conf[minor].lo_file = 0;
-		drbd_conf[minor].lo_device = 0;
+	if (mdev->lo_file) {
+		blkdev_put(mdev->lo_file->f_dentry->d_inode->i_bdev, BDEV_FILE);
+		fput(mdev->lo_file);
+		mdev->lo_file = 0;
+		mdev->lo_device = 0;
 	}
 }
 
-void drbd_free_sock(int minor)
+void drbd_free_sock(drbd_dev *mdev)
 {
-	if (drbd_conf[minor].sock) {
-		sock_release(drbd_conf[minor].sock);
-		drbd_conf[minor].sock = 0;
+	if (mdev->sock) {
+		sock_release(mdev->sock);
+		mdev->sock = 0;
 	}
-	if (drbd_conf[minor].msock) {
-		sock_release(drbd_conf[minor].msock);
-		drbd_conf[minor].msock = 0;
+	if (mdev->msock) {
+		sock_release(mdev->msock);
+		mdev->msock = 0;
 	}
-
 }
 
 
-void drbd_free_resources(int minor)
+void drbd_free_resources(drbd_dev *mdev)
 {
-	drbd_free_sock(minor);
-	drbd_free_ll_dev(minor);
+	drbd_free_sock(mdev);
+	drbd_free_ll_dev(mdev);
 }
 
 /*********************************/
@@ -1512,7 +1509,7 @@ struct meta_data_on_disk {
 	__u32 magic;
 };
 
-void drbd_md_write(struct Drbd_Conf *mdev)
+void drbd_md_write(drbd_dev *mdev)
 {
 	struct meta_data_on_disk buffer;
 	__u32 flags;
@@ -1549,7 +1546,7 @@ void drbd_md_write(struct Drbd_Conf *mdev)
 	return;
 }
 
-void drbd_md_read(struct Drbd_Conf *mdev)
+void drbd_md_read(drbd_dev *mdev)
 {
 	struct meta_data_on_disk buffer;
 	mm_segment_t oldfs;
@@ -1588,24 +1585,24 @@ void drbd_md_read(struct Drbd_Conf *mdev)
 	    0 if both are nice
 	   -1 if the partner has the good bits.
 */
-int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
+int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 {
 	int i;
 	u32 me,other;
 
-	me=drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent;
+	me=mdev->gen_cnt[Flags] & MDF_Consistent;
 	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_Consistent;
 	if( me > other ) return 1;
 	if( me < other ) return -1;
 
 	for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-		me=drbd_conf[minor].gen_cnt[i];
+		me=mdev->gen_cnt[i];
 		other=be32_to_cpu(partner->gen_cnt[i]);
 		if( me > other ) return 1;
 		if( me < other ) return -1;
 	}
 
-	me=drbd_conf[minor].gen_cnt[Flags] & MDF_PrimaryInd;
+	me=mdev->gen_cnt[Flags] & MDF_PrimaryInd;
 	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_PrimaryInd;
 	if( me > other ) return 1;
 	if( me < other ) return -1;
@@ -1616,12 +1613,12 @@ int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 /* Returns  1 if SyncingQuick is sufficient
 	    0 if SyncAll is needed.
 */
-int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
+int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int i_am_pri)
 {
 	int i;
 	u32 me,other;
 
-	me=drbd_conf[minor].gen_cnt[Flags];
+	me=mdev->gen_cnt[Flags];
 	other=be32_to_cpu(partner->gen_cnt[Flags]);
 	// crash during sync forces SyncAll:
 	if( (i_am_pri && !(other & MDF_Consistent) ) ||
@@ -1634,13 +1631,13 @@ int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
 	// If partner's GC not equal our bitmap's GC force SyncAll
 	if( i_am_pri ) {
 		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-			me=drbd_conf[minor].bit_map_gen[i];
+			me=mdev->bit_map_gen[i];
 			other=be32_to_cpu(partner->gen_cnt[i]);
 			if( me != other ) return 0;
 		}
 	} else { // !i_am_pri
 		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-			me=drbd_conf[minor].gen_cnt[i];
+			me=mdev->gen_cnt[i];
 			other=be32_to_cpu(partner->bit_map_gen[i]);
 			if( me != other ) return 0;
 		}
@@ -1650,9 +1647,9 @@ int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
 	return 1;
 }
 
-void drbd_md_inc(int minor, enum MetaDataIndex order)
+void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
 {
-	drbd_conf[minor].gen_cnt[order]++;
+	mdev->gen_cnt[order]++;
 }
 
 void drbd_queue_signal(int signal,struct task_struct *task)

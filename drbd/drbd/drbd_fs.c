@@ -204,12 +204,17 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	drbd_thread_stop(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
-	drbd_free_resources(minor);
+	drbd_free_resources(mdev);
 
 	mdev->lo_device = ll_dev;
 	mdev->lo_file = filp;
 	mdev->lo_usize = new_conf.disk_size;
 	mdev->do_panic = new_conf.do_panic;
+
+	mdev->send_cnt = 0;
+	mdev->recv_cnt = 0;
+	mdev->read_cnt = 0;
+	mdev->writ_cnt = 0;
 
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
@@ -290,9 +295,12 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	drbd_thread_stop(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
-	drbd_free_sock(minor);
+	drbd_free_sock(mdev);
 
 	memcpy(&mdev->conf,&new_conf,sizeof(struct net_config));
+
+	mdev->send_cnt = 0;
+	mdev->recv_cnt = 0;
 
 	set_cstate(&drbd_conf[minor],Unconnected);
 	drbd_thread_start(&mdev->receiver);
@@ -304,24 +312,25 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	return -EINVAL;
 }
 
-int drbd_set_state(int minor,Drbd_State newstate)
+int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 {
-	if(newstate == drbd_conf[minor].state) return 0; /* nothing to do */
+	int minor = mdev-drbd_conf;
+	if(newstate == mdev->state) return 0; /* nothing to do */
 
-	if(drbd_conf[minor].cstate == Unconfigured)
+	if(mdev->cstate == Unconfigured)
 		return -ENXIO;
 
-	if ( (newstate & Primary) && (drbd_conf[minor].o_state == Primary) )
+	if ( (newstate & Primary) && (mdev->o_state == Primary) )
 		return -EACCES;
 
 	if(newstate == Secondary &&
-	   (test_bit(WRITER_PRESENT, &drbd_conf[minor].flags) ||
+	   (test_bit(WRITER_PRESENT, &mdev->flags) ||
 	    drbd_is_mounted(minor) == MountedRW))
 		return -EBUSY;
 
 	if( (newstate & Primary) &&
-	    !(drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent) &&
-	    (drbd_conf[minor].cstate < Connected) &&
+	    !(mdev->gen_cnt[Flags] & MDF_Consistent) &&
+	    (mdev->cstate < Connected) &&
 	    !(newstate & DontBlameDrbd) )
 		return -EIO;
 
@@ -342,36 +351,36 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		/*
 		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d,%d,%d)\n",
 		       minor,
-		       drbd_conf[minor].state,
-		       drbd_conf[minor].pending_cnt,
-		       drbd_conf[minor].unacked_cnt,
-		       drbd_conf[minor].epoch_size);
+		       mdev->state,
+		       mdev->pending_cnt,
+		       mdev->unacked_cnt,
+		       mdev->epoch_size);
 		*/
-	while (atomic_read(&drbd_conf[minor].pending_cnt) > 0 ||
-	       atomic_read(&drbd_conf[minor].unacked_cnt) > 0 ) {
+	while (atomic_read(&mdev->pending_cnt) > 0 ||
+	       atomic_read(&mdev->unacked_cnt) > 0 ) {
 
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: set_state(st:%d,pe:%d,ua:%d)\n",
 		       minor,
-		       drbd_conf[minor].state,
-		       atomic_read(&drbd_conf[minor].pending_cnt),
-		       atomic_read(&drbd_conf[minor].unacked_cnt));
+		       mdev->state,
+		       atomic_read(&mdev->pending_cnt),
+		       atomic_read(&mdev->unacked_cnt));
 
-		interruptible_sleep_on(&drbd_conf[minor].state_wait);
+		interruptible_sleep_on(&mdev->state_wait);
 		if(signal_pending(current)) {
 			return -EINTR;
 		}
 	}
-	drbd_conf[minor].state = (Drbd_State) newstate & 0x03;
+	mdev->state = (Drbd_State) newstate & 0x03;
 	if(newstate & Primary) {
 		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
 		if(newstate & Human) {
-			drbd_md_inc(minor,HumanCnt);
+			drbd_md_inc(mdev,HumanCnt);
 		} else if(newstate & TimeoutExpired ) {
-			drbd_md_inc(minor,TimeoutCnt);
+			drbd_md_inc(mdev,TimeoutCnt);
 		} else {
-			drbd_md_inc(minor,
-			    drbd_conf[minor].cstate >= Connected ?
+			drbd_md_inc(mdev,
+			    mdev->cstate >= Connected ?
 			    ConnectedCnt : ArbitraryCnt);
 		}
 	} else {
@@ -379,10 +388,10 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	}
 
 	/* Primary indicator has changed in any case. */
-	drbd_md_write(drbd_conf+minor);
+	drbd_md_write(mdev);
 
-	if (drbd_conf[minor].cstate >= WFReportParams)
-		drbd_send_param(drbd_conf+minor);
+	if (mdev->cstate >= WFReportParams)
+		drbd_send_param(mdev);
 
 	return 0;
 }
@@ -461,7 +470,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			    DontBlameDrbd) )
 			return -EINVAL;
 
-		err = drbd_set_state(minor,arg);
+		err = drbd_set_state(mdev,arg);
 		break;
 
 	case DRBD_IOCTL_SET_DISK_CONFIG:
@@ -526,7 +535,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_thread_stop(&mdev->dsender);
 		drbd_thread_stop(&mdev->asender);
 		drbd_thread_stop(&mdev->receiver);
-		drbd_free_resources(minor);
+		drbd_free_resources(mdev);
 		if (mdev->mbds_id) {
 			bm_cleanup(mdev->mbds_id);
 			mdev->mbds_id=0;

@@ -113,6 +113,7 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 }
 
 
+/* bool */
 int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 {
 	/* When intoducing active/active this must also consider pending read
@@ -181,6 +182,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 	}
 }
 
+/* bool */
 STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 {
 	int number,i;
@@ -257,11 +259,11 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 
 int drbd_dsender(struct Drbd_thread *thi)
 {
-	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	long time=MAX_SCHEDULE_TIMEOUT;
 	wait_queue_t wait;
 	int start_sync;
 	int sync_finished;
+	drbd_dev *mdev = thi->mdev;
 
 	sprintf(current->comm, "drbd_dsender_%d", (int)(mdev-drbd_conf));
 

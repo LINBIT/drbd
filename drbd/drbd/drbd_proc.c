@@ -161,10 +161,14 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	  dr .. disk read
 	  pe .. pending (waiting for ack)
 	  ua .. unack'd (still need to send ack)
-	  al .. access lock write count
+	  al .. access log write count
 	*/
 	for (i = 0; i < minor_count; i++) {
-		rlen += sprintf(buf + rlen,
+		if ( drbd_conf[i].cstate == Unconfigured )
+			rlen += sprintf( buf + rlen,
+			   "%2d: cs:Unconfigured\n", i);
+		else
+			rlen += sprintf( buf + rlen,
 			   "%2d: cs:%s st:%s/%s ld:%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u pe:%u ua:%u al:%u\n",
 			   i,
@@ -180,7 +184,7 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].pending_cnt),
 			   atomic_read(&drbd_conf[i].unacked_cnt),
 			   drbd_conf[i].al_writ_cnt
-				);
+			);
 
 		if ( drbd_conf[i].cstate == SyncSource ||
 		     drbd_conf[i].cstate == SyncTarget )

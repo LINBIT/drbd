@@ -26,6 +26,8 @@
 
 */
 
+#define PARANOIA
+
 #include <linux/types.h>
 #include <linux/timer.h>
 #include <linux/version.h>
@@ -109,9 +111,10 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 #endif
 
 struct Drbd_Conf;
+typedef struct Drbd_Conf drbd_dev;
 
 #ifdef DBG_ASSERTS
-extern void drbd_assert_breakpoint(struct Drbd_Conf*, char *, char *, int );
+extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 # define D_ASSERT(exp)  if (!(exp)) \
 	 drbd_assert_breakpoint(mdev,#exp,__FILE__,__LINE__)
 #else
@@ -162,107 +165,104 @@ enum MetaDataIndex {
 #define GEN_CNT_SIZE 5
 #define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
 
-#ifdef __LITTLE_ENDIAN
-#define BE_DRBD_MAGIC 0x67027483
-#endif
-#ifdef __BIG_ENDIAN
-#define BE_DRBD_MAGIC DRBD_MAGIC
-#endif
-#ifndef BE_DRBD_MAGIC
-#error unknown endianness ??
-#endif
-
 /* This is the layout for a packet on the wire!
  * The byteorder is the network byte order!
  */
 typedef struct {
-  __u32       magic;
-  __u16       command;
-  __u16       length;
-} Drbd_Packet __attribute((packed));
-
-#define MKPACKET(NAME) \
-typedef struct { \
-  Drbd_Packet p; \
-  NAME        h; \
-} NAME##acket  __attribute((packed));
+	__u32       magic;
+	__u16       command;
+	__u16       length;	// bytes of data after this header
+	char        payload[];
+} Drbd_Header __attribute((packed));
 
 typedef struct {
-  __u64       sector;    /* 64 bits sector number */
-  __u64       block_id;  /* Used in protocol B&C for the address of the req. */
-} Drbd_Data_P  __attribute((packed));
-MKPACKET(Drbd_Data_P)
+	Drbd_Header head;
+	__u64       sector;    // 64 bits sector number
+	__u64       block_id;  // Used in protocol B&C for the address of the req.
+} Drbd_Data_Packet  __attribute((packed));
 
 typedef struct {
-  __u32       barrier;   /* may be 0 or a barrier number  */
-  __u32       _fill;     /* Without the _fill gcc may add fillbytes on
-			    64 bit plaforms, but does not so an 32 bits... */
-} Drbd_Barrier_P  __attribute((packed));
-MKPACKET(Drbd_Barrier_P)
+	Drbd_Header head;
+	__u64       sector;
+	__u64       block_id;
+	__u32       blksize;
+} Drbd_BlockAck_Packet __attribute((packed));
 
 typedef struct {
-  __u32       rate;
-  __u32       use_csums;
-  __u32       skip;
-  __u32       group;
-} Drbd_SyncParam_P  __attribute((packed));
-MKPACKET(Drbd_SyncParam_P)
+	Drbd_Header head;
+	__u32       barrier;   // may be 0 or a barrier number
+} Drbd_Barrier_Packet  __attribute((packed));
 
 typedef struct {
-  __u64       p_size;  // size of disk
-  __u64       u_size;  // user requested size
-  __u32       state;
-  __u32       protocol;
-  __u32       version;
-  __u32       gen_cnt[GEN_CNT_SIZE];
-  __u32       bit_map_gen[GEN_CNT_SIZE];
-  Drbd_SyncParam_P sync_conf;
-} Drbd_Parameter_P  __attribute((packed));
-MKPACKET(Drbd_Parameter_P)
+	Drbd_Header head;
+	__u32       barrier;
+	__u32       set_size;
+} Drbd_BarrierAck_Packet  __attribute((packed));
 
 typedef struct {
-  __u64       sector;
-  __u64       block_id;
-  __u32       blksize;
-} Drbd_BlockAck_P __attribute((packed));
-MKPACKET(Drbd_BlockAck_P)
+	Drbd_Header head;
+	__u32       rate;
+	__u32       use_csums;
+	__u32       skip;
+	__u32       group;
+} Drbd_SyncParam_Packet  __attribute((packed));
 
 typedef struct {
-  __u32       barrier;
-  __u32       set_size;
-} Drbd_BarrierAck_P  __attribute((packed));
-MKPACKET(Drbd_BarrierAck_P)
+	Drbd_Header head;
+	__u64       p_size;  // size of disk
+	__u64       u_size;  // user requested size
+	__u32       state;
+	__u32       protocol;
+	__u32       version;
+	__u32       gen_cnt[GEN_CNT_SIZE];
+	__u32       bit_map_gen[GEN_CNT_SIZE];
+	__u32       sync_rate;
+	__u32       sync_use_csums;
+	__u32       skip_sync;
+	__u32       sync_group;
+} Drbd_Parameter_Packet  __attribute((packed));
 
 typedef struct {
-  __u64       sector;
-  __u64       block_id;
-  __u32       blksize;
-} Drbd_BlockRequest_P __attribute((packed));
-MKPACKET(Drbd_BlockRequest_P)
+	Drbd_Header head;
+	__u64       sector;
+	__u64       block_id;
+	__u32       blksize;
+} Drbd_BlockRequest_Packet __attribute((packed));
+
+typedef union {
+	Drbd_Data_Packet         Data;
+	Drbd_BlockAck_Packet     BlockAck;
+	Drbd_Barrier_Packet      Barrier;
+	Drbd_BarrierAck_Packet   BarrierAck;
+	Drbd_SyncParam_Packet    SyncParam;
+	Drbd_Parameter_Packet    Parameter;
+	Drbd_BlockRequest_Packet BlockRequest;
+} Drbd_Polymorph_Packet __attribute((packed));
 
 typedef enum {
-  Data,
-  DataReply,
-  RecvAck,      // Used in protocol B
-  WriteAck,     // Used in protocol C
-  Barrier,
-  BarrierAck,
-  ReportParams,
-  ReportBitMap,
-  CStateChanged,
-  Ping,
-  PingAck,
-  BecomeSyncTarget,
-  BecomeSyncSource,
-  BecomeSec,     // Secondary asking primary to become secondary
-  WriteHint,     // Used in protocol C to hint the secondary to call tq_disk
-  DataRequest,   // Used to ask for a data block
-  RSDataRequest, // Used to ask for a data block
-  BlockInSync,   // Possible anser to CondDataRequest. No data will be send
-  SetSyncParam,
-  SyncStop,
-  SyncCont,
-  MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
+	Data,
+	DataReply,
+	RecvAck,      // Used in protocol B
+	WriteAck,     // Used in protocol C
+	Barrier,
+	BarrierAck,
+	ReportParams,
+	ReportBitMap,
+	Ping,
+	PingAck,
+	BecomeSyncTarget,
+	BecomeSyncSource,
+	BecomeSec,     // Secondary asking primary to become secondary
+	WriteHint,     // Used in protocol C to hint the secondary to call tq_disk
+	DataRequest,   // Used to ask for a data block
+	RSDataRequest, // Used to ask for a data block
+	BlockInSync,   // Possible anser to CondDataRequest. No data will be send
+	SetSyncParam,
+	SyncStop,
+	SyncCont,
+	MAX_CMD,
+	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
+	MAX_OPT_CMD,
 } Drbd_Packet_Cmd;
 
 
@@ -277,7 +277,7 @@ struct Drbd_thread {
 	struct semaphore mutex;
 	volatile Drbd_thread_state t_state;
 	int (*function) (struct Drbd_thread *);
-	int minor;
+	drbd_dev *mdev;
 };
 
 struct drbd_barrier;
@@ -313,7 +313,7 @@ struct Tl_epoch_entry {
 	struct list_head list;
 	struct buffer_head* bh;
 	u64    block_id;
-	int   (*e_end_io) (struct Drbd_Conf*, struct Tl_epoch_entry *);
+	int   (*e_end_io) (drbd_dev*, struct Tl_epoch_entry *);
 };
 
 struct Pending_read {
@@ -446,36 +446,36 @@ struct Drbd_Conf {
 /* drbd_main.c: */
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
-extern void drbd_free_resources(int minor);
+extern void drbd_free_resources(drbd_dev *mdev);
 extern int drbd_log2(int i);
-extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
+extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
-extern void tl_clear(struct Drbd_Conf *mdev);
-extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
-extern int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector);
-extern void drbd_free_sock(int minor);
-/* extern int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
-	      char* buf, size_t size, unsigned msg_flags); */
-extern int drbd_send_param(struct Drbd_Conf *mdev);
-extern int drbd_send_cmd(struct Drbd_Conf *mdev, struct socket *sock,
-			  Drbd_Packet_Cmd cmd, char* buf, size_t payload);
-extern int drbd_send_sync_param(struct Drbd_Conf *mdev);
-extern int drbd_send_cstate(struct Drbd_Conf *mdev);
-extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
+extern void tl_clear(drbd_dev *mdev);
+extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
+extern int tl_check_sector(drbd_dev *mdev, sector_t sector);
+extern void drbd_free_sock(drbd_dev *mdev);
+/* extern int drbd_send(drbd_dev *mdev, struct socket *sock,
+	      void* buf, size_t size, unsigned msg_flags); */
+extern int drbd_send_param(drbd_dev *mdev);
+extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
+extern int drbd_send_sync_param(drbd_dev *mdev);
+extern int drbd_send_cstate(drbd_dev *mdev);
+extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
-extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
-			 struct buffer_head *bh, u64 block_id);
-extern int drbd_send_block(struct Drbd_Conf *mdev, int cmd,
-			   struct buffer_head *bh, u64 block_id);
-extern int drbd_send_dblock(struct Drbd_Conf *mdev, drbd_request_t *req);
-extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
-extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
+extern int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
+			 struct Tl_epoch_entry *e);
+extern int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
+			   struct Tl_epoch_entry *e);
+extern int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req);
+extern int _drbd_send_barrier(drbd_dev *mdev);
+extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
-extern int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,
+extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 			    u64 block_id);
-extern int drbd_send_bitmap(struct Drbd_Conf *mdev);
+extern int drbd_send_bitmap(drbd_dev *mdev);
 
-extern int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector);
+extern int ds_check_sector(drbd_dev *mdev, sector_t sector);
 
 /* drbd_req*/
 #define ERF_NOTLD    2   /* do not call tl_dependence */
@@ -483,25 +483,26 @@ extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
 
 /* drbd_fs.c: */
-extern int drbd_determin_dev_size(struct Drbd_Conf*);
-extern int drbd_set_state(int minor,Drbd_State newstate);
+extern int drbd_determin_dev_size(drbd_dev*);
+extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 
-extern void drbd_md_write(struct Drbd_Conf *mdev);
-extern void drbd_md_read(struct Drbd_Conf *mdev);
-extern void drbd_md_inc(int minor, enum MetaDataIndex order);
-extern int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
-extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
+extern void drbd_md_write(drbd_dev *mdev);
+extern void drbd_md_read(drbd_dev *mdev);
+extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
+extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
+extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int have_good);
 
 /* drbd_bitmap.c (still in drbd_main.c) */
 #define SS_OUT_OF_SYNC (1)
 #define SS_IN_SYNC     (0)
 #define MBDS_SYNC_ALL (-2)
 #define MBDS_DONE     (-3)
-#define MBDS_PACKET_SIZE 4096
+// I want the packet to fit within one page
+#define MBDS_PACKET_SIZE (PAGE_SIZE-sizeof(Drbd_Header))
 
 #define BM_BLOCK_SIZE_B  12
 #define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
@@ -539,22 +540,25 @@ extern mempool_t *drbd_pr_mempool;
 /* drbd_dsender.c */
 extern int drbd_dsender(struct Drbd_thread *thi);
 extern void drbd_dio_end_read(struct buffer_head *bh, int uptodate);
-extern void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side);
+extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 extern unsigned long drbd_hash(struct buffer_head *bh);
 
-static inline int drbd_send_short_cmd(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd)
+static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 {
-	return drbd_send_cmd(mdev,mdev->sock,cmd,NULL,0);
+	Drbd_Header h;
+	return drbd_send_cmd(mdev,mdev->sock,cmd,&h,sizeof(h));
 }
 
-static inline int drbd_send_ping(struct Drbd_Conf *mdev)
+static inline int drbd_send_ping(drbd_dev *mdev)
 {
-	return drbd_send_cmd(mdev,mdev->msock,Ping,NULL,0);
+	Drbd_Header h;
+	return drbd_send_cmd(mdev,mdev->msock,Ping,&h,sizeof(h));
 }
 
-static inline int drbd_send_ping_ack(struct Drbd_Conf *mdev)
+static inline int drbd_send_ping_ack(drbd_dev *mdev)
 {
-	return drbd_send_cmd(mdev,mdev->msock,PingAck,NULL,0);
+	Drbd_Header h;
+	return drbd_send_cmd(mdev,mdev->msock,PingAck,&h,sizeof(h));
 }
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
@@ -567,13 +571,13 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 	_drbd_thread_stop(thi,TRUE,FALSE);
 }
 
-static inline void set_cstate(struct Drbd_Conf* mdev,Drbd_CState cs)
+static inline void set_cstate(drbd_dev* mdev,Drbd_CState cs)
 {
 	mdev->cstate = cs;
 	wake_up_interruptible(&mdev->cstate_wait);
 }
 
-static inline void inc_pending(struct Drbd_Conf* mdev)
+static inline void inc_pending(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->pending_cnt);
 	if(mdev->conf.timeout ) {
@@ -582,7 +586,7 @@ static inline void inc_pending(struct Drbd_Conf* mdev)
 	}
 }
 
-static inline void dec_pending(struct Drbd_Conf* mdev)
+static inline void dec_pending(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->pending_cnt))
 		wake_up_interruptible(&mdev->state_wait);
@@ -602,12 +606,12 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 	}
 }
 
-static inline void inc_unacked(struct Drbd_Conf* mdev)
+static inline void inc_unacked(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-static inline void dec_unacked(struct Drbd_Conf* mdev)
+static inline void dec_unacked(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->unacked_cnt))
 		wake_up_interruptible(&mdev->state_wait);
@@ -628,14 +632,14 @@ static inline struct Drbd_Conf* drbd_mdev_of_bh(struct buffer_head *bh)
 	return drbd_conf + ( bh->b_dev & 0x00ff ) ;
 }
 
-static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,
+static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 					sector_t sector, int blk_size)
 {
 	mdev->rs_total +=
 		bm_set_bit(mdev->mbds_id, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
-static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
+static inline void drbd_set_in_sync(drbd_dev* mdev,
 				    sector_t sector, int blk_size)
 {
 	/* Is called by drbd_dio_end possibly from IRQ context, but
@@ -659,15 +663,15 @@ static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 	spin_unlock_irqrestore(&mdev->rs_lock,flags);
 }
 
-extern int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list);
-extern void drbd_init_ee(struct Drbd_Conf* mdev);
-extern void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e);
-extern struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
+extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
+extern void drbd_init_ee(drbd_dev* mdev);
+extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
+extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev,
 					  int may_sleep);
-extern int _drbd_process_ee(struct Drbd_Conf *,struct list_head *);
-extern int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
+extern int _drbd_process_ee(drbd_dev *,struct list_head *);
+extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
 			    sector_t sector, int data_size);
-extern int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
+extern int recv_dless_read(drbd_dev* mdev, struct Pending_read *pr,
 			   sector_t sector, int data_size);
 
 
@@ -726,7 +730,7 @@ struct busy_block {
 	sector_t sector;
 };
 
-static inline void bb_wait_prepare(struct Drbd_Conf *mdev,sector_t sector,
+static inline void bb_wait_prepare(drbd_dev *mdev,sector_t sector,
 				   struct busy_block *bl)
 {
 	MUST_HOLD(&mdev->bb_lock);
@@ -744,7 +748,7 @@ static inline void bb_wait(struct busy_block *bl)
 	wait_for_completion(&bl->event);
 }
 
-static inline void bb_done(struct Drbd_Conf *mdev,sector_t sector)
+static inline void bb_done(drbd_dev *mdev,sector_t sector)
 {
 	struct list_head *le;
 	struct busy_block *bl;
@@ -775,7 +779,7 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 }
 
 
-static inline void drbd_set_bh(struct Drbd_Conf *mdev,
+static inline void drbd_set_bh(drbd_dev *mdev,
 			       struct buffer_head *bh,
 			       sector_t sector,
 			       int size)
@@ -812,7 +816,7 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 # define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
 #endif
 
-// drbd_actlog.h 
+// drbd_actlog.h
 
 struct drbd_extent {
 	struct list_head accessed;
