@@ -82,26 +82,24 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		}
 	}
 
-	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
-		drbd_set_in_sync(mdev,rsector,drbd_req_get_size(req));
-	}
-
 	uptodate = req->rq_status & 0x0001;
 	if( !uptodate && mdev->on_io_error == Detach) {
 		drbd_set_out_of_sync(mdev,rsector, drbd_req_get_size(req));
 		// It should also be as out of sync on 
 		// the other side!  See w_io_error()
 
-		drbd_bio_endio(req->master_bio,uptodate);
-		// The assumption is that we wrote it on the peer.
-
 		drbd_bio_endio(req->master_bio,1);
+		// The assumption is that we wrote it on the peer.
 
 		req->w.cb = w_io_error;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 
 		goto out;
 
+	}
+
+	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
+		drbd_set_in_sync(mdev,rsector,drbd_req_get_size(req));
 	}
 
 	drbd_bio_endio(req->master_bio,uptodate);
