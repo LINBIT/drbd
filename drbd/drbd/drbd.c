@@ -1655,7 +1655,8 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		drbd_md_inc(minor, drbd_conf[minor].cstate >= Connected ? 
 			    ConnectedCnt : ArbitraryCnt);
 	}
-	
+	drbd_md_write(minor); /* Primary indicator has changed in any case. */
+
 	if (drbd_conf[minor].sock )
 		drbd_setup_sock(&drbd_conf[minor]);
 	
@@ -2623,36 +2624,36 @@ inline int receive_param(int minor,int command)
 	}
 	
 	if (drbd_conf[minor].cstate == WFReportParams) {
-		int pri,sync;
+		int pri,method,sync;
 		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n",
 		       minor);
 		printk(KERN_INFO DEVICE_NAME "%d: size=%d KB / blksize=%d B\n",
 		       minor,blk_size[MAJOR_NR][minor],blksize);
 
+		pri=drbd_md_compare(minor,&param);
+		method=drbd_md_syncq_ok(minor,&param)?SyncingQuick:SyncingAll;
+		sync=(drbd_conf[minor].state!=drbd_conf[minor].o_state);
+
 		if(be32_to_cpu(param.state) == Secondary &&
-		   drbd_conf[minor].state == Secondary && 
-		   (!drbd_conf[minor].conf.skip_sync) ) {
-			pri=drbd_md_compare(minor,&param);
-			sync=drbd_md_syncq_ok(minor,&param) ? 
-				SyncingQuick : SyncingAll;
+		   drbd_conf[minor].state == Secondary ) {
 			printk(KERN_INFO DEVICE_NAME "%d: 1 %d %d\n",
-			       minor,pri,sync);
+			       minor,pri,method);
 			switch(pri) {
 			case 1: drbd_set_state(minor,Primary);
-				set_cstate(&drbd_conf[minor],sync);
-				drbd_send_cstate(&drbd_conf[minor]);
-				drbd_thread_start(&drbd_conf[minor].syncer);
+			case -1:sync=1;
 				break;
-			case -1:
-				set_cstate(&drbd_conf[minor],sync);
-				break;
-			case 0: set_cstate(&drbd_conf[minor],Connected);
+			case 0: sync=0;
 				break;
 			}
-		} else {
-			printk(KERN_INFO DEVICE_NAME "%d: 2\n",minor);
-			set_cstate(&drbd_conf[minor],Connected);
 		}
+
+		if( sync && !drbd_conf[minor].conf.skip_sync ) {
+			set_cstate(&drbd_conf[minor],method);
+			if(pri) {
+				drbd_send_cstate(&drbd_conf[minor]);
+				drbd_thread_start(&drbd_conf[minor].syncer);
+			}
+		} else set_cstate(&drbd_conf[minor],Connected);
 	}
 
 	if (drbd_conf[minor].state == Secondary) {
@@ -2836,6 +2837,7 @@ void drbdd(int minor)
 		tl_clear(&drbd_conf[minor]);
 		clear_bit(ISSUE_BARRIER,&drbd_conf[minor].flags);
 		drbd_md_inc(minor,ConnectedCnt);
+		drbd_md_write(minor);
 		break;
 	case Secondary: 
 		es_clear(&drbd_conf[minor]);
@@ -3558,7 +3560,6 @@ int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner)
 void drbd_md_inc(int minor, enum MetaDataIndex order)
 {
 	drbd_conf[minor].gen_cnt[order]++;
-	drbd_md_write(minor);	
 }
 
 

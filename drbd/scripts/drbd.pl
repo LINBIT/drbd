@@ -449,6 +449,6 @@ if($#ARGV == 1) {
 read_config();
 #print Dumper(\%conf);
 
-if( $pname =~ /drbd.pl$/ ) { drbd(); }
+if( $pname =~ /drbd$/ ) { drbd(); }
 elsif( $pname =~ /datadisk$/ ) { datadisk(); }
 else { die "do not know what to do"; }
