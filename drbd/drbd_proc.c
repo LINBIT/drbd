@@ -37,6 +37,7 @@
 #include <linux/proc_fs.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
+#include "lru_cache.h" /* for lc_sprintf_stats */
 
 int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 
@@ -215,10 +216,10 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			if(test_bit(PARTNER_DISKLESS,&drbd_conf[i].flags))
 				sn = "ServerForDLess";
 		}
-		if ( drbd_conf[i].cstate == Unconfigured )
+		if ( drbd_conf[i].cstate == Unconfigured ) {
 			rlen += sprintf( buf + rlen,
 			   "%2d: cs:Unconfigured\n", i);
-		else
+		} else {
 			rlen += sprintf( buf + rlen,
 			   "%2d: cs:%s st:%s/%s ld:%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
@@ -242,9 +243,14 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].ap_bio_cnt)
 			);
 
-		if ( drbd_conf[i].cstate == SyncSource ||
-		     drbd_conf[i].cstate == SyncTarget )
-			rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
+			if ( drbd_conf[i].cstate == SyncSource ||
+			     drbd_conf[i].cstate == SyncTarget )
+				rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
+
+			rlen += lc_sprintf_stats(buf+rlen,drbd_conf[i].resync);
+			rlen += lc_sprintf_stats(buf+rlen,drbd_conf[i].act_log);
+		}
+
 	}
 
 	/* DEBUG & profile stuff end */

@@ -42,8 +42,8 @@
  * struct lru_cache, and the hash table slots.
  * returns pointer to a newly initialized lru_cache object with said parameters.
  */
-struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
-			   void *private_p)
+struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
+			   size_t e_size, void *private_p)
 {
 	unsigned long bytes;
 	struct lru_cache   *lc;
@@ -65,6 +65,7 @@ struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
 		lc->nr_elements      = e_count;
 		lc->new_number	     = -1;
 		lc->lc_private       = private_p;
+		lc->name             = name;
 		for(i=0;i<e_count;i++) {
 			e = lc_entry(lc,i);
 			e->lc_number = LC_FREE;
@@ -82,6 +83,20 @@ struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
 void lc_free(struct lru_cache* lc)
 {
 	vfree(lc);
+}
+
+size_t	lc_sprintf_stats(char* buf, struct lru_cache* lc)
+{
+	/* NOTE:
+	 * total calls to lc_get are
+	 * starving + hits + misses
+	 * misses include "dirty" count (update from an other thread in progress)
+	 * and "changed", when this in fact lead to an successful update of the cache.
+	 */
+	return sprintf(buf,"\t%s: elements:%u "
+		"hits:%lu misses:%lu starving:%lu dirty:%lu changed:%lu\n",
+		lc->name, lc->nr_elements,
+		lc->hits, lc->misses, lc->starving, lc->dirty, lc->changed);
 }
 
 static unsigned int lc_hash_fn(struct lru_cache* lc, unsigned int enr)
@@ -199,14 +214,20 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	BUG_ON(!lc->nr_elements);
 
 	PARANOIA_ENTRY();
-	if ( lc->flags & LC_STARVING ) RETURN(NULL);
+	if ( lc->flags & LC_STARVING ) {
+		++lc->starving;
+		RETURN(NULL);
+	}
 
 	e = lc_find(lc, enr);
 	if (e) {
+		++lc->hits;
 		++e->refcnt;
 		list_move(&e->list,&lc->in_use); // Not evictable...
 		RETURN(e);
 	}
+
+	++lc->misses;
 
 	/* In case there is nothing available and we can not kick out
 	 * the LRU element, we have to wait ...
@@ -220,7 +241,10 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	 * which then is replaced.
 	 * we need to update the cache; serialize on lc->flags & LC_DIRTY
 	 */
-	if (test_and_set_bit(__LC_DIRTY,&lc->flags)) RETURN(NULL);
+	if (test_and_set_bit(__LC_DIRTY,&lc->flags)) {
+		++lc->dirty;
+		RETURN(NULL);
+	}
 
 	e = lc_get_unused_element(lc);
 	BUG_ON(!e);
@@ -238,6 +262,7 @@ void lc_changed(struct lru_cache* lc, struct lc_element* e)
 {
 	PARANOIA_ENTRY();
 	BUG_ON(e != lc->changing_element);
+	++lc->changed;
 	e->lc_number = lc->new_number;
 	list_add(&e->list,&lc->in_use);
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, lc->new_number) );

@@ -178,7 +178,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 
 	in_use = 0;
 	t = mdev->act_log;
-	n = lc_alloc(mdev->sync_conf.al_extents,
+	n = lc_alloc("act_log", mdev->sync_conf.al_extents,
 		     sizeof(struct lc_element), mdev);
 
 	if (n==NULL) {

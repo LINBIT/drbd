@@ -53,6 +53,10 @@
 
 #include <linux/version.h>
 
+/* FIXME
+ * I want these structs opaque outside of lru_cache.c
+ */
+
 struct lc_element {
 	struct hlist_node colision;
 	struct list_head list;           // LRU list or free list
@@ -67,10 +71,15 @@ struct lru_cache {
 	size_t element_size;
 	unsigned int  nr_elements;
 	unsigned int  new_number;
+
+	/* here may or may not be a pad... */
+
 	unsigned long flags;
+	unsigned long hits, misses, starving, dirty, changed;
 	struct lc_element *changing_element; // just for paranoia
 
 	void  *lc_private;
+	const char *name;
 
 	struct hlist_head slot[0];
 	// hash colision chains here, then element storage.
@@ -87,8 +96,8 @@ enum {
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 
-extern struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
-				  void *private_p);
+extern struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
+				  size_t e_size, void *private_p);
 extern void lc_free(struct lru_cache* lc);
 extern void lc_set (struct lru_cache* lc, unsigned int enr, int index);
 extern void lc_del (struct lru_cache* lc, struct lc_element *element);
@@ -98,6 +107,7 @@ extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
 extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
 extern void            lc_changed(struct lru_cache* lc, struct lc_element* e);
 
+extern size_t lc_sprintf_stats(char* buf, struct lru_cache* lc);
 
 /* This can be used to stop lc_get from changing the set of active elements.
  * Note that the reference counts and order on the lru list may still change.
