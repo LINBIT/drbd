@@ -694,14 +694,14 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc)
   return do_disk_conf(drbd_fd,argv[0],&cn);
 }
 
-const char* guess_dev_name(int major,int minor)
+const char* guess_dev_name(const char* dir,int major,int minor)
 {
   DIR* device_dir;
   struct dirent* dde;
   struct stat sb;
   static char dev_name[50];
 
-  chdir("/dev");
+  chdir(dir);
   device_dir=opendir(".");
 
   if(!device_dir) goto err_out;
@@ -716,16 +716,40 @@ const char* guess_dev_name(int major,int minor)
 	      minor == (int)(sb.st_rdev & 0x00ff) )
 	    {
 	      closedir(device_dir);
-	      snprintf(dev_name,50,"/dev/%s",dde->d_name);
+	      snprintf(dev_name,50,"%s/%s",dir,dde->d_name);
 	      return dev_name;
 	    }
+	}
+    }
+
+  rewinddir(device_dir);
+
+  while((dde=readdir(device_dir))) 
+    {
+      if(stat(dde->d_name,&sb)) goto err_out_close;
+      
+      if(!strcmp(dde->d_name,".")) continue;
+      if(!strcmp(dde->d_name,"..")) continue;
+      if(!strcmp(dde->d_name,"fd")) continue;
+
+      if(S_ISDIR(sb.st_mode)) 
+	{
+	  char subdir[50];
+
+	  if(snprintf(subdir,50,"%s/%s",dir,dde->d_name)==49) 
+	    { /* recursion is too deep */
+	      strcpy(dev_name,"can not guess name");
+	      return dev_name;
+	    }
+
+	  if(guess_dev_name(subdir,major,minor)) return dev_name;
 	}
     }
 
  err_out_close:
   closedir(device_dir);
  err_out:
-  return "can not guess name";
+  return NULL;
 }
 
 int cmd_show(int drbd_fd,char** argv,int argc)
@@ -751,7 +775,7 @@ int cmd_show(int drbd_fd,char** argv,int argc)
   printf("Lower device: %02d:%02d   (%s)\n",
 	 cn.lower_device_major,
 	 cn.lower_device_minor,
-	 guess_dev_name(cn.lower_device_major,cn.lower_device_minor));
+	 guess_dev_name("/dev",cn.lower_device_major,cn.lower_device_minor));
   printf("Disk options:\n");
   if( cn.disk_size_user ) printf(" disk-size = %d KB\n",cn.disk_size_user);
   if( cn.do_panic ) printf(" do-panic\n");
