@@ -1,0 +1,56 @@
+My TODO list:
+
+1) David`s Points, most of them should be easy to fix...
+2) Remove the "BlkSizeChanged" packet from the protocol, since it is redundant.
+3) I got some messages from ReiserFS on 2.2.14:
+                   buffer-300: BAD, count is 1 for buffer 155664
+                   buffer-300: BAD, count is 1 for buffer 172048
+                   buffer-300: BAD, count is 1 for buffer 204814
+                   buffer-300: BAD, count is 1 for buffer 360462
+                   buffer-300: BAD, count is 1 for buffer 311312
+                   buffer-300: BAD, count is 1 for buffer 278540
+                   buffer-300: BAD, count is 1 for buffer 466960
+                   buffer-300: BAD, count is 1 for buffer 466961
+                   buffer-300: BAD, count is 1 for buffer 262156
+                   buffer-300: BAD, count is 1 for buffer 303113
+                   buffer-300: BAD, count is 1 for buffer 426001
+                   buffer-300: BAD, count is 1 for buffer 81934
+                   buffer-300: BAD, count is 1 for buffer 262154
+                   buffer-300: BAD, count is 1 for buffer 1
+                   buffer-300: BAD, count is 1 for buffer 24591
+   this happened at unmunt, and it`s always about the same number of these
+   messages, independent of drbd`s size.
+   Unfortunately I can not remember which protocol I used ...
+4) On 2.3.x it is possible to have a private request-queue (instead of
+   all_requests), we should definitely use this feature. Then we can 
+   leave NBD`s major number alone.
+5) 2.3.x. Dev-fs support
+6) Now there are two places where we do IO without using the buffercache.
+   (in do_request() when reading/writing and in the syncer when reading)
+   It we are starting with GFS support we will need to write on the
+   secondary`s side without using the buffercache. Thus if would be nice if
+   we had some generic do_IO_without_buffercache() functions, that we could
+   use from all that places.
+7) If it`s in WFConnection, it should try to connect every x seconds. x is
+   tunable by drbdsetup.
+8) If there is nothing to send the primary should send every y seconds a 
+   keep-alive-packet. (y is tunable by drbdsetup) 
+   If the is no packet for more than y seconds the secondary close()s the
+   connection.
+9) GFS support. 
+   I think we should introduce two new states: GPrimary and GSecondary
+   Both states give you full R/W access. If the connection
+   is lost, the GSecondary is blocking every IO-request until is has 
+   a new connection or until the manager (heartbeat?) puts it into 
+   GPrimary.
+   Whe the connection is lost the node in GPrimary continues to work.
+   Another important question is how, GFS`s lock-daeon handles the
+   connection lost cast.
+10) Use Thomas Mangin's datadisk script
+11) The bitmap syncer is not working flawless on alpha. It is working on 
+    intel.
+
+DONE:
+
+1 (partial),2,7,8,11
+

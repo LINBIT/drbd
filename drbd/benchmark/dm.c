@@ -31,6 +31,7 @@
 #include<sys/time.h>
 #define _GNU_SOURCE
 #include <getopt.h>
+#include <string.h>
 
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
 
@@ -63,16 +64,17 @@ void usage(char* prgname)
 {
   fprintf(stderr,"USAGE: %s [options] \n"
 	  "  Available options:\n"
-	  "   --input-file val  -i val \n"
-	  "   --output-file val -o val\n"
-	  "   --buffer-size val -b val\n"
-	  "   --seek-input val  -k val\n"
-	  "   --seek-output val -l val\n"
-	  "   --size val        -s val\n"
-	  "   --sync            -y\n"
-	  "   --progress        -m\n"
-	  "   --performance     -p\n"
-	  "   --help            -h\n",
+         "    --input-pattern val -a val \n"
+	  "   --input-file val    -i val \n"
+	  "   --output-file val   -o val\n"
+	  "   --buffer-size val   -b val\n"
+	  "   --seek-input val    -k val\n"
+	  "   --seek-output val   -l val\n"
+	  "   --size val          -s val\n"
+	  "   --sync              -y\n"
+	  "   --progress          -m\n"
+	  "   --performance       -p\n"
+	  "   --help              -h\n",
 	  prgname);
   exit(20);
 
@@ -91,25 +93,28 @@ int main(int argc, char** argv)
   int show_progress=0;
   int show_performance=0;
   struct timeval tv1,tv2;
+  int use_pattern=0;
+  int pattern;
 
   int c;
-  static struct option options[] = {
-    { "input-file",  required_argument, 0, 'i' },
-    { "output-file", required_argument, 0, 'o' },
-    { "buffer-size", required_argument, 0, 'b' },
-    { "seek-input",  required_argument, 0, 'k' },
-    { "seek-output", required_argument, 0, 'l' },
-    { "size"       , required_argument, 0, 's' },
-    { "sync",        no_argument,       0, 'y' },
-    { "progress",    no_argument,       0, 'm' },
-    { "performance", no_argument,       0, 'p' },
-    { "help",        no_argument,       0, 'h' },
-    { 0,             0,                 0, 0   }
+  static struct option options[] = {        
+    { "input-pattern",required_argument, 0, 'a' },
+    { "input-file",   required_argument, 0, 'i' },
+    { "output-file",  required_argument, 0, 'o' },
+    { "buffer-size",  required_argument, 0, 'b' },
+    { "seek-input",   required_argument, 0, 'k' },
+    { "seek-output",  required_argument, 0, 'l' },
+    { "size"       ,  required_argument, 0, 's' },
+    { "sync",         no_argument,       0, 'y' },
+    { "progress",     no_argument,       0, 'm' },
+    { "performance",  no_argument,       0, 'p' },
+    { "help",         no_argument,       0, 'h' },
+    { 0,              0,                 0, 0   }
   };
 
   while(1)
     {
-      c = getopt_long(argc,argv,"i:o:b:k:l:s:ymph",options,0);
+      c = getopt_long(argc,argv,"i:o:b:k:l:s:ympha:",options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -152,6 +157,9 @@ int main(int argc, char** argv)
 	  break;
 	case 'h':
 	  usage(argv[0]);
+	case 'a':
+	  use_pattern = 1;
+	  pattern = m_strtol(optarg);
 	  break;
 	}
     }
@@ -162,7 +170,7 @@ int main(int argc, char** argv)
       fprintf(stderr,"Can not allocate the Buffer memory\n");
       exit(20);
     }
-
+  
   if(seek_offs_i)
     {
       if(lseek(in_fd,seek_offs_i,SEEK_SET) != seek_offs_i)
@@ -181,17 +189,27 @@ int main(int argc, char** argv)
 	}
     }
 
+  if(use_pattern)
+    {
+      memset(buffer,pattern,buffer_size);
+      rr=buffer_size;
+    }
+
   rsize = size;
   gettimeofday(&tv1,NULL);
   while(1)
-    {
-      rr=read(in_fd,buffer,(size_t)min(buffer_size,rsize));
-      if(rr==0) break;
-      if(rr==-1)
+    {      
+      if(!use_pattern)
 	{
-	  perror("Read failed");
-	  exit(20);
+	  rr=read(in_fd,buffer,(size_t)min(buffer_size,rsize));
+	  if(rr==0) break;
+	  if(rr==-1)
+	    {
+	      perror("Read failed");
+	      break;
+	    }
 	}
+
       if(rr==buffer_size) 
 	{
 	  if(show_progress)
@@ -208,14 +226,15 @@ int main(int argc, char** argv)
 	      fflush(stdout);
 	    }
 	}
+
       ww=write(out_fd,buffer,rr);
       if(ww==-1)
 	{
 	  perror("Write failed");
-	  exit(20);	  
+	  break;
 	}
       rsize = rsize - ww;
-      if(ww!=rr) break;
+      if( !use_pattern && ww!=rr) break;
     }
       
   if(do_sync) fsync(out_fd);

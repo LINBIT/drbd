@@ -441,7 +441,8 @@ inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 		mdev->tl_end = mdev->transfer_log;
 
 	if (mdev->tl_end == mdev->tl_begin)
-		printk(KERN_CRIT DEVICE_NAME ": transferlog too small!! \n");
+		printk(KERN_CRIT DEVICE_NAME "%lu: transferlog too small!! \n",
+		 mdev-drbd_conf);
 
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }
@@ -467,7 +468,8 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 		mdev->tl_end = mdev->transfer_log;
 
 	if (mdev->tl_end == mdev->tl_begin)
-		printk(KERN_CRIT DEVICE_NAME ": transferlog too small!! \n");
+		printk(KERN_CRIT DEVICE_NAME "%lu: transferlog too small!!\n",
+		       mdev-drbd_conf);
 
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
@@ -499,18 +501,20 @@ inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 			mdev->tl_begin = mdev->transfer_log;
 
 		if (mdev->tl_begin == mdev->tl_end)
-			printk(KERN_ERR DEVICE_NAME ": tl messed up!\n");
+			printk(KERN_ERR DEVICE_NAME "%ld: tl messed up!\n",
+			       mdev-drbd_conf);
 		epoch_size++;
 	} while (mdev->tl_begin->req != TL_BARRIER);
 
 	if(mdev->tl_begin->sector_nr != barrier_nr) 
-		printk(KERN_ERR DEVICE_NAME ": invalid barrier number!!"
-		       "found=%u, reported=%u\n",
+		printk(KERN_ERR DEVICE_NAME "%ld: invalid barrier number!!"
+		       "found=%u, reported=%u\n",mdev-drbd_conf,
 		       (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
 
 	if(epoch_size != set_size) 
-		printk(KERN_ERR DEVICE_NAME ": Epoch set size wrong!!"
-		       "found=%d reported=%d \n",epoch_size,set_size);
+		printk(KERN_ERR DEVICE_NAME "%ld: Epoch set size wrong!!"
+		       "found=%d reported=%d \n",mdev-drbd_conf,
+		       epoch_size,set_size);
 	
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
@@ -631,7 +635,8 @@ void drbd_thread_start(struct Drbd_thread *thi)
 
 		if (pid < 0) {
 			printk(KERN_ERR DEVICE_NAME
-			       ": Couldn't start thread (%d)\n", pid);
+			       "%d: Couldn't start thread (%d)\n", thi->minor,
+			       pid);
 			return;
 		}
 		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
@@ -675,7 +680,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 			schedule_timeout(HZ / 10);
 		}
 	} else {
-		printk(KERN_ERR DEVICE_NAME ": could not send signal\n");
+		printk(KERN_ERR DEVICE_NAME "%d: could not send signal\n",
+		       thi->minor);
 	}
 }
 
@@ -709,7 +715,7 @@ int drbd_ll_blocksize(int minor)
 		size = blksize_size[MAJOR(ll_dev)][MINOR(ll_dev)];
 	else
 		printk(KERN_ERR DEVICE_NAME
-		       ": LL device has no block size ?!?\n\n");
+		       "%d: LL device has no block size ?!?\n\n",minor);
 
 	if (size == 0)
 		size = BLOCK_SIZE;
@@ -761,7 +767,7 @@ int drbd_send_param(int minor)
 		    cpu_to_be64(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]);
 	} else
 		printk(KERN_ERR DEVICE_NAME
-		       ": LL device has no size ?!?\n\n");
+		       "%d: LL device has no size ?!?\n\n",minor);
 
 	param.h.blksize = cpu_to_be32(drbd_ll_blocksize(minor));
 	param.h.state = cpu_to_be32(drbd_conf[minor].state);
@@ -775,7 +781,7 @@ int drbd_send_param(int minor)
 	
 	if(err < sizeof(Drbd_Parameter_Packet))
 		printk(KERN_ERR DEVICE_NAME
-		       ": Sending of parameter block failed!!\n");	  
+		       "%d: Sending of parameter block failed!!\n",minor);  
 
 	return err;
 }
@@ -889,7 +895,9 @@ void drbd_c_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
-	printk(KERN_INFO DEVICE_NAME ": retrying to connect(pid=%d)\n",p->pid);
+	/*
+	printk(KERN_INFO DEVICE_NAME" : retrying to connect(pid=%d)\n",p->pid);
+	*/
 
 	send_sig_info(DRBD_SIG, NULL, p);
 
@@ -900,7 +908,7 @@ void drbd_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
-	printk(KERN_ERR DEVICE_NAME ": timeout detected! (pid=%d)\n",p->pid);
+	printk(KERN_ERR DEVICE_NAME" : timeout detected! (pid=%d)\n",p->pid);
 
 	send_sig_info(DRBD_SIG, NULL, p);
 
@@ -910,7 +918,7 @@ void drbd_a_timeout(unsigned long arg)
 {
 	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
 
-	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
+	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected!\n",thi->minor);
 
 	if(drbd_conf[thi->minor].cstate >= Connected) {
 		set_cstate(&drbd_conf[thi->minor],Timeout);
@@ -973,7 +981,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 			printk(KERN_ERR DEVICE_NAME
-			       ": send timed out!! (pid=%d)\n",current->pid);
+			       "%lu: send timed out!! (pid=%d)\n",
+			       mdev-drbd_conf,current->pid);
 
 			set_cstate(mdev,Timeout);
 
@@ -983,8 +992,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 		} else spin_unlock_irqrestore(&current->sigmask_lock,flags);
 	}
 	if (err != header_size+data_size) {
-		printk(KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",
-		       err);
+		printk(KERN_ERR DEVICE_NAME "%lu: sock_sendmsg returned %d\n",
+		       mdev-drbd_conf,err);
 	}
 	if (err < 0) {
 		set_cstate(mdev,BrokenPipe);
@@ -1051,16 +1060,18 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	case RQ_DRBD_SENT:
 		if (nextstate == RQ_DRBD_WRITTEN)
 			goto end_it;
-		printk(KERN_ERR DEVICE_NAME ": request state error(A)\n");
+		printk(KERN_ERR DEVICE_NAME "%lu: request state error(A)\n",
+		       mdev-drbd_conf);
 		break;
 	case RQ_DRBD_WRITTEN:
 		if (nextstate == RQ_DRBD_SENT)
 			goto end_it;
-		printk(KERN_ERR DEVICE_NAME ": request state error(B)\n");
+		printk(KERN_ERR DEVICE_NAME "%lu: request state error(B)\n",
+		       mdev-drbd_conf);
 		break;
 	default:
-		printk(KERN_ERR DEVICE_NAME ": request state error(%X)\n",
-		       req->rq_status);
+		printk(KERN_ERR DEVICE_NAME "%lu: request state error(%X)\n",
+		       mdev-drbd_conf,req->rq_status);
 	}
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
@@ -1157,8 +1168,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		set_blocksize(drbd_conf[minor].lo_device, new_blksize);
 		drbd_conf[minor].blk_size_b = drbd_log2(new_blksize);
 
-		printk(KERN_INFO DEVICE_NAME
-		       ": Block size change detected! (%d)\n",new_blksize);
+		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",
+		       minor,new_blksize);
 
 		spin_lock_irq(&io_request_lock);
 	}
@@ -1200,7 +1211,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			bh = kmalloc(sizeof(struct buffer_head),GFP_KERNEL);
 			if (!bh) {
 				printk(KERN_ERR DEVICE_NAME
-				       ": could not kmalloc()\n");
+				       "%d: could not kmalloc()\n",minor);
 				return;
 			}
 
@@ -1388,7 +1399,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		if ((err = blkdev_open(inode, filp))) {
 			printk(KERN_ERR DEVICE_NAME
-			       ": blkdev_open( %d:%d ,) returned %d\n",
+			       "%d: blkdev_open( %d:%d ,) returned %d\n",
+			       minor,
 			       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),err);
 			fput(filp);
 			retcode=LDOpenFailed;
@@ -1431,8 +1443,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			  min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
 			      drbd_conf[minor].conf.disk_size);
 		        printk(KERN_INFO DEVICE_NAME
-			       ": user provided size = %d KB\n",
-			       blk_size[MAJOR_NR][minor]);
+			       "%d: user provided size = %d KB\n",
+			       minor,blk_size[MAJOR_NR][minor]);
 
 			if (!drbd_conf[minor].mbds_id) {
 			       drbd_conf[minor].mbds_id = 
@@ -1453,7 +1465,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	case DRBD_IOCTL_UNCONFIG:
 
-		if( drbd_conf[minor].state == Unconfigured)
+		if( drbd_conf[minor].cstate == Unconfigured)
 			return -ENXIO;
 
 		if (drbd_conf[minor].open_cnt > 1)
@@ -1558,7 +1570,7 @@ int __init drbd_init(void)
 	if (proc_register(&proc_root, &drbd_proc_dir))
 #endif
 	{
-		printk(KERN_ERR DEVICE_NAME "unable to register proc file.\n");
+		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
 		return -EIO;
 	}
 
@@ -1733,7 +1745,7 @@ struct socket* drbd_accept(struct socket* sock)
       out:
 	unlock_kernel();
 	if(err != -ERESTARTSYS)
-		printk(KERN_ERR DEVICE_NAME ": accept failed! %d\n", err);
+		printk(KERN_ERR DEVICE_NAME " : accept failed! %d\n", err);
 	return 0;
 }
 
@@ -1786,8 +1798,8 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	set_fs(oldfs);
 	unlock_kernel();
 	if (err != size && err != -ERESTARTSYS && err != 0)
-		printk(KERN_ERR DEVICE_NAME ": sock_recvmsg returned %d\n",
-		       err);
+		printk(KERN_ERR DEVICE_NAME "%lu: sock_recvmsg returned %d\n",
+		       mdev-drbd_conf,err);
 
 	if (mdev->conf.ping_int) {
 		del_timer(&idle_timeout);
@@ -1812,12 +1824,13 @@ int drbd_connect(int minor)
 
 	if (drbd_conf[minor].sock) {
 		printk(KERN_ERR DEVICE_NAME
-		       ": There is already a socket!! \n");
+		       "%d: There is already a socket!! \n",minor);
 		return 0;
 	}
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME ": sock_creat(..)=%d\n", err);
+		printk(KERN_ERR DEVICE_NAME "%d: sock_creat(..)=%d\n", minor,
+		       err);
 	}
 
 	lock_kernel();	
@@ -1838,7 +1851,7 @@ int drbd_connect(int minor)
 		err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 		if (err) {
 			printk(KERN_ERR DEVICE_NAME
-			       ": sock_creat(..)=%d\n", err);
+			       "%d: sock_creat(..)=%d\n", minor,err);
 		}
 
 		sock->sk->reuse=1; /* SO_REUSEADDR */
@@ -1851,7 +1864,7 @@ int drbd_connect(int minor)
 		unlock_kernel();
 		if (err) {
 			printk(KERN_ERR DEVICE_NAME
-			       ": Unable to bind (%d)\n", err);
+			       "%d: Unable to bind (%d)\n", minor,err);
 			sock_release(sock);
 			set_cstate(&drbd_conf[minor],Unconnected);
 			return 0;
@@ -1995,12 +2008,14 @@ inline int receive_data(int minor,int data_size)
 		set_blocksize(MKDEV(MAJOR_NR, minor), data_size);
 		set_blocksize(drbd_conf[minor].lo_device,data_size);
 		drbd_conf[minor].blk_size_b = drbd_log2(data_size);
+		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",minor,
+		       data_size);
 	}
 
 	bh = getblk(MKDEV(MAJOR_NR, minor), block_nr,data_size);
 
 	if (!bh) {
-	        printk(KERN_ERR DEVICE_NAME": getblk()=0/m=%d\n",minor);
+	        printk(KERN_ERR DEVICE_NAME"%d: getblk()=0\n",minor);
 	        return FALSE;
 	}
 
@@ -2016,8 +2031,8 @@ inline int receive_data(int minor,int data_size)
 		drbd_conf[minor].epoch_size=ep_size;
 	        spin_unlock(&drbd_conf[minor].es_lock);
 		if (ep_size > drbd_conf[minor].conf.tl_size)
-			printk(KERN_ERR DEVICE_NAME ": tl_size too small"
-			       " (ep_size > tl_size)\n");
+			printk(KERN_ERR DEVICE_NAME "%d: tl_size too small"
+			       " (ep_size > tl_size)\n",minor);
 	} else {	       
 		int i;
 		struct buffer_head ** sync_log = drbd_conf[minor].sync_log;
@@ -2039,7 +2054,8 @@ inline int receive_data(int minor,int data_size)
 				goto exit_for;
 			}
 		}
-		printk(KERN_ERR DEVICE_NAME ": SYNC_LOG_S too small\n");
+		printk(KERN_ERR DEVICE_NAME "%d: SYNC_LOG_S too small\n",
+		       minor);
 	exit_for:
 		spin_unlock(&drbd_conf[minor].sl_lock);
 	exit_for_unlocked:
@@ -2122,11 +2138,13 @@ inline int receive_block_ack(int minor)
 
 
 	if( header.block_id == ID_SYNCER) {
+	  /*
 		drbd_conf[minor].mops->
 		set_block_status(drbd_conf[minor].mbds_id,
 				 be64_to_cpu(header.block_nr), 
 				 drbd_conf[minor].blk_size_b, 
 				 SS_IN_SYNC);
+	  */
 	} else {
 		req=(struct request*)(long)header.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
@@ -2164,26 +2182,29 @@ inline int receive_param(int minor,int command)
 
 	if(be32_to_cpu(param.state) == Primary &&
 	   drbd_conf[minor].state == Primary ) {
-		printk(KERN_ERR DEVICE_NAME": incompatible states \n");
+		printk(KERN_ERR DEVICE_NAME"%d: incompatible states \n",minor);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.version)!=MOD_VERSION) {
-	        printk(KERN_ERR DEVICE_NAME": incompatible releases \n");
+	        printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
+		       minor);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
-	        printk(KERN_ERR DEVICE_NAME": incompatible protocols \n");
+	        printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
+		       minor);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
         if (!blk_size[MAJOR(ll_dev)]) {
 		blk_size[MAJOR_NR][minor] = 0;
-		printk(KERN_ERR DEVICE_NAME": LL Device has no size!\n");
+		printk(KERN_ERR DEVICE_NAME"%d: LL Device has no size!\n",
+		       minor);
 		return FALSE;
 	}
 
@@ -2193,23 +2214,18 @@ inline int receive_param(int minor,int command)
 
 	if(drbd_conf[minor].conf.disk_size &&
 	   (drbd_conf[minor].conf.disk_size != blk_size[MAJOR_NR][minor])) {
-		printk(KERN_ERR DEVICE_NAME": Your size hint is bogus!"
-		       "change it to %d\n",blk_size[MAJOR_NR][minor]);
+		printk(KERN_ERR DEVICE_NAME"%d: Your size hint is bogus!"
+		       "change it to %d\n",minor,blk_size[MAJOR_NR][minor]);
 		blk_size[MAJOR_NR][minor]=drbd_conf[minor].conf.disk_size;
 		set_cstate(&drbd_conf[minor],Unconfigured);
 		return FALSE;
 	}
-
-	printk(KERN_INFO DEVICE_NAME ": agreed size = %d KB\n",
-	       blk_size[MAJOR_NR][minor]);
 
 	blksize = max(be32_to_cpu(param.blksize),drbd_ll_blocksize(minor));
 
 	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
 	set_blocksize(drbd_conf[minor].lo_device,blksize);
 	drbd_conf[minor].blk_size_b = drbd_log2(blksize);
-
-	printk(KERN_INFO DEVICE_NAME": agreed blksize = %d B\n", blksize);
 
 	/* Do we need to adjust the device size to end on block 
 	   boundary ?? I do not think so ! */
@@ -2220,6 +2236,11 @@ inline int receive_param(int minor,int command)
 	}
 	
 	if (drbd_conf[minor].cstate == WFReportParams) {
+		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n",
+		       minor);
+		printk(KERN_INFO DEVICE_NAME "%d: size=%d KB / blksize=%d B\n",
+		       minor,blk_size[MAJOR_NR][minor],blksize);
+
 	        if (drbd_conf[minor].state == Primary
 		    && !drbd_conf[minor].conf.skip_sync) {
 		        set_cstate(&drbd_conf[minor],SyncingQuick);
@@ -2243,9 +2264,10 @@ void drbdd(int minor)
 			break;
 
 		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
-			printk(KERN_ERR DEVICE_NAME ": magic?? m: %ld "
+			printk(KERN_ERR DEVICE_NAME "%d: magic?? m: %ld "
 			       "c: %d "
 			       "l: %d \n",
+			       minor,
 			       (long) be32_to_cpu(header.magic),
 			       (int) be16_to_cpu(header.command),
 			       (int) be16_to_cpu(header.length));
@@ -2289,7 +2311,7 @@ void drbdd(int minor)
 
 		default:
 			printk(KERN_ERR DEVICE_NAME
-			       ": unknown packet type!/m=%d\n", minor);
+			       "%d: unknown packet type!\n", minor);
 			goto out;
 		}
 	}
@@ -2304,6 +2326,8 @@ void drbdd(int minor)
 		sock_release(drbd_conf[minor].sock);
 		drbd_conf[minor].sock = 0;
 	}
+
+	printk(KERN_INFO DEVICE_NAME "%d: Connection lost.\n",minor);
 
 	if(drbd_conf[minor].cstate != Unconfigured)
 	        set_cstate(&drbd_conf[minor],Unconnected);
@@ -2345,7 +2369,7 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 	}
 
-	printk(KERN_DEBUG DEVICE_NAME ": receiver exiting/m=%d\n", minor);
+	printk(KERN_DEBUG DEVICE_NAME "%d: receiver exiting\n", minor);
 
 	set_cstate(&drbd_conf[minor],Unconfigured);
 
@@ -2392,7 +2416,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 	int blocksize;
 	void* page;
 	struct buffer_head rbh,*bh;
-
+	unsigned long bcount=0;
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
 
@@ -2426,8 +2450,8 @@ restart:
 	interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
 	blocks = (amount << 10) / blocksize;
 
-	printk(KERN_INFO DEVICE_NAME ": Synchronisation started "
-	       "blks=%d int=%d \n",blocks, interval);
+	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation started "
+	       "blks=%d int=%d \n",minor,blocks, interval);
 
 	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
 	memcpy(&rbh,bh,sizeof(struct buffer_head));
@@ -2495,7 +2519,8 @@ restart:
 			ll_rw_block(READ, 1, &bh);
 		        if (!buffer_uptodate(bh)) wait_on_buffer(bh);
 			if (!buffer_uptodate(bh)) {
-                                printk(KERN_ERR DEVICE_NAME ": !uptodate\n");
+                                printk(KERN_ERR DEVICE_NAME "%d: !uptodate\n",
+				       minor);
 			        goto out;
 			}
 
@@ -2504,9 +2529,10 @@ restart:
 
 			if (rr > 0) {
 				drbd_conf[minor].send_cnt++;
+				bcount++;
 			} else {
 				printk(KERN_ERR DEVICE_NAME
-				       ": syncer send failed!!\n");
+				       "%d: syncer send failed!!\n",minor);
 				goto out;
 			}
 
@@ -2538,7 +2564,8 @@ restart:
 	free_page((unsigned long)page);
 	
 	drbd_conf[minor].synced_to=0; /* this is ok. */
-	printk(KERN_INFO DEVICE_NAME ": Synchronisation done./m=%d\n", minor);
+	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done. "
+	       "%lu blks sent\n", minor,bcount);
 
 	return 0;
 }
@@ -2676,7 +2703,7 @@ void* bm_init(kdev_t dev)
 
 	memset(sbm->bm,0,size);
 
-	printk(KERN_INFO DEVICE_NAME ": vmallocing %ld B for bitmap."
+	printk(KERN_INFO DEVICE_NAME " : vmallocing %ld B for bitmap."
 	       " @%p\n",size,sbm->bm);
   
 	return sbm;
@@ -2709,23 +2736,23 @@ void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
 
 	if(!bit && cb) {
 		if(sbm->sb_bitnr == bitnr) {
-		        sbm->sb_mask |= 1 << (blocknr & ((1<<cb)-1));
-			if(sbm->sb_mask != (1<<(1<<cb))-1) goto out;
+		        sbm->sb_mask |= 1L << (blocknr & ((1L<<cb)-1));
+			if(sbm->sb_mask != (1L<<(1<<cb))-1) goto out;
 		} else {
 	                sbm->sb_bitnr = bitnr;
-			sbm->sb_mask = 1 << (blocknr & ((1<<cb)-1));
+			sbm->sb_mask = 1L << (blocknr & ((1L<<cb)-1));
 			goto out;
 		}
 	}
 
 	if(bitnr>>LN2_BPL >= sbm->size) {
-		printk(KERN_ERR DEVICE_NAME": BitMap too small!\n");	  
+		printk(KERN_ERR DEVICE_NAME" : BitMap too small!\n");	  
 		goto out;
 	}
 
 	bm[bitnr>>LN2_BPL] = bit ?
-	  bm[bitnr>>LN2_BPL] |  ( 1 << (bitnr & ((1<<LN2_BPL)-1)) ) :
-	  bm[bitnr>>LN2_BPL] & ~( 1 << (bitnr & ((1<<LN2_BPL)-1)) );
+	  bm[bitnr>>LN2_BPL] |  ( 1L << (bitnr & ((1L<<LN2_BPL)-1)) ) :
+	  bm[bitnr>>LN2_BPL] & ~( 1L << (bitnr & ((1L<<LN2_BPL)-1)) );
 
  out:
 	spin_unlock(&sbm->bm_lock);
@@ -2753,7 +2780,7 @@ unsigned long bm_get_blocknr(void* bm_id,int ln2_block_size)
 
  	spin_lock(&sbm->bm_lock);
 
-	if(sbm->gb_snr >= (1<<cb)) {	  
+	if(sbm->gb_snr >= (1L<<cb)) {	  
 		for(wnr=sbm->gb_bitnr>>LN2_BPL;wnr<nw;wnr++) {
 	                if (bm[wnr]) {
 				int bnr;
@@ -2785,7 +2812,7 @@ void bm_reset(void* bm_id,int ln2_block_size)
 
 	sbm->gb_bitnr=0;
 	if (sbm->bm[0] & 1) sbm->gb_snr=0;
-	else sbm->gb_snr = 1<<(BM_BLOCK_SIZE_B-ln2_block_size);
+	else sbm->gb_snr = 1L<<(BM_BLOCK_SIZE_B-ln2_block_size);
 
  	spin_unlock(&sbm->bm_lock);	
 }
