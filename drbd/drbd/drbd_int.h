@@ -762,8 +762,8 @@ extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 extern void tl_clear(drbd_dev *mdev);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern void drbd_free_sock(drbd_dev *mdev);
-/* extern int drbd_send(drbd_dev *mdev, struct socket *sock,
-	      void* buf, size_t size, unsigned msg_flags); */
+extern int drbd_send(drbd_dev *mdev, struct socket *sock,
+		     void* buf, size_t size, unsigned msg_flags);
 extern int drbd_send_param(drbd_dev *mdev, int flags);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);

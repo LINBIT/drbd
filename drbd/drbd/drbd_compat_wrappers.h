@@ -279,17 +279,29 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 	size_t size = bh->b_size;
 	int offset;
 
-	/*
-	 * CAUTION I do not yet understand this completely.
-	 * I thought I have to kmap the page first... ?
-	 * hm. obviously the tcp stack kmaps internally somewhere.
-	 */
 	if (PageHighMem(page))
 		offset = (int)(long)bh->b_data;
 	else
 		offset = (long)bh->b_data - (long)page_address(page);
 
 	return _drbd_send_page(mdev,page,offset,size);
+}
+
+static inline int _drbd_send_bio(drbd_dev *mdev, struct buffer_head *bh)
+{
+	struct page *page = bh->b_page;
+	size_t size = bh->b_size;
+	int offset;
+	int ret;
+
+	if (PageHighMem(page))
+		offset = (int)(long)bh->b_data;
+	else
+		offset = (long)bh->b_data - (long)page_address(page);
+
+	ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+	kunmap(page);
+	return ret;
 }
 
 #else
@@ -590,4 +602,18 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
 	return _drbd_send_page(mdev,bvec->bv_page,bvec->bv_offset,bvec->bv_len);
 }
+
+static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
+{
+	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	struct page *page = bvec->bv_page;
+	size_t size = bvec->bv_len;
+	int offset = bvec->bv_offset;
+	int ret;
+
+	ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+	kunmap(page);
+	return ret;
+}
+
 #endif

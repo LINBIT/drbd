@@ -94,8 +94,6 @@ int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
 
-STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
-
 #ifdef DEVICE_REQUEST
 #undef DEVICE_REQUEST
 #endif
@@ -864,10 +862,7 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	return drop_it; /* && (mdev->state == Primary) */;
 }
 
-#if 1
-/* We have the following problem with zero copy network IO:
-   
-   The idea of sendpage seems to be to put some kind of reference 
+/* The idea of sendpage seems to be to put some kind of reference 
    to the page into the skb, and to hand it over to the NIC. In 
    this process get_page() gets called.
 
@@ -881,9 +876,8 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
    But this means that in protocol A we might signal IO completion too early !
 
    In order not to corrupt data during a full sync we must make sure
-   that we do not reuse our own buffer pages (EEs) to early. 
-   Have a look at drbd_get_ee() where we check if the count of the page
-   has already dropped to 1 .
+   that we do not reuse our own buffer pages (EEs) to early, therefore
+   we have the net_ee list. 
 */
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
@@ -896,9 +890,12 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	spin_unlock(&mdev->send_task_lock);
 
 	do {
-		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page, offset, len, MSG_NOSIGNAL);
+		sent = mdev->data.socket->ops->sendpage(mdev->data.socket,page,
+							offset,len,
+							MSG_NOSIGNAL);
 		if (sent == -EAGAIN) {
-			if (we_should_drop_the_connection(mdev,mdev->data.socket))
+			if (we_should_drop_the_connection(mdev,
+							  mdev->data.socket))
 				break;
 			else
 				continue;
@@ -922,16 +919,6 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		mdev->send_cnt += size>>9;
 	return ok;
 }
-#else
-int _drbd_send_page(drbd_dev *mdev, struct page *page,
-		    int offset, size_t size)
-{
-	int ret;
-	ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
-	kunmap(page);
-	return ret;
-}
-#endif
 
 // Used to send write requests: bh->b_rsector !!
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
@@ -986,7 +973,11 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p);
 		if(ok) {
-			ok = _drbd_send_zc_bio(mdev,&req->private_bio);
+			if(mdev->conf.wire_protocol == DRBD_PROT_A) {
+				ok = _drbd_send_bio(mdev,&req->private_bio);
+			} else {
+				ok = _drbd_send_zc_bio(mdev,&req->private_bio);
+			}
 		}
 		if(!ok) tl_cancel(mdev,req);
 	}
