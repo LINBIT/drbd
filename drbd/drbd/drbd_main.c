@@ -69,7 +69,7 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 #include "drbd.h"
 #include "drbd_int.h"
 
-#ifdef CONFIG_DEVFS_FS
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
 #include <linux/devfs_fs_kernel.h>
 static devfs_handle_t devfs_handle;
 #endif
@@ -1257,6 +1257,8 @@ int __init drbd_init(void)
 	if (!drbd_blocksizes || !drbd_sizes)
 		goto Enomem;
 #else
+	devfs_mk_dir("nbd");
+
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
 		struct gendisk         *disk;
@@ -1277,8 +1279,8 @@ int __init drbd_init(void)
 		disk->major = MAJOR_NR;
 		disk->first_minor = i;
 		disk->fops = &drbd_ops;
-		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
-		sprintf(disk->devfs_name, DEVICE_NAME "/%d", i);
+		sprintf(disk->disk_name, DEVICE_NAME "nbd%d", i);
+		sprintf(disk->devfs_name, DEVICE_NAME "nbd/%d", i);
 		disk->private_data = mdev;
 		add_disk(disk);
 
@@ -1340,13 +1342,13 @@ NOT_IN_26(
 	blk_size[MAJOR_NR] = drbd_sizes;
 )
 
-#ifdef CONFIG_DEVFS_FS
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
 	devfs_register_series(devfs_handle, "%u", minor_count,
 			      DEVFS_FL_DEFAULT, MAJOR_NR, 0,
 			      S_IFBLK | S_IRUSR | S_IWUSR,
 			      &drbd_ops, NULL);
-# endif
+#endif
 
 	NOT_IN_26(blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);)
 
@@ -1412,9 +1414,10 @@ void cleanup_module(void)
 {
 	int i;
 
-#ifdef CONFIG_DEVFS_FS
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
 	devfs_unregister(devfs_handle);
 #endif
+	ONLY_IN_26( devfs_remove("nbd"); )
 
 #warning "FIXME increase module refcount with each setup device"
 	/* then you need to tear down all devices
