@@ -215,7 +215,7 @@ You must not have the ee_lock:
 		e->bh=bh;
 		BH_PRIVATE(bh)=e;
 
-		e->block_id=0;
+		e->block_id=0; //all entries on the free_ee should have 0 here
 		list_add(&e->list,&mdev->free_ee);
 		mdev->ee_vacant++;
 		if (lbh) {
@@ -356,6 +356,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	}
 	le=mdev->free_ee.next;
 	list_del(le);
+	e->block_id=1;//the entries not on free_ee should not have 0 here.
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
 	e=list_entry(le, struct Tl_epoch_entry,list);
@@ -369,7 +370,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 
 	mdev->ee_in_use--;
 	mdev->ee_vacant++;
-	e->block_id=0;
+	e->block_id=0;//all entries on the free_ee should have 0 here
 	list_add(&e->list,&mdev->free_ee);
 
 	if(mdev->ee_vacant * 2 > mdev->ee_in_use) {
