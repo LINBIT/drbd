@@ -1635,9 +1635,9 @@ void drbd_khelper(drbd_dev *mdev, char* cmd)
 				NULL };
 	
 	snprintf(mb,12,"minor-%d",(int)(mdev-drbd_conf));
-	ret = call_usermodehelper("/sbin/drbdadm",argv,envp,0);
+	ret = call_usermodehelper("/sbin/drbdadm",argv,envp,1);
 	if(ret) {
-		ERR("call_usermodhelper failed with %d",ret);
+		ERR("call_usermodhelper failed with %d\n",(ret>>8) & 0xff);
 	}
 }
 
