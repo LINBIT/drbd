@@ -98,17 +98,18 @@ typedef struct wait_queue*  wait_queue_head_t;
 #endif
 
 /*
- * GFP_DRBD is used for allocations inside drbd_do_request. 
+ * GFP_DRBD is used for allocations inside drbd_do_request.
  *
- * 2.4 kernels will probably remove the __GFP_IO check in the VM code, 
- * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER flag 
- * to avoid __GFP_IO, thus avoiding the use of the atomic queue and avoiding the deadlock.
+ * 2.4 kernels will probably remove the __GFP_IO check in the VM code,
+ * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER 
+ * flag to avoid __GFP_IO, thus avoiding the use of the atomic queue and 
+ *  avoiding the deadlock.
  *
  * - marcelo
  */
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #define GFP_DRBD GFP_ATOMIC
-#else 
+#else
 #define GFP_DRBD GFP_BUFFER
 #endif
 
@@ -253,7 +254,7 @@ struct mbds_operations bm_mops;
 
 int minor_count=2;
 
-MODULE_AUTHOR("Philipp Reisner <e9525415@stud2.tuwien.ac.at>");
+MODULE_AUTHOR("Philipp Reisner <philipp@linuxfreak.com>");
 MODULE_DESCRIPTION("drbd - Network block device");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
@@ -1044,6 +1045,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	msg.msg_namelen = 0;
 	msg.msg_flags = MSG_NOSIGNAL;
 
+	/* repeat: */
+
 	if (mdev->conf.timeout) {
 		init_timer(&mdev->s_timeout);
 		mdev->s_timeout.data = (unsigned long) current;
@@ -1066,6 +1069,16 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			sigdelset(&current->signal, DRBD_SIG);
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+
+			/*
+			if (mdev->sock->flags & SO_NOSPACE) {
+				printk(KERN_ERR DEVICE_NAME
+				       "%d: no mem for sock!\n",
+				       (int)(mdev-drbd_conf));
+				goto repeat;
+			}
+			*/
+
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: send timed out!! (pid=%d)\n",
 			       (int)(mdev-drbd_conf),current->pid);
@@ -1090,13 +1103,15 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	return err;
 }
 
-void drbd_set_sock_prio(struct Drbd_Conf *mdev)
+void drbd_setup_sock(struct Drbd_Conf *mdev)
 {
+	/* to prevent oom deadlock... */
+	/* The default allocation priority was GFP_KERNEL */
+	mdev->sock->sk->allocation = GFP_DRBD;
 
 	/*
 	  We could also use TC_PRIO_CONTROL / TC_PRIO_BESTEFFORT
 	*/
-
 	switch(mdev->state) {
 	case Primary: 
 		mdev->sock->sk->priority=TC_PRIO_BULK;
@@ -1297,9 +1312,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		/* Do disk - IO */
 		{
 			struct buffer_head *bh;
-
 			bh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
-
 			if (!bh) {
 				printk(KERN_ERR DEVICE_NAME
 				       "%d: could not kmalloc()\n",minor);
@@ -1461,7 +1474,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		drbd_conf[minor].state = (Drbd_State) arg;
 
 		if (drbd_conf[minor].sock )
-			drbd_set_sock_prio(&drbd_conf[minor]);
+			drbd_setup_sock(&drbd_conf[minor]);
 
 		if (drbd_conf[minor].cstate >= Connected)
 			drbd_send_param(minor);
@@ -1867,7 +1880,10 @@ void drbd_p_timeout(unsigned long arg)
 	       (int)(mdev-drbd_conf));
 
 	set_bit(SEND_POSTPONE,&mdev->flags);
+
 	wake_up_interruptible(&mdev->asender_wait);
+
+
 }
 
 struct socket* drbd_accept(struct socket* sock)
@@ -2070,7 +2086,7 @@ int drbd_connect(int minor)
 
 	drbd_conf[minor].sock = sock;
 
-	drbd_set_sock_prio(&drbd_conf[minor]);
+	drbd_setup_sock(&drbd_conf[minor]);
 
 	drbd_thread_start(&drbd_conf[minor].asender);
 
@@ -2460,15 +2476,25 @@ inline void receive_postpone(int minor)
 	printk(KERN_ERR DEVICE_NAME"%d: got Postpone\n",minor);
 
 	if(timer_pending(&drbd_conf[minor].a_timeout)) {
+		printk(KERN_ERR DEVICE_NAME"%d: ack timeout: %ld\n",minor,
+		       drbd_conf[minor].a_timeout.expires);
 		mod_timer(&drbd_conf[minor].a_timeout,
-			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
-		printk(KERN_ERR DEVICE_NAME"%d: pushing ack timeout\n",minor);
+			  jiffies +
+			  /* drbd_conf[minor].a_timeout.expires + */
+			  drbd_conf[minor].conf.timeout * HZ / 10);
+		printk(KERN_ERR DEVICE_NAME"%d: ack timeout: %ld\n",minor,
+		       drbd_conf[minor].a_timeout.expires);
 	}
 
 	if(timer_pending(&drbd_conf[minor].s_timeout)) {
+		printk(KERN_ERR DEVICE_NAME"%d: send timeout: %ld\n",minor,
+		       drbd_conf[minor].s_timeout.expires);
 		mod_timer(&drbd_conf[minor].s_timeout,
-			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
-		printk(KERN_ERR DEVICE_NAME"%d: pushing send timeout\n",minor);
+			  jiffies +
+			  /* drbd_conf[minor].s_timeout.expires + */
+			  drbd_conf[minor].conf.timeout * HZ / 10);
+		printk(KERN_ERR DEVICE_NAME"%d: send timeout: %ld\n",minor,
+		       drbd_conf[minor].s_timeout.expires);
 	}
 }
 
@@ -2867,9 +2893,23 @@ int drbd_asender(struct Drbd_thread *thi)
 	  }
 
 	  if(test_and_clear_bit(SEND_POSTPONE,&drbd_conf[minor].flags)) {
-		  printk(KERN_ERR DEVICE_NAME
-			 "%d: sending postpone packet!\n", minor);
+		  printk(KERN_ERR DEVICE_NAME"%d: sending postpone packet!\n",
+			 minor);
+
+		  mod_timer(&drbd_conf[minor].p_timeout, jiffies + 
+			    drbd_conf[minor].conf.timeout * HZ / 20);
+
+		  printk(KERN_ERR DEVICE_NAME"%d: expire=%ld now=%ld\n",
+			 minor,drbd_conf[minor].p_timeout.expires,
+			 jiffies);
+		  
+		  if( timer_pending(&drbd_conf[minor].p_timeout)) {
+			  printk(KERN_ERR DEVICE_NAME"%d: p_timeout is act.\n",
+				 minor);
+			  
+		  }
 		  drbd_send_cmd(minor,Postpone);
+
 	  }
 
 	  if( drbd_conf[minor].state == Primary ) {
