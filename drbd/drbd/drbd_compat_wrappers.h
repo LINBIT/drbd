@@ -281,6 +281,11 @@ static inline void drbd_generic_make_request_wait(int rw, struct buffer_head *bh
 	wait_on_buffer(bh);
 }
 
+static inline void drbd_kick_lo(drbd_dev *mdev)
+{
+	run_task_queue(&tq_disk);
+}
+
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 {
 	struct page *page = bh->b_page;
@@ -463,6 +468,11 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 
 static inline void drbd_generic_make_request_wait(int rw, struct bio *bio)
 {
+}
+
+static inline void drbd_kick_lo(drbd_dev *mdev)
+{
+	blk_run_queue(bdev_get_queue(mdev->backing_bdev)); 
 }
 
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)

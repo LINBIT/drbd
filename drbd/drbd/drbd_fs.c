@@ -142,8 +142,8 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	struct file *filp = 0;
 	struct file *filp2 = 0;
 	struct inode *inode;
-	NOT_IN_26(kdev_t ll_dev);
-	ONLY_IN_26(struct block_device *bdev);
+	NOT_IN_26(kdev_t ll_dev;)
+	ONLY_IN_26(struct block_device *bdev;)
 
 	/*
 	if (!capable(CAP_SYS_ADMIN)) //MAYBE: Move this to the drbd_ioctl()

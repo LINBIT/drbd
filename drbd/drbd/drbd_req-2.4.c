@@ -182,11 +182,20 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 			return 0;
 		}
 
-NOT_IN_26(
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 			queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
 		}
-)
+#else
+		spin_lock_irq(q->queue_lock);
+		if(!blk_queue_plugged(q)) {
+			blk_plug_device(q);
+			del_timer(&q->unplug_timer);
+			// unplugging should not happen automatically...
+		}
+		spin_unlock_irq(q->queue_lock);
+#endif
+
 
 		// Fail READA ??
 		if( rw == WRITE ) {

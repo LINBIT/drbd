@@ -942,6 +942,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 STATIC void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (drbd_dev*)data;
@@ -963,8 +964,6 @@ STATIC void drbd_send_write_hint(void *data)
 	   by one of our threads?
 	 */
 
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	for (i = 0; i < minor_count; i++) {
 		if(current == drbd_conf[i].receiver.task) {
 			queue_task(&mdev->write_hint_tq, &tq_disk);
@@ -980,11 +979,33 @@ STATIC void drbd_send_write_hint(void *data)
 			clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 		} else queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
-#else
-# warning "FIXME"
-#endif
-
 }
+#else
+
+STATIC void drbd_send_write_hint(void *data)
+{
+	request_queue_t *q = data;
+	drbd_dev *mdev = q->queuedata;
+	Drbd_Header h;
+
+	/* In order to avoid deadlocks the receiver should only
+	   use blk_run_queue(). It must not use blk_run_queues() to 
+	   avoid deadlocks. 
+	*/
+
+	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,sizeof(h))==1){
+		spin_lock_irq(q->queue_lock);
+		blk_remove_plug(q);
+		spin_unlock_irq(q->queue_lock);
+	} else {
+		if(mdev->cstate < Connected) {
+			spin_lock_irq(q->queue_lock);
+			blk_remove_plug(q);
+			spin_unlock_irq(q->queue_lock);
+		}
+	}
+}
+#endif
 
 void drbd_init_set_defaults(drbd_dev *mdev)
 {
@@ -1263,6 +1284,9 @@ int __init drbd_init(void)
 
 		// THINK do we need this?
 		mdev->this_bdev = bdget(MKDEV(MAJOR_NR,i));
+
+		blk_queue_make_request(q,drbd_make_request);
+		q->unplug_fn = drbd_send_write_hint;
 	}
 #endif
 

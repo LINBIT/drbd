@@ -254,7 +254,7 @@ static inline int _get_ee_cond(struct Drbd_Conf* mdev)
 			if(drbd_alloc_ee(mdev,GFP_TRY)) av = 1;
 		}
 	}
-	NOT_IN_26 ( if(!av) run_task_queue(&tq_disk); )
+	if(!av) drbd_kick_lo(mdev);
 	return av;
 }
 
@@ -267,7 +267,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 
 	if(mdev->ee_vacant == EE_MININUM / 2) {
 		spin_unlock_irq(&mdev->ee_lock);
-		NOT_IN_26( run_task_queue(&tq_disk); )
+		drbd_kick_lo(mdev);
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
@@ -384,7 +384,7 @@ static inline int _wait_ee_cond(struct Drbd_Conf* mdev,struct list_head *head)
 	spin_lock_irq(&mdev->ee_lock);
 	rv = list_empty(head);
 	spin_unlock_irq(&mdev->ee_lock);
-	NOT_IN_26( if(!rv) run_task_queue(&tq_disk);)
+	if(!rv) drbd_kick_lo(mdev);
 	return rv;
 }
 
@@ -755,10 +755,8 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 
 	// DBG("got Barrier\n");
 
-NOT_IN_26(
 	if (mdev->conf.wire_protocol != DRBD_PROT_C)
-		run_task_queue(&tq_disk);
-)
+		drbd_kick_lo(mdev);
 
 	drbd_wait_ee(mdev,&mdev->active_ee);
 
@@ -813,11 +811,9 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	 * This code is only with protocol C relevant.
 	 */
 #define NUMBER 24
-NOT_IN_26(
 	if(atomic_read(&mdev->unacked_cnt) >= NUMBER ) {
-		run_task_queue(&tq_disk);
+		drbd_kick_lo(mdev);
 	}
-)
 #undef NUMBER
 
 	mdev->writ_cnt+=data_size>>9;
@@ -1427,8 +1423,8 @@ STATIC int receive_BecomeSec(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 {
-	NOT_IN_26(run_task_queue(&tq_disk);)
-	return TRUE; // cannot fail, only deadlock :)
+	drbd_kick_lo(mdev);
+	return TRUE; // cannot fail.
 }
 
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);

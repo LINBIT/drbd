@@ -920,39 +920,6 @@ do {									\
 })
 #endif
 
-// the same, without timeout,
-// but with run_task_queue(&tq_disk) just before the schedule()
-// THINK whether we want to be interruptible or not
-#define __wait_disk_event_interruptible(wq, condition)			\
-do {									\
-	wait_queue_t __wait;						\
-	init_waitqueue_entry(&__wait, current);				\
-									\
-	add_wait_queue(&wq, &__wait);					\
-	for (;;) {							\
-		set_current_state(TASK_INTERRUPTIBLE);			\
-		if (condition)						\
-			break;						\
-		if (!signal_pending(current)) {				\
-			run_task_queue(&tq_disk);			\
-			schedule();					\
-			continue;					\
-		}							\
-		ret = -ERESTARTSYS;					\
-		break;							\
-	}								\
-	current->state = TASK_RUNNING;					\
-	remove_wait_queue(&wq, &__wait);				\
-} while (0)
-
-#define wait_disk_event_interruptible(wq, condition)			\
-do {									\
-	if (condition)							\
-		break;							\
-	__wait_disk_event_interruptible(wq, condition);			\
-} while (0)
-
-
 /*
  * inline helper functions
  *************************/
