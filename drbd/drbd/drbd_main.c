@@ -474,9 +474,9 @@ int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd, int via_msock)
 	Drbd_Packet head;
 
 	head.command = cpu_to_be16(cmd);
-	down(&drbd_conf[minor].send_mutex);
+	if(!via_msock) down(&drbd_conf[minor].send_mutex);
 	err = drbd_send(&drbd_conf[minor], &head,sizeof(head),0,0,via_msock);
-	up(&drbd_conf[minor].send_mutex);
+	if(!via_msock) up(&drbd_conf[minor].send_mutex);
 
 	return err;  
 }
@@ -619,10 +619,11 @@ static void drbd_timeout(unsigned long arg)
 {
 	struct send_timer_info *ti = (struct send_timer_info *) arg;
 
-	printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired (pid=%d)\n",
-	       (int)(ti->mdev-drbd_conf),ti->pid);
-
 	if(ti->via_msock) {
+		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
+		       " on msock\n",
+		       (int)(ti->mdev-drbd_conf));
+
 		ti->timeout_happened=1;
 		drbd_queue_signal(DRBD_SIG, ti->pid);
 		if((ti=ti->mdev->send_proc)) {
@@ -630,6 +631,10 @@ static void drbd_timeout(unsigned long arg)
 			drbd_queue_signal(DRBD_SIG, ti->pid);
 		}
 	} else {
+		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
+		       " (pid=%d) requesting ping\n",
+		       (int)(ti->mdev-drbd_conf),ti->pid);
+
 		set_bit(SEND_PING,&ti->mdev->flags);
 		wake_up_interruptible(&ti->mdev->asender_wait);
 		if(ti->restart) {
@@ -698,19 +703,22 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	msg.msg_flags = MSG_NOSIGNAL;
 
 	if (mdev->conf.timeout) {
-		if(!via_msock) mdev->send_proc=&ti;
 		ti.mdev=mdev;
 		ti.timeout_happened=0;
 		ti.via_msock=via_msock;
 		ti.pid=current->pid;
 		ti.restart=1;
+		if(!via_msock) mdev->send_proc=&ti;
 
 		init_timer(&ti.s_timeout);
 		ti.s_timeout.function = drbd_timeout;
 		ti.s_timeout.data = (unsigned long) &ti;
 		ti.s_timeout.expires = jiffies + via_msock ? 
-			(mdev->conf.timeout * HZ / 10) : (mdev->artt*4);
+			(mdev->artt*4) : (mdev->conf.timeout * HZ / 10);
 		add_timer(&ti.s_timeout);
+/*		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg timer armed"
+		"(pid=%d)\n",(int)(mdev-drbd_conf),current->pid); */
+
 	}
 
 	lock_kernel();  //  check if this is still necessary

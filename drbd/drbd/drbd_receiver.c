@@ -1105,6 +1105,10 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
 
+	init_timer(&ping_timeout);
+	ping_timeout.function = drbd_ping_timeout;
+	ping_timeout.data = (unsigned long) mdev;
+
 	while(thi->t_state == Running) {
 	  drbd_double_sleep_on(&mdev->asender_wait,mdev->msock->sk->sleep);
 
@@ -1112,12 +1116,9 @@ int drbd_asender(struct Drbd_thread *thi)
 	  
 	  if(thi->t_state == Exiting) break;
 
-	  if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
+	  if(test_and_clear_bit(SEND_PING,&mdev->flags) && ping_sent_at==0 ) {
 		  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
-		     sizeof(Drbd_Packet) && ping_sent_at==0) {
-			  init_timer(&ping_timeout);
-			  ping_timeout.function = drbd_ping_timeout;
-			  ping_timeout.data = (unsigned long) mdev;
+		     sizeof(Drbd_Packet) ) {
 			  ping_timeout.expires = jiffies + mdev->artt*4;
 			  add_timer(&ping_timeout);
 			  ping_sent_at=jiffies;
