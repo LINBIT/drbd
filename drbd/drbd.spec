@@ -1,6 +1,5 @@
 Name: drbd
 Summary: Distributed Redundant Block Device driver for Linux
-#Version: %(cat Makefile.vars | grep "^REL_VERSION" | gawk '{ print $3 }' | sed 's/-//')
 Version: 0.6.1pre16
 Release: 1
 Source: %{name}-%{version}.tar.gz
@@ -87,11 +86,16 @@ if [ $? -eq 0 ]; then
 	rmmod drbd
 fi
 
-chkconfig --del drbd
+if [ $1 -eq 0 ]; then
+	chkconfig --del drbd
+fi
 
 %postun
 uname -r | grep BOOT || /sbin/depmod -a > /dev/null 2>&1 || true
 
 %changelog
+* Thu Aug 15 2002 Omar Kilani <ok@mailcall.com.au>
+- Do not chkconfig --del on an update.
+
 * Wed Aug 14 2002 Omar Kilani <ok@mailcall.com.au>
 - Initial revision (a very hacked up e1000.spec file)
