@@ -64,6 +64,11 @@ else
     KDIR := /lib/modules/$(shell uname -r)/build
   endif
 
+  KDIR_Makefile_PATCHLEVEL = $(shell grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3 )
+  ifneq ($(findstring $(KDIR_Makefile_PATCHLEVEL),12345),)
+    $(error "won't compile with this kernel version")
+  endif
+
   # shell ls, because some of them may be missing
   # inside a patched kernel source tree
   SRC_FILES := $(shell ls 2>/dev/null\

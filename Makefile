@@ -84,10 +84,14 @@ check_changelogs_up2date:
 	then \
 	   echo "You need to update the %changelog in drbd.spec.in"; \
 	   up2date=false; fi; \
+	if ! grep "^$$dver_re$$" >/dev/null 2>&1 ChangeLog; \
+	then \
+	   echo "You need to update ChangeLog"; \
+	   up2date=false; fi ; \
 	if ! grep "^drbd ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
-	   echo "You need to update debian/changelog"; \
-	   up2date=false; fi ; \
+	   echo -e "\n\n\tdebian/changelog needs some update\n"; \
+	   : do not fail the build because of outdated debian/changelog ; fi ; \
 	$$up2date
 
 # XXX this is newly created whenever the toplevel makefile does something.
@@ -125,8 +129,7 @@ drbd/drbd_buildtag.c:
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
 	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
-	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
-	@echo "./.filelist updated."
+	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
 # so the tgz and therefore rpm target will work within

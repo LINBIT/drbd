@@ -4,6 +4,10 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.8_pre1
+--------
+ * remove all kernel 2.4.x compatibility crap
+
 0.7.4 (api:76/proto:74)
 -----
  * Fixed a critical bug with Linux-2.4.x and HIGHMEM!
