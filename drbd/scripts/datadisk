@@ -62,36 +62,34 @@ case "$OPTION" in
             exit $RETVAL
         fi
 
-	echo SAFE $SAFE
+		setLocal $CONFIG $RESOURCE
 
-	if [ $SAFE != "false" ]; then
-		if [ -e $STATE/"$RESOURCE"_safe ]; then
-			logger -t "datadisk" "Safe mode : It seems that the resource $RESOURCE didn't stop properly"
-			echo "It seems that the node didn't stop properly"
-			ACTION="loop"
+		if [ $SAFE != "false" ]; then
+			if [ -e $STATE/"$RESOURCE"_safe ]; then
+				logger -t "datadisk" "Safe mode : It seems that the resource $RESOURCE didn't stop properly"
+				echo "It seems that the node didn't stop properly"
+				ACTION="loop"
 
-			while [ $ACTION != "c" -a $ACTION != "C" -a $ACTION != "r" -a $ACTION != "R" ]; do
-				read -n 1 -p "Do you want to continue or reboot [C/R] " ACTION
-				echo
-			done
+				while [ $ACTION != "c" -a $ACTION != "C" -a $ACTION != "r" -a $ACTION != "R" ]; do
+					read -n 1 -p "Do you want to continue or reboot [C/R] " ACTION
+					echo
+				done
 
-			if [ $ACTION !="c" -o $ACTION !="C" ]; then
-				logger -t "datadisk" "User requested us to continue"
-			else
-				logger -t "datadisk" "User requested us to reboot the server"
-				/sbin/shutdown -t3 -r now
-				sleep 10
-				echo "Oups, shutdown failed !"
-				logger -t "datadisk" "shutdown is not in /sbin .. exiting."
-				exit 0
+				if [ $ACTION !="c" -o $ACTION !="C" ]; then
+					logger -t "datadisk" "User requested us to continue"
+				else
+					logger -t "datadisk" "User requested us to reboot the server"
+					/sbin/shutdown -t3 -r now
+					sleep 10
+					echo "Oups, shutdown failed !"
+					logger -t "datadisk" "shutdown is not in /sbin .. exiting."
+					exit 0
+				fi
 			fi
+			touch $STATE/"$RESOURCE"_safe
+		else
+			rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
 		fi
-		touch $STATE/"$RESOURCE"_safe
-	else
-		rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
-	fi
-
-        setLocal $CONFIG $RESOURCE
 
 		is_force=`echo "$MODE" | grep -i "force" | wc -l | sed -e"s/ //g"`
 		is_restore=`echo "$MODE" | grep -i "restore" | wc -l | sed -e"s/ //g"`
