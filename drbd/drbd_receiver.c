@@ -1233,6 +1233,12 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 	}
 
 	if( sync ) {
+		if( mdev->peer_uuid != be64_to_cpu(p->uuid) ) {
+			WARN("Peer presented a new UUID -> full sync.\n");
+			mdev->peer_uuid = be64_to_cpu(p->uuid);
+			drbd_bm_set_all(mdev);
+		}
+
 		if(have_good == 1) {
 			D_ASSERT(drbd_md_test_flag(mdev,MDF_Consistent));
 			rv = WFBitMapS;

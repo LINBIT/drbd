@@ -159,6 +159,8 @@ struct md_cpu {
 	 * 0.7 stores la_size on disk as kb, 0.8 in units of sectors.
 	 * we use sectors in our general working structure here */
 	u64 la_sect;		/* last agreed size. */
+	u64 uuid;
+	u64 peer_uuid;
 	u32 md_size;
 	u32 al_offset;		/* offset to this block */
 	u32 al_nr_extents;	/* important for restoring the AL */
@@ -339,19 +341,23 @@ struct __attribute__ ((packed)) al_sector_on_disk {
 
 struct __attribute__ ((packed)) md_on_disk_08 {
 	be_u64 la_sect;		/* last agreed size. */
+	be_u64 uuid;            /* universally unique identifier */
+	be_u64 peer_uuid;       /* universally unique identifier */
 	be_u32 gc[GEN_CNT_SIZE];	/* generation counter */
 	be_u32 magic;
 	be_u32 md_size;
 	be_u32 al_offset;	/* offset to this block */
 	be_u32 al_nr_extents;	/* important for restoring the AL */
 	be_u32 bm_offset;	/* offset to the bitmap, from here */
-	char reserved[8 * 512 - 48];
+	char reserved[8 * 512 - 56];
 };
 
 void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 {
 	int i;
 	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
+	cpu->uuid = be64_to_cpu(disk->uuid.be);
+	cpu->peer_uuid = be64_to_cpu(disk->peer_uuid.be);
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
@@ -365,6 +371,8 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 {
 	int i;
 	disk->la_sect.be = cpu_to_be64(cpu->la_sect);
+	disk->uuid.be  = cpu_to_be64(cpu->uuid);
+	disk->peer_uuid.be  = cpu_to_be64(cpu->peer_uuid);
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
 	disk->magic.be = cpu_to_be32(cpu->magic);
@@ -1016,11 +1024,27 @@ int v08_md_cpu_to_disk(struct format *cfg)
 	return 0;
 }
 
+int get_real_random(void * p, int size)
+{
+	int fd,rv;
+
+	fd = open("/dev/random", O_RDONLY);
+	if(fd == -1) {
+		PERROR("open('/dev/random',O_RDONLY)");
+		exit(20);
+	}
+	rv = size == read(fd,p,size);
+	close(fd);
+	return rv;
+}
+
 int v08_md_initialize(struct format *cfg)
 {
 	u64 al_offset, bm_offset;
 
 	cfg->md.la_sect = 0;
+	get_real_random(&cfg->md.uuid,sizeof(u64));
+	cfg->md.peer_uuid = 0;
 	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
 	cfg->md.gc[TimeoutCnt] = 1;
@@ -1148,12 +1172,19 @@ int meta_dump_md(struct format *cfg, char **argv, int argc)
 	}
 	printf(" }\n");
 
-	if (cfg->ops > f_ops + Drbd_06) {
+	if (cfg->ops >= f_ops + Drbd_07) {
 		printf("la-size-sect %llu;\n", cfg->md.la_sect);
-		printf("# bm-bytes %u;\n", cfg->bm_bytes);	/* informational only */
-		printf("# bits-set %u;\n", cfg->bits_set);	/* informational only */
-		printf
-		    ("# FIXME include offsets, once they are not fixed anymore\n");
+	}
+
+	if (cfg->ops >= f_ops + Drbd_08) {
+		printf("uuid %llX;\n", cfg->md.uuid);
+		printf("peer-uuid %llX;\n", cfg->md.peer_uuid);
+		printf("# FIXME include offsets, once they are not fixed anymore\n");
+	}
+
+	if (cfg->ops >= f_ops + Drbd_07) {
+		printf("# bm-bytes %u;\n", cfg->bm_bytes);
+		printf("# bits-set %u;\n", cfg->bits_set);
 		if (cfg->on_disk.bm)
 			printf_bm((le_u64 *) cfg->on_disk.bm,
 				  cfg->bm_bytes / sizeof(le_u64));
@@ -1175,6 +1206,8 @@ int md_convert_07_to_08(struct format *cfg)
 	 * We only need to adjust the magic here. */
 	printf("Converting meta data...\n");
 	cfg->md.magic = DRBD_MD_MAGIC_08;
+	get_real_random(&cfg->md.uuid,sizeof(u64));
+	cfg->md.peer_uuid = 0;
 	if (cfg->ops->md_cpu_to_disk(cfg)
 	    || cfg->ops->close(cfg)) {
 		fprintf(stderr, "conversion failed\n");

@@ -472,6 +472,7 @@ typedef struct {
 	Drbd_Header head;
 	u64         p_size;  // size of disk
 	u64         u_size;  // user requested size
+	u64         uuid;
 	u32         state;
 	u32         protocol;
 	u32         version;
@@ -687,6 +688,8 @@ struct Drbd_Conf {
 	/* volatile */ drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
 	sector_t la_size;     // last agreed disk size in sectors.
+	u64 uuid;
+	u64 peer_uuid;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;

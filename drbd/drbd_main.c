@@ -844,6 +844,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
 	p.p_size = cpu_to_be64(m_size);
+	p.uuid   = cpu_to_be64(mdev->uuid);
 
 	p.state    = cpu_to_be32(mdev->state.i);
 	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
@@ -2026,6 +2027,8 @@ void drbd_free_resources(drbd_dev *mdev)
 
 struct meta_data_on_disk {
 	u64 la_size;           // last agreed size.
+	u64 uuid;              // universally unique identifier
+	u64 peer_uuid;         // universally unique identifier
 	u32 gc[GEN_CNT_SIZE];  // generation counter
 	u32 magic;
 	u32 md_size;
@@ -2063,6 +2066,9 @@ void drbd_md_write(drbd_dev *mdev)
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
 		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
+	buffer->uuid=cpu_to_be64(mdev->uuid);
+	buffer->peer_uuid=cpu_to_be64(mdev->peer_uuid);
+
 	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
@@ -2134,6 +2140,8 @@ int drbd_md_read(drbd_dev *mdev)
 	for(i=Flags;i<=ArbitraryCnt;i++)
 		mdev->gen_cnt[i]=be32_to_cpu(buffer->gc[i]);
 	mdev->la_size = be64_to_cpu(buffer->la_size);
+	mdev->uuid = be64_to_cpu(buffer->uuid);
+	mdev->peer_uuid = be64_to_cpu(buffer->peer_uuid);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;

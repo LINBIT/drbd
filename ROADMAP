@@ -354,6 +354,11 @@ DRBD 0.8 Roadmap
   are inherited from the common section, if they are not
   defined in a resource section.
 
+13 Introduce a UUID (universally unique identifier) in the
+  meta data. One purpose is to tag the bitmap with this UUID. 
+  If the peer's UUID is different to what we expect we know that 
+  we have to do a full sync....
+
 plus-banches:
 ----------------------
 
