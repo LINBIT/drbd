@@ -518,6 +518,11 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 
 	set_fs(oldfs);
 
+	if(rv != size) {
+		set_cstate(mdev,BrokenPipe);
+		drbd_thread_restart_nowait(&mdev->receiver);
+	}
+
 	return rv;
 }
 
@@ -612,7 +617,7 @@ int drbd_connect(drbd_dev *mdev)
 		if(signal_pending(current)) {
 			drbd_flush_signals(current);
 			smp_rmb();
-			if ((volatile int)mdev->receiver.t_state == Exiting)
+			if (get_t_state(&mdev->receiver) == Exiting)
 				return 0;
 		}
 	}
@@ -1100,21 +1105,21 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {
 		ERR("incompatible states\n");
 		set_cstate(mdev,StandAlone);
-		mdev->receiver.t_state = Exiting;
+		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 
 	if(be32_to_cpu(p->version)!=PRO_VERSION) {
-		ERR("incompatible releases \n");
+		ERR("incompatible releases\n");
 		set_cstate(mdev,StandAlone);
-		mdev->receiver.t_state = Exiting;
+		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 
 	if(be32_to_cpu(p->protocol)!=mdev->conf.wire_protocol) {
-		ERR("incompatible protocols \n");
+		ERR("incompatible protocols\n");
 		set_cstate(mdev,StandAlone);
-		mdev->receiver.t_state = Exiting;
+		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 
@@ -1122,9 +1127,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	if(p_size == 0 && test_bit(DISKLESS,&mdev->flags)) {
 		ERR("some backing storage is needed\n");
-		set_cstate(mdev,Unconfigured);
-		drbd_mdev_cleanup(mdev); // FIXME. Is this valid here ?
-		mdev->receiver.t_state = Exiting;
+		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 	mdev->p_size=p_size;
@@ -1199,12 +1202,9 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				set_cstate(mdev,WFBitMapS);
 			} else { // have_good == -1
 				if (mdev->state == Primary) {
-/*
-	FIXME
-*/
 					ERR("Current Primary shall become sync TARGET! Aborting to prevent data corruption.\n");
 					set_cstate(mdev,StandAlone);
-					mdev->receiver.t_state = Exiting;
+					drbd_thread_stop_nowait(&mdev->receiver);
 					return FALSE;
 				}
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
@@ -1449,17 +1449,7 @@ STATIC void drbdd(drbd_dev *mdev)
 
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
-/*
- * FIXME what if
- * (state == Primary) && !(gen_cnt[Flags] & MDF_Consistent) ??
- * or I am DISKLESS ?
- * we need to *at least* block all IO
- *
- * maybe get a write mutex on mdev ?
- * sort of "suspend" the device, untill either operator, or monitoring
- * software, or load, or whatever, kills the box, OR connection to the
- * good data copy is reestablished.
- */
+	D_ASSERT(mdev->cstate < Connected);
 	mdev->o_state = Unknown;
 	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
@@ -1484,10 +1474,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	up(&mdev->data.mutex);
 
 	drbd_thread_stop(&mdev->worker);
-	drbd_thread_start(&mdev->worker);
-
-	if(mdev->cstate != StandAlone)
-		set_cstate(mdev,Unconnected);
 
 	drbd_fail_pending_reads(mdev);
 	drbd_rs_cancel_all(mdev);
@@ -1506,12 +1492,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	mdev->epoch_size=0;
 
-	if (mdev->state == Primary) {
-		if(!test_bit(DO_NOT_INC_CONCNT,&mdev->flags))
-			drbd_md_inc(mdev,ConnectedCnt);
-		drbd_md_write(mdev);
-	}
-
 	if(atomic_read(&mdev->unacked_cnt)) {
 		ERR("unacked_cnt!=0\n");
 		atomic_set(&mdev->unacked_cnt,0);
@@ -1519,10 +1499,38 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	/* Since syncer's blocks are also counted, there is no hope that
 	   pending_cnt is zero. */
-	atomic_set(&mdev->ap_pending_cnt,0);
-	atomic_set(&mdev->rs_pending_cnt,0);
+	ERR_IF(atomic_read(&mdev->ap_pending_cnt))
+		atomic_set(&mdev->ap_pending_cnt,0);
+	ERR_IF(atomic_read(&mdev->rs_pending_cnt))
+		atomic_set(&mdev->rs_pending_cnt,0);
+
 	wake_up_interruptible(&mdev->cstate_wait);
 
+	if ( mdev->state == Primary &&
+	    ( test_bit(DISKLESS,&mdev->flags)
+	    || !(mdev->gen_cnt[Flags] & MDF_Consistent) ) ) {
+		drbd_panic("Sorry, I have no access to good data anymore.\n");
+	}
+
+	if (get_t_state(&mdev->receiver) == Exiting) {
+		if (test_bit(DISKLESS,&mdev->flags)) {
+			// Secondary
+			set_cstate(mdev,Unconfigured);
+			drbd_mdev_cleanup(mdev);
+		} else {
+			set_cstate(mdev,StandAlone);
+			drbd_thread_start(&mdev->worker);
+		}
+	} else {
+		set_cstate(mdev,Unconnected);
+		drbd_thread_start(&mdev->worker);
+	}
+
+	if (mdev->state == Primary) {
+		if(!test_bit(DO_NOT_INC_CONCNT,&mdev->flags))
+			drbd_md_inc(mdev,ConnectedCnt);
+		drbd_md_write(mdev);
+	}
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 
 	INFO("Connection lost.\n");
@@ -1542,27 +1550,22 @@ int drbdd_init(struct Drbd_thread *thi)
 			WARN("Discarding network configuration.\n");
 			break;
 		}
-		if (thi->t_state == Exiting) break;
+		if (get_t_state(thi) == Exiting) break;
 		drbdd(mdev);
 		drbd_disconnect(mdev);
-		if (thi->t_state == Exiting) break;
+		if (get_t_state(thi) == Exiting) break;
 		else {
 			if (signal_pending(current)) {
 				drbd_flush_signals(current);
-				if (thi->t_state != Restarting)
-					ERR("unexpected thread state: %d\n",
-					    thi->t_state);
 			}
+			spin_lock(&thi->t_lock);
+			D_ASSERT(thi->t_state == Restarting);
 			thi->t_state = Running;
+			spin_unlock(&thi->t_lock);
 		}
 	}
 
 	INFO("receiver exiting\n");
-
-	if(test_bit(DISKLESS,&mdev->flags)) {
-	  	set_cstate(mdev, Unconfigured);
-		drbd_mdev_cleanup(mdev);
-	} else set_cstate(mdev, StandAlone);
 
 	return 0;
 }
@@ -1726,7 +1729,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
 
-	while (thi->t_state == Running) {
+	while (get_t_state(thi) == Running) {
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
 			ERR_IF(!drbd_send_ping(mdev)) goto err;
 			// half ack timeout only,
@@ -1801,6 +1804,8 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	if(0) {
 	err:
+		if (mdev->cstate >= Connected)
+			set_cstate(mdev,NetworkFailure);
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 

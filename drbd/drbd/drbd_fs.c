@@ -468,7 +468,6 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	*/
 
 	drbd_sync_me(mdev);
-	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(mdev);
 
@@ -781,7 +780,7 @@ ONLY_IN_26(
 		/* FIXME what if fsync returns error */
 		drbd_sync_me(mdev);
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->asender);
+		set_cstate(mdev,Unconnected);
 		drbd_thread_stop(&mdev->receiver);
 
 		if (test_bit(DISKLESS,&mdev->flags)) {

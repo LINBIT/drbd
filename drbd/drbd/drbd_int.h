@@ -472,18 +472,30 @@ typedef union {
 /**********************************************************************/
 
 typedef enum {
+	None,
 	Running,
 	Exiting,
 	Restarting
 } Drbd_thread_state;
 
 struct Drbd_thread {
+	spinlock_t t_lock;
 	struct task_struct *task;
-	struct semaphore mutex;
-	volatile Drbd_thread_state t_state;
+	struct completion startstop;
+	Drbd_thread_state t_state;
 	int (*function) (struct Drbd_thread *);
 	drbd_dev *mdev;
 };
+
+static inline Drbd_thread_state get_t_state(struct Drbd_thread *thi)
+{
+	/* THINK testing the t_state seems to be uncritical in all cases
+	 * (but thread_{start,stop}), so we can read it *without* the lock.
+	 * 	--lge */
+
+	smp_rmb();
+	return (volatile int)thi->t_state;
+}
 
 
 /*
@@ -665,7 +677,7 @@ struct Drbd_Conf {
 	unsigned long lo_usize;   /* user provided size */
 	unsigned long p_size;     /* partner's disk size */
 	Drbd_State state;
-	Drbd_CState cstate;
+	volatile Drbd_CState cstate;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
 	Drbd_State o_state;
 	unsigned long int la_size; // last agreed disk size
@@ -1099,7 +1111,7 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 static inline void dec_ap_pending(drbd_dev* mdev, const char* where)
 {
 	if(atomic_dec_and_test(&mdev->ap_pending_cnt))
-		wake_up_interruptible(&mdev->cstate_wait);
+		wake_up(&mdev->cstate_wait);
 
 	if(atomic_read(&mdev->ap_pending_cnt)<0)
 		ERR("in %s: pending_cnt = %d < 0 !\n",
@@ -1171,7 +1183,7 @@ static inline void dec_local(drbd_dev* mdev)
 	if(atomic_dec_and_test(&mdev->local_cnt) && 
 	   test_bit(DISKLESS,&mdev->flags) &&
 	   mdev->lo_file) {
-		wake_up_interruptible(&mdev->cstate_wait);
+		wake_up(&mdev->cstate_wait);
 	}
 
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);

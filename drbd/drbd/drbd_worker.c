@@ -527,7 +527,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	// assert that all bit-map parts are cleared.
 	D_ASSERT(list_empty(&mdev->resync->lru));
-	
+
 	set_cstate(mdev,Connected); // w_resume_next_sg() gets called here.
 	return 1;
 }
@@ -852,26 +852,27 @@ int drbd_worker(struct Drbd_thread *thi)
 		if (intr) {
 			D_ASSERT(intr == -EINTR);
 			drbd_flush_signals(current);
-			if (thi->t_state != Running )
-				break;
-			continue;
+			ERR_IF (get_t_state(thi) == Running)
+				continue;
+			break;
 		}
 
-		if (thi->t_state != Running )
+		ERR_IF (get_t_state(thi) != Running)
 			break;
-		if (need_resched())
-			schedule();
+		
+		// if (need_resched()) schedule();
 
 		w = 0;
 		spin_lock_irq(&mdev->req_lock);
-		if (!list_empty(&mdev->data.work.q)) {
-			w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
-			list_del_init(&w->list);
-		}
+		D_ASSERT(!list_empty(&mdev->data.work.q));
+		w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
+		list_del_init(&w->list);
 		spin_unlock_irq(&mdev->req_lock);
 
 		if(!w->cb(mdev,w, mdev->cstate < Connected )) {
 			ERR("worker: a callback failed! \n");
+			if (mdev->cstate >= Connected)
+				set_cstate(mdev,NetworkFailure);
 			drbd_thread_restart_nowait(&mdev->receiver);
 		}
 	}

@@ -156,6 +156,7 @@ typedef enum {
 	Unconnected,
 	Timeout,
 	BrokenPipe,
+	NetworkFailure,
 	WFConnection,
 	WFReportParams, // we have a socket
 	Connected,      // we have introduced each other

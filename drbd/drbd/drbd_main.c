@@ -390,7 +390,7 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	os = mdev->cstate;
 	mdev->cstate = ns;
 	smp_mb();
-	wake_up_interruptible(&mdev->cstate_wait);
+	wake_up(&mdev->cstate_wait);
 
 	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
@@ -405,21 +405,25 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 STATIC int drbd_thread_setup(void* arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
+	drbd_dev *mdev = thi->mdev;
 	int retval;
 
 	drbd_daemonize();
-	down(&thi->mutex); //ensures that thi->task is set.
+	D_ASSERT(get_t_state(thi) == Running);
+	D_ASSERT(thi->task == NULL);
+	thi->task = current;
+	smp_mb();
+	complete(&thi->startstop); // notify: thi->task is set.
 
 	retval = thi->function(thi);
 
+	spin_lock(&thi->t_lock);
 	thi->task = 0;
+	D_ASSERT(thi->t_state == Exiting);
+	spin_unlock(&thi->t_lock);
 
-	/* propagate task == NULL to other CPUs */
-	smp_mb();         // necessary?
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(1);
-
-	up(&thi->mutex); //allow thread_stop to proceed
+	// THINK maybe two different completions?
+	complete(&thi->startstop); // notify: thi->task unset.
 
 	return retval;
 }
@@ -427,8 +431,11 @@ STATIC int drbd_thread_setup(void* arg)
 STATIC void drbd_thread_init(drbd_dev *mdev, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
-	thi->task = NULL;
-	init_MUTEX(&thi->mutex);
+	thi->t_lock  = SPIN_LOCK_UNLOCKED;
+	thi->task    = NULL;
+	thi->t_state = None;
+	init_completion(&thi->startstop);
+
 	thi->function = func;
 	thi->mdev = mdev;
 }
@@ -438,53 +445,65 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	int pid;
 	drbd_dev *mdev = thi->mdev;
 
-	if (thi->task == NULL) {
+	spin_lock(&thi->t_lock);
+	if (thi->t_state == None) {
+		D_ASSERT(thi->task == NULL);
+		// XXX D_ASSERT( thi->startstop something ? )
 		thi->t_state = Running;
+		spin_unlock(&thi->t_lock);
 
-		down(&thi->mutex);
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
-
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
 			return;
 		}
-		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
-		read_lock(&tasklist_lock);
-		thi->task = find_task_by_pid(pid);
-		read_unlock(&tasklist_lock);
-		up(&thi->mutex);
+		wait_for_completion(&thi->startstop); // waits until thi->task is set
+	} else {
+		spin_unlock(&thi->t_lock);
 	}
 }
 
 
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
-	if (!thi->task) return;
-	/* test on ->state useless now since we use reparent_to_init */
-	if (thi->task->state == -1
-	    || thi->task->state == TASK_ZOMBIE
-	    || thi->task->flags & PF_EXITING   ) {
-		// unexpected death... clean up.
-		init_MUTEX(&thi->mutex);
-		thi->task = NULL;
+	drbd_dev *mdev = thi->mdev;
+
+	Drbd_thread_state ns = restart ? Restarting : Exiting;
+	spin_lock(&thi->t_lock);
+	if (thi->t_state == None) {
+		spin_unlock(&thi->t_lock);
 		return;
 	}
 
-	if (restart)
-		thi->t_state = Restarting;
-	else
-		thi->t_state = Exiting;
+	if (thi->t_state != ns) {
+		ERR_IF (thi->task == NULL) {
+			spin_unlock(&thi->t_lock);
+			return;
+		}
 
-	smp_mb(); /* should not be necessary, since the next
-		     instruction is spinlock, but anyways */
-	force_sig(DRBD_SIGKILL,thi->task);
+		if (ns == Restarting && thi->t_state == Exiting) {
+			// Already Exiting. Cannot restart!
+			spin_unlock(&thi->t_lock);
+			return;
+		}
 
-	if(wait) {
-		down(&thi->mutex); // wait until thread has exited
-		up(&thi->mutex);
+		thi->t_state = ns;
+		smp_mb();
+		if (thi->task != current)
+			force_sig(DRBD_SIGKILL,thi->task);
+		else
+			D_ASSERT(!wait);
 
-		current->state = TASK_INTERRUPTIBLE;
-		schedule_timeout(HZ / 10);
+	}
+	spin_unlock(&thi->t_lock);
+
+	if (wait) {
+		D_ASSERT(thi->t_state == Exiting);
+		wait_for_completion(&thi->startstop);
+		spin_lock(&thi->t_lock);
+		thi->t_state = None;
+		D_ASSERT(thi->task == NULL);
+		spin_unlock(&thi->t_lock);
 	}
 }
 
@@ -1289,9 +1308,8 @@ static void __exit drbd_cleanup(void)
 				up(&mdev->device_mutex);
 				drbd_sync_me(mdev);
 				set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-				drbd_thread_stop(&mdev->worker);
 				drbd_thread_stop(&mdev->receiver);
-				drbd_thread_stop(&mdev->asender);
+				drbd_thread_stop(&mdev->worker);
 			}
 		}
 
