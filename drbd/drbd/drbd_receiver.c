@@ -137,53 +137,6 @@ STATIC inline int is_syncer_blk(drbd_dev *mdev, u64 block_id)
 }
 #endif //PARANOIA
 
-STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
-{
-	/* This callback will be called in irq context by the IDE drivers,
-	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
-	   Try to get the locking right :) */
-  //	int wake_asender=0;
-	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
-	struct Drbd_Conf* mdev;
-
-	mdev=bh->b_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	e = container_of(bh,struct Tl_epoch_entry,pbh);
-	PARANOIA_BUG_ON(!VALID_POINTER(e));
-	D_ASSERT(e->block_id != ID_VACANT);
-
-	spin_lock_irqsave(&mdev->ee_lock,flags);
-
-	mark_buffer_uptodate(bh, uptodate);
-
-	clear_bit(BH_Dirty, &bh->b_state);
-	clear_bit(BH_Lock, &bh->b_state);
-	smp_mb__after_clear_bit();
-
-	list_del(&e->w.list);
-	list_add(&e->w.list,&mdev->done_ee);
-
-	if (waitqueue_active(&mdev->ee_wait) &&
-	    (list_empty(&mdev->active_ee) ||
-	     list_empty(&mdev->sync_ee)))
-		wake_up(&mdev->ee_wait);
-
-	//	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-	//	   e->block_id == ID_SYNCER ) wake_asender=1;
-
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
-
-	if( mdev->do_panic && !uptodate) {
-		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
-
-	//	if(wake_asender) {
-	wake_asender(mdev);
-	//	}
-}
-
 /*
 You need to hold the ee_lock:
  drbd_free_ee()
@@ -209,17 +162,16 @@ STATIC int _drbd_alloc_ee(drbd_dev *mdev,struct page* page,int mask)
 	e = kmem_cache_alloc(drbd_ee_cache, mask);
 	if( e == NULL ) return FALSE;
 
-	drbd_init_bh(&e->pbh, BM_BLOCK_SIZE); // BM_BLOCK_SIZE == PAGE_SIZE !
-	set_bh_page(&e->pbh,page,0);          // sets b_data and b_page
+	// BM_BLOCK_SIZE == PAGE_SIZE ! FIXME not necessarily on all arch!!
+	drbd_init_bio(&e->private_bio, BM_BLOCK_SIZE);
+	drbd_bio_add_page(&e->private_bio,page,0);     // sets b_data and b_page
 
 	e->block_id = ID_VACANT;
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->free_ee);
 	mdev->ee_vacant++;
 	spin_unlock_irq(&mdev->ee_lock);
-	
-	e->pbh.b_this_page=&e->pbh;
-	
+
 	return TRUE;
 }
 
@@ -235,7 +187,7 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 		__free_page(page);
 		return FALSE;
 	}
-	  
+
 	return TRUE;
 }
 
@@ -252,12 +204,12 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	e = list_entry(le, struct Tl_epoch_entry, w.list);
 	list_del(le);
 
-	page = e->pbh.b_page;
+	page = drbd_bio_get_page(&e->private_bio);
 	kmem_cache_free(drbd_ee_cache, e);
 	mdev->ee_vacant--;
-	
+
 	return page;
-}	
+}
 
 void drbd_init_ee(drbd_dev *mdev)
 {
@@ -813,39 +765,28 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 }
 
 STATIC struct Tl_epoch_entry *
-read_in_block(drbd_dev *mdev,int data_size)
+read_in_block(drbd_dev *mdev, int data_size)
 {
 	struct Tl_epoch_entry *e;
-	struct buffer_head *bh;
+	drbd_bio_t *bio;
 	int rr;
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
 	spin_unlock_irq(&mdev->ee_lock);
-	bh=&e->pbh;
 
-	rr=drbd_recv(mdev,mdev->data.socket,bh_kmap(bh),data_size);
-	bh_kunmap(bh);
+	bio = &e->private_bio;
+
+	rr=drbd_recv(mdev,mdev->data.socket, drbd_bio_kmap(bio), data_size);
+	drbd_bio_kunmap(bio);
 
 	if ( rr != data_size) {
-		clear_bit(BH_Lock, &bh->b_state);
+		clear_bit(BH_Lock, &bio->b_state);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
 		return 0;
 	}
-
-	/* do not use mark_buffer_dirty() since it would call refile_buffer()*/
-	set_bit(BH_Dirty, &bh->b_state);
-	set_bit(BH_Lock, &bh->b_state); // since using generic_make_request()
-
-	/* MAYBE: set_bit(BH_Sync, &bh->b_state);
-	 * at least for A&B
-	 * see drivers/block/ll_rw_blk.c, __make_request:
-	 * would unplug the request queue for every single request, so
-	 * we won't need to run_task_queue(&tq_disk) ...
-	 */
-	bh->b_end_io = drbd_dio_end_sec;
 	mdev->recv_cnt+=data_size>>9;
 
 	return e;
@@ -870,20 +811,20 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 		    sector_t sector, int data_size)
 {
-	struct buffer_head *bh;
+	drbd_bio_t *bio;
 	int ok,rr;
 
 	// DBG("%s\n", __func__);
 
-	bh = pr->d.bh;
+	bio = pr->d.master_bio;
 
-	D_ASSERT( sector == APP_BH_SECTOR(bh) );
+	D_ASSERT( sector == APP_BH_SECTOR(bio) );
 
-	rr=drbd_recv(mdev,mdev->data.socket,bh_kmap(bh),data_size);
-	bh_kunmap(bh);
+	rr=drbd_recv(mdev,mdev->data.socket,drbd_bio_kmap(bio),data_size);
+	drbd_bio_kunmap(bio);
 
 	ok=(rr==data_size);
-	bh->b_end_io(bh,ok);
+	drbd_bio_endio(bio,ok);
 
 	dec_ap_pending(mdev,HERE);
 	return ok;
@@ -892,7 +833,9 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	drbd_set_in_sync(mdev,e->pbh.b_blocknr,e->pbh.b_size);
+	drbd_set_in_sync(mdev,
+			 drbd_ee_get_sector(e),
+			 drbd_ee_get_size(e));
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
 	return TRUE;
@@ -909,7 +852,8 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
-	drbd_set_bh(mdev, &e->pbh, sector ,data_size);
+
+	drbd_ee_prepare_write(mdev,e,sector,data_size);
 	e->block_id = ID_SYNCER;
 	e->w.cb     = e_end_resync_block;
 
@@ -920,7 +864,7 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	dec_rs_pending(mdev,HERE);
 	inc_unacked(mdev);
 
-	generic_make_request(WRITE,&e->pbh);
+	drbd_generic_make_request(WRITE,&e->private_bio);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -932,35 +876,35 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
  * serialize app and resync requests.
  * yes, I think even app READS should be serialized, or made independent of,
  * resync requests
+ * at least they only make sense for aligned (size == BM_BLOCK_SIZE)
  */
-
 int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 		   sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
-	struct buffer_head *bh;
+	drbd_bio_t *bio;
 
 	ERR("should not happen anymore%s\n", __func__);
 
-	bh = pr->d.bh;
+	bio = pr->d.master_bio;
 
-	D_ASSERT( sector == bh->b_blocknr * (bh->b_size >> 9) );
+	D_ASSERT( sector == APP_BH_SECTOR(bio) );
 
 	e = read_in_block(mdev,data_size);
 
-	if(!e) {
-		bh->b_end_io(bh,0);
+	if (!e) {
+		drbd_bio_IO_error(bio);
 		return FALSE;
 	}
 
 	// XXX can't we share it somehow?
-	memcpy(bh_kmap(bh),bh_kmap(&e->pbh),data_size);
-	bh_kunmap(bh);
-	bh_kunmap(&e->pbh);
+	memcpy(drbd_bio_kmap(bio),drbd_bio_kmap(&e->private_bio),data_size);
+	drbd_bio_kunmap(bio);
+	drbd_bio_kunmap(&e->private_bio);
 
-	bh->b_end_io(bh,1);
+	drbd_bio_endio(bio,1); // propagate success for application read
 
-	drbd_set_bh(mdev, &e->pbh, sector, data_size);
+	drbd_ee_prepare_write(mdev, e, sector, data_size);
 	e->block_id = ID_SYNCER;
 	e->w.cb     = e_end_resync_block;
 
@@ -972,7 +916,7 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	dec_ap_pending(mdev,HERE);
 	inc_unacked(mdev);
 
-	generic_make_request(WRITE,&e->pbh);
+	drbd_generic_make_request(WRITE,&e->private_bio);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -989,7 +933,8 @@ int recv_discard(drbd_dev *mdev, struct Pending_read *pr /* ignored */,
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
 
-	drbd_set_bh(mdev, &e->pbh, sector ,data_size);
+	// needed to correctly set the ee members for drbd_send_ack
+	drbd_ee_prepare_write(mdev, e, sector ,data_size);
 	drbd_send_ack(mdev,WriteAck,e);
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -1061,8 +1006,9 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if( mdev->cstate > Connected ) {
-			drbd_set_in_sync(mdev,e->pbh.b_blocknr,
-					 e->pbh.b_size);
+			drbd_set_in_sync(mdev
+			,	drbd_ee_get_sector(e)
+			,	drbd_ee_get_size(e));
 		}
 		ok=drbd_send_ack(mdev,WriteAck,e);
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
@@ -1100,7 +1046,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
 
-	drbd_set_bh(mdev, &e->pbh, sector, data_size);
+	drbd_ee_prepare_write(mdev, e, sector, data_size);
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
 	e->w.cb     = e_end_block;
 
@@ -1120,7 +1066,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
-	generic_make_request(WRITE,&e->pbh);
+	drbd_generic_make_request(WRITE,&e->private_bio);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1143,7 +1089,8 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
-	drbd_set_bh(mdev, &e->pbh, sector, data_size);
+	// can we move it outside the lock?
+	drbd_ee_prepare_read(mdev,e,sector,data_size);
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
@@ -1165,13 +1112,11 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		D_ASSERT(0);
 	}
 
-	clear_bit(BH_Uptodate, &e->pbh.b_state);
-	set_bit(BH_Lock, &e->pbh.b_state);
-	e->pbh.b_end_io = enslaved_read_bh_end_io;
-
-	mdev->read_cnt += e->pbh.b_size >> 9;
+	// FIXME do statistics here, or better within the end_io handler ?
+	// what about concurrent access to *_cnt ?
+	mdev->read_cnt += data_size >> 9;
 	inc_unacked(mdev);
-	generic_make_request(READ,&e->pbh);
+	drbd_generic_make_request(READ,&e->private_bio);
 
 	return TRUE;
 }
@@ -1206,7 +1151,6 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
-	int minor=(int)(mdev-drbd_conf);
 	int no_sync=0;
 	int oo_state;
 	unsigned long p_size;
@@ -1271,7 +1215,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	no_sync=drbd_determin_dev_size(mdev);
 
-	if( blk_size[MAJOR_NR][minor] == 0) {
+	if( drbd_get_my_capacity(mdev) == 0) {
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
@@ -1393,7 +1337,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
 	struct Pending_read *pr;
 	struct list_head workset,*le;
-	struct buffer_head *bh;
+	drbd_bio_t *bio;
 
 	spin_lock(&mdev->pr_lock);
 	list_add(&workset,&mdev->app_reads);
@@ -1404,10 +1348,11 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 	while(!list_empty(&workset)) {
 		le = workset.next;
 		pr = list_entry(le, struct Pending_read, w.list);
-		bh = pr->d.bh;
 		list_del(le);
 
-		bh->b_end_io(bh,0);
+		bio = pr->d.master_bio;
+		drbd_bio_IO_error(bio);
+
 		switch(pr->cause) {
 		case Application:
 			dec_ap_pending(mdev,HERE);
@@ -1463,7 +1408,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	ERR_IF(!mdev->mbds_id)
 		return FALSE;
 	bm_fill_bm(mdev->mbds_id,-1);
-	mdev->rs_total = blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1;
+	mdev->rs_total = drbd_get_my_capacity(mdev);
 	drbd_write_bm(mdev);
 	drbd_start_resync(mdev,SyncTarget);
 	return TRUE; // cannot fail ?
@@ -1472,7 +1417,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
 	bm_fill_bm(mdev->mbds_id,-1);
-	mdev->rs_total = blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1;
+	mdev->rs_total = drbd_get_my_capacity(mdev);
 	drbd_write_bm(mdev);
 	drbd_start_resync(mdev,SyncSource);
 	return TRUE; // cannot fail ?
@@ -1679,7 +1624,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
-	
+
 	if( is_syncer_blk(mdev,p->block_id)) {
 		drbd_set_in_sync(mdev,sector,blksize);
 	} else {

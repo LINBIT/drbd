@@ -50,6 +50,7 @@
 #include <linux/blkpg.h>
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 {
        struct super_block *sb;
@@ -65,8 +66,15 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
        drop_super(sb);
        return MountedRW;
 }
+#endif
 
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
+/*
+ * THINK do we want the size to be KB or sectors ?
+ * note, *_capacity operates in 512 byte sectors!!
+ *
+ * currently *_size is in KB.
+ */
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
 	unsigned long p_size = mdev->p_size;  // partner's disk size.
@@ -74,13 +82,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	unsigned long m_size; // my size
 	unsigned long u_size = mdev->lo_usize; // size requested by user.
 	unsigned long size=0;
-	kdev_t ll_dev = mdev->lo_device;
-	int rv,minor=(int)(mdev-drbd_conf);
+	int rv;
 
-	m_size = ll_dev ? blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] : 0;
+	m_size = drbd_get_lo_capacity(mdev)>>1;
 
-	if( mdev->md_index == -1 && m_size) {// internal metadata
-		m_size = m_size - MD_RESERVED_SIZE;
+	if (mdev->md_index == -1 && m_size) {// internal metadata
+		D_ASSERT(m_size > MD_RESERVED_SIZE);
+		m_size = drbd_md_ss(mdev)>>1;
 	}
 
 	if(p_size && m_size) {
@@ -111,13 +119,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		}
 	}
 
-	if( blk_size[MAJOR_NR][minor] != size ) {
+	if( drbd_get_my_capacity(mdev) != size ) {
 		if(bm_resize(mdev->mbds_id,size)) {
-			blk_size[MAJOR_NR][minor] = size;
+			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
 			INFO("size = %lu KB\n",size);
 		}
-		// FIXME else { error handling }
+#warning "FIXME else { error handling }"
 	}
 
 	return rv;
@@ -127,13 +135,15 @@ STATIC
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
-	int err,i,minor;
+	int err,i; // unused in 26 ?? cannot believe it ...
+	int minor;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
 	struct file *filp2 = 0;
 	struct inode *inode;
-	kdev_t ll_dev;
+	NOT_IN_26(kdev_t ll_dev);
+	ONLY_IN_26(struct block_device *bdev);
 
 	/*
 	if (!capable(CAP_SYS_ADMIN)) //MAYBE: Move this to the drbd_ioctl()
@@ -156,17 +166,27 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	inode = filp->f_dentry->d_inode;
 
+	if (!S_ISBLK(inode->i_mode)) {
+		retcode=LDNoBlockDev;
+		goto fail_ioctl;
+	}
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
+	bdev = inode->i_bdev;
+	if (bd_claim(bdev, &mdev)) {
+		retcode=LDMounted;
+		goto fail_ioctl;
+	}
+#warning "FIXME sync ll-dev, check size"
+#warning "FIXME meta-device"
+	mdev->backing_device = bdev;
+#else
 	for(i=0;i<minor_count;i++) {
 		if( i != minor &&
 		    inode->i_rdev == drbd_conf[i].lo_device) {
 			retcode=LDAlreadyInUse;
 			goto fail_ioctl;
 		}
-	}
-
-	if (!S_ISBLK(inode->i_mode)) {
-		retcode=LDNoBlockDev;
-		goto fail_ioctl;
 	}
 
 	if (drbd_is_mounted(inode->i_rdev)) {
@@ -185,7 +205,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	ll_dev = inode->i_rdev;
 
-	if (blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] < new_conf.disk_size) {
+	if ((drbd_get_lo_capacity(mdev)>>1) < new_conf.disk_size) {
 		retcode = LDDeviceTooSmall;
 		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
 		goto fail_ioctl;
@@ -215,17 +235,19 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	}
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
+#endif
+
 	drbd_thread_stop(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_resources(mdev);
 
-	mdev->md_device = inode->i_rdev;
-	mdev->md_file = filp2;
+	NOT_IN_26( mdev->md_device = inode->i_rdev; )
+	mdev->md_file  = filp2;
 	mdev->md_index = new_conf.meta_index;
 
-	mdev->lo_device = ll_dev;
-	mdev->lo_file = filp;
+	NOT_IN_26( mdev->lo_device = ll_dev; )
+	mdev->lo_file  = filp;
 	mdev->lo_usize = new_conf.disk_size;
 	mdev->do_panic = new_conf.do_panic;
 
@@ -258,6 +280,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		drbd_al_to_on_disk_bm(mdev);
 	}
 
+#warning "FIXME introduce drbd_set_blocksize"
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
 
@@ -277,6 +300,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 {
 	struct ioctl_get_config cn;
 
+#warning "FIXME make 26 clean, maybe move to compat layer?"
 	cn.cstate=mdev->cstate;
 	cn.lower_device_major=MAJOR(mdev->lo_device);
 	cn.lower_device_minor=MINOR(mdev->lo_device);
@@ -354,8 +378,9 @@ FIXME
 	 * XXX maybe rather store the value scaled to jiffies?
 	 * Note: MAX_SCHEDULE_TIMEOUT/HZ*HZ != MAX_SCHEDULE_TIMEOUT
 	 *       and HZ > 10; which is unlikely to change...
-	 *       Thus, if interrupted by a signal, or the timeout,
-	 *       sock_{send,recv}msg returns -EINTR.
+	 *       Thus, if interrupted by a signal,
+	 *       sock_{send,recv}msg returns -EINTR,
+	 *       if the timeout expires, -EAGAIN.
 	 */
 	// unlikely: someone disabled the timeouts ...
 	// just put some huge values in there.
@@ -521,12 +546,12 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	 */
 	switch (cmd) {
 	case BLKGETSIZE:
-		err = put_user(blk_size[MAJOR_NR][minor]<<1, (long *)arg);
+		err = put_user(drbd_get_my_capacity(mdev), (long *)arg);
 		break;
 
 #ifdef BLKGETSIZE64
 	case BLKGETSIZE64: /* see ./drivers/block/loop.c */
-		err = put_user((u64)blk_size[MAJOR_NR][minor]<<10, (u64*)arg);
+		err = put_user((u64)drbd_get_my_capacity(mdev)<<9, (u64*)arg);
 		break;
 #endif
 
@@ -608,7 +633,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_free_resources(mdev);
 		if (mdev->mbds_id) {
 			bm_resize(mdev->mbds_id,0);
-			blk_size[MAJOR_NR][minor] = 0;
+			drbd_set_my_capacity(mdev,0);
 		}
 
 		set_cstate(mdev,Unconfigured);
@@ -667,7 +692,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 
 		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
+		mdev->rs_total = drbd_get_my_capacity(mdev);
 		drbd_write_bm(mdev);
 		drbd_send_short_cmd(mdev,BecomeSyncSource);
 		drbd_start_resync(mdev,SyncTarget);
@@ -680,7 +705,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 
 		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
+		mdev->rs_total = drbd_get_my_capacity(mdev);
 		drbd_write_bm(mdev);
 		drbd_send_short_cmd(mdev,BecomeSyncTarget);
 		drbd_start_resync(mdev,SyncSource);

@@ -42,7 +42,7 @@ extern int disable_io_hints;
    left on all_requests...
    look out for NBD_MAJOR in ll_rw_blk.c */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 /*lge: this hack is to get rid of the compiler warnings about
  * 'do_nbd_request declared static but never defined'
  * whilst forcing blk.h defines on
@@ -102,11 +102,11 @@ typedef struct Drbd_Conf drbd_dev;
  *************************/
 
 // handy macro: DUMPP(somepointer)
-#define DUMPP(A) ERR( #A " = %p in %s:%d\n",(A),__FILE__,__LINE__);
-#define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPP(A)   ERR( #A " = %p in %s:%d\n",  (A),__FILE__,__LINE__);
+#define DUMPLU(A)  ERR( #A " = %lu in %s:%d\n", (A),__FILE__,__LINE__);
 #define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n",(A),__FILE__,__LINE__);
-#define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
-#define DUMPI(A) ERR( #A " = %d in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLX(A)  ERR( #A " = %lx in %s:%d\n", (A),__FILE__,__LINE__);
+#define DUMPI(A)   ERR( #A " = %d in %s:%d\n",  (A),__FILE__,__LINE__);
 
 
 // Info: do not remove the spaces around the "," before ##
@@ -160,46 +160,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
  * Compatibility Section
  *************************/
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-typedef unsigned long sector_t;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)
-#define completion semaphore
-#define init_completion(A) init_MUTEX_LOCKED(A)
-#define wait_for_completion(A) down(A)
-#define complete(A) up(A)
-#else
-#include <linux/completion.h>
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
-#define min_t(type,x,y) \
-	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
-#define max_t(type,x,y) \
-	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
-#define MODULE_LICENSE(L)
-#endif
-
-#if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
-#define bh_kmap(bh)	((bh)->b_data)
-#define bh_kunmap(bh)	do { } while (0)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
-#define BH_Launder BH_launder
-#endif
-
-#ifndef list_for_each
-#define list_for_each(pos, head) \
-	for(pos = (head)->next; pos != (head); pos = pos->next)
-#endif
-
-#if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
-#else
-# define MUST_HOLD(lock)
-#endif
+#include "drbd_compat_types.h"
 
 #ifdef SIGHAND_HACK
 # define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sighand->siglock, flags)
@@ -232,14 +193,8 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 })
 #endif
 
-// THINK: x->magic = &x; ??
-#define SET_MAGIC(x) ((x)->magic = (int)(x) ^ DRBD_MAGIC)
-// For some optimization crap, please test for NULL explicitly,
-//	and not in this macro!
-// #define VALID_POINTER(x) ((x) && (x)->magic == DRBD_MAGIC)
-// #define VALID_POINTER(x) ((x)->magic == DRBD_MAGIC)
-// hopefully this works:
-#define VALID_POINTER(x) ((x) ? (((x)->magic ^ DRBD_MAGIC) == (int)(x)):0)
+#define SET_MAGIC(x)       ((x)->magic = (int)(x) ^ DRBD_MAGIC)
+#define VALID_POINTER(x)   ((x) ? (((x)->magic ^ DRBD_MAGIC) == (int)(x)):0)
 #define INVALIDATE_MAGIC(x) (x->magic--)
 
 #define SET_MDEV_MAGIC(x) \
@@ -251,18 +206,15 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 
 
 /*
- * GFP_DRBD is used for allocations inside drbd_do_request.
+ * GFP_DRBD is used for allocations inside drbd_make_request,
+ * and for the sk->allocation scheme.
  *
- * 2.4 kernels will probably remove the __GFP_IO check in the VM code,
- * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER
- * flag to avoid __GFP_IO, thus avoiding the use of the atomic queue and
- *  avoiding the deadlock.
+ * Try to get away with GFP_NOIO, which is
+ * in 2.4.x:	(__GFP_HIGH | __GFP_WAIT) // HIGH == EMERGENCY, not HIGHMEM!
+ * in 2.6.x:	             (__GFP_WAIT)
  *
- * - marcelo
- *
- * try to get away with GFP_NOIO, which is (GFP_ATOMIC | __GFP_WAIT)
- * as far as i can see we do not allocate from interrupt context...
- * needs to be tested under memory pressure, though.
+ * As far as i can see we do not allocate from interrupt context...
+ * if we do, we certainly should fix that.
  * - lge
  */
 #define GFP_DRBD GFP_NOIO
@@ -382,6 +334,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 	default              : return "Unknown";
 	}
 }
+
 
 /* This is the layout for a packet on the wire.
  * The byteorder is the network byte order.
@@ -538,8 +491,8 @@ struct drbd_request {
 	int magic;
 	int rq_status;
 	struct drbd_barrier *barrier; // The next barrier.
-	struct buffer_head *bh;       // master buffer head pointer
-	struct buffer_head  pbh;      // private buffer head struct
+	drbd_bio_t *master_bio;       // master bio pointer
+	drbd_bio_t private_bio;       // private bio struct
 };
 
 struct drbd_barrier {
@@ -570,12 +523,12 @@ typedef struct drbd_request drbd_request_t;
  * TODO
  * I'd like to "drop" the free list altogether, since we use mempools, which
  * are designed for this. We probably would still need a private "page pool"
- * to set the bh.b_page from.
+ * to do the "bio_add_page" from.
  *	-lge
  */
 struct Tl_epoch_entry {
 	struct drbd_work    w;
-	struct buffer_head  pbh; // private buffer head struct, NOT a pointer
+	drbd_bio_t private_bio; // private bio struct, NOT a pointer
 	u64    block_id;
 	int magic;
 };
@@ -584,7 +537,7 @@ struct Pending_read {
 	struct drbd_work w;
 	int magic;
 	union {
-		struct buffer_head* bh;
+		drbd_bio_t *master_bio;
 		sector_t sector;
 	} d;
 	enum {
@@ -671,9 +624,17 @@ struct Drbd_Conf {
 	volatile unsigned long last_received; // in jiffies, either socket
 	struct drbd_work  resync_work;
 	struct timer_list resync_timer;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	kdev_t lo_device;         // backing device
-	struct file *lo_file;
 	kdev_t md_device;         // device for meta-data.
+#else
+	struct block_device *backing_bdev;
+	struct block_device *md_bdev;
+	struct gendisk      *vdisk;
+	request_queue_t     *rq_queue;
+#endif
+	// THINK is this the same in 2.6.x ??
+	struct file *lo_file;
 	struct file *md_file;
 	int md_index;
 	unsigned long lo_usize;   /* user provided size */
@@ -727,8 +688,8 @@ struct Drbd_Conf {
 	int ee_in_use;
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
-	struct tq_struct write_hint_tq;
-	struct buffer_head md_io_bh; // a (one page) Byte buffer for md_io
+	NOT_IN_26(struct tq_struct write_hint_tq);
+	drbd_bio_t md_io_bio; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
@@ -764,6 +725,8 @@ extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			 struct Tl_epoch_entry *e);
+extern int _drbd_send_page(drbd_dev *mdev, struct page *page,
+			   int offset, size_t size);
 extern int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			   struct Tl_epoch_entry *e);
 extern int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req);
@@ -775,7 +738,6 @@ extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 extern int drbd_send_bitmap(drbd_dev *mdev);
 
 // drbd_meta-data.c (still in drbd_main.c)
-extern void drbd_generic_end_io(struct buffer_head *bh, int uptodate);
 extern void drbd_md_write(drbd_dev *mdev);
 extern void drbd_md_read(drbd_dev *mdev);
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
@@ -807,21 +769,6 @@ extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 #define MD_AL_OFFSET 8      // 8 Sectors after start of meta area
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
-
-/* Returns the number of kb of a block device. */
-static inline unsigned long capacity(kdev_t dev) {
-	return blk_size[MAJOR(dev)][MINOR(dev)];
-}
-
-/* Returns the start sector for metadata */
-static inline sector_t drbd_md_ss(drbd_dev *mdev) {
-	if( mdev->md_index == -1 ) {
-		return ( (capacity(mdev->lo_device) & ~3L) -
-			 MD_RESERVED_SIZE ) * 2;
-	} else {
-		return 2 * MD_RESERVED_SIZE * mdev->md_index;
-	}
-}
 
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5
@@ -872,7 +819,6 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 
 // drbd_dsender.c
 extern int drbd_worker(struct Drbd_thread *thi);
-extern void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate);
 extern void drbd_alter_sg(drbd_dev *mdev, int ng);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 // worker callbacks
@@ -997,6 +943,8 @@ do {									\
  * inline helper functions
  *************************/
 
+#include "drbd_compat_wrappers.h"
+
 static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
 	unsigned long flags;
@@ -1005,7 +953,7 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 }
 
-static inline void 
+static inline void
 _drbd_dequeue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	if(!list_empty(&w->list)) {
@@ -1128,73 +1076,6 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 	mdev->rs_total +=
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
-
-static inline void drbd_init_bh(struct buffer_head *bh,
-				int size)
-{
-	memset(bh, 0, sizeof(struct buffer_head));
-
-	bh->b_list = BUF_LOCKED;
-	init_waitqueue_head(&bh->b_wait);
-	bh->b_size = size;
-	atomic_set(&bh->b_count, 1);
-	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr
-}
-
-
-static inline void drbd_set_md_bh(drbd_dev *mdev,
-				  struct buffer_head *bh,
-				  sector_t sector,
-				  int size)
-{
-	bh->b_blocknr = sector;  // We abuse b_blocknr here.
-	bh->b_size = size;
-	// bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
-	bh->b_private = mdev;
-
-	// we skip submit_bh, but use generic_make_request.
-	set_bit(BH_Req, &bh->b_state);
-	set_bit(BH_Launder, &bh->b_state);
-	bh->b_rdev = mdev->md_device;
-	bh->b_rsector = sector;
-}
-
-static inline void drbd_set_bh(drbd_dev *mdev,
-			       struct buffer_head *bh,
-			       sector_t sector,
-			       int size)
-{
-	bh->b_blocknr = sector;  // We abuse b_blocknr here.
-	bh->b_size = size;
-	// bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
-	bh->b_private = mdev;
-
-	// we skip submit_bh, but use generic_make_request.
-	set_bit(BH_Req, &bh->b_state);
-	set_bit(BH_Launder, &bh->b_state);
-	bh->b_rdev = mdev->lo_device;
-	bh->b_rsector = sector;
-}
-
-#ifdef DBG_BH_SECTOR
-static inline sector_t DRBD_BH_SECTOR(struct buffer_head *bh)
-{
-	if(!IS_VALID_MDEV(bh->b_private)) {
-		printk(KERN_ERR DEVICE_NAME" !IS_VALID_MDEV(bh->b_private)\n");
-	}
-	return bh->b_blocknr;
-}
-static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
-{
-	if(IS_VALID_MDEV(bh->b_private)) {
-		printk(KERN_ERR DEVICE_NAME" IS_VALID_MDEV(bh->b_private)\n");
-	}
-	return bh->b_blocknr * (bh->b_size>>9) ;
-}
-#else
-# define DRBD_BH_SECTOR(BH) ( (BH)->b_blocknr )
-# define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
-#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 # if (BITS_PER_LONG > 32)

@@ -44,11 +44,46 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate)
+
+/* I choose to have all block layer end_io handlers defined here.
+
+ * For all these callbacks, note the follwing:
+ * The callbacks will be called in irq context by the IDE drivers,
+ * and in Softirqs/Tasklets/BH context by the SCSI drivers.
+ * Try to get the locking right :)
+ *
+ */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+
+/* used for synchronous meta data and bitmap IO
+ * submitted by FIXME (I'd say worker only, but currently this is not true...)
+ */
+void drbd_generic_end_io(struct buffer_head *bh, int uptodate)
+{ // This is a rough copy of end_buffer_io_sync
+	mark_buffer_uptodate(bh, uptodate);
+	unlock_buffer(bh);
+}
+
+/* used for asynchronous meta data and bitmap IO
+ * submitted by FIXME (I'd say worker only, but currently this is not true...)
+ */
+void drbd_async_eio(drbd_bio_t *bh, int uptodate)
 {
-	/* This callback will be called in irq context by the IDE drivers,
-	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
-	   Try to get the locking right :) */
+	struct Drbd_Conf *mdev;
+
+	mdev = container_of(bh,struct Drbd_Conf,md_io_bio);
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	mark_buffer_uptodate(bh, uptodate);
+	unlock_buffer(bh);
+	up(&mdev->md_io_mutex);
+}
+
+/* reads on behalf of the partner,
+ * "submitted" by the receiver
+ */
+void enslaved_read_bi_end_io(drbd_bio_t *bh, int uptodate)
+{
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
@@ -56,7 +91,7 @@ void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate)
 	mdev=bh->b_private;
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
-	e = container_of(bh,struct Tl_epoch_entry,pbh);
+	e = container_of(bh,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
@@ -72,6 +107,68 @@ void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate)
 	drbd_queue_work(mdev,&mdev->data.work,&e->w);
 }
 
+/* writes on behalf of the partner, or resync writes,
+ * "submitted" by the receiver.
+ */
+void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
+{
+	unsigned long flags=0;
+	struct Tl_epoch_entry *e=NULL;
+	struct Drbd_Conf* mdev;
+
+	mdev=bh->b_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	e = container_of(bh,struct Tl_epoch_entry,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(e));
+	D_ASSERT(e->block_id != ID_VACANT);
+
+	spin_lock_irqsave(&mdev->ee_lock,flags);
+
+	mark_buffer_uptodate(bh, uptodate);
+
+	clear_bit(BH_Dirty, &bh->b_state);
+	clear_bit(BH_Lock, &bh->b_state);
+	smp_mb__after_clear_bit();
+
+	list_del(&e->w.list);
+	list_add(&e->w.list,&mdev->done_ee);
+
+	if (waitqueue_active(&mdev->ee_wait) &&
+	    (list_empty(&mdev->active_ee) ||
+	     list_empty(&mdev->sync_ee)))
+		wake_up(&mdev->ee_wait);
+
+	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+
+	if( mdev->do_panic && !uptodate) {
+		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
+	}
+
+	wake_asender(mdev);
+}
+
+/* writes on Primary comming from drbd_make_request
+ */
+void drbd_dio_end(struct buffer_head *bh, int uptodate)
+{
+	struct Drbd_Conf* mdev;
+	drbd_request_t *req;
+
+	mdev = bh->b_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	req = container_of(bh,struct drbd_request,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(req));
+
+	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, drbd_req_get_sector(req));
+	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
+}
+
+#else
+# error "FIXME"
+#endif
+
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
 {
 	ERR("resync inactive, but callback triggered??\n");
@@ -85,7 +182,7 @@ void resync_timer_fn(unsigned long data)
 	drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 }
 
-STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
+int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 {
 	struct Pending_read *pr;
 	sector_t sector;
@@ -188,7 +285,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
 
-	drbd_rs_complete_io(mdev,DRBD_BH_SECTOR(&e->pbh));
+	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 	inc_rs_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?

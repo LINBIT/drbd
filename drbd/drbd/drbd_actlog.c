@@ -146,7 +146,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 	u32 xor_sum=0;
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
-	buffer = (struct al_transaction*)bh_kmap(&mdev->md_io_bh);
+	buffer = (struct al_transaction*)drbd_bio_kmap(&mdev->md_io_bio);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
@@ -181,16 +181,12 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-	bh_kunmap(&mdev->md_io_bh);
+	drbd_bio_kunmap(&mdev->md_io_bio);
 
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
 
-	drbd_set_md_bh(mdev, &mdev->md_io_bh, sector, 512);
-	set_bit(BH_Dirty, &mdev->md_io_bh.b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
-	mdev->md_io_bh.b_end_io = drbd_generic_end_io;
-	generic_make_request(WRITE,&mdev->md_io_bh);
-	wait_on_buffer(&mdev->md_io_bh);
+	drbd_md_prepare_write(mdev,sector);
+	drbd_generic_make_request_wait(WRITE,&mdev->md_io_bio);
 
 	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
@@ -201,7 +197,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 }
 
 /* In case this function returns 1 == success, the caller must do
-		bh_kunmap(&mdev->md_io_bh);
+		drbd_bio_kunmap(&mdev->md_io_bio);
 		up(&mdev->md_io_mutex);
  */
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
@@ -216,14 +212,10 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	down(&mdev->md_io_mutex);
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + index;
 
-	drbd_set_md_bh(mdev, &mdev->md_io_bh, sector, 512);
-	clear_bit(BH_Uptodate, &mdev->md_io_bh.b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
-	mdev->md_io_bh.b_end_io = drbd_generic_end_io;
-	generic_make_request(READ,&mdev->md_io_bh);
-	wait_on_buffer(&mdev->md_io_bh);
+	drbd_md_prepare_read(mdev,sector);
+	drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
 
-	buffer = (struct al_transaction*)bh_kmap(&mdev->md_io_bh);
+	buffer = (struct al_transaction*)drbd_bio_kmap(&mdev->md_io_bio);
 
 	rv = ( be32_to_cpu(buffer->magic) == DRBD_MAGIC );
 
@@ -235,7 +227,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	if(rv) {
 		*bp = buffer;
 	} else {
-		bh_kunmap(&mdev->md_io_bh);
+		drbd_bio_kunmap(&mdev->md_io_bio);
 		up(&mdev->md_io_mutex);
 	}
 
@@ -258,7 +250,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		if(!drbd_al_read_tr(mdev,&buffer,i)) continue;
 		cnr = be32_to_cpu(buffer->tr_number);
 		// INFO("index %d valid tnr=%d\n",i,cnr);
-		bh_kunmap(&mdev->md_io_bh);
+		drbd_bio_kunmap(&mdev->md_io_bio);
 		up(&mdev->md_io_mutex);
 
 		if(cnr == -1) overflow=1;
@@ -306,7 +298,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 			active_extents++;
 		}
 
-		bh_kunmap(&mdev->md_io_bh);
+		drbd_bio_kunmap(&mdev->md_io_bio);
 		up(&mdev->md_io_mutex);
 
 		transactions++;
@@ -412,21 +404,17 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		sector = drbd_md_ss(mdev) + MD_BM_OFFSET + so;
 		so++;
 
-		drbd_set_md_bh(mdev, &mdev->md_io_bh, sector, 512);
-		clear_bit(BH_Uptodate, &mdev->md_io_bh.b_state);
-		set_bit(BH_Lock, &mdev->md_io_bh.b_state);
-		mdev->md_io_bh.b_end_io = drbd_generic_end_io;
-		generic_make_request(READ,&mdev->md_io_bh);
-		wait_on_buffer(&mdev->md_io_bh);
+		drbd_md_prepare_read(mdev, sector);
+		drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
 
-		buffer = (unsigned long *)bh_kmap(&mdev->md_io_bh);
+		buffer = (unsigned long *)drbd_bio_kmap(&mdev->md_io_bio);
 
 		for(buf_i=0;buf_i<want;buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]);
 			bits += hweight_long(word);
 			bm[bm_i++] = word;
 		}
-		bh_kunmap(&mdev->md_io_bh);
+		drbd_bio_kunmap(&mdev->md_io_bio);
 	}
 
 	up(&mdev->md_io_mutex);
@@ -437,19 +425,6 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
 	     mdev->rs_total/2);
 }
-
-STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
-{
-	struct Drbd_Conf *mdev;
-
-	mdev = container_of(bh,struct Drbd_Conf,md_io_bh);
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	mark_buffer_uptodate(bh, uptodate);
-	unlock_buffer(bh);
-	up(&mdev->md_io_mutex);
-}
-
 
 #define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
 #define BM_BYTES_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / 8 )
@@ -475,24 +450,23 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 	want=min_t(int,512/sizeof(long),bm_words-bm_i);
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer
-	buffer = (unsigned long *)bh_kmap(&mdev->md_io_bh);
+	buffer = (unsigned long *)drbd_bio_kmap(&mdev->md_io_bio);
 
 	for(buf_i=0;buf_i<want;buf_i++) {
 		buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
 	}
 
-	bh_kunmap(&mdev->md_io_bh);
+	drbd_bio_kunmap(&mdev->md_io_bio);
 
 	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 
-	drbd_set_md_bh(mdev, &mdev->md_io_bh, sector, 512);
-	set_bit(BH_Dirty, &mdev->md_io_bh.b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
-	mdev->md_io_bh.b_end_io = sync ? drbd_generic_end_io : drbd_async_eio;
-	generic_make_request(WRITE,&mdev->md_io_bh);
+	drbd_md_prepare_write(mdev,sector);
 	if(sync) {
-		wait_on_buffer(&mdev->md_io_bh);
+		drbd_generic_make_request_wait(WRITE,&mdev->md_io_bio);
 		up(&mdev->md_io_mutex);
+	} else {
+		drbd_bio_set_end_io(&mdev->md_io_bio,drbd_async_eio);
+		drbd_generic_make_request(WRITE,&mdev->md_io_bio);
 	}
 
 	mdev->bm_writ_cnt++;

@@ -75,7 +75,6 @@ static devfs_handle_t devfs_handle;
 #endif
 
 int drbdd_init(struct Drbd_thread*);
-//int drbd_dsender(struct Drbd_thread*);
 int drbd_worker(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
 
@@ -105,8 +104,13 @@ int disable_io_hints = 0;
 // global panic flag
 volatile int drbd_did_panic = 0;
 
+/* in 2.6.x, our device mapping and config info contains our virtual gendisks
+ * as member struct gendisk vdisk;
+ */
+NOT_IN_26(
 STATIC int *drbd_blocksizes;
 STATIC int *drbd_sizes;
+);
 struct Drbd_Conf *drbd_conf;
 kmem_cache_t *drbd_request_cache;
 kmem_cache_t *drbd_pr_cache;
@@ -133,6 +137,7 @@ STATIC void tl_init(drbd_dev *mdev)
 	struct drbd_barrier *b;
 
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
+	// FIXME no mem ;-)
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
 	b->br_number=4711;
@@ -259,12 +264,14 @@ void tl_clear(drbd_dev *mdev)
 			r = list_entry(le, struct drbd_request,w.list);
 			if( (r->rq_status&0xfffe) != RQ_DRBD_SENT ) {
 				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1,
-					     r->pbh.b_blocknr);
+					     drbd_req_get_sector(r));
 				goto mark;
 			}
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
 			mark:
-				drbd_set_out_of_sync(mdev,r->pbh.b_blocknr,r->pbh.b_size);
+				drbd_set_out_of_sync(mdev
+				,	drbd_req_get_sector(r)
+				,	drbd_req_get_size(r));
 			}
 		}
 		f=b;
@@ -281,6 +288,11 @@ void tl_clear(drbd_dev *mdev)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
 // Check when daemonize was introduced.
+/* NOTE: seems like all 2.4.X have it, so it should be 2,4,0 above.
+ * in 2.4.6 is is prototyped as
+ * void daemonize(const char *name, ...)
+ * though, so maybe we want to do this for 2.4.x already, too.
+ */
 void daemonize(void)
 {
 	struct fs_struct *fs;
@@ -301,6 +313,14 @@ void daemonize(void)
 }
 #endif
 
+void drbd_daemonize(void) {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
+	daemonize("drbd_thread");
+#else
+	daemonize();
+#endif
+}
+
 void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
 	Drbd_CState os;
@@ -320,7 +340,7 @@ STATIC int drbd_thread_setup(void* arg)
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int retval;
 
-	daemonize();
+	drbd_daemonize();
 
 	down(&thi->mutex); //ensures that thi->task is set.
 
@@ -520,14 +540,12 @@ int drbd_send_param(drbd_dev *mdev)
 {
 	Drbd_Parameter_Packet p;
 	int ok,i;
-	kdev_t ll_dev = mdev->lo_device;
-	unsigned long m_size=0; // sector_t ??
+	unsigned long m_size; // sector_t ??
 
-	if(ll_dev) {
-		m_size = blk_size[MAJOR(ll_dev)][MINOR(ll_dev)];
-		if( mdev->md_index == -1 ) {// internal metadata
-			m_size = m_size - MD_RESERVED_SIZE;
-		}
+	m_size = drbd_get_lo_capacity(mdev)>>1;
+	if (mdev->md_index == -1 ) {// internal metadata
+		D_ASSERT(m_size > MD_RESERVED_SIZE);
+		m_size = drbd_md_ss(mdev)>>1;
 	}
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
@@ -613,9 +631,9 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	int ok;
 	Drbd_BlockAck_Packet p;
 
-	p.sector   = cpu_to_be64(e->pbh.b_blocknr);
+	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
-	p.blksize  = cpu_to_be32(e->pbh.b_size);
+	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
 
 	// YES, this happens. There is some race with the syncer!
 	if ((unsigned long)e->block_id <= 1) {
@@ -665,28 +683,19 @@ STATIC int drbd_retry_send(drbd_dev *mdev, struct socket *sock)
 	return FALSE;
 }
 
-int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
+int _drbd_send_page(drbd_dev *mdev, struct page *page,
+		    int offset, size_t size)
 {
 	int sent,ok;
-	struct page *page = bh->b_page;
-	size_t size = bh->b_size;
-	int offset;
+	int len   = size;
 	int retry = 10;
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
 	spin_unlock(&mdev->send_task_lock);
 
-	/*
-	 * CAUTION I do not yet understand this completely.
-	 * I thought I have to kmap the page first... ?
-	 */
-	if (PageHighMem(page))
-		offset = (int)bh->b_data;
-	else
-		offset = (int)bh->b_data - (int)page_address(page);
 	do {
-		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page, offset, size, MSG_NOSIGNAL);
+		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page, offset, len, MSG_NOSIGNAL);
 		if (sent == -EAGAIN) {
 			// FIXME move "retry--" into drbd_retry_send()
 			if (drbd_retry_send(mdev,mdev->data.socket) && retry--)
@@ -694,22 +703,22 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 			else
 				break;
 		}
-		if (sent <= 0) break;
-		size   -= sent;
+		if (sent <= 0) {
+			WARN("%s: size=%d len=%d sent=%d\n",__func__,size,len,sent);
+			break;
+		}
+		len    -= sent;
 		offset += sent;
 		// FIXME test "last_received" ...
-	} while(size > 0 /* THINK && mdev->cstate >= Connected*/);
+	} while(len > 0 /* THINK && mdev->cstate >= Connected*/);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);
 
-	if (sent < 0)
-		WARN("%s: size=%d sent==%d\n",__func__,size,sent);
-
-	ok = (size == 0);
-	if(likely(ok))
-		mdev->send_cnt+=bh->b_size>>9;
+	ok = (len == 0);
+	if (likely(ok))
+		mdev->send_cnt += size>>9;
 	return ok;
 }
 
@@ -720,15 +729,14 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 
-	ERR_IF(!req || !req->bh) return FALSE;
-	ERR_IF(req->bh->b_reqnext != NULL) return FALSE;
+	ERR_IF(!req || !req->master_bio) return FALSE;
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
 	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
-				     + req->bh->b_size );
+				     + drbd_req_get_size(req) );
 
-	p.sector   = cpu_to_be64(req->bh->b_rsector);
+	p.sector   = cpu_to_be64(drbd_req_get_sector(req));
 	p.block_id = (unsigned long)req;
 
 	/* About tl_add():
@@ -756,7 +764,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		_drbd_send_barrier(mdev);
 	tl_add(mdev,req);
 	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
-	   && _drbd_send_zc_bh(mdev,req->bh);
+	   && _drbd_send_zc_bio(mdev,&req->private_bio);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
@@ -766,7 +774,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	return ok;
 }
 
-// Used to send answer to read requests, DRBD_BH_SECTOR(bh) !!
 int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 		    struct Tl_epoch_entry *e)
 {
@@ -779,9 +786,9 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
 	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
-				     + e->pbh.b_size );
+				     + drbd_ee_get_size(e) );
 
-	p.sector   = cpu_to_be64(e->pbh.b_blocknr);
+	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
 
 	/* only called by our kernel thread.
@@ -795,7 +802,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	spin_unlock(&mdev->send_task_lock);
 
 	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
-	   && _drbd_send_zc_bh(mdev,&e->pbh);
+	   && _drbd_send_zc_bio(mdev,&e->private_bio);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
@@ -1115,14 +1122,28 @@ int drbd_create_mempools(void)
 void drbd_cleanup(void)
 {
 	int i, rr;
+	struct page *page;
 	if (drbd_conf) {
 		if (drbd_proc)
 			remove_proc_entry("drbd",&proc_root);
 		i=minor_count;
 		while (i--) {
 			drbd_dev        *mdev  = &drbd_conf[i];
+			ONLY_IN_26(
+			struct gendisk  **disk = &mdev->vdisk;
+			request_queue_t **q    = &mdev->rq_queue;
+			)
 
 			drbd_free_resources(mdev);
+
+			ONLY_IN_26(
+			if (*disk)
+				put_disk(*disk);
+			*disk = NULL;
+			if (*q) blk_put_queue(*q);
+			*q = NULL;
+			)
+
 			tl_cleanup(mdev);
 			if (mdev->mbds_id) bm_cleanup(mdev->mbds_id);
 			if (mdev->resync) lc_free(mdev->resync);
@@ -1144,17 +1165,21 @@ void drbd_cleanup(void)
 			if(rr) printk(KERN_ERR DEVICE_NAME
 				       "%d: %d EEs in read list found!\n",i,rr);
 
-			if (mdev->md_io_bh.b_page)
-				__free_page(mdev->md_io_bh.b_page);
+			page = drbd_bio_get_page(&mdev->md_io_bio);
+			if (page)
+				__free_page(page);
 
 			if (mdev->act_log) lc_free(mdev->act_log);
 		}
 		drbd_destroy_mempools();
 	}
 
-	// kfree(NULL) is noop
+
+	NOT_IN_26(
 	blksize_size[MAJOR_NR] = NULL;
 	blk_size[MAJOR_NR]     = NULL;
+	)
+	// kfree(NULL) is noop
 	kfree(drbd_conf);
 	kfree(drbd_blocksizes);
 	kfree(drbd_sizes);
@@ -1164,7 +1189,7 @@ void drbd_cleanup(void)
 
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 void *
 kcalloc(size_t size, int type)
 {
@@ -1191,10 +1216,22 @@ int __init drbd_init(void)
 
 	drbd_proc       = NULL; // play safe for drbd_cleanup
 	drbd_conf       = kcalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
+	if (!drbd_conf)
+		goto Enomem;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	drbd_sizes      = kcalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	if (!drbd_conf || !drbd_blocksizes || !drbd_sizes)
+	if (!drbd_blocksizes || !drbd_sizes)
 		goto Enomem;
+#else
+	for (i = 0; i < minor_count; i++) {
+		drbd_conf[i].vdisk = alloc_disk(1);
+		if (!drbd_conf[i].vdisk) goto Enomem;
+	}
+	/* thanks to alloc_disk, we now have minor_count gendisks with
+	 * capacity == 0, waiting to be configured.  */
+#endif
 
 	if ((err = drbd_create_mempools()))
 		goto Enomem;
@@ -1202,13 +1239,25 @@ int __init drbd_init(void)
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = &drbd_conf[i];
 		struct page *page = alloc_page(GFP_KERNEL);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
+		struct gendisk         **disk = &mdev->vdisk;
+		request_queue_t        **q    = &mdev->rq_queue;
 
+		*disk = alloc_disk(1);
+		if (!*disk) goto Enomem;
+
+		*q = blk_alloc_queue(GFP_KERNEL);
+		if (!*q) goto Enomem;
+
+		set_disk_ro( mdev->this_bdev, TRUE );
+#else
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
+#endif
 
 		if(!page) goto Enomem;
-		drbd_init_bh(&mdev->md_io_bh,512);
-		set_bh_page(&mdev->md_io_bh,page,0);
+		drbd_init_bio(&mdev->md_io_bio,512);
+		drbd_bio_add_page(&mdev->md_io_bio,page,0);
 
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
@@ -1239,8 +1288,10 @@ int __init drbd_init(void)
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
+	NOT_IN_26(
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;
+	)
 
 #ifdef CONFIG_DEVFS_FS
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
@@ -1360,6 +1411,8 @@ void drbd_free_ll_dev(drbd_dev *mdev)
 		mdev->lo_device = 0;
 		mdev->md_file = 0;
 		mdev->md_device = 0;
+#warning FIXME
+		ONLY_IN_26(del_gendisk(&mdev->vdisk));
 	}
 }
 
@@ -1793,12 +1846,6 @@ struct meta_data_on_disk {
 	u32 bm_offset;         // offset to the bitmap, from here
 };
 
-void drbd_generic_end_io(struct buffer_head *bh, int uptodate)
-{ // This is a rough copy of end_buffer_io_sync
-	mark_buffer_uptodate(bh, uptodate);
-	unlock_buffer(bh);
-}
-
 void drbd_md_write(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
@@ -1809,7 +1856,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if( mdev->lo_device == 0) return;
 
 	down(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)bh_kmap(&mdev->md_io_bh);
+	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
 
 	flags=mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
 	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
@@ -1818,7 +1865,7 @@ void drbd_md_write(drbd_dev *mdev)
 
 	for(i=Flags;i<=ArbitraryCnt;i++)
 		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
-	buffer->la_size=cpu_to_be64(blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]);
+	buffer->la_size=cpu_to_be64(drbd_get_my_capacity(mdev)>>1);
 	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
@@ -1827,14 +1874,11 @@ void drbd_md_write(drbd_dev *mdev)
 
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
-	bh_kunmap(&mdev->md_io_bh);
+	drbd_bio_kunmap(&mdev->md_io_bio);
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
-	drbd_set_bh(mdev, &mdev->md_io_bh, sector, 512);
-	set_bit(BH_Dirty, &mdev->md_io_bh.b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
-	mdev->md_io_bh.b_end_io = drbd_generic_end_io;
-	generic_make_request(WRITE,&mdev->md_io_bh);
-	wait_on_buffer(&mdev->md_io_bh);
+
+	drbd_md_prepare_write(mdev,sector);
+	drbd_generic_make_request_wait(WRITE,&mdev->md_io_bio);
 
 	up(&mdev->md_io_mutex);
 }
@@ -1850,15 +1894,12 @@ void drbd_md_read(drbd_dev *mdev)
 	down(&mdev->md_io_mutex);
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
-	drbd_set_bh(mdev, &mdev->md_io_bh, sector, 512);
-	clear_bit(BH_Uptodate, &mdev->md_io_bh.b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
-	mdev->md_io_bh.b_end_io = drbd_generic_end_io;
-	generic_make_request(READ,&mdev->md_io_bh);
-	wait_on_buffer(&mdev->md_io_bh);
-	ERR_IF( ! buffer_uptodate(&mdev->md_io_bh) ) goto err;
 
-	buffer = (struct meta_data_on_disk *)bh_kmap(&mdev->md_io_bh);
+	drbd_md_prepare_read(mdev,sector);
+	drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
+	ERR_IF( ! buffer_uptodate(&mdev->md_io_bio) ) goto err;
+
+	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
 
 	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) goto err;
 
@@ -1867,12 +1908,12 @@ void drbd_md_read(drbd_dev *mdev)
 	mdev->la_size = be64_to_cpu(buffer->la_size);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 
-	bh_kunmap(&mdev->md_io_bh);
+	drbd_bio_kunmap(&mdev->md_io_bio);
 	up(&mdev->md_io_mutex);
 	return;
 
  err:
-	bh_kunmap(&mdev->md_io_bh);
+	drbd_bio_kunmap(&mdev->md_io_bio);
 	up(&mdev->md_io_mutex);
 
 	INFO("Creating state block\n");

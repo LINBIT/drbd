@@ -43,10 +43,11 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	   This function is called by the receiver in kernel-thread context.
 	   Try to get the locking right :) */
 
-	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
+	struct Drbd_Conf* mdev = drbd_req_get_mdev(req);
 	unsigned long flags=0;
 
-	PARANOIA_BUG_ON(req->pbh.b_blocknr != rsector);
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+	PARANOIA_BUG_ON(drbd_req_get_sector(req) != rsector);
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
 	if(req->rq_status & nextstate) {
@@ -78,10 +79,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	}
 
 	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
-		drbd_set_in_sync(mdev,rsector,req->bh->b_size);
+		drbd_set_in_sync(mdev,rsector,drbd_req_get_size(req));
 	}
 
-	req->bh->b_end_io(req->bh,(req->rq_status & 0x0001));
+	drbd_bio_endio(req->master_bio,(req->rq_status & 0x0001));
 
 	if( mdev->do_panic && !(req->rq_status & 0x0001) ) {
 		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
@@ -92,25 +93,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
 	if (test_bit(ISSUE_BARRIER,&mdev->flags))
 		wake_asender(mdev);
-}
-
-/*
- * b_end_io for writes on Primary comming from drbd_make_request
- */
-void drbd_dio_end(struct buffer_head *bh, int uptodate)
-{
-	struct Drbd_Conf* mdev;
-	drbd_request_t *req;
-
-	// ok, now we have the b_private available for other use
-	req = container_of(bh,struct drbd_request,pbh);
-	PARANOIA_BUG_ON(!VALID_POINTER(req));
-	mdev = drbd_conf+MINOR(req->bh->b_rdev);
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	// NOT bh->b_rsector, may have been remapped!
-	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, req->bh->b_rsector);
-	drbd_al_complete_io(mdev,req->bh->b_rsector);
 }
 
 STATIC struct Pending_read*
@@ -127,19 +109,20 @@ drbd_find_read(sector_t sector, struct list_head *in)
 	return NULL;
 }
 
-STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
+#warning "FIXME make 2.6.x clean"
+STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 {
 	struct Pending_read *pr;
 	pr = mempool_alloc(drbd_pr_mempool, GFP_DRBD);
 
 	if (!pr) {
 		ERR("could not kmalloc() pr\n");
-		bh->b_end_io(bh,0);
+		drbd_bio_IO_error(bio);
 		return;
 	}
 	SET_MAGIC(pr);
 
-	pr->d.bh = bh;
+	pr->d.master_bio = bio;
 	// TODO: should only issue AppAndResnc if it is out of sync!
 	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
 	spin_lock(&mdev->pr_lock);
@@ -149,17 +132,22 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	if(pr->cause == AppAndResync) inc_rs_pending(mdev);
 	drbd_send_drequest(mdev, 
 			   pr->cause==AppAndResync ? RSDataRequest:DataRequest,
-			   bh->b_rsector, bh->b_size,
+			   bio->b_rsector, bio->b_size,
 			   (unsigned long)pr);
 }
 
-
+// in 2.6 this is of the form
+// static int __make_request(request_queue_t *q, struct bio *bio)
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);
-	struct buffer_head *nbh;
 	drbd_request_t *req;
 	int send_ok;
+
+	if (MINOR(bh->b_rdev) >= minor_count || mdev->cstate < StandAlone) {
+		buffer_IO_error(bh);
+		return 0;
+	}
 
 	if( mdev->lo_device == 0 ) {
 		if( mdev->cstate < Connected ) {
@@ -183,11 +171,18 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			SET_MAGIC(req);
 
 			req->rq_status = RQ_DRBD_WRITTEN | 1;
-			req->bh=bh;
+			req->master_bio=bh;
 
 			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
 				inc_ap_pending(mdev);
 			}
+			/* FIXME the drbd_make_request function will be
+			 * restructured soon.
+			 * until that is the case,
+			 * at least put the mdev and sector number into the
+			 * private bh!
+			 */
+			drbd_req_prepare_write(mdev,req);
 			drbd_send_dblock(mdev,req); // FIXME error check?
 		} else { // rw == READ || rw == READA
 			drbd_issue_drequest(mdev,bh);
@@ -221,7 +216,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 				pr->cause |= Application;
 				inc_ap_pending(mdev);
-				pr->d.bh=bh;
+				pr->d.master_bio=bh;
 				list_del(&pr->w.list);
 				list_add(&pr->w.list,&mdev->app_reads);
 				spin_unlock(&mdev->pr_lock);
@@ -263,34 +258,17 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 	SET_MAGIC(req);
 
-	nbh = &req->pbh;
-
-	drbd_init_bh(nbh, bh->b_size);
-
-	nbh->b_page=bh->b_page; // instead of set_bh_page()
-	nbh->b_data=bh->b_data; // instead of set_bh_page()
-
-	drbd_set_bh(mdev, nbh, bh->b_rsector, bh->b_size);
-
-	if(mdev->cstate < StandAlone || MINOR(bh->b_rdev) >= minor_count) {
-		buffer_IO_error(bh);
-		return 0;
-	}
-
-	nbh->b_private = req;
-	nbh->b_state = (1 << BH_Dirty) | ( 1 << BH_Mapped) | (1 << BH_Lock);
-
-	req->bh=bh;
-
-	req->rq_status = RQ_DRBD_NOTHING;
+	req->master_bio = bh;
+	drbd_req_prepare_write(mdev,req);
 
 	send_ok=drbd_send_dblock(mdev,req);
+
 	// FIXME we could remove the send_ok cases, the are redundant to tl_clear()
 	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_ap_pending(mdev);
 	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
 				/* If sending failed, we can not expect
 				   an ack packet. */
-		drbd_end_req(req, RQ_DRBD_SENT, 1, bh->b_rsector);
+		drbd_end_req(req, RQ_DRBD_SENT, 1, drbd_req_get_sector(req));
 	}
 	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 
@@ -298,10 +276,9 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
 
-	drbd_al_begin_io(mdev, nbh->b_rsector);
+	drbd_al_begin_io(mdev, drbd_req_get_sector(req));
 
-	nbh->b_end_io = drbd_dio_end;
-	generic_make_request(rw,nbh);
+	drbd_generic_make_request(rw,&req->private_bio);
 
 	return 0; /* Ok, bh arranged for transfer */
 
