@@ -460,7 +460,7 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 
   if(err == len+sizeof(packet_header) )
     {
-      if(len >= 512) {
+      if(cmd == Data) {
 	spin_lock(&drbd_conf[minor].tl_lock);
 	tl_add(&drbd_conf[minor],sect_nr);
 	spin_unlock(&drbd_conf[minor].tl_lock);
