@@ -318,7 +318,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 
 		if(sync_finished) {
 			unsigned long dt;
-			dt = (jiffies - mdev->rs_start) / HZ;
+			dt = (jiffies - mdev->rs_start) / HZ + 1;
 			INFO("resync done (total %lu sec; %lu K/sec)\n",
 			     dt,(mdev->rs_total/2)/dt);
 

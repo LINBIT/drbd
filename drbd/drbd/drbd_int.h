@@ -91,6 +91,7 @@ extern int disable_io_hints;
 #define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
 #define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n",(A),__FILE__,__LINE__);
 #define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPI(A) ERR( #A " = %d in %s:%d\n",(A),__FILE__,__LINE__);
 
 
 // Info: do not remove the spaces around the "," before ## 
