@@ -112,14 +112,16 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	if(mdev->state == Secondary) {
 		struct Tl_epoch_entry *e;
 		e=req->bh->b_private;
-		if(e == NULL) {
-			printk(KERN_ERR DEVICE_NAME ": e == NULL\n");
-		} else {
+		if( e ) {
 			spin_lock_irqsave(&mdev->ee_lock,flags);
 			list_del(&e->list);
 			list_add(&e->list,&mdev->done_ee);
 			spin_unlock_irqrestore(&mdev->ee_lock,flags);
-		}
+		} else {
+			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
+			       ", bh=%p\n",
+			       (int)(mdev-drbd_conf),req->bh);
+		} 
 	}
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
@@ -142,19 +144,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 {
 	drbd_request_t *req;
 
-	if(bh == NULL) {
-		printk(KERN_ERR DEVICE_NAME ": drbd_dio_end bh=NULL\n");
-	}
-
-	if(bh->b_private == NULL) {
-		printk(KERN_ERR DEVICE_NAME ": drbd_dio_end bh->req=NULL\n");
-	}
-
 	req = bh->b_private;
-
-	if(req->bh->b_data != bh->b_data) {
-		printk(KERN_ERR DEVICE_NAME ": drbd_dio_end ! b_data\n");
-	}
 
 	// READs are sorted out in drbd_end_req().
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);

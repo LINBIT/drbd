@@ -505,15 +505,11 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
-	mark_buffer_dirty(bh);
-
 	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
 	    != data_size) {
 		bforget(bh);
 		return FALSE;
 	}
-
-	mark_buffer_uptodate(bh, 0);
 
 	spin_lock_irq(&drbd_conf[minor].ee_lock);
 	e=drbd_get_ee(drbd_conf+minor);
@@ -530,6 +526,13 @@ inline int receive_data(int minor,int data_size)
 #else
 	bh->b_private = e;
 #endif
+
+	/* When you call mark_buffer_diry() before drbd_recv() (which 
+	   can sleep) you risk, that the system writes the
+	   buffer while you are sleeping. --> and the b_private
+	   field of the buffer head is not set... oops 	*/
+	mark_buffer_dirty(bh);     
+	mark_buffer_uptodate(bh, 0);
 
 //	generic_make_request(WRITE,bh);
 	ll_rw_block(WRITE, 1, &bh);
