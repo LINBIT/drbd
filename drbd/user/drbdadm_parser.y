@@ -82,7 +82,6 @@ static struct d_resource* new_resource(char* name)
 %type <d_option> disk_stmts disk_stmt 
 %type <d_option> net_stmts net_stmt
 %type <d_option> sync_stmts sync_stmt 
-%type <d_option> sync_stmts sync_stmt 
 %type <d_option> startup_stmts startup_stmt 
 %type <d_resource> resources resource
 
