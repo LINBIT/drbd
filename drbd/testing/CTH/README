@@ -61,11 +61,29 @@ into e.g. /root/bin on the test nodes.
  Example of how to use the core functions directly from bash.
  In contrast to generic_test.pl and the LGE_CTH perl modules,
  this is meant to script one particular failure scenario.
+
+ The idea is that you create a config file matching your setup
+ (see the next two for example), then script a simple test case 
+ you suspect to be a problem for DRBD.
+ 
+ Then get you an extra bash instance (because the internal functions may
+ explicitly call "exit", which otherwise will kick your seesion out),
+ and then "source CTH_bash.sh your.sh.conf T-00X.sh", which will run the
+ test case, and drops you back to your extra bash instance, which now
+ has an "extended command set" and environment, so you can interactively
+ investigate what went wrong (if something went wrong), or reapeat
+ certain steps, or do additional weird stuff.
  
  CTH_bash.conf::
  sample configuration for the CTH_bash.sh similar to uml-minna.conf
 
+ bloodymary.sh.conf::
+ sample configuration for the bash CTH similar to bloodymary.conf
+
  CTH_bash.helpers:: guess what ... to keep the CTH_bash.sh clean.
+
+ T-###.sh::
+ simple example test cases to show how this is intended to be used.
 
 === Test Resources ===
  * tiobench
@@ -73,11 +91,12 @@ into e.g. /root/bin on the test nodes.
 
 == AUTHOR ==
 
-of all this crap is Lars Ellenberg <l.g.e@web.de>
+of all this crap is Lars Ellenberg <l.g.e@web.de>,
+if not otherwise stated.
 
 In case you care for an explicit '''license statement''':
 This is and needs to be GPL.
 
-# $Id: README,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
+# $Id: README,v 1.1.2.3 2004/05/28 08:57:02 lars Exp $
 # if you don't know wiki-moin.vim: http://linuxha.trick.ca/WikiTricks
 # vim: set ft=wiki-moin :
