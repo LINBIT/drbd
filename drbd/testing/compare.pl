@@ -4,6 +4,8 @@ use strict;
 use Digest::MD5;
 use FileHandle;
 use IPC::Open2;
+use Getopt::Long;
+use POSIX;
 
 sub print_md5s($$) {
   my ($devname,$blksize)=@_;
@@ -64,13 +66,13 @@ sub run_remote($$) {
   my ($rfh,$wfh,$pid,$line,$subroutine);
 
   $pid=open2($rfh,$wfh,"ssh $host perl");
-  
+
   if($statement =~ m/^([^(]+)/ ) {
     $subroutine=$1;
   }
 
   print $wfh "use strict;\n";
-  print $wfh "use Digest::MD5;\n"; ## hmmm, not generic.
+  print $wfh "use Digest::MD5;\n"; ## hmmm, this is not generic.
   send_sub($wfh,$subroutine);
   print $wfh $statement;
   close $wfh;
@@ -90,47 +92,93 @@ sub run_local($) {
   return ($pid,\*PIPE);
 }
 
+sub check_ssh($) {
+  my ($host)=@_;
+  my ($pid,$cnt);
+
+  if( $> != 0) {
+    print
+      " Since this script needs to read from block devices it is very \n".
+      " likely that you need to run it as root.\n";
+  }
+
+  $pid=fork();
+  if($pid==0) {
+    exec "ssh $host echo It works > /dev/null 2> /dev/null";
+  }
+  for($cnt=0;$cnt<10;$cnt++) {
+    if(waitpid($pid,&POSIX::WNOHANG) == -1) {
+      sleep 1;
+    } else {
+      return;
+    }
+  }
+
+  kill 9,$pid;
+  print
+    " This scripts needs to make ssh connections to your machines \n".
+    " without using a password.\n".
+    " \n".
+    " use ssh-keygen and ~/.ssh/authorized_keys (or authorized_keys2) to \n".
+    " make this possible.\n";
+  waitpid($pid,0);
+  exit 10;
+}
+
 sub main {
   my($rline,$lline);
-  my($lpid,$lfh,$rpid,$rfh);
+  my($lpid,$lfh,$rpid,$rfh,$lname,$rname,$ldev,$rdev);
+  my $blksize=4096;
+
+  GetOptions("blksize=i" => \$blksize);
 
   if($#ARGV != 2 && $#ARGV != 3) {
-    print "USAGE: $0 local_blk_dev host remote_blk_dev\n".
-          "   OR: $0 host1 blk_dev1 host2 bkl_dev2\n\n";
+    print "USAGE: $0 [--blksize=BYTES] local_blk_dev host remote_blk_dev\n".
+          "   OR: $0 [--blksize=BYTES] host1 blk_dev1 host2 bkl_dev2\n\n";
     exit 10;
   }
 
   if($#ARGV == 2) {
-    my($lpid,$lfh) = run_local('print_md5s("$ARGV[0]",4096);');
-    my($rpid,$rfh) = run_remote('print_md5s("$ARGV[2]",4096);',"$ARGV[1]");
+    $lname="localhost";
+    ($ldev,$rname,$rdev)=@ARGV;
   } else {
-    my($lpid,$lfh) = run_remote('print_md5s("$ARGV[1]",4096);',"$ARGV[0]");
-    my($rpid,$rfh) = run_remote('print_md5s("$ARGV[3]",4096);',"$ARGV[2]");
+    ($lname,$ldev,$rname,$rdev)=@ARGV;
   }
+
+  waitpid(-1,&POSIX::WNOHANG); # to load the posix pm ...
+  check_ssh($rname);
+
+  if($lname eq "localhost") {
+    ($lpid,$lfh) = run_local("print_md5s(\"${ldev}\",${blksize});");
+  } else {
+    ($lpid,$lfh) = run_remote("print_md5s(\"${ldev}\",${blksize});",$lname);
+  }
+  ($rpid,$rfh) = run_remote("print_md5s(\"${rdev}\",${blksize});",$rname);
+
 
   while(1) {
     $lline=<$lfh>;
     $rline=<$rfh>;
     last if(!defined($lline) && !defined($rline));
     if(!defined($lline)) {
-      print "local device smaller";
+      print "device on $lname smaller\n";
       last;
     }
     if(!defined($lline)) {
-      print "remote device smaller";
+      print "device on $rname smaller\n";
       last;
     }
     if( $lline ne $rline) {
-      print "l: $lline";
-      print "r: $rline";
+      print "$lname: $lline";
+      print "$rname: $rline";
     }
   }
 
   close $lfh;
   close $rfh;
 
-  waitpid $lpid,0;
-  waitpid $rpid,0;
+  waitpid($lpid,0);
+  waitpid($rpid,0);
 }
 
 main;
