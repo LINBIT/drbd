@@ -1012,7 +1012,9 @@ drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
-	force_sig(DRBD_SIG, mdev->asender.task);
+	if(mdev->asender.task) { // could be wrong if asender just terminated.
+		force_sig(DRBD_SIG, mdev->asender.task);
+	}
 }
 
 static inline void request_ping(drbd_dev *mdev) {

@@ -1955,6 +1955,7 @@ void drbd_md_write(drbd_dev *mdev)
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
 	drbd_md_sync_page_io(mdev,sector,WRITE);
+	mdev->la_size = drbd_get_capacity(mdev->this_bdev)>>1;
 
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
