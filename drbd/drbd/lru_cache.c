@@ -31,8 +31,8 @@
 #define STATIC static
 
 // this is developers aid only!
-#define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_LOCKED,&lc->flags))
-#define PARANOIA_LEAVE() do { clear_bit(__LC_LOCKED,&lc->flags); smp_mb__after_clear_bit(); } while (0)
+#define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_PARANOIA,&lc->flags))
+#define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA,&lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
 static inline void lc_touch(struct lru_cache *lc,struct lc_element *e)

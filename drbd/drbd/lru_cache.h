@@ -77,10 +77,12 @@ struct lru_cache {
 
 // flag-bits for lru_cache
 enum {
+	__LC_PARANOIA,
 	__LC_DIRTY,
 	__LC_STARVING,
 	__LC_LOCKED
 };
+#define LC_PARANOIA (1<<__LC_PARANOIA)
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 #define LC_LOCKED   (1<<__LC_LOCKED)
@@ -101,12 +103,12 @@ extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
  */
 static inline int lc_try_lock(struct lru_cache* lc)
 {
-	return !test_and_set_bit(__LC_DIRTY,&lc->flags);
+	return !test_and_set_bit(__LC_LOCKED,&lc->flags);
 }
 
 static inline void lc_unlock(struct lru_cache* lc)
 {
-	clear_bit(__LC_DIRTY,&lc->flags);
+	clear_bit(__LC_LOCKED,&lc->flags);
 	smp_mb__after_clear_bit();
 }
 
