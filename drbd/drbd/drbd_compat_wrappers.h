@@ -1,10 +1,6 @@
 // currently only abstraction layer to get all references to buffer_head
 // and b_some_thing out of our .c files.
 
-// FIXME
-// some of these should not be "extern inline" but defined in kernel version
-// dependend .c files...
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 
 // b_end_io handlers
@@ -113,7 +109,6 @@ static inline void drbd_ee_init(struct Tl_epoch_entry *e,struct page *page)
 	struct buffer_head * const bh = &e->private_bio;
 	memset(e, 0, sizeof(*e));
 
-	// BM_BLOCK_SIZE == PAGE_SIZE ! FIXME not necessarily on all arch!!
 	// bh->b_list   = BUF_LOCKED; // does it matter?
 	bh->b_size      = PAGE_SIZE;
 	bh->b_this_page = bh;
@@ -266,14 +261,6 @@ static inline void drbd_generic_make_request(int rw, struct buffer_head *bh)
 	generic_make_request(rw, bh);
 }
 
-#warning "FIXME we need to check the return value"
-static inline int drbd_generic_make_request_wait(int rw, struct buffer_head *bh)
-{
-	generic_make_request(rw, bh);
-	wait_on_buffer(bh);
-	return test_bit(BH_Uptodate,&bh->b_state);
-}
-
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
 	run_task_queue(&tq_disk);
@@ -299,11 +286,9 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 }
 
 #else
-#warning "FIXME these do nonsense. Currently I only check whether it compiles!"
+#warning "FIXME these are still untested!"
 
 #include <linux/buffer_head.h> // for fsync_bdev
-
-extern void FIXME_DONT_USE(void); // unresolved symbol ;)
 
 /* see get_sb_bdev and bd_claim */
 extern char* drbd_sec_holder;
@@ -549,26 +534,6 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 	generic_make_request(bio);
 }
 
-#if 0
-/* FIXME
- * I'd rather use something like sync_page_io() from drivers/md/md.c
- * for our meta data io!  For now I only copied some of it here.
- */
-#warning "FIXME we need to check the return value"
-static inline int drbd_generic_make_request_wait(int rw, struct bio *bio)
-{
-	struct completion event;
-	bio->bi_rw = rw; //??
-	init_completion(&event);
-	bio->bi_private = &event;
-	bio->bi_end_io = drbd_generic_end_io;
-	generic_make_request(bio);
-	blk_run_queues();
-	wait_for_completion(&event);
-	return test_bit(BIO_UPTODATE, &bio->bi_flags);
-}
-#endif
-
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
 	blk_run_queue(bdev_get_queue(mdev->backing_bdev)); 
@@ -580,24 +545,3 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 	return _drbd_send_page(mdev,bvec->bv_page,bvec->bv_offset,bvec->bv_len);
 }
 #endif
-
-/***
- * common functions,
- * move back to drbd_int.h
- ***/
-
-// defined in drbd_dsender.c
-extern int
-drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw);
-
-/* Returns the start sector for metadata, aligned to 4K */
-static inline sector_t drbd_md_ss(drbd_dev *mdev)
-{
-	if( mdev->md_index == -1 ) {
-		return (  (drbd_get_lo_capacity(mdev) & ~7L)
-			- (MD_RESERVED_SIZE<<1) );
-	} else {
-		return 2 * MD_RESERVED_SIZE * mdev->md_index;
-	}
-}
-

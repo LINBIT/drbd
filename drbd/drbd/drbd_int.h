@@ -839,12 +839,15 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sg(drbd_dev *mdev, int ng);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
+// maybe rather drbd_main.c ?
+extern int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw);
 // worker callbacks
 extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work *w);
 extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work *w);
 extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work *w);
 extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work *w);
 extern int w_resume_next_sg      (drbd_dev* mdev, struct drbd_work *w);
+
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
@@ -929,6 +932,20 @@ do {									\
  *************************/
 
 #include "drbd_compat_wrappers.h"
+
+/* Returns the start sector for metadata, aligned to 4K
+ * which happens to be the capacity we announce for
+ * our lower level device if it includes the meta data
+ */
+static inline sector_t drbd_md_ss(drbd_dev *mdev)
+{
+	if( mdev->md_index == -1 ) {
+		return (  (drbd_get_lo_capacity(mdev) & ~7L)
+			- (MD_RESERVED_SIZE<<1) );
+	} else {
+		return 2 * MD_RESERVED_SIZE * mdev->md_index;
+	}
+}
 
 static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {

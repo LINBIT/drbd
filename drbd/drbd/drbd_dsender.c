@@ -65,23 +65,6 @@ void drbd_md_io_complete(struct buffer_head *bh, int uptodate)
 	complete((struct completion*)bh->b_private);
 }
 
-#if 0
-/* used for asynchronous meta data and bitmap IO
- * submitted by FIXME (I'd say worker only, but currently this is not true...)
- */
-void drbd_async_eio(drbd_bio_t *bh, int uptodate)
-{
-	struct Drbd_Conf *mdev;
-
-	mdev = container_of(bh,struct Drbd_Conf,md_io_bio);
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	mark_buffer_uptodate(bh, uptodate);
-	unlock_buffer(bh);
-	up(&mdev->md_io_mutex);
-}
-#endif
-
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */

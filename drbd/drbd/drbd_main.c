@@ -782,8 +782,6 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 
-	// D_ASSERT(FIXME)
-
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
 	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)

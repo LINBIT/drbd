@@ -552,7 +552,7 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 		spin_unlock_irq(&mdev->al_lock);
 		if (t) lc_free(t);
 	}
-	
+
 	if (mdev->cstate > WFConnection)
 		drbd_send_sync_param(mdev,&sc);
 

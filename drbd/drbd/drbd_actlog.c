@@ -512,15 +512,8 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 
 	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 
-	if(sync) {
-		drbd_md_sync_page_io(mdev,sector,WRITE);
-		up(&mdev->md_io_mutex);
-	} else {
-#warning "FIXME pls remove ;)"
-		BUG(); // or do I miss something, Philipp?
-		// drbd_bio_set_end_io(&mdev->md_io_bio,drbd_async_eio);
-		// drbd_generic_make_request(WRITE,&mdev->md_io_bio);
-	}
+	drbd_md_sync_page_io(mdev,sector,WRITE);
+	up(&mdev->md_io_mutex);
 
 	mdev->bm_writ_cnt++;
 }
