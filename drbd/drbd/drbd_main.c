@@ -1367,6 +1367,8 @@ int __init drbd_init(void)
 		}
 
 		blk_queue_make_request(q,drbd_make_request_26);
+		q->queue_lock = &mdev->req_lock; // needed since we use
+		// plugging on a queue, that actually has no requests!
 		q->unplug_fn = drbd_send_write_hint;
 	}
 #endif
