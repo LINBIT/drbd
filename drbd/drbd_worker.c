@@ -31,7 +31,8 @@
 #include <linux/sched.h>
 #include <linux/smp_lock.h>
 #include <linux/wait.h>
-#define __KERNEL_SYSCALLS__
+#include <linux/mm.h>
+#include <linux/mm_inline.h> // for the page_count macro on RH/Fedora
 #include <linux/slab.h>
 
 #include <linux/drbd.h>

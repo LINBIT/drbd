@@ -39,6 +39,7 @@
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/mm.h>
+#include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
 #include <linux/pkt_sched.h>
