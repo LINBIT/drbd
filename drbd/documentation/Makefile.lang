@@ -17,15 +17,11 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 #
-# For Debian:
-# nsgmls drbdsetup.sgml | sgmlspl /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl
-# On RedHat it is at:
-# /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl
-# the RedHat only way is docbook2man
-# hmmm, nowadays docbook2man works also on Debian
 
-include ../Makefile.vars
-LANGS=ja pt_BR
+include ../../Makefile.vars
+
+C_LANG=$(shell basename `pwd`)
+TARGETS=$(shell if [ -e drbd.conf.sgml ]; then echo -n "drbd.conf.5 " ; fi ; if [ -e drbdsetup.sgml ]; then echo -n "drbdsetup.8 " ; fi ; if [ -e drbd.sgml ]; then echo -n "drbd.8 " ; fi ; if [ -e datadisk.sgml ]; then echo -n "datadisk.8 " ; fi ; if [ -e HOWTO ]; then echo -n "HOWTO/index.html " ; fi ; echo )
 
 ####### Implicit rules
 
@@ -39,22 +35,18 @@ LANGS=ja pt_BR
 
 #######
 
-all:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 HOWTO/index.html
-	@ set -e; for i in $(LANGS); do ln -s ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i all; done
+all:	$(TARGETS)
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 	if [ "$(DB2HTML)" ]; then cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd .. ; fi
 
 clean:
 	rm -f *.ps *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
-	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/man8; fi
-	if [ -e drbd.conf.5 ]; then install drbd.conf.5 $(PREFIX)usr/share/man/man5; fi
-	if [ -e drbd.8 ]; then install drbd.8 $(PREFIX)usr/share/man/man8; fi
-	if [ -e datadisk.8 ]; then install datadisk.8 $(PREFIX)usr/share/man/man8; fi
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
-
+	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8; fi
+	if [ -e drbd.conf.5 ]; then install drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5; fi
+	if [ -e drbd.8 ]; then install drbd.8 $(PREFIX)usr/share/$(C_LANG)/man/man8; fi
+	if [ -e datadisk.8 ]; then install datadisk.8 $(PREFIX)usr/share/$(C_LANG)/man/man8; fi
 
 
