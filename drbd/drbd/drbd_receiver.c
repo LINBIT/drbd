@@ -169,10 +169,10 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	if (waitqueue_active(&bh->b_wait))
 		wake_up(&bh->b_wait); //must be within the lock!
 
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
-
 	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 	   e->block_id == ID_SYNCER ) wake_asender=1;
+
+	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	if( mdev->do_panic && !uptodate) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
@@ -921,10 +921,10 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	list_add(&e->list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	submit_bh(WRITE,e->bh);
-
 	dec_pending(mdev);
 	inc_unacked(mdev);
+
+	submit_bh(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -963,10 +963,10 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	list_add(&e->list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	submit_bh(WRITE,e->bh);
-
 	dec_pending(mdev);
 	inc_unacked(mdev);
+
+	submit_bh(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1063,8 +1063,6 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 	list_add(&e->list,&mdev->active_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	submit_bh(WRITE,e->bh);
-
 	switch(mdev->conf.wire_protocol) {
 	case DRBD_PROT_C:
 		inc_unacked(mdev);
@@ -1076,6 +1074,8 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 		// nothing to do
 		break;
 	}
+
+	submit_bh(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1143,8 +1143,8 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	} else spin_unlock_irq(&mdev->bb_lock);
 
 	mdev->read_cnt += bh->b_size >> 9;
-	submit_bh(READ,e->bh);
 	inc_unacked(mdev);
+	submit_bh(READ,e->bh);
 	
 	return TRUE;
 }
