@@ -42,7 +42,7 @@ typedef unsigned long sector_t;
 #include <linux/completion.h>
 #endif
 
-#if defined(CONFIG_X86)
+#if defined(__i386__) || defined(__arch_um__)
 /**
  * find_first_bit - find the first set bit in a memory region
  * @addr: The address to start the search at
@@ -106,7 +106,7 @@ static __inline__ int find_next_bit(const unsigned long *addr, int size, int off
 }
 
 #else
-#warn You probabely need to copy find_next_bit() from a 2.6.x kernel.
+#warning "You probabely need to copy find_next_bit() from a 2.6.x kernel."
 #endif
 
 #ifndef ALIGN
@@ -118,7 +118,6 @@ static __inline__ int find_next_bit(const unsigned long *addr, int size, int off
 #endif
 
 #else // LINUX 2.6
-//#warning "FIXME"
 
 typedef struct bio drbd_bio_t;
 

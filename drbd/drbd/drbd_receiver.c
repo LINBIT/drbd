@@ -267,7 +267,13 @@ STATIC void finish_wait(wait_queue_head_t *q, wait_queue_t *wait)
 	spin_unlock_irqrestore(&q->lock, flags);
 }
 
-#define DEFINE_WAIT(name)	DECLARE_WAITQUEUE(name,current)
+#define DEFINE_WAIT(name)						\
+	wait_queue_t name = {						\
+		.task		= current,				\
+		.task_list	= {	.next = &name.task_list,	\
+					.prev = &name.task_list,	\
+				},					\
+	}
 
 #endif
 
