@@ -16,11 +16,18 @@
 # Description:    Control drbd resources.
 ### END INIT INFO
 
+DEFAULTFILE="/etc/default/drbd"
 DRBDADM="/sbin/drbdadm"
 PROC_DRBD="/proc/drbd"
 MODPROBE="modprobe"
 RMMOD="rmmod"
 UDEV_TIMEOUT=10
+
+if [ -f $DEFAULTFILE ]; then
+  . $DEFAULTFILE
+fi
+
+test -f $DRBDADM || exit 5
 
 function assure_module_is_loaded
 {
@@ -63,21 +70,29 @@ case "$1" in
 	$RMMOD drbd
 	echo "."
 	;;
+    status)
+	if [ -e $PROC_DRBD ]; then
+	    cat $PROC_DRBD
+	    exit 0
+	else
+	    exit 3
+	fi
+	;;
     reload)
 	echo -n "Reloading DRBD configuration"
 	$DRBDADM adjust all
 	echo "."
 	;;
-    restart)
+    restart|force-reload)
 	echo -n "Restarting all DRBD resources"
 	$DRBDADM down all
-	rmmod drbd
+	$RMMOD drbd
 	assure_module_is_loaded
 	$DRBDADM up all
 	echo "."
 	;;
     *)
-	echo "Usage: /etc/init.d/drbd {start|stop|reload|restart}"
+	echo "Usage: /etc/init.d/drbd {start|stop|status|reload|restart|force-reload}"
 	exit 1
 	;;
 esac
