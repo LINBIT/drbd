@@ -135,21 +135,6 @@ STATIC struct block_device_operations drbd_ops = {
 
 static int errno;
 
-int drbd_log2(int i)
-{
-	int bits = 0;
-	int add_one=0; /* In case there is not a whole-numbered solution,
-			  round up */
-	while (i != 1) {
-		bits++;
-		if ( (i & 1) == 1) add_one=1;
-		i >>= 1;
-	}
-	return bits+add_one;
-}
-
-
-
 /************************* The transfer log start */
 STATIC void tl_init(drbd_dev *mdev)
 {

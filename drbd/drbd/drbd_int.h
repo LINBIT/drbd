@@ -624,7 +624,6 @@ struct Drbd_Conf {
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(drbd_dev *mdev);
-extern int drbd_log2(int i);
 extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
