@@ -2,14 +2,14 @@ Source: drbd
 Section: ha
 Priority: extra
 Maintainer: Ard van Breemen <ard@telegraafnet.nl>
-Build-Depends: debhelper (>= 2), autoconf, automake, kernel-headers, cpio, debconf-utils, dh-kpatches (>=0.5)
+Build-Depends: debhelper (>= 2), debconf-utils, dh-kpatches (>=0.5), sp, docbook2man
 
 Package: drbd-source
 Architecture: all
 Recommends:  dpkg-dev, kernel-package, debhelper (>= 2), debconf-utils
-Description: RAID 1 over tcp/ip for Linux source.
+Description: RAID 1 over tcp/ip for Linux module source.
  This package provides the source code for the drbd module.
- The kernel source is required to compile these modules.
+ The kernel source is required to compile this module.
 
 Package: drbd
 Architecture: i386
