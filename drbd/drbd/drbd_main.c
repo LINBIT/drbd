@@ -567,8 +567,9 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 		      data_size,0);
 
 	if( ret == data_size + sizeof(head) &&
-	    mdev->conf.wire_protocol != DRBD_PROT_A) {
-			inc_pending(mdev);
+	    (mdev->conf.wire_protocol != DRBD_PROT_A || 
+	     block_id == ID_SYNCER) ) {
+		inc_pending(mdev);
 	}
 
 	if(block_id != ID_SYNCER) {

@@ -70,10 +70,12 @@ inline void dec_unacked(struct Drbd_Conf* mdev)
 		       (int)(mdev-drbd_conf));
 }
 
+#define is_syncer_blk(A,B) ((B)==ID_SYNCER)
+
+#if 0
 inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
-#if 0
 	/* Use this code if you are working with a VIA based mboard :) */
 	if ( (long)block_id == (long)-1) {
 		printk(KERN_ERR DEVICE_NAME 
@@ -82,9 +84,10 @@ inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id)
 		       (unsigned long)block_id);
 		return 1;
 	}
-#endif //PARANOIA
 	return 0;
 }
+#endif //PARANOIA
+
 
 int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
@@ -655,8 +658,10 @@ inline int receive_block_ack(int minor)
 	    sizeof(header))
 	        return FALSE;
 
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A ||
+	   is_syncer_blk(drbd_conf+minor,header.block_id)) {
 		dec_pending(drbd_conf+minor);
+	}
 
 	if( is_syncer_blk(drbd_conf+minor,header.block_id)) {
 		bm_set_bit(drbd_conf[minor].mbds_id,
