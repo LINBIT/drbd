@@ -280,15 +280,15 @@ case "$1" in
 		MOUNTED=$?
 
 		if [ $PRIMARY -eq 0 -a $MOUNTED -eq 0 ]; then
-                        $0 $RESOURCE primary && 
-                        $0 $RESOURCE fsck && 
-                        $0 $RESOURCE mount
+			$0 $RESOURCE primary && 
+			$0 $RESOURCE fsck && 
+			$0 $RESOURCE mount
 			RV=$?
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
 		if [ $PRIMARY -eq 1 -a $MOUNTED -eq 0 ]; then
-                        $0 $RESOURCE fsck && 
-                        $0 $RESOURCE mount
+			$0 $RESOURCE fsck && 
+			$0 $RESOURCE mount
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -516,8 +516,23 @@ case "$1" in
 		fi
 		;;
 
+	help)
+		echo "Usage: $0 [resource] {init|master|slave|mount|umount|fsck|resync|start|stop|restart|status|state|help}"
+		echo "init   : set the node as master or slave at boot time"
+		echo "master : set drbd as master,fsck the volume(s) and mount it/them"
+		echo "slave  : set drbd as slave, umnount the volume(s) if needed"
+		echo "mount  : mount the volume(s)"
+		echo "umount : unmount the volume(s)"
+		echo "fsck   : fsck the volume(s)"
+		echo "resync : force a full resynchronisation of the slave."
+		echo "         only work on the slave"
+		echo "status : display drdb status (/proc/drdb)"
+		echo "state  : Return Primary or Secondary depending on the node settings"
+		echo "help   : ..."
+		RETVAL=1
+		;;
 	*)
-		echo "Usage: $0 [resource] {init|master|slave|mount|umount|fsck|start|stop|restart|status|state}"
+		echo "Usage: $0 [resource] {init|master|slave|mount|umount|fsck|resync|start|stop|restart|status|state|help}"
 		RETVAL=1
 		;;
 esac
