@@ -464,11 +464,10 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
-        if(number > 1000) number=1000;  // Remove later
-	if (atomic_read(&mdev->rs_pending_cnt)>1200) {
-		// INFO("pending cnt high -- throttling resync.\n");
+	if (atomic_read(&mdev->rs_pending_cnt)>number) {
 		goto requeue;
 	}
+	number -= atomic_read(&mdev->rs_pending_cnt);
 
 	for(i=0;i<number;i++) {
 
