@@ -109,9 +109,11 @@ struct Drbd_Conf {
 	int blk_size_b;
 	Drbd_State state;
 	Drbd_CState cstate;
-	int send_cnt;
-	int recv_cnt;
-        int longest_epoch;
+	unsigned int send_cnt;
+	unsigned int recv_cnt;
+	unsigned int read_cnt;
+	unsigned int writ_cnt;
+	unsigned int pending_cnt;
 	rwlock_t tl_lock;
 	struct Tl_entry* tl_end;
 	struct Tl_entry* tl_begin;
@@ -120,7 +122,8 @@ struct Drbd_Conf {
         int    epoch_size;
 	spinlock_t es_lock;
 	//struct semaphore es_sem;
-	struct timer_list s_timeout_t;
+	struct timer_list s_timeout;
+	struct timer_list a_timeout;
 	struct semaphore send_mutex;
 	atomic_t synced_to;	/* Unit: sectors (512 Bytes) */
   /* FIXME: using atomic_t here is broken, because atomic_t is int and 
@@ -269,12 +272,15 @@ struct request *my_all_requests = NULL;
 	for (i = 0; i < MINOR_COUNT; i++) {
 		rlen =
 		    rlen + sprintf(buf + rlen,
-				   "%d: cs:%s st:%s s:%d r:%d le:%d\n", i,
+				   "%d: cs:%s st:%s ns:%u nr:%u dw:%u dr:%u\n",
+				   i,
 				   cstate_names[drbd_conf[i].cstate],
 				   state_names[drbd_conf[i].state],
 				   drbd_conf[i].send_cnt,
 				   drbd_conf[i].recv_cnt,
-				   drbd_conf[i].longest_epoch);
+				   drbd_conf[i].writ_cnt,
+				   drbd_conf[i].read_cnt);
+
 	}
 
 #if 1
@@ -424,7 +430,6 @@ inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr)
 	
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
-	mdev->longest_epoch = max(epoch_size,mdev->longest_epoch);
 }
 
 inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
@@ -509,17 +514,23 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 
 	head.h.block_nr = cpu_to_be64(block_nr);
 	head.h.block_id = block_id;
+	
+	if(mdev->conf.wire_protocol != DRBD_PROT_A) {
+		mdev->pending_cnt++;
+		mod_timer(&mdev->a_timeout,
+			  jiffies + mdev->conf.timeout * HZ / 10);
+	}
 
 	if(test_and_clear_bit(0,&mdev->need_to_issue_barrier)) {
 	        drbd_send_barrier(mdev, tl_add_barrier(mdev));
-             /* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */	  
+             /* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
 	}
 	
 	return drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),
 			 data,data_size);
 }
 
-void drbd_send_timeout(unsigned long arg)
+void drbd_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
@@ -562,10 +573,10 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	msg.msg_flags = MSG_NOSIGNAL;
 
 	if (mdev->conf.timeout) {
-		mdev->s_timeout_t.data = (unsigned long) current;
-		mdev->s_timeout_t.expires =
+		mdev->s_timeout.data = (unsigned long) current;
+		mdev->s_timeout.expires =
 		    jiffies + mdev->conf.timeout * HZ / 10;
-		add_timer(&mdev->s_timeout_t);
+		add_timer(&mdev->s_timeout);
 	}
 	lock_kernel();
 	oldfs = get_fs();
@@ -575,8 +586,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	unlock_kernel();
 
 	if (mdev->conf.timeout) {
-		del_timer(&mdev->s_timeout_t);
-		// FIXME: Are not these spinlocks somehow unbalanced ?
+		del_timer(&mdev->s_timeout);
+		// FIXME: Are not theese spinlocks somehow unbalanced ?
 		// spin_lock() and spin_lock_irq()    _irq ???
 		spin_lock(&current->sigmask_lock);
 		if (sigismember(&current->signal, DRBD_SIG)) {
@@ -813,6 +824,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			bh->b_list = BUF_LOCKED;
 			bh->b_dev_id = req;
 			bh->b_end_io = drbd_dio_end;
+			
+			if(req->cmd == WRITE) drbd_conf[minor].writ_cnt++;
+			else drbd_conf[minor].read_cnt++;
 
 			if (sending)
 				req->rq_status = RQ_DRBD_NOTHING;
@@ -883,8 +897,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	case DRBD_IOCTL_SET_STATE:
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_conf[minor].state = (Drbd_State) arg;
-		if (blk_size[MAJOR_NR][minor])
-			/*      set_device_ro(MKDEV(MAJOR_NR,minor),
+		/*if (blk_size[MAJOR_NR][minor])
+			      set_device_ro(MKDEV(MAJOR_NR,minor),
 			   drbd_conf[minor].state != Primary);      */
 		        /*printk(KERN_DEBUG DEVICE_NAME ": set_state(%d)\n",
 			  drbd_conf[minor].state);*/
@@ -1022,15 +1036,19 @@ __initfunc(int drbd_init(void))
 		drbd_conf[i].cstate = Unconfigured;
 		drbd_conf[i].send_cnt = 0;
 		drbd_conf[i].recv_cnt = 0;
-		drbd_conf[i].longest_epoch = 0;
+		drbd_conf[i].writ_cnt = 0;
+		drbd_conf[i].read_cnt = 0;
+		drbd_conf[i].pending_cnt = 0;		
 		drbd_conf[i].transfer_log = 0;
 		drbd_conf[i].mops = &bm_mops;
 		drbd_conf[i].mbds_id = 0;
 		drbd_conf[i].need_to_issue_barrier=0;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].epoch_size=0;
-		drbd_conf[i].s_timeout_t.function = drbd_send_timeout;
-		init_timer(&drbd_conf[i].s_timeout_t);
+		drbd_conf[i].s_timeout.function = drbd_timeout;
+		drbd_conf[i].a_timeout.function = drbd_timeout;
+		init_timer(&drbd_conf[i].s_timeout);
+		init_timer(&drbd_conf[i].a_timeout);
 		atomic_set(&drbd_conf[i].synced_to, 0);
 		init_MUTEX(&drbd_conf[i].send_mutex);
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);
@@ -1203,10 +1221,10 @@ int drbd_recv(struct socket *sock, void *ubuf, size_t size)
 	return err;
 }
 
-/* I do not know why, but this prototype is missing in the net.h includefile */
-int sock_setsockopt(struct socket *sock, int level, int optname,
-		    char *optval, int optlen);
-
+/* I do not know why, but this prototype is missing in the net.h includefile:
+   int sock_setsockopt(struct socket *sock, int level, int optname,
+   char *optval, int optlen);
+*/
 int drbd_connect(int minor)
 {
 	int err;
@@ -1374,9 +1392,6 @@ inline int receive_data(int minor,int data_size)
 		epoch[ep_size].block_id = header.block_id;
 		ep_size++;
 
-		drbd_conf[minor].longest_epoch = 
-		  max(ep_size,drbd_conf[minor].longest_epoch);
-
 		drbd_conf[minor].epoch_size=ep_size;
 	        spin_unlock(&drbd_conf[minor].es_lock);
 	}
@@ -1410,6 +1425,17 @@ inline int receive_block_ack(int minor)
 	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
 	        return FALSE;
 	
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A) {
+		if(--drbd_conf[minor].pending_cnt > 0) {
+			mod_timer(&drbd_conf[minor].a_timeout,
+				  jiffies + drbd_conf[minor].conf.timeout 
+				  * HZ / 10);
+		} else {
+			del_timer(&drbd_conf[minor].a_timeout);
+		}
+	}
+
+
 	if( header.block_id == ID_SYNCER) {
 		drbd_conf[minor].mops->
 		set_block_status(drbd_conf[minor].mbds_id,
@@ -1556,6 +1582,7 @@ void drbdd(int minor)
 	}
 
       out:
+	del_timer(&drbd_conf[minor].a_timeout);
 	if (drbd_conf[minor].sock) {
 	        drbd_thread_stop(&drbd_conf[minor].syncer);
 	        drbd_thread_stop(&drbd_conf[minor].asender);
@@ -1580,6 +1607,7 @@ int drbdd_init(void *arg)
 
 	sprintf(current->comm, "drbdd_%d", minor);
 
+	drbd_conf[minor].a_timeout.data = (unsigned long) current;
 	down(&thi->sem);	/* wait until parent has written its
 				   rpid variable */
 
@@ -1592,7 +1620,7 @@ int drbdd_init(void *arg)
 		if (thi->exit == 1) break;
 	}
 
-	printk(KERN_INFO DEVICE_NAME ": receiver exiting/m=%d\n", minor);
+	printk(KERN_ERR DEVICE_NAME ": receiver exiting/m=%d\n", minor);
 
 	thi->pid = 0;
 	up(&thi->sem);
