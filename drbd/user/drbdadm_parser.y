@@ -125,7 +125,7 @@ void check_meta_disk()
 %token <txt> TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
 %token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_GROUP TK_AL_EXTENTS
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
-%token <txt> TK_KO_COUNT TK_ON_DISCONNECT
+%token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
 
 %type <txt> hostname resource_name
 %type <d_option> disk_stmts disk_stmt
@@ -150,6 +150,8 @@ glob_stmt:	  TK_DISABLE_IO_HINTS
 			{ global_options.disable_io_hints=1;   }
 		| TK_MINOR_COUNT TK_INTEGER
 			{ global_options.minor_count=atoi($2); }
+		| TK_DIALOG_REFRESH TK_INTEGER   
+                        { global_options.dialog_refresh=atoi($2); }
 		;
 
 resources:	  /* empty */	     { $$ = 0; }

@@ -25,6 +25,7 @@ struct d_globals
 {
   int disable_io_hints;
   int minor_count;
+  int dialog_refresh;
 };
 
 struct d_host_info

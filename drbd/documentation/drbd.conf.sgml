@@ -108,7 +108,8 @@ resource drbd0 {
   <term><option>global</option></term>
   <listitem><para>
     Configures some global parameters. Currently only
-    <option>minor_count</option> and <option>disable_io_hints</option>
+    <option>minor-count</option>, <option>dialog-refresh</option> 
+    and <option>disable-io-hints</option>
     are allowed here. You may only have one global section, preferably
     as the first section.
   </para>
@@ -208,25 +209,36 @@ resource drbd0 {
 <variablelist>
 
 <varlistentry>
-  <term><option>minor_count <replaceable>count</replaceable></option></term>
+  <term><option>minor-count <replaceable>count</replaceable></option></term>
   <listitem><para>
     <replaceable>count</replaceable> may be a number from 1 to 255.
   </para>
-  <para>Use <replaceable>minor_count</replaceable>
+  <para>Use <replaceable>minor-count</replaceable>
    if you want to define more resources later without reloading the DRBD kernel
    module. Per default the module loads with exactly as many devices as
    configured in this file. Builtin default for module is 2, and 8 for
    monolithic kernel. For monolithic kernel
-   <replaceable>minor_count</replaceable> is ignored, and you have to pass a
+   <replaceable>minor-count</replaceable> is ignored, and you have to pass a
    kernel boot parameter <replaceable>drbd.minor_count=count</replaceable> to
    change the default.</para>
    </listitem>
 </varlistentry>
 
 <varlistentry>
-  <term><option>disable_io_hints</option></term>
+  <term><option>dialog-refresh <replaceable>time</replaceable></option></term>
+  <listitem><para>
+    <replaceable>time</replaceable> may be 0 or a positive number.
+  </para>
+  <para>The user dialog redraws the second count every 
+   <replaceable>time</replaceable> seconds (or does no redraws if 
+   <replaceable>time</replaceable> is zero). The default is 1.</para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>disable-io-hints</option></term>
   <listitem>
-  <para>Use <replaceable>disable_io_hints</replaceable>
+  <para>Use <replaceable>disable-io-hints</replaceable>
    if you want to set up a DRBD device via the
    loopback network interface or between two virtual machines on the same
    box, for testing/simulating/presentationn

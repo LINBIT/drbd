@@ -91,7 +91,7 @@ char ss_buffer[255];
 struct utsname nodeinfo;
 int line=1;
 int fline, c_resource_start;
-struct d_globals global_options = { 0, 0 };
+struct d_globals global_options = { 0, 0, 1 };
 char *config_file = NULL;
 struct d_resource* config = NULL;
 int nr_resources;
@@ -187,6 +187,8 @@ static void dump_global_info()
 	printI("disable-io-hints;\n");
       if (global_options.minor_count)
 	printI("minor-count %i;\n", global_options.minor_count);
+      if (global_options.dialog_refresh != 1)
+	printI("dialog-refresh %i;\n", global_options.dialog_refresh);
       --indent; printI("}\n\n");
     }
 }
@@ -636,6 +638,7 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
   pid_t* pids;
   struct d_option* opt;
   int argc,sec,i=0;
+  int wtime;
 
   struct sigaction so;
   struct sigaction sa;
@@ -660,6 +663,9 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
     pids[i++]=m_system(SF_MaySleep|SF_ReturnPid, argv);
   }
 
+  wtime = global_options.dialog_refresh ? 
+    global_options.dialog_refresh : -1;
+
   sec = 0;
   while(sec < 3) {
     if(!childs_running(pids,WNOHANG)) return 0;
@@ -683,7 +689,7 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
     do {
       printf("\e[s\e[31G[%4d]:\e[u",sec); // Redraw sec, preserve cursor pos.
       fflush(stdout);
-      if(gets_timeout(answer,40,1000)) {
+      if(gets_timeout(answer,40,wtime*1000)) {
 	if(!strcmp(answer,"yes\n")) {
 	  kill_childs(pids);
 	  childs_running(pids,0);
@@ -691,7 +697,7 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 	  printf(" To abort waiting enter 'yes' [%4d]:",sec);
 	}
       }
-      sec++;
+      sec += wtime;
     } while(childs_running(pids,WNOHANG));
     printf("\n");
   }
