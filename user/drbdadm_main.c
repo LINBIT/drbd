@@ -62,8 +62,7 @@ char* progname;
 
 struct adm_cmd {
   const char* name;
-  int (* function)(struct d_resource*,char* );
-  char* arg;
+  int (* function)(struct d_resource*,const char* );
   int show_in_usage;
   int res_name_required;
 };
@@ -71,25 +70,25 @@ struct adm_cmd {
 extern int yyparse();
 extern FILE* yyin;
 
-int adm_attach(struct d_resource* ,char* );
-int adm_connect(struct d_resource* ,char* );
-int adm_generic_s(struct d_resource* ,char* );
-int adm_generic_l(struct d_resource* ,char* );
-int adm_resize(struct d_resource* ,char* );
-int adm_syncer(struct d_resource* ,char* );
-static int adm_up(struct d_resource* ,char* );
-extern int adm_adjust(struct d_resource* ,char* );
-static int adm_dump(struct d_resource* ,char* );
-static int adm_wait_c(struct d_resource* ,char* );
-static int adm_wait_ci(struct d_resource* ,char* );
-static int sh_resources(struct d_resource* ,char* );
-static int sh_mod_parms(struct d_resource* ,char* );
-static int sh_dev(struct d_resource* ,char* );
-static int sh_ll_dev(struct d_resource* ,char* );
-static int sh_md_dev(struct d_resource* ,char* );
-static int sh_md_idx(struct d_resource* ,char* );
-static int admm_generic(struct d_resource* ,char* );
-static int adm_khelper(struct d_resource* ,char* );
+int adm_attach(struct d_resource* ,const char* );
+int adm_connect(struct d_resource* ,const char* );
+int adm_generic_s(struct d_resource* ,const char* );
+int adm_generic_l(struct d_resource* ,const char* );
+int adm_resize(struct d_resource* ,const char* );
+int adm_syncer(struct d_resource* ,const char* );
+static int adm_up(struct d_resource* ,const char* );
+extern int adm_adjust(struct d_resource* ,const char* );
+static int adm_dump(struct d_resource* ,const char* );
+static int adm_wait_c(struct d_resource* ,const char* );
+static int adm_wait_ci(struct d_resource* ,const char* );
+static int sh_resources(struct d_resource* ,const char* );
+static int sh_mod_parms(struct d_resource* ,const char* );
+static int sh_dev(struct d_resource* ,const char* );
+static int sh_ll_dev(struct d_resource* ,const char* );
+static int sh_md_dev(struct d_resource* ,const char* );
+static int sh_md_idx(struct d_resource* ,const char* );
+static int admm_generic(struct d_resource* ,const char* );
+static int adm_khelper(struct d_resource* ,const char* );
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -116,39 +115,39 @@ struct option admopt[] = {
 };
 
 struct adm_cmd cmds[] = {
-  { "attach",            adm_attach,  0                  ,1,1 },
-  { "detach",            adm_generic_s,"detach"          ,1,1 },
-  { "connect",           adm_connect, 0                  ,1,1 },
-  { "disconnect",        adm_generic_s,"disconnect"      ,1,1 },
-  { "up",                adm_up,      0                  ,1,1 },
-  { "down",              adm_generic_s,"down"            ,1,1 },
-  { "primary",           adm_generic_s,"primary"         ,1,1 },
-  { "secondary",         adm_generic_s,"secondary"       ,1,1 },
-  { "invalidate",        adm_generic_l,"invalidate"      ,1,1 },
-  { "invalidate_remote", adm_generic_l,"invalidate_remote",1,1 },
-  { "outdate",           adm_generic_s,"outdate"         ,1,1 },
-  { "resize",            adm_resize,  0                  ,1,1 },
-  { "syncer",            adm_syncer,  0                  ,1,1 },
-  { "adjust",            adm_adjust,  0                  ,1,1 },
-  { "wait_connect",      adm_wait_c,  0                  ,1,1 },
-  { "state",             adm_generic_s,"state"           ,1,1 },
-  { "cstate",            adm_generic_s,"cstate"          ,1,1 },
-  { "dump",              adm_dump,    0                  ,1,1 },
-  { "create-md",         admm_generic, "create-md"       ,1,1 },
-  { "show-gc",           admm_generic, "show-gc"         ,1,1 },
-  { "get-gc",            admm_generic, "get-gc"          ,1,1 },
-  { "dump-md",           admm_generic, "dump-md"         ,1,1 },
-  { "set-gc",            admm_generic, "set-gc"          ,0,1 },
-  { "pri-on-incon-degr", adm_khelper,  "pri-on-incon-degr",0,1},
-  { "pri-sees-sec-with-higher-gc", adm_khelper,  "pri-sees-sec-with-higher-gc",0,1},
-  { "on-disconnect",     adm_khelper,  "on-disconnect"   ,0,1},
-  { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
-  { "sh-resources",      sh_resources,0                  ,0,0 },
-  { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
-  { "sh-dev",            sh_dev,      0                  ,0,1 },
-  { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 },
-  { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
-  { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
+  { "attach",            adm_attach,            1, 1 },
+  { "detach",            adm_generic_s,         1, 1 },
+  { "connect",           adm_connect,           1, 1 },
+  { "disconnect",        adm_generic_s,         1, 1 },
+  { "up",                adm_up,                1, 1 },
+  { "down",              adm_generic_s,         1, 1 },
+  { "primary",           adm_generic_s,         1, 1 },
+  { "secondary",         adm_generic_s,         1, 1 },
+  { "invalidate",        adm_generic_l,         1, 1 },
+  { "invalidate_remote", adm_generic_l,         1, 1 },
+  { "outdate",           adm_generic_s,         1, 1 },
+  { "resize",            adm_resize,            1, 1 },
+  { "syncer",            adm_syncer,            1, 1 },
+  { "adjust",            adm_adjust,            1, 1 },
+  { "wait_connect",      adm_wait_c,            1, 1 },
+  { "state",             adm_generic_s,         1, 1 },
+  { "cstate",            adm_generic_s,         1, 1 },
+  { "dump",              adm_dump,              1, 1 },
+  { "create-md",         admm_generic,          1, 1 },
+  { "show-gc",           admm_generic,          1, 1 },
+  { "get-gc",            admm_generic,          1, 1 },
+  { "dump-md",           admm_generic,          1, 1 },
+  { "set-gc",            admm_generic,          0, 1 },
+  { "pri-on-incon-degr", adm_khelper,           0, 1 },
+  { "pri-sees-sec-with-higher-gc", adm_khelper, 0, 1 },
+  { "on-disconnect",     adm_khelper,           0, 1 },
+  { "wait_con_int",      adm_wait_ci,           1, 0 },
+  { "sh-resources",      sh_resources,          0, 0 },
+  { "sh-mod-parms",      sh_mod_parms,          0, 0 },
+  { "sh-dev",            sh_dev,                0, 1 },
+  { "sh-ll-dev",         sh_ll_dev,             0, 1 },
+  { "sh-md-dev",         sh_md_dev,             0, 1 },
+  { "sh-md-idx",         sh_md_idx,             0, 1 }
 };
 
 /*** These functions are used to the print the config ***/
@@ -225,7 +224,7 @@ static void dump_host_info(struct d_host_info* hi)
   --indent; printI("}\n");
 }
 
-static int adm_dump(struct d_resource* res,char* unused)
+static int adm_dump(struct d_resource* res,const char* unused)
 {
   printI("resource %s {\n",esc(res->name)); ++indent;
   printA("protocol",res->protocol);
@@ -241,7 +240,7 @@ static int adm_dump(struct d_resource* res,char* unused)
   return 0;
 }
 
-static int sh_resources(struct d_resource* ignored,char* unused)
+static int sh_resources(struct d_resource* ignored,const char* unused)
 {
   struct d_resource *res,*t;
   for_each_resource(res,t,config) {
@@ -252,21 +251,21 @@ static int sh_resources(struct d_resource* ignored,char* unused)
   return 0;
 }
 
-static int sh_dev(struct d_resource* res,char* unused)
+static int sh_dev(struct d_resource* res,const char* unused)
 {
   printf("%s\n",res->me->device);
 
   return 0;
 }
 
-static int sh_ll_dev(struct d_resource* res,char* unused)
+static int sh_ll_dev(struct d_resource* res,const char* unused)
 {
   printf("%s\n",res->me->disk);
 
   return 0;
 }
 
-static int sh_md_dev(struct d_resource* res,char* unused)
+static int sh_md_dev(struct d_resource* res,const char* unused)
 {
   char *r;
 
@@ -278,7 +277,7 @@ static int sh_md_dev(struct d_resource* res,char* unused)
   return 0;
 }
 
-static int sh_md_idx(struct d_resource* res,char* unused)
+static int sh_md_idx(struct d_resource* res,const char* unused)
 {
   printf("%s\n",res->me->meta_index);
 
@@ -286,7 +285,7 @@ static int sh_md_idx(struct d_resource* res,char* unused)
 }
 
 
-static int sh_mod_parms(struct d_resource* res,char* unused)
+static int sh_mod_parms(struct d_resource* res,const char* unused)
 {
   int mc=global_options.minor_count;
 
@@ -432,7 +431,7 @@ pid_t m_system(char** argv,int flags)
   if( flags & SLEEPS_FINITE ) {
     alarm(0);
     sigaction(SIGALRM,&so,NULL);
-    if(rv) {
+    if(rv >= 10) {
       fprintf(stderr,"Command '");
       while(*argv) {
 	fprintf(stderr,"%s",*argv++);
@@ -460,7 +459,7 @@ pid_t m_system(char** argv,int flags)
     OPT=OPT->next; \
   }
 
-int adm_attach(struct d_resource* res,char* unused)
+int adm_attach(struct d_resource* res,const char* unused)
 {
   char* argv[20];
   struct d_option* opt;
@@ -490,7 +489,7 @@ struct d_option* find_opt(struct d_option* base,char* name)
   return 0;
 }
 
-int adm_resize(struct d_resource* res,char* unused)
+int adm_resize(struct d_resource* res,const char* unused)
 {
   char* argv[20];
   struct d_option* opt;
@@ -506,7 +505,7 @@ int adm_resize(struct d_resource* res,char* unused)
   return m_system(argv,SLEEPS_SHORT);
 }
 
-static int admm_generic(struct d_resource* res ,char* cmd)
+static int admm_generic(struct d_resource* res ,const char* cmd)
 {
   char* argv[20];
   int argc=0,i;
@@ -520,7 +519,7 @@ static int admm_generic(struct d_resource* res ,char* cmd)
     argv[argc++]=res->me->meta_disk;
   }
   argv[argc++]=res->me->meta_index;
-  argv[argc++]=cmd;
+  argv[argc++]=(char*)cmd;
   for(i=0;i<soi;i++) {
     argv[argc++]=setup_opts[i];
   }
@@ -530,14 +529,14 @@ static int admm_generic(struct d_resource* res ,char* cmd)
   return m_system(argv,SLEEPS_VERY_LONG);
 }
 
-static int adm_generic(struct d_resource* res,char* cmd,int flags)
+static int adm_generic(struct d_resource* res,const char* cmd,int flags)
 {
   char* argv[20];
   int argc=0,i;
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
-  argv[argc++]=cmd;
+  argv[argc++]=(char*)cmd;
   for(i=0;i<soi;i++) {
     argv[argc++]=setup_opts[i];
   }
@@ -546,31 +545,32 @@ static int adm_generic(struct d_resource* res,char* cmd,int flags)
   return m_system(argv,flags);
 }
 
-int adm_generic_s(struct d_resource* res,char* cmd)
+int adm_generic_s(struct d_resource* res,const char* cmd)
 {
   return adm_generic(res,cmd,SLEEPS_SHORT);
 }
 
-int adm_generic_l(struct d_resource* res,char* cmd)
+int adm_generic_l(struct d_resource* res,const char* cmd)
 {
   return adm_generic(res,cmd,SLEEPS_LONG);
 }
 
-static char* get_opt_val(struct d_option*,char*,char*);
+static char* get_opt_val(struct d_option*,const char*,char*);
 
-static int adm_khelper(struct d_resource* res ,char* cmd)
+static int adm_khelper(struct d_resource* res ,const char* cmd)
 {
+  int rv=0;
   char *sh_cmd;
   char *argv[] = { "/bin/bash", "-c", NULL , NULL };
 
   if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
     argv[2]=sh_cmd;
-    m_system(argv,SLEEPS_VERY_LONG);
+    rv = m_system(argv,SLEEPS_VERY_LONG);
   }
-  return 0;
+  return rv;
 }
 
-int adm_connect(struct d_resource* res,char* unused)
+int adm_connect(struct d_resource* res,const char* unused)
 {
   char* argv[20];
   struct d_option* opt;
@@ -590,7 +590,7 @@ int adm_connect(struct d_resource* res,char* unused)
   return m_system(argv,SLEEPS_SHORT);
 }
 
-int adm_syncer(struct d_resource* res,char* unused)
+int adm_syncer(struct d_resource* res,const char* unused)
 {
   char* argv[20];
   struct d_option* opt;
@@ -606,7 +606,7 @@ int adm_syncer(struct d_resource* res,char* unused)
   return m_system(argv,SLEEPS_SHORT);
 }
 
-static int adm_up(struct d_resource* res,char* unused)
+static int adm_up(struct d_resource* res,const char* unused)
 {
   int r;
   if( (r=adm_attach(res,unused)) ) return r;
@@ -630,7 +630,7 @@ static int on_primary(struct d_resource* res ,char* flag)
 }
 
 
-static int adm_wait_c(struct d_resource* res ,char* unused)
+static int adm_wait_c(struct d_resource* res ,const char* unused)
 {
   char* argv[20];
   struct d_option* opt;
@@ -759,7 +759,7 @@ int gets_timeout(pid_t* pids, char* s, int size, int timeout)
    return pr;
 }
 
-static char* get_opt_val(struct d_option* base,char* name,char* def)
+static char* get_opt_val(struct d_option* base,const char* name,char* def)
 {
   while(base) {
     if(!strcmp(base->name,name)) {
@@ -795,7 +795,7 @@ static int check_exit_codes(pid_t* pids)
   return rv;
 }
 
-static int adm_wait_ci(struct d_resource* ignored ,char* unused)
+static int adm_wait_ci(struct d_resource* ignored ,const char* unused)
 {
   struct d_resource *res,*t;
   char *argv[20], answer[40];
@@ -1071,7 +1071,7 @@ void validate_resource(struct d_resource * res)
 
 int main(int argc, char** argv)
 {
-  int i,rv;
+  int i,rv=0;
   struct adm_cmd *cmd;
   struct d_resource *res,*tmp;
 
@@ -1230,7 +1230,7 @@ int main(int argc, char** argv)
       if(optind==argc || !strcmp(argv[optind],"all")) {
         if (cmd->function == adm_dump) dump_global_info();
         for_each_resource(res,tmp,config) {
-	  if( (rv=cmd->function(res,cmd->arg)) ) {
+	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	    exit(E_exec_error);
 	  }
@@ -1245,14 +1245,14 @@ int main(int argc, char** argv)
 	  fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
 	  exit(E_usage);
 	found:
-	  if( (rv=cmd->function(res,cmd->arg)) ) {
+	  if( (rv=cmd->function(res,cmd->name)) >= 10 ) {
 	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(E_exec_error);
 	  }
 	}
       }
     } else { // Commands which do not need a resource name
-      if( (rv=cmd->function(config,cmd->arg)) ) {
+      if( (rv=cmd->function(config,cmd->name)) >= 10) {
 	fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	exit(E_exec_error);
       }
@@ -1260,7 +1260,7 @@ int main(int argc, char** argv)
 
   free_config(config);
 
-  return 0;
+  return rv;
 }
 
 void yyerror(char* text)
