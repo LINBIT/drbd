@@ -29,7 +29,7 @@ LANGS=ja pt_BR
 
 ####### Implicit rules
 
-.SUFFIXES: .sgml .5 .8
+.SUFFIXES: .sgml .5 .8 .html .pdf .ps
 
 .sgml.5:
 	if [ "$(DB2MAN)" ]; then $(DB2MAN) $< ; fi
@@ -37,16 +37,31 @@ LANGS=ja pt_BR
 .sgml.8:
 	if [ "$(DB2MAN)" ]; then $(DB2MAN) $< ; fi
 
+.sgml.html:
+	if [ "$(DB2HTML)" ]; then $(DB2HTML) $< ; mv index.html $@; fi
+
+.sgml.pdf:
+	if [ "$(DB2PDF)" ]; then $(DB2PDF) $< ; if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi ; fi
+
+.sgml.ps:
+	if [ "$(DB2PS)" ]; then $(DB2PS) $< ; if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi; gzip -c $@ > $@.gz; fi
+
 #######
 
-all:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 HOWTO/index.html
-	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i all; done
+prepare:
+	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
+
+man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
+
+all:	prepare man HOWTO/index.html
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 	if [ "$(DB2HTML)" ]; then cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd .. ; fi
 
 clean:
-	rm -f *.ps *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
+	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
+	rm -f *.ps.gz *.pdf *.ps *.html
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
@@ -67,3 +82,10 @@ install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
 		install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8; \
 	fi
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
+
+html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)	
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i html; done	
+pdf:	prepare $(shell ls *.sgml | sed s/sgml/pdf/g)
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i pdf; done	
+ps:	prepare $(shell ls *.sgml | sed s/sgml/ps/g)
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i ps; done	
