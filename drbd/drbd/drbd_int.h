@@ -348,8 +348,6 @@ typedef enum {
 	DataRequest,   // Used to ask for a data block
 	RSDataRequest, // Used to ask for a data block
 	SyncParam,
-	SyncStop,
-	SyncCont,
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
@@ -378,8 +376,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 	case DataRequest     : return "DataRequest";
 	case RSDataRequest   : return "RSDataRequest";
 	case SyncParam       : return "SyncParam";
-	case SyncStop        : return "SyncStop";
-	case SyncCont        : return "SyncCont";
 	case MAX_CMD         : return "MAX_CMD";
 	case MayIgnore       : return "MayIgnore";
 	case MAX_OPT_CMD     : return "MAX_OPT_CMD";
@@ -685,7 +681,6 @@ struct Drbd_Conf {
 	Drbd_State state;
 	Drbd_CState cstate;
 	wait_queue_head_t cstate_wait;
-	struct list_head  cstate_hook; // processed if cstate changes.
 	wait_queue_head_t state_wait;  // TODO: Remove state_wait.
 	Drbd_State o_state;
 	unsigned long int la_size; // last agreed disk size
@@ -748,7 +743,7 @@ struct Drbd_Conf {
  *************************/
 
 // drbd_main.c
-extern void set_cstate(drbd_dev* mdev,Drbd_CState cs);
+extern void _set_cstate(drbd_dev* mdev,Drbd_CState cs);
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(drbd_dev *mdev);
@@ -762,7 +757,7 @@ extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send_param(drbd_dev *mdev);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
-extern int drbd_send_sync_param(drbd_dev *mdev);
+extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
 extern int drbd_send_cstate(drbd_dev *mdev);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
@@ -877,12 +872,14 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 // drbd_dsender.c
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate);
+extern void drbd_alter_sg(drbd_dev *mdev, int ng);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 // worker callbacks
-extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work*w);
-extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work*w);
-extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work*w);
-extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work*w);
+extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work *w);
+extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work *w);
+extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work *w);
+extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work *w);
+extern int w_resume_next_sg      (drbd_dev* mdev, struct drbd_work *w);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
@@ -999,11 +996,26 @@ do {									\
  * inline helper functions
  *************************/
 
-static inline void
-_drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
-		  struct drbd_work *w)
+static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
 	unsigned long flags;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	_set_cstate(mdev,ns);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+}
+
+static inline void 
+_drbd_dequeue_work(struct drbd_work_queue *q, struct drbd_work *w)
+{
+	if(!list_empty(&w->list)) {
+		list_del_init(&w->list);
+		down(&q->s); // Should! never sleep.
+	}
+}
+
+static inline void
+_drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
+{
 	list_add_tail(&w->list,&q->q);
 	up(&q->s);
 }

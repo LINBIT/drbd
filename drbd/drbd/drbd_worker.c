@@ -78,27 +78,9 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
 	return 0;
 }
 
-STATIC drbd_dev *ds_find_osg(drbd_dev *mdev)
-{
-	drbd_dev *odev;
-	int i;
-
-	for (i=0; i < minor_count; i++) {
-		odev = drbd_conf + i;
-		if ( odev->sync_conf.group < mdev->sync_conf.group
-		     && odev->cstate > Connected ) {
-			return odev;
-		}
-	}
-
-	return 0;
-}
-
 void resync_timer_fn(unsigned long data)
 {
-	drbd_dev* mdev;
-
-	mdev = (drbd_dev*) data;
+	drbd_dev* mdev = (drbd_dev*) data;
 
 	drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 }
@@ -106,34 +88,13 @@ void resync_timer_fn(unsigned long data)
 STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 {
 	struct Pending_read *pr;
-	struct Drbd_Conf    *odev;
 	sector_t sector;
 	int number,i,size;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
-	// wait_for_other_sync_groups
-	odev = ds_find_osg(mdev);
-	if (odev) {
-		spin_lock_irq(&odev->req_lock);
-		if (odev->cstate > Connected) {
-			list_add_tail(&w->list,&odev->cstate_hook);
-			spin_unlock_irq(&odev->req_lock);
-			INFO("Syncer waits for sync group %i\n",
-			     odev->sync_conf.group);
-			drbd_send_short_cmd(mdev,SyncStop);
-			set_cstate(mdev,PausedSyncT);
-			return 1;
-		}
-		// state change while we were looking at it. never mind ...
-		spin_unlock_irq(&odev->req_lock);
-	}
+	if(mdev->cstate < Connected ) return 1; // connection was lost...
 
-	if (mdev->cstate == PausedSyncT) {
-		INFO("resumed synchronisation.\n");
-		drbd_send_short_cmd(mdev,SyncCont);
-		set_cstate(mdev,SyncTarget);
-	}
 	D_ASSERT(mdev->cstate == SyncTarget);
 
 #define SLEEP_TIME (HZ/10)
@@ -157,7 +118,7 @@ STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 		if (sector == MBDS_DONE) {
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
-			mdev->resync_work.cb = w_resync_inactive;
+			mdev->resync_work.cb = w_resync_inactive; //TODO ööö
 			return 1;
 		}
 
@@ -197,12 +158,12 @@ int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
 		drbd_md_write(mdev);
 	}
 	mdev->rs_total = 0;
-	set_cstate(mdev,Connected);
 
 	// assert that all bit-map parts are cleared.
 	D_ASSERT(list_empty(&mdev->resync->lru));
-	w->cb = w_resync_inactive;
-	INIT_LIST_HEAD(&w->list);
+	// w->cb = w_resync_inactive; // look into done set_cstate()
+
+	set_cstate(mdev,Connected);
 	return 1;
 }
 
@@ -240,7 +201,151 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	return ok;
 }
 
-void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
+
+STATIC void drbd_global_lock(void)
+{
+	int i;
+
+	local_irq_disable();
+	for (i=0; i < minor_count; i++) {
+		spin_lock(&drbd_conf[i].req_lock);
+	}
+}
+
+STATIC void drbd_global_unlock(void)
+{
+	int i;
+
+	for (i=0; i < minor_count; i++) {
+		spin_unlock(&drbd_conf[i].req_lock);
+	}
+	local_irq_enable();
+}
+
+STATIC void _drbd_rs_resume(drbd_dev *mdev)
+{
+	Drbd_CState ns;
+
+	ns = mdev->cstate - (PausedSyncS - SyncSource);
+	D_ASSERT(ns == SyncSource || ns == SyncTarget);
+
+	INFO("Syncer continues.\n");
+	_set_cstate(mdev,ns);
+
+	mdev->resync_work.cb = w_make_resync_request;
+	_drbd_dequeue_work(&mdev->data.work,&mdev->resync_work);
+}
+
+
+STATIC void _drbd_rs_pause(drbd_dev *mdev)
+{
+	Drbd_CState ns;
+
+	D_ASSERT(mdev->cstate == SyncSource || mdev->cstate == SyncTarget);
+	ns = mdev->cstate + (PausedSyncS - SyncSource);
+
+	del_timer_sync(&mdev->resync_timer);
+	_drbd_dequeue_work(&mdev->data.work,&mdev->resync_work);
+	mdev->resync_work.cb = w_resync_inactive;
+
+	_set_cstate(mdev,ns);
+	INFO("Syncer waits for sync group.\n");
+}
+
+STATIC int _drbd_pause_higher_sg(drbd_dev *mdev)
+{
+	drbd_dev *odev;
+	int i,rv=0;
+
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group > mdev->sync_conf.group
+		     && ( odev->cstate == SyncSource || 
+			  odev->cstate == SyncTarget ) ) {
+			_drbd_rs_pause(odev);
+			rv = 1;
+		}
+	}
+
+	return rv;
+}
+
+STATIC int _drbd_lower_sg_running(drbd_dev *mdev)
+{
+	drbd_dev *odev;
+	int i,rv=0;
+
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group < mdev->sync_conf.group
+		     && ( odev->cstate == SyncSource || 
+			  odev->cstate == SyncTarget ) ) {
+			rv = 1;
+		}
+	}
+
+	return rv;
+}
+
+int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w)
+{
+	drbd_dev *odev;
+	int i,ng=10000;
+
+	PARANOIA_BUG_ON(w != &mdev->resync_work);
+
+	WARN("w_resume_next_sg() called.\n");
+
+	drbd_global_lock();
+
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group > mdev->sync_conf.group
+		     && odev->sync_conf.group < ng ) {
+			ng = odev->sync_conf.group;
+		}
+	}
+
+	WARN("ng = %d\n",ng);
+
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group == ng ) {
+			_drbd_rs_resume(odev);
+			WARN("odev = %p\n",odev);
+		}
+	}
+
+	drbd_global_unlock();
+	w->cb = w_resync_inactive;
+
+	return 1;
+}
+
+void drbd_alter_sg(drbd_dev *mdev, int ng)
+{
+	int c = 0;
+	int d = (ng - mdev->sync_conf.group);
+
+	drbd_global_lock();
+	mdev->sync_conf.group = ng;
+
+	if( ( mdev->cstate == PausedSyncS || 
+	      mdev->cstate == PausedSyncT ) && ( d < 0 ) ) {
+		if(_drbd_pause_higher_sg(mdev)) c=1;
+		else if(!_drbd_lower_sg_running(mdev)) c=1;
+		if(c) _drbd_rs_resume(mdev);
+	}
+
+	if( ( mdev->cstate == SyncSource || 
+	      mdev->cstate == SyncTarget ) && ( d > 0 ) ) {
+		if(_drbd_lower_sg_running(mdev)) c=1;
+		if(c) _drbd_rs_pause(mdev);
+	}
+	drbd_global_unlock();
+}
+
+void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 {
 	set_cstate(mdev,side);
 	mdev->rs_left=mdev->rs_total;
@@ -271,6 +376,13 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	}
 
 	drbd_md_write(mdev);
+
+	drbd_global_lock();
+	_drbd_pause_higher_sg(mdev);
+	if(_drbd_lower_sg_running(mdev)) {
+		_drbd_rs_pause(mdev);
+	}
+	drbd_global_unlock();
 }
 
 int drbd_worker(struct Drbd_thread *thi)
@@ -310,7 +422,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		spin_lock_irq(&mdev->req_lock);
 		if (!list_empty(&mdev->data.work.q)) {
 			w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
-			list_del(&w->list);
+			list_del_init(&w->list);
 		}
 		spin_unlock_irq(&mdev->req_lock);
 

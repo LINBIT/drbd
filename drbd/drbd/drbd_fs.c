@@ -487,6 +487,42 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 	return 0;
 }
 
+STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
+				 struct ioctl_syncer_config* arg)
+{
+	struct syncer_config sc;
+
+	if(copy_from_user(&sc,&arg->config,sizeof(sc))) return -EFAULT;
+
+	mdev->sync_conf.rate       = sc.rate;
+	mdev->sync_conf.use_csums  = sc.use_csums;
+	mdev->sync_conf.skip       = sc.skip;
+	mdev->sync_conf.al_extents = sc.al_extents;
+
+	if ( !mdev->act_log ||
+	     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )	{
+		struct lru_cache *n,*t;
+		n = lc_alloc(mdev->sync_conf.al_extents,
+			     sizeof(struct lc_element), mdev);
+		// FIXME if (n==NULL) scream out loud ...
+		// FIXME if (still_in_use) BUG();
+		spin_lock_irq(&mdev->al_lock);
+		t = mdev->act_log;
+		mdev->act_log = n;
+		spin_unlock_irq(&mdev->al_lock);
+		if (t) lc_free(t);
+	}
+	
+	if (mdev->cstate > WFConnection)
+		drbd_send_sync_param(mdev,&sc);
+
+	drbd_alter_sg(mdev, sc.group);
+
+	return 0;
+}
+	
+
+
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
@@ -557,29 +593,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_SYNC_CONFIG:
-		// PARANOIA check plausibility of values.
-		err = copy_from_user(&drbd_conf[minor].sync_conf,
-			   &(((struct ioctl_syncer_config*)arg)->config),
-				     sizeof(struct syncer_config));
-		// THINK         > WFReportParams? Connected?
-		if (mdev->cstate > WFConnection)
-			drbd_send_sync_param(mdev);
-		// TODO Need to signal dsender() ?
-
-		if ( !mdev->act_log ||
-		     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )
-		{
-			struct lru_cache *n,*t;
-			n = lc_alloc(mdev->sync_conf.al_extents,
-				     sizeof(struct lc_element), mdev);
-			// FIXME if (n==NULL) scream out loud ...
-			// FIXME if (still_in_use) BUG();
-			spin_lock_irq(&mdev->al_lock);
-			t = mdev->act_log;
-			mdev->act_log = n;
-			spin_unlock_irq(&mdev->al_lock);
-			if (t) lc_free(t);
-		}
+		err = drbd_ioctl_set_syncer(mdev,
+					    (struct ioctl_syncer_config*) arg);
 		break;
 
 	case DRBD_IOCTL_GET_CONFIG:

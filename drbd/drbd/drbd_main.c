@@ -313,27 +313,19 @@ void daemonize(void)
 }
 #endif
 
-void set_cstate(drbd_dev* mdev,Drbd_CState cs)
+void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
-	struct list_head *le;
-	struct drbd_work *w;
-	struct Drbd_Conf *that_dev;
-	unsigned long flags;
+	Drbd_CState os;
 
-	spin_lock_irqsave(&mdev->req_lock,flags);
-	mdev->cstate = cs;
-
-	while(!list_empty(&mdev->cstate_hook)) {
-		le = mdev->cstate_hook.next;
-		w  = list_entry(le,struct drbd_work,list);
-		list_del(le);
-		that_dev = container_of(w,struct Drbd_Conf,resync_work);
-		PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-		list_add_tail(&w->list,&that_dev->data.work.q);
-	}
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
-
+	os = mdev->cstate;
+	mdev->cstate = ns;
 	wake_up_interruptible(&mdev->cstate_wait);
+
+	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
+		WARN("queuing w_resume_next_sg().\n");
+		mdev->resync_work.cb = w_resume_next_sg;
+		_drbd_dequeue_work(&mdev->data.work,&mdev->resync_work);
+	}
 }
 
 STATIC int drbd_thread_setup(void* arg)
@@ -516,20 +508,20 @@ STATIC int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
 	return ok;
 }
 
-int drbd_send_sync_param(drbd_dev *mdev)
+int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 {
 	Drbd_SyncParam_Packet p;
 	int ok;
 
-	p.rate      = cpu_to_be32(mdev->sync_conf.rate);
-	p.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
-	p.skip      = cpu_to_be32(mdev->sync_conf.skip);
-	p.group     = cpu_to_be32(mdev->sync_conf.group);
+	p.rate      = cpu_to_be32(sc->rate);
+	p.use_csums = cpu_to_be32(sc->use_csums);
+	p.skip      = cpu_to_be32(sc->skip);
+	p.group     = cpu_to_be32(sc->group);
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
 	if ( ok
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
-	    && !mdev->sync_conf.skip )
+	    && !sc->skip )
 	{
 		set_cstate(mdev,WFReportParams);
 		ok = drbd_send_param(mdev);
@@ -1029,13 +1021,11 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->pr_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->send_task_lock = SPIN_LOCK_UNLOCKED;
 
-	INIT_LIST_HEAD(&mdev->cstate_hook);
 	INIT_LIST_HEAD(&mdev->free_ee);
 	INIT_LIST_HEAD(&mdev->active_ee);
 	INIT_LIST_HEAD(&mdev->sync_ee);
 	INIT_LIST_HEAD(&mdev->done_ee);
 	INIT_LIST_HEAD(&mdev->read_ee);
-	// INIT_LIST_HEAD(&mdev->rdone_ee);
 	INIT_LIST_HEAD(&mdev->busy_blocks);
 	INIT_LIST_HEAD(&mdev->app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);

@@ -1192,7 +1192,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	mdev->sync_conf.rate      = be32_to_cpu(p->rate);
 	mdev->sync_conf.use_csums = be32_to_cpu(p->use_csums);
 	mdev->sync_conf.skip      = be32_to_cpu(p->skip);
-	mdev->sync_conf.group     = be32_to_cpu(p->group);
+	drbd_alter_sg(mdev, be32_to_cpu(p->group));
 
 	if (   (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !mdev->sync_conf.skip )
@@ -1482,22 +1482,6 @@ STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail, only deadlock :)
 }
 
-STATIC int receive_SyncStop(drbd_dev *mdev, Drbd_Header *h)
-{
-	D_ASSERT(mdev->cstate == SyncSource);
-	set_cstate(mdev,PausedSyncS);
-	INFO("Syncer waits for sync group\n");
-	return TRUE; // cannot fail ?
-}
-
-STATIC int receive_SyncCont(drbd_dev *mdev, Drbd_Header *h)
-{
-	D_ASSERT(mdev->cstate == PausedSyncS);
-	set_cstate(mdev,SyncSource);
-	INFO("resumed synchronisation.\n");
-	return TRUE; // cannot fail ?
-}
-
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
@@ -1519,8 +1503,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[DataRequest]      = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
 	[SyncParam]        = receive_SyncParam,
-	[SyncStop]         = receive_SyncStop,
-	[SyncCont]         = receive_SyncCont,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;

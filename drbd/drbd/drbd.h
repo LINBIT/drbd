@@ -150,9 +150,9 @@ typedef enum {
 	SkippedSyncT,
 	WFBitMapS,
 	WFBitMapT,
-	SyncSource,
-	SyncTarget,
-	PausedSyncS,    // is sync source, but higher priority groups first
+	SyncSource,     // The distance between original state and pause
+	SyncTarget,     // state must be the same for source and target. (+2)
+	PausedSyncS,    // see _drbd_rs_resume() and _drbd_rs_pause()
 	PausedSyncT,    // is sync target, but higher priority groups first
 } Drbd_CState;
 
