@@ -23,7 +23,7 @@
 extern const char * drbd_buildtag(void);
 
 #define REL_VERSION "0.8-pre1"
-#define API_VERSION 77
+#define API_VERSION 80
 #define PRO_VERSION 74
 
 //#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces

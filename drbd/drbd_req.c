@@ -144,7 +144,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector, nr_sectors;
 
-	if (drbd_md_test_flag(mdev,MDF_Consistent)) return 1;
+	if (mdev->state.s.disk == UpToDate) return 1;
 
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
@@ -255,7 +255,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				dec_local(mdev);
 			}
 		}
-		remote = !local && mdev->state.s.pdsk >= Consistent;
+		remote = !local && mdev->state.s.pdsk >= UpToDate;//Consistent;
 	} else {
 		remote = 1;
 	}

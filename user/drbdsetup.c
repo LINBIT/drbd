@@ -105,6 +105,7 @@ int cmd_down(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_outdate(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
@@ -168,6 +169,7 @@ struct drbd_cmd commands[] = {
    (struct option[]) {
      { "size",  required_argument,      0, 'd' },
      { 0,            0,                 0, 0 } } },
+  {"outdate", cmd_outdate,           0, 0, },
   {"disconnect", cmd_disconnect,     0, 0, },
   {"state", cmd_state,               0, 0, },
   {"cstate", cmd_cstate,              0, 0, },
@@ -955,6 +957,22 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
       PERROR("ioctl(,INVALIDATE_REM,) failed");
       if(err==EINPROGRESS)
 	fprintf(stderr,"Only in 'Connected' cstate possible.\n");
+      return 20;
+    }
+  return 0;
+}
+
+int cmd_outdate(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_OUTDATE_DISK);
+  if(err)
+    {
+      err=errno;
+      PERROR("ioctl(,OUTDATE_DISK,) failed");
+      if(err==EISCONN)
+	fprintf(stderr,"Only possible when not connected to the peer.\n");
       return 20;
     }
   return 0;

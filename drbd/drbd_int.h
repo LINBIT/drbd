@@ -246,11 +246,13 @@ enum MetaDataFlags {
 	__MDF_PrimaryInd,
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
+	__MDF_UpToDate,
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
 #define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
 #define MDF_FullSync        (1<<__MDF_FullSync)
+#define MDF_UpToDate        (1<<__MDF_UpToDate)
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 enum MetaDataIndex {

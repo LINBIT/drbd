@@ -401,8 +401,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_paused = 0;
 
 	drbd_request_state(mdev,NS3(conn,Connected,
-				    disk,Consistent,
-				    pdsk,Consistent));
+				    disk,UpToDate,
+				    pdsk,UpToDate));
 
 	drbd_md_write(mdev);
 
@@ -711,14 +711,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	} else if (side == SyncSource) {
 		r = drbd_request_state(mdev,NS2(conn,SyncSource,
 						pdsk,Inconsistent));
-		/* If we are SyncSource we must be consistent.
-		 * FIXME this should be an assertion only,
-		 * otherwise it masks a logic bug somewhere else...
-		 */
-		ERR_IF (!drbd_md_test_flag(mdev,MDF_Consistent)) {
-			// FIXME this is actually a BUG()!
-			drbd_md_set_flag(mdev,MDF_Consistent);
-		}
+		D_ASSERT(mdev->state.s.disk == UpToDate);
 	}
 
 	if(r != 1) return;

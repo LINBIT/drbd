@@ -431,10 +431,14 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		    ns.s.conn < Connected ) rv=-3;
 
 		if( ns.s.conn > Connected && 
-		    ns.s.disk < Consistent && ns.s.pdsk < Consistent ) rv=-4;
+		    ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
 
 		if( ns.s.conn > Connected && 
 		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) rv=-5;
+
+		if( (ns.s.conn >= Connected && ns.s.conn != PausedSyncT) &&
+		    ns.s.disk == Outdated ) rv=-6;
+
 	}
 
 	/*  State sanitising  */
@@ -444,6 +448,48 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	if( ns.s.disk <= Failed && ns.s.conn > Connected) {
 		WARN("Resync aborted.\n");
 		ns.s.conn = Connected;
+	}
+
+	if( ns.s.conn >= Connected && ns.s.disk == Consistent ) {
+		switch(ns.s.conn) {
+		case SkippedSyncT:
+		case WFBitMapT:
+		case PausedSyncT:
+			ns.s.disk = Outdated;
+			break;
+		case Connected:
+		case SkippedSyncS:
+		case WFBitMapS:
+		case SyncSource:
+		case PausedSyncS:
+			ns.s.disk = UpToDate;
+			break;
+		case SyncTarget:
+			ns.s.disk = Inconsistent;
+			WARN("Implicit set disk state Inconsistent!\n");
+			break;
+		}
+	}
+
+	if( ns.s.conn >= Connected && ns.s.pdsk == Consistent ) {
+		switch(ns.s.conn) {
+		case Connected:
+		case SkippedSyncT:
+		case WFBitMapT:
+		case PausedSyncT:
+		case SyncTarget:
+			ns.s.pdsk = UpToDate;
+			break;
+		case SkippedSyncS:
+		case WFBitMapS:
+		case PausedSyncS:
+			ns.s.pdsk = Outdated;
+			break;
+		case SyncSource:
+			ns.s.disk = Inconsistent;
+			WARN("Implicit set pdsk Inconsistent!\n");
+			break;
+		}
 	}
 
 	if(rv <= 0) {
@@ -483,7 +529,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if ( ns.s.role == Primary && ns.s.conn < Connected &&
-	     ns.s.disk < Consistent ) {
+	     ns.s.disk < UpToDate ) {
 		drbd_panic("No access to good data anymore.\n");
 	}
 
@@ -506,18 +552,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	     ns.s.conn >= Connected ) {
 		drbd_send_param(mdev,0);
 	}
-
-	/*  Update MDF_Consistent in the meta-data  */
-	if ( os.s.disk != ns.s.disk && ns.s.disk > Failed ) {
-		if(ns.s.disk >= Outdated ) {
-			drbd_md_set_flag(mdev,MDF_Consistent);
-		} else {
-			drbd_md_clear_flag(mdev,MDF_Consistent);
-		}
-		/* TODO metadata, to support everything that 
-		   drbd_disk_t can express... */
-	}
-
 }
 
 
@@ -1964,9 +1998,12 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer,0,512);
 
-	flags = mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
+	flags = mdev->gen_cnt[Flags] & ~(MDF_Consistent|MDF_PrimaryInd|
+					 MDF_ConnectedInd|MDF_UpToDate);
 	if (mdev->state.s.role == Primary)        flags |= MDF_PrimaryInd;
 	if (mdev->state.s.conn >= WFReportParams) flags |= MDF_ConnectedInd;
+	if (mdev->state.s.disk >= Consistent)     flags |= MDF_Consistent;
+	if (mdev->state.s.disk >= UpToDate)       flags |= MDF_UpToDate;
 	mdev->gen_cnt[Flags] = flags;
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
@@ -2127,15 +2164,7 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	u32 me,other;
 
 	/* FIXME
-	 * we should not only rely on the consistent bit, but at least check
-	 * whether the rest of the gencounts is plausible, to detect a previous
-	 * split brain situation, and refuse anything until we are told
-	 * otherwise!
-	 *
-	 * And we should refuse to become SyncSource if we are not consistent!
-	 *
-	 * though DRBD is not to blame for it,
-	 * someone eventually will try to blame it ...
+	 * Take the UpToDate flag into account.
 	 */
 
 	me=mdev->gen_cnt[Flags] & MDF_Consistent;

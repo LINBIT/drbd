@@ -126,6 +126,7 @@ struct adm_cmd cmds[] = {
   { "secondary",         adm_generic_s,"secondary"       ,1,1 },
   { "invalidate",        adm_generic_l,"invalidate"      ,1,1 },
   { "invalidate_remote", adm_generic_l,"invalidate_remote",1,1 },
+  { "outdate",           adm_generic_s,"outdate"         ,1,1 },
   { "resize",            adm_resize,  0                  ,1,1 },
   { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },

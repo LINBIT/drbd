@@ -84,11 +84,13 @@ enum MetaDataFlags {
 	__MDF_PrimaryInd,
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
+	__MDF_UpToDate,
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
 #define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
 #define MDF_FullSync        (1<<__MDF_FullSync)
+#define MDF_UpToDate        (1<<__MDF_UpToDate)
 
 enum MetaDataIndex {
 	Flags,			/* Consistency flag,connected-ind,primary-ind */
@@ -180,14 +182,32 @@ struct __attribute__ ((packed)) md_on_disk_06 {
 void md_disk_06_to_cpu(struct md_cpu *cpu, const struct md_on_disk_06 *disk)
 {
 	int i;
+	u32 flags;
+
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
+
+	/* 06 does not have the UpToDate flag, set it according to
+	   the Consistent Flag */
+	flags = cpu->gc[Flags];
+	if( flags & MDF_Consistent) flags = flags | MDF_UpToDate;
+	cpu->gc[Flags]=flags;
 }
 
-void md_cpu_to_disk_06(struct md_on_disk_06 *disk, const struct md_cpu *cpu)
+void md_cpu_to_disk_06(struct md_on_disk_06 *disk, struct md_cpu *cpu)
 {
 	int i;
+	u32 flags;
+
+	/* Commulate the UpToDate flag into the consistent flag. */
+	flags = cpu->gc[Flags];
+	if(!((flags & MDF_Consistent) && (flags & MDF_UpToDate))) {
+		flags &= ~MDF_Consistent;
+	}
+	flags &= ~MDF_UpToDate;
+	cpu->gc[Flags]=flags;
+
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
 	disk->magic.be = cpu_to_be32(cpu->magic);
@@ -220,6 +240,7 @@ struct __attribute__ ((packed)) md_on_disk_07 {
 void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 {
 	int i;
+	u32 flags;
 	cpu->la_sect = be64_to_cpu(disk->la_kb.be) << 1;
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
@@ -228,11 +249,27 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
+
+	/* 07 does not have the UpToDate flag, set it according to
+	   the Consistent Flag */
+	flags = cpu->gc[Flags];
+	if( flags & MDF_Consistent) flags = flags | MDF_UpToDate;
+	cpu->gc[Flags]=flags;
 }
 
-void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu *cpu)
+void md_cpu_to_disk_07(struct md_on_disk_07 *disk, struct md_cpu *cpu)
 {
 	int i;
+	u32 flags;
+
+	/* Commulate the UpToDate flag into the consistent flag. */
+	flags = cpu->gc[Flags];
+	if(!((flags & MDF_Consistent) && (flags & MDF_UpToDate))) {
+		flags &= ~MDF_Consistent;
+	}
+	flags &= ~MDF_UpToDate;
+	cpu->gc[Flags]=flags;
+
 	disk->la_kb.be = cpu_to_be64(cpu->la_sect >> 1);
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
@@ -596,7 +633,7 @@ void printf_bm(const le_u64 * bm, const unsigned int n)
 
 void printf_gc(const struct md_cpu *md)
 {
-	printf("%d:%d:%d:%d:%d:%d:%d:%d\n",
+	printf("%d:%d:%d:%d:%d:%d:%d:%d:%d\n",
 	       md->gc[Flags] & MDF_Consistent ? 1 : 0,
 	       md->gc[HumanCnt],
 	       md->gc[TimeoutCnt],
@@ -604,7 +641,8 @@ void printf_gc(const struct md_cpu *md)
 	       md->gc[ArbitraryCnt],
 	       md->gc[Flags] & MDF_PrimaryInd ? 1 : 0,
 	       md->gc[Flags] & MDF_ConnectedInd ? 1 : 0,
-	       md->gc[Flags] & MDF_FullSync ? 1 : 0);
+	       md->gc[Flags] & MDF_FullSync ? 1 : 0,
+	       md->gc[Flags] & MDF_UpToDate ? 1 : 0);
 }
 
 /******************************************
@@ -1053,16 +1091,17 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 		return -1;
 
 	printf("\n"
-	       "                                        WantFullSync |\n"
-	       "                                  ConnectedInd |     |\n"
-	       "                               lastState |     |     |\n"
-	       "                      ArbitraryCnt |     |     |     |\n"
-	       "                ConnectedCnt |     |     |     |     |\n"
-	       "            TimeoutCnt |     |     |     |     |     |\n"
-	       "        HumanCnt |     |     |     |     |     |     |\n"
-	       "Consistent |     |     |     |     |     |     |     |\n"
-	       "   --------+-----+-----+-----+-----+-----+-----+-----+\n"
-	       "       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
+	       "                                                  UpToDate |\n"
+	       "                                        WantFullSync |     |\n"
+	       "                                  ConnectedInd |     |     |\n"
+	       "                               lastState |     |     |     |\n"
+	       "                      ArbitraryCnt |     |     |     |     |\n"
+	       "                ConnectedCnt |     |     |     |     |     |\n"
+	       "            TimeoutCnt |     |     |     |     |     |     |\n"
+	       "        HumanCnt |     |     |     |     |     |     |     |\n"
+	       "Consistent |     |     |     |     |     |     |     |     |\n"
+	       "   --------+-----+-----+-----+-----+-----+-----+-----+-----+\n"
+	       "       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s | %3s  \n"
 	       "\n",
 	       cfg->md.gc[Flags] & MDF_Consistent ? "1/c" : "0/i",
 	       cfg->md.gc[HumanCnt],
@@ -1071,7 +1110,9 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 	       cfg->md.gc[ArbitraryCnt],
 	       cfg->md.gc[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
 	       cfg->md.gc[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
-	       cfg->md.gc[Flags] & MDF_FullSync ? "1/y" : "0/n");
+	       cfg->md.gc[Flags] & MDF_FullSync ? "1/y" : "0/n",
+	       cfg->md.gc[Flags] & MDF_UpToDate ? "1/y" : "0/n");
+
 
 	if (cfg->md.la_sect) {
 		printf("last agreed size: %s\n",

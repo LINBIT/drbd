@@ -1102,7 +1102,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	if(!inc_local(mdev) || (mdev->gen_cnt[Flags] & MDF_Consistent) == 0) {
+	if(!inc_local(mdev) || mdev->state.s.disk < UpToDate ) {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not satisfy peer's read request, no local data.\n");
 		drbd_send_ack(mdev,NegDReply,e);
@@ -1206,7 +1206,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 	drbd_dump_md(mdev,p,0);
 	// INFO("have_good=%d sync=%d\n", have_good, sync);
 
-	if (have_good > 0 && !drbd_md_test_flag(mdev,MDF_Consistent)) {
+	if (have_good > 0 && mdev->state.s.disk < Consistent ) {
 		/* doh. I cannot become SyncSource when I am inconsistent!
 		 */
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
@@ -1290,8 +1290,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
 	drbd_conns_t nconn;
-	drbd_disks_t npdsk;
-	drbd_state_t ns;
+	drbd_state_t ns,peer_state;
 	int consider_sync,rv;
 	sector_t p_size;
 
@@ -1388,16 +1387,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		     (unsigned long)mdev->lo_usize);
 	}
 
-
-	if(p_size ) {
-		npdsk = Inconsistent;
- 		if (be32_to_cpu(p->gen_cnt[Flags]) & MDF_Consistent) {
-			npdsk = Consistent;
-		}
-	} else {
-		npdsk = Diskless;
-	}
-
 	if (mdev->state.s.conn == WFReportParams) {
 		INFO("Connection established.\n");
 	}
@@ -1408,11 +1397,13 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			return FALSE;
 	}
 
+	peer_state.i = be32_to_cpu(p->state);
+
 	spin_lock_irq(&mdev->req_lock);
 	ns.i = mdev->state.i;
 	ns.s.conn = nconn;
-	ns.s.peer = be32_to_cpu(p->state);
-	ns.s.pdsk = npdsk;
+	ns.s.peer = peer_state.s.role;
+	ns.s.pdsk = peer_state.s.disk;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	spin_unlock_irq(&mdev->req_lock);
 

@@ -222,6 +222,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	struct file *filp2 = 0;
 	struct inode *inode, *inode2;
 	struct block_device *bdev, *bdev2;
+	drbd_disks_t nds;
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -434,9 +435,22 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
-	if(drbd_request_state(mdev,NS(disk,
-				      drbd_md_test_flag(mdev,MDF_Consistent)
-				      ? Consistent : Inconsistent )) > 0) {
+	/* If MDF_Consistent is not set go into inconsistent state, otherwise
+	   investige MDF_UpToDate...
+	   If MDF_UpToDate is not set go into Outdated disk state, otherwise
+	   into Consistent state.
+	*/
+	if(drbd_md_test_flag(mdev,MDF_Consistent)) {
+		if(drbd_md_test_flag(mdev,MDF_UpToDate)) {
+			nds = Consistent;
+		} else {
+			nds = Outdated;
+		}
+	} else {
+		nds = Inconsistent;
+	}
+
+	if(drbd_request_state(mdev,NS(disk,nds)) > 0) {
 		drbd_thread_start(&mdev->worker);
 	}
 
@@ -615,10 +629,10 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 		}
 
 		/* --do-what-I-say*/
-		if (mdev->state.s.disk < Consistent) {
-			WARN("Forcefully set consistent!");
+		if (mdev->state.s.disk < UpToDate) {
+			WARN("Forcefully set to UpToDate!");
 			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
-							disk,Consistent));
+							disk,UpToDate));
 			if(r<=0) return -EIO;
 
 			forced = 1;
@@ -1032,7 +1046,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_bm_lock(mdev); // racy...
 
 		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_md_write(mdev);
 
 		drbd_bm_set_all(mdev);
@@ -1084,6 +1097,18 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		drbd_bm_unlock(mdev);
 
+		break;
+
+	case DRBD_IOCTL_OUTDATE_DISK:
+		r = drbd_request_state(mdev,NS(disk,Outdated));
+		if( r == 2 ) break;
+		if( r <= 0 ) {
+			err = -EISCONN;
+			break;
+		}
+
+		drbd_md_write(mdev);
+		
 		break;
 
 	default:
