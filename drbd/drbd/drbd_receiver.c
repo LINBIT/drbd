@@ -312,7 +312,7 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 		}
 	}
 
-	wake_up_interruptible(&mdev->ee_wait);
+	wake_up(&mdev->ee_wait);
 }
 
 /* It is important that the head list is really empty when returning,
@@ -347,7 +347,7 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	}
 
 	clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
-	wake_up_interruptible(&mdev->ee_wait);
+	wake_up(&mdev->ee_wait);
 
 	return ok;
 }
