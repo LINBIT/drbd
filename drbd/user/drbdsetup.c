@@ -54,7 +54,9 @@ struct drbd_cmd {
 
 int cmd_primary(int drbd_fd,char** argv,int argc);
 int cmd_secodary(int drbd_fd,char** argv,int argc);
-int cmd_wait(int drbd_fd,char** argv,int argc);
+int cmd_sec_rem(int drbd_fd,char** argv,int argc);
+int cmd_wait_sync(int drbd_fd,char** argv,int argc);
+int cmd_wait_connect(int drbd_fd,char** argv,int argc);
 int cmd_replicate(int drbd_fd,char** argv,int argc);
 int cmd_down(int drbd_fd,char** argv,int argc);
 int cmd_net_conf(int drbd_fd,char** argv,int argc);
@@ -63,15 +65,17 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc);
 int cmd_show(int drbd_fd,char** argv,int argc);
 
 struct drbd_cmd commands[] = {
-	{"pri", cmd_primary,           0, 1 },
-	{"sec", cmd_secodary,          0, 0 },
-	{"wait", cmd_wait,             0, 1 },
-	{"repl", cmd_replicate,        0, 0 },
-	{"down", cmd_down,             0, 0 },
-	{"net", cmd_net_conf,          3, 1 },
-	{"disk", cmd_disk_conf,        1, 1 },
-	{"disconnect", cmd_disconnect, 0, 0 },
-	{"show", cmd_show,             0, 0 },
+	{"primary", cmd_primary,           0, 1 },
+	{"secondary", cmd_secodary,        0, 0 },
+	{"secondary_remote", cmd_sec_rem,  0, 0 },
+	{"wait_sync", cmd_wait_sync,       0, 1 },
+	{"wait_connect", cmd_wait_connect, 0, 1 },
+	{"replicate", cmd_replicate,       0, 0 },
+	{"down", cmd_down,                 0, 0 },
+	{"net", cmd_net_conf,              3, 1 },
+	{"disk", cmd_disk_conf,            1, 1 },
+	{"disconnect", cmd_disconnect,     0, 0 },
+	{"show", cmd_show,                 0, 0 },
 };
 
 struct option config_options[] = {
@@ -191,10 +195,11 @@ void print_usage(const char* prgname)
 	  "USAGE:\n"
 	  " %s device command [ command_args ] [ comamnd_options ]\n"
 	  "Commands:\n"
-	  " pri [-h|--human] \n"
-	  " sec\n"
-	  " wait [-t|--time val]\n"
-	  " repl\n"
+	  " primary [-h|--human] \n"
+	  " secondary\n"
+	  " wait_sync [-t|--time val]\n"
+	  " wait_connect [-t|--time val]\n"
+	  " replicate\n"
 	  " down\n"
 	  " net local_addr[:port] remote_addr[:port] protocol "
 	  " [-t|--timout val]\n"
@@ -547,12 +552,32 @@ int cmd_secodary(int drbd_fd,char** argv,int argc)
   return set_state(drbd_fd,Secondary);
 }
 
-int cmd_wait(int drbd_fd,char** argv,int argc)
+int cmd_sec_rem(int drbd_fd,char** argv,int argc)
+{
+  int err;
+  err=ioctl(drbd_fd,DRBD_IOCTL_SECONDARY_REM);
+  if(err) 
+    {
+      perror("ioctl() failed");
+      if(errno==ENXIO)
+	fprintf(stderr,"Not connected to remote DRBD device!\n");
+    
+      if(errno==ESRCH) 
+	{
+	  fprintf(stderr,"remote DRBD device is already in Secondary state\n");
+	  return 1;
+	}
+      return 20;
+    }
+  return 0;
+}
+
+int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req)
 {
   int err,retval;
 
   optind=0; 
-  retval=8; /* Do not wait longer than 8 seconds for a connection */
+  retval=def_time;
   if(argc > 0) 
     {
       while(1)
@@ -577,13 +602,23 @@ int cmd_wait(int drbd_fd,char** argv,int argc)
 	    }
 	}
     }
-  err=ioctl(drbd_fd,DRBD_IOCTL_WAIT_SYNC,&retval);
+  err=ioctl(drbd_fd,req,&retval);
   if(err)
     {
       perror("ioctl() failed");
       exit(20);
     }
   return !retval;
+}
+
+int cmd_wait_connect(int drbd_fd,char** argv,int argc)
+{
+  return wait_on(drbd_fd,argv,argc,0,DRBD_IOCTL_WAIT_CONNECT);
+}
+
+int cmd_wait_sync(int drbd_fd,char** argv,int argc)
+{
+  return wait_on(drbd_fd,argv,argc,8,DRBD_IOCTL_WAIT_SYNC);
 }
 
 int cmd_replicate(int drbd_fd,char** argv,int argc)

@@ -1596,6 +1596,73 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	return -EINVAL;
 }
 
+
+int drbd_set_state(int minor,Drbd_State newstate)
+{
+	if(newstate == drbd_conf[minor].state) return 0; /* nothing to do */
+		
+	if (drbd_conf[minor].cstate == SyncingAll
+	    || drbd_conf[minor].cstate == SyncingQuick)
+		return -EINPROGRESS;
+
+	if(test_bit(WRITER_PRESENT, &drbd_conf[minor].flags)
+	   && newstate == Secondary)
+		return -EBUSY;
+			
+	fsync_dev(MKDEV(MAJOR_NR, minor));
+			
+		/* Wait until nothing is on the fly :) */
+		/* PRI -> SEC : TL is empty || cstate < connected
+		   SEC -> PRI : ES is empty || cstate < connected
+                     -> this should be the case anyway, becuase the
+		        other one should be already in SEC state
+
+		   FIXME:
+		     The current implementation is full of races.
+		     Will do the right thing in 2.4 (using a rw-semaphore),
+		     for now it is good enough. (Do not panic, these races
+		     are not harmfull)		     
+		*/
+		/*
+		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d,%d,%d)\n",
+		       minor,
+		       drbd_conf[minor].state,
+		       drbd_conf[minor].pending_cnt,
+		       drbd_conf[minor].unacked_cnt,
+		       drbd_conf[minor].epoch_size);
+		*/
+	while (drbd_conf[minor].pending_cnt > 0 ||
+	       drbd_conf[minor].unacked_cnt > 0 ) {
+		
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: set_state(%d,%d,%d,%d)\n",
+		       minor,
+		       drbd_conf[minor].state,
+		       drbd_conf[minor].pending_cnt,
+		       drbd_conf[minor].unacked_cnt,
+		       drbd_conf[minor].epoch_size);
+		
+		interruptible_sleep_on(&drbd_conf[minor].state_wait);
+		if(signal_pending(current)) { 
+			return -EINTR;
+		}
+	}
+	drbd_conf[minor].state = (Drbd_State) newstate & 0x03;
+	if(newstate == PRIMARY_PLUS) drbd_md_inc(minor,HumanCnt);
+	if(newstate == Primary) {
+		drbd_md_inc(minor, drbd_conf[minor].cstate >= Connected ? 
+			    ConnectedCnt : ArbitraryCnt);
+	}
+	
+	if (drbd_conf[minor].sock )
+		drbd_setup_sock(&drbd_conf[minor]);
+	
+	if (drbd_conf[minor].cstate >= WFReportParams) 
+		drbd_send_param(minor);
+
+	return 0;
+}
+
 /*static */ int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
@@ -1631,67 +1698,8 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	case DRBD_IOCTL_SET_STATE:
 		if (arg != Primary && arg != Secondary && arg != PRIMARY_PLUS)
 			return -EINVAL;
-		
-		if (drbd_conf[minor].cstate == SyncingAll
-		    || drbd_conf[minor].cstate == SyncingQuick)
-			return -EINPROGRESS;
 
-		if(test_bit(WRITER_PRESENT, &drbd_conf[minor].flags)
-		   && arg == Secondary)
-                        return -EBUSY;
-
-		if(arg == drbd_conf[minor].state) break; /* nothing to do */
-			
-	        fsync_dev(MKDEV(MAJOR_NR, minor));
-			
-		/* Wait until nothing is on the fly :) */
-		/* PRI -> SEC : TL is empty || cstate < connected
-		   SEC -> PRI : ES is empty || cstate < connected
-                     -> this should be the case anyway, becuase the
-		        other one should be already in SEC state
-
-		   FIXME:
-		     The current implementation is full of races.
-		     Will do the right thing in 2.4 (using a rw-semaphore),
-		     for now it is good enough. (Do not panic, these races
-		     are not harmfull)		     
-		*/
-		/*
-		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d,%d,%d)\n",
-		       minor,
-		       drbd_conf[minor].state,
-		       drbd_conf[minor].pending_cnt,
-		       drbd_conf[minor].unacked_cnt,
-		       drbd_conf[minor].epoch_size);
-		*/
-		while (drbd_conf[minor].pending_cnt > 0 ||
-		       drbd_conf[minor].unacked_cnt > 0 ) {
-
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: set_state(%d,%d,%d,%d)\n",
-			       minor,
-			       drbd_conf[minor].state,
-			       drbd_conf[minor].pending_cnt,
-			       drbd_conf[minor].unacked_cnt,
-			       drbd_conf[minor].epoch_size);
-
-			interruptible_sleep_on(&drbd_conf[minor].state_wait);
-			if(signal_pending(current)) { 
-				return -EINTR;
-			}
-		}
-		drbd_conf[minor].state = (Drbd_State) arg & 0x03;
-		if(arg == PRIMARY_PLUS) drbd_md_inc(minor,HumanCnt);
-		else drbd_md_inc(minor, drbd_conf[minor].cstate >= Connected ? 
-			           ConnectedCnt : ArbitraryCnt);
-
-		if (drbd_conf[minor].sock )
-			drbd_setup_sock(&drbd_conf[minor]);
-
-		if (drbd_conf[minor].cstate >= Connected)
-			drbd_send_param(minor);
-
-		break;
+		return drbd_set_state(minor,arg);
 
 	case DRBD_IOCTL_SET_DISK_CONFIG:
 		return drbd_ioctl_set_disk(&drbd_conf[minor],
@@ -1737,11 +1745,35 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 		break;
 
+	case DRBD_IOCTL_WAIT_CONNECT:
+		if ((err = get_user(time, (int *) arg)))
+			return err;
+
+		time=time*HZ;
+		if(time==0) time=MAX_SCHEDULE_TIMEOUT;
+		
+		while (drbd_conf[minor].cstate >= Unconnected && 
+		       drbd_conf[minor].cstate < Connected &&
+		       time > 0 ) {
+
+			time = interruptible_sleep_on_timeout(
+				&drbd_conf[minor].cstate_wait, time);
+
+			if(signal_pending(current)) return -EINTR;
+		}
+			
+		if ((err = put_user(drbd_conf[minor].cstate >= Connected, 
+				    (int *) arg)))
+			return err;
+		break;
+
+
 	case DRBD_IOCTL_WAIT_SYNC:
 		if ((err = get_user(time, (int *) arg)))
 			return err;
 
 		time=time*HZ;
+		if(time==0) time=MAX_SCHEDULE_TIMEOUT;
 		
 		while (drbd_conf[minor].cstate >= Unconnected && 
 		       drbd_conf[minor].cstate != Connected &&
@@ -1763,8 +1795,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		break;
 
 	case DRBD_IOCTL_DO_SYNC_ALL:
-		if( drbd_conf[minor].cstate != Connected)
-		        return -ENXIO;
+		if( drbd_conf[minor].cstate != Connected) return -ENXIO;
 
 		if( drbd_conf[minor].state == Primary) {
 			set_cstate(&drbd_conf[minor],SyncingAll);
@@ -1775,6 +1806,16 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		} else return -EINPROGRESS;
 		
 		break;
+
+	case DRBD_IOCTL_SECONDARY_REM:
+		if( drbd_conf[minor].cstate != Connected) return -ENXIO;
+
+		if (drbd_conf[minor].o_state == Primary) {
+			drbd_send_cmd(minor,BecomeSec);
+		} else return -ESRCH;
+		
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -2579,15 +2620,11 @@ inline int receive_param(int minor,int command)
 
 		if(be32_to_cpu(param.state) == Secondary &&
 		   drbd_conf[minor].state == Secondary) {
-			if(drbd_md_compare(minor,&param)==1) {
-				/* Primary: */
-				drbd_conf[minor].state=Primary;
-				drbd_md_inc(minor,ConnectedCnt);
-				drbd_setup_sock(&drbd_conf[minor]);
-				drbd_send_param(minor);
-			}
+			if(drbd_md_compare(minor,&param)==1)
+				drbd_set_state(minor,Primary);
 		}
-		/* TODO: improve this */
+		/* TODO: use gen_cnt to decide if we may 
+		         use SyncingQuick or if we have to use SyncingAll */
 	        if (drbd_conf[minor].state == Primary
 		    && !drbd_conf[minor].conf.skip_sync) {
 		        set_cstate(&drbd_conf[minor],SyncingQuick);
@@ -2737,7 +2774,9 @@ void drbdd(int minor)
 		case Postpone:
 			receive_postpone(minor);
 			break;
-
+		case BecomeSec:
+			drbd_set_state(minor,Secondary);
+			break;
 		default:
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: unknown packet type!\n", minor);

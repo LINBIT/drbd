@@ -166,7 +166,8 @@ typedef enum {
   Ping,
   PingAck,
   StartSync,   /* Secondary asking primary to start sync */ 
-  Postpone
+  Postpone,
+  BecomeSec    /* Secondary asking primary to become secondary */
 } Drbd_Packet_Cmd;
 
 typedef enum { Unknown=0, Primary=1, Secondary=2 } Drbd_State;
@@ -204,11 +205,13 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )
 #define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x03, int )
 #define DRBD_IOCTL_DO_SYNC_ALL   _IO ( 'D', 0x04 )
-
 #define DRBD_IOCTL_SET_DISK_CONFIG _IOW( 'D', 0x06, struct ioctl_disk_config )
 #define DRBD_IOCTL_SET_NET_CONFIG _IOW( 'D', 0x07, struct ioctl_net_config )
-#define DRBD_IOCTL_UNCONFIG_NET   _IO ( 'D', 0x08 )
-#define DRBD_IOCTL_UNCONFIG_BOTH  _IO ( 'D', 0x09 )
-#define DRBD_IOCTL_GET_CONFIG     _IOW( 'D', 0x0A, struct ioctl_get_config)
+#define DRBD_IOCTL_UNCONFIG_NET  _IO ( 'D', 0x08 )
+#define DRBD_IOCTL_UNCONFIG_BOTH _IO ( 'D', 0x09 )
+#define DRBD_IOCTL_GET_CONFIG    _IOW( 'D', 0x0A, struct ioctl_get_config)
+#define DRBD_IOCTL_WAIT_CONNECT  _IOR( 'D', 0x0B, int )
+#define DRBD_IOCTL_SECONDARY_REM _IOR( 'D', 0x0C, int )
+
 #endif
 
