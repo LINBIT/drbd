@@ -340,7 +340,7 @@ struct Drbd_Conf {
 	atomic_t pending_cnt;
 	atomic_t unacked_cnt;
 	spinlock_t req_lock;
-	rwlock_t tl_lock;
+	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
         int    flags;

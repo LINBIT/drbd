@@ -165,7 +165,7 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
 	struct drbd_barrier *b;
 
-	write_lock_irq(&mdev->tl_lock);
+ 	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->newest_barrier;
 
@@ -177,7 +177,7 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 		set_bit(ISSUE_BARRIER,&mdev->flags);
 	}
 
-	write_unlock_irq(&mdev->tl_lock);
+	spin_unlock_irq(&mdev->tl_lock);
 }
 
 STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
@@ -194,13 +194,13 @@ STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 	b->br_number=barrier_nr_issue;
 	b->n_req=0;
 	
-	write_lock_irq(&mdev->tl_lock);
+	spin_lock_irq(&mdev->tl_lock);
 
 	bnr = mdev->newest_barrier->br_number;
 	mdev->newest_barrier->next = b;
 	mdev->newest_barrier = b;
 
-	write_unlock_irq(&mdev->tl_lock);
+	spin_unlock_irq(&mdev->tl_lock);
 
 	return bnr;
 }
@@ -210,13 +210,13 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 {
 	struct drbd_barrier *b;
 
-	write_lock_irq(&mdev->tl_lock);
+	spin_lock_irq(&mdev->tl_lock);
 
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
 	list_del(&b->requests);
 
-	write_unlock_irq(&mdev->tl_lock);
+	spin_unlock_irq(&mdev->tl_lock);
 
 	if( b->br_number != barrier_nr) {
 		printk(KERN_ERR DEVICE_NAME "%d: invalid barrier number!!"
@@ -243,14 +243,15 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 */
 int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
+	unsigned long flags;
 	int r=TRUE;
 
-	read_lock(&mdev->tl_lock);
+	spin_lock_irqsave(&mdev->tl_lock,flags);
 
 	r = ( item->barrier == mdev->newest_barrier );
 	list_del(&item->list);
 
-	read_unlock(&mdev->tl_lock);
+	spin_unlock_irqrestore(&mdev->tl_lock,flags);
 	return r;
 }
 
@@ -264,7 +265,7 @@ int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
 
 	if((mdev->send_block<<(mdev->blk_size_b-9)) == sector) return TRUE;
 
-	read_lock(&mdev->tl_lock);
+	spin_lock_irq(&mdev->tl_lock);
 	b=mdev->oldest_barrier;
 	while ( b ) {
 		list_for_each(le,&b->requests) {
@@ -278,7 +279,7 @@ int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
 		b=b->next;
 	}
  found:
-	read_unlock(&mdev->tl_lock);
+	spin_unlock_irq(&mdev->tl_lock);
 	return rv;
 }
 
@@ -294,7 +295,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 	new_first->br_number=4711;
 	new_first->n_req=0;
 
-	write_lock_irq(&mdev->tl_lock);
+	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->oldest_barrier;
 	while ( b ) {
@@ -318,7 +319,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 	mdev->oldest_barrier = new_first;
 	mdev->newest_barrier = new_first;
 
-	write_unlock_irq(&mdev->tl_lock);
+	spin_unlock_irq(&mdev->tl_lock);
 }     
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14) 
@@ -1013,7 +1014,7 @@ int __init drbd_init(void)
 		drbd_thread_init(i, &drbd_conf[i].dsender, drbd_dsender);
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
 		init_waitqueue_head(&drbd_conf[i].dsender_wait);
-		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
+		drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].bb_lock = SPIN_LOCK_UNLOCKED;
