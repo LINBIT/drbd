@@ -215,20 +215,6 @@ int adm_adjust(struct d_resource* res,char* unused)
     }
   }
 
-  /*
-res->me->meta_disk)) do_attach=1;
-  } else {
-    rv=fscanf(in,"Meta device: %*02d:%*02d   (%[^)])\n",str1);
-    if( (rv!=1) || strcmp(str1,res->me->meta_disk)) {
-      do_attach=1;
-    }
-
-    rv=fscanf(in,"Meta index: %[0-9]\n",str1);
-    if( (rv!=1) || strcmp(str1,res->me->meta_index)) {
-      do_attach=1;
-    }
-  }
-  */
   rv=fscanf(in,"Disk options%[:]\n",uu);
   if(rv==1) {
     do_resize |= check_opt_d(in,"size",1024,"KB",res->disk_options);
