@@ -41,4 +41,4 @@ clean:
 
 install: drbdsetup.8 drbd.conf.5
 	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/man8; fi
-	if [ -e drbd.conf.e ]; then install drbd.conf.5 $(PREFIX)usr/share/man/man5; fi
+	if [ -e drbd.conf.5 ]; then install drbd.conf.5 $(PREFIX)usr/share/man/man5; fi
