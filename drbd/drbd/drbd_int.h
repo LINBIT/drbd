@@ -533,7 +533,6 @@ struct Pending_read {
 // bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
-#define COLLECT_ZOMBIES    1
 #define SEND_PING          2
 #define WRITER_PRESENT     3
 #define STOP_SYNC_TIMER    4

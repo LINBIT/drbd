@@ -382,19 +382,43 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	}
 }
 
+/* If reparent_to_init() would be exported, we could use the kernel's
+   version .... so we have to maintain our own copy of it.
+ */
+STATIC void drbd_reparent_to_init(void)
+{
+	struct task_struct *child_reaper;
+
+	child_reaper = find_task_by_pid(1);
+
+        write_lock_irq(&tasklist_lock);
+
+        REMOVE_LINKS(current);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
+        current->parent = child_reaper;
+        current->real_parent = child_reaper;
+#else
+        current->p_pptr = child_reaper;
+        current->p_opptr = child_reaper;
+#endif
+        SET_LINKS(current);
+        current->exit_signal = SIGCHLD;
+        write_unlock_irq(&tasklist_lock);
+}
+
 STATIC int drbd_thread_setup(void* arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int retval;
 
+	drbd_reparent_to_init();
 	drbd_daemonize();
-
 	down(&thi->mutex); //ensures that thi->task is set.
 
 	retval = thi->function(thi);
 
 	thi->task = 0;
-	set_bit(COLLECT_ZOMBIES,&(thi->mdev->flags));
+
 	up(&thi->mutex); //allow thread_stop to proceed
 
 	return retval;
@@ -440,8 +464,6 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	    || thi->task->state == TASK_ZOMBIE
 	    || thi->task->flags & PF_EXITING   ) {
 		// unexpected death... clean up.
-		if (thi->mdev)
-			set_bit(COLLECT_ZOMBIES,&thi->mdev->flags);
 		init_MUTEX(&thi->mutex);
 		thi->task = NULL;
 		return;
@@ -1412,18 +1434,19 @@ NOT_IN_26(
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	// tell the kernel that we think our ioctls are 64bit clean
 	lock_kernel();
-	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
 	unlock_kernel();
 #endif
 
@@ -1484,18 +1507,19 @@ void cleanup_module(void)
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	lock_kernel();
-	unregister_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
 	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
+	unregister_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
 	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
 	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
+	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
 	unlock_kernel();
 #endif
 

@@ -1325,13 +1325,6 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	return ok;
 }
 
-STATIC void drbd_collect_zombies(drbd_dev *mdev)
-{
-	if(test_and_clear_bit(COLLECT_ZOMBIES,&mdev->flags)) {
-		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
-	}
-}
-
 STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
 	struct list_head workset,*le;
@@ -1478,7 +1471,6 @@ STATIC void drbdd(drbd_dev *mdev)
 	Drbd_Header *header = &mdev->data.rbuf.head;
 
 	for (;;) {
-		drbd_collect_zombies(mdev); // in case a syncer exited.
 		if (!drbd_recv_header(mdev,header))
 			break;
 
@@ -1530,7 +1522,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	up(&mdev->data.mutex);
 
 	drbd_thread_stop(&mdev->worker);
-	drbd_collect_zombies(mdev);
 
 	if(mdev->cstate != StandAlone)
 		set_cstate(mdev,Unconnected);
