@@ -4,14 +4,14 @@ These are the steps to build and install DRBD on your system.
 It should work for SuSE, Debian, RH and other distros with slight
 modifications.
 
-This was written for 0.6.10, and might not work for releases
-before that, since we changed our Makefile to use the top level
-kernel source Makefile, so we no longer need to worry about
-all those funny kernel compile flags...
-
-It is still correct for 0.6.13.
-Maybe this needs an update for 0.7.x,
-but most of it probably still applies.
+   This was written for 0.6.10, and might not work for releases
+   before that, since we changed our Makefile to use the top level
+   kernel source Makefile, so we no longer need to worry about
+   all those funny kernel compile flags...
+   
+   It is still correct for 0.6.13.
+   Maybe this needs an update for 0.7.x,
+   but most of it probably still applies.
 
 I tried to indicate what you should type by the prompt-prefix
 on the below command lines. "all#", when it is the same for
@@ -22,24 +22,33 @@ different distributions in turn.
 For FAQs, publications and other stuff see also the documentation
 subdirectory, and of course http://www.drbd.org .
 
-Other interessting links:
- http://www.drbd.org
- http://www.drbd.org/drbd-article.html
- http://www.linux-mag.com/2003-11/drbd_01.html
- http://www.linux-mag.com/2003-11/toc.html
- http://linuxha.trick.ca/DRBD_2fFAQ
-and of course,
- http://www.drbd.org/support.html
+Other helpful links:
+
+	http://www.drbd.org
+	http://www.drbd.org/drbd-article.html
+	http://www.linux-mag.com/2003-11/drbd_01.html
+	http://www.linux-mag.com/2003-11/toc.html
+	http://linuxha.trick.ca/DRBD_2fFAQ , and of course,
+	http://www.drbd.org/support.html
 
 == Prerequisites ==
 
- You need to install the kernel-source package
+ You need to install the kernel-source package. Or, if you run the default
+ distribution kernel, and there is some "precompiled kernel headers"
+ directory, you can skip this, and compile against that directory of header
+ files. If so, skip the "Prepare" section, and just jump to "Build DRBD".
 
        rpm.distros# rpm -Uhv kernel-source-2.4.XX-YYY.rpm
             debian# apt-get install kernel-source 
         kernel.org# tar --bzip2 -xvf linux-2.4.XX.tar.bz2
 
- And you should have a build-system installed, i.e. gcc, make, etc.
+ Note: this is really kernel-source.rpm, NOT kernel.src.rpm.
+ You don't want to use the latter, unless you know _exactly_ why...
+
+ If you want to use a 2.6.x kernel, you need to use DRBD-0.7.;
+ 0.6 just won't compile.
+
+ Obviously you should have a build-system installed, i.e. gcc, make, etc. ;)
 
  You should make sure that the gcc you use to compile the module
  is the same which was used to build the kernel you are running.
@@ -48,7 +57,7 @@ and of course,
  thingy, and then wonder why kernel modules no longer work properly.
 
  Note: for a 2.2.x kernel, you need to add a line to kernel/ksyms.c,
- see debian/kernel-export-wup.patch .
+ see debian/kernel-export-wup.patch . But who cares for 2.2, nowadays?
 
  So what next?
 
@@ -94,14 +103,20 @@ and of course,
              # vi Makefile #mod EXTRAVERSION to match installed kernel
              # yes "" | { make oldconfig ; make oldconfig ; }
 
-   Note:
-   If you consider to not run some vendor kernel, but compile
-   your own kernel, you need to build in module support, since
-   DRBD is a module.  DRBD depends on procfs, but you want to
-   have that anyways.  Make sure that you do not compile NBD
-   into the kernel, since DRBD uses the same major device
-   number. Having it as module is ok, but you cannot use both
-   at the same time.
+    Note:
+    If you consider to not run some vendor kernel, but compile
+    your own kernel, you need to build in module support, since
+    DRBD is a module.  DRBD depends on procfs, but you want to
+    have that anyways.  Make sure that you do not compile NBD
+    into the kernel, since DRBD uses the same major device
+    number. Having it as module is ok, but you cannot use both
+    at the same time.
+
+      Update:
+      since we now (0.7.1 and later) have an officially assigned
+      device major number (147) and device nodes (/dev/drbd), we no longer
+      hijack NBDs major numbers. You now in fact _can_ use NBD in parallel
+      with DRBD, if it makes any sense in your setup...
 
    So if necessary, "make menuconfig" and adapt to your own
    preferences, but then you need to compile and install this
@@ -168,7 +183,10 @@ and of course,
    or rebuild and install the new kernel
    ("make bzImage" or "make linux ARCH=um" or ...)
 
-== Build DRBD user space tools ==
+== Build DRBD user space tools only ==
+
+   If you took the 'patch kernel' approach, you still need to build the
+   user space tools.
 
        all# cd /usr/src/drbd-0.6.12/user
        all# make
@@ -188,13 +206,13 @@ and of course,
 
 == Configure it ==
 
-   If you have not used DRBD before, have browse on http://www.drbd.org
+   If you have not used DRBD before, have a browse on http://www.drbd.org .
    You should find some interesting stuff on the "Documentation"
    and "Publications" sub pages.
 
    In any case, have a look at the example configuration file in
    ./scripts/drbd.conf, which is well commented.
-   Maybe we added a new config option, or deprecated an other :)
+   Maybe we added a new config option, or deprecated an other ;)
 
 == Why ... ? ==
 
@@ -204,23 +222,25 @@ and of course,
    right, and I don't want to screw up the precompiled
    documentation and man-pages that come with the .tar.gz ...
 
+   Note: since 0.7, to rebuild the documentation, you need to
+   explicitly ask for it: "make doc"
+
 == Troubleshooting ==
 
    Added on your feedback and request, if necessary... ;-)
 
-   Eventually we will have a Wiki for this.
+   Also, have a look at http://www.drbd.org , the FAQ at
+   http://linuxha.trick.ca/DRBD , and the other links mentioned
+   at the top of this page.
 
 == Building a .rpm of it ==
 
-   This section probably needs some update for 0.7,
-   but maybe it just works anyways ?
+   This should be fairly easy, there is an example spec
+   file, and you can even "make rpm".  If this is a CVS/SVN version,
+   you might need to say "make rpm FORCE=1".
 
    There are caveats, please have a look at ./README, too,
    you might want/need to edit the ./drbd.spec file.
-
-   This should be fairly easy, there is an example spec
-   file, and you can even "make rpm".  If this is a CVS version,
-   you might need to say "make rpm FORCE=1".
 
    Note that it should build against preconfigured kernel-headers, too,
    like in "make rpm KDIR=/usr/src/linux-include/athlon",
@@ -232,6 +252,10 @@ and of course,
 	./dist/RPMS/i586/kernel-module-drbd-0.6.12-3_2.4.21_166_default.i586.rpm
 	./dist/RPMS/i586/kernel-smp-module-drbd-0.6.12-3_2.4.21_166_4G.i586.rpm
 	...
+
+   Note however that your distro most likely handles rpms of kernel modules in
+   some special way, so you may want to first ask your ditributor to provide
+   some update packages themselves.
 
 == Building a .deb of it ==
 
