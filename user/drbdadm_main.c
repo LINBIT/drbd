@@ -105,6 +105,7 @@ int fline, c_resource_start;
 struct d_globals global_options = { 0, 0, 1 };
 char *config_file = NULL;
 struct d_resource* config = NULL;
+struct d_resource* common = NULL;
 int nr_resources;
 int highest_minor;
 int config_valid=1;
@@ -263,6 +264,17 @@ static void dump_global_info()
     }
 }
 
+static void dump_common_info()
+{
+  printI("common {\n"); ++indent;
+  dump_options("net",common->net_options);
+  dump_options("disk",common->disk_options);
+  dump_options("syncer",common->sync_options);
+  dump_options("startup",common->startup_options);
+  dump_options("handlers",common->handlers);
+  --indent; printf("}\n\n");  
+}
+
 static void dump_host_info(struct d_host_info* hi)
 {
   if(!hi) {
@@ -390,6 +402,53 @@ static void free_config(struct d_resource* res)
     free_options(f->startup_options);
     free_options(f->handlers);
     free(f);
+  }
+  free_options(common->net_options);
+  free_options(common->disk_options);
+  free_options(common->sync_options);
+  free_options(common->startup_options);
+  free_options(common->handlers);
+}
+
+static struct d_option* new_opt(char* name,char* value)
+{
+  struct d_option* cn = malloc(sizeof(struct d_option));
+
+  /* fprintf(stderr,"%s:%d: %s = %s\n",config_file,line,name,value); */
+  cn->name=name;
+  cn->value=value;
+  cn->mentioned=0;
+
+  return cn;
+}
+
+static void expand_opts(struct d_option* co, struct d_option** opts)
+{
+  struct d_option* no;
+
+  while(co) {
+    if(!find_opt(*opts,co->name)) {
+      // prepend new item to opts
+      no = malloc(sizeof(struct d_option));
+      no->name=strdup(co->name);
+      no->value=strdup(co->value);
+      no->next = *opts;
+      *opts = no;
+    }
+    co=co->next;
+  }
+}
+
+static void expand_common(void)
+{
+  struct d_resource *res,*tmp;
+
+  for_each_resource(res,tmp,config) {
+    expand_opts(common->net_options,     &res->net_options);
+    expand_opts(common->disk_options,    &res->disk_options);
+    expand_opts(common->sync_options,    &res->sync_options);
+    expand_opts(common->startup_options, &res->startup_options);
+    expand_opts(common->handlers,        &res->handlers);
   }
 }
 
@@ -1324,7 +1383,12 @@ int main(int argc, char** argv)
         print_usage (argv[0]);	// arguments missing.
 
       if(optind==argc || !strcmp(argv[optind],"all")) {
-        if (cmd->function == adm_dump) dump_global_info();
+        if (cmd->function == adm_dump) {
+	  dump_global_info();
+	  dump_common_info();
+	} else {
+	  expand_common(); // Propagate common options to resources.
+	}
         for_each_resource(res,tmp,config) {
 	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);

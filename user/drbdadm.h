@@ -88,6 +88,7 @@ extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 extern char* config_file;
 extern int config_valid;
 extern struct d_resource* config;
+extern struct d_resource* common;
 extern struct d_globals global_options;
 extern int line, fline, c_resource_start;
 

@@ -238,8 +238,8 @@ void check_meta_disk()
 %token TK_GLOBAL TK_RESOURCE
 %token TK_ON TK_NET TK_DISK_S TK_SYNCER TK_STARTUP
 %token TK_DISABLE_IO_HINTS
-%token TK_PROTOCOL TK_HANDLERS
-%token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK
+%token TK_PROTOCOL TK_HANDLERS TK_COMMON
+%token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK 
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
 %token <txt> TK_ON_IO_ERROR TK_SIZE TK_SPLIT_BRAIN_FIX
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
@@ -260,7 +260,7 @@ void check_meta_disk()
 %type <d_resource> resources resource
 
 %%
-config:		  global_sec resources	 { config=$2; }
+config:		  global_sec common resources	 { config=$3; }
 		;
 
 global_sec:	  /* empty */
@@ -285,7 +285,12 @@ glob_stmt:	  TK_DISABLE_IO_HINTS
 		}
 		;
 
-resources:	  /* empty */	     { $$ = 0; }
+common:		  /* empty */	      { common = NULL;  }
+		| TK_COMMON { c_res = new_resource("common"); } 
+			res_stmts { common = c_res; }
+		;
+
+resources:	  /* empty */	     { $$ = NULL; }
 		| resources resource { $$=APPEND($1,$2); }
 		;
 
@@ -344,17 +349,17 @@ hostname:	TK_STRING
 		}
 		;
 
-disk_stmts:	  /* empty */	           { $$ = 0; }
+disk_stmts:	  /* empty */	           { $$ = NULL; }
 		| disk_stmts disk_stmt	   { $$=APPEND($1,$2); }
 		;
 
 disk_stmt:	  TK_ON_IO_ERROR TK_STRING { $$=new_opt($1,$2); }
 		| TK_SIZE TK_INTEGER
 		{ $$=new_opt($1,$2); range_check(R_DISK_SIZE,$1,$2); }
-		| TK_SPLIT_BRAIN_FIX       { $$=new_opt($1,0);  }
+		| TK_SPLIT_BRAIN_FIX       { $$=new_opt($1,NULL);  }
 		;
 
-net_stmts:	  /* empty */	           { $$ = 0; }
+net_stmts:	  /* empty */	           { $$ = NULL; }
 		| net_stmts net_stmt       { $$=APPEND($1,$2); }
 		;
 
@@ -373,17 +378,17 @@ net_stmt:	  TK_TIMEOUT	    TK_INTEGER
 		| TK_KO_COUNT       TK_INTEGER
 		{ range_check(R_KO_COUNT,$1,$2);	$$=new_opt($1,$2); }
 		| TK_ON_DISCONNECT  TK_STRING	{	$$=new_opt($1,$2); }
-		| TK_ALLOW_TWO_PRIMARIES	{	$$=new_opt($1,0);  }
+		| TK_ALLOW_TWO_PRIMARIES	{	$$=new_opt($1,NULL); }
 		| TK_CRAM_HMAC_ALG  TK_STRING	{	$$=new_opt($1,$2); }
 		| TK_SHARED_SECRET  TK_STRING	{	$$=new_opt($1,$2); }
 		;
 
-sync_stmts:	  /* empty */	           { $$ = 0; }
+sync_stmts:	  /* empty */	           { $$ = NULL; }
 		| sync_stmts sync_stmt	   { $$=APPEND($1,$2); }
 		;
 
-sync_stmt:	  TK_SKIP_SYNC		   { $$=new_opt($1,0);  }
-		| TK_USE_CSUMS		   { $$=new_opt($1,0);  }
+sync_stmt:	  TK_SKIP_SYNC		   { $$=new_opt($1,NULL);  }
+		| TK_USE_CSUMS		   { $$=new_opt($1,NULL);  }
 		| TK_RATE	TK_INTEGER
 		{ range_check(R_RATE,$1,$2); $$=new_opt($1,$2); }
 		| TK_SYNC_GROUP TK_INTEGER { $$=new_opt($1,$2); }
@@ -417,7 +422,7 @@ meta_disk_and_index:
 		| TK_STRING { c_host->meta_disk = $1; }
 		;
 
-startup_stmts:	  /* empty */  { $$ = 0; }
+startup_stmts:	  /* empty */  { $$ = NULL; }
 		| startup_stmts startup_stmt   { $$=APPEND($1,$2); }
 		;
 
@@ -427,7 +432,7 @@ startup_stmt:	  TK_WFC_TIMEOUT      TK_INTEGER
 		{ range_check(R_DEGR_WFC_TIMEOUT,$1,$2);$$=new_opt($1,$2); }
 		;
 
-handler_stmts:	  /* empty */	           { $$ = 0; }
+handler_stmts:	  /* empty */	           { $$ = NULL; }
 		| handler_stmts handler_stmt	   { $$=APPEND($1,$2); }
 		;
 

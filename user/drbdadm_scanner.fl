@@ -47,7 +47,7 @@ NDELIM			  [^ \t\n#=:;{}]+
 %option stack
 
 %x RESOURCE GLOBAL
-%x STARTUP DISK NET SYNCER HOST HANDLERS
+%x STARTUP DISK NET SYNCER HOST HANDLERS COMMON
 %x SEMICOLON ASSIGN NUM NUM_U NAME STRING PROTO IO_ERROR ON_DISCONNECT
 %x IP_AND_PORT PORT META_DISK META_IDX
 %x LS LBRACE IGNORE_SECTION
@@ -74,6 +74,7 @@ _1_254			  [1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-4]
 _0_255			  0|[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-5]
 IPV4ADDR		  {_1_254}\.{_0_255}\.{_0_255}\.{_1_254}
 PORT			  {WSC}port{ASSIGN}{NUM}
+COMMON			  common
 
 %%
 
@@ -87,10 +88,11 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   global		section(GLOBAL); return TK_GLOBAL;
   resource		named_section(RESOURCE); return TK_RESOURCE;
   \}			syntax_error("unmached closing brace.");
+  common		section(COMMON); return TK_COMMON;
   {NDELIM}		expect_error("one of 'global|resource'");
 }
 
-<RESOURCE,GLOBAL,IGNORE_SECTION,STARTUP,DISK,NET,SYNCER,HOST,HANDLERS>{
+<RESOURCE,GLOBAL,IGNORE_SECTION,STARTUP,DISK,NET,SYNCER,HOST,HANDLERS,COMMON>{
   {IGNORE}		update_lcnt();
   \}			yy_pop_state();
 }
@@ -214,7 +216,7 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   protocol		do_assign(PROTO);  CP; return TK_PROTOCOL;
   {NDELIM}		{
 			  expect_error(
-				"one of 'protocol|incon-degr-cmd|"
+				"one of 'protocol"
 				"startup|disk|net|syncer|on <HOSTNAME>'|"
 				"handlers");
 			}
@@ -286,6 +288,19 @@ PORT			  {WSC}port{ASSIGN}{NUM}
 				"one of 'pri-on-incon-degr|"
 				"pri-sees-sec-with-higher-gc|"
 				"outdate-peer");
+			}
+}
+
+<COMMON>{
+  startup		section(STARTUP);    return TK_STARTUP;
+  syncer		section(SYNCER);     return TK_SYNCER;
+  disk			section(DISK);	     return TK_DISK_S;
+  net			section(NET);	     return TK_NET;
+  handlers		section(HANDLERS);   return TK_HANDLERS;
+
+  {NDELIM}		{
+			  expect_error(
+				"one of 'startup|disk|net|syncer|handlers");
 			}
 }
 
