@@ -208,7 +208,8 @@ struct drbd_event {
 struct Drbd_Conf {
 	struct net_config conf;
         int do_panic;
-	struct socket *sock;
+	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
+	struct socket *msock; /* for ping/ack (metadata) packets */
 	kdev_t lo_device;
 	struct file *lo_file;
 	int lo_usize;   /* user provided size */
@@ -266,7 +267,6 @@ extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct Drbd_Conf *mdev);
 extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
-extern void drbd_setup_sock(struct Drbd_Conf *mdev);
 extern void drbd_free_sock(int minor);
 extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 		     Drbd_Packet* header, size_t header_size, 

@@ -291,9 +291,6 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	}
 	drbd_md_write(minor); /* Primary indicator has changed in any case. */
 
-	if (drbd_conf[minor].sock )
-		drbd_setup_sock(&drbd_conf[minor]);
-	
 	if (drbd_conf[minor].cstate >= WFReportParams) 
 		drbd_send_param(minor);
 

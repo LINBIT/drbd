@@ -42,6 +42,7 @@
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
+#include <linux/pkt_sched.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include "drbd.h"
@@ -347,12 +348,91 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 }
 
 
-int drbd_connect(int minor)
+static struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
 {
 	int err;
 	struct socket *sock;
 
- retry:
+	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
+	if (err) {
+		printk(KERN_ERR DEVICE_NAME "%d: sock_creat(..)=%d\n", 
+		       (int)(mdev-drbd_conf), err);
+	}
+
+	lock_kernel();	
+	err = sock->ops->connect(sock,
+				 (struct sockaddr *) mdev->conf.other_addr,
+				 mdev->conf.other_addr_len, 0);
+	unlock_kernel();
+
+	if (err) {
+		sock_release(sock);
+		sock = NULL;
+	}
+	return sock;
+}
+
+static struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
+{
+	int err;
+	struct socket *sock,*sock2;
+	struct timer_list accept_timeout;
+
+	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock2);
+	if (err) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: sock_creat(..)=%d\n",(int)(mdev-drbd_conf),err);
+	}
+
+	sock2->sk->reuse=1; /* SO_REUSEADDR */
+
+	lock_kernel();
+	err = sock2->ops->bind(sock2,
+			      (struct sockaddr *) mdev->conf.my_addr,
+			      mdev->conf.my_addr_len);
+	unlock_kernel();
+	if (err) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: Unable to bind (%d)\n",(int)(mdev-drbd_conf),err);
+		sock_release(sock2);
+		set_cstate(mdev,Unconnected);
+		return 0;
+	}
+	
+	if(mdev->conf.try_connect_int) {
+		init_timer(&accept_timeout);
+		accept_timeout.function = drbd_c_timeout;
+		accept_timeout.data = (unsigned long) current;
+		accept_timeout.expires = jiffies +
+			mdev->conf.try_connect_int * HZ;
+		add_timer(&accept_timeout);
+	}			
+
+	sock = drbd_accept(sock2);
+	sock_release(sock2);
+	
+	if(mdev->conf.try_connect_int) {
+		unsigned long flags;
+		del_timer(&accept_timeout);
+		spin_lock_irqsave(&current->sigmask_lock,flags);
+		if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
+			sigdelset(CURRENT_SIGSET, DRBD_SIG);
+			recalc_sigpending(current);
+			spin_unlock_irqrestore(&current->sigmask_lock,
+					       flags);
+			if(sock) sock_release(sock);
+			return 0;
+		}
+		spin_unlock_irqrestore(&current->sigmask_lock,flags);
+	}
+	
+	return sock;
+}
+
+int drbd_connect(int minor)
+{
+	struct socket *sock,*msock;
+
 
 	if (drbd_conf[minor].cstate==Unconfigured) return 0;
 
@@ -361,95 +441,58 @@ int drbd_connect(int minor)
 		       "%d: There is already a socket!! \n",minor);
 		return 0;
 	}
-	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
-	if (err) {
-		printk(KERN_ERR DEVICE_NAME "%d: sock_creat(..)=%d\n", minor,
-		       err);
+
+	set_cstate(drbd_conf+minor,WFConnection);		
+
+	while(1) {
+		sock=drbd_try_connect(drbd_conf+minor);
+		if(sock) {
+			msock=drbd_wait_for_connect(drbd_conf+minor);
+			if(msock) break;
+			else sock_release(sock);
+		} else {
+			sock=drbd_wait_for_connect(drbd_conf+minor);
+			if(sock) {
+				msock=drbd_try_connect(drbd_conf+minor);
+				if(msock) break;
+				else sock_release(sock);
+			}			
+		}
+		if(drbd_conf[minor].cstate==Unconnected) return 0;
 	}
 
-	lock_kernel();	
-	err = sock->ops->connect(sock,
-				 (struct sockaddr *) drbd_conf[minor].conf.
-				 other_addr,
-				 drbd_conf[minor].conf.other_addr_len, 0);
-	unlock_kernel();
+	msock->sk->reuse=1; /* SO_REUSEADDR */
+	sock->sk->reuse=1; /* SO_REUSEADDR */  
 
-	if (err) {
-		struct socket *sock2;
-		struct timer_list accept_timeout;
+	/* to prevent oom deadlock... */
+	/* The default allocation priority was GFP_KERNEL */
+	sock->sk->allocation = GFP_DRBD;
+	msock->sk->allocation = GFP_DRBD;
 
-		sock_release(sock);
-		/* printk(KERN_INFO DEVICE_NAME
-		   ": Unable to connec to server (%d)\n", err); */
+	sock->sk->priority=TC_PRIO_BULK;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+	sock->sk->tp_pinfo.af_tcp.nonagle=0;
+#else
+	sock->sk->nonagle=0;
+#endif
+	// This boosts the performance of the syncer to 6M/s max
+	sock->sk->sndbuf = 2*65535; 
 
-		err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
-		if (err) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: sock_creat(..)=%d\n", minor,err);
-		}
-
-		sock->sk->reuse=1; /* SO_REUSEADDR */
-
-		lock_kernel();
-		err = sock->ops->bind(sock,
-				      (struct sockaddr *) drbd_conf[minor].
-				      conf.my_addr,
-				      drbd_conf[minor].conf.my_addr_len);
-		unlock_kernel();
-		if (err) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: Unable to bind (%d)\n", minor,err);
-			sock_release(sock);
-			set_cstate(&drbd_conf[minor],Unconnected);
-			return 0;
-		}
-
-		set_cstate(&drbd_conf[minor],WFConnection);
-		sock2 = sock;
-		
-		if(drbd_conf[minor].conf.try_connect_int) {
-			init_timer(&accept_timeout);
-			accept_timeout.function = drbd_c_timeout;
-			accept_timeout.data = (unsigned long) current;
-			accept_timeout.expires = jiffies +
-				drbd_conf[minor].conf.try_connect_int * HZ;
-			add_timer(&accept_timeout);
-		}			
-
-		sock = drbd_accept(sock2);
-		sock_release(sock2);
-
-		if(drbd_conf[minor].conf.try_connect_int) {
-			unsigned long flags;
-			del_timer(&accept_timeout);
-			spin_lock_irqsave(&current->sigmask_lock,flags);
-			if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
-				sigdelset(CURRENT_SIGSET, DRBD_SIG);
-				recalc_sigpending(current);
-				spin_unlock_irqrestore(&current->sigmask_lock,
-						       flags);
-				if(sock) sock_release(sock);
-				goto retry;
-			}
-			spin_unlock_irqrestore(&current->sigmask_lock,flags);
-		}
-
-		if (!sock) {
-			set_cstate(&drbd_conf[minor],Unconnected);
-			return 0;
-		}
-	}
-
-	sock->sk->reuse=1;    /* SO_REUSEADDR */
+	msock->sk->priority=TC_PRIO_INTERACTIVE;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+	msock->sk->tp_pinfo.af_tcp.nonagle=1;
+#else
+	msock->sk->nonagle=1;
+#endif
+	msock->sk->sndbuf = 2*32767;
 
 	drbd_conf[minor].sock = sock;
-
-	drbd_setup_sock(&drbd_conf[minor]);
+	drbd_conf[minor].msock = msock;
 
 	drbd_thread_start(&drbd_conf[minor].asender);
 
 	set_cstate(&drbd_conf[minor],WFReportParams);
-	err = drbd_send_param(minor);
+	drbd_send_param(minor);
 
 	return 1;
 }
@@ -542,8 +585,7 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
-	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
-	    != data_size) {
+	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) != data_size) {
 		bforget(bh);
 		return FALSE;
 	}
@@ -629,19 +671,12 @@ inline int receive_block_ack(int minor)
 	        return FALSE;
 
 	if( is_syncer_blk(drbd_conf+minor,header.block_id)) {
-	syncer_blk:
 		bm_set_bit(drbd_conf[minor].mbds_id,
 			   be64_to_cpu(header.block_nr), 
 			   drbd_conf[minor].blk_size_b, 
 			   SS_IN_SYNC);
 	} else {
 		req=(drbd_request_t*)(long)header.block_id;
-		if(req == (drbd_request_t*)-1) { // REMOVE THIS LATER
-			printk(KERN_ERR DEVICE_NAME 
-			       "%d: strange block_id2 %llx\n",minor,
-			       header.block_id);
-			goto syncer_blk;
-		}
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
 
 		if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
@@ -1003,6 +1038,35 @@ inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
 	}
 	up(&mdev->send_mutex);
 }     
+
+void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
+{
+	unsigned long flags;
+	wait_queue_t wait1,wait2;
+
+	init_waitqueue_entry(&wait1, current);
+	init_waitqueue_entry(&wait2, current);
+
+	current->state = TASK_INTERRUPTIBLE;
+
+	wq_write_lock_irqsave(&q1->lock,flags);
+	add_wait_queue(q1, &wait1);
+	wq_write_unlock(&q1->lock);
+
+	wq_write_lock_irq(&q1->lock);
+	add_wait_queue(q2, &wait2);
+	wq_write_unlock(&q2->lock);
+
+	schedule();
+
+	wq_write_lock_irq(&q1->lock);
+	remove_wait_queue(q1, &wait1);
+	wq_write_unlock(&q1->lock);
+
+	wq_write_lock_irq(&q2->lock);
+	remove_wait_queue(q2, &wait2);
+	wq_write_unlock_irqrestore(&q2->lock,flags);
+}
 
 int drbd_asender(struct Drbd_thread *thi)
 {

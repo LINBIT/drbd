@@ -60,7 +60,6 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/slab.h>
-#include <linux/pkt_sched.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 
@@ -779,42 +778,6 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	return sent;
 }
 
-void drbd_setup_sock(struct Drbd_Conf *mdev)
-{
-	/* to prevent oom deadlock... */
-	/* The default allocation priority was GFP_KERNEL */
-	mdev->sock->sk->allocation = GFP_DRBD;
-
-	/*
-	  We could also use TC_PRIO_CONTROL / TC_PRIO_BESTEFFORT
-	*/
-	switch(mdev->state) {
-	case Primary: 
-		mdev->sock->sk->priority=TC_PRIO_BULK;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-		mdev->sock->sk->tp_pinfo.af_tcp.nonagle=0;
-#else
-		mdev->sock->sk->nonagle=0;
-#endif
-		mdev->sock->sk->sndbuf = 2*65535; 
-		// This boosts the performance of the syncer to 6M/s max
-
-		break;
-	case Secondary:
-		mdev->sock->sk->priority=TC_PRIO_INTERACTIVE;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-		mdev->sock->sk->tp_pinfo.af_tcp.nonagle=1;
-#else
-		mdev->sock->sk->nonagle=1;
-#endif
-		mdev->sock->sk->sndbuf = 2*32767;
-		// Small buffer -> small response time
-
-		break;
-	case Unknown:
-	}
-}
-
 /*static */ int drbd_open(struct inode *inode, struct file *file)
 {
 	int minor;
@@ -1087,6 +1050,11 @@ void drbd_free_sock(int minor)
 		sock_release(drbd_conf[minor].sock);
 		drbd_conf[minor].sock = 0;
 	}
+	if (drbd_conf[minor].msock) {
+		sock_release(drbd_conf[minor].msock);
+		drbd_conf[minor].msock = 0;
+	}
+
 }
 
 
