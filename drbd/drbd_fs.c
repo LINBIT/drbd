@@ -1005,7 +1005,7 @@ ONLY_IN_26(
 	    && cmd != DRBD_IOCTL_GET_CONFIG
 	    && cmd != DRBD_IOCTL_GET_VERSION) {
 		err = -EPERM;
-		goto out;
+		goto out_unlocked;
 	}
 
 	if (mdev->cstate == Unconfigured) {
@@ -1013,7 +1013,7 @@ ONLY_IN_26(
 		default:
 			/* oops, unknown IOCTL ?? */
 			err = -EINVAL;
-			goto out;
+			goto out_unlocked;
 
 		case DRBD_IOCTL_GET_CONFIG:
 		case DRBD_IOCTL_GET_VERSION:
@@ -1027,7 +1027,7 @@ ONLY_IN_26(
 		case DRBD_IOCTL_UNCONFIG_NET:
 			/* no op, so "drbdadm down all" does not fail */
 			err = 0;
-			goto out;
+			goto out_unlocked;
 
 		/* the rest of them don't make sense if Unconfigured.
 		 * still, set an Unconfigured device Secondary
@@ -1042,7 +1042,7 @@ ONLY_IN_26(
 		case DRBD_IOCTL_WAIT_SYNC:
 			err = (cmd == DRBD_IOCTL_SET_STATE && arg == Secondary)
 				    ? 0 : -ENXIO;
-			goto out;
+			goto out_unlocked;
 		}
 	}
 
@@ -1323,7 +1323,7 @@ ONLY_IN_26(
 	default:
 		err = -EINVAL;
 	}
- out:
+ /* out: */
 	up(&mdev->device_mutex);
  out_unlocked:
 	return err;
