@@ -260,7 +260,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	mdev->writ_cnt+=bh->b_size>>9;
 
 	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
-		drbd_set_out_of_sync(mdev,bh->b_rsector);
+		drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
@@ -315,7 +315,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 				   an ack packet. */
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
 	}
-	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector);
+	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 		
 	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk);

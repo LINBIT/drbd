@@ -240,6 +240,7 @@ struct drbd_request {
 	struct drbd_barrier *barrier; // The next barrier.
 	struct buffer_head *bh;    // buffer head
 	unsigned long sector;
+	int size;
 	int rq_status;
 };
 
@@ -251,7 +252,6 @@ struct drbd_barrier {
 };
 
 typedef struct drbd_request drbd_request_t;
-#define GET_SECTOR(A) ((A)->bh->b_rsector)   //REMOVE THIS
 
 /* These Tl_epoch_entries may be in one of 4 lists:
    free_ee .... free entries

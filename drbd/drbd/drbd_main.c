@@ -161,7 +161,8 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 
 	b=mdev->newest_barrier;
 
-	new_item->sector = GET_SECTOR(new_item);
+	new_item->sector = new_item->bh->b_rsector;
+	new_item->size = new_item->bh->b_size;
 	new_item->barrier = b;
 	list_add(&new_item->list,&b->requests);
 
@@ -294,7 +295,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 			}
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
 			mark:
-				drbd_set_out_of_sync(mdev,r->sector);
+				drbd_set_out_of_sync(mdev,r->sector,r->size);
 			}
 		}
 		f=b;
@@ -1219,7 +1220,7 @@ void bm_cleanup(struct BitMap* sbm)
 }
 
 #define BM_SS (BM_BLOCK_SIZE_B-9)
-#define BM_MM ((1L<<CB)-1)
+#define BM_MM ((1L<<BM_SS)-1)
 
 
 /* secot_t and size have a higher resolution (512 Byte) than
@@ -1241,15 +1242,15 @@ void bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
-	sbnr = sector >> CM_SS;
-	ebnr = esector >> CM_SS;
+	sbnr = sector >> BM_SS;
+	ebnr = esector >> BM_SS;
 
 	if(bit) {
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
 			bm[bnr>>LN2_BPL] |= ( 1L << (bnr & ((1L<<LN2_BPL)-1)));
 		}
 	} else { // bit == 0
-		if(  sector & BM_MM   != 0 )     sbnr++;
+		if(  (sector & BM_MM) != 0 )     sbnr++;
 		if( (esector & BM_MM) != BM_MM ) ebnr--;
 
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
