@@ -1,15 +1,31 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.3 2004/05/28 08:32:52 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.4 2004/05/28 11:38:34 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
 #
 
-ID_DISK=0
-ID_DRBD=0
-DRBD_CONF=""
-unset ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*} ${!FS_*} ${!RS_*}
+clear_env()
+{
+	ID_DISK=0
+	ID_DRBD=0
+	DRBD_CONF=""
+	unset ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*}
+	unset ${!FS_*} ${!RS_*} ${!H_*} ${!Fmt_*}
 
+	# field name headers for display in _gen_comp()
+	Fmt_Node="(%-15s %-12s %-10s %9s %10s)"
+	  H_Node=(admin_ip hostname admin_nic timeout min_uptime)
+	Fmt_Disk="(%-8s %-8s %-24s)"
+	  H_Disk=(name Node real_dev)
+	Fmt_Link="\n#\t(%-8s %-15s %-6s)"
+	  H_Link=(Node ip nic)
+	Fmt_Drbd="(%-8s %-5s %6s %-8s\n#\t  %-8s %-15s %-24s %-8s\n#\t  %-8s %-15s %-24s %-8s)"
+	  H_Drbd=(name minor port link
+		left left_ip left_real_dev left_disk
+		right right_ip right_real_dev right_disk
+		conf)
+}
 link_for_each_node()
 {
 	local link=$1 doit=$2
@@ -33,11 +49,11 @@ ip_of()
 node_to_env()
 {
 	eval "set -- \"\${$1[@]}\""
-	   admin_ip=$1
-	   hostname=$2
-	  admin_nic=$3
-	    timeout=$4	# boot_timeout
-	min_uptimre=$5
+	  admin_ip=$1
+	  hostname=$2
+	 admin_nic=$3
+	   timeout=$4	# boot_timeout
+	min_uptime=$5
 }
 disk_to_env()
 {
@@ -87,6 +103,7 @@ new_drbd()
 
 	# funny quoting with cat
 	conf=$(cat <<-___
+
 		resource $name {
 		    protocol        C;
 		    incon-degr-cmd "reboot -f";
@@ -298,15 +315,34 @@ Relocate()
 }
 
 # for verification
-Dump()
+Dump_long()
 {
 	echo "$1=("
 	eval "printf '\t%s\n' \"\${$1[@]}\""
 	echo ")"
 }
+Dump()
+{
+	local v=$1 f
+	[[ $v == H_* ]] && f=Fmt_${v#H_}
+	[[ $f ]] || f=Fmt_${v%_*}
+	eval "set -- \"\${$v[@]::12}\""
+	if [[ $v == H_* ]] ; then
+		printf "\n# %7s" ""
+	else
+		printf "# %s=" "$v"
+	fi
+	printf "${!f}" "$@"
+	echo
+}
 Dump_All()
 {
+	local c
 	for n in ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*} ; do
+		if [[ ${n%_*} != $c ]] ; then
+			c=${n%_*}
+			Dump H_$c
+		fi
 		Dump $n
 	done
 }
@@ -351,4 +387,60 @@ Help()
 	#
 ___
 }
+
+# interactive TAB completion
+_dump_comp()
+{
+	local c=$1
+	if (( ${#COMPREPLY[*]} )); then
+		echo
+		Dump H_$c
+		for v in "${COMPREPLY[@]}" ; do
+			Dump $v
+		done
+		echo -n "$PS2${COMP_WORDS[*]}"
+	fi
+}
+_start_and_reloc_comp()
+{
+	local v
+	eval "v=\${!${COMP_WORDS[COMP_CWORD]}*}"
+	if (( COMP_CWORD <= 1 )) ; then
+		COMPREPLY=(${v:-${!RS_*}})
+	elif (( COMP_CWORD <= 2 )) ; then
+		COMPREPLY=(${v:-${!Node_*}})
+		_dump_comp Node
+	else
+		COMPREPLY=()
+	fi
+}
+_gen_comp()
+{
+	local v c
+	case $COMP_WORDS in
+		Node_State|\
+		Wait_for_boot|\
+		Crash_Node)	c=Node ;;
+		*_Disk)		c=Disk ;;
+		*_Link)		c=Link ;;
+	esac
+	if (( COMP_CWORD <= 1 )) ; then
+		eval "v=\${!${COMP_WORDS[COMP_CWORD]}*}"
+		if [[ $v ]] ; then
+			COMPREPLY=($v)
+		else
+			eval "COMPREPLY=(\${!${c}_*})"
+		fi
+		_dump_comp $c
+	else
+		COMPREPLY=()
+	fi
+}
+#complete -v -X '!Node_*' Node_State Crash_Node Wait_for_boot
+#complete -v -X '!Link_*' Fail_Link Heal_Link
+#complete -v -X '!Disk_*' Fail_Disk Heal_Disk
+complete -v -X '!RS_*'   Stop
+complete -F _gen_comp Fail_Disk Heal_Disk Fail_Link Heal_Link
+complete -F _gen_comp Crash_Node Node_State Wait_for_boot
+complete -F _start_and_reloc_comp Start Relocate
 

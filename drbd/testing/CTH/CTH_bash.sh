@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.3 2004/05/28 08:32:52 lars Exp $
+# $Id: CTH_bash.sh,v 1.1.2.4 2004/05/28 11:38:34 lars Exp $
 
 # example for scripting failures
 # 
@@ -21,6 +21,7 @@ source ./CTH_bash.helpers
 # YOU MUST GET THIS RIGHT !
 # source ./CTH_bash.conf # uml-minna.sh.conf
 # source ./bloodymary.sh.conf
+clear_env
 source $CONF
 
 # verify
@@ -53,23 +54,4 @@ cat <<___
 ___
 Help
 Dump_RS
-
-# interactive TAB completion
-_start_and_reloc_completion()
-{
-	local v
-	eval "v=\${!${COMP_WORDS[COMP_CWORD]}*}"
-	if (( COMP_CWORD <= 1 )) ; then
-		COMPREPLY=(${v:-${!RS_*}})
-	elif (( COMP_CWORD <= 2 )) ; then
-		COMPREPLY=(${v:-${!Node_*}})
-	else
-		COMPREPLY=()
-	fi
-}
-complete -v -X '!Node_*' Node_State Crash_Node Wait_for_boot
-complete -v -X '!Link_*' Fail_Link Heal_Link
-complete -v -X '!Disk_*' Fail_Disk Heal_Disk
-complete -v -X '!RS_*'   Stop
-complete -F _start_and_reloc_completion Start Relocate
 
