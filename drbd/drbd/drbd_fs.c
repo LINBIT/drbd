@@ -537,8 +537,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_thread_stop(&mdev->receiver);
 		drbd_free_resources(mdev);
 		if (mdev->mbds_id) {
-			bm_cleanup(mdev->mbds_id);
-			mdev->mbds_id=0;
+			bm_resize(mdev->mbds_id,0);
+			blk_size[MAJOR_NR][minor] = 0;
 		}
 
 		set_cstate(mdev,Unconfigured);

@@ -36,12 +36,12 @@
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_FREE (-1)
-#define AL_EXTENTS_PT 122
+#define AL_EXTENTS_PT 61
 
 struct al_transaction {
 	u32       magic;
 	u32       tr_number;
-	u32       updated_extents[3];
+	u32       updated_extents[3]; //BUG! need to store slot nr _AND_ extent
 	u32       cyclic_extents[AL_EXTENTS_PT];
 	u32       xor_sum;      
        // I do not believe that all storage medias can guarantee atomic

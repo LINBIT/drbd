@@ -1324,6 +1324,7 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 
 	if(size == 0) {
 		sbm->size = size;
+		vfree(sbm->bm);
 		sbm->bm = 0;
 		return 1;
 	}

@@ -143,7 +143,8 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	list_add(&pr->list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 	inc_pending(mdev);
-	drbd_send_drequest(mdev,DataRequest, bh->b_rsector, bh->b_size,
+	drbd_send_drequest(mdev, mdev->cstate == SyncTarget ? RSDataRequest : DataRequest,
+			   bh->b_rsector, bh->b_size,
 			   (unsigned long)pr);
 }
 
