@@ -32,7 +32,8 @@
 #include <linux/list.h>
 #include <linux/sched.h>
 #include <linux/bitops.h>
-#include <linux/slab.h> 
+#include <linux/slab.h>
+
 #include "lru_cache.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,8)
@@ -226,8 +227,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	 _b; \
 	}))
 
-// to debug dec_*(), while we still have the <0!! issue
-// to debug dec_*(), while we still have the <0!! issue
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,9)
 #include <linux/stringify.h>
 #else
@@ -235,8 +234,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define __stringify_1(x)	#x
 #define __stringify(x)		__stringify_1(x)
 #endif
-
-#define HERE __stringify(__FILE__ __LINE__) // __FUNCTION__
 
 // integer division, round _UP_ to the next integer
 #define div_ceil(A,B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
@@ -1317,46 +1314,83 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 	atomic_inc(&mdev->ap_pending_cnt);
 }
 
-static inline void dec_ap_pending(drbd_dev* mdev, const char* where)
-{
-	if(atomic_dec_and_test(&mdev->ap_pending_cnt))
-		wake_up(&mdev->cstate_wait);
+#define ERR_IF_CNT_IS_NEGATIVE(which)				\
+	if(atomic_read(&mdev->which)<0)				\
+		ERR("in %s:%d: " #which " = %d < 0 !\n",	\
+		    __func__ , __LINE__ ,			\
+		    atomic_read(&mdev->which))
 
-	if(atomic_read(&mdev->ap_pending_cnt)<0)
-		ERR("in %s: pending_cnt = %d < 0 !\n",
-		    where,
-		    atomic_read(&mdev->ap_pending_cnt));
-}
+#define dec_ap_pending(mdev)					\
+	typecheck(drbd_dev*,mdev);				\
+	if(atomic_dec_and_test(&mdev->ap_pending_cnt))		\
+		wake_up(&mdev->cstate_wait);			\
+	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt)
 
 static inline void inc_rs_pending(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->rs_pending_cnt);
 }
 
-static inline void dec_rs_pending(drbd_dev* mdev, const char* where)
-{
-	atomic_dec(&mdev->rs_pending_cnt);
-
-	if(atomic_read(&mdev->rs_pending_cnt)<0) 
-		ERR("in %s: rs_pending_cnt = %d < 0 !\n",
-		    where,
-		    atomic_read(&mdev->unacked_cnt));
-}
+#define dec_rs_pending(mdev)					\
+	typecheck(drbd_dev*,mdev);				\
+	atomic_dec(&mdev->rs_pending_cnt);			\
+	ERR_IF_CNT_IS_NEGATIVE(rs_pending_cnt)
 
 static inline void inc_unacked(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-static inline void dec_unacked(drbd_dev* mdev,const char* where)
-{
-	atomic_dec(&mdev->unacked_cnt);
+#if 0 && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
+/*
+ * idea was to forcefully push the tcp stack whenever the
+ * currently last pending packet is in the buffer.
+ * should be benchmarked on some real box to see if it has any
+ * effect on overall latency.
+ */
 
-	if(atomic_read(&mdev->unacked_cnt)<0)
-		ERR("in %s: unacked_cnt = %d < 0 !\n",
-		    where,
-		    atomic_read(&mdev->unacked_cnt));
+/* this only works with 2.6 kernels because of some conflicting defines
+ * in header files included from net.tcp.h.
+ */
+
+#include <net/tcp.h>
+static inline void drbd_push_msock(drbd_dev* mdev)
+{
+	struct sock    *sk;
+	struct tcp_opt *tp;
+	if (mdev->meta.socket == NULL) return;
+	sk = mdev->meta.socket->sk;
+	tp = tcp_sk(sk);
+	lock_sock(sk);
+	__tcp_push_pending_frames(sk, tp, tcp_current_mss(sk, 1), TCP_NAGLE_PUSH);
+	release_sock(sk);
 }
+
+#define dec_unacked(mdev)					\
+	might_sleep();						\
+	typecheck(drbd_dev*,mdev);				\
+	if (atomic_dec_and_test(&mdev->unacked_cnt))		\
+		drbd_push_msock(mdev);				\
+	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt);
+
+#define sub_unacked(mdev, n)					\
+	might_sleep();						\
+	typecheck(drbd_dev*,mdev);				\
+	if (atomic_sub_and_test(n, &mdev->unacked_cnt))		\
+		drbd_push_msock(mdev);				\
+	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt);
+#else
+#define dec_unacked(mdev)					\
+	typecheck(drbd_dev*,mdev);				\
+	atomic_dec(&mdev->unacked_cnt);				\
+	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
+
+#define sub_unacked(mdev, n)					\
+	typecheck(drbd_dev*,mdev);				\
+	atomic_sub(n, &mdev->unacked_cnt);			\
+	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
+#endif
+
 
 /**
  * inc_local: Returns TRUE when local IO is possible. If it returns

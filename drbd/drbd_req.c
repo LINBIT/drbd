@@ -316,10 +316,10 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			if (!drbd_send_dblock(mdev,req)) {
 				if (mdev->cstate >= Connected)
 					set_cstate(mdev,NetworkFailure);
-				dec_ap_pending(mdev,HERE);
+				dec_ap_pending(mdev);
 				drbd_thread_restart_nowait(&mdev->receiver);
 			} else if(mdev->conf.wire_protocol == DRBD_PROT_A) {
-				dec_ap_pending(mdev,HERE);
+				dec_ap_pending(mdev);
 				drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 			}
 		} else if (target_area_out_of_sync) {
