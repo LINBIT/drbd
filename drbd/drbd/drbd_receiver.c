@@ -192,8 +192,6 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	drbd_al_complete_io(mdev,DRBD_BH_SECTOR(bh));
-
 	//	if(wake_asender) {
 	wake_asender(mdev);
 	//	}
@@ -858,8 +856,7 @@ STATIC int receive_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	if( is_syncer_blk(mdev,p->block_id)) {
 		drbd_set_in_sync(mdev,
 				 be64_to_cpu(p->sector),
-				 be32_to_cpu(p->blksize));
-		//drbd_clean_on_disk_bm(mdev,be64_to_cpu(p->sector));
+				 be32_to_cpu(p->blksize),1);
 	} else {
 		req=(drbd_request_t*)(long)p->block_id;
 
@@ -1014,8 +1011,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 
 STATIC int e_end_resync_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
-	drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),e->bh->b_size);
-	//drbd_clean_on_disk_bm(mdev,DRBD_BH_SECTOR(e->bh));
+	drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),e->bh->b_size,1);
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
 	return TRUE;
@@ -1043,7 +1039,6 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	dec_pending(mdev,HERE);
 	inc_unacked(mdev);
 
-	drbd_al_begin_io(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
@@ -1088,7 +1083,6 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	dec_pending(mdev,HERE);
 	inc_unacked(mdev);
 
-	drbd_al_begin_io(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
@@ -1180,8 +1174,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if( mdev->cstate > Connected ) {
 			drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),
-					 e->bh->b_size);
-			//drbd_clean_on_disk_bm(mdev,DRBD_BH_SECTOR(e->bh));
+					 e->bh->b_size,1);
 		}
 		
 		ok=drbd_send_ack(mdev,WriteAck,e);
@@ -1240,7 +1233,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
-	drbd_al_begin_io(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);

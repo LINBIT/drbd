@@ -317,8 +317,9 @@ int drbd_dsender(struct Drbd_thread *thi)
 
 		if(sync_finished) {
 			unsigned long dt;
-			dt = (jiffies - mdev->rs_mark_time) / HZ;
-			INFO("resync done (running time was %lu sec)\n",dt);
+			dt = (jiffies - mdev->rs_start) / HZ;
+			INFO("resync done (total %lu sec %lu K/sec)\n",
+			     dt,(mdev->rs_total/2)/dt);
 
 			if(mdev->cstate == SyncTarget) {
 				mdev->gen_cnt[Flags] |= MDF_Consistent;

@@ -145,27 +145,12 @@ STATIC void lc_move_element(struct lru_cache * mlc,
 	list_add(&to->list,le);
 }
 
-STATIC struct lc_element * lc_evict(struct lru_cache * mlc)
+STATIC struct lc_element * lc_unlink(struct lru_cache * mlc,
+	                             struct lc_element *element)
 {
-	struct list_head *le;
-	struct lc_element *element, *slot;
-
- retry:
-	le=mlc->lru.prev;
-	element=list_entry(le, struct lc_element,list);
-
-	if( mlc->may_evict ) {
-		if( ! mlc->may_evict(mlc,element) ) {
-			printk(KERN_WARNING "LC: need to wait\n");
-			spin_unlock(mlc->lc_lock); 
-			//TODO use wait_event_lock here
-			wait_event(mlc->evict_wq,mlc->may_evict(mlc,element));
-			spin_lock(mlc->lc_lock);
-			goto retry;
-		}
-	}
-
-	list_del(le);
+	struct lc_element *slot;
+	
+	list_del(&element->list);
 
 	slot = lc_hash_fn( mlc, element->lc_number);
 	if( slot == element) {
@@ -184,6 +169,46 @@ STATIC struct lc_element * lc_evict(struct lru_cache * mlc)
 		}
 		slot=slot->hash_next;
 	} while(1);
+}
+
+STATIC struct lc_element * lc_evict(struct lru_cache * mlc)
+{
+	struct list_head *le;
+	struct lc_element *element;
+
+ retry:
+	le=mlc->lru.prev;
+	element=list_entry(le, struct lc_element,list);
+
+	if( mlc->may_evict ) {
+		if( ! mlc->may_evict(mlc,element) ) {
+			printk(KERN_WARNING "LC: need to wait\n");
+			spin_unlock(mlc->lc_lock); 
+			//TODO use wait_event_lock here
+			wait_event(mlc->evict_wq,mlc->may_evict(mlc,element));
+			spin_lock(mlc->lc_lock);
+			goto retry;
+		}
+	}
+
+	return lc_unlink(mlc,element);
+}
+
+/**
+ * lc_del: Removes an element from the cache (and therefore adds the 
+ * element's slot to the free list)
+ *
+ * @mlc: The lru_cache object
+ * @element: The element to remove
+ */
+void lc_del(struct lru_cache * mlc, struct lc_element *element)
+{
+	struct lc_element *free_slot;
+
+	free_slot = lc_unlink(mlc,element);
+	free_slot->lc_number = LC_FREE;
+
+	list_add(&free_slot->list,&mlc->free);	
 }
 
 STATIC struct lc_element * lc_get(struct lru_cache * mlc,

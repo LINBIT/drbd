@@ -1102,7 +1102,10 @@ int __init drbd_init(void)
 		drbd_conf[i].read_cnt = 0;
 		atomic_set(&drbd_conf[i].pending_cnt,0);
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
-		drbd_conf[i].mbds_id = bm_init(MKDEV(MAJOR_NR, i));
+		drbd_conf[i].mbds_id = bm_init(0);
+		lc_init(&drbd_conf[i].resync);
+		drbd_conf[i].resync.element_size = sizeof(struct bm_extent);
+		lc_resize(&drbd_conf[i].resync,5);
 		/* If the WRITE_HINT_QUEUED flag is set but it is not
 		   actually queued the functionality is completely disabled */
 		if(disable_io_hints) drbd_conf[i].flags=1<<WRITE_HINT_QUEUED;
@@ -1241,6 +1244,7 @@ void cleanup_module(void)
 		drbd_free_resources(drbd_conf+i);
 		tl_cleanup(drbd_conf+i);
 		if (drbd_conf[i].mbds_id) bm_cleanup(drbd_conf[i].mbds_id);
+		lc_free(&drbd_conf[i].resync);
 		// free the receiver's stuff
 
 		drbd_release_ee(drbd_conf+i,&drbd_conf[i].free_ee);
@@ -1365,16 +1369,6 @@ void drbd_free_resources(drbd_dev *mdev)
 // Shift right with round up. :)
 #define SR_RU(A,B) ( ((A)>>(B)) + ( ((A) & ((1<<(B))-1)) > 0 ? 1 : 0 ) )
 
-#define BM_EXTENT_SIZE_B 24       // One extent represents 16M Storage
-#define BM_EXTENT_SIZE (1<<BM_EXTENT_SIZE_B)
-
-/*
-struct bm_extent { // 16MB sized extents.
-	struct lc_element lce;
-	unsigned int rs_left; // number of sectors our of sync in this extent.
-};
-*/
-
 int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 {
 	unsigned long *obm,*nbm;
@@ -1406,6 +1400,7 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 	if(obm) {
 		memcpy(nbm,obm,min_t(unsigned long,sbm->size,size));
 	}
+	sbm->dev_size = size_kb;
 	sbm->size = size;
 	sbm->bm = nbm;
 	spin_unlock(&sbm->bm_lock);
@@ -1415,7 +1410,7 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 	return 1;
 }
 
-struct BitMap* bm_init(kdev_t dev)
+struct BitMap* bm_init(unsigned long size_kb)
 {
 	struct BitMap* sbm;
 
@@ -1425,27 +1420,23 @@ struct BitMap* bm_init(kdev_t dev)
 		return 0;
 	}
 
-	sbm->dev = dev;
+	sbm->dev_size = size_kb;
 	sbm->gs_bitnr=0;
 	sbm->bm_lock = SPIN_LOCK_UNLOCKED;
 
 	sbm->size = 0;
 	sbm->bm = NULL;
 
-	if(!bm_resize(sbm,blk_size[MAJOR(dev)][MINOR(dev)])) {
+	if(!bm_resize(sbm,size_kb)) {
 		kfree(sbm);
 		return 0;
 	}
-
-	//	lc_init(&sbm->resync);
-	//	sbm->resync.element_size = sizeof(struct bm_extent);
 
 	return sbm;
 }
 
 void bm_cleanup(struct BitMap* sbm)
 {
-	// lc_free(&sbm->resync);
 	vfree(sbm->bm);
 	kfree(sbm);
 }
@@ -1459,7 +1450,7 @@ void bm_cleanup(struct BitMap* sbm)
    the bitmap (4K). In case we have to set a bit, we 'round up',
    in case we have to clear a bit we do the opposit.
    It returns the number of sectors that where marked dirty, or
-   marked clear.
+   marked clean.
 */
 int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 {
@@ -1490,10 +1481,8 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		}
 	} else { // bit == 0
 		sector_t dev_size;
-		//struct bm_extent* ext;
-		//unsigned long enr;
 
-		dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
+		dev_size=sbm->dev_size;
 	
 		if(  (sector & BM_MM) != 0 )     sbnr++;
 		if( (esector & BM_MM) != BM_MM ) {
@@ -1511,29 +1500,31 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 			if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
-
-/*		// I simply assume that a sector/size pair never crosses
-		// a 16 MB extent border. (Currently this is true...)
-		enr = (sector >> (BM_EXTENT_SIZE_B-9));
-
-		ext = (struct bm_extent *) lc_find(&sbm->resync,enr);
-		if(ext) {
-			lc_touch(&sbm->resync,&ext->lce);
-		} else {
-			ext = (struct drbd_extent *)lc_add(&sbm->resync,enr,0);
-			ext->rs_left = //count bits...
-		}
-		
-		ext->rs_left -= ret;
-		if(ext->rs_left) {
-			// write block to on disk bitmap
-			// kick it out of the cache
-		} */
 	}
 	spin_unlock(&sbm->bm_lock);
 
 	return ret;
 }
+
+#define WORDS ( ( BM_EXTENT_SIZE / BM_BLOCK_SIZE ) / BITS_PER_LONG )
+int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
+{
+	unsigned long* bm;
+	int i;
+	int bits=0;
+
+	spin_lock(&sbm->bm_lock);
+	bm = sbm->bm;
+
+	for(i = enr * WORDS ; i < (enr+1) * WORDS ; i++) {
+		bits += parallel_bitcount(bm[i]);
+	} 
+
+	spin_unlock(&sbm->bm_lock);
+
+	return bits << (BM_BLOCK_SIZE_B - 9); // in sectors
+}
+#undef WORDS
 
 int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 {
@@ -1572,7 +1563,6 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 	if(*size != BM_BLOCK_SIZE) BUG(); // Other cases are not needed
 
 	if(sbm->gs_bitnr == -1) {
-		// lc_free(&sbm->resync);
 		return MBDS_DONE;
 	}
 
@@ -1588,7 +1578,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 
 	ret=bnr<<BM_SS;
 
-	dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
+	dev_size=sbm->dev_size;
 	if( ret+((1<<BM_SS)-1) > dev_size<<1 ) {
 		int ns = dev_size % (1<<(BM_BLOCK_SIZE_B-10));
 		sbm->gs_bitnr = -1;
@@ -1620,7 +1610,6 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 
 	spin_unlock(&sbm->bm_lock);
 }
-
 
 /*********************************/
 /* meta data management */

@@ -80,7 +80,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
 	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
-		drbd_set_in_sync(mdev,rsector,req->bh->b_size);
+		drbd_set_in_sync(mdev,rsector,req->bh->b_size,0);
 	}
 
 	req->bh->b_end_io(req->bh,(0x0001 & er_flags & req->rq_status));

@@ -503,13 +503,20 @@ struct Pending_read {
 #define PROCESS_EE_RUNNING 9
 
 struct BitMap {
-	kdev_t dev;
+	unsigned long dev_size;
 	unsigned long size;
 	unsigned long* bm;
 	unsigned long gs_bitnr;
 	unsigned long gs_snr;
 	spinlock_t bm_lock;
-	// struct lru_cache resync; // Used to track operations of resync...
+};
+
+#define BM_EXTENT_SIZE_B 24       // One extent represents 16M Storage
+#define BM_EXTENT_SIZE (1<<BM_EXTENT_SIZE_B)
+
+struct bm_extent { // 16MB sized extents.
+	struct lc_element lce;
+	unsigned int rs_left; // number of sectors our of sync in this extent.
 };
 
 struct al_transaction;
@@ -564,6 +571,7 @@ struct Drbd_Conf {
 	struct Drbd_thread asender;
 	wait_queue_head_t dsender_wait;
 	struct BitMap* mbds_id;
+	struct lru_cache resync; // Used to track operations of resync...
 	int open_cnt;
 	u32 gen_cnt[GEN_CNT_SIZE];
 	u32 bit_map_gen[GEN_CNT_SIZE];
@@ -697,7 +705,7 @@ static inline sector_t drbd_md_ss(drbd_dev *mdev) {
 struct BitMap;
 
 // TODO I'd like to change these all to take the mdev as first argument
-extern struct BitMap* bm_init(kdev_t dev);
+extern struct BitMap* bm_init(unsigned long size_kb);
 extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
 extern void bm_cleanup(struct BitMap* sbm);
 extern int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit);
@@ -705,6 +713,8 @@ extern sector_t bm_get_sector(struct BitMap* sbm,int* size);
 extern void bm_reset(struct BitMap* sbm);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
 extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
+extern int bm_count_sectors(struct BitMap* sbm, unsigned long enr);
+
 extern void drbd_queue_signal(int signal,struct task_struct *task);
 
 extern drbd_dev *drbd_conf;
@@ -753,6 +763,9 @@ extern void drbd_al_init(struct Drbd_Conf *mdev);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
+extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, 
+			     int blk_size, int may_sleep);
+
 /*
  * event macros
  *************************/
@@ -940,32 +953,6 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
-static inline void drbd_set_in_sync(drbd_dev* mdev,
-				    sector_t sector, int blk_size)
-{
-	/* Is called by drbd_dio_end possibly from IRQ context, but
-	   from other places in non IRQ */
-	unsigned long flags=0;
-	int cleared;
-
-	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
-
-	spin_lock_irqsave(&mdev->rs_lock,flags);
-	mdev->rs_left -= cleared;
-	D_ASSERT((long)mdev->rs_left >= 0);
-	if( cleared && mdev->rs_left == 0 ) {
-		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
-		set_bit(SYNC_FINISHED,&mdev->flags);
-		spin_unlock(&mdev->ee_lock);
-		wake_up_interruptible(&mdev->dsender_wait);
-	}
-
-	if(jiffies - mdev->rs_mark_time > HZ*10) {
-		mdev->rs_mark_time=jiffies;
-		mdev->rs_mark_left=mdev->rs_left;
-	}
-	spin_unlock_irqrestore(&mdev->rs_lock,flags);
-}
 
 /*
   There was a race condition between the syncer's and applications' write

@@ -57,7 +57,7 @@ struct al_transaction {
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
 STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev);
-STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int);
+STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int,int);
 STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev);
 
 STATIC int drbd_al_may_evict(struct lru_cache *mlc, struct lc_element *e)
@@ -107,7 +107,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	if( update_al ) {
 		if(mdev->cstate < Connected &&  evicted != AL_FREE ) {
-			drbd_update_on_disk_bitmap(mdev,evicted);
+			drbd_update_on_disk_bitmap(mdev,evicted,1);
 		}
 		drbd_al_write_transaction(mdev);
 	}
@@ -401,21 +401,32 @@ STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev)
 	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
 }
 
+STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
+{
+	struct Drbd_Conf *mdev;
+
+	mdev=drbd_mdev_of_bh(bh);
+
+	mark_buffer_uptodate(bh, uptodate);
+	unlock_buffer(bh);
+	up(&mdev->md_io_mutex);
+}
+
+
+#define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
+#define EXTENTS_PER_SECTOR  ( 512 / BM_WORDS_PER_EXTENT )
 /**
  * drbd_update_on_disk_bitmap: Writes a piece of the bitmap to its
  * on disk location. 
  * @enr: The extent number of the bits we should write to disk.
  *
- * TODO: Implement cleaning of the on disk bitmap somewhere...
  */
-STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr)
+STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr,
+				       int sync)
 {
 	unsigned long * buffer, * bm;
 	int want,buf_i,bm_words,bm_i;
 	sector_t sector;
-
-#define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
-#define EXTENTS_PER_SECTOR  ( 512 / BM_WORDS_PER_EXTENT )
 
 	enr = (enr & ~(EXTENTS_PER_SECTOR-1) );
 
@@ -438,41 +449,94 @@ STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr)
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
-	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	mdev->md_io_bh->b_end_io = sync ? drbd_generic_end_io : drbd_async_eio;
 	generic_make_request(WRITE,mdev->md_io_bh);
-	wait_on_buffer(mdev->md_io_bh);
-
-	up(&mdev->md_io_mutex);
-
+	if(sync) {
+		wait_on_buffer(mdev->md_io_bh);
+		up(&mdev->md_io_mutex);
+	}
 }
+#undef BM_WORDS_PER_EXTENT
+#undef EXTENTS_PER_SECTOR
 
-STATIC void drbd_async_end_io(struct buffer_head *bh, int uptodate)
+/*
+  The very very curde thing currently is that we have two different extent
+  sizes now. AL's extents are 4MB each, while the extents of the resync
+  LRU-cache are 16MB each. I guess we should have only one extent
+  size here. -- I guess the 16MB are the better choice but I want to 
+  postpone this decission a bit... :(
+*/
+#define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
+STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
+				      int cleared,int may_sleep)
 {
-	struct Drbd_Conf *mdev;
+	struct bm_extent* ext;
+	unsigned long enr;
 
-	mdev=drbd_mdev_of_bh(bh);
+	// I simply assume that a sector/size pair never crosses
+	// a 16 MB extent border. (Currently this is true...)
+	enr = (sector >> (BM_EXTENT_SIZE_B-9));
 
-	mark_buffer_uptodate(bh, uptodate);
-	unlock_buffer(bh);
-	up(&mdev->md_io_mutex);
+	spin_lock(&mdev->resync.lc_lock);
+
+	ext = (struct bm_extent *) lc_find(&mdev->resync,enr);
+	if(ext) {
+		lc_touch(&mdev->resync,&ext->lce);
+		ext->rs_left -= cleared;
+	} else {
+		ext = (struct bm_extent *)lc_add(&mdev->resync,enr,0);
+		ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+	}
+	spin_unlock(&mdev->resync.lc_lock);		
+
+	D_ASSERT((long)ext->rs_left >= 0);
+
+	if(may_sleep) {
+		struct list_head *le;
+
+		spin_lock(&mdev->resync.lc_lock);
+	restart:
+		list_for_each(le,&mdev->resync.lru) {
+			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
+			if(ext->rs_left == 0) {
+				spin_unlock(&mdev->resync.lc_lock);	       
+				drbd_update_on_disk_bitmap(mdev,enr*SM,0);
+				INFO("Clearing e# %lu of on disk bm\n",enr);
+				spin_lock(&mdev->resync.lc_lock);
+				lc_del(&mdev->resync,&ext->lce);
+				goto restart;
+			}
+		}
+		spin_unlock(&mdev->resync.lc_lock);		
+	}
 }
+#undef SM
 
-void drbd_clean_on_disk_bm(struct Drbd_Conf *mdev,sector_t s)
+void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, 
+		      int blk_size, int may_sleep)
 {
-/*	
+	/* Is called by drbd_dio_end possibly from IRQ context, but
+	   from other places in non IRQ */
+	unsigned long flags=0;
+	int cleared;
 
+	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
-	down(&mdev->md_io_mutex);
-	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr;
+	spin_lock_irqsave(&mdev->rs_lock,flags);
+	mdev->rs_left -= cleared;
+	D_ASSERT((long)mdev->rs_left >= 0);
+	if( cleared && mdev->rs_left == 0 ) {
+		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
+		set_bit(SYNC_FINISHED,&mdev->flags);
+		spin_unlock(&mdev->ee_lock);
+		wake_up_interruptible(&mdev->dsender_wait);
+	}
 
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
-	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
-	mdev->md_io_bh->b_end_io = drbd_async_end_io;
-	generic_make_request(WRITE,mdev->md_io_bh);
+	if(jiffies - mdev->rs_mark_time > HZ*10) {
+		mdev->rs_mark_time=jiffies;
+		mdev->rs_mark_left=mdev->rs_left;
+	}
+	spin_unlock_irqrestore(&mdev->rs_lock,flags);
 
-	//The up(&mdev->md_io_mutex); is in the drbd_async_end_io handler.
-	*/
+	drbd_try_clear_on_disk_bm(mdev,sector,cleared,may_sleep);
 }
-
-

@@ -65,9 +65,10 @@ extern void lc_init(struct lru_cache * mlc);
 extern void lc_resize(struct lru_cache * mlc, int nr_elements);
 extern void lc_free(struct lru_cache * mlc);
 extern struct lc_element * lc_find(struct lru_cache * mlc, unsigned int enr);
-extern struct lc_element * lc_add(struct lru_cache * mlc, 
+extern struct lc_element * lc_add(struct lru_cache *,
 				  unsigned int enr,
 				  unsigned long * evicted);
+extern void lc_del(struct lru_cache * mlc, struct lc_element *element);
 extern void lc_set(struct lru_cache * mlc, unsigned int enr, int index);
 extern int lc_fixup_hash_next(struct lru_cache * mlc);
 
