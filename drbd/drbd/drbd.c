@@ -825,7 +825,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	int err;
 
 	if (!mdev->sock) return -1000;
-	if (mdev->cstate == Timeout) return -1001;
+	if (mdev->cstate == Timeout || 
+	    mdev->cstate == BrokenPipe) return -1001;
 
 	header->magic  =  cpu_to_be32(DRBD_MAGIC);
 	header->command = cpu_to_be16(cmd);
@@ -925,8 +926,10 @@ void drbd_a_timeout(unsigned long arg)
 
 	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
 
-	if(drbd_conf[thi->minor].cstate == Connected)
+	if(drbd_conf[thi->minor].cstate == Connected) {
+		set_cstate(&drbd_conf[thi->minor],Timeout);
 		drbd_thread_restart_nowait(thi);
+	}
 }
 
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
@@ -1687,7 +1690,8 @@ inline int receive_cstate(int minor)
 {
 	Drbd_CState_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) 
+	    != sizeof(header))
 	        return FALSE;
 
 	set_cstate(&drbd_conf[minor],be32_to_cpu(header.cstate));
@@ -1702,7 +1706,8 @@ inline int receive_barrier(int minor)
   	Drbd_Barrier_P header;
 	int ep_size,i;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) 
+	    != sizeof(header))
 	        return FALSE;
 
 	spin_lock(&drbd_conf[minor].es_lock);
@@ -1752,7 +1757,8 @@ inline int receive_data(int minor,int data_size)
 	int ep_size;
 	Drbd_Data_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) != 
+	    sizeof(header))
 	        return FALSE;
 	
 	/*
@@ -1813,7 +1819,8 @@ inline int receive_data(int minor,int data_size)
 	}
 
 
-	if (drbd_recv(drbd_conf[minor].sock, bh->b_data, data_size) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, bh->b_data, data_size) 
+	    != data_size)
 	        return FALSE;
 
 	mark_buffer_uptodate(bh, 0);
@@ -1858,7 +1865,8 @@ inline int receive_block_ack(int minor)
         struct request *req;
 	Drbd_BlockAck_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) != 
+	    sizeof(header))
 	        return FALSE;
 	
 	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A &&
@@ -1891,7 +1899,8 @@ inline int receive_barrier_ack(int minor)
 {
 	Drbd_BarrierAck_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) != 
+	    sizeof(header))
 	        return FALSE;
 
         tl_release(&drbd_conf[minor],header.barrier,
@@ -1909,7 +1918,8 @@ inline int receive_param(int minor,int command)
 	/*printk(KERN_DEBUG DEVICE_NAME
 	  ": recv ReportParams/m=%d\n",minor);*/
 
-	if (drbd_recv(drbd_conf[minor].sock, &param, sizeof(param)) <= 0)
+	if (drbd_recv(drbd_conf[minor].sock, &param, sizeof(param)) != 
+	    sizeof(param))
 	        return FALSE;
 
 	if(be32_to_cpu(param.state) == Primary &&
@@ -1983,7 +1993,8 @@ void drbdd(int minor)
 	while (TRUE) {
 		drbd_collect_zombies(minor);
 
-		if ( drbd_recv(my_sock,&header,sizeof(Drbd_Packet)) <= 0) 
+		if ( drbd_recv(my_sock,&header,sizeof(Drbd_Packet)) != 
+		     sizeof(Drbd_Packet)) 
 			break;
 
 		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
