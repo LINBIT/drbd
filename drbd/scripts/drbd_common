@@ -288,7 +288,7 @@ have_command()
 {
 	for NAME in $*
 	do
-		if ! `which $NAME 2>/dev/null` ; then
+		if [ ! -z "`which $NAME 2>/dev/null`" ]; then
 			failed "$0 needs the command '$NAME'"
 			exit 1
 		fi
@@ -302,7 +302,7 @@ have_device()
 	for NAME in $*
 	do
 		if [ ! -b /dev/$NAME ]; then
-			failed "$0 needs the device '/dev/$NAME'"
+			failed "$0 needs the device '$NAME'"
 			exit 1
 		fi
 	done
