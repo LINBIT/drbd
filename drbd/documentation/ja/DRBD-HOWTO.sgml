@@ -1,0 +1,688 @@
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook V4.1//EN">
+
+<article lang="ja">
+<articleinfo>
+        <title>DRBD HOWTO</title>
+	<author>
+	        <firstname>David</firstname>
+		<surname>Krovich</surname>
+		<affiliation>
+		         <address>
+			 <email>dkrovich@slackworks.com</email>
+			 </address>
+		</affiliation>
+	</author>
+	<author>
+	        <firstname>Hiroaki</firstname>
+		<surname>Kuze</surname>
+		<affiliation>
+		         <address>
+			 <email>hkuze@wbc.co.jp</email>
+			 </address>
+		</affiliation>
+	</author>
+
+        <revhistory>
+                <revision>
+                <revnumber>v0.6.5J</revnumber>
+                <date>2002-05-17</date>
+                <authorinitials>hk</authorinitials>
+                </revision>
+           <revision>
+                <revnumber>v0.6.5</revnumber>
+                <date>2002-01-23</date>
+                <authorinitials>dmk</authorinitials>
+                </revision>
+        </revhistory>
+
+	<abstract>
+	<para>
+	DRBD HOWTO 
+	</para>
+	</abstract>
+</articleinfo> 
+
+<sect1 id="Introduction">
+<title>はじめに</title>
+
+       <sect2>
+       <title>DRBDとは何ですか?</title>
+       <para>
+DRBDは1つのカーネルモジュールと関連する複数のスクリプトで構成され、ハイアベイラビリティクラスタを構築できるように設計されたブロックデバイスを提供します。このハイアベイラビリティクラスタは、ブロックデバイス全体を(専用の)ネットワークを介してミラーリングすることによって実現されます。ネットワークRAIDを実現していると考えてください。
+       </para>
+       </sect2>
+
+
+       <sect2>
+       <title>DRBDでどこまでできますか。HAクラスタを構築するために他に必要なものはありますか？。</title>
+
+       <para>DRBDはデータを受け取ると、ローカルディスクに書き込み、かつ他方のマシンに送信します。他方のマシン上では、受信したデータを自身のディスクに書き込みます。
+</para>
+       <para>
+他に必要なソフトウェアは、<ulink url="http://linux-ha.org/download">heartbeat</ulink>のようなサービスや、ブロックデバイス上で動作するいくつかのアプリケーションです。
+</para>
+
+       <para>
+       例: 
+       </para>
+       <itemizedlist>
+         <listitem>
+	    <para>ファイルシステム及びfsck</para>
+	 </listitem>
+	 <listitem>
+	     <para>ジャーナリングファイルシステム</para>
+	 </listitem>
+	 <listitem>
+	     <para>リカバリ機能付きデータベース</para>
+	 </listitem>
+        </itemizedlist>
+	</sect2>
+
+	<sect2>
+	<title>どのように動作しますか?</title>
+
+	<para>
+各デバイス(DRBDは2つ以上のデバイスを提供します)には、プライマリあるいはセカンダリという状態になります。プライマリデバイスのあるノード上でアプリケーションは動作し、デバイス(/dev/nbX)にアクセスします。すべての書き込みはローカルの「さらにローレベルなブロックデバイス」に送られ、セカンダリ状態のデバイスのあるノードに送られます。セカンダリデバイスは単にデータを自身のローレベルのブロックデバイスに書き込みます。読み取りは常にローカルで実行されます。 
+</para>
+
+         <para>プライマリノードが停止した場合、heartbeatがセカンダリデバイスをプライマリ状態に切り替えてアプリケーションを起動させます。(もし非ジャーナリングファイルシステムを使用している場合、fsckの実行も含まれます。) </para>
+
+         <para>
+停止したノードが再び起動した場合、それは新しいセカンダリノードであり、データ内容をプライマリ側と同期させる必要があります。これはもちろんサービスを中断せずにバックグラウンドで行われます。 
+</para>
+
+         </sect2>
+
+	 <sect2>
+	 <title>DRBDは最近のHAクラスタとどのような関係がありますか?</title>
+	 
+
+	 <para>私の知っている限りでは、最近のクラスタ(HP、Compaqなど)はたいてい共有されたストレージデバイスを使っています。従ってストレージデバイスは2台以上のノードに接続されていることになります(これは共有SCSIバスやファイバーチャネルを使って実現されています。)。 
+         </para>
+
+	 <para>DRBDは共有デバイスを使うのと意味的には同じですが、非一般的なハードウェアは一切必要としません。DRBDは、私の印象では特別なストレージネットワークよりもコストの低いIPネットワーク上で動作します。 
+        </para>
+
+
+	<para>現在では、DRBDは一度に1つのノードにのみ読み書きアクセスを許可します。これは通常のフェールオーバー型HAクラスタにとって十分です。私の現在のタスクリストには載っていませんが、両ノードに読み書きアクセスを許可できるようになるにはそれほどの努力は必要ないでしょう。これには例えば<ulink url="http://www.globalfilesystem.org">GFS</ulink>を使うと便利でしょう。 
+        </para>
+	</sect2>
+
+</sect1>
+
+<sect1 id="Installation">
+<title>インストール</title>
+
+        <sect2>
+	<title>ダウンロード</title>
+	<para>
+最新の安定バージョンは0.5.8です。ダウンロードは
+<ulink url="http://www.complang.tuwien.ac.at/reisner/drbd/download/">http://www.complang.tuwien.ac.at/reisner/drbd/download/</ulink>から可能です。
+        </para>
+	</sect2>
+	
+	<sect2>
+	<title>コンパイル</title>
+	<para>
+	 コンパイルは非常に簡単です。単に下記のコマンドを実行してください。</para>
+
+	 <programlisting>
+
+	 $ make 
+	 $ make install
+
+	 </programlisting>
+
+	 </sect2>
+	 <sect2>
+	 <title>DRBDモジュールのロードテスト</title>
+
+	 <para>全てを正しく構築しインストールできたら、モジュールのロードテストができます。</para>
+
+<programlisting>
+$ /sbin/insmod drbd
+</programlisting>
+
+<para>全て順調なら、エラーメッセージを目にすることはないでしょう。lsmodを実行してモジュールがロードされているか確認してください。
+
+</para>
+
+<programlisting>
+$ /sbin/lsmod
+</programlisting>
+
+<para>
+drbdという文字が表示されたら全て良好です。次のステップに進むためにrmmodして、サンプル設定セクションに移ってください。
+</para>
+
+<programlisting>
+$ /sbin/rmmod drbd
+</programlisting>
+          </sect2>
+ 
+          <sect2>
+          <title>2.4.x系カーネルについて</title>
+
+<para>DRBDのバージョン0.5.8は2.2.x系カーネルでのみ動作します。2.4.x系カーネルを使う場合は、<ulink url="http://www.complang.tuwien.ac.at/reisner/drbd/cvs.html">cvs</ulink>で最新版をダウンロードしてください。</para>
+          </sect2>
+
+
+	  <sect2>
+	  <title>Unresolved symbolエラー</title>
+
+<para>
+モジュールのロード時に下記のようなメッセージが50行ほど表示される場合があります：
+</para>
+<programlisting>
+drbd.o: unresolved symbol sock_alloc
+drbd.o: unresolved symbol proc_register
+drbd.o: unresolved symbol schedule_timeout
+...
+</programlisting>
+
+<para>
+カーネルのCONFIG_MODVERSIONSが有効、及びDRBDモジュールがMODVERSIONS無効で構築されたか、あるいはその逆の組み合わせになっているのが原因です。
+</para>
+<para>
+この問題の解決方法は2通りあります。:</para>
+
+<itemizedlist>
+<listitem>
+  <para>MODVERSIONSを無効にする:
+カーネルコンフィグレーションを変更してCONFIG_MODVERSIONSを無効にしてください。(ファイルは~linux/.configです)。その後カーネルを再構築してください。 
+</para>
+</listitem>
+
+<listitem>
+  <para>MODVERSIONSを有効にする:
+~drbd/Makefile.varsを編集し、-DMODVERSIONS -DCONFIG_MODVERSIONSを
+KERNFLAGSに追加し、DRBDを再コンパイルしてください。
+
+</para>
+</listitem>
+</itemizedlist>
+     
+           </sect2>
+</sect1>
+
+<sect1 id="Usingdrbdsetup">
+<title>drbdsetup使用方法</title>
+ 
+           <sect2>
+	   <title>drbdsetup</title>
+
+<para>
+drbdsetupはローレベルでのDRBD設定ツールです。DRBDデバイスと
+ローレベルブロックデバイスとを関連付け、DRBDデバイスのペアをそれぞれの
+ローレベルブロックデバイスをミラーリングするように設定し、
+動作中のDRBDデバイスの環境設定を確認することができます。
+
+</para>
+
+           </sect2>
+	   <sect2>
+	   <title>drbdsetupの使用例</title>
+
+<para>
+例えば、ノード1 (10.0.0.10) とノード2 (10.0.0.20)という2台のマシンがあるとします。両方のマシンで
+/dev/hdc6をローレベルなブロックデバイスとして使用したいと仮定します。
+まずノード2で下記のコマンドを実行してください:
+</para>
+
+<programlisting>
+$ insmod drbd.o
+$ drbdsetup /dev/nb0 disk /dev/hdc6
+$ drbdsetup /dev/nb0 net 10.0.0.20 10.0.0.10 B
+</programlisting>
+
+<para>次にノード1で下記のコマンドを実行してください:</para>
+<programlisting>
+$ insmod drbd.o
+$ drbdsetup /dev/nb0 disk /dev/hdc6
+$ drbdsetup /dev/nb0 net 10.0.0.10 10.0.0.20 B
+$ drbdsetup /dev/nb0 primary
+</programlisting>
+
+<para>これで/dev/nb0を他のデバイスと同じように使用することができるようになります。
+</para>
+
+<programlisting>
+$ mkfs -b 4096 /dev/nb0
+$ mount /dev/nb0 /mnt/mountpoint
+</programlisting>
+
+<para>
+上記の例では、"B"プロトコルが指定されています。DRBDでは、どのようにセカンダリデバイスにデータを書き込むかを
+決めるためのプロトコルを選択することができます。
+
+</para>
+
+<table frame="all">
+<title>DRBDプロトコル</title>
+<tgroup cols='2' colsep='0' rowsep='0'>
+<thead>
+<row>
+  <entry>プロトコル</entry>
+  <entry align="center">定義</entry>
+</row>
+</thead>
+<tbody>
+<row>
+  <entry align="center">A</entry>
+  <entry>
+データがディスクに書き込まれ、かつネットワークに送信された時点で書込み操作を完了します。
+ </entry>
+</row>
+
+<row>
+  <entry align="center">B</entry>
+  <entry>
+受信肯定応答を受信した時点で、書込み操作を完了します。</entry>
+</row>
+<row>
+  <entry align="center">C</entry>
+  <entry>
+書き込み肯定応答を受信した時点で、書込み操作を完了します。
+</entry>
+</row>
+</tbody>
+</tgroup>
+</table>
+
+<para>また、diskやnetオプションにはさらに追加可能なオプションがあります。
+詳細はdrbdsetupのMANページを見てください。</para>
+</sect2>
+
+</sect1>
+
+
+<sect1 id="drbd.conf">
+<title>drbd.confサンプル設定</title>
+
+           <sect2>
+	   <title>drbd.conf</title>
+
+<para> 
+前セクションでは、drbdsetupの使い方について説明しました。
+DRBDでは、すべての挙動をdrbd.confファイルであらかじめ指定しておくこともできます。
+このファイルを正しく設定し、init.d/drbdスクリプトを使うことで、マシン起動時に
+正常にDRBDを起動させるようにすることが簡単にできます。
+</para>
+           </sect2>
+
+	   <sect2>
+	   <title>drbd.confサンプル設定</title>
+
+
+<para>
+ここでの環境としては、thost1及びthost2と名づけた2台のマシンがあると仮定します。
+thost1のIPアドレスは10.1.1.31、thost2のIPアドレスは10.1.1.32です。
+thost1上の/dev/hda7と、thost2上の/dev/hda7のミラーリングを設定したいと思います。
+下記は、これを実現するための/etc/drbd.confファイルの例です:
+</para>
+
+<programlisting>
+resource drbd0 {
+  protocol=B
+  fsck-cmd=fsck.ext2 -p -y
+
+  on thost1 {
+    device=/dev/nb0
+    disk=/dev/hda7
+    address=10.1.1.31
+    port=7789
+  }
+
+  on thost2 {
+    device=/dev/nb0
+    disk=/dev/hda7
+    address=10.1.1.32
+    port=7789
+  }
+}        
+</programlisting>
+
+<para>
+drbd.confファイル作成後、thost1上で下記のコマンドを実行します:
+</para>
+
+<programlisting>
+$ /etc/rc.d/init.d/drbd start
+</programlisting>  
+
+<para>thost2でも同様に実行します</para>
+
+<programlisting>
+$ /etc/rc.d/init.d/drbd start
+</programlisting>
+
+<para>これで、2台のマシン間でミラーリングが確立します。動作状態は/proc/drbdを見れば確認できます。
+</para>
+
+<programlisting>
+$ cat /proc/drbd
+</programlisting>
+
+<para>
+これでthost1上で、このデバイス上にファイルシステムを作成し、マウントすることが可能になります。
+</para>
+
+<programlisting>
+$ mkfs /dev/nb0
+$ mount /dev/nb0 /mnt/disk
+</programlisting>
+
+<para>
+これでDRBDを使ったミラーリング環境の構築は完了です。おめでとうございます。
+ハイアベイラビリティフェイルオーバーシステムの構築に進むために、scriptsサブディレクトリの中を参照して、
+<ulink url="http://linux-ha.org">こちら</ulink>で入手可能なheartbeatソフトウェアと統合してください。
+       </para>
+
+       </sect2>
+</sect1>
+
+<sect1 id="heartbeat">
+       <title>heartbeatとの組み合わせ</title>
+       <sect2>
+       <title>heartbeatとは何ですか?</title>
+       <para>
+heartbeatはハイアベイラビリティフェールオーバークラスタを構築するために使用します。
+これを使うと2ノード間のIPアドレスの引継ぎをさせることができます。
+これは2台のマシン間でシリアルケーブルやイーサネット、あるいは両方を使って"heartbeat(心臓の鼓動)"を送ることによって実現しています。
+heartbeatが失敗すれば、セカンダリマシンはプライマリマシンがダウンしたと認識し、
+プライマリマシン上で動作していたサービスを引き継ぎます。
+heartbeatソフトウェアについてのより詳細な情報は、<ulink url="http://linux-ha.org">linux-ha.org</ulink>を
+参照してください。</para>
+       </sect2>
+
+       <sect2>
+       <title>drbd及びheartbeatのスクリプト</title>
+       <para>
+DRBDにはheartbeatとの統合が非常に簡単にできるよう、2つのスクリプトが用意されています。
+1つ目のスクリプトはdrbdで、/etc/rc.d/init.d/drbdとしてインストールされます。
+このdrbdスクリプトはマシン起動時にDRBDサービスを自動起動させるためのものです。
+2つ目のスクリプトはdatadiskで、/etc/ha.d/resource.d/datadiskとしてインストールされます。
+このdatadiskスクリプトは、DRBDデバイスをセカンダリ状態からプライマリ状態へ切り替えるのに使用されるもので、
+/etc/ha.d/haresourcesから呼び出されて起動します。
+
+</para>
+       </sect2>
+
+       <sect2>
+       <title>heartbeatと組み合わせた例 - Webサーバ</title>
+       <para>
+ここでは、前出のdrbd.confセクションでの例をもとに構築します。
+そのセクションでは、thost1(10.1.1.31)とthost2(10.1.1.32)と名づけられた2台のマシンがありました。
+ここではHTMLファイルがDRBDデバイス上に保存されていると仮定したWebサーバを構築します。
+最終的には、これらの手順をすべて自動で実行できるようにしたいところですが、このHOWTO文書では手動で実行していきます。
+</para>
+
+       <para>
+最初にheartbeatパッケージを正常に構築、設定します。ここでheartbeatパッケージ
+のセットアップの説明に入るつもりはありません。
+ここまでの説明を理解してこれたとすれば、あなたの環境ですでにheartbeatが動作しているはずです。
+heartbeatが動作し、drbd.confファイルが正確に設定されているとすると、
+ここで実行すべき最初の作業は両方のノード上でdrbdを起動することです。
+thost1上で、下記のコマンドを実行してください:
+</para>
+
+<programlisting>
+$ insmod drbd
+$ /etc/rc.d/init.d/drbd start
+</programlisting>
+
+       <para>thost2上でも同様に下記のコマンドを実行してください:</para>
+
+<programlisting>
+$ insmod drbd
+$ /etc/rc.d/init.d/drbd start
+</programlisting>
+
+       <para>
+これでDRBDが起動しているはずです。
+thost1上でDRBDがプライマリ状態になっていることを確認したら、マウントしてください。
+ファイルシステムをまだDRBDデバイス上に作成していなければ、作成してください。
+最後に、DRBDデバイスのマウントポイントがドキュメントルートになるよう、両マシンのWebサーバを設定してください。
+</para>
+<programlisting>
+[root@10-0-1-31 ha.d]# cat /proc/drbd
+version       : 58
+
+0: cs:Connected st:Primary/Secondary ns:208 nr:36 dw:88 dr:373 gc:5,25,13
+</programlisting>
+
+       <para>
+両ノードの/etc/ha.d/ha.cfファイルの設定が正確だとすると、次の作業は
+/etc/ha.d/haresourcesファイルの編集です。
+このファイルに下記の行を追加してください。
+
+</para>
+
+<programlisting>
+10-0-1-31.linux-ha.org  10.0.10.10/16 datadisk::drbd0 httpd 
+</programlisting>
+
+      <para>
+10.0.10.10はWebサーバのIPアドレスです。
+これについての詳細はheartbeatのドキュメントを参照してください。
+基本的に、上記の行ではheartbeatソフトウェアが/etc/ha.d/resource.d/datadiskスクリプトをdrbd0パラメータを付けて
+実行するように指定しています。
+マシンダウン時には、datadiskスクリプトがセカンダリノードで実行され、drbd0のDRBDデバイスをセカンダリ状態から
+プライマリ状態に切り替えます。
+</para>
+
+      <para>
+さらに両ノードの/etc/fstabファイルも編集する必要があります。
+重要な点は、マシン起動時にDRBDデバイスを決してマウント"しない"ように設定しておくことです。noauto
+フラグをつけることで、そのように設定できます。
+</para>
+
+<programlisting>
+/dev/nb0                /mnt/disk               ext2    noauto          0 0
+</programlisting>
+
+       <para>これで、heartbeatを起動することができます。</para>
+
+<programlisting>
+/etc/rc.d/init.d/heartbeat start
+</programlisting>
+
+       <para>
+全ての設定が正しければ、heartbeatはWebサーバを起動し、仮想インターフェースに割り当てます。
+この時点で、thost1の電源を落としてみてください。
+全て順調に動作していれば、約30秒でthost2が引き継ぎを実行し、Webサーバを起動します。
+このテストが成功したら、マシン起動時に自動起動するようdrbdとheartbeatを設定し、腰をおろしてハイアベイラビリティ
+の世界を楽しんでください!
+</para>
+
+
+
+       </sect2>
+
+        <sect2>
+        <title>heartbeatの組み合わせ例 - NFSサーバ</title>
+        <para>
+ここでの短い例では、保持されているステータス情報を必要とするサービスのフェールオーバー時に考慮すべき
+事柄をいくつか説明します。DRBDデバイス上のファイルシステムをエクスポートするNFSサーバを設定したいと思います。
+ここでも、手動での手順を説明します。
+
+</para>
+        <para>
+前出のとおり、heartbeatの設定が完了していると仮定して、Webサーバの設定をNFSサーバの設定
+に変更して、NFSサーバのフェールオーバーができるようにします。
+ここでも同様に、thost1上で下記のコマンドを実行してください。:
+</para>
+ 
+ <programlisting>
+ $ insmod drbd
+ $ /etc/rc.d/init.d/drbd start
+ </programlisting>
+ 
+        <para>thost2上でも同様に実行してください。:</para>
+ 
+ <programlisting>
+ $ insmod drbd
+ $ /etc/rc.d/init.d/drbd start
+ </programlisting>
+ 
+        <para>
+これでDRBDが起動しているはずです。
+DRBDがthost1上でプライマリ状態になっていることを確認してください。
+DRBDデバイスを/mnt/diskにマウントすると仮定します。
+少なくともRedHatやSuSEベースのシステムでは、NFSサーバのステータス情報は/var/lib/nfs
+にあります。共有されているデバイス上でこのステータス情報を見ることができるようにしたいと思います。
+thost1上で、NFSサーバを停止し、下記を実行してください。：
+
+</para>
+ 
+ <programlisting>
+ $ mkdir /mnt/disk
+ $ mount /proc/nb0 /mnt/disk
+ $ mkdir /mnt/disk/var; mkdir /mnt/disk/var/lib
+ $ mv /var/lib/nfs /mnt/disk/var/lib
+ $ ln -s /mnt/disk/var/lib/nfs /var/lib/nfs
+ </programlisting>
+ 
+ 	<para>
+thost2上で、NFSサーバが動作していないことを確認して、下記を実行してください。：
+</para>
+ 
+ <programlisting>
+ $ mkdir /mnt/disk
+ $ rm -r /var/lib/nfs
+ $ ln -s /mnt/disk/var/lib/nfs /var/lib/nfs
+ </programlisting>
+ 
+ 	<para>
+最後の手順は、実際にNFSマウント用にエクスポートするファイルシステムを設定する手順です。
+これは/mnt/disk/export下の階層になります。NFSクライアントが10.0.20.1というIPアドレスを持っていると仮定します。
+ thost1上で下記を実行してください。:</para>
+ 
+ <programlisting>
+ $ mkdir /mnt/disk/export
+ $ echo "/mnt/disk/export	10.0.20.1(rw)" >> /etc/exports
+ </programlisting>
+ 
+ 	<para>thost2上で下記を実行してください。:</para>
+ 
+ <programlisting>
+ $ echo "/mnt/disk/export	10.0.20.1(rw)" >> /etc/exports
+ </programlisting>
+ 
+        <para>
+/etc/ha.d/ha.cfファイルでクラスタ内の両ノードの定義を正しく設定しているなら、次に/etc/ha.d/haresources
+ファイルを編集します。
+両方のノードで下記の行をこのファイルに追加してください。 
+</para>
+ <programlisting>
+ 10-0-1-31.linux-ha.org  10.0.10.10/16 datadisk::drbd0 nfsserver
+ </programlisting>
+ 
+       <para>
+NFSサーバのスクリプトをheartbeatが見つけられるか確認する必要があります。詳細はheartbeatの
+ドキュメントを参照してください。
+</para>
+ 
+       <para>
+10.0.10.10はNFSサーバに設定したIPアドレスです。詳細はheartbeatの
+ドキュメントを参照してください。
+基本的に、この行ではheartbeatが/etc/ha.d/resource.d/datadiskスクリプトをパラメータdrbd0を付けて実行するように
+指定しています。
+マシンダウン時には、datadiskスクリプトがセカンダリノード上で動作し、drbd0のDRBDデバイスをセカンダリ状態からプライマリ状態
+に切り替えます。
+</para>
+ 
+       <para>
+両方のマシンで/etc/fstabファイルの編集も必要です。
+DRBDデバイスをマシン起動時にマウントしないよう設定することが重要です。これはnoautoフラグで指定します。 </para>
+ 
+ <programlisting>
+ /dev/nb0                /mnt/disk               ext2    noauto          0 0
+ </programlisting>
+ 
+        <para>これで、heartbeatを起動することができます。</para>
+ 
+ <programlisting>
+ /etc/rc.d/init.d/heartbeat start
+ </programlisting>
+ 
+        <para>
+全て正しく設定されていれば、heartbeatはNFSサーバを起動し、仮想インターフェースと結合します。
+この時点で、thost1の電源を落とすことができます。すべてが順調に動作すれば、約30秒でthost2が引き継いでNFSサーバを
+起動します。テストとして、10.0.20.1のマシンからのNFSマウントや、30秒以上かかるようなファイル操作をいくつか実行してみてください。
+いったん一時停止しますが、再び動くようになるので、それが切り替わったサーバであるという事実に気づかないでしょう。ハイアベイラビリティの世界を楽しんでください!
+</para>
+ 
+        </sect2>
+ 
+
+</sect1>
+
+<sect1 id=timeouts>
+       <title>タイムアウト</title>
+
+       <sect2>
+       <title>タイムアウトはどのように動作しますか?</title>
+       <para>
+プライマリノードはある期間内でパケットの応答を期待します。(この期間はdrbdsetupコマンドの--timeoutオプションで調節できます。)
+もしタイムアウト値が他方のノードにあわなければ、プライマリノードは接続を切断して再確立を試行します。 
+       </para>
+
+       </sect2>
+
+       <sect2>
+       <title>タイムアウト値が小さい方がいいのはなぜですか?</title>
+       <para>
+セカンダリノードがダウンした場合、プライマリノードは元の状態のまま、DRBDデバイスに書き込み途中のアプリケーションをすべて
+ブロックします。基本的に、他方のノードがダウンしたと決定するまでに、タイムアウトの時間だけかかります。
+このように、この間はアプリケーションはブロックされます。
+       </para>
+       </sect2>
+
+       <sect2>
+       <title>なぜ小さなタイムアウト値が、timeout/resync/connectを引き起こすのですか?
+</title>
+
+       <para>
+これは、セカンダリノードのIOサブシステムが遅い時に発生します。
+       </para>
+       </sect2>
+
+       <sect2>
+       <title>"postpone packets"とは何ですか?</title>
+       <para>
+状況改善のために、"postpone that deadline(締め切り延長)"の案があります。
+これらのパケットは、タイムアウトを切ると認識したらすぐにセカンダリノードによって送信されます。
+       </para>
+       </sect2>
+
+       <sect2>
+       <title>このtimeout/resync/connectパターンを発見したときには何をすべきですか?</title>
+       <para>
+タイムアウト値を大きくしてください。(connect-intとpint-intのタイムアウトを大きくするには、より大きなタイムアウト値が必要だからです。
+)
+
+       </para>
+       </sect2>
+</sect1>
+
+<sect1 id=misc>
+       <title>その他</title>
+       
+       <sect2>
+       <title>tl-size</title>
+       <para>
+syslogに"transfer log too small"メッセージが現れた場合に必要な作業については、近い将来書く予定です。
+</para> 
+</sect2>
+</sect1>
+
+</article>
+
+
+
+
+
+
+
+ 

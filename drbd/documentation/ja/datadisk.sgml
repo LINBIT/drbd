@@ -1,0 +1,88 @@
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<refentry>
+<docinfo><date>01 Oct 2001</date></docinfo>
+
+<refmeta>
+ <refentrytitle>datadisk</refentrytitle>
+ <manvolnum>5</manvolnum>
+</refmeta>
+
+<refnamediv>
+ <refname>/etc/ha.d/resource.d/datadisk</refname>
+ <refpurpose>デバイスをプライマリとして定義し、ファイルシステムをマウントするためのスクリプト</refpurpose>
+</refnamediv>
+
+<refsynopsisdiv>
+ <cmdsynopsis>
+  <command>/etc/ha.d/resource.d/datadisk</command>
+  <arg><replaceable>resource</replaceable></arg>
+  <arg choice=req><group choice=plain>
+      <arg choice=req>start</arg>
+      <arg choice=req>stop</arg>
+      <arg choice=req>status</arg>
+    </group>
+    </arg>
+ </cmdsynopsis>
+</refsynopsisdiv>
+
+<refsect1>
+ <title>Introduction</title>
+ <para>
+   <option>/etc/ha.d/resource.d/datadisk</option>スクリプトは
+   <replaceable>resource</replaceable> のローカルデバイスを
+   プライマリ状態にし、そのデバイス上にファイルシステムをマウントするために使用します。
+   heartbeatによって起動されるように設計されています。
+  </para>
+  <para>
+    <option>/etc/ha.d/resource.d/datadisk</option>を使用するために、リソース、ホスト、
+    その他の設定オプションをDRBD設定ファイルで定義する必要があります。
+    詳細は、<option>/etc/drbd.conf</option>を参照してください。
+    もし<replaceable>resource</replaceable>を省略した場合、
+    設定ファイルで列挙されているすべてのリソースが有効になります。
+
+  </para>
+  <para>
+  注意: これは<option>/etc/init.d/drbd</option>へのシンボリックリンクです。
+  </para>
+</refsect1>
+
+<refsect1>
+  <title>Author</title>
+  <simpara>
+    著者：Philipp Reisner <email>philipp.reisner@gmx.at</email>
+  </simpara>
+</refsect1>
+
+<refsect1>
+  <title>Reporting Bugs</title>
+  <simpara>
+    バグが見つかったら<email>drbd-devel@lists.sourceforge.net</email>まで報告してください。
+  </simpara>
+</refsect1>
+
+<refsect1>
+  <title>Copyright</title>
+  <simpara>
+    Copyright (c) 2001 Philipp Reisner. This  is  free software; 
+    see the source for copying conditions.  There is NO warranty; 
+    not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
+  </simpara>
+  <simpara>
+    訳：久世 宏明 Copyright (c) 2002
+  </simpara>
+</refsect1>
+
+<refsect1>
+  <title>See Also</title>
+  <para>
+    <citerefentry><refentrytitle>drbd.conf</refentrytitle>
+    <manvolnum>5</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>drbd</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>
+  </para>
+</refsect1>
+
+</refentry>
+
