@@ -32,7 +32,8 @@ ifneq ($(KERNELRELEASE),)
     $(error "won't compile with this kernel version")
   endif
 
-  CFLAGS    += -I$(DRBDSRC)
+  # override needed for 2.4.X kbuild
+  override CFLAGS    += -I$(DRBDSRC)
 
   obj-m     += drbd.o
   drbd-objs := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
