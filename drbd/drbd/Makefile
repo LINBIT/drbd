@@ -38,7 +38,8 @@ ifneq ($(KERNELRELEASE),)
   # linux 2.6 style:
   obj-m     += drbd.o
   drbd-objs := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
-               drbd_receiver.o drbd_req-2.4.o mempool-2.4.o drbd_actlog.o
+               drbd_receiver.o drbd_req-2.4.o mempool-2.4.o drbd_actlog.o \
+	       lru_cache.o
 
   # rest is magic for KERNEL_VERSION < 2.6
   ifneq ($(findstring $(PATCHLEVEL),24),)

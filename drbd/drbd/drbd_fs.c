@@ -210,7 +210,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
-	drbd_al_init(mdev); 
+	lc_resize(&drbd_conf[i].act_log, drbd_conf[i].sync_conf.al_extents);
 	drbd_al_read_log(mdev);
 
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
@@ -519,7 +519,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			drbd_send_sync_param(mdev);
 		// TODO Need to signal dsender() ?
 
-		drbd_al_init(mdev);
+		lc_resize(&mdev->act_log,mdev->sync_conf.al_extents);
 		break;
 
 	case DRBD_IOCTL_GET_CONFIG:

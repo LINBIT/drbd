@@ -38,235 +38,43 @@
 #define AL_FREE (-1)
 #define AL_EXTENTS_PT 59
 
+struct drbd_extent {
+	struct lc_element lce;
+	unsigned int pending_ios;
+};
+
 struct al_transaction {
 	u32       magic;
 	u32       tr_number;
 	struct { 
 		u32 pos;
-		u32 extent; } updated[3],cyclic[AL_EXTENTS_PT];
+		u32 extent; } updates[3 + AL_EXTENTS_PT];
 	u32       xor_sum;      
        // I do not believe that all storage medias can guarantee atomic
        // 512 byte write operations. When the journal is read, only
        // transactions with correct xor_sums are considered.
 };     // sizeof() = 512 byte
 
-struct drbd_extent {
-	struct list_head accessed;
-	struct drbd_extent *hash_next;
-	unsigned int extent_nr;
-	unsigned int pending_ios;
-};
-
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
-STATIC void drbd_al_set(struct Drbd_Conf*, unsigned int, int);
-STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf*);
 STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev);
 STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int);
 STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev);
 
+STATIC int drbd_al_may_evict(struct lru_cache *mlc, struct lc_element *e)
+{
+	struct drbd_extent * extent;
+
+	extent = (struct drbd_extent *)e;
+
+	return extent->pending_ios > 0;
+}
+
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
-	int i;
-	struct drbd_extent *extents;
-
-	if(mdev->al_nr_extents == mdev->sync_conf.al_extents) return;
-
-	extents = kmalloc(sizeof(struct drbd_extent) *
-			  mdev->sync_conf.al_extents,GFP_KERNEL);
-
-	if(!extents) {
-		ERR("can not kmalloc() activity log\n");
-		return;
-	}
-
-	if(!mdev->md_io_bh) {
-		struct page * page = alloc_page(GFP_KERNEL);
-		ERR_IF(!page) return;
-		mdev->md_io_bh=kmem_cache_alloc(bh_cachep, GFP_KERNEL);
-		ERR_IF(!mdev->md_io_bh) {
-			__free_page(page);
-			return;
-		}
-		drbd_init_bh(mdev->md_io_bh,512);
-		set_bh_page(mdev->md_io_bh,page,0);
-	}
-
-	down(&mdev->md_io_mutex);
-	spin_lock(&mdev->al_lock);
-	INIT_LIST_HEAD(&mdev->al_lru);
-	INIT_LIST_HEAD(&mdev->al_free);
-	for(i=0;i<mdev->sync_conf.al_extents;i++) {
-		extents[i].extent_nr=AL_FREE;
-		extents[i].hash_next=0;
-		extents[i].pending_ios=0;
-		list_add(&extents[i].accessed,&mdev->al_free);
-	}
-	mdev->al_nr_extents=mdev->sync_conf.al_extents; 
-	if(mdev->al_extents) kfree(mdev->al_extents);
-	mdev->al_extents = extents;
-	mdev->al_tr_number = 0;
-	mdev->al_tr_cycle = 0;
-	mdev->al_tr_pos = 0;
-	spin_unlock(&mdev->al_lock);
-	up(&mdev->md_io_mutex);
-}
-
-void drbd_al_free(struct Drbd_Conf *mdev)
-{
-	if(mdev->al_extents) kfree(mdev->al_extents);
-	if(mdev->md_io_bh) {
-		__free_page(mdev->md_io_bh->b_page);
-		kmem_cache_free(bh_cachep, mdev->md_io_bh);
-	}
-	mdev->al_extents=0;
-	mdev->md_io_bh=0;
-	mdev->al_nr_extents=0;
-}
-
-static struct drbd_extent *al_hash_fn(struct Drbd_Conf *mdev, unsigned int enr)
-{
-	return mdev->al_extents + ( enr % mdev->al_nr_extents );
-}
-
-
-/* When you add an extent (and most probabely remove an other extent)
-   to the hash table, you can at most modifiy 3 slots in the hash table!
-   drbd_al_add() can only change the extent number in two slots,
-   drbd_al_evict() might change the extent number in one slot. Gives 3. */
-static void al_mark_update(struct Drbd_Conf *mdev, struct drbd_extent *slot)
-{
-	int i;
-
-	for(i=0;i<3;i++) {
-		if(mdev->al_updates[i] == -1) {
-			mdev->al_updates[i] = slot - mdev->al_extents;
-			break;
-		}
-	}
-}
-
-STATIC struct drbd_extent * drbd_al_find(struct Drbd_Conf *mdev, 
-					 unsigned int enr)
-{
-	struct drbd_extent *extent;
-
-	extent = al_hash_fn(mdev, enr);
-	while(extent && extent->extent_nr != enr)
-		extent = extent->hash_next;
-	return extent;
-}
-
-STATIC void drbd_al_move_extent(struct drbd_extent *from, 
-				struct drbd_extent *to)
-{
-	struct list_head *le;
-
-	to->extent_nr = from->extent_nr;
-	to->pending_ios = from->pending_ios;
-	to->hash_next = from->hash_next;
-	le = from->accessed.prev; // Fixing accessed list here!
-	list_del(&from->accessed);
-	list_add(&to->accessed,le);
-}
-
-STATIC struct drbd_extent * drbd_al_evict(struct Drbd_Conf *mdev)
-{
-	struct list_head *le;
-	struct drbd_extent *extent, *slot;
-
-	le=mdev->al_lru.prev;
-	list_del(le);
-	extent=list_entry(le, struct drbd_extent,accessed);
-	if(extent->pending_ios) { 
-		// Ouch! In the least recently used extent there are still
-		// pending wirte requests. We have to sleep a bit...
-		return 0;
-	}
-
-	slot = al_hash_fn( mdev, extent->extent_nr);
-	if( slot == extent) {
-		slot = extent->hash_next;
-		if( slot == NULL) return extent;
-		// move the next in hash table (=slot) to its slot (=extent)
-		drbd_al_move_extent(slot,extent);
-		al_mark_update(mdev, extent);
-
-		return slot;
-	}
-	do {
-		if( slot->hash_next == extent ) {
-			slot->hash_next = extent->hash_next;
-			return extent;
-		}
-		slot=slot->hash_next;
-	} while(1);
-}
-
-STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
-{
-	struct list_head *le;
-	struct drbd_extent *extent;
-
-	if(list_empty(&mdev->al_free)) {
-		extent=drbd_al_evict(mdev);
-		if(extent) {
-			mdev->al_evicted = extent->extent_nr;
-			extent->extent_nr = AL_FREE;
-		}
-		return extent;
-	}
-
-	le=mdev->al_free.next;
-	list_del(le);
-	extent=list_entry(le, struct drbd_extent,accessed);
-
-	return extent;
-}
-
-STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev, 
-					unsigned int enr)
-{
-	struct drbd_extent *slot, *n, *a;
-
-	slot = al_hash_fn( mdev, enr );
-	if (slot->extent_nr == AL_FREE) {
-		list_del(&slot->accessed);
-		slot->hash_next = NULL;
-		goto have_slot;
-	}
-
-	n = drbd_al_get(mdev);
-	if(!n) return 0;
-
-	if ( n == slot) {
-		// we got the slot we wanted 
-		goto have_slot;
-	}
-
-	a = al_hash_fn( mdev, slot->extent_nr );
-	if( a != slot ) {
-		// our extent is a better fit for this slot
-		drbd_al_move_extent(slot,n);
-		al_mark_update(mdev, n);
-		// fix the hash_next pointer to the element in slot
-		a = al_hash_fn( mdev, n->extent_nr );
-		while(a->hash_next != slot) a=a->hash_next;
-		a->hash_next = n;
-		
-		goto have_slot;
-	}
-
-	// chain our extent behind this slot 
-	n->hash_next = slot->hash_next;
-	slot->hash_next = n;
-	slot = n;
-
- have_slot:
-	slot->extent_nr = enr;
-	al_mark_update(mdev, slot);
-	list_add(&slot->accessed,&mdev->al_lru);
-
-	return slot;
+	lc_init(&mdev->act_log);
+	mdev->act_log.element_size = sizeof(struct drbd_extent);
+	mdev->act_log.may_evict = drbd_al_may_evict;
+	lc_resize(&mdev->act_log, mdev->sync_conf.al_extents);
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -274,41 +82,32 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct drbd_extent *extent;
 	int update_al=0;
+	unsigned long evicted=AL_FREE;
 
-	spin_lock(&mdev->al_lock);
+	spin_lock(&mdev->act_log.lc_lock);
 
-	extent = drbd_al_find(mdev,enr);
+	extent = (struct drbd_extent *)lc_find(&mdev->act_log,enr);
 
 	if(extent) { // we have a hit!
-		list_del(&extent->accessed);
-		list_add(&extent->accessed,&mdev->al_lru);
+		lc_touch(&mdev->act_log,&extent->lce);
 	} else { // miss, need to updated AL
 		int i;
 		
-		for(i=0;i<3;i++) mdev->al_updates[i]=-1;
-		mdev->al_evicted = AL_FREE;
+		for(i=0;i<3;i++) mdev->act_log.updates[i]=-1;
 
-		while(1) {
-			extent = drbd_al_add(mdev,enr);
-			if(likely(extent != 0)) break;
-			spin_unlock(&mdev->al_lock);
-			WARN("Have to wait for extent! "
-			     "You should increase 'al-extents'\n");
-			sleep_on(&mdev->al_wait);
-			spin_lock(&mdev->al_lock);
-		}
+		extent = (struct drbd_extent *)
+			lc_add(&mdev->act_log,enr,&evicted);
 		mdev->al_writ_cnt++;
-
 		update_al=1;
 	}
 
 	extent->pending_ios++;
 
-	spin_unlock(&mdev->al_lock);
+	spin_unlock(&mdev->act_log.lc_lock);
 
 	if( update_al ) {
-		if(mdev->cstate < Connected &&  mdev->al_evicted != AL_FREE ) {
-			drbd_update_on_disk_bitmap(mdev,mdev->al_evicted);
+		if(mdev->cstate < Connected &&  evicted != AL_FREE ) {
+			drbd_update_on_disk_bitmap(mdev,evicted);
 		}
 		drbd_al_write_transaction(mdev);
 	}
@@ -319,12 +118,12 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct drbd_extent *extent;
 
-	spin_lock(&mdev->al_lock);
+	spin_lock(&mdev->act_log.lc_lock);
 
-	extent = drbd_al_find(mdev,enr);
+	extent = (struct drbd_extent *)lc_find(&mdev->act_log,enr);
 
 	if(!extent) {
-		spin_unlock(&mdev->al_lock);
+		spin_unlock(&mdev->act_log.lc_lock);
 		ERR("drbd_al_complete_io() called on inactive extent\n");
 		return;
 	}
@@ -333,10 +132,10 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	extent->pending_ios--;
 
 	if(extent->pending_ios == 0) {
-		wake_up(&mdev->al_wait);
+		wake_up(&mdev->act_log.evict_wq);
 	}
 
-	spin_unlock(&mdev->al_lock);
+	spin_unlock(&mdev->act_log.lc_lock);
 }
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
@@ -353,35 +152,37 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
 	for(i=0;i<3;i++) {
-		n = mdev->al_updates[i];
+		n = mdev->act_log.updates[i];
 		if(n != -1) {
-			extent_nr = mdev->al_extents[n].extent_nr;
+			extent_nr = LC_AT_INDEX(&mdev->act_log,n)->lc_number;
 #if 0	/* Use this printf with the test_al.pl program */
 			ERR("T%03d S%03d=E%06d\n", 
-			    mdev->al_tr_number, n, extent_nr);
+			    mdev->al_tr_number,n,extent_nr);
 #endif
 		} else {
 			extent_nr = AL_FREE;
 		}
-		buffer->updated[i].pos = cpu_to_be32(n);
-		buffer->updated[i].extent = cpu_to_be32(extent_nr);
+		buffer->updates[i].pos = cpu_to_be32(n);
+		buffer->updates[i].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
 
-	mx = min_t(int,AL_EXTENTS_PT,mdev->al_nr_extents-mdev->al_tr_cycle);
-	for(i=0;i<mx;i++) {
-		extent_nr = mdev->al_extents[mdev->al_tr_cycle+i].extent_nr;
-		buffer->cyclic[i].pos = cpu_to_be32(mdev->al_tr_cycle+i);
-		buffer->cyclic[i].extent = cpu_to_be32(extent_nr);
+	mx = min_t(int,AL_EXTENTS_PT,
+		   mdev->act_log.nr_elements - mdev->al_tr_cycle);
+	for(i=3;i<mx+3;i++) {
+		extent_nr = LC_AT_INDEX(&mdev->act_log,
+					mdev->al_tr_cycle+i)->lc_number;
+		buffer->updates[i].pos = cpu_to_be32(mdev->al_tr_cycle+i);
+		buffer->updates[i].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
-	for(;i<AL_EXTENTS_PT;i++) {
-		buffer->cyclic[i].pos = __constant_cpu_to_be32(-1);
-		buffer->cyclic[i].extent = __constant_cpu_to_be32(AL_FREE);
+	for(;i<AL_EXTENTS_PT+3;i++) {
+		buffer->updates[i].pos = __constant_cpu_to_be32(-1);
+		buffer->updates[i].extent = __constant_cpu_to_be32(AL_FREE);
 		xor_sum ^= AL_FREE;
 	}
 	mdev->al_tr_cycle += AL_EXTENTS_PT;
-	if(mdev->al_tr_cycle >= mdev->al_nr_extents) mdev->al_tr_cycle=0;
+	if(mdev->al_tr_cycle >= mdev->act_log.nr_elements) mdev->al_tr_cycle=0;
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
@@ -396,7 +197,7 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 	generic_make_request(WRITE,mdev->md_io_bh);
 	wait_on_buffer(mdev->md_io_bh);
 
-	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
+	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
 	mdev->al_tr_number++;
@@ -431,11 +232,8 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 	rv = ( be32_to_cpu(buffer->magic) == DRBD_MAGIC );
 
-	for(i=0;i<3;i++) {
-		xor_sum ^= be32_to_cpu(buffer->updated[i].extent);
-	}
-	for(i=0;i<AL_EXTENTS_PT;i++) {
-		xor_sum ^= be32_to_cpu(buffer->cyclic[i].extent);
+	for(i=0;i<AL_EXTENTS_PT+3;i++) {
+		xor_sum ^= be32_to_cpu(buffer->updates[i].extent);
 	}
 	rv &= (xor_sum == be32_to_cpu(buffer->xor_sum));
 
@@ -458,7 +256,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	int transactions=0;
 
 	// Find the valid transaction in the log
-	for(i=0;i<mdev->al_nr_extents;i++) {
+	for(i=0;i<mdev->act_log.nr_elements;i++) {
 		if(!drbd_al_read_tr(mdev,&buffer,i)) continue;
 		cnr = be32_to_cpu(buffer->tr_number);
 		// INFO("index %d valid tnr=%d\n",i,cnr);
@@ -496,39 +294,29 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 		trn=be32_to_cpu(buffer->tr_number);
 
-		for(j=0;j<3;j++) {
-			pos = be32_to_cpu(buffer->updated[j].pos);
-			extent_nr = be32_to_cpu(buffer->updated[j].extent);
+		for(j=0;j<AL_EXTENTS_PT+3;j++) {
+			pos = be32_to_cpu(buffer->updates[j].pos);
+			extent_nr = be32_to_cpu(buffer->updates[j].extent);
 
 			if(extent_nr == AL_FREE) continue;
 
-			//ERR("T%03d S%03d=E%06d\n",trn, pos, extent_nr);
-			drbd_al_set(mdev,extent_nr,pos);
+			lc_set(&mdev->act_log,extent_nr,pos);
 		}
 
-		for(j=0;j<AL_EXTENTS_PT;j++) {
-			pos = be32_to_cpu(buffer->cyclic[j].pos);
-			extent_nr = be32_to_cpu(buffer->cyclic[j].extent);
-
-			if(extent_nr == AL_FREE) continue;
-
-			drbd_al_set(mdev,extent_nr,pos);
-		}
-		
 		bh_kunmap(mdev->md_io_bh);
 		up(&mdev->md_io_mutex);
 
 		transactions++;
 
 		if( i == to) break;
-		if( ++i > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) i=0;
+		if( ++i > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) i=0;
 	}
 
-	active_extents=drbd_al_fixup_hash_next(mdev);
+	active_extents=lc_fixup_hash_next(&mdev->act_log);
 
 	mdev->al_tr_number = to_tnr+1;
 	mdev->al_tr_pos = to;
-	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
+	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
 
@@ -541,47 +329,6 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	drbd_al_setup_bitmap(mdev);
 }
 
-STATIC void drbd_al_set(struct Drbd_Conf *mdev,unsigned int extent_nr,int pos)
-{
-	struct drbd_extent *extent;
-
-	ERR_IF(pos < 0 || pos >= mdev->al_nr_extents ) return;
-
-	extent = mdev->al_extents + pos;
-	spin_lock(&mdev->al_lock);
-
-	list_del(&extent->accessed); // either from al_free or from al_lru
-	mdev->al_extents[pos].extent_nr = extent_nr;
-	list_add(&extent->accessed,&mdev->al_lru);
-	extent->hash_next = 0;
-
-	spin_unlock(&mdev->al_lock);
-}
-
-STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf *mdev)
-{
-	struct drbd_extent *slot, *want;
-	int i;
-	int active_extents=0;
-
-	spin_lock(&mdev->al_lock);
-
-	for(i=0;i<mdev->al_nr_extents;i++) {
-		slot = mdev->al_extents + i;
-		if(slot->extent_nr == AL_FREE) continue;
-		active_extents++;
-		want = al_hash_fn(mdev,slot->extent_nr);
-		if( slot != want ) {
-			while (want->hash_next) want=want->hash_next;
-			want->hash_next = slot;
-		}
-	}
-
-	spin_unlock(&mdev->al_lock);
-
-	return active_extents;
-}
-
 /**
  * drbd_al_setup_bitmap: Sets the bits in the bitmap that are described
  * by the active extents of the AL.
@@ -591,16 +338,18 @@ STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
 	int i;
 	unsigned int enr;
 
-	spin_lock(&mdev->al_lock);
-	for(i=0;i<mdev->al_nr_extents;i++) {
-		enr = mdev->al_extents[i].extent_nr;
+	spin_lock(&mdev->act_log.lc_lock);
+
+	for(i=0;i<mdev->act_log.nr_elements;i++) {
+		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
 		if(enr == AL_FREE) continue;
 		mdev->rs_total +=
 			bm_set_bit( mdev, 
 				    enr << (AL_EXTENT_SIZE_B-9), 4<<20 , 
 				    SS_OUT_OF_SYNC );
 	}
-	spin_unlock(&mdev->al_lock);
+
+	spin_unlock(&mdev->act_log.lc_lock);
 }
 
 /**
@@ -693,3 +442,34 @@ STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr)
 	up(&mdev->md_io_mutex);
 
 }
+
+STATIC void drbd_async_end_io(struct buffer_head *bh, int uptodate)
+{
+	struct Drbd_Conf *mdev;
+
+	mdev=drbd_mdev_of_bh(bh);
+
+	mark_buffer_uptodate(bh, uptodate);
+	unlock_buffer(bh);
+	up(&mdev->md_io_mutex);
+}
+
+void drbd_clean_on_disk_bm(struct Drbd_Conf *mdev,sector_t s)
+{
+/*	
+
+
+	down(&mdev->md_io_mutex);
+	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr;
+
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_async_end_io;
+	generic_make_request(WRITE,mdev->md_io_bh);
+
+	//The up(&mdev->md_io_mutex); is in the drbd_async_end_io handler.
+	*/
+}
+
+

@@ -1148,16 +1148,24 @@ int __init drbd_init(void)
 		drbd_conf[i].write_hint_tq.sync	= 0;
 		drbd_conf[i].write_hint_tq.routine = &drbd_send_write_hint;
 		drbd_conf[i].write_hint_tq.data = drbd_conf+i;
-		drbd_conf[i].al_extents = 0;
-		drbd_conf[i].al_nr_extents = 0;
-		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
+		drbd_al_init(drbd_conf + i);
+		init_MUTEX(&drbd_conf[i].md_io_mutex);
+		{
+			struct page * page = alloc_page(GFP_KERNEL);
+			if(!page) return -ENOMEM;
+			drbd_conf[i].md_io_bh=
+				kmem_cache_alloc(bh_cachep, GFP_KERNEL);
+			if(!drbd_conf[i].md_io_bh) {
+				__free_page(page);
+				return -ENOMEM;
+			}
+			drbd_init_bh(drbd_conf[i].md_io_bh,512);
+			set_bh_page(drbd_conf[i].md_io_bh,page,0);
+		}
 		drbd_conf[i].al_writ_cnt = 0;
+		drbd_conf[i].al_tr_number = 0;
 		drbd_conf[i].al_tr_cycle = 0;
 		drbd_conf[i].al_tr_pos = 0;
-		init_waitqueue_head(&drbd_conf[i].al_wait);
-		drbd_conf[i].md_io_bh = 0;
-		init_MUTEX(&drbd_conf[i].md_io_mutex);
-		drbd_al_init(drbd_conf+i);
 		{
 			int j;
 			for(j=0;j<=ArbitraryCnt;j++) drbd_conf[i].gen_cnt[j]=0;
@@ -1256,7 +1264,12 @@ void cleanup_module(void)
 		if(rr) printk(KERN_ERR DEVICE_NAME
 			       "%d: %d EEs in read list found!\n",i,rr);
 
-		drbd_al_free(drbd_conf+i);
+		if(drbd_conf[i].md_io_bh) {
+			__free_page(drbd_conf[i].md_io_bh->b_page);
+			kmem_cache_free(bh_cachep, drbd_conf[i].md_io_bh);
+		}
+
+		lc_free(&drbd_conf[i].act_log);
 	}
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
@@ -1352,6 +1365,16 @@ void drbd_free_resources(drbd_dev *mdev)
 // Shift right with round up. :)
 #define SR_RU(A,B) ( ((A)>>(B)) + ( ((A) & ((1<<(B))-1)) > 0 ? 1 : 0 ) )
 
+#define BM_EXTENT_SIZE_B 24       // One extent represents 16M Storage
+#define BM_EXTENT_SIZE (1<<BM_EXTENT_SIZE_B)
+
+/*
+struct bm_extent { // 16MB sized extents.
+	struct lc_element lce;
+	unsigned int rs_left; // number of sectors our of sync in this extent.
+};
+*/
+
 int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 {
 	unsigned long *obm,*nbm;
@@ -1414,11 +1437,15 @@ struct BitMap* bm_init(kdev_t dev)
 		return 0;
 	}
 
+	//	lc_init(&sbm->resync);
+	//	sbm->resync.element_size = sizeof(struct bm_extent);
+
 	return sbm;
 }
 
 void bm_cleanup(struct BitMap* sbm)
 {
+	// lc_free(&sbm->resync);
 	vfree(sbm->bm);
 	kfree(sbm);
 }
@@ -1463,6 +1490,9 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		}
 	} else { // bit == 0
 		sector_t dev_size;
+		//struct bm_extent* ext;
+		//unsigned long enr;
+
 		dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
 	
 		if(  (sector & BM_MM) != 0 )     sbnr++;
@@ -1481,6 +1511,24 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 			if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
+
+/*		// I simply assume that a sector/size pair never crosses
+		// a 16 MB extent border. (Currently this is true...)
+		enr = (sector >> (BM_EXTENT_SIZE_B-9));
+
+		ext = (struct bm_extent *) lc_find(&sbm->resync,enr);
+		if(ext) {
+			lc_touch(&sbm->resync,&ext->lce);
+		} else {
+			ext = (struct drbd_extent *)lc_add(&sbm->resync,enr,0);
+			ext->rs_left = //count bits...
+		}
+		
+		ext->rs_left -= ret;
+		if(ext->rs_left) {
+			// write block to on disk bitmap
+			// kick it out of the cache
+		} */
 	}
 	spin_unlock(&sbm->bm_lock);
 
@@ -1523,7 +1571,10 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 
 	if(*size != BM_BLOCK_SIZE) BUG(); // Other cases are not needed
 
-	if(sbm->gs_bitnr == -1) return MBDS_DONE;
+	if(sbm->gs_bitnr == -1) {
+		lc_free(&sbm->resync);
+		return MBDS_DONE;
+	}
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
@@ -1569,6 +1620,7 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 
 	spin_unlock(&sbm->bm_lock);
 }
+
 
 /*********************************/
 /* meta data management */
@@ -1690,7 +1742,7 @@ void drbd_md_write(drbd_dev *mdev)
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
 	buffer->al_offset = __constant_cpu_to_be32(MD_AL_OFFSET);
-	buffer->al_nr_extents = cpu_to_be32(mdev->al_nr_extents);
+	buffer->al_nr_extents = cpu_to_be32(mdev->act_log.nr_elements);
 	
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 

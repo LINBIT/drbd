@@ -31,6 +31,7 @@
 #include <linux/version.h>
 #include <linux/list.h>
 #include "mempool.h"
+#include "lru_cache.h"
 
 // module parameter, defined in drbd_main.c
 extern int minor_count;
@@ -508,6 +509,7 @@ struct BitMap {
 	unsigned long gs_bitnr;
 	unsigned long gs_snr;
 	spinlock_t bm_lock;
+	// struct lru_cache resync; // Used to track operations of resync...
 };
 
 struct al_transaction;
@@ -581,20 +583,13 @@ struct Drbd_Conf {
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
 	struct tq_struct write_hint_tq;
-	struct drbd_extent *al_extents;
-	int al_nr_extents;
-	struct list_head al_lru;
-	struct list_head al_free;
-	spinlock_t al_lock;
-	unsigned int al_writ_cnt;
-	int al_updates[3];
-	unsigned int al_evicted;
-	unsigned int al_tr_number;
 	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
+	struct lru_cache act_log;     // activity log
+	unsigned int al_writ_cnt;
+	unsigned int al_tr_number;
 	int al_tr_cycle;  
 	int al_tr_pos;     // position of the next transaction in the journal
-	wait_queue_head_t al_wait;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif
@@ -755,7 +750,6 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 
 // drbd_actlog.c
 extern void drbd_al_init(struct Drbd_Conf *mdev);
-extern void drbd_al_free(struct Drbd_Conf *mdev);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
