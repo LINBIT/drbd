@@ -428,12 +428,12 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		       drbd_conf[minor].cstate != Connected &&
 		       time > 0 ) {
 
-			time = interruptible_sleep_on_timeout(
-				&drbd_conf[minor].cstate_wait, time);
-
 			if (drbd_conf[minor].cstate == SyncingQuick ||
 			    drbd_conf[minor].cstate == SyncingAll ) 
 				time=MAX_SCHEDULE_TIMEOUT;
+
+			time = interruptible_sleep_on_timeout(
+				&drbd_conf[minor].cstate_wait, time);
 
 			if(signal_pending(current)) return -EINTR;
 		}
