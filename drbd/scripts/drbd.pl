@@ -278,10 +278,14 @@ sub become_sec($$)
     my ($res,$mconf)=@_;
     my ($errtxt,$line,$mounted);
 
-    `$drbdsetup $$mconf{self}{device} secondary 2>&1`;  
-      #TODO: May not only fail because somethink is mounted, may also
-      #      fail because sync is running.
+    $errtxt=`$drbdsetup $$mconf{self}{device} secondary 2>&1`;  
     if ( $? ) {
+	if ($errtxt =~ /^Resynchroni/) {
+	    if($pname =~ /drbd$/) {
+		return;
+	    }
+	    die $errtxt;
+	}
 	`umount $$mconf{self}{device} 2> /dev/null`;
 	if ( $? ) {
 	    `fuser -k -m $$mconf{self}{device} > /dev/null`;
@@ -524,7 +528,7 @@ sub drbd()
 	}
     } elsif ($command eq "stop") { 
 	if ( -e "/proc/drbd" ) {
-	    fcaller( \&become_sec );
+            fcaller( \&become_sec );
 	    `$rmmod -s drbd`;
 	    if( $? ) {
 		die "$pname: Can not unload the drbd module.";
