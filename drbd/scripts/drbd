@@ -137,6 +137,7 @@ case "$1" in
 	    fi
 
 	    unset SIZE SIZE_OP # don't let it contaminate other devices... :)
+	    unset MASTER_IF SLAVE_IF # ditto...
 
 	done
 	;;
