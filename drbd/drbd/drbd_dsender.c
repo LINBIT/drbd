@@ -722,7 +722,6 @@ int drbd_worker(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
 	struct drbd_work *w;
-	unsigned long flags;
 	int intr;
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
@@ -735,10 +734,7 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		if (intr) {
 			D_ASSERT(intr == -EINTR);
-			LOCK_SIGMASK(current,flags);
-			sigemptyset(&current->pending.signal);
-			RECALC_SIGPENDING(current);
-			UNLOCK_SIGMASK(current,flags);
+			drbd_flush_signals(current);
 			if (thi->t_state != Running )
 				break;
 			continue;

@@ -17,7 +17,7 @@ extern void drbd_read_bi_end_io     (struct buffer_head *bh, int uptodate);
  */
 
 /* Returns the number of 512 byte sectors of the device */
-static inline sector_t long drbd_get_capacity(kdev_t dev)
+static inline sector_t drbd_get_capacity(kdev_t dev)
 {
 	return dev ? blk_size[MAJOR(dev)][MINOR(dev)]<<1 : 0;
 }

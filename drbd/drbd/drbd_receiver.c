@@ -598,12 +598,7 @@ int drbd_connect(drbd_dev *mdev)
 		}
 		if(mdev->cstate==Unconnected) return 0;
 		if(signal_pending(current)) {
-			unsigned long flags;
-			LOCK_SIGMASK(current,flags);
-			sigemptyset(&current->pending.signal);
-			RECALC_SIGPENDING(current);
-			UNLOCK_SIGMASK(current,flags);
-
+			drbd_flush_signals(current);
 			smp_mb();
 			if ((volatile int)mdev->receiver.t_state != Running)
 				return 0;
@@ -1601,14 +1596,14 @@ int drbdd_init(struct Drbd_thread *thi)
 		drbdd(mdev);
 		drbd_disconnect(mdev);
 		if (thi->t_state == Exiting) break;
-		if (thi->t_state == Restarting) {
-			unsigned long flags;
+		else {
+			if (signal_pending(current)) {
+				drbd_flush_signals(current);
+				if (thi->t_state != Restarting)
+					ERR("unexpected thread state: %d\n",
+					    thi->t_state);
+			}
 			thi->t_state = Running;
-
-			LOCK_SIGMASK(current,flags);
-			sigemptyset(&current->pending.signal);
-			RECALC_SIGPENDING(current);
-			UNLOCK_SIGMASK(current,flags);
 		}
 	}
 
@@ -1744,7 +1739,6 @@ int drbd_asender(struct Drbd_thread *thi)
 	drbd_dev *mdev = thi->mdev;
 	Drbd_Header *h = &mdev->meta.rbuf.head;
 
-	unsigned long flags = 0;
 	int rv,len;
 	void *buf    = h;
 	int received = 0;
@@ -1808,10 +1802,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			set_bit(SEND_PING,&mdev->flags);
 			continue;
 		} else if (rv == -EINTR) {
-			LOCK_SIGMASK(current,flags);
-			sigemptyset(&current->pending.signal);
-			RECALC_SIGPENDING(current);
-			UNLOCK_SIGMASK(current,flags);
+			drbd_flush_signals(current);
 			// Do something on signal ??
 			continue;
 		} else {

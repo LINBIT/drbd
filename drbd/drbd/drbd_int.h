@@ -938,6 +938,18 @@ do {									\
 
 #include "drbd_compat_wrappers.h"
 
+static inline void
+drbd_flush_signals(struct task_struct *t)
+{
+	NOT_IN_26(
+	unsigned long flags;
+	LOCK_SIGMASK(t,flags);
+	)
+
+	flush_signals(t);
+	NOT_IN_26(UNLOCK_SIGMASK(t,flags));
+}
+
 static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
 	unsigned long flags;
