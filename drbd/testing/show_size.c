@@ -1,13 +1,10 @@
 /*
-   drbdsetup.c
+   show_size.c
 
    This file is part of drbd by Philipp Reisner.
 
    Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
         Initial author.
-
-   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-        Added sanity checks before using the device.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
