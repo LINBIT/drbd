@@ -73,11 +73,12 @@ static struct d_resource* new_resource(char* name)
 %token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON 
 %token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_STARTUP
 %token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
-%token <txt> TK_SIZE TK_TL_SIZE TK_TIMEOUT TK_CONNECT_INT 
+%token <txt> TK_SIZE TK_TIMEOUT TK_CONNECT_INT 
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
 %token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 
 %token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT 
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
+%token <txt> TK_MAX_BUFFERS TK_MAX_EPOCH_SIZE
 
 %type <d_option> disk_stmts disk_stmt 
 %type <d_option> net_stmts net_stmt
@@ -140,7 +141,8 @@ net_stmts:        /* empty */   { $$ = 0; }
 net_stmt:         TK_TIMEOUT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_CONNECT_INT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_PING_INT '=' TK_INTEGER   { $$=new_opt($1,$3); }
-		| TK_TL_SIZE  '=' TK_INTEGER   { $$=new_opt($1,$3); }
+		| TK_MAX_BUFFERS '=' TK_INTEGER   { $$=new_opt($1,$3); }
+		| TK_MAX_EPOCH_SIZE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
 sync_stmts:       /* empty */   { $$ = 0; }

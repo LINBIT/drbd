@@ -48,7 +48,6 @@
 
 /* Default values */
 #define DEF_NET_TIMEOUT 60           // 6 seconds
-#define DEF_NET_TL_SIZE 256
 #define DEF_NET_TRY_CON_I 10         // 10 seconds
 #define DEF_NET_PING_I 10            // 10 seconds
 #define DEF_SYNC_RATE 250
@@ -56,6 +55,8 @@
 #define DEF_DEGR_WFC_TIMEOUT 60      // 60 Seconds
 #define DEF_SYNC_WFC_TIMEOUT 8       // 8 seconds
 #define DEF_SYNC_DEGR_WFC_TIMEOUT 4  // 4 seconds
+#define DEF_MAX_EPOCH_SIZE 2048      // entries
+#define DEF_MAX_BUFFERS 2048         // entries
 
 struct drbd_cmd {
   const char* cmd;
@@ -109,7 +110,8 @@ struct drbd_cmd commands[] = {
   {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0}, 
    (struct option[]) {
      { "timeout",    required_argument, 0, 't' },
-     { "tl-size",    required_argument, 0, 's' },
+     { "max-epoch-size", required_argument, 0, 'e' },
+     { "max-buffers",required_argument, 0, 'b' },
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
      { 0,            0,                 0, 0 } } },
@@ -378,9 +380,10 @@ int scan_net_options(char **argv,
 		     struct option *options)
 {
   cn->config.timeout = DEF_NET_TIMEOUT;
-  cn->config.tl_size = DEF_NET_TL_SIZE;
   cn->config.try_connect_int = DEF_NET_TRY_CON_I;
   cn->config.ping_int = DEF_NET_PING_I;
+  cn->config.max_epoch_size = DEF_MAX_EPOCH_SIZE;
+  cn->config.max_buffers = DEF_MAX_BUFFERS;
 
   if(argc==0) return 0;
 
@@ -397,8 +400,11 @@ int scan_net_options(char **argv,
 	case 't': 
 	  cn->config.timeout = m_strtol(optarg,1);
 	  break;
-	case 's':
-	  cn->config.tl_size = m_strtol(optarg,1);
+	case 'e':
+	  cn->config.max_epoch_size = m_strtol(optarg,1);
+	  break;
+	case 'b':
+	  cn->config.max_buffers = m_strtol(optarg,1);
 	  break;
 	case 'c':
 	  cn->config.try_connect_int = m_strtol(optarg,1);
@@ -985,16 +991,18 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   printf("Net options:\n");
   printf(" timeout = %d.%d sec %s\n",cn.nconf.timeout/10,cn.nconf.timeout%10,
 	 cn.nconf.timeout == DEF_NET_TIMEOUT ? "(default)" : "" );
-  printf(" tl-size = %d %s\n",cn.nconf.tl_size,
-	 cn.nconf.tl_size == DEF_NET_TL_SIZE ? "(default)" : "" );
-  printf(" connect-int = %d sec %s\n",cn.nconf.try_connect_int,
-	 cn.nconf.try_connect_int == DEF_NET_TRY_CON_I ? "(default)":"");
-  printf(" ping-int = %d sec %s\n",cn.nconf.ping_int,
-	 cn.nconf.ping_int == DEF_NET_PING_I ? "(default)" : "");
+
+#define SHOW_I(T,U,M,D) printf(" " T " = %d " U " %s\n", M, M == D ? "(default)" : "")
+
+  SHOW_I("connect-int","sec", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
+  SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
+  SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
+  SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
 
   printf("Syncer options:\n");
-  printf(" rate = %d KB/sec %s\n",cn.sconf.rate,
-	 cn.sconf.rate == DEF_SYNC_RATE ? "(default)" : "" );
+
+  SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
+
   if( cn.sconf.skip ) printf(" skip-sync\n");
   if( cn.sconf.use_csums ) printf(" use-csums\n");
 

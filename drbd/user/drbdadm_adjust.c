@@ -93,6 +93,68 @@ static unsigned long m_strtol(const char* s,int def_mult)
     }
 }
 
+int check_opt_b(FILE *in,char* name,struct d_option* base)
+{
+  struct d_option* o;
+  char uu[2],scs[200],sn[50];
+  int l,rv=0;
+  
+  strcpy(sn,name);
+  l=strlen(sn)-1;
+  sn[l]=0;
+  sprintf(scs," %*s%%[%c]\n",l,sn,name[l]);
+
+  if(fscanf(in,scs,uu)) { 
+    o=find_opt(base,name);
+    if(o) o->mentioned=1;
+    else rv=1;
+  } // else { unexpected input... }
+
+  //printf("check_opt_b(%s)=%d\n",name,rv);
+  return rv;
+}
+
+int check_opt_v(FILE *in,char* name,int dm, char* unit,struct d_option* base)
+{
+  unsigned long  ul;
+  struct d_option* o;
+  char uu[2];
+  char scs[200];
+  int rv=0;
+  
+  sprintf(scs," %s = %%lu %s (%%[d]efault)\n",name,unit);
+  fscanf(in,scs,&ul,uu);
+  o=find_opt(base,name);
+  if(o) {
+    o->mentioned=1;
+    if(m_strtol(o->value,dm) != ul) rv=1;
+  } else {
+    if( uu[0] != 'd' ) rv=1;
+  }
+
+  //printf("check_opt_v(%s)=%d\n",name,rv);
+
+  return rv;
+}
+
+int complete(struct d_option* base)
+{
+  int rv=0;
+
+  while(base) {
+    if(base->mentioned == 0) {
+      //printf("complete(): '%s'\n",base->name);
+      rv=1;
+      break;
+    }
+    base=base->next;
+  }
+
+  //printf("complete()=%d\n",rv);
+
+  return rv;
+}
+
 int adm_adjust(struct d_resource* res,char* unused)
 {
   char* argv[20];
@@ -120,25 +182,10 @@ int adm_adjust(struct d_resource* res,char* unused)
   }
 
   rv=fscanf(in,"Disk options%[:]\n",uu);
-  if(rv==1) {
-    rv=fscanf(in," size = %lu KB\n",&ul1);
-    if(rv==1) {
-      o=find_opt(res->disk_options,"size");
-      if(o) {
-	o->mentioned=1;
-	if(m_strtol(o->value,1024) != ul1) {
-	  do_resize=1;
-	}
-      } else {
-	do_attach=1;
-      }
-    }
-    rv=fscanf(in," do-pani%[c]\n",uu); // 1 == SUCCESS
-    if(rv==1) {
-      o=find_opt(res->disk_options,"do-panic");
-      if(o) o->mentioned=1;
-      else do_attach=1;
-    }
+  if(rv==1) {    
+
+    do_resize |= check_opt_v(in,"size",1024,"KB",res->disk_options);
+    do_attach |= check_opt_b(in,"do-panic",res->disk_options);
 
     // Check if every options is also present in drbdsetup show's output.
     o=res->disk_options;
@@ -178,59 +225,18 @@ int adm_adjust(struct d_resource* res,char* unused)
       if( uu[0] != 'd' ) do_connect=1;
     }
 
-    rv=fscanf(in," tl-size = %lu (%[d]efault)\n",&ul1,uu);
-    o=find_opt(res->net_options,"tl-size");
-    if(o) {
-      o->mentioned=1;
-      if(m_strtol(o->value,1) != ul1) do_connect=1;
-    } else {
-      if( uu[0] != 'd' ) do_connect=1;
-    }
-
-    rv=fscanf(in," connect-int = %lu sec (%[d]efault)\n",&ul1,uu);
-    o=find_opt(res->net_options,"connect-int");
-    if(o) {
-      o->mentioned=1;
-      if(m_strtol(o->value,1) != ul1) do_connect=1;
-    } else {
-      if( uu[0] != 'd' ) do_connect=1;
-    }
-
-    rv=fscanf(in," ping-int = %lu sec (%[d]efault)\n",&ul1,uu);
-    o=find_opt(res->net_options,"ping-int");
-    if(o) {
-      o->mentioned=1;
-      if(m_strtol(o->value,1) != ul1) do_connect=1;
-    } else {
-      if( uu[0] != 'd' ) do_connect=1;
-    }    
-
-    // Check if every option was present...
-    o=res->net_options;
-    while(o) {
-      if(o->mentioned == 0) do_connect=1;
-      o=o->next;
-    }
-
+    do_connect |= check_opt_v(in,"connect-int",1,"sec",res->net_options);
+    do_connect |= check_opt_v(in,"ping-int",1,"sec",res->net_options);
+    do_connect |= check_opt_v(in,"max-epoch-size",1,"",res->net_options);
+    do_connect |= check_opt_v(in,"max-buffers",1,"",res->net_options);
+    do_connect |= complete(res->net_options);
   }
   
   rv=fscanf(in,"Syncer options%[:]\n",uu);
   if(rv==1) {
-    rv=fscanf(in," rate = %lu KB/sec (%[d]efault)\n",&ul1,uu);
-    o=find_opt(res->sync_options,"rate");
-    if(o) {
-      o->mentioned=1;
-      if(m_strtol(o->value,1) != ul1) do_syncer=1;
-    } else {
-      if( uu[0] != 'd' ) do_syncer=1;
-    }
-
-    // Check if every option was present...
-    o=res->sync_options;
-    while(o) {
-      if(o->mentioned == 0) do_syncer=1;
-      o=o->next;
-    }
+    do_syncer |= check_opt_v(in,"rate",1024,"KB/sec",res->sync_options);
+    do_syncer |= check_opt_b(in,"use-csums",res->sync_options);
+    do_syncer |= complete(res->sync_options); 
   }
   
   fclose(in);

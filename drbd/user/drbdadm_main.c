@@ -661,6 +661,6 @@ int main(int argc, char** argv)
 
 void yyerror(char* text)
 {
-  printf("%s in %d of config file.\n",text,line);
+  fprintf(stderr,"%s in %d of config file.\n",text,line);
   exit(20); 
 }

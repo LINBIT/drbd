@@ -46,7 +46,6 @@ startup          { DP; return TK_STARTUP;       }
 resource         { DP; return TK_RESOURCE;      }
 rate             { DP; CP; return TK_RATE;            }
 size             { DP; CP; return TK_SIZE;            }
-tl-size          { DP; CP; return TK_TL_SIZE;         }
 timeout          { DP; CP; return TK_TIMEOUT;         }
 ping-int         { DP; CP; return TK_PING_INT;        }   
 protocol         { DP; CP; return TK_PROTOCOL;        }
@@ -56,7 +55,9 @@ skip-sync        { DP; CP; return TK_SKIP_SYNC;       }
 minor_count      { DP; CP; return TK_MINOR_COUNT;     }
 connect-int      { DP; CP; return TK_CONNECT_INT;     }
 wfc-timeout      { DP; CP; return TK_WFC_TIMEOUT;     }
+max-buffers      { DP; CP; return TK_MAX_BUFFERS;     }
 incon-degr-cmd   { DP; CP; return TK_INCON_DEGR_CMD;  }
+max-epoch-size   { DP; CP; return TK_MAX_EPOCH_SIZE;  }
 degr-wfc-timeout { DP; CP; return TK_DEGR_WFC_TIMEOUT;}
 disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;}
 {IPV4ADDR}       { DP; CP; return TK_IPADDR;          }

@@ -66,10 +66,11 @@ struct net_config {
 	IN char     other_addr[MAX_SOCK_ADDR];
 	IN int      other_addr_len;
 	IN int      timeout;
-	IN int      tl_size; /* size of the transfer log */
 	IN int      wire_protocol;  
 	IN int      try_connect_int;  /* seconds */
 	IN int      ping_int;         /* seconds */
+	IN int      max_epoch_size;
+	IN int      max_buffers;
 };
 
 struct syncer_config {

@@ -312,7 +312,7 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,int may_sleep)
 		_drbd_process_ee(mdev,&mdev->done_ee);
 		if(!list_empty(&mdev->free_ee)) break;
 		spin_unlock_irq(&mdev->ee_lock);
-		if((mdev->ee_vacant+mdev->ee_in_use) < EE_MAXIMUM) {
+		if((mdev->ee_vacant+mdev->ee_in_use)<mdev->conf.max_buffers) {
 			if(drbd_alloc_ee(mdev,GFP_TRY)) {
 				spin_lock_irq(&mdev->ee_lock);
 				break;

@@ -173,7 +173,7 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	new_item->barrier = b;
 	list_add(&new_item->list,&b->requests);
 
-	if( b->n_req++ > 200 ) { // TODO replace fixed value.
+	if( b->n_req++ > mdev->conf.max_epoch_size ) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
 	}
 
