@@ -1005,6 +1005,10 @@ static inline sector_t drbd_md_ss(drbd_dev *mdev)
 static inline void
 _drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
+	drbd_dev *mdev = container_of(q,struct Drbd_Conf,data.work);
+	D_ASSERT(IS_VALID_MDEV(mdev));
+	ERR_IF(mdev->worker.t_state != Running)
+		dump_stack();
 	list_add_tail(&w->list,&q->q);
 	up(&q->s);
 }
@@ -1012,6 +1016,10 @@ _drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 static inline void
 _drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 {
+	drbd_dev *mdev = container_of(q,struct Drbd_Conf,data.work);
+	D_ASSERT(IS_VALID_MDEV(mdev));
+	ERR_IF(mdev->worker.t_state != Running)
+		dump_stack();
 	list_add(&w->list,&q->q);
 	up(&q->s);
 }
@@ -1022,6 +1030,8 @@ drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 {
 	unsigned long flags;
 	spin_lock_irqsave(&mdev->req_lock,flags);
+	ERR_IF(mdev->worker.t_state != Running)
+		dump_stack();
 	list_add_tail(&w->list,&q->q);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 	up(&q->s);

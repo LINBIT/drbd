@@ -771,7 +771,9 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	     side == SyncTarget ? "target" : "source", 
 	     (unsigned long) mdev->rs_left>>1);
 
-	PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));
+	/* no longer true since we queue the write hints here, too
+	  PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));
+	*/
 	PARANOIA_BUG_ON(mdev->resync_work.cb != w_resync_inactive);
 
 	if ( mdev->rs_left == 0 ) {
