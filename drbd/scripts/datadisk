@@ -18,10 +18,6 @@
 INSTALL="/etc/ha.d/resource.d"
 . $INSTALL/drbd_commun $*
 
-# Time to wait for the other side to release the node before
-# forcing the local to become master
-time=300
-
 
 # Parameter :
 # The resource to wait for
@@ -73,7 +69,7 @@ case "$1" in
 		is_negotiate=`echo "$MODE" | grep -i "negotiate" | wc -l | sed -e"s/ //g"`
 
 		if [ $is_force -eq 1 ]; then
-			waitForPrimary $RESOURCE $time
+			waitForPrimary $RESOURCE $TIME
 			command="master"
 		elif [ $is_restore -eq 1 ]; then
 			isMasterBoot $RESOURCE
