@@ -25,7 +25,7 @@ fi
 # Some distributions don't have it, so test and act accordingly
 
 if [ -f /etc/rc.d/init.d/functions ]; then
-        if grep success /etc/rc.d/init.d/functions > /dev/null ; then        
+        if [ grep success /etc/rc.d/init.d/functions > /dev/null ]; then
 	       . /etc/rc.d/init.d/functions
                HAVE_SUCCESS=1
         fi
