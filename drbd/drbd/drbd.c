@@ -142,7 +142,10 @@ struct Drbd_Conf {
 	struct file *lo_file;
 	int blk_size_b;
 	Drbd_State state;
+	wait_queue_head_t state_wait;
+	int stateref_cnt;
 	Drbd_CState cstate;
+	wait_queue_head_t cstate_wait;
 	Drbd_State o_state;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -169,7 +172,6 @@ struct Drbd_Conf {
         struct mbds_operations* mops;
 	void* mbds_id;
         wait_queue_head_t asender_wait;  
-	wait_queue_head_t cstate_wait;
 	int open_cnt;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
@@ -486,6 +488,9 @@ inline void tl_init(struct Drbd_Conf *mdev)
 {
 	mdev->tl_begin = mdev->transfer_log;
 	mdev->tl_end = mdev->transfer_log;
+
+	mdev->stateref_cnt=0;
+	wake_up_interruptible(&mdev->state_wait);
 }
 
 inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
@@ -511,15 +516,18 @@ inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		epoch_size++;
 	} while (mdev->tl_begin->req != TL_BARRIER);
 
-	if(mdev->tl_begin->sector_nr != barrier_nr) 
+	if(mdev->tl_begin->sector_nr != barrier_nr) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: invalid barrier number!!"
 		       "found=%u, reported=%u\n",(int)(mdev-drbd_conf),
 		       (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
 
-	if(epoch_size != set_size) 
+	if(epoch_size != set_size) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: Epoch set size wrong!!"
 		       "found=%d reported=%d \n",(int)(mdev-drbd_conf),
 		       epoch_size,set_size);
+
+	mdev->stateref_cnt-=epoch_size;
+	if(mdev->stateref_cnt == 0) wake_up_interruptible(&mdev->state_wait);
 	
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
@@ -1163,31 +1171,33 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		INIT_REQUEST;
 		req=CURRENT;
 		blkdev_dequeue_request(req);
-
+		
 		/*
-		   {
-		   static const char *strs[2] = 
-		   {
-		   "READ",
-		   "WRITE"
-		   };
-
-		   printk(KERN_DEBUG DEVICE_NAME ": do_request(cmd=%s,sec=%ld,"
-		   "nr_sec=%ld,cnr_sec=%ld,buf=%p,min=%d)",
-		   strs[req->cmd == READ ? 0 : 1],req->sector,
-		   req->nr_sectors,
-		   req->current_nr_sectors,
-		   req->buffer,minor);
-		   }
-		 */
+		{
+			static const char *strs[2] = 
+			{
+				"READ",
+				"WRITE"
+			};
+			
+			if(req->cmd == WRITE)
+			printk(KERN_ERR DEVICE_NAME "%d: do_request(cmd=%s,"
+			       "sec=%ld,nr_sec=%ld,cnr_sec=%ld)\n",
+			       minor,
+			       strs[req->cmd == READ ? 0 : 1],req->sector,
+			       req->nr_sectors,
+			       req->current_nr_sectors);
+		}
+		*/
 
 		spin_unlock_irq(&io_request_lock);
 
 		sending = 0;
 
 		if (req->cmd == WRITE && drbd_conf[minor].state == Primary) {
+			drbd_conf[minor].stateref_cnt++;
 			if ( drbd_conf[minor].cstate >= Connected
-			     && req->sector > drbd_conf[minor].synced_to) 
+			     && req->sector >= drbd_conf[minor].synced_to) 
 				sending = 1;
 		}
 
@@ -1254,7 +1264,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 			if(send_ok) {
 			        drbd_conf[minor].send_cnt++;
-			} 
+			} else {
+				drbd_conf[minor].stateref_cnt--;
+			}
 
 			if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A ||
 			    (!send_ok) ) {
@@ -1312,9 +1324,43 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		if(test_bit(WRITER_PRESENT, &drbd_conf[minor].flags)
 		   && arg == Secondary)
-			return -EBUSY;
+                        return -EBUSY;
+			
+	        fsync_dev(MKDEV(MAJOR_NR, minor));
+			
+		/* Wait until nothing is on the fly :) */
+		/* PRI -> SEC : TL is empty || cstate < connected
+		   SEC -> PRI : ES is empty || cstate < connected
+                     -> this should be the case anyway, becuase the
+		        other one should be already in SEC state
 
-		fsync_dev(MKDEV(MAJOR_NR, minor));
+		   FIXME:
+		     The current implementation is full of races.
+		     Will do the right thing in 2.4 (using a rw-semaphore),
+		     for now it's good enough. (Do not panic, these races
+		     are not harmfull)		     
+		*/
+
+		printk(KERN_ERR DEVICE_NAME "%d: es=%d sr=%d pe=%d\n",
+		       minor,
+		       drbd_conf[minor].epoch_size,
+		       drbd_conf[minor].stateref_cnt,
+		       drbd_conf[minor].pending_cnt);
+		
+		while (drbd_conf[minor].epoch_size > 0 ||
+		       drbd_conf[minor].stateref_cnt > 0 ) {
+
+			printk(KERN_ERR DEVICE_NAME "%d: es=%d sr=%d pe=%d\n",
+			       minor,
+			       drbd_conf[minor].epoch_size,
+			       drbd_conf[minor].stateref_cnt,
+			       drbd_conf[minor].pending_cnt);
+
+			interruptible_sleep_on(&drbd_conf[minor].state_wait);
+			if(signal_pending(current)) { 
+				return -EINTR;
+			}
+		}
 		drbd_conf[minor].state = (Drbd_State) arg;
 
 		if (drbd_conf[minor].sock )
@@ -1323,8 +1369,13 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if (drbd_conf[minor].cstate >= Connected)
 			drbd_send_param(minor);
 
-		        /*printk(KERN_DEBUG DEVICE_NAME ": set_state(%d)\n",
-			  drbd_conf[minor].state);*/
+		/*
+		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d)\n",
+		       minor,
+		       drbd_conf[minor].state,
+		       drbd_conf[minor].pending_cnt,
+		       drbd_conf[minor].unacked_cnt);
+		*/
 		break;
 
 	case DRBD_IOCTL_SET_CONFIG:
@@ -1593,6 +1644,8 @@ int __init drbd_init(void)
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].state = Secondary;
+		drbd_conf[i].stateref_cnt = 0;
+		init_waitqueue_head(&drbd_conf[i].state_wait);
 		drbd_conf[i].o_state = Unknown;
 		drbd_conf[i].cstate = Unconfigured;
 		drbd_conf[i].send_cnt = 0;
@@ -1929,6 +1982,10 @@ inline int receive_barrier(int minor)
   	Drbd_Barrier_P header;
 	int ep_size,i;
 
+	if(drbd_conf[minor].state != Secondary) /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n",
+		       minor);
+
 	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) 
 	    != sizeof(header))
 	        return FALSE;
@@ -1967,6 +2024,7 @@ inline int receive_barrier(int minor)
 	drbd_conf[minor].epoch_size=0;
 	spin_unlock(&drbd_conf[minor].es_lock);
 	drbd_send_b_ack(&drbd_conf[minor], header.barrier,ep_size );
+	wake_up_interruptible(&drbd_conf[minor].state_wait);
 
 	return TRUE;
 }
@@ -1980,10 +2038,14 @@ inline int receive_data(int minor,int data_size)
 	int ep_size;
 	Drbd_Data_P header;
 
+	if(drbd_conf[minor].state != Secondary) /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: got data while not SEC!!\n",
+		       minor);
+
 	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
 	        return FALSE;
-	
+       
 	/*
 	  printk(KERN_DEBUG DEVICE_NAME ": recv Data "
 	  "block_nr=%ld len=%d/m=%d bs_bits=%d\n",
@@ -2110,6 +2172,10 @@ inline int receive_block_ack(int minor)
         struct request *req;
 	Drbd_BlockAck_P header;
 
+	if(drbd_conf[minor].state != Primary) /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: got blk-ack while not PRI!!\n",
+		       minor);
+
 	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
 	        return FALSE;
@@ -2145,6 +2211,10 @@ inline int receive_block_ack(int minor)
 inline int receive_barrier_ack(int minor)
 {
 	Drbd_BarrierAck_P header;
+
+	if(drbd_conf[minor].state != Primary) /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: got barrier-ack while not"
+		       " PRI!!\n",minor);
 
 	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
@@ -2342,6 +2412,7 @@ void drbdd(int minor)
 		break;
 	case Secondary: 
 		drbd_conf[minor].epoch_size=0; 
+		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
 	}
