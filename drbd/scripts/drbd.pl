@@ -19,6 +19,7 @@ use Sys::Hostname;
 my $drbdsetup="/usr/sbin/drbdsetup";
 my $modprobe="/sbin/modprobe";
 my $rmmod="/sbin/rmmod";
+my $touch="/bin/touch";
 
 my @get_token_line;
 my $token_line=0;
@@ -279,7 +280,9 @@ sub become_sec($$)
     my ($res,$mconf)=@_;
     my ($errtxt,$line,$mounted);
 
-    `$drbdsetup $$mconf{self}{device} secondary 2>&1`;    
+    `$drbdsetup $$mconf{self}{device} secondary 2>&1`;  
+      #TODO: May not only fail because somethink is mounted, may also
+      #      fail because sync is running.
     if ( $? ) {
 	`umount $$mconf{self}{device} 2> /dev/null`;
 	if ( $? ) {
@@ -488,6 +491,10 @@ sub drbd()
 	}
 	# configure the devices etc...
 	fcaller( \&doconfig );
+	# On redhat: touch /var/lock/subsys/drbd
+	if ( -d '/var/lock/subsys' ) {
+	    `$touch /var/lock/subsys/drbd`;
+	}
 	$user = ask_for_abort();
 	%syncers = fcaller( \&wait_ready );	
 	if (scalar(keys %syncers) == 0) { die "no child processes"; }
@@ -523,6 +530,10 @@ sub drbd()
 	    `$rmmod -s drbd`;
 	    if( $? ) {
 		die "$pname: Can not unload the drbd module.";
+	    }
+	    # On Redhat: remove /var/lock/subsys/drbd 
+	    if ( -f '/var/lock/subsys/drbd' ) {
+		unlink '/var/lock/subsys/drbd';
 	    }
 	}
     } elsif ($command eq "reconnect") { 
