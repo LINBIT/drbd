@@ -195,31 +195,24 @@ sub doconfig($$)
 sub wait_ready($$)
 {
     my ($res,$mconf)=@_;
-    my ($errtxt,$pid,$minor,$line);
-
-    $minor=$$mconf{self}{device};
-    $minor =~ s/\/dev\/nb//;
+    my ($errtxt,$pid);
 
     $pid=fork();
     if($pid == 0) {
+	my ($cstate,$state);
+
 	$errtxt=`$drbdsetup $$mconf{self}{device} wait_connect`;
 	if($errtxt) { die "$errtxt"; }
 
-	open (PROC,"</proc/drbd")
-	    or die "can not open /proc/drbd";
-
-	while($line = <PROC>) {
-	    if($line =~ /^(\d+): cs:Syncing(?:All)|(?:Quick) st:Secondary/) {
-		if($1==$minor) {
-		    print "Waiting until $res is synced...(You can still say 'yes', but for what?) \n";
-		    $errtxt=`$drbdsetup $$mconf{self}{device} wait_sync`;
-		    if($errtxt) { die "$errtxt"; }
-		    `$drbdsetup $$mconf{self}{device} secondary_remote 2>&1`;
-		    # No error check here, on purpose!
-		}
-	    }	    
+	($cstate,$state) = get_drbd_status($$mconf{self}{device});
+#	print "\n$$mconf{self}{device} is $cstate,$state";
+	if($cstate =~ m/^Syncing/ && $state eq "Secondary" ) {
+	    print "\nWaiting until $res is up to date (using $cstate) abort? ";
+	    $errtxt=`$drbdsetup $$mconf{self}{device} wait_sync`;
+	    if($errtxt) { die "$errtxt"; }
+	    `$drbdsetup $$mconf{self}{device} secondary_remote 2>&1`;
+	    # No error check here, on purpose!		
 	}
-	close(PROC);
 	exit 0;
     } elsif( $pid == -1 ) {
 	die "fork failed";
@@ -299,6 +292,29 @@ sub become_sec($$)
 # Helpers 
 #
 
+sub get_drbd_status($)
+{
+    my ($device)=@_;
+    my ($minor,$line);
+
+    $minor=$device;
+    $minor =~ s/\/dev\/nb//;
+
+    open (PROC,"</proc/drbd")
+	or die "can not open /proc/drbd";
+
+    while($line = <PROC>) {
+	if($line =~ /^(\d+):\scs:(\w+)\sst:(\w+)\//) {
+	    if($1==$minor) {
+		close(PROC);
+		return ($2,$3);
+	    }
+	}	    
+    }
+    close (PROC);
+    die "My minor not found in /proc/drbd";
+}
+
 
 sub ask_for_abort()
 {
@@ -358,34 +374,33 @@ sub drbd()
 	}
 	# configure the devices etc...
 	fcaller( \&doconfig );
+	$user = ask_for_abort();
 	%syncers = fcaller( \&wait_ready );	
-	if (scalar(keys %syncers) > 0) {
-	    $user = ask_for_abort();
-	    while(1) {
-		$pid = wait();
-		if($pid == $user) {
-		    my $res;
-
-		    kill 'INT',keys %syncers;
-		    foreach $res (keys %syncers) {
-			increase_h_count($res,$conf{$res});
-		    }
-		    last;
-
+	if (scalar(keys %syncers) == 0) { die "no child processes"; }
+	while(1) {
+	    $pid = wait();
+	    if($pid == $user) {
+		my $res;
+		
+		kill 'INT',keys %syncers;
+		foreach $res (keys %syncers) {
+		    increase_h_count($res,$conf{$res});
 		}
-		if($syncers{$pid}) {
-		    my $res=$syncers{$pid};
-		    delete $syncers{$pid};
-		    if (scalar(keys %syncers) == 0) {
-			print "no\n";
-			kill 'INT',$user;			
-			last;
-		    }
-		    next;
-		}
-		print "$user ",keys %syncers," $syncers{$pid}\n";
-		die "Wait returned strange pid $pid";
+		last;
+		
 	    }
+	    if($syncers{$pid}) {
+		my $res=$syncers{$pid};
+		delete $syncers{$pid};
+		if (scalar(keys %syncers) == 0) {
+		    print "no\n";
+		    kill 'INT',$user;			
+		    last;
+		}
+		next;
+	    }
+	    print "$user ",keys %syncers," $syncers{$pid}\n";
+	    die "Wait returned strange pid $pid";
 	}
     } elsif ($command eq "stop") { 
 	if ( -e "/proc/drbd" ) {
