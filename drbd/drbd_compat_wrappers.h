@@ -538,7 +538,9 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	bio_init(bio); // bio->bi_flags   = 0;
 	bio->bi_io_vec = bvec;
 	bio->bi_max_vecs = 1;
-
+	
+	/* FIXME: __bio_clone() workaround, fix me properly later! */
+	bio_src->bi_max_vecs = 1;
 	__bio_clone(bio,bio_src);
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = mdev;
@@ -559,6 +561,8 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	bio->bi_io_vec = bvec;
 	bio->bi_max_vecs = 1;
 
+	/* FIXME: __bio_clone() workaround, fix me properly later! */
+	bio_src->bi_max_vecs = 1;
 	__bio_clone(bio,bio_src);
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = mdev;
