@@ -781,8 +781,6 @@ extern void drbd_read_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
 extern void drbd_write_bm(struct Drbd_Conf *mdev);
-extern void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector);
-extern void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector);
 
 /*
  * event macros
