@@ -187,7 +187,7 @@ You must not have the ee_lock:
  drbd_wait_sync_ee()
 */
 
-/*static */void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
+/*static */void _drbd_alloc_ee(struct Drbd_Conf* mdev,page_t* page)
 {
 	struct Tl_epoch_entry* e;
 	struct buffer_head *bh,*lbh,*fbh;
@@ -227,15 +227,9 @@ You must not have the ee_lock:
 	bh->b_this_page=fbh;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-struct page;
-
-#define alloc_page(A) ((struct page*)__get_free_page(A))
-#endif
-
 /*static */int drbd_alloc_ee(struct Drbd_Conf* mdev,int mask)
 {
-	struct page *page;
+	page_t *page;
 
 	page=alloc_page(mask);
 	if(!page) return FALSE;
@@ -249,14 +243,13 @@ struct page;
 	return TRUE;
 }
 
-/*static */struct page* drbd_free_ee(struct Drbd_Conf* mdev,
-				     struct list_head *list)
+/*static */page_t* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
 	struct buffer_head *bh,*nbh;
 	int freeable=0;
-	struct page* page;
+	page_t* page;
 
 	list_for_each(le,list) {
 		bh=list_entry(le, struct Tl_epoch_entry,list)->bh;
@@ -273,7 +266,7 @@ struct page;
  free_it:
 	nbh=bh;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-	page=bh->b_data;
+	page=(page_t*)bh->b_data;
 #else
 	page=bh->b_page;
 #endif
@@ -282,7 +275,8 @@ struct page;
 		list_del(&e->list);
 		mdev->ee_vacant--;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-		if(nbh->b_data<page) page=nbh->b_data;
+		if((page_t*)nbh->b_data<page) 
+			page=(page_t*)nbh->b_data;
 #endif
 		nbh=nbh->b_this_page;
 		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
@@ -308,7 +302,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 
 	spin_lock_irq(&mdev->ee_lock);
 	while(!list_empty(list)) {
-		__free_page(drbd_free_ee(mdev,list));
+		drbd_free_page(drbd_free_ee(mdev,list));
 		count++;
 	}
 	spin_unlock_irq(&mdev->ee_lock);
@@ -319,7 +313,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 /*static */void drbd_ee_fix_bhs(struct Drbd_Conf* mdev)
 {
 	struct list_head workset;
-	struct page* page;
+	page_t* page;
 
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&workset,&mdev->free_ee); // insert the new head
@@ -376,11 +370,11 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	list_add(&e->list,&mdev->free_ee);
 
 	if(mdev->ee_vacant * 2 > mdev->ee_in_use) {
-		__free_page(drbd_free_ee(mdev,&mdev->free_ee));
+		drbd_free_page(drbd_free_ee(mdev,&mdev->free_ee));
 	}
 	if(mdev->ee_in_use == 0) {
 		while( mdev->ee_vacant > EE_MININUM ) {
-			__free_page(drbd_free_ee(mdev,&mdev->free_ee));
+			drbd_free_page(drbd_free_ee(mdev,&mdev->free_ee));
 		}
 	}
 }

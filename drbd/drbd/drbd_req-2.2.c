@@ -213,7 +213,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		}
 
 		drbd_init_bh(bh, req->bh->b_size, drbd_dio_end);
-		bh->b_data = req->bh->b_data // instead of set_bh_page()
+		bh->b_data = req->bh->b_data; // instead of set_bh_page()
 
 		drbd_set_bh(bh,
 			    req->bh->b_rsector / (req->bh->b_size >> 9),

@@ -56,7 +56,7 @@
 */
 
 struct ds_buffer {
-	struct page* buffers;
+	page_t* buffers;
 	unsigned long *blnr;
 	struct buffer_head *bhs;
 	int number;
@@ -90,7 +90,6 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 	if (waitqueue_active(&bh->b_wait))
 		wake_up(&bh->b_wait);
 }
-
 
 void ds_buffer_init(struct ds_buffer *this,int minor)
 {
@@ -138,7 +137,7 @@ void ds_buffer_free(struct ds_buffer *this)
 	int amount;
 
 	amount=this->number*this->b_size;
-	__free_pages(this->buffers,drbd_log2(amount>>PAGE_SHIFT));
+	drbd_free_pages(this->buffers,drbd_log2(amount>>PAGE_SHIFT));
 	kfree(this->blnr);
 }
 

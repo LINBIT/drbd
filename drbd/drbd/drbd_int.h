@@ -527,11 +527,19 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+typedef char page_t [4096];
+
+#define alloc_page(A) ((page_t*)__get_free_page((A)))
+#define alloc_pages(A,B) ((page_t*)__get_free_pages((A),(B)))
+
+#define drbd_free_page(A) free_page((unsigned long)A) 
+#define drbd_free_pages(A,B) free_pages((unsigned long)A,B) 
+
 static inline void set_bh_page(struct buffer_head *bh, 
-			       struct page *page, 
+			       page_t *page, 
 			       unsigned long offset)
 {
-	bh->b_data = page + offset;
+	bh->b_data = ((char *)page) + offset;
 }
 
 static inline void drbd_init_bh(struct buffer_head *bh,
@@ -554,6 +562,10 @@ static inline void submit_bh(int rw, struct buffer_head * bh)
 }
 
 #else
+typedef struct page page_t;
+
+#define drbd_free_page(A) __free_page(A) 
+#define drbd_free_pages(A,B) __free_pages(A,B) 
 
 static inline void drbd_init_bh(struct buffer_head *bh,
 				int size,
