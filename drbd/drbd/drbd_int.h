@@ -169,19 +169,14 @@ struct Drbd_thread {
 struct drbd_request_struct {
 	struct buffer_head* bh; /* bh waiting for io_completion */
 	int rq_status;
-	int cmd;
 };
+
 typedef struct drbd_request_struct drbd_request_t;
 #define GET_SECTOR(A) ((A)->bh->b_rsector)
 #else
 typedef struct request drbd_request_t;
 #define GET_SECTOR(A) ((A)->sector)
 #endif
-
-struct Tl_entry {
-        drbd_request_t* req;
-        unsigned long sector_nr;
-};
 
 struct Tl_epoch_entry {
 	struct buffer_head* bh;
@@ -216,9 +211,11 @@ struct Drbd_Conf {
 	unsigned int unacked_cnt;
 	spinlock_t req_lock;
 	rwlock_t tl_lock;
-	struct Tl_entry* tl_end;
-	struct Tl_entry* tl_begin;
-	struct Tl_entry* transfer_log;
+	drbd_request_t** tl_end;
+	drbd_request_t** tl_begin;
+	drbd_request_t** transfer_log;
+	unsigned int barrier_nr_issue;
+	unsigned int barrier_nr_done;
         int    flags;
         int    epoch_size;
 	spinlock_t es_lock;
@@ -241,11 +238,6 @@ struct Drbd_Conf {
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
-#define DRBD_NR_REQUESTS 2048
-	drbd_request_t requests[DRBD_NR_REQUESTS];
-	int next_request;
-#endif	
 };
 
 /* drbd_main.c: */
@@ -256,7 +248,7 @@ extern int drbd_log2(int i);
 extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct Drbd_Conf *mdev);
-extern int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr);
+extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
 extern void drbd_setup_sock(struct Drbd_Conf *mdev);
 extern void drbd_free_sock(int minor);
 extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
@@ -327,7 +319,8 @@ static inline void tl_init(struct Drbd_Conf *mdev)
 {
 	mdev->tl_begin = mdev->transfer_log;
 	mdev->tl_end = mdev->transfer_log;
-
+	mdev->barrier_nr_issue=1;
+	mdev->barrier_nr_done=1;
 }
 
 static inline void inc_pending(int minor)

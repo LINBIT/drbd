@@ -163,6 +163,7 @@ int drbd_log2(int i)
 
 /************************* The transfer log start */
 #define TL_BARRIER    0
+#define TL_EMPTY      ((drbd_request_t *)(-1))
 /* spinlock readme:
    tl_dependence() only needs a read-lock and is called from interrupt time.
    See Documentation/spinlocks.txt why this is valid.
@@ -171,12 +172,12 @@ int drbd_log2(int i)
 #if 0
 void print_tl(struct Drbd_Conf *mdev)
 {
-	struct Tl_entry* p=mdev->tl_begin;
+	drbd_request_t** p=mdev->tl_begin;
 
 	printk(KERN_ERR "TransferLog (oldest entry first):\n");
 
 	while( p != mdev->tl_end ) {
-		if(p->req == TL_BARRIER)
+		if(*p == TL_BARRIER)
 			printk(KERN_ERR "BARRIER (%ld)\n",p->sector_nr);
 		else
 			printk(KERN_ERR "Sector %ld.\n",p->sector_nr);
@@ -200,8 +201,7 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	  /*printk(KERN_ERR DEVICE_NAME "%d: tl_add(%ld)\n",
 	    (int)(mdev-drbd_conf),new_item->sector);*/
 
-	mdev->tl_end->req = new_item;
-	mdev->tl_end->sector_nr = GET_SECTOR(new_item);
+	*mdev->tl_end = new_item;
 
 	mdev->tl_end++;
 
@@ -219,11 +219,11 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 
 
 	{
-		struct Tl_entry* p=mdev->tl_end;
+		drbd_request_t** p=mdev->tl_end;
 		while( p != mdev->tl_begin ) {
 
-			if(p->req == TL_BARRIER) break;
-			if(p->sector_nr == GET_SECTOR(new_item)) {
+			if(*p == TL_BARRIER || *p == TL_EMPTY ) break;
+			if(GET_SECTOR(*p) == GET_SECTOR(new_item)) {
 				printk(KERN_CRIT DEVICE_NAME 
 				       "%d: Sector %ld is already in !!\n",
 				       (int)(mdev-drbd_conf),
@@ -243,19 +243,15 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 
 inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 {
-        static unsigned int br_cnt=0;
 	unsigned long flags;
+	unsigned int bnr;
 
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	/*printk(KERN_DEBUG DEVICE_NAME "%d: tl_add(TL_BARRIER)\n",
 	  (int)(mdev-drbd_conf));*/
 
-	br_cnt++;
-	if(br_cnt == 0) br_cnt = 1;
-
-	mdev->tl_end->req = TL_BARRIER;
-	mdev->tl_end->sector_nr = br_cnt;
+	*mdev->tl_end = TL_BARRIER;
 
 	mdev->tl_end++;
 
@@ -266,9 +262,10 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!!\n",
 		       (int)(mdev-drbd_conf));
 
+	bnr=mdev->barrier_nr_issue++; 
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
-	return br_cnt;
+	return bnr;
 }
 
 void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
@@ -280,7 +277,7 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": tl_release(%u)\n",barrier_nr); */
 
-	if (mdev->tl_begin->req == TL_BARRIER) epoch_size--;
+	if (*mdev->tl_begin == TL_BARRIER) epoch_size--;
 
 	do {
 		mdev->tl_begin++;
@@ -292,12 +289,14 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 			printk(KERN_ERR DEVICE_NAME "%d: tl messed up!\n",
 			       (int)(mdev-drbd_conf));
 		epoch_size++;
-	} while (mdev->tl_begin->req != TL_BARRIER);
+	} while (*mdev->tl_begin != TL_BARRIER);
 
-	if(mdev->tl_begin->sector_nr != barrier_nr) /* CHK */
+	if(mdev->barrier_nr_done != barrier_nr) //CHK
 		printk(KERN_ERR DEVICE_NAME "%d: invalid barrier number!!"
 		       "found=%u, reported=%u\n",(int)(mdev-drbd_conf),
-		       (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
+		       (unsigned int)mdev->barrier_nr_done,barrier_nr);
+
+	mdev->barrier_nr_done++;
 
 	if(epoch_size != set_size) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: Epoch set size wrong!!"
@@ -312,9 +311,9 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 }
 
-int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
+int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
-	struct Tl_entry* p;
+	drbd_request_t** p;
 	int r;
 
 	read_lock(&mdev->tl_lock);
@@ -327,8 +326,11 @@ int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 			if ( p==mdev->tl_begin ) {r=FALSE; break;}
 		}
 		p--;
-		if ( p->req==TL_BARRIER) {r=FALSE; break;}
-		if ( p->sector_nr == sect_nr) {r=TRUE; break;}
+		if ( *p == TL_BARRIER) {r=FALSE; break;}
+		if ( *p == item) {
+			*p=TL_EMPTY;
+			r=TRUE; break;
+		}
 	}
 
 	read_unlock(&mdev->tl_lock);
@@ -337,21 +339,19 @@ int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 
 void tl_clear(struct Drbd_Conf *mdev)
 {
-	struct Tl_entry* p = mdev->tl_begin;
+	drbd_request_t** p = mdev->tl_begin;
 	int end_them = mdev->conf.wire_protocol == DRBD_PROT_B || 
                        mdev->conf.wire_protocol == DRBD_PROT_C;
 	unsigned long flags;
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	while(p != mdev->tl_end) {
-	        if(p->req != TL_BARRIER) {
+	        if(*p != TL_BARRIER && *p != TL_EMPTY ) {
 	                mdev->mops->set_block_status(mdev->mbds_id,
-				     p->sector_nr >> (mdev->blk_size_b-9),
+				     GET_SECTOR(*p) >> (mdev->blk_size_b-9),
 				     mdev->blk_size_b, SS_OUT_OF_SYNC);
-			if(end_them && 
-			   p->req->rq_status != RQ_INACTIVE &&
-			   GET_SECTOR(p->req) == p->sector_nr ) {
-		                drbd_end_req(p->req,RQ_DRBD_SENT,1);
+			if(end_them) {
+				drbd_end_req(*p,RQ_DRBD_SENT,1);
 				mdev->pending_cnt--;
 #if 0 /*Debug ... */
 				printk(KERN_CRIT DEVICE_NAME 
@@ -895,9 +895,6 @@ int __init drbd_init(void)
 		init_waitqueue_head(&drbd_conf[i].asender_wait);
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
-		drbd_conf[i].next_request=0;
-#endif	
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
@@ -907,10 +904,6 @@ int __init drbd_init(void)
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
 #endif  
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
-			for(j=0;j<DRBD_NR_REQUESTS;j++) 
-				drbd_conf[i].requests[j].rq_status=RQ_INACTIVE;
-#endif			
 		}
 	}
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)

@@ -45,7 +45,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	unsigned long flags=0;
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
 
-	if (req->cmd == READ)
+	if (req->rq_status == (RQ_DRBD_READ | 0x0001))
 		goto end_it_unlocked;
 
 	/* This was a hard one! Can you see the race?
@@ -99,7 +99,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	  /* If we are unconnected we may not call tl_dependece, since
 	     then this call could be from tl_clear(). => spinlock deadlock!
 	  */
-	        if(tl_dependence(mdev,req->bh->b_rsector)) {
+	        if(tl_dependence(mdev,req)) {
 	                set_bit(ISSUE_BARRIER,&mdev->flags);
 			wake_asender=1;
 		}
@@ -112,7 +112,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	req->rq_status=RQ_INACTIVE;
+	kfree(req); /* frees also the temporary bh */
 
 	/* NICE: It would be nice if we could AND this condition.
 	   But we must also wake the asender if we are receiving 
@@ -129,21 +129,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	// READs are sorted out in drbd_end_req().
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	
-	kfree(bh);
-}
-
-drbd_request_t* drbd_get_request(struct Drbd_Conf* mdev)
-{
-	drbd_request_t* req;
-
-	req = &mdev->requests[mdev->next_request++];
-
-	if(mdev->next_request>=DRBD_NR_REQUESTS) 
-		mdev->next_request=0;
-
-	if(req->rq_status != RQ_INACTIVE) req=0;
-
-	return req;
 }
 
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
@@ -168,23 +153,16 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	size_kb = 1<<(mdev->blk_size_b-10);
 
 	/* Do disk - IO */
-	nbh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
-	if (!nbh) {
+	req = kmalloc(sizeof(struct buffer_head)+
+		      sizeof(drbd_request_t), GFP_DRBD);
+	if (!req) {
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: could not kmalloc() nbh\n",(int)(mdev-drbd_conf));
 		bh->b_end_io(bh,0);
 		return 0;
 	}
 
-	req = drbd_get_request(mdev);
-	if (!req) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: could not get req\n",(int)(mdev-drbd_conf));
-		kfree(nbh);
-		bh->b_end_io(bh,0);
-		return 0;
-	}
-
+	nbh = (struct buffer_head*)((char*)req)+sizeof(drbd_request_t);
 
 #if 0
 	{
@@ -220,7 +198,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		| ( 1 << BH_Mapped) | (1 << BH_Lock);
 
 	req->bh=bh;
-	req->cmd=rw;
 
 	switch(rw) {
 	case READ:

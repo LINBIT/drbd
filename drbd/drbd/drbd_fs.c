@@ -220,7 +220,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	       sizeof(struct net_config));
 
 	if (!mdev->transfer_log) {
-		mdev->transfer_log = kmalloc(sizeof(struct Tl_entry) * 
+		mdev->transfer_log = kmalloc(sizeof(drbd_request_t*) * 
 					     mdev->conf.tl_size, GFP_KERNEL);
 		tl_init(&drbd_conf[minor]);
 	}

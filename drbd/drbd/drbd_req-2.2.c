@@ -103,7 +103,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	  /* If we are unconnected we may not call tl_dependece, since
 	     then this call could be from tl_clear(). => spinlock deadlock!
 	  */
-	        if(tl_dependence(mdev,req->sector)) {
+	        if(tl_dependence(mdev,req)) {
 	                set_bit(ISSUE_BARRIER,&mdev->flags);
 			wake_asender=1;
 		}
