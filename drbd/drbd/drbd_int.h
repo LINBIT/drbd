@@ -237,38 +237,6 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 #define RQ_DRBD_DONE      0x0030
 #define RQ_DRBD_READ      0x0040
 
-#define DRBD_PANIC 2
-/* do_panic alternatives:
- *	0: panic();
- *	1: machine_halt;  FIXME does not work;
- *	2: prink(EMERG ), plus flag to fail all eventual drbd IO, plus panic()
- */
-
-extern volatile int drbd_did_panic;
-
-#include <linux/reboot.h>
-
-#if    DRBD_PANIC == 0
-#define drbd_panic(x...) panic(x)
-#elif  DRBD_PANIC == 1
-#error "THIS DRBD_PANIC SETTING DOES NOT WORK (yet)"
-#define drbd_panic(x...) do {						\
-	printk(KERN_EMERG x);						\
-	notifier_call_chain(&reboot_notifier_list, SYS_HALT, NULL);	\
-	printk(KERN_EMERG "System halted.\n");				\
-	machine_halt();							\
-	do_exit(0);							\
-} while (0)
-#else
-#define drbd_panic(x...) do {		\
-	printk(KERN_EMERG x);		\
-	drbd_did_panic = DRBD_MD_MAGIC;	\
-	smp_mb();			\
-	panic(x);			\
-} while (0)
-#endif
-#undef DRBD_PANIC
-
 enum MetaDataFlags {
 	MDF_Consistent   = 1,
 	MDF_PrimaryInd   = 2,
@@ -577,6 +545,7 @@ struct Pending_read {
 #define PARTNER_DISKLESS   8
 #define PROCESS_EE_RUNNING 9
 #define MD_IO_ALLOWED     10
+#define SENT_DISK_FAILURE 11
 
 struct BitMap {
 	unsigned long dev_size;
@@ -637,7 +606,7 @@ struct Drbd_Conf {
 #endif
 	struct net_config conf;
 	struct syncer_config sync_conf;
-	int do_panic;
+	enum io_error_handler on_io_error;
 	struct semaphore device_mutex;
 	struct drbd_socket data; // for data/barrier/cstate/parameter packets
 	struct drbd_socket meta; // for ping/ack (metadata) packets
@@ -944,6 +913,49 @@ do {									\
 
 #include "drbd_compat_wrappers.h"
 
+/**
+ * drbd_chk_io_error: Handles the on_io_error setting, should be called from
+ * all io completion handlers.
+ */
+static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
+{
+	if (error) {
+		switch(mdev->on_io_error) {
+		case PassOn:
+			ERR("Ignoring local IO error!\n");
+			break;
+		case Panic:
+			set_bit(DISKLESS,&mdev->flags);
+			smp_mb();
+			panic(DEVICE_NAME" : IO error on backing device!\n");
+			break;
+		case Detach:
+			set_bit(DISKLESS,&mdev->flags);
+			smp_mb(); // Nack is sent in w_e handlers.
+			break;
+		}
+	}
+}
+
+/**
+ * drbd_io_error: Handles the on_io_error setting, should be called in the
+ * unlikely(!drbd_bio_uptodate(e->bio)) case from kernel thread context.
+ */
+static inline int drbd_io_error(drbd_dev* mdev)
+{
+	int ok=1;
+
+	if(mdev->on_io_error == Panic || mdev->on_io_error == Detach) {
+		if(!test_bit(SENT_DISK_FAILURE,&mdev->flags)) {
+			D_ASSERT(test_bit(DISKLESS,&mdev->flags));
+			ok = drbd_send_param(mdev,0);
+			set_bit(SENT_DISK_FAILURE,&mdev->flags);
+			WARN("Notified peer that my disk is broken.\n");
+		}
+	}
+
+	return ok;
+}
 
 static inline int semaphore_is_locked(struct semaphore* s) 
 {

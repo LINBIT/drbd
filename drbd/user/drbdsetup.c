@@ -64,7 +64,7 @@
 #define DEF_MAX_BUFFERS 2048         // entries
 #define DEF_SNDBUF_SIZE (2*65535)    // ~128KB
 #define DEF_DISK_SIZE 0
-
+#define DEF_ON_IO_ERROR PassOn
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -149,8 +149,8 @@ struct drbd_cmd commands[] = {
   {"disk", cmd_disk_conf,(char *[]){"lower_dev","meta_data_dev",
 				    "meta_data_index",0},
    (struct option[]) {
-     { "size",  required_argument,      0, 'd' },
-     { "do-panic",   no_argument,       0, 'p' },
+     { "size",       required_argument, 0, 'd' },
+     { "on-io-error",required_argument, 0, 'e' },
      { 0,            0,                 0, 0 } } },
   {"resize", cmd_disk_size,             0,
    (struct option[]) {
@@ -158,6 +158,12 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0 } } },
   {"disconnect", cmd_disconnect,     0, 0, },
   {"show", cmd_show,                 0, 0, }
+};
+
+const char *eh_names[] = {
+  [PassOn] = "pass_on",
+  [Panic]  = "panic",
+  [Detach] = "detach" 
 };
 
 unsigned long resolv(const char* name)
@@ -335,7 +341,13 @@ void print_usage(const char* addinfo)
   for (i = 0; i < ARRY_SIZE(commands); i++)
     print_command_usage(i, 0);
 
-  printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
+  printf("\nAvailable on-io-error handlers:");
+  for(i=0;i<ARRY_SIZE(eh_names);i++) {
+    printf(" %s",eh_names[i]);
+    if(i < ARRY_SIZE(eh_names)-1) printf(",");
+  }
+    
+  printf("\n\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
   if (addinfo)
       printf("\n%s\n",addinfo);
 
@@ -403,13 +415,13 @@ int scan_disk_options(char **argv,
 		      struct option *options)
 {
   cn->config.disk_size = 0; /* default not known */
-  cn->config.do_panic  = 0;
+  cn->config.on_io_error = DEF_ON_IO_ERROR;
 
   if(argc==0) return 0;
 
   while(1)
     {
-      int c;
+      int c,i;
 
       PRINT_ARGV;
       c = getopt_long(argc,argv,make_optstring(options),options,0);
@@ -419,14 +431,22 @@ int scan_disk_options(char **argv,
 	case 'd':
 	  cn->config.disk_size = m_strtol(optarg,1024);
 	  break;
-	case 'p':
-	  cn->config.do_panic=1;
-	  break;
+	case 'e':
+	  for(i=0;i<ARRY_SIZE(eh_names);i++) {
+	    if (strcmp(optarg,eh_names[i])==0) {
+	      cn->config.on_io_error=i;
+	      goto ok;
+	    }
+	  }
+	  fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
+		  argv[0],optarg);
+	  return 20;
 	case 1:	// non option argument. see getopt_long(3)
 	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
 	case '?':
 	  return 20;
 	}
+    ok:
     }
   return 0;
 }
@@ -1097,7 +1117,9 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 
   printf("Disk options:\n");
   if( cn.disk_size_user ) printf(" size = %d KB\n",cn.disk_size_user);
-  if( cn.do_panic ) printf(" do-panic\n");
+  if( cn.on_io_error != DEF_ON_IO_ERROR) {
+    printf(" on-io-error = %s\n",eh_names[cn.on_io_error]);
+  }
 
   if( cn.cstate < Unconnected ) return 0;
 

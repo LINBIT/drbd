@@ -58,15 +58,23 @@ extern int line;
 
 extern int dry_run;
 extern char* drbdsetup;
+extern char ss_buffer[255];
 
 /* ssprintf() places the result of the printf in the current stack
    frame and sets ptr to the resulting string. If the current stack
    frame is destroyed (=function returns), the allocated memory is
    freed automatically */
 
+/*
 #define ssprintf(...) \
          ({ int _ss_size = snprintf(0, 0, ##__VA_ARGS__);        \
          char *_ss_ret = __builtin_alloca(_ss_size+1);           \
          snprintf(_ss_ret, _ss_size+1, ##__VA_ARGS__);           \
          _ss_ret; })
+#endif
+*/
+
+#define ssprintf(ptr,...) \
+  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer)
+
 #endif

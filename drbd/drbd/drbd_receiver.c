@@ -768,12 +768,19 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = drbd_ee_get_sector(e);
+	int ok;
 
 	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
-	drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
-	drbd_send_ack(mdev,WriteAck,e);
-	dec_unacked(mdev,HERE); // FIXME unconditional ??
-	return TRUE;
+	if(likely(drbd_bio_uptodate(&e->private_bio))) {
+		drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
+		ok = drbd_send_ack(mdev,WriteAck,e);
+	} else {
+		ok = drbd_send_ack(mdev,NegAck,e);
+		ok&= drbd_io_error(mdev);
+	}
+
+	dec_unacked(mdev,HERE);
+	return ok;
 }
 
 int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
@@ -928,17 +935,25 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	int ok=TRUE;
+	sector_t sector = drbd_ee_get_sector(e);
+	int ok=1;
 
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
-		if( mdev->cstate > Connected ) {
-			drbd_set_in_sync(mdev
-			,	drbd_ee_get_sector(e)
-			,	drbd_ee_get_size(e));
+		if(likely(drbd_bio_uptodate(&e->private_bio))) {
+			ok=drbd_send_ack(mdev,WriteAck,e);
+			if(ok) drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
+		} else {
+			ok = drbd_send_ack(mdev,NegAck,e);
+			ok&= drbd_io_error(mdev);
 		}
-		ok=drbd_send_ack(mdev,WriteAck,e);
-		dec_unacked(mdev,HERE); // FIXME unconditional ??
+		dec_unacked(mdev,HERE);
+
+		return ok;
+	}
+
+	if(unlikely(!drbd_bio_uptodate(&e->private_bio))) {
+		ok = drbd_io_error(mdev);
 	}
 
 	return ok;

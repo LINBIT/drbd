@@ -93,7 +93,7 @@ static struct d_resource* new_resource(char* name)
 %token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON
 %token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_STARTUP
 %token TK_META_DISK TK_META_INDEX
-%token <txt> TK_PROTOCOL TK_DO_PANIC
+%token <txt> TK_PROTOCOL TK_ON_IO_ERROR
 %token <txt> TK_SIZE TK_TIMEOUT TK_CONNECT_INT
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT
 %token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD
@@ -163,7 +163,7 @@ disk_stmts:       /* empty */   { $$ = 0; }
 		| disk_stmts disk_stmt   { $$=APPEND($1,$2); }
 		;
 
-disk_stmt:        TK_DO_PANIC   { $$=new_opt($1,0); }
+disk_stmt:        TK_ON_IO_ERROR '=' TK_STRING   { $$=new_opt($1,$3); }
 		| TK_SIZE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 

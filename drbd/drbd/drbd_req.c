@@ -82,11 +82,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		drbd_set_in_sync(mdev,rsector,drbd_req_get_size(req));
 	}
 
+	/// TODO look at mdev->on_io_error
+	/// in the Detach case do not report it to the application.
 	drbd_bio_endio(req->master_bio,(req->rq_status & 0x0001));
 
-	if( mdev->do_panic && !(req->rq_status & 0x0001) ) {
-		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
 
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
@@ -286,6 +285,8 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt += size >> 9;
 		dec_local(mdev);  // FIXME TODO -> completion handler
+		/// TODO FIXME shoulbe be able to reissue the request to
+		/// the peer in case it fails locally.
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev  = mdev->backing_bdev;
 #else

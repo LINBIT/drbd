@@ -298,7 +298,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->backing_bdev = bdev;
 	mdev->lo_file  = filp;
 	mdev->lo_usize = new_conf.disk_size;
-	mdev->do_panic = new_conf.do_panic;
+	mdev->on_io_error = new_conf.on_io_error;
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -325,6 +325,7 @@ ONLY_IN_26({
 })
 #undef min_not_zero
 
+	clear_bit(SENT_DISK_FAILURE,&mdev->flags);
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
 	i = drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
@@ -406,7 +407,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	cn.cstate=mdev->cstate;
 	cn.disk_size_user=mdev->lo_usize;
 	cn.meta_index=mdev->md_index;
-	cn.do_panic=mdev->do_panic;
+	cn.on_io_error=mdev->on_io_error;
 	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
 	memcpy(&cn.sconf, &mdev->sync_conf, sizeof(struct syncer_config));
 

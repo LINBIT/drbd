@@ -59,7 +59,7 @@ group            { DP; CP; return TK_SYNC_GROUP;         }
 timeout          { DP; CP; return TK_TIMEOUT;            }
 ping-int         { DP; CP; return TK_PING_INT;           }
 protocol         { DP; CP; BEGIN(id); return TK_PROTOCOL;}
-do-panic         { DP; CP; return TK_DO_PANIC;           }
+on-io-error      { DP; CP; BEGIN(id); return TK_ON_IO_ERROR;}
 use-csums        { DP; CP; return TK_USE_CSUMS;          }
 skip-sync        { DP; CP; return TK_SKIP_SYNC;          }
 al-extents       { DP; CP; return TK_AL_EXTENTS;         }

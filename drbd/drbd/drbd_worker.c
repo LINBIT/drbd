@@ -90,6 +90,7 @@ void enslaved_read_bi_end_io(drbd_bio_t *bh, int uptodate)
 	list_del(&e->w.list);
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
+	drbd_chk_io_error(mdev,!uptodate);
 	drbd_queue_work(mdev,&mdev->data.work,&e->w);
 	dec_local(mdev);
 }
@@ -128,10 +129,7 @@ void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
-	if( mdev->do_panic && !uptodate) {
-		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
-
+	drbd_chk_io_error(mdev,!uptodate);
 	wake_asender(mdev);
 	dec_local(mdev);
 }
@@ -149,6 +147,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	req = container_of(bh,struct drbd_request,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
+	drbd_chk_io_error(mdev,!uptodate);
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
 	dec_local(mdev);
@@ -194,6 +193,7 @@ int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	list_del(&e->w.list);
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
+	drbd_chk_io_error(mdev,error);
 	drbd_queue_work(mdev,&mdev->data.work,&e->w);
 	dec_local(mdev);
 	return 0;
@@ -230,10 +230,7 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
-	if( mdev->do_panic && error) {
-		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
-
+	drbd_chk_io_error(mdev,error);
 	wake_asender(mdev);
 	dec_local(mdev);
 	return 0;
@@ -256,6 +253,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	req = container_of(bio,struct drbd_request,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
+	drbd_chk_io_error(mdev,error);
 	drbd_end_req(req, RQ_DRBD_WRITTEN, (error == 0), drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
 	dec_local(mdev);
@@ -375,8 +373,15 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
 
-	ok=drbd_send_block(mdev, DataReply, e);
-	dec_unacked(mdev,HERE); // THINK unconditional?
+	if(likely(drbd_bio_uptodate(&e->private_bio))) {
+		ok=drbd_send_block(mdev, DataReply, e);
+	} else {
+		ok=drbd_send_ack(mdev,NegDReply,e);
+		ERR("Sending NegDReply. I guess it gets messy.\n");
+		drbd_io_error(mdev);
+	}
+
+	dec_unacked(mdev,HERE);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
@@ -392,9 +397,17 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	int ok;
 
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
-	inc_rs_pending(mdev);
-	ok=drbd_send_block(mdev, DataReply, e);
-	dec_unacked(mdev,HERE); // THINK unconditional?
+
+	if(likely(drbd_bio_uptodate(&e->private_bio))) {
+		inc_rs_pending(mdev);
+		ok=drbd_send_block(mdev, DataReply, e);
+	} else {
+		ok=drbd_send_ack(mdev,NegDReply,e);
+		ERR("Sending NegDReply. I guess it gets messy.\n");
+		drbd_io_error(mdev);
+	}
+
+	dec_unacked(mdev,HERE);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);

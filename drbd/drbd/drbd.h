@@ -55,10 +55,17 @@
 				   :unix_mkname()).
 				 */
 
+enum io_error_handler {
+	PassOn,
+	Panic,
+	Detach
+};
+
+
 struct disk_config {
 	IN int      lower_device;
 	IN unsigned int disk_size;
-	IN int      do_panic;  /* Panic on error upon LL_DEV */
+	IN enum io_error_handler on_io_error;
 	IN int      meta_device;
 	IN int      meta_index;
 };
@@ -168,7 +175,7 @@ struct ioctl_get_config {
 	OUT int               lower_device_major;
 	OUT int               lower_device_minor;
 	OUT unsigned int      disk_size_user;
-	OUT int               do_panic;
+	OUT enum io_error_handler on_io_error;
 	OUT Drbd_CState       cstate;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
