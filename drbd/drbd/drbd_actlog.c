@@ -171,7 +171,11 @@ STATIC struct drbd_extent * drbd_al_evict(struct Drbd_Conf *mdev)
 	le=mdev->al_lru.prev;
 	list_del(le);
 	extent=list_entry(le, struct drbd_extent,accessed);
-	D_ASSERT(extent->pending_ios == 0);
+	if(extent->pending_ios) { 
+		// Ouch! In the least recently used extent there are still
+		// pending wirte requests. We have to sleep a bit...
+		return 0;
+	}
 
 	slot = al_hash_fn( mdev, extent->extent_nr);
 	if( slot == extent) {
@@ -199,7 +203,7 @@ STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
 
 	if(list_empty(&mdev->al_free)) {
 		extent=drbd_al_evict(mdev);
-		extent->extent_nr = AL_FREE;
+		if(extent) extent->extent_nr = AL_FREE;
 		return extent;
 	}
 
@@ -223,6 +227,8 @@ STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev,
 	}
 
 	n = drbd_al_get(mdev);
+	if(!n) return 0;
+
 	if ( n == slot) {
 		// we got the slot we wanted 
 		goto have_slot;
@@ -303,8 +309,8 @@ void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 
 	bh_kunmap(mdev->md_io_bh);
 
-	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1) + MD_AL_OFFSET +
-	  mdev->al_tr_pos ;
+	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1)+MD_AL_OFFSET+
+		mdev->al_tr_pos ;
 	
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
@@ -337,7 +343,15 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		int i;
 		for(i=0;i<3;i++) mdev->al_updates[i]=-1;
 
-		extent = drbd_al_add(mdev,enr);
+		while(1) {
+			extent = drbd_al_add(mdev,enr);
+			if(likely(extent)) break;
+			spin_unlock(&mdev->al_lock);
+			WARN("Have to wait for extent! "
+			     "You should increase 'al-extents'\n");
+			sleep_on(&mdev->al_wait);
+			spin_lock(&mdev->al_lock);
+		}
 		mdev->al_writ_cnt++;
 
 		update_al=1;
@@ -370,6 +384,10 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	D_ASSERT( extent->pending_ios > 0);
 	extent->pending_ios--;
+
+	if(extent->pending_ios == 0) {
+		wake_up(&mdev->al_wait);
+	}
 
 	spin_unlock(&mdev->al_lock);
 }

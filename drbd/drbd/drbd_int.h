@@ -593,6 +593,7 @@ struct Drbd_Conf {
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	int al_tr_cycle;  
 	int al_tr_pos;     // position of the next transaction in the journal
+	wait_queue_head_t al_wait;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif

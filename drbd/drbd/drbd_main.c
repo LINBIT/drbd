@@ -1153,6 +1153,7 @@ int __init drbd_init(void)
 		drbd_conf[i].al_writ_cnt = 0;
 		drbd_conf[i].al_tr_cycle = 0;
 		drbd_conf[i].al_tr_pos = 0;
+		init_waitqueue_head(&drbd_conf[i].al_wait);
 		drbd_conf[i].md_io_bh = 0;
 		init_MUTEX(&drbd_conf[i].md_io_mutex);
 		drbd_al_init(drbd_conf+i);
