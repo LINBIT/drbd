@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $Id: generic_test.pl,v 1.1.2.3 2004/06/07 10:16:39 lars Exp $
+# $Id: generic_test.pl,v 1.1.2.4 2004/07/07 08:56:26 lars Exp $
 use strict;
 use warnings;
 
@@ -43,7 +43,7 @@ pod2usage(1) if $help;
 
 our (
 	$left,$right,$link,
-	$r0, $r1, $fs0, $fs1,
+	$r0, $r1, $r2, $r3, $fs0, $fs1, $fs2, $fs3,
 );
 
 # CHANGE
@@ -70,8 +70,17 @@ new LGE_CTH::GenericTest {
 new LGE_CTH::GenericTest {
 	fs    => $fs1,
 	which => $test_name,
-};
+} if defined $fs1;
 
+new LGE_CTH::GenericTest {
+	fs    => $fs2,
+	which => $test_name,
+} if defined $fs2;
+
+new LGE_CTH::GenericTest {
+	fs    => $fs3,
+	which => $test_name,
+} if defined $fs3;
 
 	Run;
 

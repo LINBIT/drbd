@@ -1,5 +1,5 @@
 package LGE_CTH::Disk;
-# $Id: Disk.pm,v 1.1.2.2 2004/06/15 08:41:02 lars Exp $
+# $Id: Disk.pm,v 1.1.2.3 2004/07/07 08:56:26 lars Exp $
 
 use strict;
 use warnings;
@@ -83,7 +83,7 @@ sub fail {
 	my $me = shift;
 	my ($dev,$name,$node,$usize) = @{$me->{_config}}{qw(dev name node usize)};
 	my ($hostname,$admin_ip) = @{$node->{_config}}{qw(hostname admin_ip)};
-	my $blocks = $usize ? ( "blocks=" . ($usize*1024) ) : "";
+	my $blocks = $usize ? "blocks=$usize" : "";
 	my $cmd = "on $admin_ip: dmsetup_error name=$name dev=$dev $blocks\n";
 	$me->_generic_event("fail","down",$cmd);
 }
@@ -92,7 +92,7 @@ sub heal {
 	my $me = shift;
 	my ($dev,$name,$node,$usize) = @{$me->{_config}}{qw(dev name node usize)};
 	my ($hostname,$admin_ip) = @{$node->{_config}}{qw(hostname admin_ip)};
-	my $blocks = $usize ? ( "blocks=" . ($usize*1024) ) : "";
+	my $blocks = $usize ? "blocks=$usize" : "";
 	my $cmd = "on $admin_ip: dmsetup_linear name=$name dev=$dev $blocks\n";
 	$me->_generic_event("heal","up",$cmd);
 }
@@ -101,7 +101,7 @@ sub reconfigure {
 	my $me = shift;
 	my ($dev,$name,$node,$usize) = @{$me->{_config}}{qw(dev name node usize)};
 	my ($hostname,$admin_ip) = @{$node->{_config}}{qw(hostname admin_ip)};
-	my $blocks = $usize ? ( "blocks=" . ($usize*1024) ) : "";
+	my $blocks = $usize ? "blocks=$usize" : "";
 	my $cmd;
 	if ($me->{_status}->{status} eq 'down') {
         	$cmd = "on $admin_ip: dmsetup_error name=$name dev=$dev $blocks\n";

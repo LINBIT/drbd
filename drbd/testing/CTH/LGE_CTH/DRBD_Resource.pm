@@ -1,4 +1,4 @@
-# $Id: DRBD_Resource.pm,v 1.1.2.2 2004/06/15 08:41:02 lars Exp $
+# $Id: DRBD_Resource.pm,v 1.1.2.3 2004/07/07 08:56:26 lars Exp $
 package LGE_CTH::DRBD_ResourceInstance;
 use strict;
 use warnings;
@@ -198,7 +198,7 @@ sub CheckConfig {
 			name => $c->{name},
 			dev  => $lodev,
 			may_fail => \$n->{lo_may_fail},
-			usize => ($c->{usize} ? ($c->{usize}+128) : 0)
+			usize => ($c->{usize} ? ($c->{usize}+128*1024) : 0)
 		};
 		my $instance = new LGE_CTH::DRBD_ResourceInstance {
 			master_resource => $me,

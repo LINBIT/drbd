@@ -1,5 +1,5 @@
 package LGE_CTH;
-# $Id: LGE_CTH.pm,v 1.1.2.2 2004/06/03 10:00:08 lars Exp $
+# $Id: LGE_CTH.pm,v 1.1.2.3 2004/07/07 08:56:26 lars Exp $
 use strict;
 use warnings;
 use Carp;
@@ -94,7 +94,8 @@ sub kill_if_pending($) {
 	my $pid = $_[0];
 	return unless pid_is_pending $pid;
 	my $cb = delete $pending_events{$pid};
-	kill 'TERM' => $pid;
+	# kill 'TERM' => $pid;
+	kill -15 => $pid;
 	return undef if waitpid($pid,0) <= 0;
 	# die "THINKO" if $pid != waitpid ...
 	$cb->($?) if $cb;

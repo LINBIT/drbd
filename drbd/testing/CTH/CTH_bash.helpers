@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.11 2004/06/17 01:35:52 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.12 2004/07/07 08:56:26 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -21,8 +21,8 @@ clear_env()
 	  H_Disk=(name Node real_dev usize)
 	Fmt_Link="\n#\t(%-8s %-15s %-6s)"
 	  H_Link=(Node ip nic)
-	Fmt_Drbd="(%-8s %-5s %6s %-8s %7s\n#\t  %-8s %-15s %-24s %-8s\n#\t  %-8s %-15s %-24s %-8s)"
-	  H_Drbd=(name minor port link usize
+	Fmt_Drbd="(%-8s %-5s %6s %-8s %7s %2s\n#\t  %-8s %-15s %-24s %-8s\n#\t  %-8s %-15s %-24s %-8s)"
+	  H_Drbd=(name minor port link usize sync_group
 		left left_ip left_real_dev left_disk
 		right right_ip right_real_dev right_disk
 		conf)
@@ -82,7 +82,8 @@ drbd_to_env()
 	   port=$3
 	   link=$4
 	  USIZE=$5
-	shift 5;  left=$1  left_ip=$2  left_real_dev=$3  left_disk=$4
+     sync_group=$6
+	shift 6;  left=$1  left_ip=$2  left_real_dev=$3  left_disk=$4
 	shift 4; right=$1 right_ip=$2 right_real_dev=$3 right_disk=$4
 	   conf=$5
 	DEV=/dev/nb$minor
@@ -114,7 +115,7 @@ new_drbd()
 {
 	local name minor port left left_real_dev right right_real_dev link
 	local  left_ip  left_hostname  left_disk
-	local right_ip right_hostname right_disk conf usize
+	local right_ip right_hostname right_disk conf usize sync_group
 	          name=$1
 	         minor=$2
 		  port=$3
@@ -124,6 +125,7 @@ new_drbd()
 	right_real_dev=$7
 	          link=$8
 	         usize=$9
+	    sync_group=${10:- 1}
 
 	 left_ip=$(ip_of $link $left)  || return
 	right_ip=$(ip_of $link $right) || return
@@ -132,10 +134,10 @@ new_drbd()
 
 	let ID_DISK++
 	left_disk="Disk_$ID_DISK"
-	eval "$left_disk=( $name $left  $left_real_dev \"${usize:+$[usize+128]}\" )"
+	eval "$left_disk=( $name $left  $left_real_dev \"${usize:+$[usize+128*1024]}\" )"
 	let ID_DISK++
 	right_disk="Disk_$ID_DISK"
-       	eval "$right_disk=( $name $right $right_real_dev \"${usize:+$[usize+128]}\" )"
+       	eval "$right_disk=( $name $right $right_real_dev \"${usize:+$[usize+128*1024]}\" )"
 
 	# funny quoting with cat
 	conf=$(cat <<-___
@@ -168,8 +170,8 @@ new_drbd()
 		    }
 		    syncer {
 		        al-extents     257;
-		        group          1;
-		        rate           30M;
+		        group          $sync_group;
+		        rate           100M;
 		    }
 		    startup {
 		        degr-wfc-timeout 120;
@@ -185,6 +187,7 @@ new_drbd()
 		$port
 		$link
 		\"$usize\"
+		$sync_group
 		$left
 		$left_ip
 		$left_real_dev
@@ -202,16 +205,16 @@ blockwise_md5_pl()
 	: ${DEV:?unknown device} 
 	# we could exclude the meta data...
 	# RSIZE=$(fdisk -s $DEV)
-	# USIZE=${USIZE:+$[(USIZE+128)*1024]}
-	# (( USIZE <= RSIZE )) # assert USIZE <= RSIZE
+	# USIZE=${USIZE:+$[USIZE+128*1024]}
 	# : ${USIZE:=$RSIZE}
+	# (( USIZE <= RSIZE )) # assert USIZE <= RSIZE
 	# let "MLOC=USIZE-128*1024"
 	perl -e '
 	use Digest::MD5 "md5_hex";
 	$nr=0;
 	while (sysread(STDIN,$buf,4096)==4096) {
 		printf "%6d\t%s\n",$nr++,md5_hex($buf);
-	       '${USIZE:+"last if \$pos+=4 >= $USIZE*256;"}'
+	       '${USIZE:+"last if \$nr >= $[USIZE/4];"}'
 	}; print "\nDEVICE_SIZE\t$nr\tblocks \@ 4KB\n"; ' < $DEV
 }
 
@@ -286,14 +289,14 @@ Fail_Disk()
 {
 	local d=$1
 	disk_to_env $d
-	on ${!node}: dmsetup_error name=$name dev=$real_dev blocks=${USIZE:+$[USIZE*1024]}
+	on ${!node}: dmsetup_error name=$name dev=$real_dev blocks=$USIZE
 }
 
 Heal_Disk()
 {
 	local d=$1
 	disk_to_env $d
-	on ${!node}: dmsetup_linear name=$name dev=$real_dev blocks=${USIZE:+$[USIZE*1024]}
+	on ${!node}: dmsetup_linear name=$name dev=$real_dev blocks=$USIZE
 }
 
 # initial boot

@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.8 2004/06/17 01:35:52 lars Exp $
+# $Id: functions.sh,v 1.1.2.9 2004/07/07 08:56:26 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -271,9 +271,9 @@ drbd_append_config()							# {{{3
 	drbdadm dump $RES &>/dev/null
 
 	RSIZE=$(fdisk -s /dev/mapper/$NAME)
-	USIZE=${USIZE:+$[(USIZE+128)*1024]}
-	(( USIZE <= RSIZE )) # assert USIZE <= RSIZE
+	USIZE=${USIZE:+$[USIZE+128*1024]}
 	: ${USIZE:=$RSIZE}
+	(( USIZE <= RSIZE )) # assert USIZE <= RSIZE
 	let "MLOC=(USIZE & ~3) -128*1024"
 	echo -n "Wipeout GC and AL area on $HOSTNAME:$LO_DEV via /dev/mapper/$NAME for resource $RES"
 	# drbdadm down $RES
