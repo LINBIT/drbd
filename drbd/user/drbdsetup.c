@@ -238,6 +238,10 @@ int main(int argc, char** argv)
 	  if(err)
 	    {
 	      perror("ioctl() failed");
+	      if(errno==ENOTSUP)
+	        fprintf(stderr,"Can not start SyncAll. Not Primary!\n");
+	      if(errno==ENXIO)
+	        fprintf(stderr,"Can not start SyncAll. Not connected!\n");
 	      exit(20);
 	    }
          exit(0);        
@@ -247,6 +251,8 @@ int main(int argc, char** argv)
 	  if(err)
 	    {
 	      perror("ioctl() failed");
+	      if(errno==EBUSY)
+		fprintf(stderr,"Someone has opened the device!\n");
 	      exit(20);
 	    }
 	  exit(0);        
@@ -259,6 +265,10 @@ int main(int argc, char** argv)
       if(err)
 	{
 	  perror("ioctl() failed");
+	  if(errno==EBUSY)	    
+	    fprintf(stderr,"Someone has opened the device for RW access!\n");
+	  if(errno==EINPROGRESS)
+	    fprintf(stderr,"Resynchronization process currently running!\n");
 	  exit(20);
 	}
 

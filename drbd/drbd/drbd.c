@@ -1400,13 +1400,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			return -EINVAL;
 		}
 
-		/* TODO: chech this! We should check the count in the 
-		   inode! */
-		if (filp->f_count > 2) { /* drbdsetup and the module = 2 */
-			printk(KERN_ERR DEVICE_NAME 
-			       ": The lower dev open_count=%d!!\n",
-			       filp->f_count);
-		}
+		/* TODO: 
+		         We should warn the user if the LL_DEV is
+			 used already. E.g. some FS mounted on it.
+		*/
 
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_thread_stop(&drbd_conf[minor].syncer);
@@ -1464,8 +1461,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);
 		drbd_free_resources(minor);
-		if (drbd_conf[minor].mbds_id)
-		      drbd_conf[minor].mops->cleanup(drbd_conf[minor].mbds_id);
+		if (drbd_conf[minor].mbds_id) {
+			drbd_conf[minor].mops->cleanup(drbd_conf[minor].mbds_id);
+			drbd_conf[minor].mbds_id=0;
+		}
 
 		break;
 
@@ -1485,12 +1484,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if( drbd_conf[minor].state != Primary) {
 			printk(KERN_ERR DEVICE_NAME 
 			       ": Can not start SyncAll. not Primary!\n");
-			break;
+			return -ENOTSUP;
 		}
 		if( drbd_conf[minor].cstate != Connected) {
 			printk(KERN_ERR DEVICE_NAME 
-			       ": Can not start SyncAll. not connected!\n");
-			break;
+			       ": Can not start SyncAll. Not connected!\n");
+		        return -ENXIO;
 		}
 		set_cstate(&drbd_conf[minor],SyncingAll);
 		drbd_send_cstate(&drbd_conf[minor]);
