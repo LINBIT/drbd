@@ -73,13 +73,14 @@ HOST=`hostname -s`
 # the exit value of [ ... ]. That was a dumb one... :)
 RETVAL=0	# this means there were errors
 RV=0		# this means there were errors in the current device
+MINOR_COUNT=`echo $DEVICES | wc --words | sed -e s/\ //g`
 
 # See how we were called.
 case "$1" in
   start)
   	# use -s in modprobe/rmmod to keep errors in the logs
 	action "Loading DRBD module" /sbin/modprobe -s drbd \
-            minor_count=`echo $DEVICES | wc --words` 
+            minor_count=$MINOR_COUNT
 	[ $? -ne 0 ] && exit 1
 
 	for D in $DEVICES; do
@@ -89,11 +90,19 @@ case "$1" in
 		SIZE_OP="-d $SIZE";
 	    fi
 
+	    if [ -z "$MASTER_IF" ]; then
+                MASTER_IF=$MASTER_NODE;
+            fi
+
+	    if [ -z "$SLAVE_IF" ]; then
+                SLAVE_IF=$SLAVE_NODE;
+            fi
+
 	    if [ "$HOST" = "`echo $MASTER_NODE | cut -d: -f1`" ]; then
 
 		action "Configuring DRBD resource $D" \
 		    /usr/sbin/drbdsetup $MASTER_DEVICE $MASTER_PARTITION \
-		    $PROTOCOL $MASTER_NODE $SLAVE_NODE $SIZE_OP $OPTIONS 
+		    $PROTOCOL $MASTER_IF $SLAVE_IF $SIZE_OP $OPTIONS 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
@@ -107,13 +116,13 @@ case "$1" in
 
 		action "Configuring DRBD resource $D" \
 		    /usr/sbin/drbdsetup $SLAVE_DEVICE $SLAVE_PARTITION \
-		    $PROTOCOL $SLAVE_NODE $MASTER_NODE $SIZE_OP $OPTIONS
+		    $PROTOCOL $SLAVE_IF $MASTER_IF $SIZE_OP $OPTIONS
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
 		if [ $RV -eq 0 ]; then
 			# don't wait if there was an error in this device
-			action "Waiting for DRBD resource $D to resynchonize" \
+			action "Waiting for DRBD resource $D to resynchronize" \
 			    /usr/sbin/drbdsetup $SLAVE_DEVICE WAIT
 		fi
 
@@ -150,3 +159,4 @@ case "$1" in
 esac
 
 exit $RETVAL
+

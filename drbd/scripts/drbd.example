@@ -22,9 +22,21 @@
 
 # master and slave addr addr[:port]
 # default port: 7788
-# Important: don't use domain names here, only the hostnames/IPs
+# Important: don't use domain names here, only the hostnames 
+# as reported by hostname -s
 MASTER_NODE=ha1
 SLAVE_NODE=ha2
+
+
+# If you have machines with multiple NICs, you may want to specify
+# the interface by it's IP address here. 
+#
+# If you machines only have one NIC do not set these.
+#
+# If you use these fields, put any port identifies (:[0-9]+) here, you
+# do not need to specify them at the *_NODE entries.
+#MASTER_IF=10.0.0.3
+#SLAVE_IF=10.0.0.4
 
 # Options:
 #       -t --timeout  val
