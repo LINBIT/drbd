@@ -936,7 +936,7 @@ struct bm_extent {
 
 /* thus many _storage_ sectors are described by one bit */
 #define BM_SECT_TO_BIT(x)   ((x)>>(BM_BLOCK_SIZE_B-9))
-#define BM_BIT_TO_SECT(x)   ((x)<<(BM_BLOCK_SIZE_B-9))
+#define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SIZE_B-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
 /* bit to represented kilo byte conversion */
