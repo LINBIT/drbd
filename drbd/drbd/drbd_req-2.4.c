@@ -88,7 +88,8 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	kfree(req); /* frees also the temporary bh */
+	kmem_cache_free(bh_cachep, req->bh);
+	mempool_free(req,drbd_request_mempool);
 
 	if(wake_asender) {
 		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
@@ -266,8 +267,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	// Now its clear that we have to do a mirrored write:
 
-	req = kmalloc(sizeof(struct buffer_head)+
-		      sizeof(drbd_request_t), GFP_DRBD);
+	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
+
 	if (!req) {
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: could not kmalloc() nbh\n",(int)(mdev-drbd_conf));
@@ -275,7 +276,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		return 0;
 	}
 
-	nbh = (struct buffer_head*)(((char*)req)+sizeof(drbd_request_t));
+	nbh = kmem_cache_alloc(bh_cachep, GFP_DRBD);
 	
 	drbd_init_bh(nbh, bh->b_size);
 

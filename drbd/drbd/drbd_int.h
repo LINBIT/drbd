@@ -30,6 +30,7 @@
 #include <linux/timer.h>
 #include <linux/version.h>
 #include <linux/list.h>
+#include "mempool.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 typedef unsigned long sector_t;
@@ -477,10 +478,12 @@ extern sector_t bm_get_sector(struct BitMap* sbm,int* size);
 extern void bm_reset(struct BitMap* sbm);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
 extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
+extern void drbd_queue_signal(int signal,struct task_struct *task);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
-extern void drbd_queue_signal(int signal,struct task_struct *task);
+extern kmem_cache_t *drbd_request_cache;
+extern mempool_t *drbd_request_mempool;
 
 /* drbd_dsender.c */
 extern int drbd_dsender(struct Drbd_thread *thi);

@@ -102,6 +102,8 @@ STATIC int *drbd_sizes;
 struct Drbd_Conf *drbd_conf;
 int minor_count=2;
 int disable_io_hints=0;
+kmem_cache_t *drbd_request_cache;
+mempool_t *drbd_request_mempool;
 
 STATIC struct block_device_operations drbd_ops = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,10)
@@ -1043,6 +1045,21 @@ int __init drbd_init(void)
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
 
+	drbd_request_cache = kmem_cache_create("drbd_request_cache",
+					       sizeof(drbd_request_t),
+					       0, SLAB_NO_REAP, 
+					       NULL, NULL);
+	if (drbd_request_cache == NULL)
+		return -ENOMEM;
+
+	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
+					      mempool_alloc_slab,
+					      mempool_free_slab,
+					      drbd_request_cache); 
+
+	if (drbd_request_mempool == NULL)
+		return -ENOMEM;
+
 	return 0;
 }
 
@@ -1112,6 +1129,9 @@ void cleanup_module()
 	kfree(drbd_blocksizes);
 	kfree(drbd_sizes);
 	kfree(drbd_conf);
+
+	mempool_destroy(drbd_request_mempool);
+	kmem_cache_destroy(drbd_request_cache);
 }
 
 

@@ -41,7 +41,6 @@
 #endif
 
 #include <asm/uaccess.h>
-#include <asm/types.h>
 #include <net/sock.h>
 #include <linux/version.h>
 #include <linux/fs.h>
