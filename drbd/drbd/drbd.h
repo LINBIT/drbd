@@ -149,22 +149,21 @@ typedef enum {
   WriteAck,     /* Used in protocol C */
   BarrierAck,  
   ReportParams,
-  BlkSizeChanged,
   CStateChanged
 } Drbd_Packet_Cmd;
 
 typedef enum { Primary, Secondary } Drbd_State;
 
 typedef enum { 
-  Unconfigured, 
-  Unconnected, 
-  WFConnection,
-  WFReportParams,
-  SyncingAll,
-  SyncingQuick,
-  Connected,
-  Timeout,
-  BrokenPipe
+  Unconfigured   = 1,
+  Unconnected    = 2, 
+  Timeout        = 3,
+  BrokenPipe     = 4,
+  WFConnection   = 5,
+  WFReportParams = 1000,
+  Connected      = 1001,
+  SyncingAll     = 1002,
+  SyncingQuick   = 1003
 } Drbd_CState; 
 
 #define DRBD_MAGIC 0x83740267

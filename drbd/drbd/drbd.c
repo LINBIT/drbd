@@ -176,7 +176,7 @@ struct Drbd_Conf {
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 	      Drbd_Packet* header, size_t header_size, 
 	      void* data, size_t data_size);
-int drbd_send_param(int minor, int cmd);
+int drbd_send_param(int minor);
 void drbd_thread_start(struct Drbd_thread *thi);
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 
@@ -709,7 +709,7 @@ int drbd_ll_blocksize(int minor)
 	return size;
 }
 
-int drbd_send_param(int minor, int cmd)
+int drbd_send_param(int minor)
 {
 	Drbd_Parameter_Packet param;
 	int err;
@@ -728,7 +728,7 @@ int drbd_send_param(int minor, int cmd)
 	param.h.version = cpu_to_be32(MOD_VERSION);
 
 	down(&drbd_conf[minor].send_mutex);
-	err = drbd_send(&drbd_conf[minor], cmd,(Drbd_Packet*)&param, 
+	err = drbd_send(&drbd_conf[minor], ReportParams, (Drbd_Packet*)&param, 
 			sizeof(param),0,0);
 	up(&drbd_conf[minor].send_mutex);
 	
@@ -855,8 +855,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	int err;
 
 	if (!mdev->sock) return -1000;
-	if (mdev->cstate == Timeout || 
-	    mdev->cstate == BrokenPipe) return -1001;
+	if (mdev->cstate < WFReportParams) return -1001;
 
 	header->magic  =  cpu_to_be32(DRBD_MAGIC);
 	header->command = cpu_to_be16(cmd);
@@ -963,7 +962,7 @@ void drbd_a_timeout(unsigned long arg)
 
 	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
 
-	if(drbd_conf[thi->minor].cstate == Connected) {
+	if(drbd_conf[thi->minor].cstate >= Connected) {
 		set_cstate(&drbd_conf[thi->minor],Timeout);
 		drbd_thread_restart_nowait(thi);
 	}
@@ -1023,7 +1022,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 
 	end_it_unlocked:
 
-	if(mdev->state == Primary && mdev->cstate != Unconnected) {
+	if(mdev->state == Primary && mdev->cstate >= Connected) {
 	  /* If we are unconnected we may not call tl_dependece, since
 	     then this call could be from tl_clear(). => spinlock deadlock!
 	  */
@@ -1099,18 +1098,13 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		int new_blksize;
 
 		spin_unlock_irq(&io_request_lock);
-		printk(KERN_INFO DEVICE_NAME
-		       ": Block size change detected!\n");
 
 		new_blksize = blksize_size[MAJOR_NR][minor];
 		set_blocksize(drbd_conf[minor].lo_device, new_blksize);
 		drbd_conf[minor].blk_size_b = drbd_log2(new_blksize);
 
-		/* TODO: Send only if connected! */
-		if (drbd_conf[minor].state == Primary)
-			if (drbd_send_param(minor, BlkSizeChanged) < 0)
-				printk(KERN_ERR DEVICE_NAME
-				       ": drbd_send_param() failed!\n");
+		printk(KERN_INFO DEVICE_NAME
+		       ": Block size change detected! (%d)\n",new_blksize);
 
 		spin_lock_irq(&io_request_lock);
 	}
@@ -1141,10 +1135,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		sending = 0;
 
 		if (req->cmd == WRITE && drbd_conf[minor].state == Primary) {
-			if ( (drbd_conf[minor].cstate == Connected)
-			     || (drbd_conf[minor].cstate == SyncingQuick) 
-			     || (drbd_conf[minor].cstate == SyncingAll
-				 && req->sector > drbd_conf[minor].synced_to) )
+			if ( drbd_conf[minor].cstate >= Connected
+			     && req->sector > drbd_conf[minor].synced_to) 
 				sending = 1;
 		}
 
@@ -1263,8 +1255,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		/* Do not allow the state to change during resync */
 		if (drbd_conf[minor].cstate == SyncingAll
 		    || drbd_conf[minor].cstate == SyncingQuick)
-			/* Maybe -EBUSY is not the most appropriate, but who knows? */
 			return -EBUSY;
+	       /* Maybe -EBUSY is not the most appropriate, but who knows? */
+
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_conf[minor].state = (Drbd_State) arg;
 
@@ -1273,8 +1266,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		/* Only report the state change immediately if connected */
 		/* There is a race here somewhere without the if */
-		if (drbd_conf[minor].cstate == Connected)
-			drbd_send_param(minor, ReportParams);
+		if (drbd_conf[minor].cstate >= Connected)
+			drbd_send_param(minor);
 
 		        /*printk(KERN_DEBUG DEVICE_NAME ": set_state(%d)\n",
 			  drbd_conf[minor].state);*/
@@ -1757,7 +1750,7 @@ int drbd_connect(int minor)
 
 	drbd_thread_start(&drbd_conf[minor].asender);
 
-	err = drbd_send_param(minor, ReportParams);
+	err = drbd_send_param(minor);
 	set_cstate(&drbd_conf[minor],WFReportParams);
 
 	return 1;
@@ -1846,6 +1839,12 @@ inline int receive_data(int minor,int data_size)
 	  minor,drbd_conf[minor].blk_size_b); 
 	*/
 	block_nr = be64_to_cpu(header.block_nr);
+
+	if (data_size != (1 << drbd_conf[minor].blk_size_b)) {
+		set_blocksize(MKDEV(MAJOR_NR, minor), data_size);
+		set_blocksize(drbd_conf[minor].lo_device,data_size);
+		drbd_conf[minor].blk_size_b = drbd_log2(data_size);
+	}
 
 	bh = getblk(MKDEV(MAJOR_NR, minor), block_nr,data_size);
 
@@ -2018,35 +2017,29 @@ inline int receive_param(int minor,int command)
 		return FALSE;
 	}
 
-	if(command == BlkSizeChanged ) {
-	        blksize = be32_to_cpu(param.blksize);
-	} else {
-	        if (blk_size[MAJOR(ll_dev)]) {
-		        blk_size[MAJOR_NR][minor] =
-			  min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
-			      be64_to_cpu(param.size));
-			printk(KERN_INFO DEVICE_NAME
-			       ": agreed size = %d KB\n",
-			       blk_size[MAJOR_NR][minor]);
-			if(drbd_conf[minor].conf.disk_size &&
-			   (drbd_conf[minor].conf.disk_size != 
-			   blk_size[MAJOR_NR][minor])) {
-				printk(KERN_ERR DEVICE_NAME
-				       ": Your size hint is bogus! "
-				       "change it to %d\n",
-				       blk_size[MAJOR_NR][minor]);
-				blk_size[MAJOR_NR][minor]=
-					drbd_conf[minor].conf.disk_size;
-				set_cstate(&drbd_conf[minor],Unconfigured);
-				return FALSE;
-			}
-		} else {
-		        blk_size[MAJOR_NR][minor] = 0;
-			printk(KERN_ERR DEVICE_NAME"LL Device has no size!\n");
-		}
-		blksize = max(be32_to_cpu(param.blksize),
-			      drbd_ll_blocksize(minor));
+        if (!blk_size[MAJOR(ll_dev)]) {
+		blk_size[MAJOR_NR][minor] = 0;
+		printk(KERN_ERR DEVICE_NAME": LL Device has no size!\n");
+		return FALSE;
 	}
+
+	blk_size[MAJOR_NR][minor] =
+		min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
+		    be64_to_cpu(param.size));
+
+	if(drbd_conf[minor].conf.disk_size &&
+	   (drbd_conf[minor].conf.disk_size != blk_size[MAJOR_NR][minor])) {
+		printk(KERN_ERR DEVICE_NAME": Your size hint is bogus!"
+		       "change it to %d\n",blk_size[MAJOR_NR][minor]);
+		blk_size[MAJOR_NR][minor]=drbd_conf[minor].conf.disk_size;
+		set_cstate(&drbd_conf[minor],Unconfigured);
+		return FALSE;
+	}
+
+	printk(KERN_INFO DEVICE_NAME ": agreed size = %d KB\n",
+	       blk_size[MAJOR_NR][minor]);
+
+	blksize = max(be32_to_cpu(param.blksize),drbd_ll_blocksize(minor));
 
 	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
 	set_blocksize(drbd_conf[minor].lo_device,blksize);
@@ -2115,7 +2108,6 @@ void drbdd(int minor)
 		        if (!receive_barrier_ack(minor)) goto out;
 			break;
 
-		case BlkSizeChanged:
 		case ReportParams:
 		        if (!receive_param(minor,be16_to_cpu(header.command)))
 			        goto out;
