@@ -1,6 +1,9 @@
-0.6.1  (api:58/proto:58)
+0.6.1  (api:58/proto:60)
 -----
 Since the last one should have been 0.6, this is 0.6.1:
+  *) devfs support by Lelik P.Korchagin <lelik@price.ru>.
+  *) Fixed a bug that could crash a task in kernel space on the primary 
+     in the moment the secondary leaves the cluster.
   *) A few SMP-only bugs removed.
   *) The state files are now written with O_SYNC.
   *) Droped the postponepackets; Checkeing the liveliness via a second

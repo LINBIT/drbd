@@ -815,8 +815,6 @@ inline int receive_param(int minor,int command)
 	}
 
 	drbd_conf[minor].o_state = be32_to_cpu(param.state);
-	// BUG: move this down, after set_cstate() ??
-	// Should be fixed now.
 
 	if (drbd_conf[minor].state == Secondary) {
 		/* Secondary has to adopt primary's gen_cnt. */

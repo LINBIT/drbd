@@ -319,10 +319,6 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
    that IO is complete and that drbd_end_req() should not be called
    in case tl_clear has to be called due to interruption of the 
    communication) 
-   BUG: I need to make shure that the bit in the bitmap gets set, therefore
-        I need to have some way of knowing the sectornumber/blocknr at 
-        the time tl_clear is called.
-	Should be fixed. Test it.
 */
 int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
