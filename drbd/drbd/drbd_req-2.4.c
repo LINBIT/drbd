@@ -139,14 +139,14 @@ STATIC struct Pending_read*
 drbd_find_read(unsigned long block_nr, struct list_head *in)
 {
 	struct list_head *le;
-	struct Pending_read *pr=NULL;
+	struct Pending_read *pr;
 	
 	list_for_each(le,in) {
 		pr = list_entry(le, struct Pending_read, list);
-		if(pr->d.block_nr == block_nr) break;
+		if(pr->d.block_nr == block_nr) return pr;
 	}
 
-	return pr;
+	return NULL;
 }
 
 STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
