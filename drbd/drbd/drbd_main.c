@@ -1275,7 +1275,7 @@ void drbd_md_write(int minor)
 	buffer[MagicNr]=cpu_to_be32(DRBD_MAGIC);
 	
 	sprintf(fname,DRBD_MD_FILES,minor);
-	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC|O_DSYNC,00600);
+	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC|O_SYNC,00600);
 	if(IS_ERR(fp)) goto err;
         oldfs = get_fs();
         set_fs(get_ds());
