@@ -315,7 +315,6 @@ ONLY_IN_26({
 	q->max_segment_size  = min((unsigned)PAGE_SIZE,b->max_segment_size);
 	q->hardsect_size     = max((unsigned short)512,b->hardsect_size);
 	q->seg_boundary_mask = b->seg_boundary_mask;
-	q->merge_bvec_fn     = drbd_merge_bvec_fn;
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
 })
 #undef min_not_zero

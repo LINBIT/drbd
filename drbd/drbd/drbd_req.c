@@ -132,29 +132,6 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	return rv;
 }
 
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
-int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv)
-{
-	drbd_dev * const mdev = q->queuedata;
-	sector_t sector = bio->bi_sector;
-	int lo_max = PAGE_SIZE, max = PAGE_SIZE;
-	const unsigned long chunk_sectors = AL_EXTENT_SIZE >> 9;
-
-	D_ASSERT(bio->bi_size == 0);
-
-	if (mdev->backing_bdev) {
-		request_queue_t * const b = mdev->backing_bdev->bd_disk->queue;
-		if (b->merge_bvec_fn)
-			lo_max = b->merge_bvec_fn(b,bio,bv);
-	}
-	max = (chunk_sectors - (sector & (chunk_sectors - 1))) << 9;
-	max = min(lo_max,max);
-	// if (max < 0) max = 0; /* bio_add cannot handle a negative return */
-	return min((int)PAGE_SIZE,max);
-}
-#endif
-
 STATIC int
 drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			 sector_t sector, drbd_bio_t *bio)
@@ -332,11 +309,31 @@ int drbd_make_request_24(request_queue_t *q, int rw, struct buffer_head *bh)
 #else
 int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
+	unsigned int s_enr,e_enr;
 	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
 	if (mdev->cstate < StandAlone) {
 		drbd_bio_IO_error(bio);
 		return 0;
 	}
-	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,bio->bi_sector,bio);
+
+	s_enr = bio->bi_sector >> (AL_EXTENT_SIZE_B-9);
+	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> (AL_EXTENT_SIZE_B-9);
+	D_ASSERT(e_enr >= s_enr);
+
+	if(unlikely(s_enr != e_enr)) {
+		/* This bio crosses an AL_EXTENT boundary, so we have to
+		 * split it. [So far, only XFS is known to do this...]
+		 */
+		struct bio_pair *bp;
+		bp = bio_split(bio, bio_split_pool, 
+			       (e_enr<<(AL_EXTENT_SIZE_B-9)) - bio->bi_sector);
+		drbd_make_request_26(q,&bp->bio1);
+		drbd_make_request_26(q,&bp->bio2);
+		bio_pair_release(bp);
+		return 0;
+	}
+
+	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,
+					bio->bi_sector,bio);
 }
 #endif

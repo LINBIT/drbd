@@ -289,9 +289,6 @@ extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, in
 extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_read_bi_end_io     (struct bio *bio, unsigned int bytes_done, int error);
 
-// we should not accept bios crossing our extent boundaries!
-extern int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv);
-
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {

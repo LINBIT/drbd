@@ -1417,6 +1417,7 @@ ONLY_IN_26(
 			if(rr) ERR("%d: %d EEs in read list found!\n",i,rr);
 
 			D_ASSERT(mdev->ee_vacant==0);
+			D_ASSERT(list_empty(&mdev->data.work.q));
 
 			if (mdev->md_io_page)
 				__free_page(mdev->md_io_page);
