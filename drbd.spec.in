@@ -177,6 +177,18 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Aug 06 2004 14:44:31 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.2-1)
+  * Propper handling of backing storage devices that occasionally fail 
+    READA (=read ahead) requests. (E.g. LVM and MD)
+  * DRBD now fails READA requests itself, if a resynchronisation is running
+    and it would need to fetch the block from its peer.
+  * "drbdadm adjust" had a race, which caused random errors. ( Missing
+    waitpid() ). Fixed now.
+  * Popper substract SyncPause times from the syncer performance numbers.
+  * Fix to the syncer progress bar in /proc/drbd.
+  * Fix to debian build rules.
+
 * Fri Jul 30 2004 13:50:38 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.1-1)
   * Upgrade instructions for 0.6.x -> 0.7.0 and 0.7.0 -> 0.7.1
