@@ -1621,6 +1621,8 @@ int __init drbd_init(void)
 		drbd_dev    *mdev = &drbd_conf[i];
 		struct page *page = alloc_page(GFP_KERNEL);
 
+		drbd_init_set_defaults(mdev);
+
 NOT_IN_26(
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		mdev->this_bdev = MKDEV(MAJOR_NR, i);
@@ -1639,7 +1641,6 @@ NOT_IN_26(
 					 sizeof(struct lc_element), mdev);
 		if (!mdev->act_log) goto Enomem;
 
-		drbd_init_set_defaults(mdev);
 		init_MUTEX(&mdev->device_mutex);
 		if (!tl_init(mdev)) goto Enomem;
 		if (!drbd_init_ee(mdev)) goto Enomem;
@@ -2216,6 +2217,8 @@ int drbd_md_read(drbd_dev *mdev)
 		mdev->gen_cnt[i]=be32_to_cpu(buffer->gc[i]);
 	mdev->la_size = be64_to_cpu(buffer->la_size);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
+	if (mdev->sync_conf.al_extents < 7)
+		mdev->sync_conf.al_extents = 127;
 
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);

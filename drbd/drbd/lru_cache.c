@@ -49,6 +49,7 @@ struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
 	struct lc_element *e;
 	int i;
 
+	BUG_ON(!e_count);
 	e_size = max(sizeof(struct lc_element),e_size);
 	bytes  = e_size+sizeof(struct hlist_head);
 	bytes *= e_count;

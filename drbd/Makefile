@@ -21,7 +21,12 @@
 
 SUBDIRS     = user drbd scripts benchmark documentation #testing
 ALLSUBDIRS  = user drbd scripts benchmark documentation testing
-REL_VERSION = $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .*/\1/;p;q;}' drbd/linux/drbd_config.h)
+ifdef FORCE
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .Date: \(.\{10\}\).*/\1-\2/;s,/,,g;p;q;}' drbd_config.h)
+else
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .*/\1/;p;q;}' drbd/linux/drbd_config.h)
+endif
+DIST_VERSION := $(subst -,_,$(REL_VERSION))
 
 LN_S = ln -s
 RPMBUILD=rpmbuild
@@ -59,7 +64,6 @@ distclean:
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
 
-DIST_VERSION=$(subst -,_,$(REL_VERSION))
 check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
 	in_changelog=$$(sed -n -e '0,/^%changelog/d' \

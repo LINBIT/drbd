@@ -340,13 +340,20 @@ ONLY_IN_26({
 		drbd_write_bm(mdev);
 	}
 
+	D_ASSERT(mdev->sync_conf.al_extents >= 7);
+
 	if ( !mdev->act_log ||
 	     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )
 	{
 		struct lru_cache *n,*t;
 		n = lc_alloc(mdev->sync_conf.al_extents,
 			     sizeof(struct lc_element), mdev);
-		// FIXME if (n==NULL) scream out loud ...
+		ERR_IF (n==NULL) {
+			/* FIXME
+			 * allocation failed.
+			 * how do we cleanup this mess now?
+			 */
+		}
 		// FIXME if (still_in_use) BUG();
 		spin_lock_irq(&mdev->al_lock);
 		t = mdev->act_log;
@@ -658,6 +665,11 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	struct syncer_config sc;
 
 	if(copy_from_user(&sc,&arg->config,sizeof(sc))) return -EFAULT;
+
+	sc.use_csums = 0; // TODO, NYI
+	ERR_IF (sc.rate < 1) sc.rate = 1;
+	ERR_IF (sc.skip & ~1) sc.skip = !!sc.skip;
+	ERR_IF (sc.al_extents < 7) sc.al_extents = 127; // arbitrary minimum
 
 	mdev->sync_conf.rate       = sc.rate;
 	mdev->sync_conf.use_csums  = sc.use_csums;

@@ -60,7 +60,7 @@
 #define DEF_DEGR_WFC_TIMEOUT        60      // 60 Seconds
 #define DEF_SYNC_WFC_TIMEOUT         8      // 8 seconds
 #define DEF_SYNC_DEGR_WFC_TIMEOUT    4      // 4 seconds
-#define DEF_SYNC_AL_EXTENTS        128
+#define DEF_SYNC_AL_EXTENTS        127
 #define DEF_MAX_EPOCH_SIZE        2048      // entries
 #define DEF_MAX_BUFFERS           2048      // entries
 #define DEF_SNDBUF_SIZE           (2*65535) // ~128KB
@@ -834,6 +834,10 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	    }
 	}
     }
+
+
+  if (cn.config.al_extents < 7)
+	cn.config.al_extents = 127;
 
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&cn);
   if(err)

@@ -605,6 +605,8 @@ void verify_ips(struct d_resource* res)
   char *argv[] = { "/bin/bash", "-c", NULL, "drbdadm:verify_ips", NULL };
   int ex;
 
+  if (dry_run < 2) return;
+
   if (!(res && res->me   && res->me->address
 	    && res->peer && res->peer->address)) {
     fprintf(stderr, "OOPS, no resource info in verify_ips!\n");
@@ -792,7 +794,7 @@ int main(int argc, char** argv)
       switch(c)
 	{
 	case 'd':
-	  dry_run=1;
+	  dry_run++;
 	  break;
 	case 'c':
 	  if(!strcmp(optarg,"-")) {
