@@ -60,7 +60,6 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/slab.h>
-#include <linux/in.h>
 #include <linux/pkt_sched.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
@@ -73,15 +72,14 @@ static int errno;
 
 /* This maches BM_BLOCK_SIZE */
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-#include <linux/blkpg.h>
-#else
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,2,18)
 #define init_MUTEX_LOCKED( A )    (*(A)=MUTEX_LOCKED)
 #define init_MUTEX( A )           (*(A)=MUTEX)
 #define init_waitqueue_head( A )  (*(A)=0)
 typedef struct wait_queue*  wait_queue_head_t;
 #endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
 #define blkdev_dequeue_request(A) CURRENT=(A)->next
 #endif
 

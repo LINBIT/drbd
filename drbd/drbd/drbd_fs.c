@@ -36,12 +36,17 @@
 #endif
 
 #include <asm/uaccess.h>
+#include <linux/in.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/slab.h>
 #include "drbd.h"
 #include "drbd_int.h"
 #include "mbds.h"
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+#include <linux/blkpg.h>
+#endif 
 
 /*static */
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev, 
