@@ -1,11 +1,17 @@
 Latest:
 ------
- ChangeLog last updated: r1640 2004-11-16
+ ChangeLog last updated: r1661 2004-11-29
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
 0.7.6 (api:77/proto:74)
 -----
+ * Fixed bug that could cause a lockup of the receiver and
+   asender threads, the visible outcome was that the syncer
+   starves.
+ * Fixed a bug that under specific circumstandes caused that the
+   SyncSource node did not recognised that a resync process was
+   finished.
  * "drbdadm invalidate [res]" was not working correct, while
    "drbdadm invalidate_remote [res]" works. Fixed the former.
  * Make DRBD work on Linux-2.6.10-rc2 and newer: Replaced
@@ -23,7 +29,8 @@ Latest:
    module loading.
  * Improvements to the drbddisk script, to do the right thing
    in case Heartbeat is configured with a small timeout than DRBD.
- * Lots of updates to the way Debian's DRBD packages works.
+ * On request of the debian package maintainers, the debian directory
+   from SVN is not longer included in the tar.gz releases.
 
 0.7.5 (api:76/proto:74)
 -----

@@ -173,6 +173,14 @@ uname -r | grep BOOT ||
 %changelog
 * Tue Nov 16 2004 14:59:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.6-1)
+  * Fixed bug that could cause a lockup of the receiver and
+    asender threads, the visible outcome was that the syncer
+    starves.
+  * Fixed a bug that under specific circumstandes caused that the
+    SyncSource node did not recognised that a resync process was
+    finished.
+  * "drbdadm invalidate [res]" was not working correct, while
+    "drbdadm invalidate_remote [res]" works. Fixed the former.
   * Make DRBD work on Linux-2.6.10-rc2 and newer: Replaced
     sock_alloc() by sock_create(), replaced TASK_ZOMBIE by 
     EXIT_ZOMBIE.
@@ -188,7 +196,8 @@ uname -r | grep BOOT ||
     module loading.
   * Improvements to the drbddisk script, to do the right thing
     in case Heartbeat is configured with a small timeout than DRBD.
-  * Lots of updates to the way Debian's DRBD packages works.
+  * On request of the debian package maintainers, the debian directory
+    from SVN is not longer included in the tar.gz releases.
 
 * Fri Oct 1 2004 11:33:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.5-1)
