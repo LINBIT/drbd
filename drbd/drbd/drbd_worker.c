@@ -579,6 +579,20 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
+int w_try_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	int ok=1;
+
+	if(unlikely(cancel)) return ok;
+
+	down(&mdev->data.mutex);
+	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
+		ok = _drbd_send_barrier(mdev);
+	}
+	up(&mdev->data.mutex);
+
+	return ok;
+}
 
 STATIC void drbd_global_lock(void)
 {

@@ -1513,18 +1513,6 @@ int drbdd_init(struct Drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
-STATIC int drbd_try_send_barrier(drbd_dev *mdev)
-{
-	int rv=TRUE;
-	if(down_trylock(&mdev->data.mutex)==0) {
-		if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-			if(! _drbd_send_barrier(mdev)) rv=FALSE;
-		}
-		up(&mdev->data.mutex);
-	}
-	return rv;
-}
-
 STATIC int got_Ping(drbd_dev *mdev, Drbd_Header* h)
 {
 	return drbd_send_ping_ack(mdev);
@@ -1687,10 +1675,6 @@ int drbd_asender(struct Drbd_thread *thi)
 			// since sendmsg waited the other half already
 			mdev->meta.socket->sk->SK_(rcvtimeo) =
 				mdev->conf.timeout*HZ/20;
-		}
-
-		if (mdev->state == Primary) {
-			if(!drbd_try_send_barrier(mdev)) goto err;
 		}
 
 		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;

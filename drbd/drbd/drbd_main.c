@@ -939,6 +939,12 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 				break;
 		}
 		D_ASSERT(rv != 0);
+		if (rv == -EINTR ) {
+			ERR("Got a signal in drbd_send()!\n");
+			dump_stack();
+			drbd_flush_signals(current);
+			rv = 0;
+		}
 		if (rv < 0) break;
 		sent += rv;
 		iov.iov_base += rv;
@@ -1115,7 +1121,9 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->data.work.q);
 	INIT_LIST_HEAD(&mdev->meta.work.q);
 	INIT_LIST_HEAD(&mdev->resync_work.list);
+	INIT_LIST_HEAD(&mdev->barrier_work.list);
 	mdev->resync_work.cb = w_resync_inactive;
+	mdev->barrier_work.cb = w_try_send_barrier;
 	init_timer(&mdev->resync_timer);
 
 	init_waitqueue_head(&mdev->cstate_wait);

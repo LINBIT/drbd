@@ -110,8 +110,13 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	mempool_free(req,drbd_request_mempool);
 
  out:
-	if (test_bit(ISSUE_BARRIER,&mdev->flags))
-		wake_asender(mdev);
+	if (test_bit(ISSUE_BARRIER,&mdev->flags)) {
+		spin_lock_irqsave(&mdev->req_lock,flags);
+		if(list_empty(&mdev->barrier_work.list)) {
+			_drbd_queue_work(&mdev->data.work,&mdev->barrier_work);
+		}
+		spin_unlock_irqrestore(&mdev->req_lock,flags);
+	}
 }
 
 int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)

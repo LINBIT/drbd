@@ -620,7 +620,7 @@ struct Drbd_Conf {
 	struct drbd_socket data; // for data/barrier/cstate/parameter packets
 	struct drbd_socket meta; // for ping/ack (metadata) packets
 	volatile unsigned long last_received; // in jiffies, either socket
-	struct drbd_work  resync_work;
+	struct drbd_work  resync_work,barrier_work;
 	struct timer_list resync_timer;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	kdev_t backing_bdev;  // backing device
@@ -842,6 +842,7 @@ extern int w_e_end_rsdata_req    (drbd_dev *, struct drbd_work *, int);
 extern int w_resync_inactive     (drbd_dev *, struct drbd_work *, int);
 extern int w_resume_next_sg      (drbd_dev *, struct drbd_work *, int);
 extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
+extern int w_try_send_barrier    (drbd_dev *, struct drbd_work *, int);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
