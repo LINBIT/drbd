@@ -1373,29 +1373,6 @@ STATIC int receive_bitmap(struct Drbd_Conf* mdev)
 	return ret;
 }
 
-STATIC int receive_in_sync(struct Drbd_Conf* mdev)
-{     
-	Drbd_Data_P header;
-	struct Pending_read *pr;
-	
-	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
-		return FALSE;
-
-	pr = (struct Pending_read *)(long)header.block_id;
-	spin_lock(&mdev->pr_lock);
-	list_del(&pr->list);
-	spin_unlock(&mdev->pr_lock);
-	mempool_free(pr,drbd_pr_mempool);
-
-	dec_pending(mdev);
-	
-	// TODO BM_BLOCK_SIZE, should be replaced here ...
-	drbd_set_in_sync(mdev,be64_to_cpu(header.sector),BM_BLOCK_SIZE);
-
-	return TRUE;
-}
-
-
 STATIC void drbd_collect_zombies(int minor)
 {
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
@@ -1511,10 +1488,6 @@ STATIC void drbdd(int minor)
 		case RSDataRequest:
 			if(!receive_drequest(mdev,
 					     be16_to_cpu(header.command))) 
-				goto err;
-			break;
-		case BlockInSync:
-			if(!receive_in_sync(mdev))
 				goto err;
 			break;
 

@@ -570,22 +570,6 @@ int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 	return (ret == sizeof(head));
 }
 
-int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,u64 block_id)
-{
-	Drbd_Data_Packet head;
-	int ret;
-
-	head.p.command = cpu_to_be16(BlockInSync);
-	head.h.sector = cpu_to_be64(sector);
-	head.h.block_id = block_id;
-
-	down(&mdev->sock_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
-	up(&mdev->sock_mutex);
-
-	return (ret == sizeof(head));
-}
-
 // Used to send write requests bh->b_rsector !!
 int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 		     u64 block_id)
