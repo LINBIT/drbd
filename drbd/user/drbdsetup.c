@@ -41,9 +41,6 @@
 #include <stdlib.h>
 #include <linux/kdev_t.h>
 
-/* Copied from drbd.c (the module's source), this probably belongs in a header file */
-#define MAJOR_NR 43
-
 unsigned long resolv(const char* name)
 {
   unsigned long retval;
@@ -171,11 +168,6 @@ int main(int argc, char** argv)
     if(!S_ISBLK(drbd_stat.st_mode))
       {
 	fprintf(stderr, "%s is not a block device!\n", argv[1]);
-	exit(20);
-      }
-    if(MAJOR(drbd_stat.st_rdev) != MAJOR_NR)
-      {
-	fprintf(stderr, "%s is not a drbd device!\n", argv[1]);
 	exit(20);
       }
     err=ioctl(dtbd_fd,DRBD_IOCTL_GET_VERSION,&retval);
