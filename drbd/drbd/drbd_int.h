@@ -547,20 +547,6 @@ static inline void submit_bh(int rw, struct buffer_head * bh)
 	ll_rw_block(rw, 1, &bh);
 }
 
-static inline void drbd_set_bh(struct buffer_head *bh,
-			       unsigned long block,
-			       kdev_t dev)
-{
-	bh->b_blocknr=block;
-	bh->b_dev = dev;
-	init_waitqueue_head(&bh->b_wait);
-	/* in buffer.c function __wait_on_buffer() the wait_queue entry
-	   is not initialized. Therefore the waitqueue of the buffer head
-	   is fucked up after a call to wait_on_buffer().
-	   Initializing it here is a workaround.
-	 */
-}
-
 #else
 
 static inline void drbd_init_bh(struct buffer_head *bh,
@@ -579,6 +565,8 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr 
 }
 
+#endif
+
 static inline void drbd_set_bh(struct buffer_head *bh,
 			       unsigned long block,
 			       kdev_t dev)
@@ -586,7 +574,5 @@ static inline void drbd_set_bh(struct buffer_head *bh,
 	bh->b_blocknr=block;
 	bh->b_dev = dev;
 }
-#endif
-
 
 

@@ -445,13 +445,16 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 			list_add(le,&mdev->done_ee);
 			continue;
 		}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
+		init_waitqueue_head(&e->bh->b_wait);
+#endif
 		spin_unlock_irq(&mdev->ee_lock);
 		/*
 		printk(KERN_ERR DEVICE_NAME 
 		       "%d: Waiting for bh=%p, blocknr=%ld\n",
 		       (int)(mdev-drbd_conf),e->bh,e->bh->b_blocknr);
 		*/
-		wait_on_buffer(e->bh); // TODO: replace this with sleep_on()..
+		wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
 	}
 	spin_unlock_irq(&mdev->ee_lock);
