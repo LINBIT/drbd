@@ -127,7 +127,7 @@ drbd_find_read(sector_t sector, struct list_head *in)
 STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 {
 	struct Pending_read *pr;
-	pr = mempool_alloc(drbd_pending_read_mempool, GFP_DRBD);
+	pr = mempool_alloc(drbd_pr_mempool, GFP_DRBD);
 
 	if (!pr) {
 		printk(KERN_ERR DEVICE_NAME

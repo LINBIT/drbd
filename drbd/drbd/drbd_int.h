@@ -483,10 +483,10 @@ extern void drbd_queue_signal(int signal,struct task_struct *task);
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
 extern kmem_cache_t *drbd_request_cache;
-extern kmem_cache_t *drbd_pending_read_cache;
-extern kmem_cache_t *drbd_epoch_entry_cache;
+extern kmem_cache_t *drbd_pr_cache;
+extern kmem_cache_t *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
-extern mempool_t *drbd_pending_read_mempool;
+extern mempool_t *drbd_pr_mempool;
 
 /* drbd_dsender.c */
 extern int drbd_dsender(struct Drbd_thread *thi);

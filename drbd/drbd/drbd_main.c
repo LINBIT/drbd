@@ -114,9 +114,10 @@ struct Drbd_Conf *drbd_conf;
 int minor_count=2;
 int disable_io_hints=0;
 kmem_cache_t *drbd_request_cache;
-kmem_cache_t *drbd_pending_read_cache;
+kmem_cache_t *drbd_pr_cache;
+kmem_cache_t *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
-mempool_t *drbd_pending_read_mempool;
+mempool_t *drbd_pr_mempool;
 
 STATIC struct block_device_operations drbd_ops = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,10)
@@ -965,7 +966,42 @@ int __init drbd_init(void)
 	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	drbd_conf = kmalloc(sizeof(struct Drbd_Conf)*minor_count,GFP_KERNEL);
 
-	/* Initialize size arrays. */
+	drbd_request_cache = kmem_cache_create("drbd_req_cache",
+					       sizeof(drbd_request_t),
+					       0, SLAB_NO_REAP, 
+					       NULL, NULL);
+	if (drbd_request_cache == NULL)
+		return -ENOMEM;
+
+	drbd_pr_cache = kmem_cache_create("drbd_pr_cache",
+					  sizeof(struct Pending_read),
+					  0, SLAB_NO_REAP, 
+					  NULL, NULL);
+	if (drbd_pr_cache == NULL)
+		return -ENOMEM;
+
+	drbd_ee_cache = kmem_cache_create("drbd_ee_cache",
+					  sizeof(struct Tl_epoch_entry),
+					  0, SLAB_NO_REAP, 
+					  NULL, NULL);
+
+	if (drbd_ee_cache == NULL)
+		return -ENOMEM;
+
+
+	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
+					      mempool_alloc_slab,
+					      mempool_free_slab,
+					      drbd_request_cache); 
+	if (drbd_request_mempool == NULL)
+		return -ENOMEM;
+
+	drbd_pr_mempool = mempool_create(16, //TODO; reasonable value
+						   mempool_alloc_slab,
+						   mempool_free_slab,
+						   drbd_pr_cache); 
+	if (drbd_pr_mempool == NULL)
+		return -ENOMEM;
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_conf[i].sync_conf.rate=250;
@@ -1077,42 +1113,6 @@ int __init drbd_init(void)
 	unlock_kernel();
 #endif
 
-	drbd_request_cache = kmem_cache_create("drbd_request_cache",
-					       sizeof(drbd_request_t),
-					       0, SLAB_NO_REAP, 
-					       NULL, NULL);
-	if (drbd_request_cache == NULL)
-		return -ENOMEM;
-
-	drbd_pending_read_cache = kmem_cache_create("drbd_pending_read_cache",
-						 sizeof(struct Pending_read),
-						    0, SLAB_NO_REAP, 
-						    NULL, NULL);
-	if (drbd_pending_read_cache == NULL)
-		return -ENOMEM;
-
-	drbd_epoch_entry_cache = kmem_cache_create("drbd_epoch_entry_cache",
-						 sizeof(struct Tl_epoch_entry),
-						    0, SLAB_NO_REAP, 
-						    NULL, NULL);
-	if (drbd_epoch_entry_cache == NULL)
-		return -ENOMEM;
-
-
-	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
-					      mempool_alloc_slab,
-					      mempool_free_slab,
-					      drbd_request_cache); 
-	if (drbd_request_mempool == NULL)
-		return -ENOMEM;
-
-	drbd_pending_read_mempool = mempool_create(16, //TODO; reasonable value
-						   mempool_alloc_slab,
-						   mempool_free_slab,
-						   drbd_pending_read_cache); 
-	if (drbd_pending_read_mempool == NULL)
-		return -ENOMEM;
-
 	return 0;
 }
 
@@ -1203,10 +1203,10 @@ void cleanup_module()
 #endif
 
 	mempool_destroy(drbd_request_mempool);
-	mempool_destroy(drbd_pending_read_mempool);
+	mempool_destroy(drbd_pr_mempool);
 	kmem_cache_destroy(drbd_request_cache);
-	kmem_cache_destroy(drbd_pending_read_cache);
-	kmem_cache_destroy(drbd_epoch_entry_cache);
+	kmem_cache_destroy(drbd_pr_cache);
+	kmem_cache_destroy(drbd_ee_cache);
 }
 
 

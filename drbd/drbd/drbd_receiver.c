@@ -227,7 +227,7 @@ STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
 
 	for(i=0;i<number;i++) {
 	  
-		e = kmem_cache_alloc(drbd_epoch_entry_cache, GFP_KERNEL);
+		e = kmem_cache_alloc(drbd_ee_cache, GFP_KERNEL);
 		bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
 		
 		if( e == NULL || bh == NULL ) {
@@ -311,7 +311,7 @@ STATIC struct page* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
 		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
 		  (int)(mdev-drbd_conf),e);*/
 		kmem_cache_free(bh_cachep, e->bh);
-		kmem_cache_free(drbd_epoch_entry_cache, e);
+		kmem_cache_free(drbd_ee_cache, e);
 	} while(nbh != bh);
 
 	return page;
@@ -1041,7 +1041,7 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
 
-	mempool_free(pr,drbd_pending_read_mempool);
+	mempool_free(pr,drbd_pr_mempool);
 
 	return ok;
 }
@@ -1381,7 +1381,7 @@ STATIC int receive_in_sync(struct Drbd_Conf* mdev)
 	spin_lock(&mdev->pr_lock);
 	list_del(&pr->list);
 	spin_unlock(&mdev->pr_lock);
-	mempool_free(pr,drbd_pending_read_mempool);
+	mempool_free(pr,drbd_pr_mempool);
 
 	dec_pending(mdev);
 	
@@ -1420,7 +1420,7 @@ STATIC void drbd_fail_pending_reads(struct Drbd_Conf* mdev)
 		bh->b_end_io(bh,0);
 		dec_pending(mdev);
 
-		mempool_free(pr,drbd_pending_read_mempool);
+		mempool_free(pr,drbd_pr_mempool);
 	}
 
 	spin_lock(&mdev->pr_lock);
@@ -1433,7 +1433,7 @@ STATIC void drbd_fail_pending_reads(struct Drbd_Conf* mdev)
 		le = workset.next;
 		list_del(le);
 		pr = list_entry(le, struct Pending_read, list);
-		mempool_free(pr,drbd_pending_read_mempool);
+		mempool_free(pr,drbd_pr_mempool);
 	}
 }
 
