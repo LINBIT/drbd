@@ -1711,12 +1711,14 @@ int drbd_ack_sender(void *arg)
 	    /* printk(KERN_ERR DEVICE_NAME ": block=%ld state=%lX\n",
 	       epoch[i].bh->b_blocknr,epoch[i].bh->b_state); */
 
-	    if(buffer_uptodate(epoch[i].bh)) {
-	      drbd_send(&drbd_conf[minor], WriteAck, 0,
-			0,epoch[i].block_id,0);	  
-	      epoch[i].block_id=0;
-	      /* printk(KERN_ERR DEVICE_NAME ": sending WriteAck for %ld\n",
-		 epoch[i].bh->b_blocknr); */
+	    if(epoch[i].block_id) {
+	      if(buffer_uptodate(epoch[i].bh)) {
+		drbd_send(&drbd_conf[minor], WriteAck, 0,
+			  0,epoch[i].block_id,0);	  
+		epoch[i].block_id=0;
+		/* printk(KERN_ERR DEVICE_NAME ": sending WriteAck for %ld\n",
+		   epoch[i].bh->b_blocknr); */
+	      }
 	    }
 	  }
 	}
