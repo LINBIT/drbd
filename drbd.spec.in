@@ -40,7 +40,7 @@ high availability (HA) clusters.
 
 Authors:
 --------
-    Philipp Reisner <philipp.reisner@linbit.com> - Primary Author
+    Philipp Reisner <philipp.reisner@linbit.com>
     Lars Ellenberg  <l.g.e@web.de>
 
 #%package -n kernel%{?ksmp}-module-drbd
@@ -177,7 +177,26 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Fri Jul 16 2004 10:13:33 +0200 Philipp Reisner <phil@linbit.com>
+* Mon Jul 26 2004 18:39:38 +0200 Lars Ellenberg <l.g.e@web.de>
+- update to SVN revision http://svn.drbd.org/drbd/trunk@1456
 - drbd (0.7.0-1)
-  FIXME write changelog :^)
-
+  Drbd-0.7 was actually forked off from drbd-0.6.1 (actually -pre18). 
+  * Complete new way of doing resynchronisation. Does no longer need
+    to do tricks with the nice value, and delivers very good performace.
+  * Decoupling of role assignment (primary/secondary) from the direction
+    of resynchronisation. (Necessary for primary/primary)
+  * All "ack" and "ping" packets now go through the msock. 
+    (Prerequisite for primary/primary)
+  * Reworked a lot of internals to work with sector_t instead of
+    blocknumbers. DRBD works now with XFS, and will be complete
+    immune to changes in the block size.
+  * Reworked the tl_ code, the user no longer has to specify the size
+    for a preallocated transfer-log.
+  * Improved metadata; Ao the device size is now stored in metadata,
+    users no longer need to configure it.
+  * Online resizing via "drbdsetup resize"
+  * Resynchronisation groups "drbdsetup syncer -g"
+  * New (very short!) sys-v init scripts, new userland tool "drbdadm"
+  * Changes to the way we allocate memory. We want to survive hard OOM
+    situations. (partially done, partially ongoing work) 
+  * Implemented the Activity-Log and the persistent bitmap.
