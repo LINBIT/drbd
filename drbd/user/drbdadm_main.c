@@ -195,9 +195,10 @@ static int adm_dump(struct d_resource* res,char* unused)
   return 0;
 }
 
-static int sh_devices(struct d_resource* res,char* unused)
+static int sh_devices(struct d_resource* ignored,char* unused)
 {
-  while(1) {
+  struct d_resource *res,*t;
+  for_each_resource(res,t,config) {
     printf("%s",esc(res->name));
     res=res->next;
     if(res != config) printf(" ");
