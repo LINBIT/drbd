@@ -156,8 +156,7 @@ ONLY_IN_26(
 			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
 			INFO("size = %lu KB\n",size);
-		}
-		//#warning "FIXME else { error handling }"
+		} else ERR("BM resizing failed. Leaving size unchanged\n");
 	}
 
 	return rv;
@@ -508,10 +507,10 @@ FIXME
 
 int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 {
-
-  //#warning "FIXME actually must hold device_mutex!"
-
 	NOT_IN_26(int minor = mdev-drbd_conf;)
+
+	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
+
 	if ( (newstate & 0x3) == mdev->state ) return 0; /* nothing to do */
 
 	// exactly one of sec or pri. not both.
@@ -739,6 +738,7 @@ ONLY_IN_26(
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		//#warning "yet an other reason to serialize all state changes on a rw_semaphore"
+		// PRE: Please explain the issue.
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		break;
 

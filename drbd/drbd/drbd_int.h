@@ -318,33 +318,32 @@ typedef enum {
 	MAX_OPT_CMD,
 } Drbd_Packet_Cmd;
 
-// FIXME we should be able to define this away
-// no char* cmdname[], since I'm not sure the index is valid ...
 static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 {
-	switch (cmd) {
-	case Data            : return "Data";
-	case DataReply       : return "DataReply";
-	case RecvAck         : return "RecvAck";
-	case WriteAck        : return "WriteAck";
-	case Barrier         : return "Barrier";
-	case BarrierAck      : return "BarrierAck";
-	case ReportParams    : return "ReportParams";
-	case ReportBitMap    : return "ReportBitMap";
-	case Ping            : return "Ping";
-	case PingAck         : return "PingAck";
-	case BecomeSyncTarget: return "BecomeSyncTarget";
-	case BecomeSyncSource: return "BecomeSyncSource";
-	case BecomeSec       : return "BecomeSec";
-	case WriteHint       : return "WriteHint";
-	case DataRequest     : return "DataRequest";
-	case RSDataRequest   : return "RSDataRequest";
-	case SyncParam       : return "SyncParam";
-	case MAX_CMD         : return "MAX_CMD";
-	case MayIgnore       : return "MayIgnore";
-	case MAX_OPT_CMD     : return "MAX_OPT_CMD";
-	default              : return "Unknown";
-	}
+	static const char *cmdnames[] = {
+		[Data]             = "Data",
+		[DataReply]        = "DataReply",
+		[Barrier]          = "Barrier",
+		[ReportParams]     = "ReportParams",
+		[ReportBitMap]     = "ReportBitMap",
+		[BecomeSyncTarget] = "BecomeSyncTarget",
+		[BecomeSyncSource] = "BecomeSyncSource",
+		[BecomeSec]        = "BecomeSec",
+		[WriteHint]        = "WriteHint",
+		[DataRequest]      = "DataRequest",
+		[RSDataRequest]    = "RSDataRequest",
+		[SyncParam]        = "SyncParam",
+		[Ping]             = "Ping",
+		[PingAck]          = "PingAck",
+		[RecvAck]          = "RecvAck",
+		[WriteAck]         = "WriteAck",
+		[NegAck]           = "NegAck",
+		[NegDReply]        = "NegDReply",
+		[BarrierAck]       = "BarrierAck"
+	};
+
+	if(cmd < 0 || cmd > MAX_CMD) return "Unknown";
+	return cmdnames[cmd];
 }
 
 
@@ -862,7 +861,7 @@ extern int w_resume_next_sg      (drbd_dev* mdev, struct drbd_work *w);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
-extern void drbd_init_ee(drbd_dev* mdev);
+extern int drbd_init_ee(drbd_dev* mdev);
 extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
 extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
 extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
@@ -945,6 +944,15 @@ do {									\
 
 #include "drbd_compat_wrappers.h"
 
+
+static inline int semaphore_is_locked(struct semaphore* s) 
+{
+	if(!down_trylock(s)) {
+		up(s);
+		return 0;
+	}
+	return 1;
+}
 /* Returns the start sector for metadata, aligned to 4K
  * which happens to be the capacity we announce for
  * our lower level device if it includes the meta data

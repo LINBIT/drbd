@@ -89,8 +89,7 @@ STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
 #endif
 #define DEVICE_REQUEST drbd_do_request
 
-//#warning "FIXME review the MODULE_* macros below"
-MODULE_AUTHOR("Philipp Reisner <philipp.reisner@gmx.at>");
+MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
 MODULE_PARM(minor_count,"i");
@@ -133,12 +132,12 @@ STATIC struct block_device_operations drbd_ops = {
 int errno;
 
 /************************* The transfer log start */
-STATIC void tl_init(drbd_dev *mdev)
+STATIC int tl_init(drbd_dev *mdev)
 {
 	struct drbd_barrier *b;
 
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
-	// FIXME no mem ;-)
+	if(!b) return 0;
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
 	b->br_number=4711;
@@ -146,6 +145,8 @@ STATIC void tl_init(drbd_dev *mdev)
 
 	mdev->oldest_barrier = b;
 	mdev->newest_barrier = b;
+
+	return 1;
 }
 
 STATIC void tl_cleanup(drbd_dev *mdev)
@@ -1340,8 +1341,8 @@ NOT_IN_26(
 		if (!mdev->act_log) goto Enomem;
 
 		drbd_init_set_defaults(mdev);
-		tl_init(mdev);
-		drbd_init_ee(mdev);
+		if (!tl_init(mdev)) goto Enomem;
+		if (!drbd_init_ee(mdev)) goto Enomem;
 	}
 
 #if CONFIG_PROC_FS
@@ -1387,7 +1388,6 @@ NOT_IN_26(
 	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
@@ -1436,9 +1436,6 @@ void cleanup_module(void)
 {
 	int i;
 
-//#warning "FIXME increase module refcount with each setup device"
-	/* then you need to tear down all devices
-	 * before you can remove the module */
 	for (i = 0; i < minor_count; i++) {
 		drbd_set_state(drbd_conf+i,Secondary);
 		drbd_sync_me(drbd_conf+i);
@@ -1460,7 +1457,6 @@ void cleanup_module(void)
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH);
 	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);

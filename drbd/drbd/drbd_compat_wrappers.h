@@ -484,9 +484,6 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	bio->bi_end_io  = drbd_dio_end;
 	bio->bi_next    = 0;
 
-	// FIXME D_ASSERT(??)
-	// what else?
-
 	req->rq_status = RQ_DRBD_NOTHING;
 }
 

@@ -122,8 +122,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	int rlen, i;
 	const char *sn;
 
-	static const char *cstate_names[] =
-	{
+	static const char *cstate_names[] = {
 		[Unconfigured]   = "Unconfigured",
 		[StandAlone]     = "StandAlone",
 		[Unconnected]    = "Unconnected",
@@ -141,8 +140,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 		[PausedSyncS]    = "PausedSyncS",
 		[PausedSyncT]    = "PausedSyncT",
 	};
-	static const char *state_names[] =
-	{
+	static const char *state_names[] = {
 		[Primary]   = "Primary",
 		[Secondary] = "Secondary",
 		[Unknown]   = "Unknown"

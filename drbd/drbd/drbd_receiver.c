@@ -210,14 +210,15 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	return page;
 }
 
-void drbd_init_ee(drbd_dev *mdev)
+int drbd_init_ee(drbd_dev *mdev)
 {
 	while(mdev->ee_vacant < EE_MININUM ) {
 		if(!drbd_alloc_ee(mdev,GFP_USER)) {
 			ERR("Failed to allocate %d EEs !",EE_MININUM);
-			break;
+			return 0;
 		}
 	}
+	return 1;
 }
 
 int drbd_release_ee(drbd_dev *mdev,struct list_head* list)

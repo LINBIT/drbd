@@ -155,9 +155,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 #else
-//#warning "FIXME"
+
 /* used for synchronous meta data and bitmap IO
- * submitted by FIXME (I'd say worker only, but currently this is not true...)
+ * submitted by drbd_md_sync_page_io()
  */
 int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
