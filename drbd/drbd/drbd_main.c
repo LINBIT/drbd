@@ -927,6 +927,15 @@ void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
 	
+	for (i = 0; i < minor_count; i++) {
+		if(current == drbd_conf[i].receiver.task) {
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: send_write_hint in receivers context\n",
+			       (int)(mdev-drbd_conf));
+			return;
+		}
+	}
+	
 	drbd_send_cmd(mdev,WriteHint,0);
 	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }

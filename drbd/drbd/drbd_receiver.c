@@ -68,6 +68,14 @@
    a distributed deadlock. 
 
    Therefore calls to run_task_queue(&tq_disk) are avoided... 
+
+ [update:]
+   This would be true it I would still use the request_fn hook. But since
+   I use the make_request_fn hook on 2.4, the real reason the the deadlock
+   is that I am sending the write_hint packets off from tq_disk.
+
+   I can use run_task_queue(&tq_disk) again, and need only to fix 
+   drbd_send_write_hint().
 */
 
 static inline void drbd_flush_request_queue(kdev_t rdev)
@@ -77,13 +85,10 @@ static inline void drbd_flush_request_queue(kdev_t rdev)
 	q=blk_get_queue(rdev);
 	if(q->plug_tq.routine == NULL) {
 		/* LVM does not provide a function to unplug the devices.
-		   The way out is to run tq_disk and to disable DRBD's
-		   request_fns, this way we omit the deadlock and can be
-		   shure that we flushed the real disk devices. */
-		q=BLK_DEFAULT_QUEUE(MAJOR_NR);//This is drbd's request queue.
-		q->plug_tq.routine=NULL;
+		   To avoid deadlocks the drbd_send_write_hint() function
+		   checks against beeing called from receiver's context */
+
 		run_task_queue(&tq_disk);
-		q->plug_tq.routine=generic_unplug_device;
 		return;
 	}
 	q->plug_tq.routine(q); // This is usually generic_unplug_device()
