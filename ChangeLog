@@ -4,6 +4,12 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.7.10 (api:77/proto:74)
+-----
+ * 0.7.9 had a memory corruption bug. This time I did
+   the cone_bio() fix myself, and this release is supposed
+   to work with SLES9 SP1, Linux-2.6.11 and Linux-2.6.12.
+
 0.7.9 (api:77/proto:74)
 -----
  * A fix that makes DRBD work on SLES9 SP1 kernel, and 
