@@ -26,7 +26,15 @@
 #include <linux/timer.h>
 #include <linux/version.h>
 #include <linux/list.h>
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
+#define completion semaphore
+#define init_completion(A) init_MUTEX_LOCKED(A)
+#define wait_for_completion(A) down(A)
+#define complete(A) up(A)
+#else
 #include <linux/completion.h>
+#endif
 
 /* #define MAJOR_NR 240 */
 #define MAJOR_NR 43
@@ -399,6 +407,55 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 }
 
 
+/* drbd_proc.c  */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+extern struct proc_dir_entry *drbd_proc;
+#else
+extern struct proc_dir_entry drbd_proc_dir;
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
+#define min_t(type,x,y) \
+        ({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
+#define max_t(type,x,y) \
+        ({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define SIGSET_OF(P) (&(P)->signal)
+#else
+#define SIGSET_OF(P) (&(P)->pending.signal)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define del_timer_sync(A) del_timer(A)
+//typedef	struct wait_queue wait_queue_t;
+#ifndef init_waitqueue_entry
+#define init_waitqueue_entry(A,B) (A)->task=(B)
+#endif
+#define wq_write_lock_irqsave(A,B) write_lock_irqsave(A,B)
+#define wq_write_lock_irq(A) write_lock_irq(A)
+#define wq_write_unlock(A) write_unlock(A)
+#define wq_write_unlock_irqrestore(A,B) write_unlock_irqrestore(A,B)
+#endif
+
+#ifdef __arch_um__
+#define waitpid(A,B,C) 0
+#endif
+
+#if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
+#define bh_kmap(bh)	((bh)->b_data)
+#define bh_kunmap(bh)	do { } while (0)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,13)
+#define MODULE_LICENSE(L) 
+#endif
+
+#ifndef list_for_each
+#define list_for_each(pos, head) \
+        for(pos = (head)->next; pos != (head); pos = pos->next)
+#endif
 
 /*
   There was a race condition between the syncer's and applications' write
@@ -459,48 +516,3 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 		}
 	}
 }
-
-
-/* drbd_proc.c  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-extern struct proc_dir_entry *drbd_proc;
-#else
-extern struct proc_dir_entry drbd_proc_dir;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
-#define min_t(type,x,y) \
-        ({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
-#define max_t(type,x,y) \
-        ({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-#define SIGSET_OF(P) (&(P)->signal)
-#else
-#define SIGSET_OF(P) (&(P)->pending.signal)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-#define del_timer_sync(A) del_timer(A)
-//typedef	struct wait_queue wait_queue_t;
-#define init_waitqueue_entry(A,B) (A)->task=(B)
-#define wq_write_lock_irqsave(A,B) write_lock_irqsave(A,B)
-#define wq_write_lock_irq(A) write_lock_irq(A)
-#define wq_write_unlock(A) write_unlock(A)
-#define wq_write_unlock_irqrestore(A,B) write_unlock_irqrestore(A,B)
-#endif
-
-#ifdef __arch_um__
-#define waitpid(A,B,C) 0
-#endif
-
-#if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
-#define bh_kmap(bh)	((bh)->b_data)
-#define bh_kunmap(bh)	do { } while (0)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,13)
-#define MODULE_LICENSE(L) 
-#endif
-

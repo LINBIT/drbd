@@ -174,13 +174,17 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 /*static */ void drbd_do_request()
 {
 	struct buffer_head *bh;
-	int size_kb=1<<(drbd_conf[minor].blk_size_b-10);
+	int size_kb;
 	int minor = 0;
 	struct request *req;
 	int sending;
+	unsigned long flags;
+	struct Drbd_Conf *mdev;
 
 	minor = MINOR(CURRENT->rq_dev);
-
+	size_kb=1<<(drbd_conf[minor].blk_size_b-10);
+	mdev = &drbd_conf[minor];
+	
 	if (blksize_size[MAJOR_NR][minor] !=
 	    (1 << drbd_conf[minor].blk_size_b)) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */
