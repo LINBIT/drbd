@@ -1313,12 +1313,12 @@ int drbd_syncer(void *arg)
 
   printk(KERN_ERR DEVICE_NAME ": syncer living/m=%d\n",minor);
 
-  drbd_conf[minor].synced_to = (blk_size[MAJOR_NR][minor]-1) << 1;  
+  drbd_conf[minor].synced_to=(blk_size[MAJOR_NR][minor]-(blocksize>>10))<<1;  
  restart:
   blocksize = blksize_size[MAJOR_NR][minor];
 
   drbd_conf[minor].synced_to =   /* align synced_to to blocksize */
-    (drbd_conf[minor].synced_to+1) & ~((blocksize>>9)-1);
+    (drbd_conf[minor].synced_to) & ~((blocksize>>9)-1);
 
   interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
   blocks = (amount << 10) / blocksize;
