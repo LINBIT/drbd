@@ -110,7 +110,6 @@ struct Drbd_Conf {
         struct Drbd_thread ack_sender;
         struct mbds_operations* mops;
         struct wait_queue* ack_wait;  
-  //struct wait_queue* sync_wait;  
 };
 
 struct Drbd_buffer_head {
@@ -1015,7 +1014,6 @@ __initfunc(int drbd_init(void))
 		drbd_thread_init(i, &drbd_conf[i].ack_sender, drbd_ack_sender);
 		drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].ack_wait= NULL;
-		//drbd_conf[i].sync_wait= NULL;
 	}
 #if LINUX_VERSION_CODE > 0x20330
 	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
@@ -1281,7 +1279,7 @@ inline int receive_data(int minor,int data_size)
 		for(i=0;i<ep_size;i++) {
 		        if(!buffer_uptodate(epoch[i].bh))
 			        wait_on_buffer(epoch[i].bh);
-			brelse(epoch[i].bh); 
+			brelse(epoch[i].bh); /* Can I use bforget() here ? */
 		}
 		if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C) {
 		        for(i=0;i<ep_size;i++) {
@@ -1614,13 +1612,6 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
   We really need to read in the data from our disk.
 */
 
-
-void syncer_dio_end(struct buffer_head *bh, int uptodate)
-{
-	mark_buffer_uptodate(bh, uptodate);
-        wake_up(&bh->b_wait);
-}
-
 int drbd_syncer(void *arg)
 {
   /* TODO: do not use getblk. Use a private buffer head, ... */
@@ -1672,15 +1663,13 @@ int drbd_syncer(void *arg)
 
 	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
 	memcpy(&rbh,bh,sizeof(struct buffer_head));
-	brelse(bh); /* hehe this is the way to initialize a BH :)  */
+	brelse(bh); /* FIXME. hehe this is the way to initialize a BH :)  */
 
 	rbh.b_dev = drbd_conf[minor].lo_device;
 	rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
 	rbh.b_list = BUF_LOCKED;
 	rbh.b_data = page;
 	rbh.b_wait = 0;
-	rbh.b_dev_id = 0;
-	rbh.b_end_io = &syncer_dio_end;	
 
 	bh=&rbh;
 
@@ -1707,7 +1696,7 @@ int drbd_syncer(void *arg)
 			rbh.b_wait = 0; /* Hmmm, why do I need this ? */
 
 			ll_rw_block(READ, 1, &bh);
-			if (!buffer_uptodate(bh)) sleep_on(&bh->b_wait);
+		        if (!buffer_uptodate(bh)) wait_on_buffer(bh);
 			if (!buffer_uptodate(bh)) {
                                 printk(KERN_ERR DEVICE_NAME ": !uptodate\n");
 			        goto out;
@@ -1752,7 +1741,6 @@ int drbd_syncer(void *arg)
 	up(&thi->sem);
 	return 0;
 }
-
 
 /* ********* acknowledge sender for protocol C ******** */
 int drbd_ack_sender(void *arg)
@@ -1809,6 +1797,76 @@ int drbd_ack_sender(void *arg)
 
 /*********************************/
 
+/*** The bitmap stuff. ***/
+/*
+  We need to store one bit for a block. 
+  Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
+  Bit 0 ==> Primary and secondary nodes are in sync.
+  Bit 1 ==> secondary node's block must be updated.
+*/
+
+#include <asm/types.h>
+#include <linux/vmalloc.h>
+
+#define BM_BLOCK_SIZE_B  12  
+#define BM_BLOCK_SIZE    (1<<12)
+
+#define BM_IN_SYNC       0
+#define BM_OUT_OF_SYNC   1
+
+void* bm_init(kdev_t dev)
+{
+  void* bm;
+  unsigned long size;
+
+  size = blk_size[MAJOR(dev)][MINOR(dev)]>>(BM_BLOCK_SIZE_B-7);
+  printk(KERN_ERR DEVICE_NAME ": vmallocing %ld B for bitmap.\n",size);
+  bm=0;
+  //bm = vmalloc(blk_size[MAJOR(dev)][MINOR(dev)]>>(BM_BLOCK_SIZE_B-7))
+  return bm;
+}     
+
+void bm_cleanup(void* bm_id)
+{
+  vfree(bm_id);
+}
+
+#if BITS_PER_LONG == 32
+#define LN2_BPL 5
+#elif BITS_PER_LONG == 64
+#define LN2_BPL 6
+#else
+#error "LN2 of BITS_PER_LONG unknown!"
+#endif
+
+void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
+{
+  unsigned long* bm = (unsigned long*)bm_id;
+  unsigned long bitnr;
+  int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
+
+  bitnr = blocknr >> cb;
+
+  if(!bit && cb) {
+          static unsigned long last_bitnr;
+	  static unsigned long last_mask;
+
+	  if(last_bitnr == bitnr) {
+		  last_mask |= 1 << (blocknr & ((1<<cb)-1));
+		  if(last_mask != (1<<(1<<cb))-1) return;
+	  } else {
+	          last_bitnr = bitnr;
+		  last_mask = 1 << (blocknr & ((1<<cb)-1));
+		  return;
+	  }
+	  printk("Whow, someone managed this gordean code\n");
+  }
+
+
+  bm[bitnr>>LN2_BPL] = bit ?
+    bm[bitnr>>LN2_BPL] |  (1<< (bitnr & ((1<<LN2_BPL)-1) ) ) :
+    bm[bitnr>>LN2_BPL] & ~(1<< (bitnr & ((1<<LN2_BPL)-1) ) );
+}
 
 void mops_block_not_replicated(kdev_t dev, unsigned long blocknr)
 {
