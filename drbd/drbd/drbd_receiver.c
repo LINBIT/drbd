@@ -922,7 +922,6 @@ STATIC int receive_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 
 	ERR_IF(mdev->state != Primary) return FALSE;
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-
 	rv = drbd_recv(mdev, mdev->msock, PAYLOAD_P(h), h->length);
 	ERR_IF(rv != h->length) return FALSE;
 
@@ -1852,9 +1851,15 @@ int drbd_asender(struct Drbd_thread *thi)
 				mdev->conf.timeout*HZ/20;
 		}
 
-		set_bit(MAY_WAKE_ASENDER,&mdev->flags);
-		ok = drbd_recv_header(mdev,mdev->msock,header);
+		/* going to wait for input ...  maybe we need to output
+		 * something before input is ready...
+		 */
+		LOCK_SIGMASK(current,flags);
+		sigdelset(&current->blocked,DRBD_SIG);
+		RECALC_SIGPENDING(current);
+		UNLOCK_SIGMASK(current,flags);
 
+		ok = drbd_recv_header(mdev,mdev->msock,header);
 		ERR_IF(!ok)
 			goto err;
 
@@ -1862,10 +1867,10 @@ int drbd_asender(struct Drbd_thread *thi)
 		 * receiving payload data, nor while sending out pings
 		 * and acks!  SIGTERM is unaffected...
 		 */
-		clear_bit(MAY_WAKE_ASENDER,&mdev->flags);
-		LOCK_SIGMASK(current,flags); // implicit wmb()
+		LOCK_SIGMASK(current,flags);
 		if (sigismember(&current->pending.signal, DRBD_SIG)) {
 			sigdelset(&current->pending.signal, DRBD_SIG);
+			sigaddset(&current->blocked,DRBD_SIG);
 			RECALC_SIGPENDING(current);
 		}
 		UNLOCK_SIGMASK(current,flags);

@@ -252,7 +252,6 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	}
 }
 
-extern volatile int disable_io_hints;
 int drbd_dsender(struct Drbd_thread *thi)
 {
 	long time=MAX_SCHEDULE_TIMEOUT;

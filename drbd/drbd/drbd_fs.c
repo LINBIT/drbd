@@ -442,7 +442,6 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 	return 0;
 }
 
-extern volatile int disable_io_hints;
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
@@ -598,8 +597,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		       mdev->cstate != Connected &&
 		       time > 0 ) {
 
-			if (mdev->cstate == SyncSource ||
-			    mdev->cstate == SyncTarget )
+			if (mdev->cstate >= SyncSource)
 				time=MAX_SCHEDULE_TIMEOUT;
 
 			time = interruptible_sleep_on_timeout(

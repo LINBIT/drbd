@@ -144,7 +144,6 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 }
 
 
-extern volatile int disable_io_hints;
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);

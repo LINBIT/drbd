@@ -114,8 +114,6 @@ MODULE_PARM_DESC(disable_io_hints, "Necessary if loopback devices are used for D
 STATIC int *drbd_blocksizes;
 STATIC int *drbd_sizes;
 struct Drbd_Conf *drbd_conf;
-int minor_count=2;
-int disable_io_hints=0;
 kmem_cache_t *drbd_request_cache;
 kmem_cache_t *drbd_pr_cache;
 kmem_cache_t *drbd_ee_cache;
@@ -435,19 +433,16 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
-inline void block_but_drbd_sig(sigset_t *oldset)
+inline sigset_t block_sigs_but(unsigned long mask)
 {
 	unsigned long flags;
+	sigset_t oldset;
 	LOCK_SIGMASK(current,flags);
-	*oldset = current->blocked;
-	/* THINK as long as we send directly from make_request,
-	 * I'd like to allow KILL, too, so the user can kill -9 hanging
-	 * write processes. but then again, if it does not succeed, it
-	 * _should_ timeout anyways... so what.
-	 */
-	siginitsetinv(&current->blocked,DRBD_SIG|SIGKILL);
+	oldset = current->blocked;
+	siginitsetinv(&current->blocked,mask);
 	RECALC_SIGPENDING(current);
 	UNLOCK_SIGMASK(current,flags);
+	return oldset;
 }
 
 inline void restore_old_sigset(sigset_t oldset)
@@ -475,7 +470,12 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
-	block_but_drbd_sig(&old_blocked);
+	/* THINK as long as we send directly from make_request,
+	 * I'd like to allow KILL, too, so the user can kill -9 hanging
+	 * write processes. but then again, if it does not succeed, it
+	 * _should_ timeout anyways... so what.
+	 */
+	old_blocked = block_sigs_but(DRBD_SIG|SIGKILL);
 	sent = drbd_send(mdev,sock,h,size,msg_flags);
 	restore_old_sigset(old_blocked);
 
@@ -740,7 +740,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
 	      for everything in the data structure.
 	*/
-	block_but_drbd_sig(&old_blocked);
+	old_blocked = block_sigs_but(DRBD_SIG);
 	down(&mdev->sock_mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -779,7 +779,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
 	p.block_id = e->block_id;
 
-	block_but_drbd_sig(&old_blocked);
+	old_blocked = block_sigs_but(DRBD_SIG|SIGKILL);
 	down(&mdev->sock_mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;

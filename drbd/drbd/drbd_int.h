@@ -33,6 +33,10 @@
 #include <linux/list.h>
 #include "mempool.h"
 
+// module parameter
+static int __attribute__((unused)) minor_count=2;
+static int __attribute__((unused)) disable_io_hints=0;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 typedef unsigned long sector_t;
 #endif
@@ -455,7 +459,6 @@ struct Pending_read {
 #define PARTNER_DISKLESS   7
 #define SYNC_FINISHED      8
 #define PROCESS_EE_RUNNING 9
-#define MAY_WAKE_ASENDER  10
 
 struct BitMap {
 	kdev_t dev;
@@ -659,15 +662,13 @@ extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 extern unsigned long drbd_hash(struct buffer_head *bh);
 
 static inline void wake_asender(drbd_dev *mdev) {
-	if (test_bit(MAY_WAKE_ASENDER,&mdev->flags))
-		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
+	drbd_queue_signal(DRBD_SIG, mdev->asender.task);
 }
 
 static inline void request_ping(drbd_dev *mdev) {
 	set_bit(SEND_PING,&mdev->flags);
 	wake_asender(mdev);
 }
-
 
 static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 {
