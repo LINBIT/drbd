@@ -240,7 +240,7 @@ void drbd_bm_cleanup(drbd_dev *mdev)
  */
 STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 {
-	const unsigned long mask = (1 << (b->bm_bits & (BITS_PER_LONG-1))) -1;
+	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
 	int cleared=0;
 
