@@ -537,8 +537,10 @@ inline int receive_data(int minor,int data_size)
 //	generic_make_request(WRITE,bh);
 	ll_rw_block(WRITE, 1, &bh);
 
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A || 
+	   header.block_id == ID_SYNCER) {
 		inc_unacked(minor);
+	}
 
 	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B
 	    && header.block_id != ID_SYNCER) {
