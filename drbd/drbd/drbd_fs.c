@@ -172,6 +172,9 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	minor=(int)(mdev-drbd_conf);
 
+	if (!try_module_get(THIS_MODULE))
+		return -EINVAL;
+
 	/* if you want to reconfigure, please tear down first */
 	smp_rmb();
 	if (!test_bit(DISKLESS,&mdev->flags))
@@ -384,6 +387,7 @@ ONLY_IN_26({
 	NOT_IN_26(blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);)
 	ONLY_IN_26(bd_release(bdev);)
  fail_ioctl:
+	module_put(THIS_MODULE);
 	if (filp) fput(filp);
 	if (filp2) fput(filp2);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
@@ -433,6 +437,9 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	struct net_config new_conf;
 
 	minor=(int)(mdev-drbd_conf);
+
+	if (!try_module_get(THIS_MODULE))
+		return -EINVAL;
 
 	// FIXME plausibility check
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
@@ -507,7 +514,8 @@ FIXME
 
 	return 0;
 
-	fail_ioctl:
+  fail_ioctl:
+	module_put(THIS_MODULE);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
@@ -792,6 +800,7 @@ ONLY_IN_26(
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
 		} else set_cstate(mdev,StandAlone);
+		module_put(THIS_MODULE);
 
 		break;
 
@@ -837,6 +846,7 @@ ONLY_IN_26(
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
 		}
+		module_put(THIS_MODULE);
 
 		break;
 

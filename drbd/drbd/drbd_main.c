@@ -1148,6 +1148,22 @@ STATIC void drbd_unplug_fn(void *data)
 }
 #endif
 
+void drbd_set_defaults(drbd_dev *mdev)
+{
+	mdev->flags = 1<<DISKLESS;
+
+	/* If the WRITE_HINT_QUEUED flag is set but it is not
+	   actually queued the functionality is completely disabled */
+	if (disable_io_hints) mdev->flags |= 1<<WRITE_HINT_QUEUED;
+
+	mdev->sync_conf.rate       = 250;
+	mdev->sync_conf.al_extents = 127; // 512 MB active set
+	mdev->state                = Secondary;
+	mdev->o_state              = Unknown;
+	mdev->cstate               = Unconfigured;
+
+}
+
 void drbd_init_set_defaults(drbd_dev *mdev)
 {
 	// the implicit memset(,0,) of kcalloc did most of this
@@ -1156,17 +1172,8 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 #ifdef PARANOIA
 	SET_MDEV_MAGIC(mdev);
 #endif
-	mdev->flags = 1<<DISKLESS;
 
-	/* If the WRITE_HINT_QUEUED flag is set but it is not
-	   actually queued the functionality is completely disabled */
-	if (disable_io_hints) mdev->flags |= 1<<WRITE_HINT_QUEUED;
-
-	mdev->sync_conf.rate       = 250;
-	mdev->sync_conf.al_extents = 128; // 512 MB active set
-	mdev->state                = Secondary;
-	mdev->o_state              = Unknown;
-	mdev->cstate               = Unconfigured;
+	drbd_set_defaults(mdev);
 
 	atomic_set(&mdev->ap_pending_cnt,0);
 	atomic_set(&mdev->rs_pending_cnt,0);
@@ -1275,8 +1282,8 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 #define ZAP(x) memset(&x,0,sizeof(x))
 	ZAP(mdev->conf);
 	ZAP(mdev->sync_conf);
-	ZAP(mdev->data);
-	ZAP(mdev->meta);
+	// ZAP(mdev->data); Not yet!
+	// ZAP(mdev->meta); Not yet!
 	ZAP(mdev->gen_cnt);
 #undef ZAP
 	mdev->al_writ_cnt  =
@@ -1295,7 +1302,28 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->rs_mark_time = 0;
 	mdev->send_task    = NULL;
 	drbd_set_my_capacity(mdev,0);
-	drbd_init_set_defaults(mdev);
+
+	/*
+	 * currently we drbd_init_ee only on module load, so
+	 * we may do drbd_release_ee only on module unload!
+	 * drbd_release_ee(&mdev->free_ee);
+	 * D_ASSERT(list_emptry(&mdev->free_ee));
+	 *
+	 */
+	D_ASSERT(list_empty(&mdev->active_ee));
+	D_ASSERT(list_empty(&mdev->sync_ee));
+	D_ASSERT(list_empty(&mdev->done_ee));
+	D_ASSERT(list_empty(&mdev->read_ee));
+	D_ASSERT(list_empty(&mdev->busy_blocks));
+	D_ASSERT(list_empty(&mdev->app_reads));
+	D_ASSERT(list_empty(&mdev->resync_reads));
+	D_ASSERT(list_empty(&mdev->data.work.q));
+	D_ASSERT(list_empty(&mdev->meta.work.q));
+	D_ASSERT(list_empty(&mdev->resync_work.list));
+	D_ASSERT(list_empty(&mdev->barrier_work.list));
+	D_ASSERT(list_empty(&mdev->unplug_work.list));
+
+	drbd_set_defaults(mdev);
 }
 
 
@@ -1403,21 +1431,30 @@ ONLY_IN_26(
 			if (mdev->resync) lc_free(mdev->resync);
 
 			D_ASSERT(mdev->ee_in_use==0);
-			drbd_release_ee(mdev,&mdev->free_ee);
+
+			rr = drbd_release_ee(mdev,&mdev->free_ee);
+			// INFO("%d EEs in free list found.\n",rr);
+			// D_ASSERT(rr == 32);
+
 			rr = drbd_release_ee(mdev,&mdev->active_ee);
-			if(rr) ERR("%d: %d EEs in active list found!\n",i,rr);
+			if(rr) ERR("%d EEs in active list found!\n",rr);
 
 			rr = drbd_release_ee(mdev,&mdev->sync_ee);
-			if(rr) ERR("%d: %d EEs in sync list found!\n",i,rr);
-
-			rr = drbd_release_ee(mdev,&mdev->done_ee);
-			if(rr) ERR("%d: %d EEs in done list found!\n",i,rr);
+			if(rr) ERR("%d EEs in sync list found!\n",rr);
 
 			rr = drbd_release_ee(mdev,&mdev->read_ee);
-			if(rr) ERR("%d: %d EEs in read list found!\n",i,rr);
+			if(rr) ERR("%d EEs in read list found!\n",rr);
 
-			D_ASSERT(mdev->ee_vacant==0);
-			D_ASSERT(list_empty(&mdev->data.work.q));
+			rr = drbd_release_ee(mdev,&mdev->done_ee);
+			if(rr) ERR("%d EEs in done list found!\n",rr);
+
+			ERR_IF (!list_empty(&mdev->data.work.q)) {
+				struct list_head *lp;
+				list_for_each(lp,&mdev->data.work.q) {
+					DUMPP(lp);
+				}
+			};
+			D_ASSERT(mdev->ee_vacant == 0);
 
 			if (mdev->md_io_page)
 				__free_page(mdev->md_io_page);
@@ -1463,6 +1500,7 @@ NOT_IN_26(
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
+	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
 }
 
 void * kcalloc(size_t size, int type)
