@@ -441,8 +441,8 @@ inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 		mdev->tl_end = mdev->transfer_log;
 
 	if (mdev->tl_end == mdev->tl_begin)
-		printk(KERN_CRIT DEVICE_NAME "%lu: transferlog too small!! \n",
-		 mdev-drbd_conf);
+		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!! \n",
+		 (int)(mdev-drbd_conf));
 
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }
@@ -468,8 +468,8 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 		mdev->tl_end = mdev->transfer_log;
 
 	if (mdev->tl_end == mdev->tl_begin)
-		printk(KERN_CRIT DEVICE_NAME "%lu: transferlog too small!!\n",
-		       mdev-drbd_conf);
+		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!!\n",
+		       (int)(mdev-drbd_conf));
 
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
@@ -501,19 +501,19 @@ inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 			mdev->tl_begin = mdev->transfer_log;
 
 		if (mdev->tl_begin == mdev->tl_end)
-			printk(KERN_ERR DEVICE_NAME "%ld: tl messed up!\n",
-			       mdev-drbd_conf);
+			printk(KERN_ERR DEVICE_NAME "%d: tl messed up!\n",
+			       (int)(mdev-drbd_conf));
 		epoch_size++;
 	} while (mdev->tl_begin->req != TL_BARRIER);
 
 	if(mdev->tl_begin->sector_nr != barrier_nr) 
-		printk(KERN_ERR DEVICE_NAME "%ld: invalid barrier number!!"
-		       "found=%u, reported=%u\n",mdev-drbd_conf,
+		printk(KERN_ERR DEVICE_NAME "%d: invalid barrier number!!"
+		       "found=%u, reported=%u\n",(int)(mdev-drbd_conf),
 		       (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
 
 	if(epoch_size != set_size) 
-		printk(KERN_ERR DEVICE_NAME "%ld: Epoch set size wrong!!"
-		       "found=%d reported=%d \n",mdev-drbd_conf,
+		printk(KERN_ERR DEVICE_NAME "%d: Epoch set size wrong!!"
+		       "found=%d reported=%d \n",(int)(mdev-drbd_conf),
 		       epoch_size,set_size);
 	
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
@@ -981,8 +981,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 			printk(KERN_ERR DEVICE_NAME
-			       "%lu: send timed out!! (pid=%d)\n",
-			       mdev-drbd_conf,current->pid);
+			       "%d: send timed out!! (pid=%d)\n",
+			       (int)(mdev-drbd_conf),current->pid);
 
 			set_cstate(mdev,Timeout);
 
@@ -992,8 +992,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 		} else spin_unlock_irqrestore(&current->sigmask_lock,flags);
 	}
 	if (err != header_size+data_size) {
-		printk(KERN_ERR DEVICE_NAME "%lu: sock_sendmsg returned %d\n",
-		       mdev-drbd_conf,err);
+		printk(KERN_ERR DEVICE_NAME "%d: sock_sendmsg returned %d\n",
+		       (int)(mdev-drbd_conf),err);
 	}
 	if (err < 0) {
 		set_cstate(mdev,BrokenPipe);
@@ -1060,18 +1060,18 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	case RQ_DRBD_SENT:
 		if (nextstate == RQ_DRBD_WRITTEN)
 			goto end_it;
-		printk(KERN_ERR DEVICE_NAME "%lu: request state error(A)\n",
-		       mdev-drbd_conf);
+		printk(KERN_ERR DEVICE_NAME "%d: request state error(A)\n",
+		       (int)(mdev-drbd_conf));
 		break;
 	case RQ_DRBD_WRITTEN:
 		if (nextstate == RQ_DRBD_SENT)
 			goto end_it;
-		printk(KERN_ERR DEVICE_NAME "%lu: request state error(B)\n",
-		       mdev-drbd_conf);
+		printk(KERN_ERR DEVICE_NAME "%d: request state error(B)\n",
+		       (int)(mdev-drbd_conf));
 		break;
 	default:
-		printk(KERN_ERR DEVICE_NAME "%lu: request state error(%X)\n",
-		       mdev-drbd_conf,req->rq_status);
+		printk(KERN_ERR DEVICE_NAME "%d: request state error(%X)\n",
+		       (int)(mdev-drbd_conf),req->rq_status);
 	}
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
@@ -1798,8 +1798,8 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	set_fs(oldfs);
 	unlock_kernel();
 	if (err != size && err != -ERESTARTSYS && err != 0)
-		printk(KERN_ERR DEVICE_NAME "%lu: sock_recvmsg returned %d\n",
-		       mdev-drbd_conf,err);
+		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
+		       (int)(mdev-drbd_conf),err);
 
 	if (mdev->conf.ping_int) {
 		del_timer(&idle_timeout);
