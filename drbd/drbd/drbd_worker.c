@@ -50,9 +50,12 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	mdev=drbd_lldev_to_mdev(bh->b_dev);
+	mdev=drbd_mdev_of_bh(bh);
 
 	e=bh->b_private;
+	D_ASSERT(e->bh == bh);
+	D_ASSERT(e->block_id != ID_VACANT);
+
 	spin_lock_irqsave(&mdev->ee_lock,flags);
 
 	mark_buffer_uptodate(bh, uptodate);

@@ -56,9 +56,6 @@
 #include "drbd_int.h"
 
 #define EE_MININUM 32    // @4k pages => 128 KByte
-#define ID_VACANT 0      // All EEs on the free list should have this value
-                         // in block_id. The EEs on all other lists must
-                         // have some other value here.
 
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
@@ -148,7 +145,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	mdev=drbd_lldev_to_mdev(bh->b_dev);
+	mdev=drbd_mdev_of_bh(bh);
 
 	/*
 	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_irq()=%d\n",
@@ -929,7 +926,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
-	drbd_set_bh(e->bh, sector ,data_size, mdev->lo_device);
+	drbd_set_bh(mdev, e->bh, sector ,data_size);
         e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
@@ -971,7 +968,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	bh->b_end_io(bh,1);
 
-	drbd_set_bh(e->bh,sector,data_size,mdev->lo_device);
+	drbd_set_bh(mdev, e->bh, sector, data_size);
         e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
@@ -997,7 +994,7 @@ int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	e = read_in_block(mdev,data_size);
 	if(!e)	return FALSE;
 	
-	drbd_set_bh(e->bh, sector ,data_size, mdev->lo_device);
+	drbd_set_bh(mdev, e->bh, sector ,data_size);
 	drbd_send_ack(mdev,WriteAck,e->bh,ID_SYNCER);
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -1073,7 +1070,7 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
-	drbd_set_bh(e->bh,sector,data_size,mdev->lo_device);
+	drbd_set_bh(mdev, e->bh, sector, data_size);
         e->block_id=header.block_id;
 	e->e_end_io = e_end_block;
 
@@ -1137,7 +1134,7 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev,TRUE);
-	drbd_set_bh(e->bh,sector,data_size,mdev->lo_device);
+	drbd_set_bh(mdev, e->bh, sector, data_size);
 	e->block_id=header.block_id;
 	list_add(&e->list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);

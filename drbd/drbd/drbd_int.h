@@ -78,6 +78,7 @@ typedef unsigned long sector_t;
 #define INITIAL_BLOCK_SIZE (1<<12)
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
+#define ID_VACANT 0      // All EEs on the free list should have this value
 
 #ifdef DBG_ALL_SYMBOLS
 # define STATIC
@@ -547,17 +548,15 @@ static inline void dec_unacked(struct Drbd_Conf* mdev)
 		       (int)(mdev-drbd_conf), atomic_read(&mdev->unacked_cnt));
 }
 
-static inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
+static inline struct Drbd_Conf* drbd_mdev_of_bh(struct buffer_head *bh)
 {
-	int i;
-
-	for (i=0; i<minor_count; i++) {
-		if(drbd_conf[i].lo_device == dev) {
-			return drbd_conf+i;
-		}
+#ifdef DBG_BH_SECTOR
+	if((bh->b_dev & 0xff00) != 0xab00) {
+		printk(KERN_ERR DEVICE_NAME" bh->b_dev != 0xabxx\n");
+		return drbd_conf;
 	}
-	printk(KERN_ERR DEVICE_NAME "X: lodev_to_mdev !!\n");
-	return drbd_conf;
+#endif
+	return drbd_conf + ( bh->b_dev & 0x00ff ) ;
 }
 
 static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,
@@ -707,20 +706,20 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 }
 
 
-static inline void drbd_set_bh(struct buffer_head *bh,
+static inline void drbd_set_bh(struct Drbd_Conf *mdev,
+			       struct buffer_head *bh,
 			       sector_t sector,
-			       int size,
-			       kdev_t dev)
+			       int size)
 {
 	bh->b_blocknr = sector;  // We abuse b_blocknr here.
 	bh->b_size = size;
-	bh->b_dev = 0xabcd;      // DRBD's magic mark
+	bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
 
 	// we skip submit_bh, but use generic_make_request.
 	set_bit(BH_Req, &bh->b_state);  
 	set_bit(BH_Launder, &bh->b_state);
 
-	bh->b_rdev = dev;
+	bh->b_rdev = mdev->lo_device;
 	bh->b_rsector = sector;
 }
 
@@ -728,15 +727,15 @@ static inline void drbd_set_bh(struct buffer_head *bh,
 #ifdef DBG_BH_SECTOR
 static inline sector_t DRBD_BH_SECTOR(struct buffer_head *bh)
 {
-	if(bh->b_dev != 0xabcd) {
-		printk(KERN_ERR DEVICE_NAME" bh->b_dev != 0xabcd\n");
+	if((bh->b_dev & 0xff00) != 0xab00) {
+		printk(KERN_ERR DEVICE_NAME" bh->b_dev != 0xabxx\n");
 	}
 	return bh->b_blocknr;
 }
 static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 {
-	if(bh->b_dev == 0xabcd) {
-		printk(KERN_ERR DEVICE_NAME" bh->b_dev == 0xabcd\n");
+	if((bh->b_dev & 0xff00) == 0xab00) {
+		printk(KERN_ERR DEVICE_NAME" bh->b_dev == 0xabxx\n");
 	}
 	return bh->b_blocknr;
 }

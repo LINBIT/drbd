@@ -282,7 +282,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	nbh->b_page=bh->b_page; // instead of set_bh_page()
 	nbh->b_data=bh->b_data; // instead of set_bh_page()
 
-	drbd_set_bh(nbh,bh->b_rsector,bh->b_size,mdev->lo_device);
+	drbd_set_bh(mdev, nbh, bh->b_rsector, bh->b_size);
 
 	if(mdev->cstate < StandAlone || MINOR(bh->b_rdev) >= minor_count) {
 		buffer_IO_error(bh);
