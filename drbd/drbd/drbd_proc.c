@@ -28,9 +28,7 @@
  */
 
 #include <linux/config.h>
-#ifdef CONFIG_MODVERSIONS
-#include <linux/modversions.h>
-#endif
+#include <linux/module.h>
 
 #include <asm/uaccess.h>
 #include <linux/fs.h>

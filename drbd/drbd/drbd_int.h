@@ -769,6 +769,7 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 			    u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
+extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern void drbd_free_ll_dev(drbd_dev *mdev);
 extern int drbd_io_error(drbd_dev* mdev);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);

@@ -32,9 +32,6 @@
 
 #include <linux/config.h>
 #include <linux/module.h>
-#ifdef CONFIG_MODVERSIONS
-#include <linux/modversions.h>
-#endif
 
 #include <asm/uaccess.h>
 #include <linux/in.h>

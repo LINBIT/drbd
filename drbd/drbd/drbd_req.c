@@ -25,9 +25,7 @@
  */
 
 #include <linux/config.h>
-#ifdef CONFIG_MODVERSIONS
-#include <linux/modversions.h>
-#endif
+#include <linux/module.h>
 
 #include <linux/slab.h>
 #include <linux/drbd.h>
