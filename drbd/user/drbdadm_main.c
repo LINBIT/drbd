@@ -622,7 +622,7 @@ void verify_ips(struct d_resource* res)
 	"  ifconfig | grep -qE ' inet addr:'$IP' ';"
 	"else"
 	"  echo >&2 $0: 'neither ip nor ifconfig found!';"
-	"fi",
+	"fi >/dev/null",
 	my_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
   ex = m_system(1,argv);
@@ -643,7 +643,7 @@ void verify_ips(struct d_resource* res)
     return;
   }
 
-#if 0
+#if 1
 /* seems to not work as expected with aliases.
  * maybe drop it completely and trust the admin.
  */
@@ -652,11 +652,11 @@ void verify_ips(struct d_resource* res)
 	"peerIP=%s; peerIPQ=${peerIP//./\\\\.};"
 	"LANG=; PATH=/sbin/:$PATH;"
 	"if type -p ip ; then "
-	"  ip -o route get to $peerIP 2>/dev/null |"
-	"    grep -qE $peerIPQ' dev .* src '$IPQ' ';"
+	"  ip -o route get to $peerIP from $IP 2>/dev/null |"
+	"    grep -qE ^$peerIPQ' from '$IPQ' ';"
 	"else"
-	"  echo >&2 $0: 'cannot check route to peer';"
-	"fi",
+	"  # echo >&2 $0: 'cannot check route to peer';"
+	"fi >/dev/null",
 	my_ip,his_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
   ex = m_system(1,argv);
