@@ -38,7 +38,7 @@ rudeUnMount()
 	MOUNTED=$?
 		
 	if [ $MOUNTED -eq 1 ]; then
-		$0 umount $1
+		$0 $1 umount
 
 		isMounted $1
 		MOUNTED=$?
@@ -46,7 +46,7 @@ rudeUnMount()
 		if [ $MOUNTED -eq 1 ]; then
 			fuser -km $2
 			sleep 1
-			$0 umount $1
+			$0 $1 umount
 		fi
  
 		isMounted $1
@@ -55,7 +55,7 @@ rudeUnMount()
 		if [ $MOUNTED -eq 1 ]; then
 			fuser -km -9 $2
 			sleep 1
-			$0 umount $1
+			$0 $1 umount
 		fi
 
 		isMounted $1
@@ -123,15 +123,15 @@ case "$1" in
 		MOUNTED=$?
 
 		if [ $PRIMARY -eq 0 -a $MOUNTED -eq 0 ]; then
-			$0 primary $RESOURCE && 
-			$0 fsck $RESOURCE && 
-			$0 mount $RESOURCE 
+			$0 $RESOURCE primary && 
+			$0 $RESOURCE fsck && 
+			$0 $RESOURCE mount
 			RV=$?
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
 		if [ $PRIMARY -eq 1 -a $MOUNTED -eq 0 ]; then
-			$0 fsck $RESOURCE && 
-			$0 mount $RESOURCE 
+			$0 $RESOURCE fsck && 
+			$0 $RESOURCE mount
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -144,7 +144,7 @@ case "$1" in
 			setMasterBoot $RESOURCE
 		fi
 		if [ $RETVAL -ne 0 -a $PRIMARY -eq 0 ]; then
-			$0 secondary $RESOURCE
+			$0 $RESOURCE secondary
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -168,7 +168,7 @@ case "$1" in
 
 		# Only become secondary if umount succed
 		if [ $RETVAL -eq 0 ]; then
-			$0 secondary $RESOURCE 
+			$0 $RESOURCE secondary
 			RETVAL=$?
 			if [ "$RETVAL" -eq 0 ]; then
 				setSlaveBoot $RESOURCE
@@ -257,7 +257,7 @@ case "$1" in
 		MOUNTED=$?
 
 		if [ $MOUNTED -eq 1 ]; then
-			$0 umount $RESOURCE 
+			$0 $RESOURCE umount
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -404,7 +404,7 @@ case "$1" in
 		;;
 
 	help)
-		echo "Usage: $0 [command] [resource]"
+		echo "Usage: $0 [resource] [command]"
 		echo
 		echo "command can be :"
 		echo
