@@ -173,9 +173,6 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	}
 
 	spin_unlock_irq(&mdev->tl_lock);
-
-/*	printk(KERN_ERR DEVICE_NAME "%d: tl_add(%lu)\n",
-	(int)(mdev-drbd_conf),new_item->sector ); */
 }
 
 STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
@@ -200,9 +197,6 @@ STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 
 	spin_unlock_irq(&mdev->tl_lock);
 
-/*	printk(KERN_ERR DEVICE_NAME "%d: tl_add_barrier(%d)\n",
-	(int)(mdev-drbd_conf),bnr );*/
-
 	return bnr;
 }
 
@@ -213,28 +207,15 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 	struct list_head *le;
 	struct drbd_request *r;
 
-/*	printk(KERN_ERR DEVICE_NAME "%d: tl_release(%d)\n",
-	(int)(mdev-drbd_conf),barrier_nr );*/
-
 	spin_lock_irq(&mdev->tl_lock);
 
 	b = mdev->oldest_barrier;
-
-	if( ! list_empty(&b->requests)) {
-		printk(KERN_ERR DEVICE_NAME "%d: Active requests in epoch!!\n",
-		       (int)(mdev-drbd_conf));
-
-		list_for_each(le,&b->requests) {
-			r=list_entry(le, struct drbd_request,list);
-			printk(KERN_ERR DEVICE_NAME "%d: Active %lu,%X !!\n",
-			       (int)(mdev-drbd_conf),r->sector,r->rq_status);
-			
-		}
-
-		list_del(&b->requests);
-	}
-
 	mdev->oldest_barrier = b->next;
+
+	list_del(&b->requests); 
+	/* There could be requests on the list waiting for completion 
+	   of the write to the local disk, to avoid corruptions of 
+	   slab's data structures we have to remove the lists head */
 
 	spin_unlock_irq(&mdev->tl_lock);
 
@@ -265,9 +246,6 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
 	unsigned long flags;
 	int r=TRUE;
-
-/*	printk(KERN_ERR DEVICE_NAME "%d: tl_dependence(%lu)\n",
-	(int)(mdev-drbd_conf),item->sector );*/
 
 	spin_lock_irqsave(&mdev->tl_lock,flags);
 
