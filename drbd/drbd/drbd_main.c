@@ -402,6 +402,7 @@ STATIC void drbd_daemonize(void) {
 	daemonize("drbd_thread");
 #else
 	daemonize();
+	// VERIFY what about blocking signals ?
 	reparent_to_init();
 #endif
 }
@@ -551,13 +552,13 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
-inline sigset_t block_sigs_but(unsigned long mask)
+inline sigset_t drbd_block_all_signals(void)
 {
 	unsigned long flags;
 	sigset_t oldset;
 	LOCK_SIGMASK(current,flags);
 	oldset = current->blocked;
-	siginitsetinv(&current->blocked,mask);
+	sigfillset(&current->blocked);
 	RECALC_SIGPENDING(current);
 	UNLOCK_SIGMASK(current,flags);
 	return oldset;
@@ -612,7 +613,7 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	} else
 		down(&mdev->meta.mutex);
 
-	old_blocked = block_sigs_but(0);
+	old_blocked = drbd_block_all_signals();
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size,0);
 	restore_old_sigset(old_blocked);
 
@@ -874,14 +875,12 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	/* Still called directly by drbd_make_request,
 	 * so all sorts of processes may end up here.
-	 * They may be interrupted by DRBD_SIGKILL in response to
-	 * ioctl or some other "connection loast" event.
-	 *
-	 * we also should replace all "LOCK(); sigemptyset(); UNLOCK();"
-	 * with flush_signals(); ...
+	 * They may be interrupted by DRBD_SIG in response to
+	 * ioctl or some other "connection lost" event.
+	 * This is not propagated.
 	 */
 
-	old_blocked = block_sigs_but(0);
+	old_blocked = drbd_block_all_signals();
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -932,7 +931,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
 	 * in response to ioctl or module unload.
 	 */
-	old_blocked = block_sigs_but(0);
+	old_blocked = drbd_block_all_signals();
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -1014,9 +1013,9 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		}
 		D_ASSERT(rv != 0);
 		if (rv == -EINTR ) {
-			ERR("Got a signal in drbd_send(,%c,)!\n",
+			DBG("Got a signal in drbd_send(,%c,)!\n",
 			    sock == mdev->meta.socket ? 'm' : 's');
-			dump_stack();
+			// dump_stack();
 			drbd_flush_signals(current);
 			rv = 0;
 		}
@@ -1161,7 +1160,6 @@ void drbd_set_defaults(drbd_dev *mdev)
 	mdev->state                = Secondary;
 	mdev->o_state              = Unknown;
 	mdev->cstate               = Unconfigured;
-
 }
 
 void drbd_init_set_defaults(drbd_dev *mdev)
@@ -1856,7 +1854,7 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	int ret=0;
 	unsigned long flags;
 
-	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+	if (size <= 0 || (size & 0x1ff) != 0 || ( size > PAGE_SIZE && size != AL_EXTENT_SIZE)) {
 		DUMPI(size);
 		return 0;
 	}
@@ -2231,7 +2229,7 @@ int drbd_md_read(drbd_dev *mdev)
 	return 0;
 }
 
-#if DUMP_MD
+#ifdef DUMP_MD
 #define MeGC(x) mdev->gen_cnt[x]
 #define PeGC(x) be32_to_cpu(peer->gen_cnt[x])
 

@@ -320,7 +320,7 @@ ONLY_IN_26({
 	q->max_hw_segments   = 1;
 	q->max_segment_size  = min((unsigned)PAGE_SIZE,b->max_segment_size);
 	q->hardsect_size     = max((unsigned short)512,b->hardsect_size);
-	q->seg_boundary_mask = b->seg_boundary_mask;
+	q->seg_boundary_mask = PAGE_SIZE-1;
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
 })
 #undef min_not_zero
@@ -373,12 +373,16 @@ ONLY_IN_26({
 		drbd_thread_start(&mdev->worker);
 		set_cstate(mdev,StandAlone);
 	}
+
+
+// FIXME why "else" ?? I think allways, and *before send_param!
+	clear_bit(DISKLESS,&mdev->flags);
+	smp_wmb();
+// FIXME explain:
+	clear_bit(MD_IO_ALLOWED,&mdev->flags);
+
 	if(mdev->cstate >= Connected ) {
 		drbd_send_param(mdev,1);
-	} else {
-		clear_bit(DISKLESS,&mdev->flags);
-		smp_wmb();
-		clear_bit(MD_IO_ALLOWED,&mdev->flags);
 	}
 
 	return 0;
@@ -848,6 +852,13 @@ ONLY_IN_26(
 /* FIXME race with sync start
  */
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
+/* FIXME
+ * if you detach while connected, you are *at least* inconsistent now,
+ * and should clear MDF_Consistent in metadata, and maybe even set the bitmap
+ * out of sync.
+ * since if you reattach, this might be a different lo dev, and then it needs
+ * to receive a sync!
+ */
 		if (mdev->cstate == StandAlone) {
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);

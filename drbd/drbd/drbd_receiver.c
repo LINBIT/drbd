@@ -204,6 +204,10 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	list_del(le);
 
 	page = drbd_bio_get_page(&e->private_bio);
+ONLY_IN_26(
+	D_ASSERT(page == e->ee_bvec.bv_page);
+	// page = e->ee_bvec.bv_page;
+)
 	kmem_cache_free(drbd_ee_cache, e);
 	mdev->ee_vacant--;
 
@@ -321,6 +325,10 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
 	e=list_entry(le, struct Tl_epoch_entry, w.list);
+ONLY_IN_26(
+	D_ASSERT(e->private_bio.bi_idx == 0);
+	// drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
+)
 	e->block_id = !ID_VACANT;
 	SET_MAGIC(e);
 	return e;
@@ -547,8 +555,10 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 			INFO("sock was shut down by peer\n");
 			break;
 		} else  {
-			/* signal came in after we read a partial message */
-			D_ASSERT(signal_pending(current));
+			/* signal came in, or peer/link went down,
+			 * after we read a partial message
+			 */
+			// D_ASSERT(signal_pending(current));
 			break;
 		}
 	};
@@ -1241,7 +1251,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				drbd_send_bitmap(mdev);
 				set_cstate(mdev,WFBitMapS);
 			} else { // have_good == -1
-				if (mdev->state == Primary) {
+				if ( (mdev->state == Primary) &&
+				     (mdev->gen_cnt[Flags] & MDF_Consistent) ) {
+					/* FIXME
+					 * allow Primary become SyncTarget if it was diskless, and now had a storage reattached.
+					 * only somewhere the MDF_Consistent flag is set where it should not... I think.
+					 */
 					ERR("Current Primary shall become sync TARGET! Aborting to prevent data corruption.\n");
 					set_cstate(mdev,StandAlone);
 					drbd_thread_stop_nowait(&mdev->receiver);
@@ -1526,6 +1541,9 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	clear_bit(ISSUE_BARRIER,&mdev->flags);
 	wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt) == 0 );
 	D_ASSERT(mdev->oldest_barrier->n_req == 0);
+
+	// both
+	clear_bit(PARTNER_DISKLESS,&mdev->flags);
 
 	D_ASSERT(mdev->ee_in_use == 0);
 	D_ASSERT(list_empty(&mdev->read_ee)); // done by termination of worker

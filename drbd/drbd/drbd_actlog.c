@@ -446,7 +446,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
-	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add/2);
+	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",(add+1)/2);
 
 	mdev->rs_total += add;
 }

@@ -316,6 +316,15 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 		return 0;
 	}
 
+	/*
+	 * what we "blindly" assume:
+	 */
+	D_ASSERT(bio->bi_size > 0);
+	D_ASSERT( (bio->bi_size & 0x1ff) == 0);
+	D_ASSERT(bio->bi_size <= PAGE_SIZE);
+	D_ASSERT(bio->bi_vcnt == 1);
+	D_ASSERT(bio->bi_idx == 0);
+
 	s_enr = bio->bi_sector >> (AL_EXTENT_SIZE_B-9);
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> (AL_EXTENT_SIZE_B-9);
 	D_ASSERT(e_enr >= s_enr);
