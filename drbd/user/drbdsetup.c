@@ -63,6 +63,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_down(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
@@ -102,8 +103,13 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
    (struct option[]) {
-     { "disk-size",  required_argument, 0, 'd' }, 
+     //     { "disk-size",  required_argument, 0, 'd' }, 
      { "do-panic",   no_argument,       0, 'p' },
+     { 0,            0,                 0, 0 } } },
+  {"resize", cmd_disk_size,             0,
+   (struct option[]) {
+     { "disk-size",  required_argument, 0, 'd' }, 
+     //     { "do-panic",   no_argument,       0, 'p' },
      { 0,            0,                 0, 0 } } },
   {"disconnect", cmd_disconnect,     0, 0 },
   {"show", cmd_show,                 0, 0 },
@@ -819,6 +825,44 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
   if(retval) return retval;
 
   return do_disk_conf(drbd_fd,argv[0],&cn);
+}
+
+int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  unsigned long u_size=0;
+  int err;
+
+  optind=0; 
+  opterr=0; /* do not print error messages upon not valid options */
+  if(argc > 0) 
+    {
+      while(1)
+	{
+	  int c;
+	  
+	  c = getopt_long(argc+3,argv-3,make_optstring(options),options,0);
+	  if(c == -1) break;
+	  switch(c)
+	    {
+	    case 'd': 
+	      u_size=m_strtol(optarg,1024);
+	      break;
+	    case '?':
+	      fprintf(stderr,"Unknown option %s\n",argv[optind-4]);
+	      return 20;
+	      break;
+	    }
+	}
+    }
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_SIZE,u_size);
+  if(err)
+    {
+      perror("DRBD_IOCTL_SET_DISK_SIZE ioctl() failed");
+      return 20;
+    }
+
+  return 0;
 }
 
 const char* guess_dev_name(const char* dir,int major,int minor)

@@ -56,7 +56,7 @@
 
 struct disk_config {
 	IN int      lower_device;
-	IN unsigned int disk_size;  /* Size given by user */
+	IN unsigned int disk_size;  // Remove this member.
         IN int      do_panic;  /* Panic on error upon LL_DEV */
 };
 
@@ -162,5 +162,6 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_INVALIDATE    _IO ( 'D', 0x0D )
 #define DRBD_IOCTL_INVALIDATE_REM _IO ( 'D', 0x0E )
 #define DRBD_IOCTL_SET_SYNC_CONFIG _IOW( 'D', 0x0F,struct ioctl_syncer_config)
+#define DRBD_IOCTL_SET_DISK_SIZE  _IOW( 'D', 0x10, unsigned int)
 #endif
 

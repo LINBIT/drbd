@@ -113,6 +113,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size)
 		blk_size[MAJOR_NR][minor] = size;
 		mdev->la_size = size;
 		printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",minor,size);
+		drbd_md_write(mdev);
 	}
 
 	return rv;
@@ -445,6 +446,14 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	case DRBD_IOCTL_SET_DISK_CONFIG:
  		err = drbd_ioctl_set_disk(mdev,(struct ioctl_disk_config*)arg);
  		break;
+
+	case DRBD_IOCTL_SET_DISK_SIZE:
+		// TODO determine_dev_size should report errors...
+		err = 0;
+		mdev->lo_usize = (unsigned long)arg;
+		drbd_determin_dev_size(mdev,0);
+		drbd_send_param(mdev);
+		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:
  		err = drbd_ioctl_set_net(mdev,(struct ioctl_net_config*) arg);
