@@ -73,10 +73,10 @@ check_changelogs_up2date:
 
 update.filelist:
 	cvs status | grep -o "/drbd/drbd/[^,]*" | \
-		sed "/documentation/d;            \
-		     s/Attic\///;                 \
-		     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/" > .filelist
-	echo drbd-$(DIST_VERSION)/documentation >> .filelist
+	sed "s/Attic\///;                  \
+	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist
+	find documentation -name "*.[58]" -o -name "*.html" | \
+	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist
 
 .filelist:
@@ -87,9 +87,7 @@ tgz: .filelist
 	cd scripts; ln -sf drbd datadisk
 	rm -f drbd-$(DIST_VERSION)
 	ln -s . drbd-$(DIST_VERSION)
-	tar -czvf drbd-$(DIST_VERSION).tar.gz \
-	    --exclude CVS --exclude ".*" --exclude "*~" \
-            -T .filelist
+	tar --owner=0 --group=0 -czf drbd-$(DIST_VERSION).tar.gz -T .filelist
 	rm drbd-$(DIST_VERSION)
 
 ifeq ($(FORCE),)

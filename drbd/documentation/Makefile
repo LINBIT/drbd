@@ -26,12 +26,49 @@
 
 LANGS = ja pt_BR
 
-DB2MAN          := $(shell which 2>/dev/null docbook2man)
-DB2HTML         := $(shell which 2>/dev/null docbook2html)
-DB2PDF          := $(shell which 2>/dev/null docbook2pdf)
-DB2PS           := $(shell which 2>/dev/null docbook2ps)
+MAKEFILES_LANG := $(foreach dir,$(LANGS),$(dir)/Makefile)
 
 MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 drbdadm.8
+
+#
+# Docbook Magic for SuSE, Worksforme...
+# Needs to be explicitly enabled with make doc DIST=SuSE-9.0
+# requires these packages and their dependencies:
+#  docbook-dsssl-stylesheets docbook-toys
+#  docbook-utils docbook-utils opensp perl-SGMLS
+#
+ifeq ($(DIST),SuSE-9.0)
+  # dockbook2man just does not work.
+  # this does:
+  DB2MAN :=\
+  @_db2man() { in=$$1		;\
+   echo "  [DB2MAN] $$in"	;\
+   nsgmls "$$in" |\
+   sgmlspl /usr/share/sgml/docbook/utils-0.6.6/helpers/docbook2man-spec.pl;\
+  }; _db2man
+  
+  # dockbook2html produces errors and swallows tables.
+  # db2html works, but in contrast do dockbook2man creates 
+  # a subdirectory and some extra files ...
+  # this works for me:
+  DB2HTML :=\
+  _db2html() { in=$$1; base=$${in%.sgml}		;\
+   echo " [DB2HTML] $$in"			;\
+   db2html "$$in"				;\
+   ln -sf t1.html $$base/index.html		;\
+   mv $$base/*.html .		                ;\
+   rm -rf $$base/   		                ;\
+  }; _db2html
+
+else
+
+ DB2MAN          := $(shell which 2>/dev/null docbook2man)
+ DB2HTML         := $(shell which 2>/dev/null docbook2html)
+ DB2PDF          := $(shell which 2>/dev/null docbook2pdf)
+ DB2PS           := $(shell which 2>/dev/null docbook2ps)
+
+endif
+
 
 ####### Implicit rules
 
@@ -80,18 +117,25 @@ doc-clean:
 endif
 
 distclean:
-	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
-	rm -f *.ps.gz *.pdf *.ps *.html
+	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
+	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
+	rm -f  HOWTO/{*.html,*.css,suse-*.dsl,CATALOG.local}
+	rm -rf HOWTO/{DRBD-HOWTO*,db2html*}/	# note the trailing slash
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
-prepare:
-	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
+$(MAKEFILES_LANG): Makefile.lang
+	ln -sf ../Makefile.lang $@
+
+prepare: $(MAKEFILES_LANG)
+
+
+#	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
 
 man:	$(MANPAGES)
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
-	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
+	@cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
 install:
 	@ok=true; for f in $(MANPAGES) ; \
