@@ -86,25 +86,25 @@ typedef struct {
   __u32       magic;
   __u16       command;
   __u16       length;
-} Drbd_Packet;
+} __attribute((packed)) Drbd_Packet;
 
 #define MKPACKET(NAME) \
 typedef struct { \
   Drbd_Packet p; \
   NAME        h; \
-} NAME##acket;
+}  __attribute((packed)) NAME##acket ;
 
 typedef struct {
   __u64       block_nr;  /* 64 bits block number */
   __u64       block_id;  /* Used in protocol B&C for the address of the req. */
-} Drbd_Data_P;
+}  __attribute((packed)) Drbd_Data_P;
 MKPACKET(Drbd_Data_P)
 
 typedef struct {
   __u32       barrier;   /* may be 0 or a barrier number  */
   __u32       _fill;     /* Without the _fill gcc may add fillbytes on 
                             64 bit plaforms, but does not so an 32 bits... */
-} Drbd_Barrier_P;
+}  __attribute((packed)) Drbd_Barrier_P;
 MKPACKET(Drbd_Barrier_P)
 
 typedef struct {
@@ -114,24 +114,24 @@ typedef struct {
   __u32       protocol;
   __u32       version;
   __u32       gen_cnt[5];
-} Drbd_Parameter_P;
+}  __attribute((packed)) Drbd_Parameter_P;
 MKPACKET(Drbd_Parameter_P)
 
 typedef struct {
   __u64       block_nr;
   __u64       block_id;
-} Drbd_BlockAck_P;
+} __attribute((packed)) Drbd_BlockAck_P;
 MKPACKET(Drbd_BlockAck_P)
 
 typedef struct {
   __u32       barrier;
   __u32       set_size;
-} Drbd_BarrierAck_P;
+}  __attribute((packed)) Drbd_BarrierAck_P;
 MKPACKET(Drbd_BarrierAck_P)
 
 typedef struct {
   __u32       cstate;
-} Drbd_CState_P;
+}  __attribute((packed)) Drbd_CState_P;
 MKPACKET(Drbd_CState_P)
 
 typedef enum { 

@@ -83,6 +83,18 @@ inline void dec_unacked(int minor)
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 }
 
+inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
+{
+	if ( block_id == ID_SYNCER ) return 1;
+	if ( (long)block_id == (long)-1) {
+		printk(KERN_ERR DEVICE_NAME 
+		       "%d: strange block_id %llx\n",(int)(mdev-drbd_conf),
+		       block_id);
+		return 1;
+	}
+	return 0;
+}
+
 int drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry *e;
@@ -96,14 +108,14 @@ int drbd_process_done_ee(struct Drbd_Conf* mdev)
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry,list);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-		   e->block_id == ID_SYNCER ) {
+		   is_syncer_blk(mdev,e->block_id) ) {
 			spin_unlock_irq(&mdev->ee_lock);
 			r=drbd_send_ack(mdev, WriteAck,e->bh->b_blocknr,
 					e->block_id);
 			dec_unacked((int)(mdev-drbd_conf));
 			spin_lock_irq(&mdev->ee_lock);
 		}
-		if(e->block_id != ID_SYNCER) mdev->epoch_size++;
+		if(!is_syncer_blk(mdev,e->block_id)) mdev->epoch_size++;
 		bforget(e->bh);
 		list_add(le,&mdev->free_ee);
 		if(r != sizeof(Drbd_BlockAck_Packet )) {
@@ -131,7 +143,7 @@ static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 		bforget(e->bh);		
 		list_add(le,&mdev->free_ee);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-		   e->block_id == ID_SYNCER ) {
+		   is_syncer_blk(mdev,e->block_id)) {
 			dec_unacked((int)(mdev-drbd_conf));
 		}
 
@@ -520,7 +532,7 @@ inline int receive_data(int minor,int data_size)
 	e=drbd_get_ee(drbd_conf+minor);
 	e->bh=bh;
 	e->block_id=header.block_id;
-	if(header.block_id == ID_SYNCER) {
+	if( is_syncer_blk(drbd_conf+minor,header.block_id) ) {
 		list_add(&e->list,&drbd_conf[minor].sync_ee);
 	} else {
 		list_add(&e->list,&drbd_conf[minor].active_ee);
@@ -543,12 +555,12 @@ inline int receive_data(int minor,int data_size)
 	ll_rw_block(WRITE, 1, &bh);
 
 	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A || 
-	   header.block_id == ID_SYNCER) {
+	   is_syncer_blk(drbd_conf+minor,header.block_id)) {
 		inc_unacked(minor);
 	}
 
-	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B
-	    && header.block_id != ID_SYNCER) {
+	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B &&
+	     !is_syncer_blk(drbd_conf+minor,header.block_id)) {
 	        /*  printk(KERN_DEBUG DEVICE_NAME": Sending RecvAck"
 		    " %ld\n",header.block_id); */
 	        drbd_send_ack(&drbd_conf[minor], RecvAck,
@@ -596,7 +608,7 @@ inline int receive_block_ack(int minor)
 	    sizeof(header))
 	        return FALSE;
 
-	if( header.block_id == ID_SYNCER) {
+	if( is_syncer_blk(drbd_conf+minor,header.block_id)) {
 	syncer_blk:
 		bm_set_bit(drbd_conf[minor].mbds_id,
 			   be64_to_cpu(header.block_nr), 
@@ -604,9 +616,9 @@ inline int receive_block_ack(int minor)
 			   SS_IN_SYNC);
 	} else {
 		req=(drbd_request_t*)(long)header.block_id;
-		if(req == (drbd_request_t*)-1) {
+		if(req == (drbd_request_t*)-1) { // REMOVE THIS LATER
 			printk(KERN_ERR DEVICE_NAME 
-			       "%d: strange block_id %llx\n",minor,
+			       "%d: strange block_id2 %llx\n",minor,
 			       header.block_id);
 			goto syncer_blk;
 		}
