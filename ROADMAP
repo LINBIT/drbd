@@ -5,6 +5,7 @@ DRBD 0.8 Roadmap
   Do all size calculations on the base of sectors (512 Byte) as it 
   is common in Linux-2.6.x.
   (Currently they are done on a 1k base, for 2.4.x compatibility)
+  90% DONE
 
 2 Drop the Drbd_Parameter_Packet.
   Replace the Drbd_Parameter_Packet by a more general and 
@@ -14,14 +15,20 @@ DRBD 0.8 Roadmap
   at the beginning, including the expected API version.
   Consider using DRBD ioctls with some char device similar to
   /dev/mapper/control
+  0% DONE
 
 3 Authenticate the peer upon connect by using a shared secret. 
   Configuration file syntax:  net { auth-secret "secret-word" }
   Using a challenge-response authentication within the new
   handshake.
+  0% ASSIGNED TO rodrigo@corporacionlinux.cl 
 
-4 Changes of state and cstate synchronized by mutex and only done by
-  the worker thread.
+4 Consolidate state changes into a central function, that makes
+  sure that the new state is valid. Replace set_cstate() with
+  a force_state() and a request_state() function. Make all
+  state changes atomic, and consolidate the many differenct 
+  cstate-error states into a single "NetworkFailure" state.
+  50% DONE
 
 5 Two new configuration options, to allow more fine grained definition of
   DRDBs behaviour after a split-brain situation:
@@ -61,6 +68,7 @@ DRBD 0.8 Roadmap
        use the GC to tag the bitmap it is better the current way ]
   4) The execution of the pri-sees-sec-with-higher-gc-cmd should
      be implemented like the kernel can execute modprobe...
+  0% DONE
 
 6 It is possible that a secondary node crashes a primary by 
   returning invalid block_ids in ACK packets. [This might be 
@@ -82,6 +90,7 @@ DRBD 0.8 Roadmap
 
   Note: The actual key to the hash should be (sector & ~0x7).
         See item 9 for more details.
+  0% DONE
 
 7 Handle split brain situations; Support IO fencing; 
   introduce the "Dead" peer state (o_state)
@@ -127,6 +136,7 @@ DRBD 0.8 Roadmap
   tasks as well.
 
   Eventually introduce on-disconnent-cmd "command";
+  0% DONE
 
 8 New command drbdmeta
 
@@ -152,6 +162,7 @@ DRBD 0.8 Roadmap
   md-create would ask nasty questions about whether you are really 
   sure and so on, and do some plausibility checks first.
   md-set would be undocumented and for wizards only.
+  80% DONE
 
 9 Support shared disk semantics  ( for GFS, OCFS etc... )
 
@@ -288,6 +299,7 @@ DRBD 0.8 Roadmap
         to find IO operations starting in the same 4k block of
         data quickly. -> With two lookups the hash table we can
 	find any concurrent access.
+  0% DONE
 
 10 Change Sync-groups to sync-after
   
@@ -306,6 +318,7 @@ DRBD 0.8 Roadmap
 
   Remove config options   syncer { group <number>; }
   Introduce config options   syncer { after <resource>; }
+  0% DONE
   
 11 Take into account that the two systems could have different 
   PAGE_SIZE. 
@@ -317,6 +330,7 @@ DRBD 0.8 Roadmap
   Probably a general high performance implementation for this
   issue is not necessary, since clusters of machines with 
   different PAGE_SIZE are of academic interest only.
+  0% DONE
  
 
 plus-banches:
