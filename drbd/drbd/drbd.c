@@ -154,10 +154,11 @@ struct Tl_epoch_entry {
 /* #define ES_SIZE_STATS 50 */
 
 struct Drbd_Conf {
-	struct drbd_config conf;
+	struct net_config conf;
 	struct socket *sock;
 	kdev_t lo_device;
 	struct file *lo_file;
+	int lo_usize;   /* user provided size */
 	int blk_size_b;
 	Drbd_State state;
 	Drbd_CState cstate;
@@ -209,6 +210,7 @@ int drbdd_init(struct Drbd_thread*);
 int drbd_syncer(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
 void drbd_free_resources(int minor);
+void drbd_free_sock(int minor);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
@@ -326,21 +328,22 @@ struct request *my_all_requests = NULL;
 
 	static const char *cstate_names[] =
 	{
-		"Unconfigured",
-		"Unconnected",
-		"Timeout",
-		"BrokenPipe",
-		"WFConnection",
-		"WFReportParams",
-		"Connected",
-		"SyncingAll",
-		"SyncingQuick"
+		[Unconfigured] = "Unconfigured",
+		[StandAllone] =  "StandAllone",
+		[Unconnected] =  "Unconnected",
+		[Timeout] =      "Timeout",
+		[BrokenPipe] =   "BrokenPipe",
+		[WFConnection] = "WFConnection",
+		[WFReportParams] = "WFReportParams",
+		[Connected] =    "Connected",
+		[SyncingAll] =   "SyncingAll",
+		[SyncingQuick] = "SyncingQuick"
 	};
 	static const char *state_names[] =
 	{
-		"Primary",
-		"Secondary",
-		"Unknown"
+		[Primary] = "Primary",
+		[Secondary] = "Secondary",
+		[Unknown] = "Unknown"
 	};
 
 
@@ -891,7 +894,7 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
 	int r;
         Drbd_Barrier_Packet head;
 
-	/* tl_add_barrier() must be called witth the send_mutex aquired */
+	/* tl_add_barrier() must be called with the send_mutex aquired */
 	head.h.barrier=tl_add_barrier(mdev); 
 
 	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
@@ -1386,14 +1389,176 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	}
 }
 
+/*static */
+int drbd_ioctl_set_disk(struct Drbd_Conf *mdev, 
+			struct ioctl_disk_config * arg)
+{
+	int err,i,minor;
+	enum ret_codes retcode;
+	struct disk_config new_conf;
+	struct file *filp;
+	struct inode *inode;
+	kdev_t ll_dev;
+
+	minor=(int)(mdev-drbd_conf);
+
+	if (mdev->open_cnt > 1)
+		return -EBUSY;
+
+	if ((err = copy_from_user(&new_conf, &arg->config,
+				  sizeof(struct disk_config))))
+		return err;
+
+	filp = fget(new_conf.lower_device);
+	if (!filp) {
+		retcode=LDFDInvalid;
+		goto fail_ioctl;
+	}
+
+	inode = filp->f_dentry->d_inode;
+	
+	for(i=0;i<minor_count;i++) {
+		if( i != minor && 
+		    inode->i_rdev == drbd_conf[i].lo_device) {
+			retcode=LDAlreadyInUse;
+			goto fail_ioctl;
+		}
+	}
+
+	if (!S_ISBLK(inode->i_mode)) {			
+		fput(filp);
+		retcode=LDNoBlockDev;
+		goto fail_ioctl;
+	}
+
+	if ((err = blkdev_open(inode, filp))) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: blkdev_open( %d:%d ,) returned %d\n", minor,
+		       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),err);
+		fput(filp);
+		retcode=LDOpenFailed;
+		goto fail_ioctl;
+	}
+
+	ll_dev = inode->i_rdev;
+
+	if (blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] < new_conf.disk_size ) {
+		retcode=LDDeviceTooSmall;
+		goto fail_ioctl;
+	}
+
+
+	fsync_dev(MKDEV(MAJOR_NR, minor));
+	drbd_thread_stop(&mdev->syncer);
+	drbd_thread_stop(&mdev->asender);
+	drbd_thread_stop(&mdev->receiver);
+	drbd_free_resources(minor);
+
+	mdev->lo_device = ll_dev;
+	mdev->lo_file = filp;
+	mdev->lo_usize = new_conf.disk_size;
+
+	if (mdev->lo_usize) {
+		blk_size[MAJOR_NR][minor] = mdev->lo_usize;
+		printk(KERN_INFO DEVICE_NAME"%d: user provided size = %d KB\n",
+		       minor,blk_size[MAJOR_NR][minor]);
+
+		if (!mdev->mbds_id) {
+			mdev->mbds_id = 
+				mdev->mops->init(MKDEV(MAJOR_NR, minor));
+		}
+	}		
+
+	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
+	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
+	mdev->blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
+	
+	set_cstate(mdev,StandAllone);
+
+	return 0;
+
+	fail_ioctl:
+	if ((err=put_user(retcode, &arg->ret_code))) return err;
+	return -EINVAL;
+}
+
+/*static */
+int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
+{
+	int err,i,minor;
+	enum ret_codes retcode;
+	struct net_config new_conf;
+
+	minor=(int)(mdev-drbd_conf);
+
+	if ((err = copy_from_user(&new_conf, &arg->config,
+				  sizeof(struct net_config))))
+		return err;
+
+	if( mdev->lo_file == 0 || mdev->lo_device == 0 ) {
+		retcode=LDNoConfig;
+		goto fail_ioctl;
+	}
+
+#define M_ADDR(A) (((struct sockaddr_in *)&A##.my_addr)->sin_addr.s_addr)
+#define M_PORT(A) (((struct sockaddr_in *)&A##.my_addr)->sin_port)
+#define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
+#define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
+	for(i=0;i<minor_count;i++) {		  
+		if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
+		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
+		    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
+			retcode=LAAlreadyInUse;
+			goto fail_ioctl;
+		}
+		if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
+		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
+		    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
+			retcode=OAAlreadyInUse;
+			goto fail_ioctl;
+		}
+	}
+#undef M_ADDR
+#undef M_PORT
+#undef O_ADDR
+#undef O_PORT
+
+
+	/* TODO: 
+	   We should warn the user if the LL_DEV is
+	   used already. E.g. some FS mounted on it.
+	*/
+
+	fsync_dev(MKDEV(MAJOR_NR, minor));
+	drbd_thread_stop(&mdev->syncer);
+	drbd_thread_stop(&mdev->asender);
+	drbd_thread_stop(&mdev->receiver);
+	drbd_free_sock(minor);
+
+	memcpy(&mdev->conf,&new_conf,
+	       sizeof(struct net_config));
+
+	if (!mdev->transfer_log) {
+		mdev->transfer_log = kmalloc(sizeof(struct Tl_entry) * 
+					     mdev->conf.tl_size, GFP_KERNEL);
+		tl_init(&drbd_conf[minor]);
+	}
+
+	set_cstate(&drbd_conf[minor],Unconnected);
+	drbd_thread_start(&mdev->receiver);
+
+	return 0;
+
+	fail_ioctl:
+	if ((err=put_user(retcode, &arg->ret_code))) return err;
+	return -EINVAL;
+}
+
 /*static */ int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
 	int err;
-	int minor,i;
-	struct file *filp;
-	struct drbd_config new_conf;
-	enum ret_codes retcode;
+	int minor;
 	long time;
 
 	minor = MINOR(inode->i_rdev);
@@ -1444,7 +1609,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		   FIXME:
 		     The current implementation is full of races.
 		     Will do the right thing in 2.4 (using a rw-semaphore),
-		     for now it's good enough. (Do not panic, these races
+		     for now it is good enough. (Do not panic, these races
 		     are not harmfull)		     
 		*/
 		/*
@@ -1481,129 +1646,27 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		break;
 
-	case DRBD_IOCTL_SET_CONFIG:
-	        /* printk(KERN_DEBUG DEVICE_NAME ": set_config()\n"); */
+	case DRBD_IOCTL_SET_DISK_CONFIG:
+		return drbd_ioctl_set_disk(&drbd_conf[minor],
+					   (struct ioctl_disk_config*) arg);
+	case DRBD_IOCTL_SET_NET_CONFIG:
+		return drbd_ioctl_set_net(&drbd_conf[minor],
+					   (struct ioctl_net_config*) arg);
 
-		if (drbd_conf[minor].open_cnt > 1)
-			return -EBUSY;
+	case DRBD_IOCTL_UNCONFIG_NET:
 
-		if ((err = copy_from_user(&new_conf, 
-				    &((struct ioctl_drbd_config *)arg)->config,
-				    sizeof(struct drbd_config))))
-			return err;
-
-#define M_ADDR(A) (((struct sockaddr_in *)&A##.my_addr)->sin_addr.s_addr)
-#define M_PORT(A) (((struct sockaddr_in *)&A##.my_addr)->sin_port)
-#define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
-#define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
-		for(i=0;i<minor_count;i++) {		  
-			if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
-			    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
-			    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
-				retcode=LAAlreadyInUse;
-				goto fail_ioctl;
-			}
-			if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
-			    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
-			    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
-				retcode=OAAlreadyInUse;
-				goto fail_ioctl;
-			}
-		}
-#undef M_ADDR
-#undef M_PORT
-#undef O_ADDR
-#undef O_PORT
-
-		filp = fget(new_conf.lower_device);
-		if (!filp) {
-			retcode=LDFDInvalid;
-			goto fail_ioctl;
-		}
-
-		inode = filp->f_dentry->d_inode;
-
-		for(i=0;i<minor_count;i++) {
-			if( i != minor && 
-			    inode->i_rdev == drbd_conf[i].lo_device) {
-				retcode=LDAlreadyInUse;
-				goto fail_ioctl;
-			}
-		}
-
-		if (!S_ISBLK(inode->i_mode)) {			
-			fput(filp);
-			retcode=LDNoBlockDev;
-			goto fail_ioctl;
-		}
-
-		if ((err = blkdev_open(inode, filp))) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: blkdev_open( %d:%d ,) returned %d\n",
-			       minor,
-			       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),err);
-			fput(filp);
-			retcode=LDOpenFailed;
-			/* goto fail_ioctl; */
-		fail_ioctl:
-			if ((err=put_user(retcode, 
-				&((struct ioctl_drbd_config *)arg)->ret_code)))
-				return err;
-			return -EINVAL;
-		}
-
-		/* TODO: 
-		         We should warn the user if the LL_DEV is
-			 used already. E.g. some FS mounted on it.
-		*/
+		if( drbd_conf[minor].cstate == Unconfigured)
+			return -ENXIO;
 
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_thread_stop(&drbd_conf[minor].syncer);
 		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);
-		drbd_free_resources(minor);
 
-		memcpy(&drbd_conf[minor].conf,&new_conf,
-		       sizeof(struct drbd_config));
-
-		drbd_conf[minor].lo_device = inode->i_rdev;
-		drbd_conf[minor].lo_file = filp;
-
-		if (!drbd_conf[minor].transfer_log) {
-			drbd_conf[minor].transfer_log =
-			    kmalloc(sizeof(struct Tl_entry) * 
-				    drbd_conf[minor].conf.tl_size,
-				    GFP_KERNEL);
-			tl_init(&drbd_conf[minor]);
-		}
-
-		if (drbd_conf[minor].conf.disk_size) {
-		        kdev_t ll_dev = drbd_conf[minor].lo_device;
-			blk_size[MAJOR_NR][minor] =
-			  min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
-			      drbd_conf[minor].conf.disk_size);
-		        printk(KERN_INFO DEVICE_NAME
-			       "%d: user provided size = %d KB\n",
-			       minor,blk_size[MAJOR_NR][minor]);
-
-			if (!drbd_conf[minor].mbds_id) {
-			       drbd_conf[minor].mbds_id = 
-				 drbd_conf[minor].mops->init(MKDEV(MAJOR_NR, 
-								   minor));
-			}
-		}		
-
-		set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
-		set_blocksize(drbd_conf[minor].lo_device, INITIAL_BLOCK_SIZE);
-		drbd_conf[minor].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
-
-		set_cstate(&drbd_conf[minor],Unconnected);
-
-		drbd_thread_start(&drbd_conf[minor].receiver);
-
+		set_cstate(&drbd_conf[minor],StandAllone);
 		break;
 
-	case DRBD_IOCTL_UNCONFIG:
+	case DRBD_IOCTL_UNCONFIG_BOTH:
 
 		if( drbd_conf[minor].cstate == Unconfigured)
 			return -ENXIO;
@@ -2395,6 +2458,7 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.state) == Primary &&
 	   drbd_conf[minor].state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME"%d: incompatible states \n",minor);
+		set_cstate(&drbd_conf[minor],StandAllone);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
@@ -2402,6 +2466,7 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.version)!=MOD_VERSION) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
 		       minor);
+		set_cstate(&drbd_conf[minor],StandAllone);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
@@ -2409,14 +2474,15 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
 		       minor);
+		set_cstate(&drbd_conf[minor],StandAllone);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
         if (!blk_size[MAJOR(ll_dev)]) {
 		blk_size[MAJOR_NR][minor] = 0;
-		printk(KERN_ERR DEVICE_NAME"%d: LL Device has no size!\n",
-		       minor);
+		printk(KERN_ERR DEVICE_NAME"%d: LL dev(%d,%d) has no size!\n",
+		       minor,MAJOR(ll_dev),MINOR(ll_dev));
 		return FALSE;
 	}
 
@@ -2426,12 +2492,12 @@ inline int receive_param(int minor,int command)
 		min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
 		    be64_to_cpu(param.size));
 
-	if(drbd_conf[minor].conf.disk_size &&
-	   (drbd_conf[minor].conf.disk_size != blk_size[MAJOR_NR][minor])) {
+	if(drbd_conf[minor].lo_usize &&
+	   (drbd_conf[minor].lo_usize != blk_size[MAJOR_NR][minor])) {
 		printk(KERN_ERR DEVICE_NAME"%d: Your size hint is bogus!"
 		       "change it to %d\n",minor,blk_size[MAJOR_NR][minor]);
-		blk_size[MAJOR_NR][minor]=drbd_conf[minor].conf.disk_size;
-		set_cstate(&drbd_conf[minor],Unconfigured);
+		blk_size[MAJOR_NR][minor]=drbd_conf[minor].lo_usize;
+		set_cstate(&drbd_conf[minor],StandAllone);
 		return FALSE;
 	}
 
@@ -2620,7 +2686,7 @@ void drbdd(int minor)
 	       "(pc=%d,uc=%d)\n",minor,drbd_conf[minor].pending_cnt,
 	       drbd_conf[minor].unacked_cnt);
 
-	if(drbd_conf[minor].cstate != Unconfigured)
+	if(drbd_conf[minor].cstate != StandAllone) 
 	        set_cstate(&drbd_conf[minor],Unconnected);
 
 	switch(drbd_conf[minor].state) {
@@ -2668,17 +2734,14 @@ int drbdd_init(struct Drbd_thread *thi)
 
 	printk(KERN_DEBUG DEVICE_NAME "%d: receiver exiting\n", minor);
 
-	set_cstate(&drbd_conf[minor],Unconfigured);
+	/* set_cstate(&drbd_conf[minor],StandAllone); */
 
 	return 0;
 }
 
-void drbd_free_resources(int minor)
+
+void drbd_free_ll_dev(int minor)
 {
-	if (drbd_conf[minor].sock) {
-		sock_release(drbd_conf[minor].sock);
-		drbd_conf[minor].sock = 0;
-	}
 	if (drbd_conf[minor].lo_file) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 		blkdev_put(drbd_conf[minor].lo_file->f_dentry->d_inode->i_bdev,
@@ -2691,7 +2754,21 @@ void drbd_free_resources(int minor)
 		drbd_conf[minor].lo_file = 0;
 		drbd_conf[minor].lo_device = 0;
 	}
-	set_cstate(&drbd_conf[minor],Unconfigured);
+}
+
+void drbd_free_sock(int minor)
+{
+	if (drbd_conf[minor].sock) {
+		sock_release(drbd_conf[minor].sock);
+		drbd_conf[minor].sock = 0;
+	}
+}
+
+
+void drbd_free_resources(int minor)
+{
+	drbd_free_sock(minor);
+	drbd_free_ll_dev(minor);
 }
 
 
@@ -2967,7 +3044,7 @@ int drbd_asender(struct Drbd_thread *thi)
   We need to store one bit for a block. 
   Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
   Bit 0 ==> Primary and secondary nodes are in sync.
-  Bit 1 ==> secondary node's block must be updated.
+  Bit 1 ==> secondary node's block must be updated. (')
 */
 
 #include <asm/types.h>

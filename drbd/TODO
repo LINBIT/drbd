@@ -66,6 +66,14 @@ My TODO list:
 
 16) MAYBE: Implement the please-postpone-this-timeout-packet. 
 
+17) split drbdsetup /dev/nbX /dev/hdaY bla bla ... into 
+    a ll_device part and a network part.	
+
+18) Add entries to /proc/partitions
+
+19) Maybe use /dev/nvram for something  // Maybe receiver is blocking
+    in ll_rw_block too long. --> Is it possible to do that in an other thread?
+
 DONE:
 1 (partial),2,7,8,11,13,10, 3 (Yes, finally)
 
