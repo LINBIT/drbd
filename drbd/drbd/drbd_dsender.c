@@ -211,6 +211,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 	long time=MAX_SCHEDULE_TIMEOUT;
 	wait_queue_t wait;
 	int start_sync;
+	int sync_finished;
 
 	sprintf(current->comm, "drbd_dsender_%d", (int)(mdev-drbd_conf));
 
@@ -236,6 +237,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 		spin_unlock(&mdev->dsender_wait.lock);
 
 		start_sync=test_and_clear_bit(START_SYNC,&mdev->flags);
+		sync_finished=test_and_clear_bit(SYNC_FINISHED,&mdev->flags);
 
 		spin_unlock_irq(&mdev->ee_lock);
 
@@ -246,6 +248,17 @@ int drbd_dsender(struct Drbd_thread *thi)
 			bm_reset(mdev->mbds_id,mdev->blk_size_b);
 			printk(KERN_INFO DEVICE_NAME "%d: resync started.\n",
 			       (int)(mdev-drbd_conf));
+		}
+
+		if(sync_finished) {
+			printk(KERN_INFO DEVICE_NAME "%d: resync done.\n",
+			       (int)(mdev-drbd_conf));
+			if(mdev->cstate == SyncTarget) {
+				mdev->gen_cnt[Flags] |= MDF_Consistent;
+				drbd_md_write(mdev);
+			}
+			mdev->rs_total = 0;
+			set_cstate(mdev,Connected);
 		}
 
 		schedule_timeout(time);

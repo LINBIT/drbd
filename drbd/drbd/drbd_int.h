@@ -278,6 +278,7 @@ struct Pending_read {
 #define WRITE_HINT_QUEUED 6
 #define BLKSIZE_CHANGING  7
 #define PARTNER_DISKLESS  8
+#define SYNC_FINISHED     16
 
 struct send_timer_info {
 	struct timer_list s_timeout; /* send timeout */
@@ -342,6 +343,7 @@ struct Drbd_Conf {
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
 	unsigned long rs_mark_left;// block not up-to-date at mark [unit KB]
 	unsigned long rs_mark_time;// marks's time [unit jiffies]
+	spinlock_t rs_lock; // used to protect the rs_variables.
 	spinlock_t bb_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread dsender;
@@ -560,25 +562,25 @@ static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 				    unsigned long blocknr,
 				    int b_size_bits)
 {
+	/* Is called by drbd_dio_end possibly from IRQ context, but
+	   from other places in non IRQ */
+	unsigned long flags=0; 
 	bm_set_bit(mdev->mbds_id, blocknr, b_size_bits, SS_IN_SYNC);
 
+	spin_lock_irqsave(&mdev->rs_lock,flags);
 	mdev->rs_left = mdev->rs_left-(1 << (b_size_bits - 10));
+	if( mdev->rs_left == 0 ) {
+		spin_lock(&mdev->ee_lock); // IRQ already taken by rs_lock
+		set_bit(SYNC_FINISHED,&mdev->flags);
+		spin_unlock(&mdev->ee_lock);
+                wake_up_interruptible(&mdev->dsender_wait);		
+	}
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
 		mdev->rs_mark_time=jiffies;
 		mdev->rs_mark_left=mdev->rs_left;
 	}
-
-	if( mdev->rs_left == 0 ) {
-		printk(KERN_INFO DEVICE_NAME "%d: All blocks in sync.\n",
-		       (int)(mdev-drbd_conf));
-		if(mdev->cstate == SyncTarget) {
-			mdev->gen_cnt[Flags] |= MDF_Consistent;
-			drbd_md_write(mdev);
-		}
-		mdev->rs_total = 0;
-		set_cstate(mdev,Connected);
-	}
+	spin_unlock_irqrestore(&mdev->rs_lock,flags);
 }
 
 extern int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list);

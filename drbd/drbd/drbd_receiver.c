@@ -856,8 +856,9 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	spin_unlock(&mdev->pr_lock); 
 
         if(block_nr != bh->b_blocknr) {
-                printk(KERN_ERR DEVICE_NAME "%d: blocknr inconsitent!\n",
-                       (int)(mdev-drbd_conf));
+                printk(KERN_ERR DEVICE_NAME "%d: dleass_read: blocknr!"
+		       "g=%lu e=%lu\n",
+                       (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
         }
 
 	rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
@@ -924,8 +925,9 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	}
 
         if(block_nr != bh->b_blocknr) {
-                printk(KERN_ERR DEVICE_NAME "%d: blocknr inconsitent!\n",
-                       (int)(mdev-drbd_conf));
+                printk(KERN_ERR DEVICE_NAME "%d: both_read: blocknr!"
+		       "g=%lu e=%lu\n",
+                       (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
         }
 
 	memcpy(bh_kmap(bh),bh_kmap(e->bh),data_size);

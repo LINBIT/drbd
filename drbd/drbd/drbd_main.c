@@ -1064,6 +1064,7 @@ int __init drbd_init(void)
 		//drbd_conf[i].rs_start=0;
 		//drbd_conf[i].rs_mark_left=0;
 		//drbd_conf[i].rs_mark_time=0;
+		drbd_conf[i].rs_lock = SPIN_LOCK_UNLOCKED;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].a_timeout.function = drbd_a_timeout;
 		drbd_conf[i].a_timeout.data = (unsigned long)(drbd_conf+i);
