@@ -284,7 +284,7 @@ sub become_sec($$)
 	`umount $$mconf{self}{device} 2> /dev/null`;
 	if ( $? ) {
 	    `fuser -k -m $$mconf{self}{device} > /dev/null`;
-	    sleep 1; #Hopefully the signals get delivered within one second...
+	    sleep 3; #Hopefully the signals get delivered within 3 seconds..
 	    $errtxt=`umount $$mconf{self}{device} 2>&1`;
 	    if ( $? ) {
 		print "$pname: umount FAILED:";
@@ -307,6 +307,40 @@ sub reconnect($$)
     $errtxt=`$drbdsetup $$mconf{self}{device} net $$mconf{self}{address}:$$mconf{self}{port} $$mconf{other}{address}:$$mconf{other}{port} $$mconf{protocol} $$mconf{net} 2>&1 `;
     if( $? ) { die "$errtxt"; }
 
+}
+
+sub drbd_status($$)
+{
+    my ($res,$mconf)=@_;
+    my $cs;
+    my %retcode_table = ("Unconfigured"   => "stopped",
+			 "StandAllone"    => "stopped",
+			 "Unconnected"    => "stopped",
+			 "Timeout"        => "stopped",
+			 "BrokenPipe"     => "stopped",
+			 "WFConnection"   => "stopped",
+			 "WFReportParams" => "stopped",
+			 "Connected"      => "running",
+			 "SyncingAll"     => "running",
+			 "SyncingQuick"   => "running");
+    
+    ($cs,undef)=get_drbd_status($$mconf{self}{device});
+
+    return $retcode_table{$cs};
+}
+
+sub datadisk_status($$)
+{
+    my ($res,$mconf)=@_;
+    my $st;
+    my %retcode_table = (
+		         "Primary"      => "running",
+		         "Secondary"    => "stopped",
+		         "Unknown"      => "stopped");
+    
+    (undef,$st)=get_drbd_status($$mconf{self}{device});
+
+    return $retcode_table{$st};
 }
 
 #
@@ -335,10 +369,12 @@ sub m_system($)
 sub get_drbd_status($)
 {
     my ($device)=@_;
-    my ($minor,$line);
+    my ($minor,$line,@st);
 
-    $minor=$device;
-    $minor =~ s/\/dev\/nb//;
+    if ( -b $device && (@st = stat(_))) {
+	#$major = ($st[6] & 0xff00) >> 8;
+	$minor = $st[6] & 0xff;
+    } else { die "Can not stat $device (or it is not a block device)"; }
 
     open (PROC,"</proc/drbd")
 	or die "can not open /proc/drbd";
@@ -383,14 +419,29 @@ sub fcaller($)
     if($resource) { 
 	$rv=&$function($resource,$conf{$resource}); 
 	if($rv) {$ret{$rv}=$resource;}
-    }
-    else {
+    } else {
 	foreach $res (keys %conf) {
 	    $rv=&$function($res,$conf{$res}); 
 	    if($rv) {$ret{$rv}=$res;}
 	}
     }
     return %ret;
+}
+
+sub status_fcaller($)
+{
+    my ($function)=@_;
+    my ($res,$status);
+
+    if($resource) {
+	$status=&$function($resource,$conf{$resource});
+    } else {
+	$status="running";
+	foreach $res (keys %conf) {
+	    $status="stopped" if(&$function($res,$conf{$res}) eq "stopped");
+	}
+    }
+    return $status;
 }
 
 sub u_check($$)
@@ -475,6 +526,8 @@ sub drbd()
 	}
     } elsif ($command eq "reconnect") { 
 	fcaller( \&reconnect );
+    } elsif ($command eq "status") { 
+	print status_fcaller( \&drbd_status) . "\n";
     } else {
 	print "USAGE: drbd [resource] start|reconnect|stop\n";
     }
@@ -488,7 +541,7 @@ sub datadisk()
     } elsif ($command eq "stop") { 
 	fcaller( \&become_sec );
     } elsif ($command eq "status") { 
-	# TODO: status.
+	print status_fcaller( \&datadisk_status) . "\n";
     } else {
 	print "USAGE: datadisk [resource] start|stop|status\n";
     }
