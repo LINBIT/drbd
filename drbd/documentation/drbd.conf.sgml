@@ -93,7 +93,9 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     (keyword <option>on</option>) and may have
     a <option>net</option> and a <option>disk</option> section.
     Required parameter in this section: <option>protocol</option>,
-    <option>fsckcmd</option>.
+    <option>fsckcmd</option>. Optinal parameters are <option>inittimeout
+    </option>, <option>skip-wait</option> and 
+    <option>incon-degr-cmd</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -176,6 +178,16 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     synchronisation to finish, you can set this option. WARNING:
     only do this if whatever software you're using to manage drbd can 
     correctly handle a syncing drbd device (no failover possible).
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>incon-degr-cmd=<replaceable>command</replaceable></option></term>
+  <listitem><para>
+    In case a node starts up in degraded mode (inittimeout is set) and
+    its local replica of the data is inconsistent it executes the
+    <replaceable>command</replaceable>. If the command exits without
+    error, datadisk expects the drbd device to be in primary state.
   </para>
   </listitem>
 </varlistentry>
