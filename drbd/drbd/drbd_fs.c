@@ -1055,13 +1055,19 @@ ONLY_IN_26(
 		// We can drop the mutex, we do not touch anything in mdev.
 		up(&mdev->device_mutex);
 
-		err = wait_event_interruptible_timeout(
+		time = wait_event_interruptible_timeout(
 			mdev->cstate_wait,
 			mdev->cstate < Unconnected
 			|| mdev->cstate >= Connected,
 			time );
-		if (err == 0) err = -ETIME;
-		if (err < 0) goto out_unlocked;
+		if (time < 0) {
+			err = time;
+			goto out_unlocked;
+		}
+		if (time == 0) {
+			err = -ETIME;
+			goto out_unlocked;
+		}
 		err=0; // no error
 
 		if(put_user(mdev->cstate>=Connected,&wp->ret_code))err=-EFAULT;
@@ -1074,19 +1080,28 @@ ONLY_IN_26(
 		up(&mdev->device_mutex);
 
 		do {
-			if (mdev->cstate > Connected)
-				time=MAX_SCHEDULE_TIMEOUT;
-			// XXX else back to user supplied timeout ??
-			err = wait_event_interruptible_timeout(
+			time = wait_event_interruptible_timeout(
 				mdev->cstate_wait,
 				mdev->cstate == Connected
 				|| mdev->cstate < Unconnected,
 				time );
-			if (err == 0) err = -ETIME;
-			if (err < 0) goto out_unlocked;
-		} while (err > 0
-			 && mdev->cstate != Connected
-			 && mdev->cstate >= Unconnected);
+
+			if (time < 0 ) {
+				err = time;
+				goto out_unlocked;
+			}
+
+			if (mdev->cstate > Connected) {
+				time=MAX_SCHEDULE_TIMEOUT;
+			}
+
+			if (time == 0) {
+				err = -ETIME;
+				goto out_unlocked;
+			}
+		} while ( mdev->cstate != Connected
+			  && mdev->cstate >= Unconnected );
+
 		err=0; // no error
 
 		if(put_user(mdev->cstate==Connected,&wp->ret_code))err=-EFAULT;

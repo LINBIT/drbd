@@ -1040,7 +1040,7 @@ do {									\
 
 #define wait_event_interruptible_timeout(wq, condition, timeout)	\
 ({									\
-	unsigned long __ret = timeout;						\
+	long __ret = timeout;						\
 	if (!(condition))						\
 		__wait_event_interruptible_timeout(wq, condition, __ret); \
 	__ret;								\
