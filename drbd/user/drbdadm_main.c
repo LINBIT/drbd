@@ -179,9 +179,9 @@ static void dump_global_info()
     {
       printI("global {\n"); ++indent;
       if (global_options.disable_io_hints)
-	printI("disable_io_hints;\n");
+	printI("disable-io-hints;\n");
       if (global_options.minor_count)
-	printI("minor_count = %i;\n", global_options.minor_count);
+	printI("minor-count %i;\n", global_options.minor_count);
       --indent; printI("}\n\n");
     }
 }
