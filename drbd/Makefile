@@ -24,6 +24,8 @@ all:
 
 install:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
+	@ echo
+	@ echo Don't forget to do 'make dev'
 
 clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
