@@ -4,10 +4,13 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.7.8 (api:77/proto:74)
+-----
  * Fixed a bug that caused the syncer to starve on devices 
-   bigger than 2 TB on 32bit Systems.
+   bigger than 2 TB on 32bit systems (=CONFIG_LBA).
  * Made online resizing actually work. Now it makes a lot
    more sense to put DRBD on top of LVM.
+ * Made the user dialog to work on RedHat based distributions.
  * A small optimization that improves the performance of the 
    syncer when woking with IBM's ServRaid Controllers (ips).
    May have a positive effect with other Controllers as well.
@@ -16,8 +19,7 @@ Latest:
    harm than printing messages to the syslog
  * Fixed write_gc.pl to work with the perl version delivered
    with RHAS3.
- * Made the initscript to abort if one off the setup commands
-   fails.
+ * Made the initscript to abort if one of the setup commands fails.
 
 0.7.7 (api:77/proto:74)
 -----
