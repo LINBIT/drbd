@@ -40,7 +40,7 @@ case "$1" in
 	start)
 		INSERTED=`lsmod | grep drbd | wc -l | sed -e s/\ //g`
 
-		if [ "$INSERTED" -eq 1 ]; then
+		if [ "$INSERTED" -eq 0 ]; then
 			MINOR_COUNT=`echo $DEVICES | wc -w | sed -e s/\ //g`
 			action "Loading DRBD module " \
 			modprobe -s drbd minor_count=$MINOR_COUNT 2> /dev/null
