@@ -75,7 +75,7 @@ case "$OPTION" in
 				echo "It seems that the node didn't stop properly"
 				ACTION="loop"
 
-				while [ $ACTION != "c" -a $ACTION != "C" -a $ACTION != "r" -a $ACTION != "R" ]; do
+				while [ "$ACTION" != "c" -a "$ACTION" != "C" -a "$ACTION" != "r" -a "$ACTION" != "R" ]; do
 					echo -n "Do you want to continue or reboot [C/R] " 
 					read ACTION
 					echo
