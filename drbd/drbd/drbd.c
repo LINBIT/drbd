@@ -153,6 +153,15 @@ struct Tl_epoch_entry {
 
 /* #define ES_SIZE_STATS 50 */
 
+enum MetaDataIndex { 
+	Consistent,     /* Consistency flag, updated in drbd_md_write */
+	HumanCnt,       /* human-intervention-count */
+	ConnectedCnt,   /* connected-count */
+	ArbitraryCnt,   /* arbitrary-count */
+	PrimaryInd,     /* primary-indicator, updated in drbd_md_write */
+	MagicNr        
+};
+
 struct Drbd_Conf {
 	struct net_config conf;
         int do_panic;
@@ -165,7 +174,6 @@ struct Drbd_Conf {
 	Drbd_CState cstate;
 	wait_queue_head_t cstate_wait;
 	wait_queue_head_t state_wait;
-	/* TODO : Check if there are enough wake_up(state_wait)s */
 	Drbd_State o_state;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -195,6 +203,7 @@ struct Drbd_Conf {
 	void* mbds_id;
         wait_queue_head_t asender_wait;  
 	int open_cnt;
+	u32 gen_cnt[5];
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
@@ -212,6 +221,10 @@ int drbd_syncer(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
 void drbd_free_resources(int minor);
 void drbd_free_sock(int minor);
+void drbd_md_write(int minor);
+void drbd_md_read(int minor);
+void drbd_md_inc(int minor, enum MetaDataIndex order);
+int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
@@ -265,7 +278,6 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 /*static */ int *drbd_blocksizes;
 /*static */ int *drbd_sizes;
 /*static */ struct Drbd_Conf *drbd_conf;
-/*static */ struct fs_struct dummy_fs;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
 /*static */ struct block_device_operations drbd_ops = {
@@ -287,6 +299,7 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
 #define max(a,b) ( (a) > (b) ? (a) : (b) )
+#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 /************************* PROC FS stuff begin */
 #include <linux/proc_fs.h>
@@ -349,6 +362,7 @@ struct request *my_all_requests = NULL;
 	   dw .. disk write
 	   dr .. disk read
 	   of .. block's on the fly 
+	   gc .. generation count 
 	*/
 
 	for (i = 0; i < minor_count; i++) {
@@ -357,7 +371,7 @@ struct request *my_all_requests = NULL;
 		rlen = 
 		    rlen + sprintf(buf + rlen,
 				   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
-				   " of:%u\n",
+				   " gc:%u,%u,%u\n",
 				   i,
 				   cstate_names[drbd_conf[i].cstate],
 				   state_names[drbd_conf[i].state],
@@ -366,7 +380,11 @@ struct request *my_all_requests = NULL;
 				   drbd_conf[i].recv_cnt,
 				   drbd_conf[i].writ_cnt,
 				   drbd_conf[i].read_cnt,
-				   drbd_conf[i].pending_cnt);
+				   /*  drbd_conf[i].pending_cnt, */
+				   drbd_conf[i].gen_cnt[1],
+				   drbd_conf[i].gen_cnt[2],
+				   drbd_conf[i].gen_cnt[3]);
+				   
 
 	}
 
@@ -687,14 +705,6 @@ int drbd_thread_setup(void* arg)
 	exit_mm(current);	/* give up UL-memory context */
 	exit_files(current);	/* give up open filedescriptors */
 
-	exit_fs(current);      /* give up filesystem context (root,pwd) */
-	current->fs=&dummy_fs; /* point fs context to dummy fs context,
-				  is needed for further calls to do_fork() */
-	atomic_inc(&dummy_fs.count);
-	                       /* Since childs are decrementing dummy_fs's 
-                                  refcount (by calling exit_fs(), every child 
-				  increments the count explicitly :)
-			       */
 	current->session = 1;
 	current->pgrp = 1;
 
@@ -844,7 +854,7 @@ int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd)
 int drbd_send_param(int minor)
 {
 	Drbd_Parameter_Packet param;
-	int err;
+	int err,i;
 	kdev_t ll_dev = drbd_conf[minor].lo_device;
 
 	if (blk_size[MAJOR(ll_dev)]) {
@@ -858,6 +868,9 @@ int drbd_send_param(int minor)
 	param.h.state = cpu_to_be32(drbd_conf[minor].state);
 	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
 	param.h.version = cpu_to_be32(MOD_VERSION);
+
+	for(i=0;i<=PrimaryInd;i++) 
+		param.h.gen_cnt[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
 
 	down(&drbd_conf[minor].send_mutex);
 	err = drbd_send(&drbd_conf[minor], ReportParams, (Drbd_Packet*)&param, 
@@ -1212,7 +1225,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	/* TODO: It would be nice if we could AND this condition.
+	/* NICE: It would be nice if we could AND this condition.
 	   But we must also wake the asender if we are receiving 
 	   syncer blocks! */
 	if(wake_asender /*&& mdev->conf.wire_protocol == DRBD_PROT_C*/ ) {
@@ -1482,10 +1495,11 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 	
 	set_cstate(mdev,StandAllone);
+	drbd_md_read(minor);
 
 	return 0;
-
-	fail_ioctl:
+	
+ fail_ioctl:
 	if ((err=put_user(retcode, &arg->ret_code))) return err;
 	return -EINVAL;
 }
@@ -1552,7 +1566,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #undef O_PORT
 
 
-	/* TODO: 
+	/* IMPROVE: 
 	   We should warn the user if the LL_DEV is
 	   used already. E.g. some FS mounted on it.
 	*/
@@ -1615,7 +1629,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		if (arg != Primary && arg != Secondary)
+		if (arg != Primary && arg != Secondary && arg != PRIMARY_PLUS)
 			return -EINVAL;
 		
 		if (drbd_conf[minor].cstate == SyncingAll
@@ -1625,6 +1639,8 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		if(test_bit(WRITER_PRESENT, &drbd_conf[minor].flags)
 		   && arg == Secondary)
                         return -EBUSY;
+
+		if(arg == drbd_conf[minor].state) break; /* nothing to do */
 			
 	        fsync_dev(MKDEV(MAJOR_NR, minor));
 			
@@ -1664,7 +1680,10 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 				return -EINTR;
 			}
 		}
-		drbd_conf[minor].state = (Drbd_State) arg;
+		drbd_conf[minor].state = (Drbd_State) arg & 0x03;
+		if(arg == PRIMARY_PLUS) drbd_md_inc(minor,HumanCnt);
+		else drbd_md_inc(minor, drbd_conf[minor].cstate >= Connected ? 
+			           ConnectedCnt : ArbitraryCnt);
 
 		if (drbd_conf[minor].sock )
 			drbd_setup_sock(&drbd_conf[minor]);
@@ -1895,7 +1914,7 @@ int __init drbd_init(void)
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
-
+			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
 #endif  
@@ -1908,11 +1927,6 @@ int __init drbd_init(void)
 #endif
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
-
-	atomic_set(&dummy_fs.count,1); /* initialise in 1, as it's static */
-	dummy_fs.umask=0;
-	dummy_fs.root=0;
-	dummy_fs.pwd=0;
 
 	return 0;
 }
@@ -2199,8 +2213,11 @@ inline int receive_cstate(int minor)
 	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) 
 	    != sizeof(header))
 	        return FALSE;
-
+	
 	set_cstate(&drbd_conf[minor],be32_to_cpu(header.cstate));
+
+	/* Save changed consistency flag */
+	if(drbd_conf[minor].state == Secondary)	drbd_md_write(minor);
 
 	return TRUE;
 }
@@ -2560,13 +2577,36 @@ inline int receive_param(int minor,int command)
 		printk(KERN_INFO DEVICE_NAME "%d: size=%d KB / blksize=%d B\n",
 		       minor,blk_size[MAJOR_NR][minor],blksize);
 
+		if(be32_to_cpu(param.state) == Secondary &&
+		   drbd_conf[minor].state == Secondary) {
+			if(drbd_md_compare(minor,&param)==1) {
+				/* Primary: */
+				drbd_conf[minor].state=Primary;
+				drbd_md_inc(minor,ConnectedCnt);
+				drbd_setup_sock(&drbd_conf[minor]);
+				drbd_send_param(minor);
+			}
+		}
+		/* TODO: improve this */
 	        if (drbd_conf[minor].state == Primary
 		    && !drbd_conf[minor].conf.skip_sync) {
 		        set_cstate(&drbd_conf[minor],SyncingQuick);
 			drbd_send_cstate(&drbd_conf[minor]);
 			drbd_thread_start(&drbd_conf[minor].syncer);
 		} else set_cstate(&drbd_conf[minor],Connected);
+
 	}
+
+	if (drbd_conf[minor].state == Secondary) {
+		/* Secondary has to adopt primary's gen_cnt. */
+		int i;
+		for(i=0;i<=PrimaryInd;i++) {
+			drbd_conf[minor].gen_cnt[i]=
+				be32_to_cpu(param.gen_cnt[i]);
+		}
+		drbd_md_write(minor);
+	}
+
 	return TRUE;
 }
 
@@ -2726,6 +2766,7 @@ void drbdd(int minor)
 	case Primary:   
 		tl_clear(&drbd_conf[minor]);
 		clear_bit(ISSUE_BARRIER,&drbd_conf[minor].flags);
+		drbd_md_inc(minor,ConnectedCnt);
 		break;
 	case Secondary: 
 		es_clear(&drbd_conf[minor]);
@@ -2954,10 +2995,20 @@ unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 	struct Drbd_Conf *mdev=(struct Drbd_Conf *)id;
 	int shift=ln2_bs - 9;
 
-	if(mdev->synced_to == 0) return MBDS_DONE;
+	if(mdev->synced_to == 0) {
+		printk(KERN_ERR DEVICE_NAME 
+		       " : end reached(1)\n");
+		return MBDS_DONE;
+	}
 
 	rv = mdev->synced_to >> shift;
+	old_sync_to = mdev->synced_to;
 	mdev->synced_to -= (1L<<shift);
+	if(mdev->synced_to > old_sync_to) {
+		printk(KERN_ERR DEVICE_NAME 
+		       " : end reached(2)%lu\n",mdev->synced_to);
+		return MBDS_DONE;
+	}
 
 	return rv;	
 }
@@ -3314,3 +3365,108 @@ struct mbds_operations bm_mops = {
 	bm_set_bit,
 	bm_get_blocknr
 };
+
+
+/* meta data management */
+
+void drbd_md_write(int minor)
+{
+	u32 buffer[6];
+	mm_segment_t oldfs;
+	struct inode* inode;
+	struct file* fp;
+	char fname[25];
+	int i;		
+
+	drbd_conf[minor].gen_cnt[PrimaryInd]=(drbd_conf[minor].state==Primary);
+	i=1;
+	if(drbd_conf[minor].state==Secondary && (
+		drbd_conf[minor].cstate==SyncingAll || 
+		drbd_conf[minor].cstate==SyncingQuick ) ) i=0;
+	drbd_conf[minor].gen_cnt[Consistent]=i;
+	
+	for(i=0;i<=PrimaryInd;i++) 
+		buffer[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
+	buffer[MagicNr]=cpu_to_be32(DRBD_MAGIC);
+	
+	sprintf(fname,DRBD_MD_FILES,minor);
+	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC,00600);
+	if(IS_ERR(fp)) goto err;
+        oldfs = get_fs();
+        set_fs(get_ds());
+	inode = fp->f_dentry->d_inode;
+        down(&inode->i_sem); 
+	i=fp->f_op->write(fp,(const char*)&buffer,sizeof(buffer),&fp->f_pos);
+	up(&inode->i_sem);
+	set_fs(oldfs);
+	filp_close(fp,NULL);
+	if (i==sizeof(buffer)) return;
+ err:
+	printk(KERN_ERR DEVICE_NAME 
+	       "%d: Error writing state file\n\"%s\"\n",minor,fname);
+	return;
+}
+
+void drbd_md_read(int minor)
+{
+	u32 buffer[6];
+	mm_segment_t oldfs;
+	struct inode* inode;
+	struct file* fp;
+	char fname[25];
+	int i;		
+
+	sprintf(fname,DRBD_MD_FILES,minor);
+	fp=filp_open(fname,O_RDONLY,0);
+	if(IS_ERR(fp)) goto err;
+        oldfs = get_fs();
+        set_fs(get_ds());
+	inode = fp->f_dentry->d_inode;
+        down(&inode->i_sem); 
+	i=fp->f_op->read(fp,(char*)&buffer,sizeof(buffer),&fp->f_pos);
+	up(&inode->i_sem);
+	set_fs(oldfs);
+	filp_close(fp,NULL);
+
+	if(i != sizeof(buffer)) goto err;
+	if(be32_to_cpu(buffer[MagicNr]) != DRBD_MAGIC) goto err;
+	for(i=0;i<=PrimaryInd;i++) 
+		drbd_conf[minor].gen_cnt[i]=be32_to_cpu(buffer[i]);
+
+	return;
+ err:
+	printk(KERN_ERR DEVICE_NAME 
+	       "%d: Error reading state file\n\"%s\"\n",minor,fname);
+	for(i=0;i<PrimaryInd;i++) drbd_conf[minor].gen_cnt[i]=0;
+	drbd_conf[minor].gen_cnt[PrimaryInd]=
+		(drbd_conf[minor].state==Primary);
+	drbd_md_write(minor);
+	return;
+}
+
+
+/* Returns  1 if I have the good bits,
+            0 if both are nice
+	   -1 if the partner has the good bits.
+*/
+int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
+{
+	int i;
+	u32 me,other;
+	
+	for(i=0;i<=PrimaryInd;i++) {
+		me=drbd_conf[minor].gen_cnt[i];
+		other=be32_to_cpu(partner->gen_cnt[i]);
+		if( me > other ) return 1;
+		if( me < other ) return -1;
+	}
+	return 0;
+}
+
+void drbd_md_inc(int minor, enum MetaDataIndex order)
+{
+	drbd_conf[minor].gen_cnt[order]++;
+	drbd_md_write(minor);	
+}
+
+

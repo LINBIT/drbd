@@ -134,6 +134,7 @@ typedef struct {
   __u32       blksize;
   __u32       protocol;
   __u32       version;
+  __u32       gen_cnt[5];
 } Drbd_Parameter_P;
 MKPACKET(Drbd_Parameter_P)
 
@@ -168,7 +169,8 @@ typedef enum {
   Postpone
 } Drbd_Packet_Cmd;
 
-typedef enum { Primary, Secondary, Unknown } Drbd_State;
+typedef enum { Unknown=0, Primary=1, Secondary=2 } Drbd_State;
+#define PRIMARY_PLUS 5
 
 typedef enum { 
   Unconfigured,
@@ -191,6 +193,10 @@ struct ioctl_get_config {
         OUT int      do_panic;
 	OUT Drbd_CState cstate; 
 };
+
+
+#define DRBD_MD_PATH   "/var/lib/drbd"
+#define DRBD_MD_FILES  DRBD_MD_PATH"/drbd%d"
 
 #define DRBD_MAGIC 0x83740267
 

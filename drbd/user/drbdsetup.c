@@ -63,7 +63,7 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc);
 int cmd_show(int drbd_fd,char** argv,int argc);
 
 struct drbd_cmd commands[] = {
-	{"pri", cmd_primary,           0, 0 },
+	{"pri", cmd_primary,           0, 1 },
 	{"sec", cmd_secodary,          0, 0 },
 	{"wait", cmd_wait,             0, 1 },
 	{"repl", cmd_replicate,        0, 0 },
@@ -191,7 +191,7 @@ void print_usage(const char* prgname)
 	  "USAGE:\n"
 	  " %s device command [ command_args ] [ comamnd_options ]\n"
 	  "Commands:\n"
-	  " pri\n"
+	  " pri [-h|--human] \n"
 	  " sec\n"
 	  " wait [-t|--time val]\n"
 	  " repl\n"
@@ -206,65 +206,6 @@ void print_usage(const char* prgname)
 	  " show\n"
 	  "Version: "VERSION"\n"
 	  ,prgname);
-
-	  /*
-	  " %s device {Pri|Sec|Wait [-t|--time val]|Repl|Down}\n"
-	  "       -t --time val\n"
-	  "          drbdsetup waits up to val seconds for this device\n"
-	  "          to get a connection. If it is not connected within\n"
-	  "          this time, the call will fail (return 1).\n"
-	  "          If the connection is established, it will wait\n"
-	  "          until resynchronisation is done, no matter how\n"
-	  "          long it takes.\n"
-	  "          Default: 8 sec.\n\n"
-	  " %s device lower_device protocol local_addr[:port] "
-	  "remote_addr[:port] \n"
-	  "       [-t|--timout val] [-r|--sync-rate val] "
-	  "[-k|--skip-sync] [-s|-tl-size val]\n"
-	  "       [-d|--disk-size val] [-p|--do-panic] "
-	  "[-c|--connect-int] [-i|--ping-int]\n\n"
-	  "       protocol\n"
-	  "          protocol may be A, B or C.\n\n" 
-	  "       port\n"
-	  "          TCP port number\n"
-	  "          Default: 7788\n\n"
-	  "       -t --timeout  val\n"
-	  "          If communication blocks for val * 1/10 seconds,\n"
-	  "          drbd falls back into unconnected operation.\n"
-	  "          Default: 60 = 6 sec.\n\n"
-	  "       -r --sync-rate val\n"
-	  "          The synchronisation sends up to val KB per sec.\n"
-	  "          Default: 250 = 250 KB/sec\n\n"
-	  "       -k --skip-sync\n"
-	  "          Instructs drbd not to do synchronisation.\n\n"
-	  "       -s --tl-size val\n"
-	  "          Sets the size of the transfer log(=TL). The TL is\n"
-	  "          used for dependency analysis. For long latency\n"
-	  "          high bandwith links it might be necessary to set\n"
-	  "          the size bigger than 256.\n"
-	  "          You will find error messages in the system log\n"
-	  "          if the TL is too small.\n"
-	  "          Default: 256 entries\n\n"
-	  "      -d --disk-size\n"
-	  "          Sets drbd's size. When set to 0, drbd negotiates the\n"
-	  "          size with the remote node.\n"
-	  "          Default: 0 KB.\n\n"
-	  "      -p --do-panic\n"
-	  "          Drbd will trigger a kernel panic if there is an\n"
-	  "          IO error on the lower_device. May be useful when\n"
-	  "          drbd is used in a HA cluster.\n\n"
-	  "      -c --connect-int\n"
-	  "          If drbd cannot connect it will retry every val seconds.\n"
-	  "          Default: 10 Seconds\n\n"
-	  "      -i --ping-int\n"
-	  "          If the connection is idle for more than val seconds\n"
-	  "          DRBD will send a NOP packet. This helps DRBD to\n"
-	  "          detect broken connections.\n"
-	  "          Default: 10 Seconds\n\n"
-	  "     multipliers\n"
-	  "          You may append K, M or G to the values of -r and -d\n"
-	  "          where K=2^10, M=2^20 and G=2^30.\n\n"
-	  "          Version: "VERSION"\n"*/
 
   exit(20);
 }
@@ -305,6 +246,23 @@ int open_drbd_device(const char* device)
     }    
 
   return drbd_fd;
+}
+
+void check_state_dir(void)
+{
+  struct stat drbd_stat;
+  if(stat(DRBD_MD_PATH,&drbd_stat))
+    {
+      if (errno==ENOENT) 
+	{
+	  fprintf(stderr,DRBD_MD_PATH " does not exists. Creating it.\n");
+	  if(!mkdir(DRBD_MD_PATH,00600)) return;
+	  fprintf(stderr,"Can not create " DRBD_MD_PATH "\n");
+	  exit(20);
+	}
+      fprintf(stderr,"Something is wrong with " DRBD_MD_PATH "\n");
+      exit(20);
+    }
 }
 
 int scan_disk_options(char **argv,
@@ -553,7 +511,35 @@ int set_state(int drbd_fd,Drbd_State state)
 
 int cmd_primary(int drbd_fd,char** argv,int argc)
 {
-  return set_state(drbd_fd,Primary);
+  Drbd_State newstate=Primary;
+
+  optind=0; 
+  if(argc > 0) 
+    {
+      while(1)
+	{
+	  int c;
+	  static struct option options[] = {
+	    { "human",    no_argument, 0, 'h' },
+	    { 0,           0,                 0, 0 }
+	  };
+	  
+	  c = getopt_long(argc+1,argv-1,"-h",options,0);
+	  if(c == -1) break;
+	  switch(c)
+	    {
+	    case 'h': 
+	      newstate=PRIMARY_PLUS;
+	      break;
+	    case '?':
+	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	      return 20;
+	      break;
+	    }
+	}
+    }
+  
+  return set_state(drbd_fd,newstate);
 }
 
 int cmd_secodary(int drbd_fd,char** argv,int argc)
@@ -768,6 +754,7 @@ int main(int argc, char** argv)
   chdir("/");
 
   drbd_fd=open_drbd_device(argv[1]);
+  check_state_dir();
 
   if(argv[2][0] == '/') /* old style configure*/
     {
