@@ -382,10 +382,11 @@ int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
 
 void tl_clear(struct Drbd_Conf *mdev)
 {
-	struct tl_entry* p = mdev->tl_begin;
+	struct tl_entry* p;
 	unsigned long flags;
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
+	p = mdev->tl_begin;
 	while(p != mdev->tl_end) {
 	        if(p->req != TL_BARRIER) { 
 			if(p->req != TL_FINISHED && 
