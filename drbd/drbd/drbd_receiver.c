@@ -1040,7 +1040,6 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 
 	kfree(pr);
 
-	if(ok) mdev->recv_cnt+=data_size>>9;
 	return ok;
 }
 
