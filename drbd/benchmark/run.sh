@@ -51,7 +51,8 @@ else
 fi
 
 echo "This script is going to erase the first $SETSIZE of $LL_DEV @ $L_NODE "
-echo "and $RL_DEV @ $R_NODE. "
+echo "and $RL_DEV @ $R_NODE. Therefore any filesystem or database on these"
+echo "devices will be destroyed."
 echo "Continue ? [y/n] "
 read CONT
 if [ $CONT != "Y" -a $CONT != "y" ];
@@ -85,7 +86,7 @@ echo -n -e "Node1:\n " >>report
 uname -s -r -m >>report    
 echo -n " " >>report
 grep -i BogoMIPS /proc/cpuinfo >>report
-echo "lokal disk"
+echo "local disk"
 echo -n " Disk write: " >>report
 $DM -i /dev/zero -o $LL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
