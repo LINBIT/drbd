@@ -1,6 +1,10 @@
 0.6.1  (api:58/proto:58)
 -----
 Since the last one should have been 0.6, this is 0.6.1:
+  *) The state files are now written with O_SYNC.
+  *) Droped the postponepackets; Checkeing the liveliness via a second
+     TCP connection (msock). -- No more timeout in case of the standby
+     node has high load.
   *) If an application which is writing to a drbd device receives a signal
      while it sleeps in DRBD's send_msg call, the connection is dropped.
      -- Fixed this bug. (You could observe this with tiobench)
