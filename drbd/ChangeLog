@@ -1,3 +1,9 @@
+0.5.5
+-----
+SMP and ext3 fixes to the module.
+Scripts should work on RedHat distributions now.
+(Automatic) support for more than two devices.
+
 0.5.4
 -----
 No more zombies, when a connection is canceled.
