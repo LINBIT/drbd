@@ -63,3 +63,31 @@ document linux-ps
   linux-ps lists all tasks on the system. 
   Also have a look at linux-bt.
 end
+
+define linux-mod-helper
+  p/x (int)module_list+(int)module_list->size_of_struct
+end
+
+define drbd-al-show
+  set $sa_nr=((struct Drbd_Conf *)$arg0)->al_nr_extents
+  set $sa_extents=((struct Drbd_Conf *)$arg0)->al_extents
+  printf "-#-  -EXTENT-  -HASH-NEXT-   TABLE\n"
+  set $sa_i=0
+  while $sa_i < $sa_nr
+    printf "%3d  %8d", $sa_i, $sa_extents[$sa_i].extent_nr
+    if $sa_extents[$sa_i].hash_next
+      printf "  %3d", $sa_extents[$sa_i].hash_next - $sa_extents
+    end
+    printf "\n"
+    set $sa_i = $sa_i + 1    
+  end
+  printf "-#-  -TABLE-#-  -EXTENT-   LRU LIST\n"
+  set $sa_le=((struct Drbd_Conf *)$arg0)->al_lru->next
+  set $sa_i=0
+  while $sa_le != &((struct Drbd_Conf *)$arg0)->al_lru && $sa_i < $sa_nr
+    set $sa_e = (struct drbd_extent *)$sa_le
+    printf "%3d  %8d  %8d\n", $sa_i, $sa_e-$sa_extents, $sa_e->extent_nr
+    set $sa_i = $sa_i + 1
+    set $sa_le = $sa_le->next    
+  end
+end
