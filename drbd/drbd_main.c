@@ -1569,6 +1569,7 @@ static void __exit drbd_cleanup(void)
 	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
 }
 
+int sizeof_drbd_structs_sanity_check(void);
 int __init drbd_init(void)
 {
 	int i,err;
@@ -1605,6 +1606,9 @@ int __init drbd_init(void)
 	if (sizeof(Drbd_HandShake_Packet) != 80) {
 		printk(KERN_ERR DEVICE_NAME
 		       ": never change the size or layout of the HandShake packet.\n");
+		return -EINVAL;
+	}
+	if (sizeof_drbd_structs_sanity_check()) {
 		return -EINVAL;
 	}
 

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "drbdadm.h"
+#include "drbd_limits.h"
 
 extern void yyerror(char* text);
 extern int  yylex(void);
@@ -26,6 +27,205 @@ static struct d_resource* c_res;
 static struct d_host_info* c_host;
 static char* c_hostname;
 static int   c_section_start, n_hosts;
+
+unsigned long long
+m_strtoll(const char *s, char def_unit)
+{
+  unsigned long long r;
+  char unit = 0;
+  char dummy = 0;
+  int shift, c;
+
+  /*
+   * paranoia
+   */
+  switch (def_unit)
+    {
+    default:
+      fprintf(stderr, "%s:%d: unexpected default unit\n", __FILE__, __LINE__);
+      exit(E_thinko);
+    case 0:
+    case 1:
+    case '1':
+      shift = 0;
+      break;
+
+    case 'K':
+    case 'k':
+      shift = -10;
+      break;
+
+      /*
+         case 'M':
+         case 'm':
+         case 'G':
+         case 'g':
+       */
+    }
+
+  /* catched by the scanner already */
+  if (!s || !*s)
+    {
+      fprintf(stderr, "missing number argument\n");
+      exit(E_thinko);
+    }
+
+  c = sscanf(s, "%llu%c%c", &r, &unit, &dummy);
+
+  /* catched by the scanner already */
+  if (c != 1 && c != 2)
+    {
+      fprintf(stderr, "%s:%d: '%s' is not a valid number; %c %c\n",
+	      config_file, fline, s, unit, dummy);
+      exit(20);
+    }
+
+  switch (unit)
+    {
+    case 0:
+      return r;
+    case 'K':
+    case 'k':
+      shift += 10;
+      break;
+    case 'M':
+    case 'm':
+      shift += 20;
+      break;
+    case 'G':
+    case 'g':
+      shift += 30;
+      break;
+    default:
+      fprintf(stderr, "%s is not a valid number\n", s);
+      exit(20);
+    }
+  if (r > (~0ULL >> shift))
+    {
+      fprintf(stderr, "%s: out of range\n", s);
+      exit(20);
+    }
+  return r << shift;
+}
+
+void
+m_strtoll_range(const char *s, char def_unit,
+		const char *name,
+		unsigned long long min, unsigned long long max)
+{
+  unsigned long long r = m_strtoll(s, def_unit);
+  char unit[] = { def_unit > '1' ? def_unit : 0, 0 };
+  if (min > r || r > max)
+    {
+      fprintf(stderr,
+	      "%s:%d: %s %s => %llu%s out of range [%llu..%llu]%s.\n",
+	      config_file, fline, name, s, r, unit, min, max, unit);
+      exit(E_config_invalid);
+    }
+  if (DEBUG_RANGE_CHECK)
+    {
+      fprintf(stderr,
+	      "%s:%d: %s %s => %llu%s in range [%llu..%llu]%s.\n",
+	      config_file, fline, name, s, r, unit, min, max, unit);
+    }
+}
+
+enum range_checks
+{
+  R_MINOR_COUNT,
+  R_DIALOG_REFRESH,
+  R_DISK_SIZE,
+  R_TIMEOUT,
+  R_CONNECT_INT,
+  R_PING_INT,
+  R_MAX_BUFFERS,
+  R_MAX_EPOCH_SIZE,
+  R_SNDBUF_SIZE,
+  R_KO_COUNT,
+  R_RATE,
+  R_GROUP,
+  R_AL_EXTENTS,
+  R_PORT,
+  R_META_IDX,
+  R_WFC_TIMEOUT,
+  R_DEGR_WFC_TIMEOUT,
+};
+
+void
+range_check(const enum range_checks what, const char *name, const char *value)
+{
+  switch (what)
+    {
+    default:
+      fprintf(stderr, "%s:%d: unknown range for %s => %s\n",
+	      config_file, fline, name, value);
+      break;
+    case R_MINOR_COUNT:
+      m_strtoll_range(value, 1, name,
+		      DRBD_MINOR_COUNT_MIN, DRBD_MINOR_COUNT_MAX);
+      break;
+    case R_DIALOG_REFRESH:
+      m_strtoll_range(value, 1, name,
+		      DRBD_DIALOG_REFRESH_MIN, DRBD_DIALOG_REFRESH_MAX);
+      break;
+    case R_DISK_SIZE:
+      m_strtoll_range(value, 'K', name,
+		      DRBD_DISK_SIZE_SECT_MIN >> 1,
+		      DRBD_DISK_SIZE_SECT_MAX >> 1);
+      break;
+    case R_TIMEOUT:
+      m_strtoll_range(value, 1, name, DRBD_TIMEOUT_MIN, DRBD_TIMEOUT_MAX);
+      break;
+    case R_CONNECT_INT:
+      m_strtoll_range(value, 1, name, DRBD_CONNECT_INT_MIN,
+		      DRBD_CONNECT_INT_MAX);
+      break;
+    case R_PING_INT:
+      m_strtoll_range(value, 1, name, DRBD_PING_INT_MIN, DRBD_PING_INT_MAX);
+      break;
+    case R_MAX_BUFFERS:
+      m_strtoll_range(value, 1, name, DRBD_MAX_BUFFERS_MIN,
+		      DRBD_MAX_BUFFERS_MAX);
+      break;
+    case R_MAX_EPOCH_SIZE:
+      m_strtoll_range(value, 1, name, DRBD_MAX_EPOCH_SIZE_MIN,
+		      DRBD_MAX_EPOCH_SIZE_MAX);
+      break;
+    case R_SNDBUF_SIZE:
+      m_strtoll_range(value, 1, name, DRBD_SNDBUF_SIZE_MIN,
+		      DRBD_SNDBUF_SIZE_MAX);
+      break;
+    case R_KO_COUNT:
+      m_strtoll_range(value, 1, name, DRBD_KO_COUNT_MIN, DRBD_KO_COUNT_MAX);
+      break;
+    case R_RATE:
+      m_strtoll_range(value, 'K', name, DRBD_RATE_MIN, DRBD_RATE_MAX);
+      break;
+    case R_GROUP:
+      m_strtoll_range(value, 1, name, DRBD_GROUP_MIN, DRBD_GROUP_MAX);
+      break;
+    case R_AL_EXTENTS:
+      m_strtoll_range(value, 1, name, DRBD_AL_EXTENTS_MIN,
+		      DRBD_AL_EXTENTS_MAX);
+      break;
+    case R_PORT:
+      m_strtoll_range(value, 1, name, DRBD_PORT_MIN, DRBD_PORT_MAX);
+      break;
+      /* FIXME not yet implemented!
+         case R_META_IDX:
+         m_strtoll_range(value, 1, name, DRBD_META_IDX_MIN, DRBD_META_IDX_MAX);
+         break;
+       */
+    case R_WFC_TIMEOUT:
+      m_strtoll_range(value, 1, name, DRBD_WFC_TIMEOUT_MIN,
+		      DRBD_WFC_TIMEOUT_MAX);
+      break;
+    case R_DEGR_WFC_TIMEOUT:
+      m_strtoll_range(value, 1, name, DRBD_DEGR_WFC_TIMEOUT_MIN,
+		      DRBD_DEGR_WFC_TIMEOUT_MAX);
+      break;
+    }
+}
 
 static struct d_option* new_opt(char* name,char* value)
 {
@@ -116,10 +316,10 @@ void check_meta_disk()
 
 %token TK_GLOBAL TK_RESOURCE
 %token TK_ON TK_NET TK_DISK_S TK_SYNCER TK_STARTUP
-%token TK_MINOR_COUNT TK_DISABLE_IO_HINTS
+%token TK_DISABLE_IO_HINTS
 %token TK_PROTOCOL TK_INCON_DEGR_CMD
 %token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK
-%token <txt> TK_INTEGER TK_STRING
+%token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
 %token <txt> TK_ON_IO_ERROR TK_SIZE
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
 %token <txt> TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
@@ -149,9 +349,15 @@ glob_stmts:	  /* empty */
 glob_stmt:	  TK_DISABLE_IO_HINTS
 			{ global_options.disable_io_hints=1;   }
 		| TK_MINOR_COUNT TK_INTEGER
-			{ global_options.minor_count=atoi($2); }
-		| TK_DIALOG_REFRESH TK_INTEGER   
-                        { global_options.dialog_refresh=atoi($2); }
+		{
+			range_check(R_MINOR_COUNT,$1,$2);
+			global_options.minor_count=atoi($2);
+		}
+		| TK_DIALOG_REFRESH TK_INTEGER
+                {
+			range_check(R_DIALOG_REFRESH,$1,$2);
+			global_options.dialog_refresh=atoi($2);
+		}
 		;
 
 resources:	  /* empty */	     { $$ = 0; }
@@ -217,21 +423,29 @@ disk_stmts:	  /* empty */	           { $$ = 0; }
 		;
 
 disk_stmt:	  TK_ON_IO_ERROR TK_STRING { $$=new_opt($1,$2); }
-		| TK_SIZE TK_INTEGER       { $$=new_opt($1,$2); }
+		| TK_SIZE TK_INTEGER
+		{ $$=new_opt($1,$2); range_check(R_DISK_SIZE,$1,$2); }
 		;
 
 net_stmts:	  /* empty */	           { $$ = 0; }
 		| net_stmts net_stmt       { $$=APPEND($1,$2); }
 		;
 
-net_stmt:	  TK_TIMEOUT	    TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_CONNECT_INT    TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_PING_INT	    TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_MAX_BUFFERS    TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_MAX_EPOCH_SIZE TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_SNDBUF_SIZE    TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_KO_COUNT       TK_INTEGER { $$=new_opt($1,$2); }
-		| TK_ON_DISCONNECT  TK_STRING  { $$=new_opt($1,$2); }
+net_stmt:	  TK_TIMEOUT	    TK_INTEGER
+		{ range_check(R_TIMEOUT,$1,$2);		$$=new_opt($1,$2); }
+		| TK_CONNECT_INT    TK_INTEGER
+		{ range_check(R_CONNECT_INT,$1,$2);	$$=new_opt($1,$2); }
+		| TK_PING_INT	    TK_INTEGER
+		{ range_check(R_PING_INT,$1,$2);	$$=new_opt($1,$2); }
+		| TK_MAX_BUFFERS    TK_INTEGER
+		{ range_check(R_MAX_BUFFERS,$1,$2);	$$=new_opt($1,$2); }
+		| TK_MAX_EPOCH_SIZE TK_INTEGER
+		{ range_check(R_MAX_EPOCH_SIZE,$1,$2);	$$=new_opt($1,$2); }
+		| TK_SNDBUF_SIZE    TK_INTEGER
+		{ range_check(R_SNDBUF_SIZE,$1,$2);	$$=new_opt($1,$2); }
+		| TK_KO_COUNT       TK_INTEGER
+		{ range_check(R_KO_COUNT,$1,$2);	$$=new_opt($1,$2); }
+		| TK_ON_DISCONNECT  TK_STRING	{	$$=new_opt($1,$2); }
 		;
 
 sync_stmts:	  /* empty */	           { $$ = 0; }
@@ -240,9 +454,12 @@ sync_stmts:	  /* empty */	           { $$ = 0; }
 
 sync_stmt:	  TK_SKIP_SYNC		   { $$=new_opt($1,0);  }
 		| TK_USE_CSUMS		   { $$=new_opt($1,0);  }
-		| TK_RATE	TK_INTEGER { $$=new_opt($1,$2); }
+		| TK_RATE	TK_INTEGER
+		{ range_check(R_RATE,$1,$2); $$=new_opt($1,$2); }
 		| TK_SYNC_GROUP TK_INTEGER { $$=new_opt($1,$2); }
+		{ range_check(R_GROUP,$1,$2); $$=new_opt($1,$2); }
 		| TK_AL_EXTENTS TK_INTEGER { $$=new_opt($1,$2); }
+		{ range_check(R_AL_EXTENTS,$1,$2); $$=new_opt($1,$2); }
 		;
 
 host_stmts:	  /* empty */ { c_host=calloc(1,sizeof(struct d_host_info)); }
@@ -258,7 +475,10 @@ host_stmt:	  TK_DISK    TK_STRING	  { CHKU(disk,$2); }
 
 
 ip_and_port:	  TK_IPADDR TK_INTEGER
-		{ c_host->address=$1; c_host->port = $2; }
+		{
+			range_check(R_PORT, "port", $2);
+			c_host->address=$1; c_host->port = $2;
+		}
 		;
 
 meta_disk_and_index:
@@ -271,6 +491,8 @@ startup_stmts:	  /* empty */  { $$ = 0; }
 		| startup_stmts startup_stmt   { $$=APPEND($1,$2); }
 		;
 
-startup_stmt:	  TK_WFC_TIMEOUT      TK_INTEGER   { $$=new_opt($1,$2); }
-		| TK_DEGR_WFC_TIMEOUT TK_INTEGER   { $$=new_opt($1,$2); }
+startup_stmt:	  TK_WFC_TIMEOUT      TK_INTEGER
+		{ range_check(R_WFC_TIMEOUT,$1,$2);	$$=new_opt($1,$2); }
+		| TK_DEGR_WFC_TIMEOUT TK_INTEGER
+		{ range_check(R_DEGR_WFC_TIMEOUT,$1,$2);$$=new_opt($1,$2); }
 		;

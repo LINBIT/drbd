@@ -45,6 +45,12 @@
 #define INOUT
 #endif
 
+/* 
+   - Never forget to place bigger members before the smaller ones, 
+     to avoid unaligned placement of members on 64 bit architectures. 
+   - Never forget to add explicit _pad members to make sizeof(struct)
+     divisible by 8.
+*/
 
 #define MAX_SOCK_ADDR	128	/* 108 for Unix domain -
 				   16 for IP, 16 for IPX,
@@ -62,9 +68,9 @@ enum io_error_handler {
 };
 
 
-struct __attribute__((packed)) disk_config {
-	IN int      lower_device;
+struct disk_config {
 	IN __u64    disk_size;
+	IN int      lower_device;
 	IN enum io_error_handler on_io_error;
 	IN int      meta_device;
 	IN int      meta_index;
@@ -76,10 +82,10 @@ enum disconnect_handler {
 	FreezeIO
 };
 
-struct __attribute__((packed)) net_config {
+struct net_config {
 	IN char     my_addr[MAX_SOCK_ADDR];
-	IN int      my_addr_len;
 	IN char     other_addr[MAX_SOCK_ADDR];
+	IN int      my_addr_len;
 	IN int      other_addr_len;
 	IN int      timeout;          // deci seconds
 	IN int      wire_protocol;
@@ -90,14 +96,16 @@ struct __attribute__((packed)) net_config {
 	IN int      sndbuf_size;  /* socket send buffer size */
 	IN unsigned int ko_count;
 	IN enum disconnect_handler on_disconnect;
+	const int   _pad;
 };
 
-struct __attribute__((packed)) syncer_config {
+struct syncer_config {
 	int      rate; /* KB/sec */
 	int      use_csums;   /* use checksum based syncing*/
 	int      skip;
 	int      group;
 	int      al_extents;
+	const int _pad;
 };
 
 /* KEEP the order, do not delete or insert!
@@ -122,25 +130,29 @@ enum ret_codes {
 	LDDeviceTooLarge,
 };
 
-struct __attribute__((packed)) ioctl_disk_config {
+struct ioctl_disk_config {
 	struct disk_config    config;
 	OUT enum ret_codes    ret_code;
+	const int             _pad;
 };
 
-struct __attribute__((packed)) ioctl_net_config {
+struct ioctl_net_config {
 	struct net_config     config;
 	OUT enum ret_codes    ret_code;
+	const int             _pad;
 };
 
-struct __attribute__((packed)) ioctl_syncer_config {
+struct ioctl_syncer_config {
 	struct syncer_config  config;
 	OUT enum ret_codes    ret_code;
+	const int             _pad;
 };
 
-struct __attribute__((packed)) ioctl_wait {
+struct ioctl_wait {
 	IN int wfc_timeout;
 	IN int degr_wfc_timeout;
 	OUT int ret_code;
+	int      _pad;
 };
 
 #define DRBD_PROT_A   1
@@ -189,21 +201,22 @@ typedef enum {
 # define BDEVNAME_SIZE 32
 #endif
 
-struct __attribute__((packed)) ioctl_get_config {
+struct ioctl_get_config {
+	OUT __u64             disk_size_user;
+	OUT char              lower_device_name[BDEVNAME_SIZE];
+	OUT char              meta_device_name[BDEVNAME_SIZE];
 	struct net_config     nconf;
 	struct syncer_config  sconf;
 	OUT int               lower_device_major;
 	OUT int               lower_device_minor;
-	OUT __u64             disk_size_user;
 	OUT enum io_error_handler on_io_error;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
 	OUT int               meta_index;
-	OUT char              lower_device_name[BDEVNAME_SIZE];
-	OUT char              meta_device_name[BDEVNAME_SIZE];
 	OUT Drbd_CState       cstate;
 	OUT Drbd_State        state;
 	OUT Drbd_State        peer_state;
+	int                   _pad;
 };
 
 #define DRBD_MAGIC 0x83740267

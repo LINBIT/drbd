@@ -37,14 +37,16 @@ resource drbd0 {
     device    /dev/drbd1;
     disk      /dev/hda7;
     address   10.1.1.31:7789;
+    meta-disk  internal;
   }
 
   on thost2 {
     device    /dev/drbd1;
     disk      /dev/hda7;
     address   10.1.1.32:7789;
+    meta-disk  internal;
   }
-}	
+}
 </programlisting>
 </example>
  In this example there is a single DRBD resource (called drbd0) which uses
@@ -524,7 +526,7 @@ The default is 0, which disables this feature.
 </refsect1>
 <refsect1>
 <title>Version</title>
-<simpara>This document is correct for version 0.7-pre7 of the DRBD distribution.
+<simpara>This document is correct for version 0.7.5 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>
