@@ -1,9 +1,12 @@
 Latest:
 ------
- ChangeLog last updated: r1496 2004-08-22
+ ChangeLog last updated: r1508 2004-08-26
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+ * New config option "wait-sync-target" in the startup section.
+   When set, the drbd script will block the boot process to prevent
+   heatbeat to make a SyncTarget-node primary.
  * prevent possible in-kernel buffer overflow in drbd_proc.c
  * Fixed debian's postinst script to create /dev/drbd? instead of /dev/nb?
  * drbd status:
