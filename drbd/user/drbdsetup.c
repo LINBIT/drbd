@@ -153,7 +153,8 @@ int main(int argc, char** argv)
 	      "remote_addr[:port] \n"
 	      "       [-t|--timout val] [-r|--sync-rate val] "
 	      "[-k|--skip-sync] [-s|-tl-size val]\n"
-	      "       [-d|--disk-size val] [-p|--do-panic]\n\n"
+	      "       [-d|--disk-size val] [-p|--do-panic] "
+	      "[-c|--connect-int] [-i|--ping-int]\n\n"
 	      "       protocol\n"
 	      "          protocol may be A, B or C.\n\n" 
 	      "       port\n"
@@ -426,6 +427,16 @@ int main(int argc, char** argv)
 	      cn.config.ping_int = m_strtol(optarg,1);
 	      break;
 	    }
+	}
+
+      /* sanity checks of the timeouts */
+
+      if(cn.config.timeout >= cn.config.try_connect_int * 10 ||
+	 cn.config.timeout >= cn.config.ping_int * 10)
+	{
+	  fprintf(stderr,"The timeout has to be smaller than "
+		  "connect-int and ping-int.\n");
+	  exit(20);
 	}
 
       err=ioctl(drbd_fd,DRBD_IOCTL_SET_CONFIG,&cn);
