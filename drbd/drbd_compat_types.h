@@ -21,10 +21,6 @@ typedef unsigned long sector_t;
 	for(pos = (head)->next; pos != (head); pos = pos->next)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19) && !defined(REDHAT_2_4_18)
-#define BH_Launder BH_launder
-#endif
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
 #define min_t(type,x,y) \
 	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })

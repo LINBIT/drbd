@@ -37,13 +37,7 @@ extern const char * drbd_buildtag(void);
 
 //#define SIGHAND_HACK           // Needed for RH 2.4.20 and later kernels.
 //#define REDHAT_HLIST_BACKPORT  // Makes DRBD work on RH9 kernels
-/* Redhat 2.4.18 already includes BH_Launder,
- * other  2.4.18 still have       BH_launder ...
- * most likely we could do without it completely,
- * since it is only used in drbd_ee_bh_prepare().
- * anyways...
- */
-//#define REDHAT_2_4_18
+
 /* some redhat 2.4.X-Y.Z.whatever kernel flavours have an mm_inline.h,
  * which needs to be included explicitly. most 2.4.x kernels don't have that
  * header file at all. So uncomment for these, and ignore for all others.

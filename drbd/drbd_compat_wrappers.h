@@ -148,7 +148,6 @@ drbd_ee_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
 	bh->b_rdev     = mdev->backing_bdev;
 	bh->b_private  = mdev;
 	bh->b_state    = (1 << BH_Req)
-			|(1 << BH_Launder)
 	                |(1 << BH_Mapped)
 			|(1 << BH_Lock);
 }
@@ -206,7 +205,6 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	bh->b_end_io  = drbd_dio_end;
 
 	D_ASSERT(buffer_req(bh));
-	D_ASSERT(buffer_launder(bh));
 	D_ASSERT(buffer_locked(bh));
 	D_ASSERT(buffer_mapped(bh));
 	// D_ASSERT(buffer_dirty(bh)); // It is not true ?!?
@@ -241,7 +239,6 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	bh->b_end_io  = drbd_read_bi_end_io;
 
 	D_ASSERT(buffer_req(bh));
-	D_ASSERT(buffer_launder(bh));
 	D_ASSERT(buffer_locked(bh));
 	D_ASSERT(buffer_mapped(bh));
 	D_ASSERT(!buffer_uptodate(bh));
