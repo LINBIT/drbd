@@ -92,6 +92,10 @@ echo -n -e "DRBD Benchmark\n " > report
 $DRBDSETUP 2>&1 | grep Version | sed -e "s/\  //g" >>report
 echo " SETSIZE = $SETSIZE" >>report
 echo >>report
+
+##
+# LOCAL DISK
+##
 echo -n -e "Node1:\n " >>report
 uname -s -r -m >>report    
 echo -n " " >>report
@@ -101,12 +105,16 @@ echo -n " Disk write: " >>report
 $DM -i /dev/zero -o $LL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
 $INSMOD $MODULE
-$DRBDSETUP /dev/nb0 $LL_DEV A $L_NODE $R_NODE -d $SETSIZE
-$DRBDSETUP /dev/nb0 PRI
+$DRBDSETUP /dev/nb0 disk $LL_DEV -d $SETSIZE
+$DRBDSETUP /dev/nb0 net $L_NODE $R_NODE A 
+$DRBDSETUP /dev/nb0 primary
 $DM -i /dev/zero -o /dev/nb0 -s $SETSIZE -y -p >>report
 $RMMOD drbd
 echo >>report
 
+##
+# REMOTE DISK
+##
 echo -n -e "Node2:\n " >>report
 $RSH $R_NODE uname -s -r -m >>report    
 echo -n " " >>report
@@ -116,12 +124,16 @@ echo -n " Disk write: " >>report
 $RSH $R_NODE $RDM -i /dev/zero -o $RL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
 $RSH $R_NODE $INSMOD $RMODULE
-$RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV A $R_NODE $L_NODE -d $SETSIZE
-$RSH $R_NODE $RDRBDSETUP /dev/nb0 PRI
+$RSH $R_NODE $RDRBDSETUP /dev/nb0 disk $RL_DEV -d $SETSIZE
+$RSH $R_NODE $RDRBDSETUP /dev/nb0 net $R_NODE $L_NODE A 
+$RSH $R_NODE $RDRBDSETUP /dev/nb0 primary
 $RSH $R_NODE $RDM -i /dev/zero -o /dev/nb0 -s $SETSIZE -y -p >>report
 $RSH $R_NODE $RMMOD drbd
 echo >>report
 
+##
+# NETWORK
+##
 echo "network"
 echo "Network: " >>report
 echo -n " Bandwidth: " >>report
@@ -135,13 +147,18 @@ for PROT in $PROTOCOLS; do
   $INSMOD $MODULE
   $RSH $R_NODE $INSMOD $RMODULE
   echo -n "o"
-  $RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE $OPTIONS
-  $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE $OPTIONS
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 disk $RL_DEV
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 net $R_NODE $L_NODE $PROT -k
+  $DRBDSETUP /dev/nb0 disk $LL_DEV
+  $DRBDSETUP /dev/nb0 net $L_NODE $R_NODE $PROT -k
+  $DRBDSETUP /dev/nb0 wait_connect $OPTIONS
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 wait_connect $OPTIONS
+
   echo -n "t"
 
   sleep 2
 
-  $DRBDSETUP /dev/nb0 PRI
+  $DRBDSETUP /dev/nb0 primary
 
   echo "ocol $PROT"
   
@@ -161,13 +178,17 @@ for PROT in $PROTOCOLS; do
   $INSMOD $MODULE
   $RSH $R_NODE $INSMOD $RMODULE
   echo -n "o"
-  $RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE $OPTIONS
-  $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE $OPTIONS
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 disk $RL_DEV
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 net $R_NODE $L_NODE $PROT -k
+  $DRBDSETUP /dev/nb0 disk $LL_DEV
+  $DRBDSETUP /dev/nb0 net $L_NODE $R_NODE $PROT -k
+  $DRBDSETUP /dev/nb0 wait_connect $OPTIONS
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 wait_connect $OPTIONS
   echo -n "t"
 
   sleep 2
 
-  $RSH $R_NODE $RDRBDSETUP /dev/nb0 PRI
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 primary
 
   echo "ocol $PROT"
   
@@ -184,11 +205,7 @@ done
 echo "--------------- report --------------"
 cat report
 echo "-------------------------------------"
-echo "Please send the report file to philipp@linuxfreak.com."
+echo "Please send the report file to philipp.reisner@gmx.at."
 echo "     Thank you."
 echo 
 echo "PS: Do not forget to disable rsh again."
-
-
-
-
