@@ -1352,7 +1352,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			       drbd_conf[minor].stateref_cnt,
 			       drbd_conf[minor].pending_cnt);
 
-			//interruptible_sleep_on(&drbd_conf[minor].state_wait);
+			interruptible_sleep_on(&drbd_conf[minor].state_wait);
 			if(signal_pending(current)) { 
 				return -EINTR;
 			}

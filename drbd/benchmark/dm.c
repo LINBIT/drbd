@@ -300,6 +300,7 @@ int main(int argc, char** argv)
       if( dialog )
 	{
 	  printf("%2d\n",(int)(100.0*(size-rsize)/size));
+	  fflush(stdout);
 	}
       if( !use_pattern && ww!=rr) break;
     }
