@@ -1313,7 +1313,8 @@ int drbd_syncer(void *arg)
 
   printk(KERN_ERR DEVICE_NAME ": syncer living/m=%d\n",minor);
 
-  drbd_conf[minor].synced_to=(blk_size[MAJOR_NR][minor]-(blocksize>>10))<<1;  
+  drbd_conf[minor].synced_to = ( blk_size[MAJOR_NR][minor] -
+			      (blksize_size[MAJOR_NR][minor]>>10) ) <<1;  
  restart:
   blocksize = blksize_size[MAJOR_NR][minor];
 
