@@ -63,7 +63,8 @@ sub send_sub($$) {
 
 sub run_remote($$) {
   my ($statement,$host)=@_;
-  my ($rfh,$wfh,$pid,$line,$subroutine);
+  my ($pid,$line,$subroutine);
+  my ($rfh,$wfh) = (FileHandle->new, FileHandle->new);
 
   $pid=open2($rfh,$wfh,"ssh $host perl");
 
