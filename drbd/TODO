@@ -62,9 +62,10 @@ My TODO list:
     reported.
     Marcelo was the first one who pointed out this bug.
 
+15) prot. C does not work on SMP machines (esp. when cancelling a connection)
 
+16) MAYBE: Implement the please-postpone-this-timeout-packet. 
 
 DONE:
-
-1 (partial),2,7,8,11,13,10
+1 (partial),2,7,8,11,13,10, 3 (Yes, finally)
 

@@ -431,13 +431,37 @@ int drbd_log2(int i)
    See Documentation/spinlocks.txt why this is valid.
 */
 
+#if 0
+void print_tl(struct Drbd_Conf *mdev)
+{
+	struct Tl_entry* p=mdev->tl_begin;
+
+	printk(KERN_ERR "TransferLog (oldest entry first):\n");
+
+	while( p != mdev->tl_end ) {
+		if(p->req == TL_BARRIER)
+			printk(KERN_ERR "BARRIER (%ld)\n",p->sector_nr);
+		else
+			printk(KERN_ERR "Sector %ld.\n",p->sector_nr);
+		
+		p++;
+		if (p == mdev->transfer_log + mdev->conf.tl_size) 
+			p = mdev->transfer_log;
+	}
+	
+	printk(KERN_ERR "TransferLog (end)\n");
+}
+#endif
+
 inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 {
 	unsigned long flags;
 
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
-	/* printk(KERN_ERR DEVICE_NAME ": tl_add(%ld)\n",new_item->sector);*/
+
+	  /*printk(KERN_ERR DEVICE_NAME "%d: tl_add(%ld)\n",
+	    (int)(mdev-drbd_conf),new_item->sector);*/
 
 	mdev->tl_end->req = new_item;
 	mdev->tl_end->sector_nr = new_item->sector;
@@ -451,6 +475,32 @@ inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!! \n",
 		 (int)(mdev-drbd_conf));
 
+	/* DEBUG CODE */
+	/* look if this block is alrady in this epoch */
+#if 0
+	/* print_tl(mdev); */
+
+
+	{
+		struct Tl_entry* p=mdev->tl_end;
+		while( p != mdev->tl_begin ) {
+
+			if(p->req == TL_BARRIER) break;
+			if(p->sector_nr == new_item->sector) {
+				printk(KERN_CRIT DEVICE_NAME 
+				       "%d: Sector %ld is already in !!\n",
+				       (int)(mdev-drbd_conf),
+				       new_item->sector);
+			}
+
+			p--;
+			if (p == mdev->transfer_log) 
+				p = mdev->transfer_log + mdev->conf.tl_size;
+		}
+	}
+#endif
+
+
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }
 
@@ -461,7 +511,8 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
-	/* printk(KERN_DEBUG DEVICE_NAME ": tl_add(TL_BARRIER)\n");*/
+	/*printk(KERN_DEBUG DEVICE_NAME "%d: tl_add(TL_BARRIER)\n",
+	  (int)(mdev-drbd_conf));*/
 
 	br_cnt++;
 	if(br_cnt == 0) br_cnt = 1;
@@ -580,7 +631,22 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 			   p->req->sector == p->sector_nr ) {
 		                drbd_end_req(p->req,RQ_DRBD_SENT,1);
 				mdev->pending_cnt--;
+#if 0 /*Debug ... */
+				printk(KERN_CRIT DEVICE_NAME 
+				       "%d: end_req(Sector %ld)\n",
+				       (int)(mdev-drbd_conf),
+				       p->sector_nr);
+#endif
 			}
+#if 0 /* dEBGug */
+			else {
+				printk(KERN_CRIT DEVICE_NAME 
+				       "%d: not_ending(Sector %ld)\n",
+				       (int)(mdev-drbd_conf),
+				       p->sector_nr);
+			}
+#endif 
+
 		}
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
@@ -1197,10 +1263,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		sending = 0;
 
 		if (req->cmd == WRITE && drbd_conf[minor].state == Primary) {
-			drbd_conf[minor].stateref_cnt++;
 			if ( drbd_conf[minor].cstate >= Connected
-			     && req->sector >= drbd_conf[minor].synced_to) 
+			     && req->sector >= drbd_conf[minor].synced_to) {
 				sending = 1;
+				drbd_conf[minor].stateref_cnt++;
+			}
 		}
 
 		/* Do disk - IO */
@@ -1342,7 +1409,15 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		     for now it's good enough. (Do not panic, these races
 		     are not harmfull)		     
 		*/
-
+		/*
+		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d,%d,%d)\n",
+		       minor,
+		       drbd_conf[minor].state,
+		       drbd_conf[minor].pending_cnt,
+		       drbd_conf[minor].unacked_cnt,
+		       drbd_conf[minor].epoch_size,
+		       drbd_conf[minor].stateref_cnt);
+		*/
 		while (drbd_conf[minor].epoch_size > 0 ||
 		       drbd_conf[minor].stateref_cnt > 0 ) {
 
@@ -1365,13 +1440,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if (drbd_conf[minor].cstate >= Connected)
 			drbd_send_param(minor);
 
-		/*
-		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d)\n",
-		       minor,
-		       drbd_conf[minor].state,
-		       drbd_conf[minor].pending_cnt,
-		       drbd_conf[minor].unacked_cnt);
-		*/
 		break;
 
 	case DRBD_IOCTL_SET_CONFIG:
@@ -2138,11 +2206,13 @@ inline int receive_data(int minor,int data_size)
 	 * Actually the primary can send up to NR_REQUESTS / 3 blocks,
 	 * but we already start when we have NR_REQUESTS / 4 blocks.
 	 */
+
 	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
 		if (drbd_conf[minor].unacked_cnt++ >= (NR_REQUEST / 4)) {
 			run_task_queue(&tq_disk);
 		}
 	}
+
 	/* </HACK> */
 
 	drbd_conf[minor].recv_cnt++;
@@ -2189,16 +2259,16 @@ inline int receive_block_ack(int minor)
 
 
 	if( header.block_id == ID_SYNCER) {
-	  /*
 		drbd_conf[minor].mops->
 		set_block_status(drbd_conf[minor].mbds_id,
 				 be64_to_cpu(header.block_nr), 
 				 drbd_conf[minor].blk_size_b, 
 				 SS_IN_SYNC);
-	  */
 	} else {
 		req=(struct request*)(long)header.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
+		/* printk(KERN_ERR DEVICE_NAME "%d: got blk-ack for sec %ld\n",
+		   minor,req->sector); */
 	}
 
 	return TRUE;
@@ -2314,6 +2384,38 @@ inline int receive_param(int minor,int command)
 	return TRUE;
 }
 
+inline void es_clear(struct Drbd_Conf *mdev)
+{
+	int ep_size,i;
+	struct Tl_epoch_entry *epoch = 
+		(struct Tl_epoch_entry *)mdev->transfer_log;
+
+	spin_lock(&mdev->es_lock);
+	ep_size = mdev->epoch_size;
+	for(i=0;i<ep_size;i++) {
+		if(epoch[i].block_id) {
+			epoch[i].block_id=0;
+			brelse(epoch[i].bh); /* Can I use bforget() here ? */
+		}
+	}
+	mdev->epoch_size=0;
+	spin_unlock(&mdev->es_lock);
+}
+
+inline void sl_clear(struct Drbd_Conf *mdev)
+{
+	int i;
+	struct buffer_head ** sync_log = mdev->sync_log;
+
+	spin_lock(&mdev->sl_lock);
+	for(i=0;i<SYNC_LOG_S;i++) {
+		if(sync_log[i]) {
+			brelse(sync_log[i]);
+			sync_log[i]=0;
+		}
+	}
+	spin_unlock(&mdev->sl_lock);
+}
 
 void drbdd(int minor)
 {
@@ -2395,7 +2497,9 @@ void drbdd(int minor)
 		drbd_conf[minor].sock = 0;
 	}
 
-	printk(KERN_INFO DEVICE_NAME "%d: Connection lost.\n",minor);
+	printk(KERN_INFO DEVICE_NAME "%d: Connection lost."
+	       "(pc=%d,uc=%d)\n",minor,drbd_conf[minor].pending_cnt,
+	       drbd_conf[minor].unacked_cnt);
 
 	if(drbd_conf[minor].cstate != Unconfigured)
 	        set_cstate(&drbd_conf[minor],Unconnected);
@@ -2406,7 +2510,9 @@ void drbdd(int minor)
 		clear_bit(ISSUE_BARRIER,&drbd_conf[minor].flags);
 		break;
 	case Secondary: 
-		drbd_conf[minor].epoch_size=0; 
+		es_clear(&drbd_conf[minor]);
+		sl_clear(&drbd_conf[minor]);
+		drbd_conf[minor].unacked_cnt=0;
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
