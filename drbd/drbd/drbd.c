@@ -155,6 +155,7 @@ struct Tl_epoch_entry {
 
 struct Drbd_Conf {
 	struct net_config conf;
+        int do_panic;
 	struct socket *sock;
 	kdev_t lo_device;
 	struct file *lo_file;
@@ -1206,7 +1207,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	        end_that_request_last(req);
 
 
-	if( mdev->conf.do_panic && !(uptodate & req->rq_status) ) {
+	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
@@ -1457,6 +1458,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->lo_device = ll_dev;
 	mdev->lo_file = filp;
 	mdev->lo_usize = new_conf.disk_size;
+        mdev->do_panic = new_conf.do_panic;
 
 	if (mdev->lo_usize) {
 		blk_size[MAJOR_NR][minor] = mdev->lo_usize;
@@ -1481,6 +1483,26 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	if ((err=put_user(retcode, &arg->ret_code))) return err;
 	return -EINVAL;
 }
+
+/*static */
+int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
+{
+	struct ioctl_get_config cn;
+	int err;
+
+	cn.cstate=mdev->cstate;
+	cn.lower_device_major=MAJOR(mdev->lo_device);
+	cn.lower_device_minor=MINOR(mdev->lo_device);
+	cn.disk_size_user=mdev->lo_usize;
+	cn.do_panic=mdev->do_panic;
+	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
+
+	if ((err = copy_to_user(arg,&cn,sizeof(struct ioctl_get_config))))
+		return err;
+
+	return 0;
+}
+
 
 /*static */
 int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
@@ -1653,6 +1675,10 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		return drbd_ioctl_set_net(&drbd_conf[minor],
 					   (struct ioctl_net_config*) arg);
 
+	case DRBD_IOCTL_GET_CONFIG:
+		return drbd_ioctl_get_conf(&drbd_conf[minor],
+					   (struct ioctl_get_config*) arg);
+
 	case DRBD_IOCTL_UNCONFIG_NET:
 
 		if( drbd_conf[minor].cstate == Unconfigured)
@@ -1722,8 +1748,8 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		} else if (drbd_conf[minor].o_state == Primary) {
 			drbd_send_cmd(minor,StartSync);
 		} else return -EINPROGRESS;
-			
-			break;
+		
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -1819,6 +1845,7 @@ int __init drbd_init(void)
 		drbd_conf[i].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), FALSE /*TRUE */ );
+		drbd_conf[i].do_panic = 0;
 		drbd_conf[i].sock = 0;
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;

@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -58,6 +59,7 @@ int cmd_down(int drbd_fd,char** argv,int argc);
 int cmd_net_conf(int drbd_fd,char** argv,int argc);
 int cmd_disk_conf(int drbd_fd,char** argv,int argc);
 int cmd_disconnect(int drbd_fd,char** argv,int argc);
+int cmd_show(int drbd_fd,char** argv,int argc);
 
 struct drbd_cmd commands[] = {
 	{"pri", cmd_primary,           0 },
@@ -68,6 +70,7 @@ struct drbd_cmd commands[] = {
 	{"net", cmd_net_conf,          3 },
 	{"disk", cmd_disk_conf,        1 },
 	{"disconnect", cmd_disconnect, 0 },
+	{"show", cmd_show,             0 },
 };
 
 unsigned long resolv(const char* name)
@@ -186,6 +189,7 @@ void print_usage(const char* prgname)
           " [-i|--ping-int]\n"
 	  " disk lower_device [-d|--disk-size val] [-p|--do-panic]\n"
 	  " disconnect\n"
+	  " show\n"
 	  "Version: "VERSION"\n"
 	  ,prgname);
 
@@ -294,6 +298,7 @@ int scan_disk_options(char **argv,
 		      struct ioctl_disk_config* cn)
 {
   cn->config.disk_size = 0; /* default not known */
+  cn->config.do_panic  = 0;
 
   if(argc==0) return 0;
 
@@ -304,15 +309,19 @@ int scan_disk_options(char **argv,
       int c;
       static struct option options[] = {
 	{ "disk-size",  required_argument, 0, 'd' }, 
+	{ "do-panic",   no_argument,       0, 'p' },
 	{ 0,           0,                 0, 0 }
       };
 	  
-      c = getopt_long(argc,argv,"d:",options,0);
+      c = getopt_long(argc,argv,"d:p",options,0);
       if(c == -1) break;
       switch(c)
 	{
 	case 'd':
 	  cn->config.disk_size = m_strtol(optarg,1024);
+	  break;
+	case 'p':
+	  cn->config.do_panic=1;
 	  break;
 	case '?':
 	  /* onknown option */
@@ -331,7 +340,6 @@ int scan_net_options(char **argv,
   cn->config.sync_rate = 250; /* KB/sec */
   cn->config.skip_sync = 0; 
   cn->config.tl_size = 256;
-  cn->config.do_panic  = 0;
   cn->config.try_connect_int = 10;
   cn->config.ping_int = 10;
 
@@ -347,13 +355,12 @@ int scan_net_options(char **argv,
 	{ "sync-rate",  required_argument, 0, 'r' },
 	{ "skip-sync",  no_argument,       0, 'k' },
 	{ "tl-size",    required_argument, 0, 's' },
-	{ "do-panic",   no_argument,       0, 'p' },
 	{ "connect-int",required_argument, 0, 'c' },
 	{ "ping-int",   required_argument, 0, 'i' },
 	{ 0,           0,                 0, 0   }
       };
 	  
-      c = getopt_long(argc,argv,"t:r:ks:pc:i:",options,0);
+      c = getopt_long(argc,argv,"t:r:ks:c:i:",options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -368,9 +375,6 @@ int scan_net_options(char **argv,
 	  break;
 	case 's':
 	  cn->config.tl_size = m_strtol(optarg,1);
-	  break;
-	case 'p':
-	  cn->config.do_panic=1;
 	  break;
 	case 'c':
 	  cn->config.try_connect_int = m_strtol(optarg,1);
@@ -643,6 +647,82 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc)
   if(retval) return retval;
 
   return do_disk_conf(drbd_fd,argv[0],&cn);
+}
+
+const char* guess_dev_name(int major,int minor)
+{
+  DIR* device_dir;
+  struct dirent* dde;
+  struct stat sb;
+  static char dev_name[50];
+
+  chdir("/dev");
+  device_dir=opendir(".");
+
+  if(!device_dir) goto err_out;
+
+  while((dde=readdir(device_dir))) 
+    {
+      if(stat(dde->d_name,&sb)) goto err_out_close;
+
+      if(S_ISBLK(sb.st_mode)) 
+	{
+	  if (major == (int)(sb.st_rdev & 0xff00) >> 8 &&
+	      minor == (int)(sb.st_rdev & 0x00ff) )
+	    {
+	      closedir(device_dir);
+	      snprintf(dev_name,50,"/dev/%s",dde->d_name);
+	      return dev_name;
+	    }
+	}
+    }
+
+ err_out_close:
+  closedir(device_dir);
+ err_out:
+  return "can not guess name";
+}
+
+int cmd_show(int drbd_fd,char** argv,int argc)
+{
+  struct ioctl_get_config cn;
+  struct sockaddr_in *other_addr;
+  struct sockaddr_in *my_addr;
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
+  if(err)
+    {
+      perror("ioctl() failed");
+      return 20;
+    }
+
+  if( cn.cstate < StandAllone )
+    {
+      printf("Not configured\n");
+      return 0;
+    }
+
+  printf("Lower device = %d:%d   ( %s )\n",
+	 cn.lower_device_major,
+	 cn.lower_device_minor,
+	 guess_dev_name(cn.lower_device_major,cn.lower_device_minor));
+
+  if( cn.cstate < Unconnected ) return 0;
+
+  my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
+  other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
+  printf("Local address = %s:%d\n",
+	 inet_ntoa(my_addr->sin_addr),
+	 ntohs(my_addr->sin_port));
+
+  printf("Remote address = %s:%d\n",
+	 inet_ntoa(other_addr->sin_addr),
+	 ntohs(other_addr->sin_port));
+
+  printf("Wire protocol = %c\n",'A'-1+cn.nconf.wire_protocol); 
+
+  return 0;
 }
 
 int main(int argc, char** argv)

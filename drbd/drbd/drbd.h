@@ -57,6 +57,7 @@
 struct disk_config {
 	IN int      lower_device;
 	IN unsigned int disk_size;  /* Size given by user */
+        IN int      do_panic;  /* Panic on error upon LL_DEV */
 };
 
 struct net_config {
@@ -69,7 +70,6 @@ struct net_config {
 	IN int      skip_sync; 
 	IN int      tl_size; /* size of the transfer log */
 	IN int      wire_protocol;  
-	IN int      do_panic;
 	IN int      try_connect_int;  /* seconds */
 	IN int      ping_int;         /* seconds */
 };
@@ -183,6 +183,15 @@ typedef enum {
   SyncingQuick        /* >=WFReportParams ==> There is a socket */
 } Drbd_CState; 
 
+struct ioctl_get_config {
+	struct net_config     nconf;
+	OUT int      lower_device_major;
+	OUT int      lower_device_minor;
+	OUT unsigned int disk_size_user;
+        OUT int      do_panic;
+	OUT Drbd_CState cstate; 
+};
+
 #define DRBD_MAGIC 0x83740267
 
 #define DRBD_IOCTL_GET_VERSION   _IOR( 'D', 0x00, int )
@@ -194,5 +203,6 @@ typedef enum {
 #define DRBD_IOCTL_SET_NET_CONFIG _IOW( 'D', 0x07, struct ioctl_net_config )
 #define DRBD_IOCTL_UNCONFIG_NET   _IO ( 'D', 0x08 )
 #define DRBD_IOCTL_UNCONFIG_BOTH  _IO ( 'D', 0x09 )
+#define DRBD_IOCTL_GET_CONFIG     _IOW( 'D', 0x0A, struct ioctl_get_config)
 #endif
 
