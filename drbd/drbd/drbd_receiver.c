@@ -849,7 +849,7 @@ read_in_block(struct Drbd_Conf* mdev,int data_size)
         set_bit(BH_Dirty, &bh->b_state);
         set_bit(BH_Lock, &bh->b_state); // since using submit_bh()
 	bh->b_end_io = drbd_dio_end_sec;
-	mdev->recv_cnt+=data_size>>10;
+	mdev->recv_cnt+=data_size>>9;
 	
 	return e;
 }
@@ -867,7 +867,7 @@ STATIC void receive_data_tail(struct Drbd_Conf* mdev,int data_size)
 	}
 #undef NUMBER
 
-	mdev->writ_cnt+=data_size>>10;
+	mdev->writ_cnt+=data_size>>9;
 	
 }
 
@@ -1022,7 +1022,7 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 
 	kfree(pr);
 
-	if(ok) mdev->recv_cnt+=data_size>>10;	
+	if(ok) mdev->recv_cnt+=data_size>>9;
 	return ok;
 }
 
@@ -1151,7 +1151,7 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 		bb_wait(&bl);
 	} else spin_unlock_irq(&mdev->bb_lock);
 
-	mdev->read_cnt += bh->b_size >> 10;
+	mdev->read_cnt += bh->b_size >> 9;
 	submit_bh(READ,e->bh);
 	inc_unacked(mdev);
 	

@@ -591,7 +591,7 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	ok=(ret == bh->b_size + sizeof(head));
 
 	if( ok ) {
-		mdev->send_cnt+=bh->b_size>>10;
+		mdev->send_cnt+=bh->b_size>>9;
 		/* This must be within the semaphore */
 		//UGGLY UGGLY casting it back to a drbd_request_t
 		tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
@@ -621,7 +621,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 
 	up(&mdev->sock_mutex);
 
-	if( ok ) mdev->send_cnt+=bh->b_size>>10;
+	if( ok ) mdev->send_cnt+=bh->b_size>>9;
 
 	return ok;
 }

@@ -150,7 +150,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	struct buffer_head *nbh;
 	drbd_request_t *req;
 	int cbs = 1 << mdev->blk_size_b;
-	int size_kb, send_ok;
+	int send_ok;
 
 	if (bh->b_size != cbs) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */
@@ -162,8 +162,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",
 		       (int)(mdev-drbd_conf),cbs);
 	}
-
-	size_kb = 1<<(mdev->blk_size_b-10);
 
 #if 0
 	{
@@ -253,13 +251,13 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 	if( rw == READ || rw == READA ) {
-		mdev->read_cnt+=size_kb; 
+		mdev->read_cnt+=bh->b_size>>9;
 
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
 
-	mdev->writ_cnt+=size_kb;
+	mdev->writ_cnt+=bh->b_size>>9;
 
 	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
 		drbd_set_out_of_sync(mdev,bh->b_rsector);
