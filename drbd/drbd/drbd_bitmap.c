@@ -177,10 +177,11 @@ STATIC void bm_end_info(drbd_dev *mdev)
 	size_t w = b->bm_bits >> LN2_BPL;
 
 	INFO("bm_set=%lu\n",b->bm_set);
-	INFO("bm[%d]=0x%lX\n",w,b->bm[w++]);
+	INFO("bm[%d]=0x%lX\n",w,b->bm[w]);
+	w++;
 
 	if ( w < b->bm_words ) {
-		INFO("bm[%d]=0x%lX\n",w,b->bm[w++]);
+		INFO("bm[%d]=0x%lX\n",w,b->bm[w]);
 	}
 }
 */
