@@ -155,8 +155,8 @@ case "$OPTION" in
 		;;
 		
 	restart)
-		$0 stop
-		$0 start
+		$0 $RESOURCE stop
+		$0 $RESOURCE start
 
 		# TODO: A real return check
 		RV=$?
