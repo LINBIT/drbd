@@ -90,7 +90,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr/SM);
-	if(unlikely(bm_ext)) {
+	if (unlikely(bm_ext!=NULL)) {
 		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
 			WARN("Delaying app write until sync read is done\n");
