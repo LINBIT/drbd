@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.9 2004/06/07 13:58:27 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.10 2004/06/15 08:41:02 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -17,12 +17,12 @@ clear_env()
 	# field name headers for display in _gen_comp()
 	Fmt_Node="(%-15s %-12s %-10s %9s %10s)"
 	  H_Node=(admin_ip hostname admin_nic timeout min_uptime)
-	Fmt_Disk="(%-8s %-8s %-24s)"
-	  H_Disk=(name Node real_dev)
+	Fmt_Disk="(%-8s %-8s %-24s %7s)"
+	  H_Disk=(name Node real_dev usize)
 	Fmt_Link="\n#\t(%-8s %-15s %-6s)"
 	  H_Link=(Node ip nic)
-	Fmt_Drbd="(%-8s %-5s %6s %-8s\n#\t  %-8s %-15s %-24s %-8s\n#\t  %-8s %-15s %-24s %-8s)"
-	  H_Drbd=(name minor port link
+	Fmt_Drbd="(%-8s %-5s %6s %-8s %7s\n#\t  %-8s %-15s %-24s %-8s\n#\t  %-8s %-15s %-24s %-8s)"
+	  H_Drbd=(name minor port link usize
 		left left_ip left_real_dev left_disk
 		right right_ip right_real_dev right_disk
 		conf)
@@ -62,6 +62,7 @@ disk_to_env()
 	    name=$1
 	    node=$2
 	real_dev=$3
+	USIZE=$4
 	DEV=$real_dev
 }
 bdev_to_env()
@@ -80,23 +81,30 @@ drbd_to_env()
 	  minor=$2
 	   port=$3
 	   link=$4
-	shift 4;  left=$1  left_ip=$2  left_real_dev=$3  left_disk=$4
+	  USIZE=$5
+	shift 5;  left=$1  left_ip=$2  left_real_dev=$3  left_disk=$4
 	shift 4; right=$1 right_ip=$2 right_real_dev=$3 right_disk=$4
 	   conf=$5
 	DEV=/dev/nb$minor
 }
 new_bdev()
 {
-	local name node real_dev disk bdev
+	local name node real_dev disk bdev usize
 	name=$1 ; shift
 
 	bdev="$name"
 	while (( $# )) ; do
 		[[ $1 == *:/* ]] || return 101
 		node=${1%%:*} ; real_dev=${1#*:} ; shift
+		if [[ $real_dev == *:* ]] ; then
+			usize=${real_dev#*:}
+			real_dev=${real_dev%:*}
+		else
+			usize=""
+		fi
 		let ID_DISK++
 		disk="Disk_$ID_DISK"
-		eval "$disk=( $name $node  $real_dev )"
+		eval "$disk=( $name $node  $real_dev \"${usize}\")"
 		bdev="$bdev $node $real_dev"
 	done
 	let ID_BDEV++
@@ -106,7 +114,7 @@ new_drbd()
 {
 	local name minor port left left_real_dev right right_real_dev link
 	local  left_ip  left_hostname  left_disk
-	local right_ip right_hostname right_disk conf
+	local right_ip right_hostname right_disk conf usize
 	          name=$1
 	         minor=$2
 		  port=$3
@@ -115,6 +123,7 @@ new_drbd()
 	         right=$6
 	right_real_dev=$7
 	          link=$8
+	         usize=$9
 
 	 left_ip=$(ip_of $link $left)  || return
 	right_ip=$(ip_of $link $right) || return
@@ -123,10 +132,10 @@ new_drbd()
 
 	let ID_DISK++
 	left_disk="Disk_$ID_DISK"
-	eval "$left_disk=( $name $left  $left_real_dev )"
+	eval "$left_disk=( $name $left  $left_real_dev \"${usize:+$[usize+128]}\" )"
 	let ID_DISK++
 	right_disk="Disk_$ID_DISK"
-       	eval "$right_disk=( $name $right $right_real_dev )"
+       	eval "$right_disk=( $name $right $right_real_dev \"${usize:+$[usize+128]}\" )"
 
 	# funny quoting with cat
 	conf=$(cat <<-___
@@ -170,8 +179,12 @@ new_drbd()
 	)
 
 	let ID_DRBD++
-	eval "Drbd_$ID_DRBD=($name $minor $port
+	eval "Drbd_$ID_DRBD=(
+		$name
+		$minor
+		$port
 		$link
+		\"$usize\"
 		$left
 		$left_ip
 		$left_real_dev
@@ -184,6 +197,54 @@ new_drbd()
 	)"
 }	
 
+blockwise_md5_pl()
+{
+	: ${DEV:?unknown device} 
+	# we could exclude the meta data...
+	# RSIZE=$(fdisk -s $DEV)
+	# USIZE=${USIZE:+$[(USIZE+128)*1024]}
+	# (( USIZE <= RSIZE )) # assert USIZE <= RSIZE
+	# : ${USIZE:=$RSIZE}
+	# let "MLOC=USIZE-128*1024"
+	perl -e '
+	use Digest::MD5 "md5_hex";
+	$pos=0;
+	while (sysread(STDIN,$buf,4096)==4096) {
+		printf "%6d\t%s\n",$nr++,md5_hex($buf);
+	       '${USIZE:+"last if \$pos+=4 >= $USIZE*1024;"}'
+	}' < $DEV
+}
+
+Drbd_MD5_diff()
+{
+	# ONLY use this when DRBD is down or secondary *ON BOTH* nodes!
+	drbd=$1
+	drbd_to_env $drbd
+	on ${!left}:  blockwise_md5_pl DEV=/dev/mapper/$name USIZE=$usize \
+		> md5sum-${!left}-$name
+	on ${!right}: blockwise_md5_pl DEV=/dev/mapper/$name USIZE=$usize \
+		> md5sum-${!right}-$name
+	lines=$(wc -l < md5sum-${!right}-$name)
+	echo "NOTE: internal meta data may differ..."
+	echo "md probably starts at blocknr $[lines-(128<<8)]"
+	diff -u md5sum-${!left}-$name md5sum-${!right}-$name
+}
+
+dd_single_block()
+{
+	: ${name:?unknown resource name} 
+	: ${blocknr:?which block nr do you want}
+	dd if=/dev/mapper/$name bs=4k count=1 skip=$blocknr
+}
+
+Drbd_hexdump_diff_block()
+{
+	drbd=$1 blocknr=$2
+	: ${blocknr:?which blocknr do you want}
+	drbd_to_env $drbd
+	diff -u <(on ${!left}: dd_single_block name=$name blocknr=$blocknr | hexdump -C) \
+	        <(on ${!right}: dd_single_block name=$name blocknr=$blocknr| hexdump -C)
+}
 
 Crash_Node()
 {
@@ -225,14 +286,14 @@ Fail_Disk()
 {
 	local d=$1
 	disk_to_env $d
-	on ${!node}: dmsetup_error name=$name dev=$real_dev
+	on ${!node}: dmsetup_error name=$name dev=$real_dev blocks=${USIZE:+$[USIZE*1024]}
 }
 
 Heal_Disk()
 {
 	local d=$1
 	disk_to_env $d
-	on ${!node}: dmsetup_linear name=$name dev=$real_dev
+	on ${!node}: dmsetup_linear name=$name dev=$real_dev blocks=${USIZE:+$[USIZE*1024]}
 }
 
 # initial boot
@@ -257,8 +318,8 @@ boot_and_setup_nodes()
 	# reset and up all DRBDs
 	for d in ${!Drbd_*} ; do
 		drbd_to_env $d
-		echo "$conf" | on ${!left}:  drbd_append_config NAME=$name RES=$name LO_DEV=$left_real_dev
-		echo "$conf" | on ${!right}: drbd_append_config NAME=$name RES=$name LO_DEV=$right_real_dev
+		echo "$conf" | on ${!left}:  drbd_append_config USIZE=$USIZE NAME=$name RES=$name LO_DEV=$left_real_dev
+		echo "$conf" | on ${!right}: drbd_append_config USIZE=$USIZE NAME=$name RES=$name LO_DEV=$right_real_dev
 	done
 
 	# wait for connect and initial sync (which should be skipped automatically)
@@ -269,6 +330,7 @@ boot_and_setup_nodes()
 	done
 
 	# make file systems
+	wait_for=""
 	for fs in ${!FS_*} ; do
 		eval ${!fs}
 		# fixme add paranoia, should check for availability on the
@@ -276,7 +338,7 @@ boot_and_setup_nodes()
 		bdev_to_env $BDEV
 		if [[ $BDEV == Drbd_* ]] ; then
 			n=$left
-			on ${!n}: drbdadm_pri   name=$name
+			on ${!n}: drbdadm_pri force="-- -d" name=$name
 		else
 			n=Node_1
 		fi
@@ -288,15 +350,14 @@ boot_and_setup_nodes()
 		on ${!n}: mkfs_$TYPE    DEV=$DEV
 		if [[ $BDEV == Drbd_* ]] ; then
 			on ${!n}: drbdadm_sec   name=$name
+			on ${!n}: drbd_wait_sync minor=$minor
 		fi
 	done
-
-	initial=false
 ) }
 
 Start()
 {
-	local rs=$1 nn=$2
+	rs=$1 nn=$2
 	i=${rs#RS_}
 	which=${!rs}; [[ $which == *CN=* ]] && cn=${which#*CN=} || cn=''
 	fs=FS_$i; CN=""
@@ -305,6 +366,7 @@ Start()
 	[[ -z $CN && -z $cn ]] || return 101
 	[[ $nn == Node_* ]]    || return 102
 
+	( set -e
 	# fixme add paranoia, should check for availability on the
 	# respective node
 	bdev_to_env $BDEV
@@ -318,6 +380,7 @@ Start()
 
 	# START IN BACKGROUND
 	on ${!nn}: ${which}_start   MNT=$MNT </dev/null &
+	) || return
 
 	# rememeber current node
 	eval "$fs=\"\$$fs CN=$nn\""
@@ -328,7 +391,7 @@ Start()
 }
 
 Stop()
-{
+{ ( set -e
 	local rs=$1 i fs cn CN which
 	i=${rs#RS_}
 	which=${!rs}; [[ $which == *CN=* ]] && cn=${which#*CN=} || cn=''
@@ -352,6 +415,7 @@ Stop()
 	else
 		: "do something to make $BDEV unavailable?"
 	fi
+) || return
 	eval "$fs=\${$fs% CN=*}"   # forget current node
 	eval "$rs=\${$rs% CN=*}"   # forget current node
 	Dump_RS

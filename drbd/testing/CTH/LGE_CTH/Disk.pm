@@ -1,5 +1,5 @@
 package LGE_CTH::Disk;
-# $Id: Disk.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: Disk.pm,v 1.1.2.2 2004/06/15 08:41:02 lars Exp $
 
 use strict;
 use warnings;
@@ -24,6 +24,7 @@ our %ClassData = (
 		dev  => undef,
 		name => undef,
 		may_fail => 0,
+		usize => 0,
 		setup_script => 'empty_script',
 		heal_script => 'dmsetup_linear',
 		fail_script => 'dmsetup_error',
@@ -80,29 +81,32 @@ sub Node_changed {
 
 sub fail {
 	my $me = shift;
-	my ($dev,$name,$node)    = @{$me->{_config}}{qw(dev name node)};
+	my ($dev,$name,$node,$usize) = @{$me->{_config}}{qw(dev name node usize)};
 	my ($hostname,$admin_ip) = @{$node->{_config}}{qw(hostname admin_ip)};
-	my $cmd = "on $admin_ip: dmsetup_error name=$name dev=$dev\n";
+	my $blocks = $usize ? ( "blocks=" . ($usize*1024) ) : "";
+	my $cmd = "on $admin_ip: dmsetup_error name=$name dev=$dev $blocks\n";
 	$me->_generic_event("fail","down",$cmd);
 }
 
 sub heal {
 	my $me = shift;
-	my ($dev,$name,$node)    = @{$me->{_config}}{qw(dev name node)};
+	my ($dev,$name,$node,$usize) = @{$me->{_config}}{qw(dev name node usize)};
 	my ($hostname,$admin_ip) = @{$node->{_config}}{qw(hostname admin_ip)};
-	my $cmd = "on $admin_ip: dmsetup_linear name=$name dev=$dev\n";
+	my $blocks = $usize ? ( "blocks=" . ($usize*1024) ) : "";
+	my $cmd = "on $admin_ip: dmsetup_linear name=$name dev=$dev $blocks\n";
 	$me->_generic_event("heal","up",$cmd);
 }
 
 sub reconfigure {
 	my $me = shift;
-	my ($dev,$name,$node)    = @{$me->{_config}}{qw(dev name node)};
+	my ($dev,$name,$node,$usize) = @{$me->{_config}}{qw(dev name node usize)};
 	my ($hostname,$admin_ip) = @{$node->{_config}}{qw(hostname admin_ip)};
+	my $blocks = $usize ? ( "blocks=" . ($usize*1024) ) : "";
 	my $cmd;
 	if ($me->{_status}->{status} eq 'down') {
-        	$cmd = "on $admin_ip: dmsetup_error name=$name dev=$dev\n";
+        	$cmd = "on $admin_ip: dmsetup_error name=$name dev=$dev $blocks\n";
 	} else {
-        	$cmd = "on $admin_ip: dmsetup_linear name=$name dev=$dev\n";
+        	$cmd = "on $admin_ip: dmsetup_linear name=$name dev=$dev $blocks\n";
 	}
 	_spawn( "configure $dev as $name on $hostname after boot", $cmd, 'SYNC');
 }

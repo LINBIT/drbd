@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.7 2004/06/01 14:27:30 lars Exp $
+# $Id: CTH_bash.sh,v 1.1.2.8 2004/06/15 08:41:02 lars Exp $
 
 # example for scripting failures
 # 
@@ -54,6 +54,7 @@ Run()
 	return
 }
 
+set +e
 if Run; then
 	cat <<-___
 	#--- $CASE ----

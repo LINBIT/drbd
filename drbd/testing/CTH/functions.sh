@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.6 2004/06/07 10:16:39 lars Exp $
+# $Id: functions.sh,v 1.1.2.7 2004/06/15 08:41:02 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -52,10 +52,16 @@ wbtest_start()
 	echo RESTART >> $WBTLOG
 	date >> $WBTLOG
 
-	wbtest -s checkpoint -t data -l $WBTLOG -V || true
-	df .
-# CHANGE, but be aware that -c 20, and two resources, you will have a load of ~40 :)
-	wbtest -p 0 -c 5 -s checkpoint -t data -l $WBTLOG || true
+	wbtest -s checkpoint -t data -l $WBTLOG -V 2>&1 |
+		sed '/Processed checkfile .*: \([0-9]*\)\/\1 passed/d'
+	echo "remaining garbage files:"
+       	# FIXME should be empty, but is not.
+	# wbtest does not like to be killed.
+	ls -l checkpoint/ data/
+	du -s checkpoint/ data/
+# CHANGE, but be aware that -c 20,
+# and two resources, you will have a load of ~40 :)
+	wbtest -p 0 -c 5 -m 16384 -M 102400 -s checkpoint -t data -l $WBTLOG
 }
 
 #
@@ -83,15 +89,14 @@ on()
 {
 	local host=${1%:}
 	local cmd=`type $2|tail +2`
-	local IFS=$'\n'
 	local env="\
 set -o errexit $DEBUG
 PATH=/root/bin:/usr/bin:/bin:/usr/sbin:/sbin
-${*:3}
+$(printf '%q\n' "${@:3}")
 "
 	: ${host:?unknown host}
 	: ${cmd:?no command}
-	# printf "%q " ssh -2 -4 -o BatchMode=yes -o KeepAlive=yes -xl root $host -- "$env$cmd; $2"
+	# printf "%s " ssh -2 -4 -o BatchMode=yes -o KeepAlive=yes -xl root $host -- "$env$cmd; $2"
 	ssh -2 -4 -o BatchMode=yes -o KeepAlive=yes -xl root $host -- "$env$cmd; $2"
 }
 
@@ -226,8 +231,8 @@ dmsetup_linear()
 {
 	: ${name:?unknown dm name} 
 	: ${dev:?unknown lower level device} 
+	: ${blocks:=$(fdisk -s $dev)}
 	dmsetup ls | grep -q $name || dmsetup create $name </dev/null || exit 1
-	blocks=$(fdisk -s $dev)
 	dmsetup suspend $name &&
 	echo "0 $[blocks*2] linear $dev 0" | dmsetup reload $name /dev/stdin || exit 1
 	dmsetup resume $name
@@ -240,8 +245,8 @@ dmsetup_error()
 {
 	: ${name:?unknown dm name} 
 	: ${dev:?unknown lower level device} 
+	: ${blocks:=$(fdisk -s $dev)}
 	dmsetup ls | grep -q $name || dmsetup create $name </dev/null || exit 1
-	blocks=$(fdisk -s $dev)
 	dmsetup suspend $name &&
 	echo "0 $[blocks*2] error" | dmsetup reload $name /dev/stdin || exit 1
 	dmsetup resume $name
@@ -266,13 +271,14 @@ drbd_append_config()							# {{{3
 	cat >> /etc/drbd-07.conf
 	drbdadm dump $RES &>/dev/null
 
-	RSIZE=$(fdisk -s $LO_DEV)
-	# USIZE=${USIZE:+$[(USIZE+128)*1024]} # FIXME assert USIZE <= RSIZE
+	RSIZE=$(fdisk -s /dev/mapper/$NAME)
+	USIZE=${USIZE:+$[(USIZE+128)*1024]}
+	(( USIZE <= RSIZE )) # assert USIZE <= RSIZE
 	: ${USIZE:=$RSIZE}
-	let "MLOC=USIZE-128*1024"
+	let "MLOC=(USIZE & ~3) -128*1024"
 	echo -n "Wipeout GC and AL area on $HOSTNAME:$LO_DEV via /dev/mapper/$NAME for resource $RES"
 	# drbdadm down $RES
-	dd if=/dev/zero bs=1024 seek=$MLOC count=128 of=/dev/mapper/$NAME &>/dev/null
+	dd if=/dev/zero bs=4k seek=$[MLOC/4] count=$[128*256] of=/dev/mapper/$NAME
 	sync
 	echo .
 	drbdadm up $RES
@@ -282,7 +288,7 @@ drbd_append_config()							# {{{3
 
 drbdadm_up()								# {{{3
 {
-	: ${name:?unknown dm name} 
+	: ${name:?unknown resource name} 
 	drbdadm up $name
 	# cat /proc/drbd
 	echo "up'ed drbd $name on $HOSTNAME"
@@ -290,7 +296,7 @@ drbdadm_up()								# {{{3
 
 drbdadm_down()								# {{{3
 {
-	: ${name:?unknown dm name} 
+	: ${name:?unknown resource name} 
 	drbdadm down $name
 	# cat /proc/drbd
 	echo "down'ed drbd $name on $HOSTNAME"
@@ -307,9 +313,8 @@ drbd_wait_sync()							# {{{3
 drbd_wait_peer_not_pri()						# {{{3
 {
 	: ${minor:?unknown minor number} 
-	# FIXME does not work for minor > 9
 	while true; do
-		grep -q "^ $minor:.*/Primary" /proc/drbd || break
+		grep -q "^ *$minor:.*/Primary" /proc/drbd || break
 		sleep 1
 		# FIXME currently hardcoded timeout ...
 		(( SECONDS > 30 )) && exit 1
@@ -333,7 +338,13 @@ drbd_reattach()								# {{{3
 drbdadm_pri()
 {
 	: ${name:?unknown resource name} 
-	drbdadm primary $name
+	: ${force:=}
+	# FIXME should not be neccessary!
+	# patch already done, needs to be checked in...
+	drbdadm $force primary $name
+	if [[ $force ]] ; then
+		drbdadm invalidate_remote $name || true
+	fi
 	echo "$name now Primary on $HOSTNAME"
 }
 
@@ -353,7 +364,7 @@ do_mount()
 	: ${MNT:?unknown mount point} 
 	: ${TYPE:?unknown fs type} 
 	: ${DEV:?which device are you talkin about}
-	mount -v -t $TYPE $DEV $MNT
+	mount -v -t ${TYPE%%_*} $DEV $MNT
 }
 
 do_umount()
@@ -365,6 +376,11 @@ do_umount()
 		sleep 1
 	done
 }
+
+mkfs_reiserfs_nomkfs() { echo "skipped mkreiserfs" ; }
+mkfs_ext2_nomkfs()     { echo "skipped mke2fs"     ; }
+mkfs_ext3_nomkfs()     { echo "skipped mke3fs"     ; }
+mkfs_xfs_nomkfs()      { echo "skipped mkxfs"      ; }
 
 mkfs_reiserfs()
 {

@@ -1,4 +1,4 @@
-# $Id: DRBD_Resource.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: DRBD_Resource.pm,v 1.1.2.2 2004/06/15 08:41:02 lars Exp $
 package LGE_CTH::DRBD_ResourceInstance;
 use strict;
 use warnings;
@@ -25,8 +25,7 @@ our %ClassData = (
 		role => [ qw(active passive) ],
 		data => [ qw(valid inconsistent) ],
 		disk => [ qw(attached detached) ],
-		# keep these state names,
-		# for now I depend on the sort order!  (I think. Do I, still?)
+		# keep these state names, I may depend on the sort order!
 		conn => [ qw(Alone Try connected syncSource syncTarget) ],
 	},
 );
@@ -137,6 +136,7 @@ our %ClassData = (
 		name              => undef,
 		minor             => undef,
 		protocol          => 'C',       # A,B,C
+		usize             => 0,
   	        'incon-degr-cmd'  => "reboot -f",
 		startup => {
 			'degr-wfc-timeout' => 120, # 2 minutes.
@@ -198,6 +198,7 @@ sub CheckConfig {
 			name => $c->{name},
 			dev  => $lodev,
 			may_fail => \$n->{lo_may_fail},
+			usize => ($c->{usize} ? ($c->{usize}+128) : 0)
 		};
 		my $instance = new LGE_CTH::DRBD_ResourceInstance {
 			master_resource => $me,
@@ -254,21 +255,25 @@ sub start {
 	# FIXME paranoia: $node in peers, and up...
 	my ($minor,$name) = @{$me->{_config}}{qw( minor name )};
 	my ($hostname,$ip) = @{$node->{_config}}{qw/hostname admin_ip/};
-	my $cmd;
+	my ($cmd,$force);
 
 	if ($me->{_config}->{do_once_per_node} and not $me->{"did_once:$node->{_id}"}++) {
 		$cmd = "on $ip: $me->{_config}->{do_once_per_node} " . $me->env;
 		_spawn("$me->{_id} do once per node on $node->{_id}", $cmd, 'SYNC');
 	}
-	if ($me->{_config}->{do_on_first_start} and not $me->{did_on_first_start}++) {
-		$cmd = "on $ip: $me->{_config}->{do_on_first_start} " . $me->env;
-		_spawn("$me->{_id} do on first start on $node->{_id}", $cmd, 'SYNC') if $cmd;
+	if (not $me->{did_on_first_start}++) {
+		if ($me->{_config}->{do_on_first_start}) {
+			$cmd = "on $ip: $me->{_config}->{do_on_first_start} " . $me->env;
+			_spawn("$me->{_id} do on first start on $node->{_id}", $cmd, 'SYNC') if $cmd;
+		}
+		$force = 1;
 	}
 
        	$cmd = "on $ip: drbd_wait_peer_not_pri minor=$minor";
 	_spawn("$me->{_id}: wait for $hostname to recognize ... ",$cmd,'SYNC');
 
        	$cmd = "on $ip: drbdadm_pri name=$name";
+        $cmd .=	' "force=-- -d"' if $force;
 	_spawn("$me->{_id}: Primary $name on $node->{_config}->{hostname}",$cmd,'SYNC');
 }
 
