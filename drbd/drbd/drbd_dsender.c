@@ -816,7 +816,6 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 		bm_reset(mdev->mbds_id);
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
-		clear_bit(STOP_SYNC_TIMER,&mdev->flags); // on the way out...
 		mod_timer(&mdev->resync_timer,jiffies);
 	} else {
 		// If we are SyncSource we must be consistent :)
@@ -861,10 +860,10 @@ int drbd_worker(struct Drbd_thread *thi)
 			break;
 		}
 
-		ERR_IF (get_t_state(thi) != Running)
-			break;
-
-		// if (need_resched()) schedule();
+		if (get_t_state(thi) != Running) break;
+		/* With this break, we have done an down() but not consumed
+		   the entry from the list. The cleanup code takes care of
+		   this...   */
 
 		w = 0;
 		spin_lock_irq(&mdev->req_lock);
@@ -874,14 +873,12 @@ int drbd_worker(struct Drbd_thread *thi)
 		spin_unlock_irq(&mdev->req_lock);
 
 		if(!w->cb(mdev,w, mdev->cstate < Connected )) {
-			ERR("worker: a callback failed! \n");
+			//WARN("worker: a callback failed! \n");
 			if (mdev->cstate >= Connected)
 				set_cstate(mdev,NetworkFailure);
 			drbd_thread_restart_nowait(&mdev->receiver);
 		}
 	}
-
-	del_timer_sync(&mdev->resync_timer); // just in case...
 
 	drbd_wait_ee(mdev,&mdev->read_ee);
 

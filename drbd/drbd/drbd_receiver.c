@@ -827,7 +827,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev,data_size);
-	ERR_IF(!e) return FALSE;
+	if(!e) return FALSE;
 
 	dec_rs_pending(mdev,HERE);
 
@@ -1581,7 +1581,7 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 	}
 
-	INFO("receiver exiting\n");
+	INFO("receiver terminated\n");
 
 	return 0;
 }
