@@ -1027,7 +1027,7 @@ void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
 	__add_wait_queue(q1, &wait1);
 	wq_write_unlock(&q1->lock);
 
-	wq_write_lock_irq(&q1->lock);
+	wq_write_lock_irq(&q2->lock);
 	__add_wait_queue(q2, &wait2);
 	wq_write_unlock(&q2->lock);
 
