@@ -182,8 +182,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	int rlen, i;
 	const char *sn;
 
-	rlen = sprintf(buf, "version: " REL_VERSION " (api:%d/proto:%d)\n\n",
-		       API_VERSION,PRO_VERSION);
+	rlen = sprintf(buf, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
+		       API_VERSION,PRO_VERSION, drbd_buildtag());
 
 	/*
 	  cs .. connection state

@@ -81,7 +81,11 @@ else
   endif
 	@echo ""
 
-  kbuild:
+  drbd_buildtag.c:
+	@echo "you probably need to do a 'make' in DRBDs toplevel directory.";\
+	false
+
+  kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 	@mv .kernelrelease.new .kernelrelease

@@ -776,7 +776,8 @@ void print_usage()
     }
   }
 
-  printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
+  printf("\nVersion: "REL_VERSION" (api:%d)\n%s\n",
+		  API_VERSION, drbd_buildtag());
 
   exit(E_usage);
 }

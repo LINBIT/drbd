@@ -44,6 +44,7 @@
 #include <linux/file.h>
 #include <linux/proc_fs.h>
 #include <linux/init.h>
+#include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/devfs_fs_kernel.h>
 
@@ -1718,12 +1719,14 @@ int __init drbd_init(void)
 
 	drbd_proc = NULL; // play safe for drbd_cleanup
 	drbd_conf = kmalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
-	if (likely(drbd_conf)) memset(drbd_conf,0,sizeof(drbd_dev)*minor_count);
+	if (likely(drbd_conf!=NULL))
+		memset(drbd_conf,0,sizeof(drbd_dev)*minor_count);
 	else goto Enomem;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	if (likely(drbd_sizes)) memset(drbd_sizes,0,sizeof(int)*minor_count);
+	if (likely(drbd_sizes!=NULL))
+		memset(drbd_sizes,0,sizeof(int)*minor_count);
 	else goto Enomem;
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	if (unlikely(!drbd_blocksizes)) goto Enomem;
@@ -1854,6 +1857,7 @@ NOT_IN_26(
 	printk(KERN_INFO DEVICE_NAME ": initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
+	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
 	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", major_nr);
 
 	return 0; // Success!

@@ -17,12 +17,15 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
+# TODO move some of the more cryptic bash scriptlets here into scripts/*
+# and call those from here.	-- lge 
+
 #PREFIX      = /usr/local
 
 SUBDIRS     = user scripts benchmark documentation drbd #testing
 ALLSUBDIRS  = user scripts benchmark documentation drbd testing
 
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) svn .*/\1/;p;q;}' drbd/linux/drbd_config.h)
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
@@ -87,9 +90,30 @@ check_changelogs_up2date:
 	   up2date=false; fi ; \
 	$$up2date
 
+# XXX this is newly created whenever the toplevel makefile does something.
+# however it is NOT updated when you just do a make in user/ or drbd/ ...
+#
+# update of drbd_buildtag.c is forced:
+.PHONY: drbd/drbd_buildtag.c
+drbd/drbd_buildtag.c:
+	@is_tarball=`test -e .svn/. && echo false || echo true`;		\
+	set -e; exec > $@.new;							\
+	echo -e "/* automatically generated. DO NOT EDIT. */";			\
+	echo -e "const char * drbd_buildtag(void)\n{";			\
+	if $$is_tarball; then							\
+	  if ! test -e $@ ; then 						\
+	  	echo >&2 "your DRBD source tree is broken. unpack again.";	\
+		exit 1;								\
+	  fi;									\
+	  grep return $@ ;							\
+	else									\
+	  echo -ne "\treturn \"SVN Revision: "; svnversion -n .; echo \";	\
+	fi ;									\
+	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
+       	mv $@{.new,}
+
 # update of .filelist is forced:
 .PHONY: .filelist
-
 .filelist:
 	@ svn info >/dev/null || { echo "you need a svn checkout to do this." ; false ; }
 	@find $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;') \
@@ -99,20 +123,10 @@ check_changelogs_up2date:
 	@find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
+	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
 	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
 	@echo "./.filelist updated."
-
-update.filelist.cvs:
-	cvs status | grep -o "/drbd/drbd/[^,]*" |                 \
-	sed "s/Attic\///;                                         \
-	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist  ;\
-	[ -s .filelist ] # assert there is something in .filelist now
-	find documentation -name "[^.]*.[58]" -o -name "*.html" | \
-	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
-	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
-	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
-	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
 
 tgz: .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
@@ -126,7 +140,15 @@ ifeq ($(FORCE),)
 tgz: check_changelogs_up2date doc
 endif
 
-tarball: distclean doc tgz
+check_all_committed:
+	@modified=`svn st -q`; 		\
+	if test -n "$$modified" ; then	\
+		echo "$$modified";	\
+	       	false;			\
+	fi
+
+tarball: check_all_committed distclean doc tgz
+all tools doc .filelist: drbd/drbd_buildtag.c
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
 KVER := $(shell \

@@ -371,7 +371,8 @@ void print_usage(const char* addinfo)
     if(i < ARRY_SIZE(dh_names)-1) printf(",");
   }
 
-  printf("\n\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
+  printf("\n\nVersion: "REL_VERSION" (api:%d)\n%s\n",
+		  API_VERSION, drbd_buildtag());
   if (addinfo)
       printf("\n%s\n",addinfo);
 

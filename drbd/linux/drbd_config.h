@@ -20,7 +20,9 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7.0 svn $Rev$"
+extern const char * drbd_buildtag(void);
+
+#define REL_VERSION "0.7.0"
 #define API_VERSION 74
 #define PRO_VERSION 74
 

@@ -38,6 +38,7 @@
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
 #include <linux/pkt_sched.h>

@@ -20,11 +20,15 @@
 CFLAGS = -c -Wall -I../drbd
 CC = gcc
 
+drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
+	      drbdadm_adjust.o ../drbd/drbd_buildtag.o
+
+drbdsetup-obj = drbdsetup.o ../drbd/drbd_buildtag.o
+
 all: drbdsetup drbdadm
 
-drbdadm: drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o drbdadm_adjust.o
-	$(CC) -o drbdadm drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
-	drbdadm_adjust.o
+drbdadm: $(drbdadm-obj)
+	$(CC) -o $@ $^ 
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
@@ -37,8 +41,8 @@ drbdadm_parser.h: drbdadm_parser.y
 drbdadm_parser.c: drbdadm_parser.y drbdadm.h
 	bison -d -o drbdadm_parser.c drbdadm_parser.y
 
-drbdsetup: drbdsetup.o
-	$(CC) -o drbdsetup drbdsetup.o
+drbdsetup: $(drbdsetup-obj)
+	$(CC) -o $@ $^ 
 
 clean:
 	rm -f drbdadm_scanner.c
