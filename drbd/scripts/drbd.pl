@@ -150,6 +150,7 @@ sub read_resource_sec($)
       if( $token =~ /^protocol=(.*)/ ) { $this{"protocol"}=$1; next; }
       if( $token =~ /^inittimeout=(.*)/ ) { $this{"inittimeout"}=$1; next; }
       if( $token =~ /^fsckcmd=(.*)/ ) { $this{"fsckcmd"}=$1; next;}
+      if( $token =~ /^skip-wait(.*)/ ) { $this{"skip-wait"}=1; next; }
       if($token eq "}") {
 	if(! $this{"protocol"} || !$this{"fsckcmd"}) {
 	  die "$pname: protocol or fsckcmd missing line $token_line";
@@ -214,6 +215,10 @@ sub wait_ready($$)
     if(!defined($pid)) { die "fork failed"; }
     if($pid == 0) {
 	my ($cstate,$state,$child);
+
+	if ($$mconf{"skip-wait"}) {
+	    exit 0;
+	}
 
 	m_system("$drbdsetup $$mconf{self}{device} wait_connect -t $$mconf{inittimeout}");
 

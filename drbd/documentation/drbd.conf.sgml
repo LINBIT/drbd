@@ -170,6 +170,16 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
   </listitem>
 </varlistentry>
  <varlistentry>
+  <term><option>skip-wait</option></term>
+  <listitem><para>
+    If you want startup of drbd to proceed without waiting for 
+    synchronisation to finish, you can set this option. WARNING:
+    only do this if whatever software you're using to manage drbd can 
+    correctly handle a syncing drbd device (no failover possible).
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
   <term><option>port=<replaceable>number</replaceable></option></term>
   <listitem><para>
     Each DRBD resource needs a TCP port <replaceable>number</replaceable> 
