@@ -231,6 +231,9 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 			int bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
 			int send_ok;
+
+			req->rq_status = RQ_DRBD_NOTHING;
+
      		        send_ok=drbd_send_data(mdev, bh->b_data,
 					   cbs,bnr,(unsigned long)req);
 
@@ -245,7 +248,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
 
-			req->rq_status = RQ_DRBD_NOTHING;
 			} else {
 				bm_set_bit(mdev->mbds_id,
 					   bh->b_rsector >> 
