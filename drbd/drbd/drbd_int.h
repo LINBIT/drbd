@@ -238,7 +238,7 @@ typedef enum {
 struct Drbd_thread {
 	struct task_struct *task;
 	struct semaphore mutex;
-	int t_state;
+	volatile Drbd_thread_state t_state;
 	int (*function) (struct Drbd_thread *);
 	int minor;
 };

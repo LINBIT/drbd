@@ -60,6 +60,17 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+
+#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+extern int register_ioctl32_conversion(unsigned int cmd,
+				       int (*handler)(unsigned int,
+						      unsigned int,
+						      unsigned long,
+						      struct file *));
+extern int unregister_ioctl32_conversion(unsigned int cmd);
+extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
+#endif
+
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
@@ -1047,6 +1058,25 @@ int __init drbd_init(void)
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
 
+#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+	lock_kernel();
+	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
+	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
+	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
+	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
+	register_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
+	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
+	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
+	unlock_kernel();
+#endif
+
 	drbd_request_cache = kmem_cache_create("drbd_request_cache",
 					       sizeof(drbd_request_t),
 					       0, SLAB_NO_REAP, 
@@ -1152,6 +1182,25 @@ void cleanup_module()
 	kfree(drbd_blocksizes);
 	kfree(drbd_sizes);
 	kfree(drbd_conf);
+
+#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+	lock_kernel();
+	unregister_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
+	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH);
+	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
+	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
+	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
+	unlock_kernel();
+#endif
 
 	mempool_destroy(drbd_request_mempool);
 	mempool_destroy(drbd_pending_read_mempool);

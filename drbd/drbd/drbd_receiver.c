@@ -788,6 +788,8 @@ int drbd_connect(struct Drbd_Conf* mdev)
 
 	sock->sk->sndbuf = mdev->conf.sndbuf_size ;
 
+	sock->sk->sndtimeo = mdev->conf.timeout*HZ/5;
+
 	msock->sk->priority=TC_PRIO_INTERACTIVE;
 
 	msock->sk->tp_pinfo.af_tcp.nonagle=1;
@@ -1761,9 +1763,9 @@ int drbd_asender(struct Drbd_thread *thi)
 				break;
 			}
 			rsize=0;
-		get_more:
 		}
-	  
+	get_more:
+
 		if(ping_sent_at==0) {
 			if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
 				if(!drbd_send_cmd(mdev,Ping,1)) goto err;
@@ -1780,7 +1782,6 @@ int drbd_asender(struct Drbd_thread *thi)
 		}
 		
 		if(!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
-		
 	} //while
 
 	if(0) {

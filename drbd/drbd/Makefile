@@ -27,12 +27,19 @@ MINOR = $(shell echo $(KERNVER) | cut -d. -f 2)
 OBJS =  drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_dsender.o 
 OBJS += drbd_req-2.4.o mempool-2.4.o
 
+ifeq ($(ARCH),sparc64)
+	KCC=sparc64-linux-gcc
+	LDFLAGS=-m elf64_sparc
+else
+	KCC=$(CC)
+endif
+
 ####### Implicit rules
 
 .SUFFIXES: .c .o
 
 .c.o:
-	$(CC) -c $(KERNFLAGS) $(VERSIONFLAGS) $<
+	$(KCC) -c $(KERNFLAGS) $(VERSIONFLAGS) $<
 
 #######
 
@@ -40,7 +47,7 @@ OBJS += drbd_req-2.4.o mempool-2.4.o
 all: drbd.o 
 
 drbd.o: $(OBJS)
-	$(LD) -r -o $@ $^
+	$(LD) $(LDFLAGS) -r -o $@ $^
 
 clean:
 	rm -f *.o
