@@ -318,15 +318,16 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
 	int ok=1;
+	int got_sig;
 
 	MUST_HOLD(&mdev->ee_lock);
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
-		wait_event_interruptible(mdev->ee_wait, 
+		got_sig = wait_event_interruptible(mdev->ee_wait, 
 		       test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) == 0);
 		spin_lock_irq(&mdev->ee_lock);
-		if(signal_pending(current)) return 2;
+		if(got_sig) return 2;
 	}
 
 	while(!list_empty(head)) {
