@@ -214,6 +214,14 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   in=m_popen(&pid,argv);
 
+  rv=fscanf(in,"%[Not] configured",str1);
+  if(rv==1 && !strcmp("Not",str1) ) {
+    do_attach=1;
+    do_connect=1;
+    do_syncer=1;
+    goto do_up;
+  }
+
   rv=m_fscanf(in,"Lower device: %*02d:%*02d   (%[^)])\n",str1);
   if( (rv!=1) || strcmp(str1,res->me->disk)) {
     do_attach=1;
@@ -222,7 +230,8 @@ int adm_adjust(struct d_resource* res,char* unused)
   rv=m_fscanf(in,"Meta device: %s   (%[^)])\n",str1,str2);
   if(rv==1) {
     if(strcmp("internal",str1)==0) {
-      if(strcmp("internal",res->me->meta_disk)) do_attach=1;
+      if(strcmp("internal",res->me->meta_disk) && 
+	 strcmp(res->me->disk,res->me->meta_disk)) do_attach=1;
     } 
   }
   if(rv==2) {
@@ -292,11 +301,12 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_syncer |= check_opt_b(in,"skip-sync",res->sync_options);
     do_syncer |= check_opt_b(in,"use-csums",res->sync_options);
     do_syncer |= complete(res->sync_options);
-  }
+  } else do_syncer=1;
 
   fclose(in);
   waitpid(pid,0,0);
 
+ do_up:
   if(do_attach) {
     if( (rv=adm_attach(res,0)) ) return rv;
     do_resize=0;
