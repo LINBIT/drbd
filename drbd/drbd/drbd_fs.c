@@ -325,9 +325,14 @@ ONLY_IN_26({
 })
 #undef min_not_zero
 
-	drbd_md_read(mdev);
+	i = drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
-	drbd_read_bm(mdev);
+	if(i) drbd_read_bm(mdev);
+	else {
+		WARN("You have to start initial sync if it is needed!\n");
+		drbd_write_bm(mdev);
+	}
+
 	if ( !mdev->act_log ||
 	     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )
 	{

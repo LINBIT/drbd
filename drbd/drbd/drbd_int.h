@@ -755,7 +755,7 @@ extern int drbd_send_bitmap(drbd_dev *mdev);
 
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);
-extern void drbd_md_read(drbd_dev *mdev);
+extern int drbd_md_read(drbd_dev *mdev);
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
 extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 

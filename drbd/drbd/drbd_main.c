@@ -1833,83 +1833,6 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 /*********************************/
 /* meta data management */
 
-/* Simply disabled for now...
-struct meta_data_on_disk {
-	__u64 la_size;           // last agreed size.
-	__u32 gc[GEN_CNT_SIZE];  // generation counter
-	__u32 magic;
-};
-
-void drbd_md_write(drbd_dev *mdev)
-{
-	struct meta_data_on_disk buffer;
-	__u32 flags;
-	mm_segment_t oldfs;
-	struct inode* inode;
-	struct file* fp;
-	char fname[25];
-	int i;
-
-	flags=mdev->gen_cnt[Flags] &
-		~(MDF_PrimaryInd|MDF_ConnectedInd);
-	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
-	if(mdev->cstate>=WFReportParams) flags |= MDF_ConnectedInd;
-	mdev->gen_cnt[Flags]=flags;
-
-	for(i=Flags;i<=ArbitraryCnt;i++)
-		buffer.gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
-	buffer.la_size=cpu_to_be64(blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]);
-	buffer.magic=cpu_to_be32(DRBD_MD_MAGIC);
-
-	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
-	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC|O_SYNC,00600);
-	if(IS_ERR(fp)) goto err;
-	oldfs = get_fs();
-	set_fs(get_ds());
-	inode = fp->f_dentry->d_inode;
-	i=fp->f_op->write(fp,(const char*)&buffer,sizeof(buffer),&fp->f_pos);
-	set_fs(oldfs);
-	filp_close(fp,NULL);
-	if (i==sizeof(buffer)) return;
- err:
-	ERR("Error writing state file\n\"%s\"\n", fname);
-	return;
-}
-
-void drbd_md_read(drbd_dev *mdev)
-{
-	struct meta_data_on_disk buffer;
-	mm_segment_t oldfs;
-	struct inode* inode;
-	struct file* fp;
-	char fname[25];
-	int i;
-
-	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
-	fp=filp_open(fname,O_RDONLY,0);
-	if(IS_ERR(fp)) goto err;
-	oldfs = get_fs();
-	set_fs(get_ds());
-	inode = fp->f_dentry->d_inode;
-	i=fp->f_op->read(fp,(char*)&buffer,sizeof(buffer),&fp->f_pos);
-	set_fs(oldfs);
-	filp_close(fp,NULL);
-
-	if(i != sizeof(buffer)) goto err;
-	if(be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC) goto err;
-	for(i=Flags;i<=ArbitraryCnt;i++)
-		mdev->gen_cnt[i]=be32_to_cpu(buffer.gc[i]);
-	mdev->la_size = be64_to_cpu(buffer.la_size);
-	return;
- err:
-	INFO("Creating state file\n\"%s\"\n",fname);
-	for(i=HumanCnt;i<=ArbitraryCnt;i++) mdev->gen_cnt[i]=1;
-	mdev->gen_cnt[Flags]=MDF_Consistent;
-	drbd_md_write(mdev);
-	return;
-}
-*/
-
 struct meta_data_on_disk {
 	u64 la_size;           // last agreed size.
 	u32 gc[GEN_CNT_SIZE];  // generation counter
@@ -1956,13 +1879,13 @@ void drbd_md_write(drbd_dev *mdev)
 	up(&mdev->md_io_mutex);
 }
 
-void drbd_md_read(drbd_dev *mdev)
+int drbd_md_read(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
 	sector_t sector;
 	int i;
 
-	if( mdev->lo_file == 0) return;
+	if( mdev->lo_file == 0) return -1;
 
 	down(&mdev->md_io_mutex);
 
@@ -1981,7 +1904,7 @@ void drbd_md_read(drbd_dev *mdev)
 
 	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
-	return;
+	return 1;
 
  err:
 	kunmap(mdev->md_io_page);
@@ -1994,7 +1917,7 @@ void drbd_md_read(drbd_dev *mdev)
 
 	drbd_md_write(mdev);
 
-	return;
+	return 0;
 }
 
 
