@@ -883,6 +883,7 @@ inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 		return FALSE;
 	}
 
+	mdev->writ_cnt+=data_size/1024;
 	submit_bh(WRITE,bh);
 
 	if(mdev->conf.wire_protocol != DRBD_PROT_A || 
