@@ -214,14 +214,14 @@ static inline void drbd_wait_on_buffer(struct buffer_head * bh)
 
 /*
 You need to hold the ee_lock:
- _drbd_alloc_ee()
- drbd_alloc_ee()
- drbd_free_ee()
  drbd_get_ee()
+ drbd_free_ee()
  drbd_put_ee()
  _drbd_process_done_ee()
 
 You must not have the ee_lock:
+ _drbd_alloc_ee()
+ drbd_alloc_ee()
  drbd_init_ee()
  drbd_release_ee()
  drbd_ee_fix_bhs()
@@ -247,12 +247,16 @@ You must not have the ee_lock:
 	for(i=0;i<number;i++) {
 		e=kmalloc(sizeof(struct Tl_epoch_entry)+
 			  sizeof(struct buffer_head),GFP_KERNEL);
-		
+
+		if( e == NULL ) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: could not kmalloc() new ee\n",
+			       (int)(mdev-drbd_conf));
+			BUG();
+		}
+
 		bh=(struct buffer_head*)(((char*)e)+
 					 sizeof(struct Tl_epoch_entry));
-
-		/*printk(KERN_ERR DEVICE_NAME "%d: kmalloc()=%p\n",
-		  (int)(mdev-drbd_conf),e);*/
 
 		drbd_init_bh(bh, buffer_size, drbd_dio_end_sec);
 		set_bh_page(bh,page,i*buffer_size); // sets b_data and b_page
@@ -261,8 +265,10 @@ You must not have the ee_lock:
 		BH_PRIVATE(bh)=e;
 
 		e->block_id=0; //all entries on the free_ee should have 0 here
+		spin_lock_irq(&mdev->ee_lock);
 		list_add(&e->list,&mdev->free_ee);
 		mdev->ee_vacant++;
+		spin_unlock_irq(&mdev->ee_lock);
 		if (lbh) {
 			lbh->b_this_page = bh;
 		} else {
@@ -335,11 +341,9 @@ You must not have the ee_lock:
 
 void drbd_init_ee(struct Drbd_Conf* mdev)
 {
-	spin_lock_irq(&mdev->ee_lock);
 	while(mdev->ee_vacant < EE_MININUM ) {
 		drbd_alloc_ee(mdev,GFP_USER);
 	}
-	spin_unlock_irq(&mdev->ee_lock);
 }
 
 int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
@@ -369,7 +373,11 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 
 	while(!list_empty(&workset)) {
 		page=drbd_free_ee(mdev,&workset);
-		if(page) _drbd_alloc_ee(mdev,page);
+		if(page) {
+			spin_unlock_irq(&mdev->ee_lock);
+			_drbd_alloc_ee(mdev,page);
+			spin_lock_irq(&mdev->ee_lock);
+		}
 	}
 	spin_unlock_irq(&mdev->ee_lock);
 }
@@ -395,10 +403,13 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	while(list_empty(&mdev->free_ee)) {
 		_drbd_process_done_ee(mdev);
 		if(!list_empty(&mdev->free_ee)) break;
-		if((mdev->ee_vacant+mdev->ee_in_use) < EE_MAXIMUM) {
-			if(drbd_alloc_ee(mdev,GFP_TRY)) break;
-		}
 		spin_unlock_irq(&mdev->ee_lock);
+		if((mdev->ee_vacant+mdev->ee_in_use) < EE_MAXIMUM) {
+			if(drbd_alloc_ee(mdev,GFP_TRY)) {
+				spin_lock_irq(&mdev->ee_lock);
+				break;
+			}
+		}
 		drbd_flush_request_queue(mdev->lo_device);
 		interruptible_sleep_on(&mdev->ee_wait);
 		spin_lock_irq(&mdev->ee_lock);

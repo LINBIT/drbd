@@ -119,12 +119,23 @@ void ds_buffer_alloc(struct ds_buffer *this,int minor)
 	this->io_pending_number=0;
 	this->b_size=blocksize;
 
-	this->buffers = alloc_pages(GFP_USER,drbd_log2(amount>>PAGE_SHIFT));
+	this->buffers=alloc_pages(GFP_USER,drbd_log2(amount>>PAGE_SHIFT));
+	if(this->buffers == NULL) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: could not get free pages\n",minor);
+		BUG();
+	}
 
 	size = 	sizeof(unsigned long)*amount_blks + 
 		sizeof(struct buffer_head)*amount_blks;
 
 	mem = kmalloc(size,GFP_USER);
+	if( mem == NULL ) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: could not kmalloc() in ds_buffer_alloc\n",minor);
+		BUG();
+	} 
+
 	this->blnr = (unsigned long*) mem;
 	mem = mem + sizeof(unsigned long)*amount_blks;
 	this->bhs = (struct buffer_head*) mem;
