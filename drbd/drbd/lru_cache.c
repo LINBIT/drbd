@@ -25,7 +25,7 @@
  */
 
 #include <linux/bitops.h>
-#include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include "lru_cache.h"
 
 #define STATIC static
@@ -35,81 +35,55 @@
 #define PARANOIA_LEAVE() do { clear_bit(__LC_LOCKED,&lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
-/**
- * lc_init: Prepares a lru_cache. Important node: Before you may use it
- * you must also call lc_resize.
- * @lc: The lru_cache object
- * @f:   callback function which is called when lc_get needs to change
- *       the set of elements in the cache
- */
-void lc_init(struct lru_cache* lc)
+static inline void lc_touch(struct lru_cache *lc,struct lc_element *e)
 {
-	lc->nr_elements      = 0;
-	lc->element_size     = sizeof(struct lc_element);
-	lc->notify_on_change = 0;
-	lc->changing         = NULL;
-	lc->slot             = NULL;
-	lc->flags            = 0;
+	// XXX paranoia: !list_empty(lru) && list_empty(free)
+	list_move(&e->list,&lc->lru);
 }
 
 /**
- * lc_resize: Sets the number of elements in of a lru_cache. It also 
- * clears the chache. You should set the element_size member before 
- * calling this function.
- * @lc: The lru_cache object
+ * lc_alloc: allocates memory for @e_count objects of @e_size bytes plus the
+ * struct lru_cache, and the hash table slots.
+ * returns pointer to a newly initialized lru_cache object with said parameters.
  */
-void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
+struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
+			   lc_notify_on_change_fn fn, void *private_p)
 {
-	unsigned int i;
-	void *data;
-	int  bytes;
+	unsigned long bytes;
+	struct lru_cache   *lc;
 	struct lc_element *e;
-	unsigned long flags;
+	int i;
 
-	PARANOIA_ENTRY(); //TODO.
-	if(lc->nr_elements == nr_elements) RETURN();
-
-	bytes = ( lc->element_size + sizeof(lc->slot[0]) ) * nr_elements;
-	data = kmalloc(bytes,GFP_KERNEL);
-
-	if(!data) {
-		printk(KERN_ERR"LC: can not kmalloc() cache's elements\n");
-		RETURN();
-	}
-	memset(data, 0, bytes);
-
-	spin_lock_irqsave(lck,flags); // The uggly exception.
-
-	if (lc->slot) kfree(lc->slot);
-	lc->slot = data;
-	lc->nr_elements = nr_elements;
-
+	e_size = max(sizeof(struct lc_element),e_size);
+	bytes  = e_size+sizeof(struct hlist_head);
+	bytes *= e_count;
+	bytes += sizeof(struct lru_cache);
+	lc     = vmalloc(bytes);
+	memset(lc, 0, bytes);
+	if (lc) {
 	INIT_LIST_HEAD(&lc->lru);
 	INIT_LIST_HEAD(&lc->free);
-	for(i=0;i<nr_elements;i++) {
-		//INIT_HLIST_HEAD( lc->slot + i );
-		e= lc_entry(lc,i);
+		lc->element_size     = e_size;
+		lc->nr_elements      = e_count;
+		lc->notify_on_change = fn;
+		lc->lc_private       = private_p;
+		for(i=0;i<e_count;i++) {
+			e = lc_entry(lc,i);
 		e->lc_number = LC_FREE;
 		list_add(&e->list,&lc->free);
-		// INIT_HLIST_NODE(&e->colision);
+			// memset(,0,) did the rest of init for us
 	}
-
-	spin_unlock_irqrestore(lck,flags);
-
-	RETURN();
+	}
+	return lc;
 }
 
 /**
- * lc_free: Frees memory allocated by lc_resize.
+ * lc_free: Frees memory allocated by lc_alloc.
  * @lc: The lru_cache object
  */
 void lc_free(struct lru_cache* lc)
 {
-	PARANOIA_ENTRY();
-	if (lc->slot) kfree(lc->slot);
-	lc->slot = 0;
-	lc->nr_elements = 0;
-	RETURN();
+	vfree(lc);
 }
 
 static unsigned int lc_hash_fn(struct lru_cache* lc, unsigned int enr)
@@ -129,8 +103,9 @@ struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr)
 	struct hlist_node *n;
 	struct lc_element *e;
 
-	e = NULL;
-	hlist_for_each_entry(e, n, &lc->slot[lc_hash_fn(lc, enr)], colision) {
+	BUG_ON(!lc);
+	BUG_ON(!lc->nr_elements);
+	hlist_for_each_entry(e, n, lc->slot + lc_hash_fn(lc, enr), colision) {
 		if (e->lc_number == enr) return e;
 	}
 	return NULL;
@@ -212,8 +187,13 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	struct lc_element *e;
 	int sync;
 
+	BUG_ON(!lc);
+	BUG_ON(!lc->nr_elements);
+
 	PARANOIA_ENTRY();
-	if (lc->flags & LC_STARVING) RETURN(NULL);
+	// maybe this should be test_bit, but access needs be serialized
+	// anyways, so this should be ok.
+	if ( lc->flags & (LC_STARVING|LC_LOCKED) ) RETURN(NULL);
 
 	e = lc_find(lc, enr);
 	if (e) {
@@ -223,10 +203,10 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	}
 
 	/* In case there is nothing available and we can not kick out
-	   the LRU element, we have to wait .... 
+	   the LRU element, we have to wait ...
 	 */
 	if(!lc_unused_element_available(lc)) {
-		lc->flags |= LC_STARVING; 
+		__set_bit(__LC_STARVING,&lc->flags);
 		RETURN(NULL);
 	}
 
@@ -245,8 +225,22 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 		PARANOIA_LEAVE();
 		sync = lc->notify_on_change(lc,e,enr);
 		PARANOIA_ENTRY();
+		/* we set the STARVING bit when we try to evict the lru
+		 * element, but it is still in use, to avoid usage patterns
+		 * where we never can evict.
+		 * as soon as we have successfully changed an element,
+		 * we need to clear this flag again.
+		 */
+		clear_bit(__LC_STARVING,&lc->flags);
+		smp_mb__after_clear_bit();
 	} else {
+		/* ok, user does not want to be notified.
+		 * we just do it here and now.
+		 */
+		e->lc_number = enr;
+		// I'd like to use __clear_bit, but 2.4.23 does not have it.
 		clear_bit(__LC_DIRTY,&lc->flags);
+		clear_bit(__LC_STARVING,&lc->flags);
 		smp_mb__after_clear_bit();
 		sync = 1;
 	}
@@ -254,24 +248,27 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
 
 	if (sync) {
-		// e->lc_number = enr; //Moved this into the callback - Phil
+		BUG_ON(e->lc_number != enr);
 		BUG_ON(++e->refcnt != 1);
 		BUG_ON(lc->flags & LC_DIRTY);
-		// BUG_ON(lc->flags & LC_STARVING); // ?? - Phil
 		RETURN(e);
 	} else {
-		lc->changing = e;
 		RETURN(NULL);
 	}
 }
 
 unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 {
-	PARANOIA_ENTRY();
+	BUG_ON(!lc);
+	BUG_ON(!lc->nr_elements);
 	BUG_ON(!e);
+
+	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt == 0);
-	e->refcnt--;
-	if(e->refcnt == 0) clear_bit(__LC_STARVING,&lc->flags);
+	if ( --e->refcnt == 0) {
+		clear_bit(__LC_STARVING,&lc->flags);
+		smp_mb__after_clear_bit();
+	}
 	RETURN(e->refcnt);
 }
 
@@ -287,14 +284,13 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 {
 	struct lc_element *e;
 
-	if(index < 0 || index >= lc->nr_elements ) return;
+	if ( index < 0 || index >= lc->nr_elements ) return;
 
 	e = lc_entry(lc,index);
-
 	e->lc_number = enr;
 	
 	hlist_del_init(&e->colision);
-	hlist_add_head(&e->colision, lc->slot + lc_hash_fn(lc,enr) );
+	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc,enr) );
 	lc_touch(lc,e); // to make sure that his entry is not on the free list.
 }
 

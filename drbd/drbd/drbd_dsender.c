@@ -205,7 +205,6 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
 			drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,sizeof(h));
-			
 			return FALSE;
 		}
 
@@ -250,7 +249,6 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 static inline int _dsender_cond(struct Drbd_Conf *mdev)
 {
 	int rv;
-	
 	rv = test_bit(START_SYNC,&mdev->flags)
 		|| test_bit(SYNC_FINISHED,&mdev->flags);
 
@@ -296,7 +294,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 			set_cstate(mdev,Connected);
 
 			// assert that all bit-map parts are cleared.
-			D_ASSERT(list_empty(&mdev->resync.lru));
+			D_ASSERT(list_empty(&mdev->resync->lru));
 		}
 
 		if(mdev->cstate == SyncSource) {

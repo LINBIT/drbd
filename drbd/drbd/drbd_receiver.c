@@ -1143,7 +1143,6 @@ STATIC int e_end_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
 			drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),
 					 e->bh->b_size,1);
 		}
-		
 		ok=drbd_send_ack(mdev,WriteAck,e);
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
 	}

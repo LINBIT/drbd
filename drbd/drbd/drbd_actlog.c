@@ -49,7 +49,7 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *);
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
 
-STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e, 
+int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 			    unsigned int enr)
 {
 	// This callback is called by lc_get(). 
@@ -73,18 +73,10 @@ STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 
 	spin_lock_irq(&mdev->al_lock);	
 	clear_bit(__LC_DIRTY,&lc->flags);
-	clear_bit(__LC_STARVING,&lc->flags); // Do we need this here ?
 	smp_mb__after_clear_bit();
 	wake_up(&mdev->al_wait);
 
 	return 1;
-}
-
-void drbd_al_init(struct Drbd_Conf *mdev)
-{
-	lc_init(&mdev->act_log);
-	mdev->act_log.notify_on_change = drbd_al_changing;
-	mdev->act_log.lc_private = mdev;
 }
 
 static inline 
@@ -93,14 +85,14 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	struct lc_element * extent;
 	
 	spin_lock_irq(&mdev->al_lock);
-	extent = lc_get(&mdev->act_log,enr);	
+	extent = lc_get(mdev->act_log,enr);
 	spin_unlock_irq(&mdev->al_lock);
 	if(extent == 0) {
-		if(mdev->act_log.flags & LC_STARVING) {
+		if(mdev->act_log->flags & LC_STARVING) {
 			WARN("Have to wait for LRU element (AL too small?)\n");
 		}
 
-		if(mdev->act_log.flags & LC_DIRTY) {
+		if(mdev->act_log->flags & LC_DIRTY) {
 			WARN("Ongoing AL update (AL device too slow?)\n");
 		}
 	}
@@ -124,7 +116,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
 
-	extent = lc_find(&mdev->act_log,enr);
+	extent = lc_find(mdev->act_log,enr);
 
 	if(!extent) {
 		spin_unlock_irqrestore(&mdev->al_lock,flags);
@@ -132,7 +124,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 		return;
 	}
 
-	if( lc_put(&mdev->act_log,extent) == 0 ) {
+	if( lc_put(mdev->act_log,extent) == 0 ) {
 		wake_up(&mdev->al_wait);
 	}
 
@@ -154,7 +146,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
 
-	n = lc_index_of(&mdev->act_log, updated);
+	n = lc_index_of(mdev->act_log, updated);
 
 	buffer->updates[0].pos = cpu_to_be32(n);
 	buffer->updates[0].extent = cpu_to_be32(updated->lc_number);
@@ -166,9 +158,9 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 	xor_sum ^= updated->lc_number;
 
 	mx = min_t(int,AL_EXTENTS_PT,
-		   mdev->act_log.nr_elements - mdev->al_tr_cycle);
+		   mdev->act_log->nr_elements - mdev->al_tr_cycle);
 	for(i=0;i<mx;i++) {
-		extent_nr = lc_entry(&mdev->act_log,
+		extent_nr = lc_entry(mdev->act_log,
 				     mdev->al_tr_cycle+i)->lc_number;
 		buffer->updates[i+1].pos = cpu_to_be32(mdev->al_tr_cycle+i);
 		buffer->updates[i+1].extent = cpu_to_be32(extent_nr);
@@ -180,7 +172,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 		xor_sum ^= LC_FREE;
 	}
 	mdev->al_tr_cycle += AL_EXTENTS_PT;
-	if(mdev->al_tr_cycle >= mdev->act_log.nr_elements) mdev->al_tr_cycle=0;
+	if(mdev->al_tr_cycle >= mdev->act_log->nr_elements) mdev->al_tr_cycle=0;
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
@@ -195,7 +187,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 	generic_make_request(WRITE,mdev->md_io_bh);
 	wait_on_buffer(mdev->md_io_bh);
 
-	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) {
+	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
 	mdev->al_tr_number++;
@@ -254,7 +246,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	int transactions=0;
 	int mx;
 
-	mx = div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT);
+	mx = div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT);
 
 	// Find the valid transaction in the log
 	for(i=0;i<=mx;i++) {
@@ -304,7 +296,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 		       //if(j<3) INFO("T%03d S%03d=E%06d\n",trn,pos,extent_nr);
 			spin_lock_irq(&mdev->al_lock);
-			lc_set(&mdev->act_log,extent_nr,pos);
+			lc_set(mdev->act_log,extent_nr,pos);
 			spin_unlock_irq(&mdev->al_lock);
 			active_extents++;
 		}
@@ -322,7 +314,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	mdev->al_tr_number = to_tnr+1;
 	mdev->al_tr_pos = to;
-	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) {
+	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
 
@@ -339,18 +331,15 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	int i;
 	unsigned int enr;
 
-	// Lock down the lru-cache by setting the DIRTY bit...
-	wait_event(mdev->al_wait, 
-		   test_and_set_bit(__LC_DIRTY,&mdev->act_log.flags) == 0);
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	for(i=0;i<mdev->act_log.nr_elements;i++) {
-		enr = lc_entry(&mdev->act_log,i)->lc_number;
+	for(i=0;i<mdev->act_log->nr_elements;i++) {
+		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
 		drbd_update_on_disk_bm(mdev,enr,1);
 	}
 
-	clear_bit(__LC_DIRTY,&mdev->act_log.flags);
-	smp_mb__after_clear_bit();
+	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 }
 
@@ -364,19 +353,16 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	unsigned int enr;
 	unsigned long add=0;
 
-	// Lock down the lru-cache by setting the DIRTY bit...
-	wait_event(mdev->al_wait, 
-		   test_and_set_bit(__LC_DIRTY,&mdev->act_log.flags) == 0);
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	for(i=0;i<mdev->act_log.nr_elements;i++) {
-		enr = lc_entry(&mdev->act_log,i)->lc_number;
+	for(i=0;i<mdev->act_log->nr_elements;i++) {
+		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
 		add += bm_set_bit( mdev, enr << (AL_EXTENT_SIZE_B-9), 
 				   AL_EXTENT_SIZE, SS_OUT_OF_SYNC );
 	}
 
-	clear_bit(__LC_DIRTY,&mdev->act_log.flags);
-	smp_mb__after_clear_bit();
+	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
 	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add/2);
@@ -510,7 +496,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	enr = (sector >> (BM_EXTENT_SIZE_B-9));
 
 	spin_lock_irqsave(&mdev->rs_lock,flags);
-	ext = (struct bm_extent *) lc_get(&mdev->resync,enr);
+	ext = (struct bm_extent *) lc_get(mdev->resync,enr);
 	if(ext) {
 		if( ext->lce.lc_number == enr) {
 			ext->rs_left -= cleared;
@@ -519,7 +505,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			ext->lce.lc_number = enr;
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 		}
-		lc_put(&mdev->resync,(struct lc_element*)ext);
+		lc_put(mdev->resync,(struct lc_element*)ext);
 	} else {
 		ERR("lc_get(rsync) failed ?!?\n");
 	}
@@ -530,7 +516,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 
 		spin_lock(&mdev->al_lock);
 	restart:
-		list_for_each(le,&mdev->resync.lru) {
+		list_for_each(le,&mdev->resync->lru) {
 			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 			if(ext->rs_left == 0) {
 				spin_unlock(&mdev->al_lock);	       
@@ -539,7 +525,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				// of drbd_update_on_disk_bm()
 				//INFO("Clearing e# %lu of on disk bm\n",enr);
 				spin_lock(&mdev->al_lock);
-				lc_del(&mdev->resync,&ext->lce);
+				lc_del(mdev->resync,&ext->lce);
 				goto restart;
 			}
 		}

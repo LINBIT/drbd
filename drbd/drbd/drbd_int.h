@@ -584,7 +584,7 @@ struct Drbd_Conf {
 	struct Drbd_thread asender;
 	wait_queue_head_t dsender_wait;
 	struct BitMap* mbds_id;
-	struct lru_cache resync; // Used to track operations of resync...
+	struct lru_cache* resync; // Used to track operations of resync...
 	int open_cnt;
 	u32 gen_cnt[GEN_CNT_SIZE];
 	int epoch_size;
@@ -607,7 +607,7 @@ struct Drbd_Conf {
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;	
-	struct lru_cache act_log;     // activity log
+	struct lru_cache* act_log;     // activity log
 	unsigned int al_tr_number;
 	int al_tr_cycle;  
 	int al_tr_pos;     // position of the next transaction in the journal
@@ -770,7 +770,8 @@ extern struct proc_dir_entry *drbd_proc;
 extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 
 // drbd_actlog.c
-extern void drbd_al_init(struct Drbd_Conf *mdev);
+extern int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
+			    unsigned int enr);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);

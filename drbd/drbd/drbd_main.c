@@ -1069,15 +1069,16 @@ void drbd_destroy_mempools(void)
 		mempool_destroy(drbd_pr_mempool);
 	if (drbd_request_mempool)
 		mempool_destroy(drbd_request_mempool);
-	if (kmem_cache_destroy(drbd_ee_cache))
+	if (drbd_ee_cache && kmem_cache_destroy(drbd_ee_cache))
 		printk(KERN_ERR DEVICE_NAME
 		       ": kmem_cache_destroy(drbd_ee_cache) FAILED\n");
-	if (kmem_cache_destroy(drbd_pr_cache))
+	if (drbd_pr_cache && kmem_cache_destroy(drbd_pr_cache))
 		printk(KERN_ERR DEVICE_NAME
 		       ": kmem_cache_destroy(drbd_pr_cache) FAILED\n");
-	if (kmem_cache_destroy(drbd_request_cache))
+	if (drbd_request_cache && kmem_cache_destroy(drbd_request_cache))
 		printk(KERN_ERR DEVICE_NAME
 		       ": kmem_cache_destroy(drbd_request_cache) FAILED\n");
+	// FIXME what can we do if we fail to destroy them?
 
 	drbd_pr_mempool      = NULL;
 	drbd_request_mempool = NULL;
@@ -1148,8 +1149,7 @@ void drbd_cleanup(void)
 			drbd_free_resources(mdev);
 			tl_cleanup(mdev);
 			if (mdev->mbds_id) bm_cleanup(mdev->mbds_id);
-			lc_free(&mdev->resync);
-			// free the receiver's stuff
+			if (mdev->resync) lc_free(mdev->resync);
 
 			drbd_release_ee(mdev,&mdev->free_ee);
 			rr = drbd_release_ee(mdev,&mdev->active_ee);
@@ -1177,16 +1177,16 @@ void drbd_cleanup(void)
 				kmem_cache_free(bh_cachep, mdev->md_io_bh);
 			}
 
-			lc_free(&mdev->act_log);
+			if (mdev->act_log) lc_free(mdev->act_log);
 		}
 	}
 
 	// kfree(NULL) is noop
+	blksize_size[MAJOR_NR] = NULL;
+	blk_size[MAJOR_NR]     = NULL;
 	kfree(drbd_conf);
 	kfree(drbd_blocksizes);
 	kfree(drbd_sizes);
-	blksize_size[MAJOR_NR] = NULL;
-	blk_size[MAJOR_NR]     = NULL;
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
@@ -1246,16 +1246,16 @@ int __init drbd_init(void)
 
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
-
-		lc_init(&drbd_conf[i].resync);
-		// maybe better give the element size to lc_init
-		drbd_conf[i].resync.element_size = sizeof(struct bm_extent);
-		// FIXME protect lc_resize from concurrent access
-		lc_resize(&drbd_conf[i].resync,5,&drbd_conf[i].al_lock);
+		// no need to lock access, we are still initializing the module.
+		mdev->resync = lc_alloc(5, sizeof(struct bm_extent),NULL,NULL);
+		if (!mdev->resync) goto Enomem;
+		mdev->act_log = lc_alloc(mdev->sync_conf.al_extents,
+					 sizeof(struct lc_element),
+					 drbd_al_changing, mdev);
+		if (!mdev->act_log) goto Enomem;
 
 		tl_init(mdev);
 		drbd_init_ee(mdev);
-		drbd_al_init(mdev);
 
 		drbd_init_set_defaults(mdev);
 	}
@@ -1840,7 +1840,7 @@ void drbd_md_write(drbd_dev *mdev)
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
 	buffer->al_offset = __constant_cpu_to_be32(MD_AL_OFFSET);
-	buffer->al_nr_extents = cpu_to_be32(mdev->act_log.nr_elements);
+	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
 	
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 

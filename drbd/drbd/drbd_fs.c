@@ -237,7 +237,22 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
 	drbd_read_bm(mdev);
-	lc_resize(&mdev->act_log, mdev->sync_conf.al_extents,&mdev->al_lock);
+	if ( !mdev->act_log ||
+	     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )
+	{
+		struct lru_cache *n,*t;
+		n = lc_alloc(mdev->sync_conf.al_extents,
+			     sizeof(struct lc_element),
+			     drbd_al_changing, mdev);
+		// FIXME if (n==NULL) scream out loud ...
+		// FIXME if (still_in_use) BUG();
+		spin_lock_irq(&mdev->al_lock);
+		t = mdev->act_log;
+		mdev->act_log = n;
+		spin_unlock_irq(&mdev->al_lock);
+		if (t) lc_free(t);
+	}
+
 	drbd_al_read_log(mdev);
 	if(mdev->gen_cnt[Flags] & MDF_PrimaryInd) {
 		drbd_al_apply_to_bm(mdev);
@@ -552,8 +567,21 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			drbd_send_sync_param(mdev);
 		// TODO Need to signal dsender() ?
 
-		lc_resize(&mdev->act_log,mdev->sync_conf.al_extents,
-			  &mdev->al_lock);
+		if ( !mdev->act_log ||
+		     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )
+		{
+			struct lru_cache *n,*t;
+			n = lc_alloc(mdev->sync_conf.al_extents,
+				     sizeof(struct lc_element),
+				     drbd_al_changing, NULL);
+			// FIXME if (n==NULL) scream out loud ...
+			// FIXME if (still_in_use) BUG();
+			spin_lock_irq(&mdev->al_lock);
+			t = mdev->act_log;
+			mdev->act_log = n;
+			spin_unlock_irq(&mdev->al_lock);
+			if (t) lc_free(t);
+		}
 		break;
 
 	case DRBD_IOCTL_GET_CONFIG:

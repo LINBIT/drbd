@@ -70,9 +70,8 @@ struct lru_cache {
 
 	lc_notify_on_change_fn notify_on_change;
 	void  *lc_private;
-	struct lc_element *changing;
 
-	struct hlist_head *slot;
+	struct hlist_head slot[0];
 };
 
 
@@ -86,9 +85,9 @@ enum {
 #define LC_STARVING (1<<__LC_STARVING)
 #define LC_LOCKED   (1<<__LC_LOCKED)
 
-extern void lc_init  (struct lru_cache* lc);
-extern void lc_resize(struct lru_cache* lc, unsigned int, spinlock_t* );
-extern void lc_free  (struct lru_cache* lc);
+extern struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
+				  lc_notify_on_change_fn fn, void *private_p);
+extern void lc_free(struct lru_cache* lc);
 extern void lc_set   (struct lru_cache* lc, unsigned int enr, int index);
 extern void lc_del   (struct lru_cache* lc, struct lc_element *element);
 
@@ -96,10 +95,19 @@ extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
 extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
 extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
 
-static inline void lc_touch (struct lru_cache* lc,struct lc_element * e)
+
+/* this can be used to "disables" lc_get.
+ * lc_put still accesses and changes the elements, though.
+ */
+static inline int lc_try_lock(struct lru_cache* lc)
 {
-	// XXX paranoia: !list_empty(lru) && list_empty(free)
-	list_move(&e->list,&lc->lru);
+	return !test_and_set_bit(__LC_LOCKED,&lc->flags);
+}
+
+static inline void lc_unlock(struct lru_cache* lc)
+{
+	clear_bit(__LC_DIRTY,&lc->flags);
+	smp_mb__after_clear_bit();
 }
 
 #define LC_FREE (-1)
