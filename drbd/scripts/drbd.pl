@@ -268,7 +268,7 @@ sub become_pri($$)
     $mounted=0;
     while($line=<MOUNT>) {
   	if( index($line,$$mconf{self}{device}) > -1 ) {
-	    print "pname: $$mconf{self}{device} is already mounted";
+	    print "pname: $$mconf{self}{device} is already mounted\n";
 	    $mounted=1;
   	}
     }
@@ -468,6 +468,12 @@ if($#ARGV == 1) {
 
 read_config();
 #print Dumper(\%conf);
+
+if(defined($resource)) {
+   if(!defined($conf{$resource})) {
+       die "resource $resource not defined in the configuration file";
+   }
+}
 
 if( $pname =~ /drbd$/ ) { drbd(); }
 elsif( $pname =~ /datadisk$/ ) { datadisk(); }
