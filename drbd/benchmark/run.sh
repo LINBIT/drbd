@@ -79,6 +79,7 @@ DM=./dm
 RDM=$R_DRBD_DIR"benchmark/dm"
 MODULE=../drbd/drbd.o
 RMODULE=$R_DRBD_DIR"drbd/drbd.o"
+OPTIONS="-t 50"
 
 unset LC_ALL
 unset LANG
@@ -123,7 +124,7 @@ echo >>report
 
 echo "network"
 echo "Network: " >>report
-echo -n " Bandwith: " >>report
+echo -n " Bandwidth: " >>report
 $RSH $R_NODE $RDM -i /dev/zero -s $SETSIZE | $DM -o /dev/null -p >>report
 echo -n " Latency: " >>report
 ping -c 50 -f $R_NODE | grep round-trip >>report
@@ -134,11 +135,11 @@ for PROT in $PROTOCOLS; do
   $INSMOD $MODULE
   $RSH $R_NODE $INSMOD $RMODULE
   echo -n "o"
-  $RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE
-  $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE $OPTIONS
+  $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE $OPTIONS
   echo -n "t"
 
-  sleep 1
+  sleep 2
 
   $DRBDSETUP /dev/nb0 PRI
 
@@ -160,11 +161,11 @@ for PROT in $PROTOCOLS; do
   $INSMOD $MODULE
   $RSH $R_NODE $INSMOD $RMODULE
   echo -n "o"
-  $RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE
-  $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE
+  $RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE $OPTIONS
+  $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE $OPTIONS
   echo -n "t"
 
-  sleep 1
+  sleep 2
 
   $RSH $R_NODE $RDRBDSETUP /dev/nb0 PRI
 

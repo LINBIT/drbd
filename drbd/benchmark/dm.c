@@ -214,12 +214,8 @@ int main(int argc, char** argv)
 	  perror("Write failed");
 	  exit(20);	  
 	}
-      if(ww!=rr)
-	{
-	  fprintf(stderr,"Write returned odd number!\n");
-	  exit(20);	  
-	}
       rsize = rsize - ww;
+      if(ww!=rr) break;
     }
       
   if(do_sync) fsync(out_fd);
