@@ -86,6 +86,17 @@ check_changelogs_up2date:
 	$$up2date
 
 update.filelist:
+	find $$(svn st -v | sed '/^?/d;s/^. \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;') \
+	\! -type d -maxdepth 0 |\
+	sed 's:^:drbd-$(DIST_VERSION)/:' > .filelist
+	[ -s .filelist ] # assert there is something in .filelist now
+	find documentation -name "[^.]*.[58]" -o -name "*.html" | \
+	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
+	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
+	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
+	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
+
+update.filelist.cvs:
 	cvs status | grep -o "/drbd/drbd/[^,]*" |                 \
 	sed "s/Attic\///;                                         \
 	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist  ;\
