@@ -45,6 +45,12 @@ struct al_transaction {
        // transactions with correct xor_sums are considered.
 };     // sizeof() = 512 byte
 
+
+struct update_odbm_work {
+	struct drbd_work w;
+	unsigned int enr;
+};
+
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *);
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
@@ -494,13 +500,34 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 #undef BM_WORDS_PER_EXTENT
 #undef EXTENTS_PER_SECTOR
 
+STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
+{
+	struct update_odbm_work *udw = (struct update_odbm_work*)w;
+
+	drbd_update_on_disk_bm(mdev,udw->enr,1);
+
+	kfree(udw);
+
+	if(mdev->rs_left == 0) {
+		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
+		// Could also call directly. This runs in worker's context.
+		mdev->resync_work.cb = w_resync_finished;
+		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	}
+	
+	return 1;
+}
+
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the  *
  * resync LRU-cache are 16MB each.                                     */
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
-				      int cleared,int may_sleep)
+				      int cleared)
 {
+	struct list_head *le;
 	struct bm_extent* ext;
-	unsigned long enr;
+	struct update_odbm_work * udw;
+
+	unsigned int enr;
 	unsigned long flags;
 
 	// I simply assume that a sector/size pair never crosses
@@ -522,53 +549,45 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				// pulled it already in.
 			}
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
-			lc_changed(mdev->resync,(struct lc_element*)ext);
+			lc_changed(mdev->resync,&ext->lce);
 		}
-		lc_put(mdev->resync,(struct lc_element*)ext);
+		lc_put(mdev->resync,&ext->lce);
 	} else {
 		ERR("lc_get() failed! Probabely something stays"
 		    " dirty in the on disk BM\n");
 	}
-	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
-	if(may_sleep) {
-		struct list_head *le;
-
-		spin_lock(&mdev->al_lock);
-	restart:
-		list_for_each(le,&mdev->resync->lru) {
-			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
-			if(ext->rs_left == 0) {
-				ERR_IF(ext->lce.refcnt) continue;
-				spin_unlock(&mdev->al_lock);
-				drbd_update_on_disk_bm(mdev,enr*SM,1);
-				// TODO: reconsider to use the async version
-				// of drbd_update_on_disk_bm()
-				//INFO("Clearing e# %lu of on disk bm\n",enr);
-				spin_lock(&mdev->al_lock);
-				lc_del(mdev->resync,&ext->lce);
-				goto restart;
+	list_for_each(le,&mdev->resync->lru) {
+		ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
+		if(ext->rs_left == 0) {
+			ERR_IF(ext->lce.refcnt) continue;
+			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
+			if(!udw) {
+				WARN("Could not kmalloc an udw\n");
+				break;
 			}
+			udw->enr = enr*SM;
+			udw->w.cb = w_update_odbm;
+			__drbd_queue_work(mdev,&mdev->data.work,&udw->w);
+			lc_del(mdev->resync,&ext->lce);
 		}
-		spin_unlock(&mdev->al_lock);
 	}
+
+	spin_unlock_irqrestore(&mdev->al_lock,flags);
 }
 
-void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
-		      int blk_size, int may_sleep)
+void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int blk_size)
 {
 	/* Is called by drbd_dio_end possibly from IRQ context, but
 	   from other places in non IRQ */
 	unsigned long flags=0;
 	int cleared;
-	int finished=0;
 
 	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
 	mdev->rs_left -= cleared;
 	D_ASSERT((long)mdev->rs_left >= 0);
-	if( cleared && mdev->rs_left == 0 ) finished=1;
 
 	if( cleared == 0 ) {
 		WARN("cleared == 0; sector = %lu\n",sector);
@@ -580,14 +599,7 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	}
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
-	drbd_try_clear_on_disk_bm(mdev,sector,cleared,may_sleep);
-
-	if( finished ) {
-		// This must be after the last call to clear_on_disk_bm() !
-		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
-		mdev->resync_work.cb = w_resync_finished;
-		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
-	}
+	drbd_try_clear_on_disk_bm(mdev,sector,cleared);
 }
 
 

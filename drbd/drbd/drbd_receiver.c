@@ -784,7 +784,7 @@ STATIC int process_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	if( is_syncer_blk(mdev,p->block_id)) {
 		drbd_set_in_sync(mdev,
 				 be64_to_cpu(p->sector),
-				 be32_to_cpu(p->blksize),1);
+				 be32_to_cpu(p->blksize));
 	} else {
 		req=(drbd_request_t*)(long)p->block_id;
 
@@ -931,7 +931,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	drbd_set_in_sync(mdev,e->pbh.b_blocknr,e->pbh.b_size,1);
+	drbd_set_in_sync(mdev,e->pbh.b_blocknr,e->pbh.b_size);
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
 	return TRUE;
@@ -1102,7 +1102,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if( mdev->cstate > Connected ) {
 			drbd_set_in_sync(mdev,e->pbh.b_blocknr,
-					 e->pbh.b_size,1);
+					 e->pbh.b_size);
 		}
 		ok=drbd_send_ack(mdev,WriteAck,e);
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
