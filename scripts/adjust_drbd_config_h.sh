@@ -61,7 +61,7 @@ if grep_q "^PATCHLEVEL *= *4" $KDIR/Makefile ; then
   # 
 
   # do we have mm_inline, and need to include it explicitly?
-  if test -e $KDIR/include/linux/mm_inline.h ; then
+  if grep "#define *page_count" $KDIR/include/linux/mm_inline.h &> /dev/null ; then
     have_mm_inline_h=1
   else
     have_mm_inline_h=0
