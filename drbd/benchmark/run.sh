@@ -104,6 +104,7 @@ echo "local disk"
 echo -n " Disk write: " >>report
 $DM -i /dev/zero -o $LL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
+rm -f /var/lib/drbd/drbd*
 $INSMOD $MODULE
 $DRBDSETUP /dev/nb0 disk $LL_DEV -d $SETSIZE
 $DRBDSETUP /dev/nb0 net $L_NODE $R_NODE A 
@@ -123,6 +124,7 @@ echo "remote disk"
 echo -n " Disk write: " >>report
 $RSH $R_NODE $RDM -i /dev/zero -o $RL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
+$RSH $R_NODE rm -f /var/lib/drbd/drbd*
 $RSH $R_NODE $INSMOD $RMODULE
 $RSH $R_NODE $RDRBDSETUP /dev/nb0 disk $RL_DEV -d $SETSIZE
 $RSH $R_NODE $RDRBDSETUP /dev/nb0 net $R_NODE $L_NODE A 
@@ -144,7 +146,9 @@ ping -c 50 -f $R_NODE | grep round-trip >>report
 echo -e "\nDrbd connected (writing on node1):" >>report
 for PROT in $PROTOCOLS; do
   echo -n "Pr"
+  rm -f /var/lib/drbd/drbd*
   $INSMOD $MODULE
+  $RSH $R_NODE rm -f /var/lib/drbd/drbd*
   $RSH $R_NODE $INSMOD $RMODULE
   echo -n "o"
   $RSH $R_NODE $RDRBDSETUP /dev/nb0 disk $RL_DEV
@@ -175,7 +179,9 @@ done
 echo -e "\nDrbd connected (writing on node2):" >>report
 for PROT in $PROTOCOLS; do
   echo -n "Pr"
+  rm -f /var/lib/drbd/drbd*
   $INSMOD $MODULE
+  $RSH $R_NODE rm -f /var/lib/drbd/drbd*
   $RSH $R_NODE $INSMOD $RMODULE
   echo -n "o"
   $RSH $R_NODE $RDRBDSETUP /dev/nb0 disk $RL_DEV
@@ -199,6 +205,9 @@ for PROT in $PROTOCOLS; do
 
   $RMMOD drbd
   $RSH $R_NODE $RMMOD drbd
+  rm -f /var/lib/drbd/drbd*
+  $RSH $R_NODE rm -f /var/lib/drbd/drbd*
+
   sleep 1;
 done
 
