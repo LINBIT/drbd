@@ -851,13 +851,8 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	struct buffer_head *bh;
 	int ok,rr;
 
-	spin_lock(&mdev->pr_lock); 
-	bh = pr->d.bh;
-	pr->d.bh = 0; 
-	spin_unlock(&mdev->pr_lock); 
-
         if(block_nr != bh->b_blocknr) {
-                printk(KERN_ERR DEVICE_NAME "%d: dleass_read: blocknr!"
+                printk(KERN_ERR DEVICE_NAME "%d: dleass_read: blocknr! "
 		       "g=%lu e=%lu\n",
                        (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
         }
@@ -886,6 +881,12 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 {
 	struct Tl_epoch_entry *e;
 
+	if( pr->d.block_nr != block_nr ) {
+		printk(KERN_ERR DEVICE_NAME "%d: resync_read: blocknr! "
+		       "g=%lu e=%lu\n",
+		       (int)(mdev-drbd_conf),block_nr,pr->d.block_nr );
+	}
+
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
 	drbd_set_bh(e->bh,block_nr,mdev->lo_device);
@@ -913,23 +914,20 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	struct Tl_epoch_entry *e;
 	struct buffer_head *bh;
 
-	e = read_in_block(mdev,data_size);
-
-	spin_lock(&mdev->pr_lock); 
 	bh = pr->d.bh;
-	pr->d.bh = 0; 
-	spin_unlock(&mdev->pr_lock); 
+
+        if(block_nr != bh->b_blocknr) {
+                printk(KERN_ERR DEVICE_NAME "%d: both_read: blocknr! "
+		       "g=%lu e=%lu\n",
+                       (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
+        }
+
+	e = read_in_block(mdev,data_size);
 
 	if(!e) {
 		return FALSE;
 		bh->b_end_io(bh,0);
 	}
-
-        if(block_nr != bh->b_blocknr) {
-                printk(KERN_ERR DEVICE_NAME "%d: both_read: blocknr!"
-		       "g=%lu e=%lu\n",
-                       (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
-        }
 
 	memcpy(bh_kmap(bh),bh_kmap(e->bh),data_size);
 	bh_kunmap(bh);
@@ -996,11 +994,15 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 
 	pr = (struct Pending_read *)(long)header.block_id;
 
-	ok = funcs[pr->cause](mdev,pr,block_nr,data_size);
+	/* Take it out of the list before calling the handler, since the
+	   handler could by changed by make_req as long as it is on the list
+	*/
 
 	spin_lock(&mdev->pr_lock); 
-	list_del(&pr->list);
+	list_del(&pr->list); 
 	spin_unlock(&mdev->pr_lock);
+
+	ok = funcs[pr->cause](mdev,pr,block_nr,data_size);
 
 	kfree(pr);
 
