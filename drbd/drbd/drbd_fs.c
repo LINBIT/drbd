@@ -161,7 +161,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
 	NOT_IN_26(int err;) // unused in 26 ?? cannot believe it ...
-	int i, md_gc_valid, minor;
+	int i, md_gc_valid, minor, mput=0;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
@@ -171,9 +171,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	ONLY_IN_26(struct block_device *bdev, *bdev2;)
 
 	minor=(int)(mdev-drbd_conf);
-
-	if (!try_module_get(THIS_MODULE))
-		return -EINVAL;
 
 	/* if you want to reconfigure, please tear down first */
 	smp_rmb();
@@ -190,6 +187,12 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct disk_config)))
 		return -EFAULT;
+
+	if (mdev->cstate == Unconfigured) {
+		// ioctl already has a refcnt
+		__module_get(THIS_MODULE);
+		mput = 1;
+	}
 
 	if ( new_conf.meta_index < -1) {
 		retcode=LDMDInvalid;
@@ -387,7 +390,7 @@ ONLY_IN_26({
 	NOT_IN_26(blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);)
 	ONLY_IN_26(bd_release(bdev);)
  fail_ioctl:
-	module_put(THIS_MODULE);
+	if (mput) module_put(THIS_MODULE);
 	if (filp) fput(filp);
 	if (filp2) fput(filp2);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
@@ -432,18 +435,21 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 STATIC
 int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 {
-	int i,minor;
+	int i,minor, mput=0;
 	enum ret_codes retcode;
 	struct net_config new_conf;
 
 	minor=(int)(mdev-drbd_conf);
 
-	if (!try_module_get(THIS_MODULE))
-		return -EINVAL;
-
 	// FIXME plausibility check
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
 		return -EFAULT;
+
+	if (mdev->cstate == Unconfigured) {
+		// ioctl already has a refcnt
+		__module_get(THIS_MODULE);
+		mput = 1;
+	}
 
 #define M_ADDR(A) (((struct sockaddr_in *)&A.my_addr)->sin_addr.s_addr)
 #define M_PORT(A) (((struct sockaddr_in *)&A.my_addr)->sin_port)
@@ -515,7 +521,7 @@ FIXME
 	return 0;
 
   fail_ioctl:
-	module_put(THIS_MODULE);
+	if (mput) module_put(THIS_MODULE);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
@@ -799,8 +805,8 @@ ONLY_IN_26(
 		if (test_bit(DISKLESS,&mdev->flags)) {
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
+			module_put(THIS_MODULE);
 		} else set_cstate(mdev,StandAlone);
-		module_put(THIS_MODULE);
 
 		break;
 
@@ -845,8 +851,8 @@ ONLY_IN_26(
 		if (mdev->cstate == StandAlone) {
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
+			module_put(THIS_MODULE);
 		}
-		module_put(THIS_MODULE);
 
 		break;
 
