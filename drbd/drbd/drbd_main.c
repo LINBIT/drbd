@@ -733,8 +733,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		rv = sock_sendmsg(sock, &msg, header_size+data_size);
 		if ( rv == -ERESTARTSYS) {
 			spin_lock_irqsave(&current->sigmask_lock,flags);
-			if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
-				sigdelset(CURRENT_SIGSET, DRBD_SIG);
+			if (sigismember(SIGSET_OF(current), DRBD_SIG)) {
+				sigdelset(SIGSET_OF(current), DRBD_SIG);
 				recalc_sigpending(current);
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
@@ -787,9 +787,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	current->blocked = oldset;
 	if(app_got_sig) {
-		sigaddset(CURRENT_SIGSET, DRBD_SIG);
+		sigaddset(SIGSET_OF(current), DRBD_SIG);
 	} else {
-		sigdelset(CURRENT_SIGSET, DRBD_SIG);
+		sigdelset(SIGSET_OF(current), DRBD_SIG);
 	}
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
@@ -1405,6 +1405,22 @@ void drbd_md_inc(int minor, enum MetaDataIndex order)
 	drbd_conf[minor].gen_cnt[order]++;
 }
 
+void drbd_queue_signal(int signal,int pid)
+{
+	unsigned long flags;
+	struct task_struct *p;
+
+  	read_lock(&tasklist_lock);
+	p = find_task_by_pid(pid);
+	if (p) {
+		spin_lock_irqsave(&p->sigmask_lock, flags);
+		sigaddset(SIGSET_OF(p), signal);
+		recalc_sigpending(p);
+		spin_unlock_irqrestore(&p->sigmask_lock, flags);
+		if (p->state & TASK_INTERRUPTIBLE) wake_up_process(p);
+	}
+	read_unlock(&tasklist_lock);
+}
 
 /*********************************/
 /* This was contributed by Ard van Breemen <ard@telegraafnet.nl> 
@@ -1412,6 +1428,7 @@ void drbd_md_inc(int minor, enum MetaDataIndex order)
  * btw, I modified it, so blame me(Philipp) not Ard.
  */
 
+/*
 void drbd_queue_signal(int signal,int pid)
 {
 	struct drbd_event *e;
@@ -1433,7 +1450,7 @@ void drbd_queue_signal(int signal,int pid)
 	spin_unlock_irq(&event_q_lock);
 	wake_up_interruptible(&event_wait);
 }
-
+*/
 int drbd_eventd(struct Drbd_thread *thi)
 {
 	struct drbd_event *e;

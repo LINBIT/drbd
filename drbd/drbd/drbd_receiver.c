@@ -402,8 +402,8 @@ static struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 		unsigned long flags;
 		del_timer_sync(&accept_timeout);
 		spin_lock_irqsave(&current->sigmask_lock,flags);
-		if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
-			sigdelset(CURRENT_SIGSET, DRBD_SIG);
+		if (sigismember(SIGSET_OF(current), DRBD_SIG)) {
+			sigdelset(SIGSET_OF(current), DRBD_SIG);
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,
 					       flags);
@@ -964,8 +964,8 @@ int drbdd_init(struct Drbd_thread *thi)
 			thi->t_state = Running;
 			wake_up(&thi->wait);
 			spin_lock_irqsave(&current->sigmask_lock,flags);
-			if (sigismember(CURRENT_SIGSET, SIGTERM)) {
-				sigdelset(CURRENT_SIGSET, SIGTERM);
+			if (sigismember(SIGSET_OF(current), SIGTERM)) {
+				sigdelset(SIGSET_OF(current), SIGTERM);
 				recalc_sigpending(current);
 			}
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
@@ -1114,13 +1114,14 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	  if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
 		  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
-		     sizeof(Drbd_Packet)) {
+		     sizeof(Drbd_Packet) && ping_sent_at==0) {
 			  init_timer(&ping_timeout);
 			  ping_timeout.function = drbd_ping_timeout;
 			  ping_timeout.data = (unsigned long) mdev;
 			  ping_timeout.expires = jiffies + mdev->artt*4;
 			  add_timer(&ping_timeout);
 			  ping_sent_at=jiffies;
+			  if(ping_sent_at==0) ping_sent_at=1;
 		  }
 	  }
 
@@ -1151,6 +1152,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			rtt=max_t(int,jiffies-ping_sent_at,4); //HZ/50);
 			if(rtt < mdev->artt) mdev->artt--;
 			if(rtt > mdev->artt) mdev->artt++;
+			ping_sent_at=0;
 			break;
 		}
 		rsize=0;

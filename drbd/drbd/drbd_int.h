@@ -403,7 +403,7 @@ extern struct proc_dir_entry drbd_proc_dir;
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-#define CURRENT_SIGSET (&current->signal)
+#define SIGSET_OF(P) (&(P)->signal)
 #else
-#define CURRENT_SIGSET (&current->pending.signal)
+#define SIGSET_OF(P) (&(P)->pending.signal)
 #endif
