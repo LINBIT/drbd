@@ -18,7 +18,6 @@
 INSTALL="/etc/ha.d/resource.d"
 . $INSTALL/drbd_commun $*
 
-
 # Parameter :
 # The resource to wait for
 # The time to wait
@@ -32,7 +31,7 @@ waitForPrimary()
 
 		while [ $RPRIMARY -eq 1 -a $counter -lt $2 ]; do
 			havetowait=1
-			logger -t "Waiting for the other node to become secondary"
+			logger -t "datadisk" "Waiting for the other node to become secondary"
 			sleep 1
 
 			counter=`expr $counter + 1`
@@ -42,15 +41,15 @@ waitForPrimary()
 		done
 
 
-		if [ $havetowait -eq 1]; then
+		if [ $havetowait -eq 1 ]; then
 			if [ $RPRIMARY -eq 1 ]; then
-				logger -t "The other node didn't release the resource after $2 second"
-				logger -t "Forcing the to become primary"
+				logger -t "datadisk" "The other node didn't release the resource after $2 second"
+				logger -t "datadisk" "Forcing the to become primary"
 			else
-				logger -t "The other node is now secondary"
+				logger -t "datadisk" "The other node is now secondary"
 			fi
 		else
-			logger -t "The node can become primary without waiting"
+			logger -t "datadisk" "The node can become primary without waiting"
 		fi
 }
 
@@ -61,6 +60,33 @@ case "$1" in
             runForAll start
             exit $RETVAL
         fi
+
+	if [ $SAFE != "false" ]; then
+		if [ -x $STATE/"$RESOURCE"_safe ]; then
+			logger -t "datadisk" "Safe mode : It seems that the resource $RESOURCE didn't stop properly"
+			echo "It seems that the node didn't stop properly"
+			ACTION="loop"
+
+			while [ $ACTION != "c" -a $ACTION != "C" -a $ACTION != "r" -a $ACTION != "R" ]; do
+				read -n 1 -p "Do you want to continue or reboot [C/R] " ACTION
+				echo
+			done
+
+			if [ $ACTION !="c" -o $ACTION !="C" ]; then
+				logger -t "datadisk" "User requested us to continue"
+			else
+				logger -t "datadisk" "User requested us to reboot the server"
+				/sbin/shutdown -t3 -r now
+				sleep 10
+				echo "Oups, shutdown failed !"
+				logger -t "datadisk" "shutdown is not in /sbin .. exiting."
+				exit 0
+			fi
+		fi
+		touch $STATE/"$RESOURCE"_safe
+	else
+		rm $STATE/"$RESOURCE"_safe
+	fi
 
         setLocal $CONFIG $RESOURCE
 
@@ -109,10 +135,15 @@ case "$1" in
 		;;
 
 	stop)
-        if [ -z "$RESOURCE" ]; then
-            runForAll stop
-            exit $RETVAL
-        fi
+	        if [ -z "$RESOURCE" ]; then
+         	   runForAll stop
+	            exit $RETVAL
+        	fi
+
+		if [ $SAFE != "false" ]; then
+			logger -t "datadisk" "Safe mode : Clean shutdown for $RESOURCE"
+			rm $STATE/"$RESOURCE"_safe
+		fi
 
 		$INSTALL/drbdc slave $RESOURCE
 

@@ -36,7 +36,14 @@
 # the first node to come up is master the other will be slave.
 # All the setting are autonegotiated
 
+
 GLOBAL_MODE=negotiate
+
+# The safe parameter is a security to not allow a system to
+# restart after a crash. If set it will log the problem and
+# ask for an user action (reboot/continue)
+
+GLOBAL_SAFE=false
 
 # master and slave addr addr[:port]
 # default port: 7788
