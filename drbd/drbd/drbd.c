@@ -1462,7 +1462,7 @@ int drbd_connect(int minor)
 		sock_release(sock);
 		/* printk(KERN_INFO DEVICE_NAME
 		   ": Unable to connec to server (%d)\n", err); */
-/*
+/*    // REMOVE
 		while(TRUE) {
 			int bind_count=0;
 
@@ -1912,7 +1912,18 @@ int drbdd_init(void *arg)
 		if (thi->exit == 1) break;
 		if (thi->exit == 2) {
 			thi->exit = 0;
-			wake_up(&thi->wait);			
+			wake_up(&thi->wait);
+			spin_lock(&current->sigmask_lock);
+			if (sigismember(&current->signal, SIGTERM)) {
+				sigdelset(&current->signal, SIGTERM);
+				recalc_sigpending(current);
+				printk(KERN_DEBUG DEVICE_NAME 
+				       ": SIGTERM cleared\n");
+			} else {
+				printk(KERN_DEBUG DEVICE_NAME  // REMOVE 
+				       ": SIGTERM not cleared\n");				
+			}
+			spin_unlock_irq(&current->sigmask_lock);
 		}
 	}
 
