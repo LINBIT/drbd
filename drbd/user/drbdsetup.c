@@ -84,7 +84,7 @@
 #endif
 
 #define PERROR(fmt, args...) \
-do { fprintf(stderr,fmt ": ", ##args); perror(0); } while (0)
+do { fprintf(stderr,fmt ": " , ##args); perror(0); } while (0)
 
 
 // some globals
