@@ -23,10 +23,12 @@
 # /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl
 # the RedHat only way is docbook2man
 
+include ../Makefile.vars
 
 SPEC = $(shell for S in /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl; do if [ -e $$S ]; then echo $$S; fi; done)
 
-man:	drbdsetup.8 drbd.conf.5
+
+all:	drbdsetup.8 drbd.conf.5
 
 drbdsetup.8: drbdsetup.sgml
 	nsgmls drbdsetup.sgml | sgmlspl $(SPEC)
@@ -38,5 +40,5 @@ clean:
 	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs *~ manpage.log
 
 install: drbdsetup.8 drbd.conf.5
-	install drbdsetup.8 $(INITD)usr/share/man/man8
-	install drbd.conf.5 $(INITD)usr/share/man/man5
+	install drbdsetup.8 $(PREFIX)usr/share/man/man8
+	install drbd.conf.5 $(PREFIX)usr/share/man/man5

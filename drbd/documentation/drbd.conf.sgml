@@ -15,7 +15,7 @@
 <refsect1>
  <title>Introduction</title>
  <para>
-The <option>/etc/drbd.conf</option>, is read by 
+The file <option>/etc/drbd.conf</option>, is read by 
 <option>/etc/init.d/drbd</option> and 
 <option>/etc/ha.d/resrouce.d/datadisk</option> 
 which are included in the drbd distribution.
