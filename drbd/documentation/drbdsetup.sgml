@@ -59,13 +59,24 @@
  <cmdsynopsis>
   <command>drbdsetup</command>
   <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>secondary_remote</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
   <arg choice=req>replicate</arg>
  </cmdsynopsis>
  <cmdsynopsis>
   <command>drbdsetup</command>
   <arg choice=req><replaceable>device</replaceable></arg>
-  <arg choice=req>wait</arg>
-  <arg>-r<arg choice=req><replaceable>connect_timeout</replaceable></arg></arg>
+  <arg choice=req>wait_connect</arg>
+  <arg>-t<arg choice=req><replaceable>connect_timeout</replaceable></arg></arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>wait_sync</arg>
+  <arg>-t<arg choice=req><replaceable>connect_timeout</replaceable></arg></arg>
  </cmdsynopsis>
  <cmdsynopsis>
   <command>drbdsetup</command>
@@ -239,6 +250,15 @@ pair are in secondary state.
 </para>
 </refsect2>
 <refsect2>
+<title>secondary_remote</title>
+<para>
+Tries to set the partner of <replaceable>device</replaceable> into secondary 
+state. This command will return successfully as long as it is possible
+to communicate with the partner, Its return value does not indicate if the
+partner device could change its state.
+</para>
+</refsect2>
+<refsect2>
 <title>replicate</title>
 <para>
 This forces the pair of connected drbd devices into SyncAll state, which
@@ -252,7 +272,25 @@ secondary state.
 </para>
 </refsect2>
 <refsect2>
-<title>wait</title>
+<title>wait_connect</title>
+<para>
+Returns as soon as the <replaceable>device</replaceable> can communicate
+with its partner device.
+</para>
+<variablelist>
+ <varlistentry>
+  <term><option>-t</option>,
+   <option>--time <replaceable>connect_timeout</replaceable></option></term>
+  <listitem><para>
+This command will fail if the <replaceable>device</replaceable> can not
+communicate with its partner for <replaceable>connect_timeout</replaceable> 
+seconds. The default value is 0 which disables the timeout machanism.
+  </para></listitem>
+ </varlistentry>
+</variablelist>
+</refsect2>
+<refsect2>
+<title>wait_sync</title>
 <para>
 Returns as soon as the <replaceable>device</replaceable> leaves any
 synchronisation state and returns into connected state.
@@ -260,7 +298,7 @@ synchronisation state and returns into connected state.
 <variablelist>
  <varlistentry>
   <term><option>-t</option>,
-   <option>--time <replaceable>cpmmect_timeout</replaceable></option></term>
+   <option>--time <replaceable>connect_timeout</replaceable></option></term>
   <listitem><para>
 This command will fail if the <replaceable>device</replaceable> stays
 for <replaceable>connect_timeout</replaceable> seconds in unconnected 
@@ -328,6 +366,34 @@ that the device is ready for use on tc1.</para>
 <screen>
 $ mkfs -b 4096 /dev/nb0
 $ mount /dev/nb0 /mnt/mountpoint
+</screen>
+</example>
+<example>
+<title>Snapshot a device to a third machine</title>
+<para>In this example the hosts, <replaceable>tc1</replaceable>
+and <replaceable>tc2</replaceable>, are connected and
+tc2 is primary on the /dev/nb0 device. The resource should
+be snapshotted to <replaceable>tc3's /dev/hda6</replaceable>.</para>
+<para>We need to prepare tc3:</para>
+<screen>
+$ drbdsetup /dev/nb0 disk /dev/hda6
+$ drbdsetup /dev/nb0 net tc3 tc2 B
+</screen>
+<para>On tc2 we have to issue:</para>
+<screen>
+$ drbdsetup /dev/nb0 disconnect
+$ drbdsetup /dev/nb0 net tc2 tac3 B --sync-rate 4M
+$ #drbdsetup /dev/nb0 replicate###TODO describe why this is not needed.
+$ drbdsetup /dev/nb0 wait_sync
+$ drbdsetup /dev/nb0 disconnect
+$ drbdsetup /dev/nb0 net tc2 tc1 B
+</screen>
+<para>Since the snapshot was taken without bringing the on disk file 
+system into a consisten state we need theese commands on tc3:</para>
+<screen>
+$ drbdsetup /dev/nb0 down
+$ fsck /dev/hda6
+$ mount /dev/hda6 /some/mountpint
 </screen>
 </example>
 </refsect1>
