@@ -87,11 +87,10 @@
 # define MUST_HOLD(lock)
 #endif
 
-#ifdef DBG_PRINTKS_RCV
-# define DPRINTK(fmt, args... ) printk(KERN_DEBUG fmt, ##args)
-#else
-# define DPRINTK(...)
-#endif
+#define D_ASSERT(exp)  if (!(exp)) \
+        printk(KERN_ERR DEVICE_NAME"%d: ASSERT( " #exp " ) in %s:%d\n", \
+        (int)(mdev-drbd_conf),__FILE__,__LINE__)
+        
 
 // handy macro: DUMPP(somepointer) 
 #define DUMPP(A) printk(KERN_ERR DEVICE_NAME "%d: "#A"= %p\n",(int)(mdev-drbd_conf),A);

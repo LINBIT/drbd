@@ -886,11 +886,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 {
 	struct Tl_epoch_entry *e;
 
-	if( pr->d.block_nr != block_nr ) {
-		printk(KERN_ERR DEVICE_NAME "%d: resync_read: blocknr! "
-		       "g=%lu e=%lu\n",
-		       (int)(mdev-drbd_conf),block_nr,pr->d.block_nr );
-	}
+	D_ASSERT( pr->d.block_nr == block_nr);
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
@@ -921,11 +917,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	bh = pr->d.bh;
 
-        if(block_nr != bh->b_blocknr) {
-                printk(KERN_ERR DEVICE_NAME "%d: both_read: blocknr! "
-		       "g=%lu e=%lu\n",
-                       (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
-        }
+        D_ASSERT(block_nr == bh->b_blocknr);
 
 	e = read_in_block(mdev,data_size);
 
@@ -1656,9 +1648,7 @@ STATIC void got_block_ack(struct Drbd_Conf* mdev,Drbd_BlockAck_Packet* pkt)
 
 inline void got_barrier_ack(struct Drbd_Conf* mdev,Drbd_BarrierAck_Packet* pkt)
 {
-	if(mdev->state != Primary) /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: got barrier-ack while not"
-		       " PRI!!\n",(int)(mdev-drbd_conf));
+	D_ASSERT(mdev->state == Primary);
 
         tl_release(mdev,pkt->h.barrier,be32_to_cpu(pkt->h.set_size));
 

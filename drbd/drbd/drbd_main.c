@@ -148,10 +148,7 @@ STATIC inline void tl_init(struct Drbd_Conf *mdev)
 
 STATIC void tl_cleanup(struct Drbd_Conf *mdev)
 {
-	if(mdev->oldest_barrier != mdev->newest_barrier) {
-		printk(KERN_ERR DEVICE_NAME "%d: Transferlog not empty!\n",
-		       (int)(mdev-drbd_conf));
-	}
+	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 
 	kfree(mdev->oldest_barrier);
 }
@@ -204,8 +201,6 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size)
 {
 	struct drbd_barrier *b;
-	struct list_head *le;
-	struct drbd_request *r;
 
 	spin_lock_irq(&mdev->tl_lock);
 
@@ -219,17 +214,8 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 	spin_unlock_irq(&mdev->tl_lock);
 
-	if( b->br_number != barrier_nr) {
-		printk(KERN_ERR DEVICE_NAME "%d: invalid barrier number!!"
-		       "found=%u, reported=%u\n",(int)(mdev-drbd_conf),
-		       (unsigned int)b->br_number,barrier_nr);
-	}
-
-	if( b->n_req != set_size ) {
-		printk(KERN_ERR DEVICE_NAME "%d: Epoch set size wrong!!"
-		       "found=%d reported=%d \n",(int)(mdev-drbd_conf),
-		       b->n_req,set_size);
-	}
+	D_ASSERT(b->br_number == barrier_nr);
+	D_ASSERT(b->n_req == set_size);
 
 	kfree(b);
 }
@@ -456,10 +442,7 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);
 	up(&mdev->sock_mutex);
 	
-	if(err < sizeof(param))
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: Sending of parameter block failed!!\n",
-		       (int)(mdev-drbd_conf));  
+	D_ASSERT(err == sizeof(param));
 
 	return (err == sizeof(param));
 }
