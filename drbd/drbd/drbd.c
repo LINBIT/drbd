@@ -1,6 +1,6 @@
 /*
   drbd.c
-  Kernel module for 2.2.x Kernels
+  Kernel module for 2.2.x/2.4.x Kernels
   
   This file is part of drbd by Philipp Reisner.
 
@@ -51,6 +51,7 @@
 #define DEVICE_OFF(device)
 #define DEVICE_NR(device) (MINOR(device))
 #include <linux/blk.h>
+#include <linux/blkpg.h>
 
 #ifdef DEVICE_NAME
 #undef DEVICE_NAME
@@ -85,8 +86,11 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 int drbd_send_param(int minor);
 void drbdd_start(int minor);
 void drbdd_stop(int minor,int restart);
-
+#if LINUX_VERSION_CODE > 0x20300
+/*static*/ int drbd_proc_get_info(char *, char ** , off_t ,int , int *, void *);
+#else
 /*static*/ int drbd_proc_get_info(char * , char ** , off_t ,int , int );
+#endif
 /*static*/ void drbd_dio_end(struct buffer_head *bh, int uptodate);
 
 int drbd_init( void );
@@ -141,7 +145,10 @@ MODULE_DESCRIPTION("drbd - Network block device");
 
 /************************* PROC FS stuff begin */
 #include <linux/proc_fs.h>
-  
+
+#if LINUX_VERSION_CODE > 0x20300 
+struct proc_dir_entry *drbd_proc;
+#else
 struct proc_dir_entry drbd_proc_dir = 
 {
   0, 4, "drbd",
@@ -151,12 +158,18 @@ struct proc_dir_entry drbd_proc_dir =
   NULL,
   NULL, NULL
 };
+#endif
 
 
 struct request* my_all_requests = NULL;
 
+#if LINUX_VERSION_CODE > 0x20300 
+/*static*/ int drbd_proc_get_info(char * buf , char ** start, off_t offset,
+				  int len, int *unused, void *data)	
+#else
 /*static*/ int drbd_proc_get_info(char * buf , char ** start, off_t offset, 
 			      int len, int unused)
+#endif
 {
   int rlen,i;
 
@@ -603,7 +616,16 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
 
   switch(cmd)
     {
+#if LINUX_VERSION_CODE > 0x20300
+	case BLKROSET:
+	case BLKROGET:
+	case BLKFLSBUF:
+	case BLKSSZGET:
+	case BLKPG:
+		return blk_ioctl(inode->i_rdev, cmd, arg);
+#else
     RO_IOCTLS(inode->i_rdev,arg);
+#endif
 
     case DRBD_IOCTL_GET_VERSION:
       if((err=put_user(MOD_VERSION, (int *)arg))) return err;
@@ -700,12 +722,21 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
   return 0;
 }
 
-                                                                             
+#if LINUX_VERSION_CODE > 0x20300
+int drbd_init (void) 
+#else
 __initfunc(int drbd_init( void ))
+#endif
 {
+	
   int i;
-
+#if LINUX_VERSION_CODE > 0x20300
+	drbd_proc = create_proc_read_entry("drbd", 0, &proc_root,
+							drbd_proc_get_info, NULL);
+	if(!drbd_proc)
+#else
   if(proc_register(&proc_root, &drbd_proc_dir))
+#endif
     {
       printk(MODULE_NAME"unable to register proc file.\n");
       return -EIO;
@@ -744,8 +775,11 @@ __initfunc(int drbd_init( void ))
 
   return 0;
 }
-
+#if LINUX_VERSION_CODE > 0x20300
+int init_module() 
+#else
 __initfunc(int init_module())
+#endif
 {
   printk(MODULE_NAME"module initialised. Version: %d\n",MOD_VERSION);
 
@@ -769,9 +803,12 @@ void cleanup_module()
   blk_dev[ MAJOR_NR ].request_fn = NULL;
   blksize_size[ MAJOR_NR ] = NULL;
   blk_size[ MAJOR_NR ] = NULL;
-  
+#if LINUX_VERSION_CODE > 0x20300 
+  if (drbd_proc)
+    remove_proc_entry ("drbd", &proc_root);
+#else
   proc_unregister(&proc_root, drbd_proc_dir.low_ino);
-
+#endif
 }
 
 
@@ -817,8 +854,11 @@ struct socket* drbd_accept(struct socket* sock)
     goto out;
 
   newsock->type = sock->type;
-
+#if LINUX_VERSION_CODE > 0x20300
+  newsock->ops = sock->ops;
+#else
   err = sock->ops->dup(newsock, sock);
+#endif
   if (err < 0) 
     goto out_release;
 
@@ -1103,7 +1143,11 @@ void drbdd_start(int minor)
 
   if(drbd_conf[minor].rpid==0)
     {
+#if LINUX_VERSION_CODE > 0x20300
+	  init_MUTEX_LOCKED(&drbd_conf[minor].tsem);
+#else
       drbd_conf[minor].tsem = MUTEX_LOCKED; 
+#endif
       pid = kernel_thread(drbdd_init, (void *)((long)minor), 0);
 
       if(pid < 0) 
@@ -1125,8 +1169,11 @@ void drbdd_stop(int minor,int restart)
       int err;
       if(!restart) drbd_conf[minor].cstate = Unconfigured;
       /* FIXME should use a dedicated variable, for signalling exit! */
-
+#if LINUX_VERSION_CODE > 0x20300
+	  init_MUTEX_LOCKED(&drbd_conf[minor].tsem);
+#else
       drbd_conf[minor].tsem = MUTEX_LOCKED; 
+#endif
       err = kill_proc_info(SIGTERM,NULL,drbd_conf[minor].rpid);
 
       if(err==0)
