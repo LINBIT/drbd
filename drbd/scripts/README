@@ -7,8 +7,15 @@ At install time, the drbd and datadisk script will be installed
 and then linked in the /etc/(rc.d)/init.d directory.
 
 You will have to type :
+
+On RedHat (based) distribution(s):
 > chkconfig drbd on
 > chkconfig datadisk on
+
+On Debian (based) distribution(s):
+> update-rc.d drbd start 18 2 3 4 5 . stop 18 0 1 6 . 
+> update-rc.d drbd start 19 2 3 4 5 . stop 19 0 1 6 . 
+
 to have it start at boot time automaticly.
 
 drbdc is a administration script. see drbdc help.
