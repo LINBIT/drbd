@@ -693,14 +693,23 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	if ( !mdev->act_log ||
 	     mdev->act_log->nr_elements != mdev->sync_conf.al_extents )	{
 		struct lru_cache *n,*t;
+		struct lc_element *e;
+		unsigned int in_use=0;
+		int i;
 		n = lc_alloc(mdev->sync_conf.al_extents,
 			     sizeof(struct lc_element), mdev);
-		// FIXME if (n==NULL) scream out loud ...
-		// FIXME if (still_in_use) BUG();
+		D_ASSERT(n); // FIXME if (n==NULL) scream out loud ...
 		spin_lock_irq(&mdev->al_lock);
 		t = mdev->act_log;
 		mdev->act_log = n;
 		spin_unlock_irq(&mdev->al_lock);
+		for (i=0; i < t->nr_elements; i++) {
+			e = lc_entry(t,i);
+			if (e->refcnt)
+				ERR("refcnt(%d)==%d\n", e->lc_number, e->refcnt);
+			in_use += e->refcnt;
+		}
+		BUG_ON(in_use);
 		if (t) lc_free(t);
 	}
 

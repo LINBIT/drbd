@@ -31,6 +31,7 @@
 #include <linux/version.h>
 #include <linux/list.h>
 #include <linux/sched.h>
+#include <linux/bitops.h>
 #include "lru_cache.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -1312,7 +1313,7 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #endif
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+#ifndef sector_div
 # define sector_div(n, b)( \
 { \
 	int _res; \
@@ -1321,6 +1322,9 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 	_res; \
 } \
 )
+#endif
+
+#ifndef hweight_long
 # if (BITS_PER_LONG > 32)
 static inline unsigned long hweight64(__u64 w)
 {

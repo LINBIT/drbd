@@ -39,7 +39,6 @@
 #include <asm/uaccess.h>
 #include <asm/types.h>
 #include <net/sock.h>
-#include <linux/bitops.h>
 #include <linux/smp_lock.h>
 #include <linux/fs.h>
 #include <linux/file.h>
