@@ -377,7 +377,8 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		}
 		growing = words > b->bm_words;
 		if (growing) { // set all newly allocated bits
-			memset(nbm,-1,(words - b->bm_words)*sizeof(long));
+			memset( nbm+b->bm_words, -1,
+				(words - b->bm_words) * sizeof(long) );
 			b->bm_set  += bits - b->bm_bits;
 		}
 		nbm[words] = DRBD_MAGIC;
