@@ -235,7 +235,11 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 	return count;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
+#define GFP_TRY	( __GFP_HIGHMEM | __GFP_NOWARN )
+#else
 #define GFP_TRY	( __GFP_HIGHMEM )
+#endif
 
 STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
 
