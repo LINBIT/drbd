@@ -90,8 +90,7 @@ else
 
   # for the install target. (also works if kernel source is not there)
   KERNELRELEASE := $(shell test -r .kernelrelease && \
-                           cat .kernelrelease || \
-                           echo "UNKNOWN KERNEL RELEASE")
+                           sed 's/-1um//' < .kernelrelease)
   MODSUBDIR := $(strip \
     $(if $(wildcard /lib/modules/$(KERNELRELEASE)/kernel),\
          kernel/drivers/block,\
@@ -118,10 +117,13 @@ else
   clean:
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernelrelease
 
+  distclean: clean
+
   install:
 	@if ! [ -e drbd.o ] ; then \
 	  echo "No drbd.o: nothing to install??"; false ; \
 	fi
+	test -n "$(KERNELRELEASE)"
 	install -d $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -d $(PREFIX)var/lib/drbd
@@ -131,4 +133,8 @@ else
 	[ -e $(LINUX)/System.map ] && \
 	   /sbin/depmod -F $(LINUX)/System.map -e ./drbd.o 2>&1 >/dev/null || true
   endif
+
+  depmod:
+	[ -e $(LINUX)/System.map ] && \
+	   /sbin/depmod -F $(LINUX)/System.map -e ./drbd.o 2>&1 >/dev/null || true
 endif
