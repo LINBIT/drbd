@@ -222,7 +222,14 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 
 // to debug dec_*(), while we still have the <0!! issue
 // to debug dec_*(), while we still have the <0!! issue
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,9)
 #include <linux/stringify.h>
+#else
+// RH 2.4.9 does not have linux/stringify.h
+#define __stringify_1(x)	#x
+#define __stringify(x)		__stringify_1(x)
+#endif
+
 #define HERE __stringify(__FILE__ __LINE__) // __FUNCTION__
 
 // integer division, round _UP_ to the next integer

@@ -14,7 +14,10 @@
  */
 static inline void dump_stack(void)
 {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,9)
+	// It seems that on 2.4.9 even show_stack is not available.
         show_stack(0);
+#endif
 }
 #endif
 

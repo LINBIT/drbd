@@ -21,12 +21,30 @@ typedef unsigned long sector_t;
 	for(pos = (head)->next; pos != (head); pos = pos->next)
 #endif
 
+// RH 2.4.9 does not have min() / max()
+#ifndef min
+# define min(x,y) \
+	({ typeof(x) __x = (x); typeof(y) __y = (y); \
+	   (void)(&__x == &__y); \
+	   __x < __y ? __x: __y; })
+#endif
+
+#ifndef max
+# define max(x,y) \
+	({ typeof(x) __x = (x); typeof(y) __y = (y); \
+	   (void)(&__x == &__y); \
+	   __x > __y ? __x: __y; })
+#endif
+
+#ifndef MODULE_LICENSE
+# define MODULE_LICENSE(L)
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
 #define min_t(type,x,y) \
 	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
 #define max_t(type,x,y) \
 	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
-#define MODULE_LICENSE(L)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)

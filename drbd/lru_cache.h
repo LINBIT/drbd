@@ -60,6 +60,14 @@ static inline void list_move(struct list_head *list, struct list_head *head)
 }
 #endif
 
+#ifndef max
+// For RH 2.4.9
+# define max(x,y) \
+	({ typeof(x) __x = (x); typeof(y) __y = (y); \
+	   (void)(&__x == &__y); \
+	   __x > __y ? __x: __y; })
+#endif
+
 struct lc_element {
 	struct hlist_node colision;
 	struct list_head list;           // LRU list or free list
