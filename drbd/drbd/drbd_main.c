@@ -1235,6 +1235,8 @@ int __init drbd_init(void)
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
+	blksize_size[MAJOR_NR] = drbd_blocksizes;
+	blk_size[MAJOR_NR] = drbd_sizes;
 
 #ifdef CONFIG_DEVFS_FS
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
