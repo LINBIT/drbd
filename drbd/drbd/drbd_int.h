@@ -181,6 +181,7 @@ MKPACKET(Drbd_Parameter_P)
 typedef struct {
   __u64       sector;
   __u64       block_id;
+  __u32       blksize;
 } __attribute((packed)) Drbd_BlockAck_P;
 MKPACKET(Drbd_BlockAck_P)
 
@@ -405,7 +406,7 @@ extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
-			 sector_t sector,u64 block_id);
+			 struct buffer_head *bh, u64 block_id);
 extern int drbd_send_block(struct Drbd_Conf *mdev, int cmd,
 			   struct buffer_head *bh, u64 block_id);
 extern int drbd_send_dblock(struct Drbd_Conf *mdev, 

@@ -522,14 +522,15 @@ int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 
 
 int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
-		  sector_t sector,u64 block_id)
+		  struct buffer_head *bh, u64 block_id)
 {
         Drbd_BlockAck_Packet head;
 	int ret;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(sector);
+	head.h.sector = cpu_to_be64(BH_SECTOR(bh));
         head.h.block_id = block_id;
+	head.h.blksize = cpu_to_be32(bh->b_size);
 	down(&mdev->msock_mutex);
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
 	up(&mdev->msock_mutex);

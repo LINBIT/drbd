@@ -898,7 +898,7 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 STATIC int e_end_resync_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 {
 	drbd_set_in_sync(mdev,BH_SECTOR(e->bh),e->bh->b_size);
-	drbd_send_ack(mdev,WriteAck,BH_SECTOR(e->bh),ID_SYNCER);
+	drbd_send_ack(mdev,WriteAck,e->bh,ID_SYNCER);
 	dec_unacked(mdev);
 
 	return TRUE;
@@ -981,7 +981,8 @@ int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	e = read_in_block(mdev,data_size);
 	if(!e)	return FALSE;
 	
-	drbd_send_ack(mdev,WriteAck,sector,ID_SYNCER);
+	drbd_set_bh(e->bh, sector ,data_size, mdev->lo_device);
+	drbd_send_ack(mdev,WriteAck,e->bh,ID_SYNCER);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
@@ -1034,7 +1035,7 @@ STATIC int e_end_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
-		ok=drbd_send_ack(mdev,WriteAck,BH_SECTOR(e->bh),e->block_id);
+		ok=drbd_send_ack(mdev,WriteAck,e->bh,e->block_id);
 		dec_unacked(mdev);
 	}
 
@@ -1069,7 +1070,7 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 		inc_unacked(mdev);
 		break;
 	case DRBD_PROT_B:
-		drbd_send_ack(mdev, RecvAck, sector,header.block_id);
+		drbd_send_ack(mdev, RecvAck, e->bh ,header.block_id);
 		break;
 	case DRBD_PROT_A:
 		// nothing to do
@@ -1630,7 +1631,7 @@ STATIC void got_block_ack(struct Drbd_Conf* mdev,Drbd_BlockAck_Packet* pkt)
 	if( is_syncer_blk(mdev,pkt->h.block_id)) {
 		drbd_set_in_sync(mdev,
 				 be64_to_cpu(pkt->h.sector),
-				 BM_BLOCK_SIZE); // TODO BM_BLOCK_SIZE
+				 be32_to_cpu(pkt->h.blksize));
 	} else {
 		req=(drbd_request_t*)(long)pkt->h.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
