@@ -6,10 +6,14 @@
 # complete rewrite from scratch by Philipp Reisner in March and April 2001
 # rewritten in perl in May
 #
+# with patches form:
+#  Thomas Stinner <t.stinner@billiton.de>
+#  Sergio Talens-Oliag <sto@isoco.com>
+#
 
 use strict;
 use Sys::Hostname;
-use Data::Dumper;
+#use Data::Dumper;
 
 my $drbdsetup="/usr/sbin/drbdsetup";
 my $modprobe="/sbin/modprobe";
@@ -192,24 +196,40 @@ sub doconfig($$)
     print "[ OK ]\n";
 }
 
+sub m_system($)
+{ 
+    my $cmd=shift;
+    my $pid;
+
+    $pid=fork();
+    if(!defined($pid)) { die "fork failed"; }
+    if($pid == 0) {
+	exec $cmd;
+	die "exec failed";
+    }
+    $SIG{INT}=sub { kill 'INT',$pid; }; #closures are really nice.
+    wait();
+    if( $? & 127 ) { exit 0; } #we got a signal.
+    return ($? >> 8);
+}
+
 sub wait_ready($$)
 {
     my ($res,$mconf)=@_;
     my ($errtxt,$pid);
 
     $pid=fork();
+    if(!defined($pid)) { die "fork failed"; }
     if($pid == 0) {
-	my ($cstate,$state);
+	my ($cstate,$state,$child);
 
-	$errtxt=`$drbdsetup $$mconf{self}{device} wait_connect`;
-	if($errtxt) { die "$errtxt"; }
+	m_system("$drbdsetup $$mconf{self}{device} wait_connect");
 
 	($cstate,$state) = get_drbd_status($$mconf{self}{device});
 #	print "\n$$mconf{self}{device} is $cstate,$state";
 	if($cstate =~ m/^Syncing/ && $state eq "Secondary" ) {
 	    print "\nWaiting until $res is up to date (using $cstate) abort? ";
-	    $errtxt=`$drbdsetup $$mconf{self}{device} wait_sync`;
-	    if($errtxt) { die "$errtxt"; }
+	    m_system("$drbdsetup $$mconf{self}{device} wait_sync");
 	    sleep 4; # This is necesary since DRBD does not yet include
 	             # the syncer's blocks in the unacked_cnd 
 	             # Quick and dirty :(
@@ -217,8 +237,6 @@ sub wait_ready($$)
 	    # No error check here, on purpose!		
 	}
 	exit 0;
-    } elsif( $pid == -1 ) {
-	die "fork failed";
     }
 
     return $pid;    
@@ -229,11 +247,10 @@ sub increase_h_count($$)
     my ($res,$mconf)=@_;
     my ($errtxt);
     
-    print "Setting up $res...";
     $errtxt=`$drbdsetup $$mconf{self}{device} primary --human`;
     if($errtxt) { die $errtxt; }
-    $errtxt=`$drbdsetup $$mconf{self}{device} secondary`;
-    if($errtxt) { die $errtxt; }
+#    $errtxt=`$drbdsetup $$mconf{self}{device} secondary`;
+#    if($errtxt) { die $errtxt; }
 }
 
 
@@ -325,6 +342,7 @@ sub ask_for_abort()
 
     print "Do you want to abort waiting for other server and make this one primary? ";
     $pid=fork();
+    if(!defined($pid)) { die "fork failed"; }
     if($pid == 0) {
 	while($in=<STDIN>) {
 	    chomp $in;
@@ -332,8 +350,6 @@ sub ask_for_abort()
 	    print "Answer either \"yes\" or not at all: "
 	}
 	exit 10;
-    } elsif( $pid == -1 ) {
-	die "fork failed";
     }
 
     return $pid;
@@ -383,11 +399,12 @@ sub drbd()
 	while(1) {
 	    $pid = wait();
 	    if($pid == $user) {
-		my $res;
+		my $mpid;
 		
 		kill 'INT',keys %syncers;
-		foreach $res (keys %syncers) {
-		    increase_h_count($res,$conf{$res});
+
+		foreach $mpid (keys %syncers) {
+		    increase_h_count($syncers{$mpid},$conf{$syncers{$mpid}});
 		}
 		last;
 		
