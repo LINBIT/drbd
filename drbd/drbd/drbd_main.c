@@ -521,8 +521,8 @@ int drbd_send_bitmap(struct Drbd_Conf *mdev)
 	 * some such algorithms in the kernel anyways.
 	 */
 	do {
-		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
-		for(buf_i=0;buf_i<want/sizeof(long);buf_i++)
+		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(u32));
+		for(buf_i=0;buf_i<want/sizeof(u32);buf_i++)
 			buffer[buf_i] = cpu_to_be32(bm[bm_i++]);
 		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,(char*)buffer,want);
 	} while (ok && want);

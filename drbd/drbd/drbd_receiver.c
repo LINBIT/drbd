@@ -1429,12 +1429,12 @@ STATIC int receive_bitmap(struct Drbd_Conf* mdev, unsigned length)
 	buffer=vmalloc(MBDS_PACKET_SIZE);
 
 	while (1) {
-		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
+		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(u32));
 		D_ASSERT(want == length);
 		if(want==0) break;
 		if (drbd_recv(mdev, buffer, want,0) != want)
 			goto out;
-		for(buf_i=0;buf_i<want/sizeof(long);buf_i++) {
+		for(buf_i=0;buf_i<want/sizeof(u32);buf_i++) {
 			word = be32_to_cpu(buffer[buf_i]);
 			bits += parallel_bitcount(word);
 			bm[bm_i++] = word;
