@@ -59,6 +59,7 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/in.h>
+#include <linux/pkt_sched.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 
@@ -854,6 +855,24 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	return err;
 }
 
+void drbd_set_sock_prio(struct Drbd_Conf *mdev)
+{
+
+	/*
+	  We could also use TC_PRIO_CONTROL / TC_PRIO_BESTEFFORT
+	*/
+
+	switch(mdev->state) {
+	case Primary: 
+		mdev->sock->sk->priority=TC_PRIO_BULK;
+		break;
+	case Secondary:
+		mdev->sock->sk->priority=TC_PRIO_INTERACTIVE;
+		break;
+	}
+}
+
+
 void drbd_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
@@ -1141,6 +1160,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			return -EBUSY;
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_conf[minor].state = (Drbd_State) arg;
+
+		if (drbd_conf[minor].sock )
+			drbd_set_sock_prio(&drbd_conf[minor]);
 
 		/* Only report the state change immediately if connected */
 		/* There is a race here somewhere without the if */
@@ -1601,14 +1623,19 @@ int drbd_connect(int minor)
 		}
 	}
 
-	sock->sk->reuse=1;
-	/* TODO:
-	   Have a look if it is possible to have this in 2.3.x
+
+	sock->sk->reuse=1;    /* SO_REUSEADDR */
+/*
+ #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+	sock->sk->tp_pinfo.af_tcp.nonagle=1;
+ #else
 	sock->sk->nonagle=1;
-	*/
-	// SO_LINGER too ??
+ #endif
+*/
 
 	drbd_conf[minor].sock = sock;
+
+	drbd_set_sock_prio(&drbd_conf[minor]);
 
 	drbd_thread_start(&drbd_conf[minor].asender);
 
@@ -2065,8 +2092,7 @@ int drbd_syncer(void *arg)
 	int minor = thi->minor;
 	int interval,wait;
 	unsigned long before;
-	int amount = 32; /* KB */
-	/* TODO: get the half of the size of the socket write buffer */
+	int amount;
 	int blocks;
 	int blocksize;
 	void* page;
@@ -2083,6 +2109,11 @@ int drbd_syncer(void *arg)
 
 	drbd_thread_setup(thi);	/* wait until parent has written its
 				   rpid variable */
+
+
+	amount=drbd_conf[minor].sock->sk->sndbuf >> (1+10);
+	/* We want to fill half of the send buffer, we need the size
+	   in KB */
 
 	page = (void*)__get_free_page(GFP_USER);
 
@@ -2108,7 +2139,7 @@ restart:
 	interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
 	blocks = (amount << 10) / blocksize;
 
-	printk(KERN_INFO DEVICE_NAME ": Synchronistaion started "
+	printk(KERN_INFO DEVICE_NAME ": Synchronisation started "
 	       "blks=%d int=%d \n",blocks, interval);
 
 	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
