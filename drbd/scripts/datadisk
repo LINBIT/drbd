@@ -15,8 +15,13 @@
 # Source function library.
 # Some distributions don't have it, so test and act accordingly
 if [ -f /etc/rc.d/init.d/functions ]; then
-	. /etc/rc.d/init.d/functions
-else
+        if grep action /etc/rc.d/init.d/functions > /dev/null ; then        
+	       . /etc/rc.d/init.d/functions
+               HAVE_ACTION=1
+        fi
+fi
+
+if [ -z "$HAVE_ACTION" ]; then
 	# dumb "action" substitution
 	action() {
 		echo -n $1...
