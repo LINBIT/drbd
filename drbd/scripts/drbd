@@ -14,28 +14,9 @@
 
 # Source function library.
 # Some distributions don't have it, so test and act accordingly
-if [ -f /etc/rc.d/init.d/functions ]; then
-        if grep action /etc/rc.d/init.d/functions > /dev/null ; then        
-	       . /etc/rc.d/init.d/functions
-               HAVE_ACTION=1
-        fi
-fi
 
-if [ -z "$HAVE_ACTION" ]; then
-	# dumb "action" substitution
-	action() {
-		echo -n $1...
-		shift
-		eval $*
-		if [ $? -eq 0 ]; then
-			echo ok
-			return 0
-		else
-			echo failure!
-			return 1
-		fi
-	}
-fi
+INSTALL="/etc/ha.d/resource.d"
+. $INSTALL/drbd_commun
 
 # Source networking configuration.
 if [ -f /etc/sysconfig/network ]; then
@@ -62,14 +43,14 @@ if [ ! -f /lib/modules/`uname -r`/block/drbd.o ]; then
 fi
 
 # Check for our config directory
-if [ ! -d /etc/sysconfig/drbd ]; then
+if [ ! -d $CONFIG ]; then
 	echo drbd: configuration directory not found!
 	exit 1
 fi
 
-cd /etc/sysconfig/drbd
+cd $CONFIG
 DEVICES=`ls drbd[0-9] 2>/dev/null`
-HOST=`hostname -s`
+
 # RETVAL will work as a "stuck bit" for any error. The construct
 # RV=$?
 # [ $RETVAL -eq 0 ] && RETVAL=$RV
@@ -91,47 +72,35 @@ case "$1" in
 	for D in $DEVICES; do
 	    . $D
 
-	    if [ -z "$MASTER_IF" ]; then
-                MASTER_IF=$MASTER_NODE;
-            fi
+	    if [ -z "$NODE1_IF" ]; then
+                NODE1_IF=$NODE1_HOST;
+		fi
 
-	    if [ -z "$SLAVE_IF" ]; then
-                SLAVE_IF=$SLAVE_NODE;
-            fi
+	    if [ -z "$NODE2_IF" ]; then
+                NODE2_IF=$NODE2_HOST;
+		fi
 
-	    if [ "$HOST" = "`echo $MASTER_NODE | cut -d: -f1`" ]; then
+
+		setLocal
 
 		action "Configuring DRBD resource $D" \
-		    /usr/sbin/drbdsetup $MASTER_DEVICE $MASTER_PARTITION \
-		    $PROTOCOL $MASTER_IF $SLAVE_IF $OPTIONS 
+		    /usr/sbin/drbdsetup $LOCAL_DEVICE $LOCAL_PARTITION \
+	    $PROTOCOL $LOCAL_IF $REMOTE_IF $OPTIONS 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
-		if [ $RV -eq 0 ]; then
+	    if [ ! isMasterBoot $D ]; then
+			if [ $RV -eq 0 ]; then
+			echo -n "Waiting for drdb to initialize (Can not fail)"
+			sleep 30
+			success
+			
 			# don't wait if there was an error in this device
 			action "Waiting for DRBD resource $D to resynchronize" \
-			    /usr/sbin/drbdsetup $MASTER_DEVICE WAIT
+			    /usr/sbin/drbdsetup $LOCAL_DEVICE WAIT
+		else
+			succed "Node is master nothing to sync"
 		fi
-
-	    elif [ "$HOST" = "`echo $SLAVE_NODE | cut -d: -f1`" ]; then
-
-		action "Configuring DRBD resource $D" \
-		    /usr/sbin/drbdsetup $SLAVE_DEVICE $SLAVE_PARTITION \
-		    $PROTOCOL $SLAVE_IF $MASTER_IF $OPTIONS
-		RV=$?
-		[ $RETVAL -eq 0 ] && RETVAL=$RV
-
-		if [ $RV -eq 0 ]; then
-			# don't wait if there was an error in this device
-			action "Waiting for DRBD resource $D to resynchronize" \
-			    /usr/sbin/drbdsetup $SLAVE_DEVICE WAIT
-		fi
-
-	    else
-		echo This machine is neither master nor slave!
-		exit 1
-	    fi
-
 	done
 	;;
   stop)
