@@ -15,18 +15,10 @@ extern void drbd_dio_end            (struct buffer_head *bh, int uptodate);
  * appropriate.
  */
 
-/* Returns the number of 512 byte sectors of the lower level device */
-static inline unsigned long drbd_get_lo_capacity(drbd_dev *mdev)
+/* Returns the number of 512 byte sectors of the device */
+static inline unsigned long drbd_get_capacity(kdev_t dev)
 {
-	return mdev->lo_device
-		? blk_size[MAJOR(mdev->lo_device)][MINOR(mdev->lo_device)]<<1
-		: 0;
-}
-
-/* Returns the number of 512 byte sectors of our virtual device */
-static inline unsigned long drbd_get_my_capacity(drbd_dev *mdev)
-{
-	return blk_size[MAJOR_NR][(int)(mdev - drbd_conf)]<<1;
+	return dev ? blk_size[MAJOR(dev)][MINOR(dev)]<<1 : 0;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */
@@ -38,13 +30,13 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 //#warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
-	set_blocksize(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)), blksize);
-	set_blocksize(mdev->lo_device, blksize);
+	set_blocksize(mdev->this_bdev, blksize);
+	set_blocksize(mdev->backing_bdev, blksize);
 }
 
 static inline int drbd_sync_me(drbd_dev *mdev)
 {
-	return fsync_dev(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)));
+	return fsync_dev(mdev->this_bdev);
 }
 
 #define drbd_bio_uptodate(bio) buffer_uptodate(bio)
@@ -137,7 +129,7 @@ drbd_ee_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
 	bh->b_blocknr  = sector;	// We abuse b_blocknr here.
 	bh->b_size     = size;
 	bh->b_rsector  = sector;
-	bh->b_rdev     = mdev->lo_device;
+	bh->b_rdev     = mdev->backing_bdev;
 	bh->b_private  = mdev;
 	bh->b_state    = (1 << BH_Req)
 			|(1 << BH_Launder)
@@ -193,7 +185,7 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	struct buffer_head * const bh_src =  req->master_bio;
 
 	drbd_bh_clone(bh,bh_src);
-	bh->b_rdev    = mdev->lo_device;
+	bh->b_rdev    = mdev->backing_bdev;
 	bh->b_private = mdev;
 	bh->b_end_io  = drbd_dio_end;
 
@@ -224,7 +216,7 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	struct buffer_head * const bh_src =  req->master_bio;
 
 	drbd_bh_clone(bh,bh_src);
-	bh->b_rdev    = mdev->lo_device;
+	bh->b_rdev    = mdev->backing_bdev;
 	bh->b_private = mdev;
 	bh->b_end_io  = drbd_read_end_io;
 
@@ -294,18 +286,10 @@ extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, in
 // we should not accept bios crossing our extent boundaries!
 extern int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv);
 
-/* Returns the number of 512 byte sectors of the lower level device */
-static inline unsigned long drbd_get_lo_capacity(drbd_dev *mdev)
+/* Returns the number of 512 byte sectors of the device */
+static inline unsigned long drbd_get_capacity(struct block_device *bdev)
 {
-	return mdev->backing_bdev ?
-		get_capacity(mdev->backing_bdev->bd_disk) : 0;
-}
-
-/* Returns the number of 512 byte sectors of our virtual device */
-static inline unsigned long drbd_get_my_capacity(drbd_dev *mdev)
-{
-	sector_t c = get_capacity(mdev->vdisk);
-	return c;
+	return bdev ? get_capacity(bdev->bd_disk) : 0;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */

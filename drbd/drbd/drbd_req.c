@@ -285,7 +285,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt += size >> 9;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-		bio->b_rdev = mdev->lo_device;
+		bio->b_rdev  = mdev->backing_bdev;
 #else
 		bio->bi_bdev = mdev->backing_bdev;
 #endif
@@ -300,7 +300,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 		drbd_al_begin_io(mdev, sector);
 		drbd_al_complete_io(mdev, sector); // FIXME TODO
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-		bio->b_rdev = mdev->lo_device;
+		bio->b_rdev  = mdev->backing_bdev;
 #else
 		bio->bi_bdev = mdev->backing_bdev;
 		/* I want to change it anyways so we never remap ... */

@@ -517,12 +517,16 @@ void print_config_ioctl_err(int err_no)
     [LAAlreadyInUse]="Local address(port) already in use.",
     [OAAlreadyInUse]="Remove address(port) already in use.",
     [LDFDInvalid]="Filedescriptor for lower device is invalid.",
+    [MDFDInvalid]="Filedescriptor for meta device is invalid.",
     [LDAlreadyInUse]="Lower device already in use.",
     [LDNoBlockDev]="Lower device is not a block device.",
+    [MDNoBlockDev]="Meta device is not a block device.",
     [LDOpenFailed]="Open of lower device failed.",
+    [MDOpenFailed]="Open of meta device failed.",
     [LDDeviceTooSmall]="Low.dev. smaller than requested DRBD-dev. size.",
     [LDNoConfig]="You have to use the disk command first.",
-    [LDMounted]="Lower device is already mounted."
+    [LDMounted]="Lower device is already mounted.",
+    [MDMounted]="Lower device is already mounted."
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;

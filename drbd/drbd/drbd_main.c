@@ -550,7 +550,7 @@ int drbd_send_param(drbd_dev *mdev)
 	int ok,i;
 	unsigned long m_size; // sector_t ??
 
-	m_size = drbd_get_lo_capacity(mdev)>>1;
+	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 	if (mdev->md_index == -1 ) {// internal metadata
 		D_ASSERT(m_size > MD_RESERVED_SIZE);
 		m_size = drbd_md_ss(mdev)>>1;
@@ -1316,6 +1316,7 @@ int __init drbd_init(void)
 
 NOT_IN_26(
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
+		mdev->this_bdev = MKDEV(MAJOR_NR, i);
 		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
 )
 
@@ -1474,15 +1475,14 @@ void drbd_free_ll_dev(drbd_dev *mdev)
 NOT_IN_26(
 		blkdev_put(mdev->lo_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
 		blkdev_put(mdev->md_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		mdev->lo_device = 0;
-		mdev->md_device = 0;
 )
 ONLY_IN_26(
 		bd_release(mdev->backing_bdev);
 		bd_release(mdev->md_bdev);
+)
 		mdev->md_bdev =
 		mdev->backing_bdev = 0;
-)
+
 		fput(mdev->lo_file);
 		fput(mdev->md_file);
 		mdev->lo_file = 0;
@@ -1939,7 +1939,7 @@ void drbd_md_write(drbd_dev *mdev)
 
 	for(i=Flags;i<=ArbitraryCnt;i++)
 		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
-	buffer->la_size=cpu_to_be64(drbd_get_my_capacity(mdev)>>1);
+	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev)>>1);
 	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);

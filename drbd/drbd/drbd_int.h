@@ -639,8 +639,9 @@ struct Drbd_Conf {
 	struct drbd_work  resync_work;
 	struct timer_list resync_timer;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	kdev_t lo_device;         // backing device
-	kdev_t md_device;         // device for meta-data.
+	kdev_t backing_bdev;  // backing device
+	kdev_t this_bdev;
+	kdev_t md_bdev;       // device for meta-data.
 #else
 	struct block_device *backing_bdev;
 	struct block_device *this_bdev;
@@ -942,7 +943,7 @@ do {									\
 static inline sector_t drbd_md_ss(drbd_dev *mdev)
 {
 	if( mdev->md_index == -1 ) {
-		return (  (drbd_get_lo_capacity(mdev) & ~7L)
+		return (  (drbd_get_capacity(mdev->backing_bdev) & ~7L)
 			- (MD_RESERVED_SIZE<<1) );
 	} else {
 		return 2 * MD_RESERVED_SIZE * mdev->md_index;

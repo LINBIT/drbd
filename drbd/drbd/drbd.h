@@ -90,12 +90,16 @@ enum ret_codes {
 	LAAlreadyInUse,
 	OAAlreadyInUse,
 	LDFDInvalid,
+	MDFDInvalid,
 	LDAlreadyInUse,
 	LDNoBlockDev,
+	MDNoBlockDev,
 	LDOpenFailed,
+	MDOpenFailed,
 	LDDeviceTooSmall,
 	LDNoConfig,
-	LDMounted
+	LDMounted,
+	MDMounted
 };
 
 struct ioctl_disk_config {

@@ -50,6 +50,12 @@
 #include <linux/blkpg.h>
 #endif
 
+ONLY_IN_26(
+/* see get_sb_bdev and bd_claim */
+char *drbd_sec_holder = "Secondary DRBD cannot be bd_claimed ;)";
+char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
+)
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 {
@@ -104,7 +110,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	unsigned long size=0;
 	int rv;
 
-	m_size = drbd_get_lo_capacity(mdev)>>1;
+	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 
 	if (mdev->md_index == -1 && m_size) {// internal metadata
 		D_ASSERT(m_size > MD_RESERVED_SIZE);
@@ -139,7 +145,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		}
 	}
 
-	if( drbd_get_my_capacity(mdev) != size ) {
+	if( drbd_get_capacity(mdev->this_bdev) != size ) {
 		if(bm_resize(mdev->mbds_id,size)) {
 			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
@@ -161,14 +167,9 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	struct disk_config new_conf;
 	struct file *filp = 0;
 	struct file *filp2 = 0;
-	struct inode *inode;
-	NOT_IN_26(kdev_t ll_dev;)
-	ONLY_IN_26(struct block_device *bdev;)
-
-	/*
-	if (!capable(CAP_SYS_ADMIN)) //MAYBE: Move this to the drbd_ioctl()
-		return -EACCES;
-	*/
+	struct inode *inode, *inode2;
+	NOT_IN_26(kdev_t bdev, bdev2;)
+	ONLY_IN_26(struct block_device *bdev, *bdev2;)
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -202,39 +203,36 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		goto fail_ioctl;
 	}
 
+	filp2 = fget(new_conf.meta_device);
+
+	if (!filp2) {
+		retcode=MDFDInvalid;
+		goto fail_ioctl;
+	}
+
+	inode2 = filp2->f_dentry->d_inode;
+
+	if (!S_ISBLK(inode2->i_mode)) {
+		retcode=MDNoBlockDev;
+		goto fail_ioctl;
+	}
+
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
 	bdev = inode->i_bdev;
-	if (bd_claim(bdev, &mdev)) {
+	if (bd_claim(bdev, mdev)) {
 		retcode=LDMounted;
 		goto fail_ioctl;
 	}
 
-	//#warning "XXX size check does not care about meta data on the same device??"
-	if ((drbd_get_lo_capacity(mdev)>>1) < new_conf.disk_size) {
-		retcode = LDDeviceTooSmall;
-		goto release_bdev_fail_ioctl;
-	}
-
-	filp2 = fget(new_conf.meta_device);
-	if (!filp2) {
-		retcode=LDFDInvalid;
-		goto release_bdev_fail_ioctl;
-	}
-
-	inode = filp2->f_dentry->d_inode;
-
-	if (!S_ISBLK(inode->i_mode)) {
-		retcode=LDNoBlockDev;
-		goto release_bdev_fail_ioctl;
-	}
-	if (bd_claim(inode->i_bdev, &mdev)) {
-		retcode=LDOpenFailed;
+	bdev2 = inode2->i_bdev;
+	if (bd_claim(bdev2,new_conf.meta_index==-1 ? mdev : drbd_m_holder )) {
+		retcode=MDMounted;
 		goto release_bdev_fail_ioctl;
 	}
 #else
 	for(i=0;i<minor_count;i++) {
 		if( i != minor &&
-		    inode->i_rdev == drbd_conf[i].lo_device) {
+		    inode->i_rdev == drbd_conf[i].backing_bdev) {
 			retcode=LDAlreadyInUse;
 			goto fail_ioctl;
 		}
@@ -253,34 +251,24 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		retcode=LDOpenFailed;
 		goto fail_ioctl;
 	}
+	bdev = inode->i_rdev;
 
-	ll_dev = inode->i_rdev;
-
-	if ((drbd_get_lo_capacity(mdev)>>1) < new_conf.disk_size) {
-		retcode = LDDeviceTooSmall;
-		goto release_bdev_fail_ioctl;
-	}
-
-	filp2 = fget(new_conf.meta_device);
-	if (!filp2) {
-		retcode=LDFDInvalid;
-		goto release_bdev_fail_ioctl;
-	}
-
-	inode = filp2->f_dentry->d_inode;
-
-	if (!S_ISBLK(inode->i_mode)) {
-		retcode=LDNoBlockDev;
-		goto release_bdev_fail_ioctl;
-	}
-
-	if ((err = blkdev_open(inode, filp2))) {
+	if ((err = blkdev_open(inode2, filp2))) {
 		ERR("blkdev_open( %d:%d ,) returned %d\n",
 		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
-		retcode=LDOpenFailed;
+		retcode=MDOpenFailed;
 		goto release_bdev_fail_ioctl;
 	}
+	bdev2 = inode2->i_rdev;
 #endif
+
+	if ((drbd_get_capacity(mdev->backing_bdev)>>1) < new_conf.disk_size) {
+		retcode = LDDeviceTooSmall;
+		goto release_bdev2_fail_ioctl;
+	}
+#warning "XXX size check does not care about meta data on the same device??"
+
+	
 
 	drbd_sync_me(mdev); // XXX does this make sense?
 
@@ -289,13 +277,11 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_resources(mdev);
 
-	NOT_IN_26( mdev->md_device = inode->i_rdev; )
-	ONLY_IN_26(mdev->md_bdev   = inode->i_bdev; )
+	mdev->md_bdev  = bdev2;
 	mdev->md_file  = filp2;
 	mdev->md_index = new_conf.meta_index;
 
-	NOT_IN_26( mdev->lo_device    = ll_dev; )
-	ONLY_IN_26(mdev->backing_bdev = bdev; )
+	mdev->backing_bdev = bdev;
 	mdev->lo_file  = filp;
 	mdev->lo_usize = new_conf.disk_size;
 	mdev->do_panic = new_conf.do_panic;
@@ -355,6 +341,9 @@ ONLY_IN_26({
 
 	return 0;
 
+ release_bdev2_fail_ioctl:
+	NOT_IN_26(blkdev_put(filp2->f_dentry->d_inode->i_bdev,BDEV_FILE);)
+	ONLY_IN_26(bd_release(bdev2);)
  release_bdev_fail_ioctl:
 	NOT_IN_26(blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);)
 	ONLY_IN_26(bd_release(bdev);)
@@ -380,10 +369,10 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	cn.meta_device_minor  = MINOR(mdev->md_bdev ?
 				      mdev->md_bdev->bd_dev : 0);
 #else
-	cn.lower_device_major=MAJOR(mdev->lo_device);
-	cn.lower_device_minor=MINOR(mdev->lo_device);
-	cn.meta_device_major=MAJOR(mdev->md_device);
-	cn.meta_device_minor=MINOR(mdev->md_device);
+	cn.lower_device_major=MAJOR(mdev->backing_bdev);
+	cn.lower_device_minor=MINOR(mdev->backing_bdev);
+	cn.meta_device_major=MAJOR(mdev->md_bdev);
+	cn.meta_device_minor=MINOR(mdev->md_bdev);
 #endif
 	cn.cstate=mdev->cstate;
 	cn.disk_size_user=mdev->lo_usize;
@@ -638,11 +627,6 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	return 0;
 }
 
-ONLY_IN_26(
-/* see get_sb_bdev and bd_claim */
-char *drbd_sec_holder = "Secondary DRBD cannot be bd_claimed ;)";
-)
-
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
@@ -678,12 +662,13 @@ ONLY_IN_26(
  * If I understand correctly, only "private" ioctl end up here.
  */
 	case BLKGETSIZE:
-		err = put_user(drbd_get_my_capacity(mdev), (long *)arg);
+		err = put_user(drbd_get_capacity(mdev->this_bdev),(long *)arg);
 		break;
 
 #ifdef BLKGETSIZE64
 	case BLKGETSIZE64: /* see ./drivers/block/loop.c */
-		err = put_user((u64)drbd_get_my_capacity(mdev)<<9, (u64*)arg);
+		err = put_user((u64)drbd_get_capacity(mdev->this_bdev)<<9, 
+			       (u64*)arg);
 		break;
 #endif
 
@@ -826,7 +811,7 @@ ONLY_IN_26(
 		}
 
 		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total = drbd_get_my_capacity(mdev);
+		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 		drbd_write_bm(mdev);
 		drbd_send_short_cmd(mdev,BecomeSyncSource);
 		drbd_start_resync(mdev,SyncTarget);
@@ -839,7 +824,7 @@ ONLY_IN_26(
 		}
 
 		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total = drbd_get_my_capacity(mdev);
+		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 		drbd_write_bm(mdev);
 		drbd_send_short_cmd(mdev,BecomeSyncTarget);
 		drbd_start_resync(mdev,SyncSource);

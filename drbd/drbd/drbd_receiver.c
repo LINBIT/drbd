@@ -1123,7 +1123,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	no_sync=drbd_determin_dev_size(mdev);
 
-	if( drbd_get_my_capacity(mdev) == 0) {
+	if( drbd_get_capacity(mdev->this_bdev) == 0) {
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
@@ -1326,7 +1326,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	ERR_IF(!mdev->mbds_id)
 		return FALSE;
 	bm_fill_bm(mdev->mbds_id,-1);
-	mdev->rs_total = drbd_get_my_capacity(mdev);
+	mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 	drbd_write_bm(mdev);
 	drbd_start_resync(mdev,SyncTarget);
 	return TRUE; // cannot fail ?
@@ -1335,7 +1335,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
 	bm_fill_bm(mdev->mbds_id,-1);
-	mdev->rs_total = drbd_get_my_capacity(mdev);
+	mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 	drbd_write_bm(mdev);
 	drbd_start_resync(mdev,SyncSource);
 	return TRUE; // cannot fail ?

@@ -43,7 +43,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw)
 
 	init_completion(&event);
 	init_buffer(&bh, drbd_md_io_complete, &event);
-	bh.b_rdev = mdev->md_device;
+	bh.b_rdev = mdev->md_bdev;
 	bh.b_rsector = sector;
 	bh.b_state = (1 << BH_Req) | (1 << BH_Mapped) | (1 << BH_Lock);
 	bh.b_size = 512; // THINK: always? well, we can add an other parameter
