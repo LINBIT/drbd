@@ -67,13 +67,16 @@ DRBD 0.8 Roadmap
   Have a hash table (hlist_head style), add the collision
   member (hlist_node) to drbd_request. 
 
-  Use the pointer to the drbd_request as key to the hash, each
+  Use the sector number of the drbd_request as key to the hash, each
   drbd_request is also put into this hash table. We still use the 
   pointer as block_id. 
 
   When we get an ACK packet, we lookup the hash table with the
   block_id, and may find the drbd_request there. Otherwise it 
   was a forged ACK.
+
+  Note: The actual key to the hash should be (sector & ~0x7).
+        See item 9 for more details.
 
 7 Handle split brain situations; Support IO fencing; 
   introduce the "Dead" peer state (o_state)
@@ -203,6 +206,12 @@ DRBD 0.8 Roadmap
   BTW, each time we have a concurrent write access, we print
   a warning to the syslog, since this indicates that the layer
   above us is broken!
+
+  Note: In Item 6 we created a hash table over all requests in the
+        transfer log, keyed with (sector & ~0x7). This allows us
+        to find IO operations starting in the same 4k block of
+        data quickly. -> With two lookups the hash table we can
+	find any concurrent access.
 
   [ see also GFS-mode-arbitration.pdf for illustration. ]
 
