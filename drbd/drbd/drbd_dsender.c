@@ -167,6 +167,29 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 #else
 # warning "FIXME"
+/* used for synchronous meta data and bitmap IO
+ * submitted by FIXME (I'd say worker only, but currently this is not true...)
+ */
+
+int drbd_generic_end_io(struct bio *bio, unsigned int bytes_done, int error)
+{
+	if (bio->bi_size)
+		return 1;
+
+	complete((struct completion*)bio->bi_private);
+	return 0;
+}
+
+/* used for asynchronous meta data and bitmap IO
+ * submitted by FIXME (I'd say worker only, but currently this is not true...)
+ */
+int drbd_async_eio(struct bio *bio, unsigned int bytes_done, int error)
+{
+	// FIXME: since all meta data io should be synchronous, this is
+	// probably a
+	BUG(); // and currently not used anyways.
+	return 0;
+}
 #endif
 
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)

@@ -166,8 +166,8 @@ STATIC int _drbd_alloc_ee(drbd_dev *mdev,struct page* page,int mask)
 	if( e == NULL ) return FALSE;
 
 	// BM_BLOCK_SIZE == PAGE_SIZE ! FIXME not necessarily on all arch!!
-	drbd_init_bio(&e->private_bio, BM_BLOCK_SIZE);
-	drbd_bio_add_page(&e->private_bio,page,0);     // sets b_data and b_page
+	drbd_bio_init(&e->private_bio);
+	drbd_bio_add_page(&e->private_bio,page,BM_BLOCK_SIZE_B,0);
 
 	e->block_id = ID_VACANT;
 	spin_lock_irq(&mdev->ee_lock);

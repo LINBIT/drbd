@@ -1305,8 +1305,8 @@ NOT_IN_26(
 )
 
 		if(!page) goto Enomem;
-		drbd_init_bio(&mdev->md_io_bio,512);
-		drbd_bio_add_page(&mdev->md_io_bio,page,0);
+		drbd_bio_init(&mdev->md_io_bio);
+		drbd_bio_add_page(&mdev->md_io_bio,page,512,0);
 
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;

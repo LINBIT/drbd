@@ -540,6 +540,8 @@ struct Tl_epoch_entry {
 	drbd_bio_t private_bio; // private bio struct, NOT a pointer
 	u64    block_id;
 	int magic;
+	ONLY_IN_26(unsigned int ee_size;)
+	ONLY_IN_26(sector_t ee_sector;)
 };
 
 struct Pending_read {

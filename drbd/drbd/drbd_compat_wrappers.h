@@ -15,7 +15,7 @@ extern void drbd_dio_end_sec        (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end            (struct buffer_head *bh, int uptodate);
 
 /*
- * becase in 2.6.x [sg]et_capacity operate on gendisk->capacity, which is in
+ * because in 2.6.x [sg]et_capacity operate on gendisk->capacity, which is in
  * units of 512 bytes sectors, these wrappers have a <<1 or >>1 where
  * appropriate.
  */
@@ -40,17 +40,7 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 	blk_size[MAJOR_NR][(int)(mdev - drbd_conf)] = (size>>1);
 }
 
-/* Returns the start sector for metadata, aligned to 4K */
-static inline sector_t drbd_md_ss(drbd_dev *mdev)
-{
-	if( mdev->md_index == -1 ) {
-		return (  (drbd_get_lo_capacity(mdev) & ~7L)
-			- (MD_RESERVED_SIZE<<1) );
-	} else {
-		return 2 * MD_RESERVED_SIZE * mdev->md_index;
-	}
-}
-
+# warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)), blksize);
@@ -76,7 +66,6 @@ static inline void drbd_bio_endio(struct buffer_head *bh, int uptodate)
 
 static inline drbd_dev* drbd_req_get_mdev(struct drbd_request *req)
 {
-	// drbd_conf + MINOR(req->master_bio->b_rdev);
 	return (drbd_dev*) req->private_bio.b_private;
 }
 
@@ -120,13 +109,12 @@ static inline void drbd_bio_kunmap(struct buffer_head *bh)
 	bh_kunmap(bh);
 }
 
-static inline void drbd_init_bio(struct buffer_head *bh, int size)
+static inline void drbd_bio_init(struct buffer_head *bh)
 {
 	memset(bh, 0, sizeof(struct buffer_head));
 
 	bh->b_list = BUF_LOCKED;
 	init_waitqueue_head(&bh->b_wait);
-	bh->b_size = size;
 	atomic_set(&bh->b_count, 1);
 	bh->b_state = (1 << BH_Mapped);	//has a disk mapping = dev & blocknr
 }
@@ -344,43 +332,38 @@ extern char* drbd_sec_holder;
 
 // bi_end_io handlers
 // int (bio_end_io_t) (struct bio *, unsigned int, int);
-extern int drbd_generic_end_io     (struct bio *bio, unsigned int ignored, int error);
-extern int drbd_async_eio          (struct bio *bio, unsigned int ignored, int error);
-extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int ignored, int error);
-extern int drbd_dio_end_sec        (struct bio *bio, unsigned int ignored, int error);
-extern int drbd_dio_end            (struct bio *bio, unsigned int ignored, int error);
+extern int drbd_generic_end_io     (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_async_eio          (struct bio *bio, unsigned int bytes_done, int error);
+extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
 
-#ifdef DBG_BH_SECTOR
-static inline sector_t APP_BH_SECTOR(struct bio *bio)
-{
-	return 0;
-}
-#else
-# define APP_BH_SECTOR(BH) 0
-#endif
-
+/* Returns the number of 512 byte sectors of the lower level device */
 static inline unsigned long drbd_get_lo_capacity(drbd_dev *mdev)
 {
-	FIXME_DONT_USE();
-	return 0;
+	return mdev->backing_bdev ?
+		get_capacity(mdev->backing_bdev->bd_disk) : 0;
 }
 
+/* Returns the number of 512 byte sectors of our virtual device */
 static inline unsigned long drbd_get_my_capacity(drbd_dev *mdev)
 {
-	return 0;
+	sector_t c = get_capacity(mdev->vdisk);
+	D_ASSERT(c == mdev->la_size);
+	return c;
 }
 
+/* sets the number of 512 byte sectors of our virtual device */
 static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 {
+	set_capacity(mdev->vdisk,size);
 }
 
-static inline sector_t drbd_md_ss(drbd_dev *mdev)
-{
-	return 0;
-}
-
+# warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
+	set_blocksize(mdev->this_bdev,blksize);
+	set_blocksize(mdev->backing_bdev,blksize);
 }
 
 static inline int drbd_sync_me(drbd_dev *mdev)
@@ -392,66 +375,116 @@ static inline int drbd_sync_me(drbd_dev *mdev)
 
 static inline void drbd_bio_IO_error(struct bio *bio)
 {
+	bio_endio(bio,bio->bi_size,-EIO);
 }
 
 static inline void drbd_bio_endio(struct bio *bio, int uptodate)
 {
+	bio_endio(bio,bio->bi_size,uptodate ? 0 : -EIO);
 }
 
 static inline drbd_dev* drbd_req_get_mdev(struct drbd_request *req)
 {
-	return drbd_conf;
+	return (drbd_dev*) req->private_bio.bi_private;
 }
 
 static inline sector_t drbd_req_get_sector(struct drbd_request *req)
 {
-	return 0;
+	return req->master_bio->bi_sector;
 }
 
 static inline unsigned short drbd_req_get_size(struct drbd_request *req)
 {
-	return 0;
+	return req->master_bio->bi_size;
 }
 
 static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
 {
-	return 0;
+	return ee->ee_sector;
 }
 
 static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
 {
-	return 0;
+	return ee->ee_size;
 }
 
 static inline sector_t drbd_pr_get_sector(struct Pending_read *pr)
 {
-	return 0;
+	return pr->d.master_bio->bi_sector;
 }
 
-static inline short drbd_bio_get_size(struct buffer_head *bh)
+static inline short drbd_bio_get_size(struct bio *bio)
 {
-	return 0;
+	return bio->bi_size;
 }
 
+#ifdef CONFIG_HIGHMEM
+/*
+ * I don't know why there is no bvec_kmap, only bvec_kmap_irq ...
+ * If for some reason it is intentional, ans MUST be irq save,
+ * I introduce a very bad bug right here and now.
+ *
+ * Most likely it is only due to performance:
+  * kmap_atomic/kunmap_atomic is significantly faster than kmap/kunmap because
+  * no global lock is needed and because the kmap code must perform a global TLB
+  * invalidation when the kmap pool wraps.
+  *
+  * However when holding an atomic kmap is is not legal to sleep, so atomic
+  * kmaps are appropriate for short, tight code paths only.
+ *
+ * So in the long run we may prefer to move to bio_kmap_irq, and either ignore
+ * the compatibility with 2.4, or provide something similar there.
+ *
+ *	-lge
+ */
 static inline char *drbd_bio_kmap(struct bio *bio)
 {
-	return NULL;
+	struct bio_vec *bvec;
+	unsigned long addr;
+
+	bvec = bio_iovec_idx(bio, bio->bi_idx);
+
+	addr = (unsigned long) kmap(bvec->bv_page);
+
+	if (addr & ~PAGE_MASK)
+		BUG();
+
+	return (char *) addr + bvec->bv_offset;
 }
 
 static inline void drbd_bio_kunmap(struct bio *bio)
 {
+	struct bio_vec *bvec;
+
+	bvec = bio_iovec_idx(bio, bio->bi_idx);
+	kunmap(bvec->bv_page);
 }
 
-static inline void drbd_init_bio(struct bio *bio, int size)
+#else
+static inline char *drbd_bio_kmap(struct bio *bio)
 {
+	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	return page_address(bvec->bv_page) + bvec->bv_offset;
+}
+static inline void drbd_bio_kunmap(struct bio *bio)
+{
+	// do nothing.
+}
+#endif
+
+static inline void drbd_bio_init(struct bio *bio)
+{
+	bio_init(bio);
 }
 
 static inline void drbd_bio_set_pages_dirty(struct bio *bio)
 {
+	bio_set_pages_dirty(bio);
 }
 
 static inline void drbd_bio_set_end_io(struct bio *bio, bio_end_io_t * h)
 {
+	bio->bi_end_io = h;
 }
 
 static inline void drbd_md_prepare_write(drbd_dev *mdev, sector_t sector)
@@ -479,22 +512,48 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 {
 }
 
+#if 0
 static inline void
-drbd_bio_add_page(struct bio *bio, struct page *page, unsigned long offset)
+drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 {
+}
+#endif
+
+static inline void
+drbd_bio_add_page(struct bio *bio, struct page *page, unsigned int len,
+		  unsigned int offset)
+{
+	bio_add_page(bio,page,len,offset);
 }
 
 static inline struct page* drbd_bio_get_page(struct bio *bio)
 {
-	return NULL;
+	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	return bvec->bv_page;
 }
 
 static inline void drbd_generic_make_request(int rw, struct bio *bio)
 {
+	bio->bi_rw = rw; //??
+	generic_make_request(bio);
 }
 
-static inline void drbd_generic_make_request_wait(int rw, struct bio *bio)
+/* FIXME
+ * I'd rather use something like sync_page_io() from drivers/md/md.c
+ * for our meta data io!  For now I only copied some of it here.
+ */
+#warning "FIXME we need to check the return value"
+static inline int drbd_generic_make_request_wait(int rw, struct bio *bio)
 {
+	struct completion event;
+	bio->bi_rw = rw; //??
+	init_completion(&event);
+	bio->bi_private = &event;
+	bio->bi_end_io = drbd_generic_end_io;
+	generic_make_request(bio);
+	blk_run_queues();
+	wait_for_completion(&event);
+	return test_bit(BIO_UPTODATE, &bio->bi_flags);
 }
 
 static inline void drbd_kick_lo(drbd_dev *mdev)
@@ -504,6 +563,23 @@ static inline void drbd_kick_lo(drbd_dev *mdev)
 
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 {
-	return 0;
+	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	return _drbd_send_page(mdev,bvec->bv_page,bvec->bv_offset,bvec->bv_len);
 }
 #endif
+
+/***
+ * common functions,
+ * move back to drbd_int.h
+ ***/
+/* Returns the start sector for metadata, aligned to 4K */
+static inline sector_t drbd_md_ss(drbd_dev *mdev)
+{
+	if( mdev->md_index == -1 ) {
+		return (  (drbd_get_lo_capacity(mdev) & ~7L)
+			- (MD_RESERVED_SIZE<<1) );
+	} else {
+		return 2 * MD_RESERVED_SIZE * mdev->md_index;
+	}
+}
+
