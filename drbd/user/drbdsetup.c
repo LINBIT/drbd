@@ -383,6 +383,7 @@ int open_drbd_device(const char* device)
   if(err)
     {
       perror("ioctl() failed");
+      exit(20);
     }
 
   if (version != API_VERSION)

@@ -80,8 +80,6 @@ extern char ss_buffer[255];
 
 /* CAUTION: arguments may not have side effects! */
 #define for_each_resource(res,tmp,config) \
-	for (res = (config), tmp = 0;     \
-	     tmp = res? res->next : NULL, res != NULL;\
-	     res = tmp)
+	for (res = (config); res && (tmp = res->next, 1); res = tmp)
 
 #endif
