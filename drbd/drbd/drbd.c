@@ -1109,6 +1109,7 @@ int drbdd_init(void *arg)
 {
   int minor = (int)((long)arg);
 
+  lock_kernel();
   exit_mm(current);    /* give up UL-memory context */
   exit_files(current); /* give up open filedescriptors */
   current->session = 1;
