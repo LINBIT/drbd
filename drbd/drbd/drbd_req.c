@@ -98,10 +98,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
 	}
 
-	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
-		drbd_set_in_sync(mdev,rsector,drbd_req_get_size(req));
-	}
-
 	drbd_bio_endio(req->master_bio,uptodate);
 
 	INVALIDATE_MAGIC(req);
