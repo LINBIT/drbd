@@ -96,9 +96,11 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	bio.bi_private = &event;
 	bio.bi_end_io = drbd_md_io_complete;
 
+	/*
 	INFO("%s [%d]:%s(,%ld,%s)\n",
 	     current->comm, current->pid, __func__,
 	     sector, rw ? "WRITE" : "READ");
+	*/
 #ifdef BIO_RW_SYNC
 	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
 #else
@@ -188,8 +190,10 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		drbd_al_write_transaction(mdev,al_ext,enr);
 		mdev->al_writ_cnt++;
 
+		/*
 		DUMPI(al_ext->lc_number);
 		DUMPI(mdev->act_log->new_number);
+		*/
 		spin_lock_irq(&mdev->al_lock);
 		lc_changed(mdev->act_log,al_ext);
 		spin_unlock_irq(&mdev->al_lock);
