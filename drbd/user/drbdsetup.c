@@ -405,6 +405,7 @@ int scan_disk_options(char **argv,
       int c,i;
 
       PRINT_ARGV;
+      next_option:
       c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
@@ -416,7 +417,7 @@ int scan_disk_options(char **argv,
 	  for(i=0;i<ARRY_SIZE(eh_names);i++) {
 	    if (strcmp(optarg,eh_names[i])==0) {
 	      cn->config.on_io_error=i;
-	      goto ok;
+	      goto next_option;
 	    }
 	  }
 	  fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
@@ -427,7 +428,6 @@ int scan_disk_options(char **argv,
 	case '?':
 	  return 20;
 	}
-    ok:
     }
   return 0;
 }

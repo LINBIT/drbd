@@ -729,17 +729,15 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	mdev->resync_timer.function = resync_timer_fn;
 	mdev->resync_timer.data = (unsigned long) mdev;
-	
+
 	for (;;) {
 		intr = down_interruptible(&mdev->data.work.s);
 
 		if (intr) {
 			D_ASSERT(intr == -EINTR);
 			LOCK_SIGMASK(current,flags);
-			if (sigismember(&current->pending.signal, SIGTERM)) {
-				sigdelset(&current->pending.signal, SIGTERM);
-				RECALC_SIGPENDING(current);
-			}
+			sigemptyset(&current->pending.signal);
+			RECALC_SIGPENDING(current);
 			UNLOCK_SIGMASK(current,flags);
 			if (thi->t_state != Running )
 				break;

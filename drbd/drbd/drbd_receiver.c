@@ -596,7 +596,20 @@ int drbd_connect(drbd_dev *mdev)
 			}
 		}
 		if(mdev->cstate==Unconnected) return 0;
-		if(signal_pending(current)) return 0;
+		if(signal_pending(current)) {
+			unsigned long flags;
+			LOCK_SIGMASK(current,flags);
+			sigemptyset(&current->pending.signal);
+			RECALC_SIGPENDING(current);
+			UNLOCK_SIGMASK(current,flags);
+
+			smp_mb();
+			if ((volatile int)mdev->receiver.t_state != Running)
+				return 0;
+
+			WARN("Signal pending x%lx, but t_state still Running??\n",
+				current->pending.signal.sig[0]);
+		}
 	}
 
  connected:
@@ -617,6 +630,7 @@ int drbd_connect(drbd_dev *mdev)
 	sock->sk->SK_(rcvbuf) = mdev->conf.sndbuf_size;
 	sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
 	sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
+	sock->sk->SK_(userlocks) |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 
 	msock->sk->SK_(priority)=TC_PRIO_INTERACTIVE;
 	NOT_IN_26(sock->sk->tp_pinfo.af_tcp.nonagle=1;)
@@ -1572,16 +1586,16 @@ int drbdd_init(struct Drbd_thread *thi)
 		drbdd(mdev);
 		drbd_disconnect(mdev);
 		if (thi->t_state == Exiting) break;
-		if (thi->t_state == Restarting) {
+		else {
 			unsigned long flags;
-			thi->t_state = Running;
-
 			LOCK_SIGMASK(current,flags);
-			if (sigismember(&current->pending.signal, SIGTERM)) {
-				sigdelset(&current->pending.signal, SIGTERM);
-				RECALC_SIGPENDING(current);
-			}
+			sigemptyset(&current->pending.signal);
+			RECALC_SIGPENDING(current);
 			UNLOCK_SIGMASK(current,flags);
+
+			if (thi->t_state != Restarting)
+				ERR("unexpected thread state: %d\n", thi->t_state);
+			thi->t_state = Running;
 		}
 	}
 

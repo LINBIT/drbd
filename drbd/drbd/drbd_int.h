@@ -78,7 +78,28 @@ extern int disable_io_hints;
 #endif
 
 #define INITIAL_BLOCK_SIZE (1<<12)  // 4K
+
+/* I don't remember why XCPU ...
+ * This is used to wake the asender,
+ * and to interrupt sending the sending task
+ * on disconnect.
+ */
 #define DRBD_SIG SIGXCPU
+
+/* This is used to stop/restart our threads.
+ * Cannot use SIGTERM nor SIGKILL, since these
+ * are sent out by init on runlevel changes
+ * I choose SIGHUP for now.
+ */
+#define DRBD_SIGKILL SIGHUP
+
+/* To temporarily block signals during network operations.
+ * as long as we send directly from make_request, I'd like to
+ * allow KILL, so the user can kill -9 hanging write processes.
+ * If it does not succeed, it _should_ timeout anyways, but...
+ */
+#define DRBD_SHUTDOWNSIGMASK sigmask(DRBD_SIG)|sigmask(DRBD_SIGKILL)
+
 #define ID_SYNCER (-1LL)
 #define ID_VACANT 0     // All EEs on the free list should have this value
                         // freshly allocated EEs get !ID_VACANT (== 1)

@@ -353,10 +353,8 @@ void drbd_daemonize(void) {
 	daemonize("drbd_thread");
 	// Linux 2.6.x's daemonize blocks all signals. Unblock "our" signals.
 
-	sigemptyset(&enable);
-	sigaddset(&enable,DRBD_SIG);
-	sigaddset(&enable,SIGTERM);
-	sigprocmask(SIG_UNBLOCK, &enable, NULL);	
+	siginitset(&enable, DRBD_SHUTDOWNSIGMASK );
+	sigprocmask(SIG_UNBLOCK, &enable, NULL);
 #else
 	daemonize();
 #endif
@@ -474,7 +472,9 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	else
 		thi->t_state = Exiting;
 
-	drbd_queue_signal(SIGTERM,thi->task);
+	smp_mb(); /* should not be necessary, since the next
+		     instruction is spinlock, but anyways */
+	drbd_queue_signal(DRBD_SIGKILL,thi->task);
 
 	if(wait) {
 		down(&thi->mutex); // wait until thread has exited
@@ -522,11 +522,7 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
-	/* as long as we send directly from make_request, I'd like to
-	 * allow KILL, so the user can kill -9 hanging write processes.
-	 * if it does not succeed, it _should_ timeout anyways, but...
-	 */
-	old_blocked = block_sigs_but(SIGKILL);
+	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
 	sent = drbd_send(mdev,sock,h,size,msg_flags);
 	restore_old_sigset(old_blocked);
 
@@ -823,8 +819,27 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
 	      for everything in the data structure.
 	*/
-	// SIGKILL: see comment in _drbd_send_cmd
-	old_blocked = block_sigs_but(SIGKILL);
+
+	/* Still called directly by drbd_make_request,
+	 * so all sorts of processes may end up here.
+	 * They may be interrupted by DRBD_SIGKILL in response to
+	 * ioctl or some other "connection loast" event.
+
+	 * FIXME
+	 * unfortunatly this may well be a user process like dd,
+	 * and interupted by a user signal.
+	 * (in 0.6.x this was handled with the "app_got_sig" cludge)
+
+	 * THINK
+	 * maybe we should block all signals (so we don't need to
+	 * wory about user signals), and use force_sig() instead
+	 * of drbd_queue_signal.
+	 *
+	 * we also should replace all "LOCK(); sigemptyset(); UNLOCK();"
+	 * with flush_signals(); ...
+	 */
+
+	old_blocked = block_sigs_but(sigmask(DRBD_SIGKILL));
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -860,11 +875,11 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
 
-	/* only called by our kernel thread.
-	 * that one might get stopped by SIGTERM in responst to
-	 * ioctl or module unload
+	/* Only called by our kernel thread.
+	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
+	 * in response to ioctl or module unload.
 	 */
-	old_blocked = block_sigs_but(SIGTERM);
+	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -931,10 +946,10 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		 *
 		 * -EAGAIN on timeout, -EINTR on signal.
 		 */
-		/* THINK
-		 * do we need to block DRBD_SIG if sock == &meta.socket ??
-		 * otherwise wake_asender() might interrupt some send_*Ack !
-		 */
+/* THINK
+ * do we need to block DRBD_SIG if sock == &meta.socket ??
+ * otherwise wake_asender() might interrupt some send_*Ack !
+ */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
 		if (rv == -EAGAIN) {
 			// FIXME move "retry--" into drbd_retry_send()
@@ -951,7 +966,6 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	} while(sent < size);
 
 	set_fs(oldfs);
-	// unlock_kernel();
 
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
