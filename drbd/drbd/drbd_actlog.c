@@ -28,49 +28,9 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-/* 
-  Testcases:
-
-  * Extent to evict sits in it's right hash-table position.
-  * Extent to evict is in hash->next chain.
-
-#!/usr/bin/perl
-#
-# Use an al-axtends=4 config.
-#
-use strict;
-use Fcntl;
-use Fcntl ":seek";
-
-sub do_test($)
-{
-    my ($devname)=@_;
-    my ($buffer,$i,$rv);
-    my @pattern = ( 0,1,2,3,4 );   # Tests evict from 1st place in next chain
-#    my @pattern = ( 0,4,1,2,0,3 ); # Tests evict from 2nd place in next chain
-
-    $buffer="juhu";
-    
-    sysopen(DEVICE,$devname, O_RDWR ) or die "open failed";
-
-    for($i=0;$i<=$#pattern;$i++) {
-	$rv=sysseek(DEVICE, $pattern[$i] * 4 * 1024*1024, SEEK_SET);
-	print "$i $pattern[$i] $rv\n";
-	syswrite(DEVICE, $buffer, 4);
-    }
-}
-
-
-do_test($ARGV[0]);
-
-
-*/
-
-
 #define AL_EXTENT_SIZE_B 22             // One extend represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_FREE (-1)
-
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
@@ -89,19 +49,20 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 		return;
 	}
 
+	spin_lock(&mdev->al_lock);
+	INIT_LIST_HEAD(&mdev->al_lru);
+	INIT_LIST_HEAD(&mdev->al_free);
 	for(i=0;i<mdev->sync_conf.al_extents;i++) {
 		extents[i].extent_nr=AL_FREE;
 		extents[i].hash_next=0;
 		extents[i].pending_ios=0;
 		list_add(&extents[i].accessed,&mdev->al_free);
 	}
-
-	spin_lock(&mdev->al_lock);
 	mdev->al_nr_extents=mdev->sync_conf.al_extents; 
 	if(mdev->al_extents) kfree(mdev->al_extents);
 	mdev->al_extents = extents;
 	spin_unlock(&mdev->al_lock);
-	/* TODO allocate some 12.5% (=1/8) extends more and put
+	/* TODO allocate some 12.5% (=1/8) extents more and put
 	   them onto the free list first :)
 	 */
 }
@@ -149,8 +110,9 @@ STATIC struct drbd_extent * drbd_al_evict(struct Drbd_Conf *mdev)
 		if( p == NULL) return extent;
 		// move the next in hash table (p) to first position (extent) !
 		extent->extent_nr = p->extent_nr;
+		extent->pending_ios = p->pending_ios;
 		extent->hash_next = p->hash_next;
-		le = p->accessed.prev; // Fix accessed list!
+		le = p->accessed.prev; // Fixing accessed list here!
 		list_del(&p->accessed);
 		list_add(&extent->accessed,le);
 		return p;
@@ -170,7 +132,9 @@ STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
 	struct drbd_extent *extent;
 
 	if(list_empty(&mdev->al_free)) {
-		return drbd_al_evict(mdev);
+		extent=drbd_al_evict(mdev);
+		extent->extent_nr = AL_FREE;
+		return extent;
 	}
 
 	le=mdev->al_free.next;
@@ -188,13 +152,17 @@ STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev,
 
 	i = al_hash_fn( enr , mdev->al_nr_extents );
 	extent = mdev->al_extents + i;
-	if (extent->extent_nr != AL_FREE) {
-		n = drbd_al_get(mdev);
-		n->hash_next = extent->hash_next;
-		extent->hash_next = n;
-	} else { // is free
+	if (extent->extent_nr == AL_FREE) {
 		list_del(&extent->accessed);
 		extent->hash_next = NULL;
+	} else {
+		n = drbd_al_get(mdev);
+		if( n != extent) {
+			n->hash_next = extent->hash_next;
+			extent->hash_next = n;
+			extent = n;
+		}
+		// else { good luck, we got this slot. }
 	}
 	extent->extent_nr = enr;
 	list_add(&extent->accessed,&mdev->al_lru);

@@ -1117,8 +1117,6 @@ int __init drbd_init(void)
 		drbd_conf[i].al_extents = 0;
 		drbd_conf[i].al_nr_extents = 0;
 		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
-		INIT_LIST_HEAD(&drbd_conf[i].al_lru);
-		INIT_LIST_HEAD(&drbd_conf[i].al_free);
 		drbd_conf[i].al_writ_cnt = 0;
 		drbd_al_init(drbd_conf+i);
 		{
