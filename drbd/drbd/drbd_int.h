@@ -572,6 +572,10 @@ struct BitMap {
 #define BM_EXTENT_SIZE_B 24       // One extent represents 16M Storage
 #define BM_EXTENT_SIZE (1<<BM_EXTENT_SIZE_B)
 
+#define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
+#define BM_BYTES_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / 8 )
+#define EXTENTS_PER_SECTOR  ( 512 / BM_BYTES_PER_EXTENT )
+
 struct bm_extent { // 16MB sized extents.
 	struct lc_element lce;
 	int rs_left; //number of sectors out of sync in this extent.

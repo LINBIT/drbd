@@ -444,7 +444,7 @@ void drbd_write_bm(struct Drbd_Conf *mdev)
 			BM_EXTENT_SIZE >> 9 );
 
 	for(i=0;i<exts;i++) {
-		drbd_update_on_disk_bm(mdev,i);
+		drbd_update_on_disk_bm(mdev,i*EXTENTS_PER_SECTOR);
 	}
 	dec_local(mdev);
 }
@@ -529,9 +529,6 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 	     (unsigned long) mdev->rs_total>>1);
 }
 
-#define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
-#define BM_BYTES_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / 8 )
-#define EXTENTS_PER_SECTOR  ( 512 / BM_BYTES_PER_EXTENT )
 /**
  * drbd_update_on_disk_bm: Writes a piece of the bitmap to its
  * on disk location.
@@ -550,6 +547,16 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 	bm = mdev->mbds_id->bm;
 	bm_words = mdev->mbds_id->size/sizeof(unsigned long);
 	bm_i = enr * BM_WORDS_PER_EXTENT ;
+
+	/* FIXME yes, this triggers
+	 * not exactly reproduceable, though :(
+	 * some error in param exchange,
+	 * bitmap not properly resized ...
+	 */
+	ERR_IF(bm_i >= bm_words) {
+		DUMPI(bm_i);
+		DUMPI(bm_words);
+	}
 	want=min_t(int,512/sizeof(long),bm_words-bm_i);
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer
