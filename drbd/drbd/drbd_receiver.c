@@ -1253,7 +1253,21 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 				set_cstate(mdev,WFBitMapT);
 			} 
-		} else set_cstate(mdev,Connected);
+		} else {
+			set_cstate(mdev,Connected);
+			if(mdev->rs_total) {
+				/* We are not going to do a resync but there
+				   are marks in the bitmap. 
+				   (Could be from the AL, or someone used
+				   the write_gc.pl program)
+				   Clean the bitmap...
+				 */
+				INFO("No resync -> clearing bit map.\n");
+				bm_fill_bm(mdev->mbds_id,0);
+				mdev->rs_total = 0;
+				drbd_write_bm(mdev);
+			}
+		}
 
 		if (have_good == -1) {
 			/* Sync-Target has to adopt source's gen_cnt. */

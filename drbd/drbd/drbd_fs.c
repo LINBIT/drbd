@@ -327,6 +327,7 @@ ONLY_IN_26({
 	else {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		bm_fill_bm(mdev->mbds_id,-1);
+		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 		drbd_write_bm(mdev);
 	}
 
