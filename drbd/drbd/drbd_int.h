@@ -303,15 +303,17 @@ enum MetaDataIndex {
 extern volatile int drbd_did_panic;
 
 #if    DRBD_PANIC == 0
-#define drbd_panic(x...) panic(x)
+#define drbd_panic(fmt, args...) \
+	panic(DEVICE_NAME "%d: " fmt, (int)(mdev-drbd_conf) , ##args)
 #elif  DRBD_PANIC == 1
 #error "sorry , this does not work, please contribute"
 #else
-#define drbd_panic(x...) do {		\
-	printk(KERN_EMERG x);		\
-	drbd_did_panic = DRBD_MAGIC;	\
-	smp_mb();			\
-	panic(x);			\
+#define drbd_panic(fmt, args...) do {					\
+	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
+			(int)(mdev-drbd_conf) , ##args);		\
+	drbd_did_panic = DRBD_MAGIC;					\
+	smp_mb();							\
+	panic(DEVICE_NAME "%d: " fmt, (int)(mdev-drbd_conf) , ##args);	\
 } while (0)
 #endif
 #undef DRBD_PANIC
@@ -1021,8 +1023,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 		case Panic:
 			set_bit(DISKLESS,&mdev->flags);
 			smp_mb(); // but why is there smp_mb__after_clear_bit() ?
-			drbd_panic(DEVICE_NAME "%d: IO error on backing device!\n",
-					(int)(mdev-drbd_conf));
+			drbd_panic("IO error on backing device!\n");
 			break;
 		case Detach:
 			if (!test_and_set_bit(DISKLESS,&mdev->flags)) {

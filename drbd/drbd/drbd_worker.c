@@ -371,11 +371,12 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	if ( cancel ||
 	     mdev->cstate < Connected ||
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
-		ERR("WE ARE LOST. Local IO failure, no peer.\n");
+		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
+
+		// does not make much sense, but anyways...
 		drbd_bio_endio(req->master_bio,0);
 		dec_ap_bio(mdev);
 		mempool_free(req,drbd_request_mempool);
-		// TODO: Do something like panic() or shut_down_cluster().
 		return 1;
 	}
 

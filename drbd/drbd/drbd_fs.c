@@ -171,10 +171,13 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	if (!test_bit(DISKLESS,&mdev->flags))
 		return -EBUSY;
 
-	/* FIXME if this was "adding" a lo dev to a previously "diskless" node,
+	/* if this was "adding" a lo dev to a previously "diskless" node,
 	 * there still could be requests comming in right now. brrks.
+	 * if it was mounted, we had an open_cnt > 1,
+	 * so it would be BUSY anyways...
 	 */
-	D_ASSERT(mdev->state == Secondary);
+	ERR_IF (mdev->state != Secondary)
+		return -EBUSY;
 
 	if (mdev->open_cnt > 1)
 		return -EBUSY;

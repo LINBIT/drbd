@@ -1362,6 +1362,10 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	// We just started resync. Now we can be sure that local disk IO is okay.
+
+	/* no, actually we can't. failures happen asynchronously, anytime.
+	 * we can never be sure. disk may have failed while we where busy shaking hands...
+	 */
 /*
  *  FIXME this should only be D_ASSERT here.
  *        *doing* it here masks a logic bug elsewhere, I think.
@@ -1715,14 +1719,11 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	if (DRBD_ratelimit(5*HZ,5))
 		WARN("Got NegAck packet. Peer is in troubles?\n");
 
-	if(!is_syncer_blk(mdev,p->block_id)) {
-		D_ASSERT(bm_get_bit(mdev->mbds_id,sector,size));
-		// tl_clear() must have set this out of sync!
-	}
-
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
 	} else {
+		D_ASSERT(bm_get_bit(mdev->mbds_id,sector,size));
+		// tl_clear() must have set this out of sync!
 		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
 		dec_ap_pending(mdev,HERE);
 	}
@@ -1744,9 +1745,11 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
 
-	ERR("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
-	// TODO: Do something like panic() or shut_down_cluster(). 
-	// FIXME what about bio_endio, in case we don't panic ??
+	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
+
+	// THINK do we have other options, but panic?
+	//       what about bio_endio, in case we don't panic ??
+
 	return TRUE;
 }
 
@@ -1760,8 +1763,11 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	drbd_rs_complete_io(mdev,sector);
 
-	ERR("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
-	// TODO: Do something like panic() or shut_down_cluster(). 
+	drbd_panic("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
+
+	// THINK do we have other options, but panic?
+	//       what about bio_endio, in case we don't panic ??
+
 	return TRUE;
 }
 

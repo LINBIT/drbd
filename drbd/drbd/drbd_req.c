@@ -158,7 +158,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * This should have been handled (panic? suspend?) somehwere
 	 * else. But maybe it was not, so check again here.
 	 * Caution: as long as we do not have a read/write lock on mdev,
-	 * to serialize state changes, this is racy, since we may loose
+	 * to serialize state changes, this is racy, since we may lose
 	 * the connection *after* we test for the cstate.
 	 */
 	if ( (    test_bit(DISKLESS,&mdev->flags)

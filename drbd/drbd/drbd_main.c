@@ -1302,6 +1302,9 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->send_task    = NULL;
 	drbd_set_my_capacity(mdev,0);
 
+	// just in case
+	drbd_free_resources(mdev);
+
 	/*
 	 * currently we drbd_init_ee only on module load, so
 	 * we may do drbd_release_ee only on module unload!
