@@ -1006,7 +1006,7 @@ static inline void
 _drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	drbd_dev *mdev = container_of(q,struct Drbd_Conf,data.work);
-	D_ASSERT(IS_VALID_MDEV(mdev));
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 	ERR_IF(mdev->worker.t_state != Running)
 		dump_stack();
 	list_add_tail(&w->list,&q->q);
@@ -1017,7 +1017,7 @@ static inline void
 _drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	drbd_dev *mdev = container_of(q,struct Drbd_Conf,data.work);
-	D_ASSERT(IS_VALID_MDEV(mdev));
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 	ERR_IF(mdev->worker.t_state != Running)
 		dump_stack();
 	list_add(&w->list,&q->q);
