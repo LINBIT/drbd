@@ -10,7 +10,18 @@
 extern void yyerror(char* text);
 extern int yylex();
 
-#define APPEND(LIST,ITEM)   (ITEM); ((ITEM)->next=(LIST))
+#define APPEND(LIST,ITEM) ({                  \
+  typeof((LIST)) _l = (LIST);                 \
+  typeof((ITEM)) _i = (ITEM);                 \
+  typeof((ITEM)) _t;                          \
+  _i->next = NULL;                            \
+  if (_l == NULL) { _l = _i; }                \
+  else {                                      \
+    for (_t = _l; _t->next; _t = _t->next);   \
+    _t->next = _i;                            \
+  };                                          \
+  _l;                                         \
+})
 
 static struct d_resource* c_res;
 static struct d_host_info* c_host;
@@ -77,7 +88,7 @@ static struct d_resource* new_resource(char* name)
   struct d_resource* res;
   res=calloc(1,sizeof(struct d_resource));
   res->name=name;
-  res->next = res->prev = res;
+  res->next = NULL;
 
   return res;
 }
@@ -127,16 +138,7 @@ glob_stmt:        TK_DISABLE_IO_HINTS   { global_options.disable_io_hints=1; }
                 ;
 
 resources:        /* empty */   { $$ = 0; }
-		| resources resource   {
-			if($1) {
-				$2->next = $1;
-				$2->prev = $1->prev;
-				$1->prev->next = $2;
-				$1->prev = $2;
-				$$ = $1;
-			} else
-				$$ = $2;
-		  }
+		| resources resource   { $$=APPEND($1,$2); }
 		;
 
 resource:	  TK_RESOURCE TK_STRING { c_res = new_resource($2); }

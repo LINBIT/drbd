@@ -40,7 +40,6 @@ struct d_resource
   struct d_option* sync_options;
   struct d_option* startup_options;
   struct d_resource* next;
-  struct d_resource* prev;
 };
 
 extern int adm_attach(struct d_resource* ,char* );
@@ -79,9 +78,10 @@ extern char ss_buffer[255];
 #define ssprintf(ptr,...) \
   ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer)
 
-#define for_each_resource(res,tmp,config)                 \
-	for (res = (config), tmp = 0;                     \
-	     ({ tmp != (config) && (tmp = res->next); }); \
+/* CAUTION: arguments may not have side effects! */
+#define for_each_resource(res,tmp,config) \
+	for (res = (config), tmp = 0;     \
+	     tmp = res? res->next : NULL, res != NULL;\
 	     res = tmp)
 
 #endif

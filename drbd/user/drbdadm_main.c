@@ -684,7 +684,7 @@ int main(int argc, char** argv)
   { // check uniqueness of resource names.
     struct d_resource *res2,*tmp2;
     char *name;
-    
+
     for_each_resource(res,tmp,config) {
       name = res->name;
       for_each_resource(res2,tmp2,config) {
