@@ -353,10 +353,10 @@ struct Drbd_Conf {
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
 	spinlock_t send_proc_lock;
 	sector_t send_sector;      // block which is processed by send_data
-	unsigned long rs_left;     // blocks not up-to-date [unit KB]
-	unsigned long rs_total;    // blocks to sync in this run [unit KB]
+	sector_t rs_left;     // blocks not up-to-date [unit sectors]
+	sector_t rs_total;    // blocks to sync in this run [unit sectors]
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
-	unsigned long rs_mark_left;// block not up-to-date at mark [unit KB]
+	sector_t rs_mark_left;// block not up-to-date at mark [unit sect.]
 	unsigned long rs_mark_time;// marks's time [unit jiffies]
 	spinlock_t rs_lock; // used to protect the rs_variables.
 	spinlock_t bb_lock;
@@ -561,10 +561,10 @@ static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,
 					sector_t sector, int blk_size)
 {
 	int before;
-	before=bm_set_bit(mdev->mbds_id,  sector, SS_OUT_OF_SYNC);
+	before=bm_set_bit(mdev->mbds_id, sector, blk_size, SS_OUT_OF_SYNC);
 
 	if(before == SS_IN_SYNC) {
-		mdev->rs_total += blk_size >> 10;
+		mdev->rs_total += blk_size >> 9;
 	}
 }
 
@@ -574,10 +574,10 @@ static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 	/* Is called by drbd_dio_end possibly from IRQ context, but
 	   from other places in non IRQ */
 	unsigned long flags=0; 
-	bm_set_bit(mdev->mbds_id, sector, SS_IN_SYNC);
+	bm_set_bit(mdev->mbds_id, sector, blk_size, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->rs_lock,flags);
-	mdev->rs_left -= blk_size >> 10;
+	mdev->rs_left -= blk_size >> 9;
 	if( mdev->rs_left == 0 ) {
 		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
 		set_bit(SYNC_FINISHED,&mdev->flags);

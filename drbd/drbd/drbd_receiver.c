@@ -1261,8 +1261,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 					drbd_send_bitmap(mdev);
 				} else {
 					mdev->rs_total=
-						blk_size[MAJOR_NR][minor] & 
-						~((1<<(mdev->blk_size_b-10))-1);					
+						blk_size[MAJOR_NR][minor]<<1;
 				}
 				drbd_start_resync(mdev,SyncSource);
 			} else { // have_good == -1
@@ -1270,8 +1269,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 				if(!quick) {
 					bm_fill_bm(mdev->mbds_id,-1);
 					mdev->rs_total=
-						blk_size[MAJOR_NR][minor] & 
-						~((1<<(mdev->blk_size_b-10))-1);
+						blk_size[MAJOR_NR][minor]<<1;
 					drbd_start_resync(mdev,SyncTarget);
 				} else {
 					set_cstate(mdev,WFBitMap);
@@ -1370,7 +1368,7 @@ STATIC int receive_bitmap(struct Drbd_Conf* mdev)
 		}
 	}
 	
-	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 10); // in Kilobyte!
+	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
 	drbd_start_resync(mdev,SyncTarget);
 	ret=TRUE;
  out:
@@ -1493,15 +1491,13 @@ STATIC void drbdd(int minor)
 			break;
 
 		case BecomeSyncSource:
-			mdev->rs_total=blk_size[MAJOR_NR][minor]&
-				~((1<<(mdev->blk_size_b-10))-1);
+			mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
 			drbd_start_resync(mdev,SyncSource);
 			break;
 
 		case BecomeSyncTarget:
 			bm_fill_bm(mdev->mbds_id,-1);
-			mdev->rs_total=blk_size[MAJOR_NR][minor]&
-				~((1<<(mdev->blk_size_b-10))-1);
+			mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
 			drbd_start_resync(mdev,SyncTarget);
 			break;
 

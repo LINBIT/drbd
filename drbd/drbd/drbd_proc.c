@@ -55,7 +55,7 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	int sz = 0;
 	unsigned long res , db, dt, dbdt, rt;
 
-	res = (mdev->rs_left/1024)*1000/(mdev->rs_total/1024 + 1);
+	res = (mdev->rs_left/2048)*1000/(mdev->rs_total/2048 + 1);
 	{
 		int i, y = res/50, x = 20-y;
 		sz += sprintf(buf + sz, "\t[");
@@ -70,9 +70,9 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	sz+=sprintf(buf+sz,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
 	if (mdev->rs_total > 0x100000L) /* if more than 1 GB display in MB */
 		sz+=sprintf(buf+sz,"(%lu/%lu)M\n\t",
-			mdev->rs_left/1024L, mdev->rs_total/1024L);
+			mdev->rs_left/2048L, mdev->rs_total/2048L);
 	else
-		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", mdev->rs_left, mdev->rs_total);
+		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", mdev->rs_left/2, mdev->rs_total/2);
 
 	/* see driver/md/md.c
 	 * We do not want to overflow, so the order of operands and
@@ -85,8 +85,8 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	 */
 	dt = (jiffies - mdev->rs_mark_time) / HZ;
 	if (!dt) dt++;
-	db = mdev->rs_mark_left - mdev->rs_left;
-	rt = (dt * (mdev->rs_left / (db/100+1)))/100; /* seconds */
+	db = (mdev->rs_mark_left - mdev->rs_left)/2;
+	rt = (dt * ((mdev->rs_left/2) / (db/100+1)))/100; /* seconds */
 
 	if (rt > 3600) {
 		rt = (rt+59)/60; /* rounded up minutes */
@@ -107,7 +107,7 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	/* mean speed since syncer started */
 	dt = (jiffies - mdev->rs_start) / HZ;
 	if (!dt) dt++;
-	db = mdev->rs_total - mdev->rs_left;
+	db = (mdev->rs_total - mdev->rs_left)/2;
 	if ((dbdt=db/dt) > 1000)
 		sz += sprintf(buf + sz, " (%ld,%03ld)",
 			dbdt/1000,dbdt % 1000);
