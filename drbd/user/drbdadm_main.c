@@ -84,7 +84,6 @@ static int sh_devices(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
 static int sh_ll_dev(struct d_resource* ,char* );
 
-char ss_buffer[255];
 int line=1;
 struct d_globals global_options = { 0, 0 };
 char *config_file = NULL;
