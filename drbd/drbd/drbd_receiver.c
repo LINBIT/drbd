@@ -307,13 +307,13 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			drbd_kick_lo(mdev);
 			schedule();
 			spin_lock_irq(&mdev->ee_lock);
-			finish_wait(&mdev->al_wait, &wait);
+			finish_wait(&mdev->ee_wait, &wait);
 			if (signal_pending(current)) return 0;
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
 			_drbd_process_ee(mdev,&mdev->done_ee);
 		}
-		finish_wait(&mdev->al_wait, &wait); 
+		finish_wait(&mdev->ee_wait, &wait); 
 	}
 
 	le=mdev->free_ee.next;
