@@ -216,7 +216,6 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
 			drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,sizeof(h));
-			D_ASSERT(ts->left == 0);
 			
 			return FALSE;
 		}
@@ -320,7 +319,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 		if(sync_finished) {
 			unsigned long dt;
 			dt = (jiffies - mdev->rs_start) / HZ;
-			INFO("resync done (total %lu sec %lu K/sec)\n",
+			INFO("resync done (total %lu sec; %lu K/sec)\n",
 			     dt,(mdev->rs_total/2)/dt);
 
 			if(mdev->cstate == SyncTarget) {
@@ -329,6 +328,9 @@ int drbd_dsender(struct Drbd_thread *thi)
 			}
 			mdev->rs_total = 0;
 			set_cstate(mdev,Connected);
+
+			// assert that all bit-map parts are cleared.
+			D_ASSERT(list_empty(&mdev->resync.lru));
 		}
 
 		schedule_timeout(time);
@@ -349,7 +351,6 @@ int drbd_dsender(struct Drbd_thread *thi)
 			spin_unlock_irq(&mdev->ee_lock);
 			if(!ds_issue_requests(mdev)) {
 				time=MAX_SCHEDULE_TIMEOUT;
-				mdev->rs_total=mdev->rs_left;
 			}
 			if (!disable_io_hints) {
 				Drbd_Header h;

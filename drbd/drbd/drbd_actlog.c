@@ -254,9 +254,12 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	u32 from_tnr=-1, to_tnr=0;
 	int active_extents=0;
 	int transactions=0;
+	int mx;
+
+	mx = div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT);
 
 	// Find the valid transaction in the log
-	for(i=0;i<mdev->act_log.nr_elements;i++) {
+	for(i=0;i<=mx;i++) {
 		if(!drbd_al_read_tr(mdev,&buffer,i)) continue;
 		cnr = be32_to_cpu(buffer->tr_number);
 		// INFO("index %d valid tnr=%d\n",i,cnr);
@@ -312,7 +315,8 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	cancel:
 		if( i == to) break;
-		if( ++i > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) i=0;
+		i++;
+		if( i > mx ) i=0;
 	}
 
 	active_extents=lc_fixup_hash_next(&mdev->act_log);
@@ -501,7 +505,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			if(ext->rs_left == 0) {
 				spin_unlock(&mdev->resync.lc_lock);	       
 				drbd_update_on_disk_bitmap(mdev,enr*SM,0);
-				INFO("Clearing e# %lu of on disk bm\n",enr);
+				//INFO("Clearing e# %lu of on disk bm\n",enr);
 				spin_lock(&mdev->resync.lc_lock);
 				lc_del(&mdev->resync,&ext->lce);
 				goto restart;
