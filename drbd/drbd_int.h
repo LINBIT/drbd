@@ -266,7 +266,7 @@ enum MetaDataIndex {
 
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
 
-#define DRBD_PANIC 2
+#define DRBD_PANIC 3
 /* do_panic alternatives:
  *	0: panic();
  *	1: machine_halt; SORRY, this DOES NOT WORK

@@ -60,7 +60,7 @@ static const char *drbd_disk_s_names[] = {
 
 static const char *drbd_state_sw_errors[] = {
 	[1] = "Multiple primaries now allowed by config",
-	[2] = "Refusing to be Primary without an at least Consistent disk",
+	[2] = "Refusing to be Primary without at least one consistent disk",
 	[3] = "Refusing to make peer Primary without disk",
 	[4] = "Refusing to be inconsistent on both nodes",
 	[5] = "Refusing to be syncing and diskless",

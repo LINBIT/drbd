@@ -624,6 +624,7 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 	if ( r == -2 ) {
 		/* request state does not like the new state. */
 		if (! (newstate & DontBlameDrbd)) {
+			print_st_err(mdev,os,ns,r);
 			return -EIO;
 		}
 

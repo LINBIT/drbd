@@ -481,6 +481,9 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
 		    ns.s.conn < Connected ) rv=-2;
 
+		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
+		    ns.s.pdsk <= Inconsistent ) rv=-2;
+
 		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
 		    ns.s.conn < Connected ) rv=-3;
 
@@ -536,7 +539,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if ( ns.s.role == Primary && ns.s.conn < Connected &&
-	     ns.s.disk < UpToDate ) {
+	     ns.s.disk < Consistent ) {
 		drbd_panic("No access to good data anymore.\n");
 	}
 
