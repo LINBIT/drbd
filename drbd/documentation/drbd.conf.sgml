@@ -116,7 +116,9 @@ start with a hash sign (<quote>#</quote>).
   <term><option>net</option></term>
   <listitem><para>
     This section is used to fine tune DRBD's properties. Please
-    refere to drbdsetup(8) for detailed description of this section's 
+    refere to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry> for detailed description 
+    of this section's 
     parameters.
     Allowd parameters: <option>sync-rate</option>, 
     <option>connect-int</option>, <option>skip-sync</option>,

@@ -17,10 +17,13 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-man:	drbdsetup.8
+man:	drbdsetup.8 drbd.conf.5
 
 drbdsetup.8: drbdsetup.sgml
 	docbook2man drbdsetup.sgml
 
+drbd.conf.5: drbd.conf.sgml
+	docbook2man drbd.conf.sgml
+
 clean:
-	rm drbdsetup.ps drbdsetup.8 manpage.links manpage.refs
+	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs
