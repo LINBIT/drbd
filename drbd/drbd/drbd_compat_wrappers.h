@@ -21,7 +21,8 @@ extern void drbd_read_bi_end_io     (struct buffer_head *bh, int uptodate);
 
 static inline sector_t drbd_get_hardsect(kdev_t dev)
 {
-	return hardsect_size[MAJOR(dev)][MINOR(dev)];
+	return hardsect_size[MAJOR(dev)] ?
+		hardsect_size[MAJOR(dev)][MINOR(dev)] : 512;
 }
 
 /* Returns the number of 512 byte sectors of the device */
