@@ -489,8 +489,11 @@ int drbd_ioctl(struct inode *inode, struct file *file,
  		break;
 
 	case DRBD_IOCTL_SET_DISK_SIZE:
-		// TODO determine_dev_size should report errors...
-		err = 0;
+ 		if (mdev->cstate > Connected) {
+			err = -EBUSY;
+			break;
+		}		
+		err=0;
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
