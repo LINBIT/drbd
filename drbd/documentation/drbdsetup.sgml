@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
-<docinfo><date>15 Apr 2001</date></docinfo>
+<docinfo><date>6 Apr 2003</date></docinfo>
 
 <refmeta>
  <refentrytitle>drbdsetup</refentrytitle>
@@ -37,6 +37,7 @@
   <arg>-c<arg choice=req><replaceable>time</replaceable></arg></arg>
   <arg>-i<arg choice=req><replaceable>time</replaceable></arg></arg>
   <arg>-k</arg>
+  <arg>-S<arg choice=req><replaceable>size</replaceable></arg></arg>
  </cmdsynopsis>
  <cmdsynopsis>
   <command>drbdsetup</command>
@@ -259,6 +260,20 @@ be necessary to increase the size of this data structure.
 If this is the case, the driver will write messages to the syslog 
 saying that the transfer-log is too small. The default 
 <replaceable>size</replaceable> is 256 entries.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-S</option>,
+   <option>--sndbuf-size <replaceable>size</replaceable></option></term>
+  <listitem>
+<para>
+The driver uses a socket send buffer to store packets sent to the secondary
+node, which are not yet acknowledged (from a network point of view) by the
+secondary node. When using protocol A, it might be necessary to increase
+the size of this data structure in order to increase asynchronism between
+primary and secondary nodes. But keep in mind that more asynchronism is
+synonymous with more data loss in the case of a primary node failure.
+The default <replaceable>size</replaceable> is 128 KB. Default unit is KB.
   </para></listitem>
  </varlistentry>
 </variablelist>

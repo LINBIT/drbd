@@ -57,6 +57,7 @@
 #define DEF_SYNC_DEGR_WFC_TIMEOUT 4  // 4 seconds
 #define DEF_MAX_EPOCH_SIZE 2048      // entries
 #define DEF_MAX_BUFFERS 2048         // entries
+#define DEF_SNDBUF_SIZE (2*65535)    // ~128KB
 
 struct drbd_cmd {
   const char* cmd;
@@ -114,6 +115,7 @@ struct drbd_cmd commands[] = {
      { "max-buffers",required_argument, 0, 'b' },
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
+     { "sndbuf-size",required_argument, 0, 'S' },
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
    (struct option[]) {
@@ -384,6 +386,8 @@ int scan_net_options(char **argv,
   cn->config.ping_int = DEF_NET_PING_I;
   cn->config.max_epoch_size = DEF_MAX_EPOCH_SIZE;
   cn->config.max_buffers = DEF_MAX_BUFFERS;
+  cn->config.sndbuf_size = DEF_SNDBUF_SIZE ;
+
 
   if(argc==0) return 0;
 
@@ -411,6 +415,9 @@ int scan_net_options(char **argv,
 	  break;
 	case 'i':
 	  cn->config.ping_int = m_strtol(optarg,1);
+	  break;
+	case 'S':
+	  cn->config.sndbuf_size = m_strtol(optarg,1);
 	  break;
 	case '?':
 	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
@@ -998,6 +1005,8 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
   SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
   SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
+  SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
+
 
   printf("Syncer options:\n");
 

@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
-<docinfo><date>15 Apr 2001</date></docinfo>
+<docinfo><date>6 Apr 2003</date></docinfo>
 
 <refmeta>
  <refentrytitle>drbd.conf</refentrytitle>
@@ -132,7 +132,8 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     <option>sync-max</option>, <option>sync-min</option>,
     <option>sync-nice</option>, <option>skip-sync</option>,
     <option>connect-int</option>, <option>ping-int</option>,
-    <option>timeout</option>, <option>tl-size</option>.
+    <option>timeout</option>, <option>tl-size</option>,
+    <option>sndbuf-size</option>.
   </para>
   </listitem>
 </varlistentry>

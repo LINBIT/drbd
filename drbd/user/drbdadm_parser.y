@@ -79,6 +79,7 @@ static struct d_resource* new_resource(char* name)
 %token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT 
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_MAX_BUFFERS TK_MAX_EPOCH_SIZE
+%token <txt> TK_SNDBUF_SIZE
 
 %type <d_option> disk_stmts disk_stmt 
 %type <d_option> net_stmts net_stmt
@@ -143,6 +144,7 @@ net_stmt:         TK_TIMEOUT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_PING_INT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_MAX_BUFFERS '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_MAX_EPOCH_SIZE '=' TK_INTEGER   { $$=new_opt($1,$3); }
+		| TK_SNDBUF_SIZE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
 sync_stmts:       /* empty */   { $$ = 0; }

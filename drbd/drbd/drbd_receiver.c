@@ -772,8 +772,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 
 	sock->sk->tp_pinfo.af_tcp.nonagle=0;
 
-	// This boosts the performance of the syncer to 6M/s max
-	sock->sk->sndbuf = 2*65535; 
+	sock->sk->sndbuf = mdev->conf.sndbuf_size ;
 
 	msock->sk->priority=TC_PRIO_INTERACTIVE;
 

@@ -71,6 +71,7 @@ struct net_config {
 	IN int      ping_int;         /* seconds */
 	IN int      max_epoch_size;
 	IN int      max_buffers;
+	IN int      sndbuf_size;  /* socket send buffer size */
 };
 
 struct syncer_config {
