@@ -855,7 +855,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	if ( h->length != (sizeof(*p)-sizeof(*h)) )
 		return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
 
 	inc_unacked(mdev);
@@ -996,8 +996,8 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	e = read_in_block(mdev,data_size);
 
 	if(!e) {
-		return FALSE;
 		bh->b_end_io(bh,0);
+		return FALSE;
 	}
 
 	// XXX can't we share it somehow?
@@ -1073,7 +1073,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	if ( !data_size || (data_size & 0xff) || (data_size > PAGE_SIZE) )
 		return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, h->payload, header_size) != header_size)
+	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), header_size) != header_size)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
@@ -1138,7 +1138,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	if ( !data_size || (data_size & 0xff) || (data_size > PAGE_SIZE) )
 		return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, h->payload, header_size) != header_size)
+	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), header_size) != header_size)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
@@ -1203,7 +1203,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	if ( h->length != (sizeof(*p)-sizeof(*h)) )
 		return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
 
 	sector    = be64_to_cpu(p->sector);
@@ -1253,7 +1253,7 @@ STATIC int receive_sync_param(drbd_dev *mdev,Drbd_Header *h)
 	if ( h->length != (sizeof(*p)-sizeof(*h)) )
 		return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
 
 	// XXX harmless race with ioctl ...
@@ -1288,7 +1288,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	if ( h->length != (sizeof(*p)-sizeof(*h)) )
 		return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
 
 	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {

@@ -522,7 +522,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	bm_words = mdev->mbds_id->size/sizeof(u32);
 	bm = (u32*)mdev->mbds_id->bm;
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
-	buffer = (u32*)p->payload;
+	buffer = (u32*)PAYLOAD_P(p);
 
 	/*
 	 * maybe TODO use some simple compression scheme, nowadays there are

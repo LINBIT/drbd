@@ -172,8 +172,10 @@ typedef struct {
 	__u32       magic;
 	__u16       command;
 	__u16       length;	// bytes of data after this header
-	char        payload[];
+	// char        payload[];
 } Drbd_Header __attribute((packed));
+// hack for older gcc
+#define PAYLOAD_P(p) ((char*)(p)+sizeof(*p))
 
 typedef struct {
 	Drbd_Header head;
