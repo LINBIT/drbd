@@ -758,8 +758,7 @@ extern unsigned long drbd_hash(struct buffer_head *bh);
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
 extern void drbd_init_ee(drbd_dev* mdev);
 extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
-extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev,
-					  int may_sleep);
+extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
 extern int _drbd_process_ee(drbd_dev *,struct list_head *);
 extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
 			    sector_t sector, int data_size);

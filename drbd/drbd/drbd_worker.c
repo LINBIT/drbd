@@ -65,19 +65,8 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 	clear_bit(BH_Lock, &bh->b_state);
 	smp_mb__after_clear_bit();
 
-	/* Do not move a BH if someone is in wait_on_buffer */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
-	if(bh->b_count == 0)
-#else
-	if(atomic_read(&bh->b_count) == 0)
-#endif
-	{
-		list_del(&e->list);
-		list_add(&e->list,&mdev->rdone_ee);
-	}
-
-	if (waitqueue_active(&bh->b_wait))
-		wake_up(&bh->b_wait);
+	list_del(&e->list);
+	list_add(&e->list,&mdev->rdone_ee);
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
@@ -246,12 +235,10 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	INFO("resync started (need to sync %lu KB).\n",mdev->rs_left/2);
 
 	if(side == SyncTarget) {
-		spin_lock_irq(&mdev->ee_lock); // (ab)use ee_lock see, below.
 		set_bit(START_SYNC,&mdev->flags);
 		// FIXME do this more elegant ...
 		// for now, this ensures that meta data is "consistent"
 		if ( mdev->rs_total == 0 ) set_bit(SYNC_FINISHED,&mdev->flags);
-		spin_unlock_irq(&mdev->ee_lock);
 		wake_up_interruptible(&mdev->dsender_wait);
 	} else {
 		// If we are SyncSource we must be consistent :)
@@ -260,63 +247,42 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	}
 }
 
+static inline int _dsender_cond(struct Drbd_Conf *mdev)
+{
+	int rv;
+	
+	rv = test_bit(START_SYNC,&mdev->flags)
+		|| test_bit(SYNC_FINISHED,&mdev->flags);
+
+	spin_lock_irq(&mdev->ee_lock);
+	rv |= !list_empty(!&mdev->rdone_ee);
+	spin_unlock_irq(&mdev->ee_lock);
+
+	return rv;
+}
+
 int drbd_dsender(struct Drbd_thread *thi)
 {
 	long time=MAX_SCHEDULE_TIMEOUT;
-	wait_queue_t wait;
-	int start_sync;
-	int sync_finished;
 	drbd_dev *mdev = thi->mdev;
 
 	sprintf(current->comm, "drbd%d_dsender", (int)(mdev-drbd_conf));
 
-	while(1) {
-		init_waitqueue_entry(&wait, current);
-
-		/*
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_process_rdone_ee(mdev);
-		spin_unlock_irq(&mdev->ee_lock);
-		interruptible_sleep_on_timeout(&mdev->dsender_wait,time);
-
-		   The naive methode has the drawback, that the wakeup
-		   could happen before we are in sleep_on_timeout(), therefore
-		*/
-
-/* what about:
+	while( ! wait_event_interruptible_timeout(mdev->dsender_wait,
+						  _dsender_cond(mdev),
+						  time)) {
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_process_rdone_ee(mdev);
 		spin_unlock_irq(&mdev->ee_lock);
 
-		wait_event_interruptible_timeout(mdev->dsender_wait,
-			test_bit(START_SYNC,&mdev->flags)
-			|| test_bit(SYNC_FINISHED,&mdev->flags)
-			|| !list_empty(mdev->rdone_ee),
-			time);
-*/
-
-
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_process_rdone_ee(mdev);
-
-		current->state = TASK_INTERRUPTIBLE;
-		wq_write_lock(&mdev->dsender_wait.lock);
-		__add_wait_queue(&mdev->dsender_wait, &wait);
-		wq_write_unlock(&mdev->dsender_wait.lock);
-
-		start_sync=test_and_clear_bit(START_SYNC,&mdev->flags);
-		sync_finished=test_and_clear_bit(SYNC_FINISHED,&mdev->flags);
-
-		spin_unlock_irq(&mdev->ee_lock);
-
-		if(start_sync) {
+		if(test_and_clear_bit(START_SYNC,&mdev->flags)) {
 			time=SLEEP_TIME;
 			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 			drbd_md_write(mdev);
 			bm_reset(mdev->mbds_id);
 		}
 
-		if(sync_finished) {
+		if(test_and_clear_bit(SYNC_FINISHED,&mdev->flags)) {
 			unsigned long dt;
 			dt = (jiffies - mdev->rs_start) / HZ + 1;
 			INFO("resync done (total %lu sec; %lu K/sec)\n",
@@ -333,28 +299,14 @@ int drbd_dsender(struct Drbd_thread *thi)
 			D_ASSERT(list_empty(&mdev->resync.lru));
 		}
 
-		schedule_timeout(time);
-
-		wq_write_lock_irq(&mdev->dsender_wait.lock);
-		__remove_wait_queue(&mdev->dsender_wait, &wait);
-		wq_write_unlock_irq(&mdev->dsender_wait.lock);
-
-		/* FIXME if we have a signal pending, but t_state != Exiting,
-		 * this becomes a busy loop in kernel space
-		 */
-		//if (thi->t_state == Exiting) break;
-		if (signal_pending(current)) break;
-
-		if(time==SLEEP_TIME) {
-			spin_lock_irq(&mdev->ee_lock);
-			drbd_process_rdone_ee(mdev); // Why again ?
-			spin_unlock_irq(&mdev->ee_lock);
+		if(mdev->cstate == SyncSource) {
 			if(!ds_issue_requests(mdev)) {
 				time=MAX_SCHEDULE_TIMEOUT;
 			}
 			if (!disable_io_hints) {
 				Drbd_Header h;
-				drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,sizeof(h));
+				drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,
+					      sizeof(h));
 			}
 		}
 	}

@@ -412,19 +412,13 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		       mdev->unacked_cnt,
 		       mdev->epoch_size);
 		*/
-	while (atomic_read(&mdev->pending_cnt) > 0 ||
-	       atomic_read(&mdev->unacked_cnt) > 0 ) {
 
-		ERR("set_state(st:%d,pe:%d,ua:%d)\n",
-		    mdev->state,
-		    atomic_read(&mdev->pending_cnt),
-		    atomic_read(&mdev->unacked_cnt));
-
-		interruptible_sleep_on(&mdev->state_wait);
-		if(signal_pending(current)) {
-			return -EINTR;
-		}
+	if ( wait_event_interruptible( mdev->state_wait,
+		       atomic_read(&mdev->pending_cnt) == 0 &&
+		       atomic_read(&mdev->unacked_cnt) == 0 ) ) {
+		return -EINTR;
 	}
+
 	mdev->state = (Drbd_State) newstate & 0x03;
 	if(newstate & Primary) {
 		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );

@@ -174,14 +174,13 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	clear_bit(BH_Lock, &bh->b_state);
 	smp_mb__after_clear_bit();
 
-	/* Do not move a BH if someone is in wait_on_buffer */
-	if(atomic_read(&bh->b_count) == 0) {
-		list_del(&e->list);
-		list_add(&e->list,&mdev->done_ee);
-	}
+	list_del(&e->list);
+	list_add(&e->list,&mdev->done_ee);
 
-	if (waitqueue_active(&bh->b_wait))
-		wake_up(&bh->b_wait); //must be within the lock!
+	if (waitqueue_active(&mdev->ee_wait) &&
+	    (list_empty(&mdev->active_ee) ||
+	     list_empty(&mdev->sync_ee)))
+		wake_up(&mdev->ee_wait);
 
 	//	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 	//	   e->block_id == ID_SYNCER ) wake_asender=1;
@@ -341,7 +340,23 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 
 #define GFP_TRY	( __GFP_HIGHMEM )
 
-struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev,int may_sleep)
+static inline int _get_ee_cond(struct Drbd_Conf* mdev)
+{
+	int av;
+	spin_lock_irq(&mdev->ee_lock);
+	_drbd_process_ee(mdev,&mdev->done_ee);
+	av = !list_empty(&mdev->free_ee);
+	spin_unlock_irq(&mdev->ee_lock);
+	if(!av) {
+		if((mdev->ee_vacant+mdev->ee_in_use) < EE_MAXIMUM) {
+			if(drbd_alloc_ee(mdev,GFP_TRY)) av = 1;
+		}
+	}
+	if(!av) run_task_queue(&tq_disk);
+	return av;
+}
+
+struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
@@ -355,26 +370,11 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev,int may_sleep)
 	}
 
 	while(list_empty(&mdev->free_ee)) {
-		_drbd_process_ee(mdev,&mdev->done_ee);
-		if(!list_empty(&mdev->free_ee)) break;
 		spin_unlock_irq(&mdev->ee_lock);
-		if((mdev->ee_vacant+mdev->ee_in_use)<mdev->conf.max_buffers) {
-			if(drbd_alloc_ee(mdev,GFP_TRY)) {
-				spin_lock_irq(&mdev->ee_lock);
-				break;
-			}
-		}
-
-		if(!may_sleep) {
-			spin_lock_irq(&mdev->ee_lock);
-			return 0;
-		}
-
-		wake_up_interruptible(&mdev->dsender_wait);
-		run_task_queue(&tq_disk);
-		interruptible_sleep_on(&mdev->ee_wait);
+		wait_event(mdev->ee_wait,_get_ee_cond(mdev));
 		spin_lock_irq(&mdev->ee_lock);
 	}
+
 	le=mdev->free_ee.next;
 	list_del(le);
 	mdev->ee_vacant--;
@@ -422,6 +422,7 @@ int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	while( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
 		interruptible_sleep_on(&mdev->ee_wait);
+		if(signal_pending(current)) return 0;
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
@@ -473,53 +474,19 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 }
 
 
-STATIC void drbd_wait_ee(drbd_dev *mdev,struct list_head *head,
-			 struct list_head *to)
+static inline int _wait_ee_cond(struct Drbd_Conf* mdev,struct list_head *head)
 {
-	wait_queue_t wait;
-	struct Tl_epoch_entry *e;
-	struct list_head *le;
-
+	int rv;
 	spin_lock_irq(&mdev->ee_lock);
-	while(!list_empty(head)) {
-		le = head->next;
-		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(!buffer_locked(e->bh)) {
-			ERR( "unlocked bh in ative_ee/sync_ee/read_ee\n"
-			     "(BUG?) Moving bh=%p to done_ee/rdone_ee\n",
-			     e->bh );
-			list_del(le);
-			list_add(le,to);
-			continue;
-		}
-		get_bh(e->bh);
-		init_waitqueue_entry(&wait, current);
-		current->state = TASK_UNINTERRUPTIBLE;
-
-		spin_lock(&e->bh->b_wait.lock);
-		__add_wait_queue(&e->bh->b_wait, &wait);
-		spin_unlock(&e->bh->b_wait.lock);
-
-		spin_unlock_irq(&mdev->ee_lock);
-
-		schedule();
-
-		spin_lock_irq(&mdev->ee_lock);
-
-		spin_lock(&e->bh->b_wait.lock);
-		__remove_wait_queue(&e->bh->b_wait, &wait);
-		spin_unlock(&e->bh->b_wait.lock);
-
-		put_bh(e->bh);
-		/* The IRQ handler does not move a list entry if someone is
-		   in wait_on_buffer for that entry, therefore we have to
-		   move it here. */
-		D_ASSERT(!buffer_locked(e->bh)); // IO is finished now!
-
-		list_del(le);
-		list_add(le,to);
-	}
+	rv = list_empty(head);
 	spin_unlock_irq(&mdev->ee_lock);
+	if(!rv) run_task_queue(&tq_disk);
+	return rv;
+}
+
+STATIC void drbd_wait_ee(drbd_dev *mdev,struct list_head *head)
+{
+	wait_event(mdev->ee_wait,_wait_ee_cond(mdev,head));
 }
 
 STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
@@ -898,7 +865,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	if (mdev->conf.wire_protocol != DRBD_PROT_C)
 		run_task_queue(&tq_disk);
 
-	drbd_wait_ee(mdev,&mdev->active_ee,&mdev->done_ee);
+	drbd_wait_ee(mdev,&mdev->active_ee);
 
 	spin_lock_irq(&mdev->ee_lock);
 	rv=_drbd_process_ee(mdev,&mdev->done_ee);
@@ -1730,8 +1697,8 @@ void drbd_disconnect(drbd_dev *mdev)
 		drbd_md_write(mdev);
 		break;
 	case Secondary:
-		drbd_wait_ee(mdev,&mdev->active_ee, &mdev->done_ee);
-		drbd_wait_ee(mdev,&mdev->sync_ee, &mdev->done_ee);
+		drbd_wait_ee(mdev,&mdev->active_ee);
+		drbd_wait_ee(mdev,&mdev->sync_ee);
 		drbd_clear_done_ee(mdev);
 		mdev->epoch_size=0;
 		break;
