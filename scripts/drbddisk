@@ -6,7 +6,12 @@
 #
 ###
 
+DEFAULTFILE="/etc/default/drbd"
 DRBDADM="/sbin/drbdadm"
+
+if [ -f $DEFAULTFILE ]; then
+  . $DEFAULTFILE
+fi
 
 if [ "$#" -eq 2 ]; then
   RES="$1"
