@@ -97,6 +97,21 @@ typedef struct wait_queue*  wait_queue_head_t;
 #define blkdev_dequeue_request(A) CURRENT=(A)->next
 #endif
 
+/*
+ * GFP_DRBD is used for allocations inside drbd_do_request. 
+ *
+ * 2.4 kernels will probably remove the __GFP_IO check in the VM code, 
+ * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER flag 
+ * to avoid __GFP_IO, thus avoiding the use of the atomic queue and avoiding the deadlock.
+ *
+ * - marcelo
+ */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+#define GFP_DRBD GFP_ATOMIC
+#else 
+#define GFP_DRBD GFP_BUFFER
+#endif
+
 #ifdef DEVICE_NAME
 #undef DEVICE_NAME
 #endif
@@ -1014,6 +1029,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	header->command = cpu_to_be16(cmd);
 	header->length  = cpu_to_be16(data_size);
 
+	mdev->sock->sk->allocation = GFP_DRBD;
+
 	iov[0].iov_base = header;
 	iov[0].iov_len = header_size;
 	iov[1].iov_base = data;
@@ -1280,7 +1297,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		/* Do disk - IO */
 		{
 			struct buffer_head *bh;
-			bh = kmalloc(sizeof(struct buffer_head),GFP_KERNEL);
+
+			bh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
+
 			if (!bh) {
 				printk(KERN_ERR DEVICE_NAME
 				       "%d: could not kmalloc()\n",minor);
