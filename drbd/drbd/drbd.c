@@ -2207,7 +2207,8 @@ inline int receive_data(int minor,int data_size)
 	 * but we already start when we have NR_REQUESTS / 4 blocks.
 	 */
 
-	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
+	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C && 
+	    header.block_id != ID_SYNCER) {
 		if (drbd_conf[minor].unacked_cnt++ >= (NR_REQUEST / 4)) {
 			run_task_queue(&tq_disk);
 		}
