@@ -93,7 +93,6 @@ struct drbd_cmd {
 
 int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options);
-int cmd_sec_rem(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_wait_connect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options);
@@ -115,7 +114,6 @@ struct drbd_cmd commands[] = {
      { "timeout-expired",no_argument,   0, 't' },
      { 0,            0,                 0, 0   } } },
   {"secondary", cmd_secondary,       0, 0, },
-  {"secondary_remote", cmd_sec_rem,  0, 0, },
   {"wait_sync", cmd_wait_sync,       0,
    (struct option[]) {
      { "time",       required_argument, 0, 't' },
@@ -735,27 +733,6 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   return set_state(drbd_fd,Secondary);
-}
-
-int cmd_sec_rem(int drbd_fd,char** argv,int argc,struct option *options)
-{
-  int err;
-  err=ioctl(drbd_fd,DRBD_IOCTL_SECONDARY_REM);
-  if(err)
-    {
-      err=errno;
-      perror("ioctl() failed");
-      if(err==ENXIO)
-	fprintf(stderr,"Not connected to remote DRBD device!\n");
-
-      if(err==ESRCH)
-	{
-	  fprintf(stderr,"remote DRBD device is already in Secondary state\n");
-	  return 1;
-	}
-      return 20;
-    }
-  return 0;
 }
 
 int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,

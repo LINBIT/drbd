@@ -114,7 +114,6 @@ struct adm_cmd cmds[] = {
   { "down",              adm_generic, "down"             ,1,1, "FIXME down help" },
   { "primary",           adm_generic, "primary"          ,1,1, "FIXME primary help" },
   { "secondary",         adm_generic, "secondary"        ,1,1, "FIXME secondary help" },
-  { "secondary_remote",  adm_generic, "secondary_remote" ,1,1, "FIXME secondary_remote help" },
   { "invalidate",        adm_generic, "invalidate"       ,1,1, "FIXME invalidate help" },
   { "invalidate_remote", adm_generic, "invalidate_remote",1,1, "FIXME invalidate_remote help" },
   { "resize",            adm_resize,  0                  ,1,1, "FIXME resize help" },

@@ -267,7 +267,6 @@ typedef enum {
 	ReportBitMap,
 	BecomeSyncTarget,
 	BecomeSyncSource,
-	BecomeSec,     // Secondary asking primary to become secondary
 	WriteHint,     // Used in protocol C to hint the secondary to hurry up
 	DataRequest,   // Used to ask for a data block
 	RSDataRequest, // Used to ask for a data block
@@ -296,7 +295,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ReportBitMap]     = "ReportBitMap",
 		[BecomeSyncTarget] = "BecomeSyncTarget",
 		[BecomeSyncSource] = "BecomeSyncSource",
-		[BecomeSec]        = "BecomeSec",
 		[WriteHint]        = "WriteHint",
 		[DataRequest]      = "DataRequest",
 		[RSDataRequest]    = "RSDataRequest",

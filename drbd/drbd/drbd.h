@@ -195,7 +195,6 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_SET_NET_CONFIG _IOW( 'D', 0x07, struct ioctl_net_config )
 #define DRBD_IOCTL_UNCONFIG_NET  _IO ( 'D', 0x08 )
 #define DRBD_IOCTL_GET_CONFIG    _IOW( 'D', 0x0A, struct ioctl_get_config)
-#define DRBD_IOCTL_SECONDARY_REM _IOR( 'D', 0x0C, int )
 #define DRBD_IOCTL_INVALIDATE    _IO ( 'D', 0x0D )
 #define DRBD_IOCTL_INVALIDATE_REM _IO ( 'D', 0x0E )
 #define DRBD_IOCTL_SET_SYNC_CONFIG _IOW( 'D', 0x0F,struct ioctl_syncer_config)

@@ -1412,12 +1412,6 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail ?
 }
 
-STATIC int receive_BecomeSec(drbd_dev *mdev, Drbd_Header *h)
-{
-	drbd_set_state(mdev,Secondary);
-	return TRUE; // cannot fail ?
-}
-
 STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 {
 	drbd_kick_lo(mdev);
@@ -1439,7 +1433,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[PingAck]          = NULL, //receive_PingAck,
 	[BecomeSyncTarget] = receive_BecomeSyncTarget,
 	[BecomeSyncSource] = receive_BecomeSyncSource,
-	[BecomeSec]        = receive_BecomeSec,
 	[WriteHint]        = receive_WriteHint,
 	[DataRequest]      = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,

@@ -882,18 +882,6 @@ ONLY_IN_26(
 		drbd_start_resync(mdev,SyncSource);
 		break;
 
-	case DRBD_IOCTL_SECONDARY_REM:
-		if (mdev->cstate != Connected) {
-			err = -ENXIO;
-			break;
-		}
-
-		if (mdev->o_state == Primary) {
-			drbd_send_short_cmd(mdev,BecomeSec);
-		} else err = -ESRCH;
-
-		break;
-
 	default:
 		err = -EINVAL;
 	}
