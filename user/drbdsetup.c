@@ -1170,11 +1170,12 @@ const char* check_dev_name(const char* dev_name , int major, int minor)
   // this is because the SmartArray (Compaq, HP, whatever...) driver
   // returns a closing bracket in the device name...
 
-  if(!dev_name[0] || index(dev_name,')'))
+  if(!dev_name || !dev_name[0] || index(dev_name,')') )
     {
-      return guess_dev_name("/dev",major,minor);
+      dev_name = guess_dev_name("/dev",major,minor);
     }
-  return dev_name;
+  if(dev_name) return dev_name;
+  else return "n.a.";
 }
 
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
