@@ -674,6 +674,16 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 	drbd_global_lock();
 
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group == mdev->sync_conf.group
+		     && ( odev->cstate == SyncSource || 
+			  odev->cstate == SyncTarget ) ) {
+			goto out; // Sync on an other device in this group
+			          // still runs.
+		}
+	}
+
 	for (i=0; i < minor_count; i++) { // find next sync group
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group > mdev->sync_conf.group
@@ -691,6 +701,7 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 		}
 	}
 
+ out:
 	drbd_global_unlock();
 	w->cb = w_resync_inactive;
 
