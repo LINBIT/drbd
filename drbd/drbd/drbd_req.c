@@ -275,31 +275,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			 */
 			drbd_send_dblock(mdev,req);
 		} else if (target_area_out_of_sync) {
-			#if 0
-			/* lge: I do not like this branch,
-			 * and it currently does not work anyways...
-			 */
-			spin_lock(&mdev->pr_lock);
-			pr=drbd_find_read(sector,&mdev->resync_reads);
-			if(pr) {
-				INFO("Upgraded a resync read\n");
-
-				pr->cause |= Application;
-				inc_ap_pending(mdev);
-				pr->d.master_bio=bio;
-				list_del(&pr->w.list);
-				list_add(&pr->w.list,&mdev->app_reads);
-				spin_unlock(&mdev->pr_lock);
-				/* Ok, everything arranged.
-				 * since reads are never done
-				 * on both nodes at the same time,
-				 * we just:
-				 */
-				// up_read(mdev->device_lock);
-				return 0;
-			}
-			spin_unlock(&mdev->pr_lock);
-			#endif
 			drbd_read_remote(mdev,req);
 		} else {
 			// this node is diskless ...

@@ -1700,7 +1700,7 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	spin_unlock(&mdev->pr_lock);
 
 	ERR("Get NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
-	// TODO: Do simething like panic() or shut_down_cluster(). 
+	// TODO: Do something like panic() or shut_down_cluster(). 
 	return TRUE;
 }
 

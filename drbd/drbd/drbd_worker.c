@@ -168,13 +168,15 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 
 	if (!uptodate) {
 		// for the panic:
-		drbd_chk_io_error(mdev,!uptodate);
+		drbd_chk_io_error(mdev,!uptodate); // handle panic and detach.
+		if(mdev->on_io_error == PassOn) goto pass_on;
 		// ok, if we survived this, retry:
 		// FIXME sector ...
 		ERR("local read failed, retrying remotely\n");
 		req->w.cb = w_read_retry_remote;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
+	pass_on:
 		bh->b_end_io(req->master_bio,uptodate);
 
 		INVALIDATE_MAGIC(req);
@@ -321,14 +323,15 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	if (error) {
-		// for the panic:
-		drbd_chk_io_error(mdev,error);
+		drbd_chk_io_error(mdev,error); // handle panic and detach.
+		if(mdev->on_io_error == PassOn) goto pass_on;
 		// ok, if we survived this, retry:
 		// FIXME sector ...
 		ERR("local read failed, retrying remotely\n");
 		req->w.cb = w_read_retry_remote;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
+	pass_on:
 		bio_endio(req->master_bio,req->master_bio->bi_size,error);
 
 		INVALIDATE_MAGIC(req);
@@ -346,15 +349,10 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w)
 
 	if ( mdev->cstate <= Connected ||
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
-
-		// FIXME
-		// local read failed, and we cannot retry.
-		// drbd_chk_io_error has already been called.
-		// what now: PANIC ??
-
-		// propagate, cannot do anything about it.
+		ERR("WE ARE LOST. Local IO failure, no peer.\n");
 		drbd_bio_endio(req->master_bio,0);
-		return 0; // worker will abort.
+		// TODO: Do something like panic() or shut_down_cluster().
+		return 1;
 	}
 
 	// FIXME: what if partner was SyncTarget, and is out of sync for

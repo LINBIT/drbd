@@ -1416,7 +1416,6 @@ NOT_IN_26(
 	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,NULL);
@@ -1489,7 +1488,6 @@ void cleanup_module(void)
 	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
 	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
 	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
