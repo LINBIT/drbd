@@ -1045,6 +1045,8 @@ const char* guess_dev_name(const char* dir,int major,int minor)
       if(!strcmp(dde->d_name,".")) continue;
       if(!strcmp(dde->d_name,"..")) continue;
       if(!strcmp(dde->d_name,"fd")) continue;
+      if(!strcmp(dde->d_name,"shm")) continue;
+      if(S_ISLNK(sb.st_mode)) continue;
 
       if(S_ISDIR(sb.st_mode))
 	{
