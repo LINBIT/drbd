@@ -3,7 +3,7 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+   Copyright (C) 2002, Philipp Reisner <philipp.reisner@gmx.at>.
         Initial author.
 
    drbd is free software; you can redistribute it and/or modify
@@ -24,13 +24,16 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <linux/fs.h>
+
 
 int main(int argc, char** argv)
 {
-  int drbd_fd,err,version;
+  int fd,err;
   struct stat drbd_stat;
   long size;
 
@@ -40,31 +43,32 @@ int main(int argc, char** argv)
       exit(20);
     }
 
-  drbd_fd=open(argv[1],O_RDONLY);
-  if(drbd_fd==-1)
+  fd=open(argv[1],O_RDONLY);
+  if(fd==-1)
     {
       perror("can not open device");
       exit(20);
     }
 
   
-  err=fstat(drbd_fd, &drbd_stat);
+  err=fstat(fd, &drbd_stat);
   if(err)
     {
       perror("fstat() failed");
     }
+
   if(!S_ISBLK(drbd_stat.st_mode))
     {
       fprintf(stderr, "%s is not a block device!\n", argv[1]);
       exit(20);
     }
-  err=ioctl(drbd_fd,BLKGETSIZE,&size);
+  err=ioctl(fd,BLKGETSIZE,&size);
   if(err)
     {
       perror("ioctl() failed");
     }
   
-  printf("Device size: %ld KB (%ld MB)\n",size,size/1024);
+  printf("Device size: %ld KB (%ld MB)\n",size/2,size/2048);
 
   return 0;
 }
