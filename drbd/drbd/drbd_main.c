@@ -680,7 +680,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 }
 
 /* See the comment at receive_bitmap() */
-int drbd_send_bitmap(drbd_dev *mdev)
+int _drbd_send_bitmap(drbd_dev *mdev)
 {
 	int buf_i,want;
 	int ok=TRUE, bm_i=0;
@@ -703,10 +703,20 @@ int drbd_send_bitmap(drbd_dev *mdev)
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
 		for(buf_i=0;buf_i<want/sizeof(long);buf_i++)
 			buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
-		ok = drbd_send_cmd(mdev,mdev->data.socket,ReportBitMap,
-				   p, sizeof(*p) + want);
+		ok = _drbd_send_cmd(mdev,mdev->data.socket,ReportBitMap,
+				   p, sizeof(*p) + want, 0);
 	} while (ok && want);
+
 	vfree(p);
+	return ok;
+}
+
+int drbd_send_bitmap(drbd_dev *mdev)
+{
+	int ok;
+	down(&mdev->data.mutex);
+	ok=_drbd_send_bitmap(mdev);
+	up(&mdev->data.mutex);
 	return ok;
 }
 

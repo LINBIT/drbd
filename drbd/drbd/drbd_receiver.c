@@ -1247,8 +1247,21 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 		if( sync ) {
 			if(have_good == 1) {
-				drbd_send_bitmap(mdev);
+				/*
+				 * receiver expects the whole bitmap in one go.
+				 * so get the data.mutex here.
+				 * set_cstate within the mutex to avoid a race
+				 * between up() and the
+				 * wait_event(cstate != WFBitMap*) condition
+				 * above.
+				 */
+				down(&mdev->data.mutex);
 				set_cstate(mdev,WFBitMapS);
+				/* FIXME, here we actually have to wait for
+				 * ap_bio_cnt == 0 and/or local_cnt == 0
+				 */
+				_drbd_send_bitmap(mdev);
+				up(&mdev->data.mutex);
 			} else { // have_good == -1
 				if ( (mdev->state == Primary) &&
 				     (mdev->gen_cnt[Flags] & MDF_Consistent) ) {
