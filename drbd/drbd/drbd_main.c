@@ -1038,6 +1038,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->meta.work.q);
 	INIT_LIST_HEAD(&mdev->resync_work.list);
 	mdev->resync_work.cb = w_resync_inactive;
+	init_timer(&mdev->resync_timer);
 
 	init_waitqueue_head(&mdev->state_wait);
 	init_waitqueue_head(&mdev->cstate_wait);

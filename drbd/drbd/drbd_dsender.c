@@ -94,11 +94,21 @@ STATIC drbd_dev *ds_find_osg(drbd_dev *mdev)
 	return 0;
 }
 
-int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
+void resync_timer_fn(unsigned long data)
+{
+	drbd_dev* mdev;
+
+	mdev = (drbd_dev*) data;
+
+	__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+}
+
+STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 {
 	struct Pending_read *pr;
 	struct Drbd_Conf    *odev;
 	sector_t sector;
+	int number,i,size;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
@@ -126,26 +136,24 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 	}
 	D_ASSERT(mdev->cstate == SyncTarget);
 
+#define SLEEP_TIME (HZ/10)
+
+        number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
+
+        if(number > 1000) number=1000;  // Remove later
 	if (atomic_read(&mdev->pending_cnt)>1200) {
 		ERR("pending cnt high -- throttling resync.\n");
-		// schedule_timeout(HZ/10); ??
-		// FIXME do we send a write_hint here ?
-
-		/* FIXME if (current_sync_throughput > mdev->sync_conf.rate)
-		 * and (we have other pending writes [//reads ?? ])
-		 * throttle, too...
-		 * If drbd_make_request would not send itself, but just
-		 * queue the work to the worker, the latter (condition)
-		 * simplifies to (!list_empty(work.q))		-lge
-		 */
 		goto requeue;
 	}
 
-	pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
-	if (likely(pr!= NULL)) {
-		int size=BM_BLOCK_SIZE;
-
+	for(i=0;i<number;i++) {
+		pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
+		if (unlikely(pr == NULL)) goto requeue;
+		SET_MAGIC(pr);
+		
+		size = BM_BLOCK_SIZE;
 		sector = bm_get_sector(mdev->mbds_id,&size);
+
 		if (sector == MBDS_DONE) {
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
@@ -161,18 +169,19 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 
 		inc_pending(mdev);
 		ERR_IF(!drbd_send_drequest(mdev,RSDataRequest,
-					  sector,size,(unsigned long)pr)) {
+					   sector,size,(unsigned long)pr)) {
 			dec_pending(mdev,HERE);
 			return 0; // FAILED. worker will abort!
 		}
 	}
 
    requeue:
-	__drbd_queue_work(mdev,&mdev->data.work,w);
+	mdev->resync_timer.expires = jiffies + SLEEP_TIME;
+	add_timer(&mdev->resync_timer);
 	return 1;
 }
 
-int w_start_resync(drbd_dev *mdev, struct drbd_work *w)
+STATIC int w_start_resync(drbd_dev *mdev, struct drbd_work *w)
 {
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
@@ -231,6 +240,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
 
+	if(!ok) ERR("drbd_send_block() failed\n");
 	return ok;
 }
 
@@ -248,6 +258,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
 
+	if(!ok) ERR("drbd_send_block() failed\n");
 	return ok;
 }
 
@@ -278,6 +289,9 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
 
+	mdev->resync_timer.function = resync_timer_fn;
+	mdev->resync_timer.data = (unsigned long) mdev;
+	
 	for (;;) {
 		intr = down_interruptible(&mdev->data.work.s);
 

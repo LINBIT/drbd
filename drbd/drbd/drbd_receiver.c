@@ -1756,16 +1756,19 @@ int drbd_asender(struct Drbd_thread *thi)
 		if (rv == -EAGAIN) {
 			set_bit(SEND_PING,&mdev->flags);
 			continue;
+		} else if (rv < 0) {
+			// if (rv != -ECONNRESET)
+			ERR("sock_recvmsg returned %d\n", rv);
+			goto err;
+		} else if (rv == 0) {
+			ERR("meta connection shut down by peer.\n");
+			goto err;
 		} else if (rv == -EINTR || rv < expect) {
 			LOCK_SIGMASK(current,flags);
 			sigemptyset(&current->pending.signal);
 			RECALC_SIGPENDING(current);
 			UNLOCK_SIGMASK(current,flags);
 			if (rv == -EINTR) rv=0;
-		} else if (rv < 0) {
-			// if (rv != -ECONNRESET)
-				ERR("sock_recvmsg returned %d\n", rv);
-			break;
 		} /* else if (rv > expect) {
 			BUG();
 		} */

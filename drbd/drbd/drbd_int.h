@@ -668,6 +668,7 @@ struct Drbd_Conf {
 	struct drbd_socket meta; // for ping/ack (metadata) packets
 	volatile unsigned long last_received; // in jiffies, either socket
 	struct drbd_work  resync_work;
+	struct timer_list resync_timer;
 	kdev_t lo_device;         // backing device
 	struct file *lo_file;
 	kdev_t md_device;         // device for meta-data.
