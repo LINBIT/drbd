@@ -76,8 +76,8 @@ mkdir -p %{buildroot}
 make clean
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
-make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
-
+#       unset LOCALVERSION for building on RHEL AS 4
+make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
 %install
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd drbd
