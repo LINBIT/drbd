@@ -246,18 +246,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			bh->b_rdev = drbd_conf[minor].lo_device;
 			bh->b_rsector = req->bh->b_rsector;
 			bh->b_end_io = drbd_dio_end;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 			bh->b_count=0;
 			bh->b_this_page=0;
 			bh->b_dev_id = req;
 			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#else
-			bh->b_page=req->bh->b_page; /* missing in 2.2.x part*/
-			atomic_set(&bh->b_count, 0);
-			bh->b_private = req;
-			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty)
-			  | ( 1 << BH_Mapped) | (1 << BH_Lock);
-#endif
 			
 #ifdef BH_JWrite
 			if (test_bit(BH_JWrite, &req->bh->b_state))
@@ -286,11 +278,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			else
 				req->rq_status = RQ_DRBD_READ | 0x0001;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 			ll_rw_block(req->cmd, 1, &bh);
-#else
-			generic_make_request(req->cmd,bh);
-#endif
 		}
 
 		/* Send it out to the network */
