@@ -66,6 +66,8 @@ else
     KDIR := /lib/modules/$(shell uname -r)/build
   endif
 
+  # shell ls, because some of them may be missing
+  # inside a patched kernel source tree
   SRC_FILES := $(shell ls 2>/dev/null\
 	linux/drbd_config.h linux/drbd.h drbd_actlog.c drbd_bitmap.c drbd_fs.c \
 	drbd_main.c drbd_proc.c drbd_receiver.c drbd_req.c drbd_worker.c \
@@ -98,6 +100,8 @@ else
 
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
+	test -x ../scripts/adjust_drbd_config_h.sh && \
+	 KDIR=$(KDIR) ../scripts/adjust_drbd_config_h.sh
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 	@mv .kernelrelease.new .kernelrelease
 	@echo -n "Memorizing module configuration ... "
@@ -161,5 +165,5 @@ else
 
   depmod:
 	[ -e $(KDIR)/System.map ] && [ -e ./$(MODOBJ) ] && \
-	   /sbin/depmod -F $(KDIR)/System.map -e ./$(MODOBJ) 2>&1 >/dev/null
+	   /sbin/depmod -F $(KDIR)/System.map -e ./$(MODOBJ) # 2>&1 >/dev/null
 endif
