@@ -19,6 +19,9 @@
 
 include ../Makefile.vars
 
+KSUBD = $(shell if [ -e /lib/modules/$(KERNVER)/kernel ]; then echo "kernel/drivers/block"; else echo "block"; fi )
+
+
 all: drbd.o 
 
 drbd.o: drbd.c drbd.h mbds.h
@@ -32,6 +35,6 @@ clean:
 
 
 install:
-	install -d /lib/modules/$(KERNVER)/block/
-	install drbd.o /lib/modules/$(KERNVER)/block/
+	install -d /lib/modules/$(KERNVER)/$(KSUBD)
+	install -m 644 drbd.o /lib/modules/$(KERNVER)/$(KSUBD)
 	/sbin/depmod -a
