@@ -68,6 +68,7 @@ struct drbd_config {
 	IN unsigned int disk_size;  /* Size given by user */
 	IN int      do_panic;
 	IN int      try_connect_int;  /* seconds */
+	IN int      ping_int;         /* seconds */
 };
 
 enum ret_codes { 
@@ -150,7 +151,9 @@ typedef enum {
   WriteAck,     /* Used in protocol C */
   BarrierAck,  
   ReportParams,
-  CStateChanged
+  CStateChanged,
+  Ping,
+  PingAck
 } Drbd_Packet_Cmd;
 
 typedef enum { Primary, Secondary } Drbd_State;

@@ -130,6 +130,7 @@ struct Tl_epoch_entry {
 
 #define ISSUE_BARRIER     0
 #define COLLECT_ZOMBIES   1
+#define SEND_PING         2
 
 /* #define ES_SIZE_STATS 50 */
 
@@ -155,7 +156,6 @@ struct Drbd_Conf {
         int    flags;
         int    epoch_size;
 	spinlock_t es_lock;
-	struct timer_list s_timeout;
 	struct timer_list a_timeout;
 	struct semaphore send_mutex;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
@@ -709,6 +709,36 @@ int drbd_ll_blocksize(int minor)
 	return size;
 }
 
+int drbd_send_ping(int minor)
+{
+	int err;
+	Drbd_Packet head;
+
+	down(&drbd_conf[minor].send_mutex);
+	err = drbd_send(&drbd_conf[minor], Ping,&head,sizeof(head),0,0);
+	up(&drbd_conf[minor].send_mutex);
+
+	if(drbd_conf[minor].conf.timeout) {
+		drbd_conf[minor].pending_cnt++;
+		mod_timer(&drbd_conf[minor].a_timeout,
+			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
+	}
+
+	return err;
+}
+
+int drbd_send_ping_ack(int minor)
+{
+	int err;
+	Drbd_Packet head;
+
+	down(&drbd_conf[minor].send_mutex);
+	err = drbd_send(&drbd_conf[minor], PingAck,&head,sizeof(head),0,0);
+	up(&drbd_conf[minor].send_mutex);
+	
+	return err;
+}
+
 int drbd_send_param(int minor)
 {
 	Drbd_Parameter_Packet param;
@@ -820,15 +850,6 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	ret=drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),data,
 		      data_size);
 
-	if( ret == data_size + sizeof(head) &&
-	    mdev->conf.wire_protocol != DRBD_PROT_A && 
-	    mdev->conf.timeout)   {
-		mdev->pending_cnt++;
-		mod_timer(&mdev->a_timeout,
-			  jiffies + mdev->conf.timeout * HZ / 10);
-	}
-
-
 	if(head.h.block_id != ID_SYNCER) {
 		if( ret == data_size + sizeof(head)) {
 			/* This must be within the semaphore */
@@ -841,7 +862,49 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	}
 
 	up(&mdev->send_mutex);
+
+	if( ret == data_size + sizeof(head) &&
+	    mdev->conf.wire_protocol != DRBD_PROT_A && 
+	    mdev->conf.timeout)   {
+		mdev->pending_cnt++;
+		mod_timer(&mdev->a_timeout,
+			  jiffies + mdev->conf.timeout * HZ / 10);
+	}
+
 	return ret;
+}
+
+void drbd_c_timeout(unsigned long arg)
+{
+	struct task_struct *p = (struct task_struct *) arg;
+
+	printk(KERN_INFO DEVICE_NAME ": retrying to connect(pid=%d)\n",p->pid);
+
+	send_sig_info(DRBD_SIG, NULL, p);
+
+}
+
+
+void drbd_timeout(unsigned long arg)
+{
+	struct task_struct *p = (struct task_struct *) arg;
+
+	printk(KERN_ERR DEVICE_NAME ": timeout detected! (pid=%d)\n",p->pid);
+
+	send_sig_info(DRBD_SIG, NULL, p);
+
+}
+
+void drbd_a_timeout(unsigned long arg)
+{
+	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
+
+	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
+
+	if(drbd_conf[thi->minor].cstate >= Connected) {
+		set_cstate(&drbd_conf[thi->minor],Timeout);
+		drbd_thread_restart_nowait(thi);
+	}
 }
 
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
@@ -851,6 +914,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	mm_segment_t oldfs;
 	struct msghdr msg;
 	struct iovec iov[2];
+	struct timer_list s_timeout;
 
 	int err;
 
@@ -875,10 +939,12 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	msg.msg_flags = MSG_NOSIGNAL;
 
 	if (mdev->conf.timeout) {
-		mdev->s_timeout.data = (unsigned long) current;
-		mdev->s_timeout.expires =
+		init_timer(&s_timeout);
+		s_timeout.function = drbd_timeout;
+		s_timeout.data = (unsigned long) current;
+		s_timeout.expires =
 		    jiffies + mdev->conf.timeout * HZ / 10;
-		add_timer(&mdev->s_timeout);
+		add_timer(&s_timeout);
 	}
 	lock_kernel();
 	oldfs = get_fs();
@@ -889,7 +955,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 
 	if (mdev->conf.timeout) {
 		unsigned long flags;
-		del_timer(&mdev->s_timeout);
+		del_timer(&s_timeout);
 		spin_lock_irqsave(&current->sigmask_lock,flags);
 		if (sigismember(&current->signal, DRBD_SIG)) {
 			sigdelset(&current->signal, DRBD_SIG);
@@ -942,39 +1008,6 @@ void drbd_set_sock_prio(struct Drbd_Conf *mdev)
 		mdev->sock->sk->nonagle=1;
 #endif
 		break;
-	}
-}
-
-void drbd_c_timeout(unsigned long arg)
-{
-	struct task_struct *p = (struct task_struct *) arg;
-
-	printk(KERN_INFO DEVICE_NAME ": retrying to connect(pid=%d)\n",p->pid);
-
-	send_sig_info(DRBD_SIG, NULL, p);
-
-}
-
-
-void drbd_timeout(unsigned long arg)
-{
-	struct task_struct *p = (struct task_struct *) arg;
-
-	printk(KERN_ERR DEVICE_NAME ": timeout detected! (pid=%d)\n",p->pid);
-
-	send_sig_info(DRBD_SIG, NULL, p);
-
-}
-
-void drbd_a_timeout(unsigned long arg)
-{
-	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
-
-	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
-
-	if(drbd_conf[thi->minor].cstate >= Connected) {
-		set_cstate(&drbd_conf[thi->minor],Timeout);
-		drbd_thread_restart_nowait(thi);
 	}
 }
 
@@ -1524,11 +1557,9 @@ int __init drbd_init(void)
 		drbd_conf[i].flags=0;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].epoch_size=0;
-		drbd_conf[i].s_timeout.function = drbd_timeout;
 		drbd_conf[i].a_timeout.function = drbd_a_timeout;
 		drbd_conf[i].a_timeout.data = (unsigned long) 
 			&drbd_conf[i].receiver;
-		init_timer(&drbd_conf[i].s_timeout);
 		init_timer(&drbd_conf[i].a_timeout);
 		drbd_conf[i].synced_to=0;
 		init_MUTEX(&drbd_conf[i].send_mutex);
@@ -1651,12 +1682,22 @@ struct socket* drbd_accept(struct socket* sock)
 	return 0;
 }
 
-int drbd_recv(struct socket *sock, void *ubuf, size_t size)
+void drbd_ping_timeout(unsigned long arg)
+{
+	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
+
+	set_bit(SEND_PING,&mdev->flags);
+	wake_up_interruptible(&mdev->asender_wait);
+	
+}
+
+
+int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 {
 	mm_segment_t oldfs;
-
 	struct iovec iov;
 	struct msghdr msg;
+	struct timer_list idle_timeout;
 	int err = 0;
 
 	msg.msg_control = NULL;
@@ -1669,18 +1710,34 @@ int drbd_recv(struct socket *sock, void *ubuf, size_t size)
 	msg.msg_namelen = 0;
 	msg.msg_flags = 0;
 
+
+
+	if (mdev->conf.ping_int) {
+		init_timer(&idle_timeout);
+		idle_timeout.function = drbd_ping_timeout;
+		idle_timeout.data = (unsigned long) mdev;
+		idle_timeout.expires =
+		    jiffies + mdev->conf.ping_int * HZ;
+		add_timer(&idle_timeout);
+	}
+
+
 	lock_kernel();
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 	/* Check if this get_fs() / set_fs stuff is needed for a kernel_thread */
-
-	err = sock_recvmsg(sock, &msg, size, MSG_WAITALL);
+	err = sock_recvmsg(mdev->sock, &msg, size, MSG_WAITALL);
 
 	set_fs(oldfs);
 	unlock_kernel();
 	if (err != size && err != -ERESTARTSYS && err != 0)
 		printk(KERN_ERR DEVICE_NAME ": sock_recvmsg returned %d\n",
 		       err);
+
+	if (mdev->conf.ping_int) {
+		del_timer(&idle_timeout);
+	}
+	
 
 	return err;
 }
@@ -1799,7 +1856,7 @@ inline int receive_cstate(int minor)
 {
 	Drbd_CState_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) 
 	    != sizeof(header))
 	        return FALSE;
 
@@ -1815,7 +1872,7 @@ inline int receive_barrier(int minor)
   	Drbd_Barrier_P header;
 	int ep_size,i;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) 
 	    != sizeof(header))
 	        return FALSE;
 
@@ -1866,7 +1923,7 @@ inline int receive_data(int minor,int data_size)
 	int ep_size;
 	Drbd_Data_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) != 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
 	        return FALSE;
 	
@@ -1934,7 +1991,7 @@ inline int receive_data(int minor,int data_size)
 	}
 
 
-	if (drbd_recv(drbd_conf[minor].sock, bh->b_data, data_size) 
+	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
 	    != data_size)
 	        return FALSE;
 
@@ -1975,12 +2032,25 @@ inline int receive_data(int minor,int data_size)
 	return TRUE;
 }     
 
+inline void receive_ping_ack(int minor)
+{
+	if(drbd_conf[minor].conf.timeout ) {
+		if(--drbd_conf[minor].pending_cnt > 0) {
+			mod_timer(&drbd_conf[minor].a_timeout,
+				  jiffies + drbd_conf[minor].conf.timeout 
+				  * HZ / 10);
+		} else {
+			del_timer(&drbd_conf[minor].a_timeout);
+		}
+	}	
+}
+
 inline int receive_block_ack(int minor)
 {     
         struct request *req;
 	Drbd_BlockAck_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) != 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
 	        return FALSE;
 	
@@ -2014,7 +2084,7 @@ inline int receive_barrier_ack(int minor)
 {
 	Drbd_BarrierAck_P header;
 
-	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) != 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
 	        return FALSE;
 
@@ -2033,7 +2103,7 @@ inline int receive_param(int minor,int command)
 	/*printk(KERN_DEBUG DEVICE_NAME
 	  ": recv ReportParams/m=%d\n",minor);*/
 
-	if (drbd_recv(drbd_conf[minor].sock, &param, sizeof(param)) != 
+	if (drbd_recv(&drbd_conf[minor], &param, sizeof(param)) != 
 	    sizeof(param))
 	        return FALSE;
 
@@ -2109,12 +2179,11 @@ inline int receive_param(int minor,int command)
 void drbdd(int minor)
 {
 	Drbd_Packet header;
-	struct socket *my_sock = drbd_conf[minor].sock;
 
 	while (TRUE) {
 		drbd_collect_zombies(minor);
 
-		if ( drbd_recv(my_sock,&header,sizeof(Drbd_Packet)) != 
+		if (drbd_recv(&drbd_conf[minor],&header,sizeof(Drbd_Packet))!= 
 		     sizeof(Drbd_Packet)) 
 			break;
 
@@ -2136,6 +2205,13 @@ void drbdd(int minor)
 		case Data: 
 		        if (!receive_data(minor,be16_to_cpu(header.length)))
 			        goto out;
+			break;
+
+		case Ping:
+			drbd_send_ping_ack(minor);
+			break;
+		case PingAck:
+			receive_ping_ack(minor);
 			break;
 
 		case RecvAck:
@@ -2165,6 +2241,8 @@ void drbdd(int minor)
 
       out:
 	del_timer(&drbd_conf[minor].a_timeout);
+	drbd_conf[minor].pending_cnt = 0;
+
 	if (drbd_conf[minor].sock) {
 	        drbd_thread_stop(&drbd_conf[minor].syncer);
 	        drbd_thread_stop(&drbd_conf[minor].asender);
@@ -2429,6 +2507,10 @@ int drbd_asender(struct Drbd_thread *thi)
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
 	  
 	  if(thi->t_state == Exiting) break;
+
+	  if(test_and_clear_bit(SEND_PING,&drbd_conf[minor].flags)) {
+		  drbd_send_ping(minor);
+	  }
 
 	  if( drbd_conf[minor].state == Primary ) {
 		  drbd_try_send_barrier(&drbd_conf[minor]);

@@ -159,6 +159,11 @@ int main(int argc, char** argv)
 	      "      -c --connect-int\n"
 	      "          If drbd can not connect it will retry every val seconds.\n"
 	      "          Default: 10 Seconds\n\n"
+	      "      -i --ping-int\n"
+	      "          If the connection is idle for more than val seconds\n"
+	      "          DRBD will send a NOP packet. This helps DRBD to\n"
+	      "          detect broken connections.\n"
+	      "          Default: 10 Seconds\n\n"
 	      "     multipliers\n"
 	      "          You may append K, M or G to the values of -r and -d\n"
 	      "          where K=2^10, M=2^20 and G=2^30.\n\n"
@@ -307,6 +312,7 @@ int main(int argc, char** argv)
       cn.config.disk_size = 0;
       cn.config.do_panic  = 0;
       cn.config.try_connect_int = 10;
+      cn.config.ping_int = 10;
 
       optind=6;
       while(1)
@@ -320,10 +326,11 @@ int main(int argc, char** argv)
 	    { "disk-size",  required_argument, 0, 'd' },
 	    { "do-panic",   no_argument,       0, 'p' },
 	    { "connect-int",required_argument, 0, 'c' },
+	    { "ping-int",   required_argument, 0, 'i' },
 	    { 0,           0,                 0, 0   }
 	  };
 	  
-	  c = getopt_long(argc,argv,"t:r:ks:d:p",options,0);
+	  c = getopt_long(argc,argv,"t:r:ks:d:pc:i:",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -347,6 +354,9 @@ int main(int argc, char** argv)
 	      break;
 	    case 'c':
 	      cn.config.try_connect_int = m_strtol(optarg,1);
+	      break;
+	    case 'i':
+	      cn.config.ping_int = m_strtol(optarg,1);
 	      break;
 	    }
 	}
