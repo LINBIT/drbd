@@ -622,11 +622,11 @@ inline int receive_data(int minor,int data_size)
 	 * the PRIMARY machine can not send more blocks because the secondary
 	 * has to finish IO first, we need this.
 	 *
-	 * Actually the primary can send up to NR_REQUESTS / 3 blocks,
-	 * but we already start when we have NR_REQUESTS / 4 blocks.
+	 * Actually the primary can send up to NR_REQUEST / 3 blocks,
+	 * but we already start when we have NR_REQUEST / 4 blocks.
 	 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-#define NUMBER (NR_REQUESTS/4)	
+#define NUMBER (NR_REQUEST/4)	
 #else
 #define NUMBER 24 
 #endif
