@@ -368,6 +368,8 @@ int drbd_thread_setup(void* arg)
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int retval;
 
+	//TODO: check if we can use daemonize() ??
+
 	lock_kernel();
 	exit_mm(current);	/* give up UL-memory context */
 	exit_files(current);	/* give up open filedescriptors */
@@ -375,16 +377,14 @@ int drbd_thread_setup(void* arg)
 	current->session = 1;
 	current->pgrp = 1;
 
-	if (!thi->pid) sleep_on(&thi->wait);
+	if (!thi->task) sleep_on(&thi->wait);
 
 	retval = thi->function(thi);
 
-	thi->pid = 0;
+	thi->task = 0;
 	wake_up(&thi->wait);
 
-	if(thi->minor >= 0) {
-		set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
-	}
+	set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
 
 	return retval;
 }
@@ -392,7 +392,7 @@ int drbd_thread_setup(void* arg)
 void drbd_thread_init(int minor, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
-	thi->pid = 0;
+	thi->task = NULL;
 	init_waitqueue_head(&thi->wait);
 	thi->function = func;
 	thi->minor = minor;
@@ -402,7 +402,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 {
 	int pid;
 
-	if (thi->pid == 0) {
+	if (thi->task == NULL) {
 		thi->t_state = Running;
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
@@ -414,7 +414,9 @@ void drbd_thread_start(struct Drbd_thread *thi)
 			return;
 		}
 		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
-		thi->pid = pid;
+		read_lock(&tasklist_lock);
+		thi->task = find_task_by_pid(pid);
+		read_unlock(&tasklist_lock);
 		wake_up(&thi->wait);
 	}
 }
@@ -422,14 +424,14 @@ void drbd_thread_start(struct Drbd_thread *thi)
 
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
-	if (!thi->pid) return;
+	if (!thi->task) return;
 
 	if (restart)
 		thi->t_state = Restarting;
 	else
 		thi->t_state = Exiting;
 
-	drbd_queue_signal(SIGTERM,thi->pid);
+	drbd_queue_signal(SIGTERM,thi->task);
 
 	if(wait) {
 		sleep_on(&thi->wait);	/* wait until the thread
@@ -613,15 +615,15 @@ static void drbd_timeout(unsigned long arg)
 		       (int)(ti->mdev-drbd_conf));
 
 		ti->timeout_happened=1;
-		drbd_queue_signal(DRBD_SIG, ti->pid);
+		drbd_queue_signal(DRBD_SIG, ti->task);
 		if((ti=ti->mdev->send_proc)) {
 			ti->timeout_happened=1;
-			drbd_queue_signal(DRBD_SIG, ti->pid);
+			drbd_queue_signal(DRBD_SIG, ti->task);
 		}
 	} else {
 		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
 		       " (pid=%d) requesting ping\n",
-		       (int)(ti->mdev-drbd_conf),ti->pid);
+		       (int)(ti->mdev-drbd_conf),ti->task->pid);
 
 		set_bit(SEND_PING,&ti->mdev->flags);
 		wake_up_interruptible(&ti->mdev->asender_wait);
@@ -694,7 +696,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		ti.mdev=mdev;
 		ti.timeout_happened=0;
 		ti.via_msock=via_msock;
-		ti.pid=current->pid;
+		ti.task=current;
 		ti.restart=1;
 		if(!via_msock) mdev->send_proc=&ti;
 
@@ -1378,19 +1380,17 @@ void drbd_md_inc(int minor, enum MetaDataIndex order)
 	drbd_conf[minor].gen_cnt[order]++;
 }
 
-void drbd_queue_signal(int signal,int pid)
+void drbd_queue_signal(int signal,struct task_struct *task)
 {
 	unsigned long flags;
-	struct task_struct *p;
 
   	read_lock(&tasklist_lock);
-	p = find_task_by_pid(pid);
-	if (p) {
-		spin_lock_irqsave(&p->sigmask_lock, flags);
-		sigaddset(SIGSET_OF(p), signal);
-		recalc_sigpending(p);
-		spin_unlock_irqrestore(&p->sigmask_lock, flags);
-		if (p->state & TASK_INTERRUPTIBLE) wake_up_process(p);
+	if (task) {
+		spin_lock_irqsave(&task->sigmask_lock, flags);
+		sigaddset(SIGSET_OF(task), signal);
+		recalc_sigpending(task);
+		spin_unlock_irqrestore(&task->sigmask_lock, flags);
+		if (task->state & TASK_INTERRUPTIBLE) wake_up_process(task);
 	}
 	read_unlock(&tasklist_lock);
 }

@@ -157,7 +157,7 @@ typedef enum {
 } Drbd_thread_state; 
 
 struct Drbd_thread {
-	int pid;
+	struct task_struct *task;
         wait_queue_head_t wait;  
 	int t_state;
 	int (*function) (struct Drbd_thread *);
@@ -201,9 +201,9 @@ struct Tl_epoch_entry {
 struct send_timer_info {
 	struct timer_list s_timeout; /* send timeout */
 	struct Drbd_Conf *mdev;
+	struct task_struct *task;
 	volatile int timeout_happened;
 	int via_msock;
-	int pid;
 	int restart;
 };
 
@@ -324,7 +324,7 @@ extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
-extern void drbd_queue_signal(int signal,int pid);
+extern void drbd_queue_signal(int signal,struct task_struct *task);
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
 {

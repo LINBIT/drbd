@@ -198,7 +198,7 @@ void drbd_c_timeout(unsigned long arg)
 	printk(KERN_INFO DEVICE_NAME" : retrying to connect(pid=%d)\n",p->pid);
 	*/
 
-	drbd_queue_signal(DRBD_SIG,p->pid);
+	drbd_queue_signal(DRBD_SIG,p);
 
 }
 
@@ -1054,7 +1054,7 @@ void drbd_ping_timeout(unsigned long arg)
 
 	if((ti=mdev->send_proc)) {
 		ti->timeout_happened=1;
-		drbd_queue_signal(DRBD_SIG, ti->pid);
+		drbd_queue_signal(DRBD_SIG, ti->task);
 	}
 }
 
@@ -1105,6 +1105,9 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
 
+	current->policy = SCHED_RR;  /* Make this a realtime task! */
+	current->rt_priority = 2;    /* more important than all other tasks */
+
 	init_timer(&ping_timeout);
 	ping_timeout.function = drbd_ping_timeout;
 	ping_timeout.data = (unsigned long) mdev;
@@ -1143,6 +1146,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			       (long) be32_to_cpu(header.magic),
 			       (int) be16_to_cpu(header.command),
 			       (int) be16_to_cpu(header.length));
+			drbd_thread_restart_nowait(&mdev->receiver);
 		}
 		switch (be16_to_cpu(header.command)) {
 		case Ping:
