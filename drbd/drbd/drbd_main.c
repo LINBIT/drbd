@@ -1215,10 +1215,9 @@ int __init drbd_init(void)
 					 drbd_al_changing, mdev);
 		if (!mdev->act_log) goto Enomem;
 
+		drbd_init_set_defaults(mdev);
 		tl_init(mdev);
 		drbd_init_ee(mdev);
-
-		drbd_init_set_defaults(mdev);
 	}
 
 #if CONFIG_PROC_FS
