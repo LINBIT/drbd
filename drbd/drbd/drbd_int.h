@@ -27,7 +27,7 @@
 #include <linux/version.h>
 #include <linux/list.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)
 #define completion semaphore
 #define init_completion(A) init_MUTEX_LOCKED(A)
 #define wait_for_completion(A) down(A)
