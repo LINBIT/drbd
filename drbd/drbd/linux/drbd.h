@@ -70,6 +70,12 @@ struct disk_config {
 	IN int      meta_index;
 };
 
+enum disconnect_handler {
+	Reconnect,
+	DropNetConf,
+	FreezeIO
+};
+
 struct net_config {
 	IN char     my_addr[MAX_SOCK_ADDR];
 	IN int      my_addr_len;
@@ -82,6 +88,8 @@ struct net_config {
 	IN int      max_epoch_size;
 	IN int      max_buffers;
 	IN int      sndbuf_size;  /* socket send buffer size */
+	IN unsigned int ko_count;
+	IN enum disconnect_handler on_disconnect;
 };
 
 struct syncer_config {

@@ -66,6 +66,8 @@
 #define DEF_SNDBUF_SIZE           (2*65535) // ~128KB
 #define DEF_DISK_SIZE                0
 #define DEF_ON_IO_ERROR         PassOn
+#define DEF_KO_COUNT                 0
+#define DEF_ON_DISCONNECT       Reconnect
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -148,6 +150,8 @@ struct drbd_cmd commands[] = {
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
      { "sndbuf-size",required_argument, 0, 'S' },
+     { "ko-count",   required_argument, 0, 'k' },
+     { "on-disconnect",required_argument, 0, 'd' },
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_dev","meta_data_dev",
 				    "meta_data_index",0},
@@ -168,6 +172,12 @@ const char *eh_names[] = {
   [PassOn] = "pass_on",
   [Panic]  = "panic",
   [Detach] = "detach" 
+};
+
+const char *dh_names[] = {
+  [Reconnect]   = "reconnect",
+  [DropNetConf] = "stand_alone",
+  [FreezeIO]    = "freeze_io" 
 };
 
 unsigned long resolv(const char* name)
@@ -355,6 +365,12 @@ void print_usage(const char* addinfo)
     if(i < ARRY_SIZE(eh_names)-1) printf(",");
   }
 
+  printf("\nAvailable on-disconnect handlers:");
+  for(i=0;i<ARRY_SIZE(dh_names);i++) {
+    printf(" %s",dh_names[i]);
+    if(i < ARRY_SIZE(dh_names)-1) printf(",");
+  }
+
   printf("\n\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
   if (addinfo)
       printf("\n%s\n",addinfo);
@@ -456,15 +472,17 @@ int scan_net_options(char **argv,
   cn->config.max_epoch_size = DEF_MAX_EPOCH_SIZE;
   cn->config.max_buffers = DEF_MAX_BUFFERS;
   cn->config.sndbuf_size = DEF_SNDBUF_SIZE ;
-
+  cn->config.on_disconnect = DEF_ON_DISCONNECT;
+  cn->config.ko_count = DEF_KO_COUNT;
 
   if(argc==0) return 0;
 
   while(1)
     {
-      int c;
+      int c,i;
 
       PRINT_ARGV;
+      next_option:
       c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
@@ -487,6 +505,19 @@ int scan_net_options(char **argv,
 	case 'S':
 	  cn->config.sndbuf_size = m_strtol(optarg,1);
 	  break;
+       case 'k':
+          cn->config.ko_count = m_strtol(optarg,1);
+          break;
+	case 'd':
+	  for(i=0;i<ARRY_SIZE(dh_names);i++) {
+	    if (strcmp(optarg,dh_names[i])==0) {
+	      cn->config.on_disconnect=i;
+	      goto next_option;
+	    }
+	  }
+	  fprintf(stderr,"%s: '%s' is an invalid on-disconnect handler.\n",
+		  basename,optarg);
+	  return 20;
 	case 1:	// non option argument. see getopt_long(3)
 	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	case '?':
@@ -1132,6 +1163,10 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
   SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
   SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
+  SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
+  if( cn.nconf.on_disconnect != DEF_ON_DISCONNECT) {
+    printf(" on-disconnect = %s\n",dh_names[cn.nconf.on_disconnect]);
+  }
 
 
   printf("Syncer options:\n");

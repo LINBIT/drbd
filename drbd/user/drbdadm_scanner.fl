@@ -48,7 +48,7 @@ NDELIM			  [^ \t\n#=:;{}]+
 
 %x RESOURCE GLOBAL
 %x STARTUP DISK NET SYNCER HOST
-%x SEMICOLON ASSIGN NUM NUM_U NAME STRING PROTO IO_ERROR
+%x SEMICOLON ASSIGN NUM NUM_U NAME STRING PROTO IO_ERROR ON_DISCONNECT
 %x IP_AND_PORT PORT META_DISK META_IDX
 %x LS LBRACE IGNORE_SECTION
 
@@ -228,6 +228,12 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   {NDELIM}		expect_error("one of 'pass_on|panic|detach'");
 }
 
+<ON_DISCONNECT>{
+  reconnect		|
+  stand_alone		|
+  freeze_io		yy_pop_state(); CP; return TK_STRING;
+  {NDELIM}		expect_error("one of 'reconnect|stand_alone|freeze_io'");
+}
 
 <NET>{
   sndbuf-size		do_assign(NUM_U); CP; return TK_SNDBUF_SIZE;
@@ -236,7 +242,9 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   connect-int		do_assign(NUM);   CP; return TK_CONNECT_INT;
   max-buffers		do_assign(NUM);   CP; return TK_MAX_BUFFERS;
   max-epoch-size	do_assign(NUM);   CP; return TK_MAX_EPOCH_SIZE;
-  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|max-epoch-size'");
+  ko-count		do_assign(NUM);   CP; return TK_KO_COUNT;
+  on-disconnect 	do_assign(ON_DISCONNECT); CP; return TK_ON_DISCONNECT;
+  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|max-epoch-size|ko-count|on-disconnect'");
 }
 
 <SYNCER>{

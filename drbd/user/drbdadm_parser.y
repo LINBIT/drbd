@@ -125,7 +125,7 @@ void check_meta_disk()
 %token <txt> TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
 %token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_GROUP TK_AL_EXTENTS
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
-
+%token <txt> TK_KO_COUNT TK_ON_DISCONNECT
 
 %type <txt> hostname resource_name
 %type <d_option> disk_stmts disk_stmt
@@ -228,6 +228,8 @@ net_stmt:	  TK_TIMEOUT	    TK_INTEGER { $$=new_opt($1,$2); }
 		| TK_MAX_BUFFERS    TK_INTEGER { $$=new_opt($1,$2); }
 		| TK_MAX_EPOCH_SIZE TK_INTEGER { $$=new_opt($1,$2); }
 		| TK_SNDBUF_SIZE    TK_INTEGER { $$=new_opt($1,$2); }
+		| TK_KO_COUNT       TK_INTEGER { $$=new_opt($1,$2); }
+		| TK_ON_DISCONNECT  TK_STRING  { $$=new_opt($1,$2); }
 		;
 
 sync_stmts:	  /* empty */	           { $$ = 0; }

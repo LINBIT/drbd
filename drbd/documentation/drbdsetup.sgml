@@ -36,7 +36,8 @@
       <arg>-i<arg choice="req"><replaceable>time</replaceable></arg></arg>
       <arg>-t<arg choice="req"><replaceable>val</replaceable></arg></arg>
       <arg>-S<arg choice="req"><replaceable>size</replaceable></arg></arg>
-      <arg>-K<arg choice="req"><replaceable>count</replaceable></arg></arg>
+      <arg>-k<arg choice="req"><replaceable>count</replaceable></arg></arg>
+      <arg>-d<arg choice="req"><replaceable>discon_handler</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -256,7 +257,7 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term><option>-K</option>,
+	  <term><option>-k</option>,
 	  <option>--ko-count <replaceable>count</replaceable></option></term>
 	  <listitem>
 	    <para>
@@ -290,6 +291,20 @@
 	      same as <option>--max-epoch-size </option>.  Small values
 	      could lead to degraded performace. (Minimum 32) The default is
 	      2048.  
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-d</option>,
+	  <option>--on-disconnect <replaceable>discon_handler</replaceable></option></term>
+	  <listitem>
+	    <para>
+	      When the connection to the peer is lost, DRBD can either
+	      go into stand alone mode, try to reconnect to the peer or
+	      freeze all further IO requests (think of an NFS hard mount).
+	      The keywords are: <option>stand_allone</option>, 
+	      <option>reconnect</option> and <option>freeze_io</option>.
+	      The default hander is <option>reconnect</option>.
 	    </para>
 	  </listitem>
 	</varlistentry>

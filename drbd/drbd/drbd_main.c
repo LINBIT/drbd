@@ -1016,7 +1016,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	set_fs(KERNEL_DS);
 
 	if (sock == mdev->data.socket)
-		mdev->ko_count = 10; // FIXME conf.ko_count
+		mdev->ko_count = mdev->conf.ko_count;
 	do {
 		/* STRANGE
 		 * tcp_sendmsg does _not_ use its size parameter at all ?
