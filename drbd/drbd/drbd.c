@@ -64,6 +64,9 @@
 #include "drbd.h"
 #include "mbds.h"
 
+/* This maches BM_BLOCK_SIZE */
+#define INITIAL_BLOCK_SIZE (1<<12)
+
 /* #define MAJOR_NR 240 */
 #define MAJOR_NR 43
 /* Using the major_nr of the network block device
@@ -1139,8 +1142,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	case DRBD_IOCTL_SET_CONFIG:
 	        /* printk(KERN_DEBUG DEVICE_NAME ": set_config()\n"); */
-		if (
-			   (err =
+		if ((err =
 		     copy_from_user(&drbd_conf[minor].conf, (void *) arg,
 				    sizeof(struct ioctl_drbd_config))))
 			 return err;
@@ -1184,9 +1186,14 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 			if (!drbd_conf[minor].mbds_id) {
 			       drbd_conf[minor].mbds_id = 
-				 drbd_conf[minor].mops->init(MKDEV(MAJOR_NR, minor));
+				 drbd_conf[minor].mops->init(MKDEV(MAJOR_NR, 
+								   minor));
 			}
 		}		
+
+		set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
+		drbd_conf[minor].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
+		set_blocksize(drbd_conf[minor].lo_device, INITIAL_BLOCK_SIZE);
 
 		set_cstate(&drbd_conf[minor],Unconnected);
 
@@ -1290,8 +1297,8 @@ __initfunc(int drbd_init(void))
 	/* Initialize size arrays. */
 
 	for (i = 0; i < MINOR_COUNT; i++) {
-		drbd_blocksizes[i] = BLOCK_SIZE;
-		drbd_conf[i].blk_size_b = drbd_log2(BLOCK_SIZE);
+		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
+		drbd_conf[i].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), FALSE /*TRUE */ );
 		drbd_conf[i].sock = 0;
