@@ -951,10 +951,9 @@ void drbdd(int minor)
 		atomic_set(&drbd_conf[minor].unacked_cnt,0);
 	}		
 
-	if(atomic_read(&drbd_conf[minor].pending_cnt)) {
-		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt!=0\n",minor);
-		atomic_set(&drbd_conf[minor].pending_cnt,0);
-	}		
+	/* Since syncer's blocks are also counted, there is no hope that
+	   pending_cnt is zero. */
+	atomic_set(&drbd_conf[minor].pending_cnt,0); 
 
 	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 }

@@ -355,7 +355,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 				dec_pending(mdev);
 			}
 		}
-		if(*p == TL_BARRIER) dec_pending(mdev);
+		//if(*p == TL_BARRIER) dec_pending(mdev);
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
 		        p = mdev->transfer_log;	    
