@@ -512,7 +512,7 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	ok = ( sent == size );
 	if(!ok) {
 		ERR("short sent %s size=%d sent=%d\n",
-		    cmdname(cmd), size, sent);
+		    cmdname(cmd), (int)size, sent);
 	}
 	C_DBG(5,"on %s >>> %s l: %d\n",
 	    sock == mdev->meta.socket ? "msock" : "sock",
@@ -751,7 +751,8 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 				break;
 		}
 		if (sent <= 0) {
-			WARN("%s: size=%d len=%d sent=%d\n",__func__,size,len,sent);
+			WARN("%s: size=%d len=%d sent=%d\n",
+			     __func__,(int)size,len,sent);
 			break;
 		}
 		len    -= sent;

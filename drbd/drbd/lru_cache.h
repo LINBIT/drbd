@@ -84,7 +84,7 @@ enum {
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 
-extern struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
+extern struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
 				  void *private_p);
 extern void lc_free(struct lru_cache* lc);
 extern void lc_set (struct lru_cache* lc, unsigned int enr, int index);

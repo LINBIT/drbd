@@ -203,8 +203,8 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 })
 #endif
 
-#define SET_MAGIC(x)       ((x)->magic = (int)(x) ^ DRBD_MAGIC)
-#define VALID_POINTER(x)   ((x) ? (((x)->magic ^ DRBD_MAGIC) == (int)(x)):0)
+#define SET_MAGIC(x)       ((x)->magic = (long)(x) ^ DRBD_MAGIC)
+#define VALID_POINTER(x)   ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0)
 #define INVALIDATE_MAGIC(x) (x->magic--)
 
 #define SET_MDEV_MAGIC(x) \

@@ -47,7 +47,7 @@ static inline void lc_touch(struct lru_cache *lc,struct lc_element *e)
  * struct lru_cache, and the hash table slots.
  * returns pointer to a newly initialized lru_cache object with said parameters.
  */
-struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
+struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
 			   void *private_p)
 {
 	unsigned long bytes;

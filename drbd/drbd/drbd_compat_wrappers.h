@@ -268,9 +268,9 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 	 * hm. obviously the tcp stack kmaps internally somewhere.
 	 */
 	if (PageHighMem(page))
-		offset = (int)bh->b_data;
+		offset = (int)(long)bh->b_data;
 	else
-		offset = (int)bh->b_data - (int)page_address(page);
+		offset = (long)bh->b_data - (long)page_address(page);
 
 	return _drbd_send_page(mdev,page,offset,size);
 }
