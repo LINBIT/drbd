@@ -46,7 +46,7 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/mm.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0) || defined(HAVE_MM_INLINE_H)
 #include <linux/mm_inline.h>
 #endif
 #include <linux/slab.h>

@@ -44,6 +44,12 @@ extern const char * drbd_buildtag(void);
  * anyways...
  */
 //#define REDHAT_2_4_18
+/* some redhat 2.4.X-Y.Z.whatever kernel flavours have an mm_inline.h,
+ * which needs to be included explicitly. most 2.4.x kernels don't have that
+ * header file at all. So uncomment for these, and ignore for all others.
+ * in 2.6., it will be included anyways.
+ */
+//#define HAVE_MM_INLINE_H
 
 //Your 2.4 verndor kernel already defines find_next_bit()
 //#define HAVE_FIND_NEXT_BIT
