@@ -535,8 +535,11 @@ struct Drbd_Conf {
 	struct semaphore sock_mutex;
 	struct semaphore msock_mutex;
 	struct semaphore ctl_mutex;
-	kdev_t lo_device;
+	kdev_t lo_device;         // backing device
 	struct file *lo_file;
+	kdev_t md_device;         // device for meta-data.
+	struct file *md_file;
+	int md_index;
 	unsigned long lo_usize;   /* user provided size */
 	unsigned long p_size;     /* partner's disk size */
 	Drbd_State state;
@@ -678,17 +681,19 @@ extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
 
-/* Returns the number of sectors of a block device. */
+/* Returns the number of kb of a block device. */
 static inline unsigned long capacity(kdev_t dev) {
-	return blk_size[MAJOR(dev)][MINOR(dev)]<<1;
+	return blk_size[MAJOR(dev)][MINOR(dev)];
 }
-/* Returns the start sector for meta data for a device size in sectors */
-static inline sector_t md_start_s(unsigned long size) {
-	return (size & ~7L) - (MD_RESERVED_SIZE<<1);
-}
+
 /* Returns the start sector for metadata */
 static inline sector_t drbd_md_ss(drbd_dev *mdev) {
-	return md_start_s(capacity(mdev->lo_device));
+	if( mdev->md_index == -1 ) {
+		return ( (capacity(mdev->lo_device) & ~3L) - 
+			 MD_RESERVED_SIZE ) * 2;
+	} else {
+		return 2 * MD_RESERVED_SIZE * mdev->md_index;
+	}
 }
 
 #if BITS_PER_LONG == 32
@@ -1036,6 +1041,26 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr
 }
 
+
+static inline void drbd_set_md_bh(drbd_dev *mdev,
+				  struct buffer_head *bh,
+				  sector_t sector,
+				  int size)
+{
+	bh->b_blocknr = sector;  // We abuse b_blocknr here.
+	bh->b_size = size;
+	bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
+
+	// we skip submit_bh, but use generic_make_request.
+	set_bit(BH_Req, &bh->b_state);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
+	set_bit(BH_launder, &bh->b_state);
+#else
+	set_bit(BH_Launder, &bh->b_state);
+#endif
+	bh->b_rdev = mdev->md_device;
+	bh->b_rsector = sector;
+}
 
 static inline void drbd_set_bh(drbd_dev *mdev,
 			       struct buffer_head *bh,

@@ -155,7 +155,8 @@ struct drbd_cmd commands[] = {
      { "sndbuf-size",required_argument, 0, 'S' },
      { 0,            0,                 0, 0 } },
    "FIXME net help" },
-  {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
+  {"disk", cmd_disk_conf,(char *[]){"lower_dev","meta_data_dev",
+				    "meta_data_index",0},
    (struct option[]) {
      { "size",  required_argument,      0, 'd' },
      { "do-panic",   no_argument,       0, 'p' },
@@ -528,12 +529,32 @@ void print_config_ioctl_err(int err_no)
   fprintf(stderr,"%s\n",etext[err_no]);
 }
 
+int check_if_blk_dev(int fd,const char* dev_name)
+{
+  struct stat lower_stat;
+  int err;
+  
+  err=fstat(fd, &lower_stat);
+  if(err)
+    {
+      perror("fstat() failed");
+      return 20;
+    }
+  if(!S_ISBLK(lower_stat.st_mode))
+    {
+      fprintf(stderr, "%s is not a block device!\n", dev_name);
+      return 20;
+    }
+
+  return 0;
+}
+
 int do_disk_conf(int drbd_fd,
 		 const char* lower_dev_name,
+		 const char* meta_dev_name,
 		 struct ioctl_disk_config* cn)
 {
-  int lower_device,err;
-  struct stat lower_stat;
+  int lower_device,meta_device,err;
 
   if(already_in_use(lower_dev_name))
     {
@@ -547,20 +568,24 @@ int do_disk_conf(int drbd_fd,
       return 20;
     }
 
-      /* Check if the device is a block device */
-  err=fstat(lower_device, &lower_stat);
-  if(err)
+  err = check_if_blk_dev(lower_device,lower_dev_name);
+  if(err) return err;
+
+  if(!strcmp(meta_dev_name,"internal")) {
+    meta_dev_name = lower_dev_name;
+  }
+
+  if((meta_device = open(meta_dev_name,O_RDWR))==-1)
     {
-      perror("fstat() failed");
-      return 20;
-    }
-  if(!S_ISBLK(lower_stat.st_mode))
-    {
-      fprintf(stderr, "%s is not a block device!\n", lower_dev_name);
+      perror("Can not open meta data device");
       return 20;
     }
 
+  err = check_if_blk_dev(meta_device,meta_dev_name);
+  if(err) return err;
+
   cn->config.lower_device=lower_device;
+  cn->config.meta_device=meta_device;
 
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_CONFIG,cn);
   if(err)
@@ -931,12 +956,21 @@ int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options)
 int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_disk_config cn;
-  int retval;
+  int retval,mi;
+
 
   retval=scan_disk_options(argv,argc,&cn,options);
   if(retval) return retval;
 
-  return do_disk_conf(drbd_fd,argv[3],&cn);
+  mi = m_strtol(argv[5],1);
+  if( mi < -1 ) {
+    fprintf(stderr,"meta_index may not be smaller than -1.\n");
+    return 20;    
+  }
+  //TODO check that mi*128M is not bigger than meta device!
+  cn.config.meta_index = mi;
+
+  return do_disk_conf(drbd_fd,argv[3],argv[4],&cn);
 }
 
 int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
@@ -1058,6 +1092,17 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 	 cn.lower_device_major,
 	 cn.lower_device_minor,
 	 guess_dev_name("/dev",cn.lower_device_major,cn.lower_device_minor));
+  if( cn.lower_device_major == cn.meta_device_major && 
+       cn.lower_device_minor == cn.meta_device_minor ) {
+    printf("Meta device: internal\n");
+  } else {
+    printf("Meta device: %02d:%02d   (%s)\n",
+	   cn.meta_device_major,
+	   cn.meta_device_minor,
+	   guess_dev_name("/dev",cn.meta_device_major,cn.meta_device_minor));
+    printf("Meta index: %d\n",cn.meta_index);
+  }
+
   printf("Disk options:\n");
   if( cn.disk_size_user ) printf(" size = %d KB\n",cn.disk_size_user);
   if( cn.do_panic ) printf(" do-panic\n");

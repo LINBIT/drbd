@@ -59,6 +59,8 @@ struct disk_config {
 	IN int      lower_device;
 	IN unsigned int disk_size;
 	IN int      do_panic;  /* Panic on error upon LL_DEV */
+	IN int      meta_device;
+	IN int      meta_index;
 };
 
 struct net_config {
@@ -162,6 +164,9 @@ struct ioctl_get_config {
 	OUT unsigned int      disk_size_user;
 	OUT int               do_panic;
 	OUT Drbd_CState       cstate;
+	OUT int               meta_device_major;
+	OUT int               meta_device_minor;
+       	OUT int               meta_index;
 };
 
 

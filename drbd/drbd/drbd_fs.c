@@ -79,9 +79,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	m_size = ll_dev ? blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] : 0;
 
-	if( 1 /* metadata on ll_dev */ ) {
-		if(m_size) m_size = md_start_s(m_size<<1)>>1;
-		if(p_size) p_size = md_start_s(p_size<<1)>>1;
+	if( mdev->md_index == -1 && m_size) {// internal metadata
+		m_size = m_size - MD_RESERVED_SIZE;
 	}
 
 	if(p_size && m_size) {
@@ -131,7 +130,8 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	int err,i,minor;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
-	struct file *filp;
+	struct file *filp = 0;
+	struct file *filp2 = 0;
 	struct inode *inode;
 	kdev_t ll_dev;
 
@@ -165,7 +165,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	}
 
 	if (!S_ISBLK(inode->i_mode)) {
-		fput(filp);
 		retcode=LDNoBlockDev;
 		goto fail_ioctl;
 	}
@@ -180,7 +179,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	if ((err = blkdev_open(inode, filp))) {
 		ERR("blkdev_open( %d:%d ,) returned %d\n",
 		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
-		fput(filp);
 		retcode=LDOpenFailed;
 		goto fail_ioctl;
 	}
@@ -189,6 +187,30 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	if (blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] < new_conf.disk_size) {
 		retcode = LDDeviceTooSmall;
+		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
+		goto fail_ioctl;
+	}
+
+	filp2 = fget(new_conf.meta_device);
+	if (!filp2) {
+		retcode=LDFDInvalid;
+		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
+		goto fail_ioctl;
+	}
+
+	inode = filp2->f_dentry->d_inode;
+
+	if (!S_ISBLK(inode->i_mode)) {
+		retcode=LDNoBlockDev;
+		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
+		goto fail_ioctl;
+	}
+
+	if ((err = blkdev_open(inode, filp2))) {
+		ERR("blkdev_open( %d:%d ,) returned %d\n",
+		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
+		retcode=LDOpenFailed;
+		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
 		goto fail_ioctl;
 	}
 
@@ -197,6 +219,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_resources(mdev);
+
+	mdev->md_device = inode->i_rdev;
+	mdev->md_file = filp2;
+	mdev->md_index = new_conf.meta_index;
 
 	mdev->lo_device = ll_dev;
 	mdev->lo_file = filp;
@@ -226,6 +252,8 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	return 0;
 
  fail_ioctl:
+	if (filp) fput(filp);
+	if (filp2) fput(filp2);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
@@ -239,6 +267,9 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	cn.lower_device_major=MAJOR(mdev->lo_device);
 	cn.lower_device_minor=MINOR(mdev->lo_device);
 	cn.disk_size_user=mdev->lo_usize;
+	cn.meta_device_major=MAJOR(mdev->md_device);
+	cn.meta_device_minor=MINOR(mdev->md_device);
+	cn.meta_index=mdev->md_index;
 	cn.do_panic=mdev->do_panic;
 	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
 	memcpy(&cn.sconf, &mdev->sync_conf, sizeof(struct syncer_config));

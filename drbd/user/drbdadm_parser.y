@@ -29,7 +29,19 @@ static struct d_option* new_opt(char* name,char* value)
 static void derror(char* text)
 {
   config_valid=0;
-  fprintf(stderr,"%s\n",text);
+  fprintf(stderr,
+	  "'%s' keyword missing from host section ending at line %d.\n"
+	  "(Host sections are those beginning with the 'on' keyword)\n\n",
+	  text,line);
+}
+
+static void derror2(char* text)
+{
+  config_valid=0;
+  fprintf(stderr,
+	  "%s\nDetected at host section ending in line %d.\n"
+	  "(Host sections are those beginning with the 'on' keyword)\n\n",
+	  text,line);
 }
 
 static void host_sec(char* name)
@@ -39,16 +51,23 @@ static void host_sec(char* name)
   gethostname(hostname,255);
 
   c_host->name=name;
-  if(c_host->device==0) derror("device missing");
-  if(c_host->disk==0) derror("disk missing");
-  if(c_host->address==0) derror("address missing");
-  if(c_host->port==0) derror("port missing");
+  if(c_host->device==0) derror("device");
+  if(c_host->disk==0) derror("disk");
+  if(c_host->address==0) derror("address");
+  if(c_host->port==0) derror("port");
+  if(c_host->meta_disk==0) derror("meta-disk");
+  if(c_host->meta_disk) {
+    if( !strcmp(c_host->meta_disk,"internal") && c_host->meta_index==0) 
+      c_host->meta_index=strdup("-1");
+  }
+  if(c_host->meta_index==0) derror("meta-index");
 
   if(strcmp(name,hostname)==0) {
-    if(c_res->me) derror("multiple host sections");
+    if(c_res->me) derror2("Thre are multiple host sections for this host.");
     c_res->me = c_host;
   } else {
-    if(c_res->partner) derror("multiple partner host sections");
+    if(c_res->partner) derror2("There are multiple host sections for the peer."
+			       "\n(Maybe misspelled local host name?)");
     c_res->partner = c_host;
   }
 }
@@ -72,7 +91,8 @@ static struct d_resource* new_resource(char* name)
 
 %token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON
 %token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_STARTUP
-%token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
+%token TK_META_DISK TK_META_INDEX
+%token <txt> TK_PROTOCOL TK_DO_PANIC
 %token <txt> TK_SIZE TK_TIMEOUT TK_CONNECT_INT
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT
 %token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD
@@ -80,6 +100,7 @@ static struct d_resource* new_resource(char* name)
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_MAX_BUFFERS TK_MAX_EPOCH_SIZE
 %token <txt> TK_SNDBUF_SIZE TK_SYNC_GROUP TK_AL_EXTENTS
+%token <txt> TK_SINTEGER
 
 %type <d_option> disk_stmts disk_stmt
 %type <d_option> net_stmts net_stmt
@@ -166,6 +187,9 @@ host_stmt:        TK_DISK '=' TK_STRING     { c_host->disk=$3; }
 		| TK_DEVICE '=' TK_STRING   { c_host->device=$3; }
 		| TK_ADDRESS '=' TK_IPADDR  { c_host->address=$3; }
 		| TK_PORT '=' TK_INTEGER    { c_host->port=$3; }
+		| TK_META_DISK '=' TK_STRING { c_host->meta_disk=$3; }
+		| TK_META_INDEX '=' TK_SINTEGER { c_host->meta_index=$3; }
+
 		;
 
 startup_stmts:    /* empty */  { $$ = 0; }

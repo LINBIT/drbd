@@ -190,7 +190,7 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
 
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	drbd_set_md_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
 	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
@@ -221,7 +221,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	down(&mdev->md_io_mutex);
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + index;
 
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	drbd_set_md_bh(mdev, mdev->md_io_bh, sector, 512);
 	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
 	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
@@ -405,7 +405,7 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		sector = drbd_md_ss(mdev) + MD_BM_OFFSET + so;
 		so++;
 
-		drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+		drbd_set_md_bh(mdev, mdev->md_io_bh, sector, 512);
 		clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
 		set_bit(BH_Lock, &mdev->md_io_bh->b_state);
 		mdev->md_io_bh->b_end_io = drbd_generic_end_io;
@@ -477,7 +477,7 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 
 	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	drbd_set_md_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
 	mdev->md_io_bh->b_end_io = sync ? drbd_generic_end_io : drbd_async_eio;

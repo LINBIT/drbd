@@ -16,6 +16,8 @@ struct d_host_info
   char* disk;
   char* address;
   char* port;
+  char* meta_disk;
+  char* meta_index;
 };
 
 struct d_option

@@ -1092,6 +1092,8 @@ int __init drbd_init(void)
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].lo_usize = 0;
+		drbd_conf[i].md_file = 0;
+		drbd_conf[i].md_device = 0;
 		drbd_conf[i].p_size = 0;
 		drbd_conf[i].state = Secondary;
 		init_waitqueue_head(&drbd_conf[i].state_wait);
@@ -1329,10 +1331,14 @@ void cleanup_module(void)
 void drbd_free_ll_dev(drbd_dev *mdev)
 {
 	if (mdev->lo_file) {
-		blkdev_put(mdev->lo_file->f_dentry->d_inode->i_bdev, BDEV_FILE);
+		blkdev_put(mdev->lo_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
+		blkdev_put(mdev->md_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
 		fput(mdev->lo_file);
+		fput(mdev->md_file);
 		mdev->lo_file = 0;
 		mdev->lo_device = 0;
+		mdev->md_file = 0;
+		mdev->md_device = 0;
 	}
 }
 

@@ -51,6 +51,8 @@ global           { DP; return TK_GLOBAL;                 }
 address          { DP; return TK_ADDRESS;                }
 startup          { DP; return TK_STARTUP;                }
 resource         { DP; BEGIN(id); return TK_RESOURCE;    }
+meta-disk        { DP; BEGIN(id); return TK_META_DISK;   }
+meta-index       { DP; return TK_META_INDEX;             }
 rate             { DP; CP; return TK_RATE;               }
 size             { DP; CP; return TK_SIZE;               }
 group            { DP; CP; return TK_SYNC_GROUP;         }
@@ -72,6 +74,7 @@ degr-wfc-timeout { DP; CP; return TK_DEGR_WFC_TIMEOUT;   }
 disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;   }
 {IPV4ADDR}       { DP; CP; return TK_IPADDR;             }
 {NUM}            { DP; CP; return TK_INTEGER;            }
+-?{NUM}          { DP; CP; return TK_SINTEGER;           }
 {WS}+            /* ignore whitespaces */
 [^ \n\t={}"]+    { syntax_error(yytext); }
 

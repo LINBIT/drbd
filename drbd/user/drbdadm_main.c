@@ -161,6 +161,8 @@ static void dump_host_info(struct d_host_info* hi)
   printf("    disk=%s\n",esc(hi->disk));
   printf("    address=%s\n",hi->address);
   printf("    port=%s\n",hi->port);
+  printf("    meta-disk=%s\n",esc(hi->meta_disk));
+  printf("    meta-index=%s\n",esc(hi->meta_index));
   printf("  }\n");
 }
 
@@ -230,6 +232,8 @@ static void free_host_info(struct d_host_info* hi)
   free(hi->disk);
   free(hi->address);
   free(hi->port);
+  free(hi->meta_disk);
+  free(hi->meta_index);
 }
 
 static void free_options(struct d_option* opts)
@@ -385,6 +389,8 @@ int adm_attach(struct d_resource* res,char* unused)
   argv[argc++]=res->me->device;
   argv[argc++]="disk";
   argv[argc++]=res->me->disk;
+  argv[argc++]=res->me->meta_disk;
+  argv[argc++]=res->me->meta_index;
   opt=res->disk_options;
   make_options(opt);
   argv[argc++]=0;
