@@ -509,9 +509,17 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 	generic_make_request(bio);
 }
 
+static inline void drbd_blk_run_queue(request_queue_t *q)
+{
+	if (q && q->queue_lock && q->request_fn)
+		blk_run_queue(q);
+	else
+		blk_run_queues();
+}
+
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
-	blk_run_queue(bdev_get_queue(mdev->backing_bdev)); 
+	drbd_blk_run_queue(bdev_get_queue(mdev->backing_bdev)); 
 }
 
 static inline void drbd_plug_device(drbd_dev *mdev)

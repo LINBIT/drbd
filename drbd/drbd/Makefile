@@ -136,7 +136,7 @@ else
   endif
 
   clean:
-	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernelrelease
+	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
   distclean: clean
 
@@ -172,6 +172,6 @@ else
   endif
 
   depmod:
-	[ -e $(KDIR)/System.map ] && [ -e ./drbd.o ] && \
-	   /sbin/depmod -F $(KDIR)/System.map -e ./drbd.o 2>&1 >/dev/null
+	[ -e $(KDIR)/System.map ] && [ -e ./$(MODOBJ) ] && \
+	   /sbin/depmod -F $(KDIR)/System.map -e ./$(MODOBJ) 2>&1 >/dev/null
 endif
