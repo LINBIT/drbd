@@ -120,7 +120,7 @@ drbd/drbd_buildtag.c:
 .PHONY: .filelist
 .filelist:
 	@ svn info >/dev/null || { echo "you need a svn checkout to do this." ; false ; }
-	@find $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;/^debian/d' ) \
+	@find $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;$(if $(PRESERVE_DEBIAN),,/^debian/d)' ) \
 	\! -type d -maxdepth 0 |\
 	sed 's:^:drbd-$(DIST_VERSION)/:' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now

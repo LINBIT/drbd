@@ -761,8 +761,8 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	spin_lock_irq(&mdev->ee_lock);
 	rv = _drbd_process_ee(mdev,1);
 
-	epoch_size=mdev->epoch_size;
-	mdev->epoch_size=0;
+	epoch_size=atomic_read(&mdev->epoch_size);
+	atomic_set(&mdev->epoch_size,0);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
@@ -973,7 +973,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	sector_t sector = drbd_ee_get_sector(e);
 	int ok=1;
 
-	mdev->epoch_size++;
+	atomic_inc(&mdev->epoch_size);
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
@@ -1144,6 +1144,10 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	mdev->read_cnt += size >> 9;
 	inc_unacked(mdev);
 	drbd_generic_make_request(READ,&e->private_bio);
+	if (atomic_read(&mdev->local_cnt) >= (mdev->conf.max_epoch_size>>4) ) {
+		drbd_kick_lo(mdev);
+	}
+
 
 	return TRUE;
 }
@@ -1364,6 +1368,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
 
+	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
+		mdev->lo_usize = be64_to_cpu(p->u_size);
+		INFO("Peer sets u_size to %lu KB\n",
+		     (unsigned long)mdev->lo_usize);
+	}
+
 /*lge:
  * FIXME
  * please get the order of tests (re)settings for consider_sync
@@ -1392,12 +1402,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		mdev->sync_conf.skip != 0 || p->skip_sync != 0;
 	mdev->sync_conf.group =
 		min_t(int,mdev->sync_conf.group,be32_to_cpu(p->sync_group));
-
-	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
-		mdev->lo_usize = be64_to_cpu(p->u_size);
-		INFO("Peer sets u_size to %lu KB\n",
-		     (unsigned long)mdev->lo_usize);
-	}
 
 	if (mdev->state.s.conn == WFReportParams) {
 		INFO("Connection established.\n");
@@ -1709,7 +1713,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
 	D_ASSERT(list_empty(&mdev->done_ee)); // done here
 
-	mdev->epoch_size=0;
+	atomic_set(&mdev->epoch_size,0);
 	mdev->rs_total=0;
 
 	if(atomic_read(&mdev->unacked_cnt)) {

@@ -274,6 +274,33 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 	return cleared;
 }
 
+STATIC void bm_set_surplus(struct drbd_bitmap * b)
+{
+	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
+	size_t w = b->bm_bits >> LN2_BPL;
+
+	if ( w < b->bm_words ) {
+		b->bm[w++] |= ~mask;
+	}
+
+	if ( w < b->bm_words ) {
+		b->bm[w++] = ~(0UL);
+	}
+}
+
+STATIC unsigned long bm_count_bits(struct drbd_bitmap * b)
+{
+	unsigned long *bm = b->bm;
+	unsigned long *ep = b->bm + b->bm_words;
+	unsigned long bits = 0;
+
+	while ( bm < ep ) {
+		bits += hweight_long(*bm++);
+	}
+
+	return bits;
+}
+
 #define BM_SECTORS_PER_BIT (BM_BLOCK_SIZE/512)
 
 /*
@@ -288,7 +315,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long bits, bytes, words, *nbm, *obm = 0;
-	int err = 0;
+	int err = 0, growing;
 
 	D_BUG_ON(!b);
 	MUST_BE_LOCKED();
@@ -349,19 +376,23 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		obm = b->bm;
 		// brgs. move several MB within spinlock...
 		if (obm) {
+			bm_set_surplus(b);
 			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
 			memcpy(nbm,obm,min_t(size_t,b->bm_words,words)*sizeof(long));
 		}
-		if (b->bm_words < words) { // set all newly allocated bits
-			memset(nbm,-1,(words - b->bm_words)*sizeof(long));
+		growing = words > b->bm_words;
+		if (growing) { // set all newly allocated bits
+			memset( nbm+b->bm_words, -1,
+				(words - b->bm_words) * sizeof(long) );
+			b->bm_set  += bits - b->bm_bits;
 		}
 		nbm[words] = DRBD_MAGIC;
 		b->bm = nbm;
-		b->bm_set  += bits - b->bm_bits;
 		b->bm_bits  = bits;
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
+		if( !growing ) b->bm_set = bm_count_bits(b);
 		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
