@@ -531,7 +531,7 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 int drbd_send_bitmap(struct Drbd_Conf *mdev)
 {
 	Drbd_Packet head;
-	int ret,buf_i,bm_i;
+	int ret,buf_i,want,bm_i=0;
 	size_t bm_words;
 	u32 *buffer,*bm;
 
@@ -542,21 +542,24 @@ int drbd_send_bitmap(struct Drbd_Conf *mdev)
 	buffer=vmalloc(MBDS_PACKET_SIZE);
 	head.command = cpu_to_be16(ReportBitMap);
 
-	buf_i=0;
-	for(bm_i=0;bm_i<bm_words;bm_i++) {
+	while(1) {
+		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
+		if(want==0) break;
 
-		buffer[buf_i] = cpu_to_be32(bm[bm_i]);
+		for(buf_i=0;buf_i<want/sizeof(long);buf_i++) {
+			buffer[buf_i] = cpu_to_be32(bm[bm_i++]);
+		}
 
-		if(++buf_i == MBDS_PACKET_SIZE/sizeof(long)) {
-			buf_i=0;
-			down(&mdev->sock_mutex);
-			ret=drbd_send(mdev,&head,sizeof(head),
-				      buffer,MBDS_PACKET_SIZE,0);
-			up(&mdev->sock_mutex);
-			if(ret != sizeof(head) + MBDS_PACKET_SIZE) {
-				ret=FALSE;
-				goto out;
-			}
+		down(&mdev->sock_mutex);
+		ret=drbd_send(mdev,&head,sizeof(head),buffer,want,0);
+		up(&mdev->sock_mutex);
+		if(ret != want + sizeof(head) ) {
+			ret=FALSE;
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: short send ret=%d want=%d head=%d\n",
+			       (int)(mdev-drbd_conf),
+			       ret,want,sizeof(head));
+			goto out;
 		}
 	}
 
@@ -1271,16 +1274,18 @@ void bm_cleanup(void* bm_id)
    calls 
 */
 
-void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
+int 
+bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
 {
         unsigned long* bm;
 	unsigned long bitnr;
 	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
+	int ret=0;
 
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
 		       "device size!\n");
-		return;
+		return 0;
 	}
 
 	bm = sbm->bm;
@@ -1304,12 +1309,16 @@ void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int
 		goto out;
 	}
 
+	ret=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
+
 	bm[bitnr>>LN2_BPL] = bit ?
 	  bm[bitnr>>LN2_BPL] |  ( 1L << (bitnr & ((1L<<LN2_BPL)-1)) ) :
 	  bm[bitnr>>LN2_BPL] & ~( 1L << (bitnr & ((1L<<LN2_BPL)-1)) );
 
  out:
 	spin_unlock(&sbm->bm_lock);
+
+	return ret;
 }
 
 int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size)

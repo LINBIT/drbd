@@ -90,7 +90,7 @@
 #ifdef DBG_PRINTKS_RCV
 # define DPRINTK(fmt, args... ) printk(KERN_DEBUG fmt, ##args)
 #else
-# define DPRINTK(...) 
+# define DPRINTK(...)
 #endif
 
 /*
@@ -446,7 +446,7 @@ extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
 struct BitMap;
 extern struct BitMap* bm_init(kdev_t dev);
 extern void bm_cleanup(void* bm_id);
-extern void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit);
+extern int bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit);
 extern unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size);
 extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
@@ -543,9 +543,13 @@ static inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
 
 static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,unsigned long s)
 {
-	mdev->rs_total = mdev->rs_total + ( 1 << (mdev->blk_size_b - 10) );
-	bm_set_bit(mdev->mbds_id,  s >> (mdev->blk_size_b-9), 
-		   mdev->blk_size_b, SS_OUT_OF_SYNC);
+	int before;
+	before=bm_set_bit(mdev->mbds_id,  s >> (mdev->blk_size_b-9), 
+			  mdev->blk_size_b, SS_OUT_OF_SYNC);
+	if(before == SS_IN_SYNC) {
+		mdev->rs_total = mdev->rs_total + 
+			( 1 << (mdev->blk_size_b - 10) );
+	}
 }
 
 static inline void drbd_set_in_sync(struct Drbd_Conf* mdev, 
@@ -568,6 +572,7 @@ static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 			mdev->gen_cnt[Flags] |= MDF_Consistent;
 			drbd_md_write(mdev-drbd_conf);
 		}
+		mdev->rs_total = 0;
 		set_cstate(mdev,Connected);
 	}
 }

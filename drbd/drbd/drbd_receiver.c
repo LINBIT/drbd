@@ -1331,7 +1331,7 @@ STATIC inline int receive_bitmap(struct Drbd_Conf* mdev)
 {
 	size_t bm_words;
 	u32 *buffer,*bm,word;
-	int ret,bm_i,buf_i;
+	int ret,buf_i,want,bm_i=0;
 	unsigned long bits=0;
 	Drbd_Packet header;
 
@@ -1339,31 +1339,31 @@ STATIC inline int receive_bitmap(struct Drbd_Conf* mdev)
 	bm=(u32*)mdev->mbds_id->bm;
 	buffer=vmalloc(MBDS_PACKET_SIZE);
 
-	if (drbd_recv(mdev, buffer, MBDS_PACKET_SIZE,0) != MBDS_PACKET_SIZE) {
-		ret=FALSE;
-		goto out;
-	}
-	
-	buf_i=0;
-	for(bm_i=0;bm_i<bm_words;bm_i++) {
-		word = be32_to_cpu(buffer[buf_i]);
-		bits += parallel_bitcount(word);
-		bm[bm_i] = word;
-		if(++buf_i == MBDS_PACKET_SIZE/sizeof(long)) {
-			buf_i=0;
-			if (drbd_recv(mdev,&header,sizeof(Drbd_Packet),0) !=
-			    sizeof(Drbd_Packet)) {
-				ret=FALSE;
-				goto out;
-			}
-			if (drbd_recv(mdev, buffer, MBDS_PACKET_SIZE,0) != 
-			    MBDS_PACKET_SIZE) {
-				ret=FALSE;
-				goto out;
-			}
+	want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
+	goto start;
+
+	while(1) {
+		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
+		if(want==0) break;
+
+		if (drbd_recv(mdev,&header,sizeof(Drbd_Packet),0) !=
+		    sizeof(Drbd_Packet)) {
+			ret=FALSE;
+			goto out;
+		}		
+	start:
+		if (drbd_recv(mdev, buffer, want,0) != want) {
+			ret=FALSE;
+			goto out;
+		}
+
+		for(buf_i=0;buf_i<want/sizeof(long);buf_i++) {
+			word = be32_to_cpu(buffer[buf_i]);
+			bits += parallel_bitcount(word);
+			bm[bm_i++] = word;
 		}
 	}
-
+	
 	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 10); // in Kilobyte!
 	drbd_start_resync(mdev,SyncTarget);
 	ret=TRUE;
