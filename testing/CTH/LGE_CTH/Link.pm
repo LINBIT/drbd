@@ -1,5 +1,4 @@
 package LGE_CTH::Link;
-# $Id: Link.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
 
 use strict;
 use warnings;

@@ -1,4 +1,3 @@
-# $Id: DRBD_Resource.pm,v 1.1.2.3 2004/07/07 08:56:26 lars Exp $
 package LGE_CTH::DRBD_ResourceInstance;
 use strict;
 use warnings;

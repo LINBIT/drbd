@@ -1,5 +1,4 @@
 package LGE_CTH::Component;
-# $Id: Component.pm,v 1.1.2.1 2004/05/27 22:32:03 lars Exp $
 
 use strict;
 use warnings;

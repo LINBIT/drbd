@@ -1,5 +1,4 @@
 #!/usr/bin/env - /bin/bash
-# $Id: T-007.sh,v 1.1.2.2 2004/06/17 01:35:52 lars Exp $
 
 #
 # Fail Link; Heal Link; wait for sync; Relocate service.

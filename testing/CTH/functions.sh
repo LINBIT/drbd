@@ -1,6 +1,5 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.9 2004/07/07 08:56:26 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 

@@ -1,5 +1,4 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.12 2004/07/07 08:56:26 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier

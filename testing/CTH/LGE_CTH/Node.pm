@@ -1,5 +1,4 @@
 package LGE_CTH::Node;
-# $Id: Node.pm,v 1.1.2.2 2004/06/07 10:16:39 lars Exp $
 
 use strict;
 use warnings;

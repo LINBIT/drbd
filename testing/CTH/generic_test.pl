@@ -1,5 +1,4 @@
 #!/usr/bin/perl
-# $Id: generic_test.pl,v 1.1.2.4 2004/07/07 08:56:26 lars Exp $
 use strict;
 use warnings;
 

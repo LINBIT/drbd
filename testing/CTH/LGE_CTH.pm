@@ -1,5 +1,4 @@
 package LGE_CTH;
-# $Id: LGE_CTH.pm,v 1.1.2.3 2004/07/07 08:56:26 lars Exp $
 use strict;
 use warnings;
 use Carp;

@@ -1,5 +1,4 @@
 package LGE_CTH::GenericTest;
-# $Id: GenericTest.pm,v 1.1.2.2 2004/06/03 10:00:08 lars Exp $
 our @ISA = 'LGE_CTH::Resource';
 
 our %ClassData = (

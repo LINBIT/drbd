@@ -97,6 +97,5 @@ if not otherwise stated.
 In case you care for an explicit '''license statement''':
 This is and needs to be GPL.
 
-# $Id: README,v 1.1.2.3 2004/05/28 08:57:02 lars Exp $
 # if you don't know wiki-moin.vim: http://linuxha.trick.ca/WikiTricks
 # vim: set ft=wiki-moin :

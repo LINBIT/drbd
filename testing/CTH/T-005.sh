@@ -1,5 +1,4 @@
 #!/usr/bin/env - /bin/bash
-# $Id: T-005.sh,v 1.1.2.2 2004/06/07 13:58:27 lars Exp $
 
 #
 # Fail Primary disk, Relocate service, reattach "healed" disk on now secondary

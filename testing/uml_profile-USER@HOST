@@ -1,4 +1,4 @@
-# uml_profile for lars@minna
+# uml_profile for $USER@$HOSTNAME
 
 # you want to change
 #  - the ips for the TAP[10] devices to match your uml setup

@@ -1,5 +1,4 @@
 package LGE_CTH::Resource;
-# $Id: Resource.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
 
 use strict;
 use warnings;

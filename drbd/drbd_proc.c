@@ -8,7 +8,7 @@
    Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
 	main author.
 
-   Copyright (C) 2002-2004,, Lars Ellenberg <l.g.e@web.de>.
+   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
 	main contributor.
 
    drbd is free software; you can redistribute it and/or modify

@@ -1,5 +1,4 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.8 2004/06/15 08:41:02 lars Exp $
 
 # example for scripting failures
 # 
