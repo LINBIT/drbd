@@ -12,7 +12,7 @@
         Code to prevent zombie threads.
 
    Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
-        some SMP fixes.
+        some SMP fixes; syncer progress
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -63,14 +63,14 @@
 #define EE_MININUM 32    // @4k pages => 128 KByte
 #define EE_MAXIMUM 2048  // @4k pages => 8   MByte
 
-/*static */int _drbd_process_done_ee(struct Drbd_Conf* mdev);
+STATIC int _drbd_process_done_ee(struct Drbd_Conf* mdev);
 
-/*static */inline void inc_unacked(struct Drbd_Conf* mdev)
+STATIC inline void inc_unacked(struct Drbd_Conf* mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-/*static */inline void dec_unacked(struct Drbd_Conf* mdev)
+STATIC inline void dec_unacked(struct Drbd_Conf* mdev)
 {
 	if(atomic_dec_and_test(&mdev->unacked_cnt))
 		wake_up_interruptible(&mdev->state_wait);
@@ -83,7 +83,7 @@
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
 #if 0
-/*static */inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
+STATIC inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
 	/* Use this code if you are working with a VIA based mboard :) */
@@ -98,7 +98,7 @@
 }
 #endif //PARANOIA
 
-/*static */inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
+STATIC inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
 {
 	int i;
 
@@ -111,7 +111,7 @@
 	return drbd_conf;
 }
 
-/*static */void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
+STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 {
 	/* This callback will be called in irq context by the IDE drivers,
 	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
@@ -201,7 +201,7 @@ You must not have the ee_lock:
  drbd_wait_sync_ee()
 */
 
-/*static */void _drbd_alloc_ee(struct Drbd_Conf* mdev,page_t* page)
+STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,page_t* page)
 {
 	struct Tl_epoch_entry* e;
 	struct buffer_head *bh,*lbh,*fbh;
@@ -248,7 +248,7 @@ You must not have the ee_lock:
 	bh->b_this_page=fbh;
 }
 
-/*static */int drbd_alloc_ee(struct Drbd_Conf* mdev,int mask)
+STATIC int drbd_alloc_ee(struct Drbd_Conf* mdev,int mask)
 {
 	page_t *page;
 
@@ -264,7 +264,7 @@ You must not have the ee_lock:
 	return TRUE;
 }
 
-/*static */page_t* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
+STATIC page_t* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
@@ -329,7 +329,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	return count;
 }
 
-/*static */void drbd_ee_fix_bhs(struct Drbd_Conf* mdev)
+STATIC void drbd_ee_fix_bhs(struct Drbd_Conf* mdev)
 {
 	struct list_head workset;
 	page_t* page;
@@ -357,7 +357,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 #define GFP_TRY	( __GFP_HIGHMEM )
 #endif
 
-/*static */struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
+STATIC struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
 					  unsigned long block)
 {
 	struct list_head *le;
@@ -393,7 +393,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	return e;
 }
 
-/*static */void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
+STATIC void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
 {
 	page_t* page;
 
@@ -413,7 +413,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	}
 }
 
-/*static */int _drbd_process_done_ee(struct Drbd_Conf* mdev)
+STATIC int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
@@ -441,7 +441,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	return TRUE;
 }
 
-/*static */inline int drbd_process_done_ee(struct Drbd_Conf* mdev)
+STATIC inline int drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	int rv;
 	spin_lock_irq(&mdev->ee_lock);
@@ -450,7 +450,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	return rv;
 }
 
-/*static */inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
+STATIC inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 {
 	struct list_head *le;
         struct Tl_epoch_entry *e;
@@ -473,7 +473,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 }
 
 
-/*static */void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
+STATIC void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
@@ -505,17 +505,17 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	spin_unlock_irq(&mdev->ee_lock);
 }
 
-/*static */inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
+STATIC inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
 {
 	_drbd_wait_ee(mdev,&mdev->active_ee);
 }
 
-/*static */inline void drbd_wait_sync_ee(struct Drbd_Conf* mdev)
+STATIC inline void drbd_wait_sync_ee(struct Drbd_Conf* mdev)
 {
 	_drbd_wait_ee(mdev,&mdev->sync_ee);
 }
 
-/*static */void drbd_c_timeout(unsigned long arg)
+STATIC void drbd_c_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
@@ -527,7 +527,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 
 }
 
-/*static */struct socket* drbd_accept(struct socket* sock)
+STATIC struct socket* drbd_accept(struct socket* sock)
 {
 	struct socket *newsock;
 	int err = 0;
@@ -573,7 +573,7 @@ struct idle_timer_info {
 };
 
 
-/*static */void drbd_idle_timeout(unsigned long arg)
+STATIC void drbd_idle_timeout(unsigned long arg)
 {
 	struct idle_timer_info* ti = (struct idle_timer_info *)arg;
 
@@ -642,7 +642,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 }
 
 
-/*static */struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
+STATIC struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
 {
 	int err;
 	struct socket *sock;
@@ -666,7 +666,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 	return sock;
 }
 
-/*static */struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
+STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 {
 	int err;
 	struct socket *sock,*sock2;
@@ -797,7 +797,18 @@ int drbd_connect(struct Drbd_Conf* mdev)
 	return 1;
 }
 
-inline int receive_cstate(struct Drbd_Conf* mdev)
+/* Is called if the node is in secondary state and synchronisation starts*/
+static void syncer_starts(struct Drbd_Conf* mdev)
+{
+	mdev->gen_cnt[Consistent]=0;
+
+	mdev->resync_mark = jiffies;
+	mdev->resync_mark_start = jiffies;
+	/* This is in units of 1024 bytes... */
+	mdev->resync_mark_cnt =	blk_size[MAJOR_NR][mdev - drbd_conf] << 1;
+}
+
+STATIC inline int receive_cstate(struct Drbd_Conf* mdev)
 {
 	Drbd_CState_P header;
 
@@ -810,22 +821,22 @@ inline int receive_cstate(struct Drbd_Conf* mdev)
 	if(mdev->state == Secondary && 
 	   (mdev->cstate==SyncingAll || 
 	    mdev->cstate==SyncingQuick) ) {
-		mdev->gen_cnt[Consistent]=0;
+		syncer_starts(mdev);
 		drbd_md_write((int)(mdev-drbd_conf));
 	}
 
 	return TRUE;
 }
 
-inline int receive_barrier(struct Drbd_Conf* mdev)
+STATIC inline int receive_barrier(struct Drbd_Conf* mdev)
 {
   	Drbd_Barrier_P header;
 	int rv;
 	int epoch_size;
 
 	if(mdev->state != Secondary) /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n"
-		      ,(int)(mdev-drbd_conf));
+		printk(KERN_ERR DEVICE_NAME"%d: got barrier while not SEC!!\n",
+		       (int)(mdev-drbd_conf));
 
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
 	        return FALSE;
@@ -850,7 +861,7 @@ inline int receive_barrier(struct Drbd_Conf* mdev)
 	return rv;
 }
 
-inline int receive_data(struct Drbd_Conf* mdev,int data_size)
+STATIC inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 {
         struct buffer_head *bh;
 	unsigned long block_nr;
@@ -886,31 +897,47 @@ inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev,block_nr);
-	e->block_id=header.block_id;
-	if( is_syncer_blk(mdev,header.block_id) ) {
-		list_add(&e->list,&mdev->sync_ee);
-	} else {
-		list_add(&e->list,&mdev->active_ee);
-	}
+	spin_unlock_irq(&mdev->ee_lock);
 
-	/* do not use mark_buffer_diry() since it would call refile_buffer() */
+	e->block_id=header.block_id;
+
+	/* do not use mark_buffer_dirty() since it would call refile_buffer()*/
 	bh=e->bh;
 	set_bit(BH_Dirty, &bh->b_state);
 	set_bit(BH_Lock, &bh->b_state); // since using submit_bh()
-
-	spin_unlock_irq(&mdev->ee_lock);
 
 	rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
 	bh_kunmap(bh);
 
 	if ( rr != data_size) {
-		spin_lock_irq(&mdev->ee_lock);
-		list_del(&e->list);
 		clear_bit(BH_Lock, &bh->b_state);
+		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
-
 		return FALSE;
+	}
+
+	spin_lock_irq(&mdev->ee_lock);
+	if(is_syncer_blk(mdev,header.block_id) ) {
+		list_add(&e->list,&mdev->sync_ee);
+		spin_unlock_irq(&mdev->ee_lock);
+		if(mdev->cstate == SyncingAll) {
+			unsigned long sector =
+				block_nr << (mdev->blk_size_b - 9);
+			mdev->synced_to = sector;
+			/*
+			 * I could use rolling marks as in drbd_syncer,
+			 * but I'd have to store those marks static
+			 * somewhere.
+			 */ 
+			if (jiffies - mdev->resync_mark > 10*HZ) {
+				mdev->resync_mark = jiffies;
+				mdev->resync_mark_cnt = sector;
+			}
+		}
+	} else {
+		list_add(&e->list,&mdev->active_ee);
+		spin_unlock_irq(&mdev->ee_lock);
 	}
 
 	mdev->writ_cnt+=data_size/1024;
@@ -951,7 +978,7 @@ inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 	return TRUE;
 }     
 
-inline int receive_block_ack(struct Drbd_Conf* mdev)
+STATIC inline int receive_block_ack(struct Drbd_Conf* mdev)
 {     
         drbd_request_t *req;
 	Drbd_BlockAck_P header;
@@ -983,7 +1010,7 @@ inline int receive_block_ack(struct Drbd_Conf* mdev)
 	return TRUE;
 }
 
-inline int receive_barrier_ack(struct Drbd_Conf* mdev)
+STATIC inline int receive_barrier_ack(struct Drbd_Conf* mdev)
 {
 	Drbd_BarrierAck_P header;
 
@@ -1002,7 +1029,7 @@ inline int receive_barrier_ack(struct Drbd_Conf* mdev)
 }
 
 
-inline int receive_param(struct Drbd_Conf* mdev,int command)
+STATIC inline int receive_param(struct Drbd_Conf* mdev,int command)
 {
 	kdev_t ll_dev =	mdev->lo_device;
         Drbd_Parameter_P param;
@@ -1117,7 +1144,7 @@ inline int receive_param(struct Drbd_Conf* mdev,int command)
 				//drbd_send_cstate(mdev);
 				drbd_thread_start(&mdev->syncer);
 			} else {
-				mdev->gen_cnt[Consistent]=0;
+				syncer_starts(mdev);
 				//drbd_md_write(minor); is there anyway.
 			}
 		} else set_cstate(mdev,Connected);
@@ -1139,7 +1166,7 @@ inline int receive_param(struct Drbd_Conf* mdev,int command)
 }
 
 
-inline void drbd_collect_zombies(int minor)
+STATIC inline void drbd_collect_zombies(int minor)
 {
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
 		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
@@ -1271,7 +1298,8 @@ void drbdd(int minor)
 		drbd_clear_done_ee(drbd_conf+minor);
 		drbd_conf[minor].epoch_size=0;
 		break;
-	case Unknown:
+	default:
+		/* should not happen */
 	}
 
 	if(atomic_read(&drbd_conf[minor].unacked_cnt)) {

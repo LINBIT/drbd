@@ -66,7 +66,7 @@ struct net_config {
 	IN char     other_addr[MAX_SOCK_ADDR];
 	IN int      other_addr_len;
 	IN int      timeout;
-	IN int      sync_rate; /* KB/sec */
+	   int      sync_rate; /* KB/sec */
 	IN int      skip_sync; 
 	IN int      tl_size; /* size of the transfer log */
 	IN int      wire_protocol;  
@@ -83,7 +83,8 @@ enum ret_codes {
 	LDNoBlockDev,
 	LDOpenFailed,
 	LDDeviceTooSmall,
-	LDNoConfig
+	LDNoConfig,
+	LDMounted
 };
 
 struct ioctl_disk_config {
@@ -100,20 +101,26 @@ struct ioctl_net_config {
 #define DRBD_PROT_B   2
 #define DRBD_PROT_C   3
 
-typedef enum { Unknown=0, Primary=1, Secondary=2 } Drbd_State;
-#define PRIMARY_PLUS 5
+typedef enum {
+	Unknown=0,
+	Primary=1,     // role
+	Secondary=2,   // role
+	Human=4,
+	DontBlameDrbd=8
+} Drbd_State;
+#define PRIMARY_PLUS            (Primary   | Human )
 
 typedef enum { 
-  Unconfigured,
-  StandAlone,    
-  Unconnected,
-  Timeout,
-  BrokenPipe,
-  WFConnection,
-  WFReportParams,     /* The order of these constants is important.   */
-  Connected,          /* The lower ones (<WFReportParams) indicate */
-  SyncingAll,         /* that there is no socket! */
-  SyncingQuick        /* >=WFReportParams ==> There is a socket */
+	Unconfigured,
+	StandAlone,    
+	Unconnected,
+	Timeout,
+	BrokenPipe,
+	WFConnection,
+	WFReportParams,     /* The order of these constants is important.*/
+	Connected,          /* The lower ones (<WFReportParams) indicate */
+	SyncingAll,         /* that there is no socket! */
+	SyncingQuick        /* >=WFReportParams ==> There is a socket */
 } Drbd_CState; 
 
 struct ioctl_get_config {
@@ -142,6 +149,7 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_GET_CONFIG    _IOW( 'D', 0x0A, struct ioctl_get_config)
 #define DRBD_IOCTL_WAIT_CONNECT  _IOR( 'D', 0x0B, int )
 #define DRBD_IOCTL_SECONDARY_REM _IOR( 'D', 0x0C, int )
-
+#define DRBD_IOCTL_SET_SYNC_CONFIG _IOW( 'D', 0x10, int )
+ 
 #endif
 

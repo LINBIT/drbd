@@ -75,6 +75,18 @@
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
 
+#ifdef DBG_ALL_SYMBOLS
+# define STATIC
+#else
+# define STATIC static
+#endif
+
+#ifdef DBG_PRINTKS_RCV
+# define DPRINTK(fmt, args... ) printk(KERN_DEBUG fmt, ##args)
+#else
+# define DPRINTK(...) 
+#endif
+
 /*lge: is this the right version dependency? */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
 #define get_bh(bh)      ((bh)->b_count++)
@@ -280,10 +292,14 @@ struct Drbd_Conf {
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
 	struct semaphore send_mutex;
+	struct semaphore ctl_mutex;    /* for ioctl */
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
 	unsigned long send_block; // block which is processed by send_data
 	spinlock_t send_proc_lock;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
+	unsigned long resync_mark;       // for procfs
+	unsigned long resync_mark_cnt;   // syncer
+	unsigned long resync_mark_start; // progress bars
 	struct ds_buffer *syncer_b;
 	spinlock_t bb_lock;
 	struct Drbd_thread receiver;
@@ -344,10 +360,14 @@ extern int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr);
 extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
+#else
+extern void drbd_do_request(void);
 #endif	
 
 /* drbd_fs.c: */
 extern int drbd_set_state(int minor,Drbd_State newstate);
+extern int drbd_ioctl(struct inode *inode, struct file *file,
+		      unsigned int cmd, unsigned long arg);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 enum MetaDataIndex { 
@@ -439,8 +459,10 @@ extern void drbd_init_ee(struct Drbd_Conf* mdev);
 /* drbd_proc.c  */
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 extern struct proc_dir_entry *drbd_proc;
+extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 #else
 extern struct proc_dir_entry drbd_proc_dir;
+extern int drbd_proc_get_info(char *, char **, off_t, int, int);
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)

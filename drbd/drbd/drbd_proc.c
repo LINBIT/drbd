@@ -8,6 +8,9 @@
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
+   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
+        Show syncer progress
+
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -39,15 +42,6 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-/*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
-				   void *);
-/*static */ void drbd_do_request(request_queue_t *);
-#else
-/*static */ int drbd_proc_get_info(char *, char **, off_t, int, int);
-/*static */ void drbd_do_request(void);
-#endif
-
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 struct proc_dir_entry *drbd_proc;
@@ -65,6 +59,85 @@ struct proc_dir_entry drbd_proc_dir =
 
 
 struct request *my_all_requests = NULL;
+
+/*lge
+ * progress bars shamelessly adapted from driver/md/md.c
+ * output looks like
+ *	[=====>..............] 33.5% (23456/123456)
+ *	finish: 2:20h speed: 6,345 (6,456) K/sec
+ */
+STATIC int drbd_syncer_progress(char *buf,int minor)
+{
+	int sz = 0;
+	unsigned long total_kb, left_kb, res , db, dt, dbdt, rt;
+	/* unit 1024 bytes */
+	total_kb = blk_size[MAJOR_NR][minor];
+	/* synced_to unit 512 bytes */
+	left_kb = drbd_conf[minor].synced_to / 2;
+
+	res = (left_kb/1024)*1000/(total_kb/1024 + 1);
+	{
+		int i, y = res/50, x = 20-y;
+		sz += sprintf(buf + sz, "\t[");
+		for (i = 1; i < x; i++)
+			sz += sprintf(buf + sz, "=");
+		sz += sprintf(buf + sz, ">");
+		for (i = 0; i < y; i++)
+			sz += sprintf(buf + sz, ".");
+		sz += sprintf(buf + sz, "] ");
+	}
+	res = 1000L - res;
+	sz+=sprintf(buf+sz,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
+	if (total_kb > 0x100000L) /* if more than 1 GB display in MB */
+		sz+=sprintf(buf+sz,"(%lu/%lu)M\n\t",
+			left_kb/1024L, total_kb/1024L);
+	else
+		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", left_kb, total_kb);
+
+	/* see driver/md/md.c
+	 * We do not want to overflow, so the order of operands and
+	 * the * 100 / 100 trick are important. We do a +1 to be
+	 * safe against division by zero. We only estimate anyway.
+	 *
+	 * dt: time from mark until now
+	 * db: blocks written from mark until now
+	 * rt: remaining time
+	 */
+	dt = ((jiffies - drbd_conf[minor].resync_mark) / HZ);
+	if (!dt) dt++;
+	db = (drbd_conf[minor].resync_mark_cnt/2) - left_kb;
+	rt = (dt * (left_kb / (db/100+1)))/100; /* seconds */
+
+	if (rt > 3600) {
+		rt = (rt+59)/60; /* rounded up minutes */
+		sz += sprintf(buf + sz, "finish: %lu:%02luh",
+			rt / 60, rt % 60);
+	}
+	else 
+		sz += sprintf(buf + sz, "finish: %lu:%02lumin",
+			rt / 60, rt % 60);
+
+	/* current speed average over (SYNC_MARKS * SYNC_MARK_STEP) jiffies */
+	if ((dbdt=db/dt) > 1000)
+		sz += sprintf(buf + sz, " speed: %ld,%03ld",
+			dbdt/1000,dbdt % 1000);
+	else
+		sz += sprintf(buf + sz, " speed: %ld", dbdt);
+
+	/* mean speed since syncer started */
+	dt = ((jiffies - drbd_conf[minor].resync_mark_start) / HZ);
+	if (!dt) dt++;
+	db = total_kb - left_kb;
+	if ((dbdt=db/dt) > 1000)
+		sz += sprintf(buf + sz, " (%ld,%03ld)",
+			dbdt/1000,dbdt % 1000);
+	else
+		sz += sprintf(buf + sz, " (%ld)", dbdt);
+
+	sz += sprintf(buf+sz," K/sec\n");
+
+	return sz;
+}
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *buf, char **start, off_t offset,
@@ -128,8 +201,9 @@ struct request *my_all_requests = NULL;
 				   drbd_conf[i].read_cnt,
 				   atomic_read(&drbd_conf[i].pending_cnt),
 				   atomic_read(&drbd_conf[i].unacked_cnt));
-				   
 
+		if (drbd_conf[i].synced_to != 0)
+			rlen += drbd_syncer_progress(buf+rlen,i);
 	}
 
 	/* DEBUG & profile stuff */

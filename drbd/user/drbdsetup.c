@@ -9,6 +9,9 @@
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks before using the device.
 
+   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>
+        Some features.
+
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -64,6 +67,7 @@ int cmd_net_conf(int drbd_fd,char** argv,int argc);
 int cmd_disk_conf(int drbd_fd,char** argv,int argc);
 int cmd_disconnect(int drbd_fd,char** argv,int argc);
 int cmd_show(int drbd_fd,char** argv,int argc);
+int cmd_syncer(int drbd_fd,char** argv,int argc);
 
 struct drbd_cmd commands[] = {
 	{"primary", cmd_primary,           0, 1 },
@@ -72,6 +76,7 @@ struct drbd_cmd commands[] = {
 	{"wait_sync", cmd_wait_sync,       0, 1 },
 	{"wait_connect", cmd_wait_connect, 0, 1 },
 	{"replicate", cmd_replicate,       0, 0 },
+  	{"syncer", cmd_syncer,             0, 1 },
 	{"down", cmd_down,                 0, 0 },
 	{"net", cmd_net_conf,              3, 1 },
 	{"disk", cmd_disk_conf,            1, 1 },
@@ -196,12 +201,13 @@ void print_usage(const char* prgname)
 	  "USAGE:\n"
 	  " %s device command [ command_args ] [ comand_options ]\n"
 	  "Commands:\n"
-	  " primary [-h|--human] \n"
+	  " primary [-h|--human]\n"
 	  " secondary\n"
 	  " secondary_remote\n"
 	  " wait_sync [-t|--time val]\n"
 	  " wait_connect [-t|--time val]\n"
 	  " replicate\n"
+	  " syncer -r|--rate val\n"
 	  " down\n"
 	  " net local_addr[:port] remote_addr[:port] protocol "
 	  " [-t|--timeout val]\n"
@@ -390,7 +396,8 @@ void print_config_ioctl_err(int err_no)
     [LDNoBlockDev]="Lower device is not a block device.",
     [LDOpenFailed]="Open of lower device failed.",
     [LDDeviceTooSmall]="Low.dev. smaller than requested DRBD-dev. size.",
-    [LDNoConfig]="You have to use the disk command first."
+    [LDNoConfig]="You have to use the disk command first.",
+    [LDMounted]="Lower device is already mounted."
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;
@@ -621,6 +628,59 @@ int cmd_wait_connect(int drbd_fd,char** argv,int argc)
 int cmd_wait_sync(int drbd_fd,char** argv,int argc)
 {
   return wait_on(drbd_fd,argv,argc,8,DRBD_IOCTL_WAIT_SYNC);
+}
+
+int cmd_syncer(int drbd_fd,char** argv,int argc)
+{
+  int err;
+  int sync_rate = -1;
+  optind=0; opterr=0;
+  if(argc > 0) 
+    {
+      while(1)
+	{
+	  int c;
+	  static struct option options[] = {
+	    { "rate",       required_argument, 0, 'r' },
+	    { 0,            0,                 0, 0   }
+	  };
+	  
+	  c = getopt_long(argc+1,argv-1,"-r:",options,0);
+	  if(c == -1) break;
+	  switch(c)
+	    {
+	    case 'r': 
+	      sync_rate=m_strtol(optarg,1024);
+	      break;
+	    default:
+	      fprintf(stderr,"Unknown option %s\n",argv[optind-2]);
+	      return 20;
+	      break;
+	    }
+	}
+    }
+  
+  if (sync_rate <= 0) {
+    fprintf(stderr,"you must supply a valid sync_rate, "
+	    "e.g.  --rate=3000k\n");
+    return 20;
+  } else if (sync_rate > 200*1024) {
+    /* you can set it that high so it will never sleep.
+     * or do you really have this bandwidth :P
+     * we can adjust this in 3 years time...
+     */
+    fprintf(stderr,"I consider transfer rates above 200 M/sec bogus.\n");
+    return 20;
+  }
+  
+  err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&sync_rate);
+  if(err)
+    {
+      perror("DRBD_IOCTL_SET_SYNC_CONFIG ioctl() failed");
+      return 20;
+    }
+  
+  return 0;
 }
 
 int cmd_replicate(int drbd_fd,char** argv,int argc)

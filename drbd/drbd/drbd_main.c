@@ -80,22 +80,9 @@ int drbdd_init(struct Drbd_thread*);
 int drbd_syncer(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-/*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
-				   void *);
-/*static */ void drbd_do_request(request_queue_t *);
-#else
-/*static */ int drbd_proc_get_info(char *, char **, off_t, int, int);
-/*static */ void drbd_do_request(void);
-#endif
-/*static */ void drbd_dio_end(struct buffer_head *bh, int uptodate);
-
 int drbd_init(void);
-/*static */ int drbd_open(struct inode *inode, struct file *file);
-/*static */ int drbd_close(struct inode *inode, struct file *file);
-/*static */ int drbd_ioctl(struct inode *inode, struct file *file,
-			   unsigned int cmd, unsigned long arg);
-/*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
+STATIC int drbd_open(struct inode *inode, struct file *file);
+STATIC int drbd_close(struct inode *inode, struct file *file);
 
 int drbd_send(struct Drbd_Conf *, Drbd_Packet*, size_t , void* , size_t,int );
 
@@ -108,28 +95,32 @@ MODULE_AUTHOR("Philipp Reisner <philipp.reisner@gmx.at>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device");
 MODULE_LICENSE("GPL");
 MODULE_PARM(minor_count,"i");
+MODULE_PARM(disable_io_hints,"i");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
+MODULE_PARM_DESC(disable_io_hints, "Necessary if loopback devices are used for DRBD" );
 
-/*static */ int *drbd_blocksizes;
-/*static */ int *drbd_sizes;
+STATIC int *drbd_blocksizes;
+STATIC int *drbd_sizes;
 struct Drbd_Conf *drbd_conf;
 int minor_count=2;
+int disable_io_hints=0;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
-/*static */ struct block_device_operations drbd_ops = {
-	open:		drbd_open,
-	release:	drbd_close,
-	ioctl:          drbd_ioctl
+STATIC struct block_device_operations drbd_ops = {
+	.owner =   THIS_MODULE,
+	.open =    drbd_open,
+	.release = drbd_close,
+	.ioctl =   drbd_ioctl
 };
 #else
-/*static */ struct file_operations drbd_ops =
+STATIC struct file_operations drbd_ops =
 {
-	read:           block_read,
-	write:          block_write,
-	ioctl:          drbd_ioctl,
-	open:           drbd_open,
-	release:        drbd_close,
-	fsync:          block_fsync
+	.read =    block_read,
+	.write =   block_write,
+	.ioctl =   drbd_ioctl,
+	.open =    drbd_open,
+	.release = drbd_close,
+	.fsync =   block_fsync
 };
 #endif
 
@@ -181,7 +172,7 @@ void print_tl(struct Drbd_Conf *mdev)
 }
 #endif
 
-inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
+STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
 	unsigned long flags;
 	int cur_size;
@@ -242,7 +233,7 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }
 
-inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
+STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 {
 	unsigned long flags;
 	unsigned int bnr;
@@ -434,7 +425,7 @@ void daemonize(void)
 #endif
 
 
-int drbd_thread_setup(void* arg)
+STATIC int drbd_thread_setup(void* arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int retval;
@@ -452,7 +443,7 @@ int drbd_thread_setup(void* arg)
 	return retval;
 }
 
-void drbd_thread_init(int minor, struct Drbd_thread *thi,
+STATIC void drbd_thread_init(int minor, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
 	thi->task = NULL;
@@ -662,7 +653,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	return ret;
 }
 
-static void drbd_timeout(unsigned long arg)
+STATIC void drbd_timeout(unsigned long arg)
 {
 	struct send_timer_info *ti = (struct send_timer_info *) arg;
 	//	int i;
@@ -697,7 +688,7 @@ static void drbd_timeout(unsigned long arg)
 	}
 }
 
-void drbd_a_timeout(unsigned long arg)
+STATIC void drbd_a_timeout(unsigned long arg)
 {
 	struct Drbd_Conf *mdev = (struct Drbd_Conf *) arg;
 
@@ -879,7 +870,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	return sent;
 }
 
-/*static */ int drbd_open(struct inode *inode, struct file *file)
+STATIC int drbd_open(struct inode *inode, struct file *file)
 {
 	int minor;
 
@@ -900,7 +891,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	return 0;
 }
 
-/*static */ int drbd_close(struct inode *inode, struct file *file)
+STATIC int drbd_close(struct inode *inode, struct file *file)
 {
 	/* do not use *file (May be NULL, in case of a unmount :-) */
 	int minor;
@@ -924,7 +915,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
-void drbd_send_write_hint(void *data)
+STATIC void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
 	int i;
@@ -932,7 +923,7 @@ void drbd_send_write_hint(void *data)
 	/* In case the receiver calls run_task_queue(&tq_disk) itself,
 	   in order to flush blocks to the ll_dev (for a device in 
 	   secondary state), it could happen that it has to send the 
-	   WRITE_HINT for a other device (which is in primary state). 
+	   WRITE_HINT for an other device (which is in primary state). 
 	   This could lead to a distributed deadlock!!
 
 	   To avoid the deadlock we requeue the WRITE_HINT. */
@@ -964,6 +955,10 @@ int __init drbd_init(void)
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
 		return -EIO;
 	}
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+	drbd_proc->owner = THIS_MODULE;
+#endif
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops)) {
 
@@ -1019,13 +1014,17 @@ int __init drbd_init(void)
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
 		drbd_conf[i].transfer_log = 0;
 		drbd_conf[i].mbds_id = 0;
-		drbd_conf[i].flags=0;
+		/* If the WRITE_HINT_QUEUED flag is set but it is not
+		   actually queued the functionality is completely disabled */
+		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
+		else drbd_conf[i].flags=0;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].a_timeout.function = drbd_a_timeout;
 		drbd_conf[i].a_timeout.data = (unsigned long)(drbd_conf+i);
 		init_timer(&drbd_conf[i].a_timeout);
 		drbd_conf[i].synced_to=0;
 		init_MUTEX(&drbd_conf[i].send_mutex);
+		init_MUTEX(&drbd_conf[i].ctl_mutex);
 		drbd_conf[i].send_proc=NULL;
 		drbd_conf[i].send_proc_lock = SPIN_LOCK_UNLOCKED;
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);

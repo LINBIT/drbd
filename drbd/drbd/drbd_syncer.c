@@ -8,6 +8,10 @@
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
+   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
+        changed scheduling algorithm
+        keep track of syncer progress
+
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -82,7 +86,7 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 	return FALSE;
 }
 
-/*static */void ds_end_dio(struct buffer_head *bh, int uptodate)
+STATIC void ds_end_dio(struct buffer_head *bh, int uptodate)
 {
 	mark_buffer_uptodate(bh, uptodate);
 	clear_bit(BH_Lock, &bh->b_state);
@@ -91,7 +95,7 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 		wake_up(&bh->b_wait);
 }
 
-void ds_buffer_init(struct ds_buffer *this,int minor)
+STATIC void ds_buffer_init(struct ds_buffer *this,int minor)
 {
 	int i;
 	int bpp = PAGE_SIZE/this->b_size; // buffers per page
@@ -106,7 +110,7 @@ void ds_buffer_init(struct ds_buffer *this,int minor)
 	}
 }
 
-void ds_buffer_alloc(struct ds_buffer *this,int minor)
+STATIC void ds_buffer_alloc(struct ds_buffer *this,int minor)
 {
 	int amount,amount_blks,blocksize,size;
 	unsigned char* mem;
@@ -143,7 +147,7 @@ void ds_buffer_alloc(struct ds_buffer *this,int minor)
 	ds_buffer_init(this,minor);
 }
 
-void ds_buffer_free(struct ds_buffer *this)
+STATIC void ds_buffer_free(struct ds_buffer *this)
 {
 	int amount;
 
@@ -152,7 +156,7 @@ void ds_buffer_free(struct ds_buffer *this)
 	kfree(this->blnr);
 }
 
-int ds_buffer_read(struct ds_buffer *this,
+STATIC int ds_buffer_read(struct ds_buffer *this,
 		   unsigned long (*get_blk)(void*,int),
 		   void* id,
 		   int minor)
@@ -195,7 +199,7 @@ int ds_buffer_read(struct ds_buffer *this,
 	return count;
 }
 
-int ds_buffer_reread(struct ds_buffer *this,int minor)
+STATIC int ds_buffer_reread(struct ds_buffer *this,int minor)
 {
 	int i,count;
 	unsigned long flags;
@@ -221,7 +225,7 @@ int ds_buffer_reread(struct ds_buffer *this,int minor)
 		submit_bh(READ,this->bhs+i);
 	}
 	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
-		
+
 	if(count) {
 		run_task_queue(&tq_disk);
 	}
@@ -229,7 +233,7 @@ int ds_buffer_reread(struct ds_buffer *this,int minor)
 	return count;
 }
 
-int ds_buffer_wait_on(struct ds_buffer *this,int minor)
+STATIC int ds_buffer_wait_on(struct ds_buffer *this,int minor)
 {
 	int i;
 	int pending=this->io_pending_number;
@@ -248,7 +252,7 @@ int ds_buffer_wait_on(struct ds_buffer *this,int minor)
 	return pending;
 }
 
-inline void ds_buffer_done(struct ds_buffer *this,int minor)
+STATIC inline void ds_buffer_done(struct ds_buffer *this,int minor)
 {
 	int i,pending=this->io_pending_number;
 
@@ -258,7 +262,7 @@ inline void ds_buffer_done(struct ds_buffer *this,int minor)
 	}
 }
 
-int ds_buffer_send(struct ds_buffer *this,int minor)
+STATIC int ds_buffer_send(struct ds_buffer *this,int minor)
 {
 	int i,blocksize,rr,rv=TRUE;
 	int pending=this->io_pending_number;
@@ -284,7 +288,7 @@ int ds_buffer_send(struct ds_buffer *this,int minor)
 	return rv;
 }
 
-unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
+STATIC unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 {
 	struct Drbd_Conf *mdev=(struct Drbd_Conf *)id;
 	int shift=ln2_bs - 9;
@@ -299,28 +303,53 @@ unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 
 #define swap(a,b) { tmp=a; a=b; b=tmp; }
 
+/*lge
+ * progress bars shamelessly adapted from drivers/md/md.c
+ */
+/* hardcoded for now */
+#define SPEED_MAX (mdev->conf.sync_rate)
+#define SPEED_MIN 150
+#define SYNC_MARKS      10
+#define SYNC_MARK_STEP  (3*HZ)
+#ifdef TASK_NICE
+	/* this should work for the O(1) scheduler */
+#define drbd_set_user_nice(current,x) set_user_nice(current,(x))
+#else
+	/* FIXME which kernel introduced ->nice ? */
+# if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+	/* for 2.2 kernel */
+#  define drbd_set_user_nice(current,x) (current->priority = 20-(x))
+# else
+	/* 2.4 */
+#  define drbd_set_user_nice(current,x) (current->nice = (x))
+# endif
+#endif
+
 int drbd_syncer(struct Drbd_thread *thi)
 {
 	int minor = thi->minor;
 	struct ds_buffer buffers[2];
 	struct ds_buffer *disk_b, *net_b, *tmp;
-	int amount,amount_blks,interval;
+	int amount,amount_blks;
 	int my_blksize,ln2_bs,retry;
 	unsigned long (*get_blk)(void*,int);
 	void* id;
 	unsigned long flags;
+	unsigned long mark[SYNC_MARKS];
+	unsigned long mark_cnt[SYNC_MARKS];
+	unsigned int currspeed;
+	int last_mark,m;
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
 
 	amount=drbd_conf[minor].sock->sk->sndbuf >> (1+10);
 	/* We want to fill half of the send buffer in KB */
-	interval = max_t(int, amount*HZ/drbd_conf[minor].conf.sync_rate, 1);
 	my_blksize=blksize_size[MAJOR_NR][minor];
 	ln2_bs = drbd_log2(my_blksize);
 	amount_blks=(amount<<10)/my_blksize;
 
-	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation started "
-	       "blks=%d int=%d \n",minor,amount_blks,interval);
+	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation started blks=%d\n",
+		minor,amount_blks);
 
 	if(drbd_conf[minor].cstate == SyncingAll) {
 		drbd_conf[minor].synced_to =
@@ -339,6 +368,14 @@ int drbd_syncer(struct Drbd_thread *thi)
 		return 0;
 	}
 
+	for (m = 0; m < SYNC_MARKS; m++) {
+		mark[m] = jiffies;
+		mark_cnt[m] = drbd_conf[minor].synced_to;
+	}
+	last_mark = 0;
+	drbd_conf[minor].resync_mark_start = mark[last_mark];
+	drbd_conf[minor].resync_mark = mark[last_mark];
+	drbd_conf[minor].resync_mark_cnt = mark_cnt[last_mark];
 
 	ds_buffer_alloc(&buffers[0],minor);
 	ds_buffer_alloc(&buffers[1],minor);
@@ -350,11 +387,56 @@ int drbd_syncer(struct Drbd_thread *thi)
 	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 	
 	ds_buffer_read(disk_b,get_blk,id,minor);
+
+	/*
+	 * Resync has low priority.
+	 */
+	drbd_set_user_nice(current,19);
+
 	while (TRUE) {
+		struct Drbd_Conf *mdev = drbd_conf+minor;
 		retry=0;
 	retry:
-		current->state = TASK_INTERRUPTIBLE;
-		schedule_timeout(interval);
+		if (jiffies >= mark[last_mark] + SYNC_MARK_STEP) {
+			/* step marks */
+			int next = (last_mark+1) % SYNC_MARKS;
+
+			mdev->resync_mark = mark[next];
+			mdev->resync_mark_cnt = mark_cnt[next];
+			mark[next] = jiffies;
+		/*
+		 * there may be an issue due to non atomic_t of synced_to, etc.
+		 * could even be related to "access beyond end of device"
+		 * please tell me I'm wrong.             lge
+		 */
+			mark_cnt[next] = mdev->synced_to;
+			last_mark = next;
+		}
+		/*
+		 * FIXME what to do with signal_pending ?
+		 */
+		if (current->need_resched)
+			schedule();
+
+		currspeed = (mdev->resync_mark_cnt - mdev->synced_to)/2
+		          / ((jiffies - mdev->resync_mark)/HZ +1)         +1;
+		
+		if (currspeed > SPEED_MIN) {
+			drbd_set_user_nice(current,19);
+			                          
+			if ((currspeed > SPEED_MAX)
+				/* what to do with this one?
+				|| !is_mddev_idle(mddev) */
+				)
+			{
+				current->state = TASK_INTERRUPTIBLE;
+				schedule_timeout(HZ/2);
+				goto retry;
+				/* this is no retry++, but slowdown */
+			}
+		} else
+			drbd_set_user_nice(current,-20);
+
 		switch(ds_buffer_wait_on(disk_b,minor)) {
 		case 0: goto done;  /* finished */
 		case -1:
@@ -414,4 +496,8 @@ int drbd_syncer(struct Drbd_thread *thi)
 
 	return 0;
 }
-
+#undef SPEED_MIN
+#undef SPEED_MAX
+#undef SYNC_MARKS
+#undef SYNC_MARK_STEP
+#undef drbd_set_user_nice
