@@ -23,7 +23,8 @@ case "$1" in
 		#setLocal
 
 		#if [ isMasterBoot $RESOURCE ]; then
-			$INSTALL/drbdc $* master
+			param=`sed -e"s/stop/master/g"`
+			$INSTALL/drbdc $param
 		#else
 		#	$INSTALL/drbdc $RESOURCE slave
 		#fi
@@ -34,7 +35,8 @@ case "$1" in
 
 	stop)
 		#if [ -n "$RESOURCE" ]; then
-			$INSTALL/drbdc $* slave
+			param=`sed -e"s/stop/slave/g"`
+			$INSTALL/drbdc $param
 		#else
 		#	$INSTALL/drbdc slave
 		#fi
@@ -50,7 +52,7 @@ case "$1" in
 		#fi
 		;;
 	status)
-		$INSTALL/drbdc $* status
+		$INSTALL/drbdc $*
 		;;
 
 	*)
