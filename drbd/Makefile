@@ -30,6 +30,9 @@ all:
 doc:
 	$(MAKE) -C documentation doc
 
+doc-clean:
+	$(MAKE) -C documentation doc-clean
+
 install:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
 

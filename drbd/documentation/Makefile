@@ -31,6 +31,8 @@ DB2HTML         := $(shell which 2>/dev/null docbook2html)
 DB2PDF          := $(shell which 2>/dev/null docbook2pdf)
 DB2PS           := $(shell which 2>/dev/null docbook2ps)
 
+MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 drbdadm.8
+
 ####### Implicit rules
 
 .SUFFIXES: .sgml .5 .8 .html .pdf .ps
@@ -85,31 +87,27 @@ distclean:
 prepare:
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
 
-man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 drbdadm.8
+man:	$(MANPAGES)
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
 install:
-	@ok=true; for f in drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 ; \
+	@ok=true; for f in $(MANGAOES) ; \
 		do [ -e $$f ] || { echo $$f missing ; ok=false; } ; \
 	done ; $$ok
-	install -d $(PREFIX)/usr/share/man/man8
-	install -m 644 drbdsetup.8 $(PREFIX)/usr/share/man/man8
-	install -d $(PREFIX)/usr/share/man/man5
-	install -m 644 drbd.conf.5 $(PREFIX)/usr/share/man/man5
-	install -d $(PREFIX)/usr/share/man/man8
-	install -m 644 drbd.8 $(PREFIX)/usr/share/man/man8
-	install -d $(PREFIX)/usr/share/man/man8
-	install -m 644 datadisk.8 $(PREFIX)/usr/share/man/man8
+	@ set -e; for f in $(MANPAGES) ; do \
+		s=$${f##*.}; \
+		install -v -D -m 644 $$f $(PREFIX)usr/share/man/man$$s/$$f ; \
+	done
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
 
 uninstall:
-	rm $(PREFIX)/usr/share/man/man8/drbdsetup.8
-	rm $(PREFIX)/usr/share/man/man5/drbd.conf.5
-	rm $(PREFIX)/usr/share/man/man8/drbd.8
-	rm $(PREFIX)/usr/share/man/man8/datadisk.8
+	@ set -e; for f in $(MANPAGES) ; do \
+		s=$${f##*.}; \
+		rm -v $(PREFIX)usr/share/man/man$$s/$$f ; \
+	done
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i uninstall; done
 
 html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)	
@@ -118,3 +116,5 @@ pdf:	prepare $(shell ls *.sgml | sed s/sgml/pdf/g)
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i pdf; done	
 ps:	prepare $(shell ls *.sgml | sed s/sgml/ps/g)
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i ps; done	
+
+

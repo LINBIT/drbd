@@ -19,7 +19,7 @@
 #
 
 C_LANG=$(shell basename `pwd`)
-TARGETS=drbd.conf.5 drbdsetup.8 drbd.8 datadisk.8
+MANPAGES=drbd.conf.5 drbdsetup.8 drbd.8 datadisk.8
 
 DB2MAN          := $(shell which 2>/dev/null docbook2man)
 DB2HTML         := $(shell which 2>/dev/null docbook2html)
@@ -51,7 +51,7 @@ DB2PS           := $(shell which 2>/dev/null docbook2ps)
 
 #######
 
-man:	$(TARGETS)
+man:	$(MANPAGES)
 
 all:	man HOWTO/index.html
 
@@ -63,10 +63,10 @@ clean:
 	rm -f *.ps.gz *.pdf *.ps *.html
 
 install:
-	install -D drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8
-	install -D drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5
-	install -D drbd.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8
-	install -D datadisk.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8
+	install -D -m 644 drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8
+	install -D -m 644 drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5
+	install -D -m 644 drbd.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8
+	install -D -m 644 datadisk.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8
 
 uninstall:
 	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8

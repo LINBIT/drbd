@@ -24,6 +24,7 @@
 	<arg choice=plain rep=repeat><replaceable>resource</replaceable></arg>
       </group>
     </cmdsynopsis>
+  </refsynopsisdiv>
 
   <refsect1>
     <title>Description</title>
