@@ -69,6 +69,7 @@ struct drbd_bitmap {
 // { REMOVE once we serialize all state changes properly
 #define D_BUG_ON(x)	ERR_IF(x) { dump_stack(); }
 #define BM_LOCKED 0
+#if 0 // simply disabled for now...
 #define MUST_NOT_BE_LOCKED() do {					\
 	if (test_bit(BM_LOCKED,&b->bm_flags)) {				\
 		if (DRBD_ratelimit(5*HZ,5)) {				\
@@ -87,6 +88,10 @@ struct drbd_bitmap {
 		}							\
 	}								\
 } while (0)
+#else
+#define MUST_NOT_BE_LOCKED() do {(void)b;} while (0)
+#define MUST_BE_LOCKED() do {(void)b;} while (0)
+#endif 
 void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;

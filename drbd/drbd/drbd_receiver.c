@@ -1262,7 +1262,7 @@ STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
 	if (have_good == -1) {
 		/* Sync-Target has to adopt source's gen_cnt. */
 		int i;
-		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
+		for(i=HumanCnt;i<GEN_CNT_SIZE;i++) {
 			mdev->gen_cnt[i]=be32_to_cpu(p->gen_cnt[i]);
 		}
 	}
@@ -1633,8 +1633,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 
-	while(down_trylock(&mdev->data.mutex))
-	{
+	while(down_trylock(&mdev->data.mutex)) {
 		struct task_struct *task;
 		spin_lock(&mdev->send_task_lock);
 		if((task=mdev->send_task)) {
@@ -1664,7 +1663,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	// primary
 	tl_clear(mdev);
 	clear_bit(ISSUE_BARRIER,&mdev->flags);
-	wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt) == 0 );
+	wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt)==0 );
 	D_ASSERT(mdev->oldest_barrier->n_req == 0);
 
 	// both

@@ -538,9 +538,9 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	kfree(udw);
 
-	/* FIXME what about PausedSync{S,T} ? */
 	if(drbd_bm_total_weight(mdev) == 0 &&
-	   ( mdev->cstate == SyncSource || mdev->cstate == SyncTarget ) ) {
+	   ( mdev->cstate == SyncSource || mdev->cstate == SyncTarget ||
+	     mdev->cstate == PausedSyncS || mdev->cstate == PausedSyncT ) ) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
 		drbd_bm_lock(mdev);
 		drbd_resync_finished(mdev);
