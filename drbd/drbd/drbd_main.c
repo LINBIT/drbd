@@ -1879,6 +1879,25 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 	return ret;
 }
 
+int bm_is_rs_done(struct BitMap* sbm)
+{
+	int rv=0;
+
+	spin_lock(&sbm->bm_lock);
+
+	if( (sbm->gs_bitnr<<BM_SS) + ((1<<BM_SS)-1) > sbm->dev_size<<1) {
+		int ns = sbm->dev_size % (1<<(BM_BLOCK_SIZE_B-10));
+		if(!ns) {
+			sbm->gs_bitnr = -1;
+			rv=1;
+		}
+	}
+
+	spin_unlock(&sbm->bm_lock);
+
+	return rv;
+}
+
 void bm_reset(struct BitMap* sbm)
 {
 	spin_lock(&sbm->bm_lock);

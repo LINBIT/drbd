@@ -331,7 +331,7 @@ int m_system(int may_sleep,char** argv)
   if( !may_sleep ) {
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
-    alarm(2);
+    alarm(25); // Reading the AL & BitMap can take some time.
   }
 
   while(1) {

@@ -571,7 +571,6 @@ struct BitMap {
 	unsigned long size;
 	unsigned long* bm;
 	unsigned long gs_bitnr;
-	unsigned long gs_snr;
 	spinlock_t bm_lock;
 };
 
@@ -810,6 +809,8 @@ extern void bm_fill_bm(struct BitMap* sbm,int value);
 extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
 extern int bm_count_sectors(struct BitMap* sbm, unsigned long enr);
 extern int bm_end_of_dev_case(struct BitMap* sbm);
+extern int bm_is_rs_done(struct BitMap* sbm);
+
 
 
 extern drbd_dev *drbd_conf;
