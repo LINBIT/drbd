@@ -488,7 +488,7 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	if (err)
 		goto out;
 
-	if (!(newsock = sock_alloc()))
+	if (sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &newsock))
 		goto out;
 
 	newsock->type = sock->type;
@@ -516,8 +516,7 @@ STATIC int drbd_recv_short(drbd_dev *mdev, void *buf, size_t size)
 	int rv;
 
 	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
-		set_current_state(TASK_ZOMBIE);
-		schedule(); // commit suicide
+		drbd_suicide();
 	}
 
 	msg.msg_control = NULL;
@@ -554,8 +553,7 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 	int rv;
 
 	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
-		set_current_state(TASK_ZOMBIE);
-		schedule(); // commit suicide
+		drbd_suicide();
 	}
 
 	msg.msg_control = NULL;
