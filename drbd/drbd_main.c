@@ -1667,7 +1667,9 @@ int __init drbd_init(void)
 			      NOT_IN_26(, &drbd_ops)
 			      );
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME": unable to register block device\n");
+		printk(KERN_ERR DEVICE_NAME
+		       ": unable to register block device major %d\n",
+		       major_nr);
 		return err;
 	}
 
