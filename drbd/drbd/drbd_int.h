@@ -521,8 +521,12 @@ struct BitMap {
 
 struct bm_extent { // 16MB sized extents.
 	struct lc_element lce;
-	unsigned int rs_left; // number of sectors our of sync in this extent.
+	unsigned int rs_left; //number of sectors our of sync in this extent.
+	unsigned long flags;
 };
+
+#define BME_NO_WRITES    0
+#define BME_LOCKED       1
 
 struct al_transaction;
 struct drbd_extent;
@@ -571,14 +575,12 @@ struct Drbd_Conf {
 	unsigned int flags;
 	struct task_struct *send_task; /* about pid calling drbd_send */
 	spinlock_t send_task_lock;
-	sector_t send_sector;      // block which is processed by send_data
 	sector_t rs_left;     // blocks not up-to-date [unit sectors]
 	sector_t rs_total;    // blocks to sync in this run [unit sectors]
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
 	sector_t rs_mark_left;// block not up-to-date at mark [unit sect.]
 	unsigned long rs_mark_time;// marks's time [unit jiffies]
 	spinlock_t rs_lock; // used to protect the rs_variables.
-	spinlock_t bb_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread dsender;
 	struct Drbd_thread asender;
@@ -627,7 +629,6 @@ extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
-extern int tl_check_sector(drbd_dev *mdev, sector_t sector);
 extern void drbd_free_sock(drbd_dev *mdev);
 /* extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 	      void* buf, size_t size, unsigned msg_flags); */
@@ -649,8 +650,6 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 			    u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
-
-extern int ds_check_sector(drbd_dev *mdev, sector_t sector);
 
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_generic_end_io(struct buffer_head *bh, int uptodate);
@@ -968,72 +967,6 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
-
-/*
-  There was a race condition between the syncer's and applications' write
-  requests on the primary node.
-
-  E.g:
-
-  1) Syncer issues a read request for 4711
-  2) Application write for 4711
-  2a) 4711(new) is sent via the socket
-  2b) 4711(new) is handed over the the IO subsystem
-  3) Syncer gets 4711(old)
-  4) Syncer sends 4711(old)
-  5) 4711(new) is written to primary disk.
-
-  The secondary gets the 4711(new) first, followed by 4711(old) and
-  write 4711(old) to its disk.
-
-  Therefore
-
-  bb_wait(),bb_done(),ds_check_block() and tl_check_sector()
-
- */
-
-struct busy_block {
-	struct list_head list;
-	struct completion event;
-	sector_t sector;
-};
-
-static inline void bb_wait_prepare(drbd_dev *mdev,sector_t sector,
-				   struct busy_block *bl)
-{
-	MUST_HOLD(&mdev->bb_lock);
-
-	init_completion(&bl->event);
-	bl->sector=sector;
-	list_add(&bl->list,&mdev->busy_blocks);
-}
-
-static inline void bb_wait(struct busy_block *bl)
-{
-	// you may not hold bb_lock
-	//printk(KERN_ERR DEVICE_NAME" sleeping because block %lu busy\n",
-	//       bl->bnr);
-	wait_for_completion(&bl->event);
-}
-
-static inline void bb_done(drbd_dev *mdev,sector_t sector)
-{
-	struct list_head *le;
-	struct busy_block *bl;
-
-	MUST_HOLD(&mdev->bb_lock);
-
-	list_for_each(le,&mdev->busy_blocks) {
-		bl = list_entry(le, struct busy_block,list);
-		if(bl->sector == sector) {
-			//printk(KERN_ERR DEVICE_NAME " completing %lu\n",bnr);
-			list_del(le);
-			complete(&bl->event);
-			break;
-		}
-	}
-}
-
 static inline void drbd_init_bh(struct buffer_head *bh,
 				int size)
 {
@@ -1108,6 +1041,7 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+# if (BITS_PER_LONG > 32)
 static inline unsigned long hweight64(__u64 w)
 {
 	u64 res;
@@ -1118,9 +1052,8 @@ static inline unsigned long hweight64(__u64 w)
         res = (res & 0x0000FFFF0000FFFF) + ((res >> 16) & 0x0000FFFF0000FFFF);
         return (res & 0x00000000FFFFFFFF) + ((res >> 32) & 0x00000000FFFFFFFF);
 }
-
-static inline unsigned long hweight_long(unsigned long w)
-{
-        return sizeof(w) == 4 ? hweight32(w) : hweight64(w);
-}
+#  define hweight_long(x) hweight64(x)
+# else
+#  define hweight_long(x) hweight32(x)
+# endif
 #endif

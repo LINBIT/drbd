@@ -79,15 +79,27 @@ int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 	return 1;
 }
 
+#define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
+
 static inline
 struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
-	struct lc_element * extent;
+	struct lc_element * al_ext;
+	struct bm_extent  * bm_ext;
 
 	spin_lock_irq(&mdev->al_lock);
-	extent = lc_get(mdev->act_log,enr);
+	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr/SM);
+	if(bm_ext) {
+		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
+			spin_unlock_irq(&mdev->al_lock);
+			WARN("Delaying app write until sync read is done\n");
+			return 0;
+		}
+	}
+
+	al_ext = lc_get(mdev->act_log,enr);
 	spin_unlock_irq(&mdev->al_lock);
-	if(extent == 0) {
+	if(al_ext == 0) {
 		if(mdev->act_log->flags & LC_STARVING) {
 			WARN("Have to wait for LRU element (AL too small?)\n");
 		}
@@ -97,7 +109,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 		}
 	}
 
-	return extent;
+	return al_ext;
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -483,7 +495,6 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the  *
  * resync LRU-cache are 16MB each.                                     */
-#define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				      int cleared,int may_sleep)
 {
@@ -495,7 +506,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	// a 16 MB extent border. (Currently this is true...)
 	enr = (sector >> (BM_EXTENT_SIZE_B-9));
 
-	spin_lock_irqsave(&mdev->rs_lock,flags);
+	spin_lock_irqsave(&mdev->al_lock,flags);
 	ext = (struct bm_extent *) lc_get(mdev->resync,enr);
 	if(ext) {
 		if( ext->lce.lc_number == enr) {
@@ -509,7 +520,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	} else {
 		ERR("lc_get(rsync) failed ?!?\n");
 	}
-	spin_unlock_irqrestore(&mdev->rs_lock,flags);
+	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
 	if(may_sleep) {
 		struct list_head *le;
@@ -532,7 +543,6 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		spin_unlock(&mdev->al_lock);
 	}
 }
-#undef SM
 
 void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 		      int blk_size, int may_sleep)
@@ -566,3 +576,87 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 		wake_up_interruptible(&mdev->dsender_wait);
 	}
 }
+
+
+/**
+ * drbd_rs_begin_io: Gets an extent in the resync LRU cache and sets it 
+ * to BME_LOCKED. 
+ *
+ * @sector: The sector number
+ */
+static inline
+struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
+{
+	struct bm_extent  * bm_ext;
+
+	spin_lock_irq(&mdev->al_lock);
+	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
+	if(bm_ext) set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
+	spin_unlock_irq(&mdev->al_lock);
+	if(bm_ext == 0) {
+		if(mdev->act_log->flags & LC_STARVING) {
+			WARN("Have to wait for element (resync too small?)\n");
+                }
+
+		if(mdev->act_log->flags & LC_DIRTY) {
+			WARN("Ongoing AL update (???)\n");
+		}
+	}
+
+	return bm_ext;
+}
+
+static inline int _al_not_in_use(drbd_dev* mdev, unsigned int enr)
+{
+	struct lc_element* al_ext;
+
+	spin_lock_irq(&mdev->al_lock);
+	al_ext = lc_find(mdev->act_log,enr);
+	spin_unlock_irq(&mdev->al_lock);
+
+	if(al_ext == 0) return 1;
+	if(al_ext->refcnt == 0) return 1;
+
+	WARN("Delaying sync read until app's write is done\n");
+
+	return 0;
+}
+
+void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
+{
+	unsigned int enr = (sector >> (BM_EXTENT_SIZE_B-9));
+	struct bm_extent* bm_ext;
+	int i;
+
+	wait_event(mdev->al_wait, (bm_ext = _bme_get(mdev,enr)) );
+
+	if(test_bit(BME_LOCKED,&bm_ext->flags)) return;
+
+	for(i=0;i<SM;i++) {
+		wait_event(mdev->al_wait, _al_not_in_use(mdev,enr*SM+i) );
+	}
+
+	set_bit(BME_LOCKED,&bm_ext->flags);
+}
+
+void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
+{
+	unsigned int enr = (sector >> (BM_EXTENT_SIZE_B-9));
+	struct bm_extent* bm_ext;
+
+	spin_lock_irq(&mdev->al_lock);
+	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr);
+	if(!bm_ext) {
+		spin_unlock_irq(&mdev->al_lock);
+		ERR("bme_put() called, but extent not found");
+	}
+
+	if( lc_put(mdev->resync,(struct lc_element *)bm_ext) == 0 ) {
+		clear_bit(BME_LOCKED,&bm_ext->flags);
+		clear_bit(BME_NO_WRITES,&bm_ext->flags);
+		wake_up(&mdev->al_wait);
+	}
+
+	spin_unlock_irq(&mdev->al_lock);
+}
+

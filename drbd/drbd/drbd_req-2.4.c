@@ -75,10 +75,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		list_del(&req->list); // we have the tl_lock...
 	}
 
-	spin_lock_irqsave(&mdev->bb_lock,flags);
-	bb_done(mdev,rsector);
-	spin_unlock_irqrestore(&mdev->bb_lock,flags);
-
 	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
 		drbd_set_in_sync(mdev,rsector,req->bh->b_size,0);
 	}
@@ -275,18 +271,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	req->rq_status = RQ_DRBD_NOTHING;
 
-	spin_lock_irq(&mdev->bb_lock);
-	mdev->send_sector=bh->b_rsector;
-	if( ds_check_sector(mdev,bh->b_rsector) ) {
-		struct busy_block bl;
-		bb_wait_prepare(mdev,bh->b_rsector,&bl);
-		spin_unlock_irq(&mdev->bb_lock);
-		bb_wait(&bl);
-	} else spin_unlock_irq(&mdev->bb_lock);
-
 	send_ok=drbd_send_dblock(mdev,req);
 	// FIXME we could remove the send_ok cases, the are redundant to tl_clear()
-	mdev->send_sector=-1;
 	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_pending(mdev);
 	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
 				/* If sending failed, we can not expect

@@ -87,11 +87,8 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 		spin_unlock_irq(&mdev->ee_lock);
 		ok = ok && e->e_end_io(mdev,e);
 
-		spin_lock_irq(&mdev->bb_lock);
-		spin_lock(&mdev->ee_lock); // first bb_lock then ee_lock
+		spin_lock_irq(&mdev->ee_lock);
 		list_del(le);         // remove from list first.
-		bb_done(mdev,e->bh->b_blocknr);  // signal completion second.
-		spin_unlock(&mdev->bb_lock);
 
 		drbd_put_ee(mdev,e);
 	}
@@ -99,41 +96,6 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 	wake_up_interruptible(&mdev->ee_wait);
 
 	return ok;
-}
-
-
-/* bool */
-int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
-{
-	/* When intoducing active/active this must also consider pending read
-	   requests. (currently only unacked requests are considered.) */
-	/* This function is called with IRQs disabled (and bb_lock locked)
-	   therefore no spin_lock_irq */
-	struct Tl_epoch_entry *e;
-	struct list_head *le;
-	int rv=FALSE;
-
-	spin_lock(&mdev->ee_lock);
-
-	list_for_each(le,&mdev->read_ee) {
-		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(DRBD_BH_SECTOR(e->bh) == sector) {
-			rv=TRUE;
-			goto out;
-		}
-	}
-
-	list_for_each(le,&mdev->rdone_ee) {
-		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(DRBD_BH_SECTOR(e->bh) == sector) {
-			rv=TRUE;
-			goto out;
-		}
-	}
-
- out:
-	spin_unlock(&mdev->ee_lock);
-	return rv;
 }
 
 void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)

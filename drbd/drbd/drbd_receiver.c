@@ -1216,6 +1216,7 @@ STATIC int e_end_data_req(drbd_dev *mdev, struct Tl_epoch_entry *e)
 STATIC int e_end_rsdata_req(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	int ok;
+	drbd_rs_complete_io(mdev,DRBD_BH_SECTOR(e->bh));
 	inc_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
@@ -1257,13 +1258,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	set_bit(BH_Lock, &bh->b_state);
 	e->bh->b_end_io = drbd_dio_end_read;
 
-	spin_lock_irq(&mdev->bb_lock);
-	if(tl_check_sector(mdev,sector)) {
-		struct busy_block bl;
-		bb_wait_prepare(mdev,sector,&bl);
-		spin_unlock_irq(&mdev->bb_lock);
-		bb_wait(&bl);
-	} else spin_unlock_irq(&mdev->bb_lock);
+	drbd_rs_begin_io(mdev,sector);
 
 	mdev->read_cnt += bh->b_size >> 9;
 	inc_unacked(mdev);

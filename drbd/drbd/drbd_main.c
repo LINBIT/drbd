@@ -264,35 +264,6 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * item)
 	return r;
 }
 
-// Returns true if this sector is currently on the fly to our ll_disk
-/* bool */
-int tl_check_sector(drbd_dev *mdev, sector_t sector)
-{
-	struct list_head *le;
-	struct drbd_barrier *b;
-	struct drbd_request *r;
-	int rv=FALSE;
-
-	if(mdev->send_sector == sector) return TRUE;
-
-	spin_lock_irq(&mdev->tl_lock);
-	b=mdev->oldest_barrier;
-	while ( b ) {
-		list_for_each(le,&b->requests) {
-			r=list_entry(le, struct drbd_request,list);
-			if( r->sector == sector &&
-			    (r->rq_status&0xfffe) != RQ_DRBD_WRITTEN ) {
-				rv=TRUE;
-				goto found;
-			}
-		}
-		b=b->next;
-	}
- found:
-	spin_unlock_irq(&mdev->tl_lock);
-	return rv;
-}
-
 void tl_clear(drbd_dev *mdev)
 {
 	struct list_head *le,*tle;
@@ -1030,11 +1001,9 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->tl_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->ee_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->req_lock       = SPIN_LOCK_UNLOCKED;
-	mdev->bb_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->pr_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->send_task_lock = SPIN_LOCK_UNLOCKED;
 
-	mdev->send_sector=-1;
 	INIT_LIST_HEAD(&mdev->free_ee);
 	INIT_LIST_HEAD(&mdev->active_ee);
 	INIT_LIST_HEAD(&mdev->sync_ee);
@@ -1247,7 +1216,7 @@ int __init drbd_init(void)
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
 		// no need to lock access, we are still initializing the module.
-		mdev->resync = lc_alloc(5, sizeof(struct bm_extent),NULL,NULL);
+		mdev->resync = lc_alloc(7, sizeof(struct bm_extent),NULL,NULL);
 		if (!mdev->resync) goto Enomem;
 		mdev->act_log = lc_alloc(mdev->sync_conf.al_extents,
 					 sizeof(struct lc_element),
