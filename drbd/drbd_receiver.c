@@ -1883,9 +1883,9 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 {
 	char my_challenge[CHALLENGE_LEN];  /* 64 Bytes... */
 	struct scatterlist sg;
-	char *response;
-	char *right_response;
-	char *peers_ch;
+	char *response = NULL;
+	char *right_response = NULL;
+	char *peers_ch = NULL;
 	Drbd_Header p;
 	unsigned int key_len = SHARED_SECRET_MAX;
 	unsigned int resp_size;
@@ -1894,40 +1894,45 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 	
 	rv = drbd_send_cmd2(mdev,AuthChallenge,my_challenge,CHALLENGE_LEN);
-	if (!rv) return 0;
+	if (!rv) goto fail;
 
 	rv = drbd_recv_header(mdev,&p);
-	if (!rv) return 0;
+	if (!rv) goto fail;
 
 	if (p.command != AuthChallenge) {
 		ERR( "expected AuthChallenge packet, received: %s (0x%04x)\n",
 		     cmdname(p.command), p.command );
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	if (p.length > CHALLENGE_LEN*2 ) {
-	  ERR( "expected AuthChallenge payload too big.\n");
-		return 0;
+		ERR( "expected AuthChallenge payload too big.\n");
+		rv = 0;
+		goto fail;
 	}
 
 	peers_ch = kmalloc(p.length,GFP_KERNEL);
 	if(peers_ch == NULL) {
 		ERR("kmalloc of peers_ch failed\n");
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	rv = drbd_recv(mdev, peers_ch, p.length);
 
 	if (rv != p.length) {
 		ERR("short read AuthChallenge: l=%u\n", rv);
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	resp_size = crypto_tfm_alg_digestsize(mdev->cram_hmac_tfm);
 	response = kmalloc(resp_size,GFP_KERNEL);
 	if(response == NULL) {
 		ERR("kmalloc of response failed\n");
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	sg.page   = virt_to_page(peers_ch);
@@ -1936,36 +1941,38 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	crypto_hmac(mdev->cram_hmac_tfm, (u8*)mdev->conf.shared_secret,
 		    &key_len, &sg, 1, response);
 
-	kfree(peers_ch);
-
 	rv = drbd_send_cmd2(mdev,AuthResponse,response,resp_size);
-	if (!rv) return 0;
+	if (!rv) goto fail;
 
 	rv = drbd_recv_header(mdev,&p);
-	if (!rv) return 0;
+	if (!rv) goto fail;
 
 	if (p.command != AuthResponse) {
 		ERR( "expected AuthResponse packet, received: %s (0x%04x)\n",
 		     cmdname(p.command), p.command );
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	if (p.length != resp_size ) {
 		ERR( "expected AuthResponse payload of wrong size\n" );
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	rv = drbd_recv(mdev, response , resp_size);
 
 	if (rv != resp_size) {
 		ERR("short read receiving AuthResponse: l=%u\n", rv);
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 
 	right_response = kmalloc(resp_size,GFP_KERNEL);
 	if(response == NULL) {
 		ERR("kmalloc of right_response failed\n");
-		return 0;
+		rv = 0;
+		goto fail;
 	}
 	
 	sg.page   = virt_to_page(my_challenge);
@@ -1976,13 +1983,15 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 
 	rv = ! memcmp(response,right_response,resp_size);
 	
-	kfree(response);
-	kfree(right_response);
-
 	if(rv) {
 		INFO("Peer authenticated usind %d bytes of '%s' HMAC\n",
 		     resp_size,mdev->conf.cram_hmac_alg);
 	}
+
+ fail:
+	if(peers_ch) kfree(peers_ch);
+	if(response) kfree(response);
+	if(right_response) kfree(right_response);
 
 	return rv;
 }
