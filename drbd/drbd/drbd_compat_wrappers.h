@@ -242,15 +242,6 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 }
 #endif
 
-static inline void
-drbd_bio_add_page(struct buffer_head *bh, struct page *page, unsigned int len,
-		  unsigned int offset)
-{
-	set_bh_page (bh,page,offset);
-	bh->b_size = len;
-	bh->b_this_page = bh;
-}
-
 static inline struct page* drbd_bio_get_page(struct buffer_head *bh)
 {
 	return bh->b_page;
@@ -375,6 +366,11 @@ static inline sector_t drbd_pr_get_sector(struct Pending_read *pr)
 	return pr->d.master_bio->bi_sector;
 }
 
+/* this is valid, since the only place where it is used is in recv_both_read,
+ * on the untouched master_bio of the Pending_read.
+ * DO NOT use it for anything but an untouched bio,
+ * bi_size is mutable, see bio_endio()
+ */
 static inline short drbd_bio_get_size(struct bio *bio)
 {
 	return bio->bi_size;
@@ -383,7 +379,7 @@ static inline short drbd_bio_get_size(struct bio *bio)
 #ifdef CONFIG_HIGHMEM
 /*
  * I don't know why there is no bvec_kmap, only bvec_kmap_irq ...
- * If for some reason it is intentional, ans MUST be irq save,
+ * If for some reason it is intentional, and MUST be irq save,
  * I introduce a very bad bug right here and now.
  *
  * Most likely it is only due to performance:
@@ -514,13 +510,6 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 {
 }
 #endif
-
-static inline void
-drbd_bio_add_page(struct bio *bio, struct page *page, unsigned int len,
-		  unsigned int offset)
-{
-	bio_add_page(bio,page,len,offset);
-}
 
 static inline struct page* drbd_bio_get_page(struct bio *bio)
 {

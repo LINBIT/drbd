@@ -153,16 +153,21 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	minor=(int)(mdev-drbd_conf);
 
 	/* if you want to reconfigure, please tear down first */
-ONLY_IN_26(
-	if (mdev->backing_bdev)
+	if (mdev->lo_file)
 		return -EBUSY;
-)
+
+	/* FIXME if this was "adding" a lo dev to a previously "diskless" node,
+	 * there still could be requests comming in right now. brrks.
+	 */
+	D_ASSERT(mdev->state == Secondary);
 
 	if (mdev->open_cnt > 1)
 		return -EBUSY;
 
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct disk_config)))
 		return -EFAULT;
+
+	/* TODO plausibility check for the provided values... */
 
 	filp = fget(new_conf.lower_device);
 	if (!filp) {
@@ -183,9 +188,29 @@ ONLY_IN_26(
 		retcode=LDMounted;
 		goto fail_ioctl;
 	}
-#warning "FIXME check size"
-#warning "FIXME meta-device"
-	mdev->backing_bdev = bdev;
+
+#warning "XXX size check does not care about meta data on the same device??"
+	if ((drbd_get_lo_capacity(mdev)>>1) < new_conf.disk_size) {
+		retcode = LDDeviceTooSmall;
+		goto release_bdev_fail_ioctl;
+	}
+
+	filp2 = fget(new_conf.meta_device);
+	if (!filp2) {
+		retcode=LDFDInvalid;
+		goto release_bdev_fail_ioctl;
+	}
+
+	inode = filp2->f_dentry->d_inode;
+
+	if (!S_ISBLK(inode->i_mode)) {
+		retcode=LDNoBlockDev;
+		goto release_bdev_fail_ioctl;
+	}
+	if (bd_claim(inode->i_bdev, &mdev)) {
+		retcode=LDOpenFailed;
+		goto release_bdev_fail_ioctl;
+	}
 #else
 	for(i=0;i<minor_count;i++) {
 		if( i != minor &&
@@ -213,35 +238,31 @@ ONLY_IN_26(
 
 	if ((drbd_get_lo_capacity(mdev)>>1) < new_conf.disk_size) {
 		retcode = LDDeviceTooSmall;
-		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		goto fail_ioctl;
+		goto release_bdev_fail_ioctl;
 	}
 
 	filp2 = fget(new_conf.meta_device);
 	if (!filp2) {
 		retcode=LDFDInvalid;
-		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		goto fail_ioctl;
+		goto release_bdev_fail_ioctl;
 	}
 
 	inode = filp2->f_dentry->d_inode;
 
 	if (!S_ISBLK(inode->i_mode)) {
 		retcode=LDNoBlockDev;
-		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		goto fail_ioctl;
+		goto release_bdev_fail_ioctl;
 	}
 
 	if ((err = blkdev_open(inode, filp2))) {
 		ERR("blkdev_open( %d:%d ,) returned %d\n",
 		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
 		retcode=LDOpenFailed;
-		blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		goto fail_ioctl;
+		goto release_bdev_fail_ioctl;
 	}
-
-	fsync_dev(MKDEV(MAJOR_NR, minor));
 #endif
+
+	drbd_sync_me(mdev); // XXX does this make sense?
 
 	drbd_thread_stop(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
@@ -249,10 +270,12 @@ ONLY_IN_26(
 	drbd_free_resources(mdev);
 
 	NOT_IN_26( mdev->md_device = inode->i_rdev; )
+	ONLY_IN_26(mdev->md_bdev   = inode->i_bdev; )
 	mdev->md_file  = filp2;
 	mdev->md_index = new_conf.meta_index;
 
-	NOT_IN_26( mdev->lo_device = ll_dev; )
+	NOT_IN_26( mdev->lo_device    = ll_dev; )
+	ONLY_IN_26(mdev->backing_bdev = bdev; )
 	mdev->lo_file  = filp;
 	mdev->lo_usize = new_conf.disk_size;
 	mdev->do_panic = new_conf.do_panic;
@@ -292,6 +315,9 @@ ONLY_IN_26(
 
 	return 0;
 
+ release_bdev_fail_ioctl:
+	NOT_IN_26(blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);)
+	ONLY_IN_26(bd_release(bdev);)
  fail_ioctl:
 	if (filp) fput(filp);
 	if (filp2) fput(filp2);

@@ -107,7 +107,7 @@ struct update_odbm_work {
 };
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *);
-STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
+STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int);
 
 #define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
 
@@ -156,7 +156,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		al_ext->lc_number = enr;
 
 		if(mdev->cstate < Connected && evicted != LC_FREE ) {
-			drbd_update_on_disk_bm(mdev,evicted,1);
+			drbd_update_on_disk_bm(mdev,evicted);
 		}
 		drbd_al_write_transaction(mdev,al_ext);
 		mdev->al_writ_cnt++;
@@ -386,7 +386,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		drbd_update_on_disk_bm(mdev,enr,1);
+		drbd_update_on_disk_bm(mdev,enr);
 	}
 
 	lc_unlock(mdev->act_log);
@@ -429,7 +429,7 @@ void drbd_write_bm(struct Drbd_Conf *mdev)
 	exts = div_ceil(mdev->mbds_id->size,BM_EXTENT_SIZE);
 
 	for(i=0;i<exts;i++) {
-		drbd_update_on_disk_bm(mdev,i,1);
+		drbd_update_on_disk_bm(mdev,i);
 	}
 }
 
@@ -487,8 +487,7 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
  *
  * @enr: The extent number of the bits we should write to disk.
  */
-STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
-				       int sync)
+STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 {
 	unsigned long * buffer, * bm;
 	int want,buf_i,bm_words,bm_i;
@@ -524,7 +523,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
-	drbd_update_on_disk_bm(mdev,udw->enr,1);
+	drbd_update_on_disk_bm(mdev,udw->enr);
 
 	kfree(udw);
 
@@ -534,7 +533,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
 		mdev->resync_work.cb = w_resync_finished;
 		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 	}
-	
+
 	return 1;
 }
 

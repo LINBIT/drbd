@@ -297,6 +297,7 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 
 	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) &&
 	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {
+		// FIXME cleanup: never returns NULL anymore
 		page=drbd_free_ee(mdev,&mdev->free_ee);
 		if( page ) __free_page(page);
 	}
