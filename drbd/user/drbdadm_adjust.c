@@ -170,7 +170,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     o=find_opt(res->net_options,"timeout");
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,0) != ul1*10 + ul2) do_connect=1;
+      if(m_strtol(o->value,1) != ul1*10 + ul2) do_connect=1;
     } else {
       if( uu[0] != 'd' ) do_connect=1;
     }
@@ -179,7 +179,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     o=find_opt(res->net_options,"tl-size");
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,0) != ul1) do_connect=1;
+      if(m_strtol(o->value,1) != ul1) do_connect=1;
     } else {
       if( uu[0] != 'd' ) do_connect=1;
     }
@@ -188,7 +188,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     o=find_opt(res->net_options,"connect-int");
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,0) != ul1) do_connect=1;
+      if(m_strtol(o->value,1) != ul1) do_connect=1;
     } else {
       if( uu[0] != 'd' ) do_connect=1;
     }
@@ -197,7 +197,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     o=find_opt(res->net_options,"ping-int");
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,0) != ul1) do_connect=1;
+      if(m_strtol(o->value,1) != ul1) do_connect=1;
     } else {
       if( uu[0] != 'd' ) do_connect=1;
     }    
@@ -217,7 +217,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     o=find_opt(res->sync_options,"rate");
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,0) != ul1) do_syncer=1;
+      if(m_strtol(o->value,1) != ul1) do_syncer=1;
     } else {
       if( uu[0] != 'd' ) do_syncer=1;
     }

@@ -55,5 +55,6 @@ clean:
 	rm -f *~
 
 install:
-	install -d $(PREFIX)usr/sbin/
-	install -m 755 drbdsetup $(PREFIX)usr/sbin/
+	install -d $(PREFIX)sbin/
+	install -m 755 drbdsetup $(PREFIX)sbin/
+	install -m 755 drbdadm $(PREFIX)sbin/

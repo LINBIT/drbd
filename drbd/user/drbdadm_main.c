@@ -595,13 +595,18 @@ int main(int argc, char** argv)
 	}
       } else {
 	int i;
-	res=config;
-	while(res) {
-	  for(i=optind;i<argc;i++) {
-	    if(!strcmp(argv[i],res->name)) cmd->function(res,cmd->arg);
+	for(i=optind;i<argc;i++) {
+	  res=config;
+	  while(res) {
+	    if(!strcmp(argv[i],res->name)) break;
+	    res=res->next;
 	  }
-	  res=res->next;
-	}    
+	  if(!res) {
+	    fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
+	    exit(20);
+	  }
+	  cmd->function(res,cmd->arg);
+	}
       }
     } else { // Commands which does not need a resource name
       cmd->function(config,cmd->arg);
