@@ -43,7 +43,7 @@ binary-arch: checkroot binary-drbd
 binary-drbd:  checkroot build
 	$(checkdir)
 	$(RM) -r debian/drbd
-	dh_installdirs -pdrbd DEBIAN usr/sbin
+	dh_installdirs -pdrbd DEBIAN usr/sbin var/lib/drbd
 # Install changelog & copyright
 	dh_installman -pdrbd documentation/drbd.conf.5 documentation/drbdsetup.8
 	dh_installdocs -pdrbd TODO COPYING README
