@@ -92,9 +92,17 @@ typedef unsigned long sector_t;
 # define MUST_HOLD(lock)
 #endif
 
-#define D_ASSERT(exp)  if (!(exp)) \
-        printk(KERN_ERR DEVICE_NAME"%d: ASSERT( " #exp " ) in %s:%d\n", \
-        (int)(mdev-drbd_conf),__FILE__,__LINE__)
+struct Drbd_Conf;
+
+#ifdef DBG_ASSERTS
+extern void drbd_assert_breakpoint(struct Drbd_Conf*, char *, char *, int );
+# define D_ASSERT(exp)  if (!(exp)) \
+         drbd_assert_breakpoint(mdev,#exp,__FILE__,__LINE__)
+#else 
+# define D_ASSERT(exp)  if (!(exp)) \
+         printk(KERN_ERR DEVICE_NAME"%d: ASSERT( " #exp " ) in %s:%d\n", \
+         (int)(mdev-drbd_conf),__FILE__,__LINE__)
+#endif
         
 
 // handy macro: DUMPP(somepointer) 

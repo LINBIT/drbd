@@ -62,6 +62,16 @@
 
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
+#ifdef DBG_ASSERTS
+void drbd_assert_breakpoint(struct Drbd_Conf* mdev, char *exp,
+			    char *file, int line)
+{
+	printk(KERN_ERR DEVICE_NAME"%d: ASSERT( %s ) in %s:%d\n", \
+	       (int)(mdev-drbd_conf),exp,file,line);
+}
+#endif
+
+
 #if 0
 #define CHECK_LIST_LIMIT 1000
 void check_list(struct Drbd_Conf* mdev,struct list_head *list,char *t)
@@ -154,7 +164,9 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	*/
 
 	e=bh->b_private;
+	D_ASSERT(e->bh == bh);
 	D_ASSERT(e->block_id != ID_VACANT);
+
 	spin_lock_irqsave(&mdev->ee_lock,flags);
 
 	mark_buffer_uptodate(bh, uptodate);
