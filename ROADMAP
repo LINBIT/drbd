@@ -332,7 +332,7 @@ DRBD 0.8 Roadmap
   are not flexible enough to cover all real world scenarios.
 
   E.g. Two physical disks should be mirrored with DRBD. On one
-svn d       of the disks there is only a single partition, while the
+       of the disks there is only a single partition, while the
        other one is divided into many (e.g. 4 smaller) partitions.
        One would want to sync the big one in parallel to the 
        4 small ones. While the resync process of the 4 small
@@ -367,6 +367,8 @@ svn d       of the disks there is only a single partition, while the
   If the peer's UUID is different to what we expect we know that 
   we have to do a full sync....
   99% DONE
+  -> Will be go out again, and become replaced by UUID for data
+     generations. See item 16
 
 14 Sanitize ioctls to inlcude a standard device information struct
   at the beginning, including the expected API version.
@@ -378,6 +380,54 @@ svn d       of the disks there is only a single partition, while the
   would be a good choce. When this is done make the bits in the
   bitmap to account for more then 4k e.g. 64k
   0% DONE
+
+[ Item 16 is still unfinished, as described here, the algorithm has
+  some loose ends... ]
+16 Displace the current generation-counters with a generation-UUID concept.
+  The current generation counters have various weaknesses:
+   * In a split braine'd cluster the appliance of the same events
+     to both cluster nodes could lead to equal generation-counters
+     on both nodes, while the data is not in sync for sure.
+   * They are completely unsuitable if a 3rd node is used for 
+     e.g. weekly snapshots.
+
+  We associate each data generation with an unique UUID (=64 bit random
+  number). A new data generation is created if a node becomes primary
+  and the new auth-enum (see below) is different from the current
+  auth enum.
+
+  In the meta-data we store a few generations-UUIDs: 
+   * current
+   * bitmap
+   * history[4]
+
+  In addition there is an enum describing the authorisation of the
+  current gen-uuid: Human, Timout, Connected, Degraded
+  As well as the currently known flags: 
+     Consistent, WasUpToDate, LastState, ConnectedInd, WantFullSync
+
+  The difference here is that the former flags are determined
+  when the gen-uuid is created, while the latter are modified
+  as the state changes.
+
+  When the cluster is in Connected state, then the bitmpat gen-uuid
+  is set to 0 (Since the Bitmap is empty). When we create a new current
+  gen-uuid while we are disconencted the (old) current gets backuped
+  to the bitmap gen-uuid. (This allowes us to identify the base of
+  of the bitmap later)
+
+  Algorithm on connect:
+   If the current gen-uuids are equal -> No sync.
+   else -> Need sync.
+
+   The node which has bitmap gen-uuid == peer's current gen-uuid is
+   sync source.
+
+   The node with the higher value in the authorisation enum is sync source.
+
+   
+
+
 
 plus-banches:
 ----------------------
