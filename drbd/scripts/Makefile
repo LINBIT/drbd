@@ -29,7 +29,7 @@ install:
 	mkdir -p /etc/sysconfig/drbd
 	mkdir -p /var/lib/drbd
 	
-	install drbd_commun /etc/ha.d/resource.d/
+	install drbd_common /etc/ha.d/resource.d/
 	install drbdc /etc/ha.d/resource.d/
 	install drbd /etc/ha.d/resource.d/
 	install datadisk /etc/ha.d/resource.d/

@@ -2,9 +2,9 @@ SCRIPTS : TODO LIST
 
 Urgent :
 
-Find a better way to integrate drdb_commun
+Find a better way to integrate drdb_common
 * include the code in all script
-* make it not runnable as a standalone pramme and find a way to get its path
+* make it not runnable as a standalone program and find a way to get its path
 
 Race condition with possible two primary node when two node both 
 node both simultameously. (not very likely to happend but worrying
