@@ -26,9 +26,23 @@ sub do_test($)
     # Tests evict from 2nd place in next chain. The new extent must be
     # chained to the slot via hash next. PASSED
 
-    my @pattern = ( 0,4,1,2,6 ); 
+    #my @pattern = ( 0,4,1,2,6 ); 
     # Evict from 1st place in two element next chain. The new extent must be
     # chained to the slot via hash next. PASSED
+
+    my @pattern = ( 0,4,3,2,5,4 ); 
+    # This tests the 
+    # "move the next in hash table (p) to first position (extent) !"
+    # codepath. PASSED
+    # T000 S000=E000000
+    # T001 S003=E000004
+    # T002 S002=E000004
+    # T002 S003=E000003
+    # T003 S001=E000004
+    # T003 S002=E000002
+    # T004 S000=E000004
+    # T004 S001=E000005
+
 
     $buffer="foo";
     

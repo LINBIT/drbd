@@ -421,6 +421,8 @@ struct Drbd_Conf {
 	struct list_head al_free;
 	spinlock_t al_lock;
 	unsigned int al_writ_cnt;
+	int al_updates[3];
+	unsigned int al_transaction;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif
@@ -804,7 +806,7 @@ struct drbd_extent {
 	unsigned int pending_ios;
 };
 
-void drbd_al_init(struct Drbd_Conf *mdev);
-void drbd_al_free(struct Drbd_Conf *mdev);
-void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
-void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
+extern void drbd_al_init(struct Drbd_Conf *mdev);
+extern void drbd_al_free(struct Drbd_Conf *mdev);
+extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
+extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);

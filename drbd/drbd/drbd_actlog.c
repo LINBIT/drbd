@@ -28,7 +28,7 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-#define AL_EXTENT_SIZE_B 22             // One extend represents 4M Storage
+#define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_FREE (-1)
 
@@ -61,10 +61,8 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	mdev->al_nr_extents=mdev->sync_conf.al_extents; 
 	if(mdev->al_extents) kfree(mdev->al_extents);
 	mdev->al_extents = extents;
+	mdev->al_transaction = 0;
 	spin_unlock(&mdev->al_lock);
-	/* TODO allocate some 12.5% (=1/8) extents more and put
-	   them onto the free list first :)
-	 */
 }
 
 void drbd_al_free(struct Drbd_Conf *mdev)
@@ -74,55 +72,78 @@ void drbd_al_free(struct Drbd_Conf *mdev)
 	mdev->al_nr_extents=0;
 }
 
-static int al_hash_fn( unsigned int enr, int max )
+static struct drbd_extent *al_hash_fn(struct Drbd_Conf *mdev, unsigned int enr)
 {
-	return enr % max;
+	return mdev->al_extents + ( enr % mdev->al_nr_extents );
+}
+
+
+/* When you add an extent (and most probabely remove an other extent)
+   to the hash table, you can at most modifiy 3 slots in the hash table!
+   drbd_al_add() can only change the extent number in two slots,
+   drbd_al_evict() might change the extent number in one slot. Gives 3. */
+static void al_mark_update(struct Drbd_Conf *mdev, struct drbd_extent *slot)
+{
+	int i;
+
+	for(i=0;i<3;i++) {
+		if(mdev->al_updates[i] == -1) {
+			mdev->al_updates[i] = slot - mdev->al_extents;
+			break;
+		}
+	}
 }
 
 STATIC struct drbd_extent * drbd_al_find(struct Drbd_Conf *mdev, 
 					 unsigned int enr)
 {
 	struct drbd_extent *extent;
-	int i;
 
-	i = al_hash_fn( enr , mdev->al_nr_extents );
-	extent = mdev->al_extents + i;
+	extent = al_hash_fn(mdev, enr);
 	while(extent && extent->extent_nr != enr)
 		extent = extent->hash_next;
 	return extent;
 }
 
+STATIC void drbd_al_move_extent(struct drbd_extent *from, 
+				struct drbd_extent *to)
+{
+	struct list_head *le;
+
+	to->extent_nr = from->extent_nr;
+	to->pending_ios = from->pending_ios;
+	to->hash_next = from->hash_next;
+	le = from->accessed.prev; // Fixing accessed list here!
+	list_del(&from->accessed);
+	list_add(&to->accessed,le);
+}
+
 STATIC struct drbd_extent * drbd_al_evict(struct Drbd_Conf *mdev)
 {
 	struct list_head *le;
-	struct drbd_extent *extent, *p;
-	int i;
+	struct drbd_extent *extent, *slot;
 
 	le=mdev->al_lru.prev;
 	list_del(le);
 	extent=list_entry(le, struct drbd_extent,accessed);
 	D_ASSERT(extent->pending_ios == 0);
 
-	i = al_hash_fn( extent->extent_nr , mdev->al_nr_extents );
-	p = mdev->al_extents + i;
-	if( p == extent) {
-		p = extent->hash_next;
-		if( p == NULL) return extent;
-		// move the next in hash table (p) to first position (extent) !
-		extent->extent_nr = p->extent_nr;
-		extent->pending_ios = p->pending_ios;
-		extent->hash_next = p->hash_next;
-		le = p->accessed.prev; // Fixing accessed list here!
-		list_del(&p->accessed);
-		list_add(&extent->accessed,le);
-		return p;
+	slot = al_hash_fn( mdev, extent->extent_nr);
+	if( slot == extent) {
+		slot = extent->hash_next;
+		if( slot == NULL) return extent;
+		// move the next in hash table (=slot) to its slot (=extent)
+		drbd_al_move_extent(slot,extent);
+		al_mark_update(mdev, extent);
+
+		return slot;
 	}
 	do {
-		if( p->hash_next == extent ) {
-			p->hash_next = extent->hash_next;
+		if( slot->hash_next == extent ) {
+			slot->hash_next = extent->hash_next;
 			return extent;
 		}
-		p=p->hash_next;
+		slot=slot->hash_next;
 	} while(1);
 }
 
@@ -147,27 +168,66 @@ STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
 STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev, 
 					unsigned int enr)
 {
-	struct drbd_extent *extent, *n;
-	int i;
+	struct drbd_extent *slot, *n, *a;
 
-	i = al_hash_fn( enr , mdev->al_nr_extents );
-	extent = mdev->al_extents + i;
-	if (extent->extent_nr == AL_FREE) {
-		list_del(&extent->accessed);
-		extent->hash_next = NULL;
-	} else {
-		n = drbd_al_get(mdev);
-		if( n != extent) {
-			n->hash_next = extent->hash_next;
-			extent->hash_next = n;
-			extent = n;
-		}
-		// else { good luck, we got this slot. }
+	slot = al_hash_fn( mdev, enr );
+	if (slot->extent_nr == AL_FREE) {
+		list_del(&slot->accessed);
+		slot->hash_next = NULL;
+		goto have_slot;
 	}
-	extent->extent_nr = enr;
-	list_add(&extent->accessed,&mdev->al_lru);
 
-	return extent;
+	n = drbd_al_get(mdev);
+	if ( n == slot) {
+		// we got the slot we wanted 
+		goto have_slot;
+	}
+
+	a = al_hash_fn( mdev, slot->extent_nr );
+	if( a != slot ) {
+		// our extent is a better fit for this slot
+		drbd_al_move_extent(slot,n);
+		al_mark_update(mdev, n);
+		// fix the hash_next pointer to the element in slot
+		a = al_hash_fn( mdev, n->extent_nr );
+		while(a->hash_next != slot) a=a->hash_next;
+		a->hash_next = n;
+		
+		goto have_slot;
+	}
+
+	// chain our extent behind this slot 
+	n->hash_next = slot->hash_next;
+	slot->hash_next = n;
+	slot = n;
+
+ have_slot:
+	slot->extent_nr = enr;
+	al_mark_update(mdev, slot);
+	list_add(&slot->accessed,&mdev->al_lru);
+
+	return slot;
+}
+
+void drbd_al_write_transaction(struct Drbd_Conf *mdev)
+{
+	int i,n;
+	unsigned int t;
+
+	spin_lock(&mdev->al_lock);
+	t = mdev->al_transaction++;
+	spin_unlock(&mdev->al_lock);
+
+	for(i=0;i<3;i++) {
+		n = mdev->al_updates[i];
+		if(n != -1) {
+#if 0	/* Use this printf with the test_al.pl program */
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: T%03d S%03d=E%06d\n",(int)(mdev-drbd_conf),
+			       t, n, mdev->al_extents[n].extent_nr);
+#endif
+		}
+	}
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -184,8 +244,12 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		list_del(&extent->accessed);
 		list_add(&extent->accessed,&mdev->al_lru);
 	} else { // miss, need to updated AL
+		int i;
+		for(i=0;i<3;i++) mdev->al_updates[i]=-1;
+
 		extent = drbd_al_add(mdev,enr);
 		mdev->al_writ_cnt++;
+
 		update_al=1;
 	}
 
@@ -193,12 +257,10 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	
 	spin_unlock(&mdev->al_lock);
 
-	/* TODO
 	if( update_al ) {
-		drbd_md_write_al();
-		if(cstate != Connected) update_on_disk_bitmap();
+		drbd_al_write_transaction(mdev);
+		// TODO if(cstate != Connected) update_on_disk_bitmap();
 	}
-	*/
 }
 
 void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -218,6 +280,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 		return;
 	}
 
+	D_ASSERT( extent->pending_ios > 0);
 	extent->pending_ios--;
 
 	spin_unlock(&mdev->al_lock);
