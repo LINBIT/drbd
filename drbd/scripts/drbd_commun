@@ -336,7 +336,8 @@ fi
 
 pushd . > /dev/null
 	cd $CONFIG
-	DEVICES=`ls drbd[0-9]* | sort 2>/dev/null`
+	DEVICES=`for I in \`seq 0 255\`; do if [ -e drbd$I ]; then ls drbd$I | sort 2>/dev/null; fi; done`
+	#DEVICES=`ls drbd[0-9]* | sort 2>/dev/null`
 popd > /dev/null
 
 
