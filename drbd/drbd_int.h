@@ -241,29 +241,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define RQ_DRBD_DONE      0x0030
 #define RQ_DRBD_IN_TL     0x0040
 
-enum MetaDataFlags {
-	__MDF_Consistent,
-	__MDF_PrimaryInd,
-	__MDF_ConnectedInd,
-	__MDF_FullSync,
-	__MDF_WasUpToDate,
-};
-#define MDF_Consistent      (1<<__MDF_Consistent)
-#define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
-#define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
-#define MDF_FullSync        (1<<__MDF_FullSync)
-#define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
-
 /* drbd_meta-data.c (still in drbd_main.c) */
-enum MetaDataIndex {
-	Flags,          /* Consistency flag,connected-ind,primary-ind */
-	HumanCnt,       /* human-intervention-count */
-	TimeoutCnt,     /* timout-count */
-	ConnectedCnt,   /* connected-count */
-	ArbitraryCnt,   /* arbitrary-count */
-	GEN_CNT_SIZE	// MUST BE LAST! (and Flags must stay first...)
-};
-
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
 
 #define DRBD_PANIC 3

@@ -96,11 +96,10 @@ char* ppsize(char* buf, size_t size)
  */
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
-#warning "these ._size <<1 shifts have to go"
-	sector_t p_size = mdev->p_size <<1;  // partner's disk size.
+	sector_t p_size = mdev->p_size;   // partner's disk size.
 	sector_t la_size = mdev->la_size; // last agreed size.
 	sector_t m_size; // my size
-	sector_t u_size = mdev->lo_usize <<1; // size requested by user.
+	sector_t u_size = mdev->lo_usize; // size requested by user.
 	sector_t size=0;
 	int rv;
 	char ppb[10];
@@ -384,13 +383,17 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
 
-/* FIXME I think inc_local_md_only within drbd_md_read is misplaced.
- * should go here, and the corresponding dec_local, too.
- */
-
 	md_gc_valid = drbd_md_read(mdev);
 
-/* FIXME if (md_gc_valid < 0) META DATA IO NOT POSSIBLE! */
+	if (md_gc_valid == -1 ) {
+		retcode = MDIOError;
+		goto unset_fail_ioctl;
+	}
+
+	if (md_gc_valid == -2 ) {
+		retcode = MDInvalid;
+		goto unset_fail_ioctl;
+	}
 
 	drbd_bm_lock(mdev); // racy...
 	drbd_determin_dev_size(mdev);
@@ -460,6 +463,15 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	return 0;
 
+ unset_fail_ioctl:
+	mdev->md_bdev  = 0;
+	mdev->md_file  = 0;
+	mdev->md_index = 0;
+
+	mdev->backing_bdev = 0;
+	mdev->lo_file  = 0;
+	mdev->lo_usize = 0;
+	mdev->on_io_error = 0;
  release_bdev2_fail_ioctl:
 	bd_release(bdev2);
  release_bdev_fail_ioctl:
@@ -910,6 +922,27 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 	return 0;
 }
 
+STATIC int drbd_ioctl_get_gen_cnt(struct Drbd_Conf *mdev, 
+				  struct ioctl_get_gen_cnt* arg)
+{
+	struct ioctl_get_gen_cnt cn;
+	int i;
+
+	memset(&cn,0,sizeof(cn));
+
+	for(i=Flags;i<=ArbitraryCnt;i++)
+		cn.gen_cnt[i]=mdev->gen_cnt[i];
+	cn.uuid = mdev->uuid;
+	cn.peer_uuid = mdev->peer_uuid;
+	cn.bits_set = drbd_bm_total_weight(mdev);
+	cn.current_size = drbd_get_capacity(mdev->this_bdev);
+
+	if (copy_to_user(arg,&cn,sizeof(cn)))
+		return -EFAULT;
+
+	return 0;
+}
+
 
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
@@ -1008,7 +1041,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			break;
 		}
 		err=0;
-		mdev->lo_usize = (unsigned long)arg;
+		mdev->lo_usize = (sector_t)(u64)arg;
 		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
@@ -1203,6 +1236,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 	case DRBD_IOCTL_OUTDATE_DISK:
 		err = drbd_outdate_ioctl(mdev,(int *) arg);
+		break;
+
+	case DRBD_IOCTL_GET_GEN_CNT:
+		err=drbd_ioctl_get_gen_cnt(mdev,(void *)arg);
 		break;
 
 	default:

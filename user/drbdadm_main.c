@@ -189,8 +189,8 @@ struct adm_cmd cmds[] = {
   { "cstate",            adm_generic_s,         1, 1 },
   { "dump",              adm_dump,              1, 1 },
   { "create-md",         admm_generic,          1, 1 },
-  { "show-gc",           admm_generic,          1, 1 },
-  { "get-gc",            admm_generic,          1, 1 },
+  { "show-gc",           adm_generic_b,         1, 1 },
+  { "get-gc",            adm_generic_b,         1, 1 },
   { "dump-md",           admm_generic,          1, 1 },
   { "set-gc",            admm_generic,          0, 1 },
   { "set-uuid",          admm_generic,          0, 1 },
@@ -616,7 +616,8 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   int rv;
 
   rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
-  if(rv == 17) return rv;
+  if(rv == 17) return rv; 
+  // 17 returned by drbdsetup outdate, if it is already primary.
 
   if( rv ) {
     rv = admm_generic(res,cmd);

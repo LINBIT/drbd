@@ -114,6 +114,8 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_state(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_show_gc(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_get_gc(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
@@ -175,8 +177,10 @@ struct drbd_cmd commands[] = {
   {"outdate", cmd_outdate,           0, 0, },
   {"disconnect", cmd_disconnect,     0, 0, },
   {"state", cmd_state,               0, 0, },
-  {"cstate", cmd_cstate,              0, 0, },
-  {"show", cmd_show,                 0, 0, }
+  {"cstate", cmd_cstate,             0, 0, },
+  {"show-gc", cmd_show_gc,           0, 0, },
+  {"get-gc", cmd_get_gc,             0, 0, },
+  {"show", cmd_show,                 0, 0, },
 };
 
 const char *eh_names[] = {
@@ -413,7 +417,7 @@ int scan_disk_options(char **argv,
 	case 'd':
 	  cn->config.disk_size = m_strtoll_range(optarg,'K', "disk-size",
 			      DRBD_DISK_SIZE_SECT_MIN>>1,
-			      DRBD_DISK_SIZE_SECT_MAX>>1 );
+			      DRBD_DISK_SIZE_SECT_MAX>>1 ) << 1;
 	  break;
 	case 'e':
 	  for(i=0;i<ARRY_SIZE(eh_names);i++) {
@@ -543,6 +547,9 @@ void print_config_ioctl_err(int err_no)
     [LDDeviceTooLarge]="Currently we only support devices up to 3.998TB.\n"
                        "(up to 2TB in case you do not have CONFIG_LBD set)",
                        "Contact office@linbit.com, if you need more.",
+    [MDIOError]="IO error(s) orruced during initial access to meta-data.\n",
+    [MDInvalid]="No valid meta-data signature found.\n"
+                "Use 'drbdadm create-md res' to initialize meta-data area.\n",
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;
@@ -1071,7 +1078,7 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
 
 int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  unsigned long u_size=0;
+  __u64 u_size=0; // unit: sectors.
   int err;
 
   if(argc > 0)
@@ -1088,7 +1095,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 	    case 'd':
 	      u_size=m_strtoll_range(optarg,'K', "disk-size",
 			      DRBD_DISK_SIZE_SECT_MIN>>1,
-			      DRBD_DISK_SIZE_SECT_MAX>>1 );
+			      DRBD_DISK_SIZE_SECT_MAX>>1 ) << 1;
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
@@ -1319,6 +1326,48 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
     }
 
   printf("%s\n",conns_to_name(cn.state.s.conn));
+
+  return 0;
+}
+
+int cmd_get_gc(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  struct ioctl_get_gen_cnt cn;
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_GEN_CNT,&cn);
+  if(err)
+    {
+      PERROR("ioctl(,GET_GEN_CNT,) failed");
+      return 20;
+    }
+  
+  dt_print_gc(cn.gen_cnt);
+
+  return 0;
+}
+
+int cmd_show_gc(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  struct ioctl_get_gen_cnt cn;
+  char ppb[10];
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_GEN_CNT,&cn);
+  if(err)
+    {
+      PERROR("ioctl(,GET_GEN_CNT,) failed");
+      return 20;
+    }
+  
+  dt_pretty_print_gc(cn.gen_cnt);
+
+  printf("current agreed size: %s\n", ppsize(ppb, cn.current_size >> 1));
+  printf("%u bits set in the bitmap [ %s out of sync ]\n",
+	 cn.bits_set, ppsize(ppb, cn.bits_set * 4));
+
+  printf("local  uuid: %llX\n",cn.uuid);
+  printf("peer's uuid: %llX\n",cn.peer_uuid);
 
   return 0;
 }

@@ -352,7 +352,7 @@ DRBD 0.8 Roadmap
   defined in a resource section.
   0% DONE
 
-13 Introduce a UUID (universally unique identifier) in the
+13 Introduce an UUID (universally unique identifier) in the
   meta data. One purpose is to tag the bitmap with this UUID. 
   If the peer's UUID is different to what we expect we know that 
   we have to do a full sync....

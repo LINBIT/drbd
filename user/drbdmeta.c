@@ -79,28 +79,6 @@
 #define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
 #define DRBD_MD_MAGIC_08   (DRBD_MAGIC+4)
 
-enum MetaDataFlags {
-	__MDF_Consistent,
-	__MDF_PrimaryInd,
-	__MDF_ConnectedInd,
-	__MDF_FullSync,
-	__MDF_WasUpToDate,
-};
-#define MDF_Consistent      (1<<__MDF_Consistent)
-#define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
-#define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
-#define MDF_FullSync        (1<<__MDF_FullSync)
-#define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
-
-enum MetaDataIndex {
-	Flags,			/* Consistency flag,connected-ind,primary-ind */
-	HumanCnt,		/* human-intervention-count */
-	TimeoutCnt,		/* timout-count */
-	ConnectedCnt,		/* connected-count */
-	ArbitraryCnt,		/* arbitrary-count */
-	GEN_CNT_SIZE		/* MUST BE LAST! (and Flags must stay first...) */
-};
-
 /*
  * }
  * end of should-be-shared
@@ -644,19 +622,6 @@ void printf_bm(const le_u64 * bm, const unsigned int n)
 
 #undef FMT
 
-void printf_gc(const struct md_cpu *md)
-{
-	printf("%d:%d:%d:%d:%d:%d:%d:%d:%d\n",
-	       md->gc[Flags] & MDF_Consistent ? 1 : 0,
-	       md->gc[Flags] & MDF_WasUpToDate ? 1 : 0,
-	       md->gc[HumanCnt],
-	       md->gc[TimeoutCnt],
-	       md->gc[ConnectedCnt],
-	       md->gc[ArbitraryCnt],
-	       md->gc[Flags] & MDF_PrimaryInd ? 1 : 0,
-	       md->gc[Flags] & MDF_ConnectedInd ? 1 : 0,
-	       md->gc[Flags] & MDF_FullSync ? 1 : 0);
-}
 
 int get_real_random(void * p, int size)
 {
@@ -1114,7 +1079,7 @@ int meta_get_gc(struct format *cfg, char **argv, int argc)
 
 	if (cfg->ops->open(cfg))
 		return -1;
-	printf_gc(&cfg->md);
+	dt_print_gc(cfg->md.gc);
 	return cfg->ops->close(cfg);
 }
 
@@ -1129,28 +1094,7 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	printf("\n"
-	       "                                              WantFullSync |\n"
-	       "                                        ConnectedInd |     |\n"
-	       "                                     lastState |     |     |\n"
-	       "                            ArbitraryCnt |     |     |     |\n"
-	       "                      ConnectedCnt |     |     |     |     |\n"
-	       "                  TimeoutCnt |     |     |     |     |     |\n"
-	       "              HumanCnt |     |     |     |     |     |     |\n"
-	       "     WasUpToDate |     |     |     |     |     |     |     |\n"
-	       "Consistent |     |     |     |     |     |     |     |     |\n"
-	       "   --------+-----+-----+-----+-----+-----+-----+-----+-----+\n"
-	       "       %3s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
-	       "\n",
-	       cfg->md.gc[Flags] & MDF_Consistent ? "1/c" : "0/i",
-	       cfg->md.gc[Flags] & MDF_WasUpToDate ? "1/y" : "0/n",
-	       cfg->md.gc[HumanCnt],
-	       cfg->md.gc[TimeoutCnt],
-	       cfg->md.gc[ConnectedCnt],
-	       cfg->md.gc[ArbitraryCnt],
-	       cfg->md.gc[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
-	       cfg->md.gc[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
-	       cfg->md.gc[Flags] & MDF_FullSync ? "1/y" : "0/n");
+	dt_pretty_print_gc(cfg->md.gc);
 
 	if (cfg->md.la_sect) {
 		printf("last agreed size: %s\n",
@@ -1383,9 +1327,9 @@ int meta_set_gc(struct format *cfg, char **argv, int argc)
 
 	printf("  consistent:H:T:C:A:p:c:f\n");
 	printf("previously ");
-	printf_gc(&cfg->md);
+	dt_print_gc(cfg->md.gc);
 	printf("GCs set to ");
-	printf_gc(&tmp);
+	dt_print_gc(tmp.gc);
 
 	if (!confirmed("Write new GCs to disk?")) {
 		printf("Operation cancelled.\n");

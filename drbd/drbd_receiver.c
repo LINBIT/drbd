@@ -1334,8 +1334,6 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	// TODO also take o->c_size into account!
-
 	p_size=be64_to_cpu(p->d_size);
 
 	if(p_size == 0 && mdev->state.s.disk == Diskless ) {
@@ -1365,6 +1363,15 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 			drbd_force_state(mdev,NS(conn,StandAlone));
 			drbd_thread_stop_nowait(&mdev->receiver);
 			return FALSE;
+		}
+	}
+
+	if (mdev->state.s.conn > WFReportParams ) {
+		if( be64_to_cpu(p->c_size) != 
+		    drbd_get_capacity(mdev->this_bdev) ) {
+			// we have different sizes, probabely peer
+			// needs to know my new size...
+			drbd_send_sizes(mdev);
 		}
 	}
 
@@ -1416,6 +1423,14 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	peer_state.i = be32_to_cpu(p->state);
+
+	if (mdev->state.s.conn > WFReportParams ) {
+		if( nconn > Connected && peer_state.s.conn == Connected) {
+			// we want resync, peer has not yet decided to sync...
+			drbd_send_gen_cnt(mdev);
+			drbd_send_state(mdev);
+		}
+	}
 
 	spin_lock_irq(&mdev->req_lock);
 	ns.i = mdev->state.i;

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include <sys/types.h>
+#include <asm/types.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <fcntl.h>
@@ -11,6 +12,7 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <linux/drbd.h>
 
 #include "drbdtool_common.h"
 
@@ -275,4 +277,44 @@ int dt_close_drbd_unlock(int drbd_fd, int lock_fd)
 	if (drbd_fd >= 0) err = close(drbd_fd);
 	if (lock_fd >= 0) unlock_fd(lock_fd); /* ignore errors */
 	return err;
+}
+
+void dt_print_gc(const __u32* gen_cnt)
+{
+	printf("%d:%d:%d:%d:%d:%d:%d:%d:%d\n",
+	       gen_cnt[Flags] & MDF_Consistent ? 1 : 0,
+	       gen_cnt[Flags] & MDF_WasUpToDate ? 1 : 0,
+	       gen_cnt[HumanCnt],
+	       gen_cnt[TimeoutCnt],
+	       gen_cnt[ConnectedCnt],
+	       gen_cnt[ArbitraryCnt],
+	       gen_cnt[Flags] & MDF_PrimaryInd ? 1 : 0,
+	       gen_cnt[Flags] & MDF_ConnectedInd ? 1 : 0,
+	       gen_cnt[Flags] & MDF_FullSync ? 1 : 0);
+}
+
+void dt_pretty_print_gc(const __u32* gen_cnt)
+{
+	printf("\n"
+	       "                                              WantFullSync |\n"
+	       "                                        ConnectedInd |     |\n"
+	       "                                     lastState |     |     |\n"
+	       "                            ArbitraryCnt |     |     |     |\n"
+	       "                      ConnectedCnt |     |     |     |     |\n"
+	       "                  TimeoutCnt |     |     |     |     |     |\n"
+	       "              HumanCnt |     |     |     |     |     |     |\n"
+	       "     WasUpToDate |     |     |     |     |     |     |     |\n"
+	       "Consistent |     |     |     |     |     |     |     |     |\n"
+	       "   --------+-----+-----+-----+-----+-----+-----+-----+-----+\n"
+	       "       %3s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
+	       "\n",
+	       gen_cnt[Flags] & MDF_Consistent ? "1/c" : "0/i",
+	       gen_cnt[Flags] & MDF_WasUpToDate ? "1/y" : "0/n",
+	       gen_cnt[HumanCnt],
+	       gen_cnt[TimeoutCnt],
+	       gen_cnt[ConnectedCnt],
+	       gen_cnt[ArbitraryCnt],
+	       gen_cnt[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
+	       gen_cnt[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
+	       gen_cnt[Flags] & MDF_FullSync ? "1/y" : "0/n");
 }

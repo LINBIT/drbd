@@ -128,6 +128,8 @@ enum ret_codes {
 	MDMounted,
 	LDMDInvalid,
 	LDDeviceTooLarge,
+	MDIOError,
+	MDInvalid,
 };
 
 struct ioctl_disk_config {
@@ -249,6 +251,37 @@ struct ioctl_get_config {
 	int                   _pad;
 };
 
+enum MetaDataFlags {
+	__MDF_Consistent,
+	__MDF_PrimaryInd,
+	__MDF_ConnectedInd,
+	__MDF_FullSync,
+	__MDF_WasUpToDate,
+};
+#define MDF_Consistent      (1<<__MDF_Consistent)
+#define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
+#define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
+#define MDF_FullSync        (1<<__MDF_FullSync)
+#define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
+
+enum MetaDataIndex {
+	Flags,			/* Consistency flag,connected-ind,primary-ind */
+	HumanCnt,		/* human-intervention-count */
+	TimeoutCnt,		/* timout-count */
+	ConnectedCnt,		/* connected-count */
+	ArbitraryCnt,		/* arbitrary-count */
+	GEN_CNT_SIZE		/* MUST BE LAST! (and Flags must stay first...) */
+};
+
+struct ioctl_get_gen_cnt {
+	OUT __u64        uuid;
+	OUT __u64        peer_uuid;
+	OUT __u64        current_size;
+	OUT __u32        gen_cnt[GEN_CNT_SIZE];	/* generation counter */
+	OUT unsigned int bits_set;
+	int              _pad;
+};
+
 #define DRBD_MAGIC 0x83740267
 #define BE_DRBD_MAGIC __constant_cpu_to_be32(DRBD_MAGIC)
 
@@ -265,12 +298,13 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_INVALIDATE       _IO ( DRBD_IOCTL_LETTER, 0x0D )
 #define DRBD_IOCTL_INVALIDATE_REM   _IO ( DRBD_IOCTL_LETTER, 0x0E )
 #define DRBD_IOCTL_SET_SYNC_CONFIG  _IOW( DRBD_IOCTL_LETTER, 0x0F, struct ioctl_syncer_config )
-#define DRBD_IOCTL_SET_DISK_SIZE    _IOW( DRBD_IOCTL_LETTER, 0x10, unsigned int )
+#define DRBD_IOCTL_SET_DISK_SIZE    _IOW( DRBD_IOCTL_LETTER, 0x10, __u64 )
 #define DRBD_IOCTL_WAIT_CONNECT     _IOR( DRBD_IOCTL_LETTER, 0x11, struct ioctl_wait )
 #define DRBD_IOCTL_WAIT_SYNC        _IOR( DRBD_IOCTL_LETTER, 0x12, struct ioctl_wait )
 #define DRBD_IOCTL_UNCONFIG_DISK    _IO ( DRBD_IOCTL_LETTER, 0x13 )
 #define DRBD_IOCTL_SET_STATE_FLAGS  _IOW( DRBD_IOCTL_LETTER, 0x14, drbd_role_t )
 #define DRBD_IOCTL_OUTDATE_DISK     _IOW( DRBD_IOCTL_LETTER, 0x15, int )
+#define DRBD_IOCTL_GET_GEN_CNT      _IOR( DRBD_IOCTL_LETTER, 0x15, struct ioctl_get_gen_cnt )
 
 
 #endif

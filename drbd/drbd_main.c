@@ -852,8 +852,8 @@ int drbd_send_sizes(drbd_dev *mdev)
 	have_disk=inc_local(mdev);
 	if(have_disk) {
 		D_ASSERT(mdev->backing_bdev);
-		if (mdev->md_index == -1 ) d_size = drbd_md_ss(mdev)>>1;
-		else d_size = drbd_get_capacity(mdev->backing_bdev)>>1;
+		if (mdev->md_index == -1 ) d_size = drbd_md_ss(mdev);
+		else d_size = drbd_get_capacity(mdev->backing_bdev);
 	} else d_size = 0;
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
@@ -2125,7 +2125,9 @@ void drbd_md_write(drbd_dev *mdev)
 
 /*
  * return:
- *   < 0 if we had an error (currently never ...)
+ *   < 0 if we had an error 
+ *       -1  no meta data IO allowed
+ *       -2  magic number not present
  *   = 0 if we need a FullSync because either the flag is set,
  *       or the gen counts are invalid
  *   > 0 if we could read valid gen counts,
@@ -2135,7 +2137,7 @@ int drbd_md_read(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
 	sector_t sector;
-	int i;
+	int i,rv;
 
 	if(!inc_local_md_only(mdev)) return -1;
 
@@ -2144,11 +2146,15 @@ int drbd_md_read(drbd_dev *mdev)
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
-/* FIXME different failure cases: IO error or invalid magic */
+	if ( ! drbd_md_sync_page_io(mdev,sector,READ) ) {
+		rv = MDIOError;
+		goto err;
+	}
 
-	ERR_IF( ! drbd_md_sync_page_io(mdev,sector,READ) ) goto err;
-
-	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) goto err;
+	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) {
+		rv = MDInvalid;
+		goto err;
+	}
 
 	for(i=Flags;i<=ArbitraryCnt;i++)
 		mdev->gen_cnt[i]=be32_to_cpu(buffer->gc[i]);
@@ -2168,23 +2174,7 @@ int drbd_md_read(drbd_dev *mdev)
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 
-	INFO("Creating state block\n");
-
-	/* if we need to create a state block, we are
-	 * not consistent, and need a sync of the full device!
-	 * if one knows what he is doing, he can manipulate gcs by hand,
-	 * and avoid the initial full sync...
-	 * otherwise, one of us will have to be forced (--do-what-I-say)
-	 * to be primary, before anything is usable.
-	 */
-	set_bit(MD_DIRTY,&mdev->flags);
-	mdev->gen_cnt[Flags] = MDF_FullSync;
-	for(i = HumanCnt; i < GEN_CNT_SIZE; i++) mdev->gen_cnt[i]=1;
-
-/* FIXME might have IO errors! */
-	drbd_md_write(mdev);
-
-	return 0;
+	return rv;
 }
 
 #if DUMP_MD >= 1
