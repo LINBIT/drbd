@@ -1253,14 +1253,17 @@ void bm_cleanup(void* bm_id)
 
 void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
 {
-        unsigned long* bm = sbm->bm;
+        unsigned long* bm;
 	unsigned long bitnr;
 	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
 
-	//if(bit) printk("Block %ld out of sync\n",blocknr);
-	//else    printk("Block %ld now in sync\n",blocknr);
-		
+	if(sbm == NULL) {
+		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
+		       "device size!\n");
+		return;
+	}
 
+	bm = sbm->bm;
 	bitnr = blocknr >> cb;
 
  	spin_lock(&sbm->bm_lock);
