@@ -67,7 +67,9 @@ binary-source:
 	cp -a debian/rules debian/changelog debian/control.modules debian/src/usr/src/modules/$(package)/debian
 	cp -a debian/control.modules debian/src/usr/src/modules/$(package)/debian/control
 	cp -a drbd debian/src/usr/src/modules/$(package)/
-	chown -R root.root debian/src
+	cp Makefile.vars debian/src/usr/src/modules/$(package)/
+	chown -R root.src debian/src/usr/src/modules/$(package)/
+	chmod -R g+w debian/src/usr/src/modules/$(package)/
 #	find debian/src -type d | xargs chmod 755
 #	find debian/src -type f -perm -100 | xargs chmod 755
 #	find debian/src -type f -not -perm -100 | xargs chmod 644
@@ -76,6 +78,7 @@ binary-source:
 	$(RM) -r modules/$(package)
 	gzip -9 debian/src/usr/src/$(package).tar
 	chmod 644 debian/src/usr/src/$(package).tar.gz
+	dh_fixperms -psrc
 	# Install changelog & copyright
 	dh_installchangelogs -psrc ChangeLog
 	dh_compress -psrc
