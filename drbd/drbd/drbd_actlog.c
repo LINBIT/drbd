@@ -618,18 +618,22 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	return bm_ext;
 }
 
-static inline int _al_not_in_use(drbd_dev* mdev, unsigned int enr)
+static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
 {
 	struct lc_element* al_ext;
 	int rv=0;
 	
 	spin_lock_irq(&mdev->al_lock);
-	al_ext = lc_find(mdev->act_log,enr);
-	if(al_ext == 0 ) rv = 1;
-	else if(al_ext->refcnt == 0) rv = 1;
+	if(unlikely(enr == mdev->act_log->new_number)) rv=1;
+	else {
+		al_ext = lc_find(mdev->act_log,enr);
+		if(al_ext) {
+			if (al_ext->refcnt) rv=1;
+		}
+	}
 	spin_unlock_irq(&mdev->al_lock);
 
-	if(!rv) WARN("Delaying sync read until app's write is done\n");
+	if(rv) WARN("Delaying sync read until app's write is done\n");
 
 	return rv;
 }
@@ -651,7 +655,7 @@ void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	if(test_bit(BME_LOCKED,&bm_ext->flags)) return;
 
 	for(i=0;i<SM;i++) {
-		wait_event(mdev->al_wait, _al_not_in_use(mdev,enr*SM+i) );
+		wait_event(mdev->al_wait, !_is_in_al(mdev,enr*SM+i) );
 	}
 
 	set_bit(BME_LOCKED,&bm_ext->flags);
