@@ -21,7 +21,7 @@
 
 SUBDIRS     = user drbd scripts benchmark documentation #testing
 ALLSUBDIRS  = user drbd scripts benchmark documentation testing
-REL_VERSION = $(word 3, $(shell grep REL_VERSION drbd_config.h))
+REL_VERSION = $(word 3, $(shell grep REL_VERSION drbd/linux/drbd_config.h))
 
 all:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i ; done
@@ -77,6 +77,7 @@ update.filelist:
 	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist
 	find documentation -name "*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist
+	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist
 
 .filelist:
@@ -84,7 +85,7 @@ update.filelist:
 	@ false
 
 tgz: .filelist
-	cd scripts; ln -sf drbd datadisk
+	ln -sf drbd/linux/drbd_config.h drbd_config.h
 	rm -f drbd-$(DIST_VERSION)
 	ln -s . drbd-$(DIST_VERSION)
 	tar --owner=0 --group=0 -czf drbd-$(DIST_VERSION).tar.gz -T .filelist
