@@ -11,14 +11,14 @@ DRBD 0.8 Roadmap
   extensible mechanism.
 
 3 Authenticate the peer upon connect by using a shared secret. 
-  Config file syntax:  net { auth-secret "secret-word" }
+  Configuration file syntax:  net { auth-secret "secret-word" }
   Using a challenge-response authentication within the new
   handshake.
 
 4 Changes of state and cstate synchronized by mutex and only done by
   the worker thread.
 
-5 Two new config options, to allow more fine grained definition of
+5 Two new configuration options, to allow more fine grained definition of
   DRDBs behaviour after a split-brain situation:
 
   after-sb-2pri = 
@@ -133,8 +133,8 @@ DRBD 0.8 Roadmap
   is set up via an ioctl() call. -- drbdmeta refuses to run
   if DRBD is configured. 
 
-  drbdadm is the nice frontend. It alsways uses the right 
-  backend (drbdmeta or drbdsetup)...
+  drbdadm is the nice front end. It always uses the right 
+  back end (drbdmeta or drbdsetup)...
 
   drbdadm md-set-gc 1:2:3:4:5:6 r0
   drbdadm md-get-gc r0
@@ -170,34 +170,48 @@ DRBD 0.8 Roadmap
   
  global write order
 
-  As far as I understand the toppic up to now we have two options
+  As far as I understand the topic up to now we have two options
   to establish a global write order. 
 
   Proposed Solution 1, using the order of a coordinator node:
 
   Writes from the coordinator node are carried out, as they are
   carried out on the primary node in conventional DRBD. ( Write 
-  to disk and send to peer simultaniously. )
+  to disk and send to peer simultaneously. )
 
   Writes from the other node are sent to the coordinator first, 
   then the coordinator inserts a small "write now" packet into
-  its stram of write packets.
+  its stream of write packets.
   The node commits the write to its local IO subsystem as soon 
   as it gets the "write-now" packet from the coordinator.
 
   Note: With protocol C it does not matter which node is the
         coordinator from the performance viewpoint.
 
-  Proposed Solution 2, use ALs as distributed locks:
+  Proposed Solution 2, use a dedicated LRU to implement locking:
 
-  Only one node might mark an extent as active at a time. New
-  packets are introduced to request the locking of an extent.
+  Each extent in the locking LRU can have on of these states:
+    requested
+    locked-by-peer
+    locked-by-me
+    locked-by-me-and-requested-by-peer
+
+  We allow application writes only to extents which are in
+  locked-by-me* state. 
+
+  New Packets:
+    LockExtent
+    LockExtentAck
+
+  Configuration directives: dl-extents , dl-extent-size
+
+  TODO: Need to verify with GFS that this makes sense.
 
 10 Change Sync-groups to sync-after
   
   Sync groups turned out to be hard to configure and more
   complex setups, hard to implement right and last not least they
-  are not flexible enought to cover all real world scenarios.
+  are not flexible enough to cover all real world scenarios.
 
   E.g. Two physical disks should be mirrored with DRBD. On one
        of the disks there is only a single partition, while the
@@ -218,12 +232,10 @@ DRBD 0.8 Roadmap
   and use it. In case the PAGE_SIZE is not the same inform
   the user about the fact.
 
-  Probabel a general high performance implementation for this
+  Probably a general high performance implementation for this
   issue is not necessary, since clusters of machines with 
-  differenct PAGE_SIZE are of academic interest only.
-
-
-  
+  different PAGE_SIZE are of academic interest only.
+ 
 
 plus-banches:
 ----------------------
@@ -232,9 +244,8 @@ plus-banches:
 
 2 Implement the checksum based resync. 
 
-3 3 node support. Do and test a 3 node setup (2nd DRBD stacked over
-  a DRBD pair). Enhance the user level tools to support the 3 node
-  setup.
+3 Have protocol version 74 available in drbd-0.8, to allow rolling 
+  upgrades
 
 4 Change the bitmap code to work with unmapped highmem pages, instead
   of using vmalloc()ed memory. This allows users of 32bit platforms
@@ -243,4 +254,8 @@ plus-banches:
 5 Support for variable sized meta data (esp bitmap) = Support for more
   than 4TB of storage.
 
-6 Support to pass LockFS calls / make taking of snapshots possible (?)
+6 3 node support. Do and test a 3 node setup (2nd DRBD stacked over
+  a DRBD pair). Enhance the user level tools to support the 3 node
+  setup.
+
+7 Support to pass LockFS calls / make taking of snapshots possible (?)
