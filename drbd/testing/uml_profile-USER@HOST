@@ -1,0 +1,50 @@
+# uml_profile for lars@minna
+
+# you want to change
+#  - the ips for the TAP[10] devices to match your uml setup
+#  - the location of the LINUX binary
+#  - the CMDLINE (first occurrence)
+#  - the UBDs_[12]
+# and don't forget to name it uml_profile-$USER@$HOSTNAME
+# or you need to always supply it on the commandline.
+
+# on the HOST
+TAP0=192.168.200.254
+TAP1=192.168.201.254
+
+# which um-linux binary
+# needs to be an *absolute* path.
+# yes, ~ is absolute, because the shell expands it.
+LINUX=~/bin/linux
+
+# maybe change
+CMDLINE="mem=32M drbd.minor_count=4"
+
+# DO NOT change:
+CMDLINE="$CMDLINE xterm=screen,-t,-L uml_dir=~/.uml"
+
+# on UML-1
+# NEED TO CHANGE
+UBDs_1="\
+ ubd0=/dev/LVM-minna/uml-1\
+ ubd1=/dev/LVM-minna/D0-1\
+ ubd2=/dev/LVM-minna/D1-1"
+
+# DO NOT change unless you want to *add* host specific options
+UMLPARAMs_1="$UBDs_1\
+	eth0=daemon,FE:FD:00:00:00:01,,/tmp/uml0.ctl\
+	eth1=daemon,FE:FD:00:00:01:01,,/tmp/uml1.ctl"
+
+# on UML-2
+# NEED TO CHANGE
+UBDs_2="\
+ ubd0=/dev/LVM-minna/uml-2\
+ ubd1=/dev/LVM-minna/D0-2\
+ ubd2=/dev/LVM-minna/D1-2"
+
+# DO NOT change unless you want to *add* host specific options
+UMLPARAMs_2="$UBDs_2\
+	eth0=daemon,FE:FD:00:00:00:02,,/tmp/uml0.ctl\
+	eth1=daemon,FE:FD:00:00:01:02,,/tmp/uml1.ctl"
+
+######################

@@ -1,5 +1,17 @@
 #!/usr/bin/perl -w
 
+#
+# to simplify, I suggest:
+## perl -e '
+##  use Digest::MD5 "md5_hex";
+##  while (sysread(STDIN,$buf,4096)==4096) {
+##    printf "%6d\t%s\n",$nr++,md5_hex($buf)
+##  };' < /dev/whatever
+## and do one or both of them explicitly via ssh remotely,
+## then run a diff -u on the output.
+## but anyways...		-- lge
+## 
+
 use strict;
 use Digest::MD5;
 use FileHandle;
