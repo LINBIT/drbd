@@ -835,7 +835,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 
 	ok=(rr==data_size);
 	drbd_bio_endio(bio,ok);
-	atomic_dec(&mdev->ap_bio_cnt);
+	dec_ap_bio(mdev);
 
 	dec_ap_pending(mdev,HERE);
 	return ok;
@@ -1245,21 +1245,10 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 		if( sync ) {
 			if(have_good == 1) {
-				/*
-				 * receiver expects the whole bitmap in one go.
-				 * so get the data.mutex here.
-				 * set_cstate within the mutex to avoid a race
-				 * between up() and the
-				 * wait_event(cstate != WFBitMap*) condition
-				 * above.
-				 */
-				down(&mdev->data.mutex);
 				set_cstate(mdev,WFBitMapS);
-				/* FIXME, here we actually have to wait for
-				 * ap_bio_cnt == 0 and/or local_cnt == 0
-				 */
-				_drbd_send_bitmap(mdev);
-				up(&mdev->data.mutex);
+				wait_event(mdev->cstate_wait,
+				     atomic_read(&mdev->ap_bio_cnt)==0);
+				drbd_send_bitmap(mdev);
 			} else { // have_good == -1
 				if ( (mdev->state == Primary) &&
 				     (mdev->gen_cnt[Flags] & MDF_Consistent) ) {
@@ -1402,7 +1391,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		bio = req->master_bio;
 
 		drbd_bio_IO_error(bio);
-		atomic_dec(&mdev->ap_bio_cnt);
+		dec_ap_bio(mdev);
 		dec_ap_pending(mdev,HERE);
 
 		INVALIDATE_MAGIC(req);

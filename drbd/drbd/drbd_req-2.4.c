@@ -85,7 +85,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		// the other side!  See w_io_error()
 
 		drbd_bio_endio(req->master_bio,1);
-		atomic_dec(&mdev->ap_bio_cnt);
+		dec_ap_bio(mdev);
 		// The assumption is that we wrote it on the peer.
 
 // FIXME proto A and diskless :)
@@ -98,7 +98,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	}
 
 	drbd_bio_endio(req->master_bio,uptodate);
-	atomic_dec(&mdev->ap_bio_cnt);
+	dec_ap_bio(mdev);
 
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
@@ -196,7 +196,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	// down_read(mdev->device_lock);
 
-	wait_event( mdev->cstate_wait, (volatile int)(mdev->cstate < WFBitMapS || mdev->cstate > WFBitMapT) );
+	wait_event( mdev->cstate_wait,
+		    (volatile int)(mdev->cstate < WFBitMapS || 
+				   mdev->cstate > WFBitMapT) );
 
 	local = inc_local(mdev);
 	// FIXME special case handling of READA ??
@@ -251,7 +253,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
 	drbd_plug_device(mdev);
 
-	atomic_inc(&mdev->ap_bio_cnt);
+	inc_ap_bio(mdev);
 	if (remote) {
 		/* either WRITE and Connected,
 		 * or READ, and no local disk,

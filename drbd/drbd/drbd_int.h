@@ -682,11 +682,11 @@ struct Drbd_Conf {
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
-	atomic_t ap_bio_cnt;
-	atomic_t ap_pending_cnt;
-	atomic_t rs_pending_cnt;
-	atomic_t unacked_cnt;
-	atomic_t local_cnt;
+	atomic_t ap_bio_cnt;     // Requests we need to complete
+	atomic_t ap_pending_cnt; // AP data packes on the wire, ack expected
+	atomic_t rs_pending_cnt; // RS request/data packes onthe wire
+	atomic_t unacked_cnt;    // Need to send replys for
+	atomic_t local_cnt;      // Waiting for local disk to signal completion
 	spinlock_t req_lock;
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
@@ -1186,6 +1186,19 @@ static inline void dec_local(drbd_dev* mdev)
 	}
 
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
+}
+
+static inline void inc_ap_bio(drbd_dev* mdev)
+{
+	atomic_inc(&mdev->ap_bio_cnt);
+}
+
+static inline void dec_ap_bio(drbd_dev* mdev)
+{
+	if(atomic_dec_and_test(&mdev->ap_bio_cnt))
+		wake_up(&mdev->cstate_wait);
+
+	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)>=0);
 }
 
 static inline void drbd_set_out_of_sync(drbd_dev* mdev,

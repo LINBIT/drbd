@@ -175,7 +175,7 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 	} else {
 	pass_on:
 		req->master_bio->b_end_io(req->master_bio,uptodate);
-		atomic_dec(&mdev->ap_bio_cnt);
+		dec_ap_bio(mdev);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
@@ -332,7 +332,7 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	} else {
 	pass_on:
 		bio_endio(req->master_bio,req->master_bio->bi_size,error);
-		atomic_dec(&mdev->ap_bio_cnt);
+		dec_ap_bio(mdev);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
@@ -371,7 +371,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 		ERR("WE ARE LOST. Local IO failure, no peer.\n");
 		drbd_bio_endio(req->master_bio,0);
-		atomic_dec(&mdev->ap_bio_cnt);
+		dec_ap_bio(mdev);
 		mempool_free(req,drbd_request_mempool);
 		// TODO: Do something like panic() or shut_down_cluster().
 		return 1;
