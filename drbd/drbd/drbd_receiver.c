@@ -39,6 +39,9 @@
 
 #include <asm/uaccess.h>
 #include <net/sock.h>
+
+#include <linux/tcp.h>
+
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -251,7 +254,7 @@ static inline int _get_ee_cond(struct Drbd_Conf* mdev)
 			if(drbd_alloc_ee(mdev,GFP_TRY)) av = 1;
 		}
 	}
-	if(!av) run_task_queue(&tq_disk);
+	NOT_IN_26 ( if(!av) run_task_queue(&tq_disk); )
 	return av;
 }
 
@@ -264,7 +267,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 
 	if(mdev->ee_vacant == EE_MININUM / 2) {
 		spin_unlock_irq(&mdev->ee_lock);
-		run_task_queue(&tq_disk);
+		NOT_IN_26( run_task_queue(&tq_disk); )
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
@@ -381,7 +384,7 @@ static inline int _wait_ee_cond(struct Drbd_Conf* mdev,struct list_head *head)
 	spin_lock_irq(&mdev->ee_lock);
 	rv = list_empty(head);
 	spin_unlock_irq(&mdev->ee_lock);
-	if(!rv) run_task_queue(&tq_disk);
+	NOT_IN_26( if(!rv) run_task_queue(&tq_disk);)
 	return rv;
 }
 
@@ -447,6 +450,12 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket* sock,
 	return rv;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+# define SK_(x)		x
+#else
+# define SK_(x)		sk_ ## x
+#endif
+
 int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	      void *buf, size_t size)
 {
@@ -484,7 +493,7 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 			D_ASSERT(current == mdev->asender.task);
 
 			// FIXME decide this more elegantly
-			if ( mdev->meta.socket->sk->rcvtimeo == mdev->conf.ping_int*HZ) {
+			if ( mdev->meta.socket->sk->SK_(rcvtimeo) == mdev->conf.ping_int*HZ) {
 				C_DBG(0,"recv_header timed out, sending ping\n");
 				// goto do_ping;
 			} else {
@@ -526,7 +535,7 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 		if (!drbd_send_ping(mdev))
 			break;
 		// full ack timeout
-		mdev->meta.socket->sk->rcvtimeo = mdev->conf.timeout*HZ/10;
+		mdev->meta.socket->sk->SK_(rcvtimeo) = mdev->conf.timeout*HZ/10;
 
 	};
 
@@ -546,8 +555,8 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 		ERR("sock_creat(..)=%d\n", err);
 	}
 
-	sock->sk->rcvtimeo =
-	sock->sk->sndtimeo =  mdev->conf.try_connect_int*HZ;
+	sock->sk->SK_(rcvtimeo) =
+	sock->sk->SK_(sndtimeo) =  mdev->conf.try_connect_int*HZ;
 
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) mdev->conf.other_addr,
@@ -571,9 +580,9 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 		// FIXME return NULL ?
 	}
 
-	sock2->sk->reuse=1; /* SO_REUSEADDR */
-	sock2->sk->rcvtimeo =
-	sock2->sk->sndtimeo =  mdev->conf.try_connect_int*HZ;
+	sock2->sk->SK_(reuse)    = 1; /* SO_REUSEADDR */
+	sock2->sk->SK_(rcvtimeo) =
+	sock2->sk->SK_(sndtimeo) =  mdev->conf.try_connect_int*HZ;
 
 	err = sock2->ops->bind(sock2,
 			      (struct sockaddr *) mdev->conf.my_addr,
@@ -633,27 +642,29 @@ int drbd_connect(drbd_dev *mdev)
 
  connected:
 
-	msock->sk->reuse=1; /* SO_REUSEADDR */
-	sock->sk->reuse=1; /* SO_REUSEADDR */
+	msock->sk->SK_(reuse)=1; /* SO_REUSEADDR */
+	sock->sk->SK_(reuse)=1; /* SO_REUSEADDR */
 
 	/* to prevent oom deadlock... */
 	/* The default allocation priority was GFP_KERNEL */
-	sock->sk->allocation = GFP_DRBD;
-	msock->sk->allocation = GFP_DRBD;
+	sock->sk->SK_(allocation) = GFP_DRBD;
+	msock->sk->SK_(allocation) = GFP_DRBD;
 
-	sock->sk->priority=TC_PRIO_BULK;
-	sock->sk->tp_pinfo.af_tcp.nonagle=0;
+	sock->sk->SK_(priority)=TC_PRIO_BULK;
+	NOT_IN_26(sock->sk->tp_pinfo.af_tcp.nonagle=0;)
+	ONLY_IN_26( tcp_sk(sock->sk)->nonagle = 0;)
 	// FIXME fold to limits. should be done in drbd_ioctl
-	sock->sk->sndbuf = mdev->conf.sndbuf_size;
-	sock->sk->rcvbuf = mdev->conf.sndbuf_size;
-	sock->sk->sndtimeo = mdev->conf.timeout*HZ/20;
-	sock->sk->rcvtimeo = MAX_SCHEDULE_TIMEOUT;
+	sock->sk->SK_(sndbuf) = mdev->conf.sndbuf_size;
+	sock->sk->SK_(rcvbuf) = mdev->conf.sndbuf_size;
+	sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
+	sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
 
-	msock->sk->priority=TC_PRIO_INTERACTIVE;
-	msock->sk->tp_pinfo.af_tcp.nonagle=1;
-	msock->sk->sndbuf = 2*32767;
-	msock->sk->sndtimeo = mdev->conf.timeout*HZ/20;
-	msock->sk->rcvtimeo = mdev->conf.ping_int*HZ;
+	msock->sk->SK_(priority)=TC_PRIO_INTERACTIVE;
+	NOT_IN_26(sock->sk->tp_pinfo.af_tcp.nonagle=1;)
+	ONLY_IN_26(tcp_sk(sock->sk)->nonagle = 1;)
+	msock->sk->SK_(sndbuf) = 2*32767;
+	msock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
+	msock->sk->SK_(rcvtimeo) = mdev->conf.ping_int*HZ;
 
 	mdev->data.socket = sock;
 	mdev->meta.socket = msock;
@@ -720,7 +731,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 	mdev->last_received = jiffies;
 	if (sock == mdev->meta.socket) {
 		// restore idle timeout
-		mdev->meta.socket->sk->rcvtimeo = mdev->conf.ping_int*HZ;
+		mdev->meta.socket->sk->SK_(rcvtimeo) = mdev->conf.ping_int*HZ;
 	}
 	C_DBG(5,"on %s <<< %s l: %d\n",
 	    sock == mdev->meta.socket ? "msock" : "sock",
@@ -744,8 +755,10 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 
 	// DBG("got Barrier\n");
 
+NOT_IN_26(
 	if (mdev->conf.wire_protocol != DRBD_PROT_C)
 		run_task_queue(&tq_disk);
+)
 
 	drbd_wait_ee(mdev,&mdev->active_ee);
 
@@ -781,7 +794,7 @@ read_in_block(drbd_dev *mdev, int data_size)
 	drbd_bio_kunmap(bio);
 
 	if ( rr != data_size) {
-		clear_bit(BH_Lock, &bio->b_state);
+		NOT_IN_26(clear_bit(BH_Lock, &bio->b_state);)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
@@ -800,9 +813,11 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	 * This code is only with protocol C relevant.
 	 */
 #define NUMBER 24
+NOT_IN_26(
 	if(atomic_read(&mdev->unacked_cnt) >= NUMBER ) {
 		run_task_queue(&tq_disk);
 	}
+)
 #undef NUMBER
 
 	mdev->writ_cnt+=data_size>>9;
@@ -1412,7 +1427,7 @@ STATIC int receive_BecomeSec(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 {
-	run_task_queue(&tq_disk);
+	NOT_IN_26(run_task_queue(&tq_disk);)
 	return TRUE; // cannot fail, only deadlock :)
 }
 
@@ -1594,7 +1609,7 @@ STATIC int got_Ping(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_PingAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	// restore idle timeout
-	mdev->meta.socket->sk->rcvtimeo = mdev->conf.ping_int*HZ;
+	mdev->meta.socket->sk->SK_(rcvtimeo) = mdev->conf.ping_int*HZ;
 
 	return TRUE;
 }
@@ -1675,7 +1690,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			ERR_IF(!drbd_send_ping(mdev)) goto err;
 			// half ack timeout only,
 			// since sendmsg waited the other half already
-			mdev->meta.socket->sk->rcvtimeo =
+			mdev->meta.socket->sk->SK_(rcvtimeo) =
 				mdev->conf.timeout*HZ/20;
 		}
 

@@ -166,7 +166,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 #else
-# error "FIXME"
+# warning "FIXME"
 #endif
 
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)

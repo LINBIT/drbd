@@ -30,8 +30,11 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/list.h>
-#include "mempool.h"
 #include "lru_cache.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+#include "mempool.h"
+#endif
 
 // module parameter, defined in drbd_main.c
 extern int minor_count;
@@ -174,6 +177,12 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 # define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sigmask_lock, flags)
 # define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sigmask_lock, flags)
 # define RECALC_SIGPENDING(TSK)     (recalc_sigpending(TSK))
+#endif
+
+#if defined(DBG_SPINLOCKS) && defined(__SMP__)
+# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
+#else
+# define MUST_HOLD(lock)
 #endif
 
 /*
@@ -689,7 +698,7 @@ struct Drbd_Conf {
 	int ee_in_use;
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
-	NOT_IN_26(struct tq_struct write_hint_tq);
+	NOT_IN_26(struct tq_struct write_hint_tq;)
 	drbd_bio_t md_io_bio; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
@@ -810,7 +819,11 @@ extern mempool_t *drbd_pr_mempool;
 // drbd_req
 #define ERF_NOTLD    2   /* do not call tl_dependence */
 extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
-extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+extern int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bio);
+#else
+extern int drbd_make_request(request_queue_t *q, struct bio *bio);
+#endif
 
 // drbd_fs.c
 extern int drbd_determin_dev_size(drbd_dev*);

@@ -74,6 +74,8 @@ static inline int drbd_sync_me(drbd_dev *mdev)
 	return fsync_dev(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)));
 }
 
+#define drbd_bio_uptodate(bio) buffer_uptodate(bio)
+
 static inline void drbd_bio_IO_error(struct buffer_head *bh)
 {
 	buffer_IO_error(bh);
@@ -308,6 +310,8 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 #else
 # warning "FIXME these do nonsense. Currently I only check whether it compiles!"
 
+#include <linux/buffer_head.h> // for fsync_bdev
+
 extern void FIXME_DONT_USE(void); // unresolved symbol ;)
 
 /* see get_sb_bdev and bd_claim */
@@ -320,7 +324,6 @@ extern int drbd_async_eio          (struct bio *bio, unsigned int ignored, int e
 extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int ignored, int error);
 extern int drbd_dio_end_sec        (struct bio *bio, unsigned int ignored, int error);
 extern int drbd_dio_end            (struct bio *bio, unsigned int ignored, int error);
-
 
 #ifdef DBG_BH_SECTOR
 static inline sector_t APP_BH_SECTOR(struct bio *bio)
@@ -357,8 +360,10 @@ static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 
 static inline int drbd_sync_me(drbd_dev *mdev)
 {
-	return 0; // fsync_bdev(mdev->this_device);
+	return fsync_bdev(mdev->this_bdev);
 }
+
+#define drbd_bio_uptodate(bio) bio_flagged(bio,BIO_UPTODATE)
 
 static inline void drbd_bio_IO_error(struct bio *bio)
 {

@@ -109,7 +109,6 @@ drbd_find_read(sector_t sector, struct list_head *in)
 	return NULL;
 }
 
-#warning "FIXME make 2.6.x clean"
 STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 {
 	struct Pending_read *pr;
@@ -128,32 +127,68 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 	list_add(&pr->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 	inc_ap_pending(mdev);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
 			   (unsigned long)pr);
+#else
+# warning "FIXME make 2.6.x clean"
+#endif
 }
 
-// in 2.6 this is of the form
-// static int __make_request(request_queue_t *q, struct bio *bio)
-int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bio)
+#else
+int drbd_make_request(request_queue_t *q, struct bio *bio)
+#endif
 {
-	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);
+	struct Drbd_Conf* mdev = 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+		drbd_conf + MINOR(bio->b_rdev);
+#else
+		(drbd_dev*) q->queuedata;
+#endif
 	drbd_request_t *req;
 	int send_ok;
+	int sector, size;
+	ONLY_IN_26(int rw = bio_rw(bio);)
 
-	if (MINOR(bh->b_rdev) >= minor_count || mdev->cstate < StandAlone) {
-		buffer_IO_error(bh);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	if (MINOR(bio->b_rdev) >= minor_count || mdev->cstate < StandAlone) {
+		buffer_IO_error(bio);
 		return 0;
 	}
 
-	if( mdev->lo_device == 0 ) {
+#else
+# warning "FIXME"
+#endif
+
+	/* what do we know?
+	 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	sector = bio->b_rsector;
+	size   = bio->b_size;
+#else
+	//      rw = bio->bi_rw & RW_MASK;
+	//      ra = bio->bi_rw & RWA_MASK;
+	      size = bio->bi_size;
+	    sector = bio->bi_sector;
+	/* barrier = bio_barrier(bio);
+	nr_sectors = bio_sectors(bio); */
+#endif
+
+#warning "please review"
+	// was: if( mdev->lo_device == 0 ) {
+	if( mdev->lo_file == 0 ) {
 		if( mdev->cstate < Connected ) {
-			bh->b_end_io(bh,0);
+			drbd_bio_IO_error(bio);
 			return 0;
 		}
 
+NOT_IN_26(
 		if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 			queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
 		}
+)
 
 		// Fail READA ??
 		if( rw == WRITE ) {
@@ -161,34 +196,39 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 			if (!req) {
 				ERR("could not kmalloc() req\n");
-				bh->b_end_io(bh,0);
+				drbd_bio_IO_error(bio);
 				return 0;
 			}
 			SET_MAGIC(req);
 
-			req->rq_status = RQ_DRBD_WRITTEN | 1;
-			req->master_bio=bh;
-
-			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
-				inc_ap_pending(mdev);
-			}
 			/* FIXME the drbd_make_request function will be
 			 * restructured soon.
 			 * until that is the case,
 			 * at least put the mdev and sector number into the
 			 * private bh!
 			 */
+			req->master_bio = bio;
 			drbd_req_prepare_write(mdev,req);
+			req->rq_status  = RQ_DRBD_WRITTEN | 1;
+
+			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
+				inc_ap_pending(mdev);
+			}
 			drbd_send_dblock(mdev,req); // FIXME error check?
 		} else { // rw == READ || rw == READA
-			drbd_issue_drequest(mdev,bh);
+			drbd_issue_drequest(mdev,bio);
 		}
 		return 0; // Ok everything arranged
 	}
 
-	if( mdev->cstate == SyncTarget &&
-	    bm_get_bit(mdev->mbds_id,bh->b_rsector,bh->b_size) ) {
+#warning "FIXME pls review"
+	if ( mdev->cstate == SyncTarget &&
+	     bm_get_bit(mdev->mbds_id,sector,size) ) {
 		struct Pending_read *pr;
+	/* FIXME we need to check not only the sector, but the _size_, too.
+	 * As I pointed out already, I think s this has to be changed
+	 * completely!	-lge
+	 */
 		if( rw == WRITE ) {
 			// Actually nothing special to do.
 			// Just do a mirrored write.
@@ -196,13 +236,13 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			// via drbd_[rs|al]_[begin|end]_io()
 		} else { // rw == READ || rw == READA
 			spin_lock(&mdev->pr_lock);
-			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
+			pr=drbd_find_read(sector,&mdev->resync_reads);
 			if(pr) {
 				INFO("Upgraded a resync read\n");
 
 				pr->cause |= Application;
 				inc_ap_pending(mdev);
-				pr->d.master_bio=bh;
+				pr->d.master_bio=bio;
 				list_del(&pr->w.list);
 				list_add(&pr->w.list,&mdev->app_reads);
 				spin_unlock(&mdev->pr_lock);
@@ -210,26 +250,35 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			}
 
 			spin_unlock(&mdev->pr_lock);
-			drbd_issue_drequest(mdev,bh);
+			drbd_issue_drequest(mdev,bio);
 			return 0;
 		}
 	}
 
 	if( rw == READ || rw == READA ) {
-		mdev->read_cnt+=bh->b_size>>9;
-
-		bh->b_rdev = mdev->lo_device;
+		mdev->read_cnt += size >> 9;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+		bio->b_rdev = mdev->lo_device;
+#else
+# warning "FIXME"
+		/* I want to change it anyways so we never remap ... */
+#endif
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
 
-	mdev->writ_cnt+=bh->b_size>>9;
+	mdev->writ_cnt += size >> 9;
 
 	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
-		drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
+		drbd_set_out_of_sync(mdev,sector,size);
 
-		drbd_al_begin_io(mdev, bh->b_rsector);
-		drbd_al_complete_io(mdev, bh->b_rsector); // FIXME TODO
-		bh->b_rdev = mdev->lo_device;
+		drbd_al_begin_io(mdev, sector);
+		drbd_al_complete_io(mdev, sector); // FIXME TODO
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+		bio->b_rdev = mdev->lo_device;
+#else
+# warning "FIXME"
+		/* I want to change it anyways so we never remap ... */
+#endif
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
 
@@ -239,12 +288,12 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	if (!req) {
 		ERR("could not kmalloc() req\n");
-		bh->b_end_io(bh,0);
+		drbd_bio_IO_error(bio);
 		return 0;
 	}
 	SET_MAGIC(req);
 
-	req->master_bio = bh;
+	req->master_bio = bio;
 	drbd_req_prepare_write(mdev,req);
 
 	send_ok=drbd_send_dblock(mdev,req);
@@ -256,11 +305,13 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 				   an ack packet. */
 		drbd_end_req(req, RQ_DRBD_SENT, 1, drbd_req_get_sector(req));
 	}
-	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
+	if(!send_ok) drbd_set_out_of_sync(mdev,sector,size);
 
+NOT_IN_26(
 	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
+)
 
 	drbd_al_begin_io(mdev, drbd_req_get_sector(req));
 

@@ -111,7 +111,7 @@ volatile int drbd_did_panic = 0;
 NOT_IN_26(
 STATIC int *drbd_blocksizes;
 STATIC int *drbd_sizes;
-);
+)
 struct Drbd_Conf *drbd_conf;
 kmem_cache_t *drbd_request_cache;
 kmem_cache_t *drbd_pr_cache;
@@ -963,6 +963,8 @@ STATIC void drbd_send_write_hint(void *data)
 	   by one of our threads?
 	 */
 
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	for (i = 0; i < minor_count; i++) {
 		if(current == drbd_conf[i].receiver.task) {
 			queue_task(&mdev->write_hint_tq, &tq_disk);
@@ -978,6 +980,10 @@ STATIC void drbd_send_write_hint(void *data)
 			clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 		} else queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
+#else
+# warning "FIXME"
+#endif
+
 }
 
 void drbd_init_set_defaults(drbd_dev *mdev)
@@ -1040,8 +1046,10 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	drbd_thread_init(mdev, &mdev->worker, drbd_worker);
 	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
 
+NOT_IN_26(
 	mdev->write_hint_tq.routine = &drbd_send_write_hint;
 	mdev->write_hint_tq.data    = mdev;
+)
 
 #ifdef __arch_um__
 	INFO("mdev = 0x%p\n",mdev);
@@ -1130,20 +1138,22 @@ void drbd_cleanup(void)
 		i=minor_count;
 		while (i--) {
 			drbd_dev        *mdev  = &drbd_conf[i];
-			ONLY_IN_26(
+ONLY_IN_26(
 			struct gendisk  **disk = &mdev->vdisk;
 			request_queue_t **q    = &mdev->rq_queue;
-			)
+)
 
 			drbd_free_resources(mdev);
 
-			ONLY_IN_26(
-			if (*disk)
+ONLY_IN_26(
+			if (*disk) {
+				del_gendisk(*disk);
 				put_disk(*disk);
-			*disk = NULL;
+				*disk = NULL;
+			}
 			if (*q) blk_put_queue(*q);
 			*q = NULL;
-			)
+)
 
 			tl_cleanup(mdev);
 			if (mdev->mbds_id) bm_cleanup(mdev->mbds_id);
@@ -1176,23 +1186,21 @@ void drbd_cleanup(void)
 	}
 
 
-	NOT_IN_26(
+NOT_IN_26(
 	blksize_size[MAJOR_NR] = NULL;
 	blk_size[MAJOR_NR]     = NULL;
-	)
 	// kfree(NULL) is noop
-	kfree(drbd_conf);
 	kfree(drbd_blocksizes);
 	kfree(drbd_sizes);
+)
+	kfree(drbd_conf);
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-void *
-kcalloc(size_t size, int type)
+void * kcalloc(size_t size, int type)
 {
 	void *addr;
 	addr = kmalloc(size, type);
@@ -1200,15 +1208,17 @@ kcalloc(size_t size, int type)
 		memset(addr, 0, size);
 	return addr;
 }
-#endif
 
 int __init drbd_init(void)
 {
 
 	int i,err;
 
-	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops))
-		return -EBUSY;
+
+	err = register_blkdev(MAJOR_NR, DEVICE_NAME
+			      NOT_IN_26(, &drbd_ops)
+			      );
+	if (err) return err;
 
 	/*
 	 * allocate all necessary structs
@@ -1228,16 +1238,31 @@ int __init drbd_init(void)
 #else
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
-		struct gendisk         **disk = &mdev->vdisk;
-		request_queue_t        **q    = &mdev->rq_queue;
+		struct gendisk         *disk;
+		request_queue_t        *q;
 
-		*q = blk_alloc_queue(GFP_KERNEL);
-		if (!*q) goto Enomem;
+		q = blk_alloc_queue(GFP_KERNEL);
+		if (!q) goto Enomem;
+		mdev->rq_queue = q;
+		q->queuedata   = mdev;
 
-		*disk = alloc_disk(1);
-		if (!*disk) goto Enomem;
+		disk = alloc_disk(1);
+		if (!disk) goto Enomem;
+		mdev->vdisk = disk;
 
-		set_disk_ro( *disk, TRUE );
+		set_disk_ro( disk, TRUE );
+
+		disk->queue = q;
+		disk->major = MAJOR_NR;
+		disk->first_minor = i;
+		disk->fops = &drbd_ops;
+		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
+		sprintf(disk->devfs_name, DEVICE_NAME "/%d", i);
+		disk->private_data = mdev;
+		add_disk(disk);
+
+		// THINK do we need this?
+		mdev->this_bdev = bdget(MKDEV(MAJOR_NR,i));
 	}
 #endif
 
@@ -1248,10 +1273,10 @@ int __init drbd_init(void)
 		drbd_dev    *mdev = &drbd_conf[i];
 		struct page *page = alloc_page(GFP_KERNEL);
 
-		NOT_IN_26(
+NOT_IN_26(
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
-		)
+)
 
 		if(!page) goto Enomem;
 		drbd_init_bio(&mdev->md_io_bio,512);
@@ -1286,10 +1311,10 @@ int __init drbd_init(void)
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
-	NOT_IN_26(
+NOT_IN_26(
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;
-	)
+)
 
 #ifdef CONFIG_DEVFS_FS
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
@@ -1299,7 +1324,7 @@ int __init drbd_init(void)
 			      &drbd_ops, NULL);
 # endif
 
-	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
+	NOT_IN_26(blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);)
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	// tell the kernel that we think our ioctls are 64bit clean
@@ -1367,9 +1392,12 @@ void cleanup_module(void)
 	devfs_unregister(devfs_handle);
 #endif
 
+#warning "FIXME increase module refcount with each setup device"
+	/* then you need to tear down all devices
+	 * before you can remove the module */
 	for (i = 0; i < minor_count; i++) {
 		drbd_set_state(drbd_conf+i,Secondary);
-		fsync_dev(MKDEV(MAJOR_NR, i));
+		drbd_sync_me(drbd_conf+i);
 		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[i].flags);
 		drbd_thread_stop(&drbd_conf[i].worker);
 		drbd_thread_stop(&drbd_conf[i].receiver);
@@ -1406,11 +1434,12 @@ void drbd_free_ll_dev(drbd_dev *mdev)
 		fput(mdev->lo_file);
 		fput(mdev->md_file);
 		mdev->lo_file = 0;
+NOT_IN_26(
 		mdev->lo_device = 0;
-		mdev->md_file = 0;
 		mdev->md_device = 0;
-#warning FIXME
-		ONLY_IN_26(del_gendisk(&mdev->vdisk));
+)
+#warning "FIXME unset L26 members"
+		mdev->md_file = 0;
 	}
 }
 
@@ -1851,7 +1880,8 @@ void drbd_md_write(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-	if( mdev->lo_device == 0) return;
+#warning "FIXME maybe lo_file is ok, too?"
+	NOT_IN_26 ( if( mdev->lo_device == 0) return; )
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
@@ -1887,7 +1917,8 @@ void drbd_md_read(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-	if( mdev->lo_device == 0) return;
+#warning "FIXME maybe lo_file is ok, too?"
+	NOT_IN_26 ( if( mdev->lo_device == 0) return; )
 
 	down(&mdev->md_io_mutex);
 
@@ -1895,7 +1926,7 @@ void drbd_md_read(drbd_dev *mdev)
 
 	drbd_md_prepare_read(mdev,sector);
 	drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
-	ERR_IF( ! buffer_uptodate(&mdev->md_io_bio) ) goto err;
+	ERR_IF( ! drbd_bio_uptodate(&mdev->md_io_bio) ) goto err;
 
 	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
 
@@ -1974,7 +2005,7 @@ void drbd_queue_signal(int signal,struct task_struct *task)
 	read_unlock(&tasklist_lock);
 }
 
-#ifdef SIGHAND_HACK
+#if defined(SIGHAND_HACK) && LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 
 // copied from redhat's kernel-2.4.20-13.9 kernel/signal.c
 // to avoid a recompile of the redhat kernel

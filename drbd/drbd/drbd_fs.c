@@ -152,6 +152,12 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	minor=(int)(mdev-drbd_conf);
 
+	/* if you want to reconfigure, please tear down first */
+ONLY_IN_26(
+	if (mdev->backing_bdev)
+		return -EBUSY;
+)
+
 	if (mdev->open_cnt > 1)
 		return -EBUSY;
 
@@ -177,7 +183,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		retcode=LDMounted;
 		goto fail_ioctl;
 	}
-#warning "FIXME sync ll-dev, check size"
+#warning "FIXME check size"
 #warning "FIXME meta-device"
 	mdev->backing_bdev = bdev;
 #else
@@ -298,7 +304,9 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 {
 	struct ioctl_get_config cn;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
 #warning "FIXME make 26 clean, maybe move to compat layer?"
+#else
 	cn.cstate=mdev->cstate;
 	cn.lower_device_major=MAJOR(mdev->lo_device);
 	cn.lower_device_minor=MINOR(mdev->lo_device);
@@ -312,6 +320,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 
 	if (copy_to_user(arg,&cn,sizeof(struct ioctl_get_config)))
 		return -EFAULT;
+#endif
 
 	return 0;
 }
@@ -410,7 +419,7 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 
 #warning "FIXME actually must hold device_mutex!"
 
-	int minor = mdev-drbd_conf;
+	NOT_IN_26(int minor = mdev-drbd_conf;)
 	if ( (newstate & 0x3) == mdev->state ) return 0; /* nothing to do */
 
 	// exactly one of sec or pri. not both.
@@ -432,9 +441,6 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		/* If I got here, I am Primary. I claim me for myself. If that
 		 * does not succeed, someone other has claimed me, so I cannot
 		 * become Secondary. */
-#warning "FIXME"
-		/* if something fails beyond this point, we actually need to
-		 * bd_release again */
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
 			return -EBUSY;
 	}
@@ -451,13 +457,24 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->state_wait,
 			atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
+ONLY_IN_26(
+		if ( newstate & Secondary )
+			D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
+			bd_release(mdev->this_bdev);
+)
 		return -EINTR;
 	}
 
 	mdev->state = (Drbd_State) newstate & 0x03;
 	if(newstate & Primary) {
 		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), FALSE ); )
-		ONLY_IN_26( set_disk_ro(mdev->vdisk, FALSE ); )
+
+ONLY_IN_26(
+		set_disk_ro(mdev->vdisk, FALSE );
+		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
+		bd_release(mdev->this_bdev);
+)
+
 		if(newstate & Human) {
 			drbd_md_inc(mdev,HumanCnt);
 		} else if(newstate & TimeoutExpired ) {
@@ -556,10 +573,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	long time;
 	struct Drbd_Conf *mdev;
 	struct ioctl_wait* wp;
-	ONLY_IN_26(
+ONLY_IN_26(
 	struct block_device *bdev = inode->i_bdev;
 	struct gendisk *disk = bdev->bd_disk;
-	)
+)
 
 	minor = MINOR(inode->i_rdev);
 	if (minor >= minor_count) return -ENODEV;
@@ -573,10 +590,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	 * we hold the device_mutex
 	 */
 
-	ONLY_IN_26(
+ONLY_IN_26(
 	D_ASSERT(bdev == mdev->this_bdev);
 	D_ASSERT(disk == mdev->vdisk);
-	);
+);
 
 	switch (cmd) {
 	case BLKGETSIZE:
@@ -625,6 +642,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
+#warning "yet an other reason to serialize all state changes on a rw_semaphore"
 		if (mdev->cstate == Connected) drbd_send_param(mdev);
 		break;
 
@@ -644,7 +662,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	case DRBD_IOCTL_UNCONFIG_NET:
 		if( mdev->cstate == Unconfigured) break;
 		/* FIXME what if fsync returns error */
-		fsync_dev(MKDEV(MAJOR_NR, minor));
+		drbd_sync_me(mdev);
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 		drbd_thread_stop(&mdev->worker);
 		drbd_thread_stop(&mdev->asender);
@@ -661,7 +679,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			break;
 		}
 
-		fsync_dev(MKDEV(MAJOR_NR, minor));
+		drbd_sync_me(mdev);
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 		drbd_thread_stop(&mdev->worker);
 		drbd_thread_stop(&mdev->asender);
@@ -762,7 +780,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	default:
 		err = -EINVAL;
 	}
- out:
+ //out:
 	up(&mdev->device_mutex);
  out_unlocked:
 	return err;

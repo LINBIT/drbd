@@ -16,12 +16,6 @@ typedef unsigned long sector_t;
 #define bh_kunmap(bh)	do { } while (0)
 #endif
 
-#if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
-#else
-# define MUST_HOLD(lock)
-#endif
-
 #ifndef list_for_each
 #define list_for_each(pos, head) \
 	for(pos = (head)->next; pos != (head); pos = pos->next)
@@ -52,9 +46,9 @@ typedef unsigned long sector_t;
 #else // LINUX 2.6
 # warning "FIXME"
 
-#define SIGHAND_HACK
-
 typedef struct bio drbd_bio_t;
+
+#define SIGHAND_HACK
 
 #define NOT_IN_26(x...)
 #define ONLY_IN_26(x...)	x
