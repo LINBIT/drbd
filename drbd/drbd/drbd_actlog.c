@@ -78,8 +78,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	bio.bi_private = &event;
 	bio.bi_end_io = drbd_md_io_complete;
 	submit_bio(rw, &bio);
-	blk_run_queues();
-	// blk_run_queue(bdev_get_queue(mdev->md_bdev)); // might be better.
+	blk_run_queue(bdev_get_queue(mdev->md_bdev));
 	wait_for_completion(&event);
 
 	return test_bit(BIO_UPTODATE, &bio.bi_flags);
@@ -323,7 +322,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	if(from == -1 || to == -1) {
 		WARN("No usable activity log found.\n");
-		//TODO set all bits in the bitmap!
+
 		return;
 	}
 

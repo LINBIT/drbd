@@ -45,6 +45,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
 	struct Drbd_Conf* mdev = drbd_req_get_mdev(req);
 	unsigned long flags=0;
+	int uptodate;
 
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 	PARANOIA_BUG_ON(drbd_req_get_sector(req) != rsector);
@@ -85,10 +86,23 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		drbd_set_in_sync(mdev,rsector,drbd_req_get_size(req));
 	}
 
-	/// TODO look at mdev->on_io_error
-	/// in the Detach case do not report it to the application.
-	drbd_bio_endio(req->master_bio,(req->rq_status & 0x0001));
+	uptodate = req->rq_status & 0x0001;
+	if( !uptodate && mdev->on_io_error == Detach) {
+		if(req->rq_status & RQ_DRBD_READ) {
+			drbd_read_remote(mdev,req);
+			return;
+		} else {
+			drbd_set_out_of_sync(mdev,rsector,
+					     drbd_req_get_size(req));
+			// TODO it should also be as out of sync on 
+			// the other side! But how...
+			drbd_bio_endio(req->master_bio,1);
+			uptodate = 1; 
+                        // The assumption is that we wrote it on the peer.
+		}
+	}
 
+	drbd_bio_endio(req->master_bio,uptodate);
 
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);

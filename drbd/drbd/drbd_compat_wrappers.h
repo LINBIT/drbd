@@ -199,7 +199,7 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 		     |(1 << BH_Req)
 		     |(1 << BH_Mapped) ;
 
-	req->rq_status = RQ_DRBD_NOTHING;
+	req->rq_status = RQ_DRBD_NOTHING | RQ_DRBD_WRITE;
 }
 
 static inline void
@@ -225,7 +225,7 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 		     |(1 << BH_Req)
 		     |(1 << BH_Mapped) ;
 
-	req->rq_status = RQ_DRBD_NOTHING;
+	req->rq_status = RQ_DRBD_NOTHING | RQ_DRBD_READ;
 }
 
 static inline struct page* drbd_bio_get_page(struct buffer_head *bh)

@@ -257,6 +257,8 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 #define RQ_DRBD_LOCAL     0x0020
 #define RQ_DRBD_DONE      0x0030
 #define RQ_DRBD_IN_TL     0x0040
+#define RQ_DRBD_READ      0x0100
+#define RQ_DRBD_WRITE     0x0200
 
 enum MetaDataFlags {
 	MDF_Consistent   = 1,
