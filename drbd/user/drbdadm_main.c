@@ -647,7 +647,7 @@ void verify_ips(struct d_resource* res)
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
 		    "IP %s not found on this host.\n",
-	    config_file,(int) ep->data,res->name, res->me->name,my_ip);
+	    config_file,(int)(long)ep->data,res->name, res->me->name,my_ip);
 #ifdef INVALID_IP_IS_INVALID_CONF
     config_valid = 0;
 #endif
@@ -679,7 +679,7 @@ void verify_ips(struct d_resource* res)
     asprintf(&e.key,"%s:%s",his_ip,res->peer->port);
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s:\n\tNo route from me (%s) to peer (%s).\n",
-	    config_file,(int) ep->data,res->name, my_ip, his_ip);
+	    config_file,(int)(long)ep->data,res->name, my_ip, his_ip);
 # ifdef INVALID_IP_IS_INVALID_CONF
     config_valid = 0;
 # endif
@@ -720,7 +720,7 @@ int check_uniq(const char* what, const char *fmt, ...)
     exit(E_thinko);
   }
 #endif
-  e.data = (void*)fline;
+  e.data = (void*)(long)fline;
   ep = hsearch(e, FIND);
   // fprintf(stderr,"%s: FIND %s: %p\n",res->name,e.key,ep);
   if (ep) {
@@ -729,7 +729,7 @@ int check_uniq(const char* what, const char *fmt, ...)
 	      "%s:%d: conflicting use of %s '%s' ...\n"
 	      "%s:%d: %s '%s' first used here.\n",
 	      config_file, line, what, ep->key,
-	      config_file, (int) ep->data, what, ep->key );
+	      config_file, (int)(long)ep->data, what, ep->key );
     }
     free(e.key);
     config_valid = 0;

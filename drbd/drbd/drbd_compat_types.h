@@ -105,6 +105,72 @@ static __inline__ int find_next_bit(const unsigned long *addr, int size, int off
         return (offset + set + res);
 }
 
+#elif defined(__alpha__)
+
+#include <asm/compiler.h>
+#if __GNUC__ == 3 && __GNUC_MINOR__ >= 4 || __GNUC__ > 3
+# define __kernel_cmpbge(a, b)          __builtin_alpha_cmpbge(a, b)
+#else
+# define __kernel_cmpbge(a, b)                                          \
+  ({ unsigned long __kir;                                               \
+     __asm__("cmpbge %r2,%1,%0" : "=r"(__kir) : "rI"(b), "rJ"(a));      \
+     __kir; })
+#endif
+
+static inline unsigned long __ffs(unsigned long word)
+{
+#if defined(__alpha_cix__) && defined(__alpha_fix__)
+	/* Whee.  EV67 can calculate it directly.  */
+	return __kernel_cttz(word);
+#else
+	unsigned long bits, qofs, bofs;
+
+	bits = __kernel_cmpbge(0, word);
+	qofs = ffz_b(bits);
+	bits = __kernel_extbl(word, qofs);
+	bofs = ffz_b(~bits);
+
+	return qofs*8 + bofs;
+#endif
+}
+
+static inline unsigned long
+find_next_bit(void * addr, unsigned long size, unsigned long offset)
+{
+	unsigned long * p = ((unsigned long *) addr) + (offset >> 6);
+	unsigned long result = offset & ~63UL;
+	unsigned long tmp;
+
+	if (offset >= size)
+		return size;
+	size -= result;
+	offset &= 63UL;
+	if (offset) {
+		tmp = *(p++);
+		tmp &= ~0UL << offset;
+		if (size < 64)
+			goto found_first;
+		if (tmp)
+			goto found_middle;
+		size -= 64;
+		result += 64;
+	}
+	while (size & ~63UL) {
+		if ((tmp = *(p++)))
+			goto found_middle;
+		result += 64;
+		size -= 64;
+	}
+	if (!size)
+		return result;
+	tmp = *p;
+ found_first:
+	tmp &= ~0UL >> (64 - size);
+	if (!tmp)
+		return result + size;
+ found_middle:
+	return result + __ffs(tmp);
+}
 #else
 #warning "You probabely need to copy find_next_bit() from a 2.6.x kernel."
 #endif
