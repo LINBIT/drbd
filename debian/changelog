@@ -1,3 +1,14 @@
+drbd (0.7.4-2) unstable; urgency=low
+
+  * Added bison, flex to Build-Depends
+  * Call 'make clean' in drbd directory
+  * Upgraded to debian-policy 3.6.1
+  * Rewritten debian/rules using module-assistant
+  * Added myself as Uploader
+
+
+ -- Philipp Hug <debian@hug.cx>  Tue, 14 Sep 2004 23:25:12 +0200
+
 drbd (0.7.4-1) unstable; urgency=low
 
   * Fixed a critical bug with Linux-2.4.x and HIGHMEM!
@@ -15,7 +26,7 @@ drbd (0.7.4-1) unstable; urgency=low
 
 drbd (0.7.3-2) unstable; urgency=low
 
-  * Fixed debian/rules: Include scripts directory in drbd-source
+  * Fixed debian/rules: Include adjust_drbd_config_h.sh in drbd-source
 
  -- Philipp Hug <debian@hug.cx>  Tue, 31 Aug 2004 15:37:38 +0000
 

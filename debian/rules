@@ -1,107 +1,173 @@
 #!/usr/bin/make -f
-# Sample debian/rules that uses debhelper. 
-# GNU copyright 1997 by Joey Hess.
+# -*- makefile -*-
+# Sample debian/rules that uses debhelper.
+# GNU copyright 1997 to 1999 by Joey Hess.
 #
-# This version is for a hypothetical package that builds an
-# architecture-dependant package, as well as an architecture-independent
-# package.
+# Modified to make a template file for a multi-binary package with separated
+# build-arch and build-indep targets  by Bill Allombert 2001
 
-# Uncomment this to turn on verbose mode. 
+# Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-ifneq (,$(findstring debug,$(DEB_BUILD_OPTIONS)))
-	CFLAGS += -g
+# This has to be exported to make some magic below work.
+export DH_OPTIONS
+
+PACKAGE=drbd-modules
+MA_DIR ?= /usr/share/modass
+-include $(MA_DIR)/include/generic.make
+-include $(MA_DIR)/include/common-rules.make
+
+
+CFLAGS = -Wall -g
+
+ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
+	CFLAGS += -O0
+else
+	CFLAGS += -O2
 endif
 ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 	INSTALL_PROGRAM += -s
 endif
 
-build-arch-stamp:
+# module-assistant stuff
+MAJOR=$(shell echo $(KVERS) | sed -e 's/\(...\).*/\1/')
+ifeq ($(MAJOR),2.6)
+KO=k
+endif
+
+kdist_clean:
+	dh_clean
+	-make -C drbd clean
+
+# prep-deb-files rewrites the debian/ files as needed. See RATIONALE for
+# details
+kdist_config: prep-deb-files
+# ... additional kernel specific things to configure...
+
+kdist_configure: kdist_config
+
+binary-modules: prep-deb-files
+	dh_testdir
+	dh_testroot
+	dh_clean -k
+	make -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
+	install -m644 -b -D drbd/drbd.$(KO)o $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/kernel/drivers/block/drbd.$(KO)o
+	dh_installdocs
+	dh_installchangelogs
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_gencontrol -- -v$(VERSION)
+	dh_md5sums
+	dh_builddeb --destdir=$(DEB_DESTDIR)
+
+
+#Architecture 
+build: build-arch build-indep
+
+build-arch: build-arch-stamp
+build-arch-stamp: 
 	dh_testdir
 
 	cd user && $(MAKE)
 	cd documentation && $(MAKE) doc
 	cd scripts && $(MAKE)
-	touch build-stamp
 
-build-arch: build-arch-stamp
-	dh_testdir -a
-	dh_testroot -a
-	dh_clean -a -k
-	dh_installdirs -a
-	dh_install -a
+	touch build-arch-stamp
+
+build-indep: build-indep-stamp
+build-indep-stamp: 
+	touch build-indep-stamp
 
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f build-stamp 
+	rm -f build-arch-stamp build-indep-stamp #CONFIGURE-STAMP#
+
 	cd user && $(MAKE) clean
 	cd documentation && $(MAKE) clean
 	cd scripts && $(MAKE) clean
-	dh_clean
+	cd drbd && $(MAKE) clean
+	dh_clean 
 
-build-indep: 
-	dh_testdir -i
-	dh_testroot -i
-	dh_clean -i -k
+install: install-indep install-arch
+install-indep:
+	dh_testdir
+	dh_testroot
+	dh_clean -k -i 
 	dh_installdirs -i
-	dh_install -i
-#	cp debian/rules.MODULE debian/drbd-source/usr/src/modules/drbd/debian/rules
-	for file in debian/*.MODULE; do \
-		cp $$file debian/drbd-source/usr/src/modules/drbd/$${file%%.MODULE}; \
-	done
-	cp debian/changelog debian/drbd-source/usr/src/modules/drbd/debian
-	# touch debian/control file so debian/rules clean works the first time
-	touch debian/drbd-source/usr/src/modules/drbd/debian/control
+
+
 	cp -a drbd/* debian/drbd-source/usr/src/modules/drbd/drbd
 	cp Makefile debian/drbd-source/usr/src/modules/drbd
-	mkdir debian/drbd-source/usr/src/modules/drbd/scripts
-	cp -a scripts/adjust_drbd_config_h.sh debian/drbd-source/usr/src/modules/drbd/scripts
 	cp drbd/linux/drbd_config.h debian/drbd-source/usr/src/modules/drbd
-	cd debian/drbd-source/usr/src; \
-	chmod 0775 modules/drbd/debian/rules; \
-	tar pzfvc drbd.tar.gz modules; \
-	rm -rf modules/
+	mkdir debian/drbd-source/usr/src/modules/drbd/scripts/
+	cp -a scripts/adjust_drbd_config_h.sh debian/drbd-source/usr/src/modules/drbd/scripts/
 
-binary-indep:build-indep
-	dh_testdir -i
-	dh_testroot -i
+	# install driver source
+	#cp -a drbd debian/drbd-source/usr/src/modules/drbd/
+	#mkdir debian/drbd-source/usr/src/modules/drbd/scripts/
+	#cp -a scripts/adjust_drbd_config_h.sh debian/drbd-source/usr/src/modules/drbd/scripts/
+	#ln -s drbd debian/drbd-source/usr/src/modules/drbd/Linux-2.4
+	#ln -s drbd debian/drbd-source/usr/src/modules/drbd/Linux-2.6
 
-	dh_installdocs -i
-	dh_installman -i
-	dh_installchangelogs -i ChangeLog
-#	dh_installdebconf -i
-#	dh_installmodules -i
-	dh_strip -i
-	dh_link -i
-	dh_compress -i
-	dh_fixperms -i
-	dh_installdeb -i
-	dh_shlibdeps -i
-	dh_gencontrol -i
-	dh_md5sums -i
-	dh_builddeb -i
+	# install debian/ files
+	cd debian ; cp changelog control compat *.modules.in rules copyright drbd-source/usr/src/modules/drbd/debian
 
+	# tar the stuff
+	cd debian/drbd-source/usr/src/ ; tar pzfvc drbd.tar.gz modules ; rm -rf modules
 
-binary-arch: build-arch
-	dh_testdir -a
-	dh_testroot -a
+	dh_install -i
 
-	dh_installdocs -a
-	dh_installman -a
-	dh_installchangelogs -a ChangeLog
-#	dh_installdebconf -a
-#	dh_installmodules -a
-	dh_strip -a
-	dh_link -a
-	dh_compress -a
-	dh_fixperms -a
-	dh_installdeb -a
-	dh_shlibdeps -a
-	dh_gencontrol -a
-	dh_md5sums -a
-	dh_builddeb -a
+install-arch:
+	dh_testdir
+	dh_testroot
+	dh_clean -k -s 
+	dh_installdirs -s
 
-binary: binary-indep binary-arch
+	# Add here commands to install the arch part of the package into 
+	# debian/tmp.
+	#$(MAKE) install DESTDIR=$(CURDIR)/debian/drbd
 
-.PHONY: build clean binary-indep binary-arch binary install
+	dh_install -s
+# Must not depend on anything. This is to be called by
+# binary-arch/binary-indep
+# in another 'make' thread.
+binary-common:
+	dh_testdir
+	dh_testroot
+	dh_installchangelogs ChangeLog
+	dh_installdocs
+	dh_installexamples
+#	dh_installmenu
+#	dh_installdebconf	
+#	dh_installlogrotate	
+#	dh_installemacsen
+#	dh_installpam
+#	dh_installmime
+#	dh_installinit
+#	dh_installcron
+#	dh_installinfo
+	dh_installman
+	dh_link
+	dh_strip
+	dh_compress 
+	dh_fixperms
+#	dh_perl
+#	dh_python
+	dh_makeshlibs
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+# Build architecture independant packages using the common target.
+binary-indep: build-indep install-indep
+	$(MAKE) -f debian/rules DH_OPTIONS=-i binary-common
+
+# Build architecture dependant packages using the common target.
+binary-arch: build-arch install-arch
+	$(MAKE) -f debian/rules DH_OPTIONS=-a binary-common
+
+binary: binary-arch binary-indep
+.PHONY: build clean binary-indep binary-arch binary install install-indep install-arch
