@@ -67,6 +67,7 @@ wfc-timeout      { DP; CP; return TK_WFC_TIMEOUT;        }
 max-buffers      { DP; CP; return TK_MAX_BUFFERS;        }
 incon-degr-cmd   { DP; CP; return TK_INCON_DEGR_CMD;     }
 max-epoch-size   { DP; CP; return TK_MAX_EPOCH_SIZE;     }
+sndbuf-size      { DP; CP; return TK_SNDBUF_SIZE;        }
 degr-wfc-timeout { DP; CP; return TK_DEGR_WFC_TIMEOUT;   }
 disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;   }
 {IPV4ADDR}       { DP; CP; return TK_IPADDR;             }

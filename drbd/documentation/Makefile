@@ -87,7 +87,10 @@ man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 drbdadm.8
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
-install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
+install:
+	@ok=true; for f in drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 ; \
+		do [ -e $$f ] || { echo $$f missing ; ok=false; } ; \
+	done ; $$ok
 	install -d $(PREFIX)usr/share/man/man8
 	install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8
 	install -d $(PREFIX)usr/share/man/man5
