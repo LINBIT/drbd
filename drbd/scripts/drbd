@@ -72,14 +72,6 @@ case "$1" in
 	for D in $DEVICES; do
 	    . $D
 
-	    if [ -z "$NODE1_IF" ]; then
-                NODE1_IF=$NODE1_HOST;
-		fi
-
-	    if [ -z "$NODE2_IF" ]; then
-                NODE2_IF=$NODE2_HOST;
-		fi
-
 		setLocal
 
 		action "Configuring DRBD resource $D" \
