@@ -98,7 +98,7 @@ sub heartbeat {
 				$me->say("unexpected crash of $me->{_config}->{hostname}!\n")
 					unless $me->{_busy} eq "fail";
 				$me->status("down","fail","done");
-				$LGE_CTH::FAILED -= 499;
+				$LGE_CTH::FAILED -= 0x800;
 				$me->wait_for_boot;
 			} else {
 				$me->status("shutdown","END_OF_TEST","done");
@@ -153,7 +153,7 @@ sub fail {
 	$me->say("no point in crashing me, I'm down!"), return
 		if $me->{_status}->{status} ne "up";
 
-	$LGE_CTH::FAILED += 500;
+	$LGE_CTH::FAILED += 0x801;
 	$me->{_busy} = "fail";
 	$me->{_status}->{status} = "crashing"; # don't propagate yet, failing heartbeat will propagate it
 	Log("FAIL $me->{_id}");

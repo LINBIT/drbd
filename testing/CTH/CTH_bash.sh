@@ -40,7 +40,9 @@ Run()
 	__I_MEAN_IT__=__YES__
 	source ./functions.sh     || return
 
-	boot_and_setup_nodes      || return
+	set +e
+	( set -e; boot_and_setup_nodes )
+	err=$?; [[ $err == 0 ]]   || return $err
 
 	cat <<-___
 	#
@@ -51,20 +53,23 @@ Run()
 	trap 'ex=$?; echo "exit_code: $ex"' ERR # show exit codes != 0
 	if [[ -e $CASE ]] ; then
 		echo "now run CASE=$CASE"
-		( set -e; source $CASE ) || return
+		on_all_nodes to_syslog MSG="now run CASE=$CASE"
+		( set -e; source $CASE )
+		err=$?; [[ $err == 0 ]]   || return $err
 	fi
 
 	return
 }
 
-if Run; then
+Run; err=$?
+if [[ $err == 0 ]]; then
 	cat <<-___
 	#--- $CASE ----
 	#     PASSED
 	#-----------------
 	___
 else
-	echo "something went wrong. exit_code: $?"
+	echo "something went wrong. exit_code: $err"
 fi
 
 if $INTERACTIVE ; then

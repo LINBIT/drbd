@@ -42,7 +42,7 @@ tiobench_start()
 # wbtest            {{{2
 ########################
 
-wbtest_start()
+wbtest_old_start()
 {
 	: ${MNT:?unknown mount point}
 	WBTLOG=~/wbtest.log
@@ -61,6 +61,21 @@ wbtest_start()
 # CHANGE, but be aware that -c 20,
 # and two resources, you will have a load of ~40 :)
 	wbtest -p 0 -c 5 -m 16384 -M 102400 -s checkpoint -t data -l $WBTLOG
+}
+
+wbtest_start()
+{
+	: ${MNT:?unknown mount point}
+	WBTLOG=~/wbtest.log
+	cd $MNT
+	mkdir -p data
+	echo RESTART >> $WBTLOG
+	date >> $WBTLOG
+
+	wbtest -d data -l $WBTLOG -V
+# CHANGE, but be aware that -c 20,
+# and two resources, you will have a load of ~40 :)
+	wbtest -v -p 0 -c 5 -m 16384 -M 102400 -d data -l $WBTLOG > /dev/null
 }
 
 #
@@ -93,10 +108,19 @@ set -o errexit $DEBUG
 PATH=/root/bin:/usr/bin:/bin:/usr/sbin:/sbin
 $(printf '%q\n' "${@:3}")
 "
+	local err
 	: ${host:?unknown host}
 	: ${cmd:?no command}
 	# printf "%s " ssh -2 -4 -o BatchMode=yes -o KeepAlive=yes -xl root $host -- "$env$cmd; $2"
 	ssh -2 -4 -o BatchMode=yes -o KeepAlive=yes -xl root $host -- "$env$cmd; $2"
+	err=$?
+	[[ $err == 0 ]] || echo "$2: $err"
+	return $err
+}
+
+to_syslog()
+{
+	logger "$MSG"
 }
 
 #
@@ -109,7 +133,7 @@ do_initial_sanity_check()
 	: ${DRBD_MAJOR:?missing DRBD_MAJOR}
 	: ${DRBD_DEVNAME:?missing DRBD_DEVNAME}
 	: ${MINOR_COUNT:?missing MINOR_COUNT}
-	[[ `uname -n` == $hostname ]]
+	test `uname -n` = $hostname
 	if [ -e /proc/drbd ] ; then
 		for d in `grep -o "^/dev/$DRBD_DEVNAME[^ ]\+" /proc/mounts` ; do
 			fuser -vmk $d || true
@@ -298,7 +322,7 @@ drbd_append_config()							# {{{3
 	RSIZE=$(fdisk -s /dev/mapper/$NAME)
 	USIZE=${USIZE:+$[USIZE+128*1024]}
 	: ${USIZE:=$RSIZE}
-	(( USIZE <= RSIZE )) # assert USIZE <= RSIZE
+	(( USIZE <= RSIZE )) || return 1 # assert USIZE <= RSIZE
 	let "MLOC=(USIZE & ~3) -128*1024"
 	if $START_CLEAN ; then
 		perl -e 'print pack "N8", 0,0, 1,1,1,1,1, 0x8374026a;

@@ -235,7 +235,7 @@ Drbd_MD5_diff()
 	blocks=$( grep ^DEVICE_SIZE < md5sum-${!right}-$name | cut -f 2 )
 	echo "NOTE: internal meta data may differ..."
 	echo "md probably starts at blocknr $[blocks-(128<<8)]"
-	diff -u md5sum-${!left}-$name md5sum-${!right}-$name || true
+	diff -u md5sum-${!left}-$name md5sum-${!right}-$name
 }
 
 dd_single_block()
@@ -306,8 +306,7 @@ Heal_Disk()
 
 # initial boot
 boot_and_setup_nodes()
-{ (
-	set -e
+{
 	initial=true
 	[[ ${!Drbd_*} ]] && have_drbd=true || have_drbd=false # FIXME should be node specific...
 	for n in ${!Node_*}; do
@@ -350,7 +349,7 @@ boot_and_setup_nodes()
 		bdev_to_env $BDEV
 		if [[ $BDEV == Drbd_* ]] ; then
 			n=$left
-			on ${!n}: drbdadm_pri force="-- -d" name=$name
+			on ${!n}: drbdadm_pri force="-- --do-what-I-say" name=$name
 		else
 			n=Node_1
 		fi
@@ -365,7 +364,14 @@ boot_and_setup_nodes()
 			on ${!n}: drbd_wait_sync DEV=/dev/$DRBD_DEVNAME$minor
 		fi
 	done
-) }
+}
+
+on_all_nodes()
+{
+	for n in ${!Node_*} ; do
+		on ${!n}: "$@"
+	done
+}
 
 Start()
 {

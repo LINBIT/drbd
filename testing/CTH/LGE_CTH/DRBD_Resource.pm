@@ -45,14 +45,14 @@ sub wait_sync {
 		$cmd = "on $ip: drbd_wait_sync DEV=/dev/$DRBD_DEVNAME$minor";
 		$node->{_busy} = "wait_sync" unless $node->{_busy};
 		$node->{_busy} .= " $name ";
-		$LGE_CTH::FAILED += 1000;
+		$LGE_CTH::FAILED += 0x1000;
 		_spawn( "wait_sync $name on $hostname after $event", $cmd,
 			sub {
 				my $ex = $_[0];
 				$node->say("wait_sync $name on $hostname done: $ex");
 				$node->{_busy} =~ s/ $name / /;
 				$node->{_busy} = ""  if $node->{_busy} =~ /^wait_sync\s*$/;
-				$LGE_CTH::FAILED -= 1000;
+				$LGE_CTH::FAILED -= 0x1000;
 				# TODO update state and so on.
 			}
 		);
@@ -68,8 +68,10 @@ sub initial_setup {
 
 	_spawn("$me->{_id}: initial_setup on $node->{_config}->{hostname}",
 		sub {
-			my $cmd = ". ./functions.sh; on $node->{_config}->{admin_ip}: drbd_append_config "
-			     . "RES=$mr->{_config}->{name} LO_DEV=$disk->{_config}->{dev} NAME=$disk->{_config}->{name}";
+			my $cmd = ". ./functions.sh; on $node->{_config}->{admin_ip}: drbd_append_config"
+			     . " RES=$mr->{_config}->{name} LO_DEV=$disk->{_config}->{dev}"
+			     . " NAME=$disk->{_config}->{name}"
+			     . " START_CLEAN=$::DRBD_SKIP_INITIAL_SYNC";
 			open (DRBD_CONF,"|$cmd")
 				or die "$cmd $node->{_id}:drbd.conf: $!";
 			print DRBD_CONF $mr->as_conf_string
@@ -274,7 +276,7 @@ sub start {
 	_spawn("$me->{_id}: wait for $hostname to recognize ... ",$cmd,'SYNC');
 
        	$cmd = "on $ip: drbdadm_pri name=$name";
-        $cmd .=	' "force=-- -d"' if $force;
+        $cmd .=	' "force=-- --do-what-I-say"' if $force;
 	_spawn("$me->{_id}: Primary $name on $node->{_config}->{hostname}",$cmd,'SYNC');
 	if ($force) {
 		for my $i (@{$c->{_instances}}) {

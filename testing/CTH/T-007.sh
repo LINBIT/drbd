@@ -12,6 +12,26 @@
 
 sleeptime=30
 
+# FIXME incorporate properly into Drbd_MD5_diff in CTH_bash.helpers
+Compare()
+{
+	out=md5sum.r0.diff.$iter
+	echo "==> compare checksums of lower level devices"
+	Drbd_MD5_diff Drbd_1 > $out || true
+	last_line=$(sed -ne 's/^md probably starts at blocknr //p;2q' < $out)
+	first_chunk=$(sed -ne '1,4d;s/^@@ -\([0-9]\+\),.*/\1/p;5q' < $out)
+	if (( first_chunk > last_line )) ; then
+		echo "no block differences in data section."
+	else
+		echo -n "number of block differences in data section: "
+		if sed -e "1,4d;/^. *$last_line\t/q" $out | grep -c "^[+-]" ; then
+			echo "oops. stopping here."
+			echo "you want to have a look at '$out' yourself"
+			exit 1
+		fi
+	fi
+}
+
 # start it.
 Start RS_1 Node_1
 sleep 10
@@ -44,7 +64,7 @@ while (( iter-- )); do
 
 	Stop RS_1
 	if (( iter % 10 == 0 )) ; then
-		Drbd_MD5_diff Drbd_1 > md5sum.r0.diff.$iter
+		Compare
 	fi
 	Start RS_1 Node_1
 

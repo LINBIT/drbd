@@ -49,6 +49,10 @@ our $DRBD_DEVNAME = "nb";   # the part between /dev/ and the minor number.
 		# = "drbd";
 		# = "drbd/";
 
+# set this to something ne '' to skip the initial full sync
+# NOTE: "false" is also true. only "" is false :-)
+$::DRBD_SKIP_INITIAL_SYNC="";
+
 ##
 ## private
 ##
@@ -226,10 +230,14 @@ sub Run {
 	warn("\n.\n#\n#\tINITIAL SETUP\n#\n");
 
 	$CRM->start_all;
-	wait_for_pending_events;
+	# wait_for_pending_events;
+
+	kill 'CHLD' => $$;
+	# effect: trigger an other SIGCHLD...
+	# this whole signal magic is a little bit messy :(
 
 	warn("\n.\n#\n#\tENTER MAINLOOP\n#\n");
-	warn "Failed: $FAILED\n";
+	warn("Failed: $FAILED\n") if $::LGE_IS_DEBUGGING;
 
 
 	my ($part,$event,$lasttime,@obj);
@@ -257,10 +265,13 @@ sub Run {
 		last if $pending <= 0;
 		$did_something = 0;
 
-		@obj = active_objects;
-		if ($FAILED == 0 and int(rand(100)) < $move_resource_prob) {
+		# wait_sync and wait_for_boot increase $FAILED by 0x800 or 0x1000,
+		# so if the hardware is up, we still may move resources.
+		if ( ($FAILED & 0xff) == 0 and
+		     int(rand(100)) < $move_resource_prob ) {
 			$part = choose(@Resource);
 		} else {
+			@obj = active_objects;
 			$part = choose(@obj);
 		}
 		if ($part and $part->isa('LGE_CTH::Resource')) {
@@ -269,7 +280,9 @@ sub Run {
 			$cn = $part->{_current_node};
 			if ($cn) {
 				$nn = ( sort { $a->{_resources} <=> $b->{_resources} } 
-				        grep { $_ != $cn and not $_->{_busy} } @LGE_CTH::Node )[0];
+				        grep { $_ != $cn and $_->{_busy} =~ /^$|^wait_sync/ }
+					@LGE_CTH::Node
+				)[0];
 				$part->relocate_to($nn) if $nn;
 				$did_something = 1;
 				$last_time = time;
@@ -285,6 +298,9 @@ sub Run {
 			}
 		} else {
 			print STDERR "cannot do anything, FAILED=$FAILED\n";
+			kill 'CHLD' => $$;
+			# effect: trigger an other SIGCHLD...
+			# this whole signal magic is a little bit messy :(
 		}
 	}
 
@@ -377,11 +393,13 @@ sub __exec_with_logger {
 				: $ex >> 8;
 		}
 
+		# print "exit with $ex from: $script";
+
 		# make sure the logging sub process has flushed and
 		# exited, too ...
 		close STDERR;
 		close STDOUT;
-		
+
 		exit $ex;
 	}
 	die "NOT REACHED. ??";
