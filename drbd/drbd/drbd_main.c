@@ -361,7 +361,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 			if(p->req != TL_FINISHED && 
 			   ((p->req->rq_status & 0xfffe) != RQ_DRBD_SENT)) {
 				drbd_end_req(p->req,RQ_DRBD_SENT,1);
-				dec_pending(mdev);
+				//dec_pending(mdev);
 				goto mark;
 			}
 			
@@ -371,7 +371,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 					   p->sector >> (mdev->blk_size_b-9),
 					   mdev->blk_size_b, SS_OUT_OF_SYNC);
 			}
-		} else dec_pending(mdev);
+		} //else dec_pending(mdev);
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
 		        p = mdev->transfer_log;	    
@@ -551,7 +551,7 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
        
 	r=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
 
-	if( r == sizeof(head) ) inc_pending(mdev);
+	inc_pending(mdev);
 
 	return r;
 }
@@ -840,7 +840,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
 	if (/*rv == -ERESTARTSYS &&*/ ti.timeout_happened) {
-		printk(KERN_ERR DEVICE_NAME
+		printk(KERN_DEBUG DEVICE_NAME
 		       "%d: send timed out!! (pid=%d)\n",
 		       (int)(mdev-drbd_conf),current->pid);
 

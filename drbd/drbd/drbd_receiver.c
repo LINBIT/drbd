@@ -553,7 +553,7 @@ inline int receive_data(int minor,int data_size)
 		set_blocksize(MKDEV(MAJOR_NR, minor), data_size);
 		set_blocksize(drbd_conf[minor].lo_device,data_size);
 		drbd_conf[minor].blk_size_b = drbd_log2(data_size);
-		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",minor,
+		printk(KERN_DEBUG DEVICE_NAME "%d: blksize=%d B\n",minor,
 		       data_size);
 	}
 
@@ -772,9 +772,8 @@ inline int receive_param(int minor,int command)
 	
 	if (drbd_conf[minor].cstate == WFReportParams) {
 		int pri,method,sync;
-		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n",
-		       minor);
-		printk(KERN_INFO DEVICE_NAME "%d: size=%d KB / blksize=%d B\n",
+		printk(KERN_INFO DEVICE_NAME "%d: Connection established. "
+		       "size=%d KB / blksize=%d B\n",
 		       minor,blk_size[MAJOR_NR][minor],blksize);
 
 		pri=drbd_md_compare(minor,&param);
@@ -911,10 +910,6 @@ void drbdd(int minor)
 	}
 
       out:
-	printk(KERN_INFO DEVICE_NAME "%d: Connection lost."
-	       "(pc=%d,uc=%d)\n",minor,
-	       atomic_read(&drbd_conf[minor].pending_cnt),
-	       atomic_read(&drbd_conf[minor].unacked_cnt));
 
 	del_timer_sync(&drbd_conf[minor].a_timeout);
 
@@ -977,6 +972,8 @@ void drbdd(int minor)
 	atomic_set(&drbd_conf[minor].pending_cnt,0); 
 
 	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
+
+	printk(KERN_INFO DEVICE_NAME "%d: Connection lost.\n",minor);
 }
 
 int drbdd_init(struct Drbd_thread *thi)
@@ -1054,7 +1051,7 @@ void drbd_ping_timeout(unsigned long arg)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
 
-	printk(KERN_ERR DEVICE_NAME"%d: ping ack did not arrive\n",
+	printk(KERN_DEBUG DEVICE_NAME"%d: ping ack did not arrive\n",
 	       (int)(mdev-drbd_conf));
 
 	drbd_thread_restart_nowait(&mdev->receiver);
@@ -1088,11 +1085,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 			rr=0;
-		} else if(rr <= 0) {
-			printk(KERN_ERR DEVICE_NAME "%d: rr=%d\n",
-			       (int)(mdev-drbd_conf),rr);
-			break;
-		}
+		} else if(rr <= 0) break;
 
 		rsize+=rr;		
 			
@@ -1148,9 +1141,8 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	del_timer_sync(&ping_timeout);
 
-	printk(KERN_ERR DEVICE_NAME"%d: asender terminated\n",
-	       (int)(mdev-drbd_conf));
-
+	/* printk(KERN_ERR DEVICE_NAME"%d: asender terminated\n",
+	   (int)(mdev-drbd_conf)); */
 
 	return 0;
 }
