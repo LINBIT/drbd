@@ -82,6 +82,12 @@ extern int disable_io_hints;
 # define STATIC static
 #endif
 
+#ifdef PARANOIA
+# define PARANOIA_BUG_ON(x) BUG_ON(x)
+#else
+# define PARANOIA_BUG_ON(x)
+#endif
+
 /*
  * Some Message Macros
  *************************/
@@ -171,6 +177,10 @@ typedef unsigned long sector_t;
 #define bh_kunmap(bh)	do { } while (0)
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
+#define BH_Launder BH_launder
+#endif
+
 #ifndef list_for_each
 #define list_for_each(pos, head) \
 	for(pos = (head)->next; pos != (head); pos = pos->next)
@@ -203,13 +213,35 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 struct Drbd_Conf;
 typedef struct Drbd_Conf drbd_dev;
 
+#ifndef typecheck
+/*
+ * Check at compile time that something is of a particular type.
+ * Always evaluates to 1 so you may use it easily in comparisons.
+ */
+#define typecheck(type,x) \
+({	type __dummy; \
+	typeof(x) __dummy2; \
+	(void)(&__dummy == &__dummy2); \
+	1; \
+})
+#endif
+
 // THINK: x->magic = &x; ??
-#define SET_MAGIC(x) (x->magic = DRBD_MAGIC)
+#define SET_MAGIC(x) ((x)->magic = (int)(x) ^ DRBD_MAGIC)
 // For some optimization crap, please test for NULL explicitly,
 //	and not in this macro!
 // #define VALID_POINTER(x) ((x) && (x)->magic == DRBD_MAGIC)
-#define VALID_POINTER(x) ((x)->magic == DRBD_MAGIC)
+// #define VALID_POINTER(x) ((x)->magic == DRBD_MAGIC)
+// hopefully this works:
+#define VALID_POINTER(x) ((x) ? (((x)->magic ^ DRBD_MAGIC) == (int)(x)):0)
 #define INVALIDATE_MAGIC(x) (x->magic--)
+
+#define SET_MDEV_MAGIC(x) \
+	({ typecheck(struct Drbd_Conf*,x); \
+	  (x)->magic = (long)(x) ^ DRBD_MAGIC; })
+#define IS_VALID_MDEV(x)  \
+	( typecheck(struct Drbd_Conf*,x) && \
+	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0))
 
 
 /*
@@ -236,6 +268,38 @@ typedef struct Drbd_Conf drbd_dev;
 #define RQ_DRBD_WRITTEN   0x0020
 #define RQ_DRBD_DONE      0x0030
 #define RQ_DRBD_READ      0x0040
+
+#define DRBD_PANIC 2
+/* do_panic alternatives:
+ *	0: panic();
+ *	1: machine_halt;  FIXME does not work;
+ *	2: prink(EMERG ), plus flag to fail all eventual drbd IO, plus panic()
+ */
+
+extern volatile int drbd_did_panic;
+
+#include <linux/reboot.h>
+
+#if    DRBD_PANIC == 0
+#define drbd_panic(x...) panic(x)
+#elif  DRBD_PANIC == 1
+#error "THIS DRBD_PANIC SETTING DOES NOT WORK (yet)"
+#define drbd_panic(x...) do {						\
+	printk(KERN_EMERG x);						\
+	notifier_call_chain(&reboot_notifier_list, SYS_HALT, NULL);	\
+	printk(KERN_EMERG "System halted.\n");				\
+	machine_halt();							\
+	do_exit(0);							\
+} while (0)
+#else
+#define drbd_panic(x...) do {		\
+	printk(KERN_EMERG x);		\
+	drbd_did_panic = DRBD_MD_MAGIC;	\
+	smp_mb();			\
+	panic(x);			\
+} while (0)
+#endif
+#undef DRBD_PANIC
 
 enum MetaDataFlags {
 	MDF_Consistent   = 1,
@@ -443,15 +507,39 @@ struct Drbd_thread {
 	drbd_dev *mdev;
 };
 
+
+/*
+ * Having this as the first member of a struct provides sort of "inheritance".
+ * "derived" structs can be "drbd_queue_work()"ed.
+ * The callback should know and cast back to the descendant struct.
+ * drbd_request, Pending_read and Tl_epoch_entry are descendants of drbd_work.
+ * Pending_read will soon be merged into drbd_request, stay tuned ... -lge
+ */
+struct drbd_work;
+typedef int (*drbd_work_cb)(drbd_dev*, struct drbd_work*);
+struct drbd_work {
+	struct list_head list;
+	drbd_work_cb cb;
+};
+
+/*
+ * since we eventually don't want to "remap" any bhs, but allways need a
+ * private bh, it may as well be part of the struct so we do not need to
+ * allocate it separately.  it is only used as a clone, and since we own it, we
+ * can abuse certain fields of if for our own needs.  and, since it is part of
+ * the struct, we can use b_private for other things than the req, e.g. mdev,
+ * since we get the request struct by means of the "container_of()" macro.
+ *	-lge
+ */
+
 struct drbd_barrier;
 struct drbd_request {
+	struct drbd_work w;
 	int magic;
-	struct list_head list;     // requests are chained to a barrier
-	struct drbd_barrier *barrier; // The next barrier.
-	struct buffer_head *bh;    // buffer head
-	unsigned long sector;
-	int size;
 	int rq_status;
+	struct drbd_barrier *barrier; // The next barrier.
+	struct buffer_head *bh;       // master buffer head pointer
+	struct buffer_head  pbh;      // private buffer head struct
 };
 
 struct drbd_barrier {
@@ -472,16 +560,29 @@ typedef struct drbd_request drbd_request_t;
    rdone_ee  .. block read, need to send DataReply
 */
 
+/* Since whenever we allocate a Tl_epoch_entry, we allocated a buffer_head,
+ * at the same time, we might as well put it as member into the struct.
+ * Yes, we may "waste" a little memory since the unused EEs on the free_ee list
+ * are somewhat larger. For 2.6, this will be a struct_bio, which is fairly
+ * small, and since we adopt the amount dynamically anyways, this is not an
+ * issue.
+ *
+ * TODO
+ * I'd like to "drop" the free list altogether, since we use mempools, which
+ * are designed for this. We probably would still need a private "page pool"
+ * to set the bh.b_page from.
+ *	-lge
+ */
 struct Tl_epoch_entry {
-	struct list_head list;
-	struct buffer_head* bh;
+	struct drbd_work    w;
+	struct buffer_head  pbh; // private buffer head struct, NOT a pointer
 	u64    block_id;
-	int   (*e_end_io) (drbd_dev*, struct Tl_epoch_entry *);
+	int magic;
 };
 
 struct Pending_read {
+	struct drbd_work w;
 	int magic;
-	struct list_head list;
 	union {
 		struct buffer_head* bh;
 		sector_t sector;
@@ -611,7 +712,7 @@ struct Drbd_Conf {
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
 	struct tq_struct write_hint_tq;
-	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
+	struct buffer_head md_io_bh; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
@@ -995,7 +1096,7 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 	bh->b_list = BUF_LOCKED;
 	init_waitqueue_head(&bh->b_wait);
 	bh->b_size = size;
-	atomic_set(&bh->b_count, 0);
+	atomic_set(&bh->b_count, 1);
 	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr
 }
 
@@ -1011,11 +1112,7 @@ static inline void drbd_set_md_bh(drbd_dev *mdev,
 
 	// we skip submit_bh, but use generic_make_request.
 	set_bit(BH_Req, &bh->b_state);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
-	set_bit(BH_launder, &bh->b_state);
-#else
 	set_bit(BH_Launder, &bh->b_state);
-#endif
 	bh->b_rdev = mdev->md_device;
 	bh->b_rsector = sector;
 }
@@ -1031,11 +1128,7 @@ static inline void drbd_set_bh(drbd_dev *mdev,
 
 	// we skip submit_bh, but use generic_make_request.
 	set_bit(BH_Req, &bh->b_state);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
-	set_bit(BH_launder, &bh->b_state);
-#else
 	set_bit(BH_Launder, &bh->b_state);
-#endif
 	bh->b_rdev = mdev->lo_device;
 	bh->b_rsector = sector;
 }

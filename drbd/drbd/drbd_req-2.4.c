@@ -46,6 +46,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
 	unsigned long flags=0;
 
+	PARANOIA_BUG_ON(req->pbh.b_blocknr != rsector);
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
 	if(req->rq_status & nextstate) {
@@ -73,7 +74,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		if(tl_dependence(mdev,req))
 			set_bit(ISSUE_BARRIER,&mdev->flags);
 	} else {
-		list_del(&req->list); // we have the tl_lock...
+		list_del(&req->w.list); // we have the tl_lock...
 	}
 
 	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
@@ -83,7 +84,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	req->bh->b_end_io(req->bh,(req->rq_status & 0x0001));
 
 	if( mdev->do_panic && !(req->rq_status & 0x0001) ) {
-		panic(DEVICE_NAME": The lower-level device had an error.\n");
+		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
 	INVALIDATE_MAGIC(req);
@@ -93,17 +94,23 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		wake_asender(mdev);
 }
 
+/*
+ * b_end_io for writes on Primary comming from drbd_make_request
+ */
 void drbd_dio_end(struct buffer_head *bh, int uptodate)
 {
 	struct Drbd_Conf* mdev;
 	drbd_request_t *req;
 
-	req = bh->b_private;
+	// ok, now we have the b_private available for other use
+	req = container_of(bh,struct drbd_request,pbh);
+	PARANOIA_BUG_ON(!VALID_POINTER(req));
 	mdev = drbd_conf+MINOR(req->bh->b_rdev);
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
-	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, bh->b_rsector);
-	drbd_al_complete_io(mdev,bh->b_rsector);
-	kmem_cache_free(bh_cachep, bh);
+	// NOT bh->b_rsector, may have been remapped!
+	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, req->bh->b_rsector);
+	drbd_al_complete_io(mdev,req->bh->b_rsector);
 }
 
 STATIC struct Pending_read*
@@ -113,7 +120,7 @@ drbd_find_read(sector_t sector, struct list_head *in)
 	struct Pending_read *pr;
 
 	list_for_each(le,in) {
-		pr = list_entry(le, struct Pending_read, list);
+		pr = list_entry(le, struct Pending_read, w.list);
 		if(pr->d.sector == sector) return pr;
 	}
 
@@ -135,7 +142,7 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	pr->d.bh = bh;
 	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
 	spin_lock(&mdev->pr_lock);
-	list_add(&pr->list,&mdev->app_reads);
+	list_add(&pr->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 	inc_pending(mdev);
 	drbd_send_drequest(mdev, mdev->cstate == SyncTarget ? RSDataRequest : DataRequest,
@@ -210,8 +217,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 				pr->cause |= Application;
 				pr->d.bh=bh;
-				list_del(&pr->list);
-				list_add(&pr->list,&mdev->app_reads);
+				list_del(&pr->w.list);
+				list_add(&pr->w.list,&mdev->app_reads);
 				spin_unlock(&mdev->pr_lock);
 				return 0; // Ok everything arranged
 			}
@@ -245,13 +252,13 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
 
 	if (!req) {
-		ERR("could not kmalloc() nbh\n");
+		ERR("could not kmalloc() req\n");
 		bh->b_end_io(bh,0);
 		return 0;
 	}
 	SET_MAGIC(req);
 
-	nbh = kmem_cache_alloc(bh_cachep, GFP_DRBD);
+	nbh = &req->pbh;
 
 	drbd_init_bh(nbh, bh->b_size);
 

@@ -53,10 +53,12 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
+	// we could use pbh.b_private now for mdev
 	mdev=drbd_mdev_of_bh(bh);
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
-	e=bh->b_private;
-	D_ASSERT(e->bh == bh);
+	e = container_of(bh,struct Tl_epoch_entry,pbh);
+	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
 	spin_lock_irqsave(&mdev->ee_lock,flags);
@@ -65,8 +67,8 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 	clear_bit(BH_Lock, &bh->b_state);
 	smp_mb__after_clear_bit();
 
-	list_del(&e->list);
-	list_add(&e->list,&mdev->rdone_ee);
+	list_del(&e->w.list);
+	list_add(&e->w.list,&mdev->rdone_ee);
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
@@ -83,9 +85,9 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 
 	while(!list_empty(&mdev->rdone_ee)) {
 		le = mdev->rdone_ee.next;
-		e = list_entry(le, struct Tl_epoch_entry,list);
+		e = list_entry(le, struct Tl_epoch_entry,w.list);
 		spin_unlock_irq(&mdev->ee_lock);
-		ok = ok && e->e_end_io(mdev,e);
+		ok = ok && e->w.cb(mdev,&e->w);
 
 		spin_lock_irq(&mdev->ee_lock);
 		list_del(le);         // remove from list first.
@@ -221,7 +223,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		pr->d.sector = sector;
 		pr->cause = Resync;
 		spin_lock(&mdev->pr_lock);
-		list_add(&pr->list,&mdev->resync_reads);
+		list_add(&pr->w.list,&mdev->resync_reads);
 		spin_unlock(&mdev->pr_lock);
 
 		inc_pending(mdev);

@@ -147,23 +147,12 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
+	// we could use pbh.b_private now for mdev
 	mdev=drbd_mdev_of_bh(bh);
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
-	/*
-	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_irq()=%d\n",
-	       (int)(mdev-drbd_conf),in_irq());
-
-	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_softirq()=%d\n",
-	       (int)(mdev-drbd_conf),in_softirq());
-	*/
-
-	/*
-	printk(KERN_ERR DEVICE_NAME "%d: drbd_dio_end_sec(%ld)\n",
-	       (int)(mdev-drbd_conf),bh->b_blocknr);
-	*/
-
-	e=bh->b_private;
-	D_ASSERT(e->bh == bh);
+	e = container_of(bh,struct Tl_epoch_entry,pbh);
+	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
 	spin_lock_irqsave(&mdev->ee_lock,flags);
@@ -174,8 +163,8 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	clear_bit(BH_Lock, &bh->b_state);
 	smp_mb__after_clear_bit();
 
-	list_del(&e->list);
-	list_add(&e->list,&mdev->done_ee);
+	list_del(&e->w.list);
+	list_add(&e->w.list,&mdev->done_ee);
 
 	if (waitqueue_active(&mdev->ee_wait) &&
 	    (list_empty(&mdev->active_ee) ||
@@ -188,15 +177,12 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	if( mdev->do_panic && !uptodate) {
-		panic(DEVICE_NAME": The lower-level device had an error.\n");
+		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
 	//	if(wake_asender) {
 	wake_asender(mdev);
 	//	}
-	// TODO: Think if we should implement a short-cut here.
-	//       How about send_dontwait, and only if that fails, ...
-	//       but then, it is in irq/bh context. probably bad idea.
 }
 
 /*
@@ -224,7 +210,20 @@ STATIC void _drbd_alloc_ee(drbd_dev *mdev,struct page* page)
 	int number,buffer_size,i;
 
 	buffer_size=BM_BLOCK_SIZE;
-	number=PAGE_SIZE/buffer_size;
+	/*
+	 * I suggest to allways allocate full pages, even for b_size smaller
+	 * than PAGE_SIZE, otherwise we need to dump all EEs // realloc them
+	 * on each blocksize change. This won't work well for XFS.
+	 *
+	 * If we want do do it this way, the loop below can be replaced,
+	 * and the free_ee case simplyfies also.
+	 * We then of course waste much memory for blocksizes of 1K :(
+	 *
+	 * Alternative would be to have the EE lists as "arrays",
+	 * indexed by order of b_size.
+	 */
+	// number=PAGE_SIZE/buffer_size;
+	number=1;
 	lbh=NULL;
 	bh=NULL;
 	fbh=NULL;
@@ -232,22 +231,20 @@ STATIC void _drbd_alloc_ee(drbd_dev *mdev,struct page* page)
 	for(i=0;i<number;i++) {
 
 		e = kmem_cache_alloc(drbd_ee_cache, GFP_KERNEL);
-		bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
 
-		if( e == NULL || bh == NULL ) {
-			ERR("could not kmalloc() new ee\n");
+		if( e == NULL ) {
+			ERR("could not kmem_cache_alloc() new ee\n");
 			BUG();
 		}
 
-		drbd_init_bh(bh, buffer_size);
-		set_bh_page(bh,page,i*buffer_size); // sets b_data and b_page
+		drbd_init_bh(&e->pbh, buffer_size);
+		set_bh_page(&e->pbh,page,i*buffer_size); // sets b_data and b_page
 
-		e->bh=bh;
 		bh->b_private=e;
 
 		e->block_id = ID_VACANT;
 		spin_lock_irq(&mdev->ee_lock);
-		list_add(&e->list,&mdev->free_ee);
+		list_add(&e->w.list,&mdev->free_ee);
 		mdev->ee_vacant++;
 		spin_unlock_irq(&mdev->ee_lock);
 		if (lbh) {
@@ -287,8 +284,12 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 
 	MUST_HOLD(&mdev->ee_lock);
 
+	/* for "one bh per page" regardless of b_size,
+	 * this could be simplified.	-lge
+	 */
+
 	list_for_each(le,list) {
-		bh=list_entry(le, struct Tl_epoch_entry,list)->bh;
+		bh=&list_entry(le, struct Tl_epoch_entry, w.list)->pbh;
 		nbh=bh->b_this_page;
 		freeable=1;
 		while( nbh != bh ) {
@@ -304,13 +305,12 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	page=bh->b_page;
 	do {
 		e=nbh->b_private;
-		list_del(&e->list);
+		list_del(&e->w.list);
 		mdev->ee_vacant--;
 		D_ASSERT(nbh->b_page == page);
 		nbh=nbh->b_this_page;
 		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
 		  (int)(mdev-drbd_conf),e);*/
-		kmem_cache_free(bh_cachep, e->bh);
 		kmem_cache_free(drbd_ee_cache, e);
 	} while(nbh != bh);
 
@@ -381,8 +381,9 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	list_del(le);
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
-	e=list_entry(le, struct Tl_epoch_entry,list);
+	e=list_entry(le, struct Tl_epoch_entry, w.list);
 	e->block_id = !ID_VACANT;
+	SET_MAGIC(e);
 	return e;
 }
 
@@ -395,7 +396,8 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 	mdev->ee_in_use--;
 	mdev->ee_vacant++;
 	e->block_id = ID_VACANT;
-	list_add(&e->list,&mdev->free_ee);
+	INVALIDATE_MAGIC(e);
+	list_add(&e->w.list,&mdev->free_ee);
 
 	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) &&
 	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {
@@ -432,8 +434,8 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 		le = head->next;
 		list_del(le);
 		spin_unlock_irq(&mdev->ee_lock);
-		e = list_entry(le, struct Tl_epoch_entry,list);
-		ok = ok && e->e_end_io(mdev,e);
+		e = list_entry(le, struct Tl_epoch_entry, w.list);
+		ok = ok && e->w.cb(mdev,&e->w);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 	}
@@ -463,7 +465,7 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 	while(!list_empty(&mdev->done_ee)) {
 		le = mdev->done_ee.next;
 		list_del(le);
-		e = list_entry(le,struct Tl_epoch_entry,list);
+		e = list_entry(le, struct Tl_epoch_entry, w.list);
 		drbd_put_ee(mdev,e);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id)) {
@@ -900,7 +902,7 @@ read_in_block(drbd_dev *mdev,int data_size)
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
 	spin_unlock_irq(&mdev->ee_lock);
-	bh=e->bh;
+	bh=&e->pbh;
 
 	rr=drbd_recv(mdev,mdev->sock,bh_kmap(bh),data_size);
 	bh_kunmap(bh);
@@ -914,7 +916,6 @@ read_in_block(drbd_dev *mdev,int data_size)
 	}
 
 	/* do not use mark_buffer_dirty() since it would call refile_buffer()*/
-	bh=e->bh;
 	set_bit(BH_Dirty, &bh->b_state);
 	set_bit(BH_Lock, &bh->b_state); // since using generic_make_request()
 
@@ -968,9 +969,10 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 	return ok;
 }
 
-STATIC int e_end_resync_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
+STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 {
-	drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),e->bh->b_size,1);
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	drbd_set_in_sync(mdev,e->pbh.b_blocknr,e->pbh.b_size,1);
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
 	return TRUE;
@@ -987,23 +989,30 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
-	drbd_set_bh(mdev, e->bh, sector ,data_size);
+	drbd_set_bh(mdev, &e->pbh, sector ,data_size);
 	e->block_id = ID_SYNCER;
-	e->e_end_io = e_end_resync_block;
+	e->w.cb     = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->list,&mdev->sync_ee);
+	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	dec_pending(mdev,HERE);
 	inc_unacked(mdev);
 
-	generic_make_request(WRITE,e->bh);
+	generic_make_request(WRITE,&e->pbh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
 }
 
+
+/*
+ * these should not happen any more. if they do, we do not properly
+ * serialize app and resync requests.
+ * yes, I think even app READS should be serialized, or made independent of,
+ * resync requests
+ */
 
 int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 		   sector_t sector, int data_size)
@@ -1011,7 +1020,7 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	struct Tl_epoch_entry *e;
 	struct buffer_head *bh;
 
-	// DBG("%s\n", __func__);
+	ERR("should not happen anymore%s\n", __func__);
 
 	bh = pr->d.bh;
 
@@ -1025,24 +1034,24 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	}
 
 	// XXX can't we share it somehow?
-	memcpy(bh_kmap(bh),bh_kmap(e->bh),data_size);
+	memcpy(bh_kmap(bh),bh_kmap(&e->pbh),data_size);
 	bh_kunmap(bh);
-	bh_kunmap(e->bh);
+	bh_kunmap(&e->pbh);
 
 	bh->b_end_io(bh,1);
 
-	drbd_set_bh(mdev, e->bh, sector, data_size);
+	drbd_set_bh(mdev, &e->pbh, sector, data_size);
 	e->block_id = ID_SYNCER;
-	e->e_end_io = e_end_resync_block;
+	e->w.cb     = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->list,&mdev->sync_ee);
+	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	dec_pending(mdev,HERE);
 	inc_unacked(mdev);
 
-	generic_make_request(WRITE,e->bh);
+	generic_make_request(WRITE,&e->pbh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1054,12 +1063,12 @@ int recv_discard(drbd_dev *mdev, struct Pending_read *pr /* ignored */,
 	// THINK maybe ignore this block without using EEs ?
 	struct Tl_epoch_entry *e;
 
-	// DBG("%s\n", __func__);
+	ERR("should not happen anymore: %s\n", __func__);
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
 
-	drbd_set_bh(mdev, e->bh, sector ,data_size);
+	drbd_set_bh(mdev, &e->pbh, sector ,data_size);
 	drbd_send_ack(mdev,WriteAck,e);
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -1116,7 +1125,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	   handler could be changed by make_req as long as it is on the list
 	*/
 	spin_lock(&mdev->pr_lock);
-	list_del(&pr->list);
+	list_del(&pr->w.list);
 	spin_unlock(&mdev->pr_lock);
 
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
@@ -1125,15 +1134,16 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	return ok;
 }
 
-STATIC int e_end_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
+STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 {
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok=TRUE;
 
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if( mdev->cstate > Connected ) {
-			drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),
-					 e->bh->b_size,1);
+			drbd_set_in_sync(mdev,e->pbh.b_blocknr,
+					 e->pbh.b_size,1);
 		}
 		ok=drbd_send_ack(mdev,WriteAck,e);
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
@@ -1171,12 +1181,12 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
 
-	drbd_set_bh(mdev, e->bh, sector, data_size);
+	drbd_set_bh(mdev, &e->pbh, sector, data_size);
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
-	e->e_end_io = e_end_block;
+	e->w.cb     = e_end_block;
 
 	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->list,&mdev->active_ee);
+	list_add(&e->w.list,&mdev->active_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	switch(mdev->conf.wire_protocol) {
@@ -1191,24 +1201,26 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
-	generic_make_request(WRITE,e->bh);
+	generic_make_request(WRITE,&e->pbh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
 }
 
-STATIC int e_end_data_req(drbd_dev *mdev, struct Tl_epoch_entry *e)
+STATIC int e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 {
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
 	return ok;
 }
 
-STATIC int e_end_rsdata_req(drbd_dev *mdev, struct Tl_epoch_entry *e)
+STATIC int e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 {
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
-	drbd_rs_complete_io(mdev,DRBD_BH_SECTOR(e->bh));
+	drbd_rs_complete_io(mdev,e->pbh.b_blocknr);
 	inc_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
@@ -1219,7 +1231,6 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 {
 	sector_t sector;
 	struct Tl_epoch_entry *e;
-	struct buffer_head *bh;
 	int data_size;
 	Drbd_BlockRequest_Packet *p = (Drbd_BlockRequest_Packet*)h;
 
@@ -1233,17 +1244,17 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
-	drbd_set_bh(mdev, e->bh, sector, data_size);
+	drbd_set_bh(mdev, &e->pbh, sector, data_size);
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
-	list_add(&e->list,&mdev->read_ee);
+	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	switch (h->command) {
 	case DataRequest:
-		e->e_end_io = e_end_data_req;
+		e->w.cb = e_end_data_req;
 		break;
 	case RSDataRequest:
-		e->e_end_io = e_end_rsdata_req;
+		e->w.cb = e_end_rsdata_req;
 		/* Eventually this should become asynchrously. Currently it
 		 * blocks the whole receiver just to delay the reading of a
 		 * resync data block. */
@@ -1253,14 +1264,13 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		D_ASSERT(0);
 	}
 
-	bh=e->bh;
-	clear_bit(BH_Uptodate, &bh->b_state);
-	set_bit(BH_Lock, &bh->b_state);
-	e->bh->b_end_io = drbd_dio_end_read;
+	clear_bit(BH_Uptodate, &e->pbh.b_state);
+	set_bit(BH_Lock, &e->pbh.b_state);
+	e->pbh.b_end_io = drbd_dio_end_read;
 
-	mdev->read_cnt += bh->b_size >> 9;
+	mdev->read_cnt += e->pbh.b_size >> 9;
 	inc_unacked(mdev);
-	generic_make_request(READ,e->bh);
+	generic_make_request(READ,&e->pbh);
 
 	return TRUE;
 }
@@ -1492,7 +1502,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 
 	while(!list_empty(&workset)) {
 		le = workset.next;
-		pr = list_entry(le, struct Pending_read, list);
+		pr = list_entry(le, struct Pending_read, w.list);
 		bh = pr->d.bh;
 		list_del(le);
 
@@ -1512,7 +1522,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 	while(!list_empty(&workset)) {
 		le = workset.next;
 		list_del(le);
-		pr = list_entry(le, struct Pending_read, list);
+		pr = list_entry(le, struct Pending_read, w.list);
 		mempool_free(pr,drbd_pr_mempool);
 		INVALIDATE_MAGIC(pr);
 	}

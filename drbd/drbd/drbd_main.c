@@ -113,6 +113,9 @@ MODULE_PARM_DESC(disable_io_hints, "Necessary if loopback devices are used for D
 int minor_count = 2;
 int disable_io_hints = 0;
 
+// global panic flag
+volatile int drbd_did_panic = 0;
+
 STATIC int *drbd_blocksizes;
 STATIC int *drbd_sizes;
 struct Drbd_Conf *drbd_conf;
@@ -164,10 +167,8 @@ STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 
 	b=mdev->newest_barrier;
 
-	new_item->sector = new_item->bh->b_rsector;
-	new_item->size = new_item->bh->b_size;
 	new_item->barrier = b;
-	list_add(&new_item->list,&b->requests);
+	list_add(&new_item->w.list,&b->requests);
 
 	if( b->n_req++ > mdev->conf.max_epoch_size ) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
@@ -243,7 +244,7 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * item)
 	spin_lock_irqsave(&mdev->tl_lock,flags);
 
 	r = ( item->barrier == mdev->newest_barrier );
-	list_del(&item->list);
+	list_del(&item->w.list);
 
 	spin_unlock_irqrestore(&mdev->tl_lock,flags);
 	return r;
@@ -266,15 +267,15 @@ void tl_clear(drbd_dev *mdev)
 	b=mdev->oldest_barrier;
 	while ( b ) {
 		list_for_each_safe(le, tle, &b->requests) {
-			r = list_entry(le, struct drbd_request,list);
+			r = list_entry(le, struct drbd_request,w.list);
 			if( (r->rq_status&0xfffe) != RQ_DRBD_SENT ) {
 				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1,
-					     r->sector);
+					     r->pbh.b_blocknr);
 				goto mark;
 			}
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
 			mark:
-				drbd_set_out_of_sync(mdev,r->sector,r->size);
+				drbd_set_out_of_sync(mdev,r->pbh.b_blocknr,r->pbh.b_size);
 			}
 		}
 		f=b;
@@ -610,9 +611,9 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	int ok;
 	Drbd_BlockAck_Packet p;
 
-	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
+	p.sector   = cpu_to_be64(e->pbh.b_blocknr);
 	p.block_id = e->block_id;
-	p.blksize  = cpu_to_be32(e->bh->b_size);
+	p.blksize  = cpu_to_be32(e->pbh.b_size);
 
 	// YES, this happens. There is some race with the syncer!
 	if ((unsigned long)e->block_id <= 1) {
@@ -776,9 +777,9 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
 	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
-				     + e->bh->b_size );
+				     + e->pbh.b_size );
 
-	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
+	p.sector   = cpu_to_be64(e->pbh.b_blocknr);
 	p.block_id = e->block_id;
 
 	/* only called by our kernel thread.
@@ -792,7 +793,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	spin_unlock(&mdev->send_task_lock);
 
 	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
-	   && _drbd_send_zc_bh(mdev,e->bh);
+	   && _drbd_send_zc_bh(mdev,&e->pbh);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
@@ -974,7 +975,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	// note: only assignments, no allocation in here
 
 #ifdef PARANOIA
-	mdev->magic = (DRBD_MAGIC ^ (long)mdev);
+	SET_MDEV_MAGIC(mdev);
 #endif
 
 	/* If the WRITE_HINT_QUEUED flag is set but it is not
@@ -1140,10 +1141,8 @@ void drbd_cleanup(void)
 			if(rr) printk(KERN_ERR DEVICE_NAME
 				       "%d: %d EEs in read list found!\n",i,rr);
 
-			if(mdev->md_io_bh) {
-				__free_page(mdev->md_io_bh->b_page);
-				kmem_cache_free(bh_cachep, mdev->md_io_bh);
-			}
+			if (mdev->md_io_bh.b_page)
+				__free_page(mdev->md_io_bh.b_page);
 
 			if (mdev->act_log) lc_free(mdev->act_log);
 		}
@@ -1205,13 +1204,8 @@ int __init drbd_init(void)
 		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
 
 		if(!page) goto Enomem;
-		mdev->md_io_bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
-		if(!mdev->md_io_bh) {
-			__free_page(page);
-			goto Enomem;
-		}
-		drbd_init_bh(mdev->md_io_bh,512);
-		set_bh_page(mdev->md_io_bh,page,0);
+		drbd_init_bh(&mdev->md_io_bh,512);
+		set_bh_page(&mdev->md_io_bh,page,0);
 
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
@@ -1613,8 +1607,11 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 
-	for(bnr=sbnr; bnr <= ebnr; bnr++) {
-		if(test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) ret=1;
+	for (bnr=sbnr; bnr <= ebnr; bnr++) {
+		if (test_bit(bnr, bm)) {
+			ret=1;
+			break;
+		}
 	}
 
 	spin_unlock(&sbm->bm_lock);
@@ -1795,7 +1792,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if( mdev->lo_device == 0) return;
 
 	down(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)bh_kmap(mdev->md_io_bh);
+	buffer = (struct meta_data_on_disk *)bh_kmap(&mdev->md_io_bh);
 
 	flags=mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
 	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
@@ -1813,14 +1810,14 @@ void drbd_md_write(drbd_dev *mdev)
 
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
-	bh_kunmap(mdev->md_io_bh);
+	bh_kunmap(&mdev->md_io_bh);
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
-	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
-	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
-	generic_make_request(WRITE,mdev->md_io_bh);
-	wait_on_buffer(mdev->md_io_bh);
+	drbd_set_bh(mdev, &mdev->md_io_bh, sector, 512);
+	set_bit(BH_Dirty, &mdev->md_io_bh.b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
+	mdev->md_io_bh.b_end_io = drbd_generic_end_io;
+	generic_make_request(WRITE,&mdev->md_io_bh);
+	wait_on_buffer(&mdev->md_io_bh);
 
 	up(&mdev->md_io_mutex);
 }
@@ -1836,15 +1833,15 @@ void drbd_md_read(drbd_dev *mdev)
 	down(&mdev->md_io_mutex);
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
-	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
-	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
-	generic_make_request(READ,mdev->md_io_bh);
-	wait_on_buffer(mdev->md_io_bh);
-	ERR_IF( ! buffer_uptodate(mdev->md_io_bh) ) goto err;
+	drbd_set_bh(mdev, &mdev->md_io_bh, sector, 512);
+	clear_bit(BH_Uptodate, &mdev->md_io_bh.b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh.b_state);
+	mdev->md_io_bh.b_end_io = drbd_generic_end_io;
+	generic_make_request(READ,&mdev->md_io_bh);
+	wait_on_buffer(&mdev->md_io_bh);
+	ERR_IF( ! buffer_uptodate(&mdev->md_io_bh) ) goto err;
 
-	buffer = (struct meta_data_on_disk *)bh_kmap(mdev->md_io_bh);
+	buffer = (struct meta_data_on_disk *)bh_kmap(&mdev->md_io_bh);
 
 	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) goto err;
 
@@ -1853,12 +1850,12 @@ void drbd_md_read(drbd_dev *mdev)
 	mdev->la_size = be64_to_cpu(buffer->la_size);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 
-	bh_kunmap(mdev->md_io_bh);
+	bh_kunmap(&mdev->md_io_bh);
 	up(&mdev->md_io_mutex);
 	return;
 
  err:
-	bh_kunmap(mdev->md_io_bh);
+	bh_kunmap(&mdev->md_io_bh);
 	up(&mdev->md_io_mutex);
 
 	INFO("Creating state block\n");
