@@ -1892,16 +1892,19 @@ void bm_reset(struct BitMap* sbm)
 void bm_fill_bm(struct BitMap* sbm,int value)
 {
 	unsigned long* bm;
-	unsigned long bnr;
+	unsigned long bnr,o;
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 
-	memset(sbm->bm,value,sbm->size);
+	memset(bm,value,sbm->size);
 
 	// Special case at end of device...
 	bnr = sbm->dev_size / BM_BPS + ( sbm->dev_size % BM_BPS ? 1 : 0 );
-	bm[bnr / BITS_PER_LONG] &= ( ( 1 << (bnr % BITS_PER_LONG) ) - 1 );
+	o = bnr / BITS_PER_LONG;
+	if ( o < sbm->size/sizeof(long) ) { // e.g. is wrong if dev_size == 1G 
+		bm[ o ] &= ( ( 1 << (bnr % BITS_PER_LONG) ) - 1 );
+	}
 
 	spin_unlock(&sbm->bm_lock);
 }
