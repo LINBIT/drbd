@@ -54,7 +54,7 @@ unsigned long long fsize(int in_fd)
 	  fprintf(stderr,"Can not ioctl(BLKGETSIZE)\n");
 	  exit(20);
 	}
-      size=ls*512;
+      size=((unsigned long long)ls)*512;
     }
   else if(S_ISREG(dm_stat.st_mode))
     {
@@ -65,10 +65,10 @@ unsigned long long fsize(int in_fd)
   return size;
 }
 
-unsigned long m_strtol(const char* s)
+unsigned long long m_strtol(const char* s)
 {
   char *e = (char*)s;
-  long r;
+  unsigned long long r;
 
   r = strtol(s,&e,0);
   switch(*e)
@@ -115,8 +115,8 @@ int main(int argc, char** argv)
 {
   char* buffer;
   size_t rr,ww;
-  unsigned long seek_offs_i=0;
-  unsigned long seek_offs_o=0;
+  unsigned long long seek_offs_i=0;
+  unsigned long long seek_offs_o=0;
   unsigned long long size=-1,rsize;
   int in_fd=0, out_fd=1;
   unsigned long buffer_size=65536;
@@ -215,7 +215,7 @@ int main(int argc, char** argv)
   
   if(seek_offs_i)
     {
-      if(lseek(in_fd,seek_offs_i,SEEK_SET) != seek_offs_i)
+      if(lseek64(in_fd,seek_offs_i,SEEK_SET) == -1)
 	{
 	  fprintf(stderr,"Can not lseek(2) in input file/device\n");
 	  exit(20);
@@ -224,7 +224,7 @@ int main(int argc, char** argv)
 
   if(seek_offs_o)
     {
-      if(lseek(out_fd,seek_offs_o,SEEK_SET) != seek_offs_o)
+      if(lseek64(out_fd,seek_offs_o,SEEK_SET) == -1)
 	{
 	  fprintf(stderr,"Can not lseek(2) in output file/device\n");
 	  exit(20);
@@ -317,12 +317,12 @@ int main(int argc, char** argv)
       mps = (((double)(size-rsize)) / (1<<20)) / 
 	(sec+((double)usec)/1000000);
 
-      printf("%.2f MB/sec (%ld B / ",mps,size-rsize);
+      printf("%.2f MB/sec (%llu B / ",mps,size-rsize);
       printf("%02ld:%02ld.%06ld)\n",sec/60,sec%60,usec);
     }
 
   if(size != -1 && rsize)
-    fprintf(stderr,"Could transfer only %ld Byte.\n",(size - rsize)); 
+    fprintf(stderr,"Could transfer only %lld Byte.\n",(size - rsize)); 
 
   return 0;
 }

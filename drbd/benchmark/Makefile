@@ -1,8 +1,6 @@
-all: dm
+CFLAGS=-Wall
 
-dm: dm.c
-	gcc -o dm dm.c
-	strip dm
+all: dm
 
 install:
 
