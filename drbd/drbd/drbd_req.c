@@ -169,7 +169,7 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	spin_unlock(&mdev->pr_lock);
 	drbd_send_drequest(mdev,DataRequest,
 			   bh->b_rsector>>(mdev->blk_size_b-9),
-			   (unsigned long)pr,0);
+			   (unsigned long)pr);
 	inc_pending(mdev);
 }
 

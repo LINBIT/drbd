@@ -1145,6 +1145,7 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 	int blksize;
 	int minor=(int)(mdev-drbd_conf);
 	int no_sync=0;
+	int oo_state;
 
 	/*printk(KERN_DEBUG DEVICE_NAME
 	  ": recv ReportParams/m=%d\n",(int)(mdev-drbd_conf));*/
@@ -1245,17 +1246,20 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 
 		quick=drbd_md_syncq_ok(minor,&param,have_good==1);
 
-/*
-		printk(KERN_INFO DEVICE_NAME "%d: pri=%d sync=%d q_ok=%d\n",
-		       minor,pri,sync,quick);
-*/
+		printk(KERN_INFO DEVICE_NAME 
+		       "%d: have_good=%d sync=%d quick=%d\n",
+		       minor,have_good,sync,quick);
 
 		if( sync && !mdev->sync_conf.skip && !no_sync) {
 			if(have_good == 1) {
-				// mdev->rs_total= is correct!
-				drbd_start_resync(mdev,SyncSource);
-				if(quick)
+				if(quick) {
 					drbd_send_bitmap(mdev);
+				} else {
+					mdev->rs_total=
+						blk_size[MAJOR_NR][minor] & 
+						~((1<<(mdev->blk_size_b-10))-1);					
+				}
+				drbd_start_resync(mdev,SyncSource);
 			} else { // have_good == -1
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 				if(!quick) {
@@ -1276,11 +1280,16 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 			for(i=HumanCnt;i<=ArbitraryCnt;i++) {
 				mdev->gen_cnt[i]=be32_to_cpu(param.gen_cnt[i]);
 			}
-			drbd_md_write(minor);
 		}
+		drbd_md_write(minor); // Need to update connected indicator.
 	}
 
+	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(param.state);
+	if(oo_state == Secondary && mdev->o_state == Primary) {
+		drbd_md_inc(minor,ConnectedCnt);
+		drbd_md_write(minor);
+	}
 
 	return TRUE;
 }

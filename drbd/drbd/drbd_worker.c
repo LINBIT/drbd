@@ -188,6 +188,9 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 
 void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side) 
 {
+	printk(KERN_ERR DEVICE_NAME "%d: rs_total=%lu\n",
+	       (int)(mdev-drbd_conf),mdev->rs_total);
+
 	set_cstate(mdev,side);
 	mdev->rs_left=mdev->rs_total;
 	mdev->rs_start=jiffies;

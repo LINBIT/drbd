@@ -24,7 +24,7 @@ KSUBD = $(shell if [ -e /lib/modules/$(KERNVER)/kernel ]; then echo "kernel/driv
 MAJOR = $(shell echo $(KERNVER) | cut -d. -f 1)
 MINOR = $(shell echo $(KERNVER) | cut -d. -f 2)
 
-OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_dsender.o
+OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_dsender.o drbd_req-2.4.o
 
 ####### Implicit rules
 
