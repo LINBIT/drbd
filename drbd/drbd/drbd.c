@@ -132,6 +132,7 @@ struct Drbd_Conf {
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
 	unsigned int pending_cnt;
+	unsigned int unacked_cnt;
 	spinlock_t req_lock;
 	rwlock_t tl_lock;
 	struct Tl_entry* tl_end;
@@ -1362,7 +1363,8 @@ __initfunc(int drbd_init(void))
 		drbd_conf[i].recv_cnt = 0;
 		drbd_conf[i].writ_cnt = 0;
 		drbd_conf[i].read_cnt = 0;
-		drbd_conf[i].pending_cnt = 0;		
+		drbd_conf[i].pending_cnt = 0;
+		drbd_conf[i].unacked_cnt = 0;
 		drbd_conf[i].transfer_log = 0;
 		drbd_conf[i].mops = &bm_mops;
 		drbd_conf[i].mbds_id = 0;
@@ -1641,6 +1643,7 @@ inline int receive_barrier(int minor)
 				drbd_send_ack(&drbd_conf[minor], WriteAck,
 					      epoch[i].bh->b_blocknr,
 					      block_id);
+				drbd_conf[minor].unacked_cnt--;
 				spin_lock(&drbd_conf[minor].es_lock);
 				ep_size=drbd_conf[minor].epoch_size;
 			}
@@ -1744,10 +1747,30 @@ inline int receive_data(int minor,int data_size)
 	        drbd_send_ack(&drbd_conf[minor], RecvAck,
 			      block_nr,header.block_id);
 	}
-				    
+
 	ll_rw_block(WRITE, 1, &bh);
+
+	/* <HACK>
+	 * This is needed to get reasonable performance with protocol C
+	 * while there is no other IO activitiy on the secondary machine.
+	 *
+	 * With the other protocols blocks keep rolling in, and 
+	 * tq_disk is started from __get_request_wait. Since in protocol C
+	 * the PRIMARY machine can not send more blocks because the secondary
+	 * has to finish IO first, we need this.
+	 *
+	 * Actually the primary can send up to NR_REQUESTS / 3 blocks,
+	 * but we already start when we have NR_REQUESTS / 4 blocks.
+	 */
+	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
+		if (drbd_conf[minor].unacked_cnt++ >= (NR_REQUEST / 4)) {
+			run_task_queue(&tq_disk);
+		}
+	}
+	/* </HACK> */
+
 	drbd_conf[minor].recv_cnt++;
-	//if(header.block_id == ID_SYNCER) brelse(bh);
+	
 	return TRUE;
 }     
 
@@ -2201,7 +2224,10 @@ int drbd_asender(void *arg)
 	  
 	  if(thi->t_state == Exiting) break;
 
-	  drbd_try_send_barrier(&drbd_conf[minor]);
+	  if( drbd_conf[minor].state == Primary ) {
+		  drbd_try_send_barrier(&drbd_conf[minor]);
+		  continue;
+	  }
 
 	  spin_lock(&drbd_conf[minor].sl_lock);
 	  for(i=0;i<SYNC_LOG_S;i++) {
@@ -2233,6 +2259,7 @@ int drbd_asender(void *arg)
 				  drbd_send_ack(&drbd_conf[minor],WriteAck,
 						epoch[i].bh->b_blocknr,
 						block_id);
+				  drbd_conf[minor].unacked_cnt--;
 				  spin_lock(&drbd_conf[minor].es_lock);
 			  }
 		  }
