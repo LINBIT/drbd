@@ -605,7 +605,7 @@ void verify_ips(struct d_resource* res)
   char *argv[] = { "/bin/bash", "-c", NULL, "drbdadm:verify_ips", NULL };
   int ex;
 
-  if (dry_run < 2) return;
+  if (dry_run == 1) return;
 
   if (!(res && res->me   && res->me->address
 	    && res->peer && res->peer->address)) {

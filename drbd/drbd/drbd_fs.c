@@ -597,6 +597,7 @@ ONLY_IN_26(
 	 * */
 
 	mdev->state = (Drbd_State) newstate & 0x03;
+	INFO("switched to %s state\n", nodestate_to_name(mdev->state));
 	if(newstate & Primary) {
 		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), FALSE ); )
 

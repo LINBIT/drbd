@@ -671,7 +671,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			}
 			udw->enr = enr*SM;
 			udw->w.cb = w_update_odbm;
-			drbd_queue_work(mdev,&mdev->data.work,&udw->w);
+			drbd_queue_work_front(mdev,&mdev->data.work,&udw->w);
 			lc_del(mdev->resync,&ext->lce);
 		}
 	}

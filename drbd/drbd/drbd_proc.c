@@ -71,11 +71,12 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	sz+=sprintf(buf+sz,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
 	if (mdev->rs_total > 0x100000L) /* if more than 1 GB display in MB */
 		sz+=sprintf(buf+sz,"(%lu/%lu)M\n\t",
-			    (unsigned long) mdev->rs_left>>11, 
+			    (unsigned long) mdev->rs_left>>11,
 			    (unsigned long) mdev->rs_total>>11);
 	else
 		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", 
-			    (unsigned long) mdev->rs_left>>1, 
+			    (unsigned long) mdev->rs_left>>1 | 
+			    (mdev->rs_left == 1),
 			    (unsigned long) mdev->rs_total>>1);
 
 	/* see drivers/md/md.c

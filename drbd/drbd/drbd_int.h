@@ -1048,6 +1048,17 @@ _drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 }
 
 static inline void
+drbd_queue_work_front(drbd_dev *mdev, struct drbd_work_queue *q,
+			struct drbd_work *w)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	list_add(&w->list,&q->q);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	up(&q->s);
+}
+
+static inline void
 drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 		  struct drbd_work *w)
 {
