@@ -1886,11 +1886,15 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 
 	p->protocol_version = be32_to_cpu(p->protocol_version);
 
-	if ( p->protocol_version == PRO_VERSION ) {
+	if ( p->protocol_version == PRO_VERSION ||
+	     p->protocol_version == (PRO_VERSION+1) ) {
 		INFO( "Handshake successful: DRBD Protocol version %u\n",
-				p->protocol_version );
+		      PRO_VERSION );
 	} /* else if ( p->protocol_version == (PRO_VERSION-1) ) {
 		// not yet; but next time :)
+		INFO( "Handshake successful: DRBD Protocol version %u\n",
+		      (PRO_VERSION-1) );
+		... do some remapping of defaults and jump tables here ...
 	} */ else {
 		ERR( "incompatible DRBD dialects: "
 		     "I support %u, peer wants %u\n",
