@@ -1148,20 +1148,20 @@ int __init drbd_init(void)
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	lock_kernel();
-	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
-	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
-	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
-	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
-	register_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
-	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
-	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
+	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,sys_ioctl);
 	unlock_kernel();
 #endif
 
