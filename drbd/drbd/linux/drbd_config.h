@@ -20,7 +20,7 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre7 cvs $Date: 2004/05/19 15:36:31 $"
+#define REL_VERSION "0.7-pre7 cvs $Date: 2004/05/19 19:53:20 $"
 #define API_VERSION 72
 #define PRO_VERSION 72
 
