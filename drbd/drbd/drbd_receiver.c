@@ -5,11 +5,14 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2002, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Code to prevent zombie threads.
+
+   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
+        some SMP fixes.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -478,9 +481,11 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 			list_add(le,&mdev->done_ee);
 			continue;
 		}
+		get_bh(e->bh); 
 		spin_unlock_irq(&mdev->ee_lock);
 		wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
+		put_bh(e->bh);
 		/* The IRQ handler does not move a list entry if someone is 
 		   in wait_on_buffer for that entry, therefore we have to
 		   move it here. */
