@@ -1212,6 +1212,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	minor = MINOR(inode->i_rdev);
 
 	switch (cmd) {
+	case BLKGETSIZE:
+		if ((err=put_user(blk_size[MAJOR_NR][minor]<<1, (long *)arg)))
+			return err;
+		break;
+
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	case BLKROSET:
 	case BLKROGET:
@@ -1220,7 +1225,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	case BLKPG:
 		return blk_ioctl(inode->i_rdev, cmd, arg);
 #else
-		RO_IOCTLS(inode->i_rdev, arg);
+	 RO_IOCTLS(inode->i_rdev, arg);
 #endif
 
 	case DRBD_IOCTL_GET_VERSION:
@@ -2208,6 +2213,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 	}
 restart:
         blocksize = blksize_size[MAJOR_NR][minor];
+	/* TODO: Ensure that ll_dev also has the new block-size! */
 
 	/* align synced_to to blocksize */
 	if(drbd_conf[minor].cstate == SyncingAll)
