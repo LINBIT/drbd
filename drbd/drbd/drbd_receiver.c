@@ -449,6 +449,7 @@ int drbd_connect(int minor)
 			}			
 		}
 		if(drbd_conf[minor].cstate==Unconnected) return 0;
+		if(signal_pending(current)) return 0;
 	}
 
 	msock->sk->reuse=1; /* SO_REUSEADDR */
@@ -906,16 +907,15 @@ void drbdd(int minor)
 	}
 
       out:
-
-	if (drbd_conf[minor].sock) {
-	        drbd_thread_stop(&drbd_conf[minor].syncer);
-	        drbd_thread_stop(&drbd_conf[minor].asender);
-		drbd_free_sock(minor);
-	}
-
 	printk(KERN_INFO DEVICE_NAME "%d: Connection lost."
 	       "(pc=%d,uc=%d)\n",minor,drbd_conf[minor].pending_cnt,
 	       drbd_conf[minor].unacked_cnt);
+
+	del_timer_sync(&drbd_conf[minor].a_timeout);
+
+	drbd_thread_stop(&drbd_conf[minor].syncer);
+	drbd_thread_stop(&drbd_conf[minor].asender);
+	drbd_free_sock(minor);
 
 	if(drbd_conf[minor].cstate != StandAlone) 
 	        set_cstate(&drbd_conf[minor],Unconnected);
@@ -942,7 +942,6 @@ void drbdd(int minor)
 	case Unknown:
 	}
 	drbd_conf[minor].pending_cnt = 0;
-	del_timer_sync(&drbd_conf[minor].a_timeout);
 	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 }
 
@@ -1045,8 +1044,14 @@ void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
 void drbd_ping_timeout(unsigned long arg)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
+	struct send_timer_info *ti;
 
-	drbd_thread_restart_nowait(&mdev->asender);
+	drbd_thread_stop(&mdev->receiver);
+
+	if((ti=mdev->send_proc)) {
+		ti->timeout_happened=1;
+		drbd_queue_signal(DRBD_SIG, ti->pid);
+	}
 }
 
 int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
@@ -1149,6 +1154,8 @@ int drbd_asender(struct Drbd_thread *thi)
 		rsize=0;
 	  }
 	}
+
+	del_timer_sync(&ping_timeout);
 
 	return 0;
 }
