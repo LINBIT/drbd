@@ -25,6 +25,8 @@ case "$1" in
 	action "Configuring DRBD Module" /usr/sbin/drbdsetup $DR_DEVICE \
            $DR_LL_DEVICE $DR_PROTOCOL $DR_LOCAL_NODE $DR_REMOTE_NODE \
            $DR_OPTIONS
+	action "Wait for DRBD resynchronization to complete" \
+	   /usr/sbin/drbdsetup $DR_DEVICE WAIT
 	RETVAL=$?
 	;;
   stop)

@@ -1,3 +1,9 @@
+0.5.1
+-----
+Fixed the lockup upon loss of connection on SMP machines.
+Added a kludge to make use with heartbeat possible.
+Added scripts for use with heartbeat.
+
 0.5
 ---
 The code was considerably changed and enlarged.

@@ -102,7 +102,7 @@ int main(int argc, char** argv)
   if(argc != 3 && argc < 6)
     {
       fprintf(stderr,
-	      " %s device {pri|sec}\n"
+	      " %s device {pri|sec|wait}\n"
 	      " %s device lower_device protocol local_addr[:port] "
 	      "remote_addr[:port] \n"
 	      "       [-t|--timout val] [-r|--sync-rate val] "
@@ -128,7 +128,8 @@ int main(int argc, char** argv)
 	      "          the size bigger than 256.\n"
 	      "          You will see error messages in the system log\n"
 	      "          if the TL is too small.\n"
-	      "          Default: 256 entries\n"
+	      "          Default: 256 entries\n\n"
+	      "          Version: "VERSION"\n"
 	      ,argv[0],argv[0]);
       exit(20);
     }
@@ -140,8 +141,26 @@ int main(int argc, char** argv)
       exit(20);
     }
 
+  {
+    int retval;
+    int err;
+
+    err=ioctl(dtbd_fd,DRBD_IOCTL_GET_VERSION,&retval);
+    if(err)
+      {
+	perror("ioctl() failed");
+      }
+    
+    if (retval != MOD_VERSION)
+      {
+	fprintf(stderr,"Versions of drbdsetup and module does not match!\n");
+	exit(20);
+      }    
+  }
+
   if(argc == 3)
     {
+      int err;
       Drbd_State state;
       if(argv[2][0]=='p' || argv[2][0]=='P')
 	{
@@ -151,12 +170,23 @@ int main(int argc, char** argv)
 	{
 	  state = Secondary;
 	}
+      else if(argv[2][0]=='w' || argv[2][0]=='W')
+	{
+	  int retval;
+	  err=ioctl(dtbd_fd,DRBD_IOCTL_WAIT_SYNC,&retval);
+	  exit(!retval);
+	}
       else 
 	{
 	  fprintf(stderr,"this is no known state!\n");
 	  exit(20);
 	}
-      ioctl(dtbd_fd,DRBD_IOCTL_SET_STATE,state);
+      err=ioctl(dtbd_fd,DRBD_IOCTL_SET_STATE,state);
+      if(err)
+	{
+	  perror("ioctl() failed");
+	}
+
       exit(0);
     }
 

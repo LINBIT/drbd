@@ -121,6 +121,11 @@ typedef struct {
 } Drbd_BarrierAck_P;
 MKPACKET(Drbd_BarrierAck_P)
 
+typedef struct {
+  __u32       cstate;
+} Drbd_CState_P;
+MKPACKET(Drbd_CState_P)
+
 typedef enum { 
   Data, 
   Barrier,
@@ -128,7 +133,8 @@ typedef enum {
   WriteAck,     /* Used in protocol C */
   BarrierAck,  
   ReportParams,
-  BlkSizeChanged 
+  BlkSizeChanged,
+  CStateChanged
 } Drbd_Packet_Cmd;
 
 typedef enum { Primary, Secondary } Drbd_State;
@@ -149,6 +155,7 @@ typedef enum {
 #define DRBD_IOCTL_GET_VERSION   _IOR( 'D', 0x00, int )
 #define DRBD_IOCTL_SET_CONFIG    _IOW( 'D', 0x01, struct ioctl_drbd_config )
 #define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )
+#define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x03, int )
 
 #endif
 

@@ -139,6 +139,7 @@ struct Drbd_Conf {
         struct mbds_operations* mops;
 	void* mbds_id;
         struct wait_queue* asender_wait;  
+	struct wait_queue* cstate_wait;
 };
 
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
@@ -600,6 +601,12 @@ inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 	_drbd_thread_stop(thi,TRUE,FALSE);
 }
 
+inline void set_cstate(struct Drbd_Conf* mdev,Drbd_CState cs)
+{
+	mdev->cstate = cs;
+	wake_up_interruptible(&mdev->cstate_wait);	
+}
+
 int drbd_ll_blocksize(int minor)
 {
 	int size = 0;
@@ -650,6 +657,20 @@ int drbd_send_param(int minor, int cmd)
 		       ": Sending of parameter block failed!!\n");	  
 
 	return err;
+}
+
+int drbd_send_cstate(struct Drbd_Conf *mdev)
+{
+	Drbd_CState_Packet head;
+	int ret;
+	
+	head.h.cstate = cpu_to_be32(mdev->cstate);
+
+	down(&mdev->send_mutex);
+	ret=drbd_send(mdev,CStateChanged,(Drbd_Packet*)&head,sizeof(head),0,0);
+	up(&mdev->send_mutex);
+	return ret;
+
 }
 
 int _drbd_send_barrier(struct Drbd_Conf *mdev)
@@ -794,7 +815,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			printk(KERN_ERR DEVICE_NAME
 			       ": send timed out!! (pid=%d)\n",current->pid);
 
-			mdev->cstate = Timeout;
+			set_cstate(mdev,Timeout);
 
 			drbd_thread_restart_nowait(&mdev->receiver);
 
@@ -1133,11 +1154,23 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		drbd_conf[minor].lo_device = inode->i_rdev;
 		drbd_conf[minor].lo_file = filp;
 
-		drbd_conf[minor].cstate = Unconnected;
+		set_cstate(&drbd_conf[minor],Unconnected);
 
 		drbd_thread_start(&drbd_conf[minor].receiver);
 
 		break;
+
+	case DRBD_IOCTL_WAIT_SYNC:
+		while (drbd_conf[minor].cstate == SyncingAll ||
+		       drbd_conf[minor].cstate == SyncingQuick ) {
+			interruptible_sleep_on(&drbd_conf[minor].asender_wait);
+		}
+			
+		if ((err = put_user(drbd_conf[minor].cstate == Connected, 
+				    (int *) arg)))
+			return err;
+		break;
+
 
 	default:
 		return -EINVAL;
@@ -1244,6 +1277,7 @@ __initfunc(int drbd_init(void))
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].sl_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].asender_wait= NULL;
+		drbd_conf[i].cstate_wait = NULL;
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
@@ -1430,16 +1464,16 @@ int drbd_connect(int minor)
 			printk(KERN_ERR DEVICE_NAME
 			       ": Unable to bind (%d)\n", err);
 			sock_release(sock);
-			drbd_conf[minor].cstate = Unconnected;
+			set_cstate(&drbd_conf[minor],Unconnected);
 			return 0;
 		}
-		drbd_conf[minor].cstate = WFConnection;
+		set_cstate(&drbd_conf[minor],WFConnection);
 		sock2 = sock;
 
 		sock = drbd_accept(sock2);
 		sock_release(sock2);
 		if (!sock) {
-			drbd_conf[minor].cstate = Unconnected;
+			set_cstate(&drbd_conf[minor],Unconnected);
 			return 0;
 		}
 	}
@@ -1457,9 +1491,21 @@ int drbd_connect(int minor)
 	drbd_thread_start(&drbd_conf[minor].asender);
 
 	err = drbd_send_param(minor, ReportParams);
-	drbd_conf[minor].cstate = WFReportParams;
+	set_cstate(&drbd_conf[minor],WFReportParams);
 
 	return 1;
+}
+
+inline int receive_cstate(int minor)
+{
+	Drbd_CState_P header;
+
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	        return FALSE;
+
+	set_cstate(&drbd_conf[minor],be32_to_cpu(header.cstate));
+
+	return TRUE;
 }
 
 inline int receive_barrier(int minor)
@@ -1708,9 +1754,10 @@ inline int receive_param(int minor,int command)
 	if (drbd_conf[minor].cstate == WFReportParams) {
 	        if (drbd_conf[minor].state == Primary
 		    && !drbd_conf[minor].conf.skip_sync) {
-		        drbd_conf[minor].cstate = SyncingQuick; /*SyncingAll*/
+		        set_cstate(&drbd_conf[minor],SyncingQuick);
+			drbd_send_cstate(&drbd_conf[minor]);
 			drbd_thread_start(&drbd_conf[minor].syncer);
-		} else drbd_conf[minor].cstate = Connected;
+		} else set_cstate(&drbd_conf[minor],Connected);
 	}
 	return TRUE;
 }
@@ -1759,6 +1806,11 @@ void drbdd(int minor)
 		        if (!receive_param(minor,be16_to_cpu(header.command)))
 			        goto out;
 			break;
+
+		case CStateChanged:
+			if (!receive_cstate(minor)) goto out;
+			break;
+
 		default:
 			printk(KERN_ERR DEVICE_NAME
 			       ": unknown packet type!/m=%d\n", minor);
@@ -1774,7 +1826,7 @@ void drbdd(int minor)
 		sock_release(drbd_conf[minor].sock);
 		drbd_conf[minor].sock = 0;
 	}
-	drbd_conf[minor].cstate = Unconnected;
+	set_cstate(&drbd_conf[minor],Unconnected);
 	switch(drbd_conf[minor].state) {
 	case Primary:   
 		tl_clear(&drbd_conf[minor]);
@@ -1835,7 +1887,7 @@ void drbd_free_resources(int minor)
 		drbd_conf[minor].lo_file = 0;
 		drbd_conf[minor].lo_device = 0;
 	}
-	drbd_conf[minor].cstate = Unconfigured;
+	set_cstate(&drbd_conf[minor],Unconfigured);
 }
 
 
@@ -1909,21 +1961,6 @@ restart:
 	rbh.b_data = page;
 	rbh.b_wait = 0;
 
-//#define BHP(A) printk( " #A = %p\n",rbh. ## A)
-//#define BHL(A) printk( " #A = %lu\n",rbh. ## A)
-
-	//bad//good
-	//BHP(b_next);//0//0
-	//BHL(b_blocknr);//1//1
-	//BHL(b_size);//1024//1024
-	//BHP(b_this_page);//c0732980//c...
-	//BHL(b_state);//10//10
-	//BHP(b_next_free);//c0732980//c...
-	//BHP(b_data);//c3923000//c...
-	//BHL(b_flushtime);//0//0
-	//BHP(b_wait);//0//0
-	//BHP(b_pprev);//c3f8ac04//c...
-
 	rbh.b_next = 0;
 	rbh.b_this_page = 0;
 	rbh.b_next_free = 0;
@@ -1956,7 +1993,9 @@ restart:
 						  drbd_conf[minor].blk_size_b);
 				if(block_nr == MBDS_DONE) goto done;
 				if(block_nr == MBDS_SYNC_ALL) {
-					drbd_conf[minor].cstate = SyncingAll;
+					set_cstate(&drbd_conf[minor],
+						   SyncingAll);
+					drbd_send_cstate(&drbd_conf[minor]);
 					goto cstate_change;
 				}					
 			}
@@ -2002,8 +2041,9 @@ restart:
 		}
 	}
  done:
-	drbd_conf[minor].cstate = Connected;
-	
+	set_cstate(&drbd_conf[minor],Connected);
+	drbd_send_cstate(&drbd_conf[minor]);
+
  out:
 	free_page((unsigned long)page);
 	

@@ -24,7 +24,7 @@ include ../Makefile.vars
 .SUFFIXES: .c .o
 
 .c.o:
-	$(CC) -c $(USERFLAGS) -DVERSION=\"$(VERSION)\" -DPREFIX=\"$(PREFIX)\" $<
+	$(CC) -c $(USERFLAGS) -DVERSION=\"$(VERSION)\" -DMOD_VERSION=$(MOD_VERSION) $<
 
 #######
 

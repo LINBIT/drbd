@@ -24,11 +24,7 @@ case "$1" in
   stop)
 	action "Unmounting cluster's FS: " umount $DR_MNTPOINT
 	RETVAL=$?
-        while grep Syncing /proc/drbd > /dev/null; do
-           sleep 1;
-        done
 	action "Becoming secondary node"  /usr/sbin/drbdsetup $DR_DEVICE SEC
-	sleep 1;
 	RETVAL2=$?
 	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && rm -f /var/lock/subsys/datadisk
 	;;
