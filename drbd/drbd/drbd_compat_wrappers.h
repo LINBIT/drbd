@@ -8,8 +8,7 @@
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 
 // b_end_io handlers
-extern void drbd_generic_end_io     (struct buffer_head *bh, int uptodate);
-extern void drbd_async_eio          (struct buffer_head *bh, int uptodate);
+extern void drbd_md_io_complete     (struct buffer_head *bh, int uptodate);
 extern void enslaved_read_bi_end_io (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end_sec        (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end            (struct buffer_head *bh, int uptodate);
@@ -40,7 +39,7 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 	blk_size[MAJOR_NR][(int)(mdev - drbd_conf)] = (size>>1);
 }
 
-# warning "FIXME why don't we care for the return value?"
+#warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)), blksize);
@@ -109,14 +108,21 @@ static inline void drbd_bio_kunmap(struct buffer_head *bh)
 	bh_kunmap(bh);
 }
 
-static inline void drbd_bio_init(struct buffer_head *bh)
+static inline void drbd_ee_init(struct Tl_epoch_entry *e,struct page *page)
 {
-	memset(bh, 0, sizeof(struct buffer_head));
+	struct buffer_head * const bh = &e->private_bio;
+	memset(e, 0, sizeof(*e));
 
-	bh->b_list = BUF_LOCKED;
+	// BM_BLOCK_SIZE == PAGE_SIZE ! FIXME not necessarily on all arch!!
+	// bh->b_list   = BUF_LOCKED; // does it matter?
+	bh->b_size      = PAGE_SIZE;
+	bh->b_this_page = bh;
+	bh->b_state     = (1 << BH_Mapped);
 	init_waitqueue_head(&bh->b_wait);
+	set_bh_page(bh,page,0);
 	atomic_set(&bh->b_count, 1);
-	bh->b_state = (1 << BH_Mapped);	//has a disk mapping = dev & blocknr
+
+	e->block_id = ID_VACANT;
 }
 
 static inline void drbd_bio_set_pages_dirty(struct buffer_head *bh)
@@ -130,41 +136,9 @@ static inline void drbd_bio_set_end_io(struct buffer_head *bh, bh_end_io_t * h)
 }
 
 static inline void
-drbd_md_bh_prepare(drbd_dev *mdev, sector_t sector)
+drbd_ee_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
+		   sector_t sector, int size)
 {
-	struct buffer_head * const bh = &mdev->md_io_bio;
-
-	bh->b_blocknr = sector;	// We abuse b_blocknr here.
-	bh->b_size    = 512;
-	bh->b_private = mdev;
-	bh->b_rdev    = mdev->md_device;
-	bh->b_rsector = sector;
-	bh->b_state   = (1 << BH_Req)
-		       |(1 << BH_Launder)
-		       |(1 << BH_Lock);
-}
-
-static inline void drbd_md_prepare_write(drbd_dev *mdev, sector_t sector)
-{
-	struct buffer_head * const bh = &mdev->md_io_bio;
-
-	drbd_md_bh_prepare(mdev,sector);
-	set_bit(BH_Uptodate, &bh->b_state);
-	set_bit(BH_Dirty, &bh->b_state);
-	mdev->md_io_bio.b_end_io = drbd_generic_end_io;
-}
-
-static inline void drbd_md_prepare_read(drbd_dev *mdev, sector_t sector)
-{
-	drbd_md_bh_prepare(mdev, sector);
-	mdev->md_io_bio.b_end_io = drbd_generic_end_io;
-}
-
-static inline void
-drbd_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
-		sector_t sector, int size)
-{
-	// maybe: memset(bh,0,sizeof(*bh));
 	bh->b_blocknr  = sector;	// We abuse b_blocknr here.
 	bh->b_size     = size;
 	bh->b_rsector  = sector;
@@ -181,7 +155,7 @@ drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e,
 {
 	struct buffer_head * const bh = &e->private_bio;
 
-	drbd_bh_prepare(mdev,bh,sector,size);
+	drbd_ee_bh_prepare(mdev,bh,sector,size);
 	set_bit(BH_Uptodate,&bh->b_state);
 	set_bit(BH_Dirty,&bh->b_state);
 	bh->b_end_io   = drbd_dio_end_sec;
@@ -193,7 +167,7 @@ drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
 {
 	struct buffer_head * const bh = &e->private_bio;
 
-	drbd_bh_prepare(mdev,bh,sector,size);
+	drbd_ee_bh_prepare(mdev,bh,sector,size);
 	bh->b_end_io   = enslaved_read_bi_end_io;
 }
 
@@ -325,7 +299,7 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 }
 
 #else
-# warning "FIXME these do nonsense. Currently I only check whether it compiles!"
+#warning "FIXME these do nonsense. Currently I only check whether it compiles!"
 
 #include <linux/buffer_head.h> // for fsync_bdev
 
@@ -336,8 +310,7 @@ extern char* drbd_sec_holder;
 
 // bi_end_io handlers
 // int (bio_end_io_t) (struct bio *, unsigned int, int);
-extern int drbd_generic_end_io     (struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_async_eio          (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_md_io_complete     (struct bio *bio, unsigned int bytes_done, int error);
 extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
@@ -363,7 +336,7 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 	set_capacity(mdev->vdisk,size);
 }
 
-# warning "FIXME why don't we care for the return value?"
+#warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(mdev->this_bdev,blksize);
@@ -476,9 +449,23 @@ static inline void drbd_bio_kunmap(struct bio *bio)
 }
 #endif
 
-static inline void drbd_bio_init(struct bio *bio)
+static inline void drbd_ee_init(struct Tl_epoch_entry *e,struct page *page)
 {
-	bio_init(bio);
+	struct bio * const bio = &e->private_bio;
+	struct bio_vec * const vec = &e->ee_bvec;
+	memset(e, 0, sizeof(*e));
+
+	// bio_init(&bio); memset did it for us.
+	bio->bi_io_vec = vec;
+	vec->bv_page   = page;
+	vec->bv_len    =
+	bio->bi_size   = PAGE_SIZE;
+	bio->bi_flags  = 1 << BIO_UPTODATE;
+	bio->bi_max_vecs = 1;
+	bio->bi_destructor = NULL;
+	atomic_set(&bio->bi_cnt, 1);
+
+	e->block_id = ID_VACANT;
 }
 
 static inline void drbd_bio_set_pages_dirty(struct bio *bio)
@@ -491,29 +478,49 @@ static inline void drbd_bio_set_end_io(struct bio *bio, bio_end_io_t * h)
 	bio->bi_end_io = h;
 }
 
-static inline void drbd_md_prepare_write(drbd_dev *mdev, sector_t sector)
+static inline void
+drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
+		    sector_t sector, int size)
 {
-}
-
-static inline void drbd_md_prepare_read(drbd_dev *mdev, sector_t sector)
-{
+	struct bio * const bio = &e->private_bio;
+	bio->bi_io_vec->bv_len =
+	bio->bi_size    = size;
+	bio->bi_bdev    = mdev->backing_bdev;
+	bio->bi_sector  = sector;
+	bio->bi_private = mdev;
 }
 
 static inline void
 drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e,
 		      sector_t sector, int size)
 {
+	drbd_ee_bio_prepare(mdev,e,sector,size);
+	e->private_bio.bi_end_io = drbd_dio_end_sec;
 }
 
 static inline void
 drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
 		     sector_t sector, int size)
 {
+	drbd_ee_bio_prepare(mdev,e,sector,size);
+	e->private_bio.bi_end_io = enslaved_read_bi_end_io;
 }
 
 static inline void
 drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 {
+	struct bio * const bio     = &req->private_bio;
+	struct bio * const bio_src =  req->master_bio;
+
+	__bio_clone(bio,bio_src);
+	bio->bi_bdev    = mdev->backing_bdev;
+	bio->bi_private = mdev;
+	bio->bi_end_io  = drbd_dio_end;
+
+	// FIXME D_ASSERT(??)
+	// what else?
+
+	req->rq_status = RQ_DRBD_NOTHING;
 }
 
 #if 0
@@ -542,6 +549,7 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 	generic_make_request(bio);
 }
 
+#if 0
 /* FIXME
  * I'd rather use something like sync_page_io() from drivers/md/md.c
  * for our meta data io!  For now I only copied some of it here.
@@ -559,6 +567,7 @@ static inline int drbd_generic_make_request_wait(int rw, struct bio *bio)
 	wait_for_completion(&event);
 	return test_bit(BIO_UPTODATE, &bio->bi_flags);
 }
+#endif
 
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
@@ -576,6 +585,11 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
  * common functions,
  * move back to drbd_int.h
  ***/
+
+// defined in drbd_dsender.c
+extern int
+drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw);
+
 /* Returns the start sector for metadata, aligned to 4K */
 static inline sector_t drbd_md_ss(drbd_dev *mdev)
 {

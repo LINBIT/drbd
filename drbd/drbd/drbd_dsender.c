@@ -44,7 +44,6 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-
 /* I choose to have all block layer end_io handlers defined here.
 
  * For all these callbacks, note the follwing:
@@ -58,12 +57,15 @@
 /* used for synchronous meta data and bitmap IO
  * submitted by FIXME (I'd say worker only, but currently this is not true...)
  */
-void drbd_generic_end_io(struct buffer_head *bh, int uptodate)
-{ // This is a rough copy of end_buffer_io_sync
-	mark_buffer_uptodate(bh, uptodate);
-	unlock_buffer(bh);
+void drbd_md_io_complete(struct buffer_head *bh, int uptodate)
+{
+	if (uptodate)
+		set_bit(BH_Uptodate, &bh->b_state);
+
+	complete((struct completion*)bh->b_private);
 }
 
+#if 0
 /* used for asynchronous meta data and bitmap IO
  * submitted by FIXME (I'd say worker only, but currently this is not true...)
  */
@@ -78,6 +80,7 @@ void drbd_async_eio(drbd_bio_t *bh, int uptodate)
 	unlock_buffer(bh);
 	up(&mdev->md_io_mutex);
 }
+#endif
 
 /* reads on behalf of the partner,
  * "submitted" by the receiver
@@ -166,12 +169,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 #else
-# warning "FIXME"
+#warning "FIXME"
 /* used for synchronous meta data and bitmap IO
  * submitted by FIXME (I'd say worker only, but currently this is not true...)
  */
-
-int drbd_generic_end_io(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
 	if (bio->bi_size)
 		return 1;
@@ -180,14 +182,97 @@ int drbd_generic_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	return 0;
 }
 
-/* used for asynchronous meta data and bitmap IO
- * submitted by FIXME (I'd say worker only, but currently this is not true...)
+/* reads on behalf of the partner,
+ * "submitted" by the receiver
  */
-int drbd_async_eio(struct bio *bio, unsigned int bytes_done, int error)
+int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 {
-	// FIXME: since all meta data io should be synchronous, this is
-	// probably a
-	BUG(); // and currently not used anyways.
+	unsigned long flags=0;
+	struct Tl_epoch_entry *e=NULL;
+	struct Drbd_Conf* mdev;
+
+	/* we should be called via bio_endio, so this should never be the case
+	 * but "everyone else does it", and so do we ;)		-lge
+	 */
+	if (bio->bi_size)
+		return 1;
+
+	mdev=bio->bi_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	e = container_of(bio,struct Tl_epoch_entry,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(e));
+	D_ASSERT(e->block_id != ID_VACANT);
+
+	spin_lock_irqsave(&mdev->ee_lock,flags);
+	list_del(&e->w.list);
+	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+
+	drbd_queue_work(mdev,&mdev->data.work,&e->w);
+	return 0;
+}
+
+/* writes on behalf of the partner, or resync writes,
+ * "submitted" by the receiver.
+ */
+int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
+{
+	unsigned long flags=0;
+	struct Tl_epoch_entry *e=NULL;
+	struct Drbd_Conf* mdev;
+
+	// see above
+	if (bio->bi_size)
+		return 1;
+
+	mdev=bio->bi_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	e = container_of(bio,struct Tl_epoch_entry,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(e));
+	D_ASSERT(e->block_id != ID_VACANT);
+
+	spin_lock_irqsave(&mdev->ee_lock,flags);
+	list_del(&e->w.list);
+	list_add(&e->w.list,&mdev->done_ee);
+
+	if (waitqueue_active(&mdev->ee_wait) &&
+	    (list_empty(&mdev->active_ee) ||
+	     list_empty(&mdev->sync_ee)))
+		wake_up(&mdev->ee_wait);
+
+	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+
+	if( mdev->do_panic && error) {
+		drbd_panic(DEVICE_NAME": The lower-level device had an error.\n");
+	}
+
+	wake_asender(mdev);
+	return 0;
+}
+
+/* writes on Primary comming from drbd_make_request
+ */
+int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
+{
+	struct Drbd_Conf* mdev;
+	drbd_request_t *req;
+
+	// see above
+	if (bio->bi_size)
+		return 1;
+
+	mdev = bio->bi_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	req = container_of(bio,struct drbd_request,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(req));
+
+	if (error == 0)
+		D_ASSERT(drbd_bio_uptodate(bio));
+
+	drbd_end_req(req, RQ_DRBD_WRITTEN, (error == 0), drbd_req_get_sector(req));
+	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
 	return 0;
 }
 #endif

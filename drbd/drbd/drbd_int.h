@@ -542,6 +542,8 @@ struct Tl_epoch_entry {
 	int magic;
 	ONLY_IN_26(unsigned int ee_size;)
 	ONLY_IN_26(sector_t ee_sector;)
+	// THINK: maybe we rather want bio_alloc(GFP_*,1)
+	ONLY_IN_26(struct bio_vec ee_bvec;)
 };
 
 struct Pending_read {
@@ -701,7 +703,7 @@ struct Drbd_Conf {
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
 	NOT_IN_26(struct tq_struct write_hint_tq;)
-	drbd_bio_t md_io_bio; // a (one page) Byte buffer for md_io
+	struct page *md_io_page; // one page buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;

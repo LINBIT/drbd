@@ -1152,7 +1152,6 @@ int drbd_create_mempools(void)
 void drbd_cleanup(void)
 {
 	int i, rr;
-	struct page *page;
 	if (drbd_conf) {
 		if (drbd_proc)
 			remove_proc_entry("drbd",&proc_root);
@@ -1197,9 +1196,8 @@ ONLY_IN_26(
 			if(rr) printk(KERN_ERR DEVICE_NAME
 				       "%d: %d EEs in read list found!\n",i,rr);
 
-			page = drbd_bio_get_page(&mdev->md_io_bio);
-			if (page)
-				__free_page(page);
+			if (mdev->md_io_page)
+				__free_page(mdev->md_io_page);
 
 			if (mdev->act_log) lc_free(mdev->act_log);
 		}
@@ -1308,8 +1306,7 @@ NOT_IN_26(
 )
 
 		if(!page) goto Enomem;
-		drbd_bio_init(&mdev->md_io_bio);
-		drbd_bio_add_page(&mdev->md_io_bio,page,512,0);
+		mdev->md_io_page = page;
 
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
@@ -1916,7 +1913,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if( mdev->lo_file == 0) return;
 
 	down(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
+	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
 
 	flags=mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
 	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
@@ -1934,11 +1931,10 @@ void drbd_md_write(drbd_dev *mdev)
 
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
-	drbd_bio_kunmap(&mdev->md_io_bio);
+	kunmap(mdev->md_io_page);
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
-	drbd_md_prepare_write(mdev,sector);
-	drbd_generic_make_request_wait(WRITE,&mdev->md_io_bio);
+	drbd_md_sync_page_io(mdev,sector,WRITE);
 
 	up(&mdev->md_io_mutex);
 }
@@ -1955,11 +1951,9 @@ void drbd_md_read(drbd_dev *mdev)
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
-	drbd_md_prepare_read(mdev,sector);
-	drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
-	ERR_IF( ! drbd_bio_uptodate(&mdev->md_io_bio) ) goto err;
+	ERR_IF( ! drbd_md_sync_page_io(mdev,sector,READ) ) goto err;
 
-	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
+	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
 
 	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) goto err;
 
@@ -1968,12 +1962,12 @@ void drbd_md_read(drbd_dev *mdev)
 	mdev->la_size = be64_to_cpu(buffer->la_size);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 
-	drbd_bio_kunmap(&mdev->md_io_bio);
+	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 	return;
 
  err:
-	drbd_bio_kunmap(&mdev->md_io_bio);
+	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 
 	INFO("Creating state block\n");

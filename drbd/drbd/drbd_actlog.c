@@ -32,6 +32,61 @@
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_EXTENTS_PT 61
 
+/* This is what I like so much about the linux kernel:
+ * if you have a close look, you can almost always reuse code by someone else
+ * ;)
+ * this is mostly from drivers/md/md.c
+ */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw)
+{
+	struct buffer_head bh;
+	struct completion event;
+
+	init_completion(&event);
+	init_buffer(&bh, drbd_md_io_complete, &event);
+	bh.b_rdev = mdev->md_device;
+	bh.b_rsector = sector;
+	bh.b_state = (1 << BH_Req) | (1 << BH_Mapped) | (1 << BH_Lock);
+	bh.b_size = 512; // THINK: always? well, we can add an other parameter
+	bh.b_page = mdev->md_io_page;
+	bh.b_reqnext = NULL;
+	bh.b_data = page_address(mdev->md_io_page);
+	generic_make_request(rw, &bh);
+
+	run_task_queue(&tq_disk);
+	wait_for_completion(&event);
+
+	return test_bit(BH_Uptodate, &bh.b_state);
+}
+#else
+int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw)
+{
+	struct bio bio;
+	struct bio_vec vec;
+	struct completion event;
+
+	bio_init(&bio);
+	bio.bi_io_vec = &vec;
+	vec.bv_page = mdev->md_io_page;
+	vec.bv_offset = 0;
+	vec.bv_len =
+	bio.bi_size = 512; // THINK: always? well, we can add an other parameter
+	bio.bi_vcnt = 1;
+	bio.bi_idx = 0;
+	bio.bi_bdev = mdev->md_bdev;
+	bio.bi_sector = sector;
+	init_completion(&event);
+	bio.bi_private = &event;
+	bio.bi_end_io = drbd_md_io_complete;
+	submit_bio(rw, &bio);
+	blk_run_queues();
+	wait_for_completion(&event);
+
+	return test_bit(BIO_UPTODATE, &bio.bi_flags);
+}
+#endif
+
 struct al_transaction {
 	u32       magic;
 	u32       tr_number;
@@ -146,7 +201,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 	u32 xor_sum=0;
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
-	buffer = (struct al_transaction*)drbd_bio_kmap(&mdev->md_io_bio);
+	buffer = (struct al_transaction*)kmap(mdev->md_io_page);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
@@ -181,12 +236,11 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-	drbd_bio_kunmap(&mdev->md_io_bio);
+	kunmap(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
 
-	drbd_md_prepare_write(mdev,sector);
-	drbd_generic_make_request_wait(WRITE,&mdev->md_io_bio);
+	drbd_md_sync_page_io(mdev,sector,WRITE);
 
 	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
@@ -197,7 +251,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 }
 
 /* In case this function returns 1 == success, the caller must do
-		drbd_bio_kunmap(&mdev->md_io_bio);
+		kunmap(mdev->md_io_page);
 		up(&mdev->md_io_mutex);
  */
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
@@ -212,10 +266,9 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	down(&mdev->md_io_mutex);
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + index;
 
-	drbd_md_prepare_read(mdev,sector);
-	drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
+	drbd_md_sync_page_io(mdev,sector,READ);
 
-	buffer = (struct al_transaction*)drbd_bio_kmap(&mdev->md_io_bio);
+	buffer = (struct al_transaction*)kmap(mdev->md_io_page);
 
 	rv = ( be32_to_cpu(buffer->magic) == DRBD_MAGIC );
 
@@ -227,7 +280,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	if(rv) {
 		*bp = buffer;
 	} else {
-		drbd_bio_kunmap(&mdev->md_io_bio);
+		kunmap(mdev->md_io_page);
 		up(&mdev->md_io_mutex);
 	}
 
@@ -250,7 +303,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		if(!drbd_al_read_tr(mdev,&buffer,i)) continue;
 		cnr = be32_to_cpu(buffer->tr_number);
 		// INFO("index %d valid tnr=%d\n",i,cnr);
-		drbd_bio_kunmap(&mdev->md_io_bio);
+		kunmap(mdev->md_io_page);
 		up(&mdev->md_io_mutex);
 
 		if(cnr == -1) overflow=1;
@@ -298,7 +351,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 			active_extents++;
 		}
 
-		drbd_bio_kunmap(&mdev->md_io_bio);
+		kunmap(mdev->md_io_page);
 		up(&mdev->md_io_mutex);
 
 		transactions++;
@@ -404,17 +457,16 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		sector = drbd_md_ss(mdev) + MD_BM_OFFSET + so;
 		so++;
 
-		drbd_md_prepare_read(mdev, sector);
-		drbd_generic_make_request_wait(READ,&mdev->md_io_bio);
+		drbd_md_sync_page_io(mdev,sector,READ);
 
-		buffer = (unsigned long *)drbd_bio_kmap(&mdev->md_io_bio);
+		buffer = (unsigned long *)kmap(mdev->md_io_page);
 
 		for(buf_i=0;buf_i<want;buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]);
 			bits += hweight_long(word);
 			bm[bm_i++] = word;
 		}
-		drbd_bio_kunmap(&mdev->md_io_bio);
+		kunmap(mdev->md_io_page);
 	}
 
 	up(&mdev->md_io_mutex);
@@ -450,23 +502,24 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 	want=min_t(int,512/sizeof(long),bm_words-bm_i);
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer
-	buffer = (unsigned long *)drbd_bio_kmap(&mdev->md_io_bio);
+	buffer = (unsigned long *)kmap(mdev->md_io_page);
 
 	for(buf_i=0;buf_i<want;buf_i++) {
 		buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
 	}
 
-	drbd_bio_kunmap(&mdev->md_io_bio);
+	kunmap(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 
-	drbd_md_prepare_write(mdev,sector);
 	if(sync) {
-		drbd_generic_make_request_wait(WRITE,&mdev->md_io_bio);
+		drbd_md_sync_page_io(mdev,sector,WRITE);
 		up(&mdev->md_io_mutex);
 	} else {
-		drbd_bio_set_end_io(&mdev->md_io_bio,drbd_async_eio);
-		drbd_generic_make_request(WRITE,&mdev->md_io_bio);
+#warning "FIXME pls remove ;)"
+		BUG(); // or do I miss something, Philipp?
+		// drbd_bio_set_end_io(&mdev->md_io_bio,drbd_async_eio);
+		// drbd_generic_make_request(WRITE,&mdev->md_io_bio);
 	}
 
 	mdev->bm_writ_cnt++;

@@ -44,7 +44,7 @@ typedef unsigned long sector_t;
 
 
 #else // LINUX 2.6
-# warning "FIXME"
+#warning "FIXME"
 
 typedef struct bio drbd_bio_t;
 

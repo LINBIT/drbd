@@ -165,11 +165,7 @@ STATIC int _drbd_alloc_ee(drbd_dev *mdev,struct page* page,int mask)
 	e = kmem_cache_alloc(drbd_ee_cache, mask);
 	if( e == NULL ) return FALSE;
 
-	// BM_BLOCK_SIZE == PAGE_SIZE ! FIXME not necessarily on all arch!!
-	drbd_bio_init(&e->private_bio);
-	drbd_bio_add_page(&e->private_bio,page,BM_BLOCK_SIZE_B,0);
-
-	e->block_id = ID_VACANT;
+	drbd_ee_init(e,page);
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->free_ee);
 	mdev->ee_vacant++;

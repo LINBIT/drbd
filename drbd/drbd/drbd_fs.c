@@ -307,12 +307,13 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
 #warning "FIXME make 26 clean, maybe move to compat layer?"
 #else
-	cn.cstate=mdev->cstate;
 	cn.lower_device_major=MAJOR(mdev->lo_device);
 	cn.lower_device_minor=MINOR(mdev->lo_device);
-	cn.disk_size_user=mdev->lo_usize;
 	cn.meta_device_major=MAJOR(mdev->md_device);
 	cn.meta_device_minor=MINOR(mdev->md_device);
+#endif
+	cn.cstate=mdev->cstate;
+	cn.disk_size_user=mdev->lo_usize;
 	cn.meta_index=mdev->md_index;
 	cn.do_panic=mdev->do_panic;
 	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
@@ -320,7 +321,6 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 
 	if (copy_to_user(arg,&cn,sizeof(struct ioctl_get_config)))
 		return -EFAULT;
-#endif
 
 	return 0;
 }
