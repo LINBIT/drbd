@@ -9,11 +9,10 @@
         main author.
 
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
-        Added code for Linux 2.3.x
+        Early 2.3.x work.
 
-   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-        Added sanity checks in IOCTL_SET_STATE.
-		Added code to prevent zombie threads.
+   Copyright (C) 2001, Lelik P.Korchagin <lelik@price.ru>.
+        Initial devfs support.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -65,6 +64,13 @@
 
 #include "drbd.h"
 #include "drbd_int.h"
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+#ifdef CONFIG_DEVFS_FS
+#include <linux/devfs_fs_kernel.h>
+static devfs_handle_t devfs_handle;
+#endif
+#endif
 
 static int errno;
 
@@ -880,6 +886,16 @@ int __init drbd_init(void)
 	}
 
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+#ifdef CONFIG_DEVFS_FS
+	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
+	devfs_register_series(devfs_handle, "%u", minor_count,
+			      DEVFS_FL_DEFAULT, MAJOR_NR, 0,
+			      S_IFBLK | S_IRUSR | S_IWUSR,
+		     	      &drbd_ops, NULL);
+# endif
+#endif
+
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	drbd_conf = kmalloc(sizeof(struct Drbd_Conf)*minor_count,GFP_KERNEL);
@@ -982,6 +998,11 @@ void cleanup_module()
 {
 	int i;
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+#ifdef CONFIG_DEVFS_FS
+	devfs_unregister(devfs_handle);
+#endif
+#endif
 	for (i = 0; i < minor_count; i++) {
 		drbd_set_state(i,Secondary);
 		fsync_dev(MKDEV(MAJOR_NR, i));

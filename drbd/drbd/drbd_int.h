@@ -1,8 +1,10 @@
 /*
   drbd_int.h
-  Kernel module for 2.2.x Kernels
-  
+  Kernel module for 2.2.x/2.4.x Kernels
+
   This file is part of drbd by Philipp Reisner.
+
+  Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by

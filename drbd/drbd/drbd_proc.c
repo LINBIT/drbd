@@ -8,10 +8,6 @@
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
-   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-        Added sanity checks in IOCTL_SET_STATE.
-		Added code to prevent zombie threads.
-
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
