@@ -30,7 +30,7 @@ DRBD upgrade instructions from 0.6.x to 0.7.0
   The size of the meta-data device needs to be at least n*128MB,
   where n is the number of DRBD resources you want to use.
 
-* Update your configuration file:
+* Update your drbd.conf file:
   - Change it to the new syntax.
   - Remove the disk-size parameter from your drbd.conf
   - Add the meta-disk settings
@@ -43,3 +43,9 @@ DRBD upgrade instructions from 0.6.x to 0.7.0
 * Tune the al-extents setting to balance the number of updates
   to the metadata per minute (see cat /proc/drbd number "al:") vs
   the expected resync time. 
+
+* In case you are using heartbeat:
+  - change datadisk to drbddisk in your haresources file
+  - Add a Filesystem resource just after the drbddisk resorce
+    E.g. Filesystem::/dev/nb0::/mnt/ha0::ext3
+  - Remove the lines form /etc/fstab containing /dev/nbX
