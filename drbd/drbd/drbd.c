@@ -214,8 +214,6 @@ struct mbds_operations bm_mops;
 
 #define ID_SYNCER (-1LL)
 
-#define MINOR_COUNT 2
-
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -223,12 +221,16 @@ struct mbds_operations bm_mops;
 #define FALSE 0
 #endif
 
+int minor_count=2;
+
 MODULE_AUTHOR("Philipp Reisner <e9525415@stud2.tuwien.ac.at>");
 MODULE_DESCRIPTION("drbd - Network block device");
+MODULE_PARM(minor_count,"i");
+MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 
-/*static */ int drbd_blocksizes[MINOR_COUNT];
-/*static */ int drbd_sizes[MINOR_COUNT];
-/*static */ struct Drbd_Conf drbd_conf[MINOR_COUNT];
+/*static */ int *drbd_blocksizes;
+/*static */ int *drbd_sizes;
+/*static */ struct Drbd_Conf *drbd_conf;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
 /*static */ struct block_device_operations drbd_ops = {
@@ -321,7 +323,7 @@ struct request *my_all_requests = NULL;
 	   of .. block's on the fly 
 	*/
 
-	for (i = 0; i < MINOR_COUNT; i++) {
+	for (i = 0; i < minor_count; i++) {
 		rlen =
 		    rlen + sprintf(buf + rlen,
 				   "%d: cs:%s st:%s ns:%u nr:%u dw:%u dr:%u "
@@ -1251,7 +1253,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 #define M_PORT(A) (((struct sockaddr_in *)&A##.my_addr)->sin_port)
 #define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
-		for(i=0;i<MINOR_COUNT;i++) {		  
+		for(i=0;i<minor_count;i++) {		  
 			if( i != minor &&
 			    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
 			    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
@@ -1278,7 +1280,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		inode = filp->f_dentry->d_inode;
 
-		for(i=0;i<MINOR_COUNT;i++) {
+		for(i=0;i<minor_count;i++) {
 			if( i != minor && 
 			    inode->i_rdev == drbd_conf[i].lo_device) {
 				retcode=LDAlreadyInUse;
@@ -1442,9 +1444,14 @@ int __init drbd_init(void)
 		return -EBUSY;
 	}
 
+
+	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
+	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
+	drbd_conf = kmalloc(sizeof(struct Drbd_Conf)*minor_count,GFP_KERNEL);
+
 	/* Initialize size arrays. */
 
-	for (i = 0; i < MINOR_COUNT; i++) {
+	for (i = 0; i < minor_count; i++) {
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		drbd_conf[i].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		drbd_sizes[i] = 0;
@@ -1512,7 +1519,7 @@ void cleanup_module()
 {
 	int i;
 
-	for (i = 0; i < MINOR_COUNT; i++) {
+	for (i = 0; i < minor_count; i++) {
 		fsync_dev(MKDEV(MAJOR_NR, i));
 		drbd_thread_stop(&drbd_conf[i].syncer);
 		drbd_thread_stop(&drbd_conf[i].receiver);
@@ -1542,6 +1549,10 @@ void cleanup_module()
 #else
 	proc_unregister(&proc_root, drbd_proc_dir.low_ino);
 #endif
+
+	kfree(drbd_blocksizes);
+	kfree(drbd_sizes);
+	kfree(drbd_conf);
 }
 
 
