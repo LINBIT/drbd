@@ -28,17 +28,28 @@ include ../Makefile.vars
 SPEC = $(shell for S in /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl; do if [ -e $$S ]; then echo $$S; fi; done)
 NSGMLS=$(shell which nsgmls)
 
-all:	drbdsetup.8 drbd.conf.5
+all:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
 
 drbdsetup.8: drbdsetup.sgml
 	if [ "$(NSGMLS)" ]; then nsgmls drbdsetup.sgml | sgmlspl $(SPEC); fi
+
+drbd.8: drbd.sgml
+	if [ "$(NSGMLS)" ]; then nsgmls drbd.sgml | sgmlspl $(SPEC); fi
+
+datadisk.8: datadisk.sgml
+	if [ "$(NSGMLS)" ]; then nsgmls datadisk.sgml | sgmlspl $(SPEC); fi
 
 drbd.conf.5: drbd.conf.sgml
 	if [ "$(NSGMLS)" ]; then nsgmls drbd.conf.sgml | sgmlspl $(SPEC); fi
 
 clean:
-	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs *~ manpage.log
+	rm -f *.ps *.[58] manpage.links manpage.refs *~ manpage.log
 
-install: drbdsetup.8 drbd.conf.5
+install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
 	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/man8; fi
 	if [ -e drbd.conf.5 ]; then install drbd.conf.5 $(PREFIX)usr/share/man/man5; fi
+	if [ -e drbd.8 ]; then install drbd.8 $(PREFIX)usr/share/man/man8; fi
+	if [ -e datadisk.8 ]; then install datadisk.8 $(PREFIX)usr/share/man/man8; fi
+
+
+

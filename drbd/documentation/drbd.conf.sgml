@@ -160,6 +160,16 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
   </listitem>
 </varlistentry>
  <varlistentry>
+  <term><option>inittimeout=<replaceable>value</replaceable></option></term>
+  <listitem><para>
+    If the other node does not show up within the specified time, this
+    node will start the resource in degraded mode.</para>
+    <para>Only use this option if availabiliy is more important to you then
+    the consitency of your data.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
   <term><option>port=<replaceable>number</replaceable></option></term>
   <listitem><para>
     Each DRBD resource needs a TCP port <replaceable>number</replaceable> 
@@ -228,7 +238,11 @@ not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
 <refsect1>
 <title>See Also</title>
 <para>
-<citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <citerefentry><refentrytitle>drbd</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>datadisk</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>
 </para>
 </refsect1>

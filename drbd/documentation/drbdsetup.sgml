@@ -419,4 +419,15 @@ see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
 </simpara>
 </refsect1>
+<refsect1>
+  <title>See Also</title>
+  <para>
+    <citerefentry><refentrytitle>drbd.conf</refentrytitle>
+    <manvolnum>5</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>drbd</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>datadisk</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>
+  </para>
+</refsect1>
 </refentry>
