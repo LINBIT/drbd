@@ -46,6 +46,12 @@
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
+#define DEF_NET_TIMEOUT 60 //6 seconds
+#define DEF_NET_TL_SIZE 256
+#define DEF_NET_TRY_CON_I 10 //10 seconds
+#define DEF_NET_PING_I 10  //10 seconds
+#define DEF_SYNC_RATE 250
+
 struct drbd_cmd {
   const char* cmd;
   int (* function)(int, char**, int, struct option*);
@@ -132,10 +138,10 @@ unsigned long resolv(const char* name)
   return retval;
 }
 
-int m_strtol(const char* s,int def_mult)
+unsigned long m_strtol(const char* s,int def_mult)
 {
   char *e = (char*)s;
-  long r;
+  unsigned long r;
 
   r = strtol(s,&e,0);
   switch(*e)
@@ -360,16 +366,15 @@ int scan_disk_options(char **argv,
   return 0;
 }
 
-
 int scan_net_options(char **argv,
 		     int argc,
 		     struct ioctl_net_config* cn,
 		     struct option *options)
 {
-  cn->config.timeout = 60; /* = 6 seconds */
-  cn->config.tl_size = 256;
-  cn->config.try_connect_int = 10;
-  cn->config.ping_int = 10;
+  cn->config.timeout = DEF_NET_TIMEOUT;
+  cn->config.tl_size = DEF_NET_TL_SIZE;
+  cn->config.try_connect_int = DEF_NET_TRY_CON_I;
+  cn->config.ping_int = DEF_NET_PING_I;
 
   if(argc==0) return 0;
 
@@ -961,15 +966,18 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 	 ntohs(other_addr->sin_port));
   printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol); 
   printf("Net options:\n");
-  if( cn.nconf.timeout ) 
-    printf(" timeout = %d.%d sec\n",cn.nconf.timeout/10,cn.nconf.timeout%10);
-  if( cn.nconf.tl_size ) printf(" tl-size = %d\n",cn.nconf.tl_size);
-  if( cn.nconf.try_connect_int ) 
-    printf(" connect-int = %d sec\n",cn.nconf.try_connect_int);
-  if( cn.nconf.ping_int ) printf(" ping-int = %d sec\n",cn.nconf.ping_int);
+  printf(" timeout = %d.%d sec %s\n",cn.nconf.timeout/10,cn.nconf.timeout%10,
+	 cn.nconf.timeout == DEF_NET_TIMEOUT ? "(default)" : "" );
+  printf(" tl-size = %d %s\n",cn.nconf.tl_size,
+	 cn.nconf.tl_size == DEF_NET_TL_SIZE ? "(default)" : "" );
+  printf(" connect-int = %d sec %s\n",cn.nconf.try_connect_int,
+	 cn.nconf.try_connect_int == DEF_NET_TRY_CON_I ? "(default)":"");
+  printf(" ping-int = %d sec %s\n",cn.nconf.ping_int,
+	 cn.nconf.ping_int == DEF_NET_PING_I ? "(default)" : "");
 
   printf("Syncer options:\n");
-  printf(" rate = %d KB/sec\n",cn.sconf.rate);
+  printf(" rate = %d KB/sec %s\n",cn.sconf.rate,
+	 cn.sconf.rate == DEF_SYNC_RATE ? "(default)" : "" );
   if( cn.sconf.skip ) printf(" skip-sync\n");
   if( cn.sconf.use_csums ) printf(" use-csums\n");
 

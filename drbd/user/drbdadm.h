@@ -33,6 +33,9 @@ struct d_resource
 
 extern int adm_attach(struct d_resource* ,char* );
 extern int adm_connect(struct d_resource* ,char* );
+extern int adm_resize(struct d_resource* ,char* );
+extern int m_system(char** );
+extern struct d_option* find_opt(struct d_option*,char*);
 
 extern int config_valid;
 extern struct d_resource* config;
@@ -41,5 +44,13 @@ extern int line;
 extern int dry_run;
 extern char* drbdsetup;
 extern char ss_buffer[255];
+
+/* ssprintf() places the result of the printf in the current stack
+   frame and sets ptr to the resulting string. If the current stack
+   frame is destroyed (=function returns), the allocated memory is 
+   freed automatically */
+
+#define ssprintf(ptr,...) \
+  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer) 
 
 #endif

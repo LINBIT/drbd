@@ -21,16 +21,15 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-#include <unistd.h>
 #include "drbdadm.h"
-
-#define ssprintf(ptr,...) \
-  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer) 
-
 
 FILE *m_popen(int *pid,char** argv)
 {
@@ -61,18 +60,31 @@ FILE *m_popen(int *pid,char** argv)
   return fdopen(pipes[0],"r");
 }
 
-static struct d_option* find_opt(struct d_option* base,char* name)
-{
-  while(base) {
-    if(!strcmp(base->name,name)) {
-      base->mentioned=1;
-      return base;
-    }
-    base=base->next;
-  }
-  return 0;
-}
 
+static unsigned long m_strtol(const char* s,int def_mult)
+{
+  char *e = (char*)s;
+  unsigned long r;
+
+  r = strtol(s,&e,0);
+  switch(*e)
+    {
+    case 0:
+      return r;
+    case 'K':
+    case 'k':
+      return r*(1024/def_mult);
+    case 'M':
+    case 'm':
+      return r*1024*(1024/def_mult);
+    case 'G':
+    case 'g':      
+      return r*1024*1024*(1024/def_mult);
+    default:
+      fprintf(stderr,"%s is not a valid number\n",s);
+      exit(20);
+    }
+}
 
 int adm_adjust(struct d_resource* res,char* unused)
 {
@@ -80,6 +92,7 @@ int adm_adjust(struct d_resource* res,char* unused)
   int rv,pid,argc=0;
   FILE *in;
   char str1[255],str2[255];
+  unsigned long  ul1;
   struct d_option* o;
   char uu[2];
   int do_attach=0;
@@ -99,11 +112,12 @@ int adm_adjust(struct d_resource* res,char* unused)
   }
 
   fscanf(in,"Disk options%[:]\n",uu);
-  rv=fscanf(in," size = %s KB\n",str1);
-  if(rv) {
+  rv=fscanf(in," size = %lu KB\n",&ul1);
+  if(rv==1) {
     o=find_opt(res->disk_options,"size");
+    o->mentioned=1;
     if(o) {
-      if(strcmp(o->value,str1)) {
+      if(m_strtol(o->value,1024) != ul1) {
 	do_resize=1;
       }
     } else {
@@ -111,12 +125,18 @@ int adm_adjust(struct d_resource* res,char* unused)
     }
   }
   rv=fscanf(in," do-pani%[c]\n",uu); // 1 == SUCCESS
-  if(rv) {
+  if(rv==1) {
     o=find_opt(res->disk_options,"do-panic");
+    o->mentioned=1;
     if(!o) do_attach=1;
   }
 
-  // check if every option was mentioned.
+  // Check if every options is also present in drbdsetup show's output.
+  o=res->disk_options;
+  while(o) {
+    if(o->mentioned == 0) do_attach=1;
+    o=o->next;
+  }
 
   rv=fscanf(in,"Local address: %[0-9.]:%s\n",str1,str2);
   if(rv!=2 || strcmp(str1,res->me->address) || strcmp(str2,res->me->port) ) {
@@ -134,17 +154,19 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_connect=1;
   }
 
-  rv=fscanf(in,"Net options%[:]\n",uu); // rv=1
-  rv=fscanf(in,"Syncer options%[:]\n",uu); // rv=1
+  fscanf(in,"Net options%[:]\n",uu);
+
+  fscanf(in,"Syncer options%[:]\n",uu);
   
   if(do_attach) {
     adm_attach(res,0);
     do_resize=0;
   }
-  if(do_resize) adm_generic(res,"resize"); // missing options (!) FIX.
+  if(do_resize)  adm_resize(res,0);
   if(do_connect) adm_connect(res,0);
+  
+  fclose(in);
+  waitpid(pid,0,0);
 
-
-  // call wait/wait4
   return 0;
 }
