@@ -91,10 +91,6 @@ case "$1" in
 	for D in $DEVICES; do
 	    . $D
 
-	    if [ -n "$SIZE" ]; then
-		SIZE_OP="-d $SIZE";
-	    fi
-
 	    if [ -z "$MASTER_IF" ]; then
                 MASTER_IF=$MASTER_NODE;
             fi
@@ -107,7 +103,7 @@ case "$1" in
 
 		action "Configuring DRBD resource $D" \
 		    /usr/sbin/drbdsetup $MASTER_DEVICE $MASTER_PARTITION \
-		    $PROTOCOL $MASTER_IF $SLAVE_IF $SIZE_OP $OPTIONS 
+		    $PROTOCOL $MASTER_IF $SLAVE_IF $OPTIONS 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
@@ -121,7 +117,7 @@ case "$1" in
 
 		action "Configuring DRBD resource $D" \
 		    /usr/sbin/drbdsetup $SLAVE_DEVICE $SLAVE_PARTITION \
-		    $PROTOCOL $SLAVE_IF $MASTER_IF $SIZE_OP $OPTIONS
+		    $PROTOCOL $SLAVE_IF $MASTER_IF $OPTIONS
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
@@ -135,9 +131,6 @@ case "$1" in
 		echo This machine is neither master nor slave!
 		exit 1
 	    fi
-
-	    unset SIZE SIZE_OP # don't let it contaminate other devices... :)
-	    unset MASTER_IF SLAVE_IF # ditto...
 
 	done
 	;;

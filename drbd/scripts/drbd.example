@@ -24,19 +24,21 @@
 # default port: 7788
 # Important: don't use domain names here, only the hostnames 
 # as reported by hostname -s
-MASTER_NODE=ha1
-SLAVE_NODE=ha2
+MASTER_NODE="ha1:7788"
+SLAVE_NODE="ha2:7788"
 
 
 # If you have machines with multiple NICs, you may want to specify
 # the interface by it's IP address here. 
 #
-# If you machines only have one NIC do not set these.
+# If you machines only have one NIC do not set these, BY LEAVING
+# THEM WITH EMPTY QUOTES. Otherwise you will confuse init.d/drbd.
+# That means, DO NOT COMMENT THEM OUT! :)
 #
 # If you use these fields, put any port identifies (:[0-9]+) here, you
 # do not need to specify them at the *_NODE entries.
-#MASTER_IF=10.0.0.3
-#SLAVE_IF=10.0.0.4
+MASTER_IF=""
+SLAVE_IF=""
 
 # Options:
 #       -t --timeout  val
@@ -63,31 +65,28 @@ SLAVE_NODE=ha2
 #       -d --disk-size val
 #          Sets drbd's size. When set to 0 drbd negotiates the
 #          size with the remote node.
+#          A value different from 0 will allow drbd to operate even without
+#          a connection to the other node. Make sure sizes match!
 #          Default: 0 KB.
 #
 #       -p --do-panic
 #          drbd will trigger a kernel panic if there is an
 #          IO error on the lower_device. May be usefull when
 #          drbd is used in a HA cluster.
-OPTIONS="-r 500"
-
-# A device size of zero means drbd should negotiate the size by itself
-# If specified, the device can be used even without connecting, but make
-# sure sizes match and are valid in both nodes.
-SIZE=514080
+OPTIONS="-r 500 -d 514080"
 
 # Protocol used for this device
 # protocol may be A, B or C.
-PROTOCOL=B
+PROTOCOL="B"
 
 # Devices used in master and slave (may be different on each machine)
-MASTER_DEVICE=/dev/nb0
-SLAVE_DEVICE=/dev/nb0
+MASTER_DEVICE="/dev/nb0"
+SLAVE_DEVICE="/dev/nb0"
 
 # Partitions for drbd (can be a different partition on each machine)
-MASTER_PARTITION=/dev/hda3
-SLAVE_PARTITION=/dev/hda3
+MASTER_PARTITION="/dev/hda3"
+SLAVE_PARTITION="/dev/hda3"
 
 # Mountpoints (may be different on each machine)
-MASTER_MNTPOINT=/home/httpd/html
-SLAVE_MNTPOINT=/home/httpd/html
+MASTER_MNTPOINT="/mnt/drbd0"
+SLAVE_MNTPOINT="/mnt/drbd0"
