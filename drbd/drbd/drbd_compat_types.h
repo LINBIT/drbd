@@ -42,6 +42,13 @@ typedef unsigned long sector_t;
 #include <linux/completion.h>
 #endif
 
+/* note that if you use some verndor kernels like SuSE,
+ * their 2.4.X variant probably already contain equivalent definitions.
+ * you then have to disable this compat again...
+ */
+
+#ifndef HAVE_FIND_NEXT_BIT /* { */
+
 #if defined(__i386__) || defined(__arch_um__)
 /**
  * find_first_bit - find the first set bit in a memory region
@@ -171,9 +178,70 @@ find_next_bit(void * addr, unsigned long size, unsigned long offset)
  found_middle:
 	return result + __ffs(tmp);
 }
+#elif defined(USE_GENERIC_FIND_NEXT_BIT)
+
+#if BITS_PER_LONG == 32
+#define  _xFFFF 31ul
+#define _x10000 32
+#define _xSHIFT  5
+#elif BITS_PER_LONG == 64
+#define  _xFFFF 63ul
+#define _x10000 64
+#define _xSHIFT  6
+#else
+#error "Unexpected BITS_PER_LONG"
+#endif
+
+/* slightly large to be inlined, but anyways... */
+static inline unsigned long
+find_next_bit(void * addr, unsigned long size, unsigned long offset)
+{
+	unsigned long * p = ((unsigned long *) addr) + (offset >> _xSHIFT);
+	unsigned long result = offset & ~_xFFFF;
+	unsigned long tmp;
+
+	if (offset >= size)
+		return size;
+	size -= result;
+	offset &= _xFFFF;
+	if (offset) {
+		tmp = *(p++);
+		tmp &= ~0UL << offset;
+		if (size < _x10000)
+			goto found_first;
+		if (tmp)
+			goto found_middle;
+		size -= _x10000;
+		result += _x10000;
+	}
+	while (size & ~_xFFFF) {
+		if ((tmp = *(p++)))
+			goto found_middle;
+		result += _x10000;
+		size -= _x10000;
+	}
+	if (!size)
+		return result;
+	tmp = *p;
+ found_first:
+	tmp &= ~0UL >> (_x10000 - size);
+	if (!tmp)
+		return result + size;
+ found_middle: /* if this is reached, we know that (tmp != 0) */
+	return result + generic_ffs(tmp)-1;
+}
+
+#undef _xFFFF
+#undef _x10000
+#undef _xSHIFT
+
 #else
 #warning "You probabely need to copy find_next_bit() from a 2.6.x kernel."
+#warning "Or enable low performance generic C-code"
+#warning "(USE_GENERIC_FIND_NEXT_BIT in drbd_config.h)"
 #endif
+
+#endif /* HAVE_FIND_NEXT_BIT } */
 
 #ifndef ALIGN
 #define ALIGN(x,a) ( ((x) + (a)-1) &~ ((a)-1) )

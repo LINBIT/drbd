@@ -20,7 +20,7 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre8 cvs $Date: 2004/07/05 13:32:58 $"
+#define REL_VERSION "0.7-pre8 cvs $Date: 2004/07/08 08:04:49 $"
 #define API_VERSION 74
 #define PRO_VERSION 73
 
@@ -35,6 +35,13 @@
 
 //#define SIGHAND_HACK           // Needed for RH 2.4.20 and later kernels.
 //#define REDHAT_HLIST_BACKPORT  // Makes DRBD work on RH9 kernels
+
+//Your 2.4 verndor kernel already defines find_next_bit()
+//#define HAVE_FIND_NEXT_BIT
+
+//Your 2.4 kernel does not define find_next_bit(),
+//and you are too lazy to "backport" it from 2.6 for your arch:
+//#define USE_GENERIC_FIND_NEXT_BIT
 
 #define PARANOIA // some extra checks
 

@@ -170,21 +170,25 @@ void drbd_bm_unlock(drbd_dev *mdev)
 #endif
 // }
 
-/* debugging aid 
-STATIC void bm_end_info(drbd_dev *mdev)
+#if DUMP_MD >= 3
+/* debugging aid */
+STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	size_t w = b->bm_bits >> LN2_BPL;
+	size_t w = (b->bm_bits-1) >> LN2_BPL;
 
-	INFO("bm_set=%lu\n",b->bm_set);
-	INFO("bm[%d]=0x%lX\n",w,b->bm[w]);
+	INFO("%s: bm_set=%lu\n", where, b->bm_set);
+	INFO("bm[%d]=0x%lX\n", w, b->bm[w]);
 	w++;
 
 	if ( w < b->bm_words ) {
+		D_ASSERT(w == b->bm_words -1);
 		INFO("bm[%d]=0x%lX\n",w,b->bm[w]);
 	}
 }
-*/
+#else
+#define bm_end_info(ignored...)	((void)(0))
+#endif
 
 /* long word offset of _bitmap_ sector */
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
@@ -317,6 +321,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 			b->bm_bits    = bits;
 			b->bm_dev_capacity = capacity;
 			b->bm_set -= bm_clear_surplus(b);
+			bm_end_info(mdev, __FUNCTION__ );
 			spin_unlock_irq(&b->bm_lock);
 			goto out;
 		} else {
@@ -345,6 +350,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
+		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
 	}
@@ -426,6 +432,7 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 	 */
 	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
+		bm_end_info(mdev, __FUNCTION__ );
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -464,6 +471,7 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 	 */
 	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
+		bm_end_info(mdev, __FUNCTION__ );
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -533,7 +541,7 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 		offset    = S2W(enr);	// word offset into bitmap
 		num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
-	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
+	INFO("read_sect: sector=%lu offset=%u num_words=%u\n",
 			enr, offset, num_words);
 #endif
 		drbd_bm_set_lel( mdev, offset, num_words,
@@ -598,6 +606,9 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
 			enr, offset, num_words);
 #endif
+	if (num_words < S2W(1)) {
+		memset(page_address(mdev->md_io_page),0,MD_HARDSECT);
+	}
 	drbd_bm_get_lel( mdev, offset, num_words,
 			 page_address(mdev->md_io_page) );
 	if (!drbd_md_sync_page_io(mdev,on_disk_sector,WRITE)) {
