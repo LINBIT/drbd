@@ -82,7 +82,6 @@ static struct d_resource* new_resource(char* name)
 %type <d_option> net_statements net_statement
 %type <d_option> sync_statements sync_statement 
 %type <d_option> sync_statements sync_statement 
-%type <d_option> glob_statements glob_statement
 %type <d_resource> resources resource
 
 %%
@@ -90,15 +89,15 @@ config:           global_sec resources   { config=$2; }
 		;	 
 
 global_sec:       /* empty */
-                | TK_GLOBAL '{' glob_statements '}'   { global_options=$3; }
+                | TK_GLOBAL '{' glob_statements '}'
 		;
 
-glob_statements:  /* empty */   { $$ = 0; }
-		| glob_statements glob_statement   { $$=APPEND($1,$2); }
+glob_statements:  /* empty */
+		| glob_statements glob_statement
 		;
 
-glob_statement:   TK_DISABLE_IO_HINTS   { $$=new_opt($1,"1"); }
-		| TK_MINOR_COUNT '=' TK_INTEGER   { $$=new_opt($1,$3); }
+glob_statement:   TK_DISABLE_IO_HINTS   { global_options.disable_io_hints=1; }
+		| TK_MINOR_COUNT '=' TK_INTEGER   { global_options.minor_count=atoi($3); }
                 ;
 
 resources:        /* empty */   { $$ = 0; }

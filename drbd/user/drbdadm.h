@@ -1,6 +1,12 @@
 #ifndef DRBDADM_H
 #define DRBDADM_H
 
+struct d_globals
+{
+  int disable_io_hints;
+  int minor_count;
+};
+
 struct d_host_info
 {
   char* name;
@@ -40,7 +46,7 @@ extern struct d_option* find_opt(struct d_option*,char*);
 
 extern int config_valid;
 extern struct d_resource* config;
-extern struct d_option* global_options;
+extern struct d_globals global_options;
 extern int line;
 
 extern int dry_run;

@@ -61,7 +61,7 @@ static int sh_mod_parms(struct d_resource* ,char* );
 
 char ss_buffer[255];
 int line=1;
-struct d_option* global_options;
+struct d_globals global_options = { 0, 0 };
 struct d_resource* config;
 int config_valid=1;
 int dry_run;
@@ -172,12 +172,17 @@ static int sh_devices(struct d_resource* res,char* unused)
 
 static int sh_mod_parms(struct d_resource* res,char* unused)
 {
-  struct d_option* o=global_options;
+  int nr=0;
+  int mc=global_options.minor_count;
 
-  while(o) {
-    printf("%s=%s ",o->name,o->value);
-    o=o->next;
+  while(res) {
+    nr++;
+    res=res->next;
   }
+
+  printf("minor_count=%d ",mc ? mc : nr);
+
+  if(global_options.disable_io_hints) printf("disable_io_hints=1 ");
 
   return 0;
 }
@@ -535,11 +540,28 @@ int main(int argc, char** argv)
 
   yyparse();
 
+  if(!config_valid) exit(10);
+
+  { // check if minor_count is sane.
+    int nr=0;
+    int mc=global_options.minor_count;
+
+    res=config;
+    while(res) {
+      nr++;
+      res=res->next;
+    }
+
+    if( mc && mc<nr ) {
+      fprintf(stderr,"You have %d resources but a minor_count of %d in your"
+	      " config!\n",nr,mc);
+      exit(20);
+    }
+  }
+
   if(drbdsetup == NULL) {
     find_drbdsetup((char *[]){"/sbin/drbdsetup", "./drbdsetup", 0 });
   }
-
-  if(!config_valid) exit(10);
 
   if (optind == argc) print_usage(argv[0]);
 
