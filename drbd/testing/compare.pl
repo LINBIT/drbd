@@ -171,7 +171,7 @@ sub main {
       print "\ndevice on $lname smaller\n";
       last;
     }
-    if(!defined($lline)) {
+    if(!defined($rline)) {
       print "\ndevice on $rname smaller\n";
       last;
     }
