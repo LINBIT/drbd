@@ -278,7 +278,7 @@ case "$1" in
 		echo
 
 		if [ $MOUNTED -eq 1 ]; then 
-			$0 mount $RESOURCE
+			$0 $RESOURCE mount
 			RV=$?
 			[ $RV -eq 0 ] && RETVAL=$RV
 		fi
