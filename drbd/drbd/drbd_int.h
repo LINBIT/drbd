@@ -355,33 +355,33 @@ static inline void tl_init(struct Drbd_Conf *mdev)
 	mdev->barrier_nr_done=1;
 }
 
-static inline void inc_pending(int minor)
+static inline void inc_pending(struct Drbd_Conf* mdev)
 {
-	drbd_conf[minor].pending_cnt++;
-	if(drbd_conf[minor].conf.timeout ) {
-		mod_timer(&drbd_conf[minor].a_timeout,
-			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
+	mdev->pending_cnt++;
+	if(mdev->conf.timeout ) {
+		mod_timer(&mdev->a_timeout,
+			  jiffies + mdev->conf.timeout * HZ / 10);
 	}
 }
 
-static inline void dec_pending(int minor)
+static inline void dec_pending(struct Drbd_Conf* mdev)
 {
-	drbd_conf[minor].pending_cnt--;
-	if(drbd_conf[minor].pending_cnt<0)  /* CHK */
+	mdev->pending_cnt--;
+	if(mdev->pending_cnt<0)  /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt <0 !!!\n",
-		       minor);
+		       (int)(mdev-drbd_conf));
 		
-	if(drbd_conf[minor].conf.timeout ) {
-		if(drbd_conf[minor].pending_cnt > 0) {
-			mod_timer(&drbd_conf[minor].a_timeout,
-				  jiffies + drbd_conf[minor].conf.timeout 
+	if(mdev->conf.timeout ) {
+		if(mdev->pending_cnt > 0) {
+			mod_timer(&mdev->a_timeout,
+				  jiffies + mdev->conf.timeout 
 				  * HZ / 10);
 		} else {
-			del_timer(&drbd_conf[minor].a_timeout);
+			del_timer(&mdev->a_timeout);
 		}
 	}	
-	if(drbd_conf[minor].pending_cnt==0)
-		wake_up_interruptible(&drbd_conf[minor].state_wait);
+	if(mdev->pending_cnt==0)
+		wake_up_interruptible(&mdev->state_wait);
 }
 
 

@@ -340,8 +340,8 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 void tl_clear(struct Drbd_Conf *mdev)
 {
 	drbd_request_t** p = mdev->tl_begin;
-	int end_them = mdev->conf.wire_protocol == DRBD_PROT_B || 
-                       mdev->conf.wire_protocol == DRBD_PROT_C;
+	int end = mdev->conf.wire_protocol == DRBD_PROT_B || 
+		  mdev->conf.wire_protocol == DRBD_PROT_C;
 	unsigned long flags;
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
@@ -350,25 +350,10 @@ void tl_clear(struct Drbd_Conf *mdev)
 	                bm_set_bit(mdev->mbds_id,
 				   GET_SECTOR(*p) >> (mdev->blk_size_b-9),
 				   mdev->blk_size_b, SS_OUT_OF_SYNC);
-			if(end_them) {
+			if(end && ((*p)->rq_status&0xfffe) != RQ_DRBD_SENT) {
 				drbd_end_req(*p,RQ_DRBD_SENT,1);
-				mdev->pending_cnt--;
-#if 0 /*Debug ... */
-				printk(KERN_CRIT DEVICE_NAME 
-				       "%d: end_req(Sector %ld)\n",
-				       (int)(mdev-drbd_conf),
-				       p->sector_nr);
-#endif
+				dec_pending(mdev);
 			}
-#if 0 /* dEBGug */
-			else {
-				printk(KERN_CRIT DEVICE_NAME 
-				       "%d: not_ending(Sector %ld)\n",
-				       (int)(mdev-drbd_conf),
-				       p->sector_nr);
-			}
-#endif 
-
 		}
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
@@ -543,7 +528,7 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
        
 	r=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
 
-	if( r == sizeof(head) ) inc_pending((int)(mdev-drbd_conf));
+	if( r == sizeof(head) ) inc_pending(mdev);
 
 	return r;
 }
@@ -597,12 +582,15 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),data,
 		      data_size,0);
 
+	if( ret == data_size + sizeof(head) &&
+	    mdev->conf.wire_protocol != DRBD_PROT_A) {
+			inc_pending(mdev);
+	}
+
 	if(block_id != ID_SYNCER) {
 		if( ret == data_size + sizeof(head)) {
 			/* This must be within the semaphore */
 			tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
-			if(mdev->conf.wire_protocol != DRBD_PROT_A)
-				inc_pending((int)(mdev-drbd_conf));
 		} else {
 			bm_set_bit(mdev->mbds_id,
 				   block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);

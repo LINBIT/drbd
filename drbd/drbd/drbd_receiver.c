@@ -55,20 +55,20 @@
 
 struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev);
 
-inline void inc_unacked(int minor)
+inline void inc_unacked(struct Drbd_Conf* mdev)
 {
-	drbd_conf[minor].unacked_cnt++;	
+	mdev->unacked_cnt++;	
 }
 
-inline void dec_unacked(int minor)
+inline void dec_unacked(struct Drbd_Conf* mdev)
 {
-	drbd_conf[minor].unacked_cnt--;
-	if(drbd_conf[minor].unacked_cnt<0)  /* CHK */
+	mdev->unacked_cnt--;
+	if(mdev->unacked_cnt<0)  /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt <0 !!!\n",
-		       minor);
+		       (int)(mdev-drbd_conf));
 
-	if(drbd_conf[minor].unacked_cnt==0)
-		wake_up_interruptible(&drbd_conf[minor].state_wait);
+	if(mdev->unacked_cnt==0)
+		wake_up_interruptible(&mdev->state_wait);
 }
 
 inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
@@ -102,7 +102,7 @@ int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 			spin_unlock_irq(&mdev->ee_lock);
 			r=drbd_send_ack(mdev, WriteAck,e->bh->b_blocknr,
 					e->block_id);
-			dec_unacked((int)(mdev-drbd_conf));
+			dec_unacked(mdev);
 			spin_lock_irq(&mdev->ee_lock);
 		}
 		if(!is_syncer_blk(mdev,e->block_id)) mdev->epoch_size++;
@@ -141,7 +141,7 @@ static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 		list_add(le,&mdev->free_ee);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id)) {
-			dec_unacked((int)(mdev-drbd_conf));
+			dec_unacked(mdev);
 		}
 
 	}
@@ -523,7 +523,7 @@ inline int receive_barrier(int minor)
 	    != sizeof(header))
 	        return FALSE;
 
-	inc_unacked(minor);
+	inc_unacked(drbd_conf+minor);
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
@@ -533,7 +533,7 @@ inline int receive_barrier(int minor)
 	drbd_send_b_ack(&drbd_conf[minor], header.barrier,
 			drbd_conf[minor].epoch_size );
 	drbd_conf[minor].epoch_size=0;
-	dec_unacked(minor);
+	dec_unacked(drbd_conf+minor);
 
 	return rv;
 }
@@ -610,7 +610,7 @@ inline int receive_data(int minor,int data_size)
 
 	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A || 
 	   is_syncer_blk(drbd_conf+minor,header.block_id)) {
-		inc_unacked(minor);
+		inc_unacked(drbd_conf+minor);
 	}
 
 	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B &&
@@ -619,7 +619,7 @@ inline int receive_data(int minor,int data_size)
 		    " %ld\n",header.block_id); */
 	        drbd_send_ack(&drbd_conf[minor], RecvAck,
 			      block_nr,header.block_id);
-		dec_unacked(minor);
+		dec_unacked(drbd_conf+minor);
 	}
 
 
@@ -662,6 +662,9 @@ inline int receive_block_ack(int minor)
 	    sizeof(header))
 	        return FALSE;
 
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
+		dec_pending(drbd_conf+minor);
+
 	if( is_syncer_blk(drbd_conf+minor,header.block_id)) {
 		bm_set_bit(drbd_conf[minor].mbds_id,
 			   be64_to_cpu(header.block_nr), 
@@ -670,9 +673,6 @@ inline int receive_block_ack(int minor)
 	} else {
 		req=(drbd_request_t*)(long)header.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
-
-		if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
-			dec_pending(minor);
 	}
 
 	return TRUE;
@@ -693,7 +693,7 @@ inline int receive_barrier_ack(int minor)
         tl_release(&drbd_conf[minor],header.barrier,
 		   be32_to_cpu(header.set_size));
 
-	dec_pending(minor);
+	dec_pending(drbd_conf+minor);
 
 	return TRUE;
 }
