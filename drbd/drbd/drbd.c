@@ -289,7 +289,7 @@ struct request *my_all_requests = NULL;
 {
 	int rlen, i;
 
-	static const char *cstate_names[8] =
+	static const char *cstate_names[] =
 	{
 		"Unconfigured",
 		"Unconnected",
@@ -298,7 +298,8 @@ struct request *my_all_requests = NULL;
 		"SyncingAll",
 		"SyncingQuick",
 		"Connected",
-		"Timeout"
+		"Timeout",
+		"BrokenPipe"
 	};
 	static const char *state_names[2] =
 	{
@@ -878,6 +879,11 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 		printk(KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",
 		       err);
 	}
+	if (err < 0) {
+		set_cstate(mdev,BrokenPipe);
+		drbd_thread_restart_nowait(&mdev->receiver);	  
+		return -1003;
+	}
 
 	return err;
 }
@@ -892,9 +898,12 @@ void drbd_set_sock_prio(struct Drbd_Conf *mdev)
 	switch(mdev->state) {
 	case Primary: 
 		mdev->sock->sk->priority=TC_PRIO_BULK;
+		mdev->sock->sk->nonagle=0;
 		break;
 	case Secondary:
 		mdev->sock->sk->priority=TC_PRIO_INTERACTIVE;
+/*                sock->sk->tp_pinfo.af_tcp.nonagle=1;*/
+		mdev->sock->sk->nonagle=1;
 		break;
 	}
 }
@@ -916,7 +925,8 @@ void drbd_a_timeout(unsigned long arg)
 
 	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
 
-	drbd_thread_restart_nowait(thi);
+	if(drbd_conf[thi->minor].cstate == Connected)
+		drbd_thread_restart_nowait(thi);
 }
 
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
@@ -1152,11 +1162,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				/* If sending failed, we can not expect
 				   an ack packet. */
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
-			}
-
-			if(!send_ok) {
-				drbd_thread_restart_nowait(
-					&drbd_conf[minor].receiver);
 			}
 				
 		}
@@ -1637,7 +1642,7 @@ int drbd_connect(int minor)
 			       ": sock_creat(..)=%d\n", err);
 		}
 
-		sock->sk->reuse=1;
+		sock->sk->reuse=1; /* SO_REUSEADDR */
 
 		lock_kernel();
 		err = sock->ops->bind(sock,
@@ -1665,13 +1670,6 @@ int drbd_connect(int minor)
 
 
 	sock->sk->reuse=1;    /* SO_REUSEADDR */
-/*
- #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-	sock->sk->tp_pinfo.af_tcp.nonagle=1;
- #else
-	sock->sk->nonagle=1;
- #endif
-*/
 
 	drbd_conf[minor].sock = sock;
 

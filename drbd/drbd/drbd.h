@@ -163,7 +163,8 @@ typedef enum {
   SyncingAll,
   SyncingQuick,
   Connected,
-  Timeout
+  Timeout,
+  BrokenPipe
 } Drbd_CState; 
 
 #define DRBD_MAGIC 0x83740267
