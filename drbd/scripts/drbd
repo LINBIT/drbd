@@ -70,7 +70,6 @@ case "$1" in
 		action "Configuring DRBD resource $RESOURCE" \
 			drbdsetup $LOCAL_DEVICE $LOCAL_PARTITION \
 			$PROTOCOL $LOCAL_IF $REMOTE_IF $OPTIONS 2> /dev/null
-			#$PROTOCOL $LOCAL_IF $REMOTE_IF $OPTIONS
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
