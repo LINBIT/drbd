@@ -210,8 +210,13 @@ STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t * item)
 	b->n_req--;
 
 	list_del(&item->w.list);
+	item->rq_status &= ~RQ_DRBD_IN_TL;
 
 	spin_unlock_irq(&mdev->tl_lock);
+	drbd_end_req(item,RQ_DRBD_SENT,ERF_NOTLD|1, drbd_req_get_sector(item));
+	drbd_set_out_of_sync(mdev,
+			     drbd_req_get_sector(item),
+			     drbd_req_get_size(item));
 }
 
 STATIC unsigned int tl_add_barrier(drbd_dev *mdev)

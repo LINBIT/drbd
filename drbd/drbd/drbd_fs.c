@@ -570,6 +570,12 @@ ONLY_IN_26(
 		return -EINTR;
 	}
 
+	/* FIXME RACE here: if our direct user is not using bd_claim (i.e. 
+	 *  not a filesystem) since cstate might still be >= Connected, new 
+	 * ap requests may come in and increase ap_pending_cnt again!
+	 * but that means someone is misusing DRBD...
+	 * */
+
 	mdev->state = (Drbd_State) newstate & 0x03;
 	if(newstate & Primary) {
 		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), FALSE ); )

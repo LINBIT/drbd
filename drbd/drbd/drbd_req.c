@@ -122,7 +122,6 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	spin_lock(&mdev->pr_lock);
 	list_add(&req->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
-	inc_ap_pending(mdev);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	rv=drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
 			      (unsigned long)req);
@@ -278,21 +277,15 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
+		inc_ap_pending(mdev);
 		if (rw == WRITE) {
-			/* Syncronization with the syncer is done
-			 * via drbd_[rs|al]_[begin|end]_io()
-			 */
-			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
-				inc_ap_pending(mdev);
-			}
-
 			if (!drbd_send_dblock(mdev,req)) {
 				if (mdev->cstate >= Connected)
 					set_cstate(mdev,NetworkFailure);
 				drbd_thread_restart_nowait(&mdev->receiver);
-				if(mdev->conf.wire_protocol != DRBD_PROT_A) {
-					dec_ap_pending(mdev,HERE);
-				}
+				dec_ap_pending(mdev,HERE);
+			} else if(mdev->conf.wire_protocol == DRBD_PROT_A) {
+				dec_ap_pending(mdev,HERE);
 			}
 		} else if (target_area_out_of_sync) {
 			drbd_read_remote(mdev,req);

@@ -1484,16 +1484,20 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	drbd_free_sock(mdev);
 	up(&mdev->data.mutex);
 
-	drbd_thread_stop(&mdev->worker);
-
 	drbd_fail_pending_reads(mdev);
+	drbd_thread_stop(&mdev->worker);
 	drbd_rs_cancel_all(mdev);
 
-	tl_clear(mdev);
-	clear_bit(ISSUE_BARRIER,&mdev->flags);
+	// secondary
 	drbd_wait_ee(mdev,&mdev->active_ee);
 	drbd_wait_ee(mdev,&mdev->sync_ee);
 	drbd_clear_done_ee(mdev);
+
+	// primary
+	tl_clear(mdev);
+	clear_bit(ISSUE_BARRIER,&mdev->flags);
+	wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt) == 0 );
+	D_ASSERT(mdev->oldest_barrier->n_req == 0);
 
 	D_ASSERT(mdev->ee_in_use == 0);
 	D_ASSERT(list_empty(&mdev->read_ee)); // done by termination of worker
