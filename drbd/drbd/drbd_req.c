@@ -32,7 +32,7 @@
 #endif
 
 #include <linux/slab.h>
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,

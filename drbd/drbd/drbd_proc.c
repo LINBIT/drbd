@@ -39,7 +39,7 @@
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);

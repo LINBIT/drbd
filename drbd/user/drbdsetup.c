@@ -38,7 +38,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include "../drbd/drbd.h"
+#include <linux/drbd.h>
 #define _GNU_SOURCE
 #include <getopt.h>
 #include <stdlib.h>

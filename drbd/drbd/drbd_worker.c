@@ -41,7 +41,7 @@
 #define __KERNEL_SYSCALLS__
 #include <linux/slab.h>
 
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 /* I choose to have all block layer end_io handlers defined here.

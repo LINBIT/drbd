@@ -67,7 +67,7 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -98,8 +98,13 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if loopback devices are used for DRBD" );
 
 // module parameter, defined
+#ifdef MODULE
 int minor_count = 2;
 int disable_io_hints = 0;
+#else
+int minor_count = 8;
+int disable_io_hints = 0;
+#endif
 
 // global panic flag
 volatile int drbd_did_panic = 0;
@@ -126,8 +131,6 @@ STATIC struct block_device_operations drbd_ops = {
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
-
-int errno;
 
 /************************* The transfer log start */
 STATIC int tl_init(drbd_dev *mdev)
@@ -1178,10 +1181,26 @@ int drbd_create_mempools(void)
 	return -ENOMEM;
 }
 
-void drbd_cleanup(void)
+static void __exit drbd_cleanup(void)
 {
 	int i, rr;
+
 	if (drbd_conf) {
+		for (i = 0; i < minor_count; i++) {
+			drbd_dev    *mdev = drbd_conf + i;
+
+			if (mdev) {
+				down(&mdev->device_mutex);
+				drbd_set_state(mdev,Secondary);
+				up(&mdev->device_mutex);
+				drbd_sync_me(mdev);
+				set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
+				drbd_thread_stop(&mdev->worker);
+				drbd_thread_stop(&mdev->receiver);
+				drbd_thread_stop(&mdev->asender);
+			}
+		}
+
 		if (drbd_proc)
 			remove_proc_entry("drbd",&proc_root);
 		i=minor_count;
@@ -1239,6 +1258,23 @@ ONLY_IN_26(
 		drbd_destroy_mempools();
 	}
 
+#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+	lock_kernel();
+	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
+	unregister_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
+	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
+	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
+	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
+	unlock_kernel();
+#endif
 
 NOT_IN_26(
 	blksize_size[MAJOR_NR] = NULL;
@@ -1248,6 +1284,12 @@ NOT_IN_26(
 	kfree(drbd_sizes);
 )
 	kfree(drbd_conf);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	devfs_unregister(devfs_handle);
+#else
+	devfs_remove(DEVFS_NAME);
+#endif
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
@@ -1265,14 +1307,35 @@ void * kcalloc(size_t size, int type)
 
 int __init drbd_init(void)
 {
+#if 0
+/* I am too lazy to calculate this by hand	-lge
+ */
+#define SZO(x) printk(KERN_ERR "sizeof(" #x ") = %d\n", sizeof(x))
+	SZO(struct Drbd_Conf);
+	SZO(struct buffer_head);
+	SZO(Drbd_Polymorph_Packet);
+	SZO(struct drbd_socket);
+	SZO(struct semaphore);
+	SZO(wait_queue_head_t);
+	SZO(spinlock_t);
+	return -EBUSY;
+#endif
 
 	int i,err;
 
+	if (1 > minor_count||minor_count > 255) {
+		printk(KERN_ERR DEVICE_NAME
+			": invalid minor_count (%d)\n",minor_count);
+		return -EINVAL;
+	}
 
 	err = register_blkdev(MAJOR_NR, DEVICE_NAME
 			      NOT_IN_26(, &drbd_ops)
 			      );
-	if (err) return err;
+	if (err) {
+		printk(KERN_ERR DEVICE_NAME": unable to register block device\n");
+		return err;
+	}
 
 	/*
 	 * allocate all necessary structs
@@ -1411,86 +1474,19 @@ NOT_IN_26(
 	unlock_kernel();
 #endif
 
+	printk(KERN_INFO DEVICE_NAME ": initialised. "
+	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
+	       API_VERSION,PRO_VERSION);
+
 	return 0; // Success!
 
   Enomem:
 	drbd_cleanup();
 	if (err == -ENOMEM) // currently always the case
 		printk(KERN_ERR DEVICE_NAME ": ran out of memory\n");
+	else
+		printk(KERN_ERR DEVICE_NAME ": initialization failure\n");
 	return err;
-}
-
-int __init init_module(void)
-{
-#if 0
-/* I am too lazy to calculate this by hand	-lge
- */
-#define SZO(x) printk(KERN_ERR "sizeof(" #x ") = %d\n", sizeof(x))
-	SZO(struct Drbd_Conf);
-	SZO(struct buffer_head);
-	SZO(Drbd_Polymorph_Packet);
-	SZO(struct drbd_socket);
-	SZO(struct semaphore);
-	SZO(wait_queue_head_t);
-	SZO(spinlock_t);
-	return -EBUSY;
-#endif
-
-	if (1 > minor_count||minor_count > 255) {
-		printk(KERN_ERR DEVICE_NAME
-			": invalid minor_count (%d)\n",minor_count);
-		return -EINVAL;
-	}
-
-	printk(KERN_INFO DEVICE_NAME ": initialised. "
-	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
-	       API_VERSION,PRO_VERSION);
-
-	return drbd_init();
-}
-
-void cleanup_module(void)
-{
-	int i;
-
-	for (i = 0; i < minor_count; i++) {
-		drbd_dev    *mdev = drbd_conf + i;
-
-		down(&mdev->device_mutex);
-		drbd_set_state(mdev,Secondary);
-		up(&mdev->device_mutex);
-		drbd_sync_me(mdev);
-		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->worker);
-		drbd_thread_stop(&mdev->receiver);
-		drbd_thread_stop(&mdev->asender);
-	}
-
-#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
-	lock_kernel();
-	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
-	unregister_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
-	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
-	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
-	unlock_kernel();
-#endif
-
-	drbd_cleanup();
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	devfs_unregister(devfs_handle);
-#else
-	devfs_remove(DEVFS_NAME);
-#endif
 }
 
 void drbd_free_ll_dev(drbd_dev *mdev)
@@ -2011,7 +2007,7 @@ void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
 	mdev->gen_cnt[order]++;
 }
 
-#ifdef SIGHAND_HACK
+#if defined(SIGHAND_HACK) && defined(MODULE)
 
 /* copied from linux-2.6/kernel/signal.c
  * because recalc_sigpending_tsk is not exported,
@@ -2064,3 +2060,6 @@ inline void recalc_sigpending_tsk(struct task_struct *t)
 }
 
 #endif
+
+module_init(drbd_init)
+module_exit(drbd_cleanup)

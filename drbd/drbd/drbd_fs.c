@@ -43,7 +43,7 @@
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/utsname.h>
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)

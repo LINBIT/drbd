@@ -1,7 +1,7 @@
 #ifndef DRBDADM_H
 #define DRBDADM_H
 
-#include "../drbd_config.h"
+#include <linux/drbd_config.h>
 
 struct d_globals
 {

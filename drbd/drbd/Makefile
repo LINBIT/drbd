@@ -32,7 +32,8 @@ ifneq ($(KERNELRELEASE),)
     $(error "won't compile with this kernel version")
   endif
 
-  # linux 2.6 style:
+  CFLAGS    += -I$(DRBDSRC)
+
   obj-m     += drbd.o
   drbd-objs := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
                drbd_receiver.o drbd_req-2.4.o drbd_actlog.o \

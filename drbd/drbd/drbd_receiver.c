@@ -51,7 +51,7 @@
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 #define EE_MININUM 32    // @4k pages => 128 KByte

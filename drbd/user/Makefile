@@ -17,7 +17,7 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-CFLAGS = -c -Wall
+CFLAGS = -c -Wall -I../drbd
 CC = gcc
 
 all: drbdsetup drbdadm

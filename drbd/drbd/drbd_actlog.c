@@ -25,7 +25,7 @@
  */
 
 #include <linux/slab.h>
-#include "drbd.h"
+#include <linux/drbd.h>
 #include "drbd_int.h"
 
 #define AL_EXTENTS_PT 61
