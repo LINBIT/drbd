@@ -1494,6 +1494,12 @@ int drbdd_init(struct Drbd_thread *thi)
 		if (thi->t_state == Exiting) break;
 		drbdd(mdev);
 		drbd_disconnect(mdev);
+
+		// worker was stopped..., ev. w_resume_next_sg()
+		if(mdev->resync_work.cb == w_resume_next_sg) {
+			w_resume_next_sg(mdev,&mdev->resync_work,0);
+		}
+
 		if (thi->t_state == Exiting) break;
 		else {
 			if (signal_pending(current)) {
@@ -1506,10 +1512,6 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 	}
 
-	// worker was stopped..., run w_resume_next_sg() if it is scheduled...
-	if(mdev->resync_work.cb == w_resume_next_sg) {
-		w_resume_next_sg(mdev,&mdev->resync_work,0);
-	}
 	INFO("receiver exiting\n");
 
 	return 0;
