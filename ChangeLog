@@ -6,6 +6,9 @@ Latest:
 
 0.7.6 (api:77/proto:74)
 -----
+ * Make DRBD work on Linux-2.6.10-rc2 and newer: Replaced
+   sock_alloc() by sock_create(), replaced TASK_ZOMBIE by 
+   EXIT_ZOMBIE.
  * Range checks in drbdadm for all numeric configure parameters.
  * A fix to make ioctl()s work on machines with 64bit kernel space 
    and 32bit user space. 
@@ -13,6 +16,7 @@ Latest:
  * Removal of warnings on 64bit architectures.
  * Backport of find_first_bit() for x86_64 aka AMD64 for use on 
    that architecture under Linux-2.4.x
+ * Changed drbdadm to do the syncer config before the net config.
  * Improvements to the drbddisk script, to do the right thing
    in case Heartbeat is configured with a small timeout than DRBD.
  * Lots of updates to the way Debian's DRBD packages works.
