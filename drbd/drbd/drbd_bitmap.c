@@ -242,10 +242,12 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 {
 	const unsigned long mask = (1 << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
-	int cleared;
+	int cleared=0;
 
-	cleared = hweight_long(b->bm[w] & ~mask);
-	b->bm[w++] &= mask;
+	if ( w < b->bm_words ) {
+		cleared = hweight_long(b->bm[w] & ~mask);
+		b->bm[w++] &= mask;
+	}
 
 	if ( w < b->bm_words ) {
 		cleared += hweight_long(b->bm[w]);
