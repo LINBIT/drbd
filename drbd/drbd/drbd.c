@@ -1312,7 +1312,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		req=CURRENT;
 		blkdev_dequeue_request(req);
 		
-		/*
+#if 0
 		{
 			static const char *strs[2] = 
 			{
@@ -1320,7 +1320,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				"WRITE"
 			};
 			
-			if(req->cmd == WRITE)
+			/* if(req->cmd == WRITE) */
 			printk(KERN_ERR DEVICE_NAME "%d: do_request(cmd=%s,"
 			       "sec=%ld,nr_sec=%ld,cnr_sec=%ld)\n",
 			       minor,
@@ -1328,7 +1328,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			       req->nr_sectors,
 			       req->current_nr_sectors);
 		}
-		*/
+#endif
 
 		spin_unlock_irq(&io_request_lock);
 
@@ -1353,13 +1353,25 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				return;
 			}
 
-			memcpy(bh, req->bh, sizeof(struct buffer_head));
-
+			memset(bh, 0, sizeof(*bh));
+			bh->b_blocknr=req->bh->b_blocknr;
+			bh->b_size=req->bh->b_size;
+			bh->b_page=req->bh->b_page;
+			bh->b_data=req->bh->b_data;
+			atomic_set(&bh->b_count, 0);/*drbd does not count :)*/
+			bh->b_list = BUF_LOCKED;
+			bh->b_end_io = drbd_dio_end;
 			bh->b_dev = drbd_conf[minor].lo_device;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-			bh->b_state = (1 << BH_Req) | (1 << BH_Mapped);
-#else
+			bh->b_rdev = drbd_conf[minor].lo_device;
+			bh->b_rsector = req->bh->b_rsector;
+			bh->b_end_io = drbd_dio_end;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+			bh->b_dev_id = req;
 			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#else
+			bh->b_private = req;
+			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty)
+			  | ( 1 << BH_Mapped) | (1 << BH_Lock);
 #endif
 			
 #ifdef BH_JWrite
@@ -1367,13 +1379,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				set_bit(BH_JWrite, &bh->b_state);
 #endif			
 
-			bh->b_list = BUF_LOCKED;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-			bh->b_dev_id = req;
-#else
-			bh->b_private = req;
-#endif
-			bh->b_end_io = drbd_dio_end;
 			
 			if(req->cmd == WRITE) 
 				drbd_conf[minor].writ_cnt+=size_kb;
@@ -1397,8 +1402,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			else
 				req->rq_status = RQ_DRBD_READ | 0x0001;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 			ll_rw_block(req->cmd, 1, &bh);
-
+#else
+			generic_make_request(req->cmd,bh);
+#endif
 		}
 
 		/* Send it out to the network */
@@ -1418,7 +1426,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A ||
 			    (!send_ok) ) {
 				/* If sending failed, we can not expect
-				   an ack packet. BUGBUGBUG ???*/
+				   an ack packet. */
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
 				
