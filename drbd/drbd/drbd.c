@@ -1,4 +1,5 @@
 /*
+-*- linux-c -*-
    drbd.c
    Kernel module for 2.2.x/2.4.x Kernels
 
@@ -25,6 +26,18 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
  */
+
+
+/*
+  By introducing a "Shared" state beside "Primary" and "Secondary" for
+  use with GFS, at least the following items need to be done.
+  *) transfer_log and epoch_set reside in the same memory now.
+  *) writes on the receiver side must be done with a temporary
+     buffer_head directly to the lower level device. 
+     Otherwise we would get in an endless loop sending the same 
+     block over all the time.
+  *) All occurences of "Primary" or "Secondary" must be reviewed.
+*/
 
 #ifdef HAVE_AUTOCONF
 #include <linux/autoconf.h>
@@ -95,15 +108,16 @@ struct Drbd_Conf {
 	int blk_size_b;
 	Drbd_State state;
 	Drbd_CState cstate;
-	spinlock_t tl_lock;
 	int send_cnt;
 	int recv_cnt;
         int longest_epoch;
+	rwlock_t tl_lock;
 	struct Tl_entry* tl_end;
 	struct Tl_entry* tl_begin;
 	struct Tl_entry* transfer_log;
         int    need_to_issue_barrier;
         int    epoch_size;
+	spinlock_t es_lock;
 	struct timer_list s_timeout_t;
 	struct semaphore send_mutex;
 	atomic_t synced_to;	/* Unit: sectors (512 Bytes) */
@@ -327,10 +341,18 @@ int drbd_log2(int i)
 
 /************************* The transfer log start */
 #define TL_BARRIER    0
+/* spinlock readme:
+   tl_dependence() only needs a read-lock and is called from interrupt time.
+   See Documentation/spinlocks.txt why this is valid.
+*/
 
 inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 {
-	spin_lock(&mdev->tl_lock);
+	unsigned long flags;
+
+	//printk("A\n");
+	write_lock_irqsave(&mdev->tl_lock,flags);
+	//printk("B\n");
 
 	/* printk(KERN_ERR DEVICE_NAME ": tl_add(%ld)\n",new_item->sector);*/
 
@@ -345,14 +367,15 @@ inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 	if (mdev->tl_end == mdev->tl_begin)
 		printk(KERN_ERR DEVICE_NAME ": transferlog too small!! \n");
 
-	spin_unlock(&mdev->tl_lock);
+	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }
 
 inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 {
         static unsigned int br_cnt=0;
+	unsigned long flags;
 
-	spin_lock(&mdev->tl_lock);
+	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	/* printk(KERN_ERR DEVICE_NAME ": tl_add(TL_BARRIER)\n");*/
 
@@ -370,7 +393,7 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 	if (mdev->tl_end == mdev->tl_begin)
 		printk(KERN_ERR DEVICE_NAME ": transferlog too small!! \n");
 
-	spin_unlock(&mdev->tl_lock);
+	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
 	return br_cnt;
 }
@@ -385,47 +408,38 @@ inline void tl_init(struct Drbd_Conf *mdev)
 inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr)
 {
         int epoch_size=-1; 
-	spin_lock(&mdev->tl_lock);
+	unsigned long flags;
+	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	/* printk(KERN_ERR DEVICE_NAME ": tl_release(%u)\n",barrier_nr); */
 
-	do
-	  {
-	    mdev->tl_begin++;
+	do {
+		mdev->tl_begin++;
 
-	    if (mdev->tl_begin == mdev->transfer_log + mdev->conf.tl_size)
-	      mdev->tl_begin = mdev->transfer_log;
+		if (mdev->tl_begin == mdev->transfer_log + mdev->conf.tl_size)
+			mdev->tl_begin = mdev->transfer_log;
 
-	    if (mdev->tl_begin == mdev->tl_end)
-	      printk(KERN_ERR DEVICE_NAME ": tl messed up!\n");
-	    epoch_size++;
-	  }
-	while(mdev->tl_begin->req != TL_BARRIER);
+		if (mdev->tl_begin == mdev->tl_end)
+			printk(KERN_ERR DEVICE_NAME ": tl messed up!\n");
+		epoch_size++;
+	} while (mdev->tl_begin->req != TL_BARRIER);
 
 	if(mdev->tl_begin->sector_nr != barrier_nr) 
-	  printk(KERN_ERR DEVICE_NAME ": invalid barrier number!!"
-		 "found=%u, reported=%u\n",
-		 (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
+		printk(KERN_ERR DEVICE_NAME ": invalid barrier number!!"
+		       "found=%u, reported=%u\n",
+		       (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
 	
-	spin_unlock(&mdev->tl_lock);
+	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
 	mdev->longest_epoch = max(epoch_size,mdev->longest_epoch);
 }
-
-/* FIXME:
-   tl_dependence() is called from interrupt time, thus it could
-   deadlock in in spin_lock(). (If the same CPU was inside a 
-   spin_lock() prior to the interrupt)
-   Solution 1) Use spin_lock_irqsave() in the all tl_* functions
-            2) Do not use any spin_lock() in tl_dependence()
-*/
 
 inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 {
 	struct Tl_entry* p;
 	int r;
 
-	spin_lock(&mdev->tl_lock);
+	read_lock(&mdev->tl_lock);
 
 	p = mdev->tl_end;
 	while( TRUE ) {
@@ -436,7 +450,7 @@ inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 		if ( p->sector_nr == sect_nr) {r=TRUE; break;}
 	}
 
-	spin_unlock(&mdev->tl_lock);
+	read_unlock(&mdev->tl_lock);
 	return r;
 }
 
@@ -446,6 +460,8 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 	kdev_t dev = MKDEV(MAJOR_NR,mdev-drbd_conf);
 	int end_them = mdev->conf.wire_protocol == DRBD_PROT_B || 
                        mdev->conf.wire_protocol == DRBD_PROT_C;
+	unsigned long flags;
+	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	while(p != mdev->tl_end) {
 	        if(p->req != TL_BARRIER) {
@@ -460,6 +476,8 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
 		        p = mdev->transfer_log;	    
 	}
+	tl_init(mdev);
+	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }     
 
 int drbd_send_barrier(struct Drbd_Conf *mdev, u32 barrier_nr)
@@ -815,7 +833,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			else
 				req->rq_status = RQ_DRBD_READ | 0x0001;
 
+			//printk("C\n");
 			ll_rw_block(req->cmd, 1, &bh);
+			//printk("D\n");
 		}
 
 		/* Send it out to the network */
@@ -888,12 +908,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if ((err = blkdev_open(inode, filp))) {
 			printk(KERN_ERR DEVICE_NAME
 			       ": blkdev_open( %d:%d ,) returned %d\n",
-			       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),
-			       err);
+			       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),err);
 			return err;
 		}
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_thread_stop(&drbd_conf[minor].syncer);
+		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);
 		drbd_free_resources(minor);
 
@@ -910,8 +930,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		drbd_conf[minor].cstate = Unconnected;
 
 		drbd_thread_start(&drbd_conf[minor].receiver);
-
-		drbd_thread_start(&drbd_conf[minor].asender);
 
 		break;
 
@@ -1018,7 +1036,8 @@ __initfunc(int drbd_init(void))
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);
 		drbd_thread_init(i, &drbd_conf[i].syncer, drbd_syncer);
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
-		drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
+		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
+		drbd_conf[i].es_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].asender_wait= NULL;
 	}
 #if LINUX_VERSION_CODE > 0x20330
@@ -1237,8 +1256,10 @@ int drbd_connect(int minor)
 		}
 	}
 	drbd_conf[minor].sock = sock;
-	err = drbd_send_param(minor, ReportParams);
 
+	drbd_thread_start(&drbd_conf[minor].asender);
+
+	err = drbd_send_param(minor, ReportParams);
 	drbd_conf[minor].cstate = WFReportParams;
 
 	return 1;
@@ -1259,7 +1280,7 @@ inline int receive_barrier(int minor)
 	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
 	        return FALSE;
 
-	spin_lock(&drbd_conf[minor].tl_lock);
+	spin_lock(&drbd_conf[minor].es_lock);
 	ep_size=drbd_conf[minor].epoch_size;
 	
 	/* printk(KERN_ERR DEVICE_NAME ": got Barrier\n"); */
@@ -1280,7 +1301,7 @@ inline int receive_barrier(int minor)
 	drbd_send_b_ack(&drbd_conf[minor], header.barrier );
 	
 	drbd_conf[minor].epoch_size=0;
-	spin_unlock(&drbd_conf[minor].tl_lock);
+	spin_unlock(&drbd_conf[minor].es_lock);
 
 	return TRUE;
 }
@@ -1317,7 +1338,7 @@ inline int receive_data(int minor,int data_size)
 
 	/* Blocks from syncer are not going into the epoch set */
 	if(header.block_id) {
-	        spin_lock(&drbd_conf[minor].tl_lock);
+	        spin_lock(&drbd_conf[minor].es_lock);
 	        ep_size=drbd_conf[minor].epoch_size;
 
 	        epoch[ep_size].bh = bh;
@@ -1328,7 +1349,7 @@ inline int receive_data(int minor,int data_size)
 		  max(ep_size,drbd_conf[minor].longest_epoch);
 
 		drbd_conf[minor].epoch_size=ep_size;
-	        spin_unlock(&drbd_conf[minor].tl_lock);
+	        spin_unlock(&drbd_conf[minor].es_lock);
 	}
 
 
@@ -1493,6 +1514,7 @@ void drbdd(int minor)
       out:
 	if (drbd_conf[minor].sock) {
 	        drbd_thread_stop(&drbd_conf[minor].syncer);
+	        drbd_thread_stop(&drbd_conf[minor].asender);
 		sock_release(drbd_conf[minor].sock);
 		drbd_conf[minor].sock = 0;
 	}
@@ -1520,13 +1542,10 @@ int drbdd_init(void *arg)
 	/* printk(KERN_ERR DEVICE_NAME ": receiver living/m=%d\n", minor); */
 
 	while (TRUE) {
-		if (!drbd_connect(minor))
-			break;
-		if (thi->exit == 1)
-			break;
+		if (!drbd_connect(minor)) break;
+		if (thi->exit == 1) break;
 		drbdd(minor);
-		if (thi->exit == 1)
-			break;
+		if (thi->exit == 1) break;
 	}
 
 	printk(KERN_ERR DEVICE_NAME ": receiver exiting/m=%d\n", minor);
@@ -1616,7 +1635,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
 
 /*
   We can not use getblk()/brelse() here, because we can not
-  sind (maybe dirty) blocks of the buffer cache.
+  send (maybe dirty) blocks of the buffer cache.
   We really need to read in the data from our disk.
 */
 
@@ -1678,6 +1697,26 @@ int drbd_syncer(void *arg)
 	rbh.b_data = page;
 	rbh.b_wait = 0;
 
+//#define BHP(A) printk( " #A = %p\n",rbh. ## A)
+//#define BHL(A) printk( " #A = %lu\n",rbh. ## A)
+
+	//bad//good
+	//BHP(b_next);//0//0
+	//BHL(b_blocknr);//1//1
+	//BHL(b_size);//1024//1024
+	//BHP(b_this_page);//c0732980//c...
+	//BHL(b_state);//10//10
+	//BHP(b_next_free);//c0732980//c...
+	//BHP(b_data);//c3923000//c...
+	//BHL(b_flushtime);//0//0
+	//BHP(b_wait);//0//0
+	//BHP(b_pprev);//c3f8ac04//c...
+
+	rbh.b_next = 0;
+	rbh.b_this_page = 0;
+	rbh.b_next_free = 0;
+	rbh.b_pprev = 0;
+
 	bh=&rbh;
 
 	while (TRUE) {
@@ -1711,6 +1750,7 @@ int drbd_syncer(void *arg)
 
 			rr = drbd_send_data(&drbd_conf[minor], page,
 				       blocksize, block_nr, 0);
+
 			if (rr > 0) {
 				drbd_conf[minor].send_cnt++;
 			} else {
@@ -1778,15 +1818,15 @@ int drbd_asender(void *arg)
 	  if(thi->exit==1) break;
 
 	  if(test_and_clear_bit(0,&drbd_conf[minor].need_to_issue_barrier)) {
-	        drbd_send_barrier(&drbd_conf[minor],
-				  tl_add_barrier(&drbd_conf[minor]));
+		  drbd_send_barrier(&drbd_conf[minor],
+				    tl_add_barrier(&drbd_conf[minor]));
 	  }
 
 	  if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_C) continue;
 
 	  /*printk(KERN_ERR DEVICE_NAME ": scanning... epoch_size=%d\n",
 	                     drbd_conf[minor].epoch_size);*/
-	  spin_lock(&drbd_conf[minor].tl_lock);
+	  spin_lock(&drbd_conf[minor].es_lock);
 	  for(i=0;i<drbd_conf[minor].epoch_size;i++) {
 	    /* printk(KERN_ERR DEVICE_NAME ": block=%ld state=%lX\n",
 	       epoch[i].bh->b_blocknr,epoch[i].bh->b_state); */
@@ -1800,7 +1840,7 @@ int drbd_asender(void *arg)
 	      }
 	    }
 	  }
-	  spin_unlock(&drbd_conf[minor].tl_lock);
+	  spin_unlock(&drbd_conf[minor].es_lock);
 	}
 
 	thi->pid = 0;
@@ -1839,13 +1879,13 @@ int drbd_asender(void *arg)
 #endif
 
 struct BitMap {
-  kdev_t dev;
-  unsigned long size;
-  unsigned long* bm;
-  unsigned long sb_bitnr;
-  unsigned long sb_mask;
-  unsigned long gb_bitnr;
-  unsigned long gb_snr;
+	kdev_t dev;
+	unsigned long size;
+	unsigned long* bm;
+	unsigned long sb_bitnr;
+	unsigned long sb_mask;
+	unsigned long gb_bitnr;
+	unsigned long gb_snr;
 };
 
 void* bm_init(kdev_t dev)
@@ -1944,11 +1984,11 @@ unsigned long bm_get_blocknr(void* bm_id,int ln2_block_size)
 
 void mops_block_not_replicated(kdev_t dev, unsigned long blocknr)
 {
-  printk(KERN_ERR DEVICE_NAME ": %ld (maybe) not replicated!\n",blocknr);  
+	printk(KERN_ERR DEVICE_NAME ": %ld (maybe) not replicated!\n",blocknr);
 }
 
 int mops_blocks_need_sync(kdev_t dev, unsigned long *blocknrs, int count)
 {
-  return MBDS_SYNC_ALL;
+	return MBDS_SYNC_ALL;
 }
 
