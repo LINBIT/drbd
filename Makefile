@@ -153,7 +153,7 @@ check_all_committed:
 	       	false;			\
 	fi
 
-tarball: check_all_committed distclean doc tgz
+tarball: check_all_committed distclean doc .filelist tgz
 all tools doc .filelist: drbd/drbd_buildtag.c
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
