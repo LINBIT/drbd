@@ -1,0 +1,3 @@
+drbd        the currently maintained drbd sys-v stype init script
+drbddisk    the currently maintained resource script for heartbaet
+filesystem  taken for the heartbeat package

@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# chkconfig: 345 70 8
+# description: Loads and unloads the drbd module
+#
+# complete rewrite from scratch by Philipp Reisner in March and April 2001
+# rewrite from scratch by Lars Ellenberg in June 2002
+# Jan 2003: Moved all the logic into a program written in C.
+#
+### BEGIN INIT INFO
+# Provides: drbd
+# Required-Start: $network $syslog sshd
+# Required-Stop:
+# Default-Start:  3 5
+# Default-Stop:   0 1 2 6
+# Description:    Control drbd resources.
+### END INIT INFO
+
+DRBDADM="/sbin/drbdadm"
+PROC_DRBD="/proc/drbd"
+MODPROBE="modprobe"
+RMMOD="rmmod"
+UDEV_TIMEOUT=10
+
+function assure_module_is_loaded
+{
+    [ -e "$PROC_DRBD" ] && return
+
+    $MODPROBE -s drbd `$DRBDADM sh-mod-parms` || { 
+	echo "Can not load the drbd module."$'\n'; exit 20 
+    }
+
+    # make sure udev has time to create the device files
+    RESOURCE=`$DRBDADM sh-resources` || exit 20
+    RESOURCE=${RESOURCE%%\ *}
+    DEVICE=`$DRBDADM sh-dev $RESOURCE` || exit 20
+
+    while [ ! -e $DEVICE ] && [ $UDEV_TIMEOUT -gt 0 ] ; do
+        sleep 1
+	UDEV_TIMEOUT=$(( $UDEV_TIMEOUT-1 ))
+    done
+}
+
+case "$1" in
+    start)
+	echo -n "Starting DRBD resources:    "
+	assure_module_is_loaded
+	RESOURCES=`$DRBDADM sh-resources` || exit 20	
+	for I in $RESOURCES; do
+	    if $DRBDADM adjust $I; then
+	        echo -n "[$I]"
+            else
+                echo -e "\n Failed setting up $I"
+		exit 20
+	    fi
+	done
+	echo "."
+	$DRBDADM wait_con_int # User interruptible version of wait_connect all
+	;;
+    stop)
+	echo -n "Stopping all DRBD resources"
+	$DRBDADM down all
+	$RMMOD drbd
+	echo "."
+	;;
+    reload)
+	echo -n "Reloading DRBD configuration"
+	$DRBDADM adjust all
+	echo "."
+	;;
+    restart)
+	echo -n "Restarting all DRBD resources"
+	$DRBDADM down all
+	rmmod drbd
+	assure_module_is_loaded
+	$DRBDADM up all
+	echo "."
+	;;
+    *)
+	echo "Usage: /etc/init.d/drbd {start|stop|reload|restart}"
+	exit 1
+	;;
+esac
+
+exit 0
