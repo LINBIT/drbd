@@ -702,6 +702,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	p.skip_sync      = cpu_to_be32(mdev->sync_conf.skip);
 	p.sync_group     = cpu_to_be32(mdev->sync_conf.group);
 	p.flags          = cpu_to_be32(flags);
+	p.magic          = BE_DRBD_MAGIC;
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportParams,(Drbd_Header*)&p,sizeof(p));
 	if (have_disk) dec_local(mdev);
@@ -1620,6 +1621,7 @@ int __init drbd_init(void)
 	SZO(Drbd_BarrierAck_Packet);
 	SZO(Drbd_SyncParam_Packet);
 	SZO(Drbd_Parameter_Packet);
+	SZO(Drbd06_Parameter_P);
 	SZO(Drbd_Data_Packet);
 	SZO(Drbd_BlockAck_Packet);
 	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);

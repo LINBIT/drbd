@@ -398,7 +398,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
  *      which just echoes them as received.)
  *
  * NOTE that the payload starts at a long aligned offset,
- * regardless off 32 or 64 bit arch!
+ * regardless of 32 or 64 bit arch!
  */
 typedef struct {
 	u32       magic;
@@ -437,7 +437,7 @@ typedef struct {
 	u64         sector;
 	u64         block_id;
 	u32         blksize;
-	u32         pad;	//make sure packes it is a multiple of 8 Byte
+	u32         pad;	//make sure packet is a multiple of 8 Byte
 } Drbd_BlockAck_Packet __attribute((packed));
 
 typedef struct {
@@ -445,7 +445,7 @@ typedef struct {
 	u64         sector;
 	u64         block_id;
 	u32         blksize;
-	u32         pad;	//make sure packes it is a multiple of 8 Byte
+	u32         pad;	//make sure packet is a multiple of 8 Byte
 } Drbd_BlockRequest_Packet __attribute((packed));
 
 /*
@@ -458,7 +458,7 @@ typedef struct {
 typedef struct {
 	Drbd_Header head;
 	u32         barrier;   // may be 0 or a barrier number
-	u32         pad;	//make sure packes it is a multiple of 8 Byte
+	u32         pad;	//make sure packet is a multiple of 8 Byte
 } Drbd_Barrier_Packet  __attribute((packed));
 
 typedef struct {
@@ -475,6 +475,8 @@ typedef struct {
 	u32         group;
 } Drbd_SyncParam_Packet  __attribute((packed));
 
+/* FIXME add more members here, until we introduce a new fixed size
+ * protocol version handshake packet! */
 typedef struct {
 	Drbd_Header head;
 	u64         p_size;  // size of disk
@@ -487,9 +489,19 @@ typedef struct {
 	u32         sync_use_csums;
 	u32         skip_sync;
 	u32         sync_group;
-	u32         flags; // flags & 1 -> reply call drbd_send_param(mdev);
-	u32         pad;	//make sure packes it is a multiple of 8 Byte
+	u32         flags;   // flags & 1 -> reply call drbd_send_param(mdev);
+	u32         magic;   //make sure packet is a multiple of 8 Byte
 } Drbd_Parameter_Packet  __attribute((packed));
+
+typedef struct {
+	u64       size;
+	u32       state;
+	u32       blksize;
+	u32       protocol;
+	u32       version;
+	u32       gen_cnt[5];
+	u32       bit_map_gen[5];
+} Drbd06_Parameter_P __attribute((packed));
 
 typedef union {
 	Drbd_Header              head;
@@ -699,8 +711,8 @@ struct Drbd_Conf {
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
 	atomic_t ap_bio_cnt;     // Requests we need to complete
-	atomic_t ap_pending_cnt; // AP data packes on the wire, ack expected
-	atomic_t rs_pending_cnt; // RS request/data packes onthe wire
+	atomic_t ap_pending_cnt; // AP data packets on the wire, ack expected
+	atomic_t rs_pending_cnt; // RS request/data packets on the wire
 	atomic_t unacked_cnt;    // Need to send replys for
 	atomic_t local_cnt;      // Waiting for local disk to signal completion
 	spinlock_t req_lock;

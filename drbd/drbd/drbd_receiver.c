@@ -1304,27 +1304,73 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	int oo_state;
 	unsigned long p_size;
 
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	/* FIXME never change the size of the first handshake packet again.
+	 * I think we should introduce a protocol version handshake
+	 * independently of the other parameters. */
 
+	/* we expect 72 byte.
+	 * unfortunately h->length of drbd-0.6 Parameter_Packet is 72, too,
+	 * but it includes the header size itself, so there are only 64 byte
+	 * remaining...
+	 */
+	if (h->length != (sizeof(*p)-sizeof(*h))) {
+		ERR("Incompatible packet size of Parameter packet!\n");
+		set_cstate(mdev,StandAlone);
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return FALSE;
+	}
+
+	/* FIXME. If this connects to some drbd 0.6.X, it will timeout,
+	 * and reconnect, in a loop, forever. annoying!
+	 * maybe we want to change the on-the-wire-magic?
+	 */
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {
-		ERR("incompatible states\n");
+	if (p->magic != BE_DRBD_MAGIC) {
+		ERR("invalid Parameter_Packet magic! Protocol version: me %d, peer %d\n",
+				PRO_VERSION, be32_to_cpu(p->version));
 		set_cstate(mdev,StandAlone);
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 
 	if(be32_to_cpu(p->version)!=PRO_VERSION) {
-		ERR("incompatible releases\n");
+		ERR("incompatible releases! Protocol version: me %d, peer %d\n",
+				PRO_VERSION, be32_to_cpu(p->version));
+		set_cstate(mdev,StandAlone);
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return FALSE;
+	}
+
+	oo_state = be32_to_cpu(p->state);
+	if (oo_state != Primary && oo_state != Secondary) {
+		ERR("unexpected peer state: 0x%x\n", oo_state);
+		set_cstate(mdev,StandAlone);
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return FALSE;
+	}
+
+	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {
+		ERR("incompatible states (both Primary!)\n");
 		set_cstate(mdev,StandAlone);
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 
 	if(be32_to_cpu(p->protocol)!=mdev->conf.wire_protocol) {
-		ERR("incompatible protocols\n");
+		int peer_proto = be32_to_cpu(p->protocol);
+		if (DRBD_PROT_A <= peer_proto && peer_proto <= DRBD_PROT_C) {
+			ERR("incompatible communication protocols: "
+			    "me %c, peer %c\n",
+				'A'-1+mdev->conf.wire_protocol,
+				'A'-1+peer_proto);
+		} else {
+			ERR("incompatible communication protocols: "
+			    "me %c, peer [%d]\n",
+				'A'-1+mdev->conf.wire_protocol,
+				peer_proto);
+		}
 		set_cstate(mdev,StandAlone);
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
@@ -1333,6 +1379,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	p_size=be64_to_cpu(p->p_size);
 
 	if(p_size == 0 && test_bit(DISKLESS,&mdev->flags)) {
+		/* FIXME maybe allow connection,
+		 * but refuse to become primary? */
 		ERR("some backing storage is needed\n");
 		set_cstate(mdev,StandAlone);
 		drbd_thread_stop_nowait(&mdev->receiver);
@@ -1425,7 +1473,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if (mdev->cstate == WFReportParams) set_cstate(mdev,Connected);
-	// see above. if (p_size && mdev->cstate==Connected) clear_bit(PARTNER_DISKLESS,&mdev->flags);
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(p->state);
@@ -1644,6 +1691,10 @@ STATIC void drbdd(drbd_dev *mdev)
 			ERR("unknown packet type %d, l: %d!\n",
 			    header->command, header->length);
 			break;
+		}
+		if (mdev->cstate == WFReportParams && header->command != ReportParams) {
+			ERR("received %s packet while WFReportParams!?\n",
+					cmdname(header->command));
 		}
 		if (unlikely(!handler(mdev,header))) {
 			ERR("error receiving %s, l: %d!\n",
