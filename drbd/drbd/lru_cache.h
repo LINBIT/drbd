@@ -61,6 +61,7 @@ struct lc_element {
 struct lru_cache {
 	struct list_head lru;
 	struct list_head free;
+	struct list_head in_use;
 	size_t element_size;
 	unsigned int  nr_elements;
 	unsigned int  new_number;

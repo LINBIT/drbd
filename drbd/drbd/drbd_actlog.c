@@ -640,11 +640,6 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	// a 16 MB extent border. (Currently this is true...)
 	enr = (sector >> (BM_EXTENT_SIZE_B-9));
 
-	/*
-	INFO("%s [%d]:%s(,%ld,%d)\n",
-	     current->comm, current->pid, __func__,
-	     sector, cleared);
-	*/
 	spin_lock_irqsave(&mdev->al_lock,flags);
 	ext = (struct bm_extent *) lc_get(mdev->resync,enr);
 	if (ext) {
@@ -656,24 +651,19 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
-			//DUMPI(ext->lce.lc_number);
-			//DUMPI(mdev->resync->new_number);
 			lc_changed(mdev->resync,&ext->lce);
 		}
 		lc_put(mdev->resync,&ext->lce);
 	} else {
-		ERR("lc_get() failed! Probabely something stays"
-		    " dirty in the on disk BM. (resync LRU too small) \n");
-		ERR("resync_locked=%d nr_elements=%d\n",
-		    atomic_read(&mdev->resync_locked),
-		    mdev->resync->nr_elements);
-		ERR("flags=%lx\n",mdev->resync->flags);
+		ERR("lc_get() failed! locked=%d/%d flags=%lu\n",
+		    atomic_read(&mdev->resync_locked), 
+		    mdev->resync->nr_elements,
+		    mdev->resync->flags);
 	}
 
 	list_for_each_safe(le,tmp,&mdev->resync->lru) {
 		ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 		if(ext->rs_left == 0) {
-			ERR_IF(ext->lce.refcnt) continue;
 			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
 			if(!udw) {
 				WARN("Could not kmalloc an udw\n");
@@ -723,7 +713,7 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	unsigned long     rs_flags;
 
 	if(atomic_read(&mdev->resync_locked) > mdev->resync->nr_elements-3 ) {
-		ERR("bme_get() does not lock all elements\n");
+		//WARN("bme_get() does not lock all elements\n");
 		return 0;
 	}
 
@@ -731,11 +721,8 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
 	if (bm_ext) {
 		if(bm_ext->lce.lc_number != enr) {
+			atomic_inc(&mdev->resync_locked);
 			bm_ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
-			/*
-			DUMPI(bm_ext->lce.lc_number);
-			DUMPI(mdev->resync->new_number);
-			*/
 			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			wake_up(&mdev->al_wait);
 		}
@@ -795,8 +782,6 @@ void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	wait_event(mdev->al_wait, (bm_ext = _bme_get(mdev,enr)) );
 
 	if(test_bit(BME_LOCKED,&bm_ext->flags)) return;
-
-	atomic_inc(&mdev->resync_locked);
 
 	for(i=0;i<SM;i++) {
 		wait_event(mdev->al_wait, !_is_in_al(mdev,enr*SM+i) );

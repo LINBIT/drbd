@@ -36,12 +36,6 @@
 #define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA,&lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
-static inline void lc_touch(struct lru_cache *lc,struct lc_element *e)
-{
-	// XXX paranoia: !list_empty(lru) && list_empty(free)
-	list_move(&e->list,&lc->lru);
-}
-
 /**
  * lc_alloc: allocates memory for @e_count objects of @e_size bytes plus the
  * struct lru_cache, and the hash table slots.
@@ -62,6 +56,7 @@ struct lru_cache* lc_alloc(unsigned int e_count, size_t e_size,
 	lc     = vmalloc(bytes);
 	memset(lc, 0, bytes);
 	if (lc) {
+		INIT_LIST_HEAD(&lc->in_use);
 		INIT_LIST_HEAD(&lc->lru);
 		INIT_LIST_HEAD(&lc->free);
 		lc->element_size     = e_size;
@@ -117,10 +112,10 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
 	struct list_head  *n;
 	struct lc_element *e;
 
+	if (list_empty(&lc->lru)) return 0;
+
 	n=lc->lru.prev;
 	e=list_entry(n, struct lc_element,list);
-
-	if (e->refcnt) return NULL; // Dead code ?
 
 	list_del(&e->list);
 	hlist_del(&e->colision);
@@ -160,15 +155,10 @@ STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
 
 STATIC int lc_unused_element_available(struct lru_cache* lc)
 {
-	struct list_head *n;
-	struct lc_element *e;
-
 	if (!list_empty(&lc->free)) return 1; // something on the free list
-	n=lc->lru.prev;
-	e=list_entry(n, struct lc_element,list);
+	if (!list_empty(&lc->lru)) return 1;  // something to evict
 
-	if (e->refcnt) return 0;  // the LRU element is still in use
-	return 1; // we can evict the LRU element
+	return 0;
 }
 
 
@@ -212,7 +202,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++e->refcnt;
-		lc_touch(lc,e);
+		list_move(&e->list,&lc->in_use); // Not evictable...
 		RETURN(e);
 	}
 
@@ -247,7 +237,7 @@ void lc_changed(struct lru_cache* lc, struct lc_element* e)
 	PARANOIA_ENTRY();
 	BUG_ON(e != lc->changing_element);
 	e->lc_number = lc->new_number;
-	list_add(&e->list,&lc->lru);
+	list_add(&e->list,&lc->in_use);
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, lc->new_number) );
 	lc->changing_element = NULL;
 	lc->new_number = -1;
@@ -266,8 +256,9 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt == 0);
 	if ( --e->refcnt == 0) {
+		list_move(&e->list,&lc->lru); // move it to the front of LRU.
 		clear_bit(__LC_STARVING,&lc->flags);
-		smp_mb__after_clear_bit();
+		smp_mb__after_clear_bit();		
 	}
 	RETURN(e->refcnt);
 }
@@ -291,6 +282,6 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 
 	hlist_del_init(&e->colision);
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc,enr) );
-	lc_touch(lc,e); // to make sure that his entry is not on the free list.
+	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
