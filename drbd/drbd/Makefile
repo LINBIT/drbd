@@ -121,7 +121,7 @@ clean:
 
 distclean: clean
 
-install: all
+install: drbd.o
 	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
 	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
 	install -d $(PREFIX)var/lib/drbd
