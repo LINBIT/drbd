@@ -39,5 +39,5 @@ clean:
 	rm -f *~
 
 install:
-	install drbdsetup /usr/sbin/
+	install drbdsetup $(PREFIX)usr/sbin/
 

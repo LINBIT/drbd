@@ -24,8 +24,6 @@ all:
 
 install:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
-	@ echo
-	@ echo "Don't forget to do 'make dev'"
 
 clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
@@ -33,15 +31,6 @@ clean:
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
-
-dev:
-	echo "Generating special block device..."
-	mknod /dev/drbd0 b 240 0
-	mknod /dev/drbd1 b 240 1
-	mknod /dev/drbd2 b 240 2
-	chmod 666 /dev/drbd0
-	chmod 666 /dev/drbd1
-	chmod 666 /dev/drbd2
 
 tgz:    
 	tar -czvf drbd-$(VERSION).tar.gz \
