@@ -620,12 +620,17 @@ inline int receive_data(int minor,int data_size)
 	 * but we already start when we have NR_REQUESTS / 4 blocks.
 	 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define NUMBER (NR_REQUESTS/4)	
+#else
+#define NUMBER 24 
+#endif
 	if(drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
-		if(atomic_read(&drbd_conf[minor].unacked_cnt)>=(NR_REQUEST/4)){
+		if(atomic_read(&drbd_conf[minor].unacked_cnt) >= NUMBER ) {
 			run_task_queue(&tq_disk);
 		}
 	}
-#endif
+
+#undef NUMBER
 	/* </HACK> */
 
 	drbd_conf[minor].recv_cnt+=data_size>>10;
