@@ -273,6 +273,7 @@ enum MetaDataFlags {
 #define MDF_FullSync        (1<<__MDF_FullSync)
 #define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
 
+/* MetaDataIndex is scheduled for removal! */
 enum MetaDataIndex {
 	Flags,			/* Consistency flag,connected-ind,primary-ind */
 	HumanCnt,		/* human-intervention-count */
@@ -282,11 +283,19 @@ enum MetaDataIndex {
 	GEN_CNT_SIZE		/* MUST BE LAST! (and Flags must stay first...) */
 };
 
-struct ioctl_get_gen_cnt {
-	OUT __u64        uuid;
-	OUT __u64        peer_uuid;
+enum UuidIndex {
+	Current,
+	Bitmap,
+	History_start,
+	History_end,
+	UUID_SIZE
+};
+
+#define UUID_JUST_CREATED ((__u64)4)
+
+struct ioctl_get_uuids {
+	OUT __u64        uuid[UUID_SIZE];
 	OUT __u64        current_size;
-	OUT __u32        gen_cnt[GEN_CNT_SIZE];	/* generation counter */
 	OUT unsigned int bits_set;
 };
 
@@ -312,7 +321,7 @@ struct ioctl_get_gen_cnt {
 #define DRBD_IOCTL_UNCONFIG_DISK    _IO ( DRBD_IOCTL_LETTER, 0x13 )
 #define DRBD_IOCTL_SET_STATE_FLAGS  _IOW( DRBD_IOCTL_LETTER, 0x14, drbd_role_t )
 #define DRBD_IOCTL_OUTDATE_DISK     _IOW( DRBD_IOCTL_LETTER, 0x15, int )
-#define DRBD_IOCTL_GET_GEN_CNT      _IOR( DRBD_IOCTL_LETTER, 0x15, struct ioctl_get_gen_cnt )
+#define DRBD_IOCTL_GET_UUIDS        _IOR( DRBD_IOCTL_LETTER, 0x16, struct ioctl_get_uuids )
 
 
 #endif

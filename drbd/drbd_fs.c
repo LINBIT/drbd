@@ -703,7 +703,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		nps = Outdated;
 		break;
 	case 5: /* peer was down, increase GENCNT ... */
-		drbd_md_inc(mdev,ConnectedCnt);
+		drbd_uuid_new_current(mdev);
 		nps = Outdated;
 		break;
 	case 6: /* Peer is primary, voluntarily outdate myself */
@@ -712,7 +712,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		break;
 	default:
 		/* The script is broken ... */
-		drbd_md_inc(mdev,ConnectedCnt);
+		drbd_uuid_new_current(mdev);
 		nps = DUnknown;
 		ERR("outdate-peer helper returned %d (%d)\n",(r>>8)&0xff,r);
 	}
@@ -824,14 +824,9 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 			clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
 		}
 
-		if(newstate & Human) {
-			drbd_md_inc(mdev,HumanCnt);
-		} else if(newstate & TimeoutExpired ) {
-			drbd_md_inc(mdev,TimeoutCnt);
-		} else {
-			drbd_md_inc(mdev,
-				    mdev->state.s.conn >= Connected ?
-				    ConnectedCnt : ArbitraryCnt);
+		if ( (mdev->state.s.conn < WFReportParams &&
+		      mdev->uuid[Bitmap] == 0) || forced ) {
+			drbd_uuid_new_current(mdev);
 		}
 	}
 
@@ -982,10 +977,10 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 	return 0;
 }
 
-STATIC int drbd_ioctl_get_gen_cnt(struct Drbd_Conf *mdev, 
-				  struct ioctl_get_gen_cnt* arg)
+STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev, 
+				struct ioctl_get_uuids* arg)
 {
-	struct ioctl_get_gen_cnt cn;
+	struct ioctl_get_uuids cn;
 	int i;
 
 	if( mdev->state.s.disk <= Failed ) {
@@ -994,10 +989,9 @@ STATIC int drbd_ioctl_get_gen_cnt(struct Drbd_Conf *mdev,
 
 	memset(&cn,0,sizeof(cn));
 
-	for(i=Flags;i<=ArbitraryCnt;i++)
-		cn.gen_cnt[i]=mdev->gen_cnt[i];
-	cn.uuid = mdev->uuid;
-	cn.peer_uuid = mdev->peer_uuid;
+	for (i = Current; i < UUID_SIZE; i++) {
+		cn.uuid[i]=mdev->uuid[i];
+	}
 	cn.bits_set = drbd_bm_total_weight(mdev);
 	cn.current_size = drbd_get_capacity(mdev->this_bdev);
 
@@ -1307,8 +1301,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err = drbd_outdate_ioctl(mdev,(int *) arg);
 		break;
 
-	case DRBD_IOCTL_GET_GEN_CNT:
-		err=drbd_ioctl_get_gen_cnt(mdev,(void *)arg);
+	case DRBD_IOCTL_GET_UUIDS:
+		err=drbd_ioctl_get_uuids(mdev,(void *)arg);
 		break;
 
 	default:

@@ -390,6 +390,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_total  = 0;
 	mdev->rs_paused = 0;
 
+	drbd_uuid_set_current(mdev,mdev->p_uuid[Current]);
+	drbd_uuid_reset_bm(mdev);
+
 	drbd_request_state(mdev,NS3(conn,Connected,
 				    disk,UpToDate,
 				    pdsk,UpToDate));

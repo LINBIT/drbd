@@ -50,6 +50,7 @@
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/devfs_fs_kernel.h>
+#include <linux/random.h>
 
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
@@ -542,7 +543,6 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
 	drbd_state_t os;
-	char pb[160], *pbp;
 	int rv=1,warn_sync_abort=0;
 
 	os = mdev->state;
@@ -667,10 +667,6 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
 
-	if ( os.s.peer == Secondary    && ns.s.peer == Primary ) {
-		drbd_md_inc(mdev,ConnectedCnt);
-	}
-
 	if ( os.s.disk == Diskless && os.s.peer == StandAlone &&
 	     (ns.s.disk >= Inconsistent || ns.s.peer > StandAlone) ) {
 		__module_get(THIS_MODULE);
@@ -679,6 +675,12 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	if ( ns.s.role == Primary && ns.s.conn < Connected &&
 	     ns.s.disk < Consistent ) {
 		drbd_panic("No access to good data anymore.\n");
+	}
+
+	if ( os.s.conn != Connected && ns.s.conn == Connected && 
+	     mdev->p_uuid ) {
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = 0;
 	}
 
 	return rv;
@@ -948,7 +950,6 @@ int drbd_send_protocol(drbd_dev *mdev)
 {
 	Drbd_Protocol_Packet p;
 
-	p.uuid   = cpu_to_be64(mdev->uuid);
 	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
 
 	return drbd_send_cmd(mdev,mdev->data.socket,ReportProtocol,
@@ -960,11 +961,11 @@ int drbd_send_gen_cnt(drbd_dev *mdev)
 	Drbd_GenCnt_Packet p;
 	int i;
 
-	for (i = Flags; i < GEN_CNT_SIZE; i++) {
-		p.gen_cnt[i] = cpu_to_be32(mdev->gen_cnt[i]);
+	for (i = Current; i < UUID_SIZE; i++) {
+		p.uuid[i] = cpu_to_be64(mdev->uuid[i]);
 	}
 
-	return drbd_send_cmd(mdev,mdev->data.socket,ReportGenCnt,
+	return drbd_send_cmd(mdev,mdev->data.socket,ReportUUIDs,
 			     (Drbd_Header*)&p,sizeof(p));
 }
 
@@ -1722,7 +1723,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	ZAP(mdev->sync_conf);
 	// ZAP(mdev->data); Not yet!
 	// ZAP(mdev->meta); Not yet!
-	ZAP(mdev->gen_cnt);
+	ZAP(mdev->uuid);
 #undef ZAP
 	mdev->al_writ_cnt  =
 	mdev->bm_writ_cnt  =
@@ -2212,9 +2213,8 @@ void drbd_free_resources(drbd_dev *mdev)
 
 struct meta_data_on_disk {
 	u64 la_size;           // last agreed size.
-	u64 uuid;              // universally unique identifier
-	u64 peer_uuid;         // universally unique identifier
-	u32 gc[GEN_CNT_SIZE];  // generation counter
+	u64 uuid[UUID_SIZE];   // UUIDs.
+	u32 flags;             // MDF
 	u32 magic;
 	u32 md_size;
 	u32 al_offset;         // offset to this block
@@ -2240,19 +2240,17 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer,0,512);
 
-	flags = mdev->gen_cnt[Flags] & ~(MDF_Consistent|MDF_PrimaryInd|
-					 MDF_ConnectedInd|MDF_WasUpToDate);
+	flags = mdev->md_flags & ~(MDF_Consistent|MDF_PrimaryInd|
+				   MDF_ConnectedInd|MDF_WasUpToDate);
 	if (mdev->state.s.role == Primary)        flags |= MDF_PrimaryInd;
 	if (mdev->state.s.conn >= WFReportParams) flags |= MDF_ConnectedInd;
 	if (mdev->state.s.disk >  Inconsistent)   flags |= MDF_Consistent;
 	if (mdev->state.s.disk >  Outdated)       flags |= MDF_WasUpToDate;
-	mdev->gen_cnt[Flags] = flags;
+	mdev->md_flags = flags;
 
-	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
+	for (i = Current; i < UUID_SIZE; i++)
+		buffer->uuid[i]=cpu_to_be64(mdev->uuid[i]);
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
-	buffer->uuid=cpu_to_be64(mdev->uuid);
-	buffer->peer_uuid=cpu_to_be64(mdev->peer_uuid);
 
 	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
 
@@ -2328,11 +2326,9 @@ int drbd_md_read(drbd_dev *mdev)
 		goto err;
 	}
 
-	for(i=Flags;i<=ArbitraryCnt;i++)
-		mdev->gen_cnt[i]=be32_to_cpu(buffer->gc[i]);
+	for (i = Current; i < UUID_SIZE; i++)
+		mdev->uuid[i]=be64_to_cpu(buffer->uuid[i]);
 	mdev->la_size = be64_to_cpu(buffer->la_size);
-	mdev->uuid = be64_to_cpu(buffer->uuid);
-	mdev->peer_uuid = be64_to_cpu(buffer->peer_uuid);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;
@@ -2349,105 +2345,60 @@ int drbd_md_read(drbd_dev *mdev)
 	return rv;
 }
 
-#if DUMP_MD >= 1
-#define MeGC(x) mdev->gen_cnt[x]
-#define PeGC(x) mdev->p_gen_cnt[x]
 
-void drbd_dump_md(drbd_dev *mdev, int verbose)
+void drbd_uuid_set_current(drbd_dev *mdev, u64 val)
 {
-	INFO("I am(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
-		mdev->state.s.role == Primary ? 'P':'S',
-		MeGC(Flags) & MDF_Consistent ? '1' : '0',
-		MeGC(HumanCnt),
-		MeGC(TimeoutCnt),
-		MeGC(ConnectedCnt),
-		MeGC(ArbitraryCnt),
-		MeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
-		MeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
-	if (mdev->p_gen_cnt) {
-		INFO("Peer(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
-			mdev->state.s.peer == Primary ? 'P':'S',
-			PeGC(Flags) & MDF_Consistent ? '1' : '0',
-			PeGC(HumanCnt),
-			PeGC(TimeoutCnt),
-			PeGC(ConnectedCnt),
-			PeGC(ArbitraryCnt),
-			PeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
-			PeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
+	mdev->uuid[Current] = val;
+	if (mdev->state.s.role == Primary) {
+		mdev->uuid[Current] |= 1;
 	} else {
-		INFO("Peer Unknown.\n");
-	}
-	if (verbose) {
-		/* TODO
-		 * dump activity log and bitmap summary,
-		 * and maybe other statistics
-		 */
+		mdev->uuid[Current] &= ~((u64)1);
 	}
 }
 
-#undef MeGC
-#undef PeGC
-#else
-void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
-{ /* do nothing */ }
-#endif
+void drbd_uuid_new_current(drbd_dev *mdev)
+{
+	D_ASSERT(mdev->uuid[Bitmap] = 0);
+	mdev->uuid[Bitmap] = mdev->uuid[Current];
+	get_random_bytes(&mdev->uuid[Current], sizeof(u64));
+	if (mdev->state.s.role == Primary) {
+		mdev->uuid[Current] |= 1;
+	} else {
+		mdev->uuid[Current] &= ~((u64)1);
+	}
+}
 
-//  Returns  1 if I have the good bits,
-//           0 if both are nice
-//          -1 if the partner has the good bits.
-int drbd_md_compare(drbd_dev *mdev)
+void drbd_uuid_reset_bm(drbd_dev *mdev)
 {
 	int i;
-	u32 self,peer;
 
-	self = mdev->gen_cnt[Flags] & MDF_Consistent;
-	peer = mdev->p_gen_cnt[Flags] & MDF_Consistent;
-	if( self > peer ) return 1;
-	if( self < peer ) return -1;
+	if (mdev->uuid[Bitmap] == 0) return;
 
-	self = mdev->gen_cnt[Flags] & MDF_WasUpToDate;
-	peer = mdev->p_gen_cnt[Flags] & MDF_WasUpToDate;
-	if( self > peer ) return 1;
-	if( self < peer ) return -1;
-
-	for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-		self = mdev->gen_cnt[i];
-		peer = mdev->p_gen_cnt[i];
-		if( self > peer ) return 1;
-		if( self < peer ) return -1;
+	for ( i=History_start ; i<History_end ; i++ ) {
+		mdev->uuid[i+1] = mdev->uuid[i];
 	}
 
-	self = mdev->gen_cnt[Flags] & MDF_PrimaryInd;
-	peer = mdev->p_gen_cnt[Flags] & MDF_PrimaryInd;
-	if( self > peer ) return 1;
-	if( self < peer ) return -1;
-
-	return 0;
+	mdev->uuid[History_start]=mdev->uuid[Bitmap];
+	mdev->uuid[Bitmap]=0;
 }
 
-/* THINK do these have to be protected by some lock ? */
-void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
-{
-	set_bit(MD_DIRTY,&mdev->flags);
-	mdev->gen_cnt[order]++;
-}
 void drbd_md_set_flag(drbd_dev *mdev, int flag)
 {
-	if ( (mdev->gen_cnt[Flags] & flag) != flag) {
+	if ( (mdev->md_flags & flag) != flag) {
 		set_bit(MD_DIRTY,&mdev->flags);
-		mdev->gen_cnt[Flags] |= flag;
+		mdev->md_flags |= flag;
 	}
 }
 void drbd_md_clear_flag(drbd_dev *mdev, int flag)
 {
-	if ( (mdev->gen_cnt[Flags] & flag) != 0 ) {
+	if ( (mdev->md_flags & flag) != 0 ) {
 		set_bit(MD_DIRTY,&mdev->flags);
-		mdev->gen_cnt[Flags] &= ~flag;
+		mdev->md_flags &= ~flag;
 	}
 }
 int drbd_md_test_flag(drbd_dev *mdev, int flag)
 {
-	return ((mdev->gen_cnt[Flags] & flag) != 0);
+	return ((mdev->md_flags & flag) != 0);
 }
 
 module_init(drbd_init)

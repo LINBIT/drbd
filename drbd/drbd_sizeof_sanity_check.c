@@ -23,7 +23,7 @@ int sizeof_drbd_structs_sanity_check(void)
 	SZO(struct ioctl_syncer_config,	 32)
 	SZO(struct ioctl_wait,		 16)
 	SZO(struct ioctl_get_config,	560)
-	SZO(struct ioctl_get_gen_cnt,    48)
+	SZO(struct ioctl_get_uuids,      48)
 	if (err) printk("<3>ioctls won't work, aborting\n");
 	return err;
 }

@@ -1257,123 +1257,133 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	return TRUE;
 }
 
+/*
+  100   after split brain try auto recover
+    2   SyncSource set BitMap
+    1   SyncSource use BitMap
+    0   no Sync
+   -1   SyncTarget use BitMap
+   -2   SyncTarget set BitMap
+ -100   after split brain, disconnect
+-1000   unrelated data
+ */
+static int drbd_uuid_compare(drbd_dev *mdev)
+{
+	u64 self, peer;
+	int i,j;
+
+	self = mdev->uuid[Current] & ~((u64)1);
+	peer = mdev->p_uuid[Current] & ~((u64)1);
+
+	if (self == UUID_JUST_CREATED &&
+	    peer == UUID_JUST_CREATED) return 0;
+
+	if (self == UUID_JUST_CREATED && 
+	    peer != UUID_JUST_CREATED) return -2;
+
+	if (self != UUID_JUST_CREATED && 
+	    peer == UUID_JUST_CREATED) return 2;
+
+	if (self == peer) return 0;
+
+	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
+	if (self == peer) return -1;
+
+	for ( i=History_start ; i<=History_end ; i++ ) {
+		peer = mdev->p_uuid[i];
+		if (self == peer) return -2;
+	}
+
+	self = mdev->uuid[Bitmap] & ~((u64)1);
+	peer = mdev->p_uuid[Current] & ~((u64)1);
+
+	if (self == peer) return 1;
+	
+	for ( i=History_start ; i<=History_end ; i++ ) {
+		self = mdev->uuid[i] & ~((u64)1);
+		if (self == peer) return 2;
+	}
+
+	self = mdev->uuid[Bitmap] & ~((u64)1);
+	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
+
+	if (self == peer) return 100;
+
+	for ( i=History_start ; i<=History_end ; i++ ) {
+		self = mdev->p_uuid[i] & ~((u64)1);
+		for ( j=History_start ; j<=History_end ; j++ ) {
+			peer = mdev->p_uuid[j] & ~((u64)1);
+			if (self == peer) return -100;
+		}
+	}
+
+	return -1000;
+}
+
 /* drbd_sync_handshake() returns the new conn state on success, or 
    conn_mask (-1) on failure.
  */
 STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev)
 {
-	int have_good,sync;
+	int hg;
 	drbd_conns_t rv = conn_mask;
 
-	have_good = drbd_md_compare(mdev);
+	hg = drbd_uuid_compare(mdev);
 
-	if(have_good==0) {
-		if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
-			/* gen counts compare the same, but I have the
-			 * PrimaryIndicator set.  so the peer has, too
-			 * (otherwise this would not compare the same).
-			 * so we had a split brain!
-			 *
-			 * FIXME maybe log MDF_SplitBran into metadata,
-			 * and refuse to do anything until told otherwise!
-			 *
-			 * for now: just go StandAlone.
-			 */
-			ALERT("Split-Brain detected, dropping connection!\n");
-			drbd_force_state(mdev,NS(conn,StandAlone));
-			drbd_thread_stop_nowait(&mdev->receiver);
-			return conn_mask;
-		}
-		sync=0;
-	} else {
-		sync=1;
+	if (abs(hg) >= 100) {
+		ALERT("Split-Brain detected, dropping connection!\n");
+		drbd_force_state(mdev,NS(conn,StandAlone));
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return conn_mask;
 	}
 
-	drbd_dump_md(mdev,0);
-	// INFO("have_good=%d sync=%d\n", have_good, sync);
-
-	if (have_good > 0 && mdev->state.s.disk <= Inconsistent ) {
-		/* doh. I cannot become SyncSource when I am inconsistent!
-		 */
+	if (hg > 0 && mdev->state.s.disk <= Inconsistent ) {
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return conn_mask;
 	}
-	if (have_good < 0 && !(mdev->p_gen_cnt[Flags] & MDF_Consistent) ) {
-		/* doh. Peer cannot become SyncSource when inconsistent
-		 */
-		ERR("I shall become SyncTarget, but Peer is inconsistent!\n");
+	if (hg < 0 && mdev->state.s.role == Primary ) {
+		ERR("I shall become SyncTarget, but I am primary!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return conn_mask;
 	}
 
-	if ( mdev->sync_conf.skip && sync ) {
-		return have_good == 1 ? SkippedSyncS : SkippedSyncT ;
+	if (abs(hg) >= 2) {
+		drbd_md_set_flag(mdev,MDF_FullSync);
+		drbd_md_write(mdev);
+
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
+
+		drbd_md_clear_flag(mdev,MDF_FullSync);
+		drbd_md_write(mdev);
 	}
 
-	if( sync ) {
-		if( test_bit(UUID_CHANGED,&mdev->flags) ) {
-			WARN("Peer presented a new UUID -> full sync.\n");
-			drbd_bm_set_all(mdev);
-			clear_bit(UUID_CHANGED, &mdev->flags);
-		}
-
-		if(have_good == 1) {
-			D_ASSERT(drbd_md_test_flag(mdev,MDF_Consistent));
-			rv = WFBitMapS;
-			wait_event(mdev->cstate_wait,
-			     atomic_read(&mdev->ap_bio_cnt)==0);
-			drbd_bm_lock(mdev);   // {
-			drbd_send_bitmap(mdev);
-			drbd_bm_unlock(mdev); // }
-		} else { // have_good == -1
-			if ( (mdev->state.s.role == Primary) &&
-			     drbd_md_test_flag(mdev,MDF_Consistent) ) {
-				/* FIXME
-				 * allow Primary become SyncTarget if it was
-				 * diskless, and now had a storage reattached.
-				 * only somewhere the MDF_Consistent flag is
-				 * set where it should not... I think.
-				 */
-				ERR("Current Primary shall become sync TARGET!"
-				    " Aborting to prevent data corruption.\n");
-				drbd_force_state(mdev,NS(conn,StandAlone));
-				drbd_thread_stop_nowait(&mdev->receiver);
-				return conn_mask;
-			}
-			drbd_md_clear_flag(mdev,MDF_Consistent);
-			rv = WFBitMapT;
-		}
+	if (hg > 0) { // become sync source.
+		D_ASSERT(drbd_md_test_flag(mdev,MDF_Consistent));
+		rv = WFBitMapS;
+		wait_event(mdev->cstate_wait,
+			   atomic_read(&mdev->ap_bio_cnt)==0);
+		drbd_bm_lock(mdev);   // {
+		drbd_send_bitmap(mdev);
+		drbd_bm_unlock(mdev); // }
+	} else if (hg < 0) { // become sync target
+		drbd_md_clear_flag(mdev,MDF_Consistent);
+		drbd_uuid_set_current(mdev,mdev->p_uuid[Bitmap]);
+		rv = WFBitMapT;		
 	} else {
 		rv = Connected;
 		drbd_bm_lock(mdev);   // {
 		if(drbd_bm_total_weight(mdev)) {
-			if (drbd_md_test_flag(mdev,MDF_Consistent)) {
-				/* We are not going to do a resync but there
-				   are marks in the bitmap.
-				   (Could be from the AL, or someone used
-				   the write_gc.pl program)
-				   Clean the bitmap...
-				 */
-				INFO("No resync -> clearing bit map.\n");
-				drbd_bm_clear_all(mdev);
-				drbd_bm_write(mdev);
-			} else {
-				WARN("I am inconsistent, but there is no sync? BOTH nodes inconsistent!\n");
-			}
+			INFO("No resync -> clearing bit map.\n");
+			drbd_bm_clear_all(mdev);
+			drbd_bm_write(mdev);
 		}
 		drbd_bm_unlock(mdev); // }
 	}
 
-	if (have_good == -1) {
-		/* Sync-Target has to adopt source's gen_cnt. */
-		int i;
-		for(i=HumanCnt;i<GEN_CNT_SIZE;i++) {
-			mdev->gen_cnt[i]=mdev->p_gen_cnt[i];
-		}
-	}
 	return rv;
 }
 
@@ -1401,11 +1411,6 @@ STATIC int receive_protocol(drbd_dev *mdev, Drbd_Header *h)
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
-	}
-
-	if( mdev->peer_uuid != be64_to_cpu(p->uuid) ) {
-		mdev->peer_uuid = be64_to_cpu(p->uuid);
-		set_bit(UUID_CHANGED, &mdev->flags);
 	}
 
 	return TRUE;
@@ -1459,10 +1464,8 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	drbd_determin_dev_size(mdev);
 	drbd_bm_unlock(mdev); // }
 	
-	if (mdev->p_gen_cnt) {
+	if (mdev->p_uuid) {
 		nconn=drbd_sync_handshake(mdev);
-		kfree(mdev->p_gen_cnt);
-		mdev->p_gen_cnt = 0;
 		if(nconn == conn_mask) return FALSE;
 
 		if(drbd_request_state(mdev,NS(conn,nconn)) <= 0) {
@@ -1489,24 +1492,24 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int receive_gen_cnt(drbd_dev *mdev, Drbd_Header *h)
+STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_GenCnt_Packet *p = (Drbd_GenCnt_Packet*)h;
-	u32 *p_gen_cnt;
+	u64 *p_uuid;
 	int i;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	p_gen_cnt = kmalloc(sizeof(u32)*GEN_CNT_SIZE, GFP_KERNEL);
+	p_uuid = kmalloc(sizeof(u64)*UUID_SIZE, GFP_KERNEL);
 
-	for (i = Flags; i < GEN_CNT_SIZE; i++) {
-		p_gen_cnt[i] = be32_to_cpu(p->gen_cnt[i]);
+	for (i = Current; i < UUID_SIZE; i++) {
+		p_uuid[i] = be64_to_cpu(p->uuid[i]);
 	}
 
-	if ( mdev->p_gen_cnt ) kfree(mdev->p_gen_cnt);
-	mdev->p_gen_cnt = p_gen_cnt;
+	if ( mdev->p_uuid ) kfree(mdev->p_uuid);
+	mdev->p_uuid = p_uuid;
 
 	return TRUE;
 }
@@ -1526,10 +1529,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	nconn = mdev->state.s.conn;
 	if (nconn == WFReportParams ) nconn = Connected;
 
-	if (mdev->p_gen_cnt) {
+	if (mdev->p_uuid && mdev->state.s.conn == Connected) {
 		nconn=drbd_sync_handshake(mdev);
-		kfree(mdev->p_gen_cnt);
-		mdev->p_gen_cnt = 0;
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
 	}
 
@@ -1730,7 +1733,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
 	[SyncParam]        = receive_SyncParam,
 	[ReportProtocol]   = receive_protocol,
-	[ReportGenCnt]     = receive_gen_cnt,
+	[ReportUUIDs]     = receive_uuids,
 	[ReportSizes]      = receive_sizes,
 	[ReportState]      = receive_state,
 };
@@ -1876,10 +1879,13 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		drbd_thread_start(&mdev->worker);
 	}
 
-	if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) && 
-	     mdev->state.s.role == Primary) {
-		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
-		drbd_request_state(mdev,NS(pdsk,nps));
+	if ( mdev->state.s.role == Primary ) {
+		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) ) {
+			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
+			drbd_request_state(mdev,NS(pdsk,nps));
+		} else {
+			drbd_uuid_new_current(mdev);
+		}
 		drbd_md_write(mdev);
 	}
 

@@ -293,7 +293,7 @@ typedef enum {
 	RSDataRequest, // Used to ask for a data block
 	SyncParam,
 	ReportProtocol,
-	ReportGenCnt,
+	ReportUUIDs,
 	ReportSizes,
 	ReportState,
 	AuthChallenge,
@@ -334,7 +334,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[RSDataRequest]    = "RSDataRequest",
 		[SyncParam]        = "SyncParam",
 		[ReportProtocol]   = "ReportProtocol",
-		[ReportGenCnt]     = "ReportGenCnt",
+		[ReportUUIDs]     = "ReportUUIDs",
 		[ReportSizes]      = "ReportSizes",
 		[ReportState]      = "ReportState",
 		[AuthChallenge]    = "AuthChallenge",
@@ -461,13 +461,12 @@ typedef struct {
 
 typedef struct {
 	Drbd_Header head;
-	u64         uuid;
 	u32         protocol;
 } __attribute((packed)) Drbd_Protocol_Packet;
 
 typedef struct {
 	Drbd_Header head;
-	u32         gen_cnt[GEN_CNT_SIZE];
+	u64         uuid[UUID_SIZE];
 } __attribute((packed)) Drbd_GenCnt_Packet;
 
 typedef struct {
@@ -636,7 +635,6 @@ enum {
 	MD_IO_ALLOWED,		// EXPLAIN
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
-	UUID_CHANGED,           // UUID changed. Need fullsync.
 	UNIQUE,                 // Set on one node, cleared on the peer!
 	SPLIT_BRAIN_FIX,        // Set if split-brain-fix is configured
 };
@@ -706,8 +704,6 @@ struct Drbd_Conf {
 	/* volatile */ drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
 	sector_t la_size;     // last agreed disk size in sectors.
-	u64 uuid;
-	u64 peer_uuid;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -742,8 +738,9 @@ struct Drbd_Conf {
 	struct lru_cache* resync; // Used to track operations of resync...
 	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
-	u32 gen_cnt[GEN_CNT_SIZE];
-	u32 *p_gen_cnt;
+	unsigned int md_flags;
+	u64 uuid[UUID_SIZE];
+	u64 *p_uuid;
 	atomic_t epoch_size;
 	spinlock_t ee_lock;
 	struct list_head active_ee; // IO in progress
@@ -836,10 +833,10 @@ extern void drbd_mdev_cleanup(drbd_dev *mdev);
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);
 extern int drbd_md_read(drbd_dev *mdev);
-extern int drbd_md_compare(drbd_dev *mdev);
-extern void drbd_dump_md(drbd_dev *, int );
 // maybe define them below as inline?
-extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
+extern void drbd_uuid_set_current(drbd_dev *mdev, u64 val);
+extern void drbd_uuid_new_current(drbd_dev *mdev);
+extern void drbd_uuid_reset_bm(drbd_dev *mdev);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
 extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
 extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
