@@ -110,12 +110,6 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	unsigned long size=0;
 	int rv;
 
-ONLY_IN_26(
-	if (mdev->this_bdev->bd_disk == 0) { // strange...
-		mdev->this_bdev->bd_disk = mdev->vdisk; 
-	}
-)
-
 	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 
 	if (mdev->md_index == -1 && m_size) {// internal metadata

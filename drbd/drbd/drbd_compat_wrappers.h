@@ -296,7 +296,7 @@ extern int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_ve
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
-	return bdev ? get_capacity(bdev->bd_disk) : 0;
+	return bdev ? bdev->bd_inode->i_size >> 9 : 0;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */

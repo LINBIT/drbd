@@ -1919,12 +1919,6 @@ void drbd_md_write(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-ONLY_IN_26(
-	if (mdev->this_bdev->bd_disk == 0) { // strange...
-		mdev->this_bdev->bd_disk = mdev->vdisk; 
-	}
-)
-
 	if(!inc_local_md_only(mdev)) return;
 
 	down(&mdev->md_io_mutex);
