@@ -182,6 +182,19 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Thu Sep 9 2004 19:50:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.4-1)
+  * Fixed a critical bug with Linux-2.4.x and HIGHMEM!
+  * Fixed a bug that only showed up with the HIGHMEM problem on 
+    Linux-2.4.x -> It caused the resync process to starve.
+  * The drbd.spec file now creates /dev/drbd in the post-install stage.
+  * Fixed support for more than 2TB storage. Now DRBD supports up to
+    3.99TB storage. It will also tell you, that it is not supported if 
+    you try to set up a bigger device.
+  * Debian's build rules file now knows about the adjust_drbd_config_h.sh
+    file.
+  * DRBD_DISABLE_SENDPAGE available in drbd_config.h
+
 * Fri Aug 27 2004 15:02:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.3-1)
   * Fixed minor bugs in the handling of the generation counters.

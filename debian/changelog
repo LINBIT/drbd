@@ -1,3 +1,18 @@
+drbd (0.7.4-1) unstable; urgency=low
+
+  * Fixed a critical bug with Linux-2.4.x and HIGHMEM!
+  * Fixed a bug that only showed up with the HIGHMEM problem on 
+    Linux-2.4.x -> It caused the resync process to starve.
+  * The drbd.spec file now creates /dev/drbd in the post-install stage.
+  * Fixed support for more than 2TB storage. Now DRBD supports up to
+    3.99TB storage. It will also tell you, that it is not supported if 
+    you try to set up a bigger device.
+  * Debian's build rules file now knows about the adjust_drbd_config_h.sh
+    file.
+  * DRBD_DISABLE_SENDPAGE available in drbd_config.h
+
+ -- Philipp Reisner <phil@linbit.com>  Thu, 9 Sep 2004 19:50:00 +0200
+
 drbd (0.7.3-2) unstable; urgency=low
 
   * Fixed debian/rules: Include scripts directory in drbd-source

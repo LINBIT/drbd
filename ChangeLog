@@ -1,11 +1,15 @@
 Latest:
 ------
- ChangeLog last updated: r1529 2004-09-03
+ ChangeLog last updated: r1537 2004-09-09
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
-SVN (api:76/proto:74)
+0.7.4 (api:76/proto:74)
 -----
+ * Fixed a critical bug with Linux-2.4.x and HIGHMEM!
+ * Fixed a bug that only showed up with the HIGHMEM problem on 
+   Linux-2.4.x -> It caused the resync process to starve.
+ * The drbd.spec file now creates /dev/drbd in the post-install stage.
  * Fixed support for more than 2TB storage. Now DRBD supports up to
    3.99TB storage. It will also tell you, that it is not supported if 
    you try to set up a bigger device.
