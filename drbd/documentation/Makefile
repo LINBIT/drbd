@@ -73,7 +73,7 @@ endif
 prepare:
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
 
-man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 
+man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 drbdadm.8
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml

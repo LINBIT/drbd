@@ -1,0 +1,35 @@
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<refentry>
+  <docinfo><date>25 Aug 2003</date></docinfo>
+  
+  <refmeta>
+    <refentrytitle>drbdadm</refentrytitle>
+    <manvolnum>8</manvolnum>
+  </refmeta>
+  
+  <refnamediv>
+    <refname>drbdadm</refname>
+    <refpurpose>Administration tool for DRBD</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>drbdadm</command>
+      <arg>-d</arg>
+      <arg>-c<arg choice=req><replaceable>file</replaceable></arg></arg>
+      <arg>-s<arg choice=req><replaceable>cmd</replaceable></arg></arg>
+      <arg choice=req><replaceable>command</replaceable></arg>
+      <group>
+	<arg choice=plain>all</arg>
+	<arg choice=plain rep=repeat><replaceable>resource</replaceable></arg>
+      </group>
+    </cmdsynopsis>
+
+  <refsect1>
+    <title>Description</title>
+    <para>
+Bla foo.
+drbdadm is to drbdsetup what ifup/ifdown is to ifconfig.
+    </para>
+  </refsect1>
+</refentry>
