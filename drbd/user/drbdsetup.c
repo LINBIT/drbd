@@ -577,7 +577,7 @@ int cmd_wait(int drbd_fd,char** argv,int argc)
 	    { 0,           0,                 0, 0 }
 	  };
 	  
-	  c = getopt_long(argc,argv,"-t:",options,0);
+	  c = getopt_long(argc+1,argv-1,"-t:",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
