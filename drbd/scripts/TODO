@@ -1,0 +1,16 @@
+SCRIPTS : TODO LIST
+
+Urgent :
+
+Heartbeat integration : done need testing
+
+Not urgent :
+
+* Few Code cleanup (never ending process)
+* The datadisk mode must become resource dependant
+* Find a way to indicate the percentage of syncing performed
+ (Need more information on /proc/drbd)
+  - The number of durty block T (now)
+  - The number of durty block T-1 minute ??
+  - Information refreshed every minute ??
+  Phillip any commnent on this one ?
