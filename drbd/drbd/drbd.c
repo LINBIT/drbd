@@ -131,6 +131,7 @@ struct Tl_epoch_entry {
 #define ISSUE_BARRIER     0
 #define COLLECT_ZOMBIES   1
 #define SEND_PING         2
+#define WRITER_PRESENT    3
 
 /* #define ES_SIZE_STATS 50 */
 
@@ -168,6 +169,7 @@ struct Drbd_Conf {
 	void* mbds_id;
         wait_queue_head_t asender_wait;  
 	wait_queue_head_t cstate_wait;
+	int open_cnt;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
@@ -1304,11 +1306,16 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		/* Do not allow the state to change during resync */
+		if (arg != Primary && arg != Secondary)
+			return -EINVAL;
+		
 		if (drbd_conf[minor].cstate == SyncingAll
 		    || drbd_conf[minor].cstate == SyncingQuick)
+			return -EINPROGRESS;
+
+		if(test_bit(WRITER_PRESENT, &drbd_conf[minor].flags)
+		   && arg == Secondary)
 			return -EBUSY;
-	       /* Maybe -EBUSY is not the most appropriate, but who knows? */
 
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_conf[minor].state = (Drbd_State) arg;
@@ -1316,8 +1323,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if (drbd_conf[minor].sock )
 			drbd_set_sock_prio(&drbd_conf[minor]);
 
-		/* Only report the state change immediately if connected */
-		/* There is a race here somewhere without the if */
 		if (drbd_conf[minor].cstate >= Connected)
 			drbd_send_param(minor);
 
@@ -1327,6 +1332,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	case DRBD_IOCTL_SET_CONFIG:
 	        /* printk(KERN_DEBUG DEVICE_NAME ": set_config()\n"); */
+
+		if (drbd_conf[minor].open_cnt > 1)
+			return -EBUSY;
 
 		if ((err = copy_from_user(&new_conf, 
 				    &((struct ioctl_drbd_config *)arg)->config,
@@ -1338,13 +1346,13 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 #define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
 		for(i=0;i<minor_count;i++) {		  
-			if( i != minor &&
+			if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
 			    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
 			    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
 				retcode=LAAlreadyInUse;
 				goto fail_ioctl;
 			}
-			if( i != minor &&
+			if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
 			    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
 			    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
 				retcode=OAAlreadyInUse;
@@ -1392,6 +1400,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			return -EINVAL;
 		}
 
+		/* TODO: chech this! We should check the count in the 
+		   inode! */
 		if (filp->f_count > 2) { /* drbdsetup and the module = 2 */
 			printk(KERN_ERR DEVICE_NAME 
 			       ": The lower dev open_count=%d!!\n",
@@ -1444,6 +1454,21 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		break;
 
+	case DRBD_IOCTL_UNCONFIG:
+
+		if (drbd_conf[minor].open_cnt > 1)
+			return -EBUSY;
+
+		fsync_dev(MKDEV(MAJOR_NR, minor));
+		drbd_thread_stop(&drbd_conf[minor].syncer);
+		drbd_thread_stop(&drbd_conf[minor].asender);
+		drbd_thread_stop(&drbd_conf[minor].receiver);
+		drbd_free_resources(minor);
+		if (drbd_conf[minor].mbds_id)
+		      drbd_conf[minor].mops->cleanup(drbd_conf[minor].mbds_id);
+
+		break;
+
 	case DRBD_IOCTL_WAIT_SYNC:
 		while (drbd_conf[minor].cstate == SyncingAll ||
 		       drbd_conf[minor].cstate == SyncingQuick ) {
@@ -1485,13 +1510,14 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	minor = MINOR(inode->i_rdev);
 	if(minor >= minor_count) return -ENODEV;
 
-	if ((file->f_mode & FMODE_WRITE)
-	    && drbd_conf[minor].state == Secondary) {
-		return -EROFS;
+	if (file->f_mode & FMODE_WRITE) {
+		if( drbd_conf[minor].state == Secondary) {
+			return -EROFS;
+		}
+		set_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
 	}
-	/*printk(KERN_DEBUG DEVICE_NAME ": open(inode=%p,file=%p)"
-	  "current=%p,minor=%d\n", inode, file, current, minor);*/
 
+	drbd_conf[minor].open_cnt++;
 
 	MOD_INC_USE_COUNT;
 
@@ -1506,8 +1532,15 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	minor = MINOR(inode->i_rdev);
 	if(minor >= minor_count) return -ENODEV;
 
-	/*printk(KERN_DEBUG DEVICE_NAME ": close(inode=%p,file=%p)"
-	  "current=%p,minor=%d\n", inode, file, current, minor); */
+	/*
+	printk(KERN_ERR DEVICE_NAME ": close(inode=%p,file=%p)"
+	       "current=%p,minor=%d,wc=%d\n", inode, file, current, minor,
+	       inode->i_writecount);
+	*/
+
+	if (--drbd_conf[minor].open_cnt == 0) {
+		clear_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
+	}
 
 	MOD_DEC_USE_COUNT;
 
@@ -1581,6 +1614,7 @@ int __init drbd_init(void)
 		drbd_conf[i].sl_lock = SPIN_LOCK_UNLOCKED;
 		init_waitqueue_head(&drbd_conf[i].asender_wait);
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
+		drbd_conf[i].open_cnt = 0;
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;

@@ -112,15 +112,14 @@ int port_part(const char* s)
   return 7788;
 }
 
-
 int main(int argc, char** argv)
 {
-  int dtbd_fd;
+  int drbd_fd;
 
   if(argc != 3 && argc < 6)
     {
       fprintf(stderr,
-	      " %s device {Pri|Sec|Wait|Repl}\n"
+	      " %s device {Pri|Sec|Wait|Repl|Down}\n"
 	      " %s device lower_device protocol local_addr[:port] "
 	      "remote_addr[:port] \n"
 	      "       [-t|--timout val] [-r|--sync-rate val] "
@@ -172,8 +171,8 @@ int main(int argc, char** argv)
       exit(20);
     }
 
-  dtbd_fd=open(argv[1],O_RDONLY);
-  if(dtbd_fd==-1)
+  drbd_fd=open(argv[1],O_RDONLY);
+  if(drbd_fd==-1)
     {
       perror("can not open device");
       exit(20);
@@ -185,7 +184,7 @@ int main(int argc, char** argv)
     struct stat drbd_stat;
 
     /* Check if the device is really drbd */
-    err=fstat(dtbd_fd, &drbd_stat);
+    err=fstat(drbd_fd, &drbd_stat);
     if(err)
       {
 	perror("fstat() failed");
@@ -195,7 +194,7 @@ int main(int argc, char** argv)
 	fprintf(stderr, "%s is not a block device!\n", argv[1]);
 	exit(20);
       }
-    err=ioctl(dtbd_fd,DRBD_IOCTL_GET_VERSION,&retval);
+    err=ioctl(drbd_fd,DRBD_IOCTL_GET_VERSION,&retval);
     if(err)
       {
 	perror("ioctl() failed");
@@ -211,35 +210,56 @@ int main(int argc, char** argv)
   if(argc == 3)
     {
       int err;
+      int retval;
       Drbd_State state;
-      if(argv[2][0]=='p' || argv[2][0]=='P')
-	{
-	  state = Primary;
-	}
-      else if(argv[2][0]=='s' || argv[2][0]=='S')
-	{
-	  state = Secondary;
-	}
-      else if(argv[2][0]=='w' || argv[2][0]=='W')
-	{
-	  int retval;
-	  err=ioctl(dtbd_fd,DRBD_IOCTL_WAIT_SYNC,&retval);
-	  exit(!retval);
-	}
-      else if(argv[2][0]=='r' || argv[2][0]=='R')
+
+      switch(argv[2][0])
         {
-	  err=ioctl(dtbd_fd,DRBD_IOCTL_DO_SYNC_ALL);
-	  exit(0);	  
-	}
-      else 
-	{
+	case 'p':
+	case 'P':
+	  state = Primary;
+	  break;
+	case 's':
+	case 'S':
+	  state = Secondary;
+	  break;
+	case 'w':
+	case 'W':
+	  err=ioctl(drbd_fd,DRBD_IOCTL_WAIT_SYNC,&retval);
+	  if(err)
+	    {
+	      perror("ioctl() failed");
+	      exit(20);
+	    }
+	  exit(!retval);	  
+	case 'r':
+	case 'R':
+	  err=ioctl(drbd_fd,DRBD_IOCTL_DO_SYNC_ALL);
+	  if(err)
+	    {
+	      perror("ioctl() failed");
+	      exit(20);
+	    }
+         exit(0);        
+	case 'd':
+	case 'D':
+	  err=ioctl(drbd_fd,DRBD_IOCTL_UNCONFIG);
+	  if(err)
+	    {
+	      perror("ioctl() failed");
+	      exit(20);
+	    }
+	  exit(0);        
+	  break;
+	default:
 	  fprintf(stderr,"this is no known command!\n");
-	  exit(20);
-	}
-      err=ioctl(dtbd_fd,DRBD_IOCTL_SET_STATE,state);
+	  exit(20);	  
+        }
+      err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
       if(err)
 	{
 	  perror("ioctl() failed");
+	  exit(20);
 	}
 
       exit(0);
@@ -361,7 +381,7 @@ int main(int argc, char** argv)
 	    }
 	}
 
-      err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&cn);
+      err=ioctl(drbd_fd,DRBD_IOCTL_SET_CONFIG,&cn);
       if(err)
 	{
 	  perror("ioctl() failed");

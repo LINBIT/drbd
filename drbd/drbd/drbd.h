@@ -177,6 +177,7 @@ typedef enum {
 #define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )
 #define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x03, int )
 #define DRBD_IOCTL_DO_SYNC_ALL   _IO ( 'D', 0x04 )
+#define DRBD_IOCTL_UNCONFIG      _IO ( 'D', 0x05 )
 
 #endif
 
