@@ -1484,6 +1484,28 @@ int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 	return cfg->ops->parse(cfg, argv + 1, argc - 1, ai);
 }
 
+int is_configured(int minor)
+{
+	FILE *pr;
+	char line[120], tok[40];
+	int m,rv=0;
+
+	pr = fopen("/proc/drbd","r");
+	if(!pr) return rv;
+	
+	while(fgets(line,120,pr)) {
+		if(sscanf(line,"%2d: %s",&m,tok)) {
+			if( m == minor ) {
+				rv = strcmp(tok,"Unconfigured");
+				break;
+			}			
+		}
+	}
+	fclose(pr);
+
+	return rv;
+}
+
 int main(int argc, char **argv)
 {
 	struct meta_cmd *command = NULL;
@@ -1506,19 +1528,7 @@ int main(int argc, char **argv)
 	cfg->drbd_dev_name = argv[1];
 	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
 	if (cfg->drbd_fd > -1) {
-		/* Try to avoid DRBD specific ioctls here...
-		 * If the device is _not_ configured, block device ioctls
-		 * should fail. So if we _can_ determine whether it is readonly,
-		 * it is configured; and we better not touch its meta data.
-		 * 
-		 * Unfortunately this is not true... as soon as the
-		 * driver is loaded, this works, no regard wheter it
-		 * is configured or not.... probabely need to use
-		 * a drbd IOCTL... or look at /proc/drbd ...
-		 * uggly as well!
-		 */
-		int dummy_is_ro;
-		if (ioctl(cfg->drbd_fd, BLKROGET, &dummy_is_ro) == 0) {
+		if (is_configured(dt_minor_of_dev(cfg->drbd_dev_name))) {
 			fprintf(stderr, "Device '%s' is configured!\n",
 				cfg->drbd_dev_name);
 			exit(20);
