@@ -1118,6 +1118,7 @@ int __init drbd_init(void)
 		drbd_conf[i].al_nr_extents = 0;
 		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].al_writ_cnt = 0;
+		drbd_conf[i].al_tr_buffer = 0;
 		drbd_al_init(drbd_conf+i);
 		{
 			int j;
@@ -1215,6 +1216,8 @@ void cleanup_module()
 		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].read_ee);
 		if(rr) printk(KERN_ERR DEVICE_NAME
 			       "%d: %d EEs in read list found!\n",i,rr);
+
+		drbd_al_free(drbd_conf+i);
 	}
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)

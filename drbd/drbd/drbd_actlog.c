@@ -31,6 +31,26 @@
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_FREE (-1)
+#define AL_EXTENTS_PP 122
+
+struct al_transaction {
+	u32       magic;
+	u32       tr_number;
+	u32       updated_extents[3];
+	u32       cyclic_extents[AL_EXTENTS_PP];
+	u32       xor_sum;      
+       // I do not believe that all storage medias can guarantee atomic
+       // 512 byte write operations. When the journal is read, only
+       // transactions with correct xor_sums are considered.
+};     // sizeof() = 512 byte
+
+struct drbd_extent {
+	struct list_head accessed;
+	struct drbd_extent *hash_next;
+	unsigned int extent_nr;
+	unsigned int pending_ios;
+};
+
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
@@ -49,6 +69,17 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 		return;
 	}
 
+	if(!mdev->al_tr_buffer) {
+		mdev->al_tr_buffer=kmalloc(sizeof(struct al_transaction),
+					   GFP_KERNEL);
+		if(!mdev->al_tr_buffer) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: can not kmalloc() al_tr_buffer\n",
+			       (int)(mdev-drbd_conf));
+			return;
+		}
+	}
+
 	spin_lock(&mdev->al_lock);
 	INIT_LIST_HEAD(&mdev->al_lru);
 	INIT_LIST_HEAD(&mdev->al_free);
@@ -61,13 +92,15 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	mdev->al_nr_extents=mdev->sync_conf.al_extents; 
 	if(mdev->al_extents) kfree(mdev->al_extents);
 	mdev->al_extents = extents;
-	mdev->al_transaction = 0;
-	spin_unlock(&mdev->al_lock);
+	mdev->al_tr_number = 0;
+	mdev->al_tr_cycle = 0;
+	spin_unlock(&mdev->al_lock);	
 }
 
 void drbd_al_free(struct Drbd_Conf *mdev)
 {
-	kfree(mdev->al_extents);
+	if(mdev->al_extents) kfree(mdev->al_extents);
+	if(mdev->al_tr_buffer) kfree(mdev->al_tr_buffer);
 	mdev->al_extents=0;
 	mdev->al_nr_extents=0;
 }
@@ -211,22 +244,47 @@ STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev,
 
 void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 {
-	int i,n;
+	/* completely unfinished */
+	int i,n,c;
 	unsigned int t;
+	struct al_transaction* buffer;
+	unsigned int extent_nr;
+	u32 xor_sum=0;
 
 	spin_lock(&mdev->al_lock);
-	t = mdev->al_transaction++;
+	t = mdev->al_tr_number++;
+	//c = mdev->al_cycle++;
+	c = 0;
 	spin_unlock(&mdev->al_lock);
 
+	while(1) {
+		spin_lock(&mdev->al_lock);
+		buffer = mdev->al_tr_buffer;
+		mdev->al_tr_buffer = 0;
+		spin_unlock(&mdev->al_lock);
+		if(buffer) break;
+		schedule_timeout(HZ / 10);
+	}
+	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
+	buffer->tr_number = cpu_to_be32(t);
 	for(i=0;i<3;i++) {
 		n = mdev->al_updates[i];
 		if(n != -1) {
+			extent_nr = mdev->al_extents[n].extent_nr;
 #if 0	/* Use this printf with the test_al.pl program */
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: T%03d S%03d=E%06d\n",(int)(mdev-drbd_conf),
-			       t, n, mdev->al_extents[n].extent_nr);
+			       t, n, extent_nr);
 #endif
+			buffer->updated_extents[i] = cpu_to_be32(extent_nr);
+			xor_sum ^= extent_nr;
 		}
+	}
+
+	for(i=0;i<AL_EXTENTS_PP;i++) {
+		extent_nr = mdev->al_extents[i].extent_nr;
+		buffer->cyclic_extents[i] = cpu_to_be32(extent_nr);
+		xor_sum ^= extent_nr;
 	}
 }
 

@@ -364,6 +364,7 @@ struct BitMap {
 	spinlock_t bm_lock;
 };
 
+struct al_transaction;
 struct drbd_extent;
 
 struct Drbd_Conf {
@@ -439,7 +440,9 @@ struct Drbd_Conf {
 	spinlock_t al_lock;
 	unsigned int al_writ_cnt;
 	int al_updates[3];
-	unsigned int al_transaction;
+	unsigned int al_tr_number;
+	struct al_transaction* al_tr_buffer;
+	int al_tr_cycle;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif
@@ -819,13 +822,6 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 #endif
 
 // drbd_actlog.h
-
-struct drbd_extent {
-	struct list_head accessed;
-	struct drbd_extent *hash_next;
-	unsigned int extent_nr;
-	unsigned int pending_ios;
-};
 
 extern void drbd_al_init(struct Drbd_Conf *mdev);
 extern void drbd_al_free(struct Drbd_Conf *mdev);
