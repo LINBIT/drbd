@@ -877,8 +877,9 @@ struct bm_extent {
 /* I want the packet to fit within one page
  * THINK maybe use a special bitmap header,
  * including offset and compression scheme and whatnot
+ * Do not use PAGE_SIZE here! Use a architecture agnostic constant!
  */
-#define BM_PACKET_WORDS     ((PAGE_SIZE-sizeof(Drbd_Header))/sizeof(long))
+#define BM_PACKET_WORDS     ((4096-sizeof(Drbd_Header))/sizeof(long))
 
 /* the extent in "PER_EXTENT" below is an activity log extent
  * we need that many (long words/bytes) to store the bitmap
