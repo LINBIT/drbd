@@ -66,11 +66,18 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	/* note: both rs_total and rs_left are in bits, i.e. in
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
+
 	rs_left = drbd_bm_total_weight(mdev);
-	D_ASSERT(rs_left < mdev->rs_total);
 	/* >> 10 to prevent overflow,
 	 * +1 to prevent division by zero */
-	res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
+	ERR_IF(rs_left > mdev->rs_total) {
+		/* doh. logic bug somewhere.
+		 * for now, just try to prevent in-kernel buffer overflow.
+		 */
+		res = 1000;
+	} else {
+		res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
+	}
 	{
 		int i, y = res/50, x = 20-y;
 		sz += sprintf(buf + sz, "\t[");

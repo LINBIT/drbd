@@ -35,6 +35,7 @@
 
 #include <linux/config.h>
 #include <linux/module.h>
+#include <linux/version.h>
 
 #include <asm/uaccess.h>
 #include <asm/types.h>

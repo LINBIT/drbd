@@ -27,6 +27,7 @@
 
 #include <linux/config.h>
 #include <linux/module.h>
+#include <linux/version.h>
 
 #include <linux/sched.h>
 #include <linux/smp_lock.h>
