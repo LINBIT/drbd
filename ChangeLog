@@ -1,8 +1,13 @@
 Latest:
 ------
- ChangeLog last updated: r1672 2004-12-10
+ ChangeLog last updated: r1730 2005-01-25
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.9 (api:77/proto:74)
+-----
+ * A fix that makes DRBD work on SLES9 SP1 kernel, and 
+   probabely will be also necessary for Linux-2.6.11
 
 0.7.8 (api:77/proto:74)
 -----

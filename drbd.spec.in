@@ -171,6 +171,11 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Tue Jan 25 2005 11:31:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.9-1)
+ * A fix that makes DRBD work on SLES9 SP1 kernel, and 
+   probabely will be also necessary for Linux-2.6.11
+
 * Mon Jan 17 2005 12:55:01 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.8-1)
   * Fixed a bug that caused the syncer to starve on devices 
