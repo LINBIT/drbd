@@ -628,6 +628,7 @@ int drbd_worker(struct Drbd_thread *thi)
 			break;
 	}
 
+	del_timer_sync(&mdev->resync_timer); // just in case... 
 	INFO("worker terminated\n");
 
 	return 0;
