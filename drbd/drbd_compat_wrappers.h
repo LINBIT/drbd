@@ -314,18 +314,11 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
  */
 static inline int _drbd_send_bio(drbd_dev *mdev, struct buffer_head *bh)
 {
-	struct page *page = bh->b_page;
 	size_t size = bh->b_size;
-	int offset;
 	int ret;
 
-	if (PageHighMem(page))
-		offset = (int)(long)bh->b_data;
-	else
-		offset = (long)bh->b_data - (long)page_address(page);
-
-	ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
-	kunmap(page);
+	ret = drbd_send(mdev, mdev->data.socket, bh_kmap(bh), size, 0);
+	bh_kunmap(bh);
 	return ret;
 }
 

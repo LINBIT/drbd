@@ -930,6 +930,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
 {
+	mm_segment_t oldfs = get_fs();
 	int sent,ok;
 	int len   = size;
 
@@ -973,6 +974,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		goto out;
 	}
 
+	set_fs(KERNEL_DS);
 	do {
 		sent = mdev->data.socket->ops->sendpage(mdev->data.socket,page,
 							offset,len,
@@ -993,6 +995,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		offset += sent;
 		// FIXME test "last_received" ...
 	} while(len > 0 /* THINK && mdev->cstate >= Connected*/);
+	set_fs(oldfs);
 
   out:
 	spin_lock(&mdev->send_task_lock);
@@ -1139,9 +1142,13 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 int drbd_send(drbd_dev *mdev, struct socket *sock,
 	      void* buf, size_t size, unsigned msg_flags)
 {
+#if !HAVE_KERNEL_SENDMSG
 	mm_segment_t oldfs;
-	struct msghdr msg;
 	struct iovec iov;
+#else
+	struct kvec iov;
+#endif
+	struct msghdr msg;
 	int rv,sent=0;
 
 	if (!sock) return -1000;
@@ -1154,14 +1161,18 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 
 	msg.msg_name       = 0;
 	msg.msg_namelen    = 0;
+#if !HAVE_KERNEL_SENDMSG
 	msg.msg_iov        = &iov;
 	msg.msg_iovlen     = 1;
+#endif
 	msg.msg_control    = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
 
+#if !HAVE_KERNEL_SENDMSG
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
+#endif
 
 	if (sock == mdev->data.socket)
 		mdev->ko_count = mdev->conf.ko_count;
@@ -1175,7 +1186,11 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
  * do we need to block DRBD_SIG if sock == &meta.socket ??
  * otherwise wake_asender() might interrupt some send_*Ack !
  */
+#if !HAVE_KERNEL_SENDMSG
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
+#else
+		rv = kernel_sendmsg(sock, &msg, &iov, 1, size);
+#endif
 		if (rv == -EAGAIN) {
 			if (we_should_drop_the_connection(mdev,sock))
 				break;
@@ -1204,7 +1219,9 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		iov.iov_len  -= rv;
 	} while(sent < size);
 
+#if !HAVE_KERNEL_SENDMSG
 	set_fs(oldfs);
+#endif
 
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
