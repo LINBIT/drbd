@@ -55,24 +55,18 @@ LANGS=ja pt_BR
 ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
 all:	prepare man HOWTO/index.html
 
-install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
-	install -d $(PREFIX)usr/share/man/man8
-	install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8
-	install -d $(PREFIX)usr/share/man/man5
-	install -m 644 drbd.conf.5 $(PREFIX)usr/share/man/man5
-	install -d $(PREFIX)usr/share/man/man8
-	install -m 644 drbd.8 $(PREFIX)usr/share/man/man8
-	install -d $(PREFIX)usr/share/man/man8
-	install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
+clean:
+	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
+	rm -f *.ps.gz *.pdf *.ps *.html
+	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 else
 
 all:
 	@echo "could not find docbook tools, sorry."
 
-install:
-	@echo "could not find docbook tools, sorry."
+clean:
+	@echo "could not find docbook tools, leaving documentation in place."
 
 endif
 
@@ -83,12 +77,18 @@ man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
-	if [ "$(DB2HTML)" ]; then cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd .. ; fi
+	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
-clean:
-	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
-	rm -f *.ps.gz *.pdf *.ps *.html
-	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
+install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
+	install -d $(PREFIX)usr/share/man/man8
+	install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8
+	install -d $(PREFIX)usr/share/man/man5
+	install -m 644 drbd.conf.5 $(PREFIX)usr/share/man/man5
+	install -d $(PREFIX)usr/share/man/man8
+	install -m 644 drbd.8 $(PREFIX)usr/share/man/man8
+	install -d $(PREFIX)usr/share/man/man8
+	install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
 
 uninstall:
 	rm $(PREFIX)usr/share/man/man8/drbdsetup.8
