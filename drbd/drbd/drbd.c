@@ -131,6 +131,8 @@ struct Tl_epoch_entry {
 #define ISSUE_BARRIER 0
 #define COLLECT_ZOMBIES 1
 
+/* #define ES_SIZE_STATS 50 */
+
 struct Drbd_Conf {
 	struct drbd_config conf;
 	struct socket *sock;
@@ -166,6 +168,9 @@ struct Drbd_Conf {
 	void* mbds_id;
         wait_queue_head_t asender_wait;  
 	wait_queue_head_t cstate_wait;
+#ifdef ES_SIZE_STATS
+	unsigned int essss[ES_SIZE_STATS];
+#endif  
 };
 
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
@@ -378,6 +383,19 @@ struct request *my_all_requests = NULL;
 	}
 #endif
 
+#ifdef ES_SIZE_STATS
+	for(i=0;i<ES_SIZE_STATS;i++) {
+		int j;
+		rlen=rlen+sprintf(buf+rlen,"\n%d: ",i);
+		for (j = 0; j < minor_count; j++) {
+			rlen=rlen+sprintf(buf+rlen,"%4d ",
+					  drbd_conf[j].essss[i]);
+		}
+	}
+	rlen=rlen+sprintf(buf+rlen,"\n");
+#endif  
+
+
 	return rlen;
 }
 
@@ -490,6 +508,10 @@ inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       "found=%d reported=%d \n",epoch_size,set_size);
 	
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
+
+#ifdef ES_SIZE_STATS
+	mdev->essss[set_size]++;
+#endif  
 
 }
 
@@ -1507,6 +1529,10 @@ int __init drbd_init(void)
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
+
+#ifdef ES_SIZE_STATS
+			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
+#endif  
 		}
 	}
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
