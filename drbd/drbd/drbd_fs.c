@@ -113,22 +113,23 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	if(u_size) {
 		if(u_size > size) {
 			printk(KERN_ERR DEVICE_NAME
-			       "%d: Requested disk size is too big",
-			       minor);
+			       "%d: Requested disk size is too big\n",minor);
 		} else {
 			size = u_size;
 		}
 	}
 
 	if( blk_size[MAJOR_NR][minor] != size ) {
-		blk_size[MAJOR_NR][minor] = size;
-		mdev->la_size = size;
-		printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",minor,size);
-		drbd_md_write(mdev);
+		if(bm_resize(mdev->mbds_id,size)) {
+			blk_size[MAJOR_NR][minor] = size;
+			mdev->la_size = size;
+			printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",
+			       minor,size);
+			drbd_md_write(mdev);
+		}
 	}
 
 	return rv;
-	// TODO: Online resizing must also consider the bitmap size.
 }
 
 STATIC 

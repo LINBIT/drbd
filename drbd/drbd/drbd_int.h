@@ -448,7 +448,8 @@ extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
 
 struct BitMap;
 extern struct BitMap* bm_init(kdev_t dev);
-extern void bm_cleanup(void* bm_id);
+extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
+extern void bm_cleanup(struct BitMap* sbm);
 extern int bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit);
 extern unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size);
 extern void bm_reset(struct BitMap* sbm,int ln2_block_size);

@@ -1229,43 +1229,73 @@ void drbd_free_resources(int minor)
 // Shift right with round up. :)
 #define SR_RU(A,B) ( ((A)>>(B)) + ( ((A) & ((1<<(B))-1)) > 0 ? 1 : 0 ) )
 
-struct BitMap* bm_init(kdev_t dev)
+int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 {
-        struct BitMap* sbm;
+        unsigned long *obm,*nbm;
 	unsigned long size;
+	
+	if(!sbm) return 1; // Nothing to do 
 
-	size = SR_RU(blk_size[MAJOR(dev)][MINOR(dev)],
-		     (BM_BLOCK_SIZE_B - (10 - LN2_BPL))) << (LN2_BPL-3);
+	size = SR_RU(size_kb,(BM_BLOCK_SIZE_B - (10-LN2_BPL))) << (LN2_BPL-3);
 	/* 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
 	// Calculate the number of long words needed, round it up, and
 	// finally convert it to bytes.
 
 	if(size == 0) return 0;
 
-	sbm = vmalloc(size + sizeof(struct BitMap));
+	obm = sbm->bm;
+	nbm = vmalloc(size);
+	if(!nbm) {
+		printk(KERN_ERR DEVICE_NAME"X: Failed to allocate BitMap\n");
+		return 0;
+	}
+	memset(nbm,0,size);
+
+ 	spin_lock(&sbm->bm_lock);
+	if(obm) {
+		memcpy(nbm,obm,sbm->size);
+	}
+	sbm->size = size;
+	sbm->bm = nbm;
+	spin_unlock(&sbm->bm_lock);
+
+	if(obm) vfree(obm);
+
+	return 1;
+}
+
+struct BitMap* bm_init(kdev_t dev)
+{
+        struct BitMap* sbm;
+
+	sbm = kmalloc(sizeof(struct BitMap),GFP_KERNEL);
+	if(!sbm) {
+		printk(KERN_ERR DEVICE_NAME"X: Failed to allocate BM desc\n");
+		return 0;
+	}
 
 	sbm->dev = dev;
-	sbm->size = size;
-	sbm->bm = (unsigned long*)((char*)sbm + sizeof(struct BitMap));
 	sbm->sb_bitnr=0;
 	sbm->sb_mask=0;
 	sbm->gb_bitnr=0;
 	sbm->gb_snr=0;
 	sbm->bm_lock = SPIN_LOCK_UNLOCKED;
 
-	memset(sbm->bm,0,size);
-	
-	/*
-	printk(KERN_INFO DEVICE_NAME " : vmallocing %ld B for bitmap."
-	       " @%p\n",size,sbm->bm);
-	*/
-  
+	sbm->size = 0;
+	sbm->bm = NULL;
+
+	if(!bm_resize(sbm,blk_size[MAJOR(dev)][MINOR(dev)])) {
+		kfree(sbm);
+		return 0;
+	}
+
 	return sbm;
 }     
 
-void bm_cleanup(void* bm_id)
+void bm_cleanup(struct BitMap* sbm)
 {
-        vfree(bm_id);
+        vfree(sbm->bm);
+	kfree(sbm);
 }
 
 /* THINK:
@@ -1287,10 +1317,9 @@ bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
 		return 0;
 	}
 
+ 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 	bitnr = blocknr >> cb;
-
- 	spin_lock(&sbm->bm_lock);
 
 	if(!bit && cb) {
 		if(sbm->sb_bitnr == bitnr) {
@@ -1334,10 +1363,10 @@ int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size)
 		return 0;
 	}
 
+ 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 	bitnr = blocknr >> cb;
 
- 	spin_lock(&sbm->bm_lock);
 	bit=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
 	spin_unlock(&sbm->bm_lock);
 				     
@@ -1357,13 +1386,14 @@ static inline int bm_get_bn(unsigned long word,int nr)
 
 unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size)
 {
-        unsigned long* bm = sbm->bm;
+        unsigned long* bm;
 	unsigned long wnr;
 	unsigned long nw = sbm->size/sizeof(unsigned long);
 	unsigned long rv;
 	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
 
  	spin_lock(&sbm->bm_lock);
+	bm = sbm->bm;
 
 	if(sbm->gb_snr >= (1L<<cb)) {	  
 		for(wnr=sbm->gb_bitnr>>LN2_BPL;wnr<nw;wnr++) {
