@@ -1,40 +1,45 @@
-package main;
-# $Id: generic_test.pl,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+#!/usr/bin/perl
+# $Id: generic_test.pl,v 1.1.2.2 2004/06/03 10:00:08 lars Exp $
 use strict;
 use warnings;
 
 use LGE_CTH;
+use Pod::Usage;
+use Getopt::Long;
 
-sub show_usage() {
-	print <<___;
-Usage: $0 test_name
-where currently supported tests are:
-	wbtest
-	tiobench
-	dummy     (does only touch one file, and sleep, in a loop)
 
-since the path to ./functions.sh is still hardcoded, you have to start
-this in the directory where it lives, or copy functions.sh over to the
-current directory...
+my $logfile = 'tmp.log';
+my $logprefix = 'test0';
+my $test_name = 'wbtest';
+my $config_file = 'NONE';
+my $sleeptime = 30;
+my $move_prob = 50;
+my $rand_seed;
+my $help;
 
-to tune which "HW" parts may fail, or what config file to use
-or which file system you like best, or where to mount them,
-you still have to edit this file...
+GetOptions(
+	"h"           => \$help,
+	"help"        => sub { $help = 2 },
+	"rand_seed=i" => \$rand_seed,
+	"test_name=s" => \$test_name,
+	"logfile=s"   => \$logfile,
+	"logprefix=s" => \$logprefix,
+	"config=s"    => \$config_file,
+	"sleep=i"     => \$sleeptime,
+	"move=i"      => \$move_prob,
+) or pod2usage(2);
 
-to add more tests, you have to edit this file, and you need to add bash
-functions named <your_test>_start, and maybe <your_test>_stop if the
-generic_test_stop does not fit, to functions.sh.
+while(not $help) {
+	$test_name =~ /^(wbtest|tiobench|dummy)$/
+		or warn("unknown testname '$test_name'\n"),         $help++, last;
+	$config_file and -e $config_file 
+		or warn("config file ($config_file) not found\n"),  $help++, last;
+	-e "./functions.sh" or warn("./functions.sh not found\n"),  $help++, last;
+	last;
+};
 
-there currently is no paranoia implemented about whether the needed
-programs exist on the target box.
-___
-}
-
-show_usage and exit 1
-unless $ARGV[0] =~ /^(wbtest|tiobench|dummy)$/
-	and -e "./functions.sh";
-
-my $which = $ARGV[0];
+pod2usage(-exitstatus => 0, -verbose => 2) if $help > 1;
+pod2usage(1) if $help;
 
 our (
 	$left,$right,$link,
@@ -42,17 +47,13 @@ our (
 );
 
 # CHANGE
-# sleeptime, move_res, logfile
-# logfile gets OVERWRITTEN with each run !!
 Configure(
-	rand_seed => 1234567890,
-	logfile => "tmp.out",
-	logprefix => "test0",
-	config_file => "uml-minna.conf",
-	# config_file => "bloodymary.conf",
-	# config_file => "chipdale.conf",
-	sleeptime => 30,
-	move_res => 50, # probability (percent) of moving resources when $FAILED == 0
+	rand_seed   => $rand_seed,
+	logfile     => $logfile,
+	logprefix   => $logprefix,
+	config_file => $config_file,
+	sleeptime   => $sleeptime,
+	move_res    => $move_prob,
 );
 
 
@@ -63,15 +64,58 @@ Configure(
 
 new LGE_CTH::GenericTest {
 	fs    => $fs0,
-	which => $which,
+	which => $test_name,
 };
 
 new LGE_CTH::GenericTest {
 	fs    => $fs1,
-	which => $which,
+	which => $test_name,
 };
 
 
 	Run;
 
 die "NOT REACHED ??";
+
+__END__
+
+=head1 NAME
+
+Generic test script.
+
+=head1 SYNOPSIS
+
+  -h		short help
+  -help         more verbose help
+  -rand_seed    set random seed
+  -test_name    select which test to run; currently supported:
+  		wbtest, tiobench, dummy
+  -logfile	where to log to
+  -logprefix	used to tag log lines of this run
+  -config	config file to use
+  -sleep	min time between two events
+  -move		probability (percent) to move resources
+		instead of failing some HW component
+
+=head1 DESCRIPTION
+
+ <config_file> should look like bloodymary.conf or chipdale.conf
+ <test_name>   currently supported tests are:
+	wbtest
+	tiobench
+	dummy     (does only touch one file, and sleep, in a loop)
+
+since the path to ./functions.sh is still hardcoded, you have to start
+this in the directory where it lives, or copy functions.sh over to the
+current directory...
+
+to tune which "HW" parts may fail, or what config file to use
+or which file system you like best, or where to mount them,
+you still have to change your config file...
+
+to add more tests, you have to edit this file, and you need to add bash
+functions named <your_test>_start, and maybe <your_test>_stop if the
+generic_test_stop does not fit, to functions.sh.
+
+there currently is no paranoia implemented about whether the needed
+programs exist on the target box.

@@ -1,5 +1,5 @@
 package LGE_CTH;
-# $Id: LGE_CTH.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: LGE_CTH.pm,v 1.1.2.2 2004/06/03 10:00:08 lars Exp $
 use strict;
 use warnings;
 use Carp;
@@ -109,7 +109,8 @@ Usage:
 use LGE_CTH::Configure (
 	logfile   => "some.file.log",
 	logprefix => "test_run_name",
-	config-file => "some.config.file";
+	config_file => "some.config.file";
+	FIXME add missing...
 );
 ___
 sub Configure {
@@ -132,9 +133,10 @@ sub Configure {
 		unless defined $logprefix;
 	die "config_file missing from argument list\n$usage"
 		unless defined $config_file;
-	unlink $logname;
+	# unlink $logname;
+	-e $logname and warn ("appending log to '$logname'\n");
 	# FIXME LOG -=> $logfile = IO::Handle ...
-	sysopen(LOG,$logname,O_WRONLY|O_APPEND|O_CREAT) or die "open logfile: $!";
+	sysopen(LOG,$logname,O_WRONLY|O_APPEND|O_CREAT) or die "open logfile '$logname': $!";
 	syswrite(LOG,"\n\n-- \n\n") or die "syswrite>LOG: $!";
 
 	$srand = unpack "L", `head -c4 /dev/urandom` if not defined $srand;
@@ -144,7 +146,13 @@ sub Configure {
 	$SIG{__WARN__} = sub { print STDERR "@_"; Log(@_); };
 	$SIG{__DIE__}  = sub { warn @_; exit 255 unless $died++ or $exiting; };
 
-	warn("New Start $0 @ARGV\nrand_seed = $srand\nmove_res = $move_resource_prob\n");
+	warn(<<___);
+New Start $0 @ARGV
+rand_seed = $srand
+sleeptime = $sleeptime
+move_res  = $move_resource_prob
+config_file = $config_file
+___
 
 	$SIG{CHLD} = \&__reap;
 	$SIG{INT}  = sub { $SIG{INT} = 'DEFAULT'; warn("SIGINT caught, exiting"); $pending = -1; };
@@ -193,7 +201,7 @@ sub Run {
 
 	@Resource = grep { $_->isa('LGE_CTH::Resource') and $_->{_refcnt} == 0; } @ALL_OBJ;
 	die "No Resource configured in $config_file??\n" unless @Resource;
-	print "Services:\n", map { "\t$_->{_id}\n" } @Resource;
+	print "Services:\n", map { "\t" . $_->as_string . "\n" } @Resource;
 
 	boot_nodes;
 
@@ -314,7 +322,7 @@ BEGIN {
 END {
 	if ($$ == $mpid and not $exiting) {
 		$exiting = 1;
-		warn("\n.\n#\n#\tEXITING\n#\n");
+		warn("\n.\n#\n#\tEXITING\n#\n") if $configured;
 		#print STDERR "$$ removing semaphore\n";
 		$CRM->stop_all if $clean_exit;
 		my $pid;

@@ -1,5 +1,5 @@
 package LGE_CTH::GenericTest;
-# $Id: GenericTest.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: GenericTest.pm,v 1.1.2.2 2004/06/03 10:00:08 lars Exp $
 our @ISA = 'LGE_CTH::Resource';
 
 our %ClassData = (
@@ -28,6 +28,12 @@ sub CheckConfig {
 		(my $fn = $s) =~ s/_script$//;
 		$me->{_config}->{$s} = "${which}_$fn";
 	}
+}
+
+sub as_string {
+	my $me = shift;
+	"$me->{_id}: $me->{_config}->{which} on $me->{_config}->{fs}->{_id}: $me->{_status}->{status}"
+	. ($me->{_current_node} ? " on $me->{_current_node}->{_id}" : "" )
 }
 
 sub env {
