@@ -276,7 +276,9 @@ extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 
 /* drbd_req*/ 
 extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
-extern int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh); 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
+#endif	
 
 /* drbd_fs.c: */
 extern int drbd_set_state(int minor,Drbd_State newstate);
