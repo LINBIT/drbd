@@ -883,15 +883,61 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
    that we do not reuse our own buffer pages (EEs) to early, therefore
    we have the net_ee list. 
 */
+int _drbd_no_send_page(drbd_dev *mdev, struct page *page,
+                   int offset, size_t size)
+{
+       int ret;
+       ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+       kunmap(page);
+       return ret;
+}
+
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
 {
 	int sent,ok;
 	int len   = size;
+	static unsigned long total = 0;
+	static unsigned long fallback = 0;
+	static unsigned long last_rep = 0;
+
+	/* report statistics, every 4096 calls,
+	 * if we had at least one fallback,
+	 * but at most once every five minutes */
+	if ( (++total & 0xfffUL) == 0 ) {
+		unsigned long now = jiffies;
+		if (fallback && time_before(last_rep+300*HZ, now)) {
+			last_rep = now;
+			INFO("sendpage fallback/total: %lu/%lu\n",
+			                          fallback, total);
+		}
+	}
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
 	spin_unlock(&mdev->send_task_lock);
+
+	/* PARANOIA. if this ever triggers,
+	 * something in the layers above us is really kaputt */
+	ERR_IF (page_count(page) < 1) {
+		ERR("someone wants to send a free page!\n");
+		dump_stack();
+		++fallback;
+		sent =  _drbd_no_send_page(mdev, page, offset, size);
+		if (likely(sent > 0)) len -= sent;
+		goto out;
+	}
+
+	if (PageSlab(page)) {
+		/* probably xfs. fall back to sendmsg instead of sendpage.
+		 * FIXME
+		 * we should rather understand and fix the real problem...
+		 */
+		++fallback;
+		sent = _drbd_no_send_page(mdev, page, offset, size);
+		if (likely(sent > 0)) len -= sent;
+		goto out;
+	}
 
 	do {
 		sent = mdev->data.socket->ops->sendpage(mdev->data.socket,page,
@@ -914,6 +960,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		// FIXME test "last_received" ...
 	} while(len > 0 /* THINK && mdev->cstate >= Connected*/);
 
+  out:
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);
