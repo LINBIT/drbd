@@ -43,12 +43,12 @@ DRBD 0.8 Roadmap
    discard-NODENAME 
                   Auto sync to the named node 
   
-  pri-sees-sec-with-higher-gc =
+  pri-sees-sec-with-newer-data =
    disconnect         (current behaviour)
    discard-secondary  Auto sync from is the current primary
    suspend_io          The current primary freezes IO.
 
-  pri-sees-sec-with-higher-gc-cmd "command";
+  pri-sees-sec-with-newer-data-cmd "command";
                       In the same event this command will be executed.
   
   
@@ -64,6 +64,7 @@ DRBD 0.8 Roadmap
        use the GC to tag the bitmap it is better the current way ]
   4) The execution of the pri-sees-sec-with-higher-gc-cmd should
      be implemented like the kernel can execute modprobe...
+  5) To implement this we have the "primary" bit in the data-gen-UUIDs.
   0% DONE
 
 6 It is possible that a secondary node crashes a primary by 
@@ -392,74 +393,80 @@ DRBD 0.8 Roadmap
    * Lots of other shortcommings.
 
   We associate each data generation with an unique UUID (=64 bit random
-  number). A new data generation is created if a node becomes primary
-  and the new auth-enum (see below) is different from the current
-  auth enum.
+  number). A new data generation is created if a primary node is 
+  disconnected from its secondary and when a degraded secondary 
+  becomes primary for the first time.
 
   In the meta-data we store a few generations-UUIDs: 
    * current
    * bitmap
    * history[2]
 
-  In addition there is an enum describing the authorisation of the
-  current gen-UUID: Human, Timout, Connected, Degraded
   As well as the currently known flags: 
    Consistent, WasUpToDate, LastState, ConnectedInd, WantFullSync
 
   The difference here is that the former flags are determined
   when the current-UUID is created, while the latter are modified
   as the state changes. When drbdmeta initializes the meta-data
-  block it sets the current-UUID to JustCreated (a constant 64 bit number).
+  block it sets the current-UUID to JustCreated (a 64 bit constant ).
 
-  When the cluster is in Connected state, then the bitmpat gen-uuid
+  When the cluster is in Connected state, then the bitmpat gen-UUID
   is set to 0 (Since the Bitmap is empty). When we create a new current
   gen-UUID while we are disconencted the (old) current gets backuped
   to the bitmap gen-UUID. (This allowes us to identify the base of
   of the bitmap later)
 
+  Special UUID values:
+  JustCreated [JC] ___  4
+
   ALGORITHMS
 
   Upon Connect:
       self   peer   action
-  1.  JustC   JustC No Sync
-  2.  JustC  !JustC I am SyncTarget setting BM
-  3. !JustC   JustC I am SyncSource setting BM
+  1.  C=JC   C=JC   No Sync
+  2.  C=JC   C!=JC  I am SyncTarget setting BM
+  3. C!=JC   C=JC   I am SyncSource setting BM
   4.   C   =   C    No Sync
   5.   C   =   B    I am SyncTarget using BM
   6.   C   = H1|H2  I am SyncTarget setting BM
   7.   B   =   C    I am SyncSource using BM
   8. H1|H2 =   C    I am SyncSource setting BM
-  9.   B   =   B    [ B != 0 ] SplitBrain, try auto recover strategies 
+  9.   B   =   B    [ and B != 0 ] SplitBrain, try auto recover strategies.
   10 H1|H2 = H1|H2  SplitBrain, disconnect.
   11.               Warn about unrelated Data, disconnect.
 
   Upon Disconnect:
    Primary:
-      Copy the current-UUID over to the bitmap-UUID, create a new 
+      Copy the current-UUID over to the bitmap-UUID, create a new
       current-UUID.
    Secondary:
       Nothing to do.
 
   Upon becomming Primary:
-   If new auth-enum would be different from current auth-enum, create
-   a new one. 
+   In case we are disconnected and the bitmap-UUID is emptry, copy the
+   current-UUID over to the bitmap-UUID and create a new current-UUID.
+   Special-case: primary with --do-what-I-say, clearing the inconsistent
+                 flag causes a new UUID to be generated.
 
   Upon start of resync:
-   Clear Consistent on the SyncTarget. The SyncTarget sets its
+   Clear the consistent-flag on the SyncTarget. The SyncTarget sets its
    bitmap-UUID to the peer's current-UUID.
 
   Upon finish of resync:
    Set the bitmap-UUID to 0. The SyncTarget addopts the current-UUID
-   of the SyncSource. Set Consistent.
-   
-  * Note for the auto recover strategies after split brain (see
-    item 5) it is probabely a good idea to embedd the node's role
-    (i.e. Primary or Secondary) into the UUIDs.
+   of the SyncSource, and sets its consistent-flag.
 
-  Open Issues:
-   - When gets something moved to the History
-   - When to create a new UUID
-   - When (not) to overwrite the bitmap-UUID
+  When the bitmap-UUID gets cleared, move the previous value to H1.
+  In case H1 was already set copy its previous value to H2. Etc..
+
+  For the auto recover strategies after split brain (see item 5) 
+  it is neccessary to embedd the node's role into the UUIDs.
+  This is masked out of course when the UUIDs are compared.
+
+  * Note1: Discontinue the --human and --timout options when 
+           becoming primary.
+           NB: If they are needed, I think they can be implemented
+               as special UUID values.
 
 17 Something like
 
