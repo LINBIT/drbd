@@ -13,9 +13,50 @@
 # Copyright (C) 2000, Thomas Mangin <thomas.mangin@free.fr>
 # Losts of changes in the code
 # moved the most of the code to drbdc only keep the start, stop, restart section
+# Heartbeat integration
 
 INSTALL="/etc/ha.d/resource.d"
 . $INSTALL/drbd_commun $*
+
+# Time to wait for the other side to release the node before
+# forcing the local to become master
+time=300
+
+
+# Parameter :
+# The resource to wait for
+# The time to wait
+waitForPrimary()
+{
+		haveRemotePrimary $1
+		RPRIMARY=$?
+
+		havetowait=0
+		counter=0
+
+		while [ $RPRIMARY -eq 1 -a $counter -lt $2 ]; do
+			havetowait=1
+			logger -t "Waiting for the other node to become secondary"
+			sleep 1
+
+			counter=`expr $counter + 1`
+			
+			haveRemotePrimary $1
+			RPRIMARY=$?
+		done
+
+
+		if [ $havetowait -eq 1]; then
+			if [ $RPRIMARY -eq 1 ]; then
+				logger -t "The other node didn't release the resource after $2 second"
+				logger -t "Forcing the to become primary"
+			else
+				logger -t "The other node is now secondary"
+			fi
+		else
+			logger -t "The node can become primary without waiting"
+		fi
+}
 
 # See how we were called.
 case "$1" in
@@ -32,6 +73,7 @@ case "$1" in
 		is_negotiate=`echo "$MODE" | grep -i "negotiate" | wc -l | sed -e"s/ //g"`
 
 		if [ $is_force -eq 1 ]; then
+			waitForPrimary $RESOURCE $time
 			command="master"
 		elif [ $is_restore -eq 1 ]; then
 			isMasterBoot $RESOURCE
