@@ -171,6 +171,24 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		return 0;
 	}
 
+
+#if 1
+		{
+			static const char *strs[3] = 
+			{
+			  [READ]="READ",
+			  [READA]="READA",
+			  [WRITE]="WRITE",
+			};
+
+			printk(KERN_ERR DEVICE_NAME "%d: do_request(cmd=%s,"
+			       "sec=%ld)\n",
+			       (int)(mdev-drbd_conf),
+			       strs[rw],bh->b_rsector);
+
+		}
+#endif
+
 	
 	memset(nbh, 0, sizeof(*nbh));
 	nbh->b_blocknr=bh->b_blocknr;
