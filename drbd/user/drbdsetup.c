@@ -205,13 +205,13 @@ void print_usage(const char* prgname)
 	  " net local_addr[:port] remote_addr[:port] protocol "
 	  " [-t|--timout val]\n"
           " [-r|--sync-rate val] [-k|--skip-sync]"
-	  " [-s|-tl-size val] [-c|--connect-int]\n"
+	  " [-s|--tl-size val] [-c|--connect-int]\n"
           " [-i|--ping-int]\n"
 	  " disk lower_device [-d|--disk-size val] [-p|--do-panic]\n"
 	  " disconnect\n"
 	  " show\n"
-	  "Version: "VERSION"\n"
-	  ,prgname);
+	  "Version: "REL_VERSION" (api:%d)\n"
+	  ,prgname,API_VERSION);
 
   exit(20);
 }
@@ -245,9 +245,9 @@ int open_drbd_device(const char* device)
       perror("ioctl() failed");
     }
   
-  if (version != MOD_VERSION)
+  if (version != API_VERSION)
     {
-      fprintf(stderr,"Versions of drbdsetup and module are not matching!\n");
+      fprintf(stderr,"Drbdsetup and drbd kernel module are not matching!\n");
       exit(20);
     }    
 

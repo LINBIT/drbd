@@ -502,7 +502,7 @@ int drbd_send_param(int minor)
 	param.h.blksize = cpu_to_be32(1 << drbd_conf[minor].blk_size_b);
 	param.h.state = cpu_to_be32(drbd_conf[minor].state);
 	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
-	param.h.version = cpu_to_be32(MOD_VERSION);
+	param.h.version = cpu_to_be32(PRO_VERSION);
 
 	for(i=0;i<=PrimaryInd;i++) 
 		param.h.gen_cnt[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
@@ -924,8 +924,9 @@ int __init drbd_init(void)
 
 int __init init_module()
 {
-	printk(KERN_INFO DEVICE_NAME ": module initialised. Version: %d\n",
-	       MOD_VERSION);
+	printk(KERN_INFO DEVICE_NAME ": initialised. "
+	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
+	       API_VERSION,PRO_VERSION);
 
 	return drbd_init();
 

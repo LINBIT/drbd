@@ -648,7 +648,7 @@ inline int receive_param(int minor,int command)
 		return FALSE;
 	}
 
-	if(be32_to_cpu(param.version)!=MOD_VERSION) {
+	if(be32_to_cpu(param.version)!=PRO_VERSION) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
 		       minor);
 		set_cstate(&drbd_conf[minor],StandAllone);

@@ -30,7 +30,7 @@ OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_syncer.o $(REQ_O)
 .SUFFIXES: .c .o
 
 .c.o:
-	$(CC) -c $(KERNFLAGS) -DMOD_VERSION=$(MOD_VERSION) -DEXPORT_SYMTAB $<
+	$(CC) -c $(KERNFLAGS) -DEXPORT_SYMTAB $(VERSIONFLAGS) $<
 
 #######
 

@@ -328,7 +328,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 #endif
 
 	case DRBD_IOCTL_GET_VERSION:
-		if ((err = put_user(MOD_VERSION, (int *) arg)))
+		if ((err = put_user(API_VERSION, (int *) arg)))
 			return err;
 		break;
 

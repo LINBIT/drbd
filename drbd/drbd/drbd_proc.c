@@ -101,7 +101,8 @@ struct request *my_all_requests = NULL;
 	};
 
 
-	rlen = sprintf(buf, "version       : %d\n\n", MOD_VERSION);
+	rlen = sprintf(buf, "version: " REL_VERSION " (api:%d/proto:%d)\n\n",
+		       API_VERSION,PRO_VERSION);
 
 	/*
 	  cs .. connection state
