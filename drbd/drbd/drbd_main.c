@@ -612,6 +612,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 static void drbd_timeout(unsigned long arg)
 {
 	struct send_timer_info *ti = (struct send_timer_info *) arg;
+	int i;
 
 	if(ti->via_msock) {
 		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
@@ -632,6 +633,17 @@ static void drbd_timeout(unsigned long arg)
 		*/
 		set_bit(SEND_PING,&ti->mdev->flags);
 		drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
+		if(ti->counter++ > 10) {
+			for(i=0;i<minor_count;i++) {
+				if( ti->task == drbd_conf[i].asender.task ) {
+					printk(KERN_ERR DEVICE_NAME
+					       "%d: Distributed deadlock!\n",
+					       (int)(ti->mdev-drbd_conf));
+					ti->timeout_happened=1;
+					drbd_queue_signal(DRBD_SIG, ti->task);
+				}
+			}
+		}
 		if(ti->restart) {
 			ti->s_timeout.expires = jiffies +
 				(ti->mdev->conf.timeout * HZ / 10);
@@ -705,6 +717,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		ti.via_msock=via_msock;
 		ti.task=current;
 		ti.restart=1;
+		ti.counter=0;
 		if(!via_msock) mdev->send_proc=&ti;
 
 		init_timer(&ti.s_timeout);

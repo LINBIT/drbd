@@ -203,8 +203,9 @@ struct send_timer_info {
 	struct Drbd_Conf *mdev;
 	struct task_struct *task;
 	volatile int timeout_happened;
+	int counter;
 	int via_msock;
-	int restart;
+	int restart;	
 };
 
 struct Drbd_Conf {
