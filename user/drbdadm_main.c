@@ -68,6 +68,11 @@ struct adm_cmd {
   int res_name_required;
 };
 
+struct cmd_timeout {
+  const char* cmd;
+  int timeout;
+};
+
 extern int yyparse();
 extern FILE* yyin;
 
@@ -134,6 +139,13 @@ struct adm_cmd cmds[] = {
   { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 },
   { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
   { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
+};
+
+struct cmd_timeout timeouts[] = {
+  // All other commands have a timeout of 5 seconds.
+  { "disk",              60 },
+  { "invalidate",        60 },
+  { "invalidate_remote", 60 }
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -381,9 +393,15 @@ pid_t m_system(int flags,char** argv)
   }
 
   if( !(flags&SF_MaySleep) ) {
+    int i,timeout=5;
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
-    alarm(25); // Reading the AL & BitMap can take some time.
+    for(i=0;i<ARRY_SIZE(timeouts);i++) {
+      if(!strcmp(timeouts[i].cmd,argv[2])) {
+	timeout = timeouts[i].timeout;
+      }
+    }
+    alarm(timeout);
   }
 
   if( (flags&SF_ReturnPid) ) {
