@@ -68,6 +68,11 @@ static inline void list_move(struct list_head *list, struct list_head *head)
 	   __x > __y ? __x: __y; })
 #endif
 
+#ifndef BUG_ON
+	/* for ancient 2.4 kernels */
+# define BUG_ON(condition) do { if (unlikely((condition)!=0)) BUG(); } while(0)
+#endif
+
 struct lc_element {
 	struct hlist_node colision;
 	struct list_head list;           // LRU list or free list
