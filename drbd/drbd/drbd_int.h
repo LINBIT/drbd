@@ -535,7 +535,7 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 
 	bh->b_list = BUF_LOCKED;
 	bh->b_end_io = handler;
-	// init_waitqueue_head(&bh->b_wait); since it is in set_bh() ...
+	init_waitqueue_head(&bh->b_wait); since it is in set_bh() ...
       	bh->b_data = data;
 	bh->b_size = size;
 	// bh->b_state = 0; memset(bh,0 ... does the job :)
