@@ -80,6 +80,12 @@ http://www.complang.tuwien.ac.at/reisner/drbd/drbdsetup.html
 
 Howto !
 -------
+
+You can have a look the the README file in the script directory on
+how to setup drbdc, the control script,  and the datadisk to use with
+init or hearbeat.
+
+
 Let's assume that your two machines are named 'node1' and 'node2', and
 that you want to use /dev/hdc6 as the lower level block device on
 both. The following commands are needed on node1 to setup drbd:
