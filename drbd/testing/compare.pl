@@ -45,7 +45,7 @@ sub send_sub($$) {
       print $stream $line if ($in);
 
       $brks=$line;
-      $brks =~ s/\\\{//g; #Things like strings and comments are not handeld.. 
+      $brks =~ s/\\\{//g; #Things like strings and comments are not handeld.
       $brks =~ s/[^{]//g;
       $level=$level+length($brks);
       $was_positive=1 if ($level > 0);
@@ -94,7 +94,7 @@ sub run_local($) {
 
 sub check_ssh($) {
   my ($host)=@_;
-  my ($pid,$cnt);
+  my ($pid,$cnt,$r);
 
   if( $> != 0) {
     print
@@ -104,13 +104,18 @@ sub check_ssh($) {
 
   $pid=fork();
   if($pid==0) {
-    exec "ssh $host echo It works > /dev/null 2> /dev/null";
+    exec "ssh $host echo It works > /dev/null 2> /dev/null ";
   }
-  for($cnt=0;$cnt<10;$cnt++) {
-    if(waitpid($pid,&POSIX::WNOHANG) == -1) {
+
+  for($cnt=0;$cnt<3;$cnt++) {
+    $r=waitpid($pid,&POSIX::WNOHANG);
+    if($r==0) {
       sleep 1;
-    } else {
+      print ".";
+    } elsif ($r==$pid) {
       return;
+    } else {
+      print "waitpid() failed\n";
     }
   }
 
@@ -126,15 +131,16 @@ sub check_ssh($) {
 }
 
 sub main {
-  my($rline,$lline);
+  my($rline,$lline,$cbn,$lt,$lbc,$cbc);
   my($lpid,$lfh,$rpid,$rfh,$lname,$rname,$ldev,$rdev);
   my $blksize=4096;
 
   GetOptions("blksize=i" => \$blksize);
 
   if($#ARGV != 2 && $#ARGV != 3) {
-    print "USAGE: $0 [--blksize=BYTES] local_blk_dev host remote_blk_dev\n".
-          "   OR: $0 [--blksize=BYTES] host1 blk_dev1 host2 bkl_dev2\n\n";
+    print "USAGE: $0 [options] local_blk_dev host remote_blk_dev\n".
+          "   OR: $0 [options] host1 blk_dev1 host2 bkl_dev2\n".
+	  " options: --blksize=BYTES\n\n";
     exit 10;
   }
 
@@ -155,22 +161,31 @@ sub main {
   }
   ($rpid,$rfh) = run_remote("print_md5s(\"${rdev}\",${blksize});",$rname);
 
-
+  $lt=0;
+  $lbc=0;
   while(1) {
     $lline=<$lfh>;
     $rline=<$rfh>;
     last if(!defined($lline) && !defined($rline));
     if(!defined($lline)) {
-      print "device on $lname smaller\n";
+      print "\ndevice on $lname smaller\n";
       last;
     }
     if(!defined($lline)) {
-      print "device on $rname smaller\n";
+      print "\ndevice on $rname smaller\n";
       last;
     }
     if( $lline ne $rline) {
       print "$lname: $lline";
       print "$rname: $rline";
+    } elsif ($lt != time()) {
+      $lt=time();
+      if ( $lline =~ /^blk:(\d+)/ ) {
+	$cbc=$1;
+	print "Current block: $cbc Speed: ".($cbc-$lbc)*$blksize/1048576
+	  ." MB/s              \r";
+	$lbc=$cbc;
+      }
     }
   }
 
@@ -181,6 +196,7 @@ sub main {
   waitpid($rpid,0);
 }
 
+$|=1;
 main;
 
 
