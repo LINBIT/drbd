@@ -274,9 +274,11 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 #endif
 
 static inline void
-drbd_bio_add_page(struct buffer_head *bh, struct page *page, unsigned long offset)
+drbd_bio_add_page(struct buffer_head *bh, struct page *page, unsigned int len,
+		  unsigned int offset)
 {
 	set_bh_page (bh,page,offset);
+	bh->b_size = len;
 	bh->b_this_page = bh;
 }
 
@@ -290,10 +292,12 @@ static inline void drbd_generic_make_request(int rw, struct buffer_head *bh)
 	generic_make_request(rw, bh);
 }
 
-static inline void drbd_generic_make_request_wait(int rw, struct buffer_head *bh)
+#warning "FIXME we need to check the return value"
+static inline int drbd_generic_make_request_wait(int rw, struct buffer_head *bh)
 {
 	generic_make_request(rw, bh);
 	wait_on_buffer(bh);
+	return test_bit(BH_Uptodate,&bh->b_state);
 }
 
 static inline void drbd_kick_lo(drbd_dev *mdev)
