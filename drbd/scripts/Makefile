@@ -16,6 +16,9 @@
 # along with drbd; see the file COPYING.  If not, write to
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
+# for Debian:
+#   update-rc.d drbd start 18 2 3 4 5 . stop 18 0 1 6 .
+#
 
 include ../Makefile.vars
 
