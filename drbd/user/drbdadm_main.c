@@ -1,3 +1,27 @@
+/*
+   drbdadm_main.c
+
+   This file is part of drbd by Philipp Reisner.
+
+   Copyright (C) 2002, Philipp Reisner <philipp.reisner@gmx.at>.
+        Initial author.
+
+   drbd is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
+
+   drbd is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with drbd; see the file COPYING.  If not, write to
+   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+
+ */
+
 #include <stdio.h>
 #include <string.h>
 
@@ -9,17 +33,26 @@
 
 #include "drbdadm.h"
 
-extern int line;
 extern int yyparse();
 extern FILE* yyin;
-extern int yydebug;
 
+/* ssprintf() places the result of the printf in the current stack
+   frame and sets ptr to the resulting string. If the current stack
+   frame is destroyed (=function returns), the allocated memory is 
+   freed automatically */
+#define ssprintf(ptr,...) \
+do { \
+  char buffer[255]; \
+  ptr=strcpy(alloca(snprintf(buffer,255,__VA_ARGS__)+1),buffer); \
+} while(0)
+
+int line=1;
 struct d_resource* config;
-
+int config_valid=1;
 int dry_run=0;
 char* drbdsetup;
 
-/*** These functions are used the print the config again ***/
+/*** These functions are used to the print the config again ***/
 
 static char* esc(char* str)
 {
@@ -126,7 +159,6 @@ static int m_system(char** argv)
   }
 }
 
-
 static void conf_disk(struct d_resource* res)
 {
   char* argv[20];
@@ -141,11 +173,7 @@ static void conf_disk(struct d_resource* res)
     argv[argc++]=res->me->disk;
     opt=res->disk_options;
     while(opt) {
-      char buffer[255],*b;
-
-      b=alloca(snprintf(buffer,255,"--%s=%s",opt->name,opt->value)+1);
-      strcpy(b,buffer);
-      argv[argc++]=b;
+      ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
       opt=opt->next;
     }
     argv[argc++]=0;
@@ -157,7 +185,6 @@ static void conf_disk(struct d_resource* res)
 
 static void conf_net(struct d_resource* res)
 {
-  char buffer[255],*b;
   char* argv[20];
   struct d_option* opt;  
 
@@ -167,21 +194,13 @@ static void conf_net(struct d_resource* res)
     argv[argc++]=drbdsetup;
     argv[argc++]=res->me->device;
     argv[argc++]="net";
-    b=alloca(snprintf(buffer,255,"%s:%s",res->me->address,res->me->port)+1);
-    strcpy(b,buffer);
-    argv[argc++]=b;
-    b=alloca(snprintf(buffer,255,"%s:%s",res->partner->address,res->partner->port)+1);
-    strcpy(b,buffer);
-    argv[argc++]=b;
+    ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
+    ssprintf(argv[argc++],"%s:%s",res->partner->address,res->partner->port);
     argv[argc++]=res->protocol;
 
     opt=res->net_options;
     while(opt) {
-      char buffer[255],*b;
-
-      b=alloca(snprintf(buffer,255,"--%s=%s",opt->name,opt->value)+1);
-      strcpy(b,buffer);
-      argv[argc++]=b;
+      ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
       opt=opt->next;
     }
 
@@ -192,8 +211,6 @@ static void conf_net(struct d_resource* res)
   }
 }
 
-
-
 int main(int argc, char** argv)
 {
   
@@ -203,10 +220,13 @@ int main(int argc, char** argv)
     }
 
   yyparse();
-  
-  dry_run=1;
+
+  // TODO write real functionality...
+
   find_drbdsetup(); // setup global variable drbdsetup.
-  dump_conf(config);
+  dump_conf(config);  
+  dry_run=1;
+  if(!config_valid) exit(10);
   conf_disk(config);
   conf_net(config);
 

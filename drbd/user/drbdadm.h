@@ -30,6 +30,8 @@ struct d_resource
   struct d_resource* next;
 };
 
+extern int config_valid;
 extern struct d_resource* config;
+extern int line;
 
 #endif

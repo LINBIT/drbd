@@ -24,6 +24,7 @@ static struct d_option* new_opt(char* name,char* value)
  
 static void derror(char* text)
 {
+  config_valid=0;
   fprintf(stderr,"%s\n",text);
 }
 

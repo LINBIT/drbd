@@ -3,8 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "drbdadm_parser.h"
-
-int line=1;
+#include "drbdadm.h"
 
 void syntax_error(char*);
 
