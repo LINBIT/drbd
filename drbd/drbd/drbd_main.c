@@ -378,14 +378,13 @@ int drbd_thread_setup(void* arg)
 	current->session = 1;
 	current->pgrp = 1;
 
-	if (!thi->task) sleep_on(&thi->wait);
+	down(&thi->mutex); //ensures that thi->task is set.
 
 	retval = thi->function(thi);
 
 	thi->task = 0;
-	wake_up(&thi->wait);
-
 	set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
+	up(&thi->mutex); //allow thread_stop to proceed
 
 	return retval;
 }
@@ -394,7 +393,7 @@ void drbd_thread_init(int minor, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
 	thi->task = NULL;
-	init_waitqueue_head(&thi->wait);
+	init_MUTEX(&thi->mutex);
 	thi->function = func;
 	thi->minor = minor;
 }
@@ -406,6 +405,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	if (thi->task == NULL) {
 		thi->t_state = Running;
 
+		down(&thi->mutex);
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 
 		if (pid < 0) {
@@ -418,7 +418,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 		read_lock(&tasklist_lock);
 		thi->task = find_task_by_pid(pid);
 		read_unlock(&tasklist_lock);
-		wake_up(&thi->wait);
+		up(&thi->mutex);
 	}
 }
 
@@ -435,21 +435,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	drbd_queue_signal(SIGTERM,thi->task);
 
 	if(wait) {
-		sleep_on(&thi->wait);	/* wait until the thread
-						   has closed the socket */
-
-			/*
-			  This would be the *nice* solution, but it crashed
-			  my machine...
-			  
-			  struct task_struct *p;
-			  read_lock(&tasklist_lock);
-			  p = find_task_by_pid(drbd_conf[minor].rpid);
-			  p->p_pptr = current;
-			  errno = send_sig_info(SIGTERM, NULL, p);
-			  read_unlock(&tasklist_lock);
-			  interruptible_sleep_on(&current->wait_chldexit);
-			*/
+		down(&thi->mutex); // wait until thread has exited
+		up(&thi->mutex);
 
 		current->state = TASK_INTERRUPTIBLE;
 		schedule_timeout(HZ / 10);

@@ -158,7 +158,7 @@ typedef enum {
 
 struct Drbd_thread {
 	struct task_struct *task;
-        wait_queue_head_t wait;  
+	struct semaphore mutex;
 	int t_state;
 	int (*function) (struct Drbd_thread *);
 	int minor;
@@ -330,11 +330,6 @@ static inline void drbd_thread_stop(struct Drbd_thread *thi)
 	_drbd_thread_stop(thi,FALSE,TRUE);
 }
 
-static inline void drbd_thread_restart(struct Drbd_thread *thi)
-{
-	_drbd_thread_stop(thi,TRUE,TRUE);
-}
-
 static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 {
 	_drbd_thread_stop(thi,TRUE,FALSE);
@@ -414,7 +409,7 @@ extern struct proc_dir_entry drbd_proc_dir;
 #define wq_write_unlock_irqrestore(A,B) write_unlock_irqrestore(A,B)
 #endif
 
-#if ARCH==uml
+#ifdef __arch_um__
 #define waitpid(A,B,C) 0
 #endif
 

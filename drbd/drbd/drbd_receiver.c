@@ -961,7 +961,7 @@ int drbdd_init(struct Drbd_thread *thi)
 		if (thi->t_state == Restarting) {
 			unsigned long flags;
 			thi->t_state = Running;
-			wake_up(&thi->wait);
+
 			spin_lock_irqsave(&current->sigmask_lock,flags);
 			if (sigismember(SIGSET_OF(current), SIGTERM)) {
 				sigdelset(SIGSET_OF(current), SIGTERM);
@@ -1060,7 +1060,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 			rr=0;
-		} else if(rr < 0) {
+		} else if(rr <= 0) {
 			printk(KERN_ERR DEVICE_NAME "%d: rr=%d\n",
 			       (int)(mdev-drbd_conf),rr);
 			break;
