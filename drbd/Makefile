@@ -21,7 +21,16 @@
 
 SUBDIRS     = user drbd scripts benchmark documentation #testing
 ALLSUBDIRS  = user drbd scripts benchmark documentation testing
+ifdef FORCE
+#
+# NOTE to generate a tgz even if too lazy to update the changelogs,
+# or to forcefully include the cvs date in the tgz name:
+#   make distclean doc update.filelist tgz FORCE=1
+#
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .Date: \(.\{10\}\).*/\1-\2/;s,/,,g;p;q;}' drbd_config.h)
+else
 REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .*/\1/;p;q;}' drbd/linux/drbd_config.h)
+endif
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
 
 LN_S = ln -s
@@ -62,6 +71,7 @@ uninstall:
 
 check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
+	echo "checking for presence of $$dver_re in various changelog files"; \
 	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
 	                     -e '/^- *drbd ('"$$dver_re"'-/p' \
 	                     -e '/^\*.* \['"$$dver_re"'-/p' < drbd.spec.in) ; \
@@ -79,6 +89,7 @@ update.filelist:
 	cvs status | grep -o "/drbd/drbd/[^,]*" |                 \
 	sed "s/Attic\///;                                         \
 	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist  ;\
+	[ -s .filelist ] # assert there is something in .filelist now
 	find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
@@ -93,6 +104,7 @@ tgz: .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
 	rm -f drbd-$(DIST_VERSION)
 	ln -s . drbd-$(DIST_VERSION)
+	set -e ; for f in $$(<.filelist) ; do [ -e $$f ] ; done
 	tar --owner=0 --group=0 -czf drbd-$(DIST_VERSION).tar.gz -T .filelist
 	rm drbd-$(DIST_VERSION)
 
