@@ -266,6 +266,7 @@ static void dump_global_info()
 
 static void dump_common_info()
 {
+  if(!common) return;
   printI("common {\n"); ++indent;
   dump_options("net",common->net_options);
   dump_options("disk",common->disk_options);
@@ -403,11 +404,14 @@ static void free_config(struct d_resource* res)
     free_options(f->handlers);
     free(f);
   }
-  free_options(common->net_options);
-  free_options(common->disk_options);
-  free_options(common->sync_options);
-  free_options(common->startup_options);
-  free_options(common->handlers);
+  if(common) {
+    free_options(common->net_options);
+    free_options(common->disk_options);
+    free_options(common->sync_options);
+    free_options(common->startup_options);
+    free_options(common->handlers);
+    free(common);
+  }
 }
 
 static void expand_opts(struct d_option* co, struct d_option** opts)
@@ -430,6 +434,8 @@ static void expand_opts(struct d_option* co, struct d_option** opts)
 static void expand_common(void)
 {
   struct d_resource *res,*tmp;
+
+  if(!common) return;
 
   for_each_resource(res,tmp,config) {
     expand_opts(common->net_options,     &res->net_options);
@@ -679,7 +685,9 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
 {
   int rv=0;
   char *sh_cmd;
-  char *argv[] = { "/bin/bash", "-c", NULL , NULL };
+  char *argv[] = { "/bin/sh", "-c", NULL , NULL };
+
+  setenv("DRBD_RESOURCE",res->name,1);
 
   if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
     argv[2]=sh_cmd;

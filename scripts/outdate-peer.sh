@@ -38,6 +38,10 @@
 # the IP addresses in the from="" part are different.
 #
 
+#
+# The caller (drbdadm) sets DRBD_RESOURCE for us.
+#
+
 TIMEOUT=6
 
 for P in "$@"; do
@@ -69,7 +73,7 @@ if [ -z "$PEER_IP" -o -z "$OWN_IP" ]; then
 fi
 
 for IP in $PEER_IP; do
-    ssh $IP drbdadm outdate r0 &
+    ssh $IP drbdadm outdate ${DRBD_RESOURCE:-r0} &
     SSH_PID="$SSH_PID $!"
 done
 
