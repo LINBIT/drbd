@@ -394,7 +394,7 @@ static inline int _wait_ee_cond(struct Drbd_Conf* mdev,struct list_head *head)
 	return rv;
 }
 
-STATIC void drbd_wait_ee(drbd_dev *mdev,struct list_head *head)
+void drbd_wait_ee(drbd_dev *mdev,struct list_head *head)
 {
 	wait_event(mdev->ee_wait,_wait_ee_cond(mdev,head));
 }
@@ -1497,6 +1497,13 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	drbd_wait_ee(mdev,&mdev->active_ee);
 	drbd_wait_ee(mdev,&mdev->sync_ee);
 	drbd_clear_done_ee(mdev);
+
+	D_ASSERT(mdev->ee_in_use == 0);
+	D_ASSERT(list_empty(&mdev->read_ee)); // done by termination of worker
+	D_ASSERT(list_empty(&mdev->active_ee)); // done here
+	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
+	D_ASSERT(list_empty(&mdev->done_ee)); // done here
+
 	mdev->epoch_size=0;
 
 	if (mdev->state == Primary) {

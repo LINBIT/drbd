@@ -535,7 +535,6 @@ typedef struct drbd_request drbd_request_t;
    sync_ee   .. syncer block being written
    done_ee   .. block written, need to send WriteAck
    read_ee   .. [RS]DataRequest being read
-   rdone_ee  .. block read, need to send DataReply
 */
 
 /* Since whenever we allocate a Tl_epoch_entry, we allocated a buffer_head,
@@ -707,7 +706,6 @@ struct Drbd_Conf {
 	struct list_head sync_ee;   // IO in progress
 	struct list_head done_ee;   // send ack
 	struct list_head read_ee;   // IO in progress
-	// struct list_head rdone_ee;  // send result or CondRequest
 	spinlock_t pr_lock;
 	struct list_head app_reads;
 	struct list_head resync_reads;
@@ -879,6 +877,7 @@ extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
 extern int drbd_init_ee(drbd_dev* mdev);
 extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
 extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
+extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
 
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;

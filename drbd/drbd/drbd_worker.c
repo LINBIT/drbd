@@ -88,6 +88,7 @@ void enslaved_read_bi_end_io(drbd_bio_t *bh, int uptodate)
 	smp_mb__after_clear_bit();
 
 	list_del(&e->w.list);
+	if(list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	drbd_chk_io_error(mdev,!uptodate);
@@ -223,6 +224,7 @@ int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 
 	spin_lock_irqsave(&mdev->ee_lock,flags);
 	list_del(&e->w.list);
+	if(list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	drbd_chk_io_error(mdev,error);
@@ -875,6 +877,9 @@ int drbd_worker(struct Drbd_thread *thi)
 	}
 
 	del_timer_sync(&mdev->resync_timer); // just in case...
+
+	drbd_wait_ee(mdev,&mdev->read_ee);
+
 
 	while(!down_trylock(&mdev->data.work.s)) {
 		spin_lock_irq(&mdev->req_lock);
