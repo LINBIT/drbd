@@ -51,8 +51,11 @@
 #define DEVICE_OFF(device)
 #define DEVICE_NR(device) (MINOR(device))
 #include <linux/blk.h>
+
 #if LINUX_VERSION_CODE > 0x20300
 #include <linux/blkpg.h>
+#else
+#define init_MUTEX_LOCKED( A )   (*(A)=MUTEX_LOCKED)
 #endif
 
 #ifdef DEVICE_NAME
@@ -61,6 +64,15 @@
 #define DEVICE_NAME "drbd"
 
 #define DRBD_SIG SIGXCPU
+
+struct Drbd_thread
+{
+  int                      pid;
+  struct semaphore         sem;
+  int                      exit;
+  int                      (*function)(void*);
+  int                      minor;
+};
 
 struct Drbd_Conf
 {
@@ -76,18 +88,21 @@ struct Drbd_Conf
   int                      tl_size;
   int                      send_cnt;
   int                      recv_cnt;
-  int                      rpid;
-  struct semaphore         tsem;
   struct timer_list        s_timeout_t;
-  atomic_t	           synced_to;
+  unsigned long	           synced_to;
+  struct Drbd_thread       receiver;
+  struct Drbd_thread       syncer;
 };
 
 
 int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 	       unsigned long blk_nr,void * data);
 int drbd_send_param(int minor);
-void drbdd_start(int minor);
-void drbdd_stop(int minor,int restart);
+void drbd_thread_start(struct Drbd_thread* thi);
+void drbd_thread_stop(struct Drbd_thread* thi);
+int drbdd_init(void *arg);
+int drbd_syncer(void *arg);
+void drbd_free_resources(int minor);
 #if LINUX_VERSION_CODE > 0x20300
 /*static*/ int drbd_proc_get_info(char *, char ** , off_t ,int , int *, void *);
 #else
@@ -361,7 +376,7 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 	  spin_unlock_irq(&current->sigmask_lock);
 	  printk( KERN_ERR DEVICE_NAME ": send timed out!!\n");
 	  
-	  drbdd_stop(minor,TRUE);
+	  drbd_thread_stop(&drbd_conf[minor].receiver);
 	}
       else spin_unlock_irq(&current->sigmask_lock);
     }
@@ -542,7 +557,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	if( req->cmd == WRITE && drbd_conf[minor].state == Primary &&
 	     ( drbd_conf[minor].cstate == Connected || 
 	        ( drbd_conf[minor].cstate == Syncing && 
-	          req->sector > atomic_read(&drbd_conf[minor].synced_to))))
+	          req->sector > drbd_conf[minor].synced_to)))
 	  sending = 1;
 
 	/* Do disk - IO */
@@ -660,14 +675,15 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
 	}
 
       fsync_dev(MKDEV(MAJOR_NR,minor));
-      drbdd_stop(minor,FALSE);
+      drbd_thread_stop(&drbd_conf[minor].receiver);
+      drbd_free_resources(minor);
 
       drbd_conf[minor].lo_device = inode->i_rdev;
       drbd_conf[minor].lo_file = filp;
 
       drbd_conf[minor].cstate = Unconnected;
 
-      drbdd_start(minor);
+      drbd_thread_start(&drbd_conf[minor].receiver);
 
       break;
 
@@ -724,6 +740,16 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
   return 0;
 }
 
+void drbd_thread_init(int minor,struct Drbd_thread* thi,int (*func)(void*))
+{
+  thi->pid = 0;
+  /*  thi->sem
+      thi->exit   look at drbd_thread_start
+  */
+  thi->function = func;
+  thi->minor = minor;
+}
+
 #if LINUX_VERSION_CODE > 0x20300
 int drbd_init (void) 
 #else
@@ -769,7 +795,9 @@ __initfunc(int drbd_init( void ))
       drbd_conf[i].recv_cnt=0;
       drbd_conf[i].s_timeout_t.function = drbd_send_timeout;
       init_timer(&drbd_conf[i].s_timeout_t);
-      drbd_conf[i].synced_to = 0;
+      drbd_conf[i].synced_to=0;
+      drbd_thread_init(i,&drbd_conf[i].receiver,drbdd_init);
+      drbd_thread_init(i,&drbd_conf[i].syncer,drbd_syncer);
     }
    
   blk_dev[ MAJOR_NR ].request_fn = DEVICE_REQUEST;
@@ -797,7 +825,8 @@ void cleanup_module()
   for (i = 0; i < MINOR_COUNT; i++) 
     {  
       fsync_dev(MKDEV(MAJOR_NR,i));
-      drbdd_stop(i,FALSE);               
+      drbd_thread_stop(&drbd_conf[i].receiver);
+      drbd_free_resources(i);
     }
 
   if ( unregister_blkdev( MAJOR_NR, DEVICE_NAME ) != 0 )
@@ -1103,14 +1132,13 @@ void drbdd(int minor)
       sock_release(drbd_conf[minor].sock);
       drbd_conf[minor].sock=0;
     }
-  /* drbd_conf[minor].cstate=Unconnected; Do not touch cstate here! 
-   * since I am using it for signalling the exit condition to the thread
-   */
+  drbd_conf[minor].cstate=Unconnected;
 }
 
 int drbdd_init(void *arg)
 {
-  int minor = (int)((long)arg);
+  struct Drbd_thread* thi = (struct Drbd_thread*)arg;
+  int minor = thi->minor;
 
   lock_kernel();
   exit_mm(current);    /* give up UL-memory context */
@@ -1121,38 +1149,56 @@ int drbdd_init(void *arg)
 
   sprintf(current->comm, "drbdd_%d",minor);
 
-  down( &drbd_conf[minor].tsem ); /* wait until parent has written its
-				     rpid variable */
+  down( &thi->sem ); /* wait until parent has written its
+			rpid variable */
 
   printk(KERN_ERR DEVICE_NAME ": thread living/m=%d\n",minor);
 
   while(TRUE)
     {
       if(!drbd_connect(minor)) break;
-      if(drbd_conf[minor].cstate == Unconfigured) break;
+      if(thi->exit == TRUE || drbd_conf[minor].cstate == Unconfigured) break;
       drbdd(minor);
-      if(drbd_conf[minor].cstate == Unconfigured) break;
+      if(thi->exit == TRUE) break;
     }
 
   printk(KERN_ERR DEVICE_NAME ": thread exiting/m=%d\n",minor);
 
-  drbd_conf[minor].rpid=0;
-  up( &drbd_conf[minor].tsem );
+  thi->pid=0;
+  up( &thi->sem );
   return 0;
 }
 
-void drbdd_start(int minor)
+void drbd_free_resources(int minor)
+{
+  if(drbd_conf[minor].sock)
+    {
+      sock_release(drbd_conf[minor].sock);
+      drbd_conf[minor].sock=0;
+      printk( KERN_ERR DEVICE_NAME ": sock_release()minor=%d\n",minor);
+    }
+
+  if(drbd_conf[minor].lo_file)
+    {
+      blkdev_release(drbd_conf[minor].lo_file->f_dentry->d_inode);
+      fput(drbd_conf[minor].lo_file);
+      drbd_conf[minor].lo_file=0;
+      drbd_conf[minor].lo_device=0;
+    }
+
+  drbd_conf[minor].cstate = Unconfigured;
+}
+
+void drbd_thread_start(struct Drbd_thread* thi)
 {
   int pid;
 
-  if(drbd_conf[minor].rpid==0)
+  if(thi->pid==0)
     {
-#if LINUX_VERSION_CODE > 0x20300
-	  init_MUTEX_LOCKED(&drbd_conf[minor].tsem);
-#else
-      drbd_conf[minor].tsem = MUTEX_LOCKED; 
-#endif
-      pid = kernel_thread(drbdd_init, (void *)((long)minor), 0);
+      init_MUTEX_LOCKED(&thi->sem);
+      thi->exit = FALSE;
+
+      pid = kernel_thread(thi->function, (void *)thi, 0);
 
       if(pid < 0) 
 	{
@@ -1161,27 +1207,24 @@ void drbdd_start(int minor)
 	}
 
       printk(KERN_ERR DEVICE_NAME ": pid = %d\n",pid);  
-      drbd_conf[minor].rpid=pid;
-      up(&drbd_conf[minor].tsem);
+      thi->pid=pid;
+      up(&thi->sem);
     }
 }
 
-void drbdd_stop(int minor,int restart)
+void drbd_thread_stop(struct Drbd_thread* thi)
 {
-  if(drbd_conf[minor].rpid)
+  if(thi->pid)
     {
       int err;
-      if(!restart) drbd_conf[minor].cstate = Unconfigured;
-      /* FIXME should use a dedicated variable, for signalling exit! */
-#if LINUX_VERSION_CODE > 0x20300
-	  init_MUTEX_LOCKED(&drbd_conf[minor].tsem);
-#else
-      drbd_conf[minor].tsem = MUTEX_LOCKED; 
-#endif
-      err = kill_proc_info(SIGTERM,NULL,drbd_conf[minor].rpid);
+
+      thi->exit=TRUE;
+
+      init_MUTEX_LOCKED(&thi->sem);
+      err = kill_proc_info(SIGTERM,NULL,thi->pid);
 
       if(err==0)
-	down( &drbd_conf[minor].tsem ); /* wait until the thread
+	down( &thi->sem ); /* wait until the thread
 					   has closed the socket */
       else
 	printk( KERN_ERR DEVICE_NAME ": could not send signal\n");
@@ -1189,7 +1232,7 @@ void drbdd_stop(int minor,int restart)
       /* printk( KERN_ERR DEVICE_NAME ": (pseudo) waitpid returned \n"); */
 
       current->state = TASK_INTERRUPTIBLE;
-      schedule_timeout(HZ/4);  
+      schedule_timeout(HZ/10); 
 
       /*
 	This would be the *nice* solution, but it crashed
@@ -1204,29 +1247,14 @@ void drbdd_stop(int minor,int restart)
 	interruptible_sleep_on(&current->wait_chldexit);
       */
     }
-
-  if(drbd_conf[minor].sock)
-    {
-      sock_release(drbd_conf[minor].sock);
-      drbd_conf[minor].sock=0;
-      printk( KERN_ERR DEVICE_NAME ": sock_release()minor=%d\n",minor);
-      /* drbd_conf[minor].cstate = Unconnected; */
-    }
-
-  if(!restart && drbd_conf[minor].lo_file)
-    {
-      blkdev_release(drbd_conf[minor].lo_file->f_dentry->d_inode);
-      fput(drbd_conf[minor].lo_file);
-      drbd_conf[minor].lo_file=0;
-      drbd_conf[minor].lo_device=0;
-    }
 }
 
 /* ********* the syncer ******** */
 
 int drbd_syncer(void *arg)
 {
-  int minor = (int)((long)arg);
+  struct Drbd_thread* thi=(struct Drbd_thread*)arg;  
+  int minor = thi->minor;
   int interval;
   int amount = 32; 
   /* FIXME: get the half of the size of the socket write buffer */
@@ -1241,7 +1269,7 @@ int drbd_syncer(void *arg)
 
   sprintf(current->comm, "drbd_syncer_%d",minor);
 
-  down( &drbd_conf[minor].tsem ); /* wait until parent has written its
+  down( &thi->sem ); /* wait until parent has written its
 				     rpid variable */
 
   printk(KERN_ERR DEVICE_NAME ": thread living/m=%d\n",minor);
@@ -1254,7 +1282,7 @@ int drbd_syncer(void *arg)
 
   while(drbd_conf[minor].synced_to)
     {
-      atomic_dec(&drbd_conf[minor].synced_to);
+      drbd_conf[minor].synced_to--;
 
       bh = getblk(MKDEV(MAJOR_NR,minor),drbd_conf[minor].synced_to,
 		  blksize_size[MAJOR_NR][minor]);
@@ -1275,8 +1303,8 @@ int drbd_syncer(void *arg)
 
   printk(KERN_ERR DEVICE_NAME ": thread exiting/m=%d\n",minor);
 
-  drbd_conf[minor].rpid=0;
-  up( &drbd_conf[minor].tsem );
+  thi->pid=0;
+  up( &thi->sem );
   return 0;
 }
 
