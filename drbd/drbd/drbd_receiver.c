@@ -241,7 +241,7 @@ struct socket* drbd_accept(struct socket* sock)
 	return 0;
 }
 
-void drbd_ping_timeout(unsigned long arg)
+void drbd_idle_timeout(unsigned long arg)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
 
@@ -275,7 +275,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 
 	if (mdev->conf.ping_int) {
 		init_timer(&idle_timeout);
-		idle_timeout.function = drbd_ping_timeout;
+		idle_timeout.function = drbd_idle_timeout;
 		idle_timeout.data = (unsigned long) mdev;
 		idle_timeout.expires =
 		    jiffies + mdev->conf.ping_int * HZ;
@@ -850,15 +850,6 @@ void drbdd(int minor)
 			        goto out;
 			break;
 
-			/**** MOVE  ****/
-		case Ping:
-			drbd_send_cmd(minor,PingAck,1);
-			break;
-		case PingAck:
-			dec_pending(minor);
-			break;
-			/**** /MOVE  ****/
-
 		case RecvAck:
 		case WriteAck:
 		        if (!receive_block_ack(minor)) goto out;
@@ -973,7 +964,30 @@ int drbdd_init(struct Drbd_thread *thi)
 	return 0;
 }
 
-/* ********* acknowledge sender for protocol C ******** */
+struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
+{
+	struct Tl_epoch_entry* e;
+
+	if(list_empty(&mdev->free_ee)) _drbd_process_done_ee(mdev);
+
+	if(list_empty(&mdev->free_ee)) {
+		e=kmalloc(sizeof(struct Tl_epoch_entry),GFP_USER);
+		if (!e) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: could not kmalloc() \n",
+			       (int)(mdev-drbd_conf));
+		}
+	} else {
+		struct list_head *le; 	
+		le=mdev->free_ee.next;
+		list_del(le);
+		e=list_entry(le, struct Tl_epoch_entry, list);
+	}
+
+	return e;
+}
+
+/* ********* acknowledge sender ******** */
 
 inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
 {
@@ -1013,57 +1027,107 @@ void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
 	wq_write_unlock_irqrestore(&q2->lock,flags);
 }
 
+void drbd_ping_timeout(unsigned long arg)
+{
+	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
+
+	drbd_thread_restart_nowait(&mdev->asender);
+}
+
+int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
+{
+	mm_segment_t oldfs;
+	struct iovec iov;
+	struct msghdr msg;
+	int rv,done=0;
+
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
+	msg.msg_iovlen = 1;
+	msg.msg_iov = &iov;
+	iov.iov_len = size;
+	iov.iov_base = ubuf;
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
+	msg.msg_flags = MSG_DONTWAIT | MSG_NOSIGNAL;
+
+	lock_kernel();
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	rv = sock_recvmsg(mdev->msock, &msg, size, msg.msg_flags);
+
+	set_fs(oldfs);
+	unlock_kernel();
+
+	if (rv < 0) {
+		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
+		       (int)(mdev-drbd_conf),rv);
+		return rv;
+	}
+
+	return done;
+}
+
+
 int drbd_asender(struct Drbd_thread *thi)
 {
-	int minor = thi->minor;
+	static Drbd_Packet header;
+	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
+	struct timer_list ping_timeout;
+	int rr,rsize=0;
 
-	sprintf(current->comm, "drbd_asender_%d", minor);
+	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
 
 	while(thi->t_state == Running) {
-
-	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);
+	  drbd_double_sleep_on(&mdev->asender_wait,mdev->msock->sk->sleep);
 	  if(signal_pending(current)) break;
 	  
 	  if(thi->t_state == Exiting) break;
 
-	  if(test_and_clear_bit(SEND_PING,&drbd_conf[minor].flags)) {
-		  if(drbd_send_cmd(minor,Ping,1)==sizeof(Drbd_Packet))
-			  inc_pending(minor);
+	  if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
+		  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
+		     sizeof(Drbd_Packet)) {
+			  init_timer(&ping_timeout);
+			  ping_timeout.function = drbd_ping_timeout;
+			  ping_timeout.data = (unsigned long) mdev;
+			  ping_timeout.expires = jiffies + (mdev->artt*2);
+			  add_timer(&ping_timeout);
+		  }
 	  }
 
-	  if( drbd_conf[minor].state == Primary ) {
-		  drbd_try_send_barrier(&drbd_conf[minor]);
-		  continue;
+	  if( mdev->state == Primary ) {
+		  drbd_try_send_barrier(mdev);
+	  } else { //Secondary
+		  drbd_process_done_ee(mdev);
+		  //TODO: should asender exit if sending fails ?
 	  }
 
-	  drbd_process_done_ee(drbd_conf+minor);
-
-	  //TODO: should asender exit if sending fails ?
-
+	  rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize);
+	  if(rr < 0) break;
+	  rsize+=rr;
+	  if(rsize == sizeof(header)) {
+		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
+			printk(KERN_ERR DEVICE_NAME "%d: magic?? m: %ld "
+			       "c: %d "
+			       "l: %d \n",
+			       (int)(mdev-drbd_conf),
+			       (long) be32_to_cpu(header.magic),
+			       (int) be16_to_cpu(header.command),
+			       (int) be16_to_cpu(header.length));
+		}
+		switch (be16_to_cpu(header.command)) {
+		case Ping:
+			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
+			break;
+		case PingAck:
+			del_timer(&ping_timeout);
+			break;
+		}
+		rsize=0;
+	  }
 	}
 
 	return 0;
 }
 
-struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
-{
-	struct Tl_epoch_entry* e;
-
-	if(list_empty(&mdev->free_ee)) _drbd_process_done_ee(mdev);
-
-	if(list_empty(&mdev->free_ee)) {
-		e=kmalloc(sizeof(struct Tl_epoch_entry),GFP_USER);
-		if (!e) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: could not kmalloc() \n",
-			       (int)(mdev-drbd_conf));
-		}
-	} else {
-		struct list_head *le; 	
-		le=mdev->free_ee.next;
-		list_del(le);
-		e=list_entry(le, struct Tl_epoch_entry, list);
-	}
-
-	return e;
-}
