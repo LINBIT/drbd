@@ -225,18 +225,24 @@ struct Drbd_thread {
 	int minor;
 };
 
-struct drbd_request_struct {
-        struct buffer_head* bh; /* bh waiting for io_completion */
-        int rq_status;
+struct drbd_barrier;
+struct drbd_request {
+	struct list_head list;     // requests are chained to a barrier
+	struct drbd_barrier *barrier; // The next barrier.
+	struct buffer_head *bh;    // buffer head
+	unsigned long sector;
+	int rq_status;
 };
 
-typedef struct drbd_request_struct drbd_request_t;
+struct drbd_barrier {
+	struct list_head requests; // requests before 
+	struct drbd_barrier *next; // pointer to the next barrier
+	int br_number;  // the barriers identifier.
+	int n_req;      // number of requests attached before this barrier
+};
+
+typedef struct drbd_request drbd_request_t;
 #define GET_SECTOR(A) ((A)->bh->b_rsector)   //REMOVE THIS
-
-struct tl_entry {
-        drbd_request_t* req;
-        unsigned long sector;
-};
 
 /* These Tl_epoch_entries may be in one of 4 lists:
    free_ee .... free entries
@@ -330,9 +336,8 @@ struct Drbd_Conf {
 	atomic_t unacked_cnt;
 	spinlock_t req_lock;
 	rwlock_t tl_lock;
-	struct tl_entry* tl_end;
-	struct tl_entry* tl_begin;
-	struct tl_entry* transfer_log;
+	struct drbd_barrier* newest_barrier;
+	struct drbd_barrier* oldest_barrier;
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
@@ -482,12 +487,6 @@ static inline void set_cstate(struct Drbd_Conf* mdev,Drbd_CState cs)
 {
 	mdev->cstate = cs;
 	wake_up_interruptible(&mdev->cstate_wait);	
-}
-
-static inline void tl_init(struct Drbd_Conf *mdev)
-{
-	mdev->tl_begin = mdev->transfer_log;
-	mdev->tl_end = mdev->transfer_log;
 }
 
 static inline void inc_pending(struct Drbd_Conf* mdev)
