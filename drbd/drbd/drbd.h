@@ -97,9 +97,11 @@ enum ret_codes {
 	LDOpenFailed,
 	MDOpenFailed,
 	LDDeviceTooSmall,
+	MDDeviceTooSmall,
 	LDNoConfig,
 	LDMounted,
-	MDMounted
+	MDMounted,
+	LDMDInvalid
 };
 
 struct ioctl_disk_config {

@@ -188,7 +188,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct disk_config)))
 		return -EFAULT;
 
-	/* TODO plausibility check for the provided values... */
+	if ( new_conf.meta_index < -1) {
+		retcode=LDMDInvalid;
+		goto fail_ioctl;
+	}
 
 	filp = fget(new_conf.lower_device);
 	if (!filp) {
@@ -225,7 +228,8 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	}
 
 	bdev2 = inode2->i_bdev;
-	if (bd_claim(bdev2,new_conf.meta_index==-1 ? mdev : drbd_m_holder )) {
+	if (bd_claim(bdev2, new_conf.meta_index== - 1 ? 
+		     (void *)mdev : (void*) drbd_m_holder )) {
 		retcode=MDMounted;
 		goto release_bdev_fail_ioctl;
 	}
@@ -262,13 +266,23 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	bdev2 = inode2->i_rdev;
 #endif
 
-	if ((drbd_get_capacity(mdev->backing_bdev)>>1) < new_conf.disk_size) {
+	if ( (bdev == bdev2) != (new_conf.meta_index == -1) ) {
+		retcode=LDMDInvalid;
+		goto release_bdev2_fail_ioctl;
+	}
+
+	if ((drbd_get_capacity(bdev)>>1) < new_conf.disk_size) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail_ioctl;
 	}
-#warning "XXX size check does not care about meta data on the same device??"
 
-	
+	if ( new_conf.meta_index == -1 ) i = 1;
+	else i = new_conf.meta_index+1;
+
+	if( drbd_get_capacity(bdev2) < 2*MD_RESERVED_SIZE*i ) {
+		retcode = MDDeviceTooSmall;
+		goto release_bdev2_fail_ioctl;
+	}
 
 	drbd_sync_me(mdev); // XXX does this make sense?
 

@@ -524,9 +524,11 @@ void print_config_ioctl_err(int err_no)
     [LDOpenFailed]="Open of lower device failed.",
     [MDOpenFailed]="Open of meta device failed.",
     [LDDeviceTooSmall]="Low.dev. smaller than requested DRBD-dev. size.",
+    [MDDeviceTooSmall]="Meta device too small.",
     [LDNoConfig]="You have to use the disk command first.",
     [LDMounted]="Lower device is already mounted.",
-    [MDMounted]="Lower device is already mounted."
+    [MDMounted]="Meta device is already mounted.",
+    [LDMDInvalid]="Lower devie / meta device / index combination invalid."
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;
