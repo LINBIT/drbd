@@ -844,7 +844,7 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 		n = e-s;
 		memset(b->bm+s,-1,n*sizeof(long));
 		b->bm_set += n*BITS_PER_LONG - count;
-		if (e == b->bm_bits >> LN2_BPL) {
+		if (e == b->bm_words) {
 			b->bm_set -= bm_clear_surplus(b);
 		}
 	} else {
