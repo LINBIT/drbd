@@ -68,6 +68,26 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 }
 #endif
 
+STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
+int drbd_determin_dev_size(struct Drbd_Conf* mdev)
+{
+	sector_t long pmdss; // previous meta data start sector
+	int rv;
+
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+	pmdss = drbd_md_ss(mdev);
+	rv = do_determin_dev_size(mdev);
+	if ( pmdss != drbd_md_ss(mdev) && mdev->md_index == -1 ) {
+		WARN("Moving meta-data.\n");
+		drbd_al_shrink(mdev); // All extents inactive.
+		drbd_write_bm(mdev);  // 
+		drbd_md_write(mdev);  // Write mdev->la_size to disk.
+	}
+	lc_unlock(mdev->act_log);
+
+	return rv;
+}
+
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
 /*
  * THINK do we want the size to be KB or sectors ?
@@ -75,7 +95,7 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
  *
  * currently *_size is in KB.
  */
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
+STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
 	unsigned long p_size = mdev->p_size;  // partner's disk size.
 	unsigned long la_size = mdev->la_size; // last agreed size.

@@ -431,6 +431,41 @@ void drbd_write_bm(struct Drbd_Conf *mdev)
 	}
 }
 
+static inline int _try_lc_del(struct Drbd_Conf *mdev,struct lc_element *al_ext)
+{
+	int rv;
+
+	spin_lock_irq(&mdev->al_lock);
+	rv = (al_ext->refcnt == 0);
+	if(likely(rv)) lc_del(mdev->act_log,al_ext);
+	spin_unlock_irq(&mdev->al_lock);
+
+	if(unlikely(!rv) INFO("Waiting for extent in drbd_al_shrink()\n");
+
+	return rv;
+}
+
+/**
+ * drbd_al_shrink: Removes all active extents form the AL. (but does not
+ * write any transactions)
+ * You need to lock mdev->act_log with lc_try_lock() / lc_unlock()
+ */
+void drbd_al_shrink(struct Drbd_Conf *mdev)
+{
+	struct lc_element *al_ext;
+	int i;
+
+	D_ASSERT( test_bit(__LC_DIRTY,&mdev->act_log->flags) );
+
+	for(i=0;i<mdev->act_log->nr_elements;i++) {
+		al_ext = lc_entry(mdev->act_log,i);
+		if(al_ext->lc_number == LC_FREE) continue;
+		wait_event(mdev->al_wait, _try_lc_del(mdev,al_ext));
+	}
+
+	wake_up(&mdev->al_wait);
+}
+
 /**
  * drbd_read_bm: Read the whole bitmap from its on disk location.
  */
