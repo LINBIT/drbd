@@ -24,6 +24,7 @@
   *) New (very short!) sys-v init scripts, new userland tool "drbdadm"
   *) Changes to the way we allocate memory. We want to survive hard OOM
      situations. (partially done, partially ongoing work) 
+  *) Implemented the Activity-Log and the persistent bitmap.
 	
 0.6.1  (api:58/proto:61)
 -----
