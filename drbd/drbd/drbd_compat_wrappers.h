@@ -20,10 +20,10 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 	if(IS_VALID_MDEV(bh->b_private)) {
 		printk(KERN_ERR DEVICE_NAME" IS_VALID_MDEV(bh->b_private)\n");
 	}
-	return bh->b_blocknr * (bh->b_size>>9) ;
+	return bh->b_rsector;
 }
 #else
-# define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
+# define APP_BH_SECTOR(BH)  ( (BH)->b_rsector ) 
 #endif
 
 /*
@@ -108,6 +108,11 @@ static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
 static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
 {
 	return ee->private_bio.b_size;
+}
+
+static inline short drbd_bio_get_size(struct buffer_head *bh)
+{
+	return bh->b_size;
 }
 
 static inline char *drbd_bio_kmap(struct buffer_head *bh)

@@ -833,9 +833,10 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	drbd_set_in_sync(mdev,
-			 drbd_ee_get_sector(e),
-			 drbd_ee_get_size(e));
+	sector_t sector = drbd_ee_get_sector(e);
+
+	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
+	drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
 	return TRUE;
@@ -870,14 +871,6 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	return TRUE;
 }
 
-
-/*
- * these should not happen any more. if they do, we do not properly
- * serialize app and resync requests.
- * yes, I think even app READS should be serialized, or made independent of,
- * resync requests
- * at least they only make sense for aligned (size == BM_BLOCK_SIZE)
- */
 int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 		   sector_t sector, int data_size)
 {
@@ -897,8 +890,9 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 		return FALSE;
 	}
 
-	// XXX can't we share it somehow?
-	memcpy(drbd_bio_kmap(bio),drbd_bio_kmap(&e->private_bio),data_size);
+	// Do not use data_size in the memcpy. The app read might be smaller.
+	memcpy(drbd_bio_kmap(bio),drbd_bio_kmap(&e->private_bio),
+	       drbd_bio_get_size(bio));
 	drbd_bio_kunmap(bio);
 	drbd_bio_kunmap(&e->private_bio);
 
@@ -922,28 +916,6 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	return TRUE;
 }
 
-int recv_discard(drbd_dev *mdev, struct Pending_read *pr /* ignored */,
-		 sector_t sector, int data_size)
-{
-	// THINK maybe ignore this block without using EEs ?
-	struct Tl_epoch_entry *e;
-
-	ERR("should not happen anymore: %s\n", __func__);
-
-	e = read_in_block(mdev,data_size);
-	ERR_IF(!e) return FALSE;
-
-	// needed to correctly set the ee members for drbd_send_ack
-	drbd_ee_prepare_write(mdev, e, sector ,data_size);
-	drbd_send_ack(mdev,WriteAck,e);
-
-	spin_lock_irq(&mdev->ee_lock);
-	drbd_put_ee(mdev,e);
-	spin_unlock_irq(&mdev->ee_lock);
-
-	return TRUE;
-}
-
 STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 {
 	struct Pending_read *pr;
@@ -954,7 +926,6 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	static int (*funcs[])(struct Drbd_Conf* , struct Pending_read*,
 		      unsigned long,int) = {
-			      [Discard]      = recv_discard,
 			      [Application]  = recv_dless_read,
 			      [Resync]       = recv_resync_read,
 			      [AppAndResync] = recv_both_read
@@ -1351,7 +1322,6 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		list_del(le);
 
 		bio = pr->d.master_bio;
-		drbd_bio_IO_error(bio);
 
 		switch(pr->cause) {
 		case Application:
@@ -1359,10 +1329,16 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 			break;
 		case AppAndResync:
 			dec_ap_pending(mdev,HERE);
-		case Resync:
 			dec_rs_pending(mdev,HERE);
+			drbd_rs_complete_io(mdev,APP_BH_SECTOR(bio));
+			break;
+		case Resync:
+			ERR("pr with cause 'Resync' on app_reads list.");
+			break;
 		case Discard:;
 		}
+
+		drbd_bio_IO_error(bio);
 
 		INVALIDATE_MAGIC(pr);
 		mempool_free(pr,drbd_pr_mempool);
@@ -1378,6 +1354,11 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		le = workset.next;
 		list_del(le);
 		pr = list_entry(le, struct Pending_read, w.list);
+
+		D_ASSERT(pr->cause == Resync);
+		dec_rs_pending(mdev,HERE);
+		drbd_rs_complete_io(mdev,pr->d.sector);
+
 		mempool_free(pr,drbd_pr_mempool);
 		INVALIDATE_MAGIC(pr);
 	}

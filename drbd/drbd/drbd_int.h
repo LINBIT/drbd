@@ -541,7 +541,7 @@ struct Pending_read {
 		sector_t sector;
 	} d;
 	enum {
-		Discard = 0,
+		Discard = 0,        // unused now.
 		Application = 1,
 		Resync = 2,
 		AppAndResync = 3,

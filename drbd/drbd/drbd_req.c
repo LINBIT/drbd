@@ -123,16 +123,12 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 	SET_MAGIC(pr);
 
 	pr->d.master_bio = bio;
-	// TODO: should only issue AppAndResnc if it is out of sync!
-	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
+	pr->cause = Application;
 	spin_lock(&mdev->pr_lock);
 	list_add(&pr->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 	inc_ap_pending(mdev);
-	if(pr->cause == AppAndResync) inc_rs_pending(mdev);
-	drbd_send_drequest(mdev, 
-			   pr->cause==AppAndResync ? RSDataRequest:DataRequest,
-			   bio->b_rsector, bio->b_size,
+	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
 			   (unsigned long)pr);
 }
 
@@ -194,25 +190,15 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	    bm_get_bit(mdev->mbds_id,bh->b_rsector,bh->b_size) ) {
 		struct Pending_read *pr;
 		if( rw == WRITE ) {
-			spin_lock(&mdev->pr_lock);
-			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
-
-			if(pr) {
-				ERR("Will discard a resync_read\n");
-				pr->cause = Discard;
-				// list del as well ?
-				dec_rs_pending(mdev,HERE);
-			}
-			spin_unlock(&mdev->pr_lock);
-
-			// TODO wait until writes of syncer are done.
-			// Continue with a mirrored write op.
-			// Set some flag to clear it in the bitmap
+			// Actually nothing special to do.
+			// Just do a mirrored write.
+			// Syncronization with the syncer is done
+			// via drbd_[rs|al]_[begin|end]_io()
 		} else { // rw == READ || rw == READA
 			spin_lock(&mdev->pr_lock);
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 			if(pr) {
-				ERR("Upgraded a resync read to an app read\n");
+				INFO("Upgraded a resync read\n");
 
 				pr->cause |= Application;
 				inc_ap_pending(mdev);

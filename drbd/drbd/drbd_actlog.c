@@ -68,7 +68,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	if (unlikely(bm_ext!=NULL)) {
 		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
-			WARN("Delaying app write until sync read is done\n");
+			INFO("Delaying app write until sync read is done\n");
 			return 0;
 		}
 	}
@@ -515,13 +515,9 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			ext->rs_left -= cleared;
 			D_ASSERT(ext->rs_left >= 0);
 		} else {
-			if(mdev->cstate == SyncSource) {
-				WARN("Recounting sectors"
-				     " (resync LRU too small?)\n");
-				// On the SyncSource the element should be
-				// in the cache since drbd_rs_begin_io()
-				// pulled it already in.
-			}
+			WARN("Recounting sectors (resync LRU too small?)\n");
+			// This element should be in the cache 
+			// since drbd_rs_begin_io() pulled it already in.
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 			lc_changed(mdev->resync,&ext->lce);
 		}
@@ -559,13 +555,11 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int blk_size)
 
 	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
+	if( cleared == 0 ) return;
+
 	spin_lock_irqsave(&mdev->al_lock,flags);
 	mdev->rs_left -= cleared;
 	D_ASSERT((long)mdev->rs_left >= 0);
-
-	if( cleared == 0 ) {
-		WARN("cleared == 0; sector = %lu\n",sector);
-	}
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
 		mdev->rs_mark_time=jiffies;
@@ -624,7 +618,9 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
 	}
 	spin_unlock_irq(&mdev->al_lock);
 
-	if(rv) WARN("Delaying sync read until app's write is done\n");
+	if(unlikely(rv)) {
+		INFO("Delaying sync read until app's write is done\n");
+	}
 
 	return rv;
 }
