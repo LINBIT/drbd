@@ -77,6 +77,12 @@ extern char* drbd_devfs_name;
 # warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
 #endif
 
+/* FIXME because of code leftovers from previous times,
+ * currently our code gets heavily confused for device sizes larger
+ * than 2TB, so refuse to configure devices of that size.
+ */
+#define DRBD_MAX_SECTORS (0xffffffffLU)
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 /*lge: this hack is to get rid of the compiler warnings about
  * 'do_nbd_request declared static but never defined'

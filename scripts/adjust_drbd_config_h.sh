@@ -77,7 +77,7 @@ fi
 
 test -e ./linux/drbd_config.h.orig || cp ./linux/drbd_config.h{,.orig}
 
-perl -i -pe "
+perl -pe "
  s{.*(#define SIGHAND_HACK.*)}
   { ( $need_sighand_hack ? '' : '//' ) . \$1}e;
  s{.*(#define REDHAT_HLIST_BACKPORT.*)}
@@ -87,10 +87,13 @@ perl -i -pe "
  s{.*(#define HAVE_FIND_NEXT_BIT.*)}
   { ( $have_find_next_bit ? '' : '//' ) . \$1}e;
  s{.*(#define HAVE_MM_INLINE_H.*)}
-  { ( $have_mm_inline_h ? '' : '//' ) . \$1}e;" ./linux/drbd_config.h
+  { ( $have_mm_inline_h ? '' : '//' ) . \$1}e;" \
+	  < ./linux/drbd_config.h \
+	  > ./linux/drbd_config.h.new
 
 
-if ! DIFF=$(diff -s -U0 ./linux/drbd_config.h{.orig,}) ; then
+if ! DIFF=$(diff -s -U0 ./linux/drbd_config.h{,.new}) ; then
+  mv ./linux/drbd_config.h{.new,}
   sed -e 's/^/  /' <<___
 
 Adjusted drbd_config.h:
@@ -98,5 +101,6 @@ $DIFF
 
 ___
 else
+	rm ./linux/drbd_config.h.new
 	echo -e "\n  Using unmodified drbd_config.h\n"
 fi

@@ -366,6 +366,11 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		goto release_bdev2_fail_ioctl;
 	}
 
+	if (drbd_get_capacity(bdev) > DRBD_MAX_SECTORS) {
+		retcode = LDDeviceTooLarge;
+		goto release_bdev2_fail_ioctl;
+	}
+
 	if ( new_conf.meta_index == -1 ) i = 1;
 	else i = new_conf.meta_index+1;
 

@@ -565,7 +565,9 @@ void print_config_ioctl_err(int err_no)
     [LDNoConfig]="You have to use the disk command first.",
     [LDMounted]="Lower device is already mounted.",
     [MDMounted]="Meta device is already mounted.",
-    [LDMDInvalid]="Lower device / meta device / index combination invalid."
+    [LDMDInvalid]="Lower device / meta device / index combination invalid.",
+    [LDDeviceTooLarge]="Currently we only support devices up to 2TB.\n"
+                       "Contact office@linbit.com, if you need more.",
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;

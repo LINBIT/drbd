@@ -139,16 +139,16 @@ install:
 	@ok=true; for f in $(MANPAGES) ; \
 		do [ -e $$f ] || { echo $$f missing ; ok=false; } ; \
 	done ; $$ok
-	@ set -e; for f in $(MANPAGES) ; do \
+	set -e; for f in $(MANPAGES) ; do \
 		s=$${f##*.}; \
-		install -v -D -m 644 $$f $(PREFIX)usr/share/man/man$$s/$$f ; \
+		install -v -D -m 644 $$f $(PREFIX)/usr/share/man/man$$s/$$f ; \
 	done
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
 
 uninstall:
 	@ set -e; for f in $(MANPAGES) ; do \
 		s=$${f##*.}; \
-		rm -v $(PREFIX)usr/share/man/man$$s/$$f ; \
+		rm -v $(PREFIX)/usr/share/man/man$$s/$$f ; \
 	done
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i uninstall; done
 

@@ -100,6 +100,8 @@ struct syncer_config {
 	int      al_extents;
 };
 
+/* KEEP the order, do not delete or insert!
+ * Or change the API_VERSION, too. */
 enum ret_codes {
 	NoError=0,
 	LAAlreadyInUse,
@@ -116,7 +118,8 @@ enum ret_codes {
 	LDNoConfig,
 	LDMounted,
 	MDMounted,
-	LDMDInvalid
+	LDMDInvalid,
+	LDDeviceTooLarge,
 };
 
 struct ioctl_disk_config {

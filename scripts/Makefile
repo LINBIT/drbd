@@ -58,7 +58,7 @@ install:
 	fi
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
 ifeq ($(DIST),suselike)
-	ln -s ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
+	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
 	@ echo
 	@ echo "Don't forget to run update-rc.d or chkconfig"

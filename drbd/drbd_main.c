@@ -903,6 +903,30 @@ int _drbd_no_send_page(drbd_dev *mdev, struct page *page,
        return ret;
 }
 
+#ifdef DRBD_DISABLE_SENDPAGE
+int _drbd_send_page(drbd_dev *mdev, struct page *page,
+		    int offset, size_t size)
+{
+	int sent,ok;
+	int len   = size;
+
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=current;
+	spin_unlock(&mdev->send_task_lock);
+
+	sent =  _drbd_no_send_page(mdev, page, offset, size);
+	if (likely(sent > 0)) len -= sent;
+
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=NULL;
+	spin_unlock(&mdev->send_task_lock);
+
+	ok = (len == 0);
+	if (likely(ok))
+		mdev->send_cnt += size>>9;
+	return ok;
+}
+#else
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
 {
@@ -980,6 +1004,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		mdev->send_cnt += size>>9;
 	return ok;
 }
+#endif
 
 // Used to send write requests: bh->b_rsector !!
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
