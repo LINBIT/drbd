@@ -19,17 +19,18 @@
 
 #PREFIX      = /usr/local
 
-SUBDIRS     = user drbd scripts benchmark documentation #testing
-ALLSUBDIRS  = user drbd scripts benchmark documentation testing
+SUBDIRS     = user scripts benchmark documentation drbd #testing
+ALLSUBDIRS  = user scripts benchmark documentation drbd testing
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
-# or to forcefully include the cvs date in the tgz name:
+# or to forcefully include the svn-release-and-date in the tgz name:
 #   make distclean doc tgz FORCE=1
 #
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .Date: \(.\{10\}\).*/\1-\2/;s,/,,g;p;q;}' drbd_config.h)
+#define REL_VERSION "0.7-pre10 svn $Rev: 1432 $ $Date: 2004-07-15 14:17:50 +0200 (Thu, 15 Jul 2004) $"
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) svn .Rev: \([0-9]\+\) . .Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1-\2-\3\4\5/;s,/,,g;p;q;}' drbd_config.h)
 else
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .*/\1/;p;q;}' drbd/linux/drbd_config.h)
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) svn .*/\1/;p;q;}' drbd/linux/drbd_config.h)
 endif
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
 
