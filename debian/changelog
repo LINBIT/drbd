@@ -4,6 +4,7 @@ drbd (0.7.1-1) unstable; urgency=low
   * Workaround for XFS' IO requests with page count of zero.
   * Handle the human and the timeout count correctly in the new init script.
   * The implementation of the incon-degr-cmd was missing, added.
+  * Fix for integer overflow in /proc/drbd syncer progress display
   * Longer timeouts in drbdadm for drbdsetup commands witch operate on 
     meta data.
   * New major number 147 (officially registered at lanana.org).

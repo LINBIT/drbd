@@ -621,7 +621,7 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 	if (!drbd_md_sync_page_io(mdev,on_disk_sector,WRITE)) {
 		int i;
 		err = -EIO;
-		ERR( "IO ERROR reading bitmap sector %lu "
+		ERR( "IO ERROR writing bitmap sector %lu "
 		     "(meta-disk sector %lu)\n",
 		     enr, (unsigned long)on_disk_sector );
 		drbd_chk_io_error(mdev, 1);

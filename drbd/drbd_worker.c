@@ -160,6 +160,7 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 	req = container_of(bh,struct drbd_request,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
+	// no special case for READA here, in 2.4.X we submit them as READ.
 	if (!uptodate) {
 		// for the panic:
 		drbd_chk_io_error(mdev,!uptodate); // handle panic and detach.
@@ -302,23 +303,14 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	ERR_IF (bio->bi_size)
 		return 1;
 
-#if 0
-	{
-		static int ccc=1;
-
-		if(ccc++ % 100 == 0) {
-			ERR("Injecting IO error.\n");
-			error=-5;
-			clear_bit(BIO_UPTODATE,&bio->bi_flags);
-		}
-	}
-#endif
-
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	req = container_of(bio,struct drbd_request,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
+	/* READAs may fail.
+	 * upper layers need to be able to handle that themselves */
+	if (bio_rw(bio) == READA) goto pass_on;
 	if (error) {
 		drbd_chk_io_error(mdev,error); // handle panic and detach.
 		if(mdev->on_io_error == PassOn) goto pass_on;
@@ -529,14 +521,15 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 int drbd_resync_finished(drbd_dev* mdev)
 {
-	unsigned long dt;
-	sector_t n;
+	unsigned long db,dt,dbdt;
 
-	dt = (jiffies - mdev->rs_start) / HZ + 1;
-	n = mdev->rs_total << (BM_BLOCK_SIZE_B-10);
-	sector_div(n,dt);
-	INFO("Resync done (total %lu sec; %lu K/sec)\n",
-	     dt,(unsigned long)n);
+	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
+	if (dt <= 0) dt=1;
+	db = mdev->rs_total;
+	dbdt = Bit2KB(db/dt);
+	mdev->rs_paused /= HZ;
+	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
+	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
 	if (mdev->cstate == SyncTarget || mdev->cstate == PausedSyncT) {
 		drbd_md_set_flag(mdev,MDF_Consistent);
@@ -553,7 +546,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	// assert that all bit-map parts are cleared.
 	D_ASSERT(list_empty(&mdev->resync->lru));
 	D_ASSERT(drbd_bm_total_weight(mdev) == 0);
-	mdev->rs_total = 0;
+	mdev->rs_total  = 0;
+	mdev->rs_paused = 0;
 
 	set_cstate(mdev,Connected);
 	/* FIXME
@@ -690,6 +684,7 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 	D_ASSERT(ns == SyncSource || ns == SyncTarget);
 
 	INFO("Syncer continues.\n");
+	mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
 	_set_cstate(mdev,ns);
 
 	if(mdev->cstate == SyncTarget) {
@@ -718,6 +713,8 @@ STATIC void _drbd_rs_pause(drbd_dev *mdev)
 
 	if(mdev->cstate == SyncTarget) set_bit(STOP_SYNC_TIMER,&mdev->flags);
 
+	mdev->rs_mark_time = jiffies;
+	// mdev->rs_mark_left = drbd_bm_total_weight(mdev); // I don't care...
 	_set_cstate(mdev,ns);
 	INFO("Syncer waits for sync group.\n");
 }
@@ -867,6 +864,7 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	set_cstate(mdev,side);
 	mdev->rs_total     =
 	mdev->rs_mark_left = drbd_bm_total_weight(mdev);
+	mdev->rs_paused    = 0;
 	mdev->rs_start     =
 	mdev->rs_mark_time = jiffies;
 

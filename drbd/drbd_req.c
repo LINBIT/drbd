@@ -235,7 +235,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				   mdev->cstate > WFBitMapT) );
 
 	local = inc_local(mdev);
-	// FIXME special case handling of READA ??
+	NOT_IN_26( if (rw == READA) rw=READ );
 	if (rw == READ || rw == READA) {
 		if (local) {
 			if (!drbd_may_do_local_read(mdev,sector,size)) {
@@ -266,6 +266,19 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		remote = !local && test_bit(PARTNER_CONSISTENT, &mdev->flags);
 	} else {
 		remote = 1;
+	}
+
+	/* If we have a disk, but a READA request is mapped to remote,
+	 * we are Primary, Inconsistent, SyncTarget.
+	 * Just fail that READA request right here.
+	 *
+	 * THINK: maybe fail all READA when not local?
+	 *        or make this configurable...
+	 *        if network is slow, READA won't do any good.
+	 */
+	if (rw == READA && !test_bit(DISKLESS,&mdev->flags) && !local) {
+		drbd_bio_IO_error(bio);
+		return 0;
 	}
 
 	if (rw == WRITE && local)
@@ -332,6 +345,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 */
 		if(rw == WRITE) mdev->writ_cnt += size>>9;
 		else            mdev->read_cnt += size>>9;
+
+		// in 2.4.X, READA are submitted as READ.
 		drbd_generic_make_request(rw,&req->private_bio);
 	}
 

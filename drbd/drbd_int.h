@@ -928,6 +928,9 @@ struct bm_extent {
 #define BM_BIT_TO_SECT(x)   ((x)<<(BM_BLOCK_SIZE_B-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
+/* bit to represented kilo byte conversion */
+#define Bit2KB(bits) ((bits)<<(BM_BLOCK_SIZE_B-10))
+
 /* in which _bitmap_ extent (resp. sector) the bit for a certain
  * _storage_ sector is located in */
 #define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SIZE_B-9))

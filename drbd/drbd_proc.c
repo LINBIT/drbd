@@ -48,7 +48,6 @@ struct proc_dir_entry *drbd_proc;
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
-#define Bit2KB(bits) ((bits)<<(BM_BLOCK_SIZE_B-10))
 STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 {
 	int sz = 0;
@@ -121,10 +120,9 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 		sz += sprintf(buf + sz, " speed: %ld", dbdt);
 
 	/* mean speed since syncer started
-	 * FIXME introduce some additional "paused jiffies",
-	 * so we can account for PausedSync periods */
-	dt = (jiffies - mdev->rs_start) / HZ;
-	if (!dt) dt++;
+	 * we do account for PausedSync periods */
+	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
+	if (dt <= 0) dt=1;
 	db = mdev->rs_total - rs_left;
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
@@ -176,6 +174,8 @@ const char* nodestate_to_name(Drbd_State s) {
 		              : state_names[s];
 }
 
+/* FIXME we should use snprintf, we only have guaranteed room for one page...
+ * we should eventually use seq_file for this */
 int drbd_proc_get_info(char *buf, char **start, off_t offset,
 		       int len, int *unused, void *data)
 {

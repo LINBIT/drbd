@@ -1638,7 +1638,8 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	 * otherwise this does not make much sense, no?
 	 * and some other assertion maybe about cstate...
 	 */
-	ERR_IF(mdev->cstate != Secondary) return FALSE;
+	ERR_IF(mdev->state != Secondary || mdev->cstate != Connected)
+		return FALSE;
 
 	drbd_bm_lock(mdev);
 	drbd_bm_set_all(mdev);

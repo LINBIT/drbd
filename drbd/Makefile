@@ -66,6 +66,12 @@ else
     KDIR := /lib/modules/$(shell uname -r)/build
   endif
 
+  SRC_FILES := $(shell ls 2>/dev/null\
+	linux/drbd_config.h linux/drbd.h drbd_actlog.c drbd_bitmap.c drbd_fs.c \
+	drbd_main.c drbd_proc.c drbd_receiver.c drbd_req.c drbd_worker.c \
+	lru_cache.c drbd_compat_types.h drbd_compat_wrappers.h drbd_int.h \
+	lru_cache.h hlist.h mempool-2.4.c mempool.h)
+
   .PHONY: drbd.o default all greeting clean kbuild install dep
 
   drbd.o: greeting kbuild
@@ -81,9 +87,14 @@ else
   endif
 	@echo ""
 
-  drbd_buildtag.c:
-	@echo "you probably need to do a 'make' in DRBDs toplevel directory.";\
-	false
+  drbd_buildtag.c: $(SRC_FILES)
+	@if grep ^drbd/drbd_buildtag.c: ../Makefile &>/dev/null; then \
+	  $(MAKE) -C .. drbd/drbd_buildtag.c ;\
+	 else \
+	  echo "drbd_buildtag.c outdated." ;\
+	  echo "you probably need to do a 'make' in DRBDs toplevel directory.";\
+	  false ;\
+	 fi
 
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
