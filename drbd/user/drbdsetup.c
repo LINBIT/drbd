@@ -198,6 +198,7 @@ void print_usage(const char* prgname)
 	  "Commands:\n"
 	  " primary [-h|--human] \n"
 	  " secondary\n"
+	  " secondary_remote\n"
 	  " wait_sync [-t|--time val]\n"
 	  " wait_connect [-t|--time val]\n"
 	  " replicate\n"
