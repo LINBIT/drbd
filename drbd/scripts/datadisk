@@ -67,6 +67,7 @@ case "$OPTION" in
         fi
 
 		setLocal $CONFIG $RESOURCE
+		$INSTALL/drbd $RESOURCE start
 
 		if [ $SAFE != "false" ]; then
 			if [ -e $STATE/"$RESOURCE"_safe ]; then

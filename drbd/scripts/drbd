@@ -36,7 +36,7 @@ if [ ! -f /lib/modules/`uname -r`/block/drbd.o ]; then
 fi
 
 # See how we were called.
-case "$1" in
+case "$OPTION" in
 	# Start the service
 	start)
 		INSERTED=`lsmod | grep drbd | wc -l | sed -e s/\ //g`
@@ -57,7 +57,7 @@ case "$1" in
 			runForAll configure
 			exit $RETVAL
 		else
-			$0 configure $RESOURCE
+			$0 $RESOURCE configure
 		fi
 
 		;;
@@ -112,7 +112,7 @@ case "$1" in
 		RETVAL=$?
 		;;
 	*)
-		echo "Usage: $0 {start|stop|restart|status}"
+		echo "Usage: $0 [resource] {start|stop|restart|status}"
 		RETVAL=1
 		;;
 esac

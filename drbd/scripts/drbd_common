@@ -315,7 +315,6 @@ have_env HOST $HOST
 have_env STATE $STATE
 have_env CONFIG $CONFIG
 have_env INSTALL $INSTALL
-have_env SAFE $SAFE
 
 have_dir $CONFIG
 have_dir $STATE
