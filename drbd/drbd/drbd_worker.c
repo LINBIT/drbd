@@ -69,7 +69,7 @@ void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate)
 	list_del(&e->w.list);
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
-	__drbd_queue_work(mdev,&mdev->data.work,&e->w);
+	drbd_queue_work(mdev,&mdev->data.work,&e->w);
 }
 
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
@@ -100,7 +100,7 @@ void resync_timer_fn(unsigned long data)
 
 	mdev = (drbd_dev*) data;
 
-	__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 }
 
 STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
@@ -256,7 +256,7 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 
 	if ( mdev->rs_left == 0 ) {
 		mdev->resync_work.cb = w_resync_finished;
-		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 		return;
 	}
 
@@ -264,7 +264,7 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 		bm_reset(mdev->mbds_id);
 		mdev->resync_work.cb = w_make_resync_request;
-		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 	} else {
 		// If we are SyncSource we must be consistent :)
 		mdev->gen_cnt[Flags] |= MDF_Consistent;

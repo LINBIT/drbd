@@ -642,7 +642,7 @@ struct bm_extent { // 16MB sized extents.
  *
  * To be general, this might need a spin_lock member.
  * For now, please use the mdev->req_lock to protect list_head,
- * see __drbd_queue_work below.
+ * see drbd_queue_work below.
  */
 struct drbd_work_queue {
 	struct list_head q;
@@ -1000,7 +1000,16 @@ do {									\
  *************************/
 
 static inline void
-__drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
+_drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
+		  struct drbd_work *w)
+{
+	unsigned long flags;
+	list_add_tail(&w->list,&q->q);
+	up(&q->s);
+}
+
+static inline void
+drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 		  struct drbd_work *w)
 {
 	unsigned long flags;

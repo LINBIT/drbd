@@ -512,7 +512,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
 		// Could also call directly. This runs in worker's context.
 		mdev->resync_work.cb = w_resync_finished;
-		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 	}
 	
 	return 1;
@@ -568,7 +568,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			}
 			udw->enr = enr*SM;
 			udw->w.cb = w_update_odbm;
-			__drbd_queue_work(mdev,&mdev->data.work,&udw->w);
+			drbd_queue_work(mdev,&mdev->data.work,&udw->w);
 			lc_del(mdev->resync,&ext->lce);
 		}
 	}
