@@ -134,7 +134,7 @@ case "$OPTION" in
 			failed "$0 unknow mode '$MODE' configured"
 		fi
 
-		$INSTALL/drbdc $command $RESOURCE
+		$INSTALL/drbdc $RESOURCE $command
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
@@ -151,7 +151,7 @@ case "$OPTION" in
 			rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
 		fi
 
-		$INSTALL/drbdc slave $RESOURCE
+		$INSTALL/drbdc $RESOURCE slave
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
@@ -166,7 +166,7 @@ case "$OPTION" in
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 	status)
-		$INSTALL/drbdc status $RESOURCE
+		$INSTALL/drbdc $RESOURCE status
 		RETVAL=$?
 		;;
 
