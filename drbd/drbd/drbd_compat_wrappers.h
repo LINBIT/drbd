@@ -141,43 +141,50 @@ static inline void drbd_bio_set_end_io(struct buffer_head *bh, bh_end_io_t * h)
 	bh->b_end_io = h;
 }
 
+static inline void
+drbd_md_bh_prepare(drbd_dev *mdev, sector_t sector)
+{
+	struct buffer_head * const bh = &mdev->md_io_bio;
+
+	bh->b_blocknr = sector;	// We abuse b_blocknr here.
+	bh->b_size    = 512;
+	bh->b_private = mdev;
+	bh->b_rdev    = mdev->md_device;
+	bh->b_rsector = sector;
+	bh->b_state   = (1 << BH_Req)
+		       |(1 << BH_Launder)
+		       |(1 << BH_Lock);
+}
+
 static inline void drbd_md_prepare_write(drbd_dev *mdev, sector_t sector)
 {
 	struct buffer_head * const bh = &mdev->md_io_bio;
 
-	bh->b_blocknr = sector;	// We abuse b_blocknr here.
-	bh->b_size    = 512;
-	bh->b_private = mdev;
-	bh->b_rdev    = mdev->md_device;
-	bh->b_rsector = sector;
-
-	// we skip submit_bh, but use generic_make_request.
-	// ?? set_bit(BH_Uptodate, &bh->b_state);
-	set_bit(BH_Req, &bh->b_state);
-	set_bit(BH_Launder, &bh->b_state);
-	set_bit(BH_Lock, &bh->b_state);
-
-	drbd_bio_set_pages_dirty(bh);
-	drbd_bio_set_end_io(&mdev->md_io_bio,drbd_generic_end_io);
+	drbd_md_bh_prepare(mdev,sector);
+	set_bit(BH_Uptodate, &bh->b_state);
+	set_bit(BH_Dirty, &bh->b_state);
+	mdev->md_io_bio.b_end_io = drbd_generic_end_io;
 }
 
 static inline void drbd_md_prepare_read(drbd_dev *mdev, sector_t sector)
 {
-	struct buffer_head * const bh = &mdev->md_io_bio;
+	drbd_md_bh_prepare(mdev, sector);
+	mdev->md_io_bio.b_end_io = drbd_generic_end_io;
+}
 
-	bh->b_blocknr = sector;	// We abuse b_blocknr here.
-	bh->b_size    = 512;
-	bh->b_private = mdev;
-	bh->b_rdev    = mdev->md_device;
-	bh->b_rsector = sector;
-
-	// we skip submit_bh, but use generic_make_request.
-	clear_bit(BH_Uptodate, &bh->b_state);
-	set_bit(BH_Req, &bh->b_state);
-	set_bit(BH_Launder, &bh->b_state);
-	set_bit(BH_Lock, &bh->b_state);
-
-	drbd_bio_set_end_io(&mdev->md_io_bio,drbd_generic_end_io);
+static inline void
+drbd_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
+		sector_t sector, int size)
+{
+	// maybe: memset(bh,0,sizeof(*bh));
+	bh->b_blocknr  = sector;	// We abuse b_blocknr here.
+	bh->b_size     = size;
+	bh->b_rsector  = sector;
+	bh->b_rdev     = mdev->lo_device;
+	bh->b_private  = mdev;
+	bh->b_state    = (1 << BH_Req)
+			|(1 << BH_Launder)
+			|(1 << BH_Lock);
 }
 
 static inline void
@@ -186,17 +193,10 @@ drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e,
 {
 	struct buffer_head * const bh = &e->private_bio;
 
-	bh->b_blocknr  = sector;	// We abuse b_blocknr here.
-	bh->b_size     = size;
-	bh->b_rsector  = sector;
-	bh->b_rdev     = mdev->md_device;
-	bh->b_private  = mdev;
+	drbd_bh_prepare(mdev,bh,sector,size);
+	set_bit(BH_Uptodate,&bh->b_state);
+	set_bit(BH_Dirty,&bh->b_state);
 	bh->b_end_io   = drbd_dio_end_sec;
-
-	set_bit(BH_Dirty, &bh->b_state);
-	set_bit(BH_Req, &bh->b_state);
-	set_bit(BH_Launder, &bh->b_state);
-	set_bit(BH_Lock, &bh->b_state);
 }
 
 static inline void
@@ -205,18 +205,27 @@ drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
 {
 	struct buffer_head * const bh = &e->private_bio;
 
-	bh->b_blocknr  = sector;	// We abuse b_blocknr here.
-	bh->b_size     = size;
-	bh->b_rsector  = sector;
-	bh->b_rdev     = mdev->md_device;
-	bh->b_private  = mdev;
+	drbd_bh_prepare(mdev,bh,sector,size);
 	bh->b_end_io   = enslaved_read_bi_end_io;
+}
 
-	clear_bit(BH_Uptodate, &e->private_bio.b_state);
-	set_bit(BH_Dirty, &bh->b_state);
-	set_bit(BH_Req, &bh->b_state);
-	set_bit(BH_Launder, &bh->b_state);
-	set_bit(BH_Lock, &bh->b_state);
+static inline void
+drbd_bh_clone(struct buffer_head *bh, struct buffer_head *bh_src)
+{
+	memset(bh,0,sizeof(*bh));
+	bh->b_list    = bh_src->b_list; // BUF_LOCKED;
+	bh->b_size    = bh_src->b_size;
+	bh->b_state   = bh_src->b_state & ((1 << BH_PrivateStart)-1);
+	bh->b_page    = bh_src->b_page;
+	bh->b_data    = bh_src->b_data;
+	bh->b_rsector = bh_src->b_rsector;
+	bh->b_blocknr = bh_src->b_rsector; // We abuse b_blocknr here.
+	bh->b_dev     = bh_src->b_dev;     // hint for LVM as to
+					   // which device to call fsync_dev
+					   // on for snapshots
+	atomic_set(&bh->b_count, 1);
+	init_waitqueue_head(&bh->b_wait);
+	// other members stay NULL
 }
 
 static inline void
@@ -224,45 +233,63 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 {
 	struct buffer_head * const bh     = &req->private_bio;
 	struct buffer_head * const bh_src =  req->master_bio;
-	memset(bh, 0, sizeof(struct buffer_head));
 
-	bh->b_list      = bh_src->b_list; // BUF_LOCKED;
-	bh->b_size      = bh_src->b_size;
-	bh->b_state     = bh_src->b_state & ((1 << BH_PrivateStart)-1);
-	bh->b_page      = bh_src->b_page;
-	bh->b_data      = bh_src->b_data;
-	bh->b_rsector   = bh_src->b_rsector;
-	bh->b_blocknr   = bh_src->b_rsector; // We abuse b_blocknr here.
-	bh->b_dev       = bh_src->b_dev;     // so LVM has a hint as to
-					     // which device to call fsync_dev
-					     // on for snapshots
-	bh->b_rdev      = mdev->lo_device;
-	bh->b_private   = mdev;
-	bh->b_end_io    = drbd_dio_end;
-
-	atomic_set(&bh->b_count, 1);
-	init_waitqueue_head(&bh->b_wait);
-
-	// other members stay NULL
+	drbd_bh_clone(bh,bh_src);
+	bh->b_rdev    = mdev->lo_device;
+	bh->b_private = mdev;
+	bh->b_end_io  = drbd_dio_end;
 
 	D_ASSERT(buffer_req(bh));
 	D_ASSERT(buffer_launder(bh));
 	D_ASSERT(buffer_locked(bh));
 	D_ASSERT(buffer_mapped(bh));
 	// D_ASSERT(buffer_dirty(bh)); // It is not true ?!?
+	D_ASSERT(buffer_uptodate(bh));
 
 	// FIXME should not be necessary
-	bh->b_state = (1 << BH_Dirty) | ( 1 << BH_Mapped) | (1 << BH_Lock);
+	bh->b_state = (1 << BH_Uptodate)
+		     |(1 << BH_Dirty)
+		     |(1 << BH_Lock)
+		     |(1 << BH_Req)
+		     |(1 << BH_Mapped) ;
 
 	req->rq_status = RQ_DRBD_NOTHING;
 }
+
+#if 0
+/* not yet used
+ */
+static inline void
+drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
+{
+	struct buffer_head * const bh     = &req->private_bio;
+	struct buffer_head * const bh_src =  req->master_bio;
+
+	drbd_bh_clone(bh,bh_src);
+	bh->b_rdev    = mdev->lo_device;
+	bh->b_private = mdev;
+	bh->b_end_io  = drbd_read_end_io;
+
+	D_ASSERT(buffer_req(bh));
+	D_ASSERT(buffer_launder(bh));
+	D_ASSERT(buffer_locked(bh));
+	D_ASSERT(buffer_mapped(bh));
+	D_ASSERT(!buffer_uptodate(bh));
+
+	// FIXME should not be necessary
+	bh->b_state = (1 << BH_Lock)
+		     |(1 << BH_Req)
+		     |(1 << BH_Mapped) ;
+
+	req->rq_status = RQ_DRBD_NOTHING;
+}
+#endif
 
 static inline void
 drbd_bio_add_page(struct buffer_head *bh, struct page *page, unsigned long offset)
 {
 	set_bh_page (bh,page,offset);
 	bh->b_this_page = bh;
-
 }
 
 static inline struct page* drbd_bio_get_page(struct buffer_head *bh)
