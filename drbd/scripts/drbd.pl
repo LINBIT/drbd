@@ -196,23 +196,6 @@ sub doconfig($$)
     print "[ OK ]\n";
 }
 
-sub m_system($)
-{ 
-    my $cmd=shift;
-    my $pid;
-
-    $pid=fork();
-    if(!defined($pid)) { die "fork failed"; }
-    if($pid == 0) {
-	exec $cmd;
-	die "exec failed";
-    }
-    $SIG{INT}=sub { kill 'INT',$pid; }; #closures are really nice.
-    wait();
-    if( $? & 127 ) { exit 0; } #we got a signal.
-    return ($? >> 8);
-}
-
 sub wait_ready($$)
 {
     my ($res,$mconf)=@_;
@@ -306,11 +289,38 @@ sub become_sec($$)
     }
 }
 
+sub reconnect($$)
+{
+    my ($res,$mconf)=@_;
+    my $errtxt;
+
+    $errtxt=`$drbdsetup $$mconf{self}{device} net $$mconf{self}{address}:$$mconf{self}{port} $$mconf{other}{address}:$$mconf{other}{port} $$mconf{protocol} $$mconf{net}`;
+    if($errtxt) { die "$errtxt"; }
+
+}
+
 #
 # End of action functions.
 #=================
 # Helpers 
 #
+
+sub m_system($)
+{ 
+    my $cmd=shift;
+    my $pid;
+
+    $pid=fork();
+    if(!defined($pid)) { die "fork failed"; }
+    if($pid == 0) {
+	exec $cmd;
+	die "exec failed";
+    }
+    $SIG{INT}=sub { kill 'INT',$pid; }; #closures are really nice.
+    wait();
+    if( $? & 127 ) { exit 0; } #we got a signal.
+    return ($? >> 8);
+}
 
 sub get_drbd_status($)
 {
@@ -453,8 +463,10 @@ sub drbd()
 		die "$pname: Can not unload the drbd module.";
 	    }
 	}
+    } elsif ($command eq "reconnect") { 
+	fcaller( \&reconnect );
     } else {
-	print "USAGE: drbd [resource] start|stop\n";
+	print "USAGE: drbd [resource] start|reconnect|stop\n";
     }
     exit 0;
 }
