@@ -4,6 +4,9 @@
   
   This file is part of drbd by Philipp Reisner.
 
+  Copyright (C) 1999, Philipp Reisner <kde@ist.org>.
+  Copyright (C) 1999, Marcelo Tosatti <marcelo@conectiva.com.br>.
+
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation; either version 2, or (at your option)
@@ -66,6 +69,7 @@
 
 #define DRBD_SIG SIGXCPU
 
+
 struct Drbd_thread {
   int                      pid;
   struct semaphore         sem;
@@ -73,6 +77,22 @@ struct Drbd_thread {
   int                      (*function)(void*);
   int                      minor;
 };
+
+struct drbd_slot { 
+	struct drbd_slot *next;
+	int nr; /* seq number, to be used when we mirror to more than 1 host */
+	u64 block_nr;
+};
+
+/* from kernel/fork.c */
+
+#define DRBD_HASH_SIZE 512
+#define hashfn(blk)   (((blk >> 8) ^ blk) & (DRBD_HASH_SIZE - 1))
+
+struct drbd_hash_slot { 
+	struct drbd_slot *member;
+	spinlock_t hash_slock;
+} drbd_hash[DRBD_HASH_SIZE];
 
 struct Drbd_Conf {
   struct ioctl_drbd_config conf;
@@ -82,9 +102,6 @@ struct Drbd_Conf {
   int                      blk_size_b;
   Drbd_State               state;
   Drbd_CState              cstate;
-  u64*                     transfer_log;
-  u64*                     tl_begin;
-  u64*                     tl_end;
   spinlock_t               tl_lock;
   int                      send_cnt;
   int                      recv_cnt;
@@ -101,7 +118,7 @@ struct Drbd_buffer_head {
 };
 
 
-int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
+int drbd_send(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd,int nr, int len, 
 	       unsigned long sect_nr,void * data);
 int drbd_send_param(int minor,int cmd);
 void drbd_thread_start(struct Drbd_thread* thi);
@@ -278,98 +295,9 @@ struct request* my_all_requests = NULL;
 
 /* PROC FS stuff end */
 
-/************************* The transfer log start */
-/* Must be called with mdev->tl_lock spinlock held */
-
-inline void tl_add(struct Drbd_Conf* mdev,u64 new_nr)
+inline void tl_send_ack(struct Drbd_Conf *mdev, u64 sector)
 {
-  if(new_nr) {
-	  *mdev->tl_end = cpu_to_be64(new_nr);
-
-	  mdev->tl_end++;
-
-	  if(mdev->tl_end == mdev->transfer_log + mdev->conf.tl_size) 
-	    mdev->tl_end=mdev->transfer_log;
-
-	  if(mdev->tl_end == mdev->tl_begin)
-	      printk( KERN_ERR DEVICE_NAME ": transferlog too small!! \n");
-  }
-}    	 
-
-inline void tl_init(struct Drbd_Conf* mdev)
-{
-  mdev->tl_begin = mdev->transfer_log;
-  mdev->tl_end   = mdev->transfer_log;
-}
-
-inline void tl_release(struct Drbd_Conf* mdev,u64 old_nr,int rp)
-{
-  static int count = 0;
-
-  spin_lock(&mdev->tl_lock);
-
-  if(!*mdev->tl_begin) 
-	mdev->tl_begin++;
-
-  if(*mdev->tl_begin != old_nr && count < 30)
-    {
-      printk( KERN_ERR DEVICE_NAME ": WRITE-order!! was=%ld is=%ld @%d\n",
-	      (unsigned long)be64_to_cpu(*mdev->tl_begin),
-	      (unsigned long)be64_to_cpu(old_nr),rp);
-      count++;
-    }
-
-  mdev->tl_begin++;
-
-  if(mdev->tl_begin == mdev->transfer_log + mdev->conf.tl_size) 
-    mdev->tl_begin=mdev->transfer_log;
-
-  spin_unlock(&mdev->tl_lock);
-} 
-
-inline void tl_send_ack(int minor, u64 sector)
-{
-  int len;
-  struct Drbd_Conf* mdev = &drbd_conf[minor];
-
-  spin_lock(&mdev->tl_lock);
-
-  tl_add(mdev, sector);
-  
-  if(mdev->tl_end >= mdev->tl_begin) len = mdev->tl_end - mdev->tl_begin;
-  else len = mdev->conf.tl_size - (mdev->tl_begin - mdev->tl_end);
-  spin_unlock(&mdev->tl_lock);
-
-  if(len > mdev->conf.tl_size/2  )
-    {
-      u64 *begin, *end;
-      /* need to send an ack packet */
-      printk( KERN_ERR DEVICE_NAME ": sending ack! for %d packets\n",len);
-
-      spin_lock(&mdev->tl_lock);
-      begin=mdev->tl_begin;
-      end=mdev->tl_end;
-      mdev->tl_begin=mdev->tl_end;
-      spin_unlock(&mdev->tl_lock);
-      /* The first send might sleep thus I have to have my own begin&end */
-      /* FIXME: This is racy, the data on the table may change under us. */
-
-      if(end >= begin)
-	{
-	  drbd_send(minor,Ack,len*sizeof(u64),0,begin);
-	}
-      else
-	{
-	  drbd_send(minor,Ack,
-		    (mdev->transfer_log + mdev->conf.tl_size - begin)*
-		    sizeof(u64),
-		    0,begin);
-	  drbd_send(minor,Ack,
-		    (end - mdev->transfer_log) *
-		    sizeof(u64),
-		    0,mdev->transfer_log);  
-	}      
-    }
+	drbd_send(mdev ,Ack, 0, sizeof(u64), 0, &sector);
 }
 
 /* Transfer log end */ 
@@ -394,23 +322,98 @@ void drbd_send_timeout(unsigned long arg)
   send_sig_info(DRBD_SIG, NULL, p);
 }
 
-int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
+inline int tl_release(struct Drbd_Conf* mdev, u64 new_nr)
+{
+  struct drbd_slot *member = NULL, *walk;
+  struct drbd_hash_slot *slot = &drbd_hash[hashfn(new_nr)];
+  
+  spin_lock(&slot->hash_slock);
+
+  walk = slot->member; 
+  member = walk;
+
+  if(walk) {
+	  if(!walk->next) {
+	  	/* we are first on the list */
+	 	slot->member = NULL;
+		kfree(walk);
+		/* free_block_on_bitmap(mdev, new_nr); */
+		spin_unlock(&slot->hash_slot);
+		return -1;
+	  }
+	   while(walk->next != NULL) {
+		member = walk;
+		walk = walk->next;
+	  }
+	  member->next = NULL;
+	  kfree(walk);
+  }
+
+  spin_unlock(&slot->hash_slock);
+
+  return 1;
+}
+
+inline int tl_add(struct Drbd_Conf* mdev, u64 new_nr)
+{
+  struct drbd_slot *member, *walk;
+  struct drbd_hash_slot *slot = &drbd_hash[hashfn(new_nr)];
+
+  member = kmalloc(sizeof(struct drbd_slot), GFP_ATOMIC);
+  if(!slot) {
+		printk(KERN_ERR DEVICE_NAME ": could not allocate memory\n");
+		return -1;
+  }
+
+  member->next = NULL;
+
+  spin_lock(&slot->hash_slock);
+
+  walk = slot->member;
+
+  if(!walk) { 
+	slot->member = member;
+	return 1; 
+  }
+
+  while (walk->next != NULL)
+  	walk = walk->next;
+
+ walk->next = member;
+
+  spin_unlock(&slot->hash_slock); 
+
+  return 1;
+}
+
+int drbd_send(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd,int nr,int len, 
 	      unsigned long sect_nr,void * data)
 {
   mm_segment_t oldfs;
   struct msghdr msg;
   struct iovec iov[2];
   Drbd_Packet packet_header;
+
   int err;
 
-  if(! drbd_conf[minor].sock) return -1000;
+  if(!mdev->sock) return -1000;
 
-  down( &drbd_conf[minor].send_mutex );
+/*  if(len >= 512) {
+  	spin_lock(&drbd_conf[minor].tl_lock);
+	nr =_tl_add(&drbd_conf[minor],sect_nr);
+	printk("Number: %d\n", nr);
+	tl_add(&drbd_conf[minor], sect_nr);
+	spin_unlock(&drbd_conf[minor].tl_lock);
+  } */
+
+  down( &mdev->send_mutex );
   /* Without this sock_sendmsg() somehow mixes bytes :-) */
+
 
   packet_header.magic = cpu_to_be32(DRBD_MAGIC);
   packet_header.command = cpu_to_be16(cmd);
   packet_header.length = cpu_to_be16(len);
+  packet_header.table_nr = cpu_to_be16(nr);
   packet_header.block_nr = cpu_to_be64(sect_nr);
 
   iov[0].iov_base=(void*)&packet_header;
@@ -426,24 +429,24 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
   msg.msg_namelen=0;
   msg.msg_flags = MSG_NOSIGNAL;
   
-  if(drbd_conf[minor].conf.timeout)
+  if(mdev->conf.timeout)
     {
-      drbd_conf[minor].s_timeout_t.data = (unsigned long) current;
-      drbd_conf[minor].s_timeout_t.expires = 
-	jiffies + drbd_conf[minor].conf.timeout * HZ / 10 ; 
-      add_timer(&drbd_conf[minor].s_timeout_t);
+      mdev->s_timeout_t.data = (unsigned long) current;
+      mdev->s_timeout_t.expires = 
+	jiffies + mdev->conf.timeout * HZ / 10 ; 
+      add_timer(&mdev->s_timeout_t);
     }
 
   lock_kernel();
   oldfs = get_fs(); set_fs(KERNEL_DS);
-  err = sock_sendmsg(drbd_conf[minor].sock, &msg,
+  err = sock_sendmsg(mdev->sock, &msg,
 		     iov[1].iov_len+sizeof(packet_header));
   set_fs(oldfs);
   unlock_kernel();
 
-  if(drbd_conf[minor].conf.timeout)
+  if(mdev->conf.timeout)
     {
-      del_timer(&drbd_conf[minor].s_timeout_t);
+      del_timer(&mdev->s_timeout_t);
 
       spin_lock(&current->sigmask_lock);
       if(sigismember(&current->signal,DRBD_SIG))
@@ -453,25 +456,20 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 	  spin_unlock_irq(&current->sigmask_lock);
 	  printk( KERN_ERR DEVICE_NAME ": send timed out!!\n");
 	  
-	  drbd_thread_restart(&drbd_conf[minor].receiver);
+	  drbd_thread_restart(&mdev->receiver);
 	}
       else spin_unlock_irq(&current->sigmask_lock);
     }
 
   if(err == len+sizeof(packet_header) )
     {
-      if(cmd == Data) {
-	spin_lock(&drbd_conf[minor].tl_lock);
-	tl_add(&drbd_conf[minor],sect_nr);
-	spin_unlock(&drbd_conf[minor].tl_lock);
-      }
     }
   else
     {
       printk( KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",err);
     }
 
-  up( &drbd_conf[minor].send_mutex );
+  up( &mdev->send_mutex );
 
   return err;
 }
@@ -522,7 +520,8 @@ void drbd_end_req(struct request *req,int nextstate,int uptodate,
   switch( req->rq_status & 0xfffe )
     {
     case RQ_DRBD_SEC_WRITE:
-      goto end_it;
+	tl_send_ack(mdev,req->sector);
+	goto end_it;
     case RQ_DRBD_NOTHING:
       req->rq_status = nextstate | (uptodate ? 1 : 0) ; 
       break;
@@ -587,7 +586,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
   int sending;
 
   minor = MINOR(CURRENT->rq_dev);
-
 
   if(blksize_size[MAJOR_NR][minor] != (1 << drbd_conf[minor].blk_size_b))
     {
@@ -677,6 +675,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	    req->rq_status = RQ_DRBD_NOTHING;
 	  else if(req->cmd == WRITE && drbd_conf[minor].state == Secondary)
 	    req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
+
 	  else
 	    req->rq_status = RQ_DRBD_SOMETHING | 0x0001;
 
@@ -684,11 +683,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	}
 
 	/* Send it out to the network */
-	if( sending )
+	if(sending)
 	  {
-	    if(drbd_send(minor,Data,
-			 req->current_nr_sectors<<9,
-			 req->sector,req->buffer)>0)
+	    if(drbd_send(&drbd_conf[minor],Data,
+		tl_add(&drbd_conf[minor], req->sector), 
+		req->current_nr_sectors<<9, 
+		  req->sector, req->buffer)>0)
 	      {
 		drbd_conf[minor].send_cnt++;
 	      }  
@@ -778,15 +778,6 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
       drbd_thread_stop(&drbd_conf[minor].receiver);
       drbd_free_resources(minor);
 
-      if(!drbd_conf[minor].transfer_log)
-	{
-	  drbd_conf[minor].transfer_log = 
-	    kmalloc(sizeof(u64)*drbd_conf[minor].conf.tl_size,
-		    GFP_KERNEL);
-	  tl_init(&drbd_conf[minor]);
-          memset(drbd_conf[minor].transfer_log, -1, sizeof(u64)*drbd_conf[minor].conf.tl_size);
-	}
-
       drbd_conf[minor].lo_device = inode->i_rdev;
       drbd_conf[minor].lo_file = filp;
 
@@ -875,8 +866,14 @@ __initfunc(int drbd_init( void ))
       return -EBUSY;
     }
 
+  /* Initialize hash table. */
+
+  for (i = 0; i < DRBD_HASH_SIZE; i++) 
+	drbd_hash[i].member = NULL;
+
+ 
   /* Initialize size arrays. */
-  
+
   for (i = 0; i < MINOR_COUNT; i++) 
     {
       drbd_blocksizes[i] = BLOCK_SIZE;
@@ -885,7 +882,6 @@ __initfunc(int drbd_init( void ))
       set_device_ro(MKDEV(MAJOR_NR,i),FALSE/*TRUE*/);     
       drbd_conf[i].sock = 0;
       drbd_conf[i].lo_file = 0;	
-      drbd_conf[i].transfer_log = 0;
       drbd_conf[i].state = Secondary;
       drbd_conf[i].cstate = Unconfigured;
       drbd_conf[i].send_cnt=0;
@@ -898,7 +894,7 @@ __initfunc(int drbd_init( void ))
       drbd_thread_init(i,&drbd_conf[i].syncer,drbd_syncer);
       drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
     }
-   
+
   blk_dev[ MAJOR_NR ].request_fn = DEVICE_REQUEST;
   blksize_size[ MAJOR_NR ] = drbd_blocksizes;
   blk_size[ MAJOR_NR ] = drbd_sizes; /* Size in Kb */
@@ -927,12 +923,6 @@ void cleanup_module()
       drbd_thread_stop(&drbd_conf[i].syncer);
       drbd_thread_stop(&drbd_conf[i].receiver);
       drbd_free_resources(i);
-
-      if(drbd_conf[i].transfer_log)
-	 {
-	   kfree(drbd_conf[i].transfer_log);
-	   drbd_conf[i].transfer_log=0;
-	 }      
     }
 
   if ( unregister_blkdev( MAJOR_NR, DEVICE_NAME ) != 0 )
@@ -972,7 +962,7 @@ int drbd_send_param(int minor,int cmd)
 
   param.my_state = cpu_to_be32(drbd_conf[minor].state);
   
-  err=drbd_send(minor,cmd,sizeof(Drbd_ParameterBlock),0,&param);
+  err=drbd_send(&drbd_conf[minor],cmd,0,sizeof(Drbd_ParameterBlock),0,&param);
   if(err>0) drbd_conf[minor].send_cnt++;
   
   return err;
@@ -1176,8 +1166,6 @@ void drbdd(int minor)
 	       which is of major importance for journaling FSs    */
 	    brelse(bh);
 
-	    /**** transfer log ...***/
-	    tl_send_ack(minor, be64_to_cpu(packet_header.block_nr));
 
 
 	    break;
@@ -1185,24 +1173,19 @@ void drbdd(int minor)
 	case Ack:  
 	  {
 #define ACK_SPACE 11
-	    u64 space[ACK_SPACE];
-	    int rr,i,len;
+	    struct drbd_slot slt;
+	    int rr,len;
 
-	    printk(KERN_ERR DEVICE_NAME ": recv Ack/m=%d\n",minor);
+//	    printk(KERN_ERR DEVICE_NAME ": recv Ack/m=%d\n",minor);
 	    
 	    len = be16_to_cpu(packet_header.length);
 	    
-	    while(len)
-	      {
-		rr = drbd_recv(my_sock, space, min(ACK_SPACE*sizeof(u64),len));
-		if(rr <= 0) break;
-		len -= rr;
-		rr = rr/sizeof(u64);
+            rr = drbd_recv(my_sock, &slt, len);
 
-		for(i=0;i<rr;i++)
-		  tl_release(&drbd_conf[minor],space[i],i);
-	      }
-	    	    
+            if(rr <= 0) break;
+
+            tl_release(&drbd_conf[minor],slt.block_nr);
+
 	    break;
 	  }
 	case SyncNow: 
@@ -1216,9 +1199,9 @@ void drbdd(int minor)
 
 	    printk(KERN_ERR DEVICE_NAME ": recv ReportParams/m=%d\n",minor); 
 
-	    if( drbd_recv(my_sock, &param, sizeof(Drbd_ParameterBlock)) <= 0) 
+	    if( drbd_recv(my_sock, &param, sizeof(Drbd_ParameterBlock)) <= 0)
 	      break;
-	    
+
 	    if(be16_to_cpu(packet_header.command)==BlkSizeChanged)
 	      {
 		blksize = be32_to_cpu(param.my_blksize);
@@ -1473,9 +1456,9 @@ int drbd_syncer(void *arg)
 		}
 	    }
 
-	  rr=drbd_send(minor,Data,blocksize,
-                       atomic_read(&drbd_conf[minor].synced_to),
-		       bh->b_data);
+	  rr=drbd_send(&drbd_conf[minor],Data,
+		tl_add(&drbd_conf[minor], block_nr), 
+		 blocksize, block_nr, bh->b_data);
 
 	  brelse(bh);
 

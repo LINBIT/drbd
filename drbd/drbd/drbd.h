@@ -76,6 +76,7 @@ typedef struct
   __u32 magic;
   __u16 command;
   __u16 length;    /* obsolete ?? hmmm, maybe ... */
+  __u16 table_nr;
   __u64 block_nr;  /* 64 Bits Block number */
 } Drbd_Packet;
 
