@@ -1044,7 +1044,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	struct Tl_epoch_entry *e;
 	drbd_request_t * req;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
-	int header_size, data_size, packet_seq, discard;
+	int header_size, data_size, packet_seq, discard, rv;
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -1068,10 +1068,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write mirrored data block to local disk.\n");
 		drbd_send_ack(mdev,NegAck,e);
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
-		return TRUE;
+		rv = TRUE;
+		goto out1;
 	}
 
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
@@ -1085,13 +1083,15 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	*/
 	if (mdev->conf.two_primaries) {
 		packet_seq = be32_to_cpu(p->seq_num);
-		if( packet_seq > peer_seq(mdev)+1 ) {
+		/* if( packet_seq > peer_seq(mdev)+1 ) {
 			WARN(" will wait till (packet_seq) %d <= %d\n",
 			     packet_seq,peer_seq(mdev)+1);
-		}
+			     } */
 		if( wait_event_interruptible(mdev->cstate_wait, 
-					     packet_seq <= peer_seq(mdev)+1) )
-			return FALSE;
+					     packet_seq <= peer_seq(mdev)+1)) {
+			rv = FALSE;
+			goto out2;
+		}
 
 		spin_lock(&mdev->peer_seq_lock); 
 		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
@@ -1100,14 +1100,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		spin_unlock(&mdev->peer_seq_lock);
 
 		if(discard) {
-			spin_lock_irq(&mdev->ee_lock);
-			drbd_put_ee(mdev,e);
-			spin_unlock_irq(&mdev->ee_lock);
-			atomic_inc(&mdev->epoch_size);
-			dec_local(mdev);
 			WARN("Concurrent write! [DISCARD BY LIST] sec=%lu\n",
 			     (unsigned long)sector);
-			return TRUE;
+			rv = TRUE;
+			goto out2;
 		}
 
 		req = req_have_write(mdev, e);
@@ -1120,34 +1116,27 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 				     "sec=%lu\n",(unsigned long)sector);
 				if( wait_event_interruptible(mdev->cstate_wait,
 					       !req_have_write(mdev,e))) {
-					spin_lock_irq(&mdev->ee_lock);
-					drbd_put_ee(mdev,e);
-					spin_unlock_irq(&mdev->ee_lock);
-					return FALSE;
+					rv = FALSE;
+					goto out2;
 				}
 			} else {
 				/* Conflicting write, no ACK by now*/
 				if (test_bit(UNIQUE,&mdev->flags)) {
-					spin_lock_irq(&mdev->ee_lock);
-					drbd_put_ee(mdev,e);
-					spin_unlock_irq(&mdev->ee_lock);
-					atomic_inc(&mdev->epoch_size);
-					dec_local(mdev);
 					WARN("Concurrent write! [DISCARD BY FLAG] sec=%lu\n",
 					     (unsigned long)sector);
-					return TRUE;
+					rv = TRUE;
+					goto out2;
 				} else {
 					/* write afterwards do not exp ACK */
 					WARN("Concurrent write! [W AFTERWARDS2] sec=%lu\n",
 					     (unsigned long)sector);
 					drbd_send_discard(mdev,req);
 					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+					dec_ap_pending(mdev);
 					if( wait_event_interruptible(mdev->cstate_wait,
 								     !req_have_write(mdev,e))) {
-						spin_lock_irq(&mdev->ee_lock);
-						drbd_put_ee(mdev,e);
-						spin_unlock_irq(&mdev->ee_lock);
-						return FALSE;
+						rv = FALSE;
+						goto out2;
 					}
 				}
 			}
@@ -1170,14 +1159,19 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
-	// Instrumentation
-	set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout(HZ);
-
 	drbd_generic_make_request(WRITE,&e->private_bio);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
+
+ out2:
+	atomic_inc(&mdev->epoch_size);
+	dec_local(mdev);
+ out1:
+	spin_lock_irq(&mdev->ee_lock);
+	drbd_put_ee(mdev,e);
+	spin_unlock_irq(&mdev->ee_lock);
+	return rv;
 }
 
 STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
@@ -2191,7 +2185,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 			drbd_set_in_sync(mdev,sector,blksize);
 			__set_bit(SYNC_STARTED,&mdev->flags);
 		} else {
-			req=(drbd_request_t*)(long)p->block_id;
+			req=(drbd_request_t*)(unsigned long)p->block_id;
 
 			if (unlikely(!tl_verify(mdev,req,sector))) {
 				ERR("Got a corrupt block_id/sector pair.\n");
@@ -2239,7 +2233,7 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	drbd_request_t *req;
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 
-	req = (drbd_request_t *)(long)p->block_id;
+	req = (drbd_request_t *)(unsigned long)p->block_id;
 	D_ASSERT(req->w.cb == w_is_app_read);
 
 	spin_lock(&mdev->pr_lock);
@@ -2299,7 +2293,7 @@ STATIC int got_Discard(drbd_dev *mdev, Drbd_Header* h)
 		return FALSE;
 	}
 
-	dn->block_id = (long)p->block_id;
+	dn->block_id = p->block_id;
 	dn->seq_num = be32_to_cpu(p->seq_num);
 
 	spin_lock(&mdev->peer_seq_lock);

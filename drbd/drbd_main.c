@@ -1343,10 +1343,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 				     atomic_add_return(1,&mdev->packet_seq) );
 
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
-		// Instrumentation
-		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(HZ);
-
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 		if(ok) {
@@ -1389,7 +1385,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 
 	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
-	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
+	/* p.seq_num  = 0;    No sequence numbers here.. */
 
 	/* Only called by our kernel thread.
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL

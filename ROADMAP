@@ -86,7 +86,9 @@ DRBD 0.8 Roadmap
 
   Note: The actual key to the hash should be (sector & ~0x7).
         See item 9 for more details.
-  99% DONE
+  80% DONE ; There are more places where we case an block_id
+             to an req pointer, need to make sure that we
+             cover all of these places.
 
 7 Handle split brain situations; Support IO fencing; 
   
@@ -321,8 +323,7 @@ DRBD 0.8 Roadmap
         to find IO operations starting in the same 4k block of
         data quickly. -> With two lookups the hash table we can
 	find any concurrent access.
-  70% DONE ; Implement discard info packets. Code an equivalent
-             hash table for EEs, to solve example case 5.
+  99% DONE
 
 10 Change Sync-groups to sync-after
   
