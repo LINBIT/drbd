@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $Id: generic_test.pl,v 1.1.2.2 2004/06/03 10:00:08 lars Exp $
+# $Id: generic_test.pl,v 1.1.2.3 2004/06/07 10:16:39 lars Exp $
 use strict;
 use warnings;
 
@@ -15,7 +15,7 @@ my $config_file = 'NONE';
 my $sleeptime = 30;
 my $move_prob = 50;
 my $rand_seed;
-my $help;
+my $help = 0;
 
 GetOptions(
 	"h"           => \$help,

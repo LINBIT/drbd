@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.7 2004/06/01 09:36:55 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.8 2004/06/07 10:16:39 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -9,8 +9,9 @@ clear_env()
 {
 	ID_DISK=0
 	ID_DRBD=0
+	ID_BDEV=0
 	DRBD_CONF=""
-	unset ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*}
+	unset ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*} ${!Bdev_*}
 	unset ${!FS_*} ${!RS_*} ${!H_*} ${!Fmt_*}
 
 	# field name headers for display in _gen_comp()
@@ -61,6 +62,16 @@ disk_to_env()
 	    name=$1
 	    node=$2
 	real_dev=$3
+	DEV=$real_dev
+}
+bdev_to_env()
+{
+	local b=$1
+	case $b in
+	Drbd_*) drbd_to_env $b ;;
+	Bdev_*) DEV=/dev/mapper/${!b} ;;
+	*)	echo >&2 "sorry, I don't know about bdev '$b'"; return 1 ;;
+	esac
 }
 drbd_to_env()
 {
@@ -72,7 +83,25 @@ drbd_to_env()
 	shift 4;  left=$1  left_ip=$2  left_real_dev=$3  left_disk=$4
 	shift 4; right=$1 right_ip=$2 right_real_dev=$3 right_disk=$4
 	   conf=$5
+	DEV=/dev/nb$minor
 }
+new_bdev()
+{
+	local name node real_dev disk bdev
+	name=$1 ; shift
+
+	bdev="$name"
+	while (( $# )) ; do
+		[[ $1 == *:/* ]] || return 101
+		node=${1%%:*} ; real_dev=${1#*:} ; shift
+		let ID_DISK++
+		disk="Disk_$ID_DISK"
+		eval "$disk=( $name $node  $real_dev )"
+		bdev="$bdev $node $real_dev"
+	done
+	let ID_BDEV++
+	eval "Bdev_$ID_BDEV=($bdev)"
+}	
 new_drbd()
 {
 	local name minor port left left_real_dev right right_real_dev link
@@ -87,8 +116,6 @@ new_drbd()
 	right_real_dev=$7
 	          link=$8
 
-	# unfortunately the ${!xx} operator only gives the [0] array field
-	# but since thats the IP by definition, this works.
 	 left_ip=$(ip_of $link $left)  || return
 	right_ip=$(ip_of $link $right) || return
 	node_to_env $left  ;  left_hostname=$hostname
@@ -213,6 +240,7 @@ boot_and_setup_nodes()
 { (
 	set -e
 	initial=true
+	[[ ${!Drbd_*} ]] && have_drbd=true || have_drbd=false # FIXME should be node specific...
 	for n in ${!Node_*}; do
 		node_to_env $n
 		ip=$admin_ip
@@ -243,16 +271,24 @@ boot_and_setup_nodes()
 	# make file systems
 	for fs in ${!FS_*} ; do
 		eval ${!fs}
-		drbd_to_env $DRBD
-		n=$left
-		on ${!n}: drbdadm_pri   name=$name
+		# fixme add paranoia, should check for availability on the
+		# respective node
+		bdev_to_env $BDEV
+		if [[ $BDEV == Drbd_* ]] ; then
+			n=$left
+			on ${!n}: drbdadm_pri   name=$name
+		else
+			n=Node_1
+		fi
 		cat <<-___
 		#
-		# on $n: mkfs.$TYPE /dev/nb$minor
+		# on $n: mkfs.$TYPE $DEV
 		#
 		___
-		on ${!n}: mkfs_$TYPE    DEV=/dev/nb$minor
-		on ${!n}: drbdadm_sec   name=$name
+		on ${!n}: mkfs_$TYPE    DEV=$DEV
+		if [[ $BDEV == Drbd_* ]] ; then
+			on ${!n}: drbdadm_sec   name=$name
+		fi
 	done
 
 	initial=false
@@ -269,10 +305,16 @@ Start()
 	[[ -z $CN && -z $cn ]] || return 101
 	[[ $nn == Node_* ]]    || return 102
 
-	drbd_to_env $DRBD
-	on ${!nn}: drbd_wait_peer_not_pri minor=$minor
-	on ${!nn}: drbdadm_pri   name=$name
-	on ${!nn}: do_mount      DEV=/dev/nb$minor TYPE=$TYPE MNT=$MNT
+	# fixme add paranoia, should check for availability on the
+	# respective node
+	bdev_to_env $BDEV
+	if [[ $BDEV == Drbd_* ]] ; then
+		on ${!nn}: drbd_wait_peer_not_pri minor=$minor
+		on ${!nn}: drbdadm_pri   name=$name
+	else
+		: "do something to make $BDEV available?"
+	fi
+	on ${!nn}: do_mount      DEV=$DEV TYPE=$TYPE MNT=$MNT
 
 	# START IN BACKGROUND
 	on ${!nn}: ${which}_start   MNT=$MNT </dev/null &
@@ -297,10 +339,14 @@ Stop()
 	[[ $CN == $cn ]]       || return 102
 	[[ $cn == Node_* ]]    || return 103
 
-	drbd_to_env $DRBD
+	bdev_to_env $BDEV
 	on ${!cn}: generic_test_stop MNT=$MNT
 	on ${!cn}: do_umount         MNT=$MNT
-	on ${!cn}: drbdadm_sec       name=$name
+	if [[ $BDEV == Drbd_* ]] ; then
+		on ${!cn}: drbdadm_sec       name=$name
+	else
+		: "do something to make $BDEV unavailable?"
+	fi
 	eval "$fs=\${$fs% CN=*}"   # forget current node
 	eval "$rs=\${$rs% CN=*}"   # forget current node
 	Dump_RS

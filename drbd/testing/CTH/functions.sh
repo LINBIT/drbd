@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.5 2004/06/01 14:27:30 lars Exp $
+# $Id: functions.sh,v 1.1.2.6 2004/06/07 10:16:39 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -142,9 +142,13 @@ generic_heartbeat()
 
 generic_wait_for_boot()
 {
-	[[ -z $initial ]] && initial=false || initial=true
 	: ${ip:?unknown admin ip} 
 	: ${hostname:?unknown hostname} 
+
+	: ${initial:=false} ${have_drbd:=true}
+	[[ $initial   == true ]] || [[ $initial   == false ]] || return 1
+	[[ $have_drbd == true ]] || [[ $have_drbd == false ]] || return 1
+
 	SECONDS=0   # reset bash magic variable
 	while true; do
 		ping -c 1 $ip > /dev/null && break
@@ -162,7 +166,12 @@ generic_wait_for_boot()
 	retry=4
 	while (( retry-- )) ; do
 		if $initial; then
-			on $ip: do_initial_sanity_check hostname=$hostname && break
+			if $have_drbd ; then
+				on $ip: do_initial_sanity_check hostname=$hostname && break
+			else
+				# fixme sanity check *no drbd*
+				on $ip: do_sanity_check         hostname=$hostname && break
+			fi
 		else
 			on $ip: do_sanity_check         hostname=$hostname && break
 		fi
@@ -336,7 +345,7 @@ drbdadm_sec()
 }
 
 #
-# FileSystem
+# FileSystem        {{{2
 ########################
 
 do_mount()
@@ -383,5 +392,5 @@ mkfs_xfs()
 
 # 1}}}
 
-set -o errexit
-#set -o errexit $DEBUG
+#set -o errexit
+set -o errexit $DEBUG

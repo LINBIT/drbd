@@ -1,5 +1,5 @@
 package LGE_CTH::Node;
-# $Id: Node.pm,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: Node.pm,v 1.1.2.2 2004/06/07 10:16:39 lars Exp $
 
 use strict;
 use warnings;
@@ -116,7 +116,8 @@ sub wait_for_boot {
 	my ($hostname,$ip,$timeout) =
 		@{$me->{_config}}{qw(hostname admin_ip boot_timeout)};
 	my $initial = $me->{_status}->{status} eq '__UNDEF__' ? "true" : "false";
-	my $cmd = "ip=$ip\nhostname=$hostname\ntimeout=$timeout\ninitial=$initial\n"
+	my $have_drbd = scalar(grep { /^DRBD/ } keys %{$me->{_users}}) ? "true" : "false";
+	my $cmd = "ip=$ip\nhostname=$hostname\ntimeout=$timeout\ninitial=$initial\nhave_drbd=$have_drbd\n"
 		. $me->{_config}->{boot_script};
 
 	$me->{_busy} = "wait_for_boot";
