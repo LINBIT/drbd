@@ -37,6 +37,8 @@ function assure_module_is_loaded
     $MODPROBE -s drbd `$DRBDADM sh-mod-parms` $ADD_MOD_PARAM || { 
 	echo "Can not load the drbd module."$'\n'; exit 20 
     }
+    # tell klogd to reload module symbol information ...
+    [ -e /var/run/klogd.pid ] && [ -x /sbin/klogd ] && /sbin/klogd -i
 
     # make sure udev has time to create the device files
     RESOURCE=`$DRBDADM sh-resources` || exit 20
@@ -68,8 +70,10 @@ case "$1" in
 	;;
     stop)
 	echo -n "Stopping all DRBD resources"
-	$DRBDADM down all
-	$RMMOD drbd
+	if [ -e $PROC_DRBD ] ; then
+		$DRBDADM down all
+		$RMMOD drbd
+	fi
 	[ -f /var/lock/subsys/drbd ] && rm /var/lock/subsys/drbd
 	echo "."
 	;;

@@ -10,7 +10,7 @@ Package: drbd0.7
 Architecture: any
 Section: misc
 Depends: debconf, ${misc:Depends}
-Conflicts: drbd (<< 0.7)
+Conflicts: drbd
 Provides: drbd
 Suggests: heartbeat
 Description: RAID 1 over tcp/ip for Linux utilities
@@ -30,7 +30,7 @@ Package: drbd0.7-source
 Architecture: all
 Section: misc
 Depends: module-assistant
-Conflicts: drbd-source (<< 0.7)
+Conflicts: drbd-source
 Provides: drbd-source
 Recommends:  dpkg-dev, kernel-package, debhelper (>= 4), debconf-utils
 Description: RAID 1 over tcp/ip for Linux module source

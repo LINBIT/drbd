@@ -171,9 +171,31 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Tue Sep 21 2004 02:39:53 +0200 Lars Ellenberg <l.g.e@web.de>
+* Fri Oct 15 2004 19:53:21 +0200 Lars Ellenberg <l.g.e@web.de>
 - drbd (0.8_pre1-1)
   * remove all kernel 2.4.x compatibility crap
+  * ioctl sanity checks about Unconfigured and CAP_SYS_ADMIN
+
+* Fri Oct 1 2004 11:33:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.5-1)
+  * Fix a bug that could case read requests to return wrong data
+    on a node in Primary/SyncTaget state. (A very unlikely race,
+    it is not known that this ever triggered; It was found by an 
+    ASSERTION in the code)
+  * Removed the 30MB/sec speeding limit for the syncer. (this was 
+    intended as a debugging aid, but it was not removed in time)
+  * A fix to drbdsetup, to make drbdadm adjust work if a resource
+    is diskless.
+  * Got rid of the compiler warning when build on a kernel with
+    CONFIG_LBD not set.
+  * Now the device nodes are created with sane permissions.
+  * The debian package is now named "drbd0.7"
+  * set_fs() is now also done for sendpage()
+  * Better compatibility with early 2.4.x kernels (BH_Launder, min()/max())
+  * Touch /var/lock/subsys/drbd, needed for RedHat based distros.
+  * Improvements to the INSALL document
+  * Removed HOWTO, ja, pt_BR ... all hopelessly outdated.
+    disabled benchmark/run.sh
 
 * Thu Sep 9 2004 19:50:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.4-1)

@@ -23,10 +23,18 @@ fi
 
 case "$CMD" in
     start)
-	$DRBDADM primary $RES
+    	# try several times, in case heartbeat deadtime
+	# was smaller than drbd ping time
+    	try=6
+	while true; do
+		$DRBDADM primary $RES && break
+		let "--try" || exit 20
+		sleep 1
+	done
 	;;
     stop)
-	$DRBDADM secondary $RES
+    	# exec, so the exit code of drbdadm propagates
+	exec $DRBDADM secondary $RES
 	;;
     status)
 	if [ "$RES" = "all" ]; then

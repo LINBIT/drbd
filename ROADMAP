@@ -10,6 +10,11 @@ DRBD 0.8 Roadmap
   Replace the Drbd_Parameter_Packet by a more general and 
   extensible mechanism.
 
+  Sanitize ioctls to inlcude a standard device information struct
+  at the beginning, including the expected API version.
+  Consider using DRBD ioctls with some char device similar to
+  /dev/mapper/control
+
 3 Authenticate the peer upon connect by using a shared secret. 
   Configuration file syntax:  net { auth-secret "secret-word" }
   Using a challenge-response authentication within the new
@@ -319,7 +324,8 @@ plus-banches:
 
 1 wait-sync-target  
 
-2 Implement the checksum based resync. 
+2 Implement the checksum based resync
+  and online verification.
 
 3 Have protocol version 74 available in drbd-0.8, to allow rolling 
   upgrades

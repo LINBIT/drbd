@@ -455,10 +455,9 @@ The default is 0, which disables this feature.
   The init script <citerefentry><refentrytitle>drbd</refentrytitle>
   <manvolnum>8</manvolnum></citerefentry> blocks the boot process
   until the DRBD resources are connected.
+  This is so when the cluster manager starts later,
+  it does not see a resource with internal split-brain.
   In case you want to limit the wait time, do it here.
-  The sign is important.
-  Always use a negative value, positive will (try to) force primary status,
-  which is not what you want, if it has outdated data.
   Default is 0, which means unlimited. Unit is seconds.
   </para></listitem>
 </varlistentry>
@@ -468,7 +467,9 @@ The default is 0, which disables this feature.
   <listitem><para>
   Wait for connection timeout, if this node was a degraded cluster.
   In case a degraded cluster (= cluster with only one node left)
-  is rebooted, this timeout value is used instead of wfc-timeout.
+  is rebooted, this timeout value is used instead of wfc-timeout,
+  because the peer is less likely to show up in time,
+  if it had been dead before.
   Default is 60, unit is seconds. Value 0 means unlimited.
   </para>
   </listitem>
