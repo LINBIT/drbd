@@ -67,12 +67,6 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 		}
 	}
 	al_ext   = lc_get(mdev->act_log,enr);
-	if(al_ext) {
-		if (al_ext->lc_number != enr) {
-			if (!lc_try_lock(mdev->resync))
-				BUG(); // has to be successfull
-		}
-	}
 	al_flags = mdev->act_log->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
@@ -109,7 +103,6 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		spin_lock_irq(&mdev->al_lock);
 		lc_changed(mdev->act_log,al_ext);
 		spin_unlock_irq(&mdev->al_lock);
-		lc_unlock(mdev->resync);
 		wake_up(&mdev->al_wait);
 	}
 }
@@ -532,7 +525,8 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		}
 		lc_put(mdev->resync,(struct lc_element*)ext);
 	} else {
-		ERR("lc_get(rsync) failed ?!?\n");
+		ERR("lc_get() failed! Probabely something stays"
+		    " dirty in the on disk BM\n");
 	}
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
@@ -627,17 +621,17 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 static inline int _al_not_in_use(drbd_dev* mdev, unsigned int enr)
 {
 	struct lc_element* al_ext;
-
+	int rv=0;
+	
 	spin_lock_irq(&mdev->al_lock);
 	al_ext = lc_find(mdev->act_log,enr);
+	if(al_ext == 0 ) rv = 1;
+	else if(al_ext->refcnt == 0) rv = 1;
 	spin_unlock_irq(&mdev->al_lock);
 
-	if(al_ext == 0) return 1;
-	if(al_ext->refcnt == 0) return 1;
+	if(!rv) WARN("Delaying sync read until app's write is done\n");
 
-	WARN("Delaying sync read until app's write is done\n");
-
-	return 0;
+	return rv;
 }
 
 /**
