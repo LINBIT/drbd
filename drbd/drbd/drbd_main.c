@@ -365,7 +365,7 @@ int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
 		p--;
 		if ( p->sector == sector) {
 			drbd_request_t *req = p->req;
-			printk(KERN_ERR DEVICE_NAME " found senctor in tl\n");
+			if( req == TL_BARRIER) continue;
 			if( req == TL_FINISHED) { r=FALSE; }
 			else {
 				if((req->rq_status&0xfffe)==RQ_DRBD_WRITTEN) {
@@ -1088,7 +1088,7 @@ void cleanup_module()
 		if (drbd_conf[i].transfer_log)
 			kfree(drbd_conf[i].transfer_log);		    
 		if (drbd_conf[i].mbds_id) bm_cleanup(drbd_conf[i].mbds_id);
-		// free the receivers stuff
+		// free the receiver's stuff
 		free_ee_list(&drbd_conf[i].free_ee);
 		if(free_ee_list(&drbd_conf[i].active_ee) || 
 		   free_ee_list(&drbd_conf[i].sync_ee)   ||
