@@ -191,16 +191,16 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 #endif
 
 	
-	drbd_init_bh(nbh,
-		     bh->b_size,
-		     bh->b_data,
-		     drbd_dio_end);
+	drbd_init_bh(nbh, bh->b_size, drbd_dio_end);
+
+	nbh->b_page=bh->b_page; // instead of set_bh_page()
+	nbh->b_data=bh->b_data; // instead of set_bh_page()
 
 	drbd_set_bh(nbh,
 		    bh->b_rsector / (bh->b_size >> 9),
 		    mdev->lo_device);
 
-	nbh->b_page=bh->b_page;
+
 	nbh->b_private = req;
 	nbh->b_state = (1 << BH_Dirty) | ( 1 << BH_Mapped) | (1 << BH_Lock);
 

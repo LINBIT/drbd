@@ -56,7 +56,7 @@
 */
 
 struct ds_buffer {
-	void* buffers;
+	struct page* buffers;
 	unsigned long *blnr;
 	struct buffer_head *bhs;
 	int number;
@@ -95,12 +95,15 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 void ds_buffer_init(struct ds_buffer *this,int minor)
 {
 	int i;
+	int bpp = PAGE_SIZE/this->b_size; // buffers per page
 
 	for (i=0;i<this->number;i++) {
 		drbd_init_bh(this->bhs+i,
 			     this->b_size,
-			     this->buffers + i*this->b_size,
 			     ds_end_dio);
+		set_bh_page(this->bhs+i,
+			    this->buffers + i/bpp,
+			    (i % bpp) * this->b_size);// sets b_data and b_page
 	}
 }
 
@@ -117,8 +120,7 @@ void ds_buffer_alloc(struct ds_buffer *this,int minor)
 	this->io_pending_number=0;
 	this->b_size=blocksize;
 
-	this->buffers = (void*)__get_free_pages(GFP_USER,
-					      drbd_log2(amount>>PAGE_SHIFT));
+	this->buffers = alloc_pages(GFP_USER,drbd_log2(amount>>PAGE_SHIFT));
 
 	size = 	sizeof(unsigned long)*amount_blks + 
 		sizeof(struct buffer_head)*amount_blks;
@@ -136,7 +138,7 @@ void ds_buffer_free(struct ds_buffer *this)
 	int amount;
 
 	amount=this->number*this->b_size;
-	free_pages((unsigned long)this->buffers,drbd_log2(amount>>PAGE_SHIFT));
+	__free_pages(this->buffers,drbd_log2(amount>>PAGE_SHIFT));
 	kfree(this->blnr);
 }
 
