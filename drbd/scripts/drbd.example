@@ -86,3 +86,7 @@ SLAVE_DEVICE="/dev/nb0"
 # Partitions for drbd (can be a different partition on each machine)
 MASTER_PARTITION="/dev/hda3"
 SLAVE_PARTITION="/dev/hda3"
+
+# Option for fsck (ALWAYS keep the -p for automatic error correction)
+MASTER_FSCK="-p -y"
+SLAVE_FSCK="-p -y"
