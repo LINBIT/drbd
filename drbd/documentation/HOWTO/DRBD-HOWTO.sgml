@@ -382,13 +382,13 @@ visit <ulink url="http://linux-ha.org">linux-ha.org</ulink>.</para>
 integrate with the heartbeat package.  The first script is drbd,
 and it installs to the /etc/rc.d/init.d/drbd.  It is intended to be
 used to start up drbd services upon boot.  The second script is datadisk,
-and it install into /etc/ha.d/resource.d/datadisk.  The datadisk script
+and it installs Into /etc/ha.d/resource.d/datadisk.  The datadisk script
 handles switching a drbd device from secondary to primary state, and it
 is called from the /etc/ha.d/haresources file.</para>
        </sect2>
 
        <sect2>
-       <title>Sample heartbeat integration</title>
+       <title>Sample heartbeat integration - web server</title>
        <para>This example will build upon the previous example from the
 drbd.conf section.  In that example, we have 2 machines named thost1
 (10.1.1.31) and thost2 (10.1.1.32).  In this example, we will st up
@@ -466,6 +466,114 @@ back and enjoy the high availability!</para>
 
 
        </sect2>
+
+        <sect2>
+        <title>Sample heartbeat integration - NFS server</title>
+        <para>This short example will demonstrate some of the things
+ you need to take into account when failing over services which
+ require state information to be kept.  We will set up an NFS server
+ which exports a filesystem stored on a shared drbd device.  Again,
+ we'll just consider the steps to do things manually</para>
+ 
+        <para>We're going to assume that you've set up the heartbeat
+ package just as above, and just go over the changes required for
+ setting up a failover NFS service instead of the web service. So,
+ just as before, on thost1 issue the following commands:</para>
+ 
+ <programlisting>
+ $ insmod drbd
+ $ /etc/rc.d/init.d/drbd start
+ </programlisting>
+ 
+        <para>Do the same thing on thost2:</para>
+ 
+ <programlisting>
+ $ insmod drbd
+ $ /etc/rc.d/init.d/drbd start
+ </programlisting>
+ 
+        <para> At this point drbd should be running.  Make sure drbd is the
+ primary interface on thost1.  We'll assume that you will be mounting the drbd
+ device at /mnt/disk.  At least on Red Hat and SuSE based systems, the state
+ information for the NFS server is in /var/lib/nfs, and we will want this state
+ information to be found on the shared device. So, on thost1, with the NFS
+ server stopped, do:</para>
+ 
+ <programlisting>
+ $ mkdir /mnt/disk
+ $ mount /proc/nb0 /mnt/disk
+ $ mkdir /mnt/disk/var; mkdir /mnt/disk/var/lib
+ $ mv /var/lib/nfs /mnt/disk/var/lib
+ $ ln -s /mnt/disk/var/lib/nfs /var/lib/nfs
+ </programlisting>
+ 
+ 	<para>On thost2, ensure the NFS server is not running, and execute the
+ following:</para>
+ 
+ <programlisting>
+ $ mkdir /mnt/disk
+ $ rm -r /var/lib/nfs
+ $ ln -s /mnt/disk/var/lib/nfs /var/lib/nfs
+ </programlisting>
+ 
+ 	<para>The last thing is to set up the part of the filesystem we will
+ actually export over the NFS mount.  This will be the hierarchy below
+ /mnt/disk/export.  Assume that the NFS client has IP address 10.0.20.1.  So, on
+ thost1:</para>
+ 
+ <programlisting>
+ $ mkdir /mnt/disk/export
+ $ echo "/mnt/disk/export	10.0.20.1(rw)" >> /etc/exports
+ </programlisting>
+ 
+ 	<para>On thost2:</para>
+ 
+ <programlisting>
+ $ echo "/mnt/disk/export	10.0.20.1(rw)" >> /etc/exports
+ </programlisting>
+ 
+        <para>Assuming the /etc/ha.d/ha.cf file correctly identifies both
+ nodes in your cluster, the next step is to edit the /etc/ha.d/haresources file.
+ Add the following line to that file on BOTH machines</para>
+ 
+ <programlisting>
+ 10-0-1-31.linux-ha.org  10.0.10.10/16 datadisk::drbd0 nfsserver
+ </programlisting>
+ 
+       <para>You need to make sure that the nfsserver script can be found by the
+ heartbeat package; see the heartbeat documentation for more details.</para>
+ 
+       <para>The 10.0.10.10 address is the IP address attached to the NFS
+ server.  See the heartbeat documentation for more info on that.  Basically,
+ that line tells the heartbeat software to run the /etc/ha.d/resource.d/datadisk
+ script with a paramater of drbd0.  In the event of a failure, the datadisk
+ script will run on the secondary node, and switch the drbd0 drbd device from
+ seconday to primary state.</para>
+ 
+       <para>You also need to edit the /etc/fstab file on both machines.  It is
+ important to configure this device to NOT mount upon boot.  The noauto flag
+ will take care of that.</para>
+ 
+ <programlisting>
+ /dev/nb0                /mnt/disk               ext2    noauto          0 0
+ </programlisting>
+ 
+        <para>At this point, you can start up the heartbeat software.</para>
+ 
+ <programlisting>
+ /etc/rc.d/init.d/heartbeat start
+ </programlisting>
+ 
+        <para> If everything is configured correctly, the heartbeat software
+ will launch the NFS server and tie it to the virtual interface.  At this point,
+ you can power off thost1.  If all goes well, in about 30 seconds, thost2 will
+ take over and launch the NFS server.  Test it by mounting the NFS mount from
+ 10.0.20.1 and performing some file operation which will take more than 30
+ seconds; it should pause and then magically start going again, unconscious of
+ the fact it's just swapped servers.  Enjoy your high availability!  </para>
+ 
+        </sect2>
+ 
 
 </sect1>
 
