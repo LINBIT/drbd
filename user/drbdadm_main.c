@@ -965,7 +965,7 @@ void verify_ips(struct d_resource* res)
 }
 
 static char* conf_file[] = {
-    "/etc/drbd-07.conf",
+    "/etc/drbd-08.conf",
     "/etc/drbd.conf",
     0
 };

@@ -246,13 +246,13 @@ enum MetaDataFlags {
 	__MDF_PrimaryInd,
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
-	__MDF_UpToDate,
+	__MDF_WasUpToDate,
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
 #define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
 #define MDF_FullSync        (1<<__MDF_FullSync)
-#define MDF_UpToDate        (1<<__MDF_UpToDate)
+#define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 enum MetaDataIndex {
@@ -271,6 +271,7 @@ enum MetaDataIndex {
  *	0: panic();
  *	1: machine_halt; SORRY, this DOES NOT WORK
  *	2: prink(EMERG ), plus flag to fail all eventual drbd IO, plus panic()
+ *	3: prink(EMERG ) and nothing more. For UML debugging...
  */
 
 extern volatile int drbd_did_panic;
@@ -280,13 +281,18 @@ extern volatile int drbd_did_panic;
 	panic(DEVICE_NAME "%d: " fmt, (int)(mdev-drbd_conf) , ##args)
 #elif  DRBD_PANIC == 1
 #error "sorry , this does not work, please contribute"
-#else
+#elif  DRBD_PANIC == 2
 #define drbd_panic(fmt, args...) do {					\
 	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
 			(int)(mdev-drbd_conf) , ##args);		\
 	drbd_did_panic = DRBD_MAGIC;					\
 	smp_mb();							\
 	panic(DEVICE_NAME "%d: " fmt, (int)(mdev-drbd_conf) , ##args);	\
+} while (0)
+#else
+#define drbd_panic(fmt, args...) do {					\
+	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
+			(int)(mdev-drbd_conf) , ##args);		\
 } while (0)
 #endif
 #undef DRBD_PANIC
@@ -955,7 +961,7 @@ extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 // drbd_fs.c
 extern char* ppsize(char* buf, size_t size);
 extern int drbd_determin_dev_size(drbd_dev*);
-extern int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate);
+extern int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 

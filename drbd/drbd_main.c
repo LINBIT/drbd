@@ -377,14 +377,13 @@ int drbd_io_error(drbd_dev* mdev)
 
 static void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 {
-	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s m:%d }\n",
+	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s }\n",
 	    name,
 	    conns_to_name(ns.s.conn),
 	    roles_to_name(ns.s.role),
 	    roles_to_name(ns.s.peer),
 	    disks_to_name(ns.s.disk),
-	    disks_to_name(ns.s.pdsk),
-	    ns.s.mult);
+	    disks_to_name(ns.s.pdsk));
 }
 
 void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
@@ -472,10 +471,10 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		if( !ns.s.mult && 
+		if( !mdev->conf.two_primaries && 
 		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
 
-		if( ns.s.role == Primary && ns.s.disk < UpToDate && 
+		if( ns.s.role == Primary && ns.s.disk < Consistent && 
 		    ns.s.conn < Connected ) rv=-2;
 
 		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
@@ -511,9 +510,6 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	PSC(conn);
 	PSC(disk);
 	PSC(pdsk);
-	if( ns.s.mult != os.s.mult ) {
-		sprintf(pbp, "mult( %d -> %d)", os.s.mult,ns.s.mult);
-	}
 	INFO("%s\n", pb);
 #endif
 
@@ -1400,7 +1396,6 @@ void drbd_set_defaults(drbd_dev *mdev)
 					StandAlone,
 					Diskless,
 					DUnknown,
-					0,
 					0 } };
 }
 
@@ -1629,7 +1624,7 @@ static void __exit drbd_cleanup(void)
 
 			if (mdev) {
 				down(&mdev->device_mutex);
-				drbd_set_state(mdev,Secondary);
+				drbd_set_role(mdev,Secondary);
 				up(&mdev->device_mutex);
 				drbd_sync_me(mdev);
 				set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
@@ -2006,11 +2001,11 @@ void drbd_md_write(drbd_dev *mdev)
 	memset(buffer,0,512);
 
 	flags = mdev->gen_cnt[Flags] & ~(MDF_Consistent|MDF_PrimaryInd|
-					 MDF_ConnectedInd|MDF_UpToDate);
+					 MDF_ConnectedInd|MDF_WasUpToDate);
 	if (mdev->state.s.role == Primary)        flags |= MDF_PrimaryInd;
 	if (mdev->state.s.conn >= WFReportParams) flags |= MDF_ConnectedInd;
-	if (mdev->state.s.disk >= Consistent)     flags |= MDF_Consistent;
-	if (mdev->state.s.disk >= UpToDate)       flags |= MDF_UpToDate;
+	if (mdev->state.s.disk >  Inconsistent)   flags |= MDF_Consistent;
+	if (mdev->state.s.disk >= UpToDate)       flags |= MDF_WasUpToDate;
 	mdev->gen_cnt[Flags] = flags;
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
@@ -2175,8 +2170,8 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	if( me > other ) return 1;
 	if( me < other ) return -1;
 
-	me=mdev->gen_cnt[Flags] & MDF_UpToDate;
-	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_UpToDate;
+	me=mdev->gen_cnt[Flags] & MDF_WasUpToDate;
+	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_WasUpToDate;
 	if( me > other ) return 1;
 	if( me < other ) return -1;
 

@@ -435,12 +435,12 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
 	/* If MDF_Consistent is not set go into inconsistent state, otherwise
-	   investige MDF_UpToDate...
-	   If MDF_UpToDate is not set go into Outdated disk state, otherwise
+	   investige MDF_WasUpToDate...
+	   If MDF_WasUpToDate is not set go into Outdated disk state, otherwise
 	   into Consistent state.
 	*/
 	if(drbd_md_test_flag(mdev,MDF_Consistent)) {
-		if(drbd_md_test_flag(mdev,MDF_UpToDate)) {
+		if(drbd_md_test_flag(mdev,MDF_WasUpToDate)) {
 			nds = Consistent;
 		} else {
 			nds = Outdated;
@@ -588,7 +588,7 @@ FIXME
 	return -EINVAL;
 }
 
-int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
+int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 {
 	int r,forced = 0;
 	drbd_state_t os,ns;
@@ -825,7 +825,7 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev)
 	if( mdev->state.s.disk != UpToDate ) { 
 		r=-999;
 	} else {
-		r = _drbd_set_state(mdev, _NS(role,Outdated), 0);
+		r = _drbd_set_state(mdev, _NS(disk,Outdated), 0);
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
@@ -910,7 +910,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			    DontBlameDrbd) ) {
 			err = -EINVAL;
 		} else {
-			err = drbd_set_state(mdev,arg);
+			err = drbd_set_role(mdev,arg);
 		}
 		break;
 

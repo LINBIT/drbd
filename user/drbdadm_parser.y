@@ -247,6 +247,7 @@ void check_meta_disk()
 %token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_GROUP TK_AL_EXTENTS
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
+%token <txt> TK_ALLOW_TWO_PRIMARIES
 
 %type <txt> hostname resource_name
 %type <d_option> disk_stmts disk_stmt
@@ -367,6 +368,7 @@ net_stmt:	  TK_TIMEOUT	    TK_INTEGER
 		| TK_KO_COUNT       TK_INTEGER
 		{ range_check(R_KO_COUNT,$1,$2);	$$=new_opt($1,$2); }
 		| TK_ON_DISCONNECT  TK_STRING	{	$$=new_opt($1,$2); }
+		| TK_ALLOW_TWO_PRIMARIES	{	$$=new_opt($1,0);  }
 		;
 
 sync_stmts:	  /* empty */	           { $$ = 0; }

@@ -94,9 +94,9 @@ struct net_config {
 	IN int      max_epoch_size;
 	IN int      max_buffers;
 	IN int      sndbuf_size;  /* socket send buffer size */
+	IN int      two_primaries;
 	IN unsigned int ko_count;
 	IN enum disconnect_handler on_disconnect;
-	const int   _pad;
 };
 
 struct syncer_config {
@@ -204,8 +204,8 @@ typedef enum {
 	Diskless,
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
 	Inconsistent,
-	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	Outdated,
+	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	UpToDate,
 	disk_mask=7
 } drbd_disks_t;
@@ -217,8 +217,7 @@ typedef union {
 		unsigned conn : 5 ;   // 17/32    cstates
 		unsigned disk : 3 ;   // 7/7      from DUnknown to UpToDate
 		unsigned pdsk : 3 ;   // 7/7      from DUnknown to UpToDate
-		unsigned mult : 1 ;   // 2/2      multiple primaries allowed
-		unsigned _pad : 16;   // 0        unused
+		unsigned _pad : 17;   // 0        unused
 	} s;
 	unsigned int i;
 } drbd_state_t;

@@ -68,6 +68,7 @@
 #define DEF_ON_IO_ERROR         PassOn
 #define DEF_KO_COUNT                 0
 #define DEF_ON_DISCONNECT       Reconnect
+#define DEF_TWO_PRIMARIES            0
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -158,6 +159,7 @@ struct drbd_cmd commands[] = {
      { "sndbuf-size",required_argument, 0, 'S' },
      { "ko-count",   required_argument, 0, 'k' },
      { "on-disconnect",required_argument, 0, 'd' },
+     { "allow-two-primaries",no_argument, 0, 'm' },
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_dev","meta_data_dev",
 				    "meta_data_index",0},
@@ -443,7 +445,7 @@ int scan_net_options(char **argv,
   cn->config.max_buffers = DEF_MAX_BUFFERS;
   cn->config.sndbuf_size = DEF_SNDBUF_SIZE ;
   cn->config.on_disconnect = DEF_ON_DISCONNECT;
-  cn->config.ko_count = DEF_KO_COUNT;
+  cn->config.two_primaries = DEF_TWO_PRIMARIES;
 
   if(argc==0) return 0;
 
@@ -485,6 +487,9 @@ int scan_net_options(char **argv,
        case 'k':
           cn->config.ko_count = m_strtoll_range(optarg,1, "ko-count",
 			  DRBD_KO_COUNT_MIN, DRBD_KO_COUNT_MAX);
+          break;
+       case 'm':
+	  cn->config.two_primaries = 1;
           break;
 	case 'd':
 	  for(i=0;i<ARRY_SIZE(dh_names);i++) {
@@ -1247,7 +1252,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       if( cn.nconf.on_disconnect != DEF_ON_DISCONNECT) {
 	printf(" on-disconnect = %s\n",dh_names[cn.nconf.on_disconnect]);
       }
-
+      if( cn.nconf.two_primaries ) printf(" allow-two-primaries\n");
 
       printf("Syncer options:\n");
 
