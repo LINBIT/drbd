@@ -9,7 +9,8 @@ before that, since we changed our Makefile to use the top level
 kernel source Makefile, so we no longer need to worry about
 all those funny kernel compile flags...
 
-It is still correct for 0.6.12. Maybe this needs an update for 0.7.x,
+It is still correct for 0.6.13.
+Maybe this needs an update for 0.7.x,
 but most of it probably still applies.
 
 I tried to indicate what you should type by the prompt-prefix
@@ -20,6 +21,15 @@ different distributions in turn.
 
 For FAQs, publications and other stuff see also the documentation
 subdirectory, and of course http://www.drbd.org .
+
+Other interessting links:
+ http://www.drbd.org
+ http://www.drbd.org/drbd-article.html
+ http://www.linux-mag.com/2003-11/drbd_01.html
+ http://www.linux-mag.com/2003-11/toc.html
+ http://linuxha.trick.ca/DRBD_2fFAQ
+and of course,
+ http://www.drbd.org/support.html
 
 == Prerequisites ==
 
@@ -114,6 +124,10 @@ subdirectory, and of course http://www.drbd.org .
    look into ./drbd_config.h, and (un)comment some of the
    settings appropriately.
 
+   Since 0.7.3, we have script/adjust_drbd_config_h.sh, which helps you 
+   with this, and gets called during the normal build process,
+   so you "should" no longer need to adjust it by hand.
+
        all# cd drbd-0.6.12/drbd  # kernel module sub directory
        all# make clean all
     fedora# make clean all CC=gcc32
@@ -133,7 +147,7 @@ subdirectory, and of course http://www.drbd.org .
    Note that it should build against preconfigured kernel-headers, too,
    like in "make KDIR=/usr/src/linux-include/athlon". But then you
    should be very sure that your running kernel matches the
-   configuration of that header tree exactly.
+   configuration of that header tree ''exactly''.
 
 == Patching DRBD into the kernel ==
 
@@ -280,4 +294,4 @@ Hope this helped, cheers and have fun ...
 	Lars Ellenberg
 
 
-Last modified: Mon Apr 26 09:27:50 UTC 2004
+Last modified: Tue Aug 24 14:07:40 UTC 2004
