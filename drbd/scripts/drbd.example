@@ -24,8 +24,8 @@
 # default port: 7788
 # Important: don't use domain names here, only the hostnames 
 # as reported by hostname -s
-MASTER_NODE="ha1:7788"
-SLAVE_NODE="ha2:7788"
+NODE1_HOST="ha1:7788"
+NODE2_HOST="ha2:7788"
 
 
 # If you have machines with multiple NICs, you may want to specify
@@ -37,8 +37,8 @@ SLAVE_NODE="ha2:7788"
 #
 # If you use these fields, put any port identifies (:[0-9]+) here, you
 # do not need to specify them at the *_NODE entries.
-MASTER_IF=""
-SLAVE_IF=""
+NODE1_IF=""
+NODE2_IF=""
 
 # Options:
 #       -t --timeout  val
@@ -80,13 +80,13 @@ OPTIONS=""
 PROTOCOL="B"
 
 # Devices used in master and slave (may be different on each machine)
-MASTER_DEVICE="/dev/nb0"
-SLAVE_DEVICE="/dev/nb0"
+NODE1_DEVICE="/dev/nb0"
+NODE2_DEVICE="/dev/nb0"
 
 # Partitions for drbd (can be a different partition on each machine)
-MASTER_PARTITION="/dev/hda3"
-SLAVE_PARTITION="/dev/hda3"
+NODE1_PARTITION="/dev/hda3"
+NODE2_PARTITION="/dev/hda3"
 
 # fsck command (ALWAYS keep the -p for automatic error correction)
-MASTER_FSCK="fsck -p -y"
-SLAVE_FSCK="fsck -p -y"
+NODE1_FSCK="fsck -p -y"
+NODE2_FSCK="fsck -p -y"
