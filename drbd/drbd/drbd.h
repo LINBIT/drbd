@@ -65,8 +65,9 @@ struct ioctl_drbd_config {
   IN int      sync_rate; /* KB/sec */
   IN int      skip_sync; 
   IN int      tl_size; /* size of the transfer log */
-  IN int      wire_protocol;
+  IN int      wire_protocol;  
   IN unsigned int disk_size;  /* Size given by user */
+  IN int      do_panic;
 };
 
 #define DRBD_PROT_A   1
@@ -157,6 +158,7 @@ typedef enum {
 #define DRBD_IOCTL_SET_CONFIG    _IOW( 'D', 0x01, struct ioctl_drbd_config )
 #define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )
 #define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x03, int )
+#define DRBD_IOCTL_DO_SYNC_ALL   _IO ( 'D', 0x04 )
 
 #endif
 

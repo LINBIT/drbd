@@ -610,8 +610,7 @@ inline void set_cstate(struct Drbd_Conf* mdev,Drbd_CState cs)
 int drbd_ll_blocksize(int minor)
 {
 	int size = 0;
-	kdev_t ll_dev =
-	  drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+	kdev_t ll_dev = drbd_conf[minor].lo_device;
 
 	if (blksize_size[MAJOR(ll_dev)])
 		size = blksize_size[MAJOR(ll_dev)][MINOR(ll_dev)];
@@ -632,8 +631,7 @@ int drbd_send_param(int minor, int cmd)
 {
 	Drbd_Parameter_Packet param;
 	int err;
-	kdev_t ll_dev =
-	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+	kdev_t ll_dev = drbd_conf[minor].lo_device;
 
 	if (blk_size[MAJOR(ll_dev)]) {
 		param.h.size =
@@ -804,14 +802,13 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	unlock_kernel();
 
 	if (mdev->conf.timeout) {
+		unsigned long flags;
 		del_timer(&mdev->s_timeout);
-		// THINK: Are not theese spinlocks somehow unbalanced ?
-		// spin_lock() and spin_lock_irq()    _irq ???
-		spin_lock(&current->sigmask_lock);
+		spin_lock_irqsave(&current->sigmask_lock,flags);
 		if (sigismember(&current->signal, DRBD_SIG)) {
 			sigdelset(&current->signal, DRBD_SIG);
 			recalc_sigpending(current);
-			spin_unlock_irq(&current->sigmask_lock);
+			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 			printk(KERN_ERR DEVICE_NAME
 			       ": send timed out!! (pid=%d)\n",current->pid);
 
@@ -820,7 +817,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			drbd_thread_restart_nowait(&mdev->receiver);
 
 			return -1002;
-		} else spin_unlock_irq(&current->sigmask_lock);
+		} else spin_unlock_irqrestore(&current->sigmask_lock,flags);
 	}
 	if (err != header_size+data_size) {
 		printk(KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",
@@ -910,6 +907,11 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 
 	if(!end_that_request_first(req, uptodate & req->rq_status,DEVICE_NAME))
 	        end_that_request_last(req);
+
+
+	if( mdev->conf.do_panic && !(uptodate & req->rq_status) ) {
+		panic(DEVICE_NAME": The lower-level device had an error.\n");
+	}
 
 	/* TODO: It would be nice if we could AND this condition.
 	   But we must also wake the asender if we are receiving 
@@ -1155,7 +1157,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		drbd_conf[minor].lo_file = filp;
 
 		if (drbd_conf[minor].conf.disk_size) {
-		        kdev_t ll_dev = drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+		        kdev_t ll_dev = drbd_conf[minor].lo_device;
 			blk_size[MAJOR_NR][minor] =
 			  min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
 			      drbd_conf[minor].conf.disk_size);
@@ -1178,7 +1180,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	case DRBD_IOCTL_WAIT_SYNC:
 		while (drbd_conf[minor].cstate == SyncingAll ||
 		       drbd_conf[minor].cstate == SyncingQuick ) {
-			interruptible_sleep_on(&drbd_conf[minor].asender_wait);
+			interruptible_sleep_on(&drbd_conf[minor].cstate_wait);
 		}
 			
 		if ((err = put_user(drbd_conf[minor].cstate == Connected, 
@@ -1186,7 +1188,21 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			return err;
 		break;
 
-
+	case DRBD_IOCTL_DO_SYNC_ALL:
+		if( drbd_conf[minor].state != Primary) {
+			printk(KERN_DEBUG DEVICE_NAME 
+			       ": Can not start SyncAll. not Primary!\n");
+			break;
+		}
+		if( drbd_conf[minor].cstate != Connected) {
+			printk(KERN_DEBUG DEVICE_NAME 
+			       ": Can not start SyncAll. not connected!\n");
+			break;
+		}
+		set_cstate(&drbd_conf[minor],SyncingAll);
+		drbd_send_cstate(&drbd_conf[minor]);
+		drbd_thread_start(&drbd_conf[minor].syncer);
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -1462,37 +1478,6 @@ int drbd_connect(int minor)
 		sock_release(sock);
 		/* printk(KERN_INFO DEVICE_NAME
 		   ": Unable to connec to server (%d)\n", err); */
-/*    // REMOVE
-		while(TRUE) {
-			int bind_count=0;
-
-			err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
-			if (err) {
-				printk(KERN_ERR DEVICE_NAME
-				       ": sock_creat(..)=%d\n", err);
-			}
-			sock->sk->reuse=1;
-
-			lock_kernel();
-			err = sock->ops->bind(sock,
-					      (struct sockaddr *) drbd_conf[minor].
-					      conf.my_addr,
-					      drbd_conf[minor].conf.my_addr_len);
-			unlock_kernel();
-			if (!err) break;
-
-			sock_release(sock);
-			set_cstate(&drbd_conf[minor],Unconnected);
-
-			current->state = TASK_INTERRUPTIBLE;
-			schedule_timeout(HZ);
-			if(bind_count++ == 5) {
-				printk(KERN_ERR DEVICE_NAME
-				       ": Unable to bind (%d)\n", err);
-				return 0;
-			}
-		} 
-*/
 
 		err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 		if (err) {
@@ -1526,12 +1511,8 @@ int drbd_connect(int minor)
 		}
 	}
 
-	//err=sock_setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,pon,sizeof(int));
 	sock->sk->reuse=1;
-
-	//err=sock->ops->setsockopt(sock,SOL_TCP,TCP_NODELAY,pon,sizeof(int));
 	sock->sk->nonagle=1;
-
 	// SO_LINGER too ??
 
 	drbd_conf[minor].sock = sock;
@@ -1741,7 +1722,7 @@ inline int receive_barrier_ack(int minor)
 
 inline int receive_param(int minor,int command)
 {
-	kdev_t ll_dev =	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+	kdev_t ll_dev =	drbd_conf[minor].lo_device;
         Drbd_Parameter_P param;
 	int blksize;
 
@@ -1791,7 +1772,7 @@ inline int receive_param(int minor,int command)
 
 	printk(KERN_INFO DEVICE_NAME": agreed blksize = %d B\n", blksize);
 
-	/* Do wee nedd to adjust device size to end on block 
+	/* Do we need to adjust the device size to end on block 
 	   boundary ?? I do not think so ! */
 
 	if (!drbd_conf[minor].mbds_id) {
@@ -1911,19 +1892,15 @@ int drbdd_init(void *arg)
 		drbdd(minor);
 		if (thi->exit == 1) break;
 		if (thi->exit == 2) {
+			unsigned long flags;
 			thi->exit = 0;
 			wake_up(&thi->wait);
-			spin_lock(&current->sigmask_lock);
+			spin_lock_irqsave(&current->sigmask_lock,flags);
 			if (sigismember(&current->signal, SIGTERM)) {
 				sigdelset(&current->signal, SIGTERM);
 				recalc_sigpending(current);
-				printk(KERN_DEBUG DEVICE_NAME 
-				       ": SIGTERM cleared\n");
-			} else {
-				printk(KERN_DEBUG DEVICE_NAME  // REMOVE 
-				       ": SIGTERM not cleared\n");				
 			}
-			spin_unlock_irq(&current->sigmask_lock);
+			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 		}
 	}
 

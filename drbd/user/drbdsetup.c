@@ -102,7 +102,7 @@ int main(int argc, char** argv)
   if(argc != 3 && argc < 6)
     {
       fprintf(stderr,
-	      " %s device {pri|sec|wait}\n"
+	      " %s device {Pri|Sec|Wait|Repl}\n"
 	      " %s device lower_device protocol local_addr[:port] "
 	      "remote_addr[:port] \n"
 	      "       [-t|--timout val] [-r|--sync-rate val] "
@@ -133,6 +133,10 @@ int main(int argc, char** argv)
 	      "          Sets drbd's size. When given 0 drbd negotiates the\n"
 	      "          size with the remote node.\n"
 	      "          Default: 0 KB.\n\n"
+	      "      -p --do-panic\n"
+	      "          drbd will trigger a kernel panic if there is an\n"
+	      "          IO error on the lower_device. May be usefull when\n"
+	      "          drbd is used in a HA cluster.\n\n"
 	      "          Version: "VERSION"\n"
 	      ,argv[0],argv[0]);
       exit(20);
@@ -180,9 +184,14 @@ int main(int argc, char** argv)
 	  err=ioctl(dtbd_fd,DRBD_IOCTL_WAIT_SYNC,&retval);
 	  exit(!retval);
 	}
+      else if(argv[2][0]=='r' || argv[2][0]=='R')
+        {
+	  err=ioctl(dtbd_fd,DRBD_IOCTL_DO_SYNC_ALL);
+	  exit(0);	  
+	}
       else 
 	{
-	  fprintf(stderr,"this is no known state!\n");
+	  fprintf(stderr,"this is no known command!\n");
 	  exit(20);
 	}
       err=ioctl(dtbd_fd,DRBD_IOCTL_SET_STATE,state);
@@ -247,6 +256,7 @@ int main(int argc, char** argv)
       config.skip_sync = 0; 
       config.tl_size = 256;
       config.disk_size = 0;
+      config.do_panic  = 0;
 
       optind=6;
       while(1)
@@ -258,10 +268,11 @@ int main(int argc, char** argv)
 	    { "skip-sync", no_argument,       0, 'k' },
 	    { "tl-size",   required_argument, 0, 's' },
 	    { "disk-size", required_argument, 0, 'd' },
+	    { "do-panic",  no_argument,       0, 'p' },
 	    { 0,           0,                 0, 0   }
 	  };
 	  
-	  c = getopt_long(argc,argv,"t:r:ks:d:",options,0);
+	  c = getopt_long(argc,argv,"t:r:ks:d:p",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -280,6 +291,8 @@ int main(int argc, char** argv)
 	    case 'd':
 	      config.disk_size = m_strtol(optarg);
 	      break;
+	    case 'p':
+	      config.do_panic=1;
 	    }
 	}
 
