@@ -373,6 +373,30 @@ sub fcaller($)
     return %ret;
 }
 
+sub u_check($$)
+{
+    my ($name,$func)=@_;
+    my (%hash,$res,$obj);
+
+    foreach $res (keys %conf) {
+	$obj=&$func($res);
+	if(defined($hash{$obj})) { 
+	    die "$name $obj used by resource $res and $hash{$obj}.";
+	}
+	$hash{$obj}=$res;
+    }
+}
+
+sub sanity_checker()
+{
+    u_check("Device", sub { my $res=shift; return $conf{$res}{self}{device};});
+    u_check("Disk", sub { my $res=shift; return $conf{$res}{self}{disk}; } );
+    u_check("Address/port",
+	    sub { my $res=shift;
+		return $conf{$res}{self}{address}.":".$conf{$res}{self}{port};
+	    } );
+}
+
 #
 # End of helpers.
 #=================
@@ -468,6 +492,7 @@ if($#ARGV == 1) {
 
 read_config();
 #print Dumper(\%conf);
+sanity_checker();
 
 if(defined($resource)) {
    if(!defined($conf{$resource})) {
