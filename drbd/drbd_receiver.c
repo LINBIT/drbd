@@ -1204,7 +1204,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 	drbd_dump_md(mdev,p,0);
 	// INFO("have_good=%d sync=%d\n", have_good, sync);
 
-	if (have_good > 0 && mdev->state.s.disk < Consistent ) {
+	if (have_good > 0 && mdev->state.s.disk <= Inconsistent ) {
 		/* doh. I cannot become SyncSource when I am inconsistent!
 		 */
 		ERR("I shall become SyncSource, but I am inconsistent!\n");

@@ -474,7 +474,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if( !mdev->conf.two_primaries && 
 		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
 
-		if( ns.s.role == Primary && ns.s.disk < Consistent && 
+		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
 		    ns.s.conn < Connected ) rv=-2;
 
 		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
