@@ -38,6 +38,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/poll.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <getopt.h>
@@ -823,8 +824,25 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
   struct d_option* opt;
   int rr,wtime,argc,i=0;
   time_t start;
+  int saved_stdin,saved_stdout,fd;
 
   struct sigaction so,sa;
+
+  saved_stdin = -1;
+  if( isatty(fileno(stdin)) == 0 || isatty(fileno(stdout)) == 0 ) {
+    fprintf(stderr,"WARN: stdin/stdout is not a TTY; using /dev/console");
+    fprintf(stdout,"WARN: stdin/stdout is not a TTY; using /dev/console");
+    saved_stdin  = dup(fileno(stdin));
+    if( saved_stdin == -1) perror("dup(stdin)");
+    saved_stdout = dup(fileno(stdout));
+    if( saved_stdin == -1) perror("dup(stdout)");
+    fd = open( "/dev/console", O_RDONLY);
+    if(fd == -1) perror("open('/dev/console, O_RDONLY)");
+    dup2(fd, fileno(stdin) );
+    fd = open( "/dev/console", O_WRONLY);
+    if(fd == -1) perror("open('/dev/console, O_WRONLY)");
+    dup2(fd, fileno(stdout) );
+  }
 
   sa.sa_handler=chld_sig_hand;
   sigemptyset(&sa.sa_mask);
@@ -884,6 +902,11 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
       
     } while( rr != -1 );
     printf("\n");
+  }
+
+  if( saved_stdin != -1 ) {
+    dup2(saved_stdin,  fileno(stdin ) );
+    dup2(saved_stdout, fileno(stdout) );
   }
 
   return 0;
