@@ -18,6 +18,15 @@ On Debian (based) distribution(s):
 
 to have it start at boot time automaticly.
 
+You will need to add something like this to your /etc/fstab too :
+/dev/nb0 /mnt/drbd ext2 rw,sync,nouser,suid,exec,nodev,noauto 1 0
+
+The key values being :
+- sync   : do not cache the read
+- noauto : do not mount the partition at boot time (done by datadisk)
+
+
+
 drbdc is a administration script. see drbdc help for the list
 of available command.
 
