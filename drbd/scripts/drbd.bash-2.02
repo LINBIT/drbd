@@ -24,9 +24,9 @@
 #
 # QQQ Provides: datadisk ?
 #
-# QQQ should there be an auto background mode as to not block other init
-#     scripts? How should we go about that?
-#     Maybe check an environment variable set by init?
+# QQQ should there be an auto background mode as to
+#     not block other init scripts?
+#    It is there! see skip-wait, and if needed, inittimeout
 #
 # functionality translated from drbd.pl CVS 1.5 to
 # BASH_VERSINFO=(2 05 0 1 release i386-suse-linux)
@@ -39,7 +39,7 @@
 #
 # shouldn't there be more descriptive comments? ;)
 #
-CVSID='$Id: drbd.bash-2.02,v 1.2 2002/07/28 01:08:08 lars Exp $'
+CVSID='$Id: drbd.bash-2.02,v 1.3 2002/07/31 09:44:44 lars Exp $'
 CONTACT='Lars Ellenberg <l.g.e@web.de>, drbd-devel@lists.sourceforge.net'
 #
 
@@ -55,7 +55,7 @@ CONTACT='Lars Ellenberg <l.g.e@web.de>, drbd-devel@lists.sourceforge.net'
 	trap "echo Error during script startup. This may be an incompatible bash version" EXIT
 	set -e
 
-if ! [ "${BASH_VERSINFO[0]}" -ge 2 -a "${BASH_VERSINFO[1]//[^0-9]/}" -ge 5 ] ; then
+if ! [ "${BASH_VERSINFO[0]}" -ge 2 -a "${BASH_VERSINFO[1]//[^0-9]/}" -ge 2 ] ; then
 	echo "bash version is older than known to work."
 	echo "  If it works despite of that, report as known good version to"
 	echo "  $CONTACT"
@@ -99,19 +99,21 @@ fi
 
 	HOSTNAME=$(hostname -s)
 
-	MODPROBE="/sbin/modprobe"
-	RMMOD="/sbin/rmmod"
-	UMOUNT="/bin/umount -v"
-	MOUNT="/bin/mount -v"
-	FUSER="/bin/fuser"
-	TOUCH="/bin/touch"
+	# since the location is not guaranteed to be the same on all distibutions,
+	# do not use full path
+	MODPROBE="modprobe"
+	RMMOD="rmmod"
+	UMOUNT="umount -v"
+	MOUNT="mount -v"
+	FUSER="fuser"
+	TOUCH="touch"
 
-	DRBD_SETUP="/usr/sbin/drbdsetup"
+	DRBD_SETUP="drbdsetup"
 	PROC_DRBD="/proc/drbd"
 	CONFIG="/etc/drbd.conf"
 	CONFIG_PARSED="/var/lib/drbd/drbd.conf.parsed"
 
-	PING="/bin/ping -c 1 -w 3"
+	PING="ping -c 1 -w 3"
 
 	: ${VERBOSITY:=-1}
 
@@ -437,7 +439,7 @@ CONF=(__hash__0)
 		done
 		let i=i+1
 		RET_VAL=("${!i}" $i $n)
-		debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+		debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 		return $(( i > n ))
 	}
 
@@ -853,7 +855,7 @@ CONF=(__hash__0)
 				n=${N: -1}
 			done
 			RET_VAL=(${R##+(0)})
-			debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+			debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 		}
 
 		# divide <nominator> by denominator>
@@ -881,7 +883,7 @@ CONF=(__hash__0)
 				n=${r#0}${N::1}
 			done
 			RET_VAL=(${F##+(0)})
-			debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+			debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 		}
 
 	# check_disk
@@ -1036,7 +1038,7 @@ CONF=(__hash__0)
 		
 		set -- $1
 		RET_VAL=(${4%%,*} $*)
-		debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+		debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 	}
 
 	# configure <device>
@@ -1240,10 +1242,10 @@ CONF=(__hash__0)
 				read ; progress_line=$REPLY$'\n'
 				read ; progress_line=$progress_line$REPLY$'\n'
 				# only if there were the too additional progress bar lines
-				mymatch "$progress_line" "$'\t'*" || progress_line=''
+				mymatch "$progress_line" $'\t*' || progress_line=''
 			fi
 			RET_VAL=($3 $5 $6 "$progress_line")
-			debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+			debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 	return
 		done <$PROC_DRBD || { die "can not open $PROC_DRBD"$'\n'; }
 		die "Minor for $device ($res) not found in $PROC_DRBD"$'\n'
@@ -1259,7 +1261,7 @@ CONF=(__hash__0)
 		if [ "${RET_VAL[1]}" == Primary \
 		-a "${RET_VAL[2]}" == Primary ] ; then
 			RET_VAL=("error")
-			debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+			debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 	return
 		fi
 		case $RET_VAL in
@@ -1277,7 +1279,7 @@ CONF=(__hash__0)
 			SyncingQuick  )
 				RET_VAL=("running" "${RET_VAL[3]}") ;;
 		esac
-		debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+		debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 	}
 
 	# datadisk_status <resource>
@@ -1299,7 +1301,7 @@ CONF=(__hash__0)
 			Secondary )
 				RET_VAL=("stopped") ;;
 		esac
-		debug 4 "$FUNCNAME returns (${RET_VAL[*]})"
+		debug 4 "$FUNCNAME returns (%s)" "${RET_VAL[*]}"
 	}
 
 	# reconnect <resource>
@@ -1495,14 +1497,22 @@ CONF=(__hash__0)
 
 			if [ -n "${resources[i]}" ] ; then
 				debug 1 "[${wait_connect[i]}] ${resources[i]}: connection established"
-				# *What?* spawn kids in signal handler?
-				# well, yes. have to. don't like it, but it seems to work.
-				( trap "exit 0" INT; wait_sync ${resources[i]} ) &
-				# store this pid, so it gets killed on INT
-				wait_connect[i]=$!
-				debug 1 "[$!] wait_sync '${resources[i]}'"
+				fetch CONF "${resources[i]}:skip-wait"
+				if mymatch "$RET_VAL" "@(yes|on|true|1)"; then
+					echo "$link: skip-wait for '${resources[i]}'"
+					wait_connect[i]=""
+				else
+					# *What?* spawn kids in signal handler?
+					# well, yes. have to. don't like it, but it seems to work.
+
+					( trap "exit 0" INT; wait_sync ${resources[i]} ) &
+					# store this pid, so it gets killed on INT
+					wait_connect[i]=$!
+					echo "[$!] wait_sync '${resources[i]}'"
+				fi
 			else
-				debug 1 "[${wait_connect[i]}] ${resources[i]}: synchronization finished"
+				echo "[${wait_connect[i]}] '${resources[i]}': synchronization finished"
+				wait_connect[i]="";
 			fi
 
 			# remove resource from list,
@@ -1516,7 +1526,7 @@ CONF=(__hash__0)
 		# reaped it in a previous loop together with some other child
 		# sometimes the signal is here *before* the child is dead, since it is
 		# sent by the child itself. then we get confused.
-		[ $reaped -gt 0 ] || echo >&2 "got SIGUSR2, but who sent it?"
+		#[ $reaped -gt 0 ] || echo >&2 "got SIGUSR2, but who sent it?"
 
 		# connecting childs left?
 		_IFS=$IFS; IFS=''
@@ -1556,9 +1566,6 @@ CONF=(__hash__0)
 		trap "" INT # parent script ignores INT
 
 		for res in $DO_RESOURCES ; do
-			fetch CONF "$res:skip-wait"
-			mymatch "$RET_VAL" "@(yes|on|true|1)" && continue
-
 			(# sends USR2 when connection is established
 				wait_connect $res \
 				&& sig="-USR2"    \
@@ -1582,8 +1589,7 @@ CONF=(__hash__0)
 			# on confirm ("yes"): USR1
 			(
 				trap "exit 1" INT
-				trap "echo 'All resources connected,'\
-					'waiting for synchronization to finish...'; exit 0" TERM
+				trap "echo 'All resources connected'; exit 0" TERM
 				sleep 3         # show the prompt with a little delay.
 				ask_for_abort && kill -USR1 $$
 			)  < $TERMINAL &> $TERMINAL &
@@ -1607,7 +1613,6 @@ CONF=(__hash__0)
 		# wait for all children
 		# the traps above will do the work
 		wait
-		echo "Synchronization finished."
 		# restore default INT handler for parent; since we leave anyways, this
 		# is just to be explicit.
 		trap - INT
@@ -1649,18 +1654,18 @@ set +e
 			  Sequence of commands might be not identical to real run.
 
 		_EOF
-		MODPROBE="echo # /sbin/modprobe"
-		RMMOD="echo # /sbin/rmmod"
-		UMOUNT="echo # /bin/umount -v"
-		MOUNT="echo # /bin/mount -v"
-		FUSER="echo # /bin/fuser"
-		TOUCH="echo # /bin/touch"
+		MODPROBE="echo # modprobe"
+		RMMOD="echo # rmmod"
+		UMOUNT="echo # umount -v"
+		MOUNT="echo # mount -v"
+		FUSER="echo # fuser"
+		TOUCH="echo # touch"
 
-		DRBD_SETUP="echo # /usr/sbin/drbdsetup"
+		DRBD_SETUP="echo # drbdsetup"
 		PROC_DRBD="/proc/drbd"
 		# CONFIG is set elsewhere, otherwise the dry run would be biased
 
-		PING="echo # /bin/ping -c 1 -w 3"
+		PING="echo # ping -c 1 -w 3"
 		;;
 
 	--dummy)
@@ -1678,17 +1683,18 @@ set +e
 		                         # to check if signal delivery works as intended.
 		                         # loop {sleep(1); printf(i);} on wait_{sync,connect}
 		                         # and simply returns on other
-		MODPROBE="/bin/true"
-		RMMOD="/bin/true"
-		UMOUNT="/bin/true"
-		MOUNT="/bin/true"
-		FUSER="/bin/true"
-		TOUCH="/bin/touch"       # otherwise --parse would not work
+		MODPROBE="true"
+		RMMOD="true"
+		UMOUNT="true"
+		MOUNT="true"
+		FUSER="true"
+		TOUCH="touch"       # otherwise --parse would not work
 
 		# point to text files for debugging
 		PROC_DRBD="$STARTDIR/try/proc.drbd"
 
 		CONFIG=${OPT_CONFIG:-"$STARTDIR/try/drbd.conf"}
+		[ "${CONFIG::1}" == "/" ] || CONFIG=$STARTDIR/$CONFIG_PARSED 
 		CONFIG_PARSED="$CONFIG.parsed"
 
 		if ! [ -f $PROC_DRBD ] && [ -f $CONFIG ] && [ -x $DRBD_SETUP ] ; then
