@@ -45,6 +45,8 @@
 #define INOUT
 #endif
 
+/* Never forget to place bigger members before the smaller, to
+   avoid unaligned placement of members on 64 bit architectures. */
 
 #define MAX_SOCK_ADDR	128	/* 108 for Unix domain -
 				   16 for IP, 16 for IPX,
@@ -63,8 +65,8 @@ enum io_error_handler {
 
 
 struct __attribute__((packed)) disk_config {
-	IN int      lower_device;
 	IN __u64    disk_size;
+	IN int      lower_device;
 	IN enum io_error_handler on_io_error;
 	IN int      meta_device;
 	IN int      meta_index;
@@ -78,8 +80,8 @@ enum disconnect_handler {
 
 struct __attribute__((packed)) net_config {
 	IN char     my_addr[MAX_SOCK_ADDR];
-	IN int      my_addr_len;
 	IN char     other_addr[MAX_SOCK_ADDR];
+	IN int      my_addr_len;
 	IN int      other_addr_len;
 	IN int      timeout;          // deci seconds
 	IN int      wire_protocol;
@@ -190,17 +192,17 @@ typedef enum {
 #endif
 
 struct __attribute__((packed)) ioctl_get_config {
+	OUT __u64             disk_size_user;
+	OUT char              lower_device_name[BDEVNAME_SIZE];
+	OUT char              meta_device_name[BDEVNAME_SIZE];
 	struct net_config     nconf;
 	struct syncer_config  sconf;
 	OUT int               lower_device_major;
 	OUT int               lower_device_minor;
-	OUT __u64             disk_size_user;
 	OUT enum io_error_handler on_io_error;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
 	OUT int               meta_index;
-	OUT char              lower_device_name[BDEVNAME_SIZE];
-	OUT char              meta_device_name[BDEVNAME_SIZE];
 	OUT Drbd_CState       cstate;
 	OUT Drbd_State        state;
 	OUT Drbd_State        peer_state;
