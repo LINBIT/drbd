@@ -380,13 +380,14 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long s;
+	unsigned long flags;
 
 	D_BUG_ON(!(b && b->bm));
 	// MUST_BE_LOCKED(); well. yes. but ...
 
-	spin_lock_irq(&b->bm_lock);
+	spin_lock_irqsave(&b->bm_lock,flags);
 	s = b->bm_set;
-	spin_unlock_irq(&b->bm_lock);
+	spin_unlock_irqrestore(&b->bm_lock,flags);
 
 	return s;
 }
