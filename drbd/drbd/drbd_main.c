@@ -399,11 +399,6 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	}
 	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
 	   test_bit(DISKLESS,&mdev->flags) && ns < Connected) {
-
-/* are you SURE you want this HERE ? */
-
-		clear_bit(DISKLESS,&mdev->flags);
-		smp_wmb();
 		clear_bit(MD_IO_ALLOWED,&mdev->flags);
 	}
 }
@@ -419,6 +414,11 @@ STATIC int drbd_thread_setup(void* arg)
 	retval = thi->function(thi);
 
 	thi->task = 0;
+
+	/* propagate task == NULL to other CPUs */
+	smp_mb();         // necessary?
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(1);
 
 	up(&thi->mutex); //allow thread_stop to proceed
 
@@ -1050,21 +1050,25 @@ STATIC void drbd_unplug_fn(void *data)
 #endif
 	drbd_dev *mdev = q->queuedata;
 
+	INFO("%s [%d]: unplug\n",current->comm, current->pid);
 	/* unplug FIRST */
 	spin_lock_irq(q->queue_lock);
 	blk_remove_plug(q);
 	spin_unlock_irq(q->queue_lock);
 
-	ERR_IF(mdev->state != Primary)
-		return;
-	/* add to the front of the data.work queue,
-         * unless already queued */
-	spin_lock_irq(&mdev->req_lock);
-	/* FIXME this might be a good addition to drbd_queu_work
-	 * anyways, to detect "double queuing" ... */
-	if (list_empty(&mdev->unplug_work.list))
-		_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
-	spin_unlock_irq(&mdev->req_lock);
+	/* only if connected */
+	if (mdev->cstate >= Connected) {
+		D_ASSERT(mdev->state == Primary);
+		spin_lock_irq(&mdev->req_lock);
+		/* add to the front of the data.work queue,
+		 * unless already queued.
+		 * XXX this might be a good addition to drbd_queue_work
+		 * anyways, to detect "double queuing" ... */
+		if (list_empty(&mdev->unplug_work.list))
+			_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
+		spin_unlock_irq(&mdev->req_lock);
+	}
+	/* allways */
 	drbd_kick_lo(mdev);
 }
 #endif
@@ -2032,7 +2036,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if(!inc_local_md_only(mdev)) return;
 
 	down(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
+	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
 	flags=mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
 	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
@@ -2049,8 +2053,6 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
 
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
-
-	kunmap(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
@@ -2071,7 +2073,7 @@ int drbd_md_read(drbd_dev *mdev)
 	if(!inc_local_md_only(mdev)) return -1;
 
 	down(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
+	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
@@ -2086,14 +2088,12 @@ int drbd_md_read(drbd_dev *mdev)
 	mdev->la_size = be64_to_cpu(buffer->la_size);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 
-	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 
 	return 1;
 
  err:
-	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 
@@ -2108,6 +2108,44 @@ int drbd_md_read(drbd_dev *mdev)
 	return 0;
 }
 
+#if 0
+#define MeGC(x) mdev->gen_cnt[x]
+#define PeGC(x) be32_to_cpu(peer->gen_cnt[x])
+
+void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
+{
+	INFO("MeGCs: %c:%08x:%08x:%08x:%08x:%c%c\n",
+		MeGC(Flags) & MDF_Consistent ? '1' : '0',
+		MeGC(HumanCnt),
+		MeGC(TimeoutCnt),
+		MeGC(ConnectedCnt),
+		MeGC(ArbitraryCnt),
+		MeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
+		MeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
+	if (peer) {
+		INFO("PeGCs: %c:%08x:%08x:%08x:%08x:%c%c\n",
+			PeGC(Flags) & MDF_Consistent ? '1' : '0',
+			PeGC(HumanCnt),
+			PeGC(TimeoutCnt),
+			PeGC(ConnectedCnt),
+			PeGC(ArbitraryCnt),
+			PeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
+			PeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
+	}
+	if (verbose) {
+		/* TODO
+		 * dump activity log and bitmap summary,
+		 * and maybe other statistics
+		 */
+	}
+}
+
+#undef MeGC
+#undef PeGC
+#else
+void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
+{ /* do nothing */ }
+#endif
 
 //  Returns  1 if I have the good bits,
 //           0 if both are nice

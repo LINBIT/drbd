@@ -694,7 +694,7 @@ struct Drbd_Conf {
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
 	NOT_IN_26(struct tq_struct write_hint_tq;)
-	struct page *md_io_page; // one page buffer for md_io
+	struct page *md_io_page;      // one page buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
@@ -752,6 +752,7 @@ extern void drbd_md_write(drbd_dev *mdev);
 extern int drbd_md_read(drbd_dev *mdev);
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
 extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
+extern void drbd_dump_md(drbd_dev *, Drbd_Parameter_Packet *, int );
 
 // drbd_bitmap.c (still in drbd_main.c)
 #define SS_OUT_OF_SYNC (1)

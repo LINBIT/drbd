@@ -164,10 +164,40 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	int local, remote;
 	int target_area_out_of_sync = FALSE; // only relevant for reads
 
+	/* FIXME
+	 * not always true, e.g. someone trying to mount on Secondary
+	 * maybe error out immediately here?
+	 */
+	D_ASSERT(mdev->state == Primary);
+
+	/*
+	 * Paranoia: we might have been primary, but sync target, or
+	 * even diskless, then lost the connection.
+	 * This should have been handled (panic? suspend?) somehwere
+	 * else. But maybe it was not, so check again here.
+	 * Caution: as long as we do not have a read/write lock on mdev,
+	 * to serialize state changes, this is racy, since we may loose
+	 * the connection *after* we test for the cstate.
+	 */
+	if ( (    test_bit(DISKLESS,&mdev->flags)
+	      || !(mdev->gen_cnt[Flags] & MDF_Consistent)
+	     ) && mdev->cstate < Connected )
+	{
+		ERR("Sorry, I have no access to good data anymore.\n");
+/*
+	FIXME suspend, loop waiting on cstate wait? panic?
+*/
+		drbd_bio_IO_error(bio);
+		return 0;
+	}
+
 	/* allocate outside of all locks
 	 */
 	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
 	if (!req) {
+		/* THINK really only pass the error to the upper layers?
+		 * maybe we should rather panic reight here?
+		 */
 		ERR("could not kmalloc() req\n");
 		drbd_bio_IO_error(bio);
 		return 0;
@@ -237,6 +267,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * right here already?
 	 */
 
+	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
+	drbd_plug_device(mdev);
 	if (rw == WRITE && local)
 		drbd_al_begin_io(mdev, sector);
 
@@ -250,7 +282,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		drbd_plug_device(mdev);
 		if (rw == WRITE) {
 			/* Syncronization with the syncer is done
 			 * via drbd_[rs|al]_[begin|end]_io()

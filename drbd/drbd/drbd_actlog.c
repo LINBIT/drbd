@@ -43,9 +43,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 
 #ifdef PARANOIA
 	if (rw != WRITE) {
-		void *b = kmap(mdev->md_io_page);
+		void *b = page_address(mdev->md_io_page);
 		memset(b,0,PAGE_SIZE);
-		kunmap(mdev->md_io_page);
 	}
 #endif
 	init_completion(&event);
@@ -73,9 +72,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 
 #ifdef PARANOIA
 	if (rw != WRITE) {
-		void *b = kmap(mdev->md_io_page);
+		void *b = page_address(mdev->md_io_page);
 		memset(b,0,PAGE_SIZE);
-		kunmap(mdev->md_io_page);
 	}
 #endif
 	bio_init(&bio);
@@ -231,7 +229,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 	u32 xor_sum=0;
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
-	buffer = (struct al_transaction*)kmap(mdev->md_io_page);
+	buffer = (struct al_transaction*)page_address(mdev->md_io_page);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
@@ -266,7 +264,6 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-	kunmap(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
 
@@ -324,7 +321,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	 * and make sure the page is mapped.
 	 */
 	down(&mdev->md_io_mutex);
-	buffer = kmap(mdev->md_io_page);
+	buffer = page_address(mdev->md_io_page);
 
 	// Find the valid transaction in the log
 	for(i=0;i<=mx;i++) {
@@ -347,7 +344,6 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	if(from == -1 || to == -1) {
 		WARN("No usable activity log found.\n");
 
-		kunmap(mdev->md_io_page);
 		up(&mdev->md_io_mutex);
 		return;
 	}
@@ -396,7 +392,6 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	}
 
 	/* ok, we are done with it */
-	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 
 	INFO("Found %d transactions (%d active extents) in activity log.\n",
@@ -525,7 +520,7 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 	bm = mdev->mbds_id->bm;
 
 	down(&mdev->md_io_mutex);
-	buffer = (unsigned long *)kmap(mdev->md_io_page);
+	buffer = (unsigned long *)page_address(mdev->md_io_page);
 
 	while (1) {
 		want=min_t(int,512/sizeof(long),bm_words-bm_i);
@@ -548,7 +543,6 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		}
 	}
 
-	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 
 	mdev->rs_total = (bits << (BM_BLOCK_SIZE_B - 9)) +
@@ -589,13 +583,11 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 	want=min_t(unsigned int,512/sizeof(long),bm_words-bm_i);
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer
-	buffer = (unsigned long *)kmap(mdev->md_io_page);
+	buffer = (unsigned long *)page_address(mdev->md_io_page);
 
 	for(buf_i=0;buf_i<want;buf_i++) {
 		buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
 	}
-
-	kunmap(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 

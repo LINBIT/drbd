@@ -606,7 +606,7 @@ int drbd_connect(drbd_dev *mdev)
 		if(mdev->cstate==Unconnected) return 0;
 		if(signal_pending(current)) {
 			drbd_flush_signals(current);
-			smp_mb();
+			smp_rmb();
 			if ((volatile int)mdev->receiver.t_state != Running)
 				return 0;
 
@@ -1156,7 +1156,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		set_bit(PARTNER_DISKLESS, &mdev->flags);
 		if(mdev->cstate >= Connected ) {
 			if(mdev->state == Primary) tl_clear(mdev);
-			if(mdev->state == Primary || 
+			if(mdev->state == Primary ||
 			   be32_to_cpu(p->state) == Primary ) {
 				drbd_md_inc(mdev,ConnectedCnt);
 			}
@@ -1176,11 +1176,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	if (consider_sync) {
 		int have_good,sync;
 
-		have_good=drbd_md_compare(mdev,p);
+		have_good = drbd_md_compare(mdev,p);
 
 		if(have_good==0) sync=0;
 		else sync=1;
 
+		drbd_dump_md(mdev,p,0);
 		//INFO("have_good=%d sync=%d\n", have_good, sync);
 
 		if ( mdev->sync_conf.skip && sync ) {
@@ -1196,14 +1197,20 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				drbd_send_bitmap(mdev);
 				set_cstate(mdev,WFBitMapS);
 			} else { // have_good == -1
+				if (mdev->state == Primary) {
+/*
+	FIXME
+*/
+					WARN("Current Primary becomming sync TARGET! Data corruption in progress?\n");
+				}
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 				set_cstate(mdev,WFBitMapT);
-			} 
+			}
 		} else {
 			set_cstate(mdev,Connected);
 			if(mdev->rs_total) {
 				/* We are not going to do a resync but there
-				   are marks in the bitmap. 
+				   are marks in the bitmap.
 				   (Could be from the AL, or someone used
 				   the write_gc.pl program)
 				   Clean the bitmap...
@@ -1281,8 +1288,9 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	if (mdev->cstate == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->cstate == WFBitMapT) {
-		drbd_send_bitmap(mdev);
-		drbd_start_resync(mdev,SyncTarget);
+		if (!drbd_send_bitmap(mdev))
+			goto out;
+		drbd_start_resync(mdev,SyncTarget); // XXX cannot fail ???
 	} else {
 		D_ASSERT(0);
 	}
@@ -1434,6 +1442,17 @@ STATIC void drbdd(drbd_dev *mdev)
 
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
+/*
+ * FIXME what if
+ * (state == Primary) && !(gen_cnt[Flags] & MDF_Consistent) ??
+ * or I am DISKLESS ?
+ * we need to *at least* block all IO
+ *
+ * maybe get a write mutex on mdev ?
+ * sort of "suspend" the device, untill either operator, or monitoring
+ * software, or load, or whatever, kills the box, OR connection to the
+ * good data copy is reestablished.
+ */
 	mdev->o_state = Unknown;
 	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
@@ -1554,6 +1573,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
 
+	smp_rmb();
 	if(likely(!test_bit(PARTNER_DISKLESS,&mdev->flags))) {
 		// test_bit(PARTNER_DISKLESS,&mdev->flags)
 		// This happens if one a few IO requests on the peer
@@ -1648,6 +1668,7 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
 
+	smp_rmb();
 	if(unlikely(test_bit(PARTNER_DISKLESS,&mdev->flags))) return TRUE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));

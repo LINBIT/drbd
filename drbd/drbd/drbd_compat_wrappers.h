@@ -245,7 +245,10 @@ static inline void drbd_kick_lo(drbd_dev *mdev)
 
 static inline void drbd_plug_device(drbd_dev *mdev)
 {
-	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
+	D_ASSERT(mdev->state == Primary);
+	if (mdev->cstate < Connected)
+		return;
+	if (!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
 	}
 }
@@ -525,6 +528,10 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	request_queue_t *q = bdev_get_queue(mdev->this_bdev);
 
 	spin_lock_irq(q->queue_lock);
+
+/* XXX the check on !blk_queue_plugged is redundant,
+ * implicitly checked in blk_plug_device */
+
 	if(!blk_queue_plugged(q)) {
 		blk_plug_device(q);
 		del_timer(&q->unplug_timer);

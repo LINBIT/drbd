@@ -173,6 +173,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	minor=(int)(mdev-drbd_conf);
 
 	/* if you want to reconfigure, please tear down first */
+	smp_rmb();
 	if (!test_bit(DISKLESS,&mdev->flags))
 		return -EBUSY;
 
@@ -528,6 +529,7 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		return -EACCES;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	smp_rmb();
 	if(newstate == Secondary &&
 	   (test_bit(WRITER_PRESENT,&mdev->flags) ||
 	    drbd_is_mounted(minor) == MountedRW))
@@ -692,6 +694,7 @@ ONLY_IN_26(
 	D_ASSERT(disk == mdev->vdisk);
 );
 
+	smp_rmb();
 	switch (cmd) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 /* see how sys_ioctl and blkdev_ioctl handle it in 2.6 .
@@ -743,8 +746,6 @@ ONLY_IN_26(
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
-		//#warning "yet an other reason to serialize all state changes on a rw_semaphore"
-		// PRE: Please explain the issue.
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		break;
 
@@ -762,7 +763,15 @@ ONLY_IN_26(
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_NET:
-		if( mdev->cstate == Unconfigured) break;
+		if ( mdev->cstate == Unconfigured) break;
+		if (  (   mdev->state  == Primary
+		       && test_bit(DISKLESS,&mdev->flags) )
+		   || (   mdev->o_state == Primary
+		       && test_bit(PARTNER_DISKLESS,&mdev->flags) ) )
+		{
+			err=-ENODATA;
+			break;
+		}
 		/* FIXME what if fsync returns error */
 		drbd_sync_me(mdev);
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
@@ -800,7 +809,7 @@ ONLY_IN_26(
 		drbd_sync_me(mdev);
 
 		set_bit(DISKLESS,&mdev->flags);
-		smp_mb__after_clear_bit();
+		smp_wmb();
 		if ( wait_event_interruptible(mdev->cstate_wait,
 					      atomic_read(&mdev->local_cnt)==0) ) {
 			clear_bit(DISKLESS,&mdev->flags);
