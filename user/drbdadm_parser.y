@@ -249,7 +249,7 @@ void check_meta_disk()
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
 %token <txt> TK_ALLOW_TWO_PRIMARIES
 %token <txt> TK_PRI_ON_INCON_DEGR TK_PRI_SEES_SEC_WITH_HIGHER_GC
-%token <txt> TK_OUTDATE_PEER
+%token <txt> TK_OUTDATE_PEER TK_CRAM_HMAC_ALG TK_SHARED_SECRET
 
 %type <txt> hostname resource_name
 %type <d_option> disk_stmts disk_stmt
@@ -373,6 +373,8 @@ net_stmt:	  TK_TIMEOUT	    TK_INTEGER
 		{ range_check(R_KO_COUNT,$1,$2);	$$=new_opt($1,$2); }
 		| TK_ON_DISCONNECT  TK_STRING	{	$$=new_opt($1,$2); }
 		| TK_ALLOW_TWO_PRIMARIES	{	$$=new_opt($1,0);  }
+		| TK_CRAM_HMAC_ALG  TK_STRING	{	$$=new_opt($1,$2); }
+		| TK_SHARED_SECRET  TK_STRING	{	$$=new_opt($1,$2); }
 		;
 
 sync_stmts:	  /* empty */	           { $$ = 0; }

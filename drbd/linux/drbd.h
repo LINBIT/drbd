@@ -60,6 +60,8 @@
 				   the AF_UNIX size (see net/unix/af_unix.c
 				   :unix_mkname()).
 				 */
+#define CRYPTO_MAX_ALG_NAME 64
+#define SHARED_SECRET_MAX   64
 
 enum io_error_handler {
 	PassOn,
@@ -85,6 +87,8 @@ enum disconnect_handler {
 struct net_config {
 	IN char     my_addr[MAX_SOCK_ADDR];
 	IN char     other_addr[MAX_SOCK_ADDR];
+	IN char     shared_secret[SHARED_SECRET_MAX];
+	IN char     cram_hmac_alg[CRYPTO_MAX_ALG_NAME];
 	IN int      my_addr_len;
 	IN int      other_addr_len;
 	IN int      timeout;          // deci seconds

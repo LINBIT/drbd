@@ -255,7 +255,10 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   ko-count		do_assign(NUM);   CP; return TK_KO_COUNT;
   on-disconnect 	do_assign(ON_DISCONNECT); CP; return TK_ON_DISCONNECT;
   allow-two-primaries   yy_push_state(SEMICOLON); CP; return TK_ALLOW_TWO_PRIMARIES;
-  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|max-epoch-size|ko-count|on-disconnect'");
+  cram-hmac-alg		do_assign(STRING); CP; return TK_CRAM_HMAC_ALG;
+  shared-secret		do_assign(STRING); CP; return TK_SHARED_SECRET;
+
+  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|max-epoch-size|ko-count|on-disconnect|cram-hmac-alg|shared-secret'");
 }
 
 <SYNCER>{

@@ -163,6 +163,8 @@ struct drbd_cmd commands[] = {
      { "ko-count",   required_argument, 0, 'k' },
      { "on-disconnect",required_argument, 0, 'd' },
      { "allow-two-primaries",no_argument, 0, 'm' },
+     { "cram-hmac-alg",required_argument, 0, 'a' },
+     { "shared-secret",required_argument, 0, 'x' },
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_dev","meta_data_dev",
 				    "meta_data_index",0},
@@ -451,6 +453,8 @@ int scan_net_options(char **argv,
   cn->config.sndbuf_size = DEF_SNDBUF_SIZE ;
   cn->config.on_disconnect = DEF_ON_DISCONNECT;
   cn->config.two_primaries = DEF_TWO_PRIMARIES;
+  cn->config.cram_hmac_alg[0] = 0;
+  cn->config.shared_secret[0] = 0;
 
   if(argc==0) return 0;
 
@@ -506,6 +510,12 @@ int scan_net_options(char **argv,
 	  fprintf(stderr,"%s: '%s' is an invalid on-disconnect handler.\n",
 		  cmdname,optarg);
 	  return 20;
+	case 'a':
+	  strncpy(cn->config.cram_hmac_alg,optarg,CRYPTO_MAX_ALG_NAME);
+	  break;
+	case 'x':
+	  strncpy(cn->config.shared_secret,optarg,SHARED_SECRET_MAX);
+	  break;
 	case 1:	// non option argument. see getopt_long(3)
 	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	case '?':
