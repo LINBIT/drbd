@@ -70,10 +70,12 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	rs_left = drbd_bm_total_weight(mdev);
 	/* >> 10 to prevent overflow,
 	 * +1 to prevent division by zero */
-	ERR_IF(rs_left > mdev->rs_total) {
+	if (rs_left > mdev->rs_total) {
 		/* doh. logic bug somewhere.
 		 * for now, just try to prevent in-kernel buffer overflow.
 		 */
+		ERR("logic bug? rs_left=%lu > rs_total=%lu\n",
+				rs_left, mdev->rs_total);
 		res = 1000;
 	} else {
 		res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);

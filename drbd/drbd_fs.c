@@ -782,7 +782,7 @@ ONLY_IN_26(
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 )
 
-		if(test_bit(ON_PRI_INC_HUMAN,&mdev->flags)) { 
+		if(test_bit(ON_PRI_INC_HUMAN,&mdev->flags)) {
 			newstate |= Human;
 			clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
 		}
@@ -1152,10 +1152,14 @@ ONLY_IN_26(
 		 * differentiate between different error cases,
 		 * or report the current connection state and flags back
 		 * to userspace */
-		if( mdev->state == Primary || 
+
+		/* disallow "invalidation" of local replica
+		 * when currently in primary state (would be a Bad Idea),
+		 * or during a running sync (won't make any sense) */
+		if( mdev->state == Primary ||
 		    mdev->cstate < StandAlone ||
 		    mdev->cstate > Connected ||
-		    test_bit(DISKLESS,&mdev->flags) || 
+		    test_bit(DISKLESS,&mdev->flags) ||
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;
 			break;
@@ -1182,7 +1186,7 @@ ONLY_IN_26(
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
 
-		if (mdev->cstate == Connected) {	
+		if (mdev->cstate == Connected) {
 			drbd_send_short_cmd(mdev,BecomeSyncSource);
 			drbd_start_resync(mdev,SyncTarget);
 		}
@@ -1192,9 +1196,9 @@ ONLY_IN_26(
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
-		if( mdev->o_state == Primary || 
+		if( mdev->o_state == Primary ||
 		    mdev->cstate != Connected ||
-		    test_bit(DISKLESS,&mdev->flags) || 
+		    test_bit(DISKLESS,&mdev->flags) ||
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;
 			break;

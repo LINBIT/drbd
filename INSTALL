@@ -112,6 +112,16 @@ Other helpful links:
     number. Having it as module is ok, but you cannot use both
     at the same time.
 
+    If you do not run a selfcompiled kernel, but the binary shipped
+    distro kernel, and after "make install" the drbd module ends up in
+    the wrong place (e.g. "/lib/modules/2.4.20custom/", when you want it
+    in "/lib/modules/2.4.20/" ), edit the top-level Makefile of your kernel
+    source tree and remove "custom" from the EXTRAVERSION.  Make sure you
+    copied in the .config corresponding to the kernel you use.
+    Don't forget to "make dep" in /usr/src/linux, it sometimes helps, too.
+    (you could of course edit .kernelversion in the drbd directory,
+    or copy by hand, too)
+
       Update:
       since we now (0.7.1 and later) have an officially assigned
       device major number (147) and device nodes (/dev/drbd), we no longer
@@ -137,7 +147,7 @@ Other helpful links:
 
    Note: On some distros (redhat/fedora typically), you first need to have a 
    look into ./drbd_config.h, and (un)comment some of the
-   settings appropriately.
+   settings appropriately, if not done automagically already.
 
    Since 0.7.3, we have script/adjust_drbd_config_h.sh, which helps you 
    with this, and gets called during the normal build process,
@@ -238,6 +248,12 @@ Other helpful links:
    This should be fairly easy, there is an example spec
    file, and you can even "make rpm".  If this is a CVS/SVN version,
    you might need to say "make rpm FORCE=1".
+
+   If it does not work for you out of the box, first get "make install"
+   to work properly, see the section titled 'prepare the kernel source tree'
+   and 'building a kernel module'.
+   You may need to add some packages, or edit the drbd.spec(.in) file,
+   or even add a patch if fedora broke something again...
 
    There are caveats, please have a look at ./README, too,
    you might want/need to edit the ./drbd.spec file.

@@ -6,7 +6,7 @@ Latest:
 
  * New config option "wait-sync-target" in the startup section.
    When set, the drbd script will block the boot process to prevent
-   heatbeat to make a SyncTarget-node primary.
+   heartbeat to make a SyncTarget-node primary.
  * prevent possible in-kernel buffer overflow in drbd_proc.c
  * Fixed debian's postinst script to create /dev/drbd? instead of /dev/nb?
  * drbd status:

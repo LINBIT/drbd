@@ -4,19 +4,14 @@
         		   by Philipp Reisner
 		   		   
 
-Unfortunately my time does not allow me to maintain this README besides
-the software. 
-
-Please refer to the web pages at
-http://www.drbd.org/
-to find maintained information.
-
 Reference documentation is included in the documentation directory.
+
 Please have a look at INSTALL or INSTALL.html, too.
 BTW, if there is no INSTALL.html, say "make INSTALL.html" :)
 
 
 DEBUGING:
+---------
 
 In case you experience kernel crashes when using DRBD, please
 define "DBG_ALL_SYMBOLS" in drbd_config.h, and recompile DRBD.
@@ -26,26 +21,19 @@ If you don't know what ksymoops is, read
 /usr/src/linux/Documentation/oops-tracing.txt
 
 BUILD RPMS:
+-----------
 
-It should be enough to just say: make rpm.
-If not, you probably need to add some packages,
-or edit the drbd.spec(.in) file.
+Read INSTALL.
 
-After make rpm there should be distributable rpms in dist/*/*/drbd-*.*.rpm
-
-REDHAT USERS:
-
-Have a look into drbd_config.h, and uncomment the RH-specific defines.
-
-If you do not run a selfcompiled kernel, but the binary shipped
-distro kernel, and after "make install" the drbd module ends up in
-the wrong place (e.g. /lib/modules/2.4.20custom/, when you want it
-in /lib/modules/2.4.20/), edit the top-level Makefile of your
-kernel source tree and remove "custom" from the EXTRAVERSION.
-Make sure you copied in the .config corresponding to the kernel you use.
-Don't forget to "make dep" in /usr/src/linux, it sometimes helps, too.
-
-(you could of course edit .kernelversion in the drbd directory,
- or copy by hand, too)
  
+GENERAL ISSUES
+--------------
+
+Unfortunately our time does not allow us to
+maintain this README besides the software. 
+
+Please refer to the web pages at
+http://www.drbd.org/ and 
+http://linuxha.trick.ca/DRBD
+to find maintained information.
 

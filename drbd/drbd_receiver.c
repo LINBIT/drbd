@@ -1511,6 +1511,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		      nodestate_to_name(oo_state),
 		      nodestate_to_name(mdev->state),
 		      nodestate_to_name(mdev->o_state) );
+		/* FIXME assertion for (gencounts do not diverge) */
 	}
 	drbd_md_write(mdev); // update connected indicator, la_size, ...
 
