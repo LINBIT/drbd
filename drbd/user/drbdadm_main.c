@@ -42,6 +42,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <signal.h>
+#include <time.h>
 
 #include "drbdadm.h"
 
@@ -593,20 +594,40 @@ static void kill_childs(pid_t* pids)
   }
 }
 
-int gets_timeout(char* s, int size, int timeout)
+/*
+  returns:
+  -1 ... all childs terminated
+   0 ... timeout expired
+   1 ... a string was read
+ */
+int gets_timeout(pid_t* pids, char* s, int size, int timeout)
 {
-  int pr,rr;
+  int pr,rr,n=0;
   struct pollfd pfd;
 
-  pfd.fd = fileno(stdin);
-  pfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
-
-  pr = poll(&pfd, 1, timeout);
-
-  if( pr == -1 ) {   // Poll error.
-    perror("poll");
-    exit(E_exec_error);
+  if(s) {
+    pfd.fd = fileno(stdin);
+    pfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+    n=1;
   }
+
+  if(!childs_running(pids,WNOHANG)) {
+    pr = -1;
+    goto out;
+  }
+
+  do {
+    pr = poll(&pfd, n, timeout);
+
+    if( pr == -1 ) {   // Poll error.
+      if (errno == EINTR) {
+	if(childs_running(pids,WNOHANG)) continue;
+	goto out; // pr = -1 here.
+      }
+      perror("poll");
+      exit(E_exec_error);
+    }
+  } while(pr == -1);
   
   if( pr == 1 ) {  // Input available.
     rr = read(fileno(stdin),s,size-1);
@@ -617,7 +638,8 @@ int gets_timeout(char* s, int size, int timeout)
     s[rr]=0;
   }
 
-  return pr; // if pr == 0 timeout expired
+ out:
+   return pr;
 }
 
 static char* get_opt_val(struct d_option* base,char* name,char* def)
@@ -631,22 +653,25 @@ static char* get_opt_val(struct d_option* base,char* name,char* def)
   return def;
 }
 
+void chld_sig_hand(int unused)
+{
+  // do nothing. But interrupt systemcalls :)
+}
+
 static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 {
   struct d_resource *res,*t;
   char *argv[20], answer[40];
   pid_t* pids;
   struct d_option* opt;
-  int argc,sec,i=0;
-  int wtime;
+  int rr,wtime,argc,i=0;
+  time_t start;
 
-  struct sigaction so;
-  struct sigaction sa;
+  struct sigaction so,sa;
 
-  sa.sa_handler=SIG_IGN;
+  sa.sa_handler=chld_sig_hand;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags=SA_NOCLDSTOP;
-
   sigaction(SIGCHLD,&sa,&so);
 
   pids = alloca( nr_resources * sizeof(pid_t) );
@@ -666,14 +691,10 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
   wtime = global_options.dialog_refresh ? 
     global_options.dialog_refresh : -1;
 
-  sec = 0;
-  while(sec < 3) {
-    if(!childs_running(pids,WNOHANG)) return 0;
-    sleep(1);
-    sec++;
-  }
+  start = time(0);
+  rr = gets_timeout(pids,0,0,3*1000); // no string, but timeout of 3 seconds.
 
-  if(childs_running(pids,WNOHANG)) {
+  if(rr == 0) {
     printf("***************************************************************\n"
 	   " DRBD's startup script waits for the peer node(s) to appear.\n"
 	   " - In case this node was already a degraded cluster before the\n"
@@ -685,20 +706,21 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 	   get_opt_val(config->startup_options,"wfc-timeout","0"),
 	   config->name);
 
-    printf(" To abort waiting enter 'yes' [%4d]:",sec);
+    printf(" To abort waiting enter 'yes' [ -- ]:");
     do {
-      printf("\e[s\e[31G[%4d]:\e[u",sec); // Redraw sec, preserve cursor pos.
+      printf("\e[s\e[31G[%4d]:\e[u",(int)(time(0)-start)); // Redraw sec.
       fflush(stdout);
-      if(gets_timeout(answer,40,wtime*1000)) {
+      rr = gets_timeout(pids,answer,40,wtime*1000);
+      if(rr==1) {
 	if(!strcmp(answer,"yes\n")) {
 	  kill_childs(pids);
 	  childs_running(pids,0);
 	} else {
-	  printf(" To abort waiting enter 'yes' [%4d]:",sec);
+	  printf(" To abort waiting enter 'yes' [ -- ]:");
 	}
       }
-      sec += wtime;
-    } while(childs_running(pids,WNOHANG));
+      
+    } while( rr != -1 );
     printf("\n");
   }
 
