@@ -811,7 +811,7 @@ inline int receive_param(int minor,int command)
 	if (drbd_conf[minor].state == Secondary) {
 		/* Secondary has to adopt primary's gen_cnt. */
 		int i;
-		for(i=0;i<=PrimaryInd;i++) {
+		for(i=HumanCnt;i<=PrimaryInd;i++) {
 			drbd_conf[minor].gen_cnt[i]=
 				be32_to_cpu(param.gen_cnt[i]);
 		}
