@@ -307,6 +307,25 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 */
 		inc_ap_pending(mdev);
 		if (rw == WRITE) {
+			switch(drbd_send_dblock(mdev,req)) {
+			case 0: /* sending failed */
+				if (mdev->state.s.conn >= Connected)
+					drbd_force_state(mdev,NS(conn,NetworkFailure));
+				dec_ap_pending(mdev);
+				drbd_thread_restart_nowait(&mdev->receiver);
+				break;
+			case -1: /* concurrent write */
+				WARN("Concurrent write! [DISCARD L] sec=%lu\n",
+				     (unsigned long)sector);
+				local=0;
+				drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
+				break;
+			default: /* block was sent */
+				if(mdev->conf.wire_protocol == DRBD_PROT_A) {
+					dec_ap_pending(mdev);
+					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+				}
+			}
 			if (!drbd_send_dblock(mdev,req)) {
 				if (mdev->state.s.conn >= Connected)
 					drbd_force_state(mdev,NS(conn,NetworkFailure));

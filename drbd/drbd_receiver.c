@@ -1036,7 +1036,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	sector_t sector;
 	struct Tl_epoch_entry *e;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
-	int header_size,data_size, packet_seq,discard;
+	int header_size,data_size, packet_seq,discard=0;
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -1057,16 +1057,18 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	   traveling on msock 
 	   PRE TODO: Wrap around of seq_num !!! 
 	*/
-	packet_seq = be32_to_cpu(p->seq_num);
-	if( wait_event_interruptible(mdev->cstate_wait, 
-				     packet_seq <= peer_seq(mdev)+1) )
-		return FALSE;
+	if (mdev->conf.two_primaries) {
+		packet_seq = be32_to_cpu(p->seq_num);
+		if( wait_event_interruptible(mdev->cstate_wait, 
+					     packet_seq <= peer_seq(mdev)+1) )
+			return FALSE;
 
-	spin_lock(&mdev->peer_seq_lock); 
-	mdev->peer_seq = max(mdev->peer_seq, packet_seq);
- 	/* is update_peer_seq(mdev,packet_seq); */
-	discard = drbd_chk_discard(mdev,p->block_id,packet_seq);
-	spin_unlock(&mdev->peer_seq_lock);
+		spin_lock(&mdev->peer_seq_lock); 
+		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
+		/* is update_peer_seq(mdev,packet_seq); */
+		discard = drbd_chk_discard(mdev,p->block_id,packet_seq);
+		spin_unlock(&mdev->peer_seq_lock);
+	}
 
 	sector = be64_to_cpu(p->sector);
 	e = read_in_block(mdev,data_size);

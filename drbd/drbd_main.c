@@ -168,11 +168,9 @@ STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
 }
 
 
-STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
+STATIC void _tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 {
 	struct drbd_barrier *b;
-
-	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->newest_barrier;
 
@@ -187,7 +185,12 @@ STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 	INIT_HLIST_NODE(&new_item->colision);
 	hlist_add_head( &new_item->colision, mdev->tl_hash + 
 			tl_hash_fn(mdev, drbd_req_get_sector(new_item) ));
+}
 
+STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
+{
+	spin_lock_irq(&mdev->tl_lock);
+	_tl_add(mdev,new_item);
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
@@ -422,10 +425,39 @@ int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags)
 	return rv;
 }
 
-int ee_have_write(drbd_dev *mdev, drbd_request_t * req)
+STATIC int ee_have_write(drbd_dev *mdev, drbd_request_t * req)
 {
-	// PRE TODO: same as above for a request agains our acive EEs.
-	return 0;
+	struct hlist_head *slot;
+	struct hlist_node *n;
+	struct Tl_epoch_entry *ee;
+	sector_t sector = drbd_req_get_sector(req);
+	int size = drbd_req_get_size(req);
+	int i, rv=0;
+
+	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
+
+	spin_lock_irq(&mdev->tl_lock);
+
+	for(i=-1;i<=1;i++ ) {
+		slot = mdev->tl_hash + ee_hash_fn(mdev,
+						  sector + i*(1<<(HT_SHIFT)));
+		hlist_for_each_entry(ee, n, slot, colision) {
+			if( overlaps(drbd_ee_get_sector(ee),
+				     drbd_ee_get_size(ee),
+				     sector,
+				     size) ) {
+				rv=1;
+				goto out;
+			} //overlaps()
+		} // hlist_for_each_entry()
+	}
+
+	// Good, no conflict found
+	_tl_add(mdev,req);
+ out:
+	spin_unlock_irq(&mdev->tl_lock);
+
+	return rv;
 }
 
 /**
@@ -1308,7 +1340,11 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		ok = _drbd_send_barrier(mdev);
 	if(ok) {
-		tl_add(mdev,req);
+		if (mdev->conf.two_primaries) {
+			if(ee_have_write(mdev,req)) return -1;
+		} else {
+			tl_add(mdev,req);
+		}
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);

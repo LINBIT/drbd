@@ -125,6 +125,12 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
+	if( !hlist_unhashed(&e->colision) ) {
+		spin_lock_irqsave(&mdev->tl_lock,flags);
+		hlist_del_init(&e->colision);
+		spin_unlock_irqrestore(&mdev->tl_lock,flags);
+	}
+
 	drbd_chk_io_error(mdev,error);
 	wake_asender(mdev);
 	dec_local(mdev);

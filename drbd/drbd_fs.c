@@ -577,7 +577,8 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		}
 	}
 
-	if (mdev->ee_hash_s != new_conf.max_buffers/8 ) {
+	if (mdev->conf.two_primaries &&
+	    ( mdev->ee_hash_s != new_conf.max_buffers/8 ) ) {
 		new_ee_hash = kmalloc(mdev->ee_hash_s * sizeof(void*),
 				      GFP_KERNEL);
 		if(!new_ee_hash) {
