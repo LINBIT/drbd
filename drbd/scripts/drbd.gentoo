@@ -1,0 +1,42 @@
+#!/sbin/runscript
+# Distributed under the terms of the GNU General Public License v2
+#
+# kindly provided by Ron O'Hara, see
+# http://thread.gmane.org/gmane.comp.linux.drbd/6429
+
+opts="${opts} reload"
+
+DRBDADM="/sbin/drbdadm"
+PROC_DRBD="/proc/drbd"
+MODPROBE="modprobe"
+RMMOD="rmmod"
+
+depend() {
+	use logger
+	need net
+}
+
+start() {
+	ebegin "Starting DRBD"
+	if [ ! -e /dev/nb0 ] ; then
+	   /bin/mknod /dev/nb0 b 43 0
+	fi
+	if [ ! -e /dev/nb1 ] ; then
+	   /bin/mknod /dev/nb1 b 43 1
+	fi
+	${DRBDADM} up all
+#	/sbin/drbdadm wait_connect all
+	eend $ret
+}
+
+stop() {
+	ebegin "Stopping DRBD"
+	${DRBDADM} down all
+	eend $?
+}
+
+reload() {
+	ebegin "Reloading DRBD"
+	${DRBDADM} adjust all
+	eend $?
+}
