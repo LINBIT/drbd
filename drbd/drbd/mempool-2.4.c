@@ -9,10 +9,15 @@
  *  modified for inclusion with DRBD in 2003 by Philipp Reisner.
  */
 
+#include <linux/compiler.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include "mempool.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
+# define BUG_ON(condition) do { if (unlikely((condition)!=0)) BUG(); } while(0)
+#endif
 
 /**
  * mempool_create - create a memory pool

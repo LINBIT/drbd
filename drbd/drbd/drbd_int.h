@@ -26,6 +26,7 @@
 
 */
 
+#include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/list.h>
@@ -721,6 +722,91 @@ extern void drbd_al_init(struct Drbd_Conf *mdev);
 extern void drbd_al_free(struct Drbd_Conf *mdev);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
+
+/*
+ * event macros
+ *************************/
+
+// we use these within spin_lock_irq() ...
+#ifndef wq_write_lock
+#if USE_RW_WAIT_QUEUE_SPINLOCK
+# define wq_write_lock write_lock
+# define wq_write_unlock write_unlock
+# define wq_write_unlock_irq write_unlock_irq
+#else
+# define wq_write_lock spin_lock
+# define wq_write_unlock spin_unlock
+# define wq_write_unlock_irq spin_unlock_irq
+#endif
+#endif
+
+// sched.h does not have it with timeout, so here goes:
+
+#ifndef wait_event_interruptible_timeout
+#define __wait_event_interruptible_timeout(wq, condition, ret)		\
+do {									\
+	wait_queue_t __wait;						\
+	init_waitqueue_entry(&__wait, current);				\
+									\
+	add_wait_queue(&wq, &__wait);					\
+	for (;;) {							\
+		set_current_state(TASK_INTERRUPTIBLE);			\
+		if (condition)						\
+			break;						\
+		if (!signal_pending(current)) {				\
+			ret = schedule_timeout(ret);			\
+			if (!ret)					\
+				break;					\
+			continue;					\
+		}							\
+		ret = -EINTR;						\
+		break;							\
+	}								\
+	current->state = TASK_RUNNING;					\
+	remove_wait_queue(&wq, &__wait);				\
+} while (0)
+
+#define wait_event_interruptible_timeout(wq, condition, timeout)	\
+({									\
+	unsigned long __ret = timeout;						\
+	if (!(condition))						\
+		__wait_event_interruptible_timeout(wq, condition, __ret); \
+	__ret;								\
+})
+#endif
+
+// the same, without timeout,
+// but with run_task_queue(&tq_disk) just before the schedule()
+// THINK whether we want to be interruptible or not
+#define __wait_disk_event_interruptible(wq, condition)			\
+do {									\
+	wait_queue_t __wait;						\
+	init_waitqueue_entry(&__wait, current);				\
+									\
+	add_wait_queue(&wq, &__wait);					\
+	for (;;) {							\
+		set_current_state(TASK_INTERRUPTIBLE);			\
+		if (condition)						\
+			break;						\
+		if (!signal_pending(current)) {				\
+			run_task_queue(&tq_disk);			\
+			schedule();					\
+			continue;					\
+		}							\
+		ret = -ERESTARTSYS;					\
+		break;							\
+	}								\
+	current->state = TASK_RUNNING;					\
+	remove_wait_queue(&wq, &__wait);				\
+} while (0)
+
+#define wait_disk_event_interruptible(wq, condition)			\
+do {									\
+	if (condition)							\
+		break;							\
+	__wait_disk_event_interruptible(wq, condition);			\
+} while (0)
+
 
 /*
  * inline helper functions
