@@ -22,9 +22,7 @@
 
 #define REL_VERSION "0.7-pre10 cvs $Date: 2004/07/09 18:29:24 $"
 #define API_VERSION 74
-#define PRO_VERSION 73 /* actually already 74, but I expect some more
-			* protocol changes, maybe even an additional packet
-			* soonish... */
+#define PRO_VERSION 74
 
 //#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 

@@ -600,7 +600,6 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 	return rv;
 }
 
-
 STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 {
 	int err;
@@ -655,6 +654,8 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 
 	return sock;
 }
+
+STATIC int drbd_do_handshake(drbd_dev *mdev);
 
 int drbd_connect(drbd_dev *mdev)
 {
@@ -712,8 +713,12 @@ int drbd_connect(drbd_dev *mdev)
 	// FIXME fold to limits. should be done in drbd_ioctl
 	sock->sk->SK_(sndbuf) = mdev->conf.sndbuf_size;
 	sock->sk->SK_(rcvbuf) = mdev->conf.sndbuf_size;
-	sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
-	sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
+	/* NOT YET ...
+	 * sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
+	 * sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
+	 * THINK HandShake timeout, hardcoded for now: */
+	sock->sk->SK_(sndtimeo) =
+	sock->sk->SK_(rcvtimeo) = 2*HZ;
 	sock->sk->SK_(userlocks) |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 
 	msock->sk->SK_(priority)=TC_PRIO_INTERACTIVE;
@@ -728,8 +733,14 @@ int drbd_connect(drbd_dev *mdev)
 	mdev->last_received = jiffies;
 
 	set_cstate(mdev,WFReportParams);
-
 	D_ASSERT(mdev->asender.task == NULL);
+
+	if (!drbd_do_handshake(mdev)) {
+		return 0;
+	}
+
+	sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
+	sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
 
 	drbd_thread_start(&mdev->asender);
 
@@ -1811,6 +1822,85 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	INFO("Connection lost.\n");
 }
 
+/*
+ * we hereby assure that we always support the drbd dialects
+ * PRO_VERSION and (PRO_VERSION -1), allowing for rolling upgrades
+ *
+ * feature flags and the reserved array should be enough room for future
+ * enhancements of the handshake protocol, and possible plugins...
+ *
+ * for now, they are expected to be zero, but ignored.
+ */
+int drbd_send_handshake(drbd_dev *mdev)
+{
+	// ASSERT current == mdev->receiver ...
+	Drbd_HandShake_Packet *p = &mdev->data.sbuf.HandShake;
+	int ok;
+
+	down(&mdev->data.mutex);
+	memset(p,0,sizeof(*p));
+	p->protocol_version = cpu_to_be32(PRO_VERSION);
+	ok = _drbd_send_cmd( mdev, mdev->data.socket, HandShake,
+	                     (Drbd_Header *)p, sizeof(*p), 0 );
+	up(&mdev->data.mutex);
+	return ok;
+}
+
+STATIC int drbd_do_handshake(drbd_dev *mdev)
+{
+	// ASSERT current == mdev->receiver ...
+	Drbd_HandShake_Packet *p = &mdev->data.rbuf.HandShake;
+	const int expect = sizeof(Drbd_HandShake_Packet)-sizeof(Drbd_Header);
+	int rv;
+
+	rv = drbd_send_handshake(mdev);
+	if (!rv) return 0;
+
+	rv = drbd_recv_header(mdev,&p->head);
+	if (!rv) return 0;
+
+	if (p->head.command == ReportParams) {
+		ERR("expected HandShake packet, received ReportParams...\n");
+		ERR("peer probaly runs some incompatible 0.7 -preX version\n");
+		return 0;
+	} else if (p->head.command != HandShake) {
+		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
+		     cmdname(p->head.command), p->head.command );
+		return 0;
+	}
+
+	if (p->head.length != expect) {
+		ERR( "expected HandShake length: %u, received: %u\n",
+		     expect, p->head.length );
+		return 0;
+	}
+
+	rv = drbd_recv(mdev, &p->head.payload, expect);
+
+	if (rv != expect) {
+		ERR("short read receiving handshake packet: l=%u\n", rv);
+		return 0;
+	}
+
+	dump_packet(mdev,mdev->data.socket,2,&mdev->data.rbuf, __FILE__, __LINE__);
+
+	p->protocol_version = be32_to_cpu(p->protocol_version);
+
+	if ( p->protocol_version == PRO_VERSION ) {
+		INFO( "Handshake successful: DRBD Protocol version %u\n",
+				p->protocol_version );
+	} /* else if ( p->protocol_version == (PRO_VERSION-1) ) {
+		// not yet; but next time :)
+	} */ else {
+		ERR( "incompatible DRBD dialects: "
+		     "I support %u, peer wants %u\n",
+		     PRO_VERSION, p->protocol_version );
+		return 0;
+	}
+
+	return 1;
+}
+
 int drbdd_init(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
@@ -1823,6 +1913,12 @@ int drbdd_init(struct Drbd_thread *thi)
 	while (TRUE) {
 		if (!drbd_connect(mdev)) {
 			WARN("Discarding network configuration.\n");
+			/* FIXME DISKLESS StandAlone
+			 * does not make much sense...
+			 * drbd_disconnect should set cstate properly...
+			 */
+			drbd_disconnect(mdev);
+			set_cstate(mdev,StandAlone);
 			break;
 		}
 		if (get_t_state(thi) == Exiting) break;

@@ -358,10 +358,15 @@ typedef enum {
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
+
+	HandShake = 0xfffe // FIXED for the next century!
 } Drbd_Packet_Cmd;
 
 static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 {
+	/* THINK may need to become several global tables
+	 * when we want to support more than
+	 * one PRO_VERSION */
 	static const char *cmdnames[] = {
 		[Data]             = "Data",
 		[DataReply]        = "DataReply",
@@ -385,7 +390,8 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[BarrierAck]       = "BarrierAck"
 	};
 
-	if(cmd < 0 || cmd > MAX_CMD) return "Unknown";
+	if (cmd == HandShake) return "HandShake";
+	if (Data > cmd || cmd >= MAX_CMD) return "Unknown";
 	return cmdnames[cmd];
 }
 
@@ -406,6 +412,7 @@ typedef struct {
 	u16       length;	// bytes of data after this header
 	char      payload[0];
 } Drbd_Header __attribute((packed));
+// 8 bytes. packet FIXED for the next century!
 
 /*
  * short commands, packets without payload, plain Drbd_Header:
@@ -450,11 +457,26 @@ typedef struct {
 
 /*
  * commands with their own struct for additional fields:
+ *   HandShake
  *   Barrier
  *   BarrierAck
  *   SyncParam
  *   ReportParams
  */
+
+typedef struct {
+	Drbd_Header head;		// 8 bytes
+	u32         protocol_version;
+	u32         feature_flags;
+
+	/* should be more than enough for future enhancements
+	 * for now, feature_flags and the reserverd array shall be zero.
+	 */
+
+	u64         reserverd[8];
+} Drbd_HandShake_Packet __attribute((packed));
+// 80 bytes, FIXED for the next century
+
 typedef struct {
 	Drbd_Header head;
 	u32         barrier;   // may be 0 or a barrier number
@@ -505,6 +527,7 @@ typedef struct {
 
 typedef union {
 	Drbd_Header              head;
+	Drbd_HandShake_Packet    HandShake;
 	Drbd_Data_Packet         Data;
 	Drbd_BlockAck_Packet     BlockAck;
 	Drbd_Barrier_Packet      Barrier;
@@ -782,6 +805,9 @@ extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
 extern int drbd_send_param(drbd_dev *mdev, int flags);
+extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
+			  size_t size, unsigned msg_flags);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
@@ -1348,6 +1374,10 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
 	int cmd = (recv == 2) ? p->head.command : be16_to_cpu(p->head.command);
 	switch (cmd) {
+	case HandShake:
+		INFOP("%s (%u)\n", be32_to_cpu(p->HandShake.protocol_version));
+		break;
+
 	case Ping:
 	case PingAck:
 	case BecomeSyncTarget:

@@ -600,7 +600,7 @@ inline void restore_old_sigset(sigset_t oldset)
 	UNLOCK_SIGMASK(current,flags);
 }
 
-STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
 			  size_t size, unsigned msg_flags)
 {
@@ -1617,6 +1617,7 @@ int __init drbd_init(void)
 	SZO(wait_queue_head_t);
 	SZO(spinlock_t);
 	SZO(Drbd_Header);
+	SZO(Drbd_HandShake_Packet);
 	SZO(Drbd_Barrier_Packet);
 	SZO(Drbd_BarrierAck_Packet);
 	SZO(Drbd_SyncParam_Packet);
@@ -1627,6 +1628,12 @@ int __init drbd_init(void)
 	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);
 	return -EBUSY;
 #endif
+
+	if (sizeof(Drbd_HandShake_Packet) != 80) {
+		printk(KERN_ERR DEVICE_NAME
+		       ": never change the size or layout of the HandShake packet.\n");
+		return -EINVAL;
+	}
 
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
