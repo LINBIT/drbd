@@ -109,7 +109,7 @@ case "$1" in
 			exit $RETVAL
 		fi
 		
-		setLocal
+		setLocal $RESOURCE
 		isMounted $RESOURCE
 
 		if [ $? -eq 1 ]; then
@@ -131,7 +131,7 @@ case "$1" in
 			exit $RETVAL
 		fi
 		
-		setLocal
+		setLocal $RESOURCE
 		isMounted $RESOURCE
 
 		if [ $? -eq 1 ]; then
@@ -156,7 +156,7 @@ case "$1" in
 		isPrimary $RESOURCE
 		PRIMARY=$?
 
-		setLocal
+		setLocal $RESOURCE
 		isMounted $RESOURCE
 		MOUNTED=$?
 
@@ -197,8 +197,7 @@ case "$1" in
 			exit $RETVAL
 		fi
 
-		setLocal
-
+		setLocal $RESOURCE
 		isMounted $RESOURCE
 		MOUNTED=$?
 
@@ -210,7 +209,7 @@ case "$1" in
 		# Only become secondary if umount succed
 		if [ $RETVAL -eq 0 ]; then
 			$0 $RESOURCE secondary
-			setLocal
+			setLocal $RESOURCE
 			drbdsetup $LOCAL_DEVICE wait
 			RETVAL=$?
 			setSlaveBoot $RESOURCE
@@ -225,7 +224,7 @@ case "$1" in
 			exit $RETVAL
 		fi
 
-		setLocal
+		setLocal $RESOURCE
 
 		isMounted $RESOURCE
 		MOUNTED=$?
@@ -249,7 +248,7 @@ case "$1" in
 			exit $RETVAL
 		fi
 
-		setLocal
+		setLocal $RESOURCE
 
 		isMounted $RESOURCE
 		MOUNTED=$?
@@ -274,7 +273,7 @@ case "$1" in
 			exit $RETVAL
 		fi
 
-		setLocal
+		setLocal $RESOURCE
 		isMounted $RESOURCE
 		MOUNTED=$?
 
@@ -326,7 +325,7 @@ case "$1" in
 			CONNECTED=$?
 
 			if [ $CONNECTED -eq 1 ]; then
-				setLocal
+				setLocal $RESOURCE
 
 				rudeUnMount $RESOURCE $LOCAL_DEVICE
 				MOUNTED=$?
@@ -368,7 +367,7 @@ case "$1" in
 			isPrimary $RESOURCE
 			PRIMARY=$?
 
-			setLocal
+			setLocal $RESOURCE
 			isMounted $RESOURCE
 			MOUNTED=$?
 			

@@ -25,11 +25,11 @@ fi
 # Some distributions don't have it, so test and act accordingly
 
 if [ -f /etc/rc.d/init.d/functions ]; then
-        grep "success" /etc/rc.d/init.d/functions 
-        if [ $? ]; then
-	       . /etc/rc.d/init.d/functions
-               HAVE_SUCCESS=1
-        fi
+	result=`grep success /etc/rc.d/init.d/functions`
+	if [ $? ]; then
+			. /etc/rc.d/init.d/functions
+			HAVE_SUCCESS=1
+	fi
 fi
 
 # TODO/NOT TODO: A test for failure ??
@@ -101,32 +101,50 @@ setSlaveBoot()
 	rm -f $STATE/"$1"_master
 }
 
+# Usefull function ..
+
+range()
+{
+	number=$1
+	while [ "$number" -lt "$2" ]
+	do
+		echo -n "$number "
+		number=`expr $number + 1`
+	done
+	echo
+}
+
 # Information grabbing
 
 # set LOCAL_DEVICE : set environement value with the node configuration info
+# $1 RESOURCE FILE
 setLocal()
 {
 	LOCAL_DEVICE=""
 	LOCAL_FSCK=""
 
-	if [ "$HOST" = "`echo $NODE1_HOST | cut -d: -f1`" ]; then
-		LOCAL_IF=$NODE1_IF
-		REMOTE_IF=$NODE2_IF
-		LOCAL_DEVICE=$NODE1_DEVICE
-		LOCAL_PARTITION=$NODE1_PARTITION
-		LOCAL_FSCK=$NODE1_FSCK
-	elif [ "$HOST" = "`echo $NODE2_HOST | cut -d: -f1`" ]; then
-		LOCAL_IF=$NODE2_IF
-		REMOTE_IF=$NODE1_IF
-		LOCAL_DEVICE=$NODE2_DEVICE
-		LOCAL_PARTITION=$NODE2_PARTITION
-		LOCAL_FSCK=$NODE2_FSCK
-	else
-		failed "This machine is neither master nor slave"
-		exit 1
-	fi
+	host_line=`grep _HOST $CONFIG/$1 | grep $HOST`
+	node=`echo $host_line | cut -f1 -d"_" | cut -f2 -d"E"`
+
+	for line in `cat $CONFIG/$1`
+	do
+		keep=`echo $line | grep ^[nN][oO][dD][eE]$node | wc -l`
+		if [ "$keep" -eq 1 ]; then
+		 	affectation=`echo $line | sed -e"s/NODE$node/LOCAL/g"`
+			name=`echo $affectation | cut -f1 -d"="`
+			value=`echo $affectation | cut -f2 -d"="`
+			echo $affectation
+			echo set $name $value
+			set $name $value
+		fi
+	done
 }
 
+echo xxxxxx
+setLocal drbd.example
+echo xxxxxx
+set
+echo xxxxxx
 
 # Installation integrity check
 
