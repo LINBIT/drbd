@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <ctype.h>
+
 #include "drbdtool_common.h"
 
 char* ppsize(char* buf, size_t size) 
@@ -183,71 +185,94 @@ int get_fd_lockfile_timeout(const char *path, int seconds)
     return -1;
 }
 
+int dt_minor_of_dev(const char *device)
+{
+	struct stat sb;
+
+	if(stat(device,&sb)) {
+		// On udev/devfs based system the device nodes does not
+		// exist before the module is loaded. Therefore assume that
+		// the number in the device name is the minor number.
+		const char *c;
+
+		c=device;
+		while(*c) {
+			if(isdigit(*c)) return strtol(c,NULL,10);
+			c++;
+		}
+		return 0;
+	}
+
+	return minor(sb.st_rdev);
+}
+
+
 int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
 {
-  int drbd_fd, lfd, err;
-  struct stat drbd_stat;
-  char lfname[40];
+	int drbd_fd, lfd;
+	struct stat drbd_stat;
+	char lfname[40];
+	int dev_major,dev_minor;
 
-  drbd_fd=open(device,O_RDONLY);
-  if(drbd_fd==-1 && !open_may_fail)
-    {
-      PERROR("can not open %s", device);
-      exit(20);
-    }
+	drbd_fd=open(device,O_RDONLY);
+	if(drbd_fd==-1 && !open_may_fail) {
+		PERROR("can not open %s", device);
+		exit(20);
+	}
+	
+	dev_major = 147; //LANANA_DRBD_MAJOR;
 
-  err=stat(device, &drbd_stat);
-  if(err)
-    {
-      PERROR("fstat(%s) failed",device);
-    }
+	if( stat(device, &drbd_stat) ) {
 
-  if(!S_ISBLK(drbd_stat.st_mode))
-    {
-      fprintf(stderr, "%s is not a block device!\n", device);
-      exit(20);
-    }
+		if(!S_ISBLK(drbd_stat.st_mode)) {
+			fprintf(stderr, "%s is not a block device!\n", device);
+			exit(20);
+		}
 
-  /* FIXME maybe check the major number, too?
-   * you cannot be paranoid enough...
-   * either NBD [43], or DRBD [147] (enforce for v08)
-   */
+		dev_major = major(drbd_stat.st_rdev);
 
-  /* THINK.
-   * maybe we should also place a fcntl lock on the
-   * _physical_device_ we open later...
-   *
-   * This lock is to prevent a drbd minor from being configured
-   * by drbdsetup while drbdmeta is about to mess with its meta data.
-   *
-   * If you happen to mess with the meta data of one device,
-   * pretending it belongs to an other, you'll screw up completely.
-   *
-   * We should store something in the meta data to detect such abuses.
-   * Philipp, see my suggestion for "/var/lib/drbd/drbd-toc",
-   * or /etc/drbd/ for that matter ...
-   */
+		/* FIXME maybe check the major number, too?
+		 * you cannot be paranoid enough...
+		 * either NBD [43], or DRBD [147] (enforce for v08)
+		 */
+	}
 
-  /* NOTE that /var/lock/drbd-*-* may not be "secure",
-   * maybe we should rather use /var/lock/drbd/drbd-*-*,
-   * and make sure that /var/lock/drbd is drwx.-..-. root:root  ...
-   */
 
-  snprintf(lfname,39,"/var/lock/drbd-%d-%d",
-	   major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
+	/* THINK.
+	 * maybe we should also place a fcntl lock on the
+	 * _physical_device_ we open later...
+	 *
+	 * This lock is to prevent a drbd minor from being configured
+	 * by drbdsetup while drbdmeta is about to mess with its meta data.
+	 *
+	 * If you happen to mess with the meta data of one device,
+	 * pretending it belongs to an other, you'll screw up completely.
+	 *
+	 * We should store something in the meta data to detect such abuses.
+	 * Philipp, see my suggestion for "/var/lib/drbd/drbd-toc",
+	 * or /etc/drbd/ for that matter ...
+	 */
 
-  lfd = get_fd_lockfile_timeout(lfname,1);
-  if (lfd < 0)
-	exit(20);
-  if (lock_fd) *lock_fd = lfd;
+	/* NOTE that /var/lock/drbd-*-* may not be "secure",
+	 * maybe we should rather use /var/lock/drbd/drbd-*-*,
+	 * and make sure that /var/lock/drbd is drwx.-..-. root:root  ...
+	 */
 
-  return drbd_fd;
+	dev_minor = dt_minor_of_dev(device);
+	snprintf(lfname,39,"/var/lock/drbd-%d-%d",dev_major,dev_minor);
+
+	lfd = get_fd_lockfile_timeout(lfname,1);
+	if (lfd < 0)
+		exit(20);
+	if (lock_fd) *lock_fd = lfd;
+
+	return drbd_fd;
 }
 
 int dt_close_drbd_unlock(int drbd_fd, int lock_fd)
 {
-  int err = 0;
-  if (drbd_fd >= 0) err = close(drbd_fd);
-  if (lock_fd >= 0) unlock_fd(lock_fd); /* ignore errors */
-  return err;
+	int err = 0;
+	if (drbd_fd >= 0) err = close(drbd_fd);
+	if (lock_fd >= 0) unlock_fd(lock_fd); /* ignore errors */
+	return err;
 }

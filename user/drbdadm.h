@@ -16,9 +16,12 @@ enum {
   SLEEPS_SHORT         = 2+1,
   SLEEPS_LONG          = 4+1,
   SLEEPS_VERY_LONG     = 8+1,
+  SLEEPS_MASK          = 15,
 
   RETURN_PID           = 2,
   SLEEPS_FOREVER       = 4,
+
+  SUPRESS_STDERR       = 16,
 };
 
 /* for check_uniq(): Check for uniqueness of certain values...

@@ -35,7 +35,6 @@
 #include <search.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/poll.h>
 #include <unistd.h>
@@ -96,6 +95,7 @@ static int sh_md_dev(struct d_resource* ,const char* );
 static int sh_md_idx(struct d_resource* ,const char* );
 static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
+static int adm_generic_b(struct d_resource* ,const char* );
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -180,7 +180,7 @@ struct adm_cmd cmds[] = {
   { "secondary",         adm_generic_s,         1, 1 },
   { "invalidate",        adm_generic_l,         1, 1 },
   { "invalidate_remote", adm_generic_l,         1, 1 },
-  { "outdate",           adm_generic_s,         1, 1 },
+  { "outdate",           adm_generic_b,         1, 1 },
   { "resize",            adm_resize,            1, 1 },
   { "syncer",            adm_syncer,            1, 1 },
   { "adjust",            adm_adjust,            1, 1 },
@@ -393,12 +393,11 @@ static void free_config(struct d_resource* res)
 
 static void find_drbdcmd(char** cmd, char** pathes)
 {
-  struct stat buf;
   char **path;
 
   path=pathes;
   while(*path) {
-    if(stat(*path,&buf)==0) {
+    if(access(*path,X_OK)==0) {
       *cmd=*path;
       return;
     }
@@ -441,6 +440,7 @@ pid_t m_system(char** argv,int flags)
     exit(E_exec_error);
   }
   if(pid == 0) {
+    if(flags & SUPRESS_STDERR) fclose(stderr);
     execv(argv[0],argv);
     fprintf(stderr,"Can not exec\n");
     exit(E_exec_error);
@@ -450,7 +450,7 @@ pid_t m_system(char** argv,int flags)
     int timeout;
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
-    switch(flags) {
+    switch(flags & SLEEPS_MASK) {
     case SLEEPS_SHORT:     timeout = 5; break;
     case SLEEPS_LONG:      timeout = 120; break;
     case SLEEPS_VERY_LONG: timeout = 600; break;
@@ -486,7 +486,7 @@ pid_t m_system(char** argv,int flags)
   if( flags & SLEEPS_FINITE ) {
     alarm(0);
     sigaction(SIGALRM,&so,NULL);
-    if(rv >= 10) {
+    if(rv >= 10 && !(flags & SUPRESS_STDERR) ) {
       fprintf(stderr,"Command '");
       while(*argv) {
 	fprintf(stderr,"%s",*argv++);
@@ -610,6 +610,15 @@ int adm_generic_l(struct d_resource* res,const char* cmd)
   return adm_generic(res,cmd,SLEEPS_LONG);
 }
 
+static int adm_generic_b(struct d_resource* res,const char* cmd)
+{
+  int rv;
+  if( (rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR)) ) {
+    rv = admm_generic(res,cmd);
+  }
+  return rv;
+}
+
 static char* get_opt_val(struct d_option*,const char*,char*);
 
 static int adm_khelper(struct d_resource* res ,const char* cmd)
@@ -708,27 +717,6 @@ static int adm_wait_c(struct d_resource* res ,const char* unused)
   return rv;
 }
 
-int minor_of_res(struct d_resource *res)
-{
-  struct stat sb;
-
-  if(stat(res->me->device,&sb)) {
-    // On udev/devfs based system the device nodes does not
-    // exist before the module is loaded. Therefore assume that
-    // the number in the device name is the minor number.
-    char *c;
-
-    c=res->me->device;
-    while(*c) {
-      if(isdigit(*c)) return strtol(c,NULL,10);
-      c++;
-    }
-    return 0;
-  }
-
-  return minor(sb.st_rdev);
-}
-
 struct d_resource* res_by_minor(const char *id)
 {
   struct d_resource *res,*t;
@@ -738,7 +726,7 @@ struct d_resource* res_by_minor(const char *id)
   mm = m_strtoll(id+6,1);
 
   for_each_resource(res,t,config) {
-    if( mm == minor_of_res(res)) return res;
+    if( mm == dt_minor_of_dev(res->me->device)) return res;
   }
   return NULL;
 }
@@ -1277,7 +1265,7 @@ int main(int argc, char** argv)
 
     highest_minor=0;
     for_each_resource(res,tmp,config) {
-      int m = minor_of_res(res);
+      int m = dt_minor_of_dev(res->me->device);
       if ( m > highest_minor ) highest_minor = m;
       nr_resources++;
     }

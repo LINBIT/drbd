@@ -542,6 +542,7 @@ int meta_show_gc(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
 int meta_set_gc(struct format *cfg, char **argv, int argc);
+int meta_outdate_gc(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
 	{"get-gc", 0, meta_get_gc, 1},
@@ -551,6 +552,7 @@ struct meta_cmd cmds[] = {
 	/* FIXME convert still missing.
 	 * implicit convert from v07 to v08 by create-md
 	 * see comments there */
+	{"outdate", 0, meta_outdate_gc, 1},
 	{"set-gc", ":::VAL:VAL:...", meta_set_gc, 0},
 };
 
@@ -1325,6 +1327,33 @@ int meta_set_gc(struct format *cfg, char **argv, int argc)
 	return err;
 }
 
+int meta_outdate_gc(struct format *cfg, char **argv, int argc)
+{
+	int err;
+
+	if (argc > 0) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	if ( !(cfg->md.gc[Flags] & MDF_Consistent) ) {
+		fprintf(stderr, "Device is inconsistent.\n");
+		exit(10);
+	}
+
+	cfg->md.gc[Flags] &= ~MDF_WasUpToDate;
+
+	err = cfg->ops->md_cpu_to_disk(cfg)
+		|| cfg->ops->close(cfg);
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
+}
+
+
 #if 0
 int meta_set_size(struct format *cfg, char **argv, int argc)
 {
@@ -1477,10 +1506,16 @@ int main(int argc, char **argv)
 	cfg->drbd_dev_name = argv[1];
 	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
 	if (cfg->drbd_fd > -1) {
-		/* avoid DRBD specific ioctls here...
+		/* Try to avoid DRBD specific ioctls here...
 		 * If the device is _not_ configured, block device ioctls
 		 * should fail. So if we _can_ determine whether it is readonly,
 		 * it is configured; and we better not touch its meta data.
+		 * 
+		 * Unfortunately this is not true... as soon as the
+		 * driver is loaded, this works, no regard wheter it
+		 * is configured or not.... probabely need to use
+		 * a drbd IOCTL... or look at /proc/drbd ...
+		 * uggly as well!
 		 */
 		int dummy_is_ro;
 		if (ioctl(cfg->drbd_fd, BLKROGET, &dummy_is_ro) == 0) {

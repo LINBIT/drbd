@@ -28,6 +28,8 @@
 
  */
 
+#define _GNU_SOURCE
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -40,7 +42,6 @@
 #include <string.h>
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
-#define _GNU_SOURCE
 #include <getopt.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -86,7 +87,7 @@
 
 
 // some globals
-char* basename = 0;
+char* cmdname = 0;
 
 struct drbd_cmd {
   const char* cmd;
@@ -339,7 +340,7 @@ void print_usage(const char* addinfo)
 
   printf("\nUSAGE: %s device command arguments options\n\n"
 	 "Device is usually /dev/drbdX or /dev/drbd/X.\n"
-         "Commands, arguments and options are:\n",basename);
+         "Commands, arguments and options are:\n",cmdname);
 
 
   for (i = 0; i < ARRY_SIZE(commands); i++)
@@ -422,10 +423,10 @@ int scan_disk_options(char **argv,
 	    }
 	  }
 	  fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
-		  basename,optarg);
+		  cmdname,optarg);
 	  return 20;
 	case 1:	// non option argument. see getopt_long(3)
-	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	case '?':
 	  return 20;
 	}
@@ -499,10 +500,10 @@ int scan_net_options(char **argv,
 	    }
 	  }
 	  fprintf(stderr,"%s: '%s' is an invalid on-disconnect handler.\n",
-		  basename,optarg);
+		  cmdname,optarg);
 	  return 20;
 	case 1:	// non option argument. see getopt_long(3)
-	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	case '?':
 	  return 20;
 	}
@@ -744,7 +745,7 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	      newstate |= TimeoutExpired;
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -783,7 +784,7 @@ int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	      flags |= TimeoutExpired;
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -832,7 +833,7 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 			      DRBD_DEGR_WFC_TIMEOUT_MAX);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -913,7 +914,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 			      DRBD_AL_EXTENTS_MIN, DRBD_AL_EXTENTS_MAX);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -1089,7 +1090,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 			      DRBD_DISK_SIZE_SECT_MAX>>1 );
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -1107,7 +1108,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-const char* guess_dev_name(const char* dir,int major,int minor)
+const char* guess_dev_name(const char* dir,int g_major,int g_minor)
 {
   DIR* device_dir;
   struct dirent* dde;
@@ -1125,8 +1126,8 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 
       if(S_ISBLK(sb.st_mode))
 	{
-	  if (major == (int)(sb.st_rdev & 0xff00) >> 8 &&
-	      minor == (int)(sb.st_rdev & 0x00ff) )
+	  if (g_major == major(sb.st_rdev) &&
+	      g_minor == minor(sb.st_rdev) )
 	    {
 	      closedir(device_dir);
 	      return dev_name;
@@ -1157,7 +1158,7 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 	      return dev_name;
 	    }
 
-	  if(guess_dev_name(subdir,major,minor)) return dev_name;
+	  if(guess_dev_name(subdir,g_major,g_minor)) return dev_name;
 	}
     }
 
@@ -1324,10 +1325,10 @@ int main(int argc, char** argv)
   int err;
   char **args;
 
-  if ( (basename = strrchr(argv[0],'/')) )
-      argv[0] = ++basename;
+  if ( (cmdname = strrchr(argv[0],'/')) )
+      argv[0] = ++cmdname;
   else
-      basename = argv[0];
+      cmdname = argv[0];
 
   /* == '-' catches -h, --help, and similar */
   if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-'))

@@ -196,7 +196,7 @@ int adm_adjust(struct d_resource* res,char* unused)
   int do_syncer=0;
 
   struct stat sb;
-  int major, minor;
+  int c_major, c_minor;
   int err = 10;
 
   argv[argc++]=drbdsetup;
@@ -222,8 +222,8 @@ int adm_adjust(struct d_resource* res,char* unused)
     fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
     goto out;
   }
-  rv=m_fscanf(in,"Lower device: %d:%d (%*[^)])\n",&major,&minor);
-  if( (rv!=2) || (((major<<8)|minor) != (int)sb.st_rdev)) do_attach=1;
+  rv=m_fscanf(in,"Lower device: %d:%d (%*[^)])\n",&c_major,&c_minor);
+  if( (rv!=2) || makedev(c_major,c_minor) != sb.st_rdev) do_attach=1;
 
   if (strcmp("internal", res->me->meta_disk)) {
     if (stat(res->me->meta_disk, &sb)) {
@@ -249,8 +249,8 @@ int adm_adjust(struct d_resource* res,char* unused)
     }
   }
   if (rv == 2) {
-    sscanf(str1, "%d:%d", &major, &minor);
-    if ((rv != 2) || (((major << 8) | minor) != (int) sb.st_rdev))
+    sscanf(str1, "%d:%d", &c_major, &c_minor);
+    if ((rv != 2) || makedev(c_major,c_minor) != sb.st_rdev)
       do_attach = 1;
     rv = m_fscanf(in, "Meta index: %[0-9]\n", str1);
     if (rv == 1) {
