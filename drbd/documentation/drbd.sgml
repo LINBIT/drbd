@@ -20,7 +20,6 @@
       <arg choice=req>start</arg>
       <arg choice=req>stop</arg>
       <arg choice=req>status</arg>
-      <arg choice=req>reconnect</arg>
     </group>
     </arg>
  </cmdsynopsis>
