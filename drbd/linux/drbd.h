@@ -217,7 +217,8 @@ typedef union {
 		unsigned conn : 5 ;   // 17/32    cstates
 		unsigned disk : 3 ;   // 7/7      from DUnknown to UpToDate
 		unsigned pdsk : 3 ;   // 7/7      from DUnknown to UpToDate
-		unsigned _pad : 17;   // 0        unused
+		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
+		unsigned _pad : 16;   // 0        unused
 	} s;
 	unsigned int i;
 } drbd_state_t;

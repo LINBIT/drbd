@@ -417,10 +417,13 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	if( ns.i == os.i ) return 2;
 
 	/*  State sanitising  */
-	if( ns.s.conn < Connected ) ns.s.peer = Unknown;
-	if( ns.s.conn < Connected ) ns.s.pdsk = DUnknown;
+	if( ns.s.conn < Connected ) {
+		ns.s.peer = Unknown;
+		ns.s.pdsk = DUnknown;
+		if( ns.s.disk > Consistent ) ns.s.disk = Consistent;
+	}
 
-	if( ns.s.disk <= Failed && ns.s.conn > Connected) {
+	if( ns.s.conn > Connected && ns.s.disk <= Failed ) {
 		warn_sync_abort=1;
 		ns.s.conn = Connected;
 	}
@@ -466,6 +469,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			break;
 		}
 	}
+
 
 	if( !(flags & ChgStateHard) ) {
 		/*  pre-state-change checks ; only look at ns  */
@@ -2005,7 +2009,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if (mdev->state.s.role == Primary)        flags |= MDF_PrimaryInd;
 	if (mdev->state.s.conn >= WFReportParams) flags |= MDF_ConnectedInd;
 	if (mdev->state.s.disk >  Inconsistent)   flags |= MDF_Consistent;
-	if (mdev->state.s.disk >= UpToDate)       flags |= MDF_WasUpToDate;
+	if (mdev->state.s.disk >  Outdated)       flags |= MDF_WasUpToDate;
 	mdev->gen_cnt[Flags] = flags;
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
