@@ -99,13 +99,11 @@ inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id)
 	return 0;
 }
 
-int drbd_process_done_ee(struct Drbd_Conf* mdev)
+int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
 	int r=sizeof(Drbd_BlockAck_Packet); // for protocol A/B case.
- 
-	spin_lock_irq(&mdev->ee_lock);
 
 	while(!list_empty(&mdev->done_ee)) {
 		le = mdev->done_ee.next;
@@ -128,9 +126,16 @@ int drbd_process_done_ee(struct Drbd_Conf* mdev)
 		}
 	}
 
-	spin_unlock_irq(&mdev->ee_lock);
-
 	return TRUE;
+}
+
+static inline int drbd_process_done_ee(struct Drbd_Conf* mdev)
+{
+	int rv;
+	spin_lock_irq(&mdev->ee_lock);
+	rv=_drbd_process_done_ee(mdev);
+	spin_unlock_irq(&mdev->ee_lock);
+	return rv;
 }
 
 static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
@@ -1055,7 +1060,7 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry* e;
 
-	if(list_empty(&mdev->free_ee)) drbd_process_done_ee(mdev);
+	if(list_empty(&mdev->free_ee)) _drbd_process_done_ee(mdev);
 
 	if(list_empty(&mdev->free_ee)) {
 		e=kmalloc(sizeof(struct Tl_epoch_entry),GFP_USER);
