@@ -70,8 +70,8 @@ static struct d_resource* new_resource(char* name)
   struct d_resource* d_resource;
 }
 
-%token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON
-%token TK_PORT TK_DEVICE TK_ADDRESS
+%token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON TK_DISABLE_IO_HINTS
+%token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_MINOR_COUNT 
 %token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
 %token <txt> TK_SIZE TK_TL_SIZE TK_TIMEOUT TK_CONNECT_INT 
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
@@ -83,8 +83,20 @@ static struct d_resource* new_resource(char* name)
 %type <d_resource> resources resource
 
 %%
-config:           resources   { config=$1; }
+config:           global_sec resources   { config=$1; }
 		;	 
+
+global_sec:       /* empty */
+                | TK_GLOBAL { glob_statements }
+		;
+
+glob_statements:  /* empty */
+		| glob_statements glob_statement
+		;
+
+glob_statement:   TK_DISABLE_IO_HINTS
+		| TK_MINOR_COUNT '=' TK_STRING   { $$=APPEND($1,$2); }
+                ;
 
 resources:        /* empty */   { $$ = 0; }
 	    	| resources resource   { $$=APPEND($1,$2); }

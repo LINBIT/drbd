@@ -40,8 +40,11 @@ disk             { DP; return TK_DISK;          }
 port             { DP; return TK_PORT;          }
 syncer           { DP; return TK_SYNCER;        } 
 device           { DP; return TK_DEVICE;        }
+global           { DP; return TK_GLOBAL;        }
 address          { DP; return TK_ADDRESS;       }
 resource         { DP; return TK_RESOURCE;      }
+minor_count      { DP; return TK_MINOR_COUNT;   }
+disable_io_hints { DP; return TK_DISABLE_IO_HINTS;  }
 rate             { DP; CP; return TK_RATE;          }
 size             { DP; CP; return TK_SIZE;          }
 tl-size          { DP; CP; return TK_TL_SIZE;       }
