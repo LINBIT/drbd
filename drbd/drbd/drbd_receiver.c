@@ -247,6 +247,7 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	MUST_HOLD(&mdev->ee_lock);
 
 	e = list_entry(list->next, struct Tl_epoch_entry, w.list);
+	list_del(list->next);
 
 	page = e->pbh.b_page;
 	kmem_cache_free(drbd_ee_cache, e);
