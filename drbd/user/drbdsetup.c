@@ -59,10 +59,12 @@
 #define DEF_DEGR_WFC_TIMEOUT 60      // 60 Seconds
 #define DEF_SYNC_WFC_TIMEOUT 8       // 8 seconds
 #define DEF_SYNC_DEGR_WFC_TIMEOUT 4  // 4 seconds
+#define DEF_SYNC_AL_EXTENTS 128
 #define DEF_MAX_EPOCH_SIZE 2048      // entries
 #define DEF_MAX_BUFFERS 2048         // entries
 #define DEF_SNDBUF_SIZE (2*65535)    // ~128KB
 #define DEF_DISK_SIZE 0
+
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -1088,6 +1090,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 
   SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
   SHOW_I("group","", cn.sconf.group, DEF_SYNC_GROUP);
+  SHOW_I("al-extents","", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
 
   if( cn.sconf.skip ) printf(" skip-sync\n");
   if( cn.sconf.use_csums ) printf(" use-csums\n");

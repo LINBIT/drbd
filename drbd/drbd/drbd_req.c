@@ -97,16 +97,16 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 
 void drbd_dio_end(struct buffer_head *bh, int uptodate)
 {
+	struct Drbd_Conf* mdev;
 	drbd_request_t *req;
 
 	req = bh->b_private;
+	mdev = drbd_conf+MINOR(req->bh->b_rdev);
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	// BIG TODO: Only set it, iff it is the case!
-	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),
-			 APP_BH_SECTOR(req->bh),
-			 req->bh->b_size);
-
+	drbd_set_in_sync(mdev, APP_BH_SECTOR(req->bh), req->bh->b_size);
+	drbd_al_complete_io(mdev,bh->b_rsector);
 	kmem_cache_free(bh_cachep, bh);
 }
 
@@ -253,7 +253,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt+=bh->b_size>>9;
 
-		drbd_al_access(mdev, bh->b_rsector);
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
@@ -263,7 +262,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
 		drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 
-		drbd_al_access(mdev, bh->b_rsector);
+		drbd_al_begin_io(mdev, bh->b_rsector);
+		drbd_al_complete_io(mdev, bh->b_rsector); // FIXME TODO 
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
@@ -324,7 +324,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
 
-	drbd_al_access(mdev, nbh->b_rsector);
+	drbd_al_begin_io(mdev, nbh->b_rsector);
 
 	nbh->b_end_io = drbd_dio_end;
 	generic_make_request(rw,nbh);

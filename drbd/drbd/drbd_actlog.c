@@ -1,6 +1,6 @@
 /*
 -*- linux-c -*-
-   drbd_fs.c
+   drbd_actlog.c
    Kernel module for 2.2.x/2.4.x Kernels
 
    This file is part of drbd by Philipp Reisner.
@@ -28,11 +28,42 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-/*
+/* 
   Testcases:
 
   * Extent to evict sits in it's right hash-table position.
   * Extent to evict is in hash->next chain.
+
+#!/usr/bin/perl
+#
+# Use an al-axtends=4 config.
+#
+use strict;
+use Fcntl;
+use Fcntl ":seek";
+
+sub do_test($)
+{
+    my ($devname)=@_;
+    my ($buffer,$i,$rv);
+    my @pattern = ( 0,1,2,3,4 );   # Tests evict from 1st place in next chain
+#    my @pattern = ( 0,4,1,2,0,3 ); # Tests evict from 2nd place in next chain
+
+    $buffer="juhu";
+    
+    sysopen(DEVICE,$devname, O_RDWR ) or die "open failed";
+
+    for($i=0;$i<=$#pattern;$i++) {
+	$rv=sysseek(DEVICE, $pattern[$i] * 4 * 1024*1024, SEEK_SET);
+	print "$i $pattern[$i] $rv\n";
+	syswrite(DEVICE, $buffer, 4);
+    }
+}
+
+
+do_test($ARGV[0]);
+
+
 */
 
 
@@ -61,6 +92,7 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->sync_conf.al_extents;i++) {
 		extents[i].extent_nr=AL_FREE;
 		extents[i].hash_next=0;
+		extents[i].pending_ios=0;
 		list_add(&extents[i].accessed,&mdev->al_free);
 	}
 
@@ -108,6 +140,7 @@ STATIC struct drbd_extent * drbd_al_evict(struct Drbd_Conf *mdev)
 	le=mdev->al_lru.prev;
 	list_del(le);
 	extent=list_entry(le, struct drbd_extent,accessed);
+	D_ASSERT(extent->pending_ios == 0);
 
 	i = al_hash_fn( extent->extent_nr , mdev->al_nr_extents );
 	p = mdev->al_extents + i;
@@ -147,7 +180,8 @@ STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
 	return extent;
 }
 
-STATIC int drbd_al_add(struct Drbd_Conf *mdev, unsigned int enr)
+STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev, 
+					unsigned int enr)
 {
 	struct drbd_extent *extent, *n;
 	int i;
@@ -158,7 +192,6 @@ STATIC int drbd_al_add(struct Drbd_Conf *mdev, unsigned int enr)
 		n = drbd_al_get(mdev);
 		n->hash_next = extent->hash_next;
 		extent->hash_next = n;
-		i = n - mdev->al_extents;
 	} else { // is free
 		list_del(&extent->accessed);
 		extent->hash_next = NULL;
@@ -166,13 +199,14 @@ STATIC int drbd_al_add(struct Drbd_Conf *mdev, unsigned int enr)
 	extent->extent_nr = enr;
 	list_add(&extent->accessed,&mdev->al_lru);
 
-	return i;
+	return extent;
 }
 
-void drbd_al_access(struct Drbd_Conf *mdev, sector_t sector)
+void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct drbd_extent *extent;
+	int update_al=0;
 
 	spin_lock(&mdev->al_lock);
 
@@ -182,16 +216,41 @@ void drbd_al_access(struct Drbd_Conf *mdev, sector_t sector)
 		list_del(&extent->accessed);
 		list_add(&extent->accessed,&mdev->al_lru);
 	} else { // miss, need to updated AL
-		drbd_al_add(mdev,enr);
+		extent = drbd_al_add(mdev,enr);
 		mdev->al_writ_cnt++;
-		/*
-		  drbd_md_write_al();
-		  if(cstate != Connected) {
-		  update_on_disk_bitmap()
-		  }
-		 */
+		update_al=1;
 	}
+
+	extent->pending_ios++;
+	
+	spin_unlock(&mdev->al_lock);
+
+	/* TODO
+	if( update_al ) {
+		drbd_md_write_al();
+		if(cstate != Connected) update_on_disk_bitmap();
+	}
+	*/
+}
+
+void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
+{
+	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
+	struct drbd_extent *extent;
+
+	spin_lock(&mdev->al_lock);
+	
+	extent = drbd_al_find(mdev,enr);
+	
+	if(!extent) {
+		spin_unlock(&mdev->al_lock);
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: drbd_al_complete_io() called on incative extent\n",
+		       (int)(mdev-drbd_conf));
+		return;
+	}
+
+	extent->pending_ios--;
 
 	spin_unlock(&mdev->al_lock);
 }
-

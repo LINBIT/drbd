@@ -801,8 +801,10 @@ struct drbd_extent {
 	struct list_head accessed;
 	struct drbd_extent *hash_next;
 	unsigned int extent_nr;
+	unsigned int pending_ios;
 };
 
 void drbd_al_init(struct Drbd_Conf *mdev);
 void drbd_al_free(struct Drbd_Conf *mdev);
-void drbd_al_access(struct Drbd_Conf *mdev, sector_t sector);
+void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
+void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);

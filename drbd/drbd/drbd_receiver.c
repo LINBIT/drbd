@@ -196,6 +196,8 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
+	drbd_al_complete_io(mdev,DRBD_BH_SECTOR(bh));
+
 	//	if(wake_asender) {
 		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
 	//	}
@@ -940,7 +942,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	dec_pending(mdev);
 	inc_unacked(mdev);
 
-	drbd_al_access(mdev, sector);
+	drbd_al_begin_io(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
@@ -983,7 +985,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	dec_pending(mdev);
 	inc_unacked(mdev);
 
-	drbd_al_access(mdev, sector);
+	drbd_al_begin_io(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
@@ -1106,7 +1108,7 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 		break;
 	}
 
-	drbd_al_access(mdev, sector);
+	drbd_al_begin_io(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
