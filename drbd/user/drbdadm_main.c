@@ -48,6 +48,7 @@ struct adm_cmd {
   char* arg;
   int show_in_usage;
   int res_name_required;
+  const char* help;
 };
 
 extern int yyparse();
@@ -85,24 +86,24 @@ struct option admopt[] = {
 };
 
 struct adm_cmd cmds[] = {
-  { "attach",            adm_attach,  0                  ,1,1 },
+  { "attach",            adm_attach,  0                  ,1,1, "FIXME attach help" },
   //{ "detach",            adm_generic, "??missing??"    ,1,1 },
-  { "connect",           adm_connect, 0                  ,1,1 },
-  { "disconnect",        adm_generic, "disconnect"       ,1,1 },
-  { "up",                adm_up,      0                  ,1,1 },
-  { "down",              adm_generic, "down"             ,1,1 },
-  { "primary",           adm_generic, "primary"          ,1,1 },
-  { "secondary",         adm_generic, "secondary"        ,1,1 },
-  { "secondary_remote",  adm_generic, "secondary_remote" ,1,1 },
-  { "invalidate",        adm_generic, "invalidate"       ,1,1 },
-  { "invalidate_remote", adm_generic, "invalidate_remote",1,1 },
-  { "resize",            adm_resize,  0                  ,1,1 },
-  { "syncer",            adm_syncer,  0                  ,1,1 },
-  { "adjust",            adm_adjust,  0                  ,1,1 },
-  { "wait_connect",      adm_wait_c,  0                  ,1,1 },
-  { "dump",              adm_dump,    0                  ,1,1 },
-  { "sh-devices",        sh_devices,  0                  ,0,0 },
-  { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
+  { "connect",           adm_connect, 0                  ,1,1, "FIXME connect help" },
+  { "disconnect",        adm_generic, "disconnect"       ,1,1, "FIXME disconnect help" },
+  { "up",                adm_up,      0                  ,1,1, "FIXME up help" },
+  { "down",              adm_generic, "down"             ,1,1, "FIXME down help" },
+  { "primary",           adm_generic, "primary"          ,1,1, "FIXME primary help" },
+  { "secondary",         adm_generic, "secondary"        ,1,1, "FIXME secondary help" },
+  { "secondary_remote",  adm_generic, "secondary_remote" ,1,1, "FIXME secondary_remote help" },
+  { "invalidate",        adm_generic, "invalidate"       ,1,1, "FIXME invalidate help" },
+  { "invalidate_remote", adm_generic, "invalidate_remote",1,1, "FIXME invalidate_remote help" },
+  { "resize",            adm_resize,  0                  ,1,1, "FIXME resize help" },
+  { "syncer",            adm_syncer,  0                  ,1,1, "FIXME syncer help" },
+  { "adjust",            adm_adjust,  0                  ,1,1, "FIXME adjust help" },
+  { "wait_connect",      adm_wait_c,  0                  ,1,1, "FIXME wait_connect help" },
+  { "dump",              adm_dump,    0                  ,1,1, "FIXME dump help" },
+  { "sh-devices",        sh_devices,  0                  ,0,0, "FIXME sh-devices help" },
+  { "sh-mod-parms",      sh_mod_parms,0                  ,0,0, "FIXME sh-mod-parms help" },
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -504,6 +505,26 @@ const char* make_optstring(struct option *options)
   return buffer;
 }
 
+void print_cmd_help(struct adm_cmd *cmd)
+{
+  struct option *opt;
+
+  printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
+	 "{all|RESOURCE...}\n\n"
+	 "OPTIONS:\n",basename);
+
+  opt=admopt;
+  while(opt->name) {
+    if(opt->has_arg == required_argument)
+      printf(" {--%s|-%c} val\n",opt->name,opt->val);
+    else
+      printf(" {--%s|-%c}\n",opt->name,opt->val);
+    opt++;
+  }
+  printf("\n%s:\n%s\n",cmd->name,cmd->help);
+  exit(20);
+}
+
 void print_usage()
 {
   int i;
@@ -541,6 +562,7 @@ void print_usage()
 int main(int argc, char** argv)
 {
   int i,rv;
+  int help = 0;
   struct adm_cmd* cmd;
   struct d_resource* res;
 
@@ -596,18 +618,21 @@ int main(int argc, char** argv)
 	}
     }
 
-  if ( optind == argc || !strcmp(argv[optind],"help") )
-    print_usage();
+  if ( optind == argc ) print_usage();
 
   while(argv[optind][0]=='-') {
     setup_opts[soi++]=argv[optind++];
     if (optind == argc) print_usage();
   }
+  if (!strcmp(argv[optind],"help")) { help = 1; ++optind; }
+  if (optind == argc) print_usage();
 
   cmd=NULL;
   for(i=0;i<ARRY_SIZE(cmds);i++) {
       if(!strcmp(cmds[i].name,argv[optind])) {
 	cmd=cmds+i;
+	if (help) print_cmd_help(cmd);
+	break;
       }
   }
 

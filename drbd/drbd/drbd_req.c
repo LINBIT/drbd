@@ -200,7 +200,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			if(mdev->conf.wire_protocol!=DRBD_PROT_A) {
 				inc_pending(mdev);
 			}
-			drbd_send_dblock(mdev,bh,(unsigned long)req);
+			drbd_send_dblock(mdev,req);
 		} else { // rw == READ || rw == READA
 			drbd_issue_drequest(mdev,bh);
 		}
@@ -309,8 +309,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		bb_wait(&bl);
 	} else spin_unlock_irq(&mdev->bb_lock);
 
-	send_ok=drbd_send_dblock(mdev,bh,(unsigned long)req);
-	// we could remove the send_ok cases, the are redundant to tl_clear()
+	send_ok=drbd_send_dblock(mdev,req);
+	// FIXME we could remove the send_ok cases, the are redundant to tl_clear()
 	mdev->send_sector=-1;
 	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_pending(mdev);
 	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {

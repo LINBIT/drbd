@@ -153,17 +153,19 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 
 	/*
 	  cs .. connection state
-	  st .. node state
+	  st .. node state (local/remote)
+	  ld .. local data consistentency
 	  ns .. network send
 	  nr .. network receive
 	  dw .. disk write
 	  dr .. disk read
 	  pe .. pending (waiting for ack)
 	  ua .. unack'd (still need to send ack)
+	  al .. access lock write count
 	*/
 	for (i = 0; i < minor_count; i++) {
 		rlen += sprintf(buf + rlen,
-			   "%2d: cs:%s st:%s/%s ld:%s \n"
+			   "%2d: cs:%s st:%s/%s ld:%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u pe:%u ua:%u al:%u\n",
 			   i,
 			   cstate_names[drbd_conf[i].cstate],

@@ -161,8 +161,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 					(mdev-drbd_conf),
 					drbd_conf[i].sync_conf.group
 				);
-				// CAUTION magic +2 !!
-				drbd_send_cmd(mdev,SyncStop,0);
+				drbd_send_short_cmd(mdev,SyncStop);
 				set_cstate(mdev,PausedSyncT);
 				interruptible_sleep_on(&drbd_conf[i].cstate_wait);
 				did_wait=1;
@@ -177,7 +176,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 			"%d: resumed synchronisation.\n",
 			(mdev-drbd_conf)
 		);
-		drbd_send_cmd(mdev,SyncCont,0);
+		drbd_send_short_cmd(mdev,SyncCont);
 		set_cstate(mdev,SyncTarget);
 	}
 }
@@ -328,7 +327,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 				time=MAX_SCHEDULE_TIMEOUT;
 				mdev->rs_total=mdev->rs_left;
 			}
-			drbd_send_cmd(mdev,WriteHint,0); // IO hint
+			drbd_send_short_cmd(mdev,WriteHint); // IO hint
 		}
 	}
 

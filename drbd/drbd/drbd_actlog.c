@@ -94,10 +94,8 @@ STATIC struct drbd_extent * drbd_al_find(struct Drbd_Conf *mdev,
 
 	i = al_hash_fn( enr , mdev->al_nr_extents );
 	extent = mdev->al_extents + i;
-	while(extent->extent_nr != enr) {
+	while(extent && extent->extent_nr != enr)
 		extent = extent->hash_next;
-		if(extent == NULL) break;
-	}
 	return extent;
 }
 
@@ -120,7 +118,7 @@ STATIC struct drbd_extent * drbd_al_evict(struct Drbd_Conf *mdev)
 		extent->extent_nr = p->extent_nr;
 		extent->hash_next = p->hash_next;
 		le = p->accessed.prev; // Fix accessed list!
-		list_del(&p->accessed); 
+		list_del(&p->accessed);
 		list_add(&extent->accessed,le);
 		return p;
 	}
@@ -145,7 +143,7 @@ STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
 	le=mdev->al_free.next;
 	list_del(le);
 	extent=list_entry(le, struct drbd_extent,accessed);
-	
+
 	return extent;
 }
 
@@ -177,9 +175,9 @@ void drbd_al_access(struct Drbd_Conf *mdev, sector_t sector)
 	struct drbd_extent *extent;
 
 	spin_lock(&mdev->al_lock);
-	
+
 	extent = drbd_al_find(mdev,enr);
-	
+
 	if(extent) { // we have a hit!
 		list_del(&extent->accessed);
 		list_add(&extent->accessed,&mdev->al_lru);

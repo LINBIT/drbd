@@ -78,11 +78,16 @@
 # define PRINT_ARGV
 #endif
 
+
+// some globals
+char* basename = 0;
+
 struct drbd_cmd {
   const char* cmd;
   int (* function)(int, char**, int, struct option*);
   char **args;
   struct option *options;
+  char *help;
 };
 
 int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options);
@@ -106,20 +111,27 @@ struct drbd_cmd commands[] = {
      { "human",      no_argument,       0, 'h' },
      { "do-what-I-say",no_argument,     0, 'd' },
      { "timeout-expired",no_argument,   0, 't' },
-     { 0,            0,                 0, 0   } } },
-  {"secondary", cmd_secondary,       0, 0 },
-  {"secondary_remote", cmd_sec_rem,  0, 0 },
+     { 0,            0,                 0, 0   } },
+   "FIXME primary help" },
+  {"secondary", cmd_secondary,       0, 0,
+   "FIXME secondary help" },
+  {"secondary_remote", cmd_sec_rem,  0, 0,
+   "FIXME secondary_remote help" },
   {"wait_sync", cmd_wait_sync,       0,
    (struct option[]) {
      { "time",       required_argument, 0, 't' },
-     { 0,            0,                 0, 0   } } },
+     { 0,            0,                 0, 0   } },
+   "FIXME wait_sync help" },
   {"wait_connect", cmd_wait_connect, 0,
    (struct option[]) {
      { "wfc-timeout",required_argument, 0, 't' },
      { "degr-wfc-timeout",required_argument,0,'d'},
-     { 0,            0,                 0, 0   } } },
-  {"invalidate", cmd_invalidate,     0, 0 },
-  {"invalidate_remote", cmd_invalidate_rem,0, 0 },
+     { 0,            0,                 0, 0   } },
+   "FIXME wait_connect help" },
+  {"invalidate", cmd_invalidate,     0, 0,
+   "FIXME invalidate help" },
+  {"invalidate_remote", cmd_invalidate_rem,0, 0,
+   "FIXME invalidate_remote help" },
   {"syncer", cmd_syncer,                0,
    (struct option[]) {
      { "use-csums",  no_argument,       0, 'c' },
@@ -127,8 +139,10 @@ struct drbd_cmd commands[] = {
      { "group",      required_argument, 0, 'g' },
      { "rate",       required_argument, 0, 'r' },
      { "al-extents", required_argument, 0, 'e' },
-     { 0,            0,                 0, 0 } } },
-  {"down", cmd_down,                 0, 0 },
+     { 0,            0,                 0, 0 } },
+   "FIXME syncer help" },
+  {"down", cmd_down,                 0, 0,
+   "FIXME down help" },
   {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0},
    (struct option[]) {
      { "timeout",    required_argument, 0, 't' },
@@ -137,18 +151,23 @@ struct drbd_cmd commands[] = {
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
      { "sndbuf-size",required_argument, 0, 'S' },
-     { 0,            0,                 0, 0 } } },
+     { 0,            0,                 0, 0 } },
+   "FIXME net help" },
   {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
    (struct option[]) {
      { "size",  required_argument,      0, 'd' },
      { "do-panic",   no_argument,       0, 'p' },
-     { 0,            0,                 0, 0 } } },
+     { 0,            0,                 0, 0 } },
+   "FIXME disk help" },
   {"resize", cmd_disk_size,             0,
    (struct option[]) {
      { "size",  required_argument,      0, 'd' },
-     { 0,            0,                 0, 0 } } },
-  {"disconnect", cmd_disconnect,     0, 0 },
-  {"show", cmd_show,                 0, 0 },
+     { 0,            0,                 0, 0 } },
+   "FIXME resize help" },
+  {"disconnect", cmd_disconnect,     0, 0,
+   "FIXME disconnect help" },
+  {"show", cmd_show,                 0, 0,
+   "FIXME show help" },
 };
 
 unsigned long resolv(const char* name)
@@ -313,18 +332,19 @@ void print_command_usage(int i, const char *addinfo)
   line[col]=0;
   printf("%s\n",line);
   if (addinfo) {
+    printf("%s\n", commands[i].help);
     printf("%s\n", addinfo);
     exit(20);
   }
 }
 
-void print_usage(const char* prgname,const char* addinfo)
+void print_usage(const char* addinfo)
 {
   int i;
 
   printf("\nUSAGE: %s device command arguments options\n\n"
 	 "Device is usually /dev/nbX or /dev/drbd/X.\n"
-         "Commands, arguments and options are:\n",prgname);
+         "Commands, arguments and options are:\n",basename);
 
 
   for (i = 0; i < ARRY_SIZE(commands); i++)
@@ -1082,9 +1102,14 @@ int main(int argc, char** argv)
   int help = 0;
   char **args;
 
+  if ( (basename = strrchr(argv[0],'/')) )
+      argv[0] = ++basename;
+  else
+      basename = argv[0];
+
   if (argc > 1 && !strcmp(argv[1],"help")) help = 1;
   if (argc < 3)
-    print_usage(argv[0], argc==1 ? 0 :
+    print_usage(argc==1 ? 0 :
 		help ? "try help <command>"
 		     : "  What??");
 

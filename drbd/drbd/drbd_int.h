@@ -147,6 +147,15 @@ enum MetaDataIndex {
 #define GEN_CNT_SIZE 5
 #define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
 
+#ifdef __LITTLE_ENDIAN
+#define BE_DRBD_MAGIC 0x67027483
+#endif
+#ifdef __BIG_ENDIAN
+#define BE_DRBD_MAGIC DRBD_MAGIC
+#endif
+#ifndef BE_DRBD_MAGIC
+#error unknown endianness ??
+#endif
 
 /* This is the layout for a packet on the wire!
  * The byteorder is the network byte order!
@@ -155,26 +164,25 @@ typedef struct {
   __u32       magic;
   __u16       command;
   __u16       length;
-} __attribute((packed)) Drbd_Packet;
+} Drbd_Packet __attribute((packed));
 
 #define MKPACKET(NAME) \
 typedef struct { \
   Drbd_Packet p; \
   NAME        h; \
-}  __attribute((packed)) NAME##acket ;
+} NAME##acket  __attribute((packed));
 
 typedef struct {
   __u64       sector;    /* 64 bits sector number */
   __u64       block_id;  /* Used in protocol B&C for the address of the req. */
-}  __attribute((packed)) Drbd_Data_P;
+} Drbd_Data_P  __attribute((packed));
 MKPACKET(Drbd_Data_P)
 
-// unused again...
 typedef struct {
   __u32       barrier;   /* may be 0 or a barrier number  */
   __u32       _fill;     /* Without the _fill gcc may add fillbytes on
 			    64 bit plaforms, but does not so an 32 bits... */
-}  __attribute((packed)) Drbd_Barrier_P;
+} Drbd_Barrier_P  __attribute((packed));
 MKPACKET(Drbd_Barrier_P)
 
 typedef struct {
@@ -182,7 +190,7 @@ typedef struct {
   __u32       use_csums;
   __u32       skip;
   __u32       group;
-}  __attribute((packed)) Drbd_SyncParam_P;
+} Drbd_SyncParam_P  __attribute((packed));
 MKPACKET(Drbd_SyncParam_P)
 
 typedef struct {
@@ -194,27 +202,27 @@ typedef struct {
   __u32       gen_cnt[GEN_CNT_SIZE];
   __u32       bit_map_gen[GEN_CNT_SIZE];
   Drbd_SyncParam_P sync_conf;
-}  __attribute((packed)) Drbd_Parameter_P;
+} Drbd_Parameter_P  __attribute((packed));
 MKPACKET(Drbd_Parameter_P)
 
 typedef struct {
   __u64       sector;
   __u64       block_id;
   __u32       blksize;
-} __attribute((packed)) Drbd_BlockAck_P;
+} Drbd_BlockAck_P __attribute((packed));
 MKPACKET(Drbd_BlockAck_P)
 
 typedef struct {
   __u32       barrier;
   __u32       set_size;
-}  __attribute((packed)) Drbd_BarrierAck_P;
+} Drbd_BarrierAck_P  __attribute((packed));
 MKPACKET(Drbd_BarrierAck_P)
 
 typedef struct {
   __u64       sector;
   __u64       block_id;
   __u32       blksize;
-} __attribute((packed)) Drbd_BlockRequest_P;
+} Drbd_BlockRequest_P __attribute((packed));
 MKPACKET(Drbd_BlockRequest_P)
 
 typedef enum {
@@ -259,6 +267,7 @@ struct Drbd_thread {
 
 struct drbd_barrier;
 struct drbd_request {
+	// PARANOIA I'd like to add a magic to this struct!
 	struct list_head list;     // requests are chained to a barrier
 	struct drbd_barrier *barrier; // The next barrier.
 	struct buffer_head *bh;    // buffer head
@@ -293,6 +302,7 @@ struct Tl_epoch_entry {
 };
 
 struct Pending_read {
+	// PARANOIA I'd like to add a magic to this struct!
 	struct list_head list;
 	union {
 		struct buffer_head* bh;
@@ -427,15 +437,12 @@ extern void tl_clear(struct Drbd_Conf *mdev);
 extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
 extern int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_free_sock(int minor);
-/*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
-		     Drbd_Packet* header, size_t header_size,
-		     void* data, size_t data_size);*/
+/* extern int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
+	      char* buf, size_t size, unsigned msg_flags); */
 extern int drbd_send_param(struct Drbd_Conf *mdev);
-extern int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd,
-			 int via_msock);
-//extern int drbd_send_u32_param(struct Drbd_Conf *mdev,
-//			Drbd_Packet_Cmd which, int value);
-int drbd_send_sync_param(struct Drbd_Conf *mdev);
+extern int drbd_send_cmd(struct Drbd_Conf *mdev, struct socket *sock,
+			  Drbd_Packet_Cmd cmd, char* buf, size_t payload);
+extern int drbd_send_sync_param(struct Drbd_Conf *mdev);
 extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);
@@ -443,8 +450,7 @@ extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 			 struct buffer_head *bh, u64 block_id);
 extern int drbd_send_block(struct Drbd_Conf *mdev, int cmd,
 			   struct buffer_head *bh, u64 block_id);
-extern int drbd_send_dblock(struct Drbd_Conf *mdev,
-			    struct buffer_head *bh, u64 block_id);
+extern int drbd_send_dblock(struct Drbd_Conf *mdev, drbd_request_t *req);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
@@ -518,6 +524,21 @@ extern int drbd_dsender(struct Drbd_thread *thi);
 extern void drbd_dio_end_read(struct buffer_head *bh, int uptodate);
 extern void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side);
 extern unsigned long drbd_hash(struct buffer_head *bh);
+
+static inline int drbd_send_short_cmd(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd)
+{
+	return drbd_send_cmd(mdev,mdev->sock,cmd,NULL,0);
+}
+
+static inline int drbd_send_ping(struct Drbd_Conf *mdev)
+{
+	return drbd_send_cmd(mdev,mdev->msock,Ping,NULL,0);
+}
+
+static inline int drbd_send_ping_ack(struct Drbd_Conf *mdev)
+{
+	return drbd_send_cmd(mdev,mdev->msock,PingAck,NULL,0);
+}
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
 {

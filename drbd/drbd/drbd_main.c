@@ -96,7 +96,9 @@ int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
 
-int drbd_send(struct Drbd_Conf *, Drbd_Packet*, size_t , void* , size_t,int );
+// XXX inline ?
+inline
+int drbd_send(struct Drbd_Conf*,struct socket*,char*,size_t,unsigned);
 
 #ifdef DEVICE_REQUEST
 #undef DEVICE_REQUEST
@@ -424,67 +426,46 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
-int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, int via_msock)
+int drbd_send_cmd(struct Drbd_Conf *mdev, struct socket *sock,
+		  Drbd_Packet_Cmd cmd, char* buf, size_t payload)
 {
-	int err;
+	int sent,ok;
 	Drbd_Packet head;
 
+	head.magic   = BE_DRBD_MAGIC;
 	head.command = cpu_to_be16(cmd);
-	down( via_msock ? &mdev->msock_mutex : &mdev->sock_mutex);
-	err = drbd_send(mdev, &head,sizeof(head),0,0,via_msock);
-	up( via_msock ? &mdev->msock_mutex : &mdev->sock_mutex);
+	head.length  = cpu_to_be16(payload);
 
-	return (err == sizeof(head));
+	down(sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
+	sent = drbd_send(mdev,sock,(char*)&head,sizeof(head),
+			 payload ? MSG_MORE : 0);
+	D_ASSERT(sent == sizeof(head));
+	ok = ( sent == sizeof(head) );
+	if (ok && payload) {
+		sent = drbd_send(mdev, sock, buf,payload, 0);
+		D_ASSERT(sent == payload);
+		ok = (sent == payload);
+		if(!ok) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: short send cmd=%d payload=%d sent=%d\n",
+			       (int)(mdev-drbd_conf), cmd, payload, sent);
+		}
+	}
+	up  (sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
+	return ok;
 }
-
-#if 0
-// hm, possibly remove these again...
-// XXX should these go over sock or msock??
-int _drbd_send_u32_param(struct Drbd_Conf *mdev,
-			Drbd_Packet_Cmd which, int value)
-{
-	// PARANOIA BUG() unless 'which' is valid.
-	int err;
-	__u32 v;
-	Drbd_Packet head;
-
-	head.command = cpu_to_be16(which);
-	v = cpu_to_be32(value);
-
-	err = drbd_send(mdev, &head,sizeof(head), &v,sizeof(v),0);
-
-	D_ASSERT(err == sizeof(head)+sizeof(v));
-
-	return (err == sizeof(head)+sizeof(v));
-}
-
-int drbd_send_u32_param(struct Drbd_Conf *mdev,
-			Drbd_Packet_Cmd which, int value)
-{
-	int ret;
-	down(&mdev->sock_mutex);
-	ret = _drbd_send_u32_param(mdev,which,value);
-	up(&mdev->sock_mutex);
-	return ret;
-}
-#endif
 
 int drbd_send_sync_param(struct Drbd_Conf *mdev)
 {
-	Drbd_SyncParam_Packet p;
-	int err, ok;
+	Drbd_SyncParam_P p;
+	int ok;
 
-	p.p.command   = cpu_to_be16(SetSyncParam);
-	p.h.rate      = cpu_to_be32(mdev->sync_conf.rate);
-	p.h.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
-	p.h.skip      = cpu_to_be32(mdev->sync_conf.skip);
-	p.h.group     = cpu_to_be32(mdev->sync_conf.group);
+	p.rate      = cpu_to_be32(mdev->sync_conf.rate);
+	p.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
+	p.skip      = cpu_to_be32(mdev->sync_conf.skip);
+	p.group     = cpu_to_be32(mdev->sync_conf.group);
 
-	err = drbd_send(mdev, (Drbd_Packet*)&p,sizeof(p),0,0,0);
-
-	D_ASSERT(err == sizeof(p));
-	ok = (err == sizeof(p));
-
+	ok = drbd_send_cmd(mdev,mdev->sock,SetSyncParam,(char*)&p,sizeof(p));
 	if ( ok
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !mdev->sync_conf.skip )
@@ -492,166 +473,168 @@ int drbd_send_sync_param(struct Drbd_Conf *mdev)
 		set_cstate(mdev,WFReportParams);
 		ok = drbd_send_param(mdev);
 	}
-
 	return ok;
 }
 
 int drbd_send_param(struct Drbd_Conf *mdev)
 {
-	Drbd_Parameter_Packet param;
-	int err,i;
+	Drbd_Parameter_P p;
+	int ok,i;
 	kdev_t ll_dev = mdev->lo_device;
 
-	param.h.u_size=cpu_to_be64(mdev->lo_usize);
-	param.h.p_size=cpu_to_be64(ll_dev ?
-				   blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]:0);
+	p.u_size = cpu_to_be64(mdev->lo_usize);
+	p.p_size = cpu_to_be64(ll_dev ?
+			       blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]:0);
 
-	param.p.command = cpu_to_be16(ReportParams);
-	param.h.state = cpu_to_be32(mdev->state);
-	param.h.protocol = cpu_to_be32(mdev->conf.wire_protocol);
-	param.h.version = cpu_to_be32(PRO_VERSION);
+	p.state    = cpu_to_be32(mdev->state);
+	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
+	p.version  = cpu_to_be32(PRO_VERSION);
 
 	for(i=Flags;i<=ArbitraryCnt;i++) {
-		param.h.gen_cnt[i]=cpu_to_be32(mdev->gen_cnt[i]);
-		param.h.bit_map_gen[i]=cpu_to_be32(mdev->bit_map_gen[i]);
+		p.gen_cnt[i]     = cpu_to_be32(mdev->gen_cnt[i]);
+		p.bit_map_gen[i] = cpu_to_be32(mdev->bit_map_gen[i]);
 	}
-	param.h.sync_conf.rate      = cpu_to_be32(mdev->sync_conf.rate);
-	param.h.sync_conf.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
-	param.h.sync_conf.skip      = cpu_to_be32(mdev->sync_conf.skip);
-	param.h.sync_conf.group     = cpu_to_be32(mdev->sync_conf.group);
+	p.sync_conf.rate      = cpu_to_be32(mdev->sync_conf.rate);
+	p.sync_conf.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
+	p.sync_conf.skip      = cpu_to_be32(mdev->sync_conf.skip);
+	p.sync_conf.group     = cpu_to_be32(mdev->sync_conf.group);
 
-	down(&mdev->sock_mutex);
-	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);
-	up(&mdev->sock_mutex);
-
-	D_ASSERT(err == sizeof(param));
-
-	return (err == sizeof(param));
+	ok = drbd_send_cmd(mdev,mdev->sock,ReportParams,(char*)&p,sizeof(p));
+	return ok;
 }
 
 int drbd_send_bitmap(struct Drbd_Conf *mdev)
 {
-	Drbd_Packet head;
-	int ret,buf_i,want,bm_i=0;
+	int buf_i,want;
+	int ok=TRUE, bm_i=0;
 	size_t bm_words;
 	u32 *buffer,*bm;
 
 	if(!mdev->mbds_id) return FALSE;
 
-	bm_words=mdev->mbds_id->size/sizeof(u32);
-	bm=(u32*)mdev->mbds_id->bm;
-	buffer=vmalloc(MBDS_PACKET_SIZE);
-	head.command = cpu_to_be16(ReportBitMap);
+	bm_words = mdev->mbds_id->size/sizeof(u32);
+	bm = (u32*)mdev->mbds_id->bm;
+	buffer = vmalloc(MBDS_PACKET_SIZE); // sleeps. cannot fail.
 
-	while(1) {
+	/*
+	 * maybe TODO use some simple compression scheme, nowadays there are
+	 * some such algorithms in the kernel anyways.
+	 */
+	do {
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
-		if(want==0) break;
-
-		for(buf_i=0;buf_i<want/sizeof(long);buf_i++) {
+		for(buf_i=0;buf_i<want/sizeof(long);buf_i++)
 			buffer[buf_i] = cpu_to_be32(bm[bm_i++]);
-		}
-
-		down(&mdev->sock_mutex);
-		ret=drbd_send(mdev,&head,sizeof(head),buffer,want,0);
-		up(&mdev->sock_mutex);
-		if(ret != want + sizeof(head) ) {
-			ret=FALSE;
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: short send ret=%d want=%d head=%d\n",
-			       (int)(mdev-drbd_conf),
-			       ret,want,(int)sizeof(head));
-			goto out;
-		}
-	}
-
-	ret=TRUE;
- out:
+		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,(char*)buffer,want);
+	} while (ok && want);
 	vfree(buffer);
-	return ret;
+	return ok;
 }
 
 int _drbd_send_barrier(struct Drbd_Conf *mdev)
 {
-	int r;
+	int sent,ok;
 	Drbd_Barrier_Packet head;
-
-	/* tl_add_barrier() must be called with the sock_mutex aquired */
-	head.p.command = cpu_to_be16(Barrier);
-	head.h.barrier=tl_add_barrier(mdev);
 
 	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
 
-	r=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
+	head.p.magic   = BE_DRBD_MAGIC;
+	head.p.command = cpu_to_be16(Barrier);
+	head.p.length  = cpu_to_be16(sizeof(Drbd_Barrier_P));
 
-	inc_pending(mdev);
+	/* tl_add_barrier() must be called with the sock_mutex aquired */
+	head.h.barrier=tl_add_barrier(mdev);
 
-	return (r == sizeof(head));
+	sent = drbd_send(mdev,mdev->sock,(char*)&head,sizeof(head), 0);
+	D_ASSERT(sent == sizeof(head));
+	ok = (sent == sizeof(head));
+	if (ok) inc_pending(mdev);
+	return ok;
 }
 
 int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 {
-	Drbd_BarrierAck_Packet head;
-	int ret;
+	int ok;
+	Drbd_BarrierAck_P p;
 
-	head.p.command = cpu_to_be16(BarrierAck);
-	head.h.barrier = barrier_nr;
-	head.h.set_size = cpu_to_be32(set_size);
-	down(&mdev->msock_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
-	up(&mdev->msock_mutex);
-	return (ret == sizeof(head));
+	p.barrier  = barrier_nr; // CHECK cpu_to_be32 ?
+	p.set_size = cpu_to_be32(set_size);
+
+	ok = drbd_send_cmd(mdev,mdev->msock,BarrierAck,(char*)&p,sizeof(p));
+	return ok;
 }
 
 
 int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 		  struct buffer_head *bh, u64 block_id)
 {
-	Drbd_BlockAck_Packet head;
-	int ret;
+	int ok;
+	Drbd_BlockAck_P p;
 
-	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(DRBD_BH_SECTOR(bh));
-	head.h.block_id = block_id;
-	head.h.blksize = cpu_to_be32(bh->b_size);
-	down(&mdev->msock_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
-	up(&mdev->msock_mutex);
-	return (ret == sizeof(head));
+	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(bh));
+	p.block_id = block_id;
+	p.blksize  = cpu_to_be32(bh->b_size);
+
+	ok = drbd_send_cmd(mdev,mdev->msock,cmd,(char*)&p,sizeof(p));
+	return ok;
 }
 
 int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 		       sector_t sector,int size, u64 block_id)
 {
-	Drbd_BlockRequest_Packet head;
-	int ret;
+	int ok;
+	Drbd_BlockRequest_P p;
 
-	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(sector);
-	head.h.block_id = block_id;
-	head.h.blksize = cpu_to_be32(size);
+	p.sector   = cpu_to_be64(sector);
+	p.block_id = block_id;
+	p.blksize  = cpu_to_be32(size);
 
-	down(&mdev->sock_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
-	up(&mdev->sock_mutex);
-	return (ret == sizeof(head));
+	ok = drbd_send_cmd(mdev,mdev->sock,cmd,(char*)&p,sizeof(p));
+	return ok;
 }
 
-// Used to send write requests bh->b_rsector !!
-int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
-		     u64 block_id)
+int _drbd_send_zc_bh(struct Drbd_Conf *mdev, struct buffer_head *bh)
 {
+	int sent,ok;
+	struct page *page = bh->b_page;
+	size_t size = bh->b_size;
+	int offset;
+
+	/*
+	 * CAUTION I do not yet understand this completely.
+	 * I thought I have to kmap the page first... ?
+	 */
+	if (PageHighMem(page))
+		offset = (int)bh->b_data;
+	else
+		offset = (int)bh->b_data - (int)page_address(page);
+	do {
+		sent = mdev->sock->ops->sendpage(mdev->sock, page, offset, size, MSG_NOSIGNAL);
+		if (sent <= 0) break;
+		size   -= sent;
+		offset += sent;
+	} while(size > 0);
+
+	ok = (size == 0);
+	if(likely(ok))
+		mdev->send_cnt+=bh->b_size>>9;
+	return ok;
+}
+
+// Used to send write requests: bh->b_rsector !!
+int drbd_send_dblock(struct Drbd_Conf *mdev, drbd_request_t *req)
+{
+	int sent,ok;
+	struct buffer_head *bh = req->bh;
 	Drbd_Data_Packet head;
-	int ret,ok;
 
+	D_ASSERT(bh->b_reqnext == NULL);
+
+	head.p.magic   = BE_DRBD_MAGIC;
 	head.p.command = cpu_to_be16(Data);
-	head.h.sector = cpu_to_be64(bh->b_rsector);
-	head.h.block_id = block_id;
+	head.p.length  = cpu_to_be16(sizeof(Drbd_Data_P)+bh->b_size);
 
-	down(&mdev->sock_mutex);
-
-	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-		_drbd_send_barrier(mdev);
-	}
+	head.h.sector   = cpu_to_be64(bh->b_rsector);
+	head.h.block_id = (unsigned long)req;
 
 	/* About tl_add():
 	1. This must be within the semaphor,
@@ -659,28 +642,24 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	   ensure right order of packets on the write
 	2. This must happen before sending, otherwise we might
 	   get in the BlockAck packet before we have it on the
-	   tl_ datastructure (=> We would want to remove it before it 
+	   tl_ datastructure (=> We would want to remove it before it
 	   is there!)
 	3. Q: Why can we add it to tl_ even when drbd_send() might fail ?
 	      There could be a tl_cancel() to remove it within the semaphore!
 	   A: If drbd_send fails, we will loose the connection. Then
-	      tl_cear() will simute a RQ_DRBD_SEND and set it out of sync
+	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
 	      for everything in the data structure.
 	*/
-	// UGGLY UGGLY casting it back to a drbd_request_t
-	tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
+	down(&mdev->sock_mutex);
+	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
+		_drbd_send_barrier(mdev);
+	tl_add(mdev,req);
 
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
-		      bh->b_size,0);
-	bh_kunmap(bh);
-	ok=(ret == bh->b_size + sizeof(head));
-
-	if(likely(ok)) {
-		mdev->send_cnt+=bh->b_size>>9;
-	}
-
+	sent = drbd_send(mdev,mdev->sock,(char*)&head,sizeof(head),MSG_MORE);
+	ok = (sent == sizeof(head));
+	if (likely(ok))
+		ok = _drbd_send_zc_bh(mdev,bh);
 	up(&mdev->sock_mutex);
-
 	return ok;
 }
 
@@ -688,24 +667,22 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 		    u64 block_id)
 {
+	int sent,ok;
 	Drbd_Data_Packet head;
-	int ret,ok;
 
+	head.p.magic   = BE_DRBD_MAGIC;
 	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(DRBD_BH_SECTOR(bh));
+	head.p.length  = cpu_to_be16(sizeof(Drbd_Data_P)+bh->b_size);
+
+	head.h.sector   = cpu_to_be64(DRBD_BH_SECTOR(bh));
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
-
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
-		      bh->b_size,0);
-	bh_kunmap(bh);
-	ok=(ret == bh->b_size + sizeof(head));
-
+	sent = drbd_send(mdev,mdev->sock,(char*)&head,sizeof(head),MSG_MORE);
+	ok = (sent == sizeof(head));
+	if (likely(ok))
+		ok = _drbd_send_zc_bh(mdev,bh);
 	up(&mdev->sock_mutex);
-
-	if( ok ) mdev->send_cnt+=bh->b_size>>9;
-
 	return ok;
 }
 
@@ -769,39 +746,41 @@ STATIC void drbd_a_timeout(unsigned long arg)
   timeout action    send a ping via msock     Abort communication
 					      and close all sockets
 */
-int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
-	      void* data, size_t data_size, int via_msock)
+
+/*
+ * you should have down()ed the appropriate [m]sock_mutex elsewhere!
+ */
+int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
+	      char* buf, size_t size, unsigned msg_flags)
 {
 	mm_segment_t oldfs;
 	sigset_t oldset;
 	struct msghdr msg;
-	struct iovec iov[2];
+	struct iovec iov;
 	unsigned long flags;
 	int rv,sent=0;
 	int app_got_sig=0;
 	struct send_timer_info ti;
-	struct socket *sock = via_msock ? mdev->msock : mdev->sock;
+	int via_msock = (sock == mdev->msock);
 
 	if (!sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
 
-	header->magic  =  cpu_to_be32(DRBD_MAGIC);
-	header->length  = cpu_to_be16(data_size);
+	iov.iov_base = buf;
+	iov.iov_len  = size;
 
-	sock->sk->allocation = GFP_DRBD;
-
-	iov[0].iov_base = header;
-	iov[0].iov_len = header_size;
-	iov[1].iov_base = data;
-	iov[1].iov_len = data_size;
-
-	msg.msg_iov = iov;
-	msg.msg_iovlen = data_size > 0 ? 2 : 1;
-	msg.msg_control = NULL;
+	msg.msg_name       = 0;
+	msg.msg_namelen    = 0;
+	msg.msg_iov        = &iov;
+	msg.msg_iovlen     = 1;
+	msg.msg_control    = NULL;
 	msg.msg_controllen = 0;
-	msg.msg_name = 0;
-	msg.msg_namelen = 0;
-	msg.msg_flags = MSG_NOSIGNAL;
+	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
+
+	/* THINK
+	 * we should be able to cope without the timer,
+	 * using sk->sndtimeo and the return value from sock_sendmsg.
+	 */
 
 	ti.mdev=mdev;
 	ti.timeout_happened=0;
@@ -822,19 +801,30 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		add_timer(&ti.s_timeout);
 	}
 
-	lock_kernel();  //  check if this is still necessary
+	/* FIXME remove. since nbd does not do this either,
+	 * it seems to be safe ... well, or *they* have a bug there :-)
+	 * lock_kernel();  //  check if this is still necessary
+	 */
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	oldset = current->blocked;
 	sigfillset(&current->blocked);
+	/* THINK as long as we send directly from make_request,
+	 * I'd like to allow KILL, too, so the user can kill -9 hanging
+	 * write processes. but then again, if it does not succeed, it
+	 * _should_ timeout anyways... so what.
+	 */
 	sigdelset(&current->blocked,DRBD_SIG);
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	while(1) {
-		rv = sock_sendmsg(sock, &msg, header_size+data_size);
+	do {
+		/* STRANGE
+		 * tcp_sendmsg does _not_ use its size parameter at all ???
+		 */
+		rv = sock_sendmsg(sock, &msg, iov.iov_len );
 		if ( rv == -ERESTARTSYS) {
 			spin_lock_irqsave(&current->sigmask_lock,flags);
 			if (sigismember(&current->pending.signal, DRBD_SIG)) {
@@ -853,32 +843,12 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		}
 		if (rv <= 0) break;
 		sent += rv;
-		if (sent == header_size+data_size) break;
-
-		/*printk(KERN_ERR DEVICE_NAME
-		       "%d: calling sock_sendmsg again\n",
-		       (int)(mdev-drbd_conf));*/
-
-		if( rv < header_size ) {
-			iov[0].iov_base += rv;
-			iov[0].iov_len  -= rv;
-			header_size -= rv;
-		} else /* rv >= header_size */ {
-			if (header_size) {
-				iov[0].iov_base = iov[1].iov_base;
-				iov[0].iov_len = iov[1].iov_len;
-				msg.msg_iovlen = 1;
-				rv -= header_size;
-				header_size = 0;
-			}
-			iov[0].iov_base += rv;
-			iov[0].iov_len  -= rv;
-			data_size -= rv;
-		}
-	}
+		iov.iov_base += rv;
+		iov.iov_len  -= rv;
+	} while(sent < size);
 
 	set_fs(oldfs);
-	unlock_kernel();
+	// unlock_kernel();
 
 	ti.restart=0;
 
@@ -990,7 +960,7 @@ STATIC void drbd_send_write_hint(void *data)
 		}
 	}
 
-	drbd_send_cmd(mdev,WriteHint,0);
+	drbd_send_short_cmd(mdev,WriteHint);
 	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }
 
@@ -1192,6 +1162,12 @@ int __init drbd_init(void)
 
 int __init init_module()
 {
+	if (1 > minor_count||minor_count > 255) {
+		printk(KERN_ERR DEVICE_NAME
+			": invalid minor_count (%d)\n",minor_count);
+		return -EINVAL;
+	}
+
 	printk(KERN_INFO DEVICE_NAME ": initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
