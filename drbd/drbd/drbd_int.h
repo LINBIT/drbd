@@ -398,3 +398,8 @@ extern struct proc_dir_entry drbd_proc_dir;
         ({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define CURRENT_SIGSET (&current->signal)
+#else
+#define CURRENT_SIGSET (&current->pending.signal)
+#endif

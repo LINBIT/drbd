@@ -423,13 +423,8 @@ int drbd_connect(int minor)
 			unsigned long flags;
 			del_timer(&accept_timeout);
 			spin_lock_irqsave(&current->sigmask_lock,flags);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-			if (sigismember(&current->signal, DRBD_SIG)) {
-				sigdelset(&current->signal, DRBD_SIG);
-#else
-			if (sigismember(&current->pending.signal, DRBD_SIG)) {
-				sigdelset(&current->pending.signal, DRBD_SIG);
-#endif
+			if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
+				sigdelset(CURRENT_SIGSET, DRBD_SIG);
 				recalc_sigpending(current);
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
@@ -1002,13 +997,8 @@ int drbdd_init(struct Drbd_thread *thi)
 			thi->t_state = Running;
 			wake_up(&thi->wait);
 			spin_lock_irqsave(&current->sigmask_lock,flags);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-			if (sigismember(&current->signal, SIGTERM)) {
-				sigdelset(&current->signal, SIGTERM);
-#else
-			if (sigismember(&current->pending.signal, SIGTERM)) {
-				sigdelset(&current->pending.signal, SIGTERM);
-#endif
+			if (sigismember(CURRENT_SIGSET, SIGTERM)) {
+				sigdelset(CURRENT_SIGSET, SIGTERM);
 				recalc_sigpending(current);
 			}
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);

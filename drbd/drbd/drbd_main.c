@@ -651,6 +651,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	struct iovec iov[2];
 	unsigned long flags;
 	int rv,sent=0;
+	int app_got_sig=0;
 
 	if (!mdev->sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
@@ -674,6 +675,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	msg.msg_namelen = 0;
 	msg.msg_flags = MSG_NOSIGNAL;
 
+	clear_bit(SEND_TIMEOUTED,&mdev->flags);
 	if (mdev->conf.timeout) {
 		init_timer(&mdev->s_timeout);
 		mdev->send_proc = current;
@@ -693,10 +695,24 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	/* TODO: What if the application gets a SIGXCPU (=DRBD_SIG) signal ? */
-
 	while(1) {
 		rv = sock_sendmsg(mdev->sock, &msg, header_size+data_size);
+		if ( rv == -ERESTARTSYS) {
+			spin_lock_irqsave(&current->sigmask_lock,flags);
+			if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
+				sigdelset(CURRENT_SIGSET, DRBD_SIG);
+				recalc_sigpending(current);
+				spin_unlock_irqrestore(&current->sigmask_lock,
+						       flags);
+				if(test_bit(SEND_TIMEOUTED,&mdev->flags)) {
+					break;
+				} else {
+					app_got_sig=1;
+					continue;
+				}
+			}
+			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+		}
 		if (rv <= 0) break;
 		sent += rv;
 		if (sent == header_size+data_size) break;
@@ -732,21 +748,15 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	current->blocked = oldset;
+	if(app_got_sig) {
+		sigaddset(CURRENT_SIGSET, DRBD_SIG);
+	} else {
+		sigdelset(CURRENT_SIGSET, DRBD_SIG);
+	}
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	if (mdev->conf.timeout && 
-	    test_and_clear_bit(SEND_TIMEOUTED,&mdev->flags)) {
-
-		spin_lock_irqsave(&current->sigmask_lock,flags);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-		sigdelset(&current->signal, DRBD_SIG);
-#else
-		sigdelset(&current->pending.signal, DRBD_SIG);
-#endif
-		recalc_sigpending(current);
-		spin_unlock_irqrestore(&current->sigmask_lock,flags);
-
+	if (rv == -ERESTARTSYS && test_bit(SEND_TIMEOUTED,&mdev->flags)) {
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: send timed out!! (pid=%d)\n",
 		       (int)(mdev-drbd_conf),current->pid);
