@@ -345,7 +345,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 		while(1) {
 			extent = drbd_al_add(mdev,enr);
-			if(likely(extent)) break;
+			if(likely(extent != 0)) break;
 			spin_unlock(&mdev->al_lock);
 			WARN("Have to wait for extent! "
 			     "You should increase 'al-extents'\n");

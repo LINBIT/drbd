@@ -84,6 +84,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
+	if( mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate>Connected) {
+		drbd_set_in_sync(mdev,APP_BH_SECTOR(req->bh),req->bh->b_size);
+	}
+
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
 
@@ -100,8 +104,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	mdev = drbd_conf+MINOR(req->bh->b_rdev);
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
-	// BIG TODO: Only set it, iff it is the case!
-	drbd_set_in_sync(mdev, APP_BH_SECTOR(req->bh), req->bh->b_size);
 	drbd_al_complete_io(mdev,bh->b_rsector);
 	kmem_cache_free(bh_cachep, bh);
 }

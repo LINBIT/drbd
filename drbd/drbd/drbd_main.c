@@ -1419,13 +1419,16 @@ void bm_cleanup(struct BitMap* sbm)
 }
 
 #define BM_SS (BM_BLOCK_SIZE_B-9)
+#define BM_NS (1<<BM_SS)
 #define BM_MM ((1L<<BM_SS)-1)
 #define BPLM (BITS_PER_LONG-1)
 
-/* secot_t and size have a higher resolution (512 Byte) than
+/* sector_t and size have a higher resolution (512 Byte) than
    the bitmap (4K). In case we have to set a bit, we 'round up',
    in case we have to clear a bit we do the opposit.
-   It returns the number of sectors that where marked dirty. */
+   It returns the number of sectors that where marked dirty, or
+   marked clear.
+*/
 int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 {
 	struct BitMap* sbm = mdev->mbds_id;
@@ -1442,29 +1445,38 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
 
-	// WARN("set=%d sbnr=%ld ebnr=%ld size=%d\n",bit,sbnr,ebnr,size);
-	ERR_IF ((sbnr >> 8) >= sbm->size) return FALSE;
-	ERR_IF ((ebnr >> 8) >= sbm->size) return FALSE;
+	ERR_IF ((sbnr >> 8) >= sbm->size) return 0;
+	ERR_IF ((ebnr >> 8) >= sbm->size) return 0;
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 
 	if(bit) {
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
-			if(!test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) ret++;
+			if(!test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			__set_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
 	} else { // bit == 0
+		sector_t dev_size;
+		dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
+	
 		if(  (sector & BM_MM) != 0 )     sbnr++;
 		if( (esector & BM_MM) != BM_MM ) ebnr--;
 
+		/* There is this one special case at the end of the device */
+		if(dev_size<<1 == esector+1) {
+			ebnr++;
+			ret = (esector-sector+1)-8;
+		}
+
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
+			if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
 	}
 	spin_unlock(&sbm->bm_lock);
 
-	return ret<<BM_SS;
+	return ret;
 }
 
 int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)

@@ -928,13 +928,14 @@ static inline void drbd_set_in_sync(drbd_dev* mdev,
 	/* Is called by drbd_dio_end possibly from IRQ context, but
 	   from other places in non IRQ */
 	unsigned long flags=0;
+	int cleared;
 
-	bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
+	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->rs_lock,flags);
-	mdev->rs_left -= blk_size >> 9;
+	mdev->rs_left -= cleared;
 	D_ASSERT((long)mdev->rs_left >= 0);
-	if( mdev->rs_left == 0 ) {
+	if( cleared && mdev->rs_left == 0 ) {
 		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
 		set_bit(SYNC_FINISHED,&mdev->flags);
 		spin_unlock(&mdev->ee_lock);

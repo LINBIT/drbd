@@ -1,7 +1,4 @@
 /*
-  Mess: drbd_set_in_sync(), bm_set_bit(), bm_get_bit()
-*/
-/*
 -*- linux-c -*-
    drbd_receiver.c
    Kernel module for 2.2.x/2.4.x Kernels
@@ -1179,6 +1176,11 @@ STATIC int e_end_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
 
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
+		if( mdev->cstate > Connected ) {
+			drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),
+					 e->bh->b_size);
+		}
+		
 		ok=drbd_send_ack(mdev,WriteAck,e);
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
 	}
@@ -1437,6 +1439,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				if(quick) {
 					drbd_send_bitmap(mdev);
 				} else {
+					bm_fill_bm(mdev->mbds_id,-1);
 					mdev->rs_total=
 						blk_size[MAJOR_NR][minor]<<1;
 				}
@@ -1628,6 +1631,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
+	bm_fill_bm(mdev->mbds_id,-1);
 	mdev->rs_total = blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1;
 	drbd_start_resync(mdev,SyncSource);
 	return TRUE; // cannot fail ?

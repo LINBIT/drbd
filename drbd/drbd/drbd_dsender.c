@@ -210,6 +210,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		SET_MAGIC(pr);
 
 		sector = bm_get_sector(mdev->mbds_id,&size);
+
 		if(sector == MBDS_DONE) {
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
@@ -321,7 +322,6 @@ int drbd_dsender(struct Drbd_thread *thi)
 				drbd_md_write(mdev);
 			}
 			mdev->rs_total = 0;
-			mdev->rs_left = 0; // FIXME this is a BUG!
 			set_cstate(mdev,Connected);
 		}
 
