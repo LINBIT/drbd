@@ -156,6 +156,9 @@ int main(int argc, char** argv)
 	      "          drbd will trigger a kernel panic if there is an\n"
 	      "          IO error on the lower_device. May be usefull when\n"
 	      "          drbd is used in a HA cluster.\n\n"
+	      "      -c --connect-int\n"
+	      "          If drbd can not connect it will retry every val seconds.\n"
+	      "          Default: 10 Seconds\n\n"
 	      "     multipliers\n"
 	      "          You may append K, M or G to the values of -r and -d\n"
 	      "          where K=2^10, M=2^20 and G=2^30.\n\n"
@@ -303,18 +306,20 @@ int main(int argc, char** argv)
       cn.config.tl_size = 256;
       cn.config.disk_size = 0;
       cn.config.do_panic  = 0;
+      cn.config.try_connect_int = 10;
 
       optind=6;
       while(1)
 	{
 	  int c;
 	  static struct option options[] = {
-	    { "timeout",   required_argument, 0, 't' },
-	    { "sync-rate", required_argument, 0, 'r' },
-	    { "skip-sync", no_argument,       0, 'k' },
-	    { "tl-size",   required_argument, 0, 's' },
-	    { "disk-size", required_argument, 0, 'd' },
-	    { "do-panic",  no_argument,       0, 'p' },
+	    { "timeout",    required_argument, 0, 't' },
+	    { "sync-rate",  required_argument, 0, 'r' },
+	    { "skip-sync",  no_argument,       0, 'k' },
+	    { "tl-size",    required_argument, 0, 's' },
+	    { "disk-size",  required_argument, 0, 'd' },
+	    { "do-panic",   no_argument,       0, 'p' },
+	    { "connect-int",required_argument, 0, 'c' },
 	    { 0,           0,                 0, 0   }
 	  };
 	  
@@ -339,6 +344,9 @@ int main(int argc, char** argv)
 	      break;
 	    case 'p':
 	      cn.config.do_panic=1;
+	      break;
+	    case 'c':
+	      cn.config.try_connect_int = m_strtol(optarg,1);
 	      break;
 	    }
 	}

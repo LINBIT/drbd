@@ -128,8 +128,8 @@ struct Tl_epoch_entry {
 	u64    block_id;
 };
 
-#define ISSUE_BARRIER 0
-#define COLLECT_ZOMBIES 1
+#define ISSUE_BARRIER     0
+#define COLLECT_ZOMBIES   1
 
 /* #define ES_SIZE_STATS 50 */
 
@@ -301,13 +301,13 @@ struct request *my_all_requests = NULL;
 	{
 		"Unconfigured",
 		"Unconnected",
+		"Timeout",
+		"BrokenPipe",
 		"WFConnection",
 		"WFReportParams",
-		"SyncingAll",
-		"SyncingQuick",
 		"Connected",
-		"Timeout",
-		"BrokenPipe"
+		"SyncingAll",
+		"SyncingQuick"
 	};
 	static const char *state_names[2] =
 	{
@@ -943,6 +943,16 @@ void drbd_set_sock_prio(struct Drbd_Conf *mdev)
 #endif
 		break;
 	}
+}
+
+void drbd_c_timeout(unsigned long arg)
+{
+	struct task_struct *p = (struct task_struct *) arg;
+
+	printk(KERN_INFO DEVICE_NAME ": retrying to connect(pid=%d)\n",p->pid);
+
+	send_sig_info(DRBD_SIG, NULL, p);
+
 }
 
 
@@ -1684,6 +1694,8 @@ int drbd_connect(int minor)
 	int err;
 	struct socket *sock;
 
+ retry:
+
 	if (drbd_conf[minor].cstate==Unconfigured) return 0;
 
 	if (drbd_conf[minor].sock) {
@@ -1705,6 +1717,8 @@ int drbd_connect(int minor)
 
 	if (err) {
 		struct socket *sock2;
+		struct timer_list accept_timeout;
+
 		sock_release(sock);
 		/* printk(KERN_INFO DEVICE_NAME
 		   ": Unable to connec to server (%d)\n", err); */
@@ -1730,17 +1744,42 @@ int drbd_connect(int minor)
 			set_cstate(&drbd_conf[minor],Unconnected);
 			return 0;
 		}
+
 		set_cstate(&drbd_conf[minor],WFConnection);
 		sock2 = sock;
+		
+		if(drbd_conf[minor].conf.try_connect_int) {
+			init_timer(&accept_timeout);
+			accept_timeout.function = drbd_c_timeout;
+			accept_timeout.data = (unsigned long) current;
+			accept_timeout.expires = jiffies +
+				drbd_conf[minor].conf.try_connect_int * HZ;
+			add_timer(&accept_timeout);
+		}			
 
 		sock = drbd_accept(sock2);
 		sock_release(sock2);
+
+		if(drbd_conf[minor].conf.try_connect_int) {
+			unsigned long flags;
+			del_timer(&accept_timeout);
+			spin_lock_irqsave(&current->sigmask_lock,flags);
+			if (sigismember(&current->signal, DRBD_SIG)) {
+				sigdelset(&current->signal, DRBD_SIG);
+				recalc_sigpending(current);
+				spin_unlock_irqrestore(&current->sigmask_lock,
+						       flags);
+				if(sock) sock_release(sock);
+				goto retry;
+			}
+			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+		}
+
 		if (!sock) {
 			set_cstate(&drbd_conf[minor],Unconnected);
 			return 0;
 		}
 	}
-
 
 	sock->sk->reuse=1;    /* SO_REUSEADDR */
 
@@ -1750,8 +1789,8 @@ int drbd_connect(int minor)
 
 	drbd_thread_start(&drbd_conf[minor].asender);
 
-	err = drbd_send_param(minor);
 	set_cstate(&drbd_conf[minor],WFReportParams);
+	err = drbd_send_param(minor);
 
 	return 1;
 }
@@ -2356,8 +2395,11 @@ restart:
 		}
 	}
  done:
-	set_cstate(&drbd_conf[minor],Connected);
-	drbd_send_cstate(&drbd_conf[minor]);
+	if(drbd_conf[minor].cstate == SyncingAll ||
+           drbd_conf[minor].cstate == SyncingQuick) {
+		set_cstate(&drbd_conf[minor],Connected);
+		drbd_send_cstate(&drbd_conf[minor]);
+	}
 
  out:
 	free_page((unsigned long)page);

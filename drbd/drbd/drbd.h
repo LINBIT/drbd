@@ -55,18 +55,19 @@
 					 */
 
 struct drbd_config {
-  IN int      lower_device;
-  IN char     other_addr[MAX_SOCK_ADDR];
-  IN int      other_addr_len;
-  IN char     my_addr[MAX_SOCK_ADDR];
-  IN int      my_addr_len;
-  IN int      timeout;
-  IN int      sync_rate; /* KB/sec */
-  IN int      skip_sync; 
-  IN int      tl_size; /* size of the transfer log */
-  IN int      wire_protocol;  
-  IN unsigned int disk_size;  /* Size given by user */
-  IN int      do_panic;
+	IN int      lower_device;
+	IN char     other_addr[MAX_SOCK_ADDR];
+	IN int      other_addr_len;
+	IN char     my_addr[MAX_SOCK_ADDR];
+	IN int      my_addr_len;
+	IN int      timeout;
+	IN int      sync_rate; /* KB/sec */
+	IN int      skip_sync; 
+	IN int      tl_size; /* size of the transfer log */
+	IN int      wire_protocol;  
+	IN unsigned int disk_size;  /* Size given by user */
+	IN int      do_panic;
+	IN int      try_connect_int;  /* seconds */
 };
 
 enum ret_codes { 
@@ -155,15 +156,15 @@ typedef enum {
 typedef enum { Primary, Secondary } Drbd_State;
 
 typedef enum { 
-  Unconfigured   = 1,
-  Unconnected    = 2, 
-  Timeout        = 3,
-  BrokenPipe     = 4,
-  WFConnection   = 5,
-  WFReportParams = 1000,
-  Connected      = 1001,
-  SyncingAll     = 1002,
-  SyncingQuick   = 1003
+  Unconfigured   = 0,
+  Unconnected    = 1, 
+  Timeout        = 2,
+  BrokenPipe     = 3,
+  WFConnection   = 4, 
+  WFReportParams = 5, /* The order of these constants is important.   */
+  Connected      = 6, /* The lower ones (<WFReportParams) indicate */
+  SyncingAll     = 7, /* that there is no socket! */
+  SyncingQuick   = 8  /* >=WFReportParams ==> There is a socket */
 } Drbd_CState; 
 
 #define DRBD_MAGIC 0x83740267
