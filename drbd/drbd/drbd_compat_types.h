@@ -42,6 +42,80 @@ typedef unsigned long sector_t;
 #include <linux/completion.h>
 #endif
 
+#if defined(CONFIG_X86)
+/**
+ * find_first_bit - find the first set bit in a memory region
+ * @addr: The address to start the search at
+ * @size: The maximum size to search
+ *
+ * Returns the bit-number of the first set bit, not the number of the byte
+ * containing a bit.
+ */
+static __inline__ int find_first_bit(const unsigned long *addr, unsigned size)
+{
+        int d0, d1;
+        int res;
+
+        /* This looks at memory. Mark it volatile to tell gcc not to move it around */
+        __asm__ __volatile__(
+                "xorl %%eax,%%eax\n\t"
+                "repe; scasl\n\t"
+                "jz 1f\n\t"
+                "leal -4(%%edi),%%edi\n\t"
+                "bsfl (%%edi),%%eax\n"
+                "1:\tsubl %%ebx,%%edi\n\t"
+                "shll $3,%%edi\n\t"
+                "addl %%edi,%%eax"
+                :"=a" (res), "=&c" (d0), "=&D" (d1)
+                :"1" ((size + 31) >> 5), "2" (addr), "b" (addr));
+        return res;
+}
+
+/**
+ * find_next_bit - find the first set bit in a memory region
+ * @addr: The address to base the search on
+ * @offset: The bitnumber to start searching at
+ * @size: The maximum size to search
+ */
+
+static __inline__ int find_next_bit(const unsigned long *addr, int size, int offset)
+{
+        const unsigned long *p = addr + (offset >> 5);
+        int set = 0, bit = offset & 31, res;
+
+        if (bit) {
+                /*
+                 * Look for nonzero in the first 32 bits:
+                 */
+                __asm__("bsfl %1,%0\n\t"
+                        "jne 1f\n\t"
+                        "movl $32, %0\n"
+                        "1:"
+                        : "=r" (set)
+                        : "r" (*p >> bit));
+                if (set < (32 - bit))
+                        return set + offset;
+                set = 32 - bit;
+                p++;
+        }
+        /*
+         * No set bit yet, search remaining full words for a bit
+         */
+        res = find_first_bit (p, size - 32 * (p - addr));
+        return (offset + set + res);
+}
+
+#else
+#warn You probabely need to copy find_next_bit() from a 2.6.x kernel.
+#endif
+
+#ifndef ALIGN
+#define ALIGN(x,s) (((x) + (s - 1)) & ~(s - 1))
+#endif
+
+#ifndef BUG_ON
+#define BUG_ON(condition) do { if (unlikely((condition)!=0)) BUG(); } while(0)
+#endif
 
 #else // LINUX 2.6
 //#warning "FIXME"

@@ -145,7 +145,6 @@ void drbd_bm_unlock(drbd_dev *mdev)
 
 
 /* long word offset of _bitmap_ sector */
-//#define S2W(s)	((s)<<(12-LN2_BPL))
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 
 /*

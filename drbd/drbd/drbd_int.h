@@ -32,6 +32,7 @@
 #include <linux/list.h>
 #include <linux/sched.h>
 #include <linux/bitops.h>
+#include <linux/slab.h> 
 #include "lru_cache.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)

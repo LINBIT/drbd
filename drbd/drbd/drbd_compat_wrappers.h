@@ -244,6 +244,8 @@ static inline struct page* drbd_bio_get_page(struct buffer_head *bh)
 
 static inline void drbd_generic_make_request(int rw, struct buffer_head *bh)
 {
+	drbd_dev *mdev = drbd_conf -1 ;
+	
 	if (!bh->b_rdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
 			printk(KERN_ERR "drbd_generic_make_request: bh->b_rdev == NULL\n");
