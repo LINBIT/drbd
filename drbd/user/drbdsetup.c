@@ -42,6 +42,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <mntent.h>
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -163,23 +164,23 @@ int port_part(const char* s)
 int already_in_use_tab(const char* dev_name,const char* tab_name)
 {
   FILE* tab;
-  char line[200];
-  int dev_name_len;  
+  struct mntent* entry;
 
-  if( ! (tab=fopen(tab_name,"r")) )
+
+  if( ! (tab=setmntent(tab_name,"r")) )
     return 0;
 
-  dev_name_len=strlen(dev_name);
-
-  while( fgets(line,200,tab) )
+  while( (entry=getmntent(tab)) ) 
     {
-      if(!strncmp(line,dev_name,dev_name_len))
+      if( !strcmp(entry->mnt_fsname, dev_name) )
 	{
-	  fclose(tab);
+	  endmntent(tab);
 	  return 1;
 	}
     }
-  fclose(tab);
+
+  endmntent(tab);
+
   return 0;
 }
 
