@@ -126,6 +126,53 @@ static __inline__ int find_next_bit(const unsigned long *addr, int size, int off
         return (offset + set + res);
 }
 
+#elif defined(__x86_64__)
+
+static __inline__ int find_first_bit(const unsigned long * addr, unsigned size)
+{
+	int d0, d1;
+	int res;
+
+	/* This looks at memory. Mark it volatile to tell gcc not to move it around */
+	__asm__ __volatile__(
+		"xorl %%eax,%%eax\n\t"
+		"repe; scasl\n\t"
+		"jz 1f\n\t"
+		"leaq -4(%%rdi),%%rdi\n\t"
+		"bsfl (%%rdi),%%eax\n"
+		"1:\tsubq %%rbx,%%rdi\n\t"
+		"shll $3,%%edi\n\t"
+		"addl %%edi,%%eax"
+		:"=a" (res), "=&c" (d0), "=&D" (d1)
+		:"1" ((size + 31) >> 5), "2" (addr), "b" (addr) : "memory");
+	return res;
+}
+
+static __inline__ int find_next_bit(const unsigned long * addr, int size, int offset)
+{
+	const unsigned long * p = addr + (offset >> 6);
+	unsigned long set = 0, bit = offset & 63, res;
+	
+	if (bit) {
+		/*
+		 * Look for nonzero in the first 64 bits:
+		 */
+		__asm__("bsfq %1,%0\n\t"
+			"cmoveq %2,%0\n\t"
+			: "=r" (set)
+			: "r" (*p >> bit), "r" (64L));
+		if (set < (64 - bit))
+			return set + offset;
+		set = 64 - bit;
+		p++;
+	}
+	/*
+	 * No set bit yet, search remaining full words for a bit
+	 */
+	res = find_first_bit (p, size - 64 * (p - addr));
+	return (offset + set + res);
+}
+
 #elif defined(__alpha__)
 
 #include <asm/compiler.h>

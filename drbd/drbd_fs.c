@@ -97,7 +97,7 @@ char* ppsize(char* buf, size_t size)
 		size = size >> 10;
 		base++;
 	}
-	sprintf(buf,"%d %cB",size,units[base]);
+	sprintf(buf,"%ld %cB",(long)size,units[base]);
 
 	return buf;
 }
