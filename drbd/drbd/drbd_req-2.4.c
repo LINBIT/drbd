@@ -138,7 +138,9 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	struct buffer_head *nbh;
 	drbd_request_t *req;
 	int cbs = 1 << mdev->blk_size_b;
-	int size_kb;
+	int size_kb, bnr, send_ok;
+	unsigned long flags;
+
 
 	if (bh->b_size != cbs) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */
@@ -172,12 +174,21 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt+=size_kb; 
-		goto remap_only;
+
+		bh->b_rdev = mdev->lo_device;
+		return 1; // Not arranged for transfer ( but remapped :)
 	}
 
 	mdev->writ_cnt+=size_kb;
 
-	if( mdev->cstate < Connected ) goto remap_only;
+	if( mdev->cstate < Connected || 
+	    bh->b_rsector < mdev->synced_to ) {
+		bm_set_bit(mdev->mbds_id, bh->b_rsector>>(mdev->blk_size_b-9),
+			   mdev->blk_size_b,SS_OUT_OF_SYNC);
+
+		bh->b_rdev = mdev->lo_device;
+		return 1; // Not arranged for transfer ( but remapped :)
+	}
 
 	// Now its clear that we have to do a mirrored write:
 
@@ -207,51 +218,33 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	req->bh=bh;
 
-	if ( bh->b_rsector >= mdev->synced_to) {
+	bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
 
-		int bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
-		int send_ok;
-		unsigned long flags;
+	req->rq_status = RQ_DRBD_NOTHING;
 
-		req->rq_status = RQ_DRBD_NOTHING;
+	spin_lock_irqsave(&mdev->bb_lock,flags);
+	mdev->send_block=bnr;
+	if( ds_check_block(mdev,bnr) ) {
+		bb_wait(mdev,bnr,&flags);
+	}
+	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-		spin_lock_irqsave(&mdev->bb_lock,flags);
-		mdev->send_block=bnr;
-		if( ds_check_block(mdev,bnr) ) {
-			bb_wait(mdev,bnr,&flags);
-		}
-		spin_unlock_irqrestore(&mdev->bb_lock,flags);
+	send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
+	mdev->send_block=-1;
 
-		send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
-		mdev->send_block=-1;
-
-		if( mdev->conf.wire_protocol==DRBD_PROT_A ||
-		    (!send_ok) ) {
+	if( mdev->conf.wire_protocol==DRBD_PROT_A ||
+	    (!send_ok) ) {
 				/* If sending failed, we can not expect
 				   an ack packet. */
-			drbd_end_req(req, RQ_DRBD_SENT, 1);
-		}
+		drbd_end_req(req, RQ_DRBD_SENT, 1);
+	}
 		
-		if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
-			queue_task(&mdev->write_hint_tq, &tq_disk);
-		}
-
-	} else {
-		bm_set_bit(mdev->mbds_id,
-			   bh->b_rsector >> 
-			   (mdev->blk_size_b-9),
-			   mdev->blk_size_b, 
-			   SS_OUT_OF_SYNC);
-		req->rq_status = RQ_DRBD_SENT | 0x0001;
+	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
+		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
 		
 	submit_bh(rw,nbh);
 	
 	return 0; /* Ok, bh arranged for transfer */
-
- remap_only:
-	mdev->read_cnt+=size_kb; 
-	bh->b_rdev = mdev->lo_device;
-	return 1; // Not arranged for transfer ( but remapped :)	
 }
 
