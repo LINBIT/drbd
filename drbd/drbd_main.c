@@ -1825,7 +1825,7 @@ NOT_IN_26(
 )
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
+	devfs_handle = devfs_mk_dir (NULL, drbd_devfs_name, NULL);
 	devfs_register_series(devfs_handle, "%u", minor_count,
 			      DEVFS_FL_DEFAULT, MAJOR_NR, 0,
 			      S_IFBLK | S_IRUSR | S_IWUSR,
