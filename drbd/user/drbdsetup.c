@@ -504,7 +504,7 @@ void print_config_ioctl_err(int err_no)
   const char *etext[] = {
     [NoError]="No further Information available.",
     [LAAlreadyInUse]="Local address(port) already in use.",
-    [OAAlreadyInUse]="Remove address(port) already in use.",
+    [OAAlreadyInUse]="Remote address(port) already in use.",
     [LDFDInvalid]="Filedescriptor for lower device is invalid.",
     [MDFDInvalid]="Filedescriptor for meta device is invalid.",
     [LDAlreadyInUse]="Lower device already in use.",
@@ -517,7 +517,7 @@ void print_config_ioctl_err(int err_no)
     [LDNoConfig]="You have to use the disk command first.",
     [LDMounted]="Lower device is already mounted.",
     [MDMounted]="Meta device is already mounted.",
-    [LDMDInvalid]="Lower devie / meta device / index combination invalid."
+    [LDMDInvalid]="Lower device / meta device / index combination invalid."
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;
@@ -1144,7 +1144,7 @@ int main(int argc, char** argv)
       basename = argv[0];
 
   if (argc > 1 && !strcmp(argv[1],"help")) help = 1;
-  if (argc < 3) print_usage(argc==1 ? 0 : " Insuficcient arguments");
+  if (argc < 3) print_usage(argc==1 ? 0 : " Insufficient arguments");
 
   chdir("/");
 
