@@ -1147,7 +1147,7 @@ void drbd_free_resources(int minor)
   Bit 0 ==> Primary and secondary nodes are in sync.
   Bit 1 ==> secondary node's block must be updated. (')
 
-  A wicked was found and pointed out by 
+  A wicked bug was found and pointed out by 
                      Guzovsky, Eduard <EGuzovsky@crossbeamsys.com>
 */
 
@@ -1189,7 +1189,7 @@ struct BitMap* bm_init(kdev_t dev)
 	unsigned long size;
 
 	size = SR_RU(blk_size[MAJOR(dev)][MINOR(dev)],
-		     (BM_BLOCK_SIZE_B - (10 - LN2_BPL))) >> (LN2_BPL-3);
+		     (BM_BLOCK_SIZE_B - (10 - LN2_BPL))) << (LN2_BPL-3);
 	/* 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
 	// Calculate the number of long words needed, round it up, and
 	// finally convert it to bytes.
