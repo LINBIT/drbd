@@ -5,6 +5,8 @@ always goes into WFConnection state instead of Unconnected.
 
 Added a command to drbdsetup to force a run of the basic syncer.
 
+Things to be fixed: Heartbeat scripts, protocol C on SMP machines.
+
 0.5.1
 -----
 Fixed the lockup upon loss of connection on SMP machines.

@@ -54,7 +54,7 @@ unsigned long resolv(const char* name)
       he = gethostbyname(name);
       if (!he)
 	{
-	  perror("can not resolv hostname");
+	  perror("can not resolv the hostname");
 	  exit(20);
 	}
       retval = ((struct in_addr *)(he->h_addr_list[0]))->s_addr;
@@ -125,20 +125,20 @@ int main(int argc, char** argv)
 	      "          drbd falls back into unconnected operation.\n"
 	      "          Default: 30 = 3 sec.\n\n"
 	      "       -r --sync-rate val\n"
-	      "          The synchronisations sends up to val KB per sec.\n"
+	      "          The synchronisation sends up to val KB per sec.\n"
 	      "          Default: 250 = 250 KB/sec\n\n"
 	      "       -k --skip-sync\n"
 	      "          Instruct drbd not to do synchronisation.\n\n"
 	      "       -s --tl-size val\n"
 	      "          Sets the size of the transfer log(=TL). The TL is\n"
-	      "          is used for dependency analysis. For long latency\n"
+	      "          used for dependency analysis. For long latency\n"
 	      "          high bandwith links it might be necessary to set\n"
 	      "          the size bigger than 256.\n"
-	      "          You will see error messages in the system log\n"
+	      "          You will find error messages in the system log\n"
 	      "          if the TL is too small.\n"
 	      "          Default: 256 entries\n\n"
 	      "      -d --disk-size\n"
-	      "          Sets drbd's size. When given 0 drbd negotiates the\n"
+	      "          Sets drbd's size. When set to 0 drbd negotiates the\n"
 	      "          size with the remote node.\n"
 	      "          Default: 0 KB.\n\n"
 	      "      -p --do-panic\n"
@@ -186,7 +186,7 @@ int main(int argc, char** argv)
     
     if (retval != MOD_VERSION)
       {
-	fprintf(stderr,"Versions of drbdsetup and module does not match!\n");
+	fprintf(stderr,"Versions of drbdsetup and module are not matching!\n");
 	exit(20);
       }    
   }

@@ -48,29 +48,136 @@ If the failed node comes up again, it is a new secondary node and has
 to synchronise its content to the primary. This, of course, will happen
 whithout interruption of service in the background. 
 
+How is drbd related to current HA clusters ?
+--------------------------------------------
+  
+To my knowledge most current HA clusters (HP, Compaq, ...) are using
+shared storage devices, thus the storage devices are connected to more
+than one node (This can be done with shared SCSI busses or Fibre
+Channel).
+   
+Drbd gives you about the same semantics as a shared device, but it
+does not need any uncommon hardware. It runs on top of IP networks,
+which are to my impression less expensive than special storage
+networks.
+   
+Currently drbd grants read-write access only to one node at a time,
+which is sufficient for the usual fail-over HA cluster. Although it is
+currently not on my task list, it would not be a great effort to allow
+both nodes read-write access. This would be useful with [2]GFS for
+example.
 
 
 Howto !
 -------
-
 Let's assume that your two machines are named 'node1' and 'node2', and
-that you want to use /dev/hdc6 as the lower level block device on both,
-then these commands are needed on node1 to setup drbd:
+that you want to use /dev/hdc6 as the lower level block device on
+both. The following commands are needed on node1 to setup drbd:
 
 insmod drbd.o
-drbdsetup /dev/nb0 /dev/hdc6 node1 node2
+drbdsetup /dev/nb0 /dev/hdc6 B node1 node2
 
 On node2 you need:
 
 insmod drbd.o
-drbdsetup /dev/nb0 /dev/hdc6 node2 node1
+drbdsetup /dev/nb0 /dev/hdc6 B node2 node1
 
-And finally your cluster membership service needs to tell one of 
-the two to become primary by running:
+The B in the command line selects the protocol.
+   
+protocol description
+A A write operation is complete as soon as the data is written to disk
+and sent to the network.
+B A write operation is complete as soon as a reception acknowledgement
+arrives.
+C A write operation is complete as soon as a write acknowledgement
+arrives.
+   
+If you want to learn more about the protocols, have a look at the
+paper in the [1]download section.
+   
+There are a number of options you may append to the above commands.
+   
+option name short arg description default
+--timeout -t y If communication blocks for val * 1/10 seconds, drbd
+falls back into unconnected operation. 30
+--sync-rate -r y The synchronisation sends up to val KB per sec. 250
+--skip-sync -k n Instruct drbd not to do synchronisation.
+--tl-size -s y Sets the size of the transfer log(=TL). The TL is used
+for dependency analysis. For long latency high bandwith links it might
+be necessary to set the size bigger than 256. You will find error
+messages in the system log if the TL is too small. 256
+--disk-size -d y Sets drbd's size. When set to 0 drbd negotiates the
+size with the remote node. 0
+--do-panic -p n drbd will trigger a kernel panic if there is an IO
+error on the lower_device. May be usefull when drbd is used in a HA
+cluster.
+   
+And finally your cluster membership service needs to tell one of the
+two to become primary by running:
 
-drbdsetup /dev/nb0 p 
+drbdsetup /dev/nb0 PRI
 
+You have to take care that you never assign the primary role to both
+nodes. If you do that, drbd will disconnect and return to Unconfigured
+state immediately. If you want to migrate a service while both nodes
+are up, you have to bring both nodes into secondary state before
+assigning the primary role to another node. You can bring a node into
+secondary state by running:
 
+drbdsetup /dev/nb0 SEC
+
+When a node rejoins the cluster, its device must be brought to the new
+state. By default drbd assumes that the node still has its old disk
+and that it is sufficient to update only the blocks that were modified
+in the absence of the other node. It might be of intrest to your
+cluster manager when this synchronisation process is finished.
+
+drbdsetup /dev/nb0 WAIT
+
+This command returns as soon as any synchronisation process
+(SyncingAll or SyncingQuick) is finished. If there is no
+synchronisation process running, it returns immediately. You can use
+this on the primary and on the secondary node.
+   
+In case you had to replace the disk you need to trigger complete
+synchronisation by running the following command on the primary node.
+
+drbdsetup /dev/nb0 REPL
+
+You can use cat /proc/drbd to get information about drbd's state.
+Example:
+
+version       : 52
+
+0: cs:Unconfigured st:Secondary ns:0 nr:0 dw:0 dr:0 of:0
+1: cs:Unconfigured st:Secondary ns:0 nr:0 dw:0 dr:0 of:0
+
+Each line shows one device. E.g. The Line starting with 0: is about
+/dev/nb0.
+   
+Field Description Values
+cs connection state
+Unconfigured Device waits for configuration
+Unconnected Transitory state, while bind() blocks.
+WFConnection Device waits for configuration of other side
+WFReportParams Transitory state, while waiting for fist packet on a
+new TCP connection
+SyncingAll All blocks of the primary node are being copied to the
+secondary node
+SyncingQuick The secondary is updated, by copying the blocks which
+were updated since the now secondary node has left the cluster
+Connected Everything is fine.
+Timeout Transitory state.
+st state (device's role) Primary, Secondary
+ns network send number of blocks
+nr network receive number of blocks
+dw disk write number of blocks
+dr disk read number of blocks
+of on the fly number of blocks
+
+Your application (most probably a file system) may access the device
+/dev/nb0 in read-write mode if drbd is in primary state. Otherwise
+only read-only access is permitted.
 
 Implementation details
 ----------------------
