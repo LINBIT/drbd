@@ -277,7 +277,6 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 }
 
 #else
-#warning "FIXME these are still untested!"
 
 #include <linux/buffer_head.h> // for fsync_bdev
 

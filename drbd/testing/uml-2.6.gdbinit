@@ -20,11 +20,42 @@
 #
 # -Philipp
 
-define linux-mod-helper
-  p ((struct module *)(((void*)(modules->next))-4))->module_core
+define lx-container-of
+  set $rv = (($arg1 *)((char *)($arg0)-(unsigned long)(&((($arg1 *)0)->$arg2))))
 end
 
-# functions below this line are not yet ported.
+define lx-container-of-struct
+  set $rv = ((struct $arg1 *)((char *)($arg0)-(unsigned long)(&(((struct $arg1 *)0)->$arg2))))
+end
+
+define linux-mod-helper
+  lx-container-of-struct modules->next module list
+  p $rv->module_core
+end
+
+define linux-ps
+  set $ps_ph_i = 1<<pidhash_shift
+  printf "---TASK---  -PID-  --------COMM----------\n"
+  while $ps_ph_i > 0
+    set $ps_ph_i = $ps_ph_i - 1
+    set $ps_plist = &pid_hash[0][$ps_ph_i]
+    set $ps_pitem = $ps_plist->next
+    while $ps_pitem != $ps_plist
+      lx-container-of-struct $ps_pitem pid hash_chain
+      set $ps_pid = $rv
+      set $ps_h = $ps_pid->task_list.next
+      lx-container-of-struct $ps_h task_struct pids[0].pid_chain
+      set $ps_t = $rv
+      printf "%8p  %-5d  %-20s\n", $ps_t, $ps_pid->nr, $ps_t->comm
+      set $ps_pitem = $ps_pitem->next
+    end
+  end
+end
+
+document linux-ps
+  linux-ps lists all tasks on the system. 
+  Also have a look at linux-bt.
+end
 
 define linux-bt
   set $bt_switch_buf = ((struct task_struct*)$arg0)->thread.mode.skas.switch_buf
@@ -33,7 +64,7 @@ define linux-bt
   printf "-#-  ---EBP----  ---EIP----    ---------FUNCTION---------\n"
   while $bt_i < 32
     set $bt_eip = ((unsigned long*)$bt_ebp)[1]
-    if $bt_eip == __restore
+    if $bt_eip < 0x00100000
       set $bt_i = 32
     else 
       printf "#%-2d  0x%8x  0x%8x in ", $bt_i, $bt_ebp, $bt_eip
@@ -49,24 +80,6 @@ document linux-bt
   and prints the stack back trace of that task.
   You might use linux-ps to find the addresses of all available
   tasks on the system
-end
-
-define linux-ps
-  set $ps_i=0
-  printf "---TASK---  -PID-  --------COMM----------\n"
-  while $ps_i < 1024
-    set $ps_p = pidhash[$ps_i]
-      while $ps_p
-        printf "0x%8x  %-5d  %-20s\n", $ps_p, $ps_p->pid, $ps_p->comm
-        set $ps_p = $ps_p->pidhash_next
-      end
-    set $ps_i = $ps_i + 1
-  end
-end
-
-document linux-ps
-  linux-ps lists all tasks on the system. 
-  Also have a look at linux-bt.
 end
 
 define drbd-al-show
@@ -93,7 +106,8 @@ define lru-show
   set $ls_le=((struct lru_cache *)$arg0)->lru->next
   set $ls_i=0
   while $ls_le != &((struct lru_cache *)$arg0)->lru && $ls_i < $ls_nr
-    set $ls_e = (struct lc_element *)(((char *)$ls_le)-8)
+    lx-container-of-struct $ls_le lc_element list
+    set $ls_e = $rv
     set $ls_en = ((void*)$ls_e-$ls_elements)/$ls_esize
     printf "%3d  %8d  %8d\n", $ls_i, $ls_en, $ls_e->lc_number
     set $ls_i = $ls_i + 1

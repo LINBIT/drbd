@@ -51,6 +51,7 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/devfs_fs_kernel.h>
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 extern int register_ioctl32_conversion(unsigned int cmd,
@@ -70,7 +71,6 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 #include "drbd_int.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
-#include <linux/devfs_fs_kernel.h>
 static devfs_handle_t devfs_handle;
 #endif
 
@@ -288,9 +288,8 @@ void tl_clear(drbd_dev *mdev)
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
-// Check when daemonize was introduced.
-/* NOTE: seems like all 2.4.X have it, so it should be 2,4,0 above.
- * in 2.4.6 is is prototyped as
+// daemonize was no global symbol before 2.4.14
+/* in 2.4.6 is is prototyped as
  * void daemonize(const char *name, ...)
  * though, so maybe we want to do this for 2.4.x already, too.
  */
@@ -316,7 +315,15 @@ void daemonize(void)
 
 void drbd_daemonize(void) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
+	sigset_t enable;
+
 	daemonize("drbd_thread");
+	// Linux 2.6.x's daemonize blocks all signals. Unblock "our" signals.
+
+	sigemptyset(&enable);
+	sigaddset(&enable,DRBD_SIG);
+	sigaddset(&enable,SIGTERM);
+	sigprocmask(SIG_UNBLOCK, &enable, NULL);	
 #else
 	daemonize();
 #endif
@@ -1257,9 +1264,7 @@ int __init drbd_init(void)
 		goto Enomem;
 #else
 
-#ifdef CONFIG_DEVFS_FS
 	devfs_mk_dir(DEVFS_NAME);
-#endif
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
@@ -1343,7 +1348,7 @@ NOT_IN_26(
 	blk_size[MAJOR_NR] = drbd_sizes;
 )
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
 	devfs_register_series(devfs_handle, "%u", minor_count,
 			      DEVFS_FL_DEFAULT, MAJOR_NR, 0,
@@ -1448,12 +1453,10 @@ void cleanup_module(void)
 
 	drbd_cleanup();
 
-#ifdef CONFIG_DEVFS_FS
-# if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	devfs_unregister(devfs_handle);
-# else
+#else
 	devfs_remove(DEVFS_NAME);
-# endif
 #endif
 }
 
@@ -1466,7 +1469,6 @@ NOT_IN_26(
 		mdev->lo_device = 0;
 		mdev->md_device = 0;
 )
-#warning "FIXME unset L26 members"
 ONLY_IN_26(
 		bd_release(mdev->backing_bdev);
 		bd_release(mdev->md_bdev);
