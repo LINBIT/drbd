@@ -46,9 +46,9 @@ clean:
 
 
 install:
-	install -d /lib/modules/$(KERNVER)/$(KSUBD)
-	install -m 644 drbd.o /lib/modules/$(KERNVER)/$(KSUBD)
-	/sbin/depmod -a
+	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
+	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
+	/sbin/depmod -a || true
 
 ### dependencies:
 

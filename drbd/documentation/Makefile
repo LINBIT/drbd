@@ -50,11 +50,20 @@ clean:
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
-	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/man8; fi
-	if [ -e drbd.conf.5 ]; then install drbd.conf.5 $(PREFIX)usr/share/man/man5; fi
-	if [ -e drbd.8 ]; then install drbd.8 $(PREFIX)usr/share/man/man8; fi
-	if [ -e datadisk.8 ]; then install datadisk.8 $(PREFIX)usr/share/man/man8; fi
+	if [ -e drbdsetup.8 ]; then \
+		install -d $(PREFIX)usr/share/man/man8; \
+		install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8; \
+	fi
+	if [ -e drbd.conf.5 ]; then \
+		install -d $(PREFIX)usr/share/man/man5; \
+		install -m 644 drbd.conf.5 $(PREFIX)usr/share/man/man5; \
+	fi
+	if [ -e drbd.8 ]; then \
+		install -d $(PREFIX)usr/share/man/man8; \
+		install -m 644 drbd.8 $(PREFIX)usr/share/man/man8; \
+	fi
+	if [ -e datadisk.8 ]; then \
+		install -d $(PREFIX)usr/share/man/man8; \
+		install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8; \
+	fi
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
-
-
-
