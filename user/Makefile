@@ -64,5 +64,5 @@ uninstall:
 
 ###dependencies
 drbdadm_adjust.o: drbdadm.h drbdadm_adjust.c
-drbdadm_main.o: drbdadm.h drbdadm_main.c
+drbdadm_main.o: drbdadm.h drbdadm_main.c ../drbd/linux/drbd_config.h
 drbdsetup.o: ../drbd/linux/drbd.h ../drbd/linux/drbd_config.h
