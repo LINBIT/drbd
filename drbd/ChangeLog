@@ -1,3 +1,22 @@
+0.6.1  (api:58/proto:58)
+-----
+Since the last one should have been 0.6, this is 0.6.1:
+  *) Split the code of the module into 7 files
+  *) Added reasonable support for Linux-2.4.x.
+     Yes you can put in on top of RAID/LVM and you can even stack
+     multiple drbd devices.
+  *) Completely removed the SYNC-LOG and implemented a better scheme
+  *) Removed the mbdh.h interface since it was useless
+  *) Implemented correct signal sending (not longer done from interrupt time)
+  *) Implemented correct removing of requests from the transfer log
+  *) Fixed a "can not guess name" bug in drbdsetup
+  *) implemented /etc/init.d/drbd XXX status
+  *) From now on the drbd wire protocol and the ioctl interface carry
+     interface version numbers, which are independend of the release
+     number. E.g. You can combine a drbd device of release 0.6.1 and
+     0.5.8, since both have protocol version 58. You can even use
+     drbdsetup of 0.5.8 to configure the module of the 0.6.1 release.
+	
 0.5.8
 -----
 A lot of new features: (This release should be named 0.6)
