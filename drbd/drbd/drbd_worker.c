@@ -132,7 +132,7 @@ STATIC void _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
 		if( (odev = ds_find_osg(mdev)) ) {
 			spin_lock_irqsave(&odev->req_lock,flags);
 			if(odev->cstate > Connected) {
-				list_add(&dh->list,&odev->cstate_hook);
+				list_add_tail(&dh->list,&odev->cstate_hook);
 				added=1;
 			}
 			spin_unlock_irqrestore(&odev->req_lock,flags);
@@ -168,7 +168,7 @@ STATIC int drbd_wait_for_other_sync_groups(drbd_dev *mdev)
 
 	spin_lock_irq(&odev->req_lock);
 	if(odev->cstate > Connected) {
-		list_add(&dh->list,&odev->cstate_hook);
+		list_add_tail(&dh->list,&odev->cstate_hook);
 		added=1;
 	}
 	spin_unlock_irq(&odev->req_lock);
