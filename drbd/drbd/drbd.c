@@ -1156,13 +1156,15 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 #define M_PORT(A) (((struct sockaddr_in *)&A##.my_addr)->sin_port)
 #define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
-		for(i=0;i<MINOR_COUNT;i++) {
-			if( M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
+		for(i=0;i<MINOR_COUNT;i++) {		  
+			if( i != minor &&
+			    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
 			    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
 				retcode=LAAlreadyInUse;
 				goto fail_ioctl;
 			}
-			if( O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
+			if( i != minor &&
+			    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
 			    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
 				retcode=OAAlreadyInUse;
 				goto fail_ioctl;
@@ -1182,7 +1184,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		inode = filp->f_dentry->d_inode;
 
 		for(i=0;i<MINOR_COUNT;i++) {
-			if(inode->i_rdev == drbd_conf[i].lo_device) {
+			if( i != minor && 
+			    inode->i_rdev == drbd_conf[i].lo_device) {
 				retcode=LDAlreadyInUse;
 				goto fail_ioctl;
 			}
