@@ -141,65 +141,68 @@ int already_in_use(const char* dev_name)
     already_in_use_tab(dev_name,"/proc/mounts");
 }
 
+void print_usage(const char* prgname)
+{
+  fprintf(stderr,
+	  " %s device {Pri|Sec|Wait [-t|--time val]|Repl|Down}\n"
+	  " %s device lower_device protocol local_addr[:port] "
+	  "remote_addr[:port] \n"
+	  "       [-t|--timout val] [-r|--sync-rate val] "
+	  "[-k|--skip-sync] [-s|-tl-size val]\n"
+	  "       [-d|--disk-size val] [-p|--do-panic] "
+	  "[-c|--connect-int] [-i|--ping-int]\n\n"
+	  "       protocol\n"
+	  "          protocol may be A, B or C.\n\n" 
+	  "       port\n"
+	  "          TCP port number\n"
+	  "          Default: 7788\n\n"
+	  "       -t --timeout  val\n"
+	  "          If communication blocks for val * 1/10 seconds,\n"
+	  "          drbd falls back into unconnected operation.\n"
+	  "          Default: 60 = 6 sec.\n\n"
+	  "       -r --sync-rate val\n"
+	  "          The synchronisation sends up to val KB per sec.\n"
+	  "          Default: 250 = 250 KB/sec\n\n"
+	  "       -k --skip-sync\n"
+	  "          Instruct drbd not to do synchronisation.\n\n"
+	  "       -s --tl-size val\n"
+	  "          Sets the size of the transfer log(=TL). The TL is\n"
+	  "          used for dependency analysis. For long latency\n"
+	  "          high bandwith links it might be necessary to set\n"
+	  "          the size bigger than 256.\n"
+	  "          You will find error messages in the system log\n"
+	  "          if the TL is too small.\n"
+	  "          Default: 256 entries\n\n"
+	  "      -d --disk-size\n"
+	  "          Sets drbd's size. When set to 0 drbd negotiates the\n"
+	  "          size with the remote node.\n"
+	  "          Default: 0 KB.\n\n"
+	  "      -p --do-panic\n"
+	  "          drbd will trigger a kernel panic if there is an\n"
+	  "          IO error on the lower_device. May be usefull when\n"
+	  "          drbd is used in a HA cluster.\n\n"
+	  "      -c --connect-int\n"
+	  "          If drbd can not connect it will retry every val seconds.\n"
+	  "          Default: 10 Seconds\n\n"
+	  "      -i --ping-int\n"
+	  "          If the connection is idle for more than val seconds\n"
+	  "          DRBD will send a NOP packet. This helps DRBD to\n"
+	  "          detect broken connections.\n"
+	  "          Default: 10 Seconds\n\n"
+	  "     multipliers\n"
+	  "          You may append K, M or G to the values of -r and -d\n"
+	  "          where K=2^10, M=2^20 and G=2^30.\n\n"
+	  "          Version: "VERSION"\n"
+	  ,prgname,prgname);
+  exit(20);
+}
+
+
 int main(int argc, char** argv)
 {
   int drbd_fd;
 
-  if(argc != 3 && argc < 6)
-    {
-      fprintf(stderr,
-	      " %s device {Pri|Sec|Wait|Repl|Down}\n"
-	      " %s device lower_device protocol local_addr[:port] "
-	      "remote_addr[:port] \n"
-	      "       [-t|--timout val] [-r|--sync-rate val] "
-	      "[-k|--skip-sync] [-s|-tl-size val]\n"
-	      "       [-d|--disk-size val] [-p|--do-panic] "
-	      "[-c|--connect-int] [-i|--ping-int]\n\n"
-	      "       protocol\n"
-	      "          protocol may be A, B or C.\n\n" 
-	      "       port\n"
-	      "          TCP port number\n"
-	      "          Default: 7788\n\n"
-	      "       -t --timeout  val\n"
-	      "          If communication blocks for val * 1/10 seconds,\n"
-	      "          drbd falls back into unconnected operation.\n"
-	      "          Default: 60 = 6 sec.\n\n"
-	      "       -r --sync-rate val\n"
-	      "          The synchronisation sends up to val KB per sec.\n"
-	      "          Default: 250 = 250 KB/sec\n\n"
-	      "       -k --skip-sync\n"
-	      "          Instruct drbd not to do synchronisation.\n\n"
-	      "       -s --tl-size val\n"
-	      "          Sets the size of the transfer log(=TL). The TL is\n"
-	      "          used for dependency analysis. For long latency\n"
-	      "          high bandwith links it might be necessary to set\n"
-	      "          the size bigger than 256.\n"
-	      "          You will find error messages in the system log\n"
-	      "          if the TL is too small.\n"
-	      "          Default: 256 entries\n\n"
-	      "      -d --disk-size\n"
-	      "          Sets drbd's size. When set to 0 drbd negotiates the\n"
-	      "          size with the remote node.\n"
-	      "          Default: 0 KB.\n\n"
-	      "      -p --do-panic\n"
-	      "          drbd will trigger a kernel panic if there is an\n"
-	      "          IO error on the lower_device. May be usefull when\n"
-	      "          drbd is used in a HA cluster.\n\n"
-	      "      -c --connect-int\n"
-	      "          If drbd can not connect it will retry every val seconds.\n"
-	      "          Default: 10 Seconds\n\n"
-	      "      -i --ping-int\n"
-	      "          If the connection is idle for more than val seconds\n"
-	      "          DRBD will send a NOP packet. This helps DRBD to\n"
-	      "          detect broken connections.\n"
-	      "          Default: 10 Seconds\n\n"
-	      "     multipliers\n"
-	      "          You may append K, M or G to the values of -r and -d\n"
-	      "          where K=2^10, M=2^20 and G=2^30.\n\n"
-	      "          Version: "VERSION"\n"
-	      ,argv[0],argv[0]);
-      exit(20);
-    }
+  if(argc == 1) print_usage(argv[0]);
 
   drbd_fd=open(argv[1],O_RDONLY);
   if(drbd_fd==-1)
@@ -237,7 +240,7 @@ int main(int argc, char** argv)
       }    
   }
 
-  if(argc == 3)
+  if(argv[2][0] != '/') /* UGGLY !!! */
     {
       int err;
       int retval;
@@ -255,13 +258,32 @@ int main(int argc, char** argv)
 	  break;
 	case 'w':
 	case 'W':
+	  optind=3; 
+	  retval=8; /* Do not wait longer than 8 seconds for a connection */
+	  while(1)
+	    {
+	      int c;
+	      static struct option options[] = {
+		{ "time",    required_argument, 0, 't' },
+		{ 0,           0,                 0, 0 }
+	      };
+	  
+	      c = getopt_long(argc,argv,"t:",options,0);
+	      if(c == -1) break;
+	      switch(c)
+		{
+		case 't': 
+		  retval = m_strtol(optarg,1);
+		  break;
+		}
+	    }
 	  err=ioctl(drbd_fd,DRBD_IOCTL_WAIT_SYNC,&retval);
 	  if(err)
 	    {
 	      perror("ioctl() failed");
 	      exit(20);
 	    }
-	  exit(!retval);	  
+	  exit(!retval);
 	case 'r':
 	case 'R':
 	  err=ioctl(drbd_fd,DRBD_IOCTL_DO_SYNC_ALL);
@@ -290,8 +312,7 @@ int main(int argc, char** argv)
 	  exit(0);        
 	  break;
 	default:
-	  fprintf(stderr,"this is no known command!\n");
-	  exit(20);	  
+	  print_usage(argv[0]);
         }
       err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
       if(err)

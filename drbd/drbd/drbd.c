@@ -1357,6 +1357,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	struct file *filp;
 	struct drbd_config new_conf;
 	enum ret_codes retcode;
+	long time;
 
 	minor = MINOR(inode->i_rdev);
 	if(minor >= minor_count) return -ENODEV;
@@ -1421,11 +1422,14 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		while (drbd_conf[minor].epoch_size > 0 ||
 		       drbd_conf[minor].stateref_cnt > 0 ) {
 
-			printk(KERN_ERR DEVICE_NAME "%d: es=%d sr=%d pe=%d\n",
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: set_state(%d,%d,%d,%d,%d)\n",
 			       minor,
+			       drbd_conf[minor].state,
+			       drbd_conf[minor].pending_cnt,
+			       drbd_conf[minor].unacked_cnt,
 			       drbd_conf[minor].epoch_size,
-			       drbd_conf[minor].stateref_cnt,
-			       drbd_conf[minor].pending_cnt);
+			       drbd_conf[minor].stateref_cnt);
 
 			interruptible_sleep_on(&drbd_conf[minor].state_wait);
 			if(signal_pending(current)) { 
@@ -1585,9 +1589,22 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		break;
 
 	case DRBD_IOCTL_WAIT_SYNC:
-		while (drbd_conf[minor].cstate == SyncingAll ||
-		       drbd_conf[minor].cstate == SyncingQuick ) {
-			interruptible_sleep_on(&drbd_conf[minor].cstate_wait);
+		if ((err = get_user(time, (int *) arg)))
+			return err;
+
+		time=time*HZ;
+		
+		while (drbd_conf[minor].cstate >= Unconnected && 
+		       drbd_conf[minor].cstate != Connected &&
+		       time > 0 ) {
+
+			time = interruptible_sleep_on_timeout(
+				&drbd_conf[minor].cstate_wait, time);
+
+			if (drbd_conf[minor].cstate == SyncingQuick ||
+			    drbd_conf[minor].cstate == SyncingAll ) 
+				time=MAX_SCHEDULE_TIMEOUT;
+
 			if(signal_pending(current)) return -EINTR;
 		}
 			
