@@ -35,7 +35,7 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
+void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 {
 	/* This callback will be called in irq context by the IDE drivers,
 	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
@@ -46,44 +46,15 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	int wake_asender=0;
 	unsigned long flags=0;
 
-	/*
-	printk(KERN_ERR DEVICE_NAME "%d: end_req in_irq()=%d\n",
-               (int)(mdev-drbd_conf),in_irq());
- 
-        printk(KERN_ERR DEVICE_NAME "%d: end_req in_softirq()=%d\n",
-               (int)(mdev-drbd_conf),in_softirq());
-	*/
-
-	/* This was a hard one! Can you see the race?
-	   (It hit me about once out of 20000 blocks) 
-
-	   switch(status) {
-	   ..: status = ...;
-	   }
-	*/
-
 	spin_lock_irqsave(&mdev->req_lock,flags);
-
-	switch (req->rq_status & 0xfffe) {
-	case RQ_DRBD_NOTHING:
-		req->rq_status = nextstate | (uptodate ? 1 : 0);
-		break;
-	case RQ_DRBD_SENT:
-		if (nextstate == RQ_DRBD_WRITTEN)
-			goto end_it;
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(A)\n",
-		       (int)(mdev-drbd_conf));
-		break;
-	case RQ_DRBD_WRITTEN:
-		if (nextstate == RQ_DRBD_SENT)
-			goto end_it;
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(B)\n",
-		       (int)(mdev-drbd_conf));
-		break;
-	default:
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(%X)\n",
-		       (int)(mdev-drbd_conf),req->rq_status);
+	
+	if(req->rq_status & nextstate) {
+		printk(KERN_ERR DEVICE_NAME "%d: request state error(%d)\n",
+		       (int)(mdev-drbd_conf),req->rq_status);		
 	}
+
+	req->rq_status = req->rq_status | nextstate | (er_flags & 0x0001);
+	if( (req->rq_status & RQ_DRBD_DONE) == RQ_DRBD_DONE ) goto end_it;
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
@@ -96,10 +67,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	end_it:
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	if(mdev->cstate >= Connected) {
-	  /* If we are unconnected we may not call tl_dependece, since
-	     then this call could be from tl_clear(). => spinlock deadlock!
-	  */
+	if( ! ( er_flags & ERF_NOTLD ) ) {
+		/*If this call is from tl_clear() we may not call tl_dependene,
+		  otherwhise we have a homegrown spinlock deadlock.   */
+		
 	        if(tl_dependence(mdev,req)) {
 	                set_bit(ISSUE_BARRIER,&mdev->flags);
 			wake_asender=1;
@@ -110,9 +81,9 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	bb_done(mdev,req->bh->b_blocknr);
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
+	req->bh->b_end_io(req->bh,(0x0001 & er_flags & req->rq_status));
 
-	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
+	if( mdev->do_panic && !(0x0001 & er_flags & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 

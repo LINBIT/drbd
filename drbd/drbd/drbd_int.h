@@ -107,10 +107,11 @@
 
 /* these defines should go into blkdev.h 
    (if it will be ever includet into linus' linux) */
-#define RQ_DRBD_NOTHING	  0xf100
-#define RQ_DRBD_SENT	  0xf200
-#define RQ_DRBD_WRITTEN   0xf300
-#define RQ_DRBD_READ      0xf500
+#define RQ_DRBD_NOTHING	  0x0000
+#define RQ_DRBD_SENT	  0x0010
+#define RQ_DRBD_WRITTEN   0x0020
+#define RQ_DRBD_DONE      0x0030
+#define RQ_DRBD_READ      0x0040
 
 enum MetaDataFlags {
 	MDF_Consistent   = 1,
@@ -415,6 +416,7 @@ extern int drbd_send_bitmap(struct Drbd_Conf *mdev);
 extern int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr);
 
 /* drbd_req*/ 
+#define ERF_NOTLD    2   /* do not call tl_dependence */
 extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
 
