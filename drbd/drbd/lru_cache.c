@@ -61,18 +61,18 @@ struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
 	lc     = vmalloc(bytes);
 	memset(lc, 0, bytes);
 	if (lc) {
-	INIT_LIST_HEAD(&lc->lru);
-	INIT_LIST_HEAD(&lc->free);
+		INIT_LIST_HEAD(&lc->lru);
+		INIT_LIST_HEAD(&lc->free);
 		lc->element_size     = e_size;
 		lc->nr_elements      = e_count;
 		lc->notify_on_change = fn;
 		lc->lc_private       = private_p;
 		for(i=0;i<e_count;i++) {
 			e = lc_entry(lc,i);
-		e->lc_number = LC_FREE;
-		list_add(&e->list,&lc->free);
+			e->lc_number = LC_FREE;
+			list_add(&e->list,&lc->free);
 			// memset(,0,) did the rest of init for us
-	}
+		}
 	}
 	return lc;
 }
@@ -165,7 +165,7 @@ STATIC int lc_unused_element_available(struct lru_cache* lc)
 	if (!list_empty(&lc->free)) return 1; // something on the free list
 	n=lc->lru.prev;
 	e=list_entry(n, struct lc_element,list);
-	
+
 	if (e->refcnt) return 0;  // the LRU element is still in use
 	return 1; // we can evict the LRU element
 }
@@ -288,7 +288,7 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 
 	e = lc_entry(lc,index);
 	e->lc_number = enr;
-	
+
 	hlist_del_init(&e->colision);
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc,enr) );
 	lc_touch(lc,e); // to make sure that his entry is not on the free list.

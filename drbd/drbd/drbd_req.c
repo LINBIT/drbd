@@ -35,7 +35,7 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags, 
+void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		  sector_t rsector)
 {
 	/* This callback will be called in irq context by the IDE drivers,
@@ -238,7 +238,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 
 		drbd_al_begin_io(mdev, bh->b_rsector);
-		drbd_al_complete_io(mdev, bh->b_rsector); // FIXME TODO 
+		drbd_al_complete_io(mdev, bh->b_rsector); // FIXME TODO
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
 	}

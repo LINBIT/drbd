@@ -50,10 +50,10 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
 
 int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
-			    unsigned int enr)
+		     unsigned int enr)
 {
-	// This callback is called by lc_get(). 
-	// WRITE transaction.... 
+	// This callback is called by lc_get().
+	// WRITE transaction....
 	// async:  do lc->flags &= ~LC_DIRTY and  wake_up(&mdev->al_wait);
 	// in end of IO hander. Return 0 here.
 	// sync: do everything here and return 1.
@@ -63,7 +63,7 @@ int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 
 	evicted = e->lc_number;
 	e->lc_number = enr;
-	spin_unlock_irq(&mdev->al_lock);	
+	spin_unlock_irq(&mdev->al_lock);
 
 	if(mdev->cstate < Connected && evicted != LC_FREE ) {
 		drbd_update_on_disk_bm(mdev,evicted,1);
@@ -71,7 +71,7 @@ int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 	drbd_al_write_transaction(mdev,e);
 	mdev->al_writ_cnt++;
 
-	spin_lock_irq(&mdev->al_lock);	
+	spin_lock_irq(&mdev->al_lock);
 	clear_bit(__LC_DIRTY,&lc->flags);
 	smp_mb__after_clear_bit();
 	wake_up(&mdev->al_wait);
@@ -79,11 +79,11 @@ int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 	return 1;
 }
 
-static inline 
+static inline
 struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct lc_element * extent;
-	
+
 	spin_lock_irq(&mdev->al_lock);
 	extent = lc_get(mdev->act_log,enr);
 	spin_unlock_irq(&mdev->al_lock);
@@ -96,7 +96,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 			WARN("Ongoing AL update (AL device too slow?)\n");
 		}
 	}
-	
+
 	return extent;
 }
 
@@ -131,7 +131,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
 }
 
-STATIC void 
+STATIC void
 drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 {
 	int i,n,mx;
@@ -199,7 +199,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 		bh_kunmap(mdev->md_io_bh);
 		up(&mdev->md_io_mutex);
  */
-STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev, 
+STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 			   struct al_transaction** bp,
 			   int index)
 {
@@ -358,7 +358,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		add += bm_set_bit( mdev, enr << (AL_EXTENT_SIZE_B-9), 
+		add += bm_set_bit( mdev, enr << (AL_EXTENT_SIZE_B-9),
 				   AL_EXTENT_SIZE, SS_OUT_OF_SYNC );
 	}
 
@@ -413,9 +413,9 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 
 	up(&mdev->md_io_mutex);
 
-	mdev->rs_total = (bits << (BM_BLOCK_SIZE_B - 9)) + 
+	mdev->rs_total = (bits << (BM_BLOCK_SIZE_B - 9)) +
 		bm_end_of_dev_case(mdev->mbds_id);
-	
+
 	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
 	     mdev->rs_total/2);
 }
@@ -437,7 +437,7 @@ STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
 #define EXTENTS_PER_SECTOR  ( 512 / BM_BYTES_PER_EXTENT )
 /**
  * drbd_update_on_disk_bm: Writes a piece of the bitmap to its
- * on disk location. 
+ * on disk location.
  *
  * @enr: The extent number of the bits we should write to disk.
  */
@@ -519,7 +519,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		list_for_each(le,&mdev->resync->lru) {
 			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 			if(ext->rs_left == 0) {
-				spin_unlock(&mdev->al_lock);	       
+				spin_unlock(&mdev->al_lock);
 				drbd_update_on_disk_bm(mdev,enr*SM,1);
 				// TODO: reconsider to use the async version
 				// of drbd_update_on_disk_bm()
@@ -529,12 +529,12 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				goto restart;
 			}
 		}
-		spin_unlock(&mdev->al_lock);		
+		spin_unlock(&mdev->al_lock);
 	}
 }
 #undef SM
 
-void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, 
+void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 		      int blk_size, int may_sleep)
 {
 	/* Is called by drbd_dio_end possibly from IRQ context, but
@@ -563,6 +563,6 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 
 	drbd_try_clear_on_disk_bm(mdev,sector,cleared,may_sleep);
 	if(wake_dsender) {// must happen after drbd_try_clear_on_disk_bm();
-		wake_up_interruptible(&mdev->dsender_wait); 
+		wake_up_interruptible(&mdev->dsender_wait);
 	}
 }

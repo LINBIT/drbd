@@ -94,7 +94,7 @@ extern int disable_io_hints;
 #define DUMPI(A) ERR( #A " = %d in %s:%d\n",(A),__FILE__,__LINE__);
 
 
-// Info: do not remove the spaces around the "," before ## 
+// Info: do not remove the spaces around the "," before ##
 //       Otherwise this is not portable from gcc-2.95 to gcc-3.3
 #define PRINTK(level,fmt,args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
@@ -606,10 +606,10 @@ struct Drbd_Conf {
 	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
-	wait_queue_head_t al_wait;	
+	wait_queue_head_t al_wait;
 	struct lru_cache* act_log;     // activity log
 	unsigned int al_tr_number;
-	int al_tr_cycle;  
+	int al_tr_cycle;
 	int al_tr_pos;     // position of the next transaction in the journal
 };
 
@@ -681,7 +681,7 @@ extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 
 #define MD_RESERVED_SIZE ( 128 * (1<<10) )  // 128 MB  ( in units of kb )
 // The following numbers are sectors
-#define MD_GC_OFFSET 0      
+#define MD_GC_OFFSET 0
 #define MD_AL_OFFSET 8      // 8 Sectors after start of meta area
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
@@ -694,7 +694,7 @@ static inline unsigned long capacity(kdev_t dev) {
 /* Returns the start sector for metadata */
 static inline sector_t drbd_md_ss(drbd_dev *mdev) {
 	if( mdev->md_index == -1 ) {
-		return ( (capacity(mdev->lo_device) & ~3L) - 
+		return ( (capacity(mdev->lo_device) & ~3L) -
 			 MD_RESERVED_SIZE ) * 2;
 	} else {
 		return 2 * MD_RESERVED_SIZE * mdev->md_index;
@@ -775,7 +775,7 @@ extern int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
-extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, 
+extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 			     int blk_size, int may_sleep);
 extern void drbd_read_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);

@@ -88,8 +88,8 @@ enum {
 extern struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
 				  lc_notify_on_change_fn fn, void *private_p);
 extern void lc_free(struct lru_cache* lc);
-extern void lc_set   (struct lru_cache* lc, unsigned int enr, int index);
-extern void lc_del   (struct lru_cache* lc, struct lc_element *element);
+extern void lc_set (struct lru_cache* lc, unsigned int enr, int index);
+extern void lc_del (struct lru_cache* lc, struct lc_element *element);
 
 extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
 extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);

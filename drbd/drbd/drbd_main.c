@@ -1491,7 +1491,7 @@ void bm_cleanup(struct BitMap* sbm)
 #define BM_SS (BM_BLOCK_SIZE_B-9)     // 3
 #define BM_NS (1<<BM_SS)              // 8
 #define BM_MM ((1L<<BM_SS)-1)         // 7 = 111bin
-#define BPLM (BITS_PER_LONG-1)        
+#define BPLM (BITS_PER_LONG-1)
 #define BM_BPS (BM_BLOCK_SIZE/1024)   // 4
 
 /* sector_t and size have a higher resolution (512 Byte) than
@@ -1532,12 +1532,12 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		sector_t dev_size;
 
 		dev_size=sbm->dev_size;
-	
+
 		if(  (sector & BM_MM) != 0 )     sbnr++;
 		if( (esector & BM_MM) != BM_MM ) {
 			ebnr--;
 
-			// There is this one special case at the 
+			// There is this one special case at the
 			// end of the device...
 			if(unlikely(dev_size<<1 == esector+1)) {
 				ebnr++;
@@ -1557,14 +1557,14 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	return ret;
 }
 
-static inline unsigned long bitmask(int o) 
+static inline unsigned long bitmask(int o)
 {
 	return o >= BITS_PER_LONG ? -1 : ((1<<o)-1);
 }
 
 /* In case the device's size is not divisible by 4, the last bit
    does not count for 8 sectors but something less. This function
-   returns this 'something less' iff the last bit is set.  
+   returns this 'something less' iff the last bit is set.
    0               in case the device's size is divisible by 4
    -2,-4 or -6     in the other cases
    If the bits beyond the device's size are set, they are cleared
@@ -1576,8 +1576,8 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 	unsigned long* bm;
 	int rv=0;
 	int used_bits;      // number ob bits used in last word
-	unsigned long mask;   
-	
+	unsigned long mask;
+
 	bm = sbm->bm;
 
 	if( sbm->dev_size % BM_BPS ) {
@@ -1586,7 +1586,7 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 			rv = (sbm->dev_size*2) % BM_NS - BM_NS;
 		}
 	}
-	used_bits = BITS_PER_LONG - 
+	used_bits = BITS_PER_LONG -
 		( sbm->size*8 - div_ceil(sbm->dev_size,BM_BPS) );
 	mask = ~ bitmask(used_bits); // mask of bits to clear;
 	mask &= bm[sbm->size/sizeof(long)-1];
@@ -1611,13 +1611,13 @@ int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 
 	for(i = enr * WORDS ; i < max ; i++) {
 		bits += parallel_bitcount(bm[i]);
-	} 
+	}
 
 	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
 
 	// Special case at the end of the device
 	if( max == sbm->size/sizeof(long) ) {
-		bits += bm_end_of_dev_case(sbm); 
+		bits += bm_end_of_dev_case(sbm);
 	}
 
 	spin_unlock(&sbm->bm_lock);
@@ -1716,14 +1716,14 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 	// Special case at end of device...
 	bnr = sbm->dev_size / BM_BPS + ( sbm->dev_size % BM_BPS ? 1 : 0 );
 	bm[bnr / BITS_PER_LONG] &= ( ( 1 << (bnr % BITS_PER_LONG) ) - 1 );
- 
+
 	spin_unlock(&sbm->bm_lock);
 }
 
 /*********************************/
 /* meta data management */
 
-/* Simply disabled for now... 
+/* Simply disabled for now...
 struct meta_data_on_disk {
 	__u64 la_size;           // last agreed size.
 	__u32 gc[GEN_CNT_SIZE];  // generation counter
@@ -1841,7 +1841,7 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
 	buffer->al_offset = __constant_cpu_to_be32(MD_AL_OFFSET);
 	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
-	
+
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
 	bh_kunmap(mdev->md_io_bh);
