@@ -341,7 +341,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 	}
 	
  done:
-	drbd_send_cmd(minor,SetConsistent);
+	drbd_send_cmd(minor,SetConsistent,0);
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done.\n",minor);
 
  err:

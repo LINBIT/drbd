@@ -440,7 +440,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			drbd_send_cstate(&drbd_conf[minor]);
 			drbd_thread_start(&drbd_conf[minor].syncer);
 		} else if (drbd_conf[minor].o_state == Primary) {
-			drbd_send_cmd(minor,StartSync);
+			drbd_send_cmd(minor,StartSync,0);
 		} else return -EINPROGRESS;
 		
 		break;
@@ -449,7 +449,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		if( drbd_conf[minor].cstate != Connected) return -ENXIO;
 
 		if (drbd_conf[minor].o_state == Primary) {
-			drbd_send_cmd(minor,BecomeSec);
+			drbd_send_cmd(minor,BecomeSec,0);
 		} else return -ESRCH;
 		
 		break;

@@ -203,11 +203,19 @@ struct drbd_event {
 /*                        4   */
 #define DO_NOT_INC_CONCNT 5
 
+struct send_timer_info {
+	struct Drbd_Conf *mdev;
+	volatile int timeout_happened;
+	int via_msock;
+	int pid;
+};
+
 struct Drbd_Conf {
 	struct net_config conf;
         int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
+	int artt;  /* avg. round trip time */
 	kdev_t lo_device;
 	struct file *lo_file;
 	int lo_usize;   /* user provided size */
@@ -233,6 +241,7 @@ struct Drbd_Conf {
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
 	struct semaphore send_mutex;
+	struct send_timer_info* send_proc; /* about pid calling drbd_send */
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
@@ -267,7 +276,7 @@ extern void drbd_free_sock(int minor);
 		     Drbd_Packet* header, size_t header_size, 
 		     void* data, size_t data_size);*/
 extern int drbd_send_param(int minor);
-extern int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd);
+extern int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd, int via_msock);
 extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);

@@ -850,12 +850,14 @@ void drbdd(int minor)
 			        goto out;
 			break;
 
+			/**** MOVE  ****/
 		case Ping:
-			drbd_send_cmd(minor,PingAck);
+			drbd_send_cmd(minor,PingAck,1);
 			break;
 		case PingAck:
 			dec_pending(minor);
 			break;
+			/**** /MOVE  ****/
 
 		case RecvAck:
 		case WriteAck:
@@ -1025,7 +1027,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	  if(thi->t_state == Exiting) break;
 
 	  if(test_and_clear_bit(SEND_PING,&drbd_conf[minor].flags)) {
-		  if(drbd_send_cmd(minor,Ping)==sizeof(Drbd_Packet))
+		  if(drbd_send_cmd(minor,Ping,1)==sizeof(Drbd_Packet))
 			  inc_pending(minor);
 	  }
 
