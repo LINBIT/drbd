@@ -324,6 +324,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * They already have a reference count (sort of...)
 		 * on mdev via inc_local()
 		 */
+		if(rw == WRITE) mdev->writ_cnt += size>>9;
+		else            mdev->read_cnt += size>>9;
 		drbd_generic_make_request(rw,&req->private_bio);
 	}
 
