@@ -486,6 +486,10 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	    drbd_is_mounted(minor) == MountedRW))
 		return -EBUSY;
 #else
+	if(mdev->this_bdev->bd_contains == 0) {
+		mdev->this_bdev->bd_contains = mdev->this_bdev;
+	}
+
 	if ( newstate & Secondary ) {
 		/* If I got here, I am Primary. I claim me for myself. If that
 		 * does not succeed, someone other has claimed me, so I cannot

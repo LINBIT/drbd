@@ -251,9 +251,6 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	req = container_of(bio,struct drbd_request,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
-	if (error == 0)
-		D_ASSERT(drbd_bio_uptodate(bio));
-
 	drbd_end_req(req, RQ_DRBD_WRITTEN, (error == 0), drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
 	return 0;

@@ -287,9 +287,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev = mdev->lo_device;
 #else
-		//#warning "FIXME"
-			//WORK_HERE
-		/* I want to change it anyways so we never remap ... */
+		bio->bi_bdev = mdev->backing_bdev;
 #endif
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
@@ -304,8 +302,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev = mdev->lo_device;
 #else
-		//#warning "FIXME"
-			//WORK_HERE
+		bio->bi_bdev = mdev->backing_bdev;
 		/* I want to change it anyways so we never remap ... */
 #endif
 		return 1; // Not arranged for transfer ( but remapped :)

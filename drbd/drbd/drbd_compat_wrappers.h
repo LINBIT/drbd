@@ -466,6 +466,7 @@ drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_sector  = sector;
 	bio->bi_private = mdev;
+	bio->bi_next    = 0;
 }
 
 static inline void
@@ -494,6 +495,7 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = mdev;
 	bio->bi_end_io  = drbd_dio_end;
+	bio->bi_next    = 0;
 
 	// FIXME D_ASSERT(??)
 	// what else?
