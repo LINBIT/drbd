@@ -1,11 +1,11 @@
-drbd (0.7.4-2) unstable; urgency=low
+drbd (0.7.5-1) unstable; urgency=low
 
   * Added bison, flex to Build-Depends
   * Call 'make clean' in drbd directory
   * Upgraded to debian-policy 3.6.1
   * Rewritten debian/rules using module-assistant
+  * Change binary package name to drbd0.7
   * Added myself as Uploader
-
 
  -- Philipp Hug <debian@hug.cx>  Tue, 14 Sep 2004 23:25:12 +0200
 

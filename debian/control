@@ -6,10 +6,12 @@ Uploaders: Philipp Hug <debian@hug.cx>
 Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, bison, flex
 Standards-Version: 3.6.1
 
-Package: drbd
+Package: drbd0.7
 Architecture: any
 Section: misc
 Depends: debconf, ${misc:Depends}
+Conflicts: drbd (<< 0.7)
+Provides: drbd
 Suggests: heartbeat
 Description: RAID 1 over tcp/ip for Linux utilities
  Drbd is a block device which is designed to build high availability
@@ -24,10 +26,12 @@ Description: RAID 1 over tcp/ip for Linux utilities
  .
  Homepage: http://www.drbd.org
 
-Package: drbd-source
+Package: drbd0.7-source
 Architecture: all
 Section: misc
 Depends: module-assistant
+Conflicts: drbd-source (<< 0.7)
+Provides: drbd-source
 Recommends:  dpkg-dev, kernel-package, debhelper (>= 4), debconf-utils
 Description: RAID 1 over tcp/ip for Linux module source
  Drbd is a block device which is designed to build high availability
