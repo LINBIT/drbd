@@ -518,10 +518,17 @@ int drbd_send_param(drbd_dev *mdev)
 	Drbd_Parameter_Packet p;
 	int ok,i;
 	kdev_t ll_dev = mdev->lo_device;
+	unsigned long m_size=0; // sector_t ??
+
+	if(ll_dev) {
+		m_size = blk_size[MAJOR(ll_dev)][MINOR(ll_dev)];
+		if( mdev->md_index == -1 ) {// internal metadata
+			m_size = m_size - MD_RESERVED_SIZE;
+		}
+	}
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
-	p.p_size = cpu_to_be64(ll_dev ?
-			       blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]:0);
+	p.p_size = cpu_to_be64(m_size);
 
 	p.state    = cpu_to_be32(mdev->state);
 	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);

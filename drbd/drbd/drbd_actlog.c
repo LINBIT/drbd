@@ -513,7 +513,13 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			ext->rs_left -= cleared;
 			D_ASSERT((long)ext->rs_left >= 0);
 		} else {
-			WARN("Recounting sectors (resync LRU too small?)\n");
+			if(mdev->cstate == SyncSource) {
+				WARN("Recounting sectors"
+				     " (resync LRU too small?)\n");
+				// On the SyncSource the element should be
+				// in the cache since drbd_rs_begin_io()
+				// pulled it already in.
+			}
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 			lc_changed(mdev->resync,(struct lc_element*)ext);
 		}
@@ -598,11 +604,14 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	rs_flags=mdev->resync->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
-	if (rs_flags & LC_STARVING) {
-		WARN("Have to wait for element (resync LRU too small?)\n");
-	}
-	if (rs_flags & LC_DIRTY) {
-		BUG(); // WARN("Ongoing RS update (???)\n");
+	if(!bm_ext) {
+		if (rs_flags & LC_STARVING) {
+			WARN("Have to wait for element"
+			     " (resync LRU too small?)\n");
+		}
+		if (rs_flags & LC_DIRTY) {
+			BUG(); // WARN("Ongoing RS update (???)\n");
+		}
 	}
 
 	return bm_ext;
