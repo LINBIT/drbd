@@ -911,7 +911,9 @@ void drbd_a_timeout(unsigned long arg)
 {
 	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
 
-	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected!\n",thi->minor);
+	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected (pc=%d)!\n",
+	       thi->minor,
+	       drbd_conf[thi->minor].pending_cnt);
 
 	if(drbd_conf[thi->minor].cstate >= Connected) {
 		set_cstate(&drbd_conf[thi->minor],Timeout);
@@ -1341,12 +1343,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		     are not harmfull)		     
 		*/
 
-		printk(KERN_ERR DEVICE_NAME "%d: es=%d sr=%d pe=%d\n",
-		       minor,
-		       drbd_conf[minor].epoch_size,
-		       drbd_conf[minor].stateref_cnt,
-		       drbd_conf[minor].pending_cnt);
-		
 		while (drbd_conf[minor].epoch_size > 0 ||
 		       drbd_conf[minor].stateref_cnt > 0 ) {
 
@@ -1356,7 +1352,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			       drbd_conf[minor].stateref_cnt,
 			       drbd_conf[minor].pending_cnt);
 
-			interruptible_sleep_on(&drbd_conf[minor].state_wait);
+			//interruptible_sleep_on(&drbd_conf[minor].state_wait);
 			if(signal_pending(current)) { 
 				return -EINTR;
 			}
@@ -2391,7 +2387,6 @@ void drbdd(int minor)
 
       out:
 	del_timer(&drbd_conf[minor].a_timeout);
-	drbd_conf[minor].pending_cnt = 0;
 
 	if (drbd_conf[minor].sock) {
 	        drbd_thread_stop(&drbd_conf[minor].syncer);
@@ -2416,6 +2411,7 @@ void drbdd(int minor)
 		break;
 	case Unknown:
 	}
+	drbd_conf[minor].pending_cnt = 0;
 }
 
 int drbdd_init(struct Drbd_thread *thi)
