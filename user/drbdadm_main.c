@@ -396,6 +396,9 @@ pid_t m_system(char** argv,int flags)
     case SLEEPS_SHORT:     timeout = 5; break;
     case SLEEPS_LONG:      timeout = 60; break;
     case SLEEPS_VERY_LONG: timeout = 600; break;
+    default:
+	fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__);
+	exit(E_thinko);
     }
     alarm(timeout);
   }

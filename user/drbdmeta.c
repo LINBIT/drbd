@@ -33,26 +33,17 @@
 #include <sys/ioctl.h>
 
 #include <stdlib.h>
-#include <endian.h>
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <asm/byteorder.h>	/* for the __cpu_to_le64 etc. functions  */
-#include <linux/bitops.h>	/* for the hweight functions  */
-#include <linux/types.h>	/* for the __u32/64 type defs */
-
-#define u64 __u64
-/* because u64 is used in this:
- * #define BLKGETSIZE64 _IOR(0x12,114,sizeof(u64))
- */
-
 #include <linux/fs.h>     /* for BLKGETSIZE64 */
 #include <linux/drbd.h>   /* only use DRBD_MAGIC from here! */
 
 #include "drbdtool_common.h"
+#include "drbd_endian.h"
 
 
 /*
@@ -61,33 +52,15 @@
  * {
  */
 
-#ifndef BITS_PER_LONG
-# define BITS_PER_LONG __WORDSIZE
-#endif
-
 #ifndef ALIGN
 # define ALIGN(x,a) ( ((x) + (a)-1) &~ ((a)-1) )
-#endif
-
-#if BITS_PER_LONG == 32
-# define LN2_BPL 5
-# define cpu_to_le_long __cpu_to_le32
-# define le_long_to_cpu __le32_to_cpu
-
-#elif BITS_PER_LONG == 64
-# define LN2_BPL 6
-# define cpu_to_le_long cpu_to_le64
-# define le_long_to_cpu le64_to_cpu
-
-#else
-# error "LN2 of BITS_PER_LONG unknown!"
 #endif
 
 #define MD_AL_OFFSET_07    8
 #define MD_AL_MAX_SIZE_07  64
 #define MD_BM_OFFSET_07    (MD_AL_OFFSET_07 + MD_AL_MAX_SIZE_07)
 #define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
-#define MD_RESERVED_SIZE_07 ( (__u64)128 * (1<<20) )
+#define MD_RESERVED_SIZE_07 ( (u64)128 * (1<<20) )
 #define MD_BM_MAX_SIZE_07  ( MD_RESERVED_SIZE_07 - MD_BM_OFFSET_07*512 )
 
 #define DRBD_MD_MAGIC_08   (DRBD_MAGIC+4)
@@ -118,9 +91,9 @@ enum MetaDataIndex {
 };
 
 struct meta_data {
-	__u32 gc[GEN_CNT_SIZE];   /* v06 */
+	u32 gc[GEN_CNT_SIZE];   /* v06 */
 
-	__u64 la_size;            /* v07  [ units of KB ] */
+	u64 la_size;              /* v07  [ units of KB ] */
 	int bm_size;              /* v07 */
 	unsigned long *bitmap;    /* v07 */
 	int al_size;              /* v07 */
@@ -221,9 +194,9 @@ unsigned long from_lel(unsigned long* buffer, int words)
 	return bits;
 }
 
-__u64 bdev_size(int fd)
+u64 bdev_size(int fd)
 {
-	__u64 size64; /* size in byte. */
+	u64 size64; /* size in byte. */
 	long size;    /* size in sectors. */
 	int err;
 
@@ -236,7 +209,7 @@ __u64 bdev_size(int fd)
 				perror("ioctl(,BLKGETSIZE,) failed");
 				exit(20);
 			}
-			size64 = (typeof(__u64))512 * size;
+			size64 = (typeof(u64))512 * size;
 		} else {
 			perror("ioctl(,BLKGETSIZE64,) failed");
 			exit(20);
@@ -259,18 +232,18 @@ void md_free(struct meta_data * m)
  begin of v07 {
  ******************************************/
 struct __attribute__((packed)) meta_data_on_disk_07 {
-	__u64 la_size;           /* last agreed size. */
-	__u32 gc[GEN_CNT_SIZE];  /* generation counter */
-	__u32 magic;
-	__u32 md_size;
-	__u32 al_offset;         /* offset to this block */
-	__u32 al_nr_extents;     /* important for restoring the AL */
-	__u32 bm_offset;         /* offset to the bitmap, from here */
+	u64 la_size;           /* last agreed size. */
+	u32 gc[GEN_CNT_SIZE];  /* generation counter */
+	u32 magic;
+	u32 md_size;
+	u32 al_offset;         /* offset to this block */
+	u32 al_nr_extents;     /* important for restoring the AL */
+	u32 bm_offset;         /* offset to the bitmap, from here */
 };
 
-__u64 v07_offset(struct format_07* cfg)
+u64 v07_offset(struct format_07* cfg)
 {
-	__u64 offset;
+	u64 offset;
 
 	if(cfg->index == -1) {
 		offset = ( bdev_size(cfg->fd) & ~((1<<12)-1) )
@@ -367,7 +340,7 @@ int v07_read(struct format * config, struct meta_data * m)
 	struct format_07* cfg = &config->d.f07;
 	struct meta_data_on_disk_07 buffer;
 	int rr,i,bmw;
-	__u64 offset = v07_offset(cfg);
+	u64 offset = v07_offset(cfg);
 
 	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
@@ -380,25 +353,25 @@ int v07_read(struct format * config, struct meta_data * m)
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_07 ) {
+	if( be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_07 ) {
 		fprintf(stderr,"Magic number not found\n");
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.al_offset) != MD_AL_OFFSET_07 ) {
+	if( be32_to_cpu(buffer.al_offset) != MD_AL_OFFSET_07 ) {
 		fprintf(stderr,"Magic number (al_offset) not found\n");
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.bm_offset) != MD_BM_OFFSET_07 ) {
+	if( be32_to_cpu(buffer.bm_offset) != MD_BM_OFFSET_07 ) {
 		fprintf(stderr,"Magic number (bm_offset) not found\n");
 		return 0;
 	}
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		m->gc[i] = __be32_to_cpu(buffer.gc[i]);
+		m->gc[i] = be32_to_cpu(buffer.gc[i]);
 
-	m->la_size = __be64_to_cpu(buffer.la_size);
+	m->la_size = be64_to_cpu(buffer.la_size);
 
 	if(m->bitmap) {
 		bmw = bm_words(m->la_size);
@@ -427,16 +400,16 @@ int v07_write(struct format * config, struct meta_data * m, int init_al)
 	struct format_07* cfg = &config->d.f07;
 	struct meta_data_on_disk_07 buffer;
 	int rr,i;
-	__u64 offset = v07_offset(cfg);
+	u64 offset = v07_offset(cfg);
 
-	buffer.magic = __cpu_to_be32( DRBD_MD_MAGIC_07 );
-	buffer.al_offset = __cpu_to_be32( MD_AL_OFFSET_07 );
-	buffer.bm_offset = __cpu_to_be32( MD_BM_OFFSET_07 );
+	buffer.magic = cpu_to_be32( DRBD_MD_MAGIC_07 );
+	buffer.al_offset = cpu_to_be32( MD_AL_OFFSET_07 );
+	buffer.bm_offset = cpu_to_be32( MD_BM_OFFSET_07 );
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		buffer.gc[i] = __cpu_to_be32(m->gc[i]);
+		buffer.gc[i] = cpu_to_be32(m->gc[i]);
 
-	buffer.la_size = __cpu_to_be64(m->la_size);
+	buffer.la_size = cpu_to_be64(m->la_size);
 
 	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
@@ -499,25 +472,25 @@ int v08_read(struct format * config, struct meta_data * m)
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_08 ) {
+	if( be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_08 ) {
 		fprintf(stderr,"Magic number not found\n");
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.al_offset) != MD_AL_OFFSET_07 ) {
+	if( be32_to_cpu(buffer.al_offset) != MD_AL_OFFSET_07 ) {
 		fprintf(stderr,"Magic number (al_offset) not found\n");
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.bm_offset) != MD_BM_OFFSET_07 ) {
+	if( be32_to_cpu(buffer.bm_offset) != MD_BM_OFFSET_07 ) {
 		fprintf(stderr,"Magic number (bm_offset) not found\n");
 		return 0;
 	}
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		m->gc[i] = __be32_to_cpu(buffer.gc[i]);
+		m->gc[i] = be32_to_cpu(buffer.gc[i]);
 
-	m->la_size = __be64_to_cpu(buffer.la_size) / 2 ;
+	m->la_size = be64_to_cpu(buffer.la_size) / 2 ;
 
 	if(m->bitmap) {
 		bmw = bm_words(m->la_size);
@@ -548,14 +521,14 @@ int v08_write(struct format * config, struct meta_data * m, int init_al)
 	int rr,i;
 	__u64 offset = v07_offset(cfg);
 
-	buffer.magic = __cpu_to_be32( DRBD_MD_MAGIC_08 );
-	buffer.al_offset = __cpu_to_be32( MD_AL_OFFSET_07 );
-	buffer.bm_offset = __cpu_to_be32( MD_BM_OFFSET_07 );
+	buffer.magic = cpu_to_be32( DRBD_MD_MAGIC_08 );
+	buffer.al_offset = cpu_to_be32( MD_AL_OFFSET_07 );
+	buffer.bm_offset = cpu_to_be32( MD_BM_OFFSET_07 );
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		buffer.gc[i] = __cpu_to_be32(m->gc[i]);
+		buffer.gc[i] = cpu_to_be32(m->gc[i]);
 
-	buffer.la_size = __cpu_to_be64(m->la_size * 2);
+	buffer.la_size = cpu_to_be64(m->la_size * 2);
 
 	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
@@ -597,8 +570,8 @@ int v08_write(struct format * config, struct meta_data * m, int init_al)
  begin of v06 {
  ******************************************/
 struct __attribute__((packed)) meta_data_on_disk_06 {
-	__u32 gc[GEN_CNT_SIZE];  /* generation counter */
-	__u32 magic;
+	u32 gc[GEN_CNT_SIZE];  /* generation counter */
+	u32 magic;
 };
 
 int v06_parse(struct format * config, char **argv, int argc, int *ai);
@@ -681,13 +654,13 @@ int v06_read(struct format * config, struct meta_data * m)
 		return 0;
 	}
 
-	if( __be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_06 ) {
+	if( be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC_06 ) {
 		fprintf(stderr,"Magic number not found\n");
 		return 0;
 	}
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		m->gc[i] = __be32_to_cpu(buffer.gc[i]);
+		m->gc[i] = be32_to_cpu(buffer.gc[i]);
 
 	return 1;
 }
@@ -698,10 +671,10 @@ int v06_write(struct format * config, struct meta_data * m, int init_al)
 	struct meta_data_on_disk_06 buffer;
 	int rr,i;
 
-	buffer.magic = __cpu_to_be32( DRBD_MD_MAGIC_06 );
+	buffer.magic = cpu_to_be32( DRBD_MD_MAGIC_06 );
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		buffer.gc[i] = __cpu_to_be32(m->gc[i]);
+		buffer.gc[i] = cpu_to_be32(m->gc[i]);
 
 	if(lseek64(cfg->fd,0,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
@@ -887,7 +860,7 @@ int meta_convert_md(struct format * fcfg, char** argv, int argc )
 int meta_dump_md(struct format * fcfg, char** argv, int argc )
 {
 	struct meta_data* md;
-	__u64 *b;
+	u64 *b;
 	int words;
 	int i;
 
@@ -908,8 +881,8 @@ int meta_dump_md(struct format * fcfg, char** argv, int argc )
 	/* if(md->la_size)  TODO. */
 
 	if(md->bitmap) {
-		words = md->bm_size/sizeof(__u64);
-		b = (__u64*) md->bitmap;
+		words = md->bm_size/sizeof(u64);
+		b = (u64*) md->bitmap;
 		printf("bm {");
 		for (i=0;i<words;i++) {
 #if BITS_PER_LONG == 32
