@@ -111,10 +111,11 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 		list_del(&e->list);
 		list_add(&e->list,&mdev->done_ee);
 	}
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	if (waitqueue_active(&bh->b_wait))
-		wake_up(&bh->b_wait);
+		wake_up(&bh->b_wait); //must be within the lock!
+
+	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 	   e->block_id == ID_SYNCER ) wake_asender=1;
