@@ -1,4 +1,4 @@
-/*
+*
 -*- Linux-c -*-
    drbd.c
    Kernel module for 2.2.x/2.4.x Kernels
@@ -362,9 +362,11 @@ void tl_clear(struct Drbd_Conf *mdev)
 			   ((p->req->rq_status & 0xfffe) != RQ_DRBD_SENT)) {
 				drbd_end_req(p->req,RQ_DRBD_SENT,1);
 				dec_pending(mdev);
+				goto mark;
 			}
-		  
-			if(mdev->conf.wire_protocol != DRBD_PROT_C) {
+			
+			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
+			mark:
 				bm_set_bit(mdev->mbds_id, 
 					   p->sector >> (mdev->blk_size_b-9),
 					   mdev->blk_size_b, SS_OUT_OF_SYNC);
