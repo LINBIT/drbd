@@ -42,7 +42,6 @@
 #include <linux/slab.h>
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #include <linux/blkpg.h>
@@ -124,8 +123,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		       minor,blk_size[MAJOR_NR][minor]);
 
 		if (!mdev->mbds_id) {
-			mdev->mbds_id = 
-				mdev->mops->init(MKDEV(MAJOR_NR, minor));
+			mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
 		}
 	}		
 
@@ -378,7 +376,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		drbd_thread_stop(&drbd_conf[minor].receiver);
 		drbd_free_resources(minor);
 		if (drbd_conf[minor].mbds_id) {
-			drbd_conf[minor].mops->cleanup(drbd_conf[minor].mbds_id);
+			bm_cleanup(drbd_conf[minor].mbds_id);
 			drbd_conf[minor].mbds_id=0;
 		}
 

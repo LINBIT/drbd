@@ -46,7 +46,6 @@
 #include <linux/unistd.h>
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 #define mark_buffer_dirty(A)   mark_buffer_dirty(A , 1)
@@ -156,9 +155,11 @@ void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 			continue;
 		}
 		spin_unlock_irq(&mdev->ee_lock);
+		/*
 		printk(KERN_ERR DEVICE_NAME 
 		       "%d: Waiting for bh=%p, blocknr=%ld\n",
 		       (int)(mdev-drbd_conf),e->bh,e->bh->b_blocknr);
+		*/
 		wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
 	}
@@ -586,11 +587,10 @@ inline int receive_block_ack(int minor)
 	        return FALSE;
 
 	if( header.block_id == ID_SYNCER) {
-		drbd_conf[minor].mops->
-		set_block_status(drbd_conf[minor].mbds_id,
-				 be64_to_cpu(header.block_nr), 
-				 drbd_conf[minor].blk_size_b, 
-				 SS_IN_SYNC);
+		bm_set_bit(drbd_conf[minor].mbds_id,
+			   be64_to_cpu(header.block_nr), 
+			   drbd_conf[minor].blk_size_b, 
+			   SS_IN_SYNC);
 	} else {
 		req=(drbd_request_t*)(long)header.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
@@ -699,8 +699,7 @@ inline int receive_param(int minor,int command)
 	   boundary ?? I do not think so ! */
 
 	if (!drbd_conf[minor].mbds_id) {
-		drbd_conf[minor].mbds_id = 
-			drbd_conf[minor].mops->init(MKDEV(MAJOR_NR, minor));
+		drbd_conf[minor].mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
 	}
 	
 	if (drbd_conf[minor].cstate == WFReportParams) {
@@ -963,11 +962,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	while(thi->t_state == Running) {
 
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);
-	  if(signal_pending(current)) {
-		  printk(KERN_ERR DEVICE_NAME"%d: asender signaled. exiting\n",
-			 minor);
-		  break;
-	  }
+	  if(signal_pending(current)) break;
 	  
 	  if(thi->t_state == Exiting) break;
 
@@ -1013,8 +1008,6 @@ int drbd_asender(struct Drbd_thread *thi)
 struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry* e;
-//	static int alloc=0;
-//	static int reissue=0;
 
 	if(list_empty(&mdev->free_ee)) drbd_process_done_ee(mdev);
 
@@ -1025,17 +1018,12 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 			       "%d: could not kmalloc() \n",
 			       (int)(mdev-drbd_conf));
 		}
-//		alloc+=1;
 	} else {
 		struct list_head *le; 	
 		le=mdev->free_ee.next;
 		list_del(le);
 		e=list_entry(le, struct Tl_epoch_entry, list);
-//		reissue++;
 	}
-
-//	printk(KERN_ERR DEVICE_NAME "%d: drbd_get_ee(): a=%d r=%d %p\n", 
-//	       (int)(mdev-drbd_conf),alloc,reissue,e);
 
 	return e;
 }

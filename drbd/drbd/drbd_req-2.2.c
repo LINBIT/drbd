@@ -37,7 +37,6 @@
 #include <linux/slab.h>
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
 #define blkdev_dequeue_request(A) CURRENT=(A)->next
@@ -283,12 +282,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				  req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
 				else {
 				  req->rq_status = RQ_DRBD_SENT | 0x0001;
-				  drbd_conf[minor].mops->
-				    set_block_status(drbd_conf[minor].mbds_id,
-			               req->sector >> 
-					  (drbd_conf[minor].blk_size_b-9),
-				       drbd_conf[minor].blk_size_b, 
-				       SS_OUT_OF_SYNC);
+				  bm_set_bit(drbd_conf[minor].mbds_id,
+					     req->sector >> 
+					     (drbd_conf[minor].blk_size_b-9),
+					     drbd_conf[minor].blk_size_b, 
+					     SS_OUT_OF_SYNC);
 				}
 			}
 			else

@@ -47,7 +47,6 @@
 
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 
 /*
@@ -278,12 +277,12 @@ int drbd_syncer(struct Drbd_thread *thi)
 		drbd_conf[minor].synced_to=
 			(blk_size[MAJOR_NR][minor] -
 			 (blksize_size[MAJOR_NR][minor] >> 10)) << 1;
-		get_blk=ds_sync_all_get_blk;
+		get_blk=&ds_sync_all_get_blk;
 		id=drbd_conf+minor;
         } else if(drbd_conf[minor].cstate == SyncingQuick) {
-                drbd_conf[minor].mops->reset(drbd_conf[minor].mbds_id,
-                                             drbd_conf[minor].blk_size_b);
-		get_blk=drbd_conf[minor].mops->get_block;
+		bm_reset(drbd_conf[minor].mbds_id,
+			 drbd_conf[minor].blk_size_b);
+		get_blk=(unsigned long (*)(void*,int))&bm_get_blocknr;
 		id=drbd_conf[minor].mbds_id;
         } else { 
                 /* print warning/error ? */

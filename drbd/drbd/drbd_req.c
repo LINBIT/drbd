@@ -37,7 +37,6 @@
 #include <linux/slab.h>
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 {
@@ -45,10 +44,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	unsigned long flags=0;
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
 
-	/*
-       	printk(KERN_ERR DEVICE_NAME "%d: drbd_end_req(%p,%x)\n",
+/*
+      	printk(KERN_ERR DEVICE_NAME "%d: drbd_end_req(%p,%x)\n",
 	       (int)(mdev-drbd_conf),req,nextstate);	
-	*/
+*/
 
 	if (req->rq_status == (RQ_DRBD_READ | 0x0001))
 		goto end_it_unlocked;
@@ -113,10 +112,14 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	if(mdev->state == Secondary) {
 		struct Tl_epoch_entry *e;
 		e=req->bh->b_private;
-		spin_lock_irqsave(&mdev->ee_lock,flags);
-		list_del(&e->list);
-		list_add(&e->list,&mdev->done_ee);
-		spin_unlock_irqrestore(&mdev->ee_lock,flags);
+		if(e == NULL) {
+			printk(KERN_ERR DEVICE_NAME ": e == NULL\n");
+		} else {
+			spin_lock_irqsave(&mdev->ee_lock,flags);
+			list_del(&e->list);
+			list_add(&e->list,&mdev->done_ee);
+			spin_unlock_irqrestore(&mdev->ee_lock,flags);
+		}
 	}
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
@@ -137,11 +140,24 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 
 void drbd_dio_end(struct buffer_head *bh, int uptodate)
 {
-	drbd_request_t *req = bh->b_private;
+	drbd_request_t *req;
+
+	if(bh == NULL) {
+		printk(KERN_ERR DEVICE_NAME ": drbd_dio_end bh=NULL\n");
+	}
+
+	if(bh->b_private == NULL) {
+		printk(KERN_ERR DEVICE_NAME ": drbd_dio_end bh->req=NULL\n");
+	}
+
+	req = bh->b_private;
+
+	if(req->bh->b_data != bh->b_data) {
+		printk(KERN_ERR DEVICE_NAME ": drbd_dio_end ! b_data\n");
+	}
 
 	// READs are sorted out in drbd_end_req().
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
-	
 }
 
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
@@ -243,12 +259,11 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 			req->rq_status = RQ_DRBD_NOTHING;
 			} else {
-				mdev->mops->
-					set_block_status(mdev->mbds_id,
+				bm_set_bit(mdev->mbds_id,
 					   bh->b_rsector >> 
-					       (mdev->blk_size_b-9),
-					    mdev->blk_size_b, 
-					    SS_OUT_OF_SYNC);
+					   (mdev->blk_size_b-9),
+					   mdev->blk_size_b, 
+					   SS_OUT_OF_SYNC);
 				req->rq_status = RQ_DRBD_SENT | 0x0001;
 			}
 		} else {

@@ -42,7 +42,6 @@
 #include <linux/proc_fs.h>
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,

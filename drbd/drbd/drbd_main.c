@@ -66,7 +66,6 @@
 
 #include "drbd.h"
 #include "drbd_int.h"
-#include "mbds.h"
 
 static int errno;
 
@@ -105,7 +104,6 @@ int drbd_init(void);
 			   unsigned int cmd, unsigned long arg);
 /*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
 void drbd_p_timeout(unsigned long arg);
-struct mbds_operations bm_mops;
 
 #ifdef DEVICE_REQUEST
 #undef DEVICE_REQUEST
@@ -352,9 +350,9 @@ void tl_clear(struct Drbd_Conf *mdev)
 
 	while(p != mdev->tl_end) {
 	        if(*p != TL_BARRIER && *p != TL_EMPTY ) {
-	                mdev->mops->set_block_status(mdev->mbds_id,
-				     GET_SECTOR(*p) >> (mdev->blk_size_b-9),
-				     mdev->blk_size_b, SS_OUT_OF_SYNC);
+	                bm_set_bit(mdev->mbds_id,
+				   GET_SECTOR(*p) >> (mdev->blk_size_b-9),
+				   mdev->blk_size_b, SS_OUT_OF_SYNC);
 			if(end_them) {
 				drbd_end_req(*p,RQ_DRBD_SENT,1);
 				mdev->pending_cnt--;
@@ -605,8 +603,8 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 			if(mdev->conf.wire_protocol != DRBD_PROT_A)
 				inc_pending((int)(mdev-drbd_conf));
 		} else {
-			mdev->mops->set_block_status(mdev->mbds_id,
-			      block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
+			bm_set_bit(mdev->mbds_id,
+				   block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
 			ret=0;
 		}
 	}
@@ -874,7 +872,6 @@ int __init drbd_init(void)
 		drbd_conf[i].pending_cnt = 0;
 		drbd_conf[i].unacked_cnt = 0;
 		drbd_conf[i].transfer_log = 0;
-		drbd_conf[i].mops = &bm_mops;
 		drbd_conf[i].mbds_id = 0;
 		drbd_conf[i].flags=0;
 		tl_init(&drbd_conf[i]);
@@ -934,20 +931,21 @@ int __init init_module()
 
 }
 
-inline void free_ee_list(struct list_head* list)
+inline int free_ee_list(struct list_head* list)
 {
 	struct Tl_epoch_entry *e;
-	struct list_head *le,*nle;
+	struct list_head *le;
 	int count=0;
 
-	list_for_each2(le,nle, list) {
-		e = list_entry(le,struct Tl_epoch_entry,list);
+	while(!list_empty(list)) {
+		le = list->next;
 		list_del(le);
+		e = list_entry(le,struct Tl_epoch_entry,list);
 		kfree(e);
 		count++;
 	}
 	
-	printk(KERN_ERR DEVICE_NAME " : free_ee_list(): c=%d\n",count);
+	return count;
 }
 
 void cleanup_module()
@@ -963,13 +961,15 @@ void cleanup_module()
 		drbd_free_resources(i);
 		if (drbd_conf[i].transfer_log)
 			kfree(drbd_conf[i].transfer_log);		    
-		if (drbd_conf[i].mbds_id)
-			drbd_conf[i].mops->cleanup(drbd_conf[i].mbds_id);
+		if (drbd_conf[i].mbds_id) bm_cleanup(drbd_conf[i].mbds_id);
 		// free the receivers stuff
 		free_ee_list(&drbd_conf[i].free_ee);
-		free_ee_list(&drbd_conf[i].active_ee); // questionable!
-		free_ee_list(&drbd_conf[i].sync_ee);   // questionable!
-		free_ee_list(&drbd_conf[i].done_ee);   // questionable!
+		if(free_ee_list(&drbd_conf[i].active_ee) || 
+		   free_ee_list(&drbd_conf[i].sync_ee)   ||
+		   free_ee_list(&drbd_conf[i].done_ee) ) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: EEs in active/sync/done list found!\n",i);
+		}
 	}
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
@@ -1069,7 +1069,7 @@ struct BitMap {
 	spinlock_t bm_lock;
 };
 
-void* bm_init(kdev_t dev)
+struct BitMap* bm_init(kdev_t dev)
 {
         struct BitMap* sbm;
 	unsigned long size;
@@ -1108,9 +1108,8 @@ void bm_cleanup(void* bm_id)
    calls 
 */
 
-void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
+void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
 {
-        struct BitMap* sbm = (struct BitMap*) bm_id;
         unsigned long* bm = sbm->bm;
 	unsigned long bitnr;
 	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
@@ -1147,7 +1146,7 @@ void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
 	spin_unlock(&sbm->bm_lock);
 }
 
-inline int bm_get_bn(unsigned long word,int nr)
+static inline int bm_get_bn(unsigned long word,int nr)
 {
 	if(nr == BITS_PER_LONG-1) return -1;
 	word >>= ++nr;
@@ -1158,9 +1157,8 @@ inline int bm_get_bn(unsigned long word,int nr)
 	return nr;
 }
 
-unsigned long bm_get_blocknr(void* bm_id,int ln2_block_size)
+unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size)
 {
-        struct BitMap* sbm = (struct BitMap*) bm_id;
         unsigned long* bm = sbm->bm;
 	unsigned long wnr;
 	unsigned long nw = sbm->size/sizeof(unsigned long);
@@ -1193,10 +1191,8 @@ unsigned long bm_get_blocknr(void* bm_id,int ln2_block_size)
 	return rv;
 }
 
-void bm_reset(void* bm_id,int ln2_block_size)
+void bm_reset(struct BitMap* sbm,int ln2_block_size)
 {
-	struct BitMap* sbm = (struct BitMap*) bm_id;
-
  	spin_lock(&sbm->bm_lock);
 
 	sbm->gb_bitnr=0;
@@ -1205,15 +1201,6 @@ void bm_reset(void* bm_id,int ln2_block_size)
 
  	spin_unlock(&sbm->bm_lock);	
 }
-
-struct mbds_operations bm_mops = {
-	bm_init,
-	bm_cleanup,
-	bm_reset,
-	bm_set_bit,
-	bm_get_blocknr
-};
-
 
 /* meta data management */
 

@@ -79,10 +79,6 @@
 #define RQ_DRBD_SEC_WRITE 0xf400
 #define RQ_DRBD_READ      0xf500
 
-#define list_for_each2(pos,npos,head) \
-        for (pos=(head)->next,npos=pos->next;pos !=(head); \
-		     pos=npos,npos=pos->next)
-
 /* This is the layout for a packet on the wire! 
  * The byteorder is the network byte order!
  */
@@ -237,8 +233,7 @@ struct Drbd_Conf {
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
         struct Drbd_thread asender;
-        struct mbds_operations* mops;
-	void* mbds_id;
+	struct BitMap* mbds_id;
         wait_queue_head_t asender_wait;  
 	int open_cnt;
 	u32 gen_cnt[5];
@@ -289,7 +284,7 @@ extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
 /* drbd_fs.c: */
 extern int drbd_set_state(int minor,Drbd_State newstate);
 
-/* drbd_meta-data.c (still in drbd_main.d) */
+/* drbd_meta-data.c (still in drbd_main.c) */
 enum MetaDataIndex { 
 	Consistent,     /* Consistency flag, */ 
 	HumanCnt,       /* human-intervention-count */
@@ -304,6 +299,19 @@ extern void drbd_md_read(int minor);
 extern void drbd_md_inc(int minor, enum MetaDataIndex order);
 extern int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
 extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner);
+
+/* drbd_bitmap.c (still in drbd_main.c) */
+#define SS_OUT_OF_SYNC (1)
+#define SS_IN_SYNC     (0)
+#define MBDS_SYNC_ALL (-2)
+#define MBDS_DONE     (-3)
+
+struct BitMap;
+extern struct BitMap* bm_init(kdev_t dev);
+extern void bm_cleanup(void* bm_id);
+extern void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit);
+extern unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size);
+extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
