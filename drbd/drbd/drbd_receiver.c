@@ -204,7 +204,7 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	page = drbd_bio_get_page(&e->private_bio);
 ONLY_IN_26(
 	D_ASSERT(page == e->ee_bvec.bv_page);
-	// page = e->ee_bvec.bv_page;
+	page = e->ee_bvec.bv_page;
 )
 	kmem_cache_free(drbd_ee_cache, e);
 	mdev->ee_vacant--;
@@ -325,7 +325,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	e=list_entry(le, struct Tl_epoch_entry, w.list);
 ONLY_IN_26(
 	D_ASSERT(e->private_bio.bi_idx == 0);
-	// drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
+	drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
 )
 	e->block_id = !ID_VACANT;
 	SET_MAGIC(e);

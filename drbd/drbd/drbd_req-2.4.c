@@ -198,6 +198,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	// down_read(mdev->device_lock);
 
+	wait_event( mdev->cstate_wait, (volatile int)(mdev->cstate < WFBitMapS || mdev->cstate > WFBitMapT) );
+
 	local = inc_local(mdev);
 	// FIXME special case handling of READA ??
 	if (rw == READ || rw == READA) {
