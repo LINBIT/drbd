@@ -381,15 +381,15 @@ DRBD 0.8 Roadmap
   for more then 4k e.g. 64k
   50% DONE we handle big BIOs now, a bitmap bit is still 4k.
 
-[ Item 16 is still unfinished, as described here, the algorithm has
-  some loose ends... ]
-16 Displace the current generation-counters with a generation-UUID concept.
+16 Displace the current generation-counters with a data-generation-UUID 
+   concept.
   The current generation counters have various weaknesses:
    * In a split braine'd cluster the appliance of the same events
      to both cluster nodes could lead to equal generation-counters
      on both nodes, while the data is not in sync for sure.
    * They are completely unsuitable if a 3rd node is used for 
      e.g. weekly snapshots.
+   * Lots of other shortcommings.
 
   We associate each data generation with an unique UUID (=64 bit random
   number). A new data generation is created if a node becomes primary
@@ -399,31 +399,67 @@ DRBD 0.8 Roadmap
   In the meta-data we store a few generations-UUIDs: 
    * current
    * bitmap
-   * history[4]
+   * history[2]
 
   In addition there is an enum describing the authorisation of the
-  current gen-uuid: Human, Timout, Connected, Degraded
+  current gen-UUID: Human, Timout, Connected, Degraded
   As well as the currently known flags: 
-     Consistent, WasUpToDate, LastState, ConnectedInd, WantFullSync
+   Consistent, WasUpToDate, LastState, ConnectedInd, WantFullSync
 
   The difference here is that the former flags are determined
-  when the gen-uuid is created, while the latter are modified
-  as the state changes.
+  when the current-UUID is created, while the latter are modified
+  as the state changes. When drbdmeta initializes the meta-data
+  block it sets the current-UUID to JustCreated (a constant 64 bit number).
 
   When the cluster is in Connected state, then the bitmpat gen-uuid
   is set to 0 (Since the Bitmap is empty). When we create a new current
-  gen-uuid while we are disconencted the (old) current gets backuped
-  to the bitmap gen-uuid. (This allowes us to identify the base of
+  gen-UUID while we are disconencted the (old) current gets backuped
+  to the bitmap gen-UUID. (This allowes us to identify the base of
   of the bitmap later)
 
-  Algorithm on connect:
-   If the current gen-uuids are equal -> No sync.
-   else -> Need sync.
+  ALGORITHMS
 
-   The node which has bitmap gen-uuid == peer's current gen-uuid is
-   sync source.
+  Upon Connect:
+      self   peer   action
+  1.  JustC   JustC No Sync
+  2.  JustC  !JustC I am SyncTarget setting BM
+  3. !JustC   JustC I am SyncSource setting BM
+  4.   C   =   C    No Sync
+  5.   C   =   B    I am SyncTarget using BM
+  6.   C   = H1|H2  I am SyncTarget setting BM
+  7.   B   =   C    I am SyncSource using BM
+  8. H1|H2 =   C    I am SyncSource setting BM
+  9.   B   =   B    [ B != 0 ] SplitBrain, try auto recover strategies 
+  10 H1|H2 = H1|H2  SplitBrain, disconnect.
+  11.               Warn about unrelated Data, disconnect.
 
-   The node with the higher value in the authorisation enum is sync source.
+  Upon Disconnect:
+   Primary:
+      Copy the current-UUID over to the bitmap-UUID, create a new 
+      current-UUID.
+   Secondary:
+      Nothing to do.
+
+  Upon becomming Primary:
+   If new auth-enum would be different from current auth-enum, create
+   a new one. 
+
+  Upon start of resync:
+   Clear Consistent on the SyncTarget. The SyncTarget sets its
+   bitmap-UUID to the peer's current-UUID.
+
+  Upon finish of resync:
+   Set the bitmap-UUID to 0. The SyncTarget addopts the current-UUID
+   of the SyncSource. Set Consistent.
+   
+  * Note for the auto recover strategies after split brain (see
+    item 5) it is probabely a good idea to embedd the node's role
+    (i.e. Primary or Secondary) into the UUIDs.
+
+  Open Issues:
+   - When gets something moved to the History
+   - When to create a new UUID
+   - When (not) to overwrite the bitmap-UUID
 
 17 Something like
 
