@@ -15,111 +15,136 @@
 <refsect1>
  <title>Introduction</title>
  <para>
-The file <option>/etc/drbd.conf</option> is read by 
-<option>/etc/init.d/drbd</option> and 
-<option>/etc/ha.d/resource.d/datadisk</option> 
-which are included in the DRBD distribution.
-</para>
-<para>
-The file format was designed as to allow to have 
-a verbatim copy of the file on both nodes of the cluster.
-It is highly recommended to do so in order to keep your configuration
-manageable.
+ The file <option>/etc/drbd.conf</option> is read by
+ <option>/etc/init.d/drbd</option> and
+ <option>/etc/ha.d/resource.d/drbddisk</option>
+ which are included in the DRBD distribution.
+ </para>
+ <para>
+ The file format was designed as to allow to have
+ a verbatim copy of the file on both nodes of the cluster.
+ It is highly recommended to do so in order to keep your configuration
+ manageable. The file <option>/etc/drbd.conf</option> should be the same on both  nodes of the cluster. Changes to <option>/etc/drbd.conf</option> do not apply
+ immediately.
 <example>
 <title>A small drbd.conf file</title>
 <programlisting>
 resource drbd0 {
-  protocol=C
-  fsckcmd=fsck.ext2 -p -y
+  protocol C;
+  incon-degr-cmd "halt -f";
 
   on thost1 {
-    device=/dev/nb1
-    disk=/dev/hda7
-    address=10.1.1.31
-    port=7789
+    device    /dev/nb1;
+    disk      /dev/hda7;
+    address   10.1.1.31:7789;
   }
 
   on thost2 {
-    device=/dev/nb1
-    disk=/dev/hda7
-    address=10.1.1.32
-    port=7789
+    device    /dev/nb1;
+    disk      /dev/hda7;
+    address   10.1.1.32:7789;
   }
 }	
 </programlisting>
 </example>
-In this example there is a single DRBD resource (called drbd0) which uses
-protocol C for the connection between its devices. The application
-of this resource is an ext2 file system, since the command to restart
-it is <replaceable>fsck.ext2 -p -y</replaceable>.
-The device which runs
-on host <replaceable>thost1</replaceable> uses
-<replaceable>/dev/nb1</replaceable> as devices for its application, and
-<replaceable>/dev/hda7</replaceable> as low level storage for the data.
-The IP addresses are used to specify the networking interfaces to use.
-</para>
-<para>
-There may be multiple resource sections in a single drbd.conf file.
-</para>
+ In this example there is a single DRBD resource (called drbd0) which uses
+ protocol C for the connection between its devices.
+ The device which runs
+ on host <replaceable>thost1</replaceable> uses
+ <replaceable>/dev/nb1</replaceable> as devices for its application, and
+ <replaceable>/dev/hda7</replaceable> as low level storage for the data.
+ The IP addresses are used to specify the networking interfaces to use.
+ </para>
+ <para>
+ There may be multiple resource sections in a single drbd.conf file.
+ </para>
 </refsect1>
 <refsect1>
  <title>File Format</title>
   <para>
-The file consists of sections and parameter lines. 
-A section begins with a keyword, sometimes an additional name, and an 
-opening brace.
-A section ends with a closing brace.
-</para>
-<para>
-A parameter line starts with the identifier of the parameter followed
-by an equal sign (<quote>=</quote>). Every subsequent character on 
-that line is considered
-as part of the parameters value. White space surrounding the equal
-sign is ignored. A special case are Boolean
-parameters which only consist of the identifier.
-</para>
-<para>
-Comment lines may be placed into the configuration file and must
-begin with a hash sign (<quote>#</quote>) in the leftmost column.
+  The file consists of sections and parameters.
+  A section begins with a keyword, sometimes an additional name, and an
+  opening brace (<quote>{</quote>).
+  A section ends with a closing brace (<quote>}</quote>.
+  The braces enclose the parameters.
+  </para>
+  <para>
+  section [name] { parameter value; [...] }
+  </para>
+  <para>
+  A parameter starts with the identifier of the parameter followed
+  by whitespace. Every subsequent character
+  is considered
+  as part of the parameters value. A special case are Boolean
+  parameters which only consist of the identifier.
+  Parameters are terminated by a semikolon (<quote>;</quote>).
+  </para>
+  <para>Some parameter values have default units which might be overruled
+  by K, M or G. These units are defined in the usual way (K = 2^10 = 1024,
+  M =  1024 K, G = 1024 M).
+  </para>
+  <para>
+  Comments may be placed into the configuration file and must
+  begin with a hash sign (<quote>#</quote>). Subsequent characters are ignored
+  until the end of the line.
   </para>
  <refsect2>
  <title>Sections</title>
 <variablelist>
- <varlistentry>
+<varlistentry>
+  <term><option>skip</option></term>
+  <listitem><para>
+    Comments out chunks of text, even spanning more than one line.
+    Characters between the keyword <option>skip</option> and the opening
+    brace (<quote>{</quote>)are ignored. Everything enclosed by the braces
+    is skipped.
+    This comes in handy, if you just want to comment out
+    some 'resource [name] {...}' section: just precede it with 'skip'.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
   <term><option>global</option></term>
   <listitem><para>
     Configures some global parameters. Currently only
-    minor_count=number and disable_io_hints are allowed
-    here. You may only have one global section, preferably
+    <option>minor_count</option> and <option>disable_io_hints</option>
+    are allowed here. You may only have one global section, preferably
     as the first section.
   </para>
   </listitem>
 </varlistentry>
- <varlistentry>
+
+<varlistentry>
   <term><option>resource <replaceable>name</replaceable></option></term>
   <listitem><para>
     Configures a DRBD resource.
-    Each resource section needs to have two host sections 
-    (keyword <option>on</option>) and may have
+    Each resource section needs to have two
+    <option>on <replaceable>host</replaceable></option> sections
+    and may have
+    a <option>startup</option>,
+    a <option>syncer</option>,
     a <option>net</option> and a <option>disk</option> section.
-    Required parameters in this section: <option>protocol</option>,
-    <option>fsckcmd</option>. Optional parameters are <option>inittimeout
-    </option>, <option>skip-wait</option>, <option>load-only</option>, and 
-    <option>incon-degr-cmd</option>.
+    Required parameter in this section: <option>protocol</option>.
+    Optional parameter: <option>incon-degr-cmd</option>.
   </para>
   </listitem>
 </varlistentry>
- <varlistentry>
+
+<varlistentry>
   <term><option>on <replaceable>host-name</replaceable></option></term>
   <listitem><para>
-    Carries the necessary configuration parameters for a DRBD 
+    Carries the necessary configuration parameters for a DRBD
     device of the enclosing resource.
+    <replaceable>host-name</replaceable> is mandatory and must match the
+    linux hostname (uname -n) of one of the nodes.
     Required parameters in this section: <option>device</option>,
-    <option>disk</option>, <option>address</option>, <option>port</option>.
+    <option>disk</option>, <option>address</option>, <option>meta-disk</option>.
   </para>
   </listitem>
 </varlistentry>
- <varlistentry>
+
+<varlistentry>
   <term><option>disk</option></term>
   <listitem><para>
     This section is used to fine tune DRBD's properties
@@ -127,115 +152,120 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry> for detailed description of 
     the parameters.
-    Allowed parameters: <option>disk-size</option>, <option>do-panic</option>.
+    Optional parameter: <option>on-io-error</option>.
   </para>
   </listitem>
 </varlistentry>
- <varlistentry>
+
+<varlistentry>
   <term><option>net</option></term>
   <listitem><para>
     This section is used to fine tune DRBD's properties. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry> for detailed description
     of this section's parameters.
-    Allowed parameters: <option>sync-rate</option>, 
-    <option>sync-max</option>, <option>sync-min</option>,
-    <option>sync-nice</option>, <option>sync-group</option>, <option>skip-sync</option>,
+    Optional parameters:
+    <option>sndbuf-size</option>, <option>timeout</option>,
     <option>connect-int</option>, <option>ping-int</option>,
-    <option>timeout</option>, <option>tl-size</option>,
-    <option>sndbuf-size</option>, <option>ko-count</option>.
+    <option>max-buffers</option>, <option>max-epoch-size</option>,
+    <option>ko-count</option>, <option>on-disconnect</option>.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>startup</option></term>
+  <listitem><para>
+    This section is used to fine tune DRBD's properties. Please
+    refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry> for detailed description
+    of this section's parameters.
+    Optional parameters:
+    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>syncer</option></term>
+  <listitem><para>
+    This section is used to fine tune the synchronisation daemon
+    for the device. Please
+    refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry> for detailed description
+    of this section's parameters.
+    Optional parameters:
+    <option>rate</option>, <option>group</option>, <option>al-extents</option>.
   </para>
   </listitem>
 </varlistentry>
 </variablelist>
- </refsect2>
+</refsect2>
+
  <refsect2>
- <title>Parameter</title>
+ <title>Parameters</title>
 
 <variablelist>
- <varlistentry>
-  <term><option>protocol=<replaceable>prot-id</replaceable></option></term>
+
+<varlistentry>
+  <term><option>minor_count <replaceable>count</replaceable></option></term>
   <listitem><para>
-    <replaceable>prot-id</replaceable> may be A, B or C. 
+    <replaceable>count</replaceable> may be a number from 1 to 255.
   </para>
+  <para>Use <replaceable>minor_count</replaceable>
+   if you want to define more resources later without reloading the DRBD kernel
+   module. Per default the module loads with exactly as many devices as
+   configured in this file. Builtin default for module is 2, and 8 for
+   monolithic kernel. For monolithic kernel
+   <replaceable>minor_count</replaceable> is ignored, and you have to pass a
+   kernel boot parameter <replaceable>drbd.minor_count=count</replaceable> to
+   change the default.</para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>disable_io_hints</option></term>
+  <listitem>
+  <para>Use <replaceable>disable_io_hints</replaceable>
+   if you want to set up a DRBD device via the
+   loopback network interface or between two virtual machines on the same
+   box, for testing/simulating/presentationn
+   otherwise it could trigger a run_tasq_queue deadlock.</para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>protocol <replaceable>prot-id</replaceable></option></term>
+  <listitem>
+  <para>On the TCP/IP link the specified <replaceable>protocol</replaceable>
+  is used. Valid protocol specifiers are A, B, and C.</para>
+  <para>Protocol A: write IO is reported as completed, if it has
+  reached local disk and local tcp send buffer.</para>
+  <para>Protocol B: write IO is reported as completed, if it has reached
+  local disk and remote buffer cache.</para>
+  <para>Protocol C: write IO is reported as completed, if it has
+  reached both local and remote disk.</para>
   </listitem>
 </varlistentry>
- <varlistentry>
-  <term><option>fsckcmd=<replaceable>command</replaceable></option></term>
-  <listitem><para>
-    Upon resource takeover datadisk runs the 
-    <replaceable>command</replaceable> on the device of the resource.
-    Specify here the command that brings your file system into 
-    a consistent state.
-    In case of a journaling file system you may use 
-    <replaceable>/bin/true</replaceable> instead.
-  </para>
-  </listitem>
-</varlistentry>
- <varlistentry>
-  <term><option>inittimeout=<replaceable>value</replaceable></option></term>
-  <listitem><para>
-    If <replaceable>value</replaceable> is positive, and the other node does
-    not show up within the specified time (seconds), this node will start the
-    resource in degraded mode, read: forces primary status on this node.</para>
-    <para>Only use this option if availability is more important to you than
-    the consistency of your data.</para>
-    <para>If <replaceable>value</replaceable> is negative, and the other node
-    does not show up within the specified time (seconds), this node stays in
-    WFConnection:Secondary/Unknown state, and just lets the boot process
-    continue. Use this if you expect a reboot of the remaining node of a
-    degraded cluster, and you think your clustermanager is able to handle this
-    better.
-  </para>
-  </listitem>
-</varlistentry>
- <varlistentry>
-  <term><option>skip-wait</option></term>
-  <listitem><para>
-    If you want startup of DRBD to proceed without waiting for 
-    synchronisation to finish, you can set this option. WARNING:
-    only do this if whatever software you're using to manage DRBD can 
-    correctly handle a syncing DRBD device (no failover possible), or a cluster in
-    degraded mode.
-  </para>
-  </listitem>
-</varlistentry>
- <varlistentry>
-  <term><option>load-only</option></term>
-  <listitem><para>
-    If you want the resource script to load the
-    configuration into the module ONLY, use this.
-    It will not even wait for connection of the devices.
-    WARNING: see above.
-  </para>
-  </listitem>
-</varlistentry>
- <varlistentry>
-  <term><option>incon-degr-cmd=<replaceable>command</replaceable></option></term>
+
+<varlistentry>
+  <term><option>incon-degr-cmd <replaceable>command</replaceable></option></term>
   <listitem><para>
     In case a node starts up in degraded mode (inittimeout is set) and
     its local replica of the data is inconsistent it executes the
     <replaceable>command</replaceable>. If the command exits without
-    error, datadisk expects the DRBD device to be in primary state.
+    error, drbddisk expects the DRBD device to be in primary state.
   </para>
   </listitem>
 </varlistentry>
- <varlistentry>
-  <term><option>port=<replaceable>number</replaceable></option></term>
-  <listitem><para>
-    Each DRBD resource needs a TCP port <replaceable>number</replaceable> 
-    which is used to connect to the node's partner device. 
-    Two DRBD resources may not use the same port.
-  </para>
-  </listitem>
-</varlistentry>
- <varlistentry>
-  <term><option>device=<replaceable>name</replaceable></option></term>
+
+<varlistentry>
+  <term><option>device <replaceable>name</replaceable></option></term>
   <listitem><para>
     The name of the block device node of the resource being described.
     You must use this device with your application (file system) and 
-    you must not use the block device which is specified with the 
-    <option>disk=</option> parameter.
+    you must not use the low level block device which is specified with the
+    <option>disk</option> parameter.
   </para>
   <para>
     The device nodes must have the same major number as the DRBD
@@ -243,10 +273,15 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     and the corresponding device nodes are usually named 
     <option>/dev/nb0</option>, <option>/dev/nb1</option>, etc.
   </para>
+  <para>Installation scripts of the DRBD package provide, that
+  <option>/dev/nb0</option> to <option>/dev/nb8</option> are
+  predefined in your system. To be sure, issue something like ls /dev/nb*.
+  </para>
   </listitem>
 </varlistentry>
- <varlistentry>
-  <term><option>disk=<replaceable>name</replaceable></option></term>
+
+<varlistentry>
+  <term><option>disk <replaceable>name</replaceable></option></term>
   <listitem><para>
     DRBD uses this block device to actually store and retrieve the data.
     Never access such a device while DRBD is running on top of it. This
@@ -255,12 +290,211 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
   </para>
   </listitem>
 </varlistentry>
- <varlistentry>
-  <term><option>address=<replaceable>ip-addr</replaceable></option></term>
+
+<varlistentry>
+  <term><option>address <replaceable>IP:port</replaceable></option></term>
   <listitem><para>
-    A resource needs one IP address per device, which is used to wait for 
+    A resource needs one <replaceable>IP</replaceable> address per device,
+    which is used to wait for
     incoming connections from the partner device respectively to reach
     the partner device.
+  </para>
+  <para>
+    Each DRBD resource needs a TCP <replaceable>port</replaceable>
+    which is used to connect to the node's partner device.
+    Two different DRBD resources may not use the same
+     <replaceable>IP:port</replaceable> combination on the same node.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>meta-disk <replaceable>internal</replaceable></option></term>
+  <term><option>meta-disk <replaceable>device
+  [index]</replaceable></option></term>
+  <listitem><para>
+    internal means, that the last 128 MB of the lower device are used to store
+    the meta-data. You must not use <replaceable>[index]</replaceable> with
+    internal.
+  </para>
+  <para>
+   You can use a single block <replaceable>device</replaceable> to store
+   meta-data of multiple DRBD devices.
+   E.g. use meta-disk /dev/hde6[0]; and meta-disk /dev/hde6[1];
+   for two different resources. In this case the meta-disk
+   would need to be at least 256 MB in size.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>on-io-error <replaceable>handler</replaceable></option></term>
+  <listitem><para>
+  <replaceable>handler</replaceable> is taken, if the lower level
+    device reports io-error to the upper layers.
+  </para>
+  <para>
+  <replaceable>handler</replaceable> may be pass_on, panic, or detach.
+  </para>
+  <para>pass_on: Report the io-error to the upper layers. On Primary report
+  it to the mounted file system. On Secondary ignore it.</para>
+  <para>panic: The node leaves the cluster by doing a kernel panic.</para>
+  <para>detach: The node drops its low level device, and continues in disk
+  less mode.</para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>sndbuf-size <replaceable>size</replaceable></option></term>
+  <listitem><para>
+  <replaceable>size</replaceable> is size of the TCP socket send buffer.
+  Default is 128K. You can specify smaller or larger values. Larger values
+  are appropriate for reasonable write throughput with protocol A over high
+  latency networks. Very large values like 1M may cause problems. Even values
+  below 32K do not make much sense.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>timeout <replaceable>time</replaceable></option></term>
+  <listitem><para>
+If the partner node fails to send an expected response packet within
+<replaceable>time</replaceable> 10<superscript>ths</superscript>
+of a second, the partner node
+is considered dead and therefore the TCP/IP connection is abandoned. This must be lower than <replaceable>connect-int</replaceable> and <replaceable>ping-int</replaceable>.
+The default value is 60 = 6 seconds, the unit 0.1 seconds.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>connect-int <replaceable>time</replaceable></option></term>
+  <listitem><para>
+In case it is not possible to connect to the remote DRBD device immediately,
+DRBD keeps on trying to connect. With this option you can set the time
+between two tries. The default value is 10 seconds, the unit is 1 second.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>ping-int <replaceable>time</replaceable></option></term>
+  <listitem><para>
+If the TCP/IP connection linking a DRBD device pair is idle for more than
+<replaceable>time</replaceable> seconds, DRBD will generate a keep-alive
+packet to check if its partner is still alive. The default is 10 seconds,
+the unit is 1 second.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>max-buffers <replaceable>number</replaceable></option></term>
+  <listitem><para>
+  Maximal number of requests to be allocated by DRBD. Unit is PAGE_SIZE,
+  which is 4 KB on most systems.
+  The minimum is hardcoded to 32 (=128 KB).
+  For hight performance installations it might help, if you
+  increase that number. These buffers are used to hold
+  datablocks while they are written to disk.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>max-epoch-size <replaceable>number</replaceable></option></term>
+  <listitem><para>
+  The highest number of data blocks between two write barriers.
+  If you set this smaller than 10 you might decrease your performance.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>ko-count <replaceable>count</replaceable></option></term>
+  <listitem><para>
+  In case the secondary node fails to complete a single write request
+for <replaceable>count</replaceable> times the
+<replaceable>timeout</replaceable>, it is expelled from the cluster.
+(I.e. the primary node goes into StandAlone mode.)
+The default is 0, which disables this feature.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>on-disconnect <replaceable>handler</replaceable></option></term>
+  <listitem><para>
+  When the connection to the peer is lost, DRBD can either
+  go into stand alone mode, try to reconnect to the peer or
+  freeze all further IO requests (think of an NFS hard mount).
+  Valid handler specifiers are <option>stand_alone</option>,
+  <option>reconnect</option> and <option>freeze_io</option>.
+  The default handler is <option>reconnect</option>.
+  </para>
+  <para><option>stand_alone</option>: Do not reconnect, go into
+  StandAlone state.</para>
+  <para><option>reconnect</option>: Try to reconnect.</para>
+  <para><option>freeze_io</option>: Try to reconnect, but freeze all
+  IO until the connection is established again.</para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>wfc-timeout <replaceable>time</replaceable></option></term>
+  <listitem><para>Wait for connection timeout.
+  The init script <citerefentry><refentrytitle>drbd</refentrytitle>
+  <manvolnum>8</manvolnum></citerefentry> blocks the boot process
+  until the DRBD resources are connected.
+  In case you want to limit the wait time, do it here.
+  The sign is important.
+  Always use a negative value, positive will (try to) force primary status,
+  which is not what you want, if it has outdated data.
+  Default is 0, which means unlimited. Unit is seconds.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>degr-wfc-timeout <replaceable>time</replaceable></option></term>
+  <listitem><para>
+  Wait for connection timeout, if this node was a degraded cluster.
+  In case a degraded cluster (= cluster with only one node left)
+  is rebooted, this timeout value is used instead of wfc-timeout.
+  Default is 60, unit is seconds. Value 0 means unlimited.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>rate <replaceable>rate</replaceable></option></term>
+  <listitem><para>
+  To ensure smooth operation of the application on top of DRBD,
+  it is possible to limit the bandwidth which may be used by
+  background synchronizations. The default is 250 KB/sec, the
+  default unit is KB/sec. Optional suffixes K, M, G are allowed.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>group <replaceable>number</replaceable></option></term>
+  <listitem><para>
+  Resynchronization of all devices in one group runs parallel.
+  Groups are serialized in ascending order. You should avoid,
+  that devices which lower devices share one and the same
+  physical disk sync in parallel. The default group is 0. I.e. per
+  default all devices sync parallel. Negative and positive numbers are allowed.
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>al-extents <replaceable>extents</replaceable></option></term>
+  <listitem><para>DRBD automatically performs hot area detection. With this
+  parameter you control how big the hot area (=active set) can
+  get. Each extent marks 4M of the backing storage (=low level device).
+  In case a primary node leaves the cluster unexpectedly the areas covered
+  by the active set must be resynced upon rejoin of the failed
+  node. The data structure is stored in the meta-data area, therefore each
+  change of the active set is a write operation
+  to the meta-data device. A higher number of extents gives
+  longer resync times but less updates to the meta-data. The
+  default number of <replaceable>extents</replaceable> is
+  127. (Minimum: 7, Maximum: 3843)
   </para>
   </listitem>
 </varlistentry>
@@ -269,13 +503,19 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
 </refsect2>
 </refsect1>
 <refsect1>
+<title>Upgrade from DRBD Version 0.6.x</title>
+<simpara>...
+</simpara>
+</refsect1>
+<refsect1>
 <title>Version</title>
-<simpara>This document is correct for version 0.6.11 of the DRBD distribution.
+<simpara>This document is correct for version 0.7-pre7 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>
 <title>Author</title>
 <simpara>Written by Philipp Reisner <email>philipp.reisner@gmx.at</email>.
+Man pages were reviewed and rewritten by Helmut Wollmersdorfer <email>helmut.wollmersdorfer@gmx.at</email>.
 </simpara>
 </refsect1>
 <refsect1>
@@ -296,9 +536,11 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 <para>
     <citerefentry><refentrytitle>drbd</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>,
-    <citerefentry><refentrytitle>datadisk</refentrytitle>
+    <citerefentry><refentrytitle>drbddisk</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>
+    <citerefentry><refentrytitle>drbdadm</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>
 </para>
 </refsect1>
