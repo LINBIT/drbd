@@ -310,6 +310,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 		}
 		f=b;
 		b=b->next;
+		list_del(&f->requests);
 		kfree(f);
 	}
 
