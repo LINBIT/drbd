@@ -173,9 +173,9 @@ uname -r | grep BOOT ||
 %changelog
 * Mon Jan 31 2005 10:17:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.10-1)
- * 0.7.9 had a memory corruption bug. This time I did
-   the cone_bio() fix myself, and this release is supposed
-   to work with SLES9 SP1, Linux-2.6.11 and Linux-2.6.12.
+ * 0.7.9 had a memory corruption bug and memory leakage (BIOs).
+   This time I did the clone_bio() fix myself, and this release is
+   supposed to work with SLES9 SP1, Linux-2.6.11 and Linux-2.6.12.
 
 * Tue Jan 25 2005 11:31:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.9-1)

@@ -6,9 +6,9 @@ Latest:
 
 0.7.10 (api:77/proto:74)
 -----
- * 0.7.9 had a memory corruption bug. This time I did
-   the cone_bio() fix myself, and this release is supposed
-   to work with SLES9 SP1, Linux-2.6.11 and Linux-2.6.12.
+ * 0.7.9 had a memory corruption bug and memory leakage (BIOs).
+   This time I did the clone_bio() fix myself, and this release is
+   supposed to work with SLES9 SP1, Linux-2.6.11 and Linux-2.6.12.
 
 0.7.9 (api:77/proto:74)
 -----

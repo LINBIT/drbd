@@ -544,7 +544,6 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	struct bio *bio;
 
 	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
-	bio_get(bio);
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = req;
 	bio->bi_end_io  = drbd_dio_end;
@@ -560,7 +559,6 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	struct bio *bio;
 
 	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
-	bio_get(bio);
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = req;
 	bio->bi_end_io  = drbd_read_bi_end_io;	// <- only difference

@@ -68,8 +68,6 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
 	struct completion event;
 	int ok;
 
-	bio_get(bio);
-
 	bio->bi_bdev = mdev->md_bdev;
 	bio->bi_sector = sector;
 	bio_add_page(bio, page, size, 0);
