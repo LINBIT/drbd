@@ -194,7 +194,7 @@ void print_usage(const char* prgname)
 {
   fprintf(stderr,
 	  "USAGE:\n"
-	  " %s device command [ command_args ] [ comamnd_options ]\n"
+	  " %s device command [ command_args ] [ comand_options ]\n"
 	  "Commands:\n"
 	  " primary [-h|--human] \n"
 	  " secondary\n"
@@ -204,7 +204,7 @@ void print_usage(const char* prgname)
 	  " replicate\n"
 	  " down\n"
 	  " net local_addr[:port] remote_addr[:port] protocol "
-	  " [-t|--timout val]\n"
+	  " [-t|--timeout val]\n"
           " [-r|--sync-rate val] [-k|--skip-sync]"
 	  " [-s|--tl-size val] [-c|--connect-int]\n"
           " [-i|--ping-int]\n"
@@ -435,7 +435,7 @@ int do_disk_conf(int drbd_fd,
   if(err)
     {
       perror("ioctl() failed");
-      if(errno == EINVAL) print_config_ioctl_err(cn->ret_code);
+      if(errno) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
   return 0;
@@ -492,7 +492,7 @@ int do_net_conf(int drbd_fd,
   if(err)
     {
       perror("ioctl() failed");
-      if(errno == EINVAL) print_config_ioctl_err(cn->ret_code);
+      if(errno) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
   return 0;
