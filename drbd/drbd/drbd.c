@@ -1599,7 +1599,7 @@ struct socket* drbd_accept(struct socket* sock)
 	sock_release(newsock);
       out:
 	unlock_kernel();
-	if(err != ERESTARTSYS)
+	if(err != -ERESTARTSYS)
 		printk(KERN_ERR DEVICE_NAME ": accept failed! %d\n", err);
 	return 0;
 }
@@ -1631,7 +1631,7 @@ int drbd_recv(struct socket *sock, void *ubuf, size_t size)
 
 	set_fs(oldfs);
 	unlock_kernel();
-	if (err != size && err != ERESTARTSYS)
+	if (err != size && err != -ERESTARTSYS && err != 0)
 		printk(KERN_ERR DEVICE_NAME ": sock_recvmsg returned %d\n",
 		       err);
 
