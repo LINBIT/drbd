@@ -628,8 +628,11 @@ int minor_of_res(struct d_resource *res)
     char *c;
 
     c=res->me->device;
-    while(!isdigit(*c)) c++; // Find the first digit in the device name...
-    return strtol(c,NULL,10);
+    while(*c) {
+      if(isdigit(*c)) return strtol(c,NULL,10);
+      c++;
+    }
+    return 0;
   }
 
   return minor(sb.st_rdev);
@@ -1187,6 +1190,9 @@ int main(int argc, char** argv)
       if ( m > highest_minor ) highest_minor = m;
       nr_resources++;
     }
+
+    // Just for the case that minor_of_res() returned 0 for all devices.
+    if( nr_resources > (highest_minor+1) ) highest_minor=nr_resources-1;
 
     if( mc && mc<(highest_minor+1) ) {
       fprintf(stderr,"The highest minor you have in your config is %d"
