@@ -22,9 +22,9 @@ RETVAL=0
 case "$1" in
   start)
         action "Loading DRBD module" /sbin/modprobe drbd
-	action "Configuring DRBD Module" /usr/sbin/drbdsetup ${DR_DEVICE} \
-           ${DR_LL_DEVICE} ${DR_PROTOCOL} ${DR_LOCAL_NODE} ${DR_REMOTE_NODE} \
-           ${DR_OPTIONS}
+	action "Configuring DRBD Module" /usr/sbin/drbdsetup $DR_DEVICE \
+           $DR_LL_DEVICE $DR_PROTOCOL $DR_LOCAL_NODE $DR_REMOTE_NODE \
+           $DR_OPTIONS
 	RETVAL=$?
 	;;
   stop)
@@ -46,4 +46,5 @@ case "$1" in
 	exit 1
 esac
 
-exit $RETVAL
+exit 0
+#exit $RETVAL

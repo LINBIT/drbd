@@ -14,17 +14,20 @@ RETVAL=0
 # See how we were called.
 case "$1" in
   start)
-	action "Becoming primary node" /usr/sbin/drbdsetup ${DR_DEVICE} PRI
+	action "Becoming primary node" /usr/sbin/drbdsetup $DR_DEVICE PRI
 	RETVAL=$?
-	action "Mounting cluster's FS" mount ${DR_DEVICE} ${DR_MNTPOINT}
+	action "Mounting cluster's FS" mount -o sync $DR_DEVICE $DR_MNTPOINT
 	RETVAL2=$?
 	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && touch /var/lock/subsys/datadisk\
            || RETVAL=1
 	;;
   stop)
-	action "Unmounting cluster's FS: " umount ${DR_MNTPOINT}
+	action "Unmounting cluster's FS: " umount $DR_MNTPOINT
 	RETVAL=$?
-	action "Becoming secondary node"  /usr/sbin/drbdsetup ${DR_DEVICE} SEC
+        while grep Syncing /proc/drbd > /dev/null; do
+           sleep 1;
+        done
+	action "Becoming secondary node"  /usr/sbin/drbdsetup $DR_DEVICE SEC
 	RETVAL2=$?
 	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && rm -f /var/lock/subsys/datadisk
 	;;
@@ -42,4 +45,5 @@ case "$1" in
 	exit 1
 esac
 
-exit $RETVAL
+exit 0
+#exit $RETVAL
