@@ -146,9 +146,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	      void* data, size_t data_size);
 int drbd_send_param(int minor, int cmd);
 void drbd_thread_start(struct Drbd_thread *thi);
-#define drbd_thread_stop(A)     _drbd_thread_stop(A,FALSE)
-#define drbd_thread_restart(A)  _drbd_thread_stop(A,TRUE)
-void _drbd_thread_stop(struct Drbd_thread *thi, int restart);
+void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 
 int drbdd_init(void *arg);
 int drbd_syncer(void *arg);
@@ -255,7 +253,7 @@ struct request *my_all_requests = NULL;
 {
 	int rlen, i;
 
-	static const char *cstate_names[7] =
+	static const char *cstate_names[8] =
 	{
 		"Unconfigured",
 		"Unconnected",
@@ -263,7 +261,8 @@ struct request *my_all_requests = NULL;
 		"WFReportParams",
 		"SyncingAll",
 		"SyncingQuick",
-		"Connected"
+		"Connected",
+		"Timeout"
 	};
 	static const char *state_names[2] =
 	{
@@ -547,7 +546,8 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	}
 }
 
-void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
+
+void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
         int err;
 	if (!thi->pid) return;
@@ -559,29 +559,45 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
 
 	err = kill_proc_info(SIGTERM, NULL, thi->pid);
 
-	if (err == 0)
-		sleep_on(&thi->wait);	/* wait until the thread
-					   has closed the socket */
-	else
+	if (err == 0) {
+		if(wait) {
+			sleep_on(&thi->wait);	/* wait until the thread
+						   has closed the socket */
+
+			/*
+			  This would be the *nice* solution, but it crashed
+			  my machine...
+			  
+			  struct task_struct *p;
+			  read_lock(&tasklist_lock);
+			  p = find_task_by_pid(drbd_conf[minor].rpid);
+			  p->p_pptr = current;
+			  errno = send_sig_info(SIGTERM, NULL, p);
+			  read_unlock(&tasklist_lock);
+			  interruptible_sleep_on(&current->wait_chldexit);
+			*/
+
+			current->state = TASK_INTERRUPTIBLE;
+			schedule_timeout(HZ / 10);
+		}
+	} else {
 		printk(KERN_ERR DEVICE_NAME ": could not send signal\n");
+	}
+}
 
-	/* printk( KERN_DEBUG DEVICE_NAME ": (pseudo) waitpid returned \n"); */
+inline void drbd_thread_stop(struct Drbd_thread *thi)
+{
+	_drbd_thread_stop(thi,FALSE,TRUE);
+}
 
-	current->state = TASK_INTERRUPTIBLE;
-	schedule_timeout(HZ / 10);
+inline void drbd_thread_restart(struct Drbd_thread *thi)
+{
+	_drbd_thread_stop(thi,TRUE,TRUE);
+}
 
-	/*
-	   This would be the *nice* solution, but it crashed
-	   my machine...
-
-	   struct task_struct *p;
-	   read_lock(&tasklist_lock);
-	   p = find_task_by_pid(drbd_conf[minor].rpid);
-           p->p_pptr = current;
-	   errno = send_sig_info(SIGTERM, NULL, p);
-	   read_unlock(&tasklist_lock);
-	   interruptible_sleep_on(&current->wait_chldexit);
-	 */
+inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
+{
+	_drbd_thread_stop(thi,TRUE,FALSE);
 }
 
 int drbd_ll_blocksize(int minor)
@@ -734,6 +750,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	int err;
 
 	if (!mdev->sock) return -1000;
+	if (mdev->cstate == Timeout) return -1001;
 
 	header->magic  =  cpu_to_be32(DRBD_MAGIC);
 	header->command = cpu_to_be16(cmd);
@@ -775,12 +792,13 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			recalc_sigpending(current);
 			spin_unlock_irq(&current->sigmask_lock);
 			printk(KERN_ERR DEVICE_NAME
-			       ": send timed out!!\n");
+			       ": send timed out!! (pid=%d)\n",current->pid);
 
-			up(&mdev->send_mutex);
-			drbd_thread_restart(&mdev->receiver);
-			down(&mdev->send_mutex);
-			return -1000;
+			mdev->cstate = Timeout;
+
+			drbd_thread_restart_nowait(&mdev->receiver);
+
+			return -1002;
 		} else spin_unlock_irq(&current->sigmask_lock);
 	}
 	if (err != header_size+data_size) {
@@ -795,7 +813,7 @@ void drbd_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
-	printk(KERN_ERR DEVICE_NAME ": timeout detected!\n");
+	printk(KERN_ERR DEVICE_NAME ": timeout detected! (pid=%d)\n",p->pid);
 
 	send_sig_info(DRBD_SIG, NULL, p);
 
@@ -807,9 +825,7 @@ void drbd_a_timeout(unsigned long arg)
 
 	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
 
-	if(!thi->pid) return;
-	thi->exit=2;
-	kill_proc_info(SIGTERM,NULL,thi->pid);
+	drbd_thread_restart_nowait(thi);
 }
 
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
@@ -2107,6 +2123,7 @@ struct BitMap {
 	unsigned long sb_mask;
 	unsigned long gb_bitnr;
 	unsigned long gb_snr;
+	spinlock_t bm_lock;
 };
 
 void* bm_init(kdev_t dev)
@@ -2128,6 +2145,7 @@ void* bm_init(kdev_t dev)
 	sbm->sb_mask=0;
 	sbm->gb_bitnr=0;
 	sbm->gb_snr=0;
+	sbm->bm_lock = SPIN_LOCK_UNLOCKED;
 
 	memset(sbm->bm,0,size);
 
@@ -2145,9 +2163,6 @@ void bm_cleanup(void* bm_id)
 /* THINK:
    What happens when the block_size (ln2_block_size) changes between
    calls 
-
-   TODO: 
-   bm_xxx are not yet SMP save.
 */
 
 void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
@@ -2163,25 +2178,30 @@ void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
 
 	bitnr = blocknr >> cb;
 
+ 	spin_lock(&sbm->bm_lock);
+
 	if(!bit && cb) {
 		if(sbm->sb_bitnr == bitnr) {
 		        sbm->sb_mask |= 1 << (blocknr & ((1<<cb)-1));
-			if(sbm->sb_mask != (1<<(1<<cb))-1) return;
+			if(sbm->sb_mask != (1<<(1<<cb))-1) goto out;
 		} else {
 	                sbm->sb_bitnr = bitnr;
 			sbm->sb_mask = 1 << (blocknr & ((1<<cb)-1));
-			return;
+			goto out;
 		}
 	}
 
 	if(bitnr>>LN2_BPL >= sbm->size) {
 		printk(KERN_ERR DEVICE_NAME": BitMap too small!\n");	  
-		return;
+		goto out;
 	}
 
 	bm[bitnr>>LN2_BPL] = bit ?
 	  bm[bitnr>>LN2_BPL] |  ( 1 << (bitnr & ((1<<LN2_BPL)-1)) ) :
 	  bm[bitnr>>LN2_BPL] & ~( 1 << (bitnr & ((1<<LN2_BPL)-1)) );
+
+ out:
+	spin_unlock(&sbm->bm_lock);
 }
 
 inline int bm_get_bn(unsigned long word,int nr)
@@ -2201,7 +2221,10 @@ unsigned long bm_get_blocknr(void* bm_id,int ln2_block_size)
         unsigned long* bm = sbm->bm;
 	unsigned long wnr;
 	unsigned long nw = sbm->size/sizeof(unsigned long);
+	unsigned long rv;
 	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
+
+ 	spin_lock(&sbm->bm_lock);
 
 	if(sbm->gb_snr >= (1<<cb)) {	  
 		for(wnr=sbm->gb_bitnr>>LN2_BPL;wnr<nw;wnr++) {
@@ -2217,19 +2240,27 @@ unsigned long bm_get_blocknr(void* bm_id,int ln2_block_size)
 				goto out;
 			}
 		}
-		return MBDS_DONE;
+		rv = MBDS_DONE;
+		goto r_out;
 	}
  out:
-	return (sbm->gb_bitnr<<cb) + sbm->gb_snr++;
+	rv = (sbm->gb_bitnr<<cb) + sbm->gb_snr++;
+ r_out:
+ 	spin_unlock(&sbm->bm_lock);	
+	return rv;
 }
 
 void bm_reset(void* bm_id,int ln2_block_size)
 {
 	struct BitMap* sbm = (struct BitMap*) bm_id;
 
+ 	spin_lock(&sbm->bm_lock);
+
 	sbm->gb_bitnr=0;
 	if (sbm->bm[0] & 1) sbm->gb_snr=0;
 	else sbm->gb_snr = 1<<(BM_BLOCK_SIZE_B-ln2_block_size);
+
+ 	spin_unlock(&sbm->bm_lock);	
 }
 
 struct mbds_operations bm_mops = {

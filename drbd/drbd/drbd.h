@@ -140,7 +140,8 @@ typedef enum {
   WFReportParams,
   SyncingAll,
   SyncingQuick,
-  Connected 
+  Connected,
+  Timeout
 } Drbd_CState; 
 
 #define DRBD_MAGIC 0x83740267
