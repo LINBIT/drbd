@@ -894,8 +894,12 @@ struct bm_extent {
 #define BM_EXT_PER_SECT	    ( 512 / BM_BYTES_PER_EXTENT )        //   4
  */
 
-#define DRBD_MAX_SECTORS \
+#if ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
+# define DRBD_MAX_SECTORS (0xffffffffLU)
+#else
+# define DRBD_MAX_SECTORS \
           ( (MD_RESERVED_SIZE*2LL - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
+#endif
 
 extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);

@@ -116,7 +116,7 @@ Other helpful links:
    will only work properly with a matching kernel.
 
        all# make linux/include/version.h
-          # and since kernel 2.6.6 (some distos 2.6.5-something):
+          # and since kernel 2.6.6 (some distros 2.6.5-something):
        all# make modules_prepare
 
 == Build DRBD kernel module (outside of the kernel source) ==
