@@ -266,14 +266,21 @@ int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
 	struct hlist_head *slot = mdev->tl_hash + tl_hash_fn(mdev,sector);
 	struct hlist_node *n;
 	drbd_request_t * i;
+	int rv=0;
+
+	spin_lock_irq(&mdev->tl_lock);
 
 	hlist_for_each_entry(i, n, slot, colision) {
 		if (i==item) {
 			D_ASSERT(drbd_req_get_sector(i) == sector);
-			return 1;
+			rv=1;
+			break;
 		}
 	}
-	return 0;
+
+	spin_unlock_irq(&mdev->tl_lock);
+
+	return rv;
 }
 
 /* tl_dependence reports if this sector was present in the current

@@ -1921,8 +1921,6 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 		} else {
 			req=(drbd_request_t*)(long)p->block_id;
 
-			ERR_IF (!VALID_POINTER(req)) return FALSE;
-
 			if (unlikely(!tl_verify(mdev,req,sector))) {
 				ERR("Got a corrupt block_id/sector pair.\n");
 				return FALSE;
