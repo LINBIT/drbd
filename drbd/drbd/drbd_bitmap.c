@@ -248,7 +248,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		   a 32bit host could present the wrong number of words
 		   to a 64bit host.
 		*/
-		words = ALIGN(bits,64) >> 6;
+		words = ALIGN(bits,64) >> LN2_BPL;
 
 		D_ASSERT(bits < ((MD_RESERVED_SIZE<<1)-MD_BM_OFFSET)<<12 );
 
