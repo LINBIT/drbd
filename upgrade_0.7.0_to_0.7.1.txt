@@ -13,15 +13,15 @@ Plan A)
   * Install drbd-0.7.1
   * Run these commands as root:
 
-  sed -e "s,/dev/nb,/dev/drbd,g" < /etc/drbd.conf > /etc/drbd.conf_new
+  sed -e "s,/dev/nbd\?,/dev/drbd,g" < /etc/drbd.conf > /etc/drbd.conf_new
   mv /etc/drbd.conf /etc/drbd.conf_old ; mv /etc/drbd.conf_new /etc/drbd.conf
-  sed -e "s,/dev/nb,/dev/drbd,g" < /etc/fstab > /etc/fstab_new
+  sed -e "s,/dev/nbd\?,/dev/drbd,g" < /etc/fstab > /etc/fstab_new
   mv /etc/fstab /etc/fstab_old ; mv /etc/fstab_new /etc/fstab
-  sed -e "s,/dev/nb,/dev/drbd,g" < /etc/ha.d/haresources > /etc/ha.d/haresources_new
+  sed -e "s,/dev/nbd\?,/dev/drbd,g" < /etc/ha.d/haresources > /etc/ha.d/haresources_new
   mv /etc/ha.d/haresources /etc/ha.d/haresources_old ; mv /etc/ha.d/haresources_new /etc/ha.d/haresources
 
    or alternatively:
-   perl -i_old 's,/dev/nb,/dev/drbd,g' /etc/{drbd.conf,fstab,ha.d/haresources}
+   perl -i_old 's,/dev/nbd?,/dev/drbd,g' /etc/{drbd.conf,fstab,ha.d/haresources}
 
   for i in `seq 0 15` ; do mknod /dev/drbd$i b 147 $i; done
 
