@@ -733,14 +733,26 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	  int c;
 
 	  PRINT_ARGV;
-	  c = getopt_long(argc,argv,make_optstring(options),options,0);
+	  /* only --timeout-expired may be abbreviated to -t
+	   * --human and --do-what-I-say have to be spelled out */
+	  c = getopt_long_only(argc,argv,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
 	    case 'h':
+	      if (strcmp("--human",argv[optind-1])) {
+		      fprintf(stderr,"%s\nYou have to spell out --human, if you mean it\n",
+				      argv[optind-1]);
+		      return 20;
+	      }
 	      newstate |= Human;
 	      break;
 	    case 'd':
+	      if (strcmp("--do-what-I-say",argv[optind-1])) {
+		      fprintf(stderr,"%s\nYou have to spell out --do-what-I-say, if you mean it\n",
+				      argv[optind-1]);
+		      return 20;
+	      }
 	      newstate |= DontBlameDrbd;
 	      break;
 	    case 't':
