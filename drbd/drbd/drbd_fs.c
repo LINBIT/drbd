@@ -624,11 +624,13 @@ ONLY_IN_26(
 		ONLY_IN_26( set_disk_ro(mdev->vdisk, TRUE ); )
 	}
 
-	if(newstate & Secondary && mdev->rs_total) {
-		drbd_al_to_on_disk_bm(mdev);
+	if(!test_bit(DISKLESS,&mdev->flags)) {
+		if(newstate & Secondary) {
+			drbd_al_to_on_disk_bm(mdev);
+		}
+		/* Primary indicator has changed in any case. */
+		drbd_md_write(mdev);
 	}
-	/* Primary indicator has changed in any case. */
-	drbd_md_write(mdev);
 
 	if (mdev->cstate >= WFReportParams)
 		drbd_send_param(mdev,0);
