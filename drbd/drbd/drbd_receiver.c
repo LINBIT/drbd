@@ -152,6 +152,9 @@ void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 			       (int)(mdev-drbd_conf));
 		}
 		spin_unlock_irq(&mdev->ee_lock);
+		printk(KERN_ERR DEVICE_NAME 
+		       "%d: Waiting for bh=%p, blocknr=%ld\n",
+		       (int)(mdev-drbd_conf),e->bh,e->bh->b_blocknr);
 		wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
 	}
@@ -497,6 +500,16 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
+	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
+	    != data_size)
+	        return FALSE;
+
+	mark_buffer_uptodate(bh, 0);
+	mark_buffer_dirty(bh);
+
+//	generic_make_request(WRITE,bh);
+	ll_rw_block(WRITE, 1, &bh);
+
 	spin_lock_irq(&drbd_conf[minor].ee_lock);
 	e=drbd_get_ee(drbd_conf+minor);
 	e->bh=bh;
@@ -516,13 +529,6 @@ inline int receive_data(int minor,int data_size)
 	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
 		inc_unacked(minor);
 
-	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
-	    != data_size)
-	        return FALSE;
-
-	mark_buffer_uptodate(bh, 0);
-	mark_buffer_dirty(bh);
-
 	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B
 	    && header.block_id != ID_SYNCER) {
 	        /*  printk(KERN_DEBUG DEVICE_NAME": Sending RecvAck"
@@ -532,8 +538,6 @@ inline int receive_data(int minor,int data_size)
 		dec_unacked(minor);
 	}
 
-//	generic_make_request(WRITE,bh);
-	ll_rw_block(WRITE, 1, &bh);
 
 	/* <HACK>
 	 * This is needed to get reasonable performance with protocol C
@@ -882,13 +886,9 @@ void drbdd(int minor)
 		drbd_md_write(minor);
 		break;
 	case Secondary: 
-	  //		printk(KERN_ERR DEVICE_NAME "%d: AA\n",minor);
 		drbd_wait_active_ee(drbd_conf+minor);
-		//		printk(KERN_ERR DEVICE_NAME "%d: BB\n",minor);
 		drbd_wait_sync_ee(drbd_conf+minor);
-		//		printk(KERN_ERR DEVICE_NAME "%d: CC\n",minor);
 		drbd_clear_done_ee(drbd_conf+minor);
-		//		printk(KERN_ERR DEVICE_NAME "%d: DD\n",minor);
 		drbd_conf[minor].unacked_cnt=0;		
 		del_timer(&drbd_conf[minor].p_timeout);
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
