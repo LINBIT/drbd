@@ -54,6 +54,23 @@
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
 
+
+/*
+ * GFP_DRBD is used for allocations inside drbd_do_request.
+ *
+ * 2.4 kernels will probably remove the __GFP_IO check in the VM code,
+ * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER 
+ * flag to avoid __GFP_IO, thus avoiding the use of the atomic queue and 
+ *  avoiding the deadlock.
+ *
+ * - marcelo
+ */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+#define GFP_DRBD GFP_ATOMIC
+#else
+#define GFP_DRBD GFP_BUFFER
+#endif
+
 /* these defines should go into blkdev.h 
    (if it will be ever includet into linus' linux) */
 #define RQ_DRBD_NOTHING	  0xf100
@@ -148,8 +165,21 @@ struct Drbd_thread {
 	int minor;
 };
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+struct drbd_request_struct {
+	struct buffer_head* bh; /* bh waiting for io_completion */
+	int rq_status;
+	int cmd;
+};
+typedef struct drbd_request_struct drbd_request_t;
+#define GET_SECTOR(A) ((A)->bh->b_rsector)
+#else
+typedef struct request drbd_request_t;
+#define GET_SECTOR(A) ((A)->sector)
+#endif
+
 struct Tl_entry {
-        struct request* req;
+        drbd_request_t* req;
         unsigned long sector_nr;
 };
 
@@ -218,10 +248,10 @@ extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(int minor);
 extern int drbd_log2(int i);
-extern void drbd_end_req(struct request *req, int nextstate,int uptodate);
 extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct Drbd_Conf *mdev);
+extern int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr);
 extern void drbd_setup_sock(struct Drbd_Conf *mdev);
 extern void drbd_free_sock(int minor);
 extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
@@ -238,6 +268,10 @@ extern int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 			  unsigned long block_nr, u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 
+
+/* drbd_req*/ 
+extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
+extern int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh); 
 
 /* drbd_fs.c: */
 extern int drbd_set_state(int minor,Drbd_State newstate);

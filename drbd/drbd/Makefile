@@ -21,7 +21,8 @@ include ../Makefile.vars
 
 KSUBD = $(shell if [ -e /lib/modules/$(KERNVER)/kernel ]; then echo "kernel/drivers/block"; else echo "block"; fi )
 
-OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_syncer.o
+#OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_syncer.o drbd_req-2.2.o
+OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_syncer.o drbd_req-2.4.o
 
 ####### Implicit rules
 

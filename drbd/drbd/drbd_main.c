@@ -79,26 +79,6 @@ static int errno;
 typedef struct wait_queue*  wait_queue_head_t;
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
-#define blkdev_dequeue_request(A) CURRENT=(A)->next
-#endif
-
-/*
- * GFP_DRBD is used for allocations inside drbd_do_request.
- *
- * 2.4 kernels will probably remove the __GFP_IO check in the VM code,
- * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER 
- * flag to avoid __GFP_IO, thus avoiding the use of the atomic queue and 
- *  avoiding the deadlock.
- *
- * - marcelo
- */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-#define GFP_DRBD GFP_ATOMIC
-#else
-#define GFP_DRBD GFP_BUFFER
-#endif
-
 
 /* #define ES_SIZE_STATS 50 */
 
@@ -124,7 +104,6 @@ int drbd_init(void);
 /*static */ int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg);
 /*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
-void drbd_end_req(struct request *req, int nextstate,int uptodate);
 void drbd_p_timeout(unsigned long arg);
 struct mbds_operations bm_mops;
 
@@ -211,7 +190,7 @@ void print_tl(struct Drbd_Conf *mdev)
 }
 #endif
 
-inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
+inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
 	unsigned long flags;
 
@@ -222,7 +201,7 @@ inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 	    (int)(mdev-drbd_conf),new_item->sector);*/
 
 	mdev->tl_end->req = new_item;
-	mdev->tl_end->sector_nr = new_item->sector;
+	mdev->tl_end->sector_nr = GET_SECTOR(new_item);
 
 	mdev->tl_end++;
 
@@ -244,11 +223,11 @@ inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 		while( p != mdev->tl_begin ) {
 
 			if(p->req == TL_BARRIER) break;
-			if(p->sector_nr == new_item->sector) {
+			if(p->sector_nr == GET_SECTOR(new_item)) {
 				printk(KERN_CRIT DEVICE_NAME 
 				       "%d: Sector %ld is already in !!\n",
 				       (int)(mdev-drbd_conf),
-				       new_item->sector);
+				       GET_SECTOR(new_item));
 			}
 
 			p--;
@@ -333,7 +312,7 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 }
 
-inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
+int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 {
 	struct Tl_entry* p;
 	int r;
@@ -359,7 +338,6 @@ inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 void tl_clear(struct Drbd_Conf *mdev)
 {
 	struct Tl_entry* p = mdev->tl_begin;
-	kdev_t dev = MKDEV(MAJOR_NR,mdev-drbd_conf);
 	int end_them = mdev->conf.wire_protocol == DRBD_PROT_B || 
                        mdev->conf.wire_protocol == DRBD_PROT_C;
 	unsigned long flags;
@@ -372,8 +350,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 				     mdev->blk_size_b, SS_OUT_OF_SYNC);
 			if(end_them && 
 			   p->req->rq_status != RQ_INACTIVE &&
-			   p->req->rq_dev == dev &&
-			   p->req->sector == p->sector_nr ) {
+			   GET_SECTOR(p->req) == p->sector_nr ) {
 		                drbd_end_req(p->req,RQ_DRBD_SENT,1);
 				mdev->pending_cnt--;
 #if 0 /*Debug ... */
@@ -619,7 +596,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	if(block_id != ID_SYNCER) {
 		if( ret == data_size + sizeof(head)) {
 			/* This must be within the semaphore */
-			tl_add(mdev,(struct request*)(unsigned long)block_id);
+			tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
 			if(mdev->conf.wire_protocol != DRBD_PROT_A)
 				inc_pending((int)(mdev-drbd_conf));
 		} else {
@@ -834,281 +811,6 @@ void drbd_setup_sock(struct Drbd_Conf *mdev)
 }
 
 
-void drbd_end_req(struct request *req, int nextstate, int uptodate)
-{
-	int wake_asender=0;
-	unsigned long flags=0;
-	struct Drbd_Conf* mdev = &drbd_conf[MINOR(req->rq_dev)];
-
-	if (req->cmd == READ)
-		goto end_it_unlocked;
-
-	/* This was a hard one! Can you see the race?
-	   (It hit me about once out of 20000 blocks) 
-
-	   switch(status) {
-	   ..: status = ...;
-	   }
-	*/
-
-	spin_lock_irqsave(&mdev->req_lock,flags);
-
-	switch (req->rq_status & 0xfffe) {
-	case RQ_DRBD_SEC_WRITE:
-	        wake_asender=1;
-		goto end_it;
-	case RQ_DRBD_NOTHING:
-		req->rq_status = nextstate | (uptodate ? 1 : 0);
-		break;
-	case RQ_DRBD_SENT:
-		if (nextstate == RQ_DRBD_WRITTEN)
-			goto end_it;
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(A)\n",
-		       (int)(mdev-drbd_conf));
-		break;
-	case RQ_DRBD_WRITTEN:
-		if (nextstate == RQ_DRBD_SENT)
-			goto end_it;
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(B)\n",
-		       (int)(mdev-drbd_conf));
-		break;
-	default:
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(%X)\n",
-		       (int)(mdev-drbd_conf),req->rq_status);
-	}
-
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
-
-	return;
-
-/* We only report uptodate == TRUE if both operations (WRITE && SEND)
-   reported uptodate == TRUE 
- */
-
-	end_it:
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
-
-	end_it_unlocked:
-
-	if(mdev->state == Primary && mdev->cstate >= Connected) {
-	  /* If we are unconnected we may not call tl_dependece, since
-	     then this call could be from tl_clear(). => spinlock deadlock!
-	  */
-	        if(tl_dependence(mdev,req->sector)) {
-	                set_bit(ISSUE_BARRIER,&mdev->flags);
-			wake_asender=1;
-		}
-	}
-
-	if(!end_that_request_first(req, uptodate & req->rq_status,DEVICE_NAME))
-	        end_that_request_last(req);
-
-
-	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
-		panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
-
-	/* NICE: It would be nice if we could AND this condition.
-	   But we must also wake the asender if we are receiving 
-	   syncer blocks! */
-	if(wake_asender /*&& mdev->conf.wire_protocol == DRBD_PROT_C*/ ) {
-	        wake_up_interruptible(&mdev->asender_wait);
-	}
-}
-
-void drbd_dio_end(struct buffer_head *bh, int uptodate)
-{
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-        struct request *req = bh->b_dev_id;
-#else
-	struct request *req = bh->b_private;
-#endif
-	// READs are sorted out in drbd_end_req().
-	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
-	
-	kfree(bh);
-}
-
-/*
-  We should _nerver_ sleep with the io_request_lock aquired. (See ll_rw_block)
-  Up to now I have considered these ways out:
-  * 1) unlock the io_request_lock for the time of the send 
-         Not possible, because I do not have the flags for the unlock.
-           -> Forget the flags, look at the loop block device!!
-  * 2) postpone the send to some point in time when the request lock
-       is not hold. 
-         Maybe using the tq_scheduler task queue, or an dedicated
-         execution context (kernel thread).
-
-         I am not sure if tq_schedule is a good idea, because we
-         could send some process to sleep, which would not sleep
-	 otherwise.
-	   -> tq_schedule is a bad idea, sometimes sock_sendmsg
-	      behaves *bad* ( return value does not indicate
-	      an error, but ... )
-
-  Non atomic things, that need to be done are:
-  sock_sendmsg(), kmalloc(,GFP_KERNEL) and ll_rw_block().
-*/
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-/*static */ void drbd_do_request(request_queue_t * q)
-#else
-/*static */ void drbd_do_request()
-#endif
-{
-	int minor = 0;
-	struct request *req;
-	int sending;
-
-	minor = MINOR(CURRENT->rq_dev);
-
-	if (blksize_size[MAJOR_NR][minor] !=
-	    (1 << drbd_conf[minor].blk_size_b)) {
-		/* If someone called set_blocksize() from fs/buffer.c ... */
-		int new_blksize;
-
-		spin_unlock_irq(&io_request_lock);
-
-		new_blksize = blksize_size[MAJOR_NR][minor];
-		set_blocksize(drbd_conf[minor].lo_device, new_blksize);
-		drbd_conf[minor].blk_size_b = drbd_log2(new_blksize);
-
-		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",
-		       minor,new_blksize);
-
-		spin_lock_irq(&io_request_lock);
-	}
-	while (TRUE) {
-		INIT_REQUEST;
-		req=CURRENT;
-		blkdev_dequeue_request(req);
-		
-#if 0
-		{
-			static const char *strs[2] = 
-			{
-				"READ",
-				"WRITE"
-			};
-			
-			/* if(req->cmd == WRITE) */
-			printk(KERN_ERR DEVICE_NAME "%d: do_request(cmd=%s,"
-			       "sec=%ld,nr_sec=%ld,cnr_sec=%ld)\n",
-			       minor,
-			       strs[req->cmd == READ ? 0 : 1],req->sector,
-			       req->nr_sectors,
-			       req->current_nr_sectors);
-		}
-#endif
-
-		spin_unlock_irq(&io_request_lock);
-
-		sending = 0;
-
-		if (req->cmd == WRITE && drbd_conf[minor].state == Primary) {
-			if ( drbd_conf[minor].cstate >= Connected
-			     && req->sector >= drbd_conf[minor].synced_to) {
-				sending = 1;
-			}
-		}
-
-		/* Do disk - IO */
-		{
-			struct buffer_head *bh;
-			int size_kb=1<<(drbd_conf[minor].blk_size_b-10);
-		
-			bh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
-			if (!bh) {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: could not kmalloc()\n",minor);
-				return;
-			}
-
-			memset(bh, 0, sizeof(*bh));
-			bh->b_blocknr=req->bh->b_blocknr;
-			bh->b_size=req->bh->b_size;
-			bh->b_data=req->bh->b_data;
-			bh->b_list = BUF_LOCKED;
-			bh->b_end_io = drbd_dio_end;
-			bh->b_dev = drbd_conf[minor].lo_device;
-			bh->b_rdev = drbd_conf[minor].lo_device;
-			bh->b_rsector = req->bh->b_rsector;
-			bh->b_end_io = drbd_dio_end;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-			bh->b_count=0;
-			bh->b_this_page=0;
-			bh->b_dev_id = req;
-			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#else
-			bh->b_page=req->bh->b_page; /* missing in 2.2.x part*/
-			atomic_set(&bh->b_count, 0);
-			bh->b_private = req;
-			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty)
-			  | ( 1 << BH_Mapped) | (1 << BH_Lock);
-#endif
-			
-#ifdef BH_JWrite
-			if (test_bit(BH_JWrite, &req->bh->b_state))
-				set_bit(BH_JWrite, &bh->b_state);
-#endif			
-
-			
-			if(req->cmd == WRITE) 
-				drbd_conf[minor].writ_cnt+=size_kb;
-			else drbd_conf[minor].read_cnt+=size_kb;
-
-			if (sending)
-				req->rq_status = RQ_DRBD_NOTHING;
-			else if (req->cmd == WRITE) {
-			        if(drbd_conf[minor].state == Secondary)
-				  req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
-				else {
-				  req->rq_status = RQ_DRBD_SENT | 0x0001;
-				  drbd_conf[minor].mops->
-				    set_block_status(drbd_conf[minor].mbds_id,
-			               req->sector >> 
-					  (drbd_conf[minor].blk_size_b-9),
-				       drbd_conf[minor].blk_size_b, 
-				       SS_OUT_OF_SYNC);
-				}
-			}
-			else
-				req->rq_status = RQ_DRBD_READ | 0x0001;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-			ll_rw_block(req->cmd, 1, &bh);
-#else
-			generic_make_request(req->cmd,bh);
-#endif
-		}
-
-		/* Send it out to the network */
-		if (sending) {
-			int bnr;
-			int send_ok;
-			bnr = req->sector >> (drbd_conf[minor].blk_size_b - 9);
-     		        send_ok=drbd_send_data(&drbd_conf[minor], req->buffer,
-					   req->current_nr_sectors << 9,
-					   bnr,(unsigned long)req);
-
-			if(send_ok) {
-			        drbd_conf[minor].send_cnt+=
-					req->current_nr_sectors<<1;
-			}
-
-			if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A ||
-			    (!send_ok) ) {
-				/* If sending failed, we can not expect
-				   an ack packet. */
-			         drbd_end_req(req, RQ_DRBD_SENT, 1);
-			}
-				
-		}
-		spin_lock_irq(&io_request_lock);
-	}
-}
-
 int __init drbd_init(void)
 {
 
@@ -1204,8 +906,9 @@ int __init drbd_init(void)
 #endif  
 		}
 	}
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
+	/*blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);*/
 #else
 	blk_dev[MAJOR_NR].request_fn = DEVICE_REQUEST;
 #endif
