@@ -1,0 +1,194 @@
+#!/bin/bash -nv
+# $Id: CTH_bash.helpers,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+#
+# define some implicit magic
+# so the definition of the DRBDs will be easier
+#
+
+ID_DISK=0
+ID_DRBD=0
+DRBD_CONF=""
+link_for_each_node()
+{
+	local link=$1 doit=$2
+	eval "set -- \"\${$link[@]}\""
+	while (( $# )) ; do
+		node=$1 ip=$2 nic=$3 ; shift 3
+		node_to_env $node
+		eval "$doit"
+	done
+}
+ip_of()
+{
+	local link=$1 node=$2
+	eval "set -- \"\${$link[@]}\""
+	while (( $# )) ; do
+		[[ $1 == $node ]] && echo $2 && return
+		shift 3
+	done
+	return 1
+}
+node_to_env()
+{
+	eval "set -- \"\${$1[@]}\""
+	   admin_ip=$1
+	   hostname=$2
+	  admin_nic=$3
+	    timeout=$4	# boot_timeout
+	min_uptimre=$5
+}
+disk_to_env()
+{
+	eval "set -- \"\${$1[@]}\""
+	    name=$1
+	    node=$2
+	real_dev=$3
+}
+drbd_to_env()
+{
+	eval "set -- \"\${$1[@]}\""
+	   name=$1
+	  minor=$2
+	   port=$3
+	   link=$4
+	shift 4;  left=$1  left_ip=$2  left_real_dev=$3  left_disk=$4
+	shift 4; right=$1 right_ip=$2 right_real_dev=$3 right_disk=$4
+	   conf=$5
+}
+new_drbd()
+{
+	local name minor port left left_real_dev right right_real_dev link
+	local left_ip left_disk right_ip right_disk conf
+	          name=$1
+	         minor=$2
+		  port=$3
+	          left=$4
+	 left_real_dev=$5
+	         right=$6
+	right_real_dev=$7
+	          link=$8
+
+	# unfortunately the ${!xx} operator only gives the [0] array field
+	# but since thats the IP by definition, this works.
+	 left_ip=$(ip_of $link $left)  || return
+	right_ip=$(ip_of $link $right) || return
+
+	let ID_DISK++
+	left_disk="Disk_$ID_DISK"
+	eval "$left_disk=( $name $left  $left_real_dev )"
+	let ID_DISK++
+	right_disk="Disk_$ID_DISK"
+       	eval "$right_disk=( $name $right $right_real_dev )"
+
+	# funny quoting with cat
+	conf=$(cat <<-___
+		resource $name {
+		    protocol        C;
+		    incon-degr-cmd "reboot -f";
+		    on uml-1 {
+		        device         /dev/nb$minor;
+		        disk           /dev/mapper/$name;
+		        address        $left_ip:$port;
+		        meta-disk      internal;
+		    }
+		    on uml-2 {
+		        device         /dev/nb$minor;
+		        disk           /dev/mapper/$name;
+		        address        $right_ip:$port;
+		        meta-disk      internal;
+		    }
+		    net {
+		        connect-int    10;
+		        max-buffers    32;
+		        max-epoch-size 2048;
+		        ping-int       10;
+		        sndbuf-size    131070;
+		        timeout        60;
+		    }
+		    disk {
+		        on-io-error    detach;
+		    }
+		    syncer {
+		        al-extents     257;
+		        group          1;
+		        rate           30M;
+		    }
+		    startup {
+		        degr-wfc-timeout 120;
+		    }
+		}
+		___
+	)
+
+	let ID_DRBD++
+	eval "Drbd_$ID_DRBD=($name $minor $port
+		$link
+		$left
+		$left_ip
+		$left_real_dev
+		$left_disk
+		$right
+		$right_ip
+		$right_real_dev
+		$right_disk
+		\"\$conf\"
+	)"
+}	
+
+
+crash_Node()
+{
+	local n=$1
+	on ${!n}: generic_do_crash
+}
+
+fail_Link()
+{
+	local l=$1
+	link_for_each_node $l 'on ${!node}: iptables_DROP   nic=$nic hostname=$hostname'
+}
+
+heal_Link()
+{
+	local l=$1
+	link_for_each_node $l 'on ${!node}: iptables_UNDROP   nic=$nic hostname=$hostname'
+}
+
+fail_Disk()
+{
+	local d=$1
+	disk_to_env $d
+	on ${!node}: dmsetup_error name=$name dev=$real_dev
+}
+
+heal_Disk()
+{
+	local d=$1
+	disk_to_env $d
+	on ${!node}: dmsetup_linear name=$name dev=$real_dev
+}
+
+# initial boot
+boot_and_setup_nodes()
+{
+	initial=true
+	for n in ${!Node_*}; do
+		node_to_env $n
+		ip=$admin_ip
+		generic_wait_for_boot
+	done
+
+	# undrop all links
+	for l in ${!Link_*} ; do heal_Link $l ; done
+
+	# configure all dm disks
+	for d in ${!Disk_*} ; do heal_Disk $d ; done
+
+	# reset and up all DRBDs
+	for d in ${!Drbd_*} ; do
+		drbd_to_env $d
+		echo "$conf" | on ${!left}:  drbd_append_config NAME=$name RES=$name LO_DEV=$left_real_dev
+		echo "$conf" | on ${!right}: drbd_append_config NAME=$name RES=$name LO_DEV=$right_real_dev
+	done
+	initial=false
+}

@@ -1,0 +1,20 @@
+- man page
+- lots of testing of new features, most notably -DLARGEFILES
+- add rewrite test 
+- add option to select which tests you want to run with logic
+  which are the essential ones to run also to reach. ie if you want
+  only seek test, writing files should still be made before them.
+- add option to choose how you want to output of seek testing to appear.
+  I still don't know which one is better MB/s or seeks/sec, perhaps
+  even average seek time in milliseconds would be good. (miku)
+- get the core perl wrapper of tiotest into a perl module and then
+  various frontend perl modules can be interchanged for various
+  kinds of output, even including something that does a use CGI,
+  for instance :)
+- figure out some nice easy standard for serializing the data, ideally
+  to a simple enough xml file, so we can store data and re-analyze later
+  with different front-ends.  xml serialization should ideally just be
+  given the hash and bang it out - shouldn't need updating as the hash
+  changes.
+- the stat_data hash should be pretty solid - its format shouldn't need
+  to change much, so our xml dtd would be fairly stable.

@@ -1,0 +1,78 @@
+= Cluster Test Harness =
+
+== What is this? ==
+
+This is meant to be a generic Cluster Test Harness (CTH).
+Its main purpose is to simulate hardware failure.
+Since the Hardware aspects are abstracted, this can be used to test any
+software/hardware interaction in presence of hardware failures.
+Because it is used to test DRBDs behaviour, some DRBD specifics are built in.
+
+The CTH expects
+ * to to run on one controlling box
+ * which has exclusive access to at least two test nodes via ssh
+ * that the ssh login will not ask for a password, but just let me through
+ * the test nodes run linux kernel 2.6 (may work with 2.4, too)
+ * the test nodes to have "dm" available
+ * the test nodes to have "iptables" available
+
+Test nodes may well be UML sessions.
+
+'''Note''' that since some path's are hardcoded,
+the CTH expects to be run from the current directory.
+
+=== Requirements ===
+
+Some of the internal scripting was easier done with versions of grep and ping,
+that Debian (and maybe other distros) has not installed by default.
+
+In particular, I expect
+ * ping from iputils-ping instead of netkit-ping
+ * grep > 2.5 (e.g. from 2.5.1.ds1-1.backports.org.1)
+
+For stress testing, I like to use tiobench, and wbtest.
+If you want to use them, you should compile and install them
+into e.g. /root/bin on the test nodes.
+
+== File List ==
+
+ LGE_CTH*::
+ The perl module. Only adventurouse people should have a look at the internals here.
+
+ functions.sh::
+ The core bash scripts, which are used and triggered by the CTH.
+
+ generic_test.pl::
+ Example of how to use the LGE_CTH perl module, use a certain configuration,
+ and generate randome hardware failures and test resource relocations
+
+ Since some of it is still hardcoded, you have to edit it,
+ choose a config file, and some parameters.
+
+ some sample configuration files:
+ * uml-minna.conf
+ * bloodymary.conf
+
+ CTH_bash.sh::
+ Example of how to use the core functions directly from bash.
+ In contrast to generic_test.pl and the LGE_CTH perl modules,
+ this is meant to script one particular failure scenario.
+ 
+ CTH_bash.conf::
+ sample configuration for the CTH_bash.sh similar to uml-minna.conf
+
+ CTH_bash.helpers:: guess what ... to keep the CTH_bash.sh clean.
+
+=== Test Resources ===
+ * tiobench
+ * wbtest
+
+== AUTHOR ==
+
+of all this crap is Lars Ellenberg <l.g.e@web.de>
+
+In case you care for an explicit '''license statement''':
+This is and needs to be GPL.
+
+# vim: set ft=wiki-moin :
+# $Id: README,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $

@@ -1,0 +1,78 @@
+
+slightly patched by lge:
+fsync on directory descriptor, fflush(0) before fork() ...
+
+DON'T use run-wbtest.sh with the CTH, that does not make any sense.
+
+----
+
+wbtest.c README
+
+Requirements:
+
+Requires (at least) 2 drives: one test drive, with write cache (WC)
+enabled and one safe drive, with WC disabled.  The run-wbtest.sh self
+installer must be modifed to point to the path to a directory on the
+test drive that will contain test data files (of size <min> to <max>;
+default 4B to 100KB).  Additionally, supply a path to a directory on
+the safe drive that will contain "checkpoint" files used to verify the
+integrity of the test data files after a powerfail/reboot cycle.
+Last, supply the device names for the safe and test drives such that
+the script can force WC disabled/enabled respectively on these drives
+prior to every run of wbtest.
+
+Compile:
+
+Easy!:  gcc -o wbtest wbtest.c
+
+Summary:
+
+The program starts and first scans the safe dir for checkpoint files.
+This dir should be empty on first run.  Finding none, it will begin
+creating processes whose job is to write data to the test dir and log
+it in checkpoint files (1 per process).  Each process writes a number
+of files of size in range <min> to <max> and then exits.  A max of
+<concurrent> procs are launched at once.  A pass is defined as the
+cycle a process makes from <min> to <max> or <max> to <min>; odd PIDs
+acsend, even PIDs descend.  A <passes> value of 0 runs to infinity.
+
+The point is to cut off power to the running machine at a random point
+during the testing.  To do this, either set <passes> to 0 or ensure
+that you set it high enough such that I/O is running when the power is
+shut off.  Care must be taken to ensure that the file system serving
+the test data dir does not fill before power is cut.  Also, if you are
+automating the power failures, ensure not only that the disk doesn't
+fill before the power cuts, but also that the verification process (to
+be discussed next) finishes and I/O begins before power cuts out.
+
+Since the run-wbtest.sh script installs itself at the end of rc.local,
+the wbtest will launch at the end of the next boot.  Now, the safe dir
+should contain valid checkpoint files and these will be scanned and
+control the verification of the test data.  If errors are found,
+testing stops and if a log file was provided the file in error is
+logged.  All test data and checkpoint files that verify successfully
+are removed.  Any test data files with errors are preserved for
+inspection.
+
+I think that's about it...here's the usage text:
+
+Usage: ./wbtest [-hvVs] [-m <min>] [-M <max>] [-p <passes>]
+[-c <concurrent>] [-l <vLog>] -s <safedir> -t <testdir>
+
+./wbtest - Version 1.0 Options:
+        -h prints this usage text
+        -v forces NO verification step of existing files (if any)
+        -V forces exit after verification step of existing files
+        <min> == minimum IO size to use (bytes)
+        <max> == maximum IO size to use (bytes)
+        <passes> == # of passes to run (0 for INF)
+        <concurrent> == # of processes to run at once
+        <vLog> == log all file verify failures here, otherwise mkstemp
+        <safedir> == writable DIRECTORY to store 'checkpoint' files
+        <testdir> == writable DIRECTORY to store 'test data' files
+
+        Difference between safedir and testdir is that safedir should 
+        be 'safe' storage meaning that it is not using drive write 
+        cache, whereas testdir is intended to be using drive write 
+        cache and the write barrier. Naturally, the two should be on 
+        separate drives
