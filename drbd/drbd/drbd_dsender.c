@@ -267,7 +267,11 @@ void resync_timer_fn(unsigned long data)
 {
 	drbd_dev* mdev = (drbd_dev*) data;
 
-	drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	if(unlikely(test_and_clear_bit(SYNC_PAUSED,&mdev->flags))) {
+		mdev->resync_work.cb = w_resync_inactive;
+	} else {
+		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	}
 }
 
 int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
@@ -439,9 +443,7 @@ STATIC void _drbd_rs_pause(drbd_dev *mdev)
 	D_ASSERT(mdev->cstate == SyncSource || mdev->cstate == SyncTarget);
 	ns = mdev->cstate + (PausedSyncS - SyncSource);
 
-	del_timer_sync(&mdev->resync_timer);
-	_drbd_dequeue_work(&mdev->data.work,&mdev->resync_work);
-	mdev->resync_work.cb = w_resync_inactive;
+	set_bit(SYNC_PAUSED,&mdev->flags);
 
 	_set_cstate(mdev,ns);
 	INFO("Syncer waits for sync group.\n");

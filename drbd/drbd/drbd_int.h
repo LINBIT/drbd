@@ -566,13 +566,11 @@ struct Pending_read {
 #define COLLECT_ZOMBIES    1
 #define SEND_PING          2
 #define WRITER_PRESENT     3
-//#define START_SYNC         4
+#define SYNC_PAUSED        4
 #define DO_NOT_INC_CONCNT  5
 #define WRITE_HINT_QUEUED  6
 #define PARTNER_DISKLESS   7
-//#define SYNC_FINISHED      8
 #define PROCESS_EE_RUNNING 9
-//#define SYNC_CONTINUE     10
 
 struct BitMap {
 	unsigned long dev_size;
@@ -956,17 +954,6 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	_set_cstate(mdev,ns);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-}
-
-static inline void
-_drbd_dequeue_work(struct drbd_work_queue *q, struct drbd_work *w)
-{
-	if(!list_empty(&w->list)) {
-		if(down_trylock(&q->s)) {
-			printk("down_trylock() failed in drbd_dequeue_work\n");
-		}
-		list_del_init(&w->list);
-	}
 }
 
 static inline void
