@@ -453,6 +453,8 @@ drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
 		    sector_t sector, int size)
 {
 	struct bio * const bio = &e->private_bio;
+
+	bio->bi_flags  = 1 << BIO_UPTODATE;
 	bio->bi_io_vec->bv_len =
 	bio->bi_size    = size;
 	bio->bi_bdev    = mdev->backing_bdev;
