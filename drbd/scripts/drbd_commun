@@ -1,25 +1,13 @@
 #!/bin/sh
 
+# Commun function to all drbd script
 # Copyright (C) 2000, Thomas Mangin <thomas.mangin@free.fr>
-# bug fixing Dan Yocum, <yocum@linuxcare.com>
+# This file is under the GPL licence
+# Thank you to Dan Yocum, <yocum@linuxcare.com> for is help bug fixing
 
 HOST=`hostname -s`
 CONFIG="/etc/sysconfig/drbd"
 STATE="/var/lib/drbd"
-
-# RETVAL will work as a "stuck bit" for any error. The construct
-# RV=$?
-# [ $RETVAL -eq 0 ] && RETVAL=$RV
-# allows us to have it stuck at 1 when some error occur, even if
-# subsequent operations don't fail. Using $RV prevents us from getting
-# the exit value of [ ... ]. That was a dumb one... :)
-
-RETVAL=0    # this means there were no errors
-RV=0        # in this script this is just a temporary variable
-if [ $# -eq 2 ]; then
-	RESOURCE=$1
-    shift
-fi
 
 # Source function library.
 # Some distributions don't have it, so test and act accordingly
@@ -27,8 +15,8 @@ fi
 if [ -f /etc/rc.d/init.d/functions ]; then
 	result=`grep success /etc/rc.d/init.d/functions`
 	if [ $? ]; then
-			. /etc/rc.d/init.d/functions
-			HAVE_SUCCESS=1
+		. /etc/rc.d/init.d/functions
+		HAVE_SUCCESS=1
 	fi
 fi
 
@@ -80,6 +68,72 @@ action()
 	fi
 }
 
+# /proc analysis
+
+# Check if the node is primary
+# Param : The resource
+# Return "1" or "0"
+isPrimary()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep ":Primary/" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+# Check if the other node is primary
+# Param : The resource
+# Return "1" or "0"
+haveRemotePrimary()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "/Primary" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+# Check if the other node is slave
+# Param : The resource
+# Return "1" or "0"
+haveRemoteSecondary()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "/Secondary" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+# Check if the node is in a connected state
+# Param : The resource
+# Return "1" or "0"
+isConnected()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "Connected" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+# Check if the node is in the process of full syncing
+# Param : The resource
+# Return "1" or "0"
+isSyncing()
+{
+        NUMBER=`echo $1 | cut -b5`
+        return `cat /proc/drbd | grep "Syncing" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+
+# Check if the node is a working slave
+# Param : The resource
+# Return "1" or "0"
+isWorkingSecondary()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "Connected" | grep "^$NUMBER" | grep "Secondary/" | wc -l | cut -b7`
+}
+
+# Check if the node is a working master
+# Param : The resource
+# Return "1" or "0"
+isWorkingPrimary()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "Connected" | grep "^$NUMBER" | grep "Primary/" | wc -l | cut -b7`
+}
+
 # Boot state check/set
 
 isMasterBoot()
@@ -117,59 +171,169 @@ range()
 # Information grabbing
 
 # set LOCAL_DEVICE : set environement value with the node configuration info
-# $1 RESOURCE FILE
+# $1 RESOURCE DIRECTORY
+# $2 RESOURCE FILE
 setLocal()
 {
+	# This setup the local configuration variable for the local computer
+
+	. $1/$2
+
 	LOCAL_DEVICE=""
 	LOCAL_FSCK=""
 
-	host_line=`grep _HOST $CONFIG/$1 | grep $HOST`
-	node=`echo $host_line | cut -f1 -d"_" | cut -f2 -d"E"`
+	# This part of the code is N node safe
 
-	for line in `cat $CONFIG/$1`
+	HOST_NAMES=`grep _HOST $CONFIG/$2 | grep $HOST`
+	LOCAL_NUMBER=`echo $HOST_NAMES | cut -f1 -d"_" | cut -f2 -d"E"`
+
+	if [ "$LOCAL_NUMBER" = "" ]; then
+		failed "The configuration file don't define this host"
+		exit 1
+	fi
+
+	for LINE in `cat $1/$2 | sed -e"s/ /#/g" | grep -v "^#"`
 	do
-		keep=`echo $line | grep ^[nN][oO][dD][eE]$node | wc -l`
-		if [ "$keep" -eq 1 ]; then
-		 	affectation=`echo $line | sed -e"s/NODE$node/LOCAL/g"`
-			name=`echo $affectation | cut -f1 -d"="`
-			value=`echo $affectation | cut -f2 -d"="`
-			echo $affectation
-			echo set $name $value
-			set $name $value
+		KEEP=`echo $LINE | grep ^[nN][oO][dD][eE]$LOCAL_NUMBER | wc -l`
+		if [ "$KEEP" -eq 1 ]; then
+		 	VALUE=`echo $LINE | sed -e"s/[nN][oO][dD][eE]$LOCAL_NUMBER/LOCAL/g" | sed -e"s/#/ /g"`
+			eval $VALUE
+		fi
+
+		KEEP=`echo $LINE | grep "^[gG][lL][oO][bB][aA][lL]" | wc -l`
+		if [ "$KEEP" -eq 1 ]; then
+			VALUE=`echo $LINE | sed -e"s/[gG][lL][oO][bB][aA][lL]_//g" | sed -e"s/#/ /g"`
+			eval $VALUE
+		fi
+	done
+
+	# TODO: In a configuration with more than two nodes, drdbsetup syntax
+	# is not nice as you have several "REMOTE_IF" parameter to catch.
+
+	# This part of the code is only working with TWO nodes
+
+	for LINE in `cat $1/$2 | sed -e"s/ /#/g" | grep -v "^#"`
+	do
+		KEEP=`echo $LINE | grep "^[nN][oO][dD][eE]" | grep -v "^[nN][oO][dD][eE]$LOCAL_NUMBER" | grep "_IF" | wc -l`
+
+		if [ "$KEEP" -eq 1 ]; then
+			REMOTE_NUMBER=`echo $LINE | cut -f1 -d"_" | cut -f2 -d"E"`
+			VALUE=`echo $LINE | sed -e"s/[nN][oO][dD][eE]$REMOTE_NUMBER/REMOTE/g" | sed -e"s/#/ /g"`
+			eval $VALUE
 		fi
 	done
 }
 
-echo xxxxxx
-setLocal drbd.example
-echo xxxxxx
-set
-echo xxxxxx
+runForAll ()
+{
+	pushd . > /dev/null
+		cd $CONFIG
+		DEVICES=`ls drbd[0-9] | sort 2>/dev/null`
+	popd > /dev/null
 
+	if [ ! $DEVICES ]; then
+		failed "No configuration file present"
+		exit 1
+	fi
+
+	for DEVICE in $DEVICES; do
+		for RUN in $*; do
+			$0 $RUN $DEVICE
+		done
+	done
+}
+
+# Check if a environment value is set
+# $1 Name
+# $2 Value
+have_env()
+{
+	if [ ! $2 ]; then
+		echo "This script is not programmed to be used standalone"
+		failed "$0 needs the environment value '$1'"
+		exit 1
+	fi
+}
+
+
+# Check the presence of a directory
+# $* Directories to find
+have_dir()
+{
+	for NAME in $*
+	do
+		if [ ! -d $NAME ]; then
+			failed "$0 needs the configuration directory '$NAME'"
+			exit 1
+		fi
+	done
+}
+
+# Check the presence of a file
+# $* files check
+have_file()
+{
+	for NAME in $*
+	do
+		if [ ! -f $NAME ]; then
+			failed "$0 need the file '$NAME'"
+			exit 1
+		fi
+	done
+}
+
+# Check the presence in the path of an application
+# $* commands without path
+have_command()
+{
+	for NAME in $*
+	do
+		if [ ! `which $NAME 2>/dev/null` ]; then
+			failed "$0 needs the command '$NAME'"
+			exit 1
+		fi
+	done
+}
+
+# Check the presence in the path of an application
+# $* the device name
+have_device()
+{
+	for NAME in $*
+	do
+		if [ ! -b /dev/$NAME ]; then
+			failed "$0 needs the device '/dev/$NAME'"
+			exit 1
+		fi
+	done
+}
+
+# Check for a file
 # Installation integrity check
 
-# Check for our config directory
-if [ ! -d $CONFIG ]; then
-	failed "configuration directory not found!"
-	exit 1
-fi
+have_env HOST $HOST
+have_env STATE $STATE
+have_env CONFIG $CONFIG
+have_env INSTALL $INSTALL
 
-# Check the script installation
-if [ ! -x $INSTALL/drbd_commun ]; then
-	failed "drbd script functions not found!"
-	exit 1
-fi
+have_dir $CONFIG
+have_file $INSTALL/drbd_commun
+have_command drbdsetup fuser lsmod modprobe
 
-# Check the program(s) installation
-if [ ! -x /usr/sbin/drbdsetup ]; then
-	failed "drbdsetup not found!"
-	exit 1
-fi
+# RETVAL will work as a "stuck bit" for any error. The construct
+# RV=$?
+# [ $RETVAL -eq 0 ] && RETVAL=$RV
+# allows us to have it stuck at 1 when some error occur, even if
+# subsequent operations don't fail. Using $RV prevents us from getting
+# the exit value of [ ... ]. That was a dumb one... :)
 
-# Check for fuser command
-if [ ! `which fuser 2>/dev/null` ]; then
-	failed "$0 needs the fuser command"
-	exit 1
-fi
-				
+RETVAL=0        # this means there were errors
+RV=0            # this means there were errors in the current device
 
+if [ "$2" != "" ]; then
+	OPTION=$1
+	RESOURCE=$2
+else
+	OPTION=$1
+	RESOURCE=""
+fi

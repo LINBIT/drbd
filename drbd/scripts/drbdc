@@ -19,8 +19,9 @@
 # Some ideas and inspiration from Joe Hartley <jh@brainiac.com>
 
 INSTALL="/etc/ha.d/resource.d"
-
 . $INSTALL/drbd_commun
+
+RETVAL=0
 
 # Check if the node is primary
 # Param : The resource
@@ -58,7 +59,7 @@ rudeUnMount()
 	MOUNTED=$?
 		
 	if [ $MOUNTED -eq 1 ]; then
-		$0 $1 umount
+		$0 umount $1
 
 		isMounted $1
 		MOUNTED=$?
@@ -66,7 +67,7 @@ rudeUnMount()
 		if [ $MOUNTED -eq 1 ]; then
 			fuser -km $2
 			sleep 1
-			$0 $1 umount
+			$0 umount $1
 		fi
  
 		isMounted $1
@@ -75,7 +76,7 @@ rudeUnMount()
 		if [ $MOUNTED -eq 1 ]; then
 			fuser -km -9 $2
 			sleep 1
-			$0 $1 umount
+			$0 umount $1
 		fi
 
 		isMounted $1
@@ -85,31 +86,16 @@ rudeUnMount()
 	return $MOUNTED
 }
 
-runForAll ()
-{
-	pushd . > /dev/null
-		cd $CONFIG
-		DEVICES=`ls drbd[0-9] | sort 2>/dev/null`
-	popd > /dev/null
-
-	for D in $DEVICES; do
-		for RUN in $*; do
-			$0 $D $RUN
-		done
-	done
-}
-
 # See how we were called.
 case "$1" in
 	primary)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll primary
 			exit $RETVAL
 		fi
 		
-		setLocal $RESOURCE
+		setLocal $CONFIG $RESOURCE
+
 		isMounted $RESOURCE
 
 		if [ $? -eq 1 ]; then
@@ -118,20 +104,18 @@ case "$1" in
 		fi
 
 		action "Becoming primary on DRBD resource $RESOURCE" \
-			/usr/sbin/drbdsetup $LOCAL_DEVICE PRI
+			drbdsetup $LOCAL_DEVICE PRI
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 
 	secondary)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll secondary
 			exit $RETVAL
 		fi
 		
-		setLocal $RESOURCE
+		setLocal $CONFIG $RESOURCE
 		isMounted $RESOURCE
 
 		if [ $? -eq 1 ]; then
@@ -140,36 +124,35 @@ case "$1" in
 		fi
 
 		action "Becoming secondary on DRBD resource $RESOURCE" \
-			/usr/sbin/drbdsetup $LOCAL_DEVICE SEC
+			drbdsetup $LOCAL_DEVICE SEC
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 
 	master)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll master
 			exit $RETVAL
 		fi
 
+		setLocal $CONFIG $RESOURCE
+
 		isPrimary $RESOURCE
 		PRIMARY=$?
 
-		setLocal $RESOURCE
 		isMounted $RESOURCE
 		MOUNTED=$?
 
 		if [ $PRIMARY -eq 0 -a $MOUNTED -eq 0 ]; then
-			$0 $RESOURCE primary && 
-			$0 $RESOURCE fsck && 
-			$0 $RESOURCE mount
+			$0 primary $RESOURCE && 
+			$0 fsck $RESOURCE && 
+			$0 mount $RESOURCE 
 			RV=$?
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
 		if [ $PRIMARY -eq 1 -a $MOUNTED -eq 0 ]; then
-			$0 $RESOURCE fsck && 
-			$0 $RESOURCE mount
+			$0 fsck $RESOURCE && 
+			$0 mount $RESOURCE 
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -178,26 +161,24 @@ case "$1" in
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
+		if [ $RETVAL -eq 0 -a $PRIMARY -eq 1 ]; then
+			setMasterBoot $RESOURCE
+		fi
 		if [ $RETVAL -ne 0 -a $PRIMARY -eq 0 ]; then
-			$0 $RESOURCE secondary 
+			$0 secondary $RESOURCE
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
-		fi
-
-		if [ $RETVAL -eq 0 ]; then
-			setMasterBoot $RESOURCE
 		fi
 		;;
 
 	slave)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll slave
 			exit $RETVAL
 		fi
 
-		setLocal $RESOURCE
+		setLocal $CONFIG $RESOURCE
+
 		isMounted $RESOURCE
 		MOUNTED=$?
 
@@ -208,23 +189,29 @@ case "$1" in
 
 		# Only become secondary if umount succed
 		if [ $RETVAL -eq 0 ]; then
-			$0 $RESOURCE secondary
-			setLocal $RESOURCE
-			drbdsetup $LOCAL_DEVICE wait
+			$0 secondary $RESOURCE 
 			RETVAL=$?
-			setSlaveBoot $RESOURCE
+			if [ "$RETVAL" -eq 0 ]; then
+				setSlaveBoot $RESOURCE
+			fi
 		fi
 		;;
 
 	mount)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll mount
 			exit $RETVAL
 		fi
 
-		setLocal $RESOURCE
+		setLocal $CONFIG $RESOURCE
+
+		isPrimary $RESOURCE
+		PRIMARY=$?
+
+		if [ $PRIMARY -eq 0 ]; then
+			failure "Can not mount $LOCAL_DEVICE as $LOCAL_NODE is slave"
+			exit 1
+		fi
 
 		isMounted $RESOURCE
 		MOUNTED=$?
@@ -241,14 +228,20 @@ case "$1" in
 		;;
 
 	umount)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll umount
 			exit $RETVAL
 		fi
 
-		setLocal $RESOURCE
+		setLocal $CONFIG $RESOURCE
+
+		isPrimary $RESOURCE
+		PRIMARY=$?
+
+		if [ $PRIMARY -eq 0 ]; then
+			failure "Can not mount $LOCAL_DEVICE as $LOCAL_NODE is slave"
+			exit 1
+		fi
 
 		isMounted $RESOURCE
 		MOUNTED=$?
@@ -266,19 +259,26 @@ case "$1" in
 		;;
 
 	fsck)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll fsck
 			exit $RETVAL
 		fi
 
-		setLocal $RESOURCE
+		setLocal $CONFIG $RESOURCE
+
+		isPrimary $RESOURCE
+		PRIMARY=$?
+
+		if [ "$PRIMARY" -eq 1 ]; then
+			failed "Can not perform fsck on secondary $RESOURCE "
+			exit 1
+		fi
+
 		isMounted $RESOURCE
 		MOUNTED=$?
 
 		if [ $MOUNTED -eq 1 ]; then
-			$0 $RESOURCE umount 
+			$0 umount $RESOURCE 
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -288,62 +288,49 @@ case "$1" in
 			exit 1
 		fi
 
-		isPrimary $RESOURCE
-		if [ $? -eq 1 ]; then
-			echo -n "performing fsck on $RESOURCE " 
-			$LOCAL_FSCK $LOCAL_DEVICE > /dev/null 2>/dev/null
-			RV=$?
-			[ $RV -eq 0 -o $RV -eq 1 ] && RETVAL=0
-			[ $RETVAL -eq 0 ] && success || failure
-			echo
-		else
-			failed "Can not perform fsck on secondary $RESOURCE "
-			RETVAL=1
-		fi
+		echo -n "performing fsck on $RESOURCE " 
+		$LOCAL_FSCK $LOCAL_DEVICE > /dev/null 2>/dev/null
+		RV=$?
+		[ $RV -eq 0 -o $RV -eq 1 ] && RETVAL=0
+		[ $RETVAL -eq 0 ] && success || failure
+		echo
 
 		if [ $MOUNTED -eq 1 ]; then 
-			$0 $RESOURCE mount
+			$0 mount $RESOURCE
 			RV=$?
 			[ $RV -eq 0 ] && RETVAL=$RV
 		fi
 		;;	
 
 	resync)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll resync
 			exit $RETVAL
 		fi
 
+		setLocal $CONFIG $RESOURCE
+
 		isPrimary
 		PRIMARY=$?
 
-		if [ $PRIMARY -eq 0 ]; then
-			# TODO:DRDB sometimes lies about its connection status !!
-			isConnected
-			CONNECTED=$?
-
-			if [ $CONNECTED -eq 1 ]; then
-				setLocal $RESOURCE
-
-				rudeUnMount $RESOURCE $LOCAL_DEVICE
-				MOUNTED=$?
-
-				if [ $MOUNTED -eq 0 ]; then
-					drbdsetup $LOCAL_DEVICE repl
-					RETVAL=$?
-				else
-					failed "unmount failed, you must have a SERIOUS problem"
-				fi
-			else
-				failed "The node is not connected to the primary"
-				RETVAL=1
-			fi
-		else
-			failed "$LOCAL_DEVICE is primary. The command must be run from a connected slave"
-			RETVAL=1
+		if [ $PRIMARY -eq 1 ]; then
+			failed "resync must be run from a (connected) slave"
+			exit 1
 		fi
+
+		# TODO:DRDB sometimes lies about its connection status !!
+		# See how to understand the slave/?? line 
+
+		isConnected
+		CONNECTED=$?
+
+		if [ $CONNECTED -eq 0 ]; then
+			failed "node not connected to the primary"
+			exit 1
+		fi
+
+		drbdsetup $LOCAL_DEVICE repl
+		RETVAL=$?
 		;;
 		
 	proc)
@@ -356,39 +343,50 @@ case "$1" in
 		;;
 
 	status)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll status
 			exit $RETVAL
 		fi
 
 		if [ -r /proc/drbd ]; then
+			setLocal $CONFIG $RESOURCE
+
 			isPrimary $RESOURCE
 			PRIMARY=$?
 
-			setLocal $RESOURCE
 			isMounted $RESOURCE
 			MOUNTED=$?
-			
-			if [ $PRIMARY -eq 1 ]; then
+
+			isConnected $RESOURCE
+			CONNECTED=$?
+
+			isSyncing $RESOURCE
+			SYNC=$?
+
+			haveRemotePrimary $RESOURCE
+			RPRIMARY=$?
+
+			haveRemoteSecondary $RESOURCE
+			RSECONDARY=$?
+
+			if [ "$SYNC" -eq 1 ]; then
+				echo "not ready"
+			elif [ $PRIMARY -eq 1 ]; then
 				if [ $MOUNTED -eq 1 ]; then
-					echo "Running"
+					echo "running"
 				else
 					echo "Failed"
 				fi
 			else
-				echo "Ready"
+				echo "ready"
 			fi
 		else
-			echo "Failed"
+			echo "failed"
 		fi
 		;;
 	
 	running)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
+		if [ -z "$RESOURCE" ]; then
 			runForAll running
 			exit $RETVAL
 		fi
@@ -415,14 +413,14 @@ case "$1" in
 
 		isMasterBoot $RESOURCE
 		if [ $? -eq 1 ]; then
-			succed "Master"
+			echo "Master"
 		else
-			succed "Slave"
+			echo "Slave"
 		fi
 		;;
 
 	help)
-		echo "Usage: $0 [resource] [command]"
+		echo "Usage: $0 [command] [resource]"
 		echo
 		echo "command can be :"
 		echo

@@ -2,6 +2,8 @@
 #
 # Alter this skeleton and copy it as drbd[0,1,2,...] as needed
 # Fábio Olivé Leite <olive@conectiva.com.br>
+#
+# Modifications Thomas Mangin <thomas.mangin@free.fr>
 # 
 # This file is part of drbd by Philipp Reisner
 #
@@ -20,12 +22,28 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
+# The mode define the datadisk behaviouring
+#
+# force : to use datadisk through the linux-ha heartbeat program
+# No check will be performed. start will start the node as master
+# stop will set the node as slave.
+#
+# restore : to use datadisk as a init.d script.
+# The script will save the state of the node and try to restore it at boot
+# time. Some sanity check will be performed to avoid two master node.
+#
+# negotiate : to use datadisk as a init.d script.
+# the first node to come up is master the other will be slave.
+# All the setting are autonegotiated
+
+GLOBAL_MODE=negotiate
+
 # master and slave addr addr[:port]
 # default port: 7788
 # Important: don't use domain names here, only the hostnames 
 # as reported by hostname -s
-NODE1_HOST="ha1:7788"
-NODE2_HOST="ha2:7788"
+NODE1_HOST="localhost:7788"
+NODE2_HOST="otherhost:7788"
 
 
 # If you have machines with multiple NICs, you may want to specify
@@ -73,11 +91,11 @@ NODE2_IF=""
 #          drbd will trigger a kernel panic if there is an
 #          IO error on the lower_device. May be usefull when
 #          drbd is used in a HA cluster.
-OPTIONS=""
+GLOBAL_OPTIONS=""
 
 # Protocol used for this device
 # protocol may be A, B or C.
-PROTOCOL="B"
+GLOBAL_PROTOCOL="B"
 
 # Devices used in master and slave (may be different on each machine)
 NODE1_DEVICE="/dev/nb0"

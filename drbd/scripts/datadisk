@@ -14,49 +14,80 @@
 # Mainly moved to drbdc only keep the start, stop, restart section
 
 INSTALL="/etc/ha.d/resource.d"
-. $INSTALL/drbd_commun
-
+. $INSTALL/drbd_commun $*
 
 # See how we were called.
 case "$1" in
 	start)
-		#setLocal
-
-		#if [ isMasterBoot $RESOURCE ]; then
+		if [ "$MODE" = "force" ]; then
 			param=`echo $* | sed -e"s/start/master/g"`
-			$INSTALL/drbdc $param
-		#else
-		#	$INSTALL/drbdc $RESOURCE slave
-		#fi
+		elif [ "$MODE" = "restore" ]; then
+			isMasterBoot $RESOURCE
+			MASTER=$?
+
+			isRemotePrimary $RESOURCE
+			REMOTE_PRIMARY=$?
+
+			if [ "$MASTER" -eq 1 -a "$REMOTE_PRIMARY" -ne 1 ]; then
+				param=`echo $* | sed -e"s/start/master/g"`
+			else
+				param=`echo $* | sed -e"s/start/slave/g"`
+			fi
+		elif [ "$MODE" = "negotiate" ]; then
+			isWorkingPrimary $RESOURCE
+			PRIMARY=$?
+
+			isWorkingSecondary $RESOURCE
+			SECONDARY=$?
+
+			haveRemotePrimary $RESOURCE
+			RPRIMARY=$?
+
+			haveRemoteSecondary $RESOURCE
+			RSECONDARY=$?
+
+			if [ "$SECONDARY" -eq 1 -a "$RPRIMARY" ]; then
+				param=`echo $* | sed -e"s/start/master/g"`
+			elif [ "$RSECONDARY" -eq 1 -a "$SECONDARY" -eq 1 ]; then
+				param=`echo $* | sed -e"s/start/slave/g"`
+			else
+				# TODO:Don't know if it can happen
+				failure "This must never happend ??"
+				exit 1
+			fi
+		else
+			failure "$0 unknow mode '$MODE'"
+		fi
+
+		$INSTALL/drbdc $param
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 
 	stop)
-		#if [ -n "$RESOURCE" ]; then
-			param=`echo $* | sed -e"s/stop/slave/g"`
-			$INSTALL/drbdc $param
-		#else
-		#	$INSTALL/drbdc slave
-		#fi
+		param=`echo $* | sed -e"s/stop/slave/g"`
+		$INSTALL/drbdc $param
+
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 		
 	restart)
-		#if [ -n "$RESOURCE" ]; then
-		#	$0 $RESOURCE stop
-		#	$0 $RESOURCE start
-		#else
-			$0 stop
-			$0 start
-		#fi
+		$0 stop
+		$0 start
+
+		# TODO: A real return check
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 	status)
 		$INSTALL/drbdc $*
+		RETVAL=$?
 		;;
 
 	*)
-		echo "Usage: $0 [resource] {start|stop|restart}"
+		echo "Usage: $0 [resource] {start|stop|restart|status}"
 		RETVAL=1
 		;;
 esac
