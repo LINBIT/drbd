@@ -348,7 +348,11 @@ DRBD 0.8 Roadmap
   issue is not necessary, since clusters of machines with 
   different PAGE_SIZE are of academic interest only.
   0% DONE
- 
+
+12 Introduce a "common" section in the config file. Option
+  section (like handlers, startup, disk, net and syncer)
+  are inherited from the common section, if they are not
+  defined in a resource section.
 
 plus-banches:
 ----------------------
