@@ -150,14 +150,11 @@ DRBD 0.8 Roadmap
     All the thoughts in this area, imply that the cluster deals
     with split brain situations as discussed in item 6.
 
-  In order to offer a shared disk mode for GFS, we introduce a 
-  new state "shared" (in addition to primary and secondary).
+  In order to offer a shared disk mode for GFS, we allow both
+  nodes to become primary. (This needs to be enabled with the
+  config statement net { allow-two-primaries; } )
 
-  In a cluster of two nodes in shared state we determine a 
-  coordinator node (e.g. by selecting the node with the 
-  numeric higher IP address)
-
- read after write dependencies
+ Read after write dependencies
 
   The shared state is available to clusters using protocol C
   and B. It is not usable with protocol A.
@@ -165,47 +162,49 @@ DRBD 0.8 Roadmap
   To support the shared state with protocol B, upon a read
   request the node has to check if a new version of the block
   is in the progress of getting written. (== search for it on
-  active_ee and done_ee, must make sure that it is on active_ee
-  before the RecvAck is sent. [is already the case.] )
+  active_ee and done_ee. [ Since it is on active_ee before the 
+  RecvAck is sent. ] )
   
- global write order
+ Global write order
 
-  As far as I understand the topic up to now we have two options
-  to establish a global write order. 
+  The major pitfall is the handling of concurrent writes to the
+  same block. (Concurrent writes to the same blocks should not 
+  happen, but we have to assume that it is possible that the
+  synchronisation methods of our upper layer [i.e. openGFS] 
+  may fail.)
 
-  Proposed Solution 1, using the order of a coordinator node:
+  Without further handling concurrent writes to the same block
+  would get written on each node locally first, then sent
+  to the peer and then overwrite the local version on the peer.
+  In other words, each node would write its local version first,
+  and the peers version of the data.
 
-  Writes from the coordinator node are carried out, as they are
-  carried out on the primary node in conventional DRBD. ( Write 
-  to disk and send to peer simultaneously. )
+  Both nodes need to agree to _one_ order, in which such 
+  conflicting writes should be carried out.
 
-  Writes from the other node are sent to the coordinator first, 
-  then the coordinator inserts a small "write now" packet into
-  its stream of write packets.
-  The node commits the write to its local IO subsystem as soon 
-  as it gets the "write-now" packet from the coordinator.
+  Proposed Solution
 
-  Note: With protocol C it does not matter which node is the
-        coordinator from the performance viewpoint.
+  We arbitrary select one node (e.g. the node that did the first
+  accept() in the drbd_connect() function) and mark it withe the
+  discard-concurrent-write-flag.
 
-  Proposed Solution 2, use a dedicated LRU to implement locking:
+  The algorithm which is performed upon the reception of a 
+  data packet.
 
-  Each extent in the locking LRU can have on of these states:
-    requested
-    locked-by-peer
-    locked-by-me
-    locked-by-me-and-requested-by-peer
+  1. Do we have a concurrent request? (i.e. Do I have a request
+     to the same block in my transfer log.) If not -> write now.
+  2. Have I already got an ACK packet for the concurrent 
+     request ? (Has the request the RQ_DRBD_SENT bit already set)
+     If yes -> write the data from the data packet afterwards.
+  3. Do I have the "discard-concurrent-write-flag" ?
+     If yes -> discard the data packet and send an discard notify.
+     If no -> Write data from the data packet afterwards.
 
-  We allow application writes only to extents which are in
-  locked-by-me* state. 
+  BTW, each time we have a concurrent write access, we print
+  a warning to the syslog, since this indicates that the layer
+  above us is broken!
 
-  New Packets:
-    LockExtent
-    LockExtentAck
-
-  Configuration directives: dl-extents , dl-extent-size
-
-  TODO: Need to verify with GFS that this makes sense.
+  [ see also GFS-mode-arbitration.pdf for illustration. ]
 
 10 Change Sync-groups to sync-after
   
