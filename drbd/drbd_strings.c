@@ -60,8 +60,8 @@ static const char *drbd_disk_s_names[] = {
 
 static const char *drbd_state_sw_errors[] = {
 	[1] = "Multiple primaries now allowed by config",
-	[2] = "Refusing to be Primary without consistent data",
-	[3] = "Refusing to make peer Primary without data",
+	[2] = "Refusing to be Primary without UpToDate disk",
+	[3] = "Refusing to make peer Primary without disk",
 	[4] = "Refusing to be inconsistent on both nodes",
 	[5] = "Refusing to be syncing and diskless",
 	[6] = "Refusing to be Outdated while Connected",
@@ -86,7 +86,7 @@ const char* disks_to_name(drbd_disks_t s) {
 }
 
 const char* set_st_err_name(int err) {
-	return err < -4 ? "TO_SMALL" :
+	return err < -6 ? "TO_SMALL" :
 	       err > -1 ? "TO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }

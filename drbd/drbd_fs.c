@@ -630,7 +630,7 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 
 		/* --do-what-I-say*/
 		if (mdev->state.s.disk < UpToDate) {
-			WARN("Forcefully set to UpToDate!");
+			WARN("Forcefully set to UpToDate!\n");
 			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
 							disk,UpToDate));
 			if(r<=0) return -EIO;
@@ -815,6 +815,37 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 */
 	return 0;
 }
+
+STATIC int drbd_outdate_ioctl(drbd_dev *mdev)
+{
+	drbd_state_t os,ns;
+	int r;
+
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	if( mdev->state.s.disk != UpToDate ) { 
+		r=-999;
+	} else {
+		r = _drbd_set_state(mdev, _NS(role,Outdated), 0);
+	}
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
+	
+	if( r == 2 ) return 0;
+	if( r == -999 ) {
+		return -EBADMSG; // TODO better errnos.
+	}
+	after_state_ch(mdev,os,ns); // TODO decide if neccesarry.
+	
+	if( r <= 0 ) {
+		return -EISCONN;
+	}
+	
+	drbd_md_write(mdev);
+
+	return 0;
+}
+
 
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
@@ -1100,15 +1131,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_OUTDATE_DISK:
-		r = drbd_request_state(mdev,NS(disk,Outdated));
-		if( r == 2 ) break;
-		if( r <= 0 ) {
-			err = -EISCONN;
-			break;
-		}
-
-		drbd_md_write(mdev);
-		
+		err = drbd_outdate_ioctl(mdev);
 		break;
 
 	default:

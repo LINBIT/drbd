@@ -635,14 +635,14 @@ void printf_gc(const struct md_cpu *md)
 {
 	printf("%d:%d:%d:%d:%d:%d:%d:%d:%d\n",
 	       md->gc[Flags] & MDF_Consistent ? 1 : 0,
+	       md->gc[Flags] & MDF_UpToDate ? 1 : 0,
 	       md->gc[HumanCnt],
 	       md->gc[TimeoutCnt],
 	       md->gc[ConnectedCnt],
 	       md->gc[ArbitraryCnt],
 	       md->gc[Flags] & MDF_PrimaryInd ? 1 : 0,
 	       md->gc[Flags] & MDF_ConnectedInd ? 1 : 0,
-	       md->gc[Flags] & MDF_FullSync ? 1 : 0,
-	       md->gc[Flags] & MDF_UpToDate ? 1 : 0);
+	       md->gc[Flags] & MDF_FullSync ? 1 : 0);
 }
 
 /******************************************
@@ -1091,28 +1091,27 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 		return -1;
 
 	printf("\n"
-	       "                                                  UpToDate |\n"
-	       "                                        WantFullSync |     |\n"
-	       "                                  ConnectedInd |     |     |\n"
-	       "                               lastState |     |     |     |\n"
-	       "                      ArbitraryCnt |     |     |     |     |\n"
-	       "                ConnectedCnt |     |     |     |     |     |\n"
-	       "            TimeoutCnt |     |     |     |     |     |     |\n"
-	       "        HumanCnt |     |     |     |     |     |     |     |\n"
+	       "                                              WantFullSync |\n"
+	       "                                        ConnectedInd |     |\n"
+	       "                                     lastState |     |     |\n"
+	       "                            ArbitraryCnt |     |     |     |\n"
+	       "                      ConnectedCnt |     |     |     |     |\n"
+	       "                  TimeoutCnt |     |     |     |     |     |\n"
+	       "              HumanCnt |     |     |     |     |     |     |\n"
+	       "        UpToDate |     |     |     |     |     |     |     |\n"
 	       "Consistent |     |     |     |     |     |     |     |     |\n"
 	       "   --------+-----+-----+-----+-----+-----+-----+-----+-----+\n"
-	       "       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s | %3s  \n"
+	       "       %3s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
 	       "\n",
 	       cfg->md.gc[Flags] & MDF_Consistent ? "1/c" : "0/i",
+	       cfg->md.gc[Flags] & MDF_UpToDate ? "1/y" : "0/n",
 	       cfg->md.gc[HumanCnt],
 	       cfg->md.gc[TimeoutCnt],
 	       cfg->md.gc[ConnectedCnt],
 	       cfg->md.gc[ArbitraryCnt],
 	       cfg->md.gc[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
 	       cfg->md.gc[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
-	       cfg->md.gc[Flags] & MDF_FullSync ? "1/y" : "0/n",
-	       cfg->md.gc[Flags] & MDF_UpToDate ? "1/y" : "0/n");
-
+	       cfg->md.gc[Flags] & MDF_FullSync ? "1/y" : "0/n");
 
 	if (cfg->md.la_sect) {
 		printf("last agreed size: %s\n",
@@ -1295,6 +1294,7 @@ int meta_set_gc(struct format *cfg, char **argv, int argc)
 
 	do {
 		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_Consistent)) break;
+		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_UpToDate)) break;
 		if (!m_strsep(str, &tmp.gc[HumanCnt])) break;
 		if (!m_strsep(str, &tmp.gc[TimeoutCnt])) break;
 		if (!m_strsep(str, &tmp.gc[ConnectedCnt])) break;

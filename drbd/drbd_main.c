@@ -411,42 +411,18 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
 	drbd_state_t os;
 	char pb[160], *pbp;
-	int rv=1;
+	int rv=1,warn_sync_abort=0;
 
 	os = mdev->state;
 
 	if( ns.i == os.i ) return 2;
-
-	if( !(flags & ChgStateHard) ) {
-		/*  pre-state-change checks ; only look at ns  */
-		/* See drbd_state_sw_errors in drbd_strings.c */
-
-		if( !ns.s.mult && 
-		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
-
-		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
-		    ns.s.conn < Connected ) rv=-2;
-
-		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
-		    ns.s.conn < Connected ) rv=-3;
-
-		if( ns.s.conn > Connected && 
-		    ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
-
-		if( ns.s.conn > Connected && 
-		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) rv=-5;
-
-		if( (ns.s.conn >= Connected && ns.s.conn != PausedSyncT) &&
-		    ns.s.disk == Outdated ) rv=-6;
-
-	}
 
 	/*  State sanitising  */
 	if( ns.s.conn < Connected ) ns.s.peer = Unknown;
 	if( ns.s.conn < Connected ) ns.s.pdsk = DUnknown;
 
 	if( ns.s.disk <= Failed && ns.s.conn > Connected) {
-		WARN("Resync aborted.\n");
+		warn_sync_abort=1;
 		ns.s.conn = Connected;
 	}
 
@@ -492,9 +468,40 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		}
 	}
 
+	if( !(flags & ChgStateHard) ) {
+		/*  pre-state-change checks ; only look at ns  */
+		/* See drbd_state_sw_errors in drbd_strings.c */
+
+		if( !ns.s.mult && 
+		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
+
+		if( ns.s.role == Primary && ns.s.disk < UpToDate && 
+		    ns.s.conn < Connected ) rv=-2;
+
+		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
+		    ns.s.conn < Connected ) rv=-3;
+
+		if( ns.s.conn > Connected && 
+		    ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
+
+		if( ns.s.conn > Connected && 
+		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) rv=-5;
+
+		if( (ns.s.conn == Connected ||
+		     ns.s.conn == SkippedSyncS ||
+		     ns.s.conn == WFBitMapS ||
+		     ns.s.conn == SyncSource ||
+		     ns.s.conn == PausedSyncS) &&
+		    ns.s.disk == Outdated ) rv=-6;
+	}
+
 	if(rv <= 0) {
 		if( flags & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
 		return rv;
+	}
+
+	if(warn_sync_abort) {
+		WARN("Resync aborted.\n");
 	}
 
 #if DUMP_MD >= 2
@@ -2163,12 +2170,13 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	int i;
 	u32 me,other;
 
-	/* FIXME
-	 * Take the UpToDate flag into account.
-	 */
-
 	me=mdev->gen_cnt[Flags] & MDF_Consistent;
 	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_Consistent;
+	if( me > other ) return 1;
+	if( me < other ) return -1;
+
+	me=mdev->gen_cnt[Flags] & MDF_UpToDate;
+	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_UpToDate;
 	if( me > other ) return 1;
 	if( me < other ) return -1;
 
