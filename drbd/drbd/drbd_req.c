@@ -136,7 +136,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	kfree(req); /* frees also the temporary bh */
 
 	if(wake_asender) {
-	        wake_up_interruptible(&mdev->asender_wait);
+		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
 	}
 }
 

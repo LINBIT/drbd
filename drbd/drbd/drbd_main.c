@@ -631,7 +631,7 @@ static void drbd_timeout(unsigned long arg)
 		       (int)(ti->mdev-drbd_conf),ti->task->pid);
 		*/
 		set_bit(SEND_PING,&ti->mdev->flags);
-		wake_up_interruptible(&ti->mdev->asender_wait);
+		drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
 		if(ti->restart) {
 			ti->s_timeout.expires = jiffies +
 				(ti->mdev->conf.timeout * HZ / 10);
@@ -650,7 +650,7 @@ void drbd_a_timeout(unsigned long arg)
 	       (int)(mdev-drbd_conf),atomic_read(&mdev->pending_cnt));
 	*/
 	set_bit(SEND_PING,&mdev->flags);
-	wake_up_interruptible(&mdev->asender_wait);
+	drbd_queue_signal(DRBD_SIG, mdev->asender.task);
 }
 
 /*
@@ -930,7 +930,6 @@ int __init drbd_init(void)
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
 		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
-		init_waitqueue_head(&drbd_conf[i].asender_wait);
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
 		drbd_conf[i].epoch_size=0;

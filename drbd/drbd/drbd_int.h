@@ -243,7 +243,6 @@ struct Drbd_Conf {
 	struct Drbd_thread syncer;
         struct Drbd_thread asender;
 	struct BitMap* mbds_id;
-        wait_queue_head_t asender_wait;  
 	int open_cnt;
 	u32 gen_cnt[5];
 	u32 bit_map_gen[5];

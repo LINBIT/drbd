@@ -250,7 +250,7 @@ void drbd_idle_timeout(unsigned long arg)
 	struct idle_timer_info* ti = (struct idle_timer_info *)arg;
 
 	set_bit(SEND_PING,&ti->mdev->flags);
-	wake_up_interruptible(&ti->mdev->asender_wait);
+	drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
 	if(ti->restart) {
 		ti->idle_timeout.expires = jiffies + 
 			ti->mdev->conf.ping_int * HZ;
@@ -258,13 +258,14 @@ void drbd_idle_timeout(unsigned long arg)
 	}
 }
 
-int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
+int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
 	struct msghdr msg;
 	struct idle_timer_info ti;
 	int rv,done=0;
+	struct socket *sock = via_msock ? mdev->msock : mdev->sock;
 
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
@@ -280,7 +281,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
-	if (mdev->conf.ping_int) {
+	if (mdev->conf.ping_int && !via_msock ) {
 		init_timer(&ti.idle_timeout);
 		ti.idle_timeout.function = drbd_idle_timeout;
 		ti.idle_timeout.data = (unsigned long) &ti;
@@ -292,7 +293,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	}
 
 	while(1) {
-		rv = sock_recvmsg(mdev->sock, &msg, size, msg.msg_flags);
+		rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
 
 		if(rv <= 0) break;
 		done +=rv;
@@ -310,7 +311,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	set_fs(oldfs);
 	unlock_kernel();
 
-	if (mdev->conf.ping_int) {
+	if (mdev->conf.ping_int && !via_msock) {
 		ti.restart=0;
 		del_timer_sync(&ti.idle_timeout);
 		ti.idle_timeout.function=0;
@@ -486,7 +487,7 @@ inline int receive_cstate(int minor)
 {
 	Drbd_CState_P header;
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) 
 	    != sizeof(header))
 	        return FALSE;
 	
@@ -513,7 +514,7 @@ inline int receive_barrier(int minor)
 		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n",
 		       minor);
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) 
 	    != sizeof(header))
 	        return FALSE;
 
@@ -548,7 +549,7 @@ inline int receive_data(int minor,int data_size)
 		printk(KERN_ERR DEVICE_NAME "%d: got data while not SEC!!\n",
 		       minor);
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) != 
 	    sizeof(header))
 	        return FALSE;
        
@@ -576,7 +577,7 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
-	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) != data_size) {
+	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size,0)!=data_size) {
 		bforget(bh);
 		return FALSE;
 	}
@@ -657,7 +658,7 @@ inline int receive_block_ack(int minor)
 		printk(KERN_ERR DEVICE_NAME "%d: got blk-ack while not PRI!!\n",
 		       minor);
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) != 
 	    sizeof(header))
 	        return FALSE;
 
@@ -685,7 +686,7 @@ inline int receive_barrier_ack(int minor)
 		printk(KERN_ERR DEVICE_NAME "%d: got barrier-ack while not"
 		       " PRI!!\n",minor);
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
+	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) != 
 	    sizeof(header))
 	        return FALSE;
 
@@ -707,7 +708,7 @@ inline int receive_param(int minor,int command)
 	/*printk(KERN_DEBUG DEVICE_NAME
 	  ": recv ReportParams/m=%d\n",minor);*/
 
-	if (drbd_recv(&drbd_conf[minor], &param, sizeof(param)) != 
+	if (drbd_recv(&drbd_conf[minor], &param, sizeof(param),0) != 
 	    sizeof(param))
 	        return FALSE;
 
@@ -847,8 +848,8 @@ void drbdd(int minor)
 	while (TRUE) {
 		drbd_collect_zombies(minor);
 
-		if (drbd_recv(&drbd_conf[minor],&header,sizeof(Drbd_Packet))!= 
-		     sizeof(Drbd_Packet)) 
+		if (drbd_recv(&drbd_conf[minor],&header,sizeof(Drbd_Packet),0)
+		    != sizeof(Drbd_Packet)) 
 			break;
 
 		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
@@ -1016,44 +1017,18 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 
 /* ********* acknowledge sender ******** */
 
-inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
+inline int drbd_try_send_barrier(struct Drbd_Conf *mdev)
 {
+	int rv=TRUE;
 	if(down_trylock(&mdev->send_mutex)==0) {
 		if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-			_drbd_send_barrier(mdev);
+			if( _drbd_send_barrier(mdev) != 
+			    sizeof(Drbd_Barrier_Packet)) rv=FALSE;
 		}
 		up(&mdev->send_mutex);
 	}
+	return rv;
 }     
-
-void drbd_double_sleep_on(wait_queue_head_t *q1,wait_queue_head_t *q2)
-{
-	unsigned long flags;
-	wait_queue_t wait1,wait2;
-
-	init_waitqueue_entry(&wait1, current);
-	init_waitqueue_entry(&wait2, current);
-
-	current->state = TASK_INTERRUPTIBLE;
-
-	wq_write_lock_irqsave(&q1->lock,flags);
-	__add_wait_queue(q1, &wait1);
-	wq_write_unlock(&q1->lock);
-
-	wq_write_lock_irq(&q2->lock);
-	__add_wait_queue(q2, &wait2);
-	wq_write_unlock(&q2->lock);
-
-	schedule();
-
-	wq_write_lock_irq(&q1->lock);
-	__remove_wait_queue(q1, &wait1);
-	wq_write_unlock(&q1->lock);
-
-	wq_write_lock_irq(&q2->lock);
-	__remove_wait_queue(q2, &wait2);
-	wq_write_unlock_irqrestore(&q2->lock,flags);
-}
 
 void drbd_ping_timeout(unsigned long arg)
 {
@@ -1071,47 +1046,13 @@ void drbd_ping_timeout(unsigned long arg)
 	}
 }
 
-int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
-{
-	mm_segment_t oldfs;
-	struct iovec iov;
-	struct msghdr msg;
-	int rv;
-
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_iovlen = 1;
-	msg.msg_iov = &iov;
-	iov.iov_len = size;
-	iov.iov_base = ubuf;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_flags = MSG_DONTWAIT | MSG_NOSIGNAL;
-
-	lock_kernel();
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-
-	rv = sock_recvmsg(mdev->msock, &msg, size, msg.msg_flags);
-
-	set_fs(oldfs);
-	unlock_kernel();
-
-	if (rv<0 && rv != -ECONNRESET && rv != -ERESTARTSYS && rv != -EAGAIN) {
-		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
-		       (int)(mdev-drbd_conf),rv);
-	}
-
-	return rv;
-}
-
 
 int drbd_asender(struct Drbd_thread *thi)
 {
-	Drbd_Packet header;
+	Drbd_Packet pkt;
 	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	struct timer_list ping_timeout;
-	unsigned long ping_sent_at;
+	unsigned long ping_sent_at,flags;
 	int rtt=0,rr,rsize=0;
 
 	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
@@ -1126,66 +1067,68 @@ int drbd_asender(struct Drbd_thread *thi)
 	ping_sent_at=0;
 
 	while(thi->t_state == Running) {
-	  drbd_double_sleep_on(&mdev->asender_wait,mdev->msock->sk->sleep);
-
-	  if(signal_pending(current)) break;
+		rr=drbd_recv(mdev,((char*)&pkt)+rsize,sizeof(pkt)-rsize,1);
+		if(rr == -ERESTARTSYS) {
+			spin_lock_irqsave(&current->sigmask_lock,flags);
+			sigemptyset(SIGSET_OF(current));
+			recalc_sigpending(current);
+			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+			rr=0;
+		} else if(rr <= 0) break;
+		
+		rsize+=rr;		
+			
+		if(rsize == sizeof(pkt)) {
+			if (be32_to_cpu(pkt.magic) != DRBD_MAGIC) {
+				printk(KERN_ERR DEVICE_NAME "%d: magic?? "
+				       "m: %ld c: %d l: %d \n",
+				       (int)(mdev-drbd_conf),
+				       (long) be32_to_cpu(pkt.magic),
+				       (int) be16_to_cpu(pkt.command),
+				       (int) be16_to_cpu(pkt.length));
+				goto err;
+			}
+			switch (be16_to_cpu(pkt.command)) {
+			case Ping:
+        			if(drbd_send_cmd((int)(mdev-drbd_conf),
+						 PingAck,1) != 
+				   sizeof(Drbd_Packet) ) goto err;
+				break;
+			case PingAck:
+				del_timer(&ping_timeout);
+				
+				rtt = jiffies-ping_sent_at;
+				ping_sent_at=0;
+				break;
+			}
+			rsize=0;
+		}
 	  
-	  if(thi->t_state == Exiting) break;
+		if(ping_sent_at==0) {
+			if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
+				if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)
+				   != sizeof(Drbd_Packet) ) goto err;
+				ping_timeout.expires = 
+					jiffies + mdev->conf.timeout*HZ/20;
+				add_timer(&ping_timeout);
+				ping_sent_at=jiffies;
+				if(ping_sent_at==0) ping_sent_at=1;
+			}
+		}
 
-	  if(ping_sent_at==0) {
-		  if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
-			  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
-			     sizeof(Drbd_Packet) ) {
-				  ping_timeout.expires = 
-					  jiffies + mdev->conf.timeout*HZ/20;
-				  add_timer(&ping_timeout);
-				  ping_sent_at=jiffies;
-				  if(ping_sent_at==0) ping_sent_at=1;
-			  }			  
-		  }
-	  }
-
-	  if( mdev->state == Primary ) {
-		  drbd_try_send_barrier(mdev);
-	  } else { //Secondary
-		  drbd_process_done_ee(mdev);
-	  }
-
-	  while((rr=drbd_recv_nowait(mdev,((char*)&header)+rsize,
-				     sizeof(header)-rsize)) != -EAGAIN ) {
-		  if(rr < 0) goto out;
-		  rsize+=rr;
-		  if(rsize == sizeof(header)) {
-			  if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
-				  printk(KERN_ERR DEVICE_NAME "%d: magic?? "
-					 "m: %ld c: %d l: %d \n",
-					 (int)(mdev-drbd_conf),
-					 (long) be32_to_cpu(header.magic),
-					 (int) be16_to_cpu(header.command),
-					 (int) be16_to_cpu(header.length));
-				  drbd_thread_restart_nowait(&mdev->receiver);
-			  }
-			  switch (be16_to_cpu(header.command)) {
-			  case Ping:
-        			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
-				  break;
-			  case PingAck:
-				  del_timer(&ping_timeout);
-				  
-				  rtt = jiffies-ping_sent_at;
-				  ping_sent_at=0;
-				  break;
-			  }
-			  rsize=0;
-			  
-		  }
-	  }
+		if( mdev->state == Primary ) {
+			if(!drbd_try_send_barrier(mdev)) goto err;
+		} else { //Secondary
+			if(!drbd_process_done_ee(mdev)) goto err;
+		}
 	}
 
-	// TODO: if sending fails somewhere, asender take aktion
-	out:
-	del_timer_sync(&ping_timeout);
+	if(0) {
+	err:
+		drbd_thread_restart_nowait(&mdev->receiver);
+	}
 
+	del_timer_sync(&ping_timeout);
 	return 0;
 }
 
