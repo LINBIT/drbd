@@ -72,7 +72,7 @@ struct ioctl_drbd_config {
 #define DRBD_PROT_B   2
 #define DRBD_PROT_C   3
 
-/* This is the layout for a Packet on the wire! 
+/* This is the layout for a packet on the wire! 
  * The byteorder is the network byte order!
  */
 typedef struct {
@@ -88,7 +88,7 @@ typedef struct { \
 } NAME##acket;
 
 typedef struct {
-  __u64       block_nr;  /* 64 Bits Block number */
+  __u64       block_nr;  /* 64 bits block number */
   __u64       block_id;  /* Used in protocol B&C for the address of the req. */
 } Drbd_Data_P;
 MKPACKET(Drbd_Data_P)
@@ -96,7 +96,7 @@ MKPACKET(Drbd_Data_P)
 typedef struct {
   __u32       barrier;   /* may be 0 or a barrier number  */
   __u32       _fill;     /* Without the _fill gcc may add fillbytes on 
-                            64 Bit Plaforms, but does not so an 32 bits... */
+                            64 bit plaforms, but does not so an 32 bits... */
 } Drbd_Barrier_P;
 MKPACKET(Drbd_Barrier_P)
 
