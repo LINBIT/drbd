@@ -4,6 +4,16 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+ * A fix to make ioctl()s work on machines with 64bit kernel space 
+   and 32bit user space. 
+ * Ioctl()s are only alloes if the caller has CAP_SYS_ADMIN set.
+ * Removal of warnings on 64bit architectures.
+ * Backport of find_first_bit() for x86_64 aka AMD64 for use on 
+   that architecture under Linux-2.4.x
+ * Improvements to the drbddisk script, to do the right thing
+   in case Heartbeat is configured with a small timeout than DRBD.
+ * Lots of updates to the way Debian's DRBD packages works.
+
 0.7.5 (api:76/proto:74)
 -----
  * Fix a bug that could case read requests to return wrong data
