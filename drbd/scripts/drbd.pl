@@ -217,7 +217,7 @@ sub wait_ready($$)
 
 	m_system("$drbdsetup $$mconf{self}{device} wait_connect -t $$mconf{inittimeout}");
 
-	($cstate,$state) = get_drbd_status($$mconf{self}{device});
+	($cstate,$state,undef) = get_drbd_status($$mconf{self}{device});
 #	print "\n$$mconf{self}{device} is $cstate,$state";
 	if($cstate =~ m/^Syncing/ && $state eq "Secondary" ) {
 	    print "\nWaiting until $res is up to date (using $cstate) abort? ";
@@ -245,6 +245,20 @@ sub increase_h_count($$)
 #    if($errtxt) { die $errtxt; }
 }
 
+sub wait_until_partner_sec($$)
+{
+    my ($res,$mconf)=@_;
+    my $pstate;
+
+    (undef,undef,$pstate)=get_drbd_status($$mconf{self}{device});
+    if($pstate eq "Primary") {
+	print "Waiting until partner node is secondary on $res\n";
+	while($pstate eq "Primary") {
+	    sleep 5;
+	    (undef,undef,$pstate)=get_drbd_status($$mconf{self}{device});
+	}
+    }
+}
 
 sub become_pri($$)
 {
@@ -329,7 +343,7 @@ sub drbd_status($$)
 			 "SyncingAll"     => "running",
 			 "SyncingQuick"   => "running");
     
-    ($cs,undef)=get_drbd_status($$mconf{self}{device});
+    ($cs,undef,undef)=get_drbd_status($$mconf{self}{device});
 
     return $retcode_table{$cs};
 }
@@ -343,7 +357,7 @@ sub datadisk_status($$)
 		         "Secondary"    => "stopped",
 		         "Unknown"      => "stopped");
     
-    (undef,$st)=get_drbd_status($$mconf{self}{device});
+    (undef,$st,undef)=get_drbd_status($$mconf{self}{device});
 
     return $retcode_table{$st};
 }
@@ -385,10 +399,10 @@ sub get_drbd_status($)
 	or die "can not open /proc/drbd";
 
     while($line = <PROC>) {
-	if($line =~ /^(\d+):\scs:(\w+)\sst:(\w+)\//) {
+	if($line =~ /^(\d+):\scs:(\w+)\sst:(\w+)\/(\w+)/) {
 	    if($1==$minor) {
 		close(PROC);
-		return ($2,$3);
+		return ($2,$3,$4);
 	    }
 	}	    
     }
@@ -551,6 +565,7 @@ sub drbd()
 sub datadisk()
 {
     if($command eq "start") { 
+	fcaller( \&wait_until_partner_sec );
 	fcaller( \&become_pri );
     } elsif ($command eq "stop") { 
 	fcaller( \&become_sec );
