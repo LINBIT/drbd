@@ -728,6 +728,7 @@ struct Drbd_Conf {
 	struct list_head sync_ee;   // IO in progress
 	struct list_head done_ee;   // send ack
 	struct list_head read_ee;   // IO in progress
+	struct list_head net_ee;    // zero-copy network send in progress
 	spinlock_t pr_lock;
 	struct list_head app_reads;
 	struct list_head resync_reads;

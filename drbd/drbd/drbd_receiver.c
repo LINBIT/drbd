@@ -280,7 +280,6 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
 	DEFINE_WAIT(wait);
-	LIST_HEAD(active);
 
 	MUST_HOLD(&mdev->ee_lock);
 
@@ -289,7 +288,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 		drbd_kick_lo(mdev);
 		spin_lock_irq(&mdev->ee_lock);
 	}
- retry:
+
 	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,&mdev->done_ee);
 
 	if(list_empty(&mdev->free_ee)) {
@@ -311,39 +310,20 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			finish_wait(&mdev->ee_wait, &wait);
 			if (signal_pending(current)) {
 				WARN("drbd_get_ee interrupted!\n");
-				list_splice(&active,mdev->free_ee.prev);
 				return 0;
 			}
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
 			_drbd_process_ee(mdev,&mdev->done_ee);
-
-			list_for_each(le,&active) {
-				e=list_entry(le, struct Tl_epoch_entry,w.list);
-				if( page_count(drbd_bio_get_page(&e->private_bio)) == 1 ) {
-					list_move(le,&mdev->free_ee);
-					break;
-				}
-			}
 		}
 		finish_wait(&mdev->ee_wait, &wait); 
 	}
 
 	le=mdev->free_ee.next;
 	list_del(le);
-
-	e=list_entry(le, struct Tl_epoch_entry, w.list);
-	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {
-		/* This might happen if the sendpage() has not finished */
-		list_add(le,&active);
-		goto retry;
-	}
-
-	list_splice(&active,mdev->free_ee.prev);
-
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
-
+	e=list_entry(le, struct Tl_epoch_entry, w.list);
 ONLY_IN_26(
 	D_ASSERT(e->private_bio.bi_idx == 0);
 	drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
@@ -358,6 +338,8 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 	struct page* page;
 
 	MUST_HOLD(&mdev->ee_lock);
+
+	D_ASSERT(page_count(drbd_bio_get_page(&e->private_bio)) == 1);
 
 	mdev->ee_in_use--;
 	mdev->ee_vacant++;
@@ -380,6 +362,25 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 	wake_up(&mdev->ee_wait);
 }
 
+STATIC void reclaim_net_ee(drbd_dev *mdev)
+{
+	struct Tl_epoch_entry *e;
+	struct list_head *le,*tle;
+
+	/* The EEs are always appended to the end of the list, since
+	   they are sent in order over the wire, they have to finish
+	   in order. As soon as we see the first not finished we can
+	   stop to examine the list... */
+
+	list_for_each_safe(le, tle, &mdev->net_ee) {
+		e = list_entry(le, struct Tl_epoch_entry, w.list);
+		if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) break;
+		list_del(le);
+		drbd_put_ee(mdev,e);
+	}
+}
+
+
 /* It is important that the head list is really empty when returning,
    from this function. Note, this function is called from all three
    threads (receiver, worker and asender). To ensure this I only allow
@@ -392,6 +393,8 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	int got_sig;
 
 	MUST_HOLD(&mdev->ee_lock);
+
+	reclaim_net_ee(mdev);
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
@@ -432,6 +435,8 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 	struct Tl_epoch_entry *e;
 
 	spin_lock_irq(&mdev->ee_lock);
+
+	reclaim_net_ee(mdev);
 
 	while(!list_empty(&mdev->done_ee)) {
 		le = mdev->done_ee.next;
