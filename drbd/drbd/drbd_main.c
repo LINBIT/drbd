@@ -811,6 +811,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		_drbd_send_barrier(mdev);
 	tl_add(mdev,req);
+	req->rq_status |= RQ_DRBD_IN_TL;
 	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bio(mdev,&req->private_bio);
 

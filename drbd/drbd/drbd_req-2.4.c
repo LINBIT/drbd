@@ -69,13 +69,16 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	end_it:
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	if( ! ( er_flags & ERF_NOTLD ) ) {
-		/*If this call is from tl_clear() we may not call tl_dependene,
-		  otherwhise we have a homegrown spinlock deadlock.   */
-		if(tl_dependence(mdev,req))
-			set_bit(ISSUE_BARRIER,&mdev->flags);
-	} else {
-		list_del(&req->w.list); // we have the tl_lock...
+	if( req->rq_status & RQ_DRBD_IN_TL ) {
+		if( ! ( er_flags & ERF_NOTLD ) ) {
+			/*If this call is from tl_clear() we may not call 
+			  tl_dependene, otherwhise we have a homegrown 
+			  spinlock deadlock.   */
+			if(tl_dependence(mdev,req))
+				set_bit(ISSUE_BARRIER,&mdev->flags);
+		} else {
+			list_del(&req->w.list); // we have the tl_lock...
+		}
 	}
 
 	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {

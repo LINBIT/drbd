@@ -382,6 +382,10 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
+	i=inc_local_md_only(mdev);
+	D_ASSERT( i ); // Assertions should not have side effects.
+	// I do not want to have D_ASSERT( inc_local_md_only(mdev) );
+
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
@@ -390,6 +394,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
+	dec_local(mdev);
 }
 
 /**

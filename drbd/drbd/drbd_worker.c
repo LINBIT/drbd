@@ -175,7 +175,7 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 		req->w.cb = w_read_retry_remote;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
-		bh->b_end_io(bh,uptodate);
+		bh->b_end_io(req->master_bio,uptodate);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
@@ -329,11 +329,13 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 		req->w.cb = w_read_retry_remote;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
-		bio_endio(bio,bio->bi_size,error);
+		bio_endio(req->master_bio,req->master_bio->bi_size,error);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
 	}
+
+	dec_local(mdev);
 	return 0;
 }
 #endif
