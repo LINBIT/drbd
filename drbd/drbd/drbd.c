@@ -113,7 +113,7 @@ struct Drbd_thread {
 	int pid;
         wait_queue_head_t wait;  
 	int t_state;
-	int (*function) (void *);
+	int (*function) (struct Drbd_thread *);
 	int minor;
 };
 
@@ -126,6 +126,9 @@ struct Tl_epoch_entry {
 	struct buffer_head* bh;
 	u64    block_id;
 };
+
+#define ISSUE_BARRIER 0
+#define COLLECT_ZOMBIES 1
 
 struct Drbd_Conf {
 	struct drbd_config conf;
@@ -146,7 +149,7 @@ struct Drbd_Conf {
 	struct Tl_entry* tl_end;
 	struct Tl_entry* tl_begin;
 	struct Tl_entry* transfer_log;
-        int    need_to_issue_barrier;
+        int    flags;
         int    epoch_size;
 	spinlock_t es_lock;
 	struct timer_list s_timeout;
@@ -171,10 +174,11 @@ int drbd_send_param(int minor, int cmd);
 void drbd_thread_start(struct Drbd_thread *thi);
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 
-int drbdd_init(void *arg);
-int drbd_syncer(void *arg);
+int drbdd_init(struct Drbd_thread*);
+int drbd_syncer(struct Drbd_thread*);
+int drbd_asender(struct Drbd_thread*);
 void drbd_free_resources(int minor);
-int drbd_asender(void *arg);
+
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
 				   void *);
@@ -538,19 +542,38 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }     
 
-inline void drbd_thread_setup(struct Drbd_thread *thi)
+inline void drbd_collect_zombies(int minor)
 {
-	if (!thi->pid) sleep_on(&thi->wait);
+	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
+		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
+	}
 }
 
-inline void drbd_thread_exit(struct Drbd_thread *thi)
+int drbd_thread_setup(void* arg)
 {
+	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
+	int retval;
+
+	lock_kernel();
+	exit_mm(current);	/* give up UL-memory context */
+	exit_files(current);	/* give up open filedescriptors */
+	current->session = 1;
+	current->pgrp = 1;
+	current->fs->umask = 0;
+
+	if (!thi->pid) sleep_on(&thi->wait);
+
+	retval = thi->function(thi);
+
 	thi->pid = 0;
 	wake_up(&thi->wait);
+	set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
+
+	return retval;
 }
 
 void drbd_thread_init(int minor, struct Drbd_thread *thi,
-		      int (*func) (void *))
+		      int (*func) (struct Drbd_thread *))
 {
 	thi->pid = 0;
 	init_waitqueue_head(&thi->wait);
@@ -565,7 +588,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	if (thi->pid == 0) {
 		thi->t_state = Running;
 
-		pid = kernel_thread(thi->function, (void *) thi, 0);
+		pid = kernel_thread(drbd_thread_setup, (void *) thi, 0);
 
 		if (pid < 0) {
 			printk(KERN_ERR DEVICE_NAME
@@ -717,7 +740,7 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
 inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
 {
 	down(&mdev->send_mutex);
-	if(test_and_clear_bit(0,&mdev->need_to_issue_barrier)) {
+	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 	        _drbd_send_barrier(mdev);
 	}
 	up(&mdev->send_mutex);
@@ -768,7 +791,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 			  jiffies + mdev->conf.timeout * HZ / 10);
 	}
 
-	if(test_and_clear_bit(0,&mdev->need_to_issue_barrier)) {
+	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 	        _drbd_send_barrier(mdev);
 	}
 	
@@ -949,7 +972,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 
 	if(mdev->state == Primary) {
 	        if(tl_dependence(mdev,req->sector)) {
-	                set_bit(0,&mdev->need_to_issue_barrier);
+	                set_bit(ISSUE_BARRIER,&mdev->flags);
 			wake_asender=1;
 		}
 	}
@@ -1357,11 +1380,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+//#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 int __init drbd_init(void)
-#else
-__initfunc(int drbd_init(void))
-#endif
+     //#else
+     //__initfunc(int drbd_init(void))
+     //#endif
 {
 
 	int i;
@@ -1404,7 +1427,7 @@ __initfunc(int drbd_init(void))
 		drbd_conf[i].transfer_log = 0;
 		drbd_conf[i].mops = &bm_mops;
 		drbd_conf[i].mbds_id = 0;
-		drbd_conf[i].need_to_issue_barrier=0;
+		drbd_conf[i].flags=0;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].epoch_size=0;
 		drbd_conf[i].s_timeout.function = drbd_timeout;
@@ -1439,11 +1462,11 @@ __initfunc(int drbd_init(void))
 
 	return 0;
 }
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+//#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 int __init init_module()
-#else
-__initfunc(int init_module())
-#endif
+     //#else
+     //__initfunc(int init_module())
+     //#endif
 {
 	printk(KERN_INFO DEVICE_NAME ": module initialised. Version: %d\n",
 	       MOD_VERSION);
@@ -1945,7 +1968,9 @@ void drbdd(int minor)
 	struct socket *my_sock = drbd_conf[minor].sock;
 
 	while (TRUE) {
-		if (drbd_recv(my_sock,&header,sizeof(Drbd_Packet)) <= 0)
+		drbd_collect_zombies(minor);
+
+		if ( drbd_recv(my_sock,&header,sizeof(Drbd_Packet)) <= 0) 
 			break;
 
 		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
@@ -1992,7 +2017,6 @@ void drbdd(int minor)
 			       ": unknown packet type!/m=%d\n", minor);
 			goto out;
 		}
-		while(waitpid(-1, NULL, __WCLONE|WNOHANG) > 0);
 	}
 
       out:
@@ -2007,7 +2031,7 @@ void drbdd(int minor)
 	switch(drbd_conf[minor].state) {
 	case Primary:   
 		tl_clear(&drbd_conf[minor]);
-		clear_bit(0,&drbd_conf[minor].need_to_issue_barrier);
+		clear_bit(ISSUE_BARRIER,&drbd_conf[minor].flags);
 		break;
 	case Secondary: 
 		drbd_conf[minor].epoch_size=0; 
@@ -2015,25 +2039,14 @@ void drbdd(int minor)
 	}
 }
 
-int drbdd_init(void *arg)
+int drbdd_init(struct Drbd_thread *thi)
 {
-	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int minor = thi->minor;
-
-	lock_kernel();
-	exit_mm(current);	/* give up UL-memory context */
-	exit_files(current);	/* give up open filedescriptors */
-	current->session = 1;
-	current->pgrp = 1;
-	current->fs->umask = 0;
 
 	sprintf(current->comm, "drbdd_%d", minor);
 
-	drbd_thread_setup(thi);	/* wait until parent has written its
-				   rpid variable */
-
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
-
+	
 	while (TRUE) {
 		if (!drbd_connect(minor)) break;
 		if (thi->t_state == Exiting) break;
@@ -2056,7 +2069,6 @@ int drbdd_init(void *arg)
 
 	set_cstate(&drbd_conf[minor],Unconfigured);
 
-	drbd_thread_exit(thi);
 	return 0;
 }
 
@@ -2090,9 +2102,8 @@ void drbd_free_resources(int minor)
   We really need to read in the data from our disk.
 */
 
-int drbd_syncer(void *arg)
+int drbd_syncer(struct Drbd_thread *thi)
 {
-	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int minor = thi->minor;
 	int interval,wait;
 	unsigned long before;
@@ -2102,17 +2113,8 @@ int drbd_syncer(void *arg)
 	void* page;
 	struct buffer_head rbh,*bh;
 
-	lock_kernel();
-	exit_mm(current);	/* give up UL-memory context */
-	exit_files(current);	/* give up open filedescriptors */
-	current->session = 1;
-	current->pgrp = 1;
-	current->fs->umask = 0;
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
-
-	drbd_thread_setup(thi);	/* wait until parent has written its
-				   rpid variable */
 
 
 	amount=drbd_conf[minor].sock->sk->sndbuf >> (1+10);
@@ -2245,14 +2247,13 @@ restart:
 	
 	drbd_conf[minor].synced_to=0; /* this is ok. */
 	printk(KERN_INFO DEVICE_NAME ": Synchronisation done./m=%d\n", minor);
-	drbd_thread_exit(thi);
+
 	return 0;
 }
 
 /* ********* acknowledge sender for protocol C ******** */
-int drbd_asender(void *arg)
+int drbd_asender(struct Drbd_thread *thi)
 {
-	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int minor = thi->minor;
 	struct Tl_epoch_entry *epoch = 
 	  (struct Tl_epoch_entry *)drbd_conf[minor].transfer_log;
@@ -2260,17 +2261,8 @@ int drbd_asender(void *arg)
 	struct buffer_head **sync_log = drbd_conf[minor].sync_log;
 
 
-	lock_kernel();
-	exit_mm(current);	// give up UL-memory context 
-	exit_files(current);	// give up open filedescriptors
-	current->session = 1;
-	current->pgrp = 1;
-	current->fs->umask = 0;
-
 	sprintf(current->comm, "drbd_asender_%d", minor);
 
-	drbd_thread_setup(thi); // wait until parent has written its
-				//   rpid variable 
 
 	while(thi->t_state == Running) {
 	  int i;
@@ -2323,7 +2315,6 @@ int drbd_asender(void *arg)
 
 	}
 
-	drbd_thread_exit(thi);
 	return 0;
 }
 
