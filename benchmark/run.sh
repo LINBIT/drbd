@@ -5,6 +5,13 @@ echo "Automatic DRBD performance measuring script."
 echo "--------------------------------------------"
 echo 
 
+echo "
+	Needs to be reviewed
+	is untouched since at least the 0.6 days
+	does not work with 0.7 currently
+"
+exit 1
+
 if [ -e config ]; 
   then source config;
 else

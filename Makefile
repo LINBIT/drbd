@@ -22,7 +22,7 @@
 
 #PREFIX      = /usr/local
 
-SUBDIRS     = user scripts benchmark documentation drbd #testing
+SUBDIRS     = user scripts documentation drbd #testing #benchmark
 ALLSUBDIRS  = user scripts benchmark documentation drbd testing
 
 REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)

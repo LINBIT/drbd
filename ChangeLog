@@ -7,6 +7,8 @@ Latest:
 0.8_pre1
 --------
  * remove all kernel 2.4.x compatibility crap
+ * Removed HOWTO, ja, pt_BR ... all hopelessly outdated.
+   disabled benchmark/run.sh
 
 0.7.4 (api:76/proto:74)
 -----
