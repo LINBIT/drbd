@@ -1990,6 +1990,7 @@ void cleanup_module()
 	int i;
 
 	for (i = 0; i < minor_count; i++) {
+		drbd_set_state(i,Secondary);
 		fsync_dev(MKDEV(MAJOR_NR, i));
 		drbd_thread_stop(&drbd_conf[i].syncer);
 		drbd_thread_stop(&drbd_conf[i].receiver);
@@ -2622,27 +2623,36 @@ inline int receive_param(int minor,int command)
 	}
 	
 	if (drbd_conf[minor].cstate == WFReportParams) {
+		int pri,sync;
 		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n",
 		       minor);
 		printk(KERN_INFO DEVICE_NAME "%d: size=%d KB / blksize=%d B\n",
 		       minor,blk_size[MAJOR_NR][minor],blksize);
 
 		if(be32_to_cpu(param.state) == Secondary &&
-		   drbd_conf[minor].state == Secondary) {
-			if(drbd_md_compare(minor,&param)==1)
-				drbd_set_state(minor,Primary);
+		   drbd_conf[minor].state == Secondary && 
+		   (!drbd_conf[minor].conf.skip_sync) ) {
+			pri=drbd_md_compare(minor,&param);
+			sync=drbd_md_syncq_ok(minor,&param) ? 
+				SyncingQuick : SyncingAll;
+			printk(KERN_INFO DEVICE_NAME "%d: 1 %d %d\n",
+			       minor,pri,sync);
+			switch(pri) {
+			case 1: drbd_set_state(minor,Primary);
+				set_cstate(&drbd_conf[minor],sync);
+				drbd_send_cstate(&drbd_conf[minor]);
+				drbd_thread_start(&drbd_conf[minor].syncer);
+				break;
+			case -1:
+				set_cstate(&drbd_conf[minor],sync);
+				break;
+			case 0: set_cstate(&drbd_conf[minor],Connected);
+				break;
+			}
+		} else {
+			printk(KERN_INFO DEVICE_NAME "%d: 2\n",minor);
+			set_cstate(&drbd_conf[minor],Connected);
 		}
-
-	        if (drbd_conf[minor].state == Primary
-		    && !drbd_conf[minor].conf.skip_sync) {
-			if(drbd_md_syncq_ok(minor,&param))
-				set_cstate(&drbd_conf[minor],SyncingQuick);
-			else
-				set_cstate(&drbd_conf[minor],SyncingAll);
-			drbd_send_cstate(&drbd_conf[minor]);
-			drbd_thread_start(&drbd_conf[minor].syncer);
-		} else set_cstate(&drbd_conf[minor],Connected);
-
 	}
 
 	if (drbd_conf[minor].state == Secondary) {
