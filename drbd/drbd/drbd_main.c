@@ -341,6 +341,12 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 		mdev->resync_work.cb = w_resume_next_sg;
 		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 	}
+	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
+	   test_bit(DISKLESS,&mdev->flags) && ns < Connected) {
+		clear_bit(DISKLESS,&mdev->flags);
+		smp_wmb();
+		clear_bit(MD_IO_ALLOWED,&mdev->flags);
+	}
 }
 
 STATIC int drbd_thread_setup(void* arg)
@@ -550,7 +556,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	int ok,i;
 	unsigned long m_size; // sector_t ??
 
-	if(mdev->lo_file) {
+	if(!test_bit(DISKLESS,&mdev->flags)) {
 		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
 		else m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 	} else m_size = 0;
@@ -1021,10 +1027,11 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 #ifdef PARANOIA
 	SET_MDEV_MAGIC(mdev);
 #endif
+	mdev->flags = 1<<DISKLESS;
 
 	/* If the WRITE_HINT_QUEUED flag is set but it is not
 	   actually queued the functionality is completely disabled */
-	if (disable_io_hints) mdev->flags=1<<WRITE_HINT_QUEUED;
+	if (disable_io_hints) mdev->flags |= 1<<WRITE_HINT_QUEUED;
 
 	mdev->sync_conf.rate       = 250;
 	mdev->sync_conf.al_extents = 128; // 512 MB active set
@@ -1035,6 +1042,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->ap_pending_cnt,0);
 	atomic_set(&mdev->rs_pending_cnt,0);
 	atomic_set(&mdev->unacked_cnt,0);
+	atomic_set(&mdev->local_cnt,0);
 
 	init_MUTEX(&mdev->device_mutex);
 	init_MUTEX(&mdev->md_io_mutex);
@@ -1064,7 +1072,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->resync_work.cb = w_resync_inactive;
 	init_timer(&mdev->resync_timer);
 
-	init_waitqueue_head(&mdev->state_wait);
 	init_waitqueue_head(&mdev->cstate_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
@@ -1471,9 +1478,15 @@ void cleanup_module(void)
 
 void drbd_free_ll_dev(drbd_dev *mdev)
 {
-	if (mdev->lo_file) {
+	struct file *lo_file;
+	
+	lo_file = mdev->lo_file;
+	mdev->lo_file = 0;
+	wmb();
+
+	if (lo_file) {
 NOT_IN_26(
-		blkdev_put(mdev->lo_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
+		blkdev_put(lo_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
 		blkdev_put(mdev->md_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
 )
 ONLY_IN_26(
@@ -1483,9 +1496,9 @@ ONLY_IN_26(
 		mdev->md_bdev =
 		mdev->backing_bdev = 0;
 
-		fput(mdev->lo_file);
+		fput(lo_file);
 		fput(mdev->md_file);
-		mdev->lo_file = 0;
+		// mdev->lo_file = 0;
 		mdev->md_file = 0;
 	}
 }
@@ -1856,7 +1869,7 @@ ONLY_IN_26(
 	}
 )
 
-	if( mdev->lo_file == 0) return;
+	if(!inc_local_md_only(mdev)) return;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
@@ -1884,6 +1897,7 @@ ONLY_IN_26(
 	drbd_md_sync_page_io(mdev,sector,WRITE);
 
 	up(&mdev->md_io_mutex);
+	dec_local(mdev);
 }
 
 int drbd_md_read(drbd_dev *mdev)
@@ -1892,7 +1906,7 @@ int drbd_md_read(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-	if( mdev->lo_file == 0) return -1;
+	if(!inc_local_md_only(mdev)) return -1;
 
 	down(&mdev->md_io_mutex);
 
@@ -1911,11 +1925,14 @@ int drbd_md_read(drbd_dev *mdev)
 
 	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
+	dec_local(mdev);
+	
 	return 1;
 
  err:
 	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
+	dec_local(mdev);
 
 	INFO("Creating state block\n");
 
@@ -1923,7 +1940,6 @@ int drbd_md_read(drbd_dev *mdev)
 	mdev->gen_cnt[Flags]=MDF_Consistent;
 
 	drbd_md_write(mdev);
-
 	return 0;
 }
 

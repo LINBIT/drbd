@@ -294,21 +294,25 @@ enum MetaDataIndex {
 typedef enum {
 	Data,
 	DataReply,
-	RecvAck,      // Used in protocol B
-	WriteAck,     // Used in protocol C
 	Barrier,
-	BarrierAck,
 	ReportParams,
 	ReportBitMap,
-	Ping,
-	PingAck,
 	BecomeSyncTarget,
 	BecomeSyncSource,
 	BecomeSec,     // Secondary asking primary to become secondary
-	WriteHint,     // Used in protocol C to hint the secondary to call tq_disk
+	WriteHint,     // Used in protocol C to hint the secondary to hurry up
 	DataRequest,   // Used to ask for a data block
 	RSDataRequest, // Used to ask for a data block
 	SyncParam,
+
+	Ping,         // These are sent on the meta socket...
+	PingAck,
+	RecvAck,      // Used in protocol B
+	WriteAck,     // Used in protocol C
+	NegAck,       // Sent if local disk is unusable
+	NegDReply,    // Local disk is broken...
+	BarrierAck,
+
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
@@ -570,8 +574,10 @@ struct Pending_read {
 #define STOP_SYNC_TIMER    4
 #define DO_NOT_INC_CONCNT  5
 #define WRITE_HINT_QUEUED  6
-#define PARTNER_DISKLESS   7
+#define DISKLESS           7
+#define PARTNER_DISKLESS   8
 #define PROCESS_EE_RUNNING 9
+#define MD_IO_ALLOWED     10
 
 struct BitMap {
 	unsigned long dev_size;
@@ -658,8 +664,7 @@ struct Drbd_Conf {
 	unsigned long p_size;     /* partner's disk size */
 	Drbd_State state;
 	Drbd_CState cstate;
-	wait_queue_head_t cstate_wait;
-	wait_queue_head_t state_wait;  // TODO: Remove state_wait.
+	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
 	Drbd_State o_state;
 	unsigned long int la_size; // last agreed disk size
 	unsigned int send_cnt;
@@ -671,6 +676,7 @@ struct Drbd_Conf {
 	atomic_t ap_pending_cnt;
 	atomic_t rs_pending_cnt;
 	atomic_t unacked_cnt;
+	atomic_t local_cnt;
 	spinlock_t req_lock;
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
@@ -1029,7 +1035,7 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 static inline void dec_ap_pending(drbd_dev* mdev, const char* where)
 {
 	if(atomic_dec_and_test(&mdev->ap_pending_cnt))
-		wake_up_interruptible(&mdev->state_wait);
+		wake_up_interruptible(&mdev->cstate_wait);
 
 	if(atomic_read(&mdev->ap_pending_cnt)<0)
 		ERR("in %s: pending_cnt = %d < 0 !\n",
@@ -1065,6 +1071,44 @@ static inline void dec_unacked(drbd_dev* mdev,const char* where)
 		ERR("in %s: unacked_cnt = %d < 0 !\n",
 		    where,
 		    atomic_read(&mdev->unacked_cnt));
+}
+
+/**
+ * inc_local: Returns TRUE when local IO is possible. If it returns
+ * TRUE you should call dec_local() after IO is completed.
+ */
+static inline int inc_local(drbd_dev* mdev)
+{
+	int io_allowed;
+	atomic_inc(&mdev->local_cnt);
+	io_allowed = !test_bit(DISKLESS,&mdev->flags);
+	if( !io_allowed ) {
+		atomic_dec(&mdev->local_cnt);
+	}
+	return io_allowed;
+}
+
+static inline int inc_local_md_only(drbd_dev* mdev)
+{
+	int io_allowed;
+	atomic_inc(&mdev->local_cnt);
+	io_allowed = !test_bit(DISKLESS,&mdev->flags) ||
+		test_bit(MD_IO_ALLOWED,&mdev->flags);
+	if( !io_allowed ) {
+		atomic_dec(&mdev->local_cnt);
+	}
+	return io_allowed;
+}
+
+static inline void dec_local(drbd_dev* mdev)
+{
+	if(atomic_dec_and_test(&mdev->local_cnt) && 
+	   test_bit(DISKLESS,&mdev->flags) &&
+	   mdev->lo_file) {
+		wake_up(&mdev->cstate_wait);
+	}
+
+	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
 }
 
 static inline void drbd_set_out_of_sync(drbd_dev* mdev,

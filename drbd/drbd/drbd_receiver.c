@@ -772,6 +772,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 	drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
+	dec_local(mdev);
 	return TRUE;
 }
 
@@ -780,12 +781,21 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 {
 	struct Tl_epoch_entry *e;
 
-	// DBG("%s\n", __func__);
-
 	D_ASSERT( pr->d.sector == sector);
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
+
+	dec_rs_pending(mdev,HERE);
+
+	if(!inc_local(mdev)) {
+		ERR("Can not write resync data to local disk.\n");
+		drbd_send_ack(mdev,NegAck,e);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return TRUE;
+	}
 
 	drbd_ee_prepare_write(mdev,e,sector,data_size);
 	e->block_id = ID_SYNCER;
@@ -795,7 +805,6 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_rs_pending(mdev,HERE);
 	inc_unacked(mdev);
 
 	drbd_generic_make_request(WRITE,&e->private_bio);
@@ -835,6 +844,18 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	drbd_bio_endio(bio,1); // propagate success for application read
 
+	dec_rs_pending(mdev,HERE);
+	dec_ap_pending(mdev,HERE);
+
+	if(!inc_local(mdev)) {
+		ERR("Can not write resync data to local disk.\n");
+		drbd_send_ack(mdev,NegAck,e);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return TRUE;
+	}
+
 	drbd_ee_prepare_write(mdev, e, sector, data_size);
 	e->block_id = ID_SYNCER;
 	e->w.cb     = e_end_resync_block;
@@ -843,8 +864,6 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_rs_pending(mdev,HERE);
-	dec_ap_pending(mdev,HERE);
 	inc_unacked(mdev);
 
 	drbd_generic_make_request(WRITE,&e->private_bio);
@@ -922,6 +941,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
 	}
 
+	dec_local(mdev);
 	return ok;
 }
 
@@ -932,8 +952,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	struct Tl_epoch_entry *e;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
 	int header_size,data_size;
-
-	// DBG("%s\n", __func__);
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -953,6 +971,15 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
+
+	if(!inc_local(mdev)) {
+		ERR("Can not write mirrored data block to local disk.\n");
+		drbd_send_ack(mdev,NegAck,e);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return TRUE;
+	}
 
 	drbd_ee_prepare_write(mdev, e, sector, data_size);
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
@@ -998,10 +1025,20 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
 	// can we move it outside the lock?
-	drbd_ee_prepare_read(mdev,e,sector,data_size);
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
+
+	if(!inc_local(mdev)) {
+		ERR("Can not satisfy peer's read request, no local disk.\n");
+		drbd_send_ack(mdev,NegDReply,e);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return TRUE;
+	}
+
+	drbd_ee_prepare_read(mdev,e,sector,data_size);
 
 	switch (h->command) {
 	case DataRequest:
@@ -1020,8 +1057,6 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		D_ASSERT(0);
 	}
 
-	// FIXME do statistics here, or better within the end_io handler ?
-	// what about concurrent access to *_cnt ?
 	mdev->read_cnt += data_size >> 9;
 	inc_unacked(mdev);
 	drbd_generic_make_request(READ,&e->private_bio);
@@ -1091,7 +1126,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	p_size=be64_to_cpu(p->p_size);
 
-	if(p_size == 0 && mdev->lo_file == 0) {
+	if(p_size == 0 && test_bit(DISKLESS,&mdev->flags)) {
 		ERR("some backing storage is needed\n");
 		set_cstate(mdev,Unconfigured);
 		mdev->receiver.t_state = Exiting;
@@ -1242,6 +1277,13 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		drbd_start_resync(mdev,SyncTarget);
 	} else {
 		D_ASSERT(0);
+	}
+
+	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
+	   test_bit(DISKLESS,&mdev->flags)) {
+		clear_bit(DISKLESS,&mdev->flags);
+		smp_wmb();
+		clear_bit(MD_IO_ALLOWED,&mdev->flags);
 	}
 
 	ok=TRUE;
@@ -1481,7 +1523,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	   pending_cnt is zero. */
 	atomic_set(&mdev->ap_pending_cnt,0);
 	atomic_set(&mdev->rs_pending_cnt,0);
-	wake_up_interruptible(&mdev->state_wait);
+	wake_up_interruptible(&mdev->cstate_wait);
 
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 
@@ -1567,10 +1609,6 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 		drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 	}
-	/*WARN("BlockAck: %lx %lx %x\n",
-	    (long) p->block_id,
-	    (long) be64_to_cpu(p->sector),
-	    be32_to_cpu(p->blksize));*/
 
 	// TODO: Make sure that the block is in an active epoch!!
 	if(is_syncer_blk(mdev,p->block_id)) {
@@ -1579,6 +1617,50 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
 		dec_ap_pending(mdev,HERE);
 	}
+	return TRUE;
+}
+
+STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
+{
+	drbd_request_t *req;
+	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+	sector_t sector = be64_to_cpu(p->sector);
+	int blksize = be32_to_cpu(p->blksize);
+
+	WARN("Got NegAck packet. Peer is in troubles?\n");
+
+	if( !is_syncer_blk(mdev,p->block_id)) {
+		req=(drbd_request_t*)(long)p->block_id;
+
+		ERR_IF (!VALID_POINTER(req)) return FALSE;
+		drbd_set_out_of_sync(mdev,sector,blksize);
+		drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+	}
+
+	// TODO: Make sure that the block is in an active epoch!!
+	if(is_syncer_blk(mdev,p->block_id)) {
+		dec_rs_pending(mdev,HERE);
+	} else {
+		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
+		dec_ap_pending(mdev,HERE);
+	}
+	return TRUE;
+}
+
+STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
+{
+	struct Pending_read *pr;
+	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+
+	pr = (struct Pending_read *)(long)p->block_id;
+	ERR_IF(!VALID_POINTER(pr)) return FALSE;
+
+	spin_lock(&mdev->pr_lock);
+	list_del(&pr->w.list);
+	spin_unlock(&mdev->pr_lock);
+
+	ERR("Get NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
+	// TODO: Do simething like panic() or shut_down_cluster(). 
 	return TRUE;
 }
 
@@ -1614,6 +1696,8 @@ int drbd_asender(struct Drbd_thread *thi)
 		[PingAck]   ={ sizeof(Drbd_Header),           got_PingAck },
 		[RecvAck]   ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[WriteAck]  ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
+		[NegAck]    ={ sizeof(Drbd_BlockAck_Packet),  got_NegAck },
+		[NegDReply] ={ sizeof(Drbd_BlockAck_Packet),  got_NegDReply },
 		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet),got_BarrierAck },
 	};
 

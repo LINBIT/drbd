@@ -149,6 +149,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
+	dec_local(mdev);
 }
 
 #else
@@ -371,6 +372,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
+	dec_local(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
@@ -389,6 +391,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	inc_rs_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
+	dec_local(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);

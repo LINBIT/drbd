@@ -179,7 +179,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			rlen += sprintf( buf + rlen,
 			   "%2d: cs:%s st:%s/%s ld:%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
-			   "pe:%u ua:%u\n",
+			   "lo:%d pe:%d ua:%d\n",
 			   i, sn,
 			   state_names[drbd_conf[i].state],
 			   state_names[drbd_conf[i].o_state],
@@ -191,6 +191,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   drbd_conf[i].read_cnt/2,
 			   drbd_conf[i].al_writ_cnt,
  			   drbd_conf[i].bm_writ_cnt,
+			   atomic_read(&drbd_conf[i].local_cnt),
 			   atomic_read(&drbd_conf[i].ap_pending_cnt) +
 			   atomic_read(&drbd_conf[i].rs_pending_cnt),
 			   atomic_read(&drbd_conf[i].unacked_cnt)

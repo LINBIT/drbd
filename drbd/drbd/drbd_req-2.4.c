@@ -200,7 +200,8 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	nr_sectors = bio_sectors(bio); */
 #endif
 
-	if( mdev->lo_file == 0 ) {
+	    
+	if( !inc_local(mdev) ) {
 		if( mdev->cstate < Connected ) {
 			drbd_bio_IO_error(bio);
 			return 0;
@@ -284,6 +285,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt += size >> 9;
+		dec_local(mdev);  // FIXME TODO -> completion handler
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev  = mdev->backing_bdev;
 #else
@@ -297,13 +299,16 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
 		drbd_set_out_of_sync(mdev,sector,size);
 
+		/* This should be changed. We should not remap in this 
+		   case !!!!! FIXME TODO FIXME TODO 
+		 */
 		drbd_al_begin_io(mdev, sector);
-		drbd_al_complete_io(mdev, sector); // FIXME TODO
+		drbd_al_complete_io(mdev, sector); // FIXME TODO -> completion handler
+		dec_local(mdev);  // FIXME TODO -> completion handler
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev  = mdev->backing_bdev;
 #else
 		bio->bi_bdev = mdev->backing_bdev;
-		/* I want to change it anyways so we never remap ... */
 #endif
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
@@ -315,6 +320,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	if (!req) {
 		ERR("could not kmalloc() req\n");
 		drbd_bio_IO_error(bio);
+		dec_local(mdev);
 		return 0;
 	}
 	SET_MAGIC(req);

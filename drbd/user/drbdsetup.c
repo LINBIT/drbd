@@ -869,9 +869,7 @@ int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
       err=errno;
       perror("ioctl() failed");
       if(err==EINPROGRESS)
-	fprintf(stderr,"Can not start resynchronisation. Already running\n");
-      if(err==ENXIO)
-	fprintf(stderr,"Can not start resynchronisation. Not connected\n");
+	fprintf(stderr,"Only in 'Connected' cstate possible.");
       return 20;
     }
   return 0;
@@ -887,9 +885,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
       err=errno;
       perror("ioctl() failed");
       if(err==EINPROGRESS)
-	fprintf(stderr,"Can not start resynchronisation. Already running\n");
-      if(err==ENXIO)
-	fprintf(stderr,"Can not start resynchronisation. Not connected\n");
+	fprintf(stderr,"Only in 'Connected' cstate possible.");
       return 20;
     }
   return 0;
@@ -897,19 +893,8 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
 
 int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  int err;
-
-  err=ioctl(drbd_fd,DRBD_IOCTL_UNCONFIG_BOTH);
-  if(err)
-    {
-      err=errno;
-      perror("ioctl() failed");
-      if(err==ENXIO)
-	fprintf(stderr,"Device is not configured!\n");
-      if(err==EBUSY)
-	fprintf(stderr,"Someone has opened the device!\n");
-      return 20;
-    }
+  cmd_disconnect(drbd_fd,argv,argc,options);
+  cmd_detach(drbd_fd,argv,argc,options);
   return 0;
 }
 

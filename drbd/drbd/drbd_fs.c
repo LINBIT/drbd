@@ -180,7 +180,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	minor=(int)(mdev-drbd_conf);
 
 	/* if you want to reconfigure, please tear down first */
-	if (mdev->lo_file)
+	if (!test_bit(DISKLESS,&mdev->flags))
 		return -EBUSY;
 
 	/* FIXME if this was "adding" a lo dev to a previously "diskless" node,
@@ -326,6 +326,7 @@ ONLY_IN_26({
 })
 #undef min_not_zero
 
+	set_bit(MD_IO_ALLOWED,&mdev->flags);
 	i = drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
 	if(i) drbd_read_bm(mdev);
@@ -360,6 +361,10 @@ ONLY_IN_26({
 	if(mdev->cstate == Unconfigured ) set_cstate(mdev,StandAlone);
 	if(mdev->cstate >= Connected ) {
 		drbd_send_param(mdev,1);
+	} else {
+		clear_bit(DISKLESS,&mdev->flags);
+		smp_wmb();
+		clear_bit(MD_IO_ALLOWED,&mdev->flags);
 	}
 
 	return 0;
@@ -544,7 +549,7 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	drbd_sync_me(mdev);
 
 	/* Wait until nothing is on the fly :) */
-	if ( wait_event_interruptible( mdev->state_wait,
+	if ( wait_event_interruptible( mdev->cstate_wait,
 			atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
 ONLY_IN_26(
 		if ( newstate & Secondary )
@@ -760,45 +765,35 @@ ONLY_IN_26(
 		set_cstate(mdev,StandAlone);
 		break;
 
-	case DRBD_IOCTL_UNCONFIG_BOTH:
+	case DRBD_IOCTL_UNCONFIG_DISK:
 		if (mdev->cstate == Unconfigured) break;
 
+		if ( mdev->state == Primary && mdev->cstate < Connected) {
+			err=-EBUSY; // TODO error printf in drbdsetup.c
+			break;
+		}
+		/*
 		if (mdev->open_cnt > 1) {
 			err=-EBUSY;
 			break;
 		}
-
-		drbd_sync_me(mdev);
-		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->worker);
-		drbd_thread_stop(&mdev->asender);
-		drbd_thread_stop(&mdev->receiver);
-		drbd_free_resources(mdev);
-		if (mdev->mbds_id) {
-			bm_resize(mdev->mbds_id,0);
-			drbd_set_my_capacity(mdev,0);
-		}
-
-		set_cstate(mdev,Unconfigured);
-		mdev->state = Secondary;
-
-		break;
-
-	case DRBD_IOCTL_UNCONFIG_DISK:
-		if (mdev->cstate == Unconfigured) break;
-
+		*/
 		if (mdev->cstate > Connected) {
 			err=-EBUSY;
 			break;
 		}
-		if (!mdev->lo_file || 
+		if (test_bit(DISKLESS,&mdev->flags) ||
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err=-ENXIO;
 			break;
 		}
-		// TODO: Fix all this. Currently it is the 
-		// blissfully ignorant implementation.
-		drbd_free_ll_dev(mdev); 
+		drbd_sync_me(mdev);
+
+		set_bit(DISKLESS,&mdev->flags);
+		smp_mb__after_clear_bit();
+		wait_event(mdev->cstate_wait,atomic_read(&mdev->local_cnt)==0);
+		drbd_free_ll_dev(mdev);
+
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		if (mdev->cstate == StandAlone) set_cstate(mdev,Unconfigured);
 
@@ -850,7 +845,7 @@ ONLY_IN_26(
 
 	case DRBD_IOCTL_INVALIDATE:
 		if( mdev->cstate != Connected ||
-		    !mdev->lo_file || 
+		    test_bit(DISKLESS,&mdev->flags) || 
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;
 			break;
@@ -865,7 +860,7 @@ ONLY_IN_26(
 
 	case DRBD_IOCTL_INVALIDATE_REM:
 		if( mdev->cstate != Connected ||
-		    !mdev->lo_file || 
+		    test_bit(DISKLESS,&mdev->flags) || 
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;
 			break;

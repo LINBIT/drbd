@@ -144,6 +144,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *al_ext;
 
+	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
 	wait_event(mdev->al_wait, (al_ext = _al_get(mdev,enr)) );
 
 	if (al_ext->lc_number != enr) {
@@ -425,12 +426,13 @@ void drbd_write_bm(struct Drbd_Conf *mdev)
 {
 	unsigned int exts,i;
 
-	if( mdev->lo_file == 0) return;
+	if( !inc_local_md_only(mdev) ) return;
 	exts = div_ceil(mdev->mbds_id->size,BM_EXTENT_SIZE);
 
 	for(i=0;i<exts;i++) {
 		drbd_update_on_disk_bm(mdev,i);
 	}
+	dec_local(mdev);
 }
 
 static inline int _try_lc_del(struct Drbd_Conf *mdev,struct lc_element *al_ext)
@@ -528,6 +530,7 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 	int want,buf_i,bm_words,bm_i;
 	sector_t sector;
 
+	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
 	enr = (enr & ~(EXTENTS_PER_SECTOR-1) );
 
 	bm = mdev->mbds_id->bm;
@@ -558,7 +561,13 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
+	if( !inc_local_md_only(mdev) ) {
+		WARN("Can not update on disk bitmap, local IO disabled.\n");
+		return 1;
+	}
+
 	drbd_update_on_disk_bm(mdev,udw->enr);
+	dec_local(mdev);
 
 	kfree(udw);
 
