@@ -98,8 +98,9 @@ int drbd_send(struct Drbd_Conf *, Drbd_Packet*, size_t , void* , size_t,int );
 #endif
 #define DEVICE_REQUEST drbd_do_request
 
-MODULE_AUTHOR("Philipp Reisner <philipp@linuxfreak.com>");
-MODULE_DESCRIPTION("drbd - Network block device");
+MODULE_AUTHOR("Philipp Reisner <philipp.reisner@gmx.at>");
+MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device");
+MODULE_LICENSE("GPL");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 

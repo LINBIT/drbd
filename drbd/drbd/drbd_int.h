@@ -424,3 +424,8 @@ extern struct proc_dir_entry drbd_proc_dir;
 #define bh_kmap(bh)	((bh)->b_data)
 #define bh_kunmap(bh)	do { } while (0)
 #endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,13)
+#define MODULE_LICENSE(L) 
+#endif
+
