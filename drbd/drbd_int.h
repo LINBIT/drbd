@@ -788,7 +788,7 @@ extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
 #define TLHW_FLAG_SENT   0x10000000
 #define TLHW_FLAG_RECVW  0x20000000
-extern int tl_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags);
+extern int req_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
@@ -935,6 +935,11 @@ struct bm_extent {
 # define DRBD_MAX_SECTORS \
           ( (MD_RESERVED_SIZE*2LL - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
 #endif
+
+/* Sector shift value for hash functions for tl_hash table and ee_hash
+   table. A value of 3 makes all IOs in on 4K block to make to the same
+   slot of the hash table. */
+#define HT_SHIFT 3
 
 extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);

@@ -262,7 +262,8 @@ DRBD 0.8 Roadmap
 
   7. An data packet overtakes an ACK packet on the network.
     Although this case is quite unlikely, we have to take int into 
-    account. 
+    account. From N2's point of fiew this looks a lot like case 4,
+    but N2 should not delete the data packet now!
 
  Proposed solution
 
@@ -279,19 +280,26 @@ DRBD 0.8 Roadmap
 
   *  If the sequence number of the data packet is higher than
      last_seq+1 sleep until last_seq+1 == seq_num(data packet)
+     [needed to satisfy example case 7]
 
   1. If the packet's sequence number is on the discard list,
-     simply drop it.
+     simply drop it. 
+     [ ex.c. 3]
   2. Do we have a concurrent request? (i.e. Do I have a request
      to the same block in my transfer log.) If not -> write now.
+     [ default ]
   3. Have I already got an ACK packet for the concurrent 
      request ? (Has the request the RQ_DRBD_SENT bit already set)
      If yes -> write the data from the data packet afterwards.
+     [ ex.c. 6]
   4. Do I have the "discard-concurrent-write-flag" ?
      If yes -> discard the data packet.
      If no -> Write data from the data packet afterwards and set
               the RQ_DRBD_SENT bit in the request object ( Since
-              will will not get an ACK from our peer )
+              will will not get an ACK from our peer). Mark the
+	      ee to prepend the ACK packet with a discard info
+	      packet.
+     [ ex.c. *]
 
   The algorithm which is performed upon the reception of an 
   ACK packet [drbd_asender]
@@ -313,8 +321,8 @@ DRBD 0.8 Roadmap
         to find IO operations starting in the same 4k block of
         data quickly. -> With two lookups the hash table we can
 	find any concurrent access.
-  70% DONE ; Implement real overlap check, Implement discard info
-	     Packets. Look for example case 5.
+  70% DONE ; Implement discard info packets. Code an equivalent
+             hash table for EEs, to solve example case 5.
 
 10 Change Sync-groups to sync-after
   
@@ -323,7 +331,7 @@ DRBD 0.8 Roadmap
   are not flexible enough to cover all real world scenarios.
 
   E.g. Two physical disks should be mirrored with DRBD. On one
-       of the disks there is only a single partition, while the
+svn d       of the disks there is only a single partition, while the
        other one is divided into many (e.g. 4 smaller) partitions.
        One would want to sync the big one in parallel to the 
        4 small ones. While the resync process of the 4 small
@@ -363,6 +371,11 @@ DRBD 0.8 Roadmap
   at the beginning, including the expected API version.
   Consider using DRBD ioctls with some char device similar to
   /dev/mapper/control
+  0% DONE
+
+15 Accept BIOs bigger than one page, probabely up to 64k (16 pages) 
+  would be a good choce. When this is done make the bits in the
+  bitmap to account for more then 4k e.g. 64k
   0% DONE
 
 plus-banches:

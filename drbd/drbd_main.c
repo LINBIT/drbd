@@ -164,8 +164,7 @@ STATIC void tl_cleanup(drbd_dev *mdev)
 
 STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
 {
-	// map sectors in the same 4k block to the same hash key.
-	return (sector>>3) % mdev->tl_hash_s;
+	return (sector>>HT_SHIFT) % mdev->tl_hash_s;
 }
 
 
@@ -283,41 +282,6 @@ int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
 	return rv;
 }
 
-/* Return values:
- *
- * 0 ... no conflicting write
- * 1 ... a conflicting write, have not got ack by now.
- * 2 ... a conflicting write, have got also got ack.
- */
-int tl_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags)
-{
-	// PRE TODO: Real overlap check... using size etc...
-	struct hlist_head *slot = mdev->tl_hash + tl_hash_fn(mdev,sector);
-	struct hlist_node *n;
-	drbd_request_t * i;
-	int rv=0;
-
-	spin_lock_irq(&mdev->tl_lock);
-
-	hlist_for_each_entry(i, n, slot, colision) {
-		if (drbd_req_get_sector(i) == sector) {
-			rv=1;
-			if( i->rq_status & RQ_DRBD_SENT ) rv++;
-			if(size_n_flags & TLHW_FLAG_SENT) {
-				i->rq_status |= RQ_DRBD_SENT;
-			}
-			if(size_n_flags & TLHW_FLAG_RECVW) {
-				i->rq_status |= RQ_DRBD_RECVW;
-			}
-			break;
-		}
-	}
-
-	spin_unlock_irq(&mdev->tl_lock);
-
-	return rv;
-}
-
 /* tl_dependence reports if this sector was present in the current
    epoch.
    As side effect it clears also the pointer to the request if it
@@ -394,6 +358,63 @@ void tl_clear(drbd_dev *mdev)
 		kfree(f);
 		dec_ap_pending(mdev); // for the barrier
 	}
+}
+
+STATIC int overlaps(sector_t s1, int l1, sector_t s2, int l2)
+{
+	return !( ( s1 + (l1>>9) <= s2 ) || ( s1 >= s2 + (l2>>9) ) );
+}
+
+/* Return values:
+ *
+ * 0 ... no conflicting write
+ * 1 ... a conflicting write, have not got ack by now.
+ * 2 ... a conflicting write, have got also got ack.
+ */
+int req_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags)
+{
+	struct hlist_head *slot;
+	struct hlist_node *n;
+	drbd_request_t * req;
+	int size = size_n_flags & ~(TLHW_FLAG_SENT|TLHW_FLAG_RECVW);
+	int i, rv=0;
+
+	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
+
+	spin_lock_irq(&mdev->tl_lock);
+
+	for(i=-1;i<=1;i++ ) {
+		slot = mdev->tl_hash + tl_hash_fn(mdev,
+						  sector + i*(1<<(HT_SHIFT)));
+		hlist_for_each_entry(req, n, slot, colision) {
+			if( overlaps(drbd_req_get_sector(req),
+				     drbd_req_get_size(req),
+				     sector,
+				     size) ) {
+				rv=1;
+				if( req->rq_status & RQ_DRBD_SENT ) rv++;
+				if( size_n_flags & TLHW_FLAG_SENT ) {
+					req->rq_status |= RQ_DRBD_SENT;
+				}
+				if( size_n_flags & TLHW_FLAG_RECVW ) {
+					req->rq_status |= RQ_DRBD_RECVW;
+				}
+				goto out;
+			} //overlaps()
+		} // hlist_for_each_entry()
+	}
+
+	// PRE TODO: insert ee onto ee_hash_table here...
+ out:
+	spin_unlock_irq(&mdev->tl_lock);
+
+	return rv;
+}
+
+int ee_have_write(drbd_dev *mdev, drbd_request_t * req)
+{
+	// PRE TODO: same as above for a request agains our acive EEs.
+	return 0;
 }
 
 /**
