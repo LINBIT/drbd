@@ -401,3 +401,32 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,
 					bio->bi_sector,bio);
 }
+
+/* This is called by bio_add_page(). With this function we prevent
+   that we get BIOs that span over multiple AL_EXTENTs. 
+ */
+int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
+{
+	unsigned int s = (unsigned int)bio->bi_sector << 9; // 32 bit...
+	unsigned int t;
+
+	if (bio->bi_size == 0) {
+		s = max_t(unsigned int,
+			  AL_EXTENT_SIZE - (s & (AL_EXTENT_SIZE-1)), 
+			  PAGE_SIZE);
+		// As long as the BIO is emtpy we allow at least one page.
+	} else {
+		t = s >> AL_EXTENT_SIZE_B;
+		s = (s + bio->bi_size);
+
+		if( s >> AL_EXTENT_SIZE_B != t ) {
+			s = 0;
+			// This BIO already spans over an AL_EXTENTs boundary.
+		} else {
+			s = AL_EXTENT_SIZE - ( s & (AL_EXTENT_SIZE-1) );
+			// Bytes to the next AL_EXTENT boundary.
+		}
+	}
+
+	return s;
+}

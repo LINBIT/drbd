@@ -237,6 +237,7 @@ You must not have the ee_lock:
 */
 
 struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev, 
+				     sector_t sector,
 				     unsigned int data_size,
 				     unsigned int gfp_mask)
 {
@@ -245,7 +246,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	struct page *page;
 	struct bio *bio;
 	unsigned int ds;
-	int i;
+	int bio_add,i;
 
 	e = kmem_cache_alloc(drbd_ee_cache, gfp_mask);
 	if (!e) return NULL;
@@ -254,17 +255,20 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	if (!bio) goto fail1;
 
 	bio->bi_bdev = mdev->backing_bdev;
-	
+	bio->bi_sector = sector;
+
 	ds = data_size;
 	while(ds) {
 		page = drbd_pp_alloc(mdev, gfp_mask);
 		if (!page) goto fail2;
-		bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0);
+		bio_add=bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0);
+		D_ASSERT(bio_add);
 		ds -= min_t(int, ds, PAGE_SIZE);
 	}
 
 	bio->bi_private = e;
 	e->mdev = mdev;
+	e->ee_sector = sector;
 	e->ee_size = bio->bi_size;
 	D_ASSERT( data_size == bio->bi_size);
 	e->private_bio = bio;
@@ -776,7 +780,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 }
 
 STATIC struct Tl_epoch_entry *
-read_in_block(drbd_dev *mdev, int data_size)
+read_in_block(drbd_dev *mdev, sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 	struct bio_vec *bvec;
@@ -784,7 +788,7 @@ read_in_block(drbd_dev *mdev, int data_size)
 	struct bio *bio;
 	int ds,i,rr;
 
-	e = drbd_alloc_ee(mdev,data_size,GFP_KERNEL);
+	e = drbd_alloc_ee(mdev,sector,data_size,GFP_KERNEL);
 	if(!e) return 0;
 	bio = e->private_bio;
 	ds = data_size;
@@ -883,7 +887,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 
-	e = read_in_block(mdev,data_size);
+	e = read_in_block(mdev,sector,data_size);
 	if(!e) return FALSE;
 
 	dec_rs_pending(mdev);
@@ -897,7 +901,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 		return TRUE;
 	}
 
-	drbd_ee_prepare_write(mdev,e,sector);
+	drbd_ee_prepare_write(mdev,e);
 	e->w.cb     = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -1055,7 +1059,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
-	e = read_in_block(mdev,data_size);
+	e = read_in_block(mdev,sector,data_size);
 	if (!e) return FALSE;
 
 	if(!inc_local(mdev)) {
@@ -1067,7 +1071,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
-	drbd_ee_prepare_write(mdev, e, sector);
+	drbd_ee_prepare_write(mdev, e);
 	e->w.cb     = e_end_block;
 
 	/* This wait_event is here to make sure that never ever an
@@ -1201,7 +1205,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
-	e = drbd_alloc_ee(mdev,size,GFP_KERNEL);
+	e = drbd_alloc_ee(mdev,sector,size,GFP_KERNEL);
 	if (!e) return FALSE;
 
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
@@ -1217,7 +1221,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return TRUE;
 	}
 
-	drbd_ee_prepare_read(mdev,e,sector);
+	drbd_ee_prepare_read(mdev,e);
 
 	switch (h->command) {
 	case DataRequest:

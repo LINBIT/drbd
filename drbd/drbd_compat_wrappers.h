@@ -157,18 +157,14 @@ static inline void drbd_bio_set_end_io(struct bio *bio, bio_end_io_t * h)
 }
 
 static inline void
-drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e,
-		      sector_t sector)
+drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e)
 {
-	e->ee_sector = e->private_bio->bi_sector = sector;
 	e->private_bio->bi_end_io = drbd_dio_end_sec;
 }
 
 static inline void
-drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
-		     sector_t sector)
+drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e)
 {
-	e->ee_sector = e->private_bio->bi_sector = sector;
 	e->private_bio->bi_end_io = enslaved_read_bi_end_io;
 }
 
