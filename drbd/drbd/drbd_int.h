@@ -231,7 +231,7 @@ typedef struct Drbd_Conf drbd_dev;
 
 /* these defines should go into blkdev.h
    (if it will be ever includet into linus' linux) */
-#define RQ_DRBD_NOTHING	  0x0000
+#define RQ_DRBD_NOTHING	  0x0001
 #define RQ_DRBD_SENT	  0x0010
 #define RQ_DRBD_WRITTEN   0x0020
 #define RQ_DRBD_DONE      0x0030

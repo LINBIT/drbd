@@ -52,7 +52,8 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		ERR("request state error(%d)\n", req->rq_status);
 	}
 
-	req->rq_status = req->rq_status | nextstate | (er_flags & 0x0001);
+	req->rq_status |= nextstate;
+	req->rq_status &= er_flags | ~0x0001;
 	if( (req->rq_status & RQ_DRBD_DONE) == RQ_DRBD_DONE ) goto end_it;
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
@@ -79,9 +80,9 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		drbd_set_in_sync(mdev,rsector,req->bh->b_size,0);
 	}
 
-	req->bh->b_end_io(req->bh,(0x0001 & er_flags & req->rq_status));
+	req->bh->b_end_io(req->bh,(req->rq_status & 0x0001));
 
-	if( mdev->do_panic && !(0x0001 & er_flags & req->rq_status) ) {
+	if( mdev->do_panic && !(req->rq_status & 0x0001) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
