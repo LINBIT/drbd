@@ -107,7 +107,9 @@ int disable_io_hints=0;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
 STATIC struct block_device_operations drbd_ops = {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,9)
 	.owner =   THIS_MODULE,
+#endif
 	.open =    drbd_open,
 	.release = drbd_close,
 	.ioctl =   drbd_ioctl
