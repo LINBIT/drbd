@@ -620,7 +620,7 @@ void verify_ips(struct d_resource* res)
 	"IP=%s; IP=${IP//./\\\\.};"
 	"LANG=; PATH=/sbin/:$PATH;"
 	"if   type -p ip       ; then"
-	"  ip addr show | grep -qE 'inet '$IP/;"
+	"  ip addr show | grep -qE 'inet '$IP'[ /]';"
 	"elif type -p ifconfig ; then"
 	"  ifconfig | grep -qE ' inet addr:'$IP' ';"
 	"else"
