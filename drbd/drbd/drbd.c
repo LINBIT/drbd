@@ -78,13 +78,17 @@
 #define DEVICE_ON(device)
 #define DEVICE_OFF(device)
 #define DEVICE_NR(device) (MINOR(device))
+#define LOCAL_END_REQUEST
 #include <linux/blk.h>
 
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #include <linux/blkpg.h>
 #else
-#define init_MUTEX_LOCKED( A )   (*(A)=MUTEX_LOCKED)
-#define init_MUTEX( A )          (*(A)=MUTEX)
+#define init_MUTEX_LOCKED( A )    (*(A)=MUTEX_LOCKED)
+#define init_MUTEX( A )           (*(A)=MUTEX)
+#define init_waitqueue_head( A )  (*(A)=0)
+typedef struct wait_queue*  wait_queue_head_t;
+#define blkdev_dequeue_request(A) CURRENT=(A)->next
 #endif
 
 #ifdef DEVICE_NAME
@@ -103,7 +107,7 @@ typedef enum {
 
 struct Drbd_thread {
 	int pid;
-        struct wait_queue* wait;  
+        wait_queue_head_t wait;  
 	int t_state;
 	int (*function) (void *);
 	int minor;
@@ -152,8 +156,8 @@ struct Drbd_Conf {
         struct Drbd_thread asender;
         struct mbds_operations* mops;
 	void* mbds_id;
-        struct wait_queue* asender_wait;  
-	struct wait_queue* cstate_wait;
+        wait_queue_head_t asender_wait;  
+	wait_queue_head_t cstate_wait;
 };
 
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
@@ -167,11 +171,13 @@ int drbdd_init(void *arg);
 int drbd_syncer(void *arg);
 void drbd_free_resources(int minor);
 int drbd_asender(void *arg);
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
 				   void *);
+/*static */ void drbd_do_request(request_queue_t *);
 #else
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int);
+/*static */ void drbd_do_request(void);
 #endif
 /*static */ void drbd_dio_end(struct buffer_head *bh, int uptodate);
 
@@ -181,7 +187,6 @@ int drbd_init(void);
 /*static */ int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg);
 /*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
-/*static */ void drbd_do_request(void);
 /*static */ void drbd_end_req(struct request *req, int nextstate,int uptodate);
 struct mbds_operations bm_mops;
 
@@ -216,7 +221,14 @@ MODULE_DESCRIPTION("drbd - Network block device");
 /*static */ int drbd_sizes[MINOR_COUNT];
 /*static */ struct Drbd_Conf drbd_conf[MINOR_COUNT];
 
-/*static */ struct file_operations drbd_fops =
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
+/*static */ struct block_device_operations drbd_ops = {
+	open:		drbd_open,
+	release:	drbd_close,
+	ioctl:          drbd_ioctl
+};
+#else
+/*static */ struct file_operations drbd_ops =
 {
 	NULL,			/* lseek - default */
 	block_read,		/* read - general block-dev read */
@@ -234,6 +246,7 @@ MODULE_DESCRIPTION("drbd - Network block device");
 	NULL,			/* revalidate */
 	NULL			/* lock */
 };
+#endif
 
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
 #define max(a,b) ( (a) > (b) ? (a) : (b) )
@@ -241,7 +254,7 @@ MODULE_DESCRIPTION("drbd - Network block device");
 /************************* PROC FS stuff begin */
 #include <linux/proc_fs.h>
 
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 struct proc_dir_entry *drbd_proc;
 #else
 struct proc_dir_entry drbd_proc_dir =
@@ -258,7 +271,7 @@ struct proc_dir_entry drbd_proc_dir =
 
 struct request *my_all_requests = NULL;
 
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 				   int len, int *unused, void *data)
 #else
@@ -536,7 +549,7 @@ void drbd_thread_init(int minor, struct Drbd_thread *thi,
 		      int (*func) (void *))
 {
 	thi->pid = 0;
-	thi->wait = 0;
+	init_waitqueue_head(&thi->wait);
 	thi->function = func;
 	thi->minor = minor;
 }
@@ -967,7 +980,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
   sock_sendmsg(), kmalloc(,GFP_KERNEL) and ll_rw_block().
 */
 
-/*static */ void drbd_do_request(void)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+/*static */ void drbd_do_request(request_queue_t * q)
+#else
+/*static */ void drbd_do_request()
+#endif
 {
 	int minor = 0;
 	struct request *req;
@@ -996,18 +1013,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		spin_lock_irq(&io_request_lock);
 	}
 	while (TRUE) {
-		/* INIT_REQUEST; */
-
-		if (!CURRENT) {
-			break;
-		}
-		if (MAJOR(CURRENT->rq_dev) != MAJOR_NR)
-			panic(DEVICE_NAME ": request list destroyed");
-		if (CURRENT->bh) {
-			if (!buffer_locked(CURRENT->bh))
-				panic(DEVICE_NAME ": block not locked");
-		}
-		req = CURRENT;
+		INIT_REQUEST;
+		req=CURRENT;
+		blkdev_dequeue_request(req);
 
 		/*
 		   {
@@ -1094,7 +1102,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			}
 		}
 		spin_lock_irq(&io_request_lock);
-		CURRENT = CURRENT->next;
 	}
 }
 
@@ -1110,7 +1117,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	minor = MINOR(inode->i_rdev);
 
 	switch (cmd) {
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	case BLKROSET:
 	case BLKROGET:
 	case BLKFLSBUF:
@@ -1325,15 +1332,15 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 
-#if LINUX_VERSION_CODE > 0x20300
-int drbd_init(void)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+int __init drbd_init(void)
 #else
 __initfunc(int drbd_init(void))
 #endif
 {
 
 	int i;
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	drbd_proc = create_proc_read_entry("drbd", 0, &proc_root,
 					   drbd_proc_get_info, NULL);
 	if (!drbd_proc)
@@ -1344,7 +1351,8 @@ __initfunc(int drbd_init(void))
 		printk(KERN_ERR DEVICE_NAME "unable to register proc file.\n");
 		return -EIO;
 	}
-	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_fops)) {
+
+	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops)) {
 		printk(KERN_ERR DEVICE_NAME ": Unable to get major %d\n",
 		       MAJOR_NR);
 		return -EBUSY;
@@ -1389,14 +1397,14 @@ __initfunc(int drbd_init(void))
 		drbd_conf[i].es_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].sl_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].asender_wait= NULL;
-		drbd_conf[i].cstate_wait = NULL;
+		init_waitqueue_head(&drbd_conf[i].asender_wait);
+		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
 		}
 	}
-#if LINUX_VERSION_CODE > 0x20330
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
 #else
 	blk_dev[MAJOR_NR].request_fn = DEVICE_REQUEST;
@@ -1406,8 +1414,8 @@ __initfunc(int drbd_init(void))
 
 	return 0;
 }
-#if LINUX_VERSION_CODE > 0x20300
-int init_module()
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+int __init init_module()
 #else
 __initfunc(int init_module())
 #endif
@@ -1439,7 +1447,7 @@ void cleanup_module()
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
 
-#if LINUX_VERSION_CODE > 0x20330
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	blk_cleanup_queue(BLK_DEFAULT_QUEUE(MAJOR_NR));
 #else
 	blk_dev[MAJOR_NR].request_fn = NULL;
@@ -1447,7 +1455,7 @@ void cleanup_module()
 
 	blksize_size[MAJOR_NR] = NULL;
 	blk_size[MAJOR_NR] = NULL;
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	if (drbd_proc)
 		remove_proc_entry("drbd", &proc_root);
 #else
@@ -1472,7 +1480,7 @@ struct socket* drbd_accept(struct socket* sock)
 		goto out;
 
 	newsock->type = sock->type;
-#if LINUX_VERSION_CODE > 0x20300
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	newsock->ops = sock->ops;
 #else
 	err = sock->ops->dup(newsock, sock);
@@ -1594,7 +1602,10 @@ int drbd_connect(int minor)
 	}
 
 	sock->sk->reuse=1;
+	/* TODO:
+	   Have a look if it is possible to have this in 2.3.x
 	sock->sk->nonagle=1;
+	*/
 	// SO_LINGER too ??
 
 	drbd_conf[minor].sock = sock;
@@ -2025,8 +2036,13 @@ void drbd_free_resources(int minor)
 		drbd_conf[minor].sock = 0;
 	}
 	if (drbd_conf[minor].lo_file) {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+		blkdev_put(drbd_conf[minor].lo_file->f_dentry->d_inode->i_bdev,
+			   BDEV_FILE);
+#else
 		blkdev_release(drbd_conf[minor].lo_file->f_dentry->
 			       d_inode);
+#endif
 		fput(drbd_conf[minor].lo_file);
 		drbd_conf[minor].lo_file = 0;
 		drbd_conf[minor].lo_device = 0;
@@ -2103,7 +2119,7 @@ restart:
 	rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
 	rbh.b_list = BUF_LOCKED;
 	rbh.b_data = page;
-	rbh.b_wait = 0;
+	init_waitqueue_head(&rbh.b_wait);
 
 	rbh.b_next = 0;
 	rbh.b_this_page = 0;
@@ -2147,7 +2163,8 @@ restart:
 			rbh.b_blocknr=block_nr;
 
 			rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
-			rbh.b_wait = 0; /* Hmmm, why do I need this ? */
+			init_waitqueue_head(&rbh.b_wait);
+			  /* Hmmm, why do I need this ? */
 
 			ll_rw_block(READ, 1, &bh);
 		        if (!buffer_uptodate(bh)) wait_on_buffer(bh);
