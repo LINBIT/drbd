@@ -1340,7 +1340,7 @@ int meta_outdate_gc(struct format *cfg, char **argv, int argc)
 
 	if ( !(cfg->md.gc[Flags] & MDF_Consistent) ) {
 		fprintf(stderr, "Device is inconsistent.\n");
-		exit(10);
+		exit(5);
 	}
 
 	cfg->md.gc[Flags] &= ~MDF_WasUpToDate;
