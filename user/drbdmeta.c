@@ -40,7 +40,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <sys/mount.h>         /* for BLKGETSIZE64 */
+#include <linux/fs.h>           /* for BLKGETSIZE64 */
 #include <linux/drbd.h>		/* only use DRBD_MAGIC from here! */
 
 #include "drbdtool_common.h"

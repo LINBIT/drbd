@@ -410,18 +410,6 @@ static void free_config(struct d_resource* res)
   free_options(common->handlers);
 }
 
-static struct d_option* new_opt(char* name,char* value)
-{
-  struct d_option* cn = malloc(sizeof(struct d_option));
-
-  /* fprintf(stderr,"%s:%d: %s = %s\n",config_file,line,name,value); */
-  cn->name=name;
-  cn->value=value;
-  cn->mentioned=0;
-
-  return cn;
-}
-
 static void expand_opts(struct d_option* co, struct d_option** opts)
 {
   struct d_option* no;
