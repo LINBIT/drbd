@@ -186,7 +186,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 
-#if 1
+#if 0
 	{
 		static const char *strs[3] = 
 		{

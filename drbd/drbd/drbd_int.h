@@ -242,7 +242,7 @@ struct Drbd_Conf {
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
-#define DRBD_NR_REQUESTS 256
+#define DRBD_NR_REQUESTS 2048
 	drbd_request_t requests[DRBD_NR_REQUESTS];
 	int next_request;
 #endif	
