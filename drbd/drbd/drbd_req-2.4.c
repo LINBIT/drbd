@@ -141,6 +141,10 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	int size_kb, bnr, send_ok;
 	unsigned long flags;
 
+	if(mdev->cstate < StandAlone || MINOR(bh->b_rdev) >= minor_count) {
+		buffer_IO_error(bh);
+		return 0;
+	}
 
 	if (bh->b_size != cbs) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */

@@ -144,7 +144,9 @@
 	clear_bit(BH_Dirty, &bh->b_state);
 	clear_bit(BH_Lock, &bh->b_state);
 
-	/* Do not move a BH if someone is in wait_on_buffer */
+	/* Do not move a list entry if it is waited for
+	 * in drbd_wait_{sync,active}_ee
+	 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
 	if(bh->b_count == 0)
 #else
@@ -162,8 +164,16 @@
 	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 	   e->block_id == ID_SYNCER ) wake_asender=1;
 
-	if( mdev->do_panic && !uptodate) {
-		panic(DEVICE_NAME": The lower-level device had an error.\n");
+	if( !uptodate ) {
+		if ( mdev->do_panic ) {
+			panic(DEVICE_NAME
+			      "%d: The lower-level device had an error.\n",
+			      mdev-drbd_conf);
+		} else {
+			printk(KERN_EMERG DEVICE_NAME
+			       "%d: The lower-level device had an error.\n",
+			       mdev-drbd_conf);
+		}
 	}
 
 	if(wake_asender) {
@@ -481,7 +491,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 			list_add(le,&mdev->done_ee);
 			continue;
 		}
-		get_bh(e->bh); 
+		get_bh(e->bh);
 		spin_unlock_irq(&mdev->ee_lock);
 		wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
@@ -1159,52 +1169,53 @@ void drbdd(int minor)
 			break;
 		}
 		switch (be16_to_cpu(header.command)) {
-		case Barrier:
+		case Barrier:       /* SEC */
        		        if (!receive_barrier(drbd_conf+minor)) goto out;
 			break;
 
-		case Data: 
+		case Data:          /* SEC */
 		        if (!receive_data(drbd_conf+minor,be16_to_cpu(header.length)))
 			        goto out;
 			break;
 
 		case RecvAck:
-		case WriteAck:
+		case WriteAck:      /* PRI */
 		        if (!receive_block_ack(drbd_conf+minor)) goto out;
 			break;
 
-		case BarrierAck:
+		case BarrierAck:    /* PRI */
 		        if (!receive_barrier_ack(drbd_conf+minor)) goto out;
 			break;
 
-		case ReportParams:
+		case ReportParams:  /* both, on [re]connect */
 		        if (!receive_param(drbd_conf+minor,
 					   be16_to_cpu(header.command)))
 			        goto out;
 			break;
 
-		case CStateChanged:
+		case CStateChanged: /* both, on [dis|re]connect, Sync, etc */
 			if (!receive_cstate(drbd_conf+minor)) goto out;
 			break;
 
-		case StartSync:
+		case StartSync:     /* both, should only happen on PRI */
 			set_cstate(drbd_conf+minor,SyncingAll);
 			drbd_send_cstate(drbd_conf+minor);
 			drbd_thread_start(&drbd_conf[minor].syncer);
 			break;
 
-		case BecomeSec:
+		case BecomeSec:     /* both, secondary_remote */
 			drbd_set_state(minor,Secondary);
 			break;
-		case SetConsistent:
+		case SetConsistent: /* both, should only happen on SEC
+				       at end of Sync */
 			drbd_conf[minor].gen_cnt[Consistent]=1;
 			drbd_md_write(minor);
 			break;
-		case WriteHint:
+		case WriteHint:     /* both, should only happen on SEC */
 			run_task_queue(&tq_disk);
 			break;
 
-		default:
+		default:            /* both, should NEVER happen */
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: unknown packet type!\n", minor);
 			goto out;

@@ -5,7 +5,11 @@
   This file is part of drbd by Philipp Reisner.
 
   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+        main author.
 
+  Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
+	some tidbits
+ 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation; either version 2, or (at your option)
@@ -36,18 +40,24 @@
 #include <linux/completion.h>
 #endif
 
-/* #define MAJOR_NR 240 */
-#define MAJOR_NR 43
 /* Using the major_nr of the network block device
    prevents us from deadlocking with no request entries
    left on all_requests...
    look out for NBD_MAJOR in ll_rw_blk.c */
 
+/*lge: this hack is to get rid of the compiler warnings about
+ * 'do_nbd_request declared static but never defined'
+ * whilst forcing blk.h defines on
+ * though we probably do not need them, we do not use them...
+ * would not work without LOCAL_END_REQUEST
+ */
+#define MAJOR_NR DRBD_MAJOR
 #define DEVICE_ON(device)
 #define DEVICE_OFF(device)
 #define DEVICE_NR(device) (MINOR(device))
 #define LOCAL_END_REQUEST
 #include <linux/blk.h>
+#define DRBD_MAJOR NBD_MAJOR
 
 #ifdef DEVICE_NAME
 #undef DEVICE_NAME
@@ -64,6 +74,16 @@
 #define INITIAL_BLOCK_SIZE (1<<12)
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
+
+/*lge: is this the right version dependency? */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
+#define get_bh(bh)      ((bh)->b_count++)
+#define put_bh(bh)      ((bh)->b_count--)
+/* drop_super is used in is_mounted().
+ * FIXME: should it be replaced with something more useful?
+ */
+#define drop_super(sb)  ((void)0);
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,2,18)
 #define init_MUTEX_LOCKED( A )    (*(A)=MUTEX_LOCKED)
