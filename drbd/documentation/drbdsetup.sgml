@@ -96,7 +96,7 @@ the device driver.
 <refsect1>
 <title>Commands</title>
 <para>
-Each drbd sub command might require arguments and brings it's own
+Each drbd sub-command might require arguments and bring its own
 set of options. All values have default units which might be overruled
 by K, M or G. These units are defined in the usual way (eg. K = 2^10).
 </para>
@@ -106,7 +106,7 @@ by K, M or G. These units are defined in the usual way (eg. K = 2^10).
 <para>
 Associates <replaceable>device</replaceable> with 
 <replaceable>lower_device</replaceable> to store its data blocks on.
-The <replaceable>device</replaceable> is only ready for immedate use
+The <replaceable>device</replaceable> is only ready for immediate use
 when also using the <option>-d</option> (or <option>--disk-size</option>)
 option.
 When not specifying the size of the <replaceable>device</replaceable>,
@@ -132,7 +132,7 @@ the driver. Default unit is KB.
 If the driver of the <replaceable>lower_device</replaceable> reports 
 an error to drbd, drbd passes this error on to the upper 
 layers of the operating 
-system per default. With the <option>-p</option> or 
+system by default. With the <option>-p</option> or 
 <option>--do-panic</option> you can request that
 drbd triggers a kernel panic instead.
   </para></listitem>
@@ -143,7 +143,7 @@ drbd triggers a kernel panic instead.
 <title>net</title>
 <para>
 Sets up the <replaceable>device</replaceable> to listen on 
-<replaceable>local_addr:port</replaceable> for incomming connections
+<replaceable>local_addr:port</replaceable> for incoming connections
 and to try to connect to <replaceable>remote_addr:port</replaceable>.
 If <replaceable>port</replaceable> is omitted, 7788 is used as default.
 On the tcp/ip link the specified <replaceable>protocol</replaceable> 
@@ -154,8 +154,8 @@ is used. Valid protocol spezifiers are A, B and C.
   <term><option>-r</option>,
    <option>--sync-rate <replaceable>rate</replaceable></option></term>
   <listitem><para>
-To ensure smoth operation of the application on top of drbd it is
-possible to limit the bandwith which may be used by background 
+To ensure smooth operation of the application on top of drbd, it is
+possible to limit the bandwidth which may be used by background 
 synchronisations. The default is 250 KB/sec, the default unit is KB. 
   </para></listitem>
  </varlistentry>
@@ -192,7 +192,8 @@ packet to check if its partner is still alive. The default is 10 seconds.
    <option>--timeout <replaceable>val</replaceable></option></term>
   <listitem><para>
 If the partner node failes to send an expected response packet within 
-<replaceable>val</replaceable> 10ths of a second, the partner node
+<replaceable>val</replaceable> 10<superscript>ths</superscript> 
+of a second, the partner node
 is considered dead and therefore the tcp/ip connection is abandoned.
 The default value is 60 = 6 seconds.
   </para></listitem>
@@ -202,11 +203,11 @@ The default value is 60 = 6 seconds.
    <option>--tl-size <replaceable>size</replaceable></option></term>
   <listitem><para>
 The driver uses a cyclic data structure to keep track of sent data
-blocks. When using protocol A over a network with high latency it might
+blocks. When using protocol A over a network with high latency, it might
 be necessary to increase the size of this data structure. 
 If this is the case, the driver will write messages to the syslog 
-saying that the transfer-log is too small.The default 
-<replaceable>size</replaceable> is 256 entrys.
+saying that the transfer-log is too small. The default 
+<replaceable>size</replaceable> is 256 entries.
   </para></listitem>
  </varlistentry>
 </variablelist>
@@ -215,7 +216,7 @@ saying that the transfer-log is too small.The default
 <title>primary</title>
 <para>
 Sets the <replaceable>device</replaceable> into primary state, this
-means that applications (eg. a file system) may open the 
+means that applications (e.g. a file system) may open the 
 <replaceable>device</replaceable> for read and write access. Data written
 to the <replaceable>device</replaceable> in primary state is mirrored to
 the device in secondary state.
@@ -229,12 +230,12 @@ state, they will disconnect immediately.
 <title>secondary</title>
 <para>
 Sets the <replaceable>device</replaceable> into secondary state, this
-operation fails as long as at lease one application (or file system) has 
+operation fails as long as at least one application (or file system) has 
 the device open for write access.
 </para>
 <para>
-It is leagal that both devices of a connected drbd device pair are in 
-secondary state.
+It is however, possible that both devices of a connected drbd device 
+pair are in secondary state.
 </para>
 </refsect2>
 <refsect2>
@@ -246,7 +247,7 @@ the device in secondary state.
 </para>
 <para>
 This command will fail if the <replaceable>device</replaceable> is not
-part of a connected device pair of if both devices of the pair are in 
+part of a connected device pair or if both devices of the pair are in 
 secondary state.
 </para>
 </refsect2>
@@ -264,7 +265,7 @@ synchronisation state and returns into connected state.
 This command will fail if the <replaceable>device</replaceable> stays
 for <replaceable>connect_timeout</replaceable> seconds in unconnected 
 state. The default value is 8 seconds. 
-If it is set to 0 the command will wait forever for a connection.
+If it is set to 0, the command will forever wait for a connection.
   </para></listitem>
  </varlistentry>
 </variablelist>
@@ -275,7 +276,7 @@ If it is set to 0 the command will wait forever for a connection.
 Removes the information set by the <option>net</option> command 
 from the <replaceable>device</replaceable>. This means
 that the <replaceable>device</replaceable> goes into unconnected 
-states and that it will not listen for incomming connections any longer.
+states and that it will no longer listen for incomming connections.
 </para>
 </refsect2>
 <refsect2>
@@ -297,9 +298,9 @@ Shows all available configuration information of the
 <refsect1>
 <title>Examples</title>
 <example>
-<title>setting up a device pair</title>
-<para>In this example we have the hosts <replaceable>tc1</replaceable>
-and <replaceable>tc2</replaceable>, and they are connected by a
+<title>Setting up a device pair</title>
+<para>In this example the hosts, <replaceable>tc1</replaceable>
+and <replaceable>tc2</replaceable>, are connected by a
 crossover cable via the interfaces <replaceable>192.168.37.2</replaceable>
 (on tc1) and 
 <replaceable>192.168.37.3</replaceable> (on tc2).
@@ -322,7 +323,7 @@ $ cat /proc/drbd
 </computeroutput>
 </screen>
 <para>From /prod/drbd we can see, that our device pair is connected, and
-that the device is ready to use on tc1.</para>
+that the device is ready for use on tc1.</para>
 <para>We can now run our application on top of it:</para>
 <screen>
 $ mkfs -b 4096 /dev/nb0
@@ -332,7 +333,8 @@ $ mount /dev/nb0 /mnt/mountpoint
 </refsect1>
 <refsect1>
 <title>Author</title>
-<simpara>Written by Philipp Reisner <email>phil@ist.org</email>.</simpara>
+<simpara>Written by Philipp Reisner <email>philipp.reisner@gmx.at</email>.
+</simpara>
 </refsect1>
 <refsect1>
 <title>Reporting Bugs</title>
@@ -341,12 +343,10 @@ $ mount /dev/nb0 /mnt/mountpoint
 </refsect1>
 <refsect1>
 <title>Copyright</title>
-<simpara>Copyright (c) 2001 Philipp Reisner. This is free software;
-see covered by the GNU public licence version 2.0. There is NO 
-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+<simpara>
+Copyright (c) 2001 Philipp Reisner. This  is  free software; 
+see the source for copying conditions.  There is NO warranty; 
+not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
 </simpara>
 </refsect1>
 </refentry>
-
-
-
