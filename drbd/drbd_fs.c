@@ -96,6 +96,7 @@ char* ppsize(char* buf, size_t size)
  */
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
+#warning "these ._size <<1 shifts have to go"
 	sector_t p_size = mdev->p_size <<1;  // partner's disk size.
 	sector_t la_size = mdev->la_size; // last agreed size.
 	sector_t m_size; // my size
@@ -131,6 +132,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if(u_size) {
+		/* FIXME size now in sectors, user still provides KB */
 		if(u_size > size) {
 			ERR("Requested disk size is too big (%lu > %lu)\n",
 			    (unsigned long)u_size, (unsigned long)size);
@@ -148,7 +150,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 			    ppsize(ppb,size>>1),(unsigned long)size);
 		} else {
 			// racy, see comments above.
-			drbd_set_my_capacity(mdev,size<<1);
+			drbd_set_my_capacity(mdev,size);
 			mdev->la_size = size;
 			INFO("size = %s (%lu sect)\n",ppsize(ppb,size>>1),
 			     (unsigned long)size);

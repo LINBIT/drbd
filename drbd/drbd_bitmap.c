@@ -172,7 +172,12 @@ void drbd_bm_unlock(drbd_dev *mdev)
 #else
 #define BM_PARANOIA_CHECK() do {					\
 	D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);			\
-	D_ASSERT(b->bm_dev_capacity == drbd_get_capacity(mdev->this_bdev));	\
+	if (b->bm_dev_capacity != drbd_get_capacity(mdev->this_bdev)) {	\
+		ERR("%s:%d: bm_dev_capacity:%llu drbd_get_capacity:%llu\n", \
+		__FILE__, __LINE__,					\
+		(unsigned long long) b->bm_dev_capacity,		\
+		(unsigned long long) drbd_get_capacity(mdev->this_bdev));\
+	}								\
 } while (0)
 #endif
 // }

@@ -244,8 +244,9 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			);
 
 			if ( drbd_conf[i].cstate == SyncSource ||
-			     drbd_conf[i].cstate == SyncTarget )
+			     drbd_conf[i].cstate == SyncTarget ) {
 				rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
+			}
 
 			rlen += lc_sprintf_stats(buf+rlen,drbd_conf[i].resync);
 			rlen += lc_sprintf_stats(buf+rlen,drbd_conf[i].act_log);
