@@ -571,13 +571,8 @@ int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *sock,*msock;
 
-
-	if (mdev->cstate==Unconfigured) return 0;
-
-	if (mdev->data.socket) {
-		ERR("There is already a socket!!\n");
-		return 0;
-	}
+	D_ASSERT(mdev->cstate!=Unconfigured);
+	D_ASSERT(!mdev->data.socket);
 
 	set_cstate(mdev,WFConnection);
 
@@ -607,11 +602,11 @@ int drbd_connect(drbd_dev *mdev)
 		if(signal_pending(current)) {
 			drbd_flush_signals(current);
 			smp_rmb();
-			if ((volatile int)mdev->receiver.t_state != Running)
+			if ((volatile int)mdev->receiver.t_state == Exiting)
 				return 0;
 
-			WARN("Signal pending x%lx, but t_state still Running??\n",
-				current->pending.signal.sig[0]);
+			WARN("Signal pending x%lx, but t_state not Exiting??\n",
+			     current->pending.signal.sig[0]); // to be removed.
 		}
 	}
 
@@ -658,7 +653,6 @@ int drbd_connect(drbd_dev *mdev)
 	 * worker thread :(
 	 */
 	D_ASSERT(mdev->asender.task == NULL);
-	D_ASSERT(mdev->worker.task == NULL);
 
 	drbd_thread_start(&mdev->asender);
 
@@ -1530,7 +1524,10 @@ int drbdd_init(struct Drbd_thread *thi)
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 
 	while (TRUE) {
-		if (!drbd_connect(mdev)) break;
+		if (!drbd_connect(mdev)) {
+			WARN("Discarding network configuration.\n");
+			break;
+		}
 		if (thi->t_state == Exiting) break;
 		drbdd(mdev);
 		drbd_disconnect(mdev);
@@ -1547,6 +1544,11 @@ int drbdd_init(struct Drbd_thread *thi)
 	}
 
 	INFO("receiver exiting\n");
+
+	if(test_bit(DISKLESS,&mdev->flags)) {
+	  	set_cstate(mdev, Unconfigured);
+		drbd_mdev_cleanup(mdev);
+	} else set_cstate(mdev, StandAlone);
 
 	return 0;
 }
