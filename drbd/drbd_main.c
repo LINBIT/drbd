@@ -164,7 +164,7 @@ STATIC void tl_cleanup(drbd_dev *mdev)
 
 STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
 {
-	return (sector>>HT_SHIFT) % mdev->tl_hash_s;
+	return (unsigned int)(sector>>HT_SHIFT) % mdev->tl_hash_s;
 }
 
 
@@ -367,7 +367,7 @@ void tl_clear(drbd_dev *mdev)
 
 STATIC unsigned int ee_hash_fn(drbd_dev *mdev, sector_t sector)
 {
-	return (sector>>HT_SHIFT) % mdev->ee_hash_s;
+	return (unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s;
 }
 
 STATIC int overlaps(sector_t s1, int l1, sector_t s2, int l2)
