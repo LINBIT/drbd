@@ -602,17 +602,19 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 	        _drbd_send_barrier(mdev);
 	}
+
+	// 1. This must be within the semaphore
+	// 2. This must happen before sending
+	// UGGLY UGGLY casting it back to a drbd_request_t
+	tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
 	
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
 		      bh->b_size,0);
 	bh_kunmap(bh);
 	ok=(ret == bh->b_size + sizeof(head));
 
-	if( ok ) {
+	if(likely(ok)) {
 		mdev->send_cnt+=bh->b_size>>9;
-		/* This must be within the semaphore */
-		//UGGLY UGGLY casting it back to a drbd_request_t
-		tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
 	}
 
 	up(&mdev->sock_mutex);
