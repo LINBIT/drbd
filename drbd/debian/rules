@@ -3,6 +3,9 @@
 # debian/rules file - for drbd
 # Patterned after the pcmcia-cs package by Brian Mays.
 
+# STATUS
+# drbd package seems fine. Doesn't need any other things
+
 package=drbd
 KSRC?=/usr/src/linux
 MOD_DIR?='.'
@@ -11,6 +14,8 @@ PKGVERSION=$(shell dpkg-parsechangelog | grep ^Version: | cut -d ' ' -f 2)
 MVARUSUBDIRS=$(shell grep ^SUBDIRS Makefile.vars | sed 's/ drbd / /g' | sed 's/ = /=/g'|cut -d '\#' -f1 )
 #MVARKSUBDIRS=drbd
 export DH_VERBOSE=1
+
+SMPFLAG=$(shell grep -q '^CONFIG_SMP=y' $(KSRC)/.config && echo "-D__SMP__")
 
 install-kernelpatch:
 	dh_testdir
@@ -25,8 +30,7 @@ binary-kernelpatch: install-kernelpatch
 	dh_installchangelogs -pkernel-patch-wup
 	dh_installdeb -pkernel-patch-wup
 	dpkg-gencontrol -pkernel-patch-wup -Pdebian/kernel-patch-wup
-	chown -R root.root debian/kernel-patch-wup
-	chmod -R g-ws debian/kernel-patch-wup
+	dh_fixperms -pkernel-patch-wup
 	dpkg-deb --build debian/kernel-patch-wup ..
 	
 binary-indep:   binary-source binary-kernelpatch
@@ -38,45 +42,31 @@ binary-arch: checkroot binary-drbd
 
 binary-drbd:  checkroot build
 	$(checkdir)
-	$(RM) -r debian/tmp
-	install -d debian/tmp debian/tmp/DEBIAN
-	install -d debian/tmp/usr/share/doc/$(package)
-	install -d debian/tmp/usr/sbin
-# Install files
-# Strip binaries
-#	strip `ls debian/tmp/usr/X11R6/bin/* 2>/dev/null` debian/tmp/sbin/*
-# Find configuration files
-#	find debian/tmp/etc -not -type d | sed 's%debian/tmp%%' \
-#	  > debian/tmp/DEBIAN/conffiles
+	$(RM) -r debian/drbd
+	dh_installdirs -pdrbd DEBIAN usr/sbin
 # Install changelog & copyright
-	install -m644 TODO ChangeLog COPYING README TODO \
-		debian/tmp/usr/share/doc/$(package)/
-	install -m644 debian/changelog  \
-		debian/tmp/usr/share/doc/$(package)/changelog.Debian
-	install -m755 user/drbdsetup \
-		debian/tmp/usr/sbin/
+	dh_installman -pdrbd documentation/drbd.conf.5 documentation/drbdsetup.8
+	dh_installdocs -pdrbd TODO COPYING README
+	dh_installchangelogs -pdrbd ChangeLog 
+	install -m755 user/drbdsetup debian/drbd/usr/sbin/
+	dh_compress -pdrbd
+	# We don't wan't the examples to be compressed :)
+	dh_installexamples -pdrbd scripts/datadisk scripts/drbd scripts/drbd.conf
+	dh_fixperms -pdrbd
 # Generate deb file
-	dpkg-gencontrol -pdrbd
-	chown -R root.root debian/tmp
-	chmod -R g-ws debian/tmp
-	dpkg-deb --build debian/tmp ..
+	dpkg-gencontrol -pdrbd -Pdebian/drbd
+	dpkg-deb --build debian/drbd ..
 
 binary: binary-arch binary-indep
 
 binary-source:
 	$(checkdir)
 	$(RM) -r debian/src
-	install -d debian/src debian/src/DEBIAN
-	# Install directories
-	install -d debian/src/usr/src/modules/$(package)
-	install -d debian/src/usr/src/modules/$(package)/debian
-	install -d debian/src/usr/share/doc/drbd-source
+	dh_installdirs -psrc DEBIAN usr/src/modules/$(package)/debian usr/share/doc/drbd-source
 	# Install files
 	cp -a debian/rules debian/changelog debian/control.modules debian/src/usr/src/modules/$(package)/debian
 	cp -a debian/control.modules debian/src/usr/src/modules/$(package)/debian/control
 	cp -a drbd debian/src/usr/src/modules/$(package)/
-#	cd debian/src/usr/src/modules/$(package) && \
-#	$(MAKE) -f debian/rules clean
 	chown -R root.root debian/src
 #	find debian/src -type d | xargs chmod 755
 #	find debian/src -type f -perm -100 | xargs chmod 755
@@ -87,9 +77,8 @@ binary-source:
 	gzip -9 debian/src/usr/src/$(package).tar
 	chmod 644 debian/src/usr/src/$(package).tar.gz
 	# Install changelog & copyright
-	install -m 644 debian/changelog \
-	debian/src/usr/share/doc/drbd-source/changelog.Debian
-	gzip -9v debian/src/usr/share/doc/drbd-source/*
+	dh_installchangelogs -psrc ChangeLog
+	dh_compress -psrc
 	# Generate deb file
 	dpkg-gencontrol -pdrbd-source -Pdebian/src
 	dpkg-deb --build debian/src ..
@@ -97,12 +86,15 @@ binary-source:
 
 build:
 	$(checkdir)
-	umask 022; $(MAKE) "$(MVARUSUBDIRS)"
+	$(MAKE) "$(MVARUSUBDIRS)"
 # Could not get docbook2man to work...
-#	umask 022; cd documentation && $(MAKE) man
+# But at least we have manpages for now :)
+	cd documentation && nsgmls drbdsetup.sgml | sgmlspl /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl
+	cd documentation && nsgmls drbd.conf.sgml | sgmlspl /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl
 
 clean:
 	$(MAKE) clean
+	dh_clean
 
 checkroot:
 	$(checkdir)
@@ -112,7 +104,7 @@ checkroot:
 # Build the kernel module .deb.
 build-modules:
 	dh_testdir
-	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) CC=gcc272
+	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) CC=gcc272 SMPFLAG=$(SMPFLAG)
 
 binary-modules: build-modules
 	dh_clean -k
@@ -127,12 +119,10 @@ binary-modules: build-modules
 	dh_installdirs lib/modules/$(KVERS)/misc
 	install -m644 drbd/drbd.o debian/tmp/lib/modules/$(KVERS)/misc
 	dh_installdocs
-	dh_installexamples
 	dh_installmodules
 	dh_compress
 	dh_fixperms
 	dh_installdeb
-	dh_shlibdeps
 	dh_gencontrol -- -v$(PKGVERSION)
 	dh_makeshlibs
 	dh_md5sums
