@@ -643,6 +643,10 @@ void verify_ips(struct d_resource* res)
     return;
   }
 
+#if 0
+/* seems to not work as expected with aliases.
+ * maybe drop it completely and trust the admin.
+ */
   ex = asprintf(&argv[2],
 	"IP=%s; IPQ=${IP//./\\\\.};"
 	"peerIP=%s; peerIPQ=${peerIP//./\\\\.};"
@@ -669,6 +673,8 @@ void verify_ips(struct d_resource* res)
 # endif
     return;
   }
+#endif
+
   return;
 }
 
