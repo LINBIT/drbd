@@ -654,8 +654,8 @@ void verify_ips(struct d_resource* res)
 	"if type -p ip ; then "
 	"  ip -o route get to $peerIP from $IP 2>/dev/null |"
 	"    grep -qE ^$peerIPQ' from '$IPQ' ';"
-	"else"
-	"  # echo >&2 $0: 'cannot check route to peer';"
+	/* "else"
+	 * "  echo >&2 $0: 'cannot check route to peer';" */
 	"fi >/dev/null",
 	my_ip,his_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
