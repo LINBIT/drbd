@@ -54,6 +54,13 @@
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,2,18)
+#define init_MUTEX_LOCKED( A )    (*(A)=MUTEX_LOCKED)
+#define init_MUTEX( A )           (*(A)=MUTEX)
+#define init_waitqueue_head( A )  (*(A)=0)
+typedef struct wait_queue*  wait_queue_head_t;
+#endif
+
 /*
  * GFP_DRBD is used for allocations inside drbd_do_request.
  *

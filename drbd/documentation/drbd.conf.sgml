@@ -30,7 +30,7 @@ do so.
 <programlisting>
 resource drbd0 {
   protocol=C
-  fsck-cmd=fsck.ext2 -p -y
+  fsckcmd=fsck.ext2 -p -y
 
   on thost1 {
     device=/dev/nb1
@@ -93,7 +93,7 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     (keyword <option>on</option>) and may have
     a <option>net</option> and a <option>disk</option> section.
     Required parameter in this section: <option>protocol</option>,
-    <option>fsck-cmd</option>.
+    <option>fsckcmd</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -148,7 +148,7 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
   </listitem>
 </varlistentry>
  <varlistentry>
-  <term><option>fsck-cmd=<replaceable>command</replaceable></option></term>
+  <term><option>fsckcmd=<replaceable>command</replaceable></option></term>
   <listitem><para>
     Upon resource takeover datadisk runs the 
     <replaceable>command</replaceable> on the device of the resource.

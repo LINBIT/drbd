@@ -30,7 +30,7 @@
 	<programlisting>
 	  resource drbd0 {
 	    protocol=C
-	    fsck-cmd=fsck.ext2 -p -y
+	    fsckcmd=fsck.ext2 -p -y
 
 	    on thost1 {
 	      device=/dev/nb1
@@ -93,7 +93,7 @@
 	      (keyword <option>on</option>) e pode ter uma seção
 	      <option>net</option> e uma seção <option>disk</option>.
 	      Parâmetros requeridos nesta seção: <option>protocol</option>,
-	      <option>fsck-cmd</option>.
+	      <option>fsckcmd</option>.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -145,7 +145,7 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term><option>fsck-cmd=<replaceable>comando</replaceable></option></term>
+	  <term><option>fsckcmd=<replaceable>comando</replaceable></option></term>
 	  <listitem><para>
 	      Quando ocorrer a tomada de um recurso por uma outra máquina,
 	      o script <option>datadisk</option> executa
