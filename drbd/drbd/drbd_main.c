@@ -200,6 +200,20 @@ STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
+STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t * item)
+{
+	struct drbd_barrier *b;
+
+	spin_lock_irq(&mdev->tl_lock);
+
+	b=item->barrier;
+	b->n_req--;
+
+	list_del(&item->w.list);
+
+	spin_unlock_irq(&mdev->tl_lock);
+}
+
 STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 {
 	unsigned int bnr;
@@ -824,7 +838,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 // Used to send write requests: bh->b_rsector !!
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 {
-	int ok;
+	int ok=1;
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 
@@ -869,16 +883,22 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	spin_unlock(&mdev->send_task_lock);
 
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
-		_drbd_send_barrier(mdev);
-	tl_add(mdev,req);
-	req->rq_status |= RQ_DRBD_IN_TL;
+		ok = _drbd_send_barrier(mdev);
+	if(ok) {
+		tl_add(mdev,req);
+		req->rq_status |= RQ_DRBD_IN_TL;
 
-	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
-	   && _drbd_send_zc_bio(mdev,&req->private_bio);
+		ok = (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p));
+		if(ok) {
+			ok = _drbd_send_zc_bio(mdev,&req->private_bio);
+		}
+		if(!ok) tl_cancel(mdev,req);
 
+	}
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);
+
 	up(&mdev->data.mutex);
 	restore_old_sigset(old_blocked);
 	return ok;
@@ -1373,22 +1393,21 @@ ONLY_IN_26(
 			if (mdev->mbds_id) bm_cleanup(mdev->mbds_id);
 			if (mdev->resync) lc_free(mdev->resync);
 
+			D_ASSERT(mdev->ee_in_use==0);
 			drbd_release_ee(mdev,&mdev->free_ee);
 			rr = drbd_release_ee(mdev,&mdev->active_ee);
-			if(rr) printk(KERN_ERR DEVICE_NAME
-				       "%d: %d EEs in active list found!\n",i,rr);
+			if(rr) ERR("%d: %d EEs in active list found!\n",i,rr);
 
 			rr = drbd_release_ee(mdev,&mdev->sync_ee);
-			if(rr) printk(KERN_ERR DEVICE_NAME
-				       "%d: %d EEs in sync list found!\n",i,rr);
+			if(rr) ERR("%d: %d EEs in sync list found!\n",i,rr);
 
 			rr = drbd_release_ee(mdev,&mdev->done_ee);
-			if(rr) printk(KERN_ERR DEVICE_NAME
-				       "%d: %d EEs in done list found!\n",i,rr);
+			if(rr) ERR("%d: %d EEs in done list found!\n",i,rr);
 
 			rr = drbd_release_ee(mdev,&mdev->read_ee);
-			if(rr) printk(KERN_ERR DEVICE_NAME
-				       "%d: %d EEs in read list found!\n",i,rr);
+			if(rr) ERR("%d: %d EEs in read list found!\n",i,rr);
+
+			D_ASSERT(mdev->ee_vacant==0);
 
 			if (mdev->md_io_page)
 				__free_page(mdev->md_io_page);

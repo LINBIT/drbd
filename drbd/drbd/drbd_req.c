@@ -248,6 +248,10 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	} else {
 		remote = 1;
 	}
+
+	if (rw == WRITE && local)
+		drbd_al_begin_io(mdev, sector);
+
 	remote = remote && (mdev->cstate >= Connected)
 			&& !test_bit(PARTNER_DISKLESS,&mdev->flags);
 
@@ -266,21 +270,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (!remote)
 		req->rq_status |= RQ_DRBD_SENT;
 
-	/* THINK
-	 * maybe we need to
-	 *   if (rw == WRITE) drbd_al_begin_io(mdev, sector);
-	 * right here already?
-	 */
-
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
 	drbd_plug_device(mdev);
-	if (rw == WRITE && local)
-		drbd_al_begin_io(mdev, sector);
-
-	/* since we possibly waited, we have a race: mdev may have
-	 * changed underneath us. Thats why I want to have a read lock
-	 * on it, and every state change of mdev needs to be done with a
-	 * write lock on it! */
 
 	if (remote) {
 		/* either WRITE and Connected,
@@ -294,10 +285,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
 				inc_ap_pending(mdev);
 			}
-			/* THINK drbd_send_dblock has a return value,
-			 * but we ignore it here. Is it actually void,
-			 * because error handling takes place elsewhere?
-			 */
+
 			if (!drbd_send_dblock(mdev,req)) {
 				if (mdev->cstate >= Connected)
 					set_cstate(mdev,NetworkFailure);
