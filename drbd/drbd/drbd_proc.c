@@ -83,7 +83,7 @@ struct request *my_all_requests = NULL;
 	static const char *cstate_names[] =
 	{
 		[Unconfigured] = "Unconfigured",
-		[StandAllone] =  "StandAllone",
+		[StandAlone]  =  "StandAlone",
 		[Unconnected] =  "Unconnected",
 		[Timeout] =      "Timeout",
 		[BrokenPipe] =   "BrokenPipe",

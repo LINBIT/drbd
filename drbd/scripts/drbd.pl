@@ -314,7 +314,7 @@ sub drbd_status($$)
     my ($res,$mconf)=@_;
     my $cs;
     my %retcode_table = ("Unconfigured"   => "stopped",
-			 "StandAllone"    => "stopped",
+			 "StandAlone"     => "stopped",
 			 "Unconnected"    => "stopped",
 			 "Timeout"        => "stopped",
 			 "BrokenPipe"     => "stopped",

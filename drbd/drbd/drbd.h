@@ -105,7 +105,7 @@ typedef enum { Unknown=0, Primary=1, Secondary=2 } Drbd_State;
 
 typedef enum { 
   Unconfigured,
-  StandAllone,    
+  StandAlone,    
   Unconnected,
   Timeout,
   BrokenPipe,

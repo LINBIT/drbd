@@ -131,7 +131,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
 	mdev->blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 	
-	set_cstate(mdev,StandAllone);
+	set_cstate(mdev,StandAlone);
 	drbd_md_read(minor);
 
 	return 0;
@@ -359,7 +359,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);
 
-		set_cstate(&drbd_conf[minor],StandAllone);
+		set_cstate(&drbd_conf[minor],StandAlone);
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_BOTH:

@@ -643,7 +643,7 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.state) == Primary &&
 	   drbd_conf[minor].state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME"%d: incompatible states \n",minor);
-		set_cstate(&drbd_conf[minor],StandAllone);
+		set_cstate(&drbd_conf[minor],StandAlone);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
@@ -651,7 +651,7 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.version)!=PRO_VERSION) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
 		       minor);
-		set_cstate(&drbd_conf[minor],StandAllone);
+		set_cstate(&drbd_conf[minor],StandAlone);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
@@ -659,7 +659,7 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
 		       minor);
-		set_cstate(&drbd_conf[minor],StandAllone);
+		set_cstate(&drbd_conf[minor],StandAlone);
 		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
@@ -682,7 +682,7 @@ inline int receive_param(int minor,int command)
 		printk(KERN_ERR DEVICE_NAME"%d: Your size hint is bogus!"
 		       "change it to %d\n",minor,blk_size[MAJOR_NR][minor]);
 		blk_size[MAJOR_NR][minor]=drbd_conf[minor].lo_usize;
-		set_cstate(&drbd_conf[minor],StandAllone);
+		set_cstate(&drbd_conf[minor],StandAlone);
 		return FALSE;
 	}
 
@@ -880,7 +880,7 @@ void drbdd(int minor)
 	       "(pc=%d,uc=%d)\n",minor,drbd_conf[minor].pending_cnt,
 	       drbd_conf[minor].unacked_cnt);
 
-	if(drbd_conf[minor].cstate != StandAllone) 
+	if(drbd_conf[minor].cstate != StandAlone) 
 	        set_cstate(&drbd_conf[minor],Unconnected);
 
 	for(i=0;i<=PrimaryInd;i++) {
@@ -940,7 +940,7 @@ int drbdd_init(struct Drbd_thread *thi)
 
 	printk(KERN_DEBUG DEVICE_NAME "%d: receiver exiting\n", minor);
 
-	/* set_cstate(&drbd_conf[minor],StandAllone); */
+	/* set_cstate(&drbd_conf[minor],StandAlone); */
 
 	return 0;
 }

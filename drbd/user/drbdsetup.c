@@ -765,7 +765,7 @@ int cmd_show(int drbd_fd,char** argv,int argc)
       return 20;
     }
 
-  if( cn.cstate < StandAllone )
+  if( cn.cstate < StandAlone )
     {
       printf("Not configured\n");
       return 0;
