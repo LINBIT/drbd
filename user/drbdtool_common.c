@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -6,7 +8,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
-#define _GNU_SOURCE
 #include <getopt.h>
 #include <stdlib.h>
 #include "drbdtool_common.h"
@@ -123,45 +124,70 @@ m_strtoll(const char *s, const char def_unit)
   return r << shift;
 }
 
-void create_lockfile_mm(int major, int minor)
+void alarm_handler(int signo)
+{ /* nothing. just interrupt F_SETLKW */ }
+
+/* it is implicitly unlocked when the process dies.
+ * but if you want to explicitly unlock it, just close it. */
+int unlock_fd(int fd)
 {
-  char lfname[40];
-  int fd,pid;
-  FILE* fi;
-
-  snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",major,minor);
-
-  while ( (fd = open(lfname,O_CREAT|O_EXCL|O_WRONLY,00644)) == -1 )
-    {
-      fd = open(lfname,O_RDONLY);
-      if(fd == -1 )
-	{
-	  PERROR("Creation and open(,O_RDONLY) of lockfile failed");
-	  exit(20);
-	}
-      fi = fdopen(fd,"r");
-      fscanf(fi,"%d",&pid);
-      fclose(fi);
-      errno = 0;
-      kill(pid,0);
-      if(errno == ESRCH) {
-	fprintf(stderr,"Stale lock file found and removed.\n");
-	remove(lfname);
-      } else {
-	fprintf(stderr,"A drbd tool with pid %d has the device locked.\n",pid);
-	exit(20);
-      }
-    }
-
-  fi = fdopen(fd,"w");
-  fprintf(fi,"%d\n",getpid());
-  fclose(fi);
+	return close(fd);
 }
 
-int dt_open_drbd_device(const char* device,int open_may_fail)
+int get_fd_lockfile_timeout(const char *path, int seconds)
 {
-  int drbd_fd,err;
+    int fd, err;
+    struct sigaction sa,so;
+    struct flock fl = {
+	.l_type = F_WRLCK,
+	.l_whence = 0,
+	.l_start = 0,
+	.l_len = 0
+    };
+
+    if ((fd = open(path, O_RDWR | O_CREAT, 0600)) < 0) {
+	fprintf(stderr,"open(%s): %m\n",path);
+	return -1;
+    }
+
+    if (seconds) {
+	sa.sa_handler=alarm_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags=0;
+	sigaction(SIGALRM,&sa,&so);
+	alarm(seconds);
+	err = fcntl(fd,F_SETLKW,&fl);
+	if (err) err = errno;
+	alarm(0);
+	sigaction(SIGALRM,&so,NULL);
+    } else {
+	err = fcntl(fd,F_SETLK,&fl);
+	if (err) err = errno;
+    }
+
+    if (!err) return fd;
+
+    if (err != EINTR && err != EAGAIN) {
+	close(fd);
+	errno = err;
+	fprintf(stderr,"fcntl(%s,...): %m\n", path);
+	return -1;
+    }
+
+    /* do we want to know this? */
+    if (!fcntl(fd,F_GETLK,&fl)) {
+	fprintf(stderr,"lock on %s currently held by pid:%u\n",
+		path, fl.l_pid);
+    }
+    close(fd);
+    return -1;
+}
+
+int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
+{
+  int drbd_fd, lfd, err;
   struct stat drbd_stat;
+  char lfname[40];
 
   drbd_fd=open(device,O_RDONLY);
   if(drbd_fd==-1 && !open_may_fail)
@@ -182,51 +208,34 @@ int dt_open_drbd_device(const char* device,int open_may_fail)
       exit(20);
     }
 
-  create_lockfile_mm(major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
+  /* THINK.
+   * maybe we should also place a fcntl lock on the
+   * _physical_device_ we open later...
+   *
+   * This lock is to prevent a drbd minor from being configured
+   * by drbdsetup while drbdmeta is about to mess with its meta data.
+   *
+   * If you happen to mess with the meta data of one device,
+   * pretending it belongs to an other, you'll screw up completely.
+   *
+   * We should store something in the meta data to detect such abuses.
+   */
+
+  snprintf(lfname,39,"/var/lock/drbd-%d-%d",
+	   major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
+
+  lfd = get_fd_lockfile_timeout(lfname,1);
+  if (lfd < 0)
+	exit(20);
+  if (lock_fd) *lock_fd = lfd;
 
   return drbd_fd;
 }
 
-void dt_release_lockfile(int drbd_fd)
+int dt_close_drbd_unlock(int drbd_fd, int lock_fd)
 {
-  int err;
-  struct stat drbd_stat;
-  char lfname[40];
-
-  err=fstat(drbd_fd, &drbd_stat);
-  if(err)
-    {
-      PERROR("fstat() failed");
-      exit(20);
-    }
-
-  snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",
-	   major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
-
-  remove(lfname);
-}
-
-void dt_release_lockfile_dev_name(const char* device)
-{
-  int err;
-  struct stat drbd_stat;
-  char lfname[40];
-
-  err=stat(device, &drbd_stat);
-  if(err)
-    {
-      PERROR("stat() failed");
-      exit(20);
-    }
-
-  snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",
-	   major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
-
-  remove(lfname);
-}
-
-int dt_close_drbd_device(int drbd_fd)
-{
-  dt_release_lockfile(drbd_fd);
-  return close(drbd_fd);
+  int err = 0;
+  if (drbd_fd >= 0) err = close(drbd_fd);
+  if (lock_fd >= 0) unlock_fd(lock_fd); /* ignore errors */
+  return err;
 }
