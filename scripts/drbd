@@ -72,10 +72,14 @@ case "$1" in
 	echo "."
 	;;
     status)
+	# NEEDS to be heartbeat friendly...
+	# so: put some "OK" in the output.
 	if [ -e $PROC_DRBD ]; then
+	    echo "drbd driver loaded OK; device status:"
 	    cat $PROC_DRBD
 	    exit 0
 	else
+	    echo >&2 "drbd not loaded"
 	    exit 3
 	fi
 	;;
