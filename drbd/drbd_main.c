@@ -1713,7 +1713,7 @@ int __init drbd_init(void)
 		disk->first_minor = i;
 		disk->fops = &drbd_ops;
 		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
-		sprintf(disk->devfs_name, "%s/%d", drbd_devf_sname, i);
+		sprintf(disk->devfs_name, "%s/%d", drbd_devfs_name, i);
 		disk->private_data = mdev;
 		add_disk(disk);
 

@@ -6,6 +6,18 @@
 #define __module_get  __MOD_INC_USE_COUNT
 #define   module_put  __MOD_DEC_USE_COUNT
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,20)
+/*
+ * dump_stack() showed up in 2.4.20.
+ * show_stack is arch-specific
+ * The architecture-independent backtrace generator
+ */
+static inline void dump_stack(void)
+{
+        show_stack(0);
+}
+#endif
+
 // b_end_io handlers
 extern void drbd_md_io_complete     (struct buffer_head *bh, int uptodate);
 extern void enslaved_read_bi_end_io (struct buffer_head *bh, int uptodate);
