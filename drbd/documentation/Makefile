@@ -47,7 +47,7 @@ HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 
 clean:
 	rm -f *.ps *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i clean ; done
+	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
 	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/man8; fi
