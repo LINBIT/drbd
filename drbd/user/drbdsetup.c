@@ -855,7 +855,7 @@ int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
       err=errno;
       perror("ioctl() failed");
       if(err==EINPROGRESS)
-	fprintf(stderr,"Only in 'Connected' cstate possible.");
+	fprintf(stderr,"Only in 'Connected' cstate possible.\n");
       return 20;
     }
   return 0;
@@ -871,7 +871,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
       err=errno;
       perror("ioctl() failed");
       if(err==EINPROGRESS)
-	fprintf(stderr,"Only in 'Connected' cstate possible.");
+	fprintf(stderr,"Only in 'Connected' cstate possible.\n");
       return 20;
     }
   return 0;

@@ -355,12 +355,12 @@ int m_system(int may_sleep,char** argv)
 
   pid = fork();
   if(pid == -1) {
-    fprintf(stderr,"Can not fork");
+    fprintf(stderr,"Can not fork\n");
     exit(E_exec_error);
   }
   if(pid == 0) {
     execv(argv[0],argv);
-    fprintf(stderr,"Can not exec");
+    fprintf(stderr,"Can not exec\n");
     exit(E_exec_error);
   }
 
@@ -596,44 +596,13 @@ void print_usage()
   exit(E_usage);
 }
 
-int m_shell_match(const char *subcmd, const char *pattern)
-{
-  int ex, pid;
-  char *cmd = NULL;
-
-#ifdef DEBUG
-  ex = asprintf(&cmd, "[[ `%s` == %s ]]", subcmd, pattern);
-#else
-  ex = asprintf(&cmd, "[[ `%s` == %s ]] &>/dev/null", subcmd, pattern);
-#endif
-  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-
-  pid = fork();
-  if (pid == -1) { fprintf(stderr, "Can not fork"); exit(E_exec_error); }
-  if (pid == 0) {
-    execl("/bin/bash", progname,
-#ifdef DEBUG
-	"-vxc",
-#else
-	"-c",
-#endif
-	cmd, NULL);
-    fprintf(stderr, "Can not exec");
-    exit(E_exec_error);
-  }
-  waitpid(pid, &ex, 0);
-  free(cmd);
-  return ex;
-}
-
 /* if not verifyable, prints a message to stderr,
  * and sets config_valid = 0 if INVALID_IP_IS_INVALID_CONF is defined */
 void verify_ips(struct d_resource* res)
 {
-  char *cmd = NULL;
-  char *pat = NULL;
   char *my_ip = NULL;
   char *his_ip = NULL;
+  char *argv[] = { "/bin/bash", "-c", NULL, "drbdadm:verify_ips", NULL };
   int ex;
 
   if (!(res && res->me   && res->me->address
@@ -643,13 +612,22 @@ void verify_ips(struct d_resource* res)
   }
   my_ip  = res->me->address;
   his_ip = res->peer->address;
-  ex = asprintf(&cmd, "/sbin/ip -o addr show scope global to %s", my_ip);
+
+  ex = asprintf(&argv[2],
+	"IP=%s; IP=${IP//./\\\\.};"
+	"LANG=; PATH=/sbin/:$PATH;"
+	"if   type -p ip       ; then"
+	"  ip addr show | grep -qE 'inet '$IP/;"
+	"elif type -p ifconfig ; then"
+	"  ifconfig | grep -qE ' inet addr:'$IP' ';"
+	"else"
+	"  echo >&2 $0: 'neither ip nor ifconfig found!';"
+	"fi",
+	my_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = asprintf(&pat, "*inet\\ %s/*", my_ip);
-  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_shell_match(cmd, pat);
-  free(cmd); cmd = NULL;
-  free(pat); pat = NULL;
+  ex = m_system(1,argv);
+  free(argv[2]); argv[2] = NULL;
+
   if (ex != 0) {
     ENTRY e, *ep;
     e.key = e.data = ep = NULL;
@@ -664,13 +642,21 @@ void verify_ips(struct d_resource* res)
     free(e.key);
     return;
   }
-  asprintf(&cmd, "/sbin/ip -o route get to %s", his_ip);
+
+  ex = asprintf(&argv[2],
+	"IP=%s; IPQ=${IP//./\\\\.};"
+	"peerIP=%s; peerIPQ=${peerIP//./\\\\.};"
+	"LANG=; PATH=/sbin/:$PATH;"
+	"if type -p ip ; then "
+	"  ip -o route get to $peerIP 2>/dev/null |"
+	"    grep -qE $peerIPQ' dev .* src '$IPQ' ';"
+	"else"
+	"  echo >&2 $0: 'cannot check route to peer';"
+	"fi",
+	my_ip,his_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  asprintf(&pat, "%s\\ dev*src\\ %s\\ \\\\*", his_ip, my_ip);
-  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_shell_match(cmd, pat);
-  free(cmd); cmd = NULL;
-  free(pat); pat = NULL;
+  ex = m_system(1,argv);
+  free(argv[2]); argv[2] = NULL;
   if (ex != 0) {
     ENTRY e, *ep;
     e.key = e.data = ep = NULL;
@@ -678,12 +664,11 @@ void verify_ips(struct d_resource* res)
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s:\n\tNo route from me (%s) to peer (%s).\n",
 	    config_file,(int) ep->data,res->name, my_ip, his_ip);
-#ifdef INVALID_IP_IS_INVALID_CONF
+# ifdef INVALID_IP_IS_INVALID_CONF
     config_valid = 0;
-#endif
+# endif
     return;
   }
-
   return;
 }
 

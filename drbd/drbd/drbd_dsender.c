@@ -277,7 +277,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	sector_t rsector;
 
 	// see above
-	if (bio->bi_size)
+	ERR_IF(bio->bi_size)
 		return 1;
 
 #if 0
@@ -298,7 +298,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	drbd_chk_io_error(mdev,error);
-	rsector = drbd_req_get_sector(req); 
+	rsector = drbd_req_get_sector(req);
         // the bi_sector of the bio gets modified somewhere in drbd_end_req()!
 	drbd_end_req(req, RQ_DRBD_LOCAL, (error == 0), rsector);
 	drbd_al_complete_io(mdev,rsector);
@@ -314,7 +314,7 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_request_t *req;
 
 	// see above
-	if (bio->bi_size)
+	ERR_IF(bio->bi_size)
 		return 1;
 
 #if 0
@@ -377,7 +377,8 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	drbd_request_t *req = (drbd_request_t*)w;
 	int ok;
 
-	if ( cancel || 
+	smp_rmb();
+	if ( cancel ||
 	     mdev->cstate < Connected ||
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 		ERR("WE ARE LOST. Local IO failure, no peer.\n");
