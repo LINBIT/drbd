@@ -223,6 +223,8 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_WAIT_CONNECT     _IOR( DRBD_IOCTL_LETTER, 0x11, struct ioctl_wait )
 #define DRBD_IOCTL_WAIT_SYNC        _IOR( DRBD_IOCTL_LETTER, 0x12, struct ioctl_wait )
 #define DRBD_IOCTL_UNCONFIG_DISK    _IO ( DRBD_IOCTL_LETTER, 0x13 )
+#define DRBD_IOCTL_SET_STATE_FLAGS  _IOW( DRBD_IOCTL_LETTER, 0x14, Drbd_State )
+
 
 #endif
 

@@ -714,15 +714,6 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 				return -EIO;
 			}
 		}
-#if 0
-		else if (mdev->cstate >= Connected) {
-			/* do NOT increase the Human count if we are connected,
-			 * and there is no reason for it.  I'm not yet sure
-			 * wether this is what I mean, though...
-			 */
-			newstate &= ~(Human|DontBlameDrbd);
-		}
-#endif
 	}
 
 	drbd_sync_me(mdev);
@@ -773,6 +764,16 @@ ONLY_IN_26(
 		bd_release(mdev->this_bdev);
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 )
+
+		if(test_bit(ON_PRI_INC_HUMAN,&mdev->flags)) { 
+			newstate |= Human;
+			clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
+		}
+
+		if(test_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags)) {
+			newstate |= TimeoutExpired;
+			clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
+		}
 
 		if(newstate & Human) {
 			drbd_md_inc(mdev,HumanCnt);
@@ -993,6 +994,20 @@ ONLY_IN_26(
 			err = -EINVAL;
 		} else {
 			err = drbd_set_state(mdev,arg);
+		}
+		break;
+
+	case DRBD_IOCTL_SET_STATE_FLAGS:
+		if (arg & ~(Human|TimeoutExpired) ) {
+			err = -EINVAL;
+		} else {
+			clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
+			clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
+
+			if (arg & Human ) 
+				set_bit(ON_PRI_INC_HUMAN,&mdev->flags);
+			if (arg & TimeoutExpired )
+				set_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
 		}
 		break;
 

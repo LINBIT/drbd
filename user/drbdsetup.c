@@ -99,6 +99,7 @@ struct drbd_cmd {
 
 int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_wait_connect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options);
@@ -121,6 +122,11 @@ struct drbd_cmd commands[] = {
      { "timeout-expired",no_argument,   0, 't' },
      { 0,            0,                 0, 0   } } },
   {"secondary", cmd_secondary,       0, 0, },
+  {"on_primary", cmd_on_primary,           0,
+   (struct option[]) {
+     { "inc-human",      no_argument,    0, 'h' },
+     { "inc-timeout-expired",no_argument,0, 't' },
+     { 0,            0,                 0, 0   } } },
   {"wait_sync", cmd_wait_sync,       0,
    (struct option[]) {
      { "time",       required_argument, 0, 't' },
@@ -775,6 +781,48 @@ int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options)
   return set_state(drbd_fd,Secondary);
 }
 
+int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  int err;
+  Drbd_State flags=0;
+
+  if(argc > 0)
+    {
+      while(1)
+	{
+	  int c;
+
+	  PRINT_ARGV;
+
+	  c = getopt_long(argc,argv,make_optstring(options),options,0);
+	  if(c == -1) break;
+	  switch(c)
+	    {
+	    case 'h':
+	      flags |= Human;
+	      break;
+	    case 't':
+	      flags |= TimeoutExpired;
+	      break;
+	    case 1:	// non option argument. see getopt_long(3)
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
+	    case '?':
+	      return 20;
+	    }
+	}
+    }
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE_FLAGS,flags);
+  if(err)
+    {
+      PERROR("ioctl(,SET_STATE_FLAGS,) failed");
+      exit(20);
+    }
+
+  return 0;
+}
+
+
 int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	    struct option *options)
 {
@@ -809,6 +857,7 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	}
     }
   err=ioctl(drbd_fd,req,&p);
+  if(errno == ETIME) exit(5);
   if(err)
     {
       PERROR("ioctl(,WAIT_*,) failed");

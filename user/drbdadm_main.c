@@ -564,11 +564,27 @@ static int adm_up(struct d_resource* res,char* unused)
   return adm_syncer(res,unused);
 }
 
+static int on_primary(struct d_resource* res ,char* flag)
+{
+  char* argv[20];
+  int argc=0;
+
+  argc=0;
+  argv[argc++]=drbdsetup;
+  argv[argc++]=res->me->device;
+  argv[argc++]="on_primary";
+  argv[argc++]=flag;
+  argv[argc++]=0;
+
+  return m_system(0,argv);
+}
+
+
 static int adm_wait_c(struct d_resource* res ,char* unused)
 {
   char* argv[20];
   struct d_option* opt;
-  int argc=0;
+  int argc=0,rv;
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
@@ -577,19 +593,28 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(SF_MaySleep,argv);
+  rv = m_system(SF_MaySleep,argv);
+  
+  if(rv == 5) { // Timer expired
+    rv = on_primary(res,"--inc-timeout-expired");
+  }
+
+  return rv;
 }
 
 
+/* In case a child exited, or exits, its return code is stored as
+   negative number in the pids[i] array */
 static int childs_running(pid_t* pids,int opts)
 {
   int i=0,wr,rv=0,status;
 
   for(i=0;i<nr_resources;i++) {
-    if(pids[i]==0) continue;
+    if(pids[i]<=0) continue;
     wr = waitpid(pids[i], &status, opts);
     if( wr == -1) {            // Wait error.
       if (errno == ECHILD) {
+	printf("No exit code for %d\n",pids[i]);
 	pids[i] = 0;           // Child exited before ?
 	continue;
       }
@@ -597,7 +622,11 @@ static int childs_running(pid_t* pids,int opts)
       exit(E_exec_error);
     }
     if( wr == 0 ) rv = 1;      // Child still running.
-    if( wr > 0 )  pids[i] = 0; // Child exited.
+    if( wr > 0 ) {
+      pids[i] = 0;
+      if( WIFEXITED(status) ) pids[i] = -WEXITSTATUS(status);
+      if( WIFSIGNALED(status) ) pids[i] = -1000;
+    }
   }
   return rv;
 }
@@ -607,7 +636,7 @@ static void kill_childs(pid_t* pids)
   int i;
 
   for(i=0;i<nr_resources;i++) {
-    if(pids[i]==0) continue;
+    if(pids[i]<=0) continue;
     kill(pids[i],SIGINT);
   }
 }
@@ -676,6 +705,26 @@ void chld_sig_hand(int unused)
   // do nothing. But interrupt systemcalls :)
 }
 
+static int check_exit_codes(pid_t* pids)
+{
+  struct d_resource *res,*t;
+  int i=0,rv=0;
+
+  for_each_resource(res,t,config) {
+    if (pids[i] == -5) {
+      rv |= on_primary(res,"--inc-timeout-expired");
+      pids[i]=0;
+    }
+    if (pids[i] == -1000) {
+      rv |= on_primary(res,"--inc-human");
+      pids[i]=0;
+    }
+    if (pids[i] == -20) rv = 20;
+    i++;
+  }
+  return rv;
+}
+
 static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 {
   struct d_resource *res,*t;
@@ -711,6 +760,7 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 
   start = time(0);
   rr = gets_timeout(pids,0,0,3*1000); // no string, but timeout of 3 seconds.
+  check_exit_codes(pids);
 
   if(rr == 0) {
     printf("***************************************************************\n"
@@ -729,10 +779,13 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
       printf("\e[s\e[31G[%4d]:\e[u",(int)(time(0)-start)); // Redraw sec.
       fflush(stdout);
       rr = gets_timeout(pids,answer,40,wtime*1000);
+      check_exit_codes(pids);
+
       if(rr==1) {
 	if(!strcmp(answer,"yes\n")) {
 	  kill_childs(pids);
 	  childs_running(pids,0);
+	  check_exit_codes(pids);
 	  rr = -1;
 	} else {
 	  printf(" To abort waiting enter 'yes' [ -- ]:");
@@ -1106,7 +1159,7 @@ int main(int argc, char** argv)
   }
 
   if(drbdsetup == NULL) {
-    find_drbdsetup((char *[]){"/sbin/drbdsetup", "./drbdsetup", 0 });
+    find_drbdsetup((char *[]){"./drbdsetup", "/sbin/drbdsetup", 0 });
   }
 
   if(cmd->res_name_required)
