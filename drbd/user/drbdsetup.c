@@ -112,6 +112,35 @@ int port_part(const char* s)
   return 7788;
 }
 
+int already_in_use_tab(const char* dev_name,const char* tab_name)
+{
+  FILE* tab;
+  char line[200];
+  int dev_name_len;  
+
+  if( ! (tab=fopen(tab_name,"r")) )
+    return 0;
+
+  dev_name_len=strlen(dev_name);
+
+  while( fgets(line,200,tab) )
+    {
+      if(!strncmp(line,dev_name,dev_name_len))
+	{
+	  fclose(tab);
+	  return 1;
+	}
+    }
+  fclose(tab);
+  return 0;
+}
+
+int already_in_use(const char* dev_name)
+{        
+  return already_in_use_tab(dev_name,"/etc/mtab") || 
+    already_in_use_tab(dev_name,"/proc/mounts");
+}
+
 int main(int argc, char** argv)
 {
   int drbd_fd;
@@ -286,6 +315,12 @@ int main(int argc, char** argv)
       struct sockaddr_in *my_addr;
       int err;
       struct stat lower_stat;
+
+      if(already_in_use(argv[2]))
+	{
+	  fprintf(stderr,"Lower device (%s) is already mounted\n",argv[2]);
+	  exit(20);
+	}
 
       if((lower_device = open(argv[2],O_RDWR))==-1)
 	{
