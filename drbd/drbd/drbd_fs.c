@@ -680,7 +680,7 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	ERR_IF (sc.al_extents < 7) sc.al_extents = 127; // arbitrary minimum
 #define AL_MAX ((MD_AL_MAX_SIZE-1) * AL_EXTENTS_PT)
 	if(sc.al_extents > AL_MAX) {
-		ERR("sc.al_extents > "__stringify(AL_MAX));
+		ERR("sc.al_extents > %d\n",AL_MAX);
 		sc.al_extents = AL_MAX;
 	}
 #undef AL_MAX
