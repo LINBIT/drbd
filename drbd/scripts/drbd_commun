@@ -104,13 +104,13 @@ setLocal()
 	LOCAL_DEVICE=""
 	LOCAL_FSCK=""
 
-	if [ "$HOST" = "`echo $NODE1_NODE | cut -d: -f1`" ]; then
+	if [ "$HOST" = "`echo $NODE1_HOST | cut -d: -f1`" ]; then
 		LOCAL_IF=$NODE1_IF
 		REMOTE_IF=$NODE2_IF
 		LOCAL_DEVICE=$NODE1_DEVICE
 		LOCAL_PARTITION=$NODE1_PARTITION
 		LOCAL_FSCK=$NODE1_FSCK
-	elif [ "$HOST" = "`echo $NODE2_NODE | cut -d: -f1`" ]; then
+	elif [ "$HOST" = "`echo $NODE2_HOST | cut -d: -f1`" ]; then
 		LOCAL_IF=$NODE2_IF
 		REMOTE_IF=$NODE1_IF
 		LOCAL_DEVICE=$NODE2_DEVICE
