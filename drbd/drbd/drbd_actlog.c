@@ -123,7 +123,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	if (unlikely(bm_ext!=NULL)) {
 		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
-			INFO("Delaying app write until sync read is done\n");
+			//INFO("Delaying app write until sync read is done\n");
 			return 0;
 		}
 	}
@@ -722,10 +722,11 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
 	}
 	spin_unlock_irq(&mdev->al_lock);
 
+	/*
 	if(unlikely(rv)) {
 		INFO("Delaying sync read until app's write is done\n");
 	}
-
+	*/
 	return rv;
 }
 
@@ -774,3 +775,27 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	spin_unlock_irq(&mdev->al_lock);
 }
 
+/**
+ * drbd_rs_cancel_all: Removes extents from the resync LRU. Even
+ * if they are BME_LOCKED.
+ */
+void drbd_rs_cancel_all(drbd_dev* mdev)
+{
+	struct bm_extent* bm_ext;
+	int i;
+
+	spin_lock_irq(&mdev->al_lock);
+
+	for(i=0;i<mdev->resync->nr_elements;i++) {
+		bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
+		if(bm_ext->lce.lc_number == LC_FREE) continue;
+		bm_ext->lce.refcnt = 0; // Rude but ok.
+		bm_ext->rs_left = 0;
+		clear_bit(BME_LOCKED,&bm_ext->flags);
+		clear_bit(BME_NO_WRITES,&bm_ext->flags);
+		lc_del(mdev->resync,&bm_ext->lce);
+	}
+
+	wake_up(&mdev->al_wait);
+	spin_unlock_irq(&mdev->al_lock);	
+}

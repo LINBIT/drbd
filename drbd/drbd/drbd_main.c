@@ -113,10 +113,8 @@ STATIC int *drbd_sizes;
 )
 struct Drbd_Conf *drbd_conf;
 kmem_cache_t *drbd_request_cache;
-kmem_cache_t *drbd_pr_cache;
 kmem_cache_t *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
-mempool_t *drbd_pr_mempool;
 
 STATIC struct block_device_operations drbd_ops = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,10)
@@ -1130,25 +1128,18 @@ NOT_IN_26(
 
 void drbd_destroy_mempools(void)
 {
-	if (drbd_pr_mempool)
-		mempool_destroy(drbd_pr_mempool);
 	if (drbd_request_mempool)
 		mempool_destroy(drbd_request_mempool);
 	if (drbd_ee_cache && kmem_cache_destroy(drbd_ee_cache))
 		printk(KERN_ERR DEVICE_NAME
 		       ": kmem_cache_destroy(drbd_ee_cache) FAILED\n");
-	if (drbd_pr_cache && kmem_cache_destroy(drbd_pr_cache))
-		printk(KERN_ERR DEVICE_NAME
-		       ": kmem_cache_destroy(drbd_pr_cache) FAILED\n");
 	if (drbd_request_cache && kmem_cache_destroy(drbd_request_cache))
 		printk(KERN_ERR DEVICE_NAME
 		       ": kmem_cache_destroy(drbd_request_cache) FAILED\n");
 	// FIXME what can we do if we fail to destroy them?
 
-	drbd_pr_mempool      = NULL;
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
-	drbd_pr_cache        = NULL;
 	drbd_request_cache   = NULL;
 
 	return;
@@ -1157,10 +1148,8 @@ void drbd_destroy_mempools(void)
 int drbd_create_mempools(void)
 {
 	// prepare our caches and mempools
-	drbd_pr_mempool      = NULL;
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
-	drbd_pr_cache        = NULL;
 	drbd_request_cache   = NULL;
 
 	// caches
@@ -1168,12 +1157,6 @@ int drbd_create_mempools(void)
 		"drbd_req_cache", sizeof(drbd_request_t),
 		0, SLAB_NO_REAP, NULL, NULL);
 	if (drbd_request_cache == NULL)
-		goto Enomem;
-
-	drbd_pr_cache = kmem_cache_create(
-		"drbd_pr_cache", sizeof(struct Pending_read),
-		0, SLAB_NO_REAP, NULL, NULL);
-	if (drbd_pr_cache == NULL)
 		goto Enomem;
 
 	drbd_ee_cache = kmem_cache_create(
@@ -1186,11 +1169,6 @@ int drbd_create_mempools(void)
 	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
 		mempool_alloc_slab, mempool_free_slab, drbd_request_cache);
 	if (drbd_request_mempool == NULL)
-		goto Enomem;
-
-	drbd_pr_mempool = mempool_create(16, //TODO; reasonable value
-		mempool_alloc_slab, mempool_free_slab, drbd_pr_cache);
-	if (drbd_pr_mempool == NULL)
 		goto Enomem;
 
 		return 0;

@@ -398,7 +398,6 @@ void resync_timer_fn(unsigned long data)
 
 int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 {
-	struct Pending_read *pr;
 	sector_t sector;
 	int number,i,size;
 
@@ -419,18 +418,12 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 	}
 
 	for(i=0;i<number;i++) {
-		pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
-		if (unlikely(pr == NULL)) goto requeue;
-		SET_MAGIC(pr);
-		pr->w.cb = w_is_resync_read;
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
 		sector = bm_get_sector(mdev->mbds_id,&size);
 
 		if (sector == MBDS_DONE) {
-			INVALIDATE_MAGIC(pr);
-			mempool_free(pr,drbd_pr_mempool);
 			mdev->resync_work.cb = w_resync_inactive;
 			return 1;
 		}
@@ -442,15 +435,9 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 			goto next_sector;
 		}
 
-		pr->d.sector = sector;
-		pr->cause = Resync;
-		spin_lock(&mdev->pr_lock);
-		list_add(&pr->w.list,&mdev->resync_reads);
-		spin_unlock(&mdev->pr_lock);
-
 		inc_rs_pending(mdev);
 		ERR_IF(!drbd_send_drequest(mdev,RSDataRequest,
-					   sector,size,(unsigned long)pr)) {
+					   sector,size,ID_SYNCER)) {
 			dec_rs_pending(mdev,HERE);
 			return 0; // FAILED. worker will abort!
 		}
@@ -527,9 +514,9 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 
 	if(likely(drbd_bio_uptodate(&e->private_bio))) {
 		inc_rs_pending(mdev);
-		ok=drbd_send_block(mdev, DataReply, e);
+		ok=drbd_send_block(mdev, RSDataReply, e);
 	} else {
-		ok=drbd_send_ack(mdev,NegDReply,e);
+		ok=drbd_send_ack(mdev,NegRSDReply,e);
 		ERR("Sending NegDReply. I guess it gets messy.\n");
 		drbd_io_error(mdev);
 	}

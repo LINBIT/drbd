@@ -752,8 +752,8 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	mdev->writ_cnt+=data_size>>9;
 }
 
-int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
-		    sector_t sector, int data_size)
+STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
+			   sector_t sector, int data_size)
 {
 	drbd_bio_t *bio;
 	int ok,rr;
@@ -791,12 +791,9 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 	return ok;
 }
 
-int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
-		     sector_t sector, int data_size)
+STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
-
-	D_ASSERT( pr->d.sector == sector);
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
@@ -828,80 +825,13 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	return TRUE;
 }
 
-int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
-		   sector_t sector, int data_size)
-{
-	struct Tl_epoch_entry *e;
-	drbd_bio_t *bio;
-
-	ERR("should not happen anymore%s\n", __func__);
-
-	bio = pr->d.master_bio;
-
-	D_ASSERT( sector == drbd_pr_get_sector(pr) );
-
-	e = read_in_block(mdev,data_size);
-
-	if (!e) {
-		drbd_bio_IO_error(bio);
-		return FALSE;
-	}
-
-	// Do not use data_size in the memcpy. The app read might be smaller.
-	/* XXX for exactly this reason: maybe don't memcpy at all, but first
-	 * write it to disk, and only then propagate the read to upper layers?
-	 * the next app read might target the very same region!
-	 */
-	memcpy(drbd_bio_kmap(bio),drbd_bio_kmap(&e->private_bio),
-	       drbd_bio_get_size(bio));
-	drbd_bio_kunmap(bio);
-	drbd_bio_kunmap(&e->private_bio);
-
-	drbd_bio_endio(bio,1); // propagate success for application read
-
-	dec_rs_pending(mdev,HERE);
-	dec_ap_pending(mdev,HERE);
-
-	if(!inc_local(mdev)) {
-		ERR("Can not write resync data to local disk.\n");
-		drbd_send_ack(mdev,NegAck,e);
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
-		return TRUE;
-	}
-
-	drbd_ee_prepare_write(mdev, e, sector, data_size);
-	e->block_id = ID_SYNCER;
-	e->w.cb     = e_end_resync_block;
-
-	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->w.list,&mdev->sync_ee);
-	spin_unlock_irq(&mdev->ee_lock);
-
-	inc_unacked(mdev);
-
-	drbd_generic_make_request(WRITE,&e->private_bio);
-
-	receive_data_tail(mdev,data_size);
-	return TRUE;
-}
-
 STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 {
-	struct Pending_read *pr;
 	drbd_request_t *req;
 	sector_t sector;
 	unsigned int header_size,data_size;
 	int ok;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
-
-	static int (*funcs[])(struct Drbd_Conf* , struct Pending_read*,
-			      sector_t,int) = {
-			      [Application]  = NULL,  /* recv_dless_read, */
-			      [Resync]       = recv_resync_read,
-			      [AppAndResync] = recv_both_read
-		      };
 
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
@@ -918,47 +848,46 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	sector = be64_to_cpu(p->sector);
 
-	/* FIXME funny runtime type check.
-	 * probably should be distinct packet types!
-	 */
 	req = (drbd_request_t *)(long)p->block_id;
-	if (req->w.cb == w_is_resync_read) {
-		pr  = (struct Pending_read *)(long)p->block_id;
-		req = NULL;
-		ERR_IF(!VALID_POINTER(pr)) return FALSE;
-		// XXX are enums unsigned by default?
-		ERR_IF((unsigned)pr->cause > AppAndResync) {
-			return FALSE;
-		}
-	} else {
-		pr  = NULL;
-		ERR_IF(!VALID_POINTER(req)) return FALSE;
-	}
+	D_ASSERT(req->w.cb == w_is_app_read);
 
+	spin_lock(&mdev->pr_lock);
+	list_del(&req->w.list);
+	spin_unlock(&mdev->pr_lock);
 
-	if (pr) {
-		/* RESYNC request
-		 */
-		/* Take it out of the list before calling the handler, since the
-		   handler could be changed by make_req as long as it is on the list
-		*/
-		spin_lock(&mdev->pr_lock);
-		list_del(&pr->w.list);
-		spin_unlock(&mdev->pr_lock);
+	ok = recv_dless_read(mdev,req,sector,data_size);
 
-		// FIXME get rid of pr (at least its cause field) completely!
-		D_ASSERT(pr->cause == Resync);
+	INVALIDATE_MAGIC(req);
+	mempool_free(req,drbd_request_mempool);
 
-		ok = funcs[pr->cause](mdev,pr,sector,data_size);
-		INVALIDATE_MAGIC(pr);
-		mempool_free(pr,drbd_pr_mempool);
-	} else {
-		/* "diskless" application READ request
-		 */
-		ok = recv_dless_read(mdev,req,sector,data_size);
-		INVALIDATE_MAGIC(req);
-		mempool_free(req,drbd_request_mempool);
-	}
+	return ok;
+}
+
+STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
+{
+	sector_t sector;
+	unsigned int header_size,data_size;
+	int ok;
+	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
+
+	header_size = sizeof(*p) - sizeof(*h);
+	data_size   = h->length  - header_size;
+
+	/* I expect a block to be a multiple of 512 byte, and
+	 * no more than 4K (8K). is this too restrictive?
+	 */
+	ERR_IF(data_size == 0) return FALSE;
+	ERR_IF(data_size &  0xff) return FALSE;
+	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
+
+	if (drbd_recv(mdev, h->payload, header_size) != header_size)
+		return FALSE;
+
+	sector = be64_to_cpu(p->sector);
+	D_ASSERT(p->block_id == ID_SYNCER);
+
+	ok = recv_resync_read(mdev,sector,data_size);
+
 	return ok;
 }
 
@@ -1372,51 +1301,11 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 
 		bio = req->master_bio;
 
-#if 0
-		switch(pr->cause) {
-		case Application:
-			dec_ap_pending(mdev,HERE);
-			break;
-		case AppAndResync:
-			dec_ap_pending(mdev,HERE);
-			dec_rs_pending(mdev,HERE);
-			drbd_rs_complete_io(mdev,drbd_pr_get_sector(pr));
-			break;
-		case Resync:
-			ERR("pr with cause 'Resync' on app_reads list.");
-			break;
-		case Discard:;
-		}
-#endif
-
 		drbd_bio_IO_error(bio);
 		dec_ap_pending(mdev,HERE);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
-	}
-
-	/*
-	 * Resync READ requests
-	 */
-	spin_lock(&mdev->pr_lock);
-	list_add(&workset,&mdev->resync_reads);
-	list_del(&mdev->resync_reads);
-	INIT_LIST_HEAD(&mdev->resync_reads);
-	spin_unlock(&mdev->pr_lock);
-
-	while(!list_empty(&workset)) {
-		struct Pending_read *pr;
-		le = workset.next;
-		list_del(le);
-		pr = list_entry(le, struct Pending_read, w.list);
-
-		D_ASSERT(pr->cause == Resync);
-		dec_rs_pending(mdev,HERE);
-		drbd_rs_complete_io(mdev,pr->d.sector);
-
-		mempool_free(pr,drbd_pr_mempool);
-		INVALIDATE_MAGIC(pr);
 	}
 }
 
@@ -1471,6 +1360,7 @@ typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 static drbd_cmd_handler_f drbd_default_handler[] = {
 	[Data]             = receive_Data,
 	[DataReply]        = receive_DataReply,
+	[RSDataReply]      = receive_RSDataReply,
 	[RecvAck]          = NULL, //receive_RecvAck,
 	[WriteAck]         = NULL, //receive_WriteAck,
 	[Barrier]          = receive_Barrier,
@@ -1552,6 +1442,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		set_cstate(mdev,Unconnected);
 
 	drbd_fail_pending_reads(mdev);
+	drbd_rs_cancel_all(mdev);
 
 	tl_clear(mdev);
 	clear_bit(ISSUE_BARRIER,&mdev->flags);
@@ -1707,17 +1598,35 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 
 STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 {
-	struct Pending_read *pr;
+	drbd_request_t *req;
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 
-	pr = (struct Pending_read *)(long)p->block_id;
-	ERR_IF(!VALID_POINTER(pr)) return FALSE;
+	req = (drbd_request_t *)(long)p->block_id;
+	D_ASSERT(req->w.cb == w_is_app_read);
 
 	spin_lock(&mdev->pr_lock);
-	list_del(&pr->w.list);
+	list_del(&req->w.list);
 	spin_unlock(&mdev->pr_lock);
 
+	INVALIDATE_MAGIC(req);
+	mempool_free(req,drbd_request_mempool);
+
 	ERR("Get NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
+	// TODO: Do something like panic() or shut_down_cluster(). 
+	return TRUE;
+}
+
+STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
+{
+	sector_t sector;
+	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+
+	sector = be64_to_cpu(p->sector);
+	D_ASSERT(p->block_id == ID_SYNCER);
+
+	drbd_rs_complete_io(mdev,sector);
+
+	ERR("Get NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 	// TODO: Do something like panic() or shut_down_cluster(). 
 	return TRUE;
 }
@@ -1757,6 +1666,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		[WriteAck]  ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[NegAck]    ={ sizeof(Drbd_BlockAck_Packet),  got_NegAck },
 		[NegDReply] ={ sizeof(Drbd_BlockAck_Packet),  got_NegDReply },
+		[NegRSDReply]={sizeof(Drbd_BlockAck_Packet),  got_NegRSDReply},
 		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet),got_BarrierAck },
 	};
 

@@ -97,51 +97,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		wake_asender(mdev);
 }
 
-#if 0
-STATIC struct Pending_read*
-drbd_find_read(sector_t sector, struct list_head *in)
-{
-	struct list_head *le;
-	struct Pending_read *pr;
-
-	list_for_each(le,in) {
-		pr = list_entry(le, struct Pending_read, w.list);
-		if(pr->d.sector == sector) return pr;
-	}
-
-	return NULL;
-}
-#endif
-
-#if 0
-STATIC void drbd_issue_drequest___FIXME_broken_on_purpose_by_lge(struct Drbd_Conf* mdev,drbd_bio_t *bio)
-{
-	struct Pending_read *pr;
-	pr = mempool_alloc(drbd_pr_mempool, GFP_DRBD);
-
-	if (!pr) {
-		ERR("could not kmalloc() pr\n");
-		drbd_bio_IO_error(bio);
-		return;
-	}
-	SET_MAGIC(pr);
-
-	pr->d.master_bio = bio;
-	pr->cause = Application;
-	spin_lock(&mdev->pr_lock);
-	list_add(&pr->w.list,&mdev->app_reads);
-	spin_unlock(&mdev->pr_lock);
-	inc_ap_pending(mdev);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
-			   (unsigned long)pr);
-#else
-	drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
-			   (unsigned long)pr);
-#endif
-}
-#endif
-
 void drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 {
 	drbd_bio_t *bio = req->master_bio;

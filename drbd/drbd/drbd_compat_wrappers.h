@@ -77,16 +77,6 @@ static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
 	return ee->private_bio.b_size;
 }
 
-static inline sector_t drbd_pr_get_sector(struct Pending_read *pr)
-{
-	return pr->d.master_bio->b_rsector;
-}
-
-static inline short drbd_bio_get_size(struct buffer_head *bh)
-{
-	return bh->b_size;
-}
-
 static inline char *drbd_bio_kmap(struct buffer_head *bh)
 {
 	return bh_kmap(bh);
@@ -357,21 +347,6 @@ static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
 static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
 {
 	return ee->ee_size;
-}
-
-static inline sector_t drbd_pr_get_sector(struct Pending_read *pr)
-{
-	return pr->d.master_bio->bi_sector;
-}
-
-/* this is valid, since the only place where it is used is in recv_both_read,
- * on the untouched master_bio of the Pending_read.
- * DO NOT use it for anything but an untouched bio,
- * bi_size is mutable, see bio_endio()
- */
-static inline short drbd_bio_get_size(struct bio *bio)
-{
-	return bio->bi_size;
 }
 
 #ifdef CONFIG_HIGHMEM

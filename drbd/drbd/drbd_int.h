@@ -282,7 +282,8 @@ enum MetaDataIndex {
 
 typedef enum {
 	Data,
-	DataReply,
+	DataReply,     // Response to DataRequest
+	RSDataReply,   // Response to RSDataRequest
 	Barrier,
 	ReportParams,
 	ReportBitMap,
@@ -299,6 +300,7 @@ typedef enum {
 	WriteAck,     // Used in protocol C
 	NegAck,       // Sent if local disk is unusable
 	NegDReply,    // Local disk is broken...
+	NegRSDReply,  // Local disk is broken...
 	BarrierAck,
 
 	MAX_CMD,
@@ -311,6 +313,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 	static const char *cmdnames[] = {
 		[Data]             = "Data",
 		[DataReply]        = "DataReply",
+		[RSDataReply]      = "RSDataReply",
 		[Barrier]          = "Barrier",
 		[ReportParams]     = "ReportParams",
 		[ReportBitMap]     = "ReportBitMap",
@@ -326,6 +329,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[WriteAck]         = "WriteAck",
 		[NegAck]           = "NegAck",
 		[NegDReply]        = "NegDReply",
+		[NegRSDReply]      = "NegRSDReply",
 		[BarrierAck]       = "BarrierAck"
 	};
 
@@ -536,21 +540,6 @@ struct Tl_epoch_entry {
 	ONLY_IN_26(struct bio_vec ee_bvec;)
 };
 
-struct Pending_read {
-	struct drbd_work w;
-	long magic;
-	union {
-		drbd_bio_t *master_bio;
-		sector_t sector;
-	} d;
-	enum {
-		Discard = 0,        // unused now.
-		Application = 1,
-		Resync = 2,
-		AppAndResync = 3,
-	} cause;
-};
-
 // bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
@@ -583,7 +572,7 @@ struct BitMap {
 
 struct bm_extent { // 16MB sized extents.
 	struct lc_element lce;
-	int rs_left; //number of sectors our of sync in this extent.
+	int rs_left; //number of sectors out of sync in this extent.
 	unsigned long flags;
 };
 
@@ -816,10 +805,8 @@ extern int bm_is_rs_done(struct BitMap* sbm);
 extern drbd_dev *drbd_conf;
 extern int minor_count;
 extern kmem_cache_t *drbd_request_cache;
-extern kmem_cache_t *drbd_pr_cache;
 extern kmem_cache_t *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
-extern mempool_t *drbd_pr_mempool;
 
 // drbd_req
 #define ERF_NOTLD    2   /* do not call tl_dependence */
@@ -859,10 +846,6 @@ extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
 extern int drbd_init_ee(drbd_dev* mdev);
 extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
 extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
-extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
-			    sector_t sector, int data_size);
-extern int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
-			   sector_t sector, int data_size);
 
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
@@ -873,6 +856,7 @@ extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
+extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,int blk_size);
 extern void drbd_read_bm(struct Drbd_Conf *mdev);
