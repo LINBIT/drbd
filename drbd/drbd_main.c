@@ -914,7 +914,8 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	if (fallback && time_before(last_rep+3600*HZ, now)) {
 		last_rep = now;
 		printk(KERN_INFO DEVICE_NAME
-		       ":sendpage fallback/total: %lu/%lu\n", fallback, total);
+		       " :sendpage() omitted: %lu/%lu "
+		       "[XFS' broken IO requests?]\n", fallback, total);
 	}
 
 	spin_lock(&mdev->send_task_lock);
