@@ -96,8 +96,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	end_it:
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	end_it_unlocked:
-
 	if(mdev->cstate >= Connected) {
 	  /* If we are unconnected we may not call tl_dependece, since
 	     then this call could be from tl_clear(). => spinlock deadlock!
@@ -213,18 +211,18 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 		int bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
 		int send_ok;
+		unsigned long flags;
 
 		req->rq_status = RQ_DRBD_NOTHING;
 
-		spin_lock_irq(&mdev->bb_lock);
+		spin_lock_irqsave(&mdev->bb_lock,flags);
 		mdev->send_block=bnr;
 		if( ds_check_block(mdev,bnr) ) {
-			bb_wait(mdev,bnr);
+			bb_wait(mdev,bnr,&flags);
 		}
-		spin_unlock_irq(&mdev->bb_lock);
+		spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-		send_ok=drbd_send_block(mdev,Data,bh,
-					(unsigned long)req);
+		send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
 		mdev->send_block=-1;
 
 		if( mdev->conf.wire_protocol==DRBD_PROT_A ||
@@ -253,7 +251,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
  remap_only:
 	mdev->read_cnt+=size_kb; 
-	bh->rdev = mdev->lo_device;
+	bh->b_rdev = mdev->lo_device;
 	return 1; // Not arranged for transfer ( but remapped :)	
 }
 
