@@ -163,21 +163,22 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	*/
 	for (i = 0; i < minor_count; i++) {
 		rlen += sprintf(buf + rlen,
-			   "%d: cs:%s st:%s/%s %c ns:%u nr:%u dw:%u dr:%u"
-			   " pe:%u ua:%u\n",
+			   "%2d: cs:%s st:%s/%s ld:%s \n"
+			   "    ns:%u nr:%u dw:%u dr:%u pe:%u ua:%u al:%u\n",
 			   i,
 			   cstate_names[drbd_conf[i].cstate],
 			   state_names[drbd_conf[i].state],
 			   state_names[drbd_conf[i].o_state],
 			   (drbd_conf[i].gen_cnt[Flags]
-			    & MDF_Consistent) ? 'C' : 'I',
+			    & MDF_Consistent) ? "Consistent" : "Inconsistent",
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,
 			   drbd_conf[i].read_cnt/2,
 			   atomic_read(&drbd_conf[i].pending_cnt),
-			   atomic_read(&drbd_conf[i].unacked_cnt)
-		);
+			   atomic_read(&drbd_conf[i].unacked_cnt),
+			   drbd_conf[i].al_writ_cnt
+				);
 
 		if ( drbd_conf[i].cstate == SyncSource ||
 		     drbd_conf[i].cstate == SyncTarget )

@@ -26,7 +26,7 @@ $(if $(wildcard /lib/modules/$(KERNVER)/kernel),\
 
 
 OBJS =  drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_dsender.o
-OBJS += drbd_req-2.4.o mempool-2.4.o
+OBJS += drbd_req-2.4.o mempool-2.4.o drbd_actlog.o
 
 ifeq ($(ARCH),sparc64)
 	KCC=sparc64-linux-gcc

@@ -337,6 +337,8 @@ struct BitMap {
 	spinlock_t bm_lock;
 };
 
+struct drbd_extent;
+
 struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
@@ -403,6 +405,12 @@ struct Drbd_Conf {
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
 	struct tq_struct write_hint_tq;
+	struct drbd_extent *al_extents;
+	int al_nr_extents;
+	struct list_head al_lru;
+	struct list_head al_free;
+	spinlock_t al_lock;
+	unsigned int al_writ_cnt;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif
@@ -746,7 +754,6 @@ static inline void drbd_set_bh(struct Drbd_Conf *mdev,
 	bh->b_rsector = sector;
 }
 
-
 #ifdef DBG_BH_SECTOR
 static inline sector_t DRBD_BH_SECTOR(struct buffer_head *bh)
 {
@@ -766,3 +773,15 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 # define DRBD_BH_SECTOR(BH) ( (BH)->b_blocknr )
 # define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
 #endif
+
+// drbd_actlog.h 
+
+struct drbd_extent {
+	struct list_head accessed;
+	struct drbd_extent *hash_next;
+	unsigned int extent_nr;
+};
+
+void drbd_al_init(struct Drbd_Conf *mdev);
+void drbd_al_free(struct Drbd_Conf *mdev);
+void drbd_al_access(struct Drbd_Conf *mdev, sector_t sector);

@@ -1143,7 +1143,13 @@ int __init drbd_init(void)
 		drbd_conf[i].write_hint_tq.sync	= 0;
 		drbd_conf[i].write_hint_tq.routine = &drbd_send_write_hint;
 		drbd_conf[i].write_hint_tq.data = drbd_conf+i;
-
+		drbd_conf[i].al_extents = 0;
+		drbd_conf[i].al_nr_extents = 0;
+		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
+		INIT_LIST_HEAD(&drbd_conf[i].al_lru);
+		INIT_LIST_HEAD(&drbd_conf[i].al_free);
+		drbd_conf[i].al_writ_cnt = 0;
+		drbd_al_init(drbd_conf+i);
 		{
 			int j;
 			for(j=0;j<=ArbitraryCnt;j++) drbd_conf[i].gen_cnt[j]=0;

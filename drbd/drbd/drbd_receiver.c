@@ -940,6 +940,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	dec_pending(mdev);
 	inc_unacked(mdev);
 
+	drbd_al_access(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
@@ -981,6 +982,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	dec_pending(mdev);
 	inc_unacked(mdev);
 
+	drbd_al_access(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
@@ -1093,6 +1095,7 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 		break;
 	}
 
+	drbd_al_access(mdev, sector);
 	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);

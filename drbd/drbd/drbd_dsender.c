@@ -246,12 +246,14 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 		set_bit(START_SYNC,&mdev->flags);
 		// FIXME do this more elegant ...
 		// for now, this ensures that meta data is "consistent"
-		if ( mdev->rs_total == 0 )
-			set_bit(SYNC_FINISHED,&mdev->flags);
+		if ( mdev->rs_total == 0 ) set_bit(SYNC_FINISHED,&mdev->flags);
 		spin_unlock_irq(&mdev->ee_lock);
 		wake_up_interruptible(&mdev->dsender_wait);
-	} else if ( mdev->rs_total == 0 )
-		set_cstate(mdev,Connected);
+	} else {
+		// If we are SyncSource we must be consistent :)
+		mdev->gen_cnt[Flags] |= MDF_Consistent;
+		if ( mdev->rs_total == 0 ) set_cstate(mdev,Connected);
+	}
 }
 
 int drbd_dsender(struct Drbd_thread *thi)

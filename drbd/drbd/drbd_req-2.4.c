@@ -253,6 +253,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt+=bh->b_size>>9;
 
+		drbd_al_access(mdev, bh->b_rsector);
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
@@ -262,6 +263,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
 		drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 
+		drbd_al_access(mdev, bh->b_rsector);
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
 	}
@@ -321,6 +323,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
+
+	drbd_al_access(mdev, nbh->b_rsector);
 
 	nbh->b_end_io = drbd_dio_end;
 	generic_make_request(rw,nbh);
