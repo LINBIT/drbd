@@ -1082,6 +1082,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		set_blocksize(drbd_conf[minor].lo_device, new_blksize);
 		drbd_conf[minor].blk_size_b = drbd_log2(new_blksize);
 
+		/* TODO: Send only if connected! */
 		if (drbd_conf[minor].state == Primary)
 			if (drbd_send_param(minor, BlkSizeChanged) < 0)
 				printk(KERN_ERR DEVICE_NAME
