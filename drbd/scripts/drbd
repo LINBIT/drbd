@@ -49,7 +49,7 @@ case "$1" in
 				exit 1
 			fi
 		else
-			succed "DRBD module is already aded"
+			succed "DRBD module is already inserted"
 		fi
 
 		if [ -z "$RESOURCE" ]; then
