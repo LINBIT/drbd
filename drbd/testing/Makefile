@@ -1,16 +1,7 @@
-all: show_size # acmp receiver sender writetest
+PROGRAMS=show_size  access_and_verify
+CFLAGS=-g -Wall
 
-show_size: show_size.c
-	gcc -o show_size show_size.c
-
-#writetest: writetest.c
-#	gcc -g -o writetest writetest.c
-
-#receiver: receiver.c
-#	gcc -g -o receiver receiver.c
-
-#sender: sender.c
-#	gcc -g -o sender sender.c
+all: $(PROGRAMS)
 
 clean: 
-	rm -f show_size
+	rm -f $(PROGRAMS)
