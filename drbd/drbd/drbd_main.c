@@ -1000,7 +1000,7 @@ int __init drbd_init(void)
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		drbd_conf[i].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		drbd_sizes[i] = 0;
-		set_device_ro(MKDEV(MAJOR_NR, i), FALSE /*TRUE */ );
+		set_device_ro(MKDEV(MAJOR_NR, i), TRUE );
 		drbd_conf[i].do_panic = 0;
 		drbd_conf[i].sock = 0;
 		drbd_conf[i].msock = 0;

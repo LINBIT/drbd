@@ -5,11 +5,14 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2002, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Some sanity checks in IOCTL_SET_STATE.
+
+   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
+        drbd_is_mounted_rw() for IOCTL_SET_STATE.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -247,6 +250,22 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 }
 
 
+/*static */int drbd_is_mounted_rw(int minor)
+{
+       struct super_block *sb;
+       
+       sb = get_super(MKDEV(MAJOR_NR, minor));
+       if(!sb) return FALSE;
+
+       if(sb->s_flags & MS_RDONLY) {
+	       drop_super(sb);
+               return FALSE;
+       }
+
+       drop_super(sb);
+       return TRUE;
+}
+
 int drbd_set_state(int minor,Drbd_State newstate)
 {
 	if(newstate == drbd_conf[minor].state) return 0; /* nothing to do */
@@ -255,8 +274,9 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	    || drbd_conf[minor].cstate == SyncingQuick)
 		return -EINPROGRESS;
 
-	if(test_bit(WRITER_PRESENT, &drbd_conf[minor].flags)
-	   && newstate == Secondary)
+	if(newstate == Secondary && 
+	   (test_bit(WRITER_PRESENT, &drbd_conf[minor].flags) || 
+	    drbd_is_mounted_rw(minor))) 
 		return -EBUSY;
 			
 	fsync_dev(MKDEV(MAJOR_NR, minor));
@@ -299,8 +319,11 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	drbd_conf[minor].state = (Drbd_State) newstate & 0x03;
 	if(newstate == PRIMARY_PLUS) drbd_md_inc(minor,HumanCnt);
 	if(newstate == Primary) {
+		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
 		drbd_md_inc(minor, drbd_conf[minor].cstate >= Connected ? 
 			    ConnectedCnt : ArbitraryCnt);
+	} else {
+		set_device_ro(MKDEV(MAJOR_NR, minor), TRUE );
 	}
 	drbd_md_write(minor); /* Primary indicator has changed in any case. */
 
