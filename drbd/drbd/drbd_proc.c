@@ -121,7 +121,7 @@ struct request *my_all_requests = NULL;
 		rlen = 
 		    rlen + sprintf(buf + rlen,
 				   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
-				   " gc:%u,%u,%u\n",
+				   " pe:%u ua:%u\n",
 				   i,
 				   cstate_names[drbd_conf[i].cstate],
 				   state_names[drbd_conf[i].state],
@@ -130,10 +130,8 @@ struct request *my_all_requests = NULL;
 				   drbd_conf[i].recv_cnt,
 				   drbd_conf[i].writ_cnt,
 				   drbd_conf[i].read_cnt,
-				   /*  drbd_conf[i].pending_cnt, */
-				   drbd_conf[i].gen_cnt[1],
-				   drbd_conf[i].gen_cnt[2],
-				   drbd_conf[i].gen_cnt[3]);
+				   drbd_conf[i].pending_cnt,
+				   drbd_conf[i].unacked_cnt);
 				   
 
 	}
