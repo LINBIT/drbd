@@ -74,7 +74,7 @@ static __inline__ int find_first_bit(const unsigned long *addr, unsigned size)
                 "shll $3,%%edi\n\t"
                 "addl %%edi,%%eax"
                 :"=a" (res), "=&c" (d0), "=&D" (d1)
-                :"1" ((size + 31) >> 5), "2" (addr), "b" (addr));
+                :"1" ((size + 31) >> 5), "2" (addr), "b" (addr) : "memory");
         return res;
 }
 
