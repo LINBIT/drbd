@@ -73,9 +73,8 @@ inline void dec_unacked(struct Drbd_Conf* mdev)
 inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
-#define PARANOIA
-#ifdef PARANOIA 
-	/* Use this code if you are working with a VIA based moard :) */
+#if 0
+	/* Use this code if you are working with a VIA based mboard :) */
 	if ( (long)block_id == (long)-1) {
 		printk(KERN_ERR DEVICE_NAME 
 		       "%d: strange block_id %lx%lx\n",(int)(mdev-drbd_conf),
@@ -831,8 +830,6 @@ void drbdd(int minor)
 	int i;
 
 	while (TRUE) {
-		drbd_collect_zombies(minor);
-
 		if (drbd_recv(&drbd_conf[minor],&header,sizeof(Drbd_Packet),0)
 		    != sizeof(Drbd_Packet)) 
 			break;
