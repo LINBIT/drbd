@@ -153,7 +153,7 @@ int drbd_log2(int i)
 
 /************************* The transfer log start */
 #define TL_BARRIER    0
-#define TL_EMPTY      ((drbd_request_t *)(-1))
+#define TL_FINISHED   ((drbd_request_t *)(-1))
 /* spinlock readme:
    tl_dependence() only needs a read-lock and is called from interrupt time.
    See Documentation/spinlocks.txt why this is valid.
@@ -162,15 +162,15 @@ int drbd_log2(int i)
 #if 0
 void print_tl(struct Drbd_Conf *mdev)
 {
-	drbd_request_t** p=mdev->tl_begin;
+	struct tl_entry* p=mdev->tl_begin;
 
 	printk(KERN_ERR "TransferLog (oldest entry first):\n");
 
 	while( p != mdev->tl_end ) {
-		if(*p == TL_BARRIER)
+		if(p->req == TL_BARRIER)
 			printk(KERN_ERR "BARRIER \n");
 		else
-			printk(KERN_ERR "Sector %ld.\n",GET_SECTOR(*p));
+			printk(KERN_ERR "Sector %ld.\n",p->sector);
 		
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size) 
@@ -192,7 +192,8 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	  /*printk(KERN_ERR DEVICE_NAME "%d: tl_add(%ld)\n",
 	    (int)(mdev-drbd_conf),new_item->sector);*/
 
-	*mdev->tl_end = new_item;
+	mdev->tl_end->req = new_item;
+	mdev->tl_end->sector = GET_SECTOR(new_item);
 
 	mdev->tl_end++;
 
@@ -221,11 +222,11 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 
 
 	{
-		drbd_request_t** p=mdev->tl_end;
+		struct tl_entry* p=mdev->tl_end;
 		while( p != mdev->tl_begin ) {
 
-			if(*p == TL_BARRIER || *p == TL_EMPTY ) break;
-			if(GET_SECTOR(*p) == GET_SECTOR(new_item)) {
+			if(p->req==TL_BARRIER || p->req==TL_FINISHED) break;
+			if(p->sector == GET_SECTOR(new_item)) {
 				printk(KERN_CRIT DEVICE_NAME 
 				       "%d: Sector %ld is already in !!\n",
 				       (int)(mdev-drbd_conf),
@@ -247,13 +248,16 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 {
 	unsigned long flags;
 	unsigned int bnr;
+	static int barrier_nr_issue=1;
 
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	/*printk(KERN_DEBUG DEVICE_NAME "%d: tl_add(TL_BARRIER)\n",
 	  (int)(mdev-drbd_conf));*/
 
-	*mdev->tl_end = TL_BARRIER;
+	bnr=barrier_nr_issue++; 
+	mdev->tl_end->req = TL_BARRIER;
+	mdev->tl_end->sector = bnr;
 
 	mdev->tl_end++;
 
@@ -264,7 +268,6 @@ inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!!\n",
 		       (int)(mdev-drbd_conf));
 
-	bnr=mdev->barrier_nr_issue++; 
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
 	return bnr;
@@ -279,7 +282,7 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": tl_release(%u)\n",barrier_nr); */
 
-	if (*mdev->tl_begin == TL_BARRIER) epoch_size--;
+	if (mdev->tl_begin->req == TL_BARRIER) epoch_size--;
 
 	do {
 		mdev->tl_begin++;
@@ -291,14 +294,12 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 			printk(KERN_ERR DEVICE_NAME "%d: tl messed up!\n",
 			       (int)(mdev-drbd_conf));
 		epoch_size++;
-	} while (*mdev->tl_begin != TL_BARRIER);
+	} while (mdev->tl_begin->req != TL_BARRIER);
 
-	if(mdev->barrier_nr_done != barrier_nr) //CHK
+	if(mdev->tl_begin->sector != barrier_nr) //CHK
 		printk(KERN_ERR DEVICE_NAME "%d: invalid barrier number!!"
 		       "found=%u, reported=%u\n",(int)(mdev-drbd_conf),
-		       (unsigned int)mdev->barrier_nr_done,barrier_nr);
-
-	mdev->barrier_nr_done++;
+		       (unsigned int)mdev->tl_begin->sector,barrier_nr);
 
 	if(epoch_size != set_size) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: Epoch set size wrong!!"
@@ -319,10 +320,15 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
    was present in the transfert log. (Since tl_dependence indicates
    that IO is complete and that drbd_end_req() should not be called
    in case tl_clear has to be called due to interruption of the 
-   communication) */
+   communication) 
+   BUG: I need to make shure that the bit in the bitmap gets set, therefore
+        I need to have some way of knowing the sectornumber/blocknr at 
+        the time tl_clear is called.
+	Should be fixed. Test it.
+*/
 int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
-	drbd_request_t** p;
+	struct tl_entry* p;
 	int r=TRUE;
 
 	read_lock(&mdev->tl_lock);
@@ -335,9 +341,9 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 			if ( p==mdev->tl_begin ) {r=FALSE; break;}
 		}
 		p--;
-		if ( *p == TL_BARRIER) r=FALSE;
-		if ( *p == item) {
-			*p=TL_EMPTY;
+		if ( p->req == TL_BARRIER) r=FALSE;
+		if ( p->req == item) {
+			p->req=TL_FINISHED;
 			break;
 		}
 	}
@@ -348,23 +354,24 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 
 void tl_clear(struct Drbd_Conf *mdev)
 {
-	drbd_request_t** p = mdev->tl_begin;
-	int end = mdev->conf.wire_protocol == DRBD_PROT_B || 
-		  mdev->conf.wire_protocol == DRBD_PROT_C;
+	struct tl_entry* p = mdev->tl_begin;
 	unsigned long flags;
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
 	while(p != mdev->tl_end) {
-	        if(*p != TL_BARRIER && *p != TL_EMPTY ) {
-	                bm_set_bit(mdev->mbds_id,
-				   GET_SECTOR(*p) >> (mdev->blk_size_b-9),
-				   mdev->blk_size_b, SS_OUT_OF_SYNC);
-			if(end && ((*p)->rq_status&0xfffe) != RQ_DRBD_SENT) {
-				drbd_end_req(*p,RQ_DRBD_SENT,1);
+	        if(p->req != TL_BARRIER) { 
+			if(p->req != TL_FINISHED && 
+			   ((p->req->rq_status & 0xfffe) != RQ_DRBD_SENT)) {
+				drbd_end_req(p->req,RQ_DRBD_SENT,1);
 				dec_pending(mdev);
 			}
-		}
-		//if(*p == TL_BARRIER) dec_pending(mdev);
+		  
+			if(mdev->conf.wire_protocol != DRBD_PROT_C) {
+				bm_set_bit(mdev->mbds_id, 
+					   p->sector >> (mdev->blk_size_b-9),
+					   mdev->blk_size_b, SS_OUT_OF_SYNC);
+			}
+		} else dec_pending(mdev);
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
 		        p = mdev->transfer_log;	    
@@ -373,19 +380,35 @@ void tl_clear(struct Drbd_Conf *mdev)
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }     
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14) 
+// Check when daemonize was introduced.
+void daemonize(void)
+{
+        struct fs_struct *fs;
+
+        exit_mm(current);
+
+        current->session = 1;
+        current->pgrp = 1;
+        current->tty = NULL;
+
+        exit_fs(current);       /* current->fs->count--; */
+        fs = init_task.fs;
+        current->fs = fs;
+        atomic_inc(&fs->count);
+        exit_files(current);
+        current->files = init_task.files;
+        atomic_inc(&current->files->count);
+}
+#endif
+
+
 int drbd_thread_setup(void* arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int retval;
 
-	//TODO: check if we can use daemonize() ??
-
-	lock_kernel();
-	exit_mm(current);	/* give up UL-memory context */
-	exit_files(current);	/* give up open filedescriptors */
-
-	current->session = 1;
-	current->pgrp = 1;
+	daemonize();
 
 	down(&thi->mutex); //ensures that thi->task is set.
 
@@ -632,7 +655,14 @@ static void drbd_timeout(unsigned long arg)
 		drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
 		if(ti->counter++ > 10) {
 			for(i=0;i<minor_count;i++) {
-				if( ti->task == drbd_conf[i].asender.task ) {
+/* Further improvement:
+   This case happens (receiver/asender blocked in send via (data) socket,
+   set a bit in the ping packet that signals this state to the other side.
+   Only if both sides are in this state a distributed deadlock is 
+   established.
+*/
+				if( ti->task == drbd_conf[i].receiver.task ||
+				    ti->task == drbd_conf[i].asender.task ) {
 					printk(KERN_ERR DEVICE_NAME
 					       "%d: Distributed deadlock!\n",
 					       (int)(ti->mdev-drbd_conf));

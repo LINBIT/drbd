@@ -175,8 +175,8 @@ struct Drbd_thread {
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 struct drbd_request_struct {
-	struct buffer_head* bh; /* bh waiting for io_completion */
-	int rq_status;
+        struct buffer_head* bh; /* bh waiting for io_completion */
+        int rq_status;
 };
 
 typedef struct drbd_request_struct drbd_request_t;
@@ -186,6 +186,10 @@ typedef struct request drbd_request_t;
 #define GET_SECTOR(A) ((A)->sector)
 #endif
 
+struct tl_entry {
+        drbd_request_t* req;
+        unsigned long sector;
+};
 
 /* These Tl_epoch_entries may be in one of 4 lists:
    free_ee .... free entries
@@ -239,11 +243,9 @@ struct Drbd_Conf {
 	atomic_t unacked_cnt;
 	spinlock_t req_lock;
 	rwlock_t tl_lock;
-	drbd_request_t** tl_end;
-	drbd_request_t** tl_begin;
-	drbd_request_t** transfer_log;
-	unsigned int barrier_nr_issue;
-	unsigned int barrier_nr_done;
+	struct tl_entry* tl_end;
+	struct tl_entry* tl_begin;
+	struct tl_entry* transfer_log;
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
 	struct semaphore send_mutex;
@@ -354,8 +356,6 @@ static inline void tl_init(struct Drbd_Conf *mdev)
 {
 	mdev->tl_begin = mdev->transfer_log;
 	mdev->tl_end = mdev->transfer_log;
-	mdev->barrier_nr_issue=1;
-	mdev->barrier_nr_done=1;
 }
 
 static inline void inc_pending(struct Drbd_Conf* mdev)

@@ -740,7 +740,6 @@ inline int receive_param(int minor,int command)
 		return FALSE;
 	}
 
-	drbd_conf[minor].o_state = be32_to_cpu(param.state);
 
 	blk_size[MAJOR_NR][minor] =
 		min_t(int,blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
@@ -815,6 +814,10 @@ inline int receive_param(int minor,int command)
 			}
 		} else set_cstate(&drbd_conf[minor],Connected);
 	}
+
+	drbd_conf[minor].o_state = be32_to_cpu(param.state);
+	// BUG: move this down, after set_cstate() ??
+	// Should be fixed now.
 
 	if (drbd_conf[minor].state == Secondary) {
 		/* Secondary has to adopt primary's gen_cnt. */
