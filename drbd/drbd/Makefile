@@ -84,7 +84,7 @@ else
 
   .PHONY: drbd.o default all greeting clean kbuild install dep
 
-  drbd.o: kbuild
+  drbd.o: greeting dep kbuild
   default: drbd.o
   all:     drbd.o
 
@@ -105,11 +105,11 @@ else
 	echo "    NOTE: please ignore warnings regarding overriding of SUBDIRS" ;\
 	echo ""
 
-  kbuild: greeting
+  kbuild:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) $(ARCH_UM) modules
 
   # obsolete in 2.6 ...
-  dep: greeting
+  dep:
 	@echo "make dep ..."
 	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(PWD) $(ARCH_UM) dep
 	@echo "done."
