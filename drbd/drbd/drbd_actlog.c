@@ -440,7 +440,7 @@ static inline int _try_lc_del(struct Drbd_Conf *mdev,struct lc_element *al_ext)
 	if(likely(rv)) lc_del(mdev->act_log,al_ext);
 	spin_unlock_irq(&mdev->al_lock);
 
-	if(unlikely(!rv) INFO("Waiting for extent in drbd_al_shrink()\n");
+	if(unlikely(!rv)) INFO("Waiting for extent in drbd_al_shrink()\n");
 
 	return rv;
 }

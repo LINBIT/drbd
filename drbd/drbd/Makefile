@@ -32,14 +32,14 @@ ifneq ($(KERNELRELEASE),)
     $(error "won't compile with this kernel version")
   endif
 
-  # Super stupid anti "-1um" hack. See  ~linux/arch/um/Makefile
-  KERNELRELEASE := $(shell echo $(KERNELRELEASE) | sed s/-1um// )
-
   # linux 2.6 style:
   obj-m     += drbd.o
   drbd-objs := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
                drbd_receiver.o drbd_req-2.4.o drbd_actlog.o \
 	       lru_cache.o
+
+  # remember KERNELRELEASE for install target
+  $(shell echo $(KERNELRELEASE) > $(DRBDSRC)/.kernelrelease.new )
 
   # rest is magic for KERNEL_VERSION < 2.6
   ifneq ($(findstring $(PATCHLEVEL),24),)
@@ -58,10 +58,7 @@ ifneq ($(KERNELRELEASE),)
     endif
 
     drbd.o: $(drbd-objs)
-	# remember KERNELRELEASE for install target
-	echo $(KERNELRELEASE) > .kernelrelease
 	$(LD) -r -o $@ $(drbd-objs)
-
 
   else
   ifneq ($(PATCHLEVEL),6)
@@ -71,7 +68,8 @@ ifneq ($(KERNELRELEASE),)
   endif
 else
   # called from command line in current directory
-  PWD  := $(shell pwd)
+  DRBDSRC := $(shell pwd)
+  export DRBDSRC
   # to be overridden on command line:
   PREFIX := /
   ifeq ($(wildcard ../build-for-uml),../build-for-uml)
@@ -89,8 +87,12 @@ else
   all:     drbd.o
 
   # for the install target. (also works if kernel source is not there)
-  KERNELRELEASE := $(shell test -r .kernelrelease && \
-                           sed 's/-1um//' < .kernelrelease)
+  # stupid anti "-1um" hack. See  ~linux/arch/um/Makefile
+  #KERNELRELEASE := $(shell test -r .kernelrelease && \
+  #                         sed 's/-1um//' < .kernelrelease)
+  # Nowadays UML got is consistent. the anit "-1um" hack is no longer needed.
+  KERNELRELEASE := $(shell test -r .kernelrelease && cat .kernelrelease)
+
   MODSUBDIR := $(strip \
     $(if $(wildcard /lib/modules/$(KERNELRELEASE)/kernel),\
          kernel/drivers/block,\
@@ -106,12 +108,14 @@ else
 	echo ""
 
   kbuild:
-	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) $(ARCH_UM) modules
+	@rm -f .kernelrelease*
+	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+	@mv .kernelrelease.new .kernelrelease
 
   # obsolete in 2.6 ...
   dep:
 	@echo "make dep ..."
-	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(PWD) $(ARCH_UM) dep
+	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) dep
 	@echo "done."
 
   clean:
@@ -119,7 +123,8 @@ else
 
   distclean: clean
 
-  install:
+  ifeq ($(PATCHLEVEL),4)
+    install:
 	@if ! [ -e drbd.o ] ; then \
 	  echo "No drbd.o: nothing to install??"; false ; \
 	fi
@@ -127,11 +132,18 @@ else
 	install -d $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -d $(PREFIX)var/lib/drbd
-  ifeq ($(shell uname -r),$(KERNELRELEASE))
+    ifeq ($(shell uname -r),$(KERNELRELEASE))
 	/sbin/depmod -a || depmod -e drbd.o 2>&1 >/dev/null || true
-  else
+    else
 	[ -e $(LINUX)/System.map ] && \
 	   /sbin/depmod -F $(LINUX)/System.map -e ./drbd.o 2>&1 >/dev/null || true
+    endif
+  else
+    install:
+	@if ! [ -e drbd.ko ] ; then \
+	  echo "No drbd.ko: nothing to install??"; false ; \
+	fi
+	@echo "TODO install drbd.ko"
   endif
 
   depmod:
