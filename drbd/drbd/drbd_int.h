@@ -543,7 +543,6 @@ struct Tl_epoch_entry {
 // bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
-// #define ISSUE_IO_HINT      1		is now drbd_queue_work'ed
 #define SEND_PING          2
 #define WRITER_PRESENT     3
 #define STOP_SYNC_TIMER    4

@@ -338,9 +338,6 @@ ONLY_IN_26({
 		bm_fill_bm(mdev->mbds_id,-1);
 		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 		drbd_write_bm(mdev);
-
-/* FIXME whipeout on disk activity log area */
-
 	}
 
 	if ( !mdev->act_log ||

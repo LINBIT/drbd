@@ -41,15 +41,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct buffer_head bh;
 	struct completion event;
 
-	/* just to play safe: fill it with zeroes. if you want to, you
-	 * could define it away based on "PARANOIA" or something. */
+#ifdef PARANOIA
 	if (rw != WRITE) {
-		/* most often this is already mapped, so don't worry
-		 * about performance loss */
 		void *b = kmap(mdev->md_io_page);
 		memset(b,0,PAGE_SIZE);
 		kunmap(mdev->md_io_page);
 	}
+#endif
 	init_completion(&event);
 	init_buffer(&bh, drbd_md_io_complete, &event);
 	bh.b_rdev = mdev->md_bdev;
@@ -73,15 +71,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct bio_vec vec;
 	struct completion event;
 
-	/* just to play safe: fill it with zeroes. if you want to, you
-	 * could define it away based on "PARANOIA" or something. */
+#ifdef PARANOIA
 	if (rw != WRITE) {
-		/* most often this is already mapped, so don't worry
-		 * about performance loss */
 		void *b = kmap(mdev->md_io_page);
 		memset(b,0,PAGE_SIZE);
 		kunmap(mdev->md_io_page);
 	}
+#endif
 	bio_init(&bio);
 	bio.bi_io_vec = &vec;
 	vec.bv_page = mdev->md_io_page;
@@ -224,11 +220,6 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
 }
 
-/*
-
-FIXME md_io might fail unnoticed!
-
-*/
 STATIC void
 drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 			  unsigned int new_enr)
@@ -279,8 +270,10 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
 
-	/* FIXME what if this fails ?? */
-	drbd_md_sync_page_io(mdev,sector,WRITE);
+	if(!drbd_md_sync_page_io(mdev,sector,WRITE)) {
+		drbd_chk_io_error(mdev, 1);
+		drbd_io_error(mdev);
+	}
 
 	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
@@ -290,11 +283,6 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 	up(&mdev->md_io_mutex);
 }
 
-/*
-
-FIXME md_io might fail unnoticed!
-
-*/
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 			   struct al_transaction* b,
 			   int index)
@@ -305,8 +293,11 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + index;
 
-	/* FIXME what if this fails ?? */
-	drbd_md_sync_page_io(mdev,sector,READ);
+	if(!drbd_md_sync_page_io(mdev,sector,READ)) {
+		drbd_chk_io_error(mdev, 1);
+		drbd_io_error(mdev);
+		return 0;
+	}
 
 	rv = ( be32_to_cpu(b->magic) == DRBD_MAGIC );
 
@@ -520,9 +511,6 @@ void drbd_al_shrink(struct Drbd_Conf *mdev)
 
 /**
  * drbd_read_bm: Read the whole bitmap from its on disk location.
-
-FIXME md_io might fail unnoticed!
-
  */
 void drbd_read_bm(struct Drbd_Conf *mdev)
 {
@@ -546,8 +534,12 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		sector = drbd_md_ss(mdev) + MD_BM_OFFSET + so;
 		so++;
 
-		/* FIXME what if this fails ?? */
-		drbd_md_sync_page_io(mdev,sector,READ);
+		if(!drbd_md_sync_page_io(mdev,sector,READ)) {
+			drbd_chk_io_error(mdev, 1);
+			drbd_io_error(mdev);
+			break;
+			//return 0; // FIXME error propagation...
+		}
 
 		for(buf_i=0;buf_i<want;buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]);
@@ -574,9 +566,6 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
  *       ATTENTION: Based on AL_EXTENT_SIZE, although the chunk
  *                  we write might represent more storage. 
  *                  ( actually AL_EXTENT_SIZE*EXTENTS_PER_SECTOR )
-
-FIXME md_io might fail unnoticed!
-
  */
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 {
@@ -610,8 +599,10 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 
 	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 
-	/* FIXME what if this fails ?? */
-	drbd_md_sync_page_io(mdev,sector,WRITE);
+	if(!drbd_md_sync_page_io(mdev,sector,WRITE)) {
+		drbd_chk_io_error(mdev, 1);
+		drbd_io_error(mdev);
+	}
 	up(&mdev->md_io_mutex);
 
 	mdev->bm_writ_cnt++;
