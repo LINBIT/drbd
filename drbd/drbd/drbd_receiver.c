@@ -324,8 +324,8 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	while( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
 		interruptible_sleep_on(&mdev->ee_wait);
-		if(signal_pending(current)) return 2;
 		spin_lock_irq(&mdev->ee_lock);
+		if(signal_pending(current)) return 2;
 	}
 
 	while(!list_empty(head)) {
