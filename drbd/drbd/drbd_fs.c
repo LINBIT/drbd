@@ -886,6 +886,10 @@ ONLY_IN_26(
 		goto out_unlocked;
 
 	case DRBD_IOCTL_INVALIDATE:
+		/* TODO
+		 * differentiate between different error cases,
+		 * or report the current connection state and flags back
+		 * to userspace */
 		if( mdev->cstate != Connected ||
 		    test_bit(DISKLESS,&mdev->flags) || 
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {

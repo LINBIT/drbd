@@ -496,7 +496,6 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	} else {
 		spin_unlock(&thi->t_lock);
 	}
-
 }
 
 
@@ -616,10 +615,10 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	restore_old_sigset(old_blocked);
 
 	if (sock == mdev->data.socket) {
-		up(&mdev->data.mutex);
 		spin_lock(&mdev->send_task_lock);
 		mdev->send_task=NULL;
 		spin_unlock(&mdev->send_task_lock);
+		up(&mdev->data.mutex);
 	} else
 		up(&mdev->meta.mutex);
 	return ok;

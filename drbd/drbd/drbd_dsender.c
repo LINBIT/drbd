@@ -800,7 +800,7 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 
 	INFO("Resync started as %s (need to sync %lu KB).\n",
 	     side == SyncTarget ? "target" : "source", 
-	     (unsigned long) mdev->rs_left>>1);
+	     (unsigned long) (mdev->rs_left+1)>>1);
 
 	/* no longer true since we queue the write hints here, too
 	  PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));

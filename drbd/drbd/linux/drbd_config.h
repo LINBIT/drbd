@@ -20,7 +20,7 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre7"
+#define REL_VERSION "0.7-pre7+cvs"
 #define API_VERSION 72
 #define PRO_VERSION 72
 

@@ -549,7 +549,7 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		bm_end_of_dev_case(mdev->mbds_id);
 
 	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
-	     (unsigned long) mdev->rs_total>>1);
+	     (unsigned long) (mdev->rs_total+1)>>1);
 }
 
 /**

@@ -502,8 +502,7 @@ static inline Drbd_thread_state get_t_state(struct Drbd_thread *thi)
  * Having this as the first member of a struct provides sort of "inheritance".
  * "derived" structs can be "drbd_queue_work()"ed.
  * The callback should know and cast back to the descendant struct.
- * drbd_request, Pending_read and Tl_epoch_entry are descendants of drbd_work.
- * Pending_read will soon be merged into drbd_request, stay tuned ... -lge
+ * drbd_request and Tl_epoch_entry are descendants of drbd_work.
  */
 struct drbd_work;
 typedef int (*drbd_work_cb)(drbd_dev*, struct drbd_work*, int cancel);
