@@ -991,6 +991,8 @@ int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
 
+	dec_pending(mdev);
+
 	return TRUE;
 }
 

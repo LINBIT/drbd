@@ -139,9 +139,9 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	spin_lock(&mdev->pr_lock);
 	list_add(&pr->list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
+	inc_pending(mdev);
 	drbd_send_drequest(mdev,DataRequest, bh->b_rsector, bh->b_size,
 			   (unsigned long)pr);
-	inc_pending(mdev);
 }
 
 
@@ -194,10 +194,10 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			req->rq_status = RQ_DRBD_WRITTEN | 1;
 			req->bh=bh;
 
-			drbd_send_dblock(mdev,bh,(unsigned long)req);
 			if(mdev->conf.wire_protocol!=DRBD_PROT_A) {
 				inc_pending(mdev);
 			}
+			drbd_send_dblock(mdev,bh,(unsigned long)req);
 		} else { // rw == READ || rw == READA
 			drbd_issue_drequest(mdev,bh);
 		}
