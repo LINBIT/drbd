@@ -1,8 +1,9 @@
 Latest:
 ------
- Last updated 2004-08-22.
+ ChangeLog last updated:
+  $LastChangedRevision$ $LastChangedDate$
  Cumulative changes since last tarball.
- For even more detail, use "svn log".
+ For even more detail, use "svn log" and "svn diff".
 
  * prevent possible in-kernel buffer overflow in drbd_proc.c
  * Fixed debian's postinst script to create /dev/drbd? instead of /dev/nb?
