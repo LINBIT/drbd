@@ -22,6 +22,8 @@
 
  */
 
+typedef unsigned long long u64;
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -30,12 +32,12 @@
 #include <stdlib.h>
 #include <linux/fs.h>
 
-
 int main(int argc, char** argv)
 {
   int fd,err;
   struct stat drbd_stat;
-  long size;
+  u64 size64=0;
+  long size=0;
 
   if(argc != 2) 
     {
@@ -68,7 +70,18 @@ int main(int argc, char** argv)
       perror("ioctl() failed");
     }
   
-  printf("Device size: %ld KB (%ld MB)\n",size/2,size/2048);
+  printf("BLKGETSIZE: %ld sectors: %ld KB   %ld MB  %ld GB\n",
+	 size, size/2,size/2048,size/2097152);
+
+  err=ioctl(fd,BLKGETSIZE64,&size64);
+  if(err)
+    {
+      perror("ioctl() failed");
+    }
+  
+  printf("BLKGETSIZE64: %llu byte: %llu KB   %llu MB  %llu GB  %llu TB \n",
+	 size64,size64/(1U<<10),size64/(1LU<<20),size64/(1LLU<<30),
+	 size64/(1LLU<<40));
 
   return 0;
 }

@@ -962,7 +962,7 @@ struct bm_extent {
  */
 
 #define DRBD_MAX_SECTORS \
-          ( (MD_RESERVED_SIZE*2 - MD_BM_OFFSET) * (1<<(BM_EXT_SIZE_B-9)) )
+          ( (MD_RESERVED_SIZE*2LL - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
 
 extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);

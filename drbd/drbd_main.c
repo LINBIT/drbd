@@ -1706,6 +1706,7 @@ int __init drbd_init(void)
 	SZO(Drbd_Data_Packet);
 	SZO(Drbd_BlockAck_Packet);
 	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);
+	printk(KERN_ERR "DRBD_MAX_SECTORS = %llu\n",DRBD_MAX_SECTORS);
 	return -EBUSY;
 #endif
 
