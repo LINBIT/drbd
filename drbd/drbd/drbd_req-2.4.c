@@ -97,8 +97,9 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		wake_asender(mdev);
 }
 
-void drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
+int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 {
+	int rv;
 	drbd_bio_t *bio = req->master_bio;
 
 	spin_lock(&mdev->pr_lock);
@@ -106,12 +107,13 @@ void drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	spin_unlock(&mdev->pr_lock);
 	inc_ap_pending(mdev);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
-			   (unsigned long)req);
+	rv=drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
+			      (unsigned long)req);
 #else
-	drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
-			   (unsigned long)req);
+	rv=drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
+			      (unsigned long)req);
 #endif
+	return rv;
 }
 
 

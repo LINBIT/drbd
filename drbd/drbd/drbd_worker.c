@@ -346,31 +346,35 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 }
 #endif
 
-int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w)
+int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
 	drbd_request_t *req = (drbd_request_t*)w;
+	int ok;
 
-	if ( mdev->cstate <= Connected ||
+	if ( cancel || 
+	     mdev->cstate <= Connected ||
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 		ERR("WE ARE LOST. Local IO failure, no peer.\n");
 		drbd_bio_endio(req->master_bio,0);
+		mempool_free(req,drbd_request_mempool);
 		// TODO: Do something like panic() or shut_down_cluster().
 		return 1;
 	}
 
 	// FIXME: what if partner was SyncTarget, and is out of sync for
 	// this area ?? ... should be handled in the receiver.
-	drbd_read_remote(mdev,req);
-	return 1;
+	ok = drbd_read_remote(mdev,req);
+	if(unlikely(!ok)) ERR("drbd_read_remote() failed\n");
+	return ok;
 }
 
-int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
+int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	ERR("resync inactive, but callback triggered??\n");
 	return 0;
 }
 
-int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w)
+int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
 	return 0;
@@ -379,7 +383,7 @@ int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w)
 /* in case we need it. currently unused,
  * since should be assigned to "w_read_retry_remote"
  */
-int w_is_app_read(drbd_dev *mdev, struct drbd_work *w)
+int w_is_app_read(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
 	return 0;
@@ -396,14 +400,15 @@ void resync_timer_fn(unsigned long data)
 	}
 }
 
-int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
+int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
 	sector_t sector;
 	int number,i,size;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
-	if(mdev->cstate < Connected ) return 1; // connection was lost...
+	if(unlikely(cancel)) return 1;
+	if(unlikely(mdev->cstate < Connected)) return 0;
 
 	D_ASSERT(mdev->cstate == SyncTarget);
 
@@ -454,12 +459,11 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 	return 1;
 }
 
-int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
+int drbd_resync_finished(drbd_dev* mdev)
 {
 	unsigned long dt;
 	sector_t n;
 
-	PARANOIA_BUG_ON(w != &mdev->resync_work);
 	D_ASSERT(mdev->rs_left == 0);
 
 	dt = (jiffies - mdev->rs_start) / HZ + 1;
@@ -482,10 +486,17 @@ int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
 	return 1;
 }
 
-int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
+int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
+
+	if(unlikely(cancel)) {
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return 1;
+	}
 
 	if(likely(drbd_bio_uptodate(&e->private_bio))) {
 		ok=drbd_send_block(mdev, DataReply, e);
@@ -505,10 +516,17 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 	return ok;
 }
 
-int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
+int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
+
+	if(unlikely(cancel)) {
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return 1;
+	}
 
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 
@@ -617,7 +635,7 @@ STATIC int _drbd_lower_sg_running(drbd_dev *mdev)
 	return rv;
 }
 
-int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w)
+int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 {
 	drbd_dev *odev;
 	int i,ng=10000;
@@ -688,8 +706,7 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	PARANOIA_BUG_ON(mdev->resync_work.cb != w_resync_inactive);
 
 	if ( mdev->rs_left == 0 ) {
-		mdev->resync_work.cb = w_resync_finished;
-		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		drbd_resync_finished(mdev);
 		return;
 	}
 
@@ -716,7 +733,7 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 int drbd_worker(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
-	struct drbd_work *w;
+	struct drbd_work *w = 0;
 	int intr;
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
@@ -740,7 +757,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		if (need_resched())
 			schedule();
 
-		w = NULL;
+		w = 0;
 		spin_lock_irq(&mdev->req_lock);
 		if (!list_empty(&mdev->data.work.q)) {
 			w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
@@ -748,14 +765,27 @@ int drbd_worker(struct Drbd_thread *thi)
 		}
 		spin_unlock_irq(&mdev->req_lock);
 
-		ERR_IF (!w)
-			continue; // BUG()... racy up() somewhere ??
-
-		ERR_IF ( !w->cb(mdev,w) )
-			break;
+		if(!w->cb(mdev,w,0)) goto err;
 	}
 
-	del_timer_sync(&mdev->resync_timer); // just in case... 
+	if(0) {
+	err:
+		drbd_thread_restart_nowait(&mdev->receiver);
+	}
+
+	while(!down_trylock(&mdev->data.work.s)) {
+		spin_lock_irq(&mdev->req_lock);
+		if (!list_empty(&mdev->data.work.q)) {
+			w = list_entry(mdev->data.work.q.next,
+				       struct drbd_work,list);
+			list_del_init(&w->list);
+		}
+		spin_unlock_irq(&mdev->req_lock);
+		
+		w->cb(mdev,w,1);
+	}
+
+	del_timer_sync(&mdev->resync_timer); // just in case...
 	INFO("worker terminated\n");
 
 	return 0;

@@ -472,7 +472,7 @@ struct Drbd_thread {
  * Pending_read will soon be merged into drbd_request, stay tuned ... -lge
  */
 struct drbd_work;
-typedef int (*drbd_work_cb)(drbd_dev*, struct drbd_work*);
+typedef int (*drbd_work_cb)(drbd_dev*, struct drbd_work*, int cancel);
 struct drbd_work {
 	struct list_head list;
 	drbd_work_cb cb;
@@ -816,7 +816,7 @@ extern int drbd_make_request_24(request_queue_t *q, int rw, struct buffer_head *
 #else
 extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 #endif
-extern void drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
+extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 
 // drbd_fs.c
 extern int drbd_determin_dev_size(drbd_dev*);
@@ -828,17 +828,17 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sg(drbd_dev *mdev, int ng);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
+extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?
 extern int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw);
 // worker callbacks
-extern int w_is_app_read         (drbd_dev *mdev, struct drbd_work *w);
-extern int w_is_resync_read      (drbd_dev *mdev, struct drbd_work *w);
-extern int w_read_retry_remote   (drbd_dev *mdev, struct drbd_work *w);
-extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work *w);
-extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work *w);
-extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work *w);
-extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work *w);
-extern int w_resume_next_sg      (drbd_dev *mdev, struct drbd_work *w);
+extern int w_is_app_read         (drbd_dev *, struct drbd_work *, int);
+extern int w_is_resync_read      (drbd_dev *, struct drbd_work *, int);
+extern int w_read_retry_remote   (drbd_dev *, struct drbd_work *, int);
+extern int w_e_end_data_req      (drbd_dev *, struct drbd_work *, int);
+extern int w_e_end_rsdata_req    (drbd_dev *, struct drbd_work *, int);
+extern int w_resync_inactive     (drbd_dev *, struct drbd_work *, int);
+extern int w_resume_next_sg      (drbd_dev *, struct drbd_work *, int);
 
 
 // drbd_receiver.c

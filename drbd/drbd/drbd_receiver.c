@@ -334,7 +334,7 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 		list_del(le);
 		spin_unlock_irq(&mdev->ee_lock);
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
-		ok = ok && e->w.cb(mdev,&e->w);
+		ok = ok && e->w.cb(mdev,&e->w,0);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 	}
@@ -772,7 +772,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 	return ok;
 }
 
-STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
+STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = drbd_ee_get_sector(e);
@@ -891,7 +891,7 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	return ok;
 }
 
-STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
+STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = drbd_ee_get_sector(e);

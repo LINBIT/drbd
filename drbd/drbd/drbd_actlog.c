@@ -566,7 +566,7 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 #undef BM_WORDS_PER_EXTENT
 #undef EXTENTS_PER_SECTOR
 
-STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
+STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
@@ -582,9 +582,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
 
 	if(mdev->rs_left == 0) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
-		// Could also call directly. This runs in worker's context.
-		mdev->resync_work.cb = w_resync_finished;
-		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		drbd_resync_finished(mdev);
 	}
 
 	return 1;
