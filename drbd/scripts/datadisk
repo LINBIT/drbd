@@ -147,6 +147,8 @@ case "$OPTION" in
             exit $RETVAL
        	fi
 
+		setLocal $CONFIG $RESOURCE
+
 		if [ "$SAFE" != "false" ]; then
 			logger -t "datadisk" "Safe mode : Clean shutdown for $RESOURCE"
 			rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
