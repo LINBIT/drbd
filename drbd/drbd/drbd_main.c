@@ -55,18 +55,6 @@
 #include "drbd_int.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-# warning "----------------------------------------"
-# warning "  NOTE 2.4 compatibility is untested.   "
-# warning "     it compiles, it may even work.     "
-# warning " but it may also oops at you. and if it "
-# warning " does oops at you right away, let us    "
-# warning " know, but don't expect a fix too soon, "
-# warning " as primary target is 2.6 now.          "
-# warning " If it works for you, let us know, too. "
-# warning "----------------------------------------"
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 # if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 extern int register_ioctl32_conversion(unsigned int cmd,
 				       int (*handler)(unsigned int,

@@ -242,7 +242,13 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 	} else {
 		bits  = ALIGN(capacity,BM_SECTORS_PER_BIT)
 		      >> (BM_BLOCK_SIZE_B-9);
-		words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
+
+		/* if we would use 
+		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
+		   a 32bit host could present the wrong number of words
+		   to a 64bit host.
+		*/
+		words = ALIGN(bits,64) >> 6;
 
 		D_ASSERT(bits < ((MD_RESERVED_SIZE<<1)-MD_BM_OFFSET)<<12 );
 
