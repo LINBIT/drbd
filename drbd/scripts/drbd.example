@@ -87,6 +87,6 @@ SLAVE_DEVICE="/dev/nb0"
 MASTER_PARTITION="/dev/hda3"
 SLAVE_PARTITION="/dev/hda3"
 
-# Option for fsck (ALWAYS keep the -p for automatic error correction)
-MASTER_FSCK="-p -y"
-SLAVE_FSCK="-p -y"
+# fsck command (ALWAYS keep the -p for automatic error correction)
+MASTER_FSCK="fsck -p -y"
+SLAVE_FSCK="fsck -p -y"

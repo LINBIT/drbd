@@ -20,8 +20,13 @@
 # Some distributions don't have it, so test and act accordingly
 
 if [ -f /etc/rc.d/init.d/functions ]; then
-	. /etc/rc.d/init.d/functions
-else
+        if grep success /etc/rc.d/init.d/functions > /dev/null ; then        
+	       . /etc/rc.d/init.d/functions
+               HAVE_SUCCESS=1
+        fi
+fi
+
+if [ -z "$HAVE_SUCCESS" ]; then
 	# Does not react exactly like the "functions" ones
 	success() {
 		echo -ne [OK]\r
