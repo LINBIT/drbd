@@ -660,12 +660,12 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			ext->rs_left -= cleared;
 			D_ASSERT(ext->rs_left >= 0);
 		} else {
-			WARN("Recounting sectors in %d (resync LRU too small?)\n", enr);
+			//WARN("Recounting sectors in %d (resync LRU too small?)\n", enr);
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
-			DUMPI(ext->lce.lc_number);
-			DUMPI(mdev->resync->new_number);
+			//DUMPI(ext->lce.lc_number);
+			//DUMPI(mdev->resync->new_number);
 			lc_changed(mdev->resync,&ext->lce);
 		}
 		lc_put(mdev->resync,&ext->lce);
