@@ -238,7 +238,7 @@ int main(int argc, char** argv)
 	  if(err)
 	    {
 	      perror("ioctl() failed");
-	      if(errno==ENOTSUP)
+	      if(errno==EINPROGRESS)
 	        fprintf(stderr,"Can not start SyncAll. Not Primary!\n");
 	      if(errno==ENXIO)
 	        fprintf(stderr,"Can not start SyncAll. Not connected!\n");
@@ -251,6 +251,8 @@ int main(int argc, char** argv)
 	  if(err)
 	    {
 	      perror("ioctl() failed");
+	      if(errno==ENXIO)
+		fprintf(stderr,"Device is not configured!\n");
 	      if(errno==EBUSY)
 		fprintf(stderr,"Someone has opened the device!\n");
 	      exit(20);

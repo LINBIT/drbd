@@ -1453,6 +1453,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	case DRBD_IOCTL_UNCONFIG:
 
+		if( drbd_conf[minor].state == Unconfigured)
+			return -ENXIO;
+
 		if (drbd_conf[minor].open_cnt > 1)
 			return -EBUSY;
 
@@ -1481,16 +1484,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		break;
 
 	case DRBD_IOCTL_DO_SYNC_ALL:
-		if( drbd_conf[minor].state != Primary) {
-			printk(KERN_ERR DEVICE_NAME 
-			       ": Can not start SyncAll. not Primary!\n");
-			return -ENOTSUP;
-		}
-		if( drbd_conf[minor].cstate != Connected) {
-			printk(KERN_ERR DEVICE_NAME 
-			       ": Can not start SyncAll. Not connected!\n");
+		if( drbd_conf[minor].state != Primary)
+			return -EINPROGRESS;
+
+		if( drbd_conf[minor].cstate != Connected)
 		        return -ENXIO;
-		}
+
 		set_cstate(&drbd_conf[minor],SyncingAll);
 		drbd_send_cstate(&drbd_conf[minor]);
 		drbd_thread_start(&drbd_conf[minor].syncer);
