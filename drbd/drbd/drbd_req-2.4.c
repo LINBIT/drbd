@@ -45,6 +45,11 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	unsigned long flags=0;
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
 
+	/*
+       	printk(KERN_ERR DEVICE_NAME "%d: drbd_end_req(%p,%x)\n",
+	       (int)(mdev-drbd_conf),req,nextstate);	
+	*/
+
 	if (req->rq_status == (RQ_DRBD_READ | 0x0001))
 		goto end_it_unlocked;
 

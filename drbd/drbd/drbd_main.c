@@ -949,7 +949,7 @@ inline void free_ee_list(struct list_head* list)
 		count++;
 	}
 	
-//	printk(KERN_ERR DEVICE_NAME " : free_ee_list(): c=%d\n",count);
+	printk(KERN_ERR DEVICE_NAME " : free_ee_list(): c=%d\n",count);
 }
 
 void cleanup_module()

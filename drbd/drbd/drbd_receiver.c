@@ -84,11 +84,11 @@ inline void dec_unacked(int minor)
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 }
 
-int drbd_output_block_acks(struct Drbd_Conf* mdev)
+int drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
-	int r;
+	int r=sizeof(Drbd_BlockAck_Packet); // for protocol A/B case.
  
 	spin_lock_irq(&mdev->ee_lock);
 
@@ -96,14 +96,21 @@ int drbd_output_block_acks(struct Drbd_Conf* mdev)
 		le = mdev->done_ee.next;
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		spin_unlock_irq(&mdev->ee_lock);
-		r=drbd_send_ack(mdev, WriteAck,e->bh->b_blocknr,e->block_id);
+		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+		   e->block_id == ID_SYNCER ) {
+			spin_unlock_irq(&mdev->ee_lock);
+			r=drbd_send_ack(mdev, WriteAck,e->bh->b_blocknr,
+					e->block_id);
+			dec_unacked((int)(mdev-drbd_conf));
+			spin_lock_irq(&mdev->ee_lock);
+		}
+		if(e->block_id != ID_SYNCER) mdev->epoch_size++;
 		bforget(e->bh);
-		if(r != sizeof(Drbd_BlockAck_Packet )) return FALSE;
-		dec_unacked((int)(mdev-drbd_conf));
-		mdev->epoch_size++;			
-		spin_lock_irq(&mdev->ee_lock);
-		list_add(le,&mdev->free_ee);			
+		list_add(le,&mdev->free_ee);
+		if(r != sizeof(Drbd_BlockAck_Packet )) {
+			spin_unlock_irq(&mdev->ee_lock);
+			return FALSE;
+		}
 	}
 
 	spin_unlock_irq(&mdev->ee_lock);
@@ -111,19 +118,37 @@ int drbd_output_block_acks(struct Drbd_Conf* mdev)
 	return TRUE;
 }
 
+static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
+{
+	struct list_head *le;
+	struct Tl_epoch_entry *e;
 
-inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
+	spin_lock_irq(&mdev->ee_lock);
+
+	while(!list_empty(&mdev->done_ee)) {
+		le = mdev->done_ee.next;
+		list_del(le);
+		e = list_entry(le,struct Tl_epoch_entry,list);
+		bforget(e->bh);		
+		list_add(le,&mdev->free_ee);			
+	}
+
+	spin_unlock_irq(&mdev->ee_lock);
+}
+
+
+void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
 
 	spin_lock_irq(&mdev->ee_lock);
-	while(!list_empty(&mdev->active_ee)) {
-		le = mdev->active_ee.next;
+	while(!list_empty(head)) {
+		le = head->next;
 		e = list_entry(le, struct Tl_epoch_entry,list);
 		if(buffer_uptodate(e->bh)) {
 			printk(KERN_ERR DEVICE_NAME 
-			       "%d: Why is this buffer on active_ee\n",
+			       "%d: Why is this buffer on active_ee/sync_ee\n",
 			       (int)(mdev-drbd_conf));
 		}
 		spin_unlock_irq(&mdev->ee_lock);
@@ -133,6 +158,15 @@ inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
 	spin_unlock_irq(&mdev->ee_lock);
 }
 
+static inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
+{
+	_drbd_wait_ee(mdev,&mdev->active_ee);
+}
+
+static inline void drbd_wait_sync_ee(struct Drbd_Conf* mdev)
+{
+	_drbd_wait_ee(mdev,&mdev->sync_ee);
+}
 
 void drbd_p_timeout(unsigned long arg)
 {
@@ -414,7 +448,7 @@ inline int receive_barrier(int minor)
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
 	drbd_wait_active_ee(drbd_conf+minor);
-	rv=drbd_output_block_acks(drbd_conf+minor);
+	rv=drbd_process_done_ee(drbd_conf+minor);
 
 	drbd_send_b_ack(&drbd_conf[minor], header.barrier,
 			drbd_conf[minor].epoch_size );
@@ -468,9 +502,9 @@ inline int receive_data(int minor,int data_size)
 	e->bh=bh;
 	e->block_id=header.block_id;
 	if(header.block_id == ID_SYNCER) {
-		list_add(&e->list,&drbd_conf[minor].sync_ee);
+	  list_add(&e->list,&drbd_conf[minor].sync_ee);
 	} else {
-		list_add(&e->list,&drbd_conf[minor].active_ee);
+	  list_add(&e->list,&drbd_conf[minor].active_ee);
 	}
 	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
@@ -479,7 +513,7 @@ inline int receive_data(int minor,int data_size)
 	bh->b_private = e;
 #endif
 
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A) 
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
 		inc_unacked(minor);
 
 	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
@@ -531,7 +565,7 @@ inline int receive_block_ack(int minor)
 {     
         drbd_request_t *req;
 	Drbd_BlockAck_P header;
-
+	
 	if(drbd_conf[minor].state != Primary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got blk-ack while not PRI!!\n",
 		       minor);
@@ -731,30 +765,13 @@ inline void receive_postpone(int minor)
 	}
 }
 
-
-inline void drbd_sync_ee_clear(struct Drbd_Conf *mdev)
-{
-	struct list_head *le;
-	struct Tl_epoch_entry *e;
-
-	spin_lock_irq(&mdev->ee_lock);
-
-	while(!list_empty(&mdev->sync_ee)) {
-		le = mdev->sync_ee.next;
-		list_del(le);
-		e = list_entry(le,struct Tl_epoch_entry,list);
-		bforget(e->bh);		
-		list_add(le,&mdev->free_ee);			
-	}
-
-	spin_unlock_irq(&mdev->ee_lock);
-}
-
 inline void drbd_collect_zombies(int minor)
 {
+  /*
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
 		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
 	}
+  */
 }
 
 void drbdd(int minor)
@@ -867,8 +884,13 @@ void drbdd(int minor)
 		drbd_md_write(minor);
 		break;
 	case Secondary: 
+		printk(KERN_ERR DEVICE_NAME "%d: AA\n",minor);
 		drbd_wait_active_ee(drbd_conf+minor);
-		drbd_sync_ee_clear(drbd_conf+minor);
+		printk(KERN_ERR DEVICE_NAME "%d: BB\n",minor);
+		drbd_wait_sync_ee(drbd_conf+minor);
+		printk(KERN_ERR DEVICE_NAME "%d: CC\n",minor);
+		drbd_clear_done_ee(drbd_conf+minor);
+		printk(KERN_ERR DEVICE_NAME "%d: DD\n",minor);
 		drbd_conf[minor].unacked_cnt=0;		
 		del_timer(&drbd_conf[minor].p_timeout);
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
@@ -970,7 +992,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		  continue;
 	  }
 
-	  drbd_output_block_acks(drbd_conf+minor);
+	  drbd_process_done_ee(drbd_conf+minor);
 	  // TODO handle return value
 
 	}
@@ -984,7 +1006,7 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 //	static int alloc=0;
 //	static int reissue=0;
 
-	if(list_empty(&mdev->free_ee)) drbd_output_block_acks(mdev);
+	if(list_empty(&mdev->free_ee)) drbd_process_done_ee(mdev);
 
 	if(list_empty(&mdev->free_ee)) {
 		e=kmalloc(sizeof(struct Tl_epoch_entry)*2,GFP_USER);
