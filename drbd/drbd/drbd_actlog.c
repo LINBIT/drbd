@@ -630,6 +630,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		ERR("resync_locked=%d nr_elements=%d\n",
 		    atomic_read(&mdev->resync_locked),
 		    mdev->resync->nr_elements);
+		ERR("flags=%lx\n",mdev->resync->flags);
 	}
 
 	list_for_each_safe(le,tmp,&mdev->resync->lru) {
