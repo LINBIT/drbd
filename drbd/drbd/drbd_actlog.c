@@ -109,10 +109,6 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	struct lc_element *extent;
 
 	wait_event(mdev->al_wait, (extent = _al_get(mdev,enr)) );
-
-	spin_lock_irq(&mdev->al_lock);
-	lc_touch(&mdev->act_log,extent); // move back to lc_get  ??
-	spin_unlock_irq(&mdev->al_lock);
 }
 
 void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -501,24 +497,27 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 {
 	struct bm_extent* ext;
 	unsigned long enr;
+	unsigned long flags;
 
 	// I simply assume that a sector/size pair never crosses
 	// a 16 MB extent border. (Currently this is true...)
 	enr = (sector >> (BM_EXTENT_SIZE_B-9));
 
-	spin_lock(&mdev->al_lock);
-
+	spin_lock_irqsave(&mdev->rs_lock,flags);
 	ext = (struct bm_extent *) lc_get(&mdev->resync,enr);
-	if(ext->lce.lc_number == enr) {
-		lc_touch(&mdev->resync,&ext->lce);
-		ext->rs_left -= cleared;
+	if(ext) {
+		if( ext->lce.lc_number == enr) {
+			ext->rs_left -= cleared;
+			D_ASSERT((long)ext->rs_left >= 0);
+		} else {
+			ext->lce.lc_number = enr;
+			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+		}
+		lc_put(&mdev->resync,(struct lc_element*)ext);
 	} else {
-		ext->lce.lc_number = enr;
-		ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+		ERR("lc_get(rsync) failed ?!?\n");
 	}
-	spin_unlock(&mdev->al_lock);		
-
-	D_ASSERT((long)ext->rs_left >= 0);
+	spin_unlock_irqrestore(&mdev->rs_lock,flags);
 
 	if(may_sleep) {
 		struct list_head *le;

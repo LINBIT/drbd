@@ -75,15 +75,15 @@ end
 
 define lru-show
   set $ls_nr=((struct lru_cache *)$arg0)->nr_elements
-  set $ls_elements=((struct lru_cache *)$arg0)->elements
+  set $ls_elements=(void *) (((struct lru_cache *)$arg0)->slot + $ls_nr)
   set $ls_esize=((struct lru_cache *)$arg0)->element_size
-  printf "-#-  -EXTENT-  -HASH-NEXT-   TABLE\n"
+  printf "-#-  ---ADDR---  -EXTENT-  -HASH-NEXT-   TABLE\n"
   set $ls_i=0
   while $ls_i < $ls_nr
     set $ls_element = (struct lc_element *)($ls_elements + $ls_i * $ls_esize)
-    printf "%3d  %8d", $ls_i, $ls_element->lc_number
-    if $ls_element->hash_next
-      printf "  %3d", ((void *)$ls_element->hash_next - $ls_elements)/$ls_esize
+    printf "%3d  0x%8x  %8d ", $ls_i, $ls_element, $ls_element->lc_number
+    if $ls_element->colision.next
+      printf "  %3d", ((void *)$ls_element->colision.next - $ls_elements)/$ls_esize
     end
     printf "\n"
     set $ls_i = $ls_i + 1    
@@ -92,7 +92,7 @@ define lru-show
   set $ls_le=((struct lru_cache *)$arg0)->lru->next
   set $ls_i=0
   while $ls_le != &((struct lru_cache *)$arg0)->lru && $ls_i < $ls_nr
-    set $ls_e = (struct lc_element *)$ls_le
+    set $ls_e = (struct lc_element *)(((char *)$ls_le)-8)
     set $ls_en = ((void*)$ls_e-$ls_elements)/$ls_esize
     printf "%3d  %8d  %8d\n", $ls_i, $ls_en, $ls_e->lc_number
     set $ls_i = $ls_i + 1

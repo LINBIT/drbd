@@ -47,6 +47,7 @@ void lc_init(struct lru_cache* lc)
 	PARANOIA_ENTRY();
 	lc->nr_elements      = 0;
 	lc->element_size     = sizeof(struct lc_element);
+	lc->notify_on_change = 0;
 	lc->changing         = NULL;
 	lc->slot             = NULL;
 	RETURN();
@@ -89,10 +90,11 @@ void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
 	INIT_LIST_HEAD(&lc->lru);
 	INIT_LIST_HEAD(&lc->free);
 	for(i=0;i<nr_elements;i++) {
-		INIT_HLIST_HEAD( lc->slot + i );
+		//INIT_HLIST_HEAD( lc->slot + i );
 		e= lc_entry(lc,i);
 		e->lc_number = LC_FREE;
 		list_add(&e->list,&lc->free);
+		// INIT_HLIST_NODE(&e->colision);
 	}
 
 	spin_unlock_irqrestore(lck,flags);
@@ -205,6 +207,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++e->refcnt;
+		lc_touch(lc,e);
 		RETURN(e);
 	}
 
@@ -222,6 +225,8 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 		RETURN(NULL);
 	}
 
+	list_add(&e->list,&lc->lru);
+		
 	sync = lc->notify_on_change ? lc->notify_on_change(lc,e,enr) : 1;
 
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
@@ -263,7 +268,8 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 	e = lc_entry(lc,index);
 
 	e->lc_number = enr;
-	__hlist_del(&e->colision);
+	
+	hlist_del_init(&e->colision);
 	hlist_add_head(&e->colision, lc->slot + lc_hash_fn(lc,enr) );
 	lc_touch(lc,e); // to make sure that his entry is not on the free list.
 }

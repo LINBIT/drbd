@@ -52,8 +52,8 @@
 #endif
 
 struct lc_element {
-	struct list_head list;           // LRU list or free list
 	struct hlist_node colision;
+	struct list_head list;           // LRU list or free list
 	unsigned int refcnt;
 	unsigned int lc_number;
 };
