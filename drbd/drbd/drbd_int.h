@@ -373,3 +373,9 @@ extern struct proc_dir_entry *drbd_proc;
 #else
 extern struct proc_dir_entry drbd_proc_dir;
 #endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,9)
+#define min(t,a,b) ( (a) < (b) ? (a) : (b) )
+#define max(t,a,b) ( (a) > (b) ? (a) : (b) )
+#endif
+

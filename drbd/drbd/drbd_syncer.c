@@ -267,7 +267,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 
 	amount=drbd_conf[minor].sock->sk->sndbuf >> (1+10);
 	/* We want to fill half of the send buffer in KB */
-	interval = max( amount * HZ / drbd_conf[minor].conf.sync_rate , 1 );
+	interval = max(int, amount * HZ / drbd_conf[minor].conf.sync_rate , 1);
 	my_blksize=blksize_size[MAJOR_NR][minor];
 	amount_blks=(amount<<10)/my_blksize;
 

@@ -141,8 +141,6 @@ int minor_count=2;
 };
 #endif
 
-#define min(a,b) ( (a) < (b) ? (a) : (b) )
-#define max(a,b) ( (a) > (b) ? (a) : (b) )
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 

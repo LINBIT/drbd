@@ -660,7 +660,7 @@ inline int receive_param(int minor,int command)
 	drbd_conf[minor].o_state = be32_to_cpu(param.state);
 
 	blk_size[MAJOR_NR][minor] =
-		min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
+		min(int,blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
 		    be64_to_cpu(param.size));
 
 	if(drbd_conf[minor].lo_usize &&
@@ -677,7 +677,7 @@ inline int receive_param(int minor,int command)
 	else if(be32_to_cpu(param.state) == Primary)
 		blksize = be32_to_cpu(param.blksize);
 	else 
-		blksize = max(be32_to_cpu(param.blksize),
+		blksize = max(int,be32_to_cpu(param.blksize),
 			      (1 << drbd_conf[minor].blk_size_b));
 
 	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
@@ -955,8 +955,12 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	while(thi->t_state == Running) {
 
-	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
-	  // TODO: exit upon signal or clear signals.
+	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);
+	  if(signal_pending(current)) {
+		  printk(KERN_ERR DEVICE_NAME"%d: asender signaled. exiting\n",
+			 minor);
+		  break;
+	  }
 	  
 	  if(thi->t_state == Exiting) break;
 
@@ -991,7 +995,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	  }
 
 	  drbd_process_done_ee(drbd_conf+minor);
-	  // TODO handle return value
+
+	  //TODO: should asender exit if sending fails ?
 
 	}
 
@@ -1008,6 +1013,11 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 
 	if(list_empty(&mdev->free_ee)) {
 		e=kmalloc(sizeof(struct Tl_epoch_entry)*2,GFP_USER);
+		if (!e) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: could not kmalloc() \n",
+			       (int)(mdev-drbd_conf));
+		}
 		list_add(&(e+1)->list,&mdev->free_ee);
 //		alloc+=2;
 	} else {
