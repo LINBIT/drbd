@@ -1246,19 +1246,25 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	list_add(&e->list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	switch(h->command) {
-	case DataRequest:     e->e_end_io = e_end_data_req; break;
-	case RSDataRequest:   e->e_end_io = e_end_rsdata_req; break;
+	switch (h->command) {
+	case DataRequest:
+		e->e_end_io = e_end_data_req;
+		break;
+	case RSDataRequest:
+		e->e_end_io = e_end_rsdata_req;
+		/* Eventually this should become asynchrously. Currently it
+		 * blocks the whole receiver just to delay the reading of a
+		 * resync data block. */
+		drbd_rs_begin_io(mdev,sector);
+		break;
 	default:
-	      D_ASSERT(0);
+		D_ASSERT(0);
 	}
 
 	bh=e->bh;
 	clear_bit(BH_Uptodate, &bh->b_state);
 	set_bit(BH_Lock, &bh->b_state);
 	e->bh->b_end_io = drbd_dio_end_read;
-
-	drbd_rs_begin_io(mdev,sector);
 
 	mdev->read_cnt += bh->b_size >> 9;
 	inc_unacked(mdev);

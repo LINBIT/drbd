@@ -84,29 +84,28 @@ int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 static inline
 struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
-	struct lc_element * al_ext;
-	struct bm_extent  * bm_ext;
+	struct lc_element *al_ext;
+	struct bm_extent  *bm_ext;
+	unsigned long     al_flags=0;
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr/SM);
-	if(bm_ext) {
+	if(unlikely(bm_ext)) {
 		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
 			WARN("Delaying app write until sync read is done\n");
 			return 0;
 		}
 	}
-
 	al_ext = lc_get(mdev->act_log,enr);
+	if (!al_ext) al_flags=mdev->act_log->flags;
 	spin_unlock_irq(&mdev->al_lock);
-	if(al_ext == 0) {
-		if(mdev->act_log->flags & LC_STARVING) {
-			WARN("Have to wait for LRU element (AL too small?)\n");
-		}
 
-		if(mdev->act_log->flags & LC_DIRTY) {
-			WARN("Ongoing AL update (AL device too slow?)\n");
-		}
+	if(al_flags & LC_STARVING) {
+		WARN("Have to wait for LRU element (AL too small?)\n");
+	}
+	if(al_flags & LC_DIRTY) {
+		WARN("Ongoing AL update (AL device too slow?)\n");
 	}
 
 	return al_ext;
@@ -578,29 +577,23 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 }
 
 
-/**
- * drbd_rs_begin_io: Gets an extent in the resync LRU cache and sets it 
- * to BME_LOCKED. 
- *
- * @sector: The sector number
- */
 static inline
 struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
-	struct bm_extent  * bm_ext;
+	struct bm_extent  *bm_ext;
+	unsigned long     rs_flags=0;
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
 	if(bm_ext) set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
+	if(bm_ext == 0)	rs_flags=mdev->resync->flags;
 	spin_unlock_irq(&mdev->al_lock);
-	if(bm_ext == 0) {
-		if(mdev->act_log->flags & LC_STARVING) {
-			WARN("Have to wait for element (resync too small?)\n");
-                }
 
-		if(mdev->act_log->flags & LC_DIRTY) {
-			WARN("Ongoing AL update (???)\n");
-		}
+	if(rs_flags & LC_STARVING) {
+		WARN("Have to wait for element (resync too small?)\n");
+	}
+	if(rs_flags & LC_DIRTY) {
+		BUG(); // WARN("Ongoing RS update (???)\n");
 	}
 
 	return bm_ext;
@@ -622,6 +615,12 @@ static inline int _al_not_in_use(drbd_dev* mdev, unsigned int enr)
 	return 0;
 }
 
+/**
+ * drbd_rs_begin_io: Gets an extent in the resync LRU cache and sets it
+ * to BME_LOCKED.
+ *
+ * @sector: The sector number
+ */
 void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (BM_EXTENT_SIZE_B-9));
