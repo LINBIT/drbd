@@ -52,6 +52,11 @@
      divisible by 8.
 */
 
+/* defined in drbd_strings.c */
+extern const char *drbd_conn_s_names[];
+extern const char *drbd_role_s_names[];
+extern const char *drbd_disk_s_names[];
+
 #define MAX_SOCK_ADDR	128	/* 108 for Unix domain -
 				   16 for IP, 16 for IPX,
 				   24 for IPv6,
@@ -163,10 +168,11 @@ typedef enum {
 	Unknown=0,
 	Primary=1,     // role
 	Secondary=2,   // role
+	role_mask=3,
 	Human=4,           // flag for set_state
 	TimeoutExpired=8,  // flag for set_state
 	DontBlameDrbd=16   // flag for set_state
-} Drbd_State;
+} drbd_role_t;
 
 /* The order of these constants is important.
  * The lower ones (<WFReportParams) indicate
@@ -195,7 +201,32 @@ typedef enum {
 	SyncTarget,     // state must be the same for source and target. (+2)
 	PausedSyncS,    // see _drbd_rs_resume() and _drbd_rs_pause()
 	PausedSyncT,    // is sync target, but higher priority groups first
-} Drbd_CState;
+	conn_mask=31
+} drbd_conns_t;
+
+typedef enum {
+	DUnknown,
+	Diskless,
+	Failed,         /* Becomes Diskless as soon as we told it the peer */
+	Inconsistent,
+	Outdated,
+	Consistent,     /* Might be outdated, might be UpToDate ... */
+	UpToDate,
+	disk_mask=7
+} drbd_disks_t;
+
+typedef union {
+	struct {
+		unsigned role : 2 ;   // 3/3      primary/secondary/unknown
+		unsigned peer : 2 ;   // 3/3      primary/secondary/unknown
+		unsigned conn : 5 ;   // 17/32    cstates
+		unsigned disk : 3 ;   // 7/7      from DUnknown to UpToDate
+		unsigned pedi : 3 ;   // 7/7      from DUnknown to UpToDate
+		unsigned mult : 1 ;   // 2/2      multiple primaries allowed
+		unsigned _pad : 16;   // 0        unused
+	} s;
+	unsigned int i;
+} drbd_state_t;
 
 #ifndef BDEVNAME_SIZE
 # define BDEVNAME_SIZE 32
@@ -213,9 +244,7 @@ struct ioctl_get_config {
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
 	OUT int               meta_index;
-	OUT Drbd_CState       cstate;
-	OUT Drbd_State        state;
-	OUT Drbd_State        peer_state;
+	OUT drbd_state_t      state;
 	int                   _pad;
 };
 
@@ -227,7 +256,7 @@ struct ioctl_get_config {
  */
 #define DRBD_IOCTL_LETTER 'D'
 #define DRBD_IOCTL_GET_VERSION      _IOR( DRBD_IOCTL_LETTER, 0x00, int )
-#define DRBD_IOCTL_SET_STATE        _IOW( DRBD_IOCTL_LETTER, 0x02, Drbd_State )
+#define DRBD_IOCTL_SET_STATE        _IOW( DRBD_IOCTL_LETTER, 0x02, drbd_role_t )
 #define DRBD_IOCTL_SET_DISK_CONFIG  _IOW( DRBD_IOCTL_LETTER, 0x06, struct ioctl_disk_config )
 #define DRBD_IOCTL_SET_NET_CONFIG   _IOW( DRBD_IOCTL_LETTER, 0x07, struct ioctl_net_config )
 #define DRBD_IOCTL_UNCONFIG_NET     _IO ( DRBD_IOCTL_LETTER, 0x08 )
@@ -239,7 +268,7 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_WAIT_CONNECT     _IOR( DRBD_IOCTL_LETTER, 0x11, struct ioctl_wait )
 #define DRBD_IOCTL_WAIT_SYNC        _IOR( DRBD_IOCTL_LETTER, 0x12, struct ioctl_wait )
 #define DRBD_IOCTL_UNCONFIG_DISK    _IO ( DRBD_IOCTL_LETTER, 0x13 )
-#define DRBD_IOCTL_SET_STATE_FLAGS  _IOW( DRBD_IOCTL_LETTER, 0x14, Drbd_State )
+#define DRBD_IOCTL_SET_STATE_FLAGS  _IOW( DRBD_IOCTL_LETTER, 0x14, drbd_role_t )
 
 
 #endif

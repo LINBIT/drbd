@@ -331,12 +331,20 @@ void tl_clear(drbd_dev *mdev)
  */
 int drbd_io_error(drbd_dev* mdev)
 {
-	int ok=1;
+	unsigned long flags;
+	int send,ok=1;
 
 	if(mdev->on_io_error != Panic && mdev->on_io_error != Detach) return 1;
-	if(test_and_set_bit(SENT_DISK_FAILURE,&mdev->flags)) return 1;
 
-	D_ASSERT(test_bit(DISKLESS,&mdev->flags));
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	if( (send = (mdev->state.s.disk == Failed)) ) {
+		_drbd_set_state(mdev,_NS(disk,Diskless),1);
+	}
+	D_ASSERT(mdev->state.s.disk <= Failed);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	if(!send) return ok;
+
 	ok = drbd_send_param(mdev,0);
 	WARN("Notified peer that my disk is broken.\n");
 
@@ -347,11 +355,6 @@ int drbd_io_error(drbd_dev* mdev)
 		drbd_md_write(mdev);
 	}
 
-	if(mdev->cstate > Connected ) {
-		WARN("Resync aborted.\n");
-		set_cstate(mdev,Connected);
-		mdev->rs_total = 0;
-	}
 	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
 		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
 		WARN("Not releasing backing storage device.\n");
@@ -371,35 +374,137 @@ int drbd_io_error(drbd_dev* mdev)
 	return ok;
 }
 
-void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
-{
-	Drbd_CState os;
+#define drbd_peer_s_names drbd_role_s_names
+#define drbd_pedi_s_names drbd_disk_s_names
 
-	os = mdev->cstate;
+#define PSC(A) \
+	({ if( ns.s.A != os.s.A ) { \
+		pbp += sprintf(pbp, #A "( %s -> %s ) ", \
+		              drbd_##A##_s_names[os.s.A], \
+		              drbd_##A##_s_names[ns.s.A]); \
+	} })
+
+
+/* PRE TODO: Should return ernno numbers from the pre-state-change checks. */
+int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
+{
+	drbd_state_t os;
+	char pb[160], *pbp;
+
+	os = mdev->state;
+
+	if( ns.i == os.i ) return 2;
+
+	if( !hard ) {
+		/*  pre-state-change checks ; only look at ns  */
+		if( !ns.s.mult && 
+		    ns.s.role == Primary && ns.s.peer == Primary ) {
+			WARN("Multiple primaries now allowed by config.");
+			return 0;
+		}
+
+		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
+		    ns.s.conn < Connected ) {
+			WARN("Refusing to be Primary without consistent data");
+			return 0;
+		}
+
+		if( ns.s.peer == Primary && ns.s.pedi <= Inconsistent && 
+		    ns.s.conn < Connected ) {
+			WARN("Refusing to make peer Primary without data");
+			return 0;
+		}
+
+		if( ns.s.disk < Consistent && ns.s.pedi < Consistent ) {
+			WARN("Refusing to be inconsistent on both nodes.");
+			return 0;
+		}
+
+		if( ns.s.conn > Connected && 
+		    (ns.s.disk == Diskless || ns.s.pedi == Diskless ) ) {
+			WARN("Refusing to do resync without two disks.");
+			return 0;
+		}
+	}
+
+	/*  State sanitising  */
+	if( ns.s.conn < Connected ) ns.s.peer = Unknown;
+	if( ns.s.conn < Connected ) ns.s.pedi = DUnknown;
+
+	if( ns.s.disk <= Failed && ns.s.conn > Connected) {
+		WARN("Resync aborted.\n");
+		ns.s.conn = Connected;
+	}
 
 #if DUMP_MD >= 2
-	INFO("%s [%d]: cstate %s --> %s\n", current->comm, current->pid,
-	   cstate_to_name(os), cstate_to_name(ns) );
+	pbp = pb;
+	PSC(role);
+	PSC(peer);
+	PSC(conn);
+	PSC(disk);
+	PSC(pedi);
+	if( ns.s.mult != os.s.mult ) {
+		sprintf(pbp, "mult( %d -> %d)", os.s.mult,ns.s.mult);
+	}
+	INFO("%s\n", pb);
 #endif
 
-	mdev->cstate = ns;
-	smp_mb();
+	mdev->state.i = ns.i;
 	wake_up(&mdev->cstate_wait);
 
-	/* THINK.
-	 * was:
-	 * if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
-	 */
-	if ( ( os >= SyncSource ) && ns <= Connected ) {
+	/**   post-state-change actions   **/
+	if ( os.s.conn >= SyncSource   && ns.s.conn <= Connected ) {
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
-	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
-	   test_bit(DISKLESS,&mdev->flags) && ns < Connected) {
-// FIXME EXPLAIN
-		clear_bit(MD_IO_ALLOWED,&mdev->flags);
+
+	if ( os.s.peer == Secondary    && ns.s.peer == Primary ) {
+		drbd_md_inc(mdev,ConnectedCnt);
 	}
+
+	if ( os.s.disk == Diskless && os.s.peer == StandAlone &&
+	     (ns.s.disk >= Inconsistent || ns.s.peer > StandAlone) ) {
+		__module_get(THIS_MODULE);
+	}
+
+	if ( ns.s.role == Primary && ns.s.conn < Connected &&
+	     ns.s.disk < Consistent ) {
+		drbd_panic("No access to good data anymore.\n");
+	}
+
+	return 1;
 }
+
+void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
+{
+	/* Here we have the actions that are performed after a
+	   state change. This function might sleep */
+
+	/*  Added disk, tell peer.  */
+	if ( os.s.disk == Diskless && ns.s.disk >= Inconsistent &&
+	     ns.s.conn >= Connected ) {
+		drbd_send_param(mdev,1);
+	}
+
+	/*  Removed disk, tell peer.  */
+	if ( os.s.disk >= Inconsistent && ns.s.disk == Diskless &&
+	     ns.s.conn >= Connected ) {
+		drbd_send_param(mdev,0);
+	}
+
+	/*  Update MDF_Consistent in the meta-data  */
+	if ( os.s.disk != ns.s.disk && ns.s.disk > Failed ) {
+		if(ns.s.disk >= Outdated ) {
+			drbd_md_set_flag(mdev,MDF_Consistent);
+		} else {
+			drbd_md_clear_flag(mdev,MDF_Consistent);
+		}
+		/* TODO metadata, to support everything that 
+		   drbd_disk_t can express... */
+	}
+
+}
+
 
 STATIC int drbd_thread_setup(void* arg)
 {
@@ -610,11 +715,12 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
 	if ( ok
-	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
-	    && !sc->skip )
+	     && (mdev->state.s.conn == SkippedSyncS || 
+		 mdev->state.s.conn == SkippedSyncT)
+	     && !sc->skip )
 	{
 		/* FIXME EXPLAIN. I think this cannot work properly! -lge */
-		set_cstate(mdev,WFReportParams);
+		drbd_request_state(mdev,NS(conn,WFReportParams));
 		ok = drbd_send_param(mdev,0);
 	}
 	return ok;
@@ -636,7 +742,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	p.u_size = cpu_to_be64(mdev->lo_usize);
 	p.p_size = cpu_to_be64(m_size);
 
-	p.state    = cpu_to_be32(mdev->state);
+	p.state    = cpu_to_be32(mdev->state.i);
 	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
 	p.version  = cpu_to_be32(PRO_VERSION);
 
@@ -673,7 +779,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
-		if (unlikely(test_bit(DISKLESS,&mdev->flags))) {
+		if (unlikely(mdev->state.s.disk <= Failed )) {
 			/* write_bm did fail! panic.
 			 * FIXME can we do something better than panic?
 			 */
@@ -752,8 +858,8 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.block_id = e->block_id;
 	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
 
-	if (!mdev->meta.socket || mdev->cstate < Connected) return FALSE;
-	ok = drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
+	if (!mdev->meta.socket || mdev->state.s.conn < Connected) return FALSE;
+	ok=drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -784,7 +890,7 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
 		|| get_t_state(&mdev->asender) != Running
-		|| (volatile int)mdev->cstate < Connected;
+		|| (volatile int)mdev->state.s.conn < Connected;
 
 	if (drop_it)
 		return TRUE;
@@ -1077,7 +1183,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	int rv,sent=0;
 
 	if (!sock) return -1000;
-	if ((volatile int)mdev->cstate < WFReportParams) return -1001;
+	if ((volatile int)mdev->state.s.conn < WFReportParams) return -1001;
 
 	// THINK  if (signal_pending) return ... ?
 
@@ -1153,9 +1259,9 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 			ERR("%s_sendmsg returned %d\n",
 			    sock == mdev->meta.socket ? "msock" : "sock",
 			    rv);
-			set_cstate(mdev, BrokenPipe);
+			drbd_force_state(mdev, NS(conn,BrokenPipe));
 		} else
-			set_cstate(mdev, Timeout);
+			drbd_force_state(mdev, NS(conn,Timeout));
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
@@ -1170,7 +1276,7 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	if(minor >= minor_count) return -ENODEV;
 
 	if (file->f_mode & FMODE_WRITE) {
-		if( drbd_conf[minor].state == Secondary) {
+		if( drbd_conf[minor].state.s.role == Secondary) {
 			return -EROFS;
 		}
 		set_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
@@ -1212,31 +1318,34 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 	spin_unlock_irq(q->queue_lock);
 
 	/* only if connected */
-	if (mdev->cstate >= Connected && !test_bit(PARTNER_DISKLESS,&mdev->flags)) {
-		D_ASSERT(mdev->state == Primary);
+	spin_lock_irq(&mdev->req_lock);
+	if (mdev->state.s.pedi >= Inconsistent) /* implies cs >= Connected */ {
+		D_ASSERT(mdev->state.s.role == Primary);
 		if (test_and_clear_bit(UNPLUG_REMOTE,&mdev->flags)) {
-			spin_lock_irq(&mdev->req_lock);
 			/* add to the front of the data.work queue,
 			 * unless already queued.
 			 * XXX this might be a good addition to drbd_queue_work
 			 * anyways, to detect "double queuing" ... */
 			if (list_empty(&mdev->unplug_work.list))
 				_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
-			spin_unlock_irq(&mdev->req_lock);
 		}
 	}
+	spin_unlock_irq(&mdev->req_lock);
 
-	if(!test_bit(DISKLESS,&mdev->flags)) drbd_kick_lo(mdev);
+	if(mdev->state.s.disk >= Inconsistent) drbd_kick_lo(mdev);
 }
 
 void drbd_set_defaults(drbd_dev *mdev)
 {
-	mdev->flags = 1<<DISKLESS;
 	mdev->sync_conf.rate       = 250;
 	mdev->sync_conf.al_extents = 127; // 512 MB active set
-	mdev->state                = Secondary;
-	mdev->o_state              = Unknown;
-	mdev->cstate               = Unconfigured;
+	mdev->state = (drbd_state_t){ { Secondary,
+					Unknown,
+					StandAlone,
+					Diskless,
+					DUnknown,
+					0,
+					0 } };
 }
 
 void drbd_init_set_defaults(drbd_dev *mdev)
@@ -1841,8 +1950,8 @@ void drbd_md_write(drbd_dev *mdev)
 	memset(buffer,0,512);
 
 	flags = mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
-	if (mdev->state  == Primary)        flags |= MDF_PrimaryInd;
-	if (mdev->cstate >= WFReportParams) flags |= MDF_ConnectedInd;
+	if (mdev->state.s.role == Primary)        flags |= MDF_PrimaryInd;
+	if (mdev->state.s.conn >= WFReportParams) flags |= MDF_ConnectedInd;
 	mdev->gen_cnt[Flags] = flags;
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
@@ -1870,7 +1979,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if (drbd_md_sync_page_io(mdev,sector,WRITE)) {
 		clear_bit(MD_DIRTY,&mdev->flags);
 	} else {
-		if (test_bit(DISKLESS,&mdev->flags)) {
+		if (mdev->state.s.disk <= Failed) {
 			/* this was a try anyways ... */
 			ERR("meta data update failed!\n");
 		} else {
@@ -1958,7 +2067,7 @@ int drbd_md_read(drbd_dev *mdev)
 void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 {
 	INFO("I am(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
-		mdev->state == Primary ? 'P':'S',
+		mdev->state.s.role == Primary ? 'P':'S',
 		MeGC(Flags) & MDF_Consistent ? '1' : '0',
 		MeGC(HumanCnt),
 		MeGC(TimeoutCnt),
@@ -1968,7 +2077,7 @@ void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 		MeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
 	if (peer) {
 		INFO("Peer(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
-			be32_to_cpu(peer->state) == Primary ? 'P':'S',
+			((drbd_state_t)be32_to_cpu(peer->state)).s.role == Primary ? 'P':'S',
 			PeGC(Flags) & MDF_Consistent ? '1' : '0',
 			PeGC(HumanCnt),
 			PeGC(TimeoutCnt),

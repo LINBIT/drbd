@@ -218,7 +218,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 		evicted = al_ext->lc_number;
 
-		if(mdev->cstate < Connected && evicted != LC_FREE ) {
+		if(mdev->state.s.conn < Connected && evicted != LC_FREE ) {
 			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT );
 		}
 		drbd_al_write_transaction(mdev,al_ext,enr);
@@ -547,8 +547,8 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 	kfree(udw);
 
 	if(drbd_bm_total_weight(mdev) == 0 &&
-	   ( mdev->cstate == SyncSource || mdev->cstate == SyncTarget ||
-	     mdev->cstate == PausedSyncS || mdev->cstate == PausedSyncT ) ) {
+	   ( mdev->state.s.conn == SyncSource || mdev->state.s.conn == SyncTarget ||
+	     mdev->state.s.conn == PausedSyncS || mdev->state.s.conn == PausedSyncT ) ) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
 		drbd_bm_lock(mdev);
 		drbd_resync_finished(mdev);
@@ -588,7 +588,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				     (unsigned long)sector,
 				     ext->lce.lc_number, ext->rs_left, cleared);
 				// FIXME brrrgs. should never happen!
-				_set_cstate(mdev,StandAlone);
+				drbd_force_state(mdev,NS(conn,StandAlone));
 				drbd_thread_stop_nowait(&mdev->receiver);
 				return;
 			}
@@ -651,15 +651,6 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	unsigned long sbnr,ebnr,lbnr,bnr;
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
-	int strange_state;
-
-	strange_state = (mdev->cstate <= Connected) ||
-	                test_bit(DISKLESS,&mdev->flags) ||
-	                test_bit(PARTNER_DISKLESS,&mdev->flags);
-	if (strange_state) {
-		ERR("%s:%d: %s flags=0x%02lx\n", file , line ,
-				cstate_to_name(mdev->cstate), mdev->flags);
-	}
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
 		ERR("drbd_set_in_sync: sector=%lu size=%d nonsense!\n",
@@ -727,16 +718,6 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 {
 	unsigned long sbnr,ebnr,lbnr,bnr;
 	sector_t esector, nr_sectors;
-	int strange_state;
-
-	strange_state = ( mdev->cstate  > Connected ) ||
-	                ( mdev->cstate == Connected &&
-	                 !(test_bit(DISKLESS,&mdev->flags) ||
-	                   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
-	if (strange_state) {
-		ERR("%s:%d: %s flags=0x%02lx\n", file , line ,
-				cstate_to_name(mdev->cstate), mdev->flags);
-	}
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
 		ERR("sector: %lu, size: %d\n",(unsigned long)sector,size);

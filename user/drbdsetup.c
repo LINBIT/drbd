@@ -670,7 +670,7 @@ int do_net_conf(int drbd_fd,
 
 
 
-int set_state(int drbd_fd,Drbd_State state)
+int set_state(int drbd_fd,drbd_role_t state)
 {
   int err;
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
@@ -703,7 +703,7 @@ int set_state(int drbd_fd,Drbd_State state)
 
 int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  Drbd_State newstate=Primary;
+  drbd_role_t newstate=Primary;
 
   if(argc > 0)
     {
@@ -756,7 +756,7 @@ int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options)
 int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
-  Drbd_State flags=0;
+  drbd_role_t flags=0;
 
   if(argc > 0)
     {
@@ -1168,72 +1168,78 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
-  if( cn.cstate < StandAlone )
+  if( cn.state.s.conn == StandAlone && cn.state.s.disk == Diskless)
     {
       printf("Not configured\n");
       return 0;
     }
 
-  printf("Lower device: %02d:%02d   (%s)\n",
-	 cn.lower_device_major,
-	 cn.lower_device_minor,
-        check_dev_name(cn.lower_device_name,cn.lower_device_major,
-                       cn.lower_device_minor));
-  if( cn.lower_device_major == cn.meta_device_major && 
-       cn.lower_device_minor == cn.meta_device_minor ) {
-    printf("Meta device: internal\n");
-  } else {
-    printf("Meta device: %02d:%02d   (%s)\n",
-	   cn.meta_device_major,
-	   cn.meta_device_minor,
-          check_dev_name(cn.meta_device_name,cn.meta_device_major,
-                         cn.meta_device_minor));
-    printf("Meta index: %d\n",cn.meta_index);
-  }
+  if( cn.state.s.disk > Diskless)
+    {
 
-  printf("Disk options:\n");
-  if( cn.disk_size_user ) printf(" size = %lu KB\n",
-				 (unsigned long)cn.disk_size_user);
-  if( cn.on_io_error != DEF_ON_IO_ERROR) {
-    printf(" on-io-error = %s\n",eh_names[cn.on_io_error]);
-  }
+      printf("Lower device: %02d:%02d   (%s)\n",
+	     cn.lower_device_major,
+	     cn.lower_device_minor,
+	     check_dev_name(cn.lower_device_name,cn.lower_device_major,
+			    cn.lower_device_minor));
+      if( cn.lower_device_major == cn.meta_device_major && 
+	  cn.lower_device_minor == cn.meta_device_minor ) {
+	printf("Meta device: internal\n");
+      } else {
+	printf("Meta device: %02d:%02d   (%s)\n",
+	       cn.meta_device_major,
+	       cn.meta_device_minor,
+	       check_dev_name(cn.meta_device_name,cn.meta_device_major,
+			      cn.meta_device_minor));
+	printf("Meta index: %d\n",cn.meta_index);
+      }
 
-  if( cn.cstate < Unconnected ) return 0;
+      printf("Disk options:\n");
+      if( cn.disk_size_user ) printf(" size = %lu KB\n",
+				     (unsigned long)cn.disk_size_user);
+      if( cn.on_io_error != DEF_ON_IO_ERROR) {
+	printf(" on-io-error = %s\n",eh_names[cn.on_io_error]);
+      }
 
-  my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
-  other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
-  printf("Local address: %s:%d\n",
-	 inet_ntoa(my_addr->sin_addr),
-	 ntohs(my_addr->sin_port));
-  printf("Remote address: %s:%d\n",
-	 inet_ntoa(other_addr->sin_addr),
-	 ntohs(other_addr->sin_port));
-  printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol);
-  printf("Net options:\n");
-  printf(" timeout = %d.%d sec %s\n",cn.nconf.timeout/10,cn.nconf.timeout%10,
-	 cn.nconf.timeout == DEF_NET_TIMEOUT ? "(default)" : "" );
+    }
+
+  if( cn.state.s.conn > StandAlone)
+    {
+      my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
+      other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
+      printf("Local address: %s:%d\n",
+	     inet_ntoa(my_addr->sin_addr),
+	     ntohs(my_addr->sin_port));
+      printf("Remote address: %s:%d\n",
+	     inet_ntoa(other_addr->sin_addr),
+	     ntohs(other_addr->sin_port));
+      printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol);
+      printf("Net options:\n");
+      printf(" timeout = %d.%d sec %s\n",cn.nconf.timeout/10,cn.nconf.timeout%10,
+	     cn.nconf.timeout == DEF_NET_TIMEOUT ? "(default)" : "" );
 
 #define SHOW_I(T,U,M,D) printf(" " T " = %d " U " %s\n", M, M == D ? "(default)" : "")
 
-  SHOW_I("connect-int","sec", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
-  SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
-  SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
-  SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
-  SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
-  SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
-  if( cn.nconf.on_disconnect != DEF_ON_DISCONNECT) {
-    printf(" on-disconnect = %s\n",dh_names[cn.nconf.on_disconnect]);
-  }
+      SHOW_I("connect-int","sec", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
+      SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
+      SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
+      SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
+      SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
+      SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
+      if( cn.nconf.on_disconnect != DEF_ON_DISCONNECT) {
+	printf(" on-disconnect = %s\n",dh_names[cn.nconf.on_disconnect]);
+      }
 
 
-  printf("Syncer options:\n");
+      printf("Syncer options:\n");
 
-  SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
-  SHOW_I("group","", cn.sconf.group, DEF_SYNC_GROUP);
-  SHOW_I("al-extents","", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
+      SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
+      SHOW_I("group","", cn.sconf.group, DEF_SYNC_GROUP);
+      SHOW_I("al-extents","", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
 
-  if( cn.sconf.skip ) printf(" skip-sync\n");
-  if( cn.sconf.use_csums ) printf(" use-csums\n");
+      if( cn.sconf.skip ) printf(" skip-sync\n");
+      if( cn.sconf.use_csums ) printf(" use-csums\n");
+    }
 
   return 0;
 }
@@ -1256,13 +1262,13 @@ int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
-  if( cn.cstate < StandAlone )
+  if( cn.state.s.conn == StandAlone && cn.state.s.disk == Diskless)
     {
       printf("Not configured\n");
       return 0;
     }
 
-  printf("%s/%s\n",state_names[cn.state],state_names[cn.peer_state]);
+  printf("%s/%s\n",state_names[cn.state.s.role],state_names[cn.state.s.peer]);
 
   return 0;
 }
@@ -1299,13 +1305,13 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
-  if( cn.cstate < StandAlone )
+  if( cn.state.s.conn == StandAlone && cn.state.s.disk == Diskless)
     {
       printf("Not configured\n");
       return 0;
     }
 
-  printf("%s\n",cstate_names[cn.cstate]);
+  printf("%s\n",cstate_names[cn.state.s.conn]);
 
   return 0;
 }

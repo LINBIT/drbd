@@ -228,8 +228,8 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	smp_rmb();
 	if ( cancel ||
-	     mdev->cstate < Connected ||
-	     !test_bit(PARTNER_CONSISTENT,&mdev->flags) ) {
+	     mdev->state.s.conn < Connected ||
+	     mdev->state.s.pedi < Consistent ) {
 		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
 
 		// does not make much sense, but anyways...
@@ -312,13 +312,13 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	if(unlikely(cancel)) return 1;
 	/* FIXME THINK what about w_resume_next_sg ?? */
 
-	if(unlikely(mdev->cstate < Connected)) {
+	if(unlikely(mdev->state.s.conn < Connected)) {
 		ERR("Confused in w_make_resync_request()! cstate < Connected");
 		return 0;
 	}
 
-	if (mdev->cstate != SyncTarget) {
-		ERR("%s in w_make_resync_request\n", cstate_to_name(mdev->cstate));
+	if (mdev->state.s.conn != SyncTarget) {
+		ERR("%s in w_make_resync_request\n", cstate_to_name(mdev->state.s.conn));
 	}
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
@@ -394,25 +394,18 @@ int drbd_resync_finished(drbd_dev* mdev)
 	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
-	if (mdev->cstate == SyncTarget || mdev->cstate == PausedSyncT) {
-		drbd_md_set_flag(mdev,MDF_Consistent);
-		ERR_IF(drbd_md_test_flag(mdev,MDF_FullSync))
-			drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
-	} else if (mdev->cstate == SyncSource || mdev->cstate == PausedSyncS) {
-		set_bit(PARTNER_CONSISTENT, &mdev->flags);
-	} else {
-		ERR("unexpected cstate (%s) in drbd_resync_finished\n",
-		    cstate_to_name(mdev->cstate));
-	}
-
 	// assert that all bit-map parts are cleared.
 	D_ASSERT(list_empty(&mdev->resync->lru));
 	D_ASSERT(drbd_bm_total_weight(mdev) == 0);
 	mdev->rs_total  = 0;
 	mdev->rs_paused = 0;
 
-	set_cstate(mdev,Connected);
+	drbd_request_state(mdev,NS3(conn,Connected,
+				    disk,Consistent,
+				    pedi,Consistent));
+
+	drbd_md_write(mdev);
+
 	/* FIXME
 	 * _queueing_ of w_resume_next_sg() gets _scheduled_ here.
 	 * maybe rather _do_ it right here instead? */
@@ -472,7 +465,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 
 	if(likely(drbd_bio_uptodate(&e->private_bio))) {
-		if (likely( !test_bit(PARTNER_DISKLESS,&mdev->flags) )) {
+		if (likely( mdev->state.s.pedi >= Inconsistent )) {
 			inc_rs_pending(mdev);
 			ok=drbd_send_block(mdev, RSDataReply, e);
 		} else {
@@ -545,16 +538,16 @@ STATIC void drbd_global_unlock(void)
 
 STATIC void _drbd_rs_resume(drbd_dev *mdev)
 {
-	Drbd_CState ns;
+	drbd_conns_t ncs;
 
-	ns = mdev->cstate - (PausedSyncS - SyncSource);
-	D_ASSERT(ns == SyncSource || ns == SyncTarget);
+	ncs = mdev->state.s.conn - (PausedSyncS - SyncSource);
+	D_ASSERT(ncs == SyncSource || ncs == SyncTarget);
 
 	INFO("Syncer continues.\n");
 	mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
-	_set_cstate(mdev,ns);
+	_drbd_set_state(mdev,_NS(conn,ncs),1);
 
-	if(mdev->cstate == SyncTarget) {
+	if(mdev->state.s.conn == SyncTarget) {
 		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
 			unsigned long rs_left = drbd_bm_total_weight(mdev);
 			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
@@ -573,16 +566,17 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 
 STATIC void _drbd_rs_pause(drbd_dev *mdev)
 {
-	Drbd_CState ns;
+	drbd_conns_t ncs;
 
-	D_ASSERT(mdev->cstate == SyncSource || mdev->cstate == SyncTarget);
-	ns = mdev->cstate + (PausedSyncS - SyncSource);
+	D_ASSERT(mdev->state.s.conn == SyncSource || mdev->state.s.conn == SyncTarget);
+	ncs = mdev->state.s.conn + (PausedSyncS - SyncSource);
 
-	if(mdev->cstate == SyncTarget) set_bit(STOP_SYNC_TIMER,&mdev->flags);
+	if(mdev->state.s.conn == SyncTarget) set_bit(STOP_SYNC_TIMER,&mdev->flags);
 
 	mdev->rs_mark_time = jiffies;
 	// mdev->rs_mark_left = drbd_bm_total_weight(mdev); // I don't care...
-	_set_cstate(mdev,ns);
+	_drbd_set_state(mdev,_NS(conn,ncs),1);
+
 	INFO("Syncer waits for sync group.\n");
 }
 
@@ -594,8 +588,8 @@ STATIC int _drbd_pause_higher_sg(drbd_dev *mdev)
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group > mdev->sync_conf.group
-		     && ( odev->cstate == SyncSource || 
-			  odev->cstate == SyncTarget ) ) {
+		     && ( odev->state.s.conn == SyncSource || 
+			  odev->state.s.conn == SyncTarget ) ) {
 			_drbd_rs_pause(odev);
 			rv = 1;
 		}
@@ -612,8 +606,8 @@ STATIC int _drbd_lower_sg_running(drbd_dev *mdev)
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group < mdev->sync_conf.group
-		     && ( odev->cstate == SyncSource || 
-			  odev->cstate == SyncTarget ) ) {
+		     && ( odev->state.s.conn == SyncSource || 
+			  odev->state.s.conn == SyncTarget ) ) {
 			rv = 1;
 		}
 	}
@@ -629,8 +623,8 @@ STATIC int _drbd_resume_lower_sg(drbd_dev *mdev)
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group < mdev->sync_conf.group
-		     && ( odev->cstate == PausedSyncS || 
-			  odev->cstate == PausedSyncT ) ) {
+		     && ( odev->state.s.conn == PausedSyncS || 
+			  odev->state.s.conn == PausedSyncT ) ) {
 			_drbd_rs_resume(odev);
 			rv = 1;
 		}
@@ -651,8 +645,8 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group == mdev->sync_conf.group
-		     && ( odev->cstate == SyncSource || 
-			  odev->cstate == SyncTarget ) ) {
+		     && ( odev->state.s.conn == SyncSource || 
+			  odev->state.s.conn == SyncTarget ) ) {
 			goto out; // Sync on an other device in this group
 			          // still runs.
 		}
@@ -662,7 +656,7 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group > mdev->sync_conf.group
 		     && odev->sync_conf.group < ng && 
-		     (odev->cstate==PausedSyncS || odev->cstate==PausedSyncT)){
+		     (odev->state.s.conn==PausedSyncS || odev->state.s.conn==PausedSyncT)){
 		  ng = odev->sync_conf.group;
 		}
 	}
@@ -670,7 +664,7 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 	for (i=0; i < minor_count; i++) { // resume all devices in next group
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group == ng &&
-		     (odev->cstate==PausedSyncS || odev->cstate==PausedSyncT)){
+		     (odev->state.s.conn==PausedSyncS || odev->state.s.conn==PausedSyncT)){
 			_drbd_rs_resume(odev);
 		}
 	}
@@ -690,15 +684,15 @@ void drbd_alter_sg(drbd_dev *mdev, int ng)
 	drbd_global_lock();
 	mdev->sync_conf.group = ng;
 
-	if( ( mdev->cstate == PausedSyncS || 
-	      mdev->cstate == PausedSyncT ) && ( d < 0 ) ) {
+	if( ( mdev->state.s.conn == PausedSyncS || 
+	      mdev->state.s.conn == PausedSyncT ) && ( d < 0 ) ) {
 		if(_drbd_pause_higher_sg(mdev)) c=1;
 		else if(!_drbd_lower_sg_running(mdev)) c=1;
 		if(c) _drbd_rs_resume(mdev);
 	}
 
-	if( ( mdev->cstate == SyncSource || 
-	      mdev->cstate == SyncTarget ) && ( d > 0 ) ) {
+	if( ( mdev->state.s.conn == SyncSource || 
+	      mdev->state.s.conn == SyncTarget ) && ( d > 0 ) ) {
 		if(_drbd_resume_lower_sg(mdev)) p=1;
 		else if(_drbd_lower_sg_running(mdev)) p=1;
 		if(p) _drbd_rs_pause(mdev);
@@ -706,13 +700,17 @@ void drbd_alter_sg(drbd_dev *mdev, int ng)
 	drbd_global_unlock();
 }
 
-void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
+void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 {
+	int r=0;
+
 	if(side == SyncTarget) {
-		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_bm_reset_find(mdev);
+		r = drbd_request_state(mdev,NS2(conn,SyncTarget,
+						disk,Inconsistent));
 	} else if (side == SyncSource) {
-		clear_bit(PARTNER_CONSISTENT, &mdev->flags);
+		r = drbd_request_state(mdev,NS2(conn,SyncSource,
+						pedi,Inconsistent));
 		/* If we are SyncSource we must be consistent.
 		 * FIXME this should be an assertion only,
 		 * otherwise it masks a logic bug somewhere else...
@@ -721,14 +719,16 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 			// FIXME this is actually a BUG()!
 			drbd_md_set_flag(mdev,MDF_Consistent);
 		}
-	} else {
-		ERR("Usage error in drbd_start_resync! (side == %s)\n",
-		     cstate_to_name(side));
+	}
+
+	if(r != 1) {
+		ERR("Error in drbd_start_resync! (side == %s)\n",
+		    cstate_to_name(side));
 		return;
 	}
+
 	drbd_md_write(mdev);
 
-	set_cstate(mdev,side);
 	mdev->rs_total     =
 	mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 	mdev->rs_paused    = 0;
@@ -757,15 +757,14 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 		return;
 	}
 
-	/* FIXME THINK
-	 * use mdev->cstate (we may already be paused...) or side here ?? */
-	if (mdev->cstate == SyncTarget) {
+	if (side == SyncTarget) {
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
 
 	drbd_global_lock();
-	if (mdev->cstate == SyncTarget || mdev->cstate == SyncSource) {
+	if ( mdev->state.s.conn == SyncTarget || 
+	     mdev->state.s.conn == SyncSource ) {
 		_drbd_pause_higher_sg(mdev);
 		if(_drbd_lower_sg_running(mdev)) {
 			_drbd_rs_pause(mdev);
@@ -818,10 +817,10 @@ int drbd_worker(struct Drbd_thread *thi)
 		list_del_init(&w->list);
 		spin_unlock_irq(&mdev->req_lock);
 
-		if(!w->cb(mdev,w, mdev->cstate < Connected )) {
+		if(!w->cb(mdev,w, mdev->state.s.conn < Connected )) {
 			//WARN("worker: a callback failed! \n");
-			if (mdev->cstate >= Connected)
-				set_cstate(mdev,NetworkFailure);
+			if (mdev->state.s.conn >= Connected)
+				drbd_force_state(mdev,NS(conn,NetworkFailure));
 			drbd_thread_restart_nowait(&mdev->receiver);
 		}
 	}

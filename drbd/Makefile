@@ -74,7 +74,7 @@ else
   SRC_FILES := $(shell ls 2>/dev/null\
 	linux/drbd_config.h linux/drbd.h drbd_actlog.c drbd_bitmap.c drbd_fs.c \
 	drbd_main.c drbd_proc.c drbd_receiver.c drbd_req.c drbd_worker.c \
-	lru_cache.c drbd_compat_wrappers.h drbd_int.h \
+	drbd_strings.c lru_cache.c drbd_compat_wrappers.h drbd_int.h \
 	lru_cache.h )
 
   .PHONY: drbd.o default all greeting clean kbuild install dep

@@ -215,7 +215,7 @@ STATIC
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
-	int i, md_gc_valid, minor, mput=0;
+	int i, md_gc_valid, minor;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
@@ -227,7 +227,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	/* if you want to reconfigure, please tear down first */
 	smp_rmb();
-	if (!test_bit(DISKLESS,&mdev->flags))
+	if (mdev->state.s.disk > Diskless)
 		return -EBUSY;
 
 	/* if this was "adding" a lo dev to a previously "diskless" node,
@@ -235,7 +235,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	 * if it was mounted, we had an open_cnt > 1,
 	 * so it would be BUSY anyways...
 	 */
-	ERR_IF (mdev->state != Secondary)
+	ERR_IF (mdev->state.s.role != Secondary)
 		return -EBUSY;
 
 	if (mdev->open_cnt > 1)
@@ -257,20 +257,14 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	 *
 	 */
 
-	if (mdev->cstate == Unconfigured) {
-		// ioctl already has a refcnt
-		__module_get(THIS_MODULE);
-		mput = 1;
-	} else {
-		/* FIXME allow reattach while connected,
-		 * and allow it in Primary/Diskless state...
-		 * currently there are strange races leading to a distributed
-		 * deadlock in that case...
-		 */
-		if ( mdev->cstate != StandAlone /* &&
-		    mdev->cstate != Connected */) {
-			return -EBUSY;
-		}
+
+	/* FIXME allow reattach while connected,
+	 * and allow it in Primary/Diskless state...
+	 * currently there are strange races leading to a distributed
+	 * deadlock in that case...
+	 */
+	if ( mdev->state.s.conn > StandAlone ) {
+		return -EBUSY;
 	}
 
 	if ( new_conf.meta_index < -1) {
@@ -387,7 +381,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
 #undef min_not_zero
 
-	clear_bit(SENT_DISK_FAILURE,&mdev->flags);
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
 
 /* FIXME I think inc_local_md_only within drbd_md_read is misplaced.
@@ -441,24 +434,15 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
-	if(mdev->cstate == Unconfigured ) {
+	if (drbd_request_state(mdev,NS(disk,
+				       drbd_md_test_flag(mdev,MDF_Consistent) ?
+				       Consistent : Inconsistent ))) {
 		drbd_thread_start(&mdev->worker);
-		set_cstate(mdev,StandAlone);
 	}
 
-
-	clear_bit(DISKLESS,&mdev->flags);
-	smp_wmb();
 // FIXME EXPLAIN:
 	clear_bit(MD_IO_ALLOWED,&mdev->flags);
 
-	/* FIXME currently only StandAlone here...
-	 * Connected is not possible, since
-	 * above we return -EBUSY in that case  */
-	D_ASSERT(mdev->cstate <= Connected);
-	if(mdev->cstate == Connected ) {
-		drbd_send_param(mdev,1);
-	}
 	drbd_bm_unlock(mdev);
 
 	return 0;
@@ -468,7 +452,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
  release_bdev_fail_ioctl:
 	bd_release(bdev);
  fail_ioctl:
-	if (mput) module_put(THIS_MODULE);
 	if (filp) fput(filp);
 	if (filp2) fput(filp2);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
@@ -491,10 +474,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 		cn.meta_device_minor  = MINOR(mdev->md_bdev->bd_dev);
 		bdevname(mdev->md_bdev,cn.meta_device_name);
 	}
-	cn.cstate=mdev->cstate;
 	cn.state=mdev->state;
-	cn.peer_state=mdev->o_state;
-	cn.disk_size_user=mdev->lo_usize;
 	cn.meta_index=mdev->md_index;
 	cn.on_io_error=mdev->on_io_error;
 	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
@@ -510,7 +490,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 STATIC
 int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 {
-	int i,minor, mput=0;
+	int i,minor;
 	enum ret_codes retcode;
 	struct net_config new_conf;
 
@@ -520,24 +500,18 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
 		return -EFAULT;
 
-	if (mdev->cstate == Unconfigured) {
-		// ioctl already has a refcnt
-		__module_get(THIS_MODULE);
-		mput = 1;
-	}
-
 #define M_ADDR(A) (((struct sockaddr_in *)&A.my_addr)->sin_addr.s_addr)
 #define M_PORT(A) (((struct sockaddr_in *)&A.my_addr)->sin_port)
 #define O_ADDR(A) (((struct sockaddr_in *)&A.other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A.other_addr)->sin_port)
 	for(i=0;i<minor_count;i++) {
-		if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
+		if( i!=minor && drbd_conf[i].state.s.conn==Unconfigured &&
 		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
 		    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
 			retcode=LAAlreadyInUse;
 			goto fail_ioctl;
 		}
-		if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
+		if( i!=minor && drbd_conf[i].state.s.conn!=Unconfigured &&
 		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
 		    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
 			retcode=OAAlreadyInUse;
@@ -590,34 +564,26 @@ FIXME
 	mdev->recv_cnt = 0;
 
 	drbd_thread_start(&mdev->worker);
-	set_cstate(mdev,Unconnected);
+	drbd_request_state(mdev,NS(conn,Unconnected));
 	drbd_thread_start(&mdev->receiver);
 
 	return 0;
 
   fail_ioctl:
-	if (mput) module_put(THIS_MODULE);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
 
-int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
+int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 {
-	int forced = 0;
-	int dont_have_good_data;
+	int r;
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
 
-	if ( (newstate & 0x3) == mdev->state ) return 0; /* nothing to do */
+	if ( (newstate & 0x3) == mdev->state.s.role ) return 0; /* nothing to do */
 
 	// exactly one of sec or pri. not both.
 	if ( !((newstate ^ (newstate >> 1)) & 1) ) return -EINVAL;
-
-	if(mdev->cstate == Unconfigured)
-		return -ENXIO;
-
-	if ( (newstate & Primary) && (mdev->o_state == Primary) )
-		return -EACCES;
 
 	ERR_IF (mdev->this_bdev->bd_contains == 0) {
 		// FIXME this masks a bug somewhere else!
@@ -632,46 +598,31 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 			return -EBUSY;
 	}
 
-	/* I dont have access to good data anywhere, if:
-	 *  ( I am diskless OR inconsistent )
-	 *  AND
-	 *  ( not connected, or partner has no consistent data either )
-	 */
-	dont_have_good_data =
-		(    test_bit(DISKLESS, &mdev->flags)
-		  || !drbd_md_test_flag(mdev,MDF_Consistent) )
-		&&
-		( mdev->cstate < Connected
-		  || test_bit(PARTNER_DISKLESS, &mdev->flags)
-		  || !test_bit(PARTNER_CONSISTENT, &mdev->flags) );
-
-	if (newstate & Primary) {
-		if ( test_bit(DISKLESS,&mdev->flags)
-		    && mdev->cstate < Connected ) {
-			/* not even brute force can find data without disk.
-			 * FIXME choose a usefull Error,
-			 * and update drbsetup accordingly */
+	r = drbd_request_state(mdev,NS(role,newstate & 0x3));
+	if ( r == 2 ) { return 0; }
+	if ( r == 0 ) {
+		/* request state does not like the new state. */
+		if (! (newstate & DontBlameDrbd)) {
 			return -EIO;
-		} else if (dont_have_good_data) {
-			/* ok, either we have a disk (which may be inconsistent)
-			 * or we have a connection */
-			if (newstate & DontBlameDrbd) {
-				forced = 1;
-				/* make sure the Human count is increased if
-				 * we got here only because it was forced.
-				 * maybe we want to force a FullSync? */
-				newstate |= Human;
-			} else {
-				return -EIO;
-			}
-		} else if (mdev->cstate >= Connected) {
-			/* do NOT increase the Human count if we are connected,
-			 * and there is no reason for it.  See
-			 * drbd_lk9.pdf middle of Page 7
-			 */
-			newstate &= ~(Human|DontBlameDrbd);
+		}
+
+		/* --do-what-I-say*/
+		if (mdev->state.s.disk < Consistent) {
+			WARN("Forcefully set consistent!");
+			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
+							disk,Consistent));
+			if(r==0) return -EIO;
 		}
 	}
+
+	if (mdev->state.s.conn >= Connected) {
+		/* do NOT increase the Human count if we are connected,
+		 * and there is no reason for it.  See
+		 * drbd_lk9.pdf middle of Page 7
+		 */
+		newstate &= ~(Human|DontBlameDrbd);
+	}
+
 
 	drbd_sync_me(mdev);
 
@@ -691,25 +642,8 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	 * but that means someone is misusing DRBD...
 	 * */
 
-	if (forced) { /* this was --do-what-I-say ... */
-		int i;
-		// drbd_dump_md(mdev,0,0);
-		for (i=HumanCnt; i < GEN_CNT_SIZE ; i++) {
-			if (mdev->gen_cnt[i] != 1) {
-				WARN("Forcefully set consistent! "
-				     "If this screws your data, don't blame DRBD!\n");
-				break;
-			}
-		}
-		drbd_md_set_flag(mdev,MDF_Consistent);
-	}
 	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
-	INFO( "%s/%s --> %s/%s\n",
-	      nodestate_to_name(mdev->state),
-	      nodestate_to_name(mdev->o_state),
-	      nodestate_to_name(newstate & 0x03),
-	      nodestate_to_name(mdev->o_state)   );
-	mdev->state = (Drbd_State) newstate & 0x03;
+
 	if (newstate & Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
 	} else {
@@ -734,21 +668,16 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 			drbd_md_inc(mdev,TimeoutCnt);
 		} else {
 			drbd_md_inc(mdev,
-			    mdev->cstate >= Connected ?
-			    ConnectedCnt : ArbitraryCnt);
+				    mdev->state.s.conn >= Connected ?
+				    ConnectedCnt : ArbitraryCnt);
 		}
 	}
 
-	if(!test_bit(DISKLESS,&mdev->flags) && (newstate & Secondary)) {
+	if(mdev->state.s.disk > Diskless && (newstate & Secondary)) {
 		drbd_al_to_on_disk_bm(mdev);
 	}
 	/* Primary indicator has changed in any case. */
 	drbd_md_write(mdev);
-
-	if (mdev->cstate >= WFReportParams) {
-		/* if this was forced, we should consider sync */
-		drbd_send_param(mdev,forced);
-	}
 
 	return 0;
 }
@@ -806,7 +735,7 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	err = drbd_check_al_size(mdev);
 	if (err) return err;
 
-	if (mdev->cstate > WFConnection)
+	if (mdev->state.s.conn >= Connected)
 		drbd_send_sync_param(mdev,&sc);
 
 	drbd_alter_sg(mdev, sc.group);
@@ -814,51 +743,33 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	return 0;
 }
 
+/* new */
 STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 {
-	int would_discard_last_good_data;
-	int interrupted;
+	int interrupted,r;
+	drbd_state_t os,ns;
 
-	// not during resync. no.
-	if (mdev->cstate > Connected) return -EBUSY;
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	r = _drbd_set_state(mdev,_NS(disk,Diskless),0);
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
 
-	/* this was the last good data copy, if:
-	 *  (I am Primary, and not connected ),
-	 *  OR
-	 *  (we are connected, and Peer has no good data himself)
-	 */
-	would_discard_last_good_data =
-		( mdev->state == Primary && mdev->cstate < Connected )
-		||
-		( mdev->cstate >= Connected
-		  && (    test_bit(PARTNER_DISKLESS, &mdev->flags)
-		      || !test_bit(PARTNER_CONSISTENT, &mdev->flags) ) );
-
-	if ( would_discard_last_good_data ) {
-		return -ENETRESET;
-	}
-	if (test_bit(DISKLESS,&mdev->flags) ||
-	    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
-		return -ENXIO;
-	}
+	if( r == 2 ) { return 0; }
+	if( r == 0 ) { return -ENETRESET; }
 
 	drbd_sync_me(mdev);
-
-	set_bit(DISKLESS,&mdev->flags);
-	smp_wmb();
 
 	interrupted = wait_event_interruptible(mdev->cstate_wait,
 				      atomic_read(&mdev->local_cnt)==0);
 	if ( interrupted ) {
-		clear_bit(DISKLESS,&mdev->flags);
+		drbd_force_state(mdev,NS(disk,os.s.disk));
 		return -EINTR;
 	}
 
 	drbd_free_ll_dev(mdev);
+	after_state_ch(mdev, os, ns);
 
-/* FIXME race with sync start
-*/
-	if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 /* FIXME
 * if you detach while connected, you are *at least* inconsistent now,
 * and should clear MDF_Consistent in metadata, and maybe even set the bitmap
@@ -866,19 +777,13 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 * since if you reattach, this might be a different lo dev, and then it needs
 * to receive a sync!
 */
-	if (mdev->cstate == StandAlone) {
-		// maybe  < Connected is better?
-		set_cstate(mdev,Unconfigured);
-		drbd_mdev_cleanup(mdev);
-		module_put(THIS_MODULE);
-	}
 	return 0;
 }
 
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
-	int minor,err=0;
+	int r,minor,err=0;
 	long time;
 	struct Drbd_Conf *mdev;
 	struct ioctl_wait* wp;
@@ -914,44 +819,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	    && cmd != DRBD_IOCTL_GET_VERSION) {
 		err = -EPERM;
 		goto out_unlocked;
-	}
-
-	if (mdev->cstate == Unconfigured) {
-		switch (cmd) {
-		default:
-			/* oops, unknown IOCTL ?? */
-			err = -EINVAL;
-			goto out_unlocked;
-
-		case DRBD_IOCTL_GET_CONFIG:
-		case DRBD_IOCTL_GET_VERSION:
-			break;		/* always allowed */
-
-		case DRBD_IOCTL_SET_DISK_CONFIG:
-		case DRBD_IOCTL_SET_NET_CONFIG:
-			break;		/* no restriction here */
-
-		case DRBD_IOCTL_UNCONFIG_DISK:
-		case DRBD_IOCTL_UNCONFIG_NET:
-			/* no op, so "drbdadm down all" does not fail */
-			err = 0;
-			goto out_unlocked;
-
-		/* the rest of them don't make sense if Unconfigured.
-		 * still, set an Unconfigured device Secondary
-		 * is allowed, so "drbdadm down all" does not fail */
-		case DRBD_IOCTL_SET_STATE:
-		case DRBD_IOCTL_INVALIDATE:
-		case DRBD_IOCTL_INVALIDATE_REM:
-		case DRBD_IOCTL_SET_DISK_SIZE:
-		case DRBD_IOCTL_SET_STATE_FLAGS:
-		case DRBD_IOCTL_SET_SYNC_CONFIG:
-		case DRBD_IOCTL_WAIT_CONNECT:
-		case DRBD_IOCTL_WAIT_SYNC:
-			err = (cmd == DRBD_IOCTL_SET_STATE && arg == Secondary)
-				    ? 0 : -ENXIO;
-			goto out_unlocked;
-		}
 	}
 
 	if (unlikely(drbd_did_panic == DRBD_MAGIC))
@@ -1000,7 +867,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_DISK_SIZE:
-		if (mdev->cstate > Connected) {
+		if (mdev->state.s.conn > Connected) {
 			err = -EBUSY;
 			break;
 		}
@@ -1010,7 +877,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		drbd_bm_unlock(mdev);
-		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
+		if (mdev->state.s.conn == Connected) drbd_send_param(mdev,0);
 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:
@@ -1027,31 +894,31 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_NET:
-		if ( mdev->cstate == Unconfigured) break;
-		if (  (   mdev->state  == Primary
-		       && test_bit(DISKLESS,&mdev->flags) )
-		   || (   mdev->o_state == Primary
-		       && !test_bit(PARTNER_CONSISTENT,&mdev->flags) ) )
-		{
+		if ( mdev->state.s.conn == Unconfigured) break;
+
+		r = drbd_request_state(mdev,NS(conn,StandAlone));
+		if( r == 2 ) { break; }
+		if( r == 0 ) {
 			err=-ENODATA;
 			break;
-		}
-		/* FIXME what if fsync returns error */
-		drbd_sync_me(mdev);
+		} 
+		/* r == 1 which means that we changed the state... */
+
+		drbd_sync_me(mdev); /* FIXME what if fsync returns error */
+
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		set_cstate(mdev,Unconnected);
 		drbd_thread_stop(&mdev->receiver);
 
-		if (test_bit(DISKLESS,&mdev->flags)) {
-			set_cstate(mdev,Unconfigured);
-			drbd_mdev_cleanup(mdev);
+		if ( mdev->state.s.conn == StandAlone && 
+		     mdev->state.s.disk == Diskless ) {
+			drbd_mdev_cleanup(mdev);  // Move to after_state_ch() ?
 			module_put(THIS_MODULE);
-		} else set_cstate(mdev,StandAlone);
+		}
 
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_DISK:
-		if (mdev->cstate == Unconfigured) break;
+		if (mdev->state.s.disk == Diskless) break;
 		err = drbd_detach_ioctl(mdev);
 		break;
 
@@ -1064,8 +931,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		time = wait_event_interruptible_timeout(
 			mdev->cstate_wait,
-			mdev->cstate < Unconnected
-			|| mdev->cstate >= Connected,
+			mdev->state.s.conn < Unconnected
+			|| mdev->state.s.conn >= Connected,
 			time );
 		if (time < 0) {
 			err = time;
@@ -1077,7 +944,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 		err=0; // no error
 
-		if(put_user(mdev->cstate>=Connected,&wp->ret_code))err=-EFAULT;
+		if(put_user(mdev->state.s.conn>=Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
 
 	case DRBD_IOCTL_WAIT_SYNC:
@@ -1089,8 +956,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		do {
 			time = wait_event_interruptible_timeout(
 				mdev->cstate_wait,
-				mdev->cstate == Connected
-				|| mdev->cstate < Unconnected,
+				mdev->state.s.conn == Connected
+				|| mdev->state.s.conn < Unconnected,
 				time );
 
 			if (time < 0 ) {
@@ -1098,7 +965,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 				goto out_unlocked;
 			}
 
-			if (mdev->cstate > Connected) {
+			if (mdev->state.s.conn > Connected) {
 				time=MAX_SCHEDULE_TIMEOUT;
 			}
 
@@ -1106,12 +973,12 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 				err = -ETIME;
 				goto out_unlocked;
 			}
-		} while ( mdev->cstate != Connected
-			  && mdev->cstate >= Unconnected );
+		} while ( mdev->state.s.conn != Connected
+			  && mdev->state.s.conn >= Unconnected );
 
 		err=0; // no error
 
-		if(put_user(mdev->cstate==Connected,&wp->ret_code))err=-EFAULT;
+		if(put_user(mdev->state.s.conn==Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
 
 	case DRBD_IOCTL_INVALIDATE:
@@ -1123,23 +990,22 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		/* disallow "invalidation" of local replica
 		 * when currently in primary state (would be a Bad Idea),
 		 * or during a running sync (won't make any sense) */
-		if( mdev->state == Primary ||
-		    mdev->cstate < StandAlone ||
-		    mdev->cstate > Connected ||
-		    test_bit(DISKLESS,&mdev->flags) ||
-		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+
+		/* PRE TODO disallow invalidate if we are primary */
+		r = drbd_request_state(mdev,NS2(disk,Inconsistent,
+					        conn,WFBitMapT));
+
+		if( r == 2 ) { break; }
+		if( r == 0 ) {
 			err = -EINPROGRESS;
 			break;
-		}
+		} 
 
-		if (mdev->cstate == Connected) {
-			/* avoid races with set_in_sync
-			 * for successfull mirrored writes
-			 */
-			set_cstate(mdev,WFBitMapT);
-			wait_event(mdev->cstate_wait,
-				   atomic_read(&mdev->ap_bio_cnt)==0);
-		}
+		/* avoid races with set_in_sync
+		 * for successfull mirrored writes
+		 */
+		wait_event(mdev->cstate_wait,
+			   atomic_read(&mdev->ap_bio_cnt)==0);
 
 		drbd_bm_lock(mdev); // racy...
 
@@ -1153,8 +1019,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
 
-		if (mdev->cstate == Connected) {
-			drbd_send_short_cmd(mdev,BecomeSyncSource);
+		if (drbd_send_short_cmd(mdev,BecomeSyncSource)) {
 			drbd_start_resync(mdev,SyncTarget);
 		}
 
@@ -1163,18 +1028,17 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
-		if( mdev->o_state == Primary ||
-		    mdev->cstate != Connected ||
-		    test_bit(DISKLESS,&mdev->flags) ||
-		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+
+		/* PRE TODO disallow invalidate if we peer is primary */
+		/* remove EINVAL from error output... */
+		r = drbd_request_state(mdev,NS2(pedi,Inconsistent,
+					        conn,WFBitMapS));
+
+		if( r == 2 ) { break; }
+		if( r == 0 ) {
 			err = -EINPROGRESS;
 			break;
-		}
-		if ( !drbd_md_test_flag(mdev,MDF_Consistent) ) {
-			// FIXME use a more descriptive error number
-			err = -EINVAL;
-			break;
-		}
+		} 
 
 		drbd_md_set_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
@@ -1182,7 +1046,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		/* avoid races with set_in_sync
 		 * for successfull mirrored writes
 		 */
-		set_cstate(mdev,WFBitMapS);
 		wait_event(mdev->cstate_wait,
 		     atomic_read(&mdev->ap_bio_cnt)==0);
 

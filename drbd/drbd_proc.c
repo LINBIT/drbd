@@ -146,42 +146,22 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	return sz;
 }
 
-const char* cstate_to_name(Drbd_CState s) {
-	static const char *cstate_names[] = {
-		[Unconfigured]   = "Unconfigured",
-		[StandAlone]     = "StandAlone",
-		[Unconnected]    = "Unconnected",
-		[Timeout]        = "Timeout",
-		[BrokenPipe]     = "BrokenPipe",
-		[NetworkFailure] = "NetworkFailure",
-		[WFConnection]   = "WFConnection",
-		[WFReportParams] = "WFReportParams",
-		[Connected]      = "Connected",
-		[SkippedSyncS]   = "SkippedSyncS",
-		[SkippedSyncT]   = "SkippedSyncT",
-		[WFBitMapS]      = "WFBitMapS",
-		[WFBitMapT]      = "WFBitMapT",
-		[SyncSource]     = "SyncSource",
-		[SyncTarget]     = "SyncTarget",
-		[PausedSyncS]    = "PausedSyncS",
-		[PausedSyncT]    = "PausedSyncT",
-	};
-
+const char* cstate_to_name(drbd_conns_t s) {
 	return s < Unconfigured ? "TO_SMALL" :
 	       s > PausedSyncT  ? "TO_LARGE"
-		                : cstate_names[s];
+		                : drbd_conn_s_names[s];
 }
 
-const char* nodestate_to_name(Drbd_State s) {
-	static const char *state_names[] = {
-		[Primary]   = "Primary",
-		[Secondary] = "Secondary",
-		[Unknown]   = "Unknown"
-	};
-
+const char* nodestate_to_name(drbd_role_t s) {
 	return s < Unknown    ? "TO_SMALL" :
 	       s > Secondary  ? "TO_LARGE"
-		              : state_names[s];
+		              : drbd_role_s_names[s];
+}
+
+const char* diskstate_to_name(drbd_disks_t s) {
+	return s < DUnknown    ? "TO_SMALL" :
+	       s > UpToDate    ? "TO_LARGE"
+		              : drbd_disk_s_names[s];
 }
 
 /* FIXME we should use snprintf, we only have guaranteed room for one page...
@@ -209,27 +189,30 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		sn = cstate_to_name(drbd_conf[i].cstate);
+		sn = cstate_to_name(drbd_conf[i].state.s.conn);
+		
+		/* PRE FIXME
 		if(drbd_conf[i].cstate == Connected) {
 			if(test_bit(DISKLESS,&drbd_conf[i].flags))
 				sn = "DiskLessClient";
 			if(test_bit(PARTNER_DISKLESS,&drbd_conf[i].flags))
 				sn = "ServerForDLess";
-		}
-		if ( drbd_conf[i].cstate == Unconfigured ) {
+				} */
+		
+		if ( drbd_conf[i].state.s.conn == StandAlone && 
+		     drbd_conf[i].state.s.disk == Diskless) {
 			rlen += sprintf( buf + rlen,
-			   "%2d: cs:Unconfigured\n", i);
+			   "%2d: Unconfigured\n", i);
 		} else {
 			rlen += sprintf( buf + rlen,
-			   "%2d: cs:%s st:%s/%s ld:%s\n"
+			   "%2d: cs:%s st:%s/%s ds:%s/%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
-			   nodestate_to_name(drbd_conf[i].state),
-			   nodestate_to_name(drbd_conf[i].o_state),
-			   (drbd_conf[i].gen_cnt[Flags]
-			    & MDF_Consistent) ? "Consistent" : "Inconsistent",
-			// FIXME partner consistent?
+			   nodestate_to_name(drbd_conf[i].state.s.role),
+			   nodestate_to_name(drbd_conf[i].state.s.peer),
+			   diskstate_to_name(drbd_conf[i].state.s.disk),
+			   diskstate_to_name(drbd_conf[i].state.s.pedi),
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,
@@ -243,8 +226,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].ap_bio_cnt)
 			);
 
-			if ( drbd_conf[i].cstate == SyncSource ||
-			     drbd_conf[i].cstate == SyncTarget ) {
+			if ( drbd_conf[i].state.s.conn == SyncSource ||
+			     drbd_conf[i].state.s.conn == SyncTarget ) {
 				rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
 			}
 

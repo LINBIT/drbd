@@ -613,9 +613,6 @@ enum {
 	ON_PRI_INC_TIMEOUTEX,   // When " - "  increase timeout-count
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
-	DISKLESS,		// no local disk
-	PARTNER_DISKLESS,	// partner has no storage
-	PARTNER_CONSISTENT,	// partner has consistent data
 	PROCESS_EE_RUNNING,	// eek!
 	MD_IO_ALLOWED,		// EXPLAIN
 	SENT_DISK_FAILURE,	// sending it once is enough
@@ -678,10 +675,8 @@ struct Drbd_Conf {
 	int md_index;
 	sector_t lo_usize;   /* user provided size */
 	sector_t p_size;     /* partner's disk size */
-	Drbd_State state;
-	volatile Drbd_CState cstate;
+	/* volatile */ drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
-	Drbd_State o_state;
 	sector_t la_size;     // last agreed disk size in sectors.
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -748,7 +743,8 @@ struct Drbd_Conf {
  *************************/
 
 // drbd_main.c
-extern void _set_cstate(drbd_dev* mdev,Drbd_CState cs);
+extern int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard);
+extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns);
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(drbd_dev *mdev);
@@ -950,14 +946,14 @@ extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 // drbd_fs.c
 extern char* ppsize(char* buf, size_t size);
 extern int drbd_determin_dev_size(drbd_dev*);
-extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
+extern int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
 // drbd_dsender.c
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sg(drbd_dev *mdev, int ng);
-extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
+extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
 extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?
 extern int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw);
@@ -984,8 +980,8 @@ extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
 extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
-extern const char* cstate_to_name(Drbd_CState s);
-extern const char* nodestate_to_name(Drbd_State s);
+extern const char* cstate_to_name(drbd_conns_t s);
+extern const char* nodestate_to_name(drbd_role_t s);
 
 // drbd_actlog.c
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
@@ -1010,12 +1006,55 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 
 #include "drbd_compat_wrappers.h"
 
-static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
+#define peer_mask role_mask
+#define pedi_mask disk_mask
+
+#define NS(T,S) ({drbd_state_t mask; mask.i=0; mask.s.T = T##_mask; mask;}), \
+                ({drbd_state_t val; val.i=0; val.s.T = (S); val;})
+#define NS2(T1,S1,T2,S2) \
+                ({drbd_state_t mask; mask.i=0; mask.s.T1 = T1##_mask; \
+		  mask.s.T2 = T2##_mask; mask;}), \
+                ({drbd_state_t val; val.i=0; val.s.T1 = (S1); \
+                  val.s.T2 = (S2); val;})
+#define NS3(T1,S1,T2,S2,T3,S3) \
+                ({drbd_state_t mask; mask.i=0; mask.s.T1 = T1##_mask; \
+		  mask.s.T2 = T2##_mask; mask.s.T3 = T3##_mask; mask;}), \
+                ({drbd_state_t val; val.i=0; val.s.T1 = (S1); \
+                  val.s.T2 = (S2); val.s.T3 = (S3); val;})
+
+#define _NS(T,S) ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T = (S); ns;})
+
+static inline void drbd_force_state(drbd_dev* mdev, 
+				    drbd_state_t mask, drbd_state_t val)
 {
 	unsigned long flags;
+	drbd_state_t os,ns;
+
 	spin_lock_irqsave(&mdev->req_lock,flags);
-	_set_cstate(mdev,ns);
+	os = mdev->state;
+	ns.i = (os.i & ~mask.i) | val.i;
+	_drbd_set_state(mdev, ns, 1);
+	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	after_state_ch(mdev,os,ns);
+}
+
+static inline int drbd_request_state(drbd_dev* mdev, 
+				     drbd_state_t mask, drbd_state_t val)
+{
+	unsigned long flags;
+	drbd_state_t os,ns;
+	int rv;
+
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	os = mdev->state;
+	ns.i = (os.i & ~mask.i) | val.i;
+	rv = _drbd_set_state(mdev, ns, 0);
+	ns = mdev->state;
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	after_state_ch(mdev,os,ns);
+
+	return rv;
 }
 
 /**
@@ -1025,30 +1064,25 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 {
 	if (error) {
+		unsigned long flags;
+		spin_lock_irqsave(&mdev->req_lock,flags);
+
 		switch(mdev->on_io_error) {
 		case PassOn:
 			ERR("Ignoring local IO error!\n");
 			break;
 		case Panic:
-			set_bit(DISKLESS,&mdev->flags);
-			smp_mb(); // but why is there smp_mb__after_clear_bit() ?
+			_drbd_set_state(mdev,_NS(disk,Failed),1);
 			drbd_panic("IO error on backing device!\n");
 			break;
 		case Detach:
-			/*lge:
-			 *  I still do not fully grasp when to set or clear
-			 *  this flag... but I want to be able to at least
-			 *  still _try_ and write the "I am inconsistent, and
-			 *  need full sync" information to the MD. */
 			set_bit(MD_IO_ALLOWED,&mdev->flags);
-			drbd_md_set_flag(mdev,MDF_FullSync);
-			drbd_md_clear_flag(mdev,MDF_Consistent);
-			if (!test_and_set_bit(DISKLESS,&mdev->flags)) {
-				smp_mb(); // Nack is sent in w_e handlers.
+			if (_drbd_set_state(mdev,_NS(disk,Failed),1) == 1) {
 				ERR("Local IO failed. Detaching...\n");
 			}
 			break;
 		}
+		spin_unlock_irqrestore(&mdev->req_lock,flags);
 	}
 }
 
@@ -1253,7 +1287,7 @@ static inline int inc_local(drbd_dev* mdev)
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = !test_bit(DISKLESS,&mdev->flags);
+	io_allowed = (mdev->state.s.disk >= Inconsistent);
 	if( !io_allowed ) {
 		atomic_dec(&mdev->local_cnt);
 	}
@@ -1265,7 +1299,7 @@ static inline int inc_local_md_only(drbd_dev* mdev)
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = !test_bit(DISKLESS,&mdev->flags) ||
+	io_allowed = (mdev->state.s.disk >= Inconsistent) ||
 		test_bit(MD_IO_ALLOWED,&mdev->flags);
 	if( !io_allowed ) {
 		atomic_dec(&mdev->local_cnt);
@@ -1276,7 +1310,7 @@ static inline int inc_local_md_only(drbd_dev* mdev)
 static inline void dec_local(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->local_cnt) && 
-	   test_bit(DISKLESS,&mdev->flags) &&
+	   mdev->state.s.disk == Diskless &&
 	   mdev->lo_file) {
 		wake_up(&mdev->cstate_wait);
 	}
