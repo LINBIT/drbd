@@ -1292,16 +1292,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	ERR_IF(!req || !req->master_bio) return FALSE;
 
-	p.head.magic   = BE_DRBD_MAGIC;
-	p.head.command = cpu_to_be16(Data);
-	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
-				     + drbd_req_get_size(req) );
-
-	p.sector   = cpu_to_be64(drbd_req_get_sector(req));
-	p.block_id = (unsigned long)req;
-	p.seq_num  = cpu_to_be32( req->seq_num =
-				  atomic_add_return(1,&mdev->packet_seq) );
-
 	/* About tl_add():
 	1. This must be within the semaphor,
 	   to ensure right order in tl_ data structure and to
@@ -1334,11 +1324,29 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		ok = _drbd_send_barrier(mdev);
 	if(ok) {
 		if (mdev->conf.two_primaries) {
-			if(ee_have_write(mdev,req)) return -1;
+			if(ee_have_write(mdev,req)) {
+				ok=-1;
+				goto out;
+			}
 		} else {
 			tl_add(mdev,req);
 		}
+
+		p.head.magic   = BE_DRBD_MAGIC;
+		p.head.command = cpu_to_be16(Data);
+		p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
+					      + drbd_req_get_size(req) );
+
+		p.sector   = cpu_to_be64(drbd_req_get_sector(req));
+		p.block_id = (unsigned long)req;
+		p.seq_num  = cpu_to_be32( req->seq_num =
+				     atomic_add_return(1,&mdev->packet_seq) );
+
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
+		// Instrumentation
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(HZ);
+
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 		if(ok) {
@@ -1357,6 +1365,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1,
 			     drbd_req_get_sector(req));
 	}
+ out:
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);

@@ -716,6 +716,9 @@ int drbd_connect(drbd_dev *mdev)
 	sock->sk->sk_sndtimeo = mdev->conf.timeout*HZ/20;
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
+	atomic_set(&mdev->packet_seq,0);
+	mdev->peer_seq=0;
+
 	drbd_thread_start(&mdev->asender);
 
 	drbd_send_protocol(mdev);
@@ -1071,6 +1074,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		return TRUE;
 	}
 
+	e->block_id = p->block_id; // no meaning on this side, e* on partner
+	drbd_ee_prepare_write(mdev, e, sector, data_size);
+	e->w.cb     = e_end_block;
+
 	/* This wait_event is here to make sure that never ever an
 	   DATA packet traveling via sock can overtake an ACK packet
 	   traveling on msock 
@@ -1078,6 +1085,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	*/
 	if (mdev->conf.two_primaries) {
 		packet_seq = be32_to_cpu(p->seq_num);
+		if( packet_seq > peer_seq(mdev)+1 ) {
+			WARN(" will wait till (packet_seq) %d <= %d\n",
+			     packet_seq,peer_seq(mdev)+1);
+		}
 		if( wait_event_interruptible(mdev->cstate_wait, 
 					     packet_seq <= peer_seq(mdev)+1) )
 			return FALSE;
@@ -1092,6 +1103,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			spin_lock_irq(&mdev->ee_lock);
 			drbd_put_ee(mdev,e);
 			spin_unlock_irq(&mdev->ee_lock);
+			atomic_inc(&mdev->epoch_size);
+			dec_local(mdev);
 			WARN("Concurrent write! [DISCARD BY LIST] sec=%lu\n",
 			     (unsigned long)sector);
 			return TRUE;
@@ -1103,7 +1116,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			if( req->rq_status & RQ_DRBD_SENT ) {
 				/* Conflicting write, got ACK */
 				/* write afterwards ...*/
-				WARN("Concurrent write! [W AFTERWARDS] "
+				WARN("Concurrent write! [W AFTERWARDS1] "
 				     "sec=%lu\n",(unsigned long)sector);
 				if( wait_event_interruptible(mdev->cstate_wait,
 					       !req_have_write(mdev,e))) {
@@ -1118,12 +1131,14 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 					spin_lock_irq(&mdev->ee_lock);
 					drbd_put_ee(mdev,e);
 					spin_unlock_irq(&mdev->ee_lock);
+					atomic_inc(&mdev->epoch_size);
+					dec_local(mdev);
 					WARN("Concurrent write! [DISCARD BY FLAG] sec=%lu\n",
 					     (unsigned long)sector);
 					return TRUE;
 				} else {
 					/* write afterwards do not exp ACK */
-					WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
+					WARN("Concurrent write! [W AFTERWARDS2] sec=%lu\n",
 					     (unsigned long)sector);
 					drbd_send_discard(mdev,req);
 					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
@@ -1138,11 +1153,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			}
 		}
 	}
-
-	e->block_id = p->block_id; // no meaning on this side, e* on partner
-
-	drbd_ee_prepare_write(mdev, e, sector, data_size);
-	e->w.cb     = e_end_block;
 
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->active_ee);
@@ -1159,6 +1169,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		// nothing to do
 		break;
 	}
+
+	// Instrumentation
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(HZ);
 
 	drbd_generic_make_request(WRITE,&e->private_bio);
 

@@ -978,6 +978,10 @@ STATIC int drbd_ioctl_get_gen_cnt(struct Drbd_Conf *mdev,
 	struct ioctl_get_gen_cnt cn;
 	int i;
 
+	if( mdev->state.s.disk <= Failed ) {
+		return -EIO;
+	}
+
 	memset(&cn,0,sizeof(cn));
 
 	for(i=Flags;i<=ArbitraryCnt;i++)
