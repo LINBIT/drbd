@@ -418,6 +418,11 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 		*bm++ = word;
 		b->bm_set += hweight_long(word) - bits;
 	}
+	/* with 32bit <-> 64bit cross-platform connect
+	 * this is only correct for current usage,
+	 * where we _know_ that we are 64 bit aligned,
+	 * and know that this function is used in this way, too...
+	 */
 	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
 	}
@@ -451,6 +456,11 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 		*bm++ = word;
 		b->bm_set += hweight_long(word) - bits;
 	}
+	/* with 32bit <-> 64bit cross-platform connect
+	 * this is only correct for current usage,
+	 * where we _know_ that we are 64 bit aligned,
+	 * and know that this function is used in this way, too...
+	 */
 	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
 	}
@@ -670,9 +680,9 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	if (b->bm_fo < b->bm_bits)
+	if (b->bm_fo < b->bm_bits) {
 		i = find_next_bit(b->bm,b->bm_bits,b->bm_fo);
-	else if (b->bm_fo > b->bm_bits) {
+	} else if (b->bm_fo > b->bm_bits) {
 		ERR("bm_fo=%lu bm_bits=%lu\n",b->bm_fo, b->bm_bits);
 	}
 	if (i >= b->bm_bits) {
