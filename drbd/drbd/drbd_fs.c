@@ -69,9 +69,10 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 }
 
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
+int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size)
 {
-	unsigned long p_size = mdev->p_disk_size; // parnter's size
+	// p_size ___ partner's disk size
+	unsigned long la_size = mdev->la_size; // last agreed size.
 	unsigned long m_size; // my size
 	unsigned long u_size = mdev->lo_usize; // size requested by user.
 	unsigned long size=0;
@@ -85,8 +86,14 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		size=min_t(unsigned long,p_size,m_size);
 	} else {
 		rv=1;
-		if(p_size) size=p_size;
-		if(m_size) size=m_size;
+		if(la_size) {
+			size=la_size;
+			if(m_size && m_size < size) size=m_size;
+			if(p_size && p_size < size) size=p_size;
+		} else {
+			if(m_size) size=m_size;
+			if(p_size) size=p_size;
+		}
 	} 
 
 	if(size == 0) {
@@ -104,6 +111,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	if( blk_size[MAJOR_NR][minor] != size ) {
 		blk_size[MAJOR_NR][minor] = size;
+		mdev->la_size = size;
 		printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",minor,size);
 	}
 
@@ -196,7 +204,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
         }
 
 	drbd_md_read(mdev);
-	drbd_determin_dev_size(mdev);
+	drbd_determin_dev_size(mdev,0);
 	
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);

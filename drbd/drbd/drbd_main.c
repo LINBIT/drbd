@@ -1045,7 +1045,7 @@ int __init drbd_init(void)
 		drbd_conf[i].state = Secondary;
 		init_waitqueue_head(&drbd_conf[i].state_wait);
 		drbd_conf[i].o_state = Unknown;
-		drbd_conf[i].p_disk_size = 0;
+		drbd_conf[i].la_size = 0;
 		drbd_conf[i].cstate = Unconfigured;
 		drbd_conf[i].send_cnt = 0;
 		drbd_conf[i].recv_cnt = 0;
@@ -1418,9 +1418,8 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 /* meta data management */
 
 struct meta_data_on_disk {
-	__u64 pp_size;             // size of partner's disk
-	//__u64 la_size;           // last agreed size. TODO: Would me more usefull!
-	__u32 gc[GEN_CNT_SIZE];    // generation counter
+	__u64 la_size;           // last agreed size.
+	__u32 gc[GEN_CNT_SIZE];  // generation counter
 	__u32 magic;      
 };
 
@@ -1442,7 +1441,7 @@ void drbd_md_write(struct Drbd_Conf *mdev)
 	
 	for(i=Flags;i<=ArbitraryCnt;i++) 
 		buffer.gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
-	buffer.pp_size=cpu_to_be64(mdev->p_disk_size);
+	buffer.la_size=cpu_to_be64(blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]);
 	buffer.magic=cpu_to_be32(DRBD_MD_MAGIC);
 	
 	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
@@ -1484,7 +1483,7 @@ void drbd_md_read(struct Drbd_Conf *mdev)
 	if(be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC) goto err;
 	for(i=Flags;i<=ArbitraryCnt;i++) 
 		mdev->gen_cnt[i]=be32_to_cpu(buffer.gc[i]);
-	mdev->p_disk_size = be64_to_cpu(buffer.pp_size);
+	mdev->la_size = be64_to_cpu(buffer.la_size);
 	return;
  err:
 	printk(KERN_INFO DEVICE_NAME "%d: Creating state file\n\"%s\"\n",

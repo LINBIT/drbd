@@ -318,7 +318,7 @@ struct Drbd_Conf {
 	wait_queue_head_t cstate_wait;
 	wait_queue_head_t state_wait;
 	Drbd_State o_state;
-	unsigned long int p_disk_size; // size of partner's disk
+	unsigned long int la_size; // last agreed disk size
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -410,7 +410,7 @@ extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
 
 /* drbd_fs.c: */
-extern int drbd_determin_dev_size(struct Drbd_Conf* mdev);
+extern int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size);
 extern int drbd_set_state(int minor,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);

@@ -1145,6 +1145,7 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 	int minor=(int)(mdev-drbd_conf);
 	int no_sync=0;
 	int oo_state;
+	unsigned long p_size;
 
 	/*printk(KERN_DEBUG DEVICE_NAME
 	  ": recv ReportParams/m=%d\n",(int)(mdev-drbd_conf));*/
@@ -1183,9 +1184,11 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 		return FALSE;
 	}
 
-	clear_bit(PARTNER_DISKLESS, &mdev->flags); // TODO
-	mdev->p_disk_size=be64_to_cpu(param.p_size);
-	no_sync=drbd_determin_dev_size(mdev);
+	p_size=be64_to_cpu(param.p_size);
+	if(p_size) clear_bit(PARTNER_DISKLESS, &mdev->flags);
+	else set_bit(PARTNER_DISKLESS, &mdev->flags);
+
+	no_sync=drbd_determin_dev_size(mdev,p_size);
 
 	if( blk_size[MAJOR_NR][minor] == 0) {
 		set_cstate(mdev,StandAlone);
