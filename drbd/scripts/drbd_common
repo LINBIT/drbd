@@ -152,7 +152,7 @@ setMasterBoot()
 
 setSlaveBoot()
 {
-	rm -f $STATE/"$1"_master
+	rm -f $STATE/"$1"_master 2> /dev/null
 }
 
 # Usefull function ..

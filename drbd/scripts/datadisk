@@ -88,7 +88,7 @@ case "$OPTION" in
 		fi
 		touch $STATE/"$RESOURCE"_safe
 	else
-		rm $STATE/"$RESOURCE"_safe 2> /dev/null
+		rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
 	fi
 
         setLocal $CONFIG $RESOURCE
@@ -145,7 +145,7 @@ case "$OPTION" in
 
 		if [ $SAFE != "false" ]; then
 			logger -t "datadisk" "Safe mode : Clean shutdown for $RESOURCE"
-			rm $STATE/"$RESOURCE"_safe 2> /dev/null
+			rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
 		fi
 
 		$INSTALL/drbdc slave $RESOURCE
