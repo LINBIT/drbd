@@ -53,7 +53,6 @@
 #include "drbd_int.h"
 
 #define EE_MININUM 32    // @4k pages => 128 KByte
-#define EE_MAXIMUM 2048  // @4k pages => 8   MByte
 
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
@@ -403,7 +402,7 @@ STATIC int drbd_process_ee(struct Drbd_Conf* mdev,struct list_head *head)
 	return rv;
 }
 
-STATIC inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
+STATIC void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 {
 	struct list_head *le;
         struct Tl_epoch_entry *e;
@@ -429,6 +428,7 @@ STATIC inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 			 struct list_head *to)
 {
+	wait_queue_t wait;
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
 
@@ -446,9 +446,21 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 			continue;
 		}
 		get_bh(e->bh); 
+
+		spin_lock(&e->bh->b_wait.lock);
+		__add_wait_queue(&e->bh->b_wait, &wait);
+		spin_unlock(&e->bh->b_wait.lock);
+
 		spin_unlock_irq(&mdev->ee_lock);
-		wait_on_buffer(e->bh);
+
+		schedule_timeout(MAX_SCHEDULE_TIMEOUT);
+
 		spin_lock_irq(&mdev->ee_lock);
+
+		spin_lock(&e->bh->b_wait.lock);
+		__remove_wait_queue(&e->bh->b_wait, &wait);
+		spin_unlock(&e->bh->b_wait.lock);
+
 		put_bh(e->bh);
 		/* The IRQ handler does not move a list entry if someone is 
 		   in wait_on_buffer for that entry, therefore we have to
@@ -744,7 +756,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 	return 1;
 }
 
-STATIC inline int receive_barrier(struct Drbd_Conf* mdev)
+STATIC int receive_barrier(struct Drbd_Conf* mdev)
 {
   	Drbd_Barrier_P header;
 	int rv;
@@ -806,7 +818,7 @@ STATIC void ensure_blocksize(struct Drbd_Conf* mdev,int data_size)
 	}
 }
 
-STATIC inline struct Tl_epoch_entry *
+STATIC struct Tl_epoch_entry *
 read_in_block(struct Drbd_Conf* mdev,int data_size)
 {
 	struct Tl_epoch_entry *e;
@@ -839,7 +851,7 @@ read_in_block(struct Drbd_Conf* mdev,int data_size)
 	return e;
 }
 
-STATIC inline void receive_data_tail(struct Drbd_Conf* mdev,int data_size)
+STATIC void receive_data_tail(struct Drbd_Conf* mdev,int data_size)
 {
 	/* Actually the primary can send up to NR_REQUEST / 3 blocks,
 	 * but we already start when we have NR_REQUEST / 4 blocks.
@@ -1090,7 +1102,7 @@ STATIC int e_end_rsdata_req(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 	return ok;
 }
 
-STATIC inline int receive_drequest(struct Drbd_Conf* mdev,int command)
+STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 {
 	Drbd_BlockRequest_P header;
 	unsigned long block_nr;
@@ -1148,7 +1160,7 @@ STATIC inline int receive_drequest(struct Drbd_Conf* mdev,int command)
 	return TRUE;
 }
 
-STATIC inline int receive_param(struct Drbd_Conf* mdev)
+STATIC int receive_param(struct Drbd_Conf* mdev)
 {
         Drbd_Parameter_P param;
 	int blksize;
@@ -1323,7 +1335,7 @@ static inline unsigned long parallel_bitcount (unsigned long n)
 #undef MASK
 #undef COUNT
 
-STATIC inline int receive_bitmap(struct Drbd_Conf* mdev)
+STATIC int receive_bitmap(struct Drbd_Conf* mdev)
 {
 	size_t bm_words;
 	u32 *buffer,*bm,word;
@@ -1368,7 +1380,7 @@ STATIC inline int receive_bitmap(struct Drbd_Conf* mdev)
 	return ret;
 }
 
-STATIC inline int receive_in_sync(struct Drbd_Conf* mdev)
+STATIC int receive_in_sync(struct Drbd_Conf* mdev)
 {     
 	Drbd_Data_P header;
 	struct Pending_read *pr;
@@ -1390,7 +1402,7 @@ STATIC inline int receive_in_sync(struct Drbd_Conf* mdev)
 }
 
 
-STATIC inline void drbd_collect_zombies(int minor)
+STATIC void drbd_collect_zombies(int minor)
 {
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
 		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
@@ -1654,7 +1666,7 @@ STATIC void got_block_ack(struct Drbd_Conf* mdev,Drbd_BlockAck_Packet* pkt)
 	}
 }
 
-inline void got_barrier_ack(struct Drbd_Conf* mdev,Drbd_BarrierAck_Packet* pkt)
+STATIC void got_barrier_ack(struct Drbd_Conf* mdev,Drbd_BarrierAck_Packet* pkt)
 {
 	D_ASSERT(mdev->state == Primary);
 
@@ -1665,7 +1677,7 @@ inline void got_barrier_ack(struct Drbd_Conf* mdev,Drbd_BarrierAck_Packet* pkt)
 }
 
 
-inline int drbd_try_send_barrier(struct Drbd_Conf *mdev)
+STATIC int drbd_try_send_barrier(struct Drbd_Conf *mdev)
 {
 	int rv=TRUE;
 	if(down_trylock(&mdev->sock_mutex)==0) {

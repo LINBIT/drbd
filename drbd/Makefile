@@ -32,10 +32,15 @@ clean:
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
 
-tgz:    
-	(cd scripts; ln -sf drbd datadisk)
-	tar -czvf drbd-$(REL_VERSION).tar.gz \
-	--exclude *.o  --exclude CVS \
-	--exclude *~ --exclude .deps --exclude *.tar.gz \
-	--exclude drbdsetup --exclude dm --exclude config \
-        --exclude report* -C .. drbd
+#tgz:    
+#	(cd scripts; ln -sf drbd datadisk)
+#	tar -czvf drbd-$(REL_VERSION).tar.gz \
+#	--exclude *.o  --exclude CVS \
+#	--exclude *~ --exclude .deps --exclude *.tar.gz \
+#	--exclude drbdsetup --exclude dm --exclude config \
+#       --exclude report* -C .. drbd
+
+tgz:	
+	find . -type d ! -name "CVS" -exec mkdir /tmp/drbd-$(REL_VERSION)/{} \;
+
+	find . ! -name "*.o" ! -name "*~" ! -name "CVS" ! -name "*.deps"
