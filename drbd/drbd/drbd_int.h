@@ -264,6 +264,26 @@ struct send_timer_info {
 
 struct ds_buffer;
 
+
+enum MetaDataFlags {
+	MDF_Consistent   = 1,
+	MDF_PrimaryInd   = 2,
+	MDF_ConnectedInd = 4,
+};
+/* drbd_meta-data.c (still in drbd_main.c) */
+enum MetaDataIndex { 
+	Flags,          /* Consistency flag,connected-ind,primary-ind */ 
+	HumanCnt,       /* human-intervention-count */
+	TimeoutCnt,     /* timout-count */
+	ConnectedCnt,   /* connected-count */
+	ArbitraryCnt,   /* arbitrary-count */
+	MagicNr        
+};
+
+#define META_DATA_SIZE 5 // Without MagicNr
+#define DRBD_MD_MAGIC (DRBD_MAGIC+2) // 2nd incarnation of the file format.
+
+
 struct Drbd_Conf {
 	struct net_config conf;
         int do_panic;
@@ -307,8 +327,8 @@ struct Drbd_Conf {
         struct Drbd_thread asender;
 	struct BitMap* mbds_id;
 	int open_cnt;
-	u32 gen_cnt[5];
-	u32 bit_map_gen[5];
+	u32 gen_cnt[META_DATA_SIZE];
+	u32 bit_map_gen[META_DATA_SIZE];
 	int epoch_size;
 	spinlock_t ee_lock;
 	struct list_head free_ee;  
@@ -370,14 +390,6 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
-enum MetaDataIndex { 
-	Consistent,     /* Consistency flag, */ 
-	HumanCnt,       /* human-intervention-count */
-	ConnectedCnt,   /* connected-count */
-	ArbitraryCnt,   /* arbitrary-count */
-	PrimaryInd,     /* primary-indicator, updated in drbd_md_write */
-	MagicNr        
-};
 
 extern void drbd_md_write(int minor);
 extern void drbd_md_read(int minor);

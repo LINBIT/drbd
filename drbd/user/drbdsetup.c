@@ -552,12 +552,13 @@ int cmd_primary(int drbd_fd,char** argv,int argc)
 	{
 	  int c;
 	  static struct option options[] = {
-	    { "human",         no_argument, 0, 'h' },
-	    { "do-what-I-say", no_argument, 0, 'd' },
+	    { "human",          no_argument, 0, 'h' },
+	    { "timeout-expired",no_argument, 0, 't' },
+	    { "do-what-I-say",  no_argument, 0, 'd' },
 	    { 0,           0,                 0, 0 }
 	  };
 	  
-	  c = getopt_long(argc+1,argv-1,"-hd",options,0);
+	  c = getopt_long(argc+1,argv-1,"-htd",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -566,6 +567,9 @@ int cmd_primary(int drbd_fd,char** argv,int argc)
 	      break;
 	    case 'd': 
 	      newstate |= DontBlameDrbd;
+	      break;
+	    case 't': 
+	      newstate |= TimeoutExpired;
 	      break;
 	    case '?':
 	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);

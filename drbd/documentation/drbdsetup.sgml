@@ -51,6 +51,7 @@
   <arg choice=req><replaceable>device</replaceable></arg>
   <arg choice=req>primary</arg>
   <arg>-h</arg>
+  <arg>-t</arg>
   <arg>-d</arg>
  </cmdsynopsis>
  <cmdsynopsis>
@@ -244,7 +245,16 @@ primary state.
    <option>--human</option></term>
   <listitem><para>
 Indicates that this state change was issued by an administrator and has
-precedence over decissions made by the cluster manager.
+at cluster restart time precedence over decissions made by other parties.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-t</option>,
+   <option>--timeout-expired</option></term>
+  <listitem><para>
+Indicates that this state change was caused because a node did not showed
+up on cluster startup (The cluster started in degraded mode). At cluster 
+restart this this has precedence over decissions made by the cluster manager.
   </para></listitem>
  </varlistentry>
  <varlistentry>

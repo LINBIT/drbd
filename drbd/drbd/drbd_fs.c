@@ -297,7 +297,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		return -EBUSY;
 			
 	if( (newstate & Primary) && 
-	    drbd_conf[minor].gen_cnt[Consistent]==0 &&
+	    !(drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent) &&
 	    !(newstate & DontBlameDrbd) )
 		return -EIO;
 
@@ -341,8 +341,10 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	drbd_conf[minor].state = (Drbd_State) newstate & 0x03;
  	if(newstate & Primary) {
  		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
-		if(newstate & PRIMARY_PLUS) {
+		if(newstate & Human) {
 			drbd_md_inc(minor,HumanCnt);
+		} else if(newstate & TimeoutExpired ) {
+			drbd_md_inc(minor,TimeoutCnt);
 		} else {
 			drbd_md_inc(minor,
 			    drbd_conf[minor].cstate >= Connected ? 
@@ -403,7 +405,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		if (arg & ~(Primary|Secondary|Human|DontBlameDrbd) )
+		if (arg & ~(Primary|Secondary|Human|TimeoutExpired|
+			    DontBlameDrbd) )
 			return -EINVAL;
 
 		err = drbd_set_state(minor,arg);

@@ -527,7 +527,7 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 	param.h.protocol = cpu_to_be32(mdev->conf.wire_protocol);
 	param.h.version = cpu_to_be32(PRO_VERSION);
 
-	for(i=0;i<=PrimaryInd;i++) {
+	for(i=Flags;i<=ArbitraryCnt;i++) {
 		param.h.gen_cnt[i]=cpu_to_be32(mdev->gen_cnt[i]);
 		param.h.bit_map_gen[i]=
 			cpu_to_be32(mdev->bit_map_gen[i]);
@@ -1056,8 +1056,8 @@ int __init drbd_init(void)
 
 		{
 			int j;
-			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;
-			for(j=0;j<=PrimaryInd;j++) 
+			for(j=0;j<=ArbitraryCnt;j++) drbd_conf[i].gen_cnt[j]=0;
+			for(j=0;j<=ArbitraryCnt;j++) 
 				drbd_conf[i].bit_map_gen[j]=0;
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
@@ -1371,18 +1371,22 @@ void bm_reset(struct BitMap* sbm,int ln2_block_size)
 
 void drbd_md_write(int minor)
 {
-	u32 buffer[6];
+	u32 buffer[META_DATA_SIZE+1],flags;
 	mm_segment_t oldfs;
 	struct inode* inode;
 	struct file* fp;
 	char fname[25];
-	int i;		
+	int i;
 
-	drbd_conf[minor].gen_cnt[PrimaryInd]=(drbd_conf[minor].state==Primary);
+	flags=drbd_conf[minor].gen_cnt[Flags] & 
+		~(MDF_PrimaryInd|MDF_ConnectedInd);
+	if(drbd_conf[minor].state==Primary) flags |= MDF_PrimaryInd;
+	if(drbd_conf[minor].cstate>=WFReportParams) flags |= MDF_ConnectedInd;
+	drbd_conf[minor].gen_cnt[Flags]=flags;
 	
-	for(i=0;i<=PrimaryInd;i++) 
+	for(i=Flags;i<=ArbitraryCnt;i++) 
 		buffer[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
-	buffer[MagicNr]=cpu_to_be32(DRBD_MAGIC);
+	buffer[MagicNr]=cpu_to_be32(DRBD_MD_MAGIC);
 	
 	sprintf(fname,DRBD_MD_FILES,minor);
 	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC|O_SYNC,00600);
@@ -1408,7 +1412,7 @@ void drbd_md_write(int minor)
 
 void drbd_md_read(int minor)
 {
-	u32 buffer[6];
+	u32 buffer[META_DATA_SIZE+1];
 	mm_segment_t oldfs;
 	struct inode* inode;
 	struct file* fp;
@@ -1432,17 +1436,16 @@ void drbd_md_read(int minor)
 	filp_close(fp,NULL);
 
 	if(i != sizeof(buffer)) goto err;
-	if(be32_to_cpu(buffer[MagicNr]) != DRBD_MAGIC) goto err;
-	for(i=0;i<=PrimaryInd;i++) 
+	if(be32_to_cpu(buffer[MagicNr]) != DRBD_MD_MAGIC) goto err;
+	for(i=Flags;i<=ArbitraryCnt;i++) 
 		drbd_conf[minor].gen_cnt[i]=be32_to_cpu(buffer[i]);
 
 	return;
  err:
-	printk(KERN_ERR DEVICE_NAME 
-	       "%d: Error reading state file\n\"%s\"\n",minor,fname);
-	for(i=0;i<PrimaryInd;i++) drbd_conf[minor].gen_cnt[i]=1;
-	drbd_conf[minor].gen_cnt[PrimaryInd]=
-		(drbd_conf[minor].state==Primary);
+	printk(KERN_INFO DEVICE_NAME 
+	       "%d: Creating state file\n\"%s\"\n",minor,fname);
+	for(i=HumanCnt;i<=ArbitraryCnt;i++) drbd_conf[minor].gen_cnt[i]=1;
+	drbd_conf[minor].gen_cnt[Flags]=MDF_Consistent;
 	drbd_md_write(minor);
 	return;
 }
@@ -1457,12 +1460,23 @@ int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 	int i;
 	u32 me,other;
 	
-	for(i=0;i<=PrimaryInd;i++) {
+	me=drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent;
+	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_Consistent;
+	if( me > other ) return 1;
+	if( me < other ) return -1;
+
+	for(i=HumanCnt;i<=ArbitraryCnt;i++) {
 		me=drbd_conf[minor].gen_cnt[i];
 		other=be32_to_cpu(partner->gen_cnt[i]);
 		if( me > other ) return 1;
 		if( me < other ) return -1;
 	}
+
+	me=drbd_conf[minor].gen_cnt[Flags] & MDF_PrimaryInd;
+	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_PrimaryInd;
+	if( me > other ) return 1;
+	if( me < other ) return -1;
+
 	return 0;
 }
 
@@ -1474,13 +1488,15 @@ int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
 	int i;
 	u32 me,other;
 
+	me=drbd_conf[minor].gen_cnt[Flags];
+	other=be32_to_cpu(partner->gen_cnt[Flags]);
 	// crash during sync forces SyncAll:
-	if( (i_am_pri && be32_to_cpu(partner->gen_cnt[Consistent])==0) ||
-	    (!i_am_pri && drbd_conf[minor].gen_cnt[Consistent]==0)) return 0;
+	if( (i_am_pri && !(other & MDF_Consistent) ) ||
+	    (!i_am_pri && !(me & MDF_Consistent) ) ) return 0;
 
 	// primary crash forces SyncAll:
-	if( (i_am_pri && be32_to_cpu(partner->gen_cnt[PrimaryInd])==1) ||
-	    (!i_am_pri && drbd_conf[minor].gen_cnt[PrimaryInd]==1)) return 0;
+	if( (i_am_pri && (other & MDF_PrimaryInd) ) ||
+	    (!i_am_pri && (me & MDF_PrimaryInd) ) ) return 0;
 
 	// If partner's GC not equal our bitmap's GC force SyncAll
 	if( i_am_pri ) {

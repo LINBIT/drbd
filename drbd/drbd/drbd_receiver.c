@@ -800,7 +800,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 /* Is called if the node is in secondary state and synchronisation starts*/
 static void syncer_starts(struct Drbd_Conf* mdev)
 {
-	mdev->gen_cnt[Consistent]=0;
+	mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 
 	mdev->resync_mark = jiffies;
 	mdev->resync_mark_start = jiffies;
@@ -1155,9 +1155,8 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev,int command)
 	if (mdev->state == Secondary) {
 		/* Secondary has to adopt primary's gen_cnt. */
 		int i;
-		for(i=HumanCnt;i<=PrimaryInd;i++) {
-			mdev->gen_cnt[i]=
-				be32_to_cpu(param.gen_cnt[i]);
+		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
+			mdev->gen_cnt[i]=be32_to_cpu(param.gen_cnt[i]);
 		}
 		drbd_md_write(minor);
 	}
@@ -1235,7 +1234,7 @@ void drbdd(int minor)
 			break;
 		case SetConsistent: /* both, should only happen on SEC
 				       at end of Sync */
-			drbd_conf[minor].gen_cnt[Consistent]=1;
+			drbd_conf[minor].gen_cnt[Flags] |= MDF_Consistent;
 			drbd_md_write(minor);
 			break;
 		case WriteHint:     /* both, should only happen on SEC */
@@ -1280,7 +1279,7 @@ void drbdd(int minor)
 	if(drbd_conf[minor].cstate != StandAlone) 
 	        set_cstate(drbd_conf+minor,Unconnected);
 
-	for(i=0;i<=PrimaryInd;i++) {
+	for(i=0;i<=ArbitraryCnt;i++) {
 		drbd_conf[minor].bit_map_gen[i]=drbd_conf[minor].gen_cnt[i];
 	}
 

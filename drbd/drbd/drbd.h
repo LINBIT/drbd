@@ -102,13 +102,13 @@ struct ioctl_net_config {
 #define DRBD_PROT_C   3
 
 typedef enum {
-	Unknown=0,
+	Unknown=0,   
 	Primary=1,     // role
 	Secondary=2,   // role
-	Human=4,
-	DontBlameDrbd=8
+	Human=4,           // flag for set_state
+	TimeoutExpired=8,  // flag for set_state
+	DontBlameDrbd=16   // flag for set_state
 } Drbd_State;
-#define PRIMARY_PLUS            (Primary   | Human )
 
 typedef enum { 
 	Unconfigured,
