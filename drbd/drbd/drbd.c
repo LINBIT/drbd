@@ -711,26 +711,6 @@ inline void set_cstate(struct Drbd_Conf* mdev,Drbd_CState cs)
 	wake_up_interruptible(&mdev->cstate_wait);	
 }
 
-int drbd_ll_blocksize(int minor)
-{
-	int size = 0;
-	kdev_t ll_dev = drbd_conf[minor].lo_device;
-
-	if (blksize_size[MAJOR(ll_dev)])
-		size = blksize_size[MAJOR(ll_dev)][MINOR(ll_dev)];
-	else
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: LL device has no block size ?!?\n\n",minor);
-
-	if (size == 0)
-		size = BLOCK_SIZE;
-
-	/*printk(KERN_DEBUG DEVICE_NAME ": my ll_dev block size=%d/m=%d\n",
-	  size, minor); */
-
-	return size;
-}
-
 int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd)
 {
 	int err;
@@ -774,7 +754,7 @@ int drbd_send_param(int minor)
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: LL device has no size ?!?\n\n",minor);
 
-	param.h.blksize = cpu_to_be32(drbd_ll_blocksize(minor));
+	param.h.blksize = cpu_to_be32(1 << drbd_conf[minor].blk_size_b);
 	param.h.state = cpu_to_be32(drbd_conf[minor].state);
 	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
 	param.h.version = cpu_to_be32(MOD_VERSION);
@@ -1460,8 +1440,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		}		
 
 		set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
-		drbd_conf[minor].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		set_blocksize(drbd_conf[minor].lo_device, INITIAL_BLOCK_SIZE);
+		drbd_conf[minor].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 
 		set_cstate(&drbd_conf[minor],Unconnected);
 
@@ -2232,7 +2212,13 @@ inline int receive_param(int minor,int command)
 		return FALSE;
 	}
 
-	blksize = max(be32_to_cpu(param.blksize),drbd_ll_blocksize(minor));
+	if(drbd_conf[minor].state == Primary)
+		blksize = (1 << drbd_conf[minor].blk_size_b);
+	else if(be32_to_cpu(param.state) == Primary)
+		blksize = be32_to_cpu(param.blksize);
+	else 
+		blksize = max(be32_to_cpu(param.blksize),
+			      (1 << drbd_conf[minor].blk_size_b));
 
 	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
 	set_blocksize(drbd_conf[minor].lo_device,blksize);

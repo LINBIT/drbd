@@ -49,8 +49,22 @@ My TODO list:
 10) Use Thomas Mangin's datadisk script
 11) The bitmap syncer is not working flawless on alpha. It is working on 
     intel.
+12) The syncer is too slow, especially on intel. 
+13) Juri Haberland andd Thomas Graichen found out that after reconnecting a 
+    new secondary to a mounted primary the primary is disturbed, because
+    in the progress the blocksize was set to 4096. -- This is fixed now.
+
+14) It's not possible to send a signal from "interrupt_time". 
+    This is not a principal problem, this is only a problem becuase
+    the neccessary hooks are not exported to the module's interface.
+    The current code does examine the "current" pointer form "interrupt_time"
+    and it seems that this is the cause for the hangs that Antti Salmela
+    reported.
+    Marcelo was the first one who pointed out this bug.
+
+
 
 DONE:
 
-1 (partial),2,7,8,11
+1 (partial),2,7,8,11,13,10
 
