@@ -60,7 +60,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	bh.b_rdev = mdev->md_bdev;
 	bh.b_rsector = sector;
 	bh.b_state = (1 << BH_Req) | (1 << BH_Mapped) | (1 << BH_Lock);
-	bh.b_size = 512; // THINK: always? well, we can add an other parameter
+	bh.b_size = MD_HARDSECT; 
 	bh.b_page = mdev->md_io_page;
 	bh.b_reqnext = NULL;
 	bh.b_data = page_address(mdev->md_io_page);
@@ -106,7 +106,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	vec.bv_page = mdev->md_io_page;
 	vec.bv_offset = 0;
 	vec.bv_len =
-	bio.bi_size = 512; // THINK: always? well, we can add an other parameter
+	bio.bi_size = MD_HARDSECT;
 	bio.bi_vcnt = 1;
 	bio.bi_idx = 0;
 	bio.bi_bdev = mdev->md_bdev;
@@ -145,11 +145,11 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 }
 #endif
 
-struct al_transaction {
+struct __attribute__((packed)) al_transaction {
 	u32       magic;
 	u32       tr_number;
 	// u32       tr_generation; //TODO
-	struct {
+	struct __attribute__((packed)) {
 		u32 pos;
 		u32 extent; } updates[1 + AL_EXTENTS_PT];
 	u32       xor_sum;

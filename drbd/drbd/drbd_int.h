@@ -808,8 +808,16 @@ extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
 
+// All metadata IO is done in units of MD_HARDSECT
+#if defined(CONFIG_ARCH_S390) | defined(CONFIG_ARCH_S390X)
+#define MD_HARDSECT_B    12     // Necessary for s390
+#else
+#define MD_HARDSECT_B    9      // Nice for "small" hardware.
+#endif
+#define MD_HARDSECT      (1<<MD_HARDSECT_B)
+
 // activity log
-#define AL_EXTENTS_PT    61      // Extents per 512B sector (AKA transaction)
+#define AL_EXTENTS_PT    (MD_HARDSECT-12)/8-1 // 61 ; Extents per 512B sector
 #define AL_EXTENT_SIZE_B 22      // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 
@@ -826,7 +834,7 @@ extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
 #endif
 
 // resync bitmap
-// 16MB sized 'bitmap extent' to track syncer usage
+// 16MB sized 'bitmap extent' to track syncer usage [128MB on the x390]
 struct bm_extent {
 	struct lc_element lce;
 	int rs_left; //number of bits set (out of sync) in this extent.
@@ -848,7 +856,7 @@ struct bm_extent {
 #define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
 /* (9+3) : 512 bytes @ 8 bits; representing 16M storage
  * per sector of on disk bitmap */
-#define BM_EXT_SIZE_B    (BM_BLOCK_SIZE_B + 9+3)  // = 24
+#define BM_EXT_SIZE_B    (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3 )  // = 24
 #define BM_EXT_SIZE      (1<<BM_EXT_SIZE_B)
 
 /* thus many _storage_ sectors are described by one bit */

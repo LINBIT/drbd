@@ -1603,6 +1603,8 @@ void * kcalloc(size_t size, int type)
 
 int __init drbd_init(void)
 {
+	int i,err;
+
 #if 0
 /* I am too lazy to calculate this by hand	-lge
  */
@@ -1618,10 +1620,9 @@ int __init drbd_init(void)
 	SZO(struct bio);
 	SZO(wait_queue_head_t);
 	SZO(spinlock_t);
+	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);
 	return -EBUSY;
 #endif
-
-	int i,err;
 
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
