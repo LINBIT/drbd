@@ -229,12 +229,15 @@ case "$1" in
 		MOUNTED=$?
 
 		if [ $PRIMARY -eq 0 -a $MOUNTED -eq 0 ]; then
-			runForAll primary fsck mount
+                        $0 $RESOURCE primary && 
+                        $0 $RESOURCE fsck && 
+                        $0 $RESOURCE mount
 			RV=$?
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
 		if [ $PRIMARY -eq 1 -a $MOUNTED -eq 0 ]; then
-			runForAll fsck mount 
+                        $0 $RESOURCE fsck && 
+                        $0 $RESOURCE mount
 			RV=$? 
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -272,6 +275,17 @@ case "$1" in
 
 			if [ $MOUNTED -eq 1 ]; then
 				fuser -km $LOCAL_DEVICE
+                                sleep 3
+                                $0 $RESOURCE umount
+                                RETVAL=$?
+                        fi
+ 
+                        isMounted $RESOURCE
+                        MOUNTED=$?
+
+                        if [ $MOUNTED -eq 1 ]; then
+                                fuser -km -9 $LOCAL_DEVICE
+                                sleep 3
 				$0 $RESOURCE umount
 				RETVAL=$?
 			fi
