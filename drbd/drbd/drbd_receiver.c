@@ -899,10 +899,10 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	data_size   = h->length  - header_size;
 
 	/* I expect a block to be a multiple of 512 byte, and
-	 * no more than 4K (8K). is this too restrictive?
+	 * no more than 4K (PAGE_SIZE). is this too restrictive?
 	 */
 	ERR_IF(data_size == 0) return FALSE;
-	ERR_IF(data_size &  0xff) return FALSE;
+	ERR_IF(data_size &  0x1ff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
@@ -936,10 +936,10 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	data_size   = h->length  - header_size;
 
 	/* I expect a block to be a multiple of 512 byte, and
-	 * no more than 4K (8K). is this too restrictive?
+	 * no more than 4K (PAGE_SIZE). is this too restrictive?
 	 */
 	ERR_IF(data_size == 0) return FALSE;
-	ERR_IF(data_size &  0xff) return FALSE;
+	ERR_IF(data_size &  0x1ff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
@@ -994,10 +994,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	data_size   = h->length  - header_size;
 
 	/* I expect a block to be a multiple of 512 byte, and
-	 * no more than 4K (8K). is this too restrictive?
+	 * no more than 4K (PAGE_SIZE). is this too restrictive?
 	 */
 	ERR_IF(data_size == 0) return FALSE;
-	ERR_IF(data_size &  0xff) return FALSE;
+	ERR_IF(data_size &  0x1ff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)

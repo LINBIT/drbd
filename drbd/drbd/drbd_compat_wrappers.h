@@ -341,6 +341,8 @@ static inline sector_t drbd_req_get_sector(struct drbd_request *req)
 
 static inline unsigned short drbd_req_get_size(struct drbd_request *req)
 {
+	drbd_dev* mdev = req->private_bio.bi_private;
+	D_ASSERT(req->master_bio->bi_size);
 	return req->master_bio->bi_size;
 }
 

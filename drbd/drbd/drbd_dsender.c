@@ -882,11 +882,12 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	drbd_wait_ee(mdev,&mdev->read_ee);
 
+	i = 0;
 	spin_lock_irq(&mdev->req_lock);
+  again:
 	list_splice_init(&mdev->data.work.q,&work_list);
 	spin_unlock_irq(&mdev->req_lock);
 
-	i = 0;
 	while(!list_empty(&work_list)) {
 		w = list_entry(work_list.next, struct drbd_work,list);
 		list_del_init(&w->list);
@@ -895,7 +896,8 @@ int drbd_worker(struct Drbd_thread *thi)
 	}
 
 	spin_lock_irq(&mdev->req_lock);
-	D_ASSERT(list_empty(&mdev->data.work.q));
+	ERR_IF(!list_empty(&mdev->data.work.q))
+		goto again;
 	sema_init(&mdev->data.work.s,0);
 	spin_unlock_irq(&mdev->req_lock);
 

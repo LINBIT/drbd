@@ -294,6 +294,8 @@ void tl_clear(drbd_dev *mdev)
 	struct list_head *le,*tle;
 	struct drbd_barrier *b,*f,*new_first;
 	struct drbd_request *r;
+	sector_t sector;
+	unsigned int size;
 
 	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
 	INIT_LIST_HEAD(&new_first->requests);
@@ -314,25 +316,25 @@ void tl_clear(drbd_dev *mdev)
 	while ( b ) {
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,w.list);
-			if( (r->rq_status&0xfffe) != RQ_DRBD_SENT ) {
+			// bi_size and bi_sector are modified in bio_endio!
+			sector = drbd_req_get_sector(r);
+			size   = drbd_req_get_size(r);
+			if( !(r->rq_status & RQ_DRBD_SENT) ) {
 				if(mdev->conf.wire_protocol != DRBD_PROT_A )
 					dec_ap_pending(mdev,HERE);
-				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1,
-					     drbd_req_get_sector(r));
+				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
 				goto mark;
 			}
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
 			mark:
-				drbd_set_out_of_sync(mdev
-				,	drbd_req_get_sector(r)
-				,	drbd_req_get_size(r));
+				drbd_set_out_of_sync(mdev, sector, size);
 			}
 		}
 		f=b;
 		b=b->next;
 		list_del(&f->requests);
 		kfree(f);
-		dec_ap_pending(mdev,HERE);
+		dec_ap_pending(mdev,HERE); // for the barrier
 	}
 }
 
@@ -718,7 +720,8 @@ int _drbd_send_barrier(drbd_dev *mdev)
 
 	inc_ap_pending(mdev);
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)&p,sizeof(p),0);
-	if (!ok) dec_ap_pending(mdev,HERE);
+
+//	if (!ok) dec_ap_pending(mdev,HERE); // is done in tl_clear()
 	return ok;
 }
 
@@ -898,7 +901,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		drbd_set_out_of_sync(mdev,
 				     drbd_req_get_sector(req),
 				     drbd_req_get_size(req));
-		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1, 
+		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1,
 			     drbd_req_get_sector(req));
 	}
 	spin_lock(&mdev->send_task_lock);
@@ -1814,13 +1817,18 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	int ret=0;
 	unsigned long flags;
 
+	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+		DUMPI(size);
+		return 0;
+	}
+
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: No BitMap !?\n");
 		return 0;
 	}
 
 	if(sector >= sbm->dev_size<<1) return 0;
-	if(esector >= sbm->dev_size<<1) esector = (sbm->dev_size<<1) - 1;
+	ERR_IF(esector >= sbm->dev_size<<1) esector = (sbm->dev_size<<1) - 1;
 
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;

@@ -164,7 +164,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 // to debug dec_*(), while we still have the <0!! issue
 // to debug dec_*(), while we still have the <0!! issue
 #include <linux/stringify.h>
-#define HERE __stringify(__FUNCTION__ __LINE__) // __FUNCTION__
+#define HERE __stringify(__FILE__ __LINE__) // __FUNCTION__
 
 #if 1
 #define C_DBG(r,x...)
@@ -1194,6 +1194,7 @@ static inline void dec_local(drbd_dev* mdev)
 static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 					sector_t sector, int blk_size)
 {
+	D_ASSERT(blk_size);
 	mdev->rs_total +=
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
