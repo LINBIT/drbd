@@ -439,7 +439,9 @@ void drbd_write_bm(struct Drbd_Conf *mdev)
 	unsigned int exts,i;
 
 	if( !inc_local_md_only(mdev) ) return;
-	exts = div_ceil(mdev->mbds_id->size,BM_EXTENT_SIZE);
+
+	exts = div_ceil(drbd_get_capacity(mdev->this_bdev), 
+			BM_EXTENT_SIZE >> 9 );
 
 	for(i=0;i<exts;i++) {
 		drbd_update_on_disk_bm(mdev,i);
