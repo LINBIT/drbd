@@ -771,7 +771,8 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 
 	if (mdev->state.s.conn >= WFReportParams) {
 		/* if this was forced, we should consider sync */
-		drbd_send_param(mdev,forced);
+		if(forced) drbd_send_gen_cnt(mdev);
+		drbd_send_state(mdev);
 	}
 
 	return 0;
@@ -1001,7 +1002,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			err = -EBUSY;
 			break;
 		}
-		if ( mdev->state == Secondary && mdev->o_state == Secondary) {
+		if ( mdev->state.s.role == Secondary && 
+		     mdev->state.s.peer == Secondary) {
 			err = -EINPROGRESS;
 			break;
 		}
@@ -1011,7 +1013,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		drbd_bm_unlock(mdev);
-		if (mdev->state.s.conn == Connected) drbd_send_param(mdev,1);
+		if (mdev->state.s.conn == Connected) {
+			drbd_send_gen_cnt(mdev); // to start sync...
+			drbd_send_sizes(mdev);
+		}
 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:

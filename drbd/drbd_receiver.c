@@ -303,8 +303,6 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 
 void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 {
-	struct page* page;
-
 	MUST_HOLD(&mdev->ee_lock);
 
 	D_ASSERT(page_count(drbd_bio_get_page(&e->private_bio)) == 1);
@@ -317,9 +315,7 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 
 	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) &&
 	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {
-		// FIXME cleanup: never returns NULL anymore
-		page=drbd_free_ee(mdev,&mdev->free_ee);
-		if( page ) __free_page(page);
+		__free_page(drbd_free_ee(mdev,&mdev->free_ee));
 	}
 	if(mdev->ee_in_use == 0) {
 		while( mdev->ee_vacant > EE_MININUM ) {
@@ -709,7 +705,11 @@ int drbd_connect(drbd_dev *mdev)
 
 	drbd_thread_start(&mdev->asender);
 
-	drbd_send_param(mdev,0);
+	drbd_send_protocol(mdev);
+	drbd_send_sync_param(mdev,&mdev->sync_conf);
+	drbd_send_sizes(mdev);
+	drbd_send_gen_cnt(mdev);
+	drbd_send_state(mdev);
 
 	return 1;
 }
@@ -1152,42 +1152,15 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
-{
-	int ok = TRUE;
-	Drbd_SyncParam_Packet *p = (Drbd_SyncParam_Packet*)h;
-
-	// FIXME move into helper
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-
-	if (drbd_recv(mdev, h->payload, h->length) != h->length)
-		return FALSE;
-
-	// XXX harmless race with ioctl ...
-	mdev->sync_conf.rate      = be32_to_cpu(p->rate);
-	mdev->sync_conf.use_csums = be32_to_cpu(p->use_csums);
-	mdev->sync_conf.skip      = be32_to_cpu(p->skip);
-	drbd_alter_sg(mdev, be32_to_cpu(p->group));
-
-	if ( (mdev->state.s.conn == SkippedSyncS || 
-	      mdev->state.s.conn == SkippedSyncT)
-	     && !mdev->sync_conf.skip ) {
-		drbd_request_state(mdev,NS(conn,WFReportParams));
-		ok = drbd_send_param(mdev,0);
-	}
-
-	return ok;
-}
-
 /* drbd_sync_handshake() returns the new conn state on success, or 
    conn_mask (-1) on failure.
  */
-STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
+STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev)
 {
 	int have_good,sync;
 	drbd_conns_t rv = conn_mask;
 
-	have_good = drbd_md_compare(mdev,p);
+	have_good = drbd_md_compare(mdev);
 
 	if(have_good==0) {
 		if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
@@ -1211,7 +1184,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 		sync=1;
 	}
 
-	drbd_dump_md(mdev,p,0);
+	drbd_dump_md(mdev,0);
 	// INFO("have_good=%d sync=%d\n", have_good, sync);
 
 	if (have_good > 0 && mdev->state.s.disk <= Inconsistent ) {
@@ -1222,8 +1195,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return conn_mask;
 	}
-	if (have_good < 0 &&
-	    !(be32_to_cpu(p->gen_cnt[Flags]) & MDF_Consistent) ) {
+	if (have_good < 0 && !(mdev->p_gen_cnt[Flags] & MDF_Consistent) ) {
 		/* doh. Peer cannot become SyncSource when inconsistent
 		 */
 		ERR("I shall become SyncTarget, but Peer is inconsistent!\n");
@@ -1237,10 +1209,10 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 	}
 
 	if( sync ) {
-		if( mdev->peer_uuid != be64_to_cpu(p->uuid) ) {
+		if( test_bit(UUID_CHANGED,&mdev->flags) ) {
 			WARN("Peer presented a new UUID -> full sync.\n");
-			mdev->peer_uuid = be64_to_cpu(p->uuid);
 			drbd_bm_set_all(mdev);
+			clear_bit(UUID_CHANGED, &mdev->flags);
 		}
 
 		if(have_good == 1) {
@@ -1294,45 +1266,19 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p
 		/* Sync-Target has to adopt source's gen_cnt. */
 		int i;
 		for(i=HumanCnt;i<GEN_CNT_SIZE;i++) {
-			mdev->gen_cnt[i]=be32_to_cpu(p->gen_cnt[i]);
+			mdev->gen_cnt[i]=mdev->p_gen_cnt[i];
 		}
 	}
 	return rv;
 }
 
-STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
+STATIC int receive_protocol(drbd_dev *mdev, Drbd_Header *h)
 {
-	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
-	drbd_conns_t nconn;
-	drbd_state_t ns,peer_state;
-	int consider_sync,rv;
-	sector_t p_size;
+	Drbd_Protocol_Packet *p = (Drbd_Protocol_Packet*)h;
 
-	if (h->length != (sizeof(*p)-sizeof(*h))) {
-		ERR("Incompatible packet size of Parameter packet!\n");
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
-		return FALSE;
-	}
-
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
-
-	if (p->magic != BE_DRBD_MAGIC) {
-		ERR("invalid Parameter_Packet magic! Protocol version: me %d, peer %d\n",
-				PRO_VERSION, be32_to_cpu(p->version));
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
-		return FALSE;
-	}
-
-	if(be32_to_cpu(p->version)!=PRO_VERSION) {
-		ERR("incompatible releases! Protocol version: me %d, peer %d\n",
-				PRO_VERSION, be32_to_cpu(p->version));
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
-		return FALSE;
-	}
 
 	if(be32_to_cpu(p->protocol)!=mdev->conf.wire_protocol) {
 		int peer_proto = be32_to_cpu(p->protocol);
@@ -1352,11 +1298,47 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
-	p_size=be64_to_cpu(p->p_size);
+	if( mdev->peer_uuid != be64_to_cpu(p->uuid) ) {
+		mdev->peer_uuid = be64_to_cpu(p->uuid);
+		set_bit(UUID_CHANGED, &mdev->flags);
+	}
+
+	return TRUE;
+}
+
+STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
+{
+	int ok = TRUE;
+	Drbd_SyncParam_Packet *p = (Drbd_SyncParam_Packet*)h;
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+		return FALSE;
+
+	// XXX harmless race with ioctl ...
+	mdev->sync_conf.rate      = be32_to_cpu(p->rate);
+	mdev->sync_conf.use_csums = be32_to_cpu(p->use_csums);
+	mdev->sync_conf.skip      = be32_to_cpu(p->skip);
+	drbd_alter_sg(mdev, be32_to_cpu(p->group));
+
+	return ok;
+}
+
+STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
+{
+	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
+	sector_t p_size;
+	drbd_conns_t nconn;
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+		return FALSE;
+
+	// TODO also take o->c_size into account!
+
+	p_size=be64_to_cpu(p->d_size);
 
 	if(p_size == 0 && mdev->state.s.disk == Diskless ) {
-		/* FIXME maybe allow connection,
-		 * but refuse to become primary? */
 		ERR("some backing storage is needed\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
@@ -1365,52 +1347,72 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	drbd_bm_lock(mdev); // {
 	mdev->p_size=p_size;
-
-	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
-
 	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
 		mdev->lo_usize = be64_to_cpu(p->u_size);
 		INFO("Peer sets u_size to %lu KB\n",
 		     (unsigned long)mdev->lo_usize);
 	}
-
-/*lge:
- * FIXME
- * please get the order of tests (re)settings for consider_sync
- * right, and comment them!
- */
-
-	consider_sync = ((nconn=mdev->state.s.conn) == WFReportParams);
-	if(drbd_determin_dev_size(mdev)) consider_sync=0;
-
-	if(mdev->state.s.disk==Diskless) consider_sync=0;
-
+	drbd_determin_dev_size(mdev);
 	drbd_bm_unlock(mdev); // }
+	
+	if (mdev->p_gen_cnt) {
+		nconn=drbd_sync_handshake(mdev);
+		kfree(mdev->p_gen_cnt);
+		mdev->p_gen_cnt = 0;
+		if(nconn == conn_mask) return FALSE;
 
-	if(be32_to_cpu(p->flags)&1) {
-		consider_sync=1;
-		drbd_send_param(mdev,2);
-	}
-	if(be32_to_cpu(p->flags)&2) consider_sync=1;
-
-	// XXX harmless race with ioctl ...
-	mdev->sync_conf.rate  =
-		max_t(int,mdev->sync_conf.rate, be32_to_cpu(p->sync_rate));
-
-	// if one of them wants to skip, both of them should skip.
-	mdev->sync_conf.skip  =
-		mdev->sync_conf.skip != 0 || p->skip_sync != 0;
-	mdev->sync_conf.group =
-		min_t(int,mdev->sync_conf.group,be32_to_cpu(p->sync_group));
-
-	if (mdev->state.s.conn == WFReportParams) {
-		INFO("Connection established.\n");
-	}
-
-	nconn=Connected;
-	if (consider_sync) {
-		if ((nconn=drbd_sync_handshake(mdev,p))==conn_mask) 
+		if(drbd_request_state(mdev,NS(conn,nconn)) <= 0) {
+			drbd_force_state(mdev,NS(conn,StandAlone));
+			drbd_thread_stop_nowait(&mdev->receiver);
 			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+STATIC int receive_gen_cnt(drbd_dev *mdev, Drbd_Header *h)
+{
+	Drbd_GenCnt_Packet *p = (Drbd_GenCnt_Packet*)h;
+	u32 *p_gen_cnt;
+	int i;
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+		return FALSE;
+
+	p_gen_cnt = kmalloc(sizeof(u32)*GEN_CNT_SIZE, GFP_KERNEL);
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++) {
+		p_gen_cnt[i] = be32_to_cpu(p->gen_cnt[i]);
+	}
+
+	if ( mdev->p_gen_cnt ) kfree(mdev->p_gen_cnt);
+	mdev->p_gen_cnt = p_gen_cnt;
+
+	return TRUE;
+}
+
+
+STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
+{
+	Drbd_State_Packet *p = (Drbd_State_Packet*)h;
+	drbd_conns_t nconn;
+	drbd_state_t ns,peer_state;
+	int rv;
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+		return FALSE;
+
+	nconn = mdev->state.s.conn;
+	if (nconn == WFReportParams ) nconn = Connected;
+
+	if (mdev->p_gen_cnt) {
+		nconn=drbd_sync_handshake(mdev);
+		kfree(mdev->p_gen_cnt);
+		mdev->p_gen_cnt = 0;
+		if(nconn == conn_mask) return FALSE;
 	}
 
 	peer_state.i = be32_to_cpu(p->state);
@@ -1434,6 +1436,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	return TRUE;
 }
+
 
 /* Since we are processing the bitfild from lower addresses to higher,
    it does not matter if the process it in 32 bit chunks or 64 bit
@@ -1591,7 +1594,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[WriteAck]         = NULL, //receive_WriteAck,
 	[Barrier]          = receive_Barrier,
 	[BarrierAck]       = NULL, //receive_BarrierAck,
-	[ReportParams]     = receive_param,
 	[ReportBitMap]     = receive_bitmap,
 	[Ping]             = NULL, //receive_Ping,
 	[PingAck]          = NULL, //receive_PingAck,
@@ -1601,6 +1603,10 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[DataRequest]      = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
 	[SyncParam]        = receive_SyncParam,
+	[ReportProtocol]   = receive_protocol,
+	[ReportGenCnt]     = receive_gen_cnt,
+	[ReportSizes]      = receive_sizes,
+	[ReportState]      = receive_state,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
@@ -1628,10 +1634,6 @@ STATIC void drbdd(drbd_dev *mdev)
 			ERR("unknown packet type %d, l: %d!\n",
 			    header->command, header->length);
 			break;
-		}
-		if (mdev->state.s.conn == WFReportParams && header->command != ReportParams) {
-			ERR("received %s packet while WFReportParams!?\n",
-					cmdname(header->command));
 		}
 		if (unlikely(!handler(mdev,header))) {
 			ERR("error receiving %s, l: %d!\n",
@@ -1797,11 +1799,7 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	rv = drbd_recv_header(mdev,&p->head);
 	if (!rv) return 0;
 
-	if (p->head.command == ReportParams) {
-		ERR("expected HandShake packet, received ReportParams...\n");
-		ERR("peer probaly runs some incompatible 0.7 -preX version\n");
-		return 0;
-	} else if (p->head.command != HandShake) {
+	if (p->head.command != HandShake) {
 		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
 		     cmdname(p->head.command), p->head.command );
 		return 0;

@@ -8,14 +8,11 @@ DRBD 0.8 Roadmap
   90% DONE
 
 2 Drop the Drbd_Parameter_Packet.
-  Replace the Drbd_Parameter_Packet by a more general and 
-  extensible mechanism.
-
-  Sanitize ioctls to inlcude a standard device information struct
-  at the beginning, including the expected API version.
-  Consider using DRBD ioctls with some char device similar to
-  /dev/mapper/control
-  0% DONE
+  Replace the Drbd_Parameter_Packet by 4 small packets:
+  Protocol, GenCnt, Sizes and State.
+  The receiving code of these small packets is sane, compared
+  to that huge receive_params() function we had before.
+  40% DONE
 
 3 Authenticate the peer upon connect by using a shared secret. 
   Configuration file syntax:  net { auth-secret "secret-word" }
@@ -353,11 +350,19 @@ DRBD 0.8 Roadmap
   section (like handlers, startup, disk, net and syncer)
   are inherited from the common section, if they are not
   defined in a resource section.
+  0% DONE
 
 13 Introduce a UUID (universally unique identifier) in the
   meta data. One purpose is to tag the bitmap with this UUID. 
   If the peer's UUID is different to what we expect we know that 
   we have to do a full sync....
+  99% DONE
+
+14 Sanitize ioctls to inlcude a standard device information struct
+  at the beginning, including the expected API version.
+  Consider using DRBD ioctls with some char device similar to
+  /dev/mapper/control
+  0% DONE
 
 plus-banches:
 ----------------------

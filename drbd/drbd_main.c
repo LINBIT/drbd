@@ -385,7 +385,7 @@ int drbd_io_error(drbd_dev* mdev)
 
 	if(!send) return ok;
 
-	ok = drbd_send_param(mdev,0);
+	ok = drbd_send_state(mdev);
 	WARN("Notified peer that my disk is broken.\n");
 
 	D_ASSERT(drbd_md_test_flag(mdev,MDF_FullSync));
@@ -598,13 +598,14 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	/*  Added disk, tell peer.  */
 	if ( os.s.disk == Diskless && ns.s.disk >= Inconsistent &&
 	     ns.s.conn >= Connected ) {
-		drbd_send_param(mdev,1);
+		drbd_send_sizes(mdev);
+		drbd_send_state(mdev);
 	}
 
 	/*  Removed disk, tell peer.  */
 	if ( os.s.disk >= Inconsistent && ns.s.disk == Diskless &&
 	     ns.s.conn >= Connected ) {
-		drbd_send_param(mdev,0);
+		drbd_send_state(mdev);
 	}
 }
 
@@ -809,60 +810,72 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 {
 	Drbd_SyncParam_Packet p;
-	int ok;
 
 	p.rate      = cpu_to_be32(sc->rate);
 	p.use_csums = cpu_to_be32(sc->use_csums);
 	p.skip      = cpu_to_be32(sc->skip);
 	p.group     = cpu_to_be32(sc->group);
 
-	ok = drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
-	if ( ok
-	     && (mdev->state.s.conn == SkippedSyncS || 
-		 mdev->state.s.conn == SkippedSyncT)
-	     && !sc->skip )
-	{
-		/* FIXME EXPLAIN. I think this cannot work properly! -lge */
-		drbd_request_state(mdev,NS(conn,WFReportParams));
-		ok = drbd_send_param(mdev,0);
-	}
-	return ok;
+	return drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
 }
 
-int drbd_send_param(drbd_dev *mdev, int flags)
+int drbd_send_protocol(drbd_dev *mdev)
 {
-	Drbd_Parameter_Packet p;
-	int i, ok, have_disk;
-	unsigned long m_size; // sector_t ??
+	Drbd_Protocol_Packet p;
 
-	have_disk=inc_local(mdev);
-	if(have_disk) {
-		D_ASSERT(mdev->backing_bdev);
-		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
-		else m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
-	} else m_size = 0;
-
-	p.u_size = cpu_to_be64(mdev->lo_usize);
-	p.p_size = cpu_to_be64(m_size);
 	p.uuid   = cpu_to_be64(mdev->uuid);
-
-	p.state    = cpu_to_be32(mdev->state.i);
 	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
-	p.version  = cpu_to_be32(PRO_VERSION);
+
+	return drbd_send_cmd(mdev,mdev->data.socket,ReportProtocol,
+			     (Drbd_Header*)&p,sizeof(p));
+}
+
+int drbd_send_gen_cnt(drbd_dev *mdev)
+{
+	Drbd_GenCnt_Packet p;
+	int i;
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++) {
 		p.gen_cnt[i] = cpu_to_be32(mdev->gen_cnt[i]);
 	}
-	p.sync_rate      = cpu_to_be32(mdev->sync_conf.rate);
-	p.sync_use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
-	p.skip_sync      = cpu_to_be32(mdev->sync_conf.skip);
-	p.sync_group     = cpu_to_be32(mdev->sync_conf.group);
-	p.flags          = cpu_to_be32(flags);
-	p.magic          = BE_DRBD_MAGIC;
 
-	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportParams,(Drbd_Header*)&p,sizeof(p));
+	return drbd_send_cmd(mdev,mdev->data.socket,ReportGenCnt,
+			     (Drbd_Header*)&p,sizeof(p));
+}
+
+int drbd_send_sizes(drbd_dev *mdev)
+{
+	Drbd_Sizes_Packet p;
+	int ok, have_disk;
+	sector_t d_size;
+
+	have_disk=inc_local(mdev);
+	if(have_disk) {
+		D_ASSERT(mdev->backing_bdev);
+		if (mdev->md_index == -1 ) d_size = drbd_md_ss(mdev)>>1;
+		else d_size = drbd_get_capacity(mdev->backing_bdev)>>1;
+	} else d_size = 0;
+
+	p.u_size = cpu_to_be64(mdev->lo_usize);
+	p.d_size = cpu_to_be64(d_size);
+	p.c_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
+
+	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportSizes,
+			   (Drbd_Header*)&p,sizeof(p));
 	if (have_disk) dec_local(mdev);
+
 	return ok;
+}
+
+
+int drbd_send_state(drbd_dev *mdev)
+{
+	Drbd_State_Packet p;
+
+	p.state    = cpu_to_be32(mdev->state.i);
+
+	return drbd_send_cmd(mdev,mdev->data.socket,ReportState,
+			     (Drbd_Header*)&p,sizeof(p));
 }
 
 /* See the comment at receive_bitmap() */
@@ -2176,9 +2189,9 @@ int drbd_md_read(drbd_dev *mdev)
 
 #if DUMP_MD >= 1
 #define MeGC(x) mdev->gen_cnt[x]
-#define PeGC(x) be32_to_cpu(peer->gen_cnt[x])
+#define PeGC(x) mdev->p_gen_cnt[x]
 
-void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
+void drbd_dump_md(drbd_dev *mdev, int verbose)
 {
 	INFO("I am(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
 		mdev->state.s.role == Primary ? 'P':'S',
@@ -2189,9 +2202,9 @@ void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 		MeGC(ArbitraryCnt),
 		MeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
 		MeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
-	if (peer) {
+	if (mdev->p_gen_cnt) {
 		INFO("Peer(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
-			((drbd_state_t)be32_to_cpu(peer->state)).s.role == Primary ? 'P':'S',
+			mdev->state.s.peer == Primary ? 'P':'S',
 			PeGC(Flags) & MDF_Consistent ? '1' : '0',
 			PeGC(HumanCnt),
 			PeGC(TimeoutCnt),
@@ -2220,32 +2233,32 @@ void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 //  Returns  1 if I have the good bits,
 //           0 if both are nice
 //          -1 if the partner has the good bits.
-int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
+int drbd_md_compare(drbd_dev *mdev)
 {
 	int i;
-	u32 me,other;
+	u32 self,peer;
 
-	me=mdev->gen_cnt[Flags] & MDF_Consistent;
-	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_Consistent;
-	if( me > other ) return 1;
-	if( me < other ) return -1;
+	self = mdev->gen_cnt[Flags] & MDF_Consistent;
+	peer = mdev->p_gen_cnt[Flags] & MDF_Consistent;
+	if( self > peer ) return 1;
+	if( self < peer ) return -1;
 
-	me=mdev->gen_cnt[Flags] & MDF_WasUpToDate;
-	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_WasUpToDate;
-	if( me > other ) return 1;
-	if( me < other ) return -1;
+	self = mdev->gen_cnt[Flags] & MDF_WasUpToDate;
+	peer = mdev->p_gen_cnt[Flags] & MDF_WasUpToDate;
+	if( self > peer ) return 1;
+	if( self < peer ) return -1;
 
 	for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-		me=mdev->gen_cnt[i];
-		other=be32_to_cpu(partner->gen_cnt[i]);
-		if( me > other ) return 1;
-		if( me < other ) return -1;
+		self = mdev->gen_cnt[i];
+		peer = mdev->p_gen_cnt[i];
+		if( self > peer ) return 1;
+		if( self < peer ) return -1;
 	}
 
-	me=mdev->gen_cnt[Flags] & MDF_PrimaryInd;
-	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_PrimaryInd;
-	if( me > other ) return 1;
-	if( me < other ) return -1;
+	self = mdev->gen_cnt[Flags] & MDF_PrimaryInd;
+	peer = mdev->p_gen_cnt[Flags] & MDF_PrimaryInd;
+	if( self > peer ) return 1;
+	if( self < peer ) return -1;
 
 	return 0;
 }

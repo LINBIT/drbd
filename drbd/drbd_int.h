@@ -306,7 +306,6 @@ typedef enum {
 	DataReply,     // Response to DataRequest
 	RSDataReply,   // Response to RSDataRequest
 	Barrier,
-	ReportParams,
 	ReportBitMap,
 	BecomeSyncTarget,
 	BecomeSyncSource,
@@ -314,6 +313,10 @@ typedef enum {
 	DataRequest,   // Used to ask for a data block
 	RSDataRequest, // Used to ask for a data block
 	SyncParam,
+	ReportProtocol,
+	ReportGenCnt,
+	ReportSizes,
+	ReportState,
 
 	Ping,         // These are sent on the meta socket...
 	PingAck,
@@ -341,7 +344,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[DataReply]        = "DataReply",
 		[RSDataReply]      = "RSDataReply",
 		[Barrier]          = "Barrier",
-		[ReportParams]     = "ReportParams",
 		[ReportBitMap]     = "ReportBitMap",
 		[BecomeSyncTarget] = "BecomeSyncTarget",
 		[BecomeSyncSource] = "BecomeSyncSource",
@@ -349,6 +351,10 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[DataRequest]      = "DataRequest",
 		[RSDataRequest]    = "RSDataRequest",
 		[SyncParam]        = "SyncParam",
+		[ReportProtocol]   = "ReportProtocol",
+		[ReportGenCnt]     = "ReportGenCnt",
+		[ReportSizes]      = "ReportSizes",
+		[ReportState]      = "ReportState",
 		[Ping]             = "Ping",
 		[PingAck]          = "PingAck",
 		[RecvAck]          = "RecvAck",
@@ -466,24 +472,28 @@ typedef struct {
 	u32         group;
 } __attribute((packed)) Drbd_SyncParam_Packet;
 
-/* FIXME add more members here, until we introduce a new fixed size
- * protocol version handshake packet! */
 typedef struct {
 	Drbd_Header head;
-	u64         p_size;  // size of disk
-	u64         u_size;  // user requested size
 	u64         uuid;
-	u32         state;
 	u32         protocol;
-	u32         version;
+} __attribute((packed)) Drbd_Protocol_Packet;
+
+typedef struct {
+	Drbd_Header head;
 	u32         gen_cnt[GEN_CNT_SIZE];
-	u32         sync_rate;
-	u32         sync_use_csums;
-	u32         skip_sync;
-	u32         sync_group;
-	u32         flags;   // flags & 1 -> reply call drbd_send_param(mdev);
-	u32         magic;   //make sure packet is a multiple of 8 Byte
-} __attribute((packed)) Drbd_Parameter_Packet;
+} __attribute((packed)) Drbd_GenCnt_Packet;
+
+typedef struct {
+	Drbd_Header head;
+	u64         d_size;  // size of disk
+	u64         u_size;  // user requested size
+	u64         c_size;  // current exported size
+} __attribute((packed)) Drbd_Sizes_Packet;
+
+typedef struct {
+	Drbd_Header head;
+	u32         state;
+} __attribute((packed)) Drbd_State_Packet;
 
 typedef struct {
 	u64       size;
@@ -503,7 +513,10 @@ typedef union {
 	Drbd_Barrier_Packet      Barrier;
 	Drbd_BarrierAck_Packet   BarrierAck;
 	Drbd_SyncParam_Packet    SyncParam;
-	Drbd_Parameter_Packet    Parameter;
+	Drbd_Protocol_Packet     Protocol;
+	Drbd_Sizes_Packet        Sizes;
+	Drbd_GenCnt_Packet       GenCnt;
+	Drbd_State_Packet        State;
 	Drbd_BlockRequest_Packet BlockRequest;
 } __attribute((packed)) Drbd_Polymorph_Packet;
 
@@ -627,6 +640,7 @@ enum {
 	SENT_DISK_FAILURE,	// sending it once is enough
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
+	UUID_CHANGED,           // UUID changed. Need fullsync.
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf
@@ -725,6 +739,7 @@ struct Drbd_Conf {
 	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
 	u32 gen_cnt[GEN_CNT_SIZE];
+	u32 *p_gen_cnt;
 	atomic_t epoch_size;
 	spinlock_t ee_lock;
 	struct list_head free_ee;   // available
@@ -777,7 +792,10 @@ extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
-extern int drbd_send_param(drbd_dev *mdev, int flags);
+extern int drbd_send_protocol(drbd_dev *mdev);
+extern int drbd_send_gen_cnt(drbd_dev *mdev);
+extern int drbd_send_sizes(drbd_dev *mdev);
+extern int drbd_send_state(drbd_dev *mdev);
 extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
 			  size_t size, unsigned msg_flags);
@@ -805,8 +823,8 @@ extern void drbd_mdev_cleanup(drbd_dev *mdev);
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);
 extern int drbd_md_read(drbd_dev *mdev);
-extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
-extern void drbd_dump_md(drbd_dev *, Drbd_Parameter_Packet *, int );
+extern int drbd_md_compare(drbd_dev *mdev);
+extern void drbd_dump_md(drbd_dev *, int );
 // maybe define them below as inline?
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
