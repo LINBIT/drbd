@@ -1532,27 +1532,6 @@ STATIC int receive_SyncCont(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail ?
 }
 
-STATIC int receive_SyncDone(drbd_dev *mdev, Drbd_Header *h)
-{
-	unsigned long dt;
-	D_ASSERT(mdev->cstate == SyncSource);
-	D_ASSERT(mdev->resync_work.cb == w_resync_source);
-
-	INIT_LIST_HEAD(&mdev->resync_work.list);
-	mdev->resync_work.cb = w_resync_inactive;
-
-	dt = (jiffies - mdev->rs_start) / HZ + 1;
-	INFO("Resync done (total %lu sec; %lu K/sec)\n",
-	     dt,(mdev->rs_total/2)/dt);
-
-	mdev->rs_total = 0;
-	set_cstate(mdev,Connected);
-
-	// assert that all bit-map parts are cleared.
-	D_ASSERT(list_empty(&mdev->resync->lru));
-	return TRUE; // cannot fail ?
-}
-
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
@@ -1576,7 +1555,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[SyncParam]        = receive_SyncParam,
 	[SyncStop]         = receive_SyncStop,
 	[SyncCont]         = receive_SyncCont,
-	[SyncDone]         = receive_SyncDone,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;

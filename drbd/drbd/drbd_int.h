@@ -344,7 +344,6 @@ typedef enum {
 	SyncParam,
 	SyncStop,
 	SyncCont,
-	SyncDone,
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
@@ -375,7 +374,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 	case SyncParam       : return "SyncParam";
 	case SyncStop        : return "SyncStop";
 	case SyncCont        : return "SyncCont";
-	case SyncDone        : return "SyncDone";
 	case MAX_CMD         : return "MAX_CMD";
 	case MayIgnore       : return "MayIgnore";
 	case MAX_OPT_CMD     : return "MAX_OPT_CMD";

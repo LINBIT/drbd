@@ -72,12 +72,6 @@ void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate)
 	__drbd_queue_work(mdev,&mdev->data.work,&e->w);
 }
 
-int w_resync_source(drbd_dev *mdev, struct drbd_work *w)
-{
-	ERR("I seem to be resync source, but callback triggered??\n");
-	return 0;
-}
-
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
 {
 	ERR("resync inactive, but callback triggered??\n");
@@ -155,8 +149,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 		if (sector == MBDS_DONE) {
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
-			// __queue_work ... shortcut.
-			w_resync_finished(mdev,w);
+			mdev->resync_work.cb = w_resync_inactive;
 			return 1;
 		}
 
@@ -191,7 +184,6 @@ int w_start_resync(drbd_dev *mdev, struct drbd_work *w)
 	} else {
 		// If we are SyncSource we must be consistent :)
 		mdev->gen_cnt[Flags] |= MDF_Consistent;
-		w->cb = w_resync_source;
 		if ( mdev->rs_total == 0 ) {
 			w->cb = w_resync_finished;
 			__drbd_queue_work(mdev,&mdev->data.work,w);
@@ -216,7 +208,6 @@ int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
 	if (mdev->cstate == SyncTarget) {
 		mdev->gen_cnt[Flags] |= MDF_Consistent;
 		drbd_md_write(mdev);
-		drbd_send_short_cmd(mdev,SyncDone);
 	}
 	mdev->rs_total = 0;
 	set_cstate(mdev,Connected);

@@ -560,13 +560,14 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	   from other places in non IRQ */
 	unsigned long flags=0;
 	int cleared;
-	/* notify of SYNC_FINISHED is now done by other means */
+	int finished=0;
 
 	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
 	mdev->rs_left -= cleared;
 	D_ASSERT((long)mdev->rs_left >= 0);
+	if( cleared && mdev->rs_left == 0 ) finished=1;
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
 		mdev->rs_mark_time=jiffies;
@@ -575,6 +576,13 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
 	drbd_try_clear_on_disk_bm(mdev,sector,cleared,may_sleep);
+
+	if( finished ) {
+		// This must be after the last call to clear_on_disk_bm() !
+		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
+		mdev->resync_work.cb = w_resync_finished;
+		__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+	}
 }
 
 
