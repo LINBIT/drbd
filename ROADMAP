@@ -425,7 +425,12 @@ DRBD 0.8 Roadmap
 
    The node with the higher value in the authorisation enum is sync source.
 
-   
+17 Something like
+
+   drbdx: WARNING disk sizes more than 10% different
+
+  would be nice at (initial) full sync.
+  drbdx: WARNING disk sizes more than 10% different   
 
 
 
