@@ -199,6 +199,13 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 # define MUST_HOLD(lock)
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,8)
+# define HAVE_KERNEL_SENDMSG 1
+#else
+# define HAVE_KERNEL_SENDMSG 0
+#endif
+
+
 /*
  * our structs
  *************************/
