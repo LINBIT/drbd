@@ -184,6 +184,7 @@ void print_tl(struct Drbd_Conf *mdev)
 inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
 	unsigned long flags;
+	int cur_size;
 
 	write_lock_irqsave(&mdev->tl_lock,flags);
 
@@ -197,6 +198,17 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 
 	if (mdev->tl_end == mdev->transfer_log + mdev->conf.tl_size)
 		mdev->tl_end = mdev->transfer_log;
+
+	// Issue a barrier if tl fills up:
+	cur_size = mdev->tl_end - mdev->tl_begin;
+	if(cur_size < 0) {
+		cur_size = mdev->conf.tl_size + cur_size;
+	}
+	if(cur_size*4 == mdev->conf.tl_size*3) {
+		set_bit(ISSUE_BARRIER,&mdev->flags);
+		printk(KERN_INFO DEVICE_NAME "%d: issuing add. barrier\n",
+		       (int)(mdev-drbd_conf));
+	}       
 
 	if (mdev->tl_end == mdev->tl_begin)
 		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!! \n",
