@@ -2649,7 +2649,7 @@ inline int receive_param(int minor,int command)
 
 		if( sync && !drbd_conf[minor].conf.skip_sync ) {
 			set_cstate(&drbd_conf[minor],method);
-			if(pri) {
+			if(pri==1) {
 				drbd_send_cstate(&drbd_conf[minor]);
 				drbd_thread_start(&drbd_conf[minor].syncer);
 			}
@@ -2927,38 +2927,21 @@ void drbd_free_resources(int minor)
 
 struct ds_buffer {
 	void* buffers;
+	unsigned long *blnr;
 	struct buffer_head *bhs;
 	struct buffer_head **bhsp;
 	int number;
 	int io_pending_number;
+	int b_size;
 };
 
 void ds_buffer_init(struct ds_buffer *this,int minor)
 {
-	int amount,amount_blks,i,blocksize;
+	int i;
 	struct buffer_head *bh;
 
-	amount=drbd_conf[minor].sock->sk->sndbuf >> 1;
-	/* We want to fill half of the send buffer*/
-	blocksize=blksize_size[MAJOR_NR][minor];
-	amount_blks=amount/blocksize;
-	this->number=amount_blks;
-
-	this->buffers = (void*)__get_free_pages(GFP_USER,
-					      drbd_log2(amount>>PAGE_SHIFT));
-	this->bhs = (struct buffer_head*)
-		kmalloc(sizeof(struct buffer_head) * amount_blks,GFP_USER);
-
-	this->bhsp = (struct buffer_head**)
-		kmalloc(sizeof(struct buffer_head *) * amount_blks,GFP_USER);
-/*
-	printk(KERN_INFO DEVICE_NAME "%d: amount=%d\n",minor,amount);
-	printk(KERN_INFO DEVICE_NAME "%d: amount_blks=%d\n",minor,amount_blks);
-*/
-
-	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
+	bh = getblk(MKDEV(MAJOR_NR, minor), 1,this->b_size);
 	memcpy(&this->bhs[0],bh,sizeof(struct buffer_head));
-	/* this->bhs[0]=*bh; */
 	bforget(bh); /* hehe this is the way to initialize a BH :)  */
 
 	this->bhs[0].b_dev = drbd_conf[minor].lo_device;
@@ -2976,18 +2959,46 @@ void ds_buffer_init(struct ds_buffer *this,int minor)
 	this->bhs[0].b_pprev = 0;
 	this->bhs[0].b_data = this->buffers;
 
-	for (i=1;i<amount_blks;i++) {
+	for (i=1;i<this->number;i++) {
 		memcpy(&this->bhs[i],&this->bhs[0],sizeof(struct buffer_head));
 		/*this->bhs[i]=this->bhs[0];*/
-		this->bhs[i].b_data = this->buffers + i*blocksize;
+		this->bhs[i].b_data = this->buffers + i * this->b_size;
 	}
+}
+
+void ds_buffer_alloc(struct ds_buffer *this,int minor)
+{
+	int amount,amount_blks,blocksize,size;
+	unsigned char* mem;
+
+	amount=drbd_conf[minor].sock->sk->sndbuf >> 1;
+	/* We want to fill half of the send buffer*/
+	blocksize=blksize_size[MAJOR_NR][minor];
+	amount_blks=amount/blocksize;
+	this->number=amount_blks;
+	this->b_size=blocksize;
+
+	this->buffers = (void*)__get_free_pages(GFP_USER,
+					      drbd_log2(amount>>PAGE_SHIFT));
+
+	size = 	sizeof(unsigned long)*amount_blks + 
+		sizeof(struct buffer_head *)*amount_blks +
+		sizeof(struct buffer_head)*amount_blks;
+
+	mem = kmalloc(size,GFP_USER);
+	this->blnr = (unsigned long*) mem;
+	mem = mem + sizeof(unsigned long)*amount_blks;
+	this->bhsp = (struct buffer_head**)mem;
+	mem = mem + sizeof(struct buffer_head**)*amount_blks;
+	this->bhs = (struct buffer_head*) mem;
+
+	ds_buffer_init(this,minor);
 }
 
 void ds_buffer_free(struct ds_buffer *this)
 {
 	free_page((unsigned long)this->buffers);
-	kfree(this->bhs);
-	kfree(this->bhsp);
+	kfree(this->blnr);
 }
 
 int ds_buffer_read(struct ds_buffer *this,
@@ -2997,13 +3008,15 @@ int ds_buffer_read(struct ds_buffer *this,
 {
 	int count=0;
 	int amount_blks=this->number;
+	int ln2_bs = drbd_log2(this->b_size);
 
 	while (count < amount_blks) {
 		unsigned long block_nr;
 
-		block_nr=get_blk(id,drbd_conf[minor].blk_size_b);
+		block_nr=get_blk(id,ln2_bs);
 		if(block_nr == MBDS_DONE) break;
 				
+		this->blnr[count]=block_nr;
 		this->bhs[count].b_blocknr=block_nr;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 		this->bhs[count].b_state = (1 << BH_Req) | (1 << BH_Mapped);
@@ -3019,6 +3032,31 @@ int ds_buffer_read(struct ds_buffer *this,
 	}
 	if(count) ll_rw_block(READ, count, this->bhsp);
 	this->io_pending_number=count;
+	return count;
+}
+
+int ds_buffer_reread(struct ds_buffer *this,int minor)
+{
+	int i,count;
+	
+	count=this->io_pending_number;
+
+	for(i=0;i<count;i++) {
+		this->bhs[i].b_blocknr=this->blnr[i];
+	     /* this->bhs[i].b_size=this->b_size;  */
+		this->bhs[i].b_list = BUF_LOCKED;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+		this->bhs[i].b_state = (1 << BH_Req) | (1 << BH_Mapped);
+#else
+		this->bhs[i].b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#endif
+		init_waitqueue_head(&this->bhs[i].b_wait);
+		/* Hmmm, why do I need this ? */
+		this->bhsp[i]=&this->bhs[i];		
+	}
+		
+	if(count) ll_rw_block(READ, count, this->bhsp);
+	
 	return count;
 }
 
@@ -3090,6 +3128,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 	struct ds_buffer buffers[2];
 	struct ds_buffer *disk_b, *net_b, *tmp;
 	int amount,amount_blks,interval;
+	int my_blksize,retry;
 	unsigned long (*get_blk)(void*,int);
 	void* id;
 
@@ -3098,7 +3137,8 @@ int drbd_syncer(struct Drbd_thread *thi)
 	amount=drbd_conf[minor].sock->sk->sndbuf >> (1+10);
 	/* We want to fill half of the send buffer in KB */
 	interval = max( amount * HZ / drbd_conf[minor].conf.sync_rate , 1 );
-	amount_blks=(amount<<10)/blksize_size[MAJOR_NR][minor];
+	my_blksize=blksize_size[MAJOR_NR][minor];
+	amount_blks=(amount<<10)/my_blksize;
 
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation started "
 	       "blks=%d int=%d \n",minor,amount_blks,interval);
@@ -3120,18 +3160,33 @@ int drbd_syncer(struct Drbd_thread *thi)
 	}
 
 
-	ds_buffer_init(&buffers[0],minor);
-	ds_buffer_init(&buffers[1],minor);
+	ds_buffer_alloc(&buffers[0],minor);
+	ds_buffer_alloc(&buffers[1],minor);
 	disk_b=buffers;
 	net_b=buffers+1;
 	
 	ds_buffer_read(disk_b,get_blk,id,minor);
 	while (TRUE) {
+		retry=0;
+	retry:
 		current->state = TASK_INTERRUPTIBLE;
 		schedule_timeout(interval);
 		switch(ds_buffer_wait_on(disk_b,minor)) {
 		case 0: goto done;  /* finished */
-		case -1: 
+		case -1:
+			if(my_blksize != blksize_size[MAJOR_NR][minor]) {
+				printk(KERN_ERR DEVICE_NAME 
+				       "%d: Changing blksize not supported\n"
+				       "Please consider contributing it!\n",
+				       minor);
+			} else {
+				printk(KERN_ERR DEVICE_NAME 
+				       "%d: Syncer reread.\n",minor);
+				ds_buffer_init(disk_b,minor);
+				/* ds_buffer_read(disk_b,get_blk,id,minor); */
+				ds_buffer_reread(disk_b,minor);
+			}
+			if(retry++ < 5) goto retry;
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: Syncer read failed.\n",minor);
 			goto err;
