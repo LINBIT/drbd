@@ -805,6 +805,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 		} else {
 	                mdev->mops->set_block_status(mdev->mbds_id,
 				   block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
+			ret=0;
 		}
 	}
 
@@ -1136,15 +1137,28 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		/* Send it out to the network */
 		if (sending) {
 			int bnr;
+			int send_ok;
 			bnr = req->sector >> (drbd_conf[minor].blk_size_b - 9);
-     		        if (drbd_send_data(&drbd_conf[minor], req->buffer,
+     		        send_ok=drbd_send_data(&drbd_conf[minor], req->buffer,
 					   req->current_nr_sectors << 9,
-					   bnr,(unsigned long)req) > 0 ) {
+					   bnr,(unsigned long)req);
+
+			if(send_ok) {
 			        drbd_conf[minor].send_cnt++;
-			}
-			if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A) {
+			} 
+
+			if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A ||
+			    (!send_ok) ) {
+				/* If sending failed, we can not expect
+				   an ack packet. */
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
+
+			if(!send_ok) {
+				drbd_thread_restart_nowait(
+					&drbd_conf[minor].receiver);
+			}
+				
 		}
 		spin_lock_irq(&io_request_lock);
 	}
