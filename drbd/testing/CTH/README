@@ -9,12 +9,15 @@ software/hardware interaction in presence of hardware failures.
 Because it is used to test DRBDs behaviour, some DRBD specifics are built in.
 
 The CTH expects
- * to to run on one controlling box
+ * to run on one controlling box
  * which has exclusive access to at least two test nodes via ssh
  * that the ssh login will not ask for a password, but just let me through
  * the test nodes run linux kernel 2.6 (may work with 2.4, too)
  * the test nodes to have "dm" available
  * the test nodes to have "iptables" available
+ * the test nodes to '''not''' start heartbeat or drbd
+ from their init scripts, or simulating a node failure
+ won't work as intended
 
 Test nodes may well be UML sessions.
 
@@ -38,6 +41,7 @@ into e.g. /root/bin on the test nodes.
 
  LGE_CTH*::
  The perl module. Only adventurouse people should have a look at the internals here.
+ You should be at least perl "journeyman", otherwise please stay out.
 
  functions.sh::
  The core bash scripts, which are used and triggered by the CTH.
@@ -74,5 +78,6 @@ of all this crap is Lars Ellenberg <l.g.e@web.de>
 In case you care for an explicit '''license statement''':
 This is and needs to be GPL.
 
+# $Id: README,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
+# if you don't know wiki-moin.vim: http://linuxha.trick.ca/WikiTricks
 # vim: set ft=wiki-moin :
-# $Id: README,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $

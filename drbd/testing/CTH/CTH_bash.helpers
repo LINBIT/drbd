@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -58,7 +58,8 @@ drbd_to_env()
 new_drbd()
 {
 	local name minor port left left_real_dev right right_real_dev link
-	local left_ip left_disk right_ip right_disk conf
+	local  left_ip  left_hostname  left_disk
+	local right_ip right_hostname right_disk conf
 	          name=$1
 	         minor=$2
 		  port=$3
@@ -72,6 +73,8 @@ new_drbd()
 	# but since thats the IP by definition, this works.
 	 left_ip=$(ip_of $link $left)  || return
 	right_ip=$(ip_of $link $right) || return
+	node_to_env $left  ;  left_hostname=$hostname
+	node_to_env $right ; right_hostname=$hostname
 
 	let ID_DISK++
 	left_disk="Disk_$ID_DISK"
@@ -85,13 +88,13 @@ new_drbd()
 		resource $name {
 		    protocol        C;
 		    incon-degr-cmd "reboot -f";
-		    on uml-1 {
+		    on $left_hostname {
 		        device         /dev/nb$minor;
 		        disk           /dev/mapper/$name;
 		        address        $left_ip:$port;
 		        meta-disk      internal;
 		    }
-		    on uml-2 {
+		    on $right_hostname {
 		        device         /dev/nb$minor;
 		        disk           /dev/mapper/$name;
 		        address        $right_ip:$port;
@@ -142,6 +145,15 @@ crash_Node()
 	on ${!n}: generic_do_crash
 }
 
+wait_for_boot()
+{
+	local n=$1
+	node_to_env $n
+	on ${!n}: generic_do_crash
+	ip=$admin_ip
+	generic_wait_for_boot
+}
+
 fail_Link()
 {
 	local l=$1
@@ -190,5 +202,96 @@ boot_and_setup_nodes()
 		echo "$conf" | on ${!left}:  drbd_append_config NAME=$name RES=$name LO_DEV=$left_real_dev
 		echo "$conf" | on ${!right}: drbd_append_config NAME=$name RES=$name LO_DEV=$right_real_dev
 	done
+
+	# wait for connect and initial sync (which should be skipped automatically)
+	for d in ${!Drbd_*} ; do
+		drbd_to_env $d
+		on ${!left}:  drbd_wait_sync minor=$minor
+		# on ${!right}: drbd_wait_sync minor=$minor
+	done
+
+	# make file systems
+	for fs in ${!FS_*} ; do
+		eval ${!fs}
+		drbd_to_env $DRBD
+		n=$left
+		on ${!n}: drbdadm_pri   name=$name
+		cat <<-___
+		#
+		# on $n: mkfs.$TYPE /dev/nb$minor
+		#
+		___
+		on ${!n}: mkfs_$TYPE    DEV=/dev/nb$minor
+		on ${!n}: drbdadm_sec   name=$name
+	done
+
 	initial=false
+}
+
+resource_Start_on_Node()
+{
+	local rs=$1 nn=$2
+	i=${rs#RS_}
+	which=${!rs}; [[ $which == *CN=* ]] && cn=${which#*CN=} || cn=''
+	fs=FS_$i; CN=""
+	eval ${!fs}
+
+	[[ -z $CN && -z $cn ]] || exit 101
+	[[ $nn == Node_* ]]    || exit 102
+
+	drbd_to_env $DRBD
+	on ${!nn}: drbdadm_pri   name=$name
+	on ${!nn}: do_mount      DEV=/dev/nb$minor TYPE=$TYPE MNT=$MNT
+
+	# START IN BACKGROUND
+	on ${!nn}: ${which}_start   MNT=$MNT &
+
+	# rememeber current node
+	eval "$fs=\"\$$fs CN=$nn\""
+	eval "$rs=\"\$$rs CN=$nn\""
+
+	echo "$rs now RUNNING on $nn"
+}
+
+resource_Stop()
+{
+	local rs=$1
+	i=${rs#RS_}
+	which=${!rs}; [[ $which == *CN=* ]] && cn=${which#*CN=} || cn=''
+	fs=FS_$i; CN=""
+	eval "${!fs}"
+
+	[[ -z $CN || -z $cn ]] && exit 101
+	[[ $CN == $cn ]]       || exit 102
+	[[ $cn == Node_* ]]    || exit 103
+
+	drbd_to_env $DRBD
+	on ${!cn}: generic_test_stop MNT=$MNT
+	on ${!cn}: do_umount         MNT=$MNT
+	on ${!cn}: drbdadm_sec       name=$name
+	eval "$fs=\${$fs% CN=*}"   # forget current node
+	eval "$rs=\${$rs% CN=*}"   # forget current node
+}
+
+resource_relocate_to_Node()
+{
+	local rs=$1 nn=$2
+	if [[ ${!rs} == *CN=* ]] ; then
+		resource_Stop $rs
+	fi
+	resource_Start_on_Node $rs $nn
+}
+
+# for verification
+Dump()
+{
+	echo "$1=("
+	eval "printf '\t%s\n' \"\${$1[@]}\""
+	echo ")"
+}
+Dump_All()
+{
+	for n in ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*} ; do
+		Dump $n
+	done
 }

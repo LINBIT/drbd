@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: functions.sh,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -315,35 +315,37 @@ drbd_reattach()								# {{{3
 	fi
 }
 
-#
-# FileSystem
-########################
-
 drbdadm_pri()
 {
 	: ${name:?unknown resource name} 
 	drbdadm primary $name
+	echo "$name now Primary on $HOSTNAME"
 }
 
 drbdadm_sec()
 {
 	: ${name:?unknown resource name} 
 	drbdadm secondary $name
+	echo "$name now Secondary on $HOSTNAME"
 }
+
+#
+# FileSystem
+########################
 
 do_mount()
 {
 	: ${MNT:?unknown mount point} 
 	: ${TYPE:?unknown fs type} 
 	: ${DEV:?which device are you talkin about}
-	mount -t $TYPE $DEV $MNT
+	mount -v -t $TYPE $DEV $MNT
 }
 
 do_umount()
 {
 	: ${MNT:?unknown mount point} 
 	while grep -q " $MNT " /proc/mounts ; do
-		umount $MNT/ && break
+		umount -v $MNT/ && break
 		fuser -vmk $MNT/ || true
 		sleep 1
 	done

@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.1 2004/05/27 12:44:18 lars Exp $
+# $Id: CTH_bash.sh,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
 
 # example for scripting failures
 # 
@@ -25,27 +25,36 @@ source ./functions.sh
 
 boot_and_setup_nodes
 
+cat <<___
 #
-# ok, all up and configured.
+# ok, all up and configured, and fresh file systems created...
+#
 # now we can
 #
 #  start something on some node:
-#     on $Node_#: drbdadm_pri   name=r#
-#     on $Node_#: mkfs_reiserfs DEV=/dev/nb#
-#     on $Node_#: do_mount      DEV=/dev/nb# TYPE=resiserfs MNT=/mnt/ha#
-#     on $Node_#: wbtest_start  MNT=/mnt/ha#
+#     resource_Start_on_Node RS_1 Node_1
+#
+#  relocate it:
+#     resource_relocate_to_Node RS_1 Node_2
 #
 #  stop it again:
-#     on $Node_#: generic_test_stop MNT=/mnt/ha#
-#     on $Node_#: do_umount     MNT=/mnt/ha#
-#     on $Node_#: drbdadm_sec   name=r#
+#     resource_Stop RS_1
 #
-#  sleep $for_a_while
+#  sleep \$for_a_while # ;-)
 #
 #  fail and heal hardware:
-#     crash_Node Node_#
+#     crash_Node    Node_#
+#     wait_for_boot Node_#
 #     fail_Link Link_#
 #     heal_Link Link_#
 #     fail_Disk Disk_#
 #     heal_Disk Disk_#
-# 
+#
+___
+
+# for example:
+#   resource_Start_on_Node RS_1 Node_1
+#   sleep 30
+#   resource_relocate_to_Node RS_1 Node_2
+#   sleep 30
+#   resource_Stop RS_1
