@@ -86,18 +86,27 @@ enum {
 #define LC_STARVING (1<<__LC_STARVING)
 #define LC_LOCKED   (1<<__LC_LOCKED)
 
-extern void lc_init  (struct lru_cache* lc, lc_notify_on_change_fn f,void* d);
+extern void lc_init  (struct lru_cache* lc);
 extern void lc_resize(struct lru_cache* lc, unsigned int, spinlock_t* );
 extern void lc_free  (struct lru_cache* lc);
 extern void lc_set   (struct lru_cache* lc, unsigned int enr, int index);
 extern void lc_del   (struct lru_cache* lc, struct lc_element *element);
-extern void lc_touch (struct lru_cache* lc,struct lc_element * e);
-extern int  lc_fixup_hash_next(struct lru_cache * lc);
 
 extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
 extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
 extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
 
+static inline void lc_touch (struct lru_cache* lc,struct lc_element * e)
+{
+	// XXX paranoia: !list_empty(lru) && list_empty(free)
+	list_move(&e->list,&lc->lru);
+}
+
 #define LC_FREE (-1)
+
+#define lc_e_base(lc)  ((char*) ( (lc)->slot + (lc)->nr_elements ) )
+#define lc_entry(lc,i) ((struct lc_element*) \
+                       (lc_e_base(lc) + (i)*(lc)->element_size))
+#define lc_index_of(lc,e) (((char*)(e) - lc_e_base(lc))/(lc)->element_size)
 
 #endif

@@ -42,13 +42,11 @@
  * @f:   callback function which is called when lc_get needs to change
  *       the set of elements in the cache
  */
-void lc_init(struct lru_cache* lc, lc_notify_on_change_fn f,void* d)
+void lc_init(struct lru_cache* lc)
 {
 	PARANOIA_ENTRY();
 	lc->nr_elements      = 0;
 	lc->element_size     = sizeof(struct lc_element);
-	lc->notify_on_change = f;
-	lc->lc_private       = d;
 	lc->changing         = NULL;
 	lc->slot             = NULL;
 	RETURN();
@@ -60,7 +58,6 @@ void lc_init(struct lru_cache* lc, lc_notify_on_change_fn f,void* d)
  * calling this function.
  * @lc: The lru_cache object
  */
-#define lc_entry(lc,i) ((struct lc_element*)(((char*)&(lc)->slot[(lc)->nr_elements])+(i)*(lc)->element_size))
 void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
 {
 	unsigned int i;
@@ -98,7 +95,7 @@ void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
 		list_add(&e->list,&lc->free);
 	}
 
-	spin_lock_irqrestore(lck,flags);
+	spin_unlock_irqrestore(lck,flags);
 
 	RETURN();
 }
@@ -173,12 +170,6 @@ void lc_del(struct lru_cache* lc, struct lc_element *e)
 	e->refcnt = 0;
 	list_add(&e->list,&lc->free);
 	RETURN();
-}
-
-STATIC void lc_touch(struct lru_cache * lc,struct lc_element* e)
-{
-	// XXX paranoia: !list_empty(lru) && list_empty(free)
-	list_move(&e->list,&lc->lru);
 }
 
 STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
@@ -274,6 +265,6 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 	e->lc_number = enr;
 	__hlist_del(&e->colision);
 	hlist_add_head(&e->colision, lc->slot + lc_hash_fn(lc,enr) );
-	lc_touch(lc,e);
+	lc_touch(lc,e); // to make sure that his entry is not on the free list.
 }
 

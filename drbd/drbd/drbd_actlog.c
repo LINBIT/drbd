@@ -35,52 +35,50 @@
 
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
-#define AL_EXTENTS_PT 59
-
-struct drbd_extent {
-	struct lc_element lce;
-	unsigned int pending_ios;
-};
+#define AL_EXTENTS_PT 61
 
 struct al_transaction {
 	u32       magic;
 	u32       tr_number;
-	struct { 
+	// u32       tr_generation; //TODO
+	struct {
 		u32 pos;
-		u32 extent; } updates[3 + AL_EXTENTS_PT];
-	u32       xor_sum;      
+		u32 extent; } updates[1 + AL_EXTENTS_PT];
+	u32       xor_sum;
        // I do not believe that all storage medias can guarantee atomic
        // 512 byte write operations. When the journal is read, only
        // transactions with correct xor_sums are considered.
 };     // sizeof() = 512 byte
 
-STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
+STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *);
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
+
 
 STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e, 
 			    unsigned int enr)
 {
-	struct Drbd_Conf *mdev = (struct Drbd_Conf *) lc->lc_private;
-	unsigned long evicted;
-
+	// This callback is called by lc_get(). 
 	// WRITE transaction.... 
 	// async:  do lc->flags &= ~LC_DIRTY and  wake_up(&mdev->al_wait);
 	// in end of IO hander. Return 0 here.
 	// sync: do everything here and return 1.
 
+	struct Drbd_Conf *mdev = (struct Drbd_Conf *) lc->lc_private;
+	unsigned long evicted;
+
 	evicted = e->lc_number;
 	e->lc_number = enr;
-	spin_unlock(&mdev->al_lock);	
+	spin_unlock_irq(&mdev->al_lock);	
 
 	if(mdev->cstate < Connected && evicted != LC_FREE ) {
 		drbd_update_on_disk_bm(mdev,evicted,1);
 	}
-	drbd_al_write_transaction(mdev);
+	drbd_al_write_transaction(mdev,e);
 
-	spin_lock(&mdev->al_lock);	
+	spin_lock_irq(&mdev->al_lock);	
 	clear_bit(__LC_DIRTY,&lc->flags);
 	clear_bit(__LC_STARVING,&lc->flags);
-	smb_mb__after_clear_bit();
+	smp_mb__after_clear_bit();
 	wake_up(&mdev->al_wait);
 
 	return 1;
@@ -89,9 +87,8 @@ STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
 	lc_init(&mdev->act_log);
-	mdev->act_log.element_size = sizeof(struct drbd_extent);
-	mdev->act_log.may_evict = drbd_al_changing;
-	mdev->act_log.clb_data  = mdev;
+	mdev->act_log.notify_on_change = drbd_al_changing;
+	mdev->act_log.lc_private = mdev;
 }
 
 static inline 
@@ -99,9 +96,9 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct lc_element * extent;
 	
-	spin_lock(&mdev->al_lock);
+	spin_lock_irq(&mdev->al_lock);
 	extent = lc_get(&mdev->act_log,enr);	
-	spin_unlock(&mdev->al_lock);
+	spin_unlock_irq(&mdev->al_lock);
 
 	return extent;
 }
@@ -111,22 +108,25 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *extent;
 
-	wait_event(&mdev->al_wait, (extent = _al_get(mdev,enr)) );
+	wait_event(mdev->al_wait, (extent = _al_get(mdev,enr)) );
 
-	lc_touch(&mdev->act_log,extent);
+	spin_lock_irq(&mdev->al_lock);
+	lc_touch(&mdev->act_log,extent); // move back to lc_get  ??
+	spin_unlock_irq(&mdev->al_lock);
 }
 
 void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *extent;
+	unsigned long flags;
 
-	spin_lock(&mdev->al_lock);
+	spin_lock_irqsave(&mdev->al_lock,flags);
 
 	extent = lc_find(&mdev->act_log,enr);
 
 	if(!extent) {
-		spin_unlock(&mdev->al_lock);
+		spin_unlock_irqrestore(&mdev->al_lock,flags);
 		ERR("drbd_al_complete_io() called on inactive extent\n");
 		return;
 	}
@@ -135,15 +135,16 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 		wake_up(&mdev->al_wait);
 	}
 
-	spin_unlock(&mdev->al_lock);
+	spin_unlock_irqrestore(&mdev->al_lock,flags);
 }
 
-STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
+STATIC void 
+drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 {
 	int i,n,mx;
+	unsigned int extent_nr;
 	struct al_transaction* buffer;
 	sector_t sector;
-	unsigned int extent_nr;
 	u32 xor_sum=0;
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
@@ -151,34 +152,30 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
-	for(i=0;i<3;i++) {
-		n = mdev->act_log.updates[i];
-		if(n != -1) {
-			extent_nr = LC_AT_INDEX(&mdev->act_log,n)->lc_number;
+
+	n = lc_index_of(&mdev->act_log, updated);
+
+	buffer->updates[0].pos = cpu_to_be32(n);
+	buffer->updates[0].extent = cpu_to_be32(updated->lc_number);
+
 #if 0	/* Use this printf with the test_al.pl program */
-			ERR("T%03d S%03d=E%06d\n", 
-			    mdev->al_tr_number,n,extent_nr);
+	ERR("T%03d S%03d=E%06d\n", mdev->al_tr_number,n,updated->lc_number);
 #endif
-		} else {
-			extent_nr = LC_FREE;
-		}
-		buffer->updates[i].pos = cpu_to_be32(n);
-		buffer->updates[i].extent = cpu_to_be32(extent_nr);
-		xor_sum ^= extent_nr;
-	}
+
+	xor_sum ^= updated->lc_number;
 
 	mx = min_t(int,AL_EXTENTS_PT,
 		   mdev->act_log.nr_elements - mdev->al_tr_cycle);
 	for(i=0;i<mx;i++) {
-		extent_nr = LC_AT_INDEX(&mdev->act_log,
-					mdev->al_tr_cycle+i)->lc_number;
-		buffer->updates[i+3].pos = cpu_to_be32(mdev->al_tr_cycle+i);
-		buffer->updates[i+3].extent = cpu_to_be32(extent_nr);
+		extent_nr = lc_entry(&mdev->act_log,
+				     mdev->al_tr_cycle+i)->lc_number;
+		buffer->updates[i+1].pos = cpu_to_be32(mdev->al_tr_cycle+i);
+		buffer->updates[i+1].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
 	for(;i<AL_EXTENTS_PT;i++) {
-		buffer->updates[i+3].pos = __constant_cpu_to_be32(-1);
-		buffer->updates[i+3].extent = __constant_cpu_to_be32(LC_FREE);
+		buffer->updates[i+1].pos = __constant_cpu_to_be32(-1);
+		buffer->updates[i+1].extent = __constant_cpu_to_be32(LC_FREE);
 		xor_sum ^= LC_FREE;
 	}
 	mdev->al_tr_cycle += AL_EXTENTS_PT;
@@ -232,7 +229,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 	rv = ( be32_to_cpu(buffer->magic) == DRBD_MAGIC );
 
-	for(i=0;i<AL_EXTENTS_PT+3;i++) {
+	for(i=0;i<AL_EXTENTS_PT+1;i++) {
 		xor_sum ^= be32_to_cpu(buffer->updates[i].extent);
 	}
 	rv &= (xor_sum == be32_to_cpu(buffer->xor_sum));
@@ -298,16 +295,16 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 		trn=be32_to_cpu(buffer->tr_number);
 
-		for(j=0;j<AL_EXTENTS_PT+3;j++) {
+		for(j=0;j<AL_EXTENTS_PT+1;j++) {
 			pos = be32_to_cpu(buffer->updates[j].pos);
 			extent_nr = be32_to_cpu(buffer->updates[j].extent);
 
 			if(extent_nr == LC_FREE) continue;
 
 		       //if(j<3) INFO("T%03d S%03d=E%06d\n",trn,pos,extent_nr);
-			spin_lock(&mdev->al_lock);
+			spin_lock_irq(&mdev->al_lock);
 			lc_set(&mdev->act_log,extent_nr,pos);
-			spin_unlock(&mdev->al_lock);
+			spin_unlock_irq(&mdev->al_lock);
 		}
 
 		bh_kunmap(mdev->md_io_bh);
@@ -320,10 +317,6 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		i++;
 		if( i > mx ) i=0;
 	}
-
-	spin_lock(&mdev->al_lock);
-	active_extents=lc_fixup_hash_next(&mdev->act_log);
-	spin_unlock(&mdev->al_lock);
 
 	mdev->al_tr_number = to_tnr+1;
 	mdev->al_tr_pos = to;
@@ -344,15 +337,19 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	int i;
 	unsigned int enr;
 
-	spin_lock(&mdev->al_lock);
+	// Lock down the lru-cache by setting the DIRTY bit...
+	wait_event(mdev->al_wait, 
+		   test_and_set_bit(__LC_DIRTY,&mdev->act_log.flags) == 0);
 
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
-		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
+		enr = lc_entry(&mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
 		drbd_update_on_disk_bm(mdev,enr,1);
 	}
 
-	spin_unlock(&mdev->al_lock);
+	clear_bit(__LC_DIRTY,&mdev->act_log.flags);
+	smp_mb__after_clear_bit();
+	wake_up(&mdev->al_wait);
 }
 
 /**
@@ -365,16 +362,20 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	unsigned int enr;
 	unsigned long add=0;
 
-	spin_lock(&mdev->al_lock);
+	// Lock down the lru-cache by setting the DIRTY bit...
+	wait_event(mdev->al_wait, 
+		   test_and_set_bit(__LC_DIRTY,&mdev->act_log.flags) == 0);
 
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
-		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
+		enr = lc_entry(&mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
 		add += bm_set_bit( mdev, enr << (AL_EXTENT_SIZE_B-9), 
 				   AL_EXTENT_SIZE, SS_OUT_OF_SYNC );
 	}
 
-	spin_unlock(&mdev->al_lock);
+	clear_bit(__LC_DIRTY,&mdev->act_log.flags);
+	smp_mb__after_clear_bit();
+	wake_up(&mdev->al_wait);
 
 	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add/2);
 
@@ -492,13 +493,8 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 #undef BM_WORDS_PER_EXTENT
 #undef EXTENTS_PER_SECTOR
 
-/*
-  The very very curde thing currently is that we have two different extent
-  sizes now. AL's extents are 4MB each, while the extents of the resync
-  LRU-cache are 16MB each. I guess we should have only one extent
-  size here. -- I guess the 16MB are the better choice but I want to 
-  postpone this decission a bit... :(
-*/
+/* ATTENTION. The AL's extents are 4MB each, while the extents in the  *
+ * resync LRU-cache are 16MB each.                                     */
 #define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				      int cleared,int may_sleep)
