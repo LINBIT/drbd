@@ -8,6 +8,7 @@ extern void drbd_md_io_complete     (struct buffer_head *bh, int uptodate);
 extern void enslaved_read_bi_end_io (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end_sec        (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end            (struct buffer_head *bh, int uptodate);
+extern void drbd_read_bi_end_io     (struct buffer_head *bh, int uptodate);
 
 /*
  * because in 2.6.x [sg]et_capacity operate on gendisk->capacity, which is in
@@ -196,7 +197,8 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	// D_ASSERT(buffer_dirty(bh)); // It is not true ?!?
 	D_ASSERT(buffer_uptodate(bh));
 
-	// FIXME should not be necessary
+	// FIXME should not be necessary;
+	// remove if the assertions above do not trigger.
 	bh->b_state = (1 << BH_Uptodate)
 		     |(1 << BH_Dirty)
 		     |(1 << BH_Lock)
@@ -206,9 +208,6 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	req->rq_status = RQ_DRBD_NOTHING;
 }
 
-#if 0
-/* not yet used
- */
 static inline void
 drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 {
@@ -218,7 +217,7 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	drbd_bh_clone(bh,bh_src);
 	bh->b_rdev    = mdev->backing_bdev;
 	bh->b_private = mdev;
-	bh->b_end_io  = drbd_read_end_io;
+	bh->b_end_io  = drbd_read_bi_end_io;
 
 	D_ASSERT(buffer_req(bh));
 	D_ASSERT(buffer_launder(bh));
@@ -226,14 +225,14 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	D_ASSERT(buffer_mapped(bh));
 	D_ASSERT(!buffer_uptodate(bh));
 
-	// FIXME should not be necessary
+	// FIXME should not be necessary;
+	// remove if the assertions above do not trigger.
 	bh->b_state = (1 << BH_Lock)
 		     |(1 << BH_Req)
 		     |(1 << BH_Mapped) ;
 
 	req->rq_status = RQ_DRBD_NOTHING;
 }
-#endif
 
 static inline struct page* drbd_bio_get_page(struct buffer_head *bh)
 {
@@ -248,6 +247,13 @@ static inline void drbd_generic_make_request(int rw, struct buffer_head *bh)
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
 	run_task_queue(&tq_disk);
+}
+
+static inline void drbd_plug_device(drbd_dev *mdev)
+{
+	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
+		queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
+	}
 }
 
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
@@ -282,6 +288,7 @@ extern int drbd_md_io_complete     (struct bio *bio, unsigned int bytes_done, in
 extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_read_bi_end_io     (struct bio *bio, unsigned int bytes_done, int error);
 
 // we should not accept bios crossing our extent boundaries!
 extern int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv);
@@ -487,12 +494,20 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	req->rq_status = RQ_DRBD_NOTHING;
 }
 
-#if 0
 static inline void
 drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 {
+	struct bio * const bio     = &req->private_bio;
+	struct bio * const bio_src =  req->master_bio;
+
+	__bio_clone(bio,bio_src);
+	bio->bi_bdev    = mdev->backing_bdev;
+	bio->bi_private = mdev;
+	bio->bi_end_io  = drbd_read_bi_end_io;	// <- only difference
+	bio->bi_next    = 0;
+
+	req->rq_status = RQ_DRBD_NOTHING;
 }
-#endif
 
 static inline struct page* drbd_bio_get_page(struct bio *bio)
 {
@@ -500,6 +515,9 @@ static inline struct page* drbd_bio_get_page(struct bio *bio)
 	return bvec->bv_page;
 }
 
+/*
+ * used to submit our private bio
+ */
 static inline void drbd_generic_make_request(int rw, struct bio *bio)
 {
 	bio->bi_rw = rw; //??
@@ -509,6 +527,19 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
 	blk_run_queue(bdev_get_queue(mdev->backing_bdev)); 
+}
+
+static inline void drbd_plug_device(drbd_dev *mdev)
+{
+	request_queue_t *q = bdev_get_queue(mdev->this_bdev);
+
+	spin_lock_irq(q->queue_lock);
+	if(!blk_queue_plugged(q)) {
+		blk_plug_device(q);
+		del_timer(&q->unplug_timer);
+		// unplugging should not happen automatically...
+	}
+	spin_unlock_irq(q->queue_lock);
 }
 
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)

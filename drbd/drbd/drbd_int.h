@@ -232,10 +232,9 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 /* these defines should go into blkdev.h
    (if it will be ever includet into linus' linux) */
 #define RQ_DRBD_NOTHING	  0x0001
-#define RQ_DRBD_SENT	  0x0010
-#define RQ_DRBD_WRITTEN   0x0020
+#define RQ_DRBD_SENT      0x0010
+#define RQ_DRBD_LOCAL     0x0020
 #define RQ_DRBD_DONE      0x0030
-#define RQ_DRBD_READ      0x0040
 
 enum MetaDataFlags {
 	MDF_Consistent   = 1,
@@ -671,7 +670,8 @@ struct Drbd_Conf {
 	struct list_head read_ee;   // IO in progress
 	// struct list_head rdone_ee;  // send result or CondRequest
 	spinlock_t pr_lock;
-	struct list_head app_reads;
+	// struct list_head app_reads; // FIXME broken on purpose by lge
+	struct list_head new_app_reads;
 	struct list_head resync_reads;
 	int ee_vacant;
 	int ee_in_use;
@@ -803,10 +803,11 @@ extern mempool_t *drbd_pr_mempool;
 #define ERF_NOTLD    2   /* do not call tl_dependence */
 extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-extern int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bio);
+extern int drbd_make_request_24(request_queue_t *q, int rw, struct buffer_head *bio);
 #else
-extern int drbd_make_request(request_queue_t *q, struct bio *bio);
+extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 #endif
+extern void drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 
 // drbd_fs.c
 extern int drbd_determin_dev_size(drbd_dev*);
@@ -821,11 +822,14 @@ extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 // maybe rather drbd_main.c ?
 extern int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw);
 // worker callbacks
+extern int w_is_app_read         (drbd_dev *mdev, struct drbd_work *w);
+extern int w_is_resync_read      (drbd_dev *mdev, struct drbd_work *w);
+extern int w_read_retry_remote   (drbd_dev *mdev, struct drbd_work *w);
 extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work *w);
 extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work *w);
 extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work *w);
 extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work *w);
-extern int w_resume_next_sg      (drbd_dev* mdev, struct drbd_work *w);
+extern int w_resume_next_sg      (drbd_dev *mdev, struct drbd_work *w);
 
 
 // drbd_receiver.c
@@ -835,7 +839,7 @@ extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
 extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
 extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
 			    sector_t sector, int data_size);
-extern int recv_dless_read(drbd_dev* mdev, struct Pending_read *pr,
+extern int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 			   sector_t sector, int data_size);
 
 // drbd_proc.c
@@ -934,7 +938,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 			break;
 		case Panic:
 			set_bit(DISKLESS,&mdev->flags);
-			smp_mb();
+			smp_mb(); // but why is there smp_mb__after_clear_bit() ?
 			panic(DEVICE_NAME" : IO error on backing device!\n");
 			break;
 		case Detach:

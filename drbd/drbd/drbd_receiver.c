@@ -742,17 +742,15 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	mdev->writ_cnt+=data_size>>9;
 }
 
-int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
+int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 		    sector_t sector, int data_size)
 {
 	drbd_bio_t *bio;
 	int ok,rr;
 
-	// DBG("%s\n", __func__);
+	bio = req->master_bio;
 
-	bio = pr->d.master_bio;
-
-	D_ASSERT( sector == drbd_pr_get_sector(pr) );
+	D_ASSERT( sector == drbd_req_get_sector(req) );
 
 	rr=drbd_recv(mdev,drbd_bio_kmap(bio),data_size);
 	drbd_bio_kunmap(bio);
@@ -882,6 +880,7 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 {
 	struct Pending_read *pr;
+	drbd_request_t *req;
 	sector_t sector;
 	unsigned int header_size,data_size;
 	int ok;
@@ -889,7 +888,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	static int (*funcs[])(struct Drbd_Conf* , struct Pending_read*,
 			      sector_t,int) = {
-			      [Application]  = recv_dless_read,
+			      [Application]  = NULL,  /* recv_dless_read, */
 			      [Resync]       = recv_resync_read,
 			      [AppAndResync] = recv_both_read
 		      };
@@ -909,26 +908,47 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	sector = be64_to_cpu(p->sector);
 
-	pr = (struct Pending_read *)(long)p->block_id;
-
-	// these would be BUG()s ...
-	ERR_IF(!VALID_POINTER(pr)) return FALSE;
-
-	// XXX are enums unsigned by default?
-	ERR_IF((unsigned)pr->cause > AppAndResync) {
-		return FALSE;
+	/* FIXME funny runtime type check.
+	 * probably should be distinct packet types!
+	 */
+	req = (drbd_request_t *)(long)p->block_id;
+	if (req->w.cb == w_is_resync_read) {
+		pr  = (struct Pending_read *)(long)p->block_id;
+		req = NULL;
+		ERR_IF(!VALID_POINTER(pr)) return FALSE;
+		// XXX are enums unsigned by default?
+		ERR_IF((unsigned)pr->cause > AppAndResync) {
+			return FALSE;
+		}
+	} else {
+		pr  = NULL;
+		ERR_IF(!VALID_POINTER(req)) return FALSE;
 	}
 
-	/* Take it out of the list before calling the handler, since the
-	   handler could be changed by make_req as long as it is on the list
-	*/
-	spin_lock(&mdev->pr_lock);
-	list_del(&pr->w.list);
-	spin_unlock(&mdev->pr_lock);
 
-	ok = funcs[pr->cause](mdev,pr,sector,data_size);
-	INVALIDATE_MAGIC(pr);
-	mempool_free(pr,drbd_pr_mempool);
+	if (pr) {
+		/* RESYNC request
+		 */
+		/* Take it out of the list before calling the handler, since the
+		   handler could be changed by make_req as long as it is on the list
+		*/
+		spin_lock(&mdev->pr_lock);
+		list_del(&pr->w.list);
+		spin_unlock(&mdev->pr_lock);
+
+		// FIXME get rid of pr (at least its cause field) completely!
+		D_ASSERT(pr->cause == Resync);
+
+		ok = funcs[pr->cause](mdev,pr,sector,data_size);
+		INVALIDATE_MAGIC(pr);
+		mempool_free(pr,drbd_pr_mempool);
+	} else {
+		/* "diskless" application READ request
+		 */
+		ok = recv_dless_read(mdev,req,sector,data_size);
+		INVALIDATE_MAGIC(req);
+		mempool_free(req,drbd_request_mempool);
+	}
 	return ok;
 }
 
@@ -1314,23 +1334,27 @@ STATIC void drbd_collect_zombies(drbd_dev *mdev)
 
 STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
-	struct Pending_read *pr;
 	struct list_head workset,*le;
 	drbd_bio_t *bio;
 
+	/*
+	 * Application READ requests
+	 */
 	spin_lock(&mdev->pr_lock);
-	list_add(&workset,&mdev->app_reads);
-	list_del(&mdev->app_reads);
-	INIT_LIST_HEAD(&mdev->app_reads);
+	list_add(&workset,&mdev->new_app_reads);
+	list_del(&mdev->new_app_reads);
+	INIT_LIST_HEAD(&mdev->new_app_reads);
 	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
+		drbd_request_t *req;
 		le = workset.next;
-		pr = list_entry(le, struct Pending_read, w.list);
+		req = list_entry(le, drbd_request_t, w.list);
 		list_del(le);
 
-		bio = pr->d.master_bio;
+		bio = req->master_bio;
 
+#if 0
 		switch(pr->cause) {
 		case Application:
 			dec_ap_pending(mdev,HERE);
@@ -1345,13 +1369,18 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 			break;
 		case Discard:;
 		}
+#endif
 
 		drbd_bio_IO_error(bio);
+		dec_ap_pending(mdev,HERE);
 
-		INVALIDATE_MAGIC(pr);
-		mempool_free(pr,drbd_pr_mempool);
+		INVALIDATE_MAGIC(req);
+		mempool_free(req,drbd_request_mempool);
 	}
 
+	/*
+	 * Resync READ requests
+	 */
 	spin_lock(&mdev->pr_lock);
 	list_add(&workset,&mdev->resync_reads);
 	list_del(&mdev->resync_reads);
@@ -1359,6 +1388,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
+		struct Pending_read *pr;
 		le = workset.next;
 		list_del(le);
 		pr = list_entry(le, struct Pending_read, w.list);

@@ -94,6 +94,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		wake_asender(mdev);
 }
 
+#if 0
 STATIC struct Pending_read*
 drbd_find_read(sector_t sector, struct list_head *in)
 {
@@ -107,8 +108,10 @@ drbd_find_read(sector_t sector, struct list_head *in)
 
 	return NULL;
 }
+#endif
 
-STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
+#if 0
+STATIC void drbd_issue_drequest___FIXME_broken_on_purpose_by_lge(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 {
 	struct Pending_read *pr;
 	pr = mempool_alloc(drbd_pr_mempool, GFP_DRBD);
@@ -132,6 +135,24 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 #else
 	drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
 			   (unsigned long)pr);
+#endif
+}
+#endif
+
+void drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
+{
+	drbd_bio_t *bio = req->master_bio;
+
+	spin_lock(&mdev->pr_lock);
+	list_add(&req->w.list,&mdev->new_app_reads);
+	spin_unlock(&mdev->pr_lock);
+	inc_ap_pending(mdev);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
+			   (unsigned long)req);
+#else
+	drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
+			   (unsigned long)req);
 #endif
 }
 
@@ -158,110 +179,103 @@ int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bio)
-#else
-int drbd_make_request(request_queue_t *q, struct bio *bio)
-#endif
+STATIC int
+drbd_make_request_common(drbd_dev *mdev, int rw, int size,
+			 sector_t sector, drbd_bio_t *bio)
 {
-	struct Drbd_Conf* mdev =
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-		drbd_conf + MINOR(bio->b_rdev);
-#else
-		(drbd_dev*) q->queuedata;
-#endif
 	drbd_request_t *req;
-	int send_ok;
-	int sector, size;
-	ONLY_IN_26(int rw = bio_rw(bio);)
+	int local, remote;
+	int target_area_out_of_sync = FALSE; // only relevant for reads
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	if (MINOR(bio->b_rdev) >= minor_count || mdev->cstate < StandAlone) {
-		buffer_IO_error(bio);
+	/* allocate outside of all locks
+	 */
+	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
+	if (!req) {
+		ERR("could not kmalloc() req\n");
+		drbd_bio_IO_error(bio);
+		return 0;
+	}
+	SET_MAGIC(req);
+	req->master_bio = bio;
+
+	// XXX maybe merge both variants into one
+	if (rw == WRITE) drbd_req_prepare_write(mdev,req);
+	else             drbd_req_prepare_read(mdev,req);
+
+	/* XXX req->w.cb = something; drbd_queue_work() ....
+	 * Not yet.
+	 */
+
+	// down_read(mdev->device_lock);
+
+	local = inc_local(mdev);
+	// FIXME special case handling of READA ??
+	if (rw == READ || rw == READA) {
+		if (local) {
+			target_area_out_of_sync =
+				(mdev->cstate == SyncTarget) &&
+				bm_get_bit(mdev->mbds_id,sector,size);
+			if (target_area_out_of_sync) {
+				/* whe could kick the syncer to
+				 * sync this extent asap, wait for
+				 * it, then continue locally.
+				 * Or just issue the request remotely.
+				 */
+				local = 0;
+				dec_local(mdev);
+			}
+		}
+		remote = !local;
+	} else {
+		remote = 1;
+	}
+	remote = remote && (mdev->cstate >= Connected)
+			&& !test_bit(PARTNER_DISKLESS,&mdev->flags);
+
+	if (!(local || remote)) {
+		ERR("IO ERROR: neither local nor remote disk\n");
+		// PANIC ??
+		drbd_bio_IO_error(bio);
 		return 0;
 	}
 
-#else
-	//#warning "FIXME"
-#endif
-
-	/* what do we know?
+	/* THINK
+	 * maybe we need to
+	 *   if (rw == WRITE) drbd_al_begin_io(mdev, sector);
+	 * right here already?
 	 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	sector = bio->b_rsector;
-	size   = bio->b_size;
-#else
-	//      rw = bio->bi_rw & RW_MASK;
-	//      ra = bio->bi_rw & RWA_MASK;
-	      size = bio->bi_size;
-	    sector = bio->bi_sector;
-	/* barrier = bio_barrier(bio);
-	nr_sectors = bio_sectors(bio); */
-#endif
 
-	    
-	if( !inc_local(mdev) ) {
-		if( mdev->cstate < Connected ) {
-			drbd_bio_IO_error(bio);
-			return 0;
-		}
+	/* do this first, so I do not need to call drbd_end_req,
+	 * but can set the rq_status directly.
+	 */
+	if (!local)
+		req->rq_status |= RQ_DRBD_LOCAL;
+	if (!remote)
+		req->rq_status |= RQ_DRBD_SENT;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-		if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
-			queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
-		}
-#else
-		spin_lock_irq(q->queue_lock);
-		if(!blk_queue_plugged(q)) {
-			blk_plug_device(q);
-			del_timer(&q->unplug_timer);
-			// unplugging should not happen automatically...
-		}
-		spin_unlock_irq(q->queue_lock);
-#endif
-
-
-		// Fail READA ??
-		if( rw == WRITE ) {
-			req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
-
-			if (!req) {
-				ERR("could not kmalloc() req\n");
-				drbd_bio_IO_error(bio);
-				return 0;
-			}
-			SET_MAGIC(req);
-
-			//WORK_HERE
-			/* FIXME the drbd_make_request function will be
-			 * restructured soon.
-			 * until that is the case,
-			 * at least put the mdev and sector number into the
-			 * private bh!
+	if (remote) {
+		/* either WRITE and Connected,
+		 * or READ, and no local disk,
+		 * or READ, but not in sync.
+		 */
+		drbd_plug_device(mdev);
+		if (rw == WRITE) {
+			/* Syncronization with the syncer is done
+			 * via drbd_[rs|al]_[begin|end]_io()
 			 */
-			req->master_bio = bio;
-			drbd_req_prepare_write(mdev,req);
-			req->rq_status  = RQ_DRBD_WRITTEN | 1;
-
 			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
 				inc_ap_pending(mdev);
 			}
-			drbd_send_dblock(mdev,req); // FIXME error check?
-		} else { // rw == READ || rw == READA
-			drbd_issue_drequest(mdev,bio);
-		}
-		return 0; // Ok everything arranged
-	}
-
-	if ( mdev->cstate == SyncTarget &&
-	     bm_get_bit(mdev->mbds_id,sector,size) ) {
-		struct Pending_read *pr;
-		if( rw == WRITE ) {
-			// Actually nothing special to do.
-			// Just do a mirrored write.
-			// Syncronization with the syncer is done
-			// via drbd_[rs|al]_[begin|end]_io()
-		} else { // rw == READ || rw == READA
+			/* THINK drbd_send_dblock has a return value,
+			 * but we ignore it here. Is it actually void,
+			 * because error handling takes place elsewhere?
+			 */
+			drbd_send_dblock(mdev,req);
+		} else if (target_area_out_of_sync) {
+			#if 0
+			/* lge: I do not like this branch,
+			 * and it currently does not work anyways...
+			 */
 			spin_lock(&mdev->pr_lock);
 			pr=drbd_find_read(sector,&mdev->resync_reads);
 			if(pr) {
@@ -273,84 +287,63 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 				list_del(&pr->w.list);
 				list_add(&pr->w.list,&mdev->app_reads);
 				spin_unlock(&mdev->pr_lock);
-				return 0; // Ok everything arranged
+				/* Ok, everything arranged.
+				 * since reads are never done
+				 * on both nodes at the same time,
+				 * we just:
+				 */
+				// up_read(mdev->device_lock);
+				return 0;
 			}
-
 			spin_unlock(&mdev->pr_lock);
-			drbd_issue_drequest(mdev,bio);
-			return 0;
+			#endif
+			drbd_read_remote(mdev,req);
+		} else {
+			// this node is diskless ...
+			drbd_read_remote(mdev,req);
 		}
 	}
 
-	if( rw == READ || rw == READA ) {
-		mdev->read_cnt += size >> 9;
-		dec_local(mdev);  // FIXME TODO -> completion handler
-		/// TODO FIXME shoulbe be able to reissue the request to
-		/// the peer in case it fails locally.
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-		bio->b_rdev  = mdev->backing_bdev;
-#else
-		bio->bi_bdev = mdev->backing_bdev;
-#endif
-		return 1; // Not arranged for transfer ( but remapped :)
-	}
-
-	mdev->writ_cnt += size >> 9;
-
-	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
-		drbd_set_out_of_sync(mdev,sector,size);
-
-		/* This should be changed. We should not remap in this 
-		   case !!!!! FIXME TODO FIXME TODO 
+	if (local) {
+		if (rw == WRITE) {
+			drbd_al_begin_io(mdev, sector);
+			if (!remote) drbd_set_out_of_sync(mdev,sector,size);
+		} else {
+			D_ASSERT(!remote);
+		}
+		/* FIXME
+		 * Should we add even local reads to some list, so
+		 * they can be grabbed and freed somewhen?
+		 *
+		 * They already have a reference count (sort of...)
+		 * on mdev via inc_local()
 		 */
-		drbd_al_begin_io(mdev, sector);
-		drbd_al_complete_io(mdev, sector); // FIXME TODO -> completion handler
-		dec_local(mdev);  // FIXME TODO -> completion handler
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-		bio->b_rdev  = mdev->backing_bdev;
-#else
-		bio->bi_bdev = mdev->backing_bdev;
-#endif
-		return 1; // Not arranged for transfer ( but remapped :)
+		drbd_generic_make_request(rw,&req->private_bio);
 	}
 
-	// Now its clear that we have to do a mirrored write:
-
-	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
-
-	if (!req) {
-		ERR("could not kmalloc() req\n");
-		drbd_bio_IO_error(bio);
-		dec_local(mdev);
-		return 0;
-	}
-	SET_MAGIC(req);
-
-	req->master_bio = bio;
-	drbd_req_prepare_write(mdev,req);
-
-	send_ok=drbd_send_dblock(mdev,req);
-
-	// FIXME we could remove the send_ok cases, the are redundant to tl_clear()
-	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_ap_pending(mdev);
-	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
-				/* If sending failed, we can not expect
-				   an ack packet. */
-		drbd_end_req(req, RQ_DRBD_SENT, 1, drbd_req_get_sector(req));
-	}
-	if(!send_ok) drbd_set_out_of_sync(mdev,sector,size);
-
-NOT_IN_26(
-	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
-		queue_task(&mdev->write_hint_tq, &tq_disk);
-	}
-)
-
-	drbd_al_begin_io(mdev, drbd_req_get_sector(req));
-
-	drbd_generic_make_request(rw,&req->private_bio);
-
-	return 0; /* Ok, bh arranged for transfer */
-
+	// up_read(mdev->device_lock);
+	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+int drbd_make_request_24(request_queue_t *q, int rw, struct buffer_head *bh)
+{
+	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);
+	if (MINOR(bh->b_rdev) >= minor_count || mdev->cstate < StandAlone) {
+		buffer_IO_error(bh);
+		return 0;
+	}
+
+	return drbd_make_request_common(mdev,rw,bh->b_size,bh->b_rsector,bh);
+}
+#else
+int drbd_make_request_26(request_queue_t *q, struct bio *bio)
+{
+	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
+	if (mdev->cstate < StandAlone) {
+		drbd_bio_IO_error(bio);
+		return 0;
+	}
+	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,bio->bi_sector,bio);
+}
+#endif

@@ -1097,7 +1097,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->done_ee);
 	INIT_LIST_HEAD(&mdev->read_ee);
 	INIT_LIST_HEAD(&mdev->busy_blocks);
-	INIT_LIST_HEAD(&mdev->app_reads);
+	INIT_LIST_HEAD(&mdev->new_app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
 	INIT_LIST_HEAD(&mdev->data.work.q);
 	INIT_LIST_HEAD(&mdev->meta.work.q);
@@ -1342,7 +1342,7 @@ int __init drbd_init(void)
 			WARN("Could not bd_claim() myself.");
 		}
 
-		blk_queue_make_request(q,drbd_make_request);
+		blk_queue_make_request(q,drbd_make_request_26);
 		q->unplug_fn = drbd_send_write_hint;
 	}
 #endif
@@ -1405,7 +1405,7 @@ NOT_IN_26(
 			      &drbd_ops, NULL);
 #endif
 
-	NOT_IN_26(blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);)
+	NOT_IN_26(blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request_24);)
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	// tell the kernel that we think our ioctls are 64bit clean

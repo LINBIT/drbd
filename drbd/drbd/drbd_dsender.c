@@ -148,8 +148,38 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	drbd_chk_io_error(mdev,!uptodate);
-	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, drbd_req_get_sector(req));
+	drbd_end_req(req, RQ_DRBD_LOCAL, uptodate, drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
+	dec_local(mdev);
+}
+
+/* reads on Primary comming from drbd_make_request
+ */
+void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
+{
+	struct Drbd_Conf* mdev;
+	drbd_request_t *req;
+
+	mdev = bh->b_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	req = container_of(bh,struct drbd_request,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(req));
+
+	if (!uptodate) {
+		// for the panic:
+		drbd_chk_io_error(mdev,!uptodate);
+		// ok, if we survived this, retry:
+		// FIXME sector ...
+		ERR("local read failed, retrying remotely\n");
+		req->w.cb = w_read_retry_remote;
+		drbd_queue_work(mdev,&mdev->data.work,&req->w);
+	} else {
+		bh->b_end_io(bh,uptodate);
+
+		INVALIDATE_MAGIC(req);
+		mempool_free(req,drbd_request_mempool);
+	}
 	dec_local(mdev);
 }
 
@@ -267,16 +297,88 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	drbd_chk_io_error(mdev,error);
-	drbd_end_req(req, RQ_DRBD_WRITTEN, (error == 0), drbd_req_get_sector(req));
+	drbd_end_req(req, RQ_DRBD_LOCAL, (error == 0), drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
 	dec_local(mdev);
 	return 0;
 }
+
+/* reads on Primary comming from drbd_make_request
+ */
+int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
+{
+	struct Drbd_Conf* mdev;
+	drbd_request_t *req;
+
+	// see above
+	if (bio->bi_size)
+		return 1;
+
+	mdev = bio->bi_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	req = container_of(bio,struct drbd_request,private_bio);
+	PARANOIA_BUG_ON(!VALID_POINTER(req));
+
+	if (error) {
+		// for the panic:
+		drbd_chk_io_error(mdev,error);
+		// ok, if we survived this, retry:
+		// FIXME sector ...
+		ERR("local read failed, retrying remotely\n");
+		req->w.cb = w_read_retry_remote;
+		drbd_queue_work(mdev,&mdev->data.work,&req->w);
+	} else {
+		bio_endio(bio,bio->bi_size,error);
+
+		INVALIDATE_MAGIC(req);
+		mempool_free(req,drbd_request_mempool);
+	}
+	return 0;
+}
 #endif
+
+int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w)
+{
+	drbd_request_t *req = (drbd_request_t*)w;
+
+	if ( mdev->cstate <= Connected ||
+	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+
+		// FIXME
+		// local read failed, and we cannot retry.
+		// drbd_chk_io_error has already been called.
+		// what now: PANIC ??
+
+		// propagate, cannot do anything about it.
+		drbd_bio_endio(req->master_bio,0);
+		return 0; // worker will abort.
+	}
+
+	// FIXME: what if partner was SyncTarget, and is out of sync for
+	// this area ?? ... should be handled in the receiver.
+	drbd_read_remote(mdev,req);
+	return 1;
+}
 
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
 {
 	ERR("resync inactive, but callback triggered??\n");
+	return 0;
+}
+
+int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w)
+{
+	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
+	return 0;
+}
+
+/* in case we need it. currently unused,
+ * since should be assigned to "w_read_retry_remote"
+ */
+int w_is_app_read(drbd_dev *mdev, struct drbd_work *w)
+{
+	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
 	return 0;
 }
 
@@ -317,6 +419,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 		pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
 		if (unlikely(pr == NULL)) goto requeue;
 		SET_MAGIC(pr);
+		pr->w.cb = w_is_resync_read;
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
@@ -367,7 +470,7 @@ int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
 	dt = (jiffies - mdev->rs_start) / HZ + 1;
 	n = mdev->rs_total>>1;
 	sector_div(n,dt);
-	INFO("Resync done (total %lu sec; %u K/sec)\n",
+	INFO("Resync done (total %lu sec; %lu K/sec)\n",
 	     dt,(unsigned long)n);
 
 	if (mdev->cstate == SyncTarget) {
