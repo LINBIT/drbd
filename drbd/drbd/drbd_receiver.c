@@ -321,6 +321,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	if (mdev->conf.ping_int) {
 		ti.restart=0;
 		del_timer_sync(&ti.idle_timeout);
+		ti.idle_timeout.function=0;
 	}
 
 
@@ -1046,7 +1047,10 @@ void drbd_ping_timeout(unsigned long arg)
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
 	struct send_timer_info *ti;
 
-	drbd_thread_stop(&mdev->receiver);
+	printk(KERN_ERR DEVICE_NAME"%d: ping ack did not arrive in time\n",
+	       (int)(mdev-drbd_conf));
+
+	drbd_thread_restart_nowait(&mdev->receiver);
 
 	if((ti=mdev->send_proc)) {
 		ti->timeout_happened=1;
@@ -1097,8 +1101,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	struct timer_list ping_timeout;
 	unsigned long ping_sent_at=0;
-
-	int rr,rsize=0;
+	int rtt,rr,rsize=0;
 
 	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
 
@@ -1115,7 +1118,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			  init_timer(&ping_timeout);
 			  ping_timeout.function = drbd_ping_timeout;
 			  ping_timeout.data = (unsigned long) mdev;
-			  ping_timeout.expires = jiffies + HZ;//(mdev->artt*2);
+			  ping_timeout.expires = jiffies + mdev->artt*4;
 			  add_timer(&ping_timeout);
 			  ping_sent_at=jiffies;
 		  }
@@ -1125,7 +1128,6 @@ int drbd_asender(struct Drbd_thread *thi)
 		  drbd_try_send_barrier(mdev);
 	  } else { //Secondary
 		  drbd_process_done_ee(mdev);
-		  //TODO: should asender exit if sending fails ?
 	  }
 	  rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize);
 	  if(rr < 0) break;
@@ -1146,14 +1148,16 @@ int drbd_asender(struct Drbd_thread *thi)
 			break;
 		case PingAck:
 			del_timer_sync(&ping_timeout);
-			printk(KERN_ERR DEVICE_NAME "%d: rtt=%ld\n",
-			       (int)(mdev-drbd_conf),
-			       (jiffies-ping_sent_at));
+			rtt=max_t(int,jiffies-ping_sent_at,4); //HZ/50);
+			if(rtt < mdev->artt) mdev->artt--;
+			if(rtt > mdev->artt) mdev->artt++;
 			break;
 		}
 		rsize=0;
 	  }
 	}
+
+	// TODO: if sending fails somewhere, asender should exit...
 
 	del_timer_sync(&ping_timeout);
 

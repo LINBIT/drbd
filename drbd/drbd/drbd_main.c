@@ -641,21 +641,19 @@ static void drbd_timeout(unsigned long arg)
 	} else {
 		set_bit(SEND_PING,&ti->mdev->flags);
 		wake_up_interruptible(&ti->mdev->asender_wait);
+		//TODO: reschedule itself.
 	}
 }
 
 void drbd_a_timeout(unsigned long arg)
 {
-	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
+	struct Drbd_Conf *mdev = (struct Drbd_Conf *) arg;
 
 	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected (pc=%d)!\n",
-	       thi->minor,
-	       drbd_conf[thi->minor].pending_cnt);
+	       (int)(mdev-drbd_conf),mdev->pending_cnt);
 
-	if(drbd_conf[thi->minor].cstate >= Connected) {
-		set_cstate(&drbd_conf[thi->minor],Timeout);
-		drbd_thread_restart_nowait(thi);
-	}
+	set_bit(SEND_PING,&mdev->flags);
+	wake_up_interruptible(&mdev->asender_wait);
 }
 
 /*
@@ -666,7 +664,7 @@ void drbd_a_timeout(unsigned long arg)
 
                     sock                      msock
   -----------------+-------------------------+------------------------------
-  timeout           conf.timeout              avg round trip time(artt) x 2
+  timeout           conf.timeout              avg round trip time(artt) x 4
   timeout action    send a ping via msock     Abort communication
                                               and close all sockets
 */
@@ -716,7 +714,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		s_timeout.function = drbd_timeout;
 		s_timeout.data = (unsigned long) &ti;
 		s_timeout.expires = jiffies + via_msock ? 
-			(mdev->conf.timeout * HZ / 10) : (mdev->artt*2);
+			(mdev->conf.timeout * HZ / 10) : (mdev->artt*4);
 		add_timer(&s_timeout);
 	}
 
@@ -741,6 +739,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
 				if(ti.timeout_happened) {
+				  printk(KERN_ERR DEVICE_NAME
+					 "%d: leaving while(1)\n",
+					 (int)(mdev-drbd_conf));
 					break;
 				} else {
 					app_got_sig=1;
@@ -793,7 +794,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	if (rv == -ERESTARTSYS && ti.timeout_happened) {
+	if (/*rv == -ERESTARTSYS &&*/ ti.timeout_happened) {
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: send timed out!! (pid=%d)\n",
 		       (int)(mdev-drbd_conf),current->pid);
@@ -905,8 +906,9 @@ int __init drbd_init(void)
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), FALSE /*TRUE */ );
 		drbd_conf[i].do_panic = 0;
-		drbd_conf[i].artt = HZ/10; // 10ms 
+		drbd_conf[i].artt = HZ/10; // 100ms 
 		drbd_conf[i].sock = 0;
+		drbd_conf[i].msock = 0;
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].state = Secondary;
@@ -924,8 +926,7 @@ int __init drbd_init(void)
 		drbd_conf[i].flags=0;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].a_timeout.function = drbd_a_timeout;
-		drbd_conf[i].a_timeout.data = (unsigned long) 
-			&drbd_conf[i].receiver;
+		drbd_conf[i].a_timeout.data = (unsigned long)(drbd_conf+i);
 		init_timer(&drbd_conf[i].a_timeout);
 		drbd_conf[i].synced_to=0;
 		init_MUTEX(&drbd_conf[i].send_mutex);
