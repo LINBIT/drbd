@@ -148,7 +148,7 @@ int drbd_log2(int i)
 
 
 /************************* The transfer log start */
-STATIC inline void tl_init(struct Drbd_Conf *mdev)
+STATIC void tl_init(struct Drbd_Conf *mdev)
 {
 	struct drbd_barrier *b;
 
@@ -169,7 +169,7 @@ STATIC void tl_cleanup(struct Drbd_Conf *mdev)
 	kfree(mdev->oldest_barrier);
 }
 
-STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
+STATIC void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
 	struct drbd_barrier *b;
 
@@ -189,7 +189,7 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
-STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
+STATIC unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 {
 	unsigned int bnr;
 	static int barrier_nr_issue=1;
@@ -627,8 +627,20 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 		_drbd_send_barrier(mdev);
 	}
 
-	// 1. This must be within the semaphore
-	// 2. This must happen before sending
+	/* About tl_add():
+	1. This must be within the semaphor,
+	   to ensure right order in tl_ data structure and to
+	   ensure right order of packets on the write
+	2. This must happen before sending, otherwise we might
+	   get in the BlockAck packet before we have it on the
+	   tl_ datastructure (=> We would want to remove it before it 
+	   is there!)
+	3. Q: Why can we add it to tl_ even when drbd_send() might fail ?
+	      There could be a tl_cancel() to remove it within the semaphore!
+	   A: If drbd_send fails, we will loose the connection. Then
+	      tl_cear() will simute a RQ_DRBD_SEND and set it out of sync
+	      for everything in the data structure.
+	*/
 	// UGGLY UGGLY casting it back to a drbd_request_t
 	tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
 
