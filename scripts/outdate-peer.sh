@@ -41,24 +41,25 @@
 TIMEOUT=6
 
 for P in "$@"; do
-    if [ "$EXP_PEER_IP" = "1" ]; then 
-	PEER_IP="$PEER_IP $P"
-    fi;
-    if [ "$EXP_OWN_IP" = "1" ]; then 
-	OWN_IP="$OWN_IP $P"
-    fi;
-    if [ "$EXP_HOST_NAME" = "1" ]; then 
-	if [ "$P" != `uname -n` ]; then 
-	    EXP_PEER_IP=1
-	else
-	    EXP_OWN_IP=1
-	fi
-	EXP_HOST_NAME=0
-    fi
     if [ "$P" = "on" ]; then 
 	EXP_HOST_NAME=1
 	EXP_PEER_IP=0
 	EXP_OWN_IP=0
+    else
+	if [ "$EXP_PEER_IP" = "1" ]; then 
+	    PEER_IP="$PEER_IP $P"
+	fi;
+	if [ "$EXP_OWN_IP" = "1" ]; then 
+	    OWN_IP="$OWN_IP $P"
+	fi;
+	if [ "$EXP_HOST_NAME" = "1" ]; then 
+	    if [ "$P" != `uname -n` ]; then 
+		EXP_PEER_IP=1
+	    else
+		EXP_OWN_IP=1
+	    fi
+	    EXP_HOST_NAME=0
+	fi
     fi
 done
 
@@ -74,12 +75,13 @@ done
 
 
 SSH_CMDS_RUNNING=1
-while [ "$SSH_CMDS_RUNNING" = "1" ] ; do
+while [ "$SSH_CMDS_RUNNING" = "1" ] && [ $TIMEOUT -gt 0 ]; do
     sleep 1
     SSH_CMDS_RUNNING=0
     for P in $SSH_PID; do
 	if [ -d /proc/$P ]; then SSH_CMDS_RUNNING=1; fi
     done
+    TIMEOUT=$(( $TIMEOUT - 1 ))
 done
 
 RV=5
@@ -94,11 +96,11 @@ for P in $SSH_PID; do
 	# exit codes of drbdmeata outdate:
 	# 5  -> is inconsistent
 	# 0  -> is outdated
-	# 20 -> outdate failed because peer is primary.
+	# 17 -> outdate failed because peer is primary.
 	# Unfortunately 20 can have other reasons too....
 
 	if [ $EXIT_CODE -eq 5 ]; then RV=3; else
-	    if [ $EXIT_CODE -eq 27 ]; then RV=6; else
+	    if [ $EXIT_CODE -eq 17 ]; then RV=6; else
 		if [ $EXIT_CODE -eq 0 ]; then RV=4; else
 		    echo "do not know about this exit code"
 		fi

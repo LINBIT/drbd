@@ -92,22 +92,35 @@ DRBD 0.8 Roadmap
   99% DONE
 
 7 Handle split brain situations; Support IO fencing; 
-  introduce the "Dead" peer state (o_state)
-
+  
   New commands:
-    drbdadm resume r0
     drbdadm outdate r0
-    drbdadm suspend r0
+
+    When the device is configured this works via an ioctl() call.
+    In the other case it modifies the meta data directly by 
+    calling drbdmeta.
 
   remove option value: on-disconnect=suspend_io
 
-  introduce:
-    split-brain-fix;
-    suspend-io-split-brain;pdsk-unknown;
-    peer-state-unknown=suspend_io
-    peer-state-unknown=continue_io
-
   New meta-data flag: "Outdated"
+
+  introduce:
+  disk {
+    split-brain-fix;
+  }
+
+  handlers {
+    outdate-peer "some script";
+  }
+
+  If the disk state of the peer is unknown, drbd calls this 
+  handler (yes a call to userspace from kernel space). The handler's
+  returncodes are:
+
+  3 -> peer is inconsistent
+  4 -> peer is outdated (presumabely this handler outdated it)
+  5 -> peer was down / unreachable
+  6 -> peer is primary
 
   Let us assume that we have two boxes (N1 and N2) and that these
   two boxes are connected by two networks (net and cnet [ clinets'-net ]).
@@ -127,17 +140,20 @@ DRBD 0.8 Roadmap
                     N1 asks N2 to fence itself from the storage via cnet.
                     HB calls "drbdadm outdate r0" on N2.
                     N2 replies to N1 that fencing is done via cnet.
-                    N1 calls "drbdadm resume r0".
+                    The outdate-peer script on N1 returns sucess to DRBD.
    P/D - -  S/?     N1 thaws IO
 
   N2 got the the "Outdated" flag set in its meta-data, by the outdate 
-  command. The suspend command is here to make the interface 
-  complete, and to reach the freezed state without th need to
-  disconnect the peer. It might turn out to be usefull for other
-  tasks as well.
+  command. 
 
-  Eventually introduce on-disconnent-cmd "command";
-  33% DONE
+  The "split-brain-fix" enables this behaviour. If this option is
+  omitted, the handler is not called nor IO is frozen on disconnect.
+
+  Eventually introduce a "suspend" and a "resume" command to 
+  to reach the freezed state without the need to disconnect the peer. 
+  It might turn out to be usefull for other tasks as well.
+
+  66% DONE / TODO: IO freezing is not done yet.
 
 8 New command drbdmeta
 

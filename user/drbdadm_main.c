@@ -613,7 +613,11 @@ int adm_generic_l(struct d_resource* res,const char* cmd)
 static int adm_generic_b(struct d_resource* res,const char* cmd)
 {
   int rv;
-  if( (rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR)) ) {
+
+  rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
+  if(rv == 17) return rv;
+
+  if( rv ) {
     rv = admm_generic(res,cmd);
   }
   return rv;
@@ -1311,9 +1315,9 @@ int main(int argc, char** argv)
 	  fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
 	  exit(E_usage);
 	found:
-	  if( (rv=cmd->function(res,cmd->name)) >= 10 ) {
+	  if( (rv=cmd->function(res,cmd->name)) >= 20 ) {
 	    fprintf(stderr,"drbdadm aborting\n");
-	    exit(E_exec_error);
+	    exit(rv);
 	  }
 	}
       }

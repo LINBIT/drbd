@@ -503,7 +503,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			ns.s.pdsk = Outdated;
 			break;
 		case SyncSource:
-			ns.s.disk = Inconsistent;
+			ns.s.pdsk = Inconsistent;
 			WARN("Implicit set pdsk Inconsistent!\n");
 			break;
 		}
@@ -521,7 +521,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			 ns.s.disk <= Outdated ) rv=-2;
 
 		else if( ns.s.role == Primary && ns.s.conn < Connected &&
-			 ns.s.pdsk >= Unknown ) rv=-7;
+			 ns.s.pdsk >= DUnknown ) rv=-7;
 
 		else if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
 			 ns.s.pdsk <= Inconsistent ) rv=-2;

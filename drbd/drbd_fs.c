@@ -623,7 +623,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	r=drbd_khelper(mdev,"outdate-peer");
 
-	switch( (r>>8) && 0xff ) {
+	switch( (r>>8) & 0xff ) {
 	case 3: /* peer is inconsistent */
 		nps = Inconsistent;
 		break;
@@ -634,14 +634,15 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		drbd_md_inc(mdev,ConnectedCnt);
 		nps = Outdated;
 		break;
-	case 6: /* Peer is primary */
+	case 6: /* Peer is primary, voluntarily outdate myself */
 		nps = DUnknown;
+		drbd_request_state(mdev,NS(disk,Outdated));
 		break;
 	default:
 		/* The script is broken ... */
 		drbd_md_inc(mdev,ConnectedCnt);
 		nps = DUnknown;
-		ERR("outdate-peer helper returned %d (%d)\n",(r>>8)&&0xff,r);
+		ERR("outdate-peer helper returned %d (%d)\n",(r>>8)&0xff,r);
 	}
 
 	return nps;
@@ -700,12 +701,9 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 	if ( r == -7 ) {
 		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 		r = drbd_request_state(mdev,NS2(role,newstate & 0x3,pdsk,nps));
-	}
-	if ( r <= 0) { 
-		print_st_err(mdev,os,ns,r);
-		return -EACCES; 
-	}
+	} else if ( r <= 0 ) print_st_err(mdev,os,ns,r);
 
+	if ( r <= 0 ) return -EACCES; 
 
 	if (mdev->state.s.conn >= Connected) {
 		/* do NOT increase the Human count if we are connected,

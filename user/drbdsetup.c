@@ -980,6 +980,7 @@ int cmd_outdate(int drbd_fd,char** argv,int argc,struct option *options)
       if(err==EIO) 
 	{
 	  fprintf(stderr,"%s\n",set_st_err_name(reason));
+	  if(reason == -2) return 17;
 	}
       return 20;
     }

@@ -57,6 +57,8 @@ install:
 		install -m 644 drbd.conf $(PREFIX)/etc/; \
 	fi
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
+	install -d $(PREFIX)/usr/lib/drbd
+	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
