@@ -145,6 +145,14 @@ void print_usage(const char* prgname)
 {
   fprintf(stderr,
 	  " %s device {Pri|Sec|Wait [-t|--time val]|Repl|Down}\n"
+	  "       -t --time val\n"
+	  "          drbdsetup waits up to val seconds for this device\n"
+	  "          to get a connection. If it is not connected within\n"
+	  "          this time, the call will fail (return 1).\n"
+	  "          If the connection is established, it will wait\n"
+	  "          until resynchronisation is done, no matter how\n"
+	  "          long it takes.\n"
+	  "          Default: 8 sec.\n\n"
 	  " %s device lower_device protocol local_addr[:port] "
 	  "remote_addr[:port] \n"
 	  "       [-t|--timout val] [-r|--sync-rate val] "
