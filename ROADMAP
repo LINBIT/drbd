@@ -193,6 +193,37 @@ DRBD 0.8 Roadmap
   Only one node might mark an extent as active at a time. New
   packets are introduced to request the locking of an extent.
 
+10 Change Sync-groups to sync-after
+  
+  Sync groups turned out to be hard to configure and more
+  complex setups, hard to implement right and last not least they
+  are not flexible enought to cover all real world scenarios.
+
+  E.g. Two physical disks should be mirrored with DRBD. On one
+       of the disks there is only a single partition, while the
+       other one is divided into many (e.g. 4 smaller) partitions.
+       One would want to sync the big one in parallel to the 
+       4 small ones. While the resync process of the 4 small
+       ones need to be serialized. 
+       -> With the current sync groups you can not express
+          this requirement.
+
+  Remove config options   syncer { group <number>; }
+  Introduce config options   syncer { after <resource>; }
+  
+11 Take into account that the two systems could have different 
+  PAGE_SIZE. 
+
+  At least we should negotiate the PAGE_SIZE used by the peers,
+  and use it. In case the PAGE_SIZE is not the same inform
+  the user about the fact.
+
+  Probabel a general high performance implementation for this
+  issue is not necessary, since clusters of machines with 
+  differenct PAGE_SIZE are of academic interest only.
+
+
+  
 
 plus-banches:
 ----------------------
