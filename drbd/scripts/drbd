@@ -15,7 +15,7 @@
 # Source function library.
 
 export INSTALL="/etc/ha.d/resource.d"
-. $INSTALL/drbd_commun $*
+. $INSTALL/drbd_common $*
 
 # If the distribution does not have sysconfig/network, let's hope
 # networking is up.

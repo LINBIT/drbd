@@ -319,7 +319,7 @@ have_env SAFE $SAFE
 
 have_dir $CONFIG
 have_dir $STATE
-have_file $INSTALL/drbd_commun
+have_file $INSTALL/drbd_common
 have_command drbdsetup fuser lsmod modprobe
 
 # RETVAL will work as a "stuck bit" for any error. The construct
