@@ -136,6 +136,7 @@ enum ret_codes {
 	MDIOError,
 	MDInvalid,
 	CRAMAlgNotAvail,
+	KMallocFailed,
 };
 
 struct ioctl_disk_config {

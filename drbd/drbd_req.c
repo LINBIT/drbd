@@ -57,7 +57,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	req->rq_status |= nextstate;
 	req->rq_status &= er_flags | ~0x0001;
 	if( (req->rq_status & RQ_DRBD_DONE) == RQ_DRBD_DONE ) {
-		hlist_del(&req->colision);
 		goto end_it;
 	}
 
@@ -81,6 +80,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 				set_bit(ISSUE_BARRIER,&mdev->flags);
 		} else {
 			list_del(&req->w.list); // we have the tl_lock...
+			hlist_del(&req->colision);
 		}
 	}
 
@@ -323,6 +323,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			drbd_read_remote(mdev,req);
 		}
 	}
+
+	/* NOTE: drbd_send_dlobck() must happen before start of local IO,
+	         to get he concurrent write detection right. */
 
 	if (local) {
 		if (rw == WRITE) {

@@ -84,7 +84,7 @@ static inline unsigned short drbd_req_get_size(struct drbd_request *req)
 	return req->master_bio->bi_size;
 }
 
-static inline drbd_bio_t* drbd_req_private_bio(struct drbd_request *req)
+static inline struct bio* drbd_req_private_bio(struct drbd_request *req)
 {
 	return req->private_bio;
 }

@@ -1072,6 +1072,16 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	e = read_in_block(mdev,data_size);
 	if (!e) return FALSE;
 
+	if(!inc_local(mdev)) {
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Can not write mirrored data block to local disk.\n");
+		drbd_send_ack(mdev,NegAck,e);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return TRUE;
+	}
+
 	if(discard) {
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
@@ -1081,13 +1091,13 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		return TRUE;
 	}
 
-	switch( req_have_write(mdev, sector, data_size) ) {
+	switch( req_have_write(mdev, e, 0) ) {
 	case 2: /* Conflicting write, got ACK */
 		/* write afterwards ...*/
 		WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
 		     (unsigned long)sector);
 		if( wait_event_interruptible(mdev->cstate_wait,
-		     !req_have_write(mdev,sector,data_size|TLHW_FLAG_RECVW))) {
+		     !req_have_write(mdev,e,TLHW_FLAG_RECVW))) {
 			spin_lock_irq(&mdev->ee_lock);
 			drbd_put_ee(mdev,e);
 			spin_unlock_irq(&mdev->ee_lock);
@@ -1106,7 +1116,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
 			     (unsigned long)sector);
 			if( wait_event_interruptible(mdev->cstate_wait,
-			      !req_have_write(mdev,sector,data_size|
+			      !req_have_write(mdev,e,
 				            TLHW_FLAG_RECVW|TLHW_FLAG_SENT))) {
 				spin_lock_irq(&mdev->ee_lock);
 				drbd_put_ee(mdev,e);
@@ -1119,16 +1129,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
-
-	if(!inc_local(mdev)) {
-		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Can not write mirrored data block to local disk.\n");
-		drbd_send_ack(mdev,NegAck,e);
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
-		return TRUE;
-	}
 
 	drbd_ee_prepare_write(mdev, e, sector, data_size);
 	e->w.cb     = e_end_block;

@@ -201,6 +201,7 @@ STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t * item)
 	b->n_req--;
 
 	list_del(&item->w.list);
+	hlist_del(&item->colision);
 	item->rq_status &= ~RQ_DRBD_IN_TL;
 
 	spin_unlock_irq(&mdev->tl_lock);
@@ -300,6 +301,7 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * item)
 
 	r = ( item->barrier == mdev->newest_barrier );
 	list_del(&item->w.list);
+	hlist_del(&item->colision);
 
 	if( item->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
 
@@ -360,6 +362,11 @@ void tl_clear(drbd_dev *mdev)
 	}
 }
 
+STATIC unsigned int ee_hash_fn(drbd_dev *mdev, sector_t sector)
+{
+	return (sector>>HT_SHIFT) % mdev->ee_hash_s;
+}
+
 STATIC int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 {
 	return !( ( s1 + (l1>>9) <= s2 ) || ( s1 >= s2 + (l2>>9) ) );
@@ -371,12 +378,13 @@ STATIC int overlaps(sector_t s1, int l1, sector_t s2, int l2)
  * 1 ... a conflicting write, have not got ack by now.
  * 2 ... a conflicting write, have got also got ack.
  */
-int req_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags)
+int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
 	drbd_request_t * req;
-	int size = size_n_flags & ~(TLHW_FLAG_SENT|TLHW_FLAG_RECVW);
+	sector_t sector = drbd_ee_get_sector(e);	
+	int size = drbd_ee_get_size(e);
 	int i, rv=0;
 
 	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
@@ -393,10 +401,10 @@ int req_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags)
 				     size) ) {
 				rv=1;
 				if( req->rq_status & RQ_DRBD_SENT ) rv++;
-				if( size_n_flags & TLHW_FLAG_SENT ) {
+				if( flags & TLHW_FLAG_SENT ) {
 					req->rq_status |= RQ_DRBD_SENT;
 				}
-				if( size_n_flags & TLHW_FLAG_RECVW ) {
+				if( flags & TLHW_FLAG_RECVW ) {
 					req->rq_status |= RQ_DRBD_RECVW;
 				}
 				goto out;
@@ -404,7 +412,10 @@ int req_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags)
 		} // hlist_for_each_entry()
 	}
 
-	// PRE TODO: insert ee onto ee_hash_table here...
+	// Good, no conflict found
+	INIT_HLIST_NODE(&e->colision);
+	hlist_add_head( &e->colision, mdev->ee_hash + 
+			ee_hash_fn(mdev, sector) );
  out:
 	spin_unlock_irq(&mdev->tl_lock);
 
@@ -1858,6 +1869,11 @@ static void __exit drbd_cleanup(void)
 				__free_page(mdev->md_io_tmpp);
 
 			if (mdev->act_log) lc_free(mdev->act_log);
+
+			if(mdev->ee_hash) {
+				kfree(mdev->ee_hash);
+				mdev->ee_hash_s = 0;
+			}
 		}
 		drbd_destroy_mempools();
 	}

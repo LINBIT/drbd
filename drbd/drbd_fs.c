@@ -522,6 +522,8 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	enum ret_codes retcode;
 	struct net_config new_conf;
 	struct crypto_tfm* tfm = NULL;
+	struct hlist_head *new_tl_hash = NULL;
+	struct hlist_head *new_ee_hash = NULL;
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -566,6 +568,25 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 	mdev->cram_hmac_tfm = tfm;
 
+
+	if (mdev->tl_hash_s != new_conf.max_epoch_size/8 ) {
+		new_tl_hash = kmalloc(mdev->tl_hash_s * sizeof(void*),
+				      GFP_KERNEL);
+		if(!new_tl_hash) {
+			retcode=KMallocFailed;
+			goto fail_ioctl;
+		}
+	}
+
+	if (mdev->ee_hash_s != new_conf.max_buffers/8 ) {
+		new_ee_hash = kmalloc(mdev->ee_hash_s * sizeof(void*),
+				      GFP_KERNEL);
+		if(!new_ee_hash) {
+			retcode=KMallocFailed;
+			goto fail_ioctl;
+		}
+	}
+
 	/* IMPROVE:
 	   We should warn the user if the LL_DEV is
 	   used already. E.g. some FS mounted on it.
@@ -607,17 +628,18 @@ FIXME
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
 
-	if (mdev->tl_hash_s != mdev->conf.max_epoch_size/8 ) {
+	if(new_tl_hash) {
 		if (mdev->tl_hash) kfree(mdev->tl_hash);
 		mdev->tl_hash_s = mdev->conf.max_epoch_size/8;
-		mdev->tl_hash = kmalloc(mdev->tl_hash_s * sizeof(void*),
-					GFP_KERNEL);
-		if(!mdev->tl_hash) {
-			mdev->tl_hash_s = 0;
-			return -ENOMEM;
-		}
-
+		mdev->tl_hash = new_tl_hash;
 		memset(mdev->tl_hash, 0, mdev->tl_hash_s * sizeof(void*));
+	}
+
+	if(new_ee_hash) {
+		if (mdev->ee_hash) kfree(mdev->ee_hash);
+		mdev->ee_hash_s = mdev->conf.max_buffers/8;
+		mdev->ee_hash = new_ee_hash;
+		memset(mdev->ee_hash, 0, mdev->ee_hash_s * sizeof(void*));
 	}
 
 	drbd_thread_start(&mdev->worker);
@@ -628,6 +650,8 @@ FIXME
 	return 0;
 
   fail_ioctl:
+	if (new_tl_hash) kfree(new_tl_hash);
+	if (new_ee_hash) kfree(new_ee_hash);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }

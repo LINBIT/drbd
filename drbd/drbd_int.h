@@ -606,6 +606,7 @@ struct Tl_epoch_entry {
 	long magic;
 	unsigned int ee_size;
 	sector_t ee_sector;
+	struct hlist_node colision;
 	// THINK: maybe we rather want bio_alloc(GFP_*,1)
 	struct bio_vec ee_bvec;
 };
@@ -741,6 +742,8 @@ struct Drbd_Conf {
 	struct list_head done_ee;   // send ack
 	struct list_head read_ee;   // IO in progress
 	struct list_head net_ee;    // zero-copy network send in progress
+	struct hlist_head * ee_hash; // is proteced by tl_lock!
+	unsigned int ee_hash_s;     
 	spinlock_t pr_lock;
 	struct list_head app_reads;
 	struct list_head resync_reads;
@@ -789,7 +792,7 @@ extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
 #define TLHW_FLAG_SENT   0x10000000
 #define TLHW_FLAG_RECVW  0x20000000
-extern int req_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags);
+extern int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
