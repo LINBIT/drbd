@@ -194,16 +194,17 @@ setLocal()
 
 	for LINE in `cat $1/$2 | sed -e"s/ /#/g" | grep -v "^#"`
 	do
-		KEEP=`echo $LINE | grep ^[nN][oO][dD][eE]$LOCAL_NUMBER | wc -l`
+		KEEP=`echo $LINE | grep -i ^node$LOCAL_NUMBER | wc -l`
 		if [ "$KEEP" -eq 1 ]; then
 		 	VALUE=`echo $LINE | sed -e"s/[nN][oO][dD][eE]$LOCAL_NUMBER/LOCAL/g" | sed -e"s/#/ /g"`
 			eval $VALUE
 		fi
 
-		KEEP=`echo $LINE | grep "^[gG][lL][oO][bB][aA][lL]" | wc -l`
+		KEEP=`echo $LINE | grep -i global_ | wc -l`
 		if [ "$KEEP" -eq 1 ]; then
 			VALUE=`echo $LINE | sed -e"s/[gG][lL][oO][bB][aA][lL]_//g" | sed -e"s/#/ /g"`
 			eval $VALUE
+			eval `echo $LINE | sed -e"s/#/ /g"`
 		fi
 	done
 

@@ -11,7 +11,8 @@
 # Changes to increase robustness and exit with proper error values.
 #
 # Copyright (C) 2000, Thomas Mangin <thomas.mangin@free.fr>
-# Mainly moved to drbdc only keep the start, stop, restart section
+# Losts of changes in the code
+# moved the most of the code to drbdc only keep the start, stop, restart section
 
 INSTALL="/etc/ha.d/resource.d"
 . $INSTALL/drbd_commun $*
@@ -19,12 +20,19 @@ INSTALL="/etc/ha.d/resource.d"
 # See how we were called.
 case "$1" in
 	start)
-		$is_force=`echo "$MODE" | grep -i "force" | wc -l | sed -e"s/ //g"`
-		$is_restore=`echo "$MODE" | grep -i "restore" | wc -l | sed -e"s/ //g"`
-		$is_force=`echo "$MODE" | grep -i "negotiate" | wc -l | sed -e"s/ //g"`
+        if [ -z "$RESOURCE" ]; then
+            runForAll start
+            exit $RETVAL
+        fi
+
+        setLocal $CONFIG $RESOURCE
+
+		is_force=`echo "$MODE" | grep -i "force" | wc -l | sed -e"s/ //g"`
+		is_restore=`echo "$MODE" | grep -i "restore" | wc -l | sed -e"s/ //g"`
+		is_negotiate=`echo "$MODE" | grep -i "negotiate" | wc -l | sed -e"s/ //g"`
 
 		if [ $is_force -eq 1 ]; then
-			param=`echo $* | sed -e"s/start/master/g"`
+			command="master"
 		elif [ $is_restore -eq 1 ]; then
 			isMasterBoot $RESOURCE
 			MASTER=$?
@@ -33,45 +41,42 @@ case "$1" in
 			REMOTE_PRIMARY=$?
 
 			if [ "$MASTER" -eq 1 -a "$REMOTE_PRIMARY" -ne 1 ]; then
-				param=`echo $* | sed -e"s/start/master/g"`
+				command="master"
 			else
-				param=`echo $* | sed -e"s/start/slave/g"`
+				command="slave"
 			fi
 		elif [ $is_negotiate -eq 1 ]; then
-			isWorkingPrimary $RESOURCE
-			PRIMARY=$?
-
-			isWorkingSecondary $RESOURCE
-			SECONDARY=$?
-
 			haveRemotePrimary $RESOURCE
 			RPRIMARY=$?
 
 			haveRemoteSecondary $RESOURCE
 			RSECONDARY=$?
 
-			if [ "$SECONDARY" -eq 1 -a "$RPRIMARY" ]; then
-				param=`echo $* | sed -e"s/start/master/g"`
-			elif [ "$RSECONDARY" -eq 1 -a "$SECONDARY" -eq 1 ]; then
-				param=`echo $* | sed -e"s/start/slave/g"`
+			if [ "$RSECONDARY" -eq 1 ]; then
+				command="master"
+			elif [ "$RPRIMARY" -eq 1 ]; then
+				command="slave"
 			else
-				# TODO:Don't know if it can happen
-				failure "This must never happend ??"
-				exit 1
+				# The other node must not be here
+				command="slave"
 			fi
 		else
-			failure "$0 unknow mode '$MODE'"
+			failed "$0 unknow mode '$MODE' configured"
 		fi
 
-		$INSTALL/drbdc $param
+		$INSTALL/drbdc $command $RESOURCE
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 
 	stop)
-		param=`echo $* | sed -e"s/stop/slave/g"`
-		$INSTALL/drbdc $param
+        if [ -z "$RESOURCE" ]; then
+            runForAll start
+            exit $RETVAL
+        fi
+
+		$INSTALL/drbdc slave $RESOURCE
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
