@@ -370,13 +370,17 @@ case "$1" in
 			isMounted $RESOURCE
 			MOUNTED=$?
 			
-			if [ $PRIMARY -eq 1 -a $MOUNTED -eq 1 ]; then
-				succed "Running"
+			if [ $PRIMARY -eq 1 ]; then
+				if [ $MOUNTED -eq 1 ]; then
+					succed "Running"
+				else
+					succed "Failed"
+				fi
 			else
 				succed "Ready"
 			fi
 		else
-			failed "DRBD Not loaded"
+			failed "Failed"
 		fi
 		;;
 	
