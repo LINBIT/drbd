@@ -366,13 +366,17 @@ case "$1" in
 
 		if [ -r /proc/drbd ]; then
 			isPrimary $RESOURCE
-			if [ $? -eq 1 ]; then
+			PRIMARY=$?
+			isMounted $RESOURCE
+			MOUNTED=$?
+			
+			if [ $PRIMARY -eq 1 -a $MOUNTED -eq 1 ]; then
 				succed "Running"
 			else
-				succed "Error : What are you willing here"
+				succed "DRBD Slave"
 			fi
 		else
-			failed "Error drbd not loaded"
+			failed "DRBD Not loaded"
 		fi
 		;;
 	
