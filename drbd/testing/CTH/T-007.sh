@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: T-007.sh,v 1.1.2.1 2004/06/15 08:41:02 lars Exp $
+# $Id: T-007.sh,v 1.1.2.2 2004/06/17 01:35:52 lars Exp $
 
 #
 # Fail Link; Heal Link; wait for sync; Relocate service.
@@ -7,13 +7,13 @@
 # in a loop. does work.
 #
 
-sleeptime=20
+sleeptime=30
 
 # start it.
 Start RS_1 Node_1
 sleep 10
 
-iter=2
+iter=150
 while (( iter-- )); do
 
 	Fail_Link Link_1
@@ -39,12 +39,15 @@ while (( iter-- )); do
 		sleep $(( sleeptime - SECONS ))
 	fi
 
-	Reloc RS_1 Node_1
+	Stop RS_1
+	if (( iter % 10 == 0 )) ; then
+		Drbd_MD5_diff Drbd_1 > md5sum.r0.diff.$iter
+	fi
+	Start RS_1 Node_1
+
 	sleep $sleeptime
 
 	echo "===> $iter iterations to go ... <==="
 done
 
 Stop RS_1
-
-Drbd_MD5_diff Drbd_1 > md5sum.r0.diff

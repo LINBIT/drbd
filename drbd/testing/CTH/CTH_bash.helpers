@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.10 2004/06/15 08:41:02 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.11 2004/06/17 01:35:52 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -208,11 +208,11 @@ blockwise_md5_pl()
 	# let "MLOC=USIZE-128*1024"
 	perl -e '
 	use Digest::MD5 "md5_hex";
-	$pos=0;
+	$nr=0;
 	while (sysread(STDIN,$buf,4096)==4096) {
 		printf "%6d\t%s\n",$nr++,md5_hex($buf);
-	       '${USIZE:+"last if \$pos+=4 >= $USIZE*1024;"}'
-	}' < $DEV
+	       '${USIZE:+"last if \$pos+=4 >= $USIZE*256;"}'
+	}; print "\nDEVICE_SIZE\t$nr\tblocks \@ 4KB\n"; ' < $DEV
 }
 
 Drbd_MD5_diff()
@@ -224,9 +224,9 @@ Drbd_MD5_diff()
 		> md5sum-${!left}-$name
 	on ${!right}: blockwise_md5_pl DEV=/dev/mapper/$name USIZE=$usize \
 		> md5sum-${!right}-$name
-	lines=$(wc -l < md5sum-${!right}-$name)
+	blocks=$( grep ^DEVICE_SIZE < md5sum-${!right}-$name | cut -f 2 )
 	echo "NOTE: internal meta data may differ..."
-	echo "md probably starts at blocknr $[lines-(128<<8)]"
+	echo "md probably starts at blocknr $[blocks-(128<<8)]"
 	diff -u md5sum-${!left}-$name md5sum-${!right}-$name
 }
 

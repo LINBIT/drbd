@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.7 2004/06/15 08:41:02 lars Exp $
+# $Id: functions.sh,v 1.1.2.8 2004/06/17 01:35:52 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -55,8 +55,7 @@ wbtest_start()
 	wbtest -s checkpoint -t data -l $WBTLOG -V 2>&1 |
 		sed '/Processed checkfile .*: \([0-9]*\)\/\1 passed/d'
 	echo "remaining garbage files:"
-       	# FIXME should be empty, but is not.
-	# wbtest does not like to be killed.
+	echo "FIXME! should be empty, but is not. wbtest does not like to be killed."
 	ls -l checkpoint/ data/
 	du -s checkpoint/ data/
 # CHANGE, but be aware that -c 20,
@@ -339,12 +338,12 @@ drbdadm_pri()
 {
 	: ${name:?unknown resource name} 
 	: ${force:=}
+	drbdadm $force primary $name
 	# FIXME should not be neccessary!
 	# patch already done, needs to be checked in...
-	drbdadm $force primary $name
-	if [[ $force ]] ; then
-		drbdadm invalidate_remote $name || true
-	fi
+	# if [[ $force ]] ; then
+	# 	drbdadm invalidate_remote $name || true
+	# fi
 	echo "$name now Primary on $HOSTNAME"
 }
 
