@@ -1133,9 +1133,11 @@ struct BitMap* bm_init(kdev_t dev)
 	sbm->bm_lock = SPIN_LOCK_UNLOCKED;
 
 	memset(sbm->bm,0,size);
-
+	
+	/*
 	printk(KERN_INFO DEVICE_NAME " : vmallocing %ld B for bitmap."
 	       " @%p\n",size,sbm->bm);
+	*/
   
 	return sbm;
 }     

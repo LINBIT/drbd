@@ -318,7 +318,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 
 	/* ECONNRESET = other side closed the connection
 	   ERESTARTSYS = we got a signal. */
-	if (rv < 0 && ( rv != -ECONNRESET || rv != -ERESTARTSYS)) {
+	if (rv < 0 && rv != -ECONNRESET && rv != -ERESTARTSYS) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 		return rv;
@@ -1096,7 +1096,7 @@ int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 
 	if( rv == -EAGAIN) rv=0;
 
-	if (rv < 0 && ( rv != -ECONNRESET || rv != -ERESTARTSYS)) {
+	if (rv < 0 && rv != -ECONNRESET && rv != -ERESTARTSYS) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 	}
@@ -1107,7 +1107,7 @@ int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 
 int drbd_asender(struct Drbd_thread *thi)
 {
-	static Drbd_Packet header;
+	Drbd_Packet header;
 	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	struct timer_list ping_timeout;
 	unsigned long ping_sent_at;
@@ -1131,14 +1131,16 @@ int drbd_asender(struct Drbd_thread *thi)
 	  
 	  if(thi->t_state == Exiting) break;
 
-	  if(test_and_clear_bit(SEND_PING,&mdev->flags) && ping_sent_at==0 ) {
-		  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
-		     sizeof(Drbd_Packet) ) {
-			  ping_timeout.expires = 
-				  jiffies + mdev->conf.timeout*HZ/20;
-			  add_timer(&ping_timeout);
-			  ping_sent_at=jiffies;
-			  if(ping_sent_at==0) ping_sent_at=1;
+	  if(ping_sent_at==0) {
+		  if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
+			  if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)==
+			     sizeof(Drbd_Packet) ) {
+				  ping_timeout.expires = 
+					  jiffies + mdev->conf.timeout*HZ/20;
+				  add_timer(&ping_timeout);
+				  ping_sent_at=jiffies;
+				  if(ping_sent_at==0) ping_sent_at=1;
+			  }			  
 		  }
 	  }
 

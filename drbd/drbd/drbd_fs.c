@@ -120,8 +120,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	if (mdev->lo_usize) {
 		blk_size[MAJOR_NR][minor] = mdev->lo_usize;
+		/*
 		printk(KERN_INFO DEVICE_NAME"%d: user provided size = %d KB\n",
-		       minor,blk_size[MAJOR_NR][minor]);
+		       minor,blk_size[MAJOR_NR][minor]); 
+		*/
 
 		if (!mdev->mbds_id) {
 			mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));

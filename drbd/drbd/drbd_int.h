@@ -54,7 +54,6 @@
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
 
-
 /*
  * GFP_DRBD is used for allocations inside drbd_do_request.
  *
@@ -402,4 +401,8 @@ extern struct proc_dir_entry drbd_proc_dir;
 #define SIGSET_OF(P) (&(P)->signal)
 #else
 #define SIGSET_OF(P) (&(P)->pending.signal)
+#endif
+
+#if ARCH==uml
+#define waitpid(A,B,C) 0
 #endif
