@@ -621,7 +621,7 @@ struct BitMap {
 
 struct bm_extent { // 16MB sized extents.
 	struct lc_element lce;
-	unsigned int rs_left; //number of sectors our of sync in this extent.
+	int rs_left; //number of sectors our of sync in this extent.
 	unsigned long flags;
 };
 

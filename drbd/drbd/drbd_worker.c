@@ -142,7 +142,7 @@ STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 
         if(number > 1000) number=1000;  // Remove later
 	if (atomic_read(&mdev->pending_cnt)>1200) {
-		ERR("pending cnt high -- throttling resync.\n");
+		// INFO("pending cnt high -- throttling resync.\n");
 		goto requeue;
 	}
 
@@ -192,6 +192,7 @@ STATIC int w_start_resync(drbd_dev *mdev, struct drbd_work *w)
 		__drbd_queue_work(mdev,&mdev->data.work,w);
 	} else {
 		// If we are SyncSource we must be consistent :)
+		w->cb = w_resync_inactive;
 		mdev->gen_cnt[Flags] |= MDF_Consistent;
 		if ( mdev->rs_total == 0 ) {
 			w->cb = w_resync_finished;

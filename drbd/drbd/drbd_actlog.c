@@ -512,7 +512,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	if (ext) {
 		if( ext->lce.lc_number == enr) {
 			ext->rs_left -= cleared;
-			D_ASSERT((long)ext->rs_left >= 0);
+			D_ASSERT(ext->rs_left >= 0);
 		} else {
 			if(mdev->cstate == SyncSource) {
 				WARN("Recounting sectors"
@@ -539,6 +539,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		list_for_each(le,&mdev->resync->lru) {
 			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 			if(ext->rs_left == 0) {
+				ERR_IF(ext->lce.refcnt) continue;
 				spin_unlock(&mdev->al_lock);
 				drbd_update_on_disk_bm(mdev,enr*SM,1);
 				// TODO: reconsider to use the async version
@@ -568,6 +569,10 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	mdev->rs_left -= cleared;
 	D_ASSERT((long)mdev->rs_left >= 0);
 	if( cleared && mdev->rs_left == 0 ) finished=1;
+
+	if( cleared == 0 ) {
+		WARN("cleared == 0; sector = %lu\n",sector);
+	}
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
 		mdev->rs_mark_time=jiffies;
