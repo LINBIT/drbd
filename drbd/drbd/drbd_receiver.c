@@ -75,6 +75,17 @@ static inline void drbd_flush_request_queue(kdev_t rdev)
 	request_queue_t* q;
 
 	q=blk_get_queue(rdev);
+	if(q->plug_tq.routine == NULL) {
+		/* LVM does not provide a function to unplug the devices.
+		   The way out is to run tq_disk and to disable DRBD's
+		   request_fns, this way we omit the deadlock and can be
+		   shure that we flushed the real disk devices. */
+		q=BLK_DEFAULT_QUEUE(MAJOR_NR);//This is drbd's request queue.
+		q->plug_tq.routine=NULL;
+		run_task_queue(&tq_disk);
+		q->plug_tq.routine=generic_unplug_device;
+		return;
+	}
 	q->plug_tq.routine(q); // This is usually generic_unplug_device()
 }
 
