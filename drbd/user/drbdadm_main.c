@@ -31,6 +31,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <errno.h>
+#define _GNU_SOURCE
+#include <getopt.h>
 
 #include "drbdadm.h"
 
@@ -45,10 +47,12 @@ char ss_buffer[255];
 #define ssprintf(ptr,...) \
   ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer) 
 
+#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
+
 int line=1;
 struct d_resource* config;
 int config_valid=1;
-int dry_run=0;
+int dry_run;
 char* drbdsetup;
 
 /*** These functions are used to the print the config ***/
@@ -92,20 +96,19 @@ static void dump_host_info(struct d_host_info* hi)
   printf("  }\n");
 }
 
-static void dump_conf(struct d_resource* res)
+static int dump_conf(struct d_resource* res)
 {
-  while(res) {
-    printf("resource %s {\n",esc(res->name));
-    printf("  protocol=%s\n",res->protocol);
-    if(res->ind_cmd) printf("  incon-degr-cmd=%s\n",esc(res->ind_cmd));
-    dump_host_info(res->me);
-    dump_host_info(res->partner);
-    dump_options("net",res->net_options);
-    dump_options("disk",res->disk_options);
-    dump_options("syncer",res->sync_options);
-    printf("}\n\n");
-    res=res->next;
-  }
+  printf("resource %s {\n",esc(res->name));
+  printf("  protocol=%s\n",res->protocol);
+  if(res->ind_cmd) printf("  incon-degr-cmd=%s\n",esc(res->ind_cmd));
+  dump_host_info(res->me);
+  dump_host_info(res->partner);
+  dump_options("net",res->net_options);
+  dump_options("disk",res->disk_options);
+  dump_options("syncer",res->sync_options);
+  printf("}\n\n");
+    
+  return 1;
 }
 
 static void free_host_info(struct d_host_info* hi)
@@ -149,9 +152,8 @@ static void free_config(struct d_resource* res)
   }
 }
 
-static void find_drbdsetup(void)
+static void find_drbdsetup(char** pathes)
 {
-  static char* pathes[] = { "/sbin/drbdsetup", "./drbdsetup", 0 };
   struct stat buf;
   char **path;
   
@@ -211,59 +213,80 @@ static int m_system(char** argv)
     OPT=OPT->next; \
   }
 
-static void conf_disk(struct d_resource* res)
+static int conf_disk(struct d_resource* res)
 {
   char* argv[20];
   struct d_option* opt;  
 
-  while(res) {
-    int argc=0;
+  int argc=0;
     
-    argv[argc++]=drbdsetup;
-    argv[argc++]=res->me->device;
-    argv[argc++]="disk";
-    argv[argc++]=res->me->disk;
-    opt=res->disk_options;
-    make_options(opt);
-    argv[argc++]=0;
+  argv[argc++]=drbdsetup;
+  argv[argc++]=res->me->device;
+  argv[argc++]="disk";
+  argv[argc++]=res->me->disk;
+  opt=res->disk_options;
+  make_options(opt);
+  argv[argc++]=0;
 
-    m_system(argv);
-    res=res->next;
-  }
+  return m_system(argv);
 }
 
-static void conf_net(struct d_resource* res)
+static int conf_net(struct d_resource* res)
 {
   char* argv[20];
   struct d_option* opt;  
 
-  while(res) {
-    int argc=0;
+  int argc=0;
     
-    argv[argc++]=drbdsetup;
-    argv[argc++]=res->me->device;
-    argv[argc++]="net";
-    ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
-    ssprintf(argv[argc++],"%s:%s",res->partner->address,res->partner->port);
-    argv[argc++]=res->protocol;
-    opt=res->net_options;
-    make_options(opt);
-    argv[argc++]=0;
+  argv[argc++]=drbdsetup;
+  argv[argc++]=res->me->device;
+  argv[argc++]="net";
+  ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
+  ssprintf(argv[argc++],"%s:%s",res->partner->address,res->partner->port);
+  argv[argc++]=res->protocol;
+  opt=res->net_options;
+  make_options(opt);
+  argv[argc++]=0;
 
-    m_system(argv);
-    res=res->next;
-  }
+  return m_system(argv);
 }
 
-int main(int argc, char** argv)
+const char* make_optstring(struct option *options)
 {
-  
-  if(argc>1) 
-    {
-      yyin = fopen(argv[1],"r");
-    }
+  static char buffer[200];
+  static struct option* buffer_valid_for=NULL;
+  struct option *opt;
+  char *c;
 
-  yyparse();
+  if(options==buffer_valid_for) return buffer;
+  opt=buffer_valid_for=options;
+  c=buffer;
+  while(opt->name) {
+    *c++=opt->val;
+    if(opt->has_arg) *c++=':';
+    opt++;
+  }
+  *c=0;
+  return buffer;
+}
+
+struct option admopt[] = {
+  { "dry-run",      no_argument,      0, 'd' },
+  { "config-file",  required_argument,0, 'c' },
+  { "drbdsetup",    required_argument,0, 's' },
+  { 0,              0,                0, 0   } 
+};
+
+struct adm_cmd {
+  const char* name;
+  int (* function)(struct d_resource*);
+};
+
+struct adm_cmd cmds[] = {
+  {"disk",     conf_disk},
+  {"connect",  conf_net},
+  {"dump",     dump_conf}
+};
 
   // TODO write real functionality...
   /*
@@ -287,14 +310,127 @@ int main(int argc, char** argv)
     options:
     --dry-run -d
     --verbose -v
+    --config -c
+    -- drbdsetup options following
   */
 
-  find_drbdsetup(); // setup global variable drbdsetup.
-  dump_conf(config);  
-  dry_run=1;
+void print_usage(const char* prgname)
+{
+  int i;
+  struct option *opt;
+
+  printf("\nUSAGE: %s [OPTION]... COMMAND [RESOURCE-NAME]...\n\n"
+	 "OPTIONS:\n",prgname);
+
+  opt=admopt;
+  while(opt->name) {
+    if(opt->has_arg == required_argument) 
+      printf(" {--%s|-%c} val\n",opt->name,opt->val);
+    else 
+      printf(" {--%s|-%c}\n",opt->name,opt->val);
+    opt++;
+  }
+
+  printf("\nCOMMANDS:\n");
+  
+  for(i=0;i<ARRY_SIZE(cmds);i++) {
+      printf(" %s\n",cmds[i].name);
+  }
+
+  printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
+
+  exit(20);
+}
+
+int main(int argc, char** argv)
+{
+  int i;
+  int (* function)(struct d_resource*);
+  struct d_resource* res;
+
+  drbdsetup=NULL;
+  dry_run=0;
+  yyin=NULL;
+
+  if(argc==1) print_usage(argv[0]);
+
+  optind=0;
+  while(1)
+    {  
+      int c;
+	  
+      c = getopt_long(argc,argv,make_optstring(admopt),admopt,0);
+      if(c == -1) break;
+      switch(c)
+	{
+	case 'd':
+	  dry_run=1;
+	  break;
+	case 'c':
+	  if(!strcmp(optarg,"-")) { 
+	    yyin=stdin; 
+	  } else {
+	    yyin=fopen(optarg,"r");
+	    if(!yyin) {
+	      fprintf(stderr,"Can not open '%s'.\n.",optarg);
+	      exit(20);
+	    }
+	  }
+	  break;
+	case 's':
+	  {
+	    char* pathes[2];
+	    pathes[0]=optarg;
+	    pathes[1]=0;
+	    find_drbdsetup(pathes);
+	  }
+	  break;
+	case '?':
+	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	  return 20;
+	  break;
+	}
+    }
+
+  if(yyin==NULL) {
+    yyin = fopen(argv[1],"/etc/drbd-07.conf");
+    if(yyin == 0) {
+      yyin = fopen(argv[1],"/etc/drbd.conf");
+      if(yyin == 0) {
+	fprintf(stderr,"Can not open '/etc/drbd.conf'.\n.");
+	exit(20);	
+      }
+    }
+  }
+
+  yyparse();
+
+  if(drbdsetup == NULL) {
+    find_drbdsetup((char *[]){"/sbin/drbdsetup", "./drbdsetup", 0 });
+  }
+
   if(!config_valid) exit(10);
-  conf_disk(config);
-  conf_net(config);
+
+  function=NULL;
+  for(i=0;i<ARRY_SIZE(cmds);i++) {
+      if(!strcmp(cmds[i].name,argv[optind])) function=cmds[i].function;
+  }
+
+  if(function==NULL) {
+    fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
+    exit(20);	
+  }
+  optind++;
+
+  // if optind < argc resource list follows...
+
+  // for all known resources...
+  res=config;
+  while(res) {
+    function(res);
+    res=res->next;
+  }
+
   free_config(config);
 
   return 0;
