@@ -625,6 +625,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		nps = DUnknown;
 		break;
 	default:
+		/* The script is broken ... */
+		drbd_md_inc(mdev,ConnectedCnt);
 		nps = DUnknown;
 		ERR("outdate-peer helper returned %d (%d)\n",(r>>8)&&0xff,r);
 	}
@@ -864,17 +866,17 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	return 0;
 }
 
-STATIC int drbd_outdate_ioctl(drbd_dev *mdev)
+STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 {
 	drbd_state_t os,ns;
-	int r;
+	int err,r;
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
 	if( mdev->state.s.disk < Outdated ) { 
 		r=-999;
 	} else {
-		r = _drbd_set_state(mdev, _NS(disk,Outdated), 0);
+		r = _drbd_set_state(mdev, _NS(disk,Outdated), ChgStateVerbose);
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
@@ -886,7 +888,9 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev)
 	after_state_ch(mdev,os,ns); // TODO decide if neccesarry.
 	
 	if( r <= 0 ) {
-		return -EIO;
+		err = put_user(r, reason);
+		if(!err) err=-EIO;
+		return err;
 	}
 	
 	drbd_md_write(mdev);
@@ -1178,7 +1182,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_OUTDATE_DISK:
-		err = drbd_outdate_ioctl(mdev);
+		err = drbd_outdate_ioctl(mdev,(int *) arg);
 		break;
 
 	default:

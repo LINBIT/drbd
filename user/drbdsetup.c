@@ -969,14 +969,17 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
 int cmd_outdate(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
+  int reason;
 
-  err=ioctl(drbd_fd,DRBD_IOCTL_OUTDATE_DISK);
+  err=ioctl(drbd_fd,DRBD_IOCTL_OUTDATE_DISK,&reason);
   if(err)
     {
       err=errno;
       PERROR("ioctl(,OUTDATE_DISK,) failed");
-      if(err==EISCONN)
-	fprintf(stderr,"Only possible when not connected to the peer.\n");
+      if(err==EIO) 
+	{
+	  fprintf(stderr,"%s\n",set_st_err_name(reason));
+	}
       return 20;
     }
   return 0;
@@ -1268,12 +1271,6 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 
 int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  static const char *state_names[] = {
-    [Primary]   = "Primary",
-    [Secondary] = "Secondary",
-    [Unknown]   = "Unknown"
-  };
-
   struct ioctl_get_config cn;
   int err;
 
@@ -1290,33 +1287,14 @@ int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
       return 0;
     }
 
-  printf("%s/%s\n",state_names[cn.state.s.role],state_names[cn.state.s.peer]);
+  printf("%s/%s\n",roles_to_name(cn.state.s.role),
+	 roles_to_name(cn.state.s.peer));
 
   return 0;
 }
 
 int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  static const char *cstate_names[] = {
-    [Unconfigured]   = "Unconfigured",
-    [StandAlone]     = "StandAlone",
-    [Unconnected]    = "Unconnected",
-    [Timeout]        = "Timeout",
-    [BrokenPipe]     = "BrokenPipe",
-    [NetworkFailure] = "NetworkFailure",
-    [WFConnection]   = "WFConnection",
-    [WFReportParams] = "WFReportParams",
-    [Connected]      = "Connected",
-    [SkippedSyncS]   = "SkippedSyncS",
-    [SkippedSyncT]   = "SkippedSyncT",
-    [WFBitMapS]      = "WFBitMapS",
-    [WFBitMapT]      = "WFBitMapT",
-    [SyncSource]     = "SyncSource",
-    [SyncTarget]     = "SyncTarget",
-    [PausedSyncS]    = "PausedSyncS",
-    [PausedSyncT]    = "PausedSyncT"
-  };
-
   struct ioctl_get_config cn;
   int err;
 
@@ -1333,7 +1311,7 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
       return 0;
     }
 
-  printf("%s\n",cstate_names[cn.state.s.conn]);
+  printf("%s\n",conns_to_name(cn.state.s.conn));
 
   return 0;
 }

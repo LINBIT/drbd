@@ -81,13 +81,13 @@ const char* roles_to_name(drbd_role_t s) {
 }
 
 const char* disks_to_name(drbd_disks_t s) {
-	return s < DUnknown    ? "TO_SMALL" :
+	return s < Diskless    ? "TO_SMALL" :
 	       s > UpToDate    ? "TO_LARGE"
 		               : drbd_disk_s_names[s];
 }
 
 const char* set_st_err_name(int err) {
-	return err < -6 ? "TO_SMALL" :
+	return err < -7 ? "TO_SMALL" :
 	       err > -1 ? "TO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }

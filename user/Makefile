@@ -23,7 +23,8 @@ CC = gcc
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o ../drbd/drbd_buildtag.o
 
-drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o
+drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
+	        ../drbd/drbd_strings.o
 
 drbdmeta-obj = drbdmeta.o drbdtool_common.o ../drbd/drbd_buildtag.o
 

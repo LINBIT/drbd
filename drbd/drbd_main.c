@@ -477,29 +477,31 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if( !mdev->conf.two_primaries && 
 		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
 
-		if( ns.s.role == Primary && ns.s.conn < Connected &&
-		    ns.s.disk <= Outdated ) rv=-2;
+		else if( ns.s.role == Primary && ns.s.conn < Connected &&
+			 ns.s.disk <= Outdated ) rv=-2;
 
-		if( ns.s.role == Primary && ns.s.conn < Connected &&
-		    ns.s.pdsk >= Unknown ) rv=-7;
+		else if( ns.s.role == Primary && ns.s.conn < Connected &&
+			 ns.s.pdsk >= Unknown ) rv=-7;
 
-		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
-		    ns.s.pdsk <= Inconsistent ) rv=-2;
+		else if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
+			 ns.s.pdsk <= Inconsistent ) rv=-2;
 
-		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent ) rv=-3;
+		else if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent ) 
+			rv=-3;
 
-		if( ns.s.conn > Connected && 
-		    ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
+		else if( ns.s.conn > Connected && 
+			 ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
 
-		if( ns.s.conn > Connected && 
-		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) rv=-5;
+		else if( ns.s.conn > Connected && 
+			 (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) 
+			rv=-5;
 
-		if( (ns.s.conn == Connected ||
-		     ns.s.conn == SkippedSyncS ||
-		     ns.s.conn == WFBitMapS ||
-		     ns.s.conn == SyncSource ||
-		     ns.s.conn == PausedSyncS) &&
-		    ns.s.disk == Outdated ) rv=-6;
+		else if( (ns.s.conn == Connected ||
+			  ns.s.conn == SkippedSyncS ||
+			  ns.s.conn == WFBitMapS ||
+			  ns.s.conn == SyncSource ||
+			  ns.s.conn == PausedSyncS) &&
+			 ns.s.disk == Outdated ) rv=-6;
 	}
 
 	if(rv <= 0) {
