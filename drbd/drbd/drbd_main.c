@@ -1253,7 +1253,7 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 
  	spin_lock(&sbm->bm_lock);
 	if(obm) {
-		memcpy(nbm,obm,sbm->size);
+		memcpy(nbm,obm,min_t(unsigned long,sbm->size,size));
 	}
 	sbm->size = size;
 	sbm->bm = nbm;
