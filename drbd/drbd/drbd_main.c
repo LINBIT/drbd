@@ -587,30 +587,36 @@ int drbd_send_param(drbd_dev *mdev)
 	return ok;
 }
 
-/* bool */
+/* See the comment at receive_bitmap() */
 int drbd_send_bitmap(drbd_dev *mdev)
 {
 	int buf_i,want;
 	int ok=TRUE, bm_i=0;
 	size_t bm_words;
-	u32 *buffer,*bm;
+	unsigned long *buffer,*bm;
 	Drbd_Header *p;
 
 	ERR_IF(!mdev->mbds_id) return FALSE;
 
-	bm_words = mdev->mbds_id->size/sizeof(u32);
-	bm = (u32*)mdev->mbds_id->bm;
+	bm_words = mdev->mbds_id->size/sizeof(unsigned long);
+	bm = mdev->mbds_id->bm;
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
-	buffer = (u32*)PAYLOAD_P(p);
+	buffer = (unsigned long*)PAYLOAD_P(p);
 
 	/*
 	 * maybe TODO use some simple compression scheme, nowadays there are
 	 * some such algorithms in the kernel anyways.
 	 */
 	do {
-		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(u32));
-		for(buf_i=0;buf_i<want/sizeof(u32);buf_i++)
-			buffer[buf_i] = cpu_to_be32(bm[bm_i++]);
+		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
+		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++)
+#if BITS_PER_LONG == 32
+			buffer[buf_i] = cpu_to_le32(bm[bm_i++]);
+#elif BITS_PER_LONG == 64
+			buffer[buf_i] = cpu_to_le64(bm[bm_i++]);
+#else
+#error "BITS_PER_LONG unknown!"
+#endif
 		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,
 				   p, sizeof(*p) + want);
 	} while (ok && want);

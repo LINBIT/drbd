@@ -1515,27 +1515,38 @@ static inline unsigned long parallel_bitcount (unsigned long n)
 #undef MASK
 #undef COUNT
 
+/* Since we are processing the bitfild from lower addresses to higher,
+   it does not matter if the process it in 32 bit chunks or 64 bit
+   chunks as long as it is little endian. (Understand it as byte stream,
+   beginning with the lowest byte...) If we would use big endian
+   we would need to process it from the highest address to the lowest,
+   in order to be agnostic to the 32 vs 64 bits issue. */
 STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 {
 	size_t bm_words;
-	u32 *buffer,*bm,word;
+	unsigned long *buffer, *bm, word;
 	int buf_i,want;
 	int ok=FALSE, bm_i=0;
 	unsigned long bits=0;
 
-	bm_words=mdev->mbds_id->size/sizeof(u32);
-	bm=(u32*)mdev->mbds_id->bm;
+	bm_words=mdev->mbds_id->size/sizeof(unsigned long);
+	bm=mdev->mbds_id->bm;
 	buffer=vmalloc(MBDS_PACKET_SIZE);
 
 	while (1) {
-		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(u32));
-		D_ASSERT(want == h->length);
-		if (want != h->length) goto out;
+		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(word));
+		ERR_IF(want != h->length) goto out;
 		if (want==0) break;
 		if (drbd_recv(mdev, mdev->sock, buffer, want) != want)
 			goto out;
-		for(buf_i=0;buf_i<want/sizeof(u32);buf_i++) {
-			word = be32_to_cpu(buffer[buf_i]);
+		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
+#if BITS_PER_LONG == 32
+			word = le32_to_cpu(buffer[buf_i]);
+#elif BITS_PER_LONG == 64
+			word = le64_to_cpu(buffer[buf_i]);
+#else
+#error "BITS_PER_LONG unknown!"
+#endif
 			bits += parallel_bitcount(word);
 			bm[bm_i++] = word;
 		}
