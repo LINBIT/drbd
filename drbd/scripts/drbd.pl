@@ -210,6 +210,9 @@ sub wait_ready($$)
 	    print "\nWaiting until $res is up to date (using $cstate) abort? ";
 	    $errtxt=`$drbdsetup $$mconf{self}{device} wait_sync`;
 	    if($errtxt) { die "$errtxt"; }
+	    sleep 4; # This is necesary since DRBD does not yet include
+	             # the syncer's blocks in the unacked_cnd 
+	             # Quick and dirty :(
 	    `$drbdsetup $$mconf{self}{device} secondary_remote 2>&1`;
 	    # No error check here, on purpose!		
 	}
@@ -247,7 +250,7 @@ sub become_pri($$)
 
     $mounted=0;
     while($line=<MOUNT>) {
-  	if( index($line,$$mconf{self}{device}) < 0 ) {
+  	if( index($line,$$mconf{self}{device}) > -1 ) {
 	    print "pname: $$mconf{self}{device} is already mounted";
 	    $mounted=1;
   	}
