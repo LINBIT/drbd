@@ -500,10 +500,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	if(minor >= minor_count) return -ENODEV;
 	mdev = &drbd_conf[minor];
 
-	if( (err=down_interruptible(&mdev->ctl_mutex)) ) return err;
+	if( (err=down_interruptible(&mdev->device_mutex)) ) return err;
 	/*
 	 * please no 'return', use 'err = -ERRNO; break;'
-	 * we hold the ctl_mutex
+	 * we hold the device_mutex
 	 */
 	switch (cmd) {
 	case BLKGETSIZE:
@@ -629,7 +629,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		if( (err=drbd_get_wait_time(&time,mdev,wp)) ) break;
 
 		// We can drop the mutex, we do not touch anything in mdev.
-		up(&mdev->ctl_mutex);
+		up(&mdev->device_mutex);
 
 		err = wait_event_interruptible_timeout(
 			mdev->cstate_wait,
@@ -647,7 +647,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		wp=(struct ioctl_wait*)arg;
 		if( (err=drbd_get_wait_time(&time,mdev,wp)) ) break;
 
-		up(&mdev->ctl_mutex);
+		up(&mdev->device_mutex);
 
 		do {
 			if (mdev->cstate > Connected)
@@ -710,7 +710,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err = -EINVAL;
 	}
 //out:
-	up(&mdev->ctl_mutex);
+	up(&mdev->device_mutex);
  out_unlocked:
 	return err;
 }

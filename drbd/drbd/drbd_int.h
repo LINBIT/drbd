@@ -543,10 +543,10 @@ struct Drbd_Conf {
 	int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
-	volatile unsigned long last_received; // XXX atomic_t ?
+	volatile unsigned long last_received;
 	struct semaphore sock_mutex;
 	struct semaphore msock_mutex;
-	struct semaphore ctl_mutex;
+	struct semaphore device_mutex;
 	kdev_t lo_device;         // backing device
 	struct file *lo_file;
 	kdev_t md_device;         // device for meta-data.
@@ -772,6 +772,8 @@ extern int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 			    unsigned int enr);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
+extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
+extern void drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 			     int blk_size, int may_sleep);

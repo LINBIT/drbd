@@ -976,9 +976,9 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->pending_cnt,0);
 	atomic_set(&mdev->unacked_cnt,0);
 
+	init_MUTEX(&mdev->device_mutex);
 	init_MUTEX(&mdev->sock_mutex);
 	init_MUTEX(&mdev->msock_mutex);
-	init_MUTEX(&mdev->ctl_mutex);
 	init_MUTEX(&mdev->md_io_mutex);
 
 	mdev->rs_lock        = SPIN_LOCK_UNLOCKED;
