@@ -106,7 +106,8 @@ int main(int argc, char** argv)
 	      " %s device lower_device protocol local_addr[:port] "
 	      "remote_addr[:port] \n"
 	      "       [-t|--timout val] [-r|--sync-rate val] "
-	      "[-k|--skip-sync] [-s|-tl-size val]\n\n"
+	      "[-k|--skip-sync] [-s|-tl-size val]\n"
+	      "       [-d|--disk-size val] [-p|--do-panic]\n\n"
 	      "       protocol\n"
 	      "          protocol may be A, B or C.\n\n" 
 	      "       port\n"
@@ -293,6 +294,7 @@ int main(int argc, char** argv)
 	      break;
 	    case 'p':
 	      config.do_panic=1;
+	      break;
 	    }
 	}
 

@@ -1,17 +1,25 @@
 #!/bin/sh
 
 SETSIZE=10000  #KBYTE
-R_NODE=lha2  
-L_NODE=lha1
-CR_NODE=ha2
-CL_NAME=ha1
+R_NODE=phil
+L_NODE=alf
+CR_NODE=phil
+CL_NAME=alf
 RL_DEV=/dev/sda6
-LL_DEV=/dev/sda6
+LL_DEV=/dev/hdc6
+#R_NODE=alf
+#L_NODE=phil
+#CR_NODE=alf
+#CL_NAME=phil
+#RL_DEV=/dev/hdc6
+#LL_DEV=/dev/sda6
+
 DRBDSETUP=/usr/sbin/drbdsetup
 MODPROBE=/sbin/modprobe
-PROTOCOLS="B A"
+PROTOCOLS="A"
+RSH=rsh
 
-ssh $CR_NODE $DRBDSETUP /dev/nb0 SEC
+$RSH $CR_NODE $DRBDSETUP /dev/nb0 SEC
 
 for PROT in $PROTOCOLS; do
 
@@ -19,13 +27,13 @@ for PROT in $PROTOCOLS; do
   sleep 1
   echo -n "r"
   $MODPROBE -r drbd
-  ssh $CR_NODE $MODPROBE -r drbd
+  $RSH $CR_NODE $MODPROBE -r drbd
   sleep 1
   echo -n "o"
   $MODPROBE drbd
-  ssh $CR_NODE $MODPROBE drbd
+  $RSH $CR_NODE $MODPROBE drbd
 
-  ssh $CR_NODE $DRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE
+  $RSH $CR_NODE $DRBDSETUP /dev/nb0 $RL_DEV $PROT $R_NODE $L_NODE
   $DRBDSETUP /dev/nb0 $LL_DEV $PROT $L_NODE $R_NODE
 
   sleep 1

@@ -1,3 +1,10 @@
+0.5.2
+-----
+Improved the behaviour upon loss of connction. Now it
+always goes into WFConnection state instead of Unconnected.
+
+Added a command to drbdsetup to force a run of the basic syncer.
+
 0.5.1
 -----
 Fixed the lockup upon loss of connection on SMP machines.

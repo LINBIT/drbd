@@ -88,10 +88,16 @@
 #define DRBD_SIG SIGXCPU
 #define SYNC_LOG_S 60
 
+typedef enum { 
+	Running,
+	Exiting,
+	Restarting
+} Drbd_thread_state; 
+
 struct Drbd_thread {
 	int pid;
         struct wait_queue* wait;  
-	int exit;
+	int t_state;
 	int (*function) (void *);
 	int minor;
 };
@@ -532,7 +538,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	int pid;
 
 	if (thi->pid == 0) {
-		thi->exit = 0;
+		thi->t_state = Running;
 
 		pid = kernel_thread(thi->function, (void *) thi, 0);
 
@@ -554,9 +560,9 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	if (!thi->pid) return;
 
 	if (restart)
-		thi->exit = 2;
+		thi->t_state = Restarting;
 	else
-		thi->exit = 1;
+		thi->t_state = Exiting;
 
 	err = kill_proc_info(SIGTERM, NULL, thi->pid);
 
@@ -927,7 +933,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	// READs are sorted out in drbd_end_req().
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
-
+	
 	kfree(bh);
 }
 
@@ -1736,19 +1742,19 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.state) == Primary &&
 	   drbd_conf[minor].state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME": incompatible states \n");
-		drbd_conf[minor].receiver.exit = 1;
+		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.version)!=MOD_VERSION) {
 	        printk(KERN_ERR DEVICE_NAME": incompatible releases \n");
-		drbd_conf[minor].receiver.exit = 1;
+		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
 	        printk(KERN_ERR DEVICE_NAME": incompatible protocols \n");
-		drbd_conf[minor].receiver.exit = 1;
+		drbd_conf[minor].receiver.t_state = Exiting;
 		return FALSE;
 	}
 
@@ -1892,12 +1898,12 @@ int drbdd_init(void *arg)
 
 	while (TRUE) {
 		if (!drbd_connect(minor)) break;
-		if (thi->exit == 1) break;
+		if (thi->t_state == Exiting) break;
 		drbdd(minor);
-		if (thi->exit == 1) break;
-		if (thi->exit == 2) {
+		if (thi->t_state == Exiting) break;
+		if (thi->t_state == Restarting) {
 			unsigned long flags;
-			thi->exit = 0;
+			thi->t_state = Running;
 			wake_up(&thi->wait);
 			spin_lock_irqsave(&current->sigmask_lock,flags);
 			if (sigismember(&current->signal, SIGTERM)) {
@@ -2022,7 +2028,7 @@ restart:
 		before = jiffies;
 
 		for (i = 0; i < blocks; i++) {
-			if (thi->exit == 1) goto out;
+			if (thi->t_state == Exiting) goto out;
 			if (blocksize != blksize_size[MAJOR_NR][minor])
 				goto restart;
 
@@ -2118,12 +2124,12 @@ int drbd_asender(void *arg)
 	drbd_thread_setup(thi); // wait until parent has written its
 				//   rpid variable 
 
-	while(!thi->exit) {
+	while(thi->t_state == Running) {
 	  int i;
 
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
 	  
-	  if(thi->exit==1) break;
+	  if(thi->t_state == Exiting) break;
 
 	  drbd_try_send_barrier(&drbd_conf[minor]);
 
