@@ -103,10 +103,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	// BIG TODO: Only set it, iff it is the case!
-	/* TODO HERE we have a bug hidden somewhere
 	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),BH_SECTOR(req->bh),
 			 req->bh->b_size);
-	*/
 }
 
 STATIC struct Pending_read* 

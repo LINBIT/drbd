@@ -60,6 +60,56 @@
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
 #if 0
+#define CHECK_LIST_LIMIT 1000
+void check_list(struct Drbd_Conf* mdev,struct list_head *list,char *t)
+{
+	struct list_head *le,*la;
+	int forward=0,backward=0;
+
+	le=list;
+	do {
+		la=le;
+		le=le->next;
+		if( le->prev != la ) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: %s list fucked.\n",
+			       (int)(mdev-drbd_conf),t);
+			break;
+		}
+		if( forward++ > CHECK_LIST_LIMIT ) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: %s forward > 1000\n",
+			       (int)(mdev-drbd_conf),t);
+			break;
+		}
+	} while(le != list);
+
+	le=list;
+	do {
+		la=le;
+		le=le->prev;
+		if( le->next != la ) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: %s list fucked.\n",
+			       (int)(mdev-drbd_conf),t);
+			break;
+		}
+		if( backward++ > CHECK_LIST_LIMIT ) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: %s backward > 1000\n",
+			       (int)(mdev-drbd_conf),t);
+			break;
+		}
+	} while(le != list);
+
+	if(forward != backward) {
+		printk(KERN_ERR DEVICE_NAME "%d: forward=%d, backward=%d\n",
+		       (int)(mdev-drbd_conf),forward,backward);
+	}
+}
+#endif
+
+#if 0
 STATIC inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
@@ -101,6 +151,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	*/
 
 	e=bh->b_private;
+	D_ASSERT(e->block_id);  // otherwhise it is on the free list!
 	spin_lock_irqsave(&mdev->ee_lock,flags);
 
 	mark_buffer_uptodate(bh, uptodate);
@@ -241,6 +292,7 @@ STATIC struct page* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
 		e=nbh->b_private;
 		list_del(&e->list);
 		mdev->ee_vacant--;
+		D_ASSERT(nbh->b_page == page);
 		nbh=nbh->b_this_page;
 		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
 		  (int)(mdev-drbd_conf),e);*/
@@ -327,7 +379,8 @@ void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
 	e->block_id=0; //all entries on the free_ee should have 0 here
 	list_add(&e->list,&mdev->free_ee);
 
-	if(mdev->ee_vacant * 2 > mdev->ee_in_use) {
+	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) && 
+	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {
 		page=drbd_free_ee(mdev,&mdev->free_ee);
 		if( page ) __free_page(page);
 	}
@@ -425,6 +478,8 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 			continue;
 		}
 		get_bh(e->bh); 
+		init_waitqueue_entry(&wait, current);
+		current->state = TASK_UNINTERRUPTIBLE;
 
 		spin_lock(&e->bh->b_wait.lock);
 		__add_wait_queue(&e->bh->b_wait, &wait);
@@ -432,7 +487,7 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 
 		spin_unlock_irq(&mdev->ee_lock);
 
-		schedule_timeout(MAX_SCHEDULE_TIMEOUT);
+		schedule();
 
 		spin_lock_irq(&mdev->ee_lock);
 
@@ -444,6 +499,8 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 		/* The IRQ handler does not move a list entry if someone is 
 		   in wait_on_buffer for that entry, therefore we have to
 		   move it here. */
+		D_ASSERT(!buffer_locked(e->bh)); // IO is finished now!
+
 		list_del(le); 
 		list_add(le,to);
 	}
