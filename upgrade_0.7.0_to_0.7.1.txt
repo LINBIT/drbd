@@ -21,7 +21,7 @@ Plan A)
   mv /etc/ha.d/haresources /etc/ha.d/haresources_old ; mv /etc/ha.d/haresources_new /etc/ha.d/haresources
 
    or alternatively:
-   perl -i_old 's,/dev/nbd?,/dev/drbd,g' /etc/{drbd.conf,fstab,ha.d/haresources}
+   perl -i_old -pe 's,/dev/nbd?,/dev/drbd,g' /etc/{drbd.conf,fstab,ha.d/haresources}
 
   for i in `seq 0 15` ; do mknod /dev/drbd$i b 147 $i; done
 
