@@ -13,14 +13,6 @@
 		</affiliation>
 	</author>
 
-        <revhistory>
-                <revision>
-                <revnumber>v0.6.5</revnumber>
-                <date>2002-01-23</date>
-                <authorinitials>dmk</authorinitials>
-                </revision>
-        </revhistory>
-
 	<abstract>
 	<para>
 	HOWTO for DRBD
@@ -637,7 +629,20 @@ back and enjoy the high availability!</para>
        Need to write a paragraph on what to do if there is a message
        "transfer log too small" in the syslog.       
        </para> 
+</sect1>
 
+<sect1 id=support>
+       <title>Getting Support</title>
+
+       <sect2>
+       <title>Mailing List</title>
+       <para>
+       The best place
+       to address your questions is to the DRBD-devel mailing list.  To
+       subscribe, visit <ulink url="http://lists.sourceforge.net/lists/listinfo/drbd-devel">http://lists.sourceforge.net/lists/listinfo/drbd-devel</ulink>.   Make sure you search the <ulink url="http://sourceforge.net/mailarchive/forum.php?forum_id=6513"> arhives </ulink> before you post.  
+       </para>
+       </sect2>
+</sect1>
 </article>
 
 
