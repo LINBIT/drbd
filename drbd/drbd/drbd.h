@@ -58,7 +58,6 @@
 struct ioctl_drbd_config
 {
   IN int      lower_device;
-
   IN char     other_addr[MAX_SOCK_ADDR];
   IN int      other_addr_len;
   IN char     my_addr[MAX_SOCK_ADDR];
@@ -86,7 +85,7 @@ typedef struct
   __u32 my_blksize;
 } Drbd_ParameterBlock;
 
-typedef enum { Data,Ack,SyncNow,ReportParams } Drbd_Packet_Cmd;
+typedef enum { Data,Ack,SyncNow,ReportParams,BlkSizeChanged } Drbd_Packet_Cmd;
 typedef enum { Primary, Secondary } Drbd_State;
 typedef enum { 
   Unconfigured, 

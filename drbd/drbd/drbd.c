@@ -56,6 +56,7 @@
 #include <linux/blkpg.h>
 #else
 #define init_MUTEX_LOCKED( A )   (*(A)=MUTEX_LOCKED)
+#define init_MUTEX( A )          (*(A)=MUTEX)
 #endif
 
 #ifdef DEVICE_NAME
@@ -90,6 +91,7 @@ struct Drbd_Conf
   int                      recv_cnt;
   struct timer_list        s_timeout_t;
   unsigned long	           synced_to;
+  struct semaphore         send_mutex;
   struct Drbd_thread       receiver;
   struct Drbd_thread       syncer;
 };
@@ -97,7 +99,7 @@ struct Drbd_Conf
 
 int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 	       unsigned long blk_nr,void * data);
-int drbd_send_param(int minor);
+int drbd_send_param(int minor,int cmd);
 void drbd_thread_start(struct Drbd_thread* thi);
 #define drbd_thread_stop(A)     _drbd_thread_stop(A,FALSE)
 #define drbd_thread_restart(A)  _drbd_thread_stop(A,TRUE)
@@ -334,6 +336,9 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 
   if(! drbd_conf[minor].sock) return -1000;
 
+  down( &drbd_conf[minor].send_mutex );
+  /* Without this sock_sendmsg() somehow mixes bytes :-) */
+
   packet_header.magic = cpu_to_be32(DRBD_MAGIC);
   packet_header.command = cpu_to_be16(cmd);
   packet_header.length = cpu_to_be16(len);
@@ -386,6 +391,8 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 
   if(err != iov[1].iov_len+sizeof(packet_header) )
     printk( KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",err);
+
+  up( &drbd_conf[minor].send_mutex );
 
   return err;
 }
@@ -511,14 +518,14 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
       int new_blksize;
 
       spin_unlock_irq(&io_request_lock);
-      printk( KERN_ERR DEVICE_NAME ": Blocksize change dedected!\n");
+      printk( KERN_ERR DEVICE_NAME ": Block size change detected!\n");
 
       new_blksize = blksize_size[MAJOR_NR][minor];
       set_blocksize(drbd_conf[minor].lo_device,new_blksize);
       drbd_conf[minor].blk_size_b = drbd_log2(new_blksize);
-
+      
       if(drbd_conf[minor].state == Primary)
-	if(drbd_send_param(minor)<0)
+	if(drbd_send_param(minor,BlkSizeChanged)<0)
 	  printk( KERN_ERR DEVICE_NAME ": drbd_send_param() failed!\n");
 
       spin_lock_irq(&io_request_lock);       	 
@@ -805,6 +812,7 @@ __initfunc(int drbd_init( void ))
       drbd_conf[i].s_timeout_t.function = drbd_send_timeout;
       init_timer(&drbd_conf[i].s_timeout_t);
       drbd_conf[i].synced_to=0;
+      init_MUTEX(&drbd_conf[i].send_mutex);
       drbd_thread_init(i,&drbd_conf[i].receiver,drbdd_init);
       drbd_thread_init(i,&drbd_conf[i].syncer,drbd_syncer);
     }
@@ -858,7 +866,7 @@ void cleanup_module()
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
 #define max(a,b) ( (a) > (b) ? (a) : (b) )
 
-int drbd_send_param(int minor)
+int drbd_send_param(int minor,int cmd)
 {
   Drbd_ParameterBlock param;
   int err;
@@ -876,7 +884,7 @@ int drbd_send_param(int minor)
 
   param.my_state = cpu_to_be32(drbd_conf[minor].state);
   
-  err=drbd_send(minor,ReportParams,sizeof(Drbd_ParameterBlock),0,&param);
+  err=drbd_send(minor,cmd,sizeof(Drbd_ParameterBlock),0,&param);
   if(err>0) drbd_conf[minor].send_cnt++;
   
   return err;
@@ -1008,7 +1016,7 @@ int drbd_connect(int minor)
     }
 
   drbd_conf[minor].sock=sock;
-  err=drbd_send_param(minor);
+  err=drbd_send_param(minor,ReportParams);
 
   printk( KERN_ERR DEVICE_NAME": drbd_send_param()=%d \n", err);
   drbd_conf[minor].cstate = WFReportParams;
@@ -1087,6 +1095,7 @@ void drbdd(int minor)
 	case SyncNow: 
 	  printk(KERN_ERR DEVICE_NAME ": recv SyncNow/m=%d\n",minor); 
 	  break;
+	case BlkSizeChanged: /* fall trough */
 	case ReportParams: 
 	  {
 	    Drbd_ParameterBlock param;
@@ -1094,30 +1103,35 @@ void drbdd(int minor)
 
 	    printk(KERN_ERR DEVICE_NAME ": recv ReportParams/m=%d\n",minor); 
 
-	    drbd_thread_stop(&drbd_conf[minor].syncer);
-	    /* No syncer when we change the block size !! */
-
 	    if( drbd_recv(my_sock, &param, sizeof(Drbd_ParameterBlock)) <= 0) 
 	      break;
 	    
-	    if (blk_size[MAJOR(ll_dev)])
-	       {
-		 blk_size[MAJOR_NR][minor] =
-		   min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
-		       be64_to_cpu(param.my_size));
-		 printk(KERN_ERR DEVICE_NAME ": reported size=%ld\n",
-			(long)be64_to_cpu(param.my_size)); 
-		 /*		 set_device_ro(MKDEV(MAJOR_NR,minor),
-				 drbd_conf[minor].state != Primary);      */
-	       }
+	    if(be16_to_cpu(packet_header.command)==BlkSizeChanged)
+	      {
+		blksize = be32_to_cpu(param.my_blksize);
+	      }
 	    else
 	      {
-		blk_size[MAJOR_NR][minor] = 0;
-		printk( KERN_ERR DEVICE_NAME "LL Device has no size ?!?\n\n");
-	      }
 
-	    blksize = max(be32_to_cpu(param.my_blksize),
-			  drbd_ll_blocksize(minor));
+		if (blk_size[MAJOR(ll_dev)])
+		  {
+		    blk_size[MAJOR_NR][minor] =
+		      min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
+			  be64_to_cpu(param.my_size));
+		    printk(KERN_ERR DEVICE_NAME ": reported size=%ld\n",
+			   (long)be64_to_cpu(param.my_size)); 
+		    /*		 set_device_ro(MKDEV(MAJOR_NR,minor),
+				 drbd_conf[minor].state != Primary);      */
+		  }
+		else
+		  {
+		    blk_size[MAJOR_NR][minor] = 0;
+		    printk( KERN_ERR DEVICE_NAME "LL Device has no size?!?\n");
+		  }
+
+		blksize = max(be32_to_cpu(param.my_blksize),
+			      drbd_ll_blocksize(minor));
+	      }
 
 	    set_blocksize(MKDEV(MAJOR_NR,minor),blksize);
 	    set_blocksize(drbd_conf[minor].lo_device,blksize);
@@ -1180,9 +1194,9 @@ int drbdd_init(void *arg)
   while(TRUE)
     {
       if(!drbd_connect(minor)) break;
-      if(thi->exit) break;
+      if(thi->exit==1) break;
       drbdd(minor);
-      if(thi->exit) break;
+      if(thi->exit==1) break;
     }
 
   printk(KERN_ERR DEVICE_NAME ": receiver exiting/m=%d\n",minor);
@@ -1219,7 +1233,7 @@ void drbd_thread_start(struct Drbd_thread* thi)
   if(thi->pid==0)
     {
       init_MUTEX_LOCKED(&thi->sem);
-      thi->exit = FALSE;
+      thi->exit = 0;
 
       pid = kernel_thread(thi->function, (void *)thi, 0);
 
@@ -1241,7 +1255,8 @@ void _drbd_thread_stop(struct Drbd_thread* thi,int restart)
     {
       int err;
 
-      if(!restart) thi->exit=TRUE;
+      if(restart) thi->exit=2;
+      else        thi->exit=1;      
 
       init_MUTEX_LOCKED(&thi->sem);
       err = kill_proc_info(SIGTERM,NULL,thi->pid);
@@ -1282,6 +1297,8 @@ int drbd_syncer(void *arg)
   int amount = 32; 
   /* FIXME: get the half of the size of the socket write buffer */
   int blocks;
+  int blocksize;
+
 
   exit_mm(current);    /* give up UL-memory context */
   exit_files(current); /* give up open filedescriptors */
@@ -1296,45 +1313,59 @@ int drbd_syncer(void *arg)
 
   printk(KERN_ERR DEVICE_NAME ": syncer living/m=%d\n",minor);
 
+  drbd_conf[minor].synced_to = (blk_size[MAJOR_NR][minor]-1) << 1;  
+ restart:
+  blocksize = blksize_size[MAJOR_NR][minor];
+
+  drbd_conf[minor].synced_to =   /* align synced_to to blocksize */
+    (drbd_conf[minor].synced_to+1) & ~((blocksize>>9)-1);
+
   interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
-  blocks = (amount << 10) / blksize_size[MAJOR_NR][minor];
+  blocks = (amount << 10) / blocksize;
 
-  drbd_conf[minor].synced_to = (blk_size[MAJOR_NR][minor]-1) << 1;
-
-  printk(KERN_ERR DEVICE_NAME ": s_to=%ld "
+  printk(KERN_ERR DEVICE_NAME ": synced_to=%ld "
 	 "blks=%d "
-	 "int=%d bb=%d\n"
-	 ,drbd_conf[minor].synced_to,blocks,interval,
-	 drbd_conf[minor].blk_size_b);
+	 "int=%d \n"
+	 ,drbd_conf[minor].synced_to,blocks,interval);
 
   while(TRUE)
     {
       int i,rr;
-      unsigned long block_nr;
-      struct buffer_head *bh;
+      unsigned long block_nr,new_sector;
+      struct buffer_head *bh;      
+
+      current->state = TASK_INTERRUPTIBLE;
+      schedule_timeout(interval);
 
       for(i=0;i<blocks;i++)
 	{
-	  block_nr = drbd_conf[minor].synced_to 
-	    >> (drbd_conf[minor].blk_size_b - 9);
+	  if(thi->exit==1) goto out;
+	  if(blocksize != blksize_size[MAJOR_NR][minor]) goto restart;
 
-	  bh = getblk(MKDEV(MAJOR_NR,minor),block_nr,
-		      blksize_size[MAJOR_NR][minor]);
+	  block_nr=drbd_conf[minor].synced_to>>(drbd_conf[minor].blk_size_b-9);
+
+	  bh = getblk(MKDEV(MAJOR_NR,minor),block_nr,blocksize);
 
 	  if(!buffer_uptodate(bh))
 	    {
 	      ll_rw_block(READ,1,&bh);
 	      wait_on_buffer(bh);
+	      if(!buffer_uptodate(bh)) 
+		{
+		  brelse(bh);
+		  goto restart; /* THINK */
+		}
 	    }
 
-	  rr=drbd_send(minor,Data,blksize_size[MAJOR_NR][minor],
-		       drbd_conf[minor].synced_to,
+	  rr=drbd_send(minor,Data,blocksize,drbd_conf[minor].synced_to,
 		       bh->b_data);
 
 	  brelse(bh);
 
 	  if(rr > 0)
-	    drbd_conf[minor].send_cnt++;
+	    {
+	      drbd_conf[minor].send_cnt++;
+	    }
 	  else
 	    {
 	      printk(KERN_ERR DEVICE_NAME ": syncer send failed!!\n");
@@ -1346,18 +1377,13 @@ int drbd_syncer(void *arg)
 	  printk(KERN_ERR DEVICE_NAME ": syncer send: "
 		 "block_nr=%ld len=%d\n",
 		 block_nr,
-		 blksize_size[MAJOR_NR][minor]);
+		 blocksize);
 	  */
 
-	  if(thi->exit) goto out;
-	  if(drbd_conf[minor].synced_to==0) goto done;
-	  drbd_conf[minor].synced_to -= (blksize_size[MAJOR_NR][minor]>>9);
+	  new_sector = drbd_conf[minor].synced_to - (blocksize>>9);
+	  if(new_sector > drbd_conf[minor].synced_to) goto done;
+	  drbd_conf[minor].synced_to = new_sector;
 	}
-
-      current->state = TASK_INTERRUPTIBLE;
-      schedule_timeout(interval);
-
-      if(thi->exit) goto out;
     }
  done:
   drbd_conf[minor].cstate = Connected;
