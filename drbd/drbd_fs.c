@@ -983,6 +983,69 @@ ONLY_IN_26(
 
 	D_ASSERT(MAJOR(inode->i_rdev) == MAJOR_NR);
 
+	/*
+	 * check whether we can permit this ioctl, and whether is makes sense.
+	 * we don't care for the BLK* ioctls, with 2.6 they never end up here.
+	 *
+	 * for non-sysadmins, we only allow GET_CONFIG (and GET_VERSION)
+	 * all other things need CAP_SYS_ADMIN.
+	 *
+	 * on an Unconfigured device, only configure requests make sense.
+	 * still we silently ignore requests to become secondary or to
+	 * unconfigure. other requests are invalid.
+	 *
+	 * I chose to have an additional switch statement for it
+	 * because I think this makes it more obvious.
+	 *
+	 * because we look at mdev->cstate, it should be inside the lock
+	 * (once we serialize cstate changes, it has to be...)
+	 *
+	 */
+	if (!capable(CAP_SYS_ADMIN)
+	    && cmd != DRBD_IOCTL_GET_CONFIG
+	    && cmd != DRBD_IOCTL_GET_VERSION) {
+		err = -EPERM;
+		goto out;
+	}
+
+	if (mdev->cstate == Unconfigured) {
+		switch (cmd) {
+		default:
+			/* oops, unknown IOCTL ?? */
+			err = -EINVAL;
+			goto out;
+
+		case DRBD_IOCTL_GET_CONFIG:
+		case DRBD_IOCTL_GET_VERSION:
+			break;		/* always allowed */
+
+		case DRBD_IOCTL_SET_DISK_CONFIG:
+		case DRBD_IOCTL_SET_NET_CONFIG:
+			break;		/* no restriction here */
+
+		case DRBD_IOCTL_UNCONFIG_DISK:
+		case DRBD_IOCTL_UNCONFIG_NET:
+			/* no op, so "drbdadm down all" does not fail */
+			err = 0;
+			goto out;
+
+		/* the rest of them don't make sense if Unconfigured.
+		 * still, set an Unconfigured device Secondary
+		 * is allowed, so "drbdadm down all" does not fail */
+		case DRBD_IOCTL_SET_STATE:
+		case DRBD_IOCTL_INVALIDATE:
+		case DRBD_IOCTL_INVALIDATE_REM:
+		case DRBD_IOCTL_SET_DISK_SIZE:
+		case DRBD_IOCTL_SET_STATE_FLAGS:
+		case DRBD_IOCTL_SET_SYNC_CONFIG:
+		case DRBD_IOCTL_WAIT_CONNECT:
+		case DRBD_IOCTL_WAIT_SYNC:
+			err = (cmd == DRBD_IOCTL_SET_STATE && arg == Secondary)
+				    ? 0 : -ENXIO;
+			goto out;
+		}
+	}
+
 	if (unlikely(drbd_did_panic == DRBD_MAGIC))
 		return -EBUSY;
 
@@ -1260,7 +1323,7 @@ ONLY_IN_26(
 	default:
 		err = -EINVAL;
 	}
- //out:
+ out:
 	up(&mdev->device_mutex);
  out_unlocked:
 	return err;
