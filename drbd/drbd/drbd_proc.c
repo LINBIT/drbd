@@ -161,8 +161,6 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		if( drbd_conf[i].cstate < Connected ) 
-			drbd_conf[i].o_state = Unknown;
 		rlen = 
 		    rlen + sprintf(buf + rlen,
 				   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"

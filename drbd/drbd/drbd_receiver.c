@@ -1512,6 +1512,7 @@ STATIC void drbdd(int minor)
 
       out:
 
+	drbd_conf[minor].o_state = Unknown;
 	del_timer_sync(&mdev->a_timeout);
 
 	drbd_thread_stop(&mdev->asender);
