@@ -1230,7 +1230,6 @@ void drbdd(int minor)
 		drbd_wait_sync_ee(drbd_conf+minor);
 		drbd_clear_done_ee(drbd_conf+minor);
 		drbd_conf[minor].epoch_size=0;
-		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
 	}
@@ -1243,6 +1242,7 @@ void drbdd(int minor)
 	/* Since syncer's blocks are also counted, there is no hope that
 	   pending_cnt is zero. */
 	atomic_set(&drbd_conf[minor].pending_cnt,0); 
+	wake_up_interruptible(&drbd_conf[minor].state_wait);
 
 	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 
