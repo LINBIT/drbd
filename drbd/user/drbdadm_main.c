@@ -730,7 +730,7 @@ int main(int argc, char** argv)
 	  for_each_resource(res,tmp,config) {
 	    if(!strcmp(argv[i],res->name)) goto found;
 	  }
-	  fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
+	  fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
 	  exit(20);
 	found:
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
