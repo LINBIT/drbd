@@ -2,6 +2,9 @@ SCRIPTS : TODO LIST
 
 Urgent :
 
+* read -n bug
+* datadisk have bad parameter order for heartbeat
+
 Find a better way to integrate drdb_common
 * include the code in all script
 * make it not runnable as a standalone program and find a way to get its path
