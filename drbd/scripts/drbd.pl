@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# chkconfig: 345 60 40
+# chkconfig: 345 70 8
 # description: Loads and unloads the drbd module
 #
 # complete rewrite from scratch by Philipp Reisner in March and April 2001
