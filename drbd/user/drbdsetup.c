@@ -879,10 +879,11 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
 
 int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  cmd_secondary(drbd_fd,argv,argc,options);
-  cmd_disconnect(drbd_fd,argv,argc,options);
-  cmd_detach(drbd_fd,argv,argc,options);
-  return 0;
+  int err;
+  err = cmd_secondary(drbd_fd,argv,argc,options);
+  if (!err) err = cmd_disconnect(drbd_fd,argv,argc,options);
+  if (!err) err = cmd_detach(drbd_fd,argv,argc,options);
+  return err;
 }
 
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
