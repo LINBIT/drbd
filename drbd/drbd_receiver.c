@@ -2007,10 +2007,6 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
-#if 0
-	sector_t sector = be64_to_cpu(p->sector);
-	int size = be32_to_cpu(p->blksize);
-#endif
 
 	/* do nothing here.
 	 * we expect to get a "report param" on the data socket soon,
@@ -2019,14 +2015,6 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
 	}
-#if 0
-	else {
-		D_ASSERT(bm_get_bit(mdev->mbds_id,sector,size));
-		// tl_clear() must have set this out of sync!
-		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
-		dec_ap_pending(mdev,HERE);
-	}
-#endif
 	if (DRBD_ratelimit(5*HZ,5))
 		WARN("Got NegAck packet. Peer is in troubles?\n");
 

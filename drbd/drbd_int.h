@@ -203,19 +203,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
  * our structs
  *************************/
 
-#ifndef typecheck
-/*
- * Check at compile time that something is of a particular type.
- * Always evaluates to 1 so you may use it easily in comparisons.
- */
-#define typecheck(type,x) \
-({	type __dummy; \
-	typeof(x) __dummy2; \
-	(void)(&__dummy == &__dummy2); \
-	1; \
-})
-#endif
-
 #define SET_MAGIC(x)       ((x)->magic = (long)(x) ^ DRBD_MAGIC)
 #define VALID_POINTER(x)   ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0)
 #define INVALIDATE_MAGIC(x) (x->magic--)
@@ -1008,58 +995,6 @@ extern void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, co
 extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_shrink(struct Drbd_Conf *mdev);
-
-/*
- * event macros
- *************************/
-
-// we use these within spin_lock_irq() ...
-#ifndef wq_write_lock
-#if USE_RW_WAIT_QUEUE_SPINLOCK
-# define wq_write_lock write_lock
-# define wq_write_unlock write_unlock
-# define wq_write_unlock_irq write_unlock_irq
-#else
-# define wq_write_lock spin_lock
-# define wq_write_unlock spin_unlock
-# define wq_write_unlock_irq spin_unlock_irq
-#endif
-#endif
-
-// sched.h does not have it with timeout, so here goes:
-
-#ifndef wait_event_interruptible_timeout
-#define __wait_event_interruptible_timeout(wq, condition, ret)		\
-do {									\
-	wait_queue_t __wait;						\
-	init_waitqueue_entry(&__wait, current);				\
-									\
-	add_wait_queue(&wq, &__wait);					\
-	for (;;) {							\
-		set_current_state(TASK_INTERRUPTIBLE);			\
-		if (condition)						\
-			break;						\
-		if (!signal_pending(current)) {				\
-			ret = schedule_timeout(ret);			\
-			if (!ret)					\
-				break;					\
-			continue;					\
-		}							\
-		ret = -EINTR;						\
-		break;							\
-	}								\
-	current->state = TASK_RUNNING;					\
-	remove_wait_queue(&wq, &__wait);				\
-} while (0)
-
-#define wait_event_interruptible_timeout(wq, condition, timeout)	\
-({									\
-	long __ret = timeout;						\
-	if (!(condition))						\
-		__wait_event_interruptible_timeout(wq, condition, __ret); \
-	__ret;								\
-})
-#endif
 
 /*
  * inline helper functions

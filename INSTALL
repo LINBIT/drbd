@@ -4,14 +4,7 @@ These are the steps to build and install DRBD on your system.
 It should work for SuSE, Debian, RH and other distros with slight
 modifications.
 
-   This was written for 0.6.10, and might not work for releases
-   before that, since we changed our Makefile to use the top level
-   kernel source Makefile, so we no longer need to worry about
-   all those funny kernel compile flags...
-   
-   It is still correct for 0.6.13.
-   Maybe this needs an update for 0.7.x,
-   but most of it probably still applies.
+   This was last reviewed for 0.8.0-pre1.
 
 I tried to indicate what you should type by the prompt-prefix
 on the below command lines. "all#", when it is the same for
@@ -26,9 +19,8 @@ Other helpful links:
 
 	http://www.drbd.org
 	http://www.drbd.org/drbd-article.html
-	http://www.linux-mag.com/2003-11/drbd_01.html
 	http://www.linux-mag.com/2003-11/toc.html
-	http://linuxha.trick.ca/DRBD_2fFAQ , and of course,
+	http://linuxha.trick.ca/DRBD , and of course,
 	http://www.drbd.org/support.html
 
 == Prerequisites ==
@@ -45,8 +37,8 @@ Other helpful links:
  Note: this is really kernel-source.rpm, NOT kernel.src.rpm.
  You don't want to use the latter, unless you know _exactly_ why...
 
- If you want to use a 2.6.x kernel, you need to use DRBD-0.7.;
- 0.6 just won't compile.
+ If you want to use a 2.4.x kernel, you need to use DRBD-0.7.;
+ DRBD-0.8 just won't compile.
 
  Obviously you should have a build-system installed, i.e. gcc, make, etc. ;)
 
@@ -56,20 +48,18 @@ Other helpful links:
  just mentioned here in case you installed gcc 2.9x for some other
  thingy, and then wonder why kernel modules no longer work properly.
 
- Note: for a 2.2.x kernel, you need to add a line to kernel/ksyms.c,
- see debian/kernel-export-wup.patch . But who cares for 2.2, nowadays?
-
  So what next?
 
 == Prepare the kernel source tree ==
 
        all# cd /usr/src/linux
    or wherever your kernel source happens to be, e.g.
-    fedora# cd /usr/src/linux-2.4
+    fedora# cd /usr/src/linux-2.6
 
    The next step is just to be sure. If you know what it does,
    you probably can judge on your own whether it is necessary or
-   not, anyways.
+   not, anyways. If you get strange results on your first try,
+   please do this first. It sometimes really helps!
 
        all# make mrproper
 
@@ -95,65 +85,55 @@ Other helpful links:
 
    The redhat way seems to be:
 
-       redhat# cp /boot/kernel-2.4.some-thing.config  .config
+       redhat# cp /boot/kernel-2.6.some-thing.config  .config
+        or   # cp configs/kernel-2.6.some-thing.config .config
              # make -s oldconfig_nonint ; make -s oldconfig_nonint
+             # vi Makefile # mod EXTRAVERSION to match installed kernel
+                           # (remove "custom" if neccessary)
 
-       fedora# cp /boot/config-2.4.some-thing  .config
+       fedora# cp /boot/config-2.6.some-thing  .config
              # export CC=gcc32
-             # vi Makefile #mod EXTRAVERSION to match installed kernel
              # yes "" | { make oldconfig ; make oldconfig ; }
+             # vi Makefile # mod EXTRAVERSION to match installed kernel
+                           # (remove "custom" if neccessary)
 
     Note:
     If you consider to not run some vendor kernel, but compile
     your own kernel, you need to build in module support, since
-    DRBD is a module.  DRBD depends on procfs, but you want to
-    have that anyways.  Make sure that you do not compile NBD
-    into the kernel, since DRBD uses the same major device
-    number. Having it as module is ok, but you cannot use both
-    at the same time.
+    DRBD is a module (but see below for in kernel builds).
+    DRBD depends on procfs, but you want to have that anyways.
 
     If you do not run a selfcompiled kernel, but the binary shipped
     distro kernel, and after "make install" the drbd module ends up in
-    the wrong place (e.g. "/lib/modules/2.4.20custom/", when you want it
-    in "/lib/modules/2.4.20/" ), edit the top-level Makefile of your kernel
+    the wrong place (e.g. "/lib/modules/2.6.6custom/", when you want it
+    in "/lib/modules/2.6.6/" ), edit the top-level Makefile of your kernel
     source tree and remove "custom" from the EXTRAVERSION.  Make sure you
     copied in the .config corresponding to the kernel you use.
-    Don't forget to "make dep" in /usr/src/linux, it sometimes helps, too.
-    (you could of course edit .kernelversion in the drbd directory,
-    or copy by hand, too)
-
-      Update:
-      since we now (0.7.1 and later) have an officially assigned
-      device major number (147) and device nodes (/dev/drbd), we no longer
-      hijack NBDs major numbers. You now in fact _can_ use NBD in parallel
-      with DRBD, if it makes any sense in your setup...
 
    So if necessary, "make menuconfig" and adapt to your own
    preferences, but then you need to compile and install this
    kernel.  Modules compiled against this kernel source tree
    will only work properly with a matching kernel.
 
-       all# make dep
        all# make linux/include/version.h
+          # and since kernel 2.6.6 (some distos 2.6.5-something):
+       all# make modules_prepare
 
 == Build DRBD kernel module (outside of the kernel source) ==
 
    unpack the drbd tgz, I suggest to unpack it into /usr/src/drbd-*
 
        all# cd /usr/src
-       all# tar -xvzf where/you/downloaded/it/drbd-0.6.12.tar.gz
+       all# tar -xvzf where/you/downloaded/it/drbd-0.8.0.tar.gz
 
    now build the module
 
-   Note: On some distros (redhat/fedora typically), you first need to have a 
+   Note:
+   On some distros (redhat/fedora typically), you first need to have a 
    look into ./drbd_config.h, and (un)comment some of the
    settings appropriately, if not done automagically already.
 
-   Since 0.7.3, we have script/adjust_drbd_config_h.sh, which helps you 
-   with this, and gets called during the normal build process,
-   so you "should" no longer need to adjust it by hand.
-
-       all# cd drbd-0.6.12/drbd  # kernel module sub directory
+       all# cd drbd-0.8.0/drbd  # kernel module sub directory
        all# make clean all
     fedora# make clean all CC=gcc32
 
@@ -196,19 +176,16 @@ Other helpful links:
 == Build DRBD user space tools only ==
 
    If you took the 'patch kernel' approach, you still need to build the
-   user space tools.
+   user space tools:
 
-       all# cd /usr/src/drbd-0.6.12/user
-       all# make
-
-   or with drbd-0.7 simply
+       all# cd /usr/src/drbd-0.8.0
        all# make tools
 
 == Install it ==
 
    If the above steps went ok, you just need to install it.
 
-       all# cd /usr/src/drbd-0.6.12
+       all# cd /usr/src/drbd-0.8.0
        all# make install
 
    If you patched the kernel, you obviously only want to
@@ -228,12 +205,12 @@ Other helpful links:
 
    Why did I not just "make ; make install" in the toplevel
    directory of the drbd source?
-   Because I seem to be too stupid to get my docbook environment
-   right, and I don't want to screw up the precompiled
-   documentation and man-pages that come with the .tar.gz ...
+   Because I like to do it explicitly step by step.
+   Of course you could do it all in one step,
+   and most of the time it should just work:
 
-   Note: since 0.7, to rebuild the documentation, you need to
-   explicitly ask for it: "make doc"
+       all# cd /usr/src/drbd-0.8.0
+       all# make all install
 
 == Troubleshooting ==
 
@@ -246,8 +223,7 @@ Other helpful links:
 == Building a .rpm of it ==
 
    This should be fairly easy, there is an example spec
-   file, and you can even "make rpm".  If this is a CVS/SVN version,
-   you might need to say "make rpm FORCE=1".
+   file, and you can even "make rpm".
 
    If it does not work for you out of the box, first get "make install"
    to work properly, see the section titled 'prepare the kernel source tree'
@@ -262,12 +238,7 @@ Other helpful links:
    like in "make rpm KDIR=/usr/src/linux-include/athlon",
    "make rpm KDIR=/usr/src/linux-include/smp", ...
 
-   You then should find packages in "dist/{S,}RPMS/*/*.rpm":
-
-	./dist/RPMS/i586/drbd-0.6.12-3.i586.rpm
-	./dist/RPMS/i586/kernel-module-drbd-0.6.12-3_2.4.21_166_default.i586.rpm
-	./dist/RPMS/i586/kernel-smp-module-drbd-0.6.12-3_2.4.21_166_4G.i586.rpm
-	...
+   You then should find packages in "dist/{S,}RPMS/*/*.rpm".
 
    Note however that your distro most likely handles rpms of kernel modules in
    some special way, so you may want to first ask your ditributor to provide
@@ -276,55 +247,7 @@ Other helpful links:
 == Building a .deb of it ==
 
    Have a look into the ./debian/* example files in place.
-
-	From: Jens Benecke
-	Subject: [DRBD-dev] Re: RFC: new ./INSTALL hints
-	Date: Wed, 24 Dec 2003 13:14:23 +0100
-	See: http://article.gmane.org/gmane.comp.linux.drbd/5616
-
-   For Debian, IMHO it makes a lot of sense to make a .deb package:
-
-	/tmp/drbd-0.6.12# dpkg-buildpackage -us -uc -b
-
-   creates drbd_*.deb, drbd-source_*.deb and kernel-patch-wup_*.deb.
-   drbd-source_*.deb only contains /usr/src/linux/drbd.tar.gz, which must be
-   unpacked and recompiled with the target kernel.
-
-	/tmp# dpkg -i drbd*deb  # install them all
-	/tmp# cd /usr/src/linux ; tar xvzf drbd.tar.gz
-	/usr/src/linux# make menuconfig
-	/usr/src/linux# make-kpkg --bzimage --revision $FOO \
-		binary-arch modules_image
-
-   creates kernel-image*deb, kernel-headers*deb, and drbd-module*deb,
-   in my case (applied reiserfs data-logging patches and changed
-   EXTRAVERSION in the Makefile to my initials, also used
-   --revision $FOO on the make-kpkg command line :)
-
-	drbd-module-2.4.23-jb-gr+r_0.6.12-1+jb1_i386.deb
-	kernel-headers-2.4.23-jb-gr+r_jb1_i386.deb
-	kernel-image-2.4.23-jb-gr+r_jb1_i386.deb
-
-   These can be installed on any computer now.
-
-   $FOO can be anything you want, like '01' or 'jb1' (which I use). It's the
-   kernel revision number for your build. If you build later .deb packages
-   with the same kernel version, you can use
-
-	# dch -i 'added $foo patches/configure items/whatever'
-
-   to update the Debian changelog in the kernel source directory and then just
-   rebuild the kernel image. It will auto-replace the running kernel on
-   installation.
-
-   If you build another .deb with a different _version_, it will
-   not replace the running kernel. See kernel-package
-   documentation for that.
-
-   Trust me, it's much cleaner and easier (also to upgrade)
-   machines this way.  Especially if you have several machines to
-   upgrade, which is _always_ the case when running drbd, as
-   that's the whole point. :)
+   See also: http://article.gmane.org/gmane.comp.linux.drbd/5616
 
 ----
 
@@ -334,4 +257,4 @@ Hope this helped, cheers and have fun ...
 	Lars Ellenberg
 
 
-Last modified: Tue Aug 24 14:07:40 UTC 2004
+Last modified: Do Sep 23 23:29:48 UTC 2004

@@ -28,7 +28,7 @@
   The lru_cache describes a big set of objects that are addressed
   by an index number (=lc_number). Only a small fraction of this set
   is present in the cache.
-  (You set the size of the cache using lc_resize)
+  (You set the size of the cache during lc_alloc)
   Once created, the api consists of
     lc_find(,nr) -- finds the object with the given number, if present
     lc_get(,nr)  -- finds the object and increases the usage count

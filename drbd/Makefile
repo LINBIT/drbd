@@ -101,8 +101,8 @@ else
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
-    # $(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
-	$(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
+	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+# $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
 	@mv .kernelrelease.new .kernelrelease
 	@echo -n "Memorizing module configuration ... "
 	@{ echo -e "#\n# drbd.o was compiled with"          ; \
