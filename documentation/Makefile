@@ -100,7 +100,7 @@ clean:
 	@echo "To clean the documentation: make doc-clean"
 
 ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
-doc:	prepare man HOWTO/index.html
+doc:	prepare man
 
 doc-clean: distclean
 
@@ -117,8 +117,6 @@ endif
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
-	rm -f  HOWTO/{*.html,*.css,suse-*.dsl,CATALOG.local}
-	rm -rf HOWTO/{DRBD-HOWTO*,db2html*}/	# note the trailing slash
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 $(MAKEFILES_LANG): Makefile.lang
@@ -131,9 +129,6 @@ prepare: $(MAKEFILES_LANG)
 
 man:	$(MANPAGES)
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
-
-HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
-	@cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
 install:
 	@ok=true; for f in $(MANPAGES) ; \

@@ -83,13 +83,10 @@ endif
 
 man:	$(MANPAGES)
 
-all:	man HOWTO/index.html
-
-HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
-	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
+all:	man
 
 clean:
-	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
+	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html
 
 install:
