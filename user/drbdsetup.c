@@ -130,7 +130,8 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0   } } },
   {"wait_sync", cmd_wait_sync,       0,
    (struct option[]) {
-     { "time",       required_argument, 0, 't' },
+     { "wfc-timeout",required_argument, 0, 't' },
+     { "degr-wfc-timeout",required_argument,0,'d'},
      { 0,            0,                 0, 0   } } },
   {"wait_connect", cmd_wait_connect, 0,
    (struct option[]) {

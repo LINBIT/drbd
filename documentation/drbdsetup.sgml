@@ -97,14 +97,15 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">wait_connect</arg>
-      <arg>-t<arg choice="req"><replaceable>connect_timeout</replaceable></arg></arg>
-      <arg>-d<arg choice="req"><replaceable>connect_timeout</replaceable></arg></arg>
+      <arg>-t<arg choice="req"><replaceable>wfc_timeout</replaceable></arg></arg>
+      <arg>-d<arg choice="req"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">wait_sync</arg>
-      <arg>-t<arg choice="req"><replaceable>connect_timeout</replaceable></arg></arg>
+      <arg>-t<arg choice="req"><replaceable>wfc_timeout</replaceable></arg></arg>
+      <arg>-d<arg choice="req"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -498,14 +499,21 @@
       <variablelist>
 	<varlistentry>
 	  <term><option>-t</option>,
-	  <option>--time <replaceable>connect_timeout</replaceable></option></term>
+	  <option>--wfc-timeout <replaceable>wfc_timeout</replaceable></option></term>
+	  <term><option>-d</option>,
+	  <option>--degr-wfc-timeout <replaceable>degr_wfc_timeout</replaceable></option></term>
 	  <listitem>
 	    <para>
 	      This command will fail if the
 	      <replaceable>device</replaceable> can not communicate with its
-	      partner for <replaceable>connect_timeout</replaceable>
-	      seconds. The default value is 0 which disables the timeout
-	      mechanism.  
+	      partner for <replaceable>timeout</replaceable>
+	      seconds. If the peer was working before this node got
+	      rebootet, the wfc_timeout is used. If the peer was already
+	      down before this node got rebooted, the degr_wfc_timeout
+	      is used. 
+	      The default value for <replaceable>wfc_timeout</replaceable> 
+	      is 0 which means to wait forever. The default for 
+	      <replaceable>degr_wfc_timeout</replaceable> is 120 seconds.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -515,23 +523,10 @@
       <title>wait_sync</title>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> leaves any
-	synchronization state and returns into connected state.
+	synchronization state and returns into connected state. The options
+	are the same as with the <replaceable>wait_connect</replaceable>
+	command.
       </para>
-      <variablelist>
-	<varlistentry>
-	  <term><option>-t</option>,
-	  <option>--time <replaceable>connect_timeout</replaceable></option></term>
-	  <listitem>
-	    <para>
-	      This command will fail if the
-	      <replaceable>device</replaceable> stays for
-	      <replaceable>connect_timeout</replaceable> seconds in
-	      unconnected state. The default value is 8 seconds. If it is
-	      set to 0, the command will forever wait for a connection.
-	    </para>
-	  </listitem>
-	</varlistentry>
-      </variablelist>
     </refsect2>
     <refsect2>
       <title>disconnect</title>
