@@ -1191,11 +1191,16 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 	}
     }
 
-  fprintf(stderr,"err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_SIZE,%lu);\n",u_size);
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_SIZE,u_size);
   if(err)
     {
       PERROR("ioctl(,SET_DISK_SIZE,) failed");
+      if(err==EBUSY) {
+	fprintf(stderr,"Online resizing is not allowed during resync.");
+      }
+      if(err==EINPROGRESS) {
+	fprintf(stderr,"One node must be primary to do online resizing.");
+      }
       return 20;
     }
 

@@ -1426,6 +1426,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
 
+	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
+		mdev->lo_usize = be64_to_cpu(p->u_size);
+		INFO("Peer sets u_size to %lu KB\n",
+		     (unsigned long)mdev->lo_usize);
+	}
+
 /*lge:
  * FIXME
  * please get the order of tests (re)settings for consider_sync
@@ -1454,12 +1460,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		mdev->sync_conf.skip != 0 || p->skip_sync != 0;
 	mdev->sync_conf.group =
 		min_t(int,mdev->sync_conf.group,be32_to_cpu(p->sync_group));
-
-	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
-		mdev->lo_usize = be64_to_cpu(p->u_size);
-		INFO("Peer sets u_size to %lu KB\n",
-		     (unsigned long)mdev->lo_usize);
-	}
 
 	if(!p_size) {
 		/* no point in trying to sync a diskless peer: */

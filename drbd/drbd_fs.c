@@ -1122,13 +1122,17 @@ ONLY_IN_26(
 			err = -EBUSY;
 			break;
 		}
+		if ( (mdev->state == Secondary && mdev->o_state == Secondary) 
+			err = -EINPROGRESS;
+			break;
+		}
 		err=0;
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		drbd_bm_unlock(mdev);
-		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
+		if (mdev->cstate == Connected) drbd_send_param(mdev,1);
 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:
