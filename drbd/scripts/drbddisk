@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# This script is inteded to be used as resource script by heartbeat
+#
+# Jan 2003 by Philipp Reisner.
+#
+###
+
+DRBDADM="/sbin/drbdadm"
+
+if [ "$#" -eq 2 ]; then
+  RES="$1"
+  CMD="$2"
+else
+  RES="all"
+  CMD="$1"
+fi
+
+case "$CMD" in
+    start)
+	$DRBDADM primary $RES
+	;;
+    stop)
+	$DRBDADM secondary $RES
+	;;
+    status)
+	echo soon...
+	;;
+    *)
+	echo "Usage: drbddisk [resource] {start|stop|status}"
+	exit 1
+	;;
+esac
+
+exit 0
