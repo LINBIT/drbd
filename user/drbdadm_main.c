@@ -68,19 +68,16 @@ struct adm_cmd {
   int res_name_required;
 };
 
-struct cmd_timeout {
-  const char* cmd;
-  int timeout;
-};
-
 extern int yyparse();
 extern FILE* yyin;
 
 int adm_attach(struct d_resource* ,char* );
 int adm_connect(struct d_resource* ,char* );
-int adm_generic(struct d_resource* ,char* );
+int adm_generic_s(struct d_resource* ,char* );
+int adm_generic_l(struct d_resource* ,char* );
 int adm_resize(struct d_resource* ,char* );
 int adm_syncer(struct d_resource* ,char* );
+static int adm_primary(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
@@ -117,20 +114,20 @@ struct option admopt[] = {
 
 struct adm_cmd cmds[] = {
   { "attach",            adm_attach,  0                  ,1,1 },
-  { "detach",            adm_generic, "detach"           ,1,1 },
+  { "detach",            adm_generic_s,"detach"          ,1,1 },
   { "connect",           adm_connect, 0                  ,1,1 },
-  { "disconnect",        adm_generic, "disconnect"       ,1,1 },
+  { "disconnect",        adm_generic_s,"disconnect"      ,1,1 },
   { "up",                adm_up,      0                  ,1,1 },
-  { "down",              adm_generic, "down"             ,1,1 },
-  { "primary",           adm_generic, "primary"          ,1,1 },
-  { "secondary",         adm_generic, "secondary"        ,1,1 },
-  { "invalidate",        adm_generic, "invalidate"       ,1,1 },
-  { "invalidate_remote", adm_generic, "invalidate_remote",1,1 },
+  { "down",              adm_generic_s,"down"            ,1,1 },
+  { "primary",           adm_primary, 0                  ,1,1 },
+  { "secondary",         adm_generic_s,"secondary"       ,1,1 },
+  { "invalidate",        adm_generic_l,"invalidate"      ,1,1 },
+  { "invalidate_remote", adm_generic_l,"invalidate_remote",1,1 },
   { "resize",            adm_resize,  0                  ,1,1 },
   { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },
   { "wait_connect",      adm_wait_c,  0                  ,1,1 },
-  { "state",             adm_generic, "state"            ,1,1 },
+  { "state",             adm_generic_s,"state"           ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
   { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
   { "sh-resources",      sh_resources,0                  ,0,0 },
@@ -141,12 +138,6 @@ struct adm_cmd cmds[] = {
   { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
 };
 
-struct cmd_timeout timeouts[] = {
-  // All other commands have a timeout of 5 seconds.
-  { "disk",              60 },
-  { "invalidate",        60 },
-  { "invalidate_remote", 60 }
-};
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -360,7 +351,7 @@ static void alarm_handler(int signo)
   alarm_raised=1;
 }
 
-pid_t m_system(int flags,char** argv)
+pid_t m_system(char** argv,int flags)
 {
   pid_t pid;
   int status,rv=-1;
@@ -392,19 +383,19 @@ pid_t m_system(int flags,char** argv)
     exit(E_exec_error);
   }
 
-  if( !(flags&SF_MaySleep) ) {
-    int i,timeout=5;
+  if( flags & SLEEPS_FINITE ) {
+    int timeout;
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
-    for(i=0;i<ARRY_SIZE(timeouts);i++) {
-      if(!strcmp(timeouts[i].cmd,argv[2])) {
-	timeout = timeouts[i].timeout;
-      }
+    switch(flags) {
+    case SLEEPS_SHORT:     timeout = 5; break;
+    case SLEEPS_LONG:      timeout = 60; break;
+    case SLEEPS_VERY_LONG: timeout = 600; break;
     }
     alarm(timeout);
   }
 
-  if( (flags&SF_ReturnPid) ) {
+  if( flags == RETURN_PID ) {
     return pid;
   }
 
@@ -426,18 +417,17 @@ pid_t m_system(int flags,char** argv)
     }
   }
 
-  if( !(flags&SF_MaySleep) ) {
+  if( flags & SLEEPS_FINITE ) {
     alarm(0);
     sigaction(SIGALRM,&so,NULL);
-  }
-
-  if(!(flags&SF_MaySleep) && rv) {
-    fprintf(stderr,"Command line was '");
-    while(*argv) {
-      fprintf(stderr,"%s",*argv++);
-      if (*argv) fputc(' ',stderr);
+    if(rv) {
+      fprintf(stderr,"Command '");
+      while(*argv) {
+	fprintf(stderr,"%s",*argv++);
+	if (*argv) fputc(' ',stderr);
+      }
+      fprintf(stderr,"' terminated with exit code %d\n",rv);
     }
-    fprintf(stderr,"'\n");
   }
 
   return rv;
@@ -474,7 +464,7 @@ int adm_attach(struct d_resource* res,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(0,argv);
+  return m_system(argv,SLEEPS_LONG);
 }
 
 struct d_option* find_opt(struct d_option* base,char* name)
@@ -501,10 +491,10 @@ int adm_resize(struct d_resource* res,char* unused)
   if(opt) ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
   argv[argc++]=0;
 
-  return m_system(0,argv);
+  return m_system(argv,SLEEPS_SHORT);
 }
 
-int adm_generic(struct d_resource* res,char* cmd)
+static int adm_generic(struct d_resource* res,char* cmd,int flags)
 {
   char* argv[20];
   int argc=0,i;
@@ -517,7 +507,30 @@ int adm_generic(struct d_resource* res,char* cmd)
   }
   argv[argc++]=0;
 
-  return m_system(0,argv);
+  return m_system(argv,flags);
+}
+
+int adm_generic_s(struct d_resource* res,char* cmd)
+{
+  return adm_generic(res,cmd,SLEEPS_SHORT);
+}
+
+int adm_generic_l(struct d_resource* res,char* cmd)
+{
+  return adm_generic(res,cmd,SLEEPS_LONG);
+}
+
+int adm_primary(struct d_resource* res,char* unused)
+{
+  int rv;
+  char *argv[] = { "/bin/bash", "-c", res->ind_cmd , NULL };
+
+  rv = adm_generic_s(res,"primary");
+
+  if(rv==21) {
+    rv = m_system(argv,SLEEPS_VERY_LONG);
+  }
+  return rv;
 }
 
 int adm_connect(struct d_resource* res,char* unused)
@@ -537,7 +550,7 @@ int adm_connect(struct d_resource* res,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(0,argv);
+  return m_system(argv,SLEEPS_SHORT);
 }
 
 int adm_syncer(struct d_resource* res,char* unused)
@@ -553,7 +566,7 @@ int adm_syncer(struct d_resource* res,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(0,argv);
+  return m_system(argv,SLEEPS_SHORT);
 }
 
 static int adm_up(struct d_resource* res,char* unused)
@@ -576,7 +589,7 @@ static int on_primary(struct d_resource* res ,char* flag)
   argv[argc++]=flag;
   argv[argc++]=0;
 
-  return m_system(0,argv);
+  return m_system(argv,SLEEPS_SHORT);
 }
 
 
@@ -593,7 +606,7 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  rv = m_system(SF_MaySleep,argv);
+  rv = m_system(argv,SLEEPS_FOREVER);
   
   if(rv == 5) { // Timer expired
     rv = on_primary(res,"--inc-timeout-expired");
@@ -752,7 +765,7 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
     make_options(opt);
     argv[argc++]=0;
 
-    pids[i++]=m_system(SF_MaySleep|SF_ReturnPid, argv);
+    pids[i++]=m_system(argv,RETURN_PID);
   }
 
   wtime = global_options.dialog_refresh ? 
@@ -884,7 +897,7 @@ void verify_ips(struct d_resource* res)
 	"fi >/dev/null",
 	my_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(0,argv);
+  ex = m_system(argv,SLEEPS_SHORT);
   free(argv[2]); argv[2] = NULL;
 
   if (ex != 0) {
@@ -918,7 +931,7 @@ void verify_ips(struct d_resource* res)
 	"fi >/dev/null",
 	my_ip,his_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(0,argv);
+  ex = m_system(argv,SLEEPS_SHORT);
   free(argv[2]); argv[2] = NULL;
   if (ex != 0) {
     ENTRY e, *ep;
@@ -1185,7 +1198,7 @@ int main(int argc, char** argv)
 	  exit(E_usage);
 	found:
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
-	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
+	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(E_exec_error);
 	  }
 	}

@@ -11,8 +11,15 @@
 #define E_exec_error     20
 #define E_thinko	 42 /* :) */
 
-#define SF_MaySleep       2
-#define SF_ReturnPid      4
+enum {
+  SLEEPS_FINITE        = 1,
+  SLEEPS_SHORT         = 2+1,
+  SLEEPS_LONG          = 4+1,
+  SLEEPS_VERY_LONG     = 8+1,
+
+  RETURN_PID           = 2,
+  SLEEPS_FOREVER       = 4,
+};
 
 /* for check_uniq(): Check for uniqueness of certain values...
  * comment out if you want to NOT choke on the first conflict */
@@ -65,7 +72,7 @@ extern int adm_attach(struct d_resource* ,char* );
 extern int adm_connect(struct d_resource* ,char* );
 extern int adm_resize(struct d_resource* ,char* );
 extern int adm_syncer(struct d_resource* ,char* );
-extern int m_system(int,char** );
+extern int m_system(char**,int );
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
 extern int check_uniq(const char* what, const char *fmt, ...);
