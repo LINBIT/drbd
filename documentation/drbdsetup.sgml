@@ -79,6 +79,13 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">on_primary</arg>
+      <arg>-h</arg>
+      <arg>-t</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">invalidate</arg>
     </cmdsynopsis>
     <cmdsynopsis>
@@ -434,6 +441,22 @@
       <para>
 	It is however, possible that both devices of a connected DRBD device
 	pair are in secondary state.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>on_primary</title>
+      <para>
+	This sets additional flags for the next
+	transition into primary state. The flags are only preserved as long 
+	as the <replaceable>device</replaceable> can not connect to its peer.
+	The possible flags are <option>--inc-human</option> and 
+	<option>--inc-timeout-expired</option>.
+      </para>
+      <para>
+	This is a conevenience command. It has the same effect as passing
+	this options to the following <option>primary</option> command
+	directly. See the <option>primary</option> command for a detailed
+	description of the two flags.
       </para>
     </refsect2>
     <refsect2>
