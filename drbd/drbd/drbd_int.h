@@ -90,13 +90,17 @@ extern int disable_io_hints;
 #define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
 #define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
 
+
+// Info: do not remove the spaces around the "," before ## 
+//       Otherwise this is portable from gcc-2.95 to gcc-3.3
 #define PRINTK(level,fmt,args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
-		(int)(mdev-drbd_conf), ##args)
+		(int)(mdev-drbd_conf) , ##args)
+
 #define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt , ##args)
-#define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt, ##args)
-#define INFO(fmt,args...) PRINTK(KERN_INFO, fmt, ##args)
-#define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt, ##args)
+#define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt , ##args)
+#define INFO(fmt,args...) PRINTK(KERN_INFO, fmt , ##args)
+#define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt , ##args)
 
 #ifdef DBG_ASSERTS
 extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
