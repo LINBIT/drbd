@@ -437,6 +437,7 @@ typedef struct {
 	u64         sector;
 	u64         block_id;
 	u32         blksize;
+	u32         pad;	//make sure packes it is a multiple of 8 Byte
 } Drbd_BlockAck_Packet __attribute((packed));
 
 typedef struct {
@@ -444,6 +445,7 @@ typedef struct {
 	u64         sector;
 	u64         block_id;
 	u32         blksize;
+	u32         pad;	//make sure packes it is a multiple of 8 Byte
 } Drbd_BlockRequest_Packet __attribute((packed));
 
 /*
@@ -456,6 +458,7 @@ typedef struct {
 typedef struct {
 	Drbd_Header head;
 	u32         barrier;   // may be 0 or a barrier number
+	u32         pad;	//make sure packes it is a multiple of 8 Byte
 } Drbd_Barrier_Packet  __attribute((packed));
 
 typedef struct {
@@ -485,6 +488,7 @@ typedef struct {
 	u32         skip_sync;
 	u32         sync_group;
 	u32         flags; // flags & 1 -> reply call drbd_send_param(mdev);
+	u32         pad;	//make sure packes it is a multiple of 8 Byte
 } Drbd_Parameter_Packet  __attribute((packed));
 
 typedef union {

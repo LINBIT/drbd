@@ -1627,6 +1627,13 @@ int __init drbd_init(void)
 	SZO(struct bio);
 	SZO(wait_queue_head_t);
 	SZO(spinlock_t);
+	SZO(Drbd_Header);
+	SZO(Drbd_Barrier_Packet);
+	SZO(Drbd_BarrierAck_Packet);
+	SZO(Drbd_SyncParam_Packet);
+	SZO(Drbd_Parameter_Packet);
+	SZO(Drbd_Data_Packet);
+	SZO(Drbd_BlockAck_Packet);
 	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);
 	return -EBUSY;
 #endif
