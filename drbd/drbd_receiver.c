@@ -685,7 +685,7 @@ int drbd_connect(drbd_dev *mdev)
 				for (retry=1; retry <= 10; retry++) {
 					// give the other side time to call
 					// bind() & listen()
-					current->state = TASK_INTERRUPTIBLE;
+					set_current_state(TASK_INTERRUPTIBLE);
 					schedule_timeout(HZ / 10);
 					msock=drbd_try_connect(mdev);
 					if(msock) goto connected;
@@ -1776,6 +1776,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			break;
 		} else {
 			spin_unlock(&mdev->send_task_lock);
+			set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout(HZ / 10);
 		}
 	}
