@@ -288,7 +288,7 @@ have_command()
 {
 	for NAME in $*
 	do
-		if [ ! `which $NAME 2>/dev/null` ]; then
+		if ! `which $NAME 2>/dev/null` ; then
 			failed "$0 needs the command '$NAME'"
 			exit 1
 		fi
