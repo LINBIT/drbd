@@ -107,11 +107,12 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
-	req->rq_status=RQ_INACTIVE;
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
+
+	req->rq_status=RQ_INACTIVE;
 
 	/* NICE: It would be nice if we could AND this condition.
 	   But we must also wake the asender if we are receiving 
@@ -172,7 +173,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 
-#if 1
+#if 0
 		{
 			static const char *strs[3] = 
 			{
@@ -181,10 +182,10 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			  [WRITE]="WRITE",
 			};
 
-			printk(KERN_ERR DEVICE_NAME "%d: do_request(cmd=%s,"
-			       "sec=%ld)\n",
+			printk(KERN_ERR DEVICE_NAME "%d: make_request(cmd=%s,"
+			       "sec=%ld, size=%d)\n",
 			       (int)(mdev-drbd_conf),
-			       strs[rw],bh->b_rsector);
+			       strs[rw],bh->b_rsector,bh->b_size);
 
 		}
 #endif
@@ -238,7 +239,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
 
-				
+			req->rq_status = RQ_DRBD_NOTHING;
 			} else {
 				mdev->mops->
 					set_block_status(mdev->mbds_id,
@@ -257,7 +258,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		return 0;
 	}
 
-	generic_make_request(rw,nbh); //? check this!
+	generic_make_request(rw,nbh);
 
 	return 0; /* Ok, bh arranged for transfer */
 }

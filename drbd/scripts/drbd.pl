@@ -193,6 +193,8 @@ sub read_config()
 
 sub doconfig($$)
 {
+
+#FIXME: Check returncodes, not output!
     my ($res,$mconf)=@_;
     my ($errtxt);
     

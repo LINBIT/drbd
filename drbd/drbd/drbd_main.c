@@ -915,7 +915,7 @@ int __init drbd_init(void)
 	}
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
-	/*blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);*/
+	/*   blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), NULL); */
 #else
 	blk_dev[MAJOR_NR].request_fn = DEVICE_REQUEST;
 #endif
@@ -955,10 +955,12 @@ void cleanup_module()
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-	blk_cleanup_queue(BLK_DEFAULT_QUEUE(MAJOR_NR));
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 	blk_dev[MAJOR_NR].request_fn = NULL;
+	/*
+#else
+	blk_cleanup_queue(BLK_DEFAULT_QUEUE(MAJOR_NR));
+	*/
 #endif
 
 	blksize_size[MAJOR_NR] = NULL;
