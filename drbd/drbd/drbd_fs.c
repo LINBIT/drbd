@@ -686,6 +686,9 @@ ONLY_IN_26(
 
 	D_ASSERT(MAJOR(inode->i_rdev) == MAJOR_NR);
 
+	if (unlikely(drbd_did_panic == DRBD_MAGIC))
+		return -EBUSY;
+
 	if( (err=down_interruptible(&mdev->device_mutex)) ) return err;
 	/*
 	 * please no 'return', use 'err = -ERRNO; goto out;'

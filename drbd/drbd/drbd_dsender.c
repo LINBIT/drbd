@@ -842,6 +842,11 @@ int drbd_worker(struct Drbd_thread *thi)
 	for (;;) {
 		intr = down_interruptible(&mdev->data.work.s);
 
+		if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
+			set_current_state(TASK_ZOMBIE);
+			schedule(); // commit suicide
+		}
+
 		if (intr) {
 			D_ASSERT(intr == -EINTR);
 			drbd_flush_signals(current);

@@ -164,6 +164,11 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	int local, remote;
 	int target_area_out_of_sync = FALSE; // only relevant for reads
 
+	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
+		drbd_bio_IO_error(bio);
+		return 0;
+	}
+
 	/* FIXME
 	 * not always true, e.g. someone trying to mount on Secondary
 	 * maybe error out immediately here?
@@ -195,8 +200,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 */
 	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
 	if (!req) {
-		/* THINK really only pass the error to the upper layers?
-		 * maybe we should rather panic reight here?
+		/* only pass the error to the upper layers.
+		 * if user cannot handle io errors, thats not our business.
 		 */
 		ERR("could not kmalloc() req\n");
 		drbd_bio_IO_error(bio);

@@ -435,6 +435,11 @@ STATIC int drbd_recv_short(drbd_dev *mdev, void *buf, size_t size)
 	struct msghdr msg;
 	int rv;
 
+	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
+		set_current_state(TASK_ZOMBIE);
+		schedule(); // commit suicide
+	}
+
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_iovlen = 1;
@@ -467,6 +472,11 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 	struct iovec iov;
 	struct msghdr msg;
 	int rv;
+
+	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
+		set_current_state(TASK_ZOMBIE);
+		schedule(); // commit suicide
+	}
 
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;

@@ -279,6 +279,28 @@ enum MetaDataIndex {
 #define GEN_CNT_SIZE 5
 #define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
 
+#define DRBD_PANIC 2
+/* do_panic alternatives:
+ *	0: panic();
+ *	1: machine_halt; SORRY, this DOES NOT WORK
+ *	2: prink(EMERG ), plus flag to fail all eventual drbd IO, plus panic()
+ */
+
+extern volatile int drbd_did_panic;
+
+#if    DRBD_PANIC == 0
+#define drbd_panic(x...) panic(x)
+#elif  DRBD_PANIC == 1
+#error "sorry , this does not work, please contribute"
+#else
+#define drbd_panic(x...) do {		\
+	printk(KERN_EMERG x);		\
+	drbd_did_panic = DRBD_MAGIC;	\
+	smp_mb();			\
+	panic(x);			\
+} while (0)
+#endif
+#undef DRBD_PANIC
 
 /***
  * on the wire
@@ -968,7 +990,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 		case Panic:
 			set_bit(DISKLESS,&mdev->flags);
 			smp_mb(); // but why is there smp_mb__after_clear_bit() ?
-			panic(DEVICE_NAME" : IO error on backing device!\n");
+			drbd_panic(DEVICE_NAME" : IO error on backing device!\n");
 			break;
 		case Detach:
 			ERR("Local IO failed. Detaching...\n");
