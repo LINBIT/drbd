@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <fcntl.h>
+#define __USE_LARGEFILE64
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>

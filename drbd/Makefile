@@ -25,6 +25,7 @@ REL_VERSION = $(word 3, $(shell grep REL_VERSION drbd_config.h))
 
 all:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i ; done
+	@ echo -e "\n\tBuild successful."
 
 doc:
 	$(MAKE) -C documentation doc
@@ -39,9 +40,8 @@ clean:
 
 distclean:
 	@ set -e; for i in $(ALLSUBDIRS); do $(MAKE) -C $$i distclean; done
-	rm -f *~
+	rm -f *~ .filelist
 	rm -rf dist
-
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
@@ -68,19 +68,30 @@ check_changelogs_up2date:
 	   up2date=false; fi ; \
 	$$up2date
 
-# maybe use a positive list intstead of exclude patterns?
-#tgz: check_changelogs_up2date
-tgz:
+update.filelist:
+	cvs status | grep -o "/drbd/drbd/[^,]*" | \
+		sed "/documentation/d;            \
+		     s/Attic\///;                 \
+		     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/" > .filelist
+	echo drbd-$(DIST_VERSION)/documentation >> .filelist
+	echo drbd-$(DIST_VERSION)/.filelist >> .filelist
+
+.filelist:
+	@ echo -e "\nto create the filelist:   make update.filelist\nyou need cvs access, though.\n"
+	@ false
+
+tgz: .filelist
 	cd scripts; ln -sf drbd datadisk
 	rm -f drbd-$(DIST_VERSION)
 	ln -s . drbd-$(DIST_VERSION)
 	tar -czvf drbd-$(DIST_VERSION).tar.gz \
-	--exclude drbd-$(DIST_VERSION)/drbd-$(DIST_VERSION) \
-	--exclude "*.o"  --exclude CVS --exclude ".*" \
-	--exclude "*~"  --exclude "*.tar.gz" \
-	--exclude drbdsetup --exclude dm --exclude config \
-	--exclude "report*" drbd-$(DIST_VERSION)/*
+	    --exclude CVS --exclude ".*" --exclude "*~" \
+            -T .filelist
 	rm drbd-$(DIST_VERSION)
+
+ifeq ($(FORCE),)
+tgz: check_changelogs_up2date doc
+endif
 
 # maybe dist/RPMS/$(ARCH) instead of i386 ?
 rpm: tgz
@@ -97,7 +108,7 @@ rpm: tgz
 	[ -f dist/SPECS/drbd.spec ] || \
 	  sed -e 's/^\(Packager:\).*/\1 ${USER}@${HOSTNAME}/;' drbd.spec \
 	  > dist/SPECS/drbd.spec
-	$(RPMBUILD) -bb \
+	$(RPMBUILD) -ba \
 	    --define "buildroot $(PWD)/dist/install" \
 	    --define "_topdir $(PWD)/dist" \
 	    $(PWD)/dist/SPECS/drbd.spec
