@@ -191,6 +191,7 @@ STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 	b=mdev->newest_barrier;
 
 	new_item->barrier = b;
+	new_item->rq_status |= RQ_DRBD_IN_TL;
 	list_add(&new_item->w.list,&b->requests);
 
 	if( b->n_req++ > mdev->conf.max_epoch_size ) {
@@ -213,10 +214,6 @@ STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t * item)
 	item->rq_status &= ~RQ_DRBD_IN_TL;
 
 	spin_unlock_irq(&mdev->tl_lock);
-	drbd_end_req(item,RQ_DRBD_SENT,ERF_NOTLD|1, drbd_req_get_sector(item));
-	drbd_set_out_of_sync(mdev,
-			     drbd_req_get_sector(item),
-			     drbd_req_get_size(item));
 }
 
 STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
@@ -785,6 +782,7 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
+		|| get_t_state(&mdev->asender) != Running
 		|| (volatile int)mdev->cstate < Connected;
 
 	if (drop_it)
@@ -891,14 +889,17 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		ok = _drbd_send_barrier(mdev);
 	if(ok) {
 		tl_add(mdev,req);
-		req->rq_status |= RQ_DRBD_IN_TL;
-
 		ok = (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p));
 		if(ok) {
 			ok = _drbd_send_zc_bio(mdev,&req->private_bio);
 		}
 		if(!ok) tl_cancel(mdev,req);
-
+	}
+	if (!ok) {
+		drbd_set_out_of_sync(mdev,
+				     drbd_req_get_sector(req),
+				     drbd_req_get_size(req));
+		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1, drbd_req_get_sector(item));
 	}
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
