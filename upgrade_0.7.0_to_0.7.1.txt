@@ -23,7 +23,7 @@ Plan A)
    or alternatively:
    perl -i_old -pe 's,/dev/nbd?,/dev/drbd,g' /etc/{drbd.conf,fstab,ha.d/haresources}
 
-  for i in `seq 0 15` ; do mknod /dev/drbd$i b 147 $i; done
+  for i in `seq 0 15` ; do mknod -m 0660 /dev/drbd$i b 147 $i; done
 
   * /etc/init.d/drbd start
   * migrate all services to the just upgraded node and 
