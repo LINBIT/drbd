@@ -1,4 +1,4 @@
-*
+/*
 -*- Linux-c -*-
    drbd.c
    Kernel module for 2.2.x/2.4.x Kernels
