@@ -50,7 +50,7 @@ RANGE(PORT,1,0xffff);
   RANGE(SNDBUF_SIZE, 1, 10000000);
 
   /* arbitrary. */
-  RANGE(MAX_BUFFERS, 32, 5000);
+  RANGE(MAX_BUFFERS, 32, 10000);
 
   /* 0 is disabled.
    * 200 should be more than enough even for very short timeouts */
