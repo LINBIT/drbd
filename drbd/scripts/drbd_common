@@ -25,10 +25,10 @@ fi
 if [ -z "$HAVE_SUCCESS" ]; then
 	# Does not react exactly like the "functions" ones
 	success() {
-		echo -ne [OK]\r
+		echo -n [OK]\r
 	}
 	failure() {
-		echo -ne [FAILED]\r
+		echo -n [FAILED]\r
 	}
 fi
 
@@ -288,7 +288,7 @@ have_command()
 {
 	for NAME in $*
 	do
-		if [ ! -z "`which $NAME 2>/dev/null`" ]; then
+		if [ -z "`which $NAME 2>/dev/null`" ]; then
 			failed "$0 needs the command '$NAME'"
 			exit 1
 		fi

@@ -83,7 +83,7 @@ case "$OPTION" in
 		fi
 
 		action "Becoming primary on DRBD resource $RESOURCE" \
-			drbdsetup $LOCAL_DEVICE PRI 2>/dev/null
+			drbdsetup $LOCAL_DEVICE pri 2>/dev/null
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
@@ -103,7 +103,7 @@ case "$OPTION" in
 		fi
 
 		action "Becoming secondary on DRBD resource $RESOURCE" \
-			drbdsetup $LOCAL_DEVICE SEC 2> /dev/null
+			drbdsetup $LOCAL_DEVICE sec 2> /dev/null
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
