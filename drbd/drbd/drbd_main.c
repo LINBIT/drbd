@@ -132,11 +132,6 @@ int drbd_log2(int i)
 
 
 /************************* The transfer log start */
-/* spinlock readme:
-   tl_dependence() only needs a read-lock and is called from interrupt time.
-   See Documentation/spinlocks.txt why this is valid.
-*/
-
 STATIC inline void tl_init(struct Drbd_Conf *mdev)
 {
 	struct drbd_barrier *b;
@@ -178,6 +173,9 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	}
 
 	spin_unlock_irq(&mdev->tl_lock);
+
+/*	printk(KERN_ERR DEVICE_NAME "%d: tl_add(%lu)\n",
+	(int)(mdev-drbd_conf),new_item->sector ); */
 }
 
 STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
@@ -202,6 +200,9 @@ STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 
 	spin_unlock_irq(&mdev->tl_lock);
 
+/*	printk(KERN_ERR DEVICE_NAME "%d: tl_add_barrier(%d)\n",
+	(int)(mdev-drbd_conf),bnr );*/
+
 	return bnr;
 }
 
@@ -209,12 +210,31 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size)
 {
 	struct drbd_barrier *b;
+	struct list_head *le;
+	struct drbd_request *r;
+
+/*	printk(KERN_ERR DEVICE_NAME "%d: tl_release(%d)\n",
+	(int)(mdev-drbd_conf),barrier_nr );*/
 
 	spin_lock_irq(&mdev->tl_lock);
 
 	b = mdev->oldest_barrier;
+
+	if( ! list_empty(&b->requests)) {
+		printk(KERN_ERR DEVICE_NAME "%d: Active requests in epoch!!\n",
+		       (int)(mdev-drbd_conf));
+
+		list_for_each(le,&b->requests) {
+			r=list_entry(le, struct drbd_request,list);
+			printk(KERN_ERR DEVICE_NAME "%d: Active %lu,%X !!\n",
+			       (int)(mdev-drbd_conf),r->sector,r->rq_status);
+			
+		}
+
+		list_del(&b->requests);
+	}
+
 	mdev->oldest_barrier = b->next;
-	list_del(&b->requests);
 
 	spin_unlock_irq(&mdev->tl_lock);
 
@@ -245,6 +265,9 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
 	unsigned long flags;
 	int r=TRUE;
+
+/*	printk(KERN_ERR DEVICE_NAME "%d: tl_dependence(%lu)\n",
+	(int)(mdev-drbd_conf),item->sector );*/
 
 	spin_lock_irqsave(&mdev->tl_lock,flags);
 

@@ -360,32 +360,35 @@ void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
 	}
 }
 
+/* It is important that the head list is really empty when returning,
+   from this function. Note, this function is called from all three
+   threads (receiver, dsender and asender). To ensure this I only allow
+   one thread at a time in the body of the function */
 int _drbd_process_ee(struct Drbd_Conf* mdev,struct list_head *head)
 {
-	struct list_head workset;
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
 	int ok=1;
 
 	MUST_HOLD(&mdev->ee_lock);
 
-	while(!list_empty(head)) {
-		list_add(&workset,head);
-		list_del(head);
-		INIT_LIST_HEAD(head);
+	while( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
-		while(!list_empty(&workset)) {
-			le = workset.next;
-			list_del(le);
-			e = list_entry(le, struct Tl_epoch_entry,list);
-			ok = ok && e->e_end_io(mdev,e);
-			spin_lock_irq(&mdev->ee_lock);
-			drbd_put_ee(mdev,e);
-			spin_unlock_irq(&mdev->ee_lock);
-		}
+		interruptible_sleep_on(&mdev->ee_wait);
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
+	while(!list_empty(head)) {
+		le = head->next;
+		list_del(le);
+		spin_unlock_irq(&mdev->ee_lock);
+		e = list_entry(le, struct Tl_epoch_entry,list);
+		ok = ok && e->e_end_io(mdev,e);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+	}
+
+	clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
 	wake_up_interruptible(&mdev->ee_wait);
 
 	return ok;

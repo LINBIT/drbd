@@ -280,16 +280,17 @@ struct Pending_read {
 };
 
 /* flag bits */
-#define ISSUE_BARRIER     0
-#define COLLECT_ZOMBIES   1
-#define SEND_PING         2
-#define WRITER_PRESENT    3
-#define START_SYNC        4
-#define DO_NOT_INC_CONCNT 5
-#define WRITE_HINT_QUEUED 6
-#define BLKSIZE_CHANGING  7
-#define PARTNER_DISKLESS  8
-#define SYNC_FINISHED     16
+#define ISSUE_BARRIER      0
+#define COLLECT_ZOMBIES    1
+#define SEND_PING          2
+#define WRITER_PRESENT     3
+#define START_SYNC         4
+#define DO_NOT_INC_CONCNT  5
+#define WRITE_HINT_QUEUED  6
+#define BLKSIZE_CHANGING   7
+#define PARTNER_DISKLESS   8
+#define SYNC_FINISHED      16
+#define PROCESS_EE_RUNNING 32
 
 struct send_timer_info {
 	struct timer_list s_timeout; /* send timeout */
