@@ -93,6 +93,10 @@
 # define DPRINTK(...)
 #endif
 
+// handy macro: DUMPP(somepointer) 
+#define DUMPP(A) printk(KERN_ERR DEVICE_NAME "%d: "#A"= %p\n",(int)(mdev-drbd_conf),A);
+
+
 /*
  * GFP_DRBD is used for allocations inside drbd_do_request.
  *

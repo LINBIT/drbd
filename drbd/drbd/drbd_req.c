@@ -70,11 +70,12 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	if( ! ( er_flags & ERF_NOTLD ) ) {
 		/*If this call is from tl_clear() we may not call tl_dependene,
 		  otherwhise we have a homegrown spinlock deadlock.   */
-		
-	        if(tl_dependence(mdev,req)) {
-	                set_bit(ISSUE_BARRIER,&mdev->flags);
+		if(tl_dependence(mdev,req)) {
+			set_bit(ISSUE_BARRIER,&mdev->flags);
 			wake_asender=1;
 		}
+	} else {
+		list_del(&req->list); // we have the tl_lock...
 	}
 	
 	spin_lock_irqsave(&mdev->bb_lock,flags);

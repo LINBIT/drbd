@@ -198,6 +198,7 @@ STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 
 	bnr = mdev->newest_barrier->br_number;
 	mdev->newest_barrier->next = b;
+	mdev->newest_barrier = b;
 
 	write_unlock_irq(&mdev->tl_lock);
 
@@ -282,7 +283,7 @@ int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
 
 void tl_clear(struct Drbd_Conf *mdev)
 {
-	struct list_head *le;
+	struct list_head *le,*tle;
 	struct drbd_barrier *b,*f,*new_first;
 	struct drbd_request *r;
 
@@ -296,10 +297,10 @@ void tl_clear(struct Drbd_Conf *mdev)
 
 	b=mdev->oldest_barrier;
 	while ( b ) {
-		list_for_each(le,&b->requests) {
-			r=list_entry(le, struct drbd_request,list);
+		list_for_each_safe(le, tle, &b->requests) {
+			r = list_entry(le, struct drbd_request,list);
 			if( (r->rq_status&0xfffe) != RQ_DRBD_SENT ) {
-				drbd_end_req(r,RQ_DRBD_SENT,1);
+				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1);
 				goto mark;
 			}
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
