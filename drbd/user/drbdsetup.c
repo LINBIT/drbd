@@ -703,24 +703,35 @@ int cmd_show(int drbd_fd,char** argv,int argc)
       return 0;
     }
 
-  printf("Lower device = %d:%d   ( %s )\n",
+  printf("Lower device: %02d:%02d   (%s)\n",
 	 cn.lower_device_major,
 	 cn.lower_device_minor,
 	 guess_dev_name(cn.lower_device_major,cn.lower_device_minor));
+  printf("Disk options:\n");
+  if( cn.disk_size_user ) printf(" disk-size = %d KB\n",cn.disk_size_user);
+  if( cn.do_panic ) printf(" do-panic\n");
 
   if( cn.cstate < Unconnected ) return 0;
 
   my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
   other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
-  printf("Local address = %s:%d\n",
+  printf("Local address: %s:%d\n",
 	 inet_ntoa(my_addr->sin_addr),
 	 ntohs(my_addr->sin_port));
-
-  printf("Remote address = %s:%d\n",
+  printf("Remote address: %s:%d\n",
 	 inet_ntoa(other_addr->sin_addr),
 	 ntohs(other_addr->sin_port));
-
-  printf("Wire protocol = %c\n",'A'-1+cn.nconf.wire_protocol); 
+  printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol); 
+  printf("Net options:\n");
+  if( cn.nconf.timeout ) 
+    printf(" timeout = %d.%d sec\n",cn.nconf.timeout/10,cn.nconf.timeout%10);
+  if( cn.nconf.sync_rate ) 
+    printf(" sync-rate = %d KB/sec\n",cn.nconf.sync_rate);
+  if( cn.nconf.skip_sync ) printf(" skip-sync\n");
+  if( cn.nconf.tl_size ) printf(" tl-size = %d\n",cn.nconf.tl_size);
+  if( cn.nconf.try_connect_int ) 
+    printf(" connect-int = %d sec\n",cn.nconf.try_connect_int);
+  if( cn.nconf.ping_int ) printf(" ping-int = %d sec\n",cn.nconf.ping_int);
 
   return 0;
 }
