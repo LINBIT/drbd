@@ -119,7 +119,7 @@ void check_meta_disk()
 %token TK_MINOR_COUNT TK_DISABLE_IO_HINTS
 %token TK_PROTOCOL TK_INCON_DEGR_CMD
 %token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK
-%token <txt> TK_INTEGER TK_STRING
+%token <txt> TK_INTEGER TK_STRING TK_WAIT_SYNC_TARGET
 %token <txt> TK_ON_IO_ERROR TK_SIZE
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
 %token <txt> TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
@@ -273,4 +273,5 @@ startup_stmts:	  /* empty */  { $$ = 0; }
 
 startup_stmt:	  TK_WFC_TIMEOUT      TK_INTEGER   { $$=new_opt($1,$2); }
 		| TK_DEGR_WFC_TIMEOUT TK_INTEGER   { $$=new_opt($1,$2); }
+		| TK_WAIT_SYNC_TARGET		   { $$=new_opt($1,0);  }
 		;

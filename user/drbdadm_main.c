@@ -81,8 +81,9 @@ static int adm_primary(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
-static int adm_wait_c(struct d_resource* ,char* );
+static int adm_wait(struct d_resource* ,char* );
 static int adm_wait_ci(struct d_resource* ,char* );
+static int adm_show_opt(struct d_resource* ,char* );
 static int sh_resources(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
 static int sh_dev(struct d_resource* ,char* );
@@ -126,7 +127,8 @@ struct adm_cmd cmds[] = {
   { "resize",            adm_resize,  0                  ,1,1 },
   { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },
-  { "wait_connect",      adm_wait_c,  0                  ,1,1 },
+  { "wait_connect",      adm_wait,    "wait_connect"     ,1,1 },
+  { "wait_sync",         adm_wait,    "wait_sync"        ,1,1 },
   { "state",             adm_generic_s,"state"           ,1,1 },
   { "cstate",            adm_generic_s,"cstate"          ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
@@ -136,7 +138,8 @@ struct adm_cmd cmds[] = {
   { "sh-dev",            sh_dev,      0                  ,0,1 },
   { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 },
   { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
-  { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
+  { "sh-md-idx",         sh_md_idx,   0                  ,0,1 },
+  { "sh-wait-st",        adm_show_opt,"wait-sync-target" ,0,1 }
 };
 
 
@@ -273,6 +276,36 @@ static int sh_md_dev(struct d_resource* res,char* unused)
 static int sh_md_idx(struct d_resource* res,char* unused)
 {
   printf("%s\n",res->me->meta_index);
+
+  return 0;
+}
+
+static char* get_opt_val(struct d_option* base,char* name,char* def)
+{
+  while(base) {
+    if(!strcmp(base->name,name)) {
+      return base->value;
+    }
+    base=base->next;
+  }
+  return def;
+}
+
+static int adm_show_opt(struct d_resource* res,char* optname)
+{
+  char *nf="unset"; // not_found
+  char *v;
+
+  do {
+    if((v=get_opt_val(res->net_options,optname,nf)) != nf) break;
+    if((v=get_opt_val(res->disk_options,optname,nf)) != nf) break;
+    if((v=get_opt_val(res->sync_options,optname,nf)) != nf) break;
+    if((v=get_opt_val(res->startup_options,optname,nf)) != nf) break;
+  } while(0);
+
+  if(v==NULL) v="set"; // boolean option, value == 0
+
+  printf("%s\n",v);
 
   return 0;
 }
@@ -594,7 +627,7 @@ static int on_primary(struct d_resource* res ,char* flag)
 }
 
 
-static int adm_wait_c(struct d_resource* res ,char* unused)
+static int adm_wait(struct d_resource* res ,char* cmd)
 {
   char* argv[20];
   struct d_option* opt;
@@ -602,9 +635,13 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
-  argv[argc++]="wait_connect";
+  argv[argc++]=cmd;
   opt=res->startup_options;
-  make_options(opt);
+  while(opt) {
+    if(strstr(opt->name,"timeout"))
+      ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
+    opt=opt->next;
+  }
   argv[argc++]=0;
 
   rv = m_system(argv,SLEEPS_FOREVER);
@@ -615,7 +652,6 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
 
   return rv;
 }
-
 
 /* In case a child exited, or exits, its return code is stored as
    negative number in the pids[i] array */
@@ -703,17 +739,6 @@ int gets_timeout(pid_t* pids, char* s, int size, int timeout)
    return pr;
 }
 
-static char* get_opt_val(struct d_option* base,char* name,char* def)
-{
-  while(base) {
-    if(!strcmp(base->name,name)) {
-      return base->value;
-    }
-    base=base->next;
-  }
-  return def;
-}
-
 void chld_sig_hand(int unused)
 {
   // do nothing. But interrupt systemcalls :)
@@ -763,7 +788,11 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
     argv[argc++]=res->me->device;
     argv[argc++]="wait_connect";
     opt=res->startup_options;
-    make_options(opt);
+    while(opt) {
+      if(strstr(opt->name,"timeout"))
+	ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
+      opt=opt->next;
+    }
     argv[argc++]=0;
 
     pids[i++]=m_system(argv,RETURN_PID);
