@@ -78,7 +78,8 @@ RV=0		# this means there were errors in the current device
 case "$1" in
   start)
   	# use -s in modprobe/rmmod to keep errors in the logs
-	action "Loading DRBD module" /sbin/modprobe -s drbd
+	action "Loading DRBD module" /sbin/modprobe -s drbd \
+            minor_count=`echo $DEVICES | wc --words` 
 	[ $? -ne 0 ] && exit 1
 
 	for D in $DEVICES; do
