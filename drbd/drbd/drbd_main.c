@@ -89,7 +89,7 @@ static devfs_handle_t devfs_handle;
 /* #define ES_SIZE_STATS 50 */
 
 int drbdd_init(struct Drbd_thread*);
-int drbd_syncer(struct Drbd_thread*);
+int drbd_dsender(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
 
 int drbd_init(void);
@@ -104,7 +104,7 @@ STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
 #define DEVICE_REQUEST drbd_do_request
 
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@gmx.at>");
-MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device");
+MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM(disable_io_hints,"i");
@@ -200,6 +200,8 @@ STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 
 	barrier_nr_issue++;
 
+	// THINK this is called with the send_mutex locked
+	// and may sleep ... can we do this?
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
@@ -384,6 +386,7 @@ STATIC void drbd_thread_init(drbd_dev *mdev, struct Drbd_thread *thi,
 void drbd_thread_start(struct Drbd_thread *thi)
 {
 	int pid;
+	drbd_dev *mdev = thi->mdev;
 
 	if (thi->task == NULL) {
 		thi->t_state = Running;
@@ -392,9 +395,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 
 		if (pid < 0) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: Couldn't start thread (%d)\n",
-			       (int)(thi->mdev-drbd_conf), pid);
+			ERR("Couldn't start thread (%d)\n", pid);
 			return;
 		}
 		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
@@ -409,6 +410,14 @@ void drbd_thread_start(struct Drbd_thread *thi)
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
 	if (!thi->task) return;
+	if (thi->task->state == -1 || thi->task->state == TASK_ZOMBIE) {
+		// unexpected death... clean up.
+		if (thi->mdev)
+			set_bit(COLLECT_ZOMBIES,&thi->mdev->flags);
+		init_MUTEX(&thi->mutex);
+		thi->task = NULL;
+		return;
+	}
 
 	if (restart)
 		thi->t_state = Restarting;
@@ -426,27 +435,59 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
+inline void block_but_drbd_sig(sigset_t *oldset)
+{
+	unsigned long flags;
+	LOCK_SIGMASK(current,flags);
+	*oldset = current->blocked;
+	/* THINK as long as we send directly from make_request,
+	 * I'd like to allow KILL, too, so the user can kill -9 hanging
+	 * write processes. but then again, if it does not succeed, it
+	 * _should_ timeout anyways... so what.
+	 */
+	siginitsetinv(&current->blocked,DRBD_SIG|SIGKILL);
+	RECALC_SIGPENDING(current);
+	UNLOCK_SIGMASK(current,flags);
+}
+
+inline void restore_old_sigset(sigset_t oldset)
+{
+	unsigned long flags;
+	LOCK_SIGMASK(current,flags);
+	// _never_ propagate this to anywhere...
+	sigdelset(&current->pending.signal, DRBD_SIG);
+	current->blocked = oldset;
+	RECALC_SIGPENDING(current);
+	UNLOCK_SIGMASK(current,flags);
+}
+
 STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
-		  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size)
+			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
+			  size_t size, unsigned msg_flags)
 {
 	int sent,ok;
+	sigset_t old_blocked;
 
-	D_ASSERT(h);
-	D_ASSERT(size);
-	if (!h || !size) return FALSE;
+	ERR_IF(!h) return FALSE;
+	ERR_IF(!size) return FALSE;
 
 	h->magic   = BE_DRBD_MAGIC;
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
-	sent = drbd_send(mdev,sock,h,size,0);
+	block_but_drbd_sig(&old_blocked);
+	sent = drbd_send(mdev,sock,h,size,msg_flags);
+	restore_old_sigset(old_blocked);
+
 	D_ASSERT(sent == size);
 	ok = ( sent == size );
 	if(!ok) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: short send cmd=%d size=%d sent=%d\n",
-		       (int)(mdev-drbd_conf), cmd, size, sent);
+		ERR("short sent %s size=%d sent=%d\n",
+		    cmdname(cmd), size, sent);
 	}
+	C_DBG(5,"on %s >>> %s l: %d\n",
+	    sock == mdev->msock ? "msock" : "sock",
+	    cmdname(cmd), size-sizeof(Drbd_Header));
 	return ok;
 }
 
@@ -454,8 +495,35 @@ STATIC int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
+	if (sock == mdev->sock) {
+		down(&mdev->sock_mutex);
+		spin_lock(&mdev->send_task_lock);
+		mdev->send_task=current;
+		spin_unlock(&mdev->send_task_lock);
+	} else
+		down(&mdev->msock_mutex);
+
+	ok = _drbd_send_cmd(mdev,sock,cmd,h,size,0);
+
+	if (sock == mdev->sock) {
+		up(&mdev->sock_mutex);
+		spin_lock(&mdev->send_task_lock);
+		mdev->send_task=NULL;
+		spin_unlock(&mdev->send_task_lock);
+	} else
+		up(&mdev->msock_mutex);
+	return ok;
+}
+
+// for Ping & PingAck
+STATIC int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
+		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
+{
+	int ok;
+	// FIXME down_trylock?
+	// down might schedule even though this routine says dontwait
 	down(sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
-	ok = _drbd_send_cmd(mdev,sock,cmd,h,size);
+	ok = _drbd_send_cmd(mdev,sock,cmd,h,size, MSG_DONTWAIT);
 	up  (sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
 	return ok;
 }
@@ -470,7 +538,7 @@ int drbd_send_sync_param(drbd_dev *mdev)
 	p.skip      = cpu_to_be32(mdev->sync_conf.skip);
 	p.group     = cpu_to_be32(mdev->sync_conf.group);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,SetSyncParam,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->sock,SyncParam,(Drbd_Header*)&p,sizeof(p));
 	if ( ok
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !mdev->sync_conf.skip )
@@ -517,7 +585,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	u32 *buffer,*bm;
 	Drbd_Header *p;
 
-	if(!mdev->mbds_id) return FALSE;
+	ERR_IF(!mdev->mbds_id) return FALSE;
 
 	bm_words = mdev->mbds_id->size/sizeof(u32);
 	bm = (u32*)mdev->mbds_id->bm;
@@ -548,8 +616,9 @@ int _drbd_send_barrier(drbd_dev *mdev)
 	/* tl_add_barrier() must be called with the sock_mutex aquired */
 	p.barrier=tl_add_barrier(mdev);
 
-	ok = _drbd_send_cmd(mdev,mdev->sock,Barrier,(Drbd_Header*)&p,sizeof(p));
-	if (ok) inc_pending(mdev);
+	inc_pending(mdev);
+	ok = _drbd_send_cmd(mdev,mdev->sock,Barrier,(Drbd_Header*)&p,sizeof(p),0);
+	if (!ok) dec_pending(mdev,HERE);
 	return ok;
 }
 
@@ -558,7 +627,7 @@ int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
 	int ok;
 	Drbd_BarrierAck_Packet p;
 
-	p.barrier  = barrier_nr; // CHECK cpu_to_be32 ?
+	p.barrier  = barrier_nr;
 	p.set_size = cpu_to_be32(set_size);
 
 	ok = drbd_send_cmd(mdev,mdev->msock,BarrierAck,(Drbd_Header*)&p,sizeof(p));
@@ -575,6 +644,13 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.block_id = e->block_id;
 	p.blksize  = cpu_to_be32(e->bh->b_size);
 
+	// YES, this happens. There is some race with the syncer!
+	if ((unsigned long)e->block_id <= 1) {
+		ERR("%s: e->block_id == %lx\n",__func__,(long)e->block_id);
+		return FALSE;
+	}
+
+	if (!mdev->msock || mdev->cstate < Connected) return FALSE;
 	ok = drbd_send_cmd(mdev,mdev->msock,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
@@ -600,6 +676,10 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 	size_t size = bh->b_size;
 	int offset;
 
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=current;
+	spin_unlock(&mdev->send_task_lock);
+
 	/*
 	 * CAUTION I do not yet understand this completely.
 	 * I thought I have to kmap the page first... ?
@@ -613,7 +693,14 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 		if (sent <= 0) break;
 		size   -= sent;
 		offset += sent;
-	} while(size > 0);
+	} while(size > 0 /* THINK && mdev->cstate >= Connected*/);
+
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=NULL;
+	spin_unlock(&mdev->send_task_lock);
+
+	if (sent < 0)
+		WARN("%s: size=%d sent==%d\n",__func__,size,sent);
 
 	ok = (size == 0);
 	if(likely(ok))
@@ -625,10 +712,11 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 {
 	int ok;
+	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 
-	D_ASSERT(req && req->bh );
-	D_ASSERT(req->bh->b_reqnext == NULL);
+	ERR_IF(!req || !req->bh) return FALSE;
+	ERR_IF(req->bh->b_reqnext != NULL) return FALSE;
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
@@ -652,13 +740,24 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
 	      for everything in the data structure.
 	*/
+	block_but_drbd_sig(&old_blocked);
 	down(&mdev->sock_mutex);
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=current;
+	spin_unlock(&mdev->send_task_lock);
+
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		_drbd_send_barrier(mdev);
+	// THINK swap with the if() above?
 	tl_add(mdev,req);
 	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bh(mdev,req->bh);
+
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=NULL;
+	spin_unlock(&mdev->send_task_lock);
 	up(&mdev->sock_mutex);
+	restore_old_sigset(old_blocked);
 	return ok;
 }
 
@@ -667,6 +766,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 		    struct Tl_epoch_entry *e)
 {
 	int ok;
+	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 
 	// D_ASSERT(FIXME)
@@ -679,73 +779,60 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
 	p.block_id = e->block_id;
 
+	block_but_drbd_sig(&old_blocked);
 	down(&mdev->sock_mutex);
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=current;
+	spin_unlock(&mdev->send_task_lock);
+
 	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bh(mdev,e->bh);
+
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=NULL;
+	spin_unlock(&mdev->send_task_lock);
 	up(&mdev->sock_mutex);
+	restore_old_sigset(old_blocked);
 	return ok;
 }
 
-STATIC void drbd_timeout(unsigned long arg)
-{
-	struct send_timer_info *ti = (struct send_timer_info *) arg;
-	//	int i;
-
-	if(ti->via_msock) {
-		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
-		       " on msock\n",
-		       (int)(ti->mdev-drbd_conf));
-
-		ti->timeout_happened=1;
-		drbd_queue_signal(DRBD_SIG, ti->task);
-		spin_lock(&ti->mdev->send_proc_lock);
-		if((ti=ti->mdev->send_proc)) {
-			ti->timeout_happened=1;
-			drbd_queue_signal(DRBD_SIG, ti->task);
-		}
-		spin_unlock(&ti->mdev->send_proc_lock);
-	} else {
-		/*
-		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
-		       " (pid=%d) requesting ping\n",
-		       (int)(ti->mdev-drbd_conf),ti->task->pid);
-		*/
-		set_bit(SEND_PING,&ti->mdev->flags);
-		drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
-
-		if(ti->restart) {
-			ti->s_timeout.expires = jiffies +
-				(ti->mdev->conf.timeout * HZ / 10);
-			add_timer(&ti->s_timeout);
-		}
-	}
-}
-
-STATIC void drbd_a_timeout(unsigned long arg)
-{
-	struct Drbd_Conf *mdev = (drbd_dev *) arg;
-
-	/*
-	printk(KERN_ERR DEVICE_NAME "%d: ack timeout detected (pc=%d)"
-	       " requesting ping\n",
-	       (int)(mdev-drbd_conf),atomic_read(&mdev->pending_cnt));
-	*/
-	set_bit(SEND_PING,&mdev->flags);
-	drbd_queue_signal(DRBD_SIG, mdev->asender.task);
-}
-
 /*
-  drbd_send distinqushes two cases:
+  drbd_send distinguishes two cases:
 
   Packets sent via the data socket "sock"
   and packets sent via the meta data socket "msock"
 
 		    sock                      msock
   -----------------+-------------------------+------------------------------
-  timeout           conf.timeout              avg round trip time(artt) x 4
+  timeout           conf.timeout / 2          conf.timeout / 2
   timeout action    send a ping via msock     Abort communication
 					      and close all sockets
 */
+
+/* called on sndtimeo
+ * returns TRUE if we should retry,
+ * FALSE if we think connection is dead,
+ * or someone signaled us.
+ */
+STATIC int drbd_retry_send(drbd_dev *mdev, struct socket *sock)
+{
+	long elapsed = (long)(jiffies - mdev->last_received);
+	DUMPLU(elapsed);
+	if ( signal_pending(current) || mdev->cstate <= WFConnection )
+		return FALSE;
+	if ( elapsed < mdev->conf.timeout*HZ/20 )
+		return TRUE;
+	if ( current != mdev->asender.task ) {
+		DBG("sock_sendmsg timed out, requesting ping\n");
+		/* FIXME can I safely send it myself right here,
+		 * or do I need to kill asender, and let it do this?
+		 */
+		request_ping(mdev);
+		return TRUE;
+	}
+	ERR("sock_sendmsg timed out, aborting connection\n");
+	return FALSE;
+}
 
 /*
  * you should have down()ed the appropriate [m]sock_mutex elsewhere!
@@ -754,17 +841,15 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	      void* buf, size_t size, unsigned msg_flags)
 {
 	mm_segment_t oldfs;
-	sigset_t oldset;
 	struct msghdr msg;
 	struct iovec iov;
-	unsigned long flags;
 	int rv,sent=0;
-	int app_got_sig=0;
-	struct send_timer_info ti;
-	int via_msock = (sock == mdev->msock);
+	int retry = 10;
 
 	if (!sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
+
+	// THINK  if (signal_pending) return ... ?
 
 	iov.iov_base = buf;
 	iov.iov_len  = size;
@@ -777,30 +862,6 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	msg.msg_controllen = 0;
 	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
 
-	/* THINK
-	 * we should be able to cope without the timer,
-	 * using sk->sndtimeo and the return value from sock_sendmsg.
-	 */
-
-	ti.mdev=mdev;
-	ti.timeout_happened=0;
-	ti.via_msock=via_msock;
-	ti.task=current;
-	ti.restart=1;
-	if(!via_msock) {
-		spin_lock(&mdev->send_proc_lock);
-		mdev->send_proc=&ti;
-		spin_unlock(&mdev->send_proc_lock);
-	}
-
-	if (mdev->conf.timeout) {
-		init_timer(&ti.s_timeout);
-		ti.s_timeout.function = drbd_timeout;
-		ti.s_timeout.data = (unsigned long) &ti;
-		ti.s_timeout.expires = jiffies + mdev->conf.timeout*HZ/20;
-		add_timer(&ti.s_timeout);
-	}
-
 	/* FIXME remove. since nbd does not do this either,
 	 * it seems to be safe ... well, or *they* have a bug there :-)
 	 * lock_kernel();  //  check if this is still necessary
@@ -808,37 +869,16 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
-	LOCK_SIGMASK(current,flags);
-	oldset = current->blocked;
-	sigfillset(&current->blocked);
-	/* THINK as long as we send directly from make_request,
-	 * I'd like to allow KILL, too, so the user can kill -9 hanging
-	 * write processes. but then again, if it does not succeed, it
-	 * _should_ timeout anyways... so what.
-	 */
-	sigdelset(&current->blocked,DRBD_SIG);
-	RECALC_SIGPENDING(current);
-	UNLOCK_SIGMASK(current,flags);
-
 	do {
 		/* STRANGE
 		 * tcp_sendmsg does _not_ use its size parameter at all ???
 		 */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
-		if ( rv == -ERESTARTSYS) {
-			LOCK_SIGMASK(current,flags);
-			if (sigismember(&current->pending.signal, DRBD_SIG)) {
-				sigdelset(&current->pending.signal, DRBD_SIG);
-				RECALC_SIGPENDING(current);
-				UNLOCK_SIGMASK(current,flags);
-				if(ti.timeout_happened) {
-					break;
-				} else {
-					app_got_sig=1;
-					continue;
-				}
-			}
-			UNLOCK_SIGMASK(current,flags);
+		if (rv == -EINTR) {
+			if (drbd_retry_send(mdev,sock) && retry--)
+				continue;
+			else
+				break;
 		}
 		D_ASSERT(rv != 0);
 		if (rv < 0) break;
@@ -850,46 +890,14 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	set_fs(oldfs);
 	// unlock_kernel();
 
-	ti.restart=0;
-
-	if (mdev->conf.timeout) {
-		del_timer_sync(&ti.s_timeout);
-	}
-
-	if(!via_msock) {
-		spin_lock(&mdev->send_proc_lock);
-		mdev->send_proc=NULL;
-		spin_unlock(&mdev->send_proc_lock);
-	}
-
-
-	LOCK_SIGMASK(current,flags);
-	current->blocked = oldset;
-	if(app_got_sig) {
-		sigaddset(&current->pending.signal, DRBD_SIG);
-	} else {
-		sigdelset(&current->pending.signal, DRBD_SIG);
-	}
-	RECALC_SIGPENDING(current);
-	UNLOCK_SIGMASK(current,flags);
-
-	if (/*rv == -ERESTARTSYS &&*/ ti.timeout_happened) {
-		printk(KERN_DEBUG DEVICE_NAME
-		       "%d: send timed out!! (pid=%d)\n",
-		       (int)(mdev-drbd_conf),current->pid);
-
-		set_cstate(mdev,Timeout);
-
-		drbd_thread_restart_nowait(&mdev->receiver);
-
-		return -1002;
-	}
-
 	if (rv <= 0) {
-		printk(KERN_ERR DEVICE_NAME "%d: sock_sendmsg returned %d\n",
-		       (int)(mdev-drbd_conf),rv);
-
-		set_cstate(mdev,BrokenPipe);
+		if (rv != -EINTR) {
+			ERR("%s_sendmsg returned %d\n",
+			    sock == mdev->msock ? "msock" : "sock",
+			    rv);
+			set_cstate(mdev, BrokenPipe);
+		} else
+			set_cstate(mdev, Timeout);
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
@@ -943,6 +951,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 STATIC void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (drbd_dev*)data;
+	Drbd_Header h;
 	int i;
 
 	/* In case the receiver calls run_task_queue(&tq_disk) itself,
@@ -960,7 +969,7 @@ STATIC void drbd_send_write_hint(void *data)
 		}
 	}
 
-	drbd_send_short_cmd(mdev,WriteHint);
+	drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h));
 	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }
 
@@ -1071,7 +1080,7 @@ int __init drbd_init(void)
 		drbd_conf[i].mbds_id = bm_init(MKDEV(MAJOR_NR, i));
 		/* If the WRITE_HINT_QUEUED flag is set but it is not
 		   actually queued the functionality is completely disabled */
-		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
+		if(disable_io_hints) drbd_conf[i].flags=1<<WRITE_HINT_QUEUED;
 		else drbd_conf[i].flags=0;
 		drbd_conf[i].rs_total=0;
 		//drbd_conf[i].rs_left=0;
@@ -1080,14 +1089,11 @@ int __init drbd_init(void)
 		//drbd_conf[i].rs_mark_time=0;
 		drbd_conf[i].rs_lock = SPIN_LOCK_UNLOCKED;
 		tl_init(&drbd_conf[i]);
-		drbd_conf[i].a_timeout.function = drbd_a_timeout;
-		drbd_conf[i].a_timeout.data = (unsigned long)(drbd_conf+i);
-		init_timer(&drbd_conf[i].a_timeout);
 		init_MUTEX(&drbd_conf[i].sock_mutex);
 		init_MUTEX(&drbd_conf[i].msock_mutex);
 		init_MUTEX(&drbd_conf[i].ctl_mutex);
-		drbd_conf[i].send_proc=NULL;
-		drbd_conf[i].send_proc_lock = SPIN_LOCK_UNLOCKED;
+		drbd_conf[i].send_task=NULL;
+		drbd_conf[i].send_task_lock = SPIN_LOCK_UNLOCKED;
 		drbd_thread_init(drbd_conf+i, &drbd_conf[i].receiver, drbdd_init);
 		drbd_thread_init(drbd_conf+i, &drbd_conf[i].dsender, drbd_dsender);
 		drbd_thread_init(drbd_conf+i, &drbd_conf[i].asender, drbd_asender);
@@ -1258,9 +1264,15 @@ void cleanup_module()
 
 	mempool_destroy(drbd_request_mempool);
 	mempool_destroy(drbd_pr_mempool);
-	kmem_cache_destroy(drbd_request_cache);
-	kmem_cache_destroy(drbd_pr_cache);
-	kmem_cache_destroy(drbd_ee_cache);
+	if (kmem_cache_destroy(drbd_request_cache))
+		printk(KERN_ERR DEVICE_NAME
+		       ": kmem_cache_destroy(drbd_request_cache) FAILED\n");
+	if (kmem_cache_destroy(drbd_pr_cache))
+		printk(KERN_ERR DEVICE_NAME
+		       ": kmem_cache_destroy(drbd_pr_cache) FAILED\n");
+	if (kmem_cache_destroy(drbd_ee_cache))
+		printk(KERN_ERR DEVICE_NAME
+		       ": kmem_cache_destroy(drbd_ee_cache) FAILED\n");
 }
 
 
@@ -1389,8 +1401,9 @@ void bm_cleanup(struct BitMap* sbm)
    the bitmap (4K). In case we have to set a bit, we 'round up',
    in case we have to clear a bit we do the opposit.
    It returns the number of sectors that where marked dirty. */
-int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
+int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 {
+	struct BitMap* sbm = mdev->mbds_id;
 	unsigned long* bm;
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector = ( sector + (size>>9) - 1 );
@@ -1404,6 +1417,9 @@ int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
 
+	// WARN("set=%d sbnr=%ld ebnr=%ld size=%d\n",bit,sbnr,ebnr,size);
+	ERR_IF ((sbnr >> 8) >= sbm->size) return FALSE;
+	ERR_IF ((ebnr >> 8) >= sbm->size) return FALSE;
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
@@ -1550,8 +1566,7 @@ void drbd_md_write(drbd_dev *mdev)
 	filp_close(fp,NULL);
 	if (i==sizeof(buffer)) return;
  err:
-	printk(KERN_ERR DEVICE_NAME "%d: Error writing state file\n\"%s\"\n",
-	       (int)(mdev-drbd_conf),fname);
+	ERR("Error writing state file\n\"%s\"\n", fname);
 	return;
 }
 
@@ -1581,8 +1596,7 @@ void drbd_md_read(drbd_dev *mdev)
 	mdev->la_size = be64_to_cpu(buffer.la_size);
 	return;
  err:
-	printk(KERN_INFO DEVICE_NAME "%d: Creating state file\n\"%s\"\n",
-	       (int)(mdev-drbd_conf),fname);
+	INFO("Creating state file\n\"%s\"\n",fname);
 	for(i=HumanCnt;i<=ArbitraryCnt;i++) mdev->gen_cnt[i]=1;
 	mdev->gen_cnt[Flags]=MDF_Consistent;
 	drbd_md_write(mdev);
@@ -1661,6 +1675,7 @@ void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
 	mdev->gen_cnt[order]++;
 }
 
+// XXX maybe use one of the functions from signal.h
 void drbd_queue_signal(int signal,struct task_struct *task)
 {
 	unsigned long flags;

@@ -105,6 +105,7 @@ check_kernel_config:
 ifeq ($(CONFIGURED_KERNVER),)
 	@echo 
 	@echo "Kernel configuration problem, see warnings above."
+	@echo "If there are no warnings, check permissions on the kernel source tree."
 	@false
 else
 ifneq ($(CONFIGURED_KERNVER),$(KERNVER))

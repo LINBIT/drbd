@@ -181,6 +181,9 @@ void mempool_destroy(mempool_t *pool)
 	if (!pool)
 		return;
 
+	if (pool->curr_nr != pool->min_nr)
+		printk(KERN_ERR "drbd: in %s(%p): curr_nr(%d) != min_nr(%d)\n",
+		       __func__,pool,pool->curr_nr,pool->min_nr);
 	while (!list_empty(&pool->elements)) {
 		mempool_node_t *node;
 

@@ -11,11 +11,11 @@
    Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
-   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-	Code to prevent zombie threads.
-
    Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>.
 	main contributor.
+
+   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
+	Code to prevent zombie threads.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -69,8 +69,7 @@ void *to_virt(unsigned long phys)
 void drbd_assert_breakpoint(drbd_dev *mdev, char *exp,
 			    char *file, int line)
 {
-	printk(KERN_ERR DEVICE_NAME"%d: ASSERT( %s ) in %s:%d\n", \
-	       (int)(mdev-drbd_conf),exp,file,line);
+	ERR("ASSERT( %s ) in %s:%d\n", exp, file, line);
 }
 #endif
 
@@ -199,7 +198,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	drbd_al_complete_io(mdev,DRBD_BH_SECTOR(bh));
 
 	//	if(wake_asender) {
-		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
+	wake_asender(mdev);
 	//	}
 	// TODO: Think if we should implement a short-cut here.
 }
@@ -240,9 +239,7 @@ STATIC void _drbd_alloc_ee(drbd_dev *mdev,struct page* page)
 		bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
 
 		if( e == NULL || bh == NULL ) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: could not kmalloc() new ee\n",
-			       (int)(mdev-drbd_conf));
+			ERR("could not kmalloc() new ee\n");
 			BUG();
 		}
 
@@ -273,7 +270,7 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 	struct page *page;
 
 	page=alloc_page(mask);
-	if(!page) return FALSE;
+	ERR_IF(!page) return FALSE;
 
 	_drbd_alloc_ee(mdev,page);
 	/*
@@ -470,7 +467,7 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 		drbd_put_ee(mdev,e);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id)) {
-			dec_unacked(mdev);
+			dec_unacked(mdev,HERE);
 		}
 
 	}
@@ -491,10 +488,9 @@ STATIC void drbd_wait_ee(drbd_dev *mdev,struct list_head *head,
 		le = head->next;
 		e = list_entry(le, struct Tl_epoch_entry,list);
 		if(!buffer_locked(e->bh)) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: unlocked bh in ative_ee/sync_ee/read_ee\n"
-			       "(BUG?) Moving bh=%p to done_ee/rdone_ee\n",
-			       (int)(mdev-drbd_conf),e->bh);
+			ERR( "unlocked bh in ative_ee/sync_ee/read_ee\n"
+			     "(BUG?) Moving bh=%p to done_ee/rdone_ee\n",
+			     e->bh );
 			list_del(le);
 			list_add(le,to);
 			continue;
@@ -529,24 +525,12 @@ STATIC void drbd_wait_ee(drbd_dev *mdev,struct list_head *head,
 	spin_unlock_irq(&mdev->ee_lock);
 }
 
-STATIC void drbd_c_timeout(unsigned long arg)
-{
-	struct task_struct *p = (struct task_struct *) arg;
-
-	/*
-	printk(KERN_INFO DEVICE_NAME" : retrying to connect(pid=%d)\n",p->pid);
-	*/
-
-	drbd_queue_signal(DRBD_SIG,p);
-
-}
-
-STATIC struct socket* drbd_accept(struct socket* sock)
+STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 {
 	struct socket *newsock;
 	int err = 0;
 
-	lock_kernel();
+	//lock_kernel(); tcp stack has per socket locks now
 
 	err = sock->ops->listen(sock, 5);
 	if (err)
@@ -556,46 +540,22 @@ STATIC struct socket* drbd_accept(struct socket* sock)
 		goto out;
 
 	newsock->type = sock->type;
-
-	newsock->ops = sock->ops;
-
-	if (err < 0)
-		goto out_release;
+	newsock->ops  = sock->ops;
 
 	err = newsock->ops->accept(sock, newsock, 0);
 	if (err < 0)
 		goto out_release;
 
-	unlock_kernel();
+	// unlock_kernel();
 	return newsock;
 
       out_release:
 	sock_release(newsock);
       out:
 	unlock_kernel();
-	if(err != -ERESTARTSYS)
-		printk(KERN_ERR DEVICE_NAME " : accept failed! %d\n", err);
+	if(err != -EAGAIN && err != -EINTR)
+		ERR("accept failed! %d\n", err);
 	return 0;
-}
-
-struct idle_timer_info {
-	struct Drbd_Conf *mdev;
-	struct timer_list idle_timeout;
-	int restart;
-};
-
-
-STATIC void drbd_idle_timeout(unsigned long arg)
-{
-	struct idle_timer_info* ti = (struct idle_timer_info *)arg;
-
-	set_bit(SEND_PING,&ti->mdev->flags);
-	drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
-	if(ti->restart) {
-		ti->idle_timeout.expires = jiffies +
-			ti->mdev->conf.ping_int * HZ;
-		add_timer(&ti->idle_timeout);
-	}
 }
 
 int drbd_recv(drbd_dev *mdev, struct socket* sock,
@@ -604,9 +564,8 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	mm_segment_t oldfs;
 	struct iovec iov;
 	struct msghdr msg;
-	struct idle_timer_info ti;
+	char * sockname = (sock == mdev->msock ? "msock" : "sock");
 	int rv;
-	int via_msock = (sock == mdev->msock);
 
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
@@ -622,35 +581,68 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
-	// TODO wouldn't sock->rcvtimeo do?
-	if (mdev->conf.ping_int && !via_msock ) {
-		init_timer(&ti.idle_timeout);
-		ti.idle_timeout.function = drbd_idle_timeout;
-		ti.idle_timeout.data = (unsigned long) &ti;
-		ti.idle_timeout.expires =
-		    jiffies + mdev->conf.ping_int * HZ;
-		ti.mdev=mdev;
-		ti.restart=1;
-		add_timer(&ti.idle_timeout);
-	}
+	for(;;) {
+		rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+		if (rv == size) break;
 
-	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+		/* Note:
+		 * ECONNRESET   other side closed the connection
+		 * ERESTARTSYS  (on  sock) we got a signal
+		 * EINTR        (on msock) we got a signal
+		 * EAGAIN       (on msock) rcvtimeo expired
+		 */
+		if (rv == -EAGAIN) {
+			D_ASSERT(sock == mdev->msock);
+			D_ASSERT(current == mdev->asender.task);
+
+			// FIXME decide this more elegantly
+			if ( mdev->msock->sk->rcvtimeo == mdev->conf.ping_int*HZ) {
+				//DUMPLU(jiffies - mdev->last_received);
+				C_DBG(0,"recv_header timed out, sending ping\n");
+				// goto do_ping;
+			} else {
+				ERR("PingAck did not arrive\n");
+				break;
+			}
+		} else if (rv == -EINTR) {
+			D_ASSERT(sock == mdev->msock);
+			D_ASSERT(current == mdev->asender.task);
+
+			unsigned long flags = 0;
+			LOCK_SIGMASK(current,flags);
+			if (sigismember(&current->pending.signal, DRBD_SIG)) {
+				sigdelset(&current->pending.signal, DRBD_SIG);
+				RECALC_SIGPENDING(current);
+			}
+			UNLOCK_SIGMASK(current,flags);
+			break;
+		} else if (rv < 0) {
+			if (rv == -ECONNRESET)
+				INFO("%s was reset by peer\n",sockname);
+			else if (rv != -ERESTARTSYS)
+				ERR("%s_recvmsg returned %d\n",sockname,rv);
+			break;
+		} else if (rv == 0) {
+			INFO("%s was shut down by peer\n",sockname);
+			break;
+		} else {
+			ERR("logic error: %s_recvmsg returned %d\n",
+			    sockname, rv);
+			break;
+		}
+
+		// actually no goto needed, but it makes it more obvious
+		// do_ping:
+		if (!drbd_send_ping(mdev))
+			break;
+		// full ack timeout
+		mdev->msock->sk->rcvtimeo = mdev->conf.timeout*HZ/10;
+
+	};
 
 	set_fs(oldfs);
 	// unlock_kernel();
 
-	if (mdev->conf.ping_int && !via_msock) {
-		ti.restart=0;
-		del_timer_sync(&ti.idle_timeout);
-		ti.idle_timeout.function=0;
-	}
-
-	/* ECONNRESET = other side closed the connection
-	   ERESTARTSYS = we got a signal. */
-	if (rv < 0 && rv != -ECONNRESET && rv != -ERESTARTSYS) {
-		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
-		       (int)(mdev-drbd_conf),rv);
-	}
 	return rv;
 }
 
@@ -662,15 +654,17 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME "%d: sock_creat(..)=%d\n",
-		       (int)(mdev-drbd_conf), err);
+		ERR("sock_creat(..)=%d\n", err);
 	}
 
-	lock_kernel();
+	sock->sk->rcvtimeo =
+	sock->sk->sndtimeo =  mdev->conf.try_connect_int*HZ;
+
+	//lock_kernel(); no No NO! connect may sleep!
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) mdev->conf.other_addr,
 				 mdev->conf.other_addr_len, 0);
-	unlock_kernel();
+	//unlock_kernel();
 
 	if (err) {
 		sock_release(sock);
@@ -683,52 +677,31 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 {
 	int err;
 	struct socket *sock,*sock2;
-	struct timer_list accept_timeout;
 
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock2);
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: sock_creat(..)=%d\n",(int)(mdev-drbd_conf),err);
+		ERR("sock_creat(..)=%d\n", err);
+		// FIXME return NULL ?
 	}
 
 	sock2->sk->reuse=1; /* SO_REUSEADDR */
+	sock2->sk->rcvtimeo =
+	sock2->sk->sndtimeo =  mdev->conf.try_connect_int*HZ;
 
-	lock_kernel();
+	//lock_kernel(); tcp stack has per socket locks now
 	err = sock2->ops->bind(sock2,
 			      (struct sockaddr *) mdev->conf.my_addr,
 			      mdev->conf.my_addr_len);
-	unlock_kernel();
+	//unlock_kernel();
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: Unable to bind (%d)\n",(int)(mdev-drbd_conf),err);
+		ERR("Unable to bind (%d)\n", err);
 		sock_release(sock2);
 		set_cstate(mdev,Unconnected);
 		return 0;
 	}
-	if(mdev->conf.try_connect_int) {
-		init_timer(&accept_timeout);
-		accept_timeout.function = drbd_c_timeout;
-		accept_timeout.data = (unsigned long) current;
-		accept_timeout.expires = jiffies +
-			mdev->conf.try_connect_int * HZ;
-		add_timer(&accept_timeout);
-	}
 
-	sock = drbd_accept(sock2);
+	sock = drbd_accept(mdev,sock2);
 	sock_release(sock2);
-	if(mdev->conf.try_connect_int) {
-		unsigned long flags;
-		del_timer_sync(&accept_timeout);
-		LOCK_SIGMASK(current,flags);
-		if (sigismember(&current->pending.signal, DRBD_SIG)) {
-			sigdelset(&current->pending.signal, DRBD_SIG);
-			RECALC_SIGPENDING(current);
-			UNLOCK_SIGMASK(current,flags);
-			if(sock) sock_release(sock);
-			return 0;
-		}
-		UNLOCK_SIGMASK(current,flags);
-	}
 
 	return sock;
 }
@@ -741,9 +714,7 @@ int drbd_connect(drbd_dev *mdev)
 	if (mdev->cstate==Unconfigured) return 0;
 
 	if (mdev->sock) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: There is already a socket!! \n",
-		       (int)(mdev-drbd_conf));
+		ERR("There is already a socket!!\n");
 		return 0;
 	}
 
@@ -766,9 +737,7 @@ int drbd_connect(drbd_dev *mdev)
 					schedule_timeout(HZ / 10);
 					msock=drbd_try_connect(mdev);
 					if(msock) goto connected;
-					printk(KERN_DEBUG DEVICE_NAME
-					       "%d: msock try_connect %d\n",
-					       (int)(mdev-drbd_conf), retry);
+					ERR("msock try_connect %d\n",retry);
 				}
 				sock_release(sock);
 			}
@@ -788,26 +757,28 @@ int drbd_connect(drbd_dev *mdev)
 	msock->sk->allocation = GFP_DRBD;
 
 	sock->sk->priority=TC_PRIO_BULK;
-
 	sock->sk->tp_pinfo.af_tcp.nonagle=0;
-
-	sock->sk->sndbuf = mdev->conf.sndbuf_size ;
-
-	//sock->sk->sndtimeo = mdev->conf.timeout*HZ/5;
+	// FIXME fold to limits. should be done in drbd_ioctl
+	sock->sk->sndbuf = mdev->conf.sndbuf_size;
+	sock->sk->rcvbuf = mdev->conf.sndbuf_size;
+	sock->sk->sndtimeo = mdev->conf.timeout*HZ/20;
+	sock->sk->rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
 	msock->sk->priority=TC_PRIO_INTERACTIVE;
-
 	msock->sk->tp_pinfo.af_tcp.nonagle=1;
-
 	msock->sk->sndbuf = 2*32767;
+	msock->sk->sndtimeo = mdev->conf.timeout*HZ/20;
+	msock->sk->rcvtimeo = mdev->conf.ping_int*HZ;
 
 	mdev->sock = sock;
 	mdev->msock = msock;
+	mdev->last_received = jiffies;
+
+	set_cstate(mdev,WFReportParams);
 
 	drbd_thread_start(&mdev->asender);
 	drbd_thread_start(&mdev->dsender);
 
-	set_cstate(mdev,WFReportParams);
 	drbd_send_param(mdev);
 
 	return 1;
@@ -816,30 +787,95 @@ int drbd_connect(drbd_dev *mdev)
 STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 {
 	int r;
+
+	if (signal_pending(current) && current == mdev->asender.task) {
+		// shortcut only, same effect as if we first go up and
+		// down the helper function calls.
+		unsigned long flags = 0;
+		int still_pending = FALSE;
+		LOCK_SIGMASK(current,flags);
+		// XXX maybe rather flush_signals() ?
+		if (sigismember(&current->pending.signal, DRBD_SIG)) {
+			sigdelset(&current->pending.signal, DRBD_SIG);
+			RECALC_SIGPENDING(current);
+			still_pending = signal_pending(current);
+		}
+		UNLOCK_SIGMASK(current,flags);
+
+		DBG("Signal Pending in %s\n",__func__);
+
+		h->command = WakeAsender;
+		h->length  = 0;
+		// fail if it was not our private signal.
+		return !still_pending;
+	}
+
 	r = drbd_recv(mdev,sock,h,sizeof(*h));
-	h->command = be16_to_cpu(h->command);
-	h->length  = be16_to_cpu(h->length);
+	if (r == -EINTR && sock == mdev->msock) {
+		h->command = WakeAsender;
+		h->length  = 0;
+		return TRUE;
+	}
+
 	if (unlikely( r != sizeof(*h) )) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: short read expecting header: r=%d\n",
-		       (int)(mdev-drbd_conf), r );
+		ERR("short read expecting header on %s: r=%d\n",
+		    sock == mdev->msock ? "msock" : "sock",
+		    r);
 		return FALSE;
 	};
+	h->command = be16_to_cpu(h->command);
+	h->length  = be16_to_cpu(h->length);
 	if (unlikely( h->magic != BE_DRBD_MAGIC )) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: magic?? m: 0x%lx "
-		       "c: %d l: %d\n",
-		       (int)(mdev-drbd_conf),
-		       (long)be32_to_cpu(h->magic),
-		       h->command, h->length);
+		ERR("magic?? m: 0x%lx c: %d l: %d\n",
+		    (long)be32_to_cpu(h->magic),
+		    h->command, h->length);
 		return FALSE;
 	}
-#if 0
-	printk(KERN_DEBUG DEVICE_NAME
-	       "%d: c: %d l: %d\n",
-	       (int)(mdev-drbd_conf),
-	       h->command, h->length);
-#endif
+	mdev->last_received = jiffies;
+	if (sock == mdev->msock) {
+		// restore idle timeout
+		mdev->msock->sk->rcvtimeo = mdev->conf.ping_int*HZ;
+	}
+	C_DBG(5,"on %s <<< %s l: %d\n",
+	    sock == mdev->msock ? "msock" : "sock",
+	    cmdname(h->command), h->length);
+	return TRUE;
+}
+
+STATIC int receive_BlockAck(drbd_dev *mdev, Drbd_Header* h)
+{
+	int rv;
+	drbd_request_t *req;
+	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+
+	ERR_IF (h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+
+	rv = drbd_recv(mdev, mdev->msock, PAYLOAD_P(h), h->length);
+	ERR_IF (rv != h->length) return FALSE;
+
+	if( is_syncer_blk(mdev,p->block_id)) {
+		drbd_set_in_sync(mdev,
+				 be64_to_cpu(p->sector),
+				 be32_to_cpu(p->blksize));
+	} else {
+		req=(drbd_request_t*)(long)p->block_id;
+
+		ERR_IF ((unsigned long)req <= 1) return FALSE;
+		ERR_IF (!VALID_POINTER(req)) return FALSE;
+
+		drbd_end_req(req, RQ_DRBD_SENT, 1);
+	}
+	/*WARN("BlockAck: %lx %lx %x\n",
+	    (long) p->block_id,
+	    (long) be64_to_cpu(p->sector),
+	    be32_to_cpu(p->blksize));*/
+
+	// TODO: Make sure that the block is in an active epoch!!
+	if(mdev->conf.wire_protocol != DRBD_PROT_A ||
+	   is_syncer_blk(mdev,p->block_id)) {
+		dec_pending(mdev,HERE);
+	}
+
 	return TRUE;
 }
 
@@ -849,33 +885,51 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	int epoch_size;
 	Drbd_Barrier_Packet *p = (Drbd_Barrier_Packet*)h;
 
-	D_ASSERT(mdev->state == Secondary);
+	ERR_IF(mdev->state != Secondary) return FALSE;
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	D_ASSERT(h->length == (sizeof(*p)-sizeof(*h)));
-	if ( h->length != (sizeof(*p)-sizeof(*h)) )
-		return FALSE;
-
-	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
-		return FALSE;
+	rv = drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length);
+	ERR_IF(rv != h->length) return FALSE;
 
 	inc_unacked(mdev);
 
-	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
+	// DBG("got Barrier\n");
+
+	if (mdev->conf.wire_protocol != DRBD_PROT_C)
+		run_task_queue(&tq_disk);
 
 	drbd_wait_ee(mdev,&mdev->active_ee,&mdev->done_ee);
 
 	spin_lock_irq(&mdev->ee_lock);
 	rv=_drbd_process_ee(mdev,&mdev->done_ee);
+	// FIXME no error check here?
 
 	epoch_size=mdev->epoch_size;
 	mdev->epoch_size=0;
 	spin_unlock_irq(&mdev->ee_lock);
 
-	drbd_send_b_ack(mdev, p->barrier, epoch_size );
+	// FIXME no error check here?
+	drbd_send_b_ack(mdev, p->barrier, epoch_size);
+	dec_unacked(mdev,HERE);
 
-	dec_unacked(mdev);
+	return TRUE;
+}
 
-	return rv;
+STATIC int receive_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
+{
+	int rv;
+	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
+
+	ERR_IF(mdev->state != Primary) return FALSE;
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+
+	rv = drbd_recv(mdev, mdev->msock, PAYLOAD_P(h), h->length);
+	ERR_IF(rv != h->length) return FALSE;
+
+	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
+	dec_pending(mdev,HERE);
+
+	return TRUE;
 }
 
 STATIC struct Tl_epoch_entry *
@@ -933,6 +987,8 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 	struct buffer_head *bh;
 	int ok,rr;
 
+	// DBG("%s\n", __func__);
+
 	bh = pr->d.bh;
 
 	D_ASSERT( sector == APP_BH_SECTOR(bh) );
@@ -943,7 +999,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 	ok=(rr==data_size);
 	bh->b_end_io(bh,ok);
 
-	dec_pending(mdev);
+	dec_pending(mdev,HERE);
 	return ok;
 }
 
@@ -951,7 +1007,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),e->bh->b_size);
 	drbd_send_ack(mdev,WriteAck,e);
-	dec_unacked(mdev);
+	dec_unacked(mdev,HERE); // FIXME unconditional ??
 	return TRUE;
 }
 
@@ -960,10 +1016,12 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 {
 	struct Tl_epoch_entry *e;
 
+	// DBG("%s\n", __func__);
+
 	D_ASSERT( pr->d.sector == sector);
 
 	e = read_in_block(mdev,data_size);
-	if(!e) return FALSE;
+	ERR_IF(!e) return FALSE;
 	drbd_set_bh(mdev, e->bh, sector ,data_size);
 	e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
@@ -972,7 +1030,7 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	list_add(&e->list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_pending(mdev);
+	dec_pending(mdev,HERE);
 	inc_unacked(mdev);
 
 	drbd_al_begin_io(mdev, sector);
@@ -988,6 +1046,8 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 {
 	struct Tl_epoch_entry *e;
 	struct buffer_head *bh;
+
+	// DBG("%s\n", __func__);
 
 	bh = pr->d.bh;
 
@@ -1015,7 +1075,7 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	list_add(&e->list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_pending(mdev);
+	dec_pending(mdev,HERE);
 	inc_unacked(mdev);
 
 	drbd_al_begin_io(mdev, sector);
@@ -1025,13 +1085,16 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	return TRUE;
 }
 
-int recv_discard(drbd_dev *mdev, struct Pending_read *pr,
+int recv_discard(drbd_dev *mdev, struct Pending_read *pr /* ignored */,
 		 sector_t sector, int data_size)
 {
+	// THINK maybe ignore this block without using EEs ?
 	struct Tl_epoch_entry *e;
 
+	// DBG("%s\n", __func__);
+
 	e = read_in_block(mdev,data_size);
-	if(!e)	return FALSE;
+	ERR_IF(!e) return FALSE;
 
 	drbd_set_bh(mdev, e->bh, sector ,data_size);
 	drbd_send_ack(mdev,WriteAck,e);
@@ -1040,7 +1103,7 @@ int recv_discard(drbd_dev *mdev, struct Pending_read *pr,
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_pending(mdev);
+	dec_pending(mdev,HERE);
 
 	return TRUE;
 }
@@ -1067,11 +1130,9 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	/* I expect a block to be a multiple of 512 byte, and
 	 * no more than 4K (8K). is this too restrictive?
 	 */
-	D_ASSERT(data_size && !(data_size & 0xff));
-	D_ASSERT(data_size <= PAGE_SIZE);
-
-	if ( !data_size || (data_size & 0xff) || (data_size > PAGE_SIZE) )
-		return FALSE;
+	ERR_IF(data_size == 0) return FALSE;
+	ERR_IF(data_size &  0xff) return FALSE;
+	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), header_size) != header_size)
 		return FALSE;
@@ -1080,12 +1141,13 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	pr = (struct Pending_read *)(long)p->block_id;
 
-	/* PARANOIA
-	 * are we able to check validity further?
-	 * pr > 0xc0000000 or something ?
-	 */
-	D_ASSERT(pr != NULL);
-	if (!pr) return FALSE;
+	// these would be BUG()s ...
+	ERR_IF(!VALID_POINTER(pr)) return FALSE;
+
+	// XXX are enums unsigned by default?
+	ERR_IF((unsigned)pr->cause > AppAndResync) {
+		return FALSE;
+	}
 
 	/* Take it out of the list before calling the handler, since the
 	   handler could be changed by make_req as long as it is on the list
@@ -1094,12 +1156,8 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	list_del(&pr->list);
 	spin_unlock(&mdev->pr_lock);
 
-	D_ASSERT(Discard      <= pr->cause);
-	D_ASSERT(AppAndResync >= pr->cause);
-	if (Discard > pr->cause||pr->cause > AppAndResync)
-		return FALSE;
-
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
+	INVALIDATE_MAGIC(pr);
 	mempool_free(pr,drbd_pr_mempool);
 	return ok;
 }
@@ -1111,7 +1169,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		ok=drbd_send_ack(mdev,WriteAck,e);
-		dec_unacked(mdev);
+		dec_unacked(mdev,HERE); // FIXME unconditional ??
 	}
 
 	return ok;
@@ -1125,6 +1183,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
 	int header_size,data_size;
 
+	// DBG("%s\n", __func__);
+
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
@@ -1132,11 +1192,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	/* I expect a block to be a multiple of 512 byte, and
 	 * no more than 4K (8K). is this too restrictive?
 	 */
-	D_ASSERT(data_size && !(data_size & 0xff));
-	D_ASSERT(data_size <= PAGE_SIZE);
-
-	if ( !data_size || (data_size & 0xff) || (data_size > PAGE_SIZE) )
-		return FALSE;
+	ERR_IF(data_size == 0) return FALSE;
+	ERR_IF(data_size &  0xff) return FALSE;
+	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), header_size) != header_size)
 		return FALSE;
@@ -1144,7 +1202,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 
 	e = read_in_block(mdev,data_size);
-	if(!e) return FALSE;
+	ERR_IF(!e) return FALSE;
 
 	drbd_set_bh(mdev, e->bh, sector, data_size);
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
@@ -1177,16 +1235,16 @@ STATIC int e_end_data_req(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	int ok;
 	ok=drbd_send_block(mdev, DataReply, e);
-	dec_unacked(mdev); // THINK unconditional?
+	dec_unacked(mdev,HERE); // THINK unconditional?
 	return ok;
 }
 
 STATIC int e_end_rsdata_req(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	int ok;
-	ok=drbd_send_block(mdev, DataReply, e);
-	dec_unacked(mdev); // THINK unconditional?
 	inc_pending(mdev);
+	ok=drbd_send_block(mdev, DataReply, e);
+	dec_unacked(mdev,HERE); // THINK unconditional?
 	return ok;
 }
 
@@ -1198,10 +1256,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	int data_size;
 	Drbd_BlockRequest_Packet *p = (Drbd_BlockRequest_Packet*)h;
 
-	// FIXME move into helper
-	D_ASSERT( h->length == (sizeof(*p)-sizeof(*h)) );
-	if ( h->length != (sizeof(*p)-sizeof(*h)) )
-		return FALSE;
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
 	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
@@ -1243,15 +1298,13 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int receive_sync_param(drbd_dev *mdev,Drbd_Header *h)
+STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 {
 	int ok = TRUE;
 	Drbd_SyncParam_Packet *p = (Drbd_SyncParam_Packet*)h;
 
 	// FIXME move into helper
-	D_ASSERT( h->length == (sizeof(*p)-sizeof(*h)) );
-	if ( h->length != (sizeof(*p)-sizeof(*h)) )
-		return FALSE;
+	ERR_IF(h->length == (sizeof(*p)-sizeof(*h))) return FALSE;
 
 	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
@@ -1280,35 +1333,27 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	int oo_state;
 	unsigned long p_size;
 
-	/*printk(KERN_DEBUG DEVICE_NAME
-	  ": recv ReportParams/m=%d\n",(int)(mdev-drbd_conf));*/
-
-	// FIXME move into helper
-	D_ASSERT( h->length == (sizeof(*p)-sizeof(*h)) );
-	if ( h->length != (sizeof(*p)-sizeof(*h)) )
-		return FALSE;
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
 	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
 
 	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {
-		printk(KERN_ERR DEVICE_NAME"%d: incompatible states \n",minor);
+		ERR("incompatible states\n");
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(p->version)!=PRO_VERSION) {
-		printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
-		       minor);
+		ERR("incompatible releases \n");
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(p->protocol)!=mdev->conf.wire_protocol) {
-		printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
-		       minor);
+		ERR("incompatible protocols \n");
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
@@ -1352,8 +1397,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	if (mdev->cstate == WFReportParams) {
 		int have_good,quick,sync;
-		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n"
-		       ,minor);
+		INFO("Connection established.\n");
 
 		have_good=drbd_md_compare(mdev,p);
 
@@ -1362,9 +1406,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 		quick=drbd_md_syncq_ok(mdev,p,have_good==1);
 
-		printk(KERN_INFO DEVICE_NAME
-		       "%d: have_good=%d sync=%d quick=%d\n",
-		       minor,have_good,sync,quick);
+		INFO("have_good=%d sync=%d quick=%d\n",
+		     have_good, sync, quick);
 
 		if ( mdev->sync_conf.skip && sync && !no_sync ) {
 			if (have_good == 1)
@@ -1386,6 +1429,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			} else { // have_good == -1
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 				if(!quick) {
+					ERR_IF(!mdev->mbds_id)
+						return FALSE;
 					bm_fill_bm(mdev->mbds_id,-1);
 					mdev->rs_total=
 						blk_size[MAJOR_NR][minor]<<1;
@@ -1515,8 +1560,9 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		list_del(le);
 
 		bh->b_end_io(bh,0);
-		dec_pending(mdev);
+		dec_pending(mdev,HERE);
 
+		INVALIDATE_MAGIC(pr);
 		mempool_free(pr,drbd_pr_mempool);
 	}
 
@@ -1531,6 +1577,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		list_del(le);
 		pr = list_entry(le, struct Pending_read, list);
 		mempool_free(pr,drbd_pr_mempool);
+		INVALIDATE_MAGIC(pr);
 	}
 }
 
@@ -1540,9 +1587,8 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	static char sink[128];
 	int size,want,r;
 
-	printk(KERN_WARNING DEVICE_NAME
-	       "%d: skipping unknown optional packet type %d, l: %d!\n",
-	       (int)(mdev-drbd_conf), h->command, h->length );
+	WARN("skipping unknown optional packet type %d, l: %d!\n",
+	     h->command, h->length );
 
 	size = h->length;
 	while (size > 0) {
@@ -1557,6 +1603,8 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 {
+	ERR_IF(!mdev->mbds_id)
+		return FALSE;
 	bm_fill_bm(mdev->mbds_id,-1);
 	mdev->rs_total = blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1;
 	drbd_start_resync(mdev,SyncTarget);
@@ -1579,7 +1627,7 @@ STATIC int receive_BecomeSec(drbd_dev *mdev, Drbd_Header *h)
 STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 {
 	run_task_queue(&tq_disk);
-	return TRUE; // cannot fail ?
+	return TRUE; // cannot fail, only deadlock :)
 }
 
 STATIC int receive_SyncStop(drbd_dev *mdev, Drbd_Header *h)
@@ -1599,6 +1647,7 @@ STATIC int receive_SyncCont(drbd_dev *mdev, Drbd_Header *h)
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
+	[WakeAsender]      = NULL, // this is never seen on the net
 	[Data]             = receive_Data,
 	[DataReply]        = receive_DataReply,
 	[RecvAck]          = NULL, //receive_RecvAck,
@@ -1615,8 +1664,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[WriteHint]        = receive_WriteHint,
 	[DataRequest]      = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
-	[BlockInSync]      = NULL, //receive_BlockInSync,
-	[SetSyncParam]     = receive_sync_param,
+	[SyncParam]        = receive_SyncParam,
 	[SyncStop]         = receive_SyncStop,
 	[SyncCont]         = receive_SyncCont,
 };
@@ -1626,7 +1674,6 @@ static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
 
 STATIC void drbdd(drbd_dev *mdev)
 {
-	int minor=(int)(mdev-drbd_conf);
 	drbd_cmd_handler_f handler;
 	/* now I have enough space on the stack for the biggest packet
 	 * (ReportParams). Data and Bitmap are handled different
@@ -1637,7 +1684,6 @@ STATIC void drbdd(drbd_dev *mdev)
 
 	for (;;) {
 		drbd_collect_zombies(mdev); // in case a syncer exited.
-
 		if (!drbd_recv_header(mdev,mdev->sock,header))
 			break;
 
@@ -1651,15 +1697,13 @@ STATIC void drbdd(drbd_dev *mdev)
 			handler = NULL;
 
 		if (unlikely(!handler)) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: unknown packet type %d, l: %d!\n",
-			       minor, header->command, header->length );
+			ERR("unknown packet type %d, l: %d!\n",
+			    header->command, header->length);
 			break;
 		}
 		if (unlikely(!handler(mdev,header))) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: error receiving packet type %d, l: %d!\n",
-			       minor, header->command, header->length );
+			ERR("error receiving %s, l: %d!\n",
+			    cmdname(header->command), header->length);
 			break;
 		}
 	}
@@ -1667,25 +1711,23 @@ STATIC void drbdd(drbd_dev *mdev)
 
 void drbd_disconnect(drbd_dev *mdev)
 {
-	int minor=(int)(mdev-drbd_conf);
 	int i;
 
 	mdev->o_state = Unknown;
-	del_timer_sync(&mdev->a_timeout);
+	drbd_thread_stop_nowait(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
 
 	while(down_trylock(&mdev->sock_mutex))
 	{
-		struct send_timer_info *ti;
-		spin_lock(&mdev->send_proc_lock);
-		if((ti=mdev->send_proc)) {
-			ti->timeout_happened=1;
-			drbd_queue_signal(DRBD_SIG, ti->task);
-			spin_unlock(&mdev->send_proc_lock);
+		struct task_struct *task;
+		spin_lock(&mdev->send_task_lock);
+		if((task=mdev->send_task)) {
+			drbd_queue_signal(DRBD_SIG, task);
+			spin_unlock(&mdev->send_task_lock);
 			down(&mdev->sock_mutex);
 			break;
 		} else {
-			spin_unlock(&mdev->send_proc_lock);
+			spin_unlock(&mdev->send_task_lock);
 			schedule_timeout(HZ / 10);
 		}
 	}
@@ -1725,7 +1767,7 @@ void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	if(atomic_read(&mdev->unacked_cnt)) {
-		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt!=0\n",minor);
+		ERR("unacked_cnt!=0\n");
 		atomic_set(&mdev->unacked_cnt,0);
 	}
 
@@ -1736,7 +1778,7 @@ void drbd_disconnect(drbd_dev *mdev)
 
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 
-	printk(KERN_INFO DEVICE_NAME "%d: Connection lost.\n",minor);
+	INFO("Connection lost.\n");
 }
 
 int drbdd_init(struct Drbd_thread *thi)
@@ -1744,7 +1786,7 @@ int drbdd_init(struct Drbd_thread *thi)
 	drbd_dev *mdev = thi->mdev;
 	int minor = (int)(mdev-drbd_conf);
 
-	sprintf(current->comm, "drbd_receiver_%d", minor);
+	sprintf(current->comm, "drbd%d_receiver", minor);
 
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 
@@ -1767,7 +1809,7 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 	}
 
-	printk(KERN_DEBUG DEVICE_NAME "%d: receiver exiting\n", minor);
+	INFO("receiver exiting\n");
 
 	/* set_cstate(mdev,StandAlone); */
 
@@ -1775,41 +1817,6 @@ int drbdd_init(struct Drbd_thread *thi)
 }
 
 /* ********* acknowledge sender ******** */
-
-STATIC void got_block_ack(drbd_dev *mdev,Drbd_BlockAck_Packet *p)
-{
-	drbd_request_t *req;
-
-	// TODO: Make sure that the block is in an active epoch!!
-	if(mdev->conf.wire_protocol != DRBD_PROT_A ||
-	   is_syncer_blk(mdev,p->block_id)) {
-		dec_pending(mdev);
-	}
-
-	if( is_syncer_blk(mdev,p->block_id)) {
-		drbd_set_in_sync(mdev,
-				 be64_to_cpu(p->sector),
-				 be32_to_cpu(p->blksize));
-	} else {
-		req=(drbd_request_t*)(long)p->block_id;
-		// PARANOIA
-		// how can we assure this pointer is valid ??
-		D_ASSERT(req != NULL);
-		if (req)
-			drbd_end_req(req, RQ_DRBD_SENT, 1);
-	}
-}
-
-STATIC void got_barrier_ack(drbd_dev *mdev,Drbd_BarrierAck_Packet *p)
-{
-	D_ASSERT(mdev->state == Primary);
-
-	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
-
-	dec_pending(mdev);
-
-}
-
 
 STATIC int drbd_try_send_barrier(drbd_dev *mdev)
 {
@@ -1823,112 +1830,85 @@ STATIC int drbd_try_send_barrier(drbd_dev *mdev)
 	return rv;
 }
 
-void drbd_ping_timeout(unsigned long arg)
-{
-	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
-
-	printk(KERN_DEBUG DEVICE_NAME"%d: ping ack did not arrive\n",
-	       (int)(mdev-drbd_conf));
-
-	drbd_thread_restart_nowait(&mdev->receiver);
-}
-
-
 int drbd_asender(struct Drbd_thread *thi)
 {
-	Drbd_BlockAck_Packet pkt;
-	struct timer_list ping_timeout;
-	unsigned long ping_sent_at,flags;
-	int rtt=0,rr,rsize=0,expect;
+	int ok;
+	unsigned long flags = 0;
 	drbd_dev *mdev = thi->mdev;
+	Drbd_Polymorph_Packet p; // XXX BarrierAck_Packet should be enough ...
+	Drbd_Header *header = (Drbd_Header*)&p;
 
-	// FIXME use drbd_recv_header here, too
-	expect = sizeof(Drbd_Header);
-
-	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
+	sprintf(current->comm, "drbd%d_asender", (int)(mdev-drbd_conf));
 
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
 
-	init_timer(&ping_timeout);
-	ping_timeout.function = drbd_ping_timeout;
-	ping_timeout.data = (unsigned long) mdev;
-
-	ping_sent_at=0;
-
 	while(thi->t_state == Running) {
-		rr=drbd_recv(mdev,mdev->msock,((char*)&pkt)+rsize,expect-rsize);
-		if(rr == -ERESTARTSYS) {
-			LOCK_SIGMASK(current,flags);
-			sigemptyset(&current->pending.signal);
+		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
+			ERR_IF(!drbd_send_ping(mdev)) goto err;
+			// half ack timeout only,
+			// since sendmsg waited the other half already
+			mdev->msock->sk->rcvtimeo =
+				mdev->conf.timeout*HZ/20;
+		}
+
+		set_bit(MAY_WAKE_ASENDER,&mdev->flags);
+		ok = drbd_recv_header(mdev,mdev->msock,header);
+
+		ERR_IF(!ok)
+			goto err;
+
+		/* we don't want to be "woken up" by DRBD_SIG while
+		 * receiving payload data, nor while sending out pings
+		 * and acks!  SIGTERM is unaffected...
+		 */
+		clear_bit(MAY_WAKE_ASENDER,&mdev->flags);
+		LOCK_SIGMASK(current,flags); // implicit wmb()
+		if (sigismember(&current->pending.signal, DRBD_SIG)) {
+			sigdelset(&current->pending.signal, DRBD_SIG);
 			RECALC_SIGPENDING(current);
-			UNLOCK_SIGMASK(current,flags);
-			rr=0;
-		} else if(rr <= 0) break;
+		}
+		UNLOCK_SIGMASK(current,flags);
 
-		rsize+=rr;
 
-		if(rsize == expect) {
-			if (be32_to_cpu(pkt.head.magic) != DRBD_MAGIC) {
-				printk(KERN_ERR DEVICE_NAME "%d: magic!! "
-				       "m: %ld c: %d l: %d \n",
-				       (int)(mdev-drbd_conf),
-				       (long) be32_to_cpu(pkt.head.magic),
-				       (int) be16_to_cpu(pkt.head.command),
-				       (int) be16_to_cpu(pkt.head.length));
+		// MAYBE use jump table
+
+		switch (header->command) {
+		case WakeAsender:
+			// we were just woken up
+			break;
+		case Ping:
+			ERR_IF(!drbd_send_ping_ack(mdev))
 				goto err;
-			}
-			switch (be16_to_cpu(pkt.head.command)) {
-			case Ping:
-				if(!drbd_send_ping_ack(mdev)) goto err;
-				break;
-			case PingAck:
-				del_timer(&ping_timeout);
-				rtt = jiffies-ping_sent_at;
-				ping_sent_at=0;
-				break;
-			case RecvAck:
-			case WriteAck:
-				if(expect != sizeof(Drbd_BlockAck_Packet)) {
-					expect=sizeof(Drbd_BlockAck_Packet);
-					goto get_more;
-				}
-				got_block_ack(mdev,&pkt);
-				expect = sizeof(Drbd_Header);
-				break;
-
-			case BarrierAck:
-				if(expect != sizeof(Drbd_BarrierAck_Packet)) {
-					expect=sizeof(Drbd_BarrierAck_Packet);
-					goto get_more;
-				}
-				got_barrier_ack(mdev,(Drbd_BarrierAck_Packet *)
-						&pkt);
-				expect = sizeof(Drbd_Header);
-				break;
-			default:
-				D_ASSERT(0);
-			}
-			rsize=0;
+			// If partner pings me, maybe its time to kick IO
+			//run_task_queue(&tq_disk);
+			break;
+		case PingAck:
+			// restore idle timeout
+			mdev->msock->sk->rcvtimeo =
+				mdev->conf.ping_int*HZ;
+			break;
+		case RecvAck:
+		case WriteAck:
+			ERR_IF(!receive_BlockAck(mdev,header))
+				goto err;
+			break;
+		case BarrierAck:
+			ERR_IF(!receive_BarrierAck(mdev, header))
+				goto err;
+			break;
+		default:
+			D_ASSERT(0);
 		}
-	get_more:
 
-		if(ping_sent_at==0) {
-			if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
-				if(!drbd_send_ping(mdev)) goto err;
-				ping_timeout.expires =
-					jiffies + mdev->conf.timeout*HZ/20;
-				add_timer(&ping_timeout);
-				ping_sent_at=jiffies;
-				if(ping_sent_at==0) ping_sent_at=1;
-			}
-		}
 
 		if( mdev->state == Primary ) {
-			if(!drbd_try_send_barrier(mdev)) goto err;
+			ERR_IF(!drbd_try_send_barrier(mdev))
+				goto err;
 		}
 
-		if(!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
+		ERR_IF(!drbd_process_ee(mdev,&mdev->done_ee))
+			goto err;
 	} //while
 
 	if(0) {
@@ -1936,10 +1916,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
-	del_timer_sync(&ping_timeout);
-
-	/* printk(KERN_ERR DEVICE_NAME"%d: asender terminated\n",
-	   (int)(mdev-drbd_conf)); */
+	INFO("asender terminated\n");
 
 	return 0;
 }

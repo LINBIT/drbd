@@ -43,14 +43,12 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	   Try to get the locking right :) */
 
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
-	int wake_asender=0;
 	unsigned long flags=0;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
 	if(req->rq_status & nextstate) {
-		printk(KERN_ERR DEVICE_NAME "%d: request state error(%d)\n",
-		       (int)(mdev-drbd_conf),req->rq_status);
+		ERR("request state error(%d)\n", req->rq_status);
 	}
 
 	req->rq_status = req->rq_status | nextstate | (er_flags & 0x0001);
@@ -70,10 +68,8 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	if( ! ( er_flags & ERF_NOTLD ) ) {
 		/*If this call is from tl_clear() we may not call tl_dependene,
 		  otherwhise we have a homegrown spinlock deadlock.   */
-		if(tl_dependence(mdev,req)) {
+		if(tl_dependence(mdev,req))
 			set_bit(ISSUE_BARRIER,&mdev->flags);
-			wake_asender=1;
-		}
 	} else {
 		list_del(&req->list); // we have the tl_lock...
 	}
@@ -89,10 +85,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	}
 
 	mempool_free(req,drbd_request_mempool);
+	SET_MAGIC(req);
 
-	if(wake_asender) {
-		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
-	}
+	if (test_bit(ISSUE_BARRIER,&mdev->flags))
+		wake_asender(mdev);
 }
 
 void drbd_dio_end(struct buffer_head *bh, int uptodate)
@@ -130,12 +126,11 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	pr = mempool_alloc(drbd_pr_mempool, GFP_DRBD);
 
 	if (!pr) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: could not kmalloc() pr\n",
-		       (int)(mdev-drbd_conf));
+		ERR("could not kmalloc() pr\n");
 		bh->b_end_io(bh,0);
 		return;
 	}
+	SET_MAGIC(pr);
 
 	pr->d.bh = bh;
 	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
@@ -149,6 +144,7 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 }
 
 
+extern volatile int disable_io_hints;
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);
@@ -165,10 +161,16 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			[WRITE]="WRITE",
 		};
 
-		printk(KERN_ERR DEVICE_NAME "%d: make_request(cmd=%s,"
-		       "sec=%ld, size=%d)\n",
-		       (int)(mdev-drbd_conf),
-		       strs[rw],bh->b_rsector,bh->b_size);
+		/* I don't understand it yet, but
+		 * drbdadm primary drbd0 ; drbdadm invalidate drbd0 ;
+		 * dd if=/dev/zero of=/dev/nb0
+		 * "Upgraded a resync read to an app read"
+		 * so (rw == READ) for some reason ...
+		 */
+		// if (rw == READ)
+		WARN("%s make_request(cmd=%s,sec=0x%04lx,size=0x%x)\n",
+		     current->comm,
+		     strs[rw],bh->b_rsector,bh->b_size);
 
 	}
 #endif
@@ -188,20 +190,19 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
 
 			if (!req) {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: could not kmalloc() req\n",
-				       (int)(mdev-drbd_conf));
+				ERR("could not kmalloc() req\n");
 				bh->b_end_io(bh,0);
 				return 0;
 			}
+			SET_MAGIC(req);
 
 			req->rq_status = RQ_DRBD_WRITTEN | 1;
 			req->bh=bh;
 
-			if(mdev->conf.wire_protocol!=DRBD_PROT_A) {
+			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
 				inc_pending(mdev);
 			}
-			drbd_send_dblock(mdev,req);
+			drbd_send_dblock(mdev,req); // FIXME error check?
 		} else { // rw == READ || rw == READA
 			drbd_issue_drequest(mdev,bh);
 		}
@@ -216,10 +217,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 
 			if(pr) {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: Will discard a resync_read\n",
-				       (int)(mdev-drbd_conf));
-
+				ERR("Will discard a resync_read\n");
 				pr->cause = Discard;
 				// list del as well ?
 			}
@@ -232,10 +230,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			spin_lock(&mdev->pr_lock);
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 			if(pr) {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: Uprgraded a resync read to an "
-				       "app read\n",
-				       (int)(mdev-drbd_conf));
+				ERR("Upgraded a resync read to an app read\n");
 
 				pr->cause |= Application;
 				pr->d.bh=bh;
@@ -274,11 +269,11 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
 
 	if (!req) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: could not kmalloc() nbh\n",(int)(mdev-drbd_conf));
+		ERR("could not kmalloc() nbh\n");
 		bh->b_end_io(bh,0);
 		return 0;
 	}
+	SET_MAGIC(req);
 
 	nbh = kmem_cache_alloc(bh_cachep, GFP_DRBD);
 

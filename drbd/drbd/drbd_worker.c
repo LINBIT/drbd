@@ -157,11 +157,8 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 			if ( drbd_conf[i].sync_conf.group < mdev->sync_conf.group
 			  && drbd_conf[i].cstate > SkippedSyncT )
 			{
-				printk(KERN_INFO DEVICE_NAME
-					"%d: Syncer waits for sync group %i\n",
-					(mdev-drbd_conf),
-					drbd_conf[i].sync_conf.group
-				);
+				INFO("Syncer waits for sync group %i\n",
+				     drbd_conf[i].sync_conf.group);
 				drbd_send_short_cmd(mdev,SyncStop);
 				set_cstate(mdev,PausedSyncT);
 				interruptible_sleep_on(&drbd_conf[i].cstate_wait);
@@ -173,10 +170,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 		}
 	}
 	if (did_wait) {
-		printk(KERN_INFO DEVICE_NAME
-			"%d: resumed synchronisation.\n",
-			(mdev-drbd_conf)
-		);
+		INFO("resumed synchronisation.\n");
 		drbd_send_short_cmd(mdev,SyncCont);
 		set_cstate(mdev,SyncTarget);
 	}
@@ -195,9 +189,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 	// Remove later
 	if(number > 1000) number=1000;
 	if(atomic_read(&mdev->pending_cnt)>1200) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: pending cnt high -- throttling resync.\n",
-		       (int)(mdev-drbd_conf));
+		ERR("pending cnt high -- throttling resync.\n");
 		return TRUE;
 	}
 	// /Remove later
@@ -210,9 +202,11 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 
 		pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
 		if (!pr) return TRUE;
+		SET_MAGIC(pr);
 
 		sector = bm_get_sector(mdev->mbds_id,&size);
 		if(sector == MBDS_DONE) {
+			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
 			return FALSE;
 		}
@@ -223,9 +217,10 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		list_add(&pr->list,&mdev->resync_reads);
 		spin_unlock(&mdev->pr_lock);
 
-		if(drbd_send_drequest(mdev,RSDataRequest,sector,size,
-				      (unsigned long)pr))
-			inc_pending(mdev);
+		inc_pending(mdev);
+		ERR_IF(!drbd_send_drequest(mdev,RSDataRequest,
+					  sector,size,(unsigned long)pr))
+			dec_pending(mdev,HERE);
 	}
 
 	return TRUE;
@@ -257,6 +252,7 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	}
 }
 
+extern volatile int disable_io_hints;
 int drbd_dsender(struct Drbd_thread *thi)
 {
 	long time=MAX_SCHEDULE_TIMEOUT;
@@ -265,7 +261,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 	int sync_finished;
 	drbd_dev *mdev = thi->mdev;
 
-	sprintf(current->comm, "drbd_dsender_%d", (int)(mdev-drbd_conf));
+	sprintf(current->comm, "drbd%d_dsender", (int)(mdev-drbd_conf));
 
 	while(1) {
 		init_waitqueue_entry(&wait, current);
@@ -298,18 +294,17 @@ int drbd_dsender(struct Drbd_thread *thi)
 			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 			drbd_md_write(mdev);
 			bm_reset(mdev->mbds_id);
-			printk(KERN_INFO DEVICE_NAME "%d: resync started.\n",
-			       (int)(mdev-drbd_conf));
+			INFO("resync started.\n");
 		}
 
 		if(sync_finished) {
-			printk(KERN_INFO DEVICE_NAME "%d: resync done.\n",
-			       (int)(mdev-drbd_conf));
+			INFO("resync done, rs_left == %ld.\n",mdev->rs_left);
 			if(mdev->cstate == SyncTarget) {
 				mdev->gen_cnt[Flags] |= MDF_Consistent;
 				drbd_md_write(mdev);
 			}
 			mdev->rs_total = 0;
+			mdev->rs_left = 0; // FIXME this is a BUG!
 			set_cstate(mdev,Connected);
 		}
 
@@ -319,7 +314,11 @@ int drbd_dsender(struct Drbd_thread *thi)
 		__remove_wait_queue(&mdev->dsender_wait, &wait);
 		spin_unlock_irq(&mdev->dsender_wait.lock);
 
-		if (thi->t_state == Exiting) break;
+		/* FIXME if we have a signal pending, but t_state !=
+		 * Exiting, this is a busy loop in kernel space
+		 */
+		//if (thi->t_state == Exiting) break;
+		if (signal_pending(current)) break;
 
 		if(time==SLEEP_TIME) {
 			spin_lock_irq(&mdev->ee_lock);
@@ -329,7 +328,11 @@ int drbd_dsender(struct Drbd_thread *thi)
 				time=MAX_SCHEDULE_TIMEOUT;
 				mdev->rs_total=mdev->rs_left;
 			}
-			drbd_send_short_cmd(mdev,WriteHint); // IO hint
+			if (!disable_io_hints) {
+				Drbd_Header h;
+				D_ASSERT(!disable_io_hints);
+				drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h));
+			}
 		}
 	}
 

@@ -68,9 +68,7 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 			  mdev->sync_conf.al_extents,GFP_KERNEL);
 
 	if(!extents) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: can not kmalloc() activity log\n",
-		       (int)(mdev-drbd_conf));
+		ERR("can not kmalloc() activity log\n");
 		return;
 	}
 
@@ -328,7 +326,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	}
 
 	extent->pending_ios++;
-	
+
 	spin_unlock(&mdev->al_lock);
 
 	if( update_al ) {
@@ -343,14 +341,12 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	struct drbd_extent *extent;
 
 	spin_lock(&mdev->al_lock);
-	
+
 	extent = drbd_al_find(mdev,enr);
-	
+
 	if(!extent) {
 		spin_unlock(&mdev->al_lock);
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: drbd_al_complete_io() called on incative extent\n",
-		       (int)(mdev-drbd_conf));
+		ERR("drbd_al_complete_io() called on inactive extent\n");
 		return;
 	}
 

@@ -29,7 +29,6 @@
 #define PARANOIA
 
 #include <linux/types.h>
-#include <linux/timer.h>
 #include <linux/version.h>
 #include <linux/list.h>
 #include "mempool.h"
@@ -89,8 +88,32 @@ typedef unsigned long sector_t;
 # define STATIC static
 #endif
 
+#define __STR(x) #x
+#define STR(x) __STR(x)
+#define HERE STR(__LINE__)
+
+#define PRINTK(level,fmt,args...) \
+	printk(level DEVICE_NAME "%d: " fmt, \
+		(int)(mdev-drbd_conf), ## args )
+#define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt, args)
+#define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt, args)
+#define INFO(fmt,args...) PRINTK(KERN_INFO, fmt, args)
+#define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt, args)
+
+#if 1
+#define C_DBG(r,x...)
+#else
+	// at most one DBG(x) per t seconds
+#define C_DBG(t,x...) do { \
+	static unsigned long _j; \
+	if ((long)(jiffies-_j)< HZ*t) break; \
+	_j=jiffies; \
+	DBG(x); \
+} while (0)
+#endif
+
 #if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { printk(KERN_ERR DEVICE_NAME ": Not holding lock! in %s\n", __FUNCTION__ ); }
+# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
 #else
 # define MUST_HOLD(lock)
 #endif
@@ -119,14 +142,25 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	 drbd_assert_breakpoint(mdev,#exp,__FILE__,__LINE__)
 #else
 # define D_ASSERT(exp)  if (!(exp)) \
-	 printk(KERN_ERR DEVICE_NAME"%d: ASSERT( " #exp " ) in %s:%d\n", \
-	 (int)(mdev-drbd_conf),__FILE__,__LINE__)
+	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__)
 #endif
+#define ERR_IF(exp) if (({ \
+	int _b = (exp); \
+	if (_b) ERR("%s: (" #exp ") in %s:%d\n", __func__, __FILE__,__LINE__); \
+	 _b; \
+	}))
+#define SET_MAGIC(x) (x->magic = DRBD_MAGIC)
+// For some optimization crap, please test for NULL explicitly,
+//	and not in this macro!
+// #define VALID_POINTER(x) ((x) && (x)->magic == DRBD_MAGIC)
+#define VALID_POINTER(x) ((x)->magic == DRBD_MAGIC)
+#define INVALIDATE_MAGIC(x) (x->magic--)
 
 
 // handy macro: DUMPP(somepointer)
-#define DUMPP(A) printk(KERN_ERR DEVICE_NAME "%d: "#A"= %p\n",(int)(mdev-drbd_conf),A);
-#define DUMPLU(A) printk(KERN_ERR DEVICE_NAME "%d: "#A"= %lu\n",(int)(mdev-drbd_conf),A);
+#define DUMPP(A) ERR( #A " = %p in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
 
 /*
  * GFP_DRBD is used for allocations inside drbd_do_request.
@@ -165,8 +199,76 @@ enum MetaDataIndex {
 #define GEN_CNT_SIZE 5
 #define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
 
-/* This is the layout for a packet on the wire!
- * The byteorder is the network byte order!
+
+/***
+ * on the wire
+ *********************************************************************/
+
+typedef enum {
+	WakeAsender,  // interrupted drbd_receive_header fakes this
+	Data,
+	DataReply,
+	RecvAck,      // Used in protocol B
+	WriteAck,     // Used in protocol C
+	Barrier,
+	BarrierAck,
+	ReportParams,
+	ReportBitMap,
+	Ping,
+	PingAck,
+	BecomeSyncTarget,
+	BecomeSyncSource,
+	BecomeSec,     // Secondary asking primary to become secondary
+	WriteHint,     // Used in protocol C to hint the secondary to call tq_disk
+	DataRequest,   // Used to ask for a data block
+	RSDataRequest, // Used to ask for a data block
+	SyncParam,
+	SyncStop,
+	SyncCont,
+	MAX_CMD,
+	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
+	MAX_OPT_CMD,
+} Drbd_Packet_Cmd;
+
+#ifndef NDEBUG
+// no char* cmdname[], since I'm not sure the index is valid ...
+static inline const char* cmdname(Drbd_Packet_Cmd cmd)
+{
+	switch (cmd) {
+	case WakeAsender     : return "WakeAsender";
+	case Data            : return "Data";
+	case DataReply       : return "DataReply";
+	case RecvAck         : return "RecvAck";
+	case WriteAck        : return "WriteAck";
+	case Barrier         : return "Barrier";
+	case BarrierAck      : return "BarrierAck";
+	case ReportParams    : return "ReportParams";
+	case ReportBitMap    : return "ReportBitMap";
+	case Ping            : return "Ping";
+	case PingAck         : return "PingAck";
+	case BecomeSyncTarget: return "BecomeSyncTarget";
+	case BecomeSyncSource: return "BecomeSyncSource";
+	case BecomeSec       : return "BecomeSec";
+	case WriteHint       : return "WriteHint";
+	case DataRequest     : return "DataRequest";
+	case RSDataRequest   : return "RSDataRequest";
+	case SyncParam       : return "SyncParam";
+	case SyncStop        : return "SyncStop";
+	case SyncCont        : return "SyncCont";
+	case MAX_CMD         : return "MAX_CMD";
+	case MayIgnore       : return "MayIgnore";
+	case MAX_OPT_CMD     : return "MAX_OPT_CMD";
+	default              : return "Unknown";
+	}
+}
+#endif
+
+/* This is the layout for a packet on the wire.
+ * The byteorder is the network byte order.
+ *     (except block_id and barrier fields.
+ *      these are pointers to local structs
+ *      and have no relevance for the partner,
+ *      which just echoes them as received.)
  */
 typedef struct {
 	__u32       magic;
@@ -174,15 +276,39 @@ typedef struct {
 	__u16       length;	// bytes of data after this header
 	// char        payload[];
 } Drbd_Header __attribute((packed));
-// hack for older gcc
-#define PAYLOAD_P(p) ((char*)(p)+sizeof(*p))
+// (typesafe) hack for older gcc
+#define PAYLOAD_P(p) ({ \
+	const Drbd_Header *_p = (p); \
+	(char*)_p+sizeof(*_p); })
 
+/*
+ * short commands, packets without payload, plain Drbd_Header:
+ *   Ping
+ *   PingAck
+ *   BecomeSyncTarget
+ *   BecomeSyncSource
+ *   BecomeSec
+ *   WriteHint
+ *   SyncStop
+ *   SyncCont
+ */
+
+/*
+ * commands with out-of-struct payload:
+ *   ReportBitMap    (no additional fields)
+ *   Data, DataReply (see Drbd_Data_Packet)
+ */
 typedef struct {
 	Drbd_Header head;
 	__u64       sector;    // 64 bits sector number
 	__u64       block_id;  // Used in protocol B&C for the address of the req.
 } Drbd_Data_Packet  __attribute((packed));
 
+/*
+ * commands which share a struct:
+ *   RecvAck (proto B), WriteAck (proto C) (see Drbd_BlockAck_Packet)
+ *   DataRequest, RSDataRequest  (see Drbd_BlockRequest_Packet)
+ */
 typedef struct {
 	Drbd_Header head;
 	__u64       sector;
@@ -190,6 +316,20 @@ typedef struct {
 	__u32       blksize;
 } Drbd_BlockAck_Packet __attribute((packed));
 
+typedef struct {
+	Drbd_Header head;
+	__u64       sector;
+	__u64       block_id;
+	__u32       blksize;
+} Drbd_BlockRequest_Packet __attribute((packed));
+
+/*
+ * commands with their own struct for additional fields:
+ *   Barrier
+ *   BarrierAck
+ *   SyncParam
+ *   ReportParams
+ */
 typedef struct {
 	Drbd_Header head;
 	__u32       barrier;   // may be 0 or a barrier number
@@ -224,13 +364,6 @@ typedef struct {
 	__u32       sync_group;
 } Drbd_Parameter_Packet  __attribute((packed));
 
-typedef struct {
-	Drbd_Header head;
-	__u64       sector;
-	__u64       block_id;
-	__u32       blksize;
-} Drbd_BlockRequest_Packet __attribute((packed));
-
 typedef union {
 	Drbd_Data_Packet         Data;
 	Drbd_BlockAck_Packet     BlockAck;
@@ -241,32 +374,7 @@ typedef union {
 	Drbd_BlockRequest_Packet BlockRequest;
 } Drbd_Polymorph_Packet __attribute((packed));
 
-typedef enum {
-	Data,
-	DataReply,
-	RecvAck,      // Used in protocol B
-	WriteAck,     // Used in protocol C
-	Barrier,
-	BarrierAck,
-	ReportParams,
-	ReportBitMap,
-	Ping,
-	PingAck,
-	BecomeSyncTarget,
-	BecomeSyncSource,
-	BecomeSec,     // Secondary asking primary to become secondary
-	WriteHint,     // Used in protocol C to hint the secondary to call tq_disk
-	DataRequest,   // Used to ask for a data block
-	RSDataRequest, // Used to ask for a data block
-	BlockInSync,   // Possible anser to CondDataRequest. No data will be send
-	SetSyncParam,
-	SyncStop,
-	SyncCont,
-	MAX_CMD,
-	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
-	MAX_OPT_CMD,
-} Drbd_Packet_Cmd;
-
+/**********************************************************************/
 
 typedef enum {
 	Running,
@@ -284,7 +392,7 @@ struct Drbd_thread {
 
 struct drbd_barrier;
 struct drbd_request {
-	// PARANOIA I'd like to add a magic to this struct!
+	int magic;
 	struct list_head list;     // requests are chained to a barrier
 	struct drbd_barrier *barrier; // The next barrier.
 	struct buffer_head *bh;    // buffer head
@@ -302,11 +410,13 @@ struct drbd_barrier {
 
 typedef struct drbd_request drbd_request_t;
 
-/* These Tl_epoch_entries may be in one of 4 lists:
-   free_ee .... free entries
-   active_ee .. data packet beeing written
-   sync_ee .... syncer block beeing written
-   done_ee .... block written, need to send ack packet
+/* These Tl_epoch_entries may be in one of 6 lists:
+   free_ee   .. free entries
+   active_ee .. data packet being written
+   sync_ee   .. syncer block being written
+   done_ee   .. block written, need to send WriteAck
+   read_ee   .. [RS]DataRequest being read
+   rdone_ee  .. block read, need to send DataReply
 */
 
 struct Drbd_Conf;
@@ -319,7 +429,7 @@ struct Tl_epoch_entry {
 };
 
 struct Pending_read {
-	// PARANOIA I'd like to add a magic to this struct!
+	int magic;
 	struct list_head list;
 	union {
 		struct buffer_head* bh;
@@ -333,6 +443,7 @@ struct Pending_read {
 	} cause;
 };
 
+// bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
 #define COLLECT_ZOMBIES    1
@@ -344,16 +455,7 @@ struct Pending_read {
 #define PARTNER_DISKLESS   7
 #define SYNC_FINISHED      8
 #define PROCESS_EE_RUNNING 9
-
-struct send_timer_info {
-	struct timer_list s_timeout; /* send timeout */
-	struct Drbd_Conf *mdev;
-	struct task_struct *task;
-	volatile int timeout_happened;
-	int via_msock;
-	int restart;
-};
-
+#define MAY_WAKE_ASENDER  10
 
 struct BitMap {
 	kdev_t dev;
@@ -367,12 +469,15 @@ struct BitMap {
 struct al_transaction;
 struct drbd_extent;
 
+// TODO sort members for performance
+
 struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
 	int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
+	volatile unsigned long last_received; // XXX atomic_t ?
 	struct semaphore sock_mutex;
 	struct semaphore msock_mutex;
 	struct semaphore ctl_mutex;
@@ -397,10 +502,9 @@ struct Drbd_Conf {
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
-	int    flags;
-	struct timer_list a_timeout; /* ack timeout */
-	struct send_timer_info* send_proc; /* about pid calling drbd_send */
-	spinlock_t send_proc_lock;
+	unsigned int flags;
+	struct task_struct *send_task; /* about pid calling drbd_send */
+	spinlock_t send_task_lock;
 	sector_t send_sector;      // block which is processed by send_data
 	sector_t rs_left;     // blocks not up-to-date [unit sectors]
 	sector_t rs_total;    // blocks to sync in this run [unit sectors]
@@ -466,6 +570,8 @@ extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send_param(drbd_dev *mdev);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
+extern int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
+			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev);
 extern int drbd_send_cstate(drbd_dev *mdev);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
@@ -526,10 +632,12 @@ extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int ha
 #endif
 
 struct BitMap;
+
+// TODO I'd like to change these all to take the mdev as first argument
 extern struct BitMap* bm_init(kdev_t dev);
 extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
 extern void bm_cleanup(struct BitMap* sbm);
-extern int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit);
+extern int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit);
 extern sector_t bm_get_sector(struct BitMap* sbm,int* size);
 extern void bm_reset(struct BitMap* sbm);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
@@ -550,6 +658,17 @@ extern void drbd_dio_end_read(struct buffer_head *bh, int uptodate);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 extern unsigned long drbd_hash(struct buffer_head *bh);
 
+static inline void wake_asender(drbd_dev *mdev) {
+	if (test_bit(MAY_WAKE_ASENDER,&mdev->flags))
+		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
+}
+
+static inline void request_ping(drbd_dev *mdev) {
+	set_bit(SEND_PING,&mdev->flags);
+	wake_asender(mdev);
+}
+
+
 static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 {
 	Drbd_Header h;
@@ -559,18 +678,23 @@ static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 static inline int drbd_send_ping(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->msock,Ping,&h,sizeof(h));
+	return drbd_send_cmd_dontwait(mdev,mdev->msock,Ping,&h,sizeof(h));
 }
 
 static inline int drbd_send_ping_ack(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->msock,PingAck,&h,sizeof(h));
+	return drbd_send_cmd_dontwait(mdev,mdev->msock,PingAck,&h,sizeof(h));
 }
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
 {
 	_drbd_thread_stop(thi,FALSE,TRUE);
+}
+
+static inline void drbd_thread_stop_nowait(struct Drbd_thread *thi)
+{
+	_drbd_thread_stop(thi,FALSE,FALSE);
 }
 
 static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
@@ -587,30 +711,17 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState cs)
 static inline void inc_pending(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->pending_cnt);
-	if(mdev->conf.timeout ) {
-		mod_timer(&mdev->a_timeout,
-			  jiffies + mdev->conf.timeout * HZ / 10);
-	}
 }
 
-static inline void dec_pending(drbd_dev* mdev)
+static inline void dec_pending(drbd_dev* mdev, const char* where)
 {
 	if(atomic_dec_and_test(&mdev->pending_cnt))
 		wake_up_interruptible(&mdev->state_wait);
 
-	if(atomic_read(&mdev->pending_cnt)<0)  /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt = %d < 0 !\n",
-		       (int)(mdev-drbd_conf), atomic_read(&mdev->pending_cnt));
-
-	if(mdev->conf.timeout ) {
-		if(atomic_read(&mdev->pending_cnt) > 0) {
-			mod_timer(&mdev->a_timeout,
-				  jiffies + mdev->conf.timeout
-				  * HZ / 10);
-		} else {
-			del_timer(&mdev->a_timeout);
-		}
-	}
+	if(atomic_read(&mdev->pending_cnt)<0) /* CHK */
+		ERR("in %s: pending_cnt = %d < 0 !\n",
+		    where,
+		    atomic_read(&mdev->pending_cnt));
 }
 
 static inline void inc_unacked(drbd_dev* mdev)
@@ -618,14 +729,15 @@ static inline void inc_unacked(drbd_dev* mdev)
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-static inline void dec_unacked(drbd_dev* mdev)
+static inline void dec_unacked(drbd_dev* mdev,const char* where)
 {
 	if(atomic_dec_and_test(&mdev->unacked_cnt))
 		wake_up_interruptible(&mdev->state_wait);
 
 	if(atomic_read(&mdev->unacked_cnt)<0)  /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt = %d < 0 !\n",
-		       (int)(mdev-drbd_conf), atomic_read(&mdev->unacked_cnt));
+		ERR("in %s: unacked_cnt = %d < 0 !\n",
+		    where,
+		    atomic_read(&mdev->unacked_cnt));
 }
 
 static inline struct Drbd_Conf* drbd_mdev_of_bh(struct buffer_head *bh)
@@ -643,7 +755,7 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 					sector_t sector, int blk_size)
 {
 	mdev->rs_total +=
-		bm_set_bit(mdev->mbds_id, sector, blk_size, SS_OUT_OF_SYNC);
+		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
 static inline void drbd_set_in_sync(drbd_dev* mdev,
@@ -652,10 +764,12 @@ static inline void drbd_set_in_sync(drbd_dev* mdev,
 	/* Is called by drbd_dio_end possibly from IRQ context, but
 	   from other places in non IRQ */
 	unsigned long flags=0;
-	bm_set_bit(mdev->mbds_id, sector, blk_size, SS_IN_SYNC);
+
+	bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->rs_lock,flags);
 	mdev->rs_left -= blk_size >> 9;
+	D_ASSERT((long)mdev->rs_left >= 0);
 	if( mdev->rs_left == 0 ) {
 		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
 		set_bit(SYNC_FINISHED,&mdev->flags);

@@ -99,7 +99,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if(size == 0) {
-		printk(KERN_ERR DEVICE_NAME"%d: Both nodes diskless!\n",minor);
+		ERR("Both nodes diskless!\n");
 	}
 
 	if(mu_size && pu_size) {
@@ -111,9 +111,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	if(u_size) {
 		if(u_size > size) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: Requested disk size is too big"
-			       " (%lu > %lu)\n",minor,u_size,size);
+			ERR("Requested disk size is too big (%lu > %lu)\n",
+			    u_size, size);
 		} else {
 			size = u_size;
 		}
@@ -123,8 +122,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		if(bm_resize(mdev->mbds_id,size)) {
 			blk_size[MAJOR_NR][minor] = size;
 			mdev->la_size = size;
-			printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",
-			       minor,size);
+			INFO("size = %lu KB\n",size);
 		}
 		// FIXME else { error handling }
 	}
@@ -177,17 +175,15 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	}
 
 	if (drbd_is_mounted(inode->i_rdev)) {
-		printk(KERN_WARNING DEVICE_NAME
-			"%d: can not configure %d:%d, has active inodes!\n",
-			minor, MAJOR(inode->i_rdev), MINOR(inode->i_rdev));
+		WARN("can not configure %d:%d, has active inodes!\n",
+		     MAJOR(inode->i_rdev), MINOR(inode->i_rdev));
 		retcode=LDMounted;
 		goto fail_ioctl;
 	}
 
 	if ((err = blkdev_open(inode, filp))) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: blkdev_open( %d:%d ,) returned %d\n", minor,
-		       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),err);
+		ERR("blkdev_open( %d:%d ,) returned %d\n",
+		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
 		fput(filp);
 		retcode=LDOpenFailed;
 		goto fail_ioctl;
@@ -260,6 +256,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 	minor=(int)(mdev-drbd_conf);
 
+	// FIXME plausibility check
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
 		return -EFAULT;
 
@@ -297,7 +294,32 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(mdev);
 
+	// TODO plausibility check ...
 	memcpy(&mdev->conf,&new_conf,sizeof(struct net_config));
+
+#if 0
+FIXME
+	/* for the connection loss logic in drbd_recv
+	 * I _need_ the resulting timeo in jiffies to be
+	 * non-zero and different
+	 *
+	 * XXX maybe rather store the value scaled to jiffies?
+	 * Note: MAX_SCHEDULE_TIMEOUT/HZ*HZ != MAX_SCHEDULE_TIMEOUT
+	 *       and HZ > 10; which is unlikely to change...
+	 *       Thus, if interrupted by a signal, or the timeout,
+	 *       sock_{send,recv}msg returns -EINTR.
+	 */
+	// unlikely: someone disabled the timeouts ...
+	// just put some huge values in there.
+	if (!mdev->conf.ping_int)
+		mdev->conf.ping_int = MAX_SCHEDULE_TIMEOUT/HZ;
+	if (!mdev->conf.timeout)
+		mdev->conf.timeout = MAX_SCHEDULE_TIMEOUT/HZ*10;
+	if (mdev->conf.ping_int*10 < mdev->conf.timeout)
+		mdev->conf.timeout = mdev->conf.ping_int*10/6;
+	if (mdev->conf.ping_int*10 == mdev->conf.timeout)
+		mdev->conf.ping_int = mdev->conf.ping_int+1;
+#endif
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -324,7 +346,7 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		return -EACCES;
 
 	if(newstate == Secondary &&
-	   (test_bit(WRITER_PRESENT, &mdev->flags) ||
+	   (test_bit(WRITER_PRESENT,&mdev->flags) ||
 	    drbd_is_mounted(minor) == MountedRW))
 		return -EBUSY;
 
@@ -359,12 +381,10 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	while (atomic_read(&mdev->pending_cnt) > 0 ||
 	       atomic_read(&mdev->unacked_cnt) > 0 ) {
 
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: set_state(st:%d,pe:%d,ua:%d)\n",
-		       minor,
-		       mdev->state,
-		       atomic_read(&mdev->pending_cnt),
-		       atomic_read(&mdev->unacked_cnt));
+		ERR("set_state(st:%d,pe:%d,ua:%d)\n",
+		    mdev->state,
+		    atomic_read(&mdev->pending_cnt),
+		    atomic_read(&mdev->unacked_cnt));
 
 		interruptible_sleep_on(&mdev->state_wait);
 		if(signal_pending(current)) {
@@ -408,12 +428,10 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 
 	if( mdev->gen_cnt[Flags] & MDF_ConnectedInd) {
 		time=p.wfc_timeout;
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: using wfc_timeout.\n",(int)(mdev-drbd_conf));
+		ERR("using wfc_timeout.\n");
 	} else {
 		time=p.degr_wfc_timeout;
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: using degr_wfc_timeout.\n",(int)(mdev-drbd_conf));
+		ERR("using degr_wfc_timeout.\n");
 	}
 
 	time=time*HZ;
@@ -424,6 +442,7 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 	return 0;
 }
 
+extern volatile int disable_io_hints;
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {

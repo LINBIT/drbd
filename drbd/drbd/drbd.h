@@ -65,7 +65,7 @@ struct net_config {
 	IN int      my_addr_len;
 	IN char     other_addr[MAX_SOCK_ADDR];
 	IN int      other_addr_len;
-	IN int      timeout;
+	IN int      timeout;          // deci seconds
 	IN int      wire_protocol;
 	IN int      try_connect_int;  /* seconds */
 	IN int      ping_int;         /* seconds */
@@ -79,7 +79,7 @@ struct syncer_config {
 	int      use_csums;   /* use checksum based syncing*/
 	int      skip;
 	int      group;
-	int      al_extents; 
+	int      al_extents;
 };
 
 enum ret_codes {
