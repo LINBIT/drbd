@@ -2,6 +2,20 @@
 #define DRBDADM_H
 
 #include <linux/drbd_config.h>
+#include <sys/utsname.h>
+
+#define E_syntax	  2
+#define E_usage		  3
+#define E_config_invalid 10
+#define E_exec_error     20
+#define E_thinko	 42 /* :) */
+
+/* for check_uniq(): Check for uniqueness of certain values...
+ * comment out if you want to NOT choke on the first conflict */
+#define EXIT_ON_CONFLICT
+
+/* for verify_ips(): make not verifyable ips fatal */
+//#define INVALID_IP_IS_INVALID_CONF
 
 struct d_globals
 {
@@ -34,7 +48,7 @@ struct d_resource
   char* protocol;
   char* ind_cmd;
   struct d_host_info* me;
-  struct d_host_info* partner;
+  struct d_host_info* peer;
   struct d_option* net_options;
   struct d_option* disk_options;
   struct d_option* sync_options;
@@ -48,16 +62,22 @@ extern int adm_resize(struct d_resource* ,char* );
 extern int adm_syncer(struct d_resource* ,char* );
 extern int m_system(int,char** );
 extern struct d_option* find_opt(struct d_option*,char*);
+extern void validate_resource(struct d_resource *);
+extern int check_uniq(const char* what, const char *fmt, ...);
+extern void verify_ips(struct d_resource* res);
+
 
 extern char* config_file;
 extern int config_valid;
 extern struct d_resource* config;
 extern struct d_globals global_options;
-extern int line;
+extern int line, fline, c_resource_start;
 
 extern int dry_run;
 extern char* drbdsetup;
 extern char ss_buffer[255];
+extern struct utsname nodeinfo;
+
 
 /* ssprintf() places the result of the printf in the current stack
    frame and sets ptr to the resulting string. If the current stack

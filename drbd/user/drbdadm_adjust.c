@@ -21,6 +21,8 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#define _GNU_SOURCE
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -46,13 +48,13 @@ FILE *m_popen(int *pid,char** argv)
 
   if(pipe(pipes)) {
     perror("Creation of pipes failed");
-    exit(20);
+    exit(E_exec_error);
   }
 
   mpid = fork();
   if(mpid == -1) {
     fprintf(stderr,"Can not fork");
-    exit(20);
+    exit(E_exec_error);
   }
   if(mpid == 0) {
     close(pipes[0]); // close reading end
@@ -60,7 +62,7 @@ FILE *m_popen(int *pid,char** argv)
     close(pipes[1]);
     execv(argv[0],argv);
     fprintf(stderr,"Can not exec");
-    exit(20);
+    exit(E_exec_error);
   }
 
   close(pipes[1]); // close writing end
@@ -90,7 +92,7 @@ static unsigned long m_strtol(const char* s,int def_mult)
       return r*1024*1024*(1024/def_mult);
     default:
       fprintf(stderr,"%s is not a valid number\n",s);
-      exit(20);
+      exit(E_config_invalid);
     }
 }
 
@@ -264,8 +266,8 @@ int adm_adjust(struct d_resource* res,char* unused)
   }
 
   rv=m_fscanf(in,"Remote address: %[0-9.]:%s\n",str1,str2);
-  if(rv!=2 || strcmp(str1,res->partner->address) ||
-     strcmp(str2,res->partner->port) ) {
+  if(rv!=2 || strcmp(str1,res->peer->address) ||
+     strcmp(str2,res->peer->port) ) {
     do_connect=1;
   }
 

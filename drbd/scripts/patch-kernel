@@ -2,7 +2,7 @@
 #
 # Create a patch against a kernel tree which adds the DRBD sources.
 #
-# $Id: patch-kernel,v 1.1.2.2 2004/04/20 16:16:50 lars Exp $
+# $Id: patch-kernel,v 1.1.2.3 2004/04/26 08:36:29 phil Exp $
 #
 # Copyright (C) 2003 Kees Cook, OSDL
 # kees@osdl.org, http://developer.osdl.org/kees/
@@ -101,8 +101,8 @@ test "$KDIR_PATCHLEVEL" = 6 && rm $DRBD_SUB/mempool*
 grep "HLIST_HEAD_INIT" $KERNEL/include/linux/list.h >/dev/null &&
 	rm $DRBD_SUB/hlist.h
 
-# remove __arch_um__ to_virt() hack 
-sed -e '/^#ifdef __arch_um__/,/^#endif/d' \
+# disable __arch_um__ to_virt() hack 
+sed -e 's/^#ifdef __arch_um__/#if 0/' \
 	< $DRBD/drbd/drbd_receiver.c > $DRBD_SUB/drbd_receiver.c
 
 # and, in case this kernel was already patched:

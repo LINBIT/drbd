@@ -25,31 +25,38 @@
 
  */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
+#include <search.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <errno.h>
-#define _GNU_SOURCE
 #include <getopt.h>
 #include <signal.h>
 
 #include "drbdadm.h"
 
-// basic format
-#define INDENT "    "
-#define FMT    INDENT "%-14s"
-#define BFMT   INDENT FMT "\n"
-// assignment format
-#define AFMT0 FMT INDENT " = %s\n"
-#define AFMT  INDENT FMT " = %s\n"
+static int indent = 0;
+#define INDENT_WIDTH 4
+#define BFMT  "%s;\n"
+#define IPFMT "%-16s %s:%s;\n"
+#define MDISK "%-16s %s [%s];\n"
+#define printI(fmt, args... ) printf("%*s" fmt,INDENT_WIDTH * indent,"" , ## args )
+#define printA(name, val ) \
+	printf("%*s%*s %3s;\n", \
+	  INDENT_WIDTH * indent,"" , \
+	  -24+INDENT_WIDTH * indent, \
+	  name, val )
 
-
-char* basename;
+char* progname;
 
 struct adm_cmd {
   const char* name;
@@ -78,7 +85,9 @@ static int sh_md_dev(struct d_resource* ,char* );
 static int sh_md_idx(struct d_resource* ,char* );
 
 char ss_buffer[255];
+struct utsname nodeinfo;
 int line=1;
+int fline, c_resource_start;
 struct d_globals global_options = { 0, 0 };
 char *config_file = NULL;
 struct d_resource* config = NULL;
@@ -127,9 +136,23 @@ struct adm_cmd cmds[] = {
 static char* esc(char* str)
 {
   static char buffer[1024];
+  char *ue = str, *e = buffer;
 
-  if(strchr(str,' ')) {
-    snprintf(buffer,1024,"\"%s\"",str);
+  if (!str || !str[0]) {
+	return "\"\"";
+  }
+  if(strchr(str,' ')||strchr(str,'\t')||strchr(str,'\\')) {
+    *e++ = '"';
+    while(*ue) {
+      if (*ue == '"' || *ue == '\\') {
+	  *e++ = '\\';
+      }
+      if (e-buffer >= 1022) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
+      *e++ = *ue++;
+      if (e-buffer >= 1022) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
+    }
+    *e++ = '"';
+    *e++ = '\0';
     return buffer;
   }
   return str;
@@ -139,58 +162,60 @@ static void dump_options(char* name,struct d_option* opts)
 {
   if(!opts) return;
 
-  printf(INDENT "%s {\n",name);
+  printI("%s {\n",name); ++indent;
   while(opts) {
-    if(opts->value) printf(AFMT,opts->name,opts->value);
-    else printf(BFMT,opts->name);
+    if(opts->value) printA(opts->name,opts->value);
+    else            printI(BFMT,opts->name);
     opts=opts->next;
   }
-  printf(INDENT "}\n");
+  --indent;
+  printI("}\n");
 }
 
 static void dump_global_info()
 {
   if (global_options.minor_count || global_options.disable_io_hints)
     {
-      printf("global {\n");
+      printI("global {\n"); ++indent;
       if (global_options.disable_io_hints)
-	printf(INDENT "disable_io_hints\n");
+	printI("disable_io_hints;\n");
       if (global_options.minor_count)
-	printf(INDENT "minor_count = %i\n", global_options.minor_count);
-      printf("}\n\n");
+	printI("minor_count = %i;\n", global_options.minor_count);
+      --indent; printI("}\n\n");
     }
 }
 
 static void dump_host_info(struct d_host_info* hi)
 {
   if(!hi) {
-    printf("  # No host section data available.\n");
+    printI("  # No host section data available.\n");
     return;
   }
 
-  printf(INDENT "on %s {\n",esc(hi->name));
-  printf(AFMT, "device"    , esc(hi->device));
-  printf(AFMT, "disk"      , esc(hi->disk));
-  printf(AFMT, "address"   , hi->address);
-  printf(AFMT, "port"      , hi->port);
-  printf(AFMT, "meta-disk" , esc(hi->meta_disk));
-  printf(AFMT, "meta-index", esc(hi->meta_index));
-  printf(INDENT "}\n");
+  printI("on %s {\n",esc(hi->name)); ++indent;
+  printA("device", esc(hi->device));
+  printA("disk"  , esc(hi->disk));
+  printI(IPFMT,"address"   , hi->address, hi->port);
+  if (!strcmp(hi->meta_index,"-1"))
+    printA("meta-disk", "internal");
+  else
+    printI(MDISK,"meta-disk", esc(hi->meta_disk), hi->meta_index);
+  --indent; printI("}\n");
 }
 
 static int adm_dump(struct d_resource* res,char* unused)
 {
-  printf("resource %s {\n",esc(res->name));
-  printf(AFMT0,"protocol",res->protocol);
+  printI("resource %s {\n",esc(res->name)); ++indent;
+  printA("protocol",res->protocol);
   if(res->ind_cmd)
-    printf(AFMT0,"incon-degr-cmd",esc(res->ind_cmd));
+    printA("incon-degr-cmd",esc(res->ind_cmd));
   dump_host_info(res->me);
-  dump_host_info(res->partner);
+  dump_host_info(res->peer);
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
   dump_options("syncer",res->sync_options);
   dump_options("startup",res->startup_options);
-  printf("}\n\n");
+  --indent; printf("}\n\n");
 
   return 0;
 }
@@ -219,7 +244,7 @@ static int sh_md_dev(struct d_resource* res,char* unused)
 
   if(strcmp("internal",res->me->meta_disk)==0) r = res->me->disk;
   else r = res->me->meta_disk;
-  
+
   printf("%s\n",r);
 
   return 0;
@@ -275,7 +300,7 @@ static void free_config(struct d_resource* res)
     free(f->protocol);
     free(f->ind_cmd);
     free_host_info(f->me);
-    free_host_info(f->partner);
+    free_host_info(f->peer);
     free_options(f->net_options);
     free_options(f->disk_options);
     free_options(f->sync_options);
@@ -299,7 +324,7 @@ static void find_drbdsetup(char** pathes)
   }
 
   fprintf(stderr,"Can not find drbdsetup");
-  exit(20);
+  exit(E_exec_error);
 }
 
 static void alarm_handler(int signo)
@@ -331,12 +356,12 @@ int m_system(int may_sleep,char** argv)
   pid = fork();
   if(pid == -1) {
     fprintf(stderr,"Can not fork");
-    exit(20);
+    exit(E_exec_error);
   }
   if(pid == 0) {
     execv(argv[0],argv);
     fprintf(stderr,"Can not exec");
-    exit(20);
+    exit(E_exec_error);
   }
 
   if( !may_sleep ) {
@@ -350,10 +375,10 @@ int m_system(int may_sleep,char** argv)
       if (errno != EINTR) break;
       if (alarm_raised) {
 	fprintf(stderr,"Child process does not terminate!\nExiting.\n");
-	exit(20);
+	exit(E_exec_error);
       } else {
 	fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__);
-	exit(20);
+	exit(E_exec_error);
       }
     } else {
       if(WIFEXITED(status)) {
@@ -385,7 +410,7 @@ int m_system(int may_sleep,char** argv)
   while(OPT) { \
     if (argc>=20) {\
       fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__); \
-      exit(20); \
+      exit(E_thinko); \
     } \
     if(OPT->value) { \
       ssprintf(argv[argc++],"--%s=%s",OPT->name,OPT->value); \
@@ -468,7 +493,7 @@ int adm_connect(struct d_resource* res,char* unused)
   argv[argc++]=res->me->device;
   argv[argc++]="net";
   ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
-  ssprintf(argv[argc++],"%s:%s",res->partner->address,res->partner->port);
+  ssprintf(argv[argc++],"%s:%s",res->peer->address,res->peer->port);
   argv[argc++]=res->protocol;
   opt=res->net_options;
   make_options(opt);
@@ -544,7 +569,7 @@ void print_usage()
 
   printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
 	 "{all|RESOURCE...}\n\n"
-	 "OPTIONS:\n",basename);
+	 "OPTIONS:\n",progname);
 
   opt=admopt;
   while(opt->name) {
@@ -568,7 +593,98 @@ void print_usage()
 
   printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
 
-  exit(20);
+  exit(E_usage);
+}
+
+int m_shell_match(const char *subcmd, const char *pattern)
+{
+  int ex, pid;
+  char *cmd = NULL;
+
+#ifdef DEBUG
+  ex = asprintf(&cmd, "[[ `%s` == %s ]]", subcmd, pattern);
+#else
+  ex = asprintf(&cmd, "[[ `%s` == %s ]] &>/dev/null", subcmd, pattern);
+#endif
+  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
+
+  pid = fork();
+  if (pid == -1) { fprintf(stderr, "Can not fork"); exit(E_exec_error); }
+  if (pid == 0) {
+    execl("/bin/bash", progname,
+#ifdef DEBUG
+	"-vxc",
+#else
+	"-c",
+#endif
+	cmd, NULL);
+    fprintf(stderr, "Can not exec");
+    exit(E_exec_error);
+  }
+  waitpid(pid, &ex, 0);
+  free(cmd);
+  return ex;
+}
+
+/* if not verifyable, prints a message to stderr,
+ * and sets config_valid = 0 if INVALID_IP_IS_INVALID_CONF is defined */
+void verify_ips(struct d_resource* res)
+{
+  char *cmd = NULL;
+  char *pat = NULL;
+  char *my_ip = NULL;
+  char *his_ip = NULL;
+  int ex;
+
+  if (!(res && res->me   && res->me->address
+	    && res->peer && res->peer->address)) {
+    fprintf(stderr, "OOPS, no resource info in verify_ips!\n");
+    exit(E_config_invalid);
+  }
+  my_ip  = res->me->address;
+  his_ip = res->peer->address;
+  ex = asprintf(&cmd, "/sbin/ip -o addr show scope global to %s", my_ip);
+  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
+  ex = asprintf(&pat, "*inet\\ %s/*", my_ip);
+  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
+  ex = m_shell_match(cmd, pat);
+  free(cmd); cmd = NULL;
+  free(pat); pat = NULL;
+  if (ex != 0) {
+    ENTRY e, *ep;
+    e.key = e.data = ep = NULL;
+    asprintf(&e.key,"%s:%s",my_ip,res->me->port);
+    ep = hsearch(e, FIND);
+    fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
+		    "IP %s not found on this host.\n",
+	    config_file,(int) ep->data,res->name, res->me->name,my_ip);
+#ifdef INVALID_IP_IS_INVALID_CONF
+    config_valid = 0;
+#endif
+    free(e.key);
+    return;
+  }
+  asprintf(&cmd, "/sbin/ip -o route get to %s", his_ip);
+  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
+  asprintf(&pat, "%s\\ dev*src\\ %s\\ \\\\*", his_ip, my_ip);
+  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
+  ex = m_shell_match(cmd, pat);
+  free(cmd); cmd = NULL;
+  free(pat); pat = NULL;
+  if (ex != 0) {
+    ENTRY e, *ep;
+    e.key = e.data = ep = NULL;
+    asprintf(&e.key,"%s:%s",his_ip,res->peer->port);
+    ep = hsearch(e, FIND);
+    fprintf(stderr, "%s:%d: in resource %s:\n\tNo route from me (%s) to peer (%s).\n",
+	    config_file,(int) ep->data,res->name, my_ip, his_ip);
+#ifdef INVALID_IP_IS_INVALID_CONF
+    config_valid = 0;
+#endif
+    return;
+  }
+
+  return;
 }
 
 static char* conf_file[] = {
@@ -576,6 +692,86 @@ static char* conf_file[] = {
     "/etc/drbd.conf",
     0
 };
+
+/* FIXME
+ * strictly speaking we don't need to check for uniqueness of disk and device names,
+ * but for uniqueness of their major:minor numbers ;-)
+ */
+
+int check_uniq(const char* what, const char *fmt, ...)
+{
+  va_list ap;
+  int rv;
+  ENTRY e, *ep;
+  e.key = e.data = ep = NULL;
+
+  va_start(ap, fmt);
+  rv=vasprintf(&e.key,fmt,ap);
+  va_end(ap);
+
+  if (rv < 0) { perror("vasprintf"); exit(E_thinko); }
+
+#ifdef EXIT_ON_CONFLICT
+  if (!what) {
+    fprintf(stderr,"Oops, unset argument in %s:%d.\n", __FILE__ , __LINE__ );
+    exit(E_thinko);
+  }
+#endif
+  e.data = (void*)fline;
+  ep = hsearch(e, FIND);
+  // fprintf(stderr,"%s: FIND %s: %p\n",res->name,e.key,ep);
+  if (ep) {
+    if (what) {
+      fprintf(stderr,
+	      "%s:%d: conflicting use of %s '%s' ...\n"
+	      "%s:%d: %s '%s' first used here.\n",
+	      config_file, line, what, ep->key,
+	      config_file, (int) ep->data, what, ep->key );
+    }
+    free(e.key);
+    config_valid = 0;
+  } else {
+    ep = hsearch(e, ENTER);
+    // fprintf(stderr,"%s: ENTER %s as %s: %p\n",res->name,e.key,ep->key,ep);
+    if (!ep) {
+      fprintf(stderr, "entry failed.\n");
+      exit(E_thinko);
+    }
+    ep = NULL;
+  }
+#ifdef EXIT_ON_CONFLICT
+  if (ep) exit(E_config_invalid);
+#endif
+  return !ep;
+}
+
+void validate_resource(struct d_resource * res)
+{
+  if (!res->protocol) {
+    fprintf(stderr,
+	    "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
+	    config_file, c_resource_start, res->name);
+    config_valid = 0;
+  } else {
+    res->protocol[0] = toupper(res->protocol[0]);
+  }
+  if (!res->me) {
+    fprintf(stderr,
+	    "%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
+	    config_file, c_resource_start, res->name, nodeinfo.nodename);
+    config_valid = 0;
+  }
+  if (!res->peer) {
+    fprintf(stderr,
+	    "%s:%d: in resource %s:\n\t"
+	    "missing section 'on <PEER> { ... }'.\n",
+	    config_file, c_resource_start, res->name);
+    config_valid = 0;
+  }
+  if (res->me && res->peer)
+    verify_ips(res);
+}
+
 
 int main(int argc, char** argv)
 {
@@ -586,11 +782,12 @@ int main(int argc, char** argv)
   drbdsetup=NULL;
   dry_run=0;
   yyin=NULL;
+  uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
 
-  if( (basename=strrchr(argv[0],'/')) )
-    argv[0] = ++basename;
+  if( (progname=strrchr(argv[0],'/')) )
+    argv[0] = ++progname;
   else
-    basename=argv[0];
+    progname=argv[0];
   if(argc == 1) print_usage(); // arguments missing.
 
   opterr=1;
@@ -614,7 +811,7 @@ int main(int argc, char** argv)
 	    yyin=fopen(optarg,"r");
 	    if(!yyin) {
 	      fprintf(stderr,"Can not open '%s'.\n.",optarg);
-	      exit(20);
+	      exit(E_exec_error);
 	    }
 	    ssprintf(config_file,"%s",optarg);
 	  }
@@ -653,7 +850,7 @@ int main(int argc, char** argv)
 
   if(cmd==NULL) {
     fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
-    exit(20);
+    exit(E_usage);
   }
   optind++;
 
@@ -672,28 +869,32 @@ int main(int argc, char** argv)
     } while (conf_file[++i]);
   }
   if(!config_file) {
-    exit(20);
+    exit(E_config_invalid);
   }
+
+  /*
+   * for check_uniq: check uniqueness of
+   * resource names, ip:port, node:disk and node:device combinations
+   * as well as resource:section ...
+   * hash table to test for uniqness of these values...
+   *  256  (max minors)
+   *  *(
+   *       2 (host sections) * 4 (res ip:port node:disk node:device)
+   *     + 4 (other sections)
+   *     + some more,
+   *       if we want to check for scoped uniqueness of *every* option
+   *   )
+   *     since nobody (?) will actually use more than a dozend minors,
+   *     this should be more than enough.
+   */
+  if (!hcreate(256*((2*4)+4))) {
+    fprintf(stderr,"Insufficient memory.\n");
+    exit(E_exec_error);
+  };
 
   yyparse();
 
-  { // check uniqueness of resource names.
-    struct d_resource *res2,*tmp2;
-    char *name;
-
-    for_each_resource(res,tmp,config) {
-      name = res->name;
-      for_each_resource(res2,tmp2,config) {
-	if( res != res2 && !strcmp(res2->name, name) ) {
-	  fprintf(stderr,"Multiple definitions of resource '%s' found.\n",
-		  name);
-	  exit(10);
-	}
-      }
-    }
-  }
-
-  if(!config_valid) exit(10);
+  if(!config_valid) exit(E_config_invalid);
 
   {
     int mc=global_options.minor_count;
@@ -703,7 +904,7 @@ int main(int argc, char** argv)
     if( mc && mc<nr_resources ) {
       fprintf(stderr,"You have %d resources but a minor_count of %d in your"
 	      " config!\n",nr_resources,mc);
-      exit(20);
+      exit(E_usage);
     }
   }
 
@@ -721,7 +922,7 @@ int main(int argc, char** argv)
         for_each_resource(res,tmp,config) {
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
-	    exit(20);
+	    exit(E_exec_error);
 	  }
 	}
       } else {
@@ -731,18 +932,18 @@ int main(int argc, char** argv)
 	    if(!strcmp(argv[i],res->name)) goto found;
 	  }
 	  fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
-	  exit(20);
+	  exit(E_usage);
 	found:
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
-	    exit(20);
+	    exit(E_exec_error);
 	  }
 	}
       }
-    } else { // Commands which does not need a resource name
+    } else { // Commands which do not need a resource name
       if( (rv=cmd->function(config,cmd->arg)) ) {
 	fprintf(stderr,"drbdsetup exited with code %d\n",rv);
-	exit(20);
+	exit(E_exec_error);
       }
     }
 
@@ -754,5 +955,5 @@ int main(int argc, char** argv)
 void yyerror(char* text)
 {
   fprintf(stderr,"%s:%d: %s\n",config_file,line,text);
-  exit(20);
+  exit(E_syntax);
 }

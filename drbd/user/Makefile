@@ -27,7 +27,9 @@ drbdadm: drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o drbdadm_adjust.o
 	drbdadm_adjust.o
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
-	flex -odrbdadm_scanner.c drbdadm_scanner.fl
+	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
+
+# for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
 drbdadm_parser.h: drbdadm_parser.y
 	bison -d -o drbdadm_parser.c drbdadm_parser.y

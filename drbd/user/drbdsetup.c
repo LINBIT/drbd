@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <linux/drbd.h>
+#include <linux/drbd_config.h>
 #define _GNU_SOURCE
 #include <getopt.h>
 #include <stdlib.h>
@@ -50,21 +51,21 @@
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 /* Default values */
-#define DEF_NET_TIMEOUT 60           // 6 seconds
-#define DEF_NET_TRY_CON_I 10         // 10 seconds
-#define DEF_NET_PING_I 10            // 10 seconds
-#define DEF_SYNC_RATE 250
-#define DEF_SYNC_GROUP 0
-#define DEF_WFC_TIMEOUT 0            // forever
-#define DEF_DEGR_WFC_TIMEOUT 60      // 60 Seconds
-#define DEF_SYNC_WFC_TIMEOUT 8       // 8 seconds
-#define DEF_SYNC_DEGR_WFC_TIMEOUT 4  // 4 seconds
-#define DEF_SYNC_AL_EXTENTS 128
-#define DEF_MAX_EPOCH_SIZE 2048      // entries
-#define DEF_MAX_BUFFERS 2048         // entries
-#define DEF_SNDBUF_SIZE (2*65535)    // ~128KB
-#define DEF_DISK_SIZE 0
-#define DEF_ON_IO_ERROR PassOn
+#define DEF_NET_TIMEOUT             60      //  6 seconds
+#define DEF_NET_TRY_CON_I           10      // 10 seconds
+#define DEF_NET_PING_I              10      // 10 seconds
+#define DEF_SYNC_RATE              250
+#define DEF_SYNC_GROUP               0
+#define DEF_WFC_TIMEOUT              0      // forever
+#define DEF_DEGR_WFC_TIMEOUT        60      // 60 Seconds
+#define DEF_SYNC_WFC_TIMEOUT         8      // 8 seconds
+#define DEF_SYNC_DEGR_WFC_TIMEOUT    4      // 4 seconds
+#define DEF_SYNC_AL_EXTENTS        128
+#define DEF_MAX_EPOCH_SIZE        2048      // entries
+#define DEF_MAX_BUFFERS           2048      // entries
+#define DEF_SNDBUF_SIZE           (2*65535) // ~128KB
+#define DEF_DISK_SIZE                0
+#define DEF_ON_IO_ERROR         PassOn
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -348,7 +349,7 @@ void print_usage(const char* addinfo)
     printf(" %s",eh_names[i]);
     if(i < ARRY_SIZE(eh_names)-1) printf(",");
   }
-    
+
   printf("\n\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
   if (addinfo)
       printf("\n%s\n",addinfo);

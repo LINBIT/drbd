@@ -1,87 +1,382 @@
 %{
-#include <stdio.h>
-#include <stdlib.h>
+/*
+*/
+
 #include <string.h>
-#include "drbdadm_parser.h"
+#include <ctype.h>
 #include "drbdadm.h"
+#include "drbdadm_parser.h"
 
-void syntax_error(char*);
+static void update_lcnt(void);
+static void section(int);
+static void named_section(int);
+static void do_assign(int);
+static void unescape(void);
+static void unescape_midx(void);
+/* static char* const escape(char* const str); */
+static void syntax_error(char*);
+static void expect_error(char*);
 
-#if 0
-#define DP printf("'%s' ",yytext)
-#else
-#define DP
-#endif
+#define CP		yylval.txt = strdup(yytext);
 
-#define CP yylval.txt = strdup(yytext)
+#define YY_NO_UNPUT
+static int yy_top_state(void) __attribute((unused)); /* no unused warning */
+
+#define PRINTF(fmt, args...) \
+  fprintf(stderr, "%s:%d: " fmt, config_file, line , ## args )
+
+/* This is an "unusual" scanner. If someone tells me how to do this in
+ * the parser instead, tell me. I just was not able to make the error
+ * handling of yacc do what I want.
+ *		-- lge
+ */ 
+
+/*
+ * Philipp dislikes syntax diversity, and wants terminating semicolons.
+ * So I drop what I thought would be nice to have: plain English and
+ * punctuation...
+ASSIGN			  {LS}*[:=]{LS}*|{LS}(is{LS})?
+DISK			  disk|"on top of"
+IGNORE			  ({WSC}*(use|with)*)+
+NDELIM			  [^ \t\n#=:;{}]+
+*/
 
 %}
 
 %option noyywrap
+%option stack
 
-NUM      [0-9][0-9]*[MKG]?
-SNUMB    [0-9]{1,3}
-IPV4ADDR ({SNUMB}"."){3}{SNUMB}
-WS       [ \t]
-OPCHAR   [{}=]
-%x in_string id
+%x RESOURCE GLOBAL
+%x STARTUP DISK NET SYNCER HOST
+%x SEMICOLON ASSIGN NUM NUM_U NAME STRING PROTO IO_ERROR
+%x IP_AND_PORT PORT META_DISK META_IDX
+%x LS LBRACE IGNORE_SECTION
 
-%%
-
-<in_string>[^\"]*   { DP; CP; return TK_STRING; }
-<in_string>\"       BEGIN(INITIAL);
-
-<id>\"           BEGIN(in_string);
-<id>[a-zA-Z/][a-zA-Z0-9_/.-]* { DP; CP; BEGIN(INITIAL); return TK_STRING; }
-<id>[{}]         { DP; BEGIN(INITIAL); return yytext[0]; }
-<id>=            { DP; return yytext[0];                 }
-<id>{WS}+        /* ignore whitespaces */
-
-\"               BEGIN(in_string);
-\n               { line++; }
-#[^\n]*          /* ignore comments */
-{OPCHAR}         { DP; return yytext[0];                 }
-on               { DP; BEGIN(id); return TK_ON;          }
-net              { DP; return TK_NET;                    }
-disk             { DP; BEGIN(id); return TK_DISK;        }
-port             { DP; return TK_PORT;                   }
-syncer           { DP; return TK_SYNCER;                 }
-device           { DP; BEGIN(id); return TK_DEVICE;      }
-global           { DP; return TK_GLOBAL;                 }
-address          { DP; return TK_ADDRESS;                }
-startup          { DP; return TK_STARTUP;                }
-resource         { DP; BEGIN(id); return TK_RESOURCE;    }
-meta-disk        { DP; BEGIN(id); return TK_META_DISK;   }
-meta-index       { DP; return TK_META_INDEX;             }
-rate             { DP; CP; return TK_RATE;               }
-size             { DP; CP; return TK_SIZE;               }
-group            { DP; CP; return TK_SYNC_GROUP;         }
-timeout          { DP; CP; return TK_TIMEOUT;            }
-ping-int         { DP; CP; return TK_PING_INT;           }
-protocol         { DP; CP; BEGIN(id); return TK_PROTOCOL;}
-on-io-error      { DP; CP; BEGIN(id); return TK_ON_IO_ERROR;}
-use-csums        { DP; CP; return TK_USE_CSUMS;          }
-skip-sync        { DP; CP; return TK_SKIP_SYNC;          }
-al-extents       { DP; CP; return TK_AL_EXTENTS;         }
-minor_count      { DP; CP; return TK_MINOR_COUNT;        }
-connect-int      { DP; CP; return TK_CONNECT_INT;        }
-wfc-timeout      { DP; CP; return TK_WFC_TIMEOUT;        }
-max-buffers      { DP; CP; return TK_MAX_BUFFERS;        }
-incon-degr-cmd   { DP; CP; return TK_INCON_DEGR_CMD;     }
-max-epoch-size   { DP; CP; return TK_MAX_EPOCH_SIZE;     }
-sndbuf-size      { DP; CP; return TK_SNDBUF_SIZE;        }
-degr-wfc-timeout { DP; CP; return TK_DEGR_WFC_TIMEOUT;   }
-disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;   }
-{IPV4ADDR}       { DP; CP; return TK_IPADDR;             }
-{NUM}            { DP; CP; return TK_INTEGER;            }
--{NUM}           { DP; CP; return TK_SINTEGER;           }
-{WS}+            /* ignore whitespaces */
-[^ \n\t={}"]+    { syntax_error(yytext); }
+LS			  [ \t]+
+WS			  [ \t\n]+
+COMMENT			  \#[^\n]*
+WSC			  ({WS}|{COMMENT}\n)+
+ASSIGN			  {LS}
+NUM			  [0-9]+
+NUM_U			  [0-9]+[kmgKMG]? 
+NAME			  [/_.A-Za-z0-9-]+
+STRING			  ({NAME}|\"([^\"\\\n]*|\\.)*\")+
+USTRING			  \"([^\"\\\n]*|\\.)*
+DISK			  disk
+INTERN			  internal|\"internal\"
+META_IDX		  {LS}*\[{LS}*{NUM}{LS}*\]
+O_IDX			  {WSC}meta-index{ASSIGN}
+IGNORE			  {WSC}
+SKIP			  skip({LS}[^{\n]*)?
+NDELIM			  [^ \t\n#;{}]+
+_1_254			  [1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-4]
+_0_255			  0|[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-5]
+IPV4ADDR		  {_1_254}\.{_0_255}\.{_0_255}\.{_1_254}
+PORT			  {WSC}port{ASSIGN}{NUM}
 
 %%
 
-void syntax_error(char* text)
+<INITIAL,RESOURCE>{
+  {SKIP}		section(IGNORE_SECTION);
+}
+
+<INITIAL>{
+  {COMMENT}		/* discard last comment if no eol at eof */
+  {WSC}			update_lcnt();
+  global		section(GLOBAL); return TK_GLOBAL;
+  resource		named_section(RESOURCE); return TK_RESOURCE;
+  \}			syntax_error("unmached closing brace.");
+  {NDELIM}		expect_error("one of 'global|resource'");
+}
+
+<RESOURCE,GLOBAL,IGNORE_SECTION,STARTUP,DISK,NET,SYNCER,HOST>{
+  {IGNORE}		update_lcnt();
+  \}			yy_pop_state();
+}
+
+<NAME>{
+  {NAME}		yy_pop_state(); CP; return TK_STRING;
+  [^ \t\n#]+		expect_error("name"); /* not referenced currently */
+}
+
+<SEMICOLON>{
+  {LS}			/* ignore */
+  ;			yy_pop_state();
+  \n                    yy_pop_state(); PRINTF("missing ';'\n"); line++; 
+  {NDELIM}   		expect_error("';'");
+}
+
+<ASSIGN>{
+  {ASSIGN}		yy_pop_state(); fline = line;
+  =			syntax_error("don't use '=' signs anymore!");
+  {WSC}			syntax_error("linebreak between option and value not allowed.\n");
+  {NDELIM}		expect_error("whitespace");
+}
+
+<NUM>{
+  {NUM}			yy_pop_state(); CP; return TK_INTEGER;
+  {NDELIM}		expect_error("integer"); yy_pop_state();
+}
+
+<NUM_U>{
+  {NUM_U}		yy_pop_state(); CP; return TK_INTEGER;
+  {NDELIM}		expect_error("[0-9]+[KMG]?"); yy_pop_state();
+}
+
+<STRING>{
+  {STRING}		yy_pop_state(); unescape(); CP; return TK_STRING;
+  {USTRING}		syntax_error("string terminator missing.\n");
+  {NDELIM}		expect_error("string"); yy_pop_state();
+}
+
+<PROTO>{
+  \"[abcABC]\"		yy_pop_state(); unescape(); CP; return TK_STRING;
+  [abcABC]		yy_pop_state(); CP; return TK_STRING;
+  {NDELIM}		expect_error("one of 'A|B|C'"); yy_pop_state();
+}
+
+<PORT>{
+  :			BEGIN(NUM); /* this is only reached when I have a colon */
+  {WSC}port{ASSIGN}	{
+			  /* or a 'port = ' following the 'address = ' */
+			  update_lcnt(); BEGIN(NUM);
+			  PRINTF("'port=<port>' deprecated, "
+				 "please use 'IP:port' instead.\n");
+			}
+}
+
+<IP_AND_PORT>{
+  {IPV4ADDR}/:{NUM}	BEGIN(PORT); CP; return TK_IPADDR;
+  {IPV4ADDR}/{PORT}	BEGIN(PORT); CP; return TK_IPADDR;
+  {IPV4ADDR}		syntax_error("':PORT' missing from IP:PORT.\n");
+  \"{IPV4ADDR}[^ \t\n]+	syntax_error("please do not quote IP:PORT.\n");
+  [0-9.:]+		expect_error("valid IP");
+  {NDELIM}		expect_error("IP and port 'XXX.XXX.XXX.XXX:PORT'");
+}
+
+<META_IDX>{
+  {META_IDX}		unescape_midx(); yy_pop_state(); CP; return TK_INTEGER;
+  {O_IDX}		{
+			  update_lcnt(); BEGIN(NUM);
+			  PRINTF("'meta-index=<idx>' deprecated, "
+				 "please use 'meta-disk /di/sk [idx]' instead.\n");
+			}
+}
+
+<META_DISK>{
+  {INTERN}		unescape(); yy_pop_state();  CP; return TK_STRING;
+  {INTERN}{META_IDX}	|
+  {INTERN}{O_IDX}	syntax_error("don't give an index for internal meta-data.");
+  {STRING}/{META_IDX}	|
+  {STRING}/{O_IDX}{NUM} unescape(); BEGIN(META_IDX); CP; return TK_STRING;
+  {STRING}{LS}*{NDELIM}	expect_error("meta-disk: index missing; either 'internal' or '/dev/ice/name [index]'");
+  {NDELIM}		expect_error("either 'internal' or '/dev/ice/name [index]'");
+}
+
+<LS>{
+  {LS}			update_lcnt(); yy_pop_state();
+  {NDELIM}		expect_error("whitespace"); yy_pop_state();
+}
+
+<LBRACE>{
+  {WSC}*\{{WSC}*	update_lcnt(); yy_pop_state();
+  {WSC}*[^{ \t\n]+	expect_error("'{'");
+}
+
+<IGNORE_SECTION>{
+  [^{}]+		update_lcnt(); /* no ECHO */
+  \{			yy_push_state(IGNORE_SECTION);
+}
+
+<GLOBAL>{
+  minor_count		do_assign(NUM); CP; return TK_MINOR_COUNT;
+  disable_io_hints	yy_push_state(SEMICOLON); return TK_DISABLE_IO_HINTS;
+  {NDELIM}		expect_error("'minor_count|disable_io_hints'");
+}
+
+<RESOURCE>{
+  on			named_section(HOST); return TK_ON;
+  startup		section(STARTUP);    return TK_STARTUP;
+  syncer		section(SYNCER);     return TK_SYNCER;
+  disk			section(DISK);	     return TK_DISK_S;
+  net			section(NET);	     return TK_NET;
+
+  protocol		do_assign(PROTO);  CP; return TK_PROTOCOL;
+  incon-degr-cmd	do_assign(STRING); CP; return TK_INCON_DEGR_CMD;
+  {NDELIM}		{
+			  expect_error(
+				"one of 'protocol|incon-degr-cmd|"
+				"startup|disk|net|syncer|on <HOSTNAME>'");
+			}
+}
+
+<STARTUP>{
+  wfc-timeout		do_assign(NUM); CP; return TK_WFC_TIMEOUT;
+  degr-wfc-timeout	do_assign(NUM); CP; return TK_DEGR_WFC_TIMEOUT;
+  {NDELIM}		expect_error("one of 'wfc-timeout|degr-wfc-timeout'");
+}
+
+<DISK>{
+  on-io-error		do_assign(IO_ERROR); CP; return TK_ON_IO_ERROR;
+  {NDELIM}		expect_error("'on-io-error'");
+}
+
+<IO_ERROR>{
+  pass_on		|
+  panic			|
+  detach		yy_pop_state(); CP; return TK_STRING;
+  {NDELIM}		expect_error("one of 'pass_on|panic|detach'");
+}
+
+
+<NET>{
+  sndbuf-size		do_assign(NUM_U); CP; return TK_SNDBUF_SIZE;
+  timeout		do_assign(NUM);   CP; return TK_TIMEOUT;
+  ping-int		do_assign(NUM);   CP; return TK_PING_INT;
+  connect-int		do_assign(NUM);   CP; return TK_CONNECT_INT;
+  max-buffers		do_assign(NUM);   CP; return TK_MAX_BUFFERS;
+  max-epoch-size	do_assign(NUM);   CP; return TK_MAX_EPOCH_SIZE;
+  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|max-epoch-size'");
+}
+
+<SYNCER>{
+  rate			do_assign(NUM_U); CP; return TK_RATE;
+  group			do_assign(NUM);   CP; return TK_SYNC_GROUP;
+  al-extents		do_assign(NUM);   CP; return TK_AL_EXTENTS;
+  {NDELIM}		expect_error("one of 'rate|group|al-extents'");
+}
+
+<HOST>{
+  address		do_assign(IP_AND_PORT); CP; return TK_ADDRESS;
+  device		do_assign(STRING);	CP; return TK_DEVICE;
+  {DISK}		do_assign(STRING);	CP; return TK_DISK;
+  meta-disk		do_assign(META_DISK);	CP; return TK_META_DISK;
+  {NDELIM}		expect_error("one of 'address|device|disk|meta-disk'");
+}
+
+<*>{
+  \{			syntax_error("unexpected opening brace.");
+  \n			syntax_error("unexpected end of line, maybe missing ';' ? ");
+  .			expect_error("something else");
+  <<EOF>>		{
+			  if (YY_START != INITIAL)
+			    syntax_error("unexpected end of file. Maybe missing closing brace?.");
+			  /* else
+			    fprintf(stderr,"\n--- End of File. OK\n");
+			  */
+			  yyterminate();
+			}
+}
+
+%%
+
+static void syntax_error(char *err)
 {
-  fprintf(stderr,"Unknown token '%s' in line %d.\n",text,line);
-  exit(2);
+  PRINTF("%s\n", err);
+  exit(E_syntax);
+}
+
+static void expect_error(char *err)
+{
+  PRINTF("%s expected, not '%s'.\n", err, yytext);
+  exit(E_syntax);
+}
+
+static void update_lcnt(void)
+{
+  char *p = yytext;
+  while (*p) {
+    if (*p++ == '\n')
+      ++line;
+  }
+}
+
+static void section(int sect)
+{
+  static int s = 0;
+  static int g = 0;
+  if (sect != IGNORE_SECTION) {
+    ++s;
+    if (sect == GLOBAL) {
+      if (s != 1) {
+	if (g)
+	  syntax_error("only one global { ... } section allowed.\n");
+	syntax_error("global { ... } section must be first.\n");
+      }
+      ++g;
+    }
+  }
+  yy_push_state(sect);
+  yy_push_state(LBRACE);
+  fline = line;
+}
+
+static void named_section(int sect)
+{
+  section(sect);
+  yy_push_state(STRING);
+  yy_push_state(LS);
+}
+
+static void do_assign(int what)
+{
+  yy_push_state(SEMICOLON);
+  yy_push_state(what);
+  yy_push_state(ASSIGN);
+}
+
+/*
+static char* const escape(char* const str)
+{
+  static char buffer[1024];
+  char *ue = str, *e = buffer;
+
+  if (!str || !str[0]) {
+	return "\"\"";
+  }
+  *e++ = '"';
+  while(*ue) {
+    if (*ue == '"' || *ue == '\\') {
+	*e++ = '\\';
+    }
+    if (e-buffer >= 1021) { PRINTF("string too long.\n"); exit(E_syntax); }
+    *e++ = *ue++;
+  }
+  *e++ = '"';
+  *e++ = '\0';
+  return buffer;
+}
+*/
+
+static void unescape(void)
+{
+  /* backslash escapes from string */
+  char *ue, *e;
+  e = ue = yytext;
+  for (;;) {
+    if (*ue == '"')
+      ue++;
+    if (*ue == '\\')
+      ue++;
+    if (!*ue)
+      break;
+    *e++ = *ue++;
+  }
+  *e = '\0';
+}
+
+static void unescape_midx(void)
+{
+  char *b;
+  int n;
+
+  b = strrchr(yytext, '[');
+  if (b) {
+    n = atoi(b + 1);
+    n = snprintf(yytext, yyleng, "%d", n);
+    if (0 < n && n < yyleng)
+      return;			/* ok */
+  }
+  fprintf(stderr, "Oops, thinko in %s:%d.\n", __FILE__, __LINE__);
+  exit(E_thinko);
 }
