@@ -48,6 +48,7 @@
 #include <linux/pkt_sched.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
+#include <linux/sched.h>
 
 #include "drbd.h"
 #include "drbd_int.h"
