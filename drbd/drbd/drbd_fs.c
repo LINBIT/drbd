@@ -151,7 +151,7 @@ ONLY_IN_26(
 		}
 	}
 
-	if( drbd_get_capacity(mdev->this_bdev) != size ) {
+	if( (drbd_get_capacity(mdev->this_bdev)>>1) != size ) {
 		if(bm_resize(mdev->mbds_id,size)) {
 			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
