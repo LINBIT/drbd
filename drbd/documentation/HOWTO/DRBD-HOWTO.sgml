@@ -229,7 +229,7 @@ On node2, you would issue the following commands:</para>
 <programlisting>
 $ insmod drbd.o
 $ drbdsetup /dev/nb0 disk /dev/hdc6
-$ drbdsetup /dev/nb0 net 10.0.0.10 10.0.0.20 B
+$ drbdsetup /dev/nb0 net 10.0.0.20 10.0.0.10 B
 </programlisting>
 
 <para>On node1 you would issue the following commands:</para>
