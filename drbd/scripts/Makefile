@@ -25,12 +25,24 @@ include ../Makefile.vars
 all:
 
 install:
-	if [ -e /etc/init.d ]; then install drbd /etc/init.d/;\
-		else install drbd /etc/rc.d/init.d/; fi
 	mkdir -p /etc/ha.d/resource.d
-	install datadisk /etc/ha.d/resource.d/
 	mkdir -p /etc/sysconfig/drbd
+	
+	install drbd_commun /etc/ha.d/resource.d/
+	install drbdc /etc/ha.d/resource.d/
+	install drbd /etc/ha.d/resource.d/
+	install datadisk /etc/ha.d/resource.d/
 	install drbd.example /etc/sysconfig/drbd/
+
+	@ if [ -e /etc/init.d ]; then \
+		ln -sf /etc/ha.d/resource.d/drbd /etc/init.d/drbd ;\
+		echo ln -sf /etc/ha.d/resource.d/drbd /etc/init.d/drbd;\
+	elif [ -e /etc/rc.d/init.d ]; then \
+		ln -sf /etc/ha.d/resource.d/drbd /etc/rc.d/init.d/drbd ;\
+		echo ln -sf /etc/ha.d/resource.d/drbd /etc/rc.d/init.d/drbd ;\
+	else \
+		echo "Can not install drbd init.d script" ;\
+	fi
 
 clean:
 	rm -f *~
