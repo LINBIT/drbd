@@ -133,6 +133,8 @@ typedef struct Drbd_Conf drbd_dev;
 #define DUMPLX(A)  ERR( #A " = %lx in %s:%d\n", (A),__FILE__,__LINE__);
 #define DUMPI(A)   ERR( #A " = %d in %s:%d\n",  (A),__FILE__,__LINE__);
 
+#define DUMPST(A) DUMPLLU((unsigned long long)(A))
+
 
 // Info: do not remove the spaces around the "," before ##
 //       Otherwise this is not portable from gcc-2.95 to gcc-3.3

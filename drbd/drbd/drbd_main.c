@@ -1756,11 +1756,11 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	if(bit) {
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
 			ERR_IF((bnr>>3) >= sbm->size) {
-				DUMPLU(sector);
+				DUMPST(sector);
 				DUMPI(size);
 				DUMPLU(bnr);
 				DUMPLU(sbm->size);
-				DUMPLU(sbm->dev_size);
+				DUMPST(sbm->dev_size);
 				break;
 			}
 			if(!test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
@@ -1781,11 +1781,11 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 			if(unlikely(dev_size<<1 == esector+1)) {
 				ebnr++;
 				ERR_IF((ebnr>>3) >= sbm->size) {
-					DUMPLU(sector);
+					DUMPST(sector);
 					DUMPI(size);
 					DUMPLU(ebnr);
 					DUMPLU(sbm->size);
-					DUMPLU(sbm->dev_size);
+					DUMPST(sbm->dev_size);
 				} else if(test_bit(ebnr&BPLM,bm+(ebnr>>LN2_BPL))) {
 					ret = (esector-sector+1)-BM_NS;
 				}
@@ -1794,13 +1794,13 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
 			ERR_IF((bnr>>3) >= sbm->size) {
-				DUMPLU(sector);
+				DUMPST(sector);
 				DUMPI(size);
 				DUMPLU(bnr);
 				DUMPLU(sbnr);
 				DUMPLU(ebnr);
 				DUMPLU(sbm->size);
-				DUMPLU(sbm->dev_size);
+				DUMPST(sbm->dev_size);
 				break;
 			}
 			if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
