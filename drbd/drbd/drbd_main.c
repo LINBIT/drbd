@@ -351,6 +351,7 @@ STATIC void drbd_daemonize(void) {
 	daemonize("drbd_thread");
 #else
 	daemonize();
+	reparent_to_init();
 #endif
 }
 
@@ -374,36 +375,11 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	}
 }
 
-/* If reparent_to_init() would be exported, we could use the kernel's
-   version .... so we have to maintain our own copy of it.
- */
-STATIC void drbd_reparent_to_init(void)
-{
-	struct task_struct *child_reaper;
-
-	child_reaper = find_task_by_pid(1);
-
-        write_lock_irq(&tasklist_lock);
-
-        REMOVE_LINKS(current);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
-        current->parent = child_reaper;
-        current->real_parent = child_reaper;
-#else
-        current->p_pptr = child_reaper;
-        current->p_opptr = child_reaper;
-#endif
-        SET_LINKS(current);
-        current->exit_signal = SIGCHLD;
-        write_unlock_irq(&tasklist_lock);
-}
-
 STATIC int drbd_thread_setup(void* arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int retval;
 
-	drbd_reparent_to_init();
 	drbd_daemonize();
 	down(&thi->mutex); //ensures that thi->task is set.
 
