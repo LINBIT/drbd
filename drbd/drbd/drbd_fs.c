@@ -382,6 +382,8 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			drbd_conf[minor].mbds_id=0;
 		}
 
+		set_cstate(&drbd_conf[minor],Unconfigured);
+
 		break;
 
 	case DRBD_IOCTL_WAIT_CONNECT:

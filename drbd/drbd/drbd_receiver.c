@@ -724,8 +724,8 @@ inline int receive_param(int minor,int command)
 	drbd_conf[minor].o_state = be32_to_cpu(param.state);
 
 	blk_size[MAJOR_NR][minor] =
-		min(int,blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
-		    be64_to_cpu(param.size));
+		min_t(int,blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
+		      be64_to_cpu(param.size));
 
 	if(drbd_conf[minor].lo_usize &&
 	   (drbd_conf[minor].lo_usize != blk_size[MAJOR_NR][minor])) {
@@ -741,8 +741,8 @@ inline int receive_param(int minor,int command)
 	else if(be32_to_cpu(param.state) == Primary)
 		blksize = be32_to_cpu(param.blksize);
 	else 
-		blksize = max(int,be32_to_cpu(param.blksize),
-			      (1 << drbd_conf[minor].blk_size_b));
+		blksize = max_t(int,be32_to_cpu(param.blksize),
+				(1 << drbd_conf[minor].blk_size_b));
 
 	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
 	set_blocksize(drbd_conf[minor].lo_device,blksize);
