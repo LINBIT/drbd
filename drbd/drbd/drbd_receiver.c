@@ -347,6 +347,7 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	}
 
 	clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
+	wake_up_interruptible(&mdev->ee_wait);
 
 	return ok;
 }
