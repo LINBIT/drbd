@@ -1356,7 +1356,6 @@ STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
-	[WakeAsender]      = NULL, // this is never seen on the net
 	[Data]             = receive_Data,
 	[DataReply]        = receive_DataReply,
 	[RecvAck]          = NULL, //receive_RecvAck,

@@ -468,6 +468,8 @@ drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
 	bio->bi_sector  = sector;
 	bio->bi_private = mdev;
 	bio->bi_next    = 0;
+	e->ee_sector = sector;
+	e->ee_size = size;
 }
 
 static inline void

@@ -292,7 +292,6 @@ enum MetaDataIndex {
  *********************************************************************/
 
 typedef enum {
-	WakeAsender,  // interrupted drbd_receive_header fakes this
 	Data,
 	DataReply,
 	RecvAck,      // Used in protocol B
@@ -320,7 +319,6 @@ typedef enum {
 static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 {
 	switch (cmd) {
-	case WakeAsender     : return "WakeAsender";
 	case Data            : return "Data";
 	case DataReply       : return "DataReply";
 	case RecvAck         : return "RecvAck";
