@@ -1,3 +1,4 @@
+
 /*
 -*- linux-c -*-
    drbd_fs.c
@@ -137,7 +138,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
-	drbd_thread_stop(&mdev->syncer);
+	drbd_thread_stop(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_resources(minor);
@@ -189,6 +190,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	cn.disk_size_user=mdev->lo_usize;
 	cn.do_panic=mdev->do_panic;
 	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
+	memcpy(&cn.sconf, &mdev->sync_conf, sizeof(struct syncer_config));
 
 	if (copy_to_user(arg,&cn,sizeof(struct ioctl_get_config)))
 		return -EFAULT;
@@ -209,11 +211,6 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
 		return -EFAULT;
-
-	if( mdev->lo_file == 0 || mdev->lo_device == 0 ) {
-		retcode=LDNoConfig;
-		goto fail_ioctl;
-	}
 
 #define M_ADDR(A) (((struct sockaddr_in *)&A.my_addr)->sin_addr.s_addr)
 #define M_PORT(A) (((struct sockaddr_in *)&A.my_addr)->sin_port)
@@ -244,7 +241,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	*/
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
-	drbd_thread_stop(&mdev->syncer);
+	drbd_thread_stop(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(minor);
@@ -258,8 +255,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		}
 	}
 
-	memcpy(&mdev->conf,&new_conf,
-	       sizeof(struct net_config));
+	memcpy(&mdev->conf,&new_conf,sizeof(struct net_config));
 
 	if (!mdev->transfer_log) {
 		mdev->transfer_log = kmalloc(sizeof(struct tl_entry) * 
@@ -282,24 +278,21 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	if(newstate == drbd_conf[minor].state) return 0; /* nothing to do */
 		
 	if(drbd_conf[minor].cstate == Unconfigured)
-		return -ENXIO;
+                return -ENXIO;
 
-	if ( (newstate & Primary) && (drbd_conf[minor].o_state == Primary) )
-		return -EACCES;
+        if ( (newstate & Primary) && (drbd_conf[minor].o_state == Primary) )
+                return -EACCES;
 
-	if (drbd_conf[minor].cstate == SyncingAll
-	    || drbd_conf[minor].cstate == SyncingQuick)
-		return -EINPROGRESS;
+        if(newstate == Secondary &&
+           (test_bit(WRITER_PRESENT, &drbd_conf[minor].flags) ||
+            drbd_is_mounted(minor) == MountedRW))
+                return -EBUSY;
 
-	if(newstate == Secondary && 
-	   (test_bit(WRITER_PRESENT, &drbd_conf[minor].flags) || 
-	    drbd_is_mounted(minor) == MountedRW)) 
-		return -EBUSY;
-			
-	if( (newstate & Primary) && 
-	    !(drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent) &&
-	    !(newstate & DontBlameDrbd) )
-		return -EIO;
+        if( (newstate & Primary) &&
+            !(drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent) &&
+	    (drbd_conf[minor].cstate < Connected) &&
+            !(newstate & DontBlameDrbd) )
+                return -EIO;
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
 			
@@ -342,14 +335,14 @@ int drbd_set_state(int minor,Drbd_State newstate)
  	if(newstate & Primary) {
  		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
 		if(newstate & Human) {
-			drbd_md_inc(minor,HumanCnt);
-		} else if(newstate & TimeoutExpired ) {
-			drbd_md_inc(minor,TimeoutCnt);
-		} else {
-			drbd_md_inc(minor,
-			    drbd_conf[minor].cstate >= Connected ? 
-			    ConnectedCnt : ArbitraryCnt);
-		}
+                        drbd_md_inc(minor,HumanCnt);
+                } else if(newstate & TimeoutExpired ) {
+                        drbd_md_inc(minor,TimeoutCnt);
+                } else {
+                        drbd_md_inc(minor,
+                            drbd_conf[minor].cstate >= Connected ?
+                            ConnectedCnt : ArbitraryCnt);
+                }
  	} else {
  		set_device_ro(MKDEV(MAJOR_NR, minor), TRUE );
  	}
@@ -366,126 +359,100 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 {
 	int minor,err=0;
 	long time;
-	struct Drbd_Conf *mdev;
+ 	struct Drbd_Conf *mdev;
 
 	minor = MINOR(inode->i_rdev);
 	if(minor >= minor_count) return -ENODEV;
 	mdev = &drbd_conf[minor];
 
-	if( (err=down_interruptible(&mdev->ctl_mutex)) ) return err;
-	/*
-	 * please no 'return', use 'err = -ERRNO; break;'
-	 * we hold the ctl_mutex
-	 */
+ 	if( (err=down_interruptible(&mdev->ctl_mutex)) ) return err;
+ 	/*
+ 	 * please no 'return', use 'err = -ERRNO; break;'
+ 	 * we hold the ctl_mutex
+ 	 */
 	switch (cmd) {
 	case BLKGETSIZE:
-		err = put_user(blk_size[MAJOR_NR][minor]<<1, (long *)arg);
+ 		err = put_user(blk_size[MAJOR_NR][minor]<<1, (long *)arg);
 		break;
 
 #ifdef BLKGETSIZE64
-	case BLKGETSIZE64: /* see ./drivers/block/loop.c */
-		err = put_user((u64)blk_size[MAJOR_NR][minor]<<10, (u64*)arg);
-		break;
+ 	case BLKGETSIZE64: /* see ./drivers/block/loop.c */
+ 		err = put_user((u64)blk_size[MAJOR_NR][minor]<<10, (u64*)arg);
+ 		break;
 #endif
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	case BLKROSET:
 	case BLKROGET:
 	case BLKFLSBUF:
 	case BLKSSZGET:
 	case BLKPG:
-		err=blk_ioctl(inode->i_rdev, cmd, arg);
-#else
-		up(&mdev->ctl_mutex);
-		RO_IOCTLS(inode->i_rdev, arg);
-#endif
+ 		err=blk_ioctl(inode->i_rdev, cmd, arg);
 		break;
 	case DRBD_IOCTL_GET_VERSION:
-		err = put_user(API_VERSION, (int *) arg);
+ 		err = put_user(API_VERSION, (int *) arg);
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		if (arg & ~(Primary|Secondary|Human|TimeoutExpired|
-			    DontBlameDrbd) )
-			return -EINVAL;
+                if (arg & ~(Primary|Secondary|Human|TimeoutExpired|
+                            DontBlameDrbd) )
+                        return -EINVAL;
 
-		err = drbd_set_state(minor,arg);
-		break;
+                err = drbd_set_state(minor,arg);
+                break;
 
 	case DRBD_IOCTL_SET_DISK_CONFIG:
-		err = drbd_ioctl_set_disk(mdev,(struct ioctl_disk_config*)arg);
-		break;
+ 		err = drbd_ioctl_set_disk(mdev,(struct ioctl_disk_config*)arg);
+ 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:
-		err = drbd_ioctl_set_net(mdev,(struct ioctl_net_config*) arg);
-		break;
+ 		err = drbd_ioctl_set_net(mdev,(struct ioctl_net_config*) arg);
+ 		break;
 
-	case DRBD_IOCTL_SET_SYNC_CONFIG: { // brace for local variable
-		int tmp[3];
-		err = copy_from_user(tmp, (int*) arg, 3*sizeof(int));
-		if (err) break;
-
-		// rate == 0 means do not change
-		if (tmp[0] == 0 && tmp[1] > 0
-		    && tmp[1] > mdev->conf.sync_rate_min)
-		{
-			mdev->conf.sync_rate_max = tmp[1];
-		} else if (tmp[1] == 0 && tmp[0] > 0
-		    && tmp[0] < mdev->conf.sync_rate_max)
-		{
-			mdev->conf.sync_rate_min = tmp[0];
-		} else if (tmp[0] > 0 && tmp[0] < tmp[1]) {
-			mdev->conf.sync_rate_min = tmp[0];
-			mdev->conf.sync_rate_max = tmp[1];
-		} else if (tmp[0] != 0 || tmp[1] != 0) {
-			err = -EINVAL;
-			break;
-		}
-		if (-20 <= tmp[2] && tmp[2] <= 19) {
-			mdev->conf.sync_nice = tmp[2];
-		} else if (tmp[2] != 20)
-			err = -EINVAL;
+	case DRBD_IOCTL_SET_SYNC_CONFIG:
+		err = copy_from_user(&drbd_conf[minor].sync_conf, 
+		       	   &(((struct ioctl_syncer_config*)arg)->config),
+				     sizeof(struct syncer_config));
+		// TODO Need to signal dsender() ?
 		break;
-	        }
 
 	case DRBD_IOCTL_GET_CONFIG:
-		err = drbd_ioctl_get_conf(mdev,(struct ioctl_get_config*) arg);
-		break;
+ 		err = drbd_ioctl_get_conf(mdev,(struct ioctl_get_config*) arg);
+ 		break;
 
 	case DRBD_IOCTL_UNCONFIG_NET:
-		if( mdev->cstate == Unconfigured) break;
-		/* FIXME what if fsync returns error */
-		fsync_dev(MKDEV(MAJOR_NR, minor));
-		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->syncer);
-		drbd_thread_stop(&mdev->asender);
-		drbd_thread_stop(&mdev->receiver);
-
-		set_cstate(mdev,StandAlone);
-		break;
+ 		if( mdev->cstate == Unconfigured) break;
+ 		/* FIXME what if fsync returns error */
+ 		fsync_dev(MKDEV(MAJOR_NR, minor));
+ 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
+ 		drbd_thread_stop(&mdev->dsender);
+ 		drbd_thread_stop(&mdev->asender);
+ 		drbd_thread_stop(&mdev->receiver);
+  
+ 		set_cstate(mdev,StandAlone);
+  		break;
 
 	case DRBD_IOCTL_UNCONFIG_BOTH:
-		if (mdev->cstate == Unconfigured) break;
-
-		if (mdev->open_cnt > 1) {
-			err=-EBUSY;
-			break;
-		}
-
-		fsync_dev(MKDEV(MAJOR_NR, minor));
-		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->syncer);
-		drbd_thread_stop(&mdev->asender);
-		drbd_thread_stop(&mdev->receiver);
-		drbd_free_resources(minor);
-		if (mdev->mbds_id) {
-			bm_cleanup(mdev->mbds_id);
-			mdev->mbds_id=0;
-		}
-
-		set_cstate(mdev,Unconfigured);
-
-		break;
+ 		if (mdev->cstate == Unconfigured) break;
+  
+ 		if (mdev->open_cnt > 1) {
+ 			err=-EBUSY;
+ 			break;
+ 		}
+  
+  		fsync_dev(MKDEV(MAJOR_NR, minor));
+ 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
+ 		drbd_thread_stop(&mdev->dsender);
+ 		drbd_thread_stop(&mdev->asender);
+ 		drbd_thread_stop(&mdev->receiver);
+  		drbd_free_resources(minor);
+ 		if (mdev->mbds_id) {
+ 			bm_cleanup(mdev->mbds_id);
+ 			mdev->mbds_id=0;
+  		}
+ 
+ 		set_cstate(mdev,Unconfigured);
+  
+  		break;
 
 	case DRBD_IOCTL_WAIT_CONNECT:
 		if ((err = get_user(time, (int *) arg)))
@@ -526,8 +493,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		       mdev->cstate != Connected &&
 		       time > 0 ) {
 
-			if (mdev->cstate == SyncingQuick ||
-			    mdev->cstate == SyncingAll ) 
+			if (mdev->cstate == SyncSource ||
+			    mdev->cstate == SyncTarget ) 
 				time=MAX_SCHEDULE_TIMEOUT;
 
 			time = interruptible_sleep_on_timeout(
@@ -542,21 +509,30 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err = put_user(mdev->cstate == Connected, (int *) arg);
 		goto out_unlocked;
 
-	case DRBD_IOCTL_DO_SYNC_ALL:
-		if (mdev->cstate != Connected) {
+        case DRBD_IOCTL_INVALIDATE:
+                if( mdev->cstate != Connected) {
 			err = -ENXIO;
 			break;
 		}
 
-		if (mdev->state == Primary) {
-			set_cstate(mdev,SyncingAll);
-			drbd_send_cstate(mdev);
-			drbd_thread_start(&mdev->syncer);
-		} else if (mdev->o_state == Primary) {
-			drbd_send_cmd(drbd_conf+minor,StartSync,0);
-		} else err = -EINPROGRESS; /* Suggest a better one! */
-		
-		break;
+                bm_fill_bm(mdev->mbds_id,-1);
+                mdev->rs_total=blk_size[MAJOR_NR][minor] &
+                        ~((1<<(mdev->blk_size_b-10))-1);
+		drbd_start_resync(mdev,SyncTarget);
+                drbd_send_cmd(drbd_conf+minor,BecomeSyncSource,0);
+                break;
+
+        case DRBD_IOCTL_INVALIDATE_REM:
+                if( mdev->cstate != Connected) {
+			err = -ENXIO;
+			break;
+		}
+
+                mdev->rs_total=blk_size[MAJOR_NR][minor] &
+			~((1<<(drbd_conf[minor].blk_size_b-10))-1);
+		drbd_start_resync(mdev,SyncSource);
+                drbd_send_cmd(drbd_conf+minor,BecomeSyncTarget,0);
+                break;
 
 	case DRBD_IOCTL_SECONDARY_REM:
 		if (mdev->cstate != Connected) {
@@ -578,5 +554,4 @@ int drbd_ioctl(struct inode *inode, struct file *file,
  out_unlocked:
 	return err;
 }
-
 

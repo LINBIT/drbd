@@ -81,27 +81,16 @@
 # define STATIC static
 #endif
 
+#if defined(DBG_SPINLOCKS) && defined(__SMP__)
+# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { printk(KERN_ERR DEVICE_NAME ": Not holding lock! in %s\n", __FUNCTION__ ); }
+#else 
+# define MUST_HOLD(lock)
+#endif
+
 #ifdef DBG_PRINTKS_RCV
 # define DPRINTK(fmt, args... ) printk(KERN_DEBUG fmt, ##args)
 #else
 # define DPRINTK(...) 
-#endif
-
-/*lge: is this the right version dependency? */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
-#define get_bh(bh)      ((bh)->b_count++)
-#define put_bh(bh)      ((bh)->b_count--)
-/* drop_super is used in is_mounted().
- * FIXME: should it be replaced with something more useful?
- */
-#define drop_super(sb)  ((void)0);
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,2,18)
-#define init_MUTEX_LOCKED( A )    (*(A)=MUTEX_LOCKED)
-#define init_MUTEX( A )           (*(A)=MUTEX)
-#define init_waitqueue_head( A )  (*(A)=0)
-typedef struct wait_queue*  wait_queue_head_t;
 #endif
 
 /*
@@ -114,11 +103,7 @@ typedef struct wait_queue*  wait_queue_head_t;
  *
  * - marcelo
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #define GFP_DRBD GFP_ATOMIC
-#else
-#define GFP_DRBD GFP_BUFFER
-#endif
 
 /* these defines should go into blkdev.h 
    (if it will be ever includet into linus' linux) */
@@ -179,24 +164,31 @@ typedef struct {
 MKPACKET(Drbd_BarrierAck_P)
 
 typedef struct {
-  __u32       cstate;
-}  __attribute((packed)) Drbd_CState_P;
-MKPACKET(Drbd_CState_P)
+  __u64       block_nr;
+  __u64       block_id;
+  __u32       blksize;
+} __attribute((packed)) Drbd_BlockRequest_P;
+MKPACKET(Drbd_BlockRequest_P)
 
 typedef enum { 
   Data, 
-  Barrier,
+  DataReply,    
   RecvAck,      /* Used in protocol B */
   WriteAck,     /* Used in protocol C */
+  Barrier,
   BarrierAck,  
   ReportParams,
+  ReportBitMap,
   CStateChanged,
   Ping,
   PingAck,
-  StartSync,     /* Secondary asking primary to start sync */ 
+  BecomeSyncTarget,
+  BecomeSyncSource,
   BecomeSec,     /* Secondary asking primary to become secondary */
-  SetConsistent, /* Syncer run was successfull */
-  WriteHint      /* Used in protocol C to hint the secondary to call tq_disk */
+  WriteHint,     /* Used in protocol C to hint the secondary to call tq_disk */
+  DataRequest,   /* Used to ask for a data block */
+  RSDataRequest,   /* Used to ask for a data block */
+  BlockInSync    /* Possible anser to CondDataRequest. No data will be send */
 } Drbd_Packet_Cmd;
 
 
@@ -214,18 +206,13 @@ struct Drbd_thread {
 	int minor;
 };
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 struct drbd_request_struct {
         struct buffer_head* bh; /* bh waiting for io_completion */
         int rq_status;
 };
 
 typedef struct drbd_request_struct drbd_request_t;
-#define GET_SECTOR(A) ((A)->bh->b_rsector)
-#else
-typedef struct request drbd_request_t;
-#define GET_SECTOR(A) ((A)->sector)
-#endif
+#define GET_SECTOR(A) ((A)->bh->b_rsector)   //REMOVE THIS
 
 struct tl_entry {
         drbd_request_t* req;
@@ -238,10 +225,28 @@ struct tl_entry {
    sync_ee .... syncer block beeing written
    done_ee .... block written, need to send ack packet
 */ 
+
+struct Drbd_Conf;
+
 struct Tl_epoch_entry {
 	struct list_head list; 
 	struct buffer_head* bh;
 	u64    block_id;
+	int   (*e_end_io) (struct Drbd_Conf*, struct Tl_epoch_entry *);
+};
+
+struct Pending_read {
+	struct list_head list;
+	union {
+		struct buffer_head* bh;
+		unsigned long block_nr;
+	} d;
+	enum {
+		Discard = 0,
+		Application = 1,
+		Resync = 2,
+		AppAndResync = 3,
+	} cause;
 };
 
 /* flag bits */
@@ -249,9 +254,11 @@ struct Tl_epoch_entry {
 #define COLLECT_ZOMBIES   1
 #define SEND_PING         2
 #define WRITER_PRESENT    3
-/*                        4   */
+#define START_SYNC        4
 #define DO_NOT_INC_CONCNT 5
 #define WRITE_HINT_QUEUED 6
+#define BLKSIZE_CHANGING  7
+#define PARTNER_DISKLESS  8
 
 struct send_timer_info {
 	struct timer_list s_timeout; /* send timeout */
@@ -262,7 +269,17 @@ struct send_timer_info {
 	int restart;	
 };
 
-struct ds_buffer;
+
+struct BitMap {
+	kdev_t dev;
+	unsigned long size;
+	unsigned long* bm;
+	unsigned long sb_bitnr;
+	unsigned long sb_mask;
+	unsigned long gb_bitnr;
+	unsigned long gb_snr;
+	spinlock_t bm_lock;
+};
 
 
 enum MetaDataFlags {
@@ -286,9 +303,13 @@ enum MetaDataIndex {
 
 struct Drbd_Conf {
 	struct net_config conf;
+	struct syncer_config sync_conf;
         int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
+	struct semaphore sock_mutex;
+	struct semaphore msock_mutex;
+ 	struct semaphore ctl_mutex;
 	kdev_t lo_device;
 	struct file *lo_file;
 	int lo_usize;   /* user provided size */
@@ -311,37 +332,39 @@ struct Drbd_Conf {
 	struct tl_entry* transfer_log;
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
-	struct semaphore send_mutex;
-	struct semaphore ctl_mutex;    /* for ioctl */
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
-	unsigned long send_block; // block which is processed by send_data
 	spinlock_t send_proc_lock;
-	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
-	unsigned long resync_mark;       // for procfs
-	unsigned long resync_mark_cnt;   // syncer
-	unsigned long resync_mark_start; // progress bars
-	struct ds_buffer *syncer_b;
+	unsigned long send_block;     // block which is processed by send_data
+	unsigned long rs_left;     // blocks not up-to-date [unit KB]
+	unsigned long rs_total;    // blocks to sync in this run [unit KB]
+	unsigned long rs_start;    // Syncer's start time [unit jiffies]
+	unsigned long rs_mark_left;// block not up-to-date at mark [unit KB]
+	unsigned long rs_mark_time;// marks's time [unit jiffies]
 	spinlock_t bb_lock;
 	struct Drbd_thread receiver;
-	struct Drbd_thread syncer;
+	struct Drbd_thread dsender;
         struct Drbd_thread asender;
+	wait_queue_head_t dsender_wait;
 	struct BitMap* mbds_id;
 	int open_cnt;
 	u32 gen_cnt[META_DATA_SIZE];
 	u32 bit_map_gen[META_DATA_SIZE];
 	int epoch_size;
 	spinlock_t ee_lock;
-	struct list_head free_ee;  
-	struct list_head active_ee;
-	struct list_head sync_ee;  
-	struct list_head done_ee;
+	struct list_head free_ee;   // available
+	struct list_head active_ee; // IO in progress
+	struct list_head sync_ee;   // IO in progress
+	struct list_head done_ee;   // send ack
+	struct list_head read_ee;   // IO in progress
+	struct list_head rdone_ee;  // send result or CondRequest
+	spinlock_t pr_lock;
+	struct list_head app_reads;
+	struct list_head resync_reads;
 	int ee_vacant;
 	int ee_in_use;
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
 	struct tq_struct write_hint_tq;
-#endif
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
@@ -369,20 +392,22 @@ extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
 			 unsigned long block_nr,u64 block_id);
-extern int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh, 
-			  u64 block_id);
+extern int drbd_send_block(struct Drbd_Conf *mdev, int cmd,
+			   struct buffer_head *bh, u64 block_id);
+extern int drbd_send_dblock(struct Drbd_Conf *mdev, 
+			    struct buffer_head *bh, u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
-
+extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
+			      unsigned long block_nr, u64 block_id);
+extern int drbd_send_insync(struct Drbd_Conf *mdev,unsigned long blocknr,
+			    u64 block_id);
+extern int drbd_send_bitmap(struct Drbd_Conf *mdev);
 
 extern int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr);
 
 /* drbd_req*/ 
 extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
-#else
-extern void drbd_do_request(void);
-#endif	
 
 /* drbd_fs.c: */
 extern int drbd_set_state(int minor,Drbd_State newstate);
@@ -402,6 +427,21 @@ extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
 #define SS_IN_SYNC     (0)
 #define MBDS_SYNC_ALL (-2)
 #define MBDS_DONE     (-3)
+#define MBDS_PACKET_SIZE 4096
+
+#define BM_BLOCK_SIZE_B  12  
+#define BM_BLOCK_SIZE    (1<<12)
+
+#define BM_IN_SYNC       0
+#define BM_OUT_OF_SYNC   1
+
+#if BITS_PER_LONG == 32
+#define LN2_BPL 5
+#elif BITS_PER_LONG == 64
+#define LN2_BPL 6
+#else
+#error "LN2 of BITS_PER_LONG unknown!"
+#endif
 
 struct BitMap;
 extern struct BitMap* bm_init(kdev_t dev);
@@ -409,10 +449,18 @@ extern void bm_cleanup(void* bm_id);
 extern void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit);
 extern unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size);
 extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
+extern void bm_fill_bm(struct BitMap* sbm,int value);
+extern int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
 extern void drbd_queue_signal(int signal,struct task_struct *task);
+
+/* drbd_dsender.c */
+extern int drbd_dsender(struct Drbd_thread *thi);
+extern void drbd_dio_end_read(struct buffer_head *bh, int uptodate);
+extern void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side);
+extern unsigned long drbd_hash(struct buffer_head *bh);
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
 {
@@ -465,17 +513,81 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 	}	
 }
 
+static inline void inc_unacked(struct Drbd_Conf* mdev)
+{
+	atomic_inc(&mdev->unacked_cnt);
+}
+
+static inline void dec_unacked(struct Drbd_Conf* mdev)
+{
+	if(atomic_dec_and_test(&mdev->unacked_cnt))
+		wake_up_interruptible(&mdev->state_wait);
+
+	if(atomic_read(&mdev->unacked_cnt)<0)  /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt <0 !!!\n",
+		       (int)(mdev-drbd_conf));
+}
+
+static inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
+{
+	int i;
+
+	for (i=0; i<minor_count; i++) {
+		if(drbd_conf[i].lo_device == dev) {
+			return drbd_conf+i;
+		}
+	}
+	printk(KERN_ERR DEVICE_NAME "X: lodev_to_mdev !!\n");
+	return drbd_conf;
+}
+
+static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,unsigned long s)
+{
+	mdev->rs_total = mdev->rs_total + ( 1 << (mdev->blk_size_b - 10) );
+	bm_set_bit(mdev->mbds_id,  s >> (mdev->blk_size_b-9), 
+		   mdev->blk_size_b, SS_OUT_OF_SYNC);
+}
+
+static inline void drbd_set_in_sync(struct Drbd_Conf* mdev, 
+				    unsigned long blocknr,
+				    int b_size_bits)
+{
+	bm_set_bit(mdev->mbds_id, blocknr, b_size_bits, SS_IN_SYNC);
+
+	mdev->rs_left = mdev->rs_left-(1 << (b_size_bits - 10));
+
+	if(jiffies - mdev->rs_mark_time > HZ*10) {
+		mdev->rs_mark_time=jiffies;
+		mdev->rs_mark_left=mdev->rs_left;
+	}
+
+	if( mdev->rs_left == 0 ) {
+		printk(KERN_INFO DEVICE_NAME "%d: All blocks in sync.\n",
+		       (int)(mdev-drbd_conf));
+		if(mdev->cstate == SyncTarget) {
+			mdev->gen_cnt[Flags] |= MDF_Consistent;
+			drbd_md_write(mdev-drbd_conf);
+		}
+		set_cstate(mdev,Connected);
+	}
+}
+
 extern int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list);
 extern void drbd_init_ee(struct Drbd_Conf* mdev);
+extern void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e);
+extern struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
+					  int may_sleep);
+extern int _drbd_process_ee(struct Drbd_Conf *,struct list_head *);
+extern int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+			    unsigned long block_nr, int data_size);
+extern int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+			   unsigned long block_nr, int data_size);
+
+
 
 /* drbd_proc.c  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 extern struct proc_dir_entry *drbd_proc;
 extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
-#else
-extern struct proc_dir_entry drbd_proc_dir;
-extern int drbd_proc_get_info(char *, char **, off_t, int, int);
-#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
 #define min_t(type,x,y) \
@@ -484,26 +596,15 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int);
         ({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-#define SIGSET_OF(P) (&(P)->signal)
-#else
-#define SIGSET_OF(P) (&(P)->pending.signal)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-#define del_timer_sync(A) del_timer(A)
-//typedef	struct wait_queue wait_queue_t;
-#ifndef init_waitqueue_entry
-#define init_waitqueue_entry(A,B) (A)->task=(B)
-#endif
-#define wq_write_lock_irqsave(A,B) write_lock_irqsave(A,B)
-#define wq_write_lock_irq(A) write_lock_irq(A)
-#define wq_write_unlock(A) write_unlock(A)
-#define wq_write_unlock_irqrestore(A,B) write_unlock_irqrestore(A,B)
-#endif
-
 #ifdef __arch_um__
 #define waitpid(A,B,C) 0
+static inline void set_bh_page (struct buffer_head *bh, struct page *page, unsigned long offset)
+{
+	bh->b_page = page;
+	if (offset >= PAGE_SIZE)
+		BUG();
+	bh->b_data = page_address(page) + offset;
+}
 #endif
 
 #if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
@@ -511,7 +612,7 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int);
 #define bh_kunmap(bh)	do { } while (0)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,13)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
 #define MODULE_LICENSE(L) 
 #endif
 
@@ -552,7 +653,8 @@ struct busy_block {
 static inline void bb_wait_prepare(struct Drbd_Conf *mdev,unsigned long bnr,
 				   struct busy_block *bl)
 {
-	// you must hold bb_lock
+	MUST_HOLD(&mdev->bb_lock);
+
 	init_completion(&bl->event);
 	bl->bnr=bnr;
 	list_add(&bl->list,&mdev->busy_blocks);
@@ -571,6 +673,8 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 	struct list_head *le;
 	struct busy_block *bl;
 
+	MUST_HOLD(&mdev->bb_lock);
+
 	list_for_each(le,&mdev->busy_blocks) {
 		bl = list_entry(le, struct busy_block,list);
 		if(bl->bnr == bnr) {
@@ -582,62 +686,18 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 	}
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-typedef char page_t [4096];
-
-#define alloc_page(A) ((page_t*)__get_free_page((A)))
-#define alloc_pages(A,B) ((page_t*)__get_free_pages((A),(B)))
-
-#define drbd_free_page(A) free_page((unsigned long)A) 
-#define drbd_free_pages(A,B) free_pages((unsigned long)A,B) 
-
-static inline void set_bh_page(struct buffer_head *bh, 
-			       page_t *page, 
-			       unsigned long offset)
-{
-	bh->b_data = ((char *)page) + offset;
-}
-
 static inline void drbd_init_bh(struct buffer_head *bh,
-				int size,
-				void (*handler)(struct buffer_head*,int))
+				int size)
 {
 	memset(bh, 0, sizeof(struct buffer_head));
 
 	bh->b_list = BUF_LOCKED;
-	bh->b_end_io = handler;
-	init_waitqueue_head(&bh->b_wait);
-	bh->b_size = size;
-	// bh->b_state = 0; memset(bh,0 ... does the job :)
-}
-
-static inline void submit_bh(int rw, struct buffer_head * bh)
-{
-	clear_bit(BH_Lock, &bh->b_state); //ll_rw_block() wants to lock it
-	ll_rw_block(rw, 1, &bh);
-}
-
-#else
-typedef struct page page_t;
-
-#define drbd_free_page(A) __free_page(A) 
-#define drbd_free_pages(A,B) __free_pages(A,B) 
-
-static inline void drbd_init_bh(struct buffer_head *bh,
-				int size,
-				void (*handler)(struct buffer_head*,int))
-{
-	memset(bh, 0, sizeof(struct buffer_head));
-
-	bh->b_list = BUF_LOCKED;
-	bh->b_end_io = handler;
 	init_waitqueue_head(&bh->b_wait);
 	bh->b_size = size;
 	atomic_set(&bh->b_count, 0);
 	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr 
 }
 
-#endif
 
 static inline void drbd_set_bh(struct buffer_head *bh,
 			       unsigned long block,
@@ -646,5 +706,4 @@ static inline void drbd_set_bh(struct buffer_head *bh,
 	bh->b_blocknr=block;
 	bh->b_dev = dev;
 }
-
 

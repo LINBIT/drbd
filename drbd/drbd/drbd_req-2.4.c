@@ -130,7 +130,49 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	req = bh->b_private;
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
+	// BIG TODO: Only set it, iff it is the case!
+	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),req->bh->b_blocknr,
+			 drbd_log2(req->bh->b_size));
 }
+
+STATIC struct Pending_read* 
+drbd_find_read(unsigned long block_nr, struct list_head *in)
+{
+	struct list_head *le;
+	struct Pending_read *pr=NULL;
+	
+	list_for_each(le,in) {
+		pr = list_entry(le, struct Pending_read, list);
+		if(pr->d.block_nr == block_nr) break;
+	}
+
+	return pr;
+}
+
+STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
+{
+	struct Pending_read *pr;
+	pr = kmalloc(sizeof(struct Pending_read), GFP_DRBD);
+
+	if (!pr) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: could not kmalloc() pr\n",
+		       (int)(mdev-drbd_conf));
+		bh->b_end_io(bh,0);
+		return;
+	}
+
+	pr->d.bh = bh;	
+	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
+	spin_lock(&mdev->pr_lock);
+	list_add(&pr->list,&mdev->app_reads);
+	spin_unlock(&mdev->pr_lock);
+	drbd_send_drequest(mdev,DataRequest,
+			   bh->b_rsector>>(mdev->blk_size_b-9),
+			   (unsigned long)pr,0);
+	inc_pending(mdev);
+}
+
 
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
@@ -139,12 +181,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	drbd_request_t *req;
 	int cbs = 1 << mdev->blk_size_b;
 	int size_kb, bnr, send_ok;
-	unsigned long flags;
-
-	if(mdev->cstate < StandAlone || MINOR(bh->b_rdev) >= minor_count) {
-		buffer_IO_error(bh);
-		return 0;
-	}
 
 	if (bh->b_size != cbs) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */
@@ -176,6 +212,78 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 #endif
 
+	if( mdev->lo_device == 0 ) {
+		if( mdev->cstate < Connected ) {
+			bh->b_end_io(bh,0);
+			return 0;
+		}
+
+		if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
+			queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
+		}
+
+		// Fail READA ??
+		if( rw == WRITE ) {
+			req = kmalloc(sizeof(drbd_request_t), GFP_DRBD);
+
+			if (!req) {
+				printk(KERN_ERR DEVICE_NAME
+				       "%d: could not kmalloc() req\n",
+				       (int)(mdev-drbd_conf));
+				bh->b_end_io(bh,0);
+				return 0;
+			}
+
+			req->rq_status = RQ_DRBD_WRITTEN | 1;
+			req->bh=bh;
+
+			drbd_send_dblock(mdev,bh,(unsigned long)req);
+			if(mdev->conf.wire_protocol!=DRBD_PROT_A) {
+				inc_pending(mdev);
+			}
+		} else { // rw == READ || rw == READA
+			drbd_issue_drequest(mdev,bh);
+		}
+		return 0; // Ok everything arranged
+	}
+
+	if( mdev->cstate == SyncTarget &&
+	    bm_get_bit(mdev->mbds_id,bh->b_rsector >> (mdev->blk_size_b-9),
+		       mdev->blk_size_b) ) {
+		struct Pending_read *pr;
+		if( rw == WRITE ) {
+			spin_lock(&mdev->pr_lock); 	
+			pr=drbd_find_read(bh->b_rsector>>(mdev->blk_size_b-9),
+					  &mdev->resync_reads);
+
+			if(pr) {
+				pr->cause = Discard; 
+				// list del as well ?
+			}
+			spin_unlock(&mdev->pr_lock); 
+
+			// TODO wait until writes of syncer are done.
+			// Continue with a mirrored write op.
+			// Set some flag to clear it in the bitmap
+		} else { // rw == READ || rw == READA
+			spin_lock(&mdev->pr_lock); 	
+			pr=drbd_find_read(bh->b_rsector>>(mdev->blk_size_b-9),
+					  &mdev->resync_reads);
+			if(pr) {
+				pr->cause |= Application;
+				pr->d.bh=bh;
+				list_del(&pr->list);
+				list_add(&pr->list,&mdev->app_reads);
+				spin_unlock(&mdev->pr_lock); 
+				return 0; // Ok everything arranged
+			}
+
+			spin_unlock(&mdev->pr_lock); 
+			drbd_issue_drequest(mdev,bh);
+			return 0;
+		}
+	}
+
 	if( rw == READ || rw == READA ) {
 		mdev->read_cnt+=size_kb; 
 
@@ -185,10 +293,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	mdev->writ_cnt+=size_kb;
 
-	if( mdev->cstate < Connected || 
-	    bh->b_rsector < mdev->synced_to ) {
-		bm_set_bit(mdev->mbds_id, bh->b_rsector>>(mdev->blk_size_b-9),
-			   mdev->blk_size_b,SS_OUT_OF_SYNC);
+	if(mdev->cstate<Connected || test_bit(PARTNER_DISKLESS,&mdev->flags)) {
+		drbd_set_out_of_sync(mdev,bh->b_rsector);
 
 		bh->b_rdev = mdev->lo_device;
 		return 1; // Not arranged for transfer ( but remapped :)
@@ -207,7 +313,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	nbh = (struct buffer_head*)(((char*)req)+sizeof(drbd_request_t));
 	
-	drbd_init_bh(nbh, bh->b_size, drbd_dio_end);
+	drbd_init_bh(nbh, bh->b_size);
 
 	nbh->b_page=bh->b_page; // instead of set_bh_page()
 	nbh->b_data=bh->b_data; // instead of set_bh_page()
@@ -216,6 +322,10 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		    bh->b_rsector / (bh->b_size >> 9),
 		    mdev->lo_device);
 
+	if(mdev->cstate < StandAlone || MINOR(bh->b_rdev) >= minor_count) {
+		buffer_IO_error(bh);
+		return 0;
+	}
 
 	nbh->b_private = req;
 	nbh->b_state = (1 << BH_Dirty) | ( 1 << BH_Mapped) | (1 << BH_Lock);
@@ -225,32 +335,34 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
 
 	req->rq_status = RQ_DRBD_NOTHING;
-
-	spin_lock_irqsave(&mdev->bb_lock,flags);
+	
+	spin_lock_irq(&mdev->bb_lock);
 	mdev->send_block=bnr;
 	if( ds_check_block(mdev,bnr) ) {
 		struct busy_block bl;
 		bb_wait_prepare(mdev,bnr,&bl);
-		spin_unlock_irqrestore(&mdev->bb_lock,flags);
+		spin_unlock_irq(&mdev->bb_lock);
 		bb_wait(&bl);
-	} else spin_unlock_irqrestore(&mdev->bb_lock,flags);
+	} else spin_unlock_irq(&mdev->bb_lock);
 
-	send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
+	send_ok=drbd_send_dblock(mdev,bh,(unsigned long)req);
 	mdev->send_block=-1;
-
-	if( mdev->conf.wire_protocol==DRBD_PROT_A ||
-	    (!send_ok) ) {
+	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_pending(mdev);
+	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
 				/* If sending failed, we can not expect
 				   an ack packet. */
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
 	}
+	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector);
 		
 	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
-		
+
+	nbh->b_end_io = drbd_dio_end;
 	submit_bh(rw,nbh);
 	
 	return 0; /* Ok, bh arranged for transfer */
+
 }
 

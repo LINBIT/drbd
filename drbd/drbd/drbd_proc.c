@@ -8,9 +8,6 @@
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
-   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
-        Show syncer progress
-
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -42,23 +39,10 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
+STATIC int drbd_proc_get_info(char *, char **, off_t, int, int *,
+				   void *);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 struct proc_dir_entry *drbd_proc;
-#else
-struct proc_dir_entry drbd_proc_dir =
-{
-	0, 4, "drbd",
-	S_IFREG | S_IRUGO, 1, 0, 0,
-	0, NULL,
-	&drbd_proc_get_info, NULL,
-	NULL,
-	NULL, NULL
-};
-#endif
-
-
-struct request *my_all_requests = NULL;
 
 /*lge
  * progress bars shamelessly adapted from driver/md/md.c
@@ -66,16 +50,12 @@ struct request *my_all_requests = NULL;
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20h speed: 6,345 (6,456) K/sec
  */
-STATIC int drbd_syncer_progress(char *buf,int minor)
+STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 {
 	int sz = 0;
-	unsigned long total_kb, left_kb, res , db, dt, dbdt, rt;
-	/* unit 1024 bytes */
-	total_kb = blk_size[MAJOR_NR][minor];
-	/* synced_to unit 512 bytes */
-	left_kb = drbd_conf[minor].synced_to / 2;
+	unsigned long res , db, dt, dbdt, rt;
 
-	res = (left_kb/1024)*1000/(total_kb/1024 + 1);
+	res = (mdev->rs_left/1024)*1000/(mdev->rs_total/1024 + 1);
 	{
 		int i, y = res/50, x = 20-y;
 		sz += sprintf(buf + sz, "\t[");
@@ -88,11 +68,11 @@ STATIC int drbd_syncer_progress(char *buf,int minor)
 	}
 	res = 1000L - res;
 	sz+=sprintf(buf+sz,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
-	if (total_kb > 0x100000L) /* if more than 1 GB display in MB */
+	if (mdev->rs_total > 0x100000L) /* if more than 1 GB display in MB */
 		sz+=sprintf(buf+sz,"(%lu/%lu)M\n\t",
-			left_kb/1024L, total_kb/1024L);
+			mdev->rs_left/1024L, mdev->rs_total/1024L);
 	else
-		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", left_kb, total_kb);
+		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", mdev->rs_left, mdev->rs_total);
 
 	/* see driver/md/md.c
 	 * We do not want to overflow, so the order of operands and
@@ -103,10 +83,10 @@ STATIC int drbd_syncer_progress(char *buf,int minor)
 	 * db: blocks written from mark until now
 	 * rt: remaining time
 	 */
-	dt = ((jiffies - drbd_conf[minor].resync_mark) / HZ);
+	dt = (jiffies - mdev->rs_mark_time) / HZ;
 	if (!dt) dt++;
-	db = (drbd_conf[minor].resync_mark_cnt/2) - left_kb;
-	rt = (dt * (left_kb / (db/100+1)))/100; /* seconds */
+	db = mdev->rs_mark_left - mdev->rs_left;
+	rt = (dt * (mdev->rs_left / (db/100+1)))/100; /* seconds */
 
 	if (rt > 3600) {
 		rt = (rt+59)/60; /* rounded up minutes */
@@ -125,9 +105,9 @@ STATIC int drbd_syncer_progress(char *buf,int minor)
 		sz += sprintf(buf + sz, " speed: %ld", dbdt);
 
 	/* mean speed since syncer started */
-	dt = ((jiffies - drbd_conf[minor].resync_mark_start) / HZ);
+	dt = (jiffies - mdev->rs_start) / HZ;
 	if (!dt) dt++;
-	db = total_kb - left_kb;
+	db = mdev->rs_total - mdev->rs_left;
 	if ((dbdt=db/dt) > 1000)
 		sz += sprintf(buf + sz, " (%ld,%03ld)",
 			dbdt/1000,dbdt % 1000);
@@ -139,13 +119,8 @@ STATIC int drbd_syncer_progress(char *buf,int minor)
 	return sz;
 }
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-/*static */ int drbd_proc_get_info(char *buf, char **start, off_t offset,
+STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 				   int len, int *unused, void *data)
-#else
-/*static */ int drbd_proc_get_info(char *buf, char **start, off_t offset,
-				   int len, int unused)
-#endif
 {
 	int rlen, i;
 
@@ -158,15 +133,16 @@ STATIC int drbd_syncer_progress(char *buf,int minor)
 		[BrokenPipe] =   "BrokenPipe",
 		[WFConnection] = "WFConnection",
 		[WFReportParams] = "WFReportParams",
+		[WFBitMap] =     "WFBitMap",
 		[Connected] =    "Connected",
-		[SyncingAll] =   "SyncingAll",
-		[SyncingQuick] = "SyncingQuick"
+		[SyncSource] =   "SyncSource",
+		[SyncTarget] =   "SyncTarget"
 	};
 	static const char *state_names[] =
 	{
-		[Primary] = "Primary",
+		[Primary] =   "Primary",
 		[Secondary] = "Secondary",
-		[Unknown] = "Unknown"
+		[Unknown] =   "Unknown"
 	};
 
 
@@ -202,49 +178,10 @@ STATIC int drbd_syncer_progress(char *buf,int minor)
 				   atomic_read(&drbd_conf[i].pending_cnt),
 				   atomic_read(&drbd_conf[i].unacked_cnt));
 
-		if (drbd_conf[i].synced_to != 0)
-			rlen += drbd_syncer_progress(buf+rlen,i);
+		if ( drbd_conf[i].cstate == SyncSource || 
+		     drbd_conf[i].cstate == SyncTarget )
+			rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
 	}
-
-	/* DEBUG & profile stuff */
-#if 0
-
-	if (my_all_requests != NULL) {
-		char major_to_letter[256];
-		char current_letter = 'a', l;
-		int m;
-
-		for (i = 0; i < 256; i++) {
-			major_to_letter[i] = 0;
-		}
-
-		rlen = rlen + sprintf(buf + rlen, "\n");
-
-		for (i = 0; i < NR_REQUEST; i++) {
-			if (my_all_requests[i].rq_status == RQ_INACTIVE) {
-				l = 'E';
-			} else {
-				m = MAJOR(my_all_requests[i].rq_dev);
-				l = major_to_letter[m];
-				if (l == 0) {
-					l = major_to_letter[m] =
-					    current_letter++;
-				}
-			}
-			rlen = rlen + sprintf(buf + rlen, "%c", l);
-		}
-
-		rlen = rlen + sprintf(buf + rlen, "\n");
-
-		for (i = 0; i < 256; i++) {
-			l = major_to_letter[i];
-			if (l != 0)
-				rlen =
-				    rlen + sprintf(buf + rlen, "%c: %d\n",
-						   l, i);
-		}
-	}
-#endif
 
 #ifdef ES_SIZE_STATS
 	for(i=0;i<ES_SIZE_STATS;i++) {

@@ -3,14 +3,11 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999 2000, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
         Initial author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks before using the device.
-
-   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>
-        Some features.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -51,54 +48,66 @@
 
 struct drbd_cmd {
   const char* cmd;
-  int (* function)(int, char**, int);
-  int num_of_args;
-  int has_options;
+  int (* function)(int, char**, int, struct option*);
+  char **args;
+  struct option *options;
 };
 
-int cmd_primary(int drbd_fd,char** argv,int argc);
-int cmd_secodary(int drbd_fd,char** argv,int argc);
-int cmd_sec_rem(int drbd_fd,char** argv,int argc);
-int cmd_wait_sync(int drbd_fd,char** argv,int argc);
-int cmd_wait_connect(int drbd_fd,char** argv,int argc);
-int cmd_replicate(int drbd_fd,char** argv,int argc);
-int cmd_down(int drbd_fd,char** argv,int argc);
-int cmd_net_conf(int drbd_fd,char** argv,int argc);
-int cmd_disk_conf(int drbd_fd,char** argv,int argc);
-int cmd_disconnect(int drbd_fd,char** argv,int argc);
-int cmd_show(int drbd_fd,char** argv,int argc);
-int cmd_syncer(int drbd_fd,char** argv,int argc);
+int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_sec_rem(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_wait_connect(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_down(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
-	{"primary", cmd_primary,           0, 1 },
-	{"secondary", cmd_secodary,        0, 0 },
-	{"secondary_remote", cmd_sec_rem,  0, 0 },
-	{"wait_sync", cmd_wait_sync,       0, 1 },
-	{"wait_connect", cmd_wait_connect, 0, 1 },
-	{"replicate", cmd_replicate,       0, 0 },
-  	{"syncer", cmd_syncer,             0, 1 },
-	{"down", cmd_down,                 0, 0 },
-	{"net", cmd_net_conf,              3, 1 },
-	{"disk", cmd_disk_conf,            1, 1 },
-	{"disconnect", cmd_disconnect,     0, 0 },
-	{"show", cmd_show,                 0, 0 },
+  {"primary", cmd_primary,           0, 
+   (struct option[]) {
+     { "human",      no_argument,       0, 'h' },
+     { "do-what-I-say",no_argument,     0, 'd' },
+     { "timeout-expired",no_argument,   0, 't' },
+     { 0,            0,                 0, 0   } } },
+  {"secondary", cmd_secondary,       0, 0 },
+  {"secondary_remote", cmd_sec_rem,  0, 0 },
+  {"wait_sync", cmd_wait_sync,       0,
+   (struct option[]) {
+     { "time",       required_argument, 0, 't' },
+     { 0,            0,                 0, 0   } } },
+  {"wait_connect", cmd_wait_connect, 0,
+   (struct option[]) {
+     { "time",       required_argument, 0, 't' },
+     { 0,            0,                 0, 0   } } },
+  {"invalidate", cmd_invalidate,     0, 0 },
+  {"invalidate_remote", cmd_invalidate_rem,0, 0 },
+  {"syncer", cmd_syncer,                0,
+   (struct option[]) {
+     { "use-csums",  no_argument,       0, 'c' },
+     { "skip-sync",  no_argument,       0, 'k' },
+     { "rate",       required_argument, 0, 'r' },
+     { 0,            0,                 0, 0 } } },
+  {"down", cmd_down,                 0, 0 },
+  {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0}, 
+   (struct option[]) {
+     { "timeout",    required_argument, 0, 't' },
+     { "tl-size",    required_argument, 0, 's' },
+     { "connect-int",required_argument, 0, 'c' },
+     { "ping-int",   required_argument, 0, 'i' },
+     { 0,            0,                 0, 0 } } },
+  {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
+   (struct option[]) {
+     { "disk-size",  required_argument, 0, 'd' }, 
+     { "do-panic",   no_argument,       0, 'p' },
+     { 0,            0,                 0, 0 } } },
+  {"disconnect", cmd_disconnect,     0, 0 },
+  {"show", cmd_show,                 0, 0 },
 };
-
-struct option config_options[] = {
-  { "disk-size",  required_argument, 0, 'd' }, 
-  { "do-panic",   no_argument,       0, 'p' },
-  { "timeout",    required_argument, 0, 't' },
-  { "sync-rate",  required_argument, 0, 'r' },
-  { "sync-max",   required_argument, 0, 'r' },
-  { "sync-min",   required_argument, 0, 'n' },
-  { "sync-nice",  required_argument, 0, 'P' },
-  { "skip-sync",  no_argument,       0, 'k' },
-  { "tl-size",    required_argument, 0, 's' },
-  { "connect-int",required_argument, 0, 'c' },
-  { "ping-int",   required_argument, 0, 'i' },
-  { 0,           0,                 0, 0 }
-};
-#define CONFIG_OPT_STR "-t:r:ks:c:i:d:p"
 
 unsigned long resolv(const char* name)
 {
@@ -158,6 +167,27 @@ const char* addr_part(const char* s)
   return s;
 }
 
+const char* make_optstring(struct option *options)
+{
+  static char buffer[200];
+  static struct option* buffer_valid_for=NULL;
+  struct option *opt;
+  char *c;
+
+  if(options==buffer_valid_for) return buffer;
+  opt=buffer_valid_for=options;
+  c=buffer;
+  *c++='-';
+  while(opt->name)
+    {
+      *c++=opt->val;
+      if(opt->has_arg) *c++=':';
+      opt++;
+    }
+  *c=0;
+  return buffer;
+}
+
 int port_part(const char* s)
 {
   char *b;
@@ -200,28 +230,37 @@ int already_in_use(const char* dev_name)
 
 void print_usage(const char* prgname)
 {
-  fprintf(stderr,
-	  "USAGE:\n"
-	  " %s device command [ command_args ] [ comand_options ]\n"
-	  "Commands:\n"
-	  " primary [-h|--human]\n"
-	  " secondary\n"
-	  " secondary_remote\n"
-	  " wait_sync [-t|--time val]\n"
-	  " wait_connect [-t|--time val]\n"
-	  " replicate\n"
-	  " syncer --min val --max val\n"
-	  " down\n"
-	  " net local_addr[:port] remote_addr[:port] protocol\n"
-	  "     [-t|--timeout val]\n"
-          "     [-r|--sync-rate|--sync-max val] [--sync-min val]\n"
-          "     [--sync-nice val] [-k|--skip-sync]\n"
-	  "     [-s|--tl-size val] [-c|--connect-int] [-i|--ping-int]\n"
-	  " disk lower_device [-d|--disk-size val] [-p|--do-panic]\n"
-	  " disconnect\n"
-	  " show\n"
-	  "Version: "REL_VERSION" (api:%d)\n"
-	  ,prgname,API_VERSION);
+  int i;
+  char **args;
+  struct option *options;
+
+  printf("\nUSAGE: %s device command arguments options\n\n"
+	 "Device is usually /dev/nbX or /dev/drbd/X.\n"
+         "Commands, arguments and options are:\n",prgname);
+        
+
+  for(i=0;i<ARRY_SIZE(commands);i++) 
+    {
+      printf(" %s",commands[i].cmd);
+      if((args=commands[i].args)) 
+	{
+	  while(*args) printf(" %s",*args++);
+	}
+      if((options=commands[i].options))
+	{
+	  while(options->name) 
+	    {
+	      if(options->has_arg == required_argument) 
+		printf(" [{--%s|-%c} val]",options->name,options->val);
+	      else 
+		printf(" [{--%s|-%c}]",options->name,options->val);
+	      options++;
+	    }
+	}
+      printf("\n");
+    }
+  
+  printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
 
   exit(20);
 }
@@ -284,7 +323,7 @@ void check_state_dir(void)
 int scan_disk_options(char **argv,
 		      int argc,
 		      struct ioctl_disk_config* cn,
-		      int ignore_other_opts)
+		      struct option *options)
 {
   cn->config.disk_size = 0; /* default not known */
   cn->config.do_panic  = 0;
@@ -297,7 +336,7 @@ int scan_disk_options(char **argv,
     {
       int c;
 	  
-      c = getopt_long(argc,argv,CONFIG_OPT_STR,config_options,0);
+      c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -307,13 +346,6 @@ int scan_disk_options(char **argv,
 	case 'p':
 	  cn->config.do_panic=1;
 	  break;
-	case 't': 
-	case 'r':
-	case 'k':
-	case 's':
-	case 'c':
-	case 'i':
-	  if(ignore_other_opts) break;
 	case '?':
 	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	  return 20;
@@ -327,13 +359,9 @@ int scan_disk_options(char **argv,
 int scan_net_options(char **argv,
 		     int argc,
 		     struct ioctl_net_config* cn,
-		     int ignore_other_opts)
+		     struct option *options)
 {
   cn->config.timeout = 60; /* = 6 seconds */
-  cn->config.sync_rate_min = 200; /* KB/sec */
-  cn->config.sync_rate_max = 250; /* KB/sec */
-  cn->config.sync_nice = 19; /* nice-level */
-  cn->config.skip_sync = 0; 
   cn->config.tl_size = 256;
   cn->config.try_connect_int = 10;
   cn->config.ping_int = 10;
@@ -345,25 +373,13 @@ int scan_net_options(char **argv,
   while(1)
     {
       int c;
-	  
-      c = getopt_long(argc,argv,CONFIG_OPT_STR,config_options,0);
+
+      c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
 	{
 	case 't': 
 	  cn->config.timeout = m_strtol(optarg,1);
-	  break;
-	case 'n':
-	  cn->config.sync_rate_min = m_strtol(optarg,1024);
-	  break;
-	case 'r':
-	  cn->config.sync_rate_max = m_strtol(optarg,1024);
-	  break;
-	case 'P':
-	  cn->config.sync_nice = m_strtol(optarg,1);
-	  break;
-	case 'k':
-	  cn->config.skip_sync=1;
 	  break;
 	case 's':
 	  cn->config.tl_size = m_strtol(optarg,1);
@@ -374,43 +390,12 @@ int scan_net_options(char **argv,
 	case 'i':
 	  cn->config.ping_int = m_strtol(optarg,1);
 	  break;
-	case 'd':
-	case 'p':
-	  if(ignore_other_opts) break;
 	case '?':
 	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	  return 20;
 	  break;
 	}
     }
-
-  /* sanity checks for the sync_rate */
-  if (cn->config.sync_rate_min > cn->config.sync_rate_max) {
-      fprintf(stderr,"sync-min is greater than sync-max. Overflow?\n");
-      return 20;
-  }
-
-  if (cn->config.sync_rate_max > 600*1024) {
-    /* you can set it that high so it will never sleep.
-     * or do you really have this bandwidth :P
-     * we can adjust this in 3 years time...
-     * ... and tell me when we need 64 bit integer :)
-     */
-    fprintf(stderr,"I consider transfer rates above 600 M/sec bogus.\n");
-    return 20;
-  }
-
-  if ((double) cn->config.sync_rate_max < cn->config.sync_rate_min * 1.1) {
-	// avoid priority flipflops 
-	cn->config.sync_rate_max=(int)(1.1 * (double)cn->config.sync_rate_min);
-	// do I need to check for overflow?
-  }
-
-  /* range check for nice value */
-  if (cn->config.sync_nice < -20 || cn->config.sync_nice > 19) {
-      fprintf(stderr,"sync-nice has to be in the range [-20;19].\n");
-      return 20;
-  }
 
   /* sanity checks of the timeouts */
   
@@ -482,7 +467,7 @@ int do_disk_conf(int drbd_fd,
     {
       err=errno;
       perror("ioctl() failed");
-      if(err) print_config_ioctl_err(cn->ret_code);
+      if(err == EINVAL) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
   return 0;
@@ -540,7 +525,7 @@ int do_net_conf(int drbd_fd,
     {
       err=errno;
       perror("ioctl() failed");
-      if(err) print_config_ioctl_err(cn->ret_code);
+      if(err == EINVAL) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
   return 0;
@@ -555,7 +540,7 @@ int set_state(int drbd_fd,Drbd_State state)
   if(err) {
     err=errno;
     perror("ioctl() failed");
-    switch(err) 
+    switch(err)
       {
       case EBUSY:
 	fprintf(stderr,"Someone has opened the device for RW access!\n");
@@ -580,7 +565,7 @@ int set_state(int drbd_fd,Drbd_State state)
 }
 
 
-int cmd_primary(int drbd_fd,char** argv,int argc)
+int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   Drbd_State newstate=Primary;
 
@@ -590,24 +575,18 @@ int cmd_primary(int drbd_fd,char** argv,int argc)
       while(1)
 	{
 	  int c;
-	  static struct option options[] = {
-	    { "human",          no_argument, 0, 'h' },
-	    { "timeout-expired",no_argument, 0, 't' },
-	    { "do-what-I-say",  no_argument, 0, 'd' },
-	    { 0,           0,                 0, 0 }
-	  };
 	  
-	  c = getopt_long(argc+1,argv-1,"-htd",options,0);
+	  c = getopt_long(argc+1,argv-1,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
 	    case 'h': 
 	      newstate |= Human;
 	      break;
-	    case 'd': 
+	    case 'd':
 	      newstate |= DontBlameDrbd;
 	      break;
-	    case 't': 
+	    case 't':
 	      newstate |= TimeoutExpired;
 	      break;
 	    case '?':
@@ -621,12 +600,12 @@ int cmd_primary(int drbd_fd,char** argv,int argc)
   return set_state(drbd_fd,newstate);
 }
 
-int cmd_secodary(int drbd_fd,char** argv,int argc)
+int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   return set_state(drbd_fd,Secondary);
 }
 
-int cmd_sec_rem(int drbd_fd,char** argv,int argc)
+int cmd_sec_rem(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
   err=ioctl(drbd_fd,DRBD_IOCTL_SECONDARY_REM);
@@ -647,7 +626,8 @@ int cmd_sec_rem(int drbd_fd,char** argv,int argc)
   return 0;
 }
 
-int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req)
+int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req,
+	    struct option *options)
 {
   int err,retval;
 
@@ -658,12 +638,8 @@ int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req)
       while(1)
 	{
 	  int c;
-	  static struct option options[] = {
-	    { "time",    required_argument, 0, 't' },
-	    { 0,           0,                 0, 0 }
-	  };
 	  
-	  c = getopt_long(argc+1,argv-1,"-t:",options,0);
+	  c = getopt_long(argc+1,argv-1,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -686,108 +662,109 @@ int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req)
   return !retval;
 }
 
-int cmd_wait_connect(int drbd_fd,char** argv,int argc)
+int cmd_wait_connect(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  return wait_on(drbd_fd,argv,argc,0,DRBD_IOCTL_WAIT_CONNECT);
+  return wait_on(drbd_fd,argv,argc,0,DRBD_IOCTL_WAIT_CONNECT,options);
 }
 
-int cmd_wait_sync(int drbd_fd,char** argv,int argc)
+int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  return wait_on(drbd_fd,argv,argc,8,DRBD_IOCTL_WAIT_SYNC);
+  return wait_on(drbd_fd,argv,argc,8,DRBD_IOCTL_WAIT_SYNC,options);
 }
 
-int cmd_syncer(int drbd_fd,char** argv,int argc)
+int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  int err;
-  int sync_param[3] = { 0, 0, 20 };
-  optind=0; opterr=0;
+  struct ioctl_syncer_config cn;
+  struct ioctl_get_config current_cn;
+  int err;  
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&current_cn);
+  if(err)
+    {
+      perror("ioctl() failed");
+      return 20;
+    }
+
+  cn.config.rate = current_cn.sconf.rate;
+  cn.config.use_csums = 0; //current_cn.sconf.use_csums;
+  cn.config.skip = 0; //current_cn.sconf.skip;
+
+  optind=0; 
+  opterr=0; /* do not print error messages upon not valid options */
   if(argc > 0) 
     {
       while(1)
 	{
 	  int c;
-	  static struct option options[] = {
-	    { "min",      required_argument, 0, 'n' },
-	    { "max",      required_argument, 0, 'x' },
-	    { "nice",     required_argument, 0, 'p' },
-	    { 0,          0,                 0, 0   }
-	  };
 	  
-	  c = getopt_long(argc+1,argv-1,"",options,0);
+	  c = getopt_long(argc+3,argv-3,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'n': 
-	      sync_param[0]=m_strtol(optarg,1024);
+	    case 'c': 
+	      cn.config.use_csums=1;
 	      break;
-	    case 'x': 
-	      sync_param[1]=m_strtol(optarg,1024);
+	    case 'k':
+  	      cn.config.skip=1;
 	      break;
-	    case 'p': 
-	      sync_param[2]=m_strtol(optarg,1024);
+	    case 'r':
+	      cn.config.rate=m_strtol(optarg,1024);
 	      break;
-	    default:
-	      fprintf(stderr,"Unknown option %s\n",argv[optind-2]);
+	    case '?':
+	      fprintf(stderr,"Unknown option %s\n",argv[optind-4]);
 	      return 20;
 	      break;
 	    }
 	}
     }
-  
-  if (sync_param[0] > sync_param[1] && sync_param[1] != 0) {
-      fprintf(stderr,"min is greater than max!?\n");
-      return 20;
-  }
-  if (sync_param[0] < 0 || sync_param[1] < 0) {
-	// == 0 means do not change
-    fprintf(stderr,"you must supply a valid sync rate, "
-	    "e.g.  --min=3000k --max=6M\n");
-    return 20;
-  } else if (sync_param[1] > 600*1024) {
-    /* you can set it that high so it will never sleep.
-     * or do you really have this bandwidth :P
-     * we can adjust this in 3 years time...
-     */
-    fprintf(stderr,"I consider transfer rates above 600 M/sec bogus.\n");
-    return 20;
-  }
 
-  /* range check for nice value */
-  if (sync_param[2] < -20 || sync_param[2] > 20) {
-	// == 20 means do not change
-      fprintf(stderr,"nice has to be in the range [-20;19].\n");
-      return 20;
-  }
-  
-  err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&sync_param);
+  err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&cn);
   if(err)
     {
       perror("DRBD_IOCTL_SET_SYNC_CONFIG ioctl() failed");
       return 20;
     }
-  
+
   return 0;
 }
 
-int cmd_replicate(int drbd_fd,char** argv,int argc)
+int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
 
-  err=ioctl(drbd_fd,DRBD_IOCTL_DO_SYNC_ALL);
+  err=ioctl(drbd_fd,DRBD_IOCTL_INVALIDATE);
   if(err)
     {
       err=errno;
       perror("ioctl() failed");
       if(err==EINPROGRESS)
-	fprintf(stderr,"Can not start SyncAll. No Primary!\n");
+	fprintf(stderr,"Can not start resynchronisation. Already running\n");
       if(err==ENXIO)
-	fprintf(stderr,"Can not start SyncAll. Not connected!\n");
+	fprintf(stderr,"Can not start resynchronisation. Not connected\n");
       return 20;
     }
   return 0;  
 }
 
-int cmd_down(int drbd_fd,char** argv,int argc)
+int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_INVALIDATE_REM);
+  if(err)
+    {
+      err=errno;
+      perror("ioctl() failed");
+      if(err==EINPROGRESS)
+	fprintf(stderr,"Can not start resynchronisation. Already running\n");
+      if(err==ENXIO)
+	fprintf(stderr,"Can not start resynchronisation. Not connected\n");
+      return 20;
+    }
+  return 0;  
+}
+
+int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
 
@@ -805,7 +782,7 @@ int cmd_down(int drbd_fd,char** argv,int argc)
   return 0;
 }
 
-int cmd_disconnect(int drbd_fd,char** argv,int argc)
+int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
 
@@ -822,23 +799,23 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc)
 
 }     
 
-int cmd_net_conf(int drbd_fd,char** argv,int argc)
+int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_net_config cn;
   int retval;
 
-  retval=scan_net_options(argv+2,argc-2,&cn,0);
+  retval=scan_net_options(argv+2,argc-2,&cn,options);
   if(retval) return retval;
 
   return do_net_conf(drbd_fd,argv[2],argv[0],argv[1],&cn);
 }
 
-int cmd_disk_conf(int drbd_fd,char** argv,int argc)
+int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_disk_config cn;
   int retval;
 
-  retval=scan_disk_options(argv,argc,&cn,0);
+  retval=scan_disk_options(argv,argc,&cn,options);
   if(retval) return retval;
 
   return do_disk_conf(drbd_fd,argv[0],&cn);
@@ -901,7 +878,7 @@ const char* guess_dev_name(const char* dir,int major,int minor)
   return NULL;
 }
 
-int cmd_show(int drbd_fd,char** argv,int argc)
+int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_get_config cn;
   struct sockaddr_in *other_addr;
@@ -943,24 +920,24 @@ int cmd_show(int drbd_fd,char** argv,int argc)
   printf("Net options:\n");
   if( cn.nconf.timeout ) 
     printf(" timeout = %d.%d sec\n",cn.nconf.timeout/10,cn.nconf.timeout%10);
-  if( cn.nconf.sync_rate_min ) 
-    printf(" sync-min = %d KB/sec\n",cn.nconf.sync_rate_min);
-  if( cn.nconf.sync_rate_max ) 
-    printf(" sync-max = %d KB/sec\n",cn.nconf.sync_rate_max);
-  if( cn.nconf.sync_nice ) 
-    printf(" sync-nice = %d\n",cn.nconf.sync_nice);
-  if( cn.nconf.skip_sync ) printf(" skip-sync\n");
   if( cn.nconf.tl_size ) printf(" tl-size = %d\n",cn.nconf.tl_size);
   if( cn.nconf.try_connect_int ) 
     printf(" connect-int = %d sec\n",cn.nconf.try_connect_int);
   if( cn.nconf.ping_int ) printf(" ping-int = %d sec\n",cn.nconf.ping_int);
+
+  printf("Syncer options:\n");
+  printf(" rate = %d KB/sec\n",cn.sconf.rate);
+  if( cn.sconf.skip ) printf(" skip-sync\n");
+  if( cn.sconf.use_csums ) printf(" use-csums\n");
 
   return 0;
 }
 
 int main(int argc, char** argv)
 {
-  int drbd_fd,i,retval;
+  int drbd_fd,i;
+  int num_of_args;
+  char **args;
 
   if(argc < 3) print_usage(argv[0]);
 
@@ -969,50 +946,23 @@ int main(int argc, char** argv)
   drbd_fd=open_drbd_device(argv[1]);
   check_state_dir();
 
-  if(argv[2][0] == '/') /* old style configure*/
-    {
-      struct ioctl_disk_config disk_c;
-      struct ioctl_net_config net_c;
-
-      fprintf(stderr,"Please use the new command syntax."
-	      " This syntax is depricated.\n");
-      
-      if (argc < 6) 
-	{
-	  fprintf(stderr,"old conf USAGE:\n"
-		  " %s device lower_device protocol local_addr[:port]"
-		  " remote_addr[:port] [ options ]\n",argv[0]);
-	  return 20;
-	}
-
-      /*
-      2 lower_dev
-      3 proto
-      4 local_addr
-      5 remote_addr
-      */
-      retval=scan_disk_options(argv+4,argc-4,&disk_c,1);
-      if(retval) return retval;
-      retval=scan_net_options(argv+4,argc-4,&net_c,1);
-      if(retval) return retval;
-
-      retval=do_disk_conf(drbd_fd,argv[2],&disk_c);
-      if(retval) return retval;
-      retval=do_net_conf(drbd_fd,argv[3],argv[4],argv[5],&net_c);
-      return retval;
-    }
-
   for(i=0;i<ARRY_SIZE(commands);i++) 
     {
       if(strcmp(argv[2],commands[i].cmd)==0)
 	{
-	  if (argc-3 < commands[i].num_of_args) print_usage(argv[0]);
-	  if (argc-3-commands[i].num_of_args>0 && !commands[i].has_options) 
+	  num_of_args=0;
+	  if((args=commands[i].args))
+	    {
+	      while(*args++) num_of_args++; 
+	    }
+	  if (argc-3 < num_of_args) print_usage(argv[0]);
+	  if (argc-3-num_of_args>0 && commands[i].options==0) 
 	    {
 	      fprintf(stderr,"Too many arguments or options.\n");
 	      return 20;
 	    }
-	  return commands[i].function(drbd_fd,argv+3,argc-3);	  
+	  return commands[i].function(drbd_fd,argv+3,argc-3,
+				      commands[i].options);
 	}
     }
   fprintf(stderr,"%s is not a command\n",argv[2]);

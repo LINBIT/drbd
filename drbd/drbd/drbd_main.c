@@ -51,6 +51,7 @@
 
 #include <asm/uaccess.h>
 #include <asm/bitops.h> 
+#include <asm/types.h>
 #include <net/sock.h>
 #include <linux/module.h>
 #include <linux/smp_lock.h>
@@ -61,18 +62,15 @@
 #include <linux/slab.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
+#include <linux/vmalloc.h>
 
 #include "drbd.h"
 #include "drbd_int.h"
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 #ifdef CONFIG_DEVFS_FS
 #include <linux/devfs_fs_kernel.h>
 static devfs_handle_t devfs_handle;
 #endif
-#endif
-
-static int errno;
 
 /* #define ES_SIZE_STATS 50 */
 
@@ -105,29 +103,18 @@ struct Drbd_Conf *drbd_conf;
 int minor_count=2;
 int disable_io_hints=0;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
 STATIC struct block_device_operations drbd_ops = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,9)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,10)
 	.owner =   THIS_MODULE,
 #endif
 	.open =    drbd_open,
 	.release = drbd_close,
 	.ioctl =   drbd_ioctl
 };
-#else
-STATIC struct file_operations drbd_ops =
-{
-	.read =    block_read,
-	.write =   block_write,
-	.ioctl =   drbd_ioctl,
-	.open =    drbd_open,
-	.release = drbd_close,
-	.fsync =   block_fsync
-};
-#endif
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
+static int errno;
 
 int drbd_log2(int i)
 {
@@ -176,10 +163,9 @@ void print_tl(struct Drbd_Conf *mdev)
 
 STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
-	unsigned long flags;
 	int cur_size;
 
-	write_lock_irqsave(&mdev->tl_lock,flags);
+	write_lock_irq(&mdev->tl_lock);
 
 
 	  /*printk(KERN_ERR DEVICE_NAME "%d: tl_add(%ld)\n",
@@ -232,16 +218,15 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 #endif
 
 
-	write_unlock_irqrestore(&mdev->tl_lock,flags);
+	write_unlock_irq(&mdev->tl_lock);
 }
 
 STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 {
-	unsigned long flags;
 	unsigned int bnr;
 	static int barrier_nr_issue=1;
 
-	write_lock_irqsave(&mdev->tl_lock,flags);
+	write_lock_irq(&mdev->tl_lock);
 
 	/*printk(KERN_DEBUG DEVICE_NAME "%d: tl_add(TL_BARRIER)\n",
 	  (int)(mdev-drbd_conf));*/
@@ -259,7 +244,7 @@ STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 		printk(KERN_CRIT DEVICE_NAME "%d: transferlog too small!!\n",
 		       (int)(mdev-drbd_conf));
 
-	write_unlock_irqrestore(&mdev->tl_lock,flags);
+	write_unlock_irq(&mdev->tl_lock);
 
 	return bnr;
 }
@@ -268,8 +253,7 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size)
 {
         int epoch_size=0; 
-	unsigned long flags;
-	write_lock_irqsave(&mdev->tl_lock,flags);
+	write_lock_irq(&mdev->tl_lock);
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": tl_release(%u)\n",barrier_nr); */
 
@@ -297,7 +281,7 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       "found=%d reported=%d \n",(int)(mdev-drbd_conf),
 		       epoch_size,set_size);
 
-	write_unlock_irqrestore(&mdev->tl_lock,flags);
+	write_unlock_irq(&mdev->tl_lock);
 
 #ifdef ES_SIZE_STATS
 	mdev->essss[set_size]++;
@@ -376,8 +360,7 @@ int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
 void tl_clear(struct Drbd_Conf *mdev)
 {
 	struct tl_entry* p;
-	unsigned long flags;
-	write_lock_irqsave(&mdev->tl_lock,flags);
+	write_lock_irq(&mdev->tl_lock);
 
 	p = mdev->tl_begin;
 	while(p != mdev->tl_end) {
@@ -391,9 +374,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 			
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
 			mark:
-				bm_set_bit(mdev->mbds_id, 
-					   p->sector >> (mdev->blk_size_b-9),
-					   mdev->blk_size_b, SS_OUT_OF_SYNC);
+				drbd_set_out_of_sync(mdev,p->sector);
 			}
 		} //else dec_pending(mdev);
 		p++;
@@ -401,7 +382,7 @@ void tl_clear(struct Drbd_Conf *mdev)
 		        p = mdev->transfer_log;	    
 	}
 	tl_init(mdev);
-	write_unlock_irqrestore(&mdev->tl_lock,flags);
+	write_unlock_irq(&mdev->tl_lock);
 }     
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14) 
@@ -505,11 +486,11 @@ int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, int via_msock)
 	Drbd_Packet head;
 
 	head.command = cpu_to_be16(cmd);
-	if(!via_msock) down(&mdev->send_mutex);
+	down( via_msock ? &mdev->msock_mutex : &mdev->sock_mutex);
 	err = drbd_send(mdev, &head,sizeof(head),0,0,via_msock);
-	if(!via_msock) up(&mdev->send_mutex);
+	up( via_msock ? &mdev->msock_mutex : &mdev->sock_mutex);
 
-	return err;  
+	return (err == sizeof(head));
 }
 
 int drbd_send_param(struct Drbd_Conf *mdev)
@@ -518,10 +499,11 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 	int err,i;
 	kdev_t ll_dev = mdev->lo_device;
 
-	
-	param.h.size = cpu_to_be64( mdev->lo_usize ? 
-				    mdev->lo_usize : 
-				    blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] );
+	if(ll_dev) {
+		param.h.size = cpu_to_be64( mdev->lo_usize ? 
+					    mdev->lo_usize : 
+				      blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] );
+	} else param.h.size = cpu_to_be64(0);
 
 	param.p.command = cpu_to_be16(ReportParams);
 	param.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
@@ -531,35 +513,57 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 
 	for(i=Flags;i<=ArbitraryCnt;i++) {
 		param.h.gen_cnt[i]=cpu_to_be32(mdev->gen_cnt[i]);
-		param.h.bit_map_gen[i]=
-			cpu_to_be32(mdev->bit_map_gen[i]);
+		param.h.bit_map_gen[i]=cpu_to_be32(mdev->bit_map_gen[i]);
 	}
 
-	down(&mdev->send_mutex);
+	down(&mdev->sock_mutex);
 	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);
-	up(&mdev->send_mutex);
+	up(&mdev->sock_mutex);
 	
-	if(err < sizeof(Drbd_Parameter_Packet))
+	if(err < sizeof(param))
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: Sending of parameter block failed!!\n",
 		       (int)(mdev-drbd_conf));  
 
-	return err;
+	return (err == sizeof(param));
 }
 
-int drbd_send_cstate(struct Drbd_Conf *mdev)
+int drbd_send_bitmap(struct Drbd_Conf *mdev)
 {
-	Drbd_CState_Packet head;
-	int ret;
-	
-	head.p.command = cpu_to_be16(CStateChanged);
-	head.h.cstate = cpu_to_be32(mdev->cstate);
+	Drbd_Packet head;
+	int ret,buf_i,bm_i;
+	size_t bm_words;
+	u32 *buffer,*bm;
 
-	down(&mdev->send_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
-	up(&mdev->send_mutex);
+	if(!mdev->mbds_id) return FALSE;
+
+	bm_words=mdev->mbds_id->size/sizeof(u32);
+	bm=(u32*)mdev->mbds_id->bm;
+	buffer=vmalloc(MBDS_PACKET_SIZE);
+	head.command = cpu_to_be16(ReportBitMap);
+
+	buf_i=0;
+	for(bm_i=0;bm_i<bm_words;bm_i++) {
+
+		buffer[buf_i] = cpu_to_be32(bm[bm_i]);
+
+		if(++buf_i == MBDS_PACKET_SIZE/sizeof(long)) {
+			buf_i=0;
+			down(&mdev->sock_mutex);
+			ret=drbd_send(mdev,&head,sizeof(head),
+				      buffer,MBDS_PACKET_SIZE,0);
+			up(&mdev->sock_mutex);
+			if(ret != sizeof(head) + MBDS_PACKET_SIZE) {
+				ret=FALSE;
+				goto out;
+			}
+		}
+	}
+
+	ret=TRUE;
+ out:
+	vfree(buffer);
 	return ret;
-
 }
 
 int _drbd_send_barrier(struct Drbd_Conf *mdev)
@@ -567,7 +571,7 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
 	int r;
         Drbd_Barrier_Packet head;
 
-	/* tl_add_barrier() must be called with the send_mutex aquired */
+	/* tl_add_barrier() must be called with the sock_mutex aquired */
 	head.p.command = cpu_to_be16(Barrier);
 	head.h.barrier=tl_add_barrier(mdev); 
 
@@ -577,7 +581,7 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
 
 	inc_pending(mdev);
 
-	return r;
+	return (r == sizeof(head));
 }
 
 int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
@@ -588,15 +592,15 @@ int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 	head.p.command = cpu_to_be16(BarrierAck);
         head.h.barrier = barrier_nr;
 	head.h.set_size = cpu_to_be32(set_size);
-	down(&mdev->send_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
-	up(&mdev->send_mutex);
-	return ret;
+	down(&mdev->msock_mutex);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
+	up(&mdev->msock_mutex);
+	return (ret == sizeof(head));
 }
 
 
-int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, unsigned long block_nr,
-		  u64 block_id)
+int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
+		  unsigned long block_nr,u64 block_id)
 {
         Drbd_BlockAck_Packet head;
 	int ret;
@@ -604,14 +608,47 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, unsigned long block_nr,
 	head.p.command = cpu_to_be16(cmd);
 	head.h.block_nr = cpu_to_be64(block_nr);
         head.h.block_id = block_id;
-	down(&mdev->send_mutex);
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
-	up(&mdev->send_mutex);
-	return ret;
+	down(&mdev->msock_mutex);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
+	up(&mdev->msock_mutex);
+	return (ret == sizeof(head));
 }
 
-int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh, 
-			  u64 block_id)
+int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
+		       unsigned long block_nr, u64 block_id)
+{
+        Drbd_BlockRequest_Packet head;
+	int ret;
+
+	head.p.command = cpu_to_be16(cmd);
+	head.h.block_nr = cpu_to_be64(block_nr);
+        head.h.block_id = block_id;
+	head.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
+
+	down(&mdev->sock_mutex);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
+	up(&mdev->sock_mutex);
+	return (ret == sizeof(head));
+}
+
+int drbd_send_insync(struct Drbd_Conf *mdev,unsigned long blocknr,u64 block_id)
+{
+	Drbd_Data_Packet head;
+	int ret;
+
+	head.p.command = cpu_to_be16(BlockInSync);
+	head.h.block_nr = cpu_to_be64(blocknr);
+	head.h.block_id = block_id;
+
+	down(&mdev->sock_mutex);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
+	up(&mdev->sock_mutex);
+
+	return (ret == sizeof(head));
+}
+
+int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
+		     u64 block_id)
 {
         Drbd_Data_Packet head;
 	int ret,ok;
@@ -620,7 +657,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	head.h.block_nr = cpu_to_be64(bh->b_blocknr);
 	head.h.block_id = block_id;
 
-	down(&mdev->send_mutex);
+	down(&mdev->sock_mutex);
 	
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 	        _drbd_send_barrier(mdev);
@@ -632,27 +669,39 @@ int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	ok=(ret == bh->b_size + sizeof(head));
 
 	if( ok ) {
-		if( mdev->conf.wire_protocol != DRBD_PROT_A || 
-		    block_id == ID_SYNCER )  {
-			inc_pending(mdev);
-		}
 		mdev->send_cnt+=bh->b_size>>10;
+		/* This must be within the semaphore */
+		//UGGLY UGGLY casting it back to a drbd_request_t
+		tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
 	}
 
-	if(block_id != ID_SYNCER) {
-		if( ok ) {
-			/* This must be within the semaphore */
-			tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
-		} else {
-			bm_set_bit(mdev->mbds_id,bh->b_blocknr,
-				   mdev->blk_size_b,SS_OUT_OF_SYNC);
-			ret=0;
-		}
-	}
+	up(&mdev->sock_mutex);
 
-	up(&mdev->send_mutex);
+	return ok;  
+}
 
-	return ret;
+int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh, 
+		    u64 block_id)
+{
+        Drbd_Data_Packet head;
+	int ret,ok;
+
+	head.p.command = cpu_to_be16(cmd);
+	head.h.block_nr = cpu_to_be64(bh->b_blocknr);
+	head.h.block_id = block_id;
+
+	down(&mdev->sock_mutex);
+	
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
+		      bh->b_size,0);
+	bh_kunmap(bh);
+	ok=(ret == bh->b_size + sizeof(head));
+
+	up(&mdev->sock_mutex);
+
+	if( ok ) mdev->send_cnt+=bh->b_size>>10;
+
+	return ok;
 }
 
 STATIC void drbd_timeout(unsigned long arg)
@@ -783,8 +832,8 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		rv = sock_sendmsg(sock, &msg, header_size+data_size);
 		if ( rv == -ERESTARTSYS) {
 			spin_lock_irqsave(&current->sigmask_lock,flags);
-			if (sigismember(SIGSET_OF(current), DRBD_SIG)) {
-				sigdelset(SIGSET_OF(current), DRBD_SIG);
+			if (sigismember(&current->pending.signal, DRBD_SIG)) {
+				sigdelset(&current->pending.signal, DRBD_SIG);
 				recalc_sigpending(current);
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
@@ -842,9 +891,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	current->blocked = oldset;
 	if(app_got_sig) {
-		sigaddset(SIGSET_OF(current), DRBD_SIG);
+		sigaddset(&current->pending.signal, DRBD_SIG);
 	} else {
-		sigdelset(SIGSET_OF(current), DRBD_SIG);
+		sigdelset(&current->pending.signal, DRBD_SIG);
 	}
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
@@ -916,69 +965,54 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
 STATIC void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
 	int i;
 
 	/* In case the receiver calls run_task_queue(&tq_disk) itself,
-	   in order to flush blocks to the ll_dev (for a device in 
-	   secondary state), it could happen that it has to send the 
-	   WRITE_HINT for an other device (which is in primary state). 
+	   in order to flush blocks to the ll_dev (for a device in
+	   secondary state), it could happen that it has to send the
+ 	   WRITE_HINT for an other device (which is in primary state). 
 	   This could lead to a distributed deadlock!!
 
 	   To avoid the deadlock we requeue the WRITE_HINT. */
-	
+
 	for (i = 0; i < minor_count; i++) {
 		if(current == drbd_conf[i].receiver.task) {
 			queue_task(&mdev->write_hint_tq, &tq_disk);
 			return;
 		}
 	}
-	
+       
 	drbd_send_cmd(mdev,WriteHint,0);
 	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }
-#endif
 
 int __init drbd_init(void)
 {
 
 	int i;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	drbd_proc = create_proc_read_entry("drbd", 0, &proc_root,
 					   drbd_proc_get_info, NULL);
-	if (!drbd_proc)
-#else
-	if (proc_register(&proc_root, &drbd_proc_dir))
-#endif
-	{
+	if (!drbd_proc)	{
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
 		return -EIO;
 	}
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 	drbd_proc->owner = THIS_MODULE;
-#endif
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops)) {
 
 		printk(KERN_ERR DEVICE_NAME ": Unable to get major %d\n",
 		       MAJOR_NR);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-		if (drbd_proc)
-			remove_proc_entry("drbd", &proc_root);
-#else
-		proc_unregister(&proc_root, drbd_proc_dir.low_ino);
-#endif
+		if (drbd_proc) remove_proc_entry("drbd", &proc_root);
 
 		return -EBUSY;
 	}
 
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 #ifdef CONFIG_DEVFS_FS
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
 	devfs_register_series(devfs_handle, "%u", minor_count,
@@ -986,7 +1020,6 @@ int __init drbd_init(void)
 			      S_IFBLK | S_IRUSR | S_IWUSR,
 		     	      &drbd_ops, NULL);
 # endif
-#endif
 
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
 	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
@@ -995,6 +1028,9 @@ int __init drbd_init(void)
 	/* Initialize size arrays. */
 
 	for (i = 0; i < minor_count; i++) {
+		drbd_conf[i].sync_conf.rate=250;
+		drbd_conf[i].sync_conf.use_csums=0;
+		drbd_conf[i].sync_conf.skip=0;
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		drbd_conf[i].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		drbd_sizes[i] = 0;
@@ -1004,6 +1040,7 @@ int __init drbd_init(void)
 		drbd_conf[i].msock = 0;
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
+		drbd_conf[i].lo_usize = 0;
 		drbd_conf[i].state = Secondary;
 		init_waitqueue_head(&drbd_conf[i].state_wait);
 		drbd_conf[i].o_state = Unknown;
@@ -1016,27 +1053,33 @@ int __init drbd_init(void)
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
 		drbd_conf[i].transfer_log = 0;
 		drbd_conf[i].mbds_id = 0;
-		/* If the WRITE_HINT_QUEUED flag is set but it is not
-		   actually queued the functionality is completely disabled */
-		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
-		else drbd_conf[i].flags=0;
+ 		/* If the WRITE_HINT_QUEUED flag is set but it is not
+ 		   actually queued the functionality is completely disabled */
+ 		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
+ 		else drbd_conf[i].flags=0;
+		drbd_conf[i].rs_total=0;
+		//drbd_conf[i].rs_left=0;
+		//drbd_conf[i].rs_start=0;
+		//drbd_conf[i].rs_mark_left=0;
+		//drbd_conf[i].rs_mark_time=0;
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].a_timeout.function = drbd_a_timeout;
 		drbd_conf[i].a_timeout.data = (unsigned long)(drbd_conf+i);
 		init_timer(&drbd_conf[i].a_timeout);
-		drbd_conf[i].synced_to=0;
-		init_MUTEX(&drbd_conf[i].send_mutex);
-		init_MUTEX(&drbd_conf[i].ctl_mutex);
+		init_MUTEX(&drbd_conf[i].sock_mutex);
+		init_MUTEX(&drbd_conf[i].msock_mutex);
+ 		init_MUTEX(&drbd_conf[i].ctl_mutex);
 		drbd_conf[i].send_proc=NULL;
 		drbd_conf[i].send_proc_lock = SPIN_LOCK_UNLOCKED;
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);
-		drbd_thread_init(i, &drbd_conf[i].syncer, drbd_syncer);
+		drbd_thread_init(i, &drbd_conf[i].dsender, drbd_dsender);
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
+		init_waitqueue_head(&drbd_conf[i].dsender_wait);
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
 		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].syncer_b = 0;
 		drbd_conf[i].bb_lock = SPIN_LOCK_UNLOCKED;
+		drbd_conf[i].pr_lock = SPIN_LOCK_UNLOCKED;
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
 		drbd_conf[i].epoch_size=0;
@@ -1045,16 +1088,18 @@ int __init drbd_init(void)
 		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].done_ee);
+		INIT_LIST_HEAD(&drbd_conf[i].read_ee);
+		INIT_LIST_HEAD(&drbd_conf[i].rdone_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].busy_blocks);
+		INIT_LIST_HEAD(&drbd_conf[i].app_reads);
+		INIT_LIST_HEAD(&drbd_conf[i].resync_reads);
 		drbd_conf[i].ee_vacant=0;
 		drbd_conf[i].ee_in_use=0;
 		drbd_init_ee(drbd_conf+i);
 		init_waitqueue_head(&drbd_conf[i].ee_wait);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
 		drbd_conf[i].write_hint_tq.sync	= 0;
 		drbd_conf[i].write_hint_tq.routine = &drbd_send_write_hint;
 		drbd_conf[i].write_hint_tq.data = drbd_conf+i;
-#endif
 
 		{
 			int j;
@@ -1066,12 +1111,10 @@ int __init drbd_init(void)
 #endif  
 		}
 	}
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+
 	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
 	/*   blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), NULL); */
-#else
-	blk_dev[MAJOR_NR].request_fn = DEVICE_REQUEST;
-#endif
+
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
 
@@ -1092,16 +1135,15 @@ void cleanup_module()
 {
 	int i;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
 #ifdef CONFIG_DEVFS_FS
 	devfs_unregister(devfs_handle);
 #endif
-#endif
+
 	for (i = 0; i < minor_count; i++) {
 		drbd_set_state(i,Secondary);
 		fsync_dev(MKDEV(MAJOR_NR, i));
 		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[i].flags);
-		drbd_thread_stop(&drbd_conf[i].syncer);
+		drbd_thread_stop(&drbd_conf[i].dsender);
 		drbd_thread_stop(&drbd_conf[i].receiver);
 		drbd_thread_stop(&drbd_conf[i].asender);
 		drbd_free_resources(i);
@@ -1123,22 +1165,11 @@ void cleanup_module()
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-	blk_dev[MAJOR_NR].request_fn = NULL;
-	/*
-#else
-	blk_cleanup_queue(BLK_DEFAULT_QUEUE(MAJOR_NR));
-	*/
-#endif
-
 	blksize_size[MAJOR_NR] = NULL;
 	blk_size[MAJOR_NR] = NULL;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+
 	if (drbd_proc)
 		remove_proc_entry("drbd", &proc_root);
-#else
-	proc_unregister(&proc_root, drbd_proc_dir.low_ino);
-#endif
 
 	kfree(drbd_blocksizes);
 	kfree(drbd_sizes);
@@ -1150,13 +1181,9 @@ void cleanup_module()
 void drbd_free_ll_dev(int minor)
 {
 	if (drbd_conf[minor].lo_file) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 		blkdev_put(drbd_conf[minor].lo_file->f_dentry->d_inode->i_bdev,
 			   BDEV_FILE);
-#else
-		blkdev_release(drbd_conf[minor].lo_file->f_dentry->
-			       d_inode);
-#endif
+
 		fput(drbd_conf[minor].lo_file);
 		drbd_conf[minor].lo_file = 0;
 		drbd_conf[minor].lo_device = 0;
@@ -1195,34 +1222,6 @@ void drbd_free_resources(int minor)
   A wicked bug was found and pointed out by 
                      Guzovsky, Eduard <EGuzovsky@crossbeamsys.com>
 */
-
-#include <asm/types.h>
-#include <linux/vmalloc.h>
-
-#define BM_BLOCK_SIZE_B  12  
-#define BM_BLOCK_SIZE    (1<<12)
-
-#define BM_IN_SYNC       0
-#define BM_OUT_OF_SYNC   1
-
-#if BITS_PER_LONG == 32
-#define LN2_BPL 5
-#elif BITS_PER_LONG == 64
-#define LN2_BPL 6
-#else
-#error "LN2 of BITS_PER_LONG unknown!"
-#endif
-
-struct BitMap {
-	kdev_t dev;
-	unsigned long size;
-	unsigned long* bm;
-	unsigned long sb_bitnr;
-	unsigned long sb_mask;
-	unsigned long gb_bitnr;
-	unsigned long gb_snr;
-	spinlock_t bm_lock;
-};
 
 
 // Shift right with round up. :)
@@ -1313,6 +1312,30 @@ void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int
 	spin_unlock(&sbm->bm_lock);
 }
 
+int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size)
+{
+        unsigned long* bm;
+	unsigned long bitnr;
+	int bit;
+
+	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
+
+	if(sbm == NULL) {
+		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
+		       "device size!\n");
+		return 0;
+	}
+
+	bm = sbm->bm;
+	bitnr = blocknr >> cb;
+
+ 	spin_lock(&sbm->bm_lock);
+	bit=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
+	spin_unlock(&sbm->bm_lock);
+				     
+	return bit;
+}
+
 static inline int bm_get_bn(unsigned long word,int nr)
 {
 	if(nr == BITS_PER_LONG-1) return -1;
@@ -1353,6 +1376,11 @@ unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size)
 	}
  out:
 	rv = (sbm->gb_bitnr<<cb) + sbm->gb_snr++;
+
+	// Since the bitmap has to have more bits than the device blocks,
+	// we must ensure not to return a blocknumbe bejond end of device.
+	if( (rv+1)*(1<<(ln2_block_size-10)) > 
+	    blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)] ) rv = MBDS_DONE;
  r_out:
  	spin_unlock(&sbm->bm_lock);	
 	return rv;
@@ -1368,6 +1396,16 @@ void bm_reset(struct BitMap* sbm,int ln2_block_size)
 
  	spin_unlock(&sbm->bm_lock);	
 }
+
+void bm_fill_bm(struct BitMap* sbm,int value)
+{
+ 	spin_lock(&sbm->bm_lock);
+
+	memset(sbm->bm,value,sbm->size);
+
+ 	spin_unlock(&sbm->bm_lock);		
+}
+
 /*********************************/
 /* meta data management */
 
@@ -1396,13 +1434,7 @@ void drbd_md_write(int minor)
         oldfs = get_fs();
         set_fs(get_ds());
 	inode = fp->f_dentry->d_inode;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-        down(&inode->i_sem);
-#endif
 	i=fp->f_op->write(fp,(const char*)&buffer,sizeof(buffer),&fp->f_pos);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-	up(&inode->i_sem);
-#endif
 	set_fs(oldfs);
 	filp_close(fp,NULL);
 	if (i==sizeof(buffer)) return;
@@ -1427,13 +1459,7 @@ void drbd_md_read(int minor)
         oldfs = get_fs();
         set_fs(get_ds());
 	inode = fp->f_dentry->d_inode;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-        down(&inode->i_sem); 
-#endif
 	i=fp->f_op->read(fp,(char*)&buffer,sizeof(buffer),&fp->f_pos);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-	up(&inode->i_sem);
-#endif
 	set_fs(oldfs);
 	filp_close(fp,NULL);
 
@@ -1531,7 +1557,7 @@ void drbd_queue_signal(int signal,struct task_struct *task)
   	read_lock(&tasklist_lock);
 	if (task) {
 		spin_lock_irqsave(&task->sigmask_lock, flags);
-		sigaddset(SIGSET_OF(task), signal);
+		sigaddset(&task->pending.signal, signal);
 		recalc_sigpending(task);
 		spin_unlock_irqrestore(&task->sigmask_lock, flags);
 		if (task->state & TASK_INTERRUPTIBLE) wake_up_process(task);
