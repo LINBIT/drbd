@@ -102,6 +102,8 @@ int drbd_init(void);
 /*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
 int drbd_eventd(struct Drbd_thread *thi);
 
+int drbd_send(struct Drbd_Conf *, Drbd_Packet*, size_t , void* , size_t);
+
 #ifdef DEVICE_REQUEST
 #undef DEVICE_REQUEST
 #endif
@@ -480,8 +482,9 @@ int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd)
 	int err;
 	Drbd_Packet head;
 
+	head.command = cpu_to_be16(cmd);
 	down(&drbd_conf[minor].send_mutex);
-	err = drbd_send(&drbd_conf[minor], cmd,&head,sizeof(head),0,0);
+	err = drbd_send(&drbd_conf[minor], &head,sizeof(head),0,0);
 	up(&drbd_conf[minor].send_mutex);
 
 	return err;  
@@ -500,6 +503,7 @@ int drbd_send_param(int minor)
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: LL device has no size ?!?\n\n",minor);
 
+	param.p.command = cpu_to_be16(ReportParams);
 	param.h.blksize = cpu_to_be32(1 << drbd_conf[minor].blk_size_b);
 	param.h.state = cpu_to_be32(drbd_conf[minor].state);
 	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
@@ -509,7 +513,7 @@ int drbd_send_param(int minor)
 		param.h.gen_cnt[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
 
 	down(&drbd_conf[minor].send_mutex);
-	err = drbd_send(&drbd_conf[minor], ReportParams, (Drbd_Packet*)&param, 
+	err = drbd_send(&drbd_conf[minor], (Drbd_Packet*)&param, 
 			sizeof(param),0,0);
 	up(&drbd_conf[minor].send_mutex);
 	
@@ -525,10 +529,11 @@ int drbd_send_cstate(struct Drbd_Conf *mdev)
 	Drbd_CState_Packet head;
 	int ret;
 	
+	head.p.command = cpu_to_be16(CStateChanged);
 	head.h.cstate = cpu_to_be32(mdev->cstate);
 
 	down(&mdev->send_mutex);
-	ret=drbd_send(mdev,CStateChanged,(Drbd_Packet*)&head,sizeof(head),0,0);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0);
 	up(&mdev->send_mutex);
 	return ret;
 
@@ -540,11 +545,12 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
         Drbd_Barrier_Packet head;
 
 	/* tl_add_barrier() must be called with the send_mutex aquired */
+	head.p.command = cpu_to_be16(Barrier);
 	head.h.barrier=tl_add_barrier(mdev); 
 
 	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
        
-	r=drbd_send(mdev,Barrier,(Drbd_Packet*)&head,sizeof(head),0,0);
+	r=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0);
 
 	if( r == sizeof(head) ) inc_pending((int)(mdev-drbd_conf));
 
@@ -556,10 +562,11 @@ int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
         Drbd_BarrierAck_Packet head;
 	int ret;
        
+	head.p.command = cpu_to_be16(BarrierAck);
         head.h.barrier = barrier_nr;
 	head.h.set_size = cpu_to_be32(set_size);
 	down(&mdev->send_mutex);
-	ret=drbd_send(mdev,BarrierAck,(Drbd_Packet*)&head,sizeof(head),0,0);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0);
 	up(&mdev->send_mutex);
 	return ret;
 }
@@ -571,10 +578,11 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, unsigned long block_nr,
         Drbd_BlockAck_Packet head;
 	int ret;
 
+	head.p.command = cpu_to_be16(cmd);
 	head.h.block_nr = cpu_to_be64(block_nr);
         head.h.block_id = block_id;
 	down(&mdev->send_mutex);
-	ret=drbd_send(mdev,cmd,(Drbd_Packet*)&head,sizeof(head),0,0);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0);
 	up(&mdev->send_mutex);
 	return ret;
 }
@@ -585,6 +593,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
         Drbd_Data_Packet head;
 	int ret;
 
+	head.p.command = cpu_to_be16(Data);
 	head.h.block_nr = cpu_to_be64(block_nr);
 	head.h.block_id = block_id;
 
@@ -594,7 +603,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	        _drbd_send_barrier(mdev);
 	}
 	
-	ret=drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),data,
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),data,
 		      data_size);
 
 	if(block_id != ID_SYNCER) {
@@ -615,14 +624,21 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	return ret;
 }
 
+
+struct send_timeout_info {
+	struct Drbd_Conf *mdev;
+	int timeout_happened;
+	int pid;
+};
+
 void drbd_timeout(unsigned long arg)
 {
-	struct Drbd_Conf *mdev = (struct Drbd_Conf *) arg;
+	struct send_timeout_info *ti = (struct send_timeout_info *) arg;
 
-	printk(KERN_ERR DEVICE_NAME" : timeout detected! (pid=%d)\n",
-	       mdev->send_proc->pid);
-	set_bit(SEND_TIMEOUTED, &mdev->flags);
-	drbd_queue_signal(DRBD_SIG, mdev->send_proc->pid);
+	printk(KERN_ERR DEVICE_NAME"%d: timeout detected! (pid=%d)\n",
+	       (int)(ti->mdev-drbd_conf),ti->pid);
+	ti->timeout_happened=1;
+	drbd_queue_signal(DRBD_SIG, ti->pid);
 }
 
 void drbd_a_timeout(unsigned long arg)
@@ -639,7 +655,7 @@ void drbd_a_timeout(unsigned long arg)
 	}
 }
 
-int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
+int drbd_send(struct Drbd_Conf *mdev, 
 	      Drbd_Packet* header, size_t header_size, 
 	      void* data, size_t data_size)
 {
@@ -650,12 +666,13 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	unsigned long flags;
 	int rv,sent=0;
 	int app_got_sig=0;
+	struct send_timeout_info ti;
+	struct timer_list s_timeout; /* send timeout */
 
 	if (!mdev->sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
 
 	header->magic  =  cpu_to_be32(DRBD_MAGIC);
-	header->command = cpu_to_be16(cmd);
 	header->length  = cpu_to_be16(data_size);
 
 	mdev->sock->sk->allocation = GFP_DRBD;
@@ -673,13 +690,16 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	msg.msg_namelen = 0;
 	msg.msg_flags = MSG_NOSIGNAL;
 
-	clear_bit(SEND_TIMEOUTED,&mdev->flags);
 	if (mdev->conf.timeout) {
-		init_timer(&mdev->s_timeout);
-		mdev->send_proc = current;
-		mdev->s_timeout.expires =
-		    jiffies + mdev->conf.timeout * HZ / 10;
-		add_timer(&mdev->s_timeout);
+		ti.mdev=mdev;
+		ti.timeout_happened=0;
+		ti.pid=current->pid;
+
+		init_timer(&s_timeout);
+		s_timeout.function = drbd_timeout;
+		s_timeout.data = (unsigned long) &ti;
+		s_timeout.expires = jiffies + mdev->conf.timeout * HZ / 10;
+		add_timer(&s_timeout);
 	}
 
 	lock_kernel();  //  check if this is still necessary
@@ -702,7 +722,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 				recalc_sigpending(current);
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
-				if(test_bit(SEND_TIMEOUTED,&mdev->flags)) {
+				if(ti.timeout_happened) {
 					break;
 				} else {
 					app_got_sig=1;
@@ -741,7 +761,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	unlock_kernel();
 
 	if (mdev->conf.timeout) {
-		del_timer(&mdev->s_timeout);
+		del_timer(&s_timeout);
 	}
 
 	spin_lock_irqsave(&current->sigmask_lock, flags);
@@ -754,7 +774,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	if (rv == -ERESTARTSYS && test_bit(SEND_TIMEOUTED,&mdev->flags)) {
+	if (rv == -ERESTARTSYS && ti.timeout_happened) {
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: send timed out!! (pid=%d)\n",
 		       (int)(mdev-drbd_conf),current->pid);
@@ -887,9 +907,6 @@ int __init drbd_init(void)
 		drbd_conf[i].a_timeout.data = (unsigned long) 
 			&drbd_conf[i].receiver;
 		init_timer(&drbd_conf[i].a_timeout);
-		drbd_conf[i].s_timeout.function = drbd_timeout;
-		drbd_conf[i].s_timeout.data = (unsigned long) &drbd_conf[i];
-		init_timer(&drbd_conf[i].s_timeout);
 		drbd_conf[i].synced_to=0;
 		init_MUTEX(&drbd_conf[i].send_mutex);
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);

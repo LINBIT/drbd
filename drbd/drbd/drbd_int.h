@@ -202,7 +202,6 @@ struct drbd_event {
 #define WRITER_PRESENT    3
 /*                        4   */
 #define DO_NOT_INC_CONCNT 5
-#define SEND_TIMEOUTED    6
 
 struct Drbd_Conf {
 	struct net_config conf;
@@ -233,8 +232,6 @@ struct Drbd_Conf {
 	unsigned int barrier_nr_done;
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
-	struct timer_list s_timeout; /* send timeout */
-	struct task_struct* send_proc; /* process calling drbd's send_msg() */ 
 	struct semaphore send_mutex;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
 	struct Drbd_thread receiver;
@@ -266,9 +263,9 @@ extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 extern void tl_clear(struct Drbd_Conf *mdev);
 extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
 extern void drbd_free_sock(int minor);
-extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
+/*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 		     Drbd_Packet* header, size_t header_size, 
-		     void* data, size_t data_size);
+		     void* data, size_t data_size);*/
 extern int drbd_send_param(int minor);
 extern int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd);
 extern int drbd_send_cstate(struct Drbd_Conf *mdev);
