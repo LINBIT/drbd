@@ -100,7 +100,6 @@ int drbd_init(void);
 /*static */ int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg);
 /*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
-void drbd_p_timeout(unsigned long arg);
 int drbd_eventd(struct Drbd_thread *thi);
 
 #ifdef DEVICE_REQUEST
@@ -888,9 +887,6 @@ int __init drbd_init(void)
 		drbd_conf[i].a_timeout.data = (unsigned long) 
 			&drbd_conf[i].receiver;
 		init_timer(&drbd_conf[i].a_timeout);
-		drbd_conf[i].p_timeout.function = drbd_p_timeout;
-		drbd_conf[i].p_timeout.data = (unsigned long) &drbd_conf[i];
-		init_timer(&drbd_conf[i].p_timeout);
 		drbd_conf[i].s_timeout.function = drbd_timeout;
 		drbd_conf[i].s_timeout.data = (unsigned long) &drbd_conf[i];
 		init_timer(&drbd_conf[i].s_timeout);

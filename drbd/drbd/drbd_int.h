@@ -145,7 +145,6 @@ typedef enum {
   Ping,
   PingAck,
   StartSync,   /* Secondary asking primary to start sync */ 
-  Postpone,
   BecomeSec,     /* Secondary asking primary to become secondary */
   SetConsistent  /* Syncer run was successfull */
 } Drbd_Packet_Cmd;
@@ -201,7 +200,7 @@ struct drbd_event {
 #define COLLECT_ZOMBIES   1
 #define SEND_PING         2
 #define WRITER_PRESENT    3
-#define SEND_POSTPONE     4
+/*                        4   */
 #define DO_NOT_INC_CONCNT 5
 #define SEND_TIMEOUTED    6
 
@@ -234,7 +233,6 @@ struct Drbd_Conf {
 	unsigned int barrier_nr_done;
         int    flags;
 	struct timer_list a_timeout; /* ack timeout */
-	struct timer_list p_timeout; /* processing timeout */
 	struct timer_list s_timeout; /* send timeout */
 	struct task_struct* send_proc; /* process calling drbd's send_msg() */ 
 	struct semaphore send_mutex;

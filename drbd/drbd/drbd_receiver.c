@@ -58,10 +58,6 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev);
 inline void inc_unacked(int minor)
 {
 	drbd_conf[minor].unacked_cnt++;	
-	if(drbd_conf[minor].conf.timeout) {
-		mod_timer(&drbd_conf[minor].p_timeout,
-			  jiffies + drbd_conf[minor].conf.timeout * HZ / 20);
-	}
 }
 
 inline void dec_unacked(int minor)
@@ -71,15 +67,6 @@ inline void dec_unacked(int minor)
 		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt <0 !!!\n",
 		       minor);
 
-	if(drbd_conf[minor].conf.timeout) {
-		if(drbd_conf[minor].unacked_cnt > 0) {
-			mod_timer(&drbd_conf[minor].p_timeout,
-				  jiffies + drbd_conf[minor].conf.timeout 
-				  * HZ / 20);
-		} else {
-			del_timer(&drbd_conf[minor].p_timeout);
-		}
-	}
 	if(drbd_conf[minor].unacked_cnt==0)
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 }
@@ -201,20 +188,6 @@ static inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
 static inline void drbd_wait_sync_ee(struct Drbd_Conf* mdev)
 {
 	_drbd_wait_ee(mdev,&mdev->sync_ee);
-}
-
-void drbd_p_timeout(unsigned long arg)
-{
-	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
-
-	printk(KERN_ERR DEVICE_NAME "%d: it's getting late\n", 
-	       (int)(mdev-drbd_conf));
-
-	set_bit(SEND_POSTPONE,&mdev->flags);
-
-	wake_up_interruptible(&mdev->asender_wait);
-
-
 }
 
 void drbd_c_timeout(unsigned long arg)
@@ -836,32 +809,6 @@ inline int receive_param(int minor,int command)
 	return TRUE;
 }
 
-inline void receive_postpone(int minor)
-{
-	printk(KERN_ERR DEVICE_NAME"%d: got Postpone\n",minor);
-
-	if(timer_pending(&drbd_conf[minor].a_timeout)) {
-		printk(KERN_ERR DEVICE_NAME"%d: ack timeout: %ld\n",minor,
-		       drbd_conf[minor].a_timeout.expires);
-		mod_timer(&drbd_conf[minor].a_timeout,
-			  jiffies +
-			  /* drbd_conf[minor].a_timeout.expires + */
-			  drbd_conf[minor].conf.timeout * HZ / 10);
-		printk(KERN_ERR DEVICE_NAME"%d: ack timeout: %ld\n",minor,
-		       drbd_conf[minor].a_timeout.expires);
-	}
-
-	if(timer_pending(&drbd_conf[minor].s_timeout)) {
-		printk(KERN_ERR DEVICE_NAME"%d: send timeout: %ld\n",minor,
-		       drbd_conf[minor].s_timeout.expires);
-		mod_timer(&drbd_conf[minor].s_timeout,
-			  jiffies +
-			  /* drbd_conf[minor].s_timeout.expires + */
-			  drbd_conf[minor].conf.timeout * HZ / 10);
-		printk(KERN_ERR DEVICE_NAME"%d: send timeout: %ld\n",minor,
-		       drbd_conf[minor].s_timeout.expires);
-	}
-}
 
 inline void drbd_collect_zombies(int minor)
 {
@@ -934,9 +881,6 @@ void drbdd(int minor)
 			drbd_thread_start(&drbd_conf[minor].syncer);
 			break;
 
-		case Postpone:
-			receive_postpone(minor);
-			break;
 		case BecomeSec:
 			drbd_set_state(minor,Secondary);
 			break;
@@ -985,7 +929,6 @@ void drbdd(int minor)
 		drbd_wait_sync_ee(drbd_conf+minor);
 		drbd_clear_done_ee(drbd_conf+minor);
 		drbd_conf[minor].unacked_cnt=0;		
-		del_timer(&drbd_conf[minor].p_timeout);
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
@@ -1084,28 +1027,6 @@ int drbd_asender(struct Drbd_thread *thi)
 	  if(test_and_clear_bit(SEND_PING,&drbd_conf[minor].flags)) {
 		  if(drbd_send_cmd(minor,Ping)==sizeof(Drbd_Packet))
 			  inc_pending(minor);
-	  }
-
-	  if(test_and_clear_bit(SEND_POSTPONE,&drbd_conf[minor].flags)) {
-		  printk(KERN_INFO DEVICE_NAME"%d: sending postpone packet!\n",
-			 minor);
-
-		  mod_timer(&drbd_conf[minor].p_timeout, jiffies + 
-			    drbd_conf[minor].conf.timeout * HZ / 20);
-
-		  /*
-		  printk(KERN_ERR DEVICE_NAME"%d: expire=%ld now=%ld\n",
-			 minor,drbd_conf[minor].p_timeout.expires,
-			 jiffies);
-		  
-		  if( timer_pending(&drbd_conf[minor].p_timeout)) {
-			  printk(KERN_ERR DEVICE_NAME"%d: p_timeout is act.\n",
-				 minor);
-			  
-		  }
-		  */
-		  drbd_send_cmd(minor,Postpone);
-
 	  }
 
 	  if( drbd_conf[minor].state == Primary ) {
