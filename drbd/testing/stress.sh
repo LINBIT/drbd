@@ -99,6 +99,7 @@ $DRBDSETUP /dev/nb0 PRI
 $DM -i /dev/zero -o /dev/nb0 -s $SETSIZE -y -p &
 $RSH $R_NODE $RDM -i /dev/zero -s $SETSIZE | $DM -o /dev/null -p
 
+wait
 sleep 1
 
 $RMMOD drbd 2> /dev/zero
