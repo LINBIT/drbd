@@ -835,6 +835,7 @@ void drbdd(int minor)
 	int i;
 
 	while (TRUE) {
+		drbd_collect_zombies(minor); // in case a syncer exited.
 		if (drbd_recv(&drbd_conf[minor],&header,sizeof(Drbd_Packet),0)
 		    != sizeof(Drbd_Packet)) 
 			break;
