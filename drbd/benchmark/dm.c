@@ -228,19 +228,20 @@ int main(int argc, char** argv)
 
   if(show_performance)
     {
-      long mps = (100 * (size - rsize)) /
-	((tv2.tv_sec-tv1.tv_sec)*1000000+tv2.tv_usec-tv1.tv_usec);
       long sec = tv2.tv_sec - tv1.tv_sec;
       long usec = tv2.tv_usec-tv1.tv_usec;
+      double mps;
+
       if(usec<0)
 	{
 	  sec--;
 	  usec+=1000000;
 	}
 
-      mps = (mps * 15625) / 16385;
+      mps = (((double)(size-rsize)) / (1<<20)) / 
+	(sec+((double)usec)/1000000);
 
-      printf("%ld.%02ld MB/sec (%ld B / %02ld:%02ld.%06ld)\n",mps/100,mps%100,
+      printf("%.2f MB/sec (%ld B / %02ld:%02ld.%06ld)\n",mps,
 	     size-rsize,sec/60,sec%60,usec);
     }
 
