@@ -226,10 +226,11 @@ setLocal()
 
 runForAll ()
 {
-	if [ ! $DEVICES ]; then
-		failed "No configuration file present"
-		exit 1
-	fi
+	# Already Tested when $DEVICES set
+	#if [ $NB_DEVICES -eq 0 ]; then
+	#	failed "No configuration file present"
+	#	exit 1
+	#fi
 
 	for DEVICE in $DEVICES; do
 		for RUN in $*; do
@@ -338,7 +339,10 @@ pushd . > /dev/null
 	DEVICES=`ls drbd[0-9]* | sort 2>/dev/null`
 popd > /dev/null
 
-if [ ! $DEVICES ]; then
+
+NB_DEVICES=`echo "$DEVICES" | wc -w`
+
+if [ $NB_DEVICES -eq 0 ]; then
 	failed "No configuration file present"
 	exit 1
 fi
