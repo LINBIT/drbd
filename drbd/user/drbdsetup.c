@@ -236,10 +236,22 @@ int main(int argc, char** argv)
       struct sockaddr_in *other_addr;
       struct sockaddr_in *my_addr;
       int err;
+      struct stat lower_stat;
 
       if((lower_device = open(argv[2],O_RDWR))==-1)
 	{
 	  perror("Can not open lower device");
+	  exit(20);
+	}
+      /* Check if the device is a block device */
+      err=fstat(lower_device, &lower_stat);
+      if(err)
+	{
+	  perror("fstat() failed");
+	}
+      if(!S_ISBLK(lower_stat.st_mode))
+	{
+	  fprintf(stderr, "%s is not a block device!\n", argv[2]);
 	  exit(20);
 	}
 
