@@ -121,7 +121,7 @@ int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 
 	list_for_each(le,&mdev->read_ee) {
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(BH_SECTOR(e->bh) == sector) {
+		if(DRBD_BH_SECTOR(e->bh) == sector) {
 			rv=TRUE;
 			goto out;
 		}
@@ -129,7 +129,7 @@ int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 
 	list_for_each(le,&mdev->rdone_ee) {
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(BH_SECTOR(e->bh) == sector) {
+		if(DRBD_BH_SECTOR(e->bh) == sector) {
 			rv=TRUE;
 			goto out;
 		}

@@ -867,7 +867,7 @@ read_in_block(struct Drbd_Conf* mdev,int data_size)
         /* do not use mark_buffer_dirty() since it would call refile_buffer()*/
         bh=e->bh;
         set_bit(BH_Dirty, &bh->b_state);
-        set_bit(BH_Lock, &bh->b_state); // since using submit_bh()
+        set_bit(BH_Lock, &bh->b_state); // since using generic_make_request()
 	bh->b_end_io = drbd_dio_end_sec;
 	mdev->recv_cnt+=data_size>>9;
 	
@@ -899,7 +899,7 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
  	bh = pr->d.bh;
 
-	D_ASSERT( sector == BH_SECTOR(bh) );
+	D_ASSERT( sector == APP_BH_SECTOR(bh) );
 
 	rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
 	bh_kunmap(bh);
@@ -913,7 +913,7 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 STATIC int e_end_resync_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 {
-	drbd_set_in_sync(mdev,BH_SECTOR(e->bh),e->bh->b_size);
+	drbd_set_in_sync(mdev,DRBD_BH_SECTOR(e->bh),e->bh->b_size);
 	drbd_send_ack(mdev,WriteAck,e->bh,ID_SYNCER);
 	dec_unacked(mdev);
 
@@ -940,7 +940,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	dec_pending(mdev);
 	inc_unacked(mdev);
 
-	submit_bh(WRITE,e->bh);
+	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -982,7 +982,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	dec_pending(mdev);
 	inc_unacked(mdev);
 
-	submit_bh(WRITE,e->bh);
+	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1093,7 +1093,7 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 		break;
 	}
 
-	submit_bh(WRITE,e->bh);
+	generic_make_request(WRITE,e->bh);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1162,7 +1162,7 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 
 	mdev->read_cnt += bh->b_size >> 9;
 	inc_unacked(mdev);
-	submit_bh(READ,e->bh);
+	generic_make_request(READ,e->bh);
 	
 	return TRUE;
 }

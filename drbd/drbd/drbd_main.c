@@ -528,7 +528,7 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 	int ret;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(BH_SECTOR(bh));
+	head.h.sector = cpu_to_be64(DRBD_BH_SECTOR(bh));
         head.h.block_id = block_id;
 	head.h.blksize = cpu_to_be32(bh->b_size);
 	down(&mdev->msock_mutex);
@@ -604,7 +604,7 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	return ok;  
 }
 
-// Used to send answer to read requests, BH_SECTOR(bh) !!
+// Used to send answer to read requests, DRBD_BH_SECTOR(bh) !!
 int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh, 
 		    u64 block_id)
 {
@@ -612,7 +612,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 	int ret,ok;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(BH_SECTOR(bh));
+	head.h.sector = cpu_to_be64(DRBD_BH_SECTOR(bh));
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);

@@ -79,7 +79,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	}
 	
 	spin_lock_irqsave(&mdev->bb_lock,flags);
-	bb_done(mdev,BH_SECTOR(req->bh));
+	bb_done(mdev,APP_BH_SECTOR(req->bh));
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
 	req->bh->b_end_io(req->bh,(0x0001 & er_flags & req->rq_status));
@@ -103,7 +103,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	// BIG TODO: Only set it, iff it is the case!
-	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),BH_SECTOR(req->bh),
+	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),
+			 APP_BH_SECTOR(req->bh),
 			 req->bh->b_size);
 }
 
@@ -319,7 +320,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 	nbh->b_end_io = drbd_dio_end;
-	submit_bh(rw,nbh);
+	generic_make_request(rw,nbh);
 	
 	return 0; /* Ok, bh arranged for transfer */
 

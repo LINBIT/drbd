@@ -34,7 +34,6 @@
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 typedef unsigned long sector_t;
 #endif
-#define BH_SECTOR(BH) ( (BH)->b_blocknr * ((BH)->b_size>>9) )
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)
 #define completion semaphore
@@ -713,8 +712,35 @@ static inline void drbd_set_bh(struct buffer_head *bh,
 			       int size,
 			       kdev_t dev)
 {
-	bh->b_blocknr = sector / (size>>9);
+	bh->b_blocknr = sector;  // We abuse b_blocknr here.
 	bh->b_size = size;
-	bh->b_dev = dev;
+	bh->b_dev = 0xabcd;      // DRBD's magic mark
+
+	// we skip submit_bh, but use generic_make_request.
+	set_bit(BH_Req, &bh->b_state);  
+	set_bit(BH_Launder, &bh->b_state);
+
+	bh->b_rdev = dev;
+	bh->b_rsector = sector;
 }
 
+
+#ifdef DBG_BH_SECTOR
+static inline sector_t DRBD_BH_SECTOR(struct buffer_head *bh)
+{
+	if(bh->b_dev != 0xabcd) {
+		printk(KERN_ERR DEVICE_NAME" bh->b_dev != 0xabcd\n");
+	}
+	return bh->b_blocknr;
+}
+static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
+{
+	if(bh->b_dev == 0xabcd) {
+		printk(KERN_ERR DEVICE_NAME" bh->b_dev == 0xabcd\n");
+	}
+	return bh->b_blocknr;
+}
+#else
+# define DRBD_BH_SECTOR(BH) ( (BH)->b_blocknr )
+# define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
+#endif
