@@ -576,6 +576,7 @@ struct Tl_epoch_entry {
 // bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
+#define SIGNAL_ASENDER     1
 #define SEND_PING          2
 #define WRITER_PRESENT     3
 #define STOP_SYNC_TIMER    4
@@ -1062,7 +1063,7 @@ drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
-	if(mdev->asender.task) { // could be wrong if asender just terminated.
+	if(test_bit(SIGNAL_ASENDER, &mdev->flags)) {
 		force_sig(DRBD_SIG, mdev->asender.task);
 	}
 }

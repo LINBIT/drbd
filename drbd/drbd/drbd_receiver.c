@@ -272,12 +272,12 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			      mdev->conf.max_buffers ) {
 				if(drbd_alloc_ee(mdev,GFP_TRY)) break;
 			}
-			drbd_kick_lo(mdev);
 			spin_unlock_irq(&mdev->ee_lock);
+			drbd_kick_lo(mdev);
 			schedule();
 			spin_lock_irq(&mdev->ee_lock);
+			finish_wait(&mdev->al_wait, &wait);
 			if (signal_pending(current)) return 0;
-			finish_wait(&mdev->al_wait, &wait); 
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
 			_drbd_process_ee(mdev,&mdev->done_ee);
@@ -1747,9 +1747,15 @@ int drbd_asender(struct Drbd_thread *thi)
 				mdev->conf.timeout*HZ/20;
 		}
 
+		set_bit(SIGNAL_ASENDER, &mdev->flags);
+
 		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
 
 		rv = drbd_recv_short(mdev,buf,expect-received);
+
+		clear_bit(SIGNAL_ASENDER, &mdev->flags);
+
+		drbd_flush_signals(current);
 
 		/* Note:
 		 * -EINTR        (on meta) we got a signal
@@ -1776,8 +1782,6 @@ int drbd_asender(struct Drbd_thread *thi)
 			set_bit(SEND_PING,&mdev->flags);
 			continue;
 		} else if (rv == -EINTR) {
-			drbd_flush_signals(current);
-			// Do something on signal ??
 			continue;
 		} else {
 			ERR("sock_recvmsg returned %d\n", rv);
@@ -1813,6 +1817,7 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	if(0) {
 	err:
+		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 		if (mdev->cstate >= Connected)
 			set_cstate(mdev,NetworkFailure);
 		drbd_thread_restart_nowait(&mdev->receiver);

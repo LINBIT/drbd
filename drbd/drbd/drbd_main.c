@@ -413,10 +413,9 @@ STATIC int drbd_thread_setup(void* arg)
 	int retval;
 
 	drbd_daemonize();
-	D_ASSERT(get_t_state(thi) == None);
+	D_ASSERT(get_t_state(thi) == Running);
 	D_ASSERT(thi->task == NULL);
 	thi->task = current;
-	thi->t_state = Running;
 	smp_mb();
 	complete(&thi->startstop); // notify: thi->task is set.
 
@@ -462,7 +461,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 
 	if (thi->t_state == None) {
 		D_ASSERT(thi->task == NULL);
-		// XXX D_ASSERT( thi->startstop something ? )
+		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
@@ -591,7 +590,7 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	} else
 		down(&mdev->meta.mutex);
 
-	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
+	old_blocked = block_sigs_but(0);
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size,0);
 	restore_old_sigset(old_blocked);
 
@@ -899,7 +898,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
 	 * in response to ioctl or module unload.
 	 */
-	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
+	old_blocked = block_sigs_but(0);
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
