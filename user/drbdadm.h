@@ -23,10 +23,10 @@ enum {
 
 /* for check_uniq(): Check for uniqueness of certain values...
  * comment out if you want to NOT choke on the first conflict */
-#define EXIT_ON_CONFLICT
+#define EXIT_ON_CONFLICT 1
 
-/* for verify_ips(): make not verifyable ips fatal */
-//#define INVALID_IP_IS_INVALID_CONF
+/* for verify_ips(): are not verifyable ips fatal? */
+#define INVALID_IP_IS_INVALID_CONF 0
 
 struct d_globals
 {

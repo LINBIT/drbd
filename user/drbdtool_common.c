@@ -46,29 +46,81 @@ const char* make_optstring(struct option *options,char startc)
   return buffer;
 }
 
-unsigned long m_strtol(const char* s,int def_mult)
+unsigned long long
+m_strtoll(const char *s, const char def_unit)
 {
-  char *e = (char*)s;
-  unsigned long r;
+  unsigned long long r;
+  char unit = 0;
+  char dummy = 0;
+  int shift, c;
 
-  r = strtol(s,&e,0);
-  switch(*e)
+  /*
+   * paranoia
+   */
+  switch (def_unit)
+    {
+    default:
+      fprintf(stderr, "%s:%d: unexpected default unit\n", __FILE__, __LINE__);
+      exit(100);
+    case 0:
+    case 1:
+    case '1':
+      shift = 0;
+      break;
+
+    case 'K':
+    case 'k':
+      shift = -10;
+      break;
+
+      /*
+         case 'M':
+         case 'm':
+         case 'G':
+         case 'g':
+       */
+    }
+
+  if (!s || !*s)
+    {
+      fprintf(stderr, "missing number argument\n");
+      exit(100);
+    }
+
+  c = sscanf(s, "%llu%c%c", &r, &unit, &dummy);
+
+  if (c != 1 && c != 2)
+    {
+      fprintf(stderr, "%s is not a valid number\n", s);
+      exit(20);
+    }
+
+  switch (unit)
     {
     case 0:
       return r;
     case 'K':
     case 'k':
-      return r*(1024/def_mult);
+      shift += 10;
+      break;
     case 'M':
     case 'm':
-      return r*1024*(1024/def_mult);
+      shift += 20;
+      break;
     case 'G':
     case 'g':
-      return r*1024*1024*(1024/def_mult);
+      shift += 30;
+      break;
     default:
-      fprintf(stderr,"%s is not a valid number\n",s);
+      fprintf(stderr, "%s is not a valid number\n", s);
       exit(20);
     }
+  if (r > (~0ULL >> shift))
+    {
+      fprintf(stderr, "%s: out of range\n", s);
+      exit(20);
+    }
+  return r << shift;
 }
 
 void create_lockfile_mm(int major, int minor)
@@ -76,7 +128,7 @@ void create_lockfile_mm(int major, int minor)
   char lfname[40];
   int fd,pid;
   FILE* fi;
-  
+
   snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",major,minor);
 
   while ( (fd = open(lfname,O_CREAT|O_EXCL|O_WRONLY,00644)) == -1 )

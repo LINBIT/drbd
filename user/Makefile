@@ -40,7 +40,7 @@ drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 drbdadm_parser.h: drbdadm_parser.y
 	bison -d -o drbdadm_parser.c drbdadm_parser.y
 
-drbdadm_parser.c: drbdadm_parser.y drbdadm.h
+drbdadm_parser.c: drbdadm_parser.y drbdadm.h drbd_limits.h drbdtool_common.h
 	bison -d -o drbdadm_parser.c drbdadm_parser.y
 
 drbdsetup: $(drbdsetup-obj)
@@ -61,6 +61,7 @@ distclean: clean
 install:
 	install -d $(PREFIX)/sbin/
 	install -m 755 drbdsetup $(PREFIX)/sbin/
+	install -m 755 drbdmeta $(PREFIX)/sbin/
 	install -m 755 drbdadm $(PREFIX)/sbin/
 
 uninstall:
@@ -68,7 +69,11 @@ uninstall:
 	rm -f $(PREFIX)/sbin/drbdadm
 
 ###dependencies
-drbdadm_adjust.o: drbdadm.h drbdadm_adjust.c
-drbdadm_main.o: drbdadm.h drbdadm_main.c ../drbd/linux/drbd_config.h
-drbdsetup.o: ../drbd/linux/drbd.h ../drbd/linux/drbd_config.h drbd_limits.h
-drbdadm_parser.o: drbd_limits.h
+drbdtool_common.o: drbdtool_common.h          
+drbdadm_main.o:    drbdtool_common.h drbdadm.h
+drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
+drbdadm_parser.o:  drbdtool_common.h drbdadm.h drbd_limits.h
+drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h 
+drbdsetup.o:       drbdtool_common.h           drbd_limits.h
+drbdsetup.o: ../drbd/linux/drbd.h ../drbd/linux/drbd_config.h
+drbdmeta.o:        drbdtool_common.h drbd_endian.h 

@@ -6,6 +6,7 @@
 
 #include "drbdadm.h"
 #include "drbd_limits.h"
+#include "drbdtool_common.h"
 
 extern void yyerror(char* text);
 extern int  yylex(void);
@@ -27,86 +28,6 @@ static struct d_resource* c_res;
 static struct d_host_info* c_host;
 static char* c_hostname;
 static int   c_section_start, n_hosts;
-
-unsigned long long
-m_strtoll(const char *s, char def_unit)
-{
-  unsigned long long r;
-  char unit = 0;
-  char dummy = 0;
-  int shift, c;
-
-  /*
-   * paranoia
-   */
-  switch (def_unit)
-    {
-    default:
-      fprintf(stderr, "%s:%d: unexpected default unit\n", __FILE__, __LINE__);
-      exit(E_thinko);
-    case 0:
-    case 1:
-    case '1':
-      shift = 0;
-      break;
-
-    case 'K':
-    case 'k':
-      shift = -10;
-      break;
-
-      /*
-         case 'M':
-         case 'm':
-         case 'G':
-         case 'g':
-       */
-    }
-
-  /* catched by the scanner already */
-  if (!s || !*s)
-    {
-      fprintf(stderr, "missing number argument\n");
-      exit(E_thinko);
-    }
-
-  c = sscanf(s, "%llu%c%c", &r, &unit, &dummy);
-
-  /* catched by the scanner already */
-  if (c != 1 && c != 2)
-    {
-      fprintf(stderr, "%s:%d: '%s' is not a valid number; %c %c\n",
-	      config_file, fline, s, unit, dummy);
-      exit(20);
-    }
-
-  switch (unit)
-    {
-    case 0:
-      return r;
-    case 'K':
-    case 'k':
-      shift += 10;
-      break;
-    case 'M':
-    case 'm':
-      shift += 20;
-      break;
-    case 'G':
-    case 'g':
-      shift += 30;
-      break;
-    default:
-      fprintf(stderr, "%s is not a valid number\n", s);
-      exit(20);
-    }
-  if (r > (~0ULL >> shift))
-    {
-      fprintf(stderr, "%s: out of range\n", s);
-      exit(20);
-    }
-  return r << shift;
-}
 
 void
 m_strtoll_range(const char *s, char def_unit,

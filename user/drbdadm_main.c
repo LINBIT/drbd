@@ -348,7 +348,7 @@ static void find_drbdcmd(char** cmd, char** pathes)
     path++;
   }
 
-  fprintf(stderr,"Can not find command (drbdsetup/drbdmeta)");
+  fprintf(stderr,"Can not find command (drbdsetup/drbdmeta)\n");
   exit(E_exec_error);
 }
 
@@ -882,6 +882,7 @@ void print_usage()
 
 /* if not verifyable, prints a message to stderr,
  * and sets config_valid = 0 if INVALID_IP_IS_INVALID_CONF is defined */
+#define INVALID_IP_IS_INVALID_CONF 0
 void verify_ips(struct d_resource* res)
 {
   char *my_ip = NULL;
@@ -922,9 +923,8 @@ void verify_ips(struct d_resource* res)
     fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
 		    "IP %s not found on this host.\n",
 	    config_file,(int)(long)ep->data,res->name, res->me->name,my_ip);
-#ifdef INVALID_IP_IS_INVALID_CONF
-    config_valid = 0;
-#endif
+    if (INVALID_IP_IS_INVALID_CONF)
+	    config_valid = 0;
     free(e.key);
     return;
   }
@@ -954,9 +954,8 @@ void verify_ips(struct d_resource* res)
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s:\n\tNo route from me (%s) to peer (%s).\n",
 	    config_file,(int)(long)ep->data,res->name, my_ip, his_ip);
-# ifdef INVALID_IP_IS_INVALID_CONF
-    config_valid = 0;
-# endif
+    if (INVALID_IP_IS_INVALID_CONF)
+	    config_valid = 0;
     return;
   }
 #endif
@@ -988,12 +987,10 @@ int check_uniq(const char* what, const char *fmt, ...)
 
   if (rv < 0) { perror("vasprintf"); exit(E_thinko); }
 
-#ifdef EXIT_ON_CONFLICT
-  if (!what) {
+  if (EXIT_ON_CONFLICT && !what) {
     fprintf(stderr,"Oops, unset argument in %s:%d.\n", __FILE__ , __LINE__ );
     exit(E_thinko);
   }
-#endif
   e.data = (void*)(long)fline;
   ep = hsearch(e, FIND);
   // fprintf(stderr,"%s: FIND %s: %p\n",res->name,e.key,ep);
@@ -1016,9 +1013,7 @@ int check_uniq(const char* what, const char *fmt, ...)
     }
     ep = NULL;
   }
-#ifdef EXIT_ON_CONFLICT
-  if (ep) exit(E_config_invalid);
-#endif
+  if (EXIT_ON_CONFLICT && ep) exit(E_config_invalid);
   return !ep;
 }
 

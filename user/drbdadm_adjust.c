@@ -93,7 +93,7 @@ int check_opt_b(FILE *in,char* name,struct d_option* base)
   return rv;
 }
 
-int check_opt_d(FILE *in,char* name,int dm, char* unit,struct d_option* base)
+int check_opt_d(FILE *in,char* name,char du, char* unit,struct d_option* base)
 {
   unsigned long  ul;
   struct d_option* o;
@@ -106,7 +106,7 @@ int check_opt_d(FILE *in,char* name,int dm, char* unit,struct d_option* base)
     o=find_opt(base,name);
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,dm) != ul) rv=1;
+      if(m_strtoll(o->value,du) != ul) rv=1;
     } else {
       if( uu[0] != 'd' ) rv=1;
     }
@@ -119,7 +119,7 @@ int check_opt_d(FILE *in,char* name,int dm, char* unit,struct d_option* base)
 int check_opt_s(FILE *in,char* name,struct d_option* base)
 {
   struct d_option* o;
-  char scs[200];  
+  char scs[200];
   char value[200];
   int rv=0;
 
@@ -264,7 +264,7 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   rv=m_fscanf(in,"Disk options%[:]\n",uu);
   if(rv==1) {
-    do_resize |= check_opt_d(in,"size",1024,"KB",res->disk_options);
+    do_resize |= check_opt_d(in,"size",'K',"KB",res->disk_options);
     do_attach |= check_opt_s(in,"on-io-error",res->disk_options);
 
     // Check if every options is also present in drbdsetup show's output.
@@ -300,7 +300,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     o=find_opt(res->net_options,"timeout");
     if(o) {
       o->mentioned=1;
-      if(m_strtol(o->value,1) != ul1*10 + ul2) do_connect=1;
+      if(m_strtoll(o->value,1) != ul1*10 + ul2) do_connect=1;
     } else {
       if( uu[0] != 'd' ) do_connect=1;
     }
@@ -317,7 +317,7 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   rv=m_fscanf(in,"Syncer options%[:]\n",uu);
   if(rv==1) {
-    do_syncer |= check_opt_d(in,"rate",1024,"KB/sec",res->sync_options);
+    do_syncer |= check_opt_d(in,"rate",'K',"KB/sec",res->sync_options);
     do_syncer |= check_opt_d(in,"group",1,"",res->sync_options);
     do_syncer |= check_opt_d(in,"al-extents",1,"",res->sync_options);
     do_syncer |= check_opt_b(in,"skip-sync",res->sync_options);
