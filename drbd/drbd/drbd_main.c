@@ -178,9 +178,9 @@ void print_tl(struct Drbd_Conf *mdev)
 
 	while( p != mdev->tl_end ) {
 		if(*p == TL_BARRIER)
-			printk(KERN_ERR "BARRIER (%ld)\n",p->sector_nr);
+			printk(KERN_ERR "BARRIER \n");
 		else
-			printk(KERN_ERR "Sector %ld.\n",p->sector_nr);
+			printk(KERN_ERR "Sector %ld.\n",GET_SECTOR(*p));
 		
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size) 
