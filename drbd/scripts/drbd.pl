@@ -9,6 +9,7 @@
 # with patches form:
 #  Thomas Stinner <t.stinner@billiton.de>
 #  Sergio Talens-Oliag <sto@isoco.com>
+#  Martin Bene <Martin.Bene@KPNQwest.com>
 #
 
 use strict;
@@ -143,6 +144,7 @@ sub read_resource_sec($)
 	next;
       }
       if( $token =~ /^protocol=(.*)/ ) { $this{"protocol"}=$1; next; }
+      if( $token =~ /^inittimeout=(.*)/ ) { $this{"inittimeout"}=$1; next; }
       if( $token =~ /^fsckcmd=(.*)/ ) { $this{"fsckcmd"}=$1; next;}
       if($token eq "}") {
 	if(! $this{"protocol"} || !$this{"fsckcmd"}) {
@@ -153,6 +155,9 @@ sub read_resource_sec($)
 	}
 	if(! $this{"other"}) {
 	  die "$pname: No partner host mentioned until line $token_line";
+	}
+	if(! $this{"inittimeout"}) {
+	  $this{"inittimeout"}="0";
 	}
 	return;
       }
@@ -206,7 +211,7 @@ sub wait_ready($$)
     if($pid == 0) {
 	my ($cstate,$state,$child);
 
-	m_system("$drbdsetup $$mconf{self}{device} wait_connect");
+	m_system("$drbdsetup $$mconf{self}{device} wait_connect -t $$mconf{inittimeout}");
 
 	($cstate,$state) = get_drbd_status($$mconf{self}{device});
 #	print "\n$$mconf{self}{device} is $cstate,$state";
