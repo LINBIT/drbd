@@ -18,10 +18,35 @@ On Debian (based) distribution(s):
 
 to have it start at boot time automaticly.
 
-drbdc is a administration script. see drbdc help.
-datadisk is a script are for integration of drbd with heartbeat.
-It can be used as a stand alone program as well. It will now
-accept three different dehaviouring mode.
+drbdc is a administration script. see drbdc help for the list
+of available command.
+
+datadisk is the script which will setup the node function.
+It can be used through heartbeart or like a standalone
+"service starter".
+
+It now accept three starting mode to please everyone:
+
+ - Force
+
+   FORCE IS THE MODE TO USE WITH HEARTBEAT.
+   DO NOT USE ANY OTHER MODE
+
+   this mode will try to initialise the mode as master.
+   If the remote mode is already primary, it will wait
+   for it a maximum of GLOBAL_TIME which can be set in
+   the configuration file
+
+ - Restore
+
+   This mode will restore the node in the same state
+   than before the reboot.
+   The first state have to be set using drbdc
+
+ - Negotiate
+
+   The node will become master if the other node is secondary
+   The node Will become slave the other node is primary
 
 Check the sample example file for more information.
 
