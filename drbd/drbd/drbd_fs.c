@@ -290,12 +290,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		goto release_bdev2_fail_ioctl;
 	}
 
-	drbd_sync_me(mdev); // XXX does this make sense?
-
-	drbd_thread_stop(&mdev->worker);
-	drbd_thread_stop(&mdev->asender);
-	drbd_thread_stop(&mdev->receiver);
-	drbd_free_resources(mdev);
+	drbd_free_ll_dev(mdev);
 
 	mdev->md_bdev  = bdev2;
 	mdev->md_file  = filp2;
@@ -362,7 +357,10 @@ ONLY_IN_26({
 
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
-	set_cstate(mdev,StandAlone);
+	if(mdev->cstate == Unconfigured ) set_cstate(mdev,StandAlone);
+	if(mdev->cstate >= Connected ) {
+		drbd_send_param(mdev,1);
+	}
 
 	return 0;
 
@@ -564,6 +562,7 @@ ONLY_IN_26(
 		set_disk_ro(mdev->vdisk, FALSE );
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
+		mdev->this_bdev->bd_disk = mdev->vdisk;
 )
 
 		if(newstate & Human) {
@@ -587,7 +586,7 @@ ONLY_IN_26(
 	drbd_md_write(mdev);
 
 	if (mdev->cstate >= WFReportParams)
-		drbd_send_param(mdev);
+		drbd_send_param(mdev,0);
 
 	return 0;
 }
@@ -733,7 +732,7 @@ ONLY_IN_26(
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		//#warning "yet an other reason to serialize all state changes on a rw_semaphore"
-		if (mdev->cstate == Connected) drbd_send_param(mdev);
+		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:
@@ -800,7 +799,7 @@ ONLY_IN_26(
 		// TODO: Fix all this. Currently it is the 
 		// blissfully ignorant implementation.
 		drbd_free_ll_dev(mdev); 
-		if (mdev->cstate == Connected) drbd_send_param(mdev);
+		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		if (mdev->cstate == StandAlone) set_cstate(mdev,Unconfigured);
 
 		break;
@@ -850,8 +849,10 @@ ONLY_IN_26(
 		goto out_unlocked;
 
 	case DRBD_IOCTL_INVALIDATE:
-		if( mdev->cstate != Connected) {
-			err = -ENXIO;
+		if( mdev->cstate != Connected ||
+		    !mdev->lo_file || 
+		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+			err = -EINPROGRESS;
 			break;
 		}
 
@@ -863,8 +864,10 @@ ONLY_IN_26(
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
-		if( mdev->cstate != Connected) {
-			err = -ENXIO;
+		if( mdev->cstate != Connected ||
+		    !mdev->lo_file || 
+		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+			err = -EINPROGRESS;
 			break;
 		}
 

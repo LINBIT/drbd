@@ -424,6 +424,8 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 void drbd_write_bm(struct Drbd_Conf *mdev)
 {
 	unsigned int exts,i;
+
+	if( mdev->lo_file == 0) return;
 	exts = div_ceil(mdev->mbds_id->size,BM_EXTENT_SIZE);
 
 	for(i=0;i<exts;i++) {

@@ -633,7 +633,7 @@ int drbd_connect(drbd_dev *mdev)
 	drbd_thread_start(&mdev->asender);
 	drbd_thread_start(&mdev->worker);
 
-	drbd_send_param(mdev);
+	drbd_send_param(mdev,0);
 
 	return 1;
 }
@@ -1050,7 +1050,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	    && !mdev->sync_conf.skip )
 	{
 		set_cstate(mdev,WFReportParams);
-		ok = drbd_send_param(mdev);
+		ok = drbd_send_param(mdev,0);
 	}
 
 	return ok;
@@ -1059,7 +1059,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
-	int no_sync=0;
+	int consider_sync;
 	int oo_state;
 	unsigned long p_size;
 
@@ -1097,49 +1097,56 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
+	mdev->p_size=p_size;
+
+	consider_sync = (mdev->cstate == WFReportParams);
+	if(drbd_determin_dev_size(mdev)) consider_sync=0;
+
+	if(be32_to_cpu(p->flags)&1) {
+		consider_sync=1;
+		drbd_send_param(mdev,2);
+	}
+	if(be32_to_cpu(p->flags)&2) consider_sync=1;
 
 	// XXX harmless race with ioctl ...
 	mdev->sync_conf.rate  =
 		max_t(int,mdev->sync_conf.rate, be32_to_cpu(p->sync_rate));
-	/* FIXME how to decide when use_csums differs??
-		mdev->sync_conf.use_csums  = ???
-	 */
+
 	// if one of them wants to skip, both of them should skip.
 	mdev->sync_conf.skip  =
 		mdev->sync_conf.skip != 0 || p->skip_sync != 0;
 	mdev->sync_conf.group =
 		min_t(int,mdev->sync_conf.group,be32_to_cpu(p->sync_group));
 
-	/* should be removed ?
-	if(be64_to_cpu(param.protocol)!=mdev->lo_usize) {
-		printk(KERN_ERR DEVICE_NAME"%d: Size hints inconsistent \n",
-		       minor);
-		set_cstate(mdev,StandAlone);
-		mdev->receiver.t_state = Exiting;
-		return FALSE;
-	}
-	*/
-
-	mdev->p_size=p_size;
 	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
 		mdev->lo_usize = be64_to_cpu(p->u_size);
 		INFO("Peer sets u_size to %ld KB\n",mdev->lo_usize);
 	}
 
-	if(p_size) clear_bit(PARTNER_DISKLESS, &mdev->flags);
-	else set_bit(PARTNER_DISKLESS, &mdev->flags);
-
-	no_sync=drbd_determin_dev_size(mdev);
-
-	if( drbd_get_capacity(mdev->this_bdev) == 0) {
-		set_cstate(mdev,StandAlone);
-		mdev->receiver.t_state = Exiting;
-		return FALSE;
+	if(!p_size) {
+		set_bit(PARTNER_DISKLESS, &mdev->flags);
+		if(mdev->cstate >= Connected ) {
+			if(mdev->state == Primary) tl_clear(mdev);
+			if(mdev->state == Primary || 
+			   be32_to_cpu(p->state) == Primary ) {
+				drbd_md_inc(mdev,ConnectedCnt);
+			}
+		}
+		if(mdev->cstate > Connected ) {
+			WARN("Resync aborted.\n");
+			if(mdev->cstate == SyncTarget)
+				set_bit(STOP_SYNC_TIMER,&mdev->flags);
+			set_cstate(mdev,Connected);
+		}
 	}
+	else clear_bit(PARTNER_DISKLESS, &mdev->flags);
 
 	if (mdev->cstate == WFReportParams) {
-		int have_good,sync;
 		INFO("Connection established.\n");
+	}
+
+	if (consider_sync) {
+		int have_good,sync;
 
 		have_good=drbd_md_compare(mdev,p);
 
@@ -1148,7 +1155,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 		//INFO("have_good=%d sync=%d\n", have_good, sync);
 
-		if ( mdev->sync_conf.skip && sync && !no_sync ) {
+		if ( mdev->sync_conf.skip && sync ) {
 			if (have_good == 1)
 				set_cstate(mdev,SkippedSyncS);
 			else // have_good == -1
@@ -1156,14 +1163,14 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			goto skipped;
 		}
 
-		if( sync && !no_sync ) {
+		if( sync ) {
 			if(have_good == 1) {
 				drbd_send_bitmap(mdev);
 				set_cstate(mdev,WFBitMapS);
 			} else { // have_good == -1
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 				set_cstate(mdev,WFBitMapT);
-			}
+			} 
 		} else set_cstate(mdev,Connected);
 
 		if (have_good == -1) {
@@ -1174,17 +1181,18 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			}
 		}
 	}
-	drbd_md_write(mdev); // update connected indicator, la_size, ...
 
-	// do not adopt gen counts when sync was skipped ...
-skipped:
+	if (mdev->cstate == WFReportParams) set_cstate(mdev,Connected);
+
+skipped:	// do not adopt gen counts when sync was skipped ...
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(p->state);
 	if(oo_state == Secondary && mdev->o_state == Primary) {
 		drbd_md_inc(mdev,ConnectedCnt);
-		drbd_md_write(mdev);
 	}
+
+	drbd_md_write(mdev); // update connected indicator, la_size, ...
 
 	return TRUE;
 }
@@ -1418,7 +1426,7 @@ STATIC void drbdd(drbd_dev *mdev)
 	}
 }
 
-void drbd_disconnect(drbd_dev *mdev)
+STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	mdev->o_state = Unknown;
 	drbd_thread_stop_nowait(&mdev->worker);

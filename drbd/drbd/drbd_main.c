@@ -539,12 +539,12 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 	    && !sc->skip )
 	{
 		set_cstate(mdev,WFReportParams);
-		ok = drbd_send_param(mdev);
+		ok = drbd_send_param(mdev,0);
 	}
 	return ok;
 }
 
-int drbd_send_param(drbd_dev *mdev)
+int drbd_send_param(drbd_dev *mdev, int flags)
 {
 	Drbd_Parameter_Packet p;
 	int ok,i;
@@ -569,6 +569,7 @@ int drbd_send_param(drbd_dev *mdev)
 	p.sync_use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
 	p.skip_sync      = cpu_to_be32(mdev->sync_conf.skip);
 	p.sync_group     = cpu_to_be32(mdev->sync_conf.group);
+	p.flags          = cpu_to_be32(flags);
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportParams,(Drbd_Header*)&p,sizeof(p));
 	return ok;
@@ -996,19 +997,19 @@ STATIC void drbd_send_write_hint(void *data)
 	/* In order to avoid deadlocks the receiver should only
 	   use blk_run_queue(). It must not use blk_run_queues() to 
 	   avoid deadlocks. 
+
+	   Maybe we should consider to use the plain drbd_send_cmd.
 	*/
 
-	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,sizeof(h))==1){
-		spin_lock_irq(q->queue_lock);
-		blk_remove_plug(q);
-		spin_unlock_irq(q->queue_lock);
-	} else {
-		if(mdev->cstate < Connected) {
-			spin_lock_irq(q->queue_lock);
-			blk_remove_plug(q);
-			spin_unlock_irq(q->queue_lock);
-		}
+	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,
+				   sizeof(h)) != 1) {
+		WARN("Have to drop sending of an io-hint\n");
 	}
+
+	spin_lock_irq(q->queue_lock);
+	blk_remove_plug(q);
+	spin_unlock_irq(q->queue_lock);
+
 }
 #endif
 
@@ -1849,6 +1850,12 @@ void drbd_md_write(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
+ONLY_IN_26(
+	if (mdev->this_bdev->bd_disk == 0) { // strange...
+		mdev->this_bdev->bd_disk = mdev->vdisk; 
+	}
+)
+
 	if( mdev->lo_file == 0) return;
 
 	down(&mdev->md_io_mutex);
@@ -1871,6 +1878,7 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
 	kunmap(mdev->md_io_page);
+	
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
 	drbd_md_sync_page_io(mdev,sector,WRITE);

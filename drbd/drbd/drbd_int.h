@@ -439,6 +439,7 @@ typedef struct {
 	u32         sync_use_csums;
 	u32         skip_sync;
 	u32         sync_group;
+	u32         flags; // flags & 1 -> reply call drbd_send_param(mdev);
 } Drbd_Parameter_Packet  __attribute((packed));
 
 typedef union {
@@ -566,7 +567,7 @@ struct Pending_read {
 #define COLLECT_ZOMBIES    1
 #define SEND_PING          2
 #define WRITER_PRESENT     3
-#define SYNC_PAUSED        4
+#define STOP_SYNC_TIMER    4
 #define DO_NOT_INC_CONCNT  5
 #define WRITE_HINT_QUEUED  6
 #define PARTNER_DISKLESS   7
@@ -732,7 +733,7 @@ extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern void drbd_free_sock(drbd_dev *mdev);
 /* extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 	      void* buf, size_t size, unsigned msg_flags); */
-extern int drbd_send_param(drbd_dev *mdev);
+extern int drbd_send_param(drbd_dev *mdev, int flags);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);

@@ -131,8 +131,8 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
 			   (unsigned long)pr);
 #else
-	//WORK_HERE
-	//#warning "FIXME make 2.6.x clean"
+	drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
+			   (unsigned long)pr);
 #endif
 }
 
