@@ -90,21 +90,49 @@ int drbd_output_block_acks(struct Drbd_Conf* mdev)
 	struct list_head *le;
 	int r;
  
+	spin_lock_irq(&mdev->ee_lock);
+
 	while(!list_empty(&mdev->done_ee)) {
 		le = mdev->done_ee.next;
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		spin_unlock_irq(&drbd_conf[minor].ee_lock);
+		spin_unlock_irq(&mdev->ee_lock);
 		r=drbd_send_ack(mdev, WriteAck,e->bh->b_blocknr,e->block_id);
+		bforget(e->bh);
 		if(r != sizeof(Drbd_BlockAck_Packet )) return FALSE;
-		// handle return value
 		dec_unacked((int)(mdev-drbd_conf));
 		mdev->epoch_size++;			
-		spin_lock_irq(mdev->ee_lock);
+		spin_lock_irq(&mdev->ee_lock);
 		list_add(le,&mdev->free_ee);			
 	}
+
+	spin_unlock_irq(&mdev->ee_lock);
+
 	return TRUE;
 }
+
+
+inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
+{
+	struct Tl_epoch_entry *e;
+	struct list_head *le;
+
+	spin_lock_irq(&mdev->ee_lock);
+	while(!list_empty(&mdev->active_ee)) {
+		le = mdev->active_ee.next;
+		e = list_entry(le, struct Tl_epoch_entry,list);
+		if(buffer_uptodate(e->bh)) {
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: Why is this buffer on active_ee\n",
+			       (int)(mdev-drbd_conf));
+		}
+		spin_unlock_irq(&mdev->ee_lock);
+		wait_on_buffer(e->bh);
+		spin_lock_irq(&mdev->ee_lock);
+	}
+	spin_unlock_irq(&mdev->ee_lock);
+}
+
 
 void drbd_p_timeout(unsigned long arg)
 {
@@ -370,8 +398,6 @@ inline int receive_cstate(int minor)
 
 inline int receive_barrier(int minor)
 {
-	struct Tl_epoch_entry *e;
-	struct list_head *le;
   	Drbd_Barrier_P header;
 	int rv;
 
@@ -387,23 +413,9 @@ inline int receive_barrier(int minor)
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
-	spin_lock_irq(&drbd_conf[minor].ee_lock);
-	while(!list_empty(&drbd_conf[minor].active_ee)) {
-		le = drbd_conf[minor].active_ee.next;
-		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(buffer_uptodate(e->bh)) {
-			printk(KERN_ERR DEVICE_NAME 
-			       "%d: Why is this buffer on active_ee\n",
-			       minor);
-		}
-		spin_unlock_irq(&drbd_conf[minor].ee_lock);
-		wait_on_buffer(e->bh);
-		spin_lock_irq(&drbd_conf[minor].ee_lock);
-	}
-
+	drbd_wait_active_ee(drbd_conf+minor);
 	rv=drbd_output_block_acks(drbd_conf+minor);
 
-	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 	drbd_send_b_ack(&drbd_conf[minor], header.barrier,
 			drbd_conf[minor].epoch_size );
 	drbd_conf[minor].epoch_size=0;
@@ -720,25 +732,7 @@ inline void receive_postpone(int minor)
 }
 
 
-inline void es_clear(struct Drbd_Conf *mdev)
-{
-	struct list_head *le;
-	struct Tl_epoch_entry *e;
-
-	spin_lock_irq(&mdev->ee_lock);
-
-	while(!list_empty(&mdev->active_ee)) {
-		le = mdev->active_ee.next;
-		list_del(le);
-		e = list_entry(le,struct Tl_epoch_entry,list);
-		bforget(e->bh);		
-		list_add(le,&mdev->free_ee);			
-	}
-
-	spin_unlock_irq(&mdev->ee_lock);
-}
-
-inline void sl_clear(struct Drbd_Conf *mdev)
+inline void drbd_sync_ee_clear(struct Drbd_Conf *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry *e;
@@ -873,8 +867,8 @@ void drbdd(int minor)
 		drbd_md_write(minor);
 		break;
 	case Secondary: 
-		es_clear(&drbd_conf[minor]);
-		sl_clear(&drbd_conf[minor]);
+		drbd_wait_active_ee(drbd_conf+minor);
+		drbd_sync_ee_clear(drbd_conf+minor);
 		drbd_conf[minor].unacked_cnt=0;		
 		del_timer(&drbd_conf[minor].p_timeout);
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
@@ -942,9 +936,9 @@ int drbd_asender(struct Drbd_thread *thi)
 	while(thi->t_state == Running) {
 
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
+	  // TODO: exit upon signal or clear signals.
 	  
 	  if(thi->t_state == Exiting) break;
-	  // TODO: exit/clean signals.
 
 	  if(test_and_clear_bit(SEND_PING,&drbd_conf[minor].flags)) {
 		  if(drbd_send_cmd(minor,Ping)==sizeof(Drbd_Packet))
@@ -976,11 +970,9 @@ int drbd_asender(struct Drbd_thread *thi)
 		  continue;
 	  }
 
-	  spin_lock_irq(&drbd_conf[minor].ee_lock);
-	  
 	  drbd_output_block_acks(drbd_conf+minor);
+	  // TODO handle return value
 
-	  spin_unlock_irq(&drbd_conf[minor].ee_lock);
 	}
 
 	return 0;
