@@ -394,8 +394,7 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 
 	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
-		mdev->resync_work.cb = w_resume_next_sg;
-		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+		mod_timer(&mdev->resync_timer,jiffies);
 	}
 	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
 	   test_bit(DISKLESS,&mdev->flags) && ns < Connected) {

@@ -423,14 +423,22 @@ int w_is_app_read(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 void resync_timer_fn(unsigned long data)
 {
+	unsigned long flags;
 	drbd_dev* mdev = (drbd_dev*) data;
 
-	D_ASSERT(list_empty(&mdev->resync_work.list));
-	if(unlikely(test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags))) {
-		mdev->resync_work.cb = w_resync_inactive;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+
+	if(likely(!test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags))) {
+		mdev->resync_work.cb = w_make_resync_request;
 	} else {
-		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		mdev->resync_work.cb = w_resume_next_sg;
 	}
+
+	if(list_empty(&mdev->resync_work.list)) {
+		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+	} else INFO("Avoided requeue of resync_work\n");
+
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
 }
 
 int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
@@ -517,9 +525,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	// assert that all bit-map parts are cleared.
 	D_ASSERT(list_empty(&mdev->resync->lru));
-	// w->cb = w_resync_inactive; // look into done set_cstate()
-
-	set_cstate(mdev,Connected);
+	
+	set_cstate(mdev,Connected); // w_resume_next_sg() gets called here.
 	return 1;
 }
 
@@ -639,8 +646,8 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 	_set_cstate(mdev,ns);
 
 	if(mdev->cstate == SyncTarget) {
-		mdev->resync_work.cb = w_make_resync_request;
-		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+		mod_timer(&mdev->resync_timer,jiffies);
 	}
 }
 
@@ -784,8 +791,9 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	if(mdev->cstate == SyncTarget) {
 		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 		bm_reset(mdev->mbds_id);
-		mdev->resync_work.cb = w_make_resync_request;
-		drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
+		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+		clear_bit(STOP_SYNC_TIMER,&mdev->flags); // on the way out...
+		mod_timer(&mdev->resync_timer,jiffies);
 	} else {
 		// If we are SyncSource we must be consistent :)
 		mdev->gen_cnt[Flags] |= MDF_Consistent;

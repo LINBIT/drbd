@@ -800,7 +800,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr);
 	if(!bm_ext) {
 		spin_unlock_irqrestore(&mdev->al_lock,flags);
-		ERR("drbd_rs_complete_io() called, but extent not found");
+		ERR("drbd_rs_complete_io() called, but extent not found\n");
 		return;
 	}
 

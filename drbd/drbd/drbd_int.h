@@ -850,6 +850,7 @@ extern int w_resume_next_sg      (drbd_dev *, struct drbd_work *, int);
 extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
 extern int w_try_send_barrier    (drbd_dev *, struct drbd_work *, int);
 extern int w_send_write_hint     (drbd_dev *, struct drbd_work *, int);
+extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
