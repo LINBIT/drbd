@@ -45,6 +45,9 @@
 	     ({ tmp != (config) && (tmp = res->next); }); \
 	     res = tmp)
 
+#define for_completed(res,tmp,config)                     \
+            ( (res) == (tmp) ) 
+
 // basic format
 #define INDENT "    "
 #define FMT    INDENT "%-12s"
@@ -729,7 +732,7 @@ int main(int argc, char** argv)
 	  for_each_resource(res,tmp,config) {
 	    if(!strcmp(argv[i],res->name)) break;
 	  }
-	  if(tmp == config) {
+	  if(for_completed(res,tmp,config)) {
 	    fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
 	    exit(20);
 	  }
