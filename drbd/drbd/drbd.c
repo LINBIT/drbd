@@ -79,7 +79,7 @@ struct Drbd_Conf
   int                      rpid;
   struct semaphore         tsem;
   struct timer_list        s_timeout_t;
-  unsigned long            synced_to;
+  atomic_t		   synced_to;
 };
 
 
@@ -542,7 +542,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	if( req->cmd == WRITE && drbd_conf[minor].state == Primary &&
 	     ( drbd_conf[minor].cstate == Connected || 
 	        ( drbd_conf[minor].cstate == Syncing && 
-	          req->sector < drbd_conf[minor].synced_to ) ) )
+	          req->sector < atomic_read(&drbd_conf[minor].synced_to))))
 	  sending = 1;
 
 	/* Do disk - IO */
@@ -1252,7 +1252,7 @@ int drbd_syncer(void *arg)
       schedule_timeout(interval);
       /* find block */
       /* send block */
-      drbd_conf[minor].synced_to++; /* Atomic inc ? */
+      atomic_inc(&drbd_conf[minor].synced_to);
     }
 
 
