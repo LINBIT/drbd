@@ -170,38 +170,109 @@ DRBD 0.8 Roadmap
   
  Global write order
 
-  The major pitfall is the handling of concurrent writes to the
-  same block. (Concurrent writes to the same blocks should not 
-  happen, but we have to assume that it is possible that the
-  synchronisation methods of our upper layer [i.e. openGFS] 
-  may fail.)
+  [ Description of GFS-mode-arbitration2.pdf ]
 
-  Without further handling concurrent writes to the same block
-  would get written on each node locally first, then sent
-  to the peer and then overwrite the local version on the peer.
-  In other words, each node would write its local version first,
-  and the peers version of the data.
+  1. Basic mirroring with protocol C.
+    The file system on N2 issues a write request towards DRBD, 
+    which is written to the local disk and sent to N1. Then
+    the data bock is written to the local disk here and and
+    acknowledge packet is sent back. As soon as both the
+    write to the local disk and the ACK from N1 reach N2, 
+    DRBD signals the completion of IO to the file system.
 
-  Both nodes need to agree to _one_ order, in which such 
-  conflicting writes should be carried out.
+    The major pitfall is the handling of concurrent writes to the
+    same block. (Concurrent writes to the same blocks should not 
+    happen, but we have to assume that it is possible that the
+    synchronisation methods of our upper layer [i.e. openGFS] 
+    may fail.)
 
-  Proposed Solution
+    There are many cases in which such concurrent writes would
+    lead to different data on our two copies of the block. 
+
+  2. Concurrent writes, network latency is lower than disk latency
+    As we can see on the left side in figure two this could lead
+    to N1 has the blue version (=data from FS on N2) while N2
+    ends with having the green version (=data from FS on N1).
+    The solution is to flag one node (in the example N2 has the
+    discard-concurrent-writes-flag).
+    As we can see on the right side, now both nodes ends with 
+    the blue data.
+
+  3. Concurrent writes, high latency for data packets.
+    The problem now is that N2 does can not detect that this was
+    a concurrent write, since it got the ACK before the conflicting
+    data packets comes in. 
+    This can happens since in DRBD, data packets and ACK packets are
+    transmitted via two independent TCP connections, therefore the
+    ACK packet can overtakes a data packet.
+    The solution is to send with the ACK packet a discard info packet,
+    which identifies the data packet by it sequence number.
+    N2 will keep this discard info as long as it has not seen higher
+    sequence numbers by now.
+    With this both nodes will end with the blue data.
+
+  4. Concurrent writes, high latency for data packets.
+    This is the inverse case to case3 and already handled by the means
+    introduced with item 1. 
+
+  5. New write while processing a write from the peer.
+    Without further measures this would lead to an inconsistency in 
+    our mirror as the figure on the left side shows. 
+    If we currently write a conflicting block from the peer, we simply
+    discard the write request from our FS and signal IO completion 
+    immediately.
+
+  6. High disk latency on N2.
+    By IO reordering in the layers below us this could lead to 
+    having the blue data on N2 and the green data on N1. 
+    The solution to this case is the delay the write to the local
+    disk on N2 until the local write is done. This is different from
+    case two since we already got the write ACK to the conflicting
+    block.
+
+  7. An data packet overtakes an ACK packet on the network.
+    Although this case is quite unlikely, we have to take int into 
+    account. 
+
+ Proposed solution
 
   We arbitrary select one node (e.g. the node that did the first
   accept() in the drbd_connect() function) and mark it withe the
-  discard-concurrent-write-flag.
+  discard-concurrent-writes-flag.
+
+  Each data packet and each ACK packet gets a sequence 
+  number, which is increased which every packet sent. 
+  (This is a common space of sequence numbers)
 
   The algorithm which is performed upon the reception of a 
-  data packet.
+  data packet [drbd_receiver].
 
-  1. Do we have a concurrent request? (i.e. Do I have a request
+  *  If the sequence number of the data packet is higher than
+     last_seq+1 sleep until last_seq-1 == seq_num(data packet)
+
+  1. If the packet's sequence number is on the discard list,
+     simply drop it.
+  2. Do we have a concurrent request? (i.e. Do I have a request
      to the same block in my transfer log.) If not -> write now.
-  2. Have I already got an ACK packet for the concurrent 
+  3. Have I already got an ACK packet for the concurrent 
      request ? (Has the request the RQ_DRBD_SENT bit already set)
      If yes -> write the data from the data packet afterwards.
-  3. Do I have the "discard-concurrent-write-flag" ?
-     If yes -> discard the data packet and send an discard notify.
-     If no -> Write data from the data packet afterwards.
+  4. Do I have the "discard-concurrent-write-flag" ?
+     If yes -> discard the data packet.
+     If no -> Write data from the data packet afterwards and set
+              the RQ_DRBD_SENT bit in the request object ( Since
+              will will not get an ACK from our peer )
+
+  The algorithm which is performed upon the reception of an 
+  ACK packet [drbd_asender]
+
+  * If we get an ACK, store the sequence number in last_seq.
+
+  The algorithm which is performed upon the reception of an 
+  discard info packet [drbd_asender]
+
+  * if the current last_seq is lower the the packet that should
+    be discarded, store it in the to discard list.
 
   BTW, each time we have a concurrent write access, we print
   a warning to the syslog, since this indicates that the layer
@@ -212,8 +283,6 @@ DRBD 0.8 Roadmap
         to find IO operations starting in the same 4k block of
         data quickly. -> With two lookups the hash table we can
 	find any concurrent access.
-
-  [ see also GFS-mode-arbitration.pdf for illustration. ]
 
 10 Change Sync-groups to sync-after
   
