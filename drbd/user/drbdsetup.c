@@ -873,6 +873,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
 
 int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
 {
+  cmd_secondary(drbd_fd,argv,argc,options);
   cmd_disconnect(drbd_fd,argv,argc,options);
   cmd_detach(drbd_fd,argv,argc,options);
   return 0;
@@ -889,6 +890,9 @@ int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
       perror("ioctl() failed");
       if(err==EBUSY)
 	fprintf(stderr,"Not possible during resynchronisation.\n");
+      if(err==ENETRESET)
+	fprintf(stderr,"Not possible, since the device is in primary state\n"
+		"and not connected.\n");
       if(err==ENXIO)
 	fprintf(stderr," - Do not shoot yourself in the foot. -\n"
 		"A system without backing storage is not possible.\n");

@@ -766,7 +766,7 @@ ONLY_IN_26(
 		if (mdev->cstate == Unconfigured) break;
 
 		if ( mdev->state == Primary && mdev->cstate < Connected) {
-			err=-EBUSY; // TODO error printf in drbdsetup.c
+			err=-ENETRESET;
 			break;
 		}
 		/*
