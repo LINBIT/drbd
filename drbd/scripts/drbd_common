@@ -238,7 +238,7 @@ runForAll ()
 
 	for DEVICE in $DEVICES; do
 		for RUN in $*; do
-			$0 $RUN $DEVICE
+			$0 $DEVICE $RUN
 		done
 	done
 }
