@@ -1,8 +1,0 @@
-Patch-name: Export wake_up_process
-Patch-id: 50-export-wup
-Architecture: all
-Path-strip-level: 1
-
-Patch-file: debian/kernel-export-wup.patch
-Kernel-version: > 2.2.10
-

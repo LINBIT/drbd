@@ -302,7 +302,7 @@ void tl_clear(drbd_dev *mdev)
 			size   = drbd_req_get_size(r);
 			if( !(r->rq_status & RQ_DRBD_SENT) ) {
 				if(mdev->conf.wire_protocol != DRBD_PROT_A )
-					dec_ap_pending(mdev,HERE);
+					dec_ap_pending(mdev);
 				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
 				goto mark;
 			}
@@ -315,7 +315,7 @@ void tl_clear(drbd_dev *mdev)
 		b=b->next;
 		list_del(&f->requests);
 		kfree(f);
-		dec_ap_pending(mdev,HERE); // for the barrier
+		dec_ap_pending(mdev); // for the barrier
 	}
 }
 
@@ -726,7 +726,7 @@ int _drbd_send_barrier(drbd_dev *mdev)
 	inc_ap_pending(mdev);
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)&p,sizeof(p),0);
 
-//	if (!ok) dec_ap_pending(mdev,HERE); // is done in tl_clear()
+//	if (!ok) dec_ap_pending(mdev); // is done in tl_clear()
 	return ok;
 }
 

@@ -1,17 +1,18 @@
 Source: drbd
-Section: misc
+Section: admin
 Priority: extra
 Maintainer: David Krovich <dkrovich@csee.wvu.edu>
-Uploaders: Philipp Hug <debian@hug.cx>
+Uploaders: Philipp Hug <debian@hug.cx>, Cyril Bouthors <cyril@bouthors.org>
 Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, bison, flex
 Standards-Version: 3.6.1
 
-Package: drbd0.7
+Package: drbd0.7-utils
 Architecture: any
-Section: misc
-Depends: debconf, ${misc:Depends}
-Conflicts: drbd
-Provides: drbd
+Section: admin
+Depends: debconf
+Conflicts: drbd-utils, drbd
+Provides: drbd-utils
+Replaces: drbd-utils, drbd
 Suggests: heartbeat
 Description: RAID 1 over tcp/ip for Linux utilities
  Drbd is a block device which is designed to build high availability
@@ -26,12 +27,13 @@ Description: RAID 1 over tcp/ip for Linux utilities
  .
  Homepage: http://www.drbd.org
 
-Package: drbd0.7-source
+Package: drbd0.7-module-source
 Architecture: all
-Section: misc
+Section: admin
 Depends: module-assistant
-Conflicts: drbd-source
-Provides: drbd-source
+Conflicts: drbd-module-source, drbd-source
+Provides: drbd-module-source
+Replaces: drbd-module-source, drbd-source
 Recommends:  dpkg-dev, kernel-package, debhelper (>= 4), debconf-utils
 Description: RAID 1 over tcp/ip for Linux module source
  Drbd is a block device which is designed to build high availability

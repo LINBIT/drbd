@@ -1,14 +1,42 @@
+drbd (0.7.5-2) unstable; urgency=low
+
+  * debian/control: Added Conflict with drbd-util and drbd-module-source
+  * debian/control.in.modules: Fixed description for kernel module
+  * debian/control.in.modules: Added Conflict line in kernel module package
+  * debian/control.in.modules: Change depends to drbd0.7-util
+  * debian/rules: don't use top-level makefile
+  * call depmod in postinst of kernel module
+  * remove obsolete upstream ./debian/ in clean
+  * added module-assistant override file
+
+ -- Philipp Hug <debian@hug.cx>  Tue, 19 Oct 2004 20:50:49 +0200
+
 drbd (0.7.5-1) unstable; urgency=low
 
-  * Added bison, flex to Build-Depends
-  * Call 'make clean' in drbd directory
-  * Upgraded to debian-policy 3.6.1
-  * Rewritten debian/rules using module-assistant
-  * Change binary package name to drbd0.7
-  * Added myself as Uploader
-  * Conflict with drbd and drbd-source
+  * (Cyril Bouthors)
+    - New upstream release (closes: #276640).
+    - debian/drbd0.7.dirs: removed usr/bin (closes: #276643).
+    - debian/control: changed Section from misc to admin.
+    - scripts/drbd: prevent the "stop" target from failing if drbd is not running
+    - debian/rules: call upstream Makefile targets instead of doing hardcoded stuff, clean.  
+    - debian/drbd0.7.docs: added upgrade_0.6.x_to_0.7.0.txt and upgrade_0.7.0_to_0.7.1.txt.
+    - The package drbd as been renamed to drbd0.7-utils and drbd-source as
+      been renamed to drbd0.7-module-source.  We'll introduce drbd0.6-*
+      and drbd*-module soon.
+    - Added myself as Uploader.
 
- -- Philipp Hug <debian@hug.cx>  Tue, 14 Sep 2004 23:25:12 +0200
+  * (Philipp Hug)
+    - Conflict with drbd and drbd-source
+    - Fixed description for kernel modules
+    - Added Conflict line in kernel-module package
+    - Added bison, flex to Build-Depends
+    - Call 'make clean' in drbd directory
+    - Upgraded to debian-policy 3.6.1
+    - Rewritten debian/rules using module-assistant
+    - Change binary package name to drbd0.7
+    - Added myself as Uploader
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Sat, 16 Oct 2004 23:43:27 +0200
 
 drbd (0.7.4-1) unstable; urgency=low
 

@@ -1,9 +1,0 @@
-wake_up_process export kernel patch
-----------------------
-
-This patch exports the wake_up_process function so external modules can
-use them.
-One of the modules is drbd, which needs to wake-up processes as a form
-of event handling...
-
- -- Ard van Breemen <ard@telegraafnet.nl>,  Wed, 16 May 2001 15:50:32 +0200

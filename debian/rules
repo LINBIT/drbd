@@ -12,7 +12,7 @@
 # This has to be exported to make some magic below work.
 export DH_OPTIONS
 
-PACKAGE=drbd-modules
+PACKAGE=drbd0.7-module
 MA_DIR ?= /usr/share/modass
 -include $(MA_DIR)/include/generic.make
 -include $(MA_DIR)/include/common-rules.make
@@ -36,7 +36,7 @@ endif
 
 kdist_clean:
 	dh_clean
-	-make -C drbd clean
+	-$(MAKE) -C drbd clean
 
 # prep-deb-files rewrites the debian/ files as needed. See RATIONALE for
 # details
@@ -49,7 +49,7 @@ binary-modules: prep-deb-files
 	dh_testdir
 	dh_testroot
 	dh_clean -k
-	make -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
+	$(MAKE) -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
 	install -m644 -b -D drbd/drbd.$(KO)o $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/kernel/drivers/block/drbd.$(KO)o
 	dh_installdocs
 	dh_installchangelogs
@@ -60,18 +60,16 @@ binary-modules: prep-deb-files
 	dh_md5sums
 	dh_builddeb --destdir=$(DEB_DESTDIR)
 
-
 #Architecture 
 build: build-arch build-indep
 
 build-arch: build-arch-stamp
 build-arch-stamp: 
 	dh_testdir
-
-	cd user && $(MAKE)
-	cd documentation && $(MAKE) doc
-	cd scripts && $(MAKE)
-
+	$(MAKE) -C user
+	$(MAKE) -C scripts
+	$(MAKE) -C benchmark
+	$(MAKE) -C documentation doc
 	touch build-arch-stamp
 
 build-indep: build-indep-stamp
@@ -82,40 +80,36 @@ clean:
 	dh_testdir
 	dh_testroot
 	rm -f build-arch-stamp build-indep-stamp #CONFIGURE-STAMP#
-
-	cd user && $(MAKE) clean
-	cd documentation && $(MAKE) clean
-	cd scripts && $(MAKE) clean
-	cd drbd && $(MAKE) clean
+#	remove these files from upstream tgz
+	rm -f debian/drbd0.7.*
+	rm -f debian/drbd0.7-source.dirs
+	rm -f debian/kernel-patch-wup.kpatches debian/kernel-patch-wup.README.Debian debian/kernel-export-wup.patch
+	-$(MAKE) -C user clean
+	-$(MAKE) -C scripts clean
+	-$(MAKE) -C benchmark clean
+	-$(MAKE) -C documentation clean
+	-$(MAKE) -C drbd clean
 	dh_clean 
 
-install: install-indep install-arch
+install: install-arch install-indep
 install-indep:
 	dh_testdir
 	dh_testroot
 	dh_clean -k -i 
 	dh_installdirs -i
+	cp -a drbd/* debian/$(PACKAGE)-source/usr/src/modules/drbd/drbd
+	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd
+	cp drbd/linux/drbd_config.h debian/$(PACKAGE)-source/usr/src/modules/drbd
+	mkdir debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
+	cp -a scripts/adjust_drbd_config_h.sh debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
 
+#	 install debian/ files
+	cd debian ; cp changelog control compat *.modules.in rules copyright $(PACKAGE)-source/usr/src/modules/drbd/debian
 
-	cp -a drbd/* debian/drbd0.7-source/usr/src/modules/drbd/drbd
-	cp Makefile debian/drbd0.7-source/usr/src/modules/drbd
-	cp drbd/linux/drbd_config.h debian/drbd0.7-source/usr/src/modules/drbd
-	mkdir debian/drbd0.7-source/usr/src/modules/drbd/scripts/
-	cp -a scripts/adjust_drbd_config_h.sh debian/drbd0.7-source/usr/src/modules/drbd/scripts/
+#	 tar the stuff
+	cd debian/$(PACKAGE)-source/usr/src/ ; tar pzfvc drbd0.7.tar.gz modules ; rm -rf modules
 
-	# install driver source
-	#cp -a drbd debian/drbd0.7-source/usr/src/modules/drbd/
-	#mkdir debian/drbd0.7-source/usr/src/modules/drbd/scripts/
-	#cp -a scripts/adjust_drbd_config_h.sh debian/drbd0.7-source/usr/src/modules/drbd/scripts/
-	#ln -s drbd debian/drbd0.7-source/usr/src/modules/drbd/Linux-2.4
-	#ln -s drbd debian/drbd0.7-source/usr/src/modules/drbd/Linux-2.6
-
-	# install debian/ files
-	cd debian ; cp changelog control compat *.modules.in rules copyright drbd0.7-source/usr/src/modules/drbd/debian
-
-	# tar the stuff
-	cd debian/drbd0.7-source/usr/src/ ; tar pzfvc drbd0.7.tar.gz modules ; rm -rf modules
-
+	install -m 755 $(CURDIR)/debian/modass.drbd0.7-module-source $(CURDIR)/debian/$(PACKAGE)-source/usr/share/modass/overrides/drbd0.7-module-source
 	dh_install -i
 
 install-arch:
@@ -123,6 +117,10 @@ install-arch:
 	dh_testroot
 	dh_clean -k -s 
 	dh_installdirs -s
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C user install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C scripts install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C benchmark install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C documentation install
 
 	dh_install -s
 # Must not depend on anything. This is to be called by

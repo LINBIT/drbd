@@ -361,7 +361,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		if(!drbd_send_drequest(mdev,RSDataRequest,
 				       sector,size,ID_SYNCER)) {
 			ERR("drbd_send_drequest() failed, aborting...");
-			dec_rs_pending(mdev,HERE);
+			dec_rs_pending(mdev);
 			return 0; // FAILED. worker will abort!
 		}
 	}
@@ -428,7 +428,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
-		dec_unacked(mdev,HERE);
+		dec_unacked(mdev);
 		return 1;
 	}
 
@@ -441,7 +441,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		drbd_io_error(mdev);
 	}
 
-	dec_unacked(mdev,HERE);
+	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
 	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {
@@ -465,7 +465,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
-		dec_unacked(mdev,HERE);
+		dec_unacked(mdev);
 		return 1;
 	}
 
@@ -487,7 +487,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		drbd_io_error(mdev);
 	}
 
-	dec_unacked(mdev,HERE);
+	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
 	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {

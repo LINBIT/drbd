@@ -3,23 +3,28 @@ Section: misc
 Priority: extra
 Maintainer: David Krovich <dkrovich@csee.wvu.edu>
 Uploaders: Philipp Hug <debian@hug.cx>
-Build-Depends: debhelper (>= 4), drbd-source
+Build-Depends: debhelper (>= 4), drbd0.7-source
 Standards-Version: 3.6.1
 
-Package: drbd-modules-_KVERS_
+Package: drbd0.7-module-_KVERS_
 Architecture: any
-Depends: drbd
+Depends: drbd0.7-utils
+Conflicts: drbd-module-_KVERS_
+Provides: drbd-module-_KVERS_
+Replaces: drbd-module-_KVERS_
 Section: misc
 Recommends: kernel-image-_KVERS_
-Description: RAID 1 over tcp/ip for Linux module source
+Description: RAID 1 over tcp/ip for Linux kernel module
  Drbd is a block device which is designed to build high availability
  clusters by providing a virtual shared device which keeps disks in nodes
  synchronised using TCP/IP. This simulates RAID 1 but avoiding the 
  use of uncommon hardware (shared SCSI buses or Fibre Channel). 
  It is currently limited to fail-over HA clusters.
  .
- This package contains the programs that will control the 
- drbd kernel module provided in drbd-source. You will need a clustering
- service (such as heartbeat) to fully implement it.
+ This package contains the drbd kernel module for the following kernel
+ version: _KVERS_
+ If you want to build drbd against your another kernel, install the
+ drbd-source package and use module-assistant to create a new
+ module package.
  .
  Homepage: http://www.drbd.org

@@ -401,6 +401,7 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry *e;
+	int n = 0;
 
 	spin_lock_irq(&mdev->ee_lock);
 
@@ -412,12 +413,14 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id)) {
-			dec_unacked(mdev,HERE);
+			++n;
 		}
 		drbd_put_ee(mdev,e);
 	}
 
 	spin_unlock_irq(&mdev->ee_lock);
+
+	sub_unacked(mdev, n);
 }
 
 
@@ -760,7 +763,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	spin_unlock_irq(&mdev->ee_lock);
 
 	rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
-	dec_unacked(mdev,HERE);
+	dec_unacked(mdev);
 
 	return rv;
 }
@@ -827,7 +830,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 	drbd_bio_endio(bio,ok);
 	dec_ap_bio(mdev);
 
-	dec_ap_pending(mdev,HERE);
+	dec_ap_pending(mdev);
 	return ok;
 }
 
@@ -854,8 +857,8 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		ok = drbd_send_ack(mdev,NegAck,e);
 		ok&= drbd_io_error(mdev);
 	}
+	dec_unacked(mdev);
 
-	dec_unacked(mdev,HERE);
 	return ok;
 }
 
@@ -866,7 +869,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
 
-	dec_rs_pending(mdev,HERE);
+	dec_rs_pending(mdev);
 
 	e->block_id = ID_SYNCER;
 	if(!inc_local(mdev)) {
@@ -979,7 +982,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 * maybe assert this?
 			 */
 		}
-		dec_unacked(mdev,HERE);
+		dec_unacked(mdev);
 
 		return ok;
 	}
@@ -1560,7 +1563,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 
 		drbd_bio_IO_error(bio);
 		dec_ap_bio(mdev);
-		dec_ap_pending(mdev,HERE);
+		dec_ap_pending(mdev);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
@@ -1996,10 +1999,10 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	}
 
 	if(is_syncer_blk(mdev,p->block_id)) {
-		dec_rs_pending(mdev,HERE);
+		dec_rs_pending(mdev);
 	} else {
 		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
-		dec_ap_pending(mdev,HERE);
+		dec_ap_pending(mdev);
 	}
 	return TRUE;
 }
@@ -2013,7 +2016,7 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	 * and will do the cleanup then and there.
 	 */
 	if(is_syncer_blk(mdev,p->block_id)) {
-		dec_rs_pending(mdev,HERE);
+		dec_rs_pending(mdev);
 	}
 	if (DRBD_ratelimit(5*HZ,5))
 		WARN("Got NegAck packet. Peer is in troubles?\n");
@@ -2070,7 +2073,7 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	if(unlikely(test_bit(PARTNER_DISKLESS,&mdev->flags))) return TRUE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
-	dec_ap_pending(mdev,HERE);
+	dec_ap_pending(mdev);
 
 	return TRUE;
 }
