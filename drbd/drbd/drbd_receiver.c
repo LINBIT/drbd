@@ -264,9 +264,9 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 	struct iovec iov;
 	struct msghdr msg;
 	struct idle_timer_info ti;
-	int rv,done=0;
+	int rv;
 	struct socket *sock = via_msock ? mdev->msock : mdev->sock;
-
+	
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_iovlen = 1;
@@ -292,22 +292,8 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 		add_timer(&ti.idle_timeout);
 	}
 
-	while(1) {
-		rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
-
-		if(rv <= 0) break;
-		done +=rv;
-		if (done == size) break;
-
-		/*printk(KERN_ERR DEVICE_NAME
-		       "%d: calling sock_recvmsg again\n",
-		       (int)(mdev-drbd_conf));*/
-
-		iov.iov_len -= rv;
-		iov.iov_base += rv;
-		size -=rv;
-	}
-
+	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+	
 	set_fs(oldfs);
 	unlock_kernel();
 
@@ -322,10 +308,9 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 	if (rv < 0 && rv != -ECONNRESET && rv != -ERESTARTSYS) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
-		return rv;
 	}
-
-	return done;
+	
+	return rv;
 }
 
 
@@ -921,6 +906,7 @@ void drbdd(int minor)
 
 	drbd_thread_stop(&drbd_conf[minor].syncer);
 	drbd_thread_stop(&drbd_conf[minor].asender);
+	drbd_collect_zombies(minor);
 	drbd_free_sock(minor);
 
 	if(drbd_conf[minor].cstate != StandAlone) 
@@ -1074,8 +1060,12 @@ int drbd_asender(struct Drbd_thread *thi)
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 			rr=0;
-		} else if(rr <= 0) break;
-		
+		} else if(rr < 0) {
+			printk(KERN_ERR DEVICE_NAME "%d: rr=%d\n",
+			       (int)(mdev-drbd_conf),rr);
+			break;
+		}
+
 		rsize+=rr;		
 			
 		if(rsize == sizeof(pkt)) {
@@ -1121,7 +1111,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		} else { //Secondary
 			if(!drbd_process_done_ee(mdev)) goto err;
 		}
-	}
+	} //while
 
 	if(0) {
 	err:
@@ -1129,6 +1119,11 @@ int drbd_asender(struct Drbd_thread *thi)
 	}
 
 	del_timer_sync(&ping_timeout);
+
+	printk(KERN_ERR DEVICE_NAME"%d: asender terminated\n",
+	       (int)(mdev-drbd_conf));
+
+
 	return 0;
 }
 

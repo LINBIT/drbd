@@ -111,7 +111,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		if( e ) {
 			spin_lock_irqsave(&mdev->ee_lock,flags);
 			list_del(&e->list);
-			spin_unlock_irqrestore(&mdev->ee_lock,flags);
+			//spin_unlock_irqrestore(&mdev->ee_lock,flags);
 		} else {
 			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
 			       ", bh=%p\n",
@@ -123,7 +123,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	        end_that_request_last(req);
 
 	if(e) {
-		spin_lock_irqsave(&mdev->ee_lock,flags);
+	        //spin_lock_irqsave(&mdev->ee_lock,flags);
 		list_add(&e->list,&mdev->done_ee);
 		spin_unlock_irqrestore(&mdev->ee_lock,flags);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||

