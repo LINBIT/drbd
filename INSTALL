@@ -96,6 +96,7 @@ Other helpful links:
    The redhat way seems to be:
 
        redhat# cp /boot/kernel-2.4.some-thing.config  .config
+        or   # cp configs/kernel-2.4.some-thing.config .config
              # make -s oldconfig_nonint ; make -s oldconfig_nonint
 
        fedora# cp /boot/config-2.4.some-thing  .config
@@ -133,8 +134,10 @@ Other helpful links:
    kernel.  Modules compiled against this kernel source tree
    will only work properly with a matching kernel.
 
-       all# make dep
+       all# make dep	# no longer neccessary with 2.6.x
        all# make linux/include/version.h
+          # and since kernel 2.6.6 (some distos 2.6.5+):
+       all# make modules_prepare
 
 == Build DRBD kernel module (outside of the kernel source) ==
 
