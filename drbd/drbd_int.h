@@ -240,6 +240,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define RQ_DRBD_LOCAL     0x0020
 #define RQ_DRBD_DONE      0x0030
 #define RQ_DRBD_IN_TL     0x0040
+#define RQ_DRBD_RECVW     0x0080
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
@@ -389,6 +390,8 @@ typedef struct {
 	Drbd_Header head;
 	u64         sector;    // 64 bits sector number
 	u64         block_id;  // Used in protocol B&C for the address of the req.
+	u32         seq_num;
+	u32         pad;
 } __attribute((packed)) Drbd_Data_Packet;
 
 /*
@@ -401,7 +404,7 @@ typedef struct {
 	u64         sector;
 	u64         block_id;
 	u32         blksize;
-	u32         pad;	//make sure packet is a multiple of 8 Byte
+	u32         seq_num;
 } __attribute((packed)) Drbd_BlockAck_Packet;
 
 typedef struct {
@@ -656,6 +659,12 @@ struct drbd_socket {
 	Drbd_Polymorph_Packet rbuf;  // send/receive buffers off the stack
 };
 
+struct drbd_discard_note {
+	struct list_head list;
+	u64 block_id;
+	int seq_num;
+};
+
 struct Drbd_Conf {
 #ifdef PARANOIA
 	long magic;
@@ -748,6 +757,10 @@ struct Drbd_Conf {
 	int al_tr_cycle;
 	int al_tr_pos;     // position of the next transaction in the journal
 	struct crypto_tfm* cram_hmac_tfm;
+	atomic_t packet_seq;
+	int peer_seq;
+	spinlock_t peer_seq_lock;
+	struct list_head discard;
 };
 
 
@@ -773,6 +786,9 @@ extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 extern void tl_clear(drbd_dev *mdev);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
+#define TLHW_FLAG_SENT   0x10000000
+#define TLHW_FLAG_RECVW  0x20000000
+extern int tl_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
@@ -1360,6 +1376,23 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 		wake_up(&mdev->cstate_wait);
 
 	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)>=0);
+}
+
+static inline void update_peer_seq(drbd_dev* mdev, int new_seq)
+{
+	spin_lock(&mdev->peer_seq_lock);
+	mdev->peer_seq = max(mdev->peer_seq, new_seq);
+	wake_up(&mdev->cstate_wait);
+	spin_unlock(&mdev->peer_seq_lock);
+}
+
+static inline int peer_seq(drbd_dev* mdev)
+{
+	int seq;
+	spin_lock(&mdev->peer_seq_lock);
+	seq = mdev->peer_seq;
+	spin_unlock(&mdev->peer_seq_lock);
+	return seq;
 }
 
 #ifdef DUMP_EACH_PACKET

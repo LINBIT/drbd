@@ -283,6 +283,41 @@ int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
 	return rv;
 }
 
+/* Return values:
+ *
+ * 0 ... no conflicting write
+ * 1 ... a conflicting write, have not got ack by now.
+ * 2 ... a conflicting write, have got also got ack.
+ */
+int tl_have_write(drbd_dev *mdev, sector_t sector, int size_n_flags)
+{
+	// PRE TODO: Real overlap check... using size etc...
+	struct hlist_head *slot = mdev->tl_hash + tl_hash_fn(mdev,sector);
+	struct hlist_node *n;
+	drbd_request_t * i;
+	int rv=0;
+
+	spin_lock_irq(&mdev->tl_lock);
+
+	hlist_for_each_entry(i, n, slot, colision) {
+		if (drbd_req_get_sector(i) == sector) {
+			rv=1;
+			if( i->rq_status & RQ_DRBD_SENT ) rv++;
+			if(size_n_flags & TLHW_FLAG_SENT) {
+				i->rq_status |= RQ_DRBD_SENT;
+			}
+			if(size_n_flags & TLHW_FLAG_RECVW) {
+				i->rq_status |= RQ_DRBD_RECVW;
+			}
+			break;
+		}
+	}
+
+	spin_unlock_irq(&mdev->tl_lock);
+
+	return rv;
+}
+
 /* tl_dependence reports if this sector was present in the current
    epoch.
    As side effect it clears also the pointer to the request if it
@@ -301,6 +336,8 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * item)
 
 	r = ( item->barrier == mdev->newest_barrier );
 	list_del(&item->w.list);
+
+	if( item->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
 
 	spin_unlock_irqrestore(&mdev->tl_lock,flags);
 	return r;
@@ -1006,6 +1043,7 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
 	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
+	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
 
 	if (!mdev->meta.socket || mdev->state.s.conn < Connected) return FALSE;
 	ok=drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
@@ -1205,6 +1243,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	p.sector   = cpu_to_be64(drbd_req_get_sector(req));
 	p.block_id = (unsigned long)req;
+	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
 
 	/* About tl_add():
 	1. This must be within the semaphor,
@@ -1280,6 +1319,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 
 	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
+	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
 
 	/* Only called by our kernel thread.
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
@@ -1526,6 +1566,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	spin_lock_init(&mdev->req_lock);
 	spin_lock_init(&mdev->pr_lock);
 	spin_lock_init(&mdev->send_task_lock);
+	spin_lock_init(&mdev->peer_seq_lock);
 
 	INIT_LIST_HEAD(&mdev->free_ee);
 	INIT_LIST_HEAD(&mdev->active_ee);
@@ -1541,6 +1582,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->resync_work.list);
 	INIT_LIST_HEAD(&mdev->barrier_work.list);
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
+	INIT_LIST_HEAD(&mdev->discard);
 	mdev->resync_work.cb  = w_resync_inactive;
 	mdev->barrier_work.cb = w_try_send_barrier;
 	mdev->unplug_work.cb  = w_send_write_hint;

@@ -1011,13 +1011,32 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	return ok;
 }
 
+STATIC int drbd_chk_discard(drbd_dev *mdev,u64 block_id,int seq_num)
+{
+	struct drbd_discard_note *dn;
+	struct list_head *le;
+
+	MUST_HOLD(&mdev->peer_seq_lock);
+
+	list_for_each(le,&mdev->discard) {
+		dn = list_entry(le, struct drbd_discard_note, list);
+		if( dn->seq_num == seq_num ) {
+			D_ASSERT( dn->block_id == block_id );
+			list_del(le);
+			kfree(dn);
+			return 1;
+		} 
+	}
+	return 0;
+}
+
 // mirrored write
 STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 {
 	sector_t sector;
 	struct Tl_epoch_entry *e;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
-	int header_size,data_size;
+	int header_size,data_size, packet_seq,discard;
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -1033,10 +1052,72 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
-	sector = be64_to_cpu(p->sector);
+	/* This wait_event is here to make sure that never ever an
+	   DATA packet traveling via sock can overtake an ACK packet
+	   traveling on msock 
+	   PRE TODO: Wrap around of seq_num !!! 
+	*/
+	packet_seq = be32_to_cpu(p->seq_num);
+	if( wait_event_interruptible(mdev->cstate_wait, 
+				     packet_seq <= peer_seq(mdev)+1) )
+		return FALSE;
 
+	spin_lock(&mdev->peer_seq_lock); 
+	mdev->peer_seq = max(mdev->peer_seq, packet_seq);
+ 	/* is update_peer_seq(mdev,packet_seq); */
+	discard = drbd_chk_discard(mdev,p->block_id,packet_seq);
+	spin_unlock(&mdev->peer_seq_lock);
+
+	sector = be64_to_cpu(p->sector);
 	e = read_in_block(mdev,data_size);
 	if (!e) return FALSE;
+
+	if(discard) {
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		WARN("Concurrent write! [DISCARD BY LIST] sec=%lu\n",
+		     (unsigned long)sector);
+		return TRUE;
+	}
+
+	switch( tl_have_write(mdev, sector, data_size) ) {
+	case 2: /* Conflicting write, got ACK */
+		/* write afterwards ...*/
+		WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
+		     (unsigned long)sector);
+		if( wait_event_interruptible(mdev->cstate_wait,
+		     !tl_have_write(mdev,sector,data_size|TLHW_FLAG_RECVW))) {
+			spin_lock_irq(&mdev->ee_lock);
+			drbd_put_ee(mdev,e);
+			spin_unlock_irq(&mdev->ee_lock);
+			return FALSE;
+		}
+	case 1: /* Conflicting write, no ACK by now*/
+		if (test_bit(UNIQUE,&mdev->flags)) {
+			spin_lock_irq(&mdev->ee_lock);
+			drbd_put_ee(mdev,e);
+			spin_unlock_irq(&mdev->ee_lock);
+			WARN("Concurrent write! [DISCARD BY FLAG] sec=%lu\n",
+			     (unsigned long)sector);
+			return TRUE;
+		} else {
+			/* write afterwards, do not expect ACK */
+			WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
+			     (unsigned long)sector);
+			if( wait_event_interruptible(mdev->cstate_wait,
+			      !tl_have_write(mdev,sector,data_size|
+				            TLHW_FLAG_RECVW|TLHW_FLAG_SENT))) {
+				spin_lock_irq(&mdev->ee_lock);
+				drbd_put_ee(mdev,e);
+				spin_unlock_irq(&mdev->ee_lock);
+				return FALSE;
+			}
+		}
+		/* case 0:   no conflicting write. */
+		/* write it to disk now... */
+	}
+
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
 
 	if(!inc_local(mdev)) {
@@ -2069,6 +2150,8 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
 
+	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
+
 	smp_rmb();
 	if(likely(mdev->state.s.pdsk >= Inconsistent )) {
 		// test_bit(PARTNER_DISKLESS,&mdev->flags)
@@ -2110,6 +2193,8 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+
+	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	/* do nothing here.
 	 * we expect to get a "report param" on the data socket soon,
