@@ -1451,7 +1451,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 			goto out;
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]) | bm[bm_i];
-			bits += parallel_bitcount(word);
+			bits += hweight_long(word);
 			bm[bm_i++] = word;
 		}
 		if (!drbd_recv_header(mdev,mdev->sock,h))

@@ -1591,7 +1591,7 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 	mask = ~ bitmask(used_bits); // mask of bits to clear;
 	mask &= bm[sbm->size/sizeof(long)-1];
 	if( mask ) {
-		rv = -8 * parallel_bitcount(mask);
+		rv = -8 * hweight_long(mask);
 		bm[sbm->size/sizeof(long)-1] &= ~mask;
 	}
 
@@ -1610,7 +1610,7 @@ int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 	max = min_t(int, (enr+1)*WORDS, sbm->size/sizeof(long));
 
 	for(i = enr * WORDS ; i < max ; i++) {
-		bits += parallel_bitcount(bm[i]);
+		bits += hweight_long(bm[i]);
 	}
 
 	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors

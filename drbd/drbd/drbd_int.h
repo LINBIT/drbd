@@ -1107,36 +1107,20 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 # define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
 #endif
 
-/* Author: Gurmeet Singh Manku    (manku@cs.stanford.edu)
-
-   Parallel   Count   carries   out    bit   counting   in   a   parallel
-   fashion.   Consider   n   after    the   first   line   has   finished
-   executing. Imagine splitting n into  pairs of bits. Each pair contains
-   the <em>number of ones</em> in those two bit positions in the original
-   n.  After the second line has finished executing, each nibble contains
-   the  <em>number of  ones</em>  in  those four  bits  positions in  the
-   original n. Continuing  this for five iterations, the  64 bits contain
-   the  number  of ones  among  these  sixty-four  bit positions  in  the
-   original n. That is what we wanted to compute. */
-
-#define TWO(c) (0x1lu << (c))
-#define MASK(c) (((unsigned long)(-1)) / (TWO(TWO(c)) + 1lu))
-#define COUNT(x,c) ((x) & MASK(c)) + (((x) >> (TWO(c))) & MASK(c))
-
-static inline unsigned long parallel_bitcount (unsigned long n)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+static inline unsigned long hweight64(__u64 w)
 {
-	n = COUNT(n, 0); //MASK(c)=01010101 // (n&mask)+((n>>1)&mask)
-	n = COUNT(n, 1); //MASK(c)=00110011 // (n&mask)+((n>>2)&mask)
-	n = COUNT(n, 2); //MASK(c)=00001111 // (n&mask)+((n>>4)&mask)
-	n = COUNT(n, 3); // ...etc...
-	n = COUNT(n, 4);
-#if BITS_PER_LONG == 64
-	n = COUNT(n, 5);
-#endif
-	return n ;
+	u64 res;
+        res = (w & 0x5555555555555555) + ((w >> 1) & 0x5555555555555555);
+        res = (res & 0x3333333333333333) + ((res >> 2) & 0x3333333333333333);
+        res = (res & 0x0F0F0F0F0F0F0F0F) + ((res >> 4) & 0x0F0F0F0F0F0F0F0F);
+        res = (res & 0x00FF00FF00FF00FF) + ((res >> 8) & 0x00FF00FF00FF00FF);
+        res = (res & 0x0000FFFF0000FFFF) + ((res >> 16) & 0x0000FFFF0000FFFF);
+        return (res & 0x00000000FFFFFFFF) + ((res >> 32) & 0x00000000FFFFFFFF);
 }
 
-#undef TWO
-#undef MASK
-#undef COUNT
-
+static inline unsigned long hweight_long(unsigned long w)
+{
+        return sizeof(w) == 4 ? hweight32(w) : hweight64(w);
+}
+#endif

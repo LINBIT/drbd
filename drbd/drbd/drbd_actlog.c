@@ -405,7 +405,7 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 
 		for(buf_i=0;buf_i<want;buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]);
-			bits += parallel_bitcount(word);
+			bits += hweight_long(word);
 			bm[bm_i++] = word;
 		}
 		bh_kunmap(mdev->md_io_bh);
