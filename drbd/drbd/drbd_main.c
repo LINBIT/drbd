@@ -1173,6 +1173,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 
 	drbd_set_defaults(mdev);
 
+	atomic_set(&mdev->ap_bio_cnt,0);
 	atomic_set(&mdev->ap_pending_cnt,0);
 	atomic_set(&mdev->rs_pending_cnt,0);
 	atomic_set(&mdev->unacked_cnt,0);

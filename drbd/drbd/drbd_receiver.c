@@ -837,6 +837,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 
 	ok=(rr==data_size);
 	drbd_bio_endio(bio,ok);
+	atomic_dec(&mdev->ap_bio_cnt);
 
 	dec_ap_pending(mdev,HERE);
 	return ok;
@@ -1390,6 +1391,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		bio = req->master_bio;
 
 		drbd_bio_IO_error(bio);
+		atomic_dec(&mdev->ap_bio_cnt);
 		dec_ap_pending(mdev,HERE);
 
 		INVALIDATE_MAGIC(req);

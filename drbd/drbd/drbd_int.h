@@ -682,6 +682,7 @@ struct Drbd_Conf {
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
+	atomic_t ap_bio_cnt;
 	atomic_t ap_pending_cnt;
 	atomic_t rs_pending_cnt;
 	atomic_t unacked_cnt;

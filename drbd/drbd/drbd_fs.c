@@ -570,6 +570,8 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	    !(newstate & DontBlameDrbd) )
 		return -EIO;
 
+// FIXME if necessary set MDF_Consistent
+
 	drbd_sync_me(mdev);
 
 	/* Wait until nothing is on the fly :) */

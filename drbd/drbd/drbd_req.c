@@ -87,7 +87,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		// the other side!  See w_io_error()
 
 		drbd_bio_endio(req->master_bio,1);
+		atomic_dec(&mdev->ap_bio_cnt);
 		// The assumption is that we wrote it on the peer.
+
+// FIXME proto A and diskless :)
 
 		req->w.cb = w_io_error;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
@@ -97,6 +100,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	}
 
 	drbd_bio_endio(req->master_bio,uptodate);
+	atomic_dec(&mdev->ap_bio_cnt);
 
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
@@ -247,6 +251,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
 	drbd_plug_device(mdev);
 
+	atomic_inc(&mdev->ap_bio_cnt);
 	if (remote) {
 		/* either WRITE and Connected,
 		 * or READ, and no local disk,

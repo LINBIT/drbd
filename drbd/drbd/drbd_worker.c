@@ -177,6 +177,7 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 	} else {
 	pass_on:
 		req->master_bio->b_end_io(req->master_bio,uptodate);
+		atomic_dec(&mdev->ap_bio_cnt);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
@@ -207,14 +208,14 @@ int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
+	mdev=bio->bi_private;
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
 	/* we should be called via bio_endio, so this should never be the case
 	 * but "everyone else does it", and so do we ;)		-lge
 	 */
-	if (bio->bi_size)
+	ERR_IF (bio->bi_size)
 		return 1;
-
-	mdev=bio->bi_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	e = container_of(bio,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
@@ -240,12 +241,12 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	// see above
-	if (bio->bi_size)
-		return 1;
-
 	mdev=bio->bi_private;
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+
+	// see above
+	ERR_IF (bio->bi_size)
+		return 1;
 
 	e = container_of(bio,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
@@ -277,20 +278,8 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	sector_t rsector;
 
 	// see above
-	ERR_IF(bio->bi_size)
+	ERR_IF (bio->bi_size)
 		return 1;
-
-#if 0
-	{
-		static int ccc=1;
-
-		if(ccc++ % 100 == 0) {
-			ERR("Injecting IO error.\n");
-			error=-5;
-			clear_bit(BIO_UPTODATE,&bio->bi_flags);
-		}
-	}
-#endif
 
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
@@ -314,7 +303,7 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_request_t *req;
 
 	// see above
-	ERR_IF(bio->bi_size)
+	ERR_IF (bio->bi_size)
 		return 1;
 
 #if 0
@@ -345,6 +334,7 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	} else {
 	pass_on:
 		bio_endio(req->master_bio,req->master_bio->bi_size,error);
+		atomic_dec(&mdev->ap_bio_cnt);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
@@ -383,6 +373,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 		ERR("WE ARE LOST. Local IO failure, no peer.\n");
 		drbd_bio_endio(req->master_bio,0);
+		atomic_dec(&mdev->ap_bio_cnt);
 		mempool_free(req,drbd_request_mempool);
 		// TODO: Do something like panic() or shut_down_cluster().
 		return 1;

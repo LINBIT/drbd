@@ -197,7 +197,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			rlen += sprintf( buf + rlen,
 			   "%2d: cs:%s st:%s/%s ld:%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
-			   "lo:%d pe:%d ua:%d\n",
+			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
 			   nodestate_to_name(drbd_conf[i].state),
 			   nodestate_to_name(drbd_conf[i].o_state),
@@ -212,7 +212,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].local_cnt),
 			   atomic_read(&drbd_conf[i].ap_pending_cnt) +
 			   atomic_read(&drbd_conf[i].rs_pending_cnt),
-			   atomic_read(&drbd_conf[i].unacked_cnt)
+			   atomic_read(&drbd_conf[i].unacked_cnt),
+			   atomic_read(&drbd_conf[i].ap_bio_cnt)
 			);
 
 		if ( drbd_conf[i].cstate == SyncSource ||
