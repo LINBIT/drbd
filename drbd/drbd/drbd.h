@@ -66,7 +66,12 @@ struct ioctl_drbd_config
   IN int      sync_rate; /* KB/sec */
   IN int      skip_sync; 
   IN int      tl_size; /* size of the transfer log */
+  IN int      wire_protocol;
 };
+
+#define DRBD_PROT_A   1
+#define DRBD_PROT_B   2
+#define DRBD_PROT_C   3
 
 /* This is the layout for a Packet on the wire! 
  * The byteorder is the network byte order!
@@ -76,9 +81,13 @@ typedef struct
   __u32 magic;
   __u16 command;
   __u16 length;    /* obsolete ?? hmmm, maybe ... */
-  __u16 table_nr;
   __u64 block_nr;  /* 64 Bits Block number */
+  __u64 block_id;  /* Used in protocol B & C for the address of the request */
+  __u32 barrier;   /* may be 0 or a barrier number  */
+  __u32 _fill;     /* Without the _fill gcc may add fillbytes on 
+		      64 Bit Plaforms, but does not so an 32 bits... */
 } Drbd_Packet;
+
 
 typedef struct
 {
@@ -87,16 +96,23 @@ typedef struct
   __u32 my_blksize;
 } Drbd_ParameterBlock;
 
-typedef enum { Data,Ack,SyncNow,ReportParams,BlkSizeChanged } Drbd_Packet_Cmd;
+typedef enum { 
+  Data, 
+  RecvAck,      /* Used in protocol B */
+  WriteAck,     /* Used in protocol C */
+  BarrierAck,  
+  ReportParams,
+  BlkSizeChanged } Drbd_Packet_Cmd;
+
 typedef enum { Primary, Secondary } Drbd_State;
+
 typedef enum { 
   Unconfigured, 
   Unconnected, 
   WFConnection,
   WFReportParams,
   Syncing, 
-  Connected 
-} Drbd_CState; 
+  Connected } Drbd_CState; 
 
 #define DRBD_MAGIC 0x83740267
 

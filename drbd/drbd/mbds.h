@@ -27,8 +27,6 @@
 
 /* Mirroring block device's syncer operations */
 struct mbds_operations { 
-  /*  void (*mirror_lost) (kdev_t dev); 
-      void (*mirror_rejoined) (kdev_t dev); */
   void (*block_not_replicated) (kdev_t dev, unsigned long blocknr); 
   int (*get_blocks_need_sync) (kdev_t dev, unsigned long *blocknrs, int count);
 };

@@ -119,7 +119,8 @@ int main(int argc, char** argv)
       config.timeout = 30; /* = 3 seconds */
       config.sync_rate = 250; /* KB/sec */
       config.skip_sync = 0; 
-      config.tl_size = 512;
+      config.tl_size = 128;
+      config.wire_protocol = DRBD_PROT_B;
 
       err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&config);      
       if(err)
