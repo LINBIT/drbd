@@ -622,7 +622,14 @@ int minor_of_res(struct d_resource *res)
   struct stat sb;
 
   if(stat(res->me->device,&sb)) {
-    perror("stat");
+    // On udev/devfs based system the device nodes does not
+    // exist before the module is loaded. Therefore assume that
+    // the number in the device name is the minor number.
+    char *c;
+
+    c=res->me->device;
+    while(!isdigit(*c)) c++; // Find the first digit in the device name...
+    return strtol(c,NULL,10);
   }
 
   return minor(sb.st_rdev);
