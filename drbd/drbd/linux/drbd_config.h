@@ -20,15 +20,24 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre7+cvs"
+#define REL_VERSION "0.7-pre7 cvs $Date: 2004/05/19 10:03:59 $"
 #define API_VERSION 72
 #define PRO_VERSION 72
 
-//#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
+#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
+                        // for now, please leave it on.
+
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
-//#define DUMP_MD         // Dump metadata to syslog upon connect
+//#define DUMP_MD 1       // Dump metadata to syslog upon connect
+//#define DUMP_MD 2       // Dump even all cstate changes
 
 //#define SIGHAND_HACK           // Needed for RH 2.4.20 and later kernels.
 //#define REDHAT_HLIST_BACKPORT  // Makes DRBD work on RH9 kernels
+
+#define PARANOIA // some extra checks
+
+// don't enable this, unless you can cope with gigabyte syslogs :)
+//#define DUMP_EACH_PACKET
+
 #endif
