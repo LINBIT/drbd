@@ -485,6 +485,7 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	struct bio * const bio     = &req->private_bio;
 	struct bio * const bio_src =  req->master_bio;
 
+	bio->bi_flags   = 0;
 	__bio_clone(bio,bio_src);
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = mdev;
@@ -500,6 +501,7 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	struct bio * const bio     = &req->private_bio;
 	struct bio * const bio_src =  req->master_bio;
 
+	bio->bi_flags   = 0;
 	__bio_clone(bio,bio_src);
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = mdev;
