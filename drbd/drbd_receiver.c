@@ -625,7 +625,7 @@ int drbd_connect(drbd_dev *mdev)
 	D_ASSERT(mdev->state.s.conn > Unconfigured);
 	D_ASSERT(!mdev->data.socket);
 
-	if(!drbd_request_state(mdev,NS(conn,WFConnection))) return 0;
+	if(drbd_request_state(mdev,NS(conn,WFConnection)) <= 0 ) return 0;
 
 	while(1) {
 		sock=drbd_try_connect(mdev);
@@ -691,7 +691,7 @@ int drbd_connect(drbd_dev *mdev)
 	mdev->meta.socket = msock;
 	mdev->last_received = jiffies;
 
-	if(!drbd_request_state(mdev,NS(conn,WFReportParams))) return 0;
+	if(drbd_request_state(mdev,NS(conn,WFReportParams)) <= 0) return 0;
 	D_ASSERT(mdev->asender.task == NULL);
 
 	if (!drbd_do_handshake(mdev)) {
@@ -1416,7 +1416,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	rv = _drbd_set_state(mdev,ns,0);
 	spin_unlock_irq(&mdev->req_lock);
 
-	if(!rv) {
+	if(rv <= 0) {
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
@@ -1472,7 +1472,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		drbd_start_resync(mdev,SyncTarget); // XXX cannot fail ???
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
-		    cstate_to_name(mdev->state.s.conn));
+		    conns_to_name(mdev->state.s.conn));
 	}
 
 	// We just started resync. Now we can be sure that local disk IO is okay.

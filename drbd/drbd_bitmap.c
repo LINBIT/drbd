@@ -744,7 +744,7 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 	                 !(test_bit(DISKLESS,&mdev->flags) ||
 	                   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
 	if (strange_state)
-		ERR("%s in drbd_bm_set_bit\n", cstate_to_name(mdev->cstate));
+		ERR("%s in drbd_bm_set_bit\n", conns_to_name(mdev->cstate));
 */
 
 	spin_lock_irq(&b->bm_lock);
@@ -787,7 +787,7 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 	 * strange_state blubber is already in place there ...
 	if (i && mdev->cstate <= Connected)
 		ERR("drbd_bm_clear_bit: cleared a bitnr=%lu while %s\n",
-				bitnr, cstate_to_name(mdev->cstate));
+				bitnr, conns_to_name(mdev->cstate));
 	 */
 
 	return i;

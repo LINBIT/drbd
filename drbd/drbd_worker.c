@@ -318,7 +318,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 
 	if (mdev->state.s.conn != SyncTarget) {
-		ERR("%s in w_make_resync_request\n", cstate_to_name(mdev->state.s.conn));
+		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.s.conn));
 	}
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
@@ -722,8 +722,9 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 
 	if(r != 1) {
+		ERR("%s\n",set_st_err_name(r));
 		ERR("Error in drbd_start_resync! (side == %s)\n",
-		    cstate_to_name(side));
+		    conns_to_name(side));
 		return;
 	}
 
@@ -736,7 +737,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	mdev->rs_mark_time = jiffies;
 
 	INFO("Resync started as %s (need to sync %lu KB [%lu bits set]).\n",
-	     cstate_to_name(side),
+	     conns_to_name(side),
 	     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
 	     (unsigned long) mdev->rs_total);
 

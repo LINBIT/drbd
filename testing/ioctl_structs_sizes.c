@@ -5,7 +5,7 @@
 ({ int _i = sizeof(x); printf("sizeof(" #x ") = %d\n", _i); \
  if( _i % 8 ) printf(" WARN sizeof(" #x ") %% 8 != 0\n"); _i; })
 
-#define DRBD_07_SUM 1184
+#define DRBD_08_SUM 1176
 
 int main()
 {
@@ -20,9 +20,9 @@ int main()
 	sum += SZO(struct ioctl_wait);
 	sum += SZO(struct ioctl_get_config);
 
-	printf("sum = %d  DRBD_07_SUM = %d\n",sum,DRBD_07_SUM);
+	printf("sum = %d  DRBD_08_SUM = %d\n",sum,DRBD_08_SUM);
 
-	printf(sum == DRBD_07_SUM ? "OKAY\n" : "FAILED\n" );
+	printf(sum == DRBD_08_SUM ? "OKAY\n" : "FAILED\n" );
 
-	return sum != DRBD_07_SUM; /* if not equal, exit code is non-zero */
+	return sum != DRBD_08_SUM; /* if not equal, exit code is non-zero */
 }

@@ -146,24 +146,6 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	return sz;
 }
 
-const char* cstate_to_name(drbd_conns_t s) {
-	return s < Unconfigured ? "TO_SMALL" :
-	       s > PausedSyncT  ? "TO_LARGE"
-		                : drbd_conn_s_names[s];
-}
-
-const char* nodestate_to_name(drbd_role_t s) {
-	return s < Unknown    ? "TO_SMALL" :
-	       s > Secondary  ? "TO_LARGE"
-		              : drbd_role_s_names[s];
-}
-
-const char* diskstate_to_name(drbd_disks_t s) {
-	return s < DUnknown    ? "TO_SMALL" :
-	       s > UpToDate    ? "TO_LARGE"
-		              : drbd_disk_s_names[s];
-}
-
 /* FIXME we should use snprintf, we only have guaranteed room for one page...
  * we should eventually use seq_file for this */
 int drbd_proc_get_info(char *buf, char **start, off_t offset,
@@ -189,7 +171,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		sn = cstate_to_name(drbd_conf[i].state.s.conn);
+		sn = conns_to_name(drbd_conf[i].state.s.conn);
 		
 		/* PRE FIXME
 		if(drbd_conf[i].cstate == Connected) {
@@ -209,10 +191,10 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
-			   nodestate_to_name(drbd_conf[i].state.s.role),
-			   nodestate_to_name(drbd_conf[i].state.s.peer),
-			   diskstate_to_name(drbd_conf[i].state.s.disk),
-			   diskstate_to_name(drbd_conf[i].state.s.pedi),
+			   roles_to_name(drbd_conf[i].state.s.role),
+			   roles_to_name(drbd_conf[i].state.s.peer),
+			   disks_to_name(drbd_conf[i].state.s.disk),
+			   disks_to_name(drbd_conf[i].state.s.pedi),
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,

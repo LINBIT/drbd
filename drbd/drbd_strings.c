@@ -22,7 +22,7 @@
 
 #include <linux/drbd.h>
 
-const char *drbd_conn_s_names[] = {
+static const char *drbd_conn_s_names[] = {
 	[Unconfigured]   = "Unconfigured",
 	[StandAlone]     = "StandAlone",
 	[Unconnected]    = "Unconnected",
@@ -42,13 +42,13 @@ const char *drbd_conn_s_names[] = {
 	[PausedSyncT]    = "PausedSyncT",
 };
 
-const char *drbd_role_s_names[] = {
+static const char *drbd_role_s_names[] = {
 	[Primary]   = "Primary",
 	[Secondary] = "Secondary",
 	[Unknown]   = "Unknown"
 };
 
-const char *drbd_disk_s_names[] = {
+static const char *drbd_disk_s_names[] = {
 	[DUnknown]     = "DUnknown",
 	[Diskless]     = "Diskless",
 	[Failed]       = "Failed",
@@ -57,3 +57,34 @@ const char *drbd_disk_s_names[] = {
 	[Consistent]   = "Consistent",
 	[UpToDate]     = "UpToDate",
 };
+
+static const char *drbd_state_sw_errors[] = {
+	[1] = "Multiple primaries now allowed by config",
+	[2] = "Refusing to be Primary without consistent data",
+	[3] = "Refusing to make peer Primary without data",
+	[4] = "Refusing to be inconsistent on both nodes",
+};
+
+const char* conns_to_name(drbd_conns_t s) {
+	return s < Unconfigured ? "TO_SMALL" :
+	       s > PausedSyncT  ? "TO_LARGE"
+		                : drbd_conn_s_names[s];
+}
+
+const char* roles_to_name(drbd_role_t s) {
+	return s < Unknown    ? "TO_SMALL" :
+	       s > Secondary  ? "TO_LARGE"
+		              : drbd_role_s_names[s];
+}
+
+const char* disks_to_name(drbd_disks_t s) {
+	return s < DUnknown    ? "TO_SMALL" :
+	       s > UpToDate    ? "TO_LARGE"
+		               : drbd_disk_s_names[s];
+}
+
+const char* set_st_err_name(int err) {
+	return err < -4 ? "TO_SMALL" :
+	       err > -1 ? "TO_LARGE"
+		        : drbd_state_sw_errors[-err];
+}

@@ -52,11 +52,6 @@
      divisible by 8.
 */
 
-/* defined in drbd_strings.c */
-extern const char *drbd_conn_s_names[];
-extern const char *drbd_role_s_names[];
-extern const char *drbd_disk_s_names[];
-
 #define MAX_SOCK_ADDR	128	/* 108 for Unix domain -
 				   16 for IP, 16 for IPX,
 				   24 for IPv6,
@@ -227,6 +222,12 @@ typedef union {
 	} s;
 	unsigned int i;
 } drbd_state_t;
+
+/* from drbd_strings.c */
+extern const char* conns_to_name(drbd_conns_t);
+extern const char* roles_to_name(drbd_role_t);
+extern const char* disks_to_name(drbd_disks_t);
+extern const char* set_st_err_name(int);
 
 #ifndef BDEVNAME_SIZE
 # define BDEVNAME_SIZE 32

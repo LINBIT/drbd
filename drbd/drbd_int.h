@@ -980,8 +980,8 @@ extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
 extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
-extern const char* cstate_to_name(drbd_conns_t s);
-extern const char* nodestate_to_name(drbd_role_t s);
+extern const char* conns_to_name(drbd_conns_t s);
+extern const char* roles_to_name(drbd_role_t s);
 
 // drbd_actlog.c
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);

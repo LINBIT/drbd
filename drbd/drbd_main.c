@@ -374,14 +374,14 @@ int drbd_io_error(drbd_dev* mdev)
 	return ok;
 }
 
-#define drbd_peer_s_names drbd_role_s_names
-#define drbd_pedi_s_names drbd_disk_s_names
+#define peers_to_name roles_to_name
+#define pedis_to_name disks_to_name
 
 #define PSC(A) \
 	({ if( ns.s.A != os.s.A ) { \
 		pbp += sprintf(pbp, #A "( %s -> %s ) ", \
-		              drbd_##A##_s_names[os.s.A], \
-		              drbd_##A##_s_names[ns.s.A]); \
+		              A##s_to_name(os.s.A), \
+		              A##s_to_name(ns.s.A)); \
 	} })
 
 
@@ -397,34 +397,19 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
 
 	if( !hard ) {
 		/*  pre-state-change checks ; only look at ns  */
+		/* See drbd_state_sw_errors in drbd_strings.c */
 		if( !ns.s.mult && 
-		    ns.s.role == Primary && ns.s.peer == Primary ) {
-			WARN("Multiple primaries now allowed by config.");
-			return 0;
-		}
+		    ns.s.role == Primary && ns.s.peer == Primary ) return -1;
 
 		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
-		    ns.s.conn < Connected ) {
-			WARN("Refusing to be Primary without consistent data");
-			return 0;
-		}
+		    ns.s.conn < Connected ) return -2;
 
 		if( ns.s.peer == Primary && ns.s.pedi <= Inconsistent && 
-		    ns.s.conn < Connected ) {
-			WARN("Refusing to make peer Primary without data");
-			return 0;
-		}
-
-		if( ns.s.disk < Consistent && ns.s.pedi < Consistent ) {
-			WARN("Refusing to be inconsistent on both nodes.");
-			return 0;
-		}
+		    ns.s.conn < Connected ) return -3;
 
 		if( ns.s.conn > Connected && 
-		    (ns.s.disk == Diskless || ns.s.pedi == Diskless ) ) {
-			WARN("Refusing to do resync without two disks.");
-			return 0;
-		}
+		    (ns.s.disk < Consistent || ns.s.pedi < Consistent ) )
+			return -4;
 	}
 
 	/*  State sanitising  */

@@ -434,10 +434,12 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
-	if (drbd_request_state(mdev,NS(disk,
-				       drbd_md_test_flag(mdev,MDF_Consistent) ?
-				       Consistent : Inconsistent ))) {
+	if((i=drbd_request_state(mdev,NS(disk,
+					 drbd_md_test_flag(mdev,MDF_Consistent)
+					 ? Consistent : Inconsistent ))) > 0) {
 		drbd_thread_start(&mdev->worker);
+	} else {
+		ERR("%s\n",set_st_err_name(i));
 	}
 
 // FIXME EXPLAIN:
@@ -564,8 +566,11 @@ FIXME
 	mdev->recv_cnt = 0;
 
 	drbd_thread_start(&mdev->worker);
-	drbd_request_state(mdev,NS(conn,Unconnected));
-	drbd_thread_start(&mdev->receiver);
+	if( (i=drbd_request_state(mdev,NS(conn,Unconnected))) <= 0) {
+		ERR("%s\n",set_st_err_name(i));
+	} else {
+		drbd_thread_start(&mdev->receiver);
+	}
 
 	return 0;
 
@@ -600,7 +605,7 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 
 	r = drbd_request_state(mdev,NS(role,newstate & 0x3));
 	if ( r == 2 ) { return 0; }
-	if ( r == 0 ) {
+	if ( r <= 0 ) {
 		/* request state does not like the new state. */
 		if (! (newstate & DontBlameDrbd)) {
 			return -EIO;
@@ -611,7 +616,10 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 			WARN("Forcefully set consistent!");
 			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
 							disk,Consistent));
-			if(r==0) return -EIO;
+			if(r<=0) {
+				ERR("%s\n",set_st_err_name(r));
+				return -EIO;
+			}
 		}
 	}
 
@@ -756,7 +764,10 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 
 	if( r == 2 ) { return 0; }
-	if( r == 0 ) { return -ENETRESET; }
+	if( r <= 0 ) { 
+		ERR("%s\n",set_st_err_name(r));
+		return -ENETRESET; 
+	}
 
 	drbd_sync_me(mdev);
 
@@ -898,7 +909,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		r = drbd_request_state(mdev,NS(conn,StandAlone));
 		if( r == 2 ) { break; }
-		if( r == 0 ) {
+		if( r <= 0 ) {
+			ERR("%s\n",set_st_err_name(r));
 			err=-ENODATA;
 			break;
 		} 
@@ -996,7 +1008,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 					        conn,WFBitMapT));
 
 		if( r == 2 ) { break; }
-		if( r == 0 ) {
+		if( r <= 0 ) {
+			ERR("%s\n",set_st_err_name(r));
 			err = -EINPROGRESS;
 			break;
 		} 
@@ -1035,7 +1048,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 					        conn,WFBitMapS));
 
 		if( r == 2 ) { break; }
-		if( r == 0 ) {
+		if( r <= 0 ) {
+			ERR("%s\n",set_st_err_name(r));
 			err = -EINPROGRESS;
 			break;
 		} 
