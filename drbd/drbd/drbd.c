@@ -51,7 +51,9 @@
 #define DEVICE_OFF(device)
 #define DEVICE_NR(device) (MINOR(device))
 #include <linux/blk.h>
+#if LINUX_VERSION_CODE > 0x20300
 #include <linux/blkpg.h>
+#endif
 
 #ifdef DEVICE_NAME
 #undef DEVICE_NAME
@@ -1032,7 +1034,7 @@ void drbdd(int minor)
 
 	    mark_buffer_uptodate(bh, 1);
 	    mark_buffer_dirty(bh, 0);
-	    ll_rw_block(WRITE, 1, bh);
+	    ll_rw_block(WRITE, 1, &bh);
 	    /* The ll_rw_block() ensures the correct write order, 
 	       which is of major importance for journaling FSs    */
 	    brelse(bh);	  	      
@@ -1250,7 +1252,7 @@ int drbd_syncer(void *arg)
       schedule_timeout(interval);
       /* find block */
       /* send block */
-      synced_to++; /* Atomic inc ? */
+      drbd_conf[minor].synced_to++; /* Atomic inc ? */
     }
 
 
