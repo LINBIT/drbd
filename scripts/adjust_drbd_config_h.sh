@@ -4,6 +4,14 @@
 # expects KDIR in the environment to be set correctly!
 
 set -e
+sorry() {
+	cat <<___
+	Sorry, automagic adjustment of drdb_config.h failed.
+	For well known 2.6. kernels, no adjustment to the shipped drbd_config is necessary.
+	You need to verify it yourself.
+___
+}
+trap "sorry" 0
 grep_q() { grep "$@" &>/dev/null ; }
 
 # PARANOIA:
@@ -61,7 +69,7 @@ if grep_q "^PATCHLEVEL *= *4" $KDIR/Makefile ; then
   # 
 
   # do we have mm_inline, and need to include it explicitly?
-  if grep "#define *page_count" $KDIR/include/linux/mm_inline.h &> /dev/null ; then
+  if grep_q "#define *page_count" $KDIR/include/linux/mm_inline.h ; then
     have_mm_inline_h=1
   else
     have_mm_inline_h=0
@@ -104,3 +112,5 @@ else
 	rm ./linux/drbd_config.h.new
 	echo -e "\n  Using unmodified drbd_config.h\n"
 fi
+trap - 0
+exit 0

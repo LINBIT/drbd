@@ -83,11 +83,8 @@ else
   greeting:
 	@echo "" ;\
 	echo "    Calling toplevel makefile of kernel source tree, which I believe is in" ;\
-	echo "    KDIR=$(KDIR)"
-  ifeq ($(KDIR_Makefile_PATCHLEVEL),6)
-	@echo "    NOTE: please ignore warnings regarding overriding of SUBDIRS"
-  endif
-	@echo ""
+	echo "    KDIR=$(KDIR)" ; \
+	echo ""
 
   drbd_buildtag.c: $(SRC_FILES)
 	@if grep ^drbd/drbd_buildtag.c: ../Makefile &>/dev/null; then \
@@ -100,9 +97,15 @@ else
 
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
-	test -x ../scripts/adjust_drbd_config_h.sh && \
+	-test -x ../scripts/adjust_drbd_config_h.sh && \
 	 KDIR=$(KDIR) ../scripts/adjust_drbd_config_h.sh
+  ifeq ($(KDIR_Makefile_PATCHLEVEL),4)
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+  else
+    # since 2.6.6 (suse: 2.6.5-dunno), this should be:
+    # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
+	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+  endif
 	@mv .kernelrelease.new .kernelrelease
 	@echo -n "Memorizing module configuration ... "
 	@{ echo -e "#\n# drbd.o was compiled with"          ; \
@@ -165,5 +168,5 @@ else
 
   depmod:
 	[ -e $(KDIR)/System.map ] && [ -e ./$(MODOBJ) ] && \
-	   /sbin/depmod -F $(KDIR)/System.map -e ./$(MODOBJ) # 2>&1 >/dev/null
+	   /sbin/depmod -F $(KDIR)/System.map -n -e ./$(MODOBJ) # 2>&1 >/dev/null
 endif

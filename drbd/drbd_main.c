@@ -1275,17 +1275,8 @@ STATIC void drbd_unplug_fn(void *data)
 }
 #else
 
-/* ugly ifdef, and only to quieten one compiler warning for now.
- * as 2.6.X moves on, we can probably drop it again.
- */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,5)
 STATIC void drbd_unplug_fn(request_queue_t *q)
 {
-#else
-STATIC void drbd_unplug_fn(void *data)
-{
-	request_queue_t *q = (request_queue_t*)data;
-#endif
 	drbd_dev *mdev = q->queuedata;
 
 	/* unplug FIRST */
