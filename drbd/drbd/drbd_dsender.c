@@ -214,7 +214,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 			Drbd_Header h;
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
-			drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,sizeof(h));
+			drbd_send_cmd(mdev,mdev->data.socket,WriteHint,&h,sizeof(h));
 			return FALSE;
 		}
 
@@ -325,7 +325,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 			}
 			if (!disable_io_hints) {
 				Drbd_Header h;
-				drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,
+				drbd_send_cmd(mdev,mdev->data.socket,WriteHint,&h,
 					      sizeof(h));
 			}
 		}

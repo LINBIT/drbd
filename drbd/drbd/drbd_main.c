@@ -475,7 +475,7 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		    cmdname(cmd), size, sent);
 	}
 	C_DBG(5,"on %s >>> %s l: %d\n",
-	    sock == mdev->msock ? "msock" : "sock",
+	    sock == mdev->meta.socket ? "msock" : "sock",
 	    cmdname(cmd), size-sizeof(Drbd_Header));
 	return ok;
 }
@@ -484,23 +484,23 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
-	if (sock == mdev->sock) {
-		down(&mdev->sock_mutex);
+	if (sock == mdev->data.socket) {
+		down(&mdev->data.mutex);
 		spin_lock(&mdev->send_task_lock);
 		mdev->send_task=current;
 		spin_unlock(&mdev->send_task_lock);
 	} else
-		down(&mdev->msock_mutex);
+		down(&mdev->meta.mutex);
 
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size,0);
 
-	if (sock == mdev->sock) {
-		up(&mdev->sock_mutex);
+	if (sock == mdev->data.socket) {
+		up(&mdev->data.mutex);
 		spin_lock(&mdev->send_task_lock);
 		mdev->send_task=NULL;
 		spin_unlock(&mdev->send_task_lock);
 	} else
-		up(&mdev->msock_mutex);
+		up(&mdev->meta.mutex);
 	return ok;
 }
 
@@ -514,8 +514,8 @@ STATIC int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
-	struct semaphore *mutex = sock == mdev->msock ?
-		&mdev->msock_mutex : &mdev->sock_mutex;
+	struct semaphore *mutex = sock == mdev->meta.socket ?
+		&mdev->meta.mutex : &mdev->data.mutex;
 	if (down_trylock(mutex)) return -EAGAIN;
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size, MSG_DONTWAIT);
 	up  (mutex);
@@ -532,7 +532,7 @@ int drbd_send_sync_param(drbd_dev *mdev)
 	p.skip      = cpu_to_be32(mdev->sync_conf.skip);
 	p.group     = cpu_to_be32(mdev->sync_conf.group);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,SyncParam,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
 	if ( ok
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !mdev->sync_conf.skip )
@@ -572,7 +572,7 @@ int drbd_send_param(drbd_dev *mdev)
 	p.skip_sync      = cpu_to_be32(mdev->sync_conf.skip);
 	p.sync_group     = cpu_to_be32(mdev->sync_conf.group);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,ReportParams,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportParams,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -590,7 +590,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	bm_words = mdev->mbds_id->size/sizeof(unsigned long);
 	bm = mdev->mbds_id->bm;
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
-	buffer = (unsigned long*)PAYLOAD_P(p);
+	buffer = (unsigned long*)p->payload;
 
 	/*
 	 * maybe TODO use some simple compression scheme, nowadays there are
@@ -600,7 +600,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++)
 			buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
-		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,
+		ok = drbd_send_cmd(mdev,mdev->data.socket,ReportBitMap,
 				   p, sizeof(*p) + want);
 	} while (ok && want);
 	vfree(p);
@@ -617,7 +617,7 @@ int _drbd_send_barrier(drbd_dev *mdev)
 	p.barrier=tl_add_barrier(mdev);
 
 	inc_pending(mdev);
-	ok = _drbd_send_cmd(mdev,mdev->sock,Barrier,(Drbd_Header*)&p,sizeof(p),0);
+	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)&p,sizeof(p),0);
 	if (!ok) dec_pending(mdev,HERE);
 	return ok;
 }
@@ -630,7 +630,7 @@ int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
 	p.barrier  = barrier_nr;
 	p.set_size = cpu_to_be32(set_size);
 
-	ok = drbd_send_cmd(mdev,mdev->msock,BarrierAck,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->meta.socket,BarrierAck,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -650,8 +650,8 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 		return FALSE;
 	}
 
-	if (!mdev->msock || mdev->cstate < Connected) return FALSE;
-	ok = drbd_send_cmd(mdev,mdev->msock,cmd,(Drbd_Header*)&p,sizeof(p));
+	if (!mdev->meta.socket || mdev->cstate < Connected) return FALSE;
+	ok = drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -665,7 +665,7 @@ int drbd_send_drequest(drbd_dev *mdev, int cmd,
 	p.block_id = block_id;
 	p.blksize  = cpu_to_be32(size);
 
-	ok = drbd_send_cmd(mdev,mdev->sock,cmd,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,mdev->data.socket,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -713,10 +713,10 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 	else
 		offset = (int)bh->b_data - (int)page_address(page);
 	do {
-		sent = mdev->sock->ops->sendpage(mdev->sock, page, offset, size, MSG_NOSIGNAL);
+		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page, offset, size, MSG_NOSIGNAL);
 		if (sent == -EINTR) {
 			// FIXME move "retry--" into drbd_retry_send()
-			if (drbd_retry_send(mdev,mdev->sock) && retry--)
+			if (drbd_retry_send(mdev,mdev->data.socket) && retry--)
 				continue;
 			else
 				break;
@@ -774,7 +774,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	*/
 	// SIGKILL: see comment in _drbd_send_cmd
 	old_blocked = block_sigs_but(SIGKILL);
-	down(&mdev->sock_mutex);
+	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
 	spin_unlock(&mdev->send_task_lock);
@@ -782,13 +782,13 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		_drbd_send_barrier(mdev);
 	tl_add(mdev,req);
-	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
+	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bh(mdev,req->bh);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);
-	up(&mdev->sock_mutex);
+	up(&mdev->data.mutex);
 	restore_old_sigset(old_blocked);
 	return ok;
 }
@@ -816,18 +816,18 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	 * ioctl or module unload
 	 */
 	old_blocked = block_sigs_but(SIGTERM);
-	down(&mdev->sock_mutex);
+	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
 	spin_unlock(&mdev->send_task_lock);
 
-	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
+	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bh(mdev,&e->pbh);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);
-	up(&mdev->sock_mutex);
+	up(&mdev->data.mutex);
 	restore_old_sigset(old_blocked);
 	return ok;
 }
@@ -905,7 +905,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	if (rv <= 0) {
 		if (rv != -EINTR) {
 			ERR("%s_sendmsg returned %d\n",
-			    sock == mdev->msock ? "msock" : "sock",
+			    sock == mdev->meta.socket ? "msock" : "sock",
 			    rv);
 			set_cstate(mdev, BrokenPipe);
 		} else
@@ -989,7 +989,7 @@ STATIC void drbd_send_write_hint(void *data)
 	}
 
 	// THINK: sock or msock ?
-	if (drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h))==1){
+	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,sizeof(h))==1){
 		clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 	} else {
 		if(mdev->cstate < Connected) {
@@ -1021,8 +1021,8 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->unacked_cnt,0);
 
 	init_MUTEX(&mdev->device_mutex);
-	init_MUTEX(&mdev->sock_mutex);
-	init_MUTEX(&mdev->msock_mutex);
+	init_MUTEX(&mdev->data.mutex);
+	init_MUTEX(&mdev->meta.mutex);
 	init_MUTEX(&mdev->md_io_mutex);
 
 	mdev->rs_lock        = SPIN_LOCK_UNLOCKED;
@@ -1309,6 +1309,17 @@ int __init drbd_init(void)
 
 int __init init_module(void)
 {
+#if 0
+/* I am too lazy to calculate this by hand	-lge
+ */
+#define SZO(x) printk(KERN_ERR "sizeof(" #x ") = %d\n", sizeof(x))
+	SZO(struct Drbd_Conf);
+	SZO(struct buffer_head);
+	SZO(Drbd_Polymorph_Packet);
+	SZO(struct drbd_socket);
+	return -EBUSY;
+#endif
+
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
 			": invalid minor_count (%d)\n",minor_count);
@@ -1377,13 +1388,13 @@ void drbd_free_ll_dev(drbd_dev *mdev)
 
 void drbd_free_sock(drbd_dev *mdev)
 {
-	if (mdev->sock) {
-		sock_release(mdev->sock);
-		mdev->sock = 0;
+	if (mdev->data.socket) {
+		sock_release(mdev->data.socket);
+		mdev->data.socket = 0;
 	}
-	if (mdev->msock) {
-		sock_release(mdev->msock);
-		mdev->msock = 0;
+	if (mdev->meta.socket) {
+		sock_release(mdev->meta.socket);
+		mdev->meta.socket = 0;
 	}
 }
 

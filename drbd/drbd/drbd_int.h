@@ -392,12 +392,8 @@ typedef struct {
 	u32       magic;
 	u16       command;
 	u16       length;	// bytes of data after this header
-	// char        payload[];
+	char      payload[0];
 } Drbd_Header __attribute((packed));
-// (typesafe) hack for older gcc
-#define PAYLOAD_P(p) ({ \
-	const Drbd_Header *_p = (p); \
-	(char*)_p+sizeof(*_p); })
 
 /*
  * short commands, packets without payload, plain Drbd_Header:
@@ -482,6 +478,7 @@ typedef struct {
 } Drbd_Parameter_Packet  __attribute((packed));
 
 typedef union {
+	Drbd_Header              head;
 	Drbd_Data_Packet         Data;
 	Drbd_BlockAck_Packet     BlockAck;
 	Drbd_Barrier_Packet      Barrier;
@@ -640,6 +637,16 @@ struct drbd_hook {
 // TODO sort members for performance
 // MAYBE group them further
 
+/*
+ */
+struct drbd_socket {
+	struct semaphore  mutex;
+	struct list_head  send_q;
+	struct socket    *socket;
+	Drbd_Polymorph_Packet sbuf;  // this way we get our
+	Drbd_Polymorph_Packet rbuf;  // send/receive buffers off the stack
+};
+
 struct Drbd_Conf {
 #ifdef PARANOIA
 	long magic;
@@ -647,12 +654,10 @@ struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
 	int do_panic;
-	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
-	struct socket *msock; /* for ping/ack (metadata) packets */
-	volatile unsigned long last_received;
-	struct semaphore sock_mutex;
-	struct semaphore msock_mutex;
 	struct semaphore device_mutex;
+	struct drbd_socket data; // for data/barrier/cstate/parameter packets
+	struct drbd_socket meta; // for ping/ack (metadata) packets
+	volatile unsigned long last_received; // in jiffies, either socket
 	kdev_t lo_device;         // backing device
 	struct file *lo_file;
 	kdev_t md_device;         // device for meta-data.
@@ -988,19 +993,19 @@ static inline void request_ping(drbd_dev *mdev) {
 static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->sock,cmd,&h,sizeof(h));
+	return drbd_send_cmd(mdev,mdev->data.socket,cmd,&h,sizeof(h));
 }
 
 static inline int drbd_send_ping(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->msock,Ping,&h,sizeof(h));
+	return drbd_send_cmd(mdev,mdev->meta.socket,Ping,&h,sizeof(h));
 }
 
 static inline int drbd_send_ping_ack(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->msock,PingAck,&h,sizeof(h));
+	return drbd_send_cmd(mdev,mdev->meta.socket,PingAck,&h,sizeof(h));
 }
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)

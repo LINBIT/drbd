@@ -231,7 +231,7 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 	page=alloc_page(mask);
 	if(!page) return FALSE;
 
-	if(!_drbd_alloc_ee(mdev,page,mask)) {
+	if(!_drbd_alloc_ee(mdev,page,GFP_KERNEL)) {
 		__free_page(page);
 		return FALSE;
 	}
@@ -462,13 +462,41 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	return 0;
 }
 
+STATIC int drbd_recv_short(drbd_dev *mdev, struct socket* sock,
+		    void *buf, size_t size)
+{
+	mm_segment_t oldfs;
+	struct iovec iov;
+	struct msghdr msg;
+	int rv;
+
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
+	msg.msg_iovlen = 1;
+	msg.msg_iov = &iov;
+	iov.iov_len = size;
+	iov.iov_base = buf;
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
+	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+
+	set_fs(oldfs);
+
+	return rv;
+}
+
 int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	      void *buf, size_t size)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
 	struct msghdr msg;
-	char * sockname = (sock == mdev->msock ? "msock" : "sock");
+	char * sockname = (sock == mdev->meta.socket ? "msock" : "sock");
 	int rv;
 
 	msg.msg_control = NULL;
@@ -495,11 +523,11 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 		 * EAGAIN       (on msock) rcvtimeo expired
 		 */
 		if (rv == -EAGAIN) {
-			D_ASSERT(sock == mdev->msock);
+			D_ASSERT(sock == mdev->meta.socket);
 			D_ASSERT(current == mdev->asender.task);
 
 			// FIXME decide this more elegantly
-			if ( mdev->msock->sk->rcvtimeo == mdev->conf.ping_int*HZ) {
+			if ( mdev->meta.socket->sk->rcvtimeo == mdev->conf.ping_int*HZ) {
 				C_DBG(0,"recv_header timed out, sending ping\n");
 				// goto do_ping;
 			} else {
@@ -509,7 +537,7 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 		} else if (rv == -EINTR) {
 			unsigned long flags = 0;
 
-			D_ASSERT(sock == mdev->msock);
+			D_ASSERT(sock == mdev->meta.socket);
 			D_ASSERT(current == mdev->asender.task);
 
 			LOCK_SIGMASK(current,flags);
@@ -541,7 +569,7 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 		if (!drbd_send_ping(mdev))
 			break;
 		// full ack timeout
-		mdev->msock->sk->rcvtimeo = mdev->conf.timeout*HZ/10;
+		mdev->meta.socket->sk->rcvtimeo = mdev->conf.timeout*HZ/10;
 
 	};
 
@@ -613,7 +641,7 @@ int drbd_connect(drbd_dev *mdev)
 
 	if (mdev->cstate==Unconfigured) return 0;
 
-	if (mdev->sock) {
+	if (mdev->data.socket) {
 		ERR("There is already a socket!!\n");
 		return 0;
 	}
@@ -670,8 +698,8 @@ int drbd_connect(drbd_dev *mdev)
 	msock->sk->sndtimeo = mdev->conf.timeout*HZ/20;
 	msock->sk->rcvtimeo = mdev->conf.ping_int*HZ;
 
-	mdev->sock = sock;
-	mdev->msock = msock;
+	mdev->data.socket = sock;
+	mdev->meta.socket = msock;
 	mdev->last_received = jiffies;
 
 	set_cstate(mdev,WFReportParams);
@@ -712,7 +740,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 	}
 
 	r = drbd_recv(mdev,sock,h,sizeof(*h));
-	if (r == -EINTR && sock == mdev->msock) {
+	if (r == -EINTR && sock == mdev->meta.socket) {
 		h->command = WakeAsender;
 		h->length  = 0;
 		return TRUE;
@@ -720,7 +748,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 
 	if (unlikely( r != sizeof(*h) )) {
 		ERR("short read expecting header on %s: r=%d\n",
-		    sock == mdev->msock ? "msock" : "sock",
+		    sock == mdev->meta.socket ? "msock" : "sock",
 		    r);
 		return FALSE;
 	};
@@ -733,26 +761,20 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 		return FALSE;
 	}
 	mdev->last_received = jiffies;
-	if (sock == mdev->msock) {
+	if (sock == mdev->meta.socket) {
 		// restore idle timeout
-		mdev->msock->sk->rcvtimeo = mdev->conf.ping_int*HZ;
+		mdev->meta.socket->sk->rcvtimeo = mdev->conf.ping_int*HZ;
 	}
 	C_DBG(5,"on %s <<< %s l: %d\n",
-	    sock == mdev->msock ? "msock" : "sock",
+	    sock == mdev->meta.socket ? "msock" : "sock",
 	    cmdname(h->command), h->length);
 	return TRUE;
 }
 
-STATIC int receive_BlockAck(drbd_dev *mdev, Drbd_Header* h)
+STATIC int process_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 {
-	int rv;
 	drbd_request_t *req;
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
-
-	ERR_IF (h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-
-	rv = drbd_recv(mdev, mdev->msock, PAYLOAD_P(h), h->length);
-	ERR_IF (rv != h->length) return FALSE;
 
 	if( is_syncer_blk(mdev,p->block_id)) {
 		drbd_set_in_sync(mdev,
@@ -789,7 +811,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	ERR_IF(mdev->state != Secondary) return FALSE;
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	rv = drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length);
+	rv = drbd_recv(mdev, mdev->data.socket, h->payload, h->length);
 	ERR_IF(rv != h->length) return FALSE;
 
 	inc_unacked(mdev);
@@ -816,20 +838,12 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	return TRUE;
 }
 
-STATIC int receive_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
+STATIC void process_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 {
-	int rv;
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
-
-	ERR_IF(mdev->state != Primary) return FALSE;
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-	rv = drbd_recv(mdev, mdev->msock, PAYLOAD_P(h), h->length);
-	ERR_IF(rv != h->length) return FALSE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
 	dec_pending(mdev,HERE);
-
-	return TRUE;
 }
 
 STATIC struct Tl_epoch_entry *
@@ -844,7 +858,7 @@ read_in_block(drbd_dev *mdev,int data_size)
 	spin_unlock_irq(&mdev->ee_lock);
 	bh=&e->pbh;
 
-	rr=drbd_recv(mdev,mdev->sock,bh_kmap(bh),data_size);
+	rr=drbd_recv(mdev,mdev->data.socket,bh_kmap(bh),data_size);
 	bh_kunmap(bh);
 
 	if ( rr != data_size) {
@@ -899,7 +913,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	D_ASSERT( sector == APP_BH_SECTOR(bh) );
 
-	rr=drbd_recv(mdev,mdev->sock,bh_kmap(bh),data_size);
+	rr=drbd_recv(mdev,mdev->data.socket,bh_kmap(bh),data_size);
 	bh_kunmap(bh);
 
 	ok=(rr==data_size);
@@ -1046,7 +1060,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	ERR_IF(data_size &  0xff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), header_size) != header_size)
+	if (drbd_recv(mdev, mdev->data.socket, h->payload, header_size) != header_size)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
@@ -1113,7 +1127,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	ERR_IF(data_size &  0xff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), header_size) != header_size)
+	if (drbd_recv(mdev, mdev->data.socket, h->payload, header_size) != header_size)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
@@ -1176,7 +1190,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
+	if (drbd_recv(mdev, mdev->data.socket, h->payload, h->length) != h->length)
 		return FALSE;
 
 	sector    = be64_to_cpu(p->sector);
@@ -1223,7 +1237,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	// FIXME move into helper
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
+	if (drbd_recv(mdev, mdev->data.socket, h->payload, h->length) != h->length)
 		return FALSE;
 
 	// XXX harmless race with ioctl ...
@@ -1252,7 +1266,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
+	if (drbd_recv(mdev, mdev->data.socket, h->payload, h->length) != h->length)
 		return FALSE;
 
 	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {
@@ -1390,14 +1404,14 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(word));
 		ERR_IF(want != h->length) goto out;
 		if (want==0) break;
-		if (drbd_recv(mdev, mdev->sock, buffer, want) != want)
+		if (drbd_recv(mdev, mdev->data.socket, buffer, want) != want)
 			goto out;
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]) | bm[bm_i];
 			bits += hweight_long(word);
 			bm[bm_i++] = word;
 		}
-		if (!drbd_recv_header(mdev,mdev->sock,h))
+		if (!drbd_recv_header(mdev,mdev->data.socket,h))
 			goto out;
 		D_ASSERT(h->command == ReportBitMap);
 	}
@@ -1480,7 +1494,7 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	size = h->length;
 	while (size > 0) {
 		want = min_t(int,size,sizeof(sink));
-		r = drbd_recv(mdev,mdev->sock,sink,want);
+		r = drbd_recv(mdev,mdev->data.socket,sink,want);
 		D_ASSERT(r >= 0);
 		if (r < 0) break;
 		size -= r;
@@ -1576,7 +1590,7 @@ STATIC void drbdd(drbd_dev *mdev)
 
 	for (;;) {
 		drbd_collect_zombies(mdev); // in case a syncer exited.
-		if (!drbd_recv_header(mdev,mdev->sock,header))
+		if (!drbd_recv_header(mdev,mdev->data.socket,header))
 			break;
 
 		if (header->command < MAX_CMD)
@@ -1607,14 +1621,14 @@ void drbd_disconnect(drbd_dev *mdev)
 	drbd_thread_stop_nowait(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
 
-	while(down_trylock(&mdev->sock_mutex))
+	while(down_trylock(&mdev->data.mutex))
 	{
 		struct task_struct *task;
 		spin_lock(&mdev->send_task_lock);
 		if((task=mdev->send_task)) {
 			drbd_queue_signal(DRBD_SIG, task);
 			spin_unlock(&mdev->send_task_lock);
-			down(&mdev->sock_mutex);
+			down(&mdev->data.mutex);
 			break;
 		} else {
 			spin_unlock(&mdev->send_task_lock);
@@ -1624,7 +1638,7 @@ void drbd_disconnect(drbd_dev *mdev)
 	/* By grabbing the sock_mutex we make sure that no one
 	   uses the socket right now. */
 	drbd_free_sock(mdev);
-	up(&mdev->sock_mutex);
+	up(&mdev->data.mutex);
 
 	drbd_thread_stop(&mdev->dsender);
 	drbd_collect_zombies(mdev);
@@ -1707,69 +1721,104 @@ int drbdd_init(struct Drbd_thread *thi)
 STATIC int drbd_try_send_barrier(drbd_dev *mdev)
 {
 	int rv=TRUE;
-	if(down_trylock(&mdev->sock_mutex)==0) {
+	if(down_trylock(&mdev->data.mutex)==0) {
 		if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 			if(! _drbd_send_barrier(mdev)) rv=FALSE;
 		}
-		up(&mdev->sock_mutex);
+		up(&mdev->data.mutex);
 	}
 	return rv;
 }
 
 int drbd_asender(struct Drbd_thread *thi)
 {
-	int ok;
-	unsigned long flags = 0;
+	// shortcuts
 	drbd_dev *mdev = thi->mdev;
-	Drbd_Polymorph_Packet p; // XXX BarrierAck_Packet should be enough ...
-	Drbd_Header *header = (Drbd_Header*)&p;
+	Drbd_Header *h = &mdev->meta.rbuf.head;
+
+	unsigned long flags = 0;
+	int rv;
+	void *buf    = h;
+	int received = 0;
+	int expect   = sizeof(Drbd_Header);
+
 
 	sprintf(current->comm, "drbd%d_asender", (int)(mdev-drbd_conf));
 
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
 
-	while(thi->t_state == Running) {
+	while (thi->t_state == Running) {
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
 			ERR_IF(!drbd_send_ping(mdev)) goto err;
 			// half ack timeout only,
 			// since sendmsg waited the other half already
-			mdev->msock->sk->rcvtimeo =
+			mdev->meta.socket->sk->rcvtimeo =
 				mdev->conf.timeout*HZ/20;
 		}
 
-		/* going to wait for input ...  maybe we need to output
-		 * something before input is ready, so allow for wakeup
-		 * signal...
-		 */
-		LOCK_SIGMASK(current,flags);
-		sigdelset(&current->blocked,DRBD_SIG);
-		RECALC_SIGPENDING(current);
-		UNLOCK_SIGMASK(current,flags);
-
-		ok = drbd_recv_header(mdev,mdev->msock,header);
-		ERR_IF(!ok)
-			goto err;
-
-		/* we don't want to be "woken up" by DRBD_SIG while
-		 * receiving payload data, nor while sending out pings
-		 * and acks!  SIGTERM is unaffected...
-		 */
-		LOCK_SIGMASK(current,flags);
-		if (sigismember(&current->pending.signal, DRBD_SIG)) {
-			sigdelset(&current->pending.signal, DRBD_SIG);
-			sigaddset(&current->blocked,DRBD_SIG);
-			RECALC_SIGPENDING(current);
+		if (mdev->state == Primary) {
+			if(!drbd_try_send_barrier(mdev)) goto err;
 		}
-		UNLOCK_SIGMASK(current,flags);
 
+		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
+
+		rv = drbd_recv_short(mdev,mdev->meta.socket,buf,expect);
+
+		/* Note:
+		 * -EINTR        (on meta) we got a signal
+		 * -EAGAIN       (on meta) rcvtimeo expired
+		 * -ECONNRESET   other side closed the connection
+		 * -ERESTARTSYS  (on data) we got a signal
+		 * rv <  0       other than above: unexpected error!
+		 * rv == expected: full header or command
+		 * rv <  expected: "woken" by signal during receive
+		 * rv == 0       : "connection shut down by peer"
+		 */
+		if (rv == -EAGAIN) {
+			set_bit(SEND_PING,&mdev->flags);
+			continue;
+		} else if (rv == -EINTR || rv < expect) {
+			LOCK_SIGMASK(current,flags);
+			sigemptyset(&current->pending.signal);
+			RECALC_SIGPENDING(current);
+			UNLOCK_SIGMASK(current,flags);
+			if (rv == -EINTR) rv=0;
+		} else if (rv < 0) {
+			// if (rv != -ECONNRESET)
+				ERR("sock_recvmsg returned %d\n", rv);
+			break;
+		} /* else if (rv > expect) {
+			BUG();
+		} */
+		received += rv;
+		expect   -= rv;
+		buf      += rv;
+
+		if (expect)
+			continue;
 
 		// MAYBE use jump table
 
-		switch (header->command) {
-		case WakeAsender:
-			// we were just woken up
-			break;
+		if (received == sizeof(Drbd_Header)) {
+			h->command = be16_to_cpu(h->command);
+			h->length  = be16_to_cpu(h->length);
+			if (unlikely( h->magic != BE_DRBD_MAGIC )) {
+				ERR("magic?? m: 0x%lx c: %d l: %d\n",
+				    (long)be32_to_cpu(h->magic),
+				    h->command, h->length);
+				goto err;
+			}
+		}
+
+		/*
+		 * If packet command numbers were ordered by packet size,
+		 * we could just say something like
+		 * if (h->command > [last command without payload data])
+		 *	{ expect = whatever; continue; }
+		 */
+
+		switch (h->command) {
 		case Ping:
 			ERR_IF(!drbd_send_ping_ack(mdev))
 				goto err;
@@ -1778,30 +1827,35 @@ int drbd_asender(struct Drbd_thread *thi)
 			break;
 		case PingAck:
 			// restore idle timeout
-			mdev->msock->sk->rcvtimeo =
+			mdev->meta.socket->sk->rcvtimeo =
 				mdev->conf.ping_int*HZ;
 			break;
 		case RecvAck:
 		case WriteAck:
-			ERR_IF(!receive_BlockAck(mdev,header))
-				goto err;
+			if (received != sizeof(Drbd_BlockAck_Packet)) {
+				expect = sizeof(Drbd_BlockAck_Packet)
+					- received;
+				ERR_IF (h->length != expect) goto err;
+				continue;
+			}
+			ERR_IF (!process_BlockAck(mdev,h)) goto err;
 			break;
 		case BarrierAck:
-			ERR_IF(!receive_BarrierAck(mdev, header))
-				goto err;
+			if (received != sizeof(Drbd_Barrier_Packet)) {
+				expect = sizeof(Drbd_Barrier_Packet)
+					- received;
+				ERR_IF (h->length != expect) goto err;
+				continue;
+			}
+			ERR_IF (mdev->state != Primary) goto err;
+			process_BarrierAck(mdev,h);
 			break;
 		default:
 			D_ASSERT(0);
 		}
-
-
-		if( mdev->state == Primary ) {
-			ERR_IF(!drbd_try_send_barrier(mdev))
-				goto err;
-		}
-
-		ERR_IF(!drbd_process_ee(mdev,&mdev->done_ee))
-			goto err;
+		buf      = h;
+		received = 0;
+		expect   = sizeof(Drbd_Header);
 	} //while
 
 	if(0) {
@@ -1813,4 +1867,3 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	return 0;
 }
-
