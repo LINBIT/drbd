@@ -28,6 +28,7 @@ case "$1" in
            sleep 1;
         done
 	action "Becoming secondary node"  /usr/sbin/drbdsetup $DR_DEVICE SEC
+	sleep 1;
 	RETVAL2=$?
 	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && rm -f /var/lock/subsys/datadisk
 	;;
