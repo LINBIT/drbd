@@ -810,8 +810,8 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	spin_lock_irq(&mdev->ee_lock);
 	rv = _drbd_process_ee(mdev,1);
 
-	epoch_size=mdev->epoch_size;
-	mdev->epoch_size=0;
+	epoch_size=atomic_read(&mdev->epoch_size);
+	atomic_set(&mdev->epoch_size,0);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
@@ -1023,7 +1023,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	sector_t sector = drbd_ee_get_sector(e);
 	int ok=1;
 
-	mdev->epoch_size++;
+	atomic_inc(&mdev->epoch_size);
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
@@ -1194,6 +1194,10 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	mdev->read_cnt += size >> 9;
 	inc_unacked(mdev);
 	drbd_generic_make_request(READ,&e->private_bio);
+	if (atomic_read(&mdev->local_cnt) >= (mdev->conf.max_epoch_size>>4) ) {
+		drbd_kick_lo(mdev);
+	}
+
 
 	return TRUE;
 }
@@ -1818,7 +1822,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
 	D_ASSERT(list_empty(&mdev->done_ee)); // done here
 
-	mdev->epoch_size=0;
+	atomic_set(&mdev->epoch_size,0);
 	mdev->rs_total=0;
 
 	if(atomic_read(&mdev->unacked_cnt)) {

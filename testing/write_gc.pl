@@ -61,8 +61,8 @@ sub write_gc_file
     if($ConnectedInd)  { $Flags |= 0x04; }
     if($WantFullSync)  { $Flags |= 0x08; }
 
-    $out = pack("N6", $Flags,$HumanCnt,$TimeoutCnt,$ConnectedCnt,
-		$ArbitraryCnt, DRBD_MD_MAGIC);
+    $out = pack("N5", $Flags,$HumanCnt,$TimeoutCnt,$ConnectedCnt,
+		$ArbitraryCnt);
 
     $rr = syswrite(GCF, $out, length($out));
     die "syswrite failed: $!\n" unless $rr == length($out);

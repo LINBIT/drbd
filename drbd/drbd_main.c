@@ -1452,9 +1452,9 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 
 	if (   mdev->ee_in_use  !=  0
 	    || mdev->ee_vacant  != 32 /* EE_MININUM */
-	    || mdev->epoch_size !=  0)
+	    || atomic_read(&mdev->epoch_size) !=  0)
 		ERR("ee_in_use:%d ee_vacant:%d epoch_size:%d\n",
-		    mdev->ee_in_use, mdev->ee_vacant, mdev->epoch_size);
+		    mdev->ee_in_use, mdev->ee_vacant, atomic_read(&mdev->epoch_size));
 #define ZAP(x) memset(&x,0,sizeof(x))
 	ZAP(mdev->conf);
 	ZAP(mdev->sync_conf);

@@ -796,7 +796,7 @@ struct Drbd_Conf {
 	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
 	u32 gen_cnt[GEN_CNT_SIZE];
-	int epoch_size;
+	atomic_t epoch_size;
 	spinlock_t ee_lock;
 	struct list_head free_ee;   // available
 	struct list_head active_ee; // IO in progress
