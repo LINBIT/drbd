@@ -31,6 +31,8 @@ if [ -f /etc/rc.d/init.d/functions ]; then
         fi
 fi
 
+# TODO/NOT TODO: A test for failure ??
+
 if [ -z "$HAVE_SUCCESS" ]; then
 	# Does not react exactly like the "functions" ones
 	success() {
