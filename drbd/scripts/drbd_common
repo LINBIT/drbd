@@ -333,8 +333,8 @@ RETVAL=0        # this means there were errors
 RV=0            # this means there were errors in the current device
 
 if [ "$2" != "" ]; then
-	OPTION=$1
-	RESOURCE=$2
+	OPTION=$2
+	RESOURCE=$1
 else
 	OPTION=$1
 	RESOURCE=""

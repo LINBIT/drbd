@@ -55,7 +55,7 @@ waitForPrimary()
 
 
 # See how we were called.
-case "$ACTION" in
+case "$OPTION" in
 	start)
         if [ -z "$RESOURCE" ]; then
             runForAll start
