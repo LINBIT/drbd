@@ -494,12 +494,10 @@ int drbd_send_param(int minor)
 	int err,i;
 	kdev_t ll_dev = drbd_conf[minor].lo_device;
 
-	if (blk_size[MAJOR(ll_dev)]) {
-		param.h.size =
-		    cpu_to_be64(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]);
-	} else
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: LL device has no size ?!?\n\n",minor);
+	
+	param.h.size = cpu_to_be64( drbd_conf[minor].lo_usize ? 
+				    drbd_conf[minor].lo_usize : 
+				    blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] );
 
 	param.p.command = cpu_to_be16(ReportParams);
 	param.h.blksize = cpu_to_be32(1 << drbd_conf[minor].blk_size_b);
