@@ -19,7 +19,7 @@
 # Some ideas and inspiration from Joe Hartley <jh@brainiac.com>
 
 INSTALL="/etc/ha.d/resource.d"
-. $INSTALL/drbd_commun
+. $INSTALL/drbd_common
 
 # Return a boolean
 isMounted()

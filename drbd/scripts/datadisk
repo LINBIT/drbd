@@ -16,7 +16,7 @@
 # Heartbeat integration
 
 INSTALL="/etc/ha.d/resource.d"
-. $INSTALL/drbd_commun $*
+. $INSTALL/drbd_common $*
 
 # Parameter :
 # The resource to wait for
@@ -61,8 +61,10 @@ case "$1" in
             exit $RETVAL
         fi
 
+	echo SAFE $SAFE
+
 	if [ $SAFE != "false" ]; then
-		if [ -x $STATE/"$RESOURCE"_safe ]; then
+		if [ -e $STATE/"$RESOURCE"_safe ]; then
 			logger -t "datadisk" "Safe mode : It seems that the resource $RESOURCE didn't stop properly"
 			echo "It seems that the node didn't stop properly"
 			ACTION="loop"
@@ -85,7 +87,7 @@ case "$1" in
 		fi
 		touch $STATE/"$RESOURCE"_safe
 	else
-		rm $STATE/"$RESOURCE"_safe
+		rm $STATE/"$RESOURCE"_safe 2> /dev/null
 	fi
 
         setLocal $CONFIG $RESOURCE
@@ -142,7 +144,7 @@ case "$1" in
 
 		if [ $SAFE != "false" ]; then
 			logger -t "datadisk" "Safe mode : Clean shutdown for $RESOURCE"
-			rm $STATE/"$RESOURCE"_safe
+			rm $STATE/"$RESOURCE"_safe 2> /dev/null
 		fi
 
 		$INSTALL/drbdc slave $RESOURCE
