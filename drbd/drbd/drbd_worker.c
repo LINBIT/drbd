@@ -30,7 +30,7 @@
 #include <linux/config.h>
 #include <linux/module.h>
 
-#include <asm/bitops.h>
+#include <linux/bitops.h>
 #include <linux/sched.h>
 #include <linux/smp_lock.h>
 #include <linux/wait.h>

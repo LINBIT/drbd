@@ -26,7 +26,7 @@
 
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
-#include <asm/string.h>
+#include <linux/string.h> // for memset
 #include "lru_cache.h"
 
 #define STATIC static

@@ -1712,18 +1712,15 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
+#if 0
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 	sector_t sector = be64_to_cpu(p->sector);
 	int size = be32_to_cpu(p->blksize);
-
-	if (DRBD_ratelimit(5*HZ,5))
-		WARN("Got NegAck packet. Peer is in troubles?\n");
 
 	/* do nothing here.
 	 * we expect to get a "report param" on the data socket soon,
 	 * and will do the cleanup then and there.
 	 */
-#if 0
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
 	} else {
@@ -1733,6 +1730,9 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 		dec_ap_pending(mdev,HERE);
 	}
 #endif
+	if (DRBD_ratelimit(5*HZ,5))
+		WARN("Got NegAck packet. Peer is in troubles?\n");
+
 	return TRUE;
 }
 
