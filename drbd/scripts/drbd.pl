@@ -194,8 +194,6 @@ sub read_config()
 
 sub doconfig($$)
 {
-
-#FIXME: Check returncodes, not output!
     my ($res,$mconf)=@_;
     my ($errtxt);
     
@@ -261,8 +259,8 @@ sub become_pri($$)
 
     $mounted=0;
     while($line=<MOUNT>) {
-  	if( index($line,$$mconf{self}{device}) > -1 ) {
-	    print "pname: $$mconf{self}{device} is already mounted\n";
+  	if( index($line,"$$mconf{self}{device} ") > -1 ) {
+	    print "$pname: $$mconf{self}{device} is already mounted\n";
 	    $mounted=1;
   	}
     }
