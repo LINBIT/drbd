@@ -728,12 +728,11 @@ int main(int argc, char** argv)
 	for(i=optind;i<argc;i++) {
 	  struct d_resource *tmp;
 	  for_each_resource(res,tmp,config) {
-	    if(!strcmp(argv[i],res->name)) break;
+	    if(!strcmp(argv[i],res->name)) goto found;
 	  }
-	  if(for_completed(res,tmp,config)) {
-	    fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
-	    exit(20);
-	  }
+	  fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
+	  exit(20);
+	found:
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	    exit(20);
