@@ -1037,7 +1037,8 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 	list_del(&pr->list);
 	spin_unlock(&mdev->pr_lock);
 
-	// FIXME PARANOIA BUG() on invalid cause !
+	D_ASSERT(Discard      <= pr->cause);
+	D_ASSERT(AppAndResync >= pr->cause);
 
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
 
@@ -1145,8 +1146,7 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	case DataRequest:     e->e_end_io = e_end_data_req; break;
 	case RSDataRequest:   e->e_end_io = e_end_rsdata_req; break;
 	default:
-	      // FIXME PARANOIA BUG()
-		;
+	      D_ASSERT(0);
 	}
 
 	bh=e->bh;
@@ -1171,7 +1171,7 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 
 STATIC int receive_param_value(struct Drbd_Conf* mdev,int command)
 {
-	// XXX do we need the ioctl lock here?
+	// XXX harmless(?) race with ioctl
 	// __u64 l;
 	__u32 i;
 
@@ -1187,8 +1187,7 @@ STATIC int receive_param_value(struct Drbd_Conf* mdev,int command)
 		mdev->sync_conf.group = be32_to_cpu(i);
 		break;
 	default:
-	      // FIXME PARANOIA BUG()
-		;
+	      D_ASSERT(0);
 	}
 
 	return TRUE;
@@ -1230,6 +1229,12 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
+
+	// XXX harmless race with ioctl ...
+	mdev->sync_conf.group =
+		min_t(int,mdev->sync_conf.group,be32_to_cpu(param.sync_group));
+	mdev->sync_conf.rate  =
+		max_t(int,mdev->sync_conf.rate, be32_to_cpu(param.sync_rate));
 
 	/* should be removed ?
 	if(be64_to_cpu(param.protocol)!=mdev->lo_usize) {
@@ -1521,17 +1526,13 @@ STATIC void drbdd(int minor)
 				goto err;
 			break;
 		case SyncStop:
-			// paranoia
-			if (mdev->cstate == SyncSource)
-				set_cstate(mdev,PausedSyncS);
-			// else BUG()
+			D_ASSERT(mdev->cstate == SyncSource);
+			set_cstate(mdev,PausedSyncS);
 			break;
 		case SyncCont:
-			// paranoia
-			if (mdev->cstate == PausedSyncS &&
-			    mdev->sync_side == SyncSource  )
-				set_cstate(mdev,SyncSource);
-			// else BUG()
+			D_ASSERT(mdev->cstate == PausedSyncS);
+			D_ASSERT(mdev->sync_side == SyncSource);
+			set_cstate(mdev,SyncSource);
 			break;
 		default:
 			printk(KERN_ERR DEVICE_NAME
@@ -1780,8 +1781,7 @@ int drbd_asender(struct Drbd_thread *thi)
 				expect = sizeof(Drbd_Packet);
 				break;
 			default:
-				// FIXME PARANOIA BUG()
-				;
+				D_ASSERT(0);
 			}
 			rsize=0;
 		}

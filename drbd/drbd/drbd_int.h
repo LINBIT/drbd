@@ -184,6 +184,8 @@ typedef struct {
   __u32       version;
   __u32       gen_cnt[GEN_CNT_SIZE];
   __u32       bit_map_gen[GEN_CNT_SIZE];
+  __u32       sync_group;
+  __u32       sync_rate;
 }  __attribute((packed)) Drbd_Parameter_P;
 MKPACKET(Drbd_Parameter_P)
 

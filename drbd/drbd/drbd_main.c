@@ -493,6 +493,8 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 		param.h.gen_cnt[i]=cpu_to_be32(mdev->gen_cnt[i]);
 		param.h.bit_map_gen[i]=cpu_to_be32(mdev->bit_map_gen[i]);
 	}
+	param.h.sync_group = mdev->sync_conf.group;
+	param.h.sync_rate  = mdev->sync_conf.rate;
 
 	down(&mdev->sock_mutex);
 	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);

@@ -139,8 +139,8 @@ typedef enum {
 	Unconnected,
 	Timeout,
 	BrokenPipe,
-	WFConnection,   // we have a socket
-	WFReportParams,
+	WFConnection,
+	WFReportParams, // we have a socket
 	Connected,      // we have introduced each other
 	WFBitMap,
 	SyncSource,
