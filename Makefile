@@ -128,7 +128,13 @@ drbd/drbd_buildtag.c:
 	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
 	@echo "./.filelist updated."
 
-tgz: .filelist
+# tgz will no longer automatically update .filelist,
+# so the tgz and therefore rpm target will work within
+# an extracted tarball, too.
+# to generate a distribution tarball, use make tarball,
+# which will regenerate .filelist 
+tgz:
+	test -e .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
 	rm -f drbd-$(DIST_VERSION)
 	ln -s . drbd-$(DIST_VERSION)
