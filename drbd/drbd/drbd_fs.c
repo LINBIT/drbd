@@ -1,4 +1,3 @@
-
 /*
 -*- linux-c -*-
    drbd_fs.c
@@ -126,7 +125,6 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 			mdev->la_size = size;
 			printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",
 			       minor,size);
-			drbd_md_write(mdev);
 		}
 	}
 
@@ -495,6 +493,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err = 0;
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_determin_dev_size(mdev);
+		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		drbd_send_param(mdev);
 		break;
 

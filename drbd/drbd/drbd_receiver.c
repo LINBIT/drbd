@@ -1266,8 +1266,9 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 				mdev->gen_cnt[i]=be32_to_cpu(param.gen_cnt[i]);
 			}
 		}
-		drbd_md_write(mdev); // Need to update connected indicator.
 	}
+
+	drbd_md_write(mdev); // update connected indicator, la_size.
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(param.state);
