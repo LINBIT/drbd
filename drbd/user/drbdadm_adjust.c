@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #include "drbdadm.h"
 
@@ -104,7 +105,7 @@ int check_opt_b(FILE *in,char* name,struct d_option* base)
   sn[l]=0;
   sprintf(scs," %*s%%[%c]\n",l,sn,name[l]);
 
-  if(fscanf(in,scs,uu)) {
+  if(fscanf(in,scs,uu)>0) {
     o=find_opt(base,name);
     if(o) o->mentioned=1;
     else rv=1;
@@ -175,6 +176,23 @@ int complete(struct d_option* base)
   return rv;
 }
 
+int m_fscanf(FILE *stream,const char *fmt, ...)
+{
+  va_list ap;
+  int rv;
+
+  va_start(ap, fmt);
+  rv=vfscanf(stream,fmt,ap);
+  va_end(ap);
+
+  if(rv==0) {
+    fprintf(stderr,"fscanf() faild for fmt string: %s\n",fmt);
+  }
+
+  return rv;
+}
+
+
 int adm_adjust(struct d_resource* res,char* unused)
 {
   char* argv[20];
@@ -196,12 +214,12 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   in=m_popen(&pid,argv);
 
-  rv=fscanf(in,"Lower device: %*02d:%*02d   (%[^)])\n",str1);
+  rv=m_fscanf(in,"Lower device: %*02d:%*02d   (%[^)])\n",str1);
   if( (rv!=1) || strcmp(str1,res->me->disk)) {
     do_attach=1;
   }
 
-  rv=fscanf(in,"Meta device: %s   (%[^)])\n",str1,str2);
+  rv=m_fscanf(in,"Meta device: %s   (%[^)])\n",str1,str2);
   if(rv==1) {
     if(strcmp("internal",str1)==0) {
       if(strcmp("internal",res->me->meta_disk)) do_attach=1;
@@ -209,13 +227,13 @@ int adm_adjust(struct d_resource* res,char* unused)
   }
   if(rv==2) {
     if(strcmp(str2,res->me->meta_disk)) do_attach=1;
-    rv=fscanf(in,"Meta index: %[0-9]\n",str1);
+    rv=m_fscanf(in,"Meta index: %[0-9]\n",str1);
     if(rv==1) {
       if(strcmp(str1,res->me->meta_index)) do_attach=1;
     }
   }
 
-  rv=fscanf(in,"Disk options%[:]\n",uu);
+  rv=m_fscanf(in,"Disk options%[:]\n",uu);
   if(rv==1) {
     do_resize |= check_opt_d(in,"size",1024,"KB",res->disk_options);
     do_attach |= check_opt_s(in,"on-io-error",res->disk_options);
@@ -231,25 +249,25 @@ int adm_adjust(struct d_resource* res,char* unused)
     }
   }
 
-  rv=fscanf(in,"Local address: %[0-9.]:%s\n",str1,str2);
+  rv=m_fscanf(in,"Local address: %[0-9.]:%s\n",str1,str2);
   if(rv!=2 || strcmp(str1,res->me->address) || strcmp(str2,res->me->port) ) {
     do_connect=1;
   }
 
-  rv=fscanf(in,"Remote address: %[0-9.]:%s\n",str1,str2);
+  rv=m_fscanf(in,"Remote address: %[0-9.]:%s\n",str1,str2);
   if(rv!=2 || strcmp(str1,res->partner->address) ||
      strcmp(str2,res->partner->port) ) {
     do_connect=1;
   }
 
-  rv=fscanf(in,"Wire protocol: %1[ABC]\n",str1);
+  rv=m_fscanf(in,"Wire protocol: %1[ABC]\n",str1);
   if(rv!=1 || strcmp(str1,res->protocol) ) {
     do_connect=1;
   }
 
-  rv=fscanf(in,"Net options%[:]\n",uu);
+  rv=m_fscanf(in,"Net options%[:]\n",uu);
   if(rv==1) {
-    rv=fscanf(in," timeout = %lu.%lu sec (%[d]efault)\n",&ul1,&ul2,uu);
+    rv=m_fscanf(in," timeout = %lu.%lu sec (%[d]efault)\n",&ul1,&ul2,uu);
     o=find_opt(res->net_options,"timeout");
     if(o) {
       o->mentioned=1;
@@ -262,10 +280,11 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_connect |= check_opt_d(in,"ping-int",1,"sec",res->net_options);
     do_connect |= check_opt_d(in,"max-epoch-size",1,"",res->net_options);
     do_connect |= check_opt_d(in,"max-buffers",1,"",res->net_options);
+    do_connect |= check_opt_d(in,"sndbuf-size",1,"",res->net_options);
     do_connect |= complete(res->net_options);
   }
 
-  rv=fscanf(in,"Syncer options%[:]\n",uu);
+  rv=m_fscanf(in,"Syncer options%[:]\n",uu);
   if(rv==1) {
     do_syncer |= check_opt_d(in,"rate",1024,"KB/sec",res->sync_options);
     do_syncer |= check_opt_d(in,"group",1,"",res->sync_options);
