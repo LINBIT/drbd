@@ -786,7 +786,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 
 	down(&mdev->send_mutex);
 	
-	if(mdev->conf.wire_protocol != DRBD_PROT_A) {
+	if(mdev->conf.wire_protocol != DRBD_PROT_A && mdev->conf.timeout) {
 		mdev->pending_cnt++;
 		mod_timer(&mdev->a_timeout,
 			  jiffies + mdev->conf.timeout * HZ / 10);
@@ -902,7 +902,7 @@ void drbd_set_sock_prio(struct Drbd_Conf *mdev)
 		break;
 	case Secondary:
 		mdev->sock->sk->priority=TC_PRIO_INTERACTIVE;
-/*                sock->sk->tp_pinfo.af_tcp.nonagle=1;*/
+		// sock->sk->tp_pinfo.af_tcp.nonagle=1;
 		mdev->sock->sk->nonagle=1;
 		break;
 	}
@@ -1861,7 +1861,8 @@ inline int receive_block_ack(int minor)
 	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
 	        return FALSE;
 	
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A) {
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A &&
+	   drbd_conf[minor].conf.timeout ) {
 		if(--drbd_conf[minor].pending_cnt > 0) {
 			mod_timer(&drbd_conf[minor].a_timeout,
 				  jiffies + drbd_conf[minor].conf.timeout 
