@@ -47,7 +47,7 @@ NDELIM			  [^ \t\n#=:;{}]+
 %option stack
 
 %x RESOURCE GLOBAL
-%x STARTUP DISK NET SYNCER HOST
+%x STARTUP DISK NET SYNCER HOST HANDLERS
 %x SEMICOLON ASSIGN NUM NUM_U NAME STRING PROTO IO_ERROR ON_DISCONNECT
 %x IP_AND_PORT PORT META_DISK META_IDX
 %x LS LBRACE IGNORE_SECTION
@@ -90,7 +90,7 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   {NDELIM}		expect_error("one of 'global|resource'");
 }
 
-<RESOURCE,GLOBAL,IGNORE_SECTION,STARTUP,DISK,NET,SYNCER,HOST>{
+<RESOURCE,GLOBAL,IGNORE_SECTION,STARTUP,DISK,NET,SYNCER,HOST,HANDLERS>{
   {IGNORE}		update_lcnt();
   \}			yy_pop_state();
 }
@@ -209,13 +209,14 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   syncer		section(SYNCER);     return TK_SYNCER;
   disk			section(DISK);	     return TK_DISK_S;
   net			section(NET);	     return TK_NET;
+  handlers		section(HANDLERS);   return TK_HANDLERS;
 
   protocol		do_assign(PROTO);  CP; return TK_PROTOCOL;
-  incon-degr-cmd	do_assign(STRING); CP; return TK_INCON_DEGR_CMD;
   {NDELIM}		{
 			  expect_error(
 				"one of 'protocol|incon-degr-cmd|"
-				"startup|disk|net|syncer|on <HOSTNAME>'");
+				"startup|disk|net|syncer|on <HOSTNAME>'|"
+				"handlers");
 			}
 }
 
@@ -270,6 +271,18 @@ PORT			  {WSC}port{ASSIGN}{NUM}
   {DISK}		do_assign(STRING);	CP; return TK_DISK;
   meta-disk		do_assign(META_DISK);	CP; return TK_META_DISK;
   {NDELIM}		expect_error("one of 'address|device|disk|meta-disk'");
+}
+
+<HANDLERS>{
+  pri-on-incon-degr	do_assign(STRING); CP; return TK_PRI_ON_INCON_DEGR;
+  pri-sees-sec-with-higher-gc	do_assign(STRING); CP; return TK_PRI_SEES_SEC_WITH_HIGHER_GC;
+  on-disconnect		do_assign(STRING); CP; return TK_ON_DISCONNECT;
+  {NDELIM}		{
+	  		  expect_error(
+				"one of 'pri-on-incon-degr|"
+				"pri-sees-sec-with-higher-gc|"
+				"on-disconnect");
+			}
 }
 
 <*>{

@@ -700,7 +700,6 @@ int set_state(int drbd_fd,drbd_role_t state)
 	break;
       case EIO:
 	fprintf(stderr,"Local replica is inconsistent (--do-what-I-say ?)\n");
-	return 21;
       }
     return 20;
   }

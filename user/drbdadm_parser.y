@@ -238,7 +238,7 @@ void check_meta_disk()
 %token TK_GLOBAL TK_RESOURCE
 %token TK_ON TK_NET TK_DISK_S TK_SYNCER TK_STARTUP
 %token TK_DISABLE_IO_HINTS
-%token TK_PROTOCOL TK_INCON_DEGR_CMD
+%token TK_PROTOCOL TK_HANDLERS
 %token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
 %token <txt> TK_ON_IO_ERROR TK_SIZE
@@ -248,12 +248,14 @@ void check_meta_disk()
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
 %token <txt> TK_ALLOW_TWO_PRIMARIES
+%token <txt> TK_PRI_ON_INCON_DEGR TK_PRI_SEES_SEC_WITH_HIGHER_GC
 
 %type <txt> hostname resource_name
 %type <d_option> disk_stmts disk_stmt
 %type <d_option> net_stmts net_stmt
 %type <d_option> sync_stmts sync_stmt
 %type <d_option> startup_stmts startup_stmt
+%type <d_option> handler_stmts handler_stmt
 %type <d_resource> resources resource
 
 %%
@@ -306,7 +308,6 @@ res_stmts:	  /* empty */
 		;
 
 res_stmt:	  TK_PROTOCOL	    TK_STRING { c_res->protocol=$2; }
-		| TK_INCON_DEGR_CMD TK_STRING { c_res->ind_cmd=$2;  }
 		;
 
 section:	  TK_DISK_S   disk_stmts
@@ -318,6 +319,8 @@ section:	  TK_DISK_S   disk_stmts
 		| TK_STARTUP  startup_stmts
 		{ CHKS("startup"); c_res->startup_options=$2; }
 		| TK_ON hostname host_stmts { host_sec($2); }
+		| TK_HANDLERS  handler_stmts
+		{ CHKS("handlers"); c_res->handlers=$2; }
 		;
 
 hostname:	TK_STRING
@@ -418,4 +421,14 @@ startup_stmt:	  TK_WFC_TIMEOUT      TK_INTEGER
 		{ range_check(R_WFC_TIMEOUT,$1,$2);	$$=new_opt($1,$2); }
 		| TK_DEGR_WFC_TIMEOUT TK_INTEGER
 		{ range_check(R_DEGR_WFC_TIMEOUT,$1,$2);$$=new_opt($1,$2); }
+		;
+
+handler_stmts:	  /* empty */	           { $$ = 0; }
+		| handler_stmts handler_stmt	   { $$=APPEND($1,$2); }
+		;
+
+handler_stmt:	  TK_PRI_ON_INCON_DEGR TK_STRING	{ $$=new_opt($1,$2); }
+		| TK_PRI_SEES_SEC_WITH_HIGHER_GC TK_STRING
+		{ $$=new_opt($1,$2); }
+		| TK_ON_DISCONNECT TK_STRING		{ $$=new_opt($1,$2); }
 		;

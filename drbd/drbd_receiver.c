@@ -1624,6 +1624,23 @@ STATIC void drbdd(drbd_dev *mdev)
 	}
 }
 
+void drbd_khelper(drbd_dev *mdev, char* cmd)
+{
+	int ret;
+	char mb[12];
+	char *argv[] = {"/sbin/drbdadm", cmd, mb, NULL };
+	static char *envp[] = { "HOME=/",
+				"TERM=linux",
+				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+				NULL };
+	
+	snprintf(mb,12,"minor-%d",(int)(mdev-drbd_conf));
+	ret = call_usermodehelper("/sbin/drbdadm",argv,envp,0);
+	if(ret) {
+		ERR("call_usermodhelper failed with %d",ret);
+	}
+}
+
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->state.s.conn < Connected);
@@ -1735,6 +1752,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		drbd_md_write(mdev);
 	}
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
+
+	drbd_khelper(mdev,"on-disconnect");
 
 	INFO("Connection lost.\n");
 }

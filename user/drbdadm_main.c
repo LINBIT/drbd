@@ -77,7 +77,6 @@ int adm_generic_s(struct d_resource* ,char* );
 int adm_generic_l(struct d_resource* ,char* );
 int adm_resize(struct d_resource* ,char* );
 int adm_syncer(struct d_resource* ,char* );
-static int adm_primary(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
@@ -90,6 +89,7 @@ static int sh_ll_dev(struct d_resource* ,char* );
 static int sh_md_dev(struct d_resource* ,char* );
 static int sh_md_idx(struct d_resource* ,char* );
 static int admm_generic(struct d_resource* ,char* );
+static int adm_khelper(struct d_resource* ,char* );
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -122,7 +122,7 @@ struct adm_cmd cmds[] = {
   { "disconnect",        adm_generic_s,"disconnect"      ,1,1 },
   { "up",                adm_up,      0                  ,1,1 },
   { "down",              adm_generic_s,"down"            ,1,1 },
-  { "primary",           adm_primary, 0                  ,1,1 },
+  { "primary",           adm_generic_s,"primary"         ,1,1 },
   { "secondary",         adm_generic_s,"secondary"       ,1,1 },
   { "invalidate",        adm_generic_l,"invalidate"      ,1,1 },
   { "invalidate_remote", adm_generic_l,"invalidate_remote",1,1 },
@@ -139,6 +139,9 @@ struct adm_cmd cmds[] = {
   { "get-gc",            admm_generic, "get-gc"          ,1,1 },
   { "dump-md",           admm_generic, "dump-md"         ,1,1 },
   { "set-gc",            admm_generic, "set-gc"          ,0,1 },
+  { "pri-on-incon-degr", adm_khelper,  "pri-on-incon-degr",0,1},
+  { "pri-sees-sec-with-higher-gc", adm_khelper,  "pri-sees-sec-with-higher-gc",0,1},
+  { "on-disconnect",     adm_khelper,  "on-disconnect"   ,0,1},
   { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
   { "sh-resources",      sh_resources,0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
@@ -181,7 +184,7 @@ static void dump_options(char* name,struct d_option* opts)
 
   printI("%s {\n",name); ++indent;
   while(opts) {
-    if(opts->value) printA(opts->name,opts->value);
+    if(opts->value) printA(opts->name,esc(opts->value));
     else            printI(BFMT,opts->name);
     opts=opts->next;
   }
@@ -226,14 +229,13 @@ static int adm_dump(struct d_resource* res,char* unused)
 {
   printI("resource %s {\n",esc(res->name)); ++indent;
   printA("protocol",res->protocol);
-  if(res->ind_cmd)
-    printA("incon-degr-cmd",esc(res->ind_cmd));
   dump_host_info(res->me);
   dump_host_info(res->peer);
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
   dump_options("syncer",res->sync_options);
   dump_options("startup",res->startup_options);
+  dump_options("handlers",res->handlers);
   --indent; printf("}\n\n");
 
   return 0;
@@ -324,13 +326,13 @@ static void free_config(struct d_resource* res)
   for_each_resource(f,t,res) {
     free(f->name);
     free(f->protocol);
-    free(f->ind_cmd);
     free_host_info(f->me);
     free_host_info(f->peer);
     free_options(f->net_options);
     free_options(f->disk_options);
     free_options(f->sync_options);
     free_options(f->startup_options);
+    free_options(f->handlers);
     free(f);
   }
 }
@@ -554,17 +556,18 @@ int adm_generic_l(struct d_resource* res,char* cmd)
   return adm_generic(res,cmd,SLEEPS_LONG);
 }
 
-int adm_primary(struct d_resource* res,char* unused)
+static char* get_opt_val(struct d_option*,char*,char*);
+
+static int adm_khelper(struct d_resource* res ,char* cmd)
 {
-  int rv;
-  char *argv[] = { "/bin/bash", "-c", res->ind_cmd , NULL };
+  char *sh_cmd;
+  char *argv[] = { "/bin/bash", "-c", NULL , NULL };
 
-  rv = adm_generic_s(res,"primary");
-
-  if(rv==21) {
-    rv = m_system(argv,SLEEPS_VERY_LONG);
+  if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
+    argv[2]=sh_cmd;
+    m_system(argv,SLEEPS_VERY_LONG);
   }
-  return rv;
+  return 0;
 }
 
 int adm_connect(struct d_resource* res,char* unused)
@@ -649,6 +652,26 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   return rv;
 }
 
+struct d_resource* res_by_minor(const char *id)
+{
+  struct d_resource *res,*t;
+  struct stat sb;
+  int mm;
+
+  if(strncmp(id,"minor-",6)) return NULL;
+  
+  mm = m_strtoll(id+6,1);
+
+  for_each_resource(res,t,config) {
+    if(stat(res->me->device,&sb)) {
+      perror("stat");
+    }
+    if( mm == minor(sb.st_rdev)) {
+      return res;
+    }
+  }
+  return NULL;
+}
 
 /* In case a child exited, or exits, its return code is stored as
    negative number in the pids[i] array */
@@ -1218,6 +1241,7 @@ int main(int argc, char** argv)
 	  for_each_resource(res,tmp,config) {
 	    if(!strcmp(argv[i],res->name)) goto found;
 	  }
+	  if( (res=res_by_minor(argv[i])) ) goto found;
 	  fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
 	  exit(E_usage);
 	found:

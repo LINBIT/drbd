@@ -58,13 +58,13 @@ struct d_resource
 {
   char* name;
   char* protocol;
-  char* ind_cmd;
   struct d_host_info* me;
   struct d_host_info* peer;
   struct d_option* net_options;
   struct d_option* disk_options;
   struct d_option* sync_options;
   struct d_option* startup_options;
+  struct d_option* handlers;
   struct d_resource* next;
 };
 
