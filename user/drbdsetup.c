@@ -566,7 +566,9 @@ void print_config_ioctl_err(int err_no)
     [MDInvalid]="No valid meta-data signature found.\n"
                 "Use 'drbdadm create-md res' to initialize meta-data area.\n",
     [CRAMAlgNotAvail]="The 'cram-hmac-alg' you specified is not known in "
-                      "the kernel.\n"
+                      "the kernel.\n",
+    [CRAMAlgNotDigest]="The 'cram-hmac-alg' you specified is not a digest.",
+    [KMallocFailed]="kmalloc() failed. Out of memory?"
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;

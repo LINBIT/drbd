@@ -560,13 +560,12 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 			retcode=CRAMAlgNotAvail;
 			goto fail_ioctl;
 		}
-	}
 
-	if ( mdev->cram_hmac_tfm ) {
-		crypto_free_tfm(mdev->cram_hmac_tfm);
+		if (crypto_tfm_alg_type(tfm) != CRYPTO_ALG_TYPE_DIGEST) {
+			retcode=CRAMAlgNotDigest;
+			goto fail_ioctl;
+		}
 	}
-
-	mdev->cram_hmac_tfm = tfm;
 
 
 	if (mdev->tl_hash_s != new_conf.max_epoch_size/8 ) {
@@ -642,6 +641,12 @@ FIXME
 		memset(mdev->ee_hash, 0, mdev->ee_hash_s * sizeof(void*));
 	}
 
+	if ( mdev->cram_hmac_tfm ) {
+		crypto_free_tfm(mdev->cram_hmac_tfm);
+	}
+
+	mdev->cram_hmac_tfm = tfm;
+
 	drbd_thread_start(&mdev->worker);
 	if( drbd_request_state(mdev,NS(conn,Unconnected)) > 0) {
 		drbd_thread_start(&mdev->receiver);
@@ -650,6 +655,7 @@ FIXME
 	return 0;
 
   fail_ioctl:
+	if (tfm) crypto_free_tfm(tfm);
 	if (new_tl_hash) kfree(new_tl_hash);
 	if (new_ee_hash) kfree(new_ee_hash);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
