@@ -20,7 +20,7 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre10 svn $Rev$ $Date$"
+#define REL_VERSION "0.7-pre10 svn $Rev$"
 #define API_VERSION 74
 #define PRO_VERSION 74
 
