@@ -1,0 +1,68 @@
+%{
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "drbdadm_parser.h"
+
+int line=1;
+
+void syntax_error(char*);
+
+#if 1
+#define DP printf("'%s' ",yytext)
+#else
+#define DP
+#endif
+
+%}
+
+%option noyywrap
+
+NUM      [1-9][0-9]*[MKG]?
+STRING   [a-zA-Z/][a-zA-Z0-9_/]*
+SNUMB    [1-9][0-9]{0,2}
+IPV4ADDR ({SNUMB}"."){3}{SNUMB}
+WS       [ \t]
+OPCHAR   [{};]
+%x in_str
+
+%%
+\"               BEGIN(in_str);
+<in_str>[^\"]*   { DP; yylval = strdup(yytext); return TK_STRING; }
+<in_str>\"       BEGIN(INITIAL);
+\n               { line++; }
+#[^\n]*          /* ignore comments */
+{OPCHAR}         { DP; return yytext[0];        }
+resource         { DP; return TK_RESOURCE;      }
+protocol         { DP; return TK_PROTOCOL;      }
+fsck-cmd         { DP; return TK_FSCK_CMD;      }
+disk             { DP; return TK_DISK;          }
+do-panic         { DP; return TK_DO_PANIC;      }
+size             { DP; return TK_SIZE;          }
+net              { DP; return TK_NET;           }
+tl-size          { DP; return TK_TL_SIZE;       }
+timeout          { DP; return TK_TIMEOUT;       }
+connect-int      { DP; return TK_CONNECT_INT;   }
+ping-int         { DP; return TK_PING_INT;      } 
+syncer           { DP; return TK_SYNCER;        } 
+rate             { DP; return TK_RATE;          }
+use-csums        { DP; return TK_USE_CSUMS;     }
+skip-sync        { DP; return TK_SKIP_SYNC;     }
+on               { DP; return TK_ON;            }
+device           { DP; return TK_DEVICE;        }
+address          { DP; return TK_ADDRESS;       }
+port             { DP; return TK_PORT;          }
+incon-degr-cmd   { DP; return TK_INCON_DEGR_CMD;}
+{IPV4ADDR}       { DP; return TK_IPADDR;          }
+{NUM}            { DP; yylval = strdup(yytext); return TK_INTEGER;}
+{STRING}         { DP; yylval = strdup(yytext); return TK_STRING; }
+{WS}+            /* ignore whitespaces */
+.                { syntax_error(yytext); } 
+
+%%
+
+void syntax_error(char* text)
+{
+  printf("ERROR: Unexpected character(s) '%s' in line %d.\n",text,line);
+  exit(2);
+}

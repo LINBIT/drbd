@@ -29,12 +29,24 @@ include ../Makefile.vars
 #######
 
 
-all: drbdsetup
+all: drbdsetup drbdadm
+
+drbdadm: drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o
+	$(CC) -o drbdadm drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o
+
+drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
+	flex -odrbdadm_scanner.c drbdadm_scanner.fl
+
+drbdadm_parser.h: drbdadm_parser.y
+	bison -d -o drbdadm_parser.c drbdadm_parser.y
 
 drbdsetup: drbdsetup.o
 	$(CC) -o drbdsetup drbdsetup.o
 
 clean:
+	rm -f drbdadm_scanner.c
+	rm -f drbdadm_parser.c
+	rm -f drbdadm_parser.h
 	rm -f drbdsetup *.o 
 	rm -f *~
 
