@@ -37,11 +37,22 @@
 
 void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 {
+	/* This callback will be called in irq context by the IDE drivers,
+	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
+	   This function is called by the receiver in kernel-thread context.
+	   Try to get the locking right :) */
+
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
 	int wake_asender=0;
 	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
 
+	/*
+	printk(KERN_ERR DEVICE_NAME "%d: end_req in_irq()=%d\n",
+               (int)(mdev-drbd_conf),in_irq());
+ 
+        printk(KERN_ERR DEVICE_NAME "%d: end_req in_softirq()=%d\n",
+               (int)(mdev-drbd_conf),in_softirq());
+	*/
 
 	if (req->rq_status == (RQ_DRBD_READ | 0x0001))
 		goto end_it_unlocked;
@@ -57,8 +68,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
 	switch (req->rq_status & 0xfffe) {
-	case RQ_DRBD_SEC_WRITE:
-		goto end_it;
 	case RQ_DRBD_NOTHING:
 		req->rq_status = nextstate | (uptodate ? 1 : 0);
 		break;
@@ -92,7 +101,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 
 	end_it_unlocked:
 
-	if(mdev->state == Primary && mdev->cstate >= Connected) {
+	if(mdev->cstate >= Connected) {
 	  /* If we are unconnected we may not call tl_dependece, since
 	     then this call could be from tl_clear(). => spinlock deadlock!
 	  */
@@ -106,29 +115,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	bb_done(mdev,req->bh->b_blocknr);
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-	if(mdev->state == Secondary) {
-		e=req->bh->b_private;
-		// since read requests do not have the b_private field set
-		if( e ) {
-			spin_lock_irqsave(&mdev->ee_lock,flags);
-			list_del(&e->list);
-/*		} else { 
-			printk(KERN_ERR DEVICE_NAME "%d: strange e == NULL "
-			       ", bh=%p\n",
-			       (int)(mdev-drbd_conf),req->bh);
-*/
-		}
-	}
-
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
-
-	if(e) {
-		list_add(&e->list,&mdev->done_ee);
-		spin_unlock_irqrestore(&mdev->ee_lock,flags);
-		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-		   e->block_id == ID_SYNCER ) wake_asender=1;
-	}
-
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
@@ -158,6 +145,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	drbd_request_t *req;
 	int cbs = 1 << mdev->blk_size_b;
 	int size_kb;
+
+	// TODO: Handle READS even faster, simply by setting rsector & rdev ?
 
 	if (bh->b_size != cbs) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */
@@ -202,20 +191,18 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 #endif
 
 	
-	memset(nbh, 0, sizeof(*nbh));
-	nbh->b_blocknr=bh->b_blocknr;
-	nbh->b_size=bh->b_size;
-	nbh->b_data=bh->b_data;
-	nbh->b_list = BUF_LOCKED;
-	nbh->b_end_io = drbd_dio_end;
-	nbh->b_dev = mdev->lo_device;
-	nbh->b_rdev = mdev->lo_device;
-	nbh->b_rsector = bh->b_rsector;          
+	drbd_init_bh(nbh,
+		     bh->b_size,
+		     bh->b_data,
+		     drbd_dio_end);
+
+	drbd_set_bh(nbh,
+		    bh->b_rsector / (bh->b_size >> 9),
+		    mdev->lo_device);
+
 	nbh->b_page=bh->b_page;
-	atomic_set(&nbh->b_count, 0);
 	nbh->b_private = req;
-	nbh->b_state = (1 << BH_Req) | (1 << BH_Dirty)
-		| ( 1 << BH_Mapped) | (1 << BH_Lock);
+	nbh->b_state = (1 << BH_Dirty) | ( 1 << BH_Mapped) | (1 << BH_Lock);
 
 	req->bh=bh;
 
@@ -228,9 +215,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	case WRITE:
 		mdev->writ_cnt+=size_kb;
 		
-		if (mdev->state == Primary) {
-			if ( mdev->cstate >= Connected
-			     && bh->b_rsector >= mdev->synced_to) {
+		if ( mdev->cstate >= Connected
+		     && bh->b_rsector >= mdev->synced_to) {
 
 			int bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
 			int send_ok;
@@ -255,26 +241,23 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
 
-			} else {
-				bm_set_bit(mdev->mbds_id,
-					   bh->b_rsector >> 
-					   (mdev->blk_size_b-9),
-					   mdev->blk_size_b, 
-					   SS_OUT_OF_SYNC);
-				req->rq_status = RQ_DRBD_SENT | 0x0001;
-			}
 		} else {
-			req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
+			bm_set_bit(mdev->mbds_id,
+				   bh->b_rsector >> 
+				   (mdev->blk_size_b-9),
+				   mdev->blk_size_b, 
+				   SS_OUT_OF_SYNC);
+			req->rq_status = RQ_DRBD_SENT | 0x0001;
 		}
+		
 		break;
 	default:
 		bh->b_end_io(bh,0); /* should not happen*/
 		return 0;
 	}
 
-	generic_make_request(rw,nbh);
+	submit_bh(rw,nbh);
 
 	return 0; /* Ok, bh arranged for transfer */
 }
-
 

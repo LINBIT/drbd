@@ -278,6 +278,9 @@ struct Drbd_Conf {
 	struct list_head active_ee;
 	struct list_head sync_ee;  
 	struct list_head done_ee;
+	int ee_vacant;
+	int ee_in_use;
+	wait_queue_head_t ee_wait;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
@@ -405,6 +408,8 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 	}	
 }
 
+extern int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list);
+extern void drbd_init_ee(struct Drbd_Conf* mdev);
 
 /* drbd_proc.c  */
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
@@ -515,3 +520,55 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 		}
 	}
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+static inline void drbd_init_bh(struct buffer_head *bh,
+				int size,
+				char* data,
+				void (*handler)(struct buffer_head*,int))
+{
+	memset(bh, 0, sizeof(struct buffer_head));
+
+	bh->b_list = BUF_LOCKED;
+	bh->b_end_io = handler;
+	init_waitqueue_head(&bh->b_wait);
+      	bh->b_data = data;
+	bh->b_size = size;
+	// bh->b_state = 0;
+}
+
+static inline void submit_bh(int rw, struct buffer_head * bh)
+{
+	clear_bit(BH_Lock, &bh->b_state); //ll_rw_block() wants to lock it
+	ll_rw_block(rw, 1, &bh);
+}
+
+#else
+
+static inline void drbd_init_bh(struct buffer_head *bh,
+				int size,
+				char* data,
+				void (*handler)(struct buffer_head*,int))
+{
+	memset(bh, 0, sizeof(struct buffer_head));
+
+	bh->b_list = BUF_LOCKED;
+	bh->b_end_io = handler;
+	init_waitqueue_head(&bh->b_wait);
+      	bh->b_data = data;
+	bh->b_size = size;
+	atomic_set(&bh->b_count, 0);
+	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr 
+}
+
+#endif
+
+static inline void drbd_set_bh(struct buffer_head *bh,
+			       unsigned long block,
+			       kdev_t dev)
+{
+	bh->b_blocknr=block;
+	bh->b_dev = dev;
+}
+
+

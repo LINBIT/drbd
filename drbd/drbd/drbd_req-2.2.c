@@ -242,28 +242,18 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			return;
 		}
 
-		memset(bh, 0, sizeof(*bh));
-		bh->b_blocknr=req->bh->b_blocknr;
-		bh->b_size=req->bh->b_size;
-		bh->b_data=req->bh->b_data;
-		bh->b_list = BUF_LOCKED;
-		bh->b_end_io = drbd_dio_end;
-		bh->b_dev = drbd_conf[minor].lo_device;
-		bh->b_rdev = drbd_conf[minor].lo_device;
-		bh->b_rsector = req->bh->b_rsector;
-		bh->b_end_io = drbd_dio_end;
-		bh->b_count=0;
-		bh->b_this_page=0;
-		bh->b_dev_id = req;
-		bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+		drbd_init_bh(bh,
+			     req->bh->b_size,
+			     req->bh->b_data,
+			     drbd_dio_end);
 
-		/*			
-#ifdef BH_JWrite
-                if (test_bit(BH_JWrite, &req->bh->b_state))
-			set_bit(BH_JWrite, &bh->b_state);
-#endif			
-		*/
-			
+		drbd_set_bh(bh,
+			    req->bh->b_rsector / (req->bh->b_size >> 9),
+			    drbd_conf[minor].lo_device);
+
+		bh->b_dev_id = req;
+		bh->b_state = (1 << BH_Dirty);
+
 		if(req->cmd == WRITE) 
 			drbd_conf[minor].writ_cnt+=size_kb;
 		else drbd_conf[minor].read_cnt+=size_kb;
@@ -297,9 +287,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			}
 			spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-     		        send_ok=drbd_send_data(&drbd_conf[minor], req->buffer,
-					   req->current_nr_sectors << 9,
-					   bnr,(unsigned long)req);
+			send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
 			mdev->send_block=-1;
 
 			if(send_ok) {

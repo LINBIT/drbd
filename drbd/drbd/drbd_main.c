@@ -1019,6 +1019,10 @@ int __init drbd_init(void)
 		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].done_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].busy_blocks);
+		drbd_conf[i].ee_vacant=0;
+		drbd_conf[i].ee_in_use=0;
+		drbd_init_ee(drbd_conf+i);
+		init_waitqueue_head(&drbd_conf[i].ee_wait);
 		{
 			int j;
 			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;
@@ -1051,23 +1055,6 @@ int __init init_module()
 
 }
 
-inline int free_ee_list(struct list_head* list)
-{
-	struct Tl_epoch_entry *e;
-	struct list_head *le;
-	int count=0;
-
-	while(!list_empty(list)) {
-		le = list->next;
-		list_del(le);
-		e = list_entry(le,struct Tl_epoch_entry,list);
-		kfree(e);
-		count++;
-	}
-	
-	return count;
-}
-
 void cleanup_module()
 {
 	int i;
@@ -1089,10 +1076,11 @@ void cleanup_module()
 			kfree(drbd_conf[i].transfer_log);		    
 		if (drbd_conf[i].mbds_id) bm_cleanup(drbd_conf[i].mbds_id);
 		// free the receiver's stuff
-		free_ee_list(&drbd_conf[i].free_ee);
-		if(free_ee_list(&drbd_conf[i].active_ee) || 
-		   free_ee_list(&drbd_conf[i].sync_ee)   ||
-		   free_ee_list(&drbd_conf[i].done_ee) ) {
+
+		drbd_release_ee(drbd_conf+i,&drbd_conf[i].free_ee);
+		if(drbd_release_ee(drbd_conf+i,&drbd_conf[i].active_ee) || 
+		   drbd_release_ee(drbd_conf+i,&drbd_conf[i].sync_ee)   ||
+		   drbd_release_ee(drbd_conf+i,&drbd_conf[i].done_ee) ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: EEs in active/sync/done list found!\n",i);
 		}

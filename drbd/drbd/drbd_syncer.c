@@ -59,7 +59,6 @@ struct ds_buffer {
 	void* buffers;
 	unsigned long *blnr;
 	struct buffer_head *bhs;
-	struct buffer_head **bhsp;
 	int number;
 	int io_pending_number;
 	int b_size;
@@ -83,34 +82,25 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 	return FALSE;
 }
 
+/*static */void ds_end_dio(struct buffer_head *bh, int uptodate)
+{
+	mark_buffer_uptodate(bh, uptodate);
+	clear_bit(BH_Lock, &bh->b_state);
+
+	if (waitqueue_active(&bh->b_wait))
+		wake_up(&bh->b_wait);
+}
+
+
 void ds_buffer_init(struct ds_buffer *this,int minor)
 {
 	int i;
-	struct buffer_head *bh;
 
-	bh = getblk(MKDEV(MAJOR_NR, minor), 1,this->b_size);
-	memcpy(&this->bhs[0],bh,sizeof(struct buffer_head));
-	bforget(bh); /* hehe this is the way to initialize a BH :)  */
-
-	this->bhs[0].b_dev = drbd_conf[minor].lo_device;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-	this->bhs[0].b_state = (1 << BH_Req) | (1 << BH_Mapped);
-#else
-	this->bhs[0].b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#endif
-	this->bhs[0].b_list = BUF_LOCKED;
-	init_waitqueue_head(&this->bhs[0].b_wait);
-
-	this->bhs[0].b_next = 0;
-	this->bhs[0].b_this_page = 0;
-	this->bhs[0].b_next_free = 0;
-	this->bhs[0].b_pprev = 0;
-	this->bhs[0].b_data = this->buffers;
-
-	for (i=1;i<this->number;i++) {
-		memcpy(&this->bhs[i],&this->bhs[0],sizeof(struct buffer_head));
-		/*this->bhs[i]=this->bhs[0];*/
-		this->bhs[i].b_data = this->buffers + i * this->b_size;
+	for (i=0;i<this->number;i++) {
+		drbd_init_bh(this->bhs+i,
+			     this->b_size,
+			     this->buffers + i*this->b_size,
+			     ds_end_dio);
 	}
 }
 
@@ -131,14 +121,11 @@ void ds_buffer_alloc(struct ds_buffer *this,int minor)
 					      drbd_log2(amount>>PAGE_SHIFT));
 
 	size = 	sizeof(unsigned long)*amount_blks + 
-		sizeof(struct buffer_head *)*amount_blks +
 		sizeof(struct buffer_head)*amount_blks;
 
 	mem = kmalloc(size,GFP_USER);
 	this->blnr = (unsigned long*) mem;
 	mem = mem + sizeof(unsigned long)*amount_blks;
-	this->bhsp = (struct buffer_head**)mem;
-	mem = mem + sizeof(struct buffer_head**)*amount_blks;
 	this->bhs = (struct buffer_head*) mem;
 
 	ds_buffer_init(this,minor);
@@ -179,48 +166,44 @@ int ds_buffer_read(struct ds_buffer *this,
 			bb_wait(drbd_conf+minor,block_nr,&flags);
 		}
 
-		this->bhs[count].b_blocknr=block_nr;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-		this->bhs[count].b_state = (1 << BH_Req) | (1 << BH_Mapped);
-#else
-		this->bhs[count].b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#endif
-		init_waitqueue_head(&this->bhs[count].b_wait);
-		/* Hmmm, why do I need this ? */
-
-		this->bhsp[count]=&this->bhs[count];
-		
+		drbd_set_bh(this->bhs+count,
+			    block_nr,
+			    drbd_conf[minor].lo_device);
+		clear_bit(BH_Uptodate, &this->bhs[count].b_state);
+		set_bit(BH_Lock, &this->bhs[count].b_state);
+		submit_bh(READ,this->bhs+count);
 		count++;
 	}
 	this->io_pending_number=count; 
 	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
-	if(count) ll_rw_block(READ, count, this->bhsp);
+	if(count) {
+		run_task_queue(&tq_disk);
+	}
 	return count;
 }
 
 int ds_buffer_reread(struct ds_buffer *this,int minor)
 {
+	//TODO: Is the busy-blocks check missing here ?
 	int i,count;
 	
 	count=this->io_pending_number;
 
 	for(i=0;i<count;i++) {
-		this->bhs[i].b_blocknr=this->blnr[i];
-	     /* this->bhs[i].b_size=this->b_size;  */
-		this->bhs[i].b_list = BUF_LOCKED;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-		this->bhs[i].b_state = (1 << BH_Req) | (1 << BH_Mapped);
-#else
-		this->bhs[i].b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#endif
-		init_waitqueue_head(&this->bhs[i].b_wait);
-		/* Hmmm, why do I need this ? */
-		this->bhsp[i]=&this->bhs[i];		
+		drbd_set_bh(this->bhs+count,
+			    this->blnr[i],
+			    drbd_conf[minor].lo_device);
+
+		clear_bit(BH_Uptodate, &this->bhs[count].b_state);
+		set_bit(BH_Lock, &this->bhs[count].b_state);
+		submit_bh(READ,this->bhs+count);
 	}
 		
-	if(count) ll_rw_block(READ, count, this->bhsp);
-	
+	if(count) {
+		run_task_queue(&tq_disk);
+	}
+
 	return count;
 }
 

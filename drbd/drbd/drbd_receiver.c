@@ -24,7 +24,6 @@
    You should have received a copy of the GNU General Public License
    along with drbd; see the file COPYING.  If not, write to
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
-
  */
 
 #ifdef HAVE_AUTOCONF
@@ -58,14 +57,16 @@
 #endif
 
 
-struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev);
+#define EE_MININUM 32    // @4k pages => 128 KByte
+#define EE_MAXIMUM 2048  // @4k pages => 8   MByte
+/*static */int _drbd_process_done_ee(struct Drbd_Conf* mdev);
 
-inline void inc_unacked(struct Drbd_Conf* mdev)
+/*static */inline void inc_unacked(struct Drbd_Conf* mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-inline void dec_unacked(struct Drbd_Conf* mdev)
+/*static */inline void dec_unacked(struct Drbd_Conf* mdev)
 {
 	if(atomic_dec_and_test(&mdev->unacked_cnt))
 		wake_up_interruptible(&mdev->state_wait);
@@ -78,7 +79,7 @@ inline void dec_unacked(struct Drbd_Conf* mdev)
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
 #if 0
-inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
+/*static */inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
 	/* Use this code if you are working with a VIA based mboard :) */
@@ -93,8 +94,280 @@ inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id)
 }
 #endif //PARANOIA
 
+/*static */inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
+{
+	int i;
 
-int _drbd_process_done_ee(struct Drbd_Conf* mdev)
+	for (i=0; i<minor_count; i++) {
+		if(drbd_conf[i].lo_device == dev) {
+			return drbd_conf+i;
+		}
+	}
+	printk(KERN_ERR DEVICE_NAME "X: lodev_to_mdev !!\n");
+	return drbd_conf;
+}
+
+/*static */void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
+{
+	/* This callback will be called in irq context by the IDE drivers,
+	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
+	   Try to get the locking right :) */
+	int wake_asender=0;
+	unsigned long flags=0;
+	struct Tl_epoch_entry *e=NULL;
+	struct Drbd_Conf* mdev;
+
+	mdev=drbd_lldev_to_mdev(bh->b_rdev);
+
+	/*
+	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_irq()=%d\n",
+               (int)(mdev-drbd_conf),in_irq());
+ 
+        printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_softirq()=%d\n",
+               (int)(mdev-drbd_conf),in_softirq());
+	*/
+
+	/*
+	printk(KERN_ERR DEVICE_NAME "%d: drbd_dio_end_sec(%ld)\n",
+	       (int)(mdev-drbd_conf),bh->b_blocknr);
+	*/
+
+	e=BH_PRIVATE(bh);
+	spin_lock_irqsave(&mdev->ee_lock,flags);
+	list_del(&e->list);
+
+	mark_buffer_uptodate(bh, uptodate);
+
+	clear_bit(BH_Dirty, &bh->b_state);
+	clear_bit(BH_Lock, &bh->b_state);
+
+	list_add(&e->list,&mdev->done_ee);
+	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+
+	if (waitqueue_active(&bh->b_wait))
+		wake_up(&bh->b_wait);
+
+	if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+	   e->block_id == ID_SYNCER ) wake_asender=1;
+
+	if( mdev->do_panic && !uptodate) {
+		panic(DEVICE_NAME": The lower-level device had an error.\n");
+	}
+
+	if(wake_asender) {
+		drbd_queue_signal(DRBD_SIG, mdev->asender.task);
+	}
+}
+
+/*
+You need to hold the ee_lock:
+ _drbd_alloc_ee()
+ drbd_alloc_ee()
+ drbd_free_ee()
+ drbd_get_ee()
+ drbd_put_ee()
+ _drbd_process_done_ee()
+
+You must not have the ee_lock:
+ drbd_init_ee()
+ drbd_release_ee()
+ drbd_ee_fix_bhs()
+ drbd_process_done_ee()
+ drbd_clear_done_ee()
+ _drbd_wait_ee()
+ drbd_wait_active_ee()
+ drbd_wait_sync_ee()
+*/
+
+/*static */void _drbd_alloc_ee(struct Drbd_Conf* mdev,unsigned long page)
+{
+	struct Tl_epoch_entry* e;
+	struct buffer_head *bh,*lbh,*fbh;
+	int number,buffer_size,i;
+
+	buffer_size=1<<mdev->blk_size_b;
+	number=PAGE_SIZE/buffer_size;
+	lbh=NULL;
+	bh=NULL;
+	fbh=NULL;
+
+	for(i=0;i<number;i++) {
+		e=kmalloc(sizeof(struct Tl_epoch_entry)+
+			  sizeof(struct buffer_head),GFP_KERNEL);
+		
+		bh=(struct buffer_head*)(((char*)e)+
+					 sizeof(struct Tl_epoch_entry));
+
+		/*printk(KERN_ERR DEVICE_NAME "%d: kmalloc()=%p\n",
+		  (int)(mdev-drbd_conf),e);*/
+
+		drbd_init_bh(bh,buffer_size,
+			     (char*)(page + i * buffer_size),
+			     drbd_dio_end_sec);
+
+		e->bh=bh;
+		BH_PRIVATE(bh)=e;
+
+		list_add(&e->list,&mdev->free_ee);
+		mdev->ee_vacant++;
+		if (lbh) {
+			lbh->b_this_page = bh;
+		} else {
+			fbh = bh;
+		}
+		lbh=bh;
+	}
+	bh->b_this_page=fbh;
+}
+
+
+/*static */int drbd_alloc_ee(struct Drbd_Conf* mdev,int mask)
+{
+	unsigned long page;
+
+	page=__get_free_page(mask);
+	if(!page) return FALSE;
+
+	_drbd_alloc_ee(mdev,page);
+	/*
+	printk(KERN_ERR DEVICE_NAME "%d: vacant=%d in_use=%d sum=%d\n",
+	       (int)(mdev-drbd_conf),mdev->ee_vacant,mdev->ee_in_use,
+	       mdev->ee_vacant+mdev->ee_in_use);
+	*/
+	return TRUE;
+}
+
+/*static */unsigned long drbd_free_ee(struct Drbd_Conf* mdev,
+				  struct list_head *list)
+{
+	struct list_head *le;
+	struct Tl_epoch_entry* e;
+	struct buffer_head *bh,*nbh;
+	int freeable=0;
+	char* page;
+
+	list_for_each(le,list) {
+		bh=list_entry(le, struct Tl_epoch_entry,list)->bh;
+		nbh=bh->b_this_page;
+		freeable=1;
+		while( nbh != bh ) {
+			e=BH_PRIVATE(nbh);
+			if(e->block_id) freeable=0;
+			nbh=nbh->b_this_page;
+		}
+		if(freeable) goto free_it;
+	}
+	return 0;
+ free_it:
+	nbh=bh;
+	page=bh->b_data;
+	do {
+		e=BH_PRIVATE(nbh);
+		list_del(&e->list);
+		mdev->ee_vacant--;
+		if(nbh->b_data<page) page=nbh->b_data;
+		nbh=nbh->b_this_page;
+		/*printk(KERN_ERR DEVICE_NAME "%d: kfree(%p)\n",
+		  (int)(mdev-drbd_conf),e);*/
+		kfree(e);
+	} while(nbh != bh);
+
+	return (unsigned long)page;
+}
+
+void drbd_init_ee(struct Drbd_Conf* mdev)
+{
+	spin_lock_irq(&mdev->ee_lock);
+	while(mdev->ee_vacant < EE_MININUM ) {
+		drbd_alloc_ee(mdev,GFP_USER);
+	}
+	spin_unlock_irq(&mdev->ee_lock);
+}
+
+int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
+{
+	int count=0;
+
+	spin_lock_irq(&mdev->ee_lock);
+	while(!list_empty(list)) {
+		free_page(drbd_free_ee(mdev,list));
+		count++;
+	}
+	spin_unlock_irq(&mdev->ee_lock);
+
+	return count;
+}
+
+/*static */void drbd_ee_fix_bhs(struct Drbd_Conf* mdev)
+{
+	struct list_head workset;
+	unsigned long page;
+
+	spin_lock_irq(&mdev->ee_lock);
+	list_add(&workset,&mdev->free_ee); // insert the new head
+	list_del(&mdev->free_ee);          // remove the old head
+	INIT_LIST_HEAD(&mdev->free_ee); 
+	// now all elements are in the "workset" list, free_ee is empty!
+
+	while(!list_empty(&workset)) {
+		page=drbd_free_ee(mdev,&workset);
+		if(page) _drbd_alloc_ee(mdev,page);
+	}
+	spin_unlock_irq(&mdev->ee_lock);
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define GFP_TRY ( __GFP_LOW     )
+#else
+#define GFP_TRY	( __GFP_HIGHMEM )
+#endif
+
+/*static */struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
+					  unsigned long block)
+{
+	struct list_head *le;
+	struct Tl_epoch_entry* e;
+
+	if(mdev->ee_vacant == EE_MININUM / 2) run_task_queue(&tq_disk);
+
+	while(list_empty(&mdev->free_ee)) {
+		_drbd_process_done_ee(mdev);
+		if(!list_empty(&mdev->free_ee)) break;
+		if((mdev->ee_vacant+mdev->ee_in_use) < EE_MAXIMUM) {
+			if(drbd_alloc_ee(mdev,GFP_TRY)) break;
+		}
+		spin_unlock_irq(&mdev->ee_lock);
+		run_task_queue(&tq_disk);
+		interruptible_sleep_on(&mdev->ee_wait);
+		spin_lock_irq(&mdev->ee_lock);
+	}
+	le=mdev->free_ee.next;
+	list_del(le);
+	mdev->ee_vacant--;
+	mdev->ee_in_use++;
+	e=list_entry(le, struct Tl_epoch_entry,list);
+	drbd_set_bh(e->bh,block,mdev->lo_device);
+	return e;
+}
+
+/*static */void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
+{
+	mdev->ee_in_use--;
+	mdev->ee_vacant++;
+	e->block_id=0;
+	list_add(&e->list,&mdev->free_ee);
+
+	if(mdev->ee_vacant * 2 > mdev->ee_in_use) {
+		free_page(drbd_free_ee(mdev,&mdev->free_ee));
+	}
+	if(mdev->ee_in_use == 0) {
+		while( mdev->ee_vacant > EE_MININUM ) {
+			free_page(drbd_free_ee(mdev,&mdev->free_ee));
+		}
+	}
+}
+
+/*static */int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
@@ -104,6 +377,7 @@ int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 		le = mdev->done_ee.next;
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry,list);
+		if(!is_syncer_blk(mdev,e->block_id)) mdev->epoch_size++;
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id) ) {
 			spin_unlock_irq(&mdev->ee_lock);
@@ -112,17 +386,16 @@ int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 			dec_unacked(mdev);
 			spin_lock_irq(&mdev->ee_lock);
 		}
-		if(!is_syncer_blk(mdev,e->block_id)) mdev->epoch_size++;
-		BH_PRIVATE(e->bh) = NULL;
-		bforget(e->bh);
-		list_add(le,&mdev->free_ee);
+		drbd_put_ee(mdev,e);
 		if(r != sizeof(Drbd_BlockAck_Packet )) return FALSE;
 	}
+
+	wake_up_interruptible(&mdev->ee_wait);
 
 	return TRUE;
 }
 
-static inline int drbd_process_done_ee(struct Drbd_Conf* mdev)
+/*static */inline int drbd_process_done_ee(struct Drbd_Conf* mdev)
 {
 	int rv;
 	spin_lock_irq(&mdev->ee_lock);
@@ -131,10 +404,10 @@ static inline int drbd_process_done_ee(struct Drbd_Conf* mdev)
 	return rv;
 }
 
-static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
+/*static */inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 {
 	struct list_head *le;
-	struct Tl_epoch_entry *e;
+        struct Tl_epoch_entry *e;
 
 	spin_lock_irq(&mdev->ee_lock);
 
@@ -142,8 +415,7 @@ static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 		le = mdev->done_ee.next;
 		list_del(le);
 		e = list_entry(le,struct Tl_epoch_entry,list);
-		bforget(e->bh);		
-		list_add(le,&mdev->free_ee);
+		drbd_put_ee(mdev,e);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id)) {
 			dec_unacked(mdev);
@@ -155,7 +427,7 @@ static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 }
 
 
-void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
+/*static */void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
@@ -179,23 +451,23 @@ void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 		       "%d: Waiting for bh=%p, blocknr=%ld\n",
 		       (int)(mdev-drbd_conf),e->bh,e->bh->b_blocknr);
 		*/
-		wait_on_buffer(e->bh);
+		wait_on_buffer(e->bh); // TODO: replace this with sleep_on()..
 		spin_lock_irq(&mdev->ee_lock);
 	}
 	spin_unlock_irq(&mdev->ee_lock);
 }
 
-static inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
+/*static */inline void drbd_wait_active_ee(struct Drbd_Conf* mdev)
 {
 	_drbd_wait_ee(mdev,&mdev->active_ee);
 }
 
-static inline void drbd_wait_sync_ee(struct Drbd_Conf* mdev)
+/*static */inline void drbd_wait_sync_ee(struct Drbd_Conf* mdev)
 {
 	_drbd_wait_ee(mdev,&mdev->sync_ee);
 }
 
-void drbd_c_timeout(unsigned long arg)
+/*static */void drbd_c_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
@@ -207,7 +479,7 @@ void drbd_c_timeout(unsigned long arg)
 
 }
 
-struct socket* drbd_accept(struct socket* sock)
+/*static */struct socket* drbd_accept(struct socket* sock)
 {
 	struct socket *newsock;
 	int err = 0;
@@ -253,7 +525,7 @@ struct idle_timer_info {
 };
 
 
-void drbd_idle_timeout(unsigned long arg)
+/*static */void drbd_idle_timeout(unsigned long arg)
 {
 	struct idle_timer_info* ti = (struct idle_timer_info *)arg;
 
@@ -322,7 +594,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 }
 
 
-static struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
+/*static */struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
 {
 	int err;
 	struct socket *sock;
@@ -346,7 +618,7 @@ static struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
 	return sock;
 }
 
-static struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
+/*static */struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 {
 	int err;
 	struct socket *sock,*sock2;
@@ -548,67 +820,51 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
        
 	/*
-	  printk(KERN_DEBUG DEVICE_NAME ": recv Data "
-	  "block_nr=%ld len=%d/m=%d bs_bits=%d\n",
-	  be64_to_cpu(header.block_nr),
-	  (int)be16_to_cpu(header.length),
-	  minor,drbd_conf[minor].blk_size_b); 
+	printk(KERN_ERR DEVICE_NAME "%d: recv Data "
+	       "block_nr=%ld\n",
+	       minor,(unsigned long)be64_to_cpu(header.block_nr));
 	*/
+
 	block_nr = be64_to_cpu(header.block_nr);
 
 	if (data_size != (1 << drbd_conf[minor].blk_size_b)) {
-		set_blocksize(MKDEV(MAJOR_NR, minor), data_size);
-		set_blocksize(drbd_conf[minor].lo_device,data_size);
+		drbd_wait_active_ee(drbd_conf+minor);
+		drbd_wait_sync_ee(drbd_conf+minor);
 		drbd_conf[minor].blk_size_b = drbd_log2(data_size);
-		printk(KERN_DEBUG DEVICE_NAME "%d: blksize=%d B\n",minor,
+		printk(KERN_ERR DEVICE_NAME "%d: blksize=%d B\n",minor,
 		       data_size);
-	}
-
-	bh = getblk(MKDEV(MAJOR_NR, minor), block_nr,data_size);
-
-	if (!bh) {
-	        printk(KERN_ERR DEVICE_NAME"%d: getblk()=0\n",minor);
-	        return FALSE;
-	}
-
-	while (test_bit(BH_Lock, &bh->b_state)) {
-		interruptible_sleep_on(&bh->b_wait);
-	}
-
-	if(BH_PRIVATE(bh)) {   
-		drbd_process_done_ee(drbd_conf+minor);
-	}
-
-	rr=drbd_recv(&drbd_conf[minor],bh_kmap(bh),data_size,0);
-	bh_kunmap(bh);
-
-	if ( rr != data_size) {		
-		bforget(bh);
-		return FALSE;
+		drbd_ee_fix_bhs(drbd_conf+minor);
 	}
 
 	spin_lock_irq(&drbd_conf[minor].ee_lock);
-	e=drbd_get_ee(drbd_conf+minor);
-	e->bh=bh;
+	e=drbd_get_ee(drbd_conf+minor,block_nr);
 	e->block_id=header.block_id;
 	if( is_syncer_blk(drbd_conf+minor,header.block_id) ) {
 		list_add(&e->list,&drbd_conf[minor].sync_ee);
 	} else {
 		list_add(&e->list,&drbd_conf[minor].active_ee);
 	}
-	BH_PRIVATE(bh)=e;
+
+	/* do not use mark_buffer_diry() since it would call refile_buffer() */
+	bh=e->bh;
+	set_bit(BH_Dirty, &bh->b_state);
+	set_bit(BH_Lock, &bh->b_state); // since using submit_bh()
 
 	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 
-	/* When you call mark_buffer_diry() before drbd_recv() (which 
-	   can sleep) you risk, that the system writes the
-	   buffer while you are sleeping. --> and the b_private
-	   field of the buffer head is not set... oops 	*/
-	mark_buffer_dirty(bh);  // right!
-	mark_buffer_uptodate(bh, 0); // not necessary ?
+	rr=drbd_recv(&drbd_conf[minor],bh->b_data,data_size,0);
 
-//	generic_make_request(WRITE,bh);
-	ll_rw_block(WRITE, 1, &bh);
+	if ( rr != data_size) {
+		spin_lock_irq(&drbd_conf[minor].ee_lock);
+		list_del(&e->list);
+		clear_bit(BH_Lock, &bh->b_state);
+		drbd_put_ee(drbd_conf+minor,e);
+		spin_unlock_irq(&drbd_conf[minor].ee_lock);
+
+		return FALSE;
+	}
+
+	submit_bh(WRITE,bh);
 
 	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A || 
 	   is_syncer_blk(drbd_conf+minor,header.block_id)) {
@@ -647,7 +903,7 @@ inline int receive_data(int minor,int data_size)
 			run_task_queue(&tq_disk);
 		}
 	}
-
+	// TODO: FIX protocol C with filesystems in synchronous mode.
 #undef NUMBER
 	/* </HACK> */
 
@@ -661,6 +917,7 @@ inline int receive_block_ack(int minor)
         drbd_request_t *req;
 	Drbd_BlockAck_P header;
 	
+	// TODO: Make sure that the block is in an active epoch!!
 	if(drbd_conf[minor].state != Primary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got blk-ack while not PRI!!\n",
 		       minor);
@@ -1017,29 +1274,6 @@ int drbdd_init(struct Drbd_thread *thi)
 	/* set_cstate(&drbd_conf[minor],StandAlone); */
 
 	return 0;
-}
-
-struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
-{
-	struct Tl_epoch_entry* e;
-
-	if(list_empty(&mdev->free_ee)) _drbd_process_done_ee(mdev);
-
-	if(list_empty(&mdev->free_ee)) {
-		e=kmalloc(sizeof(struct Tl_epoch_entry),GFP_USER);
-		if (!e) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: could not kmalloc() \n",
-			       (int)(mdev-drbd_conf));
-		}
-	} else {
-		struct list_head *le; 	
-		le=mdev->free_ee.next;
-		list_del(le);
-		e=list_entry(le, struct Tl_epoch_entry, list);
-	}
-
-	return e;
 }
 
 /* ********* acknowledge sender ******** */
