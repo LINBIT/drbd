@@ -120,7 +120,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 
 	req->w.cb = w_is_app_read;
 	spin_lock(&mdev->pr_lock);
-	list_add(&req->w.list,&mdev->new_app_reads);
+	list_add(&req->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 	inc_ap_pending(mdev);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -198,6 +198,13 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				 * it, then continue locally.
 				 * Or just issue the request remotely.
 				 */
+/* FIXME I think we have a RACE here
+ * we request it remotely, then later some write starts ...
+ * and finished *before* the answer to the read comes in,
+ * because the ACK for the WRITE goes over meta-socket ...
+ * I think we need to properly lock reads against the syncer, too.
+ */
+
 				local = 0;
 				dec_local(mdev);
 			}
@@ -216,12 +223,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		return 0;
 	}
 
-	/* THINK
-	 * maybe we need to
-	 *   if (rw == WRITE) drbd_al_begin_io(mdev, sector);
-	 * right here already?
-	 */
-
 	/* do this first, so I do not need to call drbd_end_req,
 	 * but can set the rq_status directly.
 	 */
@@ -229,6 +230,20 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		req->rq_status |= RQ_DRBD_LOCAL;
 	if (!remote)
 		req->rq_status |= RQ_DRBD_SENT;
+
+	/* THINK
+	 * maybe we need to
+	 *   if (rw == WRITE) drbd_al_begin_io(mdev, sector);
+	 * right here already?
+	 */
+
+	if (rw == WRITE && local)
+		drbd_al_begin_io(mdev, sector);
+
+	/* since we possibly waited, we have a race: mdev may have
+	 * changed underneath us. Thats why I want to have a read lock
+	 * on it, and every state change of mdev needs to be done with a
+	 * write lock on it! */
 
 	if (remote) {
 		/* either WRITE and Connected,
@@ -258,7 +273,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	if (local) {
 		if (rw == WRITE) {
-			drbd_al_begin_io(mdev, sector);
 			if (!remote) drbd_set_out_of_sync(mdev,sector,size);
 		} else {
 			D_ASSERT(!remote);

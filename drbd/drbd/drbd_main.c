@@ -392,6 +392,7 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	wake_up_interruptible(&mdev->cstate_wait);
 
 	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
+		set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		mdev->resync_work.cb = w_resume_next_sg;
 		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 	}
@@ -526,9 +527,7 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		ERR("short sent %s size=%d sent=%d\n",
 		    cmdname(cmd), (int)size, sent);
 	}
-	C_DBG(5,"on %s >>> %s l: %d\n",
-	    sock == mdev->meta.socket ? "msock" : "sock",
-	    cmdname(cmd), size-sizeof(Drbd_Header));
+	dump_packet(mdev,sock,0,(void*)h);
 	return ok;
 }
 
@@ -557,28 +556,6 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		spin_unlock(&mdev->send_task_lock);
 	} else
 		up(&mdev->meta.mutex);
-	return ok;
-}
-
-/* for WriteHint, maybe others.
- * returns
- *   1 if nonblocking send was succesfull,
- *   0 if nonblocking send failed,
- * -EAGAIN if we did not get the send mutex
- */
-STATIC int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
-		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
-{
-	int ok;
-	sigset_t old_blocked;
-
-	struct semaphore *mutex = sock == mdev->meta.socket ?
-		&mdev->meta.mutex : &mdev->data.mutex;
-	if (down_trylock(mutex)) return -EAGAIN;
-	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
-	ok = _drbd_send_cmd(mdev,sock,cmd,h,size, MSG_DONTWAIT);
-	restore_old_sigset(old_blocked);
-	up  (mutex);
 	return ok;
 }
 
@@ -645,7 +622,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 
 	ERR_IF(!mdev->mbds_id) return FALSE;
 
-	bm_words = mdev->mbds_id->size/sizeof(unsigned long);
+	bm_words = mdev->mbds_id->size/sizeof(long);
 	bm = mdev->mbds_id->bm;
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
 	buffer = (unsigned long*)p->payload;
@@ -656,7 +633,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	 */
 	do {
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
-		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++)
+		for(buf_i=0;buf_i<want/sizeof(long);buf_i++)
 			buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
 		ok = drbd_send_cmd(mdev,mdev->data.socket,ReportBitMap,
 				   p, sizeof(*p) + want);
@@ -728,26 +705,28 @@ int drbd_send_drequest(drbd_dev *mdev, int cmd,
 }
 
 /* called on sndtimeo
- * returns TRUE if we should retry,
- * FALSE if we think connection is dead,
- * or someone signaled us.
+ * returns FALSE if we should retry,
+ * TRUE if we think connection is dead
  */
-STATIC int drbd_retry_send(drbd_dev *mdev, struct socket *sock)
+STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 {
-	long elapsed = (long)(jiffies - mdev->last_received);
-	DUMPLU(elapsed);
-	if ( signal_pending(current) || mdev->cstate <= WFConnection )
-		return FALSE;
-	if ( elapsed < mdev->conf.timeout*HZ/20 )
+	int drop_it;
+	// long elapsed = (long)(jiffies - mdev->last_received);
+	// DUMPLU(elapsed); // elapsed ignored for now.
+
+	if (mdev->meta.socket == sock || !mdev->asender.task)
 		return TRUE;
-	if ( current != mdev->asender.task ) {
-		// FIXME ko_count--
-		DBG("sock_sendmsg timed out, requesting ping\n");
+
+	drop_it = !--mdev->ko_count;
+	if ( !drop_it ) {
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: [%s/%d] sock_sendmsg time expired, ko = %u\n",
+		       (int)(mdev-drbd_conf), current->comm, current->pid,
+		       mdev->ko_count);
 		request_ping(mdev);
-		return TRUE;
 	}
-	ERR("sock_sendmsg timed out, aborting connection\n");
-	return FALSE;
+
+	return drop_it; /* && (mdev->state == Primary) */;
 }
 
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
@@ -755,7 +734,6 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 {
 	int sent,ok;
 	int len   = size;
-	int retry = 10;
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -764,11 +742,10 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	do {
 		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page, offset, len, MSG_NOSIGNAL);
 		if (sent == -EAGAIN) {
-			// FIXME move "retry--" into drbd_retry_send()
-			if (drbd_retry_send(mdev,mdev->data.socket) && retry--)
-				continue;
-			else
+			if (we_should_drop_the_connection(mdev,mdev->data.socket))
 				break;
+			else
+				continue;
 		}
 		if (sent <= 0) {
 			WARN("%s: size=%d len=%d sent=%d\n",
@@ -796,8 +773,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	int ok;
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
-	Drbd_Header ioh;
-
 
 	ERR_IF(!req || !req->master_bio) return FALSE;
 
@@ -846,11 +821,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bio(mdev,&req->private_bio);
-
-	if(test_and_clear_bit(ISSUE_IO_HINT,&mdev->flags)) {
-		_drbd_send_cmd(mdev,mdev->data.socket,WriteHint,&ioh,
-			       sizeof(ioh),0);
-	}
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
@@ -919,7 +889,6 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	struct msghdr msg;
 	struct iovec iov;
 	int rv,sent=0;
-	int retry = 10;
 
 	if (!sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
@@ -940,6 +909,8 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
+	if (sock == mdev->data.socket)
+		mdev->ko_count = 10; // FIXME conf.ko_count
 	do {
 		/* STRANGE
 		 * tcp_sendmsg does _not_ use its size parameter at all ?
@@ -952,15 +923,15 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
  */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
 		if (rv == -EAGAIN) {
-			// FIXME move "retry--" into drbd_retry_send()
-			if (drbd_retry_send(mdev,sock) && retry--)
-				continue;
-			else
+			if (we_should_drop_the_connection(mdev,sock))
 				break;
+			else
+				continue;
 		}
 		D_ASSERT(rv != 0);
 		if (rv == -EINTR ) {
-			ERR("Got a signal in drbd_send()!\n");
+			ERR("Got a signal in drbd_send(,%c,)!\n",
+			    sock == mdev->meta.socket ? 'm' : 's');
 			dump_stack();
 			drbd_flush_signals(current);
 			rv = 0;
@@ -1032,10 +1003,9 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-STATIC void drbd_send_write_hint(void *data)
+STATIC void drbd_unplug_fn(void *data)
 {
 	struct Drbd_Conf* mdev = (drbd_dev*)data;
-	Drbd_Header h;
 	int i;
 
 	/* In case the receiver calls run_task_queue(&tq_disk) itself,
@@ -1043,12 +1013,6 @@ STATIC void drbd_send_write_hint(void *data)
 	   secondary state), it could happen that it has to send the
 	   WRITE_HINT for an other device (which is in primary state).
 	   This could lead to a distributed deadlock!!
-
-	   To avoid the deadlock we set the ISSUE_IO_HINT bit and
-	   it will be sent after the current data block.
-	UPDATE:
-	   since "dontwait" this would no longer deadlock, but probably
-	   create a useless loop echoing WriteHints back and forth ...
 	 */
 
 	for (i = 0; i < minor_count; i++) {
@@ -1058,11 +1022,10 @@ STATIC void drbd_send_write_hint(void *data)
 		}
 	}
 
-	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,
-				   sizeof(h)) != 1){
-		set_bit(ISSUE_IO_HINT,&mdev->flags);
-	}
-	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
+	spin_lock_irq(&mdev->req_lock);
+	if (list_empty(&mdev->unplug_work.list))
+		_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
+	spin_unlock_irq(&mdev->req_lock);
 }
 #else
 
@@ -1070,32 +1033,31 @@ STATIC void drbd_send_write_hint(void *data)
  * as 2.6.X moves on, we can probably drop it again.
  */
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,5)
-STATIC void drbd_send_write_hint(request_queue_t *q)
+STATIC void drbd_unplug_fn(request_queue_t *q)
 {
 #else
-STATIC void drbd_send_write_hint(void *data)
+STATIC void drbd_unplug_fn(void *data)
 {
 	request_queue_t *q = (request_queue_t*)data;
 #endif
 	drbd_dev *mdev = q->queuedata;
-	Drbd_Header h;
 
-	/* In order to avoid deadlocks the receiver should only
-	   use blk_run_queue(). It must not use blk_run_queues() to
-	   avoid deadlocks.
-
-	   In 2.6, we should use the plain drbd_send_cmd again.
-	*/
-
-	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,
-				   sizeof(h)) != 1) {
-		set_bit(ISSUE_IO_HINT,&mdev->flags);
-	}
-
+	/* unplug FIRST */
 	spin_lock_irq(q->queue_lock);
 	blk_remove_plug(q);
 	spin_unlock_irq(q->queue_lock);
 
+	ERR_IF(mdev->state != Primary)
+		return;
+	/* add to the front of the data.work queue,
+         * unless already queued */
+	spin_lock_irq(&mdev->req_lock);
+	/* FIXME this might be a good addition to drbd_queu_work
+	 * anyways, to detect "double queuing" ... */
+	if (list_empty(&mdev->unplug_work.list))
+		_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
+	spin_unlock_irq(&mdev->req_lock);
+	drbd_kick_lo(mdev);
 }
 #endif
 
@@ -1125,7 +1087,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->local_cnt,0);
 	atomic_set(&mdev->resync_locked,0);
 
-	init_MUTEX(&mdev->device_mutex);
 	init_MUTEX(&mdev->md_io_mutex);
 	init_MUTEX(&mdev->data.mutex);
 	init_MUTEX(&mdev->meta.mutex);
@@ -1145,14 +1106,16 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->done_ee);
 	INIT_LIST_HEAD(&mdev->read_ee);
 	INIT_LIST_HEAD(&mdev->busy_blocks);
-	INIT_LIST_HEAD(&mdev->new_app_reads);
+	INIT_LIST_HEAD(&mdev->app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
 	INIT_LIST_HEAD(&mdev->data.work.q);
 	INIT_LIST_HEAD(&mdev->meta.work.q);
 	INIT_LIST_HEAD(&mdev->resync_work.list);
 	INIT_LIST_HEAD(&mdev->barrier_work.list);
-	mdev->resync_work.cb = w_resync_inactive;
+	INIT_LIST_HEAD(&mdev->unplug_work.list);
+	mdev->resync_work.cb  = w_resync_inactive;
 	mdev->barrier_work.cb = w_try_send_barrier;
+	mdev->unplug_work.cb  = w_send_write_hint;
 	init_timer(&mdev->resync_timer);
 
 	init_waitqueue_head(&mdev->cstate_wait);
@@ -1164,7 +1127,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
 
 NOT_IN_26(
-	mdev->write_hint_tq.routine = &drbd_send_write_hint;
+	mdev->write_hint_tq.routine = &drbd_unplug_fn;
 	mdev->write_hint_tq.data    = mdev;
 )
 
@@ -1172,6 +1135,78 @@ NOT_IN_26(
 	INFO("mdev = 0x%p\n",mdev);
 #endif
 }
+
+void drbd_mdev_cleanup(drbd_dev *mdev)
+{
+	/* I'd like to cleanup completely, and memset(,0,) it.
+	 * but I'd have to reinit it.
+	 * FIXME: do the right thing...
+	 */
+
+	/* list of things that may still
+	 * hold data of the previous config
+
+	 * act_log        ** re-initialized in set_disk
+	 * on_io_error
+
+	 * al_tr_cycle    ** re-initialized in ... FIXME??
+	 * al_tr_number
+	 * al_tr_pos
+
+	 * backing_bdev   ** re-initialized in drbd_free_ll_dev
+	 * lo_file
+	 * md_bdev 
+	 * md_file
+	 * md_index
+
+	 * ko_count       ** re-initialized in set_net
+
+	 * last_received  ** currently ignored
+
+	 * mbds_id        ** re-initialized in ... FIXME??
+
+	 * resync         ** re-initialized in ... FIXME??
+
+	*** no re-init necessary (?) ***
+	 * md_io_page
+	 * this_bdev
+
+	 * vdisk             ?
+
+	 * rq_queue       ** FIXME ASSERT ??
+	 * newest_barrier
+	 * oldest_barrier
+	 */
+
+	D_ASSERT(mdev->ee_in_use==0);
+	D_ASSERT(mdev->ee_vacant==32 /*EE_MININUM*/);
+	D_ASSERT(mdev->epoch_size==0);
+#define ZAP(x) memset(&x,0,sizeof(x))
+	ZAP(mdev->conf);
+	ZAP(mdev->sync_conf);
+	ZAP(mdev->data);
+	ZAP(mdev->meta);
+	ZAP(mdev->gen_cnt);
+#undef ZAP
+	mdev->al_writ_cnt  =
+	mdev->bm_writ_cnt  =
+	mdev->read_cnt     =
+	mdev->recv_cnt     =
+	mdev->send_cnt     =
+	mdev->writ_cnt     =
+	mdev->la_size      =
+	mdev->lo_usize     =
+	mdev->p_size       =
+	mdev->rs_start     =
+	mdev->rs_total     =
+	mdev->rs_left      =
+	mdev->rs_mark_left =
+	mdev->rs_mark_time = 0;
+	mdev->send_task    = NULL;
+	drbd_set_my_capacity(mdev,0);
+	drbd_init_set_defaults(mdev);
+}
+
 
 void drbd_destroy_mempools(void)
 {
@@ -1249,7 +1284,7 @@ static void __exit drbd_cleanup(void)
 			remove_proc_entry("drbd",&proc_root);
 		i=minor_count;
 		while (i--) {
-			drbd_dev        *mdev  = &drbd_conf[i];
+			drbd_dev        *mdev  = drbd_conf+i;
 ONLY_IN_26(
 			struct gendisk  **disk = &mdev->vdisk;
 			request_queue_t **q    = &mdev->rq_queue;
@@ -1439,7 +1474,7 @@ int __init drbd_init(void)
 		blk_queue_make_request(q,drbd_make_request_26);
 		q->queue_lock = &mdev->req_lock; // needed since we use
 		// plugging on a queue, that actually has no requests!
-		q->unplug_fn = drbd_send_write_hint;
+		q->unplug_fn = drbd_unplug_fn;
 	}
 #endif
 
@@ -1469,6 +1504,7 @@ NOT_IN_26(
 		if (!mdev->act_log) goto Enomem;
 
 		drbd_init_set_defaults(mdev);
+		init_MUTEX(&mdev->device_mutex);
 		if (!tl_init(mdev)) goto Enomem;
 		if (!drbd_init_ee(mdev)) goto Enomem;
 	}
@@ -1624,14 +1660,14 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 	}
 	memset(nbm,0,size);
 
-	spin_lock(&sbm->bm_lock);
+	spin_lock_irq(&sbm->bm_lock);
 	if(obm) {
 		memcpy(nbm,obm,min_t(unsigned long,sbm->size,size));
 	}
 	sbm->dev_size = size_kb;
 	sbm->size = size;
 	sbm->bm = nbm;
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irq(&sbm->bm_lock);
 
 	if(obm) vfree(obm);
 
@@ -1688,6 +1724,7 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector = ( sector + (size>>9) - 1 );
 	int ret=0;
+	unsigned long flags;
 
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: No BitMap !?\n");
@@ -1700,11 +1737,24 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
 
-	spin_lock(&sbm->bm_lock);
+	/*
+	INFO("bm_set_bit(,%lu,%d,%d) %lu %lu %lu ; %lu %lu\n",
+	     sector,size,bit, esector, sbnr,ebnr, sbm->size, sbm->dev_size);
+	*/
+
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 	bm = sbm->bm;
 
 	if(bit) {
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
+			ERR_IF((bnr>>3) >= sbm->size) {
+				DUMPLU(sector);
+				DUMPI(size);
+				DUMPLU(bnr);
+				DUMPLU(sbm->size);
+				DUMPLU(sbm->dev_size);
+				break;
+			}
 			if(!test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			__set_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 			ret += bm_end_of_dev_case(sbm);
@@ -1722,18 +1772,34 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 			// end of the device...
 			if(unlikely(dev_size<<1 == esector+1)) {
 				ebnr++;
-				if(test_bit(ebnr&BPLM,bm+(ebnr>>LN2_BPL))) {
+				ERR_IF((ebnr>>3) >= sbm->size) {
+					DUMPLU(sector);
+					DUMPI(size);
+					DUMPLU(ebnr);
+					DUMPLU(sbm->size);
+					DUMPLU(sbm->dev_size);
+				} else if(test_bit(ebnr&BPLM,bm+(ebnr>>LN2_BPL))) {
 					ret = (esector-sector+1)-BM_NS;
 				}
 			}
 		}
 
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
+			ERR_IF((bnr>>3) >= sbm->size) {
+				DUMPLU(sector);
+				DUMPI(size);
+				DUMPLU(bnr);
+				DUMPLU(sbnr);
+				DUMPLU(ebnr);
+				DUMPLU(sbm->size);
+				DUMPLU(sbm->dev_size);
+				break;
+			}
 			if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
 	}
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 
 	return ret;
 }
@@ -1783,9 +1849,10 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 {
 	unsigned long* bm;
+	unsigned long flags;
 	int i,max,bits=0;
 
-	spin_lock(&sbm->bm_lock);
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 	bm = sbm->bm;
 
 	max = min_t(int, (enr+1)*WORDS, sbm->size/sizeof(long));
@@ -1801,7 +1868,7 @@ int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 		bits += bm_end_of_dev_case(sbm);
 	}
 
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 
 	return bits;
 }
@@ -1811,6 +1878,7 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 {
 	unsigned long* bm;
 	unsigned long sbnr,ebnr,bnr;
+	unsigned long flags;
 	sector_t esector = ( sector + (size>>9) - 1 );
 	int ret=0;
 
@@ -1822,7 +1890,7 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
 
-	spin_lock(&sbm->bm_lock);
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 	bm = sbm->bm;
 
 	for (bnr=sbnr; bnr <= ebnr; bnr++) {
@@ -1832,7 +1900,7 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 		}
 	}
 
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 
 	return ret;
 }
@@ -1841,6 +1909,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 {
 	sector_t bnr;
 	unsigned long* bm;
+	unsigned long flags;
 	sector_t dev_size;
 	sector_t ret;
 
@@ -1850,7 +1919,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 		return MBDS_DONE;
 	}
 
-	spin_lock(&sbm->bm_lock);
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 	bm = sbm->bm;
 	bnr = sbm->gs_bitnr;
 
@@ -1872,7 +1941,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 		sbm->gs_bitnr = bnr+1;
 	}
 
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 
 	return ret;
 }
@@ -1880,8 +1949,9 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 int bm_is_rs_done(struct BitMap* sbm)
 {
 	int rv=0;
+	unsigned long flags;
 
-	spin_lock(&sbm->bm_lock);
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 
 	if( (sbm->gs_bitnr<<BM_SS) + ((1<<BM_SS)-1) > sbm->dev_size<<1) {
 		int ns = sbm->dev_size % (1<<(BM_BLOCK_SIZE_B-10));
@@ -1891,18 +1961,17 @@ int bm_is_rs_done(struct BitMap* sbm)
 		}
 	}
 
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 
 	return rv;
 }
 
 void bm_reset(struct BitMap* sbm)
 {
-	spin_lock(&sbm->bm_lock);
-
+	unsigned long flags;
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 	sbm->gs_bitnr=0;
-
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 }
 
 
@@ -1910,8 +1979,9 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 {
 	unsigned long* bm;
 	unsigned long bnr,o;
+	unsigned long flags;
 
-	spin_lock(&sbm->bm_lock);
+	spin_lock_irqsave(&sbm->bm_lock,flags);
 	bm = sbm->bm;
 
 	memset(bm,value,sbm->size);
@@ -1923,7 +1993,7 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 		bm[ o ] &= ( ( 1 << (bnr % BITS_PER_LONG) ) - 1 );
 	}
 
-	spin_unlock(&sbm->bm_lock);
+	spin_unlock_irqrestore(&sbm->bm_lock,flags);
 }
 
 /*********************************/
@@ -1939,6 +2009,11 @@ struct meta_data_on_disk {
 	u32 bm_offset;         // offset to the bitmap, from here
 };
 
+/*
+
+FIXME md_io might fail unnoticed
+
+*/
 void drbd_md_write(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
@@ -1968,9 +2043,10 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
 
 	kunmap(mdev->md_io_page);
-	
+
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
+	/* FIXME what if this fails ?? */
 	drbd_md_sync_page_io(mdev,sector,WRITE);
 	mdev->la_size = drbd_get_capacity(mdev->this_bdev)>>1;
 
@@ -1987,12 +2063,13 @@ int drbd_md_read(drbd_dev *mdev)
 	if(!inc_local_md_only(mdev)) return -1;
 
 	down(&mdev->md_io_mutex);
+	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
-	ERR_IF( ! drbd_md_sync_page_io(mdev,sector,READ) ) goto err;
+/* FIXME different failure cases: IO error or invalid magic */
 
-	buffer = (struct meta_data_on_disk *)kmap(mdev->md_io_page);
+	ERR_IF( ! drbd_md_sync_page_io(mdev,sector,READ) ) goto err;
 
 	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) goto err;
 
@@ -2004,7 +2081,7 @@ int drbd_md_read(drbd_dev *mdev)
 	kunmap(mdev->md_io_page);
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
-	
+
 	return 1;
 
  err:
@@ -2017,7 +2094,9 @@ int drbd_md_read(drbd_dev *mdev)
 	for(i=HumanCnt;i<=ArbitraryCnt;i++) mdev->gen_cnt[i]=1;
 	mdev->gen_cnt[Flags]=MDF_Consistent;
 
+/* FIXME might have IO errors! */
 	drbd_md_write(mdev);
+
 	return 0;
 }
 

@@ -169,10 +169,10 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #else
 	// at most one DBG(x) per t seconds
 #define C_DBG(t,x...) do { \
-	static unsigned long _j; \
+	static unsigned long _j = 0; \
 	if ((long)(jiffies-_j)< HZ*t) break; \
 	_j=jiffies; \
-	DBG(x); \
+	INFO(x); \
 } while (0)
 #endif
 
@@ -360,11 +360,7 @@ typedef struct {
  *   PingAck
  *   BecomeSyncTarget
  *   BecomeSyncSource
- *   BecomeSec
  *   WriteHint
- *   SyncStop
- *   SyncCont
- *   SyncDone
  */
 
 /*
@@ -545,12 +541,12 @@ struct Tl_epoch_entry {
 // bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
-#define ISSUE_IO_HINT      1
+// #define ISSUE_IO_HINT      1		is now drbd_queue_work'ed
 #define SEND_PING          2
 #define WRITER_PRESENT     3
 #define STOP_SYNC_TIMER    4
 #define DO_NOT_INC_CONCNT  5
-#define WRITE_HINT_QUEUED  6
+#define WRITE_HINT_QUEUED  6		/* only relevant in 2.4 */
 #define DISKLESS           7
 #define PARTNER_DISKLESS   8
 #define PROCESS_EE_RUNNING 9
@@ -624,7 +620,10 @@ struct Drbd_Conf {
 	struct drbd_socket data; // for data/barrier/cstate/parameter packets
 	struct drbd_socket meta; // for ping/ack (metadata) packets
 	volatile unsigned long last_received; // in jiffies, either socket
-	struct drbd_work  resync_work,barrier_work;
+	volatile unsigned int ko_count;
+	struct drbd_work  resync_work,
+			  barrier_work,
+			  unplug_work;
 	struct timer_list resync_timer;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	kdev_t backing_bdev;  // backing device
@@ -687,8 +686,7 @@ struct Drbd_Conf {
 	struct list_head read_ee;   // IO in progress
 	// struct list_head rdone_ee;  // send result or CondRequest
 	spinlock_t pr_lock;
-	// struct list_head app_reads; // FIXME broken on purpose by lge
-	struct list_head new_app_reads;
+	struct list_head app_reads;
 	struct list_head resync_reads;
 	int ee_vacant;
 	int ee_in_use;
@@ -744,6 +742,7 @@ extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern void drbd_free_ll_dev(drbd_dev *mdev);
 extern int drbd_io_error(drbd_dev* mdev);
+extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
 
 
@@ -848,6 +847,7 @@ extern int w_resync_inactive     (drbd_dev *, struct drbd_work *, int);
 extern int w_resume_next_sg      (drbd_dev *, struct drbd_work *, int);
 extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
 extern int w_try_send_barrier    (drbd_dev *, struct drbd_work *, int);
+extern int w_send_write_hint     (drbd_dev *, struct drbd_work *, int);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
@@ -949,6 +949,8 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	_set_cstate(mdev,ns);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	if (ns == Unconfigured)
+		drbd_mdev_cleanup(mdev);
 }
 
 /**
@@ -1002,6 +1004,13 @@ static inline void
 _drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	list_add_tail(&w->list,&q->q);
+	up(&q->s);
+}
+
+static inline void
+_drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
+{
+	list_add(&w->list,&q->q);
 	up(&q->s);
 }
 
@@ -1152,6 +1161,67 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 	mdev->rs_total +=
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
+
+#if 0
+/*
+ * enable to dump information about every packet exchange.
+ */
+static inline void
+dump_packet(drbd_dev *mdev, struct socket *sock,
+	    int recv, Drbd_Polymorph_Packet *p)
+{
+	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
+	int cmd = be16_to_cpu(p->head.command);
+	switch (cmd) {
+	case Ping:
+	case PingAck:
+	case BecomeSyncTarget:
+	case BecomeSyncSource:
+	case WriteHint:
+
+	case SyncParam:
+	case ReportParams:
+		INFO(" %s [%d] %s %s %s\n", current->comm, current->pid,
+		     sockname, recv?"<<<":">>>", cmdname(cmd));
+		break;
+
+	case Data:
+	case DataReply:
+	case RSDataReply:
+
+	case RecvAck:   /* yes I know. but it is the same layout */
+	case WriteAck:
+	case NegAck:
+
+	case DataRequest:
+	case RSDataRequest:
+		INFO(" %s [%d] %s %s %s (%lu,%lx)\n", current->comm, current->pid,
+		     sockname, recv?"<<<":">>>", cmdname(cmd),
+		     (long)be64_to_cpu(p->Data.sector), (long)p->Data.block_id
+		);
+		break;
+
+	case Barrier:
+	case BarrierAck:
+		INFO(" %s [%d] %s %s %s (%u)\n", current->comm, current->pid,
+		     sockname, recv?"<<<":">>>", cmdname(cmd),
+		     p->Barrier.barrier
+		);
+		break;
+
+	default:
+		INFO(" %s [%d] %s %s %s (%u)\n", current->comm, current->pid,
+		     sockname, recv?"<<<":">>>", cmdname(cmd), cmd
+		);
+		break;
+	}
+}
+#else
+static inline void
+dump_packet(drbd_dev *mdev, struct socket *sock,
+	    int recv, Drbd_Polymorph_Packet *p)   { /* DO NOTHING */ }
+#endif
+
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 # define sector_div(n, b)( \

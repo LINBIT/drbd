@@ -161,7 +161,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
 	NOT_IN_26(int err;) // unused in 26 ?? cannot believe it ...
-	int i,minor;
+	int i, md_gc_valid, minor;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
@@ -321,14 +321,26 @@ ONLY_IN_26({
 
 	clear_bit(SENT_DISK_FAILURE,&mdev->flags);
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
-	i = drbd_md_read(mdev);
+
+/* FIXME I think inc_local_md_only within drbd_md_read is misplaced.
+ * should go here, and the corresponding dec_local, too.
+ */
+
+	md_gc_valid = drbd_md_read(mdev);
+
+/* FIXME if (md_gc_valid < 0) META DATA IO NOT POSSIBLE! */
+
 	drbd_determin_dev_size(mdev);
-	if(i) drbd_read_bm(mdev);
+
+	if(md_gc_valid) drbd_read_bm(mdev);
 	else {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		bm_fill_bm(mdev->mbds_id,-1);
 		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
 		drbd_write_bm(mdev);
+
+/* FIXME whipeout on disk activity log area */
+
 	}
 
 	if ( !mdev->act_log ||
@@ -761,7 +773,9 @@ ONLY_IN_26(
 		drbd_thread_stop(&mdev->asender);
 		drbd_thread_stop(&mdev->receiver);
 
-		set_cstate(mdev,StandAlone);
+		if (test_bit(DISKLESS,&mdev->flags)) set_cstate(mdev,Unconfigured);
+		else set_cstate(mdev,StandAlone);
+
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_DISK:
@@ -798,8 +812,9 @@ ONLY_IN_26(
 		}
 
 		drbd_free_ll_dev(mdev);
-		mdev->la_size=0;
 
+/* FIXME race with sync start
+ */
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		if (mdev->cstate == StandAlone) set_cstate(mdev,Unconfigured);
 

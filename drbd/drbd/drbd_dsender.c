@@ -394,12 +394,17 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	return ok;
 }
 
-int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int unused)
+int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
+	ERR_IF(cancel) return 1;
 	ERR("resync inactive, but callback triggered??\n");
 	return 0;
 }
 
+/* FIXME
+ * not used any longer, they now use e_end_resync_block.
+ * maybe remove again?
+ */
 int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
@@ -419,6 +424,7 @@ void resync_timer_fn(unsigned long data)
 {
 	drbd_dev* mdev = (drbd_dev*) data;
 
+	D_ASSERT(list_empty(&mdev->resync_work.list));
 	if(unlikely(test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags))) {
 		mdev->resync_work.cb = w_resync_inactive;
 	} else {
@@ -592,6 +598,13 @@ int w_try_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	up(&mdev->data.mutex);
 
 	return ok;
+}
+
+int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	if (cancel) return 1;
+	NOT_IN_26(clear_bit(WRITE_HINT_QUEUED,&mdev->flags));
+	return drbd_send_short_cmd(mdev,WriteHint);
 }
 
 STATIC void drbd_global_lock(void)
@@ -826,8 +839,11 @@ int drbd_worker(struct Drbd_thread *thi)
 	if(0) {
 	err:
 		ERR("A work callback returned not ok!\n");
+		// ?? drbd_thread_restart_nowait(&mdev->asender);
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
+
+	del_timer_sync(&mdev->resync_timer); // just in case...
 
 	while(!down_trylock(&mdev->data.work.s)) {
 		spin_lock_irq(&mdev->req_lock);
@@ -837,11 +853,9 @@ int drbd_worker(struct Drbd_thread *thi)
 			list_del_init(&w->list);
 		}
 		spin_unlock_irq(&mdev->req_lock);
-		
 		w->cb(mdev,w,1);
 	}
 
-	del_timer_sync(&mdev->resync_timer); // just in case...
 	INFO("worker terminated\n");
 
 	return 0;

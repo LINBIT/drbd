@@ -214,7 +214,7 @@ int drbd_init_ee(drbd_dev *mdev)
 {
 	while(mdev->ee_vacant < EE_MININUM ) {
 		if(!drbd_alloc_ee(mdev,GFP_USER)) {
-			ERR("Failed to allocate %d EEs !",EE_MININUM);
+			ERR("Failed to allocate %d EEs !\n",EE_MININUM);
 			return 0;
 		}
 	}
@@ -330,7 +330,7 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
-		got_sig = wait_event_interruptible(mdev->ee_wait, 
+		got_sig = wait_event_interruptible(mdev->ee_wait,
 		       test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) == 0);
 		spin_lock_irq(&mdev->ee_lock);
 		if(got_sig) return 2;
@@ -648,6 +648,18 @@ int drbd_connect(drbd_dev *mdev)
 
 	set_cstate(mdev,WFReportParams);
 
+	/* in case one of the other threads said: restart_nowait(receiver),
+	 * it may still hang around itself.  make sure threads are
+	 * really stopped before trying to restart them.
+	 * drbd_disconnect should have taken care of that, but I still
+	 * get these "resync inactive, but callback triggered".
+	 *
+	 * and I saw "connection lost... established", and no more
+	 * worker thread :(
+	 */
+	D_ASSERT(mdev->asender.task == NULL);
+	D_ASSERT(mdev->worker.task == NULL);
+
 	drbd_thread_start(&mdev->asender);
 	drbd_thread_start(&mdev->worker);
 
@@ -666,6 +678,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 		ERR("short read expecting header on sock: r=%d\n",r);
 		return FALSE;
 	};
+	dump_packet(mdev,mdev->data.socket,1,(void*)h);
 	h->command = be16_to_cpu(h->command);
 	h->length  = be16_to_cpu(h->length);
 	if (unlikely( h->magic != BE_DRBD_MAGIC )) {
@@ -908,7 +921,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
-			if(ok && mdev->rs_left) 
+			if(ok && mdev->rs_left)
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
@@ -1241,7 +1254,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	int ok=FALSE, bm_i=0;
 	unsigned long bits=0;
 
-	bm_words=mdev->mbds_id->size/sizeof(unsigned long);
+	bm_words=mdev->mbds_id->size/sizeof(long);
 	bm=mdev->mbds_id->bm;
 	buffer=vmalloc(MBDS_PACKET_SIZE);
 
@@ -1251,7 +1264,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		if (want==0) break;
 		if (drbd_recv(mdev, buffer, want) != want)
 			goto out;
-		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
+		for(buf_i=0;buf_i<want/sizeof(long);buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]) | bm[bm_i];
 			bits += hweight_long(word);
 			bm[bm_i++] = word;
@@ -1295,9 +1308,10 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 	 * Application READ requests
 	 */
 	spin_lock(&mdev->pr_lock);
-	list_add(&workset,&mdev->new_app_reads);
-	list_del(&mdev->new_app_reads);
-	INIT_LIST_HEAD(&mdev->new_app_reads);
+	// FIXME use list_splice_init
+	list_add(&workset,&mdev->app_reads);
+	list_del(&mdev->app_reads);
+	INIT_LIST_HEAD(&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
@@ -1730,9 +1744,14 @@ int drbd_asender(struct Drbd_thread *thi)
 				goto err;
 			}
 			expect = asender_tbl[cmd].pkt_size;
+			ERR_IF(len != expect-sizeof(Drbd_Header)) {
+				dump_packet(mdev,mdev->meta.socket,1,(void*)h);
+				DUMPI(expect);
+			}
 		}
 		if(received == expect) {
 			D_ASSERT(cmd != -1);
+			dump_packet(mdev,mdev->meta.socket,1,(void*)h);
 			if(!asender_tbl[cmd].process(mdev,h)) goto err;
 
 			buf      = h;
