@@ -464,7 +464,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 		drbd_rs_begin_io(mdev,sector);
 		if(unlikely(!bm_get_bit(mdev->mbds_id,sector,BM_BLOCK_SIZE))) {
-			INFO("Block got synced while in drbd_rs_begin_io()\n");
+		      //INFO("Block got synced while in drbd_rs_begin_io()\n");
 			drbd_rs_complete_io(mdev,sector);
 			goto next_sector;
 		}

@@ -616,14 +616,14 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			// since drbd_rs_begin_io() pulled it already in.
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 			lc_changed(mdev->resync,&ext->lce);
-			// wake_up(&mdev->al_wait);
 		}
 		lc_put(mdev->resync,&ext->lce);
-		// if (!lc_put(mdev->resync,&ext->lce))
-		//	wake_up(&mdev->al_wait);
 	} else {
 		ERR("lc_get() failed! Probabely something stays"
 		    " dirty in the on disk BM. (resync LRU too small) \n");
+		ERR("resync_locked=%d nr_elements=%d\n",
+		    atomic_read(&mdev->resync_locked),
+		    mdev->resync->nr_elements);
 	}
 
 	list_for_each_safe(le,tmp,&mdev->resync->lru) {
@@ -639,12 +639,11 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			udw->w.cb = w_update_odbm;
 			drbd_queue_work(mdev,&mdev->data.work,&udw->w);
 			lc_del(mdev->resync,&ext->lce);
-			// wake_up(&mdev->al_wait);
 		}
 	}
 
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
-	// just wake_up unconditional now.
+	// just wake_up unconditional now. [various lc_chaged(), lc_put() here]
 	wake_up(&mdev->al_wait);
 }
 
@@ -678,6 +677,11 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct bm_extent  *bm_ext;
 	unsigned long     rs_flags;
+
+	if(atomic_read(&mdev->resync_locked) > mdev->resync->nr_elements-3 ) {
+		ERR("bme_get() does not lock all elements\n");
+		return 0;
+	}
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
@@ -744,6 +748,8 @@ void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 
 	if(test_bit(BME_LOCKED,&bm_ext->flags)) return;
 
+	atomic_inc(&mdev->resync_locked);
+
 	for(i=0;i<SM;i++) {
 		wait_event(mdev->al_wait, !_is_in_al(mdev,enr*SM+i) );
 	}
@@ -767,6 +773,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	if( lc_put(mdev->resync,(struct lc_element *)bm_ext) == 0 ) {
 		clear_bit(BME_LOCKED,&bm_ext->flags);
 		clear_bit(BME_NO_WRITES,&bm_ext->flags);
+		atomic_dec(&mdev->resync_locked);
 		wake_up(&mdev->al_wait);
 	}
 

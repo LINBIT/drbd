@@ -1095,6 +1095,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->rs_pending_cnt,0);
 	atomic_set(&mdev->unacked_cnt,0);
 	atomic_set(&mdev->local_cnt,0);
+	atomic_set(&mdev->resync_locked,0);
 
 	init_MUTEX(&mdev->device_mutex);
 	init_MUTEX(&mdev->md_io_mutex);

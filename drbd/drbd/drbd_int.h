@@ -671,6 +671,7 @@ struct Drbd_Conf {
 	struct Drbd_thread asender;
 	struct BitMap* mbds_id;
 	struct lru_cache* resync; // Used to track operations of resync...
+	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
 	u32 gen_cnt[GEN_CNT_SIZE];
 	int epoch_size;
