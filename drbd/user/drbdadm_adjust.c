@@ -114,7 +114,7 @@ int check_opt_b(FILE *in,char* name,struct d_option* base)
   return rv;
 }
 
-int check_opt_v(FILE *in,char* name,int dm, char* unit,struct d_option* base)
+int check_opt_d(FILE *in,char* name,int dm, char* unit,struct d_option* base)
 {
   unsigned long  ul;
   struct d_option* o;
@@ -123,16 +123,36 @@ int check_opt_v(FILE *in,char* name,int dm, char* unit,struct d_option* base)
   int rv=0;
 
   sprintf(scs," %s = %%lu %s (%%[d]efault)\n",name,unit);
-  fscanf(in,scs,&ul,uu);
+  if(fscanf(in,scs,&ul,uu)>0) {
+    o=find_opt(base,name);
+    if(o) {
+      o->mentioned=1;
+      if(m_strtol(o->value,dm) != ul) rv=1;
+    } else {
+      if( uu[0] != 'd' ) rv=1;
+    }
+  }
+  //printf("check_opt_d(%s)=%d\n",name,rv);
+
+  return rv;
+}
+
+int check_opt_s(FILE *in,char* name,struct d_option* base)
+{
+  struct d_option* o;
+  char scs[200];  
+  char value[200];
+  int rv=0;
+
+  sprintf(scs," %s = %%s\n",name);
+  fscanf(in,scs,value);
   o=find_opt(base,name);
   if(o) {
     o->mentioned=1;
-    if(m_strtol(o->value,dm) != ul) rv=1;
-  } else {
-    if( uu[0] != 'd' ) rv=1;
+    if(strcmp(o->value,value)) rv=1;
   }
 
-  //printf("check_opt_v(%s)=%d\n",name,rv);
+  //printf("check_opt_s(%s)=%d [value=%s]\n",name,rv,value);
 
   return rv;
 }
@@ -181,10 +201,38 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_attach=1;
   }
 
+  rv=fscanf(in,"Meta device: %s   (%[^)])\n",str1,str2);
+  if(rv==1) {
+    if(strcmp("internal",str1)==0) {
+      if(strcmp("internal",res->me->meta_disk)) do_attach=1;
+    } 
+  }
+  if(rv==2) {
+    if(strcmp(str2,res->me->meta_disk)) do_attach=1;
+    rv=fscanf(in,"Meta index: %[0-9]\n",str1);
+    if(rv==1) {
+      if(strcmp(str1,res->me->meta_index)) do_attach=1;
+    }
+  }
+
+  /*
+res->me->meta_disk)) do_attach=1;
+  } else {
+    rv=fscanf(in,"Meta device: %*02d:%*02d   (%[^)])\n",str1);
+    if( (rv!=1) || strcmp(str1,res->me->meta_disk)) {
+      do_attach=1;
+    }
+
+    rv=fscanf(in,"Meta index: %[0-9]\n",str1);
+    if( (rv!=1) || strcmp(str1,res->me->meta_index)) {
+      do_attach=1;
+    }
+  }
+  */
   rv=fscanf(in,"Disk options%[:]\n",uu);
   if(rv==1) {
-    do_resize |= check_opt_v(in,"size",1024,"KB",res->disk_options);
-    do_attach |= check_opt_b(in,"do-panic",res->disk_options);
+    do_resize |= check_opt_d(in,"size",1024,"KB",res->disk_options);
+    do_attach |= check_opt_s(in,"on-io-error",res->disk_options);
 
     // Check if every options is also present in drbdsetup show's output.
     o=res->disk_options;
@@ -224,16 +272,19 @@ int adm_adjust(struct d_resource* res,char* unused)
       if( uu[0] != 'd' ) do_connect=1;
     }
 
-    do_connect |= check_opt_v(in,"connect-int",1,"sec",res->net_options);
-    do_connect |= check_opt_v(in,"ping-int",1,"sec",res->net_options);
-    do_connect |= check_opt_v(in,"max-epoch-size",1,"",res->net_options);
-    do_connect |= check_opt_v(in,"max-buffers",1,"",res->net_options);
+    do_connect |= check_opt_d(in,"connect-int",1,"sec",res->net_options);
+    do_connect |= check_opt_d(in,"ping-int",1,"sec",res->net_options);
+    do_connect |= check_opt_d(in,"max-epoch-size",1,"",res->net_options);
+    do_connect |= check_opt_d(in,"max-buffers",1,"",res->net_options);
     do_connect |= complete(res->net_options);
   }
 
   rv=fscanf(in,"Syncer options%[:]\n",uu);
   if(rv==1) {
-    do_syncer |= check_opt_v(in,"rate",1024,"KB/sec",res->sync_options);
+    do_syncer |= check_opt_d(in,"rate",1024,"KB/sec",res->sync_options);
+    do_syncer |= check_opt_d(in,"group",1,"",res->sync_options);
+    do_syncer |= check_opt_d(in,"al-extents",1,"",res->sync_options);
+    do_syncer |= check_opt_b(in,"skip-sync",res->sync_options);
     do_syncer |= check_opt_b(in,"use-csums",res->sync_options);
     do_syncer |= complete(res->sync_options);
   }
