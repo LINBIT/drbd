@@ -79,6 +79,7 @@ struct syncer_config {
 	int      use_csums;   /* use checksum based syncing*/
 	int      skip;
 	int      group;
+	int      al_extents; 
 };
 
 enum ret_codes {

@@ -493,6 +493,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		if (mdev->cstate > WFConnection)
 			drbd_send_sync_param(mdev);
 		// TODO Need to signal dsender() ?
+
+		drbd_al_init(mdev);
 		break;
 
 	case DRBD_IOCTL_GET_CONFIG:

@@ -126,6 +126,7 @@ struct drbd_cmd commands[] = {
      { "skip-sync",  no_argument,       0, 'k' },
      { "group",      required_argument, 0, 'g' },
      { "rate",       required_argument, 0, 'r' },
+     { "al-extents", required_argument, 0, 'e' },
      { 0,            0,                 0, 0 } } },
   {"down", cmd_down,                 0, 0 },
   {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0},
@@ -775,6 +776,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 
   cn.config.rate = current_cn.sconf.rate;
   cn.config.group = current_cn.sconf.group;
+  cn.config.al_extents = current_cn.sconf.al_extents;
   cn.config.use_csums = 0; //current_cn.sconf.use_csums;
   cn.config.skip = 0; //current_cn.sconf.skip;
 
@@ -800,6 +802,9 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	      break;
 	    case 'g':
 	      cn.config.group=m_strtol(optarg,1);
+	      break;
+	    case 'e':
+	      cn.config.al_extents=m_strtol(optarg,1);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);

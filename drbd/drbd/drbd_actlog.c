@@ -43,26 +43,32 @@
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
-	int i,number=256; // TODO; fetch it form config file.
+	int i;
 	struct drbd_extent *extents;
 
-	mdev->al_nr_extents=number;
-	if(mdev->al_extents) kfree(mdev->al_extents);
+	if(mdev->al_nr_extents == mdev->sync_conf.al_extents) return;
 
-	extents = kmalloc(sizeof(struct drbd_extent)*number,GFP_KERNEL);
+	extents = kmalloc(sizeof(struct drbd_extent) *
+			  mdev->sync_conf.al_extents,GFP_KERNEL);
+
 	if(!extents) {
 		printk(KERN_ERR DEVICE_NAME
 		       "%d: can not kmalloc() activity log\n",
 		       (int)(mdev-drbd_conf));
-		BUG();
+		return;
 	}
-	mdev->al_extents = extents;
-	
-	for(i=0;i<number;i++) {
+
+	for(i=0;i<mdev->sync_conf.al_extents;i++) {
 		extents[i].extent_nr=AL_FREE;
 		extents[i].hash_next=0;
 		list_add(&extents[i].accessed,&mdev->al_free);
 	}
+
+	spin_lock(&mdev->al_lock);
+	mdev->al_nr_extents=mdev->sync_conf.al_extents; 
+	if(mdev->al_extents) kfree(mdev->al_extents);
+	mdev->al_extents = extents;
+	spin_unlock(&mdev->al_lock);
 	/* TODO allocate some 12.5% (=1/8) extends more and put
 	   them onto the free list first :)
 	 */

@@ -1072,6 +1072,7 @@ int __init drbd_init(void)
 		drbd_conf[i].sync_conf.group=0;
 		drbd_conf[i].sync_conf.use_csums=0;
 		drbd_conf[i].sync_conf.skip=0;
+		drbd_conf[i].sync_conf.al_extents=128; // 512 MB active set
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), TRUE );
