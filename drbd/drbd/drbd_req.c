@@ -125,7 +125,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 		   e->block_id == ID_SYNCER ) wake_asender=1;
 	}
 
-	blk_finished_io(req->bh->b_size>>9);
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
