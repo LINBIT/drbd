@@ -1,0 +1,3 @@
+/etc/init.d/drbd
+/etc/ha.d/resource.d/datadisk
+/etc/drbd.conf

@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if [ -x "/etc/init.d/drbd" ]; then
+	update-rc.d drbd defaults 70 08 >/dev/null
+fi
+#DEBHELPER#

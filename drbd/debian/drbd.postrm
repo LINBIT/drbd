@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if [ "$1" = "purge" ] ; then
+	update-rc.d drbd remove >/dev/null
+fi
+#DEBHELPER#

@@ -1,0 +1,6 @@
+all:
+	make -C drbd all
+
+clean:
+	make -C drbd clean
+
