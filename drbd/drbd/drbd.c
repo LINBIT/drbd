@@ -584,20 +584,90 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
 	 */
 }
 
-int drbd_send_barrier(struct Drbd_Conf *mdev)
+int drbd_ll_blocksize(int minor)
+{
+	int size = 0;
+	kdev_t ll_dev =
+	  drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+
+	if (blksize_size[MAJOR(ll_dev)])
+		size = blksize_size[MAJOR(ll_dev)][MINOR(ll_dev)];
+	else
+		printk(KERN_ERR DEVICE_NAME
+		       ": LL device has no block size ?!?\n\n");
+
+	if (size == 0)
+		size = BLOCK_SIZE;
+
+	/*printk(KERN_DEBUG DEVICE_NAME ": my ll_dev block size=%d/m=%d\n",
+	  size, minor); */
+
+	return size;
+}
+
+int drbd_send_param(int minor, int cmd)
+{
+	Drbd_Parameter_Packet param;
+	int err;
+	kdev_t ll_dev =
+	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+
+	if (blk_size[MAJOR(ll_dev)]) {
+		param.h.size =
+		    cpu_to_be64(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]);
+	} else
+		printk(KERN_ERR DEVICE_NAME
+		       ": LL device has no size ?!?\n\n");
+
+	param.h.blksize = cpu_to_be32(drbd_ll_blocksize(minor));
+	param.h.state = cpu_to_be32(drbd_conf[minor].state);
+	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
+	param.h.version = cpu_to_be32(MOD_VERSION);
+
+	down(&drbd_conf[minor].send_mutex);
+	err = drbd_send(&drbd_conf[minor], cmd,(Drbd_Packet*)&param, 
+			sizeof(param),0,0);
+	up(&drbd_conf[minor].send_mutex);
+	
+	if(err < sizeof(Drbd_Parameter_Packet))
+		printk(KERN_ERR DEVICE_NAME
+		       ": Sending of parameter block failed!!\n");	  
+
+	return err;
+}
+
+int _drbd_send_barrier(struct Drbd_Conf *mdev)
 {
         Drbd_Barrier_Packet head;
+
+	/* tl_add_barrier() must be called witth the send_mutex aquired */
+	head.h.barrier=tl_add_barrier(mdev); 
+
+	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
        
 	return drbd_send(mdev,Barrier,(Drbd_Packet*)&head,sizeof(head),0,0);
 }
 
+inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
+{
+	down(&mdev->send_mutex);
+	if(test_and_clear_bit(0,&mdev->need_to_issue_barrier)) {
+	        _drbd_send_barrier(mdev);
+	}
+	up(&mdev->send_mutex);
+}     
+
 int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 {
         Drbd_BarrierAck_Packet head;
+	int ret;
        
         head.h.barrier = barrier_nr;
 	head.h.set_size = cpu_to_be32(set_size);
-      return drbd_send(mdev,BarrierAck,(Drbd_Packet*)&head,sizeof(head),0,0);
+	down(&mdev->send_mutex);
+	ret=drbd_send(mdev,BarrierAck,(Drbd_Packet*)&head,sizeof(head),0,0);
+	up(&mdev->send_mutex);
+	return ret;
 }
 
 
@@ -605,19 +675,26 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, unsigned long block_nr,
 		  u64 block_id)
 {
         Drbd_BlockAck_Packet head;
-       
+	int ret;
+
 	head.h.block_nr = cpu_to_be64(block_nr);
         head.h.block_id = block_id;
-	return drbd_send(mdev,cmd,(Drbd_Packet*)&head,sizeof(head),0,0);
+	down(&mdev->send_mutex);
+	ret=drbd_send(mdev,cmd,(Drbd_Packet*)&head,sizeof(head),0,0);
+	up(&mdev->send_mutex);
+	return ret;
 }
 
 int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 		   unsigned long block_nr, u64 block_id)
 {
         Drbd_Data_Packet head;
+	int ret;
 
 	head.h.block_nr = cpu_to_be64(block_nr);
 	head.h.block_id = block_id;
+
+	down(&mdev->send_mutex);
 	
 	if(mdev->conf.wire_protocol != DRBD_PROT_A) {
 		mdev->pending_cnt++;
@@ -626,35 +703,19 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	}
 
 	if(test_and_clear_bit(0,&mdev->need_to_issue_barrier)) {
-	        drbd_send_barrier(mdev);
-             /* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
+	        _drbd_send_barrier(mdev);
 	}
 	
-	return drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),
-			 data,data_size);
+	ret=drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),data,
+		      data_size);
+
+	if(ret>0 && head.h.block_id != ID_SYNCER) {
+		/* This must be within the semaphore */
+		tl_add(mdev,(struct request*)(unsigned long)block_id);
+	}
+	up(&mdev->send_mutex);
+	return ret;
 }
-
-void drbd_timeout(unsigned long arg)
-{
-	struct task_struct *p = (struct task_struct *) arg;
-
-	printk(KERN_ERR DEVICE_NAME ": timeout detected!\n");
-
-	send_sig_info(DRBD_SIG, NULL, p);
-
-}
-
-void drbd_a_timeout(unsigned long arg)
-{
-	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
-
-	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
-
-	if(!thi->pid) return;
-	thi->exit=2;
-	kill_proc_info(SIGTERM,NULL,thi->pid);
-}
-
 
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 	      Drbd_Packet* header, size_t header_size, 
@@ -666,18 +727,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 
 	int err;
 
-	down(&mdev->send_mutex);
-
-	if (!mdev->sock) {
-		up(&mdev->send_mutex);
-		return -1000;
-	}
-	/* Without this sock_sendmsg() somehow mixes bytes :-) */
-
-	if(cmd == Barrier) {		
-		Drbd_Barrier_Packet* head = (Drbd_Barrier_Packet*) header;
-		head->h.barrier=tl_add_barrier(mdev); // within the semaphore!
-	}
+	if (!mdev->sock) return -1000;
 
 	header->magic  =  cpu_to_be32(DRBD_MAGIC);
 	header->command = cpu_to_be16(cmd);
@@ -723,43 +773,37 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 
 			up(&mdev->send_mutex);
 			drbd_thread_restart(&mdev->receiver);
+			down(&mdev->send_mutex);
 			return -1000;
 		} else spin_unlock_irq(&current->sigmask_lock);
 	}
 	if (err != header_size+data_size) {
 		printk(KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",
 		       err);
-	} else 	if(cmd == Data) {
-		Drbd_Data_Packet* head=(Drbd_Data_Packet*) header;
-		if(head->h.block_id != ID_SYNCER)
-			tl_add(mdev,(struct request*)
-			       (unsigned long)head->h.block_id);
-		             /* This must be within the semaphore */
 	}
-	up(&mdev->send_mutex);
 
 	return err;
 }
 
-int drbd_ll_blocksize(int minor)
+void drbd_timeout(unsigned long arg)
 {
-	int size = 0;
-	kdev_t ll_dev =
-	  drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+	struct task_struct *p = (struct task_struct *) arg;
 
-	if (blksize_size[MAJOR(ll_dev)])
-		size = blksize_size[MAJOR(ll_dev)][MINOR(ll_dev)];
-	else
-		printk(KERN_ERR DEVICE_NAME
-		       ": LL device has no block size ?!?\n\n");
+	printk(KERN_ERR DEVICE_NAME ": timeout detected!\n");
 
-	if (size == 0)
-		size = BLOCK_SIZE;
+	send_sig_info(DRBD_SIG, NULL, p);
 
-	/*printk(KERN_DEBUG DEVICE_NAME ": my ll_dev block size=%d/m=%d\n",
-	  size, minor); */
+}
 
-	return size;
+void drbd_a_timeout(unsigned long arg)
+{
+	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
+
+	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
+
+	if(!thi->pid) return;
+	thi->exit=2;
+	kill_proc_info(SIGTERM,NULL,thi->pid);
 }
 
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
@@ -1244,35 +1288,6 @@ void cleanup_module()
 
 
 /************************* Receiving part */
-int drbd_send_param(int minor, int cmd)
-{
-	Drbd_Parameter_Packet param;
-	int err;
-	kdev_t ll_dev =
-	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
-
-	if (blk_size[MAJOR(ll_dev)]) {
-		param.h.size =
-		    cpu_to_be64(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]);
-	} else
-		printk(KERN_ERR DEVICE_NAME
-		       ": LL device has no size ?!?\n\n");
-
-	param.h.blksize = cpu_to_be32(drbd_ll_blocksize(minor));
-	param.h.state = cpu_to_be32(drbd_conf[minor].state);
-	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
-	param.h.version = cpu_to_be32(MOD_VERSION);
-
-	err = drbd_send(&drbd_conf[minor], cmd,(Drbd_Packet*)&param, 
-			sizeof(param),0,0);
-	
-	if(err < sizeof(Drbd_Parameter_Packet))
-		printk(KERN_ERR DEVICE_NAME
-		       ": Sending of parameter block failed!!\n");	  
-
-	return err;
-}
-
 struct socket* drbd_accept(struct socket* sock)
 {
 	struct socket *newsock;
@@ -1773,6 +1788,10 @@ int drbdd_init(void *arg)
 		if (thi->exit == 1) break;
 		drbdd(minor);
 		if (thi->exit == 1) break;
+		if (thi->exit == 2) {
+			thi->exit = 0;
+			wake_up(&thi->wait);			
+		}
 	}
 
 	printk(KERN_DEBUG DEVICE_NAME ": receiver exiting/m=%d\n", minor);
@@ -1995,16 +2014,14 @@ int drbd_asender(void *arg)
 	drbd_thread_setup(thi); // wait until parent has written its
 				//   rpid variable 
 
-	while(thi->exit==0) {
+	while(!thi->exit) {
 	  int i;
 
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
 	  
 	  if(thi->exit==1) break;
 
-	  if(test_and_clear_bit(0,&drbd_conf[minor].need_to_issue_barrier)) {
-		  drbd_send_barrier(&drbd_conf[minor]);
-	  }
+	  drbd_try_send_barrier(&drbd_conf[minor]);
 
 	  spin_lock(&drbd_conf[minor].sl_lock);
 	  for(i=0;i<SYNC_LOG_S;i++) {
