@@ -726,6 +726,8 @@ extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 			    u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern void drbd_free_ll_dev(drbd_dev *mdev);
+extern int drbd_io_error(drbd_dev* mdev);
+
 
 
 // drbd_meta-data.c (still in drbd_main.c)
@@ -921,7 +923,7 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 
 /**
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
- * all io completion handlers.
+ * all io completion handlers. See also drbd_io_error().
  */
 static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 {
@@ -936,37 +938,12 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 			panic(DEVICE_NAME" : IO error on backing device!\n");
 			break;
 		case Detach:
+			ERR("Local IO failed. Detaching...\n");
 			set_bit(DISKLESS,&mdev->flags);
 			smp_mb(); // Nack is sent in w_e handlers.
 			break;
 		}
 	}
-}
-
-/**
- * drbd_io_error: Handles the on_io_error setting, should be called in the
- * unlikely(!drbd_bio_uptodate(e->bio)) case from kernel thread context.
- */
-static inline int drbd_io_error(drbd_dev* mdev)
-{
-	int ok=1;
-
-	if(mdev->on_io_error == Panic || mdev->on_io_error == Detach) {
-		if(!test_bit(SENT_DISK_FAILURE,&mdev->flags)) {
-			D_ASSERT(test_bit(DISKLESS,&mdev->flags));
-			ok = drbd_send_param(mdev,0);
-			set_bit(SENT_DISK_FAILURE,&mdev->flags);
-			WARN("Notified peer that my disk is broken.\n");
-			if(mdev->cstate > Connected ) {
-				WARN("Resync aborted.\n");
-				if(mdev->cstate == SyncTarget)
-					set_bit(STOP_SYNC_TIMER,&mdev->flags);
-				set_cstate(mdev,Connected);
-			}
-		}
-	}
-
-	return ok;
 }
 
 static inline int semaphore_is_locked(struct semaphore* s) 

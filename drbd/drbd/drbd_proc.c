@@ -166,7 +166,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	for (i = 0; i < minor_count; i++) {
 		sn = cstate_names[drbd_conf[i].cstate];
 		if(drbd_conf[i].cstate == Connected) {
-			if(!drbd_conf[i].lo_file) sn = "DiskLessClient";
+			if(test_bit(DISKLESS,&drbd_conf[i].flags)) 
+				sn = "DiskLessClient";
 			if(test_bit(PARTNER_DISKLESS,&drbd_conf[i].flags))
 				sn = "ServerForDLess";
 		}

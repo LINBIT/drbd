@@ -795,6 +795,7 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	dec_rs_pending(mdev,HERE);
 
+	e->block_id = ID_SYNCER;
 	if(!inc_local(mdev)) {
 		ERR("Can not write resync data to local disk.\n");
 		drbd_send_ack(mdev,NegAck,e);
@@ -805,7 +806,6 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	}
 
 	drbd_ee_prepare_write(mdev,e,sector,data_size);
-	e->block_id = ID_SYNCER;
 	e->w.cb     = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -985,6 +985,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 	e = read_in_block(mdev,data_size);
 	ERR_IF(!e) return FALSE;
+	e->block_id = p->block_id; // no meaning on this side, e* on partner
 
 	if(!inc_local(mdev)) {
 		ERR("Can not write mirrored data block to local disk.\n");
@@ -996,7 +997,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	drbd_ee_prepare_write(mdev, e, sector, data_size);
-	e->block_id = p->block_id; // no meaning on this side, e* on partner
 	e->w.cb     = e_end_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -1606,17 +1606,26 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
 
-	if( is_syncer_blk(mdev,p->block_id)) {
-		drbd_set_in_sync(mdev,sector,blksize);
-	} else {
-		req=(drbd_request_t*)(long)p->block_id;
+	if(likely(!test_bit(PARTNER_DISKLESS,&mdev->flags))) {
+		// test_bit(PARTNER_DISKLESS,&mdev->flags)
+		// This happens if one a few IO requests on the peer
+		// failed, and some subsequest completed sucessfull
+		// afterwards.
 
-		ERR_IF (!VALID_POINTER(req)) return FALSE;
+		// But we killed everything out of the transferlog
+		// as we got the news hat IO is broken on the peer.
 
-		drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+		if( is_syncer_blk(mdev,p->block_id)) {
+			drbd_set_in_sync(mdev,sector,blksize);
+		} else {
+			req=(drbd_request_t*)(long)p->block_id;
+
+			ERR_IF (!VALID_POINTER(req)) return FALSE;
+
+			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+		}
 	}
 
-	// TODO: Make sure that the block is in an active epoch!!
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
 	} else {
@@ -1628,22 +1637,17 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
-	drbd_request_t *req;
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 	sector_t sector = be64_to_cpu(p->sector);
-	int blksize = be32_to_cpu(p->blksize);
+	int size = be32_to_cpu(p->blksize);
 
 	WARN("Got NegAck packet. Peer is in troubles?\n");
 
-	if( !is_syncer_blk(mdev,p->block_id)) {
-		req=(drbd_request_t*)(long)p->block_id;
-
-		ERR_IF (!VALID_POINTER(req)) return FALSE;
-		drbd_set_out_of_sync(mdev,sector,blksize);
-		drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+	if(!is_syncer_blk(mdev,p->block_id)) {
+		D_ASSERT(bm_get_bit(mdev->mbds_id,sector,size));
+		// tl_clear() must have set this out of sync!
 	}
 
-	// TODO: Make sure that the block is in an active epoch!!
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
 	} else {
@@ -1673,6 +1677,8 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
+
+	if(unlikely(test_bit(PARTNER_DISKLESS,&mdev->flags))) return TRUE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
 	dec_ap_pending(mdev,HERE);

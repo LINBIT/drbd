@@ -288,6 +288,38 @@ void tl_clear(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
+/**
+ * drbd_io_error: Handles the on_io_error setting, should be called in the
+ * unlikely(!drbd_bio_uptodate(e->bio)) case from kernel thread context.
+ * See also drbd_chk_io_error
+ */
+int drbd_io_error(drbd_dev* mdev)
+{
+	int ok=1;
+
+	if(mdev->on_io_error != Panic && mdev->on_io_error != Detach) return 1;
+	if(test_and_set_bit(SENT_DISK_FAILURE,&mdev->flags)) return 1;
+
+	D_ASSERT(test_bit(DISKLESS,&mdev->flags));
+	ok = drbd_send_param(mdev,0);
+	WARN("Notified peer that my disk is broken.\n");
+	if(mdev->cstate > Connected ) {
+		WARN("Resync aborted.\n");
+		if(mdev->cstate == SyncTarget)
+			set_bit(STOP_SYNC_TIMER,&mdev->flags);
+		set_cstate(mdev,Connected);
+	}
+	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
+		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
+		WARN("Not releasing backing storage device.\n");
+	} else {
+		WARN("Releasing backing storage device.\n");
+		drbd_free_ll_dev(mdev);
+	}
+
+	return ok;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
 // daemonize was no global symbol before 2.4.14
 /* in 2.4.6 is is prototyped as
