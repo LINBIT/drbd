@@ -1377,7 +1377,7 @@ int main(int argc, char** argv)
 		       "  | Please use /dev/drbd*; if neccessary"
 		       " create the device nodes first.\n"
 		       "  | To do so: for i in `seq 0 15` ;"
-		       " do mknod /dev/drbd$i b 147 $i; done\n");
+		       " do mknod -m 0660 /dev/drbd$i b 147 $i; done\n");
 	    }
 	  drbd_fd=open_drbd_device(argv[1]);
 

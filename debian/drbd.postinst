@@ -8,7 +8,7 @@ fi
 # cd /dev; for a in `seq 0 7`; do MAKEDEV nb$a; done
 
 for i in `seq 0 15` ; do 
-    test -b /dev/drbd$i || mknod /dev/drbd$i b 147 $i; 
+    test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i; 
 done
 
 #DEBHELPER#
