@@ -109,6 +109,16 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">state</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">cstate</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">resize</arg>
       <arg>-d<arg choice="req"><replaceable>size</replaceable></arg></arg>
     </cmdsynopsis>
@@ -554,6 +564,13 @@
       <para>
 	Shows the current states of the <replaceable>device</replaceable> and 
 	its peer. (local/peer). 
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>cstate</title>
+      <para>
+	Shows the current connection states of the 
+	<replaceable>device</replaceable>.
       </para>
     </refsect2>
     <refsect2>

@@ -16,12 +16,12 @@
     <cmdsynopsis>
       <command>drbdadm</command>
       <arg>-d</arg>
-      <arg>-c<arg choice=req><replaceable>file</replaceable></arg></arg>
-      <arg>-s<arg choice=req><replaceable>cmd</replaceable></arg></arg>
-      <arg choice=req><replaceable>command</replaceable></arg>
+      <arg>-c<arg choice="req"><replaceable>file</replaceable></arg></arg>
+      <arg>-s<arg choice="req"><replaceable>cmd</replaceable></arg></arg>
+      <arg choice="req"><replaceable>command</replaceable></arg>
       <group>
-	<arg choice=plain>all</arg>
-	<arg choice=plain rep=repeat><replaceable>resource</replaceable></arg>
+	<arg choice="plain">all</arg>
+	<arg choice="plain" rep="repeat"><replaceable>resource</replaceable></arg>
       </group>
     </cmdsynopsis>
   </refsynopsisdiv>
@@ -172,6 +172,12 @@
         <listitem><para>
 	  Shows the current states of the devices (local/peer). 
 	  E.g. primary/secondary        
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>cstate</term>
+        <listitem><para>
+	  Shows the current connection status of the devices.
 	</para></listitem>
       </varlistentry>
       <varlistentry>

@@ -113,6 +113,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_state(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
@@ -171,6 +172,7 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0 } } },
   {"disconnect", cmd_disconnect,     0, 0, },
   {"state", cmd_state,               0, 0, },
+  {"cstate", cmd_cstate,              0, 0, },
   {"show", cmd_show,                 0, 0, }
 };
 
@@ -1268,6 +1270,49 @@ int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
     }
 
   printf("%s/%s\n",state_names[cn.state],state_names[cn.peer_state]);
+
+  return 0;
+}
+
+int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  static const char *cstate_names[] = {
+    [Unconfigured]   = "Unconfigured",
+    [StandAlone]     = "StandAlone",
+    [Unconnected]    = "Unconnected",
+    [Timeout]        = "Timeout",
+    [BrokenPipe]     = "BrokenPipe",
+    [NetworkFailure] = "NetworkFailure",
+    [WFConnection]   = "WFConnection",
+    [WFReportParams] = "WFReportParams",
+    [Connected]      = "Connected",
+    [SkippedSyncS]   = "SkippedSyncS",
+    [SkippedSyncT]   = "SkippedSyncT",
+    [WFBitMapS]      = "WFBitMapS",
+    [WFBitMapT]      = "WFBitMapT",
+    [SyncSource]     = "SyncSource",
+    [SyncTarget]     = "SyncTarget",
+    [PausedSyncS]    = "PausedSyncS",
+    [PausedSyncT]    = "PausedSyncT"
+  };
+
+  struct ioctl_get_config cn;
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
+  if(err)
+    {
+      PERROR("ioctl(,GET_CONFIG,) failed");
+      return 20;
+    }
+
+  if( cn.cstate < StandAlone )
+    {
+      printf("Not configured\n");
+      return 0;
+    }
+
+  printf("%s\n",cstate_names[cn.cstate]);
 
   return 0;
 }

@@ -128,6 +128,7 @@ struct adm_cmd cmds[] = {
   { "adjust",            adm_adjust,  0                  ,1,1 },
   { "wait_connect",      adm_wait_c,  0                  ,1,1 },
   { "state",             adm_generic_s,"state"           ,1,1 },
+  { "cstate",            adm_generic_s,"cstate"          ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
   { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
   { "sh-resources",      sh_resources,0                  ,0,0 },
