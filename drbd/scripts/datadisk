@@ -360,7 +360,7 @@ case "$1" in
 		isPrimary $RESOURCE
 		if [ $? -eq 1 ]; then
 			echo -n "performing fsck on $RESOURCE " 
-			fsck $LOCAL_FSCK $LOCAL_DEVICE > /dev/null 2>/dev/null
+			$LOCAL_FSCK $LOCAL_DEVICE > /dev/null 2>/dev/null
 			RV=$?
 			[ $RV -eq 0 -o $RV -eq 1 ] && RETVAL=0
 			[ $RETVAL -eq 0 ] && success || failure
