@@ -158,6 +158,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 
 	clear_bit(BH_Dirty, &bh->b_state);
 	clear_bit(BH_Lock, &bh->b_state);
+	smp_mb__after_clear_bit();
 
 	/* Do not move a BH if someone is in wait_on_buffer */
 	if(atomic_read(&bh->b_count) == 0) {

@@ -57,6 +57,7 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 
 	mark_buffer_uptodate(bh, uptodate);
 	clear_bit(BH_Lock, &bh->b_state);
+	smp_mb__after_clear_bit();
 
 	/* Do not move a BH if someone is in wait_on_buffer */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
