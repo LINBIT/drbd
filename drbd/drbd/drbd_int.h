@@ -853,10 +853,8 @@ struct bm_extent {
  * _storage_ sector is located in */
 #define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SIZE_B-9))
 
-/* in one sector of the bitmap, we have 1<<12 bits,
- * accounting for this many activity_log extents.
- */
-#define AL_EXT_PER_BM_SECT  (1 << (12-(AL_EXTENT_SIZE_B - BM_BLOCK_SIZE_B)))
+/* in one sector of the bitmap, we have this many activity_log extents. */
+#define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B)
 
 
 /* I want the packet to fit within one page
