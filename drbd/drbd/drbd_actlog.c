@@ -67,11 +67,13 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 		}
 	}
 	al_ext   = lc_get(mdev->act_log,enr);
-	al_flags = mdev->act_log->flags;
-	if (al_ext->lc_number != enr) {
-		if (!lc_try_lock(mdev->resync))
-			BUG(); // has to be successfull, we have the spinlock!
+	if(al_ext) {
+		if (al_ext->lc_number != enr) {
+			if (!lc_try_lock(mdev->resync))
+				BUG(); // has to be successfull
+		}
 	}
+	al_flags = mdev->act_log->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
 	if (!al_ext) {

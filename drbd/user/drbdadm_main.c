@@ -312,12 +312,11 @@ int m_system(int may_sleep,char** argv)
   sigemptyset(&sa.sa_mask);
   sa.sa_flags=0;
 
-  while(*cmdline) {
-    fprintf(dry_run?stdout:stderr,"%s ",*cmdline++);
-  }
-  fprintf(dry_run?stdout:stderr,"\n");
-
   if(dry_run) {
+    while(*cmdline) {
+      fprintf(stdout,"%s ",*cmdline++);
+    }
+    fprintf(stdout,"\n");
     return 0;
   }
 

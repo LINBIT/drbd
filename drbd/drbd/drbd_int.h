@@ -763,7 +763,6 @@ extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
 extern void drbd_init_ee(drbd_dev* mdev);
 extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
 extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
-extern int _drbd_process_ee(drbd_dev *,struct list_head *);
 extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
 			    sector_t sector, int data_size);
 extern int recv_dless_read(drbd_dev* mdev, struct Pending_read *pr,

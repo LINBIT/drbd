@@ -340,6 +340,8 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 
 #define GFP_TRY	( __GFP_HIGHMEM )
 
+STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
+
 static inline int _get_ee_cond(struct Drbd_Conf* mdev)
 {
 	int av;
@@ -411,7 +413,7 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
    from this function. Note, this function is called from all three
    threads (receiver, dsender and asender). To ensure this I only allow
    one thread at a time in the body of the function */
-int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
+STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le;
@@ -422,7 +424,7 @@ int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	while( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		spin_unlock_irq(&mdev->ee_lock);
 		interruptible_sleep_on(&mdev->ee_wait);
-		if(signal_pending(current)) return 0;
+		if(signal_pending(current)) return 2;
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
@@ -1572,6 +1574,7 @@ STATIC int receive_SyncStop(drbd_dev *mdev, Drbd_Header *h)
 {
 	D_ASSERT(mdev->cstate == SyncSource);
 	set_cstate(mdev,PausedSyncS);
+	INFO("Syncer waits for sync group\n");
 	return TRUE; // cannot fail ?
 }
 
@@ -1579,6 +1582,7 @@ STATIC int receive_SyncCont(drbd_dev *mdev, Drbd_Header *h)
 {
 	D_ASSERT(mdev->cstate == PausedSyncS);
 	set_cstate(mdev,SyncSource);
+	INFO("resumed synchronisation.\n");
 	return TRUE; // cannot fail ?
 }
 

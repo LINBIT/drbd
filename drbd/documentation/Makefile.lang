@@ -18,10 +18,13 @@
 #
 #
 
-include ../../Makefile.vars
-
 C_LANG=$(shell basename `pwd`)
-TARGETS=$(shell if [ -e drbd.conf.sgml ]; then echo -n "drbd.conf.5 " ; fi ; if [ -e drbdsetup.sgml ]; then echo -n "drbdsetup.8 " ; fi ; if [ -e drbd.sgml ]; then echo -n "drbd.8 " ; fi ; if [ -e datadisk.sgml ]; then echo -n "datadisk.8 " ; fi ; if [ -e HOWTO ]; then echo -n "HOWTO/index.html " ; fi ; echo )
+TARGETS=drbd.conf.5 drbdsetup.8 drbd.8 datadisk.8
+
+DB2MAN          := $(shell which 2>/dev/null docbook2man)
+DB2HTML         := $(shell which 2>/dev/null docbook2html)
+DB2PDF          := $(shell which 2>/dev/null docbook2pdf)
+DB2PS           := $(shell which 2>/dev/null docbook2ps)
 
 ####### Implicit rules
 
