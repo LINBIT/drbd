@@ -1146,6 +1146,9 @@ void drbd_free_resources(int minor)
   Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
   Bit 0 ==> Primary and secondary nodes are in sync.
   Bit 1 ==> secondary node's block must be updated. (')
+
+  A wicked was found and pointed out by 
+                     Guzovsky, Eduard <EGuzovsky@crossbeamsys.com>
 */
 
 #include <asm/types.h>
@@ -1176,13 +1179,20 @@ struct BitMap {
 	spinlock_t bm_lock;
 };
 
+
+// Shift right with round up. :)
+#define SR_RU(A,B) ( ((A)>>(B)) + ( ((A) & ((1<<(B))-1)) > 0 ? 1 : 0 ) )
+
 struct BitMap* bm_init(kdev_t dev)
 {
         struct BitMap* sbm;
 	unsigned long size;
 
-	size = blk_size[MAJOR(dev)][MINOR(dev)]>>(BM_BLOCK_SIZE_B-7);
-	/* 7 = 10 - 3 ; 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
+	size = SR_RU(blk_size[MAJOR(dev)][MINOR(dev)],
+		     (BM_BLOCK_SIZE_B - (10 - LN2_BPL))) >> (LN2_BPL-3);
+	/* 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
+	// Calculate the number of long words needed, round it up, and
+	// finally convert it to bytes.
 
 	if(size == 0) return 0;
 
@@ -1242,7 +1252,7 @@ void bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int
 		}
 	}
 
-	if(bitnr>>LN2_BPL >= sbm->size) {
+	if(bitnr>>3 >= sbm->size) { // 3 -> 2^3=8 Bit per Byte
 		printk(KERN_ERR DEVICE_NAME" : BitMap too small!\n");	  
 		goto out;
 	}
