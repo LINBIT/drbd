@@ -244,6 +244,7 @@ struct socket* drbd_accept(struct socket* sock)
 struct idle_timer_info {
 	struct Drbd_Conf *mdev;
 	struct timer_list idle_timeout;
+	int restart;
 };
 
 
@@ -253,8 +254,11 @@ void drbd_idle_timeout(unsigned long arg)
 
 	set_bit(SEND_PING,&ti->mdev->flags);
 	wake_up_interruptible(&ti->mdev->asender_wait);
-	ti->idle_timeout.expires = jiffies + ti->mdev->conf.ping_int * HZ;
-	add_timer(&ti->idle_timeout);
+	if(ti->restart) {
+		ti->idle_timeout.expires = jiffies + 
+			ti->mdev->conf.ping_int * HZ;
+		add_timer(&ti->idle_timeout);
+	}
 }
 
 int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
@@ -282,10 +286,11 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	if (mdev->conf.ping_int) {
 		init_timer(&ti.idle_timeout);
 		ti.idle_timeout.function = drbd_idle_timeout;
-		ti.idle_timeout.data = (unsigned long) mdev;
+		ti.idle_timeout.data = (unsigned long) &ti;
 		ti.idle_timeout.expires =
 		    jiffies + mdev->conf.ping_int * HZ;
 		ti.mdev=mdev;
+		ti.restart=1;
 		add_timer(&ti.idle_timeout);
 	}
 
@@ -314,7 +319,8 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	unlock_kernel();
 
 	if (mdev->conf.ping_int) {
-		del_timer(&ti.idle_timeout);
+		ti.restart=0;
+		del_timer_sync(&ti.idle_timeout);
 	}
 
 
@@ -393,7 +399,7 @@ static struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 	
 	if(mdev->conf.try_connect_int) {
 		unsigned long flags;
-		del_timer(&accept_timeout);
+		del_timer_sync(&accept_timeout);
 		spin_lock_irqsave(&current->sigmask_lock,flags);
 		if (sigismember(CURRENT_SIGSET, DRBD_SIG)) {
 			sigdelset(CURRENT_SIGSET, DRBD_SIG);
@@ -900,13 +906,11 @@ void drbdd(int minor)
 	}
 
       out:
-	del_timer(&drbd_conf[minor].a_timeout);
 
 	if (drbd_conf[minor].sock) {
 	        drbd_thread_stop(&drbd_conf[minor].syncer);
 	        drbd_thread_stop(&drbd_conf[minor].asender);
-		sock_release(drbd_conf[minor].sock);
-		drbd_conf[minor].sock = 0;
+		drbd_free_sock(minor);
 	}
 
 	printk(KERN_INFO DEVICE_NAME "%d: Connection lost."
@@ -938,7 +942,7 @@ void drbdd(int minor)
 	case Unknown:
 	}
 	drbd_conf[minor].pending_cnt = 0;
-	del_timer(&drbd_conf[minor].a_timeout);
+	del_timer_sync(&drbd_conf[minor].a_timeout);
 	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 }
 
@@ -1087,6 +1091,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	static Drbd_Packet header;
 	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	struct timer_list ping_timeout;
+	unsigned long ping_sent_at=0;
+
 	int rr,rsize=0;
 
 	sprintf(current->comm, "drbd_asender_%d", (int)(mdev-drbd_conf));
@@ -1106,6 +1112,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			  ping_timeout.data = (unsigned long) mdev;
 			  ping_timeout.expires = jiffies + HZ;//(mdev->artt*2);
 			  add_timer(&ping_timeout);
+			  ping_sent_at=jiffies;
 		  }
 	  }
 
@@ -1118,8 +1125,6 @@ int drbd_asender(struct Drbd_thread *thi)
 	  rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize);
 	  if(rr < 0) break;
 	  rsize+=rr;
-	  printk(KERN_ERR DEVICE_NAME "%d: rsize=%d\n",(int)(mdev-drbd_conf),
-		 rsize);
 	  if(rsize == sizeof(header)) {
 		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
 			printk(KERN_ERR DEVICE_NAME "%d: magic?? m: %ld "
@@ -1132,14 +1137,13 @@ int drbd_asender(struct Drbd_thread *thi)
 		}
 		switch (be16_to_cpu(header.command)) {
 		case Ping:
-			printk(KERN_ERR DEVICE_NAME "%d: got ping\n",
-			       (int)(mdev-drbd_conf));
 			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
 			break;
 		case PingAck:
-			printk(KERN_ERR DEVICE_NAME "%d: got ping ack\n",
-			       (int)(mdev-drbd_conf));
-			del_timer(&ping_timeout);
+			del_timer_sync(&ping_timeout);
+			printk(KERN_ERR DEVICE_NAME "%d: rtt=%ld\n",
+			       (int)(mdev-drbd_conf),
+			       (jiffies-ping_sent_at));
 			break;
 		}
 		rsize=0;

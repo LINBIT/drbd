@@ -780,7 +780,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 
 	if (mdev->conf.timeout) {
 		if(!via_msock) mdev->send_proc=NULL;
-		del_timer(&s_timeout);
+		del_timer_sync(&s_timeout);
 	}
 
 	spin_lock_irqsave(&current->sigmask_lock, flags);
