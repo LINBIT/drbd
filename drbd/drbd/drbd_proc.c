@@ -48,14 +48,16 @@ struct proc_dir_entry *drbd_proc;
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
+#define Bit2KB(bits) ((bits)<<(BM_BLOCK_SIZE_B-10))
 STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 {
 	int sz = 0;
-	unsigned long res , db, dt, dbdt, rt;
+	unsigned long res , db, dt, dbdt, rt, rs_left;
 	sector_t n;
 
-	n = (mdev->rs_left>>11)*1000;
-	sector_div(n,((mdev->rs_total>>11) + 1));
+	rs_left = drbd_bm_total_weight(mdev);
+	n = rs_left*1000;
+	sector_div(n,mdev->rs_total + 1);
 	res = n;
 	{
 		int i, y = res/50, x = 20-y;
@@ -69,15 +71,16 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	}
 	res = 1000L - res;
 	sz+=sprintf(buf+sz,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
-	if (mdev->rs_total > 0x100000L) /* if more than 1 GB display in MB */
+	/* if more than 1 GB display in MB */
+	if (mdev->rs_total > 0x100000L) {
 		sz+=sprintf(buf+sz,"(%lu/%lu)M\n\t",
-			    (unsigned long) mdev->rs_left>>11,
-			    (unsigned long) mdev->rs_total>>11);
-	else
-		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", 
-			    (unsigned long) mdev->rs_left>>1 | 
-			    (mdev->rs_left == 1),
-			    (unsigned long) mdev->rs_total>>1);
+			    (unsigned long) Bit2KB(rs_left) >> 10,
+			    (unsigned long) Bit2KB(mdev->rs_total) >> 10 );
+	} else {
+		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t",
+			    (unsigned long) Bit2KB(rs_left),
+			    (unsigned long) Bit2KB(mdev->rs_total) );
+	}
 
 	/* see drivers/md/md.c
 	 * We do not want to overflow, so the order of operands and
@@ -90,8 +93,8 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	 */
 	dt = (jiffies - mdev->rs_mark_time) / HZ;
 	if (!dt) dt++;
-	db = (mdev->rs_mark_left - mdev->rs_left)>>1;
-	n = mdev->rs_left>>1;
+	db = Bit2KB(mdev->rs_mark_left - rs_left);
+	n = Bit2KB(rs_left);
 	sector_div(n,(db/100+1));
 	rt = ( dt * (unsigned long) n ) / 100; /* seconds */
 
@@ -109,7 +112,7 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	/* mean speed since syncer started */
 	dt = (jiffies - mdev->rs_start) / HZ;
 	if (!dt) dt++;
-	db = (mdev->rs_total - mdev->rs_left)>>1;
+	db = Bit2KB(mdev->rs_total - rs_left);
 	if ((dbdt=db/dt) > 1000)
 		sz += sprintf(buf + sz, " (%ld,%03ld)",
 			dbdt/1000,dbdt % 1000);

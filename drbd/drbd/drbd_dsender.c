@@ -438,9 +438,13 @@ void resync_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 }
 
+#define SLEEP_TIME (HZ/10)
+
 int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
+	unsigned long bit;
 	sector_t sector;
+	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int number,i,size;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
@@ -452,8 +456,6 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 
 	D_ASSERT(mdev->cstate == SyncTarget);
-
-#define SLEEP_TIME (HZ/10)
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
@@ -467,21 +469,31 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
-		sector = bm_get_sector(mdev->mbds_id,&size);
+		bit  = drbd_bm_find_next(mdev);
 
-		if (sector == MBDS_DONE) {
+		if (bit == -1UL) {
+			/* FIXME either test_and_set some bit,
+			 * or make this the _only_ place that is allowed
+			 * to assign w_resync_inactive! */
 			mdev->resync_work.cb = w_resync_inactive;
 			return 1;
 		}
 
-		if(!drbd_rs_begin_io(mdev,sector)) return 0;
+		sector = BM_BIT_TO_SECT(bit);
 
-		if(unlikely(!bm_get_bit(mdev->mbds_id,sector,BM_BLOCK_SIZE))) {
+		if(!drbd_rs_begin_io(mdev,sector)) {
+			// we have been interrupted, probably connection lost!
+			D_ASSERT(signal_pending(current));
+			return 0;
+		}
+
+		if(unlikely( drbd_bm_test_bit(mdev,bit) == 0 )) {
 		      //INFO("Block got synced while in drbd_rs_begin_io()\n");
 			drbd_rs_complete_io(mdev,sector);
 			goto next_sector;
 		}
 
+		if (sector + (size>>9) > capacity) size = (capacity-sector)<<9;
 		inc_rs_pending(mdev);
 		if(!drbd_send_drequest(mdev,RSDataRequest,
 				       sector,size,ID_SYNCER)) {
@@ -492,13 +504,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 
  requeue:
-	if(bm_is_rs_done(mdev->mbds_id)) {
-		mdev->resync_work.cb = w_resync_inactive;
-		return 1;
-	}
-
-	mdev->resync_timer.expires = jiffies + SLEEP_TIME;
-	add_timer(&mdev->resync_timer);
+	mod_timer(&mdev->resync_timer, jiffies + SLEEP_TIME);
 	return 1;
 }
 
@@ -507,10 +513,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	unsigned long dt;
 	sector_t n;
 
-	D_ASSERT(mdev->rs_left == 0);
-
 	dt = (jiffies - mdev->rs_start) / HZ + 1;
-	n = mdev->rs_total>>1;
+	n = mdev->rs_total << (BM_BLOCK_SIZE_B-10);
 	sector_div(n,dt);
 	INFO("Resync done (total %lu sec; %lu K/sec)\n",
 	     dt,(unsigned long)n);
@@ -519,10 +523,11 @@ int drbd_resync_finished(drbd_dev* mdev)
 		mdev->gen_cnt[Flags] |= MDF_Consistent;
 		drbd_md_write(mdev);
 	}
-	mdev->rs_total = 0;
 
 	// assert that all bit-map parts are cleared.
 	D_ASSERT(list_empty(&mdev->resync->lru));
+	D_ASSERT(drbd_bm_total_weight(mdev) == 0);
+	mdev->rs_total = 0;
 
 	set_cstate(mdev,Connected); // w_resume_next_sg() gets called here.
 	return 1;
@@ -657,7 +662,7 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
 			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
 		}
-		D_ASSERT(mdev->rs_left > 0);
+		D_ASSERT(drbd_bm_total_weight(mdev) > 0);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
 }
@@ -798,36 +803,45 @@ void drbd_alter_sg(drbd_dev *mdev, int ng)
 
 void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 {
-	set_cstate(mdev,side);
-	mdev->rs_left=mdev->rs_total;
-	mdev->rs_start=jiffies;
-	mdev->rs_mark_left=mdev->rs_left;
-	mdev->rs_mark_time=mdev->rs_start;
+	if(side == SyncTarget) {
+		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
+		drbd_bm_reset_find(mdev);
+	} else {
+		/* If we are SyncSource we must be consistent.
+		 * FIXME this should be an assertion only,
+		 * otherwise it masks a logic bug somewhere else...
+		 */
+		mdev->gen_cnt[Flags] |= MDF_Consistent;
+	}
+	drbd_md_write(mdev);
 
-	INFO("Resync started as %s (need to sync %lu KB).\n",
-	     side == SyncTarget ? "target" : "source", 
-	     (unsigned long) (mdev->rs_left+1)>>1);
+	set_cstate(mdev,side);
+	mdev->rs_total     =
+	mdev->rs_mark_left = drbd_bm_total_weight(mdev);
+	mdev->rs_start     =
+	mdev->rs_mark_time = jiffies;
+
+	INFO("Resync started as %s (need to sync %lu KB [%lu bits set]).\n",
+	     cstate_to_name(side),
+	     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
+	     (unsigned long) mdev->rs_total);
 
 	// FIXME: this was a PARANOIA_BUG_ON, but it triggered! ??
 	ERR_IF(mdev->resync_work.cb != w_resync_inactive)
 		return;
 
-	if ( mdev->rs_left == 0 ) {
+	if ( mdev->rs_total == 0 ) {
 		drbd_resync_finished(mdev);
 		return;
 	}
 
-	if(mdev->cstate == SyncTarget) {
-		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-		bm_reset(mdev->mbds_id);
+	/* FIXME THINK
+	 * use mdev->cstate (we may already be paused...) or side here ?? */
+	if (mdev->cstate == SyncTarget) {
+		drbd_bm_reset_find(mdev);
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		mod_timer(&mdev->resync_timer,jiffies);
-	} else {
-		// If we are SyncSource we must be consistent :)
-		mdev->gen_cnt[Flags] |= MDF_Consistent;
 	}
-
-	drbd_md_write(mdev);
 
 	drbd_global_lock();
 	if (mdev->cstate == SyncTarget || mdev->cstate == SyncSource) {
@@ -839,7 +853,6 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	   * thread of other mdev already paused us,
 	   * or something very strange happend to our cstate!
 	   * I really hate it that we can't have a consistent view of cstate.
-	   * maybe we even need yet an other smp_mb() ?
 	   */
 	drbd_global_unlock();
 }

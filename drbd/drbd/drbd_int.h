@@ -144,6 +144,7 @@ typedef struct Drbd_Conf drbd_dev;
 	printk(level DEVICE_NAME "%d: " fmt, \
 		(int)(mdev-drbd_conf) , ##args)
 
+#define ALERT(fmt,args...) PRINTK(KERN_ALERT, fmt , ##args)
 #define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt , ##args)
 #define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt , ##args)
 #define INFO(fmt,args...) PRINTK(KERN_INFO, fmt , ##args)
@@ -170,7 +171,8 @@ typedef struct Drbd_Conf drbd_dev;
 		missed = 0;					\
 		toks -= ratelimit_jiffies;			\
 		if (lost)					\
-			printk(KERN_WARNING "drbd: %d messages suppressed.\n", lost);\
+			WARN("%d messages suppressed in %s:%d.\n",\
+				lost , __FILE__ , __LINE__ );	\
 		__ret=1;					\
 	} else {						\
 		missed++;					\
@@ -189,7 +191,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__)
 #endif
 #define ERR_IF(exp) if (({ \
-	int _b = (exp); \
+	int _b = (exp)!=0; \
 	if (_b) ERR("%s: (" #exp ") in %s:%d\n", __func__, __FILE__,__LINE__); \
 	 _b; \
 	}))
@@ -387,6 +389,9 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
  *      these are pointers to local structs
  *      and have no relevance for the partner,
  *      which just echoes them as received.)
+ *
+ * NOTE that the payload starts at a long aligned offset,
+ * regardless off 32 or 64 bit arch!
  */
 typedef struct {
 	u32       magic;
@@ -606,34 +611,7 @@ enum {
 	SENT_DISK_FAILURE,	// sending it once is enough
 };
 
-struct BitMap {
-	sector_t dev_size;
-	unsigned long size;
-	unsigned long* bm;
-	unsigned long gs_bitnr;
-	spinlock_t bm_lock;
-};
-
-// activity log
-#define AL_EXTENTS_PT 61         // Extents per 512B sector (AKA transaction)
-#define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
-#define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
-// resync bitmap
-#define BM_EXTENT_SIZE_B 24       // One extent represents 16M Storage
-#define BM_EXTENT_SIZE (1<<BM_EXTENT_SIZE_B)
-
-#define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
-#define BM_BYTES_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / 8 )
-#define EXTENTS_PER_SECTOR  ( 512 / BM_BYTES_PER_EXTENT )
-
-struct bm_extent { // 16MB sized extents.
-	struct lc_element lce;
-	int rs_left; //number of sectors out of sync in this extent.
-	unsigned long flags;
-};
-
-#define BME_NO_WRITES    0
-#define BME_LOCKED       1
+struct drbd_bitmap; // opaque for Drbd_Conf
 
 // TODO sort members for performance
 // MAYBE group them further
@@ -719,15 +697,17 @@ struct Drbd_Conf {
 	unsigned long flags;
 	struct task_struct *send_task; /* about pid calling drbd_send */
 	spinlock_t send_task_lock;
-	sector_t rs_left;     // blocks not up-to-date [unit sectors]
-	sector_t rs_total;    // blocks to sync in this run [unit sectors]
+	// sector_t rs_left;	   // blocks not up-to-date [unit BM_BLOCK_SIZE]
+	// moved into bitmap->bm_set
+	unsigned long rs_total;    // blocks to sync in this run [unit BM_BLOCK_SIZE]
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
-	sector_t rs_mark_left;// block not up-to-date at mark [unit sect.]
+	unsigned long rs_paused;   // cumulated time in PausedSyncX state [unit jiffies]
+	unsigned long rs_mark_left;// block not up-to-date at mark [unit BM_BLOCK_SIZE]
 	unsigned long rs_mark_time;// marks's time [unit jiffies]
 	struct Drbd_thread receiver;
 	struct Drbd_thread worker;
 	struct Drbd_thread asender;
-	struct BitMap* mbds_id;
+	struct drbd_bitmap* bitmap;
 	struct lru_cache* resync; // Used to track operations of resync...
 	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
@@ -778,7 +758,6 @@ extern int drbd_send_param(drbd_dev *mdev, int flags);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
-extern int drbd_send_cstate(drbd_dev *mdev);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
@@ -791,37 +770,24 @@ extern int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req);
 extern int _drbd_send_barrier(drbd_dev *mdev);
 extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
-extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
-			    u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern void drbd_free_ll_dev(drbd_dev *mdev);
 extern int drbd_io_error(drbd_dev* mdev);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
-
-
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);
 extern int drbd_md_read(drbd_dev *mdev);
-extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
 extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 extern void drbd_dump_md(drbd_dev *, Drbd_Parameter_Packet *, int );
-
-// drbd_bitmap.c (still in drbd_main.c)
-#define SS_OUT_OF_SYNC (1)
-#define SS_IN_SYNC     (0)
-#define MBDS_SYNC_ALL (-2)
-#define MBDS_DONE     (-3)
-// I want the packet to fit within one page
-#define MBDS_PACKET_SIZE (PAGE_SIZE-sizeof(Drbd_Header))
-
-#define BM_BLOCK_SIZE_B  12
-#define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
-
-#define BM_IN_SYNC       0
-#define BM_OUT_OF_SYNC   1
-
+// maybe define them below as inline?
+extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
+/* comming soon {
+extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
+extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
+extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
+} */
 
 /* Meta data layout
    We reserve a 128MB Block (4k aligned)
@@ -835,6 +801,11 @@ extern void drbd_dump_md(drbd_dev *, Drbd_Parameter_Packet *, int );
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
 
+// activity log
+#define AL_EXTENTS_PT    61      // Extents per 512B sector (AKA transaction)
+#define AL_EXTENT_SIZE_B 22      // One extent represents 4M Storage
+#define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
+
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5
 #define cpu_to_lel(A) cpu_to_le32(A)
@@ -847,23 +818,103 @@ extern void drbd_dump_md(drbd_dev *, Drbd_Parameter_Packet *, int );
 #error "LN2 of BITS_PER_LONG unknown!"
 #endif
 
-struct BitMap;
+// resync bitmap
+// 16MB sized 'bitmap extent' to track syncer usage
+struct bm_extent {
+	struct lc_element lce;
+	int rs_left; //number of bits set (out of sync) in this extent.
+	unsigned long flags;
+};
 
-// TODO I'd like to change these all to take the mdev as first argument
-extern struct BitMap* bm_init(unsigned long size_kb);
-extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
-extern void bm_cleanup(struct BitMap* sbm);
-extern int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit);
-extern sector_t bm_get_sector(struct BitMap* sbm,int* size);
-extern void bm_reset(struct BitMap* sbm);
-extern void bm_fill_bm(struct BitMap* sbm,int value);
-extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
-extern int bm_count_sectors(struct BitMap* sbm, unsigned long enr);
-extern int bm_end_of_dev_case(struct BitMap* sbm);
-extern int bm_is_rs_done(struct BitMap* sbm);
+#define BME_NO_WRITES  0  // bm_extent.flags: no more requests on this one!
+#define BME_LOCKED     1  // bm_extent.flags: syncer active on this one.
+
+// drbd_bitmap.c
+/*
+ * We need to store one bit for a block.
+ * Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
+ * Bit 0 ==> local node thinks this block is binary identical on both nodes
+ * Bit 1 ==> local node thinks this block needs to be synced.
+ */
+
+#define BM_BLOCK_SIZE_B  12			 //  4k per bit
+#define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
+/* (9+3) : 512 bytes @ 8 bits; representing 16M storage
+ * per sector of on disk bitmap */
+#define BM_EXT_SIZE_B    (BM_BLOCK_SIZE_B + 9+3)
+#define BM_EXT_SIZE      (1<<BM_EXT_SIZE_B)
+
+/* thus many _storage_ sectors are described by one bit */
+#define BM_SECT_TO_BIT(x)   ((x)>>(BM_BLOCK_SIZE_B-9))
+#define BM_BIT_TO_SECT(x)   ((x)<<(BM_BLOCK_SIZE_B-9))
+#define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
+
+/* in which _bitmap_ extent (resp. sector) the bit for a certain
+ * _storage_ sector is located in */
+#define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SIZE_B-9))
+
+/* in one sector of the bitmap, we have 1<<12 bits,
+ * accounting for this many activity_log extents.
+ */
+#define AL_EXT_PER_BM_SECT  (1 << (12-(AL_EXTENT_SIZE_B - BM_BLOCK_SIZE_B)))
 
 
+/* I want the packet to fit within one page
+ * THINK maybe use a special bitmap header,
+ * including offset and compression scheme and whatnot
+ */
+#define BM_PACKET_WORDS     ((PAGE_SIZE-sizeof(Drbd_Header))/sizeof(long))
 
+/* the extent in "PER_EXTENT" below is an activity log extent
+ * we need that many (long words/bytes) to store the bitmap
+ *                   of one AL_EXTENT_SIZE chunk of storage.
+ * we can store the bitmap for that many AL_EXTENTS within
+ * one sector of the _on_disk_ bitmap:
+ * bit   0        bit 37   bit 38            bit (512*8)-1
+ *           ...|........|........|.. // ..|........|
+ * sect. 0       `296     `304                     ^(512*8*8)-1
+ *
+#define BM_WORDS_PER_EXT    ( (AL_EXT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
+#define BM_BYTES_PER_EXT    ( (AL_EXT_SIZE/BM_BLOCK_SIZE) / 8 )  // 128
+#define BM_EXT_PER_SECT	    ( 512 / BM_BYTES_PER_EXTENT )        //   4
+ */
+
+extern int  drbd_bm_init      (drbd_dev *mdev);
+extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);
+extern void drbd_bm_cleanup   (drbd_dev *mdev);
+extern void drbd_bm_set_all   (drbd_dev *mdev);
+extern void drbd_bm_clear_all (drbd_dev *mdev);
+extern void drbd_bm_reset_find(drbd_dev *mdev);
+extern int  drbd_bm_set_bit   (drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_clear_bit (drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
+extern int  drbd_bm_read_sect (drbd_dev *mdev, sector_t offset);
+extern int  drbd_bm_write_sect(drbd_dev *mdev, sector_t offset);
+extern void drbd_bm_read      (drbd_dev *mdev);
+extern void drbd_bm_write     (drbd_dev *mdev);
+extern unsigned long drbd_bm_e_set_all   (drbd_dev *mdev, unsigned long enr);
+extern size_t        drbd_bm_words       (drbd_dev *mdev);
+extern unsigned long drbd_bm_find_next   (drbd_dev *mdev);
+extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
+// for receive_bitmap
+extern void drbd_bm_merge_lel (drbd_dev *mdev, size_t offset, size_t number,
+				unsigned long* buffer);
+// for _drbd_send_bitmap and drbd_bm_write_sect
+extern void drbd_bm_get_lel   (drbd_dev *mdev, size_t offset, size_t number,
+				unsigned long* buffer);
+/*
+ * only used by drbd_bm_read_sect
+extern void drbd_bm_set_lel   (drbd_dev *mdev, size_t offset, size_t number,
+				unsigned long* buffer);
+*/
+
+extern void __drbd_bm_lock    (drbd_dev *mdev, char* file, int line);
+extern void drbd_bm_unlock    (drbd_dev *mdev);
+#define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
+
+
+// drbd_main.c
 extern drbd_dev *drbd_conf;
 extern int minor_count;
 extern kmem_cache_t *drbd_request_cache;
@@ -927,10 +978,9 @@ extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,int blk_size);
-extern void drbd_read_bm(struct Drbd_Conf *mdev);
+extern void drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector,int blk_size);
 extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
-extern void drbd_write_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 
 /*
@@ -1245,14 +1295,6 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)>=0);
 }
 
-static inline void drbd_set_out_of_sync(drbd_dev* mdev,
-					sector_t sector, int blk_size)
-{
-	D_ASSERT(blk_size);
-	mdev->rs_total +=
-		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
-}
-
 #ifdef DUMP_EACH_PACKET
 /*
  * enable to dump information about every packet exchange.
@@ -1324,20 +1366,27 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 )
 #endif
 
-#ifndef hweight_long
-# if (BITS_PER_LONG > 32)
-static inline unsigned long hweight64(__u64 w)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+// this is a direct copy from 2.6.6 include/linux/bitops.h
+
+static inline unsigned long generic_hweight64(__u64 w)
 {
+#if BITS_PER_LONG < 64
+	return generic_hweight32((unsigned int)(w >> 32)) +
+				generic_hweight32((unsigned int)w);
+#else
 	u64 res;
-        res = (w & 0x5555555555555555) + ((w >> 1) & 0x5555555555555555);
-        res = (res & 0x3333333333333333) + ((res >> 2) & 0x3333333333333333);
-        res = (res & 0x0F0F0F0F0F0F0F0F) + ((res >> 4) & 0x0F0F0F0F0F0F0F0F);
-        res = (res & 0x00FF00FF00FF00FF) + ((res >> 8) & 0x00FF00FF00FF00FF);
-        res = (res & 0x0000FFFF0000FFFF) + ((res >> 16) & 0x0000FFFF0000FFFF);
-        return (res & 0x00000000FFFFFFFF) + ((res >> 32) & 0x00000000FFFFFFFF);
+	res = (w & 0x5555555555555555ul) + ((w >> 1) & 0x5555555555555555ul);
+	res = (res & 0x3333333333333333ul) + ((res >> 2) & 0x3333333333333333ul);
+	res = (res & 0x0F0F0F0F0F0F0F0Ful) + ((res >> 4) & 0x0F0F0F0F0F0F0F0Ful);
+	res = (res & 0x00FF00FF00FF00FFul) + ((res >> 8) & 0x00FF00FF00FF00FFul);
+	res = (res & 0x0000FFFF0000FFFFul) + ((res >> 16) & 0x0000FFFF0000FFFFul);
+	return (res & 0x00000000FFFFFFFFul) + ((res >> 32) & 0x00000000FFFFFFFFul);
+#endif
 }
-#  define hweight_long(x) hweight64(x)
-# else
-#  define hweight_long(x) hweight32(x)
-# endif
+
+static inline unsigned long hweight_long(unsigned long w)
+{
+	return sizeof(w) == 4 ? generic_hweight32(w) : generic_hweight64(w);
+}
 #endif

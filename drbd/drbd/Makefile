@@ -101,7 +101,7 @@ else
   ifneq ($(KDIR_Makefile_PATCHLEVEL),6)
     # obsolete in 2.6 ...
     dep:
-	@echo "tying to make dep ..."
+	@echo "trying to make dep ..."
 	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) dep || \
          echo "I'll ignore this error, but this can cause inconsistencies!"
 

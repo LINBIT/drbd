@@ -80,7 +80,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	if ( pmdss != drbd_md_ss(mdev) && mdev->md_index == -1 ) {
 		WARN("Moving meta-data.\n");
 		drbd_al_shrink(mdev); // All extents inactive.
-		drbd_write_bm(mdev);  // 
+		drbd_bm_write(mdev);  // write bitmap
 		drbd_md_write(mdev);  // Write mdev->la_size to disk.
 	}
 	lc_unlock(mdev->act_log);
@@ -94,6 +94,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
  * note, *_capacity operates in 512 byte sectors!!
  *
  * currently *_size is in KB.
+ *
+ * FIXME
+ * since this is done by drbd receiver as well as from drbdsetup,
+ * this actually needs proper locking!
+ * drbd_bm_resize already protects itself with a mutex.
+ * but again, this is a state change, and thus should be serialized with other
+ * state changes on a more general level already.
  */
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
@@ -140,11 +147,17 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if( (drbd_get_capacity(mdev->this_bdev)>>1) != size ) {
-		if(bm_resize(mdev->mbds_id,size)) {
+		int err;
+		err = drbd_bm_resize(mdev,size<<1); // wants sectors
+		if (unlikely(err)) {
+			ERR("BM resizing failed. "
+			    "Leaving size unchanged at size = %lu KB\n", size);
+		} else {
+			// racy, see comments above.
 			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
 			INFO("size = %lu KB\n",size);
-		} else ERR("BM resizing failed. Leaving size unchanged\n");
+		}
 	}
 
 	return rv;
@@ -333,14 +346,14 @@ ONLY_IN_26({
 
 /* FIXME if (md_gc_valid < 0) META DATA IO NOT POSSIBLE! */
 
+	drbd_bm_lock(mdev); // racy...
 	drbd_determin_dev_size(mdev);
 
-	if(md_gc_valid > 0) drbd_read_bm(mdev);
+	if(md_gc_valid > 0) drbd_bm_read(mdev);
 	else {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
-		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
-		drbd_write_bm(mdev);
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
 	}
 
 	D_ASSERT(mdev->sync_conf.al_extents >= 7);
@@ -379,7 +392,6 @@ ONLY_IN_26({
 	}
 
 
-// FIXME why "else" ?? I think allways, and *before* send_param!
 	clear_bit(DISKLESS,&mdev->flags);
 	smp_wmb();
 // FIXME EXPLAIN:
@@ -388,6 +400,7 @@ ONLY_IN_26({
 	if(mdev->cstate >= Connected ) {
 		drbd_send_param(mdev,1);
 	}
+	drbd_bm_unlock(mdev);
 
 	return 0;
 
@@ -612,7 +625,8 @@ ONLY_IN_26(
 	 * */
 
 	mdev->state = (Drbd_State) newstate & 0x03;
-	INFO("switched to %s state\n", nodestate_to_name(mdev->state));
+	INFO( "switched to %s/%s state\n", nodestate_to_name(mdev->state),
+			nodestate_to_name(mdev->o_state) );
 	if(newstate & Primary) {
 		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), FALSE ); )
 
@@ -813,8 +827,10 @@ ONLY_IN_26(
 		}
 		err=0;
 		mdev->lo_usize = (unsigned long)arg;
+		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
+		drbd_bm_unlock(mdev);
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		break;
 
@@ -964,11 +980,16 @@ ONLY_IN_26(
 			break;
 		}
 
-		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
-		drbd_write_bm(mdev);
+		drbd_bm_lock(mdev); // racy...
+
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
+
 		drbd_send_short_cmd(mdev,BecomeSyncSource);
 		drbd_start_resync(mdev,SyncTarget);
+
+		drbd_bm_unlock(mdev);
+
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
@@ -979,11 +1000,16 @@ ONLY_IN_26(
 			break;
 		}
 
-		bm_fill_bm(mdev->mbds_id,-1);
-		mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
-		drbd_write_bm(mdev);
+		drbd_bm_lock(mdev); // racy...
+
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
+
 		drbd_send_short_cmd(mdev,BecomeSyncTarget);
 		drbd_start_resync(mdev,SyncSource);
+
+		drbd_bm_unlock(mdev);
+
 		break;
 
 	default:

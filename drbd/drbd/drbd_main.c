@@ -695,16 +695,15 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 /* See the comment at receive_bitmap() */
 int _drbd_send_bitmap(drbd_dev *mdev)
 {
-	int buf_i,want;
+	int want;
 	int ok=TRUE, bm_i=0;
-	size_t bm_words;
-	unsigned long *buffer,*bm;
+	size_t bm_words, num_words;
+	unsigned long *buffer;
 	Drbd_Header *p;
 
-	ERR_IF(!mdev->mbds_id) return FALSE;
+	ERR_IF(!mdev->bitmap) return FALSE;
 
-	bm_words = mdev->mbds_id->size/sizeof(long);
-	bm = mdev->mbds_id->bm;
+	bm_words = drbd_bm_words(mdev);
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
 	buffer = (unsigned long*)p->payload;
 
@@ -713,11 +712,14 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	 * some such algorithms in the kernel anyways.
 	 */
 	do {
-		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
-		for(buf_i=0;buf_i<want/sizeof(long);buf_i++)
-			buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
+		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i );
+		want = num_words * sizeof(long);
+		if (want) {
+			drbd_bm_get_lel(mdev, bm_i, num_words, buffer);
+		}
 		ok = _drbd_send_cmd(mdev,mdev->data.socket,ReportBitMap,
 				   p, sizeof(*p) + want, 0);
+		bm_i += num_words;
 	} while (ok && want);
 
 	vfree(p);
@@ -1036,11 +1038,17 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		}
 		D_ASSERT(rv != 0);
 		if (rv == -EINTR ) {
+#if 0
+			/* FIXME this happens all the time.
+			 * we don't care for now!
+			 * eventually this should be sorted out be the proper
+			 * use of the SIGNAL_ASENDER bit... */
 			if (DRBD_ratelimit(5*HZ,5)) {
 				DBG("Got a signal in drbd_send(,%c,)!\n",
 				    sock == mdev->meta.socket ? 'm' : 's');
 				// dump_stack();
 			}
+#endif
 			drbd_flush_signals(current);
 			rv = 0;
 		}
@@ -1307,7 +1315,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->p_size       =
 	mdev->rs_start     =
 	mdev->rs_total     =
-	mdev->rs_left      =
 	mdev->rs_mark_left =
 	mdev->rs_mark_time = 0;
 	mdev->send_task    = NULL;
@@ -1440,7 +1447,7 @@ ONLY_IN_26(
 )
 
 			tl_cleanup(mdev);
-			if (mdev->mbds_id) bm_cleanup(mdev->mbds_id);
+			if (mdev->bitmap) drbd_bm_cleanup(mdev);
 			if (mdev->resync) lc_free(mdev->resync);
 
 			D_ASSERT(mdev->ee_in_use==0);
@@ -1639,8 +1646,7 @@ NOT_IN_26(
 		if(!page) goto Enomem;
 		mdev->md_io_page = page;
 
-		mdev->mbds_id = bm_init(0);
-		if (!mdev->mbds_id) goto Enomem;
+		if (drbd_bm_init(mdev)) goto Enomem;
 		// no need to lock access, we are still initializing the module.
 		mdev->resync = lc_alloc(17, sizeof(struct bm_extent),mdev);
 		if (!mdev->resync) goto Enomem;
@@ -1764,388 +1770,6 @@ void drbd_free_resources(drbd_dev *mdev)
 }
 
 /*********************************/
-
-/*** The bitmap stuff. ***/
-/*
-  We need to store one bit for a block.
-  Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
-  Bit 0 ==> Primary and secondary nodes are in sync.
-  Bit 1 ==> secondary node's block must be updated. (')
-*/
-
-
-// Shift right with round up. :)
-#define SR_RU(A,B) ( ((A)>>(B)) + ( ((A) & ((1<<(B))-1)) > 0 ? 1 : 0 ) )
-
-int bm_resize(struct BitMap* sbm, unsigned long size_kb)
-{
-	unsigned long *obm,*nbm;
-	unsigned long size;
-
-	if(!sbm) return 1; // Nothing to do
-
-	size = SR_RU(size_kb,(BM_BLOCK_SIZE_B - (10-LN2_BPL))) << (LN2_BPL-3);
-	/* 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
-	// Calculate the number of long words needed, round it up, and
-	// finally convert it to bytes.
-
-	if(size == 0) {
-		sbm->size = size;
-		vfree(sbm->bm);
-		sbm->bm = 0;
-		return 1;
-	}
-
-	obm = sbm->bm;
-	nbm = vmalloc(size);
-	if(!nbm) {
-		printk(KERN_ERR DEVICE_NAME"X: Failed to allocate BitMap\n");
-		return 0;
-	}
-	memset(nbm,0,size);
-
-	spin_lock_irq(&sbm->bm_lock);
-	if(obm) {
-		memcpy(nbm,obm,min_t(unsigned long,sbm->size,size));
-	}
-	sbm->dev_size = size_kb;
-	sbm->size = size;
-	sbm->bm = nbm;
-	spin_unlock_irq(&sbm->bm_lock);
-
-	if(obm) vfree(obm);
-
-	return 1;
-}
-
-struct BitMap* bm_init(unsigned long size_kb)
-{
-	struct BitMap* sbm;
-
-	sbm = kmalloc(sizeof(struct BitMap),GFP_KERNEL);
-	if(!sbm) {
-		printk(KERN_ERR DEVICE_NAME"X: Failed to allocate BM desc\n");
-		return 0;
-	}
-
-	sbm->dev_size = size_kb;
-	sbm->gs_bitnr=0;
-	sbm->bm_lock = SPIN_LOCK_UNLOCKED;
-
-	sbm->size = 0;
-	sbm->bm = NULL;
-
-	if(!bm_resize(sbm,size_kb)) {
-		kfree(sbm);
-		return 0;
-	}
-
-	return sbm;
-}
-
-void bm_cleanup(struct BitMap* sbm)
-{
-	vfree(sbm->bm);
-	kfree(sbm);
-}
-
-#define BM_SS (BM_BLOCK_SIZE_B-9)     // 3
-#define BM_NS (1<<BM_SS)              // 8
-#define BM_MM ((1L<<BM_SS)-1)         // 7 = 111bin
-#define BPLM (BITS_PER_LONG-1)
-#define BM_BPS (BM_BLOCK_SIZE/1024)   // 4
-
-/* sector_t and size have a higher resolution (512 Byte) than
-   the bitmap (4K). In case we have to set a bit, we 'round up',
-   in case we have to clear a bit we do the opposit.
-   It returns the number of sectors that where marked dirty, or
-   marked clean.
-*/
-int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
-{
-	struct BitMap* sbm = mdev->mbds_id;
-	unsigned long* bm;
-	unsigned long sbnr,ebnr,bnr;
-	sector_t esector = ( sector + (size>>9) - 1 );
-	int ret=0;
-	unsigned long flags;
-
-	if (size <= 0 || (size & 0x1ff) != 0 || ( size > PAGE_SIZE && size != AL_EXTENT_SIZE)) {
-		DUMPI(size);
-		return 0;
-	}
-
-	if(sbm == NULL) {
-		printk(KERN_ERR DEVICE_NAME"X: No BitMap !?\n");
-		return 0;
-	}
-
-	if(sector >= sbm->dev_size<<1) return 0;
-	ERR_IF(esector >= sbm->dev_size<<1) esector = (sbm->dev_size<<1) - 1;
-
-	sbnr = sector >> BM_SS;
-	ebnr = esector >> BM_SS;
-
-	/*
-	INFO("bm_set_bit(,%lu,%d,%d) %lu %lu %lu ; %lu %lu\n",
-	     sector,size,bit, esector, sbnr,ebnr, sbm->size, sbm->dev_size);
-	*/
-
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-	bm = sbm->bm;
-
-	if(bit) {
-		for(bnr=sbnr; bnr <= ebnr; bnr++) {
-			ERR_IF((bnr>>3) >= sbm->size) {
-				DUMPST(sector);
-				DUMPI(size);
-				DUMPLU(bnr);
-				DUMPLU(sbm->size);
-				DUMPST(sbm->dev_size);
-				break;
-			}
-			if(!test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
-			__set_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
-			ret += bm_end_of_dev_case(sbm);
-		}
-	} else { // bit == 0
-		sector_t dev_size;
-
-		dev_size=sbm->dev_size;
-
-		if(  (sector & BM_MM) != 0 )     sbnr++;
-		if( ebnr && (esector & BM_MM) != BM_MM ) {
-			ebnr--;
-
-			// There is this one special case at the
-			// end of the device...
-			if(unlikely(dev_size<<1 == esector+1)) {
-				ebnr++;
-				ERR_IF((ebnr>>3) >= sbm->size) {
-					DUMPST(sector);
-					DUMPI(size);
-					DUMPLU(ebnr);
-					DUMPLU(sbm->size);
-					DUMPST(sbm->dev_size);
-				} else if(test_bit(ebnr&BPLM,bm+(ebnr>>LN2_BPL))) {
-					ret = (esector-sector+1)-BM_NS;
-				}
-			}
-		}
-
-		for(bnr=sbnr; bnr <= ebnr; bnr++) {
-			ERR_IF((bnr>>3) >= sbm->size) {
-				DUMPST(sector);
-				DUMPI(size);
-				DUMPLU(bnr);
-				DUMPLU(sbnr);
-				DUMPLU(ebnr);
-				DUMPLU(sbm->size);
-				DUMPST(sbm->dev_size);
-				break;
-			}
-			if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
-			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
-		}
-	}
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-
-	return ret;
-}
-
-static inline unsigned long bitmask(int o)
-{
-	return o >= BITS_PER_LONG ? -1 : ((1<<o)-1);
-}
-
-/* In case the device's size is not divisible by 4, the last bit
-   does not count for 8 sectors but something less. This function
-   returns this 'something less' iff the last bit is set.
-   0               in case the device's size is divisible by 4
-   -2,-4 or -6     in the other cases
-   If the bits beyond the device's size are set, they are cleared
-   and their weight (-8 per bit) is added to the return value.
- */
-int bm_end_of_dev_case(struct BitMap* sbm)
-{
-	unsigned long bnr;
-	unsigned long* bm;
-	int rv=0;
-	int used_bits;      // number ob bits used in last word
-	unsigned long mask;
-
-	bm = sbm->bm;
-
-	if( sbm->dev_size % BM_BPS ) {
-		bnr = sbm->dev_size / BM_BPS;
-		if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) {
-			rv = (sbm->dev_size*2) % BM_NS - BM_NS;
-		}
-	}
-	used_bits = BITS_PER_LONG -
-		( sbm->size*8 - div_ceil(sbm->dev_size,BM_BPS) );
-	mask = ~ bitmask(used_bits); // mask of bits to clear;
-	mask &= bm[sbm->size/sizeof(long)-1];
-	if( mask ) {
-		rv = -8 * hweight_long(mask);
-		bm[sbm->size/sizeof(long)-1] &= ~mask;
-	}
-
-	return rv;
-}
-
-#define WORDS ( ( BM_EXTENT_SIZE / BM_BLOCK_SIZE ) / BITS_PER_LONG )
-int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
-{
-	unsigned long* bm;
-	unsigned long flags;
-	int i,max,bits=0;
-
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-	bm = sbm->bm;
-
-	max = min_t(int, (enr+1)*WORDS, sbm->size/sizeof(long));
-
-	for(i = enr * WORDS ; i < max ; i++) {
-		bits += hweight_long(bm[i]);
-	}
-
-	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
-
-	// Special case at the end of the device
-	if( max == sbm->size/sizeof(long) ) {
-		bits += bm_end_of_dev_case(sbm);
-	}
-
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-
-	return bits;
-}
-#undef WORDS
-
-int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
-{
-	unsigned long* bm;
-	unsigned long sbnr,ebnr,bnr;
-	unsigned long flags;
-	sector_t esector = ( sector + (size>>9) - 1 );
-	int ret=0;
-
-	if(sbm == NULL) {
-		printk(KERN_ERR DEVICE_NAME"X: No BitMap !?\n");
-		return 0;
-	}
-
-	sbnr = sector >> BM_SS;
-	ebnr = esector >> BM_SS;
-
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-	bm = sbm->bm;
-
-	for (bnr=sbnr; bnr <= ebnr; bnr++) {
-		if (test_bit(bnr, bm)) {
-			ret=1;
-			break;
-		}
-	}
-
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-
-	return ret;
-}
-
-sector_t bm_get_sector(struct BitMap* sbm,int* size)
-{
-	sector_t bnr;
-	unsigned long* bm;
-	unsigned long flags;
-	sector_t dev_size;
-	sector_t ret;
-
-	if(*size != BM_BLOCK_SIZE) BUG(); // Other cases are not needed
-
-	if(sbm->gs_bitnr == -1) {
-		return MBDS_DONE;
-	}
-
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-	bm = sbm->bm;
-	bnr = sbm->gs_bitnr;
-
-	// optimization possible, search word != 0 first...
-	while( (bnr>>3) < sbm->size ) {
-		if(test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) break;
-		bnr++;
-	}
-
-	ret=bnr<<BM_SS;
-
-	dev_size=sbm->dev_size;
-	if( ret+((1<<BM_SS)-1) > dev_size<<1 ) {
-		int ns = dev_size % (1<<(BM_BLOCK_SIZE_B-10));
-		sbm->gs_bitnr = -1;
-		if(ns) *size = ns<<10;
-		else ret=MBDS_DONE;
-	} else {
-		sbm->gs_bitnr = bnr+1;
-	}
-
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-
-	return ret;
-}
-
-int bm_is_rs_done(struct BitMap* sbm)
-{
-	int rv=0;
-	unsigned long flags;
-
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-
-	if( (sbm->gs_bitnr<<BM_SS) + ((1<<BM_SS)-1) > sbm->dev_size<<1) {
-		int ns = sbm->dev_size % (1<<(BM_BLOCK_SIZE_B-10));
-		if(!ns) {
-			sbm->gs_bitnr = -1;
-			rv=1;
-		}
-	}
-
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-
-	return rv;
-}
-
-void bm_reset(struct BitMap* sbm)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-	sbm->gs_bitnr=0;
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-}
-
-
-void bm_fill_bm(struct BitMap* sbm,int value)
-{
-	unsigned long* bm;
-	unsigned long bnr,o;
-	unsigned long flags;
-
-	spin_lock_irqsave(&sbm->bm_lock,flags);
-	bm = sbm->bm;
-
-	memset(bm,value,sbm->size);
-
-	// Special case at end of device...
-	bnr = sbm->dev_size / BM_BPS + ( sbm->dev_size % BM_BPS ? 1 : 0 );
-	o = bnr / BITS_PER_LONG;
-	if ( o < sbm->size/sizeof(long) ) { // e.g. is wrong if dev_size == 1G 
-		bm[ o ] &= ( ( 1 << (bnr % BITS_PER_LONG) ) - 1 );
-	}
-
-	spin_unlock_irqrestore(&sbm->bm_lock,flags);
-}
-
-/*********************************/
 /* meta data management */
 
 struct meta_data_on_disk {
@@ -2160,7 +1784,7 @@ struct meta_data_on_disk {
 
 /*
 
-FIXME md_io might fail unnoticed
+FIXME md_io might fail unnoticed sometimes ...
 
 */
 void drbd_md_write(drbd_dev *mdev)

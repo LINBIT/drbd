@@ -38,6 +38,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 {
 	struct buffer_head bh;
 	struct completion event;
+	int ok = 0;
 
 	if (!mdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
@@ -66,7 +67,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	run_task_queue(&tq_disk);
 	wait_for_completion(&event);
 
-	return test_bit(BH_Uptodate, &bh.b_state);
+	ok = test_bit(BH_Uptodate, &bh.b_state);
+	if (unlikely(!ok)) {
+		ERR("drbd_md_sync_page_io(,%lu,%d) failed!\n",
+				(unsigned long)sector,rw);
+	}
+
+	return ok;
 }
 #else
 int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
@@ -74,6 +81,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct bio bio;
 	struct bio_vec vec;
 	struct completion event;
+	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
+	int ok = 0;
 
 	if (!mdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
@@ -102,11 +111,18 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	bio.bi_private = &event;
 	bio.bi_end_io = drbd_md_io_complete;
 
-	/*
+#if DUMP_MD >= 3
 	INFO("%s [%d]:%s(,%ld,%s)\n",
 	     current->comm, current->pid, __func__,
 	     sector, rw ? "WRITE" : "READ");
-	*/
+#endif
+	if (sector < drbd_md_ss(mdev)  ||
+	    sector > drbd_md_ss(mdev)+MD_BM_OFFSET+BM_SECT_TO_EXT(capacity)) {
+		ALERT("%s [%d]:%s(,%ld,%s) out of range md access!\n",
+		     current->comm, current->pid, __func__,
+		     sector, rw ? "WRITE" : "READ");
+	}
+
 #ifdef BIO_RW_SYNC
 	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
 #else
@@ -115,7 +131,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 #endif
 	wait_for_completion(&event);
 
-	return test_bit(BIO_UPTODATE, &bio.bi_flags);
+	ok = test_bit(BIO_UPTODATE, &bio.bi_flags);
+	if (unlikely(!ok)) {
+		ERR("drbd_md_sync_page_io(,%lu,%s) failed!\n",
+				(unsigned long)sector,rw ? "WRITE" : "READ");
+	}
+
+	return ok;
 }
 #endif
 
@@ -140,10 +162,6 @@ struct update_odbm_work {
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *,
 				      unsigned int );
-STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int);
-
-#define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
-
 static inline
 struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
@@ -152,7 +170,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	unsigned long     al_flags=0;
 
 	spin_lock_irq(&mdev->al_lock);
-	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr/SM);
+	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr/AL_EXT_PER_BM_SECT);
 	if (unlikely(bm_ext!=NULL)) {
 		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
@@ -191,7 +209,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		evicted = al_ext->lc_number;
 
 		if(mdev->cstate < Connected && evicted != LC_FREE ) {
-			drbd_update_on_disk_bm(mdev,evicted);
+			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT );
 		}
 		drbd_al_write_transaction(mdev,al_ext,enr);
 		mdev->al_writ_cnt++;
@@ -412,8 +430,10 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 }
 
 /**
- * drbd_al_to_on_disk_bm: Writes the areas of the bitmap which are covered by
- * the AL.
+ * drbd_al_to_on_disk_bm:
+ * Writes the areas of the bitmap which are covered by the AL.
+ * called when we detach (unconfigure) local storage,
+ * or when we go from Primary to Secondary state.
  */
 void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 {
@@ -429,7 +449,10 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		drbd_update_on_disk_bm(mdev,enr);
+		/* TODO encapsulate and optimize within drbd_bitmap
+		 * currently, if we have al-extents 16..19 active,
+		 * sector 4 will be written four times! */
+		drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
 	}
 
 	lc_unlock(mdev->act_log);
@@ -452,34 +475,13 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		add += bm_set_bit( mdev, enr << (AL_EXTENT_SIZE_B-9),
-				   AL_EXTENT_SIZE, SS_OUT_OF_SYNC );
+		add += drbd_bm_e_set_all(mdev, enr);
 	}
 
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
-	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",(add+1)/2);
-
-	mdev->rs_total += add;
-}
-
-/**
- * drbd_write_bm: Writes the whole bitmap to its on disk location.
- */
-void drbd_write_bm(struct Drbd_Conf *mdev)
-{
-	unsigned int exts,i;
-
-	if( !inc_local_md_only(mdev) ) return;
-
-	exts = div_ceil(drbd_get_capacity(mdev->this_bdev),
-			BM_EXTENT_SIZE >> 9 );
-
-	for(i=0;i<exts;i++) {
-		drbd_update_on_disk_bm(mdev,i*EXTENTS_PER_SECTOR);
-	}
-	dec_local(mdev);
+	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add >> 1);
 }
 
 static inline int _try_lc_del(struct Drbd_Conf *mdev,struct lc_element *al_ext)
@@ -626,15 +628,18 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 		return 1;
 	}
 
-	drbd_update_on_disk_bm(mdev,udw->enr);
+	drbd_bm_write_sect(mdev, udw->enr );
 	dec_local(mdev);
 
 	kfree(udw);
 
-	if(mdev->rs_left == 0 && 
+	/* FIXME what about PausedSync{S,T} ? */
+	if(drbd_bm_total_weight(mdev) == 0 &&
 	   ( mdev->cstate == SyncSource || mdev->cstate == SyncTarget ) ) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
+		drbd_bm_lock(mdev);
 		drbd_resync_finished(mdev);
+		drbd_bm_unlock(mdev);
 	}
 
 	return 1;
@@ -642,7 +647,10 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the  *
- * resync LRU-cache are 16MB each.                                     */
+ * resync LRU-cache are 16MB each.                                     *
+ *
+ * TODO will be obsoleted once we have a caching lru of the on disk bitmap
+ */
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				      int cleared)
 {
@@ -651,26 +659,35 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	struct update_odbm_work * udw;
 
 	unsigned int enr;
-	unsigned long flags;
+
+	MUST_HOLD(&mdev->al_lock);
 
 	// I simply assume that a sector/size pair never crosses
 	// a 16 MB extent border. (Currently this is true...)
-	enr = (sector >> (BM_EXTENT_SIZE_B-9));
+	enr = BM_SECT_TO_EXT(sector);
 
-	spin_lock_irqsave(&mdev->al_lock,flags);
 	ext = (struct bm_extent *) lc_get(mdev->resync,enr);
 	if (ext) {
 		if( ext->lce.lc_number == enr) {
 			ext->rs_left -= cleared;
-			D_ASSERT(ext->rs_left >= 0);
+			if (ext->rs_left < 0) {
+				ERR("BAD! sector=%lu enr=%u rs_left=%d cleared=%d\n",
+				     (unsigned long)sector,
+				     ext->lce.lc_number, ext->rs_left, cleared);
+				// FIXME brrrgs. should never happen!
+				_set_cstate(mdev,StandAlone);
+				drbd_thread_stop_nowait(&mdev->receiver);
+				return;
+			}
 		} else {
 			//WARN("Recounting sectors in %d (resync LRU too small?)\n", enr);
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
-			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+			ext->rs_left = drbd_bm_e_weight(mdev,enr);
 			lc_changed(mdev->resync,&ext->lce);
 		}
 		lc_put(mdev->resync,&ext->lce);
+		// no race, we are within the al_lock!
 	} else {
 		ERR("lc_get() failed! locked=%d/%d flags=%lu\n",
 		    atomic_read(&mdev->resync_locked), 
@@ -686,47 +703,135 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				WARN("Could not kmalloc an udw\n");
 				break;
 			}
-			udw->enr = enr*SM;
+			udw->enr = ext->lce.lc_number;
 			udw->w.cb = w_update_odbm;
 			drbd_queue_work_front(mdev,&mdev->data.work,&udw->w);
 			lc_del(mdev->resync,&ext->lce);
 		}
 	}
-
-	spin_unlock_irqrestore(&mdev->al_lock,flags);
-	// just wake_up unconditional now. [various lc_chaged(), lc_put() here]
-	wake_up(&mdev->al_wait);
 }
 
-void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int blk_size)
+/* clear the bit corresponding to the piece of storage in question:
+ * size byte of data starting from sector.  Only clear a bits of the affected
+ * one ore more _aligned_ BM_BLOCK_SIZE blocks.
+ *
+ * called by worker on SyncTarget and receiver on SyncSource.
+ *
+ */
+void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size)
 {
-	/* Is called by drbd_dio_end possibly from IRQ context, but
-	   from other places in non IRQ */
-	unsigned long flags=0;
-	int cleared;
+	/* Is called from worker and receiver context _only_ */
+	unsigned long sbnr,ebnr,lbnr,bnr;
+	unsigned long count = 0;
+	sector_t esector, nr_sectors;
 
-	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
-
-	if( cleared == 0 ) return;
-
-	spin_lock_irqsave(&mdev->al_lock,flags);
-	mdev->rs_left -= cleared;
-	D_ASSERT((long)mdev->rs_left >= 0);
-
-	if(jiffies - mdev->rs_mark_time > HZ*10) {
-		mdev->rs_mark_time=jiffies;
-		mdev->rs_mark_left=mdev->rs_left;
+	if (mdev->cstate < Connected || test_bit(DISKLESS,&mdev->flags)) {
+		ERR("%s:%d: %s flags=0x%02lx\n", __FILE__ , __LINE__ ,
+				cstate_to_name(mdev->cstate), mdev->flags);
 	}
-	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
-	drbd_try_clear_on_disk_bm(mdev,sector,cleared);
+	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+		ERR("drbd_set_in_sync: sector=%lu size=%d nonsense!\n",
+				(unsigned long)sector,size);
+		return;
+	}
+	nr_sectors = drbd_get_capacity(mdev->this_bdev);
+	esector = sector + (size>>9) -1;
+
+	ERR_IF(sector >= nr_sectors) return;
+	ERR_IF(esector >= nr_sectors) esector = (nr_sectors-1);
+
+	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
+
+	/* we clear it (in sync).
+	 * round up start sector, round down end sector.  we make sure we only
+	 * clear full, alligned, BM_BLOCK_SIZE (4K) blocks */
+	if (unlikely(esector < BM_SECT_PER_BIT-1)) {
+		return;
+	} else if (unlikely(esector == (nr_sectors-1))) {
+		ebnr = lbnr;
+	} else {
+		ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
+	}
+	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
+
+#ifdef DUMP_EACH_PACKET
+	INFO("drbd_set_in_sync: sector=%lu size=%d sbnr=%lu ebnr=%lu\n",
+			(unsigned long)sector, size, sbnr, ebnr);
+#endif
+
+	if (sbnr > ebnr) return;
+
+	/*
+	 * ok, (capacity & 7) != 0 sometimes, but who cares...
+	 * we count rs_{total,left} in bits, not sectors.
+	 */
+	for(bnr=sbnr; bnr <= ebnr; bnr++) {
+		if (drbd_bm_clear_bit(mdev,bnr)) count++;
+	}
+	if (count) {
+		// we need the lock for drbd_try_clear_on_disk_bm
+		spin_lock_irq(&mdev->al_lock);
+		if(jiffies - mdev->rs_mark_time > HZ*10) {
+			/* should be roling marks, but we estimate only anyways. */
+			mdev->rs_mark_time = jiffies;
+			mdev->rs_mark_left = drbd_bm_total_weight(mdev);
+		}
+		drbd_try_clear_on_disk_bm(mdev,sector,count);
+		spin_unlock_irq(&mdev->al_lock);
+		/* just wake_up unconditional now,
+		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
+		wake_up(&mdev->al_wait);
+	}
 }
 
+/*
+ * this is intended to set one request worth of data out of sync.
+ * affects at least 1 bit, and at most 1+PAGE_SIZE/BM_BLOCK_SIZE bits.
+ *
+ * called by tl_clear and drbd_send_dblock (==drbd_make_request).
+ * so this can be _any_ process.
+ */
+void drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size)
+{
+	unsigned long sbnr,ebnr,lbnr,bnr;
+	sector_t esector, nr_sectors;
+
+	if (mdev->cstate >= Connected) {
+		ERR("%s:%d: %s flags=0x%02lx\n", __FILE__ , __LINE__ ,
+				cstate_to_name(mdev->cstate), mdev->flags);
+	}
+
+	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+		ERR("sector: %lu, size: %d\n",(unsigned long)sector,size);
+		return;
+	}
+
+	nr_sectors = drbd_get_capacity(mdev->this_bdev);
+	esector = sector + (size>>9) -1;
+
+	ERR_IF(sector >= nr_sectors) return;
+	ERR_IF(esector >= nr_sectors) esector = (nr_sectors-1);
+
+	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
+
+	/* we set it out of sync,
+	 * we do not need to round anything here */
+	sbnr = BM_SECT_TO_BIT(sector);
+	ebnr = BM_SECT_TO_BIT(esector);
+
+	/*
+	 * ok, (capacity & 7) != 0 sometimes, but who cares...
+	 * we count rs_{total,left} in bits, not sectors.
+	 */
+	for(bnr=sbnr; bnr <= ebnr; bnr++) drbd_bm_set_bit(mdev,bnr);
+}
 
 static inline
 struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct bm_extent  *bm_ext;
+	int wakeup = 0;
 	unsigned long     rs_flags;
 
 	if(atomic_read(&mdev->resync_locked) > mdev->resync->nr_elements-3 ) {
@@ -738,15 +843,16 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
 	if (bm_ext) {
 		if(bm_ext->lce.lc_number != enr) {
-			bm_ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+			bm_ext->rs_left = drbd_bm_e_weight(mdev,enr);
 			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
-			wake_up(&mdev->al_wait);
+			wakeup = 1;
 		}
 		if(bm_ext->lce.refcnt == 1) atomic_inc(&mdev->resync_locked);
 		set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
 	}
 	rs_flags=mdev->resync->flags;
 	spin_unlock_irq(&mdev->al_lock);
+	if (wakeup) wake_up(&mdev->al_wait);
 
 	if(!bm_ext) {
 		if (rs_flags & LC_STARVING) {
@@ -792,20 +898,20 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
  */
 int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 {
-	unsigned int enr = (sector >> (BM_EXTENT_SIZE_B-9));
+	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent* bm_ext;
-	int i;
+	int i, sig;
 
-	if( wait_event_interruptible(mdev->al_wait, 
-				     (bm_ext = _bme_get(mdev,enr)) ) ) {
-		return 0;
-	}
+	sig = wait_event_interruptible( mdev->al_wait,
+			(bm_ext = _bme_get(mdev,enr)) );
+	if (sig) return 0;
 
 	if(test_bit(BME_LOCKED,&bm_ext->flags)) return 1;
 
-	for(i=0;i<SM;i++) {
-		if( wait_event_interruptible(mdev->al_wait, 
-					     !_is_in_al(mdev,enr*SM+i) ) ) {
+	for(i=0;i<AL_EXT_PER_BM_SECT;i++) {
+		sig = wait_event_interruptible( mdev->al_wait,
+				!_is_in_al(mdev,enr*AL_EXT_PER_BM_SECT+i) );
+		if (sig) {
 			if( lc_put(mdev->resync,&bm_ext->lce) == 0 ) {
 				clear_bit(BME_NO_WRITES,&bm_ext->flags);
 				atomic_dec(&mdev->resync_locked);
@@ -822,7 +928,7 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 
 void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 {
-	unsigned int enr = (sector >> (BM_EXTENT_SIZE_B-9));
+	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent* bm_ext;
 	unsigned long flags;
 

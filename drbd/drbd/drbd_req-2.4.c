@@ -81,7 +81,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	uptodate = req->rq_status & 0x0001;
 	if( !uptodate && mdev->on_io_error == Detach) {
 		drbd_set_out_of_sync(mdev,rsector, drbd_req_get_size(req));
-		// It should also be as out of sync on 
+		// It should also be as out of sync on
 		// the other side!  See w_io_error()
 
 		drbd_bio_endio(req->master_bio,1);
@@ -131,6 +131,36 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 			      (unsigned long)req);
 #endif
 	return rv;
+}
+
+
+/* we may do a local read if:
+ * - we are consistent (of course),
+ * - or we are generally inconsistent,
+ *   BUT we are still/already IN SYNC for this area.
+ *   since size may be up to PAGE_SIZE, but BM_BLOCK_SIZE may be smaller
+ *   than PAGE_SIZE, we may need to check several bits.
+ */
+STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
+{
+	unsigned long sbnr,ebnr,bnr;
+	sector_t esector, nr_sectors;
+
+	if (mdev->gen_cnt[Flags] & MDF_Consistent) return 1;
+
+	nr_sectors = drbd_get_capacity(mdev->this_bdev);
+	esector = sector + (size>>9) -1;
+
+	D_ASSERT(sector  < nr_sectors);
+	D_ASSERT(esector < nr_sectors);
+
+	sbnr = BM_SECT_TO_BIT(sector);
+	ebnr = BM_SECT_TO_BIT(esector);
+
+	for (bnr = sbnr; bnr <= ebnr; bnr++) {
+		if (drbd_bm_test_bit(mdev,bnr)) return 0;
+	}
+	return 1;
 }
 
 STATIC int
@@ -205,22 +235,27 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	// FIXME special case handling of READA ??
 	if (rw == READ || rw == READA) {
 		if (local) {
-			target_area_out_of_sync =
-				(mdev->cstate == SyncTarget) &&
-				bm_get_bit(mdev->mbds_id,sector,size);
-			if (target_area_out_of_sync) {
+			if (!drbd_may_do_local_read(mdev,sector,size)) {
 				/* whe could kick the syncer to
 				 * sync this extent asap, wait for
 				 * it, then continue locally.
 				 * Or just issue the request remotely.
 				 */
-/* FIXME I think we have a RACE here
- * we request it remotely, then later some write starts ...
- * and finished *before* the answer to the read comes in,
- * because the ACK for the WRITE goes over meta-socket ...
- * I think we need to properly lock reads against the syncer, too.
- */
-
+				/* FIXME
+				 * I think we have a RACE here. We request
+				 * something from the peer, then later some
+				 * write starts ...  and finished *before*
+				 * the answer to the read comes in, because
+				 * the ACK for the WRITE goes over
+				 * meta-socket ...
+				 * Maybe we need to properly lock reads
+				 * against the syncer, too. But if we have
+				 * some user issuing writes on an area that
+				 * he has pending reads on, _he_ is really
+				 * broke anyways, and would get "undefined
+				 * results" on _any_ io stack, even just the
+				 * local io stack.
+				 */
 				local = 0;
 				dec_local(mdev);
 			}

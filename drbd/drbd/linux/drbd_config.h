@@ -20,7 +20,7 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre7 cvs $Date: 2004/06/09 14:34:21 $"
+#define REL_VERSION "0.7-pre7 cvs $Date: 2004/06/15 10:07:32 $"
 #define API_VERSION 74
 #define PRO_VERSION 72
 
@@ -30,7 +30,9 @@
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
 //#define DUMP_MD 1       // Dump metadata to syslog upon connect
-//#define DUMP_MD 2       // Dump even all cstate changes
+//#define DUMP_MD 2       // Dump even all cstate changes (I like it!)
+//#define DUMP_MD 3       // Dump even all meta data access
+                          // (don't! unless we track down a bug...)
 
 //#define SIGHAND_HACK           // Needed for RH 2.4.20 and later kernels.
 //#define REDHAT_HLIST_BACKPORT  // Makes DRBD work on RH9 kernels

@@ -969,8 +969,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
-			if(ok && mdev->rs_left)
-				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
+			if(ok && mdev->rs_total) drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
 			ok&= drbd_io_error(mdev);
@@ -1053,8 +1052,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 {
 	sector_t sector;
+	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	struct Tl_epoch_entry *e;
-	int data_size;
+	int size;
 	Drbd_BlockRequest_Packet *p = (Drbd_BlockRequest_Packet*)h;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -1062,8 +1062,27 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	sector    = be64_to_cpu(p->sector);
-	data_size = be32_to_cpu(p->blksize);
+	sector = be64_to_cpu(p->sector);
+	size   = be32_to_cpu(p->blksize);
+
+	/*
+	 * handled by NegDReply below ...
+	ERR_IF (test_bit(DISKLESS,&mdev->flags)) {
+		return FALSE;
+	ERR_IF ( (mdev->gen_cnt[Flags] & MDF_Consistent) == 0 )
+		return FALSE;
+	*/
+
+	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+		ERR("%s:%d: sector: %lu, size: %d\n", __FILE__, __LINE__,
+				(unsigned long)sector,size);
+		return FALSE;
+	}
+	if ( sector + (size>>9) > capacity) {
+		ERR("%s:%d: sector: %lu, size: %d\n", __FILE__, __LINE__,
+				(unsigned long)sector,size);
+		return FALSE;
+	}
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
@@ -1075,9 +1094,9 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	if(!inc_local(mdev)) {
+	if(!inc_local(mdev) || (mdev->gen_cnt[Flags] & MDF_Consistent) == 0) {
 		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Can not satisfy peer's read request, no local disk.\n");
+			ERR("Can not satisfy peer's read request, no local data.\n");
 		drbd_send_ack(mdev,NegDReply,e);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
@@ -1085,7 +1104,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return TRUE;
 	}
 
-	drbd_ee_prepare_read(mdev,e,sector,data_size);
+	drbd_ee_prepare_read(mdev,e,sector,size);
 
 	switch (h->command) {
 	case DataRequest:
@@ -1104,7 +1123,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		D_ASSERT(0);
 	}
 
-	mdev->read_cnt += data_size >> 9;
+	mdev->read_cnt += size >> 9;
 	inc_unacked(mdev);
 	drbd_generic_make_request(READ,&e->private_bio);
 
@@ -1178,6 +1197,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
+
+	drbd_bm_lock(mdev);
 	mdev->p_size=p_size;
 
 	consider_sync = (mdev->cstate == WFReportParams);
@@ -1264,6 +1285,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 					ERR("Current Primary shall become sync TARGET! Aborting to prevent data corruption.\n");
 					set_cstate(mdev,StandAlone);
 					drbd_thread_stop_nowait(&mdev->receiver);
+					drbd_bm_unlock(mdev);
 					return FALSE;
 				}
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
@@ -1271,7 +1293,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			}
 		} else {
 			set_cstate(mdev,Connected);
-			if(mdev->rs_total) {
+			if(drbd_bm_total_weight(mdev)) {
 				/* We are not going to do a resync but there
 				   are marks in the bitmap.
 				   (Could be from the AL, or someone used
@@ -1279,9 +1301,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				   Clean the bitmap...
 				 */
 				INFO("No resync -> clearing bit map.\n");
-				bm_fill_bm(mdev->mbds_id,0);
-				mdev->rs_total = 0;
-				drbd_write_bm(mdev);
+				drbd_bm_clear_all(mdev);
+				drbd_bm_write(mdev);
 			}
 		}
 
@@ -1305,10 +1326,12 @@ skipped:	// do not adopt gen counts when sync was skipped ...
 		drbd_md_inc(mdev,ConnectedCnt);
 	}
 	if (oo_state != mdev->o_state) {
-		INFO("Peer switched to %s state\n", nodestate_to_name(mdev->o_state));
+		INFO( "now %s/%s\n", nodestate_to_name(mdev->state),
+				nodestate_to_name(mdev->o_state) );
 	}
 
 	drbd_md_write(mdev); // update connected indicator, la_size, ...
+	drbd_bm_unlock(mdev);
 
 	return TRUE;
 }
@@ -1318,44 +1341,42 @@ skipped:	// do not adopt gen counts when sync was skipped ...
    chunks as long as it is little endian. (Understand it as byte stream,
    beginning with the lowest byte...) If we would use big endian
    we would need to process it from the highest address to the lowest,
-   in order to be agnostic to the 32 vs 64 bits issue. */
+   in order to be agnostic to the 32 vs 64 bits issue.
+
+   returns 0 on failure, 1 if we suceessfully received it. */
 STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 {
-	size_t bm_words;
-	unsigned long *buffer, *bm, word;
-	int buf_i,want;
-	int ok=FALSE, bm_i=0;
-	unsigned long bits=0;
+	size_t bm_words, bm_i, want, num_words;
+	unsigned long *buffer;
+	int ok=FALSE;
 
-	bm_words=mdev->mbds_id->size/sizeof(long);
-	bm=mdev->mbds_id->bm;
-	buffer=vmalloc(MBDS_PACKET_SIZE);
+	drbd_bm_lock(mdev);
+
+	bm_words = drbd_bm_words(mdev);
+	bm_i     = 0;
+	buffer   = vmalloc(BM_PACKET_WORDS*sizeof(long));
 
 	while (1) {
-		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(word));
+		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i );
+		want = num_words * sizeof(long);
 		ERR_IF(want != h->length) goto out;
 		if (want==0) break;
 		if (drbd_recv(mdev, buffer, want) != want)
 			goto out;
-		for(buf_i=0;buf_i<want/sizeof(long);buf_i++) {
-			word = lel_to_cpu(buffer[buf_i]) | bm[bm_i];
-			bits += hweight_long(word);
-			bm[bm_i++] = word;
-		}
+
+		drbd_bm_merge_lel(mdev, bm_i, num_words, buffer);
+		bm_i += num_words;
+
 		if (!drbd_recv_header(mdev,h))
 			goto out;
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
-	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
-
-	mdev->rs_total = bits + bm_end_of_dev_case(mdev->mbds_id);
-
 	if (mdev->cstate == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->cstate == WFBitMapT) {
-		if (!drbd_send_bitmap(mdev))
-			goto out;
+		ok = drbd_send_bitmap(mdev);
+		if (!ok) goto out;
 		drbd_start_resync(mdev,SyncTarget); // XXX cannot fail ???
 	} else {
 		D_ASSERT(0);
@@ -1377,6 +1398,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 
 	ok=TRUE;
  out:
+	drbd_bm_unlock(mdev);
 	vfree(buffer);
 	return ok;
 }
@@ -1432,21 +1454,30 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 {
-	ERR_IF(!mdev->mbds_id)
-		return FALSE;
-	bm_fill_bm(mdev->mbds_id,-1);
-	mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
-	drbd_write_bm(mdev);
+	ERR_IF(!mdev->bitmap) return FALSE;
+
+	/* THINK
+	 * otherwise this does not make much sense, no?
+	 * and some other assertion maybe about cstate...
+	 */
+	ERR_IF(mdev->cstate == Secondary) return FALSE;
+
+	drbd_bm_lock(mdev);
+	drbd_bm_set_all(mdev);
+	drbd_bm_write(mdev);
 	drbd_start_resync(mdev,SyncTarget);
+	drbd_bm_unlock(mdev);
 	return TRUE; // cannot fail ?
 }
 
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
-	bm_fill_bm(mdev->mbds_id,-1);
-	mdev->rs_total = drbd_get_capacity(mdev->this_bdev);
-	drbd_write_bm(mdev);
+	// FIXME asserts ?
+	drbd_bm_lock(mdev);
+	drbd_bm_set_all(mdev);
+	drbd_bm_write(mdev);
 	drbd_start_resync(mdev,SyncSource);
+	drbd_bm_unlock(mdev);
 	return TRUE; // cannot fail ?
 }
 
@@ -1699,8 +1730,9 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 
-			if(mdev->conf.wire_protocol == DRBD_PROT_C && 
-			   mdev->rs_left)
+			/* TODO maybe optimize: don't do the set_in_sync
+			 * if not neccessary */
+			if(mdev->conf.wire_protocol == DRBD_PROT_C)
 				drbd_set_in_sync(mdev,sector,blksize);
 		}
 	}

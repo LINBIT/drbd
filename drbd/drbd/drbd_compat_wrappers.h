@@ -533,6 +533,7 @@ static inline struct page* drbd_bio_get_page(struct bio *bio)
  */
 static inline void drbd_generic_make_request(int rw, struct bio *bio)
 {
+	drbd_dev *mdev = drbd_conf -1; // for DRBD_ratelimit
 	bio->bi_rw = rw; //??
 
 	if (!bio->bi_bdev) {
