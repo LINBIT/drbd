@@ -194,6 +194,7 @@ rpm: tgz
 	    --define "buildroot $(PWD)/dist/install" \
 	    --define "kernelversion $(KVER)" \
 	    --define "kdir $(KDIR)" \
+	    $(RPMOPT) \
 	    $(PWD)/dist/SPECS/drbd.spec
 	@echo "You have now:" ; ls -l dist/*RPMS/*/*.rpm
 
