@@ -43,6 +43,9 @@ doc-clean:
 install:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
 
+install-tools:
+	@ set -e; for i in $(patsubst drbd,,$(SUBDIRS)); do $(MAKE) -C $$i install; done
+
 clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
 	rm -f *~
@@ -136,3 +139,26 @@ rpm: tgz
 	    --define "kdir $(KDIR)" \
 	    $(PWD)/dist/SPECS/drbd.spec
 	@echo "You have now:" ; ls -l dist/*RPMS/*/*.rpm
+
+
+# the INSTALL file is writen in lge-markup, which is basically
+# wiki style plus some "conventions" :)
+# why don't I write in or convert to HTML directly?
+# editing INSTALL feels more natural this way ...
+
+INSTALL.html: INSTALL.pod
+	-pod2html --title "Howto Build and Install DRBD" \
+		< INSTALL.pod > INSTALL.html ; rm -f pod2htm*
+#	-w3m -T text/html -dump < INSTALL.html > INSTALL.txt
+
+INSTALL.pod: INSTALL
+	-@perl -pe 'BEGIN { print "=pod\n\n"; };                  \
+	 	s/^= +(.*?) +=$$/=head1 $$1/;                     \
+	 	s/^== +(.*?) +==$$/=head2 $$1/;                   \
+		s/^(Last modi)/ $$1/ and next;                    \
+	 	if(s/^ +([^#]*)$$/$$1/ or /^\S/) {                \
+			s/(Note:)/B<$$1>/g;                       \
+			s/"([^"]+)"/C<$$1>/g;                     \
+	 		s,((^|[. ])/(`[^`]*`|\S)+),C<$$1>,g;      \
+	 	}' \
+	 	< INSTALL > INSTALL.pod
