@@ -241,16 +241,20 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 
 STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 {
+	struct list_head *le;
 	struct Tl_epoch_entry* e;
 	struct page* page;
 
 	MUST_HOLD(&mdev->ee_lock);
 
-	e = list_entry(list->next, struct Tl_epoch_entry, w.list);
-	list_del(list->next);
+	D_ASSERT(!list_empty(list));
+	le = list->next;
+	e = list_entry(le, struct Tl_epoch_entry, w.list);
+	list_del(le);
 
 	page = e->pbh.b_page;
 	kmem_cache_free(drbd_ee_cache, e);
+	mdev->ee_vacant--;
 	
 	return page;
 }	
@@ -1753,31 +1757,30 @@ int drbd_asender(struct Drbd_thread *thi)
 		 * rv <  expected: "woken" by signal during receive
 		 * rv == 0       : "connection shut down by peer"
 		 */
-		if (rv == -EAGAIN) {
-			set_bit(SEND_PING,&mdev->flags);
-			continue;
-		} else if (rv < 0) {
-			// if (rv != -ECONNRESET)
-			ERR("sock_recvmsg returned %d\n", rv);
-			goto err;
+		if (likely(rv > 0)) {
+			received += rv;
+			expect   -= rv;
+			buf      += rv;
 		} else if (rv == 0) {
 			ERR("meta connection shut down by peer.\n");
 			goto err;
-		} else if (rv == -EINTR || rv < expect) {
+		} else if (rv == -EAGAIN) {
+			set_bit(SEND_PING,&mdev->flags);
+			continue;
+		} else if (rv != -EINTR) {
+			// if (rv != -ECONNRESET)
+			ERR("sock_recvmsg returned %d\n", rv);
+			goto err;
+		}
+
+		if (expect) {
+			// rv == -EINTR || rv < expect
 			LOCK_SIGMASK(current,flags);
 			sigemptyset(&current->pending.signal);
 			RECALC_SIGPENDING(current);
 			UNLOCK_SIGMASK(current,flags);
-			if (rv == -EINTR) rv=0;
-		} /* else if (rv > expect) {
-			BUG();
-		} */
-		received += rv;
-		expect   -= rv;
-		buf      += rv;
-
-		if (expect)
 			continue;
+		}
 
 		// MAYBE use jump table
 

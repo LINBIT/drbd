@@ -240,7 +240,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	if(!ok) ERR("drbd_send_block() failed\n");
+	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
 }
 
@@ -249,7 +249,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
 
-	drbd_rs_complete_io(mdev,e->pbh.b_blocknr);
+	drbd_rs_complete_io(mdev,DRBD_BH_SECTOR(&e->pbh));
 	inc_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
@@ -258,7 +258,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	if(!ok) ERR("drbd_send_block() failed\n");
+	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
 }
 

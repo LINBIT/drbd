@@ -76,6 +76,9 @@ extern int disable_io_hints;
 			// pointer at adress 0x00000001, it is most
 			// probably one of these :(
 
+struct Drbd_Conf;
+typedef struct Drbd_Conf drbd_dev;
+
 #ifdef DBG_ALL_SYMBOLS
 # define STATIC
 #else
@@ -209,9 +212,6 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 /*
  * our structs
  *************************/
-
-struct Drbd_Conf;
-typedef struct Drbd_Conf drbd_dev;
 
 #ifndef typecheck
 /*
