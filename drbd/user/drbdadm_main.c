@@ -36,8 +36,54 @@
 
 #include "drbdadm.h"
 
+struct adm_cmd {
+  const char* name;
+  int (* function)(struct d_resource*,char* );
+  char* arg;
+};
+
 extern int yyparse();
 extern FILE* yyin;
+
+int line=1;
+struct d_resource* config;
+int config_valid=1;
+int dry_run;
+char* drbdsetup;
+char* setup_opts[10];
+int soi=0;
+
+struct option admopt[] = {
+  { "dry-run",      no_argument,      0, 'd' },
+  { "config-file",  required_argument,0, 'c' },
+  { "drbdsetup",    required_argument,0, 's' },
+  { 0,              0,                0, 0   } 
+};
+
+static int adm_attach(struct d_resource* ,char* );
+static int adm_connect(struct d_resource* ,char* );
+static int adm_generic(struct d_resource* ,char* );
+static int adm_up(struct d_resource* ,char* );
+extern int adm_adjust(struct d_resource* ,char* );
+static int adm_dump(struct d_resource* ,char* );
+
+struct adm_cmd cmds[] = {
+  { "attach",            adm_attach,  0                   },
+  //{ "detach",            adm_generic, "??missing??"     },  
+  { "connect",           adm_connect, 0                   },
+  { "disconnect",        adm_generic, "disconnect"        },
+  { "up",                adm_up,      0                   },
+  { "down",              adm_generic, "down"              },
+  { "primary",           adm_generic, "primary"           },
+  { "secondary",         adm_generic, "secondary"         },
+  { "secondary_remote",  adm_generic, "secondary_remote"  },
+  { "invalidate",        adm_generic, "invalidate"        },
+  { "invalidate_remote", adm_generic, "invalidate_remote" },
+  { "resize",            adm_generic, "resize"            },
+  { "adjust",            adm_adjust,  0                   },
+  { "dump",              adm_dump,    0                   }
+// "helper" for scripts to get info from the global section...
+};
 
 /* ssprintf() places the result of the printf in the current stack
    frame and sets ptr to the resulting string. If the current stack
@@ -48,14 +94,6 @@ char ss_buffer[255];
   ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer) 
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
-
-int line=1;
-struct d_resource* config;
-int config_valid=1;
-int dry_run;
-char* drbdsetup;
-char* setup_opts[10];
-int soi=0;
 
 
 /*** These functions are used to the print the config ***/
@@ -220,7 +258,6 @@ static int adm_attach(struct d_resource* res,char* unused)
 {
   char* argv[20];
   struct d_option* opt;  
-
   int argc=0;
     
   argv[argc++]=drbdsetup;
@@ -270,11 +307,14 @@ static int adm_connect(struct d_resource* res,char* unused)
   return m_system(argv);
 }
 
-static int adm_adjust(struct d_resource* res,char* unused)
+static int adm_up(struct d_resource* res,char* unused)
 {
-  printf("Not yet implementd.\n");
-  return 0;
+  int r1,r2;
+  r1=adm_attach(res,unused);
+  r2=adm_connect(res,unused);
+  return  r1 && r2;
 }
+
 
 const char* make_optstring(struct option *options)
 {
@@ -294,36 +334,6 @@ const char* make_optstring(struct option *options)
   *c=0;
   return buffer;
 }
-
-struct option admopt[] = {
-  { "dry-run",      no_argument,      0, 'd' },
-  { "config-file",  required_argument,0, 'c' },
-  { "drbdsetup",    required_argument,0, 's' },
-  { 0,              0,                0, 0   } 
-};
-
-struct adm_cmd {
-  const char* name;
-  int (* function)(struct d_resource*,char* );
-  char* arg;
-};
-
-struct adm_cmd cmds[] = {
-  { "attach",            adm_attach,  0                   },
-  { "detach",            adm_generic, "down"              },
-  { "connect",           adm_connect, 0                   },
-  { "disconnect",        adm_generic, "disconnect"        },
-  { "primary",           adm_generic, "primary"           },
-  { "secondary",         adm_generic, "secondary"         },
-  { "secondary_remote",  adm_generic, "secondary_remote"  },
-  { "invalidate",        adm_generic, "invalidate"        },
-  { "invalidate_remote", adm_generic, "invalidate_remote" },
-  { "resize",            adm_generic, "resize"            },
-  { "adjust",            adm_adjust,  0                   },
-  { "dump",              adm_dump,    0                   }
-// "helper" for scripts to get info from the global section...
-};
-
 
 void print_usage(const char* prgname)
 {
@@ -368,6 +378,8 @@ int main(int argc, char** argv)
   drbdsetup=NULL;
   dry_run=0;
   yyin=NULL;
+
+  if(argc == 1) print_usage(argv[0]); // arguments missing.
 
   optind=0;
   while(1)

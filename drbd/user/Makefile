@@ -31,8 +31,9 @@ include ../Makefile.vars
 
 all: drbdsetup drbdadm
 
-drbdadm: drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o
-	$(CC) -o drbdadm drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o
+drbdadm: drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o drbdadm_adjust.o
+	$(CC) -o drbdadm drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
+	drbdadm_adjust.o
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -odrbdadm_scanner.c drbdadm_scanner.fl

@@ -34,4 +34,7 @@ extern int config_valid;
 extern struct d_resource* config;
 extern int line;
 
+extern int dry_run;
+extern char* drbdsetup;
+extern char ss_buffer[255];
 #endif
