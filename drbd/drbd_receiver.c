@@ -1432,6 +1432,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
+	unsigned int max_seg_s;
 	sector_t p_size;
 	drbd_conns_t nconn;
 
@@ -1469,6 +1470,11 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 			drbd_thread_stop_nowait(&mdev->receiver);
 			return FALSE;
 		}
+	}
+
+	max_seg_s = be32_to_cpu(p->max_segment_size);
+	if( max_seg_s != mdev->rq_queue->max_segment_size ) {
+		drbd_setup_queue_param(mdev, max_seg_s);
 	}
 
 	if (mdev->state.s.conn > WFReportParams ) {

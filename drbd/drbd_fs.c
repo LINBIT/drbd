@@ -210,9 +210,36 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	return 0;
 }
 
+void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
+{
+	request_queue_t * const q = mdev->rq_queue;
+	request_queue_t * const b = mdev->backing_bdev->bd_disk->queue;
+
+	unsigned int old_max_seg_s = q->max_segment_size;
+
+	if(b->merge_bvec_fn) {
+		max_seg_s = PAGE_SIZE;
+	}
+
+	q->max_sectors       = max_seg_s >> 9;
+	q->max_phys_segments = max_seg_s >> PAGE_SHIFT;
+	q->max_hw_segments   = max_seg_s >> PAGE_SHIFT;
+	q->max_segment_size  = max_seg_s;
+	q->hardsect_size     = 512;
+	q->seg_boundary_mask = PAGE_SIZE-1;
+	blk_queue_stack_limits(q, b);
+
+	if( old_max_seg_s != q->max_segment_size ) {
+		if(b->merge_bvec_fn) {
+			WARN("Backing device has merge_bvec_fn()!\n");
+		}
+		INFO("max_segment_size ( = BIO size ) = %u\n",
+		     q->max_segment_size);
+	}
+}
+
 STATIC
-int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
-			struct ioctl_disk_config * arg)
+int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 {
 	int i, md_gc_valid, minor;
 	enum ret_codes retcode;
@@ -365,25 +392,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->read_cnt = 0;
 	mdev->writ_cnt = 0;
 
-/* FIXME unclutter the code again...
- * possibly rather use blk_queue_stack_limits
- */
-/*
- * Returns the minimum that is _not_ zero, unless both are zero.
- */
-#define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
-	request_queue_t * const q = mdev->rq_queue;
-	request_queue_t * const b = bdev->bd_disk->queue;
-
-	q->max_sectors = min_not_zero((unsigned short)(DRBD_MAX_SEGMENT_SIZE >> 9), b->max_sectors);
-	q->max_phys_segments = DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE;
-	q->max_hw_segments   = DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE;
-	q->max_segment_size  = min_t(int,DRBD_MAX_SEGMENT_SIZE,b->max_segment_size);
-	q->hardsect_size     = max((unsigned short)512,b->hardsect_size);
-	q->seg_boundary_mask = PAGE_SIZE-1;
-	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
-	blk_queue_merge_bvec(q, drbd_merge_bvec);
-#undef min_not_zero
+	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
 
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
 

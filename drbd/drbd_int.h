@@ -475,6 +475,7 @@ typedef struct {
 	u64         d_size;  // size of disk
 	u64         u_size;  // user requested size
 	u64         c_size;  // current exported size
+	u32         max_segment_size;  // Maximal size of a BIO
 } __attribute((packed)) Drbd_Sizes_Packet;
 
 typedef struct {
@@ -1010,6 +1011,7 @@ extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
 // drbd_fs.c
 extern char* ppsize(char* buf, size_t size);
 extern int drbd_determin_dev_size(drbd_dev*);
+extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
 extern int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);

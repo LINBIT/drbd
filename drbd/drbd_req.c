@@ -416,10 +416,10 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 			  PAGE_SIZE);
 		// As long as the BIO is emtpy we allow at least one page.
 	} else {
-		t = s >> AL_EXTENT_SIZE_B;
+		t = s & ~(AL_EXTENT_SIZE-1);
 		s = (s + bio->bi_size);
 
-		if( s >> AL_EXTENT_SIZE_B != t ) {
+		if( ( s & ~(AL_EXTENT_SIZE-1) ) != t ) {
 			s = 0;
 			// This BIO already spans over an AL_EXTENTs boundary.
 		} else {

@@ -984,6 +984,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	p.u_size = cpu_to_be64(mdev->lo_usize);
 	p.d_size = cpu_to_be64(d_size);
 	p.c_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
+	p.max_segment_size = cpu_to_be32(mdev->rq_queue->max_segment_size);
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportSizes,
 			   (Drbd_Header*)&p,sizeof(p));
@@ -2053,6 +2054,7 @@ int __init drbd_init(void)
 		if (!q) goto Enomem;
 		mdev->rq_queue = q;
 		q->queuedata   = mdev;
+		q->max_segment_size = DRBD_MAX_SEGMENT_SIZE;
 
 		disk = alloc_disk(1);
 		if (!disk) goto Enomem;
@@ -2077,7 +2079,8 @@ int __init drbd_init(void)
 			WARN("Could not bd_claim() myself.");
 		}
 
-		blk_queue_make_request(q,drbd_make_request_26);
+		blk_queue_make_request(q, drbd_make_request_26);
+		blk_queue_merge_bvec(q, drbd_merge_bvec);
 		q->queue_lock = &mdev->req_lock; // needed since we use
 		// plugging on a queue, that actually has no requests!
 		q->unplug_fn = drbd_unplug_fn;
