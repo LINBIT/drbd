@@ -1,2 +1,21 @@
-datadisk is a script are for integration of drbd with heartbeat.
+Hello.
+
+Those script are done to manage you drbd cluster without pain.
+I hope it will work for you.
+
+At install time, the drbd and datadisk script will be installed
+and then linked in the /etc/(rc.d)/init.d directory.
+
+You will have to type :
+> chkconfig drbd on
+> chkconfig datadisk on
+to have it start at boot time automaticly.
+
 drbdc is a administration script. see drbdc help.
+datadisk is a script are for integration of drbd with heartbeat.
+It can be used as a stand alone program as well. It will now
+accept three different dehaviouring mode.
+
+Check the sample example file for more information.
+
+Thomas

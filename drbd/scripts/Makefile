@@ -37,12 +37,18 @@ install:
 	@ if [ -e /etc/init.d ]; then \
 		ln -sf /etc/ha.d/resource.d/drbd /etc/init.d/drbd ;\
 		echo ln -sf /etc/ha.d/resource.d/drbd /etc/init.d/drbd;\
+		ln -sf /etc/ha.d/resource.d/datadisk /etc/init.d/datadisk ;\
+		echo ln -sf /etc/ha.d/resource.d/datadisk /etc/init.d/datadisk;\
 	elif [ -e /etc/rc.d/init.d ]; then \
 		ln -sf /etc/ha.d/resource.d/drbd /etc/rc.d/init.d/drbd ;\
 		echo ln -sf /etc/ha.d/resource.d/drbd /etc/rc.d/init.d/drbd ;\
+		ln -sf /etc/ha.d/resource.d/datadisk /etc/rc.d/init.d/datadisk ;\
+		echo ln -sf /etc/ha.d/resource.d/datadisk /etc/rc.d/init.d/datadisk ;\
 	else \
-		echo "Can not install drbd init.d script" ;\
+		echo "Can not install drbd and datadisk init.d script" ;\
 	fi
+
+	echo "don't forget to run chkconfig with drbd and datadisk"
 
 clean:
 	rm -f *~
