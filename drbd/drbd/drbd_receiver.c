@@ -86,12 +86,16 @@ inline void dec_unacked(int minor)
 inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
 {
 	if ( block_id == ID_SYNCER ) return 1;
+#define PARANOIA
+#ifdef PARANOIA
 	if ( (long)block_id == (long)-1) {
 		printk(KERN_ERR DEVICE_NAME 
-		       "%d: strange block_id %llx\n",(int)(mdev-drbd_conf),
-		       block_id);
+		       "%d: strange block_id %lx%lx\n",(int)(mdev-drbd_conf),
+		       (unsigned long)(block_id>>32),
+		       (unsigned long)block_id);
 		return 1;
 	}
+#endif //PARANOIA
 	return 0;
 }
 
