@@ -19,7 +19,7 @@
 #
 
 C_LANG=$(shell basename `pwd`)
-MANPAGES=drbd.conf.5 drbdsetup.8 drbd.8 datadisk.8
+MANPAGES=drbd.conf.5 drbdsetup.8 drbd.8
 
 #
 # Docbook Magic for SuSE, Worksforme...
