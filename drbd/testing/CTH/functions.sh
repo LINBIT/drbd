@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.4 2004/06/01 07:01:56 lars Exp $
+# $Id: functions.sh,v 1.1.2.5 2004/06/01 14:27:30 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -313,7 +313,10 @@ drbd_reattach()								# {{{3
 	: ${minor:?unknown minor number} 
 	: ${name:?unknown resource name} 
 	if drbdsetup /dev/nb$minor show | grep -q "^Lower device:.*null"; then
-		drbdadm attach $name
+		# NO. drbdadm attach $name
+		# But rather:
+		drbdadm down $name
+		drbdadm up $name
 		echo "reattached $name on $HOSTNAME"
 	fi
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.6 2004/06/01 07:01:56 lars Exp $
+# $Id: CTH_bash.sh,v 1.1.2.7 2004/06/01 14:27:30 lars Exp $
 
 # example for scripting failures
 # 
@@ -45,8 +45,7 @@ Run()
 	#
 	___
 
-	set +o errexit         # disable this again, but do something similar, and
-	trap 'ex=$?; echo "exit_code: $ex"; [[ $FUNCNAME ]] && return $ex' ERR # show exit codes != 0
+	trap 'ex=$?; echo "exit_code: $ex"' ERR # show exit codes != 0
 	if [[ -e $CASE ]] ; then
 		echo "now run CASE=$CASE"
 		source $CASE || return
