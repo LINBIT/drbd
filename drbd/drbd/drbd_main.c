@@ -974,6 +974,7 @@ void cleanup_module()
 	for (i = 0; i < minor_count; i++) {
 		drbd_set_state(i,Secondary);
 		fsync_dev(MKDEV(MAJOR_NR, i));
+		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[i].flags);
 		drbd_thread_stop(&drbd_conf[i].syncer);
 		drbd_thread_stop(&drbd_conf[i].receiver);
 		drbd_thread_stop(&drbd_conf[i].asender);
