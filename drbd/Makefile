@@ -33,6 +33,7 @@ uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
 
 tgz:    
+	(cd scripts; ln -s drbd datadisk)
 	tar -czvf drbd-$(REL_VERSION).tar.gz \
 	--exclude *.o  --exclude CVS \
 	--exclude *~ --exclude .deps --exclude *.tar.gz \
