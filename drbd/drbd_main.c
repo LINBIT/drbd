@@ -897,20 +897,19 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 {
 	int sent,ok;
 	int len   = size;
+	unsigned long now = jiffies;
 	static unsigned long total = 0;
 	static unsigned long fallback = 0;
 	static unsigned long last_rep = 0;
 
-	/* report statistics, every 4096 calls,
-	 * if we had at least one fallback,
-	 * but at most once every five minutes */
-	if ( (++total & 0xfffUL) == 0 ) {
-		unsigned long now = jiffies;
-		if (fallback && time_before(last_rep+300*HZ, now)) {
-			last_rep = now;
-			INFO("sendpage fallback/total: %lu/%lu\n",
-			                          fallback, total);
-		}
+	/* report statistics every hour,
+	 * if we had at least one fallback.
+	 */
+	++total;
+	if (fallback && time_before(last_rep+3600*HZ, now)) {
+		last_rep = now;
+		INFO("sendpage fallback/total: %lu/%lu\n",
+					  fallback, total);
 	}
 
 	spin_lock(&mdev->send_task_lock);
@@ -918,23 +917,18 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	spin_unlock(&mdev->send_task_lock);
 
 	/* PARANOIA. if this ever triggers,
-	 * something in the layers above us is really kaputt */
-	ERR_IF (page_count(page) < 1) {
-		ERR("someone wants to send a free page!\n");
-		dump_stack();
-		++fallback;
-		sent =  _drbd_no_send_page(mdev, page, offset, size);
-		if (likely(sent > 0)) len -= sent;
-		goto out;
-	}
-
-	if (PageSlab(page)) {
-		/* probably xfs. fall back to sendmsg instead of sendpage.
-		 * FIXME
-		 * we should rather understand and fix the real problem...
+	 * something in the layers above us is really kaputt.
+	 *one roundtrip later:
+	 * doh. it triggered. so XFS _IS_ really kaputt ...
+	 * oh well...
+	 */
+	if ( (page_count(page) < 1) || PageSlab(page) ) {
+		/* e.g. XFS meta- & log-data is in slab pages, which have a
+		 * page_count of 0 and/or have PageSlab() set...
+		 * FIXME: This is a workaround.
 		 */
 		++fallback;
-		sent = _drbd_no_send_page(mdev, page, offset, size);
+		sent =  _drbd_no_send_page(mdev, page, offset, size);
 		if (likely(sent > 0)) len -= sent;
 		goto out;
 	}
