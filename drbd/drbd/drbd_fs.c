@@ -397,12 +397,41 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	return 0;
 }
 
+static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev, 
+			      struct ioctl_wait *arg)
+{
+	long time;
+	struct ioctl_wait p;
+
+	if(copy_from_user(&p,arg,sizeof(p))) {
+		return -EFAULT;
+	}
+	   
+	if( mdev->gen_cnt[Flags] & MDF_ConnectedInd) {
+		time=p.wfc_timeout;
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: using wfc_timeout.\n",(int)(mdev-drbd_conf));
+	} else {
+		time=p.degr_wfc_timeout;
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: using degr_wfc_timeout.\n",(int)(mdev-drbd_conf));
+	}
+	
+	time=time*HZ;
+	if(time==0) time=MAX_SCHEDULE_TIMEOUT;
+
+	*tp=time;
+
+	return 0;
+}
+
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
 	int minor,err=0;
 	long time;
  	struct Drbd_Conf *mdev;
+	struct ioctl_wait* wp;			
 
 	minor = MINOR(inode->i_rdev);
 	if(minor >= minor_count) return -ENODEV;
@@ -506,14 +535,11 @@ int drbd_ioctl(struct inode *inode, struct file *file,
   		break;
 
 	case DRBD_IOCTL_WAIT_CONNECT:
-		if ((err = get_user(time, (int *) arg)))
-			break;
+		wp=(struct ioctl_wait*)arg;
+		if( (err=drbd_get_wait_time(&time,mdev,wp)) ) break;
 
 		// We can drop the mutex, we do not touch anything in mdev.
 		up(&mdev->ctl_mutex); 
-		
-		time=time*HZ;
-		if(time==0) time=MAX_SCHEDULE_TIMEOUT;
 		
 		while (mdev->cstate >= Unconnected && 
 		       mdev->cstate < Connected &&
@@ -528,17 +554,14 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			}
 		}
 			
-		err = put_user(mdev->cstate >= Connected, (int *) arg);
+		if(put_user(mdev->cstate>=Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
 
 	case DRBD_IOCTL_WAIT_SYNC:
-		if ((err = get_user(time, (int *) arg)))
-			break;
+		wp=(struct ioctl_wait*)arg;
+		if( (err=drbd_get_wait_time(&time,mdev,wp)) ) break;
 
-		up(&mdev->ctl_mutex);
-
-		time=time*HZ;
-		if(time==0) time=MAX_SCHEDULE_TIMEOUT;
+		up(&mdev->ctl_mutex); 
 		
 		while (mdev->cstate >= Unconnected && 
 		       mdev->cstate != Connected &&
@@ -557,7 +580,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			}
 		}
 			
-		err = put_user(mdev->cstate == Connected, (int *) arg);
+		if(put_user(mdev->cstate==Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
 
         case DRBD_IOCTL_INVALIDATE:

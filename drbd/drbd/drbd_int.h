@@ -4,7 +4,7 @@
 
   This file is part of drbd by Philipp Reisner.
 
-  Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+  Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
         main author.
 
   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.

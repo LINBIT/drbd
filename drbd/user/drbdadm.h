@@ -34,6 +34,7 @@ struct d_resource
   struct d_option* net_options;
   struct d_option* disk_options;
   struct d_option* sync_options;
+  struct d_option* startup_options;
   struct d_resource* next;
 };
 

@@ -3,7 +3,7 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp@linuxfreak.com>.
         Initial author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
@@ -46,11 +46,16 @@
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
-#define DEF_NET_TIMEOUT 60 //6 seconds
+/* Default values */
+#define DEF_NET_TIMEOUT 60           // 6 seconds
 #define DEF_NET_TL_SIZE 256
-#define DEF_NET_TRY_CON_I 10 //10 seconds
-#define DEF_NET_PING_I 10  //10 seconds
+#define DEF_NET_TRY_CON_I 10         // 10 seconds
+#define DEF_NET_PING_I 10            // 10 seconds
 #define DEF_SYNC_RATE 250
+#define DEF_WFC_TIMEOUT 0            // forever
+#define DEF_DEGR_WFC_TIMEOUT 60      // 60 Seconds
+#define DEF_SYNC_WFC_TIMEOUT 8       // 8 seconds
+#define DEF_SYNC_DEGR_WFC_TIMEOUT 4  // 4 seconds
 
 struct drbd_cmd {
   const char* cmd;
@@ -89,7 +94,8 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0   } } },
   {"wait_connect", cmd_wait_connect, 0,
    (struct option[]) {
-     { "time",       required_argument, 0, 't' },
+     { "wfc-timeout",required_argument, 0, 't' },
+     { "degr-wfc-timeout",required_argument,0,'d'},
      { 0,            0,                 0, 0   } } },
   {"invalidate", cmd_invalidate,     0, 0 },
   {"invalidate_remote", cmd_invalidate_rem,0, 0 },
@@ -635,13 +641,16 @@ int cmd_sec_rem(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req,
+int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	    struct option *options)
 {
-  int err,retval;
+  int err;
+  struct ioctl_wait p;
+
+  p.wfc_timeout=wfct;
+  p.degr_wfc_timeout=dwfct;
 
   optind=0; 
-  retval=def_time;
   if(argc > 0) 
     {
       while(1)
@@ -653,7 +662,10 @@ int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req,
 	  switch(c)
 	    {
 	    case 't': 
-	      retval = m_strtol(optarg,1);
+	      p.wfc_timeout = m_strtol(optarg,1);
+	      break;
+	    case 'd': 
+	      p.degr_wfc_timeout = m_strtol(optarg,1);
 	      break;
 	    case '?':
 	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
@@ -662,23 +674,29 @@ int wait_on(int drbd_fd,char** argv,int argc,int def_time, int req,
 	    }
 	}
     }
-  err=ioctl(drbd_fd,req,&retval);
+  err=ioctl(drbd_fd,req,&p);
   if(err)
     {
       perror("ioctl() failed");
       exit(20);
     }
-  return !retval;
+  return !p.ret_code;
 }
 
 int cmd_wait_connect(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  return wait_on(drbd_fd,argv,argc,0,DRBD_IOCTL_WAIT_CONNECT,options);
+  return wait_on(drbd_fd,argv,argc,
+		 DEF_WFC_TIMEOUT,
+		 DEF_DEGR_WFC_TIMEOUT,
+		 DRBD_IOCTL_WAIT_CONNECT,options);
 }
 
 int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  return wait_on(drbd_fd,argv,argc,8,DRBD_IOCTL_WAIT_SYNC,options);
+  return wait_on(drbd_fd,argv,argc,
+		 DEF_SYNC_WFC_TIMEOUT,
+		 DEF_SYNC_DEGR_WFC_TIMEOUT,
+		 DRBD_IOCTL_WAIT_SYNC,options);
 }
 
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)

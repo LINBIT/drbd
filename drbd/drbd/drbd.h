@@ -106,6 +106,12 @@ struct ioctl_syncer_config {
 	OUT enum ret_codes    ret_code;
 };
 
+struct ioctl_wait {
+	IN int wfc_timeout;
+	IN int degr_wfc_timeout;
+	OUT int ret_code;
+};
+
 #define DRBD_PROT_A   1
 #define DRBD_PROT_B   2
 #define DRBD_PROT_C   3
@@ -151,17 +157,17 @@ struct ioctl_get_config {
 
 #define DRBD_IOCTL_GET_VERSION   _IOR( 'D', 0x00, int )
 #define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )
-#define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x03, int )
 #define DRBD_IOCTL_SET_DISK_CONFIG _IOW( 'D', 0x06, struct ioctl_disk_config )
 #define DRBD_IOCTL_SET_NET_CONFIG _IOW( 'D', 0x07, struct ioctl_net_config )
 #define DRBD_IOCTL_UNCONFIG_NET  _IO ( 'D', 0x08 )
 #define DRBD_IOCTL_UNCONFIG_BOTH _IO ( 'D', 0x09 )
 #define DRBD_IOCTL_GET_CONFIG    _IOW( 'D', 0x0A, struct ioctl_get_config)
-#define DRBD_IOCTL_WAIT_CONNECT  _IOR( 'D', 0x0B, int )
 #define DRBD_IOCTL_SECONDARY_REM _IOR( 'D', 0x0C, int )
 #define DRBD_IOCTL_INVALIDATE    _IO ( 'D', 0x0D )
 #define DRBD_IOCTL_INVALIDATE_REM _IO ( 'D', 0x0E )
 #define DRBD_IOCTL_SET_SYNC_CONFIG _IOW( 'D', 0x0F,struct ioctl_syncer_config)
 #define DRBD_IOCTL_SET_DISK_SIZE  _IOW( 'D', 0x10, unsigned int)
+#define DRBD_IOCTL_WAIT_CONNECT  _IOR( 'D', 0x11, struct ioctl_wait)
+#define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x12, struct ioctl_wait)
 #endif
 

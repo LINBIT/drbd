@@ -42,6 +42,7 @@ syncer           { DP; return TK_SYNCER;        }
 device           { DP; return TK_DEVICE;        }
 global           { DP; return TK_GLOBAL;        }
 address          { DP; return TK_ADDRESS;       }
+startup          { DP; return TK_STARTUP;       }
 resource         { DP; return TK_RESOURCE;      }
 rate             { DP; CP; return TK_RATE;            }
 size             { DP; CP; return TK_SIZE;            }
@@ -54,7 +55,9 @@ use-csums        { DP; CP; return TK_USE_CSUMS;       }
 skip-sync        { DP; CP; return TK_SKIP_SYNC;       }
 minor_count      { DP; CP; return TK_MINOR_COUNT;     }
 connect-int      { DP; CP; return TK_CONNECT_INT;     }
+wfc-timeout      { DP; CP; return TK_WFC_TIMEOUT;     }
 incon-degr-cmd   { DP; CP; return TK_INCON_DEGR_CMD;  }
+degr-wfc-timeout { DP; CP; return TK_DEGR_WFC_TIMEOUT;}
 disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;}
 {IPV4ADDR}       { DP; CP; return TK_IPADDR;          }
 {NUM}            { DP; CP; return TK_INTEGER;         }

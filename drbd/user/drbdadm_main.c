@@ -56,6 +56,7 @@ int adm_syncer(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
+static int adm_wait_c(struct d_resource* ,char* );
 static int sh_devices(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
 
@@ -92,6 +93,7 @@ struct adm_cmd cmds[] = {
   { "resize",            adm_resize,  0                  ,1,1 },
   { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },
+  { "wait_connect",      adm_wait_c,  0                  ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
   { "sh-devices",        sh_devices,  0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
@@ -150,6 +152,7 @@ static int adm_dump(struct d_resource* res,char* unused)
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
   dump_options("syncer",res->sync_options);
+  dump_options("startup",res->startup_options);
   printf("}\n\n");
     
   return 1;
@@ -222,6 +225,7 @@ static void free_config(struct d_resource* res)
     free_options(res->net_options);
     free_options(res->disk_options);
     free_options(res->sync_options);
+    free_options(res->startup_options);
     f=res;
     res=res->next;
     free(f);
@@ -423,6 +427,22 @@ static int adm_up(struct d_resource* res,char* unused)
   return adm_syncer(res,unused);
 }
 
+static int adm_wait_c(struct d_resource* res ,char* unused)
+{
+  char* argv[20];
+  struct d_option* opt;  
+  int argc=0;
+    
+  argv[argc++]=drbdsetup;
+  argv[argc++]=res->me->device;
+  argv[argc++]="wait_connect";
+  opt=res->startup_options;
+  make_options(opt);
+  argv[argc++]=0;
+
+  return m_system(argv);  
+}
+
 
 const char* make_optstring(struct option *options)
 {
@@ -449,7 +469,7 @@ void print_usage(const char* prgname)
   struct option *opt;
 
   printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
-	 "{ALL|RESOURCE...}\n\n"
+	 "{all|RESOURCE...}\n\n"
 	 "OPTIONS:\n",prgname);
 
   opt=admopt;

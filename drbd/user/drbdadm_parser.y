@@ -71,17 +71,19 @@ static struct d_resource* new_resource(char* name)
 }
 
 %token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON 
-%token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL 
+%token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_STARTUP
 %token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
 %token <txt> TK_SIZE TK_TL_SIZE TK_TIMEOUT TK_CONNECT_INT 
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
 %token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 
 %token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT 
+%token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 
-%type <d_option> disk_statements disk_statement 
-%type <d_option> net_statements net_statement
-%type <d_option> sync_statements sync_statement 
-%type <d_option> sync_statements sync_statement 
+%type <d_option> disk_stmts disk_stmt 
+%type <d_option> net_stmts net_stmt
+%type <d_option> sync_stmts sync_stmt 
+%type <d_option> sync_stmts sync_stmt 
+%type <d_option> startup_stmts startup_stmt 
 %type <d_resource> resources resource
 
 %%
@@ -89,14 +91,14 @@ config:           global_sec resources   { config=$2; }
 		;	 
 
 global_sec:       /* empty */
-                | TK_GLOBAL '{' glob_statements '}'
+                | TK_GLOBAL '{' glob_stmts '}'
 		;
 
-glob_statements:  /* empty */
-		| glob_statements glob_statement
+glob_stmts:       /* empty */
+		| glob_stmts glob_stmt
 		;
 
-glob_statement:   TK_DISABLE_IO_HINTS   { global_options.disable_io_hints=1; }
+glob_stmt:        TK_DISABLE_IO_HINTS   { global_options.disable_io_hints=1; }
 		| TK_MINOR_COUNT '=' TK_INTEGER   { global_options.minor_count=atoi($3); }
                 ;
 
@@ -105,57 +107,66 @@ resources:        /* empty */   { $$ = 0; }
 		;
 
 resource:	  TK_RESOURCE TK_STRING { c_res = new_resource($2); }
-                  '{' res_statements '}' { $$ = c_res; }
+                  '{' res_stmts '}' { $$ = c_res; }
 		; 
 
-res_statements:   /* empty */
-		| res_statements res_statement
-		| res_statements section
+res_stmts:        /* empty */
+		| res_stmts res_stmt
+		| res_stmts section
 		;
 
-res_statement:    TK_PROTOCOL '=' TK_STRING   { c_res->protocol=$3; }
+res_stmt:         TK_PROTOCOL '=' TK_STRING   { c_res->protocol=$3; }
 		| TK_INCON_DEGR_CMD '=' TK_STRING   { c_res->ind_cmd=$3; }
 		;
 	
-section:	  TK_DISK '{' disk_statements '}' { c_res->disk_options=$3; }
-		| TK_NET  '{' net_statements '}'  { c_res->net_options=$3; }
-		| TK_ON TK_STRING '{' host_statements '}' { host_sec($2); }
-		| TK_SYNCER '{' sync_statements '}' { c_res->sync_options=$3; }
+section:	  TK_DISK '{' disk_stmts '}' { c_res->disk_options=$3; }
+		| TK_NET  '{' net_stmts '}'  { c_res->net_options=$3; }
+		| TK_ON TK_STRING '{' host_stmts '}' { host_sec($2); }
+		| TK_SYNCER '{' sync_stmts '}' { c_res->sync_options=$3; }
+		| TK_STARTUP '{' startup_stmts '}' {c_res->startup_options=$3;}
 		;
 
-disk_statements:  /* empty */   { $$ = 0; }
-		| disk_statements disk_statement   { $$=APPEND($1,$2); }
+disk_stmts:       /* empty */   { $$ = 0; }
+		| disk_stmts disk_stmt   { $$=APPEND($1,$2); }
 		;
 
-disk_statement:   TK_DO_PANIC   { $$=new_opt($1,0); }
+disk_stmt:        TK_DO_PANIC   { $$=new_opt($1,0); }
 		| TK_SIZE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
-net_statements:   /* empty */   { $$ = 0; }
-		| net_statements net_statement   { $$=APPEND($1,$2); }
+net_stmts:        /* empty */   { $$ = 0; }
+		| net_stmts net_stmt   { $$=APPEND($1,$2); }
 		;
 
-net_statement:    TK_TIMEOUT '=' TK_INTEGER   { $$=new_opt($1,$3); }
+net_stmt:         TK_TIMEOUT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_CONNECT_INT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_PING_INT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		| TK_TL_SIZE  '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
-sync_statements:  /* empty */   { $$ = 0; }
-		| sync_statements sync_statement   { $$=APPEND($1,$2); }
+sync_stmts:       /* empty */   { $$ = 0; }
+		| sync_stmts sync_stmt   { $$=APPEND($1,$2); }
 		;
 
-sync_statement:   TK_SKIP_SYNC   { $$=new_opt($1,0); }
+sync_stmt:        TK_SKIP_SYNC   { $$=new_opt($1,0); }
 		| TK_USE_CSUMS   { $$=new_opt($1,0); }
 		| TK_RATE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
-host_statements:  /* empty */  { c_host=calloc(1,sizeof(struct d_host_info)); }
-		| host_statements host_statement
+host_stmts:       /* empty */  { c_host=calloc(1,sizeof(struct d_host_info)); }
+		| host_stmts host_stmt
 		;
 
-host_statement:   TK_DISK '=' TK_STRING     { c_host->disk=$3; }
+host_stmt:        TK_DISK '=' TK_STRING     { c_host->disk=$3; }
 		| TK_DEVICE '=' TK_STRING   { c_host->device=$3; }
 		| TK_ADDRESS '=' TK_IPADDR  { c_host->address=$3; }
 		| TK_PORT '=' TK_INTEGER    { c_host->port=$3; }
+		;
+
+startup_stmts:    /* empty */  { $$ = 0; }
+		| startup_stmts startup_stmt   { $$=APPEND($1,$2); }
+		;
+
+startup_stmt:     TK_WFC_TIMEOUT '=' TK_INTEGER   { $$=new_opt($1,$3); }
+		| TK_DEGR_WFC_TIMEOUT '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
