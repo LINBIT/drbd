@@ -1271,7 +1271,7 @@ ONLY_IN_26(
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
 
-		if (mdev->cstate == Connected) {
+		if (mdev->cstate >= Connected) {
 			drbd_send_short_cmd(mdev,BecomeSyncSource);
 			drbd_start_resync(mdev,SyncTarget);
 		}
