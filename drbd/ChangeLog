@@ -1,5 +1,15 @@
 0.5.8
 -----
+A lot of new features: (This release should be named 0.6)
+  *) codecleanup of the on-the-fly counters
+  *) drbdsetup is not splitted into a disk and a net part / syntax changed
+  *) syncer rewritten. Now a lot faster but currently only woking with
+     4K based file systems. (mkfs -b 4096)
+  *) Meta-data management implemented. => DRBD is now able to select
+     the node with the up-to-date data to become primary after a cluster 
+     restart.
+  *) datadisk / drbd scripts rewritten two times :) Now they are in
+     perl and we have a new configuration file named /etc/drbd.conf
 
 0.5.7
 -----
