@@ -129,7 +129,12 @@ static inline void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 		list_del(le);
 		e = list_entry(le,struct Tl_epoch_entry,list);
 		bforget(e->bh);		
-		list_add(le,&mdev->free_ee);			
+		list_add(le,&mdev->free_ee);
+		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+		   e->block_id == ID_SYNCER ) {
+			dec_unacked((int)(mdev-drbd_conf));
+		}
+
 	}
 
 	spin_unlock_irq(&mdev->ee_lock);

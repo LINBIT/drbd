@@ -220,8 +220,8 @@ struct Drbd_Conf {
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
-	unsigned int pending_cnt;
-	unsigned int unacked_cnt;
+	int pending_cnt;
+	int unacked_cnt;
 	spinlock_t req_lock;
 	rwlock_t tl_lock;
 	drbd_request_t** tl_end;
