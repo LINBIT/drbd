@@ -190,11 +190,6 @@ struct Tl_epoch_entry {
 	u64    block_id;
 };
 
-struct drbd_event {
-	struct list_head list;
-	int sig, pid;
-};
-
 /* flag bits */
 #define ISSUE_BARRIER     0
 #define COLLECT_ZOMBIES   1
