@@ -442,7 +442,9 @@ struct Drbd_Conf {
 	int al_updates[3];
 	unsigned int al_tr_number;
 	struct al_transaction* al_tr_buffer;
-	int al_tr_cycle;
+	int al_tr_cycle;  
+	int al_tr_pos;     // position of the next transaction in the journal
+	struct semaphore al_tr_mutex;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif

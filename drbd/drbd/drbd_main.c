@@ -1119,6 +1119,9 @@ int __init drbd_init(void)
 		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].al_writ_cnt = 0;
 		drbd_conf[i].al_tr_buffer = 0;
+		drbd_conf[i].al_tr_cycle = 0;
+		drbd_conf[i].al_tr_pos = 0;
+		init_MUTEX(&drbd_conf[i].al_tr_mutex);
 		drbd_al_init(drbd_conf+i);
 		{
 			int j;

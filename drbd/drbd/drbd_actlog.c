@@ -28,16 +28,21 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
+// integer division, round _UP_ to the next integer
+#define div_ceil(A,B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
+// usual integer division
+#define div_floor(A,B) ( (A)/(B) )
+
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_FREE (-1)
-#define AL_EXTENTS_PP 122
+#define AL_EXTENTS_PT 122
 
 struct al_transaction {
 	u32       magic;
 	u32       tr_number;
 	u32       updated_extents[3];
-	u32       cyclic_extents[AL_EXTENTS_PP];
+	u32       cyclic_extents[AL_EXTENTS_PT];
 	u32       xor_sum;      
        // I do not believe that all storage medias can guarantee atomic
        // 512 byte write operations. When the journal is read, only
@@ -80,6 +85,7 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 		}
 	}
 
+	down(&mdev->al_tr_mutex);
 	spin_lock(&mdev->al_lock);
 	INIT_LIST_HEAD(&mdev->al_lru);
 	INIT_LIST_HEAD(&mdev->al_free);
@@ -94,7 +100,9 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	mdev->al_extents = extents;
 	mdev->al_tr_number = 0;
 	mdev->al_tr_cycle = 0;
-	spin_unlock(&mdev->al_lock);	
+	mdev->al_tr_pos = 0;
+	spin_unlock(&mdev->al_lock);
+	up(&mdev->al_tr_mutex);
 }
 
 void drbd_al_free(struct Drbd_Conf *mdev)
@@ -244,29 +252,16 @@ STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev,
 
 void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 {
-	/* completely unfinished */
-	int i,n,c;
-	unsigned int t;
+	int i,n,mx;
 	struct al_transaction* buffer;
 	unsigned int extent_nr;
 	u32 xor_sum=0;
 
-	spin_lock(&mdev->al_lock);
-	t = mdev->al_tr_number++;
-	//c = mdev->al_cycle++;
-	c = 0;
-	spin_unlock(&mdev->al_lock);
+	down(&mdev->al_tr_mutex); // protects al_tr_buffer, al_tr_cycle, ...
+	buffer = mdev->al_tr_buffer;
 
-	while(1) {
-		spin_lock(&mdev->al_lock);
-		buffer = mdev->al_tr_buffer;
-		mdev->al_tr_buffer = 0;
-		spin_unlock(&mdev->al_lock);
-		if(buffer) break;
-		schedule_timeout(HZ / 10);
-	}
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
-	buffer->tr_number = cpu_to_be32(t);
+	buffer->tr_number = cpu_to_be32(mdev->al_tr_number++);
 	for(i=0;i<3;i++) {
 		n = mdev->al_updates[i];
 		if(n != -1) {
@@ -276,16 +271,37 @@ void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 			       "%d: T%03d S%03d=E%06d\n",(int)(mdev-drbd_conf),
 			       t, n, extent_nr);
 #endif
-			buffer->updated_extents[i] = cpu_to_be32(extent_nr);
-			xor_sum ^= extent_nr;
+		} else {
+			extent_nr = AL_FREE;
 		}
+		buffer->updated_extents[i] = cpu_to_be32(extent_nr);
+		xor_sum ^= extent_nr;
 	}
 
-	for(i=0;i<AL_EXTENTS_PP;i++) {
-		extent_nr = mdev->al_extents[i].extent_nr;
+	mx = min_t(int,AL_EXTENTS_PT,mdev->al_nr_extents-mdev->al_tr_cycle);
+	for(i=0;i<mx;i++) {
+		extent_nr = mdev->al_extents[mdev->al_tr_cycle+i].extent_nr;
 		buffer->cyclic_extents[i] = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
+	for(;i<AL_EXTENTS_PT;i++) {
+		buffer->cyclic_extents[i] = __constant_cpu_to_be32(AL_FREE);
+		xor_sum ^= AL_FREE;
+	}
+	mdev->al_tr_cycle += AL_EXTENTS_PT;
+	if(mdev->al_tr_cycle >= mdev->al_nr_extents) mdev->al_tr_cycle=0;
+
+	buffer->xor_sum = cpu_to_be32(xor_sum);
+
+	// TODO; continue...
+	// write this transaction to the journal.
+	// write_...(buffer, mdev->al_tr_pos);
+
+	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
+		mdev->al_tr_pos=0;
+	}
+
+	up(&mdev->al_tr_mutex);
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
