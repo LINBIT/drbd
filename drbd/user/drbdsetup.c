@@ -89,6 +89,9 @@ struct option config_options[] = {
   { "do-panic",   no_argument,       0, 'p' },
   { "timeout",    required_argument, 0, 't' },
   { "sync-rate",  required_argument, 0, 'r' },
+  { "sync-max",   required_argument, 0, 'r' },
+  { "sync-min",   required_argument, 0, 'n' },
+  { "sync-nice",  required_argument, 0, 'P' },
   { "skip-sync",  no_argument,       0, 'k' },
   { "tl-size",    required_argument, 0, 's' },
   { "connect-int",required_argument, 0, 'c' },
@@ -207,13 +210,13 @@ void print_usage(const char* prgname)
 	  " wait_sync [-t|--time val]\n"
 	  " wait_connect [-t|--time val]\n"
 	  " replicate\n"
-	  " syncer -r|--rate val\n"
+	  " syncer --min val --max val\n"
 	  " down\n"
-	  " net local_addr[:port] remote_addr[:port] protocol "
-	  " [-t|--timeout val]\n"
-          " [-r|--sync-rate val] [-k|--skip-sync]"
-	  " [-s|--tl-size val] [-c|--connect-int]\n"
-          " [-i|--ping-int]\n"
+	  " net local_addr[:port] remote_addr[:port] protocol\n"
+	  "     [-t|--timeout val]\n"
+          "     [-r|--sync-rate|--sync-max val] [--sync-min val]\n"
+          "     [--sync-nice val] [-k|--skip-sync]\n"
+	  "     [-s|--tl-size val] [-c|--connect-int] [-i|--ping-int]\n"
 	  " disk lower_device [-d|--disk-size val] [-p|--do-panic]\n"
 	  " disconnect\n"
 	  " show\n"
@@ -327,7 +330,9 @@ int scan_net_options(char **argv,
 		     int ignore_other_opts)
 {
   cn->config.timeout = 60; /* = 6 seconds */
-  cn->config.sync_rate = 250; /* KB/sec */
+  cn->config.sync_rate_min = 200; /* KB/sec */
+  cn->config.sync_rate_max = 250; /* KB/sec */
+  cn->config.sync_nice = 19; /* nice-level */
   cn->config.skip_sync = 0; 
   cn->config.tl_size = 256;
   cn->config.try_connect_int = 10;
@@ -348,8 +353,14 @@ int scan_net_options(char **argv,
 	case 't': 
 	  cn->config.timeout = m_strtol(optarg,1);
 	  break;
+	case 'n':
+	  cn->config.sync_rate_min = m_strtol(optarg,1024);
+	  break;
 	case 'r':
-	  cn->config.sync_rate = m_strtol(optarg,1024);
+	  cn->config.sync_rate_max = m_strtol(optarg,1024);
+	  break;
+	case 'P':
+	  cn->config.sync_nice = m_strtol(optarg,1);
 	  break;
 	case 'k':
 	  cn->config.skip_sync=1;
@@ -372,6 +383,34 @@ int scan_net_options(char **argv,
 	  break;
 	}
     }
+
+  /* sanity checks for the sync_rate */
+  if (cn->config.sync_rate_min > cn->config.sync_rate_max) {
+      fprintf(stderr,"sync-min is greater than sync-max. Overflow?\n");
+      return 20;
+  }
+
+  if (cn->config.sync_rate_max > 600*1024) {
+    /* you can set it that high so it will never sleep.
+     * or do you really have this bandwidth :P
+     * we can adjust this in 3 years time...
+     * ... and tell me when we need 64 bit integer :)
+     */
+    fprintf(stderr,"I consider transfer rates above 600 M/sec bogus.\n");
+    return 20;
+  }
+
+  if ((double) cn->config.sync_rate_max < cn->config.sync_rate_min * 1.1) {
+	// avoid priority flipflops 
+	cn->config.sync_rate_max=(int)(1.1 * (double)cn->config.sync_rate_min);
+	// do I need to check for overflow?
+  }
+
+  /* range check for nice value */
+  if (cn->config.sync_nice < -20 || cn->config.sync_nice > 19) {
+      fprintf(stderr,"sync-nice has to be in the range [-20;19].\n");
+      return 20;
+  }
 
   /* sanity checks of the timeouts */
   
@@ -660,7 +699,7 @@ int cmd_wait_sync(int drbd_fd,char** argv,int argc)
 int cmd_syncer(int drbd_fd,char** argv,int argc)
 {
   int err;
-  int sync_rate = -1;
+  int sync_param[3] = { 0, 0, 20 };
   optind=0; opterr=0;
   if(argc > 0) 
     {
@@ -668,16 +707,24 @@ int cmd_syncer(int drbd_fd,char** argv,int argc)
 	{
 	  int c;
 	  static struct option options[] = {
-	    { "rate",       required_argument, 0, 'r' },
-	    { 0,            0,                 0, 0   }
+	    { "min",      required_argument, 0, 'n' },
+	    { "max",      required_argument, 0, 'x' },
+	    { "nice",     required_argument, 0, 'p' },
+	    { 0,          0,                 0, 0   }
 	  };
 	  
-	  c = getopt_long(argc+1,argv-1,"-r:",options,0);
+	  c = getopt_long(argc+1,argv-1,"",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'r': 
-	      sync_rate=m_strtol(optarg,1024);
+	    case 'n': 
+	      sync_param[0]=m_strtol(optarg,1024);
+	      break;
+	    case 'x': 
+	      sync_param[1]=m_strtol(optarg,1024);
+	      break;
+	    case 'p': 
+	      sync_param[2]=m_strtol(optarg,1024);
 	      break;
 	    default:
 	      fprintf(stderr,"Unknown option %s\n",argv[optind-2]);
@@ -687,20 +734,32 @@ int cmd_syncer(int drbd_fd,char** argv,int argc)
 	}
     }
   
-  if (sync_rate <= 0) {
-    fprintf(stderr,"you must supply a valid sync_rate, "
-	    "e.g.  --rate=3000k\n");
+  if (sync_param[0] > sync_param[1] && sync_param[1] != 0) {
+      fprintf(stderr,"min is greater than max!?\n");
+      return 20;
+  }
+  if (sync_param[0] < 0 || sync_param[1] < 0) {
+	// == 0 means do not change
+    fprintf(stderr,"you must supply a valid sync rate, "
+	    "e.g.  --min=3000k --max=6M\n");
     return 20;
-  } else if (sync_rate > 200*1024) {
+  } else if (sync_param[1] > 600*1024) {
     /* you can set it that high so it will never sleep.
      * or do you really have this bandwidth :P
      * we can adjust this in 3 years time...
      */
-    fprintf(stderr,"I consider transfer rates above 200 M/sec bogus.\n");
+    fprintf(stderr,"I consider transfer rates above 600 M/sec bogus.\n");
     return 20;
   }
+
+  /* range check for nice value */
+  if (sync_param[2] < -20 || sync_param[2] > 20) {
+	// == 20 means do not change
+      fprintf(stderr,"nice has to be in the range [-20;19].\n");
+      return 20;
+  }
   
-  err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&sync_rate);
+  err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&sync_param);
   if(err)
     {
       perror("DRBD_IOCTL_SET_SYNC_CONFIG ioctl() failed");
@@ -884,8 +943,12 @@ int cmd_show(int drbd_fd,char** argv,int argc)
   printf("Net options:\n");
   if( cn.nconf.timeout ) 
     printf(" timeout = %d.%d sec\n",cn.nconf.timeout/10,cn.nconf.timeout%10);
-  if( cn.nconf.sync_rate ) 
-    printf(" sync-rate = %d KB/sec\n",cn.nconf.sync_rate);
+  if( cn.nconf.sync_rate_min ) 
+    printf(" sync-min = %d KB/sec\n",cn.nconf.sync_rate_min);
+  if( cn.nconf.sync_rate_max ) 
+    printf(" sync-max = %d KB/sec\n",cn.nconf.sync_rate_max);
+  if( cn.nconf.sync_nice ) 
+    printf(" sync-nice = %d\n",cn.nconf.sync_nice);
   if( cn.nconf.skip_sync ) printf(" skip-sync\n");
   if( cn.nconf.tl_size ) printf(" tl-size = %d\n",cn.nconf.tl_size);
   if( cn.nconf.try_connect_int ) 

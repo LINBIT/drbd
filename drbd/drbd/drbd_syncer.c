@@ -307,8 +307,8 @@ STATIC unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
  * progress bars shamelessly adapted from drivers/md/md.c
  */
 /* hardcoded for now */
-#define SPEED_MAX (mdev->conf.sync_rate)
-#define SPEED_MIN 150
+#define SPEED_MAX (mdev->conf.sync_rate_max)
+#define SPEED_MIN (mdev->conf.sync_rate_min)
 #define SYNC_MARKS      10
 #define SYNC_MARK_STEP  (3*HZ)
 #if defined(MAX_RT_PRIO) || defined(CONFIG_MAX_RT_PRIO)
@@ -328,6 +328,7 @@ STATIC unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 int drbd_syncer(struct Drbd_thread *thi)
 {
 	int minor = thi->minor;
+	struct Drbd_Conf *mdev = drbd_conf+minor;
 	struct ds_buffer buffers[2];
 	struct ds_buffer *disk_b, *net_b, *tmp;
 	int amount,amount_blks;
@@ -391,10 +392,9 @@ int drbd_syncer(struct Drbd_thread *thi)
 	/*
 	 * Resync has low priority.
 	 */
-	drbd_set_user_nice(current,19);
+	drbd_set_user_nice(current,mdev->conf.sync_nice);
 
 	while (TRUE) {
-		struct Drbd_Conf *mdev = drbd_conf+minor;
 		retry=0;
 	retry:
 		if (jiffies >= mark[last_mark] + SYNC_MARK_STEP) {
@@ -421,8 +421,8 @@ int drbd_syncer(struct Drbd_thread *thi)
 		currspeed = (mdev->resync_mark_cnt - mdev->synced_to)/2
 		          / ((jiffies - mdev->resync_mark)/HZ +1)         +1;
 		
-		if (currspeed > SPEED_MIN) {
-			drbd_set_user_nice(current,19);
+		if (currspeed >= SPEED_MIN) {
+			drbd_set_user_nice(current,mdev->conf.sync_nice);
 			                          
 			if ((currspeed > SPEED_MAX)
 				/* what to do with this one?

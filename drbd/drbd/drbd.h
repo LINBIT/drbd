@@ -66,7 +66,9 @@ struct net_config {
 	IN char     other_addr[MAX_SOCK_ADDR];
 	IN int      other_addr_len;
 	IN int      timeout;
-	   int      sync_rate; /* KB/sec */
+	   int      sync_rate_min; /* KB/sec */
+	   int      sync_rate_max; /* KB/sec */
+	   int      sync_nice; /* nice-level */
 	IN int      skip_sync; 
 	IN int      tl_size; /* size of the transfer log */
 	IN int      wire_protocol;  

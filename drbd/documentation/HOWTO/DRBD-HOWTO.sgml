@@ -114,6 +114,15 @@ with <ulink url="http://www.globalfilesystem.org">GFS</ulink> for example.
 	The latest stable version is 0.5.8, and it is available for download
 at <ulink url="http://www.complang.tuwien.ac.at/reisner/drbd/download/">http://www.complang.tuwien.ac.at/reisner/drbd/download/</ulink>
         </para>
+	<para>
+	The latest developement version is higher than 0.6.1-pre17 [2002-Oct-12]
+	and is available via <ulink url="http://www.complang.tuwien.ac.at/reisner/drbd/cvs.html">cvs</ulink>,
+	or by comand line interface:
+	<programlisting>
+	cvs -d :pserver:anonymous@ist.org:/cvshome/drbd login
+	cvs -d :pserver:anonymous@ist.org:/cvshome/drbd co drbd
+	</programlisting>
+	</para>
 	</sect2>
 	
 	<sect2>
@@ -629,6 +638,15 @@ back and enjoy the high availability!</para>
        Need to write a paragraph on what to do if there is a message
        "transfer log too small" in the syslog.       
        </para> 
+       </sect2>
+       <sect2>
+       <title>I'm halfway through a SyncAll, but I realize that it is too slow!</title>
+       <para>
+	You can reconfigure the synchronization parameters at runtime
+	using the syncer sub-command of the drbdsetup utility.
+	See the drbdsetup man page for additional information.
+       </para> 
+       </sect2>
 </sect1>
 
 <sect1 id=support>

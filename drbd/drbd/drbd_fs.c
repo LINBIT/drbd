@@ -420,12 +420,31 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err = drbd_ioctl_set_net(mdev,(struct ioctl_net_config*) arg);
 		break;
 
-	case DRBD_IOCTL_SET_SYNC_CONFIG: {
-		int tmp;
-		err = copy_from_user(&tmp, (int*) arg, sizeof(int));
+	case DRBD_IOCTL_SET_SYNC_CONFIG: { // brace for local variable
+		int tmp[3];
+		err = copy_from_user(tmp, (int*) arg, 3*sizeof(int));
 		if (err) break;
-		if (tmp > 0) mdev->conf.sync_rate = tmp;
-		else err = -EINVAL;
+
+		// rate == 0 means do not change
+		if (tmp[0] == 0 && tmp[1] > 0
+		    && tmp[1] > mdev->conf.sync_rate_min)
+		{
+			mdev->conf.sync_rate_max = tmp[1];
+		} else if (tmp[1] == 0 && tmp[0] > 0
+		    && tmp[0] < mdev->conf.sync_rate_max)
+		{
+			mdev->conf.sync_rate_min = tmp[0];
+		} else if (tmp[0] > 0 && tmp[0] < tmp[1]) {
+			mdev->conf.sync_rate_min = tmp[0];
+			mdev->conf.sync_rate_max = tmp[1];
+		} else if (tmp[0] != 0 || tmp[1] != 0) {
+			err = -EINVAL;
+			break;
+		}
+		if (-20 <= tmp[2] && tmp[2] <= 19) {
+			mdev->conf.sync_nice = tmp[2];
+		} else if (tmp[2] != 20)
+			err = -EINVAL;
 		break;
 	        }
 

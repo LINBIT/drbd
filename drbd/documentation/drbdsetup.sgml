@@ -31,10 +31,20 @@
   <arg><replaceable>:port</replaceable></arg>
   <arg choice=req><replaceable>protocol</replaceable></arg>
   <arg>-r<arg choice=req><replaceable>rate</replaceable></arg></arg>
+  <arg>--sync-min<arg choice=req><replaceable>rate</replaceable></arg></arg>
+  <arg>--sync-nice<arg choice=req><replaceable>nice-level</replaceable></arg></arg>
   <arg>-s<arg choice=req><replaceable>size</replaceable></arg></arg>
   <arg>-c<arg choice=req><replaceable>time</replaceable></arg></arg>
   <arg>-i<arg choice=req><replaceable>time</replaceable></arg></arg>
   <arg>-k</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>syncer</arg>
+  <arg>--min<arg choice=req><replaceable>rate</replaceable></arg></arg>
+  <arg>--max<arg choice=req><replaceable>rate</replaceable></arg></arg>
+  <arg>--nice<arg choice=req><replaceable>nice-level</replaceable></arg></arg>
  </cmdsynopsis>
  <cmdsynopsis>
   <command>drbdsetup</command>
@@ -166,11 +176,47 @@ is used. Valid protocol spezifiers are A, B and C.
 <variablelist>
  <varlistentry>
   <term><option>-r</option>,
-   <option>--sync-rate <replaceable>rate</replaceable></option></term>
+   <option>--sync-rate <replaceable>rate</replaceable></option>,
+   <option>--sync-max <replaceable>rate</replaceable></option></term>
   <listitem><para>
 To ensure smooth operation of the application on top of drbd, it is
 possible to limit the bandwidth which may be used by background 
-synchronisations. The default is 250 KB/sec, the default unit is KB. 
+synchronisations.  It is well possible that this limit is not fully
+utilized while the server is otherwise loaded, because synchronization
+runs at a very low priority by default (nicelevel +19; but see below).
+The default is 250 KB/sec, the default unit is KB. 
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term>
+   <option>--sync-min <replaceable>rate</replaceable></option></term>
+  <listitem><para>
+It is possible to guarantee a minimum throughput for the synchronization.
+If the current synchronization speed drops below this watermark, the
+sync-daemon reprioritizes itself to the highest possible priority
+(nicelevel -20; not RealTime class). As soon as speed is back above the
+watermark, it flips back to the normal priority, see above. The default
+is 200 KB/sec, the default unit is KB. 
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term>
+   <option>--sync-nice <replaceable>nice-level</replaceable></option></term>
+  <listitem><para>
+This sets the normal nice-level for background synchronization.
+Valid values are [-20 to 19], inclusive. Higher number means lower
+priority. This is used for the sync-deamon if the current
+synchronization throughput is between the sync-min and sync-max values,
+see above.  The default is 19, i.e. lowest priority.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-k</option>,
+   <option>--skip-sync </option></term>
+  <listitem><para>
+This option supresses the automatic start of the resynchronisation 
+process, which
+is triggered as soon as two drbd devices are connected.
   </para></listitem>
  </varlistentry>
  <varlistentry>
@@ -181,15 +227,6 @@ In case it is not possible to connect to the remote drbd device immediately,
 drbd
 keeps on trying to connect. With this option you can set the time
 between two tries. The default value is 10 seconds, the unit is 1 second.
-  </para></listitem>
- </varlistentry>
- <varlistentry>
-  <term><option>-k</option>,
-   <option>--skip-sync </option></term>
-  <listitem><para>
-This option supresses the automatic start of the resynchronisation 
-process, which
-is triggered as soon as two drbd devices are connected.
   </para></listitem>
  </varlistentry>
  <varlistentry>
@@ -222,6 +259,40 @@ be necessary to increase the size of this data structure.
 If this is the case, the driver will write messages to the syslog 
 saying that the transfer-log is too small. The default 
 <replaceable>size</replaceable> is 256 entries.
+  </para></listitem>
+ </varlistentry>
+</variablelist>
+</refsect2>
+<refsect2>
+<title>syncer</title>
+<para>
+Changes the synchronization deamon parameters of
+<replaceable>device</replaceable> at runtime.
+Not mentioned parameters will not be changed.
+</para>
+<variablelist>
+ <varlistentry>
+  <term>
+   <option>--max <replaceable>rate</replaceable></option></term>
+  <listitem><para>
+	See the <option>--sync-max</option> parameter of the
+	<option>net</option> sub-command.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term>
+   <option>--min <replaceable>rate</replaceable></option></term>
+  <listitem><para>
+	See the <option>--sync-min</option> parameter of the
+	<option>net</option> sub-command.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term>
+   <option>--nice <replaceable>nice-level</replaceable></option></term>
+  <listitem><para>
+	See the <option>--sync-nice</option> parameter of the
+	<option>net</option> sub-command.
   </para></listitem>
  </varlistentry>
 </variablelist>
@@ -295,6 +366,8 @@ partner device could change its state.
 This forces the pair of connected drbd devices into SyncAll state, which
 means that all data blocks of the device in primary state are copied to
 the device in secondary state.
+Since synchronization runs below the filesystem layer, services on the
+active node may continue.
 </para>
 <para>
 This command will fail if the <replaceable>device</replaceable> is not

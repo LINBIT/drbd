@@ -126,13 +126,13 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
   <listitem><para>
     This section is used to fine tune DRBD's properties. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
-    <manvolnum>8</manvolnum></citerefentry> for detailed description 
-    of this section's 
-    parameters.
+    <manvolnum>8</manvolnum></citerefentry> for detailed description
+    of this section's parameters.
     Allowed parameters: <option>sync-rate</option>, 
-    <option>connect-int</option>, <option>skip-sync</option>,
-    <option>ping-int</option>, <option>timeout</option>,
-    <option>tl-size</option>.
+    <option>sync-max</option>, <option>sync-min</option>,
+    <option>sync-nice</option>, <option>skip-sync</option>,
+    <option>connect-int</option>, <option>ping-int</option>,
+    <option>timeout</option>, <option>tl-size</option>.
   </para>
   </listitem>
 </varlistentry>
