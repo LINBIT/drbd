@@ -90,7 +90,7 @@ struct Drbd_Conf {
   int                      recv_cnt;
   struct timer_list        s_timeout_t;
   struct semaphore         send_mutex;
-  unsigned long	           synced_to; /* Unit: sectors (512 Bytes) */
+  atomic_t		   synced_to; /* Unit: sectors (512 Bytes) */
   struct Drbd_thread       receiver;
   struct Drbd_thread       syncer;
 };
@@ -279,22 +279,22 @@ struct request* my_all_requests = NULL;
 /* PROC FS stuff end */
 
 /************************* The transfer log start */
-/* I am not shure if the irqsave spin_lock is required ... */
+/* Must be called with mdev->tl_lock spinlock held */
+
 inline void tl_add(struct Drbd_Conf* mdev,u64 new_nr)
 {
-  unsigned long flags;
-  spin_lock_irqsave(&mdev->tl_lock, flags);
+  if(new_nr) {
+	  *mdev->tl_end = cpu_to_be64(new_nr);
 
-  *mdev->tl_end = cpu_to_be64(new_nr);
-  mdev->tl_end++;
+	  mdev->tl_end++;
 
-  if(mdev->tl_end == mdev->transfer_log + mdev->conf.tl_size) 
-    mdev->tl_end=mdev->transfer_log;
+	  if(mdev->tl_end == mdev->transfer_log + mdev->conf.tl_size) 
+	    mdev->tl_end=mdev->transfer_log;
 
-  if(mdev->tl_end == mdev->tl_begin)
-      printk( KERN_ERR DEVICE_NAME ": transferlog too small!! \n");
-  spin_unlock_irqrestore(&mdev->tl_lock, flags);
-}     
+	  if(mdev->tl_end == mdev->tl_begin)
+	      printk( KERN_ERR DEVICE_NAME ": transferlog too small!! \n");
+  }
+}    	 
 
 inline void tl_init(struct Drbd_Conf* mdev)
 {
@@ -305,8 +305,11 @@ inline void tl_init(struct Drbd_Conf* mdev)
 inline void tl_release(struct Drbd_Conf* mdev,u64 old_nr,int rp)
 {
   static int count = 0;
-  unsigned long flags;
-  spin_lock_irqsave(&mdev->tl_lock, flags);
+
+  spin_lock(&mdev->tl_lock);
+
+  if(!*mdev->tl_begin) 
+	mdev->tl_begin++;
 
   if(*mdev->tl_begin != old_nr && count < 30)
     {
@@ -321,22 +324,21 @@ inline void tl_release(struct Drbd_Conf* mdev,u64 old_nr,int rp)
   if(mdev->tl_begin == mdev->transfer_log + mdev->conf.tl_size) 
     mdev->tl_begin=mdev->transfer_log;
 
-  spin_unlock_irqrestore(&mdev->tl_lock, flags);
+  spin_unlock(&mdev->tl_lock);
 } 
 
 inline void tl_send_ack(int minor, u64 sector)
 {
   int len;
   struct Drbd_Conf* mdev = &drbd_conf[minor];
-  unsigned long flags;
+
+  spin_lock(&mdev->tl_lock);
 
   tl_add(mdev, sector);
-
-  spin_lock_irqsave(&mdev->tl_lock, flags);
-
+  
   if(mdev->tl_end >= mdev->tl_begin) len = mdev->tl_end - mdev->tl_begin;
   else len = mdev->conf.tl_size - (mdev->tl_begin - mdev->tl_end);
-  spin_unlock_irqrestore(&mdev->tl_lock, flags);
+  spin_unlock(&mdev->tl_lock);
 
   if(len > mdev->conf.tl_size/2  )
     {
@@ -344,12 +346,13 @@ inline void tl_send_ack(int minor, u64 sector)
       /* need to send an ack packet */
       printk( KERN_ERR DEVICE_NAME ": sending ack! for %d packets\n",len);
 
-      spin_lock_irqsave(&mdev->tl_lock, flags);
+      spin_lock(&mdev->tl_lock);
       begin=mdev->tl_begin;
       end=mdev->tl_end;
       mdev->tl_begin=mdev->tl_end;
-      spin_unlock_irqrestore(&mdev->tl_lock, flags);
+      spin_unlock(&mdev->tl_lock);
       /* The first send might sleep thus I have to have my own begin&end */
+      /* FIXME: This is racy, the data on the table may change under us. */
 
       if(end >= begin)
 	{
@@ -442,7 +445,7 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
     {
       del_timer(&drbd_conf[minor].s_timeout_t);
 
-      spin_lock_irq(&current->sigmask_lock);
+      spin_lock(&current->sigmask_lock);
       if(sigismember(&current->signal,DRBD_SIG))
 	{
 	  sigdelset(&current->signal,DRBD_SIG);
@@ -457,8 +460,11 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 
   if(err == len+sizeof(packet_header) )
     {
-      if(len >= 512 && be16_to_cpu(packet_header.command) == 0)
+      if(len >= 512) {
+	spin_lock(&drbd_conf[minor].tl_lock);
 	tl_add(&drbd_conf[minor],sect_nr);
+	spin_unlock(&drbd_conf[minor].tl_lock);
+      }
     }
   else
     {
@@ -643,7 +649,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	if( req->cmd == WRITE && drbd_conf[minor].state == Primary &&
 	     ( drbd_conf[minor].cstate == Connected || 
 	        ( drbd_conf[minor].cstate == Syncing && 
-	          req->sector > drbd_conf[minor].synced_to)))
+	          req->sector > atomic_read(&drbd_conf[minor].synced_to))))
 	  sending = 1;
 
 	/* Do disk - IO */
@@ -778,6 +784,7 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
 	    kmalloc(sizeof(u64)*drbd_conf[minor].conf.tl_size,
 		    GFP_KERNEL);
 	  tl_init(&drbd_conf[minor]);
+          memset(drbd_conf[minor].transfer_log, -1, sizeof(u64)*drbd_conf[minor].conf.tl_size);
 	}
 
       drbd_conf[minor].lo_device = inode->i_rdev;
@@ -885,7 +892,7 @@ __initfunc(int drbd_init( void ))
       drbd_conf[i].recv_cnt=0;
       drbd_conf[i].s_timeout_t.function = drbd_send_timeout;
       init_timer(&drbd_conf[i].s_timeout_t);
-      drbd_conf[i].synced_to=0;
+      atomic_set(&drbd_conf[i].synced_to, 0);
       init_MUTEX(&drbd_conf[i].send_mutex);
       drbd_thread_init(i,&drbd_conf[i].receiver,drbdd_init);
       drbd_thread_init(i,&drbd_conf[i].syncer,drbd_syncer);
@@ -1419,13 +1426,14 @@ int drbd_syncer(void *arg)
 
   printk(KERN_ERR DEVICE_NAME ": syncer living/m=%d\n",minor);
 
-  drbd_conf[minor].synced_to = ( blk_size[MAJOR_NR][minor] -
-			      (blksize_size[MAJOR_NR][minor]>>10) ) <<1;  
+  atomic_set(&drbd_conf[minor].synced_to, (blk_size[MAJOR_NR][minor] -
+			      (blksize_size[MAJOR_NR][minor]>>10) ) <<1);  
  restart:
   blocksize = blksize_size[MAJOR_NR][minor];
 
-  drbd_conf[minor].synced_to =   /* align synced_to to blocksize */
-    (drbd_conf[minor].synced_to) & ~((blocksize>>9)-1);
+  /* align synced_to to blocksize */
+  atomic_set(&drbd_conf[minor].synced_to,    
+    atomic_read(&drbd_conf[minor].synced_to) & ~((blocksize>>9)-1));
 
   interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
   blocks = (amount << 10) / blocksize;
@@ -1433,7 +1441,7 @@ int drbd_syncer(void *arg)
   printk(KERN_ERR DEVICE_NAME ": synced_to=%ld "
 	 "blks=%d "
 	 "int=%d \n"
-	 ,drbd_conf[minor].synced_to,blocks,interval);
+	 ,(unsigned long)atomic_read(&drbd_conf[minor].synced_to),blocks,interval);
 
   while(TRUE)
     {
@@ -1449,7 +1457,8 @@ int drbd_syncer(void *arg)
 	  if(thi->exit==1) goto out;
 	  if(blocksize != blksize_size[MAJOR_NR][minor]) goto restart;
 
-	  block_nr=drbd_conf[minor].synced_to>>(drbd_conf[minor].blk_size_b-9);
+	  block_nr = atomic_read(&drbd_conf[minor].synced_to) >> 
+		  (drbd_conf[minor].blk_size_b-9);
 
 	  bh = getblk(MKDEV(MAJOR_NR,minor),block_nr,blocksize);
 
@@ -1464,7 +1473,8 @@ int drbd_syncer(void *arg)
 		}
 	    }
 
-	  rr=drbd_send(minor,Data,blocksize,drbd_conf[minor].synced_to,
+	  rr=drbd_send(minor,Data,blocksize,
+                       atomic_read(&drbd_conf[minor].synced_to),
 		       bh->b_data);
 
 	  brelse(bh);
@@ -1487,16 +1497,16 @@ int drbd_syncer(void *arg)
 		 blocksize);
 	  */
 
-	  new_sector = drbd_conf[minor].synced_to - (blocksize>>9);
-	  if(new_sector > drbd_conf[minor].synced_to) goto done;
-	  drbd_conf[minor].synced_to = new_sector;
+	  new_sector = atomic_read(&drbd_conf[minor].synced_to) - (blocksize>>9);
+	  if(new_sector > atomic_read(&drbd_conf[minor].synced_to)) goto done;
+	  atomic_set(&drbd_conf[minor].synced_to, new_sector);
 	}
     }
  done:
   drbd_conf[minor].cstate = Connected;
 
  out:
-  drbd_conf[minor].synced_to=0;
+  atomic_set(&drbd_conf[minor].synced_to, 0);
   printk(KERN_ERR DEVICE_NAME ": syncer exiting/m=%d\n",minor);
   thi->pid=0;
   up( &thi->sem );
