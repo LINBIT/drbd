@@ -311,10 +311,17 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 
 }
 
+/* tl_dependence reports if this sector was present in the current
+   epoch. 
+   As side effect it clears also the pointer to the request if it
+   was present in the transfert log. (Since tl_dependence indicates
+   that IO is complete and that drbd_end_req() should not be called
+   in case tl_clear has to be called due to interruption of the 
+   communication) */
 int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
 	drbd_request_t** p;
-	int r;
+	int r=TRUE;
 
 	read_lock(&mdev->tl_lock);
 
@@ -326,10 +333,10 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 			if ( p==mdev->tl_begin ) {r=FALSE; break;}
 		}
 		p--;
-		if ( *p == TL_BARRIER) {r=FALSE; break;}
+		if ( *p == TL_BARRIER) r=FALSE;
 		if ( *p == item) {
 			*p=TL_EMPTY;
-			r=TRUE; break;
+			break;
 		}
 	}
 
