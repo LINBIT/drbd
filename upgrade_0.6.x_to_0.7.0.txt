@@ -1,8 +1,8 @@
 
 DRBD upgrade instructions from 0.6.x to 0.7.0
 
-* Since drbd-0.7.x is protocol incompatile to drbd-0.6.x you need
-  to do a offline upgrade. I.e. no "rolling" upgrade possible.
+* Since drbd-0.7.x is protocol incompatible to drbd-0.6.x you need
+  to do an offline upgrade. I.e. no "rolling" upgrade possible.
 
   Make sure that the devices are in sync, make both sides secondary
   first and then stop DRBD on both nodes.
@@ -13,9 +13,9 @@ DRBD upgrade instructions from 0.6.x to 0.7.0
 
   In order to do this upgrade you either need to
 
-   A) shrink your filesystems on the DRBD devices by at least 128MB
-   B) grow the backing_storage of the DRBD devices by at leas 128MB
-   C) have one seperate block_device for all meta data
+   A) shrink your filesystems on the DRBD devices by at least 128MB, or
+   B) grow the backing_storage of the DRBD devices by at least 128MB, or
+   C) have one separate block_device for all meta data
 
   A)
   ext2/ext3   resize2fs
@@ -27,12 +27,12 @@ DRBD upgrade instructions from 0.6.x to 0.7.0
   (fdisk)     (Only do this if you know what you are doing.)
 
   C)
-  The device needs to be n*128MB, where n is the number of 
-  DRBD resources.
+  The size of the meta-data device needs to be at least n*128MB,
+  where n is the number of DRBD resources you want to use.
 
-* Update you configurate file:
+* Update your configuration file:
   - Change it to the new syntax.
-  - Remove the disk-size parameter from you drbd.conf
+  - Remove the disk-size parameter from your drbd.conf
   - Add the meta-disk settings
   - Remove tl-size
   - Change sync-min & sync-max to sync { rate }
@@ -41,5 +41,5 @@ DRBD upgrade instructions from 0.6.x to 0.7.0
 * Start DRBD on both nodes
 
 * Tune the al-extents setting to balance the number of updates
-  to the metadata per minute (see cat /proc/drbd umber "al:") vs
+  to the metadata per minute (see cat /proc/drbd number "al:") vs
   the expected resync time. 

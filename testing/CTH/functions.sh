@@ -147,7 +147,7 @@ do_initial_sanity_check()
 	fi
 	> /etc/drbd-07.conf # no more drbd-07.conf hehehe...
 	ls_line=$(LANG= ls -l /dev/${DRBD_DEVNAME}0)
-	egrep_pat="^brw-..---- +1 root +root +$DRBD_MAJOR, +0 [A-Za-z0-9-: ]*/dev/${DRBD_DEVNAME}0\$"
+	egrep_pat="^brw-..---- +1 root +[a-z]+ +$DRBD_MAJOR, +0 [A-Za-z0-9-: ]*/dev/${DRBD_DEVNAME}0\$"
 	if ! echo $ls_line | grep -E "$egrep_pat" ; then
 		echo "unexpected drbd device settings"
 		echo " $ls_line"
