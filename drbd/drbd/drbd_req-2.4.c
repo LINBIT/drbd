@@ -40,14 +40,11 @@
 
 void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 {
+	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
 	int wake_asender=0;
 	unsigned long flags=0;
-	struct Drbd_Conf* mdev = drbd_conf + MINOR(req->bh->b_rdev);
+	struct Tl_epoch_entry *e=NULL;
 
-/*
-      	printk(KERN_ERR DEVICE_NAME "%d: drbd_end_req(%p,%x)\n",
-	       (int)(mdev-drbd_conf),req,nextstate);	
-*/
 
 	if (req->rq_status == (RQ_DRBD_READ | 0x0001))
 		goto end_it_unlocked;
@@ -109,15 +106,11 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	}
 
 	if(mdev->state == Secondary) {
-		struct Tl_epoch_entry *e;
 		e=req->bh->b_private;
 		if( e ) {
 			spin_lock_irqsave(&mdev->ee_lock,flags);
 			list_del(&e->list);
-			list_add(&e->list,&mdev->done_ee);
 			spin_unlock_irqrestore(&mdev->ee_lock,flags);
-			if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-			   e->block_id == ID_SYNCER ) wake_asender=1;
 		} else {
 			printk(KERN_ERR DEVICE_NAME "%d: strange e == NULL "
 			       ", bh=%p\n",
@@ -126,6 +119,15 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 	}
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
+
+	if(e) {
+		spin_lock_irqsave(&mdev->ee_lock,flags);
+		list_add(&e->list,&mdev->done_ee);
+		spin_unlock_irqrestore(&mdev->ee_lock,flags);
+		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+		   e->block_id == ID_SYNCER ) wake_asender=1;
+	}
+
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
