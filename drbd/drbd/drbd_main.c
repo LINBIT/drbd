@@ -53,7 +53,15 @@
 #include <linux/slab.h>
 #include <linux/devfs_fs_kernel.h>
 
-#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+#define __KERNEL_SYSCALLS__
+#include <linux/unistd.h>
+#include <linux/vmalloc.h>
+
+#include <linux/drbd.h>
+#include "drbd_int.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+# if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 extern int register_ioctl32_conversion(unsigned int cmd,
 				       int (*handler)(unsigned int,
 						      unsigned int,
@@ -61,14 +69,12 @@ extern int register_ioctl32_conversion(unsigned int cmd,
 						      struct file *));
 extern int unregister_ioctl32_conversion(unsigned int cmd);
 extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
+# endif
+#else
+# ifdef CONFIG_COMPAT
+#  include <linux/ioctl32.h>
+# endif
 #endif
-
-#define __KERNEL_SYSCALLS__
-#include <linux/unistd.h>
-#include <linux/vmalloc.h>
-
-#include <linux/drbd.h>
-#include "drbd_int.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 static devfs_handle_t devfs_handle;
