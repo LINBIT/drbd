@@ -927,12 +927,18 @@ void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
 	int i;
+
+	/* In case the receiver calls run_task_queue(&tq_disk) itself,
+	   in order to flush blocks to the ll_dev (for a device in 
+	   secondary state), it could happen that it has to send the 
+	   WRITE_HINT for a other device (which is in primary state). 
+	   This could lead to a distributed deadlock!!
+
+	   To avoid the deadlock we requeue the WRITE_HINT. */
 	
 	for (i = 0; i < minor_count; i++) {
 		if(current == drbd_conf[i].receiver.task) {
-			printk(KERN_ERR DEVICE_NAME 
-			       "%d: send_write_hint in receivers context\n",
-			       (int)(mdev-drbd_conf));
+			queue_task(&mdev->write_hint_tq, &tq_disk);
 			return;
 		}
 	}
