@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
-<docinfo><date>6 Apr 2003</date></docinfo>
+<docinfo><date>15 Apr 2001</date></docinfo>
 
 <refmeta>
  <refentrytitle>drbd.conf</refentrytitle>
@@ -9,22 +9,22 @@
 
 <refnamediv>
  <refname>drbd.conf</refname>
- <refpurpose>The configuration file for DRBD's devices</refpurpose>
+ <refpurpose>Configuration file for DRBD's devices</refpurpose>
 
 </refnamediv>
 <refsect1>
  <title>Introduction</title>
  <para>
-The file <option>/etc/drbd.conf</option>, is read by 
+The file <option>/etc/drbd.conf</option> is read by 
 <option>/etc/init.d/drbd</option> and 
-<option>/etc/ha.d/resrouce.d/datadisk</option> 
-which are included in the drbd distribution.
+<option>/etc/ha.d/resource.d/datadisk</option> 
+which are included in the DRBD distribution.
 </para>
 <para>
 The file format was designed as to allow to have 
-a verbatim copy of the file on both nodes of the cluster,
-and in order to keep your configuration manageable you should also
-do so.
+a verbatim copy of the file on both nodes of the cluster.
+It is highly recommended to do so in order to keep your configuration
+manageable.
 <example>
 <title>A small drbd.conf file</title>
 <programlisting>
@@ -48,7 +48,7 @@ resource drbd0 {
 }	
 </programlisting>
 </example>
-In this example there is a singe DRBD resource (called drbd0) which uses
+In this example there is a single DRBD resource (called drbd0) which uses
 protocol C for the connection between its devices. The application
 of this resource is an ext2 file system, since the command to restart
 it is <replaceable>fsck.ext2 -p -y</replaceable>.
@@ -59,14 +59,14 @@ on host <replaceable>thost1</replaceable> uses
 The IP addresses are used to specify the networking interfaces to use.
 </para>
 <para>
-There may be multiple resource sections in a singe drbd.conf file.
+There may be multiple resource sections in a single drbd.conf file.
 </para>
 </refsect1>
 <refsect1>
  <title>File Format</title>
   <para>
 The file consists of sections and parameter lines. 
-A section begins with a keyword, sometimes an additional name and an 
+A section begins with a keyword, sometimes an additional name, and an 
 opening brace.
 A section ends with a closing brace.
 </para>
@@ -74,9 +74,9 @@ A section ends with a closing brace.
 A parameter line starts with the identifier of the parameter followed
 by an equal sign (<quote>=</quote>). Every subsequent character on 
 that line is considered
-as part of the parameters value. There must not be a single white space 
-between the identifier and the equal sing. A special case are Boolean
-parameters which only consists of the identifier.
+as part of the parameters value. White space surrounding the equal
+sign is ignored. A special case are Boolean
+parameters which only consist of the identifier.
 </para>
 <para>
 Comment lines may be placed into the configuration file and must
@@ -86,15 +86,25 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
  <title>Sections</title>
 <variablelist>
  <varlistentry>
+  <term><option>global</option></term>
+  <listitem><para>
+    Configures some global parameters. Currently only
+    minor_count=number and disable_io_hints are allowed
+    here. You may only have one global section, preferably
+    as the first section.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
   <term><option>resource <replaceable>name</replaceable></option></term>
   <listitem><para>
     Configures a DRBD resource.
     Each resource section needs to have two host sections 
     (keyword <option>on</option>) and may have
     a <option>net</option> and a <option>disk</option> section.
-    Required parameter in this section: <option>protocol</option>,
-    <option>fsckcmd</option>. Optinal parameters are <option>inittimeout
-    </option>, <option>skip-wait</option> and 
+    Required parameters in this section: <option>protocol</option>,
+    <option>fsckcmd</option>. Optional parameters are <option>inittimeout
+    </option>, <option>skip-wait</option>, <option>load-only</option>, and 
     <option>incon-degr-cmd</option>.
   </para>
   </listitem>
@@ -130,10 +140,10 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     of this section's parameters.
     Allowed parameters: <option>sync-rate</option>, 
     <option>sync-max</option>, <option>sync-min</option>,
-    <option>sync-nice</option>, <option>skip-sync</option>,
+    <option>sync-nice</option>, <option>sync-group</option>, <option>skip-sync</option>,
     <option>connect-int</option>, <option>ping-int</option>,
     <option>timeout</option>, <option>tl-size</option>,
-    <option>sndbuf-size</option>.
+    <option>sndbuf-size</option>, <option>ko-count</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -165,20 +175,38 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
  <varlistentry>
   <term><option>inittimeout=<replaceable>value</replaceable></option></term>
   <listitem><para>
-    If the other node does not show up within the specified time, this
-    node will start the resource in degraded mode.</para>
-    <para>Only use this option if availabiliy is more important to you then
-    the consitency of your data.
+    If <replaceable>value</replaceable> is positive, and the other node does
+    not show up within the specified time (seconds), this node will start the
+    resource in degraded mode, read: forces primary status on this node.</para>
+    <para>Only use this option if availability is more important to you than
+    the consistency of your data.</para>
+    <para>If <replaceable>value</replaceable> is negative, and the other node
+    does not show up within the specified time (seconds), this node stays in
+    WFConnection:Secondary/Unknown state, and just lets the boot process
+    continue. Use this if you expect a reboot of the remaining node of a
+    degraded cluster, and you think your clustermanager is able to handle this
+    better.
   </para>
   </listitem>
 </varlistentry>
  <varlistentry>
   <term><option>skip-wait</option></term>
   <listitem><para>
-    If you want startup of drbd to proceed without waiting for 
+    If you want startup of DRBD to proceed without waiting for 
     synchronisation to finish, you can set this option. WARNING:
-    only do this if whatever software you're using to manage drbd can 
-    correctly handle a syncing drbd device (no failover possible).
+    only do this if whatever software you're using to manage DRBD can 
+    correctly handle a syncing DRBD device (no failover possible), or a cluster in
+    degraded mode.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>load-only</option></term>
+  <listitem><para>
+    If you want the resource script to load the
+    configuration into the module ONLY, use this.
+    It will not even wait for connection of the devices.
+    WARNING: see above.
   </para>
   </listitem>
 </varlistentry>
@@ -188,7 +216,7 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
     In case a node starts up in degraded mode (inittimeout is set) and
     its local replica of the data is inconsistent it executes the
     <replaceable>command</replaceable>. If the command exits without
-    error, datadisk expects the drbd device to be in primary state.
+    error, datadisk expects the DRBD device to be in primary state.
   </para>
   </listitem>
 </varlistentry>
@@ -241,13 +269,18 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
 </refsect2>
 </refsect1>
 <refsect1>
+<title>Version</title>
+<simpara>This document is correct for version 0.6.11 of the DRBD distribution.
+</simpara>
+</refsect1>
+<refsect1>
 <title>Author</title>
 <simpara>Written by Philipp Reisner <email>philipp.reisner@gmx.at</email>.
 </simpara>
 </refsect1>
 <refsect1>
 <title>Reporting Bugs</title>
-<simpara>Report bugs to <email>drbd-devel@lists.sourceforge.net</email>.
+<simpara>Report bugs to <email>drbd-user@lists.linbit.com</email>.
 </simpara>
 </refsect1>
 <refsect1>
@@ -255,7 +288,7 @@ begin with a hash sign (<quote>#</quote>) in the leftmost column.
 <simpara>
 Copyright (c) 2001 Philipp Reisner. This  is  free software; 
 see the source for copying conditions.  There is NO warranty; 
-not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
+not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 </simpara>
 </refsect1>
 <refsect1>

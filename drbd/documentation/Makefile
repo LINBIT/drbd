@@ -94,7 +94,7 @@ HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
 install:
-	@ok=true; for f in $(MANGAOES) ; \
+	@ok=true; for f in $(MANPAGES) ; \
 		do [ -e $$f ] || { echo $$f missing ; ok=false; } ; \
 	done ; $$ok
 	@ set -e; for f in $(MANPAGES) ; do \
