@@ -70,8 +70,8 @@
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
 # define PRINT_ARGV do { \
 	int i; \
-		fprintf(stderr,"# argv (optind=%i) in %s:%i:\n#",\
-			optind, __FUNCTION__,__LINE__); \
+		fprintf(stderr,"# argv (optind=%i argc=%i) in %s:%i:\n#",\
+			optind, argc, __FUNCTION__, __LINE__); \
 		for (i=optind; i < argc; i++) \
 			fprintf(stderr," %s",argv[i]); \
 				fprintf(stderr,"\n"); \
@@ -325,6 +325,10 @@ void print_command_usage(int i, const char *addinfo)
   }
   line[col]=0;
   printf("%s\n",line);
+  if (addinfo) {
+      printf("%s\n",addinfo);
+      exit(20);
+  }
 }
 
 void print_usage(const char* addinfo)
@@ -421,10 +425,10 @@ int scan_disk_options(char **argv,
 	    }
 	  }
 	  fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
-		  argv[0],optarg);
+		  basename,optarg);
 	  return 20;
 	case 1:	// non option argument. see getopt_long(3)
-	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	case '?':
 	  return 20;
 	}
@@ -475,7 +479,7 @@ int scan_net_options(char **argv,
 	  cn->config.sndbuf_size = m_strtol(optarg,1);
 	  break;
 	case 1:	// non option argument. see getopt_long(3)
-	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	case '?':
 	  return 20;
 	}
@@ -703,7 +707,7 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	      newstate |= TimeoutExpired;
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -745,7 +749,7 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	      p.degr_wfc_timeout = m_strtol(optarg,1);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -822,7 +826,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	      cn.config.al_extents=m_strtol(optarg,1);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	    case '?':
 	      return 20;
 	    }
@@ -969,7 +973,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 	      u_size=m_strtol(optarg,1024);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
 	    case '?':
 	      return 20;
 	    }
