@@ -525,10 +525,10 @@ int set_state(int drbd_fd,Drbd_State state)
 	fprintf(stderr,"Device not configured\n");
 	break;
       case EACCES:
-	fprintf(stderr,"Partnet is already primary\n");
+	fprintf(stderr,"Partner is already primary\n");
 	break;
       case EIO:
-	fprintf(stderr,"Local replica of data is inconsistent\n");
+	fprintf(stderr,"Local replica is inconsistent (--do-what-I-say ?)\n");
 	return 21;
       default:
       }
@@ -549,16 +549,20 @@ int cmd_primary(int drbd_fd,char** argv,int argc)
 	{
 	  int c;
 	  static struct option options[] = {
-	    { "human",    no_argument, 0, 'h' },
+	    { "human",         no_argument, 0, 'h' },
+	    { "do-what-I-say", no_argument, 0, 'd' },
 	    { 0,           0,                 0, 0 }
 	  };
 	  
-	  c = getopt_long(argc+1,argv-1,"-h",options,0);
+	  c = getopt_long(argc+1,argv-1,"-hd",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
 	    case 'h': 
-	      newstate=PRIMARY_PLUS;
+	      newstate |= Human;
+	      break;
+	    case 'd': 
+	      newstate |= DontBlameDrbd;
 	      break;
 	    case '?':
 	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);

@@ -50,6 +50,8 @@
   <command>drbdsetup</command>
   <arg choice=req><replaceable>device</replaceable></arg>
   <arg choice=req>primary</arg>
+  <arg>-h</arg>
+  <arg>-d</arg>
  </cmdsynopsis>
  <cmdsynopsis>
   <command>drbdsetup</command>
@@ -233,9 +235,28 @@ to the <replaceable>device</replaceable> in primary state is mirrored to
 the device in secondary state.
 </para>
 <para>
-If you set both devices of a connected drbd device pair to primary
-state, they will disconnect immediately.
+It is not possible to set both devices of a connected drbd device pair to 
+primary state.
 </para>
+<variablelist>
+ <varlistentry>
+  <term><option>-h</option>,
+   <option>--human</option></term>
+  <listitem><para>
+Indicates that this state change was issued by an administrator and has
+precedence over decissions made by the cluster manager.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-d</option>,
+   <option>--do-what-I-say</option></term>
+  <listitem><para>
+Becoming primary fails if the local replica is inconsistent. By using this
+option you can force it into primary state anyway.
+USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.
+  </para></listitem>
+ </varlistentry>
+</variablelist>
 </refsect2>
 <refsect2>
 <title>secondary</title>

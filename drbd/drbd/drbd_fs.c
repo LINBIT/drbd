@@ -284,7 +284,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	if(drbd_conf[minor].cstate == Unconfigured)
 		return -ENXIO;
 
-	if ((newstate == Primary) && (drbd_conf[minor].o_state == Primary))
+	if ( (newstate & Primary) && (drbd_conf[minor].o_state == Primary) )
 		return -EACCES;
 
 	if (drbd_conf[minor].cstate == SyncingAll
@@ -296,7 +296,9 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	    drbd_is_mounted(minor) == MountedRW)) 
 		return -EBUSY;
 			
-	if(newstate == Primary && drbd_conf[minor].gen_cnt[Consistent]==0) 
+	if( (newstate & Primary) && 
+	    drbd_conf[minor].gen_cnt[Consistent]==0 &&
+	    !(newstate & DontBlameDrbd) )
 		return -EIO;
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
