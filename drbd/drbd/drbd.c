@@ -8,8 +8,9 @@
    Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
         Initial author.
 
-   Copyright (C) 1999, Marcelo Tosatti <marcelo@conectiva.com.br>.
+   Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
         Added code for Linux 2.3.x
+	Pointed out a deadlock on SMP.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks in IOCTL_SET_STATE.
@@ -994,7 +995,10 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
       end_it:
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	if(mdev->state == Primary) {
+	if(mdev->state == Primary && mdev->cstate != Unconnected) {
+	  /* If we are unconnected we may not call tl_dependece, since
+	     then this call could be from tl_clear(). => spinlock deadlock!
+	  */
 	        if(tl_dependence(mdev,req->sector)) {
 	                set_bit(ISSUE_BARRIER,&mdev->flags);
 			wake_asender=1;
