@@ -40,6 +40,20 @@
 
 #include "drbdadm.h"
 
+#define for_each_resource(res,tmp,config)                 \
+	for (res = (config), tmp = 0;                     \
+	     ({ tmp != (config) && (tmp = res->next); }); \
+	     res = tmp)
+
+// basic format
+#define INDENT "    "
+#define FMT    INDENT "%-12s"
+#define BFMT   INDENT FMT "\n"
+// assignment format
+#define AFMT0 FMT INDENT " = %s\n"
+#define AFMT  INDENT FMT " = %s\n"
+
+
 char* basename;
 
 struct adm_cmd {
@@ -70,7 +84,9 @@ static int sh_ll_dev(struct d_resource* ,char* );
 char ss_buffer[255];
 int line=1;
 struct d_globals global_options = { 0, 0 };
-struct d_resource* config;
+char *config_file = NULL;
+struct d_resource* config = NULL;
+int nr_resources;
 int config_valid=1;
 int dry_run;
 char* drbdsetup;
@@ -127,13 +143,13 @@ static void dump_options(char* name,struct d_option* opts)
 {
   if(!opts) return;
 
-  printf("  %s {\n",name);
+  printf(INDENT "%s {\n",name);
   while(opts) {
-    if(opts->value) printf("    %s=%s\n",opts->name,opts->value);
-    else printf("    %s\n",opts->name);
+    if(opts->value) printf(AFMT,opts->name,opts->value);
+    else printf(BFMT,opts->name);
     opts=opts->next;
   }
-  printf("  }\n");
+  printf(INDENT "}\n");
 }
 
 static void dump_global_info()
@@ -142,10 +158,10 @@ static void dump_global_info()
     {
       printf("global {\n");
       if (global_options.disable_io_hints)
-	printf("  disable_io_hints\n");
+	printf(INDENT "disable_io_hints\n");
       if (global_options.minor_count)
-	printf("  minor_count=%i\n", global_options.minor_count);
-      printf("}\n");
+	printf(INDENT "minor_count = %i\n", global_options.minor_count);
+      printf("}\n\n");
     }
 }
 
@@ -156,22 +172,22 @@ static void dump_host_info(struct d_host_info* hi)
     return;
   }
 
-  printf("  on %s {\n",esc(hi->name));
-  printf("    device=%s\n",esc(hi->device));
-  printf("    disk=%s\n",esc(hi->disk));
-  printf("    address=%s\n",hi->address);
-  printf("    port=%s\n",hi->port);
-  printf("    meta-disk=%s\n",esc(hi->meta_disk));
-  printf("    meta-index=%s\n",esc(hi->meta_index));
-  printf("  }\n");
+  printf(INDENT "on %s {\n",esc(hi->name));
+  printf(AFMT, "device"    , esc(hi->device));
+  printf(AFMT, "disk"      , esc(hi->disk));
+  printf(AFMT, "address"   , hi->address);
+  printf(AFMT, "port"      , hi->port);
+  printf(AFMT, "meta-disk" , esc(hi->meta_disk));
+  printf(AFMT, "meta-index", esc(hi->meta_index));
+  printf(INDENT "}\n");
 }
 
 static int adm_dump(struct d_resource* res,char* unused)
 {
-  // HMM... Global section missing in dump
   printf("resource %s {\n",esc(res->name));
-  printf("  protocol=%s\n",res->protocol);
-  if(res->ind_cmd) printf("  incon-degr-cmd=%s\n",esc(res->ind_cmd));
+  printf(AFMT0,"protocol",res->protocol);
+  if(res->ind_cmd)
+    printf(AFMT0,"incon-degr-cmd",esc(res->ind_cmd));
   dump_host_info(res->me);
   dump_host_info(res->partner);
   dump_options("net",res->net_options);
@@ -188,7 +204,7 @@ static int sh_devices(struct d_resource* res,char* unused)
   while(1) {
     printf("%s",esc(res->name));
     res=res->next;
-    if(res) printf(" ");
+    if(res != config) printf(" ");
     else {
       printf("\n");
       break;
@@ -208,18 +224,10 @@ static int sh_ll_dev(struct d_resource* res,char* unused)
 
 static int sh_mod_parms(struct d_resource* res,char* unused)
 {
-  int nr=0;
   int mc=global_options.minor_count;
 
-  while(res) {
-    nr++;
-    res=res->next;
-  }
-
-  printf("minor_count=%d ",mc ? mc : nr);
-
   if(global_options.disable_io_hints) printf("disable_io_hints=1 ");
-
+  printf("minor_count=%d\n",mc ? mc : nr_resources);
   return 0;
 }
 
@@ -250,19 +258,17 @@ static void free_options(struct d_option* opts)
 
 static void free_config(struct d_resource* res)
 {
-  struct d_resource* f;
-  while(res) {
-    free(res->name);
-    free(res->protocol);
-    free(res->ind_cmd);
-    free_host_info(res->me);
-    free_host_info(res->partner);
-    free_options(res->net_options);
-    free_options(res->disk_options);
-    free_options(res->sync_options);
-    free_options(res->startup_options);
-    f=res;
-    res=res->next;
+  struct d_resource *f,*t;
+  for_each_resource(f,t,res) {
+    free(f->name);
+    free(f->protocol);
+    free(f->ind_cmd);
+    free_host_info(f->me);
+    free_host_info(f->partner);
+    free_options(f->net_options);
+    free_options(f->disk_options);
+    free_options(f->sync_options);
+    free_options(f->startup_options);
     free(f);
   }
 }
@@ -575,12 +581,18 @@ void print_usage()
   exit(20);
 }
 
+static char* conf_file[] = {
+    "/etc/drbd-07.conf",
+    "/etc/drbd.conf",
+    0
+};
+
 int main(int argc, char** argv)
 {
   int i,rv;
   int help = 0;
-  struct adm_cmd* cmd;
-  struct d_resource* res;
+  struct adm_cmd *cmd;
+  struct d_resource *res,*tmp;
 
   drbdsetup=NULL;
   dry_run=0;
@@ -608,12 +620,14 @@ int main(int argc, char** argv)
 	case 'c':
 	  if(!strcmp(optarg,"-")) {
 	    yyin=stdin;
+	    ssprintf(config_file,"STDIN");
 	  } else {
 	    yyin=fopen(optarg,"r");
 	    if(!yyin) {
 	      fprintf(stderr,"Can not open '%s'.\n.",optarg);
 	      exit(20);
 	    }
+	    ssprintf(config_file,"%s",optarg);
 	  }
 	  break;
 	case 'h':
@@ -647,7 +661,7 @@ int main(int argc, char** argv)
   for(i=0;i<ARRY_SIZE(cmds);i++) {
       if(!strcmp(cmds[i].name,argv[optind])) {
 	cmd=cmds+i;
-	if (help) print_cmd_help(cmd);
+	if (help) print_cmd_help(cmd); // noreturn
 	break;
       }
   }
@@ -658,15 +672,22 @@ int main(int argc, char** argv)
   }
   optind++;
 
-  if(yyin==NULL) {
-    yyin = fopen("/etc/drbd-07.conf","r");
-    if(yyin == 0) {
-      yyin = fopen("/etc/drbd.conf","r");
-      if(yyin == 0) {
-	fprintf(stderr,"Can not open '/etc/drbd.conf'.\n.");
-	exit(20);
+  if (!config_file) {
+    i=0;
+    do {
+      yyin = fopen(conf_file[i],"r");
+      if(yyin != 0) {
+	config_file = conf_file[i];
+	break;
       }
-    }
+      if (i) {
+	fprintf(stderr,"Can not open '%s': ",conf_file[i]);
+	perror("");
+      }
+    } while (conf_file[++i]);
+  }
+  if(!config_file) {
+    exit(20);
   }
 
   yyparse();
@@ -674,18 +695,13 @@ int main(int argc, char** argv)
   if(!config_valid) exit(10);
 
   { // check if minor_count is sane.
-    int nr=0;
     int mc=global_options.minor_count;
 
-    res=config;
-    while(res) {
-      nr++;
-      res=res->next;
-    }
+    for_each_resource(res,tmp,config) nr_resources++;
 
-    if( mc && mc<nr ) {
+    if( mc && mc<nr_resources ) {
       fprintf(stderr,"You have %d resources but a minor_count of %d in your"
-	      " config!\n",nr,mc);
+	      " config!\n",nr_resources,mc);
       exit(20);
     }
   }
@@ -701,23 +717,19 @@ int main(int argc, char** argv)
 
       if(optind==argc || !strcmp(argv[optind],"all")) {
         if (cmd->function == adm_dump) dump_global_info();
-	res=config;
-	while(res) {
+        for_each_resource(res,tmp,config) {
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	    exit(20);
 	  }
-	  res=res->next;
 	}
       } else {
-	int i;
 	for(i=optind;i<argc;i++) {
-	  res=config;
-	  while(res) {
+	  struct d_resource *tmp;
+	  for_each_resource(res,tmp,config) {
 	    if(!strcmp(argv[i],res->name)) break;
-	    res=res->next;
 	  }
-	  if(!res) {
+	  if(tmp == config) {
 	    fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
 	    exit(20);
 	  }
@@ -741,6 +753,6 @@ int main(int argc, char** argv)
 
 void yyerror(char* text)
 {
-  fprintf(stderr,"%s in line %d of config file.\n",text,line);
+  fprintf(stderr,"%s:%d: %s\n",config_file,line,text);
   exit(20);
 }

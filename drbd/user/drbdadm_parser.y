@@ -30,18 +30,18 @@ static void derror(char* text)
 {
   config_valid=0;
   fprintf(stderr,
-	  "'%s' keyword missing from host section ending at line %d.\n"
-	  "(Host sections are those beginning with the 'on' keyword)\n\n",
-	  text,line);
+	  "%s:%d:\n\t'%s' keyword missing from host section ending here.\n"
+	  "\t(Host sections are those beginning with the 'on' keyword)\n\n",
+	  config_file,line,text);
 }
 
 static void derror2(char* text)
 {
   config_valid=0;
   fprintf(stderr,
-	  "%s\nDetected at host section ending in line %d.\n"
-	  "(Host sections are those beginning with the 'on' keyword)\n\n",
-	  text,line);
+	  "%s:%d:\n\t%s\n\tDetected at host section ending here.\n"
+	  "\t(Host sections are those beginning with the 'on' keyword)\n\n",
+	  config_file,line,text);
 }
 
 static void host_sec(char* name)
@@ -67,7 +67,7 @@ static void host_sec(char* name)
     c_res->me = c_host;
   } else {
     if(c_res->partner) derror2("There are multiple host sections for the peer."
-			       "\n(Maybe misspelled local host name?)");
+			       "\n\t(Maybe misspelled local host name?)");
     c_res->partner = c_host;
   }
 }
@@ -77,6 +77,7 @@ static struct d_resource* new_resource(char* name)
   struct d_resource* res;
   res=calloc(1,sizeof(struct d_resource));
   res->name=name;
+  res->next = res->prev = res;
 
   return res;
 }
@@ -107,6 +108,7 @@ static struct d_resource* new_resource(char* name)
 %type <d_option> sync_stmts sync_stmt
 %type <d_option> startup_stmts startup_stmt
 %type <d_resource> resources resource
+%type <txt> signed_int
 
 %%
 config:           global_sec resources   { config=$2; }
@@ -125,7 +127,16 @@ glob_stmt:        TK_DISABLE_IO_HINTS   { global_options.disable_io_hints=1; }
                 ;
 
 resources:        /* empty */   { $$ = 0; }
-		| resources resource   { $$=APPEND($1,$2); }
+		| resources resource   {
+			if($1) {
+				$2->next = $1;
+				$2->prev = $1->prev;
+				$1->prev->next = $2;
+				$1->prev = $2;
+				$$ = $1;
+			} else
+				$$ = $2;
+		  }
 		;
 
 resource:	  TK_RESOURCE TK_STRING { c_res = new_resource($2); }
@@ -188,9 +199,12 @@ host_stmt:        TK_DISK '=' TK_STRING     { c_host->disk=$3; }
 		| TK_ADDRESS '=' TK_IPADDR  { c_host->address=$3; }
 		| TK_PORT '=' TK_INTEGER    { c_host->port=$3; }
 		| TK_META_DISK '=' TK_STRING { c_host->meta_disk=$3; }
-		| TK_META_INDEX '=' TK_SINTEGER { c_host->meta_index=$3; }
-
+		| TK_META_INDEX '=' signed_int { c_host->meta_index=$3; }
 		;
+
+signed_int:       TK_SINTEGER
+                | TK_INTEGER
+                ;
 
 startup_stmts:    /* empty */  { $$ = 0; }
 		| startup_stmts startup_stmt   { $$=APPEND($1,$2); }

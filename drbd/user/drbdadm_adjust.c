@@ -183,7 +183,6 @@ int adm_adjust(struct d_resource* res,char* unused)
 
   rv=fscanf(in,"Disk options%[:]\n",uu);
   if(rv==1) {
-
     do_resize |= check_opt_v(in,"size",1024,"KB",res->disk_options);
     do_attach |= check_opt_b(in,"do-panic",res->disk_options);
 

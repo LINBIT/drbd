@@ -74,7 +74,7 @@ degr-wfc-timeout { DP; CP; return TK_DEGR_WFC_TIMEOUT;   }
 disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;   }
 {IPV4ADDR}       { DP; CP; return TK_IPADDR;             }
 {NUM}            { DP; CP; return TK_INTEGER;            }
--?{NUM}          { DP; CP; return TK_SINTEGER;           }
+-{NUM}           { DP; CP; return TK_SINTEGER;           }
 {WS}+            /* ignore whitespaces */
 [^ \n\t={}"]+    { syntax_error(yytext); }
 

@@ -40,6 +40,7 @@ struct d_resource
   struct d_option* sync_options;
   struct d_option* startup_options;
   struct d_resource* next;
+  struct d_resource* prev;
 };
 
 extern int adm_attach(struct d_resource* ,char* );
@@ -49,6 +50,7 @@ extern int adm_syncer(struct d_resource* ,char* );
 extern int m_system(int,char** );
 extern struct d_option* find_opt(struct d_option*,char*);
 
+extern char* config_file;
 extern int config_valid;
 extern struct d_resource* config;
 extern struct d_globals global_options;
