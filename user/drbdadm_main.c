@@ -574,8 +574,8 @@ static int adm_up(struct d_resource* res,char* unused)
 {
   int r;
   if( (r=adm_attach(res,unused)) ) return r;
-  if( (r=adm_connect(res,unused)) ) return r;
-  return adm_syncer(res,unused);
+  if( (r=adm_syncer(res,unused)) ) return r;
+  return adm_connect(res,unused);
 }
 
 static int on_primary(struct d_resource* res ,char* flag)

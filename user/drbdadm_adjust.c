@@ -367,8 +367,8 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_resize=0;
   }
   if(do_resize)  if( (rv=adm_resize(res,0)) ) return rv;
-  if(do_connect) if( (rv=adm_connect(res,0))) return rv;
   if(do_syncer)  if( (rv=adm_syncer(res,0)) ) return rv;
+  if(do_connect) if( (rv=adm_connect(res,0))) return rv;
 
   return 0;
 }
