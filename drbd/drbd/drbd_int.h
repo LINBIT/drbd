@@ -911,6 +911,14 @@ do {									\
 
 #include "drbd_compat_wrappers.h"
 
+static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	_set_cstate(mdev,ns);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+}
+
 /**
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
  * all io completion handlers.
@@ -949,6 +957,12 @@ static inline int drbd_io_error(drbd_dev* mdev)
 			ok = drbd_send_param(mdev,0);
 			set_bit(SENT_DISK_FAILURE,&mdev->flags);
 			WARN("Notified peer that my disk is broken.\n");
+			if(mdev->cstate > Connected ) {
+				WARN("Resync aborted.\n");
+				if(mdev->cstate == SyncTarget)
+					set_bit(STOP_SYNC_TIMER,&mdev->flags);
+				set_cstate(mdev,Connected);
+			}
 		}
 	}
 
@@ -975,14 +989,6 @@ static inline sector_t drbd_md_ss(drbd_dev *mdev)
 	} else {
 		return 2 * MD_RESERVED_SIZE * mdev->md_index;
 	}
-}
-
-static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&mdev->req_lock,flags);
-	_set_cstate(mdev,ns);
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
 }
 
 static inline void

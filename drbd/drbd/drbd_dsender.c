@@ -215,6 +215,19 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 	mdev=bio->bi_private;
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
+
+#if 0
+	{
+		static int ccc=1;
+
+		if(ccc++ % 100 == 0) {
+			ERR("Injecting IO error.\n");
+			error=-5;
+			clear_bit(BIO_UPTODATE,&bio->bi_flags);
+		}
+	}
+#endif
+
 	e = container_of(bio,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);

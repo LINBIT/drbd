@@ -1437,12 +1437,16 @@ void cleanup_module(void)
 	int i;
 
 	for (i = 0; i < minor_count; i++) {
-		drbd_set_state(drbd_conf+i,Secondary);
-		drbd_sync_me(drbd_conf+i);
-		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[i].flags);
-		drbd_thread_stop(&drbd_conf[i].worker);
-		drbd_thread_stop(&drbd_conf[i].receiver);
-		drbd_thread_stop(&drbd_conf[i].asender);
+		drbd_dev    *mdev = drbd_conf + i;
+
+		down(&mdev->device_mutex);
+		drbd_set_state(mdev,Secondary);
+		up(&mdev->device_mutex);
+		drbd_sync_me(mdev);
+		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
+		drbd_thread_stop(&mdev->worker);
+		drbd_thread_stop(&mdev->receiver);
+		drbd_thread_stop(&mdev->asender);
 	}
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
