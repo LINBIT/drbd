@@ -20,7 +20,7 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre10 svn $Rev$"
+#define REL_VERSION "0.7.0 svn $Rev$"
 #define API_VERSION 74
 #define PRO_VERSION 74
 
@@ -43,7 +43,7 @@
 //and you are too lazy to "backport" it from 2.6 for your arch:
 //#define USE_GENERIC_FIND_NEXT_BIT
 
-#define PARANOIA // some extra checks
+//#define PARANOIA // some extra checks
 
 // don't enable this, unless you can cope with gigabyte syslogs :)
 //#define DUMP_EACH_PACKET

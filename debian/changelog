@@ -1,3 +1,25 @@
+drbd (0.7.0-1) unstable; urgency=low
+
+  * s/WriteHint/UnplugRemote/g
+  * new module parameter major_nr to allow "arbitrary" major numbers
+  * adjusted CTH to cope with that
+  * fix copy'n'paste and conversion errors in initial bitmap handshake
+  * warning "please upgrade me" if peer speaks (PRO_VERSION+1)
+  * drbd_set_in_sync and drbd_set_out_of_sync are now macros
+    calling to __*, giving file and line information,
+    to be able to easily track causes of "strange state"s there.
+  * rs_total is now != 0 only if we actually ARE syncing.
+    it is reset 
+  * when sync is done
+  * when connection is lost
+  * when storage is lost on either node
+    this way we can optimize and call drbd_set_in_sync only if rs_total != 0
+    (and it feels somewhat more clean, too)
+  * makefile adjusted to recognize svn revision and date tags
+  * updates and fixes to the test helpers and bash test cases
+
+ -- Philipp Reisner <phil@linbit.com> Fri, 16 Jul 2004 10:13:33 +0200
+
 drbd (0.7_pre10-1) unstable; urgency=low
 
   * A fix to a generic bug in the bitmap code introduced with the -pre9

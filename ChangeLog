@@ -1,10 +1,6 @@
-0.7 (api:70/proto:70)
+0.7.0 (api:74/proto:74)
 ---
   Drbd-0.7 was actually forked off from drbd-0.6.1 (actually -pre18). 
-  During the releases of 0.6.2 to 0.6.6 I forwarded the changes as
-  good as it was possible to the 0.7 development branch. Due to its
-  massive internal changes there might be other/new bugs, that were
-  not present in 0.6
 
   *) Complete new way of doing resynchronisation. Does no longer need
      to do tricks with the nice value, and delivers very good performace.
@@ -13,7 +9,7 @@
   *) All "ack" and "ping" packets now go through the msock. 
      (Prerequisite for primary/primary)
   *) Reworked a lot of internals to work with sector_t instead of
-     blocknumbers. DRBD should work now with XFS, and will be complete
+     blocknumbers. DRBD works now with XFS, and will be complete
      immune to changes in the block size.
   *) Reworked the tl_ code, the user no longer has to specify the size
      for a preallocated transfer-log.

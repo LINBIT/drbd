@@ -177,7 +177,7 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Fri Jul 09 2004 20:03:33 +0200 Lars Ellenberg <l.g.e@web.de>
-- drbd (0.7_pre10-1)
+* Fri Jul 16 2004 10:13:33 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.0-1)
   FIXME write changelog :^)
 
