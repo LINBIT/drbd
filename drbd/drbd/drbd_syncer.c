@@ -186,20 +186,30 @@ int ds_buffer_read(struct ds_buffer *this,
 
 int ds_buffer_reread(struct ds_buffer *this,int minor)
 {
-	//TODO: Is the busy-blocks check missing here ?
 	int i,count;
+	unsigned long flags;
+	unsigned long block_nr;
+	int ln2_bs = drbd_log2(this->b_size);
 	
 	count=this->io_pending_number;
 
+	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
 	for(i=0;i<count;i++) {
-		drbd_set_bh(this->bhs+count,
-			    this->blnr[i],
+
+		block_nr = this->blnr[i];
+
+		if(tl_check_sector(drbd_conf+minor,block_nr << (ln2_bs-9))) {
+			bb_wait(drbd_conf+minor,block_nr,&flags);
+		}
+
+		drbd_set_bh(this->bhs+i, block_nr,
 			    drbd_conf[minor].lo_device);
 
-		clear_bit(BH_Uptodate, &this->bhs[count].b_state);
-		set_bit(BH_Lock, &this->bhs[count].b_state);
-		submit_bh(READ,this->bhs+count);
+		clear_bit(BH_Uptodate, &this->bhs[i].b_state);
+		set_bit(BH_Lock, &this->bhs[i].b_state);
+		submit_bh(READ,this->bhs+i);
 	}
+	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 		
 	if(count) {
 		run_task_queue(&tq_disk);
