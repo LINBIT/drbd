@@ -843,17 +843,16 @@ read_in_block(drbd_dev *mdev, int data_size)
 
 STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 {
-	/* Actually the primary can send up to NR_REQUEST / 3 blocks,
-	 * but we already start when we have NR_REQUEST / 4 blocks.
+	/* kick lower level device, if we have more than (arbitrary number)
+	 * reference counts on it, which typically are locally submitted io
+	 * requests.  don't use unacked_cnt, so we speed up proto A and B, too.
 	 *
-	 * This code is only with protocol C relevant.
+	 * XXX maybe: make that arbitrary number configurable.
+	 * for now, I choose 1/16 of max-epoch-size.
 	 */
-#define NUMBER 24
-	if(atomic_read(&mdev->unacked_cnt) >= NUMBER ) {
+	if (atomic_read(&mdev->local_cnt) >= (mdev->conf.max_epoch_size>>4) ) {
 		drbd_kick_lo(mdev);
 	}
-#undef NUMBER
-
 	mdev->writ_cnt+=data_size>>9;
 }
 
