@@ -1330,12 +1330,6 @@ void drbdd(int minor)
 			}
 				    
 			ll_rw_block(WRITE, 1, &bh);
-
-			/* brelse(bh); */
-			/* I really think that I should brelse() the bh
-			   after it's last use, but my kernel does not
-			   like it... ( see the out-commented brelse() )
-			*/
 			 
 			break; 
 		        }
