@@ -72,7 +72,7 @@ case "$1" in
 
 	stop)
         if [ -z "$RESOURCE" ]; then
-            runForAll start
+            runForAll stop
             exit $RETVAL
         fi
 
