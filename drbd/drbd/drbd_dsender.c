@@ -198,7 +198,9 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	mdev->rs_mark_time=mdev->rs_start;
 
 	if(side == SyncTarget) {
+		spin_lock_irq(&mdev->ee_lock); // (ab)use ee_lock see, below.
 		set_bit(START_SYNC,&mdev->flags);
+		spin_unlock_irq(&mdev->ee_lock);
                 wake_up_interruptible(&mdev->dsender_wait);
 	}
 }
@@ -208,6 +210,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 	struct Drbd_Conf *mdev=drbd_conf+thi->minor;
 	long time=MAX_SCHEDULE_TIMEOUT;
 	wait_queue_t wait;
+	int start_sync;
 
 	sprintf(current->comm, "drbd_dsender_%d", (int)(mdev-drbd_conf));
 
@@ -232,7 +235,18 @@ int drbd_dsender(struct Drbd_thread *thi)
 		__add_wait_queue(&mdev->dsender_wait, &wait);
 		spin_unlock(&mdev->dsender_wait.lock);
 
+		start_sync=test_and_clear_bit(START_SYNC,&mdev->flags);
+
 		spin_unlock_irq(&mdev->ee_lock);
+
+		if(start_sync) { 
+			time=SLEEP_TIME;
+			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
+			drbd_md_write(mdev);
+			bm_reset(mdev->mbds_id,mdev->blk_size_b);
+			printk(KERN_INFO DEVICE_NAME "%d: resync started.\n",
+			       (int)(mdev-drbd_conf));
+		}
 
 		schedule_timeout(time);
 
@@ -253,15 +267,6 @@ int drbd_dsender(struct Drbd_thread *thi)
 			drbd_send_cmd(mdev,WriteHint,0); // IO hint 
 		} 
 		
-		if( test_and_clear_bit(START_SYNC,&mdev->flags) ) {
-			time=SLEEP_TIME;
-			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-			drbd_md_write(mdev);
-			bm_reset(mdev->mbds_id,mdev->blk_size_b);
-			printk(KERN_INFO DEVICE_NAME "%d: resync started.\n",
-			       (int)(mdev-drbd_conf));
-		} 
-
 	}
 
 	return 0;
