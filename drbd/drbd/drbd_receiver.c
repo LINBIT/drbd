@@ -1791,9 +1791,17 @@ int drbd_asender(struct Drbd_thread *thi)
 				mdev->conf.timeout*HZ/20;
 		}
 
+		/* FIXME this *should* be below drbd_process_ee,
+		 * but that leads to some distributed deadlock :-(
+		 * this needs to be fixed properly, I'd vote for a separate
+		 * msock sender thread, but others will frown upon yet an other
+		 * kernel thread...
+		 *	-- lge
+		 */
+		set_bit(SIGNAL_ASENDER, &mdev->flags);
+
 		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
 
-		set_bit(SIGNAL_ASENDER, &mdev->flags);
 		rv = drbd_recv_short(mdev,buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
