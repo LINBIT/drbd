@@ -32,7 +32,9 @@
 #include <linux/smp_lock.h>
 #include <linux/wait.h>
 #include <linux/mm.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
 #include <linux/mm_inline.h> // for the page_count macro on RH/Fedora
+#endif
 #include <linux/slab.h>
 
 #include <linux/drbd.h>

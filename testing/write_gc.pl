@@ -23,7 +23,8 @@ sub ensure_default
 sub write_gc_file
 {
     my ($md_dev,$md_index,$del_al,$Consistent,$HumanCnt,$TimeoutCnt,
-	$ConnectedCnt,$ArbitraryCnt,$lastState,$ConnectedInd) = @_;
+	$ConnectedCnt,$ArbitraryCnt,$lastState,$ConnectedInd,
+	$WantFullSync) = @_;
     my ($Flags,$rr,$pos,$md_start,$out);
 
     ensure_default(\$Consistent,"Consistent",1);
@@ -33,6 +34,7 @@ sub write_gc_file
     ensure_default(\$ArbitraryCnt,"ArbitraryCnt",1);
     ensure_default(\$lastState,"lastState",0);
     ensure_default(\$ConnectedInd,"ConnectedInd",0);
+    ensure_default(\$WantFullSync,"WantFullSync",0);
 
     sysopen (GCF,$md_dev,O_WRONLY)
 	or die "can not open GC file";
@@ -57,6 +59,7 @@ sub write_gc_file
     if($Consistent)    { $Flags |= 0x01; }
     if($lastState)     { $Flags |= 0x02; }
     if($ConnectedInd)  { $Flags |= 0x04; }
+    if($WantFullSync)  { $Flags |= 0x08; }
 
     $out = pack("N6", $Flags,$HumanCnt,$TimeoutCnt,$ConnectedCnt,
 		$ArbitraryCnt, DRBD_MD_MAGIC);
@@ -115,4 +118,3 @@ sub main
 
 
 main(@ARGV);
-

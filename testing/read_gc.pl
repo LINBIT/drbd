@@ -42,10 +42,15 @@ sub read_print_gc_file($$$)
 
     die "state file corrupt" if($MagicNr != DRBD_MD_MAGIC);
 
-    printf(" %6s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %6d KB\n",
-	   $resource,$Flags & 0x01 ? "1/c" : "0/i",$HumanCnt,$TimeoutCnt,
-	   $ConnectedCnt,$ArbitraryCnt,$Flags & 0x02 ? "1/p" : "0/s",
-	   $Flags & 0x04 ? "1/c" : "0/n",$size);
+    printf(" %6s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s | %6d KB\n",
+	   $resource,
+	   $Flags & 0x01 ? "1/c" : "0/i", # is consistent
+	                                  # (may become sync source)
+	   $HumanCnt, $TimeoutCnt, $ConnectedCnt, $ArbitraryCnt,
+	   $Flags & 0x02 ? "1/p" : "0/s", # last state
+	   $Flags & 0x04 ? "1/c" : "0/n", # was connected
+	   $Flags & 0x08 ? "yes" : " no", # wants full sync
+	   $size);
 
     ioctl(GCF,BLKFLSBUF,0);  # Ask the buffer cache to forget this buffer. 
 
@@ -61,15 +66,16 @@ sub main()
     @resources = sort(split(' ',`drbdadm sh-resources`));
 
     print <<EOS;
-                                     ConnectedInd |
-                                  lastState |     |
-                         ArbitraryCnt |     |     |
-                   ConnectedCnt |     |     |     |
-               TimeoutCnt |     |     |     |     |
-           HumanCnt |     |     |     |     |     |
-   Consistent |     |     |     |     |     |     |
-resource|     |     |     |     |     |     |     |   Size
---------+-----+-----+-----+-----+-----+-----+-----+----------+
+                                           WantFullSync |
+                                     ConnectedInd |     |
+                                  lastState |     |     |
+                         ArbitraryCnt |     |     |     |
+                   ConnectedCnt |     |     |     |     |
+               TimeoutCnt |     |     |     |     |     |
+           HumanCnt |     |     |     |     |     |     |
+   Consistent |     |     |     |     |     |     |     |
+resource|     |     |     |     |     |     |     |     |   Size
+--------+-----+-----+-----+-----+-----+-----+-----+-----+----------+
 EOS
 
     for $res (@resources) {
