@@ -1,0 +1,151 @@
+#!/bin/bash
+#
+# Create a patch against a kernel tree which adds the DRBD sources.
+#
+# $Id: patch-kernel,v 1.1.2.1 2004/04/20 11:36:53 lars Exp $
+#
+# Copyright (C) 2003 Kees Cook, OSDL
+# kees@osdl.org, http://developer.osdl.org/kees/
+# 
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+# http://www.gnu.org/copyleft/gpl.html
+#
+
+set -o errexit
+fatal() { echo >&2 "$*" ; exit 1; }
+
+KERNEL=$1
+  DRBD=$2
+    [[ $3 == full ]] && INCREMENT=false || INCREMENT=true
+
+#
+# naive sanity checks
+#
+
+test -n "$KERNEL" -a -n "$DRBD" ||
+	fatal "Usage: kernel-patch KERNEL_SOURCE_DIR DRBD_PACKAGE_DIR"
+test -d "$KERNEL/Documentation" ||
+	fatal "Please specify the kernel tree to patch"
+test -d "$DRBD/documentation"   ||
+	fatal "Please specify the drbd tree to use"
+
+# XXX only allow 2.6, because below we patch Kconfig files,
+#     which are non-existant for 2.4
+#     feel free to provide a patch-gen against 2.4 Configure.in ...
+KDIR_PATCHLEVEL=$(grep "^PATCHLEVEL = " $KERNEL/Makefile | cut -d " " -f 3)
+test "$KDIR_PATCHLEVEL" = 6 ||
+	fatal "wrong kernel version patchlevel ($KDIR_PATCHLEVEL), expected 6."
+
+#
+# convert to absolute pathnames
+# maybe even do a "test -L $d && readlink $d" first?
+# as a side effect this makes sure that KERNEL and DRBD are accessible
+# directories, and do not contain whitespace or something...
+#
+KERNEL=$(cd $KERNEL && pwd)
+KERNEL_BASE=$(basename $KERNEL)
+
+DRBD=$(cd $DRBD && pwd)
+DRBD_BASE=$KERNEL_BASE-drbd
+DRBD_SUB=$DRBD_BASE/drivers/block/drbd
+
+#
+# Seems that there are mktemp proggies out there that do not understand
+# the -d flag (reportedly Slackware 9.1); We do not need to waste
+# entropy anyways.
+#
+mymktemp() { umask 077 && mkdir "$1" && cd "$1" && pwd; }
+TEMPDIR=$(mymktemp /tmp/drbd-patch-$$) ||
+	fatal "Could Could not make temp directory"
+# cleanup on              0   1   2    3   13   15
+trap 'rm -r "$TEMPDIR"' EXIT HUP INT QUIT PIPE TERM
+
+#
+# Set up our work area
+#
+
+cd $TEMPDIR
+
+# Set up the diff directories
+for d in include/linux drivers/block/drbd arch/um ; do
+	mkdir -p $KERNEL_BASE/$d
+	mkdir -p $DRBD_BASE/$d
+done
+
+#
+# Pull in the base drbd source
+#
+
+# clean it first
+make -s -C $DRBD/drbd clean
+# XXX drbd_config.h probably needs different treatment.
+cp -a $DRBD/drbd/linux/drbd{,_config}.h       $DRBD_BASE/include/linux/
+cp -a $DRBD/drbd/{*.[ch],Kconfig}             $DRBD_SUB
+# and the right in-kernel-tree Makefile
+cp -a $DRBD/drbd/Makefile-2.$KDIR_PATCHLEVEL  $DRBD_SUB/Makefile
+
+# remove mempool backport if 2.6 # currently allways :)
+test "$KDIR_PATCHLEVEL" = 6 && rm $DRBD_SUB/mempool*
+# remove __arch_um__ to_virt() hack 
+sed -e '/^#ifdef __arch_um__/,/^#endif/d' \
+	< $DRBD/drbd/drbd_receiver.c > $DRBD_SUB/drbd_receiver.c
+
+# and, in case this kernel was already patched:
+if test -e $KERNEL/include/linux/drbd.h ; then
+	$INCREMENT || fatal "drbd already in $KERNEL"
+	cp -a $KERNEL/include/linux/drbd{,_config}.h \
+	 $KERNEL_BASE/include/linux/
+	cp -a $KERNEL/drivers/block/drbd/{*.[ch],Makefile,Kconfig} \
+	 $KERNEL_BASE/drivers/block/drbd/
+	# remove dangling drbd.mod.c, if it hangs around
+	test -e $KERNEL_BASE/drivers/block/drbd/drbd.mod.c
+fi
+
+# Bring over the current kernel Kconfig and Makefile
+for f in drivers/block/{Kconfig,Makefile} arch/um/Kconfig_block ; do
+	cp -a $KERNEL/$f $KERNEL_BASE/$f
+	cp -a $KERNEL/$f $DRBD_BASE/$f
+done
+
+# Add drbd to the block drivers Makefile and Kconfig if we need to
+grep drbd/ $DRBD_BASE/drivers/block/Makefile >/dev/null || \
+	echo 'obj-$(CONFIG_BLK_DEV_DRBD)     += drbd/' >> \
+		$DRBD_BASE/drivers/block/Makefile \
+	|| exit 1
+
+patch_Kconfig() { sed -e '
+/^config BLK_DEV_NBD/,/^config /{
+	/^config BLK_DEV_NBD/i\
+source "drivers/block/drbd/Kconfig"\
+
+	/^\tdepends on / s/$/ \&\& !BLK_DEV_DRBD/
+}'
+}
+for f in drivers/block/Kconfig arch/um/Kconfig_block ; do
+	grep drbd/ $DRBD_BASE/$f >/dev/null && continue
+	patch_Kconfig < $KERNEL_BASE/$f > $DRBD_BASE/$f
+done
+
+# 
+# finally: Create diff!
+#
+if diff -uNrp $KERNEL_BASE $DRBD_BASE ; then
+	echo "$KERNEL already completely patched."
+	test /proc/$$/fd/1 -ef /proc/$$/fd/2 ||
+		echo >&2 "$KERNEL already completely patched."
+fi
+
+cd -
+## clean up done by trap on EXIT

@@ -1,0 +1,11 @@
+drbd-objs  := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
+	      drbd_receiver.o drbd_req-2.4.o drbd_actlog.o \
+	      lru_cache.o mempool-2.4.o 
+obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
+
+list-multi := drbd.o
+
+include $(TOPDIR)/Rules.make
+
+drbd.o: $(drbd-objs)
+	$(LD) -r -o $@ $(drbd-objs)

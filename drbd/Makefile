@@ -102,6 +102,11 @@ KVER := $(shell \
         gcc -nostdinc -E -P -I$(KDIR)/include - 2>&1 | \
         sed -ne 's/^drbd_kernel_release "\(.*\)".*/\1/p')
 
+kernel-patch:
+	set -o noclobber; \
+	d=patch-linux-$(KVER)-drbd-$(DIST_VERSION);\
+	bash scripts/patch-kernel $(KDIR) . > $$d
+
 # maybe even dist/RPMS/$(ARCH) ?
 rpm: tgz
 	mkdir -p dist/BUILD \

@@ -31,15 +31,13 @@ ifneq ($(KERNELRELEASE),)
   ifneq ($(VERSION),2)
     $(error "won't compile with this kernel version")
   endif
+  ifeq ($(findstring $(PATCHLEVEL),46),$(PATCHLEVEL))
+    include $(DRBDSRC)/Makefile-2.$(PATCHLEVEL)
+  else
+    $(error "won't compile with this kernel version")
+  endif
 
-  # override needed for 2.4.X kbuild
-  override CFLAGS    += -I$(DRBDSRC)
-
-  obj-m     += drbd.o
-  drbd-objs := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
-               drbd_receiver.o drbd_req-2.4.o drbd_actlog.o \
-	       lru_cache.o
-
+  override CFLAGS += -I$(DRBDSRC)
   # remember KERNELRELEASE for install target
   # .kernelversion can be included in Makefile as well as
   # sourced from shell
@@ -50,36 +48,11 @@ ifneq ($(KERNELRELEASE),)
                   "KERNELRELEASE=$(KERNELRELEASE)" \
           > $(DRBDSRC)/.kernelrelease.new \
    )
-
-  # rest is magic for KERNEL_VERSION < 2.6
-  ifneq ($(findstring $(PATCHLEVEL),24),)
-    # linux 2.2//2.4 style needs in addition:
-    drbd-objs  += mempool-2.4.o 
-    list-multi := drbd.o
-
-    ifeq ($(PATCHLEVEL),2)
-      # include $(SUBDIRS)/Rules-2.2.x.make
-      # this rules file would extract the 2.2 variables
-      # from the 2.4+ obj-[ynm] ones; but since the code
-      # no longer compiles with 2.2.x: sorry!
-      $(error "won't compile with a 2.2.x kernel")
-    else
-      include $(TOPDIR)/Rules.make
-    endif
-
-    drbd.o: $(drbd-objs)
-	$(LD) -r -o $@ $(drbd-objs)
-
-  else
-  ifneq ($(PATCHLEVEL),6)
-    # we only compile for [-2.2,-] 2.4 and 2.6. sorry.
-    $(error "won't compile with this kernel version")
-  endif
-  endif
 else
   # called from command line in current directory
   DRBDSRC := $(shell pwd)
-  export DRBDSRC
+  CONFIG_BLK_DEV_DRBD := m
+  export DRBDSRC CONFIG_BLK_DEV_DRBD
 
   KDIR_Makefile_PATCHLEVEL = $(shell grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3)
 

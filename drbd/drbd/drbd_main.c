@@ -98,10 +98,30 @@ STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
+MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
+MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 MODULE_PARM(minor_count,"i");
 MODULE_PARM(disable_io_hints,"i");
-MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
-MODULE_PARM_DESC(disable_io_hints, "Necessary if loopback devices are used for DRBD" );
+#else
+#include <linux/moduleparam.h>
+/*
+ * please somebody explain to me what the "perm" of the module_param
+ * macro is good for (yes, permission for it in the "driverfs", but what
+ * do we need to do for them to show up, to begin with?)
+ * once I understand this, and the rest of the sysfs stuff, I probably
+ * be able to understand how we can move from our ioctl interface to a
+ * proper sysfs based one.
+ *	-- lge
+ */
+
+/* thanks to these macros, if compiled into the kernel (not-module),
+ * these become boot parameters: drbd.minor_count and
+ * drbd.disable_io_hints
+ */
+module_param(minor_count,     int,0);
+module_param(disable_io_hints,int,0);
+#endif
 
 // module parameter, defined
 #ifdef MODULE
@@ -1024,7 +1044,7 @@ STATIC void drbd_send_write_hint(void *data)
 	   WRITE_HINT for an other device (which is in primary state).
 	   This could lead to a distributed deadlock!!
 
-	   To avoid the deadlock we set the ISSUE_IO_HINT bit and 
+	   To avoid the deadlock we set the ISSUE_IO_HINT bit and
 	   it will be sent after the current data block.
 	UPDATE:
 	   since "dontwait" this would no longer deadlock, but probably
@@ -1061,10 +1081,10 @@ STATIC void drbd_send_write_hint(void *data)
 	Drbd_Header h;
 
 	/* In order to avoid deadlocks the receiver should only
-	   use blk_run_queue(). It must not use blk_run_queues() to 
-	   avoid deadlocks. 
+	   use blk_run_queue(). It must not use blk_run_queues() to
+	   avoid deadlocks.
 
-	   Maybe we should consider to use the plain drbd_send_cmd.
+	   In 2.6, we should use the plain drbd_send_cmd again.
 	*/
 
 	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,
@@ -1350,7 +1370,11 @@ int __init drbd_init(void)
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
 			": invalid minor_count (%d)\n",minor_count);
+#ifdef MODULE
 		return -EINVAL;
+#else
+		minor_count = 8;
+#endif
 	}
 
 	err = register_blkdev(MAJOR_NR, DEVICE_NAME
@@ -1366,8 +1390,8 @@ int __init drbd_init(void)
 	 */
 	err = -ENOMEM;
 
-	drbd_proc       = NULL; // play safe for drbd_cleanup
-	drbd_conf       = kcalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
+	drbd_proc = NULL; // play safe for drbd_cleanup
+	drbd_conf = kcalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
 	if (!drbd_conf)
 		goto Enomem;
 

@@ -1,0 +1,33 @@
+#
+# DRBD device driver configuration
+#
+config BLK_DEV_DRBD
+	tristate "Distributed redundant block device support"
+	select INET
+	select PROC_FS
+	---help---
+	  Drbd is a block device which is designed to build high availability
+	  clusters.  This is done by mirroring a whole block device via (a
+	  dedicated) network.  You could see it as a network RAID 1.
+
+	  This device replaces the regular "network block device".
+
+	  Each device (drbd provides more than one of these devices) has a
+	  state, which can be 'primary' or 'secondary'. On the node with the
+	  primary device the application is supposed to run and to access the
+	  device (/dev/nbX). Every write is sent to the local 'lower level
+	  block device' and to the node with the device in 'secondary' state.
+	  The secondary device simply writes the data to its lower level block
+	  device. Reads are always carried out locally.
+
+	  Drbd management is done through user-space tools.
+
+	  http://www.drbd.org/
+
+	  If unsure, say N.
+
+comment "DRBD in kernel, no NBD possible"
+	depends on BLK_DEV_DRBD=y
+
+comment "Note: you can _not_ load both NBD and DRBD modules at the same time"
+	depends on BLK_DEV_DRBD && BLK_DEV_NBD
