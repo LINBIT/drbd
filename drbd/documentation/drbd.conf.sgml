@@ -376,7 +376,7 @@ If the partner node fails to send an expected response packet within
 of a second, the partner node
 is considered dead and therefore the TCP/IP connection is abandoned. This must be lower than <replaceable>connect-int</replaceable> and <replaceable>ping-int</replaceable>.
 The default value is 60 = 6 seconds, the unit 0.1 seconds.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -385,7 +385,7 @@ The default value is 60 = 6 seconds, the unit 0.1 seconds.
 In case it is not possible to connect to the remote DRBD device immediately,
 DRBD keeps on trying to connect. With this option you can set the time
 between two tries. The default value is 10 seconds, the unit is 1 second.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -395,7 +395,7 @@ If the TCP/IP connection linking a DRBD device pair is idle for more than
 <replaceable>time</replaceable> seconds, DRBD will generate a keep-alive
 packet to check if its partner is still alive. The default is 10 seconds,
 the unit is 1 second.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -407,7 +407,7 @@ the unit is 1 second.
   For hight performance installations it might help, if you
   increase that number. These buffers are used to hold
   datablocks while they are written to disk.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -415,7 +415,7 @@ the unit is 1 second.
   <listitem><para>
   The highest number of data blocks between two write barriers.
   If you set this smaller than 10 you might decrease your performance.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -426,7 +426,7 @@ for <replaceable>count</replaceable> times the
 <replaceable>timeout</replaceable>, it is expelled from the cluster.
 (I.e. the primary node goes into StandAlone mode.)
 The default is 0, which disables this feature.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -458,7 +458,7 @@ The default is 0, which disables this feature.
   Always use a negative value, positive will (try to) force primary status,
   which is not what you want, if it has outdated data.
   Default is 0, which means unlimited. Unit is seconds.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
@@ -491,7 +491,7 @@ The default is 0, which disables this feature.
   that devices which lower devices share one and the same
   physical disk sync in parallel. The default group is 0. I.e. per
   default all devices sync parallel. Negative and positive numbers are allowed.
-  </listitem>
+  </para></listitem>
 </varlistentry>
 
 <varlistentry>
