@@ -176,8 +176,6 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	nr_sectors = bio_sectors(bio); */
 #endif
 
-#warning "please review"
-	// was: if( mdev->lo_device == 0 ) {
 	if( mdev->lo_file == 0 ) {
 		if( mdev->cstate < Connected ) {
 			drbd_bio_IO_error(bio);
@@ -221,14 +219,9 @@ NOT_IN_26(
 		return 0; // Ok everything arranged
 	}
 
-#warning "FIXME pls review"
 	if ( mdev->cstate == SyncTarget &&
 	     bm_get_bit(mdev->mbds_id,sector,size) ) {
 		struct Pending_read *pr;
-	/* FIXME we need to check not only the sector, but the _size_, too.
-	 * As I pointed out already, I think s this has to be changed
-	 * completely!	-lge
-	 */
 		if( rw == WRITE ) {
 			// Actually nothing special to do.
 			// Just do a mirrored write.

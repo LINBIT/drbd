@@ -1880,8 +1880,7 @@ void drbd_md_write(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-#warning "FIXME maybe lo_file is ok, too?"
-	NOT_IN_26 ( if( mdev->lo_device == 0) return; )
+	if( mdev->lo_file == 0) return;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)drbd_bio_kmap(&mdev->md_io_bio);
@@ -1917,8 +1916,7 @@ void drbd_md_read(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-#warning "FIXME maybe lo_file is ok, too?"
-	NOT_IN_26 ( if( mdev->lo_device == 0) return; )
+	if( mdev->lo_file == 0) return;
 
 	down(&mdev->md_io_mutex);
 

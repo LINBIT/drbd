@@ -27,6 +27,5 @@
 //#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
-//#define DBG_BH_SECTOR   // enables chekcs in BH_SECTOR macro
 
 #endif

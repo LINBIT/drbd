@@ -14,18 +14,6 @@ extern void enslaved_read_bi_end_io (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end_sec        (struct buffer_head *bh, int uptodate);
 extern void drbd_dio_end            (struct buffer_head *bh, int uptodate);
 
-#ifdef DBG_BH_SECTOR
-static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
-{
-	if(IS_VALID_MDEV(bh->b_private)) {
-		printk(KERN_ERR DEVICE_NAME" IS_VALID_MDEV(bh->b_private)\n");
-	}
-	return bh->b_rsector;
-}
-#else
-# define APP_BH_SECTOR(BH)  ( (BH)->b_rsector ) 
-#endif
-
 /*
  * becase in 2.6.x [sg]et_capacity operate on gendisk->capacity, which is in
  * units of 512 bytes sectors, these wrappers have a <<1 or >>1 where
@@ -110,6 +98,11 @@ static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
 static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
 {
 	return ee->private_bio.b_size;
+}
+
+static inline sector_t drbd_pr_get_sector(struct Pending_read *pr)
+{
+	return pr->d.master_bio->b_rsector;
 }
 
 static inline short drbd_bio_get_size(struct buffer_head *bh)
@@ -394,6 +387,11 @@ static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
 }
 
 static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
+{
+	return 0;
+}
+
+static inline sector_t drbd_pr_get_sector(struct Pending_read *pr)
 {
 	return 0;
 }

@@ -833,7 +833,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	bio = pr->d.master_bio;
 
-	D_ASSERT( sector == APP_BH_SECTOR(bio) );
+	D_ASSERT( sector == drbd_pr_get_sector(pr) );
 
 	rr=drbd_recv(mdev,mdev->data.socket,drbd_bio_kmap(bio),data_size);
 	drbd_bio_kunmap(bio);
@@ -896,7 +896,7 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	bio = pr->d.master_bio;
 
-	D_ASSERT( sector == APP_BH_SECTOR(bio) );
+	D_ASSERT( sector == drbd_pr_get_sector(pr) );
 
 	e = read_in_block(mdev,data_size);
 
@@ -1345,7 +1345,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		case AppAndResync:
 			dec_ap_pending(mdev,HERE);
 			dec_rs_pending(mdev,HERE);
-			drbd_rs_complete_io(mdev,APP_BH_SECTOR(bio));
+			drbd_rs_complete_io(mdev,drbd_pr_get_sector(pr));
 			break;
 		case Resync:
 			ERR("pr with cause 'Resync' on app_reads list.");
