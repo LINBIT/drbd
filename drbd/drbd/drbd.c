@@ -86,7 +86,7 @@
 #define DEVICE_NAME "drbd"
 
 #define DRBD_SIG SIGXCPU
-#define SYNC_LOG_S 20
+#define SYNC_LOG_S 60
 
 struct Drbd_thread {
 	int pid;
@@ -584,11 +584,10 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
 	 */
 }
 
-int drbd_send_barrier(struct Drbd_Conf *mdev, u32 barrier_nr)
+int drbd_send_barrier(struct Drbd_Conf *mdev)
 {
         Drbd_Barrier_Packet head;
        
-        head.h.barrier = barrier_nr;
 	return drbd_send(mdev,Barrier,(Drbd_Packet*)&head,sizeof(head),0,0);
 }
 
@@ -598,7 +597,7 @@ int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
        
         head.h.barrier = barrier_nr;
 	head.h.set_size = cpu_to_be32(set_size);
-	return drbd_send(mdev,BarrierAck,(Drbd_Packet*)&head,sizeof(head),0,0);
+      return drbd_send(mdev,BarrierAck,(Drbd_Packet*)&head,sizeof(head),0,0);
 }
 
 
@@ -627,7 +626,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	}
 
 	if(test_and_clear_bit(0,&mdev->need_to_issue_barrier)) {
-	        drbd_send_barrier(mdev, tl_add_barrier(mdev));
+	        drbd_send_barrier(mdev);
              /* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
 	}
 	
@@ -667,10 +666,18 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 
 	int err;
 
-	if (!mdev->sock) return -1000;
-
 	down(&mdev->send_mutex);
+
+	if (!mdev->sock) {
+		up(&mdev->send_mutex);
+		return -1000;
+	}
 	/* Without this sock_sendmsg() somehow mixes bytes :-) */
+
+	if(cmd == Barrier) {		
+		Drbd_Barrier_Packet* head = (Drbd_Barrier_Packet*) header;
+		head->h.barrier=tl_add_barrier(mdev); // within the semaphore!
+	}
 
 	header->magic  =  cpu_to_be32(DRBD_MAGIC);
 	header->command = cpu_to_be16(cmd);
@@ -714,14 +721,21 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			printk(KERN_ERR DEVICE_NAME
 			       ": send timed out!!\n");
 
+			up(&mdev->send_mutex);
 			drbd_thread_restart(&mdev->receiver);
+			return -1000;
 		} else spin_unlock_irq(&current->sigmask_lock);
 	}
 	if (err != header_size+data_size) {
 		printk(KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",
 		       err);
+	} else 	if(cmd == Data) {
+		Drbd_Data_Packet* head=(Drbd_Data_Packet*) header;
+		if(head->h.block_id != ID_SYNCER)
+			tl_add(mdev,(struct request*)
+			       (unsigned long)head->h.block_id);
+		             /* This must be within the semaphore */
 	}
-
 	up(&mdev->send_mutex);
 
 	return err;
@@ -810,7 +824,10 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	if(!end_that_request_first(req, uptodate & req->rq_status,DEVICE_NAME))
 	        end_that_request_last(req);
 
-	if(wake_asender && mdev->conf.wire_protocol == DRBD_PROT_C) {
+	/* TODO: It would be nice if we could AND this condition.
+	   But we must also wake the asender if we are receiving 
+	   syncer blocks! */
+	if(wake_asender /*&& mdev->conf.wire_protocol == DRBD_PROT_C*/ ) {
 	        wake_up_interruptible(&mdev->asender_wait);
 	}
 }
@@ -969,7 +986,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 					   bnr,(unsigned long)req) > 0 ) {
 			        drbd_conf[minor].send_cnt++;
 			}
-			tl_add(&drbd_conf[minor],req);
 			if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A) {
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
@@ -1424,14 +1440,11 @@ inline int receive_barrier(int minor)
 	ep_size=drbd_conf[minor].epoch_size;
 	
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
-	
-	for(i=0;i<ep_size;i++) {
-	        if(!buffer_uptodate(epoch[i].bh)) wait_on_buffer(epoch[i].bh);
-		brelse(epoch[i].bh); /* Can I use bforget() here ? */
-	}
 
 	if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C) {
 	        for(i=0;i<ep_size;i++) {
+			if(!buffer_uptodate(epoch[i].bh)) 
+				wait_on_buffer(epoch[i].bh);
 		        if(epoch[i].block_id) {
 				u64 block_id = epoch[i].block_id;
 				epoch[i].block_id=0;
@@ -1442,6 +1455,13 @@ inline int receive_barrier(int minor)
 				spin_lock(&drbd_conf[minor].es_lock);
 				ep_size=drbd_conf[minor].epoch_size;
 			}
+			brelse(epoch[i].bh); /* Can I use bforget() here ? */
+		}
+	} else {
+		for(i=0;i<ep_size;i++) {
+			if(!buffer_uptodate(epoch[i].bh)) 
+				wait_on_buffer(epoch[i].bh);
+			brelse(epoch[i].bh); /* Can I use bforget() here ? */
 		}
 	}
 
@@ -1496,14 +1516,29 @@ inline int receive_data(int minor,int data_size)
 			       " (ep_size > tl_size)\n");
 	} else {	       
 		int i;
+		struct buffer_head ** sync_log = drbd_conf[minor].sync_log;
+		spin_lock(&drbd_conf[minor].sl_lock);
 		for(i=0;i<SYNC_LOG_S;i++) {
-			if(!drbd_conf[minor].sync_log[i]) {
-				drbd_conf[minor].sync_log[i]=bh;
-				break;
+			if(sync_log[i]) {
+				if(buffer_uptodate(sync_log[i])) {
+					unsigned long bnr;
+					bnr = sync_log[i]->b_blocknr;
+					brelse(sync_log[i]);
+					sync_log[i]=bh;
+					spin_unlock(&drbd_conf[minor].sl_lock);
+					drbd_send_ack(&drbd_conf[minor],
+						      WriteAck,bnr,ID_SYNCER);
+					goto exit_for_unlocked;
+				}				
+			} else {
+				sync_log[i]=bh;
+				goto exit_for;
 			}
 		}
-		if(i==SYNC_LOG_S)
-			printk(KERN_ERR DEVICE_NAME ": sl_size too small");
+		printk(KERN_ERR DEVICE_NAME ": SYNC_LOG_S too small\n");
+	exit_for:
+		spin_unlock(&drbd_conf[minor].sl_lock);
+	exit_for_unlocked:
 	}
 
 
@@ -1523,7 +1558,7 @@ inline int receive_data(int minor,int data_size)
 				    
 	ll_rw_block(WRITE, 1, &bh);
 	drbd_conf[minor].recv_cnt++;
-	if(header.block_id == ID_SYNCER) brelse(bh);
+	//if(header.block_id == ID_SYNCER) brelse(bh);
 	return TRUE;
 }     
 
@@ -1968,20 +2003,25 @@ int drbd_asender(void *arg)
 	  if(thi->exit==1) break;
 
 	  if(test_and_clear_bit(0,&drbd_conf[minor].need_to_issue_barrier)) {
-		  drbd_send_barrier(&drbd_conf[minor],
-				    tl_add_barrier(&drbd_conf[minor]));
+		  drbd_send_barrier(&drbd_conf[minor]);
 	  }
 
+	  spin_lock(&drbd_conf[minor].sl_lock);
 	  for(i=0;i<SYNC_LOG_S;i++) {
 		  if(sync_log[i]) {
 			  if(buffer_uptodate(sync_log[i])) {
 				  unsigned long bnr;
 				  bnr = sync_log[i]->b_blocknr;
+				  brelse(sync_log[i]);
+				  sync_log[i]=0;
+				  spin_unlock(&drbd_conf[minor].sl_lock);
 				  drbd_send_ack(&drbd_conf[minor],WriteAck,
 						bnr,ID_SYNCER);
+				  spin_lock(&drbd_conf[minor].sl_lock);
 			  }
 		  }		  
 	  }
+	  spin_unlock(&drbd_conf[minor].sl_lock);
 
 	  if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_C) continue;
 
@@ -2067,7 +2107,7 @@ void* bm_init(kdev_t dev)
 	memset(sbm->bm,0,size);
 
 	printk(KERN_INFO DEVICE_NAME ": vmallocing %ld B for bitmap."
-	       " @ %p\n",size,sbm->bm);
+	       " @%p\n",size,sbm->bm);
   
 	return sbm;
 }     
