@@ -235,7 +235,7 @@ repeat_alloc:
 	/*
 	 * Kick the VM at this point.
 	 */
-	wakeup_bdflush();
+	// wakeup_bdflush();  -- Modules can not do this; PRE
 
 	spin_lock_irqsave(&pool->lock, flags);
 	if (likely(pool->curr_nr)) {

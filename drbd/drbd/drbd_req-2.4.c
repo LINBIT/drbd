@@ -88,7 +88,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	kmem_cache_free(bh_cachep, req->bh);
 	mempool_free(req,drbd_request_mempool);
 
 	if(wake_asender) {
@@ -107,6 +106,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),
 			 APP_BH_SECTOR(req->bh),
 			 req->bh->b_size);
+
+	kmem_cache_free(bh_cachep, bh);
 }
 
 STATIC struct Pending_read* 
