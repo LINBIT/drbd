@@ -523,7 +523,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w)
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				      int cleared)
 {
-	struct list_head *le;
+	struct list_head *le, *tmp;
 	struct bm_extent* ext;
 	struct update_odbm_work * udw;
 
@@ -557,7 +557,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		    " dirty in the on disk BM\n");
 	}
 
-	list_for_each(le,&mdev->resync->lru) {
+	list_for_each_safe(le,tmp,&mdev->resync->lru) {
 		ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 		if(ext->rs_left == 0) {
 			ERR_IF(ext->lce.refcnt) continue;
