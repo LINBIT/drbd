@@ -65,6 +65,24 @@ struct ds_buffer {
 	int b_size;
 };
 
+int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
+{
+	struct ds_buffer *buffer;
+
+	buffer=mdev->syncer_b;
+	if(buffer) {
+		int i,j,pending;
+		for(j=0;j<2;j++) {
+			pending=buffer[j].io_pending_number;
+			for(i=0;i<pending;i++) {
+				if( buffer[j].blnr[i] == bnr ) 
+				{ return TRUE; }
+			}
+		}
+	}
+	return FALSE;
+}
+
 void ds_buffer_init(struct ds_buffer *this,int minor)
 {
 	int i;
@@ -106,6 +124,7 @@ void ds_buffer_alloc(struct ds_buffer *this,int minor)
 	blocksize=blksize_size[MAJOR_NR][minor];
 	amount_blks=amount/blocksize;
 	this->number=amount_blks;
+	this->io_pending_number=0;
 	this->b_size=blocksize;
 
 	this->buffers = (void*)__get_free_pages(GFP_USER,
@@ -142,14 +161,24 @@ int ds_buffer_read(struct ds_buffer *this,
 	int count=0;
 	int amount_blks=this->number;
 	int ln2_bs = drbd_log2(this->b_size);
+	unsigned long flags;
 
+	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
 	while (count < amount_blks) {
 		unsigned long block_nr;
 
 		block_nr=get_blk(id,ln2_bs);
 		if(block_nr == MBDS_DONE) break;
-				
+
+                // because bb_wait releases bb_lock
+		this->io_pending_number=count; 
+
 		this->blnr[count]=block_nr;
+				
+		if(tl_check_sector(drbd_conf+minor,block_nr << (ln2_bs-9))) {
+			bb_wait(drbd_conf+minor,block_nr,&flags);
+		}
+
 		this->bhs[count].b_blocknr=block_nr;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 		this->bhs[count].b_state = (1 << BH_Req) | (1 << BH_Mapped);
@@ -163,8 +192,9 @@ int ds_buffer_read(struct ds_buffer *this,
 		
 		count++;
 	}
+	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
+
 	if(count) ll_rw_block(READ, count, this->bhsp);
-	this->io_pending_number=count;
 	return count;
 }
 
@@ -212,10 +242,21 @@ int ds_buffer_wait_on(struct ds_buffer *this,int minor)
 	return pending;
 }
 
+inline void ds_buffer_done(struct ds_buffer *this,int minor)
+{
+	int i,pending=this->io_pending_number;
+
+	this->io_pending_number=0;
+	for(i=0;i<pending;i++) {
+		bb_done(drbd_conf+minor,this->blnr[i]);
+	}
+}
+
 int ds_buffer_send(struct ds_buffer *this,int minor)
 {
-	int i,blocksize,rr;
+	int i,blocksize,rr,rv=TRUE;
 	int pending=this->io_pending_number;
+	unsigned long flags;
 
 	blocksize=blksize_size[MAJOR_NR][minor];
 
@@ -228,11 +269,17 @@ int ds_buffer_send(struct ds_buffer *this,int minor)
 		if(rr < blocksize) {
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: syncer send failed!!\n",minor);
-			return FALSE;
+			rv=FALSE;
+			break;
 		}
 		drbd_conf[minor].send_cnt+=blocksize>>10;
 	}
-	return TRUE;
+
+	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
+	ds_buffer_done(this,minor);
+	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
+
+	return rv;
 }
 
 unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
@@ -259,6 +306,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 	int my_blksize,ln2_bs,retry;
 	unsigned long (*get_blk)(void*,int);
 	void* id;
+	unsigned long flags;
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
 
@@ -295,6 +343,10 @@ int drbd_syncer(struct Drbd_thread *thi)
 	disk_b=buffers;
 	net_b=buffers+1;
 	
+	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
+	drbd_conf[minor].syncer_b = buffers;
+	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
+	
 	ds_buffer_read(disk_b,get_blk,id,minor);
 	while (TRUE) {
 		retry=0;
@@ -313,7 +365,6 @@ int drbd_syncer(struct Drbd_thread *thi)
 				printk(KERN_ERR DEVICE_NAME 
 				       "%d: Syncer reread.\n",minor);
 				ds_buffer_init(disk_b,minor);
-				/* ds_buffer_read(disk_b,get_blk,id,minor); */
 				ds_buffer_reread(disk_b,minor);
 			}
 			if(retry++ < 5) goto retry;
@@ -347,6 +398,12 @@ int drbd_syncer(struct Drbd_thread *thi)
 		set_cstate(&drbd_conf[minor],Connected);
 		drbd_send_cstate(&drbd_conf[minor]);
 	}
+
+	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
+	drbd_conf[minor].syncer_b = 0;
+	ds_buffer_done(disk_b,minor);
+	ds_buffer_done(net_b,minor);
+	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
 	ds_buffer_free(&buffers[0]);
 	ds_buffer_free(&buffers[1]);

@@ -1,6 +1,12 @@
 0.6.1  (api:58/proto:60)
 -----
 Since the last one should have been 0.6, this is 0.6.1:
+  *) Fixed a bug that could cause a OOPS on the primary if the connection 
+     is lost when the send queue is not empty.
+  *) Fixed a bug that could cause data corruption on the secondary if you 
+     put high IO-load on the primary during resynchronisation.
+  *) Fixed a bug that could cause the secondary to "forget" to send some
+     ack packets if it is under high load during resynchronisation.
   *) devfs support by Lelik P.Korchagin <lelik@price.ru>.
   *) Fixed a bug that could crash a task in kernel space on the primary 
      in the moment the secondary leaves the cluster.

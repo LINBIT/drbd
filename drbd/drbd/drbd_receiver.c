@@ -51,6 +51,12 @@
 #define mark_buffer_dirty(A)   mark_buffer_dirty(A , 1)
 #endif
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+#define BH_PRIVATE(A) ((A)->b_private)
+#else
+#define BH_PRIVATE(A) ((A)->b_dev_id)
+#endif
+
 
 struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev);
 
@@ -107,6 +113,7 @@ int _drbd_process_done_ee(struct Drbd_Conf* mdev)
 			spin_lock_irq(&mdev->ee_lock);
 		}
 		if(!is_syncer_blk(mdev,e->block_id)) mdev->epoch_size++;
+		BH_PRIVATE(e->bh) = NULL;
 		bforget(e->bh);
 		list_add(le,&mdev->free_ee);
 		if(r != sizeof(Drbd_BlockAck_Packet )) return FALSE;
@@ -564,6 +571,14 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
+	while (test_bit(BH_Lock, &bh->b_state)) {
+		interruptible_sleep_on(&bh->b_wait);
+	}
+
+	if(BH_PRIVATE(bh)) {   
+		drbd_process_done_ee(drbd_conf+minor);
+	}
+
 	rr=drbd_recv(&drbd_conf[minor],bh_kmap(bh),data_size,0);
 	bh_kunmap(bh);
 
@@ -581,19 +596,16 @@ inline int receive_data(int minor,int data_size)
 	} else {
 		list_add(&e->list,&drbd_conf[minor].active_ee);
 	}
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-	bh->b_dev_id = e;
-#else
-	bh->b_private = e;
-#endif
+	BH_PRIVATE(bh)=e;
+
 	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 
 	/* When you call mark_buffer_diry() before drbd_recv() (which 
 	   can sleep) you risk, that the system writes the
 	   buffer while you are sleeping. --> and the b_private
 	   field of the buffer head is not set... oops 	*/
-	mark_buffer_dirty(bh);     
-	mark_buffer_uptodate(bh, 0);
+	mark_buffer_dirty(bh);  // right!
+	mark_buffer_uptodate(bh, 0); // not necessary ?
 
 //	generic_make_request(WRITE,bh);
 	ll_rw_block(WRITE, 1, &bh);

@@ -346,6 +346,40 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 	return r;
 }
 
+int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
+{
+	struct tl_entry* p;
+	int r=TRUE;
+
+	if((mdev->send_block<<(mdev->blk_size_b-9)) == sector) return TRUE;
+
+	read_lock(&mdev->tl_lock);
+
+	p = mdev->tl_end;
+	while( TRUE ) {
+		if ( p==mdev->tl_begin ) {r=FALSE; break;}
+	        if ( p==mdev->transfer_log) {
+			p = p + mdev->conf.tl_size;
+			if ( p==mdev->tl_begin ) {r=FALSE; break;}
+		}
+		p--;
+		if ( p->sector == sector) {
+			drbd_request_t *req = p->req;
+			printk(KERN_ERR DEVICE_NAME " found senctor in tl\n");
+			if( req == TL_FINISHED) { r=FALSE; }
+			else {
+				if((req->rq_status&0xfffe)==RQ_DRBD_WRITTEN) {
+					r=FALSE;
+				}
+			}
+			break;
+		}
+	}
+
+	read_unlock(&mdev->tl_lock);
+	return r;
+}
+
 void tl_clear(struct Drbd_Conf *mdev)
 {
 	struct tl_entry* p = mdev->tl_begin;
@@ -988,13 +1022,17 @@ int __init drbd_init(void)
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
 		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
+		drbd_conf[i].syncer_b = 0;
+		drbd_conf[i].bb_lock = SPIN_LOCK_UNLOCKED;
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
 		drbd_conf[i].epoch_size=0;
+		drbd_conf[i].send_block=-1;
 		INIT_LIST_HEAD(&drbd_conf[i].free_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].done_ee);
+		INIT_LIST_HEAD(&drbd_conf[i].bussy_blocks);
 		{
 			int j;
 			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;

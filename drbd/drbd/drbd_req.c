@@ -101,24 +101,28 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 			wake_asender=1;
 		}
 	}
+	
+	spin_lock_irqsave(&mdev->bb_lock,flags);
+	bb_done(mdev,req->bh->b_blocknr);
+	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
 	if(mdev->state == Secondary) {
 		e=req->bh->b_private;
+		// since read requests do not have the b_private field set
 		if( e ) {
 			spin_lock_irqsave(&mdev->ee_lock,flags);
 			list_del(&e->list);
-			//spin_unlock_irqrestore(&mdev->ee_lock,flags);
-		} else {
+/*		} else { 
 			printk(KERN_ERR DEVICE_NAME "%d: strange e == NULL "
 			       ", bh=%p\n",
 			       (int)(mdev-drbd_conf),req->bh);
+*/
 		}
 	}
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
 
 	if(e) {
-	        //spin_lock_irqsave(&mdev->ee_lock,flags);
 		list_add(&e->list,&mdev->done_ee);
 		spin_unlock_irqrestore(&mdev->ee_lock,flags);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
@@ -230,12 +234,21 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 			int bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
 			int send_ok;
+			unsigned long flags;
 
 			req->rq_status = RQ_DRBD_NOTHING;
+
+			spin_lock_irqsave(&mdev->bb_lock,flags);
+			mdev->send_block=bnr;
+			if( ds_check_block(mdev,bnr) ) {
+				bb_wait(mdev,bnr,&flags);
+			}
+			spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
      		        send_ok=drbd_send_data(mdev, bh_kmap(bh), cbs,
 					       bnr,(unsigned long)req);
 			bh_kunmap(bh);
+			mdev->send_block=-1;
 
 			if(send_ok) {
 				mdev->send_cnt+=size_kb;

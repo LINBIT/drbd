@@ -102,17 +102,21 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		}
 	}
 
+	spin_lock_irqsave(&mdev->bb_lock,flags);
+	bb_done(mdev,req->bh->b_blocknr);
+	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
 	if(mdev->state == Secondary) {
 		e=req->bh->b_dev_id;
+		// since read requests do not have the b_private field set
 		if( e ) {
 			spin_lock_irqsave(&mdev->ee_lock,flags);
 			list_del(&e->list);
-			//spin_unlock_irqrestore(&mdev->ee_lock,flags);
-		} else {
+/*		} else {
 			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
 			       ", bh=%p\n",
 			       (int)(mdev-drbd_conf),req->bh);
+*/
 		}
 	}
 
@@ -120,7 +124,6 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	        end_that_request_last(req);
 
 	if(e) {
-	        //spin_lock_irqsave(&mdev->ee_lock,flags);
 		list_add(&e->list,&mdev->done_ee);
 		spin_unlock_irqrestore(&mdev->ee_lock,flags);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
@@ -170,6 +173,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 /*static */ void drbd_do_request()
 {
+	struct buffer_head *bh;
+	int size_kb=1<<(drbd_conf[minor].blk_size_b-10);
 	int minor = 0;
 	struct request *req;
 	int sending;
@@ -226,72 +231,72 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			}
 		}
 
-		/* Do disk - IO */
-		{
-			struct buffer_head *bh;
-			int size_kb=1<<(drbd_conf[minor].blk_size_b-10);
-		
-			bh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
-			if (!bh) {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: could not kmalloc()\n",minor);
-				return;
-			}
-
-			memset(bh, 0, sizeof(*bh));
-			bh->b_blocknr=req->bh->b_blocknr;
-			bh->b_size=req->bh->b_size;
-			bh->b_data=req->bh->b_data;
-			bh->b_list = BUF_LOCKED;
-			bh->b_end_io = drbd_dio_end;
-			bh->b_dev = drbd_conf[minor].lo_device;
-			bh->b_rdev = drbd_conf[minor].lo_device;
-			bh->b_rsector = req->bh->b_rsector;
-			bh->b_end_io = drbd_dio_end;
-			bh->b_count=0;
-			bh->b_this_page=0;
-			bh->b_dev_id = req;
-			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
-
-			/*			
-#ifdef BH_JWrite
-			if (test_bit(BH_JWrite, &req->bh->b_state))
-				set_bit(BH_JWrite, &bh->b_state);
-#endif			
-			*/
-			
-			if(req->cmd == WRITE) 
-				drbd_conf[minor].writ_cnt+=size_kb;
-			else drbd_conf[minor].read_cnt+=size_kb;
-
-			if (sending)
-				req->rq_status = RQ_DRBD_NOTHING;
-			else if (req->cmd == WRITE) {
-			        if(drbd_conf[minor].state == Secondary)
-				  req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
-				else {
-				  req->rq_status = RQ_DRBD_SENT | 0x0001;
-				  bm_set_bit(drbd_conf[minor].mbds_id,
-					     req->sector >> 
-					     (drbd_conf[minor].blk_size_b-9),
-					     drbd_conf[minor].blk_size_b, 
-					     SS_OUT_OF_SYNC);
-				}
-			}
-			else
-				req->rq_status = RQ_DRBD_READ | 0x0001;
-
-			ll_rw_block(req->cmd, 1, &bh);
+		bh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
+		if (!bh) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: could not kmalloc()\n",minor);
+			return;
 		}
+
+		memset(bh, 0, sizeof(*bh));
+		bh->b_blocknr=req->bh->b_blocknr;
+		bh->b_size=req->bh->b_size;
+		bh->b_data=req->bh->b_data;
+		bh->b_list = BUF_LOCKED;
+		bh->b_end_io = drbd_dio_end;
+		bh->b_dev = drbd_conf[minor].lo_device;
+		bh->b_rdev = drbd_conf[minor].lo_device;
+		bh->b_rsector = req->bh->b_rsector;
+		bh->b_end_io = drbd_dio_end;
+		bh->b_count=0;
+		bh->b_this_page=0;
+		bh->b_dev_id = req;
+		bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+
+		/*			
+#ifdef BH_JWrite
+                if (test_bit(BH_JWrite, &req->bh->b_state))
+			set_bit(BH_JWrite, &bh->b_state);
+#endif			
+		*/
+			
+		if(req->cmd == WRITE) 
+			drbd_conf[minor].writ_cnt+=size_kb;
+		else drbd_conf[minor].read_cnt+=size_kb;
+		
+		if (sending)
+			req->rq_status = RQ_DRBD_NOTHING;
+		else if (req->cmd == WRITE) {
+			if(drbd_conf[minor].state == Secondary)
+				req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
+			else {
+				req->rq_status = RQ_DRBD_SENT | 0x0001;
+				bm_set_bit(drbd_conf[minor].mbds_id,
+					   req->sector >> 
+					   (drbd_conf[minor].blk_size_b-9),
+					   drbd_conf[minor].blk_size_b, 
+					   SS_OUT_OF_SYNC);
+			}
+		} else req->rq_status = RQ_DRBD_READ | 0x0001;
+
 
 		/* Send it out to the network */
 		if (sending) {
 			int bnr;
 			int send_ok;
 			bnr = req->sector >> (drbd_conf[minor].blk_size_b - 9);
+
+			spin_lock_irqsave(&mdev->bb_lock,flags);
+			mdev->send_block=bnr;
+			if( ds_check_block(mdev,bnr) ) {
+				bb_wait(mdev,bnr,&flags);
+			}
+			spin_unlock_irqrestore(&mdev->bb_lock,flags);
+
      		        send_ok=drbd_send_data(&drbd_conf[minor], req->buffer,
 					   req->current_nr_sectors << 9,
 					   bnr,(unsigned long)req);
+			mdev->send_block=-1;
 
 			if(send_ok) {
 			        drbd_conf[minor].send_cnt+=
@@ -306,6 +311,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			}
 				
 		}
+
+		ll_rw_block(req->cmd, 1, &bh);
+		
 		spin_lock_irq(&io_request_lock);
 	}
 }

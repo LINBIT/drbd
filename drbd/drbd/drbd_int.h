@@ -221,6 +221,8 @@ struct send_timer_info {
 	int restart;	
 };
 
+struct ds_buffer;
+
 struct Drbd_Conf {
 	struct net_config conf;
         int do_panic;
@@ -250,8 +252,11 @@ struct Drbd_Conf {
 	struct timer_list a_timeout; /* ack timeout */
 	struct semaphore send_mutex;
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
+	unsigned long send_block; // block which is processed by send_data
 	spinlock_t send_proc_lock;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
+	struct ds_buffer *syncer_b;
+	spinlock_t bb_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
         struct Drbd_thread asender;
@@ -268,6 +273,7 @@ struct Drbd_Conf {
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
+	struct list_head bussy_blocks;
 };
 
 /* drbd_main.c: */
@@ -279,6 +285,7 @@ extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct Drbd_Conf *mdev);
 extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
+extern int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector);
 extern void drbd_free_sock(int minor);
 /*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 		     Drbd_Packet* header, size_t header_size, 
@@ -294,6 +301,8 @@ extern int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 			  unsigned long block_nr, u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 
+
+extern int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr);
 
 /* drbd_req*/ 
 extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
@@ -389,7 +398,69 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 }
 
 
-/* drbd_proc.d  */
+
+/*
+  There was a race condition between the syncer's and applications' write
+  requests on the primary node.
+
+  E.g:
+
+  1) Syncer issues a read request for 4711
+  2) Application write for 4711
+  2a) 4711(new) is sent via the socket
+  2b) 4711(new) is handed over the the IO subsystem
+  3) Syncer gets 4711(old)
+  4) Syncer sends 4711(old)
+  5) 4711(new) is written to primary disk.
+
+  The secondary gets the 4711(new) first, followed by 4711(old) and
+  write 4711(old) to its disk.
+
+  Therefore 
+
+  bb_wait(),bb_done(),ds_check_block() and tl_check_sector()
+
+ */
+
+struct bussy_block {
+	struct list_head list; 
+	struct completion event;
+	unsigned long bnr;
+};
+
+static inline void bb_wait(struct Drbd_Conf *mdev,unsigned long bnr,
+			   unsigned long* flags)
+{
+	struct bussy_block bl;
+
+	init_completion(&bl.event);
+	bl.bnr=bnr;
+	list_add(&bl.list,&mdev->bussy_blocks);
+	spin_unlock_irqrestore(&mdev->bb_lock,*flags);
+
+      //printk(KERN_ERR DEVICE_NAME " sleeping because block %lu busy\n",bnr);
+	wait_for_completion(&bl.event);
+	spin_lock_irqsave(&mdev->bb_lock,*flags);
+}
+
+static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
+{
+	struct list_head *le;
+	struct bussy_block *bl;
+
+	list_for_each(le,&mdev->bussy_blocks) {
+		bl = list_entry(le, struct bussy_block,list);
+		if(bl->bnr == bnr) {
+			//printk(KERN_ERR DEVICE_NAME " completing %lu\n",bnr);
+			complete(&bl->event);
+			list_del(le);
+			break;
+		}
+	}
+}
+
+
+/* drbd_proc.c  */
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 extern struct proc_dir_entry *drbd_proc;
 #else
