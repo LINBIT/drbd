@@ -144,6 +144,7 @@ static void dump_host_info(struct d_host_info* hi)
 
 static int adm_dump(struct d_resource* res,char* unused)
 {
+  // HMM... Global section missing in dump
   printf("resource %s {\n",esc(res->name));
   printf("  protocol=%s\n",res->protocol);
   if(res->ind_cmd) printf("  incon-degr-cmd=%s\n",esc(res->ind_cmd));
@@ -155,7 +156,7 @@ static int adm_dump(struct d_resource* res,char* unused)
   dump_options("startup",res->startup_options);
   printf("}\n\n");
     
-  return 1;
+  return 0;
 }
 
 static int sh_devices(struct d_resource* res,char* unused)
@@ -255,7 +256,7 @@ static void alarm_handler(int signo)
   alarm_raised=1;
 }
 
-int m_system(char** argv)
+int m_system(int may_sleep,char** argv)
 {
   int pid,status;
   int rv=-1;
@@ -287,9 +288,11 @@ int m_system(char** argv)
     exit(20);    
   }
 
-  sigaction(SIGALRM,&sa,&so);
-  alarm_raised=0;
-  alarm(2);
+  if( !may_sleep ) {
+    sigaction(SIGALRM,&sa,&so);
+    alarm_raised=0;
+    alarm(2);
+  }
 
   while(1) {
     if (waitpid(pid, &status, 0) == -1) {
@@ -306,9 +309,19 @@ int m_system(char** argv)
     }
   }
   
-  alarm(0);
-  sigaction(SIGALRM,&so,NULL);  
+  if( !may_sleep ) {
+    alarm(0);
+    sigaction(SIGALRM,&so,NULL);  
+  }
 
+  if(!may_sleep && rv) {
+    fprintf(stderr,"Command line was '");
+    while(*argv) {
+      fprintf(stderr,"%s ",*argv++);
+    }
+    fprintf(stderr,"'\n");
+  }
+  
   return rv;
 }
 
@@ -337,7 +350,7 @@ int adm_attach(struct d_resource* res,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(argv);
+  return m_system(0,argv);
 }
 
 struct d_option* find_opt(struct d_option* base,char* name)
@@ -361,10 +374,10 @@ int adm_resize(struct d_resource* res,char* unused)
   argv[argc++]=res->me->device;
   argv[argc++]="resize";
   opt=find_opt(res->disk_options,"size");
-  ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
+  if(opt) ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
   argv[argc++]=0;
 
-  return m_system(argv);
+  return m_system(0,argv);
 }
 
 int adm_generic(struct d_resource* res,char* cmd)
@@ -380,7 +393,7 @@ int adm_generic(struct d_resource* res,char* cmd)
   }
   argv[argc++]=0;
 
-  return m_system(argv);
+  return m_system(0,argv);
 }
 
 int adm_connect(struct d_resource* res,char* unused)
@@ -400,7 +413,7 @@ int adm_connect(struct d_resource* res,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(argv);
+  return m_system(0,argv);
 }
 
 int adm_syncer(struct d_resource* res,char* unused)
@@ -416,7 +429,7 @@ int adm_syncer(struct d_resource* res,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(argv);
+  return m_system(0,argv);
 }
 
 static int adm_up(struct d_resource* res,char* unused)
@@ -440,7 +453,7 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(argv);  
+  return m_system(1,argv);  
 }
 
 
@@ -499,7 +512,7 @@ void print_usage(const char* prgname)
 
 int main(int argc, char** argv)
 {
-  int i;
+  int i,rv;
   struct adm_cmd* cmd;
   struct d_resource* res;
 
@@ -610,7 +623,10 @@ int main(int argc, char** argv)
       if(!strcmp(argv[optind],"all")) {
 	res=config;
 	while(res) {
-	  cmd->function(res,cmd->arg);
+	  if( (rv=cmd->function(res,cmd->arg)) ) {
+	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
+	    exit(20);
+	  }	    
 	  res=res->next;
 	}
       } else {
@@ -625,11 +641,17 @@ int main(int argc, char** argv)
 	    fprintf(stderr,"'%s' not defined in you config.\n",argv[i]);
 	    exit(20);
 	  }
-	  cmd->function(res,cmd->arg);
+	  if( (rv=cmd->function(res,cmd->arg)) ) {
+	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
+	    exit(20);
+	  }	    
 	}
       }
     } else { // Commands which does not need a resource name
-      cmd->function(config,cmd->arg);
+      if( (rv=cmd->function(config,cmd->arg)) ) {
+	fprintf(stderr,"drbdsetup exited with code %d\n",rv);
+	exit(20);
+      }	    
     }
 
   free_config(config);

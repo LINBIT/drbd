@@ -19,7 +19,7 @@ void syntax_error(char*);
 
 %option noyywrap
 
-NUM      [1-9][0-9]*[MKG]?
+NUM      [0-9][0-9]*[MKG]?
 STRING   [a-zA-Z/][a-zA-Z0-9_/]*
 SNUMB    [1-9][0-9]{0,2}
 IPV4ADDR ({SNUMB}"."){3}{SNUMB}

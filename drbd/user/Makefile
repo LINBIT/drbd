@@ -62,3 +62,7 @@ install:
 uninstall:
 	rm -f $(PREFIX)sbin/drbdsetup
 	rm -f $(PREFIX)sbin/drbdadm
+
+###dependencies
+drbdadm_adjust.o: drbdadm.h drbdadm_adjust.c
+drbdadm_main.o: drbdadm.h drbdadm_main.c

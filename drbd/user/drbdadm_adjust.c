@@ -143,7 +143,10 @@ int adm_adjust(struct d_resource* res,char* unused)
     // Check if every options is also present in drbdsetup show's output.
     o=res->disk_options;
     while(o) {
-      if(o->mentioned == 0) do_attach=1;
+      if(o->mentioned == 0) {
+	if(!strcmp(o->name,"size")) do_resize=1;
+	   else do_attach=1;
+      }
       o=o->next;
     }
   }

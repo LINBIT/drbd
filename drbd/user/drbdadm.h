@@ -42,7 +42,7 @@ extern int adm_attach(struct d_resource* ,char* );
 extern int adm_connect(struct d_resource* ,char* );
 extern int adm_resize(struct d_resource* ,char* );
 extern int adm_syncer(struct d_resource* ,char* );
-extern int m_system(char** );
+extern int m_system(int,char** );
 extern struct d_option* find_opt(struct d_option*,char*);
 
 extern int config_valid;
