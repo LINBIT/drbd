@@ -112,6 +112,15 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
+	if(mdev->state == Secondary) {
+		struct Tl_epoch_entry *e;
+		e=req->bh->b_private;
+		spin_lock_irqsave(&mdev->ee_lock,flags);
+		list_del(&e->list);
+		list_add(&e->list,&mdev->done_ee);
+		spin_unlock_irqrestore(&mdev->ee_lock,flags);
+	}
+
 	kfree(req); /* frees also the temporary bh */
 
 	/* NICE: It would be nice if we could AND this condition.

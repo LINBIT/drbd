@@ -23,6 +23,7 @@
 #include <linux/types.h>
 #include <linux/timer.h>
 #include <linux/version.h>
+#include <linux/list.h>
 
 /* #define MAJOR_NR 240 */
 #define MAJOR_NR 43
@@ -49,7 +50,6 @@
 #define FALSE 0
 #endif
 
-#define SYNC_LOG_S 80
 #define INITIAL_BLOCK_SIZE (1<<12)
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
@@ -78,6 +78,10 @@
 #define RQ_DRBD_WRITTEN   0xf300
 #define RQ_DRBD_SEC_WRITE 0xf400
 #define RQ_DRBD_READ      0xf500
+
+#define list_for_each2(pos,npos,head) \
+        for (pos=(head)->next,npos=pos->next;pos !=(head); \
+		     pos=npos,npos=pos->next)
 
 /* This is the layout for a packet on the wire! 
  * The byteorder is the network byte order!
@@ -178,7 +182,15 @@ typedef struct request drbd_request_t;
 #define GET_SECTOR(A) ((A)->sector)
 #endif
 
+
+/* These Tl_epoch_entries may be in one of 4 lists:
+   free_ee .... free entries
+   active_ee .. data packet beeing written
+   sync_ee .... syncer block beeing written
+   done_ee .... block written, need to send ack packet
+*/ 
 struct Tl_epoch_entry {
+	struct list_head list; 
 	struct buffer_head* bh;
 	u64    block_id;
 };
@@ -217,14 +229,11 @@ struct Drbd_Conf {
 	unsigned int barrier_nr_issue;
 	unsigned int barrier_nr_done;
         int    flags;
-        int    epoch_size;
-	spinlock_t es_lock;
 	struct timer_list a_timeout; /* ack timeout */
 	struct timer_list p_timeout; /* processing timeout */
 	struct timer_list s_timeout; /* send timeout */
 	struct semaphore send_mutex;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
-	spinlock_t sl_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
         struct Drbd_thread asender;
@@ -234,7 +243,11 @@ struct Drbd_Conf {
 	int open_cnt;
 	u32 gen_cnt[5];
 	u32 bit_map_gen[5];
-	struct buffer_head* sync_log[SYNC_LOG_S];
+	spinlock_t ee_lock;
+	struct list_head free_ee;  
+	struct list_head active_ee;
+	struct list_head sync_ee;  
+	struct list_head done_ee;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  

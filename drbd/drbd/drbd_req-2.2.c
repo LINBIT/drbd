@@ -109,6 +109,15 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		}
 	}
 
+	if(mdev->state == Secondary) {
+		struct Tl_epoch_entry *e;
+		e=req->bh->b_dev_id;
+		spin_lock_irqsave(&mdev->ee_lock,flags);
+		list_del(&e->list);
+		list_add(&e->list,&mdev->done_ee);
+		spin_unlock_irqrestore(&mdev->ee_lock,flags);
+	}
+
 	if(!end_that_request_first(req, uptodate & req->rq_status,DEVICE_NAME))
 	        end_that_request_last(req);
 

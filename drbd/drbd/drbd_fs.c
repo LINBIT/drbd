@@ -274,12 +274,11 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	       drbd_conf[minor].unacked_cnt > 0 ) {
 		
 		printk(KERN_ERR DEVICE_NAME
-		       "%d: set_state(%d,%d,%d,%d)\n",
+		       "%d: set_state(%d,%d,%d)\n",
 		       minor,
 		       drbd_conf[minor].state,
 		       drbd_conf[minor].pending_cnt,
-		       drbd_conf[minor].unacked_cnt,
-		       drbd_conf[minor].epoch_size);
+		       drbd_conf[minor].unacked_cnt);
 		
 		interruptible_sleep_on(&drbd_conf[minor].state_wait);
 		if(signal_pending(current)) { 

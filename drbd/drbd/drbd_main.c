@@ -873,7 +873,6 @@ int __init drbd_init(void)
 		drbd_conf[i].mbds_id = 0;
 		drbd_conf[i].flags=0;
 		tl_init(&drbd_conf[i]);
-		drbd_conf[i].epoch_size=0;
 		drbd_conf[i].a_timeout.function = drbd_a_timeout;
 		drbd_conf[i].a_timeout.data = (unsigned long) 
 			&drbd_conf[i].receiver;
@@ -889,15 +888,18 @@ int __init drbd_init(void)
 		drbd_thread_init(i, &drbd_conf[i].syncer, drbd_syncer);
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
-		drbd_conf[i].es_lock = SPIN_LOCK_UNLOCKED;
+		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].sl_lock = SPIN_LOCK_UNLOCKED;
 		init_waitqueue_head(&drbd_conf[i].asender_wait);
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
+
+		INIT_LIST_HEAD(&drbd_conf[i].free_ee);
+		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
+		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
+		INIT_LIST_HEAD(&drbd_conf[i].done_ee);
 		{
 			int j;
-			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
 			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;
 			for(j=0;j<=PrimaryInd;j++) 
 				drbd_conf[i].bit_map_gen[j]=0;
@@ -927,6 +929,19 @@ int __init init_module()
 
 }
 
+inline void free_ee_list(struct list_head* list)
+{
+	struct Tl_epoch_entry *e;
+	struct list_head *le,*nle;
+
+	list_for_each2(le,nle, list) {
+		e = list_entry(le,struct Tl_epoch_entry,list);
+		list_del(le);
+		kfree(e);
+	}
+	
+}
+
 void cleanup_module()
 {
 	int i;
@@ -942,6 +957,11 @@ void cleanup_module()
 			kfree(drbd_conf[i].transfer_log);		    
 		if (drbd_conf[i].mbds_id)
 			drbd_conf[i].mops->cleanup(drbd_conf[i].mbds_id);
+		// free the receivers stuff
+		free_ee_list(&drbd_conf[i].free_ee);
+		free_ee_list(&drbd_conf[i].active_ee); // questionable!
+		free_ee_list(&drbd_conf[i].sync_ee);   // questionable!
+		free_ee_list(&drbd_conf[i].done_ee);   // questionable!
 	}
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)

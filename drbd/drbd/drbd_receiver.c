@@ -52,6 +52,24 @@
 #define mark_buffer_dirty(A)   mark_buffer_dirty(A , 1)
 #endif
 
+
+struct Tl_epoch_entry* get_ee(struct Drbd_Conf* mdev)
+{
+	struct Tl_epoch_entry* e;
+
+	if(list_empty(&mdev->free_ee)) {
+		e=kmalloc(sizeof(struct Tl_epoch_entry)*2,GFP_USER);
+		list_add(&(e+1)->list,&mdev->free_ee);
+	} else {
+		struct list_head *le; 	
+		le=mdev->free_ee.next;
+		list_del(le);
+		e=list_entry(le, struct Tl_epoch_entry, list);
+	}
+
+	return e;
+}
+
 void drbd_p_timeout(unsigned long arg)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
@@ -346,10 +364,10 @@ inline void dec_unacked(int minor)
 
 inline int receive_barrier(int minor)
 {
-	struct Tl_epoch_entry *epoch = 
-	  (struct Tl_epoch_entry *)drbd_conf[minor].transfer_log;
+	struct Tl_epoch_entry *e;
+	struct list_head *le,*nle;
   	Drbd_Barrier_P header;
-	int ep_size,i;
+	int epoch_size=0;
 
 	if(drbd_conf[minor].state != Secondary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n",
@@ -361,41 +379,39 @@ inline int receive_barrier(int minor)
 
 	inc_unacked(minor);
 
-	spin_lock(&drbd_conf[minor].es_lock);
-
-	ep_size=drbd_conf[minor].epoch_size;
-	
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
-	if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C) {
-	        for(i=0;i<ep_size;i++) {
-			if(!buffer_uptodate(epoch[i].bh)) 
-				wait_on_buffer(epoch[i].bh);
-		        if(epoch[i].block_id) {
-				u64 block_id = epoch[i].block_id;
-				epoch[i].block_id=0;
-				spin_unlock(&drbd_conf[minor].es_lock);
-				drbd_send_ack(&drbd_conf[minor], WriteAck,
-					      epoch[i].bh->b_blocknr,
-					      block_id);
-				dec_unacked(minor);
+	spin_lock_irq(&drbd_conf[minor].ee_lock);
 
-				spin_lock(&drbd_conf[minor].es_lock);
-				ep_size=drbd_conf[minor].epoch_size;
-			}
-			bforget(epoch[i].bh);
-		}
-	} else {
-		for(i=0;i<ep_size;i++) {
-			if(!buffer_uptodate(epoch[i].bh)) 
-				wait_on_buffer(epoch[i].bh);
-			bforget(epoch[i].bh);
-		}
+	list_for_each2(le,nle,&drbd_conf[minor].active_ee) {
+		spin_unlock_irq(&drbd_conf[minor].ee_lock);
+		e = list_entry(le,struct Tl_epoch_entry,list);
+		if(!buffer_uptodate(e->bh)) 
+			wait_on_buffer(e->bh);
+		spin_lock_irq(&drbd_conf[minor].ee_lock);
 	}
 
-	drbd_conf[minor].epoch_size=0;
-	spin_unlock(&drbd_conf[minor].es_lock);
-	drbd_send_b_ack(&drbd_conf[minor], header.barrier,ep_size );
+	if(!list_empty(&drbd_conf[minor].active_ee)) {
+		printk(KERN_ERR DEVICE_NAME "%d: active_ee not emptry!\n",
+		       minor);
+	}
+
+	list_for_each2(le,nle, &drbd_conf[minor].done_ee) {
+		list_del(le);
+		spin_unlock_irq(&drbd_conf[minor].ee_lock);
+		e = list_entry(le,struct Tl_epoch_entry,list);
+
+		drbd_send_ack(&drbd_conf[minor], WriteAck,
+			      e->bh->b_blocknr,
+			      e->block_id);
+		dec_unacked(minor);
+		epoch_size++;			
+		spin_lock_irq(&drbd_conf[minor].ee_lock);
+		list_add(le,&drbd_conf[minor].free_ee);			
+	}
+
+	spin_unlock_irq(&drbd_conf[minor].ee_lock);
+	drbd_send_b_ack(&drbd_conf[minor], header.barrier,epoch_size );
 	dec_unacked(minor);
 
 	return TRUE;
@@ -405,9 +421,7 @@ inline int receive_data(int minor,int data_size)
 {
         struct buffer_head *bh;
 	unsigned long block_nr;
-	struct Tl_epoch_entry *epoch = 
-	  (struct Tl_epoch_entry *)drbd_conf[minor].transfer_log;
-	int ep_size;
+	struct Tl_epoch_entry *e;
 	Drbd_Data_P header;
 
 	if(drbd_conf[minor].state != Secondary) /* CHK */
@@ -442,51 +456,24 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
-	/* Blocks from syncer are not going into the epoch set */
-	if(header.block_id != ID_SYNCER) {
-	        spin_lock(&drbd_conf[minor].es_lock);
-	        ep_size=drbd_conf[minor].epoch_size;
-
-	        epoch[ep_size].bh = bh;
-		epoch[ep_size].block_id = header.block_id;
-		ep_size++;
-
-		drbd_conf[minor].epoch_size=ep_size;
-	        spin_unlock(&drbd_conf[minor].es_lock);
-		if (ep_size > drbd_conf[minor].conf.tl_size)
-			printk(KERN_ERR DEVICE_NAME "%d: tl_size too small"
-			       " (ep_size > tl_size)\n",minor);
-		if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
-			inc_unacked(minor);
-
-	} else {	       
-		int i;
-		struct buffer_head ** sync_log = drbd_conf[minor].sync_log;
-		spin_lock(&drbd_conf[minor].sl_lock);
-		for(i=0;i<SYNC_LOG_S;i++) {
-			if(sync_log[i]) {
-				if(buffer_uptodate(sync_log[i])) {
-					unsigned long bnr;
-					bnr = sync_log[i]->b_blocknr;
-					bforget(sync_log[i]);
-					sync_log[i]=bh;
-					spin_unlock(&drbd_conf[minor].sl_lock);
-					drbd_send_ack(&drbd_conf[minor],
-						      WriteAck,bnr,ID_SYNCER);
-					goto exit_for_unlocked;
-				}				
-			} else {
-				sync_log[i]=bh;
-				goto exit_for;
-			}
-		}
-		printk(KERN_ERR DEVICE_NAME "%d: SYNC_LOG_S too small\n",
-		       minor);
-	exit_for:
-		spin_unlock(&drbd_conf[minor].sl_lock);
-	exit_for_unlocked:
+	spin_lock_irq(&drbd_conf[minor].ee_lock);
+	e=get_ee(drbd_conf+minor);
+	e->bh=bh;
+	e->block_id=header.block_id;
+	if(header.block_id == ID_SYNCER) {
+		list_add(&e->list,&drbd_conf[minor].sync_ee);
+	} else {
+		list_add(&e->list,&drbd_conf[minor].active_ee);
 	}
+	spin_unlock_irq(&drbd_conf[minor].ee_lock);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+	bh->b_dev_id = e;
+#else
+	bh->b_private = e;
+#endif
 
+	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A) 
+		inc_unacked(minor);
 
 	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
 	    != data_size)
@@ -504,6 +491,7 @@ inline int receive_data(int minor,int data_size)
 		dec_unacked(minor);
 	}
 
+//	generic_make_request(WRITE,bh);
 	ll_rw_block(WRITE, 1, &bh);
 
 	/* <HACK>
@@ -739,42 +727,45 @@ inline void receive_postpone(int minor)
 
 inline void es_clear(struct Drbd_Conf *mdev)
 {
-	int ep_size,i;
-	struct Tl_epoch_entry *epoch = 
-		(struct Tl_epoch_entry *)mdev->transfer_log;
+	struct list_head *le,*nle;
+	struct Tl_epoch_entry *e;
 
-	spin_lock(&mdev->es_lock);
-	ep_size = mdev->epoch_size;
-	for(i=0;i<ep_size;i++) {
-		if(epoch[i].block_id) {
-			epoch[i].block_id=0;
-			bforget(epoch[i].bh);
-		}
+	spin_lock_irq(&mdev->ee_lock);
+
+	list_for_each2(le,nle, &mdev->active_ee) {
+		list_del(le);
+		e = list_entry(le,struct Tl_epoch_entry,list);
+		bforget(e->bh);		
+		list_add(le,&mdev->free_ee);			
 	}
-	mdev->epoch_size=0;
-	spin_unlock(&mdev->es_lock);
+
+	spin_unlock_irq(&mdev->ee_lock);
 }
 
 inline void sl_clear(struct Drbd_Conf *mdev)
 {
-	int i;
-	struct buffer_head ** sync_log = mdev->sync_log;
+	struct list_head *le,*nle;
+	struct Tl_epoch_entry *e;
 
-	spin_lock(&mdev->sl_lock);
-	for(i=0;i<SYNC_LOG_S;i++) {
-		if(sync_log[i]) {
-			bforget(sync_log[i]);
-			sync_log[i]=0;
-		}
+	spin_lock_irq(&mdev->ee_lock);
+
+	list_for_each2(le,nle, &mdev->sync_ee) {
+		list_del(le);
+		e = list_entry(le,struct Tl_epoch_entry,list);
+		bforget(e->bh);		
+		list_add(le,&mdev->free_ee);			
 	}
-	spin_unlock(&mdev->sl_lock);
+
+	spin_unlock_irq(&mdev->ee_lock);
 }
 
 inline void drbd_collect_zombies(int minor)
 {
+  /*
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
 		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
 	}
+  */
 }
 
 void drbdd(int minor)
@@ -950,21 +941,19 @@ inline void drbd_try_send_barrier(struct Drbd_Conf *mdev)
 int drbd_asender(struct Drbd_thread *thi)
 {
 	int minor = thi->minor;
-	struct Tl_epoch_entry *epoch = 
-	  (struct Tl_epoch_entry *)drbd_conf[minor].transfer_log;
-
-	struct buffer_head **sync_log = drbd_conf[minor].sync_log;
+	struct list_head *le,*nle;
+	struct Tl_epoch_entry *e;
 
 
 	sprintf(current->comm, "drbd_asender_%d", minor);
 
 
 	while(thi->t_state == Running) {
-	  int i;
 
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
 	  
 	  if(thi->t_state == Exiting) break;
+	  // TODO: exit/clean signals.
 
 	  if(test_and_clear_bit(SEND_PING,&drbd_conf[minor].flags)) {
 		  if(drbd_send_cmd(minor,Ping)==sizeof(Drbd_Packet))
@@ -996,43 +985,21 @@ int drbd_asender(struct Drbd_thread *thi)
 		  continue;
 	  }
 
-	  spin_lock(&drbd_conf[minor].sl_lock);
-	  for(i=0;i<SYNC_LOG_S;i++) {
-		  if(sync_log[i]) {
-			  if(buffer_uptodate(sync_log[i])) {
-				  unsigned long bnr;
-				  bnr = sync_log[i]->b_blocknr;
-				  bforget(sync_log[i]);
-				  sync_log[i]=0;
-				  spin_unlock(&drbd_conf[minor].sl_lock);
-				  drbd_send_ack(&drbd_conf[minor],WriteAck,
-						bnr,ID_SYNCER);
-				  spin_lock(&drbd_conf[minor].sl_lock);
-			  }
-		  }		  
+	  spin_lock_irq(&drbd_conf[minor].ee_lock);
+	  
+	  list_for_each2(le,nle,&drbd_conf[minor].done_ee) {
+		  list_del(le);
+		  spin_unlock_irq(&drbd_conf[minor].ee_lock);
+		  e = list_entry(le,struct Tl_epoch_entry,list);
+		  
+		  drbd_send_ack(&drbd_conf[minor], WriteAck,
+				e->bh->b_blocknr,
+				e->block_id);
+		  dec_unacked(minor);
+		  spin_lock_irq(&drbd_conf[minor].ee_lock);
+		  list_add(le,&drbd_conf[minor].free_ee);
 	  }
-	  spin_unlock(&drbd_conf[minor].sl_lock);
-
-	  if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_C) continue;
-
-	  spin_lock(&drbd_conf[minor].es_lock);
-
-	  for(i=0;i<drbd_conf[minor].epoch_size;i++) {
-		  if(epoch[i].block_id) {
-			  if(buffer_uptodate(epoch[i].bh)) {
-				  u64 block_id = epoch[i].block_id;
-				  epoch[i].block_id=0;
-				  spin_unlock(&drbd_conf[minor].es_lock);
-				  drbd_send_ack(&drbd_conf[minor],WriteAck,
-						epoch[i].bh->b_blocknr,
-						block_id);
-				  dec_unacked(minor);
-				  spin_lock(&drbd_conf[minor].es_lock);
-			  }
-		  }
-	  }
-	  spin_unlock(&drbd_conf[minor].es_lock);
-
+	  spin_unlock_irq(&drbd_conf[minor].ee_lock);
 	}
 
 	return 0;
