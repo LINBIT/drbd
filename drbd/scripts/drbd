@@ -20,8 +20,9 @@ export INSTALL="/etc/ha.d/resource.d"
 # If the distribution does not have sysconfig/network, let's hope
 # networking is up.
 # TM : I don't like to hope stop if not here . Will add distro specif code.
+# Removed as suse don't have this directory
 
-have_file /etc/sysconfig/network
+# have_file /etc/sysconfig/network
 
 if [ "$NETWORKING" = "no" ]; then
 	echo "$0 : The network is not accessible"

@@ -204,7 +204,6 @@ setLocal()
 		if [ "$KEEP" -eq 1 ]; then
 			VALUE=`echo $LINE | sed -e"s/[gG][lL][oO][bB][aA][lL]_//g" | sed -e"s/#/ /g"`
 			eval $VALUE
-			eval `echo $LINE | sed -e"s/#/ /g"`
 		fi
 	done
 

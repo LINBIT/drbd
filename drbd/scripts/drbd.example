@@ -97,6 +97,10 @@ GLOBAL_OPTIONS=""
 # protocol may be A, B or C.
 GLOBAL_PROTOCOL="B"
 
+# Time to wait for the other side to release the node before
+# forcing the local to become master if primary confict
+GLOBAL_TIME=300
+
 # Devices used in master and slave (may be different on each machine)
 NODE1_DEVICE="/dev/nb0"
 NODE2_DEVICE="/dev/nb0"
