@@ -177,6 +177,21 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Jul 30 2004 13:50:38 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.1-1)
+  * Upgrade instructions for 0.6.x -> 0.7.0 and 0.7.0 -> 0.7.1
+  * Workaround for XFS' IO requests with page count of zero.
+  * Handle the human and the timeout count correctly in the new init script.
+  * The implementation of the incon-degr-cmd was missing, added.
+  * Longer timeouts in drbdadm for drbdsetup commands witch operate on 
+    meta data.
+  * New major number 147 (officially registered at lanana.org).
+  * Added a missing w_resume_next_wg() in case we stop syncing because
+    of connection loss.
+  * Fixed a Linux-2.2-ismus in recieve_data_tail(). Should considerably
+    speed up protocols A and B.
+  * Some work on vendor kernel compatibility
+
 * Mon Jul 26 2004 18:39:38 +0200 Lars Ellenberg <l.g.e@web.de>
 - update to SVN revision http://svn.drbd.org/drbd/trunk@1456
 - drbd (0.7.0-1)
