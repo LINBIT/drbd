@@ -123,6 +123,8 @@ ifeq ($(FORCE),)
 tgz: check_changelogs_up2date doc
 endif
 
+tarball: distclean doc update.filelist tgz
+
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
 KVER := $(shell \
 	echo -e "\#include <linux/version.h>\ndrbd_kernel_release UTS_RELEASE" | \
