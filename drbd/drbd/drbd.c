@@ -709,10 +709,16 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	ret=drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),data,
 		      data_size);
 
-	if(ret>0 && head.h.block_id != ID_SYNCER) {
-		/* This must be within the semaphore */
-		tl_add(mdev,(struct request*)(unsigned long)block_id);
+	if(head.h.block_id != ID_SYNCER) {
+		if( ret == data_size + sizeof(head) ) {
+			/* This must be within the semaphore */
+			tl_add(mdev,(struct request*)(unsigned long)block_id);
+		} else {
+	                mdev->mops->set_block_status(mdev->mbds_id,
+				   block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
+		}
 	}
+
 	up(&mdev->send_mutex);
 	return ret;
 }
@@ -2111,6 +2117,8 @@ void* bm_init(kdev_t dev)
 	size = blk_size[MAJOR(dev)][MINOR(dev)]>>(BM_BLOCK_SIZE_B-7);
 	/* 7 = 10 - 3 ; 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
 
+	if(size == 0) return 0;
+
 	sbm = vmalloc(size + sizeof(struct BitMap));
 
 	sbm->dev = dev;
@@ -2137,6 +2145,9 @@ void bm_cleanup(void* bm_id)
 /* THINK:
    What happens when the block_size (ln2_block_size) changes between
    calls 
+
+   TODO: 
+   bm_xxx are not yet SMP save.
 */
 
 void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
@@ -2146,8 +2157,8 @@ void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
 	unsigned long bitnr;
 	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
 
-	/*if(bit) printk("Block %ld out of sync\n",blocknr);
-	  else    printk("Block %ld now in sync\n",blocknr);*/
+	//if(bit) printk("Block %ld out of sync\n",blocknr);
+	//else    printk("Block %ld now in sync\n",blocknr);
 		
 
 	bitnr = blocknr >> cb;
@@ -2163,8 +2174,10 @@ void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
 		}
 	}
 
-	if(bitnr>>LN2_BPL >= sbm->size)
-	  printk(KERN_ERR DEVICE_NAME": BitMap too small!\n");	  
+	if(bitnr>>LN2_BPL >= sbm->size) {
+		printk(KERN_ERR DEVICE_NAME": BitMap too small!\n");	  
+		return;
+	}
 
 	bm[bitnr>>LN2_BPL] = bit ?
 	  bm[bitnr>>LN2_BPL] |  ( 1 << (bitnr & ((1<<LN2_BPL)-1)) ) :
@@ -2173,6 +2186,7 @@ void bm_set_bit(void* bm_id,unsigned long blocknr,int ln2_block_size, int bit)
 
 inline int bm_get_bn(unsigned long word,int nr)
 {
+	if(nr == BITS_PER_LONG-1) return -1;
 	word >>= ++nr;
 	while (! (word & 1)) {
                 word >>= 1;
