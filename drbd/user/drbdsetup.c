@@ -129,6 +129,10 @@ int main(int argc, char** argv)
 	      "          You will see error messages in the system log\n"
 	      "          if the TL is too small.\n"
 	      "          Default: 256 entries\n\n"
+	      "      -d --disk-size\n"
+	      "          Sets drbd's size. When given 0 drbd negotiates the\n"
+	      "          remote node.\n"
+	      "          Default: 0 KB.\n\n"
 	      "          Version: "VERSION"\n"
 	      ,argv[0],argv[0]);
       exit(20);
@@ -242,6 +246,7 @@ int main(int argc, char** argv)
       config.sync_rate = 250; /* KB/sec */
       config.skip_sync = 0; 
       config.tl_size = 256;
+      config.disk_size = 0;
 
       optind=6;
       while(1)
@@ -252,6 +257,7 @@ int main(int argc, char** argv)
 	    { "sync-rate", required_argument, 0, 'r' },
 	    { "skip-sync", no_argument,       0, 'k' },
 	    { "tl-size",   required_argument, 0, 's' },
+	    { "disk-size", required_argument, 0, 'd' },
 	    { 0,           0,                 0, 0   }
 	  };
 	  
@@ -270,6 +276,9 @@ int main(int argc, char** argv)
 	      break;
 	    case 's':
 	      config.tl_size = m_strtol(optarg);
+	      break;
+	    case 'd':
+	      config.disk_size = m_strtol(optarg);
 	      break;
 	    }
 	}

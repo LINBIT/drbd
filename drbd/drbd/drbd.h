@@ -66,6 +66,7 @@ struct ioctl_drbd_config {
   IN int      skip_sync; 
   IN int      tl_size; /* size of the transfer log */
   IN int      wire_protocol;
+  IN unsigned int disk_size;  /* Size given by user */
 };
 
 #define DRBD_PROT_A   1
