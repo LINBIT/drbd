@@ -162,7 +162,7 @@ static inline void drbd_wait_on_buffer(struct buffer_head * bh)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	mdev=drbd_lldev_to_mdev(bh->b_dev);
+	mdev=drbd_lldev_to_mdev(bh->b_rdev);
 
 	/*
 	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_irq()=%d\n",
