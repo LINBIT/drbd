@@ -86,11 +86,11 @@ endif
 
 .sgml.pdf:
 	$(DB2PDF) $< 
-	if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi 
+#	if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi 
 
 .sgml.ps:
 	$(DB2PS) $< 
-	if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi 
+#	if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi 
 	gzip -c $@ > $@.gz
 
 #######
