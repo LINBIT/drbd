@@ -52,5 +52,5 @@ install:
 
 ### dependencies:
 
-$(OBJS): drbd_int.h drbd.h mbds.h
+$(OBJS): drbd_int.h drbd.h
 
