@@ -569,6 +569,7 @@ int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,u64 block_id)
 	return (ret == sizeof(head));
 }
 
+// Used to send write requests bh->b_rsector !!
 int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 		     u64 block_id)
 {
@@ -602,6 +603,7 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	return ok;  
 }
 
+// Used to send answer to read requests, BH_SECTOR(bh) !!
 int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh, 
 		    u64 block_id)
 {
@@ -609,7 +611,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 	int ret,ok;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.sector = cpu_to_be64(bh->b_rsector);
+	head.h.sector = cpu_to_be64(BH_SECTOR(bh));
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
