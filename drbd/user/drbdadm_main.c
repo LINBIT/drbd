@@ -199,14 +199,9 @@ static int sh_devices(struct d_resource* ignored,char* unused)
 {
   struct d_resource *res,*t;
   for_each_resource(res,t,config) {
-    printf("%s",esc(res->name));
-    res=res->next;
-    if(res != config) printf(" ");
-    else {
-      printf("\n");
-      break;
-    }
+    printf("%s ",esc(res->name));
   }
+  printf("\n");
 
   return 0;
 }
