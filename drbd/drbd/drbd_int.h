@@ -588,6 +588,7 @@ struct Drbd_Conf {
 	spinlock_t al_lock;
 	unsigned int al_writ_cnt;
 	int al_updates[3];
+	unsigned int al_evicted;
 	unsigned int al_tr_number;
 	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer

@@ -42,8 +42,7 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-STATIC int drbd_proc_get_info(char *, char **, off_t, int, int *,
-				   void *);
+int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 
 struct proc_dir_entry *drbd_proc;
 
@@ -117,8 +116,8 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	return sz;
 }
 
-STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
-				   int len, int *unused, void *data)
+int drbd_proc_get_info(char *buf, char **start, off_t offset,
+		       int len, int *unused, void *data)
 {
 	int rlen, i;
 

@@ -61,6 +61,7 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
 STATIC void drbd_al_set(struct Drbd_Conf*, unsigned int, int);
 STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf*);
 STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev);
+STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int);
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
@@ -207,7 +208,10 @@ STATIC struct drbd_extent * drbd_al_get(struct Drbd_Conf *mdev)
 
 	if(list_empty(&mdev->al_free)) {
 		extent=drbd_al_evict(mdev);
-		if(extent) extent->extent_nr = AL_FREE;
+		if(extent) {
+			mdev->al_evicted = extent->extent_nr;
+			extent->extent_nr = AL_FREE;
+		}
 		return extent;
 	}
 
@@ -279,7 +283,9 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		list_add(&extent->accessed,&mdev->al_lru);
 	} else { // miss, need to updated AL
 		int i;
+		
 		for(i=0;i<3;i++) mdev->al_updates[i]=-1;
+		mdev->al_evicted = AL_FREE;
 
 		while(1) {
 			extent = drbd_al_add(mdev,enr);
@@ -300,8 +306,10 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	spin_unlock(&mdev->al_lock);
 
 	if( update_al ) {
+		if(mdev->cstate < Connected &&  mdev->al_evicted != AL_FREE ) {
+			drbd_update_on_disk_bitmap(mdev,mdev->al_evicted);
+		}
 		drbd_al_write_transaction(mdev);
-		// TODO if(cstate != Connected) update_on_disk_bitmap();
 	}
 }
 
@@ -571,8 +579,10 @@ STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf *mdev)
 	return active_extents;
 }
 
-/* This function marks the bits in the bitmap that are described
-   by the active extents. */
+/**
+ * drbd_al_setup_bitmap: Sets the bits in the bitmap that are described
+ * by the active extents of the AL.
+ */
 STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
 {
 	int i;
@@ -588,4 +598,14 @@ STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
 				    SS_OUT_OF_SYNC );
 	}
 	spin_unlock(&mdev->al_lock);
+}
+
+/**
+ * drbd_update_on_disk_bitmap: Writes a piece of the bitmap to its
+ * on disk location. 
+ * @enr: The extent number of the bits we should write to disk.
+ */
+STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr)
+{
+	// TODO
 }
