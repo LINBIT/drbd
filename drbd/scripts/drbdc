@@ -372,15 +372,15 @@ case "$1" in
 			
 			if [ $PRIMARY -eq 1 ]; then
 				if [ $MOUNTED -eq 1 ]; then
-					succed "Running"
+					echo "Running"
 				else
-					succed "Failed"
+					echo "Failed"
 				fi
 			else
-				succed "Ready"
+				echo "Ready"
 			fi
 		else
-			failed "Failed"
+			echo "Failed"
 		fi
 		;;
 	
