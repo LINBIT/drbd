@@ -430,7 +430,6 @@ static inline void drbd_ee_init(struct Tl_epoch_entry *e,struct page *page)
 	vec->bv_page   = page;
 	vec->bv_len    =
 	bio->bi_size   = PAGE_SIZE;
-	bio->bi_flags  = 1 << BIO_UPTODATE;
 	bio->bi_max_vecs = 1;
 	bio->bi_destructor = NULL;
 	atomic_set(&bio->bi_cnt, 1);
@@ -461,6 +460,8 @@ drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
 	bio->bi_sector  = sector;
 	bio->bi_private = mdev;
 	bio->bi_next    = 0;
+	bio->bi_idx     = 0; // for blk_recount_segments
+	bio->bi_vcnt    = 1; // for blk_recount_segments
 	e->ee_sector = sector;
 	e->ee_size = size;
 }
