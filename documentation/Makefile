@@ -24,7 +24,7 @@
 # the RedHat only way is docbook2man
 # hmmm, nowadays docbook2man works also on Debian
 
-LANGS = ja pt_BR
+LANGS =
 
 MAKEFILES_LANG := $(foreach dir,$(LANGS),$(dir)/Makefile)
 
