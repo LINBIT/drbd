@@ -241,6 +241,12 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
 
+			if( mdev->conf.wire_protocol==DRBD_PROT_C ) {
+			 if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)){
+				 queue_task(&mdev->write_hint_tq, &tq_disk);
+			 }
+			}
+
 		} else {
 			bm_set_bit(mdev->mbds_id,
 				   bh->b_rsector >> 

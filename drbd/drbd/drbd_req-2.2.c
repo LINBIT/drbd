@@ -308,4 +308,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		
 		spin_lock_irq(&io_request_lock);
 	}
+
+	if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C ) {
+		spin_unlock_irq(&io_request_lock);
+		drbd_send_cmd(minor,WriteHint,0);
+		spin_lock_irq(&io_request_lock);
+	}
 }

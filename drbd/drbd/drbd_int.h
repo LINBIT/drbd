@@ -162,9 +162,10 @@ typedef enum {
   CStateChanged,
   Ping,
   PingAck,
-  StartSync,   /* Secondary asking primary to start sync */ 
+  StartSync,     /* Secondary asking primary to start sync */ 
   BecomeSec,     /* Secondary asking primary to become secondary */
-  SetConsistent  /* Syncer run was successfull */
+  SetConsistent, /* Syncer run was successfull */
+  WriteHint      /* Used in protocol C to hint the secondary to call tq_disk */
 } Drbd_Packet_Cmd;
 
 
@@ -219,6 +220,7 @@ struct Tl_epoch_entry {
 #define WRITER_PRESENT    3
 /*                        4   */
 #define DO_NOT_INC_CONCNT 5
+#define WRITE_HINT_QUEUED 6
 
 struct send_timer_info {
 	struct timer_list s_timeout; /* send timeout */
@@ -281,10 +283,13 @@ struct Drbd_Conf {
 	int ee_vacant;
 	int ee_in_use;
 	wait_queue_head_t ee_wait;
+	struct list_head busy_blocks;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
+	struct tq_struct write_hint_tq;
+#endif
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
-	struct list_head busy_blocks;
 };
 
 /* drbd_main.c: */

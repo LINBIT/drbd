@@ -922,6 +922,15 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
+void drbd_send_write_hint(void *data)
+{
+	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
+	
+	drbd_send_cmd((int)(mdev-drbd_conf),WriteHint,0);
+	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
+}
+#endif
 
 int __init drbd_init(void)
 {
@@ -1023,6 +1032,12 @@ int __init drbd_init(void)
 		drbd_conf[i].ee_in_use=0;
 		drbd_init_ee(drbd_conf+i);
 		init_waitqueue_head(&drbd_conf[i].ee_wait);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
+		drbd_conf[i].write_hint_tq.sync	= 0;
+		drbd_conf[i].write_hint_tq.routine = &drbd_send_write_hint;
+		drbd_conf[i].write_hint_tq.data = drbd_conf+i;
+#endif
+
 		{
 			int j;
 			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;

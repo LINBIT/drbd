@@ -787,6 +787,7 @@ inline int receive_barrier(int minor)
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
+	/* TODO: use run_task_queue(&tq_disk); here */
 	drbd_wait_active_ee(drbd_conf+minor);
 
 	spin_lock_irq(&drbd_conf[minor].ee_lock);
@@ -881,31 +882,20 @@ inline int receive_data(int minor,int data_size)
 	}
 
 
-	/* <HACK>
-	 * This is needed to get reasonable performance with protocol C
-	 * while there is no other IO activitiy on the secondary machine.
-	 *
-	 * With the other protocols blocks keep rolling in, and 
-	 * tq_disk is started from __get_request_wait. Since in protocol C
-	 * the PRIMARY machine can not send more blocks because the secondary
-	 * has to finish IO first, we need this.
-	 *
-	 * Actually the primary can send up to NR_REQUEST / 3 blocks,
+	/* Actually the primary can send up to NR_REQUEST / 3 blocks,
 	 * but we already start when we have NR_REQUEST / 4 blocks.
+	 * 
+	 * This code is only with protocol C relevant.
 	 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 #define NUMBER (NR_REQUEST/4)	
 #else
 #define NUMBER 24 
 #endif
-	if(drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
-		if(atomic_read(&drbd_conf[minor].unacked_cnt) >= NUMBER ) {
-			run_task_queue(&tq_disk);
-		}
+	if(atomic_read(&drbd_conf[minor].unacked_cnt) >= NUMBER ) {
+		run_task_queue(&tq_disk);
 	}
-	// TODO: FIX protocol C with filesystems in synchronous mode.
 #undef NUMBER
-	/* </HACK> */
 
 	drbd_conf[minor].recv_cnt+=data_size>>10;
 	
@@ -1169,6 +1159,10 @@ void drbdd(int minor)
 			drbd_conf[minor].gen_cnt[Consistent]=1;
 			drbd_md_write(minor);
 			break;
+		case WriteHint:
+			run_task_queue(&tq_disk);
+			break;
+
 		default:
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: unknown packet type!\n", minor);
