@@ -69,7 +69,7 @@ case "$OPTION" in
 		setLocal $CONFIG $RESOURCE
 		$INSTALL/drbd $RESOURCE start
 
-		if [ $SAFE != "false" ]; then
+		if [ "$SAFE" != "false" ]; then
 			if [ -e $STATE/"$RESOURCE"_safe ]; then
 				logger -t "datadisk" "Safe mode : It seems that the resource $RESOURCE didn't stop properly"
 				echo "It seems that the node didn't stop properly"
@@ -81,7 +81,7 @@ case "$OPTION" in
 					echo
 				done
 
-				if [ $ACTION !="c" -o $ACTION !="C" ]; then
+				if [ $ACTION != "c" -o $ACTION != "C" ]; then
 					logger -t "datadisk" "User requested us to continue"
 				else
 					logger -t "datadisk" "User requested us to reboot the server"
@@ -142,12 +142,12 @@ case "$OPTION" in
 		;;
 
 	stop)
-	        if [ -z "$RESOURCE" ]; then
-         	   runForAll stop
-	            exit $RETVAL
-        	fi
+        if [ -z "$RESOURCE" ]; then
+       	   runForAll stop
+            exit $RETVAL
+       	fi
 
-		if [ $SAFE != "false" ]; then
+		if [ "$SAFE" != "false" ]; then
 			logger -t "datadisk" "Safe mode : Clean shutdown for $RESOURCE"
 			rm -f $STATE/"$RESOURCE"_safe 2> /dev/null
 		fi
