@@ -1,12 +1,12 @@
 drbd (0.7.2-1) unstable; urgency=low
 
-  * Propper handling of backing storage devices that occasionally fail 
+  * Proper handling of backing storage devices that occasionally fail 
     READA (=read ahead) requests. (E.g. LVM and MD)
   * DRBD now fails READA requests itself, if a resynchronisation is running
     and it would need to fetch the block from its peer.
   * "drbdadm adjust" had a race, which caused random errors. ( Missing
     waitpid() ). Fixed now.
-  * Popper substract SyncPause times from the syncer performance numbers.
+  * Proper subtract SyncPause times from the syncer performance numbers.
   * Fix to the syncer progress bar in /proc/drbd.
   * Fix to debian build rules.
 
@@ -57,12 +57,12 @@ drbd (0.7_pre10-1) unstable; urgency=low
   * A fix to a generic bug in the bitmap code introduced with the -pre9
     release (with the 64 bit work)
   * A fix to a bug in the bitmap code only relevant for 64 bit platforms.
-  * Better 2.4.x compatibility and compatiblity to 2.4.x vendor kernels.
+  * Better 2.4.x compatibility and compatibility to 2.4.x vendor kernels.
   * Improvements in the way to deal with incompatible protocol releases.
   * Added the "dialog-refresh" config option.
 
   changes up to -pre9:
-  * Reenabled zero copy IO for protocols B and C. (Zero copy IO is not
+  * Re-enabled zero copy IO for protocols B and C. (Zero copy IO is not
     used with protocol A)
   * Implemented the unpopular user dialog in the boot process.
   * Some fixes for Linux-2.4.x compatibility.

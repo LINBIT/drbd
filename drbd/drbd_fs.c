@@ -370,9 +370,9 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	else i = new_conf.meta_index+1;
 
 	/* for internal, we need to check agains <= (then we have a drbd with
-	 * zero size, but meta data...) to be on the safe side, I require 64MB
+	 * zero size, but meta data...) to be on the safe side, I require 32MB
 	 * minimal data storage area for drbd with internal meta data (thats
-	 * 192 total).  if someone wants to use that small devices, she can use
+	 * 160 total).  if someone wants to use that small devices, she can use
 	 * drbd 0.6 anyways...
 	 *
 	 * FIXME this is arbitrary and needs to be reconsidered as soon as we

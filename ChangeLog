@@ -1,12 +1,12 @@
 0.7.2 (api:75/proto:74)
 -----
-  *) Propper handling of backing storage devices that occasionally fail 
+  *) Proper handling of backing storage devices that occasionally fail 
      READA (=read ahead) requests. (E.g. LVM and MD)
   *) DRBD now fails READA requests itself, if a resynchronisation is running
      and it would need to fetch the block from its peer.
   *) "drbdadm adjust" had a race, which caused random errors. ( Missing
      waitpid() ). Fixed now.
-  *) Popper substract SyncPause times from the syncer performance numbers.
+  *) Proper subtract SyncPause times from the syncer performance numbers.
   *) Fix to the syncer progress bar in /proc/drbd.
   *) Fix to debian build rules.
 	 
