@@ -308,7 +308,10 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			schedule();
 			spin_lock_irq(&mdev->ee_lock);
 			finish_wait(&mdev->ee_wait, &wait);
-			if (signal_pending(current)) return 0;
+			if (signal_pending(current)) {
+				WARN("drbd_get_ee interrupted!\n");
+				return 0;
+			}
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
 			_drbd_process_ee(mdev,&mdev->done_ee);
@@ -698,15 +701,6 @@ int drbd_connect(drbd_dev *mdev)
 
 	set_cstate(mdev,WFReportParams);
 
-	/* in case one of the other threads said: restart_nowait(receiver),
-	 * it may still hang around itself.  make sure threads are
-	 * really stopped before trying to restart them.
-	 * drbd_disconnect should have taken care of that, but I still
-	 * get these "resync inactive, but callback triggered".
-	 *
-	 * and I saw "connection lost... established", and no more
-	 * worker thread :(
-	 */
 	D_ASSERT(mdev->asender.task == NULL);
 
 	drbd_thread_start(&mdev->asender);
@@ -795,6 +789,8 @@ read_in_block(drbd_dev *mdev, int data_size)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
+		WARN("short read receiving data block: read %d expected %d\n",
+			rr, data_size);
 		return 0;
 	}
 	mdev->recv_cnt+=data_size>>9;
@@ -1011,7 +1007,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 
 	e = read_in_block(mdev,data_size);
-	ERR_IF(!e) return FALSE;
+	if (!e) return FALSE;
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
 
 	if(!inc_local(mdev)) {
@@ -1117,7 +1113,12 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		 * resync data block.
 		 * the drbd_work_queue mechanism is made for this...
 		 */
-		drbd_rs_begin_io(mdev,sector);
+		if (!drbd_rs_begin_io(mdev,sector)) {
+			// we have been interrupted, probably connection lost!
+			D_ASSERT(signal_pending(current));
+			drbd_put_ee(mdev,e);
+			return 0;
+		}
 		break;
 	default:
 		D_ASSERT(0);
@@ -1157,6 +1158,117 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	return ok;
 }
 
+STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
+{
+	int have_good,sync;
+
+	have_good = drbd_md_compare(mdev,p);
+
+	if(have_good==0) {
+		if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
+			/* gen counts compare the same, but I have the
+			 * PrimaryIndicator set.  so the peer has, too
+			 * (otherwise this would not compare the same).
+			 * so we had a split brain!
+			 *
+			 * FIXME maybe log MDF_SplitBran into metadata,
+			 * and refuse to do anything until told otherwise!
+			 *
+			 * for now: just go StandAlone.
+			 */
+			ALERT("Split-Brain detected, dropping connection!\n");
+			set_cstate(mdev,StandAlone);
+			drbd_thread_stop_nowait(&mdev->receiver);
+			return FALSE;
+		}
+		sync=0;
+	} else {
+		sync=1;
+	}
+
+	drbd_dump_md(mdev,p,0);
+	// INFO("have_good=%d sync=%d\n", have_good, sync);
+
+	if (have_good > 0 && !drbd_md_test_flag(mdev,MDF_Consistent)) {
+		/* doh. I cannot become SyncSource when I am inconsistent!
+		 */
+		ERR("I shall become SyncSource, but I am inconsistent!\n");
+		set_cstate(mdev,StandAlone);
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return FALSE;
+	}
+	if (have_good < 0 &&
+	    !(be32_to_cpu(p->gen_cnt[Flags]) & MDF_Consistent) ) {
+		/* doh. Peer cannot become SyncSource when inconsistent
+		 */
+		ERR("I shall become SyncTarget, but Peer is inconsistent!\n");
+		set_cstate(mdev,StandAlone);
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return FALSE;
+	}
+
+	if ( mdev->sync_conf.skip && sync ) {
+		if (have_good == 1)
+			set_cstate(mdev,SkippedSyncS);
+		else // have_good == -1
+			set_cstate(mdev,SkippedSyncT);
+		return TRUE;
+	}
+
+	if( sync ) {
+		if(have_good == 1) {
+			D_ASSERT(drbd_md_test_flag(mdev,MDF_Consistent));
+			set_cstate(mdev,WFBitMapS);
+			wait_event(mdev->cstate_wait,
+			     atomic_read(&mdev->ap_bio_cnt)==0);
+			drbd_send_bitmap(mdev);
+		} else { // have_good == -1
+			if ( (mdev->state == Primary) &&
+			     drbd_md_test_flag(mdev,MDF_Consistent) ) {
+				/* FIXME
+				 * allow Primary become SyncTarget if it was
+				 * diskless, and now had a storage reattached.
+				 * only somewhere the MDF_Consistent flag is
+				 * set where it should not... I think.
+				 */
+				ERR("Current Primary shall become sync TARGET!"
+				    " Aborting to prevent data corruption.\n");
+				set_cstate(mdev,StandAlone);
+				drbd_thread_stop_nowait(&mdev->receiver);
+				return FALSE;
+			}
+			drbd_md_clear_flag(mdev,MDF_Consistent);
+			set_cstate(mdev,WFBitMapT);
+		}
+	} else {
+		set_cstate(mdev,Connected);
+		if(mdev->rs_total) {
+			if (drbd_md_test_flag(mdev,MDF_Consistent)) {
+				/* We are not going to do a resync but there
+				   are marks in the bitmap.
+				   (Could be from the AL, or someone used
+				   the write_gc.pl program)
+				   Clean the bitmap...
+				 */
+				INFO("No resync -> clearing bit map.\n");
+				drbd_bm_set_all(mdev);
+				drbd_bm_write(mdev);
+			} else {
+				WARN("I am inconsistent, but there is no sync? BOTH nodes inconsistent!\n");
+			}
+		}
+	}
+
+	if (have_good == -1) {
+		/* Sync-Target has to adopt source's gen_cnt. */
+		int i;
+		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
+			mdev->gen_cnt[i]=be32_to_cpu(p->gen_cnt[i]);
+		}
+	}
+	return TRUE;
+}
+
 STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
@@ -1194,12 +1306,21 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	if(p_size == 0 && test_bit(DISKLESS,&mdev->flags)) {
 		ERR("some backing storage is needed\n");
+		set_cstate(mdev,StandAlone);
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
 
 	drbd_bm_lock(mdev);
 	mdev->p_size=p_size;
+
+	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
+
+/*lge:
+ * FIXME
+ * please get the order of tests (re)settings for consider_sync
+ * right, and comment them!
+ */
 
 	consider_sync = (mdev->cstate == WFReportParams);
 	if(drbd_determin_dev_size(mdev)) consider_sync=0;
@@ -1226,8 +1347,23 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if(!p_size) {
-		if (!test_and_set_bit(PARTNER_DISKLESS, &mdev->flags))
+		/* no point in trying to sync a diskless peer: */
+		consider_sync = 0;
+		if (!test_and_set_bit(PARTNER_DISKLESS, &mdev->flags)) {
+			/* if we got here, we *do* have a disk.
+			 * but it may be inconsistent...
+			 * anyways, record that next time we need a full sync.
+			 */
+			clear_bit(PARTNER_CONSISTENT, &mdev->flags);
+			drbd_md_set_flag(mdev,MDF_FullSync);
+			drbd_md_write(mdev);
+			/* actually we'd need to bm_fill_bm(,-1); drbd_write_bm(mdev);
+			 * but this is not necessary _now_.
+			 * we have the MDF_FullSync bit on disk.
+			 * on the next _drbd_send_bitmap this will be done.
+			 */
 			WARN("PARTNER DISKLESS\n");
+		}
 		if(mdev->cstate >= Connected ) {
 			if(mdev->state == Primary) tl_clear(mdev);
 			if(mdev->state == Primary ||
@@ -1246,76 +1382,19 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			WARN("Partner no longer diskless\n");
 	}
 
+	if (be32_to_cpu(p->gen_cnt[Flags]) & MDF_Consistent) {
+		set_bit(PARTNER_CONSISTENT, &mdev->flags);
+	} else {
+		clear_bit(PARTNER_CONSISTENT, &mdev->flags);
+	}
+
 	if (mdev->cstate == WFReportParams) {
 		INFO("Connection established.\n");
 	}
 
 	if (consider_sync) {
-		int have_good,sync;
-
-		have_good = drbd_md_compare(mdev,p);
-
-		if(have_good==0) sync=0;
-		else sync=1;
-
-		drbd_dump_md(mdev,p,0);
-		//INFO("have_good=%d sync=%d\n", have_good, sync);
-
-		if ( mdev->sync_conf.skip && sync ) {
-			if (have_good == 1)
-				set_cstate(mdev,SkippedSyncS);
-			else // have_good == -1
-				set_cstate(mdev,SkippedSyncT);
-			goto skipped;
-		}
-
-		if( sync ) {
-			if(have_good == 1) {
-				set_cstate(mdev,WFBitMapS);
-				wait_event(mdev->cstate_wait,
-				     atomic_read(&mdev->ap_bio_cnt)==0);
-				drbd_send_bitmap(mdev);
-			} else { // have_good == -1
-				if ( (mdev->state == Primary) &&
-				     (mdev->gen_cnt[Flags] & MDF_Consistent) ) {
-					/* FIXME
-					 * allow Primary become SyncTarget if it was diskless, and now had a storage reattached.
-					 * only somewhere the MDF_Consistent flag is set where it should not... I think.
-					 */
-					ERR("Current Primary shall become sync TARGET! Aborting to prevent data corruption.\n");
-					set_cstate(mdev,StandAlone);
-					drbd_thread_stop_nowait(&mdev->receiver);
-					drbd_bm_unlock(mdev);
-					return FALSE;
-				}
-				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-				set_cstate(mdev,WFBitMapT);
-			}
-		} else {
-			set_cstate(mdev,Connected);
-			if(drbd_bm_total_weight(mdev)) {
-				/* We are not going to do a resync but there
-				   are marks in the bitmap.
-				   (Could be from the AL, or someone used
-				   the write_gc.pl program)
-				   Clean the bitmap...
-				 */
-				INFO("No resync -> clearing bit map.\n");
-				drbd_bm_clear_all(mdev);
-				drbd_bm_write(mdev);
-			}
-		}
-
-		if (have_good == -1) {
-			/* Sync-Target has to adopt source's gen_cnt. */
-			int i;
-			for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-				mdev->gen_cnt[i]=be32_to_cpu(p->gen_cnt[i]);
-			}
-		}
+		if (!drbd_sync_handshake(mdev,p)) return FALSE;
 	}
-
-skipped:	// do not adopt gen counts when sync was skipped ...
 
 	if (mdev->cstate == WFReportParams) set_cstate(mdev,Connected);
 	// see above. if (p_size && mdev->cstate==Connected) clear_bit(PARTNER_DISKLESS,&mdev->flags);
@@ -1326,8 +1405,11 @@ skipped:	// do not adopt gen counts when sync was skipped ...
 		drbd_md_inc(mdev,ConnectedCnt);
 	}
 	if (oo_state != mdev->o_state) {
-		INFO( "now %s/%s\n", nodestate_to_name(mdev->state),
-				nodestate_to_name(mdev->o_state) );
+		INFO( "%s/%s --> %s/%s\n",
+		      nodestate_to_name(mdev->state),
+		      nodestate_to_name(oo_state),
+		      nodestate_to_name(mdev->state),
+		      nodestate_to_name(mdev->o_state) );
 	}
 
 	drbd_md_write(mdev); // update connected indicator, la_size, ...
@@ -1586,6 +1668,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	D_ASSERT(mdev->oldest_barrier->n_req == 0);
 
 	// both
+	clear_bit(PARTNER_CONSISTENT, &mdev->flags);
 	clear_bit(PARTNER_DISKLESS,&mdev->flags);
 
 	D_ASSERT(mdev->ee_in_use == 0);
@@ -1622,7 +1705,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	if ( mdev->state == Primary &&
 	    ( test_bit(DISKLESS,&mdev->flags)
-	    || !(mdev->gen_cnt[Flags] & MDF_Consistent) ) ) {
+	    || !drbd_md_test_flag(mdev,MDF_Consistent) ) ) {
 		drbd_panic("Sorry, I have no access to good data anymore.\n");
 	}
 
@@ -1748,10 +1831,11 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
-#if 0
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+#if 0
 	sector_t sector = be64_to_cpu(p->sector);
 	int size = be32_to_cpu(p->blksize);
+#endif
 
 	/* do nothing here.
 	 * we expect to get a "report param" on the data socket soon,
@@ -1759,7 +1843,9 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	 */
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
-	} else {
+	}
+#if 0
+	else {
 		D_ASSERT(bm_get_bit(mdev->mbds_id,sector,size));
 		// tl_clear() must have set this out of sync!
 		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);

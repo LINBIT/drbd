@@ -280,20 +280,26 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define RQ_DRBD_IN_TL     0x0040
 
 enum MetaDataFlags {
-	MDF_Consistent   = 1,
-	MDF_PrimaryInd   = 2,
-	MDF_ConnectedInd = 4,
+	__MDF_Consistent,
+	__MDF_PrimaryInd,
+	__MDF_ConnectedInd,
+	__MDF_FullSync,
 };
+#define MDF_Consistent      (1<<__MDF_Consistent)
+#define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
+#define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
+#define MDF_FullSync        (1<<__MDF_FullSync)
+
 /* drbd_meta-data.c (still in drbd_main.c) */
 enum MetaDataIndex {
 	Flags,          /* Consistency flag,connected-ind,primary-ind */
 	HumanCnt,       /* human-intervention-count */
 	TimeoutCnt,     /* timout-count */
 	ConnectedCnt,   /* connected-count */
-	ArbitraryCnt    /* arbitrary-count */
+	ArbitraryCnt,   /* arbitrary-count */
+	GEN_CNT_SIZE	// MUST BE LAST! (and Flags must stay first...)
 };
 
-#define GEN_CNT_SIZE 5
 #define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
 
 #define DRBD_PANIC 2
@@ -606,9 +612,11 @@ enum {
 	UNPLUG_REMOTE,		// whether sending a "WriteHint" makes sense
 	DISKLESS,		// no local disk
 	PARTNER_DISKLESS,	// partner has no storage
+	PARTNER_CONSISTENT,	// partner has consistent data
 	PROCESS_EE_RUNNING,	// eek!
 	MD_IO_ALLOWED,		// EXPLAIN
 	SENT_DISK_FAILURE,	// sending it once is enough
+	MD_DIRTY,		// current gen counts and flags not yet on disk
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf
@@ -783,11 +791,9 @@ extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 extern void drbd_dump_md(drbd_dev *, Drbd_Parameter_Packet *, int );
 // maybe define them below as inline?
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
-/* comming soon {
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
 extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
 extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
-} */
 
 /* Meta data layout
    We reserve a 128MB Block (4k aligned)
@@ -855,6 +861,7 @@ struct bm_extent {
 
 /* in one sector of the bitmap, we have this many activity_log extents. */
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B) )
+#define BM_WORDS_PER_AL_EXT (1 << (AL_EXTENT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 
 
 /* I want the packet to fit within one page
@@ -886,12 +893,12 @@ extern void drbd_bm_reset_find(drbd_dev *mdev);
 extern int  drbd_bm_set_bit   (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_clear_bit (drbd_dev *mdev, unsigned long bitnr);
-extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned int enr);
-extern int  drbd_bm_read_sect (drbd_dev *mdev, sector_t offset);
-extern int  drbd_bm_write_sect(drbd_dev *mdev, sector_t offset);
+extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
+extern int  drbd_bm_read_sect (drbd_dev *mdev, unsigned long enr);
+extern int  drbd_bm_write_sect(drbd_dev *mdev, unsigned long enr);
 extern void drbd_bm_read      (drbd_dev *mdev);
 extern void drbd_bm_write     (drbd_dev *mdev);
-extern unsigned long drbd_bm_e_set_all   (drbd_dev *mdev, unsigned int enr);
+extern unsigned long drbd_bm_ALe_set_all (drbd_dev *mdev, unsigned long al_enr);
 extern size_t        drbd_bm_words       (drbd_dev *mdev);
 extern unsigned long drbd_bm_find_next   (drbd_dev *mdev);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
@@ -1077,6 +1084,14 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 			drbd_panic("IO error on backing device!\n");
 			break;
 		case Detach:
+			/*lge:
+			 *  I still do not fully grasp when to set or clear
+			 *  this flag... but I want to be able to at least
+			 *  still _try_ and write the "I am inconsistent, and
+			 *  need full sync" information to the MD. */
+			set_bit(MD_IO_ALLOWED,&mdev->flags);
+			drbd_md_set_flag(mdev,MDF_FullSync);
+			drbd_md_clear_flag(mdev,MDF_Consistent);
 			if (!test_and_set_bit(DISKLESS,&mdev->flags)) {
 				smp_mb(); // Nack is sent in w_e handlers.
 				ERR("Local IO failed. Detaching...\n");

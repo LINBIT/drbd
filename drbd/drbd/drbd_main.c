@@ -348,6 +348,11 @@ void tl_clear(drbd_dev *mdev)
  * drbd_io_error: Handles the on_io_error setting, should be called in the
  * unlikely(!drbd_bio_uptodate(e->bio)) case from kernel thread context.
  * See also drbd_chk_io_error
+ *
+ * NOTE: we set ourselves DISKLESS here.
+ * But we try to write the "need full sync bit" here anyways.  This is to make sure
+ * that you get a resynchronisation of the full device the next time you
+ * connect.
  */
 int drbd_io_error(drbd_dev* mdev)
 {
@@ -359,19 +364,29 @@ int drbd_io_error(drbd_dev* mdev)
 	D_ASSERT(test_bit(DISKLESS,&mdev->flags));
 	ok = drbd_send_param(mdev,0);
 	WARN("Notified peer that my disk is broken.\n");
+
+	D_ASSERT(drbd_md_test_flag(mdev,MDF_FullSync));
+	D_ASSERT(!drbd_md_test_flag(mdev,MDF_Consistent));
+	if (test_bit(MD_DIRTY,&mdev->flags)) {
+		// try to get "inconsistent, need full sync" to MD
+		drbd_md_write(mdev);
+	}
+
 	if(mdev->cstate > Connected ) {
 		WARN("Resync aborted.\n");
-		if(mdev->cstate == SyncTarget)
-			set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		set_cstate(mdev,Connected);
 	}
 	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
 		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
 		WARN("Not releasing backing storage device.\n");
+		/* FIXME if there *are* still references,
+		 * we should be here again soon enough.
+		 * but what if not?
+		 * we still should free our ll and md devices */
 	} else {
-		/* FIXME I see a race here, with local_cnt... no?
-		 * it it is harmless, please EXPLAIN why.
-		 */
+		/* no race. since the DISKLESS bit is set first,
+		 * further references to local_cnt are shortlived,
+		 * and no real references on the device. */
 		WARN("Releasing backing storage device.\n");
 		drbd_free_ll_dev(mdev);
 		mdev->la_size=0;
@@ -431,7 +446,11 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	smp_mb();
 	wake_up(&mdev->cstate_wait);
 
-	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
+	/* THINK.
+	 * was:
+	 * if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
+	 */
+	if ( ( os >= SyncSource ) && ns <= Connected ) {
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
@@ -654,6 +673,7 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !sc->skip )
 	{
+		/* FIXME EXPLAIN. I think this cannot work properly! -lge */
 		set_cstate(mdev,WFReportParams);
 		ok = drbd_send_param(mdev,0);
 	}
@@ -663,10 +683,11 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 int drbd_send_param(drbd_dev *mdev, int flags)
 {
 	Drbd_Parameter_Packet p;
-	int ok,i;
+	int i, ok, have_disk;
 	unsigned long m_size; // sector_t ??
 
-	if(!test_bit(DISKLESS,&mdev->flags) || test_bit(MD_IO_ALLOWED,&mdev->flags)) {
+	have_disk=inc_local_md_only(mdev);
+	if(have_disk) {
 		D_ASSERT(mdev->backing_bdev);
 		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
 		else m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
@@ -679,8 +700,8 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
 	p.version  = cpu_to_be32(PRO_VERSION);
 
-	for(i=Flags;i<=ArbitraryCnt;i++) {
-		p.gen_cnt[i]     = cpu_to_be32(mdev->gen_cnt[i]);
+	for (i = Flags; i < GEN_CNT_SIZE; i++) {
+		p.gen_cnt[i] = cpu_to_be32(mdev->gen_cnt[i]);
 	}
 	p.sync_rate      = cpu_to_be32(mdev->sync_conf.rate);
 	p.sync_use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
@@ -689,6 +710,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	p.flags          = cpu_to_be32(flags);
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportParams,(Drbd_Header*)&p,sizeof(p));
+	if (have_disk) dec_local(mdev);
 	return ok;
 }
 
@@ -707,6 +729,21 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
 	buffer = (unsigned long*)p->payload;
 
+	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
+		if (unlikely(test_bit(DISKLESS,&mdev->flags))) {
+			/* write_bm did fail! panic.
+			 * FIXME can we do something better than panic?
+			 */
+			drbd_panic("Failed to write bitmap to disk\n!");
+			ok = FALSE;
+			goto out;
+		}
+		drbd_md_clear_flag(mdev,MDF_FullSync);
+		drbd_md_write(mdev);
+	}
+
 	/*
 	 * maybe TODO use some simple compression scheme, nowadays there are
 	 * some such algorithms in the kernel anyways.
@@ -722,6 +759,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 		bm_i += num_words;
 	} while (ok && want);
 
+  out:
 	vfree(p);
 	return ok;
 }
@@ -826,6 +864,10 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	return drop_it; /* && (mdev->state == Primary) */;
 }
 
+#if 0
+/* I suspect this zero copy code somehow is plain wrong!
+ * btw, uml network sockets don't have zero copy,
+ * and fall back to sock_no_sendpage in tcp_sendpage... */
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
 {
@@ -863,6 +905,16 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		mdev->send_cnt += size>>9;
 	return ok;
 }
+#else
+int _drbd_send_page(drbd_dev *mdev, struct page *page,
+		    int offset, size_t size)
+{
+	int ret;
+	ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+	kunmap(page);
+	return ret;
+}
+#endif
 
 // Used to send write requests: bh->b_rsector !!
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
@@ -915,7 +967,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		tl_add(mdev,req);
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
-		ok = (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p));
+		ok = drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p);
 		if(ok) {
 			ok = _drbd_send_zc_bio(mdev,&req->private_bio);
 		}
@@ -1545,6 +1597,8 @@ int __init drbd_init(void)
 	SZO(struct bm_extent);
 	SZO(struct lc_element);
 	SZO(struct semaphore);
+	SZO(struct drbd_request);
+	SZO(struct bio);
 	SZO(wait_queue_head_t);
 	SZO(spinlock_t);
 	return -EBUSY;
@@ -1726,7 +1780,7 @@ NOT_IN_26(
 void drbd_free_ll_dev(drbd_dev *mdev)
 {
 	struct file *lo_file;
-	
+
 	lo_file = mdev->lo_file;
 	mdev->lo_file = 0;
 	wmb();
@@ -1794,17 +1848,18 @@ void drbd_md_write(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-	if(!inc_local_md_only(mdev)) return;
+	ERR_IF(!inc_local_md_only(mdev)) return;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
+	memset(buffer,0,512);
 
-	flags=mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
-	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
-	if(mdev->cstate>=WFReportParams) flags |= MDF_ConnectedInd;
-	mdev->gen_cnt[Flags]=flags;
+	flags = mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
+	if (mdev->state  == Primary)        flags |= MDF_PrimaryInd;
+	if (mdev->cstate >= WFReportParams) flags |= MDF_ConnectedInd;
+	mdev->gen_cnt[Flags] = flags;
 
-	for(i=Flags;i<=ArbitraryCnt;i++)
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
 		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev)>>1);
 	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
@@ -1817,14 +1872,45 @@ void drbd_md_write(drbd_dev *mdev)
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
 
-	/* FIXME what if this fails ?? */
-	drbd_md_sync_page_io(mdev,sector,WRITE);
+#if 0
+	/* FIXME sooner or later I'd like to use the MD_DIRTY flag everywhere,
+	 * so we can avoid unneccessary md writes.
+	 */
+	ERR_IF (!test_bit(MD_DIRTY,&mdev->flags)) {
+		dump_stack();
+	}
+#endif
+
+	if (drbd_md_sync_page_io(mdev,sector,WRITE)) {
+		clear_bit(MD_DIRTY,&mdev->flags);
+	} else {
+		if (test_bit(DISKLESS,&mdev->flags)) {
+			/* this was a try anyways ... */
+			ERR("meta data update failed!\n");
+		} else {
+			/* If we cannot write our meta data,
+			 * but we are supposed to be able to,
+			 * tough!
+			 */
+			drbd_panic("meta data update failed!\n");
+		}
+	}
+
+	// why is this here?? please EXPLAIN.
 	mdev->la_size = drbd_get_capacity(mdev->this_bdev)>>1;
 
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 }
 
+/*
+ * return:
+ *   < 0 if we had an error (currently never ...)
+ *   = 0 if we need a FullSync because either the flag is set,
+ *       or the gen counts are invalid
+ *   > 0 if we could read valid gen counts,
+ *       and reading the bitmap and act log does make sense.
+ */
 int drbd_md_read(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
@@ -1854,7 +1940,7 @@ int drbd_md_read(drbd_dev *mdev)
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 
-	return 1;
+	return !drbd_md_test_flag(mdev,MDF_FullSync);
 
  err:
 	up(&mdev->md_io_mutex);
@@ -1862,8 +1948,16 @@ int drbd_md_read(drbd_dev *mdev)
 
 	INFO("Creating state block\n");
 
-	for(i=HumanCnt;i<=ArbitraryCnt;i++) mdev->gen_cnt[i]=1;
-	mdev->gen_cnt[Flags]=MDF_Consistent;
+	/* if we need to create a state block, we are
+	 * not consistent, and need a sync of the full device!
+	 * if one knows what he is doing, he can manipulate gcs by hand,
+	 * and avoid the initial full sync...
+	 * otherwise, one of us will have to be forced (--do-what-I-say)
+	 * to be primary, before anything is usable.
+	 */
+	set_bit(MD_DIRTY,&mdev->flags);
+	mdev->gen_cnt[Flags] = MDF_FullSync;
+	for(i = HumanCnt; i < GEN_CNT_SIZE; i++) mdev->gen_cnt[i]=1;
 
 /* FIXME might have IO errors! */
 	drbd_md_write(mdev);
@@ -1896,6 +1990,8 @@ void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 			PeGC(ArbitraryCnt),
 			PeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
 			PeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
+	} else {
+		INFO("Peer Unknown.\n");
 	}
 	if (verbose) {
 		/* TODO
@@ -1920,6 +2016,18 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	int i;
 	u32 me,other;
 
+	/* FIXME
+	 * we should not only rely on the consistent bit, but at least check
+	 * whether the rest of the gencounts is plausible, to detect a previous
+	 * split brain situation, and refuse anything until we are told
+	 * otherwise!
+	 *
+	 * And we should refuse to become SyncSource if we are not consistent!
+	 *
+	 * though DRBD is not to blame for it,
+	 * someone eventually will try to blame it ...
+	 */
+
 	me=mdev->gen_cnt[Flags] & MDF_Consistent;
 	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_Consistent;
 	if( me > other ) return 1;
@@ -1940,9 +2048,29 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	return 0;
 }
 
+/* THINK do these have to be protected by some lock ? */
 void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
 {
+	set_bit(MD_DIRTY,&mdev->flags);
 	mdev->gen_cnt[order]++;
+}
+void drbd_md_set_flag(drbd_dev *mdev, int flag)
+{
+	if ( (mdev->gen_cnt[Flags] & flag) != flag) {
+		set_bit(MD_DIRTY,&mdev->flags);
+		mdev->gen_cnt[Flags] |= flag;
+	}
+}
+void drbd_md_clear_flag(drbd_dev *mdev, int flag)
+{
+	if ( (mdev->gen_cnt[Flags] & flag) != 0 ) {
+		set_bit(MD_DIRTY,&mdev->flags);
+		mdev->gen_cnt[Flags] &= ~flag;
+	}
+}
+int drbd_md_test_flag(drbd_dev *mdev, int flag)
+{
+	return ((mdev->gen_cnt[Flags] & flag) != 0);
 }
 
 module_init(drbd_init)

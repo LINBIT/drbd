@@ -259,7 +259,7 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	if ( --e->refcnt == 0) {
 		list_move(&e->list,&lc->lru); // move it to the front of LRU.
 		clear_bit(__LC_STARVING,&lc->flags);
-		smp_mb__after_clear_bit();		
+		smp_mb__after_clear_bit();
 	}
 	RETURN(e->refcnt);
 }

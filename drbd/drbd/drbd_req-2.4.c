@@ -146,7 +146,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector, nr_sectors;
 
-	if (mdev->gen_cnt[Flags] & MDF_Consistent) return 1;
+	if (drbd_md_test_flag(mdev,MDF_Consistent)) return 1;
 
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
@@ -192,7 +192,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * the connection *after* we test for the cstate.
 	 */
 	if ( (    test_bit(DISKLESS,&mdev->flags)
-	      || !(mdev->gen_cnt[Flags] & MDF_Consistent)
+	      || !drbd_md_test_flag(mdev,MDF_Consistent)
 	     ) && mdev->cstate < Connected )
 	{
 		ERR("Sorry, I have no access to good data anymore.\n");
@@ -260,7 +260,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				dec_local(mdev);
 			}
 		}
-		remote = !local;
+		remote = !local && test_bit(PARTNER_CONSISTENT, &mdev->flags);
 	} else {
 		remote = 1;
 	}

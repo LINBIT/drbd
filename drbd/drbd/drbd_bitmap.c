@@ -446,12 +446,12 @@ void drbd_bm_set_all(drbd_dev *mdev)
 
 /* read one sector of the on disk bitmap into memory.
  * on disk bitmap is little endian.
- * @sector is _sector_ offset from start of on disk bitmap (aka bm-extent nr).
+ * @enr is _sector_ offset from start of on disk bitmap (aka bm-extent nr).
  * returns 0 on success, -EIO on failure
  */
-int drbd_bm_read_sect(drbd_dev *mdev,sector_t sector)
+int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 {
-	sector_t on_disk_sector = sector + drbd_md_ss(mdev) + MD_BM_OFFSET;
+	sector_t on_disk_sector = enr + drbd_md_ss(mdev) + MD_BM_OFFSET;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global ...
@@ -459,11 +459,11 @@ int drbd_bm_read_sect(drbd_dev *mdev,sector_t sector)
 	down(&mdev->md_io_mutex);
 	if(drbd_md_sync_page_io(mdev,on_disk_sector,READ)) {
 		bm_words  = drbd_bm_words(mdev);
-		offset    = S2W(sector);	// word offset into bitmap
+		offset    = S2W(enr);	// word offset into bitmap
 		num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
 	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
-			(unsigned long) sector, offset, num_words);
+			enr, offset, num_words);
 #endif
 		drbd_bm_set_lel( mdev, offset, num_words,
 				 page_address(mdev->md_io_page) );
@@ -472,11 +472,11 @@ int drbd_bm_read_sect(drbd_dev *mdev,sector_t sector)
 		err = -EIO;
 		ERR( "IO ERROR reading bitmap sector %lu "
 		     "(meta-disk sector %lu)\n",
-		     (unsigned long)sector, (unsigned long)on_disk_sector );
+		     enr, (unsigned long)on_disk_sector );
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
-			drbd_bm_e_set_all(mdev,sector*AL_EXT_PER_BM_SECT+i);
+			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
 	}
 	up(&mdev->md_io_mutex);
 	return err;
@@ -509,23 +509,23 @@ void drbd_bm_read(struct Drbd_Conf *mdev)
  * drbd_bm_write_sect: Writes a 512 byte piece of the bitmap to its
  * on disk location. On disk bitmap is little endian.
  *
- * @sector: The _sector_ offset from the start of the bitmap.
+ * @enr: The _sector_ offset from the start of the bitmap.
  *
  */
-int drbd_bm_write_sect(struct Drbd_Conf *mdev,sector_t sector)
+int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 {
-	sector_t on_disk_sector = sector + drbd_md_ss(mdev) + MD_BM_OFFSET;
+	sector_t on_disk_sector = enr + drbd_md_ss(mdev) + MD_BM_OFFSET;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global...
 
 	down(&mdev->md_io_mutex);
 	bm_words  = drbd_bm_words(mdev);
-	offset    = S2W(sector);	// word offset into bitmap
+	offset    = S2W(enr);	// word offset into bitmap
 	num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
 	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
-			(unsigned long) sector, offset, num_words);
+			enr, offset, num_words);
 #endif
 	drbd_bm_get_lel( mdev, offset, num_words,
 			 page_address(mdev->md_io_page) );
@@ -534,11 +534,11 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,sector_t sector)
 		err = -EIO;
 		ERR( "IO ERROR reading bitmap sector %lu "
 		     "(meta-disk sector %lu)\n",
-		     (unsigned long)sector, (unsigned long)on_disk_sector );
+		     enr, (unsigned long)on_disk_sector );
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
-			drbd_bm_e_set_all(mdev,sector*AL_EXT_PER_BM_SECT+i);
+			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
 	}
 	mdev->bm_writ_cnt++;
 	up(&mdev->md_io_mutex);
@@ -723,7 +723,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
  * reference count of some bitmap extent element from some lru instead...
  *
  */
-int drbd_bm_e_weight(drbd_dev *mdev, unsigned int enr)
+int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int count, s, e;
@@ -750,8 +750,8 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned int enr)
 	return count;
 }
 
-/* set all bits covered by the bm-extent enr */
-unsigned long drbd_bm_e_set_all(drbd_dev *mdev, unsigned int enr)
+/* set all bits covered by the AL-extent al_enr */
+unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long weight;
@@ -764,8 +764,8 @@ unsigned long drbd_bm_e_set_all(drbd_dev *mdev, unsigned int enr)
 	BM_PARANOIA_CHECK();
 	weight = b->bm_set;
 
-	s = S2W(enr);
-	e = min((size_t)S2W(enr+1),b->bm_words);
+	s = al_enr * BM_WORDS_PER_AL_EXT;
+	e = min_t(size_t, s + BM_WORDS_PER_AL_EXT, b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
 		const unsigned long* w = b->bm+s;

@@ -40,6 +40,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct completion event;
 	int ok = 0;
 
+	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
+
 	if (!mdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
 			ERR("mdev->md_bdev==NULL\n");
@@ -83,6 +85,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct completion event;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int ok = 0;
+
+	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
 
 	if (!mdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
@@ -475,7 +479,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		add += drbd_bm_e_set_all(mdev, enr);
+		add += drbd_bm_ALe_set_all(mdev, enr);
 	}
 
 	lc_unlock(mdev->act_log);
@@ -584,7 +588,15 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			//WARN("Recounting sectors in %d (resync LRU too small?)\n", enr);
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
-			ext->rs_left = drbd_bm_e_weight(mdev,enr);
+			int rs_left = drbd_bm_e_weight(mdev,enr);
+			if (ext->flags != 0) {
+				WARN("changing resync lce: %d[%u;%02lx]"
+				     " -> %d[%u;00]\n",
+				     ext->lce.lc_number, ext->rs_left,
+				     ext->flags, enr, rs_left);
+				ext->flags = 0;
+			}
+			ext->rs_left = rs_left;
 			lc_changed(mdev->resync,&ext->lce);
 		}
 		lc_put(mdev->resync,&ext->lce);
@@ -607,6 +619,12 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			udw->enr = ext->lce.lc_number;
 			udw->w.cb = w_update_odbm;
 			drbd_queue_work_front(mdev,&mdev->data.work,&udw->w);
+			if (ext->flags != 0) {
+				WARN("deleting resync lce: %d[%u;%02lx]\n",
+				     ext->lce.lc_number, ext->rs_left,
+				     ext->flags);
+				ext->flags = 0;
+			}
 			lc_del(mdev->resync,&ext->lce);
 		}
 	}
@@ -813,12 +831,14 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 		sig = wait_event_interruptible( mdev->al_wait,
 				!_is_in_al(mdev,enr*AL_EXT_PER_BM_SECT+i) );
 		if (sig) {
+			spin_lock_irq(&mdev->al_lock);
 			if( lc_put(mdev->resync,&bm_ext->lce) == 0 ) {
 				clear_bit(BME_NO_WRITES,&bm_ext->flags);
 				atomic_dec(&mdev->resync_locked);
 				wake_up(&mdev->al_wait);
-				return 0;
 			}
+			spin_unlock_irq(&mdev->al_lock);
+			return 0;
 		}
 	}
 

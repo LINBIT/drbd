@@ -205,6 +205,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   nodestate_to_name(drbd_conf[i].o_state),
 			   (drbd_conf[i].gen_cnt[Flags]
 			    & MDF_Consistent) ? "Consistent" : "Inconsistent",
+			// FIXME partner consistent?
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,

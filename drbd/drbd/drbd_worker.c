@@ -349,7 +349,13 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	drbd_request_t *req = (drbd_request_t*)w;
 	int ok;
 
-	// TODO send a "set_out_of_sync" packet to the peer
+	/* FIXME send a "set_out_of_sync" packet to the peer
+	 * in the PassOn case...
+	 * in the Detach (or Panic) case, we (try to) send
+	 * a "we are diskless" param packet anyways, and the peer
+	 * will then set the FullSync bit in the meta data ...
+	 */
+	D_ASSERT(mdev->on_io_error != PassOn);
 
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
@@ -369,7 +375,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	smp_rmb();
 	if ( cancel ||
 	     mdev->cstate < Connected ||
-	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+	     !test_bit(PARTNER_CONSISTENT,&mdev->flags) ) {
 		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
 
 		// does not make much sense, but anyways...
@@ -455,7 +461,9 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		return 0;
 	}
 
-	D_ASSERT(mdev->cstate == SyncTarget);
+	if (mdev->cstate != SyncTarget) {
+		ERR("%s in w_make_resync_request\n", cstate_to_name(mdev->cstate));
+	}
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
@@ -525,8 +533,14 @@ int drbd_resync_finished(drbd_dev* mdev)
 	     dt,(unsigned long)n);
 
 	if (mdev->cstate == SyncTarget) {
-		mdev->gen_cnt[Flags] |= MDF_Consistent;
+		drbd_md_set_flag(mdev,MDF_Consistent);
+		ERR_IF(drbd_md_test_flag(mdev,MDF_FullSync))
+			drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
+	} else if (mdev->cstate == SyncSource) {
+		set_bit(PARTNER_CONSISTENT, &mdev->flags);
+	} else {
+		D_ASSERT(0);
 	}
 
 	// assert that all bit-map parts are cleared.
@@ -665,9 +679,16 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 
 	if(mdev->cstate == SyncTarget) {
 		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+			unsigned long rs_left = drbd_bm_total_weight(mdev);
 			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+			if (rs_left == 0) {
+				INFO("rs_left==0 in _drbd_rs_resume\n");
+			} else {
+				ERR("STOP_SYNC_TIMER was set in "
+				    "_drbd_rs_resume, but rs_left still %lu\n",
+				    rs_left);
+			}
 		}
-		D_ASSERT(drbd_bm_total_weight(mdev) > 0);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
 }
@@ -809,14 +830,21 @@ void drbd_alter_sg(drbd_dev *mdev, int ng)
 void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 {
 	if(side == SyncTarget) {
-		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
+		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_bm_reset_find(mdev);
-	} else {
+	} else if (side == SyncSource) {
+		clear_bit(PARTNER_CONSISTENT, &mdev->flags);
 		/* If we are SyncSource we must be consistent.
 		 * FIXME this should be an assertion only,
 		 * otherwise it masks a logic bug somewhere else...
 		 */
-		mdev->gen_cnt[Flags] |= MDF_Consistent;
+		ERR_IF (!drbd_md_test_flag(mdev,MDF_Consistent)) {
+			// FIXME this is actually a BUG()!
+			drbd_md_set_flag(mdev,MDF_Consistent);
+		}
+	} else {
+		D_ASSERT(0);
+		return;
 	}
 	drbd_md_write(mdev);
 
