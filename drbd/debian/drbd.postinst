@@ -1,6 +1,10 @@
 #!/bin/sh
 
 if [ -x "/etc/init.d/drbd" ]; then
-	update-rc.d drbd defaults 70 08 >/dev/null
+	update-rc.d drbd defaults 70 8 >/dev/null
 fi
+
+# Make sure /dev/nb[0-7] devices exist
+cd /dev; for a in `seq 0 7`; do MAKEDEV nb$a; done
+
 #DEBHELPER#

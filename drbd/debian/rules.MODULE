@@ -1,0 +1,133 @@
+#!/usr/bin/make -f
+# Sample debian/rules that uses debhelper. 
+# GNU copyright 1997 by Joey Hess.
+#
+# This version is for a hypothetical package that builds an
+# architecture-dependant package, as well as an architecture-independent
+# package.
+
+# Uncomment this to turn on verbose mode. 
+#export DH_VERBOSE=1
+
+baseepoch=$(shell expr $(KDREV) : '\([0-9]*\):.*' 2>/dev/null )
+ifneq ($(baseepoch),)
+EPOCH=$(baseepoch):
+endif
+
+REV=$(shell expr $(KDREV) : '[0-9]*:\(.*\)' 2>/dev/null)
+ifeq ($(REV),)
+REV=$(KDREV)
+endif
+
+ARCH=$(shell dpkg --print-architecture)
+PKG_VERSION=$(EPOCH)$(VERSION)+$(REV)
+
+VERSION=$(shell dpkg-parsechangelog | grep ^Version: | cut -d ' ' -f 2)
+
+CHFILE=$(KSRC)/../drbd-source-$(KVERS)_$(PKG_VERSION)_$(ARCH).changes
+
+SMPFLAG=$(shell grep -q '^CONFIG_SMP=y' $(KSRC)/.config && echo "-D__SMP__")
+
+# the main-revision of the kernel
+MAINREV=$(shell echo -n $${KVERS:2:1})
+
+MODNAME=$(shell if [ "$(MAINREV)" -gt "4" ] ;  then \
+		echo -n "drbd.ko"; \
+	else \
+		echo -n "drbd.o"; \
+	fi)
+
+
+
+# This target verifies that we've got the needed variables passed to us.
+# If the user is using make-kpkg (like he should), it won't be a problem.
+# But - some may have a funny preference of using debian/rules directly,
+# so here it is. It's ripped from the lm-sensors rules file, so if I ever
+# meet you, David Z Maze, I'll buy you a beer. :-)
+check:
+	@if [ -z "$(KSRC)" ] ; then \
+		echo "I need KSRC! Please set it on the command line." >&2; \
+		exit 1; \
+	elif [ ! -d "$(KSRC)/include" ] ; then \
+		echo "KRSC is set to $(KRSC), but it does not have a include/" >&2; \
+		echo "subdirectory! Please fix this." >&2; \
+		exit 1; \
+	elif [ -z "$(KVERS)" ] ; then \
+		echo "KVERS is unset, please set it at the command line." >&2; \
+		exit 1; \
+	fi
+
+# This target cleans the source tree and the debian/ subdir. Also moves the
+# original debian/control template back to it's original position (thus
+# overwriting the generated one.
+clean:
+	dh_testdir
+	dh_testroot
+	dh_clean
+
+	sed 's/(KERNEL_VERSION)/dummy/g' debian/control.in > debian/control
+
+	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) clean
+
+# This target builds the kernel module.
+build: build-stamp
+build-stamp: check clean
+	dh_testdir
+	dh_testroot
+
+	cd drbd && $(MAKE)  DRBDSRC=`pwd` SUBDIRS=`pwd`
+
+	touch build-stamp
+
+# This target installs the module to the temporary install directory.
+install: build
+	dh_testdir
+	dh_testroot
+#	install -m 644 -D drbd/$(MODNAME) debian/drbd-modules-$(KVERS)/lib/modules/$(KVERS)/misc/$(MODNAME)
+
+# To conform with Debian policy.
+binary: binary-arch binary-indep
+
+# Generate a control file, and build the Debian package.
+binary-arch: check install
+
+	dh_testdir
+	dh_testroot
+
+	sed 's/(KERNEL_VERSION)/$(KVERS)/g' debian/control.in > \
+		debian/control
+	dh_installdirs lib/modules/$(KVERS)/misc
+	dh_install -m644 drbd/$(MODNAME) lib/modules/$(KVERS)/kernel/drivers/block
+	dh_installdocs
+	dh_installmodules
+	dh_installchangelogs
+	dh_gencontrol -- -v$(PKG_VERSION)
+	dh_fixperms
+	dh_compress
+	dh_installdeb
+	dh_md5sums
+	dh_builddeb --destdir=$(KSRC)/..
+
+# No architecture-independent files to build.
+binary-indep:
+
+kdist_image:
+	$(ROOT_CMD) $(MAKE) $(MFLAGS) -f debian/rules binary
+	$(ROOT_CMD) $(MAKE) $(MFLAGS) -f debian/rules clean
+
+kdist:
+	$(ROOT_CMD) $(MAKE) $(MFLAGS) -f debian/rules clean
+	$(ROOT_CMD) $(MAKE) $(MFLAGS) -f debian/rules binary
+	dpkg-genchanges -b -e"$(KMAINT) <$(KEMAIL)>" -u"$(KSRC)/.." > $(CHFILE)
+	$(ROOT_CMD) $(MAKE) $(MFLAGS) -f debian/rules clean
+
+kdist_configure:
+	# Nothing to do when configured.
+
+kdist_clean:
+	$(ROOT_CMD) $(MAKE) $(MFLAGS) -f debian/rules clean
+
+#compatibility with the old package
+binary-modules: kdist
+
+.PHONY: check clean build install binary binary-arch binary-indep kdist_image kdist kdist_configure kdist_clean binary-modules

@@ -1,0 +1,4 @@
+usr/bin
+etc
+etc/init.d
+etc/ha.d/resource.d

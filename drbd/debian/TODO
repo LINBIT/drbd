@@ -1,2 +1,4 @@
-* Incorporate heartbeat script into userland package.
-It will need newer heartbeat .deb packages for that.
+Create lintian overrides to deal with bash not handling extglob
+syntax.  I'll also contact lintian package maintainers to make sure
+this is the correct thing to do.  Refer to #247605 in the BTS for
+background on this.
