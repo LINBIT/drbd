@@ -243,7 +243,7 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 #define GFP_TRY	( __GFP_HIGHMEM )
 #endif
 
-STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
+STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 STATIC void prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
@@ -297,7 +297,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
-	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,&mdev->done_ee);
+	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,1);
 
 	if(list_empty(&mdev->free_ee)) {
 		for (;;) {
@@ -322,7 +322,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			}
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
-			_drbd_process_ee(mdev,&mdev->done_ee);
+			_drbd_process_ee(mdev,1);
 		}
 		finish_wait(&mdev->ee_wait, &wait); 
 	}
@@ -393,9 +393,10 @@ STATIC void reclaim_net_ee(drbd_dev *mdev)
    from this function. Note, this function is called from all three
    threads (receiver, worker and asender). To ensure this I only allow
    one thread at a time in the body of the function */
-STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
+STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 {
 	struct Tl_epoch_entry *e;
+	struct list_head *head = &mdev->done_ee;
 	struct list_head *le;
 	int ok=1;
 	int got_sig;
@@ -405,6 +406,10 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	reclaim_net_ee(mdev);
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
+		if(!be_sleepy) {
+			clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
+			return 3;
+		}
 		spin_unlock_irq(&mdev->ee_lock);
 		got_sig = wait_event_interruptible(mdev->ee_wait,
 		       test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) == 0);
@@ -428,11 +433,11 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	return ok;
 }
 
-STATIC int drbd_process_ee(drbd_dev *mdev,struct list_head *head)
+STATIC int drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 {
 	int rv;
 	spin_lock_irq(&mdev->ee_lock);
-	rv=_drbd_process_ee(mdev,head);
+	rv=_drbd_process_ee(mdev,be_sleepy);
 	spin_unlock_irq(&mdev->ee_lock);
 	return rv;
 }
@@ -803,7 +808,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	drbd_wait_ee(mdev,&mdev->active_ee);
 
 	spin_lock_irq(&mdev->ee_lock);
-	rv = _drbd_process_ee(mdev,&mdev->done_ee);
+	rv = _drbd_process_ee(mdev,1);
 
 	epoch_size=mdev->epoch_size;
 	mdev->epoch_size=0;
@@ -2194,7 +2199,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		 */
 		set_bit(SIGNAL_ASENDER, &mdev->flags);
 
-		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
+		if (!drbd_process_ee(mdev,0)) goto err;
 
 		rv = drbd_recv_short(mdev,buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
