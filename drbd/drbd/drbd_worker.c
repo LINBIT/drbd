@@ -98,57 +98,86 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 	return ok;
 }
 
+STATIC drbd_dev *ds_find_osg(drbd_dev *mdev)
+{
+	drbd_dev *odev;
+	int i;
+
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group < mdev->sync_conf.group
+		     && odev->cstate > Connected ) {
+			return odev;
+		}
+	}
+
+	return 0;
+}
+
 STATIC void _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
 {
 	// This is a callback, I better not assume that this 
 	// is a context which allows to send something from.
-
+	unsigned long flags;
 	drbd_dev *mdev = (drbd_dev*) dh->data;
+	int added=0;
 
 	if(odev->cstate <= Connected) {
-		set_bit(SYNC_CONTINUE,&mdev->flags);
-		wake_up_interruptible(&mdev->dsender_wait);
-		list_del(&dh->list); // TODO: Lock for list manipulaton.
-		kfree(dh);
+		spin_lock_irqsave(&mdev->req_lock,flags);
+		list_del(&dh->list);
+		spin_unlock_irqrestore(&mdev->req_lock,flags);
+	retry:
+		if( (odev = ds_find_osg(mdev)) ) {
+			spin_lock_irqsave(&odev->req_lock,flags);
+			if(odev->cstate > Connected) {
+				list_add(&dh->list,&odev->cstate_hook);
+				added=1;
+			}
+			spin_unlock_irqrestore(&odev->req_lock,flags);
+			if(!added) goto retry;
+		} else {
+			set_bit(SYNC_CONTINUE,&mdev->flags);
+			wake_up_interruptible(&mdev->dsender_wait);
+			kfree(dh);
+		}
 	}
 }
 
-STATIC void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
+STATIC int drbd_wait_for_other_sync_groups(drbd_dev *mdev)
 {
 	drbd_dev *odev;
 	struct drbd_hook *dh=NULL;
-	int i;
+	int added=0;
 
  retry:
-	for (i=0; i < minor_count; i++) {
-		odev = drbd_conf + i;
-		if (signal_pending(current)) return;
-		if ( odev->sync_conf.group < mdev->sync_conf.group
-		     && odev->cstate > Connected ) {
-			INFO("Syncer waits for sync group %i\n",
-			     odev->sync_conf.group);
-			drbd_send_short_cmd(mdev,SyncStop);
-			set_cstate(mdev,PausedSyncT);
+	odev = ds_find_osg(mdev);
+	if(!odev) return FALSE;
 
-			dh=kmalloc(sizeof(struct drbd_hook),GFP_KERNEL);
-			if(!dh) {
-				ERR("could not kmalloc drbd_hook\n");
-				current->state = TASK_INTERRUPTIBLE;
-				schedule_timeout(HZ);
-				goto retry;
-			}
-
-			dh->data = mdev;
-			dh->callback = _ds_wait_osg;
-
-			list_add(&dh->list,&odev->cstate_hook);
-			// TODO: Need some locking here!
-			// over the test of odev->cstate and list_add.
-			// otherwise we could miss the run of the hook!
-
-			return;
-		}
+	while( dh == NULL ) {
+		dh=kmalloc(sizeof(struct drbd_hook),GFP_KERNEL);
+		if(dh) break;
+		ERR("could not kmalloc drbd_hook\n");
+		current->state = TASK_INTERRUPTIBLE;
+		schedule_timeout(HZ);
 	}
+
+	dh->data = mdev;
+	dh->callback = _ds_wait_osg;
+
+	spin_lock_irq(&odev->req_lock);
+	if(odev->cstate > Connected) {
+		list_add(&dh->list,&odev->cstate_hook);
+		added=1;
+	}
+	spin_unlock_irq(&odev->req_lock);
+	if(!added) goto retry;
+
+	INFO("Syncer waits for sync group %i\n",
+	     odev->sync_conf.group);
+	drbd_send_short_cmd(mdev,SyncStop);
+	set_cstate(mdev,PausedSyncT);
+
+	return TRUE;
 }
 
 /* bool */
@@ -169,7 +198,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 	}
 	// /Remove later
 
-	drbd_wait_for_other_sync_groups(mdev);
+	if(drbd_wait_for_other_sync_groups(mdev)) return FALSE;
 
 	for(i=0;i<number;i++) {
 		struct Pending_read *pr;
@@ -282,7 +311,8 @@ int drbd_dsender(struct Drbd_thread *thi)
 			D_ASSERT(list_empty(&mdev->resync->lru));
 		}
 
-		if(test_and_clear_bit(SYNC_CONTINUE,&mdev->flags)) {
+		if(test_and_clear_bit(SYNC_CONTINUE,&mdev->flags) && 
+		   (mdev->cstate == PausedSyncT) ) {
 			time=SLEEP_TIME;
 			INFO("resumed synchronisation.\n");
 			drbd_send_short_cmd(mdev,SyncCont);
@@ -290,8 +320,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 		}
 
 		if(time == SLEEP_TIME) {
-			if(!ds_issue_requests(mdev) || 
-			   mdev->cstate == PausedSyncT ) {
+			if (!ds_issue_requests(mdev)) {
 				time=MAX_SCHEDULE_TIMEOUT;
 			}
 			if (!disable_io_hints) {

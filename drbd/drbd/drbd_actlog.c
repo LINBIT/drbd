@@ -514,8 +514,8 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			D_ASSERT((long)ext->rs_left >= 0);
 		} else {
 			WARN("Recounting sectors (resync LRU too small?)\n");
-			lc_changed(mdev->resync,(struct lc_element*)ext);
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+			lc_changed(mdev->resync,(struct lc_element*)ext);
 		}
 		lc_put(mdev->resync,(struct lc_element*)ext);
 	} else {
@@ -589,8 +589,8 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
 	if (bm_ext) {
 		if(bm_ext->lce.lc_number != enr) {
-			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			bm_ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			wake_up(&mdev->al_wait);
 		}
 		set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock

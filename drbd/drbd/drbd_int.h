@@ -921,15 +921,21 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState cs)
 {
 	struct list_head *le;
 	struct drbd_hook *dh;
+	unsigned long flags;
 
+	spin_lock_irqsave(&mdev->req_lock,flags);
 	mdev->cstate = cs;
-	wake_up_interruptible(&mdev->cstate_wait);
 
 	while(!list_empty(&mdev->cstate_hook)) {
 		le = mdev->cstate_hook.next;
 		dh = list_entry(le, struct drbd_hook,list);
+		spin_unlock_irqrestore(&mdev->req_lock,flags);
 		dh->callback(mdev,dh);
+		spin_lock_irqsave(&mdev->req_lock,flags);
 	}
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	wake_up_interruptible(&mdev->cstate_wait);
 }
 
 static inline void inc_pending(drbd_dev* mdev)
