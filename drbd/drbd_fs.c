@@ -434,15 +434,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
-	if((i=drbd_request_state(mdev,NS(disk,
-					 drbd_md_test_flag(mdev,MDF_Consistent)
-					 ? Consistent : Inconsistent ))) > 0) {
+	if(drbd_request_state(mdev,NS(disk,
+				      drbd_md_test_flag(mdev,MDF_Consistent)
+				      ? Consistent : Inconsistent )) > 0) {
 		drbd_thread_start(&mdev->worker);
-	} else {
-		print_st_err(mdev,
-			     mdev->state,
-			     _NS(disk,drbd_md_test_flag(mdev,MDF_Consistent)
-				? Consistent : Inconsistent ),i);
 	}
 
 // FIXME EXPLAIN:
@@ -569,9 +564,7 @@ FIXME
 	mdev->recv_cnt = 0;
 
 	drbd_thread_start(&mdev->worker);
-	if( (i=drbd_request_state(mdev,NS(conn,Unconnected))) <= 0) {
-		print_st_err(mdev,mdev->state,_NS(conn,Unconnected),i);
-	} else {
+	if( drbd_request_state(mdev,NS(conn,Unconnected)) > 0) {
 		drbd_thread_start(&mdev->receiver);
 	}
 
@@ -585,6 +578,7 @@ FIXME
 int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 {
 	int r,forced = 0;
+	drbd_state_t os,ns;
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
 
@@ -606,7 +600,13 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 			return -EBUSY;
 	}
 
-	r = drbd_request_state(mdev,NS(role,newstate & 0x3));
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	r = _drbd_set_state(mdev, _NS(role,newstate & 0x3), 0);
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
+	after_state_ch(mdev,os,ns);
+
 	if ( r == 2 ) { return 0; }
 	if ( r == -2 ) {
 		/* request state does not like the new state. */
@@ -619,17 +619,13 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 			WARN("Forcefully set consistent!");
 			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
 							disk,Consistent));
-			if(r<=0) {
-				print_st_err(mdev,mdev->state,
-					     _NS2(role,newstate & 0x3,
-						 disk,Consistent),r);
-				return -EIO;
-			}
+			if(r<=0) return -EIO;
+
 			forced = 1;
 		}
 	}
 	if ( r <= 0) { 
-		print_st_err(mdev,mdev->state,_NS(role,newstate & 0x3),r);
+		print_st_err(mdev,os,ns,r);
 		return -EACCES; 
 	}
 
@@ -775,13 +771,12 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	r = _drbd_set_state(mdev,_NS(disk,Diskless),0);
+	r = _drbd_set_state(mdev,_NS(disk,Diskless),ChgStateVerbose);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
 	if( r == 2 ) { return 0; }
 	if( r <= 0 ) { 
-		print_st_err(mdev,os,ns,r);
 		return -ENETRESET; 
 	}
 
@@ -926,7 +921,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		r = drbd_request_state(mdev,NS(conn,StandAlone));
 		if( r == 2 ) { break; }
 		if( r <= 0 ) {
-			print_st_err(mdev,mdev->state,_NS(conn,StandAlone),r);
 			err=-ENODATA;
 			break;
 		} 
@@ -1025,8 +1019,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		if( r == 2 ) { break; }
 		if( r <= 0 ) {
-			print_st_err(mdev,mdev->state,_NS2(disk,Inconsistent,
-							   conn,WFBitMapT),r);
 			err = -EINPROGRESS;
 			break;
 		} 
@@ -1066,8 +1058,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		if( r == 2 ) { break; }
 		if( r <= 0 ) {
-			print_st_err(mdev,mdev->state,_NS2(pdsk,Inconsistent,
-							   conn,WFBitMapS),r);
 			err = -EINPROGRESS;
 			break;
 		} 

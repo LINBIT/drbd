@@ -1413,11 +1413,10 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	ns.s.conn = nconn;
 	ns.s.peer = be32_to_cpu(p->state);
 	ns.s.pdsk = npdsk;
-	rv = _drbd_set_state(mdev,ns,0);
+	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	spin_unlock_irq(&mdev->req_lock);
 
 	if(rv <= 0) {
-		print_st_err(mdev,mdev->state,ns,rv);
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;

@@ -545,7 +545,7 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 
 	INFO("Syncer continues.\n");
 	mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
-	_drbd_set_state(mdev,_NS(conn,ncs),1);
+	_drbd_set_state(mdev,_NS(conn,ncs),ChgStateHard);
 
 	if(mdev->state.s.conn == SyncTarget) {
 		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
@@ -575,7 +575,7 @@ STATIC void _drbd_rs_pause(drbd_dev *mdev)
 
 	mdev->rs_mark_time = jiffies;
 	// mdev->rs_mark_left = drbd_bm_total_weight(mdev); // I don't care...
-	_drbd_set_state(mdev,_NS(conn,ncs),1);
+	_drbd_set_state(mdev,_NS(conn,ncs),ChgStateHard);
 
 	INFO("Syncer waits for sync group.\n");
 }
@@ -721,12 +721,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		}
 	}
 
-	if(r != 1) {
-		ERR("%s\n",set_st_err_name(r));
-		ERR("Error in drbd_start_resync! (side == %s)\n",
-		    conns_to_name(side));
-		return;
-	}
+	if(r != 1) return;
 
 	drbd_md_write(mdev);
 

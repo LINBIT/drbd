@@ -338,7 +338,7 @@ int drbd_io_error(drbd_dev* mdev)
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.s.disk == Failed)) ) {
-		_drbd_set_state(mdev,_NS(disk,Diskless),1);
+		_drbd_set_state(mdev,_NS(disk,Diskless),ChgStateHard);
 	}
 	D_ASSERT(mdev->state.s.disk <= Failed);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
@@ -407,34 +407,34 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 
 
 /* PRE TODO: Should return ernno numbers from the pre-state-change checks. */
-int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
+int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
 	drbd_state_t os;
 	char pb[160], *pbp;
+	int rv=1;
 
 	os = mdev->state;
 
 	if( ns.i == os.i ) return 2;
 
-	if( !hard ) {
+	if( !(flags & ChgStateHard) ) {
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
+
 		if( !ns.s.mult && 
-		    ns.s.role == Primary && ns.s.peer == Primary ) return -1;
+		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
 
 		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
-		    ns.s.conn < Connected ) return -2;
+		    ns.s.conn < Connected ) rv=-2;
 
 		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
-		    ns.s.conn < Connected ) return -3;
+		    ns.s.conn < Connected ) rv=-3;
 
 		if( ns.s.conn > Connected && 
-		    ns.s.disk < Consistent && ns.s.pdsk < Consistent )
-			return -4;
+		    ns.s.disk < Consistent && ns.s.pdsk < Consistent ) rv=-4;
 
 		if( ns.s.conn > Connected && 
-		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) )
-			return -5;
+		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) rv=-5;
 	}
 
 	/*  State sanitising  */
@@ -444,6 +444,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
 	if( ns.s.disk <= Failed && ns.s.conn > Connected) {
 		WARN("Resync aborted.\n");
 		ns.s.conn = Connected;
+	}
+
+	if(rv <= 0) {
+		if( flags & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
+		return rv;
 	}
 
 #if DUMP_MD >= 2
@@ -482,7 +487,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
 		drbd_panic("No access to good data anymore.\n");
 	}
 
-	return 1;
+	return rv;
 }
 
 void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)

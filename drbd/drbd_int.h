@@ -743,7 +743,13 @@ struct Drbd_Conf {
  *************************/
 
 // drbd_main.c
-extern int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard);
+
+enum chg_state_flags {
+	ChgStateHard    = 1,
+	ChgStateVerbose = 2,
+};
+
+extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
 extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
 extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns);
 extern void drbd_thread_start(struct Drbd_thread *thi);
@@ -1031,24 +1037,8 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
                 ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T1 = (S1); \
                 ns.s.T2 = (S2); ns.s.T3 = (S3); ns;})
 
-
-static inline void drbd_force_state(drbd_dev* mdev, 
+static inline int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 				    drbd_state_t mask, drbd_state_t val)
-{
-	unsigned long flags;
-	drbd_state_t os,ns;
-
-	spin_lock_irqsave(&mdev->req_lock,flags);
-	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i;
-	_drbd_set_state(mdev, ns, 1);
-	ns = mdev->state;
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	after_state_ch(mdev,os,ns);
-}
-
-static inline int drbd_request_state(drbd_dev* mdev, 
-				     drbd_state_t mask, drbd_state_t val)
 {
 	unsigned long flags;
 	drbd_state_t os,ns;
@@ -1057,12 +1047,24 @@ static inline int drbd_request_state(drbd_dev* mdev,
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
-	rv = _drbd_set_state(mdev, ns, 0);
+	rv = _drbd_set_state(mdev, ns, f);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 	after_state_ch(mdev,os,ns);
 
 	return rv;
+}
+
+static inline void drbd_force_state(drbd_dev* mdev, 
+				    drbd_state_t mask, drbd_state_t val)
+{
+	drbd_change_state(mdev,ChgStateHard,mask,val);
+}
+
+static inline int drbd_request_state(drbd_dev* mdev, 
+				    drbd_state_t mask, drbd_state_t val)
+{
+	return drbd_change_state(mdev,ChgStateVerbose,mask,val);
 }
 
 /**
