@@ -19,9 +19,9 @@ INSTALL="/etc/ha.d/resource.d"
 # See how we were called.
 case "$1" in
 	start)
-		if [ "$MODE" = "force" ]; then
+		if [ "$MODE" = "[Ff][Oo][Rr][Cc][Ee]" ]; then
 			param=`echo $* | sed -e"s/start/master/g"`
-		elif [ "$MODE" = "restore" ]; then
+		elif [ "$MODE" = "[Rr][Ee][Ss][Tt][Oo][Rr][Ee]" ]; then
 			isMasterBoot $RESOURCE
 			MASTER=$?
 
@@ -33,7 +33,7 @@ case "$1" in
 			else
 				param=`echo $* | sed -e"s/start/slave/g"`
 			fi
-		elif [ "$MODE" = "negotiate" ]; then
+		elif [ "$MODE" = "[Nn][Ee][Gg][Oo][Tt][Ii][Aa][Tt][Ee]" ]; then
 			isWorkingPrimary $RESOURCE
 			PRIMARY=$?
 
