@@ -1,11 +1,63 @@
 #!/bin/sh
 
-SETSIZE=10M
-R_NODE=phil
-L_NODE=alf
-RL_DEV=/dev/sda6
-LL_DEV=/dev/hdc6
-R_DRBD_DIR=/home/philipp/src/uni/drbd-i386/
+echo
+echo "Automatic DRBD performance measuring script."
+echo "--------------------------------------------"
+echo 
+
+if [ -e config ]; 
+  then source config;
+else
+  echo "We need to write a config file first. You will have to answer"
+  echo "6 questions about your setup."
+  echo
+  echo "*  You need to run this script as root."
+  echo "*"
+  echo "*  This script needs to make rsh connections to your second node,"
+  echo "*  without using a passwort!"
+  echo "*"
+  echo "*  You can setup this by doing this on node2:"
+  echo "*     'ALL: node1' in /etc/hosts.allow"
+  echo "*     'shell stream ..... in.rshd' in /etc/inetd.conf"
+  echo "*     'node1' in /root/.rhosts"
+  echo
+  echo "What is the name of your (local) machine (or IP address of the"
+  echo "interface you want to use) ? "
+  read L_NODE
+  echo "What is the name of your remote machine (or IP address of the"
+  echo "interface you want to use) ? "
+  read R_NODE
+  echo "Which disk device you want to use on your (local) machine? (/dev/xyz) "
+  read LL_DEV
+  echo "Which disk device you want to use on your remote machine? (/dev/xyz) "
+  read RL_DEV
+  echo "Where is the source directory on the remote machine? (/home/xy/drbd/) "
+  read R_DRBD_DIR
+  echo "Size for write preformance tests? (If you do not know enter '10M') "
+  read SETSIZE
+  echo
+  echo "Is everything correct? [y/n] "
+  read CORR
+  if [ $CORR = "Y" -o $CORR = "y" ];
+    then
+      echo "L_NODE=$L_NODE" >config
+      echo "LL_DEV=$LL_DEV" >>config
+      echo "R_NODE=$R_NODE" >>config
+      echo "RL_DEV=$RL_DEV" >>config
+      echo "R_DRBD_DIR=$R_DRBD_DIR" >>config
+      echo "SETSIZE=$SETSIZE" >>config;
+  fi
+  exec ./run.sh;
+fi
+
+echo "This script is going to erase the first $SETSIZE of $LL_DEV @ $L_NODE "
+echo "and $RL_DEV @ $R_NODE. "
+echo "Continue ? [y/n] "
+read CONT
+if [ $CONT != "Y" -a $CONT != "y" ];
+  then exit 0;
+fi
+
 #---
 INSMOD=/sbin/insmod
 RMMOD=/sbin/rmmod
@@ -38,7 +90,7 @@ echo -n " Disk write: " >>report
 $DM -i /dev/zero -o $LL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
 $INSMOD $MODULE
-$DRBDSETUP /dev/nb0 $LL_DEV A $L_NODE $R_NODE -d 10240
+$DRBDSETUP /dev/nb0 $LL_DEV A $L_NODE $R_NODE -d $SETSIZE
 $DRBDSETUP /dev/nb0 PRI
 $DM -i /dev/zero -o /dev/nb0 -s $SETSIZE -y -p >>report
 $RMMOD drbd
@@ -53,7 +105,7 @@ echo -n " Disk write: " >>report
 $RSH $R_NODE $RDM -i /dev/zero -o $RL_DEV -s $SETSIZE -y -p >>report
 echo -n " Drbd unconnected: " >>report
 $RSH $R_NODE $INSMOD $RMODULE
-$RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV A $R_NODE $L_NODE -d 10240
+$RSH $R_NODE $RDRBDSETUP /dev/nb0 $RL_DEV A $R_NODE $L_NODE -d $SETSIZE
 $RSH $R_NODE $RDRBDSETUP /dev/nb0 PRI
 $RSH $R_NODE $RDM -i /dev/zero -o /dev/nb0 -s $SETSIZE -y -p >>report
 $RSH $R_NODE $RMMOD drbd
@@ -118,7 +170,14 @@ for PROT in $PROTOCOLS; do
   sleep 1;
 done
 
+echo "--------------- report --------------"
 cat report
+echo "-------------------------------------"
+echo "Please send the report file to philipp@linuxfreak.com."
+echo "     Thank you."
+echo 
+echo "PS: Do not forget to disable rsh again."
+
 
 
 

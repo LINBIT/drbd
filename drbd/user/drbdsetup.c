@@ -61,17 +61,29 @@ unsigned long resolv(const char* name)
   return retval;
 }
 
-int m_strtol(const char* s)
+int m_strtol(const char* s,int def_mult)
 {
   char *e = (char*)s;
   long r;
 
   r = strtol(s,&e,0);
-  if(*e == 0)
-    return r;
-
-  fprintf(stderr,"%s is not a valid number\n",s);
-  exit(20);
+  switch(*e)
+    {
+    case 0:
+      return r;
+    case 'K':
+    case 'k':
+      return r*(1024/def_mult);
+    case 'M':
+    case 'm':
+      return r*1024*(1024/def_mult);
+    case 'G':
+    case 'g':      
+      return r*1024*1024*(1024/def_mult);
+    default:
+      fprintf(stderr,"%s is not a valid number\n",s);
+      exit(20);
+    }
 }
 
 const char* addr_part(const char* s)
@@ -95,7 +107,7 @@ int port_part(const char* s)
 
   b=strchr(s,':');
   if(b)
-      return m_strtol(b+1);
+      return m_strtol(b+1,1);
 
   return 7788;
 }
@@ -118,7 +130,7 @@ int main(int argc, char** argv)
 	      "          protocol may be A, B or C.\n\n" 
 	      "       port\n"
 	      "          TCP port number\n"
-	      "          Default: 7788\n"
+	      "          Default: 7788\n\n"
 	      "       -t --timeout  val\n"
 	      "          If communication blocks for val * 1/10 seconds,\n"
 	      "          drbd falls back into unconnected operation.\n"
@@ -144,6 +156,9 @@ int main(int argc, char** argv)
 	      "          drbd will trigger a kernel panic if there is an\n"
 	      "          IO error on the lower_device. May be usefull when\n"
 	      "          drbd is used in a HA cluster.\n\n"
+	      "     multipliers\n"
+	      "          You may append K, M or G to the values of -r and -d\n"
+	      "          where K=2^10, M=2^20 and G=2^30.\n\n"
 	      "          Version: "VERSION"\n"
 	      ,argv[0],argv[0]);
       exit(20);
@@ -308,19 +323,19 @@ int main(int argc, char** argv)
 	  switch(c)
 	    {
 	    case 't': 
-	      cn.config.timeout = m_strtol(optarg);
+	      cn.config.timeout = m_strtol(optarg,1);
 	      break;
 	    case 'r':
-	      cn.config.sync_rate = m_strtol(optarg);
+	      cn.config.sync_rate = m_strtol(optarg,1024);
 	      break;
 	    case 'k':
 	      cn.config.skip_sync=1;
 	      break;
 	    case 's':
-	      cn.config.tl_size = m_strtol(optarg);
+	      cn.config.tl_size = m_strtol(optarg,1);
 	      break;
 	    case 'd':
-	      cn.config.disk_size = m_strtol(optarg);
+	      cn.config.disk_size = m_strtol(optarg,1024);
 	      break;
 	    case 'p':
 	      cn.config.do_panic=1;

@@ -1,3 +1,10 @@
+0.5.3
+-----
+More sanity checks.
+Fix to protocol C.
+Script for automatic benchmarking.
+New heartbeat scripts.
+
 0.5.2
 -----
 Improved the behaviour upon loss of connction. Now it
