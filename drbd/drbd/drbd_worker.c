@@ -177,7 +177,7 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
 	pass_on:
-		bh->b_end_io(req->master_bio,uptodate);
+		req->master_bio->b_end_io(req->master_bio,uptodate);
 
 		INVALIDATE_MAGIC(req);
 		mempool_free(req,drbd_request_mempool);
