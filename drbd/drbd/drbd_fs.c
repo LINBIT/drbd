@@ -551,7 +551,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	default:
 		err = -EINVAL;
 	}
- out:
+//out:
 	up(&mdev->ctl_mutex);
  out_unlocked:
 	return err;

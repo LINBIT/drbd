@@ -537,19 +537,21 @@ struct busy_block {
 	unsigned long bnr;
 };
 
-static inline void bb_wait(struct Drbd_Conf *mdev,unsigned long bnr,
-			   unsigned long* flags)
+static inline void bb_wait_prepare(struct Drbd_Conf *mdev,unsigned long bnr,
+				   struct busy_block *bl)
 {
-	struct busy_block bl;
+	// you must hold bb_lock
+	init_completion(&bl->event);
+	bl->bnr=bnr;
+	list_add(&bl->list,&mdev->busy_blocks);
+}
 
-	init_completion(&bl.event);
-	bl.bnr=bnr;
-	list_add(&bl.list,&mdev->busy_blocks);
-	spin_unlock_irqrestore(&mdev->bb_lock,*flags);
-
-      //printk(KERN_ERR DEVICE_NAME " sleeping because block %lu busy\n",bnr);
-	wait_for_completion(&bl.event);
-	spin_lock_irqsave(&mdev->bb_lock,*flags);
+static inline void bb_wait(struct busy_block *bl)
+{
+	// you may not hold bb_lock
+	//printk(KERN_ERR DEVICE_NAME" sleeping because block %lu busy\n",
+	//       bl->bnr);
+	wait_for_completion(&bl->event);
 }
 
 static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
@@ -561,8 +563,8 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 		bl = list_entry(le, struct busy_block,list);
 		if(bl->bnr == bnr) {
 			//printk(KERN_ERR DEVICE_NAME " completing %lu\n",bnr);
-			complete(&bl->event);
 			list_del(le);
+			complete(&bl->event);
 			break;
 		}
 	}

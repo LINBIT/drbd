@@ -166,21 +166,21 @@ STATIC int ds_buffer_read(struct ds_buffer *this,
 	int ln2_bs = drbd_log2(this->b_size);
 	unsigned long flags;
 
-	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
 	while (count < amount_blks) {
 		unsigned long block_nr;
 
 		block_nr=get_blk(id,ln2_bs);
 		if(block_nr == MBDS_DONE) break;
 
-                // because bb_wait releases bb_lock
-		this->io_pending_number=count; 
-
+		spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
+		this->io_pending_number=count+1; 
 		this->blnr[count]=block_nr;
-				
 		if(tl_check_sector(drbd_conf+minor,block_nr << (ln2_bs-9))) {
-			bb_wait(drbd_conf+minor,block_nr,&flags);
-		}
+			struct busy_block bl;
+			bb_wait_prepare(drbd_conf+minor,block_nr,&bl);
+			spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
+			bb_wait(&bl);
+		} else spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
 		drbd_set_bh(this->bhs+count,
 			    block_nr,
@@ -190,8 +190,6 @@ STATIC int ds_buffer_read(struct ds_buffer *this,
 		submit_bh(READ,this->bhs+count);
 		count++;
 	}
-	this->io_pending_number=count; 
-	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
 	if(count) {
 		run_task_queue(&tq_disk);
@@ -208,14 +206,17 @@ STATIC int ds_buffer_reread(struct ds_buffer *this,int minor)
 	
 	count=this->io_pending_number;
 
-	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
 	for(i=0;i<count;i++) {
 
 		block_nr = this->blnr[i];
 
+		spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
 		if(tl_check_sector(drbd_conf+minor,block_nr << (ln2_bs-9))) {
-			bb_wait(drbd_conf+minor,block_nr,&flags);
-		}
+			struct busy_block bl;
+			bb_wait_prepare(drbd_conf+minor,block_nr,&bl);
+			spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
+			bb_wait(&bl);
+		} else spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
 		drbd_set_bh(this->bhs+i, block_nr,
 			    drbd_conf[minor].lo_device);
@@ -224,7 +225,6 @@ STATIC int ds_buffer_reread(struct ds_buffer *this,int minor)
 		set_bit(BH_Lock, &this->bhs[i].b_state);
 		submit_bh(READ,this->bhs+i);
 	}
-	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
 	if(count) {
 		run_task_queue(&tq_disk);

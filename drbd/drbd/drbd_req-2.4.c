@@ -229,9 +229,11 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	spin_lock_irqsave(&mdev->bb_lock,flags);
 	mdev->send_block=bnr;
 	if( ds_check_block(mdev,bnr) ) {
-		bb_wait(mdev,bnr,&flags);
-	}
-	spin_unlock_irqrestore(&mdev->bb_lock,flags);
+		struct busy_block bl;
+		bb_wait_prepare(mdev,bnr,&bl);
+		spin_unlock_irqrestore(&mdev->bb_lock,flags);
+		bb_wait(&bl);
+	} else spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
 	send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
 	mdev->send_block=-1;
