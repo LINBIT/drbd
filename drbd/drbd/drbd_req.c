@@ -116,13 +116,13 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 			list_del(&e->list);
 			list_add(&e->list,&mdev->done_ee);
 			spin_unlock_irqrestore(&mdev->ee_lock,flags);
+			if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+			   e->block_id == ID_SYNCER ) wake_asender=1;
 		} else {
-			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
+			printk(KERN_ERR DEVICE_NAME "%d: strange e == NULL "
 			       ", bh=%p\n",
 			       (int)(mdev-drbd_conf),req->bh);
 		}
-		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-		   e->block_id == ID_SYNCER ) wake_asender=1;
 	}
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
