@@ -1736,6 +1736,31 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->cstate < Connected);
 	mdev->o_state = Unknown;
+
+	/* in case we have been syncing, and then we drop the connection,
+	 * we need to "w_resume_next_sg", which we try to achieve by
+	 * setting the STOP_SYNC_TIMER bit, and schedulung the timer for
+	 * immediate execution.
+	 * unfortunately we cannot be sure that the timer already triggered.
+	 *
+	 * so we del_timer_sync here, and check that bit.
+	 * if it is still set, we queue w_resume_next_sg anyways,
+	 * just to be sure.
+	 */
+
+	del_timer_sync(&mdev->resync_timer);
+	spin_lock_irq(&mdev->req_lock);
+	if (test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+		mdev->resync_work.cb = w_resume_next_sg;
+		if (list_empty(&mdev->resync_work.list))
+			_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+		// else: already queued, we only need to release the lock.
+	} else {
+		D_ASSERT(mdev->resync_work.cb == w_resync_inactive);
+	}
+	spin_unlock_irq(&mdev->req_lock);
+
+
 	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 

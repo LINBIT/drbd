@@ -454,6 +454,8 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
 	if(unlikely(cancel)) return 1;
+	/* FIXME THINK what about w_resume_next_sg ?? */
+
 	if(unlikely(mdev->cstate < Connected)) {
 		ERR("Confused in w_make_resync_request()! cstate < Connected");
 		return 0;
@@ -510,6 +512,12 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 
 	if(drbd_bm_rs_done(mdev)) {
+		/* last syncer _request_ was sent,
+		 * but the RSDataReply not yet received.  sync will end (and
+		 * next sync group will resume), as soon as we receive the last
+		 * resync data block, and the last bit is cleared.
+		 * until then resync "work" is "inactive" ...
+		 */
 		mdev->resync_work.cb = w_resync_inactive;
 		return 1;
 	}
@@ -546,7 +554,10 @@ int drbd_resync_finished(drbd_dev* mdev)
 	D_ASSERT(drbd_bm_total_weight(mdev) == 0);
 	mdev->rs_total = 0;
 
-	set_cstate(mdev,Connected); // w_resume_next_sg() gets called here.
+	set_cstate(mdev,Connected);
+	/* FIXME
+	 * _queueing_ of w_resume_next_sg() gets _scheduled_ here.
+	 * maybe rather _do_ it right here instead? */
 	return 1;
 }
 
@@ -863,8 +874,16 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	     (unsigned long) mdev->rs_total);
 
 	// FIXME: this was a PARANOIA_BUG_ON, but it triggered! ??
-	ERR_IF(mdev->resync_work.cb != w_resync_inactive)
+	if (mdev->resync_work.cb != w_resync_inactive) {
+		if (mdev->resync_work.cb == w_make_resync_request)
+			ERR("resync_work.cb == w_make_resync_request, should be w_resync_inactive\n");
+		else if (mdev->resync_work.cb == w_resume_next_sg)
+			ERR("resync_work.cb == w_resume_next_sg, should be w_resync_inactive\n");
+		else
+			ERR("resync_work.cb == %p ???, should be w_resync_inactive\n",
+					mdev->resync_work.cb);
 		return;
+	}
 
 	if ( mdev->rs_total == 0 ) {
 		drbd_resync_finished(mdev);
@@ -874,7 +893,6 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	/* FIXME THINK
 	 * use mdev->cstate (we may already be paused...) or side here ?? */
 	if (mdev->cstate == SyncTarget) {
-		drbd_bm_reset_find(mdev);
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
