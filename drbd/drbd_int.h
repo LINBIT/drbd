@@ -77,12 +77,6 @@ extern char* drbd_devfs_name;
 # warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
 #endif
 
-/* FIXME because of code leftovers from previous times,
- * currently our code gets heavily confused for device sizes larger
- * than 2TB, so refuse to configure devices of that size.
- */
-#define DRBD_MAX_SECTORS (0xffffffffLU)
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 /*lge: this hack is to get rid of the compiler warnings about
  * 'do_nbd_request declared static but never defined'
@@ -751,13 +745,13 @@ struct Drbd_Conf {
 	struct file *lo_file;
 	struct file *md_file;
 	int md_index;
-	unsigned long lo_usize;   /* user provided size */
-	unsigned long p_size;     /* partner's disk size */
+	sector_t lo_usize;   /* user provided size */
+	sector_t p_size;     /* partner's disk size */
 	Drbd_State state;
 	volatile Drbd_CState cstate;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
 	Drbd_State o_state;
-	unsigned long int la_size; // last agreed disk size
+	sector_t la_size; // last agreed disk size
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -967,6 +961,9 @@ struct bm_extent {
 #define BM_EXT_PER_SECT	    ( 512 / BM_BYTES_PER_EXTENT )        //   4
  */
 
+#define DRBD_MAX_SECTORS \
+          ( (MD_RESERVED_SIZE*2 - MD_BM_OFFSET) * (1<<BM_EXT_SIZE_B-9) )
+
 extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);
 extern void drbd_bm_cleanup   (drbd_dev *mdev);
@@ -1021,6 +1018,7 @@ extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 
 // drbd_fs.c
+extern char* ppsize(char* buf, size_t size);
 extern int drbd_determin_dev_size(drbd_dev*);
 extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,

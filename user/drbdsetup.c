@@ -566,7 +566,7 @@ void print_config_ioctl_err(int err_no)
     [LDMounted]="Lower device is already mounted.",
     [MDMounted]="Meta device is already mounted.",
     [LDMDInvalid]="Lower device / meta device / index combination invalid.",
-    [LDDeviceTooLarge]="Currently we only support devices up to 2TB.\n"
+    [LDDeviceTooLarge]="Currently we only support devices up to 3.998TB.\n"
                        "Contact office@linbit.com, if you need more.",
   };
 

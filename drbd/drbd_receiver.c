@@ -1338,7 +1338,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
 	int consider_sync;
 	int oo_state;
-	unsigned long p_size;
+	sector_t p_size;
 
 	if (h->length != (sizeof(*p)-sizeof(*h))) {
 		ERR("Incompatible packet size of Parameter packet!\n");
@@ -1444,7 +1444,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
 		mdev->lo_usize = be64_to_cpu(p->u_size);
-		INFO("Peer sets u_size to %ld KB\n",mdev->lo_usize);
+		INFO("Peer sets u_size to %lu KB\n",
+		     (unsigned long)mdev->lo_usize);
 	}
 
 	if(!p_size) {

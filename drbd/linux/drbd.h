@@ -64,7 +64,7 @@ enum io_error_handler {
 
 struct disk_config {
 	IN int      lower_device;
-	IN unsigned int disk_size;
+	IN __u64    disk_size;
 	IN enum io_error_handler on_io_error;
 	IN int      meta_device;
 	IN int      meta_index;
@@ -194,7 +194,7 @@ struct ioctl_get_config {
 	struct syncer_config  sconf;
 	OUT int               lower_device_major;
 	OUT int               lower_device_minor;
-	OUT unsigned int      disk_size_user;
+	OUT __u64             disk_size_user;
 	OUT enum io_error_handler on_io_error;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;

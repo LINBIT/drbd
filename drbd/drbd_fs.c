@@ -88,6 +88,21 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	return rv;
 }
 
+char* ppsize(char* buf, size_t size) 
+{
+	// Needs 9 bytes at max.
+	static char units[] = { 'K','M','G','T' };
+	int base = 0;
+	while (size >= 10000 ) {
+		size = size >> 10;
+		base++;
+	}
+	sprintf(buf,"%d %cB",size,units[base]);
+
+	return buf;
+}
+
+
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
 /*
  * THINK do we want the size to be KB or sectors ?
@@ -104,12 +119,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
  */
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	unsigned long p_size = mdev->p_size;  // partner's disk size.
-	unsigned long la_size = mdev->la_size; // last agreed size.
-	unsigned long m_size; // my size
-	unsigned long u_size = mdev->lo_usize; // size requested by user.
-	unsigned long size=0;
+	sector_t p_size = mdev->p_size;  // partner's disk size.
+	sector_t la_size = mdev->la_size; // last agreed size.
+	sector_t m_size; // my size
+	sector_t u_size = mdev->lo_usize; // size requested by user.
+	sector_t size=0;
 	int rv;
+	char ppb[10];
 
 	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 
@@ -120,7 +136,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 
 	if(p_size && m_size) {
 		rv=0;
-		size=min_t(unsigned long,p_size,m_size);
+		size=min_t(sector_t,p_size,m_size);
 	} else {
 		rv=1;
 		if(la_size) {
@@ -140,7 +156,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	if(u_size) {
 		if(u_size > size) {
 			ERR("Requested disk size is too big (%lu > %lu)\n",
-			    u_size, size);
+			    (unsigned long)u_size, (unsigned long)size);
 		} else {
 			size = u_size;
 		}
@@ -151,12 +167,14 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		err = drbd_bm_resize(mdev,size<<1); // wants sectors
 		if (unlikely(err)) {
 			ERR("BM resizing failed. "
-			    "Leaving size unchanged at size = %lu KB\n", size);
+			    "Leaving size unchanged at size = %lu KB\n", 
+			    (unsigned long)size);
 		} else {
 			// racy, see comments above.
 			drbd_set_my_capacity(mdev,size<<1);
 			mdev->la_size = size;
-			INFO("size = %lu KB\n",size);
+			INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
+			     (unsigned long)size);
 		}
 	}
 

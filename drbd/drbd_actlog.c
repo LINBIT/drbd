@@ -504,9 +504,10 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
  */
 void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 {
-	int i;
 	unsigned int enr;
 	unsigned long add=0;
+	char ppb[10];
+	int i;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
@@ -519,7 +520,8 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
-	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add >> 1);
+	INFO("Marked additional %s as out-of-sync based on AL.\n",
+	     ppsize(ppb,add >> 1));
 }
 
 static inline int _try_lc_del(struct Drbd_Conf *mdev,struct lc_element *al_ext)

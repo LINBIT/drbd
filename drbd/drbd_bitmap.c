@@ -576,6 +576,7 @@ void drbd_bm_read(struct Drbd_Conf *mdev)
 	struct drbd_bitmap *b = mdev->bitmap;
 	sector_t sector;
 	int bm_words, num_sectors;
+	char ppb[10];
 
 	MUST_BE_LOCKED();
 
@@ -587,8 +588,8 @@ void drbd_bm_read(struct Drbd_Conf *mdev)
 		drbd_bm_read_sect(mdev,sector);
 	}
 
-	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
-	      drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10) );
+	INFO("%s marked out-of-sync by on disk bit-map.\n",
+	     ppsize(ppb,drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
 }
 
 /**
