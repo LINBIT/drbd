@@ -389,6 +389,7 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 
 	os = mdev->cstate;
 	mdev->cstate = ns;
+	smp_mb();
 	wake_up_interruptible(&mdev->cstate_wait);
 
 	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
@@ -398,6 +399,9 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	}
 	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
 	   test_bit(DISKLESS,&mdev->flags) && ns < Connected) {
+
+/* are you SURE you want this HERE ? */
+
 		clear_bit(DISKLESS,&mdev->flags);
 		smp_wmb();
 		clear_bit(MD_IO_ALLOWED,&mdev->flags);
@@ -714,7 +718,11 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	// long elapsed = (long)(jiffies - mdev->last_received);
 	// DUMPLU(elapsed); // elapsed ignored for now.
 
-	if (mdev->meta.socket == sock || !mdev->asender.task)
+	drop_it =   mdev->meta.socket == sock
+		|| !mdev->asender.task
+		|| (volatile int)mdev->cstate < Connected;
+
+	if (drop_it)
 		return TRUE;
 
 	drop_it = !--mdev->ko_count;
@@ -891,7 +899,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	int rv,sent=0;
 
 	if (!sock) return -1000;
-	if (mdev->cstate < WFReportParams) return -1001;
+	if ((volatile int)mdev->cstate < WFReportParams) return -1001;
 
 	// THINK  if (signal_pending) return ... ?
 
