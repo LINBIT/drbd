@@ -25,7 +25,7 @@
 
 include ../Makefile.vars
 
-SPEC = $(shell for S in /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl; do if [ -e $$S ]; then echo $$S; fi; done)
+SPEC = $(shell for S in /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl /usr/share/sgml/docbook/utils-0.6.9/helpers/docbook2man-spec.pl; do if [ -e $$S ]; then echo $$S; fi; done)
 NSGMLS=$(shell which nsgmls)
 
 all:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
