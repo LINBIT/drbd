@@ -97,6 +97,10 @@ typedef struct wait_queue*  wait_queue_head_t;
 #define blkdev_dequeue_request(A) CURRENT=(A)->next
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define mark_buffer_dirty(A)   mark_buffer_dirty(A , 1)
+#endif
+
 /*
  * GFP_DRBD is used for allocations inside drbd_do_request.
  *
@@ -391,7 +395,7 @@ struct request *my_all_requests = NULL;
 	}
 
 	/* DEBUG & profile stuff */
-#if 1
+#if 0
 
 	if (my_all_requests != NULL) {
 		char major_to_letter[256];
@@ -1079,8 +1083,13 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 		unsigned long flags;
 		del_timer(&mdev->s_timeout);
 		spin_lock_irqsave(&current->sigmask_lock,flags);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 		if (sigismember(&current->signal, DRBD_SIG)) {
 			sigdelset(&current->signal, DRBD_SIG);
+#else
+		if (sigismember(&current->pending.signal, DRBD_SIG)) {
+			sigdelset(&current->pending.signal, DRBD_SIG);
+#endif
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 
@@ -1237,8 +1246,11 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 
 void drbd_dio_end(struct buffer_head *bh, int uptodate)
 {
-	struct request *req = bh->b_dev_id;
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+        struct request *req = bh->b_dev_id;
+#else
+	struct request *req = bh->b_private;
+#endif
 	// READs are sorted out in drbd_end_req().
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	
@@ -1356,7 +1368,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 #endif			
 
 			bh->b_list = BUF_LOCKED;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 			bh->b_dev_id = req;
+#else
+			bh->b_private = req;
+#endif
 			bh->b_end_io = drbd_dio_end;
 			
 			if(req->cmd == WRITE) 
@@ -1544,10 +1560,10 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 		goto fail_ioctl;
 	}
 
-#define M_ADDR(A) (((struct sockaddr_in *)&A##.my_addr)->sin_addr.s_addr)
-#define M_PORT(A) (((struct sockaddr_in *)&A##.my_addr)->sin_port)
-#define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
-#define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
+#define M_ADDR(A) (((struct sockaddr_in *)&A.my_addr)->sin_addr.s_addr)
+#define M_PORT(A) (((struct sockaddr_in *)&A.my_addr)->sin_port)
+#define O_ADDR(A) (((struct sockaddr_in *)&A.other_addr)->sin_addr.s_addr)
+#define O_PORT(A) (((struct sockaddr_in *)&A.other_addr)->sin_port)
 	for(i=0;i<minor_count;i++) {		  
 		if( i!=minor && drbd_conf[i].cstate!=Unconfigured &&
 		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
@@ -2222,8 +2238,13 @@ int drbd_connect(int minor)
 			unsigned long flags;
 			del_timer(&accept_timeout);
 			spin_lock_irqsave(&current->sigmask_lock,flags);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 			if (sigismember(&current->signal, DRBD_SIG)) {
 				sigdelset(&current->signal, DRBD_SIG);
+#else
+			if (sigismember(&current->pending.signal, DRBD_SIG)) {
+				sigdelset(&current->pending.signal, DRBD_SIG);
+#endif
 				recalc_sigpending(current);
 				spin_unlock_irqrestore(&current->sigmask_lock,
 						       flags);
@@ -2453,7 +2474,7 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 
 	mark_buffer_uptodate(bh, 0);
-	mark_buffer_dirty(bh, 1);
+	mark_buffer_dirty(bh);
 
 	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B
 	    && header.block_id != ID_SYNCER) {
@@ -2478,13 +2499,13 @@ inline int receive_data(int minor,int data_size)
 	 * Actually the primary can send up to NR_REQUESTS / 3 blocks,
 	 * but we already start when we have NR_REQUESTS / 4 blocks.
 	 */
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
 		if (drbd_conf[minor].unacked_cnt >= (NR_REQUEST / 4)) {
 			run_task_queue(&tq_disk);
 		}
 	}
-
+#endif
 	/* </HACK> */
 
 	drbd_conf[minor].recv_cnt+=data_size>>10;
@@ -2869,8 +2890,13 @@ int drbdd_init(struct Drbd_thread *thi)
 			thi->t_state = Running;
 			wake_up(&thi->wait);
 			spin_lock_irqsave(&current->sigmask_lock,flags);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 			if (sigismember(&current->signal, SIGTERM)) {
 				sigdelset(&current->signal, SIGTERM);
+#else
+			if (sigismember(&current->pending.signal, SIGTERM)) {
+				sigdelset(&current->pending.signal, SIGTERM);
+#endif
 				recalc_sigpending(current);
 			}
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
@@ -3527,9 +3553,13 @@ void drbd_md_write(int minor)
         oldfs = get_fs();
         set_fs(get_ds());
 	inode = fp->f_dentry->d_inode;
-        down(&inode->i_sem); 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+        down(&inode->i_sem);
+#endif
 	i=fp->f_op->write(fp,(const char*)&buffer,sizeof(buffer),&fp->f_pos);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 	up(&inode->i_sem);
+#endif
 	set_fs(oldfs);
 	filp_close(fp,NULL);
 	if (i==sizeof(buffer)) return;
@@ -3554,9 +3584,13 @@ void drbd_md_read(int minor)
         oldfs = get_fs();
         set_fs(get_ds());
 	inode = fp->f_dentry->d_inode;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
         down(&inode->i_sem); 
+#endif
 	i=fp->f_op->read(fp,(char*)&buffer,sizeof(buffer),&fp->f_pos);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 	up(&inode->i_sem);
+#endif
 	set_fs(oldfs);
 	filp_close(fp,NULL);
 
