@@ -1152,19 +1152,22 @@ ONLY_IN_26(
 		 * differentiate between different error cases,
 		 * or report the current connection state and flags back
 		 * to userspace */
-		if( mdev->cstate != Connected ||
+		if( mdev->cstate < StandAlone ||
+		    mdev->cstate > Connected ||
 		    test_bit(DISKLESS,&mdev->flags) || 
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;
 			break;
 		}
 
-		/* avoid races with set_in_sync
-		 * for successfull mirrored writes
-		 */
-		set_cstate(mdev,WFBitMapT);
-		wait_event(mdev->cstate_wait,
-		     atomic_read(&mdev->ap_bio_cnt)==0);
+		if (mdev->cstate == Connected) {
+			/* avoid races with set_in_sync
+			 * for successfull mirrored writes
+			 */
+			set_cstate(mdev,WFBitMapT);
+			wait_event(mdev->cstate_wait,
+				   atomic_read(&mdev->ap_bio_cnt)==0);
+		}
 
 		drbd_bm_lock(mdev); // racy...
 
@@ -1178,8 +1181,10 @@ ONLY_IN_26(
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
 
-		drbd_send_short_cmd(mdev,BecomeSyncSource);
-		drbd_start_resync(mdev,SyncTarget);
+		if (mdev->cstate == Connected) {	
+			drbd_send_short_cmd(mdev,BecomeSyncSource);
+			drbd_start_resync(mdev,SyncTarget);
+		}
 
 		drbd_bm_unlock(mdev);
 
