@@ -1,1 +1,2 @@
-These scripts are for integration of drbd with heartbeat.
+datadisk is a script are for integration of drbd with heartbeat.
+drbdc is a administration script. see drbdc help.
