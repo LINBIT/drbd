@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "drbdadm.h"
 
 extern int line;
@@ -6,19 +7,59 @@ extern int yyparse();
 extern FILE* yyin;
 extern int yydebug;
 
-struct cnode* global_conf;
+struct d_resource* config;
 
-void dump_conf(int indention,struct cnode* conf)
+static char* esc(char* str)
 {
-  while(conf) {
-    if(conf->type==CNODE) {
-      printf("%*s%s {\n",indention*3,"",conf->name);
-      dump_conf(indention+1,conf->d.subtree);
-      printf("%*s}\n",indention*3,"");
-    } else {
-      printf("%*s%s=%s\n",indention*3,"",conf->name,conf->d.value);
-    }
-    conf=conf->next;
+  static char buffer[1024];
+
+  if(strchr(str,' ')) {
+    snprintf(buffer,1024,"\"%s\"",str);
+    return buffer;
+  }
+  return str;
+}
+
+static void dump_options(char* name,struct d_option* opts)
+{
+  if(!opts) return;
+
+  printf("  %s {\n",name);
+  while(opts) {
+    printf("    %s=%s\n",opts->name,opts->value);
+    opts=opts->next;
+  }
+  printf("  }\n");
+}
+
+static void dump_host_info(struct d_host_info* hi)
+{
+  if(!hi) {
+    printf("  # No host section data available.\n");
+    return;
+  }
+
+  printf("  on %s {\n",esc(hi->name));
+  printf("    device=%s\n",esc(hi->device));
+  printf("    disk=%s\n",esc(hi->disk));
+  printf("    address=%s\n",hi->address);
+  printf("    port=%s\n",hi->port);
+  printf("  }\n");
+}
+
+static void dump_conf(struct d_resource* res)
+{
+  while(res) {
+    printf("resource %s {\n",esc(res->name));
+    printf("  protocol=%s\n",res->protocol);
+    if(res->ind_cmd) printf("  incon-degr-cmd=%s\n",esc(res->ind_cmd));
+    dump_host_info(res->me);
+    dump_host_info(res->partner);
+    dump_options("net",res->net_options);
+    dump_options("disk",res->disk_options);
+    dump_options("syncer",res->sync_options);
+    res=res->next;
+    printf("}\n\n");
   }
 }
 
@@ -34,7 +75,7 @@ int main(int argc, char** argv)
     }
 
   yyparse();
-  dump_conf(0,global_conf);
+  dump_conf(config);
 
   return 0;
 }

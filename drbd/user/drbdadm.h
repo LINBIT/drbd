@@ -1,17 +1,35 @@
 #ifndef DRBDADM_H
 #define DRBDADM_H
 
-struct cnode
+struct d_host_info
 {
   char* name;
-  enum { CVALUE, CNODE } type;
-  union {
-    char* value;
-    struct cnode* subtree;
-  } d;
-  struct cnode* next;
+  char* device;
+  char* disk;
+  char* address;
+  char* port;
 };
 
-extern struct cnode* global_conf;
+struct d_option
+{
+  char* name;
+  char* value;
+  struct d_option* next;
+};
+
+struct d_resource
+{
+  char* name;
+  char* protocol;
+  char* ind_cmd;
+  struct d_host_info* me;
+  struct d_host_info* partner;
+  struct d_option* net_options;
+  struct d_option* disk_options;
+  struct d_option* sync_options;
+  struct d_resource* next;
+};
+
+extern struct d_resource* config;
 
 #endif
