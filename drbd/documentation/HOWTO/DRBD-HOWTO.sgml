@@ -467,8 +467,68 @@ back and enjoy the high availability!</para>
 
        </sect2>
 
-
 </sect1>
+
+<sect1 id=timeouts>
+       <title>Timeouts</title>
+
+       <sect2>
+       <title>How do timeouts work?</title>
+       <para>
+          The primary node expects a reaction to some packet within a
+   timeframe (this timeframe is adjustable by the --timeout option
+   of drbdsetup). In case the timeout is not met by the other node
+   the primary cuts the connection and tries to reastablish a
+   connection.
+       </para>
+
+       </sect2>
+
+       <sect2>
+       <title>Why is a small timeout good?</title>
+       <para>
+       In case the other node dies, your primary node will sit there and
+     block all applications which are writing to the DRBD device. Basically
+     it takes the time of the timeout until it desides that the other node
+     is dead. Thus your applications my be blocked for this time.
+       </para>
+       </sect2>
+
+       <sect2>
+       <title>Why are small timeouts leading to timeout/resync/connect?</title>
+       <para>
+       This is caused when the IO subsystem of the secondary node is slow.
+       </para>
+       </sect2>
+
+       <sect2>
+       <title>What are "postpone packets"?</title>
+       <para>
+     To improve the situation I had the idea of "postpone that deadline"
+     packets. These are sent by the secondary node as soon as it realizes
+     that it will miss the timeout.
+       </para>
+       </sect2>
+
+       <sect2>
+       <title>What should you do if you see this timeout/resync/connect pattern?</title>
+       <para>
+            Increase the timeout. (Since connect-int and pint-int need to
+     be greater than the timout increase them as well)
+
+       </para>
+       </sect2>
+</sect1>
+
+<sect1 id=misc>
+       <title>Miscellanious</title>
+       
+       <sect2>
+       <title>tl-size</title>
+       <para>
+       Need to write a paragraph on what to do if there is a message
+       "transfer log too small" in the syslog.       
+       </para> 
 
 </article>
 
