@@ -137,6 +137,7 @@ struct adm_cmd cmds[] = {
   { "show-gc",           admm_generic, "show-gc"         ,1,1 },
   { "get-gc",            admm_generic, "get-gc"          ,1,1 },
   { "dump-md",           admm_generic, "dump-md"         ,1,1 },
+  { "set-gc",            admm_generic, "set-gc"          ,0,1 },
   { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
   { "sh-resources",      sh_resources,0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
@@ -505,7 +506,7 @@ int adm_resize(struct d_resource* res,char* unused)
 static int admm_generic(struct d_resource* res ,char* cmd)
 {
   char* argv[20];
-  int argc=0;
+  int argc=0,i;
 
   argv[argc++]=drbdmeta;
   argv[argc++]=res->me->device;
@@ -517,9 +518,13 @@ static int admm_generic(struct d_resource* res ,char* cmd)
   }
   argv[argc++]=res->me->meta_index;
   argv[argc++]=cmd;
+  for(i=0;i<soi;i++) {
+    argv[argc++]=setup_opts[i];
+  }
+
   argv[argc++]=0;
 
-  return m_system(argv,SLEEPS_SHORT);
+  return m_system(argv,SLEEPS_VERY_LONG);
 }
 
 static int adm_generic(struct d_resource* res,char* cmd,int flags)
@@ -1115,7 +1120,8 @@ int main(int argc, char** argv)
 
   if ( optind == argc ) print_usage();
 
-  while(argv[optind][0]=='-') {
+  while(argv[optind][0]=='-' || argv[optind][0]==':' || 
+	isdigit(argv[optind][0]) ) {
     setup_opts[soi++]=argv[optind++];
     if (optind == argc) print_usage();
   }

@@ -307,12 +307,27 @@ int v07_open(struct format * config)
 		return 0;
 	}
 
+	if( ioctl(cfg->fd,BLKFLSBUF) == -1) {
+		PERROR("ioctl(,BLKFLSBUF,) failed");
+		return 0;
+	}
+
 	return 1;
 }
 
 int v07_close(struct format * config)
 {
 	struct format_07* cfg = &config->d.f07;
+
+	if( fsync(cfg->fd) == -1) {
+		PERROR("fsync() failed");
+		return 0;
+	}
+
+	if( ioctl(cfg->fd,BLKFLSBUF) == -1) {
+		PERROR("ioctl(,BLKFLSBUF,) failed");
+		return 0;
+	}
 
 	return close(cfg->fd) == 0;
 }
@@ -438,7 +453,20 @@ int v07_write(struct format * config, struct meta_data * m, int init_al)
 	from_lel(m->bitmap, m->bm_size/sizeof(long) );
 
 	if( init_al ) {
-		/* TODO; */
+		char sector[512] = { [ 0 ... 511 ] = 0 };
+
+		if(lseek64(cfg->fd,offset+512*MD_AL_OFFSET_07, SEEK_SET)==-1) {
+			PERROR("lseek() failed");
+			return 0;
+		}
+
+		for (i = 0; i < MD_AL_MAX_SIZE_07; i++) {
+			rr = write(cfg->fd, &sector, 512);
+			if(rr != 512) {
+				PERROR("write failed");
+				return 0;
+			}
+		}
 	}
 
 	return 1;
@@ -557,7 +585,20 @@ int v08_write(struct format * config, struct meta_data * m, int init_al)
 	from_lel(m->bitmap, m->bm_size/sizeof(long) );
 
 	if( init_al ) {
-		/* TODO; */
+		char sector[512] = { [ 0 ... 511 ] = 0 };
+
+		if(lseek64(cfg->fd,offset+512*MD_AL_OFFSET_07, SEEK_SET)==-1) {
+			PERROR("lseek() failed");
+			return 0;
+		}
+
+		for (i = 0; i < MD_AL_MAX_SIZE_07; i++) {
+			rr = write(cfg->fd, &sector, 512);
+			if(rr != 512) {
+				PERROR("write failed");
+				return 0;
+			}
+		}
 	}
 
 	return 1;
@@ -694,38 +735,42 @@ int v06_write(struct format * config, struct meta_data * m, int init_al)
  ******************************************/
 
 struct format_ops formats[] = {
-	{ "v06",
-	  (char *[]) { "minor", 0 },
-	  sizeof(struct format_06),
-	  v06_parse,
-	  v06_open,
-	  v06_close,
-	  v06_md_alloc,
-	  v06_read,
-	  v06_write
-	},
-	{ "v07",
-	  (char *[]) { "device","index",0 },
-	  sizeof(struct format_07),
-	  v07_parse,
-	  v07_open,
-	  v07_close,
-	  v07_md_alloc,
-	  v07_read,
-	  v07_write
-	},
-	{ "v08",
-	  (char *[]) { "device","index",0 },
-	  sizeof(struct format_07),
-	  v07_parse,
-	  v07_open,
-	  v07_close,
-	  v07_md_alloc,
-	  v08_read,
-	  v08_write
+	{ 
+		"v06",
+		(char *[]) { "minor", 0 },
+		sizeof(struct format_06),
+		v06_parse,
+		v06_open,
+		v06_close,
+		v06_md_alloc,
+		v06_read,
+		v06_write
+	}, { 
+		"v07",
+		(char *[]) { "device","index",0 },
+		sizeof(struct format_07),
+		v07_parse,
+		v07_open,
+		v07_close,
+		v07_md_alloc,
+		v07_read,
+		v07_write
+	}, { 
+		"v08",
+		(char *[]) { "device","index",0 },
+		sizeof(struct format_07),
+		v07_parse,
+		v07_open,
+		v07_close,
+		v07_md_alloc,
+		v08_read,
+		v08_write
 	}
-
 };
+
+struct format_ops *fops_v06 = formats+0;
+struct format_ops *fops_v07 = formats+1;
+struct format_ops *fops_v08 = formats+2;
 
 struct meta_cmd {
 	const char* name;
@@ -813,6 +858,33 @@ int meta_get_gc(struct format * fcfg, char** argv, int argc )
 	return 0;
 }
 
+int m_convert_md(struct format * , struct format * );
+
+struct format * dup_v07(struct format * fcfg)
+{
+	struct format * new;
+
+	new = malloc(fops_v07->conf_size + sizeof(void*) );
+	new->ops = fops_v07;
+	new->d.f07.fd = 0;
+	new->d.f07.device_name = fcfg->d.f07.device_name;
+	new->d.f07.index = fcfg->d.f07.index;
+	
+	return new;
+}
+
+int ask(char *text)
+{
+	char answer[200];
+	int rr;
+
+	printf("%s [yes/no] ",text);
+
+	rr = scanf("%s",answer);
+
+	return !strcmp(answer,"yes");
+}
+
 int meta_create_md(struct format * fcfg, char** argv, int argc )
 {
 	struct meta_data* md;
@@ -821,11 +893,56 @@ int meta_create_md(struct format * fcfg, char** argv, int argc )
 		fprintf(stderr,"Ignoring additional arguments\n");
 	}
 
+	OR_EXIT(fcfg,open);
+
 	md = fcfg->ops->md_alloc();
 
-	OR_EXIT(fcfg,open);
+	/* Hackisch but efficient, knows details about v07 and v08 */
+	if( fcfg->ops == fops_v08 ) {
+		if(fops_v07->read(fcfg,md)) {
+			if(ask("Valid v07 meta-data found, convert?")) {
+				md_free(md);
+				return m_convert_md(dup_v07(fcfg), fcfg);
+			}
+			goto question2;
+		}
+	}
+
+	if(fcfg->ops->read(fcfg,md)) {
+	question2:
+		if(!ask("Valid meta-data already in place, create new?")) {
+			printf("Operation cancelled.\n");
+			exit(0);
+		}
+	}
+
+	printf("Creating meta data...\n");
+
+	md_free(md);
+	md = fcfg->ops->md_alloc();
 	OR_EXIT(fcfg,write,md,1);
 	OR_EXIT(fcfg,close);
+
+	md_free(md);
+
+	return 0;
+}
+
+int m_convert_md(struct format * source, struct format * target)
+{
+	struct meta_data* md;
+
+	md = target->ops->md_alloc();
+
+	printf("Converting meta data...\n");
+
+	OR_EXIT(source,open);
+	OR_EXIT(source,read,md);
+	OR_EXIT(source,close);
+
+	OR_EXIT(target,open);
+	OR_EXIT(target,write,md,0);
+	OR_EXIT(target,close);
 
 	md_free(md);
 
@@ -837,24 +954,11 @@ struct format* parse_format(char** argv, int argc, int* ai);
 int meta_convert_md(struct format * fcfg, char** argv, int argc )
 {
 	struct format * target;
-	struct meta_data* md;
 	int unused;
 
 	target = parse_format(argv, argc, &unused );
 
-	md = target->ops->md_alloc();
-
-	OR_EXIT(fcfg,open);
-	OR_EXIT(fcfg,read,md);
-	OR_EXIT(fcfg,close);
-
-	OR_EXIT(target,open);
-	OR_EXIT(target,write,md,1); /* init_al = 1 ?!? */
-	OR_EXIT(target,close);
-
-	md_free(md);
-
-	return 0;
+	return m_convert_md(fcfg, target);
 }
 
 int meta_dump_md(struct format * fcfg, char** argv, int argc )
