@@ -268,11 +268,14 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			prepare_to_wait(&mdev->ee_wait, &wait, 
 					TASK_INTERRUPTIBLE);
 			if(!list_empty(&mdev->free_ee)) break;
+			spin_unlock_irq(&mdev->ee_lock);
 			if( ( mdev->ee_vacant+mdev->ee_in_use) < 
 			      mdev->conf.max_buffers ) {
-				if(drbd_alloc_ee(mdev,GFP_TRY)) break;
+				if(drbd_alloc_ee(mdev,GFP_TRY)) {
+					spin_lock_irq(&mdev->ee_lock);
+					break;
+				}
 			}
-			spin_unlock_irq(&mdev->ee_lock);
 			drbd_kick_lo(mdev);
 			schedule();
 			spin_lock_irq(&mdev->ee_lock);
