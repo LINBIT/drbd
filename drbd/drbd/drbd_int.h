@@ -243,6 +243,7 @@ struct Drbd_Conf {
 	int open_cnt;
 	u32 gen_cnt[5];
 	u32 bit_map_gen[5];
+	int epoch_size;
 	spinlock_t ee_lock;
 	struct list_head free_ee;  
 	struct list_head active_ee;

@@ -105,13 +105,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 		}
 	}
 
-
-	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
-
-	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
-		panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
-
 	if(mdev->state == Secondary) {
 		struct Tl_epoch_entry *e;
 		e=req->bh->b_private;
@@ -119,6 +112,12 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 		list_del(&e->list);
 		list_add(&e->list,&mdev->done_ee);
 		spin_unlock_irqrestore(&mdev->ee_lock,flags);
+	}
+
+	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
+
+	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
+		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
 	kfree(req); /* frees also the temporary bh */

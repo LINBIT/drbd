@@ -900,7 +900,7 @@ int __init drbd_init(void)
 		init_waitqueue_head(&drbd_conf[i].asender_wait);
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
-
+		drbd_conf[i].epoch_size=0;
 		INIT_LIST_HEAD(&drbd_conf[i].free_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
@@ -940,13 +940,16 @@ inline void free_ee_list(struct list_head* list)
 {
 	struct Tl_epoch_entry *e;
 	struct list_head *le,*nle;
+	int count=0;
 
 	list_for_each2(le,nle, list) {
 		e = list_entry(le,struct Tl_epoch_entry,list);
 		list_del(le);
 		kfree(e);
+		count++;
 	}
 	
+//	printk(KERN_ERR DEVICE_NAME " : free_ee_list(): c=%d\n",count);
 }
 
 void cleanup_module()
