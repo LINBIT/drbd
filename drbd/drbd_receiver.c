@@ -237,7 +237,7 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 
 #define GFP_TRY	( __GFP_HIGHMEM | __GFP_NOWARN )
 
-STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
+STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy);
 
 /**
  * drbd_get_ee: Returns an Tl_epoch_entry; might sleep. Fails only if
@@ -257,7 +257,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
-	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,&mdev->done_ee);
+	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,1);
 
 	if(list_empty(&mdev->free_ee)) {
 		for (;;) {
@@ -282,7 +282,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			}
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
-			_drbd_process_ee(mdev,&mdev->done_ee);
+			_drbd_process_ee(mdev,1);
 		}
 		finish_wait(&mdev->ee_wait, &wait); 
 	}
@@ -353,9 +353,10 @@ STATIC void reclaim_net_ee(drbd_dev *mdev)
    from this function. Note, this function is called from all three
    threads (receiver, worker and asender). To ensure this I only allow
    one thread at a time in the body of the function */
-STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
+STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 {
 	struct Tl_epoch_entry *e;
+	struct list_head *head = &mdev->done_ee;
 	struct list_head *le;
 	int ok=1;
 	int got_sig;
@@ -365,6 +366,10 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	reclaim_net_ee(mdev);
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
+		if(!be_sleepy) {
+			clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
+			return 3;
+		}
 		spin_unlock_irq(&mdev->ee_lock);
 		got_sig = wait_event_interruptible(mdev->ee_wait,
 		       test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) == 0);
@@ -388,11 +393,11 @@ STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 	return ok;
 }
 
-STATIC int drbd_process_ee(drbd_dev *mdev,struct list_head *head)
+STATIC int drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 {
 	int rv;
 	spin_lock_irq(&mdev->ee_lock);
-	rv=_drbd_process_ee(mdev,head);
+	rv=_drbd_process_ee(mdev,be_sleepy);
 	spin_unlock_irq(&mdev->ee_lock);
 	return rv;
 }
@@ -638,7 +643,7 @@ int drbd_connect(drbd_dev *mdev)
 				for (retry=1; retry <= 10; retry++) {
 					// give the other side time to call
 					// bind() & listen()
-					current->state = TASK_INTERRUPTIBLE;
+					set_current_state(TASK_INTERRUPTIBLE);
 					schedule_timeout(HZ / 10);
 					msock=drbd_try_connect(mdev);
 					if(msock) goto connected;
@@ -754,7 +759,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	drbd_wait_ee(mdev,&mdev->active_ee);
 
 	spin_lock_irq(&mdev->ee_lock);
-	rv = _drbd_process_ee(mdev,&mdev->done_ee);
+	rv = _drbd_process_ee(mdev,1);
 
 	epoch_size=mdev->epoch_size;
 	mdev->epoch_size=0;
@@ -851,6 +856,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 */
 		}
 		ok = drbd_send_ack(mdev,WriteAck,e);
+		__set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
 		ok&= drbd_io_error(mdev);
@@ -971,7 +977,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
-			if (ok && mdev->rs_total)
+			if (ok && test_bit(SYNC_STARTED,&mdev->flags) )
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
@@ -1682,6 +1688,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			break;
 		} else {
 			spin_unlock(&mdev->send_task_lock);
+			set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout(HZ / 10);
 		}
 	}
@@ -1928,6 +1935,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 		if( is_syncer_blk(mdev,p->block_id)) {
 			drbd_set_in_sync(mdev,sector,blksize);
+			__set_bit(SYNC_STARTED,&mdev->flags);
 		} else {
 			req=(drbd_request_t*)(long)p->block_id;
 
@@ -1935,7 +1943,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 
-			if (mdev->rs_total &&
+			if (test_bit(SYNC_STARTED,&mdev->flags) &&
 			    mdev->conf.wire_protocol == DRBD_PROT_C)
 				drbd_set_in_sync(mdev,sector,blksize);
 		}
@@ -2071,7 +2079,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		 */
 		set_bit(SIGNAL_ASENDER, &mdev->flags);
 
-		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
+		if (!drbd_process_ee(mdev,0)) goto err;
 
 		rv = drbd_recv_short(mdev,buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);

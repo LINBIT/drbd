@@ -525,6 +525,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	/**   post-state-change actions   **/
 	if ( os.s.conn >= SyncSource   && ns.s.conn <= Connected ) {
+		clear_bit(SYNC_STARTED,&mdev->flags);
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}

@@ -625,6 +625,7 @@ enum {
 	MD_IO_ALLOWED,		// EXPLAIN
 	SENT_DISK_FAILURE,	// sending it once is enough
 	MD_DIRTY,		// current gen counts and flags not yet on disk
+	SYNC_STARTED,		// Needed to agree on the exact point in time..
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf
