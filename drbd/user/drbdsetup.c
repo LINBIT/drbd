@@ -1,3 +1,27 @@
+/*
+   drbdsetup.c
+
+   This file is part of drbd by Philipp Reisner.
+
+   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+        Initial author.
+
+   drbd is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
+
+   drbd is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with drbd; see the file COPYING.  If not, write to
+   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+
+ */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -9,9 +33,11 @@
 #include <stdio.h> 
 #include <string.h>
 #include "../drbd/drbd.h"
+#define _GNU_SOURCE
+#include <getopt.h>
+#include <stdlib.h>
 
-
-unsigned long resolv(char* name)
+unsigned long resolv(const char* name)
 {
   unsigned long retval;
 
@@ -29,16 +55,81 @@ unsigned long resolv(char* name)
   return retval;
 }
 
+int m_strtol(const char* s)
+{
+  char *e = (char*)s;
+  long r;
+
+  r = strtol(s,&e,0);
+  if(*e == 0)
+    return r;
+
+  fprintf(stderr,"%s is not a valid number\n",s);
+  exit(20);
+}
+
+const char* addr_part(const char* s)
+{
+  static char buffer[200];
+  char *b;
+
+  b=strchr(s,':');
+  if(b)
+    {
+      strncpy(buffer,s,b-s);
+      buffer[b-s]=0;
+      return buffer;
+    }
+  return s;
+}
+
+int port_part(const char* s)
+{
+  char *b;
+
+  b=strchr(s,':');
+  if(b)
+      return m_strtol(b+1);
+
+  return 7788;
+}
+
 
 int main(int argc, char** argv)
 {
   int dtbd_fd;
 
-  if(argc != 5 && argc != 3)
+  if(argc != 3 && argc < 6)
     {
-      fprintf(stderr,"USAGE: %s device lower_device local_address "
-	               "remote_address\n"
-	             "OR:    %s device (p|s)\n",argv[0],argv[0]);
+      fprintf(stderr,
+	      " %s device {pri|sec}\n"
+	      " %s device lower_device protocol local_addr[:port] "
+	      "remote_addr[:port] \n"
+	      "       [-t|--timout val] [-r|--sync-rate val] "
+	      "[-k|--skip-sync] [-s|-tl-size val]\n\n"
+	      "       protocol\n"
+	      "          protocol may be A, B or C.\n\n" 
+	      "       port\n"
+	      "          TCP port number\n"
+	      "          Default: 7788\n"
+	      "       -t --timeout  val\n"
+	      "          If communication blocks for val * 1/10 seconds,\n"
+	      "          drbd falls back into unconnected operation.\n"
+	      "          Default: 30 = 3 sec.\n\n"
+	      "       -r --sync-rate val\n"
+	      "          The synchronisations sends up to val KB per sec.\n"
+	      "          Default: 250 = 250 KB/sec\n\n"
+	      "       -k --skip-sync\n"
+	      "          Instruct drbd not to do synchronisation.\n\n"
+	      "       -s --tl-size val\n"
+	      "          Sets the size of the transfer log(=TL). The TL is\n"
+	      "          is used for dependency analysis. For long latency\n"
+	      "          high bandwith links it might be necessary to set\n"
+	      "          the size bigger than 256.\n"
+	      "          You will see error messages in the system log\n"
+	      "          if the TL is too small.\n"
+	      "          Default: 256 entries\n"
+	      ,argv[0],argv[0]);
       exit(20);
     }
 
@@ -52,11 +143,11 @@ int main(int argc, char** argv)
   if(argc == 3)
     {
       Drbd_State state;
-      if(argv[2][0]=='p')
+      if(argv[2][0]=='p' || argv[2][0]=='P')
 	{
 	  state = Primary;
 	}
-      else if(argv[2][0]=='s')
+      else if(argv[2][0]=='s' || argv[2][0]=='S')
 	{
 	  state = Secondary;
 	}
@@ -66,69 +157,98 @@ int main(int argc, char** argv)
 	  exit(20);
 	}
       ioctl(dtbd_fd,DRBD_IOCTL_SET_STATE,state);
-      printf("done.\n");
       exit(0);
     }
 
-  if(argc == 5)
+  if(argc >= 6)
     {
-      /*      int socket_fd; */
+
       int lower_device;
       struct ioctl_drbd_config config;
       struct sockaddr_in *other_addr;
       struct sockaddr_in *my_addr;
       int err;
-      /*
-      socket_fd = socket(PF_INET,SOCK_STREAM,0);
-      if(socket_fd==-1)
-	{
-	  perror("socket()");
-	  exit(20);
-	}
-      */
+
       if((lower_device = open(argv[2],O_RDWR))==-1)
 	{
 	  perror("Can not open lower device");
 	  exit(20);
 	}
 
-
       config.lower_device=lower_device;
+
+      switch(argv[3][0])
+	{
+	case 'a':
+	case 'A':
+	  config.wire_protocol = DRBD_PROT_A;
+	  break;
+	case 'b':
+	case 'B':
+	  config.wire_protocol = DRBD_PROT_B;
+	  break;
+	case 'c':
+	case 'C':
+	  config.wire_protocol = DRBD_PROT_C;
+	  break;
+	default:	  
+	  fprintf(stderr,"Invalid protocol specifier.\n");
+	  exit(20);	  
+	}
 
       config.my_addr_len = sizeof(struct sockaddr_in);
       my_addr = (struct sockaddr_in *)config.my_addr;
-      my_addr->sin_port = htons(7788);
+      my_addr->sin_port = htons(port_part(argv[4]));
       my_addr->sin_family = AF_INET;
-      my_addr->sin_addr.s_addr = resolv(argv[3]);
-
-      /*
-      err = bind(socket_fd,my_addr,sizeof(struct sockaddr_in));
-      if(err)
-	{
-	  perror("bind() failed");
-	  exit(20);
-	}
-      */
+      my_addr->sin_addr.s_addr = resolv(addr_part(argv[4]));
 
       config.other_addr_len = sizeof(struct sockaddr_in);
       other_addr = (struct sockaddr_in *)config.other_addr;
-      other_addr->sin_port = htons(7788);
+      other_addr->sin_port = htons(port_part(argv[5]));
       other_addr->sin_family = AF_INET;
-      other_addr->sin_addr.s_addr = resolv(argv[4]);
+      other_addr->sin_addr.s_addr = resolv(addr_part(argv[5]));
 
       config.timeout = 30; /* = 3 seconds */
       config.sync_rate = 250; /* KB/sec */
       config.skip_sync = 0; 
       config.tl_size = 256;
-      config.wire_protocol = DRBD_PROT_B;
+
+      optind=6;
+      while(1)
+	{
+	  int c;
+	  static struct option options[] = {
+	    { "timeout",   required_argument, 0, 't' },
+	    { "sync-rate", required_argument, 0, 'r' },
+	    { "skip-sync", no_argument,       0, 'k' },
+	    { "tl-size",   required_argument, 0, 's' },
+	    { 0,           0,                 0, 0   }
+	  };
+	  
+	  c = getopt_long(argc,argv,"t:r:ks:",options,0);
+	  if(c == -1) break;
+	  switch(c)
+	    {
+	    case 't': 
+	      config.timeout = m_strtol(optarg);
+	      break;
+	    case 'r':
+	      config.sync_rate = m_strtol(optarg);
+	      break;
+	    case 'k':
+	      config.skip_sync=1;
+	      break;
+	    case 's':
+	      config.tl_size = m_strtol(optarg);
+	      break;
+	    }
+	}
 
       err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&config);      
       if(err)
 	{
 	  perror("ioctl() failed");
 	}
-      printf("done.\n");
     }
-
   return 0;
 }

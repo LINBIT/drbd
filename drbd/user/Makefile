@@ -1,6 +1,6 @@
 # Makefile for drbd.o
 #
-# This file is part of drbd by Philipp Richter & Philipp Reisner
+# This file is part of drbd by Philipp Reisner
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,13 +29,10 @@ include ../Makefile.vars
 #######
 
 
-all: drbdsetup #drbdd
+all: drbdsetup
 
 drbdsetup: drbdsetup.o
 	$(CC) -o drbdsetup drbdsetup.o
-
-#drbdd: drbdd.o net.o config.o
-#	$(CC) -o drbdd drbdd.o net.o config.o
 
 clean:
 	rm -f drbdsetup *.o 
