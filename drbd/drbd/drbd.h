@@ -154,7 +154,8 @@ typedef enum {
   CStateChanged,
   Ping,
   PingAck,
-  StartSync    /* Secondary asking primary to start sync */ 
+  StartSync,   /* Secondary asking primary to start sync */ 
+  Postpone
 } Drbd_Packet_Cmd;
 
 typedef enum { Primary, Secondary, Unknown } Drbd_State;
