@@ -359,13 +359,16 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
 {
 	unsigned long dt;
+	sector_t n;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 	D_ASSERT(mdev->rs_left == 0);
 
 	dt = (jiffies - mdev->rs_start) / HZ + 1;
-	INFO("Resync done (total %lu sec; %lu K/sec)\n",
-	     dt,(mdev->rs_total/2)/dt);
+	n = mdev->rs_total>>1;
+	sector_div(n,dt);
+	INFO("Resync done (total %lu sec; %u K/sec)\n",
+	     dt,(unsigned long)n);
 
 	if (mdev->cstate == SyncTarget) {
 		mdev->gen_cnt[Flags] |= MDF_Consistent;
@@ -580,7 +583,8 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	mdev->rs_mark_time=mdev->rs_start;
 
 	INFO("Resync started as %s (need to sync %lu KB).\n",
-	     side == SyncTarget ? "target" : "source", mdev->rs_left/2);
+	     side == SyncTarget ? "target" : "source", 
+	     (unsigned long) mdev->rs_left>>1);
 
 	PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));
 	PARANOIA_BUG_ON(mdev->resync_work.cb != w_resync_inactive);

@@ -888,7 +888,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
 
 	static int (*funcs[])(struct Drbd_Conf* , struct Pending_read*,
-		      unsigned long,int) = {
+			      sector_t,int) = {
 			      [Application]  = recv_dless_read,
 			      [Resync]       = recv_resync_read,
 			      [AppAndResync] = recv_both_read

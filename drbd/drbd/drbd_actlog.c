@@ -36,7 +36,7 @@
  * this is mostly from drivers/md/md.c
  */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw)
+int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 {
 	struct buffer_head bh;
 	struct completion event;
@@ -58,7 +58,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw)
 	return test_bit(BH_Uptodate, &bh.b_state);
 }
 #else
-int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw)
+int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 {
 	struct bio bio;
 	struct bio_vec vec;
@@ -149,7 +149,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	if (al_ext->lc_number != enr) {
 		// We have to do write an transaction to AL.
-		unsigned long evicted;
+		unsigned int evicted;
 
 		evicted = al_ext->lc_number;
 		al_ext->lc_number = enr;
@@ -512,7 +512,7 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
 		bm_end_of_dev_case(mdev->mbds_id);
 
 	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
-	     mdev->rs_total/2);
+	     (unsigned long) mdev->rs_total>>1);
 }
 
 #define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )

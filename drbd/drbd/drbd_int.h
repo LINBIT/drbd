@@ -819,7 +819,7 @@ extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sg(drbd_dev *mdev, int ng);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 // maybe rather drbd_main.c ?
-extern int drbd_md_sync_page_io(drbd_dev *mdev, unsigned long sector, int rw);
+extern int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw);
 // worker callbacks
 extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work *w);
 extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work *w);
@@ -1122,6 +1122,14 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+# define sector_div(n, b)( \
+{ \
+	int _res; \
+	_res = (n) % (b); \
+	(n) /= (b); \
+	_res; \
+} \
+)
 # if (BITS_PER_LONG > 32)
 static inline unsigned long hweight64(__u64 w)
 {
