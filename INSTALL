@@ -4,14 +4,9 @@ These are the steps to build and install DRBD on your system.
 It should work for SuSE, Debian, RH and other distros with slight
 modifications.
 
-   This was written for 0.6.10, and might not work for releases
-   before that, since we changed our Makefile to use the top level
-   kernel source Makefile, so we no longer need to worry about
-   all those funny kernel compile flags...
-   
-   It is still correct for 0.6.13.
-   Maybe this needs an update for 0.7.x,
-   but most of it probably still applies.
+   This was last reviewed for drbd-0.7.5.
+   It is correct for both 0.6.10 and later,
+   and 0.7.x.
 
 I tried to indicate what you should type by the prompt-prefix
 on the below command lines. "all#", when it is the same for
@@ -26,9 +21,8 @@ Other helpful links:
 
 	http://www.drbd.org
 	http://www.drbd.org/drbd-article.html
-	http://www.linux-mag.com/2003-11/drbd_01.html
 	http://www.linux-mag.com/2003-11/toc.html
-	http://linuxha.trick.ca/DRBD_2fFAQ , and of course,
+	http://linuxha.trick.ca/DRBD , and of course,
 	http://www.drbd.org/support.html
 
 == Prerequisites ==
@@ -69,7 +63,8 @@ Other helpful links:
 
    The next step is just to be sure. If you know what it does,
    you probably can judge on your own whether it is necessary or
-   not, anyways.
+   not, anyways. If you get strange results on your first try,
+   please do this first. It sometimes really helps!
 
        all# make mrproper
 
@@ -98,20 +93,24 @@ Other helpful links:
        redhat# cp /boot/kernel-2.4.some-thing.config  .config
         or   # cp configs/kernel-2.4.some-thing.config .config
              # make -s oldconfig_nonint ; make -s oldconfig_nonint
+             # vi Makefile # mod EXTRAVERSION to match installed kernel
+                           # (remove "custom" if neccessary)
 
        fedora# cp /boot/config-2.4.some-thing  .config
              # export CC=gcc32
-             # vi Makefile #mod EXTRAVERSION to match installed kernel
              # yes "" | { make oldconfig ; make oldconfig ; }
+             # vi Makefile # mod EXTRAVERSION to match installed kernel
+                           # (remove "custom" if neccessary)
 
     Note:
     If you consider to not run some vendor kernel, but compile
     your own kernel, you need to build in module support, since
-    DRBD is a module.  DRBD depends on procfs, but you want to
-    have that anyways.  Make sure that you do not compile NBD
+    DRBD is a module (but see below for in kernel builds).
+    DRBD depends on procfs, but you want to have that anyways.
+    Make sure that you do not compile NBD
     into the kernel, since DRBD uses the same major device
     number. Having it as module is ok, but you cannot use both
-    at the same time.
+    at the same time. (well, starting with 0.7.1, you can...)
 
     If you do not run a selfcompiled kernel, but the binary shipped
     distro kernel, and after "make install" the drbd module ends up in
@@ -119,7 +118,8 @@ Other helpful links:
     in "/lib/modules/2.4.20/" ), edit the top-level Makefile of your kernel
     source tree and remove "custom" from the EXTRAVERSION.  Make sure you
     copied in the .config corresponding to the kernel you use.
-    Don't forget to "make dep" in /usr/src/linux, it sometimes helps, too.
+    For 2.4 kernels, don't forget to "make dep" in /usr/src/linux,
+    it sometimes helps, too.
     (you could of course edit .kernelversion in the drbd directory,
     or copy by hand, too)
 
@@ -136,7 +136,7 @@ Other helpful links:
 
        all# make dep	# no longer neccessary with 2.6.x
        all# make linux/include/version.h
-          # and since kernel 2.6.6 (some distos 2.6.5+):
+          # and since kernel 2.6.6 (some distros 2.6.5-something):
        all# make modules_prepare
 
 == Build DRBD kernel module (outside of the kernel source) ==
@@ -145,6 +145,7 @@ Other helpful links:
 
        all# cd /usr/src
        all# tar -xvzf where/you/downloaded/it/drbd-0.6.12.tar.gz
+          # or 0.7.x.tar.gz, of course
 
    now build the module
 
@@ -249,8 +250,7 @@ Other helpful links:
 == Building a .rpm of it ==
 
    This should be fairly easy, there is an example spec
-   file, and you can even "make rpm".  If this is a CVS/SVN version,
-   you might need to say "make rpm FORCE=1".
+   file, and you can even "make rpm".
 
    If it does not work for you out of the box, first get "make install"
    to work properly, see the section titled 'prepare the kernel source tree'
@@ -265,12 +265,7 @@ Other helpful links:
    like in "make rpm KDIR=/usr/src/linux-include/athlon",
    "make rpm KDIR=/usr/src/linux-include/smp", ...
 
-   You then should find packages in "dist/{S,}RPMS/*/*.rpm":
-
-	./dist/RPMS/i586/drbd-0.6.12-3.i586.rpm
-	./dist/RPMS/i586/kernel-module-drbd-0.6.12-3_2.4.21_166_default.i586.rpm
-	./dist/RPMS/i586/kernel-smp-module-drbd-0.6.12-3_2.4.21_166_4G.i586.rpm
-	...
+   You then should find packages in "dist/{S,}RPMS/*/*.rpm".
 
    Note however that your distro most likely handles rpms of kernel modules in
    some special way, so you may want to first ask your ditributor to provide
@@ -337,4 +332,4 @@ Hope this helped, cheers and have fun ...
 	Lars Ellenberg
 
 
-Last modified: Tue Aug 24 14:07:40 UTC 2004
+Last modified: Wed Sep 29 20:33:23 UTC 2004

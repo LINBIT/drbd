@@ -80,11 +80,7 @@ make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
 
 %install
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
-cd documentation
-mv HOWTO HOWTO.orig
-mkdir HOWTO
-find HOWTO.orig/ -name "*.html" -exec cp -p '{}' HOWTO \;
-cd ../drbd
+cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
 
 FILELIST="%{_builddir}/%{name}-%{version}/file.list"
@@ -128,15 +124,8 @@ ___
 %{_mandir}/man8/drbdsetup.8.gz
 %{_mandir}/man8/drbdadm.8.gz
 %{_mandir}/man5/drbd.conf.5.gz
-%{_mandir}/ja/man8/drbd.8.gz
-%{_mandir}/ja/man8/drbdsetup.8.gz
-%{_mandir}/ja/man5/drbd.conf.5.gz
-%{_mandir}/pt_BR/man8/drbd.8.gz
-%{_mandir}/pt_BR/man8/drbdsetup.8.gz
-%{_mandir}/pt_BR/man5/drbd.conf.5.gz
 %doc scripts/drbd.conf
 %doc documentation/NFS-Server-README.txt
-%doc documentation/HOWTO
 %doc COPYING
 %doc README
 %doc file.list

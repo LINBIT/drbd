@@ -1,3 +1,24 @@
+
+NOTE:
+  with recent drbd (>= 0.7)
+  you typically NOT place any entries in /etc/fstab,
+  and the device names are /dev/drbdX instead of /dev/nbX
+
+This file should be replaced by a proper howto.
+someone vonlunteers to write one?
+
+see also the pages at linux-ha.org,
+  there should be more, and more recent,
+  info on this and related topics:
+  
+  http://linuxha.trick.ca/
+  http://www.linux-ha.org/
+
+-- lge
+
+=========================================
+
+
 From: Erik de Wilde <E.deWilde@eijsink.nl>
 Subject: Re: [DRBD-dev] Bad performance when disks mounted with sync but data
 +corruption without sync
