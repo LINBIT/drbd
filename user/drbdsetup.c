@@ -48,6 +48,8 @@
 #include <dirent.h>
 #include <mntent.h>
 
+#include "drbd_limits.h"
+
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 /* Default values */
@@ -207,29 +209,103 @@ unsigned long resolv(const char* name)
   return retval;
 }
 
-unsigned long m_strtol(const char* s,int def_mult)
+unsigned long long
+m_strtoll(const char *s, char def_unit)
 {
-  char *e = (char*)s;
-  unsigned long r;
+  unsigned long long r;
+  char unit = 0;
+  char dummy = 0;
+  int shift, c;
 
-  r = strtol(s,&e,0);
-  switch(*e)
+  /*
+   * paranoia
+   */
+  switch (def_unit)
+    {
+    default:
+      fprintf(stderr, "%s:%d: unexpected default unit\n", __FILE__, __LINE__);
+      exit(100);
+    case 0:
+    case 1:
+    case '1':
+      shift = 0;
+      break;
+
+    case 'K':
+    case 'k':
+      shift = -10;
+      break;
+
+      /*
+         case 'M':
+         case 'm':
+         case 'G':
+         case 'g':
+       */
+    }
+
+  if (!s || !*s)
+    {
+      fprintf(stderr, "missing number argument\n");
+      exit(100);
+    }
+
+  c = sscanf(s, "%llu%c%c", &r, &unit, &dummy);
+
+  if (c != 1 && c != 2)
+    {
+      fprintf(stderr, "%s is not a valid number\n", s);
+      exit(20);
+    }
+
+  switch (unit)
     {
     case 0:
       return r;
     case 'K':
     case 'k':
-      return r*(1024/def_mult);
+      shift += 10;
+      break;
     case 'M':
     case 'm':
-      return r*1024*(1024/def_mult);
+      shift += 20;
+      break;
     case 'G':
     case 'g':
-      return r*1024*1024*(1024/def_mult);
+      shift += 30;
+      break;
     default:
-      fprintf(stderr,"%s is not a valid number\n",s);
+      fprintf(stderr, "%s is not a valid number\n", s);
       exit(20);
     }
+  if (r > (~0ULL >> shift))
+    {
+      fprintf(stderr, "%s: out of range\n", s);
+      exit(20);
+    }
+  return r << shift;
+}
+
+/* NOTE all values are _unsigned_ */
+unsigned long long
+m_strtoll_range(const char *s, const char def_unit, const char *name,
+		const unsigned long long min, const unsigned long long max)
+{
+  unsigned long long r = m_strtoll(s, def_unit);
+  char unit[] = { def_unit > '1' ? def_unit : 0, 0 };
+  if (min > r || r > max)
+    {
+      fprintf(stderr, "%s %s => %llu%s out of range [%llu..%llu]%s\n",
+	      name, s, r, unit, min, max, unit);
+      exit(20);
+    }
+  if (DEBUG_RANGE_CHECK)
+    {
+      fprintf(stderr,
+	      "OK: %s %s => %llu%s in range [%llu..%llu]%s.\n",
+	      name, s, r, unit, min, max, unit);
+    }
+  return r;
 }
 
 const char* addr_part(const char* s)
@@ -274,7 +350,7 @@ int port_part(const char* s)
 
   b=strchr(s,':');
   if(b)
-      return m_strtol(b+1,1);
+      return m_strtoll_range(b+1,1, "port", DRBD_PORT_MIN, DRBD_PORT_MAX);
 
   return 7788;
 }
@@ -361,7 +437,7 @@ void print_usage(const char* addinfo)
   int i;
 
   printf("\nUSAGE: %s device command arguments options\n\n"
-	 "Device is usually /dev/nbX or /dev/drbd/X.\n"
+	 "Device is usually /dev/drbdX or /dev/drbd/X.\n"
          "Commands, arguments and options are:\n",basename);
 
 
@@ -450,7 +526,9 @@ int scan_disk_options(char **argv,
       switch(c)
 	{
 	case 'd':
-	  cn->config.disk_size = m_strtol(optarg,1024);
+	  cn->config.disk_size = m_strtoll_range(optarg,'K', "disk-size",
+			      DRBD_DISK_SIZE_SECT_MIN>>1,
+			      DRBD_DISK_SIZE_SECT_MAX>>1 );
 	  break;
 	case 'e':
 	  for(i=0;i<ARRY_SIZE(eh_names);i++) {
@@ -498,25 +576,33 @@ int scan_net_options(char **argv,
       switch(c)
 	{
 	case 't':
-	  cn->config.timeout = m_strtol(optarg,1);
+	  cn->config.timeout = m_strtoll_range(optarg,1, "timeout",
+			  DRBD_TIMEOUT_MIN, DRBD_TIMEOUT_MAX);
 	  break;
 	case 'e':
-	  cn->config.max_epoch_size = m_strtol(optarg,1);
+	  cn->config.max_epoch_size = m_strtoll_range(optarg,1,
+			  "max-epoch-size",
+			  DRBD_MAX_EPOCH_SIZE_MIN, DRBD_MAX_EPOCH_SIZE_MAX);
 	  break;
 	case 'b':
-	  cn->config.max_buffers = m_strtol(optarg,1);
+	  cn->config.max_buffers = m_strtoll_range(optarg,1, "max-buffers",
+			  DRBD_MAX_BUFFERS_MIN, DRBD_MAX_BUFFERS_MIN);
 	  break;
 	case 'c':
-	  cn->config.try_connect_int = m_strtol(optarg,1);
+	  cn->config.try_connect_int = m_strtoll_range(optarg,1, "connect-int",
+			  DRBD_CONNECT_INT_MIN, DRBD_CONNECT_INT_MAX);
 	  break;
 	case 'i':
-	  cn->config.ping_int = m_strtol(optarg,1);
+	  cn->config.ping_int = m_strtoll_range(optarg,1, "ping-int",
+			  DRBD_PING_INT_MIN, DRBD_PING_INT_MAX);
 	  break;
 	case 'S':
-	  cn->config.sndbuf_size = m_strtol(optarg,1);
+	  cn->config.sndbuf_size = m_strtoll_range(optarg,1, "sndbuf-size",
+			  DRBD_SNDBUF_SIZE_MIN, DRBD_SNDBUF_SIZE_MAX);
 	  break;
        case 'k':
-          cn->config.ko_count = m_strtol(optarg,1);
+          cn->config.ko_count = m_strtoll_range(optarg,1, "ko-count",
+			  DRBD_KO_COUNT_MIN, DRBD_KO_COUNT_MAX);
           break;
 	case 'd':
 	  for(i=0;i<ARRY_SIZE(dh_names);i++) {
@@ -850,10 +936,14 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	  switch(c)
 	    {
 	    case 't':
-	      p.wfc_timeout = m_strtol(optarg,1);
+	      p.wfc_timeout = m_strtoll_range(optarg,1, "wfc-timeout",
+			      DRBD_WFC_TIMEOUT_MIN, DRBD_WFC_TIMEOUT_MAX);
 	      break;
 	    case 'd':
-	      p.degr_wfc_timeout = m_strtol(optarg,1);
+	      p.degr_wfc_timeout = m_strtoll_range(optarg,1,
+			      "degr-wfc-timeout",
+			      DRBD_DEGR_WFC_TIMEOUT_MIN,
+			      DRBD_DEGR_WFC_TIMEOUT_MAX);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
@@ -925,13 +1015,16 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	      cn.config.skip=1;
 	      break;
 	    case 'r':
-	      cn.config.rate=m_strtol(optarg,1024);
+	      cn.config.rate=m_strtoll_range(optarg,'K', "rate",
+			      DRBD_RATE_MIN, DRBD_RATE_MAX);
 	      break;
 	    case 'g':
-	      cn.config.group=m_strtol(optarg,1);
+	      cn.config.group=m_strtoll_range(optarg,1, "group",
+			      DRBD_GROUP_MIN, DRBD_GROUP_MAX);
 	      break;
 	    case 'e':
-	      cn.config.al_extents=m_strtol(optarg,1);
+	      cn.config.al_extents=m_strtoll_range(optarg,1, "al-extents",
+			      DRBD_AL_EXTENTS_MIN, DRBD_AL_EXTENTS_MAX);
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
@@ -1058,12 +1151,12 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
   retval=scan_disk_options(argv,argc,&cn,options);
   if(retval) return retval;
 
-  mi = m_strtol(argv[5],1);
+  mi = m_strtoll(argv[5],1);
   if( mi < -1 ) {
     fprintf(stderr,"meta_index may not be smaller than -1.\n");
-    return 20;    
+    return 20;
   }
-  //TODO check that mi*128M is not bigger than meta device!
+  //FIXME check that mi*128M is not bigger than meta device!
   cn.config.meta_index = mi;
 
   return do_disk_conf(drbd_fd,argv[3],argv[4],&cn);
@@ -1086,7 +1179,9 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 	  switch(c)
 	    {
 	    case 'd':
-	      u_size=m_strtol(optarg,1024);
+	      u_size=m_strtoll_range(optarg,'K', "disk-size",
+			      DRBD_DISK_SIZE_SECT_MIN>>1,
+			      DRBD_DISK_SIZE_SECT_MAX>>1 );
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",basename,optarg);
@@ -1348,7 +1443,9 @@ int main(int argc, char** argv)
   else
       basename = argv[0];
 
-  if (argc > 1 && !strcmp(argv[1],"help")) help = 1;
+  /* == '-' catches -h, --help, and similar */
+  if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-'))
+	  help = 1;
   if (argc < 3) print_usage(argc==1 ? 0 : " Insufficient arguments");
 
   chdir("/");
