@@ -305,7 +305,6 @@ static inline unsigned long drbd_get_lo_capacity(drbd_dev *mdev)
 static inline unsigned long drbd_get_my_capacity(drbd_dev *mdev)
 {
 	sector_t c = get_capacity(mdev->vdisk);
-	D_ASSERT(c == mdev->la_size);
 	return c;
 }
 

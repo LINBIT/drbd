@@ -351,8 +351,10 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	struct ioctl_get_config cn;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
-	//WORK_HERE
-#warning "FIXME make 26 clean, maybe move to compat layer?"
+	cn.lower_device_major=MAJOR(mdev->backing_bdev->bd_dev);
+	cn.lower_device_minor=MINOR(mdev->backing_bdev->bd_dev);
+	cn.meta_device_major=MAJOR(mdev->md_bdev->bd_dev);
+	cn.meta_device_minor=MINOR(mdev->md_bdev->bd_dev);
 #else
 	cn.lower_device_major=MAJOR(mdev->lo_device);
 	cn.lower_device_minor=MINOR(mdev->lo_device);

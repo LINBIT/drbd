@@ -67,6 +67,7 @@ extern int disable_io_hints;
 
 #undef DEVICE_NAME
 #define DEVICE_NAME "drbd"
+#define DEVFS_NAME "nbd"    // This make sense as long as we are MAJOR 43
 
 // XXX do we need this?
 #ifndef TRUE

@@ -1258,7 +1258,7 @@ int __init drbd_init(void)
 #else
 
 #ifdef CONFIG_DEVFS_FS
-	devfs_mk_dir(DEVICE_NAME);
+	devfs_mk_dir(DEVFS_NAME);
 #endif
 
 	for (i = 0; i < minor_count; i++) {
@@ -1282,7 +1282,7 @@ int __init drbd_init(void)
 		disk->first_minor = i;
 		disk->fops = &drbd_ops;
 		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
-		sprintf(disk->devfs_name, DEVICE_NAME "/%d", i);
+		sprintf(disk->devfs_name, DEVFS_NAME "/%d", i);
 		disk->private_data = mdev;
 		add_disk(disk);
 
@@ -1452,7 +1452,7 @@ void cleanup_module(void)
 # if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	devfs_unregister(devfs_handle);
 # else
-	devfs_remove(DEVICE_NAME);
+	devfs_remove(DEVFS_NAME);
 # endif
 #endif
 }
