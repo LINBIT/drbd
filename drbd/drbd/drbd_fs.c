@@ -210,11 +210,12 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
-	drbd_read_bitmap(mdev);
+	drbd_read_bm(mdev);
 	lc_resize(&mdev->act_log, mdev->sync_conf.al_extents);
 	drbd_al_read_log(mdev);
 	if(mdev->gen_cnt[Flags] & MDF_PrimaryInd) {
-		drbd_al_apply_to_bitmap(mdev);
+		drbd_al_apply_to_bm(mdev);
+		drbd_al_to_on_disk_bm(mdev);
 	}
 
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
@@ -409,6 +410,9 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		set_device_ro(MKDEV(MAJOR_NR, minor), TRUE );
 	}
 
+	if(newstate & Secondary && mdev->rs_total) {
+		drbd_al_to_on_disk_bm(mdev);
+	}
 	/* Primary indicator has changed in any case. */
 	drbd_md_write(mdev);
 

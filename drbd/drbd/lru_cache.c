@@ -182,10 +182,10 @@ STATIC struct lc_element * lc_evict(struct lru_cache * mlc)
 	if( mlc->may_evict ) {
 		if( ! mlc->may_evict(mlc,element) ) {
 			printk(KERN_WARNING "LC: need to wait\n");
-			spin_unlock(mlc->lc_lock); 
+			spin_unlock(&mlc->lc_lock); 
 			//TODO use wait_event_lock here
 			wait_event(mlc->evict_wq,mlc->may_evict(mlc,element));
-			spin_lock(mlc->lc_lock);
+			spin_lock(&mlc->lc_lock);
 			goto retry;
 		}
 	}

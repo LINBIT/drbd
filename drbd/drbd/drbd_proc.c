@@ -182,8 +182,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,
 			   drbd_conf[i].read_cnt/2,
-			   drbd_conf[i].al_writ_cnt/2,
- 			   drbd_conf[i].bm_writ_cnt/2,
+			   drbd_conf[i].al_writ_cnt,
+ 			   drbd_conf[i].bm_writ_cnt,
  			   atomic_read(&drbd_conf[i].pending_cnt),
 			   atomic_read(&drbd_conf[i].unacked_cnt)
 			);

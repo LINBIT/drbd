@@ -765,8 +765,9 @@ extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, 
 			     int blk_size, int may_sleep);
-extern void drbd_read_bitmap(struct Drbd_Conf *mdev);
-extern void drbd_al_apply_to_bitmap(struct Drbd_Conf *mdev);
+extern void drbd_read_bm(struct Drbd_Conf *mdev);
+extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
+extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
 
 /*
  * event macros

@@ -992,10 +992,13 @@ STATIC void drbd_send_write_hint(void *data)
 	}
 
 	// THINK: sock or msock ?
-	if (drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h))==1)
+	if (drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h))==1){
 		clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
-	else
-		queue_task(&mdev->write_hint_tq, &tq_disk);
+	} else {
+		if(mdev->cstate < Connected) {
+			clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
+		} else queue_task(&mdev->write_hint_tq, &tq_disk);
+	}
 }
 
 int __init drbd_init(void)

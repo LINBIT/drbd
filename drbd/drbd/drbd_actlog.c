@@ -55,7 +55,7 @@ struct al_transaction {
 };     // sizeof() = 512 byte
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
-STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int,int);
+STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
 STATIC int drbd_al_may_evict(struct lru_cache *mlc, struct lc_element *e)
 {
@@ -63,7 +63,7 @@ STATIC int drbd_al_may_evict(struct lru_cache *mlc, struct lc_element *e)
 
 	extent = (struct drbd_extent *)e;
 
-	return extent->pending_ios > 0;
+	return extent->pending_ios == 0;
 }
 
 void drbd_al_init(struct Drbd_Conf *mdev)
@@ -99,7 +99,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	if( update_al ) {
 		if(mdev->cstate < Connected &&  evicted != LC_FREE ) {
-			drbd_update_on_disk_bitmap(mdev,evicted,1);
+			drbd_update_on_disk_bm(mdev,evicted,1);
 		}
 		drbd_al_write_transaction(mdev);
 	}
@@ -324,10 +324,30 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 }
 
 /**
- * drbd_al_apply_to_bitmap: Sets the bits in the bitmap that are described
+ * drbd_al_to_on_disk_bm: Writes the areas of the bitmap which are covered by
+ * the AL.
+ */
+void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
+{
+	int i;
+	unsigned int enr;
+
+	spin_lock(&mdev->act_log.lc_lock);
+
+	for(i=0;i<mdev->act_log.nr_elements;i++) {
+		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
+		if(enr == LC_FREE) continue;
+		drbd_update_on_disk_bm(mdev,enr,1);
+	}
+
+	spin_unlock(&mdev->act_log.lc_lock);
+}
+
+/**
+ * drbd_al_apply_to_bm: Sets the bits in the bitmap that are described
  * by the active extents of the AL.
  */
-void drbd_al_apply_to_bitmap(struct Drbd_Conf *mdev)
+void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 {
 	int i;
 	unsigned int enr;
@@ -338,9 +358,8 @@ void drbd_al_apply_to_bitmap(struct Drbd_Conf *mdev)
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
 		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		add += bm_set_bit( mdev, 
-				   enr << (AL_EXTENT_SIZE_B-9), 4<<20 , 
-				   SS_OUT_OF_SYNC );
+		add += bm_set_bit( mdev, enr << (AL_EXTENT_SIZE_B-9), 
+				   AL_EXTENT_SIZE, SS_OUT_OF_SYNC );
 	}
 
 	spin_unlock(&mdev->act_log.lc_lock);
@@ -351,9 +370,9 @@ void drbd_al_apply_to_bitmap(struct Drbd_Conf *mdev)
 }
 
 /**
- * drbd_read_bitmap: Read the whole bitmap from its on disk location.
+ * drbd_read_bm: Read the whole bitmap from its on disk location.
  */
-void drbd_read_bitmap(struct Drbd_Conf *mdev)
+void drbd_read_bm(struct Drbd_Conf *mdev)
 {
 	unsigned long * buffer, * bm, word;
 	sector_t sector;
@@ -416,12 +435,12 @@ STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
 #define BM_BYTES_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / 8 )
 #define EXTENTS_PER_SECTOR  ( 512 / BM_BYTES_PER_EXTENT )
 /**
- * drbd_update_on_disk_bitmap: Writes a piece of the bitmap to its
+ * drbd_update_on_disk_bm: Writes a piece of the bitmap to its
  * on disk location. 
  *
  * @enr: The extent number of the bits we should write to disk.
  */
-STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr,
+STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr,
 				       int sync)
 {
 	unsigned long * buffer, * bm;
@@ -502,7 +521,9 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 			if(ext->rs_left == 0) {
 				spin_unlock(&mdev->resync.lc_lock);	       
-				drbd_update_on_disk_bitmap(mdev,enr*SM,0);
+				drbd_update_on_disk_bm(mdev,enr*SM,1);
+				// TODO: reconsider to use the async version
+				// of drbd_update_on_disk_bm()
 				//INFO("Clearing e# %lu of on disk bm\n",enr);
 				spin_lock(&mdev->resync.lc_lock);
 				lc_del(&mdev->resync,&ext->lce);
@@ -521,6 +542,7 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	   from other places in non IRQ */
 	unsigned long flags=0;
 	int cleared;
+	int wake_dsender=0;
 
 	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
@@ -531,7 +553,7 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
 		set_bit(SYNC_FINISHED,&mdev->flags);
 		spin_unlock(&mdev->ee_lock);
-		wake_up_interruptible(&mdev->dsender_wait);
+		wake_dsender=1;
 	}
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
@@ -541,4 +563,7 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	spin_unlock_irqrestore(&mdev->rs_lock,flags);
 
 	drbd_try_clear_on_disk_bm(mdev,sector,cleared,may_sleep);
+	if(wake_dsender) {// must happen after drbd_try_clear_on_disk_bm();
+		wake_up_interruptible(&mdev->dsender_wait); 
+	}
 }

@@ -1312,7 +1312,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	Drbd_SyncParam_Packet *p = (Drbd_SyncParam_Packet*)h;
 
 	// FIXME move into helper
-	ERR_IF(h->length == (sizeof(*p)-sizeof(*h))) return FALSE;
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
 	if (drbd_recv(mdev, mdev->sock, PAYLOAD_P(h), h->length) != h->length)
 		return FALSE;
