@@ -1,3 +1,17 @@
+drbd (0.7.7-1) unstable; urgency=low
+
+  * (Cyril Bouthors)
+     - New upstream release
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Wed, 15 Dec 2004 17:15:35 +0300
+
+drbd (0.7.6-2) unstable; urgency=low
+
+  * (Cyril Bouthors)
+     - drbd0.7-module-source: Moved debhelper from Recommends to Depends
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Thu,  9 Dec 2004 20:37:41 +0300
+
 drbd (0.7.6-1) unstable; urgency=low
 
   * (Cyril Bouthors)
@@ -30,7 +44,7 @@ drbd (0.7.5-1) unstable; urgency=low
     - debian/drbd0.7.dirs: removed usr/bin (closes: #276643).
     - debian/control: changed Section from misc to admin.
     - scripts/drbd: prevent the "stop" target from failing if drbd is not running
-    - debian/rules: call upstream Makefile targets instead of doing hardcoded stuff, clean.  
+    - debian/rules: call upstream Makefile targets instead of doing hardcoded stuff, clean.
     - debian/drbd0.7.docs: added upgrade_0.6.x_to_0.7.0.txt and upgrade_0.7.0_to_0.7.1.txt.
     - The package drbd as been renamed to drbd0.7-utils and drbd-source as
       been renamed to drbd0.7-module-source.  We'll introduce drbd0.6-*
@@ -53,11 +67,11 @@ drbd (0.7.5-1) unstable; urgency=low
 drbd (0.7.4-1) unstable; urgency=low
 
   * Fixed a critical bug with Linux-2.4.x and HIGHMEM!
-  * Fixed a bug that only showed up with the HIGHMEM problem on 
+  * Fixed a bug that only showed up with the HIGHMEM problem on
     Linux-2.4.x -> It caused the resync process to starve.
   * The drbd.spec file now creates /dev/drbd in the post-install stage.
   * Fixed support for more than 2TB storage. Now DRBD supports up to
-    3.99TB storage. It will also tell you, that it is not supported if 
+    3.99TB storage. It will also tell you, that it is not supported if
     you try to set up a bigger device.
   * Debian's build rules file now knows about the adjust_drbd_config_h.sh
     file.
@@ -87,7 +101,7 @@ drbd (0.7.3-1) unstable; urgency=low
 
 drbd (0.7.2-1) unstable; urgency=low
 
-  * Proper handling of backing storage devices that occasionally fail 
+  * Proper handling of backing storage devices that occasionally fail
     READA (=read ahead) requests. (E.g. LVM and MD)
   * DRBD now fails READA requests itself, if a resynchronisation is running
     and it would need to fetch the block from its peer.
@@ -106,7 +120,7 @@ drbd (0.7.1-1) unstable; urgency=low
   * Handle the human and the timeout count correctly in the new init script.
   * The implementation of the incon-degr-cmd was missing, added.
   * Fix for integer overflow in /proc/drbd syncer progress display
-  * Longer timeouts in drbdadm for drbdsetup commands witch operate on 
+  * Longer timeouts in drbdadm for drbdsetup commands witch operate on
     meta data.
   * New major number 147 (officially registered at lanana.org).
   * Added a missing w_resume_next_wg() in case we stop syncing because
@@ -128,7 +142,7 @@ drbd (0.7.0-1) unstable; urgency=low
     calling to __*, giving file and line information,
     to be able to easily track causes of "strange state"s there.
   * rs_total is now != 0 only if we actually ARE syncing.
-    it is reset 
+    it is reset
   * when sync is done
   * when connection is lost
   * when storage is lost on either node
@@ -164,54 +178,54 @@ drbd (0.7_pre10-1) unstable; urgency=low
  -- Lars Ellenberg <l.g.e@web.de>  Fri, 09 Jul 2004 20:00:19 +0200
 
 drbd (0.7_pre8-2) unstable; urgency=low
-  
+
   * fix up the modules source package
-  
- -- Bernd Schubert <bernd-schubert@web.de>  Mon,  05 Jul 2004 00:57:38 -0100  
+
+ -- Bernd Schubert <bernd-schubert@web.de>  Mon,  05 Jul 2004 00:57:38 -0100
 
 drbd (0.7_pre8-1) unstable; urgency=low
-  
+
   * initial 0.7 debian package
-  
- -- Bernd Schubert <bernd-schubert@web.de>  Mon,  21 Jun 2004 19:57:38 -0400  
+
+ -- Bernd Schubert <bernd-schubert@web.de>  Mon,  21 Jun 2004 19:57:38 -0400
 
 drbd (0.6.12-5) unstable; urgency=low
-  
+
   * Changed default drbd.conf file to set a negative inittimeout value and
-    updated the README.Debian file to reflect this change.  
+    updated the README.Debian file to reflect this change.
     (Closes Bug#221751)
-  
+
  -- David Krovich <dkrovich@csee.wvu.edu>  Tue, 25 May 2004 12:51:15 -0400
 
 drbd (0.6.12-4) unstable; urgency=low
-  
-  * Refactored rules file in an attempt to use binary-arch and binary-indep 
-    targets more wisely. This is an attempt to fix Bug#244392.  
+
+  * Refactored rules file in an attempt to use binary-arch and binary-indep
+    targets more wisely. This is an attempt to fix Bug#244392.
   * Listed /etc/ha.d/resource.d/drbd in debian/conffiles.  (Closes Bug#247606)
   * Moved drbdsetup from /usr/bin/ to /usr/sbin.  I think I introduced this
-    when I overhauled the debian directory in the 0.6.12-1 release.  
+    when I overhauled the debian directory in the 0.6.12-1 release.
     (Closes Bug#247607)
-  
- -- David Krovich <dkrovich@csee.wvu.edu>  Sun, 16 May 2004 15:20:59 -0400  
+
+ -- David Krovich <dkrovich@csee.wvu.edu>  Sun, 16 May 2004 15:20:59 -0400
 
 drbd (0.6.12-3) unstable; urgency=low
-  
+
   * After discussing with upstream, tweak /etc/init.d/drbd script so the
     stop target works if the module is not loaded.  (Closes: Bug#243417)
   * Put the drbd script in the /etc/ha.d/resource.d directory.  (Closes: Bug#245219)
-  
+
  -- David Krovich <dkrovich@csee.wvu.edu>  Thu, 22 Apr 2004 18:12:47 -0400
 
 drbd (0.6.12-2) unstable; urgency=low
-  
+
   * Create /dev/nb[0-7] devices in postinst script.  (Closes: Bug#221545)
-  
+
  -- David Krovich <dkrovich@csee.wvu.edu>  Sat, 17 Apr 2004 15:18:29 -0400
-  
+
 drbd (0.6.12-1) unstable; urgency=low
-  
+
   * new upstream release.  (Closes: Bug#239804)
-  * Completely overhauled the debian/ directory.  
+  * Completely overhauled the debian/ directory.
   * Changed sequence number in the runlevel to start at 70 and stop
     at 08.  drbd should start after things like ssh, but before
     heartbeat.
@@ -220,12 +234,12 @@ drbd (0.6.12-1) unstable; urgency=low
 
 drbd (0.6.10-3) unstable; urgency=low
   * Added back the drbd.postinst, drbd.postrm, and drbd.prerm scripts until
-    I figure out why they aren't being handled by dh_installinit.  
-  * As of drbd-0.6.9, The drbd module no longer builds against just the 
+    I figure out why they aren't being handled by dh_installinit.
+  * As of drbd-0.6.9, The drbd module no longer builds against just the
     kernel-headers package and now needs a full kernel-source tree.
 
- -- David Krovich <dkrovich@csee.wvu.edu>  Mon, 26 Jan 2004 00:32:49 -0500  
-  
+ -- David Krovich <dkrovich@csee.wvu.edu>  Mon, 26 Jan 2004 00:32:49 -0500
+
 drbd (0.6.10-2) unstable; urgency=low
 
   * noel: fixed lintian warning:
@@ -235,19 +249,19 @@ drbd (0.6.10-2) unstable; urgency=low
   * Lintian/Linda fixes.
 
   * Tweaked the drbd-0.6.10.orig.tar.gz to not have a debian/ directory in it.
-  * Stopped tweaking the copyright notice on drbd_fs.c and drbd_receiver.c. 
+  * Stopped tweaking the copyright notice on drbd_fs.c and drbd_receiver.c.
     I'm not sure how that got there in the first place.
-  * Removed mystery report_to_html.pl.debdiff file.  
+  * Removed mystery report_to_html.pl.debdiff file.
   * Put the datadisk in the correct location.  (Closes: Bug#221544)
-  
+
   * Removed drbd.postinst, drbd.postrm, and drbd.prerm as they are
     being generated by dh_installinit during the build process and do not
     need to part of the source package.
   * removed dependancy on automake and autoconf
   * Changed control.modules to require debhelper >= 4.
-  * Stop settting $KSRC in the rules file.  
+  * Stop settting $KSRC in the rules file.
 
-  * Removed conffiles, files, kernel-patch-wup.substvars as they are 
+  * Removed conffiles, files, kernel-patch-wup.substvars as they are
     unneccessary.
   * Tightened the build dependancy on debhelper. >=4
   * Updated Debian packages up to newest upstream version. (Closes: Bug#197906)
@@ -255,18 +269,18 @@ drbd (0.6.10-2) unstable; urgency=low
   * Verified support for devfs.  (Closes: Bug#203552)
   * I'd like to become a Debian Developer and take over maintenance for
     this package.  I'm working with Debian Devolpers on making this happen.
-  
+
  -- David Krovich <dkrovich@csee.wvu.edu>  Tue, 20 Jan 2004 01:36:58 -0500
 
 drbd (0.6.10-1) unstable; urgency=low
 
-  * With 0.6.9 there was a bug introduced which prevented the sending 
+  * With 0.6.9 there was a bug introduced which prevented the sending
     of ACK packets during resync. Fixed.
   * A fix to drbdsetup's wait_connect command.
-  * Replaced all invocations of the sleep_on() family functions with the 
-    invocations of the wait_event() macros. This removes lost wakup events 
+  * Replaced all invocations of the sleep_on() family functions with the
+    invocations of the wait_event() macros. This removes lost wakup events
     and race conditions.
-  * New implementation of drbd_wait_ee(). This makes the 
+  * New implementation of drbd_wait_ee(). This makes the
     "(BUG?) Moving bh=%p to done_ee" go away.
   * Handle the case if vmalloc() of the bitmap fails.
 
@@ -275,14 +289,14 @@ drbd (0.6.10-1) unstable; urgency=low
 drbd (0.6.9-1) unstable; urgency=low
 
   * New module build system (using kernel source tree build system)
-  * New net section option 'ko-count'. It allows you to kick out a 
-    secondary node which does no longer process data in acceptable time. 
+  * New net section option 'ko-count'. It allows you to kick out a
+    secondary node which does no longer process data in acceptable time.
     Its default value is 0 which disables this feature.
   * Changing syncgroups while resync runs has shows now the correct behaviour.
   * In case thread creations fails DRBD would deadlock on its own
     semaphore. Fixed now.
   * BKL is no longer used on Linux-2.4.x.
-  * Now you can stack mapping block devices like LVM2 (and maybe md) on 
+  * Now you can stack mapping block devices like LVM2 (and maybe md) on
     top of drbd (a one character fix).
   * drbdsetup wait_connect on a StandAlone node looked like a timeout and
     forced primary. fixed.
@@ -304,7 +318,7 @@ drbd (0.6.8-1) unstable; urgency=low
 
 drbd (0.6.7-1) unstable; urgency=low
 
-  * A fix to a bug that could cause data corruption if you use a 
+  * A fix to a bug that could cause data corruption if you use a
     other blocksize than 4k to access the DRBD device.
   * A fix to a SMP race in the syncer code. The problem was tirggered
     when using DRBD on QLogic fiber channel adapters.
@@ -319,7 +333,7 @@ drbd (0.6.6-1) unstable; urgency=low
   * In the 0.6.5 release the secondary_remote command was badly broken,
     it succeeded when it should fail silently. This is fixed now.
   * Probabely in all previous releases, the resyncer thread did not
-    exit properly if the secondary node goes away during resync. 
+    exit properly if the secondary node goes away during resync.
     This was not fatal sind the resyncher thread did exit at soon
     as it gets a network error. This is fixed now.
   * Some new switches to the drbd script.
@@ -395,7 +409,7 @@ drbd (0.6-1.pre16-0cvs20020909) unstable; urgency=low
     -pre versions sanely
   * uploading to unstable. (Closes: Bug#130031)
 
- -- Jan Niehusmann <jan@debian.org>  Wed, 11 Sep 2002 13:10:03 +0200 
+ -- Jan Niehusmann <jan@debian.org>  Wed, 11 Sep 2002 13:10:03 +0200
 
 drbd (cvs20010511-1) unstable; urgency=low
 

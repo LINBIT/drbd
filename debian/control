@@ -30,11 +30,11 @@ Description: RAID 1 over tcp/ip for Linux utilities
 Package: drbd0.7-module-source
 Architecture: all
 Section: admin
-Depends: module-assistant
+Depends: module-assistant, debhelper (>= 4), 
 Conflicts: drbd-module-source, drbd-source
 Provides: drbd-module-source
 Replaces: drbd-module-source, drbd-source
-Recommends:  dpkg-dev, kernel-package, debhelper (>= 4), debconf-utils
+Recommends:  dpkg-dev, kernel-package, debconf-utils
 Description: RAID 1 over tcp/ip for Linux module source
  Drbd is a block device which is designed to build high availability
  clusters by providing a virtual shared device which keeps disks in nodes
