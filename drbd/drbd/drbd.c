@@ -154,7 +154,7 @@ struct Tl_epoch_entry {
 /* #define ES_SIZE_STATS 50 */
 
 enum MetaDataIndex { 
-	Consistent,     /* Consistency flag, updated in drbd_md_write */
+	Consistent,     /* Consistency flag, */ 
 	HumanCnt,       /* human-intervention-count */
 	ConnectedCnt,   /* connected-count */
 	ArbitraryCnt,   /* arbitrary-count */
@@ -2261,8 +2261,13 @@ inline int receive_cstate(int minor)
 	
 	set_cstate(&drbd_conf[minor],be32_to_cpu(header.cstate));
 
-	/* Save changed consistency flag */
-	if(drbd_conf[minor].state == Secondary)	drbd_md_write(minor);
+	/* Clear consistency flag if a syncronisation has started */
+	if(drbd_conf[minor].state == Secondary && 
+	   (drbd_conf[minor].cstate==SyncingAll || 
+	    drbd_conf[minor].cstate==SyncingQuick) ) {
+		drbd_conf[minor].gen_cnt[Consistent]=0;
+		drbd_md_write(minor);
+	}
 
 	return TRUE;
 }
@@ -2784,6 +2789,10 @@ void drbdd(int minor)
 		case BecomeSec:
 			drbd_set_state(minor,Secondary);
 			break;
+		case SetConsistent:
+			drbd_conf[minor].gen_cnt[Consistent]=1;
+			drbd_md_write(minor);
+			break;
 		default:
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: unknown packet type!\n", minor);
@@ -2996,7 +3005,7 @@ int ds_buffer_read(struct ds_buffer *this,
 		
 		count++;
 	}
-	ll_rw_block(READ, count, this->bhsp);
+	if(count) ll_rw_block(READ, count, this->bhsp);
 	this->io_pending_number=count;
 	return count;
 }
@@ -3011,9 +3020,10 @@ int ds_buffer_wait_on(struct ds_buffer *this,int minor)
 		struct buffer_head *bh;
 		bh=&this->bhs[i];		
 		if (!buffer_uptodate(bh)) wait_on_buffer(bh);
-		if (!buffer_uptodate(bh))
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: !uptodate\n", minor);
+		if (!buffer_uptodate(bh)) {
+			printk(KERN_ERR DEVICE_NAME "%d: !uptodate\n", minor);
+			return -1;
+		}
 		drbd_conf[minor].read_cnt+=size_kb;
 	}
 	return pending;
@@ -3046,8 +3056,6 @@ unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 	int shift=ln2_bs - 9;
 
 	if(mdev->synced_to == 0) {
-		printk(KERN_ERR DEVICE_NAME 
-		       " : end reached(1)\n");
 		return MBDS_DONE;
 	}
 
@@ -3055,8 +3063,7 @@ unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 	old_sync_to = mdev->synced_to;
 	mdev->synced_to -= (1L<<shift);
 	if(mdev->synced_to > old_sync_to) {
-		printk(KERN_ERR DEVICE_NAME 
-		       " : end reached(2)%lu\n",mdev->synced_to);
+		mdev->synced_to = 0;
 		return MBDS_DONE;
 	}
 
@@ -3085,9 +3092,9 @@ int drbd_syncer(struct Drbd_thread *thi)
 	       "blks=%d int=%d \n",minor,amount_blks,interval);
 
 	if(drbd_conf[minor].cstate == SyncingAll) {
-                drbd_conf[minor].synced_to=
-                        (blk_size[MAJOR_NR][minor] -
-                         (blksize_size[MAJOR_NR][minor] >> 10)) << 1;
+		drbd_conf[minor].synced_to=
+			(blk_size[MAJOR_NR][minor] -
+			 (blksize_size[MAJOR_NR][minor] >> 10)) << 1;
 		get_blk=ds_sync_all_get_blk;
 		id=drbd_conf+minor;
         } else if(drbd_conf[minor].cstate == SyncingQuick) {
@@ -3110,27 +3117,36 @@ int drbd_syncer(struct Drbd_thread *thi)
 	while (TRUE) {
 		current->state = TASK_INTERRUPTIBLE;
 		schedule_timeout(interval);
-		if(!ds_buffer_wait_on(disk_b,minor)) break;
+		switch(ds_buffer_wait_on(disk_b,minor)) {
+		case 0:  break;    /* finished */
+		case -1: 
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: Syncer read failed.\n",minor);
+			goto out;
+		}
 		swap(disk_b,net_b);
 		if(thi->t_state == Exiting) {
 			ds_buffer_send(net_b,minor);
-			break;
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: Syncer aborted.\n",minor);
+			goto out;
 		}
 		ds_buffer_read(disk_b,get_blk,id,minor);       
 		if(!ds_buffer_send(net_b,minor)) {
 			ds_buffer_wait_on(disk_b,minor);
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: Syncer send failed.\n",minor);
 			goto out;
 		}
 	}
 
-	if(drbd_conf[minor].cstate == SyncingAll ||
-           drbd_conf[minor].cstate == SyncingQuick) {
-		set_cstate(&drbd_conf[minor],Connected);
-		drbd_send_cstate(&drbd_conf[minor]);
-	}
+	drbd_send_cmd(minor,SetConsistent);
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done.\n",minor);
 
  out:
+	set_cstate(&drbd_conf[minor],Connected);
+	drbd_send_cstate(&drbd_conf[minor]);
+
 	ds_buffer_free(&buffers[0]);
 	ds_buffer_free(&buffers[1]);
 
@@ -3429,11 +3445,6 @@ void drbd_md_write(int minor)
 	int i;		
 
 	drbd_conf[minor].gen_cnt[PrimaryInd]=(drbd_conf[minor].state==Primary);
-	i=1;
-	if(drbd_conf[minor].state==Secondary && (
-		drbd_conf[minor].cstate==SyncingAll || 
-		drbd_conf[minor].cstate==SyncingQuick ) ) i=0;
-	drbd_conf[minor].gen_cnt[Consistent]=i;
 	
 	for(i=0;i<=PrimaryInd;i++) 
 		buffer[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);

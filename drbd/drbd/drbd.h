@@ -167,7 +167,8 @@ typedef enum {
   PingAck,
   StartSync,   /* Secondary asking primary to start sync */ 
   Postpone,
-  BecomeSec    /* Secondary asking primary to become secondary */
+  BecomeSec,     /* Secondary asking primary to become secondary */
+  SetConsistent  /* Syncer run was successfull */
 } Drbd_Packet_Cmd;
 
 typedef enum { Unknown=0, Primary=1, Secondary=2 } Drbd_State;
