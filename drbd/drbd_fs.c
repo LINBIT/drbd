@@ -1122,7 +1122,7 @@ ONLY_IN_26(
 			err = -EBUSY;
 			break;
 		}
-		if ( (mdev->state == Secondary && mdev->o_state == Secondary) 
+		if ( mdev->state == Secondary && mdev->o_state == Secondary) {
 			err = -EINPROGRESS;
 			break;
 		}
