@@ -49,6 +49,7 @@ struct drbd_cmd {
   const char* cmd;
   int (* function)(int, char**, int);
   int num_of_args;
+  int has_options;
 };
 
 int cmd_primary(int drbd_fd,char** argv,int argc);
@@ -62,16 +63,29 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc);
 int cmd_show(int drbd_fd,char** argv,int argc);
 
 struct drbd_cmd commands[] = {
-	{"pri", cmd_primary,           0 },
-	{"sec", cmd_secodary,          0 },
-	{"wait", cmd_wait,             0 },
-	{"repl", cmd_replicate,        0 },
-	{"down", cmd_down,             0 },
-	{"net", cmd_net_conf,          3 },
-	{"disk", cmd_disk_conf,        1 },
-	{"disconnect", cmd_disconnect, 0 },
-	{"show", cmd_show,             0 },
+	{"pri", cmd_primary,           0, 0 },
+	{"sec", cmd_secodary,          0, 0 },
+	{"wait", cmd_wait,             0, 1 },
+	{"repl", cmd_replicate,        0, 0 },
+	{"down", cmd_down,             0, 0 },
+	{"net", cmd_net_conf,          3, 1 },
+	{"disk", cmd_disk_conf,        1, 1 },
+	{"disconnect", cmd_disconnect, 0, 0 },
+	{"show", cmd_show,             0, 0 },
 };
+
+struct option config_options[] = {
+  { "disk-size",  required_argument, 0, 'd' }, 
+  { "do-panic",   no_argument,       0, 'p' },
+  { "timeout",    required_argument, 0, 't' },
+  { "sync-rate",  required_argument, 0, 'r' },
+  { "skip-sync",  no_argument,       0, 'k' },
+  { "tl-size",    required_argument, 0, 's' },
+  { "connect-int",required_argument, 0, 'c' },
+  { "ping-int",   required_argument, 0, 'i' },
+  { 0,           0,                 0, 0 }
+};
+#define CONFIG_OPT_STR "-t:r:ks:c:i:d:p"
 
 unsigned long resolv(const char* name)
 {
@@ -295,7 +309,8 @@ int open_drbd_device(const char* device)
 
 int scan_disk_options(char **argv,
 		      int argc,
-		      struct ioctl_disk_config* cn)
+		      struct ioctl_disk_config* cn,
+		      int ignore_other_opts)
 {
   cn->config.disk_size = 0; /* default not known */
   cn->config.do_panic  = 0;
@@ -307,13 +322,8 @@ int scan_disk_options(char **argv,
   while(1)
     {
       int c;
-      static struct option options[] = {
-	{ "disk-size",  required_argument, 0, 'd' }, 
-	{ "do-panic",   no_argument,       0, 'p' },
-	{ 0,           0,                 0, 0 }
-      };
 	  
-      c = getopt_long(argc,argv,"d:p",options,0);
+      c = getopt_long(argc,argv,CONFIG_OPT_STR,config_options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -323,8 +333,16 @@ int scan_disk_options(char **argv,
 	case 'p':
 	  cn->config.do_panic=1;
 	  break;
+	case 't': 
+	case 'r':
+	case 'k':
+	case 's':
+	case 'c':
+	case 'i':
+	  if(ignore_other_opts) break;
 	case '?':
-	  /* onknown option */
+	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	  return 20;
 	  break;
 	}
     }
@@ -334,7 +352,8 @@ int scan_disk_options(char **argv,
 
 int scan_net_options(char **argv,
 		     int argc,
-		     struct ioctl_net_config* cn)
+		     struct ioctl_net_config* cn,
+		     int ignore_other_opts)
 {
   cn->config.timeout = 60; /* = 6 seconds */
   cn->config.sync_rate = 250; /* KB/sec */
@@ -350,17 +369,8 @@ int scan_net_options(char **argv,
   while(1)
     {
       int c;
-      static struct option options[] = {
-	{ "timeout",    required_argument, 0, 't' },
-	{ "sync-rate",  required_argument, 0, 'r' },
-	{ "skip-sync",  no_argument,       0, 'k' },
-	{ "tl-size",    required_argument, 0, 's' },
-	{ "connect-int",required_argument, 0, 'c' },
-	{ "ping-int",   required_argument, 0, 'i' },
-	{ 0,           0,                 0, 0   }
-      };
 	  
-      c = getopt_long(argc,argv,"t:r:ks:c:i:",options,0);
+      c = getopt_long(argc,argv,CONFIG_OPT_STR,config_options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -382,8 +392,12 @@ int scan_net_options(char **argv,
 	case 'i':
 	  cn->config.ping_int = m_strtol(optarg,1);
 	  break;
+	case 'd':
+	case 'p':
+	  if(ignore_other_opts) break;
 	case '?':
-	  /* blab */
+	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	  return 20;
 	  break;
 	}
     }
@@ -473,6 +487,11 @@ int do_net_conf(int drbd_fd,
   struct sockaddr_in *my_addr;
   int err;
 
+  if(proto[1] != 0) 
+    {
+      fprintf(stderr,"Invalid protocol specifier.\n");
+      return 20;
+    }
   switch(proto[0])
     {
     case 'a':
@@ -558,12 +577,16 @@ int cmd_wait(int drbd_fd,char** argv,int argc)
 	    { 0,           0,                 0, 0 }
 	  };
 	  
-	  c = getopt_long(argc,argv,"t:",options,0);
+	  c = getopt_long(argc,argv,"-t:",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
 	    case 't': 
 	      retval = m_strtol(optarg,1);
+	      break;
+	    case '?':
+	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	      return 20;
 	      break;
 	    }
 	}
@@ -632,7 +655,7 @@ int cmd_net_conf(int drbd_fd,char** argv,int argc)
   struct ioctl_net_config cn;
   int retval;
 
-  retval=scan_net_options(argv+3,argc-3,&cn);
+  retval=scan_net_options(argv+2,argc-2,&cn,0);
   if(retval) return retval;
 
   return do_net_conf(drbd_fd,argv[2],argv[0],argv[1],&cn);
@@ -643,7 +666,7 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc)
   struct ioctl_disk_config cn;
   int retval;
 
-  retval=scan_disk_options(argv+1,argc-1,&cn);
+  retval=scan_disk_options(argv,argc,&cn,0);
   if(retval) return retval;
 
   return do_disk_conf(drbd_fd,argv[0],&cn);
@@ -768,9 +791,9 @@ int main(int argc, char** argv)
       4 local_addr
       5 remote_addr
       */
-      retval=scan_disk_options(argv+5,argc-5,&disk_c);
+      retval=scan_disk_options(argv+4,argc-4,&disk_c,1);
       if(retval) return retval;
-      retval=scan_net_options(argv+5,argc-5,&net_c);
+      retval=scan_net_options(argv+4,argc-4,&net_c,1);
       if(retval) return retval;
 
       retval=do_disk_conf(drbd_fd,argv[2],&disk_c);
@@ -785,6 +808,11 @@ int main(int argc, char** argv)
       if(strcmp(argv[2],commands[i].cmd)==0)
 	{
 	  if (argc-3 < commands[i].num_of_args) print_usage(argv[0]);
+	  if (argc-3-commands[i].num_of_args>0 && !commands[i].has_options) 
+	    {
+	      fprintf(stderr,"Too many arguments or options.\n");
+	      return 20;
+	    }
 	  retval=commands[i].function(drbd_fd,argv+3,argc-3);
 	}
     }
