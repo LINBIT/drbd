@@ -13,6 +13,7 @@
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks in IOCTL_SET_STATE.
+	Added code to prevent zombie threads.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -65,6 +66,8 @@
 
 #include "drbd.h"
 #include "mbds.h"
+
+static int errno;
 
 /* This maches BM_BLOCK_SIZE */
 #define INITIAL_BLOCK_SIZE (1<<12)
@@ -1989,6 +1992,7 @@ void drbdd(int minor)
 			       ": unknown packet type!/m=%d\n", minor);
 			goto out;
 		}
+		while(waitpid(-1, NULL, __WCLONE|WNOHANG) > 0);
 	}
 
       out:
@@ -2240,7 +2244,7 @@ restart:
 	free_page((unsigned long)page);
 	
 	drbd_conf[minor].synced_to=0; /* this is ok. */
-	printk(KERN_INFO DEVICE_NAME ": Synchronistaion done./m=%d\n", minor);
+	printk(KERN_INFO DEVICE_NAME ": Synchronisation done./m=%d\n", minor);
 	drbd_thread_exit(thi);
 	return 0;
 }
@@ -2506,5 +2510,3 @@ struct mbds_operations bm_mops = {
 	bm_set_bit,
 	bm_get_blocknr
 };
-
-
