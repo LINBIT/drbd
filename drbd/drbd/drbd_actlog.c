@@ -59,7 +59,8 @@ struct drbd_extent {
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
 STATIC void drbd_al_set(struct Drbd_Conf*, unsigned int, int);
-STATIC void drbd_al_fixup_hash_next(struct Drbd_Conf*);
+STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf*);
+STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev);
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
@@ -346,7 +347,7 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 		n = mdev->al_updates[i];
 		if(n != -1) {
 			extent_nr = mdev->al_extents[n].extent_nr;
-#if 1	/* Use this printf with the test_al.pl program */
+#if 0	/* Use this printf with the test_al.pl program */
 			ERR("T%03d S%03d=E%06d\n", 
 			    mdev->al_tr_number, n, extent_nr);
 #endif
@@ -444,12 +445,14 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	struct al_transaction* buffer;
 	int from=-1,to=-1,i,cnr, overflow=0,rv;
 	u32 from_tnr=-1, to_tnr=0;
+	int active_extents=0;
+	int transactions=0;
 
 	// Find the valid transaction in the log
 	for(i=0;i<mdev->al_nr_extents;i++) {
 		if(!drbd_al_read_tr(mdev,&buffer,i)) continue;
 		cnr = be32_to_cpu(buffer->tr_number);
-		INFO("index %d valid cnr=%d\n",i,cnr);
+		// INFO("index %d valid tnr=%d\n",i,cnr);
 		bh_kunmap(mdev->md_io_bh);
 		up(&mdev->md_io_mutex);
 
@@ -467,20 +470,18 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	if(from == -1 || to == -1) {
 		WARN("No usable activity log found.\n");
+		//TODO set all bits in the bitmap!
 		return;
 	}
 
-	INFO("Reading activity log from=%d to=%d.\n",from,to);
-	
 	// Read the valid transactions.
 
-	for(i=from;i<=to;i++) {
+	i=from;
+	while(1) {
 		int j,pos;
 		unsigned int extent_nr;
 		unsigned int trn;
 
-		if( i == mdev->al_nr_extents ) i=0;
-		
 		rv = drbd_al_read_tr(mdev,&buffer,i);
 		ERR_IF(!rv) continue;
 
@@ -492,7 +493,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 			if(extent_nr == AL_FREE) continue;
 
-			ERR("T%03d S%03d=E%06d\n",trn, pos, extent_nr);
+			//ERR("T%03d S%03d=E%06d\n",trn, pos, extent_nr);
 			drbd_al_set(mdev,extent_nr,pos);
 		}
 
@@ -507,16 +508,26 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		
 		bh_kunmap(mdev->md_io_bh);
 		up(&mdev->md_io_mutex);
+
+		transactions++;
+
+		if( i == to) break;
+		if( ++i > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) i=0;
 	}
 
-	drbd_al_fixup_hash_next(mdev);
-	// TODO: Set some marks in the bitmap..
+	active_extents=drbd_al_fixup_hash_next(mdev);
 
 	mdev->al_tr_number = to_tnr+1;
 	mdev->al_tr_pos = to;
 	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
+
+	INFO("Found %d transactions (%d active extents) in activity log.\n",
+	     transactions,active_extents);
+
+	// TODO only call setup_bitmap() iff it is necessary.
+	drbd_al_setup_bitmap(mdev);
 }
 
 STATIC void drbd_al_set(struct Drbd_Conf *mdev,unsigned int extent_nr,int pos)
@@ -536,16 +547,18 @@ STATIC void drbd_al_set(struct Drbd_Conf *mdev,unsigned int extent_nr,int pos)
 	spin_unlock(&mdev->al_lock);
 }
 
-STATIC void drbd_al_fixup_hash_next(struct Drbd_Conf *mdev)
+STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf *mdev)
 {
 	struct drbd_extent *slot, *want;
 	int i;
+	int active_extents=0;
 
 	spin_lock(&mdev->al_lock);
 
-	for(i=0;i<mdev->sync_conf.al_extents;i++) {
+	for(i=0;i<mdev->al_nr_extents;i++) {
 		slot = mdev->al_extents + i;
 		if(slot->extent_nr == AL_FREE) continue;
+		active_extents++;
 		want = al_hash_fn(mdev,slot->extent_nr);
 		if( slot != want ) {
 			while (want->hash_next) want=want->hash_next;
@@ -553,5 +566,26 @@ STATIC void drbd_al_fixup_hash_next(struct Drbd_Conf *mdev)
 		}
 	}
 
+	spin_unlock(&mdev->al_lock);
+
+	return active_extents;
+}
+
+/* This function marks the bits in the bitmap that are described
+   by the active extents. */
+STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
+{
+	int i;
+	unsigned int enr;
+
+	spin_lock(&mdev->al_lock);
+	for(i=0;i<mdev->al_nr_extents;i++) {
+		enr = mdev->al_extents[i].extent_nr;
+		if(enr == AL_FREE) continue;
+		mdev->rs_total +=
+			bm_set_bit( mdev, 
+				    enr << (AL_EXTENT_SIZE_B-9), 4<<20 , 
+				    SS_OUT_OF_SYNC );
+	}
 	spin_unlock(&mdev->al_lock);
 }

@@ -502,7 +502,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
-		drbd_send_param(mdev);
+		if (mdev->cstate == Connected) drbd_send_param(mdev);
 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:

@@ -620,8 +620,6 @@ extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send_param(drbd_dev *mdev);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
-extern int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
-			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev);
 extern int drbd_send_cstate(drbd_dev *mdev);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,

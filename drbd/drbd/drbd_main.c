@@ -497,7 +497,7 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	return ok;
 }
 
-STATIC int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
@@ -1167,6 +1167,10 @@ int __init drbd_init(void)
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
 #endif
 		}
+
+#ifdef __arch_um__
+		printk(KERN_INFO DEVICE_NAME"%d: mdev = 0x%p\n",i,drbd_conf+i);
+#endif
 	}
 
 	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
@@ -1194,7 +1198,7 @@ int __init drbd_init(void)
 	return 0;
 }
 
-int __init init_module()
+int __init init_module(void)
 {
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
@@ -1210,7 +1214,7 @@ int __init init_module()
 
 }
 
-void cleanup_module()
+void cleanup_module(void)
 {
 	int i;
 	int rr;
@@ -1713,7 +1717,6 @@ void drbd_md_read(drbd_dev *mdev)
 	down(&mdev->md_io_mutex);
 
 	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
-	DUMPLU(sector);
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
 	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
