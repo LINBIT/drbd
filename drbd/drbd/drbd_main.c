@@ -1307,9 +1307,9 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 
 sector_t bm_get_sector(struct BitMap* sbm,int* size)
 {
-	unsigned long bnr;
+	sector_t bnr;
         unsigned long* bm;
-	unsigned long dev_size;
+	sector_t dev_size;
 	sector_t ret;
 
 	if(*size != BM_BLOCK_SIZE) BUG(); // Other cases are not needed
@@ -1329,7 +1329,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 	ret=bnr<<BM_SS;
 
 	dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
-	if(bnr<<(BM_BLOCK_SIZE_B-10) > dev_size) {
+	if( ret+((1<<BM_SS)-1) > dev_size<<1 ) {
 		int ns = dev_size % (1<<(BM_BLOCK_SIZE_B-10));
 		sbm->gs_bitnr = -1;
 		if(ns) *size = ns<<10;
