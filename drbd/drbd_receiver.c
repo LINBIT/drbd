@@ -1887,7 +1887,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	char *right_response = NULL;
 	char *peers_ch = NULL;
 	Drbd_Header p;
-	unsigned int key_len = SHARED_SECRET_MAX;
+	unsigned int key_len = strlen(mdev->conf.shared_secret);
 	unsigned int resp_size;
 	int rv;
 	

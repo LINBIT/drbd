@@ -575,6 +575,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	// TODO plausibility check ...
 	memcpy(&mdev->conf,&new_conf,sizeof(struct net_config));
 
+	((char*)mdev->conf.shared_secret)[SHARED_SECRET_MAX-1]=0;
 #if 0
 FIXME
 	/* for the connection loss logic in drbd_recv
