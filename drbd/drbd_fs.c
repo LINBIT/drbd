@@ -745,8 +745,16 @@ ONLY_IN_26(
 	 * but that means someone is misusing DRBD...
 	 * */
 
-	if (forced) {
-		/* this was --do-what-I-say ... */
+	if (forced) { /* this was --do-what-I-say ... */
+		int i;
+		// drbd_dump_md(mdev,0,0);
+		for (i=HumanCnt; i < GEN_CNT_SIZE ; i++) {
+			if (mdev->gen_cnt[i] != 1) {
+				WARN("Forcefully set consistent! "
+				     "If this screws your data, don't blame DRBD!\n");
+				break;
+			}
+		}
 		drbd_md_set_flag(mdev,MDF_Consistent);
 	}
 	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!

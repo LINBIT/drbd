@@ -130,7 +130,12 @@ void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 	} else if (DRBD_ratelimit(5*HZ,5)) {
 		ERR("%s:%d: bitmap already locked by %s:%lu\n",
 		    file, line, b->bm_file,b->bm_line);
+		/*
 		dump_stack();
+		ERR("This is no oops, but debug stack trace only.\n");
+		ERR("If you get this often, or in reproducable situations, "
+		    "notify <drbd-devel@linbit.com>\n");
+		*/
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -141,6 +146,8 @@ void drbd_bm_unlock(drbd_dev *mdev)
 	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags)) {
 		D_ASSERT(0);
 	} else {
+		/* FIXME if we got a "is already locked" previously,
+		 * we unlock here even though we actually MUST NOT do so... */
 		b->bm_file = NULL;
 		b->bm_line = -1;
 	}

@@ -1273,7 +1273,9 @@ STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
 			set_cstate(mdev,WFBitMapS);
 			wait_event(mdev->cstate_wait,
 			     atomic_read(&mdev->ap_bio_cnt)==0);
+			drbd_bm_lock(mdev);   // {
 			drbd_send_bitmap(mdev);
+			drbd_bm_unlock(mdev); // }
 		} else { // have_good == -1
 			if ( (mdev->state == Primary) &&
 			     drbd_md_test_flag(mdev,MDF_Consistent) ) {
@@ -1294,6 +1296,7 @@ STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
 		}
 	} else {
 		set_cstate(mdev,Connected);
+		drbd_bm_lock(mdev);   // {
 		if(drbd_bm_total_weight(mdev)) {
 			if (drbd_md_test_flag(mdev,MDF_Consistent)) {
 				/* We are not going to do a resync but there
@@ -1309,6 +1312,7 @@ STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
 				WARN("I am inconsistent, but there is no sync? BOTH nodes inconsistent!\n");
 			}
 		}
+		drbd_bm_unlock(mdev); // }
 	}
 
 	if (have_good == -1) {
@@ -1328,15 +1332,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	int oo_state;
 	unsigned long p_size;
 
-	/* FIXME never change the size of the first handshake packet again.
-	 * I think we should introduce a protocol version handshake
-	 * independently of the other parameters. */
-
-	/* we expect 72 byte.
-	 * unfortunately h->length of drbd-0.6 Parameter_Packet is 72, too,
-	 * but it includes the header size itself, so there are only 64 byte
-	 * remaining...
-	 */
 	if (h->length != (sizeof(*p)-sizeof(*h))) {
 		ERR("Incompatible packet size of Parameter packet!\n");
 		set_cstate(mdev,StandAlone);
@@ -1344,10 +1339,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
-	/* FIXME. If this connects to some drbd 0.6.X, it will timeout,
-	 * and reconnect, in a loop, forever. annoying!
-	 * maybe we want to change the on-the-wire-magic?
-	 */
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
@@ -1411,7 +1402,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
-	drbd_bm_lock(mdev);
+	drbd_bm_lock(mdev); // {
 	mdev->p_size=p_size;
 
 	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
@@ -1424,6 +1415,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	consider_sync = (mdev->cstate == WFReportParams);
 	if(drbd_determin_dev_size(mdev)) consider_sync=0;
+
+	drbd_bm_unlock(mdev); // }
 
 	if(be32_to_cpu(p->flags)&1) {
 		consider_sync=1;
@@ -1513,9 +1506,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		      nodestate_to_name(mdev->state),
 		      nodestate_to_name(mdev->o_state) );
 	}
-
 	drbd_md_write(mdev); // update connected indicator, la_size, ...
-	drbd_bm_unlock(mdev);
 
 	return TRUE;
 }
@@ -1534,7 +1525,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	unsigned long *buffer;
 	int ok=FALSE;
 
-	drbd_bm_lock(mdev);
+	drbd_bm_lock(mdev);  // {
 
 	bm_words = drbd_bm_words(mdev);
 	bm_i     = 0;
@@ -1582,7 +1573,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 
 	ok=TRUE;
  out:
-	drbd_bm_unlock(mdev);
+	drbd_bm_unlock(mdev); // }
 	vfree(buffer);
 	return ok;
 }
@@ -1644,7 +1635,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	 * otherwise this does not make much sense, no?
 	 * and some other assertion maybe about cstate...
 	 */
-	ERR_IF(mdev->cstate == Secondary) return FALSE;
+	ERR_IF(mdev->cstate != Secondary) return FALSE;
 
 	drbd_bm_lock(mdev);
 	drbd_bm_set_all(mdev);
@@ -1935,7 +1926,7 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 			      "Peer wants protocol version: %u\n",
 			      p->protocol_version );
 		}
-		INFO( "Handshake successful: DRBD Protocol version %u\n",
+		INFO( "Handshake successful: DRBD Network Protocol version %u\n",
 		      PRO_VERSION );
 	} /* else if ( p->protocol_version == (PRO_VERSION-1) ) {
 		// not yet; but next time :)
