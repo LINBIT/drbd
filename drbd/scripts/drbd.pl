@@ -120,6 +120,9 @@ sub read_resource_sec($)
     my $mconf=shift;
     my ($token,$name);
     my %this;
+    my $host_name;
+
+    $host_name=(split(/\./,hostname()))[0];
 
     $name=get_token();
     $$mconf{$name}=\%this;
@@ -136,7 +139,7 @@ sub read_resource_sec($)
       }
       if($token eq "on") {
 	$name=get_token();
-	if($name eq hostname()) {
+	if($name eq $host_name) {
 	  read_host_section($this{"self"}={});
 	} else {
 	  read_host_section($this{"other"}={});
@@ -194,17 +197,17 @@ sub doconfig($$)
     my ($errtxt);
     
     print "Setting up $res...";
-    $errtxt=`$drbdsetup $$mconf{self}{device} disk $$mconf{self}{disk} $$mconf{disk}`;
-    if($errtxt) { die "$errtxt"; }
-    $errtxt=`$drbdsetup $$mconf{self}{device} net $$mconf{self}{address}:$$mconf{self}{port} $$mconf{other}{address}:$$mconf{other}{port} $$mconf{protocol} $$mconf{net}`;
-    if($errtxt) { die "$errtxt"; }
+    $errtxt=`$drbdsetup $$mconf{self}{device} disk $$mconf{self}{disk} $$mconf{disk} 2>&1`;
+    if( $? ) { die "$errtxt"; }
+    $errtxt=`$drbdsetup $$mconf{self}{device} net $$mconf{self}{address}:$$mconf{self}{port} $$mconf{other}{address}:$$mconf{other}{port} $$mconf{protocol} $$mconf{net} 2>&1`;
+    if( $? ) { die "$errtxt"; }
     print "[ OK ]\n";
 }
 
 sub wait_ready($$)
 {
     my ($res,$mconf)=@_;
-    my ($errtxt,$pid);
+    my ($pid);
 
     $pid=fork();
     if(!defined($pid)) { die "fork failed"; }
@@ -235,8 +238,8 @@ sub increase_h_count($$)
     my ($res,$mconf)=@_;
     my ($errtxt);
     
-    $errtxt=`$drbdsetup $$mconf{self}{device} primary --human`;
-    if($errtxt) { die $errtxt; }
+    $errtxt=`$drbdsetup $$mconf{self}{device} primary --human 2>&1`;
+    if( $? ) { die $errtxt; }
 #    $errtxt=`$drbdsetup $$mconf{self}{device} secondary`;
 #    if($errtxt) { die $errtxt; }
 }
@@ -247,8 +250,8 @@ sub become_pri($$)
     my ($res,$mconf)=@_;
     my ($errtxt,$line,$mounted);
 
-    $errtxt=`$drbdsetup $$mconf{self}{device} primary`;
-    if($errtxt) { die $errtxt; }
+    $errtxt=`$drbdsetup $$mconf{self}{device} primary 2>&1 `;
+    if( $? ) { die $errtxt; }
     
     open(MOUNT,"mount |")
   	or die " can not execute mount";
@@ -299,8 +302,8 @@ sub reconnect($$)
     my ($res,$mconf)=@_;
     my $errtxt;
 
-    $errtxt=`$drbdsetup $$mconf{self}{device} net $$mconf{self}{address}:$$mconf{self}{port} $$mconf{other}{address}:$$mconf{other}{port} $$mconf{protocol} $$mconf{net}`;
-    if($errtxt) { die "$errtxt"; }
+    $errtxt=`$drbdsetup $$mconf{self}{device} net $$mconf{self}{address}:$$mconf{self}{port} $$mconf{other}{address}:$$mconf{other}{port} $$mconf{protocol} $$mconf{net} 2>&1 `;
+    if( $? ) { die "$errtxt"; }
 
 }
 
@@ -520,3 +523,4 @@ if(defined($resource)) {
 if( $pname =~ /drbd$/ ) { drbd(); }
 elsif( $pname =~ /datadisk$/ ) { datadisk(); }
 else { die "do not know what to do"; }
+
