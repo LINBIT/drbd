@@ -243,26 +243,15 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 
 STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
 
-static inline int _get_ee_cond(struct Drbd_Conf* mdev)
-{
-	int av;
-	spin_lock_irq(&mdev->ee_lock);
-	_drbd_process_ee(mdev,&mdev->done_ee);
-	av = !list_empty(&mdev->free_ee);
-	spin_unlock_irq(&mdev->ee_lock);
-	if(!av) {
-		if((mdev->ee_vacant+mdev->ee_in_use) < mdev->conf.max_buffers){
-			if(drbd_alloc_ee(mdev,GFP_TRY)) av = 1;
-		}
-	}
-	if(!av) drbd_kick_lo(mdev);
-	return av;
-}
-
+/**
+ * drbd_get_ee: Returns an Tl_epoch_entry; might sleep. Fails only if
+ * a signal comes in.
+ */
 struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
+	DEFINE_WAIT(wait);
 
 	MUST_HOLD(&mdev->ee_lock);
 
@@ -272,10 +261,28 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 		spin_lock_irq(&mdev->ee_lock);
 	}
 
-	while(list_empty(&mdev->free_ee)) {
-		spin_unlock_irq(&mdev->ee_lock);
-		wait_event(mdev->ee_wait,_get_ee_cond(mdev));
-		spin_lock_irq(&mdev->ee_lock);
+	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,&mdev->done_ee);
+
+	if(list_empty(&mdev->free_ee)) {
+		for (;;) {
+			prepare_to_wait(&mdev->ee_wait, &wait, 
+					TASK_INTERRUPTIBLE);
+			if(!list_empty(&mdev->free_ee)) break;
+			if( ( mdev->ee_vacant+mdev->ee_in_use) < 
+			      mdev->conf.max_buffers ) {
+				if(drbd_alloc_ee(mdev,GFP_TRY)) break;
+			}
+			drbd_kick_lo(mdev);
+			spin_unlock_irq(&mdev->ee_lock);
+			schedule();
+			spin_lock_irq(&mdev->ee_lock);
+			if (signal_pending(current)) return 0;
+			finish_wait(&mdev->al_wait, &wait); 
+			// finish wait is inside, so that we are TASK_RUNNING 
+			// in _drbd_process_ee (which might sleep by itself.)
+			_drbd_process_ee(mdev,&mdev->done_ee);
+		}
+		finish_wait(&mdev->al_wait, &wait); 
 	}
 
 	le=mdev->free_ee.next;
@@ -741,6 +748,7 @@ read_in_block(drbd_dev *mdev, int data_size)
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
 	spin_unlock_irq(&mdev->ee_lock);
+	if(!e) return 0;
 
 	bio = &e->private_bio;
 
@@ -1021,7 +1029,10 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev);
-	// can we move it outside the lock?
+	if(!e) {
+		spin_unlock_irq(&mdev->ee_lock);
+		return FALSE;
+	}
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
