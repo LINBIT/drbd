@@ -383,11 +383,15 @@ $ drbdsetup /dev/nb0 net tc3 tc2 B
 <screen>
 $ drbdsetup /dev/nb0 disconnect
 $ drbdsetup /dev/nb0 net tc2 tac3 B --sync-rate 4M
-$ #drbdsetup /dev/nb0 replicate###TODO describe why this is not needed.
+$ #drbdsetup /dev/nb0 replicate
 $ drbdsetup /dev/nb0 wait_sync
 $ drbdsetup /dev/nb0 disconnect
 $ drbdsetup /dev/nb0 net tc2 tc1 B
+$ #drbdsetup /dev/nb0 replicate
 </screen>
+<para>With release 0.5.8 drbd's meta-data management can not detect changing 
+mirroring partners. Therefore you might have to issue
+the replicate commands as outlined in the example.</para>
 <para>Since the snapshot was taken without bringing the on disk file 
 system into a consisten state we need theese commands on tc3:</para>
 <screen>
