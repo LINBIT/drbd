@@ -35,6 +35,13 @@
 
 //#define SIGHAND_HACK           // Needed for RH 2.4.20 and later kernels.
 //#define REDHAT_HLIST_BACKPORT  // Makes DRBD work on RH9 kernels
+/* Redhat 2.4.18 already includes BH_Launder,
+ * other  2.4.18 still have       BH_launder ...
+ * most likely we could do without it completely,
+ * since it is only used in drbd_ee_bh_prepare().
+ * anyways...
+ */
+//#define REDHAT_2_4_18
 
 //Your 2.4 verndor kernel already defines find_next_bit()
 //#define HAVE_FIND_NEXT_BIT

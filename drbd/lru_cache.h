@@ -51,6 +51,15 @@
 # include "hlist.h"
 #endif
 
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION (2,4,20)
+static inline void list_move(struct list_head *list, struct list_head *head)
+{
+        __list_del(list->prev, list->next);
+        list_add(list, head);
+}
+#endif
+
 struct lc_element {
 	struct hlist_node colision;
 	struct list_head list;           // LRU list or free list

@@ -39,6 +39,30 @@
 #include "mempool.h"
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,20)
+static inline void __list_splice(struct list_head *list,
+				 struct list_head *head)
+{
+	struct list_head *first = list->next;
+	struct list_head *last = list->prev;
+	struct list_head *at = head->next;
+
+	first->prev = head;
+	head->next = first;
+
+	last->next = at;
+	at->prev = last;
+}
+static inline void list_splice_init(struct list_head *list,
+				    struct list_head *head)
+{
+	if (!list_empty(list)) {
+		__list_splice(list, head);
+		INIT_LIST_HEAD(list);
+	}
+}
+#endif
+
 // module parameter, defined in drbd_main.c
 extern int minor_count;
 extern int disable_io_hints;
