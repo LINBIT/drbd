@@ -1,6 +1,7 @@
 0.6.1  (api:58/proto:58)
 -----
 Since the last one should have been 0.6, this is 0.6.1:
+  *) A few SMP-only bugs removed.
   *) The state files are now written with O_SYNC.
   *) Droped the postponepackets; Checkeing the liveliness via a second
      TCP connection (msock). -- No more timeout in case of the standby
