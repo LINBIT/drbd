@@ -45,8 +45,6 @@
 void lc_init(struct lru_cache* lc, lc_notify_on_change_fn f,void* d)
 {
 	PARANOIA_ENTRY();
-	// INIT_LIST_HEAD(&lc->lru);
-	// INIT_LIST_HEAD(&lc->free);
 	lc->nr_elements      = 0;
 	lc->element_size     = sizeof(struct lc_element);
 	lc->notify_on_change = f;
@@ -63,19 +61,17 @@ void lc_init(struct lru_cache* lc, lc_notify_on_change_fn f,void* d)
  * @lc: The lru_cache object
  */
 #define lc_entry(lc,i) ((struct lc_element*)(((char*)&(lc)->slot[(lc)->nr_elements])+(i)*(lc)->element_size))
-void lc_resize(struct lru_cache* lc, unsigned int nr_elements)
+void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
 {
 	unsigned int i;
 	void *data;
 	int  bytes;
 	struct lc_element *e;
+	unsigned long flags;
 
-	PARANOIA_ENTRY();
+	PARANOIA_ENTRY(); //TODO.
 	if(lc->nr_elements == nr_elements) RETURN();
 
-	// TODO; what is when we resize, and elements are still in use?
-	// memcopy parts of it? 
-	// for now: just don't!
 	if (lc->nr_elements) RETURN();
 
 	bytes = ( lc->element_size + sizeof(lc->slot[0]) ) * nr_elements;
@@ -87,6 +83,8 @@ void lc_resize(struct lru_cache* lc, unsigned int nr_elements)
 	}
 	memset(data, 0, bytes);
 
+	spin_lock_irqsave(lck,flags); // The uggly exception.
+
 	if (lc->slot) kfree(lc->slot);
 	lc->slot = data;
 	lc->nr_elements = nr_elements;
@@ -94,10 +92,14 @@ void lc_resize(struct lru_cache* lc, unsigned int nr_elements)
 	INIT_LIST_HEAD(&lc->lru);
 	INIT_LIST_HEAD(&lc->free);
 	for(i=0;i<nr_elements;i++) {
+		INIT_HLIST_HEAD( lc->slot + i );
 		e= lc_entry(lc,i);
 		e->lc_number = LC_FREE;
 		list_add(&e->list,&lc->free);
 	}
+
+	spin_lock_irqrestore(lck,flags);
+
 	RETURN();
 }
 
@@ -133,18 +135,9 @@ struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr)
 
 	e = NULL;
 	hlist_for_each_entry(e, n, &lc->slot[lc_hash_fn(lc, enr)], colision) {
-		if (e->lc_number == enr) break;
+		if (e->lc_number == enr) return e;
 	}
-	return e && e->lc_number == enr ? e : NULL;
-}
-
-/*
- * remove element from the lru list, and from the hash colision chains.
- */
-STATIC void lc_unlink(struct lru_cache *lc, struct lc_element *e)
-{
-	list_del(&e->list);
-	hlist_del(&e->colision);
+	return NULL;
 }
 
 STATIC struct lc_element * lc_evict(struct lru_cache* lc)
@@ -157,7 +150,8 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
 
 	if (e->refcnt) return NULL;
 
-	lc_unlink(lc,e);
+	list_del(&e->list);
+	hlist_del(&e->colision);
 	return e;
 }
 
@@ -173,7 +167,8 @@ void lc_del(struct lru_cache* lc, struct lc_element *e)
 	// FIXME what to do with refcnt != 0 ?
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt);
-	lc_unlink(lc,e);
+	list_del(&e->list);
+	hlist_del(&e->colision);
 	e->lc_number = LC_FREE;
 	e->refcnt = 0;
 	list_add(&e->list,&lc->free);
@@ -218,10 +213,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 
 	e = lc_find(lc, enr);
 	if (e) {
-		/* great. already in use, just increase reference count
-		 * and move it to lru.next */
 		++e->refcnt;
-		lc_touch(lc,e);
 		RETURN(e);
 	}
 
@@ -241,11 +233,13 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 
 	sync = lc->notify_on_change ? lc->notify_on_change(lc,e,enr) : 1;
 
+	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
+
 	if (sync) {
-		e->lc_number = enr;
+		// e->lc_number = enr; //Moved this into the callback - Phil
 		BUG_ON(++e->refcnt != 1);
-		lc->flags &= ~LC_DIRTY; // just in case user forgot
-		// smb_mb__after_clear_bit();
+		BUG_ON(lc->flags & LC_DIRTY);
+		// BUG_ON(lc->flags & LC_STARVING); // ?? - Phil
 		RETURN(e);
 	} else {
 		lc->changing = e;
@@ -279,7 +273,7 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 
 	e->lc_number = enr;
 	__hlist_del(&e->colision);
-	hlist_add_head(&e->colision,&lc->slot[lc_hash_fn(lc,enr)]);
+	hlist_add_head(&e->colision, lc->slot + lc_hash_fn(lc,enr) );
 	lc_touch(lc,e);
 }
 

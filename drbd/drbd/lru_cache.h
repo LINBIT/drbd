@@ -81,14 +81,13 @@ enum {
 	__LC_DIRTY,
 	__LC_STARVING,
 	__LC_LOCKED
-
 };
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 #define LC_LOCKED   (1<<__LC_LOCKED)
 
 extern void lc_init  (struct lru_cache* lc, lc_notify_on_change_fn f,void* d);
-extern void lc_resize(struct lru_cache* lc, unsigned int nr_elements);
+extern void lc_resize(struct lru_cache* lc, unsigned int, spinlock_t* );
 extern void lc_free  (struct lru_cache* lc);
 extern void lc_set   (struct lru_cache* lc, unsigned int enr, int index);
 extern void lc_del   (struct lru_cache* lc, struct lc_element *element);

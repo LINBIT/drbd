@@ -57,70 +57,73 @@ struct al_transaction {
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
-STATIC int drbd_al_may_evict(void *d, struct lc_element *e)
+STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e, 
+			    unsigned int enr)
 {
-	struct drbd_extent * extent = (struct drbd_extent *)e;
-	struct Drbd_Conf *mdev = (struct Drbd_Conf *) d;
+	struct Drbd_Conf *mdev = (struct Drbd_Conf *) lc->lc_private;
+	unsigned long evicted;
 
-	if( extent->pending_ios > 0 ) {
-		spin_unlock(&mdev->al_lock);
-		//TODO use wait_event_lock here
-		wait_event(mdev->al_wait, extent->pending_ios == 0 );
-		spin_lock(&mdev->al_lock);
-		return 1;
+	// WRITE transaction.... 
+	// async:  do lc->flags &= ~LC_DIRTY and  wake_up(&mdev->al_wait);
+	// in end of IO hander. Return 0 here.
+	// sync: do everything here and return 1.
+
+	evicted = e->lc_number;
+	e->lc_number = enr;
+	spin_unlock(&mdev->al_lock);	
+
+	if(mdev->cstate < Connected && evicted != LC_FREE ) {
+		drbd_update_on_disk_bm(mdev,evicted,1);
 	}
+	drbd_al_write_transaction(mdev);
 
-	return 0;
+	spin_lock(&mdev->al_lock);	
+	clear_bit(__LC_DIRTY,&lc->flags);
+	clear_bit(__LC_STARVING,&lc->flags);
+	smb_mb__after_clear_bit();
+	wake_up(&mdev->al_wait);
+
+	return 1;
 }
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
 	lc_init(&mdev->act_log);
 	mdev->act_log.element_size = sizeof(struct drbd_extent);
-	mdev->act_log.may_evict = drbd_al_may_evict;
+	mdev->act_log.may_evict = drbd_al_changing;
 	mdev->act_log.clb_data  = mdev;
+}
+
+static inline 
+struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
+{
+	struct lc_element * extent;
+	
+	spin_lock(&mdev->al_lock);
+	extent = lc_get(&mdev->act_log,enr);	
+	spin_unlock(&mdev->al_lock);
+
+	return extent;
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
-	struct drbd_extent *extent;
-	int update_al=0;
-	unsigned long evicted=LC_FREE;
+	struct lc_element *extent;
 
-	spin_lock(&mdev->al_lock);
+	wait_event(&mdev->al_wait, (extent = _al_get(mdev,enr)) );
 
-	extent = (struct drbd_extent *)lc_get(&mdev->act_log,enr);
-	
-	if(extent->lce.lc_number == enr ) { // we have a hit!
-		lc_touch(&mdev->act_log,&extent->lce);
-	} else { // miss, need to updated AL
-		evicted = extent->lce.lc_number;
-		extent->lce.lc_number = enr;
-		mdev->al_writ_cnt++;
-		update_al=1;
-	}
-
-	extent->pending_ios++;
-
-	spin_unlock(&mdev->al_lock);
-
-	if( update_al ) {
-		if(mdev->cstate < Connected &&  evicted != LC_FREE ) {
-			drbd_update_on_disk_bm(mdev,evicted,1);
-		}
-		drbd_al_write_transaction(mdev);
-	}
+	lc_touch(&mdev->act_log,extent);
 }
 
 void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
-	struct drbd_extent *extent;
+	struct lc_element *extent;
 
 	spin_lock(&mdev->al_lock);
 
-	extent = (struct drbd_extent *)lc_find(&mdev->act_log,enr);
+	extent = lc_find(&mdev->act_log,enr);
 
 	if(!extent) {
 		spin_unlock(&mdev->al_lock);
@@ -128,10 +131,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 		return;
 	}
 
-	D_ASSERT( extent->pending_ios > 0);
-	extent->pending_ios--;
-
-	if(extent->pending_ios == 0) {
+	if( lc_put(&mdev->act_log,extent) == 0) {
 		wake_up(&mdev->al_wait);
 	}
 
