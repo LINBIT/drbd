@@ -996,6 +996,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->pr_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->send_task_lock = SPIN_LOCK_UNLOCKED;
 
+	INIT_LIST_HEAD(&mdev->cstate_hook);
 	INIT_LIST_HEAD(&mdev->free_ee);
 	INIT_LIST_HEAD(&mdev->active_ee);
 	INIT_LIST_HEAD(&mdev->sync_ee);

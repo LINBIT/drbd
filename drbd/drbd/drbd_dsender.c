@@ -98,37 +98,56 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 	return ok;
 }
 
-void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
+STATIC void _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
 {
+	// This is a callback, I better not assume that this 
+	// is a context which allows to send something from.
+
+	drbd_dev *mdev = (drbd_dev*) dh->data;
+
+	if(odev->cstate <= Connected) {
+		set_bit(SYNC_CONTINUE,&mdev->flags);
+		wake_up_interruptible(&mdev->dsender_wait);
+		list_del(&dh->list); // TODO: Lock for list manipulaton.
+		kfree(dh);
+	}
+}
+
+STATIC void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
+{
+	drbd_dev *odev;
+	struct drbd_hook *dh=NULL;
 	int i;
-	int did_wait=0;
-	do {
-		for (i=0; i < minor_count; i++) {
-			if (signal_pending(current)) return;
-			if ( drbd_conf[i].sync_conf.group < mdev->sync_conf.group
-			  && drbd_conf[i].cstate > Connected )
-			{
-				int ret;
-				INFO("Syncer waits for sync group %i\n",
-				     drbd_conf[i].sync_conf.group);
-				drbd_send_short_cmd(mdev,SyncStop);
-				set_cstate(mdev,PausedSyncT);
-				ret = wait_event_interruptible(
-					drbd_conf[i].cstate_wait,
-					drbd_conf[i].cstate <= Connected );
-				// FIXME if (ret < 0) do something sensible...
-				did_wait=1;
-				// XXX why sleep again?
+
+ retry:
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if (signal_pending(current)) return;
+		if ( odev->sync_conf.group < mdev->sync_conf.group
+		     && odev->cstate > Connected ) {
+			INFO("Syncer waits for sync group %i\n",
+			     odev->sync_conf.group);
+			drbd_send_short_cmd(mdev,SyncStop);
+			set_cstate(mdev,PausedSyncT);
+
+			dh=kmalloc(sizeof(struct drbd_hook),GFP_KERNEL);
+			if(!dh) {
+				ERR("could not kmalloc drbd_hook\n");
 				current->state = TASK_INTERRUPTIBLE;
-				schedule_timeout(HZ/10);
-				break;
-			};
+				schedule_timeout(HZ);
+				goto retry;
+			}
+
+			dh->data = mdev;
+			dh->callback = _ds_wait_osg;
+
+			list_add(&dh->list,&odev->cstate_hook);
+			// TODO: Need some locking here!
+			// over the test of odev->cstate and list_add.
+			// otherwise we could miss the run of the hook!
+
+			return;
 		}
-	} while (i < minor_count);
-	if (did_wait) {
-		INFO("resumed synchronisation.\n");
-		drbd_send_short_cmd(mdev,SyncCont);
-		set_cstate(mdev,SyncTarget);
 	}
 }
 
@@ -138,7 +157,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 	int number,i;
 	sector_t sector;
 
-#define SLEEP_TIME 10
+#define SLEEP_TIME (HZ/10)
 
 	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
@@ -212,8 +231,9 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 static inline int _dsender_cond(struct Drbd_Conf *mdev)
 {
 	int rv;
-	rv = test_bit(START_SYNC,&mdev->flags)
-		|| test_bit(SYNC_FINISHED,&mdev->flags);
+	rv = test_bit(START_SYNC,&mdev->flags) // TODO Use Lars' style _FLAG 
+		|| test_bit(SYNC_FINISHED,&mdev->flags)
+		|| test_bit(SYNC_CONTINUE,&mdev->flags);
 
 	spin_lock_irq(&mdev->ee_lock);
 	rv |= !list_empty(&mdev->rdone_ee);
@@ -262,8 +282,16 @@ int drbd_dsender(struct Drbd_thread *thi)
 			D_ASSERT(list_empty(&mdev->resync->lru));
 		}
 
+		if(test_and_clear_bit(SYNC_CONTINUE,&mdev->flags)) {
+			time=SLEEP_TIME;
+			INFO("resumed synchronisation.\n");
+			drbd_send_short_cmd(mdev,SyncCont);
+			set_cstate(mdev,SyncTarget);
+		}
+
 		if(time == SLEEP_TIME) {
-			if(!ds_issue_requests(mdev)) {
+			if(!ds_issue_requests(mdev) || 
+			   mdev->cstate == PausedSyncT ) {
 				time=MAX_SCHEDULE_TIMEOUT;
 			}
 			if (!disable_io_hints) {

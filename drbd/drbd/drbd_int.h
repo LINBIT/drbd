@@ -506,6 +506,7 @@ struct Pending_read {
 #define PARTNER_DISKLESS   7
 #define SYNC_FINISHED      8
 #define PROCESS_EE_RUNNING 9
+#define SYNC_CONTINUE     10
 
 struct BitMap {
 	unsigned long dev_size;
@@ -528,8 +529,12 @@ struct bm_extent { // 16MB sized extents.
 #define BME_NO_WRITES    0
 #define BME_LOCKED       1
 
-struct al_transaction;
-struct drbd_extent;
+struct drbd_hook {
+	struct list_head list;
+	void* data;
+	void (*callback) (drbd_dev*, struct drbd_hook* );
+};
+
 
 // TODO sort members for performance
 // MAYBE group them further
@@ -557,7 +562,8 @@ struct Drbd_Conf {
 	Drbd_State state;
 	Drbd_CState cstate;
 	wait_queue_head_t cstate_wait;
-	wait_queue_head_t state_wait;
+	struct list_head  cstate_hook; // processed if cstate changes.
+	wait_queue_head_t state_wait;  // TODO: Remove state_wait.
 	Drbd_State o_state;
 	unsigned long int la_size; // last agreed disk size
 	unsigned int send_cnt;
@@ -915,8 +921,17 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 
 static inline void set_cstate(drbd_dev* mdev,Drbd_CState cs)
 {
+	struct list_head *le;
+	struct drbd_hook *dh;
+
 	mdev->cstate = cs;
 	wake_up_interruptible(&mdev->cstate_wait);
+
+	while(!list_empty(&mdev->cstate_hook)) {
+		le = mdev->cstate_hook.next;
+		dh = list_entry(le, struct drbd_hook,list);
+		dh->callback(mdev,dh);
+	}
 }
 
 static inline void inc_pending(drbd_dev* mdev)
