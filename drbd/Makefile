@@ -30,6 +30,10 @@ all:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i ; done
 	@ echo -e "\n\tBuild successful."
 
+tools:
+	@ set -e; for i in $(patsubst drbd,,$(SUBDIRS)); do $(MAKE) -C $$i ; done
+	@ echo -e "\n\tBuild successful."
+
 doc:
 	$(MAKE) -C documentation doc
 
@@ -104,7 +108,8 @@ KVER := $(shell \
 
 kernel-patch:
 	set -o noclobber; \
-	d=patch-linux-$(KVER)-drbd-$(DIST_VERSION);\
+	kbase=$$(basename $(KDIR)); \
+	d=patch-$$kbase-drbd-$(DIST_VERSION);\
 	bash scripts/patch-kernel $(KDIR) . > $$d
 
 # maybe even dist/RPMS/$(ARCH) ?
