@@ -769,9 +769,6 @@ inline int receive_param(int minor,int command)
 	set_blocksize(drbd_conf[minor].lo_device,blksize);
 	drbd_conf[minor].blk_size_b = drbd_log2(blksize);
 
-	/* Do we need to adjust the device size to end on block 
-	   boundary ?? I do not think so ! */
-
 	if (!drbd_conf[minor].mbds_id) {
 		drbd_conf[minor].mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
 	}
@@ -784,7 +781,6 @@ inline int receive_param(int minor,int command)
 		       minor,blk_size[MAJOR_NR][minor],blksize);
 
 		pri=drbd_md_compare(minor,&param);
-		method=drbd_md_syncq_ok(minor,&param,pri)?SyncingQuick:SyncingAll;
 
 		if(pri==0) sync=0;
 		else sync=1;
@@ -801,6 +797,11 @@ inline int receive_param(int minor,int command)
 				       ,minor);
 			}
 		}
+
+		method=drbd_md_syncq_ok(minor,&param,
+					drbd_conf[minor].state == Primary) ? 
+			SyncingQuick : SyncingAll;
+
 /*
 		printk(KERN_INFO DEVICE_NAME "%d: pri=%d sync=%d meth=%c\n",
 		       minor,pri,sync,method==SyncingAll?'a':'q');
@@ -808,8 +809,11 @@ inline int receive_param(int minor,int command)
 		if( sync && !drbd_conf[minor].conf.skip_sync ) {
 			set_cstate(&drbd_conf[minor],method);
 			if(drbd_conf[minor].state == Primary) {
-				drbd_send_cstate(&drbd_conf[minor]);
+				//drbd_send_cstate(&drbd_conf[minor]);
 				drbd_thread_start(&drbd_conf[minor].syncer);
+			} else {
+				drbd_conf[minor].gen_cnt[Consistent]=0;
+				//drbd_md_write(minor); is there anyway.
 			}
 		} else set_cstate(&drbd_conf[minor],Connected);
 	}

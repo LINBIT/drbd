@@ -488,8 +488,11 @@ int drbd_send_param(int minor)
 	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
 	param.h.version = cpu_to_be32(PRO_VERSION);
 
-	for(i=0;i<=PrimaryInd;i++) 
+	for(i=0;i<=PrimaryInd;i++) {
 		param.h.gen_cnt[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
+		param.h.bit_map_gen[i]=
+			cpu_to_be32(drbd_conf[minor].bit_map_gen[i]);
+	}
 
 	down(&drbd_conf[minor].send_mutex);
 	err = drbd_send(&drbd_conf[minor], (Drbd_Packet*)&param, 
@@ -1348,26 +1351,30 @@ int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 /* Returns  1 if SyncingQuick is sufficient
             0 if SyncAll is needed.
 */
-int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good)
+int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
 {
 	int i;
 	u32 me,other;
 
 	// crash during sync forces SyncAll:
-	if( (have_good && be32_to_cpu(partner->gen_cnt[Consistent])==0) ||
-	    (!have_good && drbd_conf[minor].gen_cnt[Consistent]==0)) return 0;
+	if( (i_am_pri && be32_to_cpu(partner->gen_cnt[Consistent])==0) ||
+	    (!i_am_pri && drbd_conf[minor].gen_cnt[Consistent]==0)) return 0;
 
 	// primary crash forces SyncAll:
-	if( (have_good && be32_to_cpu(partner->gen_cnt[PrimaryInd])==1) ||
-	    (!have_good && drbd_conf[minor].gen_cnt[PrimaryInd]==1)) return 0;
+	if( (i_am_pri && be32_to_cpu(partner->gen_cnt[PrimaryInd])==1) ||
+	    (!i_am_pri && drbd_conf[minor].gen_cnt[PrimaryInd]==1)) return 0;
 
 	// If partner's GC not equal our bitmap's GC force SyncAll
-	// (On the secondary, we assume SyncQuick which may be updated 
-	// to SyncAll by the primary.)
-	if( have_good ) {
+	if( i_am_pri ) {
 		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
 			me=drbd_conf[minor].bit_map_gen[i];
 			other=be32_to_cpu(partner->gen_cnt[i]);
+			if( me != other ) return 0;
+		}
+	} else { // !i_am_pri 
+		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
+			me=drbd_conf[minor].gen_cnt[i];
+			other=be32_to_cpu(partner->bit_map_gen[i]);
 			if( me != other ) return 0;
 		}
 	}

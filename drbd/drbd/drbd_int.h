@@ -113,6 +113,7 @@ typedef struct {
   __u32       protocol;
   __u32       version;
   __u32       gen_cnt[5];
+  __u32       bit_map_gen[5];
 }  __attribute((packed)) Drbd_Parameter_P;
 MKPACKET(Drbd_Parameter_P)
 
