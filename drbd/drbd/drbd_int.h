@@ -734,7 +734,7 @@ extern void drbd_al_init(struct Drbd_Conf *mdev);
 extern void drbd_al_free(struct Drbd_Conf *mdev);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
-
+extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 /*
  * event macros
  *************************/

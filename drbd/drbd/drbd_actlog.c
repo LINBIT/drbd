@@ -57,6 +57,9 @@ struct drbd_extent {
 	unsigned int pending_ios;
 };
 
+STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
+STATIC void drbd_al_set(struct Drbd_Conf*, unsigned int, int);
+STATIC void drbd_al_fixup_hash_next(struct Drbd_Conf*);
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
@@ -260,72 +263,6 @@ STATIC struct drbd_extent * drbd_al_add(struct Drbd_Conf *mdev,
 	return slot;
 }
 
-void drbd_al_write_transaction(struct Drbd_Conf *mdev)
-{
-	int i,n,mx;
-	struct al_transaction* buffer;
-	sector_t sector;
-	unsigned int extent_nr;
-	u32 xor_sum=0;
-
-	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
-	buffer = (struct al_transaction*)bh_kmap(mdev->md_io_bh);
-
-	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
-	buffer->tr_number = cpu_to_be32(mdev->al_tr_number++);
-	for(i=0;i<3;i++) {
-		n = mdev->al_updates[i];
-		if(n != -1) {
-			extent_nr = mdev->al_extents[n].extent_nr;
-#if 0	/* Use this printf with the test_al.pl program */
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: T%03d S%03d=E%06d\n",(int)(mdev-drbd_conf),
-			       t, n, extent_nr);
-#endif
-		} else {
-			extent_nr = AL_FREE;
-		}
-		buffer->updated[i].pos = cpu_to_be32(n);
-		buffer->updated[i].extent = cpu_to_be32(extent_nr);
-		xor_sum ^= extent_nr;
-	}
-
-	mx = min_t(int,AL_EXTENTS_PT,mdev->al_nr_extents-mdev->al_tr_cycle);
-	for(i=0;i<mx;i++) {
-		extent_nr = mdev->al_extents[mdev->al_tr_cycle+i].extent_nr;
-		buffer->cyclic[i].pos = cpu_to_be32(mdev->al_tr_cycle+i);
-		buffer->cyclic[i].extent = cpu_to_be32(extent_nr);
-		xor_sum ^= extent_nr;
-	}
-	for(;i<AL_EXTENTS_PT;i++) {
-		buffer->cyclic[i].pos = __constant_cpu_to_be32(-1);
-		buffer->cyclic[i].extent = __constant_cpu_to_be32(AL_FREE);
-		xor_sum ^= AL_FREE;
-	}
-	mdev->al_tr_cycle += AL_EXTENTS_PT;
-	if(mdev->al_tr_cycle >= mdev->al_nr_extents) mdev->al_tr_cycle=0;
-
-	buffer->xor_sum = cpu_to_be32(xor_sum);
-
-	bh_kunmap(mdev->md_io_bh);
-
-	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1)+MD_AL_OFFSET+
-		mdev->al_tr_pos ;
-	
-	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
-	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
-	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
-	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
-	generic_make_request(WRITE,mdev->md_io_bh);
-	wait_on_buffer(mdev->md_io_bh);
-
-	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
-		mdev->al_tr_pos=0;
-	}
-
-	up(&mdev->md_io_mutex);
-}
-
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
@@ -387,6 +324,235 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	if(extent->pending_ios == 0) {
 		wake_up(&mdev->al_wait);
+	}
+
+	spin_unlock(&mdev->al_lock);
+}
+
+STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
+{
+	int i,n,mx;
+	struct al_transaction* buffer;
+	sector_t sector;
+	unsigned int extent_nr;
+	u32 xor_sum=0;
+
+	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
+	buffer = (struct al_transaction*)bh_kmap(mdev->md_io_bh);
+
+	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
+	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
+	for(i=0;i<3;i++) {
+		n = mdev->al_updates[i];
+		if(n != -1) {
+			extent_nr = mdev->al_extents[n].extent_nr;
+#if 1	/* Use this printf with the test_al.pl program */
+			ERR("T%03d S%03d=E%06d\n", 
+			    mdev->al_tr_number, n, extent_nr);
+#endif
+		} else {
+			extent_nr = AL_FREE;
+		}
+		buffer->updated[i].pos = cpu_to_be32(n);
+		buffer->updated[i].extent = cpu_to_be32(extent_nr);
+		xor_sum ^= extent_nr;
+	}
+
+	mx = min_t(int,AL_EXTENTS_PT,mdev->al_nr_extents-mdev->al_tr_cycle);
+	for(i=0;i<mx;i++) {
+		extent_nr = mdev->al_extents[mdev->al_tr_cycle+i].extent_nr;
+		buffer->cyclic[i].pos = cpu_to_be32(mdev->al_tr_cycle+i);
+		buffer->cyclic[i].extent = cpu_to_be32(extent_nr);
+		xor_sum ^= extent_nr;
+	}
+	for(;i<AL_EXTENTS_PT;i++) {
+		buffer->cyclic[i].pos = __constant_cpu_to_be32(-1);
+		buffer->cyclic[i].extent = __constant_cpu_to_be32(AL_FREE);
+		xor_sum ^= AL_FREE;
+	}
+	mdev->al_tr_cycle += AL_EXTENTS_PT;
+	if(mdev->al_tr_cycle >= mdev->al_nr_extents) mdev->al_tr_cycle=0;
+
+	buffer->xor_sum = cpu_to_be32(xor_sum);
+
+	bh_kunmap(mdev->md_io_bh);
+
+	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1)+MD_AL_OFFSET+
+		mdev->al_tr_pos ;
+	
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	generic_make_request(WRITE,mdev->md_io_bh);
+	wait_on_buffer(mdev->md_io_bh);
+
+	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
+		mdev->al_tr_pos=0;
+	}
+	mdev->al_tr_number++;
+
+	up(&mdev->md_io_mutex);
+}
+
+/* In case this function returns 1 == success, the caller must do
+		bh_kunmap(mdev->md_io_bh);
+		up(&mdev->md_io_mutex);
+ */
+STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev, 
+			   struct al_transaction** bp,
+			   int index)
+{
+	struct al_transaction* buffer;
+	sector_t sector;
+	int rv,i;
+	u32 xor_sum=0;
+
+	down(&mdev->md_io_mutex);
+	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1)+MD_AL_OFFSET+
+		index;
+
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	generic_make_request(READ,mdev->md_io_bh);
+	wait_on_buffer(mdev->md_io_bh);
+
+	buffer = (struct al_transaction*)bh_kmap(mdev->md_io_bh);
+
+	rv = ( be32_to_cpu(buffer->magic) == DRBD_MAGIC );
+
+	for(i=0;i<3;i++) {
+		xor_sum ^= be32_to_cpu(buffer->updated[i].extent);
+	}
+	for(i=0;i<AL_EXTENTS_PT;i++) {
+		xor_sum ^= be32_to_cpu(buffer->cyclic[i].extent);
+	}
+	rv &= (xor_sum == be32_to_cpu(buffer->xor_sum));
+
+	if(rv) {
+		*bp = buffer;
+	} else {
+		bh_kunmap(mdev->md_io_bh);
+		up(&mdev->md_io_mutex);
+	}
+
+	return rv;
+}
+
+void drbd_al_read_log(struct Drbd_Conf *mdev)
+{
+	struct al_transaction* buffer;
+	int from=-1,to=-1,i,cnr, overflow=0,rv;
+	u32 from_tnr=-1, to_tnr=0;
+
+	// Find the valid transaction in the log
+	for(i=0;i<mdev->al_nr_extents;i++) {
+		if(!drbd_al_read_tr(mdev,&buffer,i)) continue;
+		cnr = be32_to_cpu(buffer->tr_number);
+		INFO("index %d valid cnr=%d\n",i,cnr);
+		bh_kunmap(mdev->md_io_bh);
+		up(&mdev->md_io_mutex);
+
+		if(cnr == -1) overflow=1;
+
+		if(cnr < from_tnr && !overflow) {
+			from = i;
+			from_tnr = cnr;
+		}
+		if(cnr > to_tnr) {
+			to = i;
+			to_tnr = cnr;
+		}
+	}
+
+	if(from == -1 || to == -1) {
+		WARN("No usable activity log found.\n");
+		return;
+	}
+
+	INFO("Reading activity log from=%d to=%d.\n",from,to);
+	
+	// Read the valid transactions.
+
+	for(i=from;i<=to;i++) {
+		int j,pos;
+		unsigned int extent_nr;
+		unsigned int trn;
+
+		if( i == mdev->al_nr_extents ) i=0;
+		
+		rv = drbd_al_read_tr(mdev,&buffer,i);
+		ERR_IF(!rv) continue;
+
+		trn=be32_to_cpu(buffer->tr_number);
+
+		for(j=0;j<3;j++) {
+			pos = be32_to_cpu(buffer->updated[j].pos);
+			extent_nr = be32_to_cpu(buffer->updated[j].extent);
+
+			if(extent_nr == AL_FREE) continue;
+
+			ERR("T%03d S%03d=E%06d\n",trn, pos, extent_nr);
+			drbd_al_set(mdev,extent_nr,pos);
+		}
+
+		for(j=0;j<AL_EXTENTS_PT;j++) {
+			pos = be32_to_cpu(buffer->cyclic[j].pos);
+			extent_nr = be32_to_cpu(buffer->cyclic[j].extent);
+
+			if(extent_nr == AL_FREE) continue;
+
+			drbd_al_set(mdev,extent_nr,pos);
+		}
+		
+		bh_kunmap(mdev->md_io_bh);
+		up(&mdev->md_io_mutex);
+	}
+
+	drbd_al_fixup_hash_next(mdev);
+	// TODO: Set some marks in the bitmap..
+
+	mdev->al_tr_number = to_tnr+1;
+	mdev->al_tr_pos = to;
+	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
+		mdev->al_tr_pos=0;
+	}
+}
+
+STATIC void drbd_al_set(struct Drbd_Conf *mdev,unsigned int extent_nr,int pos)
+{
+	struct drbd_extent *extent;
+
+	ERR_IF(pos < 0 || pos >= mdev->al_nr_extents ) return;
+
+	extent = mdev->al_extents + pos;
+	spin_lock(&mdev->al_lock);
+
+	list_del(&extent->accessed); // either from al_free or from al_lru
+	mdev->al_extents[pos].extent_nr = extent_nr;
+	list_add(&extent->accessed,&mdev->al_lru);
+	extent->hash_next = 0;
+
+	spin_unlock(&mdev->al_lock);
+}
+
+STATIC void drbd_al_fixup_hash_next(struct Drbd_Conf *mdev)
+{
+	struct drbd_extent *slot, *want;
+	int i;
+
+	spin_lock(&mdev->al_lock);
+
+	for(i=0;i<mdev->sync_conf.al_extents;i++) {
+		slot = mdev->al_extents + i;
+		if(slot->extent_nr == AL_FREE) continue;
+		want = al_hash_fn(mdev,slot->extent_nr);
+		if( slot != want ) {
+			while (want->hash_next) want=want->hash_next;
+			want->hash_next = slot;
+		}
 	}
 
 	spin_unlock(&mdev->al_lock);

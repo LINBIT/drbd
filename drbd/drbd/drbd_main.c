@@ -1730,10 +1730,14 @@ void drbd_md_read(drbd_dev *mdev)
 	for(i=Flags;i<=ArbitraryCnt;i++)
 		mdev->gen_cnt[i]=be32_to_cpu(buffer->gc[i]);
 	mdev->la_size = be64_to_cpu(buffer->la_size);
+	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
+
+	bh_kunmap(mdev->md_io_bh);
 	up(&mdev->md_io_mutex);
 	return;
 
  err:
+	bh_kunmap(mdev->md_io_bh);
 	up(&mdev->md_io_mutex);
 
 	INFO("Creating state block\n");
