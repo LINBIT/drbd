@@ -972,7 +972,8 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
-			if(ok) drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
+			if(ok && mdev->rs_left) 
+				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
 			ok&= drbd_io_error(mdev);
