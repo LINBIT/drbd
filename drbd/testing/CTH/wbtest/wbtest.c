@@ -185,8 +185,18 @@ int wait_for_kids(UINT_32 * kids, int single)
 					"child %u exited with status %u (%u remain)\n",
 					reaped_pid, WEXITSTATUS(status),
 					*kids);
-				// don't error here, we want to keep going
+				err = 1; // DO error here, we do NOT want to keep going
 			}
+			if (WAIT_ON_SINGLE_CHILD == single) {
+				break;
+			}
+		} else if (WIFSIGNALED(status)) {
+			(*kids)--;
+			fprintf(stderr,
+				"child %u exited with status %u (%u remain)\n",
+				reaped_pid, WTERMSIG(status),
+				*kids);
+			err = 1; // DO error here, we do NOT want to keep going
 			if (WAIT_ON_SINGLE_CHILD == single) {
 				break;
 			}
