@@ -45,4 +45,5 @@ tgz:
 	tar -czvf drbd-$(VERSION).tar.gz \
 	--exclude *.o  --exclude CVS \
 	--exclude *~ --exclude .deps --exclude *.tar.gz \
-	--exclude drbdsetup -C .. drbd
+	--exclude drbdsetup --exclude dm --exclude config \
+        --exclude report* -C .. drbd
