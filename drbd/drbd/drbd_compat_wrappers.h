@@ -316,7 +316,7 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 {
 	set_capacity(mdev->vdisk,size);
-	mdev->this_bdev->bd_inode->i_size = size << 9;
+	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }
 
 //#warning "FIXME why don't we care for the return value?"
