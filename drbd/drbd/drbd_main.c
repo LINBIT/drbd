@@ -111,6 +111,10 @@ MODULE_PARM(disable_io_hints,"i");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if loopback devices are used for DRBD" );
 
+// module parameter, defined
+int minor_count = 2;
+int disable_io_hints = 0;
+
 STATIC int *drbd_blocksizes;
 STATIC int *drbd_sizes;
 struct Drbd_Conf *drbd_conf;
@@ -198,9 +202,9 @@ STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 
 	barrier_nr_issue++;
 
-	// THINK this is called with the send_mutex locked
-	// and may sleep ... can we do this?
-	b=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
+	// THINK this is called in the IO path with the send_mutex held
+	// and GFP_KERNEL may itself start IO. set it to GFP_NOIO.
+	b=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
 	b->br_number=barrier_nr_issue;
@@ -408,7 +412,9 @@ void drbd_thread_start(struct Drbd_thread *thi)
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
 	if (!thi->task) return;
-	if (thi->task->state == -1 || thi->task->state == TASK_ZOMBIE) {
+	if (thi->task->state == -1
+	    || thi->task->state == TASK_ZOMBIE
+	    || thi->task->flags & PF_EXITING   ) {
 		// unexpected death... clean up.
 		if (thi->mdev)
 			set_bit(COLLECT_ZOMBIES,&thi->mdev->flags);
@@ -470,12 +476,11 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
-	/* THINK as long as we send directly from make_request,
-	 * I'd like to allow KILL, too, so the user can kill -9 hanging
-	 * write processes. but then again, if it does not succeed, it
-	 * _should_ timeout anyways... so what.
+	/* as long as we send directly from make_request, I'd like to
+	 * allow KILL, so the user can kill -9 hanging write processes.
+	 * if it does not succeed, it _should_ timeout anyways, but...
 	 */
-	old_blocked = block_sigs_but(DRBD_SIG|SIGKILL);
+	old_blocked = block_sigs_but(SIGKILL);
 	sent = drbd_send(mdev,sock,h,size,msg_flags);
 	restore_old_sigset(old_blocked);
 
@@ -515,16 +520,21 @@ STATIC int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	return ok;
 }
 
-// for Ping & PingAck
+/* for WriteHint, maybe others.
+ * returns
+ *   1 if nonblocking send was succesfull,
+ *   0 if nonblocking send failed,
+ * -EAGAIN if we did not get the send mutex
+ */
 STATIC int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
-	// FIXME down_trylock?
-	// down might schedule even though this routine says dontwait
-	down(sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
+	struct semaphore *mutex = sock == mdev->msock ?
+		&mdev->msock_mutex : &mdev->sock_mutex;
+	if (down_trylock(mutex)) return -EAGAIN;
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size, MSG_DONTWAIT);
-	up  (sock == mdev->msock ?  &mdev->msock_mutex : &mdev->sock_mutex );
+	up  (mutex);
 	return ok;
 }
 
@@ -740,7 +750,8 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
 	      for everything in the data structure.
 	*/
-	old_blocked = block_sigs_but(DRBD_SIG);
+	// SIGKILL: see comment in _drbd_send_cmd
+	old_blocked = block_sigs_but(SIGKILL);
 	down(&mdev->sock_mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -779,7 +790,11 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.sector   = cpu_to_be64(DRBD_BH_SECTOR(e->bh));
 	p.block_id = e->block_id;
 
-	old_blocked = block_sigs_but(DRBD_SIG|SIGKILL);
+	/* only called by our kernel thread.
+	 * that one might get stopped by SIGTERM in responst to
+	 * ioctl or module unload
+	 */
+	old_blocked = block_sigs_but(SIGTERM);
 	down(&mdev->sock_mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -960,7 +975,14 @@ STATIC void drbd_send_write_hint(void *data)
 	   WRITE_HINT for an other device (which is in primary state).
 	   This could lead to a distributed deadlock!!
 
-	   To avoid the deadlock we requeue the WRITE_HINT. */
+	   To avoid the deadlock we requeue the WRITE_HINT.
+	UPDATE:
+	   since "dontwait" this would no longer deadlock, but probably
+	   create a useless loop echoing WriteHints back and forth ...
+	THINK:
+	   Why not set an other bit, so the write hint is sent asap
+	   by one of our threads?
+	 */
 
 	for (i = 0; i < minor_count; i++) {
 		if(current == drbd_conf[i].receiver.task) {
@@ -969,8 +991,11 @@ STATIC void drbd_send_write_hint(void *data)
 		}
 	}
 
-	drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h));
-	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
+	// THINK: sock or msock ?
+	if (drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h))==1)
+		clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
+	else
+		queue_task(&mdev->write_hint_tq, &tq_disk);
 }
 
 int __init drbd_init(void)

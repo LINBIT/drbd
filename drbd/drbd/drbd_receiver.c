@@ -201,6 +201,8 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	wake_asender(mdev);
 	//	}
 	// TODO: Think if we should implement a short-cut here.
+	//       How about send_dontwait, and only if that fails, ...
+	//       but then, it is in irq/bh context. probably bad idea.
 }
 
 /*
@@ -597,7 +599,6 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 
 			// FIXME decide this more elegantly
 			if ( mdev->msock->sk->rcvtimeo == mdev->conf.ping_int*HZ) {
-				//DUMPLU(jiffies - mdev->last_received);
 				C_DBG(0,"recv_header timed out, sending ping\n");
 				// goto do_ping;
 			} else {
@@ -611,6 +612,7 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 			unsigned long flags = 0;
 			LOCK_SIGMASK(current,flags);
 			if (sigismember(&current->pending.signal, DRBD_SIG)) {
+				// should only trigger for wake_asender
 				sigdelset(&current->pending.signal, DRBD_SIG);
 				RECALC_SIGPENDING(current);
 			}
@@ -626,6 +628,7 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 			INFO("%s was shut down by peer\n",sockname);
 			break;
 		} else {
+			// if data comes in bytewise, this might trigger ...
 			ERR("logic error: %s_recvmsg returned %d\n",
 			    sockname, rv);
 			break;
@@ -794,7 +797,6 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 		unsigned long flags = 0;
 		int still_pending = FALSE;
 		LOCK_SIGMASK(current,flags);
-		// XXX maybe rather flush_signals() ?
 		if (sigismember(&current->pending.signal, DRBD_SIG)) {
 			sigdelset(&current->pending.signal, DRBD_SIG);
 			RECALC_SIGPENDING(current);
@@ -958,6 +960,13 @@ read_in_block(drbd_dev *mdev,int data_size)
 	bh=e->bh;
 	set_bit(BH_Dirty, &bh->b_state);
 	set_bit(BH_Lock, &bh->b_state); // since using generic_make_request()
+
+	/* MAYBE: set_bit(BH_Sync, &bh->b_state);
+	 * at least for A&B
+	 * see drivers/block/ll_rw_blk.c, __make_request:
+	 * would unplug the request queue for every single request, so
+	 * we won't need to run_task_queue(&tq_disk) ...
+	 */
 	bh->b_end_io = drbd_dio_end_sec;
 	mdev->recv_cnt+=data_size>>9;
 
@@ -1852,7 +1861,8 @@ int drbd_asender(struct Drbd_thread *thi)
 		}
 
 		/* going to wait for input ...  maybe we need to output
-		 * something before input is ready...
+		 * something before input is ready, so allow for wakeup
+		 * signal...
 		 */
 		LOCK_SIGMASK(current,flags);
 		sigdelset(&current->blocked,DRBD_SIG);

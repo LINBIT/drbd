@@ -26,29 +26,14 @@
 
 */
 
-#define PARANOIA
-
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/list.h>
 #include "mempool.h"
 
-// module parameter
-static int __attribute__((unused)) minor_count=2;
-static int __attribute__((unused)) disable_io_hints=0;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-typedef unsigned long sector_t;
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)
-#define completion semaphore
-#define init_completion(A) init_MUTEX_LOCKED(A)
-#define wait_for_completion(A) down(A)
-#define complete(A) up(A)
-#else
-#include <linux/completion.h>
-#endif
+// module parameter, defined in drbd_main.c
+extern int minor_count;
+extern int disable_io_hints;
 
 /* Using the major_nr of the network block device
    prevents us from deadlocking with no request entries
@@ -69,11 +54,10 @@ typedef unsigned long sector_t;
 #include <linux/blk.h>
 #define DRBD_MAJOR NBD_MAJOR
 
-#ifdef DEVICE_NAME
 #undef DEVICE_NAME
-#endif
 #define DEVICE_NAME "drbd"
 
+// XXX do we need this?
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -81,10 +65,14 @@ typedef unsigned long sector_t;
 #define FALSE 0
 #endif
 
-#define INITIAL_BLOCK_SIZE (1<<12)
+#define INITIAL_BLOCK_SIZE (1<<12)  // 4K
 #define DRBD_SIG SIGXCPU
 #define ID_SYNCER (-1LL)
-#define ID_VACANT 0      // All EEs on the free list should have this value
+#define ID_VACANT 0     // All EEs on the free list should have this value
+                        // freshly allocated EEs get !ID_VACANT (== 1)
+			// so if it says "cannot dereference null
+			// pointer at adress 0x00000001, it is most
+			// probably one of these :(
 
 #ifdef DBG_ALL_SYMBOLS
 # define STATIC
@@ -92,9 +80,14 @@ typedef unsigned long sector_t;
 # define STATIC static
 #endif
 
-#define __STR(x) #x
-#define STR(x) __STR(x)
-#define HERE STR(__LINE__)
+/*
+ * Some Message Macros
+ *************************/
+
+// handy macro: DUMPP(somepointer)
+#define DUMPP(A) ERR( #A " = %p in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
 
 #define PRINTK(level,fmt,args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
@@ -103,42 +96,6 @@ typedef unsigned long sector_t;
 #define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt, args)
 #define INFO(fmt,args...) PRINTK(KERN_INFO, fmt, args)
 #define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt, args)
-
-#if 1
-#define C_DBG(r,x...)
-#else
-	// at most one DBG(x) per t seconds
-#define C_DBG(t,x...) do { \
-	static unsigned long _j; \
-	if ((long)(jiffies-_j)< HZ*t) break; \
-	_j=jiffies; \
-	DBG(x); \
-} while (0)
-#endif
-
-#if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
-#else
-# define MUST_HOLD(lock)
-#endif
-
-#ifdef SIGHAND_HACK
-# define LOCK_SIGMASK(task,flags) \
-	spin_lock_irqsave(&task->sighand->siglock, flags)
-# define UNLOCK_SIGMASK(task,flags) \
-	spin_unlock_irqrestore(&task->sighand->siglock, flags)
-# define RECALC_SIGPENDING(TSK)  (recalc_sigpending_tsk(TSK))
-inline void recalc_sigpending_tsk(struct task_struct *t);
-#else
-# define LOCK_SIGMASK(task,flags) \
-	spin_lock_irqsave(&task->sigmask_lock, flags)
-# define UNLOCK_SIGMASK(task,flags) \
-	spin_unlock_irqrestore(&task->sigmask_lock, flags)
-# define RECALC_SIGPENDING(TSK)  (recalc_sigpending(TSK))
-#endif
-
-struct Drbd_Conf;
-typedef struct Drbd_Conf drbd_dev;
 
 #ifdef DBG_ASSERTS
 extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
@@ -153,6 +110,86 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	if (_b) ERR("%s: (" #exp ") in %s:%d\n", __func__, __FILE__,__LINE__); \
 	 _b; \
 	}))
+
+// to debug dec_*(), while we still have the <0!! issue
+#define __STR(x) #x
+#define STR(x) __STR(x)
+#define HERE STR(__LINE__) // __FUNCTION__
+
+#if 1
+#define C_DBG(r,x...)
+#else
+	// at most one DBG(x) per t seconds
+#define C_DBG(t,x...) do { \
+	static unsigned long _j; \
+	if ((long)(jiffies-_j)< HZ*t) break; \
+	_j=jiffies; \
+	DBG(x); \
+} while (0)
+#endif
+
+/*
+ * Compatibility Section
+ *************************/
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+typedef unsigned long sector_t;
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)
+#define completion semaphore
+#define init_completion(A) init_MUTEX_LOCKED(A)
+#define wait_for_completion(A) down(A)
+#define complete(A) up(A)
+#else
+#include <linux/completion.h>
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
+#define min_t(type,x,y) \
+	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
+#define max_t(type,x,y) \
+	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
+#define MODULE_LICENSE(L)
+#endif
+
+#if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
+#define bh_kmap(bh)	((bh)->b_data)
+#define bh_kunmap(bh)	do { } while (0)
+#endif
+
+#ifndef list_for_each
+#define list_for_each(pos, head) \
+	for(pos = (head)->next; pos != (head); pos = pos->next)
+#endif
+
+#if defined(DBG_SPINLOCKS) && defined(__SMP__)
+# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
+#else
+# define MUST_HOLD(lock)
+#endif
+
+#ifdef SIGHAND_HACK
+# define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sighand->siglock, flags)
+# define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sighand->siglock, flags)
+# define RECALC_SIGPENDING(TSK)     (recalc_sigpending_tsk(TSK))
+// defined in drbd_main.c,
+// copied from redhat's kernel-2.4.20-13.9 kernel/signal.c
+// to avoid a recompile of the redhat kernel
+inline void recalc_sigpending_tsk(struct task_struct *t);
+#else
+# define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sigmask_lock, flags)
+# define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sigmask_lock, flags)
+# define RECALC_SIGPENDING(TSK)     (recalc_sigpending(TSK))
+#endif
+
+/*
+ * our structs
+ *************************/
+
+struct Drbd_Conf;
+typedef struct Drbd_Conf drbd_dev;
+
 #define SET_MAGIC(x) (x->magic = DRBD_MAGIC)
 // For some optimization crap, please test for NULL explicitly,
 //	and not in this macro!
@@ -160,11 +197,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define VALID_POINTER(x) ((x)->magic == DRBD_MAGIC)
 #define INVALIDATE_MAGIC(x) (x->magic--)
 
-
-// handy macro: DUMPP(somepointer)
-#define DUMPP(A) ERR( #A " = %p in %s:%d\n",(A),__FILE__,__LINE__);
-#define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
-#define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
 
 /*
  * GFP_DRBD is used for allocations inside drbd_do_request.
@@ -175,8 +207,13 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
  *  avoiding the deadlock.
  *
  * - marcelo
+ *
+ * try to get away with GFP_NOIO, which is (GFP_ATOMIC | __GFP_WAIT)
+ * as far as i can see we do not allocate from interrupt context...
+ * needs to be tested under memory pressure, though.
+ * - lge
  */
-#define GFP_DRBD GFP_ATOMIC
+#define GFP_DRBD GFP_NOIO
 
 /* these defines should go into blkdev.h
    (if it will be ever includet into linus' linux) */
@@ -234,7 +271,7 @@ typedef enum {
 	MAX_OPT_CMD,
 } Drbd_Packet_Cmd;
 
-#ifndef NDEBUG
+// FIXME we should be able to define this away
 // no char* cmdname[], since I'm not sure the index is valid ...
 static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 {
@@ -265,7 +302,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 	default              : return "Unknown";
 	}
 }
-#endif
 
 /* This is the layout for a packet on the wire.
  * The byteorder is the network byte order.
@@ -423,8 +459,6 @@ typedef struct drbd_request drbd_request_t;
    rdone_ee  .. block read, need to send DataReply
 */
 
-struct Drbd_Conf;
-
 struct Tl_epoch_entry {
 	struct list_head list;
 	struct buffer_head* bh;
@@ -473,6 +507,7 @@ struct al_transaction;
 struct drbd_extent;
 
 // TODO sort members for performance
+// MAYBE group them further
 
 struct Drbd_Conf {
 	struct net_config conf;
@@ -557,7 +592,12 @@ struct Drbd_Conf {
 #endif
 };
 
-/* drbd_main.c: */
+
+/*
+ * function declarations
+ *************************/
+
+// drbd_main.c
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(drbd_dev *mdev);
@@ -593,26 +633,14 @@ extern int drbd_send_bitmap(drbd_dev *mdev);
 
 extern int ds_check_sector(drbd_dev *mdev, sector_t sector);
 
-/* drbd_req*/
-#define ERF_NOTLD    2   /* do not call tl_dependence */
-extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
-extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
-
-/* drbd_fs.c: */
-extern int drbd_determin_dev_size(drbd_dev*);
-extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
-extern int drbd_ioctl(struct inode *inode, struct file *file,
-		      unsigned int cmd, unsigned long arg);
-
-/* drbd_meta-data.c (still in drbd_main.c) */
-
+// drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);
 extern void drbd_md_read(drbd_dev *mdev);
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
 extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
 extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int have_good);
 
-/* drbd_bitmap.c (still in drbd_main.c) */
+// drbd_bitmap.c (still in drbd_main.c)
 #define SS_OUT_OF_SYNC (1)
 #define SS_IN_SYNC     (0)
 #define MBDS_SYNC_ALL (-2)
@@ -647,7 +675,7 @@ extern void bm_fill_bm(struct BitMap* sbm,int value);
 extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
 extern void drbd_queue_signal(int signal,struct task_struct *task);
 
-extern struct Drbd_Conf *drbd_conf;
+extern drbd_dev *drbd_conf;
 extern int minor_count;
 extern kmem_cache_t *drbd_request_cache;
 extern kmem_cache_t *drbd_pr_cache;
@@ -655,11 +683,48 @@ extern kmem_cache_t *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
 extern mempool_t *drbd_pr_mempool;
 
-/* drbd_dsender.c */
+// drbd_req
+#define ERF_NOTLD    2   /* do not call tl_dependence */
+extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
+extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
+
+// drbd_fs.c
+extern int drbd_determin_dev_size(drbd_dev*);
+extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
+extern int drbd_ioctl(struct inode *inode, struct file *file,
+		      unsigned int cmd, unsigned long arg);
+
+// drbd_dsender.c
 extern int drbd_dsender(struct Drbd_thread *thi);
 extern void drbd_dio_end_read(struct buffer_head *bh, int uptodate);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 extern unsigned long drbd_hash(struct buffer_head *bh);
+
+// drbd_receiver.c
+extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
+extern void drbd_init_ee(drbd_dev* mdev);
+extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
+extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev,
+					  int may_sleep);
+extern int _drbd_process_ee(drbd_dev *,struct list_head *);
+extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
+			    sector_t sector, int data_size);
+extern int recv_dless_read(drbd_dev* mdev, struct Pending_read *pr,
+			   sector_t sector, int data_size);
+
+// drbd_proc.c
+extern struct proc_dir_entry *drbd_proc;
+extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
+
+// drbd_actlog.c
+extern void drbd_al_init(struct Drbd_Conf *mdev);
+extern void drbd_al_free(struct Drbd_Conf *mdev);
+extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
+extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
+
+/*
+ * inline helper functions
+ *************************/
 
 static inline void wake_asender(drbd_dev *mdev) {
 	drbd_queue_signal(DRBD_SIG, mdev->asender.task);
@@ -679,13 +744,13 @@ static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 static inline int drbd_send_ping(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd_dontwait(mdev,mdev->msock,Ping,&h,sizeof(h));
+	return drbd_send_cmd(mdev,mdev->msock,Ping,&h,sizeof(h));
 }
 
 static inline int drbd_send_ping_ack(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd_dontwait(mdev,mdev->msock,PingAck,&h,sizeof(h));
+	return drbd_send_cmd(mdev,mdev->msock,PingAck,&h,sizeof(h));
 }
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
@@ -785,44 +850,6 @@ static inline void drbd_set_in_sync(drbd_dev* mdev,
 	spin_unlock_irqrestore(&mdev->rs_lock,flags);
 }
 
-extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
-extern void drbd_init_ee(drbd_dev* mdev);
-extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
-extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev,
-					  int may_sleep);
-extern int _drbd_process_ee(drbd_dev *,struct list_head *);
-extern int recv_resync_read(drbd_dev* mdev, struct Pending_read *pr,
-			    sector_t sector, int data_size);
-extern int recv_dless_read(drbd_dev* mdev, struct Pending_read *pr,
-			   sector_t sector, int data_size);
-
-
-
-/* drbd_proc.c  */
-extern struct proc_dir_entry *drbd_proc;
-extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
-#define min_t(type,x,y) \
-	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
-#define max_t(type,x,y) \
-	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
-#endif
-
-#if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
-#define bh_kmap(bh)	((bh)->b_data)
-#define bh_kunmap(bh)	do { } while (0)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
-#define MODULE_LICENSE(L)
-#endif
-
-#ifndef list_for_each
-#define list_for_each(pos, head) \
-	for(pos = (head)->next; pos != (head); pos = pos->next)
-#endif
-
 /*
   There was a race condition between the syncer's and applications' write
   requests on the primary node.
@@ -912,8 +939,11 @@ static inline void drbd_set_bh(drbd_dev *mdev,
 
 	// we skip submit_bh, but use generic_make_request.
 	set_bit(BH_Req, &bh->b_state);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
+	set_bit(BH_launder, &bh->b_state);
+#else
 	set_bit(BH_Launder, &bh->b_state);
-
+#endif
 	bh->b_rdev = mdev->lo_device;
 	bh->b_rsector = sector;
 }
@@ -938,9 +968,3 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 # define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
 #endif
 
-// drbd_actlog.h
-
-extern void drbd_al_init(struct Drbd_Conf *mdev);
-extern void drbd_al_free(struct Drbd_Conf *mdev);
-extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
-extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);

@@ -313,8 +313,8 @@ int drbd_dsender(struct Drbd_thread *thi)
 		__remove_wait_queue(&mdev->dsender_wait, &wait);
 		spin_unlock_irq(&mdev->dsender_wait.lock);
 
-		/* FIXME if we have a signal pending, but t_state !=
-		 * Exiting, this is a busy loop in kernel space
+		/* FIXME if we have a signal pending, but t_state != Exiting,
+		 * this becomes a busy loop in kernel space
 		 */
 		//if (thi->t_state == Exiting) break;
 		if (signal_pending(current)) break;
@@ -329,7 +329,6 @@ int drbd_dsender(struct Drbd_thread *thi)
 			}
 			if (!disable_io_hints) {
 				Drbd_Header h;
-				D_ASSERT(!disable_io_hints);
 				drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h));
 			}
 		}

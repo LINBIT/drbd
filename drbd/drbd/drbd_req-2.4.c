@@ -84,8 +84,8 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
+	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
-	SET_MAGIC(req);
 
 	if (test_bit(ISSUE_BARRIER,&mdev->flags))
 		wake_asender(mdev);
