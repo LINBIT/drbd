@@ -149,26 +149,31 @@ int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 
 void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 {
-	int i = 0;
+	int i;
 	int did_wait=0;
-	while (i < minor_count) {
+	do {
 		for (i=0; i < minor_count; i++) {
 			if (signal_pending(current)) return;
 			if ( drbd_conf[i].sync_conf.group < mdev->sync_conf.group
-			  && drbd_conf[i].cstate > SkippedSyncT )
+			  && drbd_conf[i].cstate > Connected )
 			{
+				int ret;
 				INFO("Syncer waits for sync group %i\n",
 				     drbd_conf[i].sync_conf.group);
 				drbd_send_short_cmd(mdev,SyncStop);
 				set_cstate(mdev,PausedSyncT);
-				interruptible_sleep_on(&drbd_conf[i].cstate_wait);
+				ret = wait_event_interruptible(
+					mdev->cstate_wait,
+					drbd_conf[i].cstate <= Connected );
+				// FIXME if (ret < 0) do something sensible...
 				did_wait=1;
+				// XXX why sleep again?
 				current->state = TASK_INTERRUPTIBLE;
 				schedule_timeout(HZ/10);
 				break;
 			};
 		}
-	}
+	} while (i < minor_count);
 	if (did_wait) {
 		INFO("resumed synchronisation.\n");
 		drbd_send_short_cmd(mdev,SyncCont);
@@ -275,13 +280,26 @@ int drbd_dsender(struct Drbd_thread *thi)
 		   could happen before we are in sleep_on_timeout(), therefore
 		*/
 
+/* what about:
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_process_rdone_ee(mdev);
+		spin_unlock_irq(&mdev->ee_lock);
+
+		wait_event_interruptible_timeout(mdev->dsender_wait,
+			test_bit(START_SYNC,&mdev->flags)
+			|| test_bit(SYNC_FINISHED,&mdev->flags)
+			|| !list_empty(mdev->rdone_ee),
+			time);
+*/
+
+
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_process_rdone_ee(mdev);
 
 		current->state = TASK_INTERRUPTIBLE;
-		spin_lock(&mdev->dsender_wait.lock);
+		wq_write_lock(&mdev->dsender_wait.lock);
 		__add_wait_queue(&mdev->dsender_wait, &wait);
-		spin_unlock(&mdev->dsender_wait.lock);
+		wq_write_unlock(&mdev->dsender_wait.lock);
 
 		start_sync=test_and_clear_bit(START_SYNC,&mdev->flags);
 		sync_finished=test_and_clear_bit(SYNC_FINISHED,&mdev->flags);
@@ -309,9 +327,9 @@ int drbd_dsender(struct Drbd_thread *thi)
 
 		schedule_timeout(time);
 
-		spin_lock_irq(&mdev->dsender_wait.lock);
+		wq_write_lock_irq(&mdev->dsender_wait.lock);
 		__remove_wait_queue(&mdev->dsender_wait, &wait);
-		spin_unlock_irq(&mdev->dsender_wait.lock);
+		wq_write_unlock_irq(&mdev->dsender_wait.lock);
 
 		/* FIXME if we have a signal pending, but t_state != Exiting,
 		 * this becomes a busy loop in kernel space

@@ -91,11 +91,11 @@ extern int disable_io_hints;
 
 #define PRINTK(level,fmt,args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
-		(int)(mdev-drbd_conf), ## args )
-#define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt, args)
-#define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt, args)
-#define INFO(fmt,args...) PRINTK(KERN_INFO, fmt, args)
-#define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt, args)
+		(int)(mdev-drbd_conf), ##args)
+#define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt , ##args)
+#define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt, ##args)
+#define INFO(fmt,args...) PRINTK(KERN_INFO, fmt, ##args)
+#define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt, ##args)
 
 #ifdef DBG_ASSERTS
 extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
@@ -311,9 +311,9 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
  *      which just echoes them as received.)
  */
 typedef struct {
-	__u32       magic;
-	__u16       command;
-	__u16       length;	// bytes of data after this header
+	u32       magic;
+	u16       command;
+	u16       length;	// bytes of data after this header
 	// char        payload[];
 } Drbd_Header __attribute((packed));
 // (typesafe) hack for older gcc
@@ -340,8 +340,8 @@ typedef struct {
  */
 typedef struct {
 	Drbd_Header head;
-	__u64       sector;    // 64 bits sector number
-	__u64       block_id;  // Used in protocol B&C for the address of the req.
+	u64         sector;    // 64 bits sector number
+	u64         block_id;  // Used in protocol B&C for the address of the req.
 } Drbd_Data_Packet  __attribute((packed));
 
 /*
@@ -351,16 +351,16 @@ typedef struct {
  */
 typedef struct {
 	Drbd_Header head;
-	__u64       sector;
-	__u64       block_id;
-	__u32       blksize;
+	u64         sector;
+	u64         block_id;
+	u32         blksize;
 } Drbd_BlockAck_Packet __attribute((packed));
 
 typedef struct {
 	Drbd_Header head;
-	__u64       sector;
-	__u64       block_id;
-	__u32       blksize;
+	u64         sector;
+	u64         block_id;
+	u32         blksize;
 } Drbd_BlockRequest_Packet __attribute((packed));
 
 /*
@@ -372,36 +372,36 @@ typedef struct {
  */
 typedef struct {
 	Drbd_Header head;
-	__u32       barrier;   // may be 0 or a barrier number
+	u32         barrier;   // may be 0 or a barrier number
 } Drbd_Barrier_Packet  __attribute((packed));
 
 typedef struct {
 	Drbd_Header head;
-	__u32       barrier;
-	__u32       set_size;
+	u32         barrier;
+	u32         set_size;
 } Drbd_BarrierAck_Packet  __attribute((packed));
 
 typedef struct {
 	Drbd_Header head;
-	__u32       rate;
-	__u32       use_csums;
-	__u32       skip;
-	__u32       group;
+	u32         rate;
+	u32         use_csums;
+	u32         skip;
+	u32         group;
 } Drbd_SyncParam_Packet  __attribute((packed));
 
 typedef struct {
 	Drbd_Header head;
-	__u64       p_size;  // size of disk
-	__u64       u_size;  // user requested size
-	__u32       state;
-	__u32       protocol;
-	__u32       version;
-	__u32       gen_cnt[GEN_CNT_SIZE];
-	__u32       bit_map_gen[GEN_CNT_SIZE];
-	__u32       sync_rate;
-	__u32       sync_use_csums;
-	__u32       skip_sync;
-	__u32       sync_group;
+	u64         p_size;  // size of disk
+	u64         u_size;  // user requested size
+	u32         state;
+	u32         protocol;
+	u32         version;
+	u32         gen_cnt[GEN_CNT_SIZE];
+	u32         bit_map_gen[GEN_CNT_SIZE];
+	u32         sync_rate;
+	u32         sync_use_csums;
+	u32         skip_sync;
+	u32         sync_group;
 } Drbd_Parameter_Packet  __attribute((packed));
 
 typedef union {

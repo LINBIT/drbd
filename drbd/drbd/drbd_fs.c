@@ -571,18 +571,14 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		// We can drop the mutex, we do not touch anything in mdev.
 		up(&mdev->ctl_mutex);
 
-		while (mdev->cstate >= Unconnected &&
-		       mdev->cstate < Connected &&
-		       time > 0 ) {
-
-			time = interruptible_sleep_on_timeout(
-				&mdev->cstate_wait, time);
-
-			if(signal_pending(current)) {
-				err = -EINTR;
-				goto out_unlocked;
-			}
-		}
+		err = wait_event_interruptible_timeout(
+			mdev->cstate_wait,
+			mdev->cstate < Unconnected
+			|| mdev->cstate >= Connected,
+			time );
+		if (err == 0) err = -ETIME;
+		if (err < 0) goto out_unlocked;
+		err=0; // no error
 
 		if(put_user(mdev->cstate>=Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
@@ -593,21 +589,21 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		up(&mdev->ctl_mutex);
 
-		while (mdev->cstate >= Unconnected &&
-		       mdev->cstate != Connected &&
-		       time > 0 ) {
-
-			if (mdev->cstate >= SyncSource)
+		do {
+			if (mdev->cstate > Connected)
 				time=MAX_SCHEDULE_TIMEOUT;
-
-			time = interruptible_sleep_on_timeout(
-				&mdev->cstate_wait, time);
-
-			if(signal_pending(current)) {
-				err = -EINTR;
-				goto out_unlocked;
-			}
-		}
+			// XXX else back to user supplied timeout ??
+			err = wait_event_interruptible_timeout(
+				mdev->cstate_wait,
+				mdev->cstate == Connected
+				|| mdev->cstate < Unconnected,
+				time );
+			if (err == 0) err = -ETIME;
+			if (err < 0) goto out_unlocked;
+		} while (err > 0
+			 && mdev->cstate != Connected
+			 && mdev->cstate >= Unconnected);
+		err=0; // no error
 
 		if(put_user(mdev->cstate==Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
