@@ -1462,12 +1462,45 @@ int drbd_connect(int minor)
 		sock_release(sock);
 		/* printk(KERN_INFO DEVICE_NAME
 		   ": Unable to connec to server (%d)\n", err); */
+/*
+		while(TRUE) {
+			int bind_count=0;
+
+			err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
+			if (err) {
+				printk(KERN_ERR DEVICE_NAME
+				       ": sock_creat(..)=%d\n", err);
+			}
+			sock->sk->reuse=1;
+
+			lock_kernel();
+			err = sock->ops->bind(sock,
+					      (struct sockaddr *) drbd_conf[minor].
+					      conf.my_addr,
+					      drbd_conf[minor].conf.my_addr_len);
+			unlock_kernel();
+			if (!err) break;
+
+			sock_release(sock);
+			set_cstate(&drbd_conf[minor],Unconnected);
+
+			current->state = TASK_INTERRUPTIBLE;
+			schedule_timeout(HZ);
+			if(bind_count++ == 5) {
+				printk(KERN_ERR DEVICE_NAME
+				       ": Unable to bind (%d)\n", err);
+				return 0;
+			}
+		} 
+*/
 
 		err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 		if (err) {
 			printk(KERN_ERR DEVICE_NAME
 			       ": sock_creat(..)=%d\n", err);
 		}
+
+		sock->sk->reuse=1;
 
 		lock_kernel();
 		err = sock->ops->bind(sock,
