@@ -163,7 +163,7 @@ int main(int argc, char** argv)
 	      "       -t --timeout  val\n"
 	      "          If communication blocks for val * 1/10 seconds,\n"
 	      "          drbd falls back into unconnected operation.\n"
-	      "          Default: 30 = 3 sec.\n\n"
+	      "          Default: 60 = 6 sec.\n\n"
 	      "       -r --sync-rate val\n"
 	      "          The synchronisation sends up to val KB per sec.\n"
 	      "          Default: 250 = 250 KB/sec\n\n"
@@ -373,7 +373,7 @@ int main(int argc, char** argv)
       other_addr->sin_family = AF_INET;
       other_addr->sin_addr.s_addr = resolv(addr_part(argv[5]));
 
-      cn.config.timeout = 30; /* = 3 seconds */
+      cn.config.timeout = 60; /* = 6 seconds */
       cn.config.sync_rate = 250; /* KB/sec */
       cn.config.skip_sync = 0; 
       cn.config.tl_size = 256;
