@@ -169,16 +169,16 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 
 	mx = min_t(int,AL_EXTENTS_PT,
 		   mdev->act_log.nr_elements - mdev->al_tr_cycle);
-	for(i=3;i<mx+3;i++) {
+	for(i=0;i<mx;i++) {
 		extent_nr = LC_AT_INDEX(&mdev->act_log,
 					mdev->al_tr_cycle+i)->lc_number;
-		buffer->updates[i].pos = cpu_to_be32(mdev->al_tr_cycle+i);
-		buffer->updates[i].extent = cpu_to_be32(extent_nr);
+		buffer->updates[i+3].pos = cpu_to_be32(mdev->al_tr_cycle+i);
+		buffer->updates[i+3].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
-	for(;i<AL_EXTENTS_PT+3;i++) {
-		buffer->updates[i].pos = __constant_cpu_to_be32(-1);
-		buffer->updates[i].extent = __constant_cpu_to_be32(AL_FREE);
+	for(;i<AL_EXTENTS_PT;i++) {
+		buffer->updates[i+3].pos = __constant_cpu_to_be32(-1);
+		buffer->updates[i+3].extent = __constant_cpu_to_be32(AL_FREE);
 		xor_sum ^= AL_FREE;
 	}
 	mdev->al_tr_cycle += AL_EXTENTS_PT;
@@ -282,6 +282,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	}
 
 	// Read the valid transactions.
+	// INFO("Reading from %d to %d.\n",from,to);
 
 	i=from;
 	while(1) {
@@ -300,6 +301,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 			if(extent_nr == AL_FREE) continue;
 
+		       //if(j<3) INFO("T%03d S%03d=E%06d\n",trn,pos,extent_nr);
 			lc_set(&mdev->act_log,extent_nr,pos);
 		}
 
