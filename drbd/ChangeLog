@@ -1,6 +1,9 @@
 0.6.1  (api:58/proto:58)
 -----
 Since the last one should have been 0.6, this is 0.6.1:
+  *) If an application which is writing to a drbd device receives a signal
+     while it sleeps in DRBD's send_msg call, the connection is dropped.
+     -- Fixed this bug. (You could observe this with tiobench)
   *) Fixed serious bugs in the meta-data handling.
   *) Split the code of the module into 7 files
   *) Added reasonable support for Linux-2.4.x.
