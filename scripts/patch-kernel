@@ -133,8 +133,9 @@ patch_Kconfig() { sed -e '
 	/^config BLK_DEV_NBD/i\
 source "drivers/block/drbd/Kconfig"\
 
-	/^\tdepends on / s/$/ \&\& !BLK_DEV_DRBD/
 }'
+#	/^\tdepends on / s/$/ \&\& !BLK_DEV_DRBD/
+#	}'
 }
 for f in drivers/block/Kconfig arch/um/Kconfig_block ; do
 	grep drbd/ $DRBD_BASE/$f >/dev/null && continue

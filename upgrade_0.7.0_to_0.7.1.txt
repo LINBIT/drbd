@@ -4,7 +4,7 @@ DRBD upgrade instructions from 0.7.0 to 0.7.1
 With drbd-0.7.1 we have our own major number, and our own device
 files. (=No longer misuse /dev/nbX)
 
-You can either go with the new major number: Plan A (recommendet)
+You can either go with the new major number: Plan A (recommended)
 Or stay with the old major number: Plan B
 
 Plan A)
