@@ -40,5 +40,5 @@ clean:
 	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs *~ manpage.log
 
 install: drbdsetup.8 drbd.conf.5
-	install drbdsetup.8 $(PREFIX)usr/share/man/man8
-	install drbd.conf.5 $(PREFIX)usr/share/man/man5
+	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/man8; fi
+	if [ -e drbd.conf.e ]; then install drbd.conf.5 $(PREFIX)usr/share/man/man5; fi

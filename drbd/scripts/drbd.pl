@@ -519,6 +519,7 @@ sub drbd()
 	}
     } elsif ($command eq "stop") { 
 	if ( -e "/proc/drbd" ) {
+	    fcaller( \&become_sec );
 	    `$rmmod -s drbd`;
 	    if( $? ) {
 		die "$pname: Can not unload the drbd module.";
