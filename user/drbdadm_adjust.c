@@ -34,6 +34,7 @@
 #include <stdarg.h>
 
 #include "drbdadm.h"
+#include "drbdtool_common.h"
 
 #define PERROR(fmt, args...) \
 do { fprintf(stderr,fmt ": ", ##args); perror(0); } while (0)
@@ -72,32 +73,6 @@ FILE *m_popen(int *pid,char** argv)
   close(pipes[1]); // close writing end
   *pid=mpid;
   return fdopen(pipes[0],"r");
-}
-
-
-static unsigned long m_strtol(const char* s,int def_mult)
-{
-  char *e = (char*)s;
-  unsigned long r;
-
-  r = strtol(s,&e,0);
-  switch(*e)
-    {
-    case 0:
-      return r;
-    case 'K':
-    case 'k':
-      return r*(1024/def_mult);
-    case 'M':
-    case 'm':
-      return r*1024*(1024/def_mult);
-    case 'G':
-    case 'g':
-      return r*1024*1024*(1024/def_mult);
-    default:
-      fprintf(stderr,"%s is not a valid number\n",s);
-      exit(E_config_invalid);
-    }
 }
 
 int check_opt_b(FILE *in,char* name,struct d_option* base)

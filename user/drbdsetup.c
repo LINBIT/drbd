@@ -47,6 +47,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <mntent.h>
+#include "drbdtool_common.h"
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -82,9 +83,6 @@
 #else
 # define PRINT_ARGV
 #endif
-
-#define PERROR(fmt, args...) \
-do { fprintf(stderr,fmt ": " , ##args); perror(0); } while (0)
 
 
 // some globals
@@ -205,31 +203,6 @@ unsigned long resolv(const char* name)
       retval = ((struct in_addr *)(he->h_addr_list[0]))->s_addr;
     }
   return retval;
-}
-
-unsigned long m_strtol(const char* s,int def_mult)
-{
-  char *e = (char*)s;
-  unsigned long r;
-
-  r = strtol(s,&e,0);
-  switch(*e)
-    {
-    case 0:
-      return r;
-    case 'K':
-    case 'k':
-      return r*(1024/def_mult);
-    case 'M':
-    case 'm':
-      return r*1024*(1024/def_mult);
-    case 'G':
-    case 'g':
-      return r*1024*1024*(1024/def_mult);
-    default:
-      fprintf(stderr,"%s is not a valid number\n",s);
-      exit(20);
-    }
 }
 
 const char* addr_part(const char* s)
@@ -390,27 +363,10 @@ void print_usage(const char* addinfo)
 
 int open_drbd_device(const char* device)
 {
-  int drbd_fd,err,version;
-  struct stat drbd_stat;
+  int err,drbd_fd,version;
 
-  drbd_fd=open(device,O_RDONLY);
-  if(drbd_fd==-1)
-    {
-      PERROR("can not open %s", device);
-      exit(20);
-    }
+  drbd_fd=dt_open_drbd_device(device);
 
-
-  err=fstat(drbd_fd, &drbd_stat);
-  if(err)
-    {
-      PERROR("fstat(%s) failed",device);
-    }
-  if(!S_ISBLK(drbd_stat.st_mode))
-    {
-      fprintf(stderr, "%s is not a block device!\n", device);
-      exit(20);
-    }
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_VERSION,&version);
   if(err)
     {
