@@ -1441,10 +1441,10 @@ void bm_cleanup(struct BitMap* sbm)
 	kfree(sbm);
 }
 
-#define BM_SS (BM_BLOCK_SIZE_B-9)
-#define BM_NS (1<<BM_SS)
-#define BM_MM ((1L<<BM_SS)-1)
-#define BPLM (BITS_PER_LONG-1)
+#define BM_SS (BM_BLOCK_SIZE_B-9)     // 3
+#define BM_NS (1<<BM_SS)              // 8
+#define BM_MM ((1L<<BM_SS)-1)         // 7 = 111bin
+#define BPLM (BITS_PER_LONG-1)        
 
 /* sector_t and size have a higher resolution (512 Byte) than
    the bitmap (4K). In case we have to set a bit, we 'round up',
@@ -1510,19 +1510,33 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 {
 	unsigned long* bm;
-	int i;
-	int bits=0;
+	int i,max,bits=0;
+	unsigned long bnr;
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 
-	for(i = enr * WORDS ; i < (enr+1) * WORDS ; i++) {
+	max = min_t(int, (enr+1)*WORDS, sbm->size/sizeof(long));
+
+	for(i = enr * WORDS ; i < max ; i++) {
 		bits += parallel_bitcount(bm[i]);
 	} 
 
+	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
+
+	// Special case at the end of the device
+	if( max == sbm->size/sizeof(long) &&
+	    sbm->size % (BM_BLOCK_SIZE/1024) ) {
+		bnr = sbm->size / (BM_BLOCK_SIZE/1024);
+		if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) {
+			bits = bits + (sbm->size*2) % BM_NS - BM_NS;
+		}
+	}
+
 	spin_unlock(&sbm->bm_lock);
 
-	return bits << (BM_BLOCK_SIZE_B - 9); // in sectors
+
+	return bits;
 }
 #undef WORDS
 
