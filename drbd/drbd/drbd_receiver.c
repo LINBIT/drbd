@@ -604,9 +604,6 @@ int drbd_connect(drbd_dev *mdev)
 			smp_rmb();
 			if ((volatile int)mdev->receiver.t_state == Exiting)
 				return 0;
-
-			WARN("Signal pending x%lx, but t_state not Exiting??\n",
-			     current->pending.signal.sig[0]); // to be removed.
 		}
 	}
 

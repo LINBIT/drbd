@@ -832,7 +832,7 @@ int drbd_worker(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
 	struct drbd_work *w = 0;
-	int intr,socket_ok=1;
+	int intr;
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
 
@@ -863,14 +863,8 @@ int drbd_worker(struct Drbd_thread *thi)
 		}
 		spin_unlock_irq(&mdev->req_lock);
 
-		if(!socket_ok && mdev->cstate >= Connected) {
-			socket_ok = 1;
-			INFO("worker: socket_ok=1\n");
-		}
-
-		if(!w->cb(mdev,w,!socket_ok)) {
-			socket_ok = 0;
-			ERR("worker: a callback failed! socket_ok=0\n");
+		if(!w->cb(mdev,w, mdev->cstate < Connected )) {
+			ERR("worker: a callback failed! \n");
 			drbd_thread_restart_nowait(&mdev->receiver);
 		}
 	}
