@@ -208,6 +208,11 @@ int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
       exit(20);
     }
 
+  /* FIXME maybe check the major number, too?
+   * you cannot be paranoid enough...
+   * either NBD [43], or DRBD [147] (enforce for v08)
+   */
+
   /* THINK.
    * maybe we should also place a fcntl lock on the
    * _physical_device_ we open later...
@@ -219,6 +224,13 @@ int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
    * pretending it belongs to an other, you'll screw up completely.
    *
    * We should store something in the meta data to detect such abuses.
+   * Philipp, see my suggestion for "/var/lib/drbd/drbd-toc",
+   * or /etc/drbd/ for that matter ...
+   */
+
+  /* NOTE that /var/lock/drbd-*-* may not be "secure",
+   * maybe we should rather use /var/lock/drbd/drbd-*-*,
+   * and make sure that /var/lock/drbd is drwx.-..-. root:root  ...
    */
 
   snprintf(lfname,39,"/var/lock/drbd-%d-%d",

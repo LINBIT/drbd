@@ -8,8 +8,7 @@ asmlinkage int printk(const char * fmt, ...)
 #define SZO(type,size) \
 	s = sizeof(type); \
 	if (s != size) { \
-		printk("<3>sizeof(" #type "): %d != %d; " \
-			"ioctls won't work, aborting\n", s, size); \
+		printk("<3>sizeof(" #type "): %d != %d\n", s, size); \
 		err = -1; \
 	}
 
@@ -24,5 +23,6 @@ int sizeof_drbd_structs_sanity_check(void)
 	SZO(struct ioctl_syncer_config,	 32)
 	SZO(struct ioctl_wait,		 16)
 	SZO(struct ioctl_get_config,	432)
+	if (err) printk("<3>ioctls won't work, aborting\n");
 	return err;
 }

@@ -371,9 +371,14 @@ int v08_validate_md(struct md_cpu *md)
 struct format_ops;
 
 struct format {
-	struct format_ops *ops;
-	char *device_name;	/* well, in 06 it is file name */
-	int fd;
+	const struct format_ops *ops;
+	char *md_device_name;	/* well, in 06 it is file name */
+	char *drbd_dev_name;
+	int lock_fd;
+	int drbd_fd;
+	int ll_fd;
+	int md_fd;
+
 	/* byte offset of our "super block", within fd */
 	u64 md_offset;
 
@@ -403,6 +408,12 @@ struct format {
 	} on_disk;
 };
 
+/* - parse is expected to exit() if it does not work out.
+ * - open is expected to mmap the respective on_disk members,
+ *   and copy the "superblock" meta data into the struct mem_cpu
+ * FIXME describe rest of them, and when they should exit,
+ * return error or success.
+ */
 struct format_ops {
 	const char *name;
 	char **args;
@@ -505,11 +516,6 @@ struct meta_cmd cmds[] = {
 	 * see comments there */
 	{"set-gc", ":::VAL:VAL:...", meta_set_gc, 0},
 };
-
-char *progname = 0;
-int drbd_fd = -1;
-int lock_fd = -1;
-char *drbd_dev_name;
 
 /*
  * generic helpers
@@ -650,7 +656,7 @@ int v06_parse(struct format *cfg, char **argv, int argc, int *ai)
 		fprintf(stderr, "asprintf() failed.\n");
 		exit(20);
 	};
-	cfg->device_name = e;
+	cfg->md_device_name = e;
 
 	*ai += 1;
 
@@ -661,27 +667,27 @@ int v06_md_open(struct format *cfg)
 {
 	struct stat sb;
 
-	cfg->fd = open(cfg->device_name, O_RDWR);
+	cfg->md_fd = open(cfg->md_device_name, O_RDWR);
 
-	if (cfg->fd == -1) {
-		PERROR("open(%s) failed", cfg->device_name);
+	if (cfg->md_fd == -1) {
+		PERROR("open(%s) failed", cfg->md_device_name);
 		return -1;
 	}
 
-	if (fstat(cfg->fd, &sb)) {
+	if (fstat(cfg->md_fd, &sb)) {
 		PERROR("fstat() failed");
 		return -1;
 	}
 
 	if (!S_ISREG(sb.st_mode)) {
 		fprintf(stderr, "'%s' is not a plain file!\n",
-			cfg->device_name);
+			cfg->md_device_name);
 		return -1;
 	}
 
 	cfg->on_disk.md6 =
 	    mmap(NULL, sizeof(struct md_on_disk_06), PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->fd, 0);
+		 MAP_SHARED, cfg->md_fd, 0);
 	if (cfg->on_disk.md6 == NULL) {
 		PERROR("mmap(md_on_disk) failed");
 		return -1;
@@ -700,11 +706,11 @@ int v06_md_close(struct format *cfg)
 		PERROR("munmap(md_on_disk) failed");
 		return -1;
 	}
-	if (fsync(cfg->fd) == -1) {
+	if (fsync(cfg->md_fd) == -1) {
 		PERROR("fsync() failed");
 		return -1;
 	}
-	if (close(cfg->fd)) {
+	if (close(cfg->md_fd)) {
 		PERROR("close() failed");
 		return -1;
 	}
@@ -734,7 +740,7 @@ u64 v07_offset(struct format * cfg)
 	u64 offset;
 
 	if (cfg->md_index == -1) {
-		offset = (bdev_size(cfg->fd) & ~((1 << 12) - 1))
+		offset = (bdev_size(cfg->md_fd) & ~((1 << 12) - 1))
 		    - MD_RESERVED_SIZE_07;
 	} else {
 		offset = MD_RESERVED_SIZE_07 * cfg->md_index;
@@ -777,12 +783,12 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 		return -1;
 	}
 
-	cfg->device_name = strdup(argv[0]);
+	cfg->md_device_name = strdup(argv[0]);
 	e = argv[1];
 	index = strtol(argv[1], &e, 0);
 	if (*e != 0 || -1 > index || index > 255) {
 		fprintf(stderr, "'%s' is not a valid index number.\n", argv[1]);
-		exit(20);
+		return -1;
 	}
 	cfg->md_index = index;
 
@@ -797,25 +803,25 @@ int v07_md_open(struct format *cfg)
 	unsigned long words;
 	u64 offset, al_offset, bm_offset;
 
-	cfg->fd = open(cfg->device_name, O_RDWR);
+	cfg->md_fd = open(cfg->md_device_name, O_RDWR);
 
-	if (cfg->fd == -1) {
-		PERROR("open(%s) failed", cfg->device_name);
+	if (cfg->md_fd == -1) {
+		PERROR("open(%s) failed", cfg->md_device_name);
 		exit(20);
 	}
 
-	if (fstat(cfg->fd, &sb)) {
-		PERROR("fstat(%s) failed", cfg->device_name);
+	if (fstat(cfg->md_fd, &sb)) {
+		PERROR("fstat(%s) failed", cfg->md_device_name);
 		exit(20);
 	}
 
 	if (!S_ISBLK(sb.st_mode)) {
 		fprintf(stderr, "'%s' is not a block device!\n",
-			cfg->device_name);
+			cfg->md_device_name);
 		exit(20);
 	}
 
-	if (ioctl(cfg->fd, BLKFLSBUF) == -1) {
+	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
 		PERROR("ioctl(,BLKFLSBUF,) failed");
 		exit(20);
 	}
@@ -823,7 +829,7 @@ int v07_md_open(struct format *cfg)
 	offset = v07_offset(cfg);
 	cfg->on_disk.md7 =
 	    mmap(NULL, sizeof(struct md_on_disk_07), PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->fd, offset);
+		 MAP_SHARED, cfg->md_fd, offset);
 	if (cfg->on_disk.md7 == NULL) {
 		PERROR("mmap(md_on_disk) failed");
 		exit(20);
@@ -839,14 +845,14 @@ int v07_md_open(struct format *cfg)
 
 	cfg->on_disk.al =
 	    mmap(NULL, MD_AL_MAX_SIZE_07 * 512, PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->fd, al_offset);
+		 MAP_SHARED, cfg->md_fd, al_offset);
 	if (cfg->on_disk.al == NULL) {
 		PERROR("mmap(al_on_disk) failed");
 		exit(20);
 	}
 
 	cfg->on_disk.bm = mmap(NULL, MD_BM_MAX_SIZE_07, PROT_READ | PROT_WRITE,
-			       MAP_SHARED, cfg->fd, bm_offset);
+			       MAP_SHARED, cfg->md_fd, bm_offset);
 	if (cfg->on_disk.bm == NULL) {
 		PERROR("mmap(bm_on_disk) failed");
 		exit(20);
@@ -876,15 +882,15 @@ int v07_md_close(struct format *cfg)
 		PERROR("munmap(md_on_disk) failed");
 		return -1;
 	}
-	if (fsync(cfg->fd) == -1) {
+	if (fsync(cfg->md_fd) == -1) {
 		PERROR("fsync() failed");
 		return -1;
 	}
-	if (ioctl(cfg->fd, BLKFLSBUF) == -1) {
+	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
 		PERROR("ioctl(,BLKFLSBUF,) failed");
 		return -1;
 	}
-	if (close(cfg->fd)) {
+	if (close(cfg->md_fd)) {
 		PERROR("close() failed");
 		return -1;
 	}
@@ -916,7 +922,7 @@ int v07_md_initialize(struct format *cfg)
 	if (cfg->on_disk.al == NULL) {
 		cfg->on_disk.al =
 		    mmap(NULL, MD_AL_MAX_SIZE_07 * 512, PROT_READ | PROT_WRITE,
-			 MAP_SHARED, cfg->fd, al_offset);
+			 MAP_SHARED, cfg->md_fd, al_offset);
 		if (cfg->on_disk.al == NULL) {
 			PERROR("mmap(al_on_disk) failed");
 			exit(20);
@@ -926,7 +932,7 @@ int v07_md_initialize(struct format *cfg)
 	if (cfg->on_disk.bm == NULL) {
 		cfg->on_disk.bm =
 		    mmap(NULL, MD_BM_MAX_SIZE_07, PROT_READ | PROT_WRITE,
-			 MAP_SHARED, cfg->fd, bm_offset);
+			 MAP_SHARED, cfg->md_fd, bm_offset);
 		if (cfg->on_disk.bm == NULL) {
 			PERROR("mmap(bm_on_disk) failed");
 			exit(20);
@@ -996,7 +1002,7 @@ int v08_md_initialize(struct format *cfg)
 	if (cfg->on_disk.al == NULL) {
 		cfg->on_disk.al =
 		    mmap(NULL, MD_AL_MAX_SIZE_07 * 512, PROT_READ | PROT_WRITE,
-			 MAP_SHARED, cfg->fd, al_offset);
+			 MAP_SHARED, cfg->md_fd, al_offset);
 		if (cfg->on_disk.al == NULL) {
 			PERROR("mmap(al_on_disk) failed");
 			exit(20);
@@ -1006,7 +1012,7 @@ int v08_md_initialize(struct format *cfg)
 	if (cfg->on_disk.bm == NULL) {
 		cfg->on_disk.bm =
 		    mmap(NULL, MD_BM_MAX_SIZE_07, PROT_READ | PROT_WRITE,
-			 MAP_SHARED, cfg->fd, bm_offset);
+			 MAP_SHARED, cfg->md_fd, bm_offset);
 		if (cfg->on_disk.bm == NULL) {
 			PERROR("mmap(bm_on_disk) failed");
 			exit(20);
@@ -1278,6 +1284,81 @@ int meta_set_gc(struct format *cfg, char **argv, int argc)
 	return err;
 }
 
+#if 0
+int meta_set_size(struct format *cfg, char **argv, int argc)
+{
+	struct md_cpu tmp;
+	unsigned long long kB, ll_kB;
+	int err;
+	char **str;
+
+#warning	"sorry, not yet correctly implemented"
+	fprintf(stderr,	"sorry, not yet correctly implemented\n");
+	exit(30);
+	if (argc > 1) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+	if (argc < 1) {
+		fprintf(stderr, "Required Argument missing\n");
+		exit(10);
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	ll_kB = bdev_size(cfg->drbd_fd) >> 10;
+
+	/* FIXME make flexible for v08
+	 * new method vXY_max_dev_sect? */
+	if (cfg->md_index == -1) {
+		if (ll_kB < (MD_RESERVED_SIZE_07>>10)) {
+			fprintf(stderr, "device too small for internal meta data\n");
+			exit(20);
+		}
+		ll_kB = ALIGN(ll_kB,4) - (MD_RESERVED_SIZE_07 >> 10);
+	}
+
+	kB = m_strtoll(argv[0],'k');
+	if (kB > ll_kB) {
+		fprintf(stderr,
+			"%s out of range, maximum available %llukB.\n",
+			argv[0], ll_kB);
+		exit(20);
+	}
+	tmp = cfg->md;
+	tmp.la_sect = kB<<1;
+
+	printf("available   %llukB\n", ll_kB);
+	printf("previously  %llukB\n", cfg->md.la_sect>>1);
+	printf("size set to %llukB\n", kB);
+
+	if (!confirmed("Write new size to disk?")) {
+		printf("Operation cancelled.\n");
+		exit(0);
+	}
+
+	if (cfg->on_disk.bm) {
+		u64 a,b,ll;
+		a = cfg->md.la_sect;
+		b = tmp.la_sect;
+		/* convert sectors to bit numbers */
+		a >>= 8;
+		b = (b+7) >> 8;
+		if (b > a) {
+			/* first word */
+		}
+	}
+	cfg->md = tmp;
+	err = cfg->ops->md_cpu_to_disk(cfg)
+	    || cfg->ops->close(cfg);
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
+}
+#endif
+
+char *progname = NULL;
 void print_usage()
 {
 	char **args;
@@ -1309,14 +1390,13 @@ void print_usage()
 	exit(0);
 }
 
-struct format *parse_format(char **argv, int argc, int *ai)
+int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 {
-	struct format *cfg;
 	enum Known_Formats f;
 
 	if (argc < 1) {
 		fprintf(stderr, "Format identifier missing\n");
-		exit(20);
+		return -1;
 	}
 
 	for (f = Drbd_06; f < Drbd_Unknown; f++) {
@@ -1325,16 +1405,13 @@ struct format *parse_format(char **argv, int argc, int *ai)
 	}
 	if (f == Drbd_Unknown) {
 		fprintf(stderr, "Unknown format '%s'.\n", argv[0]);
-		exit(20);
+		return -1;
 	}
 
 	(*ai)++;
 
-	cfg = calloc(1, sizeof(struct format));
 	cfg->ops = f_ops + f;
-	cfg->ops->parse(cfg, argv + 1, argc - 1, ai);
-
-	return cfg;
+	return cfg->ops->parse(cfg, argv + 1, argc - 1, ai);
 }
 
 int main(int argc, char **argv)
@@ -1352,25 +1429,32 @@ int main(int argc, char **argv)
 	if (argc < 4)
 		print_usage();
 
-	ai = 1;
-	drbd_dev_name = argv[ai++];
-	drbd_fd = dt_lock_open_drbd(drbd_dev_name, &lock_fd, 1);
-	if (drbd_fd > -1) {
+	/* FIXME should have a "drbd_cfg_new" and a "drbd_cfg_free"
+	 * function, maybe even a "get" and "put" ?
+	 */
+	cfg = calloc(1, sizeof(struct format));
+	cfg->drbd_dev_name = argv[1];
+	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
+	if (cfg->drbd_fd > -1) {
 		/* avoid DRBD specific ioctls here...
 		 * If the device is _not_ configured, block device ioctls
 		 * should fail. So if we _can_ determine whether it is readonly,
 		 * it is configured; and we better not touch its meta data.
 		 */
 		int dummy_is_ro;
-		if (ioctl(drbd_fd, BLKROGET, &dummy_is_ro) == 0) {
+		if (ioctl(cfg->drbd_fd, BLKROGET, &dummy_is_ro) == 0) {
 			fprintf(stderr, "Device '%s' is configured!\n",
-				drbd_dev_name);
+				cfg->drbd_dev_name);
 			exit(20);
 		}
 	}
 
-	/* implicit cfg = calloc */
-	cfg = parse_format(argv + ai, argc - ai, &ai);
+	/* argv[0] is progname, argv[1] was drbd_dev_name. */
+	ai = 2;
+	if (parse_format(cfg, argv + ai, argc - ai, &ai)) {
+		/* parse has already printed some error message */
+		exit(20);
+	}
 
 	if (ai >= argc) {
 		fprintf(stderr, "command missing\n");
@@ -1392,6 +1476,6 @@ int main(int argc, char **argv)
 	return command->function(cfg, argv + ai, argc - ai);
 	/* and if we want an explicit free,
 	 * this would be the place for it.
-	 * free(cfg->device_name), free(cfg) ...
+	 * free(cfg->md_device_name), free(cfg) ...
 	 */
 }
