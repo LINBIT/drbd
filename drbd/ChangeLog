@@ -1,6 +1,11 @@
-0.6.1  (api:58/proto:60)
+0.6.1  (api:58/proto:61)
 -----
 Since the last one should have been 0.6, this is 0.6.1:
+  *) Rewrote the receiver code. This one eliminates inter-device deadlocks,
+     as far as I can tell (and is a big step in the direction of active/active)
+  *) Introduced a new Packet into the protocol. The "WriteHint" drastically 
+     improves performace of protocol C in conjunction with a FS with mount
+     option "sync".
   *) Fixed a bug that could cause a OOPS on the primary if the connection 
      is lost when the send queue is not empty.
   *) Fixed a bug that could cause data corruption on the secondary if you 
