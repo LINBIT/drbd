@@ -84,7 +84,7 @@ check_changelogs_up2date:
 	then \
 	   echo "You need to update the %changelog in drbd.spec.in"; \
 	   up2date=false; fi; \
-	if ! grep "^$$dver_re$$" >/dev/null 2>&1 ChangeLog; \
+	if ! grep "^$$dver_re\>" >/dev/null 2>&1 ChangeLog; \
 	then \
 	   echo "You need to update ChangeLog"; \
 	   up2date=false; fi ; \
