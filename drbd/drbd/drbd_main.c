@@ -231,6 +231,10 @@ STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 	// THINK this is called in the IO path with the send_mutex held
 	// and GFP_KERNEL may itself start IO. set it to GFP_NOIO.
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
+	if(!b) {
+		ERR("could not kmalloc() barrier\n");
+		return 0;
+	}
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
 	b->br_number=barrier_nr_issue;
@@ -302,6 +306,10 @@ void tl_clear(drbd_dev *mdev)
 	unsigned int size;
 
 	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
+	if(!new_first) {
+		ERR("could not kmalloc() barrier\n");
+	}
+
 	INIT_LIST_HEAD(&new_first->requests);
 	new_first->next=0;
 	new_first->br_number=4711;
