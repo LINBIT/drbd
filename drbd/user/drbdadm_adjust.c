@@ -152,11 +152,14 @@ int check_opt_s(FILE *in,char* name,struct d_option* base)
   int rv=0;
 
   sprintf(scs," %s = %%s\n",name);
-  fscanf(in,scs,value);
-  o=find_opt(base,name);
-  if(o) {
-    o->mentioned=1;
-    if(strcmp(o->value,value)) rv=1;
+  if(fscanf(in,scs,value)>0) {
+    o=find_opt(base,name);
+    if(o) {
+      o->mentioned=1;
+      if(strcmp(o->value,value)) rv=1;
+    } else {
+      rv=1;
+    }
   }
 
   //printf("check_opt_s(%s)=%d [value=%s]\n",name,rv,value);
