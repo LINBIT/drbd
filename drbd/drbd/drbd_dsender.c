@@ -163,7 +163,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 				drbd_send_short_cmd(mdev,SyncStop);
 				set_cstate(mdev,PausedSyncT);
 				ret = wait_event_interruptible(
-					mdev->cstate_wait,
+					drbd_conf[i].cstate_wait,
 					drbd_conf[i].cstate <= Connected );
 				// FIXME if (ret < 0) do something sensible...
 				did_wait=1;
