@@ -28,8 +28,6 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-#define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
-#define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_EXTENTS_PT 61
 
 /* This is what I like so much about the linux kernel:

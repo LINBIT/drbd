@@ -863,6 +863,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		 */
 		/* THINK
 		 * do we need to block DRBD_SIG if sock == &meta.socket ??
+		 * otherwise wake_asender() might interrupt some send_*Ack !
 		 */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
 		if (rv == -EAGAIN) {
@@ -1171,6 +1172,8 @@ ONLY_IN_26(
 			}
 			if (*q) blk_put_queue(*q);
 			*q = NULL;
+
+			if (mdev->this_bdev) bd_release(mdev->this_bdev);
 )
 
 			tl_cleanup(mdev);
@@ -1457,16 +1460,22 @@ void cleanup_module(void)
 void drbd_free_ll_dev(drbd_dev *mdev)
 {
 	if (mdev->lo_file) {
+NOT_IN_26(
 		blkdev_put(mdev->lo_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
 		blkdev_put(mdev->md_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		fput(mdev->lo_file);
-		fput(mdev->md_file);
-		mdev->lo_file = 0;
-NOT_IN_26(
 		mdev->lo_device = 0;
 		mdev->md_device = 0;
 )
 #warning "FIXME unset L26 members"
+ONLY_IN_26(
+		bd_release(mdev->backing_bdev);
+		bd_release(mdev->md_bdev);
+		mdev->md_bdev =
+		mdev->backing_bdev = 0;
+)
+		fput(mdev->lo_file);
+		fput(mdev->md_file);
+		mdev->lo_file = 0;
 		mdev->md_file = 0;
 	}
 }

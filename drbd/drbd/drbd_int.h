@@ -584,6 +584,10 @@ struct BitMap {
 	spinlock_t bm_lock;
 };
 
+// activity log
+#define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
+#define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
+// resync bitmap
 #define BM_EXTENT_SIZE_B 24       // One extent represents 16M Storage
 #define BM_EXTENT_SIZE (1<<BM_EXTENT_SIZE_B)
 

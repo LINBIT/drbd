@@ -285,6 +285,26 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->read_cnt = 0;
 	mdev->writ_cnt = 0;
 
+// FIXME unclutter the code again ;)
+/*
+ * Returns the minimum that is _not_ zero, unless both are zero.
+ */
+#define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
+ONLY_IN_26({
+	request_queue_t * const q = mdev->rq_queue;
+	request_queue_t * const b = bdev->bd_disk->queue;
+
+	q->max_sectors = min_not_zero(PAGE_SIZE >> 9, b->max_sectors);
+	q->max_phys_segments = 1;
+	q->max_hw_segments   = 1;
+	q->max_segment_size  = min(PAGE_SIZE,b->max_segment_size);
+	q->hardsect_size     = max(512,b->hardsect_size);
+	q->seg_boundary_mask = b->seg_boundary_mask;
+	q->merge_bvec_fn     = drbd_merge_bvec_fn;
+	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
+})
+#undef min_not_zero
+
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
 	drbd_read_bm(mdev);
@@ -331,6 +351,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	struct ioctl_get_config cn;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
+	//WORK_HERE
 #warning "FIXME make 26 clean, maybe move to compat layer?"
 #else
 	cn.lower_device_major=MAJOR(mdev->lo_device);

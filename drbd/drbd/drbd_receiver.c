@@ -899,6 +899,10 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	}
 
 	// Do not use data_size in the memcpy. The app read might be smaller.
+	/* XXX for exactly this reason: maybe don't memcpy at all, but first
+	 * write it to disk, and only then propagate the read to upper layers?
+	 * the next app read might target the very same region!
+	 */
 	memcpy(drbd_bio_kmap(bio),drbd_bio_kmap(&e->private_bio),
 	       drbd_bio_get_size(bio));
 	drbd_bio_kunmap(bio);

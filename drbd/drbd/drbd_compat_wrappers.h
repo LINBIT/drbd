@@ -291,6 +291,9 @@ extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int bytes_done, in
 extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
 
+// we should not accept bios crossing our extent boundaries!
+extern int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv);
+
 /* Returns the number of 512 byte sectors of the lower level device */
 static inline unsigned long drbd_get_lo_capacity(drbd_dev *mdev)
 {
@@ -379,21 +382,17 @@ static inline short drbd_bio_get_size(struct bio *bio)
 #ifdef CONFIG_HIGHMEM
 /*
  * I don't know why there is no bvec_kmap, only bvec_kmap_irq ...
- * If for some reason it is intentional, and MUST be irq save,
- * I introduce a very bad bug right here and now.
  *
- * Most likely it is only due to performance:
+ * we do a sock_recvmsg into the target buffer,
+ * so we obviously cannot use the bvec_kmap_irq variant.	-lge
+ *
+ * Most likely it is only due to performance anyways:
   * kmap_atomic/kunmap_atomic is significantly faster than kmap/kunmap because
   * no global lock is needed and because the kmap code must perform a global TLB
   * invalidation when the kmap pool wraps.
   *
   * However when holding an atomic kmap is is not legal to sleep, so atomic
   * kmaps are appropriate for short, tight code paths only.
- *
- * So in the long run we may prefer to move to bio_kmap_irq, and either ignore
- * the compatibility with 2.4, or provide something similar there.
- *
- *	-lge
  */
 static inline char *drbd_bio_kmap(struct bio *bio)
 {

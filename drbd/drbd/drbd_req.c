@@ -131,9 +131,33 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 	drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
 			   (unsigned long)pr);
 #else
+	//WORK_HERE
 #warning "FIXME make 2.6.x clean"
 #endif
 }
+
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
+int drbd_merge_bvec_fn(request_queue_t *q, struct bio *bio, struct bio_vec *bv)
+{
+	drbd_dev * const mdev = q->queuedata;
+	sector_t sector = bio->bi_sector;
+	int lo_max = PAGE_SIZE, max = PAGE_SIZE;
+	const unsigned long chunk_sectors = AL_EXTENT_SIZE >> 9;
+
+	D_ASSERT(bio->bi_size == 0);
+
+	if (mdev->backing_bdev) {
+		request_queue_t * const b = mdev->backing_bdev->bd_disk->queue;
+		if (b->merge_bvec_fn)
+			lo_max = b->merge_bvec_fn(b,bio,bv);
+	}
+	max = (chunk_sectors - (sector & (chunk_sectors - 1))) << 9;
+	max = min(lo_max,max);
+	// if (max < 0) max = 0; /* bio_add cannot handle a negative return */
+	return min(PAGE_SIZE,max);
+}
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bio)
@@ -208,6 +232,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 			}
 			SET_MAGIC(req);
 
+			//WORK_HERE
 			/* FIXME the drbd_make_request function will be
 			 * restructured soon.
 			 * until that is the case,
@@ -263,6 +288,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 		bio->b_rdev = mdev->lo_device;
 #else
 #warning "FIXME"
+			//WORK_HERE
 		/* I want to change it anyways so we never remap ... */
 #endif
 		return 1; // Not arranged for transfer ( but remapped :)
@@ -279,6 +305,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 		bio->b_rdev = mdev->lo_device;
 #else
 #warning "FIXME"
+			//WORK_HERE
 		/* I want to change it anyways so we never remap ... */
 #endif
 		return 1; // Not arranged for transfer ( but remapped :)
