@@ -184,6 +184,8 @@ uname -r | grep BOOT ||
   * Backport of find_first_bit() for x86_64 aka AMD64 for use on 
     that architecture under Linux-2.4.x
   * Changed drbdadm to do the syncer config before the net config.
+  * Changed the way drbdadm determines the minor_count parameter for
+    module loading.
   * Improvements to the drbddisk script, to do the right thing
     in case Heartbeat is configured with a small timeout than DRBD.
   * Lots of updates to the way Debian's DRBD packages works.

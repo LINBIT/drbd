@@ -98,6 +98,7 @@ struct d_globals global_options = { 0, 0, 1 };
 char *config_file = NULL;
 struct d_resource* config = NULL;
 int nr_resources;
+int highest_minor;
 int config_valid=1;
 int dry_run;
 char* drbdsetup;
@@ -283,7 +284,7 @@ static int sh_mod_parms(struct d_resource* res,char* unused)
   int mc=global_options.minor_count;
 
   if(global_options.disable_io_hints) printf("disable_io_hints=1 ");
-  printf("minor_count=%d\n",mc ? mc : nr_resources);
+  printf("minor_count=%d\n",mc ? mc : (highest_minor+1) );
   return 0;
 }
 
@@ -616,6 +617,16 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   return rv;
 }
 
+int minor_of_res(struct d_resource *res)
+{
+  struct stat sb;
+
+  if(stat(res->me->device,&sb)) {
+    perror("stat");
+  }
+
+  return minor(sb.st_rdev);
+}
 
 /* In case a child exited, or exits, its return code is stored as
    negative number in the pids[i] array */
@@ -1163,11 +1174,16 @@ int main(int argc, char** argv)
   {
     int mc=global_options.minor_count;
 
-    for_each_resource(res,tmp,config) nr_resources++;
+    highest_minor=0;
+    for_each_resource(res,tmp,config) {
+      int m = minor_of_res(res);
+      if ( m > highest_minor ) highest_minor = m;
+      nr_resources++;
+    }
 
-    if( mc && mc<nr_resources ) {
-      fprintf(stderr,"You have %d resources but a minor_count of %d in your"
-	      " config!\n",nr_resources,mc);
+    if( mc && mc<(highest_minor+1) ) {
+      fprintf(stderr,"The highest minor you have in your config is %d"
+	      "but a minor_count of %d in your config!\n", highest_minor,mc);
       exit(E_usage);
     }
   }
