@@ -257,8 +257,6 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 #define RQ_DRBD_LOCAL     0x0020
 #define RQ_DRBD_DONE      0x0030
 #define RQ_DRBD_IN_TL     0x0040
-#define RQ_DRBD_READ      0x0100
-#define RQ_DRBD_WRITE     0x0200
 
 enum MetaDataFlags {
 	MDF_Consistent   = 1,
@@ -841,7 +839,7 @@ extern int w_e_end_data_req      (drbd_dev *, struct drbd_work *, int);
 extern int w_e_end_rsdata_req    (drbd_dev *, struct drbd_work *, int);
 extern int w_resync_inactive     (drbd_dev *, struct drbd_work *, int);
 extern int w_resume_next_sg      (drbd_dev *, struct drbd_work *, int);
-
+extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);

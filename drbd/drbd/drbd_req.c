@@ -88,18 +88,20 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
 	uptodate = req->rq_status & 0x0001;
 	if( !uptodate && mdev->on_io_error == Detach) {
-		if(req->rq_status & RQ_DRBD_READ) {
-			drbd_read_remote(mdev,req);
-			return;
-		} else {
-			drbd_set_out_of_sync(mdev,rsector,
-					     drbd_req_get_size(req));
-			// TODO it should also be as out of sync on 
-			// the other side! But how...
-			drbd_bio_endio(req->master_bio,1);
-			uptodate = 1; 
-                        // The assumption is that we wrote it on the peer.
-		}
+		drbd_set_out_of_sync(mdev,rsector, drbd_req_get_size(req));
+		// It should also be as out of sync on 
+		// the other side!  See w_io_error()
+
+		drbd_bio_endio(req->master_bio,uptodate);
+		// The assumption is that we wrote it on the peer.
+
+		drbd_bio_endio(req->master_bio,1);
+
+		req->w.cb = w_io_error;
+		drbd_queue_work(mdev,&mdev->data.work,&req->w);
+
+		goto out;
+
 	}
 
 	drbd_bio_endio(req->master_bio,uptodate);
@@ -107,6 +109,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
 
+ out:
 	if (test_bit(ISSUE_BARRIER,&mdev->flags))
 		wake_asender(mdev);
 }
@@ -116,6 +119,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	int rv;
 	drbd_bio_t *bio = req->master_bio;
 
+	req->w.cb = w_is_app_read;
 	spin_lock(&mdev->pr_lock);
 	list_add(&req->w.list,&mdev->new_app_reads);
 	spin_unlock(&mdev->pr_lock);

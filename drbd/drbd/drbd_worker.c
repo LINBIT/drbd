@@ -247,19 +247,6 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 	mdev=bio->bi_private;
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
-
-#if 0
-	{
-		static int ccc=1;
-
-		if(ccc++ % 100 == 0) {
-			ERR("Injecting IO error.\n");
-			error=-5;
-			clear_bit(BIO_UPTODATE,&bio->bi_flags);
-		}
-	}
-#endif
-
 	e = container_of(bio,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
@@ -285,7 +272,7 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
  */
 int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 {
-	struct Drbd_Conf* mdev;
+	struct Drbd_Conf* mdev=bio->bi_private;
 	drbd_request_t *req;
 	sector_t rsector;
 
@@ -293,7 +280,18 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	if (bio->bi_size)
 		return 1;
 
-	mdev = bio->bi_private;
+#if 0
+	{
+		static int ccc=1;
+
+		if(ccc++ % 100 == 0) {
+			ERR("Injecting IO error.\n");
+			error=-5;
+			clear_bit(BIO_UPTODATE,&bio->bi_flags);
+		}
+	}
+#endif
+
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	req = container_of(bio,struct drbd_request,private_bio);
@@ -312,14 +310,25 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
  */
 int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 {
-	struct Drbd_Conf* mdev;
+	struct Drbd_Conf* mdev = bio->bi_private;
 	drbd_request_t *req;
 
 	// see above
 	if (bio->bi_size)
 		return 1;
 
-	mdev = bio->bi_private;
+#if 0
+	{
+		static int ccc=1;
+
+		if(ccc++ % 100 == 0) {
+			ERR("Injecting IO error.\n");
+			error=-5;
+			clear_bit(BIO_UPTODATE,&bio->bi_flags);
+		}
+	}
+#endif
+
 	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	req = container_of(bio,struct drbd_request,private_bio);
@@ -346,13 +355,25 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 }
 #endif
 
+int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
+{
+	drbd_request_t *req = (drbd_request_t*)w;
+
+	// TODO send a "set_out_of_sync" packet to the peer
+
+	INVALIDATE_MAGIC(req);
+	mempool_free(req,drbd_request_mempool);
+
+	return drbd_io_error(mdev);
+}
+
 int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
 	drbd_request_t *req = (drbd_request_t*)w;
 	int ok;
 
 	if ( cancel || 
-	     mdev->cstate <= Connected ||
+	     mdev->cstate < Connected ||
 	     test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 		ERR("WE ARE LOST. Local IO failure, no peer.\n");
 		drbd_bio_endio(req->master_bio,0);
