@@ -39,7 +39,15 @@ ifneq ($(KERNELRELEASE),)
 	       lru_cache.o
 
   # remember KERNELRELEASE for install target
-  $(shell echo $(KERNELRELEASE) > $(DRBDSRC)/.kernelrelease.new )
+  # .kernelversion can be included in Makefile as well as
+  # sourced from shell
+  $(shell echo -e "VERSION=$(VERSION)\n"             \
+                  "PATCHLEVEL=$(PATCHLEVEL)\n"       \
+                  "SUBLEVEL=$(SUBLEVEL)\n"           \
+                  "EXTRAVERSION=$(EXTRAVERSION)\n"   \
+                  "KERNELRELEASE=$(KERNELRELEASE)" \
+          > $(DRBDSRC)/.kernelrelease.new \
+   )
 
   # rest is magic for KERNEL_VERSION < 2.6
   ifneq ($(findstring $(PATCHLEVEL),24),)
@@ -86,20 +94,6 @@ else
   default: drbd.o
   all:     drbd.o
 
-  # for the install target. (also works if kernel source is not there)
-  # stupid anti "-1um" hack. See  ~linux/arch/um/Makefile
-  #KERNELRELEASE := $(shell test -r .kernelrelease && \
-  #                         sed 's/-1um//' < .kernelrelease)
-  # Nowadays UML got is consistent. the anit "-1um" hack is no longer needed.
-  KERNELRELEASE := $(shell test -r .kernelrelease && cat .kernelrelease)
-
-  MODSUBDIR := $(strip \
-    $(if $(wildcard /lib/modules/$(KERNELRELEASE)/kernel),\
-         kernel/drivers/block,\
-         block))
-  LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
-
-
   greeting:
 	@echo "" ;\
 	echo "    Calling toplevel makefile of kernel source tree, which I believe is in" ;\
@@ -123,27 +117,35 @@ else
 
   distclean: clean
 
-  ifeq ($(PATCHLEVEL),4)
+  ifneq ($(wildcard .kernelrelease),)
+    # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
+    include .kernelrelease
+    MODOBJ-4 := drbd.o
+    MODOBJ-6 := drbd.ko
+    MODOBJ   := $(MODOBJ-$(PATCHLEVEL))
+    MODSUBDIR := $(strip \
+      $(if $(wildcard /lib/modules/$(KERNELRELEASE)/kernel),\
+           kernel/drivers/block,\
+           block))
+    LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
+
     install:
-	@if ! [ -e drbd.o ] ; then \
-	  echo "No drbd.o: nothing to install??"; false ; \
+	@if ! [ -e $(MODOBJ) ] ; then \
+	  echo "No $(MODOBJ): nothing to install??"; false ; \
 	fi
-	test -n "$(KERNELRELEASE)"
-	install -d $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -d $(PREFIX)var/lib/drbd
+	install -d $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
+	install -m 644 $(MODOBJ) $(PREFIX)lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
     ifeq ($(shell uname -r),$(KERNELRELEASE))
-	/sbin/depmod -a || depmod -e drbd.o 2>&1 >/dev/null || true
+	/sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
     else
 	[ -e $(LINUX)/System.map ] && \
-	   /sbin/depmod -F $(LINUX)/System.map -e ./drbd.o 2>&1 >/dev/null || true
+	   /sbin/depmod -F $(LINUX)/System.map -e ./$(MODOBJ) 2>&1 >/dev/null || true
     endif
   else
     install:
-	@if ! [ -e drbd.ko ] ; then \
-	  echo "No drbd.ko: nothing to install??"; false ; \
-	fi
-	@echo "TODO install drbd.ko"
+	@echo "No .kernelrelease found. Do you need to 'make' the module first?"
+	@false
   endif
 
   depmod:
