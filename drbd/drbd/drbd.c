@@ -695,10 +695,10 @@ int drbd_thread_setup(void* arg)
 	exit_fs(current);      /* give up filesystem context (root,pwd) */
 	current->fs=&dummy_fs; /* point fs context to dummy fs context,
 				  is needed for further calls to do_fork() */
-	atomic_set(&dummy_fs.count,10);
+	atomic_inc(&dummy_fs.count);
 	                       /* Since childs are decrementing dummy_fs's 
                                   refcount (by calling exit_fs(), every child 
-				  resets the count back to 10 :)
+				  increments the count explicitly :)
 			       */
 	current->session = 1;
 	current->pgrp = 1;
@@ -1903,7 +1903,7 @@ int __init drbd_init(void)
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
 
-	atomic_set(&dummy_fs.count,10);
+	atomic_set(&dummy_fs.count,1); /* initialise in 1, as it's static */
 	dummy_fs.umask=0;
 	dummy_fs.root=0;
 	dummy_fs.pwd=0;
