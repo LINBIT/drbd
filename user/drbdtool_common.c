@@ -6,8 +6,45 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
+#define _GNU_SOURCE
+#include <getopt.h>
 #include <stdlib.h>
 #include "drbdtool_common.h"
+
+char* ppsize(char* buf, size_t size) 
+{
+	// Needs 9 bytes at max.
+	static char units[] = { 'K','M','G','T' };
+	int base = 0;
+	while (size >= 10000 ) {
+		size = size >> 10;
+		base++;
+	}
+	sprintf(buf,"%d %cB",size,units[base]);
+
+	return buf;
+}
+
+const char* make_optstring(struct option *options)
+{
+  static char buffer[200];
+  static struct option* buffer_valid_for=NULL;
+  struct option *opt;
+  char *c;
+
+  if(options==buffer_valid_for) return buffer;
+  opt=buffer_valid_for=options;
+  c=buffer;
+  *c++='-';
+  while(opt->name)
+    {
+      *c++=opt->val;
+      if(opt->has_arg) *c++=':';
+      opt++;
+    }
+  *c=0;
+  return buffer;
+}
 
 unsigned long m_strtol(const char* s,int def_mult)
 {
@@ -69,24 +106,6 @@ void create_lockfile_mm(int major, int minor)
   fclose(fi);
 }
 
-void dt_release_lockfile(int drbd_fd)
-{
-  int err;
-  struct stat drbd_stat;
-  char lfname[40];
-
-  err=fstat(drbd_fd, &drbd_stat);
-  if(err)
-    {
-      PERROR("fstat() failed");
-    }
-
-  snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",
-	   major(drbd_stat.st_dev),minor(drbd_stat.st_dev));
-
-  remove(lfname);
-}
-
 int dt_open_drbd_device(const char* device)
 {
   int drbd_fd,err;
@@ -114,4 +133,28 @@ int dt_open_drbd_device(const char* device)
   create_lockfile_mm(major(drbd_stat.st_dev),minor(drbd_stat.st_dev));
 
   return drbd_fd;
+}
+
+void dt_release_lockfile(int drbd_fd)
+{
+  int err;
+  struct stat drbd_stat;
+  char lfname[40];
+
+  err=fstat(drbd_fd, &drbd_stat);
+  if(err)
+    {
+      PERROR("fstat() failed");
+    }
+
+  snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",
+	   major(drbd_stat.st_dev),minor(drbd_stat.st_dev));
+
+  remove(lfname);
+}
+
+int dt_close_drbd_device(int drbd_fd)
+{
+  dt_release_lockfile(drbd_fd);
+  return close(drbd_fd);
 }

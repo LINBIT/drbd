@@ -49,8 +49,6 @@
 #include <mntent.h>
 #include "drbdtool_common.h"
 
-#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
-
 /* Default values */
 #define DEF_NET_TIMEOUT             60      //  6 seconds
 #define DEF_NET_TRY_CON_I           10      // 10 seconds
@@ -218,27 +216,6 @@ const char* addr_part(const char* s)
       return buffer;
     }
   return s;
-}
-
-const char* make_optstring(struct option *options)
-{
-  static char buffer[200];
-  static struct option* buffer_valid_for=NULL;
-  struct option *opt;
-  char *c;
-
-  if(options==buffer_valid_for) return buffer;
-  opt=buffer_valid_for=options;
-  c=buffer;
-  *c++='-';
-  while(opt->name)
-    {
-      *c++=opt->val;
-      if(opt->has_arg) *c++=':';
-      opt++;
-    }
-  *c=0;
-  return buffer;
 }
 
 int port_part(const char* s)

@@ -43,7 +43,7 @@
 #include <getopt.h>
 #include <signal.h>
 #include <time.h>
-
+#include "drbdtool_common.h"
 #include "drbdadm.h"
 
 static int indent = 0;
@@ -138,9 +138,6 @@ struct adm_cmd cmds[] = {
   { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
   { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
 };
-
-
-#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 /*** These functions are used to the print the config ***/
 
@@ -811,25 +808,6 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
   }
 
   return 0;
-}
-
-const char* make_optstring(struct option *options)
-{
-  static char buffer[200];
-  static struct option* buffer_valid_for=NULL;
-  struct option *opt;
-  char *c;
-
-  if(options==buffer_valid_for) return buffer;
-  opt=buffer_valid_for=options;
-  c=buffer;
-  while(opt->name) {
-    *c++=opt->val;
-    if(opt->has_arg) *c++=':';
-    opt++;
-  }
-  *c=0;
-  return buffer;
 }
 
 void print_usage()
