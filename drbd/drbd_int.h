@@ -433,7 +433,7 @@ typedef struct {
 	u16       command;
 	u16       length;	// bytes of data after this header
 	char      payload[0];
-} Drbd_Header __attribute((packed));
+} __attribute((packed)) Drbd_Header;
 // 8 bytes. packet FIXED for the next century!
 
 /*
@@ -454,7 +454,7 @@ typedef struct {
 	Drbd_Header head;
 	u64         sector;    // 64 bits sector number
 	u64         block_id;  // Used in protocol B&C for the address of the req.
-} Drbd_Data_Packet  __attribute((packed));
+} __attribute((packed)) Drbd_Data_Packet;
 
 /*
  * commands which share a struct:
@@ -467,7 +467,7 @@ typedef struct {
 	u64         block_id;
 	u32         blksize;
 	u32         pad;	//make sure packet is a multiple of 8 Byte
-} Drbd_BlockAck_Packet __attribute((packed));
+} __attribute((packed)) Drbd_BlockAck_Packet;
 
 typedef struct {
 	Drbd_Header head;
@@ -475,7 +475,7 @@ typedef struct {
 	u64         block_id;
 	u32         blksize;
 	u32         pad;	//make sure packet is a multiple of 8 Byte
-} Drbd_BlockRequest_Packet __attribute((packed));
+} __attribute((packed)) Drbd_BlockRequest_Packet;
 
 /*
  * commands with their own struct for additional fields:
@@ -496,20 +496,20 @@ typedef struct {
 	 */
 
 	u64         reserverd[8];
-} Drbd_HandShake_Packet __attribute((packed));
+} __attribute((packed)) Drbd_HandShake_Packet;
 // 80 bytes, FIXED for the next century
 
 typedef struct {
 	Drbd_Header head;
 	u32         barrier;   // may be 0 or a barrier number
 	u32         pad;	//make sure packet is a multiple of 8 Byte
-} Drbd_Barrier_Packet  __attribute((packed));
+} __attribute((packed)) Drbd_Barrier_Packet;
 
 typedef struct {
 	Drbd_Header head;
 	u32         barrier;
 	u32         set_size;
-} Drbd_BarrierAck_Packet  __attribute((packed));
+} __attribute((packed)) Drbd_BarrierAck_Packet;
 
 typedef struct {
 	Drbd_Header head;
@@ -517,7 +517,7 @@ typedef struct {
 	u32         use_csums;
 	u32         skip;
 	u32         group;
-} Drbd_SyncParam_Packet  __attribute((packed));
+} __attribute((packed)) Drbd_SyncParam_Packet;
 
 /* FIXME add more members here, until we introduce a new fixed size
  * protocol version handshake packet! */
@@ -535,7 +535,7 @@ typedef struct {
 	u32         sync_group;
 	u32         flags;   // flags & 1 -> reply call drbd_send_param(mdev);
 	u32         magic;   //make sure packet is a multiple of 8 Byte
-} Drbd_Parameter_Packet  __attribute((packed));
+} __attribute((packed)) Drbd_Parameter_Packet;
 
 typedef struct {
 	u64       size;
@@ -545,7 +545,7 @@ typedef struct {
 	u32       version;
 	u32       gen_cnt[5];
 	u32       bit_map_gen[5];
-} Drbd06_Parameter_P __attribute((packed));
+} __attribute((packed)) Drbd06_Parameter_P;
 
 typedef union {
 	Drbd_Header              head;
@@ -557,7 +557,7 @@ typedef union {
 	Drbd_SyncParam_Packet    SyncParam;
 	Drbd_Parameter_Packet    Parameter;
 	Drbd_BlockRequest_Packet BlockRequest;
-} Drbd_Polymorph_Packet __attribute((packed));
+} __attribute((packed)) Drbd_Polymorph_Packet;
 
 /**********************************************************************/
 
