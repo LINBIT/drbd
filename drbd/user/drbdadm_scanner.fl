@@ -76,6 +76,6 @@ disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;   }
 
 void syntax_error(char* text)
 {
-  printf("Unknown token '%s' in line %d.\n",text,line);
+  fprintf(stderr,"Unknown token '%s' in line %d.\n",text,line);
   exit(2);
 }
