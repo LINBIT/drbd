@@ -113,9 +113,9 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	}))
 
 // to debug dec_*(), while we still have the <0!! issue
-#define __STR(x) #x
-#define STR(x) __STR(x)
-#define HERE STR(__LINE__) // __FUNCTION__
+// to debug dec_*(), while we still have the <0!! issue
+#include <linux/stringify.h>
+#define HERE __stringify(__FUNCTION__ __LINE__) // __FUNCTION__
 
 #if 1
 #define C_DBG(r,x...)
@@ -191,6 +191,7 @@ inline void recalc_sigpending_tsk(struct task_struct *t);
 struct Drbd_Conf;
 typedef struct Drbd_Conf drbd_dev;
 
+// THINK: x->magic = &x; ??
 #define SET_MAGIC(x) (x->magic = DRBD_MAGIC)
 // For some optimization crap, please test for NULL explicitly,
 //	and not in this macro!

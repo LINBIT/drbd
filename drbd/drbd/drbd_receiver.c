@@ -794,17 +794,19 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 	if (signal_pending(current) && current == mdev->asender.task) {
 		// shortcut only, same effect as if we first go up and
 		// down the helper function calls.
+		int still_pending;
 		unsigned long flags = 0;
-		int still_pending = FALSE;
 		LOCK_SIGMASK(current,flags);
 		if (sigismember(&current->pending.signal, DRBD_SIG)) {
 			sigdelset(&current->pending.signal, DRBD_SIG);
 			RECALC_SIGPENDING(current);
-			still_pending = signal_pending(current);
 		}
+		still_pending = signal_pending(current);
 		UNLOCK_SIGMASK(current,flags);
 
-		DBG("Signal Pending in %s\n",__func__);
+		if (still_pending)
+			DBG("Nonprivate signal pending in %s: 0x%08lx\n",
+			    __func__,current->pending.signal.sig[0]);
 
 		h->command = WakeAsender;
 		h->length  = 0;

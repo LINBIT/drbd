@@ -347,7 +347,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 			}
 			if (!disable_io_hints) {
 				Drbd_Header h;
-				drbd_send_cmd_dontwait(mdev,mdev->sock,WriteHint,&h,sizeof(h));
+				drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,sizeof(h));
 			}
 		}
 	}
