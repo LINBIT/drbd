@@ -305,8 +305,9 @@ extern void drbd_free_sock(int minor);
 /*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 		     Drbd_Packet* header, size_t header_size, 
 		     void* data, size_t data_size);*/
-extern int drbd_send_param(int minor);
-extern int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd, int via_msock);
+extern int drbd_send_param(struct Drbd_Conf *mdev);
+extern int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, 
+			 int via_msock);
 extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);

@@ -505,50 +505,50 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
-int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd, int via_msock)
+int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, int via_msock)
 {
 	int err;
 	Drbd_Packet head;
 
 	head.command = cpu_to_be16(cmd);
-	if(!via_msock) down(&drbd_conf[minor].send_mutex);
-	err = drbd_send(&drbd_conf[minor], &head,sizeof(head),0,0,via_msock);
-	if(!via_msock) up(&drbd_conf[minor].send_mutex);
+	if(!via_msock) down(&mdev->send_mutex);
+	err = drbd_send(mdev, &head,sizeof(head),0,0,via_msock);
+	if(!via_msock) up(&mdev->send_mutex);
 
 	return err;  
 }
 
-int drbd_send_param(int minor)
+int drbd_send_param(struct Drbd_Conf *mdev)
 {
 	Drbd_Parameter_Packet param;
 	int err,i;
-	kdev_t ll_dev = drbd_conf[minor].lo_device;
+	kdev_t ll_dev = mdev->lo_device;
 
 	
-	param.h.size = cpu_to_be64( drbd_conf[minor].lo_usize ? 
-				    drbd_conf[minor].lo_usize : 
+	param.h.size = cpu_to_be64( mdev->lo_usize ? 
+				    mdev->lo_usize : 
 				    blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] );
 
 	param.p.command = cpu_to_be16(ReportParams);
-	param.h.blksize = cpu_to_be32(1 << drbd_conf[minor].blk_size_b);
-	param.h.state = cpu_to_be32(drbd_conf[minor].state);
-	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
+	param.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
+	param.h.state = cpu_to_be32(mdev->state);
+	param.h.protocol = cpu_to_be32(mdev->conf.wire_protocol);
 	param.h.version = cpu_to_be32(PRO_VERSION);
 
 	for(i=0;i<=PrimaryInd;i++) {
-		param.h.gen_cnt[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
+		param.h.gen_cnt[i]=cpu_to_be32(mdev->gen_cnt[i]);
 		param.h.bit_map_gen[i]=
-			cpu_to_be32(drbd_conf[minor].bit_map_gen[i]);
+			cpu_to_be32(mdev->bit_map_gen[i]);
 	}
 
-	down(&drbd_conf[minor].send_mutex);
-	err = drbd_send(&drbd_conf[minor], (Drbd_Packet*)&param, 
-			sizeof(param),0,0,0);
-	up(&drbd_conf[minor].send_mutex);
+	down(&mdev->send_mutex);
+	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);
+	up(&mdev->send_mutex);
 	
 	if(err < sizeof(Drbd_Parameter_Packet))
 		printk(KERN_ERR DEVICE_NAME
-		       "%d: Sending of parameter block failed!!\n",minor);  
+		       "%d: Sending of parameter block failed!!\n",
+		       (int)(mdev-drbd_conf));  
 
 	return err;
 }
@@ -927,7 +927,7 @@ void drbd_send_write_hint(void *data)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)data;
 	
-	drbd_send_cmd((int)(mdev-drbd_conf),WriteHint,0);
+	drbd_send_cmd(mdev,WriteHint,0);
 	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }
 #endif

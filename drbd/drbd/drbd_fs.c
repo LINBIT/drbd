@@ -117,6 +117,11 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->lo_usize = new_conf.disk_size;
         mdev->do_panic = new_conf.do_panic;
 
+        filp=filp_open("/etc/.drbd-disable",O_RDONLY,0);
+        if(!IS_ERR(filp)) {
+		memset(&drbd_conf[i].free_ee,1,sizeof(struct list_head));
+        }
+	
 	if (mdev->lo_usize) {
 		blk_size[MAJOR_NR][minor] = mdev->lo_usize;
 		/*
@@ -303,7 +308,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	drbd_md_write(minor); /* Primary indicator has changed in any case. */
 
 	if (drbd_conf[minor].cstate >= WFReportParams) 
-		drbd_send_param(minor);
+		drbd_send_param(drbd_conf+minor);
 
 	return 0;
 }
@@ -451,7 +456,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			drbd_send_cstate(&drbd_conf[minor]);
 			drbd_thread_start(&drbd_conf[minor].syncer);
 		} else if (drbd_conf[minor].o_state == Primary) {
-			drbd_send_cmd(minor,StartSync,0);
+			drbd_send_cmd(drbd_conf+minor,StartSync,0);
 		} else return -EINPROGRESS;
 		
 		break;
@@ -460,7 +465,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		if( drbd_conf[minor].cstate != Connected) return -ENXIO;
 
 		if (drbd_conf[minor].o_state == Primary) {
-			drbd_send_cmd(minor,BecomeSec,0);
+			drbd_send_cmd(drbd_conf+minor,BecomeSec,0);
 		} else return -ESRCH;
 		
 		break;

@@ -683,40 +683,41 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 	return sock;
 }
 
-int drbd_connect(int minor)
+int drbd_connect(struct Drbd_Conf* mdev)
 {
 	struct socket *sock,*msock;
 
 
-	if (drbd_conf[minor].cstate==Unconfigured) return 0;
+	if (mdev->cstate==Unconfigured) return 0;
 
-	if (drbd_conf[minor].sock) {
+	if (mdev->sock) {
 		printk(KERN_ERR DEVICE_NAME
-		       "%d: There is already a socket!! \n",minor);
+		       "%d: There is already a socket!! \n",
+		       (int)(mdev-drbd_conf));
 		return 0;
 	}
 
-	set_cstate(drbd_conf+minor,WFConnection);		
+	set_cstate(mdev,WFConnection);		
 
 	while(1) {
-		sock=drbd_try_connect(drbd_conf+minor);
+		sock=drbd_try_connect(mdev);
 		if(sock) {
-			msock=drbd_wait_for_connect(drbd_conf+minor);
+			msock=drbd_wait_for_connect(mdev);
 			if(msock) break;
 			else sock_release(sock);
 		} else {
-			sock=drbd_wait_for_connect(drbd_conf+minor);
+			sock=drbd_wait_for_connect(mdev);
 			if(sock) {
 				/* this break is necessary to give the other 
 				   side time to call bind() & listen() */
 				current->state = TASK_INTERRUPTIBLE;
 				schedule_timeout(HZ / 10);
-				msock=drbd_try_connect(drbd_conf+minor);
+				msock=drbd_try_connect(mdev);
 				if(msock) break;
 				else sock_release(sock);
 			}			
 		}
-		if(drbd_conf[minor].cstate==Unconnected) return 0;
+		if(mdev->cstate==Unconnected) return 0;
 		if(signal_pending(current)) return 0;
 	}
 
@@ -745,74 +746,72 @@ int drbd_connect(int minor)
 #endif
 	msock->sk->sndbuf = 2*32767;
 
-	drbd_conf[minor].sock = sock;
-	drbd_conf[minor].msock = msock;
+	mdev->sock = sock;
+	mdev->msock = msock;
 
-	drbd_thread_start(&drbd_conf[minor].asender);
+	drbd_thread_start(&mdev->asender);
 
-	set_cstate(&drbd_conf[minor],WFReportParams);
-	drbd_send_param(minor);
+	set_cstate(mdev,WFReportParams);
+	drbd_send_param(mdev);
 
 	return 1;
 }
 
-inline int receive_cstate(int minor)
+inline int receive_cstate(struct Drbd_Conf* mdev)
 {
 	Drbd_CState_P header;
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) 
-	    != sizeof(header))
+	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
 	        return FALSE;
 	
-	set_cstate(&drbd_conf[minor],be32_to_cpu(header.cstate));
+	set_cstate(mdev,be32_to_cpu(header.cstate));
 
 	/* Clear consistency flag if a syncronisation has started */
-	if(drbd_conf[minor].state == Secondary && 
-	   (drbd_conf[minor].cstate==SyncingAll || 
-	    drbd_conf[minor].cstate==SyncingQuick) ) {
-		drbd_conf[minor].gen_cnt[Consistent]=0;
-		drbd_md_write(minor);
+	if(mdev->state == Secondary && 
+	   (mdev->cstate==SyncingAll || 
+	    mdev->cstate==SyncingQuick) ) {
+		mdev->gen_cnt[Consistent]=0;
+		drbd_md_write((int)(mdev-drbd_conf));
 	}
 
 	return TRUE;
 }
 
-inline int receive_barrier(int minor)
+inline int receive_barrier(struct Drbd_Conf* mdev)
 {
   	Drbd_Barrier_P header;
 	int rv;
 	int epoch_size;
 
-	if(drbd_conf[minor].state != Secondary) /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n",
-		       minor);
+	if(mdev->state != Secondary) /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: got barrier while not SEC!!\n"
+		      ,(int)(mdev-drbd_conf));
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) 
-	    != sizeof(header))
+	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
 	        return FALSE;
 
-	inc_unacked(drbd_conf+minor);
+	inc_unacked(mdev);
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
 	/* TODO: use run_task_queue(&tq_disk); here */
-	drbd_wait_active_ee(drbd_conf+minor);
+	drbd_wait_active_ee(mdev);
 
-	spin_lock_irq(&drbd_conf[minor].ee_lock);
-	rv=_drbd_process_done_ee(drbd_conf+minor);
+	spin_lock_irq(&mdev->ee_lock);
+	rv=_drbd_process_done_ee(mdev);
 
-	epoch_size=drbd_conf[minor].epoch_size;
-	drbd_conf[minor].epoch_size=0;
-	spin_unlock_irq(&drbd_conf[minor].ee_lock);
+	epoch_size=mdev->epoch_size;
+	mdev->epoch_size=0;
+	spin_unlock_irq(&mdev->ee_lock);
 
-	drbd_send_b_ack(&drbd_conf[minor], header.barrier, epoch_size );
+	drbd_send_b_ack(mdev, header.barrier, epoch_size );
 
-	dec_unacked(drbd_conf+minor);
+	dec_unacked(mdev);
 
 	return rv;
 }
 
-inline int receive_data(int minor,int data_size)
+inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 {
         struct buffer_head *bh;
 	unsigned long block_nr;
@@ -820,11 +819,11 @@ inline int receive_data(int minor,int data_size)
 	Drbd_Data_P header;
 	int rr;
 
-	if(drbd_conf[minor].state != Secondary) /* CHK */
+	if(mdev->state != Secondary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got data while not SEC!!\n",
-		       minor);
+		       (int)(mdev-drbd_conf));
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) != 
+	if (drbd_recv(mdev, &header, sizeof(header),0) != 
 	    sizeof(header))
 	        return FALSE;
        
@@ -836,22 +835,23 @@ inline int receive_data(int minor,int data_size)
 
 	block_nr = be64_to_cpu(header.block_nr);
 
-	if (data_size != (1 << drbd_conf[minor].blk_size_b)) {
-		drbd_wait_active_ee(drbd_conf+minor);
-		drbd_wait_sync_ee(drbd_conf+minor);
-		drbd_conf[minor].blk_size_b = drbd_log2(data_size);
-		printk(KERN_ERR DEVICE_NAME "%d: blksize=%d B\n",minor,
+	if (data_size != (1 << mdev->blk_size_b)) {
+		drbd_wait_active_ee(mdev);
+		drbd_wait_sync_ee(mdev);
+		mdev->blk_size_b = drbd_log2(data_size);
+		printk(KERN_ERR DEVICE_NAME "%d: blksize=%d B\n",
+		       (int)(mdev-drbd_conf),
 		       data_size);
-		drbd_ee_fix_bhs(drbd_conf+minor);
+		drbd_ee_fix_bhs(mdev);
 	}
 
-	spin_lock_irq(&drbd_conf[minor].ee_lock);
-	e=drbd_get_ee(drbd_conf+minor,block_nr);
+	spin_lock_irq(&mdev->ee_lock);
+	e=drbd_get_ee(mdev,block_nr);
 	e->block_id=header.block_id;
-	if( is_syncer_blk(drbd_conf+minor,header.block_id) ) {
-		list_add(&e->list,&drbd_conf[minor].sync_ee);
+	if( is_syncer_blk(mdev,header.block_id) ) {
+		list_add(&e->list,&mdev->sync_ee);
 	} else {
-		list_add(&e->list,&drbd_conf[minor].active_ee);
+		list_add(&e->list,&mdev->active_ee);
 	}
 
 	/* do not use mark_buffer_diry() since it would call refile_buffer() */
@@ -859,34 +859,34 @@ inline int receive_data(int minor,int data_size)
 	set_bit(BH_Dirty, &bh->b_state);
 	set_bit(BH_Lock, &bh->b_state); // since using submit_bh()
 
-	spin_unlock_irq(&drbd_conf[minor].ee_lock);
+	spin_unlock_irq(&mdev->ee_lock);
 
-	rr=drbd_recv(&drbd_conf[minor],bh->b_data,data_size,0);
+	rr=drbd_recv(mdev,bh->b_data,data_size,0);
 
 	if ( rr != data_size) {
-		spin_lock_irq(&drbd_conf[minor].ee_lock);
+		spin_lock_irq(&mdev->ee_lock);
 		list_del(&e->list);
 		clear_bit(BH_Lock, &bh->b_state);
-		drbd_put_ee(drbd_conf+minor,e);
-		spin_unlock_irq(&drbd_conf[minor].ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
 
 		return FALSE;
 	}
 
 	submit_bh(WRITE,bh);
 
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A || 
-	   is_syncer_blk(drbd_conf+minor,header.block_id)) {
-		inc_unacked(drbd_conf+minor);
+	if(mdev->conf.wire_protocol != DRBD_PROT_A || 
+	   is_syncer_blk(mdev,header.block_id)) {
+		inc_unacked(mdev);
 	}
 
-	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_B &&
-	     !is_syncer_blk(drbd_conf+minor,header.block_id)) {
+	if (mdev->conf.wire_protocol == DRBD_PROT_B &&
+	     !is_syncer_blk(mdev,header.block_id)) {
 	        /*  printk(KERN_DEBUG DEVICE_NAME": Sending RecvAck"
 		    " %ld\n",header.block_id); */
-	        drbd_send_ack(&drbd_conf[minor], RecvAck,
+	        drbd_send_ack(mdev, RecvAck,
 			      block_nr,header.block_id);
-		dec_unacked(drbd_conf+minor);
+		dec_unacked(mdev);
 	}
 
 
@@ -900,39 +900,39 @@ inline int receive_data(int minor,int data_size)
 #else
 #define NUMBER 24 
 #endif
-	if(atomic_read(&drbd_conf[minor].unacked_cnt) >= NUMBER ) {
+	if(atomic_read(&mdev->unacked_cnt) >= NUMBER ) {
 		run_task_queue(&tq_disk);
 	}
 #undef NUMBER
 
-	drbd_conf[minor].recv_cnt+=data_size>>10;
+	mdev->recv_cnt+=data_size>>10;
 	
 	return TRUE;
 }     
 
-inline int receive_block_ack(int minor)
+inline int receive_block_ack(struct Drbd_Conf* mdev)
 {     
         drbd_request_t *req;
 	Drbd_BlockAck_P header;
 	
 	// TODO: Make sure that the block is in an active epoch!!
-	if(drbd_conf[minor].state != Primary) /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: got blk-ack while not PRI!!\n",
-		       minor);
+	if(mdev->state != Primary) /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: got blk-ack while not PRI!!\n"
+		       ,(int)(mdev-drbd_conf));
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) != 
+	if (drbd_recv(mdev, &header, sizeof(header),0) != 
 	    sizeof(header))
 	        return FALSE;
 
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A ||
-	   is_syncer_blk(drbd_conf+minor,header.block_id)) {
-		dec_pending(drbd_conf+minor);
+	if(mdev->conf.wire_protocol != DRBD_PROT_A ||
+	   is_syncer_blk(mdev,header.block_id)) {
+		dec_pending(mdev);
 	}
 
-	if( is_syncer_blk(drbd_conf+minor,header.block_id)) {
-		bm_set_bit(drbd_conf[minor].mbds_id,
+	if( is_syncer_blk(mdev,header.block_id)) {
+		bm_set_bit(mdev->mbds_id,
 			   be64_to_cpu(header.block_nr), 
-			   drbd_conf[minor].blk_size_b, 
+			   mdev->blk_size_b, 
 			   SS_IN_SYNC);
 	} else {
 		req=(drbd_request_t*)(long)header.block_id;
@@ -942,68 +942,65 @@ inline int receive_block_ack(int minor)
 	return TRUE;
 }
 
-inline int receive_barrier_ack(int minor)
+inline int receive_barrier_ack(struct Drbd_Conf* mdev)
 {
 	Drbd_BarrierAck_P header;
 
-	if(drbd_conf[minor].state != Primary) /* CHK */
+	if(mdev->state != Primary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got barrier-ack while not"
-		       " PRI!!\n",minor);
+		       " PRI!!\n",(int)(mdev-drbd_conf));
 
-	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header),0) != 
-	    sizeof(header))
+	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
 	        return FALSE;
 
-        tl_release(&drbd_conf[minor],header.barrier,
-		   be32_to_cpu(header.set_size));
+        tl_release(mdev,header.barrier,be32_to_cpu(header.set_size));
 
-	dec_pending(drbd_conf+minor);
+	dec_pending(mdev);
 
 	return TRUE;
 }
 
 
-inline int receive_param(int minor,int command)
+inline int receive_param(struct Drbd_Conf* mdev,int command)
 {
-	kdev_t ll_dev =	drbd_conf[minor].lo_device;
+	kdev_t ll_dev =	mdev->lo_device;
         Drbd_Parameter_P param;
 	int blksize;
+	int minor=(int)(mdev-drbd_conf);
 
 	/*printk(KERN_DEBUG DEVICE_NAME
-	  ": recv ReportParams/m=%d\n",minor);*/
+	  ": recv ReportParams/m=%d\n",(int)(mdev-drbd_conf));*/
 
-	if (drbd_recv(&drbd_conf[minor], &param, sizeof(param),0) != 
-	    sizeof(param))
+	if (drbd_recv(mdev, &param, sizeof(param),0) != sizeof(param))
 	        return FALSE;
 
-	if(be32_to_cpu(param.state) == Primary &&
-	   drbd_conf[minor].state == Primary ) {
+	if(be32_to_cpu(param.state) == Primary && mdev->state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME"%d: incompatible states \n",minor);
-		set_cstate(&drbd_conf[minor],StandAlone);
-		drbd_conf[minor].receiver.t_state = Exiting;
+		set_cstate(mdev,StandAlone);
+		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.version)!=PRO_VERSION) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
 		       minor);
-		set_cstate(&drbd_conf[minor],StandAlone);
-		drbd_conf[minor].receiver.t_state = Exiting;
+		set_cstate(mdev,StandAlone);
+		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
 
-	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
+	if(be32_to_cpu(param.protocol)!=mdev->conf.wire_protocol) {
 	        printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
 		       minor);
-		set_cstate(&drbd_conf[minor],StandAlone);
-		drbd_conf[minor].receiver.t_state = Exiting;
+		set_cstate(mdev,StandAlone);
+		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
 
         if (!blk_size[MAJOR(ll_dev)]) {
 		blk_size[MAJOR_NR][minor] = 0;
 		printk(KERN_ERR DEVICE_NAME"%d: LL dev(%d,%d) has no size!\n",
-		       minor,MAJOR(ll_dev),MINOR(ll_dev));
+		       (int)(mdev-drbd_conf),MAJOR(ll_dev),MINOR(ll_dev));
 		return FALSE;
 	}
 
@@ -1012,32 +1009,33 @@ inline int receive_param(int minor,int command)
 		min_t(int,blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
 		      be64_to_cpu(param.size));
 
-	if(drbd_conf[minor].lo_usize &&
-	   (drbd_conf[minor].lo_usize != blk_size[MAJOR_NR][minor])) {
+	if(mdev->lo_usize &&
+	   (mdev->lo_usize != blk_size[MAJOR_NR][minor])) {
 		printk(KERN_ERR DEVICE_NAME"%d: Your size hint is bogus!"
-		       "change it to %d\n",minor,blk_size[MAJOR_NR][minor]);
-		blk_size[MAJOR_NR][minor]=drbd_conf[minor].lo_usize;
-		set_cstate(&drbd_conf[minor],StandAlone);
+		       "change it to %d\n",(int)(mdev-drbd_conf),
+		       blk_size[MAJOR_NR][minor]);
+		blk_size[MAJOR_NR][minor]=mdev->lo_usize;
+		set_cstate(mdev,StandAlone);
 		return FALSE;
 	}
 
-	if(drbd_conf[minor].state == Primary)
-		blksize = (1 << drbd_conf[minor].blk_size_b);
+	if(mdev->state == Primary)
+		blksize = (1 << mdev->blk_size_b);
 	else if(be32_to_cpu(param.state) == Primary)
 		blksize = be32_to_cpu(param.blksize);
 	else 
 		blksize = max_t(int,be32_to_cpu(param.blksize),
-				(1 << drbd_conf[minor].blk_size_b));
+				(1 << mdev->blk_size_b));
 
 	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
-	set_blocksize(drbd_conf[minor].lo_device,blksize);
-	drbd_conf[minor].blk_size_b = drbd_log2(blksize);
+	set_blocksize(mdev->lo_device,blksize);
+	mdev->blk_size_b = drbd_log2(blksize);
 
-	if (!drbd_conf[minor].mbds_id) {
-		drbd_conf[minor].mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
+	if (!mdev->mbds_id) {
+		mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
 	}
 	
-	if (drbd_conf[minor].cstate == WFReportParams) {
+	if (mdev->cstate == WFReportParams) {
 		int pri,method,sync;
 		printk(KERN_INFO DEVICE_NAME "%d: Connection established. "
 		       "size=%d KB / blksize=%d B\n",
@@ -1049,11 +1047,11 @@ inline int receive_param(int minor,int command)
 		else sync=1;
 
 		if(be32_to_cpu(param.state) == Secondary &&
-		   drbd_conf[minor].state == Secondary ) {
+		   mdev->state == Secondary ) {
 			if(pri==1) drbd_set_state(minor,Primary);
 		} else {
 			if( ( pri == 1 ) == 
-			    (drbd_conf[minor].state == Secondary) ) {
+			    (mdev->state == Secondary) ) {
 				printk(KERN_WARNING DEVICE_NAME 
 				       "%d: predetermined"
 				       " states are in contradiction to GC's\n"
@@ -1062,32 +1060,32 @@ inline int receive_param(int minor,int command)
 		}
 
 		method=drbd_md_syncq_ok(minor,&param,
-					drbd_conf[minor].state == Primary) ? 
+					mdev->state == Primary) ? 
 			SyncingQuick : SyncingAll;
 
 /*
 		printk(KERN_INFO DEVICE_NAME "%d: pri=%d sync=%d meth=%c\n",
 		       minor,pri,sync,method==SyncingAll?'a':'q');
 */
-		if( sync && !drbd_conf[minor].conf.skip_sync ) {
-			set_cstate(&drbd_conf[minor],method);
-			if(drbd_conf[minor].state == Primary) {
-				//drbd_send_cstate(&drbd_conf[minor]);
-				drbd_thread_start(&drbd_conf[minor].syncer);
+		if( sync && !mdev->conf.skip_sync ) {
+			set_cstate(mdev,method);
+			if(mdev->state == Primary) {
+				//drbd_send_cstate(mdev);
+				drbd_thread_start(&mdev->syncer);
 			} else {
-				drbd_conf[minor].gen_cnt[Consistent]=0;
+				mdev->gen_cnt[Consistent]=0;
 				//drbd_md_write(minor); is there anyway.
 			}
-		} else set_cstate(&drbd_conf[minor],Connected);
+		} else set_cstate(mdev,Connected);
 	}
 
-	drbd_conf[minor].o_state = be32_to_cpu(param.state);
+	mdev->o_state = be32_to_cpu(param.state);
 
-	if (drbd_conf[minor].state == Secondary) {
+	if (mdev->state == Secondary) {
 		/* Secondary has to adopt primary's gen_cnt. */
 		int i;
 		for(i=HumanCnt;i<=PrimaryInd;i++) {
-			drbd_conf[minor].gen_cnt[i]=
+			mdev->gen_cnt[i]=
 				be32_to_cpu(param.gen_cnt[i]);
 		}
 		drbd_md_write(minor);
@@ -1111,7 +1109,7 @@ void drbdd(int minor)
 
 	while (TRUE) {
 		drbd_collect_zombies(minor); // in case a syncer exited.
-		if (drbd_recv(&drbd_conf[minor],&header,sizeof(Drbd_Packet),0)
+		if (drbd_recv(drbd_conf+minor,&header,sizeof(Drbd_Packet),0)
 		    != sizeof(Drbd_Packet)) 
 			break;
 
@@ -1128,35 +1126,36 @@ void drbdd(int minor)
 		}
 		switch (be16_to_cpu(header.command)) {
 		case Barrier:
-       		        if (!receive_barrier(minor)) goto out;
+       		        if (!receive_barrier(drbd_conf+minor)) goto out;
 			break;
 
 		case Data: 
-		        if (!receive_data(minor,be16_to_cpu(header.length)))
+		        if (!receive_data(drbd_conf+minor,be16_to_cpu(header.length)))
 			        goto out;
 			break;
 
 		case RecvAck:
 		case WriteAck:
-		        if (!receive_block_ack(minor)) goto out;
+		        if (!receive_block_ack(drbd_conf+minor)) goto out;
 			break;
 
 		case BarrierAck:
-		        if (!receive_barrier_ack(minor)) goto out;
+		        if (!receive_barrier_ack(drbd_conf+minor)) goto out;
 			break;
 
 		case ReportParams:
-		        if (!receive_param(minor,be16_to_cpu(header.command)))
+		        if (!receive_param(drbd_conf+minor,
+					   be16_to_cpu(header.command)))
 			        goto out;
 			break;
 
 		case CStateChanged:
-			if (!receive_cstate(minor)) goto out;
+			if (!receive_cstate(drbd_conf+minor)) goto out;
 			break;
 
 		case StartSync:
-			set_cstate(&drbd_conf[minor],SyncingAll);
-			drbd_send_cstate(&drbd_conf[minor]);
+			set_cstate(drbd_conf+minor,SyncingAll);
+			drbd_send_cstate(drbd_conf+minor);
 			drbd_thread_start(&drbd_conf[minor].syncer);
 			break;
 
@@ -1207,7 +1206,7 @@ void drbdd(int minor)
 	up(&drbd_conf[minor].send_mutex);
 
 	if(drbd_conf[minor].cstate != StandAlone) 
-	        set_cstate(&drbd_conf[minor],Unconnected);
+	        set_cstate(drbd_conf+minor,Unconnected);
 
 	for(i=0;i<=PrimaryInd;i++) {
 		drbd_conf[minor].bit_map_gen[i]=drbd_conf[minor].gen_cnt[i];
@@ -1215,7 +1214,7 @@ void drbdd(int minor)
 
 	switch(drbd_conf[minor].state) {
 	case Primary:   
-		tl_clear(&drbd_conf[minor]);
+		tl_clear(drbd_conf+minor);
 		clear_bit(ISSUE_BARRIER,&drbd_conf[minor].flags);
 		if(!test_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags))
 			drbd_md_inc(minor,ConnectedCnt);
@@ -1254,7 +1253,7 @@ int drbdd_init(struct Drbd_thread *thi)
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 	
 	while (TRUE) {
-		if (!drbd_connect(minor)) break;
+		if (!drbd_connect(drbd_conf+minor)) break;
 		if (thi->t_state == Exiting) break;
 		drbdd(minor);
 		if (thi->t_state == Exiting) break;
@@ -1273,7 +1272,7 @@ int drbdd_init(struct Drbd_thread *thi)
 
 	printk(KERN_DEBUG DEVICE_NAME "%d: receiver exiting\n", minor);
 
-	/* set_cstate(&drbd_conf[minor],StandAlone); */
+	/* set_cstate(drbd_conf+minor,StandAlone); */
 
 	return 0;
 }
@@ -1347,8 +1346,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			}
 			switch (be16_to_cpu(pkt.command)) {
 			case Ping:
-        			if(drbd_send_cmd((int)(mdev-drbd_conf),
-						 PingAck,1) != 
+        			if(drbd_send_cmd(mdev,PingAck,1) != 
 				   sizeof(Drbd_Packet) ) goto err;
 				break;
 			case PingAck:
@@ -1363,7 +1361,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	  
 		if(ping_sent_at==0) {
 			if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
-				if(drbd_send_cmd((int)(mdev-drbd_conf),Ping,1)
+				if(drbd_send_cmd(mdev,Ping,1)
 				   != sizeof(Drbd_Packet) ) goto err;
 				ping_timeout.expires = 
 					jiffies + mdev->conf.timeout*HZ/20;
