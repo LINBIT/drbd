@@ -1,3 +1,9 @@
+drbd (0.7.6-0) unstable; urgency=low
+
+  * New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Tue, 16 Nov 2004 14:59:00 +0200
+
 drbd (0.7.5-2) unstable; urgency=low
 
   * debian/control: Added Conflict with drbd-util and drbd-module-source
