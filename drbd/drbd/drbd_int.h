@@ -404,6 +404,17 @@ extern struct proc_dir_entry drbd_proc_dir;
 #define SIGSET_OF(P) (&(P)->pending.signal)
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define del_timer_sync(A) del_timer(A)
+//typedef	struct wait_queue wait_queue_t;
+#define init_waitqueue_entry(A,B) (A)->task=(B)
+#define wq_write_lock_irqsave(A,B) write_lock_irqsave(A,B)
+#define wq_write_lock_irq(A) write_lock_irq(A)
+#define wq_write_unlock(A) write_unlock(A)
+#define wq_write_unlock_irqrestore(A,B) write_unlock_irqrestore(A,B)
+#endif
+
 #if ARCH==uml
 #define waitpid(A,B,C) 0
 #endif
+

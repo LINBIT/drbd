@@ -635,8 +635,8 @@ inline int receive_data(int minor,int data_size)
 	 * but we already start when we have NR_REQUESTS / 4 blocks.
 	 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
-		if (drbd_conf[minor].unacked_cnt >= (NR_REQUEST / 4)) {
+	if(drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
+		if(atomic_read(&drbd_conf[minor].unacked_cnt)>=(NR_REQUEST/4)){
 			run_task_queue(&tq_disk);
 		}
 	}
@@ -1097,9 +1097,7 @@ int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	set_fs(oldfs);
 	unlock_kernel();
 
-	if( rv == -EAGAIN) rv=0;
-
-	if (rv < 0 && rv != -ECONNRESET && rv != -ERESTARTSYS) {
+	if (rv<0 && rv != -ECONNRESET && rv != -ERESTARTSYS && rv != -EAGAIN) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 	}
@@ -1153,37 +1151,39 @@ int drbd_asender(struct Drbd_thread *thi)
 		  drbd_process_done_ee(mdev);
 	  }
 
-	  rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize);
-	  if(rr < 0) break;
-	  rsize+=rr;
-	  if(rsize == sizeof(header)) {
-		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
-			printk(KERN_ERR DEVICE_NAME "%d: magic?? m: %ld "
-			       "c: %d "
-			       "l: %d \n",
-			       (int)(mdev-drbd_conf),
-			       (long) be32_to_cpu(header.magic),
-			       (int) be16_to_cpu(header.command),
-			       (int) be16_to_cpu(header.length));
-			drbd_thread_restart_nowait(&mdev->receiver);
-		}
-		switch (be16_to_cpu(header.command)) {
-		case Ping:
-			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
-			break;
-		case PingAck:
-			del_timer(&ping_timeout);
-
-			rtt = jiffies-ping_sent_at;
-			ping_sent_at=0;
-			break;
-		}
-		rsize=0;
+	  while((rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize)) 
+		!= -EAGAIN ) {
+		  if(rr < 0) goto out;
+		  rsize+=rr;
+		  if(rsize == sizeof(header)) {
+			  if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
+				  printk(KERN_ERR DEVICE_NAME "%d: magic?? "
+					 "m: %ld c: %d l: %d \n",
+					 (int)(mdev-drbd_conf),
+					 (long) be32_to_cpu(header.magic),
+					 (int) be16_to_cpu(header.command),
+					 (int) be16_to_cpu(header.length));
+				  drbd_thread_restart_nowait(&mdev->receiver);
+			  }
+			  switch (be16_to_cpu(header.command)) {
+			  case Ping:
+        			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
+				  break;
+			  case PingAck:
+				  del_timer(&ping_timeout);
+				  
+				  rtt = jiffies-ping_sent_at;
+				  ping_sent_at=0;
+				  break;
+			  }
+			  rsize=0;
+			  
+		  }
 	  }
 	}
 
-	// TODO: if sending fails somewhere, asender should exit...
-
+	// TODO: if sending fails somewhere, asender take aktion
+	out:
 	del_timer_sync(&ping_timeout);
 
 	return 0;
