@@ -21,7 +21,7 @@
 */
 #ifndef DRBD_H
 #define DRBD_H
-#include "../drbd_config.h"
+#include <linux/drbd_config.h>
 
 #include <asm/types.h>
 
