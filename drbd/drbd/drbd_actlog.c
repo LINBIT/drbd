@@ -81,7 +81,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct bio bio;
 	struct bio_vec vec;
 	struct completion event;
-	//const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
+	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int ok = 0;
 
 	if (!mdev->md_bdev) {
@@ -117,14 +117,12 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	     sector, rw ? "WRITE" : "READ");
 #endif
 
-	/* This check does not handle external meta data corretly. -> Disabled.
 	if (sector < drbd_md_ss(mdev)  ||
 	    sector > drbd_md_ss(mdev)+MD_BM_OFFSET+BM_SECT_TO_EXT(capacity)) {
 		ALERT("%s [%d]:%s(,%ld,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
 		     (long)sector, rw ? "WRITE" : "READ");
 	}
-	*/
 #ifdef BIO_RW_SYNC
 	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
 #else
