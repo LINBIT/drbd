@@ -364,13 +364,16 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 
 /*static */void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
 {
+	page_t* page;
+
 	mdev->ee_in_use--;
 	mdev->ee_vacant++;
 	e->block_id=0;
 	list_add(&e->list,&mdev->free_ee);
 
 	if(mdev->ee_vacant * 2 > mdev->ee_in_use) {
-		drbd_free_page(drbd_free_ee(mdev,&mdev->free_ee));
+		page=drbd_free_ee(mdev,&mdev->free_ee);
+		if( page ) drbd_free_page(page);
 	}
 	if(mdev->ee_in_use == 0) {
 		while( mdev->ee_vacant > EE_MININUM ) {
@@ -1033,9 +1036,12 @@ inline int receive_param(struct Drbd_Conf* mdev,int command)
 		blksize = max_t(int,be32_to_cpu(param.blksize),
 				(1 << mdev->blk_size_b));
 
-	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
-	set_blocksize(mdev->lo_device,blksize);
-	mdev->blk_size_b = drbd_log2(blksize);
+	if( mdev->blk_size_b != drbd_log2(blksize)) {
+		set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
+		set_blocksize(mdev->lo_device,blksize);
+		mdev->blk_size_b = drbd_log2(blksize);
+		drbd_ee_fix_bhs(mdev);
+	}
 
 	if (!mdev->mbds_id) {
 		mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
