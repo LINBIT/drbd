@@ -444,7 +444,12 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev,HERE);
 
 	spin_lock_irq(&mdev->ee_lock);
-	drbd_put_ee(mdev,e);
+	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {
+		/* This might happen if sendpage() has not finished */
+		list_add_tail(&e->w.list,&mdev->net_ee);
+	} else {
+		drbd_put_ee(mdev,e);
+	}
 	spin_unlock_irq(&mdev->ee_lock);
 
 	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");

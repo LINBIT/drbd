@@ -17,7 +17,6 @@ MA_DIR ?= /usr/share/modass
 -include $(MA_DIR)/include/generic.make
 -include $(MA_DIR)/include/common-rules.make
 
-
 CFLAGS = -Wall -g
 
 ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
@@ -98,24 +97,24 @@ install-indep:
 	dh_installdirs -i
 
 
-	cp -a drbd/* debian/drbd-source/usr/src/modules/drbd/drbd
-	cp Makefile debian/drbd-source/usr/src/modules/drbd
-	cp drbd/linux/drbd_config.h debian/drbd-source/usr/src/modules/drbd
-	mkdir debian/drbd-source/usr/src/modules/drbd/scripts/
-	cp -a scripts/adjust_drbd_config_h.sh debian/drbd-source/usr/src/modules/drbd/scripts/
+	cp -a drbd/* debian/drbd0.7-source/usr/src/modules/drbd/drbd
+	cp Makefile debian/drbd0.7-source/usr/src/modules/drbd
+	cp drbd/linux/drbd_config.h debian/drbd0.7-source/usr/src/modules/drbd
+	mkdir debian/drbd0.7-source/usr/src/modules/drbd/scripts/
+	cp -a scripts/adjust_drbd_config_h.sh debian/drbd0.7-source/usr/src/modules/drbd/scripts/
 
 	# install driver source
-	#cp -a drbd debian/drbd-source/usr/src/modules/drbd/
-	#mkdir debian/drbd-source/usr/src/modules/drbd/scripts/
-	#cp -a scripts/adjust_drbd_config_h.sh debian/drbd-source/usr/src/modules/drbd/scripts/
-	#ln -s drbd debian/drbd-source/usr/src/modules/drbd/Linux-2.4
-	#ln -s drbd debian/drbd-source/usr/src/modules/drbd/Linux-2.6
+	#cp -a drbd debian/drbd0.7-source/usr/src/modules/drbd/
+	#mkdir debian/drbd0.7-source/usr/src/modules/drbd/scripts/
+	#cp -a scripts/adjust_drbd_config_h.sh debian/drbd0.7-source/usr/src/modules/drbd/scripts/
+	#ln -s drbd debian/drbd0.7-source/usr/src/modules/drbd/Linux-2.4
+	#ln -s drbd debian/drbd0.7-source/usr/src/modules/drbd/Linux-2.6
 
 	# install debian/ files
-	cd debian ; cp changelog control compat *.modules.in rules copyright drbd-source/usr/src/modules/drbd/debian
+	cd debian ; cp changelog control compat *.modules.in rules copyright drbd0.7-source/usr/src/modules/drbd/debian
 
 	# tar the stuff
-	cd debian/drbd-source/usr/src/ ; tar pzfvc drbd.tar.gz modules ; rm -rf modules
+	cd debian/drbd0.7-source/usr/src/ ; tar pzfvc drbd0.7.tar.gz modules ; rm -rf modules
 
 	dh_install -i
 
@@ -124,10 +123,6 @@ install-arch:
 	dh_testroot
 	dh_clean -k -s 
 	dh_installdirs -s
-
-	# Add here commands to install the arch part of the package into 
-	# debian/tmp.
-	#$(MAKE) install DESTDIR=$(CURDIR)/debian/drbd
 
 	dh_install -s
 # Must not depend on anything. This is to be called by
