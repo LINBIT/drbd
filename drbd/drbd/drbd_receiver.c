@@ -1719,6 +1719,11 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	if (DRBD_ratelimit(5*HZ,5))
 		WARN("Got NegAck packet. Peer is in troubles?\n");
 
+	/* do nothing here.
+	 * we expect to get a "report param" on the data socket soon,
+	 * and will do the cleanup then and there.
+	 */
+#if 0
 	if(is_syncer_blk(mdev,p->block_id)) {
 		dec_rs_pending(mdev,HERE);
 	} else {
@@ -1727,6 +1732,7 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
 		dec_ap_pending(mdev,HERE);
 	}
+#endif
 	return TRUE;
 }
 
