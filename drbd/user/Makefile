@@ -32,10 +32,8 @@ drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 drbdadm_parser.h: drbdadm_parser.y
 	bison -d -o drbdadm_parser.c drbdadm_parser.y
 
-drbdadm_parser.c: drbdadm_parser.y
+drbdadm_parser.c: drbdadm_parser.y drbdadm.h
 	bison -d -o drbdadm_parser.c drbdadm_parser.y
-
-drbdadm_parser.y: drbdadm.h
 
 drbdsetup: drbdsetup.o
 	$(CC) -o drbdsetup drbdsetup.o
