@@ -89,10 +89,12 @@ static int errno;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #include <linux/blkpg.h>
 #else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,2,18)
 #define init_MUTEX_LOCKED( A )    (*(A)=MUTEX_LOCKED)
 #define init_MUTEX( A )           (*(A)=MUTEX)
 #define init_waitqueue_head( A )  (*(A)=0)
 typedef struct wait_queue*  wait_queue_head_t;
+#endif
 #define blkdev_dequeue_request(A) CURRENT=(A)->next
 #endif
 
