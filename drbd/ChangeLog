@@ -1,3 +1,20 @@
+0.5.6
+-----
+No updates to the mirroring core. (It seems to be stable)
+A lot of updates to the "user interface"
+  *) Better log-messages and better messages of drbdsetup.
+  *) Fixed a few crashes of drbdsetup/ioctl interface.
+  *) It is not longer possible to use an already mounted partition.
+  *) It's possible to unconfigure a drbd device now.
+  *) Fixed the "infinite error messages" when a wrong disk size was given.
+A better datadisk script (Thomas Mangin contributed this, thanks)
+Some work on the protocol:
+  *) Cleanup
+  *) Added automatic reconnect
+  *) An intace connection is monitored by "ping" packets, thus
+     a secondary will notice a broken connection immediately.
+Found and fixed a 64 Bits problem in the bitmap based syncer.
+
 0.5.5
 -----
 SMP and ext3 fixes to the module.

@@ -68,6 +68,16 @@ both nodes read-write access. This would be useful with [2]GFS for
 example.
 
 
+DOCUMENTATION:
+--------------
+
+Please have a look at the web pages 
+http://www.complang.tuwien.ac.at/reisner/drbd/
+http://www.complang.tuwien.ac.at/reisner/drbd/uman.html
+http://www.complang.tuwien.ac.at/reisner/drbd/config-file.html
+http://www.complang.tuwien.ac.at/reisner/drbd/drbdsetup.html
+
+
 Howto !
 -------
 Let's assume that your two machines are named 'node1' and 'node2', and
