@@ -3118,32 +3118,33 @@ int drbd_syncer(struct Drbd_thread *thi)
 		current->state = TASK_INTERRUPTIBLE;
 		schedule_timeout(interval);
 		switch(ds_buffer_wait_on(disk_b,minor)) {
-		case 0:  break;    /* finished */
+		case 0:  goto done;  /* finished */
 		case -1: 
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: Syncer read failed.\n",minor);
-			goto out;
+			goto err;
 		}
 		swap(disk_b,net_b);
 		if(thi->t_state == Exiting) {
 			ds_buffer_send(net_b,minor);
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: Syncer aborted.\n",minor);
-			goto out;
+			goto err;
 		}
 		ds_buffer_read(disk_b,get_blk,id,minor);       
 		if(!ds_buffer_send(net_b,minor)) {
 			ds_buffer_wait_on(disk_b,minor);
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: Syncer send failed.\n",minor);
-			goto out;
+			goto err;
 		}
 	}
-
+	
+ done:
 	drbd_send_cmd(minor,SetConsistent);
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done.\n",minor);
 
- out:
+ err:
 	set_cstate(&drbd_conf[minor],Connected);
 	drbd_send_cstate(&drbd_conf[minor]);
 
