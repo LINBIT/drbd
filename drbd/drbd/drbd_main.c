@@ -1616,12 +1616,23 @@ void bm_reset(struct BitMap* sbm)
 	spin_unlock(&sbm->bm_lock);
 }
 
+
+#define BM_BPS (BM_BLOCK_SIZE/1024)     // 4
+
 void bm_fill_bm(struct BitMap* sbm,int value)
 {
+	unsigned long* bm;
+	unsigned long bnr;
+
 	spin_lock(&sbm->bm_lock);
+	bm = sbm->bm;
 
 	memset(sbm->bm,value,sbm->size);
 
+	// Special case at end of device...
+	bnr = sbm->dev_size / BM_BPS + ( sbm->dev_size % BM_BPS ? 1 : 0 );
+	bm[bnr / BITS_PER_LONG] &= ( ( 1 << (bnr % BITS_PER_LONG) ) - 1 );
+ 
 	spin_unlock(&sbm->bm_lock);
 }
 

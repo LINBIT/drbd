@@ -216,6 +216,8 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
 			drbd_send_cmd(mdev,mdev->sock,WriteHint,&h,sizeof(h));
+			D_ASSERT(ts->left == 0);
+			
 			return FALSE;
 		}
 
