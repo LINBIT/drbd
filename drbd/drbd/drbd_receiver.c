@@ -761,18 +761,16 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	drbd_wait_ee(mdev,&mdev->active_ee);
 
 	spin_lock_irq(&mdev->ee_lock);
-	rv=_drbd_process_ee(mdev,&mdev->done_ee);
-	// FIXME no error check here?
+	rv = _drbd_process_ee(mdev,&mdev->done_ee);
 
 	epoch_size=mdev->epoch_size;
 	mdev->epoch_size=0;
 	spin_unlock_irq(&mdev->ee_lock);
 
-	// FIXME no error check here?
-	drbd_send_b_ack(mdev, p->barrier, epoch_size);
+	rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
 	dec_unacked(mdev,HERE);
 
-	return TRUE;
+	return rv;
 }
 
 STATIC struct Tl_epoch_entry *
