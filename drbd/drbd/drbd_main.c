@@ -1544,6 +1544,9 @@ ONLY_IN_26(
 			if (mdev->md_io_page)
 				__free_page(mdev->md_io_page);
 
+			if (mdev->md_io_tmpp)
+				__free_page(mdev->md_io_tmpp);
+
 			if (mdev->act_log) lc_free(mdev->act_log);
 		}
 		drbd_destroy_mempools();

@@ -19,6 +19,11 @@ extern void drbd_read_bi_end_io     (struct buffer_head *bh, int uptodate);
  * appropriate.
  */
 
+static inline sector_t drbd_get_hardsect(kdev_t dev)
+{
+	return hardsect_size[MAJOR(dev)][MINOR(dev)];
+}
+
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(kdev_t dev)
 {
@@ -319,6 +324,11 @@ extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int bytes_done, in
 extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_read_bi_end_io     (struct bio *bio, unsigned int bytes_done, int error);
+
+static inline sector_t drbd_get_hardsect(struct block_device *bdev)
+{
+	return bdev->bd_disk->queue->hardsect_size;
+}
 
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)

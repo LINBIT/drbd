@@ -34,79 +34,46 @@
  * this is mostly from drivers/md/md.c
  */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
+STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page, 
+				 sector_t sector, int rw, int size)
 {
 	struct buffer_head bh;
 	struct completion event;
-	int ok = 0;
+	int ok;
 
-	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
-
-	if (!mdev->md_bdev) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("mdev->md_bdev==NULL\n");
-			dump_stack();
-		}
-		return 0;
-	}
-#ifdef PARANOIA
-	if (rw != WRITE) {
-		void *b = page_address(mdev->md_io_page);
-		memset(b,0,PAGE_SIZE);
-	}
-#endif
 	init_completion(&event);
 	init_buffer(&bh, drbd_md_io_complete, &event);
 	bh.b_rdev = mdev->md_bdev;
 	bh.b_rsector = sector;
 	bh.b_state = (1 << BH_Req) | (1 << BH_Mapped) | (1 << BH_Lock);
-	bh.b_size = MD_HARDSECT; 
-	bh.b_page = mdev->md_io_page;
+	bh.b_size = size; 
+	bh.b_page = page;
 	bh.b_reqnext = NULL;
-	bh.b_data = page_address(mdev->md_io_page);
+	bh.b_data = page_address(page);
 	generic_make_request(rw, &bh);
 
 	run_task_queue(&tq_disk);
 	wait_for_completion(&event);
 
 	ok = test_bit(BH_Uptodate, &bh.b_state);
-	if (unlikely(!ok)) {
-		ERR("drbd_md_sync_page_io(,%lu,%d) failed!\n",
-				(unsigned long)sector,rw);
-	}
 
 	return ok;
 }
 #else
-int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
+STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page, 
+				 sector_t sector, int rw, int size)
 {
 	struct bio bio;
 	struct bio_vec vec;
 	struct completion event;
-	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
-	int ok = 0;
+	int ok;
 
-	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
-
-	if (!mdev->md_bdev) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("mdev->md_bdev==NULL\n");
-			dump_stack();
-		}
-		return 0;
-	}
-#ifdef PARANOIA
-	if (rw != WRITE) {
-		void *b = page_address(mdev->md_io_page);
-		memset(b,0,PAGE_SIZE);
-	}
-#endif
 	bio_init(&bio);
 	bio.bi_io_vec = &vec;
-	vec.bv_page = mdev->md_io_page;
+	vec.bv_page = page;
 	vec.bv_offset = 0;
 	vec.bv_len =
-	bio.bi_size = MD_HARDSECT;
+	bio.bi_size = size;
 	bio.bi_vcnt = 1;
 	bio.bi_idx = 0;
 	bio.bi_bdev = mdev->md_bdev;
@@ -114,6 +81,72 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	init_completion(&event);
 	bio.bi_private = &event;
 	bio.bi_end_io = drbd_md_io_complete;
+
+#ifdef BIO_RW_SYNC
+	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
+#else
+	submit_bio(rw, &bio);
+	drbd_blk_run_queue(bdev_get_queue(mdev->md_bdev));
+#endif
+	wait_for_completion(&event);
+
+	ok = test_bit(BIO_UPTODATE, &bio.bi_flags);
+
+	return ok;
+}
+#endif
+
+int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
+{
+	int hardsect,mask,ok,offset=0;
+	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
+	struct page *iop = mdev->md_io_page;
+
+	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
+
+	if (!mdev->md_bdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("mdev->md_bdev==NULL\n");
+			dump_stack();
+		}
+		return 0;
+	}
+
+
+	hardsect = drbd_get_hardsect(mdev->md_bdev);
+
+	// in case hardsect != 512 [ s390 only? ]
+	if( hardsect != MD_HARDSECT ) {
+		if(!mdev->md_io_tmpp) {
+			struct page *page = alloc_page(GFP_KERNEL);
+			if(!page) return 0;
+
+			WARN("Meta data's bdev hardsect_size != %d\n",
+			     MD_HARDSECT);
+			WARN("Workaround engaged (has performace impact).\n");
+
+			mdev->md_io_tmpp = page;
+		}
+
+		mask = ( hardsect / MD_HARDSECT ) - 1;
+		D_ASSERT( mask == 1 || mask == 3 || mask == 7 );
+		D_ASSERT( hardsect == (mask+1) * MD_HARDSECT );
+		offset = sector & mask;
+		sector = sector & ~mask;
+		iop = mdev->md_io_tmpp;
+
+		if (rw == WRITE) {
+			void *p = page_address(mdev->md_io_page);
+			void *hp = page_address(mdev->md_io_tmpp);
+
+			ok = _drbd_md_sync_page_io(mdev,iop,
+						   sector,READ,hardsect);
+
+			if (unlikely(!ok)) return 0;
+
+			memcpy(hp + offset*MD_HARDSECT , p, MD_HARDSECT);
+		}
+	}
 
 #if DUMP_MD >= 3
 	INFO("%s [%d]:%s(,%ld,%s)\n",
@@ -127,23 +160,23 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 		     current->comm, current->pid, __func__,
 		     (long)sector, rw ? "WRITE" : "READ");
 	}
-#ifdef BIO_RW_SYNC
-	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
-#else
-	submit_bio(rw, &bio);
-	drbd_blk_run_queue(bdev_get_queue(mdev->md_bdev));
-#endif
-	wait_for_completion(&event);
 
-	ok = test_bit(BIO_UPTODATE, &bio.bi_flags);
+	ok = _drbd_md_sync_page_io(mdev,iop,sector,rw,hardsect);
 	if (unlikely(!ok)) {
 		ERR("drbd_md_sync_page_io(,%lu,%s) failed!\n",
-				(unsigned long)sector,rw ? "WRITE" : "READ");
+		    (unsigned long)sector,rw ? "WRITE" : "READ");
+	}
+
+	if( hardsect != MD_HARDSECT && rw == READ ) {
+		void *p = page_address(mdev->md_io_page);
+		void *hp = page_address(mdev->md_io_tmpp);
+
+		memcpy(p, hp + offset*MD_HARDSECT, MD_HARDSECT);
 	}
 
 	return ok;
 }
-#endif
+
 
 struct __attribute__((packed)) al_transaction {
 	u32       magic;

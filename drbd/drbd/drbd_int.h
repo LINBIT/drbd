@@ -738,6 +738,7 @@ struct Drbd_Conf {
 	struct list_head busy_blocks;
 	NOT_IN_26(struct tq_struct write_hint_tq;)
 	struct page *md_io_page;      // one page buffer for md_io
+	struct page *md_io_tmpp;     // in case hardsect != 512 [ s390 only? ]
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
@@ -809,12 +810,7 @@ extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
 
-// All metadata IO is done in units of MD_HARDSECT
-#if defined(CONFIG_ARCH_S390) | defined(CONFIG_ARCH_S390X)
-#define MD_HARDSECT_B    12     // Necessary for s390
-#else
-#define MD_HARDSECT_B    9      // Nice for "small" hardware.
-#endif
+#define MD_HARDSECT_B    9     // Since the smalles IO unit is usually 512 byte
 #define MD_HARDSECT      (1<<MD_HARDSECT_B)
 
 // activity log
@@ -835,7 +831,7 @@ extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
 #endif
 
 // resync bitmap
-// 16MB sized 'bitmap extent' to track syncer usage [128MB on the x390]
+// 16MB sized 'bitmap extent' to track syncer usage
 struct bm_extent {
 	struct lc_element lce;
 	int rs_left; //number of bits set (out of sync) in this extent.
