@@ -124,16 +124,13 @@ ___
 %config(noreplace) /etc/drbd.conf
 
 %defattr(-,root,root)
-%{_mandir}/man8/datadisk.8.gz
 %{_mandir}/man8/drbd.8.gz
 %{_mandir}/man8/drbdsetup.8.gz
 %{_mandir}/man8/drbdadm.8.gz
 %{_mandir}/man5/drbd.conf.5.gz
-%{_mandir}/ja/man8/datadisk.8.gz
 %{_mandir}/ja/man8/drbd.8.gz
 %{_mandir}/ja/man8/drbdsetup.8.gz
 %{_mandir}/ja/man5/drbd.conf.5.gz
-%{_mandir}/pt_BR/man8/datadisk.8.gz
 %{_mandir}/pt_BR/man8/drbd.8.gz
 %{_mandir}/pt_BR/man8/drbdsetup.8.gz
 %{_mandir}/pt_BR/man5/drbd.conf.5.gz
