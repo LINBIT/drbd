@@ -67,11 +67,11 @@ static struct d_resource* new_resource(char* name)
 }
 
 %token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON
+%token TK_PORT TK_DEVICE TK_ADDRESS
 %token <txt> TK_PROTOCOL TK_FSCK_CMD TK_DISK TK_DO_PANIC
 %token <txt> TK_SIZE TK_TL_SIZE TK_TIMEOUT TK_CONNECT_INT 
-%token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_DEVICE 
-%token <txt> TK_PORT TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 
-%token <txt> TK_PING_INT TK_ADDRESS
+%token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
+%token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 
 
 %type <d_option> disk_statements disk_statement 
 %type <d_option> net_statements net_statement
@@ -109,7 +109,7 @@ disk_statements:  /* empty */   { $$ = 0; }
 		| disk_statements disk_statement   { $$=APPEND($1,$2); }
 		;
 
-disk_statement:   TK_DO_PANIC   { $$=new_opt($1,"true"); }
+disk_statement:   TK_DO_PANIC   { $$=new_opt($1,0); }
 		| TK_SIZE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
@@ -127,8 +127,8 @@ sync_statements:  /* empty */   { $$ = 0; }
 		| sync_statements sync_statement   { $$=APPEND($1,$2); }
 		;
 
-sync_statement:   TK_SKIP_SYNC   { $$=new_opt($1,"true"); }
-		| TK_USE_CSUMS   { $$=new_opt($1,"true"); }
+sync_statement:   TK_SKIP_SYNC   { $$=new_opt($1,0); }
+		| TK_USE_CSUMS   { $$=new_opt($1,0); }
 		| TK_RATE '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 

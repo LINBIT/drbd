@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -69,7 +70,8 @@ static void dump_options(char* name,struct d_option* opts)
 
   printf("  %s {\n",name);
   while(opts) {
-    printf("    %s=%s\n",opts->name,opts->value);
+    if(opts->value) printf("    %s=%s\n",opts->name,opts->value);
+    else printf("    %s\n",opts->name);
     opts=opts->next;
   }
   printf("  }\n");
@@ -103,6 +105,47 @@ static void dump_conf(struct d_resource* res)
     dump_options("syncer",res->sync_options);
     printf("}\n\n");
     res=res->next;
+  }
+}
+
+static void free_host_info(struct d_host_info* hi)
+{
+  if(!hi) return;
+
+  free(hi->name);
+  free(hi->device);
+  free(hi->disk);
+  free(hi->address);
+  free(hi->port);
+}
+
+static void free_options(struct d_option* opts)
+{
+  struct d_option* f;
+  while(opts) {
+    free(opts->name);
+    free(opts->value);
+    f=opts;
+    opts=opts->next;
+    free(f);
+  }
+}
+
+static void free_config(struct d_resource* res)
+{
+  struct d_resource* f;
+  while(res) {
+    free(res->name);
+    free(res->protocol);
+    free(res->ind_cmd);
+    free_host_info(res->me);
+    free_host_info(res->partner);
+    free_options(res->net_options);
+    free_options(res->disk_options);
+    free_options(res->sync_options);
+    f=res;
+    res=res->next;
+    free(f);
   }
 }
 
@@ -227,6 +270,7 @@ int main(int argc, char** argv)
   if(!config_valid) exit(10);
   conf_disk(config);
   conf_net(config);
+  free_config(config);
 
   return 0;
 }

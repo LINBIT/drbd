@@ -36,16 +36,16 @@ OPCHAR   [{}=]
 {OPCHAR}         { DP; return yytext[0];        }
 on               { DP; return TK_ON;            }
 net              { DP; return TK_NET;           }
-disk             { DP; CP; return TK_DISK;      }
+disk             { DP; return TK_DISK;          }
+port             { DP; return TK_PORT;          }
 syncer           { DP; return TK_SYNCER;        } 
+device           { DP; return TK_DEVICE;        }
+address          { DP; return TK_ADDRESS;       }
 resource         { DP; return TK_RESOURCE;      }
 rate             { DP; CP; return TK_RATE;          }
 size             { DP; CP; return TK_SIZE;          }
-port             { DP; CP; return TK_PORT;          }
-device           { DP; CP; return TK_DEVICE;        }
 tl-size          { DP; CP; return TK_TL_SIZE;       }
 timeout          { DP; CP; return TK_TIMEOUT;       }
-address          { DP; CP; return TK_ADDRESS;       }
 ping-int         { DP; CP; return TK_PING_INT;      } 
 protocol         { DP; CP; return TK_PROTOCOL;      }
 fsck-cmd         { DP; CP; return TK_FSCK_CMD;      }
