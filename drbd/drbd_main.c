@@ -685,7 +685,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	int i, ok, have_disk;
 	unsigned long m_size; // sector_t ??
 
-	have_disk=inc_local_md_only(mdev);
+	have_disk=inc_local(mdev);
 	if(have_disk) {
 		D_ASSERT(mdev->backing_bdev);
 		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
