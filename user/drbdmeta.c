@@ -32,18 +32,27 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <glib.h>  // gint32, GINT64_FROM_BE()
+#include <linux/drbd.h>   // only use DRBD_MAGIC from here!
+#include <glib.h>         // gint32, GINT64_FROM_BE()
 #include "drbdtool_common.h"
 
 #define ALIGN(x,a) ( ((x) + (a)-1) &~ ((a)-1) )
 
 #if G_MAXLONG == 0x7FFFFFFF
 #define LN2_BPL 5
+#define hweight_long hweight32
+#define WW UL
 #elif G_MAXLONG == 0x7FFFFFFFFFFFFFFF
 #define LN2_BPL 6
+#define hweight_long hweight64
 #else
 #error "LN2 of BITS_PER_LONG unknown!"
 #endif
+
+#define MD_AL_OFFSET_07    8
+#define MD_AL_MAX_SIZE_07  64
+#define MD_BM_OFFSET_07    (MD_AL_OFFSET_07 + MD_AL_MAX_SIZE_07)
+#define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
 
 char* progname = 0;
 
@@ -75,6 +84,8 @@ struct meta_data {
 	unsigned long *bitmap;  // v07
 	int al_size;            // v07
 	unsigned int  *act_log; // v07
+
+	unsigned long bits_set; // additional info, set by fopts->read()
 };
 
 struct meta_data_on_disk_07 {
@@ -87,40 +98,50 @@ struct meta_data_on_disk_07 {
 	guint32 bm_offset;         // offset to the bitmap, from here
 };
 
-struct conf_06 {
+struct format_06 {
 	int fd;
 	int minor;
 };
 
-struct conf_07 {
+struct format_07 {
 	int fd;
 	char *device_name;
 	int index;
 };
 
-typedef void* conf_t;
+struct format_ops;
 
 struct format {
+	struct format_ops *ops;
+	union {
+		struct format_06 f06;
+		struct format_07 f07;
+	} d;
+};
+
+typedef void* conf_t;
+
+struct format_ops {
 	const char* name;
 	char** args;
 	int conf_size;
-	int (* parse)(conf_t, char **argv, int*);
-	int (* open) (conf_t);
-	int (* close)(conf_t);
-	int (* read) (conf_t, struct meta_data *);
-	int (* write)(conf_t, struct meta_data *);
+	int (* parse)(struct format *, char **argv, int argc, int*);
+	int (* open) (struct format *);
+	int (* close)(struct format *);
+	int (* read) (struct format *, struct meta_data *);
+	int (* write)(struct format *, struct meta_data *);
 };
 
-int v07_parse(conf_t config, char **argv, int *ai);
-int v07_open(conf_t config);
-int v07_close(conf_t config);
-int v07_read(conf_t config, struct meta_data *);
-int v07_write(conf_t config, struct meta_data *);
+int v07_parse(struct format * config, char **argv, int argc, int *ai);
+int v07_open(struct format * config);
+int v07_close(struct format * config);
+int v07_read(struct format * config, struct meta_data *);
+int v07_write(struct format * config, struct meta_data *);
 
-struct format formats[] = {
+struct format_ops formats[] = {
 	{ "v07",
 	  (char *[]) { "device","index",0 },
-	  sizeof(struct conf_07),
+	  sizeof(struct format_07),
 	  v07_parse,
 	  v07_open,
 	  v07_close,
@@ -128,6 +149,32 @@ struct format formats[] = {
 	  v07_write
 	}
 };
+
+
+static inline guint32 hweight32(guint32 w)
+{
+        guint32 res = (w & 0x55555555) + ((w >> 1) & 0x55555555);
+        res = (res & 0x33333333) + ((res >> 2) & 0x33333333);
+        res = (res & 0x0F0F0F0F) + ((res >> 4) & 0x0F0F0F0F);
+        res = (res & 0x00FF00FF) + ((res >> 8) & 0x00FF00FF);
+        return (res & 0x0000FFFF) + ((res >> 16) & 0x0000FFFF);
+}
+
+static inline guint64 hweight64(guint64 w)
+{
+#if G_MAXLONG == 0x7FFFFFFF
+	return hweight32((unsigned int)(w >> 32)) +
+				hweight32((unsigned int)w);
+#else
+	guint64 res;
+	res = (w & 0x5555555555555555ul) + ((w >> 1) & 0x5555555555555555ul);
+	res = (res & 0x3333333333333333ul) + ((res >> 2) & 0x3333333333333333ul);
+	res = (res & 0x0F0F0F0F0F0F0F0Ful) + ((res >> 4) & 0x0F0F0F0F0F0F0F0Ful);
+	res = (res & 0x00FF00FF00FF00FFul) + ((res >> 8) & 0x00FF00FF00FF00FFul);
+	res = (res & 0x0000FFFF0000FFFFul) + ((res >> 16) & 0x0000FFFF0000FFFFul);
+	return (res & 0x00000000FFFFFFFFul) + ((res >> 32) & 0x00000000FFFFFFFFul);
+#endif
+}
 
 /* capacity in units of 512 byte (AKA sectors)
  */
@@ -143,10 +190,15 @@ int bm_words(unsigned long capacity)
 	return words;
 }
 
-int v07_parse(conf_t config, char **argv, int *ai)
+int v07_parse(struct format * config, char **argv, int argc, int *ai)
 {
-	struct conf_07* cfg = (struct conf_07*) config;
+	struct format_07* cfg = &config->d.f07;
 	char *e;
+
+	if(argc < 2) {
+		fprintf(stderr,"Too few arguments for format\n");
+		return 0;
+	}
 
 	cfg->device_name = strdup(argv[0]);
 	e = argv[1];
@@ -161,32 +213,35 @@ int v07_parse(conf_t config, char **argv, int *ai)
 	return 1;
 }
 
-int v07_open(conf_t config)
+int v07_open(struct format * config)
 {
-	struct conf_07* cfg = (struct conf_07*) config;
+	struct format_07* cfg = &config->d.f07;
 	struct stat sb;
 
 	cfg->fd = open(cfg->device_name,O_RDWR);
 
-	if(!cfg->fd == -1) return 0;
+	if(cfg->fd == -1) {
+		PERROR("open() failed");
+		return 0;
+	}
 
 	if(fstat(cfg->fd, &sb)) {
 		PERROR("fstat() failed");
-		exit(20);
+		return 0;
 	}
 
 	if(!S_ISBLK(sb.st_mode)) {
 		fprintf(stderr, "'%s' is not a block device!\n", 
 			cfg->device_name);
-		exit(20);
+		return 0;
 	}
 
 	return 1;
 }
 
-int v07_close(conf_t config)
+int v07_close(struct format * config)
 {
-	struct conf_07* cfg = (struct conf_07*) config;
+	struct format_07* cfg = &config->d.f07;
 
 	return close(cfg->fd) == 0;
 }
@@ -238,9 +293,24 @@ guint64 bdev_size(int fd)
 	return size64;
 }
 
-int v07_read(conf_t config, struct meta_data * m)
+unsigned long from_lel(unsigned long* buffer, int words)
 {
-	struct conf_07* cfg = (struct conf_07*) config;
+	int i;
+	unsigned long w;
+	unsigned long bits=0;
+
+	for (i=0;i<words;i++) {
+		w = GULONG_FROM_LE(buffer[i]);
+		bits += hweight_long(w);
+		buffer[i] = w;
+	}
+
+	return bits;
+}
+
+int v07_read(struct format * config, struct meta_data * m)
+{
+	struct format_07* cfg = &config->d.f07;
 	struct meta_data_on_disk_07 * buffer;
 	int rr,i,bmw;
 	guint64 offset;
@@ -256,45 +326,95 @@ int v07_read(conf_t config, struct meta_data * m)
 	
 	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
-		exit(20);
+		return 0;
 	}
 
 	rr = read(cfg->fd, buffer, sizeof(struct meta_data_on_disk_07));
 	if( rr != sizeof(struct meta_data_on_disk_07)) {
 		PERROR("read failed");
-		exit(20);
+		return 0;
 	}
     
-	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		m->gc[i] = GINT32_FROM_BE(buffer->gc[Flags]);
+	if( GUINT32_FROM_BE(buffer->magic) != DRBD_MD_MAGIC_07 ) {
+		fprintf(stderr,"Magic number not found");
+		return 0;
+	}
 
-	m->la_size = GINT64_FROM_BE(buffer->la_size);
+	if( GUINT32_FROM_BE(buffer->al_offset) != MD_AL_OFFSET_07 ) {
+		fprintf(stderr,"Magic number (al_offset) not found");
+		return 0;
+	}
+
+	if( GUINT32_FROM_BE(buffer->bm_offset) != MD_BM_OFFSET_07 ) {
+		fprintf(stderr,"Magic number (bm_offset) not found");
+		return 0;
+	}
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
+		m->gc[i] = GUINT32_FROM_BE(buffer->gc[Flags]);
+
+	m->la_size = GUINT64_FROM_BE(buffer->la_size);
 	bmw = bm_words(m->la_size);
+
+	m->bitmap = malloc(sizeof(long) * bmw);
+	if( ! m->bitmap) {
+		PERROR("Can not allocate memory for bitmap.");
+		return 0;
+	}
+	m->bm_size = bmw*sizeof(long);
+
+	if(lseek64(cfg->fd,offset + 512 * MD_BM_OFFSET_07 ,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		return 0;
+	}
+
+	rr = read(cfg->fd, m->bitmap, bmw*sizeof(long));
+	if( rr != bmw*sizeof(long) ) {
+		PERROR("read failed");
+		return 0;
+	}
+
+	m->bits_set = from_lel(m->bitmap,bmw);
 
 	return 1;
 }
 
-int v07_write(conf_t config, struct meta_data * m)
+int v07_write(struct format * config, struct meta_data * m)
 {
+	//struct format_07* cfg = &config->d.f07;
+
 	return 0;
 }
 
 struct meta_cmd {
 	const char* name;
 	const char* args;
-	int (* function)(struct format*, conf_t);
+	int (* function)(struct format *, char** argv, int argc );
 	int show_in_usage;
 };
 
-int meta_show_gc(struct format* fmt, conf_t fcfg)
+void format_op_failed(struct format * fcfg, char* op)
+{
+	fprintf(stderr,"%s_%s() failed\n",fcfg->ops->name,op);
+	exit(20);
+}
+
+#define F_OP_OR_EXIT(OP,args...) \
+({ if(! fcfg->ops-> OP(fcfg, ##args) ) format_op_failed(fcfg, #OP ); })
+
+int meta_show_gc(struct format * fcfg, char** argv, int argc )
 {
 	struct meta_data* md;
 	char ppb[10];
 
+	if(argc > 0) {
+		fprintf(stderr,"Ignoring additional arguments\n");
+	}
+
 	md = md_alloc();
 
-	fmt->open(fcfg);
-	fmt->read(fcfg,md);
+	F_OP_OR_EXIT(open);
+	F_OP_OR_EXIT(read,md);
 	printf(
 		"                                        WantFullSync |\n"
 		"                                  ConnectedInd |     |\n"
@@ -316,17 +436,17 @@ int meta_show_gc(struct format* fmt, conf_t fcfg)
 		md->gc[Flags] & MDF_FullSync ? "1/y" : "0/n",
 		ppsize(ppb,md->la_size));
 
-	fmt->close(fcfg);
+	fcfg->ops->close(fcfg);
 	
 	md_free(md);
 
 	return 1;
 }
 
-int meta_create_md(struct format* fmt, conf_t fcfg) { return 0; }
-int meta_dump_md(struct format* fmt, conf_t fcfg) { return 0; }
-int meta_convert_md(struct format* fmt, conf_t fcfg) { return 0; }
-int meta_modify_gc(struct format* fmt, conf_t fcfg) { return 0; }
+int meta_create_md(struct format * fcfg, char** argv, int argc ) { return 0; }
+int meta_dump_md(struct format * fcfg, char** argv, int argc ) { return 0; }
+int meta_convert_md(struct format * fcfg, char** argv, int argc ) { return 0; }
+int meta_modify_gc(struct format * fcfg, char** argv, int argc ) { return 0; }
 
 struct meta_cmd cmds[] = {
 	{ "create-md",  0,                         meta_create_md,      1 },
@@ -377,12 +497,43 @@ void cleanup(void)
 	}	
 }
 
+struct format* parse_format(char** argv, int argc, int* ai)
+{
+	struct format_ops* fmt = NULL;
+	struct format* fcfg;
+
+	int i;
+
+	if(argc < 1) {
+		fprintf(stderr,"Format identifier missing\n");
+		exit(20);
+	}
+
+	for (i = 0; i < ARRY_SIZE(formats); i++ ) {
+		if( !strcmp(formats[i].name,argv[0]) ) {
+			fmt = formats+i;
+			break;
+		}
+	}
+	if(fmt == NULL) {
+		fprintf(stderr,"Unknown format '%s'.\n",argv[0]);
+		exit(20);
+	}
+
+	(*ai)++;
+
+	fcfg = malloc(fmt->conf_size + sizeof(void*) );
+	fcfg->ops = fmt;
+	fmt->parse(fcfg,argv+1,argc-1,ai);
+
+	return fcfg;
+}
+
 int main(int argc, char** argv)
 {
-	int i,ai;
-	struct format* fmt = NULL;
 	struct meta_cmd* command = NULL;
-	conf_t fcfg;
+	struct format * fcfg;
+	int i,ai;
 
 	if ( (progname = strrchr(argv[0],'/')) ) {
 		argv[0] = ++progname;
@@ -400,27 +551,14 @@ int main(int argc, char** argv)
 		int fd2 = open(drbd_dev_name,O_RDWR);
 		// I want to avoid DRBD specific ioctls here...
 		if(fd2) {
-			fprintf(stderr,"Device '%s' is configured!",
+			fprintf(stderr,"Device '%s' is configured!\n",
 				drbd_dev_name);
 			exit(20);
 		}
 		close(fd2);
 	}
 
-	for (i = 0; i < ARRY_SIZE(formats); i++ ) {
-		if( !strcmp(formats[i].name,argv[ai]) ) {
-			fmt = formats+i;
-			break;
-		}
-	}
-	if(fmt == NULL) {
-		fprintf(stderr,"Unknown format '%s'.\n",argv[ai]);
-		exit(20);
-	}
-	ai++;
-
-	fcfg = malloc(fmt->conf_size);
-	fmt->parse(fcfg,argv+ai,&ai);
+	fcfg = parse_format(argv+ai, argc-ai, &ai);
 
 	for (i = 0; i < ARRY_SIZE(cmds); i++ ) {
 		if( !strcmp(cmds[i].name,argv[ai]) ) {
@@ -434,7 +572,7 @@ int main(int argc, char** argv)
 	}
 	ai++;
 
-	command->function(fmt,fcfg);
+	command->function(fcfg, argv+ai, argc-ai);
 
 	return 0;
 }
