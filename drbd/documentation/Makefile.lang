@@ -98,13 +98,11 @@ install:
 	install -D -m 644 drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8
 	install -D -m 644 drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5
 	install -D -m 644 drbd.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8
-	install -D -m 644 datadisk.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8
 
 uninstall:
 	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8
 	rm $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5
 	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8
-	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8
 
 html:	$(shell ls *.sgml | sed s/sgml/html/g)
 pdf:	$(shell ls *.sgml | sed s/sgml/pdf/g)
