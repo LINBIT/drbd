@@ -131,7 +131,7 @@ int main(int argc, char** argv)
 	      "          Default: 256 entries\n\n"
 	      "      -d --disk-size\n"
 	      "          Sets drbd's size. When given 0 drbd negotiates the\n"
-	      "          remote node.\n"
+	      "          size with the remote node.\n"
 	      "          Default: 0 KB.\n\n"
 	      "          Version: "VERSION"\n"
 	      ,argv[0],argv[0]);
@@ -261,7 +261,7 @@ int main(int argc, char** argv)
 	    { 0,           0,                 0, 0   }
 	  };
 	  
-	  c = getopt_long(argc,argv,"t:r:ks:",options,0);
+	  c = getopt_long(argc,argv,"t:r:ks:d:",options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {

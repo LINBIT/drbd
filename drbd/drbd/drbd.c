@@ -1144,6 +1144,16 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		drbd_thread_stop(&drbd_conf[minor].receiver);
 		drbd_free_resources(minor);
 
+		if (!drbd_conf[minor].transfer_log) {
+			drbd_conf[minor].transfer_log =
+			    kmalloc(sizeof(struct Tl_entry) * 
+				    drbd_conf[minor].conf.tl_size,
+				    GFP_KERNEL);
+			tl_init(&drbd_conf[minor]);
+		}
+		drbd_conf[minor].lo_device = inode->i_rdev;
+		drbd_conf[minor].lo_file = filp;
+
 		if (drbd_conf[minor].conf.disk_size) {
 		        kdev_t ll_dev = drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
 			blk_size[MAJOR_NR][minor] =
@@ -1157,18 +1167,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			       drbd_conf[minor].mbds_id = 
 				 drbd_conf[minor].mops->init(MKDEV(MAJOR_NR, minor));
 			}
-		}
-		
-
-		if (!drbd_conf[minor].transfer_log) {
-			drbd_conf[minor].transfer_log =
-			    kmalloc(sizeof(struct Tl_entry) * 
-				    drbd_conf[minor].conf.tl_size,
-				    GFP_KERNEL);
-			tl_init(&drbd_conf[minor]);
-		}
-		drbd_conf[minor].lo_device = inode->i_rdev;
-		drbd_conf[minor].lo_file = filp;
+		}		
 
 		set_cstate(&drbd_conf[minor],Unconnected);
 
