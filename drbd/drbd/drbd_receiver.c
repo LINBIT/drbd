@@ -1201,7 +1201,10 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 /*
 	FIXME
 */
-					WARN("Current Primary becomming sync TARGET! Data corruption in progress?\n");
+					ERR("Current Primary shall become sync TARGET! Aborting to prevent data corruption.\n");
+					set_cstate(mdev,StandAlone);
+					mdev->receiver.t_state = Exiting;
+					return FALSE;
 				}
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 				set_cstate(mdev,WFBitMapT);
@@ -1296,6 +1299,10 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	// We just started resync. Now we can be sure that local disk IO is okay.
+/*
+ *  FIXME this should only be D_ASSERT here.
+ *        *doing* it here masks a logic bug elsewhere, I think.
+ */
 	clear_bit(PARTNER_DISKLESS,&mdev->flags);
 	clear_bit(DISKLESS,&mdev->flags);
 	smp_wmb();
@@ -1351,8 +1358,7 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	while (size > 0) {
 		want = min_t(int,size,sizeof(sink));
 		r = drbd_recv(mdev,sink,want);
-		D_ASSERT(r >= 0);
-		if (r < 0) break;
+		ERR_IF(r < 0) break;
 		size -= r;
 	}
 	return (size == 0);

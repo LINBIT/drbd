@@ -899,6 +899,9 @@ int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
       if(err==ENETRESET)
 	fprintf(stderr,"Not possible, since the device is in primary state\n"
 		"and not connected.\n");
+      if(err==ENODATA)
+	fprintf(stderr,"Not possible, since the device is in primary state\n"
+		"and has no local disk.\n");
       if(err==ENXIO)
 	fprintf(stderr," - Do not shoot yourself in the foot. -\n"
 		"A system without backing storage is not possible.\n");

@@ -461,6 +461,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
 	if (!thi->task) return;
+	/* test on ->state useless now since we use reparent_to_init */
 	if (thi->task->state == -1
 	    || thi->task->state == TASK_ZOMBIE
 	    || thi->task->flags & PF_EXITING   ) {
@@ -1050,7 +1051,6 @@ STATIC void drbd_unplug_fn(void *data)
 #endif
 	drbd_dev *mdev = q->queuedata;
 
-	INFO("%s [%d]: unplug\n",current->comm, current->pid);
 	/* unplug FIRST */
 	spin_lock_irq(q->queue_lock);
 	blk_remove_plug(q);
@@ -1190,9 +1190,11 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	 * oldest_barrier
 	 */
 
-	D_ASSERT(mdev->ee_in_use==0);
-	D_ASSERT(mdev->ee_vacant==32 /*EE_MININUM*/);
-	D_ASSERT(mdev->epoch_size==0);
+	if (   mdev->ee_in_use  !=  0
+	    || mdev->ee_vacant  != 32 /* EE_MININUM */
+	    || mdev->epoch_size !=  0)
+		ERR("ee_in_use:%d ee_vacant:%d epoch_size:%d\n",
+		    mdev->ee_in_use, mdev->ee_vacant, mdev->epoch_size);
 #define ZAP(x) memset(&x,0,sizeof(x))
 	ZAP(mdev->conf);
 	ZAP(mdev->sync_conf);
@@ -1406,6 +1408,8 @@ int __init drbd_init(void)
 	SZO(struct buffer_head);
 	SZO(Drbd_Polymorph_Packet);
 	SZO(struct drbd_socket);
+	SZO(struct bm_extent);
+	SZO(struct lc_element);
 	SZO(struct semaphore);
 	SZO(wait_queue_head_t);
 	SZO(spinlock_t);
@@ -2108,13 +2112,14 @@ int drbd_md_read(drbd_dev *mdev)
 	return 0;
 }
 
-#if 0
+#if 1
 #define MeGC(x) mdev->gen_cnt[x]
 #define PeGC(x) be32_to_cpu(peer->gen_cnt[x])
 
 void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 {
-	INFO("MeGCs: %c:%08x:%08x:%08x:%08x:%c%c\n",
+	INFO("I am(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
+		mdev->state == Primary ? 'P':'S',
 		MeGC(Flags) & MDF_Consistent ? '1' : '0',
 		MeGC(HumanCnt),
 		MeGC(TimeoutCnt),
@@ -2123,7 +2128,8 @@ void drbd_dump_md(drbd_dev *mdev, Drbd_Parameter_Packet *peer, int verbose)
 		MeGC(Flags) & MDF_PrimaryInd   ? '1' : '0',
 		MeGC(Flags) & MDF_ConnectedInd ? '1' : '0');
 	if (peer) {
-		INFO("PeGCs: %c:%08x:%08x:%08x:%08x:%c%c\n",
+		INFO("Peer(%c): %c:%08x:%08x:%08x:%08x:%c%c\n",
+			be32_to_cpu(peer->state) == Primary ? 'P':'S',
 			PeGC(Flags) & MDF_Consistent ? '1' : '0',
 			PeGC(HumanCnt),
 			PeGC(TimeoutCnt),

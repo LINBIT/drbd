@@ -185,11 +185,13 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	D_ASSERT(buffer_locked(bh));
 	D_ASSERT(buffer_mapped(bh));
 	// D_ASSERT(buffer_dirty(bh)); // It is not true ?!?
+	/* kupdated keeps submitting "non-uptodate" buffers.
 	ERR_IF (!buffer_uptodate(bh)) {
 		ERR("[%s/%d]: bh_src->b_state=%lx bh->b_state=%lx\n",
 		    current->comm, current->pid,
 		    bh_src->b_state, bh->b_state);
 	};
+	*/
 
 	// FIXME should not be necessary;
 	// remove if the assertions above do not trigger.
