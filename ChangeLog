@@ -1,9 +1,27 @@
 Latest:
 ------
- ChangeLog last updated: r1537 2004-09-09
+ ChangeLog last updated: r1577 2004-10-01
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.7.5 (api:76/proto:74)
+-----
+ * Fix a bug that could case read requests to return wrong data
+   on a node in Primary/SyncTaget state. (A very unlikely race,
+   it is not known that this ever triggered; It was found by an 
+   ASSERTION in the code)
+ * Removed the 30MB/sec speeding limit for the syncer. (this was 
+   intended as a debugging aid, but it was not removed in time)
+ * A fix to drbdsetup, to make drbdadm adjust work if a resource
+   is diskless.
+ * Got rid of the compiler warning when build on a kernel with
+   CONFIG_LBD not set.
+ * Now the device nodes are created with sane permissions.
+ * The debian package is now named "drbd0.7"
+ * set_fs() is now also done for sendpage()
+ * Better compatibility with early 2.4.x kernels (BH_Launder, min()/max())
+ * Touch /var/lock/subsys/drbd, needed for RedHat based distros.
+ * Improvements to the INSALL document
  * Removed HOWTO, ja, pt_BR ... all hopelessly outdated.
    disabled benchmark/run.sh
 
