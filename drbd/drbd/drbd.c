@@ -90,7 +90,7 @@
 
 struct Drbd_thread {
 	int pid;
-	struct semaphore sem;
+        struct wait_queue* wait;  
 	int exit;
 	int (*function) (void *);
 	int minor;
@@ -114,6 +114,7 @@ struct Drbd_Conf {
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
 	unsigned int pending_cnt;
+	spinlock_t req_lock;
 	rwlock_t tl_lock;
 	struct Tl_entry* tl_end;
 	struct Tl_entry* tl_begin;
@@ -121,7 +122,6 @@ struct Drbd_Conf {
         int    need_to_issue_barrier;
         int    epoch_size;
 	spinlock_t es_lock;
-	//struct semaphore es_sem;
 	struct timer_list s_timeout;
 	struct timer_list a_timeout;
 	struct semaphore send_mutex;
@@ -269,17 +269,29 @@ struct request *my_all_requests = NULL;
 
 	rlen = sprintf(buf, "version       : %d\n\n", MOD_VERSION);
 
+	/*
+	  cs .. connection state
+	   st .. mode state
+	   ns .. network send
+	   nr .. network receive
+	   dw .. disk write
+	   dr .. disk read
+	   of .. block's on the fly 
+	*/
+
 	for (i = 0; i < MINOR_COUNT; i++) {
 		rlen =
 		    rlen + sprintf(buf + rlen,
-				   "%d: cs:%s st:%s ns:%u nr:%u dw:%u dr:%u\n",
+				   "%d: cs:%s st:%s ns:%u nr:%u dw:%u dr:%u "
+				   "of:%u\n",
 				   i,
 				   cstate_names[drbd_conf[i].cstate],
 				   state_names[drbd_conf[i].state],
 				   drbd_conf[i].send_cnt,
 				   drbd_conf[i].recv_cnt,
 				   drbd_conf[i].writ_cnt,
-				   drbd_conf[i].read_cnt);
+				   drbd_conf[i].read_cnt,
+				   drbd_conf[i].pending_cnt);
 
 	}
 
@@ -404,7 +416,8 @@ inline void tl_init(struct Drbd_Conf *mdev)
 	mdev->tl_end = mdev->transfer_log;
 }
 
-inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr)
+inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
+		       unsigned int set_size)
 {
         int epoch_size=-1; 
 	unsigned long flags;
@@ -427,6 +440,10 @@ inline void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr)
 		printk(KERN_ERR DEVICE_NAME ": invalid barrier number!!"
 		       "found=%u, reported=%u\n",
 		       (unsigned int)mdev->tl_begin->sector_nr,barrier_nr);
+
+	if(epoch_size != set_size) 
+		printk(KERN_ERR DEVICE_NAME ": Epoch set size wrong! %d %d \n",
+		       epoch_size,set_size);
 	
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 
@@ -469,8 +486,10 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 			if(end_them && 
 			   p->req->rq_status != RQ_INACTIVE &&
 			   p->req->rq_dev == dev &&
-			   p->req->sector == p->sector_nr ) 
+			   p->req->sector == p->sector_nr ) {
 		                drbd_end_req(p->req,RQ_DRBD_SENT,1);
+				mdev->pending_cnt--;
+			}
 		}
 		p++;
 		if (p == mdev->transfer_log + mdev->conf.tl_size)
@@ -480,6 +499,83 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 	write_unlock_irqrestore(&mdev->tl_lock,flags);
 }     
 
+inline void drbd_thread_setup(struct Drbd_thread *thi)
+{
+	if (!thi->pid) sleep_on(&thi->wait);
+}
+
+inline void drbd_thread_exit(struct Drbd_thread *thi)
+{
+	thi->pid = 0;
+	wake_up(&thi->wait);
+}
+
+void drbd_thread_init(int minor, struct Drbd_thread *thi,
+		      int (*func) (void *))
+{
+	thi->pid = 0;
+	thi->wait = 0;
+	thi->function = func;
+	thi->minor = minor;
+}
+
+void drbd_thread_start(struct Drbd_thread *thi)
+{
+	int pid;
+
+	if (thi->pid == 0) {
+		thi->exit = 0;
+
+		pid = kernel_thread(thi->function, (void *) thi, 0);
+
+		if (pid < 0) {
+			printk(KERN_ERR DEVICE_NAME
+			       ": Couldn't start thread (%d)\n", pid);
+			return;
+		}
+		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
+		thi->pid = pid;
+		wake_up(&thi->wait);
+	}
+}
+
+void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
+{
+        int err;
+	if (!thi->pid) return;
+
+	if (restart)
+		thi->exit = 2;
+	else
+		thi->exit = 1;
+
+	err = kill_proc_info(SIGTERM, NULL, thi->pid);
+
+	if (err == 0)
+		sleep_on(&thi->wait);	/* wait until the thread
+					   has closed the socket */
+	else
+		printk(KERN_ERR DEVICE_NAME ": could not send signal\n");
+
+	/* printk( KERN_DEBUG DEVICE_NAME ": (pseudo) waitpid returned \n"); */
+
+	current->state = TASK_INTERRUPTIBLE;
+	schedule_timeout(HZ / 10);
+
+	/*
+	   This would be the *nice* solution, but it crashed
+	   my machine...
+
+	   struct task_struct *p;
+	   read_lock(&tasklist_lock);
+	   p = find_task_by_pid(drbd_conf[minor].rpid);
+           p->p_pptr = current;
+	   errno = send_sig_info(SIGTERM, NULL, p);
+	   read_unlock(&tasklist_lock);
+	   interruptible_sleep_on(&current->wait_chldexit);
+	 */
+}
+
 int drbd_send_barrier(struct Drbd_Conf *mdev, u32 barrier_nr)
 {
         Drbd_Barrier_Packet head;
@@ -488,11 +584,12 @@ int drbd_send_barrier(struct Drbd_Conf *mdev, u32 barrier_nr)
 	return drbd_send(mdev,Barrier,(Drbd_Packet*)&head,sizeof(head),0,0);
 }
 
-int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr)
+int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 {
         Drbd_BarrierAck_Packet head;
        
         head.h.barrier = barrier_nr;
+	head.h.set_size = cpu_to_be32(set_size);
 	return drbd_send(mdev,BarrierAck,(Drbd_Packet*)&head,sizeof(head),0,0);
 }
 
@@ -539,6 +636,18 @@ void drbd_timeout(unsigned long arg)
 	send_sig_info(DRBD_SIG, NULL, p);
 
 }
+
+void drbd_a_timeout(unsigned long arg)
+{
+	struct Drbd_thread* thi = (struct Drbd_thread* ) arg;
+
+	printk(KERN_ERR DEVICE_NAME ": ack timeout detected!\n");
+
+	if(!thi->pid) return;
+	thi->exit=1;
+	kill_proc_info(SIGTERM,NULL,thi->pid);
+}
+
 
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 	      Drbd_Packet* header, size_t header_size, 
@@ -634,6 +743,7 @@ int drbd_ll_blocksize(int minor)
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
 {
   int wake_asender=0;
+  unsigned long flags=0;
   struct Drbd_Conf* mdev = &drbd_conf[MINOR(req->rq_dev)];
 
 
@@ -657,6 +767,16 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	if (req->cmd == READ)
 		goto end_it;
 
+	/* This was a hard one! Can you see the race?
+	   (It hit me about once out of 20000 blocks) 
+
+	   switch(status) {
+	   ..: status = ...;
+	   }
+	*/
+
+	spin_lock_irqsave(&mdev->req_lock,flags);
+
 	switch (req->rq_status & 0xfffe) {
 	case RQ_DRBD_SEC_WRITE:
 	        wake_asender=1;
@@ -678,6 +798,9 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		printk(KERN_ERR DEVICE_NAME ": request state error(%X)\n",
 		       req->rq_status);
 	}
+
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
 	return;
 
 /* We only report uptodate == TRUE if both operations (WRITE && SEND)
@@ -685,6 +808,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
  */
 
       end_it:
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	if(mdev->state == Primary) {
 	        if(tl_dependence(mdev,req->sector)) {
@@ -774,7 +898,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				panic(DEVICE_NAME ": block not locked");
 		}
 		req = CURRENT;
-
 
 		/*
 		   {
@@ -987,16 +1110,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	return 0;
 }
 
-void drbd_thread_init(int minor, struct Drbd_thread *thi,
-		      int (*func) (void *))
-{
-	thi->pid = 0;
-	/*  thi->sem
-	   thi->exit   look at drbd_thread_start
-	 */
-	thi->function = func;
-	thi->minor = minor;
-}
 
 #if LINUX_VERSION_CODE > 0x20300
 int drbd_init(void)
@@ -1046,7 +1159,9 @@ __initfunc(int drbd_init(void))
 		tl_init(&drbd_conf[i]);
 		drbd_conf[i].epoch_size=0;
 		drbd_conf[i].s_timeout.function = drbd_timeout;
-		drbd_conf[i].a_timeout.function = drbd_timeout;
+		drbd_conf[i].a_timeout.function = drbd_a_timeout;
+		drbd_conf[i].a_timeout.data = (unsigned long) 
+			&drbd_conf[i].receiver;
 		init_timer(&drbd_conf[i].s_timeout);
 		init_timer(&drbd_conf[i].a_timeout);
 		atomic_set(&drbd_conf[i].synced_to, 0);
@@ -1056,7 +1171,7 @@ __initfunc(int drbd_init(void))
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
 		drbd_conf[i].es_lock = SPIN_LOCK_UNLOCKED;
-		//init_MUTEX(&drbd_conf[i].es_sem);
+		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].asender_wait= NULL;
 	}
 #if LINUX_VERSION_CODE > 0x20330
@@ -1344,7 +1459,7 @@ inline int receive_barrier(int minor)
 
 	drbd_conf[minor].epoch_size=0;
 	spin_unlock(&drbd_conf[minor].es_lock);
-	drbd_send_b_ack(&drbd_conf[minor], header.barrier );
+	drbd_send_b_ack(&drbd_conf[minor], header.barrier,ep_size );
 
 	return TRUE;
 }
@@ -1457,7 +1572,8 @@ inline int receive_barrier_ack(int minor)
 	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
 	        return FALSE;
 
-        tl_release(&drbd_conf[minor],header.barrier);
+        tl_release(&drbd_conf[minor],header.barrier,
+		   be32_to_cpu(header.set_size));
 	return TRUE;
 }
 
@@ -1607,8 +1723,7 @@ int drbdd_init(void *arg)
 
 	sprintf(current->comm, "drbdd_%d", minor);
 
-	drbd_conf[minor].a_timeout.data = (unsigned long) current;
-	down(&thi->sem);	/* wait until parent has written its
+	drbd_thread_setup(thi);	/* wait until parent has written its
 				   rpid variable */
 
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
@@ -1622,8 +1737,7 @@ int drbdd_init(void *arg)
 
 	printk(KERN_ERR DEVICE_NAME ": receiver exiting/m=%d\n", minor);
 
-	thi->pid = 0;
-	up(&thi->sem);
+	drbd_thread_exit(thi);
 	return 0;
 }
 
@@ -1643,64 +1757,6 @@ void drbd_free_resources(int minor)
 	drbd_conf[minor].cstate = Unconfigured;
 }
 
-void drbd_thread_start(struct Drbd_thread *thi)
-{
-	int pid;
-
-	if (thi->pid == 0) {
-		init_MUTEX_LOCKED(&thi->sem);
-		thi->exit = 0;
-
-		pid = kernel_thread(thi->function, (void *) thi, 0);
-
-		if (pid < 0) {
-			printk(KERN_ERR DEVICE_NAME
-			       ": Couldn't start thread (%d)\n", pid);
-			return;
-		}
-		/* printk(KERN_DEBUG DEVICE_NAME ": pid = %d\n", pid); */
-		thi->pid = pid;
-		up(&thi->sem);
-	}
-}
-
-void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
-{
-        int err;
-	if (!thi->pid) return;
-
-	if (restart)
-		thi->exit = 2;
-	else
-		thi->exit = 1;
-
-	init_MUTEX_LOCKED(&thi->sem);
-	err = kill_proc_info(SIGTERM, NULL, thi->pid);
-
-	if (err == 0)
-		down(&thi->sem);	/* wait until the thread
-					   has closed the socket */
-	else
-		printk(KERN_ERR DEVICE_NAME ": could not send signal\n");
-
-	/* printk( KERN_DEBUG DEVICE_NAME ": (pseudo) waitpid returned \n"); */
-
-	current->state = TASK_INTERRUPTIBLE;
-	schedule_timeout(HZ / 10);
-
-	/*
-	   This would be the *nice* solution, but it crashed
-	   my machine...
-
-	   struct task_struct *p;
-	   read_lock(&tasklist_lock);
-	   p = find_task_by_pid(drbd_conf[minor].rpid);
-           p->p_pptr = current;
-	   errno = send_sig_info(SIGTERM, NULL, p);
-	   read_unlock(&tasklist_lock);
-	   interruptible_sleep_on(&current->wait_chldexit);
-	 */
-}
 
 /* ********* the syncer ******** */
 
@@ -1732,7 +1788,7 @@ int drbd_syncer(void *arg)
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
 
-	down(&thi->sem);	/* wait until parent has written its
+	drbd_thread_setup(thi);	/* wait until parent has written its
 				   rpid variable */
 
 	page = (void*)__get_free_page(GFP_USER);
@@ -1876,8 +1932,7 @@ int drbd_syncer(void *arg)
 
 	atomic_set(&drbd_conf[minor].synced_to, 0); /* this is ok. */
 	printk(KERN_INFO DEVICE_NAME ": Synchronistaion done./m=%d\n", minor);
-	thi->pid = 0;
-	up(&thi->sem);
+	drbd_thread_exit(thi);
 	return 0;
 }
 
@@ -1899,10 +1954,10 @@ int drbd_asender(void *arg)
 
 	sprintf(current->comm, "drbd_asender_%d", minor);
 
-	down(&thi->sem);	// wait until parent has written its
+	drbd_thread_setup(thi); // wait until parent has written its
 				//   rpid variable 
 
-	while(TRUE) {
+	while(thi->exit==0) {
 	  int i;
 
 	  interruptible_sleep_on(&drbd_conf[minor].asender_wait);	  
@@ -1935,8 +1990,7 @@ int drbd_asender(void *arg)
 
 	}
 
-	thi->pid = 0;
-	up(&thi->sem);
+	drbd_thread_exit(thi);
 	return 0;
 }
 

@@ -117,7 +117,7 @@ MKPACKET(Drbd_BlockAck_P)
 
 typedef struct {
   __u32       barrier;
-  __u32       _fill;
+  __u32       set_size;
 } Drbd_BarrierAck_P;
 MKPACKET(Drbd_BarrierAck_P)
 
