@@ -20,9 +20,11 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
-#define REL_VERSION "0.7-pre10 cvs $Date: 2004/07/08 08:30:00 $"
+#define REL_VERSION "0.7-pre10 cvs $Date: 2004/07/09 18:29:24 $"
 #define API_VERSION 74
-#define PRO_VERSION 73
+#define PRO_VERSION 73 /* actually already 74, but I expect some more
+			* protocol changes, maybe even an additional packet
+			* soonish... */
 
 //#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 
