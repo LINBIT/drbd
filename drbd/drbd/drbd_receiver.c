@@ -1151,8 +1151,8 @@ int drbd_asender(struct Drbd_thread *thi)
 		  drbd_process_done_ee(mdev);
 	  }
 
-	  while((rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize)) 
-		!= -EAGAIN ) {
+	  while((rr=drbd_recv_nowait(mdev,((char*)&header)+rsize,
+				     sizeof(header)-rsize)) != -EAGAIN ) {
 		  if(rr < 0) goto out;
 		  rsize+=rr;
 		  if(rsize == sizeof(header)) {
