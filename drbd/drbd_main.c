@@ -904,12 +904,16 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 
 	/* report statistics every hour,
 	 * if we had at least one fallback.
+	 * XXX remove this statistics again,
+	 * or introduce some set of interessting per device real statistics,
+	 * and report them every hour...
+	 * currently these are global counters only.
 	 */
 	++total;
 	if (fallback && time_before(last_rep+3600*HZ, now)) {
 		last_rep = now;
-		INFO("sendpage fallback/total: %lu/%lu\n",
-					  fallback, total);
+		printk(KERN_INFO DEVICE_NAME
+		       ":sendpage fallback/total: %lu/%lu\n", fallback, total);
 	}
 
 	spin_lock(&mdev->send_task_lock);
@@ -1288,7 +1292,7 @@ void drbd_set_defaults(drbd_dev *mdev)
 
 void drbd_init_set_defaults(drbd_dev *mdev)
 {
-	// the implicit memset(,0,) of kcalloc did most of this
+	// the memset(,0,) did most of this
 	// note: only assignments, no allocation in here
 
 #ifdef PARANOIA
@@ -1636,15 +1640,6 @@ NOT_IN_26(
 	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
 }
 
-void * kcalloc(size_t size, int type)
-{
-	void *addr;
-	addr = kmalloc(size, type);
-	if (addr)
-		memset(addr, 0, size);
-	return addr;
-}
-
 int __init drbd_init(void)
 {
 	int i,err;
@@ -1722,15 +1717,16 @@ int __init drbd_init(void)
 	err = -ENOMEM;
 
 	drbd_proc = NULL; // play safe for drbd_cleanup
-	drbd_conf = kcalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
-	if (!drbd_conf)
-		goto Enomem;
+	drbd_conf = kmalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
+	if (likely(drbd_conf)) memset(drbd_conf,0,sizeof(drbd_dev)*minor_count);
+	else goto Enomem;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	drbd_sizes      = kcalloc(sizeof(int)*minor_count,GFP_KERNEL);
+	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
+	if (likely(drbd_sizes)) memset(drbd_sizes,0,sizeof(int)*minor_count);
+	else goto Enomem;
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	if (!drbd_blocksizes || !drbd_sizes)
-		goto Enomem;
+	if (unlikely(!drbd_blocksizes)) goto Enomem;
 #else
 
 	devfs_mk_dir(drbd_devfs_name);
