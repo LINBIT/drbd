@@ -901,6 +901,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 */
 		}
 		ok = drbd_send_ack(mdev,WriteAck,e);
+		__set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
 		ok&= drbd_io_error(mdev);
@@ -1021,7 +1022,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
-			if (ok && mdev->rs_total)
+			if (ok && test_bit(SYNC_STARTED,&mdev->flags) )
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
@@ -2037,6 +2038,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 		if( is_syncer_blk(mdev,p->block_id)) {
 			drbd_set_in_sync(mdev,sector,blksize);
+			__set_bit(SYNC_STARTED,&mdev->flags);
 		} else {
 			req=(drbd_request_t*)(long)p->block_id;
 
@@ -2044,7 +2046,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 
-			if (mdev->rs_total &&
+			if (test_bit(SYNC_STARTED,&mdev->flags) &&
 			    mdev->conf.wire_protocol == DRBD_PROT_C)
 				drbd_set_in_sync(mdev,sector,blksize);
 		}
