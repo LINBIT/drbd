@@ -727,9 +727,10 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned int enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int count, s, e;
+	unsigned long flags;
 
 	D_BUG_ON(!(b && b->bm));
-	spin_lock_irq(&b->bm_lock);
+	spin_lock_irqsave(&b->bm_lock,flags);
 	BM_PARANOIA_CHECK();
 
 	s = S2W(enr);
@@ -742,7 +743,7 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned int enr)
 	} else {
 		D_ASSERT(0);
 	}
-	spin_unlock_irq(&b->bm_lock);
+	spin_unlock_irqrestore(&b->bm_lock,flags);
 #if DUMP_MD >= 3
 	INFO("enr=%lu weight=%d e=%d s=%d\n", enr, count, e, s);
 #endif
