@@ -56,6 +56,9 @@
 #include "drbd_int.h"
 
 #define EE_MININUM 32    // @4k pages => 128 KByte
+#define ID_VACANT 0      // All EEs on the free list should have this value
+                         // in block_id. The EEs on all other lists must
+                         // have some other value here.
 
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
@@ -151,7 +154,7 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	*/
 
 	e=bh->b_private;
-	D_ASSERT(e->block_id);  // otherwhise it is on the free list!
+	D_ASSERT(e->block_id != ID_VACANT);
 	spin_lock_irqsave(&mdev->ee_lock,flags);
 
 	mark_buffer_uptodate(bh, uptodate);
@@ -233,7 +236,7 @@ STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
 		e->bh=bh;
 		bh->b_private=e;
 
-		e->block_id=0; //all entries on the free_ee should have 0 here
+		e->block_id = ID_VACANT;
 		spin_lock_irq(&mdev->ee_lock);
 		list_add(&e->list,&mdev->free_ee);
 		mdev->ee_vacant++;
@@ -280,7 +283,7 @@ STATIC struct page* drbd_free_ee(struct Drbd_Conf* mdev, struct list_head *list)
 		freeable=1;
 		while( nbh != bh ) {
 			e=nbh->b_private;
-			if(e->block_id) freeable=0;
+			if(e->block_id != ID_VACANT) freeable=0;
 			nbh=nbh->b_this_page;
 		}
 		if(freeable) goto free_it;
@@ -365,7 +368,7 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,int may_sleep)
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
 	e=list_entry(le, struct Tl_epoch_entry,list);
-	e->block_id=1;//the entries not on free_ee should not have 0 here.
+	e->block_id = !ID_VACANT;
 	return e;
 }
 
@@ -377,7 +380,7 @@ void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
 
 	mdev->ee_in_use--;
 	mdev->ee_vacant++;
-	e->block_id=0; //all entries on the free_ee should have 0 here
+	e->block_id = ID_VACANT;
 	list_add(&e->list,&mdev->free_ee);
 
 	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) && 
@@ -1565,7 +1568,7 @@ STATIC void drbdd(int minor)
 		mdev->epoch_size=0;
 		break;
 	default:
-		/* should not happen */
+		D_ASSERT(0);
 	}
 
 	if(atomic_read(&mdev->unacked_cnt)) {
