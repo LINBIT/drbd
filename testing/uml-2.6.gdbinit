@@ -33,20 +33,41 @@ define linux-mod-helper
   p $rv->module_core
 end
 
+# for old kernels, worked with linux-2.6.1
+#define linux-ps
+#  set $ps_ph_i = 1<<pidhash_shift
+#  printf "---TASK---  -PID-  --------COMM----------\n"
+#  while $ps_ph_i > 0
+#    set $ps_ph_i = $ps_ph_i - 1
+#    set $ps_plist = &pid_hash[0][$ps_ph_i]
+#    set $ps_pitem = $ps_plist->next
+#    while $ps_pitem != $ps_plist
+#      lx-container-of-struct $ps_pitem pid hash_chain
+#      set $ps_pid = $rv
+#      set $ps_h = $ps_pid->task_list.next
+#      lx-container-of-struct $ps_h task_struct pids[0].pid_chain
+#      set $ps_t = $rv
+#      printf "%8p  %-5d  %-20s\n", $ps_t, $ps_pid->nr, $ps_t->comm
+#      set $ps_pitem = $ps_pitem->next
+#    end
+#  end
+#end
+
 define linux-ps
   set $ps_ph_i = 1<<pidhash_shift
   printf "---TASK---  -PID-  --------COMM----------\n"
   while $ps_ph_i > 0
     set $ps_ph_i = $ps_ph_i - 1
-    set $ps_plist = &pid_hash[0][$ps_ph_i]
-    set $ps_pitem = $ps_plist->next
-    while $ps_pitem != $ps_plist
-      lx-container-of-struct $ps_pitem pid hash_chain
+    set $ps_pitem = pid_hash[0][$ps_ph_i]->first
+    while $ps_pitem != 0
+      lx-container-of-struct $ps_pitem pid pid_chain
       set $ps_pid = $rv
-      set $ps_h = $ps_pid->task_list.next
-      lx-container-of-struct $ps_h task_struct pids[0].pid_chain
+      set $ps_h = $ps_pid->pid_list.next
+      lx-container-of-struct $ps_h task_struct pids[0].pid_list
       set $ps_t = $rv
-      printf "%8p  %-5d  %-20s\n", $ps_t, $ps_pid->nr, $ps_t->comm
+      if $ps_pid->nr != 0
+        printf "%8p  %-5d  %-20s\n", $ps_t, $ps_pid->nr, $ps_t->comm
+      end
       set $ps_pitem = $ps_pitem->next
     end
   end

@@ -756,7 +756,6 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	int epoch_size;
 	Drbd_Barrier_Packet *p = (Drbd_Barrier_Packet*)h;
 
-	ERR_IF(mdev->state.s.role != Secondary) return FALSE;
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
 	rv = drbd_recv(mdev, h->payload, h->length);

@@ -1400,8 +1400,8 @@ static inline void update_peer_seq(drbd_dev* mdev, int new_seq)
 {
 	spin_lock(&mdev->peer_seq_lock);
 	mdev->peer_seq = max(mdev->peer_seq, new_seq);
-	wake_up(&mdev->cstate_wait);
 	spin_unlock(&mdev->peer_seq_lock);
+	wake_up(&mdev->cstate_wait);
 }
 
 static inline int peer_seq(drbd_dev* mdev)

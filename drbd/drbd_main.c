@@ -424,7 +424,7 @@ STATIC struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
 	spin_lock_irq(&mdev->tl_lock);
 
 	for(i=-1;i<=1;i++ ) {
-		slot = mdev->tl_hash + ee_hash_fn(mdev,
+		slot = mdev->ee_hash + ee_hash_fn(mdev,
 						  sector + i*(1<<(HT_SHIFT)));
 		hlist_for_each_entry(ee, n, slot, colision) {
 			if( overlaps(drbd_ee_get_sector(ee),
@@ -1614,6 +1614,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->unacked_cnt,0);
 	atomic_set(&mdev->local_cnt,0);
 	atomic_set(&mdev->resync_locked,0);
+	atomic_set(&mdev->packet_seq,0);
 
 	init_MUTEX(&mdev->md_io_mutex);
 	init_MUTEX(&mdev->data.mutex);
