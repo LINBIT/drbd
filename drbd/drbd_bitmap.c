@@ -144,7 +144,7 @@ void drbd_bm_unlock(drbd_dev *mdev)
 	struct drbd_bitmap *b = mdev->bitmap;
 	spin_lock_irq(&b->bm_lock);
 	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags)) {
-		D_ASSERT(0);
+		ERR("bitmap not locked in bm_unlock\n");
 	} else {
 		/* FIXME if we got a "is already locked" previously,
 		 * we unlock here even though we actually MUST NOT do so... */
@@ -841,7 +841,7 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 		int n = e-s;
 		while (n--) count += hweight_long(*w++);
 	} else {
-		D_ASSERT(0);
+		ERR("start offset (%d) too large in drbd_bm_e_weight\n", s);
 	}
 	spin_unlock_irqrestore(&b->bm_lock,flags);
 #if DUMP_MD >= 3
@@ -878,7 +878,7 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 			b->bm_set -= bm_clear_surplus(b);
 		}
 	} else {
-		D_ASSERT(0);
+		ERR("start offset (%d) too large in drbd_bm_ALe_set_all\n", s);
 	}
 	weight = b->bm_set - weight;
 	spin_unlock_irq(&b->bm_lock);

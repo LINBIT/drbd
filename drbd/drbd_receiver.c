@@ -1176,7 +1176,8 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		}
 		break;
 	default:
-		D_ASSERT(0);
+		ERR("unexpected command (%s) in receive_DataRequest\n",
+		    cmdname(h->command));
 	}
 
 	mdev->read_cnt += size >> 9;
@@ -1557,7 +1558,8 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		if (!ok) goto out;
 		drbd_start_resync(mdev,SyncTarget); // XXX cannot fail ???
 	} else {
-		D_ASSERT(0);
+		ERR("unexpected cstate (%s) in receive_bitmap\n",
+		    cstate_to_name(mdev->cstate));
 	}
 
 	// We just started resync. Now we can be sure that local disk IO is okay.

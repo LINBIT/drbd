@@ -538,15 +538,16 @@ int drbd_resync_finished(drbd_dev* mdev)
 	INFO("Resync done (total %lu sec; %lu K/sec)\n",
 	     dt,(unsigned long)n);
 
-	if (mdev->cstate == SyncTarget) {
+	if (mdev->cstate == SyncTarget || mdev->cstate == PausedSyncT) {
 		drbd_md_set_flag(mdev,MDF_Consistent);
 		ERR_IF(drbd_md_test_flag(mdev,MDF_FullSync))
 			drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
-	} else if (mdev->cstate == SyncSource) {
+	} else if (mdev->cstate == SyncSource || mdev->cstate == PausedSyncS) {
 		set_bit(PARTNER_CONSISTENT, &mdev->flags);
 	} else {
-		D_ASSERT(0);
+		ERR("unexpected cstate (%s) in drbd_resync_finished\n",
+		    cstate_to_name(mdev->cstate));
 	}
 
 	// assert that all bit-map parts are cleared.
@@ -857,7 +858,8 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 			drbd_md_set_flag(mdev,MDF_Consistent);
 		}
 	} else {
-		D_ASSERT(0);
+		ERR("Usage error in drbd_start_resync! (side == %s)\n",
+		     cstate_to_name(side));
 		return;
 	}
 	drbd_md_write(mdev);
