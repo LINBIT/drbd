@@ -614,6 +614,7 @@ struct BitMap {
 };
 
 // activity log
+#define AL_EXTENTS_PT 61         // Extents per 512B sector (AKA transaction)
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 // resync bitmap

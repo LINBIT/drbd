@@ -28,8 +28,6 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-#define AL_EXTENTS_PT 61
-
 /* This is what I like so much about the linux kernel:
  * if you have a close look, you can almost always reuse code by someone else
  * ;)
@@ -289,6 +287,7 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
+	D_ASSERT(mdev->al_tr_pos < MD_AL_MAX_SIZE);
 	mdev->al_tr_number++;
 
 	up(&mdev->md_io_mutex);

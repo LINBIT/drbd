@@ -678,6 +678,12 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	ERR_IF (sc.rate < 1) sc.rate = 1;
 	ERR_IF (sc.skip & ~1) sc.skip = !!sc.skip;
 	ERR_IF (sc.al_extents < 7) sc.al_extents = 127; // arbitrary minimum
+#define AL_MAX ((MD_AL_MAX_SIZE-1) * AL_EXTENTS_PT)
+	if(sc.al_extents > AL_MAX) {
+		ERR("sc.al_extents > "__stringify(AL_MAX));
+		sc.al_extents = AL_MAX;
+	}
+#undef AL_MAX
 
 	mdev->sync_conf.rate       = sc.rate;
 	mdev->sync_conf.use_csums  = sc.use_csums;
