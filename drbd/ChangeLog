@@ -1,3 +1,9 @@
+0.5.4
+-----
+No more zombies, when a connection is canceled.
+An important SMP fix. (It seems to work on SMP now)
+A lot of small improvments.(benchmarking, stress testing... )
+
 0.5.3
 -----
 More sanity checks.
