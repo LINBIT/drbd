@@ -767,11 +767,9 @@ inline void receive_postpone(int minor)
 
 inline void drbd_collect_zombies(int minor)
 {
-  /*
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
 		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
 	}
-  */
 }
 
 void drbdd(int minor)
@@ -884,13 +882,13 @@ void drbdd(int minor)
 		drbd_md_write(minor);
 		break;
 	case Secondary: 
-		printk(KERN_ERR DEVICE_NAME "%d: AA\n",minor);
+	  //		printk(KERN_ERR DEVICE_NAME "%d: AA\n",minor);
 		drbd_wait_active_ee(drbd_conf+minor);
-		printk(KERN_ERR DEVICE_NAME "%d: BB\n",minor);
+		//		printk(KERN_ERR DEVICE_NAME "%d: BB\n",minor);
 		drbd_wait_sync_ee(drbd_conf+minor);
-		printk(KERN_ERR DEVICE_NAME "%d: CC\n",minor);
+		//		printk(KERN_ERR DEVICE_NAME "%d: CC\n",minor);
 		drbd_clear_done_ee(drbd_conf+minor);
-		printk(KERN_ERR DEVICE_NAME "%d: DD\n",minor);
+		//		printk(KERN_ERR DEVICE_NAME "%d: DD\n",minor);
 		drbd_conf[minor].unacked_cnt=0;		
 		del_timer(&drbd_conf[minor].p_timeout);
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
