@@ -16,6 +16,12 @@
 # along with drbd; see the file COPYING.  If not, write to
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
+#
+# For Debian:
+# nsgmls drbdsetup.sgml | sgmlspl /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl
+# On RedHat it is at:
+# /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl
+
 
 man:	drbdsetup.8 drbd.conf.5
 
@@ -26,4 +32,4 @@ drbd.conf.5: drbd.conf.sgml
 	docbook2man drbd.conf.sgml
 
 clean:
-	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs
+	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs *~ manpage.log
