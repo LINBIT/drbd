@@ -97,8 +97,8 @@ else
 
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
-	-test -x ../scripts/adjust_drbd_config_h.sh && \
-	 KDIR=$(KDIR) ../scripts/adjust_drbd_config_h.sh
+	-test -f ../scripts/adjust_drbd_config_h.sh && \
+	 KDIR=$(KDIR) $(SHELL) ../scripts/adjust_drbd_config_h.sh
   ifeq ($(KDIR_Makefile_PATCHLEVEL),4)
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
   else
