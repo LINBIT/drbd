@@ -70,8 +70,6 @@ void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
 	PARANOIA_ENTRY(); //TODO.
 	if(lc->nr_elements == nr_elements) RETURN();
 
-	if (lc->nr_elements) RETURN();
-
 	bytes = ( lc->element_size + sizeof(lc->slot[0]) ) * nr_elements;
 	data = kmalloc(bytes,GFP_KERNEL);
 
