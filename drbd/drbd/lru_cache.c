@@ -233,11 +233,11 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 		 */
 		clear_bit(__LC_STARVING,&lc->flags);
 		smp_mb__after_clear_bit();
+		BUG_ON( sync && (e->lc_number != enr) );
 	} else {
 		/* ok, user does not want to be notified.
-		 * we just do it here and now.
+		 * He sets lc_number we he gets the extent...
 		 */
-		e->lc_number = enr;
 		// I'd like to use __clear_bit, but 2.4.23 does not have it.
 		clear_bit(__LC_DIRTY,&lc->flags);
 		clear_bit(__LC_STARVING,&lc->flags);
@@ -248,7 +248,6 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
 
 	if (sync) {
-		BUG_ON(e->lc_number != enr);
 		BUG_ON(++e->refcnt != 1);
 		BUG_ON(lc->flags & LC_DIRTY);
 		RETURN(e);

@@ -193,7 +193,8 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	mdev->rs_mark_left=mdev->rs_left;
 	mdev->rs_mark_time=mdev->rs_start;
 
-	INFO("resync started (need to sync %lu KB).\n",mdev->rs_left/2);
+	INFO("Resync started as %s (need to sync %lu KB).\n",
+	     side == SyncTarget ? "target" : "source", mdev->rs_left/2);
 
 	if(side == SyncTarget) {
 		set_bit(START_SYNC,&mdev->flags);
@@ -228,9 +229,11 @@ int drbd_dsender(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd%d_dsender", (int)(mdev-drbd_conf));
 
-	while( ! wait_event_interruptible_timeout(mdev->dsender_wait,
-						  _dsender_cond(mdev),
-						  time)) {
+	while( thi->t_state == Running ) {
+
+		wait_event_interruptible_timeout(
+			mdev->dsender_wait,_dsender_cond(mdev),time);
+
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_process_rdone_ee(mdev);
 		spin_unlock_irq(&mdev->ee_lock);
@@ -245,7 +248,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 		if(test_and_clear_bit(SYNC_FINISHED,&mdev->flags)) {
 			unsigned long dt;
 			dt = (jiffies - mdev->rs_start) / HZ + 1;
-			INFO("resync done (total %lu sec; %lu K/sec)\n",
+			INFO("Resync done (total %lu sec; %lu K/sec)\n",
 			     dt,(mdev->rs_total/2)/dt);
 
 			if(mdev->cstate == SyncTarget) {
@@ -259,7 +262,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 			D_ASSERT(list_empty(&mdev->resync->lru));
 		}
 
-		if(mdev->cstate == SyncSource) {
+		if(time == SLEEP_TIME) {
 			if(!ds_issue_requests(mdev)) {
 				time=MAX_SCHEDULE_TIMEOUT;
 			}
