@@ -27,9 +27,7 @@
 
  */
 
-#ifdef HAVE_AUTOCONF
-#include <linux/autoconf.h>
-#endif
+#include <linux/config.h>
 #ifdef CONFIG_MODVERSIONS
 #include <linux/modversions.h>
 #endif

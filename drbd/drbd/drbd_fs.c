@@ -30,9 +30,8 @@
 
  */
 
-#ifdef HAVE_AUTOCONF
-#include <linux/autoconf.h>
-#endif
+#include <linux/config.h>
+#include <linux/module.h>
 #ifdef CONFIG_MODVERSIONS
 #include <linux/modversions.h>
 #endif
@@ -46,9 +45,7 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #include <linux/blkpg.h>
-#endif
 
 ONLY_IN_26(
 /* see get_sb_bdev and bd_claim */

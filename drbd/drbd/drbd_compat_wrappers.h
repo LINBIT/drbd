@@ -3,6 +3,9 @@
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 
+#define __module_get  __MOD_INC_USE_COUNT
+#define   module_put  __MOD_DEC_USE_COUNT
+
 // b_end_io handlers
 extern void drbd_md_io_complete     (struct buffer_head *bh, int uptodate);
 extern void enslaved_read_bi_end_io (struct buffer_head *bh, int uptodate);
@@ -275,6 +278,7 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 }
 
 #else
+// LINUX_VERSION_CODE > 2,5,0
 
 #include <linux/buffer_head.h> // for fsync_bdev
 

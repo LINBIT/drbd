@@ -33,9 +33,7 @@
 
  */
 
-#ifdef HAVE_AUTOCONF
-#include <linux/autoconf.h>
-#endif
+#include <linux/config.h>
 #ifdef CONFIG_MODVERSIONS
 #include <linux/modversions.h>
 #endif
@@ -561,7 +559,7 @@ inline sigset_t drbd_block_all_signals(void)
 	LOCK_SIGMASK(current,flags);
 	oldset = current->blocked;
 	sigfillset(&current->blocked);
-	RECALC_SIGPENDING(current);
+	RECALC_SIGPENDING();
 	UNLOCK_SIGMASK(current,flags);
 	return oldset;
 }
@@ -573,7 +571,7 @@ inline void restore_old_sigset(sigset_t oldset)
 	// _never_ propagate this to anywhere...
 	sigdelset(&current->pending.signal, DRBD_SIG);
 	current->blocked = oldset;
-	RECALC_SIGPENDING(current);
+	RECALC_SIGPENDING();
 	UNLOCK_SIGMASK(current,flags);
 }
 
@@ -2304,60 +2302,6 @@ void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
 {
 	mdev->gen_cnt[order]++;
 }
-
-#if defined(SIGHAND_HACK) && defined(MODULE)
-
-/* copied from linux-2.6/kernel/signal.c
- * because recalc_sigpending_tsk is not exported,
- * and we still don't use the kernel mechanisms to send signals */
-
-#include <asm/signal.h> // for _NSIG_WORDS
-
-/*
- * Re-calculate pending state from the set of locally pending
- * signals, globally pending signals, and blocked signals.
- */
-static inline int has_pending_signals(sigset_t *signal, sigset_t *blocked)
-{
-        unsigned long ready;
-        long i;
-
-        switch (_NSIG_WORDS) {
-        default:
-                for (i = _NSIG_WORDS, ready = 0; --i >= 0 ;)
-                        ready |= signal->sig[i] &~ blocked->sig[i];
-                break;
-
-        case 4: ready  = signal->sig[3] &~ blocked->sig[3];
-                ready |= signal->sig[2] &~ blocked->sig[2];
-                ready |= signal->sig[1] &~ blocked->sig[1];
-                ready |= signal->sig[0] &~ blocked->sig[0];
-                break;
-
-        case 2: ready  = signal->sig[1] &~ blocked->sig[1];
-                ready |= signal->sig[0] &~ blocked->sig[0];
-                break;
-
-        case 1: ready  = signal->sig[0] &~ blocked->sig[0];
-        }
-        return ready != 0;
-}
-
-#define PENDING(p,b) has_pending_signals(&(p)->signal, (b))
-
-inline void recalc_sigpending_tsk(struct task_struct *t)
-{
-        if (t->signal->group_stop_count > 0 ||
-            PENDING(&t->pending, &t->blocked) ||
-            PENDING(&t->signal->shared_pending, &t->blocked))
-		NOT_IN_26(t->sigpending = 1;)
-		ONLY_IN_26(set_tsk_thread_flag(t, TIF_SIGPENDING);)
-        else
-		NOT_IN_26(t->sigpending = 0;)
-		ONLY_IN_26(clear_tsk_thread_flag(t, TIF_SIGPENDING);)
-}
-
-#endif
 
 module_init(drbd_init)
 module_exit(drbd_cleanup)

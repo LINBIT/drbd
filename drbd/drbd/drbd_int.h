@@ -30,6 +30,7 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/list.h>
+#include <linux/sched.h>
 #include "lru_cache.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -192,17 +193,11 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #ifdef SIGHAND_HACK
 # define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sighand->siglock, flags)
 # define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sighand->siglock, flags)
-# define RECALC_SIGPENDING(TSK)     (recalc_sigpending_tsk(TSK))
-
-// defined in drbd_main.c,
-// copied from redhat's kernel-2.4.20-13.9 kernel/signal.c
-// to avoid a recompile of the redhat kernel
-inline void recalc_sigpending_tsk(struct task_struct *t);
-
+# define RECALC_SIGPENDING()        recalc_sigpending();
 #else
 # define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sigmask_lock, flags)
 # define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sigmask_lock, flags)
-# define RECALC_SIGPENDING(TSK)     (recalc_sigpending(TSK))
+# define RECALC_SIGPENDING()        recalc_sigpending(current);
 #endif
 
 #if defined(DBG_SPINLOCKS) && defined(__SMP__)
