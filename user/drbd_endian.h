@@ -140,4 +140,30 @@ static inline unsigned long hweight_long(unsigned long w)
 	return sizeof(w) == 4 ? generic_hweight32(w) : generic_hweight64(w);
 }
 
+
+/*
+ * Format macros for printf()
+ */
+
+#if BITS_PER_LONG == 32
+# define X32 "%lX"
+//# define X64 "%llX"
+# define X64(a) "%"#a"llX"
+# define D32 "%ld"
+# define D64 "%lld"
+# define U32 "%lu"
+# define U64 "%llu"
+#elif BITS_PER_LONG == 64
+# define X32 "%X"
+//# define X64 "%lX"
+# define X64(a) "%"#a"lX"
+# define D32 "%d"
+# define D64 "%ld"
+# define U32 "%u"
+# define U64 "%lu"
+#else
+# error "sorry, weird endianness on this box"
 #endif
+
+#endif
+

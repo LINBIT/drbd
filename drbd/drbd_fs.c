@@ -992,6 +992,7 @@ STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 	for (i = Current; i < UUID_SIZE; i++) {
 		cn.uuid[i]=mdev->uuid[i];
 	}
+	cn.flags = mdev->md_flags;
 	cn.bits_set = drbd_bm_total_weight(mdev);
 	cn.current_size = drbd_get_capacity(mdev->this_bdev);
 

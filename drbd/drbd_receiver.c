@@ -1529,10 +1529,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	nconn = mdev->state.s.conn;
 	if (nconn == WFReportParams ) nconn = Connected;
 
-	if (mdev->p_uuid && mdev->state.s.conn == Connected) {
+	if (mdev->p_uuid && mdev->state.s.conn <= Connected) {
 		nconn=drbd_sync_handshake(mdev);
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
 	}
 

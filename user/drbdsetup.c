@@ -114,8 +114,8 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_state(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options);
-int cmd_show_gc(int drbd_fd,char** argv,int argc,struct option *options);
-int cmd_get_gc(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_show_gi(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
@@ -181,8 +181,8 @@ struct drbd_cmd commands[] = {
   {"disconnect", cmd_disconnect,     0, 0, },
   {"state", cmd_state,               0, 0, },
   {"cstate", cmd_cstate,             0, 0, },
-  {"show-gc", cmd_show_gc,           0, 0, },
-  {"get-gc", cmd_get_gc,             0, 0, },
+  {"show-gi", cmd_show_gi,           0, 0, },
+  {"get-gi", cmd_get_gi,             0, 0, },
   {"show", cmd_show,                 0, 0, },
 };
 
@@ -1349,44 +1349,41 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_get_gc(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  struct ioctl_get_gen_cnt cn;
+  struct ioctl_get_uuids cn;
   int err;
 
-  err=ioctl(drbd_fd,DRBD_IOCTL_GET_GEN_CNT,&cn);
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_UUIDS,&cn);
   if(err)
     {
-      PERROR("ioctl(,GET_GEN_CNT,) failed");
+      PERROR("ioctl(,GET_GEN_UUIDS,) failed");
       return 20;
     }
   
-  dt_print_gc(cn.gen_cnt);
+  dt_print_uuids(cn.uuid, cn.flags);
 
   return 0;
 }
 
-int cmd_show_gc(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_show_gi(int drbd_fd,char** argv,int argc,struct option *options)
 {
-  struct ioctl_get_gen_cnt cn;
+  struct ioctl_get_uuids cn;
   char ppb[10];
   int err;
 
-  err=ioctl(drbd_fd,DRBD_IOCTL_GET_GEN_CNT,&cn);
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_UUIDS,&cn);
   if(err)
     {
-      PERROR("ioctl(,GET_GEN_CNT,) failed");
+      PERROR("ioctl(,GET_GEN_UUIDS,) failed");
       return 20;
     }
   
-  dt_pretty_print_gc(cn.gen_cnt);
+  dt_pretty_print_uuids(cn.uuid, cn.flags);
 
   printf("current agreed size: %s\n", ppsize(ppb, cn.current_size >> 1));
   printf("%u bits set in the bitmap [ %s out of sync ]\n",
 	 cn.bits_set, ppsize(ppb, cn.bits_set * 4));
-
-  printf("local  uuid: %llX\n",cn.uuid);
-  printf("peer's uuid: %llX\n",cn.peer_uuid);
 
   return 0;
 }

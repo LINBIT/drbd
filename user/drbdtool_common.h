@@ -22,6 +22,7 @@ extern const char* make_optstring(struct option *options, char startc);
 extern char* ppsize(char* buf, size_t size);
 extern void dt_print_gc(const __u32* gen_cnt);
 extern void dt_pretty_print_gc(const __u32* gen_cnt);
+extern void dt_print_uuids(const __u64* uuid, unsigned int flags);
+extern void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags);
 
 #endif
-

@@ -15,6 +15,7 @@
 #include <linux/drbd.h>
 
 #include "drbdtool_common.h"
+#include "drbd_endian.h"
 
 char* ppsize(char* buf, size_t size) 
 {
@@ -317,4 +318,26 @@ void dt_pretty_print_gc(const __u32* gen_cnt)
 	       gen_cnt[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
 	       gen_cnt[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
 	       gen_cnt[Flags] & MDF_FullSync ? "1/y" : "0/n");
+}
+
+void dt_print_uuids(const __u64* uuid, unsigned int flags)
+{
+	int i;
+	printf(X64(016)":"X64(016)":",
+	       uuid[Current],
+	       uuid[Bitmap]);
+	for ( i=History_start ; i<=History_end ; i++ ) {
+		printf(X64(016)":", uuid[i]);
+	}
+	printf("%d:%d:%d:%d:%d\n",
+	       flags & MDF_Consistent ? 1 : 0,
+	       flags & MDF_WasUpToDate ? 1 : 0,
+	       flags & MDF_PrimaryInd ? 1 : 0,
+	       flags & MDF_ConnectedInd ? 1 : 0,
+	       flags & MDF_FullSync ? 1 : 0);
+}
+
+void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
+{
+	dt_print_uuids(uuid, flags);
 }

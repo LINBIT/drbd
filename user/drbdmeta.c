@@ -137,13 +137,13 @@ struct md_cpu {
 	 * 0.7 stores la_size on disk as kb, 0.8 in units of sectors.
 	 * we use sectors in our general working structure here */
 	u64 la_sect;		/* last agreed size. */
-	u64 uuid;
-	u64 peer_uuid;
 	u32 md_size;
 	u32 al_offset;		/* offset to this block */
 	u32 al_nr_extents;	/* important for restoring the AL */
 	u32 bm_offset;		/* offset to the bitmap, from here */
-	/* more to come eventually */
+	/* Since DRBD 0.8 we have uuid instead of gc */
+	u64 uuid[UUID_SIZE];
+	u32 flags;
 };
 
 /*
@@ -319,9 +319,8 @@ struct __attribute__ ((packed)) al_sector_on_disk {
 
 struct __attribute__ ((packed)) md_on_disk_08 {
 	be_u64 la_sect;		/* last agreed size. */
-	be_u64 uuid;            /* universally unique identifier */
-	be_u64 peer_uuid;       /* universally unique identifier */
-	be_u32 gc[GEN_CNT_SIZE];	/* generation counter */
+	be_u64 uuid[UUID_SIZE];   // UUIDs.
+	be_u32 flags;
 	be_u32 magic;
 	be_u32 md_size;
 	be_u32 al_offset;	/* offset to this block */
@@ -334,10 +333,9 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 {
 	int i;
 	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
-	cpu->uuid = be64_to_cpu(disk->uuid.be);
-	cpu->peer_uuid = be64_to_cpu(disk->peer_uuid.be);
-	for (i = 0; i < GEN_CNT_SIZE; i++)
-		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
+	for ( i=Current ; i<UUID_SIZE ; i++ )
+		cpu->uuid[i] = be64_to_cpu(disk->uuid[i].be);
+	cpu->flags = be32_to_cpu(disk->flags.be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
 	cpu->md_size = be32_to_cpu(disk->md_size.be);
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
@@ -349,10 +347,9 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 {
 	int i;
 	disk->la_sect.be = cpu_to_be64(cpu->la_sect);
-	disk->uuid.be  = cpu_to_be64(cpu->uuid);
-	disk->peer_uuid.be  = cpu_to_be64(cpu->peer_uuid);
-	for (i = 0; i < GEN_CNT_SIZE; i++)
-		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
+	for ( i=Current ; i<UUID_SIZE ; i++ )
+		disk->uuid[i].be = cpu_to_be64(cpu->uuid[i]);
+	disk->flags.be = cpu_to_be32(cpu->flags);
 	disk->magic.be = cpu_to_be32(cpu->magic);
 	disk->md_size.be = cpu_to_be32(cpu->md_size);
 	disk->al_offset.be = cpu_to_be32(cpu->al_offset);
@@ -446,6 +443,8 @@ struct format_ops {
 	int (*md_initialize) (struct format *);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
+	void (*get_gi) (struct format *);
+	void (*show_gi) (struct format *);
 };
 
 /*
@@ -458,6 +457,31 @@ enum Known_Formats {
 	Drbd_08,
 	Drbd_Unknown,
 };
+
+/*
+ * Some glue
+ */
+
+void m_get_gc(struct format *cfg)
+{
+	dt_print_gc(cfg->md.gc);
+}
+
+void m_show_gc(struct format *cfg)
+{
+	dt_pretty_print_gc(cfg->md.gc);
+}
+
+void m_get_uuid(struct format *cfg)
+{
+	dt_print_uuids(cfg->md.uuid,cfg->md.flags);
+}
+
+void m_show_uuid(struct format *cfg)
+{
+	dt_pretty_print_uuids(cfg->md.uuid,cfg->md.flags);
+}
+
 
 /* pre declarations */
 int v06_md_close(struct format *cfg);
@@ -489,6 +513,8 @@ struct format_ops f_ops[] = {
 		     .md_initialize = v06_md_initialize,
 		     .md_disk_to_cpu = v06_md_disk_to_cpu,
 		     .md_cpu_to_disk = v06_md_cpu_to_disk,
+		     .get_gi = m_get_gc,
+		     .show_gi = m_show_gc,
 		     },
 	[Drbd_07] = {
 		     .name = "v07",
@@ -499,6 +525,8 @@ struct format_ops f_ops[] = {
 		     .md_initialize = v07_md_initialize,
 		     .md_disk_to_cpu = v07_md_disk_to_cpu,
 		     .md_cpu_to_disk = v07_md_cpu_to_disk,
+		     .get_gi = m_get_gc,
+		     .show_gi = m_show_gc,
 		     },
 	[Drbd_08] = {
 		     .name = "v08",
@@ -509,6 +537,8 @@ struct format_ops f_ops[] = {
 		     .md_initialize = v08_md_initialize,
 		     .md_disk_to_cpu = v08_md_disk_to_cpu,
 		     .md_cpu_to_disk = v08_md_cpu_to_disk,
+		     .get_gi = m_get_uuid,
+		     .show_gi = m_show_uuid,
 		     },
 };
 
@@ -533,16 +563,15 @@ int meta_outdate_gc(struct format *cfg, char **argv, int argc);
 int meta_set_uuid(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
-	{"get-gc", 0, meta_get_gc, 1},
-	{"show-gc", 0, meta_show_gc, 1},
+	{"get-gi", 0, meta_get_gc, 1},
+	{"show-gi", 0, meta_show_gc, 1},
 	{"dump-md", 0, meta_dump_md, 1},
 	{"create-md", 0, meta_create_md, 1},
 	/* FIXME convert still missing.
 	 * implicit convert from v07 to v08 by create-md
 	 * see comments there */
 	{"outdate", 0, meta_outdate_gc, 1},
-	{"set-uuid", 0, meta_set_uuid, 1},
-	{"set-gc", ":::VAL:VAL:...", meta_set_gc, 0},
+	{"set-gi", ":::VAL:VAL:...", meta_set_gc, 0},
 };
 
 /*
@@ -1021,15 +1050,15 @@ int v08_md_open(struct format *cfg)
 int v08_md_initialize(struct format *cfg)
 {
 	u64 al_offset, bm_offset;
+	int i;
 
 	cfg->md.la_sect = 0;
-	get_real_random(&cfg->md.uuid,sizeof(u64));
-	cfg->md.peer_uuid = 0;
-	cfg->md.gc[Flags] = 0;
-	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
-	cfg->md.gc[TimeoutCnt] = 1;
-	cfg->md.gc[ConnectedCnt] = 1;
-	cfg->md.gc[ArbitraryCnt] = 1;
+	cfg->md.uuid[Current] = UUID_JUST_CREATED;
+	cfg->md.uuid[Bitmap] = 0;
+	for ( i=History_start ; i<=History_end ; i++ ) {
+		cfg->md.uuid[i]=0;
+	}
+	cfg->md.flags = 0;
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
 	/*
@@ -1072,7 +1101,6 @@ int v08_md_initialize(struct format *cfg)
 /******************************************
   }}} end of v08
  ******************************************/
-
 int meta_get_gc(struct format *cfg, char **argv, int argc)
 {
 	if (argc > 0) {
@@ -1081,7 +1109,9 @@ int meta_get_gc(struct format *cfg, char **argv, int argc)
 
 	if (cfg->ops->open(cfg))
 		return -1;
-	dt_print_gc(cfg->md.gc);
+
+	cfg->ops->get_gi(cfg);
+
 	return cfg->ops->close(cfg);
 }
 
@@ -1096,7 +1126,7 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	dt_pretty_print_gc(cfg->md.gc);
+	cfg->ops->show_gi(cfg);
 
 	if (cfg->md.la_sect) {
 		printf("last agreed size: %s\n",
@@ -1106,9 +1136,6 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 	} else {
 		printf("zero size device -- never seen peer yet?\n");
 	}
-
-	printf("local  uuid: %llX\n",cfg->md.uuid);
-	printf("peer's uuid: %llX\n",cfg->md.peer_uuid);
 
 	return cfg->ops->close(cfg);
 }
@@ -1128,23 +1155,21 @@ int meta_dump_md(struct format *cfg, char **argv, int argc)
 	 * so we can safely restore it later */
 	printf("DRBD meta data dump version <FIXME drbdmeta dump version>\n");
 	printf("meta data version %s\n\n", cfg->ops->name);
-	printf("gc {");
-	for (i = 0; i < GEN_CNT_SIZE; i++) {
-		printf(" 0x%X;", cfg->md.gc[i]);
+	if (cfg->ops < f_ops + Drbd_08) {
+		printf("gc {");
+		for (i = 0; i < GEN_CNT_SIZE; i++) {
+			printf(" 0x%X;", cfg->md.gc[i]);
+		}
+	} else { // >= 08
+		printf("uuid {");
+		for ( i=Current ; i<UUID_SIZE ; i++ ) {
+			printf(" 0x"X64(016)";", cfg->md.uuid[i]);
+		}
 	}
 	printf(" }\n");
 
 	if (cfg->ops >= f_ops + Drbd_07) {
 		printf("la-size-sect %llu;\n", cfg->md.la_sect);
-	}
-
-	if (cfg->ops >= f_ops + Drbd_08) {
-		printf("uuid %llX;\n", cfg->md.uuid);
-		printf("peer-uuid %llX;\n", cfg->md.peer_uuid);
-		printf("# FIXME include offsets, once they are not fixed anymore\n");
-	}
-
-	if (cfg->ops >= f_ops + Drbd_07) {
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf("# bits-set %u;\n", cfg->bits_set);
 		if (cfg->on_disk.bm)
@@ -1168,14 +1193,15 @@ int md_convert_07_to_08(struct format *cfg)
 	 * We only need to adjust the magic here. */
 	printf("Converting meta data...\n");
 	cfg->md.magic = DRBD_MD_MAGIC_08;
-	get_real_random(&cfg->md.uuid,sizeof(u64));
-	cfg->md.peer_uuid = 0;
+	// get_real_random(&cfg->md.uuid,sizeof(u64));
+	// cfg->md.peer_uuid = 0;
 	if (cfg->ops->md_cpu_to_disk(cfg)
 	    || cfg->ops->close(cfg)) {
 		fprintf(stderr, "conversion failed\n");
 		return -1;
 	}
-	printf("Successfully converted v07 meta data to v08 format.\n");
+	printf("Convertion Currently BROKEN!\n");
+	//printf("Successfully converted v07 meta data to v08 format.\n");
 	return 0;
 }
 
@@ -1267,32 +1293,6 @@ int m_strsep_b(char **s, int *val, int mask)
 		*val &= ~mask;
 
 	return rv;
-}
-
-int meta_set_uuid(struct format *cfg, char **argv, int argc)
-{
-	int err;
-
-	if (argc > 1) {
-		fprintf(stderr, "Ignoring additional arguments\n");
-	}
-	if (argc < 1) {
-		fprintf(stderr, "Required Argument missing\n");
-		exit(10);
-	}
-
-	if (cfg->ops->open(cfg))
-		return -1;
-
-	cfg->md.uuid = strtoll(argv[0],NULL,16);
-
-	err = cfg->ops->md_cpu_to_disk(cfg)
-	    || cfg->ops->close(cfg);
-	if (err)
-		fprintf(stderr, "update failed\n");
-
-	return err;
-	
 }
 
 int meta_set_gc(struct format *cfg, char **argv, int argc)

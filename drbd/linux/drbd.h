@@ -296,6 +296,7 @@ enum UuidIndex {
 struct ioctl_get_uuids {
 	OUT __u64        uuid[UUID_SIZE];
 	OUT __u64        current_size;
+	OUT unsigned int flags;
 	OUT unsigned int bits_set;
 };
 

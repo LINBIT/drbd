@@ -468,9 +468,9 @@ DRBD 0.8 Roadmap
            NB: If they are needed, I think they can be implemented
                as special UUID values.
 
-  50% DONE. Kernel part is implemented, not tested. But testing
-            will only be possible after drbdmeta was updated. 
-            Drbdmeta still has no clue of gen-UUIDs, not drbdsetup.
+  80% DONE. Kernel part is implemented, little tested. Userlang parts
+            implemented, seem to work. Known bugs: Upon connect
+            sync_handshake is not called, need to fix this.
 
 17 Something like
 
