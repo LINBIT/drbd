@@ -3118,7 +3118,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 		current->state = TASK_INTERRUPTIBLE;
 		schedule_timeout(interval);
 		switch(ds_buffer_wait_on(disk_b,minor)) {
-		case 0:  goto done;  /* finished */
+		case 0: goto done;  /* finished */
 		case -1: 
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: Syncer read failed.\n",minor);
@@ -3145,8 +3145,11 @@ int drbd_syncer(struct Drbd_thread *thi)
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done.\n",minor);
 
  err:
-	set_cstate(&drbd_conf[minor],Connected);
-	drbd_send_cstate(&drbd_conf[minor]);
+	if(drbd_conf[minor].cstate == SyncingAll || 
+	   drbd_conf[minor].cstate == SyncingQuick) {
+		set_cstate(&drbd_conf[minor],Connected);
+		drbd_send_cstate(&drbd_conf[minor]);
+	}
 
 	ds_buffer_free(&buffers[0]);
 	ds_buffer_free(&buffers[1]);
