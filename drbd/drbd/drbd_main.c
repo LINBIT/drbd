@@ -312,6 +312,35 @@ void daemonize(void)
 }
 #endif
 
+void set_cstate(drbd_dev* mdev,Drbd_CState cs)
+{
+	struct list_head workset;
+	struct list_head *le;
+	struct drbd_hook *dh;
+	unsigned long flags;
+	int run_again;
+
+	INIT_LIST_HEAD(&workset);
+
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	mdev->cstate = cs;
+
+	list_add(&workset,&mdev->cstate_hook);
+	list_del_init(&mdev->cstate_hook);
+
+	while(!list_empty(&workset)) {
+		le = workset.next;
+		dh = list_entry(le, struct drbd_hook,list);
+		list_del(le);
+		spin_unlock_irqrestore(&mdev->req_lock,flags);
+		run_again = dh->callback(mdev,dh);
+		spin_lock_irqsave(&mdev->req_lock,flags);
+		if(run_again) list_add(le,&mdev->cstate_hook);
+	}
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	wake_up_interruptible(&mdev->cstate_wait);
+}
 
 STATIC int drbd_thread_setup(void* arg)
 {
@@ -1210,7 +1239,7 @@ int __init drbd_init(void)
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
 		// no need to lock access, we are still initializing the module.
-		mdev->resync = lc_alloc(7, sizeof(struct bm_extent),mdev);
+		mdev->resync = lc_alloc(13, sizeof(struct bm_extent),mdev);
 		if (!mdev->resync) goto Enomem;
 		mdev->act_log = lc_alloc(mdev->sync_conf.al_extents,
 					 sizeof(struct lc_element), mdev);

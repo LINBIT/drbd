@@ -116,7 +116,7 @@ STATIC drbd_dev *ds_find_osg(drbd_dev *mdev)
 	return 0;
 }
 
-STATIC void _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
+STATIC int _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
 {
 	// This is a callback, I better not assume that this 
 	// is a context which allows to send something from.
@@ -125,9 +125,6 @@ STATIC void _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
 	int added=0;
 
 	if(odev->cstate <= Connected) {
-		spin_lock_irqsave(&mdev->req_lock,flags);
-		list_del(&dh->list);
-		spin_unlock_irqrestore(&mdev->req_lock,flags);
 	retry:
 		if( (odev = ds_find_osg(mdev)) ) {
 			spin_lock_irqsave(&odev->req_lock,flags);
@@ -142,7 +139,9 @@ STATIC void _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
 			wake_up_interruptible(&mdev->dsender_wait);
 			kfree(dh);
 		}
+		return 0; // do not add to this hook again.
 	}
+	return 1; // run again. 
 }
 
 STATIC int drbd_wait_for_other_sync_groups(drbd_dev *mdev)

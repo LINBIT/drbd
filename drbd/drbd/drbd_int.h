@@ -633,7 +633,7 @@ struct bm_extent { // 16MB sized extents.
 struct drbd_hook {
 	struct list_head list;
 	void* data;
-	void (*callback) (drbd_dev*, struct drbd_hook* );
+	int (*callback) (drbd_dev*, struct drbd_hook* );
 };
 
 
@@ -728,6 +728,7 @@ struct Drbd_Conf {
  *************************/
 
 // drbd_main.c
+extern void set_cstate(drbd_dev* mdev,Drbd_CState cs);
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(drbd_dev *mdev);
@@ -1015,27 +1016,6 @@ static inline void drbd_thread_stop_nowait(struct Drbd_thread *thi)
 static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 {
 	_drbd_thread_stop(thi,TRUE,FALSE);
-}
-
-static inline void set_cstate(drbd_dev* mdev,Drbd_CState cs)
-{
-	struct list_head *le;
-	struct drbd_hook *dh;
-	unsigned long flags;
-
-	spin_lock_irqsave(&mdev->req_lock,flags);
-	mdev->cstate = cs;
-
-	while(!list_empty(&mdev->cstate_hook)) {
-		le = mdev->cstate_hook.next;
-		dh = list_entry(le, struct drbd_hook,list);
-		spin_unlock_irqrestore(&mdev->req_lock,flags);
-		dh->callback(mdev,dh);
-		spin_lock_irqsave(&mdev->req_lock,flags);
-	}
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
-
-	wake_up_interruptible(&mdev->cstate_wait);
 }
 
 static inline void inc_pending(drbd_dev* mdev)

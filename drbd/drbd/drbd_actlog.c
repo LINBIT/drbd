@@ -437,7 +437,7 @@ STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
 	struct Drbd_Conf *mdev;
 
 	mdev = container_of(bh,struct Drbd_Conf,md_io_bh);
-	BUG_ON(!IS_VALID_MDEV(mdev));
+	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
 
 	mark_buffer_uptodate(bh, uptodate);
 	unlock_buffer(bh);
