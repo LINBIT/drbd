@@ -20,42 +20,39 @@ INSTALL="/etc/ha.d/resource.d"
 # See how we were called.
 case "$1" in
 	start)
-		if [ -n "$RESOURCE" ]; then
-			. $CONFIG/$RESOURCE
-		else
-			runForAll start
-			exit $RETVAL
-		fi
+		#setLocal
 
-		setLocal
-
-		if [ isMasterBoot $RESOURCE ]; then
-			$INSTALL/drbdc $RESOURCE master
-		else
-			$INSTALL/drbdc $RESOURCE slave
-		fi
+		#if [ isMasterBoot $RESOURCE ]; then
+			$INSTALL/drbdc $* master
+		#else
+		#	$INSTALL/drbdc $RESOURCE slave
+		#fi
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
 
 	stop)
-		if [ -n "$RESOURCE" ]; then
-			$INSTALL/drbdc $RESOURCE slave
-		else
-			$INSTALL/drbdc slave
-		fi
+		#if [ -n "$RESOURCE" ]; then
+			$INSTALL/drbdc $* slave
+		#else
+		#	$INSTALL/drbdc slave
+		#fi
 		;;
 		
 	restart)
-		if [ -n "$RESOURCE" ]; then
-			$0 $RESOURCE stop
-			$0 $RESOURCE start
-		else
+		#if [ -n "$RESOURCE" ]; then
+		#	$0 $RESOURCE stop
+		#	$0 $RESOURCE start
+		#else
 			$0 stop
 			$0 start
-		fi
+		#fi
 		;;
+	status)
+		$INSTALL/drbdc $* status
+		;;
+
 	*)
 		echo "Usage: $0 [resource] {start|stop|restart}"
 		RETVAL=1
