@@ -22,7 +22,8 @@ include ../Makefile.vars
 all:
 
 install:
-	install drbd /etc/rc.d/init.d/
+	if [ -e /etc/init.d ]; then install drbd /etc/init.d/;\
+		else install drbd /etc/rc.d/init.d/; fi
 	mkdir -p /etc/ha.d/resource.d
 	install datadisk /etc/ha.d/resource.d/
 	mkdir -p /etc/sysconfig/drbd
