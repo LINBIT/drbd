@@ -1,0 +1,421 @@
+#!/bin/sh
+#
+# to be managed by heartbeat.
+# description: Mounts and unmounts the cluster filesystem
+#	  
+# Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+# Initial author.
+#
+# Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>
+# Changes to support multiple devices and different distributions.
+# Changes to increase robustness and exit with proper error values.
+#
+# Copyright (C) 2000, Thomas Mangin <thomas.mangin@free.fr>
+# Major rewrite for new sections (init,mount,umount,fsck,...)
+# Added full resync from slave node option (resync)
+# Better heartbeat/script integration
+# Become drbdc
+#
+# Some ideas and inspiration from Joe Hartley <jh@brainiac.com>
+
+INSTALL="/etc/ha.d/resource.d"
+
+. $INSTALL/drbd_commun
+
+# Check if the node is primary
+# Param : The resource
+# Return "1" or "0"
+isPrimary()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep ":Primary/" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+# Check if the node is in a connected state
+# Param : The resource
+# Return "1" or "0"
+isConnected()
+{
+	NUMBER=`echo $1 | cut -b5`
+	return `cat /proc/drbd | grep "Connected" | grep "^$NUMBER" | wc -l | cut -b7`
+}
+
+
+# Return a boolean
+isMounted()
+{
+	[ "`mount | grep $LOCAL_DEVICE | cut -f1 -d\ `" = "$LOCAL_DEVICE" ] && \
+		return 1 || return 0
+}
+
+# unmount the device set by setLocal
+# $1 = RESOURCE
+# $2 = LOCAL_DEVICE
+# Return if the device is still mounted
+rudeUnMount()
+{
+	isMounted $1
+	MOUNTED=$?
+		
+	if [ $MOUNTED -eq 1 ]; then
+		$0 $1 umount
+
+		isMounted $1
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then
+			fuser -km $2
+			sleep 1
+			$0 $1 umount
+		fi
+ 
+		isMounted $1
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then
+			fuser -km -9 $2
+			sleep 1
+			$0 $1 umount
+		fi
+
+		isMounted $1
+		MOUNTED=$?
+	fi
+
+	return $MOUNTED
+}
+
+runForAll ()
+{
+	pushd . > /dev/null
+		cd $CONFIG
+		DEVICES=`ls drbd[0-9] 2>/dev/null`
+	popd > /dev/null
+
+	for D in $DEVICES; do
+		for RUN in $*; do
+			$0 $D $RUN
+		done
+	done
+}
+
+# See how we were called.
+case "$1" in
+	primary)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll primary
+			exit $RETVAL
+		fi
+		
+		setLocal
+		isMounted $RESOURCE
+
+		if [ $? -eq 1 ]; then
+			failed "$LOCAL_DEVICE is mounted"
+			exit 1
+		fi
+
+		action "Becoming primary on DRBD resource $RESOURCE" \
+			/usr/sbin/drbdsetup $LOCAL_DEVICE PRI
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+		;;
+
+	secondary)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll secondary
+			exit $RETVAL
+		fi
+		
+		setLocal
+		isMounted $RESOURCE
+
+		if [ $? -eq 1 ]; then
+			failed "$LOCAL_DEVICE is mounted"
+			exit 1
+		fi
+
+		action "Becoming secondary on DRBD resource $RESOURCE" \
+			/usr/sbin/drbdsetup $LOCAL_DEVICE SEC
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+		;;
+
+	master)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll master
+			exit $RETVAL
+		fi
+
+		isPrimary $RESOURCE
+		PRIMARY=$?
+
+		setLocal
+		isMounted $RESOURCE
+		MOUNTED=$?
+
+		if [ $PRIMARY -eq 0 -a $MOUNTED -eq 0 ]; then
+			$0 $RESOURCE primary && 
+			$0 $RESOURCE fsck && 
+			$0 $RESOURCE mount
+			RV=$?
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+		if [ $PRIMARY -eq 1 -a $MOUNTED -eq 0 ]; then
+			$0 $RESOURCE fsck && 
+			$0 $RESOURCE mount
+			RV=$? 
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+		if [ $MOUNTED -eq 1 ]; then
+			succed "Already in master state : nothing to do" 
+			RV=$? 
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+		if [ $RETVAL -ne 0 -a $PRIMARY -eq 0 ]; then
+			$0 $RESOURCE secondary 
+			RV=$? 
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+
+		if [ $RETVAL -eq 0 ]; then
+			setMasterBoot $RESOURCE
+		fi
+		;;
+
+	slave)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll slave
+			exit $RETVAL
+		fi
+
+		setLocal
+
+		isMounted $RESOURCE
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then
+			rudeUnMount $RESOURCE $LOCAL_DEVICE
+			RETVAL=$?
+		fi
+
+		# Only become secondary if umount succed
+		if [ $RETVAL -eq 0 ]; then
+			$0 $RESOURCE secondary
+			setLocal
+			drbdsetup $LOCAL_DEVICE wait
+			RETVAL=$?
+			setSlaveBoot $RESOURCE
+		fi
+		;;
+
+	mount)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll mount
+			exit $RETVAL
+		fi
+
+		setLocal
+
+		isMounted $RESOURCE
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then 
+			succed "Device on $LOCAL_DEVICE already mounted"
+			exit 0
+		fi
+
+		action "Mounting shared device on $LOCAL_DEVICE" \
+			mount $LOCAL_DEVICE
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+		;;
+
+	umount)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll umount
+			exit $RETVAL
+		fi
+
+		setLocal
+
+		isMounted $RESOURCE
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 0 ]; then
+			succed "$LOCAL_DEVICE is already unmounted"
+			exit 0
+		fi
+
+		action "Unmounting shared device on $LOCAL_DEVICE " \
+			umount $LOCAL_DEVICE
+
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+		;;
+
+	fsck)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll fsck
+			exit $RETVAL
+		fi
+
+		setLocal
+		isMounted $RESOURCE
+		MOUNTED=$?
+
+		if [ $MOUNTED -eq 1 ]; then
+			$0 $RESOURCE umount 
+			RV=$? 
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+
+		if [ $RETVAL -eq 1 ]; then
+			failed "$LOCAL_DEVICE still mounted can't check"
+			exit 1
+		fi
+
+		isPrimary $RESOURCE
+		if [ $? -eq 1 ]; then
+			echo -n "performing fsck on $RESOURCE " 
+			$LOCAL_FSCK $LOCAL_DEVICE > /dev/null 2>/dev/null
+			RV=$?
+			[ $RV -eq 0 -o $RV -eq 1 ] && RETVAL=0
+			[ $RETVAL -eq 0 ] && success || failure
+			echo
+		else
+			failed "Can not perform fsck on secondary $RESOURCE "
+			RETVAL=1
+		fi
+
+		if [ $MOUNTED -eq 1 ]; then 
+			$0 $RESOURCE mount
+			RV=$?
+			[ $RV -eq 0 ] && RETVAL=$RV
+		fi
+		;;	
+
+	resync)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll resync
+			exit $RETVAL
+		fi
+
+		isPrimary
+		PRIMARY=$?
+
+		if [ $PRIMARY -eq 0 ]; then
+			# TODO:DRDB sometimes lies about its connection status !!
+			isConnected
+			CONNECTED=$?
+
+			if [ $CONNECTED -eq 1 ]; then
+				setLocal
+
+				rudeUnMount $RESOURCE $LOCAL_DEVICE
+				MOUNTED=$?
+
+				if [ $MOUNTED -eq 0 ]; then
+					drbdsetup $LOCAL_DEVICE repl
+					RETVAL=$?
+				else
+					failed "unmount failed, you must have a SERIOUS problem"
+				fi
+			else
+				failed "The node is not connected to the primary"
+				RETVAL=1
+			fi
+		else
+			failed "$LOCAL_DEVICE is primary. The command must be run from a connected slave"
+			RETVAL=1
+		fi
+		;;
+		
+	status)
+		if [ -r /proc/drbd ]; then
+			cat /proc/drbd
+		else
+			failed "DRBD module not loaded."
+			RETVAL=1
+		fi
+		;;
+
+	running)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll running
+			exit $RETVAL
+		fi
+
+		if [ -r /proc/drbd ]; then
+			isPrimary $RESOURCE
+			if [ $? -eq 1 ]; then
+				succed "Primary"
+			else
+				succed "Secondary"
+			fi
+		else
+			failed "Error drbd not loaded"
+		fi
+		;;
+	
+	boot)
+		if [ -n "$RESOURCE" ]; then
+			. $CONFIG/$RESOURCE
+		else
+			runForAll boot
+			exit $RETVAL
+		fi
+
+		isMasterBoot $RESOURCE
+		if [ $? -eq 1 ]; then
+			succed "Master"
+		else
+			succed "Slave"
+		fi
+		;;
+
+	help)
+		echo "Usage: $0 [resource] [command]"
+		echo
+		echo "command can be :"
+		echo
+		echo "master : set drbd as primary,fsck the volume and mount it"
+		echo "slave  : set drbd as secondary, umount the volume if needed"
+		echo "mount  : mount the volume"
+		echo "umount : unmount the volume"
+		echo "fsck   : fsck the volume"
+		echo "resync : force a full resynchronisation of the slave."
+		echo "         only work on the slave"
+		echo "status : display drdb status (/proc/drdb)"
+		echo "running: Return the string 'Primary' or 'Secondary'"
+		echo "         depending on the node settings"
+		echo "boot   : Return the string 'Master' or 'Slave'"
+		echo "         Depending how the device is going to be bring"
+		echo "         at boot time"
+		echo "help   : Contact the mailing list to learn about this option"
+		RETVAL=1
+		;;
+	*)
+		$0 help
+		;;
+esac
+
+exit $RETVAL
