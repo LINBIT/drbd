@@ -929,7 +929,8 @@ void drbdd(int minor)
 	case Primary:   
 		tl_clear(&drbd_conf[minor]);
 		clear_bit(ISSUE_BARRIER,&drbd_conf[minor].flags);
-		drbd_md_inc(minor,ConnectedCnt);
+		if(!test_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags))
+			drbd_md_inc(minor,ConnectedCnt);
 		drbd_md_write(minor);
 		break;
 	case Secondary: 
@@ -944,6 +945,7 @@ void drbdd(int minor)
 	}
 	drbd_conf[minor].pending_cnt = 0;
 	del_timer(&drbd_conf[minor].a_timeout);
+	clear_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 }
 
 int drbdd_init(struct Drbd_thread *thi)

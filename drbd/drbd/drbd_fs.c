@@ -355,6 +355,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			return -ENXIO;
 
 		fsync_dev(MKDEV(MAJOR_NR, minor));
+		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 		drbd_thread_stop(&drbd_conf[minor].syncer);
 		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);
@@ -371,6 +372,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			return -EBUSY;
 
 		fsync_dev(MKDEV(MAJOR_NR, minor));
+		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[minor].flags);
 		drbd_thread_stop(&drbd_conf[minor].syncer);
 		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);

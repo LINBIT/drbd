@@ -202,6 +202,7 @@ struct drbd_event {
 #define SEND_PING         2
 #define WRITER_PRESENT    3
 #define SEND_POSTPONE     4
+#define DO_NOT_INC_CONCNT 5
 
 struct Drbd_Conf {
 	struct net_config conf;

@@ -127,7 +127,7 @@ void ds_buffer_alloc(struct ds_buffer *this,int minor)
 
 void ds_buffer_free(struct ds_buffer *this)
 {
-	free_page((unsigned long)this->buffers);
+	free_page((unsigned long)this->buffers); // correct ?
 	kfree(this->blnr);
 }
 
