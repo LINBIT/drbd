@@ -62,6 +62,7 @@ case "$1" in
 		exit 20
 	    fi
 	done
+	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd  # for RedHat
 	echo "."
 	$DRBDADM wait_con_int # User interruptible version of wait_connect all
 	;;
@@ -69,6 +70,7 @@ case "$1" in
 	echo -n "Stopping all DRBD resources"
 	$DRBDADM down all
 	$RMMOD drbd
+	[ -f /var/lock/subsys/drbd ] && rm /var/lock/subsys/drbd
 	echo "."
 	;;
     status)
