@@ -419,8 +419,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		 */
 		// return i;
 		drbd_panic("Cannot allocate act_log\n");
-		set_current_state(TASK_ZOMBIE);
-		schedule(); // drbdsetup suicide...
+		drbd_suicide();
 	}
 
 	if (md_gc_valid > 0) {

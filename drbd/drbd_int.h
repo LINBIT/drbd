@@ -1406,3 +1406,13 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #define dump_packet(ignored...) ((void)0)
 #endif
 
+static inline void drbd_suicide(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
+	set_current_state(TASK_ZOMBIE);
+#else
+	current->exit_state = EXIT_ZOMBIE;
+#endif
+	schedule();
+}
+
