@@ -112,6 +112,18 @@ else
 	@rm -f .kernelrelease*
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 	@mv .kernelrelease.new .kernelrelease
+	@echo -n "Memorizing module configuration ... "
+	@{ echo -e "#\n# drbd.o was compiled with"          ; \
+	  echo "#  `gcc -v 2>&1 | tail -1`"                 ; \
+	  echo "# against this kernelrelease:"              ; \
+	  sed 's/^/#  /' .kernelrelease                     ; \
+          echo    "# kernel .config from"                   ; \
+	  echo -n "#  $(KDIR)/.config"                      ; \
+          test -L "$(KDIR)" && echo "	alias"   &&           \
+	  echo "#  $$(readlink $(KDIR))/.config" || echo "" ; \
+	  echo -e "# follows\n#\n"                             ; \
+	  cat $(KDIR)/.config ; } | gzip > .kernel.config.gz
+	@echo "done."
 
   ifneq ($(KDIR_Makefile_PATCHLEVEL),6)
     # obsolete in 2.6 ...
@@ -119,7 +131,6 @@ else
 	@echo "tying to make dep ..."
 	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) dep || \
          echo "I'll ignore this error, but this can cause inconsistencies!"
-	@echo "done."
 
     kbuild: dep
   endif

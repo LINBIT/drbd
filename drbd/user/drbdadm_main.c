@@ -42,7 +42,7 @@
 
 // basic format
 #define INDENT "    "
-#define FMT    INDENT "%-12s"
+#define FMT    INDENT "%-14s"
 #define BFMT   INDENT FMT "\n"
 // assignment format
 #define AFMT0 FMT INDENT " = %s\n"

@@ -70,19 +70,16 @@ test $(echo -e "#include <linux/version.h>\ndrbd_kernel_release UTS_RELEASE" |
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
+[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 mkdir -p %{buildroot}
 
-skip_doc="%{?skip_make_doc:DB2MAN= DB2HTML= DB2PS= DB2PDF=}"
-make clean $skip_doc
+make clean
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
-make all PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} $skip_doc
-
-# sanity check
-test %{kernelversion} = $(<drbd/.kernelrelease)
+make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
 
 %install
-make PREFIX=%{buildroot}/ MANDIR=%{_mandir} install
+make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd documentation
 mv HOWTO HOWTO.orig
 mkdir HOWTO
@@ -120,18 +117,17 @@ ___
 %files -f %{_builddir}/%{name}-%{version}/file.list
 %defattr(755,root,root)
 /sbin/drbdsetup
-/etc/ha.d/resource.d/datadisk
+/sbin/drbdadm
+/etc/ha.d/resource.d/drbddisk
 
 %defattr(644,root,root)
 %config(noreplace) /etc/drbd.conf
-
-%defattr(700,root,root)
-%dir /var/lib/drbd
 
 %defattr(-,root,root)
 %{_mandir}/man8/datadisk.8.gz
 %{_mandir}/man8/drbd.8.gz
 %{_mandir}/man8/drbdsetup.8.gz
+%{_mandir}/man8/drbdadm.8.gz
 %{_mandir}/man5/drbd.conf.5.gz
 %{_mandir}/ja/man8/datadisk.8.gz
 %{_mandir}/ja/man8/drbd.8.gz
@@ -143,10 +139,10 @@ ___
 %{_mandir}/pt_BR/man5/drbd.conf.5.gz
 %doc scripts/drbd.conf
 %doc documentation/NFS-Server-README.txt
-%doc documentation/drbd-article.html
 %doc documentation/HOWTO
 %doc COPYING
 %doc README
+%doc file.list
 
 #%files -n kernel%{?ksmp}-module-drbd
 %files km-%{krelver}
@@ -155,8 +151,6 @@ ___
 %doc drbd/k-config-%{kernelversion}.gz
 
 %post
-uname -r | grep BOOT || /sbin/depmod -a > /dev/null 2>&1 || true
-
 chkconfig --add drbd
 
 %preun
@@ -178,6 +172,7 @@ fi
 
 #%post -n kernel%{?ksmp}-module-drbd
 %post km-%{krelver}
+uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 #%postun -n kernel%{?ksmp}-module-drbd
@@ -185,137 +180,7 @@ fi
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Fri Mar 10 2004 Philipp Reisner <philipp.reisner@linbit.com> [0.6.12-1]
-- With the non-blocking IO hints, a bug was introduced that could
-  lead to partially sent IO hints. -> loss of connetion. 
-  This issue is fixed now.
-- Fix to range check of nice value in drbdsetup
-- Updates to build system (Makefile, Makefile.SuSE-9.0)
+* Wed Sep 24 2003 21:48:39 +0100 Lars Ellenberg <l.g.e@web.de>
+- drbd (0.7_pre2-1)
+  FIXME write changelog :^)
 
-* Fri Feb  6 2004 Lars Ellenberg <Lars.Ellenberg@linbit.com> [0.6.11-1]
-- drbd (0.6.11-1)
-- fix for timeout when asender is dead
-- fix for blocking bottom halves or bdflush and the like in
-  low memory situations
-- included register_ioctl32_conversion for sparc64,ppc64,x86_64
-- improved documentation
-- improved build system
-- added Makefile-SuSE-9.0, which I use to generate all rpms for
-  the shipped SuSE kernels
-- because "kernel-module-drbd-0.6.10+cvs-3_2.4.21-166_p.i586.rpm"
-  looks too weird, I choose to have the kernel part named like
-  "drbd-km-2.4.21-166-psmp-0.6.10+cvs-3"
-
-* Wed Feb  4 2004 Lars Ellenberg <Lars.Ellenberg@linbit.com>
-- merged Sean Reifschneiders changes with my own changes which already
-  where in cvs
-
-* Tue Feb  3 2004 Sean Reifschneider <jafo-rpms@tummy.com> [0.6.10-2]
-- Moved DRBD driver out into "kernel-module-drbd" RPM.
-- The kernel-module-drbd module has a release based on the kernel name,
-  allowing one instance of kernel-module-drbd to be installed for each
-  kernel on the box.
-- Removed the "drbd.o.old" pre/post code.
-
-* Wed Dec 12 2003 15:10:44 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.10-1)
-- With 0.6.9 there was a bug introduced which prevented the sending 
-  of ACK packets during resync. Fixed.
-- A fix to drbdsetup's wait_connect command.
-  Replaced all invocations of the sleep_on() family functions with the 
-  invocations of the wait_event() macros. This removes lost wakup events 
-  and race conditions.
-- New implementation of drbd_wait_ee(). This makes the 
-  "(BUG?) Moving bh=%p to done_ee" go away.
-- Handle the case if vmalloc() of the bitmap fails.
-
-* Wed Nov 26 2003 17:39:19 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.9-1)
-- New module build system (using kernel source tree build system)
-- New net section option 'ko-count'. It allows you to kick out a 
-  secondary node which does no longer process data in acceptable time. 
-  Its default value is 0 which disables this feature.
-- Changing syncgroups while resync runs has shows now the correct behaviour.
-- In case thread creations fails DRBD would deadlock on its own
-  semaphore. Fixed now.
-- BKL is no longer used on Linux-2.4.x.
-- Now you can stack mapping block devices like LVM2 (and maybe md) on 
-  top of drbd (a one character fix).
-- drbdsetup wait_connect on a StandAlone node looked like a timeout and
-  forced primary. fixed.
-- if drbdsetup wait_* in fact did timeout this looked like a failed ioctl.
-  this bug was newly introduced in 0.6.8. fixed.
-- A fix to a race in _drbd_alloc_ee(). You could trigger this race if
-  your filesystem uses a blocksize < 4K and your machine has multiple CPUs.
-  By Eric W. Biederman.
-- A maybe bugfix regarding calls to free_page() by Eric W. Biederman.
-- A cleanup patch to drbd_process_done_ee() by Eric W. Biederman.
-
-* Mon Oct 20 2003 11:43:00 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.8-1)
-- Two fixes to the sync-group functionality.
-
-* Mon Jul 28 2003 14:40:26 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.7-1)
-- A fix to a bug that could cause data corruption if you use a 
-  other blocksize than 4k to access the DRBD device.
-- A fix to a SMP race in the syncer code. The problem was tirggered
-  when using DRBD on QLogic fiber channel adapters.
-- Replaced various calls to sleep_on() variants with the wait_event()
-  macros. -- This removes potential (, non-critical) SMP races.
-- This release includes the sync-group option.
-
-* Mon Jul 28 2003 14:40:26 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.6-1)
-- In the 0.6.5 release the secondary_remote command was badly broken,
-  it succeeded when it should fail silently. This is fixed now.
-- Probabely in all previous releases, the resyncer thread did not
-  exit properly if the secondary node goes away during resync. 
-  This was not fatal sind the resyncher thread did exit at soon
-  as it gets a network error. This is fixed now.
-- Some new switches to the drbd script.
-
-* Sun Jul 06 2003 13:29:00 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.5-1)
-- Improvements to the build system
-- Now it is possible to tune the socket send buffer size via drbdsetup/
-  drbd.conf. This is especially usefull for WAN mirroring / using
-  protocol A.
-- Compatibility code to compile DRBD under RedHat 9.0 (RH's version of
-  Linux-2.4.20)
-- Improved sample drbd.conf file
-
-* Thu May 01 2003 21:00:00 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.4-1)
-- Reworked build system (i.e. better Makefiles)
-- SyncAll works forward instead of backwards. Improves performance on
-  some storage controlers.
-- Reworked /etc/init.d/drbd script (i.e. better support of
-  different bash releases)
-
-* Thu Mar 20 2003 20:23:40 +0100 Philipp Reisner <phil@linbit.com>
-- drbd (0.6.3-1)
--  * Lockup of primary if secondary fails during resync. Fixed. (Stupid!)
--  * Probabely SMP only deadlock in the drop-conection code path.
--  * Improved connect code. (The old code could trap into a distributed
--    deadlock, resulting in an endless connect/disconnect loop.)
--  * The 'BitMap too small bug' was actually caused by a patch in
--    SuSE's distribution kernel. This patch makes DRBD 'more' compatible
--    with SuSE's kernel.
--  * Improved code to allocate buffers for the rsynchronisation process.
--    The old code allocated physical adjacent pages although the syncer
--    does not need them! The old code could fail under high memory pressure.
-
-* Tue Feb 11 2003 15:58:49 +0100 Philipp Reisner <phil@linbit.com>
--  drbd (0.6.2-1)
--
--  * SMP fix in drbd_dio_end_sec()
--  * /etc/init.d/drbd knows about returncodes of fsck
--  * SUSE style rcdrbd
--  * Fixes for uninstall Target of the Makefiles.
-
-* Thu Aug 15 2002 Omar Kilani <ok@mailcall.com.au>
-- Do not chkconfig --del on an update.
-
-* Wed Aug 14 2002 Omar Kilani <ok@mailcall.com.au>
-- Initial revision (a very hacked up e1000.spec file)

@@ -23,6 +23,9 @@ SUBDIRS     = user drbd scripts benchmark documentation #testing
 ALLSUBDIRS  = user drbd scripts benchmark documentation testing
 REL_VERSION = $(word 3, $(shell grep REL_VERSION drbd/linux/drbd_config.h))
 
+LN_S = ln -s
+RPMBUILD=rpmbuild
+
 all:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i ; done
 	@ echo -e "\n\tBuild successful."
@@ -51,23 +54,21 @@ uninstall:
 
 DIST_VERSION=$(subst -,_,$(REL_VERSION))
 check_changelogs_up2date:
-	@ up2date=true; \
-	if ! grep "^Version: $(DIST_VERSION)" >/dev/null 2>&1 drbd.spec; \
+	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
+	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
+	                     -e '/^- *drbd ('"$$dver_re"'-/p' \
+	                     -e '/^\*.* \['"$$dver_re"'-/p' < drbd.spec.in) ; \
+	if test -z "$$in_changelog" ; \
 	then \
-	   echo "You need to update the Version: tag in drbd.spec to $(DIST_VERSION)"; \
+	   echo "You need to update the %changelog in drbd.spec.in"; \
 	   up2date=false; fi; \
-	if ! sed -e '0,/^%changelog/d' drbd.spec \
-	   | grep "^- drbd ($(DIST_VERSION)-" >/dev/null 2>&1 ; \
+	if ! grep "^drbd ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
-	   echo "You need to update the %changelog in drbd.spec, $(DIST_VERSION) missing"; \
-	   up2date=false; fi; \
-	if ! grep "^drbd ($(DIST_VERSION)-" >/dev/null 2>&1 debian/changelog; \
-	then \
-	   echo "You need to update debian/changelog, $(DIST_VERSION) missing"; \
+	   echo "You need to update debian/changelog"; \
 	   up2date=false; fi ; \
-	if ! grep "^drbd_$(DIST_VERSION)-" >/dev/null 2>&1 debian/files; \
+	if ! grep "^drbd_$$dver_re-" >/dev/null 2>&1 debian/files; \
 	then \
-	   echo "You need to update debian/files, $(DIST_VERSION) missing"; \
+	   echo "You need to update debian/files"; \
 	   up2date=false; fi ; \
 	$$up2date
 
@@ -75,7 +76,7 @@ update.filelist:
 	cvs status | grep -o "/drbd/drbd/[^,]*" | \
 	sed "s/Attic\///;                  \
 	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist
-	find documentation -name "*.[58]" -o -name "*.html" | \
+	find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist
@@ -95,22 +96,33 @@ ifeq ($(FORCE),)
 tgz: check_changelogs_up2date doc
 endif
 
-# maybe dist/RPMS/$(ARCH) instead of i386 ?
+KDIR := $(shell echo /lib/modules/`uname -r`/build)
+KVER := $(shell \
+	echo -e "\#include <linux/version.h>\ndrbd_kernel_release UTS_RELEASE" | \
+        gcc -nostdinc -E -P -I$(KDIR)/include - 2>&1 | \
+        sed -ne 's/^drbd_kernel_release "\(.*\)".*/\1/p')
+
+# maybe even dist/RPMS/$(ARCH) ?
 rpm: tgz
 	mkdir -p dist/BUILD \
-	         dist/RPMS/i386 \
+	         dist/RPMS  \
 	         dist/SPECS \
 	         dist/SOURCES \
-	         dist/SRPMS \
 	         dist/TMP \
-	         dist/install
+	         dist/install \
+	         dist/SRPMS
 	[ -h dist/SOURCES/drbd-$(DIST_VERSION).tar.gz ] || \
 	  $(LN_S) $(PWD)/drbd-$(DIST_VERSION).tar.gz \
 	          $(PWD)/dist/SOURCES/drbd-$(DIST_VERSION).tar.gz
-	[ -f dist/SPECS/drbd.spec ] || \
-	  sed -e 's/^\(Packager:\).*/\1 ${USER}@${HOSTNAME}/;' drbd.spec \
-	  > dist/SPECS/drbd.spec
+	if test drbd.spec.in -nt dist/SPECS/drbd.spec ; then \
+	   sed -e "s/^\(Version:\).*/\1 $(DIST_VERSION)/;" \
+	       -e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;" < drbd.spec.in \
+	   > dist/SPECS/drbd.spec ; \
+	fi
 	$(RPMBUILD) -ba \
-	    --define "buildroot $(PWD)/dist/install" \
 	    --define "_topdir $(PWD)/dist" \
+	    --define "buildroot $(PWD)/dist/install" \
+	    --define "kernelversion $(KVER)" \
+	    --define "kdir $(KDIR)" \
 	    $(PWD)/dist/SPECS/drbd.spec
+	@echo "You have now:" ; ls -l dist/*RPMS/*/*.rpm
