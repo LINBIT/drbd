@@ -1129,7 +1129,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			bh = kmalloc(sizeof(struct buffer_head),GFP_KERNEL);
 			if (!bh) {
 				printk(KERN_ERR DEVICE_NAME
-				       ": coul'd not kmalloc()\n");
+				       ": could not kmalloc()\n");
 				return;
 			}
 
@@ -1141,6 +1141,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 #else
 			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
 #endif
+			
+#ifdef BH_JWrite
+			if (test_bit(BH_JWrite, &req->bh->b_state))
+				set_bit(BH_JWrite, &bh->b_state);
+#endif			
+
 			bh->b_list = BUF_LOCKED;
 			bh->b_dev_id = req;
 			bh->b_end_io = drbd_dio_end;
@@ -2202,9 +2208,9 @@ restart:
 
 	rbh.b_dev = drbd_conf[minor].lo_device;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-			bh->b_state = (1 << BH_Req) | (1 << BH_Mapped);
+	rbh.b_state = (1 << BH_Req) | (1 << BH_Mapped);
 #else
-			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+	rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
 #endif
 	rbh.b_list = BUF_LOCKED;
 	rbh.b_data = page;
@@ -2252,9 +2258,9 @@ restart:
 			rbh.b_blocknr=block_nr;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-			bh->b_state = (1 << BH_Req) | (1 << BH_Mapped);
+			rbh.b_state = (1 << BH_Req) | (1 << BH_Mapped);
 #else
-			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+			rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
 #endif
 			init_waitqueue_head(&rbh.b_wait);
 			  /* Hmmm, why do I need this ? */
