@@ -189,10 +189,8 @@ PORT			  {WSC}port{ASSIGN}{NUM}
 }
 
 <GLOBAL>{
-  minor_count		do_assign(NUM); return TK_MINOR_COUNT;
-  minor-count		do_assign(NUM); return TK_MINOR_COUNT;
-  disable_io_hints	yy_push_state(SEMICOLON); return TK_DISABLE_IO_HINTS;
-  disable-io-hints	yy_push_state(SEMICOLON); return TK_DISABLE_IO_HINTS;
+  minor[-_]count	do_assign(NUM); return TK_MINOR_COUNT;
+  disable[-_]io[-_]hints yy_push_state(SEMICOLON); return TK_DISABLE_IO_HINTS;
   {NDELIM}		expect_error("'minor-count|disable-io-hints'");
 }
 
