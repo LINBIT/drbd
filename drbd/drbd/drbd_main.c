@@ -1475,11 +1475,11 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		return 0;
 	}
 
+	if(sector >= sbm->dev_size*2) return 0;
+	if(esector >= sbm->dev_size*2) esector = sbm->dev_size*2 - 1;
+
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
-
-	ERR_IF ((sbnr >> 8) >= sbm->size) return 0;
-	ERR_IF ((ebnr >> 8) >= sbm->size) return 0;
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
@@ -1488,6 +1488,7 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
 			if(!test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) ret+=BM_NS;
 			__set_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
+			ret += bm_end_of_dev_case(sbm);
 		}
 	} else { // bit == 0
 		sector_t dev_size;
@@ -1521,12 +1522,16 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
    returns this 'something less' iff the last bit is set.  
    0               in case the device's size is divisible by 4
    -2,-4 or -6     in the other cases
+   If the bits beyond the device's size are set, they are cleared
+   and their weight (-8 per bit) is added to the return value.
  */
 int bm_end_of_dev_case(struct BitMap* sbm)
 {
 	unsigned long bnr;
 	unsigned long* bm;
 	int rv=0;
+	int used_bits;      // number ob bits used in last word
+	unsigned long mask;   
 	
 	bm = sbm->bm;
 
@@ -1535,6 +1540,13 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 		if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) {
 			rv = (sbm->dev_size*2) % BM_NS - BM_NS;
 		}
+	}
+	used_bits = BITS_PER_LONG - ( sbm->size*8 - sbm->dev_size/BM_BPS );
+	mask = ~( (1<<used_bits) - 1 ); // mask of bits to clear;
+	mask &= bm[sbm->size/sizeof(long)-1];
+	if( mask ) {
+		rv = -8 * parallel_bitcount(mask);
+		bm[sbm->size/sizeof(long)-1] &= ~mask;
 	}
 
 	return rv;
