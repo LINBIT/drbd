@@ -40,9 +40,7 @@
 #include <linux/file.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)) || defined(HAVE_MM_INLINE_H)
 #include <linux/mm_inline.h>
-#endif
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
 #include <linux/pkt_sched.h>
@@ -202,10 +200,10 @@ STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
 	list_del(le);
 
 	page = drbd_bio_get_page(&e->private_bio);
-ONLY_IN_26(
+
 	D_ASSERT(page == e->ee_bvec.bv_page);
 	page = e->ee_bvec.bv_page;
-)
+
 	kmem_cache_free(drbd_ee_cache, e);
 	mdev->ee_vacant--;
 
@@ -237,47 +235,9 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 	return count;
 }
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
 #define GFP_TRY	( __GFP_HIGHMEM | __GFP_NOWARN )
-#else
-#define GFP_TRY	( __GFP_HIGHMEM )
-#endif
 
 STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-STATIC void prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
-{
-	unsigned long flags;
-
-	wait->flags &= ~WQ_FLAG_EXCLUSIVE;
-	spin_lock_irqsave(&q->lock, flags);
-	if (list_empty(&wait->task_list))
-		__add_wait_queue(q, wait);
-	set_current_state(state);
-	spin_unlock_irqrestore(&q->lock, flags);
-}
-
-STATIC void finish_wait(wait_queue_head_t *q, wait_queue_t *wait)
-{
-	unsigned long flags;
-
-	__set_current_state(TASK_RUNNING);
-
-	spin_lock_irqsave(&q->lock, flags);
-	list_del_init(&wait->task_list);
-	spin_unlock_irqrestore(&q->lock, flags);
-}
-
-#define DEFINE_WAIT(name)						\
-	wait_queue_t name = {						\
-		.task		= current,				\
-		.task_list	= {	.next = &name.task_list,	\
-					.prev = &name.task_list,	\
-				},					\
-	}
-
-#endif
 
 /**
  * drbd_get_ee: Returns an Tl_epoch_entry; might sleep. Fails only if
@@ -332,10 +292,10 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
 	e=list_entry(le, struct Tl_epoch_entry, w.list);
-ONLY_IN_26(
+
 	D_ASSERT(e->private_bio.bi_idx == 0);
 	drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
-)
+
 	e->block_id = !ID_VACANT;
 	SET_MAGIC(e);
 	return e;
@@ -537,12 +497,6 @@ STATIC int drbd_recv_short(drbd_dev *mdev, void *buf, size_t size)
 	return rv;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-# define SK_(x)		x
-#else
-# define SK_(x)		sk_ ## x
-#endif
-
 int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 {
 	mm_segment_t oldfs;
@@ -614,9 +568,8 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	if (err) {
 		ERR("sock_creat(..)=%d\n", err);
 	}
-
-	sock->sk->SK_(rcvtimeo) =
-	sock->sk->SK_(sndtimeo) =  mdev->conf.try_connect_int*HZ;
+	sock->sk->sk_rcvtimeo =
+	sock->sk->sk_sndtimeo =  mdev->conf.try_connect_int*HZ;
 
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) mdev->conf.other_addr,
@@ -640,9 +593,9 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 		// FIXME return NULL ?
 	}
 
-	sock2->sk->SK_(reuse)    = 1; /* SO_REUSEADDR */
-	sock2->sk->SK_(rcvtimeo) =
-	sock2->sk->SK_(sndtimeo) =  mdev->conf.try_connect_int*HZ;
+	sock2->sk->sk_reuse    = 1; /* SO_REUSEADDR */
+	sock2->sk->sk_rcvtimeo =
+	sock2->sk->sk_sndtimeo =  mdev->conf.try_connect_int*HZ;
 
 	err = sock2->ops->bind(sock2,
 			      (struct sockaddr *) mdev->conf.my_addr,
@@ -695,7 +648,7 @@ int drbd_connect(drbd_dev *mdev)
 		}
 		if(mdev->cstate==Unconnected) return 0;
 		if(signal_pending(current)) {
-			drbd_flush_signals(current);
+			flush_signals(current);
 			smp_rmb();
 			if (get_t_state(&mdev->receiver) == Exiting)
 				return 0;
@@ -704,34 +657,32 @@ int drbd_connect(drbd_dev *mdev)
 
  connected:
 
-	msock->sk->SK_(reuse)=1; /* SO_REUSEADDR */
-	sock->sk->SK_(reuse)=1; /* SO_REUSEADDR */
+	msock->sk->sk_reuse=1; /* SO_REUSEADDR */
+	sock->sk->sk_reuse=1; /* SO_REUSEADDR */
 
 	/* to prevent oom deadlock... */
 	/* The default allocation priority was GFP_KERNEL */
-	sock->sk->SK_(allocation) = GFP_DRBD;
-	msock->sk->SK_(allocation) = GFP_DRBD;
+	sock->sk->sk_allocation = GFP_DRBD;
+	msock->sk->sk_allocation = GFP_DRBD;
 
-	sock->sk->SK_(priority)=TC_PRIO_BULK;
-	NOT_IN_26(sock->sk->tp_pinfo.af_tcp.nonagle=0;)
-	ONLY_IN_26( tcp_sk(sock->sk)->nonagle = 0;)
+	sock->sk->sk_priority=TC_PRIO_BULK;
+	tcp_sk(sock->sk)->nonagle = 0;
 	// FIXME fold to limits. should be done in drbd_ioctl
-	sock->sk->SK_(sndbuf) = mdev->conf.sndbuf_size;
-	sock->sk->SK_(rcvbuf) = mdev->conf.sndbuf_size;
+	sock->sk->sk_sndbuf = mdev->conf.sndbuf_size;
+	sock->sk->sk_rcvbuf = mdev->conf.sndbuf_size;
 	/* NOT YET ...
-	 * sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
-	 * sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
-	 * THINK HandShake timeout, hardcoded for now: */
-	sock->sk->SK_(sndtimeo) =
-	sock->sk->SK_(rcvtimeo) = 2*HZ;
-	sock->sk->SK_(userlocks) |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
+	 * sock->sk->sk_sndtimeo = mdev->conf.timeout*HZ/20;
+	 * sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
+	 * first set it to the HandShake timeout, wich is hardcoded for now: */
+	sock->sk->sk_sndtimeo =
+	sock->sk->sk_rcvtimeo = 2*HZ;
+	sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 
-	msock->sk->SK_(priority)=TC_PRIO_INTERACTIVE;
-	NOT_IN_26(sock->sk->tp_pinfo.af_tcp.nonagle=1;)
-	ONLY_IN_26(tcp_sk(sock->sk)->nonagle = 1;)
-	msock->sk->SK_(sndbuf) = 2*32767;
-	msock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
-	msock->sk->SK_(rcvtimeo) = mdev->conf.ping_int*HZ;
+	msock->sk->sk_priority=TC_PRIO_INTERACTIVE;
+	tcp_sk(sock->sk)->nonagle = 1;
+	msock->sk->sk_sndbuf = 2*32767;
+	msock->sk->sk_sndtimeo = mdev->conf.timeout*HZ/20;
+	msock->sk->sk_rcvtimeo = mdev->conf.ping_int*HZ;
 
 	mdev->data.socket = sock;
 	mdev->meta.socket = msock;
@@ -747,8 +698,8 @@ int drbd_connect(drbd_dev *mdev)
 	clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
 	clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
 
-	sock->sk->SK_(sndtimeo) = mdev->conf.timeout*HZ/20;
-	sock->sk->SK_(rcvtimeo) = MAX_SCHEDULE_TIMEOUT;
+	sock->sk->sk_sndtimeo = mdev->conf.timeout*HZ/20;
+	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
 	drbd_thread_start(&mdev->asender);
 
@@ -818,7 +769,7 @@ STATIC struct Tl_epoch_entry *
 read_in_block(drbd_dev *mdev, int data_size)
 {
 	struct Tl_epoch_entry *e;
-	drbd_bio_t *bio;
+	struct bio *bio;
 	int rr;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -832,7 +783,6 @@ read_in_block(drbd_dev *mdev, int data_size)
 	drbd_bio_kunmap(bio);
 
 	if ( rr != data_size) {
-		NOT_IN_26(clear_bit(BH_Lock, &bio->b_state);)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
@@ -863,7 +813,7 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 			   sector_t sector, int data_size)
 {
-	drbd_bio_t *bio;
+	struct bio *bio;
 	int ok,rr;
 
 	bio = req->master_bio;
@@ -1590,7 +1540,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
 	struct list_head *le;
-	drbd_bio_t *bio;
+	struct bio *bio;
 	LIST_HEAD(workset);
 
 	/*
@@ -1983,7 +1933,7 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 		else {
 			if (signal_pending(current)) {
-				drbd_flush_signals(current);
+				flush_signals(current);
 			}
 			spin_lock(&thi->t_lock);
 			D_ASSERT(thi->t_state == Restarting);
@@ -2008,7 +1958,7 @@ STATIC int got_Ping(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_PingAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	// restore idle timeout
-	mdev->meta.socket->sk->SK_(rcvtimeo) = mdev->conf.ping_int*HZ;
+	mdev->meta.socket->sk->sk_rcvtimeo = mdev->conf.ping_int*HZ;
 
 	return TRUE;
 }
@@ -2174,7 +2124,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			ERR_IF(!drbd_send_ping(mdev)) goto err;
 			// half ack timeout only,
 			// since sendmsg waited the other half already
-			mdev->meta.socket->sk->SK_(rcvtimeo) =
+			mdev->meta.socket->sk->sk_rcvtimeo =
 				mdev->conf.timeout*HZ/20;
 		}
 
@@ -2192,7 +2142,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		rv = drbd_recv_short(mdev,buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
-		drbd_flush_signals(current);
+		flush_signals(current);
 
 		/* Note:
 		 * -EINTR        (on meta) we got a signal
@@ -2211,7 +2161,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			ERR("meta connection shut down by peer.\n");
 			goto err;
 		} else if (rv == -EAGAIN) {
-			if( mdev->meta.socket->sk->SK_(rcvtimeo) ==
+			if( mdev->meta.socket->sk->sk_rcvtimeo ==
 			    mdev->conf.timeout*HZ/20) {
 				ERR("PingAck did not arrive in time.\n");
 				goto err;

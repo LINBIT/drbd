@@ -31,11 +31,11 @@ ifneq ($(KERNELRELEASE),)
   ifneq ($(VERSION),2)
     $(error "won't compile with this kernel version")
   endif
-  ifeq ($(findstring $(PATCHLEVEL),46),$(PATCHLEVEL))
-    include $(DRBDSRC)/Makefile-2.$(PATCHLEVEL)
-  else
+  ifneq ($(PATCHLEVEL),6)
     $(error "won't compile with this kernel version")
   endif
+
+  include $(DRBDSRC)/Makefile-2.6
 
   override CFLAGS += -I$(DRBDSRC)
   # remember KERNELRELEASE for install target
@@ -53,8 +53,6 @@ else
   DRBDSRC := $(shell pwd)
   CONFIG_BLK_DEV_DRBD := m
   export DRBDSRC CONFIG_BLK_DEV_DRBD
-
-  KDIR_Makefile_PATCHLEVEL = $(shell grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3)
 
   # to be overridden on command line:
   PREFIX := /
@@ -97,15 +95,9 @@ else
 
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
-	-test -x ../scripts/adjust_drbd_config_h.sh && \
-	 KDIR=$(KDIR) ../scripts/adjust_drbd_config_h.sh
-  ifeq ($(KDIR_Makefile_PATCHLEVEL),4)
-	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
-  else
-    # since 2.6.6 (suse: 2.6.5-dunno), this should be:
-    # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
-	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
-  endif
+    # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
+    # $(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+	$(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
 	@mv .kernelrelease.new .kernelrelease
 	@echo -n "Memorizing module configuration ... "
 	@{ echo -e "#\n# drbd.o was compiled with"          ; \
@@ -120,16 +112,6 @@ else
 	  cat $(KDIR)/.config ; } | gzip > .kernel.config.gz
 	@echo "done."
 
-  ifneq ($(KDIR_Makefile_PATCHLEVEL),6)
-    # obsolete in 2.6 ...
-    dep:
-	@echo "trying to make dep ..."
-	@$(MAKE) -s -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) dep || \
-         echo "I'll ignore this error, but this can cause inconsistencies!"
-
-    kbuild: dep
-  endif
-
   clean:
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
@@ -138,13 +120,8 @@ else
   ifneq ($(wildcard .kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
     include .kernelrelease
-    MODOBJ-4 := drbd.o
-    MODOBJ-6 := drbd.ko
-    MODOBJ   := $(MODOBJ-$(PATCHLEVEL))
-    MODSUBDIR := $(strip \
-      $(if $(wildcard /lib/modules/$(KERNELRELEASE)/kernel),\
-           kernel/drivers/block,\
-           block))
+    MODOBJ := drbd.ko
+    MODSUBDIR := kernel/drivers/block
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
 
     install:

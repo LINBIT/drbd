@@ -44,29 +44,9 @@
 
 #include <linux/blkpg.h>
 
-ONLY_IN_26(
 /* see get_sb_bdev and bd_claim */
 char *drbd_sec_holder = "Secondary DRBD cannot be bd_claimed ;)";
 char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
-)
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
-{
-       struct super_block *sb;
-
-       sb = get_super(MKDEV(MAJOR_NR, minor));
-       if(!sb) return NotMounted;
-
-       if(sb->s_flags & MS_RDONLY) {
-	       drop_super(sb);
-	       return MountedRO;
-       }
-
-       drop_super(sb);
-       return MountedRW;
-}
-#endif
 
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
@@ -236,15 +216,13 @@ STATIC
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
-	NOT_IN_26(int err;) // unused in 26 ?? cannot believe it ...
 	int i, md_gc_valid, minor, mput=0;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
 	struct file *filp2 = 0;
 	struct inode *inode, *inode2;
-	NOT_IN_26(kdev_t bdev, bdev2;)
-	ONLY_IN_26(struct block_device *bdev, *bdev2;)
+	struct block_device *bdev, *bdev2;
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -328,7 +306,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		goto fail_ioctl;
 	}
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
 	bdev = inode->i_bdev;
 	if (bd_claim(bdev, mdev)) {
 		retcode=LDMounted;
@@ -341,38 +318,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		retcode=MDMounted;
 		goto release_bdev_fail_ioctl;
 	}
-#else
-	for(i=0;i<minor_count;i++) {
-		if( i != minor &&
-		    inode->i_rdev == drbd_conf[i].backing_bdev) {
-			retcode=LDAlreadyInUse;
-			goto fail_ioctl;
-		}
-	}
-
-	if (drbd_is_mounted(inode->i_rdev)) {
-		WARN("can not configure %d:%d, has active inodes!\n",
-		     MAJOR(inode->i_rdev), MINOR(inode->i_rdev));
-		retcode=LDMounted;
-		goto fail_ioctl;
-	}
-
-	if ((err = blkdev_open(inode, filp))) {
-		ERR("blkdev_open( %d:%d ,) returned %d\n",
-		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
-		retcode=LDOpenFailed;
-		goto fail_ioctl;
-	}
-	bdev = inode->i_rdev;
-
-	if ((err = blkdev_open(inode2, filp2))) {
-		ERR("blkdev_open( %d:%d ,) returned %d\n",
-		    MAJOR(inode->i_rdev), MINOR(inode->i_rdev), err);
-		retcode=MDOpenFailed;
-		goto release_bdev_fail_ioctl;
-	}
-	bdev2 = inode2->i_rdev;
-#endif
 
 	if ( (bdev == bdev2) != (new_conf.meta_index == -1) ) {
 		retcode=LDMDInvalid;
@@ -384,7 +329,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		goto release_bdev2_fail_ioctl;
 	}
 
-	if (drbd_get_capacity(bdev) > DRBD_MAX_SECTORS) {
+	if (drbd_get_capacity(bdev) >= (sector_t)DRBD_MAX_SECTORS) {
 		retcode = LDDeviceTooLarge;
 		goto release_bdev2_fail_ioctl;
 	}
@@ -424,12 +369,13 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	mdev->read_cnt = 0;
 	mdev->writ_cnt = 0;
 
-// FIXME unclutter the code again ;)
+/* FIXME unclutter the code again...
+ * possibly rather use blk_queue_stack_limits
+ */
 /*
  * Returns the minimum that is _not_ zero, unless both are zero.
  */
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
-ONLY_IN_26({
 	request_queue_t * const q = mdev->rq_queue;
 	request_queue_t * const b = bdev->bd_disk->queue;
 
@@ -440,7 +386,6 @@ ONLY_IN_26({
 	q->hardsect_size     = max((unsigned short)512,b->hardsect_size);
 	q->seg_boundary_mask = PAGE_SIZE-1;
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
-})
 #undef min_not_zero
 
 	clear_bit(SENT_DISK_FAILURE,&mdev->flags);
@@ -520,11 +465,9 @@ ONLY_IN_26({
 	return 0;
 
  release_bdev2_fail_ioctl:
-	NOT_IN_26(blkdev_put(filp2->f_dentry->d_inode->i_bdev,BDEV_FILE);)
-	ONLY_IN_26(bd_release(bdev2);)
+	bd_release(bdev2);
  release_bdev_fail_ioctl:
-	NOT_IN_26(blkdev_put(filp->f_dentry->d_inode->i_bdev,BDEV_FILE);)
-	ONLY_IN_26(bd_release(bdev);)
+	bd_release(bdev);
  fail_ioctl:
 	if (mput) module_put(THIS_MODULE);
 	if (filp) fput(filp);
@@ -539,7 +482,6 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	struct ioctl_get_config cn;
 	memset(&cn,0,sizeof(cn));
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
 	if (mdev->backing_bdev) {
 		cn.lower_device_major = MAJOR(mdev->backing_bdev->bd_dev);
 		cn.lower_device_minor = MINOR(mdev->backing_bdev->bd_dev);
@@ -550,20 +492,6 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 		cn.meta_device_minor  = MINOR(mdev->md_bdev->bd_dev);
 		bdevname(mdev->md_bdev,cn.meta_device_name);
 	}
-#else
-	cn.lower_device_major=MAJOR(mdev->backing_bdev);
-	cn.lower_device_minor=MINOR(mdev->backing_bdev);
-	cn.meta_device_major=MAJOR(mdev->md_bdev);
-	cn.meta_device_minor=MINOR(mdev->md_bdev);
-	if (mdev->backing_bdev) {
-		strncpy(cn.lower_device_name,
-				bdevname(mdev->backing_bdev), BDEVNAME_SIZE);
-	}
-	if (mdev->md_bdev) {
-		strncpy(cn.meta_device_name,
-				bdevname(mdev->md_bdev), BDEVNAME_SIZE);
-	}
-#endif
 	cn.cstate=mdev->cstate;
 	cn.state=mdev->state;
 	cn.peer_state=mdev->o_state;
@@ -678,7 +606,6 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 {
 	int forced = 0;
 	int dont_have_good_data;
-	NOT_IN_26(int minor = mdev-drbd_conf;)
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
 
@@ -693,13 +620,6 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	if ( (newstate & Primary) && (mdev->o_state == Primary) )
 		return -EACCES;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	smp_rmb();
-	if ( (newstate & Secondary) &&
-	   (test_bit(WRITER_PRESENT,&mdev->flags) ||
-	    drbd_is_mounted(minor) == MountedRW))
-		return -EBUSY;
-#else
 	ERR_IF (mdev->this_bdev->bd_contains == 0) {
 		// FIXME this masks a bug somewhere else!
 		mdev->this_bdev->bd_contains = mdev->this_bdev;
@@ -712,8 +632,6 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
 			return -EBUSY;
 	}
-#endif
-
 
 	/* I dont have access to good data anywhere, if:
 	 *  ( I am diskless OR inconsistent )
@@ -761,12 +679,10 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->cstate_wait,
 			atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
-ONLY_IN_26(
 		if ( newstate & Secondary ) {
 			D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 			bd_release(mdev->this_bdev);
 		}
-)
 		return -EINTR;
 	}
 
@@ -795,15 +711,13 @@ ONLY_IN_26(
 	      nodestate_to_name(newstate & 0x03),
 	      nodestate_to_name(mdev->o_state)   );
 	mdev->state = (Drbd_State) newstate & 0x03;
-	if(newstate & Primary) {
-		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), FALSE ); )
-
-ONLY_IN_26(
+	if (newstate & Secondary) {
+		set_disk_ro(mdev->vdisk, TRUE );
+	} else {
 		set_disk_ro(mdev->vdisk, FALSE );
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
 		mdev->this_bdev->bd_disk = mdev->vdisk;
-)
 
 		if(test_bit(ON_PRI_INC_HUMAN,&mdev->flags)) {
 			newstate |= Human;
@@ -824,9 +738,6 @@ ONLY_IN_26(
 			    mdev->cstate >= Connected ?
 			    ConnectedCnt : ArbitraryCnt);
 		}
-	} else {
-		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), TRUE ); )
-		ONLY_IN_26( set_disk_ro(mdev->vdisk, TRUE ); )
 	}
 
 	if(!test_bit(DISKLESS,&mdev->flags) && (newstate & Secondary)) {
@@ -972,10 +883,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	long time;
 	struct Drbd_Conf *mdev;
 	struct ioctl_wait* wp;
-ONLY_IN_26(
 	struct block_device *bdev = inode->i_bdev;
 	struct gendisk *disk = bdev->bd_disk;
-)
 
 	minor = MINOR(inode->i_rdev);
 	if (minor >= minor_count) return -ENODEV;
@@ -992,38 +901,11 @@ ONLY_IN_26(
 	 * we hold the device_mutex
 	 */
 
-ONLY_IN_26(
 	D_ASSERT(bdev == mdev->this_bdev);
 	D_ASSERT(disk == mdev->vdisk);
-);
 
 	smp_rmb();
 	switch (cmd) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-/* see how sys_ioctl and blkdev_ioctl handle it in 2.6 .
- * If I understand correctly, only "private" ioctl end up here.
- */
-	case BLKGETSIZE:
-		err = put_user(drbd_get_capacity(mdev->this_bdev),(long *)arg);
-		break;
-
-#ifdef BLKGETSIZE64
-	case BLKGETSIZE64: /* see ./drivers/block/loop.c */
-		err = put_user((u64)drbd_get_capacity(mdev->this_bdev)<<9, 
-			       (u64*)arg);
-		break;
-#endif
-
-	case BLKROSET:  // THINK do we want to intercept this one ?
-	case BLKROGET:
-	case BLKFLSBUF:
-	case BLKSSZGET:
-	case BLKBSZGET:
-	case BLKBSZSET: // THINK do we want to intercept this one ?
-	case BLKPG:
-		err=blk_ioctl(inode->i_rdev, cmd, arg);
-		break;
-#endif
 	case DRBD_IOCTL_GET_VERSION:
 		err = put_user(API_VERSION, (int *) arg);
 		break;

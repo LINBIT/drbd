@@ -119,20 +119,15 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 {
 	int rv;
-	drbd_bio_t *bio = req->master_bio;
+	struct bio *bio = req->master_bio;
 
 	req->w.cb = w_is_app_read;
 	spin_lock(&mdev->pr_lock);
 	list_add(&req->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	rv=drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
-			      (unsigned long)req);
-#else
 	rv=drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
 			      (unsigned long)req);
-#endif
 	return rv;
 }
 
@@ -168,7 +163,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 
 STATIC int
 drbd_make_request_common(drbd_dev *mdev, int rw, int size,
-			 sector_t sector, drbd_bio_t *bio)
+			 sector_t sector, struct bio *bio)
 {
 	drbd_request_t *req;
 	int local, remote;
@@ -235,7 +230,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				   mdev->cstate > WFBitMapT) );
 
 	local = inc_local(mdev);
-	NOT_IN_26( if (rw == READA) rw=READ );
 	if (rw == READ || rw == READA) {
 		if (local) {
 			if (!drbd_may_do_local_read(mdev,sector,size)) {
@@ -354,18 +348,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-int drbd_make_request_24(request_queue_t *q, int rw, struct buffer_head *bh)
-{
-	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);
-	if (MINOR(bh->b_rdev) >= minor_count || mdev->cstate < StandAlone) {
-		buffer_IO_error(bh);
-		return 0;
-	}
-
-	return drbd_make_request_common(mdev,rw,bh->b_size,bh->b_rsector,bh);
-}
-#else
 int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
 	unsigned int s_enr,e_enr;
@@ -404,4 +386,3 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,
 					bio->bi_sector,bio);
 }
-#endif

@@ -35,37 +35,8 @@
 #include <linux/slab.h> 
 #include "lru_cache.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-#include "mempool.h"
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,20)
-static inline void __list_splice(struct list_head *list,
-				 struct list_head *head)
-{
-	struct list_head *first = list->next;
-	struct list_head *last = list->prev;
-	struct list_head *at = head->next;
-
-	first->prev = head;
-	head->next = first;
-
-	last->next = at;
-	at->prev = last;
-}
-static inline void list_splice_init(struct list_head *list,
-				    struct list_head *head)
-{
-	if (!list_empty(list)) {
-		__list_splice(list, head);
-		INIT_LIST_HEAD(list);
-	}
-}
-#endif
-
 // module parameter, defined in drbd_main.c
 extern int minor_count;
-extern int disable_io_hints;
 extern int major_nr;
 extern int use_nbd_major;
 
@@ -77,25 +48,9 @@ extern char* drbd_devfs_name;
 # warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-/*lge: this hack is to get rid of the compiler warnings about
- * 'do_nbd_request declared static but never defined'
- * whilst forcing blk.h defines on
- * though we probably do not need them, we do not use them...
- * would not work without LOCAL_END_REQUEST
- */
-# define MAJOR_NR DRBD_MAJOR
-# define DEVICE_ON(device)
-# define DEVICE_OFF(device)
-# define DEVICE_NR(device) (MINOR(device))
-# define LOCAL_END_REQUEST
-# include <linux/blk.h>
-# define DRBD_MAJOR major_nr
-#else
-# include <linux/blkdev.h>
-# include <linux/bio.h>
-# define MAJOR_NR major_nr
-#endif
+#include <linux/blkdev.h>
+#include <linux/bio.h>
+#define MAJOR_NR major_nr
 
 #undef DEVICE_NAME
 #define DEVICE_NAME "drbd"
@@ -234,17 +189,9 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
  * Compatibility Section
  *************************/
 
-#include "drbd_compat_types.h"
-
-#ifdef SIGHAND_HACK
-# define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sighand->siglock, flags)
-# define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sighand->siglock, flags)
-# define RECALC_SIGPENDING()        recalc_sigpending();
-#else
-# define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sigmask_lock, flags)
-# define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sigmask_lock, flags)
-# define RECALC_SIGPENDING()        recalc_sigpending(current);
-#endif
+#define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sighand->siglock, flags)
+#define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sighand->siglock, flags)
+#define RECALC_SIGPENDING()        recalc_sigpending();
 
 #if defined(DBG_SPINLOCKS) && defined(__SMP__)
 # define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
@@ -618,8 +565,8 @@ struct drbd_request {
 	long magic;
 	int rq_status;
 	struct drbd_barrier *barrier; // The next barrier.
-	drbd_bio_t *master_bio;       // master bio pointer
-	drbd_bio_t private_bio;       // private bio struct
+	struct bio *master_bio;       // master bio pointer
+	struct bio private_bio;       // private bio struct
 };
 
 struct drbd_barrier {
@@ -654,13 +601,13 @@ typedef struct drbd_request drbd_request_t;
  */
 struct Tl_epoch_entry {
 	struct drbd_work    w;
-	drbd_bio_t private_bio; // private bio struct, NOT a pointer
+	struct bio private_bio; // private bio struct, NOT a pointer
 	u64    block_id;
 	long magic;
-	ONLY_IN_26(unsigned int ee_size;)
-	ONLY_IN_26(sector_t ee_sector;)
+	unsigned int ee_size;
+	sector_t ee_sector;
 	// THINK: maybe we rather want bio_alloc(GFP_*,1)
-	ONLY_IN_26(struct bio_vec ee_bvec;)
+	struct bio_vec ee_bvec;
 };
 
 /* flag bits */
@@ -730,18 +677,11 @@ struct Drbd_Conf {
 			  barrier_work,
 			  unplug_work;
 	struct timer_list resync_timer;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	kdev_t backing_bdev;  // backing device
-	kdev_t this_bdev;
-	kdev_t md_bdev;       // device for meta-data.
-#else
 	struct block_device *backing_bdev;
 	struct block_device *this_bdev;
 	struct block_device *md_bdev;
 	struct gendisk      *vdisk;
 	request_queue_t     *rq_queue;
-#endif
-	// THINK is this the same in 2.6.x ??
 	struct file *lo_file;
 	struct file *md_file;
 	int md_index;
@@ -800,7 +740,6 @@ struct Drbd_Conf {
 	int ee_in_use;
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
-	NOT_IN_26(struct tq_struct write_hint_tq;)
 	struct page *md_io_page;      // one page buffer for md_io
 	struct page *md_io_tmpp;     // in case hardsect != 512 [ s390 only? ]
 	struct semaphore md_io_mutex; // protects the md_io_buffer
@@ -1010,11 +949,7 @@ extern mempool_t *drbd_request_mempool;
 // drbd_req
 #define ERF_NOTLD    2   /* do not call tl_dependence */
 extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-extern int drbd_make_request_24(request_queue_t *q, int rw, struct buffer_head *bio);
-#else
 extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
-#endif
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 
 // drbd_fs.c
@@ -1131,18 +1066,6 @@ do {									\
  *************************/
 
 #include "drbd_compat_wrappers.h"
-
-static inline void
-drbd_flush_signals(struct task_struct *t)
-{
-	NOT_IN_26(
-	unsigned long flags;
-	LOCK_SIGMASK(t,flags);
-	)
-
-	flush_signals(t);
-	NOT_IN_26(UNLOCK_SIGMASK(t,flags));
-}
 
 static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
@@ -1457,39 +1380,3 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #define dump_packet(ignored...) ((void)0)
 #endif
 
-
-#ifndef sector_div
-# define sector_div(n, b)( \
-{ \
-	int _res; \
-	_res = (n) % (b); \
-	(n) /= (b); \
-	_res; \
-} \
-)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-// this is a direct copy from 2.6.6 include/linux/bitops.h
-
-static inline unsigned long generic_hweight64(u64 w)
-{
-#if BITS_PER_LONG < 64
-	return generic_hweight32((unsigned int)(w >> 32)) +
-				generic_hweight32((unsigned int)w);
-#else
-	u64 res;
-	res = (w & 0x5555555555555555ul) + ((w >> 1) & 0x5555555555555555ul);
-	res = (res & 0x3333333333333333ul) + ((res >> 2) & 0x3333333333333333ul);
-	res = (res & 0x0F0F0F0F0F0F0F0Ful) + ((res >> 4) & 0x0F0F0F0F0F0F0F0Ful);
-	res = (res & 0x00FF00FF00FF00FFul) + ((res >> 8) & 0x00FF00FF00FF00FFul);
-	res = (res & 0x0000FFFF0000FFFFul) + ((res >> 16) & 0x0000FFFF0000FFFFul);
-	return (res & 0x00000000FFFFFFFFul) + ((res >> 32) & 0x00000000FFFFFFFFul);
-#endif
-}
-
-static inline unsigned long hweight_long(unsigned long w)
-{
-	return sizeof(w) == 4 ? generic_hweight32(w) : generic_hweight64(w);
-}
-#endif

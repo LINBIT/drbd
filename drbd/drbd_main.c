@@ -47,9 +47,7 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)) || defined(HAVE_MM_INLINE_H)
 #include <linux/mm_inline.h>
-#endif
 #include <linux/slab.h>
 #include <linux/devfs_fs_kernel.h>
 
@@ -64,24 +62,8 @@
  */
 #define LANANA_DRBD_MAJOR 147
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-# if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
-extern int register_ioctl32_conversion(unsigned int cmd,
-				       int (*handler)(unsigned int,
-						      unsigned int,
-						      unsigned long,
-						      struct file *));
-extern int unregister_ioctl32_conversion(unsigned int cmd);
-extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
-# endif
-#else
-# ifdef CONFIG_COMPAT
-#  include <linux/ioctl32.h>
-# endif
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-static devfs_handle_t devfs_handle;
+#ifdef CONFIG_COMPAT
+# include <linux/ioctl32.h>
 #endif
 
 int drbdd_init(struct Drbd_thread*);
@@ -103,12 +85,7 @@ MODULE_LICENSE("GPL");
 MODULE_PARM_DESC(use_nbd_major, "DEPRECATED! use nbd device major nr (43) "
 		                "instead of the default " __stringify(LANANA_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
-MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-MODULE_PARM(use_nbd_major,"i");
-MODULE_PARM(minor_count,"i");
-MODULE_PARM(disable_io_hints,"i");
-#else
+
 #include <linux/moduleparam.h>
 /*
  * please somebody explain to me what the "perm" of the module_param
@@ -121,13 +98,10 @@ MODULE_PARM(disable_io_hints,"i");
  */
 
 /* thanks to these macros, if compiled into the kernel (not-module),
- * these become boot parameters: [-drbd.major_nr-], drbd.minor_count and
- * drbd.disable_io_hints
+ * these become boot parameters drbd.use_nbd_major and drbd.minor_count
  */
 module_param(use_nbd_major,   bool,0);
 module_param(minor_count,      int,0);
-module_param(disable_io_hints,bool,0);
-#endif
 
 // module parameter, defined
 int use_nbd_major = 0;
@@ -137,8 +111,6 @@ int minor_count = 2;
 #else
 int minor_count = 8;
 #endif
-// FIXME disable_io_hints shall die
-int disable_io_hints = 0;
 
 // devfs name
 char* drbd_devfs_name = "drbd";
@@ -150,19 +122,13 @@ volatile int drbd_did_panic = 0;
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */
-NOT_IN_26(
-STATIC int *drbd_blocksizes;
-STATIC int *drbd_sizes;
-)
 struct Drbd_Conf *drbd_conf;
 kmem_cache_t *drbd_request_cache;
 kmem_cache_t *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
 
 STATIC struct block_device_operations drbd_ops = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,10)
 	.owner =   THIS_MODULE,
-#endif
 	.open =    drbd_open,
 	.release = drbd_close,
 	.ioctl =   drbd_ioctl
@@ -410,42 +376,6 @@ int drbd_io_error(drbd_dev* mdev)
 	return ok;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
-// daemonize was no global symbol before 2.4.14
-/* in 2.4.6 is is prototyped as
- * void daemonize(const char *name, ...)
- * though, so maybe we want to do this for 2.4.x already, too.
- */
-void daemonize(void)
-{
-	struct fs_struct *fs;
-
-	exit_mm(current);
-
-	current->session = 1;
-	current->pgrp = 1;
-	current->tty = NULL;
-
-	exit_fs(current);       /* current->fs->count--; */
-	fs = init_task.fs;
-	current->fs = fs;
-	atomic_inc(&fs->count);
-	exit_files(current);
-	current->files = init_task.files;
-	atomic_inc(&current->files->count);
-}
-#endif
-
-STATIC void drbd_daemonize(void) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
-	daemonize("drbd_thread");
-#else
-	daemonize();
-	// VERIFY what about blocking signals ?
-	reparent_to_init();
-#endif
-}
-
 void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 {
 	Drbd_CState os;
@@ -482,7 +412,7 @@ STATIC int drbd_thread_setup(void* arg)
 	drbd_dev *mdev = thi->mdev;
 	int retval;
 
-	drbd_daemonize();
+	daemonize("drbd_thread");
 	D_ASSERT(get_t_state(thi) == Running);
 	D_ASSERT(thi->task == NULL);
 	thi->task = current;
@@ -1195,7 +1125,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 				// dump_stack();
 			}
 #endif
-			drbd_flush_signals(current);
+			flush_signals(current);
 			rv = 0;
 		}
 		if (rv < 0) break;
@@ -1236,8 +1166,6 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 
 	drbd_conf[minor].open_cnt++;
 
-	NOT_IN_26(MOD_INC_USE_COUNT;)
-
 	return 0;
 }
 
@@ -1259,21 +1187,8 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 		clear_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
 	}
 
-	NOT_IN_26(MOD_DEC_USE_COUNT;)
-
 	return 0;
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-STATIC void drbd_unplug_fn(void *data)
-{
-	struct Drbd_Conf* mdev = (drbd_dev*)data;
-	spin_lock_irq(&mdev->req_lock);
-	if (list_empty(&mdev->unplug_work.list))
-		_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
-	spin_unlock_irq(&mdev->req_lock);
-}
-#else
 
 STATIC void drbd_unplug_fn(request_queue_t *q)
 {
@@ -1301,16 +1216,10 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 
 	if(!test_bit(DISKLESS,&mdev->flags)) drbd_kick_lo(mdev);
 }
-#endif
 
 void drbd_set_defaults(drbd_dev *mdev)
 {
 	mdev->flags = 1<<DISKLESS;
-
-	/* If the UNPLUG_QUEUED flag is set but it is not
-	   actually queued the functionality is completely disabled */
-	if (disable_io_hints) mdev->flags |= 1<<UNPLUG_QUEUED;
-
 	mdev->sync_conf.rate       = 250;
 	mdev->sync_conf.al_extents = 127; // 512 MB active set
 	mdev->state                = Secondary;
@@ -1375,11 +1284,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	drbd_thread_init(mdev, &mdev->receiver, drbdd_init);
 	drbd_thread_init(mdev, &mdev->worker, drbd_worker);
 	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
-
-NOT_IN_26(
-	mdev->write_hint_tq.routine = &drbd_unplug_fn;
-	mdev->write_hint_tq.data    = mdev;
-)
 
 #ifdef __arch_um__
 	INFO("mdev = 0x%p\n",mdev);
@@ -1562,14 +1466,11 @@ static void __exit drbd_cleanup(void)
 		i=minor_count;
 		while (i--) {
 			drbd_dev        *mdev  = drbd_conf+i;
-ONLY_IN_26(
 			struct gendisk  **disk = &mdev->vdisk;
 			request_queue_t **q    = &mdev->rq_queue;
-)
 
 			drbd_free_resources(mdev);
 
-ONLY_IN_26(
 			if (*disk) {
 				del_gendisk(*disk);
 				put_disk(*disk);
@@ -1578,12 +1479,11 @@ ONLY_IN_26(
 			if (*q) blk_put_queue(*q);
 			*q = NULL;
 
-			if (mdev->this_bdev->bd_holder == drbd_sec_holder) { 
+			if (mdev->this_bdev->bd_holder == drbd_sec_holder) {
 				mdev->this_bdev->bd_contains = mdev->this_bdev;
 				bd_release(mdev->this_bdev);
 			}
 			if (mdev->this_bdev) bdput(mdev->this_bdev);
-)
 
 			tl_cleanup(mdev);
 			if (mdev->bitmap) drbd_bm_cleanup(mdev);
@@ -1629,7 +1529,7 @@ ONLY_IN_26(
 		drbd_destroy_mempools();
 	}
 
-#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+#if defined(CONFIG_COMPAT)
 	lock_kernel();
 	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
@@ -1647,20 +1547,9 @@ ONLY_IN_26(
 	unlock_kernel();
 #endif
 
-NOT_IN_26(
-	blksize_size[MAJOR_NR] = NULL;
-	blk_size[MAJOR_NR]     = NULL;
-	// kfree(NULL) is noop
-	kfree(drbd_blocksizes);
-	kfree(drbd_sizes);
-)
 	kfree(drbd_conf);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	devfs_unregister(devfs_handle);
-#else
 	devfs_remove(drbd_devfs_name);
-#endif
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
@@ -1721,9 +1610,7 @@ int __init drbd_init(void)
 #endif
 	}
 
-	err = register_blkdev(MAJOR_NR, DEVICE_NAME
-			      NOT_IN_26(, &drbd_ops)
-			      );
+	err = register_blkdev(MAJOR_NR, DEVICE_NAME);
 	if (err) {
 		printk(KERN_ERR DEVICE_NAME
 		       ": unable to register block device major %d\n",
@@ -1743,15 +1630,6 @@ int __init drbd_init(void)
 	if (likely(drbd_conf!=NULL))
 		memset(drbd_conf,0,sizeof(drbd_dev)*minor_count);
 	else goto Enomem;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	if (likely(drbd_sizes!=NULL))
-		memset(drbd_sizes,0,sizeof(int)*minor_count);
-	else goto Enomem;
-	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	if (unlikely(!drbd_blocksizes)) goto Enomem;
-#else
 
 	devfs_mk_dir(drbd_devfs_name);
 
@@ -1793,7 +1671,6 @@ int __init drbd_init(void)
 		// plugging on a queue, that actually has no requests!
 		q->unplug_fn = drbd_unplug_fn;
 	}
-#endif
 
 	if ((err = drbd_create_mempools()))
 		goto Enomem;
@@ -1803,12 +1680,6 @@ int __init drbd_init(void)
 		struct page *page = alloc_page(GFP_KERNEL);
 
 		drbd_init_set_defaults(mdev);
-
-NOT_IN_26(
-		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
-		mdev->this_bdev = MKDEV(MAJOR_NR, i);
-		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
-)
 
 		if(!page) goto Enomem;
 		mdev->md_io_page = page;
@@ -1841,22 +1712,8 @@ NOT_IN_26(
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
-NOT_IN_26(
-	blksize_size[MAJOR_NR] = drbd_blocksizes;
-	blk_size[MAJOR_NR] = drbd_sizes;
-)
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	devfs_handle = devfs_mk_dir (NULL, drbd_devfs_name, NULL);
-	devfs_register_series(devfs_handle, "%u", minor_count,
-			      DEVFS_FL_DEFAULT, MAJOR_NR, 0,
-			      S_IFBLK | S_IRUSR | S_IWUSR,
-			      &drbd_ops, NULL);
-#endif
-
-	NOT_IN_26(blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request_24);)
-
-#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+#if defined(CONFIG_COMPAT)
 	// tell the kernel that we think our ioctls are 64bit clean
 	lock_kernel();
 	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,NULL);
@@ -1904,14 +1761,9 @@ void drbd_free_ll_dev(drbd_dev *mdev)
 	wmb();
 
 	if (lo_file) {
-NOT_IN_26(
-		blkdev_put(lo_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
-		blkdev_put(mdev->md_file->f_dentry->d_inode->i_bdev,BDEV_FILE);
-)
-ONLY_IN_26(
 		bd_release(mdev->backing_bdev);
 		bd_release(mdev->md_bdev);
-)
+
 		mdev->md_bdev =
 		mdev->backing_bdev = 0;
 

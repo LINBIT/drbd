@@ -34,9 +34,7 @@
 #include <linux/wait.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)) || defined(HAVE_MM_INLINE_H)
 #include <linux/mm_inline.h> // for the page_count macro on RH/Fedora
-#endif
 #include <linux/slab.h>
 
 #include <linux/drbd.h>
@@ -50,144 +48,6 @@
  * Try to get the locking right :)
  *
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-
-/* used for synchronous meta data and bitmap IO
- * submitted by FIXME (I'd say worker only, but currently this is not true...)
- */
-void drbd_md_io_complete(struct buffer_head *bh, int uptodate)
-{
-	if (uptodate)
-		set_bit(BH_Uptodate, &bh->b_state);
-
-	complete((struct completion*)bh->b_private);
-}
-
-/* reads on behalf of the partner,
- * "submitted" by the receiver
- */
-void enslaved_read_bi_end_io(drbd_bio_t *bh, int uptodate)
-{
-	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
-	struct Drbd_Conf* mdev;
-
-	mdev=bh->b_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	e = container_of(bh,struct Tl_epoch_entry,private_bio);
-	PARANOIA_BUG_ON(!VALID_POINTER(e));
-	D_ASSERT(e->block_id != ID_VACANT);
-
-	spin_lock_irqsave(&mdev->ee_lock,flags);
-
-	mark_buffer_uptodate(bh, uptodate);
-	clear_bit(BH_Lock, &bh->b_state);
-	smp_mb__after_clear_bit();
-
-	list_del(&e->w.list);
-	if(list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
-
-	drbd_chk_io_error(mdev,!uptodate);
-	drbd_queue_work(mdev,&mdev->data.work,&e->w);
-	dec_local(mdev);
-}
-
-/* writes on behalf of the partner, or resync writes,
- * "submitted" by the receiver.
- */
-void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
-{
-	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
-	struct Drbd_Conf* mdev;
-
-	mdev=bh->b_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	e = container_of(bh,struct Tl_epoch_entry,private_bio);
-	PARANOIA_BUG_ON(!VALID_POINTER(e));
-	D_ASSERT(e->block_id != ID_VACANT);
-
-	spin_lock_irqsave(&mdev->ee_lock,flags);
-
-	mark_buffer_uptodate(bh, uptodate);
-
-	clear_bit(BH_Dirty, &bh->b_state);
-	clear_bit(BH_Lock, &bh->b_state);
-	smp_mb__after_clear_bit();
-
-	list_del(&e->w.list);
-	list_add_tail(&e->w.list,&mdev->done_ee);
-
-	if (waitqueue_active(&mdev->ee_wait) &&
-	    (list_empty(&mdev->active_ee) ||
-	     list_empty(&mdev->sync_ee)))
-		wake_up(&mdev->ee_wait);
-
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
-
-	drbd_chk_io_error(mdev,!uptodate);
-	wake_asender(mdev);
-	dec_local(mdev);
-}
-
-/* writes on Primary comming from drbd_make_request
- */
-void drbd_dio_end(struct buffer_head *bh, int uptodate)
-{
-	struct Drbd_Conf* mdev;
-	drbd_request_t *req;
-
-	mdev = bh->b_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	req = container_of(bh,struct drbd_request,private_bio);
-	PARANOIA_BUG_ON(!VALID_POINTER(req));
-
-	drbd_chk_io_error(mdev,!uptodate);
-	drbd_end_req(req, RQ_DRBD_LOCAL, uptodate, drbd_req_get_sector(req));
-	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
-	dec_local(mdev);
-}
-
-/* reads on Primary comming from drbd_make_request
- */
-void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
-{
-	struct Drbd_Conf* mdev;
-	drbd_request_t *req;
-
-	mdev = bh->b_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	req = container_of(bh,struct drbd_request,private_bio);
-	PARANOIA_BUG_ON(!VALID_POINTER(req));
-
-	// no special case for READA here, in 2.4.X we submit them as READ.
-	if (!uptodate) {
-		// for the panic:
-		drbd_chk_io_error(mdev,!uptodate); // handle panic and detach.
-		if(mdev->on_io_error == PassOn) goto pass_on;
-		// ok, if we survived this, retry:
-		// FIXME sector ...
-		if (DRBD_ratelimit(5*HZ,5))
-			ERR("local read failed, retrying remotely\n");
-		req->w.cb = w_read_retry_remote;
-		drbd_queue_work(mdev,&mdev->data.work,&req->w);
-	} else {
-	pass_on:
-		req->master_bio->b_end_io(req->master_bio,uptodate);
-		dec_ap_bio(mdev);
-
-		INVALIDATE_MAGIC(req);
-		mempool_free(req,drbd_request_mempool);
-	}
-	dec_local(mdev);
-}
-
-#else
 
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
@@ -337,7 +197,6 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	dec_local(mdev);
 	return 0;
 }
-#endif
 
 int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
@@ -656,7 +515,6 @@ int w_try_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	if (cancel) return 1;
-	NOT_IN_26(clear_bit(UNPLUG_QUEUED,&mdev->flags));
 	return drbd_send_short_cmd(mdev,UnplugRemote);
 }
 
@@ -937,7 +795,7 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		if (intr) {
 			D_ASSERT(intr == -EINTR);
-			drbd_flush_signals(current);
+			flush_signals(current);
 			ERR_IF (get_t_state(thi) == Running)
 				continue;
 			break;
