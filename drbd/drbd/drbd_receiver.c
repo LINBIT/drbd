@@ -716,16 +716,15 @@ STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 	if(mdev->conf.try_connect_int) {
 		unsigned long flags;
 		del_timer_sync(&accept_timeout);
-		spin_lock_irqsave(&current->sigmask_lock,flags);
+		LOCK_SIGMASK(current,flags);
 		if (sigismember(&current->pending.signal, DRBD_SIG)) {
 			sigdelset(&current->pending.signal, DRBD_SIG);
-			recalc_sigpending(current);
-			spin_unlock_irqrestore(&current->sigmask_lock,
-					       flags);
+			RECALC_SIGPENDING(current);
+			UNLOCK_SIGMASK(current,flags);
 			if(sock) sock_release(sock);
 			return 0;
 		}
-		spin_unlock_irqrestore(&current->sigmask_lock,flags);
+		UNLOCK_SIGMASK(current,flags);
 	}
 
 	return sock;
@@ -1688,12 +1687,12 @@ int drbdd_init(struct Drbd_thread *thi)
 			unsigned long flags;
 			thi->t_state = Running;
 
-			spin_lock_irqsave(&current->sigmask_lock,flags);
+			LOCK_SIGMASK(current,flags);
 			if (sigismember(&current->pending.signal, SIGTERM)) {
 				sigdelset(&current->pending.signal, SIGTERM);
-				recalc_sigpending(current);
+				RECALC_SIGPENDING(current);
 			}
-			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+			UNLOCK_SIGMASK(current,flags);
 		}
 	}
 
@@ -1788,10 +1787,10 @@ int drbd_asender(struct Drbd_thread *thi)
 	while(thi->t_state == Running) {
 		rr=drbd_recv(mdev,((char*)&pkt)+rsize,expect-rsize,1);
 		if(rr == -ERESTARTSYS) {
-			spin_lock_irqsave(&current->sigmask_lock,flags);
+			LOCK_SIGMASK(current,flags);
 			sigemptyset(&current->pending.signal);
-			recalc_sigpending(current);
-			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+			RECALC_SIGPENDING(current);
+			UNLOCK_SIGMASK(current,flags);
 			rr=0;
 		} else if(rr <= 0) break;
 

@@ -808,7 +808,7 @@ int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
-	spin_lock_irqsave(&current->sigmask_lock, flags);
+	LOCK_SIGMASK(current,flags);
 	oldset = current->blocked;
 	sigfillset(&current->blocked);
 	/* THINK as long as we send directly from make_request,
@@ -817,8 +817,8 @@ int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
 	 * _should_ timeout anyways... so what.
 	 */
 	sigdelset(&current->blocked,DRBD_SIG);
-	recalc_sigpending(current);
-	spin_unlock_irqrestore(&current->sigmask_lock, flags);
+	RECALC_SIGPENDING(current);
+	UNLOCK_SIGMASK(current,flags);
 
 	do {
 		/* STRANGE
@@ -826,12 +826,11 @@ int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
 		 */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
 		if ( rv == -ERESTARTSYS) {
-			spin_lock_irqsave(&current->sigmask_lock,flags);
+			LOCK_SIGMASK(current,flags);
 			if (sigismember(&current->pending.signal, DRBD_SIG)) {
 				sigdelset(&current->pending.signal, DRBD_SIG);
-				recalc_sigpending(current);
-				spin_unlock_irqrestore(&current->sigmask_lock,
-						       flags);
+				RECALC_SIGPENDING(current);
+				UNLOCK_SIGMASK(current,flags);
 				if(ti.timeout_happened) {
 					break;
 				} else {
@@ -839,7 +838,7 @@ int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
 					continue;
 				}
 			}
-			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+			UNLOCK_SIGMASK(current,flags);
 		}
 		if (rv <= 0) break;
 		sent += rv;
@@ -863,15 +862,15 @@ int drbd_send(struct Drbd_Conf *mdev, struct socket *sock,
 	}
 
 
-	spin_lock_irqsave(&current->sigmask_lock, flags);
+	LOCK_SIGMASK(current,flags);
 	current->blocked = oldset;
 	if(app_got_sig) {
 		sigaddset(&current->pending.signal, DRBD_SIG);
 	} else {
 		sigdelset(&current->pending.signal, DRBD_SIG);
 	}
-	recalc_sigpending(current);
-	spin_unlock_irqrestore(&current->sigmask_lock, flags);
+	RECALC_SIGPENDING(current);
+	UNLOCK_SIGMASK(current,flags);
 
 	if (/*rv == -ERESTARTSYS &&*/ ti.timeout_happened) {
 		printk(KERN_DEBUG DEVICE_NAME
@@ -1662,12 +1661,63 @@ void drbd_queue_signal(int signal,struct task_struct *task)
 
 	read_lock(&tasklist_lock);
 	if (task) {
-		spin_lock_irqsave(&task->sigmask_lock, flags);
+		LOCK_SIGMASK(task,flags);
 		sigaddset(&task->pending.signal, signal);
-		recalc_sigpending(task);
+		RECALC_SIGPENDING(task);
 		spin_unlock_irqrestore(&task->sigmask_lock, flags);
+		UNLOCK_SIGMASK(task,flags);
 		if (task->state & TASK_INTERRUPTIBLE) wake_up_process(task);
 	}
 	read_unlock(&tasklist_lock);
 }
 
+#ifdef SIGHAND_HACK
+
+// copied from redhat's kernel-2.4.20-13.9 kernel/signal.c
+// to avoid a recompile of the redhat kernel
+
+#include <asm/signal.h> // for _NSIG_WORDS
+
+/*
+ * Re-calculate pending state from the set of locally pending
+ * signals, globally pending signals, and blocked signals.
+ */
+static inline int has_pending_signals(sigset_t *signal, sigset_t *blocked)
+{
+        unsigned long ready;
+        long i;
+
+        switch (_NSIG_WORDS) {
+        default:
+                for (i = _NSIG_WORDS, ready = 0; --i >= 0 ;)
+                        ready |= signal->sig[i] &~ blocked->sig[i];
+                break;
+
+        case 4: ready  = signal->sig[3] &~ blocked->sig[3];
+                ready |= signal->sig[2] &~ blocked->sig[2];
+                ready |= signal->sig[1] &~ blocked->sig[1];
+                ready |= signal->sig[0] &~ blocked->sig[0];
+                break;
+
+        case 2: ready  = signal->sig[1] &~ blocked->sig[1];
+                ready |= signal->sig[0] &~ blocked->sig[0];
+                break;
+
+        case 1: ready  = signal->sig[0] &~ blocked->sig[0];
+        }
+        return ready != 0;
+}
+
+#define PENDING(p,b) has_pending_signals(&(p)->signal, (b))
+
+inline void recalc_sigpending_tsk(struct task_struct *t)
+{
+        if (t->signal->group_stop_count > 0 ||
+            PENDING(&t->pending, &t->blocked) ||
+            PENDING(&t->signal->shared_pending, &t->blocked))
+                t->sigpending = 1;
+        else
+                t->sigpending = 0;
+}
+
+#endif

@@ -93,6 +93,21 @@ typedef unsigned long sector_t;
 # define MUST_HOLD(lock)
 #endif
 
+#ifdef SIGHAND_HACK
+# define LOCK_SIGMASK(task,flags) \
+	spin_lock_irqsave(&task->sighand->siglock, flags)
+# define UNLOCK_SIGMASK(task,flags) \
+	spin_unlock_irqrestore(&task->sighand->siglock, flags)
+# define RECALC_SIGPENDING(TSK)  (recalc_sigpending_tsk(TSK))
+inline void recalc_sigpending_tsk(struct task_struct *t);
+#else
+# define LOCK_SIGMASK(task,flags) \
+	spin_lock_irqsave(&task->sigmask_lock, flags)
+# define UNLOCK_SIGMASK(task,flags) \
+	spin_unlock_irqrestore(&task->sigmask_lock, flags)
+# define RECALC_SIGPENDING(TSK)  (recalc_sigpending(TSK))
+#endif
+
 struct Drbd_Conf;
 
 #ifdef DBG_ASSERTS
