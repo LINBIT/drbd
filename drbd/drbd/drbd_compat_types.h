@@ -52,6 +52,8 @@ typedef unsigned long sector_t;
 #else // LINUX 2.6
 # warning "FIXME"
 
+#define SIGHAND_HACK
+
 typedef struct bio drbd_bio_t;
 
 #define NOT_IN_26(x...)

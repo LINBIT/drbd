@@ -63,6 +63,17 @@ static inline sector_t drbd_md_ss(drbd_dev *mdev)
 	}
 }
 
+static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
+{
+	set_blocksize(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)), blksize);
+	set_blocksize(mdev->lo_device, blksize);
+}
+
+static inline int drbd_sync_me(drbd_dev *mdev)
+{
+	return fsync_dev(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)));
+}
+
 static inline void drbd_bio_IO_error(struct buffer_head *bh)
 {
 	buffer_IO_error(bh);
@@ -238,7 +249,7 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	D_ASSERT(buffer_launder(bh));
 	D_ASSERT(buffer_locked(bh));
 	D_ASSERT(buffer_mapped(bh));
-	D_ASSERT(buffer_dirty(bh));
+	// D_ASSERT(buffer_dirty(bh)); // It is not true ?!?
 
 	// FIXME should not be necessary
 	bh->b_state = (1 << BH_Dirty) | ( 1 << BH_Mapped) | (1 << BH_Lock);
@@ -294,6 +305,9 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 
 extern void FIXME_DONT_USE(void); // unresolved symbol ;)
 
+/* see get_sb_bdev and bd_claim */
+extern char* drbd_sec_holder;
+
 // bi_end_io handlers
 // int (bio_end_io_t) (struct bio *, unsigned int, int);
 extern int drbd_generic_end_io     (struct bio *bio, unsigned int ignored, int error);
@@ -330,6 +344,15 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 static inline sector_t drbd_md_ss(drbd_dev *mdev)
 {
 	return 0;
+}
+
+static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
+{
+}
+
+static inline int drbd_sync_me(drbd_dev *mdev)
+{
+	return 0; // fsync_bdev(mdev->this_device);
 }
 
 static inline void drbd_bio_IO_error(struct bio *bio)

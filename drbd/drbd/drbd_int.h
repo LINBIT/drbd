@@ -629,6 +629,7 @@ struct Drbd_Conf {
 	kdev_t md_device;         // device for meta-data.
 #else
 	struct block_device *backing_bdev;
+	struct block_device *this_bdev;
 	struct block_device *md_bdev;
 	struct gendisk      *vdisk;
 	request_queue_t     *rq_queue;

@@ -89,6 +89,7 @@ STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
 #endif
 #define DEVICE_REQUEST drbd_do_request
 
+#warning "FIXME review the MODULE_* macros below"
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@gmx.at>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
@@ -105,7 +106,7 @@ int disable_io_hints = 0;
 volatile int drbd_did_panic = 0;
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
- * as member struct gendisk vdisk;
+ * as member "struct gendisk *vdisk;"
  */
 NOT_IN_26(
 STATIC int *drbd_blocksizes;
@@ -913,7 +914,7 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 
 	drbd_conf[minor].open_cnt++;
 
-	MOD_INC_USE_COUNT;
+	NOT_IN_26(MOD_INC_USE_COUNT;)
 
 	return 0;
 }
@@ -936,7 +937,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 		clear_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
 	}
 
-	MOD_DEC_USE_COUNT;
+	NOT_IN_26(MOD_DEC_USE_COUNT;)
 
 	return 0;
 }
@@ -1226,11 +1227,18 @@ int __init drbd_init(void)
 		goto Enomem;
 #else
 	for (i = 0; i < minor_count; i++) {
-		drbd_conf[i].vdisk = alloc_disk(1);
-		if (!drbd_conf[i].vdisk) goto Enomem;
+		drbd_dev    *mdev = drbd_conf + i;
+		struct gendisk         **disk = &mdev->vdisk;
+		request_queue_t        **q    = &mdev->rq_queue;
+
+		*q = blk_alloc_queue(GFP_KERNEL);
+		if (!*q) goto Enomem;
+
+		*disk = alloc_disk(1);
+		if (!*disk) goto Enomem;
+
+		set_disk_ro( *disk, TRUE );
 	}
-	/* thanks to alloc_disk, we now have minor_count gendisks with
-	 * capacity == 0, waiting to be configured.  */
 #endif
 
 	if ((err = drbd_create_mempools()))
@@ -1239,21 +1247,11 @@ int __init drbd_init(void)
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = &drbd_conf[i];
 		struct page *page = alloc_page(GFP_KERNEL);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
-		struct gendisk         **disk = &mdev->vdisk;
-		request_queue_t        **q    = &mdev->rq_queue;
 
-		*disk = alloc_disk(1);
-		if (!*disk) goto Enomem;
-
-		*q = blk_alloc_queue(GFP_KERNEL);
-		if (!*q) goto Enomem;
-
-		set_disk_ro( mdev->this_bdev, TRUE );
-#else
+		NOT_IN_26(
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
-#endif
+		)
 
 		if(!page) goto Enomem;
 		drbd_init_bio(&mdev->md_io_bio,512);

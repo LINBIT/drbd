@@ -1361,7 +1361,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 			dec_ap_pending(mdev,HERE);
 		case Resync:
 			dec_rs_pending(mdev,HERE);
-		case Discard:
+		case Discard:;
 		}
 
 		INVALIDATE_MAGIC(pr);

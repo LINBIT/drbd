@@ -179,7 +179,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	}
 #warning "FIXME sync ll-dev, check size"
 #warning "FIXME meta-device"
-	mdev->backing_device = bdev;
+	mdev->backing_bdev = bdev;
 #else
 	for(i=0;i<minor_count;i++) {
 		if( i != minor &&
@@ -280,9 +280,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		drbd_al_to_on_disk_bm(mdev);
 	}
 
-#warning "FIXME introduce drbd_set_blocksize"
-	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
-	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
+	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
 	set_cstate(mdev,StandAlone);
 
@@ -360,7 +358,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	   used already. E.g. some FS mounted on it.
 	*/
 
-	fsync_dev(MKDEV(MAJOR_NR, minor));
+	drbd_sync_me(mdev);
 	drbd_thread_stop(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
@@ -409,8 +407,14 @@ FIXME
 
 int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 {
+
+#warning "FIXME actually must hold device_mutex!"
+
 	int minor = mdev-drbd_conf;
-	if(newstate == mdev->state) return 0; /* nothing to do */
+	if ( (newstate & 0x3) == mdev->state ) return 0; /* nothing to do */
+
+	// exactly one of sec or pri. not both.
+	if ( !((newstate ^ (newstate >> 1)) & 1) ) return -EINVAL;
 
 	if(mdev->cstate == Unconfigured)
 		return -ENXIO;
@@ -418,10 +422,23 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	if ( (newstate & Primary) && (mdev->o_state == Primary) )
 		return -EACCES;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	if(newstate == Secondary &&
 	   (test_bit(WRITER_PRESENT,&mdev->flags) ||
 	    drbd_is_mounted(minor) == MountedRW))
 		return -EBUSY;
+#else
+	if ( newstate & Secondary ) {
+		/* If I got here, I am Primary. I claim me for myself. If that
+		 * does not succeed, someone other has claimed me, so I cannot
+		 * become Secondary. */
+#warning "FIXME"
+		/* if something fails beyond this point, we actually need to
+		 * bd_release again */
+		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
+			return -EBUSY;
+	}
+#endif
 
 	if( (newstate & Primary) &&
 	    !(mdev->gen_cnt[Flags] & MDF_Consistent) &&
@@ -429,7 +446,7 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 	    !(newstate & DontBlameDrbd) )
 		return -EIO;
 
-	fsync_dev(MKDEV(MAJOR_NR, minor));
+	drbd_sync_me(mdev);
 
 	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->state_wait,
@@ -439,7 +456,8 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 
 	mdev->state = (Drbd_State) newstate & 0x03;
 	if(newstate & Primary) {
-		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
+		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), FALSE ); )
+		ONLY_IN_26( set_disk_ro(mdev->vdisk, FALSE ); )
 		if(newstate & Human) {
 			drbd_md_inc(mdev,HumanCnt);
 		} else if(newstate & TimeoutExpired ) {
@@ -450,7 +468,8 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 			    ConnectedCnt : ArbitraryCnt);
 		}
 	} else {
-		set_device_ro(MKDEV(MAJOR_NR, minor), TRUE );
+		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), TRUE ); )
+		ONLY_IN_26( set_disk_ro(mdev->vdisk, TRUE ); )
 	}
 
 	if(newstate & Secondary && mdev->rs_total) {
@@ -524,8 +543,11 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 
 	return 0;
 }
-	
 
+ONLY_IN_26(
+/* see get_sb_bdev and bd_claim */
+char *drbd_sec_holder = "Secondary DRBD cannot be bd_claimed ;)";
+)
 
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
@@ -534,16 +556,28 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	long time;
 	struct Drbd_Conf *mdev;
 	struct ioctl_wait* wp;
+	ONLY_IN_26(
+	struct block_device *bdev = inode->i_bdev;
+	struct gendisk *disk = bdev->bd_disk;
+	)
 
 	minor = MINOR(inode->i_rdev);
-	if(minor >= minor_count) return -ENODEV;
-	mdev = &drbd_conf[minor];
+	if (minor >= minor_count) return -ENODEV;
+	mdev = drbd_conf + minor;
+
+	D_ASSERT(MAJOR(inode->i_rdev) == MAJOR_NR);
 
 	if( (err=down_interruptible(&mdev->device_mutex)) ) return err;
 	/*
-	 * please no 'return', use 'err = -ERRNO; break;'
+	 * please no 'return', use 'err = -ERRNO; goto out;'
 	 * we hold the device_mutex
 	 */
+
+	ONLY_IN_26(
+	D_ASSERT(bdev == mdev->this_bdev);
+	D_ASSERT(disk == mdev->vdisk);
+	);
+
 	switch (cmd) {
 	case BLKGETSIZE:
 		err = put_user(drbd_get_my_capacity(mdev), (long *)arg);
@@ -555,14 +589,16 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 #endif
 
-	case BLKROSET:
+	case BLKROSET:  // THINK do we want to intercept this one ?
 	case BLKROGET:
 	case BLKFLSBUF:
 	case BLKSSZGET:
 	case BLKBSZGET:
-	case BLKBSZSET:
+	case BLKBSZSET: // THINK do we want to intercept this one ?
 	case BLKPG:
-		err=blk_ioctl(inode->i_rdev, cmd, arg);
+		NOT_IN_26( err=blk_ioctl(inode->i_rdev, cmd, arg); )
+#warning "FIXME verify this does not create an infine recursion!"
+		ONLY_IN_26( err=blkdev_ioctl(inode, file, cmd, arg); )
 		break;
 	case DRBD_IOCTL_GET_VERSION:
 		err = put_user(API_VERSION, (int *) arg);
@@ -726,7 +762,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	default:
 		err = -EINVAL;
 	}
-//out:
+ out:
 	up(&mdev->device_mutex);
  out_unlocked:
 	return err;
