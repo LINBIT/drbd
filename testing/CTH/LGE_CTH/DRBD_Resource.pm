@@ -253,17 +253,18 @@ ___
 sub start {
 	my ($me,$node) = @_;
 	# FIXME paranoia: $node in peers, and up...
-	my ($minor,$name) = @{$me->{_config}}{qw( minor name )};
+	my $c = $me->{_config};
+	my ($minor,$name) = @$c{qw( minor name )};
 	my ($hostname,$ip) = @{$node->{_config}}{qw/hostname admin_ip/};
 	my ($cmd,$force);
 
 	if ($me->{_config}->{do_once_per_node} and not $me->{"did_once:$node->{_id}"}++) {
-		$cmd = "on $ip: $me->{_config}->{do_once_per_node} " . $me->env;
+		$cmd = "on $ip: $c->{do_once_per_node} " . $me->env;
 		_spawn("$me->{_id} do once per node on $node->{_id}", $cmd, 'SYNC');
 	}
 	if (not $me->{did_on_first_start}++) {
-		if ($me->{_config}->{do_on_first_start}) {
-			$cmd = "on $ip: $me->{_config}->{do_on_first_start} " . $me->env;
+		if ($c->{do_on_first_start}) {
+			$cmd = "on $ip: $c->{do_on_first_start} " . $me->env;
 			_spawn("$me->{_id} do on first start on $node->{_id}", $cmd, 'SYNC') if $cmd;
 		}
 		$force = 1;
@@ -275,6 +276,12 @@ sub start {
        	$cmd = "on $ip: drbdadm_pri name=$name";
         $cmd .=	' "force=-- -d"' if $force;
 	_spawn("$me->{_id}: Primary $name on $node->{_config}->{hostname}",$cmd,'SYNC');
+	if ($force) {
+		for my $i (@{$c->{_instances}}) {
+			$i->wait_sync("forced Primary")
+				if $c->{peers}->[$i->{_config}->{index}]->{node} == $node;
+		}
+	}
 }
 
 sub stop {

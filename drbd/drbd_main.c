@@ -54,6 +54,10 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
+#ifndef CONFIG_DRBD_MAJOR
+#define CONFIG_DRBD_MAJOR NBD_MAJOR
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 # if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 extern int register_ioctl32_conversion(unsigned int cmd,
@@ -90,7 +94,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
-MODULE_PARM_DESC(major_nr, "Major nr to use -- default 43 (NBD_MAJOR)");
+MODULE_PARM_DESC(major_nr, "Major nr to use -- default " __stringify(CONFIG_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -119,7 +123,7 @@ module_param(disable_io_hints,int,0);
 #endif
 
 // module parameter, defined
-int major_nr = NBD_MAJOR;
+int major_nr = CONFIG_DRBD_MAJOR;
 #ifdef MODULE
 int minor_count = 2;
 #else
@@ -127,6 +131,10 @@ int minor_count = 8;
 #endif
 // FIXME disable_io_hints shall die
 int disable_io_hints = 0;
+
+// devfs name
+char* drbd_devfs_name = "nbd";
+
 
 // global panic flag
 volatile int drbd_did_panic = 0;
@@ -1578,7 +1586,7 @@ NOT_IN_26(
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	devfs_unregister(devfs_handle);
 #else
-	devfs_remove(DEVFS_NAME);
+	devfs_remove(drbd_devfs_name);
 #endif
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
@@ -1641,7 +1649,7 @@ int __init drbd_init(void)
 #ifdef MODULE
 		return -EINVAL;
 #else
-		major_nr = NBD_MAJOR;
+		major_nr = CONFIG_DRBD_MAJOR;
 #endif
 	}
 
@@ -1663,6 +1671,8 @@ int __init drbd_init(void)
 		return err;
 	}
 
+	drbd_devfs_name = (major_nr == NBD_MAJOR) ? "nbd" : "drbd";
+
 	/*
 	 * allocate all necessary structs
 	 */
@@ -1680,7 +1690,7 @@ int __init drbd_init(void)
 		goto Enomem;
 #else
 
-	devfs_mk_dir(DEVFS_NAME);
+	devfs_mk_dir(drbd_devfs_name);
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
@@ -1703,12 +1713,13 @@ int __init drbd_init(void)
 		disk->first_minor = i;
 		disk->fops = &drbd_ops;
 		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
-		sprintf(disk->devfs_name, DEVFS_NAME "/%d", i);
+		sprintf(disk->devfs_name, "%s/%d", drbd_devf_sname, i);
 		disk->private_data = mdev;
 		add_disk(disk);
 
 		mdev->this_bdev = bdget(MKDEV(MAJOR_NR,i));
-		mdev->this_bdev->bd_contains = mdev->this_bdev; // Hmmm ?
+		// we have no partitions. we contain only ourselves.
+		mdev->this_bdev->bd_contains = mdev->this_bdev;
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
 			// Initial we are Secondary -> should claim myself.
 			WARN("Could not bd_claim() myself.");

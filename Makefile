@@ -135,9 +135,10 @@ KVER := $(shell \
         sed -ne 's/^drbd_kernel_release "\(.*\)".*/\1/p')
 
 kernel-patch:
-	set -o noclobber; \
+	set -o errexit; \
 	kbase=$$(basename $(KDIR)); \
-	d=patch-$$kbase-drbd-$(DIST_VERSION);\
+	d=patch-$$kbase-drbd-$(DIST_VERSION); \
+	test -e $$d && cp -fav --backup=numbered $$d $$d; \
 	bash scripts/patch-kernel $(KDIR) . > $$d
 
 # maybe even dist/RPMS/$(ARCH) ?

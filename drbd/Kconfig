@@ -2,7 +2,7 @@
 # DRBD device driver configuration
 #
 config BLK_DEV_DRBD
-	tristate "Distributed redundant block device support"
+	tristate "DRBD Distributed replicated block device support"
 	select INET
 	select PROC_FS
 	---help---
@@ -16,7 +16,8 @@ config BLK_DEV_DRBD
 	  state, which can be 'primary' or 'secondary'. On the node with the
 	  primary device the application is supposed to run and to access the
 	  device (/dev/nbX). Every write is sent to the local 'lower level
-	  block device' and to the node with the device in 'secondary' state.
+	  block device' and via network to the node with the device in
+	  'secondary' state.
 	  The secondary device simply writes the data to its lower level block
 	  device. Reads are always carried out locally.
 
@@ -25,6 +26,21 @@ config BLK_DEV_DRBD
 	  http://www.drbd.org/
 
 	  If unsure, say N.
+
+config DRBD_MAJOR
+	int "DRBD device major number"
+	depends on BLK_DEV_DRBD
+	range 1 255
+	default 43
+	---help---
+	  Historically DRBD hijacked the NBD major number.
+	  Until we get some number officially assigned to DRBD,
+	  you can choose one here.
+	  Typical values may be 100 or 219.
+
+	  See also Documentation/devices.txt
+
+	  If unsure, keep the default (43).
 
 comment "DRBD in kernel, no NBD possible"
 	depends on BLK_DEV_DRBD=y

@@ -2013,7 +2013,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 
-			if (mdev->rs_total && 
+			if (mdev->rs_total &&
 			    mdev->conf.wire_protocol == DRBD_PROT_C)
 				drbd_set_in_sync(mdev,sector,blksize);
 		}

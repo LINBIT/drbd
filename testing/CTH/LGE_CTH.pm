@@ -7,11 +7,14 @@ use Carp;
 require Exporter;
 our @ISA = "Exporter";
 our @EXPORT = (qw{ Configure Run Log });
-our @EXPORT_OK = (qw{ mytimestr _spawn pid_is_pending kill_if_pending });
+our @EXPORT_OK = (qw{
+	mytimestr _spawn pid_is_pending kill_if_pending
+	$DRBD_DEVNAME $DRBD_MAJOR $MINOR_COUNT
+	});
 our %EXPORT_TAGS = (
 	util => [qw{
 		Log mytimestr _spawn pid_is_pending kill_if_pending
-		DRBD_DEVNAME DRBD_MAJOR MINOR_COUNT
+		$DRBD_DEVNAME $DRBD_MAJOR $MINOR_COUNT
 	}], # for internal use only
 ); 
 
@@ -226,6 +229,8 @@ sub Run {
 	wait_for_pending_events;
 
 	warn("\n.\n#\n#\tENTER MAINLOOP\n#\n");
+	warn "Failed: $FAILED\n";
+
 
 	my ($part,$event,$lasttime,@obj);
 

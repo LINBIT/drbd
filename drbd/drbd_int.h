@@ -44,9 +44,12 @@ extern int minor_count;
 extern int disable_io_hints;
 extern int major_nr;
 
+// major == nbd_major ? "nbd" : "drbd";
+extern char* drbd_devfs_name;
+
 /* Using the major_nr of the network block device
-   prevents us from deadlocking with no request entries
-   left on all_requests...
+   used to prevent us from deadlocking with no request entries
+   left on all_requests... those where the days...
    look out for NBD_MAJOR in ll_rw_blk.c */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -71,11 +74,6 @@ extern int major_nr;
 
 #undef DEVICE_NAME
 #define DEVICE_NAME "drbd"
-#define DEVFS_NAME "nbd"    // This make sense as long as we are MAJOR 43
-/* FIXME we are no longer strictly MAJOR 43.
- * so, should this too become "configurable" ?
- * or shall we fix it to "drbd" ?
- */
 
 // XXX do we need this?
 #ifndef TRUE
