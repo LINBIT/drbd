@@ -10,11 +10,10 @@
 
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
         Added code for Linux 2.3.x
-	Pointed out a deadlock on SMP.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks in IOCTL_SET_STATE.
-	Added code to prevent zombie threads.
+		Added code to prevent zombie threads.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
