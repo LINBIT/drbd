@@ -44,13 +44,12 @@
  */
 void lc_init(struct lru_cache* lc)
 {
-	PARANOIA_ENTRY();
 	lc->nr_elements      = 0;
 	lc->element_size     = sizeof(struct lc_element);
 	lc->notify_on_change = 0;
 	lc->changing         = NULL;
 	lc->slot             = NULL;
-	RETURN();
+	lc->flags            = 0;
 }
 
 /**
@@ -215,7 +214,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	 */
 	if (test_and_set_bit(__LC_DIRTY,&lc->flags)) RETURN(NULL);
 	
-	// no, it was not. get any slot from the free list.
+	// no, it was not. get any slot from the free list (or the LRU).
 	e = lc_get_unused_element(lc);
 
 	if (!e) {
@@ -224,8 +223,14 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	}
 
 	list_add(&e->list,&lc->lru);
-		
-	sync = lc->notify_on_change ? lc->notify_on_change(lc,e,enr) : 1;
+
+	if(lc->notify_on_change) {
+		sync = lc->notify_on_change(lc,e,enr);
+	} else {
+		clear_bit(__LC_DIRTY,&lc->flags);
+		smp_mb__after_clear_bit();
+		sync = 1;
+	}
 
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
 

@@ -1503,7 +1503,9 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 			// end of the device...
 			if(unlikely(dev_size<<1 == esector+1)) {
 				ebnr++;
-				ret = (esector-sector+1)-BM_NS;
+				if(test_bit(ebnr&BPLM,bm+(ebnr>>LN2_BPL))) {
+					ret = (esector-sector+1)-BM_NS;
+				}
 			}
 		}
 
@@ -1515,6 +1517,11 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	spin_unlock(&sbm->bm_lock);
 
 	return ret;
+}
+
+static inline unsigned long bitmask(int o) 
+{
+	return o >= BITS_PER_LONG ? -1 : ((1<<o)-1);
 }
 
 /* In case the device's size is not divisible by 4, the last bit
@@ -1541,14 +1548,17 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 			rv = (sbm->dev_size*2) % BM_NS - BM_NS;
 		}
 	}
-	used_bits = BITS_PER_LONG - ( sbm->size*8 - sbm->dev_size/BM_BPS );
-	mask = ~( (1<<used_bits) - 1 ); // mask of bits to clear;
+	used_bits = BITS_PER_LONG - 
+		( sbm->size*8 - div_ceil(sbm->dev_size,BM_BPS) );
+	mask = ~ bitmask(used_bits); // mask of bits to clear;
+	printk(KERN_ERR DEVICE_NAME"clear mask = 0x%8lX\n",mask);
 	mask &= bm[sbm->size/sizeof(long)-1];
 	if( mask ) {
 		rv = -8 * parallel_bitcount(mask);
 		bm[sbm->size/sizeof(long)-1] &= ~mask;
 	}
 
+	printk(KERN_ERR DEVICE_NAME"bm_end_of_dev_case = %d\n",rv);
 	return rv;
 }
 

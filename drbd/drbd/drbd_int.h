@@ -136,6 +136,11 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 } while (0)
 #endif
 
+// integer division, round _UP_ to the next integer
+#define div_ceil(A,B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
+// usual integer division
+#define div_floor(A,B) ( (A)/(B) )
+
 /*
  * Compatibility Section
  *************************/

@@ -28,11 +28,6 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-// integer division, round _UP_ to the next integer
-#define div_ceil(A,B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
-// usual integer division
-#define div_floor(A,B) ( (A)/(B) )
-
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_EXTENTS_PT 61
@@ -74,6 +69,7 @@ STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 		drbd_update_on_disk_bm(mdev,evicted,1);
 	}
 	drbd_al_write_transaction(mdev,e);
+	mdev->al_writ_cnt++;
 
 	spin_lock_irq(&mdev->al_lock);	
 	clear_bit(__LC_DIRTY,&lc->flags);
@@ -99,6 +95,9 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	spin_lock_irq(&mdev->al_lock);
 	extent = lc_get(&mdev->act_log,enr);	
 	spin_unlock_irq(&mdev->al_lock);
+	if(mdev->act_log.flags & LC_STARVING) {
+		WARN("Have to wait for LRU element ( AL too small ? )\n");
+	}
 
 	return extent;
 }
