@@ -208,7 +208,7 @@ case "$1" in
 
 		setLocal
 
-		$0 $D $LOCAL_STATE
+		$0 $RESOURCE $LOCAL_STATE
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
