@@ -75,8 +75,8 @@ case "$OPTION" in
 				ACTION="loop"
 
 				while [ $ACTION != "c" -a $ACTION != "C" -a $ACTION != "r" -a $ACTION != "R" ]; do
-					#read -n 1 -p "Do you want to continue or reboot [C/R] " ACTION
-					read -p "Do you want to continue or reboot [C/R] " ACTION
+					echo -n "Do you want to continue or reboot [C/R] " 
+					read ACTION
 					echo
 				done
 
