@@ -1,0 +1,150 @@
+#!/bin/sh
+
+HOST=`hostname -s`
+CONFIG="/etc/sysconfig/drbd"
+
+# RETVAL will work as a "stuck bit" for any error. The construct
+# RV=$?
+# [ $RETVAL -eq 0 ] && RETVAL=$RV
+# allows us to have it stuck at 1 when some error occur, even if
+# subsequent operations don't fail. Using $RV prevents us from getting
+# the exit value of [ ... ]. That was a dumb one... :)
+
+RETVAL=0    # this means there were no errors
+RV=0        # in this script this is just a temporary variable
+if [ $# -eq 2 ]; then
+	RESOURCE=$1
+    shift
+fi
+
+# Source function library.
+# Some distributions don't have it, so test and act accordingly
+
+if [ -f /etc/rc.d/init.d/functions ]; then
+        if grep success /etc/rc.d/init.d/functions > /dev/null ; then        
+	       . /etc/rc.d/init.d/functions
+               HAVE_SUCCESS=1
+        fi
+fi
+
+if [ -z "$HAVE_SUCCESS" ]; then
+	# Does not react exactly like the "functions" ones
+	success() {
+		echo -ne [OK]\r
+	}
+	failure() {
+		echo -ne [FAILED]\r
+	}
+fi
+
+failed()
+{
+	echo -n $*
+	# This echo is here to allow the use of cut on the sentence with " "
+	echo -n " "
+	failure
+	echo
+}
+
+succed()
+{
+	echo -n $*
+	# This echo is here to allow the use of cut on the sentence with " "
+	echo -n " "
+	success
+	echo
+}
+
+# action substitution
+action()
+{
+	text=$1...
+	#echo -n $1...
+	# This echo is here to allow the use of cut on the sentence with " "
+	#echo -n " "
+	shift
+	eval $*
+	if [ $? -eq 0 ]; then
+		succed $text
+		return 0
+	else
+		failed $text
+		return 1
+	fi
+}
+
+# Boot state check/set
+
+isMasterBoot()
+{
+	if [ $CONFIG/"$1"_master ]; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+setMasterBoot()
+{
+	touch $CONFIG/"$1"_master
+}
+
+setSlaveBoot()
+{
+	rm -f $CONFIG/"$1"_master
+}
+
+# Information grabbing
+
+# set LOCAL_DEVICE : set environement value with the node configuration info
+setLocal()
+{
+	LOCAL_DEVICE=""
+	LOCAL_FSCK=""
+
+	if [ "$HOST" = "`echo $NODE1_NODE | cut -d: -f1`" ]; then
+		LOCAL_IF=$NODE1_IF
+		REMOTE_IF=$NODE2_IF
+		LOCAL_DEVICE=$NODE1_DEVICE
+		LOCAL_PARTITION=$NODE1_PARTITION
+		LOCAL_FSCK=$NODE1_FSCK
+	elif [ "$HOST" = "`echo $NODE2_NODE | cut -d: -f1`" ]; then
+		LOCAL_IF=$NODE2_IF
+		REMOTE_IF=$NODE1_IF
+		LOCAL_DEVICE=$NODE2_DEVICE
+		LOCAL_PARTITION=$NODE2_PARTITION
+		LOCAL_FSCK=$NODE2_FSCK
+	else
+		failed "This machine is neither master nor slave"
+		exit 1
+	fi
+}
+
+
+# Installation integrity check
+
+# Check for our config directory
+if [ ! -d $CONFIG ]; then
+	failed "configuration directory not found!"
+	exit 1
+fi
+
+# Check the script installation
+if [ ! -x $INSTALL/drbd_commun ]; then
+	failed "drbd script functions not found!"
+	exit 1
+fi
+
+# Check the program(s) installation
+if [ ! -x /usr/sbin/drbdsetup ]; then
+	failed "drbdsetup not found!"
+	exit 1
+fi
+
+# Check for fuser command
+if [ ! `which fuser 2>/dev/null` ]; then
+	failed "$0 needs the fuser command"
+	exit 1
+fi
+				
+
