@@ -32,5 +32,6 @@ clean:
 
 
 install:
+	install -d /lib/modules/$(KERNVER)/block/
 	install drbd.o /lib/modules/$(KERNVER)/block/
 	/sbin/depmod -a
