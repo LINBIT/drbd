@@ -724,6 +724,12 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 			} else {
 				return -EIO;
 			}
+		} else if (mdev->cstate >= Connected) {
+			/* do NOT increase the Human count if we are connected,
+			 * and there is no reason for it.  See
+			 * drbd_lk9.pdf middle of Page 7
+			 */
+			newstate &= ~(Human|DontBlameDrbd);
 		}
 	}
 
