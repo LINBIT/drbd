@@ -73,7 +73,7 @@ STATIC int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
 
 	spin_lock_irq(&mdev->al_lock);	
 	clear_bit(__LC_DIRTY,&lc->flags);
-	clear_bit(__LC_STARVING,&lc->flags);
+	clear_bit(__LC_STARVING,&lc->flags); // Do we need this here ?
 	smp_mb__after_clear_bit();
 	wake_up(&mdev->al_wait);
 
@@ -95,10 +95,16 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	spin_lock_irq(&mdev->al_lock);
 	extent = lc_get(&mdev->act_log,enr);	
 	spin_unlock_irq(&mdev->al_lock);
-	if(mdev->act_log.flags & LC_STARVING) {
-		WARN("Have to wait for LRU element ( AL too small ? )\n");
-	}
+	if(extent == 0) {
+		if(mdev->act_log.flags & LC_STARVING) {
+			WARN("Have to wait for LRU element (AL too small?)\n");
+		}
 
+		if(mdev->act_log.flags & LC_DIRTY) {
+			WARN("Ongoing AL update (AL device too slow?)\n");
+		}
+	}
+	
 	return extent;
 }
 
@@ -126,7 +132,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 		return;
 	}
 
-	if( lc_put(&mdev->act_log,extent) == 0) {
+	if( lc_put(&mdev->act_log,extent) == 0 ) {
 		wake_up(&mdev->al_wait);
 	}
 
@@ -300,6 +306,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 			spin_lock_irq(&mdev->al_lock);
 			lc_set(&mdev->act_log,extent_nr,pos);
 			spin_unlock_irq(&mdev->al_lock);
+			active_extents++;
 		}
 
 		bh_kunmap(mdev->md_io_bh);

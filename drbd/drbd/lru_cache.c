@@ -144,7 +144,7 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
 	n=lc->lru.prev;
 	e=list_entry(n, struct lc_element,list);
 
-	if (e->refcnt) return NULL;
+	if (e->refcnt) return NULL; // Dead code ?
 
 	list_del(&e->list);
 	hlist_del(&e->colision);
@@ -182,6 +182,20 @@ STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
 	return list_entry(n, struct lc_element,list);
 }
 
+STATIC int lc_unused_element_available(struct lru_cache* lc)
+{
+	struct list_head *n;
+	struct lc_element *e;
+
+	if (!list_empty(&lc->free)) return 1; // something on the free list
+	n=lc->lru.prev;
+	e=list_entry(n, struct lc_element,list);
+	
+	if (e->refcnt) return 0;  // the LRU element is still in use
+	return 1; // we can evict the LRU element
+}
+
+
 /**
  * lc_get: Finds an element in the cache, increases its usage count,
  * "touches" and returns it.
@@ -208,24 +222,29 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 		RETURN(e);
 	}
 
+	/* In case there is nothing available and we can not kick out
+	   the LRU element, we have to wait .... 
+	 */
+	if(!lc_unused_element_available(lc)) {
+		lc->flags |= LC_STARVING; 
+		RETURN(NULL);
+	}
+
 	/* it was not present in the cache, find an unused element,
 	 * which then is replaced.
 	 * we need to update the cache; serialize on lc->flags & LC_DIRTY
 	 */
 	if (test_and_set_bit(__LC_DIRTY,&lc->flags)) RETURN(NULL);
-	
-	// no, it was not. get any slot from the free list (or the LRU).
-	e = lc_get_unused_element(lc);
 
-	if (!e) {
-		lc->flags |= LC_STARVING; // now (DIRTY | STARVING) !
-		RETURN(NULL);
-	}
+	e = lc_get_unused_element(lc);
+	BUG_ON(!e);
 
 	list_add(&e->list,&lc->lru);
 
 	if(lc->notify_on_change) {
+		PARANOIA_LEAVE();
 		sync = lc->notify_on_change(lc,e,enr);
+		PARANOIA_ENTRY();
 	} else {
 		clear_bit(__LC_DIRTY,&lc->flags);
 		smp_mb__after_clear_bit();
@@ -251,7 +270,9 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	PARANOIA_ENTRY();
 	BUG_ON(!e);
 	BUG_ON(e->refcnt == 0);
-	RETURN(--e->refcnt);
+	e->refcnt--;
+	if(e->refcnt == 0) clear_bit(__LC_STARVING,&lc->flags);
+	RETURN(e->refcnt);
 }
 
 
