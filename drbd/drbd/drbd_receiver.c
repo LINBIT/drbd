@@ -58,6 +58,13 @@
 
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
+#ifdef __arch_um__
+void *to_virt(unsigned long phys)
+{
+	return((void *) uml_physmem + phys);
+}
+#endif
+
 #ifdef DBG_ASSERTS
 void drbd_assert_breakpoint(struct Drbd_Conf* mdev, char *exp,
 			    char *file, int line)
@@ -237,9 +244,6 @@ STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
 			BUG();
 		}
 		
-		bh=(struct buffer_head*)(((char*)e)+
-					 sizeof(struct Tl_epoch_entry));
-
 		drbd_init_bh(bh, buffer_size);
 		set_bh_page(bh,page,i*buffer_size); // sets b_data and b_page
 
