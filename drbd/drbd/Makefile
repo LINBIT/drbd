@@ -21,7 +21,9 @@ include ../Makefile.vars
 
 KSUBD = $(shell if [ -e /lib/modules/$(KERNVER)/kernel ]; then echo "kernel/drivers/block"; else echo "block"; fi )
 
-REQ_O = $(shell if [ "$(KERNVER)" "<" "2.4.0" ]; then echo "drbd_req-2.2.o"; else echo "drbd_req-2.4.o"; fi )
+MAJOR = $(shell echo $(KERNVER) | cut -d. -f 1)
+MINOR = $(shell echo $(KERNVER) | cut -d. -f 2)
+REQ_O = $(shell if [ "$(MAJOR)" -lt "2" -o "$(MAJOR)" -eq "2" -a "$(MINOR)" -lt "4" ]; then echo "drbd_req-2.2.o"; else echo "drbd_req-2.4.o"; fi )
 
 OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_syncer.o $(REQ_O)
 
