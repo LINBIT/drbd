@@ -1,8 +1,17 @@
 Latest:
 ------
- ChangeLog last updated: r1508 2004-08-26
+ ChangeLog last updated: r1529 2004-09-03
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+SVN (api:76/proto:74)
+-----
+ * Fixed support for more than 2TB storage. Now DRBD supports up to
+   3.99TB storage. It will also tell you, that it is not supported if 
+   you try to set up a bigger device.
+ * Debian's build rules file now knows about the adjust_drbd_config_h.sh
+   file.
+ * DRBD_DISABLE_SENDPAGE available in drbd_config.h
 
 0.7.3 (api:75/proto:74)
 -----
