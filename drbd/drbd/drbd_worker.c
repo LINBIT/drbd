@@ -146,8 +146,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 
 #define SLEEP_TIME 10
 
-	number = SLEEP_TIME * mdev->sync_conf.rate / 
-		((1 << (mdev->blk_size_b - 10)) * HZ);
+	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
 	// Remove later
 	if(number > 1000) number=1000;	
@@ -161,12 +160,12 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 
 	for(i=0;i<number;i++) {
 		struct Pending_read *pr;
+		int size=BM_BLOCK_SIZE;
 	
 		pr = kmalloc(sizeof(struct Pending_read), GFP_USER );
 		if (!pr) return TRUE;
 
-		// TODO: Make mdev->blk_size_b constant 4K !
-		sector = bm_get_sector(mdev->mbds_id,mdev->blk_size_b);
+		sector = bm_get_sector(mdev->mbds_id,&size);
 		if(sector == MBDS_DONE) {
 			kfree(pr);
 			return FALSE;
@@ -178,7 +177,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		list_add(&pr->list,&mdev->resync_reads);
 		spin_unlock(&mdev->pr_lock);
 
-		if(drbd_send_drequest(mdev,RSDataRequest,sector,
+		if(drbd_send_drequest(mdev,RSDataRequest,sector,size,
 				      (unsigned long)pr))
 			inc_pending(mdev);
 	}
@@ -245,7 +244,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 			time=SLEEP_TIME;
 			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 			drbd_md_write(mdev);
-			bm_reset(mdev->mbds_id,mdev->blk_size_b);
+			bm_reset(mdev->mbds_id);
 			printk(KERN_INFO DEVICE_NAME "%d: resync started.\n",
 			       (int)(mdev-drbd_conf));
 		}

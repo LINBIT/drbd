@@ -155,7 +155,7 @@ STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
 	struct buffer_head *bh,*lbh,*fbh;
 	int number,buffer_size,i;
 
-	buffer_size=1<<mdev->blk_size_b;
+	buffer_size=BM_BLOCK_SIZE;
 	number=PAGE_SIZE/buffer_size;
 	lbh=NULL;
 	bh=NULL;
@@ -271,28 +271,6 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	return count;
 }
 
-STATIC void drbd_ee_fix_bhs(struct Drbd_Conf* mdev)
-{
-	struct list_head workset;
-	struct page* page;
-
-	spin_lock_irq(&mdev->ee_lock);
-	list_add(&workset,&mdev->free_ee); // insert the new head
-	list_del(&mdev->free_ee);          // remove the old head
-	INIT_LIST_HEAD(&mdev->free_ee); 
-	// now all elements are in the "workset" list, free_ee is empty!
-
-	while(!list_empty(&workset)) {
-		page=drbd_free_ee(mdev,&workset);
-		if(page) {
-			spin_unlock_irq(&mdev->ee_lock);
-			_drbd_alloc_ee(mdev,page);
-			spin_lock_irq(&mdev->ee_lock);
-		}
-	}
-	spin_unlock_irq(&mdev->ee_lock);
-}
-
 #define GFP_TRY	( __GFP_HIGHMEM )
 
 struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,int may_sleep)
@@ -301,8 +279,6 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,int may_sleep)
 	struct Tl_epoch_entry* e;
 
 	MUST_HOLD(&mdev->ee_lock);
-
-	if(test_bit(BLKSIZE_CHANGING,&mdev->flags)) return 0;
 
 	if(mdev->ee_vacant == EE_MININUM / 2) {
 		spin_unlock_irq(&mdev->ee_lock);
@@ -792,35 +768,6 @@ STATIC int receive_barrier(struct Drbd_Conf* mdev)
 	return rv;
 }
 
-STATIC void ensure_blocksize(struct Drbd_Conf* mdev,int data_size)
-{
-	if (data_size != (1 << mdev->blk_size_b)) {
-		if(mdev->state == Primary) {
-			printk(KERN_ERR DEVICE_NAME 
-			       "%d: Bklsize change on Primary!\n",
-			       (int)(mdev-drbd_conf));
-		}
-
-		set_bit(BLKSIZE_CHANGING,&mdev->flags);
-		// dsender does not get any ee from now on :)
-		drbd_wait_ee(mdev,&mdev->active_ee,&mdev->done_ee);
-		drbd_wait_ee(mdev,&mdev->sync_ee,&mdev->done_ee);
-		drbd_process_ee(mdev,&mdev->done_ee);
-
-		// Wait until dsender has given all ees back.
-		while( mdev->ee_in_use ) {
-			interruptible_sleep_on(&mdev->ee_wait);
-		}
-
-		mdev->blk_size_b = drbd_log2(data_size);
-		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",
-		       (int)(mdev-drbd_conf),
-		       data_size);
-		drbd_ee_fix_bhs(mdev);
-		clear_bit(BLKSIZE_CHANGING,&mdev->flags);
-	}
-}
-
 STATIC struct Tl_epoch_entry *
 read_in_block(struct Drbd_Conf* mdev,int data_size)
 {
@@ -909,7 +856,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
-	drbd_set_bh(e->bh, sector ,mdev->lo_device);
+	drbd_set_bh(e->bh, sector ,data_size, mdev->lo_device);
         e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
@@ -951,7 +898,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	bh->b_end_io(bh,1);
 
-	drbd_set_bh(e->bh,sector,mdev->lo_device);
+	drbd_set_bh(e->bh,sector,data_size,mdev->lo_device);
         e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
@@ -1004,8 +951,6 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
 	        return FALSE;
  
-	ensure_blocksize(mdev,data_size);
-      
 	sector = be64_to_cpu(header.sector);
 
 	pr = (struct Pending_read *)(long)header.block_id;
@@ -1048,13 +993,11 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
 	        return FALSE;
        
-	ensure_blocksize(mdev,data_size);
-
 	sector = be64_to_cpu(header.sector);	
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
-	drbd_set_bh(e->bh,sector,mdev->lo_device);
+	drbd_set_bh(e->bh,sector,data_size,mdev->lo_device);
         e->block_id=header.block_id;
 	e->e_end_io = e_end_block;
 
@@ -1114,21 +1057,11 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 
 	data_size = be32_to_cpu(header.blksize);
 
-	ensure_blocksize(mdev,data_size);
-
-	if (be32_to_cpu(header.blksize) != (1 << mdev->blk_size_b)) {
-		printk(KERN_ERR DEVICE_NAME "%d: DR he=%d me=%d\n",
-		       (int)(mdev-drbd_conf),
-		       be32_to_cpu(header.blksize),
-		       (1 << mdev->blk_size_b));
-		return FALSE;
-	}
-
 	sector = be64_to_cpu(header.sector);
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev,TRUE);
-	drbd_set_bh(e->bh,sector,mdev->lo_device);
+	drbd_set_bh(e->bh,sector,data_size,mdev->lo_device);
 	e->block_id=header.block_id;
 	list_add(&e->list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
@@ -1161,7 +1094,6 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 STATIC int receive_param(struct Drbd_Conf* mdev)
 {
         Drbd_Parameter_P param;
-	int blksize;
 	int minor=(int)(mdev-drbd_conf);
 	int no_sync=0;
 	int oo_state;
@@ -1220,20 +1152,6 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 		return FALSE;		
 	}
 
-	if(mdev->state == Primary)
-		blksize = (1 << mdev->blk_size_b);
-	else if(be32_to_cpu(param.state) == Primary)
-		blksize = be32_to_cpu(param.blksize);
-	else 
-		blksize = max_t(int,be32_to_cpu(param.blksize),
-				(1 << mdev->blk_size_b));
-
-	if( mdev->blk_size_b != drbd_log2(blksize)) {
-		set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
-		set_blocksize(mdev->lo_device,blksize);
-		mdev->blk_size_b = drbd_log2(blksize);
-		drbd_ee_fix_bhs(mdev);
-	}
 
 	if (!mdev->mbds_id) {
 		mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
@@ -1241,8 +1159,8 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 	
 	if (mdev->cstate == WFReportParams) {
 		int have_good,quick,sync;
-		printk(KERN_INFO DEVICE_NAME "%d: Connection established. "
-		       "blksize=%d B\n",minor,blksize);
+		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n"
+		       ,minor);
 
 		have_good=drbd_md_compare(minor,&param);
 
@@ -1392,7 +1310,8 @@ STATIC int receive_in_sync(struct Drbd_Conf* mdev)
 
 	dec_pending(mdev);
 	
-	drbd_set_in_sync(mdev,be64_to_cpu(header.sector),mdev->blk_size_b);
+	// TODO BM_BLOCK_SIZE, should be replaced here ...
+	drbd_set_in_sync(mdev,be64_to_cpu(header.sector),BM_BLOCK_SIZE);
 
 	return TRUE;
 }
@@ -1653,7 +1572,7 @@ STATIC void got_block_ack(struct Drbd_Conf* mdev,Drbd_BlockAck_Packet* pkt)
 	if( is_syncer_blk(mdev,pkt->h.block_id)) {
 		drbd_set_in_sync(mdev,
 				 be64_to_cpu(pkt->h.sector),
-				 mdev->blk_size_b);
+				 BM_BLOCK_SIZE); // TODO BM_BLOCK_SIZE
 	} else {
 		req=(drbd_request_t*)(long)pkt->h.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);

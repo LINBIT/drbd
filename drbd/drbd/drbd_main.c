@@ -429,7 +429,6 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 				   blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]:0);
 
 	param.p.command = cpu_to_be16(ReportParams);
-	param.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
 	param.h.state = cpu_to_be32(mdev->state);
 	param.h.protocol = cpu_to_be32(mdev->conf.wire_protocol);
 	param.h.version = cpu_to_be32(PRO_VERSION);
@@ -538,7 +537,7 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 }
 
 int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
-		       sector_t sector, u64 block_id)
+		       sector_t sector,int size, u64 block_id)
 {
         Drbd_BlockRequest_Packet head;
 	int ret;
@@ -546,7 +545,7 @@ int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 	head.p.command = cpu_to_be16(cmd);
 	head.h.sector = cpu_to_be64(sector);
         head.h.block_id = block_id;
-	head.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
+	head.h.blksize = cpu_to_be32(size);
 
 	down(&mdev->sock_mutex);
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
@@ -955,7 +954,6 @@ int __init drbd_init(void)
 		drbd_conf[i].sync_conf.use_csums=0;
 		drbd_conf[i].sync_conf.skip=0;
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
-		drbd_conf[i].blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), TRUE );
 		drbd_conf[i].do_panic = 0;
@@ -1196,10 +1194,7 @@ struct BitMap* bm_init(kdev_t dev)
 	}
 
 	sbm->dev = dev;
-	sbm->sb_bitnr=0;
-	sbm->sb_mask=0;
-	sbm->gb_bitnr=0;
-	sbm->gb_snr=0;
+	sbm->gs_bitnr=0;
 	sbm->bm_lock = SPIN_LOCK_UNLOCKED;
 
 	sbm->size = 0;
@@ -1221,18 +1216,18 @@ void bm_cleanup(struct BitMap* sbm)
 
 #define BM_SS (BM_BLOCK_SIZE_B-9)
 #define BM_MM ((1L<<BM_SS)-1)
-
+#define BPLM (BITS_PER_LONG-1)
 
 /* secot_t and size have a higher resolution (512 Byte) than
    the bitmap (4K). In case we have to set a bit, we 'round up',
-   in case we have to clear a bit we do the opposit. */
-void bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
+   in case we have to clear a bit we do the opposit. 
+   It returns the number of sectors that where marked dirty. */
+int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 {
         unsigned long* bm;
 	unsigned long sbnr,ebnr,bnr;
-	int ret=0;
 	sector_t esector = ( sector + (size>>9) - 1 );
-
+	int ret=0;
 
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
@@ -1240,33 +1235,37 @@ void bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 		return 0;
 	}
 
- 	spin_lock(&sbm->bm_lock);
-	bm = sbm->bm;
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
 
+
+ 	spin_lock(&sbm->bm_lock);
+	bm = sbm->bm;
+
 	if(bit) {
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
-			bm[bnr>>LN2_BPL] |= ( 1L << (bnr & ((1L<<LN2_BPL)-1)));
+			if(!test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) ret++;
+			__set_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
 	} else { // bit == 0
 		if(  (sector & BM_MM) != 0 )     sbnr++;
 		if( (esector & BM_MM) != BM_MM ) ebnr--;
-
+		
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
-			bm[bnr>>LN2_BPL]&= ~( 1L << (bnr & ((1L<<LN2_BPL)-1)));
+			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
 	}
  	spin_unlock(&sbm->bm_lock);
+	
+	return ret<<BM_SS;
 }
 
-// bm_get_bit is still broken....
-
-int bm_get_bit(struct BitMap* sbm, sector_t sector)
+int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 {
         unsigned long* bm;
-	unsigned long bitnr;
-	int bit;
+	unsigned long sbnr,ebnr,bnr;
+	sector_t esector = ( sector + (size>>9) - 1 );
+	int ret=0;
 
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
@@ -1274,74 +1273,64 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector)
 		return 0;
 	}
 
+	sbnr = sector >> BM_SS;
+	ebnr = esector >> BM_SS;
+
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
-	bitnr = blocknr >> CM_SS;
 
-	bit=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
-	spin_unlock(&sbm->bm_lock);
+	for(bnr=sbnr; bnr <= ebnr; bnr++) {
+		if(test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) ret=1;
+	}
+
+ 	spin_unlock(&sbm->bm_lock);
 				     
-	return bit;
+	return ret;
 }
 
-static inline int bm_get_bn(unsigned long word,int nr)
+sector_t bm_get_sector(struct BitMap* sbm,int* size)
 {
-	if(nr == BITS_PER_LONG-1) return -1;
-	word >>= ++nr;
-	while (! (word & 1)) {
-                word >>= 1;
-		if (++nr == BITS_PER_LONG) return -1;
-	}
-	return nr;
-}
-
-sector_t bm_get_sector(struct BitMap* sbm,int ln2_block_size)
-{
+	unsigned long bnr;
         unsigned long* bm;
-	unsigned long wnr;
-	unsigned long nw = sbm->size/sizeof(unsigned long);
-	unsigned long rv;
-	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
+	unsigned long dev_size;
+	sector_t ret;
+
+	if(*size != BM_BLOCK_SIZE) BUG(); // Other cases are not needed
+
+	if(sbm->gs_bitnr == -1) return MBDS_DONE;
 
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
+	bnr = sbm->gs_bitnr;
 
-	if(sbm->gb_snr >= (1L<<cb)) {	  
-		for(wnr=sbm->gb_bitnr>>LN2_BPL;wnr<nw;wnr++) {
-	                if (bm[wnr]) {
-				int bnr;
-				if (wnr == sbm->gb_bitnr>>LN2_BPL)
-					bnr = sbm->gb_bitnr & ((1<<LN2_BPL)-1);
-				else bnr = -1;
-				bnr = bm_get_bn(bm[wnr],bnr);
-				if (bnr == -1) continue; 
-			        sbm->gb_bitnr = (wnr<<LN2_BPL) + bnr;
-				sbm->gb_snr = 0;
-				goto out;
-			}
-		}
-		rv = MBDS_DONE;
-		goto r_out;
+	// optimization possible, search word != 0 first...
+	while (!test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) {
+		bnr++;
+		if((bnr>>8) >= sbm->size) break;
 	}
- out:
-	rv = (sbm->gb_bitnr<<cb) + sbm->gb_snr++;
 
-	// Since the bitmap has to have more bits than the device blocks,
-	// we must ensure not to return a blocknumbe bejond end of device.
-	if( (rv+1)*(1<<(ln2_block_size-10)) > 
-	    blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)] ) rv = MBDS_DONE;
- r_out:
- 	spin_unlock(&sbm->bm_lock);	
-	return rv << (ln2_block_size-9);
+	ret=bnr<<BM_SS;
+
+	dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
+	if(bnr<<(BM_BLOCK_SIZE_B-10) > dev_size) {
+		int ns = dev_size % (1<<(BM_BLOCK_SIZE_B-10));
+		sbm->gs_bitnr = -1;
+		if(ns) *size = ns<<10;
+		else ret=MBDS_DONE;
+	} else {
+		sbm->gs_bitnr = bnr+1;
+	}
+
+ 	spin_unlock(&sbm->bm_lock);
+
+	return ret;
 }
 
-void bm_reset(struct BitMap* sbm,int ln2_block_size)
+void bm_reset(struct BitMap* sbm)
 {
  	spin_lock(&sbm->bm_lock);
 
-	sbm->gb_bitnr=0;
-	if (sbm->bm[0] & 1) sbm->gb_snr=0;
-	else sbm->gb_snr = 1L<<(BM_BLOCK_SIZE_B-ln2_block_size);
+	sbm->gs_bitnr=0;
 
  	spin_unlock(&sbm->bm_lock);	
 }

@@ -221,7 +221,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
-	mdev->blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 	
 	set_cstate(mdev,StandAlone);
 

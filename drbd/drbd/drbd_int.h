@@ -171,7 +171,6 @@ typedef struct {
   __u64       p_size;  // size of disk
   __u64       u_size;  // user requested size
   __u32       state;
-  __u32       blksize;
   __u32       protocol;
   __u32       version;
   __u32       gen_cnt[GEN_CNT_SIZE];
@@ -291,10 +290,9 @@ struct Pending_read {
 #define START_SYNC         4
 #define DO_NOT_INC_CONCNT  5
 #define WRITE_HINT_QUEUED  6
-#define BLKSIZE_CHANGING   7
-#define PARTNER_DISKLESS   8
-#define SYNC_FINISHED      16
-#define PROCESS_EE_RUNNING 32
+#define PARTNER_DISKLESS   7
+#define SYNC_FINISHED      8
+#define PROCESS_EE_RUNNING 9
 
 struct send_timer_info {
 	struct timer_list s_timeout; /* send timeout */
@@ -310,10 +308,8 @@ struct BitMap {
 	kdev_t dev;
 	unsigned long size;
 	unsigned long* bm;
-	unsigned long sb_bitnr;
-	unsigned long sb_mask;
-	unsigned long gb_bitnr;
-	unsigned long gb_snr;
+	unsigned long gs_bitnr;
+	unsigned long gs_snr;
 	spinlock_t bm_lock;
 };
 
@@ -417,7 +413,7 @@ extern int drbd_send_dblock(struct Drbd_Conf *mdev,
 			    struct buffer_head *bh, u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
-			      sector_t sector, u64 block_id);
+			      sector_t sector,int size, u64 block_id);
 extern int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,
 			    u64 block_id);
 extern int drbd_send_bitmap(struct Drbd_Conf *mdev);
@@ -451,7 +447,7 @@ extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
 #define MBDS_PACKET_SIZE 4096
 
 #define BM_BLOCK_SIZE_B  12  
-#define BM_BLOCK_SIZE    (1<<12)
+#define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
 
 #define BM_IN_SYNC       0
 #define BM_OUT_OF_SYNC   1
@@ -468,11 +464,11 @@ struct BitMap;
 extern struct BitMap* bm_init(kdev_t dev);
 extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
 extern void bm_cleanup(struct BitMap* sbm);
-extern void bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit);
-extern sector_t bm_get_sector(struct BitMap* sbm,int ln2_block_size);
-extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
+extern int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit);
+extern sector_t bm_get_sector(struct BitMap* sbm,int* size);
+extern void bm_reset(struct BitMap* sbm);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
-extern int bm_get_bit(struct BitMap* sbm, sector_t sector);
+extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
@@ -560,12 +556,8 @@ static inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
 static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,
 					sector_t sector, int blk_size)
 {
-	int before;
-	before=bm_set_bit(mdev->mbds_id, sector, blk_size, SS_OUT_OF_SYNC);
-
-	if(before == SS_IN_SYNC) {
-		mdev->rs_total += blk_size >> 9;
-	}
+	mdev->rs_total += 
+		bm_set_bit(mdev->mbds_id, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
 static inline void drbd_set_in_sync(struct Drbd_Conf* mdev, 
@@ -710,9 +702,11 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 
 static inline void drbd_set_bh(struct buffer_head *bh,
 			       sector_t sector,
+			       int size,
 			       kdev_t dev)
 {
-	bh->b_blocknr = sector / (bh->b_size>>9);
+	bh->b_blocknr = sector / (size>>9);
+	bh->b_size = size;
 	bh->b_dev = dev;
 }
 
