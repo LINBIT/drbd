@@ -23,7 +23,7 @@ sub read_print_gc_file($$)
     # we saw at the first call.
 
     $pos = sysseek(GCF, 0, SEEK_END);
-    $md_start = (int($pos / (4*1024)) * (4*1024) - 128 *1024*1024;
+    $md_start = (int($pos / (4*1024)) * (4*1024)) - 128 *1024*1024;
 
     $rr=sysseek(GCF, $md_start, SEEK_SET);
     die "2nd seek failed rr=$rr md_start=$md_start" if ($rr != $md_start) ;
