@@ -851,6 +851,8 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	struct buffer_head *bh;
 	int ok,rr;
 
+ 	bh = pr->d.bh;
+
         if(block_nr != bh->b_blocknr) {
                 printk(KERN_ERR DEVICE_NAME "%d: dleass_read: blocknr! "
 		       "g=%lu e=%lu\n",
