@@ -55,7 +55,8 @@ build-indep:
 	touch debian/drbd-source/usr/src/modules/drbd/debian/control
 	cp -a drbd/* debian/drbd-source/usr/src/modules/drbd/drbd
 	cp Makefile debian/drbd-source/usr/src/modules/drbd
-#	cp Makefile.vars debian/drbd-source/usr/src/modules/drbd
+	mkdir debian/drbd-source/usr/src/modules/drbd/scripts
+	cp -a scripts/adjust_drbd_config_h.sh debian/drbd-source/usr/src/modules/drbd/scripts
 	cp drbd/linux/drbd_config.h debian/drbd-source/usr/src/modules/drbd
 	cd debian/drbd-source/usr/src; \
 	chmod 0775 modules/drbd/debian/rules; \
