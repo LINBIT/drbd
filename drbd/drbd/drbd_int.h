@@ -311,7 +311,9 @@ struct Drbd_Conf {
  	struct semaphore ctl_mutex;
 	kdev_t lo_device;
 	struct file *lo_file;
-	int lo_usize;   /* user provided size */
+	unsigned long lo_usize;   /* user provided size */
+	unsigned long p_usize;    /* partner node's usize */
+	unsigned long p_size;     /* partner's disk size */
 	int blk_size_b;
 	Drbd_State state;
 	Drbd_CState cstate;
@@ -410,7 +412,7 @@ extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
 
 /* drbd_fs.c: */
-extern int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size);
+extern int drbd_determin_dev_size(struct Drbd_Conf*);
 extern int drbd_set_state(int minor,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);

@@ -69,12 +69,14 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 }
 
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
-int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size)
+int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	// p_size ___ partner's disk size
+	unsigned long p_size = mdev->p_size;  // partner's disk size.
+	unsigned long pu_size = mdev->p_usize; //partner's user requested size
 	unsigned long la_size = mdev->la_size; // last agreed size.
 	unsigned long m_size; // my size
-	unsigned long u_size = mdev->lo_usize; // size requested by user.
+	unsigned long mu_size = mdev->lo_usize; // size requested by user.
+	unsigned long u_size=0; // agreed user requested size.
 	unsigned long size=0;
 	kdev_t ll_dev = mdev->lo_device;
 	int rv,minor=(int)(mdev-drbd_conf);
@@ -100,13 +102,22 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size)
 	        printk(KERN_ERR DEVICE_NAME"%d: Both nodes diskless!\n",minor);
 	}
 
+	
+	if(mu_size && pu_size) {
+		u_size=min_t(unsigned long,p_size,m_size);
+	} else {
+		if(mu_size) u_size=mu_size;
+		if(pu_size) u_size=pu_size;
+	}
+
 	if(u_size) {
 		if(u_size > size) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: Requested disk size is too big",
 			       minor);
+		} else {
+			size = u_size;
 		}
-		size = u_size;
 	}
 
 	if( blk_size[MAJOR_NR][minor] != size ) {
@@ -117,6 +128,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev,unsigned long p_size)
 	}
 
 	return rv;
+	// TODO: Online resizing must also consider the bitmap size.
 }
 
 STATIC 
@@ -205,7 +217,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
         }
 
 	drbd_md_read(mdev);
-	drbd_determin_dev_size(mdev,0);
+	drbd_determin_dev_size(mdev);
 	
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
@@ -480,7 +492,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		// TODO determine_dev_size should report errors...
 		err = 0;
 		mdev->lo_usize = (unsigned long)arg;
-		drbd_determin_dev_size(mdev,0);
+		drbd_determin_dev_size(mdev);
 		drbd_send_param(mdev);
 		break;
 

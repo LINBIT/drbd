@@ -1176,6 +1176,7 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 		return FALSE;
 	}
 
+	/* should be removed ?
 	if(be64_to_cpu(param.protocol)!=mdev->lo_usize) {
 	        printk(KERN_ERR DEVICE_NAME"%d: Size hints inconsistent \n",
 		       minor);
@@ -1183,12 +1184,15 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
+	*/
 
 	p_size=be64_to_cpu(param.p_size);
+	mdev->p_size=p_size;
+	mdev->p_usize=be64_to_cpu(param.u_size);
 	if(p_size) clear_bit(PARTNER_DISKLESS, &mdev->flags);
 	else set_bit(PARTNER_DISKLESS, &mdev->flags);
 
-	no_sync=drbd_determin_dev_size(mdev,p_size);
+	no_sync=drbd_determin_dev_size(mdev);
 
 	if( blk_size[MAJOR_NR][minor] == 0) {
 		set_cstate(mdev,StandAlone);
