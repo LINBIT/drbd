@@ -192,12 +192,10 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 # define UNLOCK_SIGMASK(task,flags) spin_unlock_irqrestore(&task->sighand->siglock, flags)
 # define RECALC_SIGPENDING(TSK)     (recalc_sigpending_tsk(TSK))
 
-# ifndef MODULE
 // defined in drbd_main.c,
 // copied from redhat's kernel-2.4.20-13.9 kernel/signal.c
 // to avoid a recompile of the redhat kernel
 inline void recalc_sigpending_tsk(struct task_struct *t);
-# endif
 
 #else
 # define LOCK_SIGMASK(task,flags)   spin_lock_irqsave(&task->sigmask_lock, flags)
