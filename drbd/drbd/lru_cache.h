@@ -31,9 +31,10 @@
   lc_resize) You might get hold of objects in the cache with the 
   lc_find() function. You can force elements into the cache with the
   lc_add() function. When the cache needs to evict an object
-  (BTW, it always evicts the least recently used element), it uses
-  the may_evict element function and the evict_wq to make sure
-  that it has the permission to evice this particular object.
+  (BTW, it always evicts the least recently used element).
+  The may_evict function is used to make shure that it is allowed
+  to evict a particular element from the cache. If may_evict 
+  slept it must return 1 otherwise it should return 0.
  */
 
 #ifndef LRU_CACHE_H
@@ -55,14 +56,13 @@ struct lru_cache {
 	int nr_elements;
 	struct list_head lru;
 	struct list_head free;
-	spinlock_t lc_lock;
 	int updates[3];
-	int (*may_evict) (struct lru_cache *, struct lc_element *);
-	wait_queue_head_t evict_wq;
+	int (*may_evict) (void *, struct lc_element *);
+	void *clb_data;
 };
 
 extern void lc_init(struct lru_cache * mlc);
-extern void lc_resize(struct lru_cache * mlc, int nr_elements);
+extern void lc_resize(struct lru_cache * mlc, int nr_elements,spinlock_t *);
 extern void lc_free(struct lru_cache * mlc);
 extern struct lc_element * lc_find(struct lru_cache * mlc, unsigned int enr);
 extern struct lc_element * lc_get(struct lru_cache * mlc, unsigned int enr);

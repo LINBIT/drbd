@@ -39,9 +39,7 @@ void lc_init(struct lru_cache * mlc)
 	mlc->elements = 0;
 	mlc->nr_elements = 0;
 	mlc->element_size = sizeof(struct lc_element);
-	mlc->lc_lock = SPIN_LOCK_UNLOCKED;
 	mlc->may_evict = 0;
-	init_waitqueue_head(&mlc->evict_wq);
 }
 
 /**
@@ -50,11 +48,12 @@ void lc_init(struct lru_cache * mlc)
  * calling this function.
  * @mlc: The lru_cache object
  */
-void lc_resize(struct lru_cache * mlc, int nr_elements)
+void lc_resize(struct lru_cache * mlc, int nr_elements,spinlock_t *lock)
 {
 	int i;
 	void * elements;
 	struct lc_element * element;
+	unsigned long flags=0;
 
 	if(mlc->nr_elements == nr_elements) return;
 
@@ -66,7 +65,8 @@ void lc_resize(struct lru_cache * mlc, int nr_elements)
 	}
 	memset(elements, 0, nr_elements * mlc->element_size);
 
-	spin_lock(&mlc->lc_lock);
+	// TODO; what is about elements which should not be evicted...?!?!
+	spin_lock_irqsave(lock,flags);
 	INIT_LIST_HEAD(&mlc->lru);
 	INIT_LIST_HEAD(&mlc->free);
 	for(i=0;i<nr_elements;i++) {
@@ -78,7 +78,7 @@ void lc_resize(struct lru_cache * mlc, int nr_elements)
 	mlc->nr_elements=nr_elements;
 	if(mlc->elements) kfree(mlc->elements);
 	mlc->elements = elements;
-	spin_unlock(&mlc->lc_lock);
+	spin_unlock_irqrestore(lock,flags);
 }
 
 /**
@@ -180,14 +180,7 @@ STATIC struct lc_element * lc_evict(struct lru_cache * mlc)
 	element=list_entry(le, struct lc_element,list);
 
 	if( mlc->may_evict ) {
-		if( ! mlc->may_evict(mlc,element) ) {
-			printk(KERN_WARNING "LC: need to wait\n");
-			spin_unlock(&mlc->lc_lock); 
-			//TODO use wait_event_lock here
-			wait_event(mlc->evict_wq,mlc->may_evict(mlc,element));
-			spin_lock(&mlc->lc_lock);
-			goto retry;
-		}
+		if(mlc->may_evict(mlc->clb_data,element)) goto retry;
 	}
 
 	return lc_unlink(mlc,element);
@@ -298,13 +291,10 @@ void lc_set(struct lru_cache * mlc, unsigned int enr, int index)
 	if(index < 0 || index >= mlc->nr_elements ) return;
 
 	element = LC_AT_INDEX(mlc,index);
-	spin_lock(&mlc->lc_lock);
 
 	element->lc_number = enr;
 	list_move(&element->list, &mlc->lru);
 	element->hash_next = 0;
-
-	spin_unlock(&mlc->lc_lock);
 }
 
 /**
@@ -318,8 +308,6 @@ int lc_fixup_hash_next(struct lru_cache * mlc)
 	int i;
 	int active_extents=0;
 
-	spin_lock(&mlc->lc_lock);
-
 	for( i=0 ; i < mlc->nr_elements ; i++ ) {
 		slot = LC_AT_INDEX(mlc,i); 
 		if(slot->lc_number == LC_FREE) continue;
@@ -330,8 +318,6 @@ int lc_fixup_hash_next(struct lru_cache * mlc)
 			want->hash_next = slot;
 		}
 	}
-
-	spin_unlock(&mlc->lc_lock);
 
 	return active_extents;
 }

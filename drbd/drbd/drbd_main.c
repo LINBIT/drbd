@@ -1107,9 +1107,10 @@ int __init drbd_init(void)
 		atomic_set(&drbd_conf[i].pending_cnt,0);
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
 		drbd_conf[i].mbds_id = bm_init(0);
+		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
 		lc_init(&drbd_conf[i].resync);
 		drbd_conf[i].resync.element_size = sizeof(struct bm_extent);
-		lc_resize(&drbd_conf[i].resync,5);
+		lc_resize(&drbd_conf[i].resync,5,&drbd_conf[i].al_lock);
 		/* If the WRITE_HINT_QUEUED flag is set but it is not
 		   actually queued the functionality is completely disabled */
 		if(disable_io_hints) drbd_conf[i].flags=1<<WRITE_HINT_QUEUED;
@@ -1156,6 +1157,7 @@ int __init drbd_init(void)
 		drbd_conf[i].write_hint_tq.routine = &drbd_send_write_hint;
 		drbd_conf[i].write_hint_tq.data = drbd_conf+i;
 		drbd_al_init(drbd_conf + i);
+		init_waitqueue_head(&drbd_conf[i].al_wait);
 		init_MUTEX(&drbd_conf[i].md_io_mutex);
 		{
 			struct page * page = alloc_page(GFP_KERNEL);

@@ -594,6 +594,8 @@ struct Drbd_Conf {
 	struct tq_struct write_hint_tq;
 	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
+	spinlock_t al_lock;
+	wait_queue_head_t al_wait;	
 	struct lru_cache act_log;     // activity log
 	unsigned int al_tr_number;
 	int al_tr_cycle;  

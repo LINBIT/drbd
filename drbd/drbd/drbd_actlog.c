@@ -57,13 +57,20 @@ struct al_transaction {
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
-STATIC int drbd_al_may_evict(struct lru_cache *mlc, struct lc_element *e)
+STATIC int drbd_al_may_evict(void *d, struct lc_element *e)
 {
-	struct drbd_extent * extent;
+	struct drbd_extent * extent = (struct drbd_extent *)e;
+	struct Drbd_Conf *mdev = (struct Drbd_Conf *) d;
 
-	extent = (struct drbd_extent *)e;
+	if( extent->pending_ios > 0 ) {
+		spin_unlock(&mdev->al_lock);
+		//TODO use wait_event_lock here
+		wait_event(mdev->al_wait, extent->pending_ios == 0 );
+		spin_lock(&mdev->al_lock);
+		return 1;
+	}
 
-	return extent->pending_ios == 0;
+	return 0;
 }
 
 void drbd_al_init(struct Drbd_Conf *mdev)
@@ -71,6 +78,7 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	lc_init(&mdev->act_log);
 	mdev->act_log.element_size = sizeof(struct drbd_extent);
 	mdev->act_log.may_evict = drbd_al_may_evict;
+	mdev->act_log.clb_data  = mdev;
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -80,7 +88,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	int update_al=0;
 	unsigned long evicted=LC_FREE;
 
-	spin_lock(&mdev->act_log.lc_lock);
+	spin_lock(&mdev->al_lock);
 
 	extent = (struct drbd_extent *)lc_get(&mdev->act_log,enr);
 	
@@ -95,7 +103,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	extent->pending_ios++;
 
-	spin_unlock(&mdev->act_log.lc_lock);
+	spin_unlock(&mdev->al_lock);
 
 	if( update_al ) {
 		if(mdev->cstate < Connected &&  evicted != LC_FREE ) {
@@ -110,12 +118,12 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct drbd_extent *extent;
 
-	spin_lock(&mdev->act_log.lc_lock);
+	spin_lock(&mdev->al_lock);
 
 	extent = (struct drbd_extent *)lc_find(&mdev->act_log,enr);
 
 	if(!extent) {
-		spin_unlock(&mdev->act_log.lc_lock);
+		spin_unlock(&mdev->al_lock);
 		ERR("drbd_al_complete_io() called on inactive extent\n");
 		return;
 	}
@@ -124,10 +132,10 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	extent->pending_ios--;
 
 	if(extent->pending_ios == 0) {
-		wake_up(&mdev->act_log.evict_wq);
+		wake_up(&mdev->al_wait);
 	}
 
-	spin_unlock(&mdev->act_log.lc_lock);
+	spin_unlock(&mdev->al_lock);
 }
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
@@ -297,7 +305,9 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 			if(extent_nr == LC_FREE) continue;
 
 		       //if(j<3) INFO("T%03d S%03d=E%06d\n",trn,pos,extent_nr);
+			spin_lock(&mdev->al_lock);
 			lc_set(&mdev->act_log,extent_nr,pos);
+			spin_unlock(&mdev->al_lock);
 		}
 
 		bh_kunmap(mdev->md_io_bh);
@@ -311,7 +321,9 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		if( i > mx ) i=0;
 	}
 
+	spin_lock(&mdev->al_lock);
 	active_extents=lc_fixup_hash_next(&mdev->act_log);
+	spin_unlock(&mdev->al_lock);
 
 	mdev->al_tr_number = to_tnr+1;
 	mdev->al_tr_pos = to;
@@ -332,7 +344,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	int i;
 	unsigned int enr;
 
-	spin_lock(&mdev->act_log.lc_lock);
+	spin_lock(&mdev->al_lock);
 
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
 		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
@@ -340,7 +352,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		drbd_update_on_disk_bm(mdev,enr,1);
 	}
 
-	spin_unlock(&mdev->act_log.lc_lock);
+	spin_unlock(&mdev->al_lock);
 }
 
 /**
@@ -353,7 +365,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	unsigned int enr;
 	unsigned long add=0;
 
-	spin_lock(&mdev->act_log.lc_lock);
+	spin_lock(&mdev->al_lock);
 
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
 		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
@@ -362,7 +374,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 				   AL_EXTENT_SIZE, SS_OUT_OF_SYNC );
 	}
 
-	spin_unlock(&mdev->act_log.lc_lock);
+	spin_unlock(&mdev->al_lock);
 
 	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add);
 
@@ -498,7 +510,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	// a 16 MB extent border. (Currently this is true...)
 	enr = (sector >> (BM_EXTENT_SIZE_B-9));
 
-	spin_lock(&mdev->resync.lc_lock);
+	spin_lock(&mdev->al_lock);
 
 	ext = (struct bm_extent *) lc_get(&mdev->resync,enr);
 	if(ext->lce.lc_number == enr) {
@@ -508,29 +520,29 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		ext->lce.lc_number = enr;
 		ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 	}
-	spin_unlock(&mdev->resync.lc_lock);		
+	spin_unlock(&mdev->al_lock);		
 
 	D_ASSERT((long)ext->rs_left >= 0);
 
 	if(may_sleep) {
 		struct list_head *le;
 
-		spin_lock(&mdev->resync.lc_lock);
+		spin_lock(&mdev->al_lock);
 	restart:
 		list_for_each(le,&mdev->resync.lru) {
 			ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
 			if(ext->rs_left == 0) {
-				spin_unlock(&mdev->resync.lc_lock);	       
+				spin_unlock(&mdev->al_lock);	       
 				drbd_update_on_disk_bm(mdev,enr*SM,1);
 				// TODO: reconsider to use the async version
 				// of drbd_update_on_disk_bm()
 				//INFO("Clearing e# %lu of on disk bm\n",enr);
-				spin_lock(&mdev->resync.lc_lock);
+				spin_lock(&mdev->al_lock);
 				lc_del(&mdev->resync,&ext->lce);
 				goto restart;
 			}
 		}
-		spin_unlock(&mdev->resync.lc_lock);		
+		spin_unlock(&mdev->al_lock);		
 	}
 }
 #undef SM
