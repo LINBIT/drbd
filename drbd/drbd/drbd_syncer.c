@@ -222,6 +222,9 @@ int ds_buffer_send(struct ds_buffer *this,int minor)
 	for(i=0;i<pending;i++) {
 		rr=drbd_send_data(&drbd_conf[minor], this->bhs[i].b_data,
 				  blocksize,this->bhs[i].b_blocknr,ID_SYNCER);
+		// bh_kmap()/bh_kunmap() not needed since they are allocaded
+		// with GFP_USER.
+
 		if(rr < blocksize) {
 			printk(KERN_ERR DEVICE_NAME 
 			       "%d: syncer send failed!!\n",minor);

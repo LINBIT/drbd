@@ -420,3 +420,7 @@ extern struct proc_dir_entry drbd_proc_dir;
 #define waitpid(A,B,C) 0
 #endif
 
+#if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
+#define bh_kmap(bh)	((bh)->b_data)
+#define bh_kunmap(bh)	do { } while (0)
+#endif

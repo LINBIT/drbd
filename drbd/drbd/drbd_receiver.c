@@ -528,6 +528,7 @@ inline int receive_data(int minor,int data_size)
 	unsigned long block_nr;
 	struct Tl_epoch_entry *e;
 	Drbd_Data_P header;
+	int rr;
 
 	if(drbd_conf[minor].state != Secondary) /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: got data while not SEC!!\n",
@@ -561,7 +562,10 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
-	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size,0)!=data_size) {
+	rr=drbd_recv(&drbd_conf[minor],bh_kmap(bh),data_size,0);
+	bh_kunmap(bh);
+
+	if ( rr != data_size) {		
 		bforget(bh);
 		return FALSE;
 	}

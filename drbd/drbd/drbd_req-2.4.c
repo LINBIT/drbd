@@ -236,8 +236,9 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 			req->rq_status = RQ_DRBD_NOTHING;
 
-     		        send_ok=drbd_send_data(mdev, bh->b_data,
-					   cbs,bnr,(unsigned long)req);
+     		        send_ok=drbd_send_data(mdev, bh_kmap(bh), cbs,
+					       bnr,(unsigned long)req);
+			bh_kunmap(bh);
 
 			if(send_ok) {
 				mdev->send_cnt+=size_kb;
