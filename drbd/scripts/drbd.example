@@ -73,7 +73,7 @@ SLAVE_IF=""
 #          drbd will trigger a kernel panic if there is an
 #          IO error on the lower_device. May be usefull when
 #          drbd is used in a HA cluster.
-OPTIONS="-r 500 -d 514080"
+OPTIONS=""
 
 # Protocol used for this device
 # protocol may be A, B or C.
@@ -86,7 +86,3 @@ SLAVE_DEVICE="/dev/nb0"
 # Partitions for drbd (can be a different partition on each machine)
 MASTER_PARTITION="/dev/hda3"
 SLAVE_PARTITION="/dev/hda3"
-
-# Mountpoints (may be different on each machine)
-MASTER_MNTPOINT="/mnt/drbd0"
-SLAVE_MNTPOINT="/mnt/drbd0"

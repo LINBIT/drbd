@@ -79,8 +79,8 @@ case "$1" in
 
 		# If there was an error becoming primary, don't mount
 		if [ $RETVAL -eq 0 ]; then
-			action "Mounting shared device on $MASTER_MNTPOINT" \
-			    mount $MASTER_MNTPOINT
+			action "Mounting shared device $MASTER_DEVICE" \
+			    mount $MASTER_DEVICE
 			RV=$?
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -94,8 +94,8 @@ case "$1" in
 
 		# If there was an error becoming primary, don't mount
 		if [ $RETVAL -eq 0 ]; then
-			action "Mounting shared device on $SLAVE_MNTPOINT" \
-			    mount $SLAVE_MNTPOINT
+			action "Mounting shared device $SLAVE_DEVICE" \
+			    mount $SLAVE_DEVICE
 			RV=$?
 			[ $RETVAL -eq 0 ] && RETVAL=$RV
 		fi
@@ -117,8 +117,8 @@ case "$1" in
 
 	    if [ "$HOST" = "`echo $MASTER_NODE | cut -d: -f1`" ]; then
 
-		action "Unmounting shared device on $MASTER_MNTPOINT" \
-		    umount $MASTER_MNTPOINT
+		action "Unmounting shared device $MASTER_DEVICE" \
+		    umount $MASTER_DEVICE
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
@@ -132,8 +132,8 @@ case "$1" in
 
 	    elif [ "$HOST" = "`echo $SLAVE_NODE | cut -d: -f1`" ]; then
 
-		action "Unmounting shared device on $SLAVE_MNTPOINT" \
-		    umount $SLAVE_MNTPOINT
+		action "Unmounting shared device $SLAVE_DEVICE" \
+		    umount $SLAVE_DEVICE
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
