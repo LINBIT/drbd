@@ -53,12 +53,25 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 {
 	int sz = 0;
 	unsigned long res , db, dt, dbdt, rt, rs_left;
-	sector_t n;
 
+	/* the whole sector_div thingy was wrong (did overflow,
+	 * did not use correctly typed parameters), and is not even
+	 * neccessary as long as rs_total and drbd_bm_total_weight
+	 * are both unsigned long.
+	 *
+	 * this is to break it at compile time when we change that
+	 * (we may feel 4TB maximum storage per drbd is not enough)
+	 */
+	typecheck(unsigned long, mdev->rs_total);
+
+	/* note: both rs_total and rs_left are in bits, i.e. in
+	 * units of BM_BLOCK_SIZE.
+	 * for the percentage, we don't care. */
 	rs_left = drbd_bm_total_weight(mdev);
-	n = rs_left*1000;
-	sector_div(n,mdev->rs_total + 1);
-	res = n;
+	D_ASSERT(rs_left < mdev->rs_total);
+	/* >> 10 to prevent overflow,
+	 * +1 to prevent division by zero */
+	res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
 	{
 		int i, y = res/50, x = 20-y;
 		sz += sprintf(buf + sz, "\t[");
@@ -93,27 +106,28 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	 */
 	dt = (jiffies - mdev->rs_mark_time) / HZ;
 	if (!dt) dt++;
-	db = Bit2KB(mdev->rs_mark_left - rs_left);
-	n = Bit2KB(rs_left);
-	sector_div(n,(db/100+1));
-	rt = ( dt * (unsigned long) n ) / 100; /* seconds */
+	db = mdev->rs_mark_left - rs_left;
+	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
 
 	sz += sprintf(buf + sz, "finish: %lu:%02lu:%02lu",
 		rt / 3600, (rt % 3600) / 60, rt % 60);
 
-
 	/* current speed average over (SYNC_MARKS * SYNC_MARK_STEP) jiffies */
-	if ((dbdt=db/dt) > 1000)
+	dbdt = Bit2KB(db/dt);
+	if (dbdt > 1000)
 		sz += sprintf(buf + sz, " speed: %ld,%03ld",
 			dbdt/1000,dbdt % 1000);
 	else
 		sz += sprintf(buf + sz, " speed: %ld", dbdt);
 
-	/* mean speed since syncer started */
+	/* mean speed since syncer started
+	 * FIXME introduce some additional "paused jiffies",
+	 * so we can account for PausedSync periods */
 	dt = (jiffies - mdev->rs_start) / HZ;
 	if (!dt) dt++;
-	db = Bit2KB(mdev->rs_total - rs_left);
-	if ((dbdt=db/dt) > 1000)
+	db = mdev->rs_total - rs_left;
+	dbdt = Bit2KB(db/dt);
+	if (dbdt > 1000)
 		sz += sprintf(buf + sz, " (%ld,%03ld)",
 			dbdt/1000,dbdt % 1000);
 	else
