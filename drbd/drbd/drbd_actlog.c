@@ -48,37 +48,6 @@ struct al_transaction {
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *);
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int ,int);
 
-
-int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
-		     unsigned int enr)
-{
-	// This callback is called by lc_get().
-	// WRITE transaction....
-	// async:  do lc->flags &= ~LC_DIRTY and  wake_up(&mdev->al_wait);
-	// in end of IO hander. Return 0 here.
-	// sync: do everything here and return 1.
-
-	struct Drbd_Conf *mdev = (struct Drbd_Conf *) lc->lc_private;
-	unsigned long evicted;
-
-	evicted = e->lc_number;
-	e->lc_number = enr;
-	spin_unlock_irq(&mdev->al_lock);
-
-	if(mdev->cstate < Connected && evicted != LC_FREE ) {
-		drbd_update_on_disk_bm(mdev,evicted,1);
-	}
-	drbd_al_write_transaction(mdev,e);
-	mdev->al_writ_cnt++;
-
-	spin_lock_irq(&mdev->al_lock);
-	clear_bit(__LC_DIRTY,&lc->flags);
-	smp_mb__after_clear_bit();
-	wake_up(&mdev->al_wait);
-
-	return 1;
-}
-
 #define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
 
 static inline
@@ -97,15 +66,15 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 			return 0;
 		}
 	}
-	al_ext = lc_get(mdev->act_log,enr);
-	if (!al_ext) al_flags=mdev->act_log->flags;
+	al_ext   = lc_get(mdev->act_log,enr);
+	al_flags = mdev->act_log->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
-	if(al_flags & LC_STARVING) {
-		WARN("Have to wait for LRU element (AL too small?)\n");
-	}
-	if(al_flags & LC_DIRTY) {
-		WARN("Ongoing AL update (AL device too slow?)\n");
+	if (!al_ext) {
+		if (al_flags & LC_STARVING)
+			WARN("Have to wait for LRU element (AL too small?)\n");
+		if (al_flags & LC_DIRTY)
+			WARN("Ongoing AL update (AL device too slow?)\n");
 	}
 
 	return al_ext;
@@ -114,9 +83,28 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
-	struct lc_element *extent;
+	struct lc_element *al_ext;
 
-	wait_event(mdev->al_wait, (extent = _al_get(mdev,enr)) );
+	wait_event(mdev->al_wait, (al_ext = _al_get(mdev,enr)) );
+
+	if (al_ext->lc_number != enr) {
+		// We have to do write an transaction to AL.
+		unsigned long evicted;
+
+		evicted = al_ext->lc_number;
+		al_ext->lc_number = enr;
+
+		if(mdev->cstate < Connected && evicted != LC_FREE ) {
+			drbd_update_on_disk_bm(mdev,evicted,1);
+		}
+		drbd_al_write_transaction(mdev,al_ext);
+		mdev->al_writ_cnt++;
+
+		spin_lock_irq(&mdev->al_lock);
+		lc_changed(mdev->act_log,al_ext);
+		spin_unlock_irq(&mdev->al_lock);
+		wake_up(&mdev->al_wait);
+	}
 }
 
 void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -520,13 +508,13 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
 	ext = (struct bm_extent *) lc_get(mdev->resync,enr);
-	if(ext) {
+	if (ext) {
 		if( ext->lce.lc_number == enr) {
 			ext->rs_left -= cleared;
 			D_ASSERT((long)ext->rs_left >= 0);
 		} else {
 			WARN("Recounting sectors (resync LRU too small?)\n");
-			ext->lce.lc_number = enr;
+			lc_changed(mdev->resync,(struct lc_element*)ext);
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 		}
 		lc_put(mdev->resync,(struct lc_element*)ext);
@@ -595,24 +583,25 @@ static inline
 struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct bm_extent  *bm_ext;
-	unsigned long     rs_flags=0;
+	unsigned long     rs_flags;
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
-	if(bm_ext) {
+	if (bm_ext) {
 		if(bm_ext->lce.lc_number != enr) {
-			bm_ext->lce.lc_number = enr;
+			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			bm_ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+			wake_up(&mdev->al_wait);
 		}
 		set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
 	}
-	if(bm_ext == 0)	rs_flags=mdev->resync->flags;
+	rs_flags=mdev->resync->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
-	if(rs_flags & LC_STARVING) {
+	if (rs_flags & LC_STARVING) {
 		WARN("Have to wait for element (resync LRU too small?)\n");
 	}
-	if(rs_flags & LC_DIRTY) {
+	if (rs_flags & LC_DIRTY) {
 		BUG(); // WARN("Ongoing RS update (???)\n");
 	}
 

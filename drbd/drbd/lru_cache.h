@@ -58,20 +58,19 @@ struct lc_element {
 	unsigned int lc_number;
 };
 
-struct lru_cache;
-typedef int (*lc_notify_on_change_fn)(struct lru_cache*,struct lc_element*,unsigned int);
-
 struct lru_cache {
 	struct list_head lru;
 	struct list_head free;
 	size_t element_size;
 	unsigned int  nr_elements;
+	unsigned int  new_number;
 	unsigned long flags;
+	struct lc_element *changing_element; // just for paranoia
 
-	lc_notify_on_change_fn notify_on_change;
 	void  *lc_private;
 
 	struct hlist_head slot[0];
+	// hash colision chains here, then element storage.
 };
 
 
@@ -80,15 +79,13 @@ enum {
 	__LC_PARANOIA,
 	__LC_DIRTY,
 	__LC_STARVING,
-	__LC_LOCKED
 };
 #define LC_PARANOIA (1<<__LC_PARANOIA)
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
-#define LC_LOCKED   (1<<__LC_LOCKED)
 
 extern struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
-				  lc_notify_on_change_fn fn, void *private_p);
+				  void *private_p);
 extern void lc_free(struct lru_cache* lc);
 extern void lc_set (struct lru_cache* lc, unsigned int enr, int index);
 extern void lc_del (struct lru_cache* lc, struct lc_element *element);
@@ -96,10 +93,12 @@ extern void lc_del (struct lru_cache* lc, struct lc_element *element);
 extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
 extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
 extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
+extern void            lc_changed(struct lru_cache* lc, struct lc_element* e);
 
 
-/* this can be used to "disables" lc_get.
- * lc_put still accesses and changes the elements, though.
+/* This can be used to stop lc_get from changing the set of active elements.
+ * Note that the reference counts and order on the lru list may still change.
+ * returns true if we aquired the lock.
  */
 static inline int lc_try_lock(struct lru_cache* lc)
 {

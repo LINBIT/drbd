@@ -242,8 +242,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	{
 		struct lru_cache *n,*t;
 		n = lc_alloc(mdev->sync_conf.al_extents,
-			     sizeof(struct lc_element),
-			     drbd_al_changing, mdev);
+			     sizeof(struct lc_element), mdev);
 		// FIXME if (n==NULL) scream out loud ...
 		// FIXME if (still_in_use) BUG();
 		spin_lock_irq(&mdev->al_lock);
@@ -572,8 +571,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		{
 			struct lru_cache *n,*t;
 			n = lc_alloc(mdev->sync_conf.al_extents,
-				     sizeof(struct lc_element),
-				     drbd_al_changing, NULL);
+				     sizeof(struct lc_element), mdev);
 			// FIXME if (n==NULL) scream out loud ...
 			// FIXME if (still_in_use) BUG();
 			spin_lock_irq(&mdev->al_lock);

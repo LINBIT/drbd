@@ -774,8 +774,6 @@ extern struct proc_dir_entry *drbd_proc;
 extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 
 // drbd_actlog.c
-extern int drbd_al_changing(struct lru_cache* lc, struct lc_element *e,
-			    unsigned int enr);
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);

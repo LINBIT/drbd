@@ -1209,11 +1209,10 @@ int __init drbd_init(void)
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
 		// no need to lock access, we are still initializing the module.
-		mdev->resync = lc_alloc(7, sizeof(struct bm_extent),NULL,NULL);
+		mdev->resync = lc_alloc(7, sizeof(struct bm_extent),mdev);
 		if (!mdev->resync) goto Enomem;
 		mdev->act_log = lc_alloc(mdev->sync_conf.al_extents,
-					 sizeof(struct lc_element),
-					 drbd_al_changing, mdev);
+					 sizeof(struct lc_element), mdev);
 		if (!mdev->act_log) goto Enomem;
 
 		drbd_init_set_defaults(mdev);

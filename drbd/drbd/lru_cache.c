@@ -47,7 +47,7 @@ static inline void lc_touch(struct lru_cache *lc,struct lc_element *e)
  * returns pointer to a newly initialized lru_cache object with said parameters.
  */
 struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
-			   lc_notify_on_change_fn fn, void *private_p)
+			   void *private_p)
 {
 	unsigned long bytes;
 	struct lru_cache   *lc;
@@ -65,7 +65,7 @@ struct lru_cache* lc_alloc(unsigned int e_count, unsigned int e_size,
 		INIT_LIST_HEAD(&lc->free);
 		lc->element_size     = e_size;
 		lc->nr_elements      = e_count;
-		lc->notify_on_change = fn;
+		lc->new_number	     = -1;
 		lc->lc_private       = private_p;
 		for(i=0;i<e_count;i++) {
 			e = lc_entry(lc,i);
@@ -179,21 +179,34 @@ STATIC int lc_unused_element_available(struct lru_cache* lc)
  * the cache. In either case, the user is notified so he is able to e.g. keep
  * a persistent log of the cache changes, and therefore the objects in use.
  *
+ * Return values:
+ *  NULL    if the requested element number was not in the cache, and no unused
+ *          element could be recycled
+ *  pointer to the element with the REQUESTED element number
+ *          In this case, it can be used right away
+ *
+ *  pointer to an UNUSED element with some different element number.
+ *          In this case, the cache is marked dirty, and the returned element
+ *          pointer is removed from the lru list and hash collision chains.
+ *          The user now should do whatever houskeeping is necessary. Then he
+ *          needs to call lc_element_changed(lc,element_pointer), to finish the
+ *          change.
+ *
+ * NOTE: The user needs to check the lc_number on EACH use, so he recognizes
+ *       any cache set change.
+ *
  * @lc: The lru_cache object
  * @enr: element number
  */
 struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 {
 	struct lc_element *e;
-	int sync;
 
 	BUG_ON(!lc);
 	BUG_ON(!lc->nr_elements);
 
 	PARANOIA_ENTRY();
-	// maybe this should be test_bit, but access needs be serialized
-	// anyways, so this should be ok.
-	if ( lc->flags & (LC_STARVING|LC_LOCKED) ) RETURN(NULL);
+	if ( lc->flags & LC_STARVING ) RETURN(NULL);
 
 	e = lc_find(lc, enr);
 	if (e) {
@@ -203,7 +216,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	}
 
 	/* In case there is nothing available and we can not kick out
-	   the LRU element, we have to wait ...
+	 * the LRU element, we have to wait ...
 	 */
 	if(!lc_unused_element_available(lc)) {
 		__set_bit(__LC_STARVING,&lc->flags);
@@ -219,42 +232,29 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_get_unused_element(lc);
 	BUG_ON(!e);
 
-	list_add(&e->list,&lc->lru);
+	clear_bit(__LC_STARVING,&lc->flags);
+	BUG_ON(++e->refcnt != 1);
 
-	if(lc->notify_on_change) {
-		PARANOIA_LEAVE();
-		sync = lc->notify_on_change(lc,e,enr);
-		PARANOIA_ENTRY();
-		/* we set the STARVING bit when we try to evict the lru
-		 * element, but it is still in use, to avoid usage patterns
-		 * where we never can evict.
-		 * as soon as we have successfully changed an element,
-		 * we need to clear this flag again.
-		 */
-		clear_bit(__LC_STARVING,&lc->flags);
-		smp_mb__after_clear_bit();
-		BUG_ON( sync && (e->lc_number != enr) );
-	} else {
-		/* ok, user does not want to be notified.
-		 * He sets lc_number we he gets the extent...
-		 */
-		// I'd like to use __clear_bit, but 2.4.23 does not have it.
-		clear_bit(__LC_DIRTY,&lc->flags);
-		clear_bit(__LC_STARVING,&lc->flags);
-		smp_mb__after_clear_bit();
-		sync = 1;
-	}
+	lc->changing_element = e;
+	lc->new_number = enr;
 
-	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
-
-	if (sync) {
-		BUG_ON(++e->refcnt != 1);
-		BUG_ON(lc->flags & LC_DIRTY);
-		RETURN(e);
-	} else {
-		RETURN(NULL);
-	}
+	RETURN(e);
 }
+
+void lc_changed(struct lru_cache* lc, struct lc_element* e)
+{
+	PARANOIA_ENTRY();
+	BUG_ON(e != lc->changing_element);
+	e->lc_number = lc->new_number;
+	list_add(&e->list,&lc->lru);
+	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, lc->new_number) );
+	lc->changing_element = NULL;
+	lc->new_number = -1;
+	clear_bit(__LC_DIRTY,&lc->flags);
+	smp_mb__after_clear_bit();
+	PARANOIA_LEAVE();
+}
+
 
 unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 {
