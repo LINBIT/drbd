@@ -799,8 +799,7 @@ int main(int argc, char** argv)
       retval=do_disk_conf(drbd_fd,argv[2],&disk_c);
       if(retval) return retval;
       retval=do_net_conf(drbd_fd,argv[3],argv[4],argv[5],&net_c);
-      if(retval) return retval;
-      return 0;
+      return retval;
     }
 
   for(i=0;i<ARRY_SIZE(commands);i++) 
@@ -813,8 +812,9 @@ int main(int argc, char** argv)
 	      fprintf(stderr,"Too many arguments or options.\n");
 	      return 20;
 	    }
-	  retval=commands[i].function(drbd_fd,argv+3,argc-3);
+	  return commands[i].function(drbd_fd,argv+3,argc-3);	  
 	}
     }
-  return retval;
+  fprintf(stderr,"%s is not a command\n",argv[2]);
+  return 20;
 }
