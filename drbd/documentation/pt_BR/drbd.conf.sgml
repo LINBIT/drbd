@@ -169,7 +169,6 @@
 	    </para>
 	  </listitem>
 	</varlistentry>
-      </varlistentry>
 	<varlistentry>
 	  <term><option>skip-wait</option></term>
 	  <listitem><para>
