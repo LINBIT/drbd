@@ -152,7 +152,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 #else
-#warning "FIXME"
+//#warning "FIXME"
 /* used for synchronous meta data and bitmap IO
  * submitted by FIXME (I'd say worker only, but currently this is not true...)
  */

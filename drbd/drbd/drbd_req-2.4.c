@@ -132,7 +132,7 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,drbd_bio_t *bio)
 			   (unsigned long)pr);
 #else
 	//WORK_HERE
-#warning "FIXME make 2.6.x clean"
+	//#warning "FIXME make 2.6.x clean"
 #endif
 }
 
@@ -183,7 +183,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 	}
 
 #else
-#warning "FIXME"
+	//#warning "FIXME"
 #endif
 
 	/* what do we know?
@@ -287,7 +287,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev = mdev->lo_device;
 #else
-#warning "FIXME"
+		//#warning "FIXME"
 			//WORK_HERE
 		/* I want to change it anyways so we never remap ... */
 #endif
@@ -304,7 +304,7 @@ int drbd_make_request(request_queue_t *q, struct bio *bio)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		bio->b_rdev = mdev->lo_device;
 #else
-#warning "FIXME"
+		//#warning "FIXME"
 			//WORK_HERE
 		/* I want to change it anyways so we never remap ... */
 #endif

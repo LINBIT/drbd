@@ -125,7 +125,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 			mdev->la_size = size;
 			INFO("size = %lu KB\n",size);
 		}
-#warning "FIXME else { error handling }"
+		//#warning "FIXME else { error handling }"
 	}
 
 	return rv;
@@ -189,7 +189,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		goto fail_ioctl;
 	}
 
-#warning "XXX size check does not care about meta data on the same device??"
+	//#warning "XXX size check does not care about meta data on the same device??"
 	if ((drbd_get_lo_capacity(mdev)>>1) < new_conf.disk_size) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev_fail_ioctl;
@@ -466,7 +466,7 @@ FIXME
 int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 {
 
-#warning "FIXME actually must hold device_mutex!"
+  //#warning "FIXME actually must hold device_mutex!"
 
 	NOT_IN_26(int minor = mdev-drbd_conf;)
 	if ( (newstate & 0x3) == mdev->state ) return 0; /* nothing to do */
@@ -694,7 +694,7 @@ ONLY_IN_26(
 		mdev->lo_usize = (unsigned long)arg;
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
-#warning "yet an other reason to serialize all state changes on a rw_semaphore"
+		//#warning "yet an other reason to serialize all state changes on a rw_semaphore"
 		if (mdev->cstate == Connected) drbd_send_param(mdev);
 		break;
 

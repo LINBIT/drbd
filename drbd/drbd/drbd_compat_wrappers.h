@@ -313,7 +313,7 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 	set_capacity(mdev->vdisk,size);
 }
 
-#warning "FIXME why don't we care for the return value?"
+//#warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(mdev->this_bdev,blksize);

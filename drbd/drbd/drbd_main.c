@@ -89,7 +89,7 @@ STATIC int drbd_send(drbd_dev*,struct socket*,void*,size_t,unsigned);
 #endif
 #define DEVICE_REQUEST drbd_do_request
 
-#warning "FIXME review the MODULE_* macros below"
+//#warning "FIXME review the MODULE_* macros below"
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@gmx.at>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
@@ -1180,6 +1180,10 @@ ONLY_IN_26(
 			if (*q) blk_put_queue(*q);
 			*q = NULL;
 
+			if (mdev->this_bdev->bd_holder == drbd_sec_holder) { 
+				mdev->this_bdev->bd_contains = mdev->this_bdev;
+				bd_release(mdev->this_bdev);
+			}
 			if (mdev->this_bdev) bdput(mdev->this_bdev);
 )
 
@@ -1291,8 +1295,12 @@ int __init drbd_init(void)
 		disk->private_data = mdev;
 		add_disk(disk);
 
-		// THINK do we need this?
 		mdev->this_bdev = bdget(MKDEV(MAJOR_NR,i));
+		mdev->this_bdev->bd_contains = mdev->this_bdev; // Hmmm ?
+		if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
+			// Initial we are Secondary -> should claim myself.
+			WARN("Could not bd_claim() myself.");
+		}
 
 		blk_queue_make_request(q,drbd_make_request);
 		q->unplug_fn = drbd_send_write_hint;
@@ -1420,7 +1428,7 @@ void cleanup_module(void)
 {
 	int i;
 
-#warning "FIXME increase module refcount with each setup device"
+//#warning "FIXME increase module refcount with each setup device"
 	/* then you need to tear down all devices
 	 * before you can remove the module */
 	for (i = 0; i < minor_count; i++) {
