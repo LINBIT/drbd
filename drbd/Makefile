@@ -21,11 +21,7 @@
 
 SUBDIRS     = user drbd scripts benchmark documentation #testing
 ALLSUBDIRS  = user drbd scripts benchmark documentation testing
-ifdef FORCE
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .Date: \(.\{10\}\).*/\1-\2/;s,/,,g;p;q;}' drbd_config.h)
-else
 REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .*/\1/;p;q;}' drbd/linux/drbd_config.h)
-endif
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
 
 LN_S = ln -s
@@ -76,10 +72,6 @@ check_changelogs_up2date:
 	if ! grep "^drbd ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
 	   echo "You need to update debian/changelog"; \
-	   up2date=false; fi ; \
-	if ! grep "^drbd_$$dver_re-" >/dev/null 2>&1 debian/files; \
-	then \
-	   echo "You need to update debian/files"; \
 	   up2date=false; fi ; \
 	$$up2date
 
