@@ -80,7 +80,8 @@ case "$1" in
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 
-	    if [ ! isMasterBoot $D ]; then
+	    isMasterBoot $D 
+	    if [ ! $? ]; then
 			if [ $RV -eq 0 ]; then
 			echo -n "Waiting for drdb to initialize (Can not fail)"
 			sleep 30
