@@ -70,7 +70,7 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 #include "drbd.h"
 #include "drbd_int.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined (CONFIG_DEVFS_FS)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 static devfs_handle_t devfs_handle;
 #endif
 
