@@ -1173,7 +1173,7 @@ ONLY_IN_26(
 			if (*q) blk_put_queue(*q);
 			*q = NULL;
 
-			if (mdev->this_bdev) bd_release(mdev->this_bdev);
+			if (mdev->this_bdev) bdput(mdev->this_bdev);
 )
 
 			tl_cleanup(mdev);
@@ -1257,7 +1257,7 @@ int __init drbd_init(void)
 		goto Enomem;
 #else
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0) && defined(CONFIG_DEVFS_FS)
+#ifdef CONFIG_DEVFS_FS
 	devfs_mk_dir(DEVICE_NAME);
 #endif
 
@@ -1415,14 +1415,6 @@ void cleanup_module(void)
 {
 	int i;
 
-#ifdef CONFIG_DEVFS_FS
-# if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-	devfs_unregister(devfs_handle);
-# else
-	devfs_remove(DEVICE_NAME);
-# endif
-#endif
-
 #warning "FIXME increase module refcount with each setup device"
 	/* then you need to tear down all devices
 	 * before you can remove the module */
@@ -1455,6 +1447,14 @@ void cleanup_module(void)
 #endif
 
 	drbd_cleanup();
+
+#ifdef CONFIG_DEVFS_FS
+# if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	devfs_unregister(devfs_handle);
+# else
+	devfs_remove(DEVICE_NAME);
+# endif
+#endif
 }
 
 void drbd_free_ll_dev(drbd_dev *mdev)
