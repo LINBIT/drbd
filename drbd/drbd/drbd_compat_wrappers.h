@@ -35,7 +35,7 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 	blk_size[MAJOR_NR][(int)(mdev - drbd_conf)] = (size>>1);
 }
 
-#warning "FIXME why don't we care for the return value?"
+//#warning "FIXME why don't we care for the return value?"
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(MKDEV(MAJOR_NR, (int)(mdev-drbd_conf)), blksize);
@@ -141,6 +141,7 @@ drbd_ee_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
 	bh->b_private  = mdev;
 	bh->b_state    = (1 << BH_Req)
 			|(1 << BH_Launder)
+	                |(1 << BH_Mapped)
 			|(1 << BH_Lock);
 }
 

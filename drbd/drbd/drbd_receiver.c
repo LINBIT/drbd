@@ -419,8 +419,7 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	return 0;
 }
 
-STATIC int drbd_recv_short(drbd_dev *mdev, struct socket* sock,
-		    void *buf, size_t size)
+STATIC int drbd_recv_short(drbd_dev *mdev, void *buf, size_t size)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
@@ -440,7 +439,7 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket* sock,
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
-	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+	rv = sock_recvmsg(mdev->meta.socket, &msg, size, msg.msg_flags);
 
 	set_fs(oldfs);
 
@@ -453,13 +452,11 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket* sock,
 # define SK_(x)		sk_ ## x
 #endif
 
-int drbd_recv(drbd_dev *mdev, struct socket* sock,
-	      void *buf, size_t size)
+int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
 	struct msghdr msg;
-	char * sockname = (sock == mdev->meta.socket ? "msock" : "sock");
 	int rv;
 
 	msg.msg_control = NULL;
@@ -476,64 +473,28 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	set_fs(KERNEL_DS);
 
 	for(;;) {
-		rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+		rv = sock_recvmsg(mdev->data.socket,&msg,size,msg.msg_flags);
 		if (rv == size) break;
 
 		/* Note:
 		 * ECONNRESET   other side closed the connection
 		 * ERESTARTSYS  (on  sock) we got a signal
-		 * EINTR        (on msock) we got a signal
-		 * EAGAIN       (on msock) rcvtimeo expired
 		 */
-		if (rv == -EAGAIN) {
-			D_ASSERT(sock == mdev->meta.socket);
-			D_ASSERT(current == mdev->asender.task);
 
-			// FIXME decide this more elegantly
-			if ( mdev->meta.socket->sk->SK_(rcvtimeo) == mdev->conf.ping_int*HZ) {
-				C_DBG(0,"recv_header timed out, sending ping\n");
-				// goto do_ping;
-			} else {
-				ERR("PingAck did not arrive\n");
-				break;
-			}
-		} else if (rv == -EINTR) {
-			unsigned long flags = 0;
-
-			D_ASSERT(sock == mdev->meta.socket);
-			D_ASSERT(current == mdev->asender.task);
-
-			LOCK_SIGMASK(current,flags);
-			if (sigismember(&current->pending.signal, DRBD_SIG)) {
-				// should only trigger for wake_asender
-				sigdelset(&current->pending.signal, DRBD_SIG);
-				RECALC_SIGPENDING(current);
-			}
-			UNLOCK_SIGMASK(current,flags);
-			break;
-		} else if (rv < 0) {
+		if (rv < 0) {
 			if (rv == -ECONNRESET)
-				INFO("%s was reset by peer\n",sockname);
+				INFO("sock was reset by peer\n");
 			else if (rv != -ERESTARTSYS)
-				ERR("%s_recvmsg returned %d\n",sockname,rv);
+				ERR("sock_recvmsg returned %d\n",rv);
 			break;
 		} else if (rv == 0) {
-			INFO("%s was shut down by peer\n",sockname);
+			INFO("sock was shut down by peer\n");
 			break;
 		} else {
 			// if data comes in bytewise, this might trigger ...
-			ERR("logic error: %s_recvmsg returned %d\n",
-			    sockname, rv);
+			ERR("logic error: sock_recvmsg returned %d\n",rv);
 			break;
 		}
-
-		// actually no goto needed, but it makes it more obvious
-		// do_ping:
-		if (!drbd_send_ping(mdev))
-			break;
-		// full ack timeout
-		mdev->meta.socket->sk->SK_(rcvtimeo) = mdev->conf.timeout*HZ/10;
-
 	};
 
 	set_fs(oldfs);
@@ -677,44 +638,14 @@ int drbd_connect(drbd_dev *mdev)
 	return 1;
 }
 
-STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
+STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 {
 	int r;
 
-	if (signal_pending(current) && current == mdev->asender.task) {
-		// shortcut only, same effect as if we first go up and
-		// down the helper function calls.
-		int still_pending;
-		unsigned long flags = 0;
-		LOCK_SIGMASK(current,flags);
-		if (sigismember(&current->pending.signal, DRBD_SIG)) {
-			sigdelset(&current->pending.signal, DRBD_SIG);
-			RECALC_SIGPENDING(current);
-		}
-		still_pending = signal_pending(current);
-		UNLOCK_SIGMASK(current,flags);
-
-		if (still_pending)
-			DBG("Nonprivate signal pending in %s: 0x%08lx\n",
-			    __func__,current->pending.signal.sig[0]);
-
-		h->command = WakeAsender;
-		h->length  = 0;
-		// fail if it was not our private signal.
-		return !still_pending;
-	}
-
-	r = drbd_recv(mdev,sock,h,sizeof(*h));
-	if (r == -EINTR && sock == mdev->meta.socket) {
-		h->command = WakeAsender;
-		h->length  = 0;
-		return TRUE;
-	}
+	r = drbd_recv(mdev,h,sizeof(*h));
 
 	if (unlikely( r != sizeof(*h) )) {
-		ERR("short read expecting header on %s: r=%d\n",
-		    sock == mdev->meta.socket ? "msock" : "sock",
-		    r);
+		ERR("short read expecting header on sock: r=%d\n",r);
 		return FALSE;
 	};
 	h->command = be16_to_cpu(h->command);
@@ -726,13 +657,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev,struct socket* sock, Drbd_Header *h)
 		return FALSE;
 	}
 	mdev->last_received = jiffies;
-	if (sock == mdev->meta.socket) {
-		// restore idle timeout
-		mdev->meta.socket->sk->SK_(rcvtimeo) = mdev->conf.ping_int*HZ;
-	}
-	C_DBG(5,"on %s <<< %s l: %d\n",
-	    sock == mdev->meta.socket ? "msock" : "sock",
-	    cmdname(h->command), h->length);
+
 	return TRUE;
 }
 
@@ -745,7 +670,7 @@ STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
 	ERR_IF(mdev->state != Secondary) return FALSE;
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	rv = drbd_recv(mdev, mdev->data.socket, h->payload, h->length);
+	rv = drbd_recv(mdev, h->payload, h->length);
 	ERR_IF(rv != h->length) return FALSE;
 
 	inc_unacked(mdev);
@@ -785,7 +710,7 @@ read_in_block(drbd_dev *mdev, int data_size)
 
 	bio = &e->private_bio;
 
-	rr=drbd_recv(mdev,mdev->data.socket, drbd_bio_kmap(bio), data_size);
+	rr=drbd_recv(mdev, drbd_bio_kmap(bio), data_size);
 	drbd_bio_kunmap(bio);
 
 	if ( rr != data_size) {
@@ -828,7 +753,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 
 	D_ASSERT( sector == drbd_pr_get_sector(pr) );
 
-	rr=drbd_recv(mdev,mdev->data.socket,drbd_bio_kmap(bio),data_size);
+	rr=drbd_recv(mdev,drbd_bio_kmap(bio),data_size);
 	drbd_bio_kunmap(bio);
 
 	ok=(rr==data_size);
@@ -953,7 +878,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	ERR_IF(data_size &  0xff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
-	if (drbd_recv(mdev, mdev->data.socket, h->payload, header_size) != header_size)
+	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
@@ -1021,7 +946,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	ERR_IF(data_size &  0xff) return FALSE;
 	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
 
-	if (drbd_recv(mdev, mdev->data.socket, h->payload, header_size) != header_size)
+	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
 	sector = be64_to_cpu(p->sector);
@@ -1064,7 +989,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	if (drbd_recv(mdev, mdev->data.socket, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
 	sector    = be64_to_cpu(p->sector);
@@ -1112,7 +1037,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	// FIXME move into helper
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	if (drbd_recv(mdev, mdev->data.socket, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
 	// XXX harmless race with ioctl ...
@@ -1140,7 +1065,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
-	if (drbd_recv(mdev, mdev->data.socket, h->payload, h->length) != h->length)
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
 	if(be32_to_cpu(p->state) == Primary && mdev->state == Primary ) {
@@ -1278,14 +1203,14 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(word));
 		ERR_IF(want != h->length) goto out;
 		if (want==0) break;
-		if (drbd_recv(mdev, mdev->data.socket, buffer, want) != want)
+		if (drbd_recv(mdev, buffer, want) != want)
 			goto out;
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
 			word = lel_to_cpu(buffer[buf_i]) | bm[bm_i];
 			bits += hweight_long(word);
 			bm[bm_i++] = word;
 		}
-		if (!drbd_recv_header(mdev,mdev->data.socket,h))
+		if (!drbd_recv_header(mdev,h))
 			goto out;
 		D_ASSERT(h->command == ReportBitMap);
 	}
@@ -1388,7 +1313,7 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	size = h->length;
 	while (size > 0) {
 		want = min_t(int,size,sizeof(sink));
-		r = drbd_recv(mdev,mdev->data.socket,sink,want);
+		r = drbd_recv(mdev,sink,want);
 		D_ASSERT(r >= 0);
 		if (r < 0) break;
 		size -= r;
@@ -1461,7 +1386,7 @@ STATIC void drbdd(drbd_dev *mdev)
 
 	for (;;) {
 		drbd_collect_zombies(mdev); // in case a syncer exited.
-		if (!drbd_recv_header(mdev,mdev->data.socket,header))
+		if (!drbd_recv_header(mdev,header))
 			break;
 
 		if (header->command < MAX_CMD)
@@ -1697,8 +1622,7 @@ int drbd_asender(struct Drbd_thread *thi)
 
 		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
 
-		rv = drbd_recv_short(mdev,mdev->meta.socket,buf,
-				     expect-received);
+		rv = drbd_recv_short(mdev,buf,expect-received);
 
 		/* Note:
 		 * -EINTR        (on meta) we got a signal
@@ -1717,6 +1641,11 @@ int drbd_asender(struct Drbd_thread *thi)
 			ERR("meta connection shut down by peer.\n");
 			goto err;
 		} else if (rv == -EAGAIN) {
+			if( mdev->meta.socket->sk->SK_(rcvtimeo) ==
+			    mdev->conf.timeout*HZ/20) {
+				ERR("PingAck did not arrive in time.\n");
+				goto err;
+			}
 			set_bit(SEND_PING,&mdev->flags);
 			continue;
 		} else if (rv == -EINTR) {
