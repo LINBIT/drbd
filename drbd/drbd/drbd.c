@@ -204,6 +204,7 @@ struct Drbd_Conf {
         wait_queue_head_t asender_wait;  
 	int open_cnt;
 	u32 gen_cnt[5];
+	u32 bit_map_gen[5];
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
@@ -225,6 +226,7 @@ void drbd_md_write(int minor);
 void drbd_md_read(int minor);
 void drbd_md_inc(int minor, enum MetaDataIndex order);
 int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
+int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
@@ -247,7 +249,7 @@ void drbd_p_timeout(unsigned long arg);
 struct mbds_operations bm_mops;
 
 /* these defines should go into blkdev.h 
-   (if it will be ever includet into linus'es linux) */
+   (if it will be ever includet into linus' linux) */
 #define RQ_DRBD_NOTHING	  0xf100
 #define RQ_DRBD_SENT	  0xf200
 #define RQ_DRBD_WRITTEN   0xf300
@@ -1956,6 +1958,8 @@ int __init drbd_init(void)
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
 			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;
+			for(j=0;j<=PrimaryInd;j++) 
+				drbd_conf[i].bit_map_gen[j]=0;
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
 #endif  
@@ -2623,11 +2627,13 @@ inline int receive_param(int minor,int command)
 			if(drbd_md_compare(minor,&param)==1)
 				drbd_set_state(minor,Primary);
 		}
-		/* TODO: use gen_cnt to decide if we may 
-		         use SyncingQuick or if we have to use SyncingAll */
+
 	        if (drbd_conf[minor].state == Primary
 		    && !drbd_conf[minor].conf.skip_sync) {
-		        set_cstate(&drbd_conf[minor],SyncingQuick);
+			if(drbd_md_syncq_ok(minor,&param))
+				set_cstate(&drbd_conf[minor],SyncingQuick);
+			else
+				set_cstate(&drbd_conf[minor],SyncingAll);
 			drbd_send_cstate(&drbd_conf[minor]);
 			drbd_thread_start(&drbd_conf[minor].syncer);
 		} else set_cstate(&drbd_conf[minor],Connected);
@@ -2711,6 +2717,7 @@ inline void sl_clear(struct Drbd_Conf *mdev)
 void drbdd(int minor)
 {
 	Drbd_Packet header;
+	int i;
 
 	while (TRUE) {
 		drbd_collect_zombies(minor);
@@ -2800,6 +2807,10 @@ void drbdd(int minor)
 
 	if(drbd_conf[minor].cstate != StandAllone) 
 	        set_cstate(&drbd_conf[minor],Unconnected);
+
+	for(i=0;i<=PrimaryInd;i++) {
+		drbd_conf[minor].bit_map_gen[i]=drbd_conf[minor].gen_cnt[i];
+	}
 
 	switch(drbd_conf[minor].state) {
 	case Primary:   
@@ -3476,7 +3487,7 @@ void drbd_md_read(int minor)
  err:
 	printk(KERN_ERR DEVICE_NAME 
 	       "%d: Error reading state file\n\"%s\"\n",minor,fname);
-	for(i=0;i<PrimaryInd;i++) drbd_conf[minor].gen_cnt[i]=0;
+	for(i=0;i<PrimaryInd;i++) drbd_conf[minor].gen_cnt[i]=1;
 	drbd_conf[minor].gen_cnt[PrimaryInd]=
 		(drbd_conf[minor].state==Primary);
 	drbd_md_write(minor);
@@ -3500,6 +3511,23 @@ int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 		if( me < other ) return -1;
 	}
 	return 0;
+}
+
+/* Returns  1 if SyncingQuick is sufficient
+            0 if SyncAll is needed.
+*/
+int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner)
+{
+	int i;
+	u32 me,other;
+
+	if(be32_to_cpu(partner->gen_cnt[PrimaryInd])==1) return 0;
+	for(i=HumanCnt;i<=ArbitraryCnt;i++) {
+		me=drbd_conf[minor].bit_map_gen[i];
+		other=be32_to_cpu(partner->gen_cnt[i]);
+		if( me != other ) return 0;
+	}
+	return 1;
 }
 
 void drbd_md_inc(int minor, enum MetaDataIndex order)
