@@ -157,6 +157,10 @@ typedef enum {
  * The lower ones (<WFReportParams) indicate
  * that there is no socket!
  * >=WFReportParams ==> There is a socket
+ *
+ * THINK
+ * Skipped should be < Connected,
+ * so writes on a Primary after Skipped sync are not mirrored either ?
  */
 typedef enum {
 	Unconfigured,
