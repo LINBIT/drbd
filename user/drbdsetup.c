@@ -1203,7 +1203,8 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   }
 
   printf("Disk options:\n");
-  if( cn.disk_size_user ) printf(" size = %d KB\n",cn.disk_size_user);
+  if( cn.disk_size_user ) printf(" size = %lu KB\n",
+				 (unsigned long)cn.disk_size_user);
   if( cn.on_io_error != DEF_ON_IO_ERROR) {
     printf(" on-io-error = %s\n",eh_names[cn.on_io_error]);
   }
