@@ -188,19 +188,23 @@ struct ioctl_get_config {
 #define DRBD_MAGIC 0x83740267
 #define BE_DRBD_MAGIC __constant_cpu_to_be32(DRBD_MAGIC)
 
-#define DRBD_IOCTL_GET_VERSION   _IOR( 'D', 0x00, int )
-#define DRBD_IOCTL_SET_STATE     _IOW( 'D', 0x02, Drbd_State )
-#define DRBD_IOCTL_SET_DISK_CONFIG _IOW( 'D', 0x06, struct ioctl_disk_config )
-#define DRBD_IOCTL_SET_NET_CONFIG _IOW( 'D', 0x07, struct ioctl_net_config )
-#define DRBD_IOCTL_UNCONFIG_NET  _IO ( 'D', 0x08 )
-#define DRBD_IOCTL_GET_CONFIG    _IOW( 'D', 0x0A, struct ioctl_get_config)
-#define DRBD_IOCTL_INVALIDATE    _IO ( 'D', 0x0D )
-#define DRBD_IOCTL_INVALIDATE_REM _IO ( 'D', 0x0E )
-#define DRBD_IOCTL_SET_SYNC_CONFIG _IOW( 'D', 0x0F,struct ioctl_syncer_config)
-#define DRBD_IOCTL_SET_DISK_SIZE  _IOW( 'D', 0x10, unsigned int)
-#define DRBD_IOCTL_WAIT_CONNECT  _IOR( 'D', 0x11, struct ioctl_wait)
-#define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x12, struct ioctl_wait)
-#define DRBD_IOCTL_UNCONFIG_DISK _IO ( 'D', 0x13 )
+/* 'D' already taken by s390 dasd driver.
+ *  maybe we want to change to something else, and register it officially?
+ */
+#define DRBD_IOCTL_LETTER 'D'
+#define DRBD_IOCTL_GET_VERSION      _IOR( DRBD_IOCTL_LETTER, 0x00, int )
+#define DRBD_IOCTL_SET_STATE        _IOW( DRBD_IOCTL_LETTER, 0x02, Drbd_State )
+#define DRBD_IOCTL_SET_DISK_CONFIG  _IOW( DRBD_IOCTL_LETTER, 0x06, struct ioctl_disk_config )
+#define DRBD_IOCTL_SET_NET_CONFIG   _IOW( DRBD_IOCTL_LETTER, 0x07, struct ioctl_net_config )
+#define DRBD_IOCTL_UNCONFIG_NET     _IO ( DRBD_IOCTL_LETTER, 0x08 )
+#define DRBD_IOCTL_GET_CONFIG       _IOW( DRBD_IOCTL_LETTER, 0x0A, struct ioctl_get_config )
+#define DRBD_IOCTL_INVALIDATE       _IO ( DRBD_IOCTL_LETTER, 0x0D )
+#define DRBD_IOCTL_INVALIDATE_REM   _IO ( DRBD_IOCTL_LETTER, 0x0E )
+#define DRBD_IOCTL_SET_SYNC_CONFIG  _IOW( DRBD_IOCTL_LETTER, 0x0F, struct ioctl_syncer_config )
+#define DRBD_IOCTL_SET_DISK_SIZE    _IOW( DRBD_IOCTL_LETTER, 0x10, unsigned int )
+#define DRBD_IOCTL_WAIT_CONNECT     _IOR( DRBD_IOCTL_LETTER, 0x11, struct ioctl_wait )
+#define DRBD_IOCTL_WAIT_SYNC        _IOR( DRBD_IOCTL_LETTER, 0x12, struct ioctl_wait )
+#define DRBD_IOCTL_UNCONFIG_DISK    _IO ( DRBD_IOCTL_LETTER, 0x13 )
 
 #endif
 
