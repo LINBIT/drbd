@@ -590,15 +590,21 @@ inline int receive_block_ack(int minor)
 	        return FALSE;
 
 	if( header.block_id == ID_SYNCER) {
+	syncer_blk:
 		bm_set_bit(drbd_conf[minor].mbds_id,
 			   be64_to_cpu(header.block_nr), 
 			   drbd_conf[minor].blk_size_b, 
 			   SS_IN_SYNC);
 	} else {
 		req=(drbd_request_t*)(long)header.block_id;
+		if(req == (drbd_request_t*)-1) {
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: strange block_id %llx\n",minor,
+			       header.block_id);
+			goto syncer_blk;
+		}
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
-		/* printk(KERN_ERR DEVICE_NAME "%d: got blk-ack for sec %ld\n",
-		   minor,req->sector); */
+
 		if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
 			dec_pending(minor);
 	}
@@ -718,8 +724,6 @@ inline int receive_param(int minor,int command)
 
 		if(be32_to_cpu(param.state) == Secondary &&
 		   drbd_conf[minor].state == Secondary ) {
-			printk(KERN_INFO DEVICE_NAME "%d: 1 %d %d\n",
-			       minor,pri,method);
 			switch(pri) {
 			case 1: drbd_set_state(minor,Primary);
 			case -1:sync=1;
