@@ -1647,6 +1647,8 @@ int drbd_connect(int minor)
 	int err;
 	struct socket *sock;
 
+	if (drbd_conf[minor].cstate==Unconfigured) return 0;
+
 	if (drbd_conf[minor].sock) {
 		printk(KERN_ERR DEVICE_NAME
 		       ": There is already a socket!! \n");
@@ -1986,11 +1988,12 @@ inline int receive_param(int minor,int command)
 			   (drbd_conf[minor].conf.disk_size != 
 			   blk_size[MAJOR_NR][minor])) {
 				printk(KERN_ERR DEVICE_NAME
-				       "Your size hint is bogus! "
+				       ": Your size hint is bogus! "
 				       "change it to %d\n",
 				       blk_size[MAJOR_NR][minor]);
 				blk_size[MAJOR_NR][minor]=
 					drbd_conf[minor].conf.disk_size;
+				set_cstate(&drbd_conf[minor],Unconfigured);
 				return FALSE;
 			}
 		} else {
@@ -2093,7 +2096,10 @@ void drbdd(int minor)
 		sock_release(drbd_conf[minor].sock);
 		drbd_conf[minor].sock = 0;
 	}
-	set_cstate(&drbd_conf[minor],Unconnected);
+
+	if(drbd_conf[minor].cstate != Unconfigured)
+	        set_cstate(&drbd_conf[minor],Unconnected);
+
 	switch(drbd_conf[minor].state) {
 	case Primary:   
 		tl_clear(&drbd_conf[minor]);
