@@ -1,0 +1,178 @@
+#!/bin/sh
+#
+# to be managed by heartbeat.
+# description: Mounts and unmounts the cluster filesystem
+#	  
+# Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+# Initial author.
+#
+# Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>
+# Changes to support multiple devices and different distributions.
+# Changes to increase robustness and exit with proper error values.
+#
+# Some ideas and inspiration from Joe Hartley <jh@brainiac.com>
+
+# Source function library.
+# Some distributions don't have it, so test and act accordingly
+if [ -f /etc/rc.d/init.d/functions ]; then
+        if grep action /etc/rc.d/init.d/functions > /dev/null ; then        
+	       . /etc/rc.d/init.d/functions
+               HAVE_ACTION=1
+        fi
+fi
+
+if [ -z "$HAVE_ACTION" ]; then
+	# dumb "action" substitution
+	action() {
+		echo -n $1...
+		shift
+		eval $*
+		if [ $? -eq 0 ]; then
+			echo ok
+			return 0
+		else
+			echo failure!
+			return 1
+		fi
+	}
+fi
+
+# Check for drbdsetup
+if [ ! -x /usr/sbin/drbdsetup ]; then
+	echo datadisk: drbdsetup not found!
+	exit 1
+fi
+
+# Check for our config directory
+if [ ! -d /etc/sysconfig/drbd ]; then
+	echo datadisk: configuration directory not found!
+	exit 1
+fi
+
+# RETVAL will work as a "stuck bit" for any error. The construct
+# RV=$?
+# [ $RETVAL -eq 0 ] && RETVAL=$RV
+# allows us to have it stuck at 1 when some error occur, even if
+# subsequent operations don't fail. Using $RV prevents us from getting
+# the exit value of [ ... ]. That was a dumb one... :)
+RETVAL=0	# this means there were errors
+RV=0		# in this script this is just a temporary variable
+HOST=`hostname -s`
+if [ $# -eq 2 ]; then
+    RESOURCE=$1
+    shift
+fi
+cd /etc/sysconfig/drbd
+
+# See how we were called.
+case "$1" in
+  start)
+	if [ -n "$RESOURCE" ]; then
+	    . $RESOURCE
+
+	    if [ "$HOST" = "`echo $MASTER_NODE | cut -d: -f1`" ]; then
+
+		action "Becoming primary on DRBD resource $RESOURCE" \
+		    /usr/sbin/drbdsetup $MASTER_DEVICE PRI
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+
+		# If there was an error becoming primary, don't mount
+		if [ $RETVAL -eq 0 ]; then
+			action "Mounting shared device $MASTER_DEVICE" \
+			    mount $MASTER_DEVICE
+			RV=$?
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+
+	    elif [ "$HOST" = "`echo $SLAVE_NODE | cut -d: -f1`" ]; then
+
+		action "Becoming primary on DRBD resource $RESOURCE" \
+		    /usr/sbin/drbdsetup $SLAVE_DEVICE PRI
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+
+		# If there was an error becoming primary, don't mount
+		if [ $RETVAL -eq 0 ]; then
+			action "Mounting shared device $SLAVE_DEVICE" \
+			    mount $SLAVE_DEVICE
+			RV=$?
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+
+	    else
+		echo This machine is neither master nor slave!
+		exit 1
+	    fi
+	else
+	    DEVICES=`ls drbd[0-9] 2>/dev/null`
+	    for D in $DEVICES; do
+		$0 $D start
+	    done
+	fi
+	;;
+  stop)
+	if [ -n "$RESOURCE" ]; then
+	    . $RESOURCE
+
+	    if [ "$HOST" = "`echo $MASTER_NODE | cut -d: -f1`" ]; then
+
+		action "Unmounting shared device $MASTER_DEVICE" \
+		    umount $MASTER_DEVICE
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+
+		# If there was an error unmounting, don't become secondary
+		if [ $RETVAL -eq 0 ]; then
+			action "Becoming secondary on DRBD resource $RESOURCE" \
+			    /usr/sbin/drbdsetup $MASTER_DEVICE SEC
+			RV=$?
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+
+	    elif [ "$HOST" = "`echo $SLAVE_NODE | cut -d: -f1`" ]; then
+
+		action "Unmounting shared device $SLAVE_DEVICE" \
+		    umount $SLAVE_DEVICE
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+
+		# If there was an error unmounting, don't become secondary
+		if [ $RETVAL -eq 0 ]; then
+			action "Becoming secondary on DRBD resource $RESOURCE" \
+			    /usr/sbin/drbdsetup $SLAVE_DEVICE SEC
+			RV=$?
+			[ $RETVAL -eq 0 ] && RETVAL=$RV
+		fi
+
+	    else
+		echo This machine is neither master nor slave!
+		exit 1
+	    fi
+	else
+	    DEVICES=`ls drbd[0-9] 2>/dev/null`
+	    for D in $DEVICES; do
+		$0 $D stop
+	    done
+	fi
+	;;
+  restart)
+	$0 stop
+	$0 start
+	RETVAL=$?
+	;;
+  status)
+	if [ -r /proc/drbd ]; then
+		cat /proc/drbd
+	else
+		echo "DRBD module not loaded."
+		RETVAL=1
+	fi
+	;;
+  *)
+	echo "Usage: $0 [resource] {start|stop|restart|status}"
+	RETVAL=1
+	;;
+esac
+
+exit $RETVAL
