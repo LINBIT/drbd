@@ -87,7 +87,8 @@ static devfs_handle_t devfs_handle;
 #endif
 
 int drbdd_init(struct Drbd_thread*);
-int drbd_dsender(struct Drbd_thread*);
+//int drbd_dsender(struct Drbd_thread*);
+int drbd_worker(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
 
 int drbd_init(void);
@@ -314,28 +315,21 @@ void daemonize(void)
 
 void set_cstate(drbd_dev* mdev,Drbd_CState cs)
 {
-	struct list_head workset;
 	struct list_head *le;
-	struct drbd_hook *dh;
+	struct drbd_work *w;
+	struct Drbd_Conf *that_dev;
 	unsigned long flags;
-	int run_again;
-
-	INIT_LIST_HEAD(&workset);
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	mdev->cstate = cs;
 
-	list_add(&workset,&mdev->cstate_hook);
-	list_del_init(&mdev->cstate_hook);
-
-	while(!list_empty(&workset)) {
-		le = workset.next;
-		dh = list_entry(le, struct drbd_hook,list);
+	while(!list_empty(&mdev->cstate_hook)) {
+		le = mdev->cstate_hook.next;
+		w  = list_entry(le,struct drbd_work,list);
 		list_del(le);
-		spin_unlock_irqrestore(&mdev->req_lock,flags);
-		run_again = dh->callback(mdev,dh);
-		spin_lock_irqsave(&mdev->req_lock,flags);
-		if(run_again) list_add(le,&mdev->cstate_hook);
+		that_dev = container_of(w,struct Drbd_Conf,resync_work);
+		PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+		list_add_tail(&w->list,&that_dev->data.work.q);
 	}
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
@@ -873,10 +867,6 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	msg.msg_controllen = 0;
 	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
 
-	/* FIXME remove. since nbd does not do this either,
-	 * it seems to be safe ... well, or *they* have a bug there :-)
-	 * lock_kernel();  //  check if this is still necessary
-	 */
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -1024,10 +1014,9 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	init_MUTEX(&mdev->md_io_mutex);
 	init_MUTEX(&mdev->data.mutex);
 	init_MUTEX(&mdev->meta.mutex);
-	sema_init(&mdev->data.work,0);
-	sema_init(&mdev->meta.work,0);
+	sema_init(&mdev->data.work.s,0);
+	sema_init(&mdev->meta.work.s,0);
 
-	mdev->rs_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->al_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->tl_lock        = SPIN_LOCK_UNLOCKED;
 	mdev->ee_lock        = SPIN_LOCK_UNLOCKED;
@@ -1041,21 +1030,22 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->sync_ee);
 	INIT_LIST_HEAD(&mdev->done_ee);
 	INIT_LIST_HEAD(&mdev->read_ee);
-	INIT_LIST_HEAD(&mdev->rdone_ee);
+	// INIT_LIST_HEAD(&mdev->rdone_ee);
 	INIT_LIST_HEAD(&mdev->busy_blocks);
 	INIT_LIST_HEAD(&mdev->app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
-	INIT_LIST_HEAD(&mdev->data.work_q);
-	INIT_LIST_HEAD(&mdev->meta.work_q);
+	INIT_LIST_HEAD(&mdev->data.work.q);
+	INIT_LIST_HEAD(&mdev->meta.work.q);
+	INIT_LIST_HEAD(&mdev->resync_work.list);
+	mdev->resync_work.cb = w_resync_inactive;
 
 	init_waitqueue_head(&mdev->state_wait);
 	init_waitqueue_head(&mdev->cstate_wait);
-	init_waitqueue_head(&mdev->dsender_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
 
 	drbd_thread_init(mdev, &mdev->receiver, drbdd_init);
-	drbd_thread_init(mdev, &mdev->dsender, drbd_dsender);
+	drbd_thread_init(mdev, &mdev->worker, drbd_worker);
 	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
 
 	mdev->write_hint_tq.routine = &drbd_send_write_hint;
@@ -1165,10 +1155,6 @@ void drbd_cleanup(void)
 			rr = drbd_release_ee(mdev,&mdev->done_ee);
 			if(rr) printk(KERN_ERR DEVICE_NAME
 				       "%d: %d EEs in done list found!\n",i,rr);
-
-			rr = drbd_release_ee(mdev,&mdev->rdone_ee);
-			if(rr) printk(KERN_ERR DEVICE_NAME
-				       "%d: %d EEs in rdone list found!\n",i,rr);
 
 			rr = drbd_release_ee(mdev,&mdev->read_ee);
 			if(rr) printk(KERN_ERR DEVICE_NAME
@@ -1349,7 +1335,7 @@ void cleanup_module(void)
 		drbd_set_state(drbd_conf+i,Secondary);
 		fsync_dev(MKDEV(MAJOR_NR, i));
 		set_bit(DO_NOT_INC_CONCNT,&drbd_conf[i].flags);
-		drbd_thread_stop(&drbd_conf[i].dsender);
+		drbd_thread_stop(&drbd_conf[i].worker);
 		drbd_thread_stop(&drbd_conf[i].receiver);
 		drbd_thread_stop(&drbd_conf[i].asender);
 	}

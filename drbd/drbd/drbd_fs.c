@@ -215,7 +215,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	}
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
-	drbd_thread_stop(&mdev->dsender);
+	drbd_thread_stop(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_resources(mdev);
@@ -337,7 +337,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	*/
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
-	drbd_thread_stop(&mdev->dsender);
+	drbd_thread_stop(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(mdev);
@@ -591,7 +591,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		/* FIXME what if fsync returns error */
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->dsender);
+		drbd_thread_stop(&mdev->worker);
 		drbd_thread_stop(&mdev->asender);
 		drbd_thread_stop(&mdev->receiver);
 
@@ -608,7 +608,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->dsender);
+		drbd_thread_stop(&mdev->worker);
 		drbd_thread_stop(&mdev->asender);
 		drbd_thread_stop(&mdev->receiver);
 		drbd_free_resources(mdev);

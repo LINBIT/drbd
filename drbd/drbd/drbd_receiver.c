@@ -353,7 +353,7 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 
 /* It is important that the head list is really empty when returning,
    from this function. Note, this function is called from all three
-   threads (receiver, dsender and asender). To ensure this I only allow
+   threads (receiver, worker and asender). To ensure this I only allow
    one thread at a time in the body of the function */
 STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head)
 {
@@ -705,7 +705,7 @@ int drbd_connect(drbd_dev *mdev)
 	set_cstate(mdev,WFReportParams);
 
 	drbd_thread_start(&mdev->asender);
-	drbd_thread_start(&mdev->dsender);
+	drbd_thread_start(&mdev->worker);
 
 	drbd_send_param(mdev);
 
@@ -1161,26 +1161,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	return TRUE;
 }
 
-STATIC int e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
-{
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	int ok;
-	ok=drbd_send_block(mdev, DataReply, e);
-	dec_unacked(mdev,HERE); // THINK unconditional?
-	return ok;
-}
-
-STATIC int e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
-{
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	int ok;
-	drbd_rs_complete_io(mdev,e->pbh.b_blocknr);
-	inc_pending(mdev);
-	ok=drbd_send_block(mdev, DataReply, e);
-	dec_unacked(mdev,HERE); // THINK unconditional?
-	return ok;
-}
-
 STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 {
 	sector_t sector;
@@ -1205,13 +1185,15 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	switch (h->command) {
 	case DataRequest:
-		e->w.cb = e_end_data_req;
+		e->w.cb = w_e_end_data_req;
 		break;
 	case RSDataRequest:
-		e->w.cb = e_end_rsdata_req;
+		e->w.cb = w_e_end_rsdata_req;
 		/* Eventually this should become asynchrously. Currently it
 		 * blocks the whole receiver just to delay the reading of a
-		 * resync data block. */
+		 * resync data block.
+		 * the drbd_work_queue mechanism is made for this...
+		 */
 		drbd_rs_begin_io(mdev,sector);
 		break;
 	default:
@@ -1220,7 +1202,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	clear_bit(BH_Uptodate, &e->pbh.b_state);
 	set_bit(BH_Lock, &e->pbh.b_state);
-	e->pbh.b_end_io = drbd_dio_end_read;
+	e->pbh.b_end_io = enslaved_read_bh_end_io;
 
 	mdev->read_cnt += e->pbh.b_size >> 9;
 	inc_unacked(mdev);
@@ -1550,6 +1532,27 @@ STATIC int receive_SyncCont(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail ?
 }
 
+STATIC int receive_SyncDone(drbd_dev *mdev, Drbd_Header *h)
+{
+	unsigned long dt;
+	D_ASSERT(mdev->cstate == SyncSource);
+	D_ASSERT(mdev->resync_work.cb == w_resync_source);
+
+	INIT_LIST_HEAD(&mdev->resync_work.list);
+	mdev->resync_work.cb = w_resync_inactive;
+
+	dt = (jiffies - mdev->rs_start) / HZ + 1;
+	INFO("Resync done (total %lu sec; %lu K/sec)\n",
+	     dt,(mdev->rs_total/2)/dt);
+
+	mdev->rs_total = 0;
+	set_cstate(mdev,Connected);
+
+	// assert that all bit-map parts are cleared.
+	D_ASSERT(list_empty(&mdev->resync->lru));
+	return TRUE; // cannot fail ?
+}
+
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
@@ -1573,6 +1576,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[SyncParam]        = receive_SyncParam,
 	[SyncStop]         = receive_SyncStop,
 	[SyncCont]         = receive_SyncCont,
+	[SyncDone]         = receive_SyncDone,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
@@ -1613,7 +1617,7 @@ STATIC void drbdd(drbd_dev *mdev)
 void drbd_disconnect(drbd_dev *mdev)
 {
 	mdev->o_state = Unknown;
-	drbd_thread_stop_nowait(&mdev->dsender);
+	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 
 	while(down_trylock(&mdev->data.mutex))
@@ -1635,7 +1639,7 @@ void drbd_disconnect(drbd_dev *mdev)
 	drbd_free_sock(mdev);
 	up(&mdev->data.mutex);
 
-	drbd_thread_stop(&mdev->dsender);
+	drbd_thread_stop(&mdev->worker);
 	drbd_collect_zombies(mdev);
 
 	if(mdev->cstate != StandAlone)

@@ -560,30 +560,21 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,
 	   from other places in non IRQ */
 	unsigned long flags=0;
 	int cleared;
-	int wake_dsender=0;
+	/* notify of SYNC_FINISHED is now done by other means */
 
 	cleared = bm_set_bit(mdev, sector, blk_size, SS_IN_SYNC);
 
-	spin_lock_irqsave(&mdev->rs_lock,flags);
+	spin_lock_irqsave(&mdev->al_lock,flags);
 	mdev->rs_left -= cleared;
 	D_ASSERT((long)mdev->rs_left >= 0);
-	if( cleared && mdev->rs_left == 0 ) {
-		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
-		set_bit(SYNC_FINISHED,&mdev->flags);
-		spin_unlock(&mdev->ee_lock);
-		wake_dsender=1;
-	}
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
 		mdev->rs_mark_time=jiffies;
 		mdev->rs_mark_left=mdev->rs_left;
 	}
-	spin_unlock_irqrestore(&mdev->rs_lock,flags);
+	spin_unlock_irqrestore(&mdev->al_lock,flags);
 
 	drbd_try_clear_on_disk_bm(mdev,sector,cleared,may_sleep);
-	if(wake_dsender) {// must happen after drbd_try_clear_on_disk_bm();
-		wake_up_interruptible(&mdev->dsender_wait);
-	}
 }
 
 

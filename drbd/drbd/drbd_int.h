@@ -344,6 +344,7 @@ typedef enum {
 	SyncParam,
 	SyncStop,
 	SyncCont,
+	SyncDone,
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
@@ -374,6 +375,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 	case SyncParam       : return "SyncParam";
 	case SyncStop        : return "SyncStop";
 	case SyncCont        : return "SyncCont";
+	case SyncDone        : return "SyncDone";
 	case MAX_CMD         : return "MAX_CMD";
 	case MayIgnore       : return "MayIgnore";
 	case MAX_OPT_CMD     : return "MAX_OPT_CMD";
@@ -405,6 +407,7 @@ typedef struct {
  *   WriteHint
  *   SyncStop
  *   SyncCont
+ *   SyncDone
  */
 
 /*
@@ -598,13 +601,13 @@ struct Pending_read {
 #define COLLECT_ZOMBIES    1
 #define SEND_PING          2
 #define WRITER_PRESENT     3
-#define START_SYNC         4
+//#define START_SYNC         4
 #define DO_NOT_INC_CONCNT  5
 #define WRITE_HINT_QUEUED  6
 #define PARTNER_DISKLESS   7
-#define SYNC_FINISHED      8
+//#define SYNC_FINISHED      8
 #define PROCESS_EE_RUNNING 9
-#define SYNC_CONTINUE     10
+//#define SYNC_CONTINUE     10
 
 struct BitMap {
 	unsigned long dev_size;
@@ -627,28 +630,29 @@ struct bm_extent { // 16MB sized extents.
 #define BME_NO_WRITES    0
 #define BME_LOCKED       1
 
-struct drbd_hook {
-	struct list_head list;
-	void* data;
-	int (*callback) (drbd_dev*, struct drbd_hook* );
-};
-
-
 // TODO sort members for performance
 // MAYBE group them further
+
+/* THINK maybe we actually want to use the default "event/%s" worker threads
+ * or similar in linux 2.6, which uses per cpu data and threads.
+ *
+ * To be general, this might need a spin_lock member.
+ * For now, please use the mdev->req_lock to protect list_head,
+ * see __drbd_queue_work below.
+ */
+struct drbd_work_queue {
+	struct list_head q;
+	struct semaphore s; // producers up it, worker down()s it
+};
 
 /* If Philipp agrees, we remove the "mutex", and make_request will only
  * (throttle on "queue full" condition and) queue it to the worker thread...
  * which then is free to do whatever is needed, and has exclusive send access
  * to the data socket ...
- * 
- * I want to see how this works first. I have the feeling in my guts that
- * it will lead to OOM deadlock.
  */
 struct drbd_socket {
+	struct drbd_work_queue work;
 	struct semaphore  mutex;
-	struct semaphore  work;      // producers up it, worker down()s it
-	struct list_head  work_q;
 	struct socket    *socket;
 	Drbd_Polymorph_Packet sbuf;  // this way we get our
 	Drbd_Polymorph_Packet rbuf;  // send/receive buffers off the stack
@@ -700,11 +704,9 @@ struct Drbd_Conf {
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
 	sector_t rs_mark_left;// block not up-to-date at mark [unit sect.]
 	unsigned long rs_mark_time;// marks's time [unit jiffies]
-	spinlock_t rs_lock; // used to protect the rs_variables.
 	struct Drbd_thread receiver;
-	struct Drbd_thread dsender;
+	struct Drbd_thread worker;
 	struct Drbd_thread asender;
-	wait_queue_head_t dsender_wait;
 	struct BitMap* mbds_id;
 	struct lru_cache* resync; // Used to track operations of resync...
 	int open_cnt;
@@ -716,7 +718,7 @@ struct Drbd_Conf {
 	struct list_head sync_ee;   // IO in progress
 	struct list_head done_ee;   // send ack
 	struct list_head read_ee;   // IO in progress
-	struct list_head rdone_ee;  // send result or CondRequest
+	// struct list_head rdone_ee;  // send result or CondRequest
 	spinlock_t pr_lock;
 	struct list_head app_reads;
 	struct list_head resync_reads;
@@ -868,10 +870,19 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
 // drbd_dsender.c
-extern int drbd_dsender(struct Drbd_thread *thi);
-extern void drbd_dio_end_read(struct buffer_head *bh, int uptodate);
+//extern int drbd_dsender(struct Drbd_thread *thi);
+extern int drbd_worker(struct Drbd_thread *thi);
+extern void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
 extern unsigned long drbd_hash(struct buffer_head *bh);
+// worker callbacks
+extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work*w);
+extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work*w);
+extern int w_make_resync_request (drbd_dev *mdev, struct drbd_work*w);
+extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work*w);
+extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work*w);
+extern int w_resync_source       (drbd_dev *mdev, struct drbd_work*w);
+extern int w_start_resync        (drbd_dev *mdev, struct drbd_work*w);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
@@ -988,6 +999,17 @@ do {									\
 /*
  * inline helper functions
  *************************/
+
+static inline void
+__drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
+		  struct drbd_work *w)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	list_add_tail(&w->list,&q->q);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	up(&q->s);
+}
 
 static inline void wake_asender(drbd_dev *mdev) {
 	drbd_queue_signal(DRBD_SIG, mdev->asender.task);

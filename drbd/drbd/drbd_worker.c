@@ -44,7 +44,7 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
+void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate)
 {
 	/* This callback will be called in irq context by the IDE drivers,
 	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
@@ -67,36 +67,21 @@ void drbd_dio_end_read(struct buffer_head *bh, int uptodate)
 	smp_mb__after_clear_bit();
 
 	list_del(&e->w.list);
-	list_add(&e->w.list,&mdev->rdone_ee);
-
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
-	wake_up_interruptible(&mdev->dsender_wait);
+	__drbd_queue_work(mdev,&mdev->data.work,&e->w);
 }
 
-int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
+int w_resync_source(drbd_dev *mdev, struct drbd_work *w)
 {
-	struct Tl_epoch_entry *e;
-	struct list_head *le;
-	int ok=1;
+	ERR("I seem to be resync source, but callback triggered??\n");
+	return 0;
+}
 
-	MUST_HOLD(&mdev->ee_lock);
-
-	while(!list_empty(&mdev->rdone_ee)) {
-		le = mdev->rdone_ee.next;
-		e = list_entry(le, struct Tl_epoch_entry,w.list);
-		spin_unlock_irq(&mdev->ee_lock);
-		ok = ok && e->w.cb(mdev,&e->w);
-
-		spin_lock_irq(&mdev->ee_lock);
-		list_del(le);         // remove from list first.
-
-		drbd_put_ee(mdev,e);
-	}
-
-	wake_up_interruptible(&mdev->ee_wait);
-
-	return ok;
+int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w)
+{
+	ERR("resync inactive, but callback triggered??\n");
+	return 0;
 }
 
 STATIC drbd_dev *ds_find_osg(drbd_dev *mdev)
@@ -115,107 +100,64 @@ STATIC drbd_dev *ds_find_osg(drbd_dev *mdev)
 	return 0;
 }
 
-STATIC int _ds_wait_osg(drbd_dev* odev, struct drbd_hook* dh)
+int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 {
-	// This is a callback, I better not assume that this 
-	// is a context which allows to send something from.
-	unsigned long flags;
-	drbd_dev *mdev = (drbd_dev*) dh->data;
-	int added=0;
-
-	if(odev->cstate <= Connected) {
-	retry:
-		if( (odev = ds_find_osg(mdev)) ) {
-			spin_lock_irqsave(&odev->req_lock,flags);
-			if(odev->cstate > Connected) {
-				list_add_tail(&dh->list,&odev->cstate_hook);
-				added=1;
-			}
-			spin_unlock_irqrestore(&odev->req_lock,flags);
-			if(!added) goto retry;
-		} else {
-			set_bit(SYNC_CONTINUE,&mdev->flags);
-			wake_up_interruptible(&mdev->dsender_wait);
-			kfree(dh);
-		}
-		return 0; // do not add to this hook again.
-	}
-	return 1; // run again. 
-}
-
-STATIC int drbd_wait_for_other_sync_groups(drbd_dev *mdev)
-{
-	drbd_dev *odev;
-	struct drbd_hook *dh=NULL;
-	int added=0;
-
- retry:
-	odev = ds_find_osg(mdev);
-	if(!odev) return FALSE;
-
-	while( dh == NULL ) {
-		dh=kmalloc(sizeof(struct drbd_hook),GFP_KERNEL);
-		if(dh) break;
-		ERR("could not kmalloc drbd_hook\n");
-		current->state = TASK_INTERRUPTIBLE;
-		schedule_timeout(HZ);
-	}
-
-	dh->data = mdev;
-	dh->callback = _ds_wait_osg;
-
-	spin_lock_irq(&odev->req_lock);
-	if(odev->cstate > Connected) {
-		list_add_tail(&dh->list,&odev->cstate_hook);
-		added=1;
-	}
-	spin_unlock_irq(&odev->req_lock);
-	if(!added) goto retry;
-
-	INFO("Syncer waits for sync group %i\n",
-	     odev->sync_conf.group);
-	drbd_send_short_cmd(mdev,SyncStop);
-	set_cstate(mdev,PausedSyncT);
-
-	return TRUE;
-}
-
-/* bool */
-STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
-{
-	int number,i;
+	struct Pending_read *pr;
+	struct Drbd_Conf    *odev;
 	sector_t sector;
 
-#define SLEEP_TIME (HZ/10)
+	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
-	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
-
-	// Remove later
-	if(number > 1000) number=1000;
-	if(atomic_read(&mdev->pending_cnt)>1200) {
-		ERR("pending cnt high -- throttling resync.\n");
-		return TRUE;
+	// wait_for_other_sync_groups
+	odev = ds_find_osg(mdev);
+	if (odev) {
+		spin_lock_irq(&odev->req_lock);
+		if (odev->cstate > Connected) {
+			list_add_tail(&w->list,&odev->cstate_hook);
+			spin_unlock_irq(&odev->req_lock);
+			INFO("Syncer waits for sync group %i\n",
+			     odev->sync_conf.group);
+			drbd_send_short_cmd(mdev,SyncStop);
+			set_cstate(mdev,PausedSyncT);
+			return 1;
+		}
+		// state change while we were looking at it. never mind ...
+		spin_unlock_irq(&odev->req_lock);
 	}
-	// /Remove later
 
-	if(drbd_wait_for_other_sync_groups(mdev)) return FALSE;
+	if (mdev->cstate == PausedSyncT) {
+		INFO("resumed synchronisation.\n");
+		drbd_send_short_cmd(mdev,SyncCont);
+		set_cstate(mdev,SyncTarget);
+	}
+	D_ASSERT(mdev->cstate == SyncTarget);
 
-	for(i=0;i<number;i++) {
-		struct Pending_read *pr;
+	if (atomic_read(&mdev->pending_cnt)>1200) {
+		ERR("pending cnt high -- throttling resync.\n");
+		// schedule_timeout(HZ/10); ??
+		// FIXME do we send a write_hint here ?
+
+		/* FIXME if (current_sync_throughput > mdev->sync_conf.rate)
+		 * and (we have other pending writes [//reads ?? ])
+		 * throttle, too...
+		 * If drbd_make_request would not send itself, but just
+		 * queue the work to the worker, the latter (condition)
+		 * simplifies to (!list_empty(work.q))		-lge
+		 */
+		goto requeue;
+	}
+
+	pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
+	if (likely(pr!= NULL)) {
 		int size=BM_BLOCK_SIZE;
 
-		pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
-		if (!pr) return TRUE;
-		SET_MAGIC(pr);
-
 		sector = bm_get_sector(mdev->mbds_id,&size);
-
-		if(sector == MBDS_DONE) {
-			Drbd_Header h;
+		if (sector == MBDS_DONE) {
 			INVALIDATE_MAGIC(pr);
 			mempool_free(pr,drbd_pr_mempool);
-			drbd_send_cmd(mdev,mdev->data.socket,WriteHint,&h,sizeof(h));
-			return FALSE;
+			// __queue_work ... shortcut.
+			w_resync_finished(mdev,w);
+			return 1;
 		}
 
 		pr->d.sector = sector;
@@ -226,11 +168,96 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 
 		inc_pending(mdev);
 		ERR_IF(!drbd_send_drequest(mdev,RSDataRequest,
-					  sector,size,(unsigned long)pr))
+					  sector,size,(unsigned long)pr)) {
 			dec_pending(mdev,HERE);
+			return 0; // FAILED. worker will abort!
+		}
 	}
 
-	return TRUE;
+   requeue:
+	__drbd_queue_work(mdev,&mdev->data.work,w);
+	return 1;
+}
+
+int w_start_resync(drbd_dev *mdev, struct drbd_work *w)
+{
+	PARANOIA_BUG_ON(w != &mdev->resync_work);
+
+	if(mdev->cstate == SyncTarget) {
+		mdev->gen_cnt[Flags] &= ~MDF_Consistent;
+		bm_reset(mdev->mbds_id);
+		w->cb = w_make_resync_request;
+		__drbd_queue_work(mdev,&mdev->data.work,w);
+	} else {
+		// If we are SyncSource we must be consistent :)
+		mdev->gen_cnt[Flags] |= MDF_Consistent;
+		w->cb = w_resync_source;
+		if ( mdev->rs_total == 0 ) {
+			w->cb = w_resync_finished;
+			__drbd_queue_work(mdev,&mdev->data.work,w);
+		}
+	}
+	drbd_md_write(mdev);
+
+	return 1;
+}
+
+int w_resync_finished(drbd_dev* mdev, struct drbd_work* w)
+{
+	unsigned long dt;
+
+	PARANOIA_BUG_ON(w != &mdev->resync_work);
+	D_ASSERT(mdev->rs_left == 0);
+
+	dt = (jiffies - mdev->rs_start) / HZ + 1;
+	INFO("Resync done (total %lu sec; %lu K/sec)\n",
+	     dt,(mdev->rs_total/2)/dt);
+
+	if (mdev->cstate == SyncTarget) {
+		mdev->gen_cnt[Flags] |= MDF_Consistent;
+		drbd_md_write(mdev);
+		drbd_send_short_cmd(mdev,SyncDone);
+	}
+	mdev->rs_total = 0;
+	set_cstate(mdev,Connected);
+
+	// assert that all bit-map parts are cleared.
+	D_ASSERT(list_empty(&mdev->resync->lru));
+	w->cb = w_resync_inactive;
+	INIT_LIST_HEAD(&w->list);
+	return 1;
+}
+
+int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
+{
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	int ok;
+
+	ok=drbd_send_block(mdev, DataReply, e);
+	dec_unacked(mdev,HERE); // THINK unconditional?
+
+	spin_lock_irq(&mdev->ee_lock);
+	drbd_put_ee(mdev,e);
+	spin_unlock_irq(&mdev->ee_lock);
+
+	return ok;
+}
+
+int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
+{
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	int ok;
+
+	drbd_rs_complete_io(mdev,e->pbh.b_blocknr);
+	inc_pending(mdev);
+	ok=drbd_send_block(mdev, DataReply, e);
+	dec_unacked(mdev,HERE); // THINK unconditional?
+
+	spin_lock_irq(&mdev->ee_lock);
+	drbd_put_ee(mdev,e);
+	spin_unlock_irq(&mdev->ee_lock);
+
+	return ok;
 }
 
 void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
@@ -244,93 +271,59 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	INFO("Resync started as %s (need to sync %lu KB).\n",
 	     side == SyncTarget ? "target" : "source", mdev->rs_left/2);
 
-	if(side == SyncTarget) {
-		set_bit(START_SYNC,&mdev->flags);
-		// FIXME do this more elegant ...
-		// for now, this ensures that meta data is "consistent"
-		if ( mdev->rs_total == 0 ) set_bit(SYNC_FINISHED,&mdev->flags);
-		wake_up_interruptible(&mdev->dsender_wait);
-	} else {
-		// If we are SyncSource we must be consistent :)
-		mdev->gen_cnt[Flags] |= MDF_Consistent;
-		if ( mdev->rs_total == 0 ) set_cstate(mdev,Connected);
-	}
+	PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));
+	PARANOIA_BUG_ON(mdev->resync_work.cb != w_resync_inactive);
+
+	mdev->resync_work.cb = w_start_resync;
+	__drbd_queue_work(mdev,&mdev->data.work,&mdev->resync_work);
 }
 
-static inline int _dsender_cond(struct Drbd_Conf *mdev)
+int drbd_worker(struct Drbd_thread *thi)
 {
-	int rv;
-	rv = test_bit(START_SYNC,&mdev->flags) // TODO Use Lars' style _FLAG 
-		|| test_bit(SYNC_FINISHED,&mdev->flags)
-		|| test_bit(SYNC_CONTINUE,&mdev->flags);
-
-	spin_lock_irq(&mdev->ee_lock);
-	rv |= !list_empty(&mdev->rdone_ee);
-	spin_unlock_irq(&mdev->ee_lock);
-
-	return rv;
-}
-
-int drbd_dsender(struct Drbd_thread *thi)
-{
-	long time=MAX_SCHEDULE_TIMEOUT;
 	drbd_dev *mdev = thi->mdev;
+	struct drbd_work *w;
+	unsigned long flags;
+	int intr;
 
-	sprintf(current->comm, "drbd%d_dsender", (int)(mdev-drbd_conf));
+	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
 
-	while( thi->t_state == Running ) {
+	for (;;) {
+		intr = down_interruptible(&mdev->data.work.s);
 
-		wait_event_interruptible_timeout(
-			mdev->dsender_wait,_dsender_cond(mdev),time);
-
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_process_rdone_ee(mdev);
-		spin_unlock_irq(&mdev->ee_lock);
-
-		if(test_and_clear_bit(START_SYNC,&mdev->flags)) {
-			time=SLEEP_TIME;
-			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-			drbd_md_write(mdev);
-			bm_reset(mdev->mbds_id);
-		}
-
-		if(test_and_clear_bit(SYNC_FINISHED,&mdev->flags)) {
-			unsigned long dt;
-			dt = (jiffies - mdev->rs_start) / HZ + 1;
-			INFO("Resync done (total %lu sec; %lu K/sec)\n",
-			     dt,(mdev->rs_total/2)/dt);
-
-			if(mdev->cstate == SyncTarget) {
-				mdev->gen_cnt[Flags] |= MDF_Consistent;
-				drbd_md_write(mdev);
+		if (intr) {
+			D_ASSERT(intr == -EINTR);
+			LOCK_SIGMASK(current,flags);
+			if (sigismember(&current->pending.signal, SIGTERM)) {
+				sigdelset(&current->pending.signal, SIGTERM);
+				RECALC_SIGPENDING(current);
 			}
-			mdev->rs_total = 0;
-			set_cstate(mdev,Connected);
-
-			// assert that all bit-map parts are cleared.
-			D_ASSERT(list_empty(&mdev->resync->lru));
+			UNLOCK_SIGMASK(current,flags);
+			if (thi->t_state != Running )
+				break;
+			continue;
 		}
 
-		if(test_and_clear_bit(SYNC_CONTINUE,&mdev->flags) && 
-		   (mdev->cstate == PausedSyncT) ) {
-			time=SLEEP_TIME;
-			INFO("resumed synchronisation.\n");
-			drbd_send_short_cmd(mdev,SyncCont);
-			set_cstate(mdev,SyncTarget);
-		}
+		if (thi->t_state != Running )
+			break;
+		if (need_resched())
+			schedule();
 
-		if(time == SLEEP_TIME) {
-			if (!ds_issue_requests(mdev)) {
-				time=MAX_SCHEDULE_TIMEOUT;
-			}
-			if (!disable_io_hints) {
-				Drbd_Header h;
-				drbd_send_cmd(mdev,mdev->data.socket,WriteHint,&h,
-					      sizeof(h));
-			}
+		w = NULL;
+		spin_lock_irq(&mdev->req_lock);
+		if (!list_empty(&mdev->data.work.q)) {
+			w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
+			list_del(&w->list);
 		}
+		spin_unlock_irq(&mdev->req_lock);
+
+		ERR_IF (!w)
+			continue; // BUG()... racy up() somewhere ??
+
+		ERR_IF ( !w->cb(mdev,w) )
+			break;
 	}
+
+	INFO("worker terminated\n");
 
 	return 0;
 }
-
