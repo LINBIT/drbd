@@ -268,7 +268,7 @@ int main(int argc, char** argv)
 	    {
 	      perror("ioctl() failed");
 	      if(errno==EINPROGRESS)
-	        fprintf(stderr,"Can not start SyncAll. Not Primary!\n");
+	        fprintf(stderr,"Can not start SyncAll. No Primary!\n");
 	      if(errno==ENXIO)
 	        fprintf(stderr,"Can not start SyncAll. Not connected!\n");
 	      exit(20);

@@ -106,7 +106,7 @@ isPrimary()
 {
 	#  Only do it if we are primary on the device
 	NUMBER=`echo $1 | cut -b5`
-	return `cat /proc/drbd | grep Primary | grep "^$NUMBER" | wc -l | cut -b7`
+	return `cat /proc/drbd | grep ":Primary/" | grep "^$NUMBER" | wc -l | cut -b7`
 }
 
 

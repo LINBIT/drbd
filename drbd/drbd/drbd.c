@@ -143,6 +143,7 @@ struct Drbd_Conf {
 	int blk_size_b;
 	Drbd_State state;
 	Drbd_CState cstate;
+	Drbd_State o_state;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -312,10 +313,11 @@ struct request *my_all_requests = NULL;
 		"SyncingAll",
 		"SyncingQuick"
 	};
-	static const char *state_names[2] =
+	static const char *state_names[] =
 	{
 		"Primary",
-		"Secondary"
+		"Secondary",
+		"Unknown"
 	};
 
 
@@ -323,7 +325,7 @@ struct request *my_all_requests = NULL;
 
 	/*
 	  cs .. connection state
-	   st .. mode state
+	   st .. node state
 	   ns .. network send
 	   nr .. network receive
 	   dw .. disk write
@@ -332,13 +334,16 @@ struct request *my_all_requests = NULL;
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		rlen =
+		if( drbd_conf[i].cstate < Connected ) 
+			drbd_conf[i].o_state = Unknown;
+		rlen = 
 		    rlen + sprintf(buf + rlen,
-				   "%d: cs:%s st:%s ns:%u nr:%u dw:%u dr:%u "
-				   "of:%u\n",
+				   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
+				   " of:%u\n",
 				   i,
 				   cstate_names[drbd_conf[i].cstate],
 				   state_names[drbd_conf[i].state],
+				   state_names[drbd_conf[i].o_state],
 				   drbd_conf[i].send_cnt,
 				   drbd_conf[i].recv_cnt,
 				   drbd_conf[i].writ_cnt,
@@ -726,6 +731,18 @@ int drbd_ll_blocksize(int minor)
 	return size;
 }
 
+int drbd_send_cmd(int minor,Drbd_Packet_Cmd cmd)
+{
+	int err;
+	Drbd_Packet head;
+
+	down(&drbd_conf[minor].send_mutex);
+	err = drbd_send(&drbd_conf[minor], cmd,&head,sizeof(head),0,0);
+	up(&drbd_conf[minor].send_mutex);
+
+	return err;  
+}
+
 int drbd_send_ping(int minor)
 {
 	int err;
@@ -741,18 +758,6 @@ int drbd_send_ping(int minor)
 			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
 	}
 
-	return err;
-}
-
-int drbd_send_ping_ack(int minor)
-{
-	int err;
-	Drbd_Packet head;
-
-	down(&drbd_conf[minor].send_mutex);
-	err = drbd_send(&drbd_conf[minor], PingAck,&head,sizeof(head),0,0);
-	up(&drbd_conf[minor].send_mutex);
-	
 	return err;
 }
 
@@ -1028,6 +1033,7 @@ void drbd_set_sock_prio(struct Drbd_Conf *mdev)
 		mdev->sock->sk->nonagle=1;
 #endif
 		break;
+	case Unknown:
 	}
 }
 
@@ -1496,16 +1502,18 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		break;
 
 	case DRBD_IOCTL_DO_SYNC_ALL:
-		if( drbd_conf[minor].state != Primary)
-			return -EINPROGRESS;
-
 		if( drbd_conf[minor].cstate != Connected)
 		        return -ENXIO;
 
-		set_cstate(&drbd_conf[minor],SyncingAll);
-		drbd_send_cstate(&drbd_conf[minor]);
-		drbd_thread_start(&drbd_conf[minor].syncer);
-		break;
+		if( drbd_conf[minor].state == Primary) {
+			set_cstate(&drbd_conf[minor],SyncingAll);
+			drbd_send_cstate(&drbd_conf[minor]);
+			drbd_thread_start(&drbd_conf[minor].syncer);
+		} else if (drbd_conf[minor].o_state == Primary) {
+			drbd_send_cmd(minor,StartSync);
+		} else return -EINPROGRESS;
+			
+			break;
 	default:
 		return -EINVAL;
 	}
@@ -1605,6 +1613,7 @@ int __init drbd_init(void)
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].state = Secondary;
+		drbd_conf[i].o_state = Unknown;
 		drbd_conf[i].cstate = Unconfigured;
 		drbd_conf[i].send_cnt = 0;
 		drbd_conf[i].recv_cnt = 0;
@@ -2208,6 +2217,8 @@ inline int receive_param(int minor,int command)
 		return FALSE;
 	}
 
+	drbd_conf[minor].o_state = be32_to_cpu(param.state);
+
 	blk_size[MAJOR_NR][minor] =
 		min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
 		    be64_to_cpu(param.size));
@@ -2285,7 +2296,7 @@ void drbdd(int minor)
 			break;
 
 		case Ping:
-			drbd_send_ping_ack(minor);
+			drbd_send_cmd(minor,PingAck);
 			break;
 		case PingAck:
 			receive_ping_ack(minor);
@@ -2307,6 +2318,12 @@ void drbdd(int minor)
 
 		case CStateChanged:
 			if (!receive_cstate(minor)) goto out;
+			break;
+
+		case StartSync:
+			set_cstate(&drbd_conf[minor],SyncingAll);
+			drbd_send_cstate(&drbd_conf[minor]);
+			drbd_thread_start(&drbd_conf[minor].syncer);
 			break;
 
 		default:
@@ -2340,6 +2357,7 @@ void drbdd(int minor)
 	case Secondary: 
 		drbd_conf[minor].epoch_size=0; 
 		break;
+	case Unknown:
 	}
 }
 
