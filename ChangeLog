@@ -4,6 +4,9 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.7.3 (api:75/proto:74)
+-----
+ * Fixed minor bugs in the handling of the generation counters.
  * prevent possible in-kernel buffer overflow in drbd_proc.c
  * Fixed debian's postinst script to create /dev/drbd? instead of /dev/nb?
  * drbd status:

@@ -177,6 +177,18 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Aug 27 2004 15:02:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.3-1)
+  * Fixed minor bugs in the handling of the generation counters.
+  * prevent possible in-kernel buffer overflow in drbd_proc.c
+  * Fixed debian's postinst script to create /dev/drbd? instead of /dev/nb?
+  * drbd status:
+    be nice to heartbeat, include "OK" in output.
+  * added FullSync meta data flag to read/write gc.pl
+  * make the RHEL3 happy (page_count no longer in mm.h, but in mm_inline.h)
+  * [Patch by Pavel Semerad]. Also use the drbd_devfs_name on Linux-2.4.x
+  * fix missing dependencies on drbd_config.h
+
 * Fri Aug 06 2004 14:44:31 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.2-1)
   * Proper handling of backing storage devices that occasionally fail 
