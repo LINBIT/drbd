@@ -646,10 +646,11 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	      void* data, size_t data_size)
 {
 	mm_segment_t oldfs;
+	sigset_t oldset;
 	struct msghdr msg;
 	struct iovec iov[2];
-
-	int err;
+	unsigned long flags;
+	int rv,sent=0;
 
 	if (!mdev->sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
@@ -673,8 +674,6 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	msg.msg_namelen = 0;
 	msg.msg_flags = MSG_NOSIGNAL;
 
-	/* repeat: */
-
 	if (mdev->conf.timeout) {
 		init_timer(&mdev->s_timeout);
 		mdev->s_timeout.data = (unsigned long) current;
@@ -682,12 +681,55 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 		    jiffies + mdev->conf.timeout * HZ / 10;
 		add_timer(&mdev->s_timeout);
 	}
-	lock_kernel();
+
+	lock_kernel();  //  check if this is still necessary
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
-	err = sock_sendmsg(mdev->sock, &msg, header_size+data_size);
+
+	spin_lock_irqsave(&current->sigmask_lock, flags);
+	oldset = current->blocked;
+	sigfillset(&current->blocked);
+	sigdelset(&current->blocked,DRBD_SIG); 
+	recalc_sigpending(current);
+	spin_unlock_irqrestore(&current->sigmask_lock, flags);
+
+	/* TODO: What if application gets the DRBD_SIG signal ? */
+
+	while(1) {
+		rv = sock_sendmsg(mdev->sock, &msg, header_size+data_size);
+		if (rv <= 0) break;
+		sent += rv;
+		if (sent == header_size+data_size) break;
+
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: calling sock_sendmsg again\n",
+		       (int)(mdev-drbd_conf));
+
+		if( rv < header_size ) {
+			iov[0].iov_base += rv;
+			iov[0].iov_len  -= rv;
+			header_size -= rv;
+		} else /* rv >= header_size */ {
+			if (header_size) {
+				iov[0].iov_base = iov[1].iov_base;
+				iov[0].iov_len = iov[1].iov_len;
+				msg.msg_iovlen = 1;
+				rv -= header_size;
+				header_size = 0;
+			}
+			iov[0].iov_base += rv;
+			iov[0].iov_len  -= rv;
+			data_size -= rv;
+		}
+	}
+
 	set_fs(oldfs);
 	unlock_kernel();
+
+	spin_lock_irqsave(&current->sigmask_lock, flags);
+	current->blocked = oldset;
+	recalc_sigpending(current);
+	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
 	if (mdev->conf.timeout) {
 		unsigned long flags;
@@ -703,15 +745,6 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			recalc_sigpending(current);
 			spin_unlock_irqrestore(&current->sigmask_lock,flags);
 
-			/*
-			if (mdev->sock->flags & SO_NOSPACE) {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: no mem for sock!\n",
-				       (int)(mdev-drbd_conf));
-				goto repeat;
-			}
-			*/
-
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: send timed out!! (pid=%d)\n",
 			       (int)(mdev-drbd_conf),current->pid);
@@ -723,17 +756,16 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			return -1002;
 		} else spin_unlock_irqrestore(&current->sigmask_lock,flags);
 	}
-	if (err != header_size+data_size) {
+
+	if (rv <= 0) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_sendmsg returned %d\n",
-		       (int)(mdev-drbd_conf),err);
-	}
-	if (err < 0) {
+		       (int)(mdev-drbd_conf),rv);
+
 		set_cstate(mdev,BrokenPipe);
 		drbd_thread_restart_nowait(&mdev->receiver);	  
-		return -1003;
 	}
 
-	return err;
+	return sent;
 }
 
 void drbd_setup_sock(struct Drbd_Conf *mdev)
@@ -754,7 +786,7 @@ void drbd_setup_sock(struct Drbd_Conf *mdev)
 		mdev->sock->sk->nonagle=0;
 #endif
 		mdev->sock->sk->sndbuf = 2*65535; 
-		/* This boosts the performance of the syncer to 6M/s max */
+		// This boosts the performance of the syncer to 6M/s max
 
 		break;
 	case Secondary:
@@ -765,7 +797,7 @@ void drbd_setup_sock(struct Drbd_Conf *mdev)
 		mdev->sock->sk->nonagle=1;
 #endif
 		mdev->sock->sk->sndbuf = 2*32767;
-		/* Small buffer -> small response time */
+		// Small buffer -> small response time
 
 		break;
 	case Unknown:

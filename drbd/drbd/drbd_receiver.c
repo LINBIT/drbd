@@ -283,7 +283,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	struct iovec iov;
 	struct msghdr msg;
 	struct timer_list idle_timeout;
-	int err = 0;
+	int rv,done=0;
 
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
@@ -293,9 +293,11 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	iov.iov_base = ubuf;
 	msg.msg_name = NULL;
 	msg.msg_namelen = 0;
-	msg.msg_flags = 0;
+	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
 
-
+	lock_kernel();
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
 
 	if (mdev->conf.ping_int) {
 		init_timer(&idle_timeout);
@@ -306,31 +308,45 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 		add_timer(&idle_timeout);
 	}
 
+	while(1) {
+		rv = sock_recvmsg(mdev->sock, &msg, size, msg.msg_flags);
+		if(rv == -ECONNRESET) {
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: sock_recvmsg returned %d r\n",
+			       (int)(mdev-drbd_conf),rv);
+			continue;
+		} 
+		if(rv <= 0) break;
+		done +=rv;
+		if (done == size) break;
 
-	lock_kernel();
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-	/* Check if this get_fs() / set_fs stuff is needed for a kernel_thread */
-	err = sock_recvmsg(mdev->sock, &msg, size, MSG_WAITALL);
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: calling sock_recvmsg again\n",
+		       (int)(mdev-drbd_conf));
+
+		iov.iov_len -= rv;
+		iov.iov_base += rv;
+		size -=rv;
+	}
 
 	set_fs(oldfs);
 	unlock_kernel();
-	if (err != size && err != -ERESTARTSYS && err != 0)
-		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
-		       (int)(mdev-drbd_conf),err);
 
 	if (mdev->conf.ping_int) {
 		del_timer(&idle_timeout);
 	}
-	
 
-	return err;
+
+	if (rv < 0) {
+		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
+		       (int)(mdev-drbd_conf),rv);
+		return rv;
+	}
+
+	return done;
 }
 
-/* I do not know why, but this prototype is missing in the net.h includefile:
-   int sock_setsockopt(struct socket *sock, int level, int optname,
-   char *optval, int optlen);
-*/
+
 int drbd_connect(int minor)
 {
 	int err;
