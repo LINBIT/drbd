@@ -499,11 +499,9 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 	int err,i;
 	kdev_t ll_dev = mdev->lo_device;
 
-	if(ll_dev) {
-		param.h.size = cpu_to_be64( mdev->lo_usize ? 
-					    mdev->lo_usize : 
-				      blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] );
-	} else param.h.size = cpu_to_be64(0);
+	param.h.u_size=cpu_to_be64(mdev->lo_usize);
+	param.h.p_size=cpu_to_be64(ll_dev ? 
+				   blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]:0);
 
 	param.p.command = cpu_to_be16(ReportParams);
 	param.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
@@ -1047,6 +1045,7 @@ int __init drbd_init(void)
 		drbd_conf[i].state = Secondary;
 		init_waitqueue_head(&drbd_conf[i].state_wait);
 		drbd_conf[i].o_state = Unknown;
+		drbd_conf[i].p_disk_size = 0;
 		drbd_conf[i].cstate = Unconfigured;
 		drbd_conf[i].send_cnt = 0;
 		drbd_conf[i].recv_cnt = 0;
@@ -1418,26 +1417,35 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 /*********************************/
 /* meta data management */
 
-void drbd_md_write(int minor)
+struct meta_data_on_disk {
+	__u64 pp_size;             // size of partner's disk
+	//__u64 la_size;           // last agreed size. TODO: Would me more usefull!
+	__u32 gc[GEN_CNT_SIZE];    // generation counter
+	__u32 magic;      
+};
+
+void drbd_md_write(struct Drbd_Conf *mdev)
 {
-	u32 buffer[META_DATA_SIZE+1],flags;
+	struct meta_data_on_disk buffer;
+	__u32 flags;
 	mm_segment_t oldfs;
 	struct inode* inode;
 	struct file* fp;
 	char fname[25];
 	int i;
 
-	flags=drbd_conf[minor].gen_cnt[Flags] & 
+	flags=mdev->gen_cnt[Flags] & 
 		~(MDF_PrimaryInd|MDF_ConnectedInd);
-	if(drbd_conf[minor].state==Primary) flags |= MDF_PrimaryInd;
-	if(drbd_conf[minor].cstate>=WFReportParams) flags |= MDF_ConnectedInd;
-	drbd_conf[minor].gen_cnt[Flags]=flags;
+	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
+	if(mdev->cstate>=WFReportParams) flags |= MDF_ConnectedInd;
+	mdev->gen_cnt[Flags]=flags;
 	
 	for(i=Flags;i<=ArbitraryCnt;i++) 
-		buffer[i]=cpu_to_be32(drbd_conf[minor].gen_cnt[i]);
-	buffer[MagicNr]=cpu_to_be32(DRBD_MD_MAGIC);
+		buffer.gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
+	buffer.pp_size=cpu_to_be64(mdev->p_disk_size);
+	buffer.magic=cpu_to_be32(DRBD_MD_MAGIC);
 	
-	sprintf(fname,DRBD_MD_FILES,minor);
+	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
 	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC|O_SYNC,00600);
 	if(IS_ERR(fp)) goto err;
         oldfs = get_fs();
@@ -1448,21 +1456,21 @@ void drbd_md_write(int minor)
 	filp_close(fp,NULL);
 	if (i==sizeof(buffer)) return;
  err:
-	printk(KERN_ERR DEVICE_NAME 
-	       "%d: Error writing state file\n\"%s\"\n",minor,fname);
+	printk(KERN_ERR DEVICE_NAME "%d: Error writing state file\n\"%s\"\n",
+	       (int)(mdev-drbd_conf),fname);
 	return;
 }
 
-void drbd_md_read(int minor)
+void drbd_md_read(struct Drbd_Conf *mdev)
 {
-	u32 buffer[META_DATA_SIZE+1];
+	struct meta_data_on_disk buffer;
 	mm_segment_t oldfs;
 	struct inode* inode;
 	struct file* fp;
 	char fname[25];
 	int i;		
 
-	sprintf(fname,DRBD_MD_FILES,minor);
+	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
 	fp=filp_open(fname,O_RDONLY,0);
 	if(IS_ERR(fp)) goto err;
         oldfs = get_fs();
@@ -1473,17 +1481,17 @@ void drbd_md_read(int minor)
 	filp_close(fp,NULL);
 
 	if(i != sizeof(buffer)) goto err;
-	if(be32_to_cpu(buffer[MagicNr]) != DRBD_MD_MAGIC) goto err;
+	if(be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC) goto err;
 	for(i=Flags;i<=ArbitraryCnt;i++) 
-		drbd_conf[minor].gen_cnt[i]=be32_to_cpu(buffer[i]);
-
+		mdev->gen_cnt[i]=be32_to_cpu(buffer.gc[i]);
+	mdev->p_disk_size = be64_to_cpu(buffer.pp_size);
 	return;
  err:
-	printk(KERN_INFO DEVICE_NAME 
-	       "%d: Creating state file\n\"%s\"\n",minor,fname);
-	for(i=HumanCnt;i<=ArbitraryCnt;i++) drbd_conf[minor].gen_cnt[i]=1;
-	drbd_conf[minor].gen_cnt[Flags]=MDF_Consistent;
-	drbd_md_write(minor);
+	printk(KERN_INFO DEVICE_NAME "%d: Creating state file\n\"%s\"\n",
+	       (int)(mdev-drbd_conf),fname);
+	for(i=HumanCnt;i<=ArbitraryCnt;i++) mdev->gen_cnt[i]=1;
+	mdev->gen_cnt[Flags]=MDF_Consistent;
+	drbd_md_write(mdev);
 	return;
 }
 

@@ -68,6 +68,48 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
        return MountedRW;
 }
 
+/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
+int drbd_determin_dev_size(struct Drbd_Conf* mdev)
+{
+	unsigned long p_size = mdev->p_disk_size; // parnter's size
+	unsigned long m_size; // my size
+	unsigned long u_size = mdev->lo_usize; // size requested by user.
+	unsigned long size=0;
+	kdev_t ll_dev = mdev->lo_device;
+	int rv,minor=(int)(mdev-drbd_conf);
+
+	m_size = ll_dev ? blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] : 0;
+
+	if(p_size && m_size) {
+		rv=0;
+		size=min_t(unsigned long,p_size,m_size);
+	} else {
+		rv=1;
+		if(p_size) size=p_size;
+		if(m_size) size=m_size;
+	} 
+
+	if(size == 0) {
+	        printk(KERN_ERR DEVICE_NAME"%d: Both nodes diskless!\n",minor);
+	}
+
+	if(u_size) {
+		if(u_size > size) {
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: Requested disk size is too big",
+			       minor);
+		}
+		size = u_size;
+	}
+
+	if( blk_size[MAJOR_NR][minor] != size ) {
+		blk_size[MAJOR_NR][minor] = size;
+		printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",minor,size);
+	}
+
+	return rv;
+}
+
 STATIC 
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev, 
 			struct ioctl_disk_config * arg)
@@ -152,25 +194,15 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
         if(!IS_ERR(filp)) {
 		memset(&drbd_conf[i].free_ee,1,sizeof(struct list_head));
         }
+
+	drbd_md_read(mdev);
+	drbd_determin_dev_size(mdev);
 	
-	if (mdev->lo_usize) {
-		blk_size[MAJOR_NR][minor] = mdev->lo_usize;
-		/*
-		printk(KERN_INFO DEVICE_NAME"%d: user provided size = %d KB\n",
-		       minor,blk_size[MAJOR_NR][minor]); 
-		*/
-
-		if (!mdev->mbds_id) {
-			mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
-		}
-	}		
-
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);
 	mdev->blk_size_b = drbd_log2(INITIAL_BLOCK_SIZE);
 	
 	set_cstate(mdev,StandAlone);
-	drbd_md_read(minor);
 
 	return 0;
 	
@@ -346,7 +378,9 @@ int drbd_set_state(int minor,Drbd_State newstate)
  	} else {
  		set_device_ro(MKDEV(MAJOR_NR, minor), TRUE );
  	}
-	drbd_md_write(minor); /* Primary indicator has changed in any case. */
+
+	/* Primary indicator has changed in any case. */
+	drbd_md_write(drbd_conf+minor);
 	
 	if (drbd_conf[minor].cstate >= WFReportParams) 
 		drbd_send_param(drbd_conf+minor);

@@ -1140,7 +1140,6 @@ STATIC inline int receive_drequest(struct Drbd_Conf* mdev,int command)
 
 STATIC inline int receive_param(struct Drbd_Conf* mdev)
 {
-	kdev_t ll_dev =	mdev->lo_device;
         Drbd_Parameter_P param;
 	int blksize;
 	int minor=(int)(mdev-drbd_conf);
@@ -1176,42 +1175,22 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 		return FALSE;
 	}
 
-	clear_bit(PARTNER_DISKLESS, &mdev->flags);
-        if (blk_size[MAJOR(ll_dev)]) {
-		if(be64_to_cpu(param.size)) {
-			blk_size[MAJOR_NR][minor] =
-				min_t(int,
-				      blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
-				      be64_to_cpu(param.size));
-		} else {
-			// Partner in disk-less mode
-			blk_size[MAJOR_NR][minor]=
-				blk_size[MAJOR(ll_dev)][MINOR(ll_dev)];
-			no_sync=1;
-			set_bit(PARTNER_DISKLESS, &mdev->flags);
-		}
-	} else {
-		// I am running in disk-less mode
-		blk_size[MAJOR_NR][minor] = be64_to_cpu(param.size);
-		no_sync=1;
-	}
-
-	if( blk_size[MAJOR_NR][minor] == 0) {
-	        printk(KERN_ERR DEVICE_NAME"%d: Both nodes diskless \n",
+	if(be64_to_cpu(param.protocol)!=mdev->lo_usize) {
+	        printk(KERN_ERR DEVICE_NAME"%d: Size hints inconsistent \n",
 		       minor);
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
-		return FALSE;		
+		return FALSE;
 	}
 
-	if(mdev->lo_usize &&
-	   (mdev->lo_usize != blk_size[MAJOR_NR][minor])) {
-		printk(KERN_ERR DEVICE_NAME"%d: Your size hint is bogus!"
-		       "change it to %d\n",(int)(mdev-drbd_conf),
-		       blk_size[MAJOR_NR][minor]);
-		blk_size[MAJOR_NR][minor]=mdev->lo_usize;
+	clear_bit(PARTNER_DISKLESS, &mdev->flags); // TODO
+	mdev->p_disk_size=be64_to_cpu(param.p_size);
+	no_sync=drbd_determin_dev_size(mdev);
+
+	if( blk_size[MAJOR_NR][minor] == 0) {
 		set_cstate(mdev,StandAlone);
-		return FALSE;
+		mdev->receiver.t_state = Exiting;
+		return FALSE;		
 	}
 
 	if(mdev->state == Primary)
@@ -1236,8 +1215,7 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 	if (mdev->cstate == WFReportParams) {
 		int have_good,quick,sync;
 		printk(KERN_INFO DEVICE_NAME "%d: Connection established. "
-		       "size=%d KB / blksize=%d B\n",
-		       minor,blk_size[MAJOR_NR][minor],blksize);
+		       "blksize=%d B\n",minor,blksize);
 
 		have_good=drbd_md_compare(minor,&param);
 
@@ -1281,14 +1259,14 @@ STATIC inline int receive_param(struct Drbd_Conf* mdev)
 				mdev->gen_cnt[i]=be32_to_cpu(param.gen_cnt[i]);
 			}
 		}
-		drbd_md_write(minor); // Need to update connected indicator.
+		drbd_md_write(mdev); // Need to update connected indicator.
 	}
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(param.state);
 	if(oo_state == Secondary && mdev->o_state == Primary) {
 		drbd_md_inc(minor,ConnectedCnt);
-		drbd_md_write(minor);
+		drbd_md_write(mdev);
 	}
 
 	return TRUE;
@@ -1576,7 +1554,7 @@ STATIC void drbdd(int minor)
 		clear_bit(ISSUE_BARRIER,&mdev->flags);
 		if(!test_bit(DO_NOT_INC_CONCNT,&mdev->flags))
 			drbd_md_inc(minor,ConnectedCnt);
-		drbd_md_write(minor);
+		drbd_md_write(mdev);
 		break;
 	case Secondary: 
 		drbd_wait_ee(mdev,&mdev->active_ee, &mdev->done_ee);

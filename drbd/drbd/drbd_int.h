@@ -112,6 +112,24 @@
 #define RQ_DRBD_WRITTEN   0xf300
 #define RQ_DRBD_READ      0xf500
 
+enum MetaDataFlags {
+	MDF_Consistent   = 1,
+	MDF_PrimaryInd   = 2,
+	MDF_ConnectedInd = 4,
+};
+/* drbd_meta-data.c (still in drbd_main.c) */
+enum MetaDataIndex { 
+	Flags,          /* Consistency flag,connected-ind,primary-ind */ 
+	HumanCnt,       /* human-intervention-count */
+	TimeoutCnt,     /* timout-count */
+	ConnectedCnt,   /* connected-count */
+	ArbitraryCnt    /* arbitrary-count */
+};
+
+#define GEN_CNT_SIZE 5
+#define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
+
+
 /* This is the layout for a packet on the wire! 
  * The byteorder is the network byte order!
  */
@@ -141,13 +159,14 @@ typedef struct {
 MKPACKET(Drbd_Barrier_P)
 
 typedef struct {
-  __u64       size;
+  __u64       p_size;  // size of disk
+  __u64       u_size;  // user requested size
   __u32       state;
   __u32       blksize;
   __u32       protocol;
   __u32       version;
-  __u32       gen_cnt[5];
-  __u32       bit_map_gen[5];
+  __u32       gen_cnt[GEN_CNT_SIZE];
+  __u32       bit_map_gen[GEN_CNT_SIZE];
 }  __attribute((packed)) Drbd_Parameter_P;
 MKPACKET(Drbd_Parameter_P)
 
@@ -281,26 +300,6 @@ struct BitMap {
 	spinlock_t bm_lock;
 };
 
-
-enum MetaDataFlags {
-	MDF_Consistent   = 1,
-	MDF_PrimaryInd   = 2,
-	MDF_ConnectedInd = 4,
-};
-/* drbd_meta-data.c (still in drbd_main.c) */
-enum MetaDataIndex { 
-	Flags,          /* Consistency flag,connected-ind,primary-ind */ 
-	HumanCnt,       /* human-intervention-count */
-	TimeoutCnt,     /* timout-count */
-	ConnectedCnt,   /* connected-count */
-	ArbitraryCnt,   /* arbitrary-count */
-	MagicNr        
-};
-
-#define META_DATA_SIZE 5 // Without MagicNr
-#define DRBD_MD_MAGIC (DRBD_MAGIC+2) // 2nd incarnation of the file format.
-
-
 struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
@@ -319,6 +318,7 @@ struct Drbd_Conf {
 	wait_queue_head_t cstate_wait;
 	wait_queue_head_t state_wait;
 	Drbd_State o_state;
+	unsigned long int p_disk_size; // size of partner's disk
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -347,8 +347,8 @@ struct Drbd_Conf {
 	wait_queue_head_t dsender_wait;
 	struct BitMap* mbds_id;
 	int open_cnt;
-	u32 gen_cnt[META_DATA_SIZE];
-	u32 bit_map_gen[META_DATA_SIZE];
+	u32 gen_cnt[GEN_CNT_SIZE];
+	u32 bit_map_gen[GEN_CNT_SIZE];
 	int epoch_size;
 	spinlock_t ee_lock;
 	struct list_head free_ee;   // available
@@ -410,14 +410,15 @@ extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
 
 /* drbd_fs.c: */
+extern int drbd_determin_dev_size(struct Drbd_Conf* mdev);
 extern int drbd_set_state(int minor,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 
-extern void drbd_md_write(int minor);
-extern void drbd_md_read(int minor);
+extern void drbd_md_write(struct Drbd_Conf *mdev);
+extern void drbd_md_read(struct Drbd_Conf *mdev);
 extern void drbd_md_inc(int minor, enum MetaDataIndex order);
 extern int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
 extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
@@ -570,7 +571,7 @@ static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 		       (int)(mdev-drbd_conf));
 		if(mdev->cstate == SyncTarget) {
 			mdev->gen_cnt[Flags] |= MDF_Consistent;
-			drbd_md_write(mdev-drbd_conf);
+			drbd_md_write(mdev);
 		}
 		mdev->rs_total = 0;
 		set_cstate(mdev,Connected);

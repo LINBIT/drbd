@@ -256,7 +256,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 		if( test_and_clear_bit(START_SYNC,&mdev->flags) ) {
 			time=SLEEP_TIME;
 			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-			drbd_md_write(mdev-drbd_conf);
+			drbd_md_write(mdev);
 			bm_reset(mdev->mbds_id,mdev->blk_size_b);
 			printk(KERN_INFO DEVICE_NAME "%d: resync started.\n",
 			       (int)(mdev-drbd_conf));
