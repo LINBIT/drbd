@@ -1152,7 +1152,8 @@ ONLY_IN_26(
 		 * differentiate between different error cases,
 		 * or report the current connection state and flags back
 		 * to userspace */
-		if( mdev->cstate < StandAlone ||
+		if( mdev->state == Primary || 
+		    mdev->cstate < StandAlone ||
 		    mdev->cstate > Connected ||
 		    test_bit(DISKLESS,&mdev->flags) || 
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
@@ -1191,7 +1192,8 @@ ONLY_IN_26(
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
-		if( mdev->cstate != Connected ||
+		if( mdev->o_state == Primary || 
+		    mdev->cstate != Connected ||
 		    test_bit(DISKLESS,&mdev->flags) || 
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;
