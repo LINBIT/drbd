@@ -311,7 +311,7 @@ STATIC unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 #define SPEED_MIN 150
 #define SYNC_MARKS      10
 #define SYNC_MARK_STEP  (3*HZ)
-#ifdef TASK_NICE
+#ifdef CONFIG_MAX_USER_RT_PRIO
 	/* this should work for the O(1) scheduler */
 #define drbd_set_user_nice(current,x) set_user_nice(current,(x))
 #else
