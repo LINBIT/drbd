@@ -327,7 +327,6 @@ struct Drbd_Conf {
 	unsigned long lo_usize;   /* user provided size */
 	unsigned long p_usize;    /* partner node's usize */
 	unsigned long p_size;     /* partner's disk size */
-	int blk_size_b;
 	Drbd_State state;
 	Drbd_CState cstate;
 	wait_queue_head_t cstate_wait;

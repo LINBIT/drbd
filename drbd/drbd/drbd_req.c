@@ -103,8 +103,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	// BIG TODO: Only set it, iff it is the case!
+	/* TODO HERE we have a bug hidden somewhere
 	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),BH_SECTOR(req->bh),
-			 drbd_log2(req->bh->b_size));
+			 req->bh->b_size);
+	*/
 }
 
 STATIC struct Pending_read* 
@@ -150,19 +152,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	struct Drbd_Conf* mdev = drbd_conf + MINOR(bh->b_rdev);
 	struct buffer_head *nbh;
 	drbd_request_t *req;
-	int cbs = 1 << mdev->blk_size_b;
 	int send_ok;
-
-	if (bh->b_size != cbs) {
-		/* If someone called set_blocksize() from fs/buffer.c ... */
-
-		cbs = bh->b_size;
-		set_blocksize(mdev->lo_device,cbs);
-		mdev->blk_size_b = drbd_log2(cbs);
-
-		printk(KERN_INFO DEVICE_NAME "%d: blksize=%d B\n",
-		       (int)(mdev-drbd_conf),cbs);
-	}
 
 #if 0
 	{
