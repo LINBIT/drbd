@@ -356,11 +356,11 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	}
 	le=mdev->free_ee.next;
 	list_del(le);
-	e->block_id=1;//the entries not on free_ee should not have 0 here.
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
 	e=list_entry(le, struct Tl_epoch_entry,list);
 	drbd_set_bh(e->bh,block,mdev->lo_device);
+	e->block_id=1;//the entries not on free_ee should not have 0 here.
 	return e;
 }
 
