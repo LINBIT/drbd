@@ -99,7 +99,10 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 	       unsigned long blk_nr,void * data);
 int drbd_send_param(int minor);
 void drbd_thread_start(struct Drbd_thread* thi);
-void drbd_thread_stop(struct Drbd_thread* thi);
+#define drbd_thread_stop(A)     _drbd_thread_stop(A,FALSE)
+#define drbd_thread_restart(A)  _drbd_thread_stop(A,TRUE)
+void _drbd_thread_stop(struct Drbd_thread* thi,int restart);
+
 int drbdd_init(void *arg);
 int drbd_syncer(void *arg);
 void drbd_free_resources(int minor);
@@ -376,7 +379,7 @@ int drbd_send(int minor,Drbd_Packet_Cmd cmd,int len,
 	  spin_unlock_irq(&current->sigmask_lock);
 	  printk( KERN_ERR DEVICE_NAME ": send timed out!!\n");
 	  
-	  drbd_thread_stop(&drbd_conf[minor].receiver);
+	  drbd_thread_restart(&drbd_conf[minor].receiver);
 	}
       else spin_unlock_irq(&current->sigmask_lock);
     }
@@ -427,11 +430,11 @@ void drbd_end_req(struct request *req,int nextstate,int uptodate)
     }
 #endif
 
-  if(req->cmd == READ) goto end_it;
+  if(req->cmd == READ) goto single_end_it;
   switch( req->rq_status & 0xfffe )
     {
     case RQ_DRBD_SEC_WRITE: 
-      goto end_it;
+      goto single_end_it;
     case RQ_DRBD_NOTHING:
       req->rq_status = nextstate | (uptodate ? 1 : 0) ; 
       break;
@@ -451,6 +454,11 @@ void drbd_end_req(struct request *req,int nextstate,int uptodate)
 /* We only report uptodate == TRUE it both operations (WRITE && SEND)
    reported uptodate == TRUE 
 */
+
+ single_end_it:
+  if(!end_that_request_first(req, uptodate, DEVICE_NAME))
+    end_that_request_last(req);  
+  return;
 
  end_it:
   if(!end_that_request_first(req, uptodate && (req->rq_status&1), DEVICE_NAME))
@@ -675,6 +683,7 @@ int drbd_fsync(struct file * file, struct dentry * dentry)
 	}
 
       fsync_dev(MKDEV(MAJOR_NR,minor));
+      drbd_thread_stop(&drbd_conf[minor].syncer);
       drbd_thread_stop(&drbd_conf[minor].receiver);
       drbd_free_resources(minor);
 
@@ -825,6 +834,7 @@ void cleanup_module()
   for (i = 0; i < MINOR_COUNT; i++) 
     {  
       fsync_dev(MKDEV(MAJOR_NR,i));
+      drbd_thread_stop(&drbd_conf[i].syncer);
       drbd_thread_stop(&drbd_conf[i].receiver);
       drbd_free_resources(i);
     }
@@ -1067,7 +1077,7 @@ void drbdd(int minor)
 	    ll_rw_block(WRITE, 1, &bh);
 	    /* The ll_rw_block() ensures the correct write order, 
 	       which is of major importance for journaling FSs    */
-	    brelse(bh);	  	      
+	    brelse(bh);
 
 	    break;
 	  }
@@ -1080,9 +1090,13 @@ void drbdd(int minor)
 	case ReportParams: 
 	  {
 	    Drbd_ParameterBlock param;
-	    int blksize;
+	    int blksize;	    
 
 	    printk(KERN_ERR DEVICE_NAME ": recv ReportParams/m=%d\n",minor); 
+
+	    drbd_thread_stop(&drbd_conf[minor].syncer);
+	    /* No syncer when we change the block size !! */
+
 	    if( drbd_recv(my_sock, &param, sizeof(Drbd_ParameterBlock)) <= 0) 
 	      break;
 	    
@@ -1115,7 +1129,16 @@ void drbdd(int minor)
 	       boundary ?? I do not think so ! */
 
 	    if(drbd_conf[minor].cstate == WFReportParams)
-	      drbd_conf[minor].cstate = Syncing;
+	      {
+		if(drbd_conf[minor].state == Primary && 
+		   !drbd_conf[minor].conf.skip_sync) 
+		  {
+		    drbd_conf[minor].cstate = Syncing;
+		    drbd_thread_start(&drbd_conf[minor].syncer);
+		  }
+		else
+		  drbd_conf[minor].cstate = Connected;
+	      }
 
 	    break;
 	  }
@@ -1152,17 +1175,17 @@ int drbdd_init(void *arg)
   down( &thi->sem ); /* wait until parent has written its
 			rpid variable */
 
-  printk(KERN_ERR DEVICE_NAME ": thread living/m=%d\n",minor);
+  printk(KERN_ERR DEVICE_NAME ": receiver living/m=%d\n",minor);
 
   while(TRUE)
     {
       if(!drbd_connect(minor)) break;
-      if(thi->exit == TRUE || drbd_conf[minor].cstate == Unconfigured) break;
+      if(thi->exit) break;
       drbdd(minor);
-      if(thi->exit == TRUE) break;
+      if(thi->exit) break;
     }
 
-  printk(KERN_ERR DEVICE_NAME ": thread exiting/m=%d\n",minor);
+  printk(KERN_ERR DEVICE_NAME ": receiver exiting/m=%d\n",minor);
 
   thi->pid=0;
   up( &thi->sem );
@@ -1212,13 +1235,13 @@ void drbd_thread_start(struct Drbd_thread* thi)
     }
 }
 
-void drbd_thread_stop(struct Drbd_thread* thi)
+void _drbd_thread_stop(struct Drbd_thread* thi,int restart)
 {
   if(thi->pid)
     {
       int err;
 
-      thi->exit=TRUE;
+      if(!restart) thi->exit=TRUE;
 
       init_MUTEX_LOCKED(&thi->sem);
       err = kill_proc_info(SIGTERM,NULL,thi->pid);
@@ -1259,7 +1282,6 @@ int drbd_syncer(void *arg)
   int amount = 32; 
   /* FIXME: get the half of the size of the socket write buffer */
   int blocks;
-  struct buffer_head *bh;
 
   exit_mm(current);    /* give up UL-memory context */
   exit_files(current); /* give up open filedescriptors */
@@ -1272,37 +1294,77 @@ int drbd_syncer(void *arg)
   down( &thi->sem ); /* wait until parent has written its
 				     rpid variable */
 
-  printk(KERN_ERR DEVICE_NAME ": thread living/m=%d\n",minor);
+  printk(KERN_ERR DEVICE_NAME ": syncer living/m=%d\n",minor);
 
   interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
   blocks = (amount << 10) / blksize_size[MAJOR_NR][minor];
 
-  drbd_conf[minor].synced_to = blk_size[MAJOR_NR][minor] / 
-    (blksize_size[MAJOR_NR][minor]>>10) + 1;
+  drbd_conf[minor].synced_to = (blk_size[MAJOR_NR][minor]-1) << 1;
 
-  while(drbd_conf[minor].synced_to)
+  printk(KERN_ERR DEVICE_NAME ": s_to=%ld "
+	 "blks=%d "
+	 "int=%d bb=%d\n"
+	 ,drbd_conf[minor].synced_to,blocks,interval,
+	 drbd_conf[minor].blk_size_b);
+
+  while(TRUE)
     {
-      drbd_conf[minor].synced_to--;
+      int i,rr;
+      unsigned long block_nr;
+      struct buffer_head *bh;
 
-      bh = getblk(MKDEV(MAJOR_NR,minor),drbd_conf[minor].synced_to,
-		  blksize_size[MAJOR_NR][minor]);
-
-      if(!buffer_uptodate(bh))
+      for(i=0;i<blocks;i++)
 	{
-	  ll_rw_block(READ,1,&bh);
-	  wait_on_buffer(bh);
+	  block_nr = drbd_conf[minor].synced_to 
+	    >> (drbd_conf[minor].blk_size_b - 9);
+
+	  bh = getblk(MKDEV(MAJOR_NR,minor),block_nr,
+		      blksize_size[MAJOR_NR][minor]);
+
+	  if(!buffer_uptodate(bh))
+	    {
+	      ll_rw_block(READ,1,&bh);
+	      wait_on_buffer(bh);
+	    }
+
+	  rr=drbd_send(minor,Data,blksize_size[MAJOR_NR][minor],
+		       drbd_conf[minor].synced_to,
+		       bh->b_data);
+
+	  brelse(bh);
+
+	  if(rr > 0)
+	    drbd_conf[minor].send_cnt++;
+	  else
+	    {
+	      printk(KERN_ERR DEVICE_NAME ": syncer send failed!!\n");
+	      goto out;
+	    }
+
+
+	  /*
+	  printk(KERN_ERR DEVICE_NAME ": syncer send: "
+		 "block_nr=%ld len=%d\n",
+		 block_nr,
+		 blksize_size[MAJOR_NR][minor]);
+	  */
+
+	  if(thi->exit) goto out;
+	  if(drbd_conf[minor].synced_to==0) goto done;
+	  drbd_conf[minor].synced_to -= (blksize_size[MAJOR_NR][minor]>>9);
 	}
-		  
-      drbd_send(minor,Data,blksize_size[MAJOR_NR][minor],
-		drbd_conf[minor].synced_to<<(drbd_conf[minor].blk_size_b - 9),
-		bh->b_data);
-      
+
+      current->state = TASK_INTERRUPTIBLE;
       schedule_timeout(interval);
+
+      if(thi->exit) goto out;
     }
+ done:
+  drbd_conf[minor].cstate = Connected;
 
-
-  printk(KERN_ERR DEVICE_NAME ": thread exiting/m=%d\n",minor);
-
+ out:
+  drbd_conf[minor].synced_to=0;
+  printk(KERN_ERR DEVICE_NAME ": syncer exiting/m=%d\n",minor);
   thi->pid=0;
   up( &thi->sem );
   return 0;

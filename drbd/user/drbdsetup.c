@@ -93,7 +93,6 @@ int main(int argc, char** argv)
 	}
 
 
-      config.my_socket=-1/*socket_fd*/;
       config.lower_device=lower_device;
 
       config.my_addr_len = sizeof(struct sockaddr_in);
@@ -118,7 +117,9 @@ int main(int argc, char** argv)
       other_addr->sin_addr.s_addr = resolv(argv[4]);
 
       config.timeout = 30 ; /* = 3 seconds */
-      config.hardbeat = 0;
+      config.sync_rate = 250; /* KB/sec */
+      config.skip_sync = 0; 
+
 
       err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&config);      
       if(err)

@@ -57,7 +57,6 @@
 
 struct ioctl_drbd_config
 {
-  IN int      my_socket; /* obsolete */
   IN int      lower_device;
 
   IN char     other_addr[MAX_SOCK_ADDR];
@@ -66,7 +65,6 @@ struct ioctl_drbd_config
   IN int      my_addr_len;
   IN int      timeout;
   IN int      sync_rate; /* KB/sec */
-  IN int      hardbeat; /* obsolete */
   IN int      skip_sync; 
 };
 
