@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: CTH_bash.sh,v 1.1.2.5 2004/05/28 11:52:43 lars Exp $
+# $Id: CTH_bash.sh,v 1.1.2.6 2004/06/01 07:01:56 lars Exp $
 
 # example for scripting failures
 # 
@@ -11,41 +11,61 @@
 #   source CTH_bash.sh bloodymary.sh.conf CASE=interactive
 #
 
+[[ $- == *i* ]] && INTERACTIVE=true || INTERACTIVE=false
+
 CONF=$1 CASE=$2
 : ${CONF:?please tell me the config file of your choice}
 : ${CASE:?please tell me the test case to run}
 
-source ./CTH_bash.helpers
+Run()
+{
+	source ./CTH_bash.helpers || return
 
-# get the configuration
-# YOU MUST GET THIS RIGHT !
-# source ./CTH_bash.conf # uml-minna.sh.conf
-# source ./bloodymary.sh.conf
-clear_env
-source $CONF
+	# get the configuration
+	# YOU MUST GET THIS RIGHT !
+	# source ./CTH_bash.conf # uml-minna.sh.conf
+	# source ./bloodymary.sh.conf
+	clear_env
+	source $CONF              || return
 
-# verify
-# Dump_All
-# exit 0
+	# verify
+	# Dump_All
+	# exit 0
 
-# get the generic test harness functions
-# DEBUG=-vx
-__I_MEAN_IT__=__YES__
-source ./functions.sh
+	# get the generic test harness functions
+	# DEBUG=-vx
+	__I_MEAN_IT__=__YES__
+	source ./functions.sh     || return
 
-trap 'echo "exit_code: $?"' ERR EXIT # show exit codes != 0
-boot_and_setup_nodes
+	boot_and_setup_nodes      || return
 
-cat <<___
-#
-# ok, all up and configured, and fresh file systems created...
-#
-___
-if [[ -e $CASE ]] ; then
-	echo "now run CASE=$CASE"
-	( source $CASE )
-elif [[ $- == *i* ]] ; then
-	set +errexit # disable this again.
+	cat <<-___
+	#
+	# ok, all up and configured, and fresh file systems created...
+	#
+	___
+
+	set +o errexit         # disable this again, but do something similar, and
+	trap 'ex=$?; echo "exit_code: $ex"; [[ $FUNCNAME ]] && return $ex' ERR # show exit codes != 0
+	if [[ -e $CASE ]] ; then
+		echo "now run CASE=$CASE"
+		source $CASE || return
+	fi
+
+	return
+}
+
+if Run; then
+	cat <<-___
+	#--- $CASE ----
+	#     PASSED
+	#-----------------
+	___
+else
+	echo "something went wrong. exit_code: $?"
+fi
+
+if $INTERACTIVE ; then
 	cat <<-___
 	#
 	# now you can:

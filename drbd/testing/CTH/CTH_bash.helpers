@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.5 2004/05/28 11:52:43 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.6 2004/06/01 07:01:56 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -211,6 +211,7 @@ Heal_Disk()
 # initial boot
 boot_and_setup_nodes()
 { (
+	set -e
 	initial=true
 	for n in ${!Node_*}; do
 		node_to_env $n
@@ -286,7 +287,7 @@ Start()
 
 Stop()
 {
-	local rs=$1
+	local rs=$1 i fs cn CN which
 	i=${rs#RS_}
 	which=${!rs}; [[ $which == *CN=* ]] && cn=${which#*CN=} || cn=''
 	fs=FS_$i; CN=""
@@ -305,10 +306,16 @@ Stop()
 	Dump_RS
 }
 
-Relocate()
+Reloc()
 {
-	local rs=$1 nn=$2
+	local rs=$1 nn=$2 cn
 	if [[ ${!rs} == *CN=* ]] ; then
+		cn=${!rs}; cn=${rs#*CN=}
+		if [[ $cn == $nn ]] ; then
+			echo "$rs already running on $nn"
+			Dump_RS
+		       	return
+		fi
 		Stop $rs
 	fi
 	Start $rs $nn
