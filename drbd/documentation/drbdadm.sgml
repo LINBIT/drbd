@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
-  <docinfo><date>09 Feg 2004</date></docinfo>
+  <docinfo><date>09 Feb 2004</date></docinfo>
   
   <refmeta>
     <refentrytitle>drbdadm</refentrytitle>
@@ -30,10 +30,6 @@
     <title>Description</title>
     <para>
       Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to 
-      drbdsetup what ifup/ifdown is to ifconfig.
-    </para>
-    <para>
-      Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to 
       drbdsetup what ifup/ifdown is to ifconfig. Drbdadm reads its configuration
       file and performs the specified commands by calling the drbdsetup program.
     </para>    
@@ -44,7 +40,7 @@
       <varlistentry>
         <term><option>-d</option>, <option>--dry-run</option></term>
         <listitem><para>
-	  Just prints the calls of drbdsetup to stdout, but do not run
+	  Just prints the calls of drbdsetup to stdout, but does not run
 	  the commands. 
 	</para></listitem>
       </varlistentry>
@@ -151,9 +147,9 @@
         <term>resize</term>
         <listitem><para>
           DRBD will reexamine all sizing constraints, and resize the
-	  resource's device accoringly. E.g. In case you increased the
+	  resource's device accordingly. E.g. in case you increased the
 	  size of your backing storage devices (on both nodes of course),
-	  then DRBD will addopt to the new size after you called 
+	  then DRBD will adopt to the new size after you called 
 	  this command on _both_ nodes.
         </para></listitem>
       </varlistentry>
@@ -162,7 +158,7 @@
         <listitem><para>
           Synchronizes the configuration of device with your configuration
 	  file. You should always examine the output of the dry-run
-	  mode before actually execuring this command. 
+	  mode before actually executing this command. 
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -175,7 +171,7 @@
         <term>dump</term>
         <listitem><para>
           Just parse the configuration file and dump it to stdout. Might
-	  be used the check the configuration file for syntactical correctness.
+	  be used to check the configuration file for syntactical correctness.
         </para></listitem>
       </varlistentry>
     </variablelist>
