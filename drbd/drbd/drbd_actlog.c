@@ -579,7 +579,8 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	kfree(udw);
 
-	if(mdev->rs_left == 0) {
+	if(mdev->rs_left == 0 && 
+	   ( mdev->cstate == SyncSource || mdev->cstate == SyncTarget ) ) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
 		drbd_resync_finished(mdev);
 	}
