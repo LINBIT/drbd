@@ -24,6 +24,7 @@
 #define _GNU_SOURCE
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -34,11 +35,14 @@
 
 #include "drbdadm.h"
 
+#define PERROR(fmt, args...) \
+do { fprintf(stderr,fmt ": ", ##args); perror(0); } while (0)
 
 /******
  This is a bit uggly.
  If you think you are clever, then consider to contribute a nicer
  implementation of adm_adjust()
+
 */
 
 FILE *m_popen(int *pid,char** argv)
@@ -209,6 +213,9 @@ int adm_adjust(struct d_resource* res,char* unused)
   int do_connect=0;
   int do_syncer=0;
 
+  struct stat sb;
+  int major, minor;
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="show";
@@ -224,23 +231,51 @@ int adm_adjust(struct d_resource* res,char* unused)
     goto do_up;
   }
 
-  rv=m_fscanf(in,"Lower device: %*3d:%*3d   (%[^)])\n",str1);
-  if( (rv!=1) || strcmp(str1,res->me->disk)) {
-    do_attach=1;
+  if (stat(res->me->disk, &sb)) {
+    PERROR("stat '%s' failed:", res->me->device);
+    return 10;
+  }
+  if (!S_ISBLK(sb.st_mode)) {
+    fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
+    return 10;
+  }
+  rv=m_fscanf(in,"Lower device: %d:%d (%*[^)])\n",&major,&minor);
+  if( (rv!=2) || (((major<<8)|minor) != (int)sb.st_rdev)) do_attach=1;
+
+  if (strcmp("internal", res->me->meta_disk)) {
+    if (stat(res->me->meta_disk, &sb)) {
+      PERROR("stat '%s' failed:", res->me->meta_disk);
+      return 10;
+    }
+    if (!S_ISBLK(sb.st_mode)) {
+      fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
+      return 10;
+    }
+  } else {
+    sb.st_rdev = 0;
   }
 
-  rv=m_fscanf(in,"Meta device: %s   (%[^)])\n",str1,str2);
-  if(rv==1) {
-    if(strcmp("internal",str1)==0) {
-      if(strcmp("internal",res->me->meta_disk) && 
-	 strcmp(res->me->disk,res->me->meta_disk)) do_attach=1;
-    } 
+  rv = m_fscanf(in, "Meta device: %s (%[^)])\n", str1, str2);
+  if (rv == 1) {
+    if (!strcmp("internal", str1)) {
+      if (strcmp("internal", res->me->meta_disk))
+	do_attach = 1;
+    } else {
+      fprintf(stderr, "parse error, '%s' read, 'internal' expected\n", str1);
+      return 10;
+    }
   }
-  if(rv==2) {
-    if(strcmp(str2,res->me->meta_disk)) do_attach=1;
-    rv=m_fscanf(in,"Meta index: %[0-9]\n",str1);
-    if(rv==1) {
-      if(strcmp(str1,res->me->meta_index)) do_attach=1;
+  if (rv == 2) {
+    sscanf(str1, "%d:%d", &major, &minor);
+    if ((rv != 2) || (((major << 8) | minor) != (int) sb.st_rdev))
+      do_attach = 1;
+    rv = m_fscanf(in, "Meta index: %[0-9]\n", str1);
+    if (rv == 1) {
+      if (strcmp(str1, res->me->meta_index))
+	do_attach = 1;
+    } else {
+      fprintf(stderr, "parse error\n");
+      return 10;
     }
   }
 
