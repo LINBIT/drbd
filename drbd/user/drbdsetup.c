@@ -708,7 +708,7 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 
   while((dde=readdir(device_dir))) 
     {
-      if(stat(dde->d_name,&sb)) goto err_out_close;
+      if(stat(dde->d_name,&sb)) continue;
 
       if(S_ISBLK(sb.st_mode)) 
 	{
@@ -726,27 +726,26 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 
   while((dde=readdir(device_dir))) 
     {
-      if(stat(dde->d_name,&sb)) goto err_out_close;
+      if(stat(dde->d_name,&sb)) continue;
       
       if(!strcmp(dde->d_name,".")) continue;
       if(!strcmp(dde->d_name,"..")) continue;
       if(!strcmp(dde->d_name,"fd")) continue;
-
+      
       if(S_ISDIR(sb.st_mode)) 
 	{
 	  char subdir[50];
-
+	  
 	  if(snprintf(subdir,50,"%s/%s",dir,dde->d_name)==49) 
 	    { /* recursion is too deep */
 	      strcpy(dev_name,"can not guess name");
 	      return dev_name;
 	    }
-
+	  
 	  if(guess_dev_name(subdir,major,minor)) return dev_name;
 	}
     }
 
- err_out_close:
   closedir(device_dir);
  err_out:
   return NULL;
