@@ -894,12 +894,14 @@ extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
 extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
+extern const char* cstate_to_name(Drbd_CState s);
+extern const char* nodestate_to_name(Drbd_State s);
 
 // drbd_actlog.c
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
-extern void drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
+extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,int blk_size);
@@ -1196,16 +1198,21 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
-#if 0
+#ifdef DUMP_ALL_PACKETS
 /*
  * enable to dump information about every packet exchange.
  */
+#define INFOP(fmt, args...) \
+	INFO("%s:%d: %s [%d] %s %s " fmt , \
+	     file, line, current->comm, current->pid, \
+	     sockname, recv?"<<<":">>>" \
+	     , ## args )
 static inline void
 dump_packet(drbd_dev *mdev, struct socket *sock,
-	    int recv, Drbd_Polymorph_Packet *p)
+	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
 {
 	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
-	int cmd = be16_to_cpu(p->head.command);
+	int cmd = (recv == 2) ? p->head.command : be16_to_cpu(p->head.command);
 	switch (cmd) {
 	case Ping:
 	case PingAck:
@@ -1215,8 +1222,10 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case SyncParam:
 	case ReportParams:
-		INFO(" %s [%d] %s %s %s\n", current->comm, current->pid,
-		     sockname, recv?"<<<":">>>", cmdname(cmd));
+		INFOP("%s\n", cmdname(cmd));
+		break;
+
+	case ReportBitMap: /* don't report this */
 		break;
 
 	case Data:
@@ -1229,31 +1238,23 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case DataRequest:
 	case RSDataRequest:
-		INFO(" %s [%d] %s %s %s (%lu,%lx)\n", current->comm, current->pid,
-		     sockname, recv?"<<<":">>>", cmdname(cmd),
-		     (long)be64_to_cpu(p->Data.sector), (long)p->Data.block_id
+		INFOP("%s (%lu,%llx)\n", cmdname(cmd),
+		     (long)be64_to_cpu(p->Data.sector), (long long)p->Data.block_id
 		);
 		break;
 
 	case Barrier:
 	case BarrierAck:
-		INFO(" %s [%d] %s %s %s (%u)\n", current->comm, current->pid,
-		     sockname, recv?"<<<":">>>", cmdname(cmd),
-		     p->Barrier.barrier
-		);
+		INFOP("%s (%u)\n", cmdname(cmd), p->Barrier.barrier);
 		break;
 
 	default:
-		INFO(" %s [%d] %s %s %s (%u)\n", current->comm, current->pid,
-		     sockname, recv?"<<<":">>>", cmdname(cmd), cmd
-		);
+		INFOP("%s (%u)\n",cmdname(cmd), cmd);
 		break;
 	}
 }
 #else
-static inline void
-dump_packet(drbd_dev *mdev, struct socket *sock,
-	    int recv, Drbd_Polymorph_Packet *p)   { /* DO NOTHING */ }
+#define dump_packet(ignored...) ((void)0)
 #endif
 
 

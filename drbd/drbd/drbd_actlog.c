@@ -773,21 +773,34 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
  *
  * @sector: The sector number
  */
-void drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
+int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (BM_EXTENT_SIZE_B-9));
 	struct bm_extent* bm_ext;
 	int i;
 
-	wait_event(mdev->al_wait, (bm_ext = _bme_get(mdev,enr)) );
+	if( wait_event_interruptible(mdev->al_wait, 
+				     (bm_ext = _bme_get(mdev,enr)) ) ) {
+		return 0;
+	}
 
-	if(test_bit(BME_LOCKED,&bm_ext->flags)) return;
+	if(test_bit(BME_LOCKED,&bm_ext->flags)) return 1;
 
 	for(i=0;i<SM;i++) {
-		wait_event(mdev->al_wait, !_is_in_al(mdev,enr*SM+i) );
+		if( wait_event_interruptible(mdev->al_wait, 
+					     !_is_in_al(mdev,enr*SM+i) ) ) {
+			if( lc_put(mdev->resync,&bm_ext->lce) == 0 ) {
+				clear_bit(BME_NO_WRITES,&bm_ext->flags);
+				atomic_dec(&mdev->resync_locked);
+				wake_up(&mdev->al_wait);
+				return 0;
+			}
+		}
 	}
 
 	set_bit(BME_LOCKED,&bm_ext->flags);
+
+	return 1;
 }
 
 void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
@@ -828,13 +841,13 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 	for(i=0;i<mdev->resync->nr_elements;i++) {
 		bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 		if(bm_ext->lce.lc_number == LC_FREE) continue;
+		atomic_sub(bm_ext->lce.refcnt,&mdev->rs_pending_cnt);
 		bm_ext->lce.refcnt = 0; // Rude but ok.
 		bm_ext->rs_left = 0;
 		clear_bit(BME_LOCKED,&bm_ext->flags);
 		clear_bit(BME_NO_WRITES,&bm_ext->flags);
 		lc_del(mdev->resync,&bm_ext->lce);
 	}
-
-	wake_up(&mdev->al_wait);
 	spin_unlock_irq(&mdev->al_lock);
+	wake_up(&mdev->al_wait);
 }

@@ -372,12 +372,11 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 		le = mdev->done_ee.next;
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
-		drbd_put_ee(mdev,e);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
 		   is_syncer_blk(mdev,e->block_id)) {
 			dec_unacked(mdev,HERE);
 		}
-
+		drbd_put_ee(mdev,e);
 	}
 
 	spin_unlock_irq(&mdev->ee_lock);
@@ -509,9 +508,9 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 		} else if (rv == 0) {
 			INFO("sock was shut down by peer\n");
 			break;
-		} else {
-			// if data comes in bytewise, this might trigger ...
-			ERR("logic error: sock_recvmsg returned %d\n",rv);
+		} else  {
+			/* signal came in after we read a partial message */
+			D_ASSERT(signal_pending(current));
 			break;
 		}
 	};
@@ -683,7 +682,6 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 		ERR("short read expecting header on sock: r=%d\n",r);
 		return FALSE;
 	};
-	dump_packet(mdev,mdev->data.socket,1,(void*)h);
 	h->command = be16_to_cpu(h->command);
 	h->length  = be16_to_cpu(h->length);
 	if (unlikely( h->magic != BE_DRBD_MAGIC )) {
@@ -1317,17 +1315,15 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
-	struct list_head workset,*le;
+	struct list_head *le;
 	drbd_bio_t *bio;
+	LIST_HEAD(workset);
 
 	/*
 	 * Application READ requests
 	 */
 	spin_lock(&mdev->pr_lock);
-	// FIXME use list_splice_init
-	list_add(&workset,&mdev->app_reads);
-	list_del(&mdev->app_reads);
-	INIT_LIST_HEAD(&mdev->app_reads);
+	list_splice_init(&mdev->app_reads,&workset);
 	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
@@ -1444,6 +1440,7 @@ STATIC void drbdd(drbd_dev *mdev)
 			    cmdname(header->command), header->length);
 			break;
 		}
+		dump_packet(mdev,mdev->data.socket,2,&mdev->data.rbuf, __FILE__, __LINE__);
 	}
 }
 
@@ -1493,16 +1490,17 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	mdev->epoch_size=0;
 
 	if(atomic_read(&mdev->unacked_cnt)) {
-		ERR("unacked_cnt!=0\n");
+		ERR("unacked_cnt = %d\n",atomic_read(&mdev->unacked_cnt));
 		atomic_set(&mdev->unacked_cnt,0);
 	}
 
-	/* Since syncer's blocks are also counted, there is no hope that
-	   pending_cnt is zero. */
+	if(atomic_read(&mdev->rs_pending_cnt)) {
+		ERR("rs_pending_cnt = %d\n",atomic_read(&mdev->rs_pending_cnt));
+		atomic_set(&mdev->rs_pending_cnt,0);
+	}
+
 	ERR_IF(atomic_read(&mdev->ap_pending_cnt))
 		atomic_set(&mdev->ap_pending_cnt,0);
-	ERR_IF(atomic_read(&mdev->rs_pending_cnt))
-		atomic_set(&mdev->rs_pending_cnt,0);
 
 	wake_up_interruptible(&mdev->cstate_wait);
 
@@ -1786,13 +1784,13 @@ int drbd_asender(struct Drbd_thread *thi)
 			}
 			expect = asender_tbl[cmd].pkt_size;
 			ERR_IF(len != expect-sizeof(Drbd_Header)) {
-				dump_packet(mdev,mdev->meta.socket,1,(void*)h);
+				dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
 				DUMPI(expect);
 			}
 		}
 		if(received == expect) {
 			D_ASSERT(cmd != -1);
-			dump_packet(mdev,mdev->meta.socket,1,(void*)h);
+			dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
 			if(!asender_tbl[cmd].process(mdev,h)) goto err;
 
 			buf      = h;

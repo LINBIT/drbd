@@ -479,7 +479,8 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 			return 1;
 		}
 
-		drbd_rs_begin_io(mdev,sector);
+		if(!drbd_rs_begin_io(mdev,sector)) return 0;
+
 		if(unlikely(!bm_get_bit(mdev->mbds_id,sector,BM_BLOCK_SIZE))) {
 		      //INFO("Block got synced while in drbd_rs_begin_io()\n");
 			drbd_rs_complete_io(mdev,sector);
@@ -541,6 +542,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
+		dec_unacked(mdev,HERE);
 		return 1;
 	}
 
@@ -571,6 +573,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
 		spin_unlock_irq(&mdev->ee_lock);
+		dec_unacked(mdev,HERE);
 		return 1;
 	}
 
@@ -834,7 +837,8 @@ int drbd_worker(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
 	struct drbd_work *w = 0;
-	int intr;
+	LIST_HEAD(work_list);
+	int intr,i;
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
 
@@ -859,7 +863,7 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		ERR_IF (get_t_state(thi) != Running)
 			break;
-		
+
 		// if (need_resched()) schedule();
 
 		w = 0;
@@ -881,17 +885,22 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	drbd_wait_ee(mdev,&mdev->read_ee);
 
+	spin_lock_irq(&mdev->req_lock);
+	list_splice_init(&mdev->data.work.q,&work_list);
+	spin_unlock_irq(&mdev->req_lock);
 
-	while(!down_trylock(&mdev->data.work.s)) {
-		spin_lock_irq(&mdev->req_lock);
-		if (!list_empty(&mdev->data.work.q)) {
-			w = list_entry(mdev->data.work.q.next,
-				       struct drbd_work,list);
-			list_del_init(&w->list);
-		}
-		spin_unlock_irq(&mdev->req_lock);
+	i = 0;
+	while(!list_empty(&work_list)) {
+		w = list_entry(work_list.next, struct drbd_work,list);
+		list_del_init(&w->list);
 		w->cb(mdev,w,1);
+		i++;
 	}
+
+	spin_lock_irq(&mdev->req_lock);
+	D_ASSERT(list_empty(&mdev->data.work.q));
+	sema_init(&mdev->data.work.s,0);
+	spin_unlock_irq(&mdev->req_lock);
 
 	INFO("worker terminated\n");
 

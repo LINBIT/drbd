@@ -388,6 +388,10 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	Drbd_CState os;
 
 	os = mdev->cstate;
+
+	INFO("%s [%d]: cstate %s --> %s\n", current->comm, current->pid,
+	     cstate_to_name(os), cstate_to_name(ns) );
+
 	mdev->cstate = ns;
 	smp_mb();
 	wake_up(&mdev->cstate_wait);
@@ -409,9 +413,10 @@ STATIC int drbd_thread_setup(void* arg)
 	int retval;
 
 	drbd_daemonize();
-	D_ASSERT(get_t_state(thi) == Running);
+	D_ASSERT(get_t_state(thi) == None);
 	D_ASSERT(thi->task == NULL);
 	thi->task = current;
+	thi->t_state = Running;
 	smp_mb();
 	complete(&thi->startstop); // notify: thi->task is set.
 
@@ -419,7 +424,8 @@ STATIC int drbd_thread_setup(void* arg)
 
 	spin_lock(&thi->t_lock);
 	thi->task = 0;
-	D_ASSERT(thi->t_state == Exiting);
+	thi->t_state = Exiting;
+	smp_mb();
 	spin_unlock(&thi->t_lock);
 
 	// THINK maybe two different completions?
@@ -446,10 +452,17 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	drbd_dev *mdev = thi->mdev;
 
 	spin_lock(&thi->t_lock);
+
+	/* INFO("%s [%d]: %s %d -> Running\n",
+	     current->comm, current->pid,
+	     thi == &mdev->receiver ? "receiver" :
+             thi == &mdev->asender  ? "asender"  :
+             thi == &mdev->worker   ? "worker"   : "NONSENSE",
+	     thi->t_state); */
+
 	if (thi->t_state == None) {
 		D_ASSERT(thi->task == NULL);
 		// XXX D_ASSERT( thi->startstop something ? )
-		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
@@ -458,18 +471,27 @@ void drbd_thread_start(struct Drbd_thread *thi)
 			return;
 		}
 		wait_for_completion(&thi->startstop); // waits until thi->task is set
+		D_ASSERT(thi->task);
+		D_ASSERT(get_t_state(thi) == Running);
 	} else {
 		spin_unlock(&thi->t_lock);
 	}
+
 }
 
 
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
 	drbd_dev *mdev = thi->mdev;
-
 	Drbd_thread_state ns = restart ? Restarting : Exiting;
+
 	spin_lock(&thi->t_lock);
+
+	/* INFO("%s [%d]: %s %d -> %d; %d\n",
+	     current->comm, current->pid,
+	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
+
+
 	if (thi->t_state == None) {
 		spin_unlock(&thi->t_lock);
 		return;
@@ -502,6 +524,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 		wait_for_completion(&thi->startstop);
 		spin_lock(&thi->t_lock);
 		thi->t_state = None;
+		smp_mb();
 		D_ASSERT(thi->task == NULL);
 		spin_unlock(&thi->t_lock);
 	}
@@ -543,6 +566,7 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
+	dump_packet(mdev,sock,0,(void*)h, __FILE__, __LINE__);
 	sent = drbd_send(mdev,sock,h,size,msg_flags);
 
 	ok = ( sent == size );
@@ -550,7 +574,6 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		ERR("short sent %s size=%d sent=%d\n",
 		    cmdname(cmd), (int)size, sent);
 	}
-	dump_packet(mdev,sock,0,(void*)h);
 	return ok;
 }
 
@@ -882,6 +905,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	mdev->send_task=current;
 	spin_unlock(&mdev->send_task_lock);
 
+	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bio(mdev,&e->private_bio);
 
