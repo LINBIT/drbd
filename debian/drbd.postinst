@@ -5,6 +5,10 @@ if [ -x "/etc/init.d/drbd" ]; then
 fi
 
 # Make sure /dev/nb[0-7] devices exist
-cd /dev; for a in `seq 0 7`; do MAKEDEV nb$a; done
+# cd /dev; for a in `seq 0 7`; do MAKEDEV nb$a; done
+
+for i in `seq 0 15` ; do 
+    test -b /dev/drbd$i || mknod /dev/drbd$i b 147 $i; 
+done
 
 #DEBHELPER#
