@@ -8,6 +8,9 @@
    Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
+   Copyright 2003 Lars Ellenberg <l.g.e@web.de>
+       contributions.
+
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)

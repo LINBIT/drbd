@@ -19,10 +19,11 @@
 
 include ../Makefile.vars
 
-KSUBD = $(shell if [ -e /lib/modules/$(KERNVER)/kernel ]; then echo "kernel/drivers/block"; else echo "block"; fi )
+KSUBD := $(strip \
+$(if $(wildcard /lib/modules/$(KERNVER)/kernel),\
+  kernel/drivers/block,\
+  block))
 
-MAJOR = $(shell echo $(KERNVER) | cut -d. -f 1)
-MINOR = $(shell echo $(KERNVER) | cut -d. -f 2)
 
 OBJS =  drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_dsender.o
 OBJS += drbd_req-2.4.o mempool-2.4.o
@@ -38,28 +39,102 @@ endif
 
 .SUFFIXES: .c .o
 
+.PHONY: check_kernel_config
+
 .c.o:
 	$(KCC) -c $(KERNFLAGS) $(VERSIONFLAGS) $<
 
 #######
 
+# error, if we have no kernel source tree
+define ERR_NO_KERNEL_SOURCE
 
-all: drbd.o
+Could not find kernel sources.
+  Install them, or tell me where to find them with
+  make LINUX=/path/to/kernel/source
+endef
+ifeq ($(LINUX),)
+  $(warning $(ERR_NO_KERNEL_SOURCE)))
+endif
+ifneq ($(shell cd $(LINUX) 2>&1),)
+  $(warning $(LINUX): no such directory. $(ERR_NO_KERNEL_SOURCE))
+endif
+# lge patent pending :-)
+ifneq ($(shell ls $(LINUX)/Documentation/oops-tracing.txt 2>&1 >/dev/null),)
+  $(warning $(LINUX) does not look like a kernel source tree)
+endif
+
+# which version is configured in the kernel source tree
+# just "make" it, in case it is out of date.
+CONFIGURED_KERNVER := $(shell \
+   ( cd $(LINUX) && $(MAKE) include/linux/version.h > /dev/null 2>&1 ) && \
+   $(CC) -nostdinc -E -P $(INCLUDE) check_kernel_config.c | \
+   sed -e '/^drbd_configured_kernver/!d;s/[^"]*"//;s/".*//; q' )
+# which version the current drbd.o was built for
+COMPILED_KERNVER := $(shell test -e .flags && sed -e 's/;.*//;q' .flags)
+
+ifeq ($(CONFIGURED_KERNVER),)
+   $(warning kernel configuration seems to be not ok)
+endif
+
+
+NEED_SIGHAND_HACK := $(shell grep -q "^struct sighand_struct" \
+	$(LINUX)/include/linux/sched.h && echo yes )
+ifeq ($(NEED_SIGHAND_HACK),yes)
+  override KERNFLAGS += -DSIGHAND_HACK
+  $(warning adding -DREDHAT_2_4_20 sighand_struct hack)
+endif
+
+NEEDNEW := $(shell \
+	if test -e .flags \
+	&& test "$(CONFIGURED_KERNVER);$(KERNFLAGS);$(VERSIONFLAGS)" = "`cat .flags`"; \
+	then \
+		:; \
+	else \
+		echo clean; \
+	fi)
+
+
+#######
+
+all: check_kernel_config $(NEEDNEW) drbd.o
+
+# error, if running or commandline specified kernel version
+# and version from the kernel source config do not match
+check_kernel_config:
+ifneq ($(CONFIGURED_KERNVER),$(KERNVER))
+	@echo "Version of running kernel and kernel config differ:"
+	@echo "  $(KERNVER) <uname -r or specified on command line>"
+	@echo "  $(CONFIGURED_KERNVER) <$(LINUX)/include/linux/version.h>"
+	@echo "  You may want to reconfigure to match the running kernel, or"
+	@echo "  make KERNVER=2.4.XY LINUX=/path/to/kernel/source "
+	@echo "  to override this"
+	@false
+endif
 
 drbd.o: $(OBJS)
 	$(LD) $(LDFLAGS) -r -o $@ $^
 
 clean:
-	rm -f *.o
-	rm -f *~
+	rm -f *.o *~ .flags
+	@echo "$(CONFIGURED_KERNVER);$(KERNFLAGS);$(VERSIONFLAGS)" >.flags
 
 
-install:
+install: all
 	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
 	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
+	install -d $(PREFIX)var/lib/drbd
+ifeq ($(shell uname -r),$(KERNVER))
+	/sbin/depmod -a || depmod -e drbd.o 2>&1 >/dev/null || true
+else
+	[ -e $(LINUX)/System.map ] && \
+	   /sbin/depmod -F $(LINUX)/System.map -e drbd.o 2>&1 >/dev/null || true
+endif
+
+uninstall:
+	rm $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)/drbd.o
 	/sbin/depmod -a || true
 
 ### dependencies:
 
 $(OBJS): drbd_int.h drbd.h
-
