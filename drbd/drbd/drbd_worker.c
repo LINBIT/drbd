@@ -232,8 +232,10 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 	INFO("Syncer continues.\n");
 	_set_cstate(mdev,ns);
 
-	mdev->resync_work.cb = w_make_resync_request;
-	_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+	if(mdev->cstate == SyncTarget) {
+		mdev->resync_work.cb = w_make_resync_request;
+		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+	}
 }
 
 
