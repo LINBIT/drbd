@@ -586,7 +586,7 @@ int scan_net_options(char **argv,
 	  break;
 	case 'b':
 	  cn->config.max_buffers = m_strtoll_range(optarg,1, "max-buffers",
-			  DRBD_MAX_BUFFERS_MIN, DRBD_MAX_BUFFERS_MIN);
+			  DRBD_MAX_BUFFERS_MIN, DRBD_MAX_BUFFERS_MAX);
 	  break;
 	case 'c':
 	  cn->config.try_connect_int = m_strtoll_range(optarg,1, "connect-int",
