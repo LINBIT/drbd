@@ -613,15 +613,16 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate,
 	case RQ_DRBD_SENT:
 		if (nextstate == RQ_DRBD_WRITTEN)
 			goto end_it;
-		printk(KERN_ERR DEVICE_NAME ": request state error(1)\n");
+		printk(KERN_ERR DEVICE_NAME ": request state error(A)\n");
 		break;
 	case RQ_DRBD_WRITTEN:
 		if (nextstate == RQ_DRBD_SENT)
 			goto end_it;
-		printk(KERN_ERR DEVICE_NAME ": request state error(2)\n");
+		printk(KERN_ERR DEVICE_NAME ": request state error(B)\n");
 		break;
 	default:
-		printk(KERN_ERR DEVICE_NAME ": request state error(3)\n");
+		printk(KERN_ERR DEVICE_NAME ": request state error(%X)\n",
+		       req->rq_status);
 	}
 	return;
 
@@ -1267,7 +1268,9 @@ void drbdd(int minor)
 			  for(i=0;i<epoch_size;i++) {
 			    if(!buffer_uptodate(epoch[i].bh))
 			      wait_on_buffer(epoch[i].bh);
-			    brelse(epoch[i].bh);
+			    /* brelse(epoch[i].bh); 
+			       kernel: VFS: brelse: Trying to free free buffer
+			    */
 			  }
 			  if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C){
 			    for(i=0;i<epoch_size;i++) {
@@ -1330,7 +1333,11 @@ void drbdd(int minor)
 			}
 				    
 			ll_rw_block(WRITE, 1, &bh);
-			/* brelse(bh);      */
+			brelse(bh);  
+			/* I really think that I schould brelse() the bh
+			   after it's last use, but my kernel does not
+			   like it... ( see the out-commented brelse() )
+			*/
 			 
 			break; 
 		        }
@@ -1567,7 +1574,7 @@ int drbd_syncer(void *arg)
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	int minor = thi->minor;
 	int interval;
-	int amount = 32;
+	int amount = 32; /* KB */
 	/* TODO: get the half of the size of the socket write buffer */
 	int blocks;
 	int blocksize;
