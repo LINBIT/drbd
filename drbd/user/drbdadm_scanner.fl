@@ -43,22 +43,22 @@ device           { DP; return TK_DEVICE;        }
 global           { DP; return TK_GLOBAL;        }
 address          { DP; return TK_ADDRESS;       }
 resource         { DP; return TK_RESOURCE;      }
-minor_count      { DP; return TK_MINOR_COUNT;   }
-disable_io_hints { DP; return TK_DISABLE_IO_HINTS;  }
-rate             { DP; CP; return TK_RATE;          }
-size             { DP; CP; return TK_SIZE;          }
-tl-size          { DP; CP; return TK_TL_SIZE;       }
-timeout          { DP; CP; return TK_TIMEOUT;       }
-ping-int         { DP; CP; return TK_PING_INT;      } 
-protocol         { DP; CP; return TK_PROTOCOL;      }
-do-panic         { DP; CP; return TK_DO_PANIC;      }
-use-csums        { DP; CP; return TK_USE_CSUMS;     }
-skip-sync        { DP; CP; return TK_SKIP_SYNC;     }
-connect-int      { DP; CP; return TK_CONNECT_INT;   }
-incon-degr-cmd   { DP; CP; return TK_INCON_DEGR_CMD;}
-{IPV4ADDR}       { DP; CP; return TK_IPADDR;        }
-{NUM}            { DP; CP; return TK_INTEGER;}
-{STRING}         { DP; CP; return TK_STRING; }
+rate             { DP; CP; return TK_RATE;            }
+size             { DP; CP; return TK_SIZE;            }
+tl-size          { DP; CP; return TK_TL_SIZE;         }
+timeout          { DP; CP; return TK_TIMEOUT;         }
+ping-int         { DP; CP; return TK_PING_INT;        }   
+protocol         { DP; CP; return TK_PROTOCOL;        }
+do-panic         { DP; CP; return TK_DO_PANIC;        }
+use-csums        { DP; CP; return TK_USE_CSUMS;       }
+skip-sync        { DP; CP; return TK_SKIP_SYNC;       }
+minor_count      { DP; CP; return TK_MINOR_COUNT;     }
+connect-int      { DP; CP; return TK_CONNECT_INT;     }
+incon-degr-cmd   { DP; CP; return TK_INCON_DEGR_CMD;  }
+disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;}
+{IPV4ADDR}       { DP; CP; return TK_IPADDR;          }
+{NUM}            { DP; CP; return TK_INTEGER;         }
+{STRING}         { DP; CP; return TK_STRING;          }
 {WS}+            /* ignore whitespaces */
 .                { syntax_error(yytext); } 
 

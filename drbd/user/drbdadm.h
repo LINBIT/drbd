@@ -40,6 +40,7 @@ extern struct d_option* find_opt(struct d_option*,char*);
 
 extern int config_valid;
 extern struct d_resource* config;
+extern struct d_option* global_options;
 extern int line;
 
 extern int dry_run;

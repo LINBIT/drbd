@@ -70,32 +70,35 @@ static struct d_resource* new_resource(char* name)
   struct d_resource* d_resource;
 }
 
-%token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON TK_DISABLE_IO_HINTS
-%token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_MINOR_COUNT 
+%token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON 
+%token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL 
 %token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
 %token <txt> TK_SIZE TK_TL_SIZE TK_TIMEOUT TK_CONNECT_INT 
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
 %token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 
+%token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT 
 
 %type <d_option> disk_statements disk_statement 
 %type <d_option> net_statements net_statement
 %type <d_option> sync_statements sync_statement 
+%type <d_option> sync_statements sync_statement 
+%type <d_option> glob_statements glob_statement
 %type <d_resource> resources resource
 
 %%
-config:           global_sec resources   { config=$1; }
+config:           global_sec resources   { config=$2; }
 		;	 
 
 global_sec:       /* empty */
-                | TK_GLOBAL { glob_statements }
+                | TK_GLOBAL '{' glob_statements '}'   { global_options=$3; }
 		;
 
-glob_statements:  /* empty */
-		| glob_statements glob_statement
+glob_statements:  /* empty */   { $$ = 0; }
+		| glob_statements glob_statement   { $$=APPEND($1,$2); }
 		;
 
-glob_statement:   TK_DISABLE_IO_HINTS
-		| TK_MINOR_COUNT '=' TK_STRING   { $$=APPEND($1,$2); }
+glob_statement:   TK_DISABLE_IO_HINTS   { $$=new_opt($1,"1"); }
+		| TK_MINOR_COUNT '=' TK_INTEGER   { $$=new_opt($1,$3); }
                 ;
 
 resources:        /* empty */   { $$ = 0; }

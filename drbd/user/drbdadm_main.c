@@ -56,10 +56,12 @@ int adm_syncer(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
-static int helper_dev(struct d_resource* ,char* );
+static int sh_devices(struct d_resource* ,char* );
+static int sh_mod_parms(struct d_resource* ,char* );
 
 char ss_buffer[255];
 int line=1;
+struct d_option* global_options;
 struct d_resource* config;
 int config_valid=1;
 int dry_run;
@@ -91,8 +93,8 @@ struct adm_cmd cmds[] = {
   { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
-  { "sh-devices",        helper_dev,  0                  ,0,0 },
-  //{ "sh-globals",      helper_globals,  0              ,0,0 },
+  { "sh-devices",        sh_devices,  0                  ,0,0 },
+  { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -153,7 +155,7 @@ static int adm_dump(struct d_resource* res,char* unused)
   return 1;
 }
 
-static int helper_dev(struct d_resource* res,char* unused)
+static int sh_devices(struct d_resource* res,char* unused)
 {
   while(1) {
     printf("%s",esc(res->name));
@@ -163,6 +165,18 @@ static int helper_dev(struct d_resource* res,char* unused)
       printf("\n");
       break;
     }
+  }
+
+  return 0;
+}
+
+static int sh_mod_parms(struct d_resource* res,char* unused)
+{
+  struct d_option* o=global_options;
+
+  while(o) {
+    printf("%s=%s ",o->name,o->value);
+    o=o->next;
   }
 
   return 0;
