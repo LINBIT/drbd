@@ -1520,8 +1520,10 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	   on the fly. */
 	atomic_set(&mdev->rs_pending_cnt,0);
 
-	ERR_IF(atomic_read(&mdev->ap_pending_cnt))
+	if(atomic_read(&mdev->ap_pending_cnt)) {
+		ERR("ap_pending_cnt = %d\n",atomic_read(&mdev->ap_pending_cnt));
 		atomic_set(&mdev->ap_pending_cnt,0);
+	}
 
 	wake_up_interruptible(&mdev->cstate_wait);
 

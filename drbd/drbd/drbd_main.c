@@ -288,10 +288,19 @@ void tl_clear(drbd_dev *mdev)
 	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->oldest_barrier;
+	mdev->oldest_barrier = new_first;
+	mdev->newest_barrier = new_first;
+
+	spin_unlock_irq(&mdev->tl_lock);
+
+	inc_ap_pending(mdev); // Since we count the old first as well...
+
 	while ( b ) {
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,w.list);
 			if( (r->rq_status&0xfffe) != RQ_DRBD_SENT ) {
+				if(mdev->conf.wire_protocol != DRBD_PROT_A )
+					dec_ap_pending(mdev,HERE);
 				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1,
 					     drbd_req_get_sector(r));
 				goto mark;
@@ -307,12 +316,8 @@ void tl_clear(drbd_dev *mdev)
 		b=b->next;
 		list_del(&f->requests);
 		kfree(f);
+		dec_ap_pending(mdev,HERE);
 	}
-
-	mdev->oldest_barrier = new_first;
-	mdev->newest_barrier = new_first;
-
-	spin_unlock_irq(&mdev->tl_lock);
 }
 
 /**
