@@ -28,26 +28,6 @@ extern const char * drbd_buildtag(void);
 
 //#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 
-//-------------------------------
-/*
- * FIXME
- * This is not yet understood.
- * Seemingly DRBD and RedHat kernel do not like each other.
- * Maybe the issue shows with other kernels too.
- *
- * In any case, we default to NOT using sendpage, to be on the safe side.
- *
- * Out tests with kernel.org/debian/SuSE 2.6. kernel showed no problems
- * with sendpage, and it inceases performance.
- *
- * If you did your own tests, or you are a vendor and really know that it
- * does not affect your kernel, comment it out.
- *
- */
-#define DRBD_DISABLE_SENDPAGE
-//-------------------------------
-
-
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
 //#define DUMP_MD 1       // Dump metadata to syslog upon connect
@@ -85,5 +65,10 @@ extern const char * drbd_buildtag(void);
 
 // Dump every hour the usage / not usage of zero copy IO 
 //#define SHOW_SENDPAGE_USAGE
+
+// You can disable the use of the sendpage() call (= zero copy
+// IO )  If you have the feeling that this might be the cause
+// for troubles.
+// #define DRBD_DISABLE_SENDPAGE
 
 #endif
