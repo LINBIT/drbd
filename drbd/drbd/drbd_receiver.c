@@ -690,18 +690,26 @@ int drbd_connect(struct Drbd_Conf* mdev)
 		} else {
 			sock=drbd_wait_for_connect(mdev);
 			if(sock) {
-				/* this break is necessary to give the other 
-				   side time to call bind() & listen() */
-				current->state = TASK_INTERRUPTIBLE;
-				schedule_timeout(HZ / 10);
-				msock=drbd_try_connect(mdev);
-				if(msock) break;
-				else sock_release(sock);
+				int retry;
+				for (retry=1; retry <= 10; retry++) {
+                                        // give the other side time to call 
+					// bind() & listen()
+					current->state = TASK_INTERRUPTIBLE;
+					schedule_timeout(HZ / 10);
+					msock=drbd_try_connect(mdev);
+					if(msock) goto connected;
+					printk(KERN_DEBUG DEVICE_NAME
+					       "%d: msock try_connect %d\n",
+					       (int)(mdev-drbd_conf), retry);
+				}
+				sock_release(sock);
 			}			
 		}
 		if(mdev->cstate==Unconnected) return 0;
 		if(signal_pending(current)) return 0;
 	}
+
+ connected:
 
 	msock->sk->reuse=1; /* SO_REUSEADDR */
 	sock->sk->reuse=1; /* SO_REUSEADDR */  
