@@ -101,7 +101,7 @@ extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
  */
 static inline int lc_try_lock(struct lru_cache* lc)
 {
-	return !test_and_set_bit(__LC_LOCKED,&lc->flags);
+	return !test_and_set_bit(__LC_DIRTY,&lc->flags);
 }
 
 static inline void lc_unlock(struct lru_cache* lc)
