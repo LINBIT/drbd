@@ -42,8 +42,8 @@ my  $clean_exit = 0;
 sub clean_exit { $clean_exit = 1; exit @_; };
 
 our $MINOR_COUNT =  4;
-our $DRBD_MAJOR  = 43;
-our $DRBD_DEVNAME = "nb";   # the part between /dev/ and the minor number.
+our $DRBD_MAJOR  = 147;
+our $DRBD_DEVNAME = "drbd";   # the part between /dev/ and the minor number.
 		# = "nbd/";
 		# = "drbd";
 		# = "drbd/";

@@ -155,7 +155,8 @@ do_initial_sanity_check()
 		echo "$egrep_pat"
 		exit 1
 	fi
-	[ -e /proc/drbd ] || modprobe drbd minor_count=$MINOR_COUNT major_nr=$DRBD_MAJOR || exit 1
+	# [ -e /proc/drbd ] || modprobe drbd minor_count=$MINOR_COUNT major_nr=$DRBD_MAJOR || exit 1
+	[ -e /proc/drbd ] || modprobe drbd minor_count=$MINOR_COUNT || exit 1
 	echo "$hostname just forgot its configuration..."
 	# FIXME more paranoia
 }
@@ -184,8 +185,8 @@ generic_wait_for_boot()
 	: ${ip:?unknown admin ip} 
 	: ${hostname:?unknown hostname} 
 	# You can override these in your config
-	: ${DRBD_MAJOR:=43}
-	: ${DRBD_DEVNAME:=nb}
+	: ${DRBD_MAJOR:=147}
+	: ${DRBD_DEVNAME:=drbd}
 	: ${MINOR_COUNT:=4}
 
 

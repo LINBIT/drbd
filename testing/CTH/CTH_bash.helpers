@@ -25,8 +25,8 @@ clear_env()
 		left left_ip left_real_dev left_disk
 		right right_ip right_real_dev right_disk
 		conf)
-	DRBD_MAJOR=43
-	DRBD_DEVNAME="nb"	# /dev/ nb X
+	DRBD_MAJOR=147
+	DRBD_DEVNAME="drbd"	# /dev/ nb X
 		#   ="nbd/"
 		#   ="drbd"
 		#   ="drbd/"

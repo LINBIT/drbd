@@ -27,21 +27,6 @@ config BLK_DEV_DRBD
 
 	  If unsure, say N.
 
-config DRBD_MAJOR
-	int "DRBD device major number"
-	depends on BLK_DEV_DRBD
-	range 1 255
-	default 43
-	---help---
-	  Historically DRBD hijacked the NBD major number.
-	  Until we get some number officially assigned to DRBD,
-	  you can choose one here.
-	  Typical values may be 100 or 219.
-
-	  See also Documentation/devices.txt
-
-	  If unsure, keep the default (43).
-
 comment "DRBD in kernel, no NBD possible"
 	depends on BLK_DEV_DRBD=y
 

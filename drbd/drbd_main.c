@@ -55,9 +55,9 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-#ifndef CONFIG_DRBD_MAJOR
-#define CONFIG_DRBD_MAJOR 147
-#endif
+/* YES. We got an official device major from lanana
+ */
+#define LANANA_DRBD_MAJOR 147
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 # if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
@@ -95,11 +95,11 @@ STATIC int drbd_close(struct inode *inode, struct file *file);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
-MODULE_PARM_DESC(major_nr, "Major nr to use -- default " __stringify(CONFIG_DRBD_MAJOR) );
+//MODULE_PARM_DESC(major_nr, "Major nr to use -- default " __stringify(CONFIG_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-MODULE_PARM(major_nr,"i");
+//MODULE_PARM(major_nr,"i");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM(disable_io_hints,"i");
 #else
@@ -115,16 +115,16 @@ MODULE_PARM(disable_io_hints,"i");
  */
 
 /* thanks to these macros, if compiled into the kernel (not-module),
- * these become boot parameters: drbd.major_nr, drbd.minor_count and
+ * these become boot parameters: [-drbd.major_nr-], drbd.minor_count and
  * drbd.disable_io_hints
  */
-module_param(major_nr,        int,0);
+//module_param(major_nr,        int,0);
 module_param(minor_count,     int,0);
 module_param(disable_io_hints,int,0);
 #endif
 
 // module parameter, defined
-int major_nr = CONFIG_DRBD_MAJOR;
+int major_nr = LANANA_DRBD_MAJOR;
 #ifdef MODULE
 int minor_count = 2;
 #else
@@ -1686,7 +1686,7 @@ int __init drbd_init(void)
 #ifdef MODULE
 		return -EINVAL;
 #else
-		major_nr = CONFIG_DRBD_MAJOR;
+		major_nr = LANANA_DRBD_MAJOR;
 #endif
 	}
 
@@ -1706,7 +1706,7 @@ int __init drbd_init(void)
 	if (err) {
 		printk(KERN_ERR DEVICE_NAME
 		       ": unable to register block device major %d\n",
-		       major_nr);
+		       MAJOR_NR);
 		return err;
 	}
 
@@ -1858,7 +1858,7 @@ NOT_IN_26(
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
 	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
-	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", major_nr);
+	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", MAJOR_NR);
 
 	return 0; // Success!
 

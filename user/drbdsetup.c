@@ -1306,6 +1306,16 @@ int main(int argc, char** argv)
 	      return 20;
 	    }
 
+	  if (strncmp ("/dev/drbd", argv[1], 9))
+	    {
+	      fprintf (stderr,
+		       "  | NOTE: we now have officially asigned"
+		       " device name and major number.\n"
+		       "  | Please use /dev/drbd*; if neccessary"
+		       " create the device nodes first.\n"
+		       "  | To do so: for i in `seq 0 15` ;"
+		       " do mknod /dev/drbd$i b 147 $i; done\n");
+	    }
 	  drbd_fd=open_drbd_device(argv[1]);
 
 	  opterr = 1; /* let getopt() print error messages */

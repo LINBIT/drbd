@@ -71,10 +71,10 @@ extern int major_nr;
 // major == nbd_major ? "nbd" : "drbd";
 extern char* drbd_devfs_name;
 
-/* Using the major_nr of the network block device
-   used to prevent us from deadlocking with no request entries
-   left on all_requests... those where the days...
-   look out for NBD_MAJOR in ll_rw_blk.c */
+#include <linux/major.h>
+#ifdef DRBD_MAJOR
+# warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 /*lge: this hack is to get rid of the compiler warnings about
