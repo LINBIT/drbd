@@ -69,6 +69,7 @@ sub run_remote($$) {
     $subroutine=$1;
   }
 
+  print $wfh "use strict;\n";
   print $wfh "use Digest::MD5;\n"; ## hmmm, not generic.
   send_sub($wfh,$subroutine);
   print $wfh $statement;
@@ -91,8 +92,21 @@ sub run_local($) {
 
 sub main {
   my($rline,$lline);
-  my($lpid,$lfh) = run_local('print_md5s("/dev/hde5",4096);');
-  my($rpid,$rfh) = run_remote('print_md5s("/dev/hda1",4096);',"moni");
+  my($lpid,$lfh,$rpid,$rfh);
+
+  if($#ARGV != 2 && $#ARGV != 3) {
+    print "USAGE: $0 local_blk_dev host remote_blk_dev\n".
+          "   OR: $0 host1 blk_dev1 host2 bkl_dev2\n\n";
+    exit 10;
+  }
+
+  if($#ARGV == 2) {
+    my($lpid,$lfh) = run_local('print_md5s("$ARGV[0]",4096);');
+    my($rpid,$rfh) = run_remote('print_md5s("$ARGV[2]",4096);',"$ARGV[1]");
+  } else {
+    my($lpid,$lfh) = run_remote('print_md5s("$ARGV[1]",4096);',"$ARGV[0]");
+    my($rpid,$rfh) = run_remote('print_md5s("$ARGV[3]",4096);',"$ARGV[2]");
+  }
 
   while(1) {
     $lline=<$lfh>;
@@ -111,6 +125,10 @@ sub main {
       print "r: $rline";
     }
   }
+
+  close $lfh;
+  close $rfh;
+
   waitpid $lpid,0;
   waitpid $rpid,0;
 }
