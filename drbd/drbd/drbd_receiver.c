@@ -754,11 +754,22 @@ inline int receive_param(int minor,int command)
 			case 0: sync=0;
 				break;
 			}
+		} else {
+			if( ( pri == 1 ) == 
+			    (drbd_conf[minor].state == Secondary) ) {
+				printk(KERN_ERR DEVICE_NAME "%d: predetermined"
+				       " states are in contradiction to GC's\n"
+				       ,minor);
+				printk(KERN_ERR DEVICE_NAME "%d: cancelling"
+				       " automatic resynchronisation\n"
+				       ,minor);
+				sync=0;
+			}
 		}
 
 		if( sync && !drbd_conf[minor].conf.skip_sync ) {
 			set_cstate(&drbd_conf[minor],method);
-			if(pri==1) {
+			if(drbd_conf[minor].state == Primary) {
 				drbd_send_cstate(&drbd_conf[minor]);
 				drbd_thread_start(&drbd_conf[minor].syncer);
 			}
