@@ -690,7 +690,8 @@ struct Drbd_Conf {
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
-	atomic_t pending_cnt;
+	atomic_t ap_pending_cnt;
+	atomic_t rs_pending_cnt;
 	atomic_t unacked_cnt;
 	spinlock_t req_lock;
 	spinlock_t tl_lock;
@@ -1075,20 +1076,35 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 	_drbd_thread_stop(thi,TRUE,FALSE);
 }
 
-static inline void inc_pending(drbd_dev* mdev)
+static inline void inc_ap_pending(drbd_dev* mdev)
 {
-	atomic_inc(&mdev->pending_cnt);
+	atomic_inc(&mdev->ap_pending_cnt);
 }
 
-static inline void dec_pending(drbd_dev* mdev, const char* where)
+static inline void dec_ap_pending(drbd_dev* mdev, const char* where)
 {
-	if(atomic_dec_and_test(&mdev->pending_cnt))
+	if(atomic_dec_and_test(&mdev->ap_pending_cnt))
 		wake_up_interruptible(&mdev->state_wait);
 
-	if(atomic_read(&mdev->pending_cnt)<0) /* CHK */
+	if(atomic_read(&mdev->ap_pending_cnt)<0)
 		ERR("in %s: pending_cnt = %d < 0 !\n",
 		    where,
-		    atomic_read(&mdev->pending_cnt));
+		    atomic_read(&mdev->ap_pending_cnt));
+}
+
+static inline void inc_rs_pending(drbd_dev* mdev)
+{
+	atomic_inc(&mdev->rs_pending_cnt);
+}
+
+static inline void dec_rs_pending(drbd_dev* mdev, const char* where)
+{
+	atomic_dec(&mdev->rs_pending_cnt);
+
+	if(atomic_read(&mdev->rs_pending_cnt)<0) 
+		ERR("in %s: rs_pending_cnt = %d < 0 !\n",
+		    where,
+		    atomic_read(&mdev->unacked_cnt));
 }
 
 static inline void inc_unacked(drbd_dev* mdev)
@@ -1098,10 +1114,9 @@ static inline void inc_unacked(drbd_dev* mdev)
 
 static inline void dec_unacked(drbd_dev* mdev,const char* where)
 {
-	if(atomic_dec_and_test(&mdev->unacked_cnt))
-		wake_up_interruptible(&mdev->state_wait);
+	atomic_dec(&mdev->unacked_cnt);
 
-	if(atomic_read(&mdev->unacked_cnt)<0)  /* CHK */
+	if(atomic_read(&mdev->unacked_cnt)<0)
 		ERR("in %s: unacked_cnt = %d < 0 !\n",
 		    where,
 		    atomic_read(&mdev->unacked_cnt));

@@ -33,18 +33,6 @@
 
  */
 
-
-/*
-  By introducing a "Shared" state beside "Primary" and "Secondary" for
-  use with GFS at least the following items need to be done.
-  *) transfer_log and epoch_set reside in the same memory now.
-  *) writes on the receiver side must be done with a temporary
-     buffer_head directly to the lower level device.
-     Otherwise we would get in an endless loop sending the same
-     block over all the time.
-  *) All occurences of "Primary" or "Secondary" must be reviewed.
-*/
-
 #ifdef HAVE_AUTOCONF
 #include <linux/autoconf.h>
 #endif
@@ -601,9 +589,9 @@ int _drbd_send_barrier(drbd_dev *mdev)
 	/* tl_add_barrier() must be called with the sock_mutex aquired */
 	p.barrier=tl_add_barrier(mdev);
 
-	inc_pending(mdev);
+	inc_ap_pending(mdev);
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)&p,sizeof(p),0);
-	if (!ok) dec_pending(mdev,HERE);
+	if (!ok) dec_ap_pending(mdev,HERE);
 	return ok;
 }
 
@@ -1003,7 +991,8 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->o_state              = Unknown;
 	mdev->cstate               = Unconfigured;
 
-	atomic_set(&mdev->pending_cnt,0);
+	atomic_set(&mdev->ap_pending_cnt,0);
+	atomic_set(&mdev->rs_pending_cnt,0);
 	atomic_set(&mdev->unacked_cnt,0);
 
 	init_MUTEX(&mdev->device_mutex);

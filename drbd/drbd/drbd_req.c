@@ -140,12 +140,15 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	SET_MAGIC(pr);
 
 	pr->d.bh = bh;
+	// TODO: should only issue AppAndResnc if it is out of sync!
 	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
 	spin_lock(&mdev->pr_lock);
 	list_add(&pr->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
-	inc_pending(mdev);
-	drbd_send_drequest(mdev, mdev->cstate == SyncTarget ? RSDataRequest : DataRequest,
+	inc_ap_pending(mdev);
+	if(pr->cause == AppAndResync) inc_rs_pending(mdev);
+	drbd_send_drequest(mdev, 
+			   pr->cause==AppAndResync ? RSDataRequest:DataRequest,
 			   bh->b_rsector, bh->b_size,
 			   (unsigned long)pr);
 }
@@ -183,7 +186,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			req->bh=bh;
 
 			if(mdev->conf.wire_protocol != DRBD_PROT_A) {
-				inc_pending(mdev);
+				inc_ap_pending(mdev);
 			}
 			drbd_send_dblock(mdev,req); // FIXME error check?
 		} else { // rw == READ || rw == READA
@@ -203,6 +206,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 				ERR("Will discard a resync_read\n");
 				pr->cause = Discard;
 				// list del as well ?
+				dec_rs_pending(mdev,HERE);
 			}
 			spin_unlock(&mdev->pr_lock);
 
@@ -216,6 +220,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 				ERR("Upgraded a resync read to an app read\n");
 
 				pr->cause |= Application;
+				inc_ap_pending(mdev);
 				pr->d.bh=bh;
 				list_del(&pr->w.list);
 				list_add(&pr->w.list,&mdev->app_reads);
@@ -281,7 +286,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	send_ok=drbd_send_dblock(mdev,req);
 	// FIXME we could remove the send_ok cases, the are redundant to tl_clear()
-	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_pending(mdev);
+	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_ap_pending(mdev);
 	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
 				/* If sending failed, we can not expect
 				   an ack packet. */

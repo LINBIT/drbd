@@ -885,7 +885,7 @@ int recv_dless_read(drbd_dev *mdev, struct Pending_read *pr,
 	ok=(rr==data_size);
 	bh->b_end_io(bh,ok);
 
-	dec_pending(mdev,HERE);
+	dec_ap_pending(mdev,HERE);
 	return ok;
 }
 
@@ -917,7 +917,7 @@ int recv_resync_read(drbd_dev *mdev, struct Pending_read *pr,
 	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_pending(mdev,HERE);
+	dec_rs_pending(mdev,HERE);
 	inc_unacked(mdev);
 
 	generic_make_request(WRITE,&e->pbh);
@@ -968,7 +968,8 @@ int recv_both_read(drbd_dev *mdev, struct Pending_read *pr,
 	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	dec_pending(mdev,HERE);
+	dec_rs_pending(mdev,HERE);
+	dec_ap_pending(mdev,HERE);
 	inc_unacked(mdev);
 
 	generic_make_request(WRITE,&e->pbh);
@@ -994,8 +995,6 @@ int recv_discard(drbd_dev *mdev, struct Pending_read *pr /* ignored */,
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
 	spin_unlock_irq(&mdev->ee_lock);
-
-	dec_pending(mdev,HERE);
 
 	return TRUE;
 }
@@ -1409,7 +1408,16 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		list_del(le);
 
 		bh->b_end_io(bh,0);
-		dec_pending(mdev,HERE);
+		switch(pr->cause) {
+		case Application:
+			dec_ap_pending(mdev,HERE);
+			break;
+		case AppAndResync:
+			dec_ap_pending(mdev,HERE);
+		case Resync:
+			dec_rs_pending(mdev,HERE);
+		case Discard:
+		}
 
 		INVALIDATE_MAGIC(pr);
 		mempool_free(pr,drbd_pr_mempool);
@@ -1573,22 +1581,17 @@ void drbd_disconnect(drbd_dev *mdev)
 
 	drbd_fail_pending_reads(mdev);
 
-	switch(mdev->state) {
-	case Primary:
-		tl_clear(mdev);
-		clear_bit(ISSUE_BARRIER,&mdev->flags);
+	tl_clear(mdev);
+	clear_bit(ISSUE_BARRIER,&mdev->flags);
+	drbd_wait_ee(mdev,&mdev->active_ee);
+	drbd_wait_ee(mdev,&mdev->sync_ee);
+	drbd_clear_done_ee(mdev);
+	mdev->epoch_size=0;
+
+	if (mdev->state == Primary) {
 		if(!test_bit(DO_NOT_INC_CONCNT,&mdev->flags))
 			drbd_md_inc(mdev,ConnectedCnt);
 		drbd_md_write(mdev);
-		break;
-	case Secondary:
-		drbd_wait_ee(mdev,&mdev->active_ee);
-		drbd_wait_ee(mdev,&mdev->sync_ee);
-		drbd_clear_done_ee(mdev);
-		mdev->epoch_size=0;
-		break;
-	default:
-		D_ASSERT(0);
 	}
 
 	if(atomic_read(&mdev->unacked_cnt)) {
@@ -1598,7 +1601,8 @@ void drbd_disconnect(drbd_dev *mdev)
 
 	/* Since syncer's blocks are also counted, there is no hope that
 	   pending_cnt is zero. */
-	atomic_set(&mdev->pending_cnt,0);
+	atomic_set(&mdev->ap_pending_cnt,0);
+	atomic_set(&mdev->rs_pending_cnt,0);
 	wake_up_interruptible(&mdev->state_wait);
 
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
@@ -1691,11 +1695,12 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	    be32_to_cpu(p->blksize));*/
 
 	// TODO: Make sure that the block is in an active epoch!!
-	if(mdev->conf.wire_protocol != DRBD_PROT_A ||
-	   is_syncer_blk(mdev,p->block_id)) {
-		dec_pending(mdev,HERE);
+	if(is_syncer_blk(mdev,p->block_id)) {
+		dec_rs_pending(mdev,HERE);
+	} else {
+		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
+		dec_ap_pending(mdev,HERE);
 	}
-
 	return TRUE;
 }
 
@@ -1704,7 +1709,7 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
-	dec_pending(mdev,HERE);
+	dec_ap_pending(mdev,HERE);
 
 	return TRUE;
 }

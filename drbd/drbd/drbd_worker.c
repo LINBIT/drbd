@@ -102,7 +102,7 @@ STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
         if(number > 1000) number=1000;  // Remove later
-	if (atomic_read(&mdev->pending_cnt)>1200) {
+	if (atomic_read(&mdev->rs_pending_cnt)>1200) {
 		// INFO("pending cnt high -- throttling resync.\n");
 		goto requeue;
 	}
@@ -128,10 +128,10 @@ STATIC int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w)
 		list_add(&pr->w.list,&mdev->resync_reads);
 		spin_unlock(&mdev->pr_lock);
 
-		inc_pending(mdev);
+		inc_rs_pending(mdev);
 		ERR_IF(!drbd_send_drequest(mdev,RSDataRequest,
 					   sector,size,(unsigned long)pr)) {
-			dec_pending(mdev,HERE);
+			dec_rs_pending(mdev,HERE);
 			return 0; // FAILED. worker will abort!
 		}
 	}
@@ -189,7 +189,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	int ok;
 
 	drbd_rs_complete_io(mdev,DRBD_BH_SECTOR(&e->pbh));
-	inc_pending(mdev);
+	inc_rs_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
 

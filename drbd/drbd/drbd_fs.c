@@ -406,30 +406,9 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
 
-		/* Wait until nothing is on the fly :) */
-		/* PRI -> SEC : TL is empty || cstate < connected
-		   SEC -> PRI : ES is empty || cstate < connected
-		     -> this should be the case anyway, becuase the
-			other one should be already in SEC state
-
-		   FIXME:
-		     The current implementation is full of races.
-		     Will do the right thing in 2.4 (using a rw-semaphore),
-		     for now it is good enough. (Do not panic, these races
-		     are not harmfull)
-		*/
-		/*
-		printk(KERN_ERR DEVICE_NAME "%d: set_state(%d,%d,%d,%d,%d)\n",
-		       minor,
-		       mdev->state,
-		       mdev->pending_cnt,
-		       mdev->unacked_cnt,
-		       mdev->epoch_size);
-		*/
-
+	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->state_wait,
-		       atomic_read(&mdev->pending_cnt) == 0 &&
-		       atomic_read(&mdev->unacked_cnt) == 0 ) ) {
+			atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
 		return -EINTR;
 	}
 
