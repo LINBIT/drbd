@@ -1218,22 +1218,20 @@ void bm_cleanup(struct BitMap* sbm)
 	kfree(sbm);
 }
 
-/* THINK:
-   What happens when the block_size (ln2_block_size) changes between
-   calls 
+#define BM_SS (BM_BLOCK_SIZE_B-9)
+#define BM_MM ((1L<<CB)-1)
 
-   TODO: bm_set_bit/bm_get_bit totally buggy, there needs to be a
-         size parameter!!!
-*/
 
-#define CB (BM_BLOCK_SIZE_B-9)
-
-int 
-bm_set_bit(struct BitMap* sbm, sector_t sector, int bit)
+/* secot_t and size have a higher resolution (512 Byte) than
+   the bitmap (4K). In case we have to set a bit, we 'round up',
+   in case we have to clear a bit we do the opposit. */
+void bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 {
         unsigned long* bm;
-	unsigned long bitnr;
+	unsigned long sbnr,ebnr,bnr;
 	int ret=0;
+	sector_t esector = ( sector + (size>>9) - 1 );
+
 
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
@@ -1243,35 +1241,25 @@ bm_set_bit(struct BitMap* sbm, sector_t sector, int bit)
 
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
-	bitnr = sector >> CB;
+	sbnr = sector >> CM_SS;
+	ebnr = esector >> CM_SS;
 
-	if(!bit && CB) {
-		if(sbm->sb_bitnr == bitnr) {
-		        sbm->sb_mask |= 1L << (blocknr & ((1L<<CB)-1));
-			if(sbm->sb_mask != (1L<<(1<<CB))-1) goto out;
-		} else {
-	                sbm->sb_bitnr = bitnr;
-			sbm->sb_mask = 1L << (blocknr & ((1L<<CB)-1));
-			goto out;
+	if(bit) {
+		for(bnr=sbnr; bnr <= ebnr; bnr++) {
+			bm[bnr>>LN2_BPL] |= ( 1L << (bnr & ((1L<<LN2_BPL)-1)));
+		}
+	} else { // bit == 0
+		if(  sector & BM_MM   != 0 )     sbnr++;
+		if( (esector & BM_MM) != BM_MM ) ebnr--;
+
+		for(bnr=sbnr; bnr <= ebnr; bnr++) {
+			bm[bnr>>LN2_BPL]&= ~( 1L << (bnr & ((1L<<LN2_BPL)-1)));
 		}
 	}
-
-	if(bitnr>>3 >= sbm->size) { // 3 -> 2^3=8 Bit per Byte
-		printk(KERN_ERR DEVICE_NAME" : BitMap too small!\n");	  
-		goto out;
-	}
-
-	ret=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
-
-	bm[bitnr>>LN2_BPL] = bit ?
-	  bm[bitnr>>LN2_BPL] |  ( 1L << (bitnr & ((1L<<LN2_BPL)-1)) ) :
-	  bm[bitnr>>LN2_BPL] & ~( 1L << (bitnr & ((1L<<LN2_BPL)-1)) );
-
- out:
-	spin_unlock(&sbm->bm_lock);
-
-	return ret;
+ 	spin_unlock(&sbm->bm_lock);
 }
+
+// bm_get_bit is still broken....
 
 int bm_get_bit(struct BitMap* sbm, sector_t sector)
 {
@@ -1287,7 +1275,7 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector)
 
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
-	bitnr = blocknr >> CB;
+	bitnr = blocknr >> CM_SS;
 
 	bit=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
 	spin_unlock(&sbm->bm_lock);

@@ -468,7 +468,7 @@ struct BitMap;
 extern struct BitMap* bm_init(kdev_t dev);
 extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
 extern void bm_cleanup(struct BitMap* sbm);
-extern int bm_set_bit(struct BitMap* sbm, sector_t sector, int bit);
+extern void bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit);
 extern sector_t bm_get_sector(struct BitMap* sbm,int ln2_block_size);
 extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
