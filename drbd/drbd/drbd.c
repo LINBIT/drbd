@@ -1599,7 +1599,8 @@ struct socket* drbd_accept(struct socket* sock)
 	sock_release(newsock);
       out:
 	unlock_kernel();
-	printk(KERN_ERR DEVICE_NAME ": accept failed! %d\n", err);
+	if(err != ERESTARTSYS)
+		printk(KERN_ERR DEVICE_NAME ": accept failed! %d\n", err);
 	return 0;
 }
 
@@ -1630,7 +1631,7 @@ int drbd_recv(struct socket *sock, void *ubuf, size_t size)
 
 	set_fs(oldfs);
 	unlock_kernel();
-	if (err != size)
+	if (err != size && err != ERESTARTSYS)
 		printk(KERN_ERR DEVICE_NAME ": sock_recvmsg returned %d\n",
 		       err);
 
@@ -1981,6 +1982,17 @@ inline int receive_param(int minor,int command)
 			printk(KERN_INFO DEVICE_NAME
 			       ": agreed size = %d KB\n",
 			       blk_size[MAJOR_NR][minor]);
+			if(drbd_conf[minor].conf.disk_size &&
+			   (drbd_conf[minor].conf.disk_size != 
+			   blk_size[MAJOR_NR][minor])) {
+				printk(KERN_ERR DEVICE_NAME
+				       "Your size hint is bogus! "
+				       "change it to %d\n",
+				       blk_size[MAJOR_NR][minor]);
+				blk_size[MAJOR_NR][minor]=
+					drbd_conf[minor].conf.disk_size;
+				return FALSE;
+			}
 		} else {
 		        blk_size[MAJOR_NR][minor] = 0;
 			printk(KERN_ERR DEVICE_NAME"LL Device has no size!\n");
