@@ -318,15 +318,16 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	}
 	drbd_conf[minor].state = (Drbd_State) newstate & 0x03;
 	if(newstate == PRIMARY_PLUS) drbd_md_inc(minor,HumanCnt);
-	if(newstate == Primary) {
-		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
+	if(newstate == Primary)	
 		drbd_md_inc(minor, drbd_conf[minor].cstate >= Connected ? 
 			    ConnectedCnt : ArbitraryCnt);
+	if(newstate & Primary) {
+		set_device_ro(MKDEV(MAJOR_NR, minor), FALSE );
 	} else {
 		set_device_ro(MKDEV(MAJOR_NR, minor), TRUE );
 	}
 	drbd_md_write(minor); /* Primary indicator has changed in any case. */
-
+	
 	if (drbd_conf[minor].cstate >= WFReportParams) 
 		drbd_send_param(drbd_conf+minor);
 
