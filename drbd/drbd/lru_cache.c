@@ -237,16 +237,13 @@ struct lc_element * lc_get(struct lru_cache * mlc, unsigned int enr)
 	struct lc_element *slot, *n, *a;
 	int i;
 
-	// Try to find it in the cahce
-	slot = lc_hash_fn(mlc, enr);
-	while(slot) {
-		if(slot->lc_number == enr) return slot;
-		slot = slot->hash_next;
-	}
+	slot = lc_find(mlc, enr);
+	if(slot) return slot;
 
 	// it was not present in the cache, find a slot for it...
 	for(i=0;i<3;i++) mlc->updates[i]=-1;
 
+	slot = lc_hash_fn(mlc, enr);
 	if (slot->lc_number == LC_FREE) {
 		list_del(&slot->list);
 		slot->hash_next = NULL;
