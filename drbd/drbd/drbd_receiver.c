@@ -426,6 +426,10 @@ int drbd_connect(int minor)
 		} else {
 			sock=drbd_wait_for_connect(drbd_conf+minor);
 			if(sock) {
+				/* this break is necessary to give the other 
+				   side time to call bind() & listen() */
+				current->state = TASK_INTERRUPTIBLE;
+				schedule_timeout(HZ / 10);
 				msock=drbd_try_connect(drbd_conf+minor);
 				if(msock) break;
 				else sock_release(sock);
