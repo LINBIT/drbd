@@ -358,13 +358,18 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
 	drbd_request_t *req = (drbd_request_t*)w;
+	int ok;
 
 	// TODO send a "set_out_of_sync" packet to the peer
 
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
 
-	return drbd_io_error(mdev);
+	if(unlikely(cancel)) return 1;
+
+	ok = drbd_io_error(mdev);
+	if(unlikely(!ok)) ERR("Sending in w_io_error() failed\n");
+	return ok;
 }
 
 int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
@@ -429,7 +434,10 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
 	if(unlikely(cancel)) return 1;
-	if(unlikely(mdev->cstate < Connected)) return 0;
+	if(unlikely(mdev->cstate < Connected)) {
+		ERR("Confused in w_make_resync_request()! cstate < Connected");
+		return 0;
+	}
 
 	D_ASSERT(mdev->cstate == SyncTarget);
 
@@ -462,8 +470,9 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		}
 
 		inc_rs_pending(mdev);
-		ERR_IF(!drbd_send_drequest(mdev,RSDataRequest,
-					   sector,size,ID_SYNCER)) {
+		if(!drbd_send_drequest(mdev,RSDataRequest,
+				       sector,size,ID_SYNCER)) {
+			ERR("drbd_send_drequest() failed, aborting...");
 			dec_rs_pending(mdev,HERE);
 			return 0; // FAILED. worker will abort!
 		}
@@ -791,6 +800,7 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	if(0) {
 	err:
+		ERR("A work callback returned not ok!\n");
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
