@@ -71,7 +71,9 @@ function adjust_with_progress
 	else echo echo -n ".. ";
 	fi
 	IFS=$IFS_O
-	$CMD
+	$CMD || { 
+	    echo -e "\ncmd $CMD failed!"; exit 20 
+	}
 	IFS=$NEWLINE
     done
     echo -n "]"
