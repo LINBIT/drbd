@@ -301,7 +301,7 @@ have_device()
 {
 	for NAME in $*
 	do
-		if [ ! -b /dev/$NAME ]; then
+		if [ ! -b $NAME ]; then
 			failed "$0 needs the device '$NAME'"
 			exit 1
 		fi
