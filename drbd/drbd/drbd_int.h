@@ -191,6 +191,11 @@ struct Tl_epoch_entry {
 	u64    block_id;
 };
 
+struct drbd_event {
+	struct list_head list;
+	int sig, pid;
+};
+
 /* flag bits */
 #define ISSUE_BARRIER     0
 #define COLLECT_ZOMBIES   1
@@ -315,6 +320,7 @@ extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
+extern void drbd_queue_signal(int signal,int pid);
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
 {

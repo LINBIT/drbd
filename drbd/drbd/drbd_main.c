@@ -1,5 +1,5 @@
 /*
--*- linux-c -*-
+-*- Linux-c -*-
    drbd.c
    Kernel module for 2.2.x/2.4.x Kernels
 
@@ -104,6 +104,7 @@ int drbd_init(void);
 			   unsigned int cmd, unsigned long arg);
 /*static */ int drbd_fsync(struct file *file, struct dentry *dentry);
 void drbd_p_timeout(unsigned long arg);
+int drbd_eventd(struct Drbd_thread *thi);
 
 #ifdef DEVICE_REQUEST
 #undef DEVICE_REQUEST
@@ -119,6 +120,13 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 /*static */ int *drbd_sizes;
 struct Drbd_Conf *drbd_conf;
 int minor_count=2;
+struct list_head event_q;      /* used for signal sending */
+struct list_head event_q_free; 
+#define MAX_NR_EVENTS 10
+struct drbd_event *drbd_events; 
+spinlock_t event_q_lock;
+wait_queue_head_t event_wait;
+struct Drbd_thread eventd;
 
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,40)
@@ -399,7 +407,10 @@ int drbd_thread_setup(void* arg)
 
 	thi->pid = 0;
 	wake_up(&thi->wait);
-	set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
+
+	if(thi->minor >= 0) {
+		set_bit(COLLECT_ZOMBIES,&drbd_conf[thi->minor].flags);
+	}
 
 	return retval;
 }
@@ -437,7 +448,6 @@ void drbd_thread_start(struct Drbd_thread *thi)
 
 void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
-        int err;
 	if (!thi->pid) return;
 
 	if (restart)
@@ -445,11 +455,10 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	else
 		thi->t_state = Exiting;
 
-	err = kill_proc_info(SIGTERM, NULL, thi->pid);
+	drbd_queue_signal(SIGTERM,thi->pid);
 
-	if (err == 0) {
-		if(wait) {
-			sleep_on(&thi->wait);	/* wait until the thread
+	if(wait) {
+		sleep_on(&thi->wait);	/* wait until the thread
 						   has closed the socket */
 
 			/*
@@ -465,12 +474,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 			  interruptible_sleep_on(&current->wait_chldexit);
 			*/
 
-			current->state = TASK_INTERRUPTIBLE;
-			schedule_timeout(HZ / 10);
-		}
-	} else {
-		printk(KERN_ERR DEVICE_NAME "%d: could not send signal\n",
-		       thi->minor);
+		current->state = TASK_INTERRUPTIBLE;
+		schedule_timeout(HZ / 10);
 	}
 }
 
@@ -620,7 +625,7 @@ void drbd_timeout(unsigned long arg)
 
 	printk(KERN_ERR DEVICE_NAME" : timeout detected! (pid=%d)\n",p->pid);
 
-	send_sig_info(DRBD_SIG, NULL, p);
+	drbd_queue_signal(DRBD_SIG, p->pid);
 
 }
 
@@ -919,6 +924,19 @@ int __init drbd_init(void)
 	blksize_size[MAJOR_NR] = drbd_blocksizes;
 	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
 
+	event_q_lock = SPIN_LOCK_UNLOCKED;
+	INIT_LIST_HEAD(&event_q);
+	INIT_LIST_HEAD(&event_q_free);
+	init_waitqueue_head(&event_wait);
+	drbd_thread_init(-1, &eventd, drbd_eventd);
+	drbd_thread_start(&eventd);
+	
+	drbd_events = kmalloc(sizeof(*drbd_events)*MAX_NR_EVENTS,GFP_USER);
+		
+	for(i=0;i<MAX_NR_EVENTS;i++) {
+		list_add(&drbd_events[i].list,&event_q_free);
+	}
+
 	return 0;
 }
 
@@ -972,6 +990,9 @@ void cleanup_module()
 			       "%d: EEs in active/sync/done list found!\n",i);
 		}
 	}
+
+	drbd_thread_stop(&eventd);
+	kfree(drbd_events);
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
@@ -1202,7 +1223,7 @@ void bm_reset(struct BitMap* sbm,int ln2_block_size)
 
  	spin_unlock(&sbm->bm_lock);	
 }
-
+/*********************************/
 /* meta data management */
 
 void drbd_md_write(int minor)
@@ -1324,4 +1345,67 @@ void drbd_md_inc(int minor, enum MetaDataIndex order)
 	drbd_conf[minor].gen_cnt[order]++;
 }
 
+
+/*********************************/
+/* This was contributed by Ard van Breemen <ard@telegraafnet.nl> 
+ * unfotunately I included it after Ard had lost interest in DRBD,
+ * btw, I modified it, so blame me(Philipp) not Ard.
+ */
+
+void drbd_queue_signal(int signal,int pid)
+{
+	struct drbd_event *e;
+	struct list_head *le;
+
+	spin_lock_irq(&event_q_lock);
+	if(list_empty(&event_q_free)) {
+		spin_unlock_irq(&event_q_lock);
+		printk(KERN_ERR DEVICE_NAME 
+		       "No more event_q entries increase MAX_NR_EVENTS\n");
+		return;
+	}
+	le = event_q_free.next;
+	list_del(le);
+	e = list_entry(le, struct drbd_event,list);
+	e->pid=pid;
+	e->sig=signal;
+	list_add_tail(le,&event_q);
+	spin_unlock_irq(&event_q_lock);
+	wake_up_interruptible(&event_wait);
+}
+
+int drbd_eventd(struct Drbd_thread *thi)
+{
+	struct drbd_event *e;
+	struct list_head *le;
+	int err;
+
+	sprintf(current->comm, "drbd_eventd");
+
+	while(thi->t_state == Running) {
+
+	  interruptible_sleep_on(&event_wait);
+	  if(signal_pending(current)) break;
+
+	  spin_lock_irq(&event_q_lock);
+	  while(!list_empty(&event_q)) {
+		  le = event_q.next;
+		  list_del(le);
+		  list_add(le,&event_q_free);
+		  e = list_entry(le, struct drbd_event,list);
+		  spin_unlock_irq(&event_q_lock);
+		  err = kill_proc_info(e->sig,NULL,e->pid);
+		  if(err) {
+			  printk(KERN_ERR DEVICE_NAME 
+				 "e: sending sig %d failed from %d to %d"
+				 " (err=%d).\n",
+				 e->sig,current->pid,e->pid,err);
+		  }
+		  spin_lock_irq(&event_q_lock);
+	  }
+	  spin_unlock_irq(&event_q_lock);
+	}
+
+	return 0;
+}
 

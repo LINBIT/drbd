@@ -198,7 +198,7 @@ void drbd_c_timeout(unsigned long arg)
 	printk(KERN_INFO DEVICE_NAME" : retrying to connect(pid=%d)\n",p->pid);
 	*/
 
-	send_sig_info(DRBD_SIG, NULL, p);
+	drbd_queue_signal(DRBD_SIG,p->pid);
 
 }
 
@@ -520,12 +520,12 @@ inline int receive_data(int minor,int data_size)
 	} else {
 		list_add(&e->list,&drbd_conf[minor].active_ee);
 	}
-	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
 	bh->b_dev_id = e;
 #else
 	bh->b_private = e;
 #endif
+	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 
 	/* When you call mark_buffer_diry() before drbd_recv() (which 
 	   can sleep) you risk, that the system writes the
