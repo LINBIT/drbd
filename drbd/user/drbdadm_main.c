@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/poll.h>
 #include <unistd.h>
 #include <errno.h>
 #include <getopt.h>
@@ -78,6 +79,7 @@ static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
 static int adm_wait_c(struct d_resource* ,char* );
+static int adm_wait_ci(struct d_resource* ,char* );
 static int sh_resources(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
 static int sh_dev(struct d_resource* ,char* );
@@ -124,6 +126,7 @@ struct adm_cmd cmds[] = {
   { "wait_connect",      adm_wait_c,  0                  ,1,1 },
   { "state",             adm_generic, "state"            ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
+  { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
   { "sh-resources",      sh_resources,0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
   { "sh-dev",            sh_dev,      0                  ,0,1 },
@@ -342,10 +345,10 @@ static void alarm_handler(int signo)
   alarm_raised=1;
 }
 
-int m_system(int may_sleep,char** argv)
+pid_t m_system(int flags,char** argv)
 {
-  int pid,status;
-  int rv=-1;
+  pid_t pid;
+  int status,rv=-1;
   char **cmdline = argv;
 
   struct sigaction so;
@@ -374,10 +377,14 @@ int m_system(int may_sleep,char** argv)
     exit(E_exec_error);
   }
 
-  if( !may_sleep ) {
+  if( !(flags&SF_MaySleep) ) {
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
     alarm(25); // Reading the AL & BitMap can take some time.
+  }
+
+  if( (flags&SF_ReturnPid) ) {
+    return pid;
   }
 
   while(1) {
@@ -398,12 +405,12 @@ int m_system(int may_sleep,char** argv)
     }
   }
 
-  if( !may_sleep ) {
+  if( !(flags&SF_MaySleep) ) {
     alarm(0);
     sigaction(SIGALRM,&so,NULL);
   }
 
-  if(!may_sleep && rv) {
+  if(!(flags&SF_MaySleep) && rv) {
     fprintf(stderr,"Command line was '");
     while(*argv) {
       fprintf(stderr,"%s",*argv++);
@@ -549,9 +556,148 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(1,argv);
+  return m_system(SF_MaySleep,argv);
 }
 
+
+static int childs_running(pid_t* pids,int opts)
+{
+  int i=0,wr,rv=0,status;
+
+  for(i=0;i<nr_resources;i++) {
+    if(pids[i]==0) continue;
+    wr = waitpid(pids[i], &status, opts);
+    if( wr == -1) {            // Wait error.
+      if (errno == ECHILD) {
+	pids[i] = 0;           // Child exited before ?
+	continue;
+      }
+      perror("waitpid");
+      exit(E_exec_error);
+    }
+    if( wr == 0 ) rv = 1;      // Child still running.
+    if( wr > 0 )  pids[i] = 0; // Child exited.
+  }
+  return rv;
+}
+
+static void kill_childs(pid_t* pids)
+{
+  int i;
+
+  for(i=0;i<nr_resources;i++) {
+    if(pids[i]==0) continue;
+    kill(pids[i],SIGINT);
+  }
+}
+
+int gets_timeout(char* s, int size, int timeout)
+{
+  int pr,rr;
+  struct pollfd pfd;
+
+  pfd.fd = fileno(stdin);
+  pfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+
+  pr = poll(&pfd, 1, timeout);
+
+  if( pr == -1 ) {   // Poll error.
+    perror("poll");
+    exit(E_exec_error);
+  }
+  
+  if( pr == 1 ) {  // Input available.
+    rr = read(fileno(stdin),s,size-1);
+    if(rr == -1) {
+      perror("read");
+      exit(E_exec_error);
+    }
+    s[rr]=0;
+  }
+
+  return pr; // if pr == 0 timeout expired
+}
+
+static char* get_opt_val(struct d_option* base,char* name,char* def)
+{
+  while(base) {
+    if(!strcmp(base->name,name)) {
+      return base->value;
+    }
+    base=base->next;
+  }
+  return def;
+}
+
+static int adm_wait_ci(struct d_resource* ignored ,char* unused)
+{
+  struct d_resource *res,*t;
+  char *argv[20], answer[40];
+  pid_t* pids;
+  struct d_option* opt;
+  int argc,sec,i=0;
+
+  struct sigaction so;
+  struct sigaction sa;
+
+  sa.sa_handler=SIG_IGN;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags=SA_NOCLDSTOP;
+
+  sigaction(SIGCHLD,&sa,&so);
+
+  pids = alloca( nr_resources * sizeof(pid_t) );
+
+  for_each_resource(res,t,config) {
+    argc=0;
+    argv[argc++]=drbdsetup;
+    argv[argc++]=res->me->device;
+    argv[argc++]="wait_connect";
+    opt=res->startup_options;
+    make_options(opt);
+    argv[argc++]=0;
+
+    pids[i++]=m_system(SF_MaySleep|SF_ReturnPid, argv);
+  }
+
+  sec = 0;
+  while(sec < 3) {
+    if(!childs_running(pids,WNOHANG)) return 0;
+    sleep(1);
+    sec++;
+  }
+
+  if(childs_running(pids,WNOHANG)) {
+    printf("***************************************************************\n"
+	   " DRBD's startup script waits for the peer node(s) to appear.\n"
+	   " - In case this node was already a degraded cluster before the\n"
+	   "   reboot the timeout is %s seconds. [degr-wfc-timeout]\n"
+	   " - If the peer was available before the reboot the timeout will\n"
+	   "   expire after %s seconds. [wfc-timeout]\n"
+	   "   (These values are for resource '%s'; 0 sec -> wait forever)\n",
+	   get_opt_val(config->startup_options,"degr-wfc-timeout","0"),
+	   get_opt_val(config->startup_options,"wfc-timeout","0"),
+	   config->name);
+
+    printf(" To abort waiting enter 'yes' [%4d]:",sec);
+    do {
+      printf("\e[s\e[31G[%4d]:\e[u",sec); // Redraw sec, preserve cursor pos.
+      fflush(stdout);
+      if(gets_timeout(answer,40,1000)) {
+	if(!strcmp(answer,"yes\n")) {
+	  kill_childs(pids);
+	  childs_running(pids,0);
+	} else {
+	  printf(" To abort waiting enter 'yes' [%4d]:",sec);
+	}
+      }
+      sec++;
+    } while(childs_running(pids,WNOHANG));
+    printf("\n");
+  }
+
+  return 0;
+}
 
 const char* make_optstring(struct option *options)
 {
@@ -637,7 +783,7 @@ void verify_ips(struct d_resource* res)
 	"fi >/dev/null",
 	my_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(1,argv);
+  ex = m_system(0,argv);
   free(argv[2]); argv[2] = NULL;
 
   if (ex != 0) {
@@ -671,7 +817,7 @@ void verify_ips(struct d_resource* res)
 	"fi >/dev/null",
 	my_ip,his_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(1,argv);
+  ex = m_system(0,argv);
   free(argv[2]); argv[2] = NULL;
   if (ex != 0) {
     ENTRY e, *ep;

@@ -3,12 +3,16 @@
 
 #include <linux/drbd_config.h>
 #include <sys/utsname.h>
+#include <sys/types.h>
 
 #define E_syntax	  2
 #define E_usage		  3
 #define E_config_invalid 10
 #define E_exec_error     20
 #define E_thinko	 42 /* :) */
+
+#define SF_MaySleep       2
+#define SF_ReturnPid      4
 
 /* for check_uniq(): Check for uniqueness of certain values...
  * comment out if you want to NOT choke on the first conflict */
