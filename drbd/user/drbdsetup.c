@@ -105,6 +105,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
@@ -135,6 +136,7 @@ struct drbd_cmd commands[] = {
      { "al-extents", required_argument, 0, 'e' },
      { 0,            0,                 0, 0 } } },
   {"down", cmd_down,                 0, 0, },
+  {"detach", cmd_detach,             0, 0, },
   {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0},
    (struct option[]) {
      { "timeout",    required_argument, 0, 't' },
@@ -906,6 +908,25 @@ int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
 	fprintf(stderr,"Device is not configured!\n");
       if(err==EBUSY)
 	fprintf(stderr,"Someone has opened the device!\n");
+      return 20;
+    }
+  return 0;
+}
+
+int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_UNCONFIG_DISK);
+  if(err)
+    {
+      err=errno;
+      perror("ioctl() failed");
+      if(err==EBUSY)
+	fprintf(stderr,"Not possible during resynchronisation.\n");
+      if(err==ENXIO)
+	fprintf(stderr," - Do not shoot yourself in the foot. -\n"
+		"A system without backing storage is not possible.\n");
       return 20;
     }
   return 0;

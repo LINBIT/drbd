@@ -196,5 +196,7 @@ struct ioctl_get_config {
 #define DRBD_IOCTL_SET_DISK_SIZE  _IOW( 'D', 0x10, unsigned int)
 #define DRBD_IOCTL_WAIT_CONNECT  _IOR( 'D', 0x11, struct ioctl_wait)
 #define DRBD_IOCTL_WAIT_SYNC     _IOR( 'D', 0x12, struct ioctl_wait)
+#define DRBD_IOCTL_UNCONFIG_DISK _IO ( 'D', 0x13 )
+
 #endif
 

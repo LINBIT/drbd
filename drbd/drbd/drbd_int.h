@@ -752,6 +752,8 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 extern int drbd_send_insync(drbd_dev *mdev,sector_t sector,
 			    u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
+extern void drbd_free_ll_dev(drbd_dev *mdev);
+
 
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);

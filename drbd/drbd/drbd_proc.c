@@ -120,6 +120,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 		       int len, int *unused, void *data)
 {
 	int rlen, i;
+	const char *sn;
 
 	static const char *cstate_names[] =
 	{
@@ -163,7 +164,14 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	  ua .. unack'd (still need to send ack)
 	  al .. access log write count
 	*/
+
 	for (i = 0; i < minor_count; i++) {
+		sn = cstate_names[drbd_conf[i].cstate];
+		if(drbd_conf[i].cstate == Connected) {
+			if(!drbd_conf[i].lo_file) sn = "DiskLessClient";
+			if(test_bit(PARTNER_DISKLESS,&drbd_conf[i].flags))
+				sn = "ServerForDLess";
+		}
 		if ( drbd_conf[i].cstate == Unconfigured )
 			rlen += sprintf( buf + rlen,
 			   "%2d: cs:Unconfigured\n", i);
@@ -172,8 +180,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   "%2d: cs:%s st:%s/%s ld:%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "pe:%u ua:%u\n",
-			   i,
-			   cstate_names[drbd_conf[i].cstate],
+			   i, sn,
 			   state_names[drbd_conf[i].state],
 			   state_names[drbd_conf[i].o_state],
 			   (drbd_conf[i].gen_cnt[Flags]

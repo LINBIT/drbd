@@ -1089,6 +1089,15 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
+	p_size=be64_to_cpu(p->p_size);
+
+	if(p_size == 0 && mdev->lo_file == 0) {
+		ERR("some backing storage is needed\n");
+		set_cstate(mdev,Unconfigured);
+		mdev->receiver.t_state = Exiting;
+		return FALSE;
+	}
+
 	// XXX harmless race with ioctl ...
 	mdev->sync_conf.rate  =
 		max_t(int,mdev->sync_conf.rate, be32_to_cpu(p->sync_rate));
@@ -1111,7 +1120,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	}
 	*/
 
-	p_size=be64_to_cpu(p->p_size);
 	mdev->p_size=p_size;
 	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
 		mdev->lo_usize = be64_to_cpu(p->u_size);

@@ -550,11 +550,10 @@ int drbd_send_param(drbd_dev *mdev)
 	int ok,i;
 	unsigned long m_size; // sector_t ??
 
-	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
-	if (mdev->md_index == -1 ) {// internal metadata
-		D_ASSERT(m_size > MD_RESERVED_SIZE);
-		m_size = drbd_md_ss(mdev)>>1;
-	}
+	if(mdev->lo_file) {
+		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
+		else m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
+	} else m_size = 0;
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
 	p.p_size = cpu_to_be64(m_size);

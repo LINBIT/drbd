@@ -110,6 +110,12 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	unsigned long size=0;
 	int rv;
 
+ONLY_IN_26(
+	if (mdev->this_bdev->bd_disk == 0) { // strange...
+		mdev->this_bdev->bd_disk = mdev->vdisk; 
+	}
+)
+
 	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 
 	if (mdev->md_index == -1 && m_size) {// internal metadata
@@ -776,6 +782,26 @@ ONLY_IN_26(
 
 		set_cstate(mdev,Unconfigured);
 		mdev->state = Secondary;
+
+		break;
+
+	case DRBD_IOCTL_UNCONFIG_DISK:
+		if (mdev->cstate == Unconfigured) break;
+
+		if (mdev->cstate > Connected) {
+			err=-EBUSY;
+			break;
+		}
+		if (!mdev->lo_file || 
+		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
+			err=-ENXIO;
+			break;
+		}
+		// TODO: Fix all this. Currently it is the 
+		// blissfully ignorant implementation.
+		drbd_free_ll_dev(mdev); 
+		if (mdev->cstate == Connected) drbd_send_param(mdev);
+		if (mdev->cstate == StandAlone) set_cstate(mdev,Unconfigured);
 
 		break;
 

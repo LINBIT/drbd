@@ -107,7 +107,7 @@ struct option admopt[] = {
 
 struct adm_cmd cmds[] = {
   { "attach",            adm_attach,  0                  ,1,1, "FIXME attach help" },
-  //{ "detach",            adm_generic, "??missing??"    ,1,1 },
+  { "detach",            adm_generic, "detach"           ,1,1, "FIXME detach help" },
   { "connect",           adm_connect, 0                  ,1,1, "FIXME connect help" },
   { "disconnect",        adm_generic, "disconnect"       ,1,1, "FIXME disconnect help" },
   { "up",                adm_up,      0                  ,1,1, "FIXME up help" },
