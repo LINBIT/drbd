@@ -146,10 +146,14 @@ void _drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head)
 	while(!list_empty(head)) {
 		le = head->next;
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(buffer_uptodate(e->bh)) {
+		if(!buffer_locked(e->bh)) {
 			printk(KERN_ERR DEVICE_NAME 
-			       "%d: Why is this buffer on active_ee/sync_ee\n",
-			       (int)(mdev-drbd_conf));
+			       "%d: unlocked bh in ative_ee/sync_ee\n"
+			       "(BUG?) Moving bh=%p to done_ee\n",
+			       (int)(mdev-drbd_conf),e->bh);
+			list_del(le);
+			list_add(le,&mdev->done_ee);
+			continue;
 		}
 		spin_unlock_irq(&mdev->ee_lock);
 		printk(KERN_ERR DEVICE_NAME 
@@ -500,6 +504,8 @@ inline int receive_data(int minor,int data_size)
 	        return FALSE;
 	}
 
+	mark_buffer_dirty(bh);
+
 	if (drbd_recv(&drbd_conf[minor], bh->b_data, data_size) 
 	    != data_size) {
 		bforget(bh);
@@ -507,7 +513,6 @@ inline int receive_data(int minor,int data_size)
 	}
 
 	mark_buffer_uptodate(bh, 0);
-	mark_buffer_dirty(bh);
 
 	spin_lock_irq(&drbd_conf[minor].ee_lock);
 	e=drbd_get_ee(drbd_conf+minor);
@@ -1014,14 +1019,13 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev)
 	if(list_empty(&mdev->free_ee)) drbd_process_done_ee(mdev);
 
 	if(list_empty(&mdev->free_ee)) {
-		e=kmalloc(sizeof(struct Tl_epoch_entry)*2,GFP_USER);
+		e=kmalloc(sizeof(struct Tl_epoch_entry),GFP_USER);
 		if (!e) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: could not kmalloc() \n",
 			       (int)(mdev-drbd_conf));
 		}
-		list_add(&(e+1)->list,&mdev->free_ee);
-//		alloc+=2;
+//		alloc+=1;
 	} else {
 		struct list_head *le; 	
 		le=mdev->free_ee.next;
