@@ -346,15 +346,9 @@ void daemonize(void)
 }
 #endif
 
-void drbd_daemonize(void) {
+STATIC void drbd_daemonize(void) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,5,0)
-	sigset_t enable;
-
 	daemonize("drbd_thread");
-	// Linux 2.6.x's daemonize blocks all signals. Unblock "our" signals.
-
-	siginitset(&enable, DRBD_SHUTDOWNSIGMASK );
-	sigprocmask(SIG_UNBLOCK, &enable, NULL);
 #else
 	daemonize();
 #endif
@@ -474,7 +468,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 
 	smp_mb(); /* should not be necessary, since the next
 		     instruction is spinlock, but anyways */
-	drbd_queue_signal(DRBD_SIGKILL,thi->task);
+	force_sig(DRBD_SIGKILL,thi->task);
 
 	if(wait) {
 		down(&thi->mutex); // wait until thread has exited
@@ -513,7 +507,6 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  size_t size, unsigned msg_flags)
 {
 	int sent,ok;
-	sigset_t old_blocked;
 
 	ERR_IF(!h) return FALSE;
 	ERR_IF(!size) return FALSE;
@@ -522,11 +515,8 @@ STATIC int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
-	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
 	sent = drbd_send(mdev,sock,h,size,msg_flags);
-	restore_old_sigset(old_blocked);
 
-	D_ASSERT(sent == size);
 	ok = ( sent == size );
 	if(!ok) {
 		ERR("short sent %s size=%d sent=%d\n",
@@ -542,6 +532,8 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
+	sigset_t old_blocked;
+
 	if (sock == mdev->data.socket) {
 		down(&mdev->data.mutex);
 		spin_lock(&mdev->send_task_lock);
@@ -550,7 +542,9 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	} else
 		down(&mdev->meta.mutex);
 
+	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size,0);
+	restore_old_sigset(old_blocked);
 
 	if (sock == mdev->data.socket) {
 		up(&mdev->data.mutex);
@@ -572,10 +566,14 @@ STATIC int drbd_send_cmd_dontwait(drbd_dev *mdev, struct socket *sock,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok;
+	sigset_t old_blocked;
+
 	struct semaphore *mutex = sock == mdev->meta.socket ?
 		&mdev->meta.mutex : &mdev->data.mutex;
 	if (down_trylock(mutex)) return -EAGAIN;
+	old_blocked = block_sigs_but(DRBD_SHUTDOWNSIGMASK);
 	ok = _drbd_send_cmd(mdev,sock,cmd,h,size, MSG_DONTWAIT);
+	restore_old_sigset(old_blocked);
 	up  (mutex);
 	return ok;
 }
@@ -794,6 +792,8 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	int ok;
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
+	Drbd_Header ioh;
+
 
 	ERR_IF(!req || !req->master_bio) return FALSE;
 
@@ -824,22 +824,12 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	 * so all sorts of processes may end up here.
 	 * They may be interrupted by DRBD_SIGKILL in response to
 	 * ioctl or some other "connection loast" event.
-
-	 * FIXME
-	 * unfortunatly this may well be a user process like dd,
-	 * and interupted by a user signal.
-	 * (in 0.6.x this was handled with the "app_got_sig" cludge)
-
-	 * THINK
-	 * maybe we should block all signals (so we don't need to
-	 * wory about user signals), and use force_sig() instead
-	 * of drbd_queue_signal.
 	 *
 	 * we also should replace all "LOCK(); sigemptyset(); UNLOCK();"
 	 * with flush_signals(); ...
 	 */
 
-	old_blocked = block_sigs_but(sigmask(DRBD_SIGKILL));
+	old_blocked = block_sigs_but(0);
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -849,8 +839,14 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		_drbd_send_barrier(mdev);
 	tl_add(mdev,req);
 	req->rq_status |= RQ_DRBD_IN_TL;
+
 	ok =  (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bio(mdev,&req->private_bio);
+
+	if(test_and_clear_bit(ISSUE_IO_HINT,&mdev->flags)) {
+		_drbd_send_cmd(mdev,mdev->data.socket,WriteHint,&ioh,
+			       sizeof(ioh),0);
+	}
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
@@ -1038,13 +1034,11 @@ STATIC void drbd_send_write_hint(void *data)
 	   WRITE_HINT for an other device (which is in primary state).
 	   This could lead to a distributed deadlock!!
 
-	   To avoid the deadlock we requeue the WRITE_HINT.
+	   To avoid the deadlock we set the ISSUE_IO_HINT bit and 
+	   it will be sent after the current data block.
 	UPDATE:
 	   since "dontwait" this would no longer deadlock, but probably
 	   create a useless loop echoing WriteHints back and forth ...
-	THINK:
-	   Why not set an other bit, so the write hint is sent asap
-	   by one of our threads?
 	 */
 
 	for (i = 0; i < minor_count; i++) {
@@ -1054,14 +1048,11 @@ STATIC void drbd_send_write_hint(void *data)
 		}
 	}
 
-	// THINK: sock or msock ?
-	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,sizeof(h))==1){
-		clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
-	} else {
-		if(mdev->cstate < Connected) {
-			clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
-		} else queue_task(&mdev->write_hint_tq, &tq_disk);
+	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,
+				   sizeof(h)) != 1){
+		set_bit(ISSUE_IO_HINT,&mdev->flags);
 	}
+	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }
 #else
 
@@ -1080,7 +1071,7 @@ STATIC void drbd_send_write_hint(void *data)
 
 	if (drbd_send_cmd_dontwait(mdev,mdev->data.socket,WriteHint,&h,
 				   sizeof(h)) != 1) {
-		WARN("Have to drop sending of an io-hint\n");
+		set_bit(ISSUE_IO_HINT,&mdev->flags);
 	}
 
 	spin_lock_irq(q->queue_lock);
@@ -2041,22 +2032,6 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)
 {
 	mdev->gen_cnt[order]++;
-}
-
-// XXX maybe use one of the functions from signal.h
-void drbd_queue_signal(int signal,struct task_struct *task)
-{
-	unsigned long flags;
-
-	read_lock(&tasklist_lock);
-	if (task) {
-		LOCK_SIGMASK(task,flags);
-		sigaddset(&task->pending.signal, signal);
-		RECALC_SIGPENDING(task);
-		UNLOCK_SIGMASK(task,flags);
-		if (task->state & TASK_INTERRUPTIBLE) wake_up_process(task);
-	}
-	read_unlock(&tasklist_lock);
 }
 
 #ifdef SIGHAND_HACK

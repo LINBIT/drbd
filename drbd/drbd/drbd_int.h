@@ -554,6 +554,7 @@ struct Pending_read {
 // bitfield? enum?
 /* flag bits */
 #define ISSUE_BARRIER      0
+#define ISSUE_IO_HINT      1
 #define SEND_PING          2
 #define WRITER_PRESENT     3
 #define STOP_SYNC_TIMER    4
@@ -810,7 +811,6 @@ extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
 extern int bm_count_sectors(struct BitMap* sbm, unsigned long enr);
 extern int bm_end_of_dev_case(struct BitMap* sbm);
 
-extern void drbd_queue_signal(int signal,struct task_struct *task);
 
 extern drbd_dev *drbd_conf;
 extern int minor_count;
@@ -1012,7 +1012,7 @@ drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
-	drbd_queue_signal(DRBD_SIG, mdev->asender.task);
+	force_sig(DRBD_SIG, mdev->asender.task);
 }
 
 static inline void request_ping(drbd_dev *mdev) {

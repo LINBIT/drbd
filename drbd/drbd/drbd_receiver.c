@@ -1535,7 +1535,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		struct task_struct *task;
 		spin_lock(&mdev->send_task_lock);
 		if((task=mdev->send_task)) {
-			drbd_queue_signal(DRBD_SIG, task);
+			force_sig(DRBD_SIG, task);
 			spin_unlock(&mdev->send_task_lock);
 			down(&mdev->data.mutex);
 			break;
@@ -1600,16 +1600,14 @@ int drbdd_init(struct Drbd_thread *thi)
 		drbdd(mdev);
 		drbd_disconnect(mdev);
 		if (thi->t_state == Exiting) break;
-		else {
+		if (thi->t_state == Restarting) {
 			unsigned long flags;
+			thi->t_state = Running;
+
 			LOCK_SIGMASK(current,flags);
 			sigemptyset(&current->pending.signal);
 			RECALC_SIGPENDING(current);
 			UNLOCK_SIGMASK(current,flags);
-
-			if (thi->t_state != Restarting)
-				ERR("unexpected thread state: %d\n", thi->t_state);
-			thi->t_state = Running;
 		}
 	}
 

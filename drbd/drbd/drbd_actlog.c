@@ -133,8 +133,8 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	if (!al_ext) {
 		if (al_flags & LC_STARVING)
 			WARN("Have to wait for LRU element (AL too small?)\n");
-		if (al_flags & LC_DIRTY)
-			WARN("Ongoing AL update (AL device too slow?)\n");
+		//if (al_flags & LC_DIRTY) // too noisy
+		//WARN("Ongoing AL update (AL device too slow?)\n");
 	}
 
 	return al_ext;
