@@ -24,20 +24,20 @@ SNUMB    [1-9][0-9]{0,2}
 IPV4ADDR ({SNUMB}"."){3}{SNUMB}
 WS       [ \t]
 OPCHAR   [{}=]
-%x in_str id
+%x in_string id
 
 %%
 
-<in_str>[^\"]*   { DP; CP; return TK_STRING; }
-<in_str>\"       BEGIN(INITIAL);
+<in_string>[^\"]*   { DP; CP; return TK_STRING; }
+<in_string>\"       BEGIN(INITIAL);
 
-<id>\"           BEGIN(in_str);
+<id>\"           BEGIN(in_string);
 <id>[a-zA-Z/][a-zA-Z0-9_/]* { DP; CP; BEGIN(INITIAL); return TK_STRING; }
 <id>[{}]         { DP; BEGIN(INITIAL); return yytext[0]; }
 <id>=            { DP; return yytext[0];                 }
 <id>{WS}+        /* ignore whitespaces */
 
-\"               BEGIN(in_str);
+\"               BEGIN(in_string);
 \n               { line++; }
 #[^\n]*          /* ignore comments */
 {OPCHAR}         { DP; return yytext[0];                 }
