@@ -64,7 +64,6 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 
 	switch (req->rq_status & 0xfffe) {
 	case RQ_DRBD_SEC_WRITE:
-	        wake_asender=1;
 		goto end_it;
 	case RQ_DRBD_NOTHING:
 		req->rq_status = nextstate | (uptodate ? 1 : 0);
@@ -121,9 +120,12 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
 			       ", bh=%p\n",
 			       (int)(mdev-drbd_conf),req->bh);
-		} 
+		}
+		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+		   e->block_id == ID_SYNCER ) wake_asender=1;
 	}
 
+	blk_finished_io(req->bh->b_size>>9);
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
@@ -132,10 +134,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 
 	kfree(req); /* frees also the temporary bh */
 
-	/* NICE: It would be nice if we could AND this condition.
-	   But we must also wake the asender if we are receiving 
-	   syncer blocks! */
-	if(wake_asender /*&& mdev->conf.wire_protocol == DRBD_PROT_C*/ ) {
+	if(wake_asender) {
 	        wake_up_interruptible(&mdev->asender_wait);
 	}
 }

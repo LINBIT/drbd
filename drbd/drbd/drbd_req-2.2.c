@@ -38,10 +38,6 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
-#define blkdev_dequeue_request(A) CURRENT=(A)->next
-#endif
-
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
 {
 	int wake_asender=0;
@@ -63,7 +59,6 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 
 	switch (req->rq_status & 0xfffe) {
 	case RQ_DRBD_SEC_WRITE:
-	        wake_asender=1;
 		goto end_it;
 	case RQ_DRBD_NOTHING:
 		req->rq_status = nextstate | (uptodate ? 1 : 0);
@@ -108,13 +103,22 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		}
 	}
 
+
 	if(mdev->state == Secondary) {
 		struct Tl_epoch_entry *e;
 		e=req->bh->b_dev_id;
-		spin_lock_irqsave(&mdev->ee_lock,flags);
-		list_del(&e->list);
-		list_add(&e->list,&mdev->done_ee);
-		spin_unlock_irqrestore(&mdev->ee_lock,flags);
+		if( e ) {
+			spin_lock_irqsave(&mdev->ee_lock,flags);
+			list_del(&e->list);
+			list_add(&e->list,&mdev->done_ee);
+			spin_unlock_irqrestore(&mdev->ee_lock,flags);
+		} else {
+			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
+			       ", bh=%p\n",
+			       (int)(mdev-drbd_conf),req->bh);
+		}
+		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
+		   e->block_id == ID_SYNCER ) wake_asender=1;
 	}
 
 	if(!end_that_request_first(req, uptodate & req->rq_status,DEVICE_NAME))
@@ -125,21 +129,15 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
 	}
 
-	/* NICE: It would be nice if we could AND this condition.
-	   But we must also wake the asender if we are receiving 
-	   syncer blocks! */
-	if(wake_asender /*&& mdev->conf.wire_protocol == DRBD_PROT_C*/ ) {
+	if(wake_asender) {
 	        wake_up_interruptible(&mdev->asender_wait);
 	}
 }
 
 void drbd_dio_end(struct buffer_head *bh, int uptodate)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
         struct request *req = bh->b_dev_id;
-#else
-	struct request *req = bh->b_private;
-#endif
+
 	// READs are sorted out in drbd_end_req().
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	
@@ -168,11 +166,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
   sock_sendmsg(), kmalloc(,GFP_KERNEL) and ll_rw_block().
 */
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-/*static */ void drbd_do_request(request_queue_t * q)
-#else
 /*static */ void drbd_do_request()
-#endif
 {
 	int minor = 0;
 	struct request *req;
@@ -199,7 +193,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	while (TRUE) {
 		INIT_REQUEST;
 		req=CURRENT;
-		blkdev_dequeue_request(req);
+		CURRENT=req->next;
 		
 #if 0
 		{
