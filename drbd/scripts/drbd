@@ -92,6 +92,7 @@ case "$1" in
 		else
 			succed "Node is master nothing to sync"
 		fi
+	     fi
 	done
 	;;
 	
