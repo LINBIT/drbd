@@ -192,6 +192,7 @@ int ds_buffer_read(struct ds_buffer *this,
 		
 		count++;
 	}
+	this->io_pending_number=count; 
 	spin_unlock_irqrestore(&drbd_conf[minor].bb_lock,flags);
 
 	if(count) ll_rw_block(READ, count, this->bhsp);
