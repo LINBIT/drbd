@@ -243,6 +243,34 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 
 STATIC int _drbd_process_ee(drbd_dev *mdev,struct list_head *head);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+STATIC void prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
+{
+	unsigned long flags;
+
+	wait->flags &= ~WQ_FLAG_EXCLUSIVE;
+	spin_lock_irqsave(&q->lock, flags);
+	if (list_empty(&wait->task_list))
+		__add_wait_queue(q, wait);
+	set_current_state(state);
+	spin_unlock_irqrestore(&q->lock, flags);
+}
+
+STATIC void finish_wait(wait_queue_head_t *q, wait_queue_t *wait)
+{
+	unsigned long flags;
+
+	__set_current_state(TASK_RUNNING);
+
+	spin_lock_irqsave(&q->lock, flags);
+	list_del_init(&wait->task_list);
+	spin_unlock_irqrestore(&q->lock, flags);
+}
+
+#define DEFINE_WAIT(name)	DECLARE_WAITQUEUE(name,current)
+
+#endif
+
 /**
  * drbd_get_ee: Returns an Tl_epoch_entry; might sleep. Fails only if
  * a signal comes in.

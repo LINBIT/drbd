@@ -899,7 +899,8 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		drbd_set_out_of_sync(mdev,
 				     drbd_req_get_sector(req),
 				     drbd_req_get_size(req));
-		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1, drbd_req_get_sector(item));
+		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1, 
+			     drbd_req_get_sector(req));
 	}
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
