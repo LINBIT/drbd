@@ -1565,8 +1565,17 @@ int __init drbd_init(void)
 	}
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops)) {
+
 		printk(KERN_ERR DEVICE_NAME ": Unable to get major %d\n",
 		       MAJOR_NR);
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+		if (drbd_proc)
+			remove_proc_entry("drbd", &proc_root);
+#else
+		proc_unregister(&proc_root, drbd_proc_dir.low_ino);
+#endif
+
 		return -EBUSY;
 	}
 
