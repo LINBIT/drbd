@@ -22,6 +22,7 @@ PROC_DRBD="/proc/drbd"
 MODPROBE="modprobe"
 RMMOD="rmmod"
 UDEV_TIMEOUT=10
+ADD_MOD_PARAM=""
 
 if [ -f $DEFAULTFILE ]; then
   . $DEFAULTFILE
@@ -33,7 +34,7 @@ function assure_module_is_loaded
 {
     [ -e "$PROC_DRBD" ] && return
 
-    $MODPROBE -s drbd `$DRBDADM sh-mod-parms` || { 
+    $MODPROBE -s drbd `$DRBDADM sh-mod-parms` $ADD_MOD_PARAM || { 
 	echo "Can not load the drbd module."$'\n'; exit 20 
     }
 

@@ -95,11 +95,11 @@ STATIC int drbd_close(struct inode *inode, struct file *file);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
-//MODULE_PARM_DESC(major_nr, "Major nr to use -- default " __stringify(CONFIG_DRBD_MAJOR) );
+MODULE_PARM_DESC(major_nr, "Major nr to use -- default " __stringify(CONFIG_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-//MODULE_PARM(major_nr,"i");
+MODULE_PARM(major_nr,"i");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM(disable_io_hints,"i");
 #else
@@ -118,7 +118,7 @@ MODULE_PARM(disable_io_hints,"i");
  * these become boot parameters: [-drbd.major_nr-], drbd.minor_count and
  * drbd.disable_io_hints
  */
-//module_param(major_nr,        int,0);
+module_param(major_nr,        int,0);
 module_param(minor_count,     int,0);
 module_param(disable_io_hints,int,0);
 #endif

@@ -1,5 +1,20 @@
+0.7.1 (api:75/proto:74)
+-----
+  *) Upgrade instructions for 0.6.x -> 0.7.0 and 0.7.0 -> 0.7.1
+  *) Workaround for XFS' IO requests with page count of zero.
+  *) Handle the human and the timeout count correctly in the new init script.
+  *) The implementation of the incon-degr-cmd was missing, added.
+  *) Longer timeouts in drbdadm for drbdsetup commands witch operate on 
+     meta data.
+  *) New major number 147 (officially registered at lanana.org).
+  *) Added a missing w_resume_next_wg() in case we stop syncing because
+     of connection loss.
+  *) Fixed a Linux-2.2-ismus in recieve_data_tail(). Should considerably
+     speed up protocols A and B.
+  *) Some work on vendor kernel compatibility
+	
 0.7.0 (api:74/proto:74)
----
+-----
   Drbd-0.7 was actually forked off from drbd-0.6.1 (actually -pre18). 
 
   *) Complete new way of doing resynchronisation. Does no longer need
