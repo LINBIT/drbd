@@ -693,7 +693,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	/* TODO: What if application gets the DRBD_SIG signal ? */
+	/* TODO: What if the application gets a SIGXCPU (=DRBD_SIG) signal ? */
 
 	while(1) {
 		rv = sock_sendmsg(mdev->sock, &msg, header_size+data_size);
