@@ -79,7 +79,7 @@ struct Drbd_Conf
   int                      rpid;
   struct semaphore         tsem;
   struct timer_list        s_timeout_t;
-  atomic_t		   synced_to;
+  atomic_t	           synced_to;
 };
 
 
@@ -542,7 +542,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	if( req->cmd == WRITE && drbd_conf[minor].state == Primary &&
 	     ( drbd_conf[minor].cstate == Connected || 
 	        ( drbd_conf[minor].cstate == Syncing && 
-	          req->sector < atomic_read(&drbd_conf[minor].synced_to))))
+	          req->sector > atomic_read(&drbd_conf[minor].synced_to))))
 	  sending = 1;
 
 	/* Do disk - IO */
@@ -769,6 +769,7 @@ __initfunc(int drbd_init( void ))
       drbd_conf[i].recv_cnt=0;
       drbd_conf[i].s_timeout_t.function = drbd_send_timeout;
       init_timer(&drbd_conf[i].s_timeout_t);
+      drbd_conf[i].synced_to = 0;
     }
    
   blk_dev[ MAJOR_NR ].request_fn = DEVICE_REQUEST;
@@ -1230,6 +1231,7 @@ int drbd_syncer(void *arg)
   int amount = 32; 
   /* FIXME: get the half of the size of the socket write buffer */
   int blocks;
+  struct buffer_head *bh;
 
   exit_mm(current);    /* give up UL-memory context */
   exit_files(current); /* give up open filedescriptors */
@@ -1245,14 +1247,29 @@ int drbd_syncer(void *arg)
   printk(KERN_ERR DEVICE_NAME ": thread living/m=%d\n",minor);
 
   interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
-  blocks = amount * 1024 / blksize_size[MAJOR_NR][minor];
+  blocks = (amount << 10) / blksize_size[MAJOR_NR][minor];
 
-  while(TRUE)
+  drbd_conf[minor].synced_to = blk_size[MAJOR_NR][minor] / 
+    (blksize_size[MAJOR_NR][minor]>>10) + 1;
+
+  while(drbd_conf[minor].synced_to)
     {
+      atomic_dec(&drbd_conf[minor].synced_to);
+
+      bh = getblk(MKDEV(MAJOR_NR,minor),drbd_conf[minor].synced_to,
+		  blksize_size[MAJOR_NR][minor]);
+
+      if(!buffer_uptodate(bh))
+	{
+	  ll_rw_block(READ,1,&bh);
+	  wait_on_buffer(bh);
+	}
+		  
+      drbd_send(minor,Data,blksize_size[MAJOR_NR][minor],
+		drbd_conf[minor].synced_to<<(drbd_conf[minor].blk_size_b - 9),
+		bh->b_data);
+      
       schedule_timeout(interval);
-      /* find block */
-      /* send block */
-      atomic_inc(&drbd_conf[minor].synced_to);
     }
 
 
