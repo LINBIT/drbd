@@ -351,14 +351,16 @@ case "$1" in
 			haveRemoteSecondary $RESOURCE
 			RSECONDARY=$?
 
-			if [ "$SYNC" -eq 1 ]; then
-				echo "not ready"
-			elif [ $PRIMARY -eq 1 ]; then
+			if [ $PRIMARY -eq 1 ]; then
 				if [ $MOUNTED -eq 1 ]; then
 					echo "running"
 				else
-					echo "Failed"
+					echo "stopped"
 				fi
+			elif [ "$SYNC" -eq 1 ]; then
+				echo "not ready"
+			elif [ "$CONNECTED" -eq 1 ]; then
+				echo "stopped"
 			else
 				echo "ready"
 			fi
