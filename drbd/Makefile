@@ -22,6 +22,9 @@ include Makefile.vars
 all:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i all; done
 
+doc:
+	$(MAKE) -C documentation doc
+
 install:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
 
@@ -29,6 +32,12 @@ clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
 	rm -f *~
 	rm -rf dist
+
+distclean:
+	@ set -e; for i in $(ALLSUBDIRS); do $(MAKE) -C $$i distclean; done
+	rm -f *~
+	rm -rf dist
+	
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done

@@ -54,6 +54,8 @@ clean:
 	rm -f drbdsetup drbdadm *.o
 	rm -f *~
 
+distclean: clean
+
 install:
 	install -d $(PREFIX)sbin/
 	install -m 755 drbdsetup $(PREFIX)sbin/

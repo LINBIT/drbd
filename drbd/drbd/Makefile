@@ -119,6 +119,7 @@ clean:
 	rm -f *.o *~ .flags
 	@echo "$(CONFIGURED_KERNVER);$(KERNFLAGS);$(VERSIONFLAGS)" >.flags
 
+distclean: clean
 
 install: all
 	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)

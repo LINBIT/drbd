@@ -52,23 +52,31 @@ LANGS=ja pt_BR
 
 #######
 
-ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
-all:	prepare man HOWTO/index.html
+all:
+	@echo "To (re)make the documentation: make doc"
 
 clean:
-	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
-	rm -f *.ps.gz *.pdf *.ps *.html
-	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
+	@echo "To clean the documentation: make doc-clean"
+
+ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
+doc:	prepare man HOWTO/index.html
+
+doc-clean: distclean
 
 else
 
-all:
+doc:
 	@echo "could not find docbook tools, sorry."
 
-clean:
+doc-clean:
 	@echo "could not find docbook tools, leaving documentation in place."
 
 endif
+
+distclean:
+	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
+	rm -f *.ps.gz *.pdf *.ps *.html
+	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
 prepare:
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done

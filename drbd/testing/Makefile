@@ -5,3 +5,5 @@ all: $(PROGRAMS)
 
 clean: 
 	rm -f $(PROGRAMS)
+
+distclean: clean
