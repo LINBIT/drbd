@@ -322,9 +322,8 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	wake_up_interruptible(&mdev->cstate_wait);
 
 	if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
-		WARN("queuing w_resume_next_sg().\n");
 		mdev->resync_work.cb = w_resume_next_sg;
-		_drbd_dequeue_work(&mdev->data.work,&mdev->resync_work);
+		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 	}
 }
 

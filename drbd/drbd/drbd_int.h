@@ -1008,8 +1008,10 @@ static inline void
 _drbd_dequeue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	if(!list_empty(&w->list)) {
+		if(down_trylock(&q->s)) {
+			printk("down_trylock() failed in drbd_dequeue_work\n");
+		}
 		list_del_init(&w->list);
-		down(&q->s); // Should! never sleep.
 	}
 }
 

@@ -233,7 +233,7 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 	_set_cstate(mdev,ns);
 
 	mdev->resync_work.cb = w_make_resync_request;
-	_drbd_dequeue_work(&mdev->data.work,&mdev->resync_work);
+	_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 }
 
 
@@ -294,11 +294,9 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w)
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
-	WARN("w_resume_next_sg() called.\n");
-
 	drbd_global_lock();
 
-	for (i=0; i < minor_count; i++) {
+	for (i=0; i < minor_count; i++) { // find next sync group
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group > mdev->sync_conf.group
 		     && odev->sync_conf.group < ng ) {
@@ -306,13 +304,10 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w)
 		}
 	}
 
-	WARN("ng = %d\n",ng);
-
-	for (i=0; i < minor_count; i++) {
+	for (i=0; i < minor_count; i++) { // resume all devices in next group
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group == ng ) {
 			_drbd_rs_resume(odev);
-			WARN("odev = %p\n",odev);
 		}
 	}
 
