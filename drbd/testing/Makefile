@@ -1,7 +1,7 @@
-all: acmp #receiver sender writetest
+all: show_size # acmp receiver sender writetest
 
-acmp: acmp.c
-	gcc -g -o acmp acmp.c
+show_size: show_size.c
+	gcc -o show_size show_size.c
 
 #writetest: writetest.c
 #	gcc -g -o writetest writetest.c
@@ -13,4 +13,4 @@ acmp: acmp.c
 #	gcc -g -o sender sender.c
 
 clean: 
-	rm -f receiver sender writetest acmp
+	rm -f show_size

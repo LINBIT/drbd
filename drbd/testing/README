@@ -1,0 +1,3 @@
+compare.pl   Use this perl script to compare two block devices of two machines.
+read_pc.pl   This scripts shows the values of the generation counters.
+show_size    Displays the size of a block device.
