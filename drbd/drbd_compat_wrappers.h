@@ -303,14 +303,8 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct buffer_head *bh)
 {
 	struct page *page = bh->b_page;
 	size_t size = bh->b_size;
-	int offset;
 
-	if (PageHighMem(page))
-		offset = (int)(long)bh->b_data;
-	else
-		offset = (long)bh->b_data - (long)page_address(page);
-
-	return _drbd_send_page(mdev,page,offset,size);
+	return _drbd_send_page(mdev,page,bh_offset(bh),size);
 }
 
 /* for proto A, we cannot use zero copy network send:
