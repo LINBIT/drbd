@@ -496,6 +496,7 @@ int v07_md_open(struct format *cfg);
 int v07_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v07_md_initialize(struct format *cfg);
 
+int v08_md_open(struct format *cfg);
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
 int v08_md_initialize(struct format *cfg);
@@ -525,7 +526,7 @@ struct format_ops f_ops[] = {
 		     .name = "v08",
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
-		     .open = v07_md_open,
+		     .open = v08_md_open,
 		     .close = v07_md_close,
 		     .md_initialize = v08_md_initialize,
 		     .md_disk_to_cpu = v08_md_disk_to_cpu,
@@ -653,6 +654,104 @@ void printf_gc(const struct md_cpu *md)
 	       md->gc[Flags] & MDF_PrimaryInd ? 1 : 0,
 	       md->gc[Flags] & MDF_ConnectedInd ? 1 : 0,
 	       md->gc[Flags] & MDF_FullSync ? 1 : 0);
+}
+
+int get_real_random(void * p, int size)
+{
+	int fd,rv;
+
+	fd = open("/dev/random", O_RDONLY);
+	if(fd == -1) {
+		PERROR("open('/dev/random',O_RDONLY)");
+		exit(20);
+	}
+	rv = size == read(fd,p,size);
+	close(fd);
+	return rv;
+}
+
+u64 new_style_offset(struct format * cfg)
+{
+	u64 offset;
+
+	if (cfg->md_index == -1) {
+		offset = (bdev_size(cfg->md_fd) & ~((1 << 12) - 1))
+		    - MD_RESERVED_SIZE_07;
+	} else {
+		offset = MD_RESERVED_SIZE_07 * cfg->md_index;
+	}
+	return offset;
+}
+
+int new_style_md_open(struct format *cfg, size_t size)
+{
+	struct stat sb;
+	unsigned long words;
+	u64 offset, al_offset, bm_offset;
+
+	cfg->md_fd = open(cfg->md_device_name, O_RDWR);
+
+	if (cfg->md_fd == -1) {
+		PERROR("open(%s) failed", cfg->md_device_name);
+		exit(20);
+	}
+
+	if (fstat(cfg->md_fd, &sb)) {
+		PERROR("fstat(%s) failed", cfg->md_device_name);
+		exit(20);
+	}
+
+	if (!S_ISBLK(sb.st_mode)) {
+		fprintf(stderr, "'%s' is not a block device!\n",
+			cfg->md_device_name);
+		exit(20);
+	}
+
+	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
+		PERROR("ioctl(,BLKFLSBUF,) failed");
+		exit(20);
+	}
+
+	offset = new_style_offset(cfg);
+	cfg->on_disk.md7 =
+	    mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, cfg->md_fd, 
+		 offset);
+	if (cfg->on_disk.md7 == NULL) {
+		PERROR("mmap(md_on_disk) failed");
+		exit(20);
+	}
+	cfg->md_offset = offset;
+
+	if (cfg->ops->md_disk_to_cpu(cfg)) {
+		return -1;
+	}
+
+	al_offset = offset + cfg->md.al_offset * 512;
+	bm_offset = offset + cfg->md.bm_offset * 512;
+
+	cfg->on_disk.al =
+	    mmap(NULL, MD_AL_MAX_SIZE_07 * 512, PROT_READ | PROT_WRITE,
+		 MAP_SHARED, cfg->md_fd, al_offset);
+	if (cfg->on_disk.al == NULL) {
+		PERROR("mmap(al_on_disk) failed");
+		exit(20);
+	}
+
+	cfg->on_disk.bm = mmap(NULL, MD_BM_MAX_SIZE_07, PROT_READ | PROT_WRITE,
+			       MAP_SHARED, cfg->md_fd, bm_offset);
+	if (cfg->on_disk.bm == NULL) {
+		PERROR("mmap(bm_on_disk) failed");
+		exit(20);
+	}
+
+	words = bm_words(cfg->md.la_sect);
+	cfg->bm_bytes = words * sizeof(long);
+	cfg->bits_set =
+	    count_bits((const unsigned long *)cfg->on_disk.bm, words);
+
+	/* FIXME paranoia verify that unused bits and words are unset... */
+
+	return 0;
 }
 
 /******************************************
@@ -783,19 +882,6 @@ int v06_md_initialize(struct format *cfg)
  begin of v07 {{{
  ******************************************/
 
-u64 v07_offset(struct format * cfg)
-{
-	u64 offset;
-
-	if (cfg->md_index == -1) {
-		offset = (bdev_size(cfg->md_fd) & ~((1 << 12) - 1))
-		    - MD_RESERVED_SIZE_07;
-	} else {
-		offset = MD_RESERVED_SIZE_07 * cfg->md_index;
-	}
-	return offset;
-}
-
 int v07_md_disk_to_cpu(struct format *cfg)
 {
 	md_disk_07_to_cpu(&cfg->md, cfg->on_disk.md7);
@@ -847,73 +933,7 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 
 int v07_md_open(struct format *cfg)
 {
-	struct stat sb;
-	unsigned long words;
-	u64 offset, al_offset, bm_offset;
-
-	cfg->md_fd = open(cfg->md_device_name, O_RDWR);
-
-	if (cfg->md_fd == -1) {
-		PERROR("open(%s) failed", cfg->md_device_name);
-		exit(20);
-	}
-
-	if (fstat(cfg->md_fd, &sb)) {
-		PERROR("fstat(%s) failed", cfg->md_device_name);
-		exit(20);
-	}
-
-	if (!S_ISBLK(sb.st_mode)) {
-		fprintf(stderr, "'%s' is not a block device!\n",
-			cfg->md_device_name);
-		exit(20);
-	}
-
-	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
-		PERROR("ioctl(,BLKFLSBUF,) failed");
-		exit(20);
-	}
-
-	offset = v07_offset(cfg);
-	cfg->on_disk.md7 =
-	    mmap(NULL, sizeof(struct md_on_disk_07), PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->md_fd, offset);
-	if (cfg->on_disk.md7 == NULL) {
-		PERROR("mmap(md_on_disk) failed");
-		exit(20);
-	}
-	cfg->md_offset = offset;
-
-	if (cfg->ops->md_disk_to_cpu(cfg)) {
-		return -1;
-	}
-
-	al_offset = offset + cfg->md.al_offset * 512;
-	bm_offset = offset + cfg->md.bm_offset * 512;
-
-	cfg->on_disk.al =
-	    mmap(NULL, MD_AL_MAX_SIZE_07 * 512, PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->md_fd, al_offset);
-	if (cfg->on_disk.al == NULL) {
-		PERROR("mmap(al_on_disk) failed");
-		exit(20);
-	}
-
-	cfg->on_disk.bm = mmap(NULL, MD_BM_MAX_SIZE_07, PROT_READ | PROT_WRITE,
-			       MAP_SHARED, cfg->md_fd, bm_offset);
-	if (cfg->on_disk.bm == NULL) {
-		PERROR("mmap(bm_on_disk) failed");
-		exit(20);
-	}
-
-	words = bm_words(cfg->md.la_sect);
-	cfg->bm_bytes = words * sizeof(long);
-	cfg->bits_set =
-	    count_bits((const unsigned long *)cfg->on_disk.bm, words);
-
-	/* FIXME paranoia verify that unused bits and words are unset... */
-
-	return 0;
+	return new_style_md_open(cfg, sizeof(struct md_on_disk_07));
 }
 
 int v07_md_close(struct format *cfg)
@@ -1024,18 +1044,9 @@ int v08_md_cpu_to_disk(struct format *cfg)
 	return 0;
 }
 
-int get_real_random(void * p, int size)
+int v08_md_open(struct format *cfg)
 {
-	int fd,rv;
-
-	fd = open("/dev/random", O_RDONLY);
-	if(fd == -1) {
-		PERROR("open('/dev/random',O_RDONLY)");
-		exit(20);
-	}
-	rv = size == read(fd,p,size);
-	close(fd);
-	return rv;
+	return new_style_md_open(cfg, sizeof(struct md_on_disk_08));
 }
 
 int v08_md_initialize(struct format *cfg)
