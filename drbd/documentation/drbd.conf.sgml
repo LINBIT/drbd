@@ -1,0 +1,196 @@
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<refentry>
+<docinfo><date>15 Apr 2001</date></docinfo>
+
+<refmeta>
+ <refentrytitle>drbd.conf</refentrytitle>
+ <manvolnum>5</manvolnum>
+</refmeta>
+
+<refnamediv>
+ <refname>drbd.conf</refname>
+ <refpurpose>The configuration file for DRBD's devices</refpurpose>
+
+</refnamediv>
+<refsect1>
+ <title>Introduction</title>
+ <para>
+This file, by default /etc/drbd.conf, is read by drbd and the
+datadisk script which are included in the drbd distribution.
+</para>
+<para>
+The format of this file was designed in a way which allows
+to have a verbatim copy of the file on both nodes of the cluster,
+and in order to keep your configuration manageble you should
+do so.
+<example>
+<title>It might look like this:</title>
+<programlisting>
+resource drbd0 {
+  protocol=C
+  fsck-cmd=fsck.ext2 -p -y
+  port=7789
+
+  on thost1 {
+    device=/dev/nb1
+    disk=/dev/hda7
+    address=10.1.1.31
+  }
+
+  on thost2 {
+    device=/dev/nb1
+    disk=/dev/hda7
+    address=10.1.1.32
+  }
+}	
+</programlisting>
+</example>
+In this example there is a singe drbd resource (called drbd0) which uses
+protocol C for the connection between its devices. The application
+of this resource is a ext2 filesystems, since the command to restart
+it is to run <replaceable>fsck.ext2 -p -y</replaceable>.
+The device which runs
+on host <replaceable>thost1</replaceable> uses
+<replaceable>/dev/nb1</replaceable> as devices for its application, and
+<replaceable>/dev/hda7</replaceable> as low level store for the data.
+Further the networkinterface to use is specified by its ip-address.
+</para>
+<para>
+There may be multiple resource sections in a singe drbd.conf file.
+</para>
+</refsect1>
+<refsect1>
+ <title>File Format</title>
+  <para>
+The file consists of sections and parameter lines. 
+A section begins with a keyword, sometimes an aditional name and an 
+opening bracet.
+A section ends with a closing bracet.
+</para>
+<para>
+A parameter line starts with the identifyer of the parameter followed
+by an equal sign (<quote>=</quote>) and every subsequent character on 
+that line is considered
+as part of the parameters value. There must not be a single white space 
+between the identifyer and the equal sing.
+</para>
+<para>
+Comment lines may be placed into the configuration file and must
+start with a hash sign (<quote>#</quote>).
+  </para>
+ <refsect2>
+ <title>Sections</title>
+<variablelist>
+ <varlistentry>
+  <term><option>resource <replaceable>name</replaceable></option></term>
+  <listitem><para>
+    Configures a drbd resource.
+    Each resource section needs to have two host sections 
+    (keyword <option>on</option>) and may have
+    a <option>net</option> and a <option>disk</option> section.
+    Required parameter in this section: <option>protocol</option>,
+    <option>fsck-cmd</option>, <option>port</option>.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>on <replaceable>host-name</replaceable></option></term>
+  <listitem><para>
+    Carries the necessary configuration parameters for a DRBD 
+    device of the enclosing resource.
+    Required parameters in this section: <option>device</option>,
+    <option>disk</option>, <option>address</option>.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>disk</option></term>
+  <listitem><para>
+    This section is used to fine tune DRBD's properties. Please
+    refere to drbdsetup(8) for detailed description of the parameters.
+    Allowd parameters: <option>disk-size</option>, <option>do-panic</option>.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>net</option></term>
+  <listitem><para>
+    This section is used to fine tune DRBD's properties. Please
+    refere to drbdsetup(8) for detailed description of this section's 
+    parameters.
+    Allowd parameters: <option>sync-rate</option>, 
+    <option>connect-int</option>, <option>skip-sync</option>,
+    <option>ping-int</option>, <option>timeout</option>,
+    <option>tl-size</option>.
+  </para>
+  </listitem>
+</varlistentry>
+</variablelist>
+ </refsect2>
+ <refsect2>
+ <title>Parameter</title>
+ <para>
+  blabber labber
+ </para>
+
+<variablelist>
+ <varlistentry>
+  <term><option>protocol=<replaceable>prot-id</replaceable></option></term>
+  <listitem><para>
+    <replaceable>prot-id</replaceable> may be A, B or C. 
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>fsck-cmd=<replaceable>command</replaceable></option></term>
+  <listitem><para>
+    datadisk runs upon resource takeover the 
+    <replaceable>command</replaceable> on the device of the resource.
+    Specify here the command that brings your filesystem into 
+    a consistent state again.
+    In case of a journaling file system you may use 
+    <replaceable>/bin/true</replaceable> instead.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>port=<replaceable>number</replaceable></option></term>
+  <listitem><para>
+    Each DRBD resource needs a tcp port <replaceable>number</replaceable> 
+    which is used to connect to the node's partner device. 
+    Two DRBD resources may not use the same port.
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>device=<replaceable>name</replaceable></option></term>
+  <listitem><para>
+    bla
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>disk=<replaceable>name</replaceable></option></term>
+  <listitem><para>
+    bla
+  </para>
+  </listitem>
+</varlistentry>
+ <varlistentry>
+  <term><option>address=<replaceable>ip-addr</replaceable></option></term>
+  <listitem><para>
+    bla
+  </para>
+  </listitem>
+</varlistentry>
+
+</variablelist>
+</refsect2>
+</refsect1>
+</refentry>
+
+
+
+
+
+
