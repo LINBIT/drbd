@@ -466,7 +466,7 @@ struct drbd_work {
 struct drbd_barrier;
 struct drbd_request {
 	struct drbd_work w;
-	int magic;
+	long magic;
 	int rq_status;
 	struct drbd_barrier *barrier; // The next barrier.
 	drbd_bio_t *master_bio;       // master bio pointer
@@ -508,7 +508,7 @@ struct Tl_epoch_entry {
 	struct drbd_work    w;
 	drbd_bio_t private_bio; // private bio struct, NOT a pointer
 	u64    block_id;
-	int magic;
+	long magic;
 	ONLY_IN_26(unsigned int ee_size;)
 	ONLY_IN_26(sector_t ee_sector;)
 	// THINK: maybe we rather want bio_alloc(GFP_*,1)
@@ -517,7 +517,7 @@ struct Tl_epoch_entry {
 
 struct Pending_read {
 	struct drbd_work w;
-	int magic;
+	long magic;
 	union {
 		drbd_bio_t *master_bio;
 		sector_t sector;
