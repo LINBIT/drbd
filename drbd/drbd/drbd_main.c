@@ -1696,8 +1696,8 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		return 0;
 	}
 
-	if(sector >= sbm->dev_size*2) return 0;
-	if(esector >= sbm->dev_size*2) esector = sbm->dev_size*2 - 1;
+	if(sector >= sbm->dev_size<<1) return 0;
+	if(esector >= sbm->dev_size<<1) esector = (sbm->dev_size<<1) - 1;
 
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;

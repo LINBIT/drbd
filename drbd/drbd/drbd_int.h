@@ -567,7 +567,7 @@ struct Pending_read {
 #define SENT_DISK_FAILURE 11
 
 struct BitMap {
-	unsigned long dev_size;
+	sector_t dev_size;
 	unsigned long size;
 	unsigned long* bm;
 	unsigned long gs_bitnr;
