@@ -701,14 +701,14 @@ const char* guess_dev_name(const char* dir,int major,int minor)
   struct stat sb;
   static char dev_name[50];
 
-  chdir(dir);
-  device_dir=opendir(".");
+  device_dir=opendir(dir);
 
   if(!device_dir) goto err_out;
 
   while((dde=readdir(device_dir))) 
     {
-      if(stat(dde->d_name,&sb)) continue;
+      snprintf(dev_name,50,"%s/%s",dir,dde->d_name);
+      if(stat(dev_name,&sb)) continue;
 
       if(S_ISBLK(sb.st_mode)) 
 	{
@@ -716,7 +716,6 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 	      minor == (int)(sb.st_rdev & 0x00ff) )
 	    {
 	      closedir(device_dir);
-	      snprintf(dev_name,50,"%s/%s",dir,dde->d_name);
 	      return dev_name;
 	    }
 	}
@@ -726,7 +725,8 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 
   while((dde=readdir(device_dir))) 
     {
-      if(stat(dde->d_name,&sb)) continue;
+      snprintf(dev_name,50,"%s/%s",dir,dde->d_name);
+      if(stat(dev_name,&sb)) continue;
       
       if(!strcmp(dde->d_name,".")) continue;
       if(!strcmp(dde->d_name,"..")) continue;
