@@ -667,7 +667,6 @@ STATIC int _drbd_pause_higher_sg(drbd_dev *mdev)
 		if ( odev->sync_conf.group > mdev->sync_conf.group
 		     && ( odev->cstate == SyncSource || 
 			  odev->cstate == SyncTarget ) ) {
-			INFO("pause_higher: %d\n",i);
 			_drbd_rs_pause(odev);
 			rv = 1;
 		}
@@ -795,7 +794,6 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	_drbd_pause_higher_sg(mdev);
 	if(_drbd_lower_sg_running(mdev)) {
 		_drbd_rs_pause(mdev);
-		INFO("Pausing myself\n");
 	}
 	drbd_global_unlock();
 }
