@@ -301,14 +301,16 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w)
 	for (i=0; i < minor_count; i++) { // find next sync group
 		odev = drbd_conf + i;
 		if ( odev->sync_conf.group > mdev->sync_conf.group
-		     && odev->sync_conf.group < ng ) {
-			ng = odev->sync_conf.group;
+		     && odev->sync_conf.group < ng && 
+		     (odev->cstate==PausedSyncS || odev->cstate==PausedSyncT)){
+		  ng = odev->sync_conf.group;
 		}
 	}
 
 	for (i=0; i < minor_count; i++) { // resume all devices in next group
 		odev = drbd_conf + i;
-		if ( odev->sync_conf.group == ng ) {
+		if ( odev->sync_conf.group == ng &&
+		     (odev->cstate==PausedSyncS || odev->cstate==PausedSyncT)){
 			_drbd_rs_resume(odev);
 		}
 	}
