@@ -708,7 +708,7 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 		offset = (int)bh->b_data - (int)page_address(page);
 	do {
 		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page, offset, size, MSG_NOSIGNAL);
-		if (sent == -EINTR) {
+		if (sent == -EAGAIN) {
 			// FIXME move "retry--" into drbd_retry_send()
 			if (drbd_retry_send(mdev,mdev->data.socket) && retry--)
 				continue;
@@ -872,10 +872,15 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 
 	do {
 		/* STRANGE
-		 * tcp_sendmsg does _not_ use its size parameter at all ???
+		 * tcp_sendmsg does _not_ use its size parameter at all ?
+		 *
+		 * -EAGAIN on timeout, -EINTR on signal.
+		 */
+		/* THINK
+		 * do we need to block DRBD_SIG if sock == &meta.socket ??
 		 */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
-		if (rv == -EINTR) {
+		if (rv == -EAGAIN) {
 			// FIXME move "retry--" into drbd_retry_send()
 			if (drbd_retry_send(mdev,sock) && retry--)
 				continue;
@@ -893,7 +898,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	// unlock_kernel();
 
 	if (rv <= 0) {
-		if (rv != -EINTR) {
+		if (rv != -EAGAIN) {
 			ERR("%s_sendmsg returned %d\n",
 			    sock == mdev->meta.socket ? "msock" : "sock",
 			    rv);
@@ -1308,6 +1313,9 @@ int __init init_module(void)
 	SZO(struct buffer_head);
 	SZO(Drbd_Polymorph_Packet);
 	SZO(struct drbd_socket);
+	SZO(struct semaphore);
+	SZO(wait_queue_head_t);
+	SZO(spinlock_t);
 	return -EBUSY;
 #endif
 

@@ -42,19 +42,25 @@ extern int disable_io_hints;
    left on all_requests...
    look out for NBD_MAJOR in ll_rw_blk.c */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
 /*lge: this hack is to get rid of the compiler warnings about
  * 'do_nbd_request declared static but never defined'
  * whilst forcing blk.h defines on
  * though we probably do not need them, we do not use them...
  * would not work without LOCAL_END_REQUEST
  */
-#define MAJOR_NR DRBD_MAJOR
-#define DEVICE_ON(device)
-#define DEVICE_OFF(device)
-#define DEVICE_NR(device) (MINOR(device))
-#define LOCAL_END_REQUEST
-#include <linux/blk.h>
-#define DRBD_MAJOR NBD_MAJOR
+# define MAJOR_NR DRBD_MAJOR
+# define DEVICE_ON(device)
+# define DEVICE_OFF(device)
+# define DEVICE_NR(device) (MINOR(device))
+# define LOCAL_END_REQUEST
+# include <linux/blk.h>
+# define DRBD_MAJOR NBD_MAJOR
+#else
+# include <linux/blkdev.h>
+# include <linux/bio.h>
+# define MAJOR_NR NBD_MAJOR
+#endif
 
 #undef DEVICE_NAME
 #define DEVICE_NAME "drbd"
@@ -695,7 +701,7 @@ struct Drbd_Conf {
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
-	unsigned int flags;
+	unsigned long flags;
 	struct task_struct *send_task; /* about pid calling drbd_send */
 	spinlock_t send_task_lock;
 	sector_t rs_left;     // blocks not up-to-date [unit sectors]
@@ -869,19 +875,14 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
 // drbd_dsender.c
-//extern int drbd_dsender(struct Drbd_thread *thi);
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void enslaved_read_bh_end_io(struct buffer_head *bh, int uptodate);
 extern void drbd_start_resync(drbd_dev *mdev, Drbd_CState side);
-extern unsigned long drbd_hash(struct buffer_head *bh);
 // worker callbacks
 extern int w_e_end_data_req      (drbd_dev *mdev, struct drbd_work*w);
 extern int w_e_end_rsdata_req    (drbd_dev *mdev, struct drbd_work*w);
-extern int w_make_resync_request (drbd_dev *mdev, struct drbd_work*w);
 extern int w_resync_finished     (drbd_dev *mdev, struct drbd_work*w);
 extern int w_resync_inactive     (drbd_dev *mdev, struct drbd_work*w);
-extern int w_resync_source       (drbd_dev *mdev, struct drbd_work*w);
-extern int w_start_resync        (drbd_dev *mdev, struct drbd_work*w);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
