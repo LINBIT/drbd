@@ -1572,7 +1572,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 	if(*size != BM_BLOCK_SIZE) BUG(); // Other cases are not needed
 
 	if(sbm->gs_bitnr == -1) {
-		lc_free(&sbm->resync);
+		// lc_free(&sbm->resync);
 		return MBDS_DONE;
 	}
 

@@ -290,7 +290,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		unsigned int trn;
 
 		rv = drbd_al_read_tr(mdev,&buffer,i);
-		ERR_IF(!rv) continue;
+		ERR_IF(!rv) goto cancel;
 
 		trn=be32_to_cpu(buffer->tr_number);
 
@@ -308,6 +308,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 		transactions++;
 
+	cancel:
 		if( i == to) break;
 		if( ++i > div_ceil(mdev->act_log.nr_elements,AL_EXTENTS_PT) ) i=0;
 	}
