@@ -72,8 +72,10 @@ start_uml() {
 	cd "$LOGDIR"
 
 	COMMAND="sleep 1; screen -t \"console ($NAME)\" $LINUX $CMDLINE umid=$NAME $EXTRA_ARG
-		echo 'waiting for uml to come up, then attaching gdb...'
-		sleep 2; screen -X title gdb; exec gdb $LINUX \$(<~/.uml/$NAME/pid)"
+		echo 'waiting for uml to come up, then attaching gdb and mconsole...'
+		sleep 2;
+		screen -t '$NAME mconsole' uml_mconsole $NAME
+		screen -X title gdb; exec gdb $LINUX \$(<~/.uml/$NAME/pid)"
 	screen -e ^^^^ -S "$NAME" -L -m -D -t $NAME -- bash -c "$COMMAND" &
 	SPID=$!
 	
@@ -81,10 +83,11 @@ start_uml() {
 	screen -X caption always
    
 	# quote "select", it confuses syntax highlighting ...
-	screen -X bindkey -k k1 "select" 2 # F1 -> vc/1
-	screen -X bindkey -k k2 "select" 3 # F2 -> vc/2
+	screen -X bindkey -k k1 "select" 3 # F1 -> vc/1
+	screen -X bindkey -k k2 "select" 4 # F2 -> vc/2
 	screen -X bindkey -k k3 "select" 1 # F3 -> console
 	screen -X bindkey -k k4 "select" 0 # F4 -> gdb
+	screen -X bindkey -k k5 "select" 2 # F5 -> mconsole
 
 	(
 		sleep 4
@@ -101,6 +104,7 @@ continue
 				# reap gdb again.
 				while test -e ~/.uml/$NAME/mconsole ; do sleep 5 ; done 
 				screen -X register g $'quit\n'; screen -X -p gdb paste g
+				screen -X -p 2 paste g  # quit mconsole
 			) &
 			screen -X "select" 1		# switch to console
 			# wait for vc/2 to show up
@@ -117,6 +121,7 @@ continue
 		else
 			screen -X register g $'quit\n'
 			screen -X -p gdb paste g
+			screen -X -p 2 paste g  # quit mconsole
 		fi
 	) &
 
@@ -140,6 +145,12 @@ continue
 # for now, just start one screen for each uml, and detach.
 # where you reattach, thats your business!
 #
+
+# in case this runs withing ksonsole or xterm: set tab and window title
+# konsole tab title:
+echo -n $'\e]30;'$UML_WHICH$'\a'
+# window title
+echo -n $'\e]0;'$UML_WHICH$'\a'
 
 i=${UML_WHICH##*[^0-9]}
 uml_params=UMLPARAMs_$i
