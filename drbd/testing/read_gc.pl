@@ -8,12 +8,12 @@ use constant F_SIZE => 32;
 use constant DRBD_MD_MAGIC => 0x83740267+3;
 use constant BLKFLSBUF => 0x1261; # 0x1261 is BLKFLSBUF on intel.
 
-sub read_print_gc_file($$)
+sub read_print_gc_file($$$)
   {
-    my ($ll_dev,$resource)=@_;
+    my ($md_dev,$md_index,$resource)=@_;
     my ($rr,$buffer,$pos,$md_start,$sector);
 
-    sysopen (GCF,$ll_dev,O_RDONLY)
+    sysopen (GCF,$md_dev,O_RDONLY)
       or die "can not open GC file";
 
     ioctl(GCF,BLKFLSBUF,0);
@@ -22,8 +22,12 @@ sub read_print_gc_file($$)
     # this we would simply the same values at subsequent calls, that
     # we saw at the first call.
 
-    $pos = sysseek(GCF, 0, SEEK_END);
-    $md_start = (int($pos / (4*1024)) * (4*1024)) - 128 *1024*1024;
+    if ($md_index == -1) {
+	$pos = sysseek(GCF, 0, SEEK_END);
+	$md_start = (int($pos / (4*1024)) * (4*1024)) - 128 *1024*1024;
+    } else {
+	$md_start = 128*1024*1024*$md_index;
+    }
 
     $rr=sysseek(GCF, $md_start, SEEK_SET);
     die "2nd seek failed rr=$rr md_start=$md_start" if ($rr != $md_start) ;
@@ -52,7 +56,7 @@ sub read_print_gc_file($$)
 sub main()
 {
 
-    my (@resources,$res,$disk);
+    my (@resources,$res,$disk,$index);
 
     @resources = sort(split(' ',`drbdadm sh-devices`));
 
@@ -69,8 +73,9 @@ resource|     |     |     |     |     |     |     |   Size
 EOS
 
     for $res (@resources) {
-	chomp($disk = `drbdadm sh-ll-dev $res`);
-	read_print_gc_file($disk,$res);
+	chomp($disk = `drbdadm sh-md-dev $res`);
+	chomp($index = `drbdadm sh-md-idx $res`);
+	read_print_gc_file($disk,$index,$res);
     }
 }
 

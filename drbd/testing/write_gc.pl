@@ -22,8 +22,8 @@ sub ensure_default
 
 sub write_gc_file
 {
-    my ($ll_dev,$del_al,$Consistent,$HumanCnt,$TimeoutCnt,$ConnectedCnt,
-	$ArbitraryCnt,$lastState,$ConnectedInd) = @_;
+    my ($md_dev,$md_index,$del_al,$Consistent,$HumanCnt,$TimeoutCnt,
+	$ConnectedCnt,$ArbitraryCnt,$lastState,$ConnectedInd) = @_;
     my ($Flags,$rr,$pos,$md_start,$out);
 
     ensure_default(\$Consistent,"Consistent",1);
@@ -34,7 +34,7 @@ sub write_gc_file
     ensure_default(\$lastState,"lastState",0);
     ensure_default(\$ConnectedInd,"ConnectedInd",0);
 
-    sysopen (GCF,$ll_dev,O_WRONLY)
+    sysopen (GCF,$md_dev,O_WRONLY)
 	or die "can not open GC file";
 
     ioctl(GCF,BLKFLSBUF,0);
@@ -43,8 +43,12 @@ sub write_gc_file
     # this we would simply the same values at subsequent calls, that
     # we saw at the first call.
 
-    $pos=sysseek(GCF, 0, SEEK_END);
-    $md_start = (int($pos / (4*1024))) * (4*1024) - 128 *1024*1024;
+    if ($md_index == -1) {
+	$pos = sysseek(GCF, 0, SEEK_END);
+	$md_start = (int($pos / (4*1024)) * (4*1024)) - 128 *1024*1024;
+    } else {
+	$md_start = 128*1024*1024*$md_index;
+    }
 
     $rr=sysseek(GCF, $md_start+8, SEEK_SET);
     die "2nd seek failed rr=$rr md_start=$md_start" if ($rr != $md_start+8) ;
@@ -88,7 +92,7 @@ sub write_gc_file
 sub main
 {
     my ($res, $opt, @other_args) = @_;
-    my ($disk,$del_al);
+    my ($disk,$index,$del_al);
 
     if(!defined($res)) {
 	print "USAGE: write_gc.pl resource-name [--del-al] counter-values...\n";
@@ -102,9 +106,10 @@ sub main
 	$del_al=0;
     }
 
-    chomp($disk = `drbdadm sh-ll-dev $res`);
+    chomp($disk = `drbdadm sh-md-dev $res`);
+    chomp($index = `drbdadm sh-md-idx $res`);
 
-    write_gc_file($disk,$del_al,@other_args);
+    write_gc_file($disk,$index,$del_al,@other_args);
 
 }
 

@@ -82,6 +82,8 @@ static int adm_wait_c(struct d_resource* ,char* );
 static int sh_devices(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
 static int sh_ll_dev(struct d_resource* ,char* );
+static int sh_md_dev(struct d_resource* ,char* );
+static int sh_md_idx(struct d_resource* ,char* );
 
 char ss_buffer[255];
 int line=1;
@@ -121,7 +123,9 @@ struct adm_cmd cmds[] = {
   { "dump",              adm_dump,    0                  ,1,1 },
   { "sh-devices",        sh_devices,  0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
-  { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 }
+  { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 },
+  { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
+  { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -217,6 +221,25 @@ static int sh_devices(struct d_resource* res,char* unused)
 static int sh_ll_dev(struct d_resource* res,char* unused)
 {
   printf("%s\n",res->me->disk);
+
+  return 0;
+}
+
+static int sh_md_dev(struct d_resource* res,char* unused)
+{
+  char *r;
+
+  if(strcmp("internal",res->me->meta_disk)==0) r = res->me->disk;
+  else r = res->me->meta_disk;
+  
+  printf("%s\n",r);
+
+  return 0;
+}
+
+static int sh_md_idx(struct d_resource* res,char* unused)
+{
+  printf("%s\n",res->me->meta_index);
 
   return 0;
 }
