@@ -179,11 +179,27 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		return 0;
 	}
 
-	/* FIXME
-	 * not always true, e.g. someone trying to mount on Secondary
-	 * maybe error out immediately here?
+	/*
+	 * If someone tries to mount on Secondary, and this is a 2.4 kernel,
+	 * it would lead to a readonly mounted, but not cache-coherent,
+	 * therefore dangerous, filesystem.
+	 * On 2.6 this is prevented by bd_claiming the device.
+	 * It is not that easy in 2.4.
+	 *
+	 * Because people continue to report they mount readonly, it does not
+	 * do what they expect, and their logs fill with messages and stuff.
+	 *
+	 * Since it just won't work, we just fail IO here.
+	 * [ ... until we implement some shared mode, and our users confirm by
+	 * configuration, that they handle cache coherency themselves ... ]
 	 */
-	D_ASSERT(mdev->state == Primary);
+	if (mdev->state != Primary) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("Not in Primary state, no IO requests allowed\n");
+		}
+		drbd_bio_IO_error(bio);
+		return 0;
+	}
 
 	/*
 	 * Paranoia: we might have been primary, but sync target, or
