@@ -24,8 +24,12 @@
 # the RedHat only way is docbook2man
 # hmmm, nowadays docbook2man works also on Debian
 
-include ../Makefile.vars
-LANGS=ja pt_BR
+LANGS = ja pt_BR
+
+DB2MAN          := $(shell which 2>/dev/null docbook2man)
+DB2HTML         := $(shell which 2>/dev/null docbook2html)
+DB2PDF          := $(shell which 2>/dev/null docbook2pdf)
+DB2PS           := $(shell which 2>/dev/null docbook2ps)
 
 ####### Implicit rules
 

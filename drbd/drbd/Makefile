@@ -1,6 +1,6 @@
-# Makefile for drbd.o
+# makefile for drbd for linux 2.4 // 2.6
 #
-# This file is part of drbd by Philipp Reisner
+# By Lars Ellenberg.
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,144 +17,58 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-include ../Makefile.vars
+# usage: make
 
-KSUBD := $(strip \
-$(if $(wildcard /lib/modules/$(KERNVER)/kernel),\
-  kernel/drivers/block,\
-  block))
+ifneq ($(KERNELRELEASE),)
 
+ifneq ($(VERSION),2)
+$(error "won't compile with this kernel version")
+endif
 
-OBJS =  drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_dsender.o
-OBJS += drbd_req-2.4.o mempool-2.4.o drbd_actlog.o
+# linux 2.6 style:
+obj-m      += drbd.o
+drbd-objs  := drbd_fs.o drbd_main.o drbd_proc.o drbd_dsender.o \
+              drbd_receiver.o drbd_req-2.4.o mempool-2.4.o drbd_actlog.o
 
-ifeq ($(ARCH),sparc64)
-	KCC=sparc64-linux-gcc
-	LDFLAGS=-m elf64_sparc
+ifeq ($(PATCHLEVEL),4)
+# linux 2.4 style needs in addition:
+
+list-multi := drbd.o
+
+include $(TOPDIR)/Rules.make
+
+drbd.o: $(drbd-objs)
+	$(LD) -r -o $@ $(drbd-objs)
+
 else
-	KCC=$(CC)
+ifneq ($(PATCHLEVEL),6)
+$(error "won't compile with this kernel version")
+endif
 endif
 
-####### Implicit rules
-
-.SUFFIXES: .c .o
-
-.PHONY: check_kernel_config
-
-.c.o:
-	$(KCC) -c $(KERNFLAGS) $(VERSIONFLAGS) $<
-
-#######
-
-# error, if we have no kernel source tree
-define ERR_NO_KERNEL_SOURCE
-
-Could not find kernel sources.
-  Install them, or tell me where to find them with
-  make LINUX=/path/to/kernel/source
-endef
-ifeq ($(LINUX),)
-  $(warning $(ERR_NO_KERNEL_SOURCE)))
-endif
-ifneq ($(shell cd $(LINUX) 2>&1),)
-  $(warning $(LINUX): no such directory. $(ERR_NO_KERNEL_SOURCE))
-endif
-# lge patent pending :-)
-ifneq ($(shell ls $(LINUX)/Documentation/oops-tracing.txt 2>&1 >/dev/null),)
-  $(warning $(LINUX) does not look like a kernel source tree)
-endif
-
-# which version is configured in the kernel source tree
-# just "make" it, in case it is out of date.
-CONFIGURED_KERNVER := $(shell \
-   ( cd $(LINUX) && $(MAKE) include/linux/version.h > /dev/null 2>&1 ) && \
-   $(CC) -nostdinc -E -P $(INCLUDE) check_kernel_config.c | \
-   sed -e '/^drbd_configured_kernver/!d;s/[^"]*"//;s/".*//; q' )
-# which version the current drbd.o was built for
-COMPILED_KERNVER := $(shell test -e .flags && sed -e 's/;.*//;q' .flags)
-
-ifeq ($(CONFIGURED_KERNVER),)
-   $(warning kernel configuration seems to be not ok)
-endif
-
-
-NEED_SIGHAND_HACK := $(shell grep -q "^struct sighand_struct" \
-	$(LINUX)/include/linux/sched.h && echo yes )
-ifeq ($(NEED_SIGHAND_HACK),yes)
-  override KERNFLAGS += -DSIGHAND_HACK
-  $(warning adding -DREDHAT_2_4_20 sighand_struct hack)
-endif
-
-NEEDNEW := $(shell \
-	if test -e .flags \
-	&& test "$(CONFIGURED_KERNVER);$(KERNFLAGS);$(VERSIONFLAGS)" = "`cat .flags`"; \
-	then \
-		:; \
-	else \
-		echo clean; \
-	fi)
-
-
-#######
-
-all: check_kernel_config $(NEEDNEW) drbd.o
-
-# error, if running or commandline specified kernel version
-# and version from the kernel source config do not match
-check_kernel_config:
-ifeq ($(CONFIGURED_KERNVER),)
-	@echo 
-	@echo "Kernel configuration problem, see warnings above."
-	@echo "If there are no warnings, check permissions on the kernel source tree."
-	@false
 else
-ifneq ($(CONFIGURED_KERNVER),$(KERNVER))
-	@echo "Version of running kernel and kernel config differ:"
-	@echo "  $(KERNVER) <uname -r or specified on command line>"
-	@echo "  $(CONFIGURED_KERNVER) <$(LINUX)/include/linux/version.h>"
-	@echo "  You may want to reconfigure to match the running kernel, or"
-	@echo "  make KERNVER=2.4.XY LINUX=/path/to/kernel/source "
-	@echo "  to override this"
-	@false
+# called from commandline in current directory
+ifeq ($(wildcard ../build-for-uml),../build-for-uml)
+#### for Philipp's convenience :) 
+ARUM := "ARCH=um"
+KDIR := /usr/src/linux-um
+else
+KDIR := /lib/modules/$(shell uname -r)/build
 endif
-endif
+PWD  := $(shell pwd)
 
-drbd.o: $(OBJS)
-	$(LD) $(LDFLAGS) -r -o $@ $^
+default:
+	@echo "" ;\
+	echo "    Calling toplevel makefile of kernel source tree." ;\
+	echo "    NOTE: please ignore the possible warning regarding overriding of SUBDIRS" ;\
+	echo ""
+	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) $(ARUM) modules
 
 clean:
-	rm -f *.o *~ .flags
-	@echo "$(CONFIGURED_KERNVER);$(KERNFLAGS);$(VERSIONFLAGS)" >.flags
-
-distclean: clean
+	rm -f *.o *~
 
 install:
-	@[ -e .flags ] && [ -e drbd.o ] || $(MAKE) all
-	@COMPILED_KERNVER=`sed -e 's/;.*//;q' .flags` ; \
-	if [ "$$COMPILED_KERNVER" != "$(KERNVER)" ]; then \
-	  echo ; \
-	  echo "kernel version mismatch:" ; \
-	  echo "  current drbd.o compiled for: $$COMPILED_KERNVER" ; \
-	  echo "  requested kernel version:    $(KERNVER)" ; \
-	  echo "either make all && make install, or override with" ; \
-	  echo "make KERNVER=$$COMPILED_KERNVER" ; \
-	  echo ; \
-	  false; \
-	fi
 	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
 	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
-	install -d $(PREFIX)var/lib/drbd
-ifeq ($(shell uname -r),$(KERNVER))
-	/sbin/depmod -a || depmod -e drbd.o 2>&1 >/dev/null || true
-else
-	[ -e $(LINUX)/System.map ] && \
-	   /sbin/depmod -F $(LINUX)/System.map -e drbd.o 2>&1 >/dev/null || true
+
 endif
-
-uninstall:
-	rm $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)/drbd.o
-	/sbin/depmod -a || true
-
-### dependencies:
-
-$(OBJS): drbd_int.h drbd.h

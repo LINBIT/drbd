@@ -1,6 +1,8 @@
 #ifndef DRBDADM_H
 #define DRBDADM_H
 
+#include "../drbd_config.h"
+
 struct d_globals
 {
   int disable_io_hints;

@@ -17,10 +17,14 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-include Makefile.vars
+PREFIX      = /
+
+SUBDIRS     = user drbd scripts benchmark documentation #testing
+ALLSUBDIRS  = user drbd scripts benchmark documentation testing
+REL_VERSION = $(word 3, $(shell grep REL_VERSION drbd_config.h))
 
 all:
-	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i all; done
+	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i ; done
 
 doc:
 	$(MAKE) -C documentation doc
@@ -37,7 +41,7 @@ distclean:
 	@ set -e; for i in $(ALLSUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~
 	rm -rf dist
-	
+
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done

@@ -17,17 +17,8 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-include ../Makefile.vars
-
-####### Implicit rules
-
-.SUFFIXES: .c .o
-
-.c.o:
-	$(CC) -c $(USERFLAGS) $(VERSIONFLAGS) $<
-
-#######
-
+CFLAGS = -c -Wall
+CC = gcc
 
 all: drbdsetup drbdadm
 
