@@ -9,11 +9,11 @@
   
   <refnamediv>
     <refname>drbd.conf</refname>
-    <refpurpose>O aquivo de configuração dos dispositivos DRBD</refpurpose>
+    <refpurpose>O arquivo de configuração dos dispositivos DRBD</refpurpose>
     
   </refnamediv>
   <refsect1>
-    <title>INTRODUÇÃO</title>
+    <title>Introdução</title>
     <para>
       O arquivo <option>/etc/drbd.conf</option> é lido
       pelos scripts <option>/etc/init.d/drbd</option> e 
@@ -23,8 +23,8 @@
     <para>
       O formato do arquivo foi projetado para permitir o uso
       de arquivos idênticos em ambas máquinas do cluster. Isso
-      facilita o gerenciamento do cluster.
-      
+      facilita o gerenciamento do cluster, portanto, use esse
+      recurso.
       <example>
 	<title>Um pequeno arquivo drbd.conf</title>
 	<programlisting>
@@ -63,7 +63,7 @@
     </para>
   </refsect1>
   <refsect1>
-    <title>FORMATO DO ARQUIVO DE CONFIGURAÇÃO</title>
+    <title>Formato do arquivo de configuração</title>
     <para>
       O arquivo consiste de seções e linhas com parâmetros.
       Um seção começa com uma palavra-chave, as vezes seguidos
@@ -83,7 +83,7 @@
       devem começar com <quote>#</quote>.
     </para>
     <refsect2>
-      <title>SEÇÕES</title>
+      <title>Seções</title>
       <variablelist>
 	<varlistentry>
 	  <term><option>resource <replaceable>nome</replaceable></option></term>
@@ -135,7 +135,7 @@
       </variablelist>
     </refsect2>
     <refsect2>
-      <title>PARÂMETROS</title>
+      <title>Parâmetros</title>
       <variablelist>
 	<varlistentry>
 	  <term><option>protocol=<replaceable>identificação-protocolo</replaceable></option></term>
@@ -155,6 +155,30 @@
 	      arquivos ficar em um estado consistente.
 	      No caso de um sistema de arquivos com journaling, você pode
 	      usar simplesmente <replaceable>/bin/true</replaceable>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>inittimeout=<replaceable>valor</replaceable></option></term>
+	  <listitem><para>
+	      Se a outra máquina deste cluster não aparecer dentro do tempo
+	      especificado, está máquina irá iniciar o recurso em modo degradado.</para>
+	    <para>
+	      Apenas usa esta opção se disponibilidade for mais importante do
+	      que a consistência dos seus dados.
+	    </para>
+	  </listitem>
+	</varlistentry>
+      </varlistentry>
+	<varlistentry>
+	  <term><option>skip-wait</option></term>
+	  <listitem><para>
+	      Se você quer a icialização do drbd prossiga sem esperar pelo
+	      termino da sincronização, você deve habilitar esta opção.
+	      ATENÇÃO: apenas use esta opção se o software que você esta
+	      usando para controlar o drbd pode lidar corretamente com a
+	      sincronização do dispositivo drbd (não será possivel
+	      utilizar circunvenção a falhas).
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -223,11 +247,15 @@
       not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
     </simpara>
   </refsect1>
-  <refsect1>
-    <title>VEJA TAMBÉM</title>
-    <para>
-      <citerefentry><refentrytitle>drbdsetup</refentrytitle>
-	<manvolnum>8</manvolnum></citerefentry>
-    </para>
-  </refsect1>
+<refsect1>
+  <title>Veja também</title>
+  <para>
+    <citerefentry><refentrytitle>drbd.conf</refentrytitle>
+    <manvolnum>5</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>drbd</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>datadisk</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>
+  </para>
+</refsect1>
 </refentry>

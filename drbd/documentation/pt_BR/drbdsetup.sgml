@@ -9,7 +9,7 @@
   
   <refnamediv>
     <refname>drbdsetup</refname>
-    <refpurpose>Ferramente de configuração do DRBD</refpurpose>
+    <refpurpose>Ferramenta de configuração do DRBD</refpurpose>
   </refnamediv>
 
   <refsynopsisdiv>
@@ -86,7 +86,7 @@
   </refsynopsisdiv>
   
   <refsect1>
-    <title>DESCRIÇÃO</title>
+    <title>Descrição</title>
     <para>
       drbdsetup é usado para ligar um dispositivo drbd com seu dispositivo
       de armazenamento, para espelhar um par de dispositivos drbd e
@@ -95,7 +95,7 @@
   </refsect1>
   
   <refsect1>
-    <title>OBSERVAÇÃO</title>
+    <title>Observação</title>
     <para>
       drbdsetup é usado como uma ferramenta de baixo nível. Ele é
       usado pelos scripts drbd, datadisk e drbdc para comunicar-se
@@ -364,7 +364,7 @@
 </screen>
     </example>
     <example>
-      <title>ESPELHAR UM DISPOSITIVO PARA UMA TERCEIRA MÁQUINA</title>
+      <title>Espelhar um dispositivo para uma terceira máquina</title>
       <para>Neste exemplo, as máquinas <replaceable>tc1</replaceable>
 	e <replaceable>tc2</replaceable>, estão conectadas e tc2 tem
 	/dev/nb0 em modo primário. O recurso deve ser espelhado para
@@ -397,7 +397,7 @@
     </example>
   </refsect1>
   <refsect1>
-    <title>Author</title>
+    <title>Autor</title>
     <simpara>Escrito por Philipp Reisner <email>philipp.reisner@gmx.at</email></simpara>
     <simpara>Traduzido por Cleber Rodrigues <email>cleberrrjr@bol.com.br</email></simpara>
   </refsect1>
@@ -413,4 +413,15 @@
       not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
     </simpara>
   </refsect1>
+<refsect1>
+  <title>Veja também</title>
+  <para>
+    <citerefentry><refentrytitle>drbd.conf</refentrytitle>
+    <manvolnum>5</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>drbd</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>datadisk</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>
+  </para>
+</refsect1>
 </refentry>
