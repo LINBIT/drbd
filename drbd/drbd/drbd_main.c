@@ -1952,7 +1952,6 @@ void drbd_queue_signal(int signal,struct task_struct *task)
 		LOCK_SIGMASK(task,flags);
 		sigaddset(&task->pending.signal, signal);
 		RECALC_SIGPENDING(task);
-		spin_unlock_irqrestore(&task->sigmask_lock, flags);
 		UNLOCK_SIGMASK(task,flags);
 		if (task->state & TASK_INTERRUPTIBLE) wake_up_process(task);
 	}
