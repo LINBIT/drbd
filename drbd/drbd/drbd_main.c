@@ -413,8 +413,10 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 
 	os = mdev->cstate;
 
-	/* INFO("%s [%d]: cstate %s --> %s\n", current->comm, current->pid,
-	   cstate_to_name(os), cstate_to_name(ns) );*/
+#if DUMP_MD > 1
+	INFO("%s [%d]: cstate %s(%d) --> %s(%d)\n", current->comm, current->pid,
+	   cstate_to_name(os),os, cstate_to_name(ns),ns );
+#endif
 
 	mdev->cstate = ns;
 	smp_mb();
@@ -2229,7 +2231,7 @@ int drbd_md_read(drbd_dev *mdev)
 	return 0;
 }
 
-#ifdef DUMP_MD
+#if DUMP_MD
 #define MeGC(x) mdev->gen_cnt[x]
 #define PeGC(x) be32_to_cpu(peer->gen_cnt[x])
 

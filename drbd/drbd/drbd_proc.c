@@ -146,7 +146,7 @@ const char* cstate_to_name(Drbd_CState s) {
 	};
 
 	return s < Unconfigured ? "TO_SMALL" :
-	       s > PausedSyncS  ? "TO_LARGE"
+	       s > PausedSyncT  ? "TO_LARGE"
 		                : cstate_names[s];
 }
 

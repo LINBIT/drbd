@@ -831,10 +831,17 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	drbd_md_write(mdev);
 
 	drbd_global_lock();
-	_drbd_pause_higher_sg(mdev);
-	if(_drbd_lower_sg_running(mdev)) {
-		_drbd_rs_pause(mdev);
-	}
+	if (mdev->cstate == SyncTarget || mdev->cstate == SyncSource) {
+		_drbd_pause_higher_sg(mdev);
+		if(_drbd_lower_sg_running(mdev)) {
+			_drbd_rs_pause(mdev);
+		}
+	} /* else:
+	   * thread of other mdev already paused us,
+	   * or something very strange happend to our cstate!
+	   * I really hate it that we can't have a consistent view of cstate.
+	   * maybe we even need yet an other smp_mb() ?
+	   */
 	drbd_global_unlock();
 }
 
