@@ -35,7 +35,6 @@
 
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
-#define AL_FREE (-1)
 #define AL_EXTENTS_PT 59
 
 struct drbd_extent {
@@ -82,21 +81,17 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct drbd_extent *extent;
 	int update_al=0;
-	unsigned long evicted=AL_FREE;
+	unsigned long evicted=LC_FREE;
 
 	spin_lock(&mdev->act_log.lc_lock);
 
-	extent = (struct drbd_extent *)lc_find(&mdev->act_log,enr);
-
-	if(extent) { // we have a hit!
+	extent = (struct drbd_extent *)lc_get(&mdev->act_log,enr);
+	
+	if(extent->lce.lc_number == enr ) { // we have a hit!
 		lc_touch(&mdev->act_log,&extent->lce);
 	} else { // miss, need to updated AL
-		int i;
-		
-		for(i=0;i<3;i++) mdev->act_log.updates[i]=-1;
-
-		extent = (struct drbd_extent *)
-			lc_add(&mdev->act_log,enr,&evicted);
+		evicted = extent->lce.lc_number;
+		extent->lce.lc_number = enr;
 		mdev->al_writ_cnt++;
 		update_al=1;
 	}
@@ -106,7 +101,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	spin_unlock(&mdev->act_log.lc_lock);
 
 	if( update_al ) {
-		if(mdev->cstate < Connected &&  evicted != AL_FREE ) {
+		if(mdev->cstate < Connected &&  evicted != LC_FREE ) {
 			drbd_update_on_disk_bitmap(mdev,evicted,1);
 		}
 		drbd_al_write_transaction(mdev);
@@ -160,7 +155,7 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 			    mdev->al_tr_number,n,extent_nr);
 #endif
 		} else {
-			extent_nr = AL_FREE;
+			extent_nr = LC_FREE;
 		}
 		buffer->updates[i].pos = cpu_to_be32(n);
 		buffer->updates[i].extent = cpu_to_be32(extent_nr);
@@ -178,8 +173,8 @@ STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 	}
 	for(;i<AL_EXTENTS_PT;i++) {
 		buffer->updates[i+3].pos = __constant_cpu_to_be32(-1);
-		buffer->updates[i+3].extent = __constant_cpu_to_be32(AL_FREE);
-		xor_sum ^= AL_FREE;
+		buffer->updates[i+3].extent = __constant_cpu_to_be32(LC_FREE);
+		xor_sum ^= LC_FREE;
 	}
 	mdev->al_tr_cycle += AL_EXTENTS_PT;
 	if(mdev->al_tr_cycle >= mdev->act_log.nr_elements) mdev->al_tr_cycle=0;
@@ -302,7 +297,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 			pos = be32_to_cpu(buffer->updates[j].pos);
 			extent_nr = be32_to_cpu(buffer->updates[j].extent);
 
-			if(extent_nr == AL_FREE) continue;
+			if(extent_nr == LC_FREE) continue;
 
 		       //if(j<3) INFO("T%03d S%03d=E%06d\n",trn,pos,extent_nr);
 			lc_set(&mdev->act_log,extent_nr,pos);
@@ -349,7 +344,7 @@ STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
 
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
 		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
-		if(enr == AL_FREE) continue;
+		if(enr == LC_FREE) continue;
 		mdev->rs_total +=
 			bm_set_bit( mdev, 
 				    enr << (AL_EXTENT_SIZE_B-9), 4<<20 , 
@@ -483,12 +478,12 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 
 	spin_lock(&mdev->resync.lc_lock);
 
-	ext = (struct bm_extent *) lc_find(&mdev->resync,enr);
-	if(ext) {
+	ext = (struct bm_extent *) lc_get(&mdev->resync,enr);
+	if(ext->lce.lc_number == enr) {
 		lc_touch(&mdev->resync,&ext->lce);
 		ext->rs_left -= cleared;
 	} else {
-		ext = (struct bm_extent *)lc_add(&mdev->resync,enr,0);
+		ext->lce.lc_number = enr;
 		ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 	}
 	spin_unlock(&mdev->resync.lc_lock);		

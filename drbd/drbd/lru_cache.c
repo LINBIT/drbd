@@ -27,7 +27,6 @@
 #include "lru_cache.h"
 #include <linux/slab.h>
 
-#define LC_FREE (-1)
 #define STATIC static
 
 /**
@@ -117,7 +116,7 @@ static void lc_mark_update(struct lru_cache * mlc, struct lc_element *slot)
 
 /**
  * lc_find: Returns the pointer to an element, if the element is present
- * in the hash table. In case it is not this function will return NULL.
+ * in the hash table. In case it is not this function returns NULL.
  * @mlc: The lru_cache object
  * @enr: element number
  */
@@ -211,53 +210,50 @@ void lc_del(struct lru_cache * mlc, struct lc_element *element)
 	list_add(&free_slot->list,&mlc->free);	
 }
 
-STATIC struct lc_element * lc_get(struct lru_cache * mlc,
-				  unsigned long * evicted)
+STATIC struct lc_element * lc_get_free_slot(struct lru_cache * mlc)
 {
 	struct list_head *le;
-	struct lc_element *element;
 
-	if(list_empty(&mlc->free)) {
-		element=lc_evict(mlc);
-		if(evicted) *evicted = element->lc_number;
-		element->lc_number = LC_FREE;
-		return element;
-	}
+	if(list_empty(&mlc->free)) return lc_evict(mlc);
 
 	le=mlc->free.next;
 	list_del(le);
-	element=list_entry(le, struct lc_element,list);
-
-	return element;
+	return list_entry(le, struct lc_element,list);
 }
 
 /**
- * lc_add: Adds an element to the lru cache. In case there are no
- * availabible slots in the cache, it will evict the least recently
- * used element from the cache.
+ * lc_get: Finds an element's slot in the cache. In case it was not
+ * present, it will be added to the cache. Therefore it is possible 
+ * that an other element becomes eviced from the cache.
  * 
  * This functions sets the update[3] pointers to the slots that 
  * were changed with this call.
  *
  * @mlc: The lru_cache object
  * @enr: element number
- * @evicted: If an element was removed from the cache, the index
- * of the removed elements is stored in this pointer.
  */
-struct lc_element * lc_add(struct lru_cache * mlc, 
-			   unsigned int enr,
-			   unsigned long * evicted)
+struct lc_element * lc_get(struct lru_cache * mlc, unsigned int enr) 
 {
 	struct lc_element *slot, *n, *a;
+	int i;
 
-	slot = lc_hash_fn( mlc, enr );
+	// Try to find it in the cahce
+	slot = lc_hash_fn(mlc, enr);
+	while(slot) {
+		if(slot->lc_number == enr) return slot;
+		slot = slot->hash_next;
+	}
+
+	// it was not present in the cache, find a slot for it...
+	for(i=0;i<3;i++) mlc->updates[i]=-1;
+
 	if (slot->lc_number == LC_FREE) {
 		list_del(&slot->list);
 		slot->hash_next = NULL;
 		goto have_slot;
 	}
 
-	n = lc_get(mlc,evicted);
+	n = lc_get_free_slot(mlc);
 
 	if ( n == slot) {
 		// we got the slot we wanted 
@@ -283,12 +279,12 @@ struct lc_element * lc_add(struct lru_cache * mlc,
 	slot = n;
 
  have_slot:
-	slot->lc_number = enr;
-	lc_mark_update(mlc, slot);
+	lc_mark_update(mlc, slot); // it needs to be updated by the caller :)
 	list_add(&slot->list,&mlc->lru);
 
 	return slot;
 }
+
 
 /**
  * lc_set: Sets an element in the cache. You might use this function to
