@@ -35,7 +35,8 @@
 #include "drbd.h"
 #include "drbd_int.h"
 
-void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
+void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags, 
+		  sector_t rsector)
 {
 	/* This callback will be called in irq context by the IDE drivers,
 	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
@@ -75,17 +76,17 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	}
 
 	spin_lock_irqsave(&mdev->bb_lock,flags);
-	bb_done(mdev,APP_BH_SECTOR(req->bh));
+	bb_done(mdev,rsector);
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
+
+	if(mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate > Connected) {
+		drbd_set_in_sync(mdev,rsector,req->bh->b_size);
+	}
 
 	req->bh->b_end_io(req->bh,(0x0001 & er_flags & req->rq_status));
 
 	if( mdev->do_panic && !(0x0001 & er_flags & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
-	}
-
-	if( mdev->conf.wire_protocol==DRBD_PROT_C && mdev->cstate>Connected) {
-		drbd_set_in_sync(mdev,APP_BH_SECTOR(req->bh),req->bh->b_size);
 	}
 
 	INVALIDATE_MAGIC(req);
@@ -103,7 +104,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	req = bh->b_private;
 	mdev = drbd_conf+MINOR(req->bh->b_rdev);
 
-	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
+	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate, bh->b_rsector);
 	drbd_al_complete_io(mdev,bh->b_rsector);
 	kmem_cache_free(bh_cachep, bh);
 }
@@ -313,7 +314,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
 				/* If sending failed, we can not expect
 				   an ack packet. */
-		drbd_end_req(req, RQ_DRBD_SENT, 1);
+		drbd_end_req(req, RQ_DRBD_SENT, 1, bh->b_rsector);
 	}
 	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
 

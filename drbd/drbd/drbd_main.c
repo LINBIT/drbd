@@ -315,7 +315,8 @@ void tl_clear(drbd_dev *mdev)
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,list);
 			if( (r->rq_status&0xfffe) != RQ_DRBD_SENT ) {
-				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1);
+				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1,
+					     r->sector);
 				goto mark;
 			}
 			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
@@ -1461,12 +1462,15 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		dev_size=blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)];
 	
 		if(  (sector & BM_MM) != 0 )     sbnr++;
-		if( (esector & BM_MM) != BM_MM ) ebnr--;
+		if( (esector & BM_MM) != BM_MM ) {
+			ebnr--;
 
-		/* There is this one special case at the end of the device */
-		if(dev_size<<1 == esector+1) {
-			ebnr++;
-			ret = (esector-sector+1)-8;
+			// There is this one special case at the 
+			// end of the device...
+			if(unlikely(dev_size<<1 == esector+1)) {
+				ebnr++;
+				ret = (esector-sector+1)-BM_NS;
+			}
 		}
 
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {

@@ -865,7 +865,7 @@ STATIC int receive_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 		ERR_IF ((unsigned long)req <= 1) return FALSE;
 		ERR_IF (!VALID_POINTER(req)) return FALSE;
 
-		drbd_end_req(req, RQ_DRBD_SENT, 1);
+		drbd_end_req(req, RQ_DRBD_SENT, 1, be64_to_cpu(p->sector) );
 	}
 	/*WARN("BlockAck: %lx %lx %x\n",
 	    (long) p->block_id,

@@ -698,7 +698,7 @@ extern mempool_t *drbd_pr_mempool;
 
 // drbd_req
 #define ERF_NOTLD    2   /* do not call tl_dependence */
-extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
+extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
 extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
 
 // drbd_fs.c
@@ -1060,7 +1060,7 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 	if((bh->b_dev & 0xff00) == 0xab00) {
 		printk(KERN_ERR DEVICE_NAME" bh->b_dev == 0xabxx\n");
 	}
-	return bh->b_blocknr;
+	return bh->b_blocknr * (bh->b_size>>9) ;
 }
 #else
 # define DRBD_BH_SECTOR(BH) ( (BH)->b_blocknr )
