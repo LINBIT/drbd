@@ -69,25 +69,33 @@ define linux-mod-helper
 end
 
 define drbd-al-show
-  set $sa_nr=((struct Drbd_Conf *)$arg0)->al_nr_extents
-  set $sa_extents=((struct Drbd_Conf *)$arg0)->al_extents
+  set $sa_base = &((struct Drbd_Conf *)$arg0)->act_log
+  lru-show $sa_base
+end
+
+define lru-show
+  set $ls_nr=((struct lru_cache *)$arg0)->nr_elements
+  set $ls_elements=((struct lru_cache *)$arg0)->elements
+  set $ls_esize=((struct lru_cache *)$arg0)->element_size
   printf "-#-  -EXTENT-  -HASH-NEXT-   TABLE\n"
-  set $sa_i=0
-  while $sa_i < $sa_nr
-    printf "%3d  %8d", $sa_i, $sa_extents[$sa_i].extent_nr
-    if $sa_extents[$sa_i].hash_next
-      printf "  %3d", $sa_extents[$sa_i].hash_next - $sa_extents
+  set $ls_i=0
+  while $ls_i < $ls_nr
+    set $ls_element = (struct lc_element *)($ls_elements + $ls_i * $ls_esize)
+    printf "%3d  %8d", $ls_i, $ls_element->lc_number
+    if $ls_element->hash_next
+      printf "  %3d", ((void *)$ls_element->hash_next - $ls_elements)/$ls_esize
     end
     printf "\n"
-    set $sa_i = $sa_i + 1    
+    set $ls_i = $ls_i + 1    
   end
   printf "-#-  -TABLE-#-  -EXTENT-   LRU LIST\n"
-  set $sa_le=((struct Drbd_Conf *)$arg0)->al_lru->next
-  set $sa_i=0
-  while $sa_le != &((struct Drbd_Conf *)$arg0)->al_lru && $sa_i < $sa_nr
-    set $sa_e = (struct drbd_extent *)$sa_le
-    printf "%3d  %8d  %8d\n", $sa_i, $sa_e-$sa_extents, $sa_e->extent_nr
-    set $sa_i = $sa_i + 1
-    set $sa_le = $sa_le->next    
+  set $ls_le=((struct lru_cache *)$arg0)->lru->next
+  set $ls_i=0
+  while $ls_le != &((struct lru_cache *)$arg0)->lru && $ls_i < $ls_nr
+    set $ls_e = (struct lc_element *)$ls_le
+    set $ls_en = ((void*)$ls_e-$ls_elements)/$ls_esize
+    printf "%3d  %8d  %8d\n", $ls_i, $ls_en, $ls_e->lc_number
+    set $ls_i = $ls_i + 1
+    set $ls_le = $ls_le->next    
   end
 end

@@ -65,7 +65,8 @@ void lc_resize(struct lru_cache * mlc, int nr_elements)
 		printk(KERN_ERR"LC: can not kmalloc() cache's elements\n");
 		return;
 	}
-	memset(elements,nr_elements,mlc->element_size);
+	memset(elements, 0, nr_elements * mlc->element_size);
+
 	spin_lock(&mlc->lc_lock);
 	INIT_LIST_HEAD(&mlc->lru);
 	INIT_LIST_HEAD(&mlc->free);
