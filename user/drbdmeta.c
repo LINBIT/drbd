@@ -41,7 +41,6 @@
 #if G_MAXLONG == 0x7FFFFFFF
 #define LN2_BPL 5
 #define hweight_long hweight32
-#define WW UL
 #elif G_MAXLONG == 0x7FFFFFFFFFFFFFFF
 #define LN2_BPL 6
 #define hweight_long hweight64
@@ -53,6 +52,10 @@
 #define MD_AL_MAX_SIZE_07  64
 #define MD_BM_OFFSET_07    (MD_AL_OFFSET_07 + MD_AL_MAX_SIZE_07)
 #define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
+#define MD_RESERVED_SIZE_07 ( (typeof(guint64))128 * (1<<20) )
+#define MD_BM_MAX_SIZE_07  ( MD_RESERVED_SIZE_07 - MD_BM_OFFSET_07*512 )
+
+#define DRBD_MD_MAGIC_06   (DRBD_MAGIC+2)
 
 char* progname = 0;
 
@@ -66,6 +69,9 @@ enum MetaDataFlags {
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
 #define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
 #define MDF_FullSync        (1<<__MDF_FullSync)
+
+#define OR_EXIT(OBJ,OP,args...) \
+({ if(! OBJ->ops-> OP(OBJ, ##args) ) format_op_failed(OBJ, #OP ); })
 
 enum MetaDataIndex {
 	Flags,          /* Consistency flag,connected-ind,primary-ind */
@@ -83,19 +89,9 @@ struct meta_data {
 	int bm_size;            // v07
 	unsigned long *bitmap;  // v07
 	int al_size;            // v07
-	unsigned int  *act_log; // v07
+	unsigned int  *act_log; // not yet implemented...
 
 	unsigned long bits_set; // additional info, set by fopts->read()
-};
-
-struct meta_data_on_disk_07 {
-	guint64 la_size;           // last agreed size.
-	guint32 gc[GEN_CNT_SIZE];  // generation counter
-	guint32 magic;
-	guint32 md_size;
-	guint32 al_offset;         // offset to this block
-	guint32 al_nr_extents;     // important for restoring the AL
-	guint32 bm_offset;         // offset to the bitmap, from here
 };
 
 struct format_06 {
@@ -125,31 +121,13 @@ struct format_ops {
 	const char* name;
 	char** args;
 	int conf_size;
-	int (* parse)(struct format *, char **argv, int argc, int*);
+	int (* parse)(struct format *, char **, int, int*);
 	int (* open) (struct format *);
 	int (* close)(struct format *);
+	struct meta_data * (* md_alloc)(void);
 	int (* read) (struct format *, struct meta_data *);
-	int (* write)(struct format *, struct meta_data *);
+	int (* write)(struct format *, struct meta_data *, int);
 };
-
-int v07_parse(struct format * config, char **argv, int argc, int *ai);
-int v07_open(struct format * config);
-int v07_close(struct format * config);
-int v07_read(struct format * config, struct meta_data *);
-int v07_write(struct format * config, struct meta_data *);
-
-struct format_ops formats[] = {
-	{ "v07",
-	  (char *[]) { "device","index",0 },
-	  sizeof(struct format_07),
-	  v07_parse,
-	  v07_open,
-	  v07_close,
-	  v07_read,
-	  v07_write
-	}
-};
-
 
 static inline guint32 hweight32(guint32 w)
 {
@@ -176,6 +154,12 @@ static inline guint64 hweight64(guint64 w)
 #endif
 }
 
+void format_op_failed(struct format * fcfg, char* op)
+{
+	fprintf(stderr,"%s_%s() failed\n",fcfg->ops->name,op);
+	exit(20);
+}
+
 /* capacity in units of 512 byte (AKA sectors)
  */
 int bm_words(unsigned long capacity)
@@ -189,6 +173,100 @@ int bm_words(unsigned long capacity)
 
 	return words;
 }
+
+void to_lel(unsigned long* buffer, int words)
+{
+	int i;
+	unsigned long w;
+
+	for (i=0;i<words;i++) {
+		w = GULONG_TO_LE(buffer[i]);
+		buffer[i] = w;
+	}
+}
+
+
+unsigned long from_lel(unsigned long* buffer, int words)
+{
+	int i;
+	unsigned long w;
+	unsigned long bits=0;
+
+	for (i=0;i<words;i++) {
+		w = GULONG_FROM_LE(buffer[i]);
+		bits += hweight_long(w);
+		buffer[i] = w;
+	}
+
+	return bits;
+}
+
+guint64 bdev_size(int fd)
+{
+	guint64 size64; // size in byte.
+	long size;    // size in sectors.
+	int err;
+
+	err=ioctl(fd,BLKGETSIZE64,&size64);
+	if(err) {
+		if (errno == EINVAL)  {
+			printf("INFO: falling back to BLKGETSIZE\n");
+			err=ioctl(fd,BLKGETSIZE,&size);
+			if(err) {
+				perror("ioctl(,BLKGETSIZE,) failed");
+				exit(20);
+			}
+			size64 = (typeof(guint64))512 * size;
+		} else {
+			perror("ioctl(,BLKGETSIZE64,) failed");
+			exit(20);
+		}
+	}
+
+	return size64;
+}
+
+void md_free(struct meta_data * m)
+{
+
+	if(m->bitmap)  free(m->bitmap);
+	if(m->act_log) free(m->act_log);
+
+	free(m);
+}
+
+/******************************************
+ begin of v07 
+ ******************************************/
+struct __attribute__((packed)) meta_data_on_disk_07 {
+	guint64 la_size;           // last agreed size.
+	guint32 gc[GEN_CNT_SIZE];  // generation counter
+	guint32 magic;
+	guint32 md_size;
+	guint32 al_offset;         // offset to this block
+	guint32 al_nr_extents;     // important for restoring the AL
+	guint32 bm_offset;         // offset to the bitmap, from here
+};
+
+guint64 v07_offset(struct format_07* cfg)
+{
+	guint64 offset;
+
+	if(cfg->index == -1) {
+		offset = ( bdev_size(cfg->fd) & ~((1<<12)-1) )
+			- MD_RESERVED_SIZE_07;
+	} else {
+		offset = MD_RESERVED_SIZE_07 * cfg->index;
+	}
+	return offset;
+}
+
+int v07_parse(struct format * config, char **argv, int argc, int *ai);
+int v07_open(struct format * config);
+int v07_close(struct format * config);
+struct meta_data * v07_md_alloc(void);
+int v07_read(struct format * config, struct meta_data *);
+int v07_write(struct format * config, struct meta_data *, int init_al);
 
 int v07_parse(struct format * config, char **argv, int argc, int *ai)
 {
@@ -246,145 +324,285 @@ int v07_close(struct format * config)
 	return close(cfg->fd) == 0;
 }
 
-struct meta_data * md_alloc()
+struct meta_data * v07_md_alloc(void)
 {
 	struct meta_data *m;
 
 	m = malloc(sizeof(struct meta_data ));
 	memset(m,0,sizeof(struct meta_data ));
+
+	m->bitmap = malloc(MD_BM_MAX_SIZE_07);
+	if( ! m->bitmap) {
+		PERROR("Can not allocate memory for bitmap.");
+		return 0;
+	}
+
+	m->bm_size = MD_BM_MAX_SIZE_07;
   
 	return m;  
-}
-
-void md_free(struct meta_data * m)
-{
-
-	if(m->bitmap)  free(m->bitmap);
-	if(m->act_log) free(m->act_log);
-
-	free(m);
-}
-
-#define MD_RESERVED_SIZE_07 ( (typeof(guint64))128 * (1<<20) )
-
-
-guint64 bdev_size(int fd)
-{
-	guint64 size64; // size in byte.
-	long size;    // size in sectors.
-	int err;
-
-	err=ioctl(fd,BLKGETSIZE64,&size64);
-	if(err) {
-		if (errno == EINVAL)  {
-			printf("INFO: falling back to BLKGETSIZE\n");
-			err=ioctl(fd,BLKGETSIZE,&size);
-			if(err) {
-				perror("ioctl(,BLKGETSIZE,) failed");
-				exit(20);
-			}
-			size64 = (typeof(guint64))512 * size;
-		} else {
-			perror("ioctl(,BLKGETSIZE64,) failed");
-			exit(20);
-		}
-	}
-
-	return size64;
-}
-
-unsigned long from_lel(unsigned long* buffer, int words)
-{
-	int i;
-	unsigned long w;
-	unsigned long bits=0;
-
-	for (i=0;i<words;i++) {
-		w = GULONG_FROM_LE(buffer[i]);
-		bits += hweight_long(w);
-		buffer[i] = w;
-	}
-
-	return bits;
 }
 
 int v07_read(struct format * config, struct meta_data * m)
 {
 	struct format_07* cfg = &config->d.f07;
-	struct meta_data_on_disk_07 * buffer;
+	struct meta_data_on_disk_07 buffer;
 	int rr,i,bmw;
-	guint64 offset;
+	guint64 offset = v07_offset(cfg);
 
-	buffer = malloc(sizeof(struct meta_data_on_disk_07));
-
-	if(cfg->index == -1) {
-		offset = ( bdev_size(cfg->fd) & ~((1<<12)-1) )
-			- MD_RESERVED_SIZE_07;
-	} else {
-		offset = MD_RESERVED_SIZE_07 * cfg->index;
-	}
-	
 	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
 		return 0;
 	}
 
-	rr = read(cfg->fd, buffer, sizeof(struct meta_data_on_disk_07));
+	rr = read(cfg->fd, &buffer, sizeof(struct meta_data_on_disk_07));
 	if( rr != sizeof(struct meta_data_on_disk_07)) {
 		PERROR("read failed");
 		return 0;
 	}
     
-	if( GUINT32_FROM_BE(buffer->magic) != DRBD_MD_MAGIC_07 ) {
-		fprintf(stderr,"Magic number not found");
+	if( GUINT32_FROM_BE(buffer.magic) != DRBD_MD_MAGIC_07 ) {
+		fprintf(stderr,"Magic number not found\n");
 		return 0;
 	}
 
-	if( GUINT32_FROM_BE(buffer->al_offset) != MD_AL_OFFSET_07 ) {
-		fprintf(stderr,"Magic number (al_offset) not found");
+	if( GUINT32_FROM_BE(buffer.al_offset) != MD_AL_OFFSET_07 ) {
+		fprintf(stderr,"Magic number (al_offset) not found\n");
 		return 0;
 	}
 
-	if( GUINT32_FROM_BE(buffer->bm_offset) != MD_BM_OFFSET_07 ) {
-		fprintf(stderr,"Magic number (bm_offset) not found");
+	if( GUINT32_FROM_BE(buffer.bm_offset) != MD_BM_OFFSET_07 ) {
+		fprintf(stderr,"Magic number (bm_offset) not found\n");
 		return 0;
 	}
 
 	for (i = Flags; i < GEN_CNT_SIZE; i++)
-		m->gc[i] = GUINT32_FROM_BE(buffer->gc[Flags]);
+		m->gc[i] = GUINT32_FROM_BE(buffer.gc[i]);
 
-	m->la_size = GUINT64_FROM_BE(buffer->la_size);
-	bmw = bm_words(m->la_size);
+	m->la_size = GUINT64_FROM_BE(buffer.la_size);
 
-	m->bitmap = malloc(sizeof(long) * bmw);
-	if( ! m->bitmap) {
-		PERROR("Can not allocate memory for bitmap.");
+	if(m->bitmap) {
+		bmw = bm_words(m->la_size);
+
+		offset = offset + 512 * MD_BM_OFFSET_07;
+		if(lseek64(cfg->fd, offset, SEEK_SET) == -1) {
+			PERROR("lseek() failed");
+			return 0;
+		}
+
+		rr = read(cfg->fd, m->bitmap, bmw*sizeof(long));
+		if( rr != bmw*sizeof(long) ) {
+			PERROR("read failed");
+			return 0;
+		}
+
+		m->bm_size = bmw*sizeof(long);
+		m->bits_set = from_lel(m->bitmap,bmw);
+	}
+
+	return 1;
+}
+
+int v07_write(struct format * config, struct meta_data * m, int init_al)
+{
+	struct format_07* cfg = &config->d.f07;
+	struct meta_data_on_disk_07 buffer;
+	int rr,i;
+	guint64 offset = v07_offset(cfg);
+
+	buffer.magic = GUINT32_TO_BE( DRBD_MD_MAGIC_07 );
+	buffer.al_offset = GUINT32_TO_BE( MD_AL_OFFSET_07 );
+	buffer.bm_offset = GUINT32_TO_BE( MD_BM_OFFSET_07 );
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
+		buffer.gc[i] = GUINT32_TO_BE(m->gc[i]);
+
+	buffer.la_size = GUINT64_TO_BE(m->la_size);
+
+	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
 		return 0;
 	}
-	m->bm_size = bmw*sizeof(long);
+
+	rr = write(cfg->fd, &buffer, sizeof(struct meta_data_on_disk_07));
+	if( rr != sizeof(struct meta_data_on_disk_07)) {
+		PERROR("write failed");
+		return 0;
+	}
 
 	if(lseek64(cfg->fd,offset + 512 * MD_BM_OFFSET_07 ,SEEK_SET) == -1) {
 		PERROR("lseek() failed");
 		return 0;
 	}
 
-	rr = read(cfg->fd, m->bitmap, bmw*sizeof(long));
-	if( rr != bmw*sizeof(long) ) {
-		PERROR("read failed");
+	to_lel(m->bitmap, m->bm_size/sizeof(long) );
+
+	rr = write(cfg->fd, m->bitmap, m->bm_size);
+	if( rr != m->bm_size) {
+		PERROR("write failed");
 		return 0;
 	}
 
-	m->bits_set = from_lel(m->bitmap,bmw);
+	from_lel(m->bitmap, m->bm_size/sizeof(long) );
+
+	if( init_al ) {
+		// TODO;
+	}
+
+	return 1;
+}
+/******************************************
+ end of v07 
+ ******************************************/
+
+/******************************************
+ begin of v06
+ ******************************************/
+struct __attribute__((packed)) meta_data_on_disk_06 {
+	guint32 gc[GEN_CNT_SIZE];  // generation counter
+	guint32 magic;
+};
+
+int v06_parse(struct format * config, char **argv, int argc, int *ai);
+int v06_open(struct format * config);
+int v06_close(struct format * config);
+struct meta_data * v06_md_alloc(void);
+int v06_read(struct format * config, struct meta_data *);
+int v06_write(struct format * config, struct meta_data *, int init_al);
+
+int v06_parse(struct format * config, char **argv, int argc, int *ai)
+{
+	struct format_06* cfg = &config->d.f06;
+	char *e;
+
+	if(argc < 1) {
+		fprintf(stderr,"Too few arguments for format\n");
+		return 0;
+	}
+
+	e = argv[0];
+	cfg->minor = strtol(argv[0],&e,0);
+	if(*e != 0) {
+		fprintf(stderr,"'%s' is not a valid index number.\n",argv[1]);
+		return 0;
+	}
+
+	*ai+=1;
 
 	return 1;
 }
 
-int v07_write(struct format * config, struct meta_data * m)
+int v06_open(struct format * config)
 {
-	//struct format_07* cfg = &config->d.f07;
+	struct format_06* cfg = &config->d.f06;
+	char fn[100];
 
-	return 0;
+	snprintf(fn,99,"/var/lib/drbd/drbd%d",cfg->minor);
+
+	cfg->fd = open(fn,O_RDWR);
+
+	if(cfg->fd == -1) {
+		PERROR("open() failed");
+		return 0;
+	}
+
+	return 1;
 }
+
+int v06_close(struct format * config)
+{
+	struct format_06* cfg = &config->d.f06;
+
+	return close(cfg->fd) == 0;
+}
+
+struct meta_data * v06_md_alloc(void)
+{
+	struct meta_data *m;
+
+	m = malloc(sizeof(struct meta_data ));
+	memset(m,0,sizeof(struct meta_data ));
+
+	return m;  
+}
+
+int v06_read(struct format * config, struct meta_data * m)
+{
+	struct format_06* cfg = &config->d.f06;
+	struct meta_data_on_disk_06 buffer;
+	int rr,i;
+
+	if(lseek64(cfg->fd,0,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		return 0;
+	}
+
+	rr = read(cfg->fd, &buffer, sizeof(struct meta_data_on_disk_06));
+	if( rr != sizeof(struct meta_data_on_disk_06)) {
+		PERROR("read failed");
+		return 0;
+	}
+    
+	if( GUINT32_FROM_BE(buffer.magic) != DRBD_MD_MAGIC_06 ) {
+		fprintf(stderr,"Magic number not found\n");
+		return 0;
+	}
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
+		m->gc[i] = GUINT32_FROM_BE(buffer.gc[i]);
+
+	return 1;
+}
+
+int v06_write(struct format * config, struct meta_data * m, int init_al)
+{
+	struct format_06* cfg = &config->d.f06;
+	struct meta_data_on_disk_06 buffer;
+	int rr,i;
+
+	buffer.magic = GUINT32_TO_BE( DRBD_MD_MAGIC_06 );
+
+	for (i = Flags; i < GEN_CNT_SIZE; i++)
+		buffer.gc[i] = GUINT32_TO_BE(m->gc[i]);
+
+	if(lseek64(cfg->fd,0,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		return 0;
+	}
+
+	rr = write(cfg->fd, &buffer, sizeof(struct meta_data_on_disk_06));
+	if( rr != sizeof(struct meta_data_on_disk_06)) {
+		PERROR("write failed");
+		return 0;
+	}
+
+	return 1;
+}
+/******************************************
+ end of v06 
+ ******************************************/
+
+struct format_ops formats[] = {
+	{ "v06",
+	  (char *[]) { "minor", 0 },
+	  sizeof(struct format_06),
+	  v06_parse,
+	  v06_open,
+	  v06_close,
+	  v06_md_alloc,
+	  v06_read,
+	  v06_write
+	},
+	{ "v07",
+	  (char *[]) { "device","index",0 },
+	  sizeof(struct format_07),
+	  v07_parse,
+	  v07_open,
+	  v07_close,
+	  v07_md_alloc,
+	  v07_read,
+	  v07_write
+	}
+};
 
 struct meta_cmd {
 	const char* name;
@@ -392,15 +610,6 @@ struct meta_cmd {
 	int (* function)(struct format *, char** argv, int argc );
 	int show_in_usage;
 };
-
-void format_op_failed(struct format * fcfg, char* op)
-{
-	fprintf(stderr,"%s_%s() failed\n",fcfg->ops->name,op);
-	exit(20);
-}
-
-#define F_OP_OR_EXIT(OP,args...) \
-({ if(! fcfg->ops-> OP(fcfg, ##args) ) format_op_failed(fcfg, #OP ); })
 
 int meta_show_gc(struct format * fcfg, char** argv, int argc )
 {
@@ -410,12 +619,11 @@ int meta_show_gc(struct format * fcfg, char** argv, int argc )
 	if(argc > 0) {
 		fprintf(stderr,"Ignoring additional arguments\n");
 	}
+	md = fcfg->ops->md_alloc();
 
-	md = md_alloc();
-
-	F_OP_OR_EXIT(open);
-	F_OP_OR_EXIT(read,md);
-	printf(
+	OR_EXIT(fcfg,open);
+	OR_EXIT(fcfg,read,md);
+	printf( "\n"
 		"                                        WantFullSync |\n"
 		"                                  ConnectedInd |     |\n"
 		"                               lastState |     |     |\n"
@@ -423,9 +631,10 @@ int meta_show_gc(struct format * fcfg, char** argv, int argc )
 		"                ConnectedCnt |     |     |     |     |\n"
 		"            TimeoutCnt |     |     |     |     |     |\n"
 		"        HumanCnt |     |     |     |     |     |     |\n"
-		"Consistent |     |     |     |     |     |     |     |       Size\n"
-		"   --------+-----+-----+-----+-----+-----+-----+-----+------------------+\n"
-		"       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s | %s\n",
+		"Consistent |     |     |     |     |     |     |     |\n"
+		"   --------+-----+-----+-----+-----+-----+-----+-----+\n"
+		"       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
+		"\n",
 		md->gc[Flags] & MDF_Consistent ? "1/c" : "0/i",
 		md->gc[HumanCnt],
 		md->gc[TimeoutCnt],
@@ -433,27 +642,231 @@ int meta_show_gc(struct format * fcfg, char** argv, int argc )
 		md->gc[ArbitraryCnt],
 		md->gc[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
 		md->gc[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
-		md->gc[Flags] & MDF_FullSync ? "1/y" : "0/n",
-		ppsize(ppb,md->la_size));
+		md->gc[Flags] & MDF_FullSync ? "1/y" : "0/n");
 
-	fcfg->ops->close(fcfg);
+	
+	if(md->la_size) {
+		printf("last agreed size: %s\n", ppsize(ppb,md->la_size));
+	}
+
+	if(md->bitmap) {
+		printf("%lu bits set in the bitmap [ %s out of sync ]\n",
+		       md->bits_set, ppsize(ppb,md->bits_set));
+	}
+
+	OR_EXIT(fcfg,close);
 	
 	md_free(md);
 
-	return 1;
+	return 0;
 }
 
-int meta_create_md(struct format * fcfg, char** argv, int argc ) { return 0; }
-int meta_dump_md(struct format * fcfg, char** argv, int argc ) { return 0; }
-int meta_convert_md(struct format * fcfg, char** argv, int argc ) { return 0; }
-int meta_modify_gc(struct format * fcfg, char** argv, int argc ) { return 0; }
+int meta_get_gc(struct format * fcfg, char** argv, int argc )
+{
+	struct meta_data* md;
+
+	if(argc > 0) {
+		fprintf(stderr,"Ignoring additional arguments\n");
+	}
+
+	md = fcfg->ops->md_alloc();
+
+	OR_EXIT(fcfg,open);
+	OR_EXIT(fcfg,read,md);
+	printf("%d:%d:%d:%d:%d:%d:%d:%d\n",
+		md->gc[Flags] & MDF_Consistent ? 1 : 0,
+		md->gc[HumanCnt],
+		md->gc[TimeoutCnt],
+		md->gc[ConnectedCnt],
+		md->gc[ArbitraryCnt],
+		md->gc[Flags] & MDF_PrimaryInd ? 1 : 0,
+		md->gc[Flags] & MDF_ConnectedInd ? 1 : 0,
+		md->gc[Flags] & MDF_FullSync ? 1 : 0);
+     
+	OR_EXIT(fcfg,close);
+	
+	md_free(md);
+
+	return 0;
+}
+
+int meta_create_md(struct format * fcfg, char** argv, int argc )
+{
+	struct meta_data* md;
+
+	if(argc > 0) {
+		fprintf(stderr,"Ignoring additional arguments\n");
+	}
+
+	md = fcfg->ops->md_alloc();
+
+	OR_EXIT(fcfg,open);
+	OR_EXIT(fcfg,write,md,1);
+	OR_EXIT(fcfg,close);
+	
+	md_free(md);
+
+	return 0;
+}
+
+struct format* parse_format(char** argv, int argc, int* ai);
+
+int meta_convert_md(struct format * fcfg, char** argv, int argc )
+{
+	struct format * target;
+	struct meta_data* md;
+	int unused;
+
+	target = parse_format(argv, argc, &unused );
+
+	md = target->ops->md_alloc();
+
+	OR_EXIT(fcfg,open);
+	OR_EXIT(fcfg,read,md);
+	OR_EXIT(fcfg,close);
+
+	OR_EXIT(target,open);
+	OR_EXIT(target,write,md,1); // init_al = 1 ?!?
+	OR_EXIT(target,close);
+	
+	md_free(md);
+
+	return 0;
+}
+
+int meta_dump_md(struct format * fcfg, char** argv, int argc ) 
+{
+	struct meta_data* md;
+	guint64 *b;
+	int words;
+	int i;
+
+	if(argc > 0) {
+		fprintf(stderr,"Ignoring additional arguments\n");
+	}
+
+	md = fcfg->ops->md_alloc();
+
+	OR_EXIT(fcfg,open);
+	OR_EXIT(fcfg,read,md);
+	printf("gc {");
+	for(i=0;i<GEN_CNT_SIZE;i++) {
+		printf(" 0x%X;",md->gc[i]);
+	}
+	printf(" }\n");
+
+	// if(md->la_size)  TODO.
+
+	if(md->bitmap) {
+		words = md->bm_size/sizeof(guint64);
+		b = (guint64*) md->bitmap;
+		printf("bm {");
+		for (i=0;i<words;i++) {
+#if G_MAXLONG == 0x7FFFFFFF
+			printf(" 0x%016llX;",b[i]);
+#elif G_MAXLONG == 0x7FFFFFFFFFFFFFFF
+			printf(" 0x%016lX;",b[i]);
+#endif
+			if(i%4 == 3) printf("\n    ");
+		}
+		printf(" }\n");
+	}
+
+	OR_EXIT(fcfg,close);
+	
+	md_free(md);
+	
+	return 0; 
+}
+
+int m_strsep(char **s,int *val)
+{
+	char *t, *e;
+	int v;
+
+	if( (t = strsep(s,":")) ) {
+		if(strlen(t)) {
+			e = t;
+			v = strtol(t,&e,0);
+			if(*e != 0) {
+				fprintf(stderr,"'%s' is not a number.\n",*s);
+				exit(10);
+			}
+			if(v < 0 ) {
+				fprintf(stderr,"'%s' is negative.\n",*s);
+				exit(10);
+			}
+			*val = v;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+int m_strsep_b(char **s,int *val, int mask)
+{
+	int d;
+	int rv;
+
+	d = *val & mask;
+
+	rv = m_strsep(s,&d);
+
+	if(d > 1) {
+		fprintf(stderr,"'%d' is not 0 or 1.\n",d);
+		exit(10);
+	}
+
+	if(d) *val |=  mask;
+	else  *val &= ~mask;
+
+	return rv;
+}
+
+//  "::14" sets the TimeoutCnt to 14
+int meta_set_gc(struct format * fcfg, char** argv, int argc ) 
+{
+	struct meta_data* md;
+	char **str;
+
+	if(argc < 1) {
+		fprintf(stderr,"Required Argument missing\n");
+		exit(10);
+	}
+	str = &argv[0];
+
+	md = fcfg->ops->md_alloc();
+
+	OR_EXIT(fcfg,open);
+	OR_EXIT(fcfg,read,md);
+
+	do {
+		if(!m_strsep_b(str,&md->gc[Flags],MDF_Consistent)) break;
+		if(!m_strsep(str,&md->gc[HumanCnt])) break;
+		if(!m_strsep(str,&md->gc[TimeoutCnt])) break;
+		if(!m_strsep(str,&md->gc[ConnectedCnt])) break;
+		if(!m_strsep(str,&md->gc[ArbitraryCnt])) break;
+		if(!m_strsep_b(str,&md->gc[Flags],MDF_PrimaryInd)) break;
+		if(!m_strsep_b(str,&md->gc[Flags],MDF_ConnectedInd)) break;
+		if(!m_strsep_b(str,&md->gc[Flags],MDF_FullSync)) break;
+	} while(0);
+
+	OR_EXIT(fcfg,write,md,0);
+	OR_EXIT(fcfg,close);
+
+	md_free(md);
+
+	return 0; 
+}
 
 struct meta_cmd cmds[] = {
-	{ "create-md",  0,                         meta_create_md,      1 },
 	{ "show-gc",    0,                         meta_show_gc,      1 },
+	{ "get-gc",     0,                         meta_get_gc,       1 },
+	{ "create-md",  0,                         meta_create_md,    1 },
 	{ "dump-md",    0,                         meta_dump_md,      1 },
 	{ "convert-md", "FORMAT [FORMAT ARGS...]", meta_convert_md,   1 },
-	{ "modify-gc",  "ID=VAL ...",              meta_modify_gc,    0 }
+	//{ "restore-md",    0,                    meta_restore_md,   0 },
+	{ "set-gc",     ":::VAL:VAL:...",          meta_set_gc,       0 }
 };
 
 void print_usage()
@@ -572,7 +985,5 @@ int main(int argc, char** argv)
 	}
 	ai++;
 
-	command->function(fcfg, argv+ai, argc-ai);
-
-	return 0;
+	return command->function(fcfg, argv+ai, argc-ai);
 }
