@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.6 2004/06/01 07:01:56 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.7 2004/06/01 09:36:55 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -450,5 +450,5 @@ complete -v -X '![DLN][ior]*' Dump Dump_long
 complete -v -X '!RS_*'   Stop
 complete -F _gen_comp Fail_Disk Heal_Disk Fail_Link Heal_Link
 complete -F _gen_comp Crash_Node Node_State Wait_for_boot
-complete -F _start_and_reloc_comp Start Relocate
+complete -F _start_and_reloc_comp Start Reloc
 

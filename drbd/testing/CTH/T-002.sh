@@ -1,5 +1,5 @@
 #!/usr/bin/env - /bin/bash
-# $Id: T-002.sh,v 1.1.2.2 2004/06/01 07:01:56 lars Exp $
+# $Id: T-002.sh,v 1.1.2.3 2004/06/01 09:36:55 lars Exp $
 
 Start RS_1 Node_1
 
@@ -9,7 +9,7 @@ Fail_Disk Disk_1
 
 sleep 5
 
-Relocate RS_1 Node_2
+Reloc RS_1 Node_2
 
 sleep 5
 
@@ -20,7 +20,7 @@ on $Node_1: drbd_reattach minor=0 name=r0
 
 sleep 5
 
-Relocate RS_1 Node_1
+Reloc RS_1 Node_1
 
 sleep 10
 
