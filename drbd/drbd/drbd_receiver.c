@@ -1791,12 +1791,10 @@ int drbd_asender(struct Drbd_thread *thi)
 				mdev->conf.timeout*HZ/20;
 		}
 
-		set_bit(SIGNAL_ASENDER, &mdev->flags);
-
 		if (!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
 
+		set_bit(SIGNAL_ASENDER, &mdev->flags);
 		rv = drbd_recv_short(mdev,buf,expect-received);
-
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 		drbd_flush_signals(current);
