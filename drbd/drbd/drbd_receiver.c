@@ -59,6 +59,51 @@
 
 #define EE_MININUM 32    // @4k pages => 128 KByte
 #define EE_MAXIMUM 2048  // @4k pages => 8   MByte
+
+/* These functions make shure that we never call run_task_queue(&tq_disk).
+   
+   If the receiver would call tq_disk, it could send a block of an other
+   drbd device (which is in primary state). The tcp_send on the socket
+   could block. If this happens on the other machine as well, we have 
+   a distributed deadlock. 
+
+   Therefore calls to run_task_queue(&tq_disk) are avoided... 
+*/
+
+static inline void drbd_flush_request_queue(kdev_t rdev)
+{
+	request_queue_t* q;
+
+	q=blk_get_queue(rdev);
+	q->plug_tq.routine(q); // This is usually generic_unplug_device()
+}
+
+void __drbd_wait_on_buffer(struct buffer_head * bh)
+{
+        struct task_struct *tsk = current;
+        DECLARE_WAITQUEUE(wait, tsk);
+
+        get_bh(bh);
+        add_wait_queue(&bh->b_wait, &wait);
+        do {
+		drbd_flush_request_queue(bh->b_rdev);
+                set_task_state(tsk, TASK_UNINTERRUPTIBLE);
+                if (!buffer_locked(bh))
+                        break;
+                schedule();
+        } while (buffer_locked(bh));
+        tsk->state = TASK_RUNNING;
+        remove_wait_queue(&bh->b_wait, &wait);
+        put_bh(bh);
+}
+
+static inline void drbd_wait_on_buffer(struct buffer_head * bh)
+{
+        if (test_bit(BH_Lock, &bh->b_state))
+                __drbd_wait_on_buffer(bh);
+}
+
+
 /*static */int _drbd_process_done_ee(struct Drbd_Conf* mdev);
 
 /*static */inline void inc_unacked(struct Drbd_Conf* mdev)
@@ -341,7 +386,11 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
 
-	if(mdev->ee_vacant == EE_MININUM / 2) run_task_queue(&tq_disk);
+	if(mdev->ee_vacant == EE_MININUM / 2) {
+		spin_unlock_irq(&mdev->ee_lock);
+		drbd_flush_request_queue(mdev->lo_device);	
+		spin_lock_irq(&mdev->ee_lock);
+	}
 
 	while(list_empty(&mdev->free_ee)) {
 		_drbd_process_done_ee(mdev);
@@ -350,7 +399,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 			if(drbd_alloc_ee(mdev,GFP_TRY)) break;
 		}
 		spin_unlock_irq(&mdev->ee_lock);
-		run_task_queue(&tq_disk);
+		drbd_flush_request_queue(mdev->lo_device);
 		interruptible_sleep_on(&mdev->ee_wait);
 		spin_lock_irq(&mdev->ee_lock);
 	}
@@ -463,7 +512,7 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 			continue;
 		}
 		spin_unlock_irq(&mdev->ee_lock);
-		wait_on_buffer(e->bh);
+		drbd_wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
 		/* The IRQ handler does not move a list entry if someone is 
 		   in wait_on_buffer for that entry, therefore we have to
@@ -803,7 +852,6 @@ inline int receive_barrier(struct Drbd_Conf* mdev)
 
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
 
-	/* TODO: use run_task_queue(&tq_disk); here */
 	drbd_wait_active_ee(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -912,7 +960,7 @@ inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 #define NUMBER 24 
 #endif
 	if(atomic_read(&mdev->unacked_cnt) >= NUMBER ) {
-		run_task_queue(&tq_disk);
+		drbd_flush_request_queue(mdev->lo_device);
 	}
 #undef NUMBER
 
@@ -1181,7 +1229,7 @@ void drbdd(int minor)
 			drbd_md_write(minor);
 			break;
 		case WriteHint:
-			run_task_queue(&tq_disk);
+			drbd_flush_request_queue(drbd_conf[minor].lo_device);
 			break;
 
 		default:
