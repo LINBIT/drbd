@@ -225,7 +225,6 @@ struct send_timer_info {
 	struct Drbd_Conf *mdev;
 	struct task_struct *task;
 	volatile int timeout_happened;
-	int counter;
 	int via_msock;
 	int restart;	
 };
@@ -282,7 +281,7 @@ struct Drbd_Conf {
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
-	struct list_head bussy_blocks;
+	struct list_head busy_blocks;
 };
 
 /* drbd_main.c: */
@@ -306,8 +305,8 @@ extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
 			 unsigned long block_nr,u64 block_id);
-extern int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
-			  unsigned long block_nr, u64 block_id);
+extern int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh, 
+			  u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 
 
@@ -480,7 +479,7 @@ extern struct proc_dir_entry drbd_proc_dir;
 
  */
 
-struct bussy_block {
+struct busy_block {
 	struct list_head list; 
 	struct completion event;
 	unsigned long bnr;
@@ -489,11 +488,11 @@ struct bussy_block {
 static inline void bb_wait(struct Drbd_Conf *mdev,unsigned long bnr,
 			   unsigned long* flags)
 {
-	struct bussy_block bl;
+	struct busy_block bl;
 
 	init_completion(&bl.event);
 	bl.bnr=bnr;
-	list_add(&bl.list,&mdev->bussy_blocks);
+	list_add(&bl.list,&mdev->busy_blocks);
 	spin_unlock_irqrestore(&mdev->bb_lock,*flags);
 
       //printk(KERN_ERR DEVICE_NAME " sleeping because block %lu busy\n",bnr);
@@ -504,10 +503,10 @@ static inline void bb_wait(struct Drbd_Conf *mdev,unsigned long bnr,
 static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 {
 	struct list_head *le;
-	struct bussy_block *bl;
+	struct busy_block *bl;
 
-	list_for_each(le,&mdev->bussy_blocks) {
-		bl = list_entry(le, struct bussy_block,list);
+	list_for_each(le,&mdev->busy_blocks) {
+		bl = list_entry(le, struct busy_block,list);
 		if(bl->bnr == bnr) {
 			//printk(KERN_ERR DEVICE_NAME " completing %lu\n",bnr);
 			complete(&bl->event);

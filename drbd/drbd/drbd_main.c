@@ -616,14 +616,14 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, unsigned long block_nr,
 	return ret;
 }
 
-int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
-		   unsigned long block_nr, u64 block_id)
+int drbd_send_block(struct Drbd_Conf *mdev, struct buffer_head *bh, 
+			  u64 block_id)
 {
         Drbd_Data_Packet head;
-	int ret;
+	int ret,ok;
 
 	head.p.command = cpu_to_be16(Data);
-	head.h.block_nr = cpu_to_be64(block_nr);
+	head.h.block_nr = cpu_to_be64(bh->b_blocknr);
 	head.h.block_id = block_id;
 
 	down(&mdev->send_mutex);
@@ -632,22 +632,26 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	        _drbd_send_barrier(mdev);
 	}
 	
-	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),data,
-		      data_size,0);
+	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
+		      bh->b_size,0);
+	bh_kunmap(bh);
+	ok=(ret == bh->b_size + sizeof(head));
 
-	if( ret == data_size + sizeof(head) &&
-	    (mdev->conf.wire_protocol != DRBD_PROT_A || 
-	     block_id == ID_SYNCER) ) {
-		inc_pending(mdev);
+	if( ok ) {
+		if( mdev->conf.wire_protocol != DRBD_PROT_A || 
+		    block_id == ID_SYNCER )  {
+			inc_pending(mdev);
+		}
+		mdev->send_cnt+=bh->b_size>>10;
 	}
 
 	if(block_id != ID_SYNCER) {
-		if( ret == data_size + sizeof(head)) {
+		if( ok ) {
 			/* This must be within the semaphore */
 			tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
 		} else {
-			bm_set_bit(mdev->mbds_id,
-				   block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
+			bm_set_bit(mdev->mbds_id,bh->b_blocknr,
+				   mdev->blk_size_b,SS_OUT_OF_SYNC);
 			ret=0;
 		}
 	}
@@ -660,7 +664,7 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 static void drbd_timeout(unsigned long arg)
 {
 	struct send_timer_info *ti = (struct send_timer_info *) arg;
-	int i;
+	//	int i;
 
 	if(ti->via_msock) {
 		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
@@ -683,24 +687,7 @@ static void drbd_timeout(unsigned long arg)
 		*/
 		set_bit(SEND_PING,&ti->mdev->flags);
 		drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
-		if(ti->counter++ > 10) {
-			for(i=0;i<minor_count;i++) {
-/* Further improvement:
-   This case happens (receiver/asender blocked in send via (data) socket,
-   set a bit in the ping packet that signals this state to the other side.
-   Only if both sides are in this state a distributed deadlock is 
-   established.
-*/
-				if( ti->task == drbd_conf[i].receiver.task ||
-				    ti->task == drbd_conf[i].asender.task ) {
-					printk(KERN_ERR DEVICE_NAME
-					       "%d: Distributed deadlock!\n",
-					       (int)(ti->mdev-drbd_conf));
-					ti->timeout_happened=1;
-					drbd_queue_signal(DRBD_SIG, ti->task);
-				}
-			}
-		}
+
 		if(ti->restart) {
 			ti->s_timeout.expires = jiffies +
 				(ti->mdev->conf.timeout * HZ / 10);
@@ -773,7 +760,6 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	ti.via_msock=via_msock;
 	ti.task=current;
 	ti.restart=1;
-	ti.counter=0;
 	if(!via_msock) {
 		spin_lock(&mdev->send_proc_lock); 
 		mdev->send_proc=&ti; 
@@ -1032,7 +1018,7 @@ int __init drbd_init(void)
 		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].done_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].bussy_blocks);
+		INIT_LIST_HEAD(&drbd_conf[i].busy_blocks);
 		{
 			int j;
 			for(j=0;j<=PrimaryInd;j++) drbd_conf[i].gen_cnt[j]=0;

@@ -245,14 +245,8 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			}
 			spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-     		        send_ok=drbd_send_data(mdev, bh_kmap(bh), cbs,
-					       bnr,(unsigned long)req);
-			bh_kunmap(bh);
+     		        send_ok=drbd_send_block(mdev,bh,(unsigned long)req);
 			mdev->send_block=-1;
-
-			if(send_ok) {
-				mdev->send_cnt+=size_kb;
-			}
 
 			if( mdev->conf.wire_protocol==DRBD_PROT_A ||
 			    (!send_ok) ) {

@@ -261,10 +261,7 @@ int ds_buffer_send(struct ds_buffer *this,int minor)
 	blocksize=blksize_size[MAJOR_NR][minor];
 
 	for(i=0;i<pending;i++) {
-		rr=drbd_send_data(&drbd_conf[minor], this->bhs[i].b_data,
-				  blocksize,this->bhs[i].b_blocknr,ID_SYNCER);
-		// bh_kmap()/bh_kunmap() not needed since they are allocaded
-		// with GFP_USER.
+		rr=drbd_send_block(&drbd_conf[minor],&this->bhs[i],ID_SYNCER);
 
 		if(rr < blocksize) {
 			printk(KERN_ERR DEVICE_NAME 
@@ -272,7 +269,6 @@ int ds_buffer_send(struct ds_buffer *this,int minor)
 			rv=FALSE;
 			break;
 		}
-		drbd_conf[minor].send_cnt+=blocksize>>10;
 	}
 
 	spin_lock_irqsave(&drbd_conf[minor].bb_lock,flags);
