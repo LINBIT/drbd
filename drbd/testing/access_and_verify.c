@@ -125,7 +125,7 @@ static unsigned long long fsize(int in_fd)
   
   if(fstat(in_fd, &dm_stat))
     {
-      fprintf(stderr,"Can not fstat\n");
+      perror("Can not fstat");
       exit(20);
     }
   if(S_ISBLK(dm_stat.st_mode))
@@ -133,7 +133,7 @@ static unsigned long long fsize(int in_fd)
       unsigned long ls;
       if( ioctl(in_fd,BLKGETSIZE,&ls) )
 	{
-	  fprintf(stderr,"Can not ioctl(BLKGETSIZE)\n");
+	  perror("Can not ioctl(BLKGETSIZE)");
 	  exit(20);
 	}
       size=((unsigned long long)ls)*512;
@@ -153,18 +153,18 @@ static int get_blocksize(int fd)
 
   if( ioctl(fd,BLKBSZGET,&block_size))
     {
-	  fprintf(stderr,"Can not ioctl(BLKBSZGET)\n");
-	  exit(20);      
+      perror("Can not ioctl(BLKBSZGET)");
+      exit(20);      
     }
   return block_size;
 }
 
 void set_blocksize(int fd, int block_size)
 {
-  if( ioctl(fd,BLKBSZSET,block_size))
+  if( ioctl(fd,BLKBSZSET,&block_size))
     {
-	  fprintf(stderr,"Can not ioctl(BLKBSZSET)\n");
-	  exit(20);      
+      perror("Can not ioctl(BLKBSZSET)");
+      exit(20);      
     }
 }
 
@@ -177,7 +177,7 @@ int read_check(int fd,unsigned long block,int block_size,int run_number)
   offset = ((unsigned long long)block) * block_size;
   if(lseek64(fd,offset,SEEK_SET) == -1)
     {
-      fprintf(stderr,"Can not lseek(2) in input file/device\n");
+      perror("Can not lseek(2) in device");
       exit(20);
     }
 
@@ -208,7 +208,7 @@ void write_pattern(int fd,unsigned long block,int block_size,int run_number)
   offset = ((unsigned long long)block) * block_size;
   if(lseek64(fd,offset,SEEK_SET) == -1)
     {
-      fprintf(stderr,"Can not lseek(2) in input file/device\n");
+      perror("Can not lseek(2) in device");
       exit(20);
     }
 
@@ -296,7 +296,7 @@ int main(int argc, char** argv)
 	  fd = open(optarg,O_RDWR);
 	  if(fd==-1)
 	    {
-	      fprintf(stderr,"Can not open device\n");
+	      perror("Can not open device");
 	      exit(20);
 	    }
 	  break;
@@ -316,14 +316,14 @@ int main(int argc, char** argv)
 
   if( ! (datab=malloc(block_size)) ) 
     {
-      fprintf(stderr,"Can not malloc datab.\n");
+      perror("Can not malloc datab.");
       exit(20);
     }
   memset(datab,block_size,1);
 
   if( ! (latencyb=malloc(rl_blocks * sizeof(unsigned long))) ) 
     {
-      fprintf(stderr,"Can not malloc latencyb.\n");
+      perror("Can not malloc latencyb.");
       exit(20);
     }
 
