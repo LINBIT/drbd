@@ -177,7 +177,7 @@ const char *eh_names[] = {
 const char *dh_names[] = {
   [Reconnect]   = "reconnect",
   [DropNetConf] = "stand_alone",
-  [FreezeIO]    = "freeze_io" 
+  // [FreezeIO]    = "freeze_io" // TODO on the kernel side...
 };
 
 unsigned long resolv(const char* name)

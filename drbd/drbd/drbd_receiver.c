@@ -1637,6 +1637,10 @@ int drbdd_init(struct Drbd_thread *thi)
 		drbdd(mdev);
 		drbd_disconnect(mdev);
 		if (get_t_state(thi) == Exiting) break;
+		if(mdev->conf.on_disconnect == DropNetConf) {
+			set_cstate(mdev,StandAlone);
+			break;
+		}
 		else {
 			if (signal_pending(current)) {
 				drbd_flush_signals(current);
