@@ -1,10 +1,34 @@
-drbd (0.7-pre8-2) unstable; urgency=low
+drbd (0.7_pre10-1) unstable; urgency=low
+
+  * A fix to a generic bug in the bitmap code introduced with the -pre9
+    release (with the 64 bit work)
+  * A fix to a bug in the bitmap code only relevant for 64 bit platforms.
+  * Better 2.4.x compatibility and compatiblity to 2.4.x vendor kernels.
+  * Improvements in the way to deal with incompatible protocol releases.
+  * Added the "dialog-refresh" config option.
+
+  changes up to -pre9:
+  * Reenabled zero copy IO for protocols B and C. (Zero copy IO is not
+    used with protocol A)
+  * Implemented the unpopular user dialog in the boot process.
+  * Some fixes for Linux-2.4.x compatibility.
+  * drbd.conf man page updated
+  * Bugfixes for 64bit architectures
+  * Ensured protocol compatibility between hosts of different word sizes
+    (Tested with i386 and alpha)
+  * Support for meta-data on block devices with hardsect size != 512 Byte
+    (e.g. dasd on s390x)
+  * New debian subdir
+
+ -- Lars Ellenberg <l.g.e@web.de>  Fri, 09 Jul 2004 20:00:19 +0200
+
+drbd (0.7_pre8-2) unstable; urgency=low
   
   * fix up the modules source package
   
  -- Bernd Schubert <bernd-schubert@web.de>  Mon,  05 Jul 2004 00:57:38 -0100  
 
-drbd (0.7-pre8-1) unstable; urgency=low
+drbd (0.7_pre8-1) unstable; urgency=low
   
   * initial 0.7 debian package
   
@@ -53,7 +77,6 @@ drbd (0.6.12-1) unstable; urgency=low
 
  -- David Krovich <dkrovich@csee.wvu.edu>  Mon, 22 Mar 2004 00:04:35 -0500
 
-	
 drbd (0.6.10-3) unstable; urgency=low
   * Added back the drbd.postinst, drbd.postrm, and drbd.prerm scripts until
     I figure out why they aren't being handled by dh_installinit.  
@@ -129,7 +152,7 @@ drbd (0.6.9-1) unstable; urgency=low
     By Eric W. Biederman.
   * A maybe bugfix regarding calls to free_page() by Eric W. Biederman.
   * A cleanup patch to drbd_process_done_ee() by Eric W. Biederman.
-	
+
  -- Philipp Reisner <phil@linbit.com>  Thu, 27 Nov 2003 08:21:34 +0200
 
 drbd (0.6.8-1) unstable; urgency=low
@@ -173,7 +196,7 @@ drbd (0.6.5-1) unstable; urgency=low
   * Improved sample drbd.conf file
 
  -- Philipp Reisner <phil@linbit.com>  Sun, 06 Jul 2003 13:35:00 +0100
-	
+
 drbd (0.6.4-1) unstable; urgency=low
 
   * Reworked build system (i.e. better Makefiles)
