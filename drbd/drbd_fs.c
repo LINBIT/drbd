@@ -569,18 +569,18 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 
 	if (mdev->tl_hash_s != new_conf.max_epoch_size/8 ) {
-		new_tl_hash = kmalloc(mdev->tl_hash_s * sizeof(void*),
-				      GFP_KERNEL);
+		new_tl_hash=kmalloc((new_conf.max_epoch_size/8)*sizeof(void*),
+				    GFP_KERNEL);
 		if(!new_tl_hash) {
 			retcode=KMallocFailed;
 			goto fail_ioctl;
 		}
 	}
 
-	if (mdev->conf.two_primaries &&
+	if (new_conf.two_primaries &&
 	    ( mdev->ee_hash_s != new_conf.max_buffers/8 ) ) {
-		new_ee_hash = kmalloc(mdev->ee_hash_s * sizeof(void*),
-				      GFP_KERNEL);
+		new_ee_hash=kmalloc((new_conf.max_buffers/8)*sizeof(void*),
+				    GFP_KERNEL);
 		if(!new_ee_hash) {
 			retcode=KMallocFailed;
 			goto fail_ioctl;

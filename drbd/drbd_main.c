@@ -375,20 +375,14 @@ STATIC int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 	return !( ( s1 + (l1>>9) <= s2 ) || ( s1 >= s2 + (l2>>9) ) );
 }
 
-/* Return values:
- *
- * 0 ... no conflicting write
- * 1 ... a conflicting write, have not got ack by now.
- * 2 ... a conflicting write, have got also got ack.
- */
-int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags)
+drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
 	drbd_request_t * req;
 	sector_t sector = drbd_ee_get_sector(e);	
 	int size = drbd_ee_get_size(e);
-	int i, rv=0;
+	int i;
 
 	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
 
@@ -401,20 +395,10 @@ int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags)
 			if( overlaps(drbd_req_get_sector(req),
 				     drbd_req_get_size(req),
 				     sector,
-				     size) ) {
-				rv=1;
-				if( req->rq_status & RQ_DRBD_SENT ) rv++;
-				if( flags & TLHW_FLAG_SENT ) {
-					req->rq_status |= RQ_DRBD_SENT;
-				}
-				if( flags & TLHW_FLAG_RECVW ) {
-					req->rq_status |= RQ_DRBD_RECVW;
-				}
-				goto out;
-			} //overlaps()
+				     size) ) goto out;
 		} // hlist_for_each_entry()
 	}
-
+	req = NULL;
 	// Good, no conflict found
 	INIT_HLIST_NODE(&e->colision);
 	hlist_add_head( &e->colision, mdev->ee_hash + 
@@ -422,17 +406,18 @@ int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags)
  out:
 	spin_unlock_irq(&mdev->tl_lock);
 
-	return rv;
+	return req;
 }
 
-STATIC int ee_have_write(drbd_dev *mdev, drbd_request_t * req)
+STATIC struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev, 
+					     drbd_request_t * req)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
 	struct Tl_epoch_entry *ee;
 	sector_t sector = drbd_req_get_sector(req);
 	int size = drbd_req_get_size(req);
-	int i, rv=0;
+	int i;
 
 	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
 
@@ -445,19 +430,16 @@ STATIC int ee_have_write(drbd_dev *mdev, drbd_request_t * req)
 			if( overlaps(drbd_ee_get_sector(ee),
 				     drbd_ee_get_size(ee),
 				     sector,
-				     size) ) {
-				rv=1;
-				goto out;
-			} //overlaps()
+				     size) ) goto out;
 		} // hlist_for_each_entry()
 	}
-
+	ee = NULL;
 	// Good, no conflict found
 	_tl_add(mdev,req);
  out:
 	spin_unlock_irq(&mdev->tl_lock);
 
-	return rv;
+	return ee;
 }
 
 /**
@@ -1000,6 +982,16 @@ int drbd_send_sizes(drbd_dev *mdev)
 	return ok;
 }
 
+int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req)
+{
+	Drbd_Discard_Packet p;
+
+	p.block_id = (unsigned long)req;
+	p.seq_num  = cpu_to_be32(req->seq_num);
+
+	return drbd_send_cmd(mdev,mdev->meta.socket,DiscardNote,
+			     (Drbd_Header*)&p,sizeof(p));
+}
 
 int drbd_send_state(drbd_dev *mdev)
 {
@@ -1307,7 +1299,8 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	p.sector   = cpu_to_be64(drbd_req_get_sector(req));
 	p.block_id = (unsigned long)req;
-	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
+	p.seq_num  = cpu_to_be32( req->seq_num =
+				  atomic_add_return(1,&mdev->packet_seq) );
 
 	/* About tl_add():
 	1. This must be within the semaphor,

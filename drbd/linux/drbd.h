@@ -77,6 +77,7 @@ struct disk_config {
 	IN int      meta_device;
 	IN int      meta_index;
 	IN int      split_brain_fix;
+	const int   _pad;
 };
 
 enum disconnect_handler {

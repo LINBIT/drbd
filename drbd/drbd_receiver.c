@@ -1011,21 +1011,26 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	return ok;
 }
 
-STATIC int drbd_chk_discard(drbd_dev *mdev,u64 block_id,int seq_num)
+STATIC int drbd_chk_discard(drbd_dev *mdev,struct Tl_epoch_entry *e)
 {
 	struct drbd_discard_note *dn;
 	struct list_head *le;
 
 	MUST_HOLD(&mdev->peer_seq_lock);
-
+ start_over:
 	list_for_each(le,&mdev->discard) {
 		dn = list_entry(le, struct drbd_discard_note, list);
-		if( dn->seq_num == seq_num ) {
-			D_ASSERT( dn->block_id == block_id );
+		if( dn->seq_num == mdev->peer_seq ) {
+			D_ASSERT( dn->block_id == e->block_id );
 			list_del(le);
 			kfree(dn);
 			return 1;
-		} 
+		}
+		if( dn->seq_num < mdev->peer_seq ) {
+			list_del(le);
+			kfree(dn);
+			goto start_over;
+		}
 	}
 	return 0;
 }
@@ -1035,8 +1040,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 {
 	sector_t sector;
 	struct Tl_epoch_entry *e;
+	drbd_request_t * req;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
-	int header_size,data_size, packet_seq,discard=0;
+	int header_size, data_size, packet_seq, discard;
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -1052,24 +1058,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
-	/* This wait_event is here to make sure that never ever an
-	   DATA packet traveling via sock can overtake an ACK packet
-	   traveling on msock 
-	   PRE TODO: Wrap around of seq_num !!! 
-	*/
-	if (mdev->conf.two_primaries) {
-		packet_seq = be32_to_cpu(p->seq_num);
-		if( wait_event_interruptible(mdev->cstate_wait, 
-					     packet_seq <= peer_seq(mdev)+1) )
-			return FALSE;
-
-		spin_lock(&mdev->peer_seq_lock); 
-		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
-		/* is update_peer_seq(mdev,packet_seq); */
-		discard = drbd_chk_discard(mdev,p->block_id,packet_seq);
-		spin_unlock(&mdev->peer_seq_lock);
-	}
-
 	sector = be64_to_cpu(p->sector);
 	e = read_in_block(mdev,data_size);
 	if (!e) return FALSE;
@@ -1084,50 +1072,72 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		return TRUE;
 	}
 
-	if(discard) {
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
-		WARN("Concurrent write! [DISCARD BY LIST] sec=%lu\n",
-		     (unsigned long)sector);
-		return TRUE;
-	}
-
-	switch( req_have_write(mdev, e, 0) ) {
-	case 2: /* Conflicting write, got ACK */
-		/* write afterwards ...*/
-		WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
-		     (unsigned long)sector);
-		if( wait_event_interruptible(mdev->cstate_wait,
-		     !req_have_write(mdev,e,TLHW_FLAG_RECVW))) {
-			spin_lock_irq(&mdev->ee_lock);
-			drbd_put_ee(mdev,e);
-			spin_unlock_irq(&mdev->ee_lock);
+	/* This wait_event is here to make sure that never ever an
+	   DATA packet traveling via sock can overtake an ACK packet
+	   traveling on msock 
+	   PRE TODO: Wrap around of seq_num !!! 
+	*/
+	if (mdev->conf.two_primaries) {
+		packet_seq = be32_to_cpu(p->seq_num);
+		if( wait_event_interruptible(mdev->cstate_wait, 
+					     packet_seq <= peer_seq(mdev)+1) )
 			return FALSE;
-		}
-	case 1: /* Conflicting write, no ACK by now*/
-		if (test_bit(UNIQUE,&mdev->flags)) {
+
+		spin_lock(&mdev->peer_seq_lock); 
+		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
+		/* is update_peer_seq(mdev,packet_seq); */
+		discard = drbd_chk_discard(mdev,e);
+		spin_unlock(&mdev->peer_seq_lock);
+
+		if(discard) {
 			spin_lock_irq(&mdev->ee_lock);
 			drbd_put_ee(mdev,e);
 			spin_unlock_irq(&mdev->ee_lock);
-			WARN("Concurrent write! [DISCARD BY FLAG] sec=%lu\n",
+			WARN("Concurrent write! [DISCARD BY LIST] sec=%lu\n",
 			     (unsigned long)sector);
 			return TRUE;
-		} else {
-			/* write afterwards, do not expect ACK */
-			WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
-			     (unsigned long)sector);
-			if( wait_event_interruptible(mdev->cstate_wait,
-			      !req_have_write(mdev,e,
-				            TLHW_FLAG_RECVW|TLHW_FLAG_SENT))) {
-				spin_lock_irq(&mdev->ee_lock);
-				drbd_put_ee(mdev,e);
-				spin_unlock_irq(&mdev->ee_lock);
-				return FALSE;
+		}
+
+		req = req_have_write(mdev, e);
+		
+		if(req) {
+			if( req->rq_status & RQ_DRBD_SENT ) {
+				/* Conflicting write, got ACK */
+				/* write afterwards ...*/
+				WARN("Concurrent write! [W AFTERWARDS] "
+				     "sec=%lu\n",(unsigned long)sector);
+				if( wait_event_interruptible(mdev->cstate_wait,
+					       !req_have_write(mdev,e))) {
+					spin_lock_irq(&mdev->ee_lock);
+					drbd_put_ee(mdev,e);
+					spin_unlock_irq(&mdev->ee_lock);
+					return FALSE;
+				}
+			} else {
+				/* Conflicting write, no ACK by now*/
+				if (test_bit(UNIQUE,&mdev->flags)) {
+					spin_lock_irq(&mdev->ee_lock);
+					drbd_put_ee(mdev,e);
+					spin_unlock_irq(&mdev->ee_lock);
+					WARN("Concurrent write! [DISCARD BY FLAG] sec=%lu\n",
+					     (unsigned long)sector);
+					return TRUE;
+				} else {
+					/* write afterwards do not exp ACK */
+					WARN("Concurrent write! [W AFTERWARDS] sec=%lu\n",
+					     (unsigned long)sector);
+					drbd_send_discard(mdev,req);
+					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+					if( wait_event_interruptible(mdev->cstate_wait,
+								     !req_have_write(mdev,e))) {
+						spin_lock_irq(&mdev->ee_lock);
+						drbd_put_ee(mdev,e);
+						spin_unlock_irq(&mdev->ee_lock);
+						return FALSE;
+					}
+				}
 			}
 		}
-		/* case 0:   no conflicting write. */
-		/* write it to disk now... */
 	}
 
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
@@ -2265,6 +2275,27 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	return TRUE;
 }
 
+STATIC int got_Discard(drbd_dev *mdev, Drbd_Header* h)
+{
+	Drbd_Discard_Packet *p = (Drbd_Discard_Packet*)h;
+	struct drbd_discard_note *dn;
+
+	dn = kmalloc(sizeof(struct drbd_discard_note),GFP_KERNEL);
+	if(!dn) {
+		ERR("kmalloc(drbd_discard_note) failed.");
+		return FALSE;
+	}
+
+	dn->block_id = (long)p->block_id;
+	dn->seq_num = be32_to_cpu(p->seq_num);
+
+	spin_lock(&mdev->peer_seq_lock);
+	list_add(&dn->list,&mdev->discard);
+	spin_unlock(&mdev->peer_seq_lock);
+
+	return TRUE;
+}
+
 struct asender_cmd {
 	size_t pkt_size;
 	int (*process)(drbd_dev *mdev, Drbd_Header* h);
@@ -2290,6 +2321,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		[NegDReply] ={ sizeof(Drbd_BlockAck_Packet),  got_NegDReply },
 		[NegRSDReply]={sizeof(Drbd_BlockAck_Packet),  got_NegRSDReply},
 		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet),got_BarrierAck },
+		[DiscardNote]={sizeof(Drbd_Discard_Packet),   got_Discard },
 	};
 
 	sprintf(current->comm, "drbd%d_asender", (int)(mdev-drbd_conf));

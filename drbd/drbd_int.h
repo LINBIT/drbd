@@ -307,6 +307,7 @@ typedef enum {
 	NegDReply,    // Local disk is broken...
 	NegRSDReply,  // Local disk is broken...
 	BarrierAck,
+	DiscardNote,
 
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
@@ -345,7 +346,8 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[NegAck]           = "NegAck",
 		[NegDReply]        = "NegDReply",
 		[NegRSDReply]      = "NegRSDReply",
-		[BarrierAck]       = "BarrierAck"
+		[BarrierAck]       = "BarrierAck",
+		[DiscardNote]      = "DiscardNote"
 	};
 
 	if (cmd == HandShake) return "HandShake";
@@ -490,6 +492,13 @@ typedef struct {
 	u32       bit_map_gen[5];
 } __attribute((packed)) Drbd06_Parameter_P;
 
+typedef struct {
+	Drbd_Header head;
+	u64         block_id;
+	u32         seq_num;
+	u32         pad;
+} __attribute((packed)) Drbd_Discard_Packet;
+
 typedef union {
 	Drbd_Header              head;
 	Drbd_HandShake_Packet    HandShake;
@@ -560,13 +569,14 @@ struct drbd_work {
 struct drbd_barrier;
 struct drbd_request {
 	struct drbd_work w;
-	long magic;
-	int rq_status;
 	struct drbd_barrier *barrier; // The next barrier.
 	struct bio *master_bio;       // master bio pointer
 	struct bio *private_bio;
 	struct hlist_node colision;
 	drbd_dev *mdev;
+	long magic;
+	int rq_status;
+	int seq_num;
 };
 
 struct drbd_barrier {
@@ -790,9 +800,7 @@ extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 extern void tl_clear(drbd_dev *mdev);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
-#define TLHW_FLAG_SENT   0x10000000
-#define TLHW_FLAG_RECVW  0x20000000
-extern int req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e, int flags);
+extern drbd_request_t * req_have_write(drbd_dev *, struct Tl_epoch_entry *);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
@@ -822,6 +830,7 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
+extern int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req);
 extern void drbd_free_ll_dev(drbd_dev *mdev);
 extern int drbd_io_error(drbd_dev* mdev);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
