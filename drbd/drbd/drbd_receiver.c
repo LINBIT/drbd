@@ -509,17 +509,14 @@ inline int receive_data(int minor,int data_size)
 	mark_buffer_uptodate(bh, 0);
 	mark_buffer_dirty(bh);
 
-//	generic_make_request(WRITE,bh);
-	ll_rw_block(WRITE, 1, &bh);
-
 	spin_lock_irq(&drbd_conf[minor].ee_lock);
 	e=drbd_get_ee(drbd_conf+minor);
 	e->bh=bh;
 	e->block_id=header.block_id;
 	if(header.block_id == ID_SYNCER) {
-	  list_add(&e->list,&drbd_conf[minor].sync_ee);
+		list_add(&e->list,&drbd_conf[minor].sync_ee);
 	} else {
-	  list_add(&e->list,&drbd_conf[minor].active_ee);
+		list_add(&e->list,&drbd_conf[minor].active_ee);
 	}
 	spin_unlock_irq(&drbd_conf[minor].ee_lock);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
@@ -527,6 +524,9 @@ inline int receive_data(int minor,int data_size)
 #else
 	bh->b_private = e;
 #endif
+
+//	generic_make_request(WRITE,bh);
+	ll_rw_block(WRITE, 1, &bh);
 
 	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
 		inc_unacked(minor);
