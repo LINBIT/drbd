@@ -89,7 +89,7 @@ runForAll ()
 {
 	pushd . > /dev/null
 		cd $CONFIG
-		DEVICES=`ls drbd[0-9] 2>/dev/null`
+		DEVICES=`ls drbd[0-9] | sort 2>/dev/null`
 	popd > /dev/null
 
 	for D in $DEVICES; do
