@@ -616,7 +616,6 @@ enum {
 	SEND_PING,		// whether asender should send a ping asap
 	WRITER_PRESENT,		// somebody opened us with write intent
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
-	DO_NOT_INC_CONCNT,	// well, don't ...
 	ON_PRI_INC_HUMAN,       // When we become primary increase human-count
 	ON_PRI_INC_TIMEOUTEX,   // When " - "  increase timeout-count
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
@@ -965,6 +964,7 @@ extern int drbd_determin_dev_size(drbd_dev*);
 extern int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
+drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
 
 // drbd_worker.c
 extern int drbd_worker(struct Drbd_thread *thi);

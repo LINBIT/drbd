@@ -34,12 +34,11 @@ DRBD 0.8 Roadmap
   DRDBs behaviour after a split-brain situation:
 
   after-sb-2pri = 
-   disconnect     No automatic resynchronisation gets performed. One
-                  node should drop its net-conf (preferable the
-                  node that would become sync-target)
+   disconnect     No automatic resynchronisation gets performed. Both
+                  nodes should drop their net-conf
                   DEFAULT.
    discard-younger-primary
-                  Auto sync from is the oder primary (curr.behaviour i.t.s.)
+                  Auto sync from is the older primary (curr.behaviour i.t.s.)
    discard-older-primary
                   Auto sync from is the younger primary
    discard-less-modified
@@ -102,7 +101,9 @@ DRBD 0.8 Roadmap
 
   remove option value: on-disconnect=suspend_io
 
-  introduce: 
+  introduce:
+    split-brain-fix;
+    suspend-io-split-brain;pdsk-unknown;
     peer-state-unknown=suspend_io
     peer-state-unknown=continue_io
 

@@ -1367,7 +1367,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	consider_sync = ((nconn=mdev->state.s.conn) == WFReportParams);
 	if(drbd_determin_dev_size(mdev)) consider_sync=0;
 
-	if(test_bit(DISKLESS, &mdev->flags)) consider_sync=0;
+	if(mdev->state.s.disk==Diskless) consider_sync=0;
 
 	drbd_bm_unlock(mdev); // }
 
@@ -1632,23 +1632,6 @@ STATIC void drbdd(drbd_dev *mdev)
 	}
 }
 
-void drbd_khelper(drbd_dev *mdev, char* cmd)
-{
-	int ret;
-	char mb[12];
-	char *argv[] = {"/sbin/drbdadm", cmd, mb, NULL };
-	static char *envp[] = { "HOME=/",
-				"TERM=linux",
-				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
-				NULL };
-	
-	snprintf(mb,12,"minor-%d",(int)(mdev-drbd_conf));
-	ret = call_usermodehelper("/sbin/drbdadm",argv,envp,1);
-	if(ret) {
-		ERR("call_usermodhelper failed with %d\n",(ret>>8) & 0xff);
-	}
-}
-
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->state.s.conn < Connected);
@@ -1756,13 +1739,10 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	if (mdev->state.s.role == Primary) {
-		if(!test_bit(DO_NOT_INC_CONCNT,&mdev->flags))
-			drbd_md_inc(mdev,ConnectedCnt);
+		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
+		drbd_request_state(mdev,NS(pdsk,nps));
 		drbd_md_write(mdev);
 	}
-	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-
-	drbd_khelper(mdev,"on-disconnect");
 
 	INFO("Connection lost.\n");
 }

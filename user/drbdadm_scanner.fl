@@ -276,12 +276,12 @@ PORT			  {WSC}port{ASSIGN}{NUM}
 <HANDLERS>{
   pri-on-incon-degr	do_assign(STRING); CP; return TK_PRI_ON_INCON_DEGR;
   pri-sees-sec-with-higher-gc	do_assign(STRING); CP; return TK_PRI_SEES_SEC_WITH_HIGHER_GC;
-  on-disconnect		do_assign(STRING); CP; return TK_ON_DISCONNECT;
+  outdate-peer		do_assign(STRING); CP; return TK_OUTDATE_PEER;
   {NDELIM}		{
 	  		  expect_error(
 				"one of 'pri-on-incon-degr|"
 				"pri-sees-sec-with-higher-gc|"
-				"on-disconnect");
+				"outdate-peer");
 			}
 }
 

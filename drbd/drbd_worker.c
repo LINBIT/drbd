@@ -757,10 +757,10 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	   */
 	drbd_global_unlock();
 
-	if (mdev->cstate == SyncTarget) {
+	if (mdev->state.s.conn == SyncTarget) {
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		mod_timer(&mdev->resync_timer,jiffies);
-	} else if (mdev->cstate == PausedSyncT) { 
+	} else if (mdev->state.s.conn == PausedSyncT) { 
 		D_ASSERT(test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		clear_bit(STOP_SYNC_TIMER,&mdev->flags);
 	}

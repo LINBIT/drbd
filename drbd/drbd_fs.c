@@ -588,6 +588,50 @@ FIXME
 	return -EINVAL;
 }
 
+int drbd_khelper(drbd_dev *mdev, char* cmd)
+{
+	char mb[12];
+	char *argv[] = {"/sbin/drbdadm", cmd, mb, NULL };
+	static char *envp[] = { "HOME=/",
+				"TERM=linux",
+				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+				NULL };
+	
+	snprintf(mb,12,"minor-%d",(int)(mdev-drbd_conf));
+	return call_usermodehelper("/sbin/drbdadm",argv,envp,1);
+}
+
+drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
+{
+	int r;
+	drbd_disks_t nps;
+
+	D_ASSERT(mdev->state.s.pdsk == DUnknown);
+
+	r=drbd_khelper(mdev,"outdate-peer");
+
+	switch( (r>>8) && 0xff ) {
+	case 3: /* peer is inconsistent */
+		nps = Inconsistent;
+		break;
+	case 4: /* peer is outdated */
+		nps = Outdated;
+		break;
+	case 5: /* peer was down, increase GENCNT ... */
+		drbd_md_inc(mdev,ConnectedCnt);
+		nps = Outdated;
+		break;
+	case 6: /* Peer is primary */
+		nps = DUnknown;
+		break;
+	default:
+		nps = DUnknown;
+		ERR("outdate-peer helper returned %d (%d)\n",(r>>8)&&0xff,r);
+	}
+
+	return nps;
+}
+
 int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 {
 	int r,forced = 0;
@@ -637,6 +681,10 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 
 			forced = 1;
 		}
+	}
+	if ( r == -7 ) {
+		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
+		r = drbd_request_state(mdev,NS2(role,newstate & 0x3,pdsk,nps));
 	}
 	if ( r <= 0) { 
 		print_st_err(mdev,os,ns,r);
@@ -823,7 +871,7 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	if( mdev->state.s.disk != UpToDate ) { 
+	if( mdev->state.s.disk < Outdated ) { 
 		r=-999;
 	} else {
 		r = _drbd_set_state(mdev, _NS(disk,Outdated), 0);
@@ -833,12 +881,12 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev)
 	
 	if( r == 2 ) return 0;
 	if( r == -999 ) {
-		return -EBADMSG; // TODO better errnos.
+		return -EINVAL;
 	}
 	after_state_ch(mdev,os,ns); // TODO decide if neccesarry.
 	
 	if( r <= 0 ) {
-		return -EISCONN;
+		return -EIO;
 	}
 	
 	drbd_md_write(mdev);
@@ -973,7 +1021,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		drbd_sync_me(mdev); /* FIXME what if fsync returns error */
 
-		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 		drbd_thread_stop(&mdev->receiver);
 
 		if ( mdev->state.s.conn == StandAlone && 

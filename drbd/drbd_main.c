@@ -419,8 +419,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	/*  State sanitising  */
 	if( ns.s.conn < Connected ) {
 		ns.s.peer = Unknown;
-		ns.s.pdsk = DUnknown;
-		if( ns.s.disk > Consistent ) ns.s.disk = Consistent;
+		if ( ns.s.pdsk > DUnknown ) ns.s.pdsk = DUnknown;
 	}
 
 	if( ns.s.conn > Connected && ns.s.disk <= Failed ) {
@@ -478,14 +477,16 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if( !mdev->conf.two_primaries && 
 		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
 
-		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
-		    ns.s.conn < Connected ) rv=-2;
+		if( ns.s.role == Primary && ns.s.conn < Connected &&
+		    ns.s.disk <= Outdated ) rv=-2;
+
+		if( ns.s.role == Primary && ns.s.conn < Connected &&
+		    ns.s.pdsk >= Unknown ) rv=-7;
 
 		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
 		    ns.s.pdsk <= Inconsistent ) rv=-2;
 
-		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
-		    ns.s.conn < Connected ) rv=-3;
+		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent ) rv=-3;
 
 		if( ns.s.conn > Connected && 
 		    ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
@@ -1637,7 +1638,6 @@ static void __exit drbd_cleanup(void)
 				drbd_set_role(mdev,Secondary);
 				up(&mdev->device_mutex);
 				drbd_sync_me(mdev);
-				set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 				drbd_thread_stop(&mdev->receiver);
 				drbd_thread_stop(&mdev->worker);
 			}

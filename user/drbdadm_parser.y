@@ -249,6 +249,7 @@ void check_meta_disk()
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
 %token <txt> TK_ALLOW_TWO_PRIMARIES
 %token <txt> TK_PRI_ON_INCON_DEGR TK_PRI_SEES_SEC_WITH_HIGHER_GC
+%token <txt> TK_OUTDATE_PEER
 
 %type <txt> hostname resource_name
 %type <d_option> disk_stmts disk_stmt
@@ -430,5 +431,5 @@ handler_stmts:	  /* empty */	           { $$ = 0; }
 handler_stmt:	  TK_PRI_ON_INCON_DEGR TK_STRING	{ $$=new_opt($1,$2); }
 		| TK_PRI_SEES_SEC_WITH_HIGHER_GC TK_STRING
 		{ $$=new_opt($1,$2); }
-		| TK_ON_DISCONNECT TK_STRING		{ $$=new_opt($1,$2); }
+		| TK_OUTDATE_PEER TK_STRING		{ $$=new_opt($1,$2); }
 		;

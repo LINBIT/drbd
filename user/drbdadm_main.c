@@ -69,7 +69,7 @@ struct adm_cmd {
 
 struct deferred_cmd
 {
-  int (* function)(struct d_resource*,char* );
+  int (* function)(struct d_resource*,const char* );
   struct d_resource* res;
   struct deferred_cmd* next;
 };
@@ -116,7 +116,7 @@ volatile int alarm_raised;
 
 struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
 
-void schedule_dcmd( int (* function)(struct d_resource*,char* ),
+void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 		    struct d_resource* res,
 		    int order)
 {
@@ -195,7 +195,7 @@ struct adm_cmd cmds[] = {
   { "set-gc",            admm_generic,          0, 1 },
   { "pri-on-incon-degr", adm_khelper,           0, 1 },
   { "pri-sees-sec-with-higher-gc", adm_khelper, 0, 1 },
-  { "on-disconnect",     adm_khelper,           0, 1 },
+  { "outdate-peer",      adm_khelper,           0, 1 },
   { "wait_con_int",      adm_wait_ci,           1, 0 },
   { "sh-resources",      sh_resources,          0, 0 },
   { "sh-mod-parms",      sh_mod_parms,          0, 0 },

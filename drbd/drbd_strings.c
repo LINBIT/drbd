@@ -65,6 +65,7 @@ static const char *drbd_state_sw_errors[] = {
 	[4] = "Refusing to be inconsistent on both nodes",
 	[5] = "Refusing to be syncing and diskless",
 	[6] = "Refusing to be Outdated while Connected",
+	[7] = "Refusing to be Primary while peer is not outdated",
 };
 
 const char* conns_to_name(drbd_conns_t s) {
