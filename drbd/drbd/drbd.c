@@ -1279,6 +1279,7 @@ __initfunc(int drbd_init(void))
 		set_device_ro(MKDEV(MAJOR_NR, i), FALSE /*TRUE */ );
 		drbd_conf[i].sock = 0;
 		drbd_conf[i].lo_file = 0;
+		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].state = Secondary;
 		drbd_conf[i].cstate = Unconfigured;
 		drbd_conf[i].send_cnt = 0;
@@ -1735,16 +1736,19 @@ inline int receive_param(int minor,int command)
 	if(be32_to_cpu(param.state) == Primary &&
 	   drbd_conf[minor].state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME": incompatible states \n");
+		drbd_conf[minor].receiver.exit = 1;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.version)!=MOD_VERSION) {
 	        printk(KERN_ERR DEVICE_NAME": incompatible releases \n");
+		drbd_conf[minor].receiver.exit = 1;
 		return FALSE;
 	}
 
 	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
 	        printk(KERN_ERR DEVICE_NAME": incompatible protocols \n");
+		drbd_conf[minor].receiver.exit = 1;
 		return FALSE;
 	}
 
@@ -1905,6 +1909,8 @@ int drbdd_init(void *arg)
 	}
 
 	printk(KERN_DEBUG DEVICE_NAME ": receiver exiting/m=%d\n", minor);
+
+	set_cstate(&drbd_conf[minor],Unconfigured);
 
 	drbd_thread_exit(thi);
 	return 0;
