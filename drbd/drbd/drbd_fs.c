@@ -403,7 +403,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		if (arg != Primary && arg != Secondary && arg != PRIMARY_PLUS)
+		if (arg & ~(Primary|Secondary|Human|DontBlameDrbd) )
 			return -EINVAL;
 
 		err = drbd_set_state(minor,arg);

@@ -441,8 +441,9 @@ int do_disk_conf(int drbd_fd,
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_CONFIG,cn);
   if(err)
     {
+      err=errno;
       perror("ioctl() failed");
-      if(errno) print_config_ioctl_err(cn->ret_code);
+      if(err) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
   return 0;
@@ -498,8 +499,9 @@ int do_net_conf(int drbd_fd,
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_NET_CONFIG,cn);
   if(err)
     {
+      err=errno;
       perror("ioctl() failed");
-      if(errno) print_config_ioctl_err(cn->ret_code);
+      if(err) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
   return 0;
@@ -512,8 +514,9 @@ int set_state(int drbd_fd,Drbd_State state)
   int err;
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
   if(err) {
+    err=errno;
     perror("ioctl() failed");
-    switch(errno) 
+    switch(err) 
       {
       case EBUSY:
 	fprintf(stderr,"Someone has opened the device for RW access!\n");
@@ -586,11 +589,12 @@ int cmd_sec_rem(int drbd_fd,char** argv,int argc)
   err=ioctl(drbd_fd,DRBD_IOCTL_SECONDARY_REM);
   if(err) 
     {
+      err=errno;
       perror("ioctl() failed");
-      if(errno==ENXIO)
+      if(err==ENXIO)
 	fprintf(stderr,"Not connected to remote DRBD device!\n");
     
-      if(errno==ESRCH) 
+      if(err==ESRCH) 
 	{
 	  fprintf(stderr,"remote DRBD device is already in Secondary state\n");
 	  return 1;
@@ -709,10 +713,11 @@ int cmd_replicate(int drbd_fd,char** argv,int argc)
   err=ioctl(drbd_fd,DRBD_IOCTL_DO_SYNC_ALL);
   if(err)
     {
+      err=errno;
       perror("ioctl() failed");
-      if(errno==EINPROGRESS)
+      if(err==EINPROGRESS)
 	fprintf(stderr,"Can not start SyncAll. No Primary!\n");
-      if(errno==ENXIO)
+      if(err==ENXIO)
 	fprintf(stderr,"Can not start SyncAll. Not connected!\n");
       return 20;
     }
@@ -726,10 +731,11 @@ int cmd_down(int drbd_fd,char** argv,int argc)
   err=ioctl(drbd_fd,DRBD_IOCTL_UNCONFIG_BOTH);
   if(err)
     {
+      err=errno;
       perror("ioctl() failed");
-      if(errno==ENXIO)
+      if(err==ENXIO)
 	fprintf(stderr,"Device is not configured!\n");
-      if(errno==EBUSY)
+      if(err==EBUSY)
 	fprintf(stderr,"Someone has opened the device!\n");
       return 20;
     }
@@ -743,8 +749,9 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc)
   err=ioctl(drbd_fd,DRBD_IOCTL_UNCONFIG_NET);
   if(err)
     {
+      err=errno;
       perror("ioctl() failed");
-      if(errno==ENXIO)
+      if(err==ENXIO)
 	fprintf(stderr,"Device is not configured!\n");
       return 20;
     }
