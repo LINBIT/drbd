@@ -135,18 +135,13 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
  */
 int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 {
-	struct Drbd_Conf* mdev=bio->bi_private;
-	drbd_request_t *req;
+	drbd_request_t *req=bio->bi_private;
+	struct Drbd_Conf* mdev=req->mdev;
 	sector_t rsector;
 
 	// see above
 	ERR_IF (bio->bi_size)
 		return 1;
-
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	req = container_of(bio,struct drbd_request,private_bio);
-	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	drbd_chk_io_error(mdev,error);
 	rsector = drbd_req_get_sector(req);
@@ -154,6 +149,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_end_req(req, RQ_DRBD_LOCAL, (error == 0), rsector);
 	drbd_al_complete_io(mdev,rsector);
 	dec_local(mdev);
+	bio_put(bio);
 	return 0;
 }
 
@@ -161,17 +157,12 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
  */
 int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 {
-	struct Drbd_Conf* mdev = bio->bi_private;
-	drbd_request_t *req;
+	drbd_request_t *req=bio->bi_private;
+	struct Drbd_Conf* mdev=req->mdev;
 
 	// see above
 	ERR_IF (bio->bi_size)
 		return 1;
-
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
-
-	req = container_of(bio,struct drbd_request,private_bio);
-	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	/* READAs may fail.
 	 * upper layers need to be able to handle that themselves */
@@ -194,6 +185,7 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 		mempool_free(req,drbd_request_mempool);
 	}
 
+	bio_put(bio);
 	dec_local(mdev);
 	return 0;
 }

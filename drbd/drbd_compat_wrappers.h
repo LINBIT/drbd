@@ -69,7 +69,7 @@ static inline void drbd_bio_endio(struct bio *bio, int uptodate)
 
 static inline drbd_dev* drbd_req_get_mdev(struct drbd_request *req)
 {
-	return (drbd_dev*) req->private_bio.bi_private;
+	return (drbd_dev*) req->mdev;
 }
 
 static inline sector_t drbd_req_get_sector(struct drbd_request *req)
@@ -79,9 +79,14 @@ static inline sector_t drbd_req_get_sector(struct drbd_request *req)
 
 static inline unsigned short drbd_req_get_size(struct drbd_request *req)
 {
-	drbd_dev* mdev = req->private_bio.bi_private;
+	drbd_dev* mdev = req->mdev;
 	D_ASSERT(req->master_bio->bi_size);
 	return req->master_bio->bi_size;
+}
+
+static inline drbd_bio_t* drbd_req_private_bio(struct drbd_request *req)
+{
+	return req->private_bio;
 }
 
 static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
@@ -111,10 +116,8 @@ static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
  */
 static inline char *drbd_bio_kmap(struct bio *bio)
 {
-	struct bio_vec *bvec;
+	struct bio_vec *bvec = bio_iovec(bio);
 	unsigned long addr;
-
-	bvec = bio_iovec_idx(bio, bio->bi_idx);
 
 	addr = (unsigned long) kmap(bvec->bv_page);
 
@@ -126,16 +129,15 @@ static inline char *drbd_bio_kmap(struct bio *bio)
 
 static inline void drbd_bio_kunmap(struct bio *bio)
 {
-	struct bio_vec *bvec;
+	struct bio_vec *bvec = bio_iovec(bio);
 
-	bvec = bio_iovec_idx(bio, bio->bi_idx);
 	kunmap(bvec->bv_page);
 }
 
 #else
 static inline char *drbd_bio_kmap(struct bio *bio)
 {
-	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	struct bio_vec *bvec = bio_iovec(bio);
 	return page_address(bvec->bv_page) + bvec->bv_offset;
 }
 static inline void drbd_bio_kunmap(struct bio *bio)
@@ -148,16 +150,16 @@ static inline void drbd_ee_init(struct Tl_epoch_entry *e,struct page *page)
 {
 	struct bio * const bio = &e->private_bio;
 	struct bio_vec * const vec = &e->ee_bvec;
-	memset(e, 0, sizeof(*e));
 
-	// bio_init(&bio); memset did it for us.
+	memset(e, 0, sizeof(*e));
+	bio_init(bio);
+
 	bio->bi_io_vec = vec;
-	vec->bv_page   = page;
-	vec->bv_len    =
-	bio->bi_size   = PAGE_SIZE;
-	bio->bi_max_vecs = 1;
 	bio->bi_destructor = NULL;
-	atomic_set(&bio->bi_cnt, 1);
+	vec->bv_page = page;
+	bio->bi_size = vec->bv_len = PAGE_SIZE;
+	bio->bi_max_vecs = bio->bi_vcnt = 1;
+	vec->bv_offset = 0;
 
 	e->block_id = ID_VACANT;
 }
@@ -177,20 +179,24 @@ drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
 		    sector_t sector, int size)
 {
 	struct bio * const bio = &e->private_bio;
-
+	struct bio_vec * const vec = &e->ee_bvec;
+	struct page * const page = vec->bv_page;
 	D_ASSERT(mdev->backing_bdev);
 
-	bio->bi_flags  = 1 << BIO_UPTODATE;
-	bio->bi_io_vec->bv_len =
-	bio->bi_size    = size;
-	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_sector  = sector;
+	/* Clear plate. */
+	bio_init(bio);
+
+	bio->bi_io_vec = vec;
+	bio->bi_destructor = NULL;
+	vec->bv_page = page;
+	vec->bv_offset = 0;
+	bio->bi_max_vecs = bio->bi_vcnt = 1;
+
+	bio->bi_bdev = mdev->backing_bdev;
 	bio->bi_private = mdev;
-	bio->bi_next    = 0;
-	bio->bi_idx     = 0; // for blk_recount_segments
-	bio->bi_vcnt    = 1; // for blk_recount_segments
-	e->ee_sector = sector;
-	e->ee_size = size;
+
+	e->ee_sector = bio->bi_sector = sector;
+	e->ee_size = bio->bi_size = bio->bi_io_vec->bv_len = size;
 }
 
 static inline void
@@ -212,38 +218,36 @@ drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
 static inline void
 drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 {
-	struct bio * const bio     = &req->private_bio;
-	struct bio * const bio_src =  req->master_bio;
+	struct bio *bio;
 
-	bio_init(bio); // bio->bi_flags   = 0;
-	__bio_clone(bio,bio_src);
+	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
 	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_private = mdev;
+	bio->bi_private = req;
 	bio->bi_end_io  = drbd_dio_end;
 	bio->bi_next    = 0;
 
 	req->rq_status = RQ_DRBD_NOTHING;
+	req->mdev      = mdev;
 }
 
 static inline void
 drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 {
-	struct bio * const bio     = &req->private_bio;
-	struct bio * const bio_src =  req->master_bio;
+	struct bio *bio;
 
-	bio_init(bio); // bio->bi_flags   = 0;
-	__bio_clone(bio,bio_src);
+	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
 	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_private = mdev;
+	bio->bi_private = req;
 	bio->bi_end_io  = drbd_read_bi_end_io;	// <- only difference
 	bio->bi_next    = 0;
 
 	req->rq_status = RQ_DRBD_NOTHING;
+	req->mdev      = mdev;
 }
 
 static inline struct page* drbd_bio_get_page(struct bio *bio)
 {
-	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	struct bio_vec *bvec = bio_iovec(bio);
 	return bvec->bv_page;
 }
 
@@ -310,7 +314,7 @@ static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 
 static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
 {
-	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
+	struct bio_vec *bvec = bio_iovec(bio);
 	struct page *page = bvec->bv_page;
 	size_t size = bvec->bv_len;
 	int offset = bvec->bv_offset;

@@ -341,7 +341,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		else            mdev->read_cnt += size>>9;
 
 		// in 2.4.X, READA are submitted as READ.
-		drbd_generic_make_request(rw,&req->private_bio);
+		drbd_generic_make_request(rw,drbd_req_private_bio(req));
 	}
 
 	// up_read(mdev->device_lock);

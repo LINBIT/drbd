@@ -564,8 +564,9 @@ struct drbd_request {
 	int rq_status;
 	struct drbd_barrier *barrier; // The next barrier.
 	struct bio *master_bio;       // master bio pointer
-	struct bio private_bio;       // private bio struct
+	struct bio *private_bio;
 	struct hlist_node colision;
+	drbd_dev *mdev;
 };
 
 struct drbd_barrier {

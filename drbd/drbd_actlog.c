@@ -37,35 +37,27 @@
 STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page, 
 				 sector_t sector, int rw, int size)
 {
-	struct bio bio;
-	struct bio_vec vec;
+	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
 	struct completion event;
 	int ok;
 
-	bio_init(&bio);
-	bio.bi_io_vec = &vec;
-	vec.bv_page = page;
-	vec.bv_offset = 0;
-	vec.bv_len =
-	bio.bi_size = size;
-	bio.bi_vcnt = 1;
-	bio.bi_idx = 0;
-	bio.bi_bdev = mdev->md_bdev;
-	bio.bi_sector = sector;
+	bio->bi_bdev = mdev->md_bdev;
+	bio->bi_sector = sector;
+	bio_add_page(bio, page, size, 0);
 	init_completion(&event);
-	bio.bi_private = &event;
-	bio.bi_end_io = drbd_md_io_complete;
+	bio->bi_private = &event;
+	bio->bi_end_io = drbd_md_io_complete;
 
 #ifdef BIO_RW_SYNC
-	submit_bio(rw | (1 << BIO_RW_SYNC), &bio);
+	submit_bio(rw | (1 << BIO_RW_SYNC), bio);
 #else
-	submit_bio(rw, &bio);
+	submit_bio(rw, bio);
 	drbd_blk_run_queue(bdev_get_queue(mdev->md_bdev));
 #endif
 	wait_for_completion(&event);
 
-	ok = test_bit(BIO_UPTODATE, &bio.bi_flags);
-
+	ok = test_bit(BIO_UPTODATE, &bio->bi_flags);
+	bio_put(bio);
 	return ok;
 }
 
