@@ -503,6 +503,11 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		}
 	}
 
+	if(drbd_bm_rs_done(mdev)) {
+		mdev->resync_work.cb = w_resync_inactive;
+		return 1;
+	}
+
  requeue:
 	mod_timer(&mdev->resync_timer, jiffies + SLEEP_TIME);
 	return 1;

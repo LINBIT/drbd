@@ -841,7 +841,7 @@ struct bm_extent {
 #define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
 /* (9+3) : 512 bytes @ 8 bits; representing 16M storage
  * per sector of on disk bitmap */
-#define BM_EXT_SIZE_B    (BM_BLOCK_SIZE_B + 9+3)
+#define BM_EXT_SIZE_B    (BM_BLOCK_SIZE_B + 9+3)  // = 24
 #define BM_EXT_SIZE      (1<<BM_EXT_SIZE_B)
 
 /* thus many _storage_ sectors are described by one bit */
@@ -888,15 +888,16 @@ extern void drbd_bm_reset_find(drbd_dev *mdev);
 extern int  drbd_bm_set_bit   (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_clear_bit (drbd_dev *mdev, unsigned long bitnr);
-extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
+extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned int enr);
 extern int  drbd_bm_read_sect (drbd_dev *mdev, sector_t offset);
 extern int  drbd_bm_write_sect(drbd_dev *mdev, sector_t offset);
 extern void drbd_bm_read      (drbd_dev *mdev);
 extern void drbd_bm_write     (drbd_dev *mdev);
-extern unsigned long drbd_bm_e_set_all   (drbd_dev *mdev, unsigned long enr);
+extern unsigned long drbd_bm_e_set_all   (drbd_dev *mdev, unsigned int enr);
 extern size_t        drbd_bm_words       (drbd_dev *mdev);
 extern unsigned long drbd_bm_find_next   (drbd_dev *mdev);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
+extern int drbd_bm_rs_done(drbd_dev *mdev);
 // for receive_bitmap
 extern void drbd_bm_merge_lel (drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long* buffer);
@@ -1369,7 +1370,7 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 // this is a direct copy from 2.6.6 include/linux/bitops.h
 
-static inline unsigned long generic_hweight64(__u64 w)
+static inline unsigned long generic_hweight64(u64 w)
 {
 #if BITS_PER_LONG < 64
 	return generic_hweight32((unsigned int)(w >> 32)) +

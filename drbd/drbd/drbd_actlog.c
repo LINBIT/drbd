@@ -120,7 +120,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	    sector > drbd_md_ss(mdev)+MD_BM_OFFSET+BM_SECT_TO_EXT(capacity)) {
 		ALERT("%s [%d]:%s(,%ld,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
-		     sector, rw ? "WRITE" : "READ");
+		     (long)sector, rw ? "WRITE" : "READ");
 	}
 
 #ifdef BIO_RW_SYNC
@@ -517,105 +517,6 @@ void drbd_al_shrink(struct Drbd_Conf *mdev)
 	}
 
 	wake_up(&mdev->al_wait);
-}
-
-/**
- * drbd_read_bm: Read the whole bitmap from its on disk location.
- */
-void drbd_read_bm(struct Drbd_Conf *mdev)
-{
-	unsigned long * buffer, * bm, word;
-	sector_t sector;
-	int want,bm_words,bm_i,buf_i;
-	unsigned long bits=0;
-	int so = 0;
-
-	bm_i = 0;
-	bm_words = mdev->mbds_id->size/sizeof(long);
-	bm = mdev->mbds_id->bm;
-
-	down(&mdev->md_io_mutex);
-	buffer = (unsigned long *)page_address(mdev->md_io_page);
-
-	while (1) {
-		want=min_t(int,512/sizeof(long),bm_words-bm_i);
-		if(want == 0) break;
-
-		sector = drbd_md_ss(mdev) + MD_BM_OFFSET + so;
-		so++;
-
-		if(!drbd_md_sync_page_io(mdev,sector,READ)) {
-			drbd_chk_io_error(mdev, 1);
-			drbd_io_error(mdev);
-			break;
-			//return 0; // FIXME error propagation...
-		}
-
-		for(buf_i=0;buf_i<want;buf_i++) {
-			word = lel_to_cpu(buffer[buf_i]);
-			bits += hweight_long(word);
-			bm[bm_i++] = word;
-		}
-	}
-
-	up(&mdev->md_io_mutex);
-
-	mdev->rs_total = (bits << (BM_BLOCK_SIZE_B - 9)) +
-		bm_end_of_dev_case(mdev->mbds_id);
-
-	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
-	     (unsigned long) (mdev->rs_total+1)>>1);
-}
-
-/**
- * drbd_update_on_disk_bm: Writes a piece of the bitmap to its
- * on disk location.
- *
- * @enr: The extent number of the bits we should write to disk.
- *       ATTENTION: Based on AL_EXTENT_SIZE, although the chunk
- *                  we write might represent more storage. 
- *                  ( actually AL_EXTENT_SIZE*EXTENTS_PER_SECTOR )
- */
-STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
-{
-	unsigned long * buffer, * bm;
-	unsigned int want,buf_i,bm_words,bm_i;
-	sector_t sector;
-
-	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
-	enr = (enr & ~(EXTENTS_PER_SECTOR-1) );
-
-	bm = mdev->mbds_id->bm;
-	bm_words = mdev->mbds_id->size/sizeof(long);
-	bm_i = enr * BM_WORDS_PER_EXTENT ;
-
-	if(bm_i >= bm_words) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("%s:%d:%s: (bm_i=%u) >= (bm_words=%u)",
-			    __FILE__, __LINE__, __FUNCTION__,
-			    bm_i, bm_words);
-			dump_stack();
-		}
-		return;
-	}
-	want=min_t(unsigned int,512/sizeof(long),bm_words-bm_i);
-
-	down(&mdev->md_io_mutex); // protects md_io_buffer
-	buffer = (unsigned long *)page_address(mdev->md_io_page);
-
-	for(buf_i=0;buf_i<want;buf_i++) {
-		buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
-	}
-
-	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
-
-	if(!drbd_md_sync_page_io(mdev,sector,WRITE)) {
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
-	}
-	up(&mdev->md_io_mutex);
-
-	mdev->bm_writ_cnt++;
 }
 
 STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)

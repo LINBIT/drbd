@@ -140,7 +140,8 @@ void drbd_bm_unlock(drbd_dev *mdev)
 
 
 /* long word offset of _bitmap_ sector */
-#define S2W(s)	((s)<<(12-LN2_BPL))
+//#define S2W(s)	((s)<<(12-LN2_BPL))
+#define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 
 /*
  * actually most functions herein should take a struct drbd_bitmap*, not a
@@ -616,13 +617,17 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	}
 	if (i >= b->bm_bits) {
 		i = -1UL;
-		/* we could easily add a second pass to assure all is in sync!
-		 * b->bm_fo = 0; */
+		b->bm_fo = 0;
 	} else {
 		b->bm_fo = i+1;
 	}
 	spin_unlock_irq(&b->bm_lock);
 	return i;
+}
+
+int drbd_bm_rs_done(drbd_dev *mdev)
+{
+	return mdev->bitmap->bm_fo == 0;
 }
 
 // THINK maybe the D_BUG_ON(i<0)s in set/clear/test should be not that strict?
@@ -710,7 +715,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
  * only cleared, not set, and typically only care for the case when the return
  * value is zero, or we already "locked" this "bitmap extent" by other means.
  *
- * sector is bm-extent number, since we chose to name one sector (512 bytes)
+ * enr is bm-extent number, since we chose to name one sector (512 bytes)
  * worth of the bitmap a "bitmap extent".
  *
  * TODO
@@ -718,7 +723,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
  * reference count of some bitmap extent element from some lru instead...
  *
  */
-int drbd_bm_e_weight(drbd_dev *mdev, sector_t sector)
+int drbd_bm_e_weight(drbd_dev *mdev, unsigned int enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int count, s, e;
@@ -727,8 +732,8 @@ int drbd_bm_e_weight(drbd_dev *mdev, sector_t sector)
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 
-	s = S2W(sector);
-	e = min((size_t)S2W(sector+1),b->bm_words);
+	s = S2W(enr);
+	e = min((size_t)S2W(enr+1),b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
 		const unsigned long* w = b->bm+s;
@@ -739,13 +744,13 @@ int drbd_bm_e_weight(drbd_dev *mdev, sector_t sector)
 	}
 	spin_unlock_irq(&b->bm_lock);
 #if DUMP_MD >= 3
-	INFO("enr=%lu weight=%d e=%d s=%d\n", sector, count, e, s);
+	INFO("enr=%lu weight=%d e=%d s=%d\n", enr, count, e, s);
 #endif
 	return count;
 }
 
-/* set all bits in the bitmap */
-unsigned long drbd_bm_e_set_all(drbd_dev *mdev, sector_t sector)
+/* set all bits covered by the bm-extent enr */
+unsigned long drbd_bm_e_set_all(drbd_dev *mdev, unsigned int enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long weight;
@@ -758,8 +763,8 @@ unsigned long drbd_bm_e_set_all(drbd_dev *mdev, sector_t sector)
 	BM_PARANOIA_CHECK();
 	weight = b->bm_set;
 
-	s = S2W(sector);
-	e = min((size_t)S2W(sector+1),b->bm_words);
+	s = S2W(enr);
+	e = min((size_t)S2W(enr+1),b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
 		const unsigned long* w = b->bm+s;
