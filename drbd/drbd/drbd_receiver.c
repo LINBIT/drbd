@@ -762,36 +762,17 @@ inline int receive_param(int minor,int command)
 
 		if(pri==0) sync=0;
 		else sync=1;
-/*
-		printk(KERN_INFO DEVICE_NAME "%d: my gc:%d %d %d %d %d\n",
-		       minor,
-		       drbd_conf[minor].gen_cnt[Consistent],
-		       drbd_conf[minor].gen_cnt[HumanCnt],
-		       drbd_conf[minor].gen_cnt[ConnectedCnt],
-		       drbd_conf[minor].gen_cnt[ArbitraryCnt],
-		       drbd_conf[minor].gen_cnt[PrimaryInd] );
 
-		printk(KERN_INFO DEVICE_NAME "%d: ot gc:%d %d %d %d %d\n",
-		       minor,
-		       be32_to_cpu(param.gen_cnt[Consistent]),
-		       be32_to_cpu(param.gen_cnt[HumanCnt]),
-		       be32_to_cpu(param.gen_cnt[ConnectedCnt]),
-		       be32_to_cpu(param.gen_cnt[ArbitraryCnt]),
-		       be32_to_cpu(param.gen_cnt[PrimaryInd]) );
-*/
 		if(be32_to_cpu(param.state) == Secondary &&
 		   drbd_conf[minor].state == Secondary ) {
 			if(pri==1) drbd_set_state(minor,Primary);
 		} else {
 			if( ( pri == 1 ) == 
 			    (drbd_conf[minor].state == Secondary) ) {
-				printk(KERN_ERR DEVICE_NAME "%d: predetermined"
+				printk(KERN_WARNING DEVICE_NAME 
+				       "%d: predetermined"
 				       " states are in contradiction to GC's\n"
 				       ,minor);
-				printk(KERN_ERR DEVICE_NAME "%d: cancelling"
-				       " automatic resynchronisation\n"
-				       ,minor);
-				sync=0;
 			}
 		}
 /*
