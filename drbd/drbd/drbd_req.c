@@ -107,6 +107,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int uptodate)
 
 
 	req->bh->b_end_io(req->bh,uptodate & req->rq_status);
+	req->rq_status=RQ_INACTIVE;
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
@@ -130,7 +131,19 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	kfree(bh);
 }
 
+drbd_request_t* drbd_get_request(struct Drbd_Conf* mdev)
+{
+	drbd_request_t* req;
 
+	req = &mdev->requests[mdev->next_request++];
+
+	if(mdev->next_request>=DRBD_NR_REQUESTS) 
+		mdev->next_request=0;
+
+	if(req->rq_status != RQ_INACTIVE) req=0;
+
+	return req;
+}
 
 int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
@@ -144,15 +157,15 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	nbh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
 	if (!nbh) {
 		printk(KERN_ERR DEVICE_NAME
-		       "%d: could not kmalloc() nbh\n",mdev-drbd_conf);
+		       "%d: could not kmalloc() nbh\n",(int)(mdev-drbd_conf));
 		bh->b_end_io(bh,0);
 		return 0;
 	}
 
-	req = kmalloc(sizeof(drbd_request_t), GFP_DRBD);
+	req = drbd_get_request(mdev);
 	if (!req) {
 		printk(KERN_ERR DEVICE_NAME
-		       "%d: could not kmalloc() req\n",mdev-drbd_conf);
+		       "%d: could not get req\n",(int)(mdev-drbd_conf));
 		kfree(nbh);
 		bh->b_end_io(bh,0);
 		return 0;
@@ -166,14 +179,14 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	nbh->b_list = BUF_LOCKED;
 	nbh->b_end_io = drbd_dio_end;
 	nbh->b_dev = mdev->lo_device;
-	nbh->b_rdev = mdev->lo_device; //? THINK
-	nbh->b_rsector = bh->b_rsector;           //? THINK
+	nbh->b_rdev = mdev->lo_device;
+	nbh->b_rsector = bh->b_rsector;          
 	nbh->b_end_io = drbd_dio_end;
 	nbh->b_page=bh->b_page;
 	atomic_set(&nbh->b_count, 0);
 	nbh->b_private = req;
 	nbh->b_state = (1 << BH_Req) | (1 << BH_Dirty)
-		| ( 1 << BH_Mapped) | (1 << BH_Lock);   // Mapped ??
+		| ( 1 << BH_Mapped) | (1 << BH_Lock);
 
 	req->bh=bh;
 	req->cmd=rw;
@@ -226,7 +239,9 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		return 0;
 	}
 
-	generic_make_request(rw,bh); //? check this!
+	generic_make_request(rw,nbh); //? check this!
 
 	return 0; /* Ok, bh arranged for transfer */
 }
+
+

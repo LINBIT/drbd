@@ -534,7 +534,7 @@ inline int receive_data(int minor,int data_size)
 
 inline int receive_block_ack(int minor)
 {     
-        struct request *req;
+        drbd_request_t *req;
 	Drbd_BlockAck_P header;
 
 	if(drbd_conf[minor].state != Primary) /* CHK */
@@ -552,7 +552,7 @@ inline int receive_block_ack(int minor)
 				 drbd_conf[minor].blk_size_b, 
 				 SS_IN_SYNC);
 	} else {
-		req=(struct request*)(long)header.block_id;
+		req=(drbd_request_t*)(long)header.block_id;
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
 		/* printk(KERN_ERR DEVICE_NAME "%d: got blk-ack for sec %ld\n",
 		   minor,req->sector); */

@@ -227,7 +227,6 @@ struct Drbd_Conf {
 	struct timer_list s_timeout; /* send timeout */
 	struct semaphore send_mutex;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
-	struct buffer_head* sync_log[SYNC_LOG_S];
 	spinlock_t sl_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
@@ -238,9 +237,15 @@ struct Drbd_Conf {
 	int open_cnt;
 	u32 gen_cnt[5];
 	u32 bit_map_gen[5];
+	struct buffer_head* sync_log[SYNC_LOG_S];
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif  
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+#define DRBD_NR_REQUESTS 256
+	drbd_request_t requests[DRBD_NR_REQUESTS];
+	int next_request;
+#endif	
 };
 
 /* drbd_main.c: */

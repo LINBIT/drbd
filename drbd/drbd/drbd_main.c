@@ -895,6 +895,9 @@ int __init drbd_init(void)
 		init_waitqueue_head(&drbd_conf[i].asender_wait);
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+		drbd_conf[i].next_request=0;
+#endif	
 		{
 			int j;
 			for(j=0;j<SYNC_LOG_S;j++) drbd_conf[i].sync_log[j]=0;
@@ -904,6 +907,10 @@ int __init drbd_init(void)
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
 #endif  
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
+			for(j=0;j<DRBD_NR_REQUESTS;j++) 
+				drbd_conf[i].requests[j].rq_status=RQ_INACTIVE;
+#endif			
 		}
 	}
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,0)
