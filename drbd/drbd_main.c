@@ -677,12 +677,6 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		drbd_panic("No access to good data anymore.\n");
 	}
 
-	if ( os.s.conn != Connected && ns.s.conn == Connected && 
-	     mdev->p_uuid ) {
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = 0;
-	}
-
 	return rv;
 }
 
@@ -956,7 +950,7 @@ int drbd_send_protocol(drbd_dev *mdev)
 			     (Drbd_Header*)&p,sizeof(p));
 }
 
-int drbd_send_gen_cnt(drbd_dev *mdev)
+int drbd_send_uuids(drbd_dev *mdev)
 {
 	Drbd_GenCnt_Packet p;
 	int i;
@@ -2346,19 +2340,39 @@ int drbd_md_read(drbd_dev *mdev)
 }
 
 
-void drbd_uuid_set_current(drbd_dev *mdev, u64 val)
+
+
+static void drbd_uuid_move_history(drbd_dev *mdev)
 {
-	mdev->uuid[Current] = val;
-	if (mdev->state.s.role == Primary) {
-		mdev->uuid[Current] |= 1;
-	} else {
-		mdev->uuid[Current] &= ~((u64)1);
+	int i;
+
+	for ( i=History_start ; i<History_end ; i++ ) {
+		mdev->uuid[i+1] = mdev->uuid[i];
 	}
+}
+
+void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
+{
+	if (mdev->state.s.role == Primary) {
+		mdev->uuid[idx] = val | 1;
+	} else {
+		mdev->uuid[idx] = val & ~((u64)1);
+	}
+}
+
+
+void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
+{
+	if(mdev->uuid[idx]) {
+		drbd_uuid_move_history(mdev);
+		mdev->uuid[History_start]=mdev->uuid[idx];
+	}
+	_drbd_uuid_set(mdev,idx,val);
 }
 
 void drbd_uuid_new_current(drbd_dev *mdev)
 {
-	D_ASSERT(mdev->uuid[Bitmap] = 0);
+	D_ASSERT(mdev->uuid[Bitmap] == 0);
 	mdev->uuid[Bitmap] = mdev->uuid[Current];
 	get_random_bytes(&mdev->uuid[Current], sizeof(u64));
 	if (mdev->state.s.role == Primary) {
@@ -2370,14 +2384,9 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 
 void drbd_uuid_reset_bm(drbd_dev *mdev)
 {
-	int i;
-
 	if (mdev->uuid[Bitmap] == 0) return;
 
-	for ( i=History_start ; i<History_end ; i++ ) {
-		mdev->uuid[i+1] = mdev->uuid[i];
-	}
-
+	drbd_uuid_move_history(mdev);
 	mdev->uuid[History_start]=mdev->uuid[Bitmap];
 	mdev->uuid[Bitmap]=0;
 }

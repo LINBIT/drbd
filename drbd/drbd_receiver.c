@@ -717,7 +717,7 @@ int drbd_connect(drbd_dev *mdev)
 	drbd_send_protocol(mdev);
 	drbd_send_sync_param(mdev,&mdev->sync_conf);
 	drbd_send_sizes(mdev);
-	drbd_send_gen_cnt(mdev);
+	drbd_send_uuids(mdev);
 	drbd_send_state(mdev);
 
 	return 1;
@@ -1371,7 +1371,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev)
 		drbd_bm_unlock(mdev); // }
 	} else if (hg < 0) { // become sync target
 		drbd_md_clear_flag(mdev,MDF_Consistent);
-		drbd_uuid_set_current(mdev,mdev->p_uuid[Bitmap]);
+		drbd_uuid_set(mdev,Current,mdev->p_uuid[Bitmap]);
+		mdev->as_c_uuid = mdev->p_uuid[Current];
 		rv = WFBitMapT;		
 	} else {
 		rv = Connected;
@@ -1466,6 +1467,8 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	
 	if (mdev->p_uuid) {
 		nconn=drbd_sync_handshake(mdev);
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
 
 		if(drbd_request_state(mdev,NS(conn,nconn)) <= 0) {
@@ -1529,8 +1532,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	nconn = mdev->state.s.conn;
 	if (nconn == WFReportParams ) nconn = Connected;
 
-	if (mdev->p_uuid && mdev->state.s.conn <= Connected) {
+	if (mdev->p_uuid) {
 		nconn=drbd_sync_handshake(mdev);
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
 	}
 
@@ -1539,7 +1544,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if (mdev->state.s.conn > WFReportParams ) {
 		if( nconn > Connected && peer_state.s.conn == Connected) {
 			// we want resync, peer has not yet decided to sync...
-			drbd_send_gen_cnt(mdev);
+			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
 		}
 	}
@@ -1731,7 +1736,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
 	[SyncParam]        = receive_SyncParam,
 	[ReportProtocol]   = receive_protocol,
-	[ReportUUIDs]     = receive_uuids,
+	[ReportUUIDs]      = receive_uuids,
 	[ReportSizes]      = receive_sizes,
 	[ReportState]      = receive_state,
 };

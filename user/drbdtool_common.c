@@ -339,5 +339,20 @@ void dt_print_uuids(const __u64* uuid, unsigned int flags)
 
 void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 {
+	printf(
+"\n"
+"       +--<  Current data generation UUID  >-\n"
+"       |               +--<  Bitmap's base data generation UUID  >-\n"
+"       |               |                 +--<  younger historiy UUID  >-\n"
+"       |               |                 |         +-<  older history  >-\n"
+"       V               V                 V         V\n");               
 	dt_print_uuids(uuid, flags);
+	printf(
+"                                                                    ^ ^ ^ ^ ^\n"
+"                                      -<  Data consistancy flag  >--+ | | | |\n"
+"                             -<  Data was/is currently up-to-date  >--+ | | |\n"
+"                                  -<  Node was/is currently primary  >--+ | |\n"
+"                                  -<  Node was/is currently connected  >--+ |\n"
+"          -<  Node was in to progress of setting all bits in the bitmap  >--+\n"
+"\n");
 }

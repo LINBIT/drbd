@@ -740,6 +740,7 @@ struct Drbd_Conf {
 	int open_cnt;
 	unsigned int md_flags;
 	u64 uuid[UUID_SIZE];
+	u64 as_c_uuid;         // Store the peers c-uuid until resync finished.
 	u64 *p_uuid;
 	atomic_t epoch_size;
 	spinlock_t ee_lock;
@@ -800,7 +801,7 @@ extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
 extern int drbd_send_protocol(drbd_dev *mdev);
-extern int drbd_send_gen_cnt(drbd_dev *mdev);
+extern int drbd_send_uuids(drbd_dev *mdev);
 extern int drbd_send_sizes(drbd_dev *mdev);
 extern int drbd_send_state(drbd_dev *mdev);
 extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
@@ -834,7 +835,8 @@ extern void drbd_mdev_cleanup(drbd_dev *mdev);
 extern void drbd_md_write(drbd_dev *mdev);
 extern int drbd_md_read(drbd_dev *mdev);
 // maybe define them below as inline?
-extern void drbd_uuid_set_current(drbd_dev *mdev, u64 val);
+extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val);
+extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
 extern void drbd_uuid_new_current(drbd_dev *mdev);
 extern void drbd_uuid_reset_bm(drbd_dev *mdev);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);

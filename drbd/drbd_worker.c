@@ -391,7 +391,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_paused = 0;
 
 	if ( mdev->state.s.conn == SyncTarget ) {
-		drbd_uuid_set_current(mdev,mdev->p_uuid[Current]);
+		/* Do not pushin the peer's Bitmap UUID into my History. */
+		_drbd_uuid_set(mdev,Current,mdev->as_c_uuid);
+		// mdev->as_c_uuid = 0xf0deadbeefbabe0fLL;
 	}
 	drbd_uuid_reset_bm(mdev);
 

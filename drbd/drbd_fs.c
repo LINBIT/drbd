@@ -838,7 +838,7 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 
 	if (mdev->state.s.conn >= WFReportParams) {
 		/* if this was forced, we should consider sync */
-		if(forced) drbd_send_gen_cnt(mdev);
+		if(forced) drbd_send_uuids(mdev);
 		drbd_send_state(mdev);
 	}
 
@@ -1106,7 +1106,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		drbd_bm_unlock(mdev);
 		if (mdev->state.s.conn == Connected) {
-			drbd_send_gen_cnt(mdev); // to start sync...
+			drbd_send_uuids(mdev); // to start sync...
 			drbd_send_sizes(mdev);
 		}
 		break;

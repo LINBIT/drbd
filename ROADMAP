@@ -171,9 +171,8 @@ DRBD 0.8 Roadmap
   drbdadm is the nice front end. It always uses the right 
   back end (drbdmeta or drbdsetup)...
 
-  drbdadm md-set-gc 1:2:3:4:5:6 r0
-  drbdadm md-get-gc r0
-  drbdadm md-get/set-{la-size|consistent|etc...} resources....
+  drbdadm set-gi 1:2:3:4:5:6 r0
+  drbdadm get-gi r0
   drbdadm md-create r0
 
   md-create would ask nasty questions about whether you are really 
@@ -468,9 +467,9 @@ DRBD 0.8 Roadmap
            NB: If they are needed, I think they can be implemented
                as special UUID values.
 
-  80% DONE. Kernel part is implemented, little tested. Userlang parts
-            implemented, seem to work. Known bugs: Upon connect
-            sync_handshake is not called, need to fix this.
+  90% DONE. Kernel part is implemented, userlang parts are implemented,
+	    only "drbdadm set-gi" is still unimplemented.
+	    Everything seems to work so far. Should be tested more.
 
 17 Something like
 
