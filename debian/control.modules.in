@@ -21,9 +21,10 @@ Description: RAID 1 over tcp/ip for Linux kernel module
  use of uncommon hardware (shared SCSI buses or Fibre Channel). 
  It is currently limited to fail-over HA clusters.
  .
- This package contains the drbd kernel module for the following kernel
- version: _KVERS_
- If you want to build drbd against your another kernel, install the
+ This package contains the DRBD kernel module for the kernel version
+ _KVERS_
+ .
+ If you want to build DRBD against your another kernel, install the
  drbd-source package and use module-assistant to create a new
  module package.
  .

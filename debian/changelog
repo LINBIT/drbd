@@ -1,19 +1,25 @@
-drbd (0.7.6-0) unstable; urgency=low
+drbd (0.7.6-1) unstable; urgency=low
 
-  * New upstream release
+  * (Cyril Bouthors)
+     - New upstream release
+     - debian/control.modules.in: updated description
+     - debian/TODO: removed
 
- -- Philipp Reisner <phil@linbit.com>  Tue, 16 Nov 2004 14:59:00 +0200
+ -- Cyril Bouthors <cyril@bouthors.org>  Tue, 30 Nov 2004 19:43:27 +0300
 
 drbd (0.7.5-2) unstable; urgency=low
 
-  * debian/control: Added Conflict with drbd-util and drbd-module-source
-  * debian/control.in.modules: Fixed description for kernel module
-  * debian/control.in.modules: Added Conflict line in kernel module package
-  * debian/control.in.modules: Change depends to drbd0.7-util
-  * debian/rules: don't use top-level makefile
-  * call depmod in postinst of kernel module
-  * remove obsolete upstream ./debian/ in clean
-  * added module-assistant override file
+  * (Philipp Hug)
+    - debian/control: Added Conflict with drbd-util and drbd-module-source
+    - debian/control.in.modules: Fixed description for kernel module
+    - debian/control.in.modules: Added Conflict line in kernel module package
+    - debian/control.in.modules: Change depends to drbd0.7-util
+    - debian/rules: don't use top-level makefile, to prevent re-creation of
+      drbd_buildtag.c
+    - call depmod in postinst of kernel module
+    - debian/rules: remove obsolete upstream ./debian/ files in clean target
+    - added module-assistant override file
+    - this version is ready for sarge (Closes: #277669)
 
  -- Philipp Hug <debian@hug.cx>  Tue, 19 Oct 2004 20:50:49 +0200
 
