@@ -29,7 +29,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include<sys/time.h>
+#include <sys/time.h>
 #define _GNU_SOURCE
 #include <getopt.h>
 #include <string.h>
@@ -127,6 +127,7 @@ int main(int argc, char** argv)
   int use_pattern=0;
   int pattern;
   int dialog=0,show_input_size=0;
+  int last_percentage=0;
 
   int c;
   static struct option options[] = {        
@@ -161,7 +162,7 @@ int main(int argc, char** argv)
 	    }
 	  break;
 	case 'o':
-	  out_fd = open(optarg,O_WRONLY);
+	  out_fd = open(optarg,O_WRONLY|O_CREAT|O_TRUNC,0664);
 	  if(out_fd==-1)
 	    {
 	      fprintf(stderr,"Can not open output file/device\n");
@@ -225,7 +226,7 @@ int main(int argc, char** argv)
     {
       if(lseek(out_fd,seek_offs_o,SEEK_SET) != seek_offs_o)
 	{
-	  fprintf(stderr,"Can not lseek(2) in input file/device\n");
+	  fprintf(stderr,"Can not lseek(2) in output file/device\n");
 	  exit(20);
 	}
     }
@@ -233,7 +234,6 @@ int main(int argc, char** argv)
   if(use_pattern)
     {
       memset(buffer,pattern,buffer_size);
-      rr=buffer_size;
     }
 
   if( dialog && size == -1)
@@ -241,7 +241,7 @@ int main(int argc, char** argv)
       size = min(fsize(in_fd),fsize(out_fd));
       if(size == -1) 
 	{
-	  fprintf(stderr,"Can not determine size\n");
+	  fprintf(stderr,"Can not determine the size\n");
 	  exit(20);	
 	}
     }
@@ -251,7 +251,7 @@ int main(int argc, char** argv)
       size = fsize(in_fd);
       if(size == -1) 
 	{
-	  fprintf(stderr,"Can not determine size\n");
+	  fprintf(stderr,"Can not determine the size\n");
 	  exit(20);	
 	}
       printf("%lldK\n",size/1024);
@@ -262,32 +262,20 @@ int main(int argc, char** argv)
   gettimeofday(&tv1,NULL);
   while(1)
     {      
-      if(!use_pattern)
+      if(use_pattern) rr=min(buffer_size,rsize);
+      else rr=read(in_fd,buffer,(size_t)min(buffer_size,rsize));
+
+      if(rr==0) break;
+      if(rr==-1)
 	{
-	  rr=read(in_fd,buffer,(size_t)min(buffer_size,rsize));
-	  if(rr==0) break;
-	  if(rr==-1)
-	    {
-	      perror("Read failed");
-	      break;
-	    }
+	  perror("Read failed");
+	  break;
 	}
 
-      if(rr==buffer_size) 
+      if(show_progress)
 	{
-	  if(show_progress)
-	    {
-	      printf("R");
-	      fflush(stdout);
-	    }
-	}
-      else 
-	{
-	  if(show_progress)
-	    {
-	      printf("r");
-	      fflush(stdout);
-	    }
+	  printf( rr==buffer_size ? "R" : "r" );
+	  fflush(stdout);
 	}
 
       ww=write(out_fd,buffer,rr);
@@ -299,10 +287,15 @@ int main(int argc, char** argv)
       rsize = rsize - ww;
       if( dialog )
 	{
-	  printf("%2d\n",(int)(100.0*(size-rsize)/size));
-	  fflush(stdout);
+	  int new_percentage=(int)(100.0*(size-rsize)/size);
+	  if( new_percentage != last_percentage)
+	    {
+	      printf("%2d\n",(int)(100.0*(size-rsize)/size));
+	      fflush(stdout);
+	      last_percentage = new_percentage;
+	    }
 	}
-      if( !use_pattern && ww!=rr) break;
+      if( ww!=rr) break;
     }
       
   if(do_sync) fsync(out_fd);
@@ -324,8 +317,8 @@ int main(int argc, char** argv)
       mps = (((double)(size-rsize)) / (1<<20)) / 
 	(sec+((double)usec)/1000000);
 
-      printf("%.2f MB/sec (%ld B / %02ld:%02ld.%06ld)\n",mps,
-	     size-rsize,sec/60,sec%60,usec);
+      printf("%.2f MB/sec (%ld B / ",mps,size-rsize);
+      printf("%02ld:%02ld.%06ld)\n",sec/60,sec%60,usec);
     }
 
   if(size != -1 && rsize)
