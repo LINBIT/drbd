@@ -5,6 +5,19 @@
 # You can load this file into GDB by using the 'source' command,
 # or simply put it into your .gdbinit
 #
+# This works in my environment of (Debian Woody 3.0):
+#  binutils         2.12.90.0.1-4
+#  gcc              2.95.4-14
+#  gdb              5.2.cvs20020401-6
+#  linux            2.4.22
+#  uml              uml-patch-2.4.22-1   
+#
+# I experienced serious troubles using Debian Sid Packages...
+#  * gdb crashing
+#  * gdb printing bogus stack traces
+#  * uml kernel crashing in strange places 
+#  * strange behaviour
+#
 # -Philipp
 
 
