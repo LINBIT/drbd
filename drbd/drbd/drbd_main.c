@@ -207,8 +207,6 @@ inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 	}
 	if(cur_size*4 == mdev->conf.tl_size*3) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
-		printk(KERN_INFO DEVICE_NAME "%d: issuing add. barrier\n",
-		       (int)(mdev-drbd_conf));
 	}       
 
 	if (mdev->tl_end == mdev->tl_begin)
@@ -745,9 +743,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	ti.restart=1;
 	ti.counter=0;
 	if(!via_msock) {
-		spin_lock(&ti->mdev->send_proc_lock); 
+		spin_lock(&mdev->send_proc_lock); 
 		mdev->send_proc=&ti; 
-		spin_unlock(&ti->mdev->send_proc_lock);		
+		spin_unlock(&mdev->send_proc_lock);		
 	}
 
 	if (mdev->conf.timeout) {
@@ -823,9 +821,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	}
 
 	if(!via_msock) {
-		spin_lock(&ti->mdev->send_proc_lock);		
+		spin_lock(&mdev->send_proc_lock);		
 		mdev->send_proc=NULL;
-		spin_unlock(&ti->mdev->send_proc_lock);		
+		spin_unlock(&mdev->send_proc_lock);		
 	}
 
 
