@@ -865,7 +865,8 @@ inline int receive_data(struct Drbd_Conf* mdev,int data_size)
 
 	spin_unlock_irq(&mdev->ee_lock);
 
-	rr=drbd_recv(mdev,bh->b_data,data_size,0);
+	rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
+	bh_kunmap(bh);
 
 	if ( rr != data_size) {
 		spin_lock_irq(&mdev->ee_lock);
