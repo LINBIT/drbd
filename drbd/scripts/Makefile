@@ -23,8 +23,9 @@ all:
 
 install:
 	install drbd /etc/rc.d/init.d/
+	mkdir -p /etc/ha.d/resource.d
 	install datadisk /etc/ha.d/resource.d/
-	install -d /etc/sysconfig/drbd
+	mkdir -p /etc/sysconfig/drbd
 	install drbd.example /etc/sysconfig/drbd/
 
 clean:

@@ -2,68 +2,150 @@
 #
 # chkconfig: 345 30 70
 # description: Loads and unloads the drbd module
-#	       
+#
+# Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+# Initial author.
+#
+# Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>
+# Changes to support multiple devices and different distributions.
+# Changes to increase robustness and exit with proper error values.
+#
+# Some ideas and inspiration from Joe Hartley <jh@brainiac.com>
 
 # Source function library.
-. /etc/rc.d/init.d/functions
+# Some distributions don't have it, so test and act accordingly
+if [ -f /etc/rc.d/init.d/functions ]; then
+	. /etc/rc.d/init.d/functions
+else
+	# dumb "action" substitution
+	action() {
+		echo -n $1...
+		shift
+		eval $*
+		if [ $? -eq 0 ]; then
+			echo ok
+			return 0
+		else
+			echo failure!
+			return 1
+		fi
+	}
+fi
 
 # Source networking configuration.
-. /etc/sysconfig/network
-
-# Check that networking is up.
-[ ${NETWORKING} = "no" ] && exit 0
+if [ -f /etc/sysconfig/network ]; then
+	. /etc/sysconfig/network
+	# Check that networking is up.
+	if [ "$NETWORKING" = "no" ]; then
+		echo drbd: networking is down!
+		exit 1
+	fi
+fi
+# If the distribution does not have sysconfig/network, let's hope
+# networking is up.
 
 # Check for drbdsetup
-[ -x /usr/sbin/drbdsetup ] || exit 1
+if [ ! -x /usr/sbin/drbdsetup ]; then
+	echo drbd: drbdsetup not found!
+	exit 1
+fi
+
+# Check for drbd's module
+if [ ! -f /lib/modules/`uname -r`/block/drbd.o ]; then
+	echo drbd: module not found!
+	exit 1
+fi
+
+# Check for our config directory
+if [ ! -d /etc/sysconfig/drbd ]; then
+	echo drbd: configuration directory not found!
+	exit 1
+fi
 
 cd /etc/sysconfig/drbd
 DEVICES=`ls drbd[0-9] 2>/dev/null`
 HOST=`hostname -s`
+# RETVAL will work as a "stuck bit" for any error. The construct
+# RV=$?
+# [ $RETVAL -eq 0 ] && RETVAL=$RV
+# allows us to have it stuck at 1 when some error occur, even if
+# subsequent operations don't fail. Using $RV prevents us from getting
+# the exit value of [ ... ]. That was a dumb one... :)
+RETVAL=0	# this means there were errors
+RV=0		# this means there were errors in the current device
 
 # See how we were called.
 case "$1" in
   start)
-        action "Loading DRBD module" /sbin/modprobe drbd
+  	# use -s in modprobe/rmmod to keep errors in the logs
+	action "Loading DRBD module" /sbin/modprobe -s drbd
+	[ $? -ne 0 ] && exit 1
+
 	for D in $DEVICES; do
 	    . $D
-	    if [ ${SIZE} != "" ]; then
-		SIZE_OP="-d ${SIZE}";
+
+	    if [ -n "$SIZE" ]; then
+		SIZE_OP="-d $SIZE";
 	    fi
-	    if [ ${HOST} = `echo ${MASTER_NODE} | cut -d: -f1` ]; then
-		action "Configuring DRBD resource %s" $D \
+
+	    if [ "$HOST" = "`echo $MASTER_NODE | cut -d: -f1`" ]; then
+
+		action "Configuring DRBD resource $D" \
 		    /usr/sbin/drbdsetup $MASTER_DEVICE $MASTER_PARTITION \
-		    $PROTOCOL $MASTER_NODE $SLAVE_NODE $SIZE_OP $OPTIONS
-		action "Waiting for DRBD resource %s to resynchronize" $D \
-		    /usr/sbin/drbdsetup $MASTER_DEVICE WAIT
-	    elif [ ${HOST} = `echo ${SLAVE_NODE} | cut -d: -f1` ]; then
-		action "Configuring DRBD resource %s" $D \
+		    $PROTOCOL $MASTER_NODE $SLAVE_NODE $SIZE_OP $OPTIONS 
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+
+		if [ $RV -eq 0 ]; then
+			# don't wait if there was an error in this device
+			action "Waiting for DRBD resource $D to resynchronize" \
+			    /usr/sbin/drbdsetup $MASTER_DEVICE WAIT
+		fi
+
+	    elif [ "$HOST" = "`echo $SLAVE_NODE | cut -d: -f1`" ]; then
+
+		action "Configuring DRBD resource $D" \
 		    /usr/sbin/drbdsetup $SLAVE_DEVICE $SLAVE_PARTITION \
 		    $PROTOCOL $SLAVE_NODE $MASTER_NODE $SIZE_OP $OPTIONS
-		action "Waiting for DRBD resource %s to resynchonize" $D \
-		    /usr/sbin/drbdsetup $SLAVE_DEVICE WAIT
+		RV=$?
+		[ $RETVAL -eq 0 ] && RETVAL=$RV
+
+		if [ $RV -eq 0 ]; then
+			# don't wait if there was an error in this device
+			action "Waiting for DRBD resource $D to resynchonize" \
+			    /usr/sbin/drbdsetup $SLAVE_DEVICE WAIT
+		fi
+
 	    else
 		echo This machine is neither master nor slave!
 		exit 1
 	    fi
+
+	    unset SIZE SIZE_OP # don't let it contaminate other devices... :)
+
 	done
 	;;
   stop)
-	action "Unloading DRBD module" /sbin/modprobe -r drbd
+	action "Unloading DRBD module" /sbin/rmmod -s drbd
+	RETVAL=$?
 	;;
   restart)
 	$0 stop
 	$0 start
+	RETVAL=$?
 	;;
   status)
 	if [ -r /proc/drbd ]; then
 		cat /proc/drbd
 	else
 		echo "DRBD module not loaded."
+		RETVAL=1
 	fi
 	;;
   *)
 	echo "Usage: $0 {start|stop|restart|status}"
-	exit 1
+	RETVAL=1
+	;;
 esac
 
-exit 0
+exit $RETVAL
