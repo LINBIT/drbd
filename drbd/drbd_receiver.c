@@ -1836,7 +1836,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		atomic_set(&mdev->ap_pending_cnt,0);
 	}
 
-	wake_up_interruptible(&mdev->cstate_wait);
+	wake_up(&mdev->cstate_wait);
 
 	if ( mdev->state == Primary &&
 	    ( test_bit(DISKLESS,&mdev->flags)
@@ -1883,7 +1883,10 @@ int drbd_send_handshake(drbd_dev *mdev)
 	Drbd_HandShake_Packet *p = &mdev->data.sbuf.HandShake;
 	int ok;
 
-	down(&mdev->data.mutex);
+	if (down_interruptible(&mdev->data.mutex)) {
+		ERR("interrupted during initial handshake\n");
+		return 0; /* interrupted. not ok. */
+	}
 	memset(p,0,sizeof(*p));
 	p->protocol_version = cpu_to_be32(PRO_VERSION);
 	ok = _drbd_send_cmd( mdev, mdev->data.socket, HandShake,
