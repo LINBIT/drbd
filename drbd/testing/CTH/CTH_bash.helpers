@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.8 2004/06/07 10:16:39 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.9 2004/06/07 13:58:27 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -332,6 +332,7 @@ Stop()
 	local rs=$1 i fs cn CN which
 	i=${rs#RS_}
 	which=${!rs}; [[ $which == *CN=* ]] && cn=${which#*CN=} || cn=''
+	which=${which%% *}
 	fs=FS_$i; CN=""
 	eval "${!fs}"
 
@@ -340,8 +341,12 @@ Stop()
 	[[ $cn == Node_* ]]    || return 103
 
 	bdev_to_env $BDEV
-	on ${!cn}: generic_test_stop MNT=$MNT
-	on ${!cn}: do_umount         MNT=$MNT
+	if [[ $(type -t ${which}_stop) == function ]] ; then
+		on ${!cn}: ${which}_stop     MNT=$MNT
+	else
+		on ${!cn}: generic_test_stop MNT=$MNT
+	fi
+	on ${!cn}: do_umount MNT=$MNT
 	if [[ $BDEV == Drbd_* ]] ; then
 		on ${!cn}: drbdadm_sec       name=$name
 	else

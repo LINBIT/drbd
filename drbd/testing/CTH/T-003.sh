@@ -1,16 +1,16 @@
 #!/usr/bin/env - /bin/bash
-# $Id: T-003.sh,v 1.1.2.1 2004/06/03 11:05:53 lars Exp $
+# $Id: T-003.sh,v 1.1.2.2 2004/06/07 13:58:27 lars Exp $
 
 #
 # Fail Secondary disk, reattach "healed" disk, Relocate Service.
-# does NOT work, pending_cnt gets confused!
+# does work.
 #
 
 Start RS_1 Node_1
 
 echo "FAIL Secondary DISK"
 Fail_Disk Disk_2
-sleep 10
+sleep 30
 
 echo "HEAL Secondary DISK"
 Heal_Disk Disk_2
