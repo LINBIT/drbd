@@ -422,16 +422,15 @@ inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 	int r;
 
 	spin_lock(&mdev->tl_lock);
-	if( mdev->tl_begin == mdev->tl_end) {r=FALSE; goto out;}
 
 	p = mdev->tl_end;
-	if (p == mdev->transfer_log) p = p + mdev->conf.tl_size;
 	while( TRUE )
 	  {
+	    if ( p==mdev->transfer_log) p = p + mdev->conf.tl_size;
+	    if ( p==mdev->tl_begin ) {r=FALSE; goto out;}
 	    p--;
-	    if (p==mdev->tl_begin || p->req==TL_BARRIER) {r=FALSE; goto out;}
+	    if ( p->req==TL_BARRIER) {r=FALSE; goto out;}
 	    if ( p->sector_nr == sect_nr) {r=TRUE; goto out;}
-	    if (p == mdev->transfer_log) p = p + mdev->conf.tl_size;
 	  }
 
  out:	
@@ -1268,9 +1267,7 @@ void drbdd(int minor)
 			  for(i=0;i<epoch_size;i++) {
 			    if(!buffer_uptodate(epoch[i].bh))
 			      wait_on_buffer(epoch[i].bh);
-			    /* brelse(epoch[i].bh); 
-			       kernel: VFS: brelse: Trying to free free buffer
-			    */
+			    brelse(epoch[i].bh); 
 			  }
 			  if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C){
 			    for(i=0;i<epoch_size;i++) {
@@ -1285,7 +1282,7 @@ void drbdd(int minor)
 			  drbd_send(&drbd_conf[minor], BarrierAck, 0,
 				    0,packet_header.barrier,0);
 
-			  drbd_conf[minor].epoch_size=0;
+			  epoch_size=0;
 			}
 			
 			/*
@@ -1333,8 +1330,9 @@ void drbdd(int minor)
 			}
 				    
 			ll_rw_block(WRITE, 1, &bh);
-			brelse(bh);  
-			/* I really think that I schould brelse() the bh
+
+			/* brelse(bh); */
+			/* I really think that I should brelse() the bh
 			   after it's last use, but my kernel does not
 			   like it... ( see the out-commented brelse() )
 			*/
