@@ -630,6 +630,7 @@ struct drbd_request {
 	struct drbd_barrier *barrier; // The next barrier.
 	drbd_bio_t *master_bio;       // master bio pointer
 	drbd_bio_t private_bio;       // private bio struct
+	ONLY_IN_26(struct bio_vec req_bvec;)
 };
 
 struct drbd_barrier {
@@ -669,7 +670,7 @@ struct Tl_epoch_entry {
 	long magic;
 	ONLY_IN_26(unsigned int ee_size;)
 	ONLY_IN_26(sector_t ee_sector;)
-	// THINK: maybe we rather want bio_alloc(GFP_*,1)
+	// TODO: we rather want bio_alloc(GFP_*,1) all through the code!
 	ONLY_IN_26(struct bio_vec ee_bvec;)
 };
 
