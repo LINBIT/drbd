@@ -1257,7 +1257,7 @@ int __init drbd_init(void)
 	if (!drbd_blocksizes || !drbd_sizes)
 		goto Enomem;
 #else
-	devfs_mk_dir("nbd");
+	devfs_mk_dir(DEVICE_NAME);
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
@@ -1279,8 +1279,8 @@ int __init drbd_init(void)
 		disk->major = MAJOR_NR;
 		disk->first_minor = i;
 		disk->fops = &drbd_ops;
-		sprintf(disk->disk_name, DEVICE_NAME "nbd%d", i);
-		sprintf(disk->devfs_name, DEVICE_NAME "nbd/%d", i);
+		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
+		sprintf(disk->devfs_name, DEVICE_NAME "/%d", i);
 		disk->private_data = mdev;
 		add_disk(disk);
 
