@@ -721,11 +721,11 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
 	if (bm_ext) {
 		if(bm_ext->lce.lc_number != enr) {
-			atomic_inc(&mdev->resync_locked);
 			bm_ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			wake_up(&mdev->al_wait);
 		}
+		if(bm_ext->lce.refcnt == 1) atomic_inc(&mdev->resync_locked);
 		set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
 	}
 	rs_flags=mdev->resync->flags;
