@@ -229,7 +229,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	smp_rmb();
 	if ( cancel ||
 	     mdev->state.s.conn < Connected ||
-	     mdev->state.s.pedi < Consistent ) {
+	     mdev->state.s.pdsk < Consistent ) {
 		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
 
 		// does not make much sense, but anyways...
@@ -402,7 +402,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	drbd_request_state(mdev,NS3(conn,Connected,
 				    disk,Consistent,
-				    pedi,Consistent));
+				    pdsk,Consistent));
 
 	drbd_md_write(mdev);
 
@@ -465,7 +465,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 
 	if(likely(drbd_bio_uptodate(&e->private_bio))) {
-		if (likely( mdev->state.s.pedi >= Inconsistent )) {
+		if (likely( mdev->state.s.pdsk >= Inconsistent )) {
 			inc_rs_pending(mdev);
 			ok=drbd_send_block(mdev, RSDataReply, e);
 		} else {
@@ -710,7 +710,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 						disk,Inconsistent));
 	} else if (side == SyncSource) {
 		r = drbd_request_state(mdev,NS2(conn,SyncSource,
-						pedi,Inconsistent));
+						pdsk,Inconsistent));
 		/* If we are SyncSource we must be consistent.
 		 * FIXME this should be an assertion only,
 		 * otherwise it masks a logic bug somewhere else...

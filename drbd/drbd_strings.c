@@ -63,6 +63,7 @@ static const char *drbd_state_sw_errors[] = {
 	[2] = "Refusing to be Primary without consistent data",
 	[3] = "Refusing to make peer Primary without data",
 	[4] = "Refusing to be inconsistent on both nodes",
+	[5] = "Refusing to be syncing and diskless",
 };
 
 const char* conns_to_name(drbd_conns_t s) {

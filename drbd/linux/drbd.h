@@ -216,7 +216,7 @@ typedef union {
 		unsigned peer : 2 ;   // 3/3      primary/secondary/unknown
 		unsigned conn : 5 ;   // 17/32    cstates
 		unsigned disk : 3 ;   // 7/7      from DUnknown to UpToDate
-		unsigned pedi : 3 ;   // 7/7      from DUnknown to UpToDate
+		unsigned pdsk : 3 ;   // 7/7      from DUnknown to UpToDate
 		unsigned mult : 1 ;   // 2/2      multiple primaries allowed
 		unsigned _pad : 16;   // 0        unused
 	} s;

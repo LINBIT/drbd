@@ -744,6 +744,7 @@ struct Drbd_Conf {
 
 // drbd_main.c
 extern int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard);
+extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
 extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns);
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
@@ -1007,7 +1008,7 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 #include "drbd_compat_wrappers.h"
 
 #define peer_mask role_mask
-#define pedi_mask disk_mask
+#define pdsk_mask disk_mask
 
 #define NS(T,S) ({drbd_state_t mask; mask.i=0; mask.s.T = T##_mask; mask;}), \
                 ({drbd_state_t val; val.i=0; val.s.T = (S); val;})
@@ -1023,6 +1024,13 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
                   val.s.T2 = (S2); val.s.T3 = (S3); val;})
 
 #define _NS(T,S) ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T = (S); ns;})
+#define _NS2(T1,S1,T2,S2) \
+                ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T1 = (S1); \
+                ns.s.T2 = (S2); ns;})
+#define _NS3(T1,S1,T2,S2,T3,S3) \
+                ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T1 = (S1); \
+                ns.s.T2 = (S2); ns.s.T3 = (S3); ns;})
+
 
 static inline void drbd_force_state(drbd_dev* mdev, 
 				    drbd_state_t mask, drbd_state_t val)

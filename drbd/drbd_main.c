@@ -374,8 +374,29 @@ int drbd_io_error(drbd_dev* mdev)
 	return ok;
 }
 
+
+static void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
+{
+	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s m:%d }\n",
+	    name,
+	    conns_to_name(ns.s.conn),
+	    roles_to_name(ns.s.role),
+	    roles_to_name(ns.s.peer),
+	    disks_to_name(ns.s.disk),
+	    disks_to_name(ns.s.pdsk),
+	    ns.s.mult);
+}
+
+void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
+{
+	ERR("State change failed: %s\n",set_st_err_name(err));
+	print_st(mdev," state",os);
+	print_st(mdev,"wanted",ns);
+}
+
+
 #define peers_to_name roles_to_name
-#define pedis_to_name disks_to_name
+#define pdsks_to_name disks_to_name
 
 #define PSC(A) \
 	({ if( ns.s.A != os.s.A ) { \
@@ -404,17 +425,21 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
 		if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
 		    ns.s.conn < Connected ) return -2;
 
-		if( ns.s.peer == Primary && ns.s.pedi <= Inconsistent && 
+		if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent && 
 		    ns.s.conn < Connected ) return -3;
 
 		if( ns.s.conn > Connected && 
-		    (ns.s.disk < Consistent || ns.s.pedi < Consistent ) )
+		    ns.s.disk < Consistent && ns.s.pdsk < Consistent )
 			return -4;
+
+		if( ns.s.conn > Connected && 
+		    (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) )
+			return -5;
 	}
 
 	/*  State sanitising  */
 	if( ns.s.conn < Connected ) ns.s.peer = Unknown;
-	if( ns.s.conn < Connected ) ns.s.pedi = DUnknown;
+	if( ns.s.conn < Connected ) ns.s.pdsk = DUnknown;
 
 	if( ns.s.disk <= Failed && ns.s.conn > Connected) {
 		WARN("Resync aborted.\n");
@@ -427,7 +452,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, int hard)
 	PSC(peer);
 	PSC(conn);
 	PSC(disk);
-	PSC(pedi);
+	PSC(pdsk);
 	if( ns.s.mult != os.s.mult ) {
 		sprintf(pbp, "mult( %d -> %d)", os.s.mult,ns.s.mult);
 	}
@@ -1304,7 +1329,7 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 
 	/* only if connected */
 	spin_lock_irq(&mdev->req_lock);
-	if (mdev->state.s.pedi >= Inconsistent) /* implies cs >= Connected */ {
+	if (mdev->state.s.pdsk >= Inconsistent) /* implies cs >= Connected */ {
 		D_ASSERT(mdev->state.s.role == Primary);
 		if (test_and_clear_bit(UNPLUG_REMOTE,&mdev->flags)) {
 			/* add to the front of the data.work queue,

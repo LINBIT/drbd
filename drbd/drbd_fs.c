@@ -439,7 +439,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 					 ? Consistent : Inconsistent ))) > 0) {
 		drbd_thread_start(&mdev->worker);
 	} else {
-		ERR("%s\n",set_st_err_name(i));
+		print_st_err(mdev,
+			     mdev->state,
+			     _NS(disk,drbd_md_test_flag(mdev,MDF_Consistent)
+				? Consistent : Inconsistent ),i);
 	}
 
 // FIXME EXPLAIN:
@@ -567,7 +570,7 @@ FIXME
 
 	drbd_thread_start(&mdev->worker);
 	if( (i=drbd_request_state(mdev,NS(conn,Unconnected))) <= 0) {
-		ERR("%s\n",set_st_err_name(i));
+		print_st_err(mdev,mdev->state,_NS(conn,Unconnected),i);
 	} else {
 		drbd_thread_start(&mdev->receiver);
 	}
@@ -581,7 +584,7 @@ FIXME
 
 int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 {
-	int r;
+	int r,forced = 0;
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
 
@@ -605,7 +608,7 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 
 	r = drbd_request_state(mdev,NS(role,newstate & 0x3));
 	if ( r == 2 ) { return 0; }
-	if ( r <= 0 ) {
+	if ( r == -2 ) {
 		/* request state does not like the new state. */
 		if (! (newstate & DontBlameDrbd)) {
 			return -EIO;
@@ -617,11 +620,19 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
 							disk,Consistent));
 			if(r<=0) {
-				ERR("%s\n",set_st_err_name(r));
+				print_st_err(mdev,mdev->state,
+					     _NS2(role,newstate & 0x3,
+						 disk,Consistent),r);
 				return -EIO;
 			}
+			forced = 1;
 		}
 	}
+	if ( r <= 0) { 
+		print_st_err(mdev,mdev->state,_NS(role,newstate & 0x3),r);
+		return -EACCES; 
+	}
+
 
 	if (mdev->state.s.conn >= Connected) {
 		/* do NOT increase the Human count if we are connected,
@@ -686,6 +697,11 @@ int drbd_set_state(drbd_dev *mdev,drbd_role_t newstate)
 	}
 	/* Primary indicator has changed in any case. */
 	drbd_md_write(mdev);
+
+	if (mdev->state.s.conn >= WFReportParams) {
+		/* if this was forced, we should consider sync */
+		drbd_send_param(mdev,forced);
+	}
 
 	return 0;
 }
@@ -765,7 +781,7 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 
 	if( r == 2 ) { return 0; }
 	if( r <= 0 ) { 
-		ERR("%s\n",set_st_err_name(r));
+		print_st_err(mdev,os,ns,r);
 		return -ENETRESET; 
 	}
 
@@ -910,7 +926,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		r = drbd_request_state(mdev,NS(conn,StandAlone));
 		if( r == 2 ) { break; }
 		if( r <= 0 ) {
-			ERR("%s\n",set_st_err_name(r));
+			print_st_err(mdev,mdev->state,_NS(conn,StandAlone),r);
 			err=-ENODATA;
 			break;
 		} 
@@ -1009,7 +1025,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		if( r == 2 ) { break; }
 		if( r <= 0 ) {
-			ERR("%s\n",set_st_err_name(r));
+			print_st_err(mdev,mdev->state,_NS2(disk,Inconsistent,
+							   conn,WFBitMapT),r);
 			err = -EINPROGRESS;
 			break;
 		} 
@@ -1044,12 +1061,13 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		/* PRE TODO disallow invalidate if we peer is primary */
 		/* remove EINVAL from error output... */
-		r = drbd_request_state(mdev,NS2(pedi,Inconsistent,
+		r = drbd_request_state(mdev,NS2(pdsk,Inconsistent,
 					        conn,WFBitMapS));
 
 		if( r == 2 ) { break; }
 		if( r <= 0 ) {
-			ERR("%s\n",set_st_err_name(r));
+			print_st_err(mdev,mdev->state,_NS2(pdsk,Inconsistent,
+							   conn,WFBitMapS),r);
 			err = -EINPROGRESS;
 			break;
 		} 

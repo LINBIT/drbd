@@ -843,7 +843,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
 	if (likely( drbd_bio_uptodate(&e->private_bio) )) {
 		ok = mdev->state.s.disk >= Inconsistent &&
-			mdev->state.s.pedi >= Inconsistent;
+			mdev->state.s.pdsk >= Inconsistent;
 		if (likely( ok )) {
 			drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
 			/* THINK maybe don't send ack either
@@ -1290,7 +1290,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
 	drbd_conns_t nconn;
-	drbd_disks_t npedi;
+	drbd_disks_t npdsk;
 	drbd_state_t ns;
 	int consider_sync,rv;
 	sector_t p_size;
@@ -1390,12 +1390,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 
 	if(p_size ) {
-		npedi = Inconsistent;
+		npdsk = Inconsistent;
  		if (be32_to_cpu(p->gen_cnt[Flags]) & MDF_Consistent) {
-			npedi = Consistent;
+			npdsk = Consistent;
 		}
 	} else {
-		npedi = Diskless;
+		npdsk = Diskless;
 	}
 
 	if (mdev->state.s.conn == WFReportParams) {
@@ -1412,11 +1412,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	ns.i = mdev->state.i;
 	ns.s.conn = nconn;
 	ns.s.peer = be32_to_cpu(p->state);
-	ns.s.pedi = npedi;
+	ns.s.pdsk = npdsk;
 	rv = _drbd_set_state(mdev,ns,0);
 	spin_unlock_irq(&mdev->req_lock);
 
 	if(rv <= 0) {
+		print_st_err(mdev,mdev->state,ns,rv);
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
@@ -1485,7 +1486,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
  *        *doing* it here masks a logic bug elsewhere, I think.
  */
 	D_ASSERT(mdev->state.s.disk >= Inconsistent);
-	D_ASSERT(mdev->state.s.pedi >= Inconsistent);
+	D_ASSERT(mdev->state.s.pdsk >= Inconsistent);
 // EXPLAIN:
 	clear_bit(MD_IO_ALLOWED,&mdev->flags);
 
@@ -1909,7 +1910,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	int blksize = be32_to_cpu(p->blksize);
 
 	smp_rmb();
-	if(likely(mdev->state.s.pedi >= Inconsistent )) {
+	if(likely(mdev->state.s.pdsk >= Inconsistent )) {
 		// test_bit(PARTNER_DISKLESS,&mdev->flags)
 		// This happens if one a few IO requests on the peer
 		// failed, and some subsequest completed sucessfull
@@ -2005,7 +2006,7 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
 
 	smp_rmb();
-	if(unlikely(mdev->state.s.pedi <= Diskless)) return TRUE;
+	if(unlikely(mdev->state.s.pdsk <= Diskless)) return TRUE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
 	dec_ap_pending(mdev);
