@@ -3,11 +3,14 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2003, Philipp Reisner <philipp@linuxfreak.com>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@linbit.com>.
         Initial author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks before using the device.
+
+   Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>
+	main contributor.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -51,6 +54,7 @@
 #define DEF_NET_TRY_CON_I 10         // 10 seconds
 #define DEF_NET_PING_I 10            // 10 seconds
 #define DEF_SYNC_RATE 250
+#define DEF_SYNC_GROUP 0
 #define DEF_WFC_TIMEOUT 0            // forever
 #define DEF_DEGR_WFC_TIMEOUT 60      // 60 Seconds
 #define DEF_SYNC_WFC_TIMEOUT 8       // 8 seconds
@@ -58,6 +62,21 @@
 #define DEF_MAX_EPOCH_SIZE 2048      // entries
 #define DEF_MAX_BUFFERS 2048         // entries
 #define DEF_SNDBUF_SIZE (2*65535)    // ~128KB
+#define DEF_DISK_SIZE 0
+
+#if 0
+# define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
+# define PRINT_ARGV do { \
+	int i; \
+		fprintf(stderr,"# argv (optind=%i) in %s:%i:\n#",\
+			optind, __FUNCTION__,__LINE__); \
+		for (i=optind; i < argc; i++) \
+			fprintf(stderr," %s",argv[i]); \
+				fprintf(stderr,"\n"); \
+} while(0)
+#else
+# define PRINT_ARGV
+#endif
 
 struct drbd_cmd {
   const char* cmd;
@@ -105,6 +124,7 @@ struct drbd_cmd commands[] = {
    (struct option[]) {
      { "use-csums",  no_argument,       0, 'c' },
      { "skip-sync",  no_argument,       0, 'k' },
+     { "group",      required_argument, 0, 'g' },
      { "rate",       required_argument, 0, 'r' },
      { 0,            0,                 0, 0 } } },
   {"down", cmd_down,                 0, 0 },
@@ -249,39 +269,69 @@ int already_in_use(const char* dev_name)
     already_in_use_tab(dev_name,"/proc/mounts");
 }
 
-void print_usage(const char* prgname)
+void print_command_usage(int i, const char *addinfo)
+    // CAUTION no range check for i
 {
-  int i;
   char **args;
   struct option *options;
+#define  maxcol 70 // plus initial tab ...
+  static char line[maxcol+1];
+  int col,prevcol;
+
+  prevcol=col=0;
+
+  col += snprintf(line+col, maxcol-col, " %s", commands[i].cmd);
+  if ((args = commands[i].args)) {
+    while (*args)
+      col += snprintf(line+col, maxcol-col, " %s", *args++);
+  }
+  if (col > maxcol) {
+    printf("%s\n\t",line);
+    col=0;
+  }
+  prevcol=col;
+  if ((options = commands[i].options)) {
+    while (options->name) {
+      if (options->has_arg == required_argument) {
+	col += snprintf(line+col, maxcol-col, " [{--%s|-%c} val]",
+			options->name, options->val);
+      } else {
+	col += snprintf(line+col, maxcol-col, " [{--%s|-%c}]",
+			options->name, options->val);
+      }
+      if (col >= maxcol) {
+	line[prevcol]=0;
+	printf("%s\n\t",line);
+	prevcol=col=0;
+      } else {
+	prevcol=col;
+	options++;
+      }
+    }
+  }
+  line[col]=0;
+  printf("%s\n",line);
+  if (addinfo) {
+    printf("%s\n", addinfo);
+    exit(20);
+  }
+}
+
+void print_usage(const char* prgname,const char* addinfo)
+{
+  int i;
 
   printf("\nUSAGE: %s device command arguments options\n\n"
 	 "Device is usually /dev/nbX or /dev/drbd/X.\n"
          "Commands, arguments and options are:\n",prgname);
 
 
-  for(i=0;i<ARRY_SIZE(commands);i++)
-    {
-      printf(" %s",commands[i].cmd);
-      if((args=commands[i].args))
-	{
-	  while(*args) printf(" %s",*args++);
-	}
-      if((options=commands[i].options))
-	{
-	  while(options->name)
-	    {
-	      if(options->has_arg == required_argument)
-		printf(" [{--%s|-%c} val]",options->name,options->val);
-	      else
-		printf(" [{--%s|-%c}]",options->name,options->val);
-	      options++;
-	    }
-	}
-      printf("\n");
-    }
+  for (i = 0; i < ARRY_SIZE(commands); i++)
+    print_command_usage(i, 0);
 
   printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
+  if (addinfo)
+      printf("\n%s\n",addinfo);
 
   exit(20);
 }
@@ -351,12 +401,11 @@ int scan_disk_options(char **argv,
 
   if(argc==0) return 0;
 
-  optind=0;
-  opterr=0; /* do not print error messages upon not valid options */
   while(1)
     {
       int c;
 
+      PRINT_ARGV;
       c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
@@ -367,10 +416,10 @@ int scan_disk_options(char **argv,
 	case 'p':
 	  cn->config.do_panic=1;
 	  break;
+	case 1:	// non option argument. see getopt_long(3)
+	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
 	case '?':
-	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	  return 20;
-	  break;
 	}
     }
   return 0;
@@ -391,12 +440,11 @@ int scan_net_options(char **argv,
 
   if(argc==0) return 0;
 
-  optind=0;
-  opterr=0; /* do not print error messages upon not valid options */
   while(1)
     {
       int c;
 
+      PRINT_ARGV;
       c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
@@ -419,10 +467,10 @@ int scan_net_options(char **argv,
 	case 'S':
 	  cn->config.sndbuf_size = m_strtol(optarg,1);
 	  break;
+	case 1:	// non option argument. see getopt_long(3)
+	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
 	case '?':
-	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	  return 20;
-	  break;
 	}
     }
 
@@ -515,7 +563,7 @@ int do_net_conf(int drbd_fd,
 
   if(proto[1] != 0)
     {
-      fprintf(stderr,"Invalid protocol specifier.\n");
+      fprintf(stderr,"Invalid protocol specifier '%s'.\n",proto);
       return 20;
     }
   switch(proto[0])
@@ -533,7 +581,7 @@ int do_net_conf(int drbd_fd,
       cn->config.wire_protocol = DRBD_PROT_C;
       break;
     default:
-      fprintf(stderr,"Invalid protocol specifier.\n");
+      fprintf(stderr,"Invalid protocol specifier '%s'.\n",proto);
       return 20;
     }
 
@@ -597,14 +645,14 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   Drbd_State newstate=Primary;
 
-  optind=0;
   if(argc > 0)
     {
       while(1)
 	{
 	  int c;
 
-	  c = getopt_long(argc+1,argv-1,make_optstring(options),options,0);
+	  PRINT_ARGV;
+	  c = getopt_long(argc,argv,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -617,10 +665,10 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	    case 't':
 	      newstate |= TimeoutExpired;
 	      break;
+	    case 1:	// non option argument. see getopt_long(3)
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
 	    case '?':
-	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	      return 20;
-	      break;
 	    }
 	}
     }
@@ -663,14 +711,14 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
   p.wfc_timeout=wfct;
   p.degr_wfc_timeout=dwfct;
 
-  optind=0;
   if(argc > 0)
     {
       while(1)
 	{
 	  int c;
 
-	  c = getopt_long(argc+1,argv-1,make_optstring(options),options,0);
+	  PRINT_ARGV;
+	  c = getopt_long(argc,argv,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -680,10 +728,10 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	    case 'd':
 	      p.degr_wfc_timeout = m_strtol(optarg,1);
 	      break;
+	    case 1:	// non option argument. see getopt_long(3)
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
 	    case '?':
-	      fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	      return 20;
-	      break;
 	    }
 	}
     }
@@ -726,18 +774,18 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
     }
 
   cn.config.rate = current_cn.sconf.rate;
+  cn.config.group = current_cn.sconf.group;
   cn.config.use_csums = 0; //current_cn.sconf.use_csums;
   cn.config.skip = 0; //current_cn.sconf.skip;
 
-  optind=0;
-  opterr=0; /* do not print error messages upon not valid options */
   if(argc > 0)
     {
       while(1)
 	{
 	  int c;
 
-	  c = getopt_long(argc+3,argv-3,make_optstring(options),options,0);
+	  PRINT_ARGV;
+	  c = getopt_long(argc,argv,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
@@ -750,10 +798,13 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	    case 'r':
 	      cn.config.rate=m_strtol(optarg,1024);
 	      break;
-	    case '?':
-	      fprintf(stderr,"Unknown option %s\n",argv[optind-4]);
-	      return 20;
+	    case 'g':
+	      cn.config.group=m_strtol(optarg,1);
 	      break;
+	    case 1:	// non option argument. see getopt_long(3)
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
+	    case '?':
+	      return 20;
 	    }
 	}
     }
@@ -844,10 +895,10 @@ int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options)
   struct ioctl_net_config cn;
   int retval;
 
-  retval=scan_net_options(argv+2,argc-2,&cn,options);
+  retval=scan_net_options(argv,argc,&cn,options);
   if(retval) return retval;
 
-  return do_net_conf(drbd_fd,argv[2],argv[0],argv[1],&cn);
+  return do_net_conf(drbd_fd,argv[5],argv[3],argv[4],&cn);
 }
 
 int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
@@ -858,7 +909,7 @@ int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
   retval=scan_disk_options(argv,argc,&cn,options);
   if(retval) return retval;
 
-  return do_disk_conf(drbd_fd,argv[0],&cn);
+  return do_disk_conf(drbd_fd,argv[3],&cn);
 }
 
 int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
@@ -866,29 +917,29 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
   unsigned long u_size=0;
   int err;
 
-  optind=0;
-  opterr=0; /* do not print error messages upon not valid options */
   if(argc > 0)
     {
       while(1)
 	{
 	  int c;
 
-	  c = getopt_long(argc+3,argv-3,make_optstring(options),options,0);
+	  PRINT_ARGV;
+	  c = getopt_long(argc,argv,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
 	    case 'd':
 	      u_size=m_strtol(optarg,1024);
 	      break;
+	    case 1:	// non option argument. see getopt_long(3)
+	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",argv[0],optarg);
 	    case '?':
-	      fprintf(stderr,"Unknown option %s\n",argv[optind-4]);
 	      return 20;
-	      break;
 	    }
 	}
     }
 
+  fprintf(stderr,"err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_SIZE,%lu);\n",u_size);
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_SIZE,u_size);
   if(err)
     {
@@ -1011,6 +1062,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   printf("Syncer options:\n");
 
   SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
+  SHOW_I("group","", cn.sconf.group, DEF_SYNC_GROUP);
 
   if( cn.sconf.skip ) printf(" skip-sync\n");
   if( cn.sconf.use_csums ) printf(" use-csums\n");
@@ -1022,14 +1074,16 @@ int main(int argc, char** argv)
 {
   int drbd_fd,i;
   int num_of_args;
+  int help = 0;
   char **args;
 
-  if(argc < 3) print_usage(argv[0]);
+  if (argc > 1 && !strcmp(argv[1],"help")) help = 1;
+  if (argc < 3)
+    print_usage(argv[0], argc==1 ? 0 :
+		help ? "try help <command>"
+		     : "  What??");
 
   chdir("/");
-
-  drbd_fd=open_drbd_device(argv[1]);
-  check_state_dir();
 
   for(i=0;i<ARRY_SIZE(commands);i++)
     {
@@ -1040,13 +1094,20 @@ int main(int argc, char** argv)
 	    {
 	      while(*args++) num_of_args++;
 	    }
-	  if (argc-3 < num_of_args) print_usage(argv[0]);
+	  if (argc-3 < num_of_args)
+	      print_command_usage(i,help?"":"Not enough arguments.");
 	  if (argc-3-num_of_args>0 && commands[i].options==0)
 	    {
 	      fprintf(stderr,"Too many arguments or options.\n");
 	      return 20;
 	    }
-	  return commands[i].function(drbd_fd,argv+3,argc-3,
+
+	  drbd_fd=open_drbd_device(argv[1]);
+	  check_state_dir();
+
+	  opterr = 1; /* let getopt() print error messages */
+	  optind = 3+num_of_args;
+	  return commands[i].function(drbd_fd,argv,argc,
 				      commands[i].options);
 	}
     }

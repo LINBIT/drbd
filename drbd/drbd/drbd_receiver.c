@@ -8,14 +8,14 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2002, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
 	Code to prevent zombie threads.
 
-   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
-	some SMP fixes; syncer progress
+   Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>.
+	main contributor.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -646,7 +646,6 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 	}
-
 	return rv;
 }
 
@@ -701,7 +700,6 @@ STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 		set_cstate(mdev,Unconnected);
 		return 0;
 	}
-
 	if(mdev->conf.try_connect_int) {
 		init_timer(&accept_timeout);
 		accept_timeout.function = drbd_c_timeout;
@@ -713,7 +711,6 @@ STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 
 	sock = drbd_accept(sock2);
 	sock_release(sock2);
-
 	if(mdev->conf.try_connect_int) {
 		unsigned long flags;
 		del_timer_sync(&accept_timeout);
@@ -892,7 +889,6 @@ STATIC void receive_data_tail(struct Drbd_Conf* mdev,int data_size)
 #undef NUMBER
 
 	mdev->writ_cnt+=data_size>>9;
-
 }
 
 int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
@@ -948,7 +944,6 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
-
 }
 
 
@@ -990,7 +985,6 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
-
 }
 
 int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr,
@@ -1042,6 +1036,8 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 	spin_lock(&mdev->pr_lock);
 	list_del(&pr->list);
 	spin_unlock(&mdev->pr_lock);
+
+	// FIXME PARANOIA BUG() on invalid cause !
 
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
 
@@ -1148,6 +1144,9 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	switch(command) {
 	case DataRequest:     e->e_end_io = e_end_data_req; break;
 	case RSDataRequest:   e->e_end_io = e_end_rsdata_req; break;
+	default:
+	      // FIXME PARANOIA BUG()
+		;
 	}
 
 	bh=e->bh;
@@ -1166,6 +1165,31 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	mdev->read_cnt += bh->b_size >> 9;
 	inc_unacked(mdev);
 	generic_make_request(READ,e->bh);
+
+	return TRUE;
+}
+
+STATIC int receive_param_value(struct Drbd_Conf* mdev,int command)
+{
+	// XXX do we need the ioctl lock here?
+	// __u64 l;
+	__u32 i;
+
+	switch (command) {
+	case SetSyncRate:
+		if (drbd_recv(mdev, &i, sizeof(i),0) != sizeof(i))
+			return FALSE;
+		mdev->sync_conf.rate = be32_to_cpu(i);
+		break;
+	case SetSyncGroup:
+		if (drbd_recv(mdev, &i, sizeof(i),0) != sizeof(i))
+			return FALSE;
+		mdev->sync_conf.group = be32_to_cpu(i);
+		break;
+	default:
+	      // FIXME PARANOIA BUG()
+		;
+	}
 
 	return TRUE;
 }
@@ -1490,7 +1514,25 @@ STATIC void drbdd(int minor)
 					     be16_to_cpu(header.command)))
 				goto err;
 			break;
-
+		case SetSyncGroup:
+		case SetSyncRate:
+			if(!receive_param_value(mdev,
+				be16_to_cpu(header.command)))
+				goto err;
+			break;
+		case SyncStop:
+			// paranoia
+			if (mdev->cstate == SyncSource)
+				set_cstate(mdev,PausedSyncS);
+			// else BUG()
+			break;
+		case SyncCont:
+			// paranoia
+			if (mdev->cstate == PausedSyncS &&
+			    mdev->sync_side == SyncSource  )
+				set_cstate(mdev,SyncSource);
+			// else BUG()
+			break;
 		default:
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: unknown packet type %d!\n", minor,
@@ -1715,7 +1757,6 @@ int drbd_asender(struct Drbd_thread *thi)
 				break;
 			case PingAck:
 				del_timer(&ping_timeout);
-
 				rtt = jiffies-ping_sent_at;
 				ping_sent_at=0;
 				break;
@@ -1738,6 +1779,9 @@ int drbd_asender(struct Drbd_thread *thi)
 						&pkt);
 				expect = sizeof(Drbd_Packet);
 				break;
+			default:
+				// FIXME PARANOIA BUG()
+				;
 			}
 			rsize=0;
 		}

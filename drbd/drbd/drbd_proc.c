@@ -5,8 +5,11 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
+
+   Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>.
+	main contributor.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -48,7 +51,7 @@ struct proc_dir_entry *drbd_proc;
  * progress bars shamelessly adapted from driver/md/md.c
  * output looks like
  *	[=====>..............] 33.5% (23456/123456)
- *	finish: 2:20h speed: 6,345 (6,456) K/sec
+ *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
 STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 {
@@ -74,7 +77,7 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	else
 		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t", mdev->rs_left/2, mdev->rs_total/2);
 
-	/* see driver/md/md.c
+	/* see drivers/md/md.c
 	 * We do not want to overflow, so the order of operands and
 	 * the * 100 / 100 trick are important. We do a +1 to be
 	 * safe against division by zero. We only estimate anyway.
@@ -88,14 +91,9 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	db = (mdev->rs_mark_left - mdev->rs_left)/2;
 	rt = (dt * ((mdev->rs_left/2) / (db/100+1)))/100; /* seconds */
 
-	if (rt > 3600) {
-		rt = (rt+59)/60; /* rounded up minutes */
-		sz += sprintf(buf + sz, "finish: %lu:%02luh",
-			rt / 60, rt % 60);
-	}
-	else
-		sz += sprintf(buf + sz, "finish: %lu:%02lumin",
-			rt / 60, rt % 60);
+	sz += sprintf(buf + sz, "finish: %lu:%02lu:%02lu",
+		rt / 3600, (rt % 3600) / 60, rt % 60);
+
 
 	/* current speed average over (SYNC_MARKS * SYNC_MARK_STEP) jiffies */
 	if ((dbdt=db/dt) > 1000)
@@ -126,23 +124,25 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 
 	static const char *cstate_names[] =
 	{
-		[Unconfigured] = "Unconfigured",
-		[StandAlone]  =  "StandAlone",
-		[Unconnected] =  "Unconnected",
-		[Timeout] =      "Timeout",
-		[BrokenPipe] =   "BrokenPipe",
-		[WFConnection] = "WFConnection",
+		[Unconfigured]   = "Unconfigured",
+		[StandAlone]     = "StandAlone",
+		[Unconnected]    = "Unconnected",
+		[Timeout]        = "Timeout",
+		[BrokenPipe]     = "BrokenPipe",
+		[WFConnection]   = "WFConnection",
 		[WFReportParams] = "WFReportParams",
-		[WFBitMap] =     "WFBitMap",
-		[Connected] =    "Connected",
-		[SyncSource] =   "SyncSource",
-		[SyncTarget] =   "SyncTarget"
+		[Connected]      = "Connected",
+		[WFBitMap]       = "WFBitMap",
+		[SyncSource]     = "SyncSource",
+		[SyncTarget]     = "SyncTarget",
+		[PausedSyncS]    = "PausedSyncS",
+		[PausedSyncT]    = "PausedSyncT",
 	};
 	static const char *state_names[] =
 	{
-		[Primary] =   "Primary",
+		[Primary]   = "Primary",
 		[Secondary] = "Secondary",
-		[Unknown] =   "Unknown"
+		[Unknown]   = "Unknown"
 	};
 
 
@@ -151,31 +151,45 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 
 	/*
 	  cs .. connection state
-	   st .. node state
-	   ns .. network send
-	   nr .. network receive
-	   dw .. disk write
-	   dr .. disk read
-	   of .. block's on the fly
-	   gc .. generation count
+	  st .. node state
+	  ns .. network send
+	  nr .. network receive
+	  dw .. disk write
+	  dr .. disk read
+	  pe .. pending (waiting for ack)
+	  ua .. unack'd (still need to send ack)
 	*/
-
+	char *need_sync, *not_consistent;
 	for (i = 0; i < minor_count; i++) {
-		rlen =
-		    rlen + sprintf(buf + rlen,
-				   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
-				   " pe:%u ua:%u\n",
-				   i,
-				   cstate_names[drbd_conf[i].cstate],
-				   state_names[drbd_conf[i].state],
-				   state_names[drbd_conf[i].o_state],
-				   drbd_conf[i].send_cnt/2,
-				   drbd_conf[i].recv_cnt/2,
-				   drbd_conf[i].writ_cnt/2,
-				   drbd_conf[i].read_cnt/2,
-				   atomic_read(&drbd_conf[i].pending_cnt),
-				   atomic_read(&drbd_conf[i].unacked_cnt));
+		rlen += sprintf(buf + rlen,
+			   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
+			   " pe:%u ua:%u\n",
+			   i,
+			   cstate_names[drbd_conf[i].cstate],
+			   state_names[drbd_conf[i].state],
+			   state_names[drbd_conf[i].o_state],
+			   drbd_conf[i].send_cnt/2,
+			   drbd_conf[i].recv_cnt/2,
+			   drbd_conf[i].writ_cnt/2,
+			   drbd_conf[i].read_cnt/2,
+			   atomic_read(&drbd_conf[i].pending_cnt),
+			   atomic_read(&drbd_conf[i].unacked_cnt)
+		);
 
+		if ( drbd_conf[i].cstate >  Unconfigured
+		  && drbd_conf[i].cstate <= Connected   )
+		{
+			need_sync = not_consistent = "";
+			if ( drbd_conf[i].sync_side )
+				need_sync = "NEEDS_SYNC";
+			if (!(drbd_conf[i].gen_cnt[Flags] & MDF_Consistent)) {
+				not_consistent = "INCONSISTENT";
+				need_sync = "NEEDS_SYNC";
+			}
+			if (need_sync[0] || not_consistent[0])
+				rlen += sprintf(buf + rlen, "\t%s\t%s\n",
+						need_sync,not_consistent);
+		}
 		if ( drbd_conf[i].cstate == SyncSource ||
 		     drbd_conf[i].cstate == SyncTarget )
 			rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);

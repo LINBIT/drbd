@@ -5,7 +5,7 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
    drbd is free software; you can redistribute it and/or modify
@@ -143,6 +143,42 @@ int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 	return rv;
 }
 
+void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
+{
+	int i = 0;
+	int did_wait=0;
+	while (i < minor_count) {
+		for (i=0; i < minor_count; i++) {
+			if (signal_pending(current)) return;
+			if ( drbd_conf[i].sync_conf.group < mdev->sync_conf.group
+			  && drbd_conf[i].cstate > Connected )
+			{
+				printk(KERN_INFO DEVICE_NAME
+					"%d: Syncer waits for sync group %i\n",
+					(mdev-drbd_conf),
+					drbd_conf[i].sync_conf.group
+				);
+				// CAUTION magic +2 !!
+				drbd_send_cmd(mdev,SyncStop,0);
+				set_cstate(mdev,mdev->sync_side+2);
+				interruptible_sleep_on(&drbd_conf[i].cstate_wait);
+				did_wait=1;
+				current->state = TASK_INTERRUPTIBLE;
+				schedule_timeout(HZ/10);
+				break;
+			};
+		}
+	}
+	if (did_wait) {
+		printk(KERN_INFO DEVICE_NAME
+			"%d: resumed synchronisation.\n",
+			(mdev-drbd_conf)
+		);
+		drbd_send_cmd(mdev,SyncCont,0);
+		set_cstate(mdev,mdev->sync_side);
+	}
+}
+
 STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 {
 	int number,i;
@@ -161,6 +197,8 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		return TRUE;
 	}
 	// /Remove later
+
+	drbd_wait_for_other_sync_groups(mdev);
 
 	for(i=0;i<number;i++) {
 		struct Pending_read *pr;
@@ -199,6 +237,7 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	mdev->rs_start=jiffies;
 	mdev->rs_mark_left=mdev->rs_left;
 	mdev->rs_mark_time=mdev->rs_start;
+	mdev->sync_side = side;
 
 	if(side == SyncTarget) {
 		spin_lock_irq(&mdev->ee_lock); // (ab)use ee_lock see, below.
@@ -261,6 +300,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 				drbd_md_write(mdev);
 			}
 			mdev->rs_total = 0;
+			mdev->sync_side = 0;
 			set_cstate(mdev,Connected);
 		}
 
@@ -282,7 +322,6 @@ int drbd_dsender(struct Drbd_thread *thi)
 			}
 			drbd_send_cmd(mdev,WriteHint,0); // IO hint
 		}
-
 	}
 
 	return 0;

@@ -20,7 +20,7 @@ void syntax_error(char*);
 %option noyywrap
 
 NUM      [0-9][0-9]*[MKG]?
-SNUMB    [1-9][0-9]{0,2}
+SNUMB    [0-9]{1,3}
 IPV4ADDR ({SNUMB}"."){3}{SNUMB}
 WS       [ \t]
 OPCHAR   [{}=]
@@ -32,7 +32,7 @@ OPCHAR   [{}=]
 <in_string>\"       BEGIN(INITIAL);
 
 <id>\"           BEGIN(in_string);
-<id>[a-zA-Z/][a-zA-Z0-9_/]* { DP; CP; BEGIN(INITIAL); return TK_STRING; }
+<id>[a-zA-Z/][a-zA-Z0-9_/.-]* { DP; CP; BEGIN(INITIAL); return TK_STRING; }
 <id>[{}]         { DP; BEGIN(INITIAL); return yytext[0]; }
 <id>=            { DP; return yytext[0];                 }
 <id>{WS}+        /* ignore whitespaces */
@@ -59,6 +59,7 @@ protocol         { DP; CP; BEGIN(id); return TK_PROTOCOL;}
 do-panic         { DP; CP; return TK_DO_PANIC;           }
 use-csums        { DP; CP; return TK_USE_CSUMS;          }
 skip-sync        { DP; CP; return TK_SKIP_SYNC;          }
+group            { DP; CP; return TK_SYNC_GROUP;         }
 minor_count      { DP; CP; return TK_MINOR_COUNT;        }
 connect-int      { DP; CP; return TK_CONNECT_INT;        }
 wfc-timeout      { DP; CP; return TK_WFC_TIMEOUT;        }

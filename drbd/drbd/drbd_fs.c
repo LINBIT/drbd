@@ -5,15 +5,14 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2002, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
 	Some sanity checks in IOCTL_SET_STATE.
 
-   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
-	drbd_is_mounted() for IOCTL_SET_STATE, and IOCTL_SET_DISK_CONFIG.
-	Some sanity checks in IOCTL, ctl_mutex
+   Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>.
+	main contributor.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -113,7 +112,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	if(u_size) {
 		if(u_size > size) {
 			printk(KERN_ERR DEVICE_NAME
-			       "%d: Requested disk size is too big\n",minor);
+			       "%d: Requested disk size is too big"
+			       " (%lu > %lu)\n",minor,u_size,size);
 		} else {
 			size = u_size;
 		}
@@ -126,6 +126,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 			printk(KERN_INFO DEVICE_NAME "%d: size = %lu KB\n",
 			       minor,size);
 		}
+		// FIXME else { error handling }
 	}
 
 	return rv;
@@ -194,11 +195,10 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	ll_dev = inode->i_rdev;
 
-	if (blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] < new_conf.disk_size ) {
-		retcode=LDDeviceTooSmall;
+	if (blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] < new_conf.disk_size) {
+		retcode = LDDeviceTooSmall;
 		goto fail_ioctl;
 	}
-
 
 	fsync_dev(MKDEV(MAJOR_NR, minor));
 	drbd_thread_stop(&mdev->dsender);
@@ -485,9 +485,11 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_SYNC_CONFIG:
+		// PARANOIA check plausibility of values.
 		err = copy_from_user(&drbd_conf[minor].sync_conf,
 			   &(((struct ioctl_syncer_config*)arg)->config),
 				     sizeof(struct syncer_config));
+		drbd_send_sync_param(mdev);
 		// TODO Need to signal dsender() ?
 		break;
 
@@ -588,7 +590,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		bm_fill_bm(mdev->mbds_id,-1);
 		mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
 		drbd_start_resync(mdev,SyncTarget);
-		drbd_send_cmd(drbd_conf+minor,BecomeSyncSource,0);
+		drbd_send_cmd(mdev,BecomeSyncSource,0);
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
@@ -599,7 +601,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		mdev->rs_total=blk_size[MAJOR_NR][minor]<<1;
 		drbd_start_resync(mdev,SyncSource);
-		drbd_send_cmd(drbd_conf+minor,BecomeSyncTarget,0);
+		drbd_send_cmd(mdev,BecomeSyncTarget,0);
 		break;
 
 	case DRBD_IOCTL_SECONDARY_REM:
@@ -609,7 +611,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 
 		if (mdev->o_state == Primary) {
-			drbd_send_cmd(drbd_conf+minor,BecomeSec,0);
+			drbd_send_cmd(mdev,BecomeSec,0);
 		} else err = -ESRCH;
 
 		break;

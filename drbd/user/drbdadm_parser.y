@@ -79,7 +79,7 @@ static struct d_resource* new_resource(char* name)
 %token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_MAX_BUFFERS TK_MAX_EPOCH_SIZE
-%token <txt> TK_SNDBUF_SIZE
+%token <txt> TK_SNDBUF_SIZE TK_SYNC_GROUP
 
 %type <d_option> disk_stmts disk_stmt
 %type <d_option> net_stmts net_stmt
@@ -104,7 +104,7 @@ glob_stmt:        TK_DISABLE_IO_HINTS   { global_options.disable_io_hints=1; }
                 ;
 
 resources:        /* empty */   { $$ = 0; }
-	    	| resources resource   { $$=APPEND($1,$2); }
+		| resources resource   { $$=APPEND($1,$2); }
 		;
 
 resource:	  TK_RESOURCE TK_STRING { c_res = new_resource($2); }
@@ -154,6 +154,7 @@ sync_stmts:       /* empty */   { $$ = 0; }
 sync_stmt:        TK_SKIP_SYNC   { $$=new_opt($1,0); }
 		| TK_USE_CSUMS   { $$=new_opt($1,0); }
 		| TK_RATE '=' TK_INTEGER   { $$=new_opt($1,$3); }
+		| TK_SYNC_GROUP '=' TK_INTEGER   { $$=new_opt($1,$3); }
 		;
 
 host_stmts:       /* empty */  { c_host=calloc(1,sizeof(struct d_host_info)); }

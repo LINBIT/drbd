@@ -7,8 +7,8 @@
   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
-  Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
-	some tidbits
+  Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>.
+	main contributor.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -224,8 +224,12 @@ typedef enum {
   BecomeSec,     /* Secondary asking primary to become secondary */
   WriteHint,     /* Used in protocol C to hint the secondary to call tq_disk */
   DataRequest,   /* Used to ask for a data block */
-  RSDataRequest,   /* Used to ask for a data block */
-  BlockInSync    /* Possible anser to CondDataRequest. No data will be send */
+  RSDataRequest, /* Used to ask for a data block */
+  BlockInSync,   /* Possible anser to CondDataRequest. No data will be send */
+  SetSyncRate,
+  SetSyncGroup,
+  SyncStop,
+  SyncCont,
 } Drbd_Packet_Cmd;
 
 
@@ -326,6 +330,7 @@ struct BitMap {
 struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
+	Drbd_CState sync_side;
 	int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
@@ -411,6 +416,9 @@ extern void drbd_free_sock(int minor);
 extern int drbd_send_param(struct Drbd_Conf *mdev);
 extern int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd,
 			 int via_msock);
+//extern int drbd_send_u32_param(struct Drbd_Conf *mdev,
+//			Drbd_Packet_Cmd which, int value);
+int drbd_send_sync_param(struct Drbd_Conf *mdev);
 extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);

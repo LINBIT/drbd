@@ -1,6 +1,6 @@
 /*
   drbd.h
-  Kernel module for 2.2.x Kernels
+  Kernel module for 2.4.x Kernels
 
   This file is part of drbd by Philipp Reisner.
 
@@ -45,14 +45,14 @@
 #endif
 
 
-#define MAX_SOCK_ADDR	128		/* 108 for Unix domain -
-					   16 for IP, 16 for IPX,
-					   24 for IPv6,
-					   about 80 for AX.25
-					   must be at least one bigger than
-					   the AF_UNIX size (see net/unix/af_unix.c
-					   :unix_mkname()).
-					 */
+#define MAX_SOCK_ADDR	128	/* 108 for Unix domain -
+				   16 for IP, 16 for IPX,
+				   24 for IPv6,
+				   about 80 for AX.25
+				   must be at least one bigger than
+				   the AF_UNIX size (see net/unix/af_unix.c
+				   :unix_mkname()).
+				 */
 
 struct disk_config {
 	IN int      lower_device;
@@ -78,6 +78,7 @@ struct syncer_config {
 	int      rate; /* KB/sec */
 	int      use_csums;   /* use checksum based syncing*/
 	int      skip;
+	int      group;
 };
 
 enum ret_codes {
@@ -127,28 +128,35 @@ typedef enum {
 	DontBlameDrbd=16   // flag for set_state
 } Drbd_State;
 
+/* The order of these constants is important.
+ * The lower ones (<WFReportParams) indicate
+ * that there is no socket!
+ * >=WFReportParams ==> There is a socket
+ */
 typedef enum {
-  Unconfigured,
-  StandAlone,
-  Unconnected,
-  Timeout,
-  BrokenPipe,
-  WFConnection,
-  WFReportParams,     /* The order of these constants is important.   */
-  Connected,          /* The lower ones (<WFReportParams) indicate */
-  WFBitMap,
-  SyncSource,
-  SyncTarget
+	Unconfigured,
+	StandAlone,
+	Unconnected,
+	Timeout,
+	BrokenPipe,
+	WFConnection,   // we have a socket
+	WFReportParams,
+	Connected,      // we have introduced each other
+	WFBitMap,
+	SyncSource,
+	SyncTarget,
+	PausedSyncS,    // is sync source, but higher priority groups first
+	PausedSyncT,    // is sync target, but higher priority groups first
 } Drbd_CState;
 
 struct ioctl_get_config {
 	struct net_config     nconf;
 	struct syncer_config  sconf;
-	OUT int      lower_device_major;
-	OUT int      lower_device_minor;
-	OUT unsigned int disk_size_user;
-	OUT int      do_panic;
-	OUT Drbd_CState cstate;
+	OUT int               lower_device_major;
+	OUT int               lower_device_minor;
+	OUT unsigned int      disk_size_user;
+	OUT int               do_panic;
+	OUT Drbd_CState       cstate;
 };
 
 

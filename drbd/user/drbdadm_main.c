@@ -3,8 +3,11 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 2002, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 2002-2003, Philipp Reisner <philipp.reisner@gmx.at>.
         Initial author.
+
+   Copyright (C) 2003, Lars Ellenberg <l.g.e@web.de>
+        contributions.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -36,6 +39,8 @@
 #include <signal.h>
 
 #include "drbdadm.h"
+
+char* basename;
 
 struct adm_cmd {
   const char* name;
@@ -69,12 +74,13 @@ int dry_run;
 char* drbdsetup;
 char* setup_opts[10];
 int soi=0;
-int alarm_raised;
+volatile int alarm_raised;
 
 struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
   { "config-file",  required_argument,0, 'c' },
   { "drbdsetup",    required_argument,0, 's' },
+  { "help",         no_argument,      0, 'h' },
   { 0,              0,                0, 0   }
 };
 
@@ -125,6 +131,19 @@ static void dump_options(char* name,struct d_option* opts)
     opts=opts->next;
   }
   printf("  }\n");
+}
+
+static void dump_global_info()
+{
+  if (global_options.minor_count || global_options.disable_io_hints)
+    {
+      printf("global {\n");
+      if (global_options.disable_io_hints)
+	printf("  disable_io_hints\n");
+      if (global_options.minor_count)
+	printf("  minor_count=%i\n", global_options.minor_count);
+      printf("}\n");
+    }
 }
 
 static void dump_host_info(struct d_host_info* hi)
@@ -260,6 +279,7 @@ int m_system(int may_sleep,char** argv)
 {
   int pid,status;
   int rv=-1;
+  char **cmdline = argv;
 
   struct sigaction so;
   struct sigaction sa;
@@ -268,12 +288,12 @@ int m_system(int may_sleep,char** argv)
   sigemptyset(&sa.sa_mask);
   sa.sa_flags=0;
 
-  if(dry_run) {
-    while(*argv) {
-      printf("%s ",*argv++);
-    }
-    printf("\n");
+  while(*cmdline) {
+    fprintf(dry_run?stdout:stderr,"%s ",*cmdline++);
+  }
+  fprintf(dry_run?stdout:stderr,"\n");
 
+  if(dry_run) {
     return 0;
   }
 
@@ -300,6 +320,9 @@ int m_system(int may_sleep,char** argv)
       if (alarm_raised) {
 	fprintf(stderr,"Child process does not terminate!\nExiting.\n");
 	exit(20);
+      } else {
+	fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__);
+	exit(20);
       }
     } else {
       if(WIFEXITED(status)) {
@@ -317,7 +340,8 @@ int m_system(int may_sleep,char** argv)
   if(!may_sleep && rv) {
     fprintf(stderr,"Command line was '");
     while(*argv) {
-      fprintf(stderr,"%s ",*argv++);
+      fprintf(stderr,"%s",*argv++);
+      if (*argv) fputc(' ',stderr);
     }
     fprintf(stderr,"'\n");
   }
@@ -328,6 +352,10 @@ int m_system(int may_sleep,char** argv)
 
 #define make_options(OPT) \
   while(OPT) { \
+    if (argc>=20) {\
+      fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__); \
+      exit(20); \
+    } \
     if(OPT->value) { \
       ssprintf(argv[argc++],"--%s=%s",OPT->name,OPT->value); \
     } else { \
@@ -476,14 +504,14 @@ const char* make_optstring(struct option *options)
   return buffer;
 }
 
-void print_usage(const char* prgname)
+void print_usage()
 {
   int i;
   struct option *opt;
 
   printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
 	 "{all|RESOURCE...}\n\n"
-	 "OPTIONS:\n",prgname);
+	 "OPTIONS:\n",basename);
 
   opt=admopt;
   while(opt->name) {
@@ -520,8 +548,11 @@ int main(int argc, char** argv)
   dry_run=0;
   yyin=NULL;
 
-  if(argc == 1) print_usage(argv[0]); // arguments missing.
+  if( (basename=rindex(argv[0],'/')) )
+    argv[0] = ++basename;
+  if(argc == 1) print_usage(); // arguments missing.
 
+  opterr=1;
   optind=0;
   while(1)
     {
@@ -545,6 +576,8 @@ int main(int argc, char** argv)
 	    }
 	  }
 	  break;
+	case 'h':
+	  print_usage();
 	case 's':
 	  {
 	    char* pathes[2];
@@ -554,11 +587,33 @@ int main(int argc, char** argv)
 	  }
 	  break;
 	case '?':
-	  fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	  // commented out, since opterr=1
+	  //fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
 	  return 20;
 	  break;
 	}
     }
+
+  if ( optind == argc || !strcmp(argv[optind],"help") )
+    print_usage();
+
+  while(argv[optind][0]=='-') {
+    setup_opts[soi++]=argv[optind++];
+    if (optind == argc) print_usage();
+  }
+
+  cmd=NULL;
+  for(i=0;i<ARRY_SIZE(cmds);i++) {
+      if(!strcmp(cmds[i].name,argv[optind])) {
+	cmd=cmds+i;
+      }
+  }
+
+  if(cmd==NULL) {
+    fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
+    exit(20);
+  }
+  optind++;
 
   if(yyin==NULL) {
     yyin = fopen("/etc/drbd-07.conf","r");
@@ -596,31 +651,13 @@ int main(int argc, char** argv)
     find_drbdsetup((char *[]){"/sbin/drbdsetup", "./drbdsetup", 0 });
   }
 
-  if (optind == argc) print_usage(argv[0]);
-
-  while(argv[optind][0]=='-') {
-    setup_opts[soi++]=argv[optind++];
-    if (optind == argc) print_usage(argv[0]);
-  }
-
-  cmd=NULL;
-  for(i=0;i<ARRY_SIZE(cmds);i++) {
-      if(!strcmp(cmds[i].name,argv[optind])) {
-	cmd=cmds+i;
-      }
-  }
-
-  if(cmd==NULL) {
-    fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
-    exit(20);
-  }
-  optind++;
-
   if(cmd->res_name_required)
     {
-      if (optind+1 > argc) print_usage(argv[0]); // arguments missing.
+      if (optind + 1 > argc && cmd->function != adm_dump)
+        print_usage (argv[0]);	// arguments missing.
 
-      if(!strcmp(argv[optind],"all")) {
+      if(optind==argc || !strcmp(argv[optind],"all")) {
+        if (cmd->function == adm_dump) dump_global_info();
 	res=config;
 	while(res) {
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
@@ -661,6 +698,6 @@ int main(int argc, char** argv)
 
 void yyerror(char* text)
 {
-  fprintf(stderr,"%s in %d of config file.\n",text,line);
+  fprintf(stderr,"%s in line %d of config file.\n",text,line);
   exit(20);
 }

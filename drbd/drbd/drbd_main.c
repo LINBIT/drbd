@@ -5,7 +5,7 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
@@ -432,6 +432,46 @@ int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, int via_msock)
 	up( via_msock ? &mdev->msock_mutex : &mdev->sock_mutex);
 
 	return (err == sizeof(head));
+}
+
+// XXX should these go over sock or msock??
+int _drbd_send_u32_param(struct Drbd_Conf *mdev,
+			Drbd_Packet_Cmd which, int value)
+{
+	// PARANOIA BUG() unless 'which' is valid.
+	int err;
+	__u32 v;
+	Drbd_Packet head;
+
+	head.command = cpu_to_be16(which);
+	v = cpu_to_be32(value);
+
+	err = drbd_send(mdev, &head,sizeof(head), &v,sizeof(v),0);
+
+	D_ASSERT(err == sizeof(head)+sizeof(v));
+
+	return (err == sizeof(head)+sizeof(v));
+}
+
+int drbd_send_u32_param(struct Drbd_Conf *mdev,
+			Drbd_Packet_Cmd which, int value)
+{
+	int ret;
+	down(&mdev->sock_mutex);
+	ret = _drbd_send_u32_param(mdev,which,value);
+	up(&mdev->sock_mutex);
+	return ret;
+}
+
+int drbd_send_sync_param(struct Drbd_Conf *mdev)
+{
+	int ret;
+	// or should we introduce a special SetSyncParam packet?
+	down(&mdev->sock_mutex);
+	ret = _drbd_send_u32_param(mdev,SetSyncRate,mdev->sync_conf.rate)
+	   && _drbd_send_u32_param(mdev,SetSyncGroup,mdev->sync_conf.group);
+	up(&mdev->sock_mutex);
+	return ret;
 }
 
 int drbd_send_param(struct Drbd_Conf *mdev)
@@ -991,8 +1031,10 @@ int __init drbd_init(void)
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_conf[i].sync_conf.rate=250;
+		drbd_conf[i].sync_conf.group=0;
 		drbd_conf[i].sync_conf.use_csums=0;
 		drbd_conf[i].sync_conf.skip=0;
+		drbd_conf[i].sync_side=0;
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), TRUE );
@@ -1002,6 +1044,8 @@ int __init drbd_init(void)
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].lo_usize = 0;
+		drbd_conf[i].p_usize = 0;
+		drbd_conf[i].p_size = 0;
 		drbd_conf[i].state = Secondary;
 		init_waitqueue_head(&drbd_conf[i].state_wait);
 		drbd_conf[i].o_state = Unknown;
