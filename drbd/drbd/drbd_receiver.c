@@ -905,6 +905,7 @@ void drbdd(int minor)
 	case Unknown:
 	}
 	drbd_conf[minor].pending_cnt = 0;
+	del_timer(&drbd_conf[minor].a_timeout);
 }
 
 int drbdd_init(struct Drbd_thread *thi)
@@ -975,12 +976,13 @@ int drbd_asender(struct Drbd_thread *thi)
 	  }
 
 	  if(test_and_clear_bit(SEND_POSTPONE,&drbd_conf[minor].flags)) {
-		  printk(KERN_ERR DEVICE_NAME"%d: sending postpone packet!\n",
+		  printk(KERN_INFO DEVICE_NAME"%d: sending postpone packet!\n",
 			 minor);
 
 		  mod_timer(&drbd_conf[minor].p_timeout, jiffies + 
 			    drbd_conf[minor].conf.timeout * HZ / 20);
 
+		  /*
 		  printk(KERN_ERR DEVICE_NAME"%d: expire=%ld now=%ld\n",
 			 minor,drbd_conf[minor].p_timeout.expires,
 			 jiffies);
@@ -990,6 +992,7 @@ int drbd_asender(struct Drbd_thread *thi)
 				 minor);
 			  
 		  }
+		  */
 		  drbd_send_cmd(minor,Postpone);
 
 	  }
