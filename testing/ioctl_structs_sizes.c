@@ -2,10 +2,10 @@
 #include <linux/drbd.h>
 
 #define SZO(x) \
-({ int _i = sizeof(x); printf("sizeof(" #x ") = %d\n", _i); _i; })
+({ int _i = sizeof(x); printf("sizeof(" #x ") = %d\n", _i); \
+ if( _i % 8 ) printf(" WARN sizeof(" #x ") %% 8 != 0\n"); _i; })
 
-
-#define DRBD_07_SUM 1140
+#define DRBD_07_SUM 1184
 
 int main()
 {

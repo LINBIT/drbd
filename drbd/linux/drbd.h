@@ -45,8 +45,12 @@
 #define INOUT
 #endif
 
-/* Never forget to place bigger members before the smaller, to
-   avoid unaligned placement of members on 64 bit architectures. */
+/* 
+   - Never forget to place bigger members before the smaller ones, 
+     to avoid unaligned placement of members on 64 bit architectures. 
+   - Never forget to add explicit _pad members to make sizeof(struct)
+     divisible by 8.
+*/
 
 #define MAX_SOCK_ADDR	128	/* 108 for Unix domain -
 				   16 for IP, 16 for IPX,
@@ -92,6 +96,7 @@ struct net_config {
 	IN int      sndbuf_size;  /* socket send buffer size */
 	IN unsigned int ko_count;
 	IN enum disconnect_handler on_disconnect;
+	const int   _pad;
 };
 
 struct syncer_config {
@@ -100,6 +105,7 @@ struct syncer_config {
 	int      skip;
 	int      group;
 	int      al_extents;
+	const int _pad;
 };
 
 /* KEEP the order, do not delete or insert!
@@ -127,22 +133,26 @@ enum ret_codes {
 struct ioctl_disk_config {
 	struct disk_config    config;
 	OUT enum ret_codes    ret_code;
+	const int             _pad;
 };
 
 struct ioctl_net_config {
 	struct net_config     config;
 	OUT enum ret_codes    ret_code;
+	const int             _pad;
 };
 
 struct ioctl_syncer_config {
 	struct syncer_config  config;
 	OUT enum ret_codes    ret_code;
+	const int             _pad;
 };
 
 struct ioctl_wait {
 	IN int wfc_timeout;
 	IN int degr_wfc_timeout;
 	OUT int ret_code;
+	int      _pad;
 };
 
 #define DRBD_PROT_A   1
@@ -206,6 +216,7 @@ struct ioctl_get_config {
 	OUT Drbd_CState       cstate;
 	OUT Drbd_State        state;
 	OUT Drbd_State        peer_state;
+	int                   _pad;
 };
 
 #define DRBD_MAGIC 0x83740267
