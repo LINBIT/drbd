@@ -93,7 +93,6 @@ typedef struct wait_queue*  wait_queue_head_t;
 #define RQ_DRBD_NOTHING	  0xf100
 #define RQ_DRBD_SENT	  0xf200
 #define RQ_DRBD_WRITTEN   0xf300
-#define RQ_DRBD_SEC_WRITE 0xf400
 #define RQ_DRBD_READ      0xf500
 
 /* This is the layout for a packet on the wire! 
@@ -536,16 +535,30 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 
 	bh->b_list = BUF_LOCKED;
 	bh->b_end_io = handler;
-	init_waitqueue_head(&bh->b_wait);
+	// init_waitqueue_head(&bh->b_wait); since it is in set_bh() ...
       	bh->b_data = data;
 	bh->b_size = size;
-	// bh->b_state = 0;
+	// bh->b_state = 0; memset(bh,0 ... does the job :)
 }
 
 static inline void submit_bh(int rw, struct buffer_head * bh)
 {
 	clear_bit(BH_Lock, &bh->b_state); //ll_rw_block() wants to lock it
 	ll_rw_block(rw, 1, &bh);
+}
+
+static inline void drbd_set_bh(struct buffer_head *bh,
+			       unsigned long block,
+			       kdev_t dev)
+{
+	bh->b_blocknr=block;
+	bh->b_dev = dev;
+	init_waitqueue_head(&bh->b_wait);
+	/* in buffer.c function __wait_on_buffer() the wait_queue entry
+	   is not initialized. Therefore the waitqueue of the buffer head
+	   is fucked up after a call to wait_on_buffer().
+	   Initializing it here is a workaround.
+	 */
 }
 
 #else
@@ -566,8 +579,6 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr 
 }
 
-#endif
-
 static inline void drbd_set_bh(struct buffer_head *bh,
 			       unsigned long block,
 			       kdev_t dev)
@@ -575,5 +586,7 @@ static inline void drbd_set_bh(struct buffer_head *bh,
 	bh->b_blocknr=block;
 	bh->b_dev = dev;
 }
+#endif
+
 
 

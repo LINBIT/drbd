@@ -37,11 +37,14 @@
 
 void drbd_end_req(struct request *req, int nextstate, int uptodate)
 {
+	/* This callback will be called in irq context by the IDE drivers,
+	   and in Softirqs/Tasklets/BH context by the SCSI drivers.
+	   This function is called by the receiver in kernel-thread context.
+	   Try to get the locking right :) */
+
 	struct Drbd_Conf* mdev = &drbd_conf[MINOR(req->rq_dev)];
 	int wake_asender=0;
 	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
-
 
 	if (req->cmd == READ)
 		goto end_it_unlocked;
@@ -57,8 +60,6 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
 	switch (req->rq_status & 0xfffe) {
-	case RQ_DRBD_SEC_WRITE:
-		goto end_it;
 	case RQ_DRBD_NOTHING:
 		req->rq_status = nextstate | (uptodate ? 1 : 0);
 		break;
@@ -92,7 +93,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 
 	end_it_unlocked:
 
-	if(mdev->state == Primary && mdev->cstate >= Connected) {
+	if(mdev->cstate >= Connected) {
 	  /* If we are unconnected we may not call tl_dependece, since
 	     then this call could be from tl_clear(). => spinlock deadlock!
 	  */
@@ -106,29 +107,8 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate)
 	bb_done(mdev,req->bh->b_blocknr);
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
-	if(mdev->state == Secondary) {
-		e=req->bh->b_dev_id;
-		// since read requests do not have the b_private field set
-		if( e ) {
-			spin_lock_irqsave(&mdev->ee_lock,flags);
-			list_del(&e->list);
-/*		} else {
-			printk(KERN_ERR DEVICE_NAME "%d: e == NULL "
-			       ", bh=%p\n",
-			       (int)(mdev-drbd_conf),req->bh);
-*/
-		}
-	}
-
 	if(!end_that_request_first(req, uptodate & req->rq_status,DEVICE_NAME))
 	        end_that_request_last(req);
-
-	if(e) {
-		list_add(&e->list,&mdev->done_ee);
-		spin_unlock_irqrestore(&mdev->ee_lock,flags);
-		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-		   e->block_id == ID_SYNCER ) wake_asender=1;
-	}
 
 	if( mdev->do_panic && !(uptodate & req->rq_status) ) {
 		panic(DEVICE_NAME": The lower-level device had an error.\n");
@@ -155,17 +135,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
   * 1) unlock the io_request_lock for the time of the send 
          Not possible, because I do not have the flags for the unlock.
            -> Forget the flags, look at the loop block device!!
-  * 2) postpone the send to some point in time when the request lock
-       is not hold. 
-         Maybe using the tq_scheduler task queue, or an dedicated
-         execution context (kernel thread).
-
-         I am not sure if tq_schedule is a good idea, because we
-         could send some process to sleep, which would not sleep
-	 otherwise.
-	   -> tq_schedule is a bad idea, sometimes sock_sendmsg
-	      behaves *bad* ( return value does not indicate
-	      an error, but ... )
 
   Non atomic things, that need to be done are:
   sock_sendmsg(), kmalloc(,GFP_KERNEL) and ll_rw_block().
@@ -180,6 +149,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	int sending;
 	unsigned long flags;
 	struct Drbd_Conf *mdev;
+	int sent_a_blk=0;
 
 	minor = MINOR(CURRENT->rq_dev);
 	size_kb=1<<(drbd_conf[minor].blk_size_b-10);
@@ -228,7 +198,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		sending = 0;
 
-		if (req->cmd == WRITE && drbd_conf[minor].state == Primary) {
+		if (req->cmd == WRITE) {
 			if ( drbd_conf[minor].cstate >= Connected
 			     && req->sector >= drbd_conf[minor].synced_to) {
 				sending = 1;
@@ -261,16 +231,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if (sending)
 			req->rq_status = RQ_DRBD_NOTHING;
 		else if (req->cmd == WRITE) {
-			if(drbd_conf[minor].state == Secondary)
-				req->rq_status = RQ_DRBD_SEC_WRITE | 0x0001;
-			else {
-				req->rq_status = RQ_DRBD_SENT | 0x0001;
-				bm_set_bit(drbd_conf[minor].mbds_id,
-					   req->sector >> 
-					   (drbd_conf[minor].blk_size_b-9),
-					   drbd_conf[minor].blk_size_b, 
-					   SS_OUT_OF_SYNC);
-			}
+			req->rq_status = RQ_DRBD_SENT | 0x0001;
+			bm_set_bit(drbd_conf[minor].mbds_id,
+				   req->sector >> 
+				   (drbd_conf[minor].blk_size_b-9),
+				   drbd_conf[minor].blk_size_b, 
+				   SS_OUT_OF_SYNC);			
 		} else req->rq_status = RQ_DRBD_READ | 0x0001;
 
 
@@ -278,6 +244,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		if (sending) {
 			int bnr;
 			int send_ok;
+			sent_a_blk=1;
 			bnr = req->sector >> (drbd_conf[minor].blk_size_b - 9);
 
 			spin_lock_irqsave(&mdev->bb_lock,flags);
@@ -309,7 +276,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		spin_lock_irq(&io_request_lock);
 	}
 
-	if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C ) {
+	if((drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C) && sent_a_blk) {
 		spin_unlock_irq(&io_request_lock);
 		drbd_send_cmd(minor,WriteHint,0);
 		spin_lock_irq(&io_request_lock);
