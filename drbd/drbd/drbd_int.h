@@ -406,7 +406,6 @@ typedef struct {
 	u32         protocol;
 	u32         version;
 	u32         gen_cnt[GEN_CNT_SIZE];
-	u32         bit_map_gen[GEN_CNT_SIZE];
 	u32         sync_rate;
 	u32         sync_use_csums;
 	u32         skip_sync;
@@ -550,6 +549,8 @@ struct Drbd_Conf {
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
+	unsigned int al_writ_cnt;
+	unsigned int bm_writ_cnt;
 	atomic_t pending_cnt;
 	atomic_t unacked_cnt;
 	spinlock_t req_lock;
@@ -575,7 +576,6 @@ struct Drbd_Conf {
 	struct lru_cache resync; // Used to track operations of resync...
 	int open_cnt;
 	u32 gen_cnt[GEN_CNT_SIZE];
-	u32 bit_map_gen[GEN_CNT_SIZE];
 	int epoch_size;
 	spinlock_t ee_lock;
 	struct list_head free_ee;   // available
@@ -595,7 +595,6 @@ struct Drbd_Conf {
 	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
 	struct semaphore md_io_mutex; // protects the md_io_buffer
 	struct lru_cache act_log;     // activity log
-	unsigned int al_writ_cnt;
 	unsigned int al_tr_number;
 	int al_tr_cycle;  
 	int al_tr_pos;     // position of the next transaction in the journal
@@ -649,7 +648,6 @@ extern void drbd_md_write(drbd_dev *mdev);
 extern void drbd_md_read(drbd_dev *mdev);
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
 extern int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner);
-extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int have_good);
 
 // drbd_bitmap.c (still in drbd_main.c)
 #define SS_OUT_OF_SYNC (1)
@@ -715,6 +713,7 @@ extern void bm_reset(struct BitMap* sbm);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
 extern int bm_get_bit(struct BitMap* sbm, sector_t sector, int size);
 extern int bm_count_sectors(struct BitMap* sbm, unsigned long enr);
+extern int bm_end_of_dev_case(struct BitMap* sbm);
 
 extern void drbd_queue_signal(int signal,struct task_struct *task);
 
@@ -766,6 +765,8 @@ extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, 
 			     int blk_size, int may_sleep);
+extern void drbd_read_bitmap(struct Drbd_Conf *mdev);
+extern void drbd_al_apply_to_bitmap(struct Drbd_Conf *mdev);
 
 /*
  * event macros

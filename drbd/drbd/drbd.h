@@ -146,7 +146,8 @@ typedef enum {
 	Connected,      // we have introduced each other
 	SkippedSyncS,   // we should have synced, but user said no
 	SkippedSyncT,
-	WFBitMap,
+	WFBitMapS,
+	WFBitMapT,
 	SyncSource,
 	SyncTarget,
 	PausedSyncS,    // is sync source, but higher priority groups first

@@ -576,7 +576,6 @@ int drbd_send_param(drbd_dev *mdev)
 
 	for(i=Flags;i<=ArbitraryCnt;i++) {
 		p.gen_cnt[i]     = cpu_to_be32(mdev->gen_cnt[i]);
-		p.bit_map_gen[i] = cpu_to_be32(mdev->bit_map_gen[i]);
 	}
 	p.sync_rate      = cpu_to_be32(mdev->sync_conf.rate);
 	p.sync_use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
@@ -1100,6 +1099,8 @@ int __init drbd_init(void)
 		drbd_conf[i].recv_cnt = 0;
 		drbd_conf[i].writ_cnt = 0;
 		drbd_conf[i].read_cnt = 0;
+		drbd_conf[i].al_writ_cnt = 0;
+		drbd_conf[i].bm_writ_cnt = 0;
 		atomic_set(&drbd_conf[i].pending_cnt,0);
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
 		drbd_conf[i].mbds_id = bm_init(0);
@@ -1165,15 +1166,12 @@ int __init drbd_init(void)
 			drbd_init_bh(drbd_conf[i].md_io_bh,512);
 			set_bh_page(drbd_conf[i].md_io_bh,page,0);
 		}
-		drbd_conf[i].al_writ_cnt = 0;
 		drbd_conf[i].al_tr_number = 0;
 		drbd_conf[i].al_tr_cycle = 0;
 		drbd_conf[i].al_tr_pos = 0;
 		{
 			int j;
 			for(j=0;j<=ArbitraryCnt;j++) drbd_conf[i].gen_cnt[j]=0;
-			for(j=0;j<=ArbitraryCnt;j++)
-				drbd_conf[i].bit_map_gen[j]=0;
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
 #endif
@@ -1507,12 +1505,35 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 	return ret;
 }
 
+/* In case the device's size is not divisible by 4, the last bit
+   does not count for 8 sectors but something less. This function
+   returns this 'something less' iff the last bit is set.  
+   0               in case the device's size is divisible by 4
+   -2,-4 or -6     in the other cases
+ */
+int bm_end_of_dev_case(struct BitMap* sbm)
+{
+	unsigned long bnr;
+	unsigned long* bm;
+	int rv=0;
+	
+	bm = sbm->bm;
+
+	if( sbm->dev_size % BM_BPS ) {
+		bnr = sbm->dev_size / BM_BPS;
+		if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) {
+			rv = (sbm->dev_size*2) % BM_NS - BM_NS;
+		}
+	}
+
+	return rv;
+}
+
 #define WORDS ( ( BM_EXTENT_SIZE / BM_BLOCK_SIZE ) / BITS_PER_LONG )
 int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 {
 	unsigned long* bm;
 	int i,max,bits=0;
-	unsigned long bnr;
 
 	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
@@ -1526,16 +1547,11 @@ int bm_count_sectors(struct BitMap* sbm, unsigned long enr)
 	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
 
 	// Special case at the end of the device
-	if( max == sbm->size/sizeof(long) && 
-	    ( sbm->dev_size % BM_BPS)  ) {
-		bnr = sbm->dev_size / BM_BPS;
-		if(test_bit(bnr&BPLM,bm+(bnr>>LN2_BPL))) {
-			bits = bits + (sbm->dev_size*2) % BM_NS - BM_NS;
-		}
+	if( max == sbm->size/sizeof(long) ) {
+		bits += bm_end_of_dev_case(sbm); 
 	}
 
 	spin_unlock(&sbm->bm_lock);
-
 
 	return bits;
 }
@@ -1844,42 +1860,6 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	if( me < other ) return -1;
 
 	return 0;
-}
-
-//  Returns  1 if SyncingQuick is sufficient
-//           0 if SyncAll is needed.
-int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int i_am_pri)
-{
-	int i;
-	u32 me,other;
-
-	me=mdev->gen_cnt[Flags];
-	other=be32_to_cpu(partner->gen_cnt[Flags]);
-	// crash during sync forces SyncAll:
-	if( (i_am_pri && !(other & MDF_Consistent) ) ||
-	    (!i_am_pri && !(me & MDF_Consistent) ) ) return 0;
-
-	// primary crash forces SyncAll:
-	if( (i_am_pri && (other & MDF_PrimaryInd) ) ||
-	    (!i_am_pri && (me & MDF_PrimaryInd) ) ) return 0;
-
-	// If partner's GC not equal our bitmap's GC force SyncAll
-	if( i_am_pri ) {
-		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-			me=mdev->bit_map_gen[i];
-			other=be32_to_cpu(partner->gen_cnt[i]);
-			if( me != other ) return 0;
-		}
-	} else { // !i_am_pri
-		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-			me=mdev->gen_cnt[i];
-			other=be32_to_cpu(partner->bit_map_gen[i]);
-			if( me != other ) return 0;
-		}
-	}
-
-	// SyncQuick sufficient
-	return 1;
 }
 
 void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order)

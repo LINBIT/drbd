@@ -210,8 +210,12 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_md_read(mdev);
 	drbd_determin_dev_size(mdev);
-	lc_resize(&drbd_conf[i].act_log, drbd_conf[i].sync_conf.al_extents);
+	drbd_read_bitmap(mdev);
+	lc_resize(&mdev->act_log, mdev->sync_conf.al_extents);
 	drbd_al_read_log(mdev);
+	if(mdev->gen_cnt[Flags] & MDF_PrimaryInd) {
+		drbd_al_apply_to_bitmap(mdev);
+	}
 
 	set_blocksize(MKDEV(MAJOR_NR, minor), INITIAL_BLOCK_SIZE);
 	set_blocksize(mdev->lo_device, INITIAL_BLOCK_SIZE);

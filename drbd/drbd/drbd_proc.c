@@ -133,7 +133,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 		[Connected]      = "Connected",
 		[SkippedSyncS]   = "SkippedSyncS",
 		[SkippedSyncT]   = "SkippedSyncT",
-		[WFBitMap]       = "WFBitMap",
+		[WFBitMapS]      = "WFBitMapS",
+		[WFBitMapT]      = "WFBitMapT",
 		[SyncSource]     = "SyncSource",
 		[SyncTarget]     = "SyncTarget",
 		[PausedSyncS]    = "PausedSyncS",
@@ -168,8 +169,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   "%2d: cs:Unconfigured\n", i);
 		else
 			rlen += sprintf( buf + rlen,
-			   "%2d: cs:%s st:%s/%s ld:%s\n"
-			   "    ns:%u nr:%u dw:%u dr:%u pe:%u ua:%u al:%u\n",
+			   "%2d: cs:%s st:%s/%s ld:%s    \n"
+			   "ns:%u nr:%u dw:%u dr:%u pe:%u ua:%u al:%u bm:%u\n",
 			   i,
 			   cstate_names[drbd_conf[i].cstate],
 			   state_names[drbd_conf[i].state],
@@ -180,9 +181,10 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,
 			   drbd_conf[i].read_cnt/2,
-			   atomic_read(&drbd_conf[i].pending_cnt),
+ 			   atomic_read(&drbd_conf[i].pending_cnt),
 			   atomic_read(&drbd_conf[i].unacked_cnt),
-			   drbd_conf[i].al_writ_cnt
+			   drbd_conf[i].al_writ_cnt,
+			   drbd_conf[i].bm_writ_cnt
 			);
 
 		if ( drbd_conf[i].cstate == SyncSource ||

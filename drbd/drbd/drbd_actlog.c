@@ -55,9 +55,7 @@ struct al_transaction {
 };     // sizeof() = 512 byte
 
 STATIC void drbd_al_write_transaction(struct Drbd_Conf *mdev);
-STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev);
 STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int,int);
-STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev);
 
 STATIC int drbd_al_may_evict(struct lru_cache *mlc, struct lc_element *e)
 {
@@ -73,7 +71,6 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	lc_init(&mdev->act_log);
 	mdev->act_log.element_size = sizeof(struct drbd_extent);
 	mdev->act_log.may_evict = drbd_al_may_evict;
-	lc_resize(&mdev->act_log, mdev->sync_conf.al_extents);
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
@@ -324,40 +321,39 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	INFO("Found %d transactions (%d active extents) in activity log.\n",
 	     transactions,active_extents);
-
-	// Think if we should call drbd_read_bitmap() here...
-	drbd_read_bitmap(mdev);
-	// TODO only call setup_bitmap() iff it is necessary.
-	drbd_al_setup_bitmap(mdev);
 }
 
 /**
- * drbd_al_setup_bitmap: Sets the bits in the bitmap that are described
+ * drbd_al_apply_to_bitmap: Sets the bits in the bitmap that are described
  * by the active extents of the AL.
  */
-STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
+void drbd_al_apply_to_bitmap(struct Drbd_Conf *mdev)
 {
 	int i;
 	unsigned int enr;
+	unsigned long add=0;
 
 	spin_lock(&mdev->act_log.lc_lock);
 
 	for(i=0;i<mdev->act_log.nr_elements;i++) {
 		enr = LC_AT_INDEX(&mdev->act_log,i)->lc_number;
 		if(enr == LC_FREE) continue;
-		mdev->rs_total +=
-			bm_set_bit( mdev, 
-				    enr << (AL_EXTENT_SIZE_B-9), 4<<20 , 
-				    SS_OUT_OF_SYNC );
+		add += bm_set_bit( mdev, 
+				   enr << (AL_EXTENT_SIZE_B-9), 4<<20 , 
+				   SS_OUT_OF_SYNC );
 	}
 
 	spin_unlock(&mdev->act_log.lc_lock);
+
+	INFO("Marked additional %lu KB as out-of-sync based on AL.\n",add);
+
+	mdev->rs_total += add;
 }
 
 /**
  * drbd_read_bitmap: Read the whole bitmap from its on disk location.
  */
-STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev)
+void drbd_read_bitmap(struct Drbd_Conf *mdev)
 {
 	unsigned long * buffer, * bm, word;
 	sector_t sector;
@@ -397,7 +393,11 @@ STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev)
 
 	up(&mdev->md_io_mutex);
 
-	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
+	mdev->rs_total = (bits << (BM_BLOCK_SIZE_B - 9)) + 
+		bm_end_of_dev_case(mdev->mbds_id);
+	
+	INFO("%lu KB marked out-of-sync by on disk bit-map.\n",
+	     mdev->rs_total/2);
 }
 
 STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
@@ -413,12 +413,13 @@ STATIC void drbd_async_eio(struct buffer_head *bh, int uptodate)
 
 
 #define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
-#define EXTENTS_PER_SECTOR  ( 512 / BM_WORDS_PER_EXTENT )
+#define BM_BYTES_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / 8 )
+#define EXTENTS_PER_SECTOR  ( 512 / BM_BYTES_PER_EXTENT )
 /**
  * drbd_update_on_disk_bitmap: Writes a piece of the bitmap to its
  * on disk location. 
- * @enr: The extent number of the bits we should write to disk.
  *
+ * @enr: The extent number of the bits we should write to disk.
  */
 STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr,
 				       int sync)
@@ -443,7 +444,7 @@ STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr,
 
 	bh_kunmap(mdev->md_io_bh);
 
-	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr;
+	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr/EXTENTS_PER_SECTOR;
 
 	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
 	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
@@ -454,6 +455,8 @@ STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr,
 		wait_on_buffer(mdev->md_io_bh);
 		up(&mdev->md_io_mutex);
 	}
+
+	mdev->bm_writ_cnt++;
 }
 #undef BM_WORDS_PER_EXTENT
 #undef EXTENTS_PER_SECTOR

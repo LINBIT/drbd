@@ -1408,7 +1408,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if (mdev->cstate == WFReportParams) {
-		int have_good,quick,sync;
+		int have_good,sync;
 		INFO("Connection established.\n");
 
 		have_good=drbd_md_compare(mdev,p);
@@ -1416,10 +1416,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		if(have_good==0) sync=0;
 		else sync=1;
 
-		quick=drbd_md_syncq_ok(mdev,p,have_good==1);
-
-		INFO("have_good=%d sync=%d quick=%d\n",
-		     have_good, sync, quick);
+		INFO("have_good=%d sync=%d\n", have_good, sync);
 
 		if ( mdev->sync_conf.skip && sync && !no_sync ) {
 			if (have_good == 1)
@@ -1431,26 +1428,11 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 		if( sync && !no_sync ) {
 			if(have_good == 1) {
-				if(quick) {
-					drbd_send_bitmap(mdev);
-				} else {
-					bm_fill_bm(mdev->mbds_id,-1);
-					mdev->rs_total=
-						blk_size[MAJOR_NR][minor]<<1;
-				}
-				drbd_start_resync(mdev,SyncSource);
+				drbd_send_bitmap(mdev);
+				set_cstate(mdev,WFBitMapS);
 			} else { // have_good == -1
 				mdev->gen_cnt[Flags] &= ~MDF_Consistent;
-				if(!quick) {
-					ERR_IF(!mdev->mbds_id)
-						return FALSE;
-					bm_fill_bm(mdev->mbds_id,-1);
-					mdev->rs_total=
-						blk_size[MAJOR_NR][minor]<<1;
-					drbd_start_resync(mdev,SyncTarget);
-				} else {
-					set_cstate(mdev,WFBitMap);
-				}
+				set_cstate(mdev,WFBitMapT);
 			}
 		} else set_cstate(mdev,Connected);
 
@@ -1502,7 +1484,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		if (drbd_recv(mdev, mdev->sock, buffer, want) != want)
 			goto out;
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
-			word = lel_to_cpu(buffer[buf_i]);
+			word = lel_to_cpu(buffer[buf_i]) | bm[bm_i];
 			bits += parallel_bitcount(word);
 			bm[bm_i++] = word;
 		}
@@ -1511,8 +1493,19 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
-	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
-	drbd_start_resync(mdev,SyncTarget);
+	bits = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
+
+	mdev->rs_total = bits + bm_end_of_dev_case(mdev->mbds_id);
+
+	if (mdev->cstate == WFBitMapS) {
+		drbd_start_resync(mdev,SyncSource);
+	} else if (mdev->cstate == WFBitMapT) {
+		drbd_send_bitmap(mdev);
+		drbd_start_resync(mdev,SyncTarget);
+	} else {
+		D_ASSERT(0);
+	}
+
 	ok=TRUE;
  out:
 	vfree(buffer);
@@ -1697,8 +1690,6 @@ STATIC void drbdd(drbd_dev *mdev)
 
 void drbd_disconnect(drbd_dev *mdev)
 {
-	int i;
-
 	mdev->o_state = Unknown;
 	drbd_thread_stop_nowait(&mdev->dsender);
 	drbd_thread_stop(&mdev->asender);
@@ -1727,10 +1718,6 @@ void drbd_disconnect(drbd_dev *mdev)
 
 	if(mdev->cstate != StandAlone)
 		set_cstate(mdev,Unconnected);
-
-	for(i=0;i<=ArbitraryCnt;i++) {
-		mdev->bit_map_gen[i]=mdev->gen_cnt[i];
-	}
 
 	drbd_fail_pending_reads(mdev);
 
