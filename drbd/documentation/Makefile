@@ -26,15 +26,15 @@
 include ../Makefile.vars
 
 SPEC = $(shell for S in /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl; do if [ -e $$S ]; then echo $$S; fi; done)
-
+NSGMLS=$(shell which nsgmls)
 
 all:	drbdsetup.8 drbd.conf.5
 
 drbdsetup.8: drbdsetup.sgml
-	nsgmls drbdsetup.sgml | sgmlspl $(SPEC)
+	if [ "$(NSGMLS)" ]; then nsgmls drbdsetup.sgml | sgmlspl $(SPEC); fi
 
 drbd.conf.5: drbd.conf.sgml
-	nsgmls drbd.conf.sgml | sgmlspl $(SPEC)
+	if [ "$(NSGMLS)" ]; then nsgmls drbd.conf.sgml | sgmlspl $(SPEC); fi
 
 clean:
 	rm -f drbdsetup.ps drbdsetup.8 drbd.conf.5 manpage.links manpage.refs *~ manpage.log
