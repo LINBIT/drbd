@@ -68,6 +68,8 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
        return MountedRW;
 }
 
+//#define DEBUG_LU(A) printk(KERN_ERR DEVICE_NAME"%d: " #A "=%lu\n",minor,A);
+
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
@@ -102,9 +104,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	        printk(KERN_ERR DEVICE_NAME"%d: Both nodes diskless!\n",minor);
 	}
 
-	
 	if(mu_size && pu_size) {
-		u_size=min_t(unsigned long,p_size,m_size);
+		u_size=min_t(unsigned long,mu_size,pu_size);
 	} else {
 		if(mu_size) u_size=mu_size;
 		if(pu_size) u_size=pu_size;
