@@ -9,13 +9,13 @@
    This file is part of drbd by Philipp Reisner.
 
    Copyright (C) 1999-2002, Philipp Reisner <philipp.reisner@gmx.at>.
-        main author.
+	main author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-        Code to prevent zombie threads.
+	Code to prevent zombie threads.
 
    Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
-        some SMP fixes; syncer progress
+	some SMP fixes; syncer progress
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -126,12 +126,12 @@ void check_list(struct Drbd_Conf* mdev,struct list_head *list,char *t)
 #endif
 
 #if 0
-STATIC inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id) 
+STATIC inline int is_syncer_blk(struct Drbd_Conf* mdev, u64 block_id)
 {
 	if ( block_id == ID_SYNCER ) return 1;
 	/* Use this code if you are working with a VIA based mboard :) */
 	if ( (long)block_id == (long)-1) {
-		printk(KERN_ERR DEVICE_NAME 
+		printk(KERN_ERR DEVICE_NAME
 		       "%d: strange block_id %lx%lx\n",(int)(mdev-drbd_conf),
 		       (unsigned long)(block_id>>32),
 		       (unsigned long)block_id);
@@ -155,10 +155,10 @@ STATIC void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 
 	/*
 	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_irq()=%d\n",
-               (int)(mdev-drbd_conf),in_irq());
- 
-        printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_softirq()=%d\n",
-               (int)(mdev-drbd_conf),in_softirq());
+	       (int)(mdev-drbd_conf),in_irq());
+
+	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_softirq()=%d\n",
+	       (int)(mdev-drbd_conf),in_softirq());
 	*/
 
 	/*
@@ -233,17 +233,17 @@ STATIC void _drbd_alloc_ee(struct Drbd_Conf* mdev,struct page* page)
 	fbh=NULL;
 
 	for(i=0;i<number;i++) {
-	  
+
 		e = kmem_cache_alloc(drbd_ee_cache, GFP_KERNEL);
 		bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
-		
+
 		if( e == NULL || bh == NULL ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: could not kmalloc() new ee\n",
 			       (int)(mdev-drbd_conf));
 			BUG();
 		}
-		
+
 		drbd_init_bh(bh, buffer_size);
 		set_bh_page(bh,page,i*buffer_size); // sets b_data and b_page
 
@@ -367,7 +367,7 @@ struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,int may_sleep)
 				break;
 			}
 		}
-		
+
 		if(!may_sleep) {
 			spin_lock_irq(&mdev->ee_lock);
 			return 0;
@@ -398,7 +398,7 @@ void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e)
 	e->block_id = ID_VACANT;
 	list_add(&e->list,&mdev->free_ee);
 
-	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) && 
+	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) &&
 	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {
 		page=drbd_free_ee(mdev,&mdev->free_ee);
 		if( page ) __free_page(page);
@@ -456,7 +456,7 @@ STATIC int drbd_process_ee(struct Drbd_Conf* mdev,struct list_head *head)
 STATIC void drbd_clear_done_ee(struct Drbd_Conf *mdev)
 {
 	struct list_head *le;
-        struct Tl_epoch_entry *e;
+	struct Tl_epoch_entry *e;
 
 	spin_lock_irq(&mdev->ee_lock);
 
@@ -488,7 +488,7 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 		le = head->next;
 		e = list_entry(le, struct Tl_epoch_entry,list);
 		if(!buffer_locked(e->bh)) {
-			printk(KERN_ERR DEVICE_NAME 
+			printk(KERN_ERR DEVICE_NAME
 			       "%d: unlocked bh in ative_ee/sync_ee/read_ee\n"
 			       "(BUG?) Moving bh=%p to done_ee/rdone_ee\n",
 			       (int)(mdev-drbd_conf),e->bh);
@@ -496,7 +496,7 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 			list_add(le,to);
 			continue;
 		}
-		get_bh(e->bh); 
+		get_bh(e->bh);
 		init_waitqueue_entry(&wait, current);
 		current->state = TASK_UNINTERRUPTIBLE;
 
@@ -515,12 +515,12 @@ STATIC void drbd_wait_ee(struct Drbd_Conf* mdev,struct list_head *head,
 		spin_unlock(&e->bh->b_wait.lock);
 
 		put_bh(e->bh);
-		/* The IRQ handler does not move a list entry if someone is 
+		/* The IRQ handler does not move a list entry if someone is
 		   in wait_on_buffer for that entry, therefore we have to
 		   move it here. */
 		D_ASSERT(!buffer_locked(e->bh)); // IO is finished now!
 
-		list_del(le); 
+		list_del(le);
 		list_add(le,to);
 	}
 	spin_unlock_irq(&mdev->ee_lock);
@@ -589,7 +589,7 @@ STATIC void drbd_idle_timeout(unsigned long arg)
 	set_bit(SEND_PING,&ti->mdev->flags);
 	drbd_queue_signal(DRBD_SIG, ti->mdev->asender.task);
 	if(ti->restart) {
-		ti->idle_timeout.expires = jiffies + 
+		ti->idle_timeout.expires = jiffies +
 			ti->mdev->conf.ping_int * HZ;
 		add_timer(&ti->idle_timeout);
 	}
@@ -603,7 +603,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 	struct idle_timer_info ti;
 	int rv;
 	struct socket *sock = via_msock ? mdev->msock : mdev->sock;
-	
+
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_iovlen = 1;
@@ -630,7 +630,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 	}
 
 	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
-	
+
 	set_fs(oldfs);
 	unlock_kernel();
 
@@ -646,7 +646,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size, int via_msock)
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
 	}
-	
+
 	return rv;
 }
 
@@ -658,11 +658,11 @@ STATIC struct socket *drbd_try_connect(struct Drbd_Conf* mdev)
 
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME "%d: sock_creat(..)=%d\n", 
+		printk(KERN_ERR DEVICE_NAME "%d: sock_creat(..)=%d\n",
 		       (int)(mdev-drbd_conf), err);
 	}
 
-	lock_kernel();	
+	lock_kernel();
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) mdev->conf.other_addr,
 				 mdev->conf.other_addr_len, 0);
@@ -701,7 +701,7 @@ STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 		set_cstate(mdev,Unconnected);
 		return 0;
 	}
-	
+
 	if(mdev->conf.try_connect_int) {
 		init_timer(&accept_timeout);
 		accept_timeout.function = drbd_c_timeout;
@@ -709,11 +709,11 @@ STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 		accept_timeout.expires = jiffies +
 			mdev->conf.try_connect_int * HZ;
 		add_timer(&accept_timeout);
-	}			
+	}
 
 	sock = drbd_accept(sock2);
 	sock_release(sock2);
-	
+
 	if(mdev->conf.try_connect_int) {
 		unsigned long flags;
 		del_timer_sync(&accept_timeout);
@@ -728,7 +728,7 @@ STATIC struct socket *drbd_wait_for_connect(struct Drbd_Conf* mdev)
 		}
 		spin_unlock_irqrestore(&current->sigmask_lock,flags);
 	}
-	
+
 	return sock;
 }
 
@@ -746,7 +746,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 		return 0;
 	}
 
-	set_cstate(mdev,WFConnection);		
+	set_cstate(mdev,WFConnection);
 
 	while(1) {
 		sock=drbd_try_connect(mdev);
@@ -759,7 +759,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 			if(sock) {
 				int retry;
 				for (retry=1; retry <= 10; retry++) {
-                                        // give the other side time to call 
+					// give the other side time to call
 					// bind() & listen()
 					current->state = TASK_INTERRUPTIBLE;
 					schedule_timeout(HZ / 10);
@@ -770,7 +770,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 					       (int)(mdev-drbd_conf), retry);
 				}
 				sock_release(sock);
-			}			
+			}
 		}
 		if(mdev->cstate==Unconnected) return 0;
 		if(signal_pending(current)) return 0;
@@ -779,7 +779,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
  connected:
 
 	msock->sk->reuse=1; /* SO_REUSEADDR */
-	sock->sk->reuse=1; /* SO_REUSEADDR */  
+	sock->sk->reuse=1; /* SO_REUSEADDR */
 
 	/* to prevent oom deadlock... */
 	/* The default allocation priority was GFP_KERNEL */
@@ -814,7 +814,7 @@ int drbd_connect(struct Drbd_Conf* mdev)
 
 STATIC int receive_barrier(struct Drbd_Conf* mdev)
 {
-  	Drbd_Barrier_P header;
+	Drbd_Barrier_P header;
 	int rv;
 	int epoch_size;
 
@@ -823,7 +823,7 @@ STATIC int receive_barrier(struct Drbd_Conf* mdev)
 		       (int)(mdev-drbd_conf));
 
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
-	        return FALSE;
+		return FALSE;
 
 	inc_unacked(mdev);
 
@@ -849,32 +849,32 @@ STATIC struct Tl_epoch_entry *
 read_in_block(struct Drbd_Conf* mdev,int data_size)
 {
 	struct Tl_epoch_entry *e;
-        struct buffer_head *bh;
+	struct buffer_head *bh;
 	int rr;
 
-        spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev,TRUE);
-        spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->ee_lock);
 	bh=e->bh;
 
-        rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
-        bh_kunmap(bh);
+	rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
+	bh_kunmap(bh);
 
-        if ( rr != data_size) {
-                clear_bit(BH_Lock, &bh->b_state);
-                spin_lock_irq(&mdev->ee_lock);
-                drbd_put_ee(mdev,e);
-                spin_unlock_irq(&mdev->ee_lock);
-                return 0;
-        }
+	if ( rr != data_size) {
+		clear_bit(BH_Lock, &bh->b_state);
+		spin_lock_irq(&mdev->ee_lock);
+		drbd_put_ee(mdev,e);
+		spin_unlock_irq(&mdev->ee_lock);
+		return 0;
+	}
 
-        /* do not use mark_buffer_dirty() since it would call refile_buffer()*/
-        bh=e->bh;
-        set_bit(BH_Dirty, &bh->b_state);
-        set_bit(BH_Lock, &bh->b_state); // since using generic_make_request()
+	/* do not use mark_buffer_dirty() since it would call refile_buffer()*/
+	bh=e->bh;
+	set_bit(BH_Dirty, &bh->b_state);
+	set_bit(BH_Lock, &bh->b_state); // since using generic_make_request()
 	bh->b_end_io = drbd_dio_end_sec;
 	mdev->recv_cnt+=data_size>>9;
-	
+
 	return e;
 }
 
@@ -882,26 +882,26 @@ STATIC void receive_data_tail(struct Drbd_Conf* mdev,int data_size)
 {
 	/* Actually the primary can send up to NR_REQUEST / 3 blocks,
 	 * but we already start when we have NR_REQUEST / 4 blocks.
-	 * 
+	 *
 	 * This code is only with protocol C relevant.
 	 */
-#define NUMBER 24 
+#define NUMBER 24
 	if(atomic_read(&mdev->unacked_cnt) >= NUMBER ) {
 		run_task_queue(&tq_disk);
 	}
 #undef NUMBER
 
 	mdev->writ_cnt+=data_size>>9;
-	
+
 }
 
-int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 		    sector_t sector, int data_size)
 {
 	struct buffer_head *bh;
 	int ok,rr;
 
- 	bh = pr->d.bh;
+	bh = pr->d.bh;
 
 	D_ASSERT( sector == APP_BH_SECTOR(bh) );
 
@@ -924,7 +924,7 @@ STATIC int e_end_resync_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 	return TRUE;
 }
 
-int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 		     sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
@@ -934,7 +934,7 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
 	drbd_set_bh(mdev, e->bh, sector ,data_size);
-        e->block_id = ID_SYNCER;
+	e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -948,11 +948,11 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
-	
+
 }
 
 
-int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 		   sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
@@ -976,7 +976,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 	bh->b_end_io(bh,1);
 
 	drbd_set_bh(mdev, e->bh, sector, data_size);
-        e->block_id = ID_SYNCER;
+	e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -990,17 +990,17 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
-	
+
 }
 
-int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr,
 		 sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev,data_size);
 	if(!e)	return FALSE;
-	
+
 	drbd_set_bh(mdev, e->bh, sector ,data_size);
 	drbd_send_ack(mdev,WriteAck,e->bh,ID_SYNCER);
 
@@ -1027,10 +1027,10 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 			      [Resync]       = recv_resync_read,
 			      [AppAndResync] = recv_both_read
 		      };
-	
+
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
-	        return FALSE;
- 
+		return FALSE;
+
 	sector = be64_to_cpu(header.sector);
 
 	pr = (struct Pending_read *)(long)header.block_id;
@@ -1039,8 +1039,8 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 	   handler could by changed by make_req as long as it is on the list
 	*/
 
-	spin_lock(&mdev->pr_lock); 
-	list_del(&pr->list); 
+	spin_lock(&mdev->pr_lock);
+	list_del(&pr->list);
 	spin_unlock(&mdev->pr_lock);
 
 	ok = funcs[pr->cause](mdev,pr,sector,data_size);
@@ -1070,14 +1070,14 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 	Drbd_Data_P header;
 
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
-	        return FALSE;
-       
-	sector = be64_to_cpu(header.sector);	
+		return FALSE;
+
+	sector = be64_to_cpu(header.sector);
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
 	drbd_set_bh(mdev, e->bh, sector, data_size);
-        e->block_id=header.block_id;
+	e->block_id=header.block_id;
 	e->e_end_io = e_end_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -1128,11 +1128,11 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	Drbd_BlockRequest_P header;
 	sector_t sector;
 	struct Tl_epoch_entry *e;
-        struct buffer_head *bh;
+	struct buffer_head *bh;
 	int data_size;
 
 	if (drbd_recv(mdev, &header, sizeof(header),0) != sizeof(header))
-	        return FALSE;
+		return FALSE;
 
 	data_size = be32_to_cpu(header.blksize);
 
@@ -1153,7 +1153,7 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	bh=e->bh;
 	clear_bit(BH_Uptodate, &bh->b_state);
 	set_bit(BH_Lock, &bh->b_state);
-	e->bh->b_end_io = drbd_dio_end_read;	
+	e->bh->b_end_io = drbd_dio_end_read;
 
 	spin_lock_irq(&mdev->bb_lock);
 	if(tl_check_sector(mdev,sector)) {
@@ -1166,13 +1166,13 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	mdev->read_cnt += bh->b_size >> 9;
 	inc_unacked(mdev);
 	generic_make_request(READ,e->bh);
-	
+
 	return TRUE;
 }
 
 STATIC int receive_param(struct Drbd_Conf* mdev)
 {
-        Drbd_Parameter_P param;
+	Drbd_Parameter_P param;
 	int minor=(int)(mdev-drbd_conf);
 	int no_sync=0;
 	int oo_state;
@@ -1182,7 +1182,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 	  ": recv ReportParams/m=%d\n",(int)(mdev-drbd_conf));*/
 
 	if (drbd_recv(mdev, &param, sizeof(param),0) != sizeof(param))
-	        return FALSE;
+		return FALSE;
 
 	if(be32_to_cpu(param.state) == Primary && mdev->state == Primary ) {
 		printk(KERN_ERR DEVICE_NAME"%d: incompatible states \n",minor);
@@ -1192,7 +1192,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 	}
 
 	if(be32_to_cpu(param.version)!=PRO_VERSION) {
-	        printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
+		printk(KERN_ERR DEVICE_NAME"%d: incompatible releases \n",
 		       minor);
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
@@ -1200,7 +1200,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 	}
 
 	if(be32_to_cpu(param.protocol)!=mdev->conf.wire_protocol) {
-	        printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
+		printk(KERN_ERR DEVICE_NAME"%d: incompatible protocols \n",
 		       minor);
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
@@ -1209,7 +1209,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 
 	/* should be removed ?
 	if(be64_to_cpu(param.protocol)!=mdev->lo_usize) {
-	        printk(KERN_ERR DEVICE_NAME"%d: Size hints inconsistent \n",
+		printk(KERN_ERR DEVICE_NAME"%d: Size hints inconsistent \n",
 		       minor);
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
@@ -1228,14 +1228,14 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 	if( blk_size[MAJOR_NR][minor] == 0) {
 		set_cstate(mdev,StandAlone);
 		mdev->receiver.t_state = Exiting;
-		return FALSE;		
+		return FALSE;
 	}
 
 
 	if (!mdev->mbds_id) {
 		mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
 	}
-	
+
 	if (mdev->cstate == WFReportParams) {
 		int have_good,quick,sync;
 		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n"
@@ -1248,7 +1248,7 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 
 		quick=drbd_md_syncq_ok(minor,&param,have_good==1);
 
-		printk(KERN_INFO DEVICE_NAME 
+		printk(KERN_INFO DEVICE_NAME
 		       "%d: have_good=%d sync=%d quick=%d\n",
 		       minor,have_good,sync,quick);
 
@@ -1313,9 +1313,9 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 
 static inline unsigned long parallel_bitcount (unsigned long n)
 {
-	n = COUNT(n, 0); //MASK(c)=01010101 // (n&mask)+((n>>1)&mask) 
-	n = COUNT(n, 1); //MASK(c)=00110011 // (n&mask)+((n>>2)&mask) 
-	n = COUNT(n, 2); //MASK(c)=00001111 // (n&mask)+((n>>4)&mask) 
+	n = COUNT(n, 0); //MASK(c)=01010101 // (n&mask)+((n>>1)&mask)
+	n = COUNT(n, 1); //MASK(c)=00110011 // (n&mask)+((n>>2)&mask)
+	n = COUNT(n, 2); //MASK(c)=00001111 // (n&mask)+((n>>4)&mask)
 	n = COUNT(n, 3); // ...etc...
 	n = COUNT(n, 4);
 #if BITS_PER_LONG == 64
@@ -1351,7 +1351,7 @@ STATIC int receive_bitmap(struct Drbd_Conf* mdev)
 		    sizeof(Drbd_Packet)) {
 			ret=FALSE;
 			goto out;
-		}		
+		}
 	start:
 		if (drbd_recv(mdev, buffer, want,0) != want) {
 			ret=FALSE;
@@ -1364,7 +1364,7 @@ STATIC int receive_bitmap(struct Drbd_Conf* mdev)
 			bm[bm_i++] = word;
 		}
 	}
-	
+
 	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
 	drbd_start_resync(mdev,SyncTarget);
 	ret=TRUE;
@@ -1381,7 +1381,7 @@ STATIC void drbd_collect_zombies(int minor)
 }
 
 STATIC void drbd_fail_pending_reads(struct Drbd_Conf* mdev)
-{		
+{
 	struct Pending_read *pr;
 	struct list_head workset,*le;
 	struct buffer_head *bh;
@@ -1408,7 +1408,7 @@ STATIC void drbd_fail_pending_reads(struct Drbd_Conf* mdev)
 	list_add(&workset,&mdev->resync_reads);
 	list_del(&mdev->resync_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
-	spin_unlock(&mdev->pr_lock);	
+	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
 		le = workset.next;
@@ -1431,7 +1431,7 @@ STATIC void drbdd(int minor)
 
 		rr = drbd_recv(mdev,&header,sizeof(Drbd_Packet),0);
 		if( rr != sizeof(Drbd_Packet)) break;
-		
+
 		length = (int) be16_to_cpu(header.length);
 		cmd = (int) be16_to_cpu(header.command);
 
@@ -1446,19 +1446,19 @@ STATIC void drbdd(int minor)
 		}
 		switch (cmd) {
 		case Barrier:
-       		        if (!receive_barrier(mdev)) goto err;
+			if (!receive_barrier(mdev)) goto err;
 			break;
 
 		case Data:    // mirrored write
-		        if (!receive_data(mdev,length)) goto err;
+			if (!receive_data(mdev,length)) goto err;
 			break;
 
 		case DataReply: // response to a read request
-		        if (!receive_data_reply(mdev,length)) goto err;
+			if (!receive_data_reply(mdev,length)) goto err;
 			break;
-			
+
 		case ReportParams:
-		        if (!receive_param(mdev)) goto err;
+			if (!receive_param(mdev)) goto err;
 			break;
 
 		case ReportBitMap:
@@ -1487,7 +1487,7 @@ STATIC void drbdd(int minor)
 		case DataRequest:
 		case RSDataRequest:
 			if(!receive_drequest(mdev,
-					     be16_to_cpu(header.command))) 
+					     be16_to_cpu(header.command)))
 				goto err;
 			break;
 
@@ -1527,7 +1527,7 @@ STATIC void drbdd(int minor)
 			schedule_timeout(HZ / 10);
 		}
 	}
-	/* By grabbing the sock_mutex we make shure that no one 
+	/* By grabbing the sock_mutex we make shure that no one
 	   uses the socket right now. */
 	drbd_free_sock(minor);
 	up(&mdev->sock_mutex);
@@ -1535,8 +1535,8 @@ STATIC void drbdd(int minor)
 	drbd_thread_stop(&mdev->dsender);
 	drbd_collect_zombies(minor);
 
-	if(mdev->cstate != StandAlone) 
-	        set_cstate(mdev,Unconnected);
+	if(mdev->cstate != StandAlone)
+		set_cstate(mdev,Unconnected);
 
 	for(i=0;i<=ArbitraryCnt;i++) {
 		mdev->bit_map_gen[i]=mdev->gen_cnt[i];
@@ -1545,14 +1545,14 @@ STATIC void drbdd(int minor)
 	drbd_fail_pending_reads(mdev);
 
 	switch(mdev->state) {
-	case Primary:   
+	case Primary:
 		tl_clear(mdev);
 		clear_bit(ISSUE_BARRIER,&mdev->flags);
 		if(!test_bit(DO_NOT_INC_CONCNT,&mdev->flags))
 			drbd_md_inc(minor,ConnectedCnt);
 		drbd_md_write(mdev);
 		break;
-	case Secondary: 
+	case Secondary:
 		drbd_wait_ee(mdev,&mdev->active_ee, &mdev->done_ee);
 		drbd_wait_ee(mdev,&mdev->sync_ee, &mdev->done_ee);
 		drbd_clear_done_ee(mdev);
@@ -1565,11 +1565,11 @@ STATIC void drbdd(int minor)
 	if(atomic_read(&mdev->unacked_cnt)) {
 		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt!=0\n",minor);
 		atomic_set(&mdev->unacked_cnt,0);
-	}		
+	}
 
 	/* Since syncer's blocks are also counted, there is no hope that
 	   pending_cnt is zero. */
-	atomic_set(&mdev->pending_cnt,0); 
+	atomic_set(&mdev->pending_cnt,0);
 	wake_up_interruptible(&mdev->state_wait);
 
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
@@ -1582,9 +1582,9 @@ int drbdd_init(struct Drbd_thread *thi)
 	int minor = thi->minor;
 
 	sprintf(current->comm, "drbd_receiver_%d", minor);
-	
+
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
-	
+
 	while (TRUE) {
 		if (!drbd_connect(drbd_conf+minor)) break;
 		if (thi->t_state == Exiting) break;
@@ -1613,9 +1613,9 @@ int drbdd_init(struct Drbd_thread *thi)
 /* ********* acknowledge sender ******** */
 
 STATIC void got_block_ack(struct Drbd_Conf* mdev,Drbd_BlockAck_Packet* pkt)
-{     
-        drbd_request_t *req;
-	
+{
+	drbd_request_t *req;
+
 	// TODO: Make sure that the block is in an active epoch!!
 	if(mdev->conf.wire_protocol != DRBD_PROT_A ||
 	   is_syncer_blk(mdev,pkt->h.block_id)) {
@@ -1636,7 +1636,7 @@ STATIC void got_barrier_ack(struct Drbd_Conf* mdev,Drbd_BarrierAck_Packet* pkt)
 {
 	D_ASSERT(mdev->state == Primary);
 
-        tl_release(mdev,pkt->h.barrier,be32_to_cpu(pkt->h.set_size));
+	tl_release(mdev,pkt->h.barrier,be32_to_cpu(pkt->h.set_size));
 
 	dec_pending(mdev);
 
@@ -1653,7 +1653,7 @@ STATIC int drbd_try_send_barrier(struct Drbd_Conf *mdev)
 		up(&mdev->sock_mutex);
 	}
 	return rv;
-}     
+}
 
 void drbd_ping_timeout(unsigned long arg)
 {
@@ -1697,8 +1697,8 @@ int drbd_asender(struct Drbd_thread *thi)
 			rr=0;
 		} else if(rr <= 0) break;
 
-		rsize+=rr;		
-			
+		rsize+=rr;
+
 		if(rsize == expect) {
 			if (be32_to_cpu(pkt.p.magic) != DRBD_MAGIC) {
 				printk(KERN_ERR DEVICE_NAME "%d: magic?? "
@@ -1711,11 +1711,11 @@ int drbd_asender(struct Drbd_thread *thi)
 			}
 			switch (be16_to_cpu(pkt.p.command)) {
 			case Ping:
-        			if(!drbd_send_cmd(mdev,PingAck,1)) goto err;
+				if(!drbd_send_cmd(mdev,PingAck,1)) goto err;
 				break;
 			case PingAck:
 				del_timer(&ping_timeout);
-				
+
 				rtt = jiffies-ping_sent_at;
 				ping_sent_at=0;
 				break;
@@ -1746,7 +1746,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		if(ping_sent_at==0) {
 			if(test_and_clear_bit(SEND_PING,&mdev->flags)) {
 				if(!drbd_send_cmd(mdev,Ping,1)) goto err;
-				ping_timeout.expires = 
+				ping_timeout.expires =
 					jiffies + mdev->conf.timeout*HZ/20;
 				add_timer(&ping_timeout);
 				ping_sent_at=jiffies;
@@ -1757,7 +1757,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		if( mdev->state == Primary ) {
 			if(!drbd_try_send_barrier(mdev)) goto err;
 		}
-		
+
 		if(!drbd_process_ee(mdev,&mdev->done_ee)) goto err;
 	} //while
 

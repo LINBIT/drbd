@@ -51,7 +51,7 @@ clean:
 	rm -f drbdadm_scanner.c
 	rm -f drbdadm_parser.c
 	rm -f drbdadm_parser.h
-	rm -f drbdsetup drbdadm *.o 
+	rm -f drbdsetup drbdadm *.o
 	rm -f *~
 
 install:

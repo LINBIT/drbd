@@ -22,10 +22,10 @@ static struct d_option* new_opt(char* name,char* value)
   cn->name=name;
   cn->value=value;
   cn->mentioned=0;
-  
+
   return cn;
 }
- 
+
 static void derror(char* text)
 {
   config_valid=0;
@@ -54,7 +54,7 @@ static void host_sec(char* name)
 }
 
 static struct d_resource* new_resource(char* name)
-{      
+{
   struct d_resource* res;
   res=calloc(1,sizeof(struct d_resource));
   res->name=name;
@@ -70,26 +70,26 @@ static struct d_resource* new_resource(char* name)
   struct d_resource* d_resource;
 }
 
-%token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON 
+%token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON
 %token TK_PORT TK_DEVICE TK_ADDRESS TK_GLOBAL TK_STARTUP
 %token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
-%token <txt> TK_SIZE TK_TIMEOUT TK_CONNECT_INT 
-%token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
-%token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 
-%token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT 
+%token <txt> TK_SIZE TK_TIMEOUT TK_CONNECT_INT
+%token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT
+%token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD
+%token <txt> TK_DISABLE_IO_HINTS TK_MINOR_COUNT
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_MAX_BUFFERS TK_MAX_EPOCH_SIZE
 %token <txt> TK_SNDBUF_SIZE
 
-%type <d_option> disk_stmts disk_stmt 
+%type <d_option> disk_stmts disk_stmt
 %type <d_option> net_stmts net_stmt
-%type <d_option> sync_stmts sync_stmt 
-%type <d_option> startup_stmts startup_stmt 
+%type <d_option> sync_stmts sync_stmt
+%type <d_option> startup_stmts startup_stmt
 %type <d_resource> resources resource
 
 %%
 config:           global_sec resources   { config=$2; }
-		;	 
+		;
 
 global_sec:       /* empty */
                 | TK_GLOBAL '{' glob_stmts '}'
@@ -109,7 +109,7 @@ resources:        /* empty */   { $$ = 0; }
 
 resource:	  TK_RESOURCE TK_STRING { c_res = new_resource($2); }
                   '{' res_stmts '}' { $$ = c_res; }
-		; 
+		;
 
 res_stmts:        /* empty */
 		| res_stmts res_stmt
@@ -119,7 +119,7 @@ res_stmts:        /* empty */
 res_stmt:         TK_PROTOCOL '=' TK_STRING   { c_res->protocol=$3; }
 		| TK_INCON_DEGR_CMD '=' TK_STRING   { c_res->ind_cmd=$3; }
 		;
-	
+
 section:	  TK_DISK '{' disk_stmts '}' { c_res->disk_options=$3; }
 		| TK_NET  '{' net_stmts '}'  { c_res->net_options=$3; }
 		| TK_ON TK_STRING '{' host_stmts '}' { host_sec($2); }

@@ -5,16 +5,16 @@
   This file is part of drbd by Philipp Reisner.
 
   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
-        main author.
+	main author.
 
   Copyright (C) 2002, Lars Ellenberg <l.g.e@web.de>.
 	some tidbits
- 
+
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation; either version 2, or (at your option)
   any later version.
-  
+
   drbd is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -89,7 +89,7 @@ typedef unsigned long sector_t;
 
 #if defined(DBG_SPINLOCKS) && defined(__SMP__)
 # define MUST_HOLD(lock) if(!spin_is_locked(lock)) { printk(KERN_ERR DEVICE_NAME ": Not holding lock! in %s\n", __FUNCTION__ ); }
-#else 
+#else
 # define MUST_HOLD(lock)
 #endif
 
@@ -98,15 +98,15 @@ struct Drbd_Conf;
 #ifdef DBG_ASSERTS
 extern void drbd_assert_breakpoint(struct Drbd_Conf*, char *, char *, int );
 # define D_ASSERT(exp)  if (!(exp)) \
-         drbd_assert_breakpoint(mdev,#exp,__FILE__,__LINE__)
-#else 
+	 drbd_assert_breakpoint(mdev,#exp,__FILE__,__LINE__)
+#else
 # define D_ASSERT(exp)  if (!(exp)) \
-         printk(KERN_ERR DEVICE_NAME"%d: ASSERT( " #exp " ) in %s:%d\n", \
-         (int)(mdev-drbd_conf),__FILE__,__LINE__)
+	 printk(KERN_ERR DEVICE_NAME"%d: ASSERT( " #exp " ) in %s:%d\n", \
+	 (int)(mdev-drbd_conf),__FILE__,__LINE__)
 #endif
-        
 
-// handy macro: DUMPP(somepointer) 
+
+// handy macro: DUMPP(somepointer)
 #define DUMPP(A) printk(KERN_ERR DEVICE_NAME "%d: "#A"= %p\n",(int)(mdev-drbd_conf),A);
 #define DUMPLU(A) printk(KERN_ERR DEVICE_NAME "%d: "#A"= %lu\n",(int)(mdev-drbd_conf),A);
 
@@ -114,15 +114,15 @@ extern void drbd_assert_breakpoint(struct Drbd_Conf*, char *, char *, int );
  * GFP_DRBD is used for allocations inside drbd_do_request.
  *
  * 2.4 kernels will probably remove the __GFP_IO check in the VM code,
- * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER 
- * flag to avoid __GFP_IO, thus avoiding the use of the atomic queue and 
+ * so lets use GFP_ATOMIC for allocations.  For 2.2, we abuse the GFP_BUFFER
+ * flag to avoid __GFP_IO, thus avoiding the use of the atomic queue and
  *  avoiding the deadlock.
  *
  * - marcelo
  */
 #define GFP_DRBD GFP_ATOMIC
 
-/* these defines should go into blkdev.h 
+/* these defines should go into blkdev.h
    (if it will be ever includet into linus' linux) */
 #define RQ_DRBD_NOTHING	  0x0000
 #define RQ_DRBD_SENT	  0x0010
@@ -136,8 +136,8 @@ enum MetaDataFlags {
 	MDF_ConnectedInd = 4,
 };
 /* drbd_meta-data.c (still in drbd_main.c) */
-enum MetaDataIndex { 
-	Flags,          /* Consistency flag,connected-ind,primary-ind */ 
+enum MetaDataIndex {
+	Flags,          /* Consistency flag,connected-ind,primary-ind */
 	HumanCnt,       /* human-intervention-count */
 	TimeoutCnt,     /* timout-count */
 	ConnectedCnt,   /* connected-count */
@@ -148,7 +148,7 @@ enum MetaDataIndex {
 #define DRBD_MD_MAGIC (DRBD_MAGIC+3) // 3nd incarnation of the file format.
 
 
-/* This is the layout for a packet on the wire! 
+/* This is the layout for a packet on the wire!
  * The byteorder is the network byte order!
  */
 typedef struct {
@@ -171,8 +171,8 @@ MKPACKET(Drbd_Data_P)
 
 typedef struct {
   __u32       barrier;   /* may be 0 or a barrier number  */
-  __u32       _fill;     /* Without the _fill gcc may add fillbytes on 
-                            64 bit plaforms, but does not so an 32 bits... */
+  __u32       _fill;     /* Without the _fill gcc may add fillbytes on
+			    64 bit plaforms, but does not so an 32 bits... */
 }  __attribute((packed)) Drbd_Barrier_P;
 MKPACKET(Drbd_Barrier_P)
 
@@ -207,13 +207,13 @@ typedef struct {
 } __attribute((packed)) Drbd_BlockRequest_P;
 MKPACKET(Drbd_BlockRequest_P)
 
-typedef enum { 
-  Data, 
-  DataReply,    
+typedef enum {
+  Data,
+  DataReply,
   RecvAck,      /* Used in protocol B */
   WriteAck,     /* Used in protocol C */
   Barrier,
-  BarrierAck,  
+  BarrierAck,
   ReportParams,
   ReportBitMap,
   CStateChanged,
@@ -229,11 +229,11 @@ typedef enum {
 } Drbd_Packet_Cmd;
 
 
-typedef enum { 
+typedef enum {
 	Running,
 	Exiting,
 	Restarting
-} Drbd_thread_state; 
+} Drbd_thread_state;
 
 struct Drbd_thread {
 	struct task_struct *task;
@@ -254,7 +254,7 @@ struct drbd_request {
 };
 
 struct drbd_barrier {
-	struct list_head requests; // requests before 
+	struct list_head requests; // requests before
 	struct drbd_barrier *next; // pointer to the next barrier
 	int br_number;  // the barriers identifier.
 	int n_req;      // number of requests attached before this barrier
@@ -267,12 +267,12 @@ typedef struct drbd_request drbd_request_t;
    active_ee .. data packet beeing written
    sync_ee .... syncer block beeing written
    done_ee .... block written, need to send ack packet
-*/ 
+*/
 
 struct Drbd_Conf;
 
 struct Tl_epoch_entry {
-	struct list_head list; 
+	struct list_head list;
 	struct buffer_head* bh;
 	u64    block_id;
 	int   (*e_end_io) (struct Drbd_Conf*, struct Tl_epoch_entry *);
@@ -310,7 +310,7 @@ struct send_timer_info {
 	struct task_struct *task;
 	volatile int timeout_happened;
 	int via_msock;
-	int restart;	
+	int restart;
 };
 
 
@@ -326,12 +326,12 @@ struct BitMap {
 struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
-        int do_panic;
+	int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */
 	struct semaphore sock_mutex;
 	struct semaphore msock_mutex;
- 	struct semaphore ctl_mutex;
+	struct semaphore ctl_mutex;
 	kdev_t lo_device;
 	struct file *lo_file;
 	unsigned long lo_usize;   /* user provided size */
@@ -353,7 +353,7 @@ struct Drbd_Conf {
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
-        int    flags;
+	int    flags;
 	struct timer_list a_timeout; /* ack timeout */
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
 	spinlock_t send_proc_lock;
@@ -367,7 +367,7 @@ struct Drbd_Conf {
 	spinlock_t bb_lock;
 	struct Drbd_thread receiver;
 	struct Drbd_thread dsender;
-        struct Drbd_thread asender;
+	struct Drbd_thread asender;
 	wait_queue_head_t dsender_wait;
 	struct BitMap* mbds_id;
 	int open_cnt;
@@ -391,7 +391,7 @@ struct Drbd_Conf {
 	struct tq_struct write_hint_tq;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
-#endif  
+#endif
 };
 
 /* drbd_main.c: */
@@ -405,23 +405,23 @@ extern void tl_clear(struct Drbd_Conf *mdev);
 extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
 extern int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_free_sock(int minor);
-/*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
-		     Drbd_Packet* header, size_t header_size, 
+/*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
+		     Drbd_Packet* header, size_t header_size,
 		     void* data, size_t data_size);*/
 extern int drbd_send_param(struct Drbd_Conf *mdev);
-extern int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, 
+extern int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd,
 			 int via_msock);
 extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);
-extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
+extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 			 struct buffer_head *bh, u64 block_id);
 extern int drbd_send_block(struct Drbd_Conf *mdev, int cmd,
 			   struct buffer_head *bh, u64 block_id);
-extern int drbd_send_dblock(struct Drbd_Conf *mdev, 
+extern int drbd_send_dblock(struct Drbd_Conf *mdev,
 			    struct buffer_head *bh, u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
-extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
+extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
 extern int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,
 			    u64 block_id);
@@ -429,10 +429,10 @@ extern int drbd_send_bitmap(struct Drbd_Conf *mdev);
 
 extern int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector);
 
-/* drbd_req*/ 
+/* drbd_req*/
 #define ERF_NOTLD    2   /* do not call tl_dependence */
 extern void drbd_end_req(drbd_request_t *req, int nextstate,int uptodate);
-extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *); 
+extern int drbd_make_request(request_queue_t *,int ,struct buffer_head *);
 
 /* drbd_fs.c: */
 extern int drbd_determin_dev_size(struct Drbd_Conf*);
@@ -455,7 +455,7 @@ extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
 #define MBDS_DONE     (-3)
 #define MBDS_PACKET_SIZE 4096
 
-#define BM_BLOCK_SIZE_B  12  
+#define BM_BLOCK_SIZE_B  12
 #define BM_BLOCK_SIZE    (1<<BM_BLOCK_SIZE_B)
 
 #define BM_IN_SYNC       0
@@ -507,7 +507,7 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 static inline void set_cstate(struct Drbd_Conf* mdev,Drbd_CState cs)
 {
 	mdev->cstate = cs;
-	wake_up_interruptible(&mdev->cstate_wait);	
+	wake_up_interruptible(&mdev->cstate_wait);
 }
 
 static inline void inc_pending(struct Drbd_Conf* mdev)
@@ -527,16 +527,16 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 	if(atomic_read(&mdev->pending_cnt)<0)  /* CHK */
 		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt = %d < 0 !\n",
 		       (int)(mdev-drbd_conf), atomic_read(&mdev->pending_cnt));
-		
+
 	if(mdev->conf.timeout ) {
 		if(atomic_read(&mdev->pending_cnt) > 0) {
 			mod_timer(&mdev->a_timeout,
-				  jiffies + mdev->conf.timeout 
+				  jiffies + mdev->conf.timeout
 				  * HZ / 10);
 		} else {
 			del_timer(&mdev->a_timeout);
 		}
-	}	
+	}
 }
 
 static inline void inc_unacked(struct Drbd_Conf* mdev)
@@ -568,16 +568,16 @@ static inline struct Drbd_Conf* drbd_mdev_of_bh(struct buffer_head *bh)
 static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,
 					sector_t sector, int blk_size)
 {
-	mdev->rs_total += 
+	mdev->rs_total +=
 		bm_set_bit(mdev->mbds_id, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
-static inline void drbd_set_in_sync(struct Drbd_Conf* mdev, 
+static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 				    sector_t sector, int blk_size)
 {
 	/* Is called by drbd_dio_end possibly from IRQ context, but
 	   from other places in non IRQ */
-	unsigned long flags=0; 
+	unsigned long flags=0;
 	bm_set_bit(mdev->mbds_id, sector, blk_size, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->rs_lock,flags);
@@ -586,7 +586,7 @@ static inline void drbd_set_in_sync(struct Drbd_Conf* mdev,
 		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
 		set_bit(SYNC_FINISHED,&mdev->flags);
 		spin_unlock(&mdev->ee_lock);
-                wake_up_interruptible(&mdev->dsender_wait);		
+		wake_up_interruptible(&mdev->dsender_wait);
 	}
 
 	if(jiffies - mdev->rs_mark_time > HZ*10) {
@@ -602,9 +602,9 @@ extern void drbd_put_ee(struct Drbd_Conf* mdev,struct Tl_epoch_entry *e);
 extern struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
 					  int may_sleep);
 extern int _drbd_process_ee(struct Drbd_Conf *,struct list_head *);
-extern int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+extern int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 			    sector_t sector, int data_size);
-extern int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
+extern int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 			   sector_t sector, int data_size);
 
 
@@ -615,9 +615,9 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
 #define min_t(type,x,y) \
-        ({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
+	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
 #define max_t(type,x,y) \
-        ({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
+	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
 #endif
 
 #if !defined(CONFIG_HIGHMEM) && !defined(bh_kmap)
@@ -626,12 +626,12 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,10)
-#define MODULE_LICENSE(L) 
+#define MODULE_LICENSE(L)
 #endif
 
 #ifndef list_for_each
 #define list_for_each(pos, head) \
-        for(pos = (head)->next; pos != (head); pos = pos->next)
+	for(pos = (head)->next; pos != (head); pos = pos->next)
 #endif
 
 /*
@@ -651,14 +651,14 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
   The secondary gets the 4711(new) first, followed by 4711(old) and
   write 4711(old) to its disk.
 
-  Therefore 
+  Therefore
 
   bb_wait(),bb_done(),ds_check_block() and tl_check_sector()
 
  */
 
 struct busy_block {
-	struct list_head list; 
+	struct list_head list;
 	struct completion event;
 	sector_t sector;
 };
@@ -708,7 +708,7 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 	init_waitqueue_head(&bh->b_wait);
 	bh->b_size = size;
 	atomic_set(&bh->b_count, 0);
-	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr 
+	bh->b_state = (1 << BH_Mapped ); //has a disk mapping = dev & blocknr
 }
 
 
@@ -722,7 +722,7 @@ static inline void drbd_set_bh(struct Drbd_Conf *mdev,
 	bh->b_dev = 0xab00 | (int)(mdev-drbd_conf);  // DRBD's magic mark
 
 	// we skip submit_bh, but use generic_make_request.
-	set_bit(BH_Req, &bh->b_state);  
+	set_bit(BH_Req, &bh->b_state);
 	set_bit(BH_Launder, &bh->b_state);
 
 	bh->b_rdev = mdev->lo_device;

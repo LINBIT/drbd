@@ -316,12 +316,12 @@ void mempool_free(void *element, mempool_t *pool)
  */
 void *mempool_alloc_slab(int gfp_mask, void *pool_data)
 {
-        kmem_cache_t *mem = (kmem_cache_t *) pool_data;
-        return kmem_cache_alloc(mem, gfp_mask);
+	kmem_cache_t *mem = (kmem_cache_t *) pool_data;
+	return kmem_cache_alloc(mem, gfp_mask);
 }
 
 void mempool_free_slab(void *element, void *pool_data)
 {
-        kmem_cache_t *mem = (kmem_cache_t *) pool_data;
-        kmem_cache_free(mem, element);
+	kmem_cache_t *mem = (kmem_cache_t *) pool_data;
+	kmem_cache_free(mem, element);
 }

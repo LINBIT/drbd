@@ -33,7 +33,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <fcntl.h>
-#include <stdio.h> 
+#include <stdio.h>
 #include <string.h>
 #include "../drbd/drbd.h"
 #define _GNU_SOURCE
@@ -82,7 +82,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
 
 struct drbd_cmd commands[] = {
-  {"primary", cmd_primary,           0, 
+  {"primary", cmd_primary,           0,
    (struct option[]) {
      { "human",      no_argument,       0, 'h' },
      { "do-what-I-say",no_argument,     0, 'd' },
@@ -108,7 +108,7 @@ struct drbd_cmd commands[] = {
      { "rate",       required_argument, 0, 'r' },
      { 0,            0,                 0, 0 } } },
   {"down", cmd_down,                 0, 0 },
-  {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0}, 
+  {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0},
    (struct option[]) {
      { "timeout",    required_argument, 0, 't' },
      { "max-epoch-size", required_argument, 0, 'e' },
@@ -119,12 +119,12 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
    (struct option[]) {
-     { "size",  required_argument,      0, 'd' }, 
+     { "size",  required_argument,      0, 'd' },
      { "do-panic",   no_argument,       0, 'p' },
      { 0,            0,                 0, 0 } } },
   {"resize", cmd_disk_size,             0,
    (struct option[]) {
-     { "size",  required_argument,      0, 'd' }, 
+     { "size",  required_argument,      0, 'd' },
      { 0,            0,                 0, 0 } } },
   {"disconnect", cmd_disconnect,     0, 0 },
   {"show", cmd_show,                 0, 0 },
@@ -134,7 +134,7 @@ unsigned long resolv(const char* name)
 {
   unsigned long retval;
 
-  if((retval = inet_addr(name)) == INADDR_NONE ) 
+  if((retval = inet_addr(name)) == INADDR_NONE )
     {
       struct hostent *he;
       he = gethostbyname(name);
@@ -165,7 +165,7 @@ unsigned long m_strtol(const char* s,int def_mult)
     case 'm':
       return r*1024*(1024/def_mult);
     case 'G':
-    case 'g':      
+    case 'g':
       return r*1024*1024*(1024/def_mult);
     default:
       fprintf(stderr,"%s is not a valid number\n",s);
@@ -229,7 +229,7 @@ int already_in_use_tab(const char* dev_name,const char* tab_name)
   if( ! (tab=setmntent(tab_name,"r")) )
     return 0;
 
-  while( (entry=getmntent(tab)) ) 
+  while( (entry=getmntent(tab)) )
     {
       if( !strcmp(entry->mnt_fsname, dev_name) )
 	{
@@ -244,8 +244,8 @@ int already_in_use_tab(const char* dev_name,const char* tab_name)
 }
 
 int already_in_use(const char* dev_name)
-{        
-  return already_in_use_tab(dev_name,"/etc/mtab") || 
+{
+  return already_in_use_tab(dev_name,"/etc/mtab") ||
     already_in_use_tab(dev_name,"/proc/mounts");
 }
 
@@ -258,29 +258,29 @@ void print_usage(const char* prgname)
   printf("\nUSAGE: %s device command arguments options\n\n"
 	 "Device is usually /dev/nbX or /dev/drbd/X.\n"
          "Commands, arguments and options are:\n",prgname);
-        
 
-  for(i=0;i<ARRY_SIZE(commands);i++) 
+
+  for(i=0;i<ARRY_SIZE(commands);i++)
     {
       printf(" %s",commands[i].cmd);
-      if((args=commands[i].args)) 
+      if((args=commands[i].args))
 	{
 	  while(*args) printf(" %s",*args++);
 	}
       if((options=commands[i].options))
 	{
-	  while(options->name) 
+	  while(options->name)
 	    {
-	      if(options->has_arg == required_argument) 
+	      if(options->has_arg == required_argument)
 		printf(" [{--%s|-%c} val]",options->name,options->val);
-	      else 
+	      else
 		printf(" [{--%s|-%c}]",options->name,options->val);
 	      options++;
 	    }
 	}
       printf("\n");
     }
-  
+
   printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
 
   exit(20);
@@ -298,7 +298,7 @@ int open_drbd_device(const char* device)
       exit(20);
     }
 
-  
+
   err=fstat(drbd_fd, &drbd_stat);
   if(err)
     {
@@ -314,12 +314,12 @@ int open_drbd_device(const char* device)
     {
       perror("ioctl() failed");
     }
-  
+
   if (version != API_VERSION)
     {
       fprintf(stderr,"Drbdsetup and drbd kernel module are not matching!\n");
       exit(20);
-    }    
+    }
 
   return drbd_fd;
 }
@@ -329,7 +329,7 @@ void check_state_dir(void)
   struct stat drbd_stat;
   if(stat(DRBD_MD_PATH,&drbd_stat))
     {
-      if (errno==ENOENT) 
+      if (errno==ENOENT)
 	{
 	  fprintf(stderr,DRBD_MD_PATH " does not exists. Creating it.\n");
 	  if(!mkdir(DRBD_MD_PATH,00600)) return;
@@ -351,12 +351,12 @@ int scan_disk_options(char **argv,
 
   if(argc==0) return 0;
 
-  optind=0; 
+  optind=0;
   opterr=0; /* do not print error messages upon not valid options */
   while(1)
     {
       int c;
-	  
+
       c = getopt_long(argc,argv,make_optstring(options),options,0);
       if(c == -1) break;
       switch(c)
@@ -401,7 +401,7 @@ int scan_net_options(char **argv,
       if(c == -1) break;
       switch(c)
 	{
-	case 't': 
+	case 't':
 	  cn->config.timeout = m_strtol(optarg,1);
 	  break;
 	case 'e':
@@ -427,7 +427,7 @@ int scan_net_options(char **argv,
     }
 
   /* sanity checks of the timeouts */
-  
+
   if(cn->config.timeout >= cn->config.try_connect_int * 10 ||
      cn->config.timeout >= cn->config.ping_int * 10)
     {
@@ -438,7 +438,7 @@ int scan_net_options(char **argv,
   return 0;
 }
 
-void print_config_ioctl_err(int err_no) 
+void print_config_ioctl_err(int err_no)
 {
   const char *etext[] = {
     [NoError]="No further Information available.",
@@ -513,7 +513,7 @@ int do_net_conf(int drbd_fd,
   struct sockaddr_in *my_addr;
   int err;
 
-  if(proto[1] != 0) 
+  if(proto[1] != 0)
     {
       fprintf(stderr,"Invalid protocol specifier.\n");
       return 20;
@@ -532,7 +532,7 @@ int do_net_conf(int drbd_fd,
     case 'C':
       cn->config.wire_protocol = DRBD_PROT_C;
       break;
-    default:	  
+    default:
       fprintf(stderr,"Invalid protocol specifier.\n");
       return 20;
     }
@@ -542,7 +542,7 @@ int do_net_conf(int drbd_fd,
   my_addr->sin_port = htons(port_part(local_addr));
   my_addr->sin_family = AF_INET;
   my_addr->sin_addr.s_addr = resolv(addr_part(local_addr));
-  
+
   cn->config.other_addr_len = sizeof(struct sockaddr_in);
   other_addr = (struct sockaddr_in *)cn->config.other_addr;
   other_addr->sin_port = htons(port_part(remote_addr));
@@ -597,18 +597,18 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   Drbd_State newstate=Primary;
 
-  optind=0; 
-  if(argc > 0) 
+  optind=0;
+  if(argc > 0)
     {
       while(1)
 	{
 	  int c;
-	  
+
 	  c = getopt_long(argc+1,argv-1,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'h': 
+	    case 'h':
 	      newstate |= Human;
 	      break;
 	    case 'd':
@@ -624,7 +624,7 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	    }
 	}
     }
-  
+
   return set_state(drbd_fd,newstate);
 }
 
@@ -637,14 +637,14 @@ int cmd_sec_rem(int drbd_fd,char** argv,int argc,struct option *options)
 {
   int err;
   err=ioctl(drbd_fd,DRBD_IOCTL_SECONDARY_REM);
-  if(err) 
+  if(err)
     {
       err=errno;
       perror("ioctl() failed");
       if(err==ENXIO)
 	fprintf(stderr,"Not connected to remote DRBD device!\n");
-    
-      if(err==ESRCH) 
+
+      if(err==ESRCH)
 	{
 	  fprintf(stderr,"remote DRBD device is already in Secondary state\n");
 	  return 1;
@@ -663,21 +663,21 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
   p.wfc_timeout=wfct;
   p.degr_wfc_timeout=dwfct;
 
-  optind=0; 
-  if(argc > 0) 
+  optind=0;
+  if(argc > 0)
     {
       while(1)
 	{
 	  int c;
-	  
+
 	  c = getopt_long(argc+1,argv-1,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 't': 
+	    case 't':
 	      p.wfc_timeout = m_strtol(optarg,1);
 	      break;
-	    case 'd': 
+	    case 'd':
 	      p.degr_wfc_timeout = m_strtol(optarg,1);
 	      break;
 	    case '?':
@@ -716,7 +716,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_syncer_config cn;
   struct ioctl_get_config current_cn;
-  int err;  
+  int err;
 
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&current_cn);
   if(err)
@@ -729,23 +729,23 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   cn.config.use_csums = 0; //current_cn.sconf.use_csums;
   cn.config.skip = 0; //current_cn.sconf.skip;
 
-  optind=0; 
+  optind=0;
   opterr=0; /* do not print error messages upon not valid options */
-  if(argc > 0) 
+  if(argc > 0)
     {
       while(1)
 	{
 	  int c;
-	  
+
 	  c = getopt_long(argc+3,argv-3,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'c': 
+	    case 'c':
 	      cn.config.use_csums=1;
 	      break;
 	    case 'k':
-  	      cn.config.skip=1;
+	      cn.config.skip=1;
 	      break;
 	    case 'r':
 	      cn.config.rate=m_strtol(optarg,1024);
@@ -783,7 +783,7 @@ int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
 	fprintf(stderr,"Can not start resynchronisation. Not connected\n");
       return 20;
     }
-  return 0;  
+  return 0;
 }
 
 int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
@@ -801,7 +801,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
 	fprintf(stderr,"Can not start resynchronisation. Not connected\n");
       return 20;
     }
-  return 0;  
+  return 0;
 }
 
 int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
@@ -837,7 +837,7 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options)
     }
   return 0;
 
-}     
+}
 
 int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options)
 {
@@ -866,19 +866,19 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
   unsigned long u_size=0;
   int err;
 
-  optind=0; 
+  optind=0;
   opterr=0; /* do not print error messages upon not valid options */
-  if(argc > 0) 
+  if(argc > 0)
     {
       while(1)
 	{
 	  int c;
-	  
+
 	  c = getopt_long(argc+3,argv-3,make_optstring(options),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'd': 
+	    case 'd':
 	      u_size=m_strtol(optarg,1024);
 	      break;
 	    case '?':
@@ -910,12 +910,12 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 
   if(!device_dir) goto err_out;
 
-  while((dde=readdir(device_dir))) 
+  while((dde=readdir(device_dir)))
     {
       snprintf(dev_name,50,"%s/%s",dir,dde->d_name);
       if(stat(dev_name,&sb)) continue;
 
-      if(S_ISBLK(sb.st_mode)) 
+      if(S_ISBLK(sb.st_mode))
 	{
 	  if (major == (int)(sb.st_rdev & 0xff00) >> 8 &&
 	      minor == (int)(sb.st_rdev & 0x00ff) )
@@ -928,25 +928,25 @@ const char* guess_dev_name(const char* dir,int major,int minor)
 
   rewinddir(device_dir);
 
-  while((dde=readdir(device_dir))) 
+  while((dde=readdir(device_dir)))
     {
       snprintf(dev_name,50,"%s/%s",dir,dde->d_name);
       if(stat(dev_name,&sb)) continue;
-      
+
       if(!strcmp(dde->d_name,".")) continue;
       if(!strcmp(dde->d_name,"..")) continue;
       if(!strcmp(dde->d_name,"fd")) continue;
-      
-      if(S_ISDIR(sb.st_mode)) 
+
+      if(S_ISDIR(sb.st_mode))
 	{
 	  char subdir[50];
-	  
-	  if(snprintf(subdir,50,"%s/%s",dir,dde->d_name)==49) 
+
+	  if(snprintf(subdir,50,"%s/%s",dir,dde->d_name)==49)
 	    { /* recursion is too deep */
 	      strcpy(dev_name,"can not guess name");
 	      return dev_name;
 	    }
-	  
+
 	  if(guess_dev_name(subdir,major,minor)) return dev_name;
 	}
     }
@@ -994,7 +994,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   printf("Remote address: %s:%d\n",
 	 inet_ntoa(other_addr->sin_addr),
 	 ntohs(other_addr->sin_port));
-  printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol); 
+  printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol);
   printf("Net options:\n");
   printf(" timeout = %d.%d sec %s\n",cn.nconf.timeout/10,cn.nconf.timeout%10,
 	 cn.nconf.timeout == DEF_NET_TIMEOUT ? "(default)" : "" );
@@ -1031,17 +1031,17 @@ int main(int argc, char** argv)
   drbd_fd=open_drbd_device(argv[1]);
   check_state_dir();
 
-  for(i=0;i<ARRY_SIZE(commands);i++) 
+  for(i=0;i<ARRY_SIZE(commands);i++)
     {
       if(strcmp(argv[2],commands[i].cmd)==0)
 	{
 	  num_of_args=0;
 	  if((args=commands[i].args))
 	    {
-	      while(*args++) num_of_args++; 
+	      while(*args++) num_of_args++;
 	    }
 	  if (argc-3 < num_of_args) print_usage(argv[0]);
-	  if (argc-3-num_of_args>0 && commands[i].options==0) 
+	  if (argc-3-num_of_args>0 && commands[i].options==0)
 	    {
 	      fprintf(stderr,"Too many arguments or options.\n");
 	      return 20;

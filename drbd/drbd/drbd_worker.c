@@ -6,7 +6,7 @@
    This file is part of drbd by Philipp Reisner.
 
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
-        main author.
+	main author.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -95,7 +95,7 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 		spin_unlock_irq(&mdev->ee_lock);
 		ok = ok && e->e_end_io(mdev,e);
 
-		spin_lock_irq(&mdev->bb_lock); 
+		spin_lock_irq(&mdev->bb_lock);
 		spin_lock(&mdev->ee_lock); // first bb_lock then ee_lock
 		list_del(le);         // remove from list first.
 		bb_done(mdev,e->bh->b_blocknr);  // signal completion second.
@@ -153,9 +153,9 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
 	// Remove later
-	if(number > 1000) number=1000;	
+	if(number > 1000) number=1000;
 	if(atomic_read(&mdev->pending_cnt)>1200) {
-		printk(KERN_ERR DEVICE_NAME 
+		printk(KERN_ERR DEVICE_NAME
 		       "%d: pending cnt high -- throttling resync.\n",
 		       (int)(mdev-drbd_conf));
 		return TRUE;
@@ -165,7 +165,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 	for(i=0;i<number;i++) {
 		struct Pending_read *pr;
 		int size=BM_BLOCK_SIZE;
-	
+
 		pr = mempool_alloc(drbd_pr_mempool, GFP_USER);
 		if (!pr) return TRUE;
 
@@ -189,7 +189,7 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 	return TRUE;
 }
 
-void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side) 
+void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 {
 	/*printk(KERN_ERR DEVICE_NAME "%d: rs_total=%lu\n",
 	  (int)(mdev-drbd_conf),mdev->rs_total);*/
@@ -204,7 +204,7 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 		spin_lock_irq(&mdev->ee_lock); // (ab)use ee_lock see, below.
 		set_bit(START_SYNC,&mdev->flags);
 		spin_unlock_irq(&mdev->ee_lock);
-                wake_up_interruptible(&mdev->dsender_wait);
+		wake_up_interruptible(&mdev->dsender_wait);
 	}
 }
 
@@ -233,7 +233,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_process_rdone_ee(mdev);
-		
+
 		current->state = TASK_INTERRUPTIBLE;
 		spin_lock(&mdev->dsender_wait.lock);
 		__add_wait_queue(&mdev->dsender_wait, &wait);
@@ -244,7 +244,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 
 		spin_unlock_irq(&mdev->ee_lock);
 
-		if(start_sync) { 
+		if(start_sync) {
 			time=SLEEP_TIME;
 			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 			drbd_md_write(mdev);
@@ -271,7 +271,7 @@ int drbd_dsender(struct Drbd_thread *thi)
 		spin_unlock_irq(&mdev->dsender_wait.lock);
 
 		if (thi->t_state == Exiting) break;
-		  		
+
 		if(time==SLEEP_TIME) {
 			spin_lock_irq(&mdev->ee_lock);
 			drbd_process_rdone_ee(mdev); // Why again ?
@@ -280,9 +280,9 @@ int drbd_dsender(struct Drbd_thread *thi)
 				time=MAX_SCHEDULE_TIMEOUT;
 				mdev->rs_total=mdev->rs_left;
 			}
-			drbd_send_cmd(mdev,WriteHint,0); // IO hint 
-		} 
-		
+			drbd_send_cmd(mdev,WriteHint,0); // IO hint
+		}
+
 	}
 
 	return 0;

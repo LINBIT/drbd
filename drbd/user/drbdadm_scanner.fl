@@ -45,7 +45,7 @@ on               { DP; BEGIN(id); return TK_ON;          }
 net              { DP; return TK_NET;                    }
 disk             { DP; BEGIN(id); return TK_DISK;        }
 port             { DP; return TK_PORT;                   }
-syncer           { DP; return TK_SYNCER;                 }  
+syncer           { DP; return TK_SYNCER;                 }
 device           { DP; BEGIN(id); return TK_DEVICE;      }
 global           { DP; return TK_GLOBAL;                 }
 address          { DP; return TK_ADDRESS;                }
@@ -54,7 +54,7 @@ resource         { DP; BEGIN(id); return TK_RESOURCE;    }
 rate             { DP; CP; return TK_RATE;               }
 size             { DP; CP; return TK_SIZE;               }
 timeout          { DP; CP; return TK_TIMEOUT;            }
-ping-int         { DP; CP; return TK_PING_INT;           }    
+ping-int         { DP; CP; return TK_PING_INT;           }
 protocol         { DP; CP; BEGIN(id); return TK_PROTOCOL;}
 do-panic         { DP; CP; return TK_DO_PANIC;           }
 use-csums        { DP; CP; return TK_USE_CSUMS;          }
@@ -70,7 +70,7 @@ disable_io_hints { DP; CP; return TK_DISABLE_IO_HINTS;   }
 {IPV4ADDR}       { DP; CP; return TK_IPADDR;             }
 {NUM}            { DP; CP; return TK_INTEGER;            }
 {WS}+            /* ignore whitespaces */
-[^ \n\t={}"]+    { syntax_error(yytext); } 
+[^ \n\t={}"]+    { syntax_error(yytext); }
 
 %%
 

@@ -1,14 +1,14 @@
 /*
   drbd.h
   Kernel module for 2.2.x Kernels
-  
+
   This file is part of drbd by Philipp Reisner.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation; either version 2, or (at your option)
   any later version.
-  
+
   drbd is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -42,22 +42,22 @@
 #define IN
 #define OUT const
 #define INOUT
-#endif                                 
+#endif
 
 
-#define MAX_SOCK_ADDR	128		/* 108 for Unix domain - 
+#define MAX_SOCK_ADDR	128		/* 108 for Unix domain -
 					   16 for IP, 16 for IPX,
 					   24 for IPv6,
-					   about 80 for AX.25 
+					   about 80 for AX.25
 					   must be at least one bigger than
 					   the AF_UNIX size (see net/unix/af_unix.c
-					   :unix_mkname()).  
+					   :unix_mkname()).
 					 */
 
 struct disk_config {
 	IN int      lower_device;
 	IN unsigned int disk_size;
-        IN int      do_panic;  /* Panic on error upon LL_DEV */
+	IN int      do_panic;  /* Panic on error upon LL_DEV */
 };
 
 struct net_config {
@@ -66,7 +66,7 @@ struct net_config {
 	IN char     other_addr[MAX_SOCK_ADDR];
 	IN int      other_addr_len;
 	IN int      timeout;
-	IN int      wire_protocol;  
+	IN int      wire_protocol;
 	IN int      try_connect_int;  /* seconds */
 	IN int      ping_int;         /* seconds */
 	IN int      max_epoch_size;
@@ -77,10 +77,10 @@ struct net_config {
 struct syncer_config {
 	int      rate; /* KB/sec */
 	int      use_csums;   /* use checksum based syncing*/
-	int      skip; 
+	int      skip;
 };
 
-enum ret_codes { 
+enum ret_codes {
 	NoError=0,
 	LAAlreadyInUse,
 	OAAlreadyInUse,
@@ -119,27 +119,27 @@ struct ioctl_wait {
 #define DRBD_PROT_C   3
 
 typedef enum {
-        Unknown=0,
-        Primary=1,     // role
-        Secondary=2,   // role
-        Human=4,           // flag for set_state
-        TimeoutExpired=8,  // flag for set_state
-        DontBlameDrbd=16   // flag for set_state
+	Unknown=0,
+	Primary=1,     // role
+	Secondary=2,   // role
+	Human=4,           // flag for set_state
+	TimeoutExpired=8,  // flag for set_state
+	DontBlameDrbd=16   // flag for set_state
 } Drbd_State;
 
-typedef enum { 
+typedef enum {
   Unconfigured,
-  StandAlone,    
+  StandAlone,
   Unconnected,
   Timeout,
   BrokenPipe,
   WFConnection,
   WFReportParams,     /* The order of these constants is important.   */
   Connected,          /* The lower ones (<WFReportParams) indicate */
-  WFBitMap,           
+  WFBitMap,
   SyncSource,
   SyncTarget
-} Drbd_CState; 
+} Drbd_CState;
 
 struct ioctl_get_config {
 	struct net_config     nconf;
@@ -147,8 +147,8 @@ struct ioctl_get_config {
 	OUT int      lower_device_major;
 	OUT int      lower_device_minor;
 	OUT unsigned int disk_size_user;
-        OUT int      do_panic;
-	OUT Drbd_CState cstate; 
+	OUT int      do_panic;
+	OUT Drbd_CState cstate;
 };
 
 

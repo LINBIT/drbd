@@ -75,12 +75,12 @@ struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
   { "config-file",  required_argument,0, 'c' },
   { "drbdsetup",    required_argument,0, 's' },
-  { 0,              0,                0, 0   } 
+  { 0,              0,                0, 0   }
 };
 
 struct adm_cmd cmds[] = {
   { "attach",            adm_attach,  0                  ,1,1 },
-  //{ "detach",            adm_generic, "??missing??"    ,1,1 },  
+  //{ "detach",            adm_generic, "??missing??"    ,1,1 },
   { "connect",           adm_connect, 0                  ,1,1 },
   { "disconnect",        adm_generic, "disconnect"       ,1,1 },
   { "up",                adm_up,      0                  ,1,1 },
@@ -155,7 +155,7 @@ static int adm_dump(struct d_resource* res,char* unused)
   dump_options("syncer",res->sync_options);
   dump_options("startup",res->startup_options);
   printf("}\n\n");
-    
+
   return 0;
 }
 
@@ -237,7 +237,7 @@ static void find_drbdsetup(char** pathes)
 {
   struct stat buf;
   char **path;
-  
+
   path=pathes;
   while(*path) {
     if(stat(*path,&buf)==0) {
@@ -280,12 +280,12 @@ int m_system(int may_sleep,char** argv)
   pid = fork();
   if(pid == -1) {
     fprintf(stderr,"Can not fork");
-    exit(20);    
+    exit(20);
   }
   if(pid == 0) {
     execv(argv[0],argv);
     fprintf(stderr,"Can not exec");
-    exit(20);    
+    exit(20);
   }
 
   if( !may_sleep ) {
@@ -308,10 +308,10 @@ int m_system(int may_sleep,char** argv)
       }
     }
   }
-  
+
   if( !may_sleep ) {
     alarm(0);
-    sigaction(SIGALRM,&so,NULL);  
+    sigaction(SIGALRM,&so,NULL);
   }
 
   if(!may_sleep && rv) {
@@ -321,7 +321,7 @@ int m_system(int may_sleep,char** argv)
     }
     fprintf(stderr,"'\n");
   }
-  
+
   return rv;
 }
 
@@ -339,9 +339,9 @@ int m_system(int may_sleep,char** argv)
 int adm_attach(struct d_resource* res,char* unused)
 {
   char* argv[20];
-  struct d_option* opt;  
+  struct d_option* opt;
   int argc=0;
-    
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="disk";
@@ -367,9 +367,9 @@ struct d_option* find_opt(struct d_option* base,char* name)
 int adm_resize(struct d_resource* res,char* unused)
 {
   char* argv[20];
-  struct d_option* opt;  
+  struct d_option* opt;
   int argc=0;
-    
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="resize";
@@ -384,7 +384,7 @@ int adm_generic(struct d_resource* res,char* cmd)
 {
   char* argv[20];
   int argc=0,i;
-    
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]=cmd;
@@ -399,10 +399,10 @@ int adm_generic(struct d_resource* res,char* cmd)
 int adm_connect(struct d_resource* res,char* unused)
 {
   char* argv[20];
-  struct d_option* opt;  
+  struct d_option* opt;
 
   int argc=0;
-    
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="net";
@@ -419,9 +419,9 @@ int adm_connect(struct d_resource* res,char* unused)
 int adm_syncer(struct d_resource* res,char* unused)
 {
   char* argv[20];
-  struct d_option* opt;  
+  struct d_option* opt;
   int argc=0;
-    
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="syncer";
@@ -443,9 +443,9 @@ static int adm_up(struct d_resource* res,char* unused)
 static int adm_wait_c(struct d_resource* res ,char* unused)
 {
   char* argv[20];
-  struct d_option* opt;  
+  struct d_option* opt;
   int argc=0;
-    
+
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="wait_connect";
@@ -453,7 +453,7 @@ static int adm_wait_c(struct d_resource* res ,char* unused)
   make_options(opt);
   argv[argc++]=0;
 
-  return m_system(1,argv);  
+  return m_system(1,argv);
 }
 
 
@@ -487,21 +487,21 @@ void print_usage(const char* prgname)
 
   opt=admopt;
   while(opt->name) {
-    if(opt->has_arg == required_argument) 
+    if(opt->has_arg == required_argument)
       printf(" {--%s|-%c} val\n",opt->name,opt->val);
-    else 
+    else
       printf(" {--%s|-%c}\n",opt->name,opt->val);
     opt++;
   }
 
   printf("\nCOMMANDS:\n");
-  
+
   for(i=0;i<ARRY_SIZE(cmds);i++) {
     if(cmds[i].show_in_usage==0) break;
     if(i%2) {
-      printf("%-35s\n",cmds[i].name);      
+      printf("%-35s\n",cmds[i].name);
     } else {
-      printf(" %-35s",cmds[i].name);      
+      printf(" %-35s",cmds[i].name);
     }
   }
 
@@ -524,9 +524,9 @@ int main(int argc, char** argv)
 
   optind=0;
   while(1)
-    {  
+    {
       int c;
-	  
+
       c = getopt_long(argc,argv,make_optstring(admopt),admopt,0);
       if(c == -1) break;
       switch(c)
@@ -535,8 +535,8 @@ int main(int argc, char** argv)
 	  dry_run=1;
 	  break;
 	case 'c':
-	  if(!strcmp(optarg,"-")) { 
-	    yyin=stdin; 
+	  if(!strcmp(optarg,"-")) {
+	    yyin=stdin;
 	  } else {
 	    yyin=fopen(optarg,"r");
 	    if(!yyin) {
@@ -566,7 +566,7 @@ int main(int argc, char** argv)
       yyin = fopen("/etc/drbd.conf","r");
       if(yyin == 0) {
 	fprintf(stderr,"Can not open '/etc/drbd.conf'.\n.");
-	exit(20);	
+	exit(20);
       }
     }
   }
@@ -612,11 +612,11 @@ int main(int argc, char** argv)
 
   if(cmd==NULL) {
     fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
-    exit(20);	
+    exit(20);
   }
   optind++;
 
-  if(cmd->res_name_required) 
+  if(cmd->res_name_required)
     {
       if (optind+1 > argc) print_usage(argv[0]); // arguments missing.
 
@@ -626,7 +626,7 @@ int main(int argc, char** argv)
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	    exit(20);
-	  }	    
+	  }
 	  res=res->next;
 	}
       } else {
@@ -644,14 +644,14 @@ int main(int argc, char** argv)
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	    exit(20);
-	  }	    
+	  }
 	}
       }
     } else { // Commands which does not need a resource name
       if( (rv=cmd->function(config,cmd->arg)) ) {
 	fprintf(stderr,"drbdsetup exited with code %d\n",rv);
 	exit(20);
-      }	    
+      }
     }
 
   free_config(config);
@@ -662,5 +662,5 @@ int main(int argc, char** argv)
 void yyerror(char* text)
 {
   fprintf(stderr,"%s in %d of config file.\n",text,line);
-  exit(20); 
+  exit(20);
 }

@@ -33,7 +33,7 @@
 
 
 /******
- This is a bit uggly. 
+ This is a bit uggly.
  If you think you are clever, then consider to contribute a nicer
  implementation of adm_adjust()
 */
@@ -51,7 +51,7 @@ FILE *m_popen(int *pid,char** argv)
   mpid = fork();
   if(mpid == -1) {
     fprintf(stderr,"Can not fork");
-    exit(20);    
+    exit(20);
   }
   if(mpid == 0) {
     close(pipes[0]); // close reading end
@@ -59,7 +59,7 @@ FILE *m_popen(int *pid,char** argv)
     close(pipes[1]);
     execv(argv[0],argv);
     fprintf(stderr,"Can not exec");
-    exit(20);    
+    exit(20);
   }
 
   close(pipes[1]); // close writing end
@@ -85,7 +85,7 @@ static unsigned long m_strtol(const char* s,int def_mult)
     case 'm':
       return r*1024*(1024/def_mult);
     case 'G':
-    case 'g':      
+    case 'g':
       return r*1024*1024*(1024/def_mult);
     default:
       fprintf(stderr,"%s is not a valid number\n",s);
@@ -98,13 +98,13 @@ int check_opt_b(FILE *in,char* name,struct d_option* base)
   struct d_option* o;
   char uu[2],scs[200],sn[50];
   int l,rv=0;
-  
+
   strcpy(sn,name);
   l=strlen(sn)-1;
   sn[l]=0;
   sprintf(scs," %*s%%[%c]\n",l,sn,name[l]);
 
-  if(fscanf(in,scs,uu)) { 
+  if(fscanf(in,scs,uu)) {
     o=find_opt(base,name);
     if(o) o->mentioned=1;
     else rv=1;
@@ -121,7 +121,7 @@ int check_opt_v(FILE *in,char* name,int dm, char* unit,struct d_option* base)
   char uu[2];
   char scs[200];
   int rv=0;
-  
+
   sprintf(scs," %s = %%lu %s (%%[d]efault)\n",name,unit);
   fscanf(in,scs,&ul,uu);
   o=find_opt(base,name);
@@ -182,7 +182,7 @@ int adm_adjust(struct d_resource* res,char* unused)
   }
 
   rv=fscanf(in,"Disk options%[:]\n",uu);
-  if(rv==1) {    
+  if(rv==1) {
 
     do_resize |= check_opt_v(in,"size",1024,"KB",res->disk_options);
     do_attach |= check_opt_b(in,"do-panic",res->disk_options);
@@ -202,13 +202,13 @@ int adm_adjust(struct d_resource* res,char* unused)
   if(rv!=2 || strcmp(str1,res->me->address) || strcmp(str2,res->me->port) ) {
     do_connect=1;
   }
-    
+
   rv=fscanf(in,"Remote address: %[0-9.]:%s\n",str1,str2);
-  if(rv!=2 || strcmp(str1,res->partner->address) || 
+  if(rv!=2 || strcmp(str1,res->partner->address) ||
      strcmp(str2,res->partner->port) ) {
     do_connect=1;
   }
-  
+
   rv=fscanf(in,"Wire protocol: %1[ABC]\n",str1);
   if(rv!=1 || strcmp(str1,res->protocol) ) {
     do_connect=1;
@@ -231,17 +231,17 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_connect |= check_opt_v(in,"max-buffers",1,"",res->net_options);
     do_connect |= complete(res->net_options);
   }
-  
+
   rv=fscanf(in,"Syncer options%[:]\n",uu);
   if(rv==1) {
     do_syncer |= check_opt_v(in,"rate",1024,"KB/sec",res->sync_options);
     do_syncer |= check_opt_b(in,"use-csums",res->sync_options);
-    do_syncer |= complete(res->sync_options); 
+    do_syncer |= complete(res->sync_options);
   }
-  
+
   fclose(in);
   waitpid(pid,0,0);
-  
+
   if(do_attach) {
     if( (rv=adm_attach(res,0)) ) return rv;
     do_resize=0;
@@ -249,6 +249,6 @@ int adm_adjust(struct d_resource* res,char* unused)
   if(do_resize)  if( (rv=adm_resize(res,0)) ) return rv;
   if(do_connect) if( (rv=adm_connect(res,0))) return rv;
   if(do_syncer)  if( (rv=adm_syncer(res,0)) ) return rv;
-  
+
   return 0;
 }

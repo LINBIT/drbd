@@ -6,13 +6,13 @@
    This file is part of drbd by Philipp Reisner.
 
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
-        main author.
+	main author.
 
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
-        Early 2.3.x work.
+	Early 2.3.x work.
 
    Copyright (C) 2001, Lelik P.Korchagin <lelik@price.ru>.
-        Initial devfs support.
+	Initial devfs support.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -36,8 +36,8 @@
   use with GFS at least the following items need to be done.
   *) transfer_log and epoch_set reside in the same memory now.
   *) writes on the receiver side must be done with a temporary
-     buffer_head directly to the lower level device. 
-     Otherwise we would get in an endless loop sending the same 
+     buffer_head directly to the lower level device.
+     Otherwise we would get in an endless loop sending the same
      block over all the time.
   *) All occurences of "Primary" or "Secondary" must be reviewed.
 */
@@ -50,7 +50,7 @@
 #endif
 
 #include <asm/uaccess.h>
-#include <asm/bitops.h> 
+#include <asm/bitops.h>
 #include <asm/types.h>
 #include <net/sock.h>
 #include <linux/module.h>
@@ -173,7 +173,7 @@ STATIC inline void tl_add(struct Drbd_Conf *mdev, drbd_request_t * new_item)
 {
 	struct drbd_barrier *b;
 
- 	spin_lock_irq(&mdev->tl_lock);
+	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->newest_barrier;
 
@@ -195,14 +195,14 @@ STATIC inline unsigned int tl_add_barrier(struct Drbd_Conf *mdev)
 	static int barrier_nr_issue=1;
 	struct drbd_barrier *b;
 
-	barrier_nr_issue++; 
+	barrier_nr_issue++;
 
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
 	b->br_number=barrier_nr_issue;
 	b->n_req=0;
-	
+
 	spin_lock_irq(&mdev->tl_lock);
 
 	bnr = mdev->newest_barrier->br_number;
@@ -224,9 +224,9 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
 
-	list_del(&b->requests); 
-	/* There could be requests on the list waiting for completion 
-	   of the write to the local disk, to avoid corruptions of 
+	list_del(&b->requests);
+	/* There could be requests on the list waiting for completion
+	   of the write to the local disk, to avoid corruptions of
 	   slab's data structures we have to remove the lists head */
 
 	spin_unlock_irq(&mdev->tl_lock);
@@ -238,12 +238,12 @@ void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 }
 
 /* tl_dependence reports if this sector was present in the current
-   epoch. 
+   epoch.
    As side effect it clears also the pointer to the request if it
    was present in the transfert log. (Since tl_dependence indicates
    that IO is complete and that drbd_end_req() should not be called
-   in case tl_clear has to be called due to interruption of the 
-   communication) 
+   in case tl_clear has to be called due to interruption of the
+   communication)
 */
 int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 {
@@ -324,27 +324,27 @@ void tl_clear(struct Drbd_Conf *mdev)
 	mdev->newest_barrier = new_first;
 
 	spin_unlock_irq(&mdev->tl_lock);
-}     
+}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14) 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
 // Check when daemonize was introduced.
 void daemonize(void)
 {
-        struct fs_struct *fs;
+	struct fs_struct *fs;
 
-        exit_mm(current);
+	exit_mm(current);
 
-        current->session = 1;
-        current->pgrp = 1;
-        current->tty = NULL;
+	current->session = 1;
+	current->pgrp = 1;
+	current->tty = NULL;
 
-        exit_fs(current);       /* current->fs->count--; */
-        fs = init_task.fs;
-        current->fs = fs;
-        atomic_inc(&fs->count);
-        exit_files(current);
-        current->files = init_task.files;
-        atomic_inc(&current->files->count);
+	exit_fs(current);       /* current->fs->count--; */
+	fs = init_task.fs;
+	current->fs = fs;
+	atomic_inc(&fs->count);
+	exit_files(current);
+	current->files = init_task.files;
+	atomic_inc(&current->files->count);
 }
 #endif
 
@@ -441,7 +441,7 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 	kdev_t ll_dev = mdev->lo_device;
 
 	param.h.u_size=cpu_to_be64(mdev->lo_usize);
-	param.h.p_size=cpu_to_be64(ll_dev ? 
+	param.h.p_size=cpu_to_be64(ll_dev ?
 				   blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]:0);
 
 	param.p.command = cpu_to_be16(ReportParams);
@@ -457,7 +457,7 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 	down(&mdev->sock_mutex);
 	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);
 	up(&mdev->sock_mutex);
-	
+
 	D_ASSERT(err == sizeof(param));
 
 	return (err == sizeof(param));
@@ -490,7 +490,7 @@ int drbd_send_bitmap(struct Drbd_Conf *mdev)
 		up(&mdev->sock_mutex);
 		if(ret != want + sizeof(head) ) {
 			ret=FALSE;
-			printk(KERN_ERR DEVICE_NAME 
+			printk(KERN_ERR DEVICE_NAME
 			       "%d: short send ret=%d want=%d head=%d\n",
 			       (int)(mdev-drbd_conf),
 			       ret,want,(int)sizeof(head));
@@ -507,14 +507,14 @@ int drbd_send_bitmap(struct Drbd_Conf *mdev)
 int _drbd_send_barrier(struct Drbd_Conf *mdev)
 {
 	int r;
-        Drbd_Barrier_Packet head;
+	Drbd_Barrier_Packet head;
 
 	/* tl_add_barrier() must be called with the sock_mutex aquired */
 	head.p.command = cpu_to_be16(Barrier);
-	head.h.barrier=tl_add_barrier(mdev); 
+	head.h.barrier=tl_add_barrier(mdev);
 
 	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
-       
+
 	r=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,0);
 
 	inc_pending(mdev);
@@ -524,11 +524,11 @@ int _drbd_send_barrier(struct Drbd_Conf *mdev)
 
 int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 {
-        Drbd_BarrierAck_Packet head;
+	Drbd_BarrierAck_Packet head;
 	int ret;
-       
+
 	head.p.command = cpu_to_be16(BarrierAck);
-        head.h.barrier = barrier_nr;
+	head.h.barrier = barrier_nr;
 	head.h.set_size = cpu_to_be32(set_size);
 	down(&mdev->msock_mutex);
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
@@ -537,15 +537,15 @@ int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 }
 
 
-int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
+int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 		  struct buffer_head *bh, u64 block_id)
 {
-        Drbd_BlockAck_Packet head;
+	Drbd_BlockAck_Packet head;
 	int ret;
 
 	head.p.command = cpu_to_be16(cmd);
 	head.h.sector = cpu_to_be64(DRBD_BH_SECTOR(bh));
-        head.h.block_id = block_id;
+	head.h.block_id = block_id;
 	head.h.blksize = cpu_to_be32(bh->b_size);
 	down(&mdev->msock_mutex);
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
@@ -553,15 +553,15 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 	return (ret == sizeof(head));
 }
 
-int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
+int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 		       sector_t sector,int size, u64 block_id)
 {
-        Drbd_BlockRequest_Packet head;
+	Drbd_BlockRequest_Packet head;
 	int ret;
 
 	head.p.command = cpu_to_be16(cmd);
 	head.h.sector = cpu_to_be64(sector);
-        head.h.block_id = block_id;
+	head.h.block_id = block_id;
 	head.h.blksize = cpu_to_be32(size);
 
 	down(&mdev->sock_mutex);
@@ -574,7 +574,7 @@ int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 		     u64 block_id)
 {
-        Drbd_Data_Packet head;
+	Drbd_Data_Packet head;
 	int ret,ok;
 
 	head.p.command = cpu_to_be16(Data);
@@ -582,16 +582,16 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
-	
+
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-	        _drbd_send_barrier(mdev);
+		_drbd_send_barrier(mdev);
 	}
 
 	// 1. This must be within the semaphore
 	// 2. This must happen before sending
 	// UGGLY UGGLY casting it back to a drbd_request_t
 	tl_add(mdev,(drbd_request_t*)(unsigned long)block_id);
-	
+
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
 		      bh->b_size,0);
 	bh_kunmap(bh);
@@ -603,14 +603,14 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 
 	up(&mdev->sock_mutex);
 
-	return ok;  
+	return ok;
 }
 
 // Used to send answer to read requests, DRBD_BH_SECTOR(bh) !!
-int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh, 
+int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 		    u64 block_id)
 {
-        Drbd_Data_Packet head;
+	Drbd_Data_Packet head;
 	int ret,ok;
 
 	head.p.command = cpu_to_be16(cmd);
@@ -618,7 +618,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
-	
+
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),bh_kmap(bh),
 		      bh->b_size,0);
 	bh_kunmap(bh);
@@ -643,12 +643,12 @@ STATIC void drbd_timeout(unsigned long arg)
 
 		ti->timeout_happened=1;
 		drbd_queue_signal(DRBD_SIG, ti->task);
-		spin_lock(&ti->mdev->send_proc_lock);		
+		spin_lock(&ti->mdev->send_proc_lock);
 		if((ti=ti->mdev->send_proc)) {
 			ti->timeout_happened=1;
 			drbd_queue_signal(DRBD_SIG, ti->task);
 		}
-		spin_unlock(&ti->mdev->send_proc_lock);		
+		spin_unlock(&ti->mdev->send_proc_lock);
 	} else {
 		/*
 		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
@@ -685,11 +685,11 @@ STATIC void drbd_a_timeout(unsigned long arg)
   Packets sent via the data socket "sock"
   and packets sent via the meta data socket "msock"
 
-                    sock                      msock
+		    sock                      msock
   -----------------+-------------------------+------------------------------
   timeout           conf.timeout              avg round trip time(artt) x 4
   timeout action    send a ping via msock     Abort communication
-                                              and close all sockets
+					      and close all sockets
 */
 int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	      void* data, size_t data_size, int via_msock)
@@ -703,7 +703,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	int app_got_sig=0;
 	struct send_timer_info ti;
 	struct socket *sock = via_msock ? mdev->msock : mdev->sock;
-	
+
 	if (!sock) return -1000;
 	if (mdev->cstate < WFReportParams) return -1001;
 
@@ -731,9 +731,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	ti.task=current;
 	ti.restart=1;
 	if(!via_msock) {
-		spin_lock(&mdev->send_proc_lock); 
-		mdev->send_proc=&ti; 
-		spin_unlock(&mdev->send_proc_lock);		
+		spin_lock(&mdev->send_proc_lock);
+		mdev->send_proc=&ti;
+		spin_unlock(&mdev->send_proc_lock);
 	}
 
 	if (mdev->conf.timeout) {
@@ -751,7 +751,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	oldset = current->blocked;
 	sigfillset(&current->blocked);
-	sigdelset(&current->blocked,DRBD_SIG); 
+	sigdelset(&current->blocked,DRBD_SIG);
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
@@ -809,9 +809,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	}
 
 	if(!via_msock) {
-		spin_lock(&mdev->send_proc_lock);		
+		spin_lock(&mdev->send_proc_lock);
 		mdev->send_proc=NULL;
-		spin_unlock(&mdev->send_proc_lock);		
+		spin_unlock(&mdev->send_proc_lock);
 	}
 
 
@@ -831,9 +831,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		       (int)(mdev-drbd_conf),current->pid);
 
 		set_cstate(mdev,Timeout);
-		
+
 		drbd_thread_restart_nowait(&mdev->receiver);
-		
+
 		return -1002;
 	}
 
@@ -842,7 +842,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		       (int)(mdev-drbd_conf),rv);
 
 		set_cstate(mdev,BrokenPipe);
-		drbd_thread_restart_nowait(&mdev->receiver);	  
+		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
 	return sent;
@@ -900,7 +900,7 @@ STATIC void drbd_send_write_hint(void *data)
 	/* In case the receiver calls run_task_queue(&tq_disk) itself,
 	   in order to flush blocks to the ll_dev (for a device in
 	   secondary state), it could happen that it has to send the
- 	   WRITE_HINT for an other device (which is in primary state). 
+	   WRITE_HINT for an other device (which is in primary state).
 	   This could lead to a distributed deadlock!!
 
 	   To avoid the deadlock we requeue the WRITE_HINT. */
@@ -911,7 +911,7 @@ STATIC void drbd_send_write_hint(void *data)
 			return;
 		}
 	}
-       
+
 	drbd_send_cmd(mdev,WriteHint,0);
 	clear_bit(WRITE_HINT_QUEUED, &mdev->flags);
 }
@@ -945,7 +945,7 @@ int __init drbd_init(void)
 	devfs_register_series(devfs_handle, "%u", minor_count,
 			      DEVFS_FL_DEFAULT, MAJOR_NR, 0,
 			      S_IFBLK | S_IRUSR | S_IWUSR,
-		     	      &drbd_ops, NULL);
+			      &drbd_ops, NULL);
 # endif
 
 	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
@@ -954,21 +954,21 @@ int __init drbd_init(void)
 
 	drbd_request_cache = kmem_cache_create("drbd_req_cache",
 					       sizeof(drbd_request_t),
-					       0, SLAB_NO_REAP, 
+					       0, SLAB_NO_REAP,
 					       NULL, NULL);
 	if (drbd_request_cache == NULL)
 		return -ENOMEM;
 
 	drbd_pr_cache = kmem_cache_create("drbd_pr_cache",
 					  sizeof(struct Pending_read),
-					  0, SLAB_NO_REAP, 
+					  0, SLAB_NO_REAP,
 					  NULL, NULL);
 	if (drbd_pr_cache == NULL)
 		return -ENOMEM;
 
 	drbd_ee_cache = kmem_cache_create("drbd_ee_cache",
 					  sizeof(struct Tl_epoch_entry),
-					  0, SLAB_NO_REAP, 
+					  0, SLAB_NO_REAP,
 					  NULL, NULL);
 
 	if (drbd_ee_cache == NULL)
@@ -978,14 +978,14 @@ int __init drbd_init(void)
 	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
 					      mempool_alloc_slab,
 					      mempool_free_slab,
-					      drbd_request_cache); 
+					      drbd_request_cache);
 	if (drbd_request_mempool == NULL)
 		return -ENOMEM;
 
 	drbd_pr_mempool = mempool_create(16, //TODO; reasonable value
 						   mempool_alloc_slab,
 						   mempool_free_slab,
-						   drbd_pr_cache); 
+						   drbd_pr_cache);
 	if (drbd_pr_mempool == NULL)
 		return -ENOMEM;
 
@@ -1014,10 +1014,10 @@ int __init drbd_init(void)
 		atomic_set(&drbd_conf[i].pending_cnt,0);
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
 		drbd_conf[i].mbds_id = 0;
- 		/* If the WRITE_HINT_QUEUED flag is set but it is not
- 		   actually queued the functionality is completely disabled */
- 		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
- 		else drbd_conf[i].flags=0;
+		/* If the WRITE_HINT_QUEUED flag is set but it is not
+		   actually queued the functionality is completely disabled */
+		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
+		else drbd_conf[i].flags=0;
 		drbd_conf[i].rs_total=0;
 		//drbd_conf[i].rs_left=0;
 		//drbd_conf[i].rs_start=0;
@@ -1030,7 +1030,7 @@ int __init drbd_init(void)
 		init_timer(&drbd_conf[i].a_timeout);
 		init_MUTEX(&drbd_conf[i].sock_mutex);
 		init_MUTEX(&drbd_conf[i].msock_mutex);
- 		init_MUTEX(&drbd_conf[i].ctl_mutex);
+		init_MUTEX(&drbd_conf[i].ctl_mutex);
 		drbd_conf[i].send_proc=NULL;
 		drbd_conf[i].send_proc_lock = SPIN_LOCK_UNLOCKED;
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);
@@ -1066,11 +1066,11 @@ int __init drbd_init(void)
 		{
 			int j;
 			for(j=0;j<=ArbitraryCnt;j++) drbd_conf[i].gen_cnt[j]=0;
-			for(j=0;j<=ArbitraryCnt;j++) 
+			for(j=0;j<=ArbitraryCnt;j++)
 				drbd_conf[i].bit_map_gen[j]=0;
 #ifdef ES_SIZE_STATS
 			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
-#endif  
+#endif
 		}
 	}
 
@@ -1233,13 +1233,13 @@ void drbd_free_resources(int minor)
 
 /*** The bitmap stuff. ***/
 /*
-  We need to store one bit for a block. 
+  We need to store one bit for a block.
   Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
   Bit 0 ==> Primary and secondary nodes are in sync.
   Bit 1 ==> secondary node's block must be updated. (')
 
-  A wicked bug was found and pointed out by 
-                     Guzovsky, Eduard <EGuzovsky@crossbeamsys.com>
+  A wicked bug was found and pointed out by
+		     Guzovsky, Eduard <EGuzovsky@crossbeamsys.com>
 */
 
 
@@ -1248,10 +1248,10 @@ void drbd_free_resources(int minor)
 
 int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 {
-        unsigned long *obm,*nbm;
+	unsigned long *obm,*nbm;
 	unsigned long size;
-	
-	if(!sbm) return 1; // Nothing to do 
+
+	if(!sbm) return 1; // Nothing to do
 
 	size = SR_RU(size_kb,(BM_BLOCK_SIZE_B - (10-LN2_BPL))) << (LN2_BPL-3);
 	/* 10 => blk_size is KB ; 3 -> 2^3=8 Bits per Byte */
@@ -1268,7 +1268,7 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 	}
 	memset(nbm,0,size);
 
- 	spin_lock(&sbm->bm_lock);
+	spin_lock(&sbm->bm_lock);
 	if(obm) {
 		memcpy(nbm,obm,min_t(unsigned long,sbm->size,size));
 	}
@@ -1283,7 +1283,7 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 
 struct BitMap* bm_init(kdev_t dev)
 {
-        struct BitMap* sbm;
+	struct BitMap* sbm;
 
 	sbm = kmalloc(sizeof(struct BitMap),GFP_KERNEL);
 	if(!sbm) {
@@ -1304,11 +1304,11 @@ struct BitMap* bm_init(kdev_t dev)
 	}
 
 	return sbm;
-}     
+}
 
 void bm_cleanup(struct BitMap* sbm)
 {
-        vfree(sbm->bm);
+	vfree(sbm->bm);
 	kfree(sbm);
 }
 
@@ -1318,11 +1318,11 @@ void bm_cleanup(struct BitMap* sbm)
 
 /* secot_t and size have a higher resolution (512 Byte) than
    the bitmap (4K). In case we have to set a bit, we 'round up',
-   in case we have to clear a bit we do the opposit. 
+   in case we have to clear a bit we do the opposit.
    It returns the number of sectors that where marked dirty. */
 int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 {
-        unsigned long* bm;
+	unsigned long* bm;
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector = ( sector + (size>>9) - 1 );
 	int ret=0;
@@ -1337,7 +1337,7 @@ int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 	ebnr = esector >> BM_SS;
 
 
- 	spin_lock(&sbm->bm_lock);
+	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 
 	if(bit) {
@@ -1348,19 +1348,19 @@ int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 	} else { // bit == 0
 		if(  (sector & BM_MM) != 0 )     sbnr++;
 		if( (esector & BM_MM) != BM_MM ) ebnr--;
-		
+
 		for(bnr=sbnr; bnr <= ebnr; bnr++) {
 			clear_bit(bnr & BPLM, bm + (bnr>>LN2_BPL));
 		}
 	}
- 	spin_unlock(&sbm->bm_lock);
-	
+	spin_unlock(&sbm->bm_lock);
+
 	return ret<<BM_SS;
 }
 
 int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 {
-        unsigned long* bm;
+	unsigned long* bm;
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector = ( sector + (size>>9) - 1 );
 	int ret=0;
@@ -1374,22 +1374,22 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 	sbnr = sector >> BM_SS;
 	ebnr = esector >> BM_SS;
 
- 	spin_lock(&sbm->bm_lock);
+	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 
 	for(bnr=sbnr; bnr <= ebnr; bnr++) {
 		if(test_bit(bnr & BPLM, bm + (bnr>>LN2_BPL))) ret=1;
 	}
 
- 	spin_unlock(&sbm->bm_lock);
-				     
+	spin_unlock(&sbm->bm_lock);
+
 	return ret;
 }
 
 sector_t bm_get_sector(struct BitMap* sbm,int* size)
 {
 	sector_t bnr;
-        unsigned long* bm;
+	unsigned long* bm;
 	sector_t dev_size;
 	sector_t ret;
 
@@ -1397,7 +1397,7 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 
 	if(sbm->gs_bitnr == -1) return MBDS_DONE;
 
- 	spin_lock(&sbm->bm_lock);
+	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
 	bnr = sbm->gs_bitnr;
 
@@ -1419,27 +1419,27 @@ sector_t bm_get_sector(struct BitMap* sbm,int* size)
 		sbm->gs_bitnr = bnr+1;
 	}
 
- 	spin_unlock(&sbm->bm_lock);
+	spin_unlock(&sbm->bm_lock);
 
 	return ret;
 }
 
 void bm_reset(struct BitMap* sbm)
 {
- 	spin_lock(&sbm->bm_lock);
+	spin_lock(&sbm->bm_lock);
 
 	sbm->gs_bitnr=0;
 
- 	spin_unlock(&sbm->bm_lock);	
+	spin_unlock(&sbm->bm_lock);
 }
 
 void bm_fill_bm(struct BitMap* sbm,int value)
 {
- 	spin_lock(&sbm->bm_lock);
+	spin_lock(&sbm->bm_lock);
 
 	memset(sbm->bm,value,sbm->size);
 
- 	spin_unlock(&sbm->bm_lock);		
+	spin_unlock(&sbm->bm_lock);
 }
 
 /*********************************/
@@ -1448,7 +1448,7 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 struct meta_data_on_disk {
 	__u64 la_size;           // last agreed size.
 	__u32 gc[GEN_CNT_SIZE];  // generation counter
-	__u32 magic;      
+	__u32 magic;
 };
 
 void drbd_md_write(struct Drbd_Conf *mdev)
@@ -1461,22 +1461,22 @@ void drbd_md_write(struct Drbd_Conf *mdev)
 	char fname[25];
 	int i;
 
-	flags=mdev->gen_cnt[Flags] & 
+	flags=mdev->gen_cnt[Flags] &
 		~(MDF_PrimaryInd|MDF_ConnectedInd);
 	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
 	if(mdev->cstate>=WFReportParams) flags |= MDF_ConnectedInd;
 	mdev->gen_cnt[Flags]=flags;
-	
-	for(i=Flags;i<=ArbitraryCnt;i++) 
+
+	for(i=Flags;i<=ArbitraryCnt;i++)
 		buffer.gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
 	buffer.la_size=cpu_to_be64(blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]);
 	buffer.magic=cpu_to_be32(DRBD_MD_MAGIC);
-	
+
 	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
 	fp=filp_open(fname,O_WRONLY|O_CREAT|O_TRUNC|O_SYNC,00600);
 	if(IS_ERR(fp)) goto err;
-        oldfs = get_fs();
-        set_fs(get_ds());
+	oldfs = get_fs();
+	set_fs(get_ds());
 	inode = fp->f_dentry->d_inode;
 	i=fp->f_op->write(fp,(const char*)&buffer,sizeof(buffer),&fp->f_pos);
 	set_fs(oldfs);
@@ -1495,13 +1495,13 @@ void drbd_md_read(struct Drbd_Conf *mdev)
 	struct inode* inode;
 	struct file* fp;
 	char fname[25];
-	int i;		
+	int i;
 
 	sprintf(fname,DRBD_MD_FILES,(int)(mdev-drbd_conf));
 	fp=filp_open(fname,O_RDONLY,0);
 	if(IS_ERR(fp)) goto err;
-        oldfs = get_fs();
-        set_fs(get_ds());
+	oldfs = get_fs();
+	set_fs(get_ds());
 	inode = fp->f_dentry->d_inode;
 	i=fp->f_op->read(fp,(char*)&buffer,sizeof(buffer),&fp->f_pos);
 	set_fs(oldfs);
@@ -1509,7 +1509,7 @@ void drbd_md_read(struct Drbd_Conf *mdev)
 
 	if(i != sizeof(buffer)) goto err;
 	if(be32_to_cpu(buffer.magic) != DRBD_MD_MAGIC) goto err;
-	for(i=Flags;i<=ArbitraryCnt;i++) 
+	for(i=Flags;i<=ArbitraryCnt;i++)
 		mdev->gen_cnt[i]=be32_to_cpu(buffer.gc[i]);
 	mdev->la_size = be64_to_cpu(buffer.la_size);
 	return;
@@ -1524,14 +1524,14 @@ void drbd_md_read(struct Drbd_Conf *mdev)
 
 
 /* Returns  1 if I have the good bits,
-            0 if both are nice
+	    0 if both are nice
 	   -1 if the partner has the good bits.
 */
 int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 {
 	int i;
 	u32 me,other;
-	
+
 	me=drbd_conf[minor].gen_cnt[Flags] & MDF_Consistent;
 	other=be32_to_cpu(partner->gen_cnt[Flags]) & MDF_Consistent;
 	if( me > other ) return 1;
@@ -1553,7 +1553,7 @@ int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 }
 
 /* Returns  1 if SyncingQuick is sufficient
-            0 if SyncAll is needed.
+	    0 if SyncAll is needed.
 */
 int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
 {
@@ -1577,7 +1577,7 @@ int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int i_am_pri)
 			other=be32_to_cpu(partner->gen_cnt[i]);
 			if( me != other ) return 0;
 		}
-	} else { // !i_am_pri 
+	} else { // !i_am_pri
 		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
 			me=drbd_conf[minor].gen_cnt[i];
 			other=be32_to_cpu(partner->bit_map_gen[i]);
@@ -1598,7 +1598,7 @@ void drbd_queue_signal(int signal,struct task_struct *task)
 {
 	unsigned long flags;
 
-  	read_lock(&tasklist_lock);
+	read_lock(&tasklist_lock);
 	if (task) {
 		spin_lock_irqsave(&task->sigmask_lock, flags);
 		sigaddset(&task->pending.signal, signal);

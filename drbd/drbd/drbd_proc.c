@@ -6,7 +6,7 @@
    This file is part of drbd by Philipp Reisner.
 
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
-        main author.
+	main author.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -93,7 +93,7 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 		sz += sprintf(buf + sz, "finish: %lu:%02luh",
 			rt / 60, rt % 60);
 	}
-	else 
+	else
 		sz += sprintf(buf + sz, "finish: %lu:%02lumin",
 			rt / 60, rt % 60);
 
@@ -156,12 +156,12 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	   nr .. network receive
 	   dw .. disk write
 	   dr .. disk read
-	   of .. block's on the fly 
-	   gc .. generation count 
+	   of .. block's on the fly
+	   gc .. generation count
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		rlen = 
+		rlen =
 		    rlen + sprintf(buf + rlen,
 				   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
 				   " pe:%u ua:%u\n",
@@ -176,7 +176,7 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 				   atomic_read(&drbd_conf[i].pending_cnt),
 				   atomic_read(&drbd_conf[i].unacked_cnt));
 
-		if ( drbd_conf[i].cstate == SyncSource || 
+		if ( drbd_conf[i].cstate == SyncSource ||
 		     drbd_conf[i].cstate == SyncTarget )
 			rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
 	}
@@ -191,7 +191,7 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 		}
 	}
 	rlen=rlen+sprintf(buf+rlen,"\n");
-#endif  
+#endif
 
 	/* DEBUG & profile stuff end */
 

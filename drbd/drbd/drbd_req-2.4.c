@@ -6,7 +6,7 @@
    This file is part of drbd by Philipp Reisner.
 
    Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
-        main author.
+	main author.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -47,10 +47,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	unsigned long flags=0;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
-	
+
 	if(req->rq_status & nextstate) {
 		printk(KERN_ERR DEVICE_NAME "%d: request state error(%d)\n",
-		       (int)(mdev-drbd_conf),req->rq_status);		
+		       (int)(mdev-drbd_conf),req->rq_status);
 	}
 
 	req->rq_status = req->rq_status | nextstate | (er_flags & 0x0001);
@@ -61,7 +61,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	return;
 
 /* We only report uptodate == TRUE if both operations (WRITE && SEND)
-   reported uptodate == TRUE 
+   reported uptodate == TRUE
  */
 
 	end_it:
@@ -77,7 +77,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	} else {
 		list_del(&req->list); // we have the tl_lock...
 	}
-	
+
 	spin_lock_irqsave(&mdev->bb_lock,flags);
 	bb_done(mdev,APP_BH_SECTOR(req->bh));
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
@@ -110,12 +110,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	kmem_cache_free(bh_cachep, bh);
 }
 
-STATIC struct Pending_read* 
+STATIC struct Pending_read*
 drbd_find_read(sector_t sector, struct list_head *in)
 {
 	struct list_head *le;
 	struct Pending_read *pr;
-	
+
 	list_for_each(le,in) {
 		pr = list_entry(le, struct Pending_read, list);
 		if(pr->d.sector == sector) return pr;
@@ -137,7 +137,7 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 		return;
 	}
 
-	pr->d.bh = bh;	
+	pr->d.bh = bh;
 	pr->cause = mdev->cstate == SyncTarget ? AppAndResync : Application;
 	spin_lock(&mdev->pr_lock);
 	list_add(&pr->list,&mdev->app_reads);
@@ -157,18 +157,18 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 #if 0
 	{
-		static const char *strs[3] = 
+		static const char *strs[3] =
 		{
 			[READ]="READ",
 			[READA]="READA",
 			[WRITE]="WRITE",
 		};
-		
+
 		printk(KERN_ERR DEVICE_NAME "%d: make_request(cmd=%s,"
 		       "sec=%ld, size=%d)\n",
 		       (int)(mdev-drbd_conf),
 		       strs[rw],bh->b_rsector,bh->b_size);
-		
+
 	}
 #endif
 
@@ -211,7 +211,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	    bm_get_bit(mdev->mbds_id,bh->b_rsector,bh->b_size) ) {
 		struct Pending_read *pr;
 		if( rw == WRITE ) {
-			spin_lock(&mdev->pr_lock); 	
+			spin_lock(&mdev->pr_lock);
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 
 			if(pr) {
@@ -219,16 +219,16 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 				       "%d: Will discard a resync_read\n",
 				       (int)(mdev-drbd_conf));
 
-				pr->cause = Discard; 
+				pr->cause = Discard;
 				// list del as well ?
 			}
-			spin_unlock(&mdev->pr_lock); 
+			spin_unlock(&mdev->pr_lock);
 
 			// TODO wait until writes of syncer are done.
 			// Continue with a mirrored write op.
 			// Set some flag to clear it in the bitmap
 		} else { // rw == READ || rw == READA
-			spin_lock(&mdev->pr_lock); 	
+			spin_lock(&mdev->pr_lock);
 			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 			if(pr) {
 				printk(KERN_ERR DEVICE_NAME
@@ -240,11 +240,11 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 				pr->d.bh=bh;
 				list_del(&pr->list);
 				list_add(&pr->list,&mdev->app_reads);
-				spin_unlock(&mdev->pr_lock); 
+				spin_unlock(&mdev->pr_lock);
 				return 0; // Ok everything arranged
 			}
 
-			spin_unlock(&mdev->pr_lock); 
+			spin_unlock(&mdev->pr_lock);
 			drbd_issue_drequest(mdev,bh);
 			return 0;
 		}
@@ -278,7 +278,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 	nbh = kmem_cache_alloc(bh_cachep, GFP_DRBD);
-	
+
 	drbd_init_bh(nbh, bh->b_size);
 
 	nbh->b_page=bh->b_page; // instead of set_bh_page()
@@ -297,7 +297,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	req->bh=bh;
 
 	req->rq_status = RQ_DRBD_NOTHING;
-	
+
 	spin_lock_irq(&mdev->bb_lock);
 	mdev->send_sector=bh->b_rsector;
 	if( ds_check_sector(mdev,bh->b_rsector) ) {
@@ -316,14 +316,14 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
 	}
 	if(!send_ok) drbd_set_out_of_sync(mdev,bh->b_rsector,bh->b_size);
-		
+
 	if(!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk);
 	}
 
 	nbh->b_end_io = drbd_dio_end;
 	generic_make_request(rw,nbh);
-	
+
 	return 0; /* Ok, bh arranged for transfer */
 
 }

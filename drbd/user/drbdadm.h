@@ -56,10 +56,10 @@ extern char ss_buffer[255];
 
 /* ssprintf() places the result of the printf in the current stack
    frame and sets ptr to the resulting string. If the current stack
-   frame is destroyed (=function returns), the allocated memory is 
+   frame is destroyed (=function returns), the allocated memory is
    freed automatically */
 
 #define ssprintf(ptr,...) \
-  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer) 
+  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer)
 
 #endif
