@@ -1,7 +1,7 @@
 /*
 -*- linux-c -*-
    drbd_dsender.c
-   Kernel module for 2.2.x/2.4.x Kernels
+   Kernel module for 2.4.x/2.6.x Kernels
 
    This file is part of drbd by Philipp Reisner.
 
