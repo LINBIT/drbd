@@ -169,7 +169,8 @@ void drbd_read_bi_end_io(struct buffer_head *bh, int uptodate)
 		if(mdev->on_io_error == PassOn) goto pass_on;
 		// ok, if we survived this, retry:
 		// FIXME sector ...
-		ERR("local read failed, retrying remotely\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("local read failed, retrying remotely\n");
 		req->w.cb = w_read_retry_remote;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
@@ -326,7 +327,8 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 		if(mdev->on_io_error == PassOn) goto pass_on;
 		// ok, if we survived this, retry:
 		// FIXME sector ...
-		ERR("local read failed, retrying remotely\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("local read failed, retrying remotely\n");
 		req->w.cb = w_read_retry_remote;
 		drbd_queue_work(mdev,&mdev->data.work,&req->w);
 	} else {
@@ -543,7 +545,8 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		ok=drbd_send_block(mdev, DataReply, e);
 	} else {
 		ok=drbd_send_ack(mdev,NegDReply,e);
-		ERR("Sending NegDReply. I guess it gets messy.\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Sending NegDReply. I guess it gets messy.\n");
 		drbd_io_error(mdev);
 	}
 
@@ -573,11 +576,18 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 
 	if(likely(drbd_bio_uptodate(&e->private_bio))) {
-		inc_rs_pending(mdev);
-		ok=drbd_send_block(mdev, RSDataReply, e);
+		if (likely( !test_bit(PARTNER_DISKLESS,&mdev->flags) )) {
+			inc_rs_pending(mdev);
+			ok=drbd_send_block(mdev, RSDataReply, e);
+		} else {
+			if (DRBD_ratelimit(5*HZ,5))
+				ERR("Not sending RSDataReply, partner DISKLESS!\n");
+			ok=1;
+		}
 	} else {
 		ok=drbd_send_ack(mdev,NegRSDReply,e);
-		ERR("Sending NegDReply. I guess it gets messy.\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Sending NegDReply. I guess it gets messy.\n");
 		drbd_io_error(mdev);
 	}
 
@@ -609,7 +619,7 @@ int w_try_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	if (cancel) return 1;
-	NOT_IN_26(clear_bit(WRITE_HINT_QUEUED,&mdev->flags));
+	NOT_IN_26(clear_bit(UNPLUG_QUEUED,&mdev->flags));
 	return drbd_send_short_cmd(mdev,WriteHint);
 }
 
@@ -798,10 +808,9 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	     side == SyncTarget ? "target" : "source", 
 	     (unsigned long) (mdev->rs_left+1)>>1);
 
-	/* no longer true since we queue the write hints here, too
-	  PARANOIA_BUG_ON(!list_empty(&mdev->resync_work.list));
-	*/
-	PARANOIA_BUG_ON(mdev->resync_work.cb != w_resync_inactive);
+	// FIXME: this was a PARANOIA_BUG_ON, but it triggered! ??
+	ERR_IF(mdev->resync_work.cb != w_resync_inactive)
+		return;
 
 	if ( mdev->rs_left == 0 ) {
 		drbd_resync_finished(mdev);

@@ -41,6 +41,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct buffer_head bh;
 	struct completion event;
 
+	if (!mdev->md_bdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("mdev->md_bdev==NULL\n");
+			dump_stack();
+		}
+		return 0;
+	}
 #ifdef PARANOIA
 	if (rw != WRITE) {
 		void *b = page_address(mdev->md_io_page);
@@ -70,6 +77,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	struct bio_vec vec;
 	struct completion event;
 
+	if (!mdev->md_bdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("mdev->md_bdev==NULL\n");
+			dump_stack();
+		}
+		return 0;
+	}
 #ifdef PARANOIA
 	if (rw != WRITE) {
 		void *b = page_address(mdev->md_io_page);
@@ -574,10 +588,13 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 	bm_words = mdev->mbds_id->size/sizeof(long);
 	bm_i = enr * BM_WORDS_PER_EXTENT ;
 
-	ERR_IF(bm_i >= bm_words) {
-		DUMPI(bm_i);
-		DUMPI(bm_words);
-		dump_stack();
+	if(bm_i >= bm_words) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("%s:%d:%s: (bm_i=%u) >= (bm_words=%u)",
+			    __FILE__, __LINE__, __FUNCTION__,
+			    bm_i, bm_words);
+			dump_stack();
+		}
 		return;
 	}
 	want=min_t(unsigned int,512/sizeof(long),bm_words-bm_i);
@@ -605,7 +622,8 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
 	if( !inc_local_md_only(mdev) ) {
-		WARN("Can not update on disk bitmap, local IO disabled.\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			WARN("Can not update on disk bitmap, local IO disabled.\n");
 		return 1;
 	}
 

@@ -121,11 +121,11 @@ module_param(disable_io_hints,int,0);
 // module parameter, defined
 #ifdef MODULE
 int minor_count = 2;
-int disable_io_hints = 0;
 #else
 int minor_count = 8;
-int disable_io_hints = 0;
 #endif
+// FIXME disable_io_hints shall die
+int disable_io_hints = 0;
 
 // global panic flag
 volatile int drbd_did_panic = 0;
@@ -358,6 +358,9 @@ int drbd_io_error(drbd_dev* mdev)
 		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
 		WARN("Not releasing backing storage device.\n");
 	} else {
+		/* FIXME I see a race here, with local_cnt... no?
+		 * it it is harmless, please EXPLAIN why.
+		 */
 		WARN("Releasing backing storage device.\n");
 		drbd_free_ll_dev(mdev);
 		mdev->la_size=0;
@@ -423,6 +426,7 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	}
 	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
 	   test_bit(DISKLESS,&mdev->flags) && ns < Connected) {
+// FIXME EXPLAIN
 		clear_bit(MD_IO_ALLOWED,&mdev->flags);
 	}
 }
@@ -652,6 +656,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	unsigned long m_size; // sector_t ??
 
 	if(!test_bit(DISKLESS,&mdev->flags) || test_bit(MD_IO_ALLOWED,&mdev->flags)) {
+		D_ASSERT(mdev->backing_bdev);
 		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
 		else m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 	} else m_size = 0;
@@ -800,10 +805,8 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 
 	drop_it = !--mdev->ko_count;
 	if ( !drop_it ) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: [%s/%d] sock_sendmsg time expired, ko = %u\n",
-		       (int)(mdev-drbd_conf), current->comm, current->pid,
-		       mdev->ko_count);
+		ERR("[%s/%d] sock_sendmsg time expired, ko = %u\n",
+		       current->comm, current->pid, mdev->ko_count);
 		request_ping(mdev);
 	}
 
@@ -897,6 +900,8 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		ok = _drbd_send_barrier(mdev);
 	if(ok) {
 		tl_add(mdev,req);
+		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
+		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = (drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE) == sizeof(p));
 		if(ok) {
 			ok = _drbd_send_zc_bio(mdev,&req->private_bio);
@@ -1020,9 +1025,11 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		}
 		D_ASSERT(rv != 0);
 		if (rv == -EINTR ) {
-			DBG("Got a signal in drbd_send(,%c,)!\n",
-			    sock == mdev->meta.socket ? 'm' : 's');
-			// dump_stack();
+			if (DRBD_ratelimit(5*HZ,5)) {
+				DBG("Got a signal in drbd_send(,%c,)!\n",
+				    sock == mdev->meta.socket ? 'm' : 's');
+				// dump_stack();
+			}
 			drbd_flush_signals(current);
 			rv = 0;
 		}
@@ -1096,8 +1103,6 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 STATIC void drbd_unplug_fn(void *data)
 {
 	struct Drbd_Conf* mdev = (drbd_dev*)data;
-	int i;
-
 	spin_lock_irq(&mdev->req_lock);
 	if (list_empty(&mdev->unplug_work.list))
 		_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
@@ -1124,16 +1129,18 @@ STATIC void drbd_unplug_fn(void *data)
 	spin_unlock_irq(q->queue_lock);
 
 	/* only if connected */
-	if (mdev->cstate >= Connected) {
+	if (mdev->cstate >= Connected && !test_bit(PARTNER_DISKLESS,&mdev->flags)) {
 		D_ASSERT(mdev->state == Primary);
-		spin_lock_irq(&mdev->req_lock);
-		/* add to the front of the data.work queue,
-		 * unless already queued.
-		 * XXX this might be a good addition to drbd_queue_work
-		 * anyways, to detect "double queuing" ... */
-		if (list_empty(&mdev->unplug_work.list))
-			_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
-		spin_unlock_irq(&mdev->req_lock);
+		if (test_and_clear_bit(UNPLUG_REMOTE,&mdev->flags)) {
+			spin_lock_irq(&mdev->req_lock);
+			/* add to the front of the data.work queue,
+			 * unless already queued.
+			 * XXX this might be a good addition to drbd_queue_work
+			 * anyways, to detect "double queuing" ... */
+			if (list_empty(&mdev->unplug_work.list))
+				_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
+			spin_unlock_irq(&mdev->req_lock);
+		}
 	}
 
 	if(!test_bit(DISKLESS,&mdev->flags)) drbd_kick_lo(mdev);
@@ -1144,9 +1151,9 @@ void drbd_set_defaults(drbd_dev *mdev)
 {
 	mdev->flags = 1<<DISKLESS;
 
-	/* If the WRITE_HINT_QUEUED flag is set but it is not
+	/* If the UNPLUG_QUEUED flag is set but it is not
 	   actually queued the functionality is completely disabled */
-	if (disable_io_hints) mdev->flags |= 1<<WRITE_HINT_QUEUED;
+	if (disable_io_hints) mdev->flags |= 1<<UNPLUG_QUEUED;
 
 	mdev->sync_conf.rate       = 250;
 	mdev->sync_conf.al_extents = 127; // 512 MB active set

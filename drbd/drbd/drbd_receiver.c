@@ -869,7 +869,8 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 
 	e->block_id = ID_SYNCER;
 	if(!inc_local(mdev)) {
-		ERR("Can not write resync data to local disk.\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Can not write resync data to local disk.\n");
 		drbd_send_ack(mdev,NegAck,e);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
@@ -1015,7 +1016,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
 
 	if(!inc_local(mdev)) {
-		ERR("Can not write mirrored data block to local disk.\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Can not write mirrored data block to local disk.\n");
 		drbd_send_ack(mdev,NegAck,e);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
@@ -1074,7 +1076,8 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	spin_unlock_irq(&mdev->ee_lock);
 
 	if(!inc_local(mdev)) {
-		ERR("Can not satisfy peer's read request, no local disk.\n");
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Can not satisfy peer's read request, no local disk.\n");
 		drbd_send_ack(mdev,NegDReply,e);
 		spin_lock_irq(&mdev->ee_lock);
 		drbd_put_ee(mdev,e);
@@ -1202,7 +1205,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if(!p_size) {
-		set_bit(PARTNER_DISKLESS, &mdev->flags);
+		if (!test_and_set_bit(PARTNER_DISKLESS, &mdev->flags))
+			WARN("PARTNER DISKLESS\n");
 		if(mdev->cstate >= Connected ) {
 			if(mdev->state == Primary) tl_clear(mdev);
 			if(mdev->state == Primary ||
@@ -1216,6 +1220,9 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 				set_bit(STOP_SYNC_TIMER,&mdev->flags);
 			set_cstate(mdev,Connected);
 		}
+	} else {
+		if (test_and_clear_bit(PARTNER_DISKLESS, &mdev->flags))
+			WARN("Partner no longer diskless\n");
 	}
 
 	if (mdev->cstate == WFReportParams) {
@@ -1290,12 +1297,15 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 skipped:	// do not adopt gen counts when sync was skipped ...
 
 	if (mdev->cstate == WFReportParams) set_cstate(mdev,Connected);
-	if (p_size && mdev->cstate==Connected) clear_bit(PARTNER_DISKLESS,&mdev->flags);
+	// see above. if (p_size && mdev->cstate==Connected) clear_bit(PARTNER_DISKLESS,&mdev->flags);
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(p->state);
 	if(oo_state == Secondary && mdev->o_state == Primary) {
 		drbd_md_inc(mdev,ConnectedCnt);
+	}
+	if (oo_state != mdev->o_state) {
+		INFO("Peer switched to %s state\n", nodestate_to_name(mdev->o_state));
 	}
 
 	drbd_md_write(mdev); // update connected indicator, la_size, ...
@@ -1356,9 +1366,9 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
  *  FIXME this should only be D_ASSERT here.
  *        *doing* it here masks a logic bug elsewhere, I think.
  */
-	clear_bit(PARTNER_DISKLESS,&mdev->flags);
-	clear_bit(DISKLESS,&mdev->flags);
-	smp_wmb();
+	D_ASSERT(!test_bit(PARTNER_DISKLESS,&mdev->flags));
+	D_ASSERT(!test_bit(DISKLESS,&mdev->flags));
+// EXPLAIN:
 	clear_bit(MD_IO_ALLOWED,&mdev->flags);
 
 	ok=TRUE;
@@ -1438,7 +1448,7 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
 {
-	drbd_kick_lo(mdev);
+	if (!test_bit(DISKLESS,&mdev->flags)) drbd_kick_lo(mdev);
 	return TRUE; // cannot fail.
 }
 
@@ -1702,7 +1712,8 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	sector_t sector = be64_to_cpu(p->sector);
 	int size = be32_to_cpu(p->blksize);
 
-	WARN("Got NegAck packet. Peer is in troubles?\n");
+	if (DRBD_ratelimit(5*HZ,5))
+		WARN("Got NegAck packet. Peer is in troubles?\n");
 
 	if(!is_syncer_blk(mdev,p->block_id)) {
 		D_ASSERT(bm_get_bit(mdev->mbds_id,sector,size));
@@ -1733,8 +1744,9 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	INVALIDATE_MAGIC(req);
 	mempool_free(req,drbd_request_mempool);
 
-	ERR("Get NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
+	ERR("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 	// TODO: Do something like panic() or shut_down_cluster(). 
+	// FIXME what about bio_endio, in case we don't panic ??
 	return TRUE;
 }
 
@@ -1748,7 +1760,7 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	drbd_rs_complete_io(mdev,sector);
 
-	ERR("Get NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
+	ERR("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 	// TODO: Do something like panic() or shut_down_cluster(). 
 	return TRUE;
 }

@@ -148,6 +148,37 @@ typedef struct Drbd_Conf drbd_dev;
 #define INFO(fmt,args...) PRINTK(KERN_INFO, fmt , ##args)
 #define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt , ##args)
 
+/* see kernel/printk.c:printk_ratelimit
+ * macro, so it is easy do have independend rate limits at different locations
+ * "initializer element not constant ..." with kernel 2.4 :(
+ * so I initialize toks to something large
+ */
+#define DRBD_ratelimit(ratelimit_jiffies,ratelimit_burst)	\
+({								\
+	int __ret;						\
+	static unsigned long toks = 0x80000000UL;		\
+	static unsigned long last_msg;				\
+	static int missed;					\
+	unsigned long now = jiffies;				\
+	toks += now - last_msg;					\
+	last_msg = now;						\
+	if (toks > (ratelimit_burst * ratelimit_jiffies))	\
+		toks = ratelimit_burst * ratelimit_jiffies;	\
+	if (toks >= ratelimit_jiffies) {			\
+		int lost = missed;				\
+		missed = 0;					\
+		toks -= ratelimit_jiffies;			\
+		if (lost)					\
+			printk(KERN_WARNING "drbd: %d messages suppressed.\n", lost);\
+		__ret=1;					\
+	} else {						\
+		missed++;					\
+		__ret=0;					\
+	}							\
+	__ret;							\
+})
+
+
 #ifdef DBG_ASSERTS
 extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 # define D_ASSERT(exp)  if (!(exp)) \
@@ -166,18 +197,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 // to debug dec_*(), while we still have the <0!! issue
 #include <linux/stringify.h>
 #define HERE __stringify(__FILE__ __LINE__) // __FUNCTION__
-
-#if 1
-#define C_DBG(r,x...)
-#else
-	// at most one DBG(x) per t seconds
-#define C_DBG(t,x...) do { \
-	static unsigned long _j = 0; \
-	if ((long)(jiffies-_j)< HZ*t) break; \
-	_j=jiffies; \
-	INFO(x); \
-} while (0)
-#endif
 
 // integer division, round _UP_ to the next integer
 #define div_ceil(A,B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
@@ -567,20 +586,22 @@ struct Tl_epoch_entry {
 	ONLY_IN_26(struct bio_vec ee_bvec;)
 };
 
-// bitfield? enum?
 /* flag bits */
-#define ISSUE_BARRIER      0
-#define SIGNAL_ASENDER     1
-#define SEND_PING          2
-#define WRITER_PRESENT     3
-#define STOP_SYNC_TIMER    4
-#define DO_NOT_INC_CONCNT  5
-#define WRITE_HINT_QUEUED  6		/* only relevant in 2.4 */
-#define DISKLESS           7
-#define PARTNER_DISKLESS   8
-#define PROCESS_EE_RUNNING 9
-#define MD_IO_ALLOWED     10
-#define SENT_DISK_FAILURE 11
+enum {
+	ISSUE_BARRIER,		// next Data is preceeded by a Barrier
+	SIGNAL_ASENDER,		// whether asender wants to be interrupted
+	SEND_PING,		// whether asender should send a ping asap
+	WRITER_PRESENT,		// somebody opened us with write intent
+	STOP_SYNC_TIMER,	// tell timer to cancel itself
+	DO_NOT_INC_CONCNT,	// well, don't ...
+	UNPLUG_QUEUED,		// only relevant with kernel 2.4
+	UNPLUG_REMOTE,		// whether sending a "WriteHint" makes sense
+	DISKLESS,		// no local disk
+	PARTNER_DISKLESS,	// partner has no storage
+	PROCESS_EE_RUNNING,	// eek!
+	MD_IO_ALLOWED,		// EXPLAIN
+	SENT_DISK_FAILURE,	// sending it once is enough
+};
 
 struct BitMap {
 	sector_t dev_size;
@@ -1000,12 +1021,14 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 		case Panic:
 			set_bit(DISKLESS,&mdev->flags);
 			smp_mb(); // but why is there smp_mb__after_clear_bit() ?
-			drbd_panic(DEVICE_NAME" : IO error on backing device!\n");
+			drbd_panic(DEVICE_NAME "%d: IO error on backing device!\n",
+					(int)(mdev-drbd_conf));
 			break;
 		case Detach:
-			ERR("Local IO failed. Detaching...\n");
-			set_bit(DISKLESS,&mdev->flags);
-			smp_mb(); // Nack is sent in w_e handlers.
+			if (!test_and_set_bit(DISKLESS,&mdev->flags)) {
+				smp_mb(); // Nack is sent in w_e handlers.
+				ERR("Local IO failed. Detaching...\n");
+			}
 			break;
 		}
 	}
@@ -1026,6 +1049,13 @@ static inline int semaphore_is_locked(struct semaphore* s)
 static inline sector_t drbd_md_ss(drbd_dev *mdev)
 {
 	if( mdev->md_index == -1 ) {
+		if (!mdev->backing_bdev) {
+			if (DRBD_ratelimit(5*HZ,5)) {
+				ERR("mdev->backing_bdev==NULL\n");
+				dump_stack();
+			}
+			return 0;
+		}
 		return (  (drbd_get_capacity(mdev->backing_bdev) & ~7L)
 			- (MD_RESERVED_SIZE<<1) );
 	} else {
@@ -1220,7 +1250,7 @@ static inline void drbd_set_out_of_sync(drbd_dev* mdev,
 		bm_set_bit(mdev, sector, blk_size, SS_OUT_OF_SYNC);
 }
 
-#ifdef DUMP_ALL_PACKETS
+#ifdef DUMP_EACH_PACKET
 /*
  * enable to dump information about every packet exchange.
  */

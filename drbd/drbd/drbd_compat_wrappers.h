@@ -35,7 +35,9 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(mdev->this_bdev, blksize);
-	set_blocksize(mdev->backing_bdev, blksize);
+	if (mdev->backing_bdev)
+		set_blocksize(mdev->backing_bdev, blksize);
+	else D_ASSERT(mdev->backing_bdev);
 }
 
 static inline int drbd_sync_me(drbd_dev *mdev)
@@ -120,6 +122,8 @@ static inline void
 drbd_ee_bh_prepare(drbd_dev *mdev, struct buffer_head *bh,
 		   sector_t sector, int size)
 {
+	D_ASSERT(mdev->backing_bdev);
+
 	bh->b_blocknr  = sector;	// We abuse b_blocknr here.
 	bh->b_size     = size;
 	bh->b_rsector  = sector;
@@ -240,6 +244,15 @@ static inline struct page* drbd_bio_get_page(struct buffer_head *bh)
 
 static inline void drbd_generic_make_request(int rw, struct buffer_head *bh)
 {
+	if (!bh->b_rdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			printk(KERN_ERR "drbd_generic_make_request: bh->b_rdev == NULL\n");
+			dump_stack();
+		}
+		drbd_bio_IO_error(bh);
+		return;
+	}
+
 	generic_make_request(rw, bh);
 }
 
@@ -253,7 +266,7 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	D_ASSERT(mdev->state == Primary);
 	if (mdev->cstate < Connected)
 		return;
-	if (!test_and_set_bit(WRITE_HINT_QUEUED,&mdev->flags)) {
+	if (!test_and_set_bit(UNPLUG_QUEUED,&mdev->flags)) {
 		queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
 	}
 }
@@ -310,7 +323,12 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
 static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
 {
 	set_blocksize(mdev->this_bdev,blksize);
-	set_blocksize(mdev->backing_bdev,blksize);
+	if (mdev->backing_bdev) {
+		set_blocksize(mdev->backing_bdev, blksize);
+	} else {
+		D_ASSERT(mdev->backing_bdev);
+		// FIXME send some package over to the peer?
+	}
 }
 
 static inline int drbd_sync_me(drbd_dev *mdev)
@@ -441,6 +459,8 @@ drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
 {
 	struct bio * const bio = &e->private_bio;
 
+	D_ASSERT(mdev->backing_bdev);
+
 	bio->bi_flags  = 1 << BIO_UPTODATE;
 	bio->bi_io_vec->bv_len =
 	bio->bi_size    = size;
@@ -514,6 +534,16 @@ static inline struct page* drbd_bio_get_page(struct bio *bio)
 static inline void drbd_generic_make_request(int rw, struct bio *bio)
 {
 	bio->bi_rw = rw; //??
+
+	if (!bio->bi_bdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			printk(KERN_ERR "drbd_generic_make_request: bio->bi_bdev == NULL\n");
+			dump_stack();
+		}
+		drbd_bio_IO_error(bio);
+		return;
+	}
+
 	generic_make_request(bio);
 }
 
@@ -525,7 +555,14 @@ static inline void drbd_blk_run_queue(request_queue_t *q)
 
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
-	drbd_blk_run_queue(bdev_get_queue(mdev->backing_bdev)); 
+	if (!mdev->backing_bdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("backing_bdev==NULL in drbd_kick_lo\n");
+			dump_stack();
+		}
+	} else {
+		drbd_blk_run_queue(bdev_get_queue(mdev->backing_bdev));
+	}
 }
 
 static inline void drbd_plug_device(drbd_dev *mdev)

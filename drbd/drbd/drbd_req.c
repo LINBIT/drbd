@@ -122,6 +122,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	spin_lock(&mdev->pr_lock);
 	list_add(&req->w.list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
+	set_bit(UNPLUG_REMOTE,&mdev->flags);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	rv=drbd_send_drequest(mdev, DataRequest, bio->b_rsector, bio->b_size,
 			      (unsigned long)req);
@@ -237,7 +238,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");
-		// PANIC ??
+		// FIXME PANIC ??
 		drbd_bio_IO_error(bio);
 		return 0;
 	}

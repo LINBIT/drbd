@@ -332,7 +332,7 @@ ONLY_IN_26({
 
 	drbd_determin_dev_size(mdev);
 
-	if(md_gc_valid) drbd_read_bm(mdev);
+	if(md_gc_valid > 0) drbd_read_bm(mdev);
 	else {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		bm_fill_bm(mdev->mbds_id,-1);
@@ -376,10 +376,10 @@ ONLY_IN_26({
 	}
 
 
-// FIXME why "else" ?? I think allways, and *before send_param!
+// FIXME why "else" ?? I think allways, and *before* send_param!
 	clear_bit(DISKLESS,&mdev->flags);
 	smp_wmb();
-// FIXME explain:
+// FIXME EXPLAIN:
 	clear_bit(MD_IO_ALLOWED,&mdev->flags);
 
 	if(mdev->cstate >= Connected ) {
