@@ -347,7 +347,7 @@ case "$1" in
 		fi
 		;;
 		
-	status)
+	proc)
 		if [ -r /proc/drbd ]; then
 			cat /proc/drbd
 		else
@@ -424,7 +424,8 @@ case "$1" in
 		echo "fsck   : fsck the volume"
 		echo "resync : force a full resynchronisation of the slave."
 		echo "         only work on the slave"
-		echo "status : display drdb status (/proc/drdb)"
+		echo "proc   : return /proc/drbd"
+		echo "status : display drdb status for heartbeat"
 		echo "running: Return the string 'Primary' or 'Secondary'"
 		echo "         depending on the node settings"
 		echo "boot   : Return the string 'Master' or 'Slave'"
