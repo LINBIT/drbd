@@ -50,10 +50,18 @@ else
   exec ./run.sh;
 fi
 
-echo "This script is going to erase the first $SETSIZE of $LL_DEV @ $L_NODE "
-echo "and $RL_DEV @ $R_NODE. Therefore any filesystem or database on these"
-echo "devices will be destroyed."
-echo "Continue ? [y/n] "
+echo "                     !!! WARNING !!!"
+echo
+echo "This test will destroy the following partitions:"
+echo "   $L_NODE::$LL_DEV"
+echo "   $R_NODE::$RL_DEV"
+echo "After the test is run, you will need to run mkfs on these"
+echo "partitions in order to use them again."
+echo
+echo "PLEASE MAKE SURE YOU HAVE BACKED UP ANY DATA YOU NEED FROM"
+echo "THESE PARTITIONS!"
+echo
+echo "Continue (and destroy these partitions) ? [y/n] "
 read CONT
 if [ $CONT != "Y" -a $CONT != "y" ];
   then exit 0;
@@ -79,8 +87,9 @@ unset LINGUAS
 $RMMOD drbd 2> /dev/zero
 $RSH $R_NODE $RMMOD drbd 2> /dev/zero
 
-echo "DRBD Benchmark" > report
-echo "SETSIZE = $SETSIZE" >>report
+echo -n -e "DRBD Benchmark\n " > report
+$DRBDSETUP 2>&1 | grep Version | sed -e "s/\  //g" >>report
+echo " SETSIZE = $SETSIZE" >>report
 echo >>report
 echo -n -e "Node1:\n " >>report
 uname -s -r -m >>report    
