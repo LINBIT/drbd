@@ -1505,10 +1505,17 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		atomic_set(&mdev->unacked_cnt,0);
 	}
 
-	if(atomic_read(&mdev->rs_pending_cnt)) {
-		ERR("rs_pending_cnt = %d\n",atomic_read(&mdev->rs_pending_cnt));
-		atomic_set(&mdev->rs_pending_cnt,0);
-	}
+	/* We do not have data structures that would allow us to 
+	   get the rs_pending_cnt down to 0 again.
+	   * On SyncTarget we do not have any data structures describing 
+	     the pending RSDataRequest's we have sent.
+	   * On SyncSource there is no data structure that tracks
+	     the RSDataReply blocks that we sent to the SyncTarget.
+	   And no, it is not the sum of the reference counts in the 
+	   resync_LRU. The resync_LRU tracks the whole operation including
+           the disk-IO, while the rs_pending_cnt only tracks the blocks 
+	   on the fly. */
+	atomic_set(&mdev->rs_pending_cnt,0);
 
 	ERR_IF(atomic_read(&mdev->ap_pending_cnt))
 		atomic_set(&mdev->ap_pending_cnt,0);

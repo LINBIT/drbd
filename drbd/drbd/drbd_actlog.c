@@ -841,7 +841,6 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 	for(i=0;i<mdev->resync->nr_elements;i++) {
 		bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 		if(bm_ext->lce.lc_number == LC_FREE) continue;
-		atomic_sub(bm_ext->lce.refcnt,&mdev->rs_pending_cnt);
 		bm_ext->lce.refcnt = 0; // Rude but ok.
 		bm_ext->rs_left = 0;
 		clear_bit(BME_LOCKED,&bm_ext->flags);
