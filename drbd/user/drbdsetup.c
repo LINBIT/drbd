@@ -81,6 +81,9 @@
 # define PRINT_ARGV
 #endif
 
+#define PERROR(fmt, args...) \
+do { fprintf(stderr,fmt ": ", ##args); perror(0); } while (0)
+
 
 // some globals
 char* basename = 0;
@@ -177,7 +180,7 @@ unsigned long resolv(const char* name)
       he = gethostbyname(name);
       if (!he)
 	{
-	  perror("can not resolv the hostname");
+	  PERROR("can not resolv the hostname");
 	  exit(20);
 	}
       retval = ((struct in_addr *)(he->h_addr_list[0]))->s_addr;
@@ -367,7 +370,7 @@ int open_drbd_device(const char* device)
   drbd_fd=open(device,O_RDONLY);
   if(drbd_fd==-1)
     {
-      perror("can not open device");
+      PERROR("can not open %s", device);
       exit(20);
     }
 
@@ -375,7 +378,7 @@ int open_drbd_device(const char* device)
   err=fstat(drbd_fd, &drbd_stat);
   if(err)
     {
-      perror("fstat() failed");
+      PERROR("fstat(%s) failed",device);
     }
   if(!S_ISBLK(drbd_stat.st_mode))
     {
@@ -385,13 +388,15 @@ int open_drbd_device(const char* device)
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_VERSION,&version);
   if(err)
     {
-      perror("ioctl() failed");
+      PERROR("ioctl(,GET_VERSION,) failed");
       exit(20);
     }
 
   if (version != API_VERSION)
     {
-      fprintf(stderr,"Drbdsetup and drbd kernel module are not matching!\n");
+      fprintf(stderr,"\tVersion tags of drbdsetup and drbd kernel module are not matching!\n"
+		     "\tAPI_VERSION: drbdsetup:%d -- drbd module:%d\n"
+		     "\tPlease check your installation!\n", API_VERSION, version);
       exit(20);
     }
 
@@ -530,11 +535,11 @@ int check_if_blk_dev(int fd,const char* dev_name)
 {
   struct stat lower_stat;
   int err;
-  
+
   err=fstat(fd, &lower_stat);
   if(err)
     {
-      perror("fstat() failed");
+      PERROR("fstat(%s) failed", dev_name);
       return 20;
     }
   if(!S_ISBLK(lower_stat.st_mode))
@@ -561,7 +566,7 @@ int do_disk_conf(int drbd_fd,
 
   if((lower_device = open(lower_dev_name,O_RDWR))==-1)
     {
-      perror("Can not open lower device");
+      PERROR("Can not open lower device '%s'", lower_dev_name);
       return 20;
     }
 
@@ -574,7 +579,7 @@ int do_disk_conf(int drbd_fd,
 
   if((meta_device = open(meta_dev_name,O_RDWR))==-1)
     {
-      perror("Can not open meta data device");
+      PERROR("Can not open meta data device '%s'", meta_dev_name);
       return 20;
     }
 
@@ -588,7 +593,7 @@ int do_disk_conf(int drbd_fd,
   if(err)
     {
       err=errno;
-      perror("ioctl() failed");
+      PERROR("ioctl(,SET_DISK_CONFIG,) failed");
       if(err == EINVAL) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
@@ -646,7 +651,7 @@ int do_net_conf(int drbd_fd,
   if(err)
     {
       err=errno;
-      perror("ioctl() failed");
+      PERROR("ioctl(,SET_NET_CONFIG,) failed");
       if(err == EINVAL) print_config_ioctl_err(cn->ret_code);
       return 20;
     }
@@ -661,7 +666,7 @@ int set_state(int drbd_fd,Drbd_State state)
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
   if(err) {
     err=errno;
-    perror("ioctl() failed");
+    PERROR("ioctl(,SET_STATE,) failed");
     switch(err)
       {
       case EBUSY:
@@ -762,7 +767,7 @@ int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
   err=ioctl(drbd_fd,req,&p);
   if(err)
     {
-      perror("ioctl() failed");
+      PERROR("ioctl(,WAIT_*,) failed");
       exit(20);
     }
   return !p.ret_code;
@@ -793,7 +798,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&current_cn);
   if(err)
     {
-      perror("ioctl() failed");
+      PERROR("ioctl(,GET_CONFIG,) failed");
       return 20;
     }
 
@@ -844,7 +849,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&cn);
   if(err)
     {
-      perror("DRBD_IOCTL_SET_SYNC_CONFIG ioctl() failed");
+      PERROR("ioctl(,SET_SYNC_CONFIG,) failed");
       return 20;
     }
 
@@ -859,7 +864,7 @@ int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
   if(err)
     {
       err=errno;
-      perror("ioctl() failed");
+      PERROR("ioctl(,INVALIDATE,) failed");
       if(err==EINPROGRESS)
 	fprintf(stderr,"Only in 'Connected' cstate possible.\n");
       return 20;
@@ -875,7 +880,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
   if(err)
     {
       err=errno;
-      perror("ioctl() failed");
+      PERROR("ioctl(,INVALIDATE_REM,) failed");
       if(err==EINPROGRESS)
 	fprintf(stderr,"Only in 'Connected' cstate possible.\n");
       return 20;
@@ -900,7 +905,7 @@ int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
   if(err)
     {
       err=errno;
-      perror("ioctl() failed");
+      PERROR("ioctl(,UNCONFIG_DISK,) failed");
       if(err==EBUSY)
 	fprintf(stderr,"Not possible during resynchronisation.\n");
       if(err==ENETRESET)
@@ -925,7 +930,7 @@ int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options)
   if(err)
     {
       err=errno;
-      perror("ioctl() failed");
+      PERROR("ioctl(,UNCONFIG_NET,) failed");
       if(err==ENXIO)
 	fprintf(stderr,"Device is not configured!\n");
       return 20;
@@ -996,7 +1001,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_DISK_SIZE,u_size);
   if(err)
     {
-      perror("DRBD_IOCTL_SET_DISK_SIZE ioctl() failed");
+      PERROR("ioctl(,SET_DISK_SIZE,) failed");
       return 20;
     }
 
@@ -1070,7 +1075,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
   if(err)
     {
-      perror("ioctl() failed");
+      PERROR("ioctl(,GET_CONFIG,) failed");
       return 20;
     }
 
@@ -1151,7 +1156,7 @@ int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
   if(err)
     {
-      perror("ioctl() failed");
+      PERROR("ioctl(,GET_CONFIG,) failed");
       return 20;
     }
 
