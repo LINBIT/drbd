@@ -303,7 +303,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 					set_cstate(mdev,NetworkFailure);
 				drbd_thread_restart_nowait(&mdev->receiver);
 				if(mdev->conf.wire_protocol != DRBD_PROT_A) {
-					dec_ap_pending(mdev);
+					dec_ap_pending(mdev,HERE);
 				}
 			}
 		} else if (target_area_out_of_sync) {
