@@ -338,7 +338,7 @@ inline int tl_release(struct Drbd_Conf* mdev, u64 new_nr)
 	 	slot->member = NULL;
 		kfree(walk);
 		/* free_block_on_bitmap(mdev, new_nr); */
-		spin_unlock(&slot->hash_slot);
+		spin_unlock(&slot->hash_slock);
 		return -1;
 	  }
 	   while(walk->next != NULL) {
@@ -894,8 +894,11 @@ __initfunc(int drbd_init( void ))
       drbd_thread_init(i,&drbd_conf[i].syncer,drbd_syncer);
       drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
     }
-
+#if LINUX_VERSION_CODE > 0x20300
+  blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
+#else
   blk_dev[ MAJOR_NR ].request_fn = DEVICE_REQUEST;
+#endif
   blksize_size[ MAJOR_NR ] = drbd_blocksizes;
   blk_size[ MAJOR_NR ] = drbd_sizes; /* Size in Kb */
 
@@ -928,7 +931,12 @@ void cleanup_module()
   if ( unregister_blkdev( MAJOR_NR, DEVICE_NAME ) != 0 )
     printk(MODULE_NAME"unregister of device failed\n");
 
+#if LINUX_VERSION_CODE > 0x20300 
+  blk_cleanup_queue(BLK_DEFAULT_QUEUE(MAJOR_NR));
+#else
   blk_dev[ MAJOR_NR ].request_fn = NULL;
+#endif
+
   blksize_size[ MAJOR_NR ] = NULL;
   blk_size[ MAJOR_NR ] = NULL;
 #if LINUX_VERSION_CODE > 0x20300 
