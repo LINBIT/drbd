@@ -21,17 +21,18 @@
 
 SUBDIRS     = user scripts benchmark documentation drbd #testing
 ALLSUBDIRS  = user scripts benchmark documentation drbd testing
+
+REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) svn .*/\1/;p;q;}' drbd/linux/drbd_config.h)
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
-# or to forcefully include the svn-release-and-date in the tgz name:
+# or to forcefully include the svn-last-changed-date in the tgz name:
 #   make distclean doc tgz FORCE=1
 #
-#define REL_VERSION "0.7-pre10 svn $Rev: 1432 $ $Date: 2004-07-15 14:17:50 +0200 (Thu, 15 Jul 2004) $"
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) svn .Rev: \([0-9]\+\) . .Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1-\2-\3\4\5/;s,/,,g;p;q;}' drbd_config.h)
-else
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) svn .*/\1/;p;q;}' drbd/linux/drbd_config.h)
+REL_VERSION := $(REL_VERSION)-$(shell svn info| \
+		  sed -ne 's/^Last Changed Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1\2\3/p')
 endif
+
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
 
 LN_S = ln -s
