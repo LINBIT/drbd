@@ -1,0 +1,8 @@
+drbd for Debian
+----------------------
+
+This package includes support for haveing a raid 1 block-device
+over tcp/ip.  It exists of a kernel-patch, user mode support, and a
+kernelmodule. The last 2 are mandatory.
+
+ -- Ard van Breemen <ard@telegraafnet.nl>,  Wed, 16 May 2001 15:50:32 +0200

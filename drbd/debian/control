@@ -1,0 +1,26 @@
+Source: drbd
+Section: ha
+Priority: extra
+Maintainer: Ard van Breemen <ard@telegraafnet.nl>
+Build-Depends: debhelper (>= 2), autoconf, automake, kernel-headers, cpio, debconf-utils, dh-kpatches (>=0.5)
+
+Package: drbd-source
+Architecture: all
+Recommends:  dpkg-dev, kernel-package, debhelper (>= 2), debconf-utils
+Description: RAID 1 over tcp/ip for Linux source.
+ This package provides the source code for the drbd module.
+ The kernel source is required to compile these modules.
+
+Package: drbd
+Architecture: i386
+Depends: debconf
+Suggests: heartbeat
+Description: RAID 1 over tcp/ip for Linux utilities.
+ This package contains the files needed to control the drbd kernel module.
+
+package: kernel-patch-wup
+Architecture: all
+Depends: patch
+Description: Export wake_up_process kernel patch.
+ This patches the kernel so that modules can call the
+ wake_up_process kernel call.

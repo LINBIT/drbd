@@ -1,0 +1,5 @@
+drbd (cvs20010511-1) unstable; urgency=low
+
+  * First deb-anized version
+
+ -- Ard van Breemen <ard@telegraafnet.nl>  Fri, 11 May 2001 11:59:53 +0200

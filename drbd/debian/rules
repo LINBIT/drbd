@@ -1,0 +1,155 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+# debian/rules file - for drbd
+# Patterned after the pcmcia-cs package by Brian Mays.
+
+package=drbd
+KSRC?=/usr/src/linux
+MOD_DIR?='.'
+kvers=`cat debian/KVERS`
+PKGVERSION=$(shell dpkg-parsechangelog | grep ^Version: | cut -d ' ' -f 2)
+MVARUSUBDIRS=$(shell grep ^SUBDIRS Makefile.vars | sed 's/ drbd / /g' | sed 's/ = /=/g'|cut -d '\#' -f1 )
+#MVARKSUBDIRS=drbd
+export DH_VERBOSE=1
+
+install-kernelpatch:
+	dh_testdir
+	dh_testroot
+	dh_installdirs -p kernel-patch-wup
+	dh_installkpatches -p kernel-patch-wup
+
+binary-kernelpatch: install-kernelpatch
+	dh_testdir
+	dh_testroot
+	dh_installdocs -pkernel-patch-wup
+	dh_installchangelogs -pkernel-patch-wup
+	dh_installdeb -pkernel-patch-wup
+	dpkg-gencontrol -pkernel-patch-wup -Pdebian/kernel-patch-wup
+	chown -R root.root debian/kernel-patch-wup
+	chmod -R g-ws debian/kernel-patch-wup
+	dpkg-deb --build debian/kernel-patch-wup ..
+	
+binary-indep:   binary-source binary-kernelpatch
+    $(checkdir)
+	
+
+binary-arch: checkroot binary-drbd
+	$(checkdir)
+
+binary-drbd:  checkroot build
+	$(checkdir)
+	$(RM) -r debian/tmp
+	install -d debian/tmp debian/tmp/DEBIAN
+	install -d debian/tmp/usr/share/doc/$(package)
+	install -d debian/tmp/usr/sbin
+# Install files
+# Strip binaries
+#	strip `ls debian/tmp/usr/X11R6/bin/* 2>/dev/null` debian/tmp/sbin/*
+# Find configuration files
+#	find debian/tmp/etc -not -type d | sed 's%debian/tmp%%' \
+#	  > debian/tmp/DEBIAN/conffiles
+# Install changelog & copyright
+	install -m644 TODO ChangeLog COPYING README TODO \
+		debian/tmp/usr/share/doc/$(package)/
+	install -m644 debian/changelog  \
+		debian/tmp/usr/share/doc/$(package)/changelog.Debian
+	install -m755 user/drbdsetup \
+		debian/tmp/usr/sbin/
+# Generate deb file
+	dpkg-gencontrol -pdrbd
+	chown -R root.root debian/tmp
+	chmod -R g-ws debian/tmp
+	dpkg-deb --build debian/tmp ..
+
+binary: binary-arch binary-indep
+
+binary-source:
+	$(checkdir)
+	$(RM) -r debian/src
+	install -d debian/src debian/src/DEBIAN
+	# Install directories
+	install -d debian/src/usr/src/modules/$(package)
+	install -d debian/src/usr/src/modules/$(package)/debian
+	install -d debian/src/usr/share/doc/drbd-source
+	# Install files
+	cp -a debian/rules debian/changelog debian/control.modules debian/src/usr/src/modules/$(package)/debian
+	cp -a debian/control.modules debian/src/usr/src/modules/$(package)/debian/control
+	cp -a drbd debian/src/usr/src/modules/$(package)/
+#	cd debian/src/usr/src/modules/$(package) && \
+#	$(MAKE) -f debian/rules clean
+	chown -R root.root debian/src
+#	find debian/src -type d | xargs chmod 755
+#	find debian/src -type f -perm -100 | xargs chmod 755
+#	find debian/src -type f -not -perm -100 | xargs chmod 644
+	cd debian/src/usr/src && \
+	tar cf $(package).tar modules && \
+	$(RM) -r modules/$(package)
+	gzip -9 debian/src/usr/src/$(package).tar
+	chmod 644 debian/src/usr/src/$(package).tar.gz
+	# Install changelog & copyright
+	install -m 644 debian/changelog \
+	debian/src/usr/share/doc/drbd-source/changelog.Debian
+	gzip -9v debian/src/usr/share/doc/drbd-source/*
+	# Generate deb file
+	dpkg-gencontrol -pdrbd-source -Pdebian/src
+	dpkg-deb --build debian/src ..
+
+
+build:
+	$(checkdir)
+	umask 022; $(MAKE) "$(MVARUSUBDIRS)"
+# Could not get docbook2man to work...
+#	umask 022; cd documentation && $(MAKE) man
+
+clean:
+	$(MAKE) clean
+
+checkroot:
+	$(checkdir)
+	test root = "`whoami`"
+
+# This is used when kernel-package is building the package. 
+# Build the kernel module .deb.
+build-modules:
+	dh_testdir
+	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) CC=gcc272
+
+binary-modules: build-modules
+	dh_clean -k
+	dh_testdir
+	dh_testroot
+
+	rm -f debian/control.save
+	cp debian/control debian/control.save
+	rm -f debian/control
+	sed 's/#KVERS#/$(KVERS)/g' debian/control.modules > debian/control
+	# And set up files so debhelper can find them.
+	dh_installdirs lib/modules/$(KVERS)/misc
+	install -m644 drbd/drbd.o debian/tmp/lib/modules/$(KVERS)/misc
+	dh_installdocs
+	dh_installexamples
+	dh_installmodules
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol -- -v$(PKGVERSION)
+	dh_makeshlibs
+	dh_md5sums
+	dh_builddeb --destdir=$(MODULE_LOC)/..
+
+kdist_image: binary-modules clean
+
+kdist: kdist_clean binary-modules
+
+kdist_clean:
+	dh_testdir
+	cd drbd && $(MAKE) INCLUDE=-I$(KSRC)/include KERNVER=$(KVERS) clean
+
+source diff:                                                     
+	@echo >&2 'source and diff are obsolete - use dpkg-source -b'; false
+
+.PHONY: binary binary-arch binary-indep binary-modules \
+	clean clean-modules checkroot \
+	kconf kdist kdist_image kdist_changes
+

@@ -1,0 +1,14 @@
+Source: drbd
+Section: ha
+Priority: extra
+Maintainer: Ard van Breemen <ard@telegraafnet.nl>
+Build-Depends: debhelper (>= 2), autoconf, automake, kernel-headers, cpio, debconf-utils
+Description: RAID 1 over tcp/ip for Linux.
+ Drbd adds raid 1 over tcp/ip to a linux system.
+
+Package: drbd-module-#KVERS#
+Architecture: i386
+Recommends:  dpkg-dev, kernel-package, debhelper (>= 2), debconf-utils, drbd
+Description: RAID 1 over tcp/ip for Linux kernel module.
+ This package provides the kernel module for linux kernel #KVERS#
+ You have to install the drbd package to be able to use it.
