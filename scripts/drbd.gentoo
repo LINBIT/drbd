@@ -18,12 +18,10 @@ depend() {
 
 start() {
 	ebegin "Starting DRBD"
-	if [ ! -e /dev/drbd0 ] ; then
-	   /bin/mknod -m 0660 /dev/drbd0 b 43 0
-	fi
-	if [ ! -e /dev/drbd1 ] ; then
-	   /bin/mknod -m 0660 /dev/drbd1 b 43 1
-	fi
+	# strange that gentoo thinks this should be done by an init script
+	for i in `seq 0 15` ; do 
+	    test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i; 
+	done
 	${DRBDADM} up all
 #	/sbin/drbdadm wait_connect all
 	eend $ret
@@ -33,6 +31,20 @@ stop() {
 	ebegin "Stopping DRBD"
 	${DRBDADM} down all
 	eend $?
+}
+
+status() {
+	# NEEDS to be heartbeat friendly...
+	# so: put some "OK" in the output.
+	ebegin "Status of DRBD"
+	if [ -e $PROC_DRBD ]; then
+	    echo "drbd driver OK; device status:"
+	    cat "$PROC_DRBD"
+	    eend 0
+	else
+	    echo >&2 "drbd not loaded"
+	    eend 3
+	fi
 }
 
 reload() {
