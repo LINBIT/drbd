@@ -3,7 +3,7 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+   Copyright (C) 1999 2000, Philipp Reisner <philipp.reisner@linbit.com>.
         Initial author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.

@@ -3,7 +3,7 @@
 
    By Philipp Reisner.
 
-   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
+   Copyright (C) 1999 2000, Philipp Reisner <philipp.reisner@linbit.com>.
         Initial author.
 
    dm is free software; you can redistribute it and/or modify
