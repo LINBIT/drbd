@@ -7,7 +7,7 @@ Latest:
 0.7.6 (api:77/proto:74)
 -----
  * "drbdadm invalidate [res]" was not working correct, while
-    drbdadm invalidate_remove works. Fixed the former.
+   "drbdadm invalidate_remote [res]" works. Fixed the former.
  * Make DRBD work on Linux-2.6.10-rc2 and newer: Replaced
    sock_alloc() by sock_create(), replaced TASK_ZOMBIE by 
    EXIT_ZOMBIE.
