@@ -865,9 +865,33 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 }
 
 #if 0
-/* I suspect this zero copy code somehow is plain wrong!
- * btw, uml network sockets don't have zero copy,
- * and fall back to sock_no_sendpage in tcp_sendpage... */
+/* We have the following problem with zero copy network IO:
+   
+   The idea of sendpage seems to be to put some kind of reference 
+   to the page into the skb, and to hand it over to the NIC. In 
+   this process get_page() gets called.
+
+   As soon as the page was really sent over the network put_page()
+   gets called by some part of the network layer. [ NIC driver? ]
+
+   [ get_page() / put_page() are functions of the buffer cache, they
+     increment/decrement the count. If count reaches 0 it goes deeply
+     into the page cache... ]
+
+   This works nicely as long as the FSs only use pages that are 
+   unter the control of the page cache. [ XFS is one of the
+   exceptions, it also uses pages allocated by other means ]
+
+   The other problematic case are our own private buffer pages (EEs). 
+   We initialize the count to 1, so they do not get handed back to the 
+   page cache, this is good. But we do not wait until the data is really 
+   sent, so somethimes we reuse our EE pages before the data was actually 
+   sent. (happens during resync.)
+
+   => I think it is possible to fix the EE case, but what should be done 
+      to the XFS issue ? 
+
+*/
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
 {
