@@ -44,7 +44,7 @@ isConnected()
 # Return a boolean
 isMounted()
 {
-	[ "`mount | grep $LOCAL_DEVICE | cut -f1 -d\ `" = "$LOCAL_DEVICE" ] && \
+	[ "`mount | grep "$LOCAL_DEVICE" | cut -f1 -d\ `" = "$LOCAL_DEVICE" ] && \
 		return 1 || return 0
 }
 
@@ -367,6 +367,8 @@ case "$1" in
 		if [ -r /proc/drbd ]; then
 			isPrimary $RESOURCE
 			PRIMARY=$?
+
+			setLocal
 			isMounted $RESOURCE
 			MOUNTED=$?
 			
