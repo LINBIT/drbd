@@ -1,10 +1,7 @@
-all: acmp getbm #receiver sender writetest
+all: acmp #receiver sender writetest
 
 acmp: acmp.c
 	gcc -g -o acmp acmp.c
-
-getbm: getbm.c
-	gcc -g -o getbm getbm.c
 
 #writetest: writetest.c
 #	gcc -g -o writetest writetest.c
@@ -16,4 +13,4 @@ getbm: getbm.c
 #	gcc -g -o sender sender.c
 
 clean: 
-	rm -f receiver sender writetest
+	rm -f receiver sender writetest acmp
