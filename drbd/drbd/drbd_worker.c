@@ -287,6 +287,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 {
 	struct Drbd_Conf* mdev;
 	drbd_request_t *req;
+	sector_t rsector;
 
 	// see above
 	if (bio->bi_size)
@@ -299,8 +300,10 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	PARANOIA_BUG_ON(!VALID_POINTER(req));
 
 	drbd_chk_io_error(mdev,error);
-	drbd_end_req(req, RQ_DRBD_LOCAL, (error == 0), drbd_req_get_sector(req));
-	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
+	rsector = drbd_req_get_sector(req); 
+        // the bi_sector of the bio gets modified somewhere in drbd_end_req()!
+	drbd_end_req(req, RQ_DRBD_LOCAL, (error == 0), rsector);
+	drbd_al_complete_io(mdev,rsector);
 	dec_local(mdev);
 	return 0;
 }

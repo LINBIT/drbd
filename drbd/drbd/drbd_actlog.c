@@ -131,12 +131,14 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	al_flags = mdev->act_log->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
+	/*
 	if (!al_ext) {
 		if (al_flags & LC_STARVING)
 			WARN("Have to wait for LRU element (AL too small?)\n");
-		//if (al_flags & LC_DIRTY) // too noisy
-		//WARN("Ongoing AL update (AL device too slow?)\n");
+		if (al_flags & LC_DIRTY)
+			WARN("Ongoing AL update (AL device too slow?)\n");
 	}
+	*/
 
 	return al_ext;
 }
@@ -180,7 +182,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	if(!extent) {
 		spin_unlock_irqrestore(&mdev->al_lock,flags);
-		ERR("drbd_al_complete_io() called on inactive extent\n");
+		ERR("al_complete_io() called on inactive extent %u\n",enr);
 		return;
 	}
 
