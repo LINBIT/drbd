@@ -1715,7 +1715,7 @@ int bm_set_bit(drbd_dev *mdev, sector_t sector, int size, int bit)
 		dev_size=sbm->dev_size;
 
 		if(  (sector & BM_MM) != 0 )     sbnr++;
-		if( (esector & BM_MM) != BM_MM ) {
+		if( ebnr && (esector & BM_MM) != BM_MM ) {
 			ebnr--;
 
 			// There is this one special case at the
