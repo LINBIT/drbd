@@ -280,6 +280,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	struct list_head *le;
 	struct Tl_epoch_entry* e;
 	DEFINE_WAIT(wait);
+	LIST_HEAD(active);
 
 	MUST_HOLD(&mdev->ee_lock);
 
@@ -288,7 +289,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 		drbd_kick_lo(mdev);
 		spin_lock_irq(&mdev->ee_lock);
 	}
-
+ retry:
 	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,&mdev->done_ee);
 
 	if(list_empty(&mdev->free_ee)) {
@@ -310,20 +311,39 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			finish_wait(&mdev->ee_wait, &wait);
 			if (signal_pending(current)) {
 				WARN("drbd_get_ee interrupted!\n");
+				list_splice(&active,mdev->free_ee.prev);
 				return 0;
 			}
 			// finish wait is inside, so that we are TASK_RUNNING 
 			// in _drbd_process_ee (which might sleep by itself.)
 			_drbd_process_ee(mdev,&mdev->done_ee);
+
+			list_for_each(le,&active) {
+				e=list_entry(le, struct Tl_epoch_entry,w.list);
+				if( page_count(drbd_bio_get_page(&e->private_bio)) == 1 ) {
+					list_move(le,&mdev->free_ee);
+					break;
+				}
+			}
 		}
 		finish_wait(&mdev->ee_wait, &wait); 
 	}
 
 	le=mdev->free_ee.next;
 	list_del(le);
+
+	e=list_entry(le, struct Tl_epoch_entry, w.list);
+	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {
+		/* This might happen if the sendpage() has not finished */
+		list_add(le,&active);
+		goto retry;
+	}
+
+	list_splice(&active,mdev->free_ee.prev);
+
 	mdev->ee_vacant--;
 	mdev->ee_in_use++;
-	e=list_entry(le, struct Tl_epoch_entry, w.list);
+
 ONLY_IN_26(
 	D_ASSERT(e->private_bio.bi_idx == 0);
 	drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
@@ -343,7 +363,7 @@ void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
 	mdev->ee_vacant++;
 	e->block_id = ID_VACANT;
 	INVALIDATE_MAGIC(e);
-	list_add(&e->w.list,&mdev->free_ee);
+	list_add_tail(&e->w.list,&mdev->free_ee);
 
 	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) &&
 	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {

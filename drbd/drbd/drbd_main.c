@@ -864,7 +864,7 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	return drop_it; /* && (mdev->state == Primary) */;
 }
 
-#if 0
+#if 1
 /* We have the following problem with zero copy network IO:
    
    The idea of sendpage seems to be to put some kind of reference 
@@ -874,23 +874,16 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
    As soon as the page was really sent over the network put_page()
    gets called by some part of the network layer. [ NIC driver? ]
 
-   [ get_page() / put_page() are functions of the buffer cache, they
-     increment/decrement the count. If count reaches 0 it goes deeply
-     into the page cache... ]
+   [ get_page() / put_page() increment/decrement the count. If count 
+     reaches 0 the page will be freed. ]
 
-   This works nicely as long as the FSs only use pages that are 
-   unter the control of the page cache. [ XFS is one of the
-   exceptions, it also uses pages allocated by other means ]
+   This works nicely with pages from FSs. 
+   But this means that in protocol A we might signal IO completion too early !
 
-   The other problematic case are our own private buffer pages (EEs). 
-   We initialize the count to 1, so they do not get handed back to the 
-   page cache, this is good. But we do not wait until the data is really 
-   sent, so somethimes we reuse our EE pages before the data was actually 
-   sent. (happens during resync.)
-
-   => I think it is possible to fix the EE case, but what should be done 
-      to the XFS issue ? 
-
+   In order not to corrupt data during a full sync we must make sure
+   that we do not reuse our own buffer pages (EEs) to early. 
+   Have a look at drbd_get_ee() where we check if the count of the page
+   has already dropped to 1 .
 */
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
