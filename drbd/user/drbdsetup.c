@@ -6,6 +6,9 @@
    Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
         Initial author.
 
+   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
+        Added sanity checks before using the device.
+
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -36,6 +39,10 @@
 #define _GNU_SOURCE
 #include <getopt.h>
 #include <stdlib.h>
+#include <linux/kdev_t.h>
+
+/* Copied from drbd.c (the module's source), this probably belongs in a header file */
+#define MAJOR_NR 43
 
 unsigned long resolv(const char* name)
 {
@@ -153,7 +160,24 @@ int main(int argc, char** argv)
   {
     int retval;
     int err;
+    struct stat drbd_stat;
 
+    /* Check if the device is really drbd */
+    err=fstat(dtbd_fd, &drbd_stat);
+    if(err)
+      {
+	perror("fstat() failed");
+      }
+    if(!S_ISBLK(drbd_stat.st_mode))
+      {
+	fprintf(stderr, "%s is not a block device!\n", argv[1]);
+	exit(20);
+      }
+    if(MAJOR(drbd_stat.st_rdev) != MAJOR_NR)
+      {
+	fprintf(stderr, "%s is not a drbd device!\n", argv[1]);
+	exit(20);
+      }
     err=ioctl(dtbd_fd,DRBD_IOCTL_GET_VERSION,&retval);
     if(err)
       {

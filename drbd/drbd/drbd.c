@@ -11,6 +11,9 @@
    Copyright (C) 1999, Marcelo Tosatti <marcelo@conectiva.com.br>.
         Added code for Linux 2.3.x
 
+   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
+        Added sanity checks in IOCTL_SET_STATE.
+
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -1117,10 +1120,18 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
+		/* Do not allow the state to change during resync */
+		if (drbd_conf[minor].cstate == SyncingAll
+		    || drbd_conf[minor].cstate == SyncingQuick)
+			/* Maybe -EBUSY is not the most appropriate, but who knows? */
+			return -EBUSY;
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_conf[minor].state = (Drbd_State) arg;
 
-		drbd_send_param(minor, ReportParams);
+		/* Only report the state change immediately if connected */
+		/* There is a race here somewhere without the if */
+		if (drbd_conf[minor].cstate == Connected)
+			drbd_send_param(minor, ReportParams);
 
 		        /*printk(KERN_DEBUG DEVICE_NAME ": set_state(%d)\n",
 			  drbd_conf[minor].state);*/
