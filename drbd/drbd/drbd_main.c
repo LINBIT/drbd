@@ -1089,7 +1089,6 @@ int __init drbd_init(void)
 		drbd_conf[i].lo_file = 0;
 		drbd_conf[i].lo_device = 0;
 		drbd_conf[i].lo_usize = 0;
-		drbd_conf[i].p_usize = 0;
 		drbd_conf[i].p_size = 0;
 		drbd_conf[i].state = Secondary;
 		init_waitqueue_head(&drbd_conf[i].state_wait);

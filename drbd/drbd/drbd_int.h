@@ -92,7 +92,7 @@ extern int disable_io_hints;
 
 
 // Info: do not remove the spaces around the "," before ## 
-//       Otherwise this is portable from gcc-2.95 to gcc-3.3
+//       Otherwise this is not portable from gcc-2.95 to gcc-3.3
 #define PRINTK(level,fmt,args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
 		(int)(mdev-drbd_conf) , ##args)
@@ -528,7 +528,6 @@ struct Drbd_Conf {
 	kdev_t lo_device;
 	struct file *lo_file;
 	unsigned long lo_usize;   /* user provided size */
-	unsigned long p_usize;    /* partner node's usize */
 	unsigned long p_size;     /* partner's disk size */
 	Drbd_State state;
 	Drbd_CState cstate;
@@ -659,6 +658,8 @@ extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int ha
 
 #define BM_IN_SYNC       0
 #define BM_OUT_OF_SYNC   1
+
+#define MD_RESERVED_SIZE 128 * (1<<10)  // 128 MB  ( in units of 1 KB )
 
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5

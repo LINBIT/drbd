@@ -606,10 +606,11 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 				break;
 			}
 		} else if (rv == -EINTR) {
+			unsigned long flags = 0;
+
 			D_ASSERT(sock == mdev->msock);
 			D_ASSERT(current == mdev->asender.task);
 
-			unsigned long flags = 0;
 			LOCK_SIGMASK(current,flags);
 			if (sigismember(&current->pending.signal, DRBD_SIG)) {
 				// should only trigger for wake_asender
@@ -1393,7 +1394,11 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	p_size=be64_to_cpu(p->p_size);
 	mdev->p_size=p_size;
-	mdev->p_usize=be64_to_cpu(p->u_size);
+	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
+		mdev->lo_usize = be64_to_cpu(p->u_size);
+		INFO("Peer sets u_size to %ld KB\n",mdev->lo_usize);
+	}
+
 	if(p_size) clear_bit(PARTNER_DISKLESS, &mdev->flags);
 	else set_bit(PARTNER_DISKLESS, &mdev->flags);
 

@@ -66,22 +66,23 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
        return MountedRW;
 }
 
-//#define DEBUG_LU(A) printk(KERN_ERR DEVICE_NAME"%d: " #A "=%lu\n",minor,A);
-
 /* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
 	unsigned long p_size = mdev->p_size;  // partner's disk size.
-	unsigned long pu_size = mdev->p_usize; //partner's user requested size
 	unsigned long la_size = mdev->la_size; // last agreed size.
 	unsigned long m_size; // my size
-	unsigned long mu_size = mdev->lo_usize; // size requested by user.
-	unsigned long u_size=0; // agreed user requested size.
+	unsigned long u_size = mdev->lo_usize; // size requested by user.
 	unsigned long size=0;
 	kdev_t ll_dev = mdev->lo_device;
 	int rv,minor=(int)(mdev-drbd_conf);
 
 	m_size = ll_dev ? blk_size[MAJOR(ll_dev)][MINOR(ll_dev)] : 0;
+
+	if( 1 /* metadata on ll_dev */ ) {
+		if(m_size) m_size -= MD_RESERVED_SIZE;
+		if(p_size) p_size -= MD_RESERVED_SIZE;
+	}
 
 	if(p_size && m_size) {
 		rv=0;
@@ -100,13 +101,6 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	if(size == 0) {
 		ERR("Both nodes diskless!\n");
-	}
-
-	if(mu_size && pu_size) {
-		u_size=min_t(unsigned long,mu_size,pu_size);
-	} else {
-		if(mu_size) u_size=mu_size;
-		if(pu_size) u_size=pu_size;
 	}
 
 	if(u_size) {
