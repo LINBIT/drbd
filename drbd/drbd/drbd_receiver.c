@@ -1149,7 +1149,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			break;
 		case PingAck:
 			del_timer_sync(&ping_timeout);
-			rtt=max_t(int,jiffies-ping_sent_at,4); //HZ/50);
+			rtt=max_t(int,jiffies-ping_sent_at,HZ/25);
 			if(rtt < mdev->artt) mdev->artt--;
 			if(rtt > mdev->artt) mdev->artt++;
 			ping_sent_at=0;

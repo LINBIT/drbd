@@ -641,7 +641,11 @@ static void drbd_timeout(unsigned long arg)
 	} else {
 		set_bit(SEND_PING,&ti->mdev->flags);
 		wake_up_interruptible(&ti->mdev->asender_wait);
-		//TODO: reschedule itself.
+		if(ti->restart) {
+			ti->s_timeout.expires = jiffies +
+				(ti->mdev->conf.timeout * HZ / 10);
+			add_timer(&ti->s_timeout);
+		}
 	}
 }
 
@@ -679,7 +683,6 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	int rv,sent=0;
 	int app_got_sig=0;
 	struct send_timer_info ti;
-	struct timer_list s_timeout; /* send timeout */
 	struct socket *sock = via_msock ? mdev->msock : mdev->sock;
 	
 	if (!sock) return -1000;
@@ -709,13 +712,14 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		ti.timeout_happened=0;
 		ti.via_msock=via_msock;
 		ti.pid=current->pid;
+		ti.restart=1;
 
-		init_timer(&s_timeout);
-		s_timeout.function = drbd_timeout;
-		s_timeout.data = (unsigned long) &ti;
-		s_timeout.expires = jiffies + via_msock ? 
+		init_timer(&ti.s_timeout);
+		ti.s_timeout.function = drbd_timeout;
+		ti.s_timeout.data = (unsigned long) &ti;
+		ti.s_timeout.expires = jiffies + via_msock ? 
 			(mdev->conf.timeout * HZ / 10) : (mdev->artt*4);
-		add_timer(&s_timeout);
+		add_timer(&ti.s_timeout);
 	}
 
 	lock_kernel();  //  check if this is still necessary
@@ -780,8 +784,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	unlock_kernel();
 
 	if (mdev->conf.timeout) {
+		ti.restart=0;
 		if(!via_msock) mdev->send_proc=NULL;
-		del_timer_sync(&s_timeout);
+		del_timer_sync(&ti.s_timeout);
 	}
 
 	spin_lock_irqsave(&current->sigmask_lock, flags);

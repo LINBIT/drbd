@@ -204,10 +204,12 @@ struct drbd_event {
 #define DO_NOT_INC_CONCNT 5
 
 struct send_timer_info {
+	struct timer_list s_timeout; /* send timeout */
 	struct Drbd_Conf *mdev;
 	volatile int timeout_happened;
 	int via_msock;
 	int pid;
+	int restart;
 };
 
 struct Drbd_Conf {
