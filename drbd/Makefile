@@ -84,13 +84,14 @@ check_changelogs_up2date:
 	$$up2date
 
 update.filelist:
-	cvs status | grep -o "/drbd/drbd/[^,]*" | \
-	sed "s/Attic\///;                  \
-	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist
+	cvs status | grep -o "/drbd/drbd/[^,]*" |                 \
+	sed "s/Attic\///;                                         \
+	     s/\/drbd\/drbd/drbd-$(DIST_VERSION)/;" > .filelist  ;\
 	find documentation -name "[^.]*.[58]" -o -name "*.html" | \
-	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist
-	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist
-	echo drbd-$(DIST_VERSION)/.filelist >> .filelist
+	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
+	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
+	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
+	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
 
 .filelist:
 	@ echo -e "\nto create the filelist:   make update.filelist\nyou need cvs access, though.\n"
