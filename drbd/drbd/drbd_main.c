@@ -1551,14 +1551,12 @@ int bm_end_of_dev_case(struct BitMap* sbm)
 	used_bits = BITS_PER_LONG - 
 		( sbm->size*8 - div_ceil(sbm->dev_size,BM_BPS) );
 	mask = ~ bitmask(used_bits); // mask of bits to clear;
-	printk(KERN_ERR DEVICE_NAME"clear mask = 0x%8lX\n",mask);
 	mask &= bm[sbm->size/sizeof(long)-1];
 	if( mask ) {
 		rv = -8 * parallel_bitcount(mask);
 		bm[sbm->size/sizeof(long)-1] &= ~mask;
 	}
 
-	printk(KERN_ERR DEVICE_NAME"bm_end_of_dev_case = %d\n",rv);
 	return rv;
 }
 
