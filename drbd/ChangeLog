@@ -1,3 +1,9 @@
+0.5.7
+-----
+Bugfix release:
+  *) Fixed a bug when working with a fs with an blocksize other than 4096
+  *) Applied the patch from Juri Haberland against the datadisk script.
+
 0.5.6
 -----
 No updates to the mirroring core. (It seems to be stable)
