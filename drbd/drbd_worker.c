@@ -54,8 +54,7 @@
  */
 int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
-	if (bio->bi_size)
-		return 1;
+	if (bio->bi_size) return 1;
 
 	complete((struct completion*)bio->bi_private);
 	return 0;
@@ -70,16 +69,15 @@ int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	mdev=bio->bi_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+	e = bio->bi_private;
+	mdev = e->mdev;
 
-	/* we should be called via bio_endio, so this should never be the case
-	 * but "everyone else does it", and so do we ;)		-lge
+	/* We are called each time a part of the bio is finished, but
+	 * we are only interested when the whole bio is finished, therefore
+	 * return as long as bio->bio_size is positive.
 	 */
-	ERR_IF (bio->bi_size)
-		return 1;
+	if (bio->bi_size) return 1;
 
-	e = container_of(bio,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
@@ -103,14 +101,12 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	mdev=bio->bi_private;
-	PARANOIA_BUG_ON(!IS_VALID_MDEV(mdev));
+	e = bio->bi_private;
+	mdev = e->mdev;
 
 	// see above
-	ERR_IF (bio->bi_size)
-		return 1;
+	if (bio->bi_size) return 1;
 
-	e = container_of(bio,struct Tl_epoch_entry,private_bio);
 	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
@@ -146,8 +142,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 	sector_t rsector;
 
 	// see above
-	ERR_IF (bio->bi_size)
-		return 1;
+	if (bio->bi_size) return 1;
 
 	drbd_chk_io_error(mdev,error);
 	rsector = drbd_req_get_sector(req);
@@ -166,9 +161,7 @@ int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_request_t *req=bio->bi_private;
 	struct Drbd_Conf* mdev=req->mdev;
 
-	// see above
-	ERR_IF (bio->bi_size)
-		return 1;
+	if (bio->bi_size) return 1;
 
 	/* READAs may fail.
 	 * upper layers need to be able to handle that themselves */
@@ -413,14 +406,12 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	int ok;
 
 	if(unlikely(cancel)) {
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
+		drbd_free_ee(mdev,e);
 		dec_unacked(mdev);
 		return 1;
 	}
 
-	if(likely(drbd_bio_uptodate(&e->private_bio))) {
+	if(likely(drbd_bio_uptodate(e->private_bio))) {
 		ok=drbd_send_block(mdev, DataReply, e);
 	} else {
 		ok=drbd_send_ack(mdev,NegDReply,e);
@@ -432,11 +423,11 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
-	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {
+	if( drbd_bio_has_active_page(e->private_bio) ) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list,&mdev->net_ee);
 	} else {
-		drbd_put_ee(mdev,e);
+		drbd_free_ee(mdev,e);
 	}
 	spin_unlock_irq(&mdev->ee_lock);
 
@@ -450,16 +441,14 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	int ok;
 
 	if(unlikely(cancel)) {
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
+		drbd_free_ee(mdev,e);
 		dec_unacked(mdev);
 		return 1;
 	}
 
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 
-	if(likely(drbd_bio_uptodate(&e->private_bio))) {
+	if(likely(drbd_bio_uptodate(e->private_bio))) {
 		if (likely( mdev->state.s.pdsk >= Inconsistent )) {
 			inc_rs_pending(mdev);
 			ok=drbd_send_block(mdev, RSDataReply, e);
@@ -478,11 +467,11 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
-	if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) {
+	if( drbd_bio_has_active_page(e->private_bio) ) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list,&mdev->net_ee);
 	} else {
-		drbd_put_ee(mdev,e);
+		drbd_free_ee(mdev,e);
 	}
 	spin_unlock_irq(&mdev->ee_lock);
 

@@ -77,9 +77,8 @@ STATIC int drbd_close(struct inode *inode, struct file *file);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
-MODULE_PARM_DESC(use_nbd_major, "DEPRECATED! use nbd device major nr (43) "
-		                "instead of the default " __stringify(LANANA_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
+MODULE_ALIAS_BLOCKDEV_MAJOR(LANANA_DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
 /*
@@ -93,13 +92,11 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
  */
 
 /* thanks to these macros, if compiled into the kernel (not-module),
- * these become boot parameters drbd.use_nbd_major and drbd.minor_count
+ * this becomes the boot parameter drbd.minor_count
  */
-module_param(use_nbd_major,   bool,0);
 module_param(minor_count,      int,0);
 
 // module parameter, defined
-int use_nbd_major = 0;
 int major_nr = LANANA_DRBD_MAJOR;
 #ifdef MODULE
 int minor_count = 2;
@@ -121,6 +118,19 @@ struct Drbd_Conf *drbd_conf;
 kmem_cache_t *drbd_request_cache;
 kmem_cache_t *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
+mempool_t *drbd_ee_mempool;
+
+/* I do not use a standard mempool, because:
+   1) I want to hand out the preallocated objects first.
+   2) I want to be able to interrupt sleeping allocation with a signal.
+   Note: This is a single linked list, the next pointer is the private
+         member of struct page.
+ */
+struct page* drbd_pp_pool;
+spinlock_t   drbd_pp_lock;
+int          drbd_pp_vacant;
+wait_queue_head_t drbd_pp_wait;
+
 
 STATIC struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
@@ -1177,30 +1187,6 @@ int _drbd_no_send_page(drbd_dev *mdev, struct page *page,
        return ret;
 }
 
-#ifdef DRBD_DISABLE_SENDPAGE
-int _drbd_send_page(drbd_dev *mdev, struct page *page,
-		    int offset, size_t size)
-{
-	int sent,ok;
-	int len   = size;
-
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=current;
-	spin_unlock(&mdev->send_task_lock);
-
-	sent =  _drbd_no_send_page(mdev, page, offset, size);
-	if (likely(sent > 0)) len -= sent;
-
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=NULL;
-	spin_unlock(&mdev->send_task_lock);
-
-	ok = (len == 0);
-	if (likely(ok))
-		mdev->send_cnt += size>>9;
-	return ok;
-}
-#else
 int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		    int offset, size_t size)
 {
@@ -1281,7 +1267,21 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		mdev->send_cnt += size>>9;
 	return ok;
 }
-#endif
+
+STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
+{
+	struct bio_vec *bvec;
+	int i;
+	
+	bio_for_each_segment(bvec, bio, i) {
+		if (! _drbd_send_page(mdev, bvec->bv_page, bvec->bv_offset,
+				      bvec->bv_len) ) {
+			return 0;
+		}
+	}
+
+	return 1;
+}
 
 // Used to send write requests: bh->b_rsector !!
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
@@ -1399,7 +1399,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
-	if (ok) ok = _drbd_send_zc_bio(mdev,&e->private_bio);
+	if (ok) ok = _drbd_send_zc_bio(mdev,e->private_bio);
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
@@ -1620,6 +1620,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->local_cnt,0);
 	atomic_set(&mdev->resync_locked,0);
 	atomic_set(&mdev->packet_seq,0);
+	atomic_set(&mdev->pp_in_use, 0);
 
 	init_MUTEX(&mdev->md_io_mutex);
 	init_MUTEX(&mdev->data.mutex);
@@ -1635,7 +1636,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	spin_lock_init(&mdev->send_task_lock);
 	spin_lock_init(&mdev->peer_seq_lock);
 
-	INIT_LIST_HEAD(&mdev->free_ee);
 	INIT_LIST_HEAD(&mdev->active_ee);
 	INIT_LIST_HEAD(&mdev->sync_ee);
 	INIT_LIST_HEAD(&mdev->done_ee);
@@ -1714,11 +1714,8 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 
 	drbd_thread_stop(&mdev->worker);
 
-	if (   mdev->ee_in_use  !=  0
-	    || mdev->ee_vacant  != 32 /* EE_MININUM */
-	    || atomic_read(&mdev->epoch_size) !=  0)
-		ERR("ee_in_use:%d ee_vacant:%d epoch_size:%d\n",
-		    mdev->ee_in_use, mdev->ee_vacant, atomic_read(&mdev->epoch_size));
+	if ( atomic_read(&mdev->epoch_size) !=  0)
+		ERR("epoch_size:%d\n",atomic_read(&mdev->epoch_size));
 #define ZAP(x) memset(&x,0,sizeof(x))
 	ZAP(mdev->conf);
 	ZAP(mdev->sync_conf);
@@ -1772,6 +1769,19 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 
 void drbd_destroy_mempools(void)
 {
+	struct page *page;
+
+	while(drbd_pp_pool) {
+		page = drbd_pp_pool;
+		drbd_pp_pool = (struct page*)page->private;
+		__free_page(page);
+		drbd_pp_vacant--;
+	}
+
+	/* D_ASSERT(atomic_read(&drbd_pp_vacant)==0); */
+
+	if (drbd_ee_mempool)
+		mempool_destroy(drbd_ee_mempool);
 	if (drbd_request_mempool)
 		mempool_destroy(drbd_request_mempool);
 	if (drbd_ee_cache && kmem_cache_destroy(drbd_ee_cache))
@@ -1782,6 +1792,7 @@ void drbd_destroy_mempools(void)
 		       ": kmem_cache_destroy(drbd_request_cache) FAILED\n");
 	// FIXME what can we do if we fail to destroy them?
 
+	drbd_ee_mempool      = NULL;
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
@@ -1791,31 +1802,52 @@ void drbd_destroy_mempools(void)
 
 int drbd_create_mempools(void)
 {
+	struct page *page;
+	const int number = (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE) * minor_count;
+	int i;
+
 	// prepare our caches and mempools
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
+	drbd_pp_pool         = NULL;
 
 	// caches
 	drbd_request_cache = kmem_cache_create(
 		"drbd_req_cache", sizeof(drbd_request_t),
-		0, SLAB_NO_REAP, NULL, NULL);
+		0, 0, NULL, NULL);
 	if (drbd_request_cache == NULL)
 		goto Enomem;
 
 	drbd_ee_cache = kmem_cache_create(
 		"drbd_ee_cache", sizeof(struct Tl_epoch_entry),
-		0, SLAB_NO_REAP, NULL, NULL);
+		0, 0, NULL, NULL);
 	if (drbd_ee_cache == NULL)
 		goto Enomem;
 
 	// mempools
-	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
+	drbd_request_mempool = mempool_create( number,
 		mempool_alloc_slab, mempool_free_slab, drbd_request_cache);
 	if (drbd_request_mempool == NULL)
 		goto Enomem;
 
-		return 0;
+	drbd_ee_mempool = mempool_create( number,
+		mempool_alloc_slab, mempool_free_slab, drbd_ee_cache);
+	if (drbd_request_mempool == NULL)
+		goto Enomem;
+
+	// drbd's page pool
+	spin_lock_init(&drbd_pp_lock);
+
+	for (i=0;i< number;i++) {
+		page = alloc_page(GFP_KERNEL);
+		if(!page) goto Enomem;
+		page->private = (unsigned long)drbd_pp_pool;
+		drbd_pp_pool = page;
+	}
+	drbd_pp_vacant = number;
+
+	return 0;
 
   Enomem:
 	drbd_destroy_mempools(); // in case we allocated some
@@ -1868,12 +1900,6 @@ static void __exit drbd_cleanup(void)
 			if (mdev->bitmap) drbd_bm_cleanup(mdev);
 			if (mdev->resync) lc_free(mdev->resync);
 
-			D_ASSERT(mdev->ee_in_use==0);
-
-			rr = drbd_release_ee(mdev,&mdev->free_ee);
-			// INFO("%d EEs in free list found.\n",rr);
-			// D_ASSERT(rr == 32);
-
 			rr = drbd_release_ee(mdev,&mdev->active_ee);
 			if(rr) ERR("%d EEs in active list found!\n",rr);
 
@@ -1895,7 +1921,6 @@ static void __exit drbd_cleanup(void)
 					DUMPP(lp);
 				}
 			};
-			D_ASSERT(mdev->ee_vacant == 0);
 
 			if (mdev->md_io_page)
 				__free_page(mdev->md_io_page);
@@ -1984,10 +2009,6 @@ int __init drbd_init(void)
 		return -EINVAL;
 	}
 
-	if (use_nbd_major) {
-		major_nr = NBD_MAJOR;
-	}
-
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
 			": invalid minor_count (%d)\n",minor_count);
@@ -2012,6 +2033,8 @@ int __init drbd_init(void)
 	 * allocate all necessary structs
 	 */
 	err = -ENOMEM;
+
+	init_waitqueue_head(&drbd_pp_wait);
 
 	drbd_proc = NULL; // play safe for drbd_cleanup
 	drbd_conf = kmalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
@@ -2082,7 +2105,6 @@ int __init drbd_init(void)
 
 		init_MUTEX(&mdev->device_mutex);
 		if (!tl_init(mdev)) goto Enomem;
-		if (!drbd_init_ee(mdev)) goto Enomem;
 	}
 
 #if CONFIG_PROC_FS
@@ -2124,9 +2146,6 @@ int __init drbd_init(void)
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
 	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
-	if (use_nbd_major) {
-		printk(KERN_INFO DEVICE_NAME": hijacking NBD device major!\n");
-	}
 	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", MAJOR_NR);
 
 	return 0; // Success!

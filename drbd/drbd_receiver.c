@@ -51,8 +51,6 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-#define EE_MININUM 32    // @4k pages => 128 KByte
-
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
 #ifdef __arch_um__
@@ -137,11 +135,94 @@ STATIC inline int is_syncer_blk(drbd_dev *mdev, u64 block_id)
 }
 #endif //PARANOIA
 
+#define GFP_TRY	( __GFP_HIGHMEM | __GFP_NOWARN )
+
+STATIC int drbd_process_ee(drbd_dev *mdev, int be_sleepy);
+
+/**
+ * drbd_bp_alloc: Returns a page. Fails only if a signal comes in.
+ */
+STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
+{
+	struct page *page;
+	DEFINE_WAIT(wait);
+
+	if ( drbd_pp_vacant == 
+	     (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count/2 ) {
+		drbd_kick_lo(mdev);
+	}
+
+	spin_lock(&drbd_pp_lock);
+	if ( (page = drbd_pp_pool) ) {
+		drbd_pp_pool = (struct page*)page->private;
+		drbd_pp_vacant--;
+	}
+	spin_unlock(&drbd_pp_lock);
+	if ( page ) goto got_page;
+
+	drbd_process_ee(mdev,1);
+ 
+	spin_lock(&drbd_pp_lock);
+	if ( (page = drbd_pp_pool) ) {
+		drbd_pp_pool = (struct page*)page->private;
+		drbd_pp_vacant--;
+	}
+	spin_unlock(&drbd_pp_lock);
+	if ( page ) goto got_page;
+
+	for (;;) {
+		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
+
+		spin_lock(&drbd_pp_lock);
+		if ( (page = drbd_pp_pool) ) {
+			drbd_pp_pool = (struct page*)page->private;
+			drbd_pp_vacant--;
+		}
+		spin_unlock(&drbd_pp_lock);
+		if ( page ) break;
+
+		if ( atomic_read(&mdev->pp_in_use) < mdev->conf.max_buffers ) {
+			if( (page = alloc_page(GFP_TRY)) ) break;
+		}
+		drbd_kick_lo(mdev);
+		schedule();
+		finish_wait(&drbd_pp_wait, &wait);
+		if (signal_pending(current)) {
+			WARN("drbd_pp_alloc interrupted!\n");
+			return NULL;
+		}
+		// finish wait is inside, so that we are TASK_RUNNING 
+		// in _drbd_process_ee (which might sleep by itself.)
+		drbd_process_ee(mdev,1);
+	}
+	finish_wait(&drbd_pp_wait, &wait); 
+
+ got_page:
+	atomic_inc(&mdev->pp_in_use);
+
+	return page;
+}
+
+STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
+{
+	atomic_dec(&mdev->pp_in_use);
+
+	spin_lock(&drbd_pp_lock);
+	if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
+		__free_page(page);
+	} else {
+		page->private = (unsigned long)drbd_pp_pool;
+		drbd_pp_pool = page;
+		drbd_pp_vacant++;
+	}
+	spin_unlock(&drbd_pp_lock);
+
+	wake_up(&drbd_pp_wait);
+}
+
 /*
 You need to hold the ee_lock:
  drbd_free_ee()
- drbd_get_ee()
- drbd_put_ee()
  _drbd_process_ee()
 
 You must not have the ee_lock:
@@ -155,176 +236,84 @@ You must not have the ee_lock:
  drbd_wait_ee()
 */
 
-STATIC int _drbd_alloc_ee(drbd_dev *mdev,struct page* page,int mask)
+struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev, 
+				     unsigned int data_size,
+				     unsigned int gfp_mask)
 {
 	struct Tl_epoch_entry* e;
-
-	e = kmem_cache_alloc(drbd_ee_cache, mask);
-	if( e == NULL ) return FALSE;
-
-	drbd_ee_init(e,page);
-	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->w.list,&mdev->free_ee);
-	mdev->ee_vacant++;
-	spin_unlock_irq(&mdev->ee_lock);
-
-	return TRUE;
-}
-
-/* bool */
-STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
-{
+	struct bio_vec *bvec;
 	struct page *page;
+	struct bio *bio;
+	unsigned int ds;
+	int i;
 
-	page=alloc_page(mask);
-	if(!page) return FALSE;
+	e = kmem_cache_alloc(drbd_ee_cache, gfp_mask);
+	if (!e) return NULL;
 
-	if(!_drbd_alloc_ee(mdev,page,GFP_KERNEL)) {
-		__free_page(page);
-		return FALSE;
+	bio = bio_alloc(GFP_KERNEL, div_ceil(data_size,PAGE_SIZE));
+	if (!bio) goto fail1;
+
+	bio->bi_bdev = mdev->backing_bdev;
+	
+	ds = data_size;
+	while(ds) {
+		page = drbd_pp_alloc(mdev, gfp_mask);
+		if (!page) goto fail2;
+		bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0);
+		ds -= min_t(int, ds, PAGE_SIZE);
 	}
 
-	return TRUE;
+	bio->bi_private = e;
+	e->mdev = mdev;
+	e->ee_size = bio->bi_size;
+	D_ASSERT( data_size == bio->bi_size);
+	e->private_bio = bio;
+	e->block_id = ID_VACANT;
+	INIT_HLIST_NODE(&e->colision);
+
+	return e;
+ fail2:
+	__bio_for_each_segment(bvec, bio, i, 0) {
+		drbd_pp_free(mdev,bvec->bv_page);
+	}
+	bio_put(bio);
+ fail1:
+	kmem_cache_free(drbd_ee_cache, e);
+	
+	return NULL;
 }
 
-STATIC struct page* drbd_free_ee(drbd_dev *mdev, struct list_head *list)
+void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 {
-	struct list_head *le;
-	struct Tl_epoch_entry* e;
-	struct page* page;
+	struct bio *bio=e->private_bio;
+	struct bio_vec *bvec;
+	int i;
 
-	MUST_HOLD(&mdev->ee_lock);
+	__bio_for_each_segment(bvec, bio, i, 0) {
+		drbd_pp_free(mdev,bvec->bv_page);
+	}
 
-	D_ASSERT(!list_empty(list));
-	le = list->next;
-	e = list_entry(le, struct Tl_epoch_entry, w.list);
-	list_del(le);
-
-	page = drbd_bio_get_page(&e->private_bio);
-
-	D_ASSERT(page == e->ee_bvec.bv_page);
-	page = e->ee_bvec.bv_page;
+	bio_put(bio);
 
 	kmem_cache_free(drbd_ee_cache, e);
-	mdev->ee_vacant--;
-
-	return page;
-}
-
-int drbd_init_ee(drbd_dev *mdev)
-{
-	while(mdev->ee_vacant < EE_MININUM ) {
-		if(!drbd_alloc_ee(mdev,GFP_USER)) {
-			ERR("Failed to allocate %d EEs !\n",EE_MININUM);
-			return 0;
-		}
-	}
-	return 1;
 }
 
 int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 {
 	int count=0;
+	struct Tl_epoch_entry* e;
+	struct list_head *le;
 
 	spin_lock_irq(&mdev->ee_lock);
 	while(!list_empty(list)) {
-		__free_page(drbd_free_ee(mdev,list));
+		le = list->next;
+		e = list_entry(le, struct Tl_epoch_entry, w.list);
+		drbd_free_ee(mdev,e);
 		count++;
 	}
 	spin_unlock_irq(&mdev->ee_lock);
 
 	return count;
-}
-
-#define GFP_TRY	( __GFP_HIGHMEM | __GFP_NOWARN )
-
-STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy);
-
-/**
- * drbd_get_ee: Returns an Tl_epoch_entry; might sleep. Fails only if
- * a signal comes in.
- */
-struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
-{
-	struct list_head *le;
-	struct Tl_epoch_entry* e;
-	DEFINE_WAIT(wait);
-
-	MUST_HOLD(&mdev->ee_lock);
-
-	if(mdev->ee_vacant == EE_MININUM / 2) {
-		spin_unlock_irq(&mdev->ee_lock);
-		drbd_kick_lo(mdev);
-		spin_lock_irq(&mdev->ee_lock);
-	}
-
-	if(list_empty(&mdev->free_ee)) _drbd_process_ee(mdev,1);
-
-	if(list_empty(&mdev->free_ee)) {
-		for (;;) {
-			prepare_to_wait(&mdev->ee_wait, &wait, 
-					TASK_INTERRUPTIBLE);
-			if(!list_empty(&mdev->free_ee)) break;
-			spin_unlock_irq(&mdev->ee_lock);
-			if( ( mdev->ee_vacant+mdev->ee_in_use) < 
-			      mdev->conf.max_buffers ) {
-				if(drbd_alloc_ee(mdev,GFP_TRY)) {
-					spin_lock_irq(&mdev->ee_lock);
-					break;
-				}
-			}
-			drbd_kick_lo(mdev);
-			schedule();
-			spin_lock_irq(&mdev->ee_lock);
-			finish_wait(&mdev->ee_wait, &wait);
-			if (signal_pending(current)) {
-				WARN("drbd_get_ee interrupted!\n");
-				return 0;
-			}
-			// finish wait is inside, so that we are TASK_RUNNING 
-			// in _drbd_process_ee (which might sleep by itself.)
-			_drbd_process_ee(mdev,1);
-		}
-		finish_wait(&mdev->ee_wait, &wait); 
-	}
-
-	le=mdev->free_ee.next;
-	list_del(le);
-	mdev->ee_vacant--;
-	mdev->ee_in_use++;
-	e=list_entry(le, struct Tl_epoch_entry, w.list);
-
-	D_ASSERT(e->private_bio.bi_idx == 0);
-	drbd_ee_init(e,e->ee_bvec.bv_page); // reinitialize
-
-	e->block_id = !ID_VACANT;
-	SET_MAGIC(e);
-	return e;
-}
-
-void drbd_put_ee(drbd_dev *mdev,struct Tl_epoch_entry *e)
-{
-	MUST_HOLD(&mdev->ee_lock);
-
-	D_ASSERT(page_count(drbd_bio_get_page(&e->private_bio)) == 1);
-
-	mdev->ee_in_use--;
-	mdev->ee_vacant++;
-	e->block_id = ID_VACANT;
-	INVALIDATE_MAGIC(e);
-	list_add_tail(&e->w.list,&mdev->free_ee);
-
-	if((mdev->ee_vacant * 2 > mdev->ee_in_use ) &&
-	   ( mdev->ee_vacant + mdev->ee_in_use > EE_MININUM) ) {
-		__free_page(drbd_free_ee(mdev,&mdev->free_ee));
-	}
-	if(mdev->ee_in_use == 0) {
-		while( mdev->ee_vacant > EE_MININUM ) {
-			__free_page(drbd_free_ee(mdev,&mdev->free_ee));
-		}
-	}
-
-	wake_up(&mdev->ee_wait);
 }
 
 STATIC void reclaim_net_ee(drbd_dev *mdev)
@@ -339,9 +328,9 @@ STATIC void reclaim_net_ee(drbd_dev *mdev)
 
 	list_for_each_safe(le, tle, &mdev->net_ee) {
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
-		if( page_count(drbd_bio_get_page(&e->private_bio)) > 1 ) break;
+		if( drbd_bio_has_active_page(e->private_bio) ) break;
 		list_del(le);
-		drbd_put_ee(mdev,e);
+		drbd_free_ee(mdev,e);
 	}
 }
 
@@ -380,8 +369,8 @@ STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 		spin_unlock_irq(&mdev->ee_lock);
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
 		ok = ok && e->w.cb(mdev,&e->w,0);
+		drbd_free_ee(mdev,e);
 		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
 	}
 
 	clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
@@ -417,7 +406,7 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 		   is_syncer_blk(mdev,e->block_id)) {
 			++n;
 		}
-		drbd_put_ee(mdev,e);
+		drbd_free_ee(mdev,e);
 	}
 
 	spin_unlock_irq(&mdev->ee_lock);
@@ -790,29 +779,29 @@ STATIC struct Tl_epoch_entry *
 read_in_block(drbd_dev *mdev, int data_size)
 {
 	struct Tl_epoch_entry *e;
+	struct bio_vec *bvec;
+	struct page *page;
 	struct bio *bio;
-	int rr;
+	int ds,i,rr;
 
-	spin_lock_irq(&mdev->ee_lock);
-	e=drbd_get_ee(mdev);
-	spin_unlock_irq(&mdev->ee_lock);
+	e = drbd_alloc_ee(mdev,data_size,GFP_KERNEL);
 	if(!e) return 0;
-
-	bio = &e->private_bio;
-
-	rr=drbd_recv(mdev, drbd_bio_kmap(bio), data_size);
-	drbd_bio_kunmap(bio);
-
-	if ( rr != data_size) {
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
-		WARN("short read receiving data block: read %d expected %d\n",
-			rr, data_size);
-		return 0;
+	bio = e->private_bio;
+	ds = data_size;
+	bio_for_each_segment(bvec, bio, i) {
+		page = bvec->bv_page;
+		rr = drbd_recv(mdev,kmap(page),min_t(int,ds,PAGE_SIZE));
+		kunmap(page);
+		if( rr != min_t(int,ds,PAGE_SIZE) ) {
+			drbd_free_ee(mdev,e);
+			WARN("short read recev data: read %d expected %d\n",
+			     rr, min_t(int,ds,PAGE_SIZE));
+			return 0;
+		}
+		ds -= rr;
 	}
-	mdev->recv_cnt+=data_size>>9;
 
+	mdev->recv_cnt+=data_size>>9;
 	return e;
 }
 
@@ -834,20 +823,29 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 			   sector_t sector, int data_size)
 {
+	struct bio_vec *bvec;
 	struct bio *bio;
-	int ok,rr;
+	int rr,i,expect,ok=1;
 
 	bio = req->master_bio;
-
 	D_ASSERT( sector == drbd_req_get_sector(req) );
+	
+	bio_for_each_segment(bvec, bio, i) {
+		expect = min_t(int,data_size,bvec->bv_len);
+		rr=drbd_recv(mdev,
+			     kmap(bvec->bv_page)+bvec->bv_offset,
+			     expect);	
+		kunmap(bvec->bv_page);
+		if (rr != expect) {
+			ok = 0;
+			break;
+		}
+		data_size -= rr;
+	}
 
-	rr=drbd_recv(mdev,drbd_bio_kmap(bio),data_size);
-	drbd_bio_kunmap(bio);
-
-	ok=(rr==data_size);
+	D_ASSERT(data_size == 0 || !ok);
 	drbd_bio_endio(bio,ok);
 	dec_ap_bio(mdev);
-
 	dec_ap_pending(mdev);
 	return ok;
 }
@@ -859,7 +857,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	int ok;
 
 	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
-	if (likely( drbd_bio_uptodate(&e->private_bio) )) {
+	if (likely( drbd_bio_uptodate(e->private_bio) )) {
 		ok = mdev->state.s.disk >= Inconsistent &&
 			mdev->state.s.pdsk >= Inconsistent;
 		if (likely( ok )) {
@@ -895,13 +893,11 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write resync data to local disk.\n");
 		drbd_send_ack(mdev,NegAck,e);
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
+		drbd_free_ee(mdev,e);
 		return TRUE;
 	}
 
-	drbd_ee_prepare_write(mdev,e,sector,data_size);
+	drbd_ee_prepare_write(mdev,e,sector);
 	e->w.cb     = e_end_resync_block;
 
 	spin_lock_irq(&mdev->ee_lock);
@@ -910,7 +906,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 
 	inc_unacked(mdev);
 
-	drbd_generic_make_request(WRITE,&e->private_bio);
+	drbd_generic_make_request(WRITE,e->private_bio);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -990,7 +986,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	atomic_inc(&mdev->epoch_size);
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
-		if(likely(drbd_bio_uptodate(&e->private_bio))) {
+		if(likely(drbd_bio_uptodate(e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
 			if (ok && test_bit(SYNC_STARTED,&mdev->flags) )
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
@@ -1006,7 +1002,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		return ok;
 	}
 
-	if(unlikely(!drbd_bio_uptodate(&e->private_bio))) {
+	if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
 		ok = drbd_io_error(mdev);
 	}
 
@@ -1050,12 +1046,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
-	/* I expect a block to be a multiple of 512 byte, and
-	 * no more than 4K (PAGE_SIZE). is this too restrictive?
-	 */
+	if( data_size > 4096 ) INFO("data_size=%d\n",data_size);
 	ERR_IF(data_size == 0) return FALSE;
 	ERR_IF(data_size &  0x1ff) return FALSE;
-	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
+	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
@@ -1073,7 +1067,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
-	drbd_ee_prepare_write(mdev, e, sector, data_size);
+	drbd_ee_prepare_write(mdev, e, sector);
 	e->w.cb     = e_end_block;
 
 	/* This wait_event is here to make sure that never ever an
@@ -1159,7 +1153,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
-	drbd_generic_make_request(WRITE,&e->private_bio);
+	drbd_generic_make_request(WRITE,e->private_bio);
 
 	receive_data_tail(mdev,data_size);
 	return TRUE;
@@ -1168,9 +1162,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	atomic_inc(&mdev->epoch_size);
 	dec_local(mdev);
  out1:
-	spin_lock_irq(&mdev->ee_lock);
-	drbd_put_ee(mdev,e);
-	spin_unlock_irq(&mdev->ee_lock);
+	drbd_free_ee(mdev,e);
 	return rv;
 }
 
@@ -1198,7 +1190,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	*/
 
-	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("%s:%d: sector: %lu, size: %d\n", __FILE__, __LINE__,
 				(unsigned long)sector,size);
 		return FALSE;
@@ -1209,13 +1201,11 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
-	spin_lock_irq(&mdev->ee_lock);
-	e=drbd_get_ee(mdev);
-	if(!e) {
-		spin_unlock_irq(&mdev->ee_lock);
-		return FALSE;
-	}
+	e = drbd_alloc_ee(mdev,size,GFP_KERNEL);
+	if (!e) return FALSE;
+
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
+	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
@@ -1223,13 +1213,11 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not satisfy peer's read request, no local data.\n");
 		drbd_send_ack(mdev,NegDReply,e);
-		spin_lock_irq(&mdev->ee_lock);
-		drbd_put_ee(mdev,e);
-		spin_unlock_irq(&mdev->ee_lock);
+		drbd_free_ee(mdev,e);
 		return TRUE;
 	}
 
-	drbd_ee_prepare_read(mdev,e,sector,size);
+	drbd_ee_prepare_read(mdev,e,sector);
 
 	switch (h->command) {
 	case DataRequest:
@@ -1245,7 +1233,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		if (!drbd_rs_begin_io(mdev,sector)) {
 			// we have been interrupted, probably connection lost!
 			D_ASSERT(signal_pending(current));
-			drbd_put_ee(mdev,e);
+			drbd_free_ee(mdev,e);
 			return 0;
 		}
 		break;
@@ -1256,7 +1244,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 
 	mdev->read_cnt += size >> 9;
 	inc_unacked(mdev);
-	drbd_generic_make_request(READ,&e->private_bio);
+	drbd_generic_make_request(READ,e->private_bio);
 	if (atomic_read(&mdev->local_cnt) >= (mdev->conf.max_epoch_size>>4) ) {
 		drbd_kick_lo(mdev);
 	}
@@ -1837,7 +1825,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt)==0 );
 	D_ASSERT(mdev->oldest_barrier->n_req == 0);
 
-	D_ASSERT(mdev->ee_in_use == 0);
+	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
 	D_ASSERT(list_empty(&mdev->read_ee)); // done by termination of worker
 	D_ASSERT(list_empty(&mdev->active_ee)); // done here
 	D_ASSERT(list_empty(&mdev->sync_ee)); // done here

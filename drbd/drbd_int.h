@@ -611,14 +611,13 @@ typedef struct drbd_request drbd_request_t;
  */
 struct Tl_epoch_entry {
 	struct drbd_work    w;
-	struct bio private_bio; // private bio struct, NOT a pointer
+	struct bio *private_bio;
 	u64    block_id;
 	long magic;
 	unsigned int ee_size;
 	sector_t ee_sector;
 	struct hlist_node colision;
-	// THINK: maybe we rather want bio_alloc(GFP_*,1)
-	struct bio_vec ee_bvec;
+	drbd_dev *mdev;
 };
 
 /* flag bits */
@@ -746,7 +745,6 @@ struct Drbd_Conf {
 	u32 *p_gen_cnt;
 	atomic_t epoch_size;
 	spinlock_t ee_lock;
-	struct list_head free_ee;   // available
 	struct list_head active_ee; // IO in progress
 	struct list_head sync_ee;   // IO in progress
 	struct list_head done_ee;   // send ack
@@ -757,8 +755,7 @@ struct Drbd_Conf {
 	spinlock_t pr_lock;
 	struct list_head app_reads;
 	struct list_head resync_reads;
-	int ee_vacant;
-	int ee_in_use;
+	atomic_t pp_in_use;
 	wait_queue_head_t ee_wait;
 	struct list_head busy_blocks;
 	struct page *md_io_page;      // one page buffer for md_io
@@ -950,9 +947,10 @@ struct bm_extent {
 #endif
 
 /* Sector shift value for hash functions for tl_hash table and ee_hash
-   table. A value of 3 makes all IOs in on 4K block to make to the same
+   table. A value of 6 makes all IOs in on 32K block to make to the same
    slot of the hash table. */
-#define HT_SHIFT 3
+#define HT_SHIFT 6
+#define DRBD_MAX_SEGMENT_SIZE (1<<(9+HT_SHIFT)) 
 
 extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);
@@ -997,6 +995,11 @@ extern kmem_cache_t *drbd_request_cache;
 extern kmem_cache_t *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
 
+extern struct page* drbd_pp_pool; // drbd's page pool
+extern spinlock_t   drbd_pp_lock;
+extern int          drbd_pp_vacant;
+extern wait_queue_head_t drbd_pp_wait;
+
 // drbd_req
 #define ERF_NOTLD    2   /* do not call tl_dependence */
 extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
@@ -1034,9 +1037,10 @@ extern void resync_timer_fn(unsigned long data);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
-extern int drbd_init_ee(drbd_dev* mdev);
-extern void drbd_put_ee(drbd_dev* mdev,struct Tl_epoch_entry *e);
-extern struct Tl_epoch_entry* drbd_get_ee(drbd_dev* mdev);
+extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev, 
+					    unsigned int data_size,
+					    unsigned int gfp_mask);
+extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
 extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
 
 // drbd_proc.c

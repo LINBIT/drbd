@@ -146,24 +146,6 @@ static inline void drbd_bio_kunmap(struct bio *bio)
 }
 #endif
 
-static inline void drbd_ee_init(struct Tl_epoch_entry *e,struct page *page)
-{
-	struct bio * const bio = &e->private_bio;
-	struct bio_vec * const vec = &e->ee_bvec;
-
-	memset(e, 0, sizeof(*e));
-	bio_init(bio);
-
-	bio->bi_io_vec = vec;
-	bio->bi_destructor = NULL;
-	vec->bv_page = page;
-	bio->bi_size = vec->bv_len = PAGE_SIZE;
-	bio->bi_max_vecs = bio->bi_vcnt = 1;
-	vec->bv_offset = 0;
-
-	e->block_id = ID_VACANT;
-}
-
 static inline void drbd_bio_set_pages_dirty(struct bio *bio)
 {
 	bio_set_pages_dirty(bio);
@@ -175,44 +157,19 @@ static inline void drbd_bio_set_end_io(struct bio *bio, bio_end_io_t * h)
 }
 
 static inline void
-drbd_ee_bio_prepare(drbd_dev *mdev, struct Tl_epoch_entry* e,
-		    sector_t sector, int size)
-{
-	struct bio * const bio = &e->private_bio;
-	struct bio_vec * const vec = &e->ee_bvec;
-	struct page * const page = vec->bv_page;
-	D_ASSERT(mdev->backing_bdev);
-
-	/* Clear plate. */
-	bio_init(bio);
-
-	bio->bi_io_vec = vec;
-	bio->bi_destructor = NULL;
-	vec->bv_page = page;
-	vec->bv_offset = 0;
-	bio->bi_max_vecs = bio->bi_vcnt = 1;
-
-	bio->bi_bdev = mdev->backing_bdev;
-	bio->bi_private = mdev;
-
-	e->ee_sector = bio->bi_sector = sector;
-	e->ee_size = bio->bi_size = bio->bi_io_vec->bv_len = size;
-}
-
-static inline void
 drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e,
-		      sector_t sector, int size)
+		      sector_t sector)
 {
-	drbd_ee_bio_prepare(mdev,e,sector,size);
-	e->private_bio.bi_end_io = drbd_dio_end_sec;
+	e->ee_sector = e->private_bio->bi_sector = sector;
+	e->private_bio->bi_end_io = drbd_dio_end_sec;
 }
 
 static inline void
 drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
-		     sector_t sector, int size)
+		     sector_t sector)
 {
-	drbd_ee_bio_prepare(mdev,e,sector,size);
-	e->private_bio.bi_end_io = enslaved_read_bi_end_io;
+	e->ee_sector = e->private_bio->bi_sector = sector;
+	e->private_bio->bi_end_io = enslaved_read_bi_end_io;
 }
 
 static inline void
@@ -245,10 +202,16 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	req->mdev      = mdev;
 }
 
-static inline struct page* drbd_bio_get_page(struct bio *bio)
+static inline int drbd_bio_has_active_page(struct bio *bio)
 {
-	struct bio_vec *bvec = bio_iovec(bio);
-	return bvec->bv_page;
+	struct bio_vec *bvec;
+	int i;
+
+	__bio_for_each_segment(bvec, bio, i, 0) {
+		if (page_count(bvec->bv_page) > 1) return 1;
+	}
+
+	return 0;
 }
 
 /*
@@ -304,12 +267,6 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 		// unplugging should not happen automatically...
 	}
 	spin_unlock_irq(q->queue_lock);
-}
-
-static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
-{
-	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
-	return _drbd_send_page(mdev,bvec->bv_page,bvec->bv_offset,bvec->bv_len);
 }
 
 static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)

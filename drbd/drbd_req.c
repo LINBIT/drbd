@@ -356,7 +356,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		else            mdev->read_cnt += size>>9;
 
 		// in 2.4.X, READA are submitted as READ.
-		drbd_generic_make_request(rw,drbd_req_private_bio(req));
+		req->private_bio->bi_rw = rw;
+		generic_make_request(req->private_bio);
 	}
 
 	// up_read(mdev->device_lock);
@@ -377,8 +378,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	 */
 	D_ASSERT(bio->bi_size > 0);
 	D_ASSERT( (bio->bi_size & 0x1ff) == 0);
-	D_ASSERT(bio->bi_size <= PAGE_SIZE);
-	D_ASSERT(bio->bi_vcnt == 1);
+	D_ASSERT(bio->bi_size <= DRBD_MAX_SEGMENT_SIZE);
 	D_ASSERT(bio->bi_idx == 0);
 
 	s_enr = bio->bi_sector >> (AL_EXTENT_SIZE_B-9);
