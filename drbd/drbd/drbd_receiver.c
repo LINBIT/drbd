@@ -134,14 +134,22 @@
 
 	e=BH_PRIVATE(bh);
 	spin_lock_irqsave(&mdev->ee_lock,flags);
-	list_del(&e->list);
 
 	mark_buffer_uptodate(bh, uptodate);
 
 	clear_bit(BH_Dirty, &bh->b_state);
 	clear_bit(BH_Lock, &bh->b_state);
 
-	list_add(&e->list,&mdev->done_ee);
+	/* Do not move a BH if someone is in wait_on_buffer */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
+	if(bh->b_count == 0)
+#else
+	if(atomic_read(&bh->b_count) == 0)
+#endif
+	{
+		list_del(&e->list);
+		list_add(&e->list,&mdev->done_ee);
+	}
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	if (waitqueue_active(&bh->b_wait))
@@ -445,17 +453,14 @@ int drbd_release_ee(struct Drbd_Conf* mdev,struct list_head* list)
 			list_add(le,&mdev->done_ee);
 			continue;
 		}
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
-		init_waitqueue_head(&e->bh->b_wait);
-#endif
 		spin_unlock_irq(&mdev->ee_lock);
-		/*
-		printk(KERN_ERR DEVICE_NAME 
-		       "%d: Waiting for bh=%p, blocknr=%ld\n",
-		       (int)(mdev-drbd_conf),e->bh,e->bh->b_blocknr);
-		*/
 		wait_on_buffer(e->bh);
 		spin_lock_irq(&mdev->ee_lock);
+		/* The IRQ handler does not move a list entry if someone is 
+		   in wait_on_buffer for that entry, therefore we have to
+		   move it here. */
+		list_del(le); 
+		list_add(le,&mdev->done_ee);
 	}
 	spin_unlock_irq(&mdev->ee_lock);
 }
