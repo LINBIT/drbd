@@ -1350,11 +1350,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
-
-	if (!mdev->mbds_id) {
-		mdev->mbds_id = bm_init(MKDEV(MAJOR_NR, minor));
-	}
-
 	if (mdev->cstate == WFReportParams) {
 		int have_good,quick,sync;
 		printk(KERN_INFO DEVICE_NAME "%d: Connection established.\n"

@@ -1037,6 +1037,9 @@ int __init drbd_init(void)
 	if (drbd_pr_mempool == NULL)
 		return -ENOMEM;
 
+	blksize_size[MAJOR_NR] = drbd_blocksizes;
+	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
+
 	for (i = 0; i < minor_count; i++) {
 		drbd_conf[i].sync_conf.rate=250;
 		drbd_conf[i].sync_conf.group=0;
@@ -1065,7 +1068,7 @@ int __init drbd_init(void)
 		drbd_conf[i].read_cnt = 0;
 		atomic_set(&drbd_conf[i].pending_cnt,0);
 		atomic_set(&drbd_conf[i].unacked_cnt,0);
-		drbd_conf[i].mbds_id = 0;
+		drbd_conf[i].mbds_id = bm_init(MKDEV(MAJOR_NR, i));
 		/* If the WRITE_HINT_QUEUED flag is set but it is not
 		   actually queued the functionality is completely disabled */
 		if(disable_io_hints) drbd_conf[i].flags=WRITE_HINT_QUEUED;
@@ -1136,9 +1139,6 @@ int __init drbd_init(void)
 
 	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
 	/*   blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), NULL); */
-
-	blksize_size[MAJOR_NR] = drbd_blocksizes;
-	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	lock_kernel();
@@ -1322,7 +1322,11 @@ int bm_resize(struct BitMap* sbm, unsigned long size_kb)
 	// Calculate the number of long words needed, round it up, and
 	// finally convert it to bytes.
 
-	if(size == 0) return 0;
+	if(size == 0) {
+		sbm->size = size;
+		sbm->bm = 0;
+		return 1;
+	}
 
 	obm = sbm->bm;
 	nbm = vmalloc(size);
@@ -1392,8 +1396,7 @@ int bm_set_bit(struct BitMap* sbm, sector_t sector, int size, int bit)
 	int ret=0;
 
 	if(sbm == NULL) {
-		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
-		       "device size!\n");
+		printk(KERN_ERR DEVICE_NAME"X: No BitMap !?\n");
 		return 0;
 	}
 
@@ -1430,8 +1433,7 @@ int bm_get_bit(struct BitMap* sbm, sector_t sector, int size)
 	int ret=0;
 
 	if(sbm == NULL) {
-		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
-		       "device size!\n");
+		printk(KERN_ERR DEVICE_NAME"X: No BitMap !?\n");
 		return 0;
 	}
 
