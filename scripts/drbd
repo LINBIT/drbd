@@ -64,14 +64,6 @@ case "$1" in
 	done
 	echo "."
 	$DRBDADM wait_con_int # User interruptible version of wait_connect all
-	for I in $RESOURCES; do
-	    WAIT_TS=`$DRBDADM sh-wait-st $I`
-	    CSTATE=`$DRBDADM cstate $I`
-	    if [ "$WAIT_TS" == "set" -a $CSTATE == "SyncTarget" ]; then
-	        echo "Waiting until sync on $I finished."
-		$DRBDADM wait_sync $I
-	    fi
-	done
 	;;
     stop)
 	echo -n "Stopping all DRBD resources"

@@ -182,8 +182,7 @@ resource drbd0 {
     <manvolnum>8</manvolnum></citerefentry> for detailed description
     of this section's parameters.
     Optional parameters:
-    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>,
-    <option>wait-sync-target</option>.
+    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>.
   </para>
   </listitem>
 </varlistentry>

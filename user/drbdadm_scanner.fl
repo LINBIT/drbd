@@ -214,8 +214,7 @@ PORT			  {WSC}port{ASSIGN}{NUM}
 <STARTUP>{
   wfc-timeout		do_assign(NUM); CP; return TK_WFC_TIMEOUT;
   degr-wfc-timeout	do_assign(NUM); CP; return TK_DEGR_WFC_TIMEOUT;
-  wait-sync-target	yy_push_state(SEMICOLON); CP; return TK_WAIT_SYNC_TARGET;
-  {NDELIM}		expect_error("one of 'wfc-timeout|degr-wfc-timeout|wait-sync-target'");
+  {NDELIM}		expect_error("one of 'wfc-timeout|degr-wfc-timeout'");
 }
 
 <DISK>{
