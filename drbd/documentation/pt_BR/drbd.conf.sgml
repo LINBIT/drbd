@@ -1,0 +1,233 @@
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<refentry>
+  <docinfo><date>26 Sep 2001</date></docinfo>
+  
+  <refmeta>
+    <refentrytitle>drbd.conf</refentrytitle>
+    <manvolnum>5</manvolnum>
+  </refmeta>
+  
+  <refnamediv>
+    <refname>drbd.conf</refname>
+    <refpurpose>O aquivo de configuração dos dispositivos DRBD</refpurpose>
+    
+  </refnamediv>
+  <refsect1>
+    <title>INTRODUÇÃO</title>
+    <para>
+      O arquivo <option>/etc/drbd.conf</option> é lido
+      pelos scripts <option>/etc/init.d/drbd</option> e 
+      <option>/etc/ha.d/resource.d/datadisk</option> que
+      são incluídos com o pacote DRBD.
+    </para>
+    <para>
+      O formato do arquivo foi projetado para permitir o uso
+      de arquivos idênticos em ambas máquinas do cluster. Isso
+      facilita o gerenciamento do cluster.
+      
+      <example>
+	<title>Um pequeno arquivo drbd.conf</title>
+	<programlisting>
+	  resource drbd0 {
+	    protocol=C
+	    fsck-cmd=fsck.ext2 -p -y
+
+	    on thost1 {
+	      device=/dev/nb1
+	      disk=/dev/hda7
+	      address=10.1.1.31
+	      port=7789
+	    }
+
+	    on thost2 {
+	      device=/dev/nb1
+	      disk=/dev/hda7
+	      address=10.1.1.32
+	      port=7789
+	    }
+	  }	
+	</programlisting>
+      </example>
+      Neste exemplo há um único recurso DRBD (chamado de drbd0) que
+      usa o protocolo C na conexão entre as máquinas do cluster. Este
+      recurso DRBD utiliza um sistema de arquivos do tipo ext2, uma vez
+      que o comando para checá-lo é <replaceable>fsck.ext2 -p -y</replaceable>.
+      O dispositivo que está rodando em <replaceable>thost1</replaceable> usa
+      <replaceable>/dev/nb1</replaceable> como dispositivo para sua aplicação,
+      e <replaceable>/dev/hda7</replaceable> como dispositivo de armazenamento
+      (neste caso, uma partição em um disco rígido IDE). Os endereços de IP são
+      usados para especificar a interface de rede a ser usada.
+    </para>
+    <para>
+      Podem haver várias seções em um único arquivo drbd.conf.
+    </para>
+  </refsect1>
+  <refsect1>
+    <title>FORMATO DO ARQUIVO DE CONFIGURAÇÃO</title>
+    <para>
+      O arquivo consiste de seções e linhas com parâmetros.
+      Um seção começa com uma palavra-chave, as vezes seguidos
+      de um parâmetro e então seguido de uma chave <quote>{</quote>. 
+      Uma segunda chave <quote>}</quote> termina uma seção.
+    </para>
+    <para>
+      Uma linha de parâmetro começa com um identificador de parâmetro
+      seguido por um sinal de igualdade <quote>=</quote>. Todo caractere
+      que segue o sinal de igualdada é considerado o valor do parâmetro.
+      Não deve haver espaços em branco entre o identificador e o valor
+      do parâmetro. Uma exeção são parâmetros que têm valores Booleanos
+      que apenas consistem do identificador.
+    </para>
+    <para>
+      O arquivo de configuração pode ter linhas de comentário que
+      devem começar com <quote>#</quote>.
+    </para>
+    <refsect2>
+      <title>SEÇÕES</title>
+      <variablelist>
+	<varlistentry>
+	  <term><option>resource <replaceable>nome</replaceable></option></term>
+	  <listitem><para>
+	      Configura um recurso DRBD.
+	      Cada seção resource precisa ter duas seções
+	      (keyword <option>on</option>) e pode ter uma seção
+	      <option>net</option> e uma seção <option>disk</option>.
+	      Parâmetros requeridos nesta seção: <option>protocol</option>,
+	      <option>fsck-cmd</option>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>on <replaceable>nome-do-host</replaceable></option></term>
+	  <listitem><para>
+	      Possui os parâmetros de confiração necessários para um
+	      recurso DRBD.
+	      Parâmetros requeridos nesta seção: <option>device</option>,
+	      <option>disk</option>, <option>address</option>, <option>port</option>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>disk</option></term>
+	  <listitem><para>
+	      Esta seção configura em maior detalhe as propriedades do
+	      dispositivo de armazenamento de um recurso DRBD.
+	      Para mais informações consulte
+	      <citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry>
+	      para informações detalhadas sobre os parâmetros.
+	      Parâmetros aceitos: <option>disk-size</option>, <option>do-panic</option>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>net</option></term>
+	  <listitem><para>
+	      Esta seção permite fazer-se ajustes nas propriedades do
+	      DRBD em maior detalhe. Favor consultar
+	      <citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry>
+	      para uma descrição detalhada dos parâmetros permitidos nesta seção.
+	      Parâmetros permitidos: <option>sync-rate</option>, <option>connect-int</option>,
+	      <option>skip-sync</option>, <option>ping-int</option>, <option>timeout</option>,
+	      <option>tl-size</option>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+      </variablelist>
+    </refsect2>
+    <refsect2>
+      <title>PARÂMETROS</title>
+      <variablelist>
+	<varlistentry>
+	  <term><option>protocol=<replaceable>identificação-protocolo</replaceable></option></term>
+	  <listitem><para>
+	      <replaceable>identificação-protocolo</replaceable> pode ser A, B ou C. 
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>fsck-cmd=<replaceable>comando</replaceable></option></term>
+	  <listitem><para>
+	      Quando ocorrer a tomada de um recurso por uma outra máquina,
+	      o script <option>datadisk</option> executa
+	      <replaceable>comando</replaceable> no dispositivo de armazenamento
+	      relativo ao recurso sendo tomado.
+	      Specifique aqui o comando necessário para fazer seu sistema de
+	      arquivos ficar em um estado consistente.
+	      No caso de um sistema de arquivos com journaling, você pode
+	      usar simplesmente <replaceable>/bin/true</replaceable>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>port=<replaceable>número</replaceable></option></term>
+	  <listitem><para>
+	      Cada recurso DRBD precisa de uma porta TCP.
+	      <replaceable>número</replaceable> é o número da porta a ser usada
+	      para conectar a outra máquina. Dois recursos DRBD não podem usar
+	      a mesma porta.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>device=<replaceable>nome</replaceable></option></term>
+	  <listitem><para>
+	      O nome do dispositivo (de tipo <quote>block</quote>) correspondente ao recurso
+	      sendo descrito. Você deve usar este dispositivo com sua aplicação
+	      (como por exemplo, seu sistema de arquivos) e não o dispositivo
+	      especificado no parâmetro <option>disk=</option>.
+	    </para>
+	    <para>
+	      Estes disposistivos devem ter números <quote>major</quote>
+	      iguais ao do driver DRBD. Atualmente este número é 43 e os
+	      dispositivos correspondentes são geralmente chamados de 
+	      <option>/dev/nb0</option>, <option>/dev/nb1</option>, etc.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>disk=<replaceable>nome</replaceable></option></term>
+	  <listitem><para>
+	      DRBD usa este dispositivo (de tipo <quote>block</quote>)
+	      é usado para gravar e ler dados.
+	      Nunca acesse tal dispositivo enquanto DRBD estiver usando-o. 
+	      Este conselho é válido inclusive para comandos do tipo
+	      <citerefentry><refentrytitle>dumpe2fs</refentrytitle><manvolnum>8</manvolnum></citerefentry>.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>address=<replaceable>endereço-ip</replaceable></option></term>
+	  <listitem><para>
+	      Um recurso precisa de um endereço IP por dispositivo que é usado
+	      para esperar por conexões vindas da sua máquina parceira.
+	    </para>
+	  </listitem>
+	</varlistentry>
+      </variablelist>
+    </refsect2>
+  </refsect1>
+  <refsect1>
+    <title>Autor</title>
+    <simpara>Escrito por Philipp Reisner <email>philipp.reisner@gmx.at</email></simpara>
+    <simpara>Traduzido por Cleber Rodrigues <email>cleberrrjr@bol.com.br</email></simpara>
+  </refsect1>
+  <refsect1>
+    <title>Relatando Bugs</title>
+    <simpara>Envie relatórios de bugs para <email>drbd-devel@lists.sourceforge.net</email>.</simpara>
+  </refsect1>
+  <refsect1>
+    <title>Direitos Autorais</title>
+    <simpara>
+      Copyright (c) 2001 Philipp Reisner. This  is  free software; 
+      see the source for copying conditions.  There is NO warranty; 
+      not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>VEJA TAMBÉM</title>
+    <para>
+      <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+	<manvolnum>8</manvolnum></citerefentry>
+    </para>
+  </refsect1>
+</refentry>
