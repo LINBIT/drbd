@@ -51,7 +51,7 @@ int config_valid=1;
 int dry_run=0;
 char* drbdsetup;
 
-/*** These functions are used to the print the config again ***/
+/*** These functions are used to the print the config ***/
 
 static char* esc(char* str)
 {
@@ -200,6 +200,17 @@ static int m_system(char** argv)
   }
 }
 
+
+#define make_options(OPT) \
+  while(OPT) { \
+    if(OPT->value) { \
+      ssprintf(argv[argc++],"--%s=%s",OPT->name,OPT->value); \
+    } else { \
+      ssprintf(argv[argc++],"--%s",OPT->name); \
+    } \
+    OPT=OPT->next; \
+  }
+
 static void conf_disk(struct d_resource* res)
 {
   char* argv[20];
@@ -213,10 +224,7 @@ static void conf_disk(struct d_resource* res)
     argv[argc++]="disk";
     argv[argc++]=res->me->disk;
     opt=res->disk_options;
-    while(opt) {
-      ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
-      opt=opt->next;
-    }
+    make_options(opt);
     argv[argc++]=0;
 
     m_system(argv);
@@ -238,13 +246,8 @@ static void conf_net(struct d_resource* res)
     ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
     ssprintf(argv[argc++],"%s:%s",res->partner->address,res->partner->port);
     argv[argc++]=res->protocol;
-
     opt=res->net_options;
-    while(opt) {
-      ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
-      opt=opt->next;
-    }
-
+    make_options(opt);
     argv[argc++]=0;
 
     m_system(argv);
@@ -263,6 +266,28 @@ int main(int argc, char** argv)
   yyparse();
 
   // TODO write real functionality...
+  /*
+    commands:
+    drbdadm mount/disk [drbd0|all]
+    drbdadm unmount/down [drbd0|all]
+    drbdadm connect [drbd0|all]
+    drbdadm disconnect [drbd0|all]
+    drbdadm primary [drbd0|all]
+    drbdadm secondary [drbd0|all]
+    drbdadm secondary_remote [drbd0|all]
+    drbdadm invalidate drbd0
+    drbdadm invalidate_remote drbd0
+    drbdadm resize drbd0
+    drbdadm helper #for scripts..
+    drbdadm dump
+    drbdadm readjust 
+
+    drbdadm options... cmd [resources...]
+
+    options:
+    --dry-run -d
+    --verbose -v
+  */
 
   find_drbdsetup(); // setup global variable drbdsetup.
   dump_conf(config);  
