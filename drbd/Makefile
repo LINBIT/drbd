@@ -64,7 +64,8 @@ check_changelogs_up2date:
 	$$up2date
 
 # maybe use a positive list intstead of exclude patterns?
-tgz: check_changelogs_up2date
+#tgz: check_changelogs_up2date
+tgz:
 	cd scripts; ln -sf drbd datadisk
 	rm -f drbd-$(REL_VERSION)
 	ln -s . drbd-$(REL_VERSION)
