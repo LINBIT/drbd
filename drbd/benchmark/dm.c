@@ -24,6 +24,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mount.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -34,6 +35,35 @@
 #include <string.h>
 
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
+
+unsigned long long fsize(int in_fd)
+{
+  struct stat dm_stat;
+  unsigned long long size;
+  
+  if(fstat(in_fd, &dm_stat))
+    {
+      fprintf(stderr,"Can not fstat\n");
+      exit(20);
+    }
+  if(S_ISBLK(dm_stat.st_mode))
+    {
+      unsigned long ls;
+      if( ioctl(in_fd,BLKGETSIZE,&ls) )
+	{
+	  fprintf(stderr,"Can not ioctl(BLKGETSIZE)\n");
+	  exit(20);
+	}
+      size=ls*512;
+    }
+  else if(S_ISREG(dm_stat.st_mode))
+    {
+      size=dm_stat.st_size;
+    }
+  else size=-1;
+
+  return size;
+}
 
 unsigned long m_strtol(const char* s)
 {
@@ -64,7 +94,7 @@ void usage(char* prgname)
 {
   fprintf(stderr,"USAGE: %s [options] \n"
 	  "  Available options:\n"
-         "    --input-pattern val -a val \n"
+          "   --input-pattern val -a val \n"
 	  "   --input-file val    -i val \n"
 	  "   --output-file val   -o val\n"
 	  "   --buffer-size val   -b val\n"
@@ -74,6 +104,7 @@ void usage(char* prgname)
 	  "   --sync              -y\n"
 	  "   --progress          -m\n"
 	  "   --performance       -p\n"
+	  "   --dialog            -d\n"
 	  "   --help              -h\n",
 	  prgname);
   exit(20);
@@ -86,7 +117,7 @@ int main(int argc, char** argv)
   size_t rr,ww;
   unsigned long seek_offs_i=0;
   unsigned long seek_offs_o=0;
-  unsigned long size=-1,rsize;
+  unsigned long long size=-1,rsize;
   int in_fd=0, out_fd=1;
   unsigned long buffer_size=65536;
   int do_sync=0;
@@ -95,6 +126,7 @@ int main(int argc, char** argv)
   struct timeval tv1,tv2;
   int use_pattern=0;
   int pattern;
+  int dialog=0,show_input_size=0;
 
   int c;
   static struct option options[] = {        
@@ -108,13 +140,15 @@ int main(int argc, char** argv)
     { "sync",         no_argument,       0, 'y' },
     { "progress",     no_argument,       0, 'm' },
     { "performance",  no_argument,       0, 'p' },
+    { "dialog",       no_argument,       0, 'd' },
     { "help",         no_argument,       0, 'h' },
+    { "show-input-size", no_argument,    0, 'w' },
     { 0,              0,                 0, 0   }
   };
 
   while(1)
     {
-      c = getopt_long(argc,argv,"i:o:b:k:l:s:ympha:",options,0);
+      c = getopt_long(argc,argv,"i:o:b:k:l:s:ympha:dw",options,0);
       if(c == -1) break;
       switch(c)
 	{
@@ -157,9 +191,16 @@ int main(int argc, char** argv)
 	  break;
 	case 'h':
 	  usage(argv[0]);
+	  break;
 	case 'a':
 	  use_pattern = 1;
 	  pattern = m_strtol(optarg);
+	  break;
+	case 'd':
+	  dialog=1;
+	  break;
+	case 'w':
+	  show_input_size=1;
 	  break;
 	}
     }
@@ -193,6 +234,28 @@ int main(int argc, char** argv)
     {
       memset(buffer,pattern,buffer_size);
       rr=buffer_size;
+    }
+
+  if( dialog && size == -1)
+    {
+      size = min(fsize(in_fd),fsize(out_fd));
+      if(size == -1) 
+	{
+	  fprintf(stderr,"Can not determine size\n");
+	  exit(20);	
+	}
+    }
+
+  if( show_input_size )
+    {
+      size = fsize(in_fd);
+      if(size == -1) 
+	{
+	  fprintf(stderr,"Can not determine size\n");
+	  exit(20);	
+	}
+      printf("%lldK\n",size/1024);
+      exit(0);
     }
 
   rsize = size;
@@ -234,6 +297,10 @@ int main(int argc, char** argv)
 	  break;
 	}
       rsize = rsize - ww;
+      if( dialog )
+	{
+	  printf("%2d\n",(int)(100.0*(size-rsize)/size));
+	}
       if( !use_pattern && ww!=rr) break;
     }
       
