@@ -25,61 +25,80 @@
  */
 
 /*
-  The lru_cache describes a big space of objects that are addressed
-  by an index number (=lc_number). Only a small fraction of this
-  objects is present in the cache. (You set the size of the cache using
-  lc_resize) You might get hold of objects in the cache with the 
-  lc_find() function. You can force elements into the cache with the
-  lc_add() function. When the cache needs to evict an object
-  (BTW, it always evicts the least recently used element).
-  The may_evict function is used to make shure that it is allowed
-  to evict a particular element from the cache. If may_evict 
-  slept it must return 1 otherwise it should return 0.
+  The lru_cache describes a big set of objects that are addressed
+  by an index number (=lc_number). Only a small fraction of this set
+  is present in the cache.
+  (You set the size of the cache using lc_resize)
+  Once created, the api consists of
+    lc_find(,nr) -- finds the object with the given number, if present
+    lc_get(,nr)  -- finds the object and increases the usage count
+                    if not present, actions are taken to make sure that
+		    the cache is updated, the user is notified of this by a callback.
+		    Return value is NULL in this case.
+		    As soon as the user informs the cache that it has been updated,
+		    the next lc_get on that very object number will be successfull.
+    lc_put(,lc_element*)
+                 -- decreases the usage count of this object, and returns the new value.
+
+    NOTE: It is the USERS responsibility to make sure that calls do not happen concurrently.
  */
 
 #ifndef LRU_CACHE_H
 #define LRU_CACHE_H
 
-#include <linux/spinlock.h>
 #include <linux/list.h>
-#include <linux/wait.h>
+#ifndef HLIST_HEAD_INIT
+# include "hlist.h"
+#endif
 
 struct lc_element {
 	struct list_head list;           // LRU list or free list
-	struct lc_element *hash_next;
+	struct hlist_node colision;
+	unsigned int refcnt;
 	unsigned int lc_number;
 };
 
+struct lru_cache;
+typedef int (*lc_notify_on_change_fn)(struct lru_cache*,struct lc_element*,unsigned int);
+
 struct lru_cache {
-	void* elements;
-	size_t element_size;
-	int nr_elements;
 	struct list_head lru;
 	struct list_head free;
-	int updates[3];
-	int (*may_evict) (void *, struct lc_element *);
-	void *clb_data;
+	size_t element_size;
+	unsigned int  nr_elements;
+	unsigned long flags;
+
+	lc_notify_on_change_fn notify_on_change;
+	void  *lc_private;
+	struct lc_element *changing;
+
+	struct hlist_head *slot;
 };
 
-extern void lc_init(struct lru_cache * mlc);
-extern void lc_resize(struct lru_cache * mlc, int nr_elements,spinlock_t *);
-extern void lc_free(struct lru_cache * mlc);
-extern struct lc_element * lc_find(struct lru_cache * mlc, unsigned int enr);
-extern struct lc_element * lc_get(struct lru_cache * mlc, unsigned int enr);
-extern void lc_del(struct lru_cache * mlc, struct lc_element *element);
-extern void lc_set(struct lru_cache * mlc, unsigned int enr, int index);
-extern int lc_fixup_hash_next(struct lru_cache * mlc);
 
-static inline void lc_touch(struct lru_cache * mlc,struct lc_element * e) 
-{
-	list_move(&e->list,&mlc->lru);
-}
+// flag-bits for lru_cache
+enum {
+	__LC_DIRTY,
+	__LC_STARVING,
+	__LC_LOCKED
+
+};
+#define LC_DIRTY    (1<<__LC_DIRTY)
+#define LC_STARVING (1<<__LC_STARVING)
+#define LC_LOCKED   (1<<__LC_LOCKED)
+
+extern void lc_init  (struct lru_cache* lc, lc_notify_on_change_fn f,void* d);
+extern void lc_resize(struct lru_cache* lc, unsigned int nr_elements);
+extern void lc_free  (struct lru_cache* lc);
+extern void lc_set   (struct lru_cache* lc, unsigned int enr, int index);
+extern void lc_del   (struct lru_cache* lc, struct lc_element *element);
+extern void lc_touch (struct lru_cache* lc,struct lc_element * e);
+extern int  lc_fixup_hash_next(struct lru_cache * lc);
+
+extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
+extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
+extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
 
 #define LC_FREE (-1)
-
-#define LC_AT_INDEX(MLC,I) \
- ( (struct lc_element *)( (MLC)->elements + (I) * (MLC)->element_size ) )
-#define LC_INDEX_OF(MLC,E) \
- ( ( ((void*)(E)) - (MLC)->elements ) / (MLC)->element_size )
 
 #endif

@@ -24,301 +24,262 @@
 
  */
 
-#include "lru_cache.h"
+#include <linux/bitops.h>
 #include <linux/slab.h>
+#include "lru_cache.h"
 
 #define STATIC static
+
+// this is developers aid only!
+#define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_LOCKED,&lc->flags))
+#define PARANOIA_LEAVE() do { clear_bit(__LC_LOCKED,&lc->flags); smp_mb__after_clear_bit(); } while (0)
+#define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
 /**
  * lc_init: Prepares a lru_cache. Important node: Before you may use it
  * you must also call lc_resize.
- * @mlc: The lru_cache object
+ * @lc: The lru_cache object
+ * @f:   callback function which is called when lc_get needs to change
+ *       the set of elements in the cache
  */
-void lc_init(struct lru_cache * mlc)
+void lc_init(struct lru_cache* lc, lc_notify_on_change_fn f,void* d)
 {
-	mlc->elements = 0;
-	mlc->nr_elements = 0;
-	mlc->element_size = sizeof(struct lc_element);
-	mlc->may_evict = 0;
+	PARANOIA_ENTRY();
+	// INIT_LIST_HEAD(&lc->lru);
+	// INIT_LIST_HEAD(&lc->free);
+	lc->nr_elements      = 0;
+	lc->element_size     = sizeof(struct lc_element);
+	lc->notify_on_change = f;
+	lc->lc_private       = d;
+	lc->changing         = NULL;
+	lc->slot             = NULL;
+	RETURN();
 }
 
 /**
  * lc_resize: Sets the number of elements in of a lru_cache. It also 
  * clears the chache. You should set the element_size member before 
  * calling this function.
- * @mlc: The lru_cache object
+ * @lc: The lru_cache object
  */
-void lc_resize(struct lru_cache * mlc, int nr_elements,spinlock_t *lock)
+#define lc_entry(lc,i) ((struct lc_element*)(((char*)&(lc)->slot[(lc)->nr_elements])+(i)*(lc)->element_size))
+void lc_resize(struct lru_cache* lc, unsigned int nr_elements)
 {
-	int i;
-	void * elements;
-	struct lc_element * element;
-	unsigned long flags=0;
+	unsigned int i;
+	void *data;
+	int  bytes;
+	struct lc_element *e;
 
-	if(mlc->nr_elements == nr_elements) return;
+	PARANOIA_ENTRY();
+	if(lc->nr_elements == nr_elements) RETURN();
 
-	elements = kmalloc(mlc->element_size * nr_elements,GFP_KERNEL);
+	// TODO; what is when we resize, and elements are still in use?
+	// memcopy parts of it? 
+	// for now: just don't!
+	if (lc->nr_elements) RETURN();
 
-	if(!elements) {
+	bytes = ( lc->element_size + sizeof(lc->slot[0]) ) * nr_elements;
+	data = kmalloc(bytes,GFP_KERNEL);
+
+	if(!data) {
 		printk(KERN_ERR"LC: can not kmalloc() cache's elements\n");
-		return;
+		RETURN();
 	}
-	memset(elements, 0, nr_elements * mlc->element_size);
+	memset(data, 0, bytes);
 
-	// TODO; what is about elements which should not be evicted...?!?!
-	spin_lock_irqsave(lock,flags);
-	INIT_LIST_HEAD(&mlc->lru);
-	INIT_LIST_HEAD(&mlc->free);
+	if (lc->slot) kfree(lc->slot);
+	lc->slot = data;
+	lc->nr_elements = nr_elements;
+
+	INIT_LIST_HEAD(&lc->lru);
+	INIT_LIST_HEAD(&lc->free);
 	for(i=0;i<nr_elements;i++) {
-		element = elements + i * mlc->element_size;
-		element->lc_number = LC_FREE;
-		// element->hash_next = NULL;
-		list_add(&element->list,&mlc->free);
+		e= lc_entry(lc,i);
+		e->lc_number = LC_FREE;
+		list_add(&e->list,&lc->free);
 	}
-	mlc->nr_elements=nr_elements;
-	if(mlc->elements) kfree(mlc->elements);
-	mlc->elements = elements;
-	spin_unlock_irqrestore(lock,flags);
+	RETURN();
 }
 
 /**
  * lc_free: Frees memory allocated by lc_resize.
- * @mlc: The lru_cache object
+ * @lc: The lru_cache object
  */
-void lc_free(struct lru_cache * mlc)
+void lc_free(struct lru_cache* lc)
 {
-	if(mlc->elements) kfree(mlc->elements);
-	mlc->elements = 0;
-	mlc->nr_elements = 0;
+	PARANOIA_ENTRY();
+	if(lc->slot) kfree(lc->slot);
+	lc->slot = 0;
+	lc->nr_elements = 0;
+	RETURN();
 }
 
-static struct lc_element *lc_hash_fn(struct lru_cache * mlc, unsigned int enr)
+static unsigned int lc_hash_fn(struct lru_cache* lc, unsigned int enr)
 {
-	return LC_AT_INDEX(mlc, enr % mlc->nr_elements );
+	return enr % lc->nr_elements;
 }
 
-
-/* When you add an element (and most probabely remove an other element)
-   to the hash table, you can at most modifiy 3 slots in the hash table!
-   lc_add() can only change the element number in two slots,
-   lc_evict() might change the element number in one slot. Gives 3. */
-static void lc_mark_update(struct lru_cache * mlc, struct lc_element *slot)
-{
-	int i;
-
-	for(i=0;i<3;i++) {
-		if(mlc->updates[i] == -1) {
-			mlc->updates[i] = LC_INDEX_OF(mlc,slot);
-			break;
-		}
-	}
-}
 
 /**
  * lc_find: Returns the pointer to an element, if the element is present
  * in the hash table. In case it is not this function returns NULL.
- * @mlc: The lru_cache object
+ * @lc: The lru_cache object
  * @enr: element number
  */
-struct lc_element * lc_find(struct lru_cache * mlc, unsigned int enr)
+struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr)
 {
-	struct lc_element *element;
+	struct hlist_node *n;
+	struct lc_element *e;
 
-	element = lc_hash_fn(mlc, enr);
-	while(element) {
-		if(element->lc_number == enr) break;
-		element = element->hash_next;
+	e = NULL;
+	hlist_for_each_entry(e, n, &lc->slot[lc_hash_fn(lc, enr)], colision) {
+		if (e->lc_number == enr) break;
 	}
-	return element;
+	return e && e->lc_number == enr ? e : NULL;
 }
 
-STATIC void lc_move_element(struct lru_cache * mlc,
-			    struct lc_element *from, 
-			    struct lc_element *to)
+/*
+ * remove element from the lru list, and from the hash colision chains.
+ */
+STATIC void lc_unlink(struct lru_cache *lc, struct lc_element *e)
 {
-	struct list_head *le;
-
-	memcpy(to,from,mlc->element_size);
-	le = from->list.prev; // Fixing list list here!
-	list_del(&from->list);
-	list_add(&to->list,le);
+	list_del(&e->list);
+	hlist_del(&e->colision);
 }
 
-STATIC struct lc_element * lc_unlink(struct lru_cache * mlc,
-	                             struct lc_element *element)
+STATIC struct lc_element * lc_evict(struct lru_cache* lc)
 {
-	struct lc_element *slot;
+	struct list_head  *n;
+	struct lc_element *e;
+
+	n=lc->lru.prev;
+	e=list_entry(n, struct lc_element,list);
+
+	if (e->refcnt) return NULL;
+
+	lc_unlink(lc,e);
+	return e;
+}
+
+/**
+ * lc_del: Removes an element from the cache (and therefore adds the
+ * element's storage to the free list)
+ *
+ * @lc: The lru_cache object
+ * @e: The element to remove
+ */
+void lc_del(struct lru_cache* lc, struct lc_element *e)
+{
+	// FIXME what to do with refcnt != 0 ?
+	PARANOIA_ENTRY();
+	BUG_ON(e->refcnt);
+	lc_unlink(lc,e);
+	e->lc_number = LC_FREE;
+	e->refcnt = 0;
+	list_add(&e->list,&lc->free);
+	RETURN();
+}
+
+STATIC void lc_touch(struct lru_cache * lc,struct lc_element* e)
+{
+	// XXX paranoia: !list_empty(lru) && list_empty(free)
+	list_move(&e->list,&lc->lru);
+}
+
+STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
+{
+	struct list_head *n;
+
+	if (list_empty(&lc->free)) return lc_evict(lc);
+
+	n=lc->free.next;
+	list_del(n);
+	return list_entry(n, struct lc_element,list);
+}
+
+/**
+ * lc_get: Finds an element in the cache, increases its usage count,
+ * "touches" and returns it.
+ * In case the requested number is not present, it needs to be added to the
+ * cache. Therefore it is possible that an other element becomes eviced from
+ * the cache. In either case, the user is notified so he is able to e.g. keep
+ * a persistent log of the cache changes, and therefore the objects in use.
+ *
+ * @lc: The lru_cache object
+ * @enr: element number
+ */
+struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
+{
+	struct lc_element *e;
+	int sync;
+
+	PARANOIA_ENTRY();
+	if (lc->flags & LC_STARVING) RETURN(NULL);
+
+	e = lc_find(lc, enr);
+	if (e) {
+		/* great. already in use, just increase reference count
+		 * and move it to lru.next */
+		++e->refcnt;
+		lc_touch(lc,e);
+		RETURN(e);
+	}
+
+	/* it was not present in the cache, find an unused element,
+	 * which then is replaced.
+	 * we need to update the cache; serialize on lc->flags & LC_DIRTY
+	 */
+	if (test_and_set_bit(__LC_DIRTY,&lc->flags)) RETURN(NULL);
 	
-	list_del(&element->list);
+	// no, it was not. get any slot from the free list.
+	e = lc_get_unused_element(lc);
 
-	slot = lc_hash_fn( mlc, element->lc_number);
-	if( slot == element) {
-		slot = element->hash_next;
-		if( slot == NULL) return element;
-		// move the next in hash table (=slot) to its slot (=element)
-		lc_move_element(mlc,slot,element);
-		lc_mark_update(mlc, element);
-
-		return slot;
+	if (!e) {
+		lc->flags |= LC_STARVING; // now (DIRTY | STARVING) !
+		RETURN(NULL);
 	}
-	do {
-		if( slot->hash_next == element ) {
-			slot->hash_next = element->hash_next;
-			return element;
-		}
-		slot=slot->hash_next;
-	} while(1);
+
+	sync = lc->notify_on_change ? lc->notify_on_change(lc,e,enr) : 1;
+
+	if (sync) {
+		e->lc_number = enr;
+		BUG_ON(++e->refcnt != 1);
+		lc->flags &= ~LC_DIRTY; // just in case user forgot
+		// smb_mb__after_clear_bit();
+		RETURN(e);
+	} else {
+		lc->changing = e;
+		RETURN(NULL);
+	}
 }
 
-STATIC struct lc_element * lc_evict(struct lru_cache * mlc)
+unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 {
-	struct list_head *le;
-	struct lc_element *element;
-
- retry:
-	le=mlc->lru.prev;
-	element=list_entry(le, struct lc_element,list);
-
-	if( mlc->may_evict ) {
-		if(mlc->may_evict(mlc->clb_data,element)) goto retry;
-	}
-
-	return lc_unlink(mlc,element);
-}
-
-/**
- * lc_del: Removes an element from the cache (and therefore adds the 
- * element's slot to the free list)
- *
- * @mlc: The lru_cache object
- * @element: The element to remove
- */
-void lc_del(struct lru_cache * mlc, struct lc_element *element)
-{
-	struct lc_element *free_slot;
-
-	free_slot = lc_unlink(mlc,element);
-	free_slot->lc_number = LC_FREE;
-
-	list_add(&free_slot->list,&mlc->free);	
-}
-
-STATIC struct lc_element * lc_get_free_slot(struct lru_cache * mlc)
-{
-	struct list_head *le;
-
-	if(list_empty(&mlc->free)) return lc_evict(mlc);
-
-	le=mlc->free.next;
-	list_del(le);
-	return list_entry(le, struct lc_element,list);
-}
-
-/**
- * lc_get: Finds an element's slot in the cache. In case it was not
- * present, it will be added to the cache. Therefore it is possible 
- * that an other element becomes eviced from the cache.
- * 
- * This functions sets the update[3] pointers to the slots that 
- * were changed with this call.
- *
- * @mlc: The lru_cache object
- * @enr: element number
- */
-struct lc_element * lc_get(struct lru_cache * mlc, unsigned int enr) 
-{
-	struct lc_element *slot, *n, *a;
-	int i;
-
-	slot = lc_find(mlc, enr);
-	if(slot) return slot;
-
-	// it was not present in the cache, find a slot for it...
-	for(i=0;i<3;i++) mlc->updates[i]=-1;
-
-	slot = lc_hash_fn(mlc, enr);
-	if (slot->lc_number == LC_FREE) {
-		list_del(&slot->list);
-		slot->hash_next = NULL;
-		goto have_slot;
-	}
-
-	n = lc_get_free_slot(mlc);
-
-	if ( n == slot) {
-		// we got the slot we wanted 
-		goto have_slot;
-	}
-
-	a = lc_hash_fn( mlc, slot->lc_number );
-	if( a != slot ) {
-		// our element is a better fit for this slot
-		lc_move_element(mlc,slot,n);
-		lc_mark_update(mlc, n);
-		// fix the hash_next pointer to the element in slot
-		a = lc_hash_fn( mlc, n->lc_number );
-		while(a->hash_next != slot) a=a->hash_next;
-		a->hash_next = n;
-		
-		goto have_slot;
-	}
-
-	// chain our element behind this slot 
-	n->hash_next = slot->hash_next;
-	slot->hash_next = n;
-	slot = n;
-
- have_slot:
-	lc_mark_update(mlc, slot); // it needs to be updated by the caller :)
-	list_add(&slot->list,&mlc->lru);
-
-	return slot;
+	PARANOIA_ENTRY();
+	BUG_ON(!e);
+	BUG_ON(e->refcnt == 0);
+	RETURN(--e->refcnt);
 }
 
 
 /**
  * lc_set: Sets an element in the cache. You might use this function to
- * setup the cache. After doing so you should use the lc_fixup_hash_next
- * function to initalise the hash collision chains.
- * @mlc: The lru_cache object
+ * setup the cache. It is expected that the elements are properly initialized.
+ * @lc: The lru_cache object
  * @enr: element number
  * @index: The elements' position in the cache
  */
-void lc_set(struct lru_cache * mlc, unsigned int enr, int index)
+void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 {
-	struct lc_element *element;
+	struct lc_element *e;
 
-	if(index < 0 || index >= mlc->nr_elements ) return;
+	if(index < 0 || index >= lc->nr_elements ) return;
 
-	element = LC_AT_INDEX(mlc,index);
+	e = lc_entry(lc,index);
 
-	element->lc_number = enr;
-	list_move(&element->list, &mlc->lru);
-	element->hash_next = 0;
-}
-
-/**
- * lc_fixup_hash_next: Sets up the collision chains in the hash table. 
- * Returns the number of elements actually in the chache.
- * @mlc: The lru_cache object
- */
-int lc_fixup_hash_next(struct lru_cache * mlc)
-{
-	struct lc_element *slot, *want;
-	int i;
-	int active_extents=0;
-
-	for( i=0 ; i < mlc->nr_elements ; i++ ) {
-		slot = LC_AT_INDEX(mlc,i); 
-		if(slot->lc_number == LC_FREE) continue;
-		active_extents++;
-		want = lc_hash_fn(mlc,slot->lc_number);
-		if( slot != want ) {
-			while (want->hash_next) want=want->hash_next;
-			want->hash_next = slot;
-		}
-	}
-
-	return active_extents;
+	e->lc_number = enr;
+	__hlist_del(&e->colision);
+	hlist_add_head(&e->colision,&lc->slot[lc_hash_fn(lc,enr)]);
+	lc_touch(lc,e);
 }
 
