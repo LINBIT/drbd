@@ -21,10 +21,14 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
  */
+#include <linux/fs.h> // for BLKGETSIZE64
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
+#define __USE_LARGEFILE64
 #include <unistd.h>
+#include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -160,10 +164,24 @@ int v07_parse(conf_t config, char **argv, int *ai)
 int v07_open(conf_t config)
 {
 	struct conf_07* cfg = (struct conf_07*) config;
+	struct stat sb;
 
 	cfg->fd = open(cfg->device_name,O_RDWR);
 
-	return (cfg->fd != -1) ;
+	if(!cfg->fd == -1) return 0;
+
+	if(fstat(cfg->fd, &sb)) {
+		PERROR("fstat() failed");
+		exit(20);
+	}
+
+	if(!S_ISBLK(sb.st_mode)) {
+		fprintf(stderr, "'%s' is not a block device!\n", 
+			cfg->device_name);
+		exit(20);
+	}
+
+	return 1;
 }
 
 int v07_close(conf_t config)
@@ -178,7 +196,7 @@ struct meta_data * md_alloc()
 	struct meta_data *m;
 
 	m = malloc(sizeof(struct meta_data ));
-	memset(m,sizeof(struct meta_data ),1);
+	memset(m,0,sizeof(struct meta_data ));
   
 	return m;  
 }
@@ -192,15 +210,55 @@ void md_free(struct meta_data * m)
 	free(m);
 }
 
+#define MD_RESERVED_SIZE_07 ( (typeof(guint64))128 * (1<<20) )
+
+
+guint64 bdev_size(int fd)
+{
+	guint64 size64; // size in byte.
+	long size;    // size in sectors.
+	int err;
+
+	err=ioctl(fd,BLKGETSIZE64,&size64);
+	if(err) {
+		if (errno == EINVAL)  {
+			printf("INFO: falling back to BLKGETSIZE\n");
+			err=ioctl(fd,BLKGETSIZE,&size);
+			if(err) {
+				perror("ioctl(,BLKGETSIZE,) failed");
+				exit(20);
+			}
+			size64 = (typeof(guint64))512 * size;
+		} else {
+			perror("ioctl(,BLKGETSIZE64,) failed");
+			exit(20);
+		}
+	}
+
+	return size64;
+}
 
 int v07_read(conf_t config, struct meta_data * m)
 {
 	struct conf_07* cfg = (struct conf_07*) config;
 	struct meta_data_on_disk_07 * buffer;
 	int rr,i,bmw;
+	guint64 offset;
 
 	buffer = malloc(sizeof(struct meta_data_on_disk_07));
-  
+
+	if(cfg->index == -1) {
+		offset = ( bdev_size(cfg->fd) & ~((1<<12)-1) )
+			- MD_RESERVED_SIZE_07;
+	} else {
+		offset = MD_RESERVED_SIZE_07 * cfg->index;
+	}
+	
+	if(lseek64(cfg->fd,offset,SEEK_SET) == -1) {
+		PERROR("lseek() failed");
+		exit(20);
+	}
+
 	rr = read(cfg->fd, buffer, sizeof(struct meta_data_on_disk_07));
 	if( rr != sizeof(struct meta_data_on_disk_07)) {
 		PERROR("read failed");
@@ -307,9 +365,21 @@ void print_usage()
 	exit(0);
 }
 
+int drbd_fd;
+char* drbd_dev_name;
+
+void cleanup(void) 
+{
+	if(drbd_fd == -1) {
+		dt_release_lockfile_dev_name(drbd_dev_name);
+	} else {
+		dt_close_drbd_device(drbd_fd);
+	}	
+}
+
 int main(int argc, char** argv)
 {
-	int i,ai,drbd_fd;
+	int i,ai;
 	struct format* fmt = NULL;
 	struct meta_cmd* command = NULL;
 	conf_t fcfg;
@@ -323,7 +393,19 @@ int main(int argc, char** argv)
 	if (argc < 4) print_usage();
 
 	ai = 1;
-	drbd_fd=dt_open_drbd_device(argv[ai++]); // This creates the lock file.
+	drbd_dev_name=argv[ai++];
+	drbd_fd=dt_open_drbd_device(drbd_dev_name,1); // Create the lock file.
+	atexit(cleanup);
+	if(drbd_fd > -1) {
+		int fd2 = open(drbd_dev_name,O_RDWR);
+		// I want to avoid DRBD specific ioctls here...
+		if(fd2) {
+			fprintf(stderr,"Device '%s' is configured!",
+				drbd_dev_name);
+			exit(20);
+		}
+		close(fd2);
+	}
 
 	for (i = 0; i < ARRY_SIZE(formats); i++ ) {
 		if( !strcmp(formats[i].name,argv[ai]) ) {
@@ -333,11 +415,12 @@ int main(int argc, char** argv)
 	}
 	if(fmt == NULL) {
 		fprintf(stderr,"Unknown format '%s'.\n",argv[ai]);
+		exit(20);
 	}
 	ai++;
 
 	fcfg = malloc(fmt->conf_size);
-	fmt->parse(fcfg,argv+2,&ai);
+	fmt->parse(fcfg,argv+ai,&ai);
 
 	for (i = 0; i < ARRY_SIZE(cmds); i++ ) {
 		if( !strcmp(cmds[i].name,argv[ai]) ) {
@@ -347,11 +430,11 @@ int main(int argc, char** argv)
 	}
 	if(command == NULL) {
 		fprintf(stderr,"Unknown command '%s'.\n",argv[ai]);
+		exit(20);
 	}
 	ai++;
 
 	command->function(fmt,fcfg);
 
-	dt_close_drbd_device(drbd_fd);
 	return 0;
 }

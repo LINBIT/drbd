@@ -342,7 +342,7 @@ int open_drbd_device(const char* device)
 {
   int err,drbd_fd,version;
 
-  drbd_fd=dt_open_drbd_device(device);
+  drbd_fd=dt_open_drbd_device(device,0);
 
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_VERSION,&version);
   if(err)

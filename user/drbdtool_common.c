@@ -79,7 +79,7 @@ void create_lockfile_mm(int major, int minor)
   
   snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",major,minor);
 
-  while ( (fd = open(lfname,O_CREAT|O_EXCL|O_WRONLY)) == -1 )
+  while ( (fd = open(lfname,O_CREAT|O_EXCL|O_WRONLY,00644)) == -1 )
     {
       fd = open(lfname,O_RDONLY);
       if(fd == -1 )
@@ -93,7 +93,7 @@ void create_lockfile_mm(int major, int minor)
       errno = 0;
       kill(pid,0);
       if(errno == ESRCH) {
-	fprintf(stderr,"Stale lock file found and removed.");
+	fprintf(stderr,"Stale lock file found and removed.\n");
 	remove(lfname);
       } else {
 	fprintf(stderr,"A drbd tool with pid %d has the device locked.\n",pid);
@@ -106,19 +106,19 @@ void create_lockfile_mm(int major, int minor)
   fclose(fi);
 }
 
-int dt_open_drbd_device(const char* device)
+int dt_open_drbd_device(const char* device,int open_may_fail)
 {
   int drbd_fd,err;
   struct stat drbd_stat;
 
   drbd_fd=open(device,O_RDONLY);
-  if(drbd_fd==-1)
+  if(drbd_fd==-1 && !open_may_fail)
     {
       PERROR("can not open %s", device);
       exit(20);
     }
 
-  err=fstat(drbd_fd, &drbd_stat);
+  err=stat(device, &drbd_stat);
   if(err)
     {
       PERROR("fstat(%s) failed",device);
@@ -130,7 +130,7 @@ int dt_open_drbd_device(const char* device)
       exit(20);
     }
 
-  create_lockfile_mm(major(drbd_stat.st_dev),minor(drbd_stat.st_dev));
+  create_lockfile_mm(major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
 
   return drbd_fd;
 }
@@ -145,10 +145,30 @@ void dt_release_lockfile(int drbd_fd)
   if(err)
     {
       PERROR("fstat() failed");
+      exit(20);
     }
 
   snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",
-	   major(drbd_stat.st_dev),minor(drbd_stat.st_dev));
+	   major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
+
+  remove(lfname);
+}
+
+void dt_release_lockfile_dev_name(const char* device)
+{
+  int err;
+  struct stat drbd_stat;
+  char lfname[40];
+
+  err=stat(device, &drbd_stat);
+  if(err)
+    {
+      PERROR("stat() failed");
+      exit(20);
+    }
+
+  snprintf(lfname,39,"/var/lock/drbd-%d-%d.pid",
+	   major(drbd_stat.st_rdev),minor(drbd_stat.st_rdev));
 
   remove(lfname);
 }

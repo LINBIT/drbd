@@ -17,7 +17,7 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-CFLAGS = -c -Wall -I../drbd $(shell glib-config --cflags)
+CFLAGS = -g -c -Wall -I../drbd $(shell glib-config --cflags)
 CC = gcc
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
@@ -53,7 +53,7 @@ clean:
 	rm -f drbdadm_scanner.c
 	rm -f drbdadm_parser.c
 	rm -f drbdadm_parser.h
-	rm -f drbdsetup drbdadm *.o
+	rm -f drbdsetup drbdadm drbdmeta *.o
 	rm -f *~
 
 distclean: clean
