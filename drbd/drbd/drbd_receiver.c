@@ -1416,7 +1416,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		if(have_good==0) sync=0;
 		else sync=1;
 
-		INFO("have_good=%d sync=%d\n", have_good, sync);
+		//INFO("have_good=%d sync=%d\n", have_good, sync);
 
 		if ( mdev->sync_conf.skip && sync && !no_sync ) {
 			if (have_good == 1)

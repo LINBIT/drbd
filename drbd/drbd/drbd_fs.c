@@ -430,10 +430,10 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 
 	if( mdev->gen_cnt[Flags] & MDF_ConnectedInd) {
 		time=p.wfc_timeout;
-		ERR("using wfc_timeout.\n");
+		//ERR("using wfc_timeout.\n");
 	} else {
 		time=p.degr_wfc_timeout;
-		ERR("using degr_wfc_timeout.\n");
+		//ERR("using degr_wfc_timeout.\n");
 	}
 
 	time=time*HZ;
