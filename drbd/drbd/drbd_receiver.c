@@ -241,22 +241,28 @@ struct socket* drbd_accept(struct socket* sock)
 	return 0;
 }
 
+struct idle_timer_info {
+	struct Drbd_Conf *mdev;
+	struct timer_list idle_timeout;
+};
+
+
 void drbd_idle_timeout(unsigned long arg)
 {
-	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
+	struct idle_timer_info* ti = (struct idle_timer_info *)arg;
 
-	set_bit(SEND_PING,&mdev->flags);
-	wake_up_interruptible(&mdev->asender_wait);
-	
+	set_bit(SEND_PING,&ti->mdev->flags);
+	wake_up_interruptible(&ti->mdev->asender_wait);
+	ti->idle_timeout.expires = jiffies + ti->mdev->conf.ping_int * HZ;
+	add_timer(&ti->idle_timeout);
 }
-
 
 int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
 	struct msghdr msg;
-	struct timer_list idle_timeout;
+	struct idle_timer_info ti;
 	int rv,done=0;
 
 	msg.msg_control = NULL;
@@ -274,12 +280,13 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	set_fs(KERNEL_DS);
 
 	if (mdev->conf.ping_int) {
-		init_timer(&idle_timeout);
-		idle_timeout.function = drbd_idle_timeout;
-		idle_timeout.data = (unsigned long) mdev;
-		idle_timeout.expires =
+		init_timer(&ti.idle_timeout);
+		ti.idle_timeout.function = drbd_idle_timeout;
+		ti.idle_timeout.data = (unsigned long) mdev;
+		ti.idle_timeout.expires =
 		    jiffies + mdev->conf.ping_int * HZ;
-		add_timer(&idle_timeout);
+		ti.mdev=mdev;
+		add_timer(&ti.idle_timeout);
 	}
 
 	while(1) {
@@ -307,7 +314,7 @@ int drbd_recv(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	unlock_kernel();
 
 	if (mdev->conf.ping_int) {
-		del_timer(&idle_timeout);
+		del_timer(&ti.idle_timeout);
 	}
 
 
@@ -1043,7 +1050,7 @@ int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	mm_segment_t oldfs;
 	struct iovec iov;
 	struct msghdr msg;
-	int rv,done=0;
+	int rv;
 
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
@@ -1064,13 +1071,14 @@ int drbd_recv_nowait(struct Drbd_Conf* mdev, void *ubuf, size_t size)
 	set_fs(oldfs);
 	unlock_kernel();
 
-	if (rv < 0) {
+	if( rv == -EAGAIN) rv=0;
+
+	if (rv < 0 ) {
 		printk(KERN_ERR DEVICE_NAME "%d: sock_recvmsg returned %d\n",
 		       (int)(mdev-drbd_conf),rv);
-		return rv;
 	}
 
-	return done;
+	return rv;
 }
 
 
@@ -1085,6 +1093,7 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	while(thi->t_state == Running) {
 	  drbd_double_sleep_on(&mdev->asender_wait,mdev->msock->sk->sleep);
+
 	  if(signal_pending(current)) break;
 	  
 	  if(thi->t_state == Exiting) break;
@@ -1095,7 +1104,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			  init_timer(&ping_timeout);
 			  ping_timeout.function = drbd_ping_timeout;
 			  ping_timeout.data = (unsigned long) mdev;
-			  ping_timeout.expires = jiffies + (mdev->artt*2);
+			  ping_timeout.expires = jiffies + HZ;//(mdev->artt*2);
 			  add_timer(&ping_timeout);
 		  }
 	  }
@@ -1106,10 +1115,11 @@ int drbd_asender(struct Drbd_thread *thi)
 		  drbd_process_done_ee(mdev);
 		  //TODO: should asender exit if sending fails ?
 	  }
-
 	  rr=drbd_recv_nowait(mdev,&header,sizeof(header)-rsize);
 	  if(rr < 0) break;
 	  rsize+=rr;
+	  printk(KERN_ERR DEVICE_NAME "%d: rsize=%d\n",(int)(mdev-drbd_conf),
+		 rsize);
 	  if(rsize == sizeof(header)) {
 		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
 			printk(KERN_ERR DEVICE_NAME "%d: magic?? m: %ld "
@@ -1122,9 +1132,13 @@ int drbd_asender(struct Drbd_thread *thi)
 		}
 		switch (be16_to_cpu(header.command)) {
 		case Ping:
+			printk(KERN_ERR DEVICE_NAME "%d: got ping\n",
+			       (int)(mdev-drbd_conf));
 			drbd_send_cmd((int)(mdev-drbd_conf),PingAck,1);
 			break;
 		case PingAck:
+			printk(KERN_ERR DEVICE_NAME "%d: got ping ack\n",
+			       (int)(mdev-drbd_conf));
 			del_timer(&ping_timeout);
 			break;
 		}
