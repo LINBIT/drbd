@@ -619,10 +619,11 @@ enum {
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
 	PROCESS_EE_RUNNING,	// eek!
 	MD_IO_ALLOWED,		// EXPLAIN
-	SENT_DISK_FAILURE,	// sending it once is enough
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	UUID_CHANGED,           // UUID changed. Need fullsync.
+	UNIQUE,                 // Set on one node, cleared on the peer!
+	SPLIT_BRAIN_FIX,        // Set if split-brain-fix is configured
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

@@ -76,6 +76,7 @@ struct disk_config {
 	IN enum io_error_handler on_io_error;
 	IN int      meta_device;
 	IN int      meta_index;
+	IN int      split_brain_fix;
 };
 
 enum disconnect_handler {

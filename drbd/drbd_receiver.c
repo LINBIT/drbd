@@ -628,11 +628,15 @@ int drbd_connect(drbd_dev *mdev)
 
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) <= 0 ) return 0;
 
+	clear_bit(UNIQUE, &mdev->flags);
 	while(1) {
 		sock=drbd_try_connect(mdev);
 		if(sock) {
 			msock=drbd_wait_for_connect(mdev);
-			if(msock) break;
+			if(msock) {
+				set_bit(UNIQUE, &mdev->flags);
+				break;
+			}
 			else sock_release(sock);
 		} else {
 			sock=drbd_wait_for_connect(mdev);
@@ -1774,7 +1778,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		drbd_thread_start(&mdev->worker);
 	}
 
-	if (mdev->state.s.role == Primary) {
+	if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) && 
+	     mdev->state.s.role == Primary) {
 		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 		drbd_request_state(mdev,NS(pdsk,nps));
 		drbd_md_write(mdev);

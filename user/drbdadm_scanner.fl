@@ -228,7 +228,8 @@ PORT			  {WSC}port{ASSIGN}{NUM}
 
 <DISK>{
   on-io-error		do_assign(IO_ERROR); CP; return TK_ON_IO_ERROR;
-  {NDELIM}		expect_error("'on-io-error'");
+  split-brain-fix 	yy_push_state(SEMICOLON); CP; return TK_SPLIT_BRAIN_FIX;
+  {NDELIM}		expect_error("'on-io-error|split-brain-fix'");
 }
 
 <IO_ERROR>{

@@ -171,6 +171,7 @@ struct drbd_cmd commands[] = {
    (struct option[]) {
      { "size",       required_argument, 0, 'd' },
      { "on-io-error",required_argument, 0, 'e' },
+     { "split-brain-fix",  no_argument, 0, 'b' },
      { 0,            0,                 0, 0 } } },
   {"resize", cmd_disk_size,             0,
    (struct option[]) {
@@ -403,6 +404,7 @@ int scan_disk_options(char **argv,
 {
   cn->config.disk_size = 0; /* default not known */
   cn->config.on_io_error = DEF_ON_IO_ERROR;
+  cn->config.split_brain_fix = 0;
 
   if(argc==0) return 0;
 
@@ -431,6 +433,9 @@ int scan_disk_options(char **argv,
 	  fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
 		  cmdname,optarg);
 	  return 20;
+	case 'b':
+	  cn->config.split_brain_fix = 1;
+	  break;
 	case 1:	// non option argument. see getopt_long(3)
 	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	case '?':

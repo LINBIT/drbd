@@ -520,7 +520,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		else if( ns.s.role == Primary && ns.s.conn < Connected &&
 			 ns.s.disk <= Outdated ) rv=-2;
 
-		else if( ns.s.role == Primary && ns.s.conn < Connected &&
+		else if( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) && 
+			 ns.s.role == Primary && ns.s.conn < Connected &&
 			 ns.s.pdsk >= DUnknown ) rv=-7;
 
 		else if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 

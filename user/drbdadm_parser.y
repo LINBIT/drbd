@@ -241,7 +241,7 @@ void check_meta_disk()
 %token TK_PROTOCOL TK_HANDLERS
 %token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
-%token <txt> TK_ON_IO_ERROR TK_SIZE
+%token <txt> TK_ON_IO_ERROR TK_SIZE TK_SPLIT_BRAIN_FIX
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
 %token <txt> TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
 %token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_GROUP TK_AL_EXTENTS
@@ -351,6 +351,7 @@ disk_stmts:	  /* empty */	           { $$ = 0; }
 disk_stmt:	  TK_ON_IO_ERROR TK_STRING { $$=new_opt($1,$2); }
 		| TK_SIZE TK_INTEGER
 		{ $$=new_opt($1,$2); range_check(R_DISK_SIZE,$1,$2); }
+		| TK_SPLIT_BRAIN_FIX       { $$=new_opt($1,0);  }
 		;
 
 net_stmts:	  /* empty */	           { $$ = 0; }

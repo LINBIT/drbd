@@ -348,6 +348,9 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 
 	drbd_free_ll_dev(mdev);
 
+	if(new_conf.split_brain_fix) __set_bit(SPLIT_BRAIN_FIX,&mdev->flags);
+	else __clear_bit(SPLIT_BRAIN_FIX,&mdev->flags);
+
 	mdev->md_bdev  = bdev2;
 	mdev->md_file  = filp2;
 	mdev->md_index = new_conf.meta_index;
