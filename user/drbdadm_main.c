@@ -193,6 +193,7 @@ struct adm_cmd cmds[] = {
   { "get-gc",            admm_generic,          1, 1 },
   { "dump-md",           admm_generic,          1, 1 },
   { "set-gc",            admm_generic,          0, 1 },
+  { "set-uuid",          admm_generic,          0, 1 },
   { "pri-on-incon-degr", adm_khelper,           0, 1 },
   { "pri-sees-sec-with-higher-gc", adm_khelper, 0, 1 },
   { "outdate-peer",      adm_khelper,           0, 1 },

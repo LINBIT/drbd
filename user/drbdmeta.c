@@ -552,6 +552,7 @@ int meta_dump_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
 int meta_set_gc(struct format *cfg, char **argv, int argc);
 int meta_outdate_gc(struct format *cfg, char **argv, int argc);
+int meta_set_uuid(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
 	{"get-gc", 0, meta_get_gc, 1},
@@ -562,6 +563,7 @@ struct meta_cmd cmds[] = {
 	 * implicit convert from v07 to v08 by create-md
 	 * see comments there */
 	{"outdate", 0, meta_outdate_gc, 1},
+	{"set-uuid", 0, meta_set_uuid, 1},
 	{"set-gc", ":::VAL:VAL:...", meta_set_gc, 0},
 };
 
@@ -1159,6 +1161,9 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 		printf("zero size device -- never seen peer yet?\n");
 	}
 
+	printf("local  uuid: %llX\n",cfg->md.uuid);
+	printf("peer's uuid: %llX\n",cfg->md.peer_uuid);
+
 	return cfg->ops->close(cfg);
 }
 
@@ -1316,6 +1321,32 @@ int m_strsep_b(char **s, int *val, int mask)
 		*val &= ~mask;
 
 	return rv;
+}
+
+int meta_set_uuid(struct format *cfg, char **argv, int argc)
+{
+	int err;
+
+	if (argc > 1) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+	if (argc < 1) {
+		fprintf(stderr, "Required Argument missing\n");
+		exit(10);
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	cfg->md.uuid = strtoll(argv[0],NULL,16);
+
+	err = cfg->ops->md_cpu_to_disk(cfg)
+	    || cfg->ops->close(cfg);
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
+	
 }
 
 int meta_set_gc(struct format *cfg, char **argv, int argc)
