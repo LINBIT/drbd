@@ -873,6 +873,7 @@ static int adm_wait_ci(struct d_resource* ignored ,const char* unused)
   struct sigaction so,sa;
 
   saved_stdin = -1;
+  saved_stdout = -1;
   if( isatty(fileno(stdin)) == 0 || isatty(fileno(stdout)) == 0 ) {
     fprintf(stderr,"WARN: stdin/stdout is not a TTY; using /dev/console");
     fprintf(stdout,"WARN: stdin/stdout is not a TTY; using /dev/console");

@@ -554,8 +554,10 @@ int confirmed(const char *text)
 	char answer[16];
 	int rr;
 
-	printf("%s [yes/no] ", text);
-	rr = scanf("%[yesno]15s", answer);
+	do {
+		printf("%s [yes/no] ", text);
+		rr = scanf("%15s", answer);
+	} while (rr != 1);
 	return !strcmp(answer, "yes");
 }
 
