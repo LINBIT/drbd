@@ -649,6 +649,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	if(!bm_ext) {
 		spin_unlock_irq(&mdev->al_lock);
 		ERR("bme_put() called, but extent not found");
+		return;
 	}
 
 	if( lc_put(mdev->resync,(struct lc_element *)bm_ext) == 0 ) {
