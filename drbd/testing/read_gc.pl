@@ -58,7 +58,7 @@ sub main()
 
     my (@resources,$res,$disk,$index);
 
-    @resources = sort(split(' ',`drbdadm sh-devices`));
+    @resources = sort(split(' ',`drbdadm sh-resources`));
 
     print <<EOS;
                                      ConnectedInd |

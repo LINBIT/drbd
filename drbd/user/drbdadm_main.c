@@ -78,8 +78,9 @@ static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
 static int adm_wait_c(struct d_resource* ,char* );
-static int sh_devices(struct d_resource* ,char* );
+static int sh_resources(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
+static int sh_dev(struct d_resource* ,char* );
 static int sh_ll_dev(struct d_resource* ,char* );
 static int sh_md_dev(struct d_resource* ,char* );
 static int sh_md_idx(struct d_resource* ,char* );
@@ -123,8 +124,9 @@ struct adm_cmd cmds[] = {
   { "wait_connect",      adm_wait_c,  0                  ,1,1 },
   { "state",             adm_generic, "state"            ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
-  { "sh-devices",        sh_devices,  0                  ,0,0 },
+  { "sh-resources",      sh_resources,0                  ,0,0 },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
+  { "sh-dev",            sh_dev,      0                  ,0,1 },
   { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 },
   { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
   { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
@@ -221,13 +223,20 @@ static int adm_dump(struct d_resource* res,char* unused)
   return 0;
 }
 
-static int sh_devices(struct d_resource* ignored,char* unused)
+static int sh_resources(struct d_resource* ignored,char* unused)
 {
   struct d_resource *res,*t;
   for_each_resource(res,t,config) {
     printf(res==config?"%s":" %s",esc(res->name));
   }
   printf("\n");
+
+  return 0;
+}
+
+static int sh_dev(struct d_resource* res,char* unused)
+{
+  printf("%s\n",res->me->device);
 
   return 0;
 }
