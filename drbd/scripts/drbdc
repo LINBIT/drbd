@@ -373,7 +373,7 @@ case "$1" in
 			if [ $PRIMARY -eq 1 -a $MOUNTED -eq 1 ]; then
 				succed "Running"
 			else
-				succed "DRBD Slave"
+				succed "Ready"
 			fi
 		else
 			failed "DRBD Not loaded"
