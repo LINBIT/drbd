@@ -93,6 +93,11 @@ static inline unsigned short drbd_req_get_size(struct drbd_request *req)
 	return req->private_bio.b_size;
 }
 
+static inline drbd_bio_t* drbd_req_private_bio(struct drbd_request *req)
+{
+	return &req->private_bio;
+}
+
 static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
 {
 	return ee->private_bio.b_blocknr;
@@ -387,7 +392,7 @@ static inline void drbd_bio_endio(struct bio *bio, int uptodate)
 
 static inline drbd_dev* drbd_req_get_mdev(struct drbd_request *req)
 {
-	return (drbd_dev*) req->private_bio.bi_private;
+	return (drbd_dev*) req->mdev;
 }
 
 static inline sector_t drbd_req_get_sector(struct drbd_request *req)
@@ -397,9 +402,14 @@ static inline sector_t drbd_req_get_sector(struct drbd_request *req)
 
 static inline unsigned short drbd_req_get_size(struct drbd_request *req)
 {
-	drbd_dev* mdev = req->private_bio.bi_private;
+	drbd_dev* mdev = req->mdev;
 	D_ASSERT(req->master_bio->bi_size);
 	return req->master_bio->bi_size;
+}
+
+static inline drbd_bio_t* drbd_req_private_bio(struct drbd_request *req)
+{
+	return req->private_bio;
 }
 
 static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
@@ -531,45 +541,33 @@ drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e,
 static inline void
 drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 {
-	struct bio * const bio      = &req->private_bio;
-	struct bio_vec * const bvec = &req->req_bvec;
-	struct bio * const bio_src  =  req->master_bio;
+	struct bio *bio;
 
-	bio_init(bio); // bio->bi_flags   = 0;
-	bio->bi_io_vec = bvec;
-	bio->bi_max_vecs = 1;
-	
-	/* FIXME: __bio_clone() workaround, fix me properly later! */
-	bio_src->bi_max_vecs = 1;
-	__bio_clone(bio,bio_src);
+	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
+	bio_get(bio);
 	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_private = mdev;
+	bio->bi_private = req;
 	bio->bi_end_io  = drbd_dio_end;
-	bio->bi_next    = NULL;
+	bio->bi_next    = 0;
 
 	req->rq_status = RQ_DRBD_NOTHING;
+	req->mdev      = mdev;
 }
 
 static inline void
 drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 {
-	struct bio * const bio      = &req->private_bio;
-	struct bio_vec * const bvec = &req->req_bvec;
-	struct bio * const bio_src  =  req->master_bio;
+	struct bio *bio;
 
-	bio_init(bio); // bio->bi_flags   = 0;
-	bio->bi_io_vec = bvec;
-	bio->bi_max_vecs = 1;
-
-	/* FIXME: __bio_clone() workaround, fix me properly later! */
-	bio_src->bi_max_vecs = 1;
-	__bio_clone(bio,bio_src);
+	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
+	bio_get(bio);
 	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_private = mdev;
+	bio->bi_private = req;
 	bio->bi_end_io  = drbd_read_bi_end_io;	// <- only difference
-	bio->bi_next    = NULL;
+	bio->bi_next    = 0;
 
 	req->rq_status = RQ_DRBD_NOTHING;
+	req->mdev      = mdev;
 }
 
 static inline struct page* drbd_bio_get_page(struct bio *bio)
@@ -635,7 +633,7 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 
 static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 {
-	struct bio_vec *bvec = bio_iovec(bio);
+	struct bio_vec *bvec = bio_iovec_idx(bio, bio->bi_idx);
 	return _drbd_send_page(mdev,bvec->bv_page,bvec->bv_offset,bvec->bv_len);
 }
 

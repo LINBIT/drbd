@@ -1064,9 +1064,9 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 		if(ok) {
 			if(mdev->conf.wire_protocol == DRBD_PROT_A) {
-				ok = _drbd_send_bio(mdev,&req->private_bio);
+				ok = _drbd_send_bio(mdev,drbd_req_private_bio(req));
 			} else {
-				ok = _drbd_send_zc_bio(mdev,&req->private_bio);
+				ok = _drbd_send_zc_bio(mdev,drbd_req_private_bio(req));
 			}
 		}
 		if(!ok) tl_cancel(mdev,req);

@@ -629,8 +629,12 @@ struct drbd_request {
 	int rq_status;
 	struct drbd_barrier *barrier; // The next barrier.
 	drbd_bio_t *master_bio;       // master bio pointer
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	drbd_bio_t private_bio;       // private bio struct
-	ONLY_IN_26(struct bio_vec req_bvec;)
+#else
+	struct bio *private_bio;
+	drbd_dev *mdev;
+#endif
 };
 
 struct drbd_barrier {
@@ -670,7 +674,7 @@ struct Tl_epoch_entry {
 	long magic;
 	ONLY_IN_26(unsigned int ee_size;)
 	ONLY_IN_26(sector_t ee_sector;)
-	// TODO: we rather want bio_alloc(GFP_*,1) all through the code!
+	// THINK: maybe we rather want bio_alloc(GFP_*,1)
 	ONLY_IN_26(struct bio_vec ee_bvec;)
 };
 
