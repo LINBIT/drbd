@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set foldmethod=marker nofoldenable :
-# $Id: functions.sh,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
+# $Id: functions.sh,v 1.1.2.3 2004/05/28 08:32:52 lars Exp $
 #DEBUG="-vx"
 #DEBUG="-v"
 
@@ -19,6 +19,7 @@ generic_test_stop()
 {
 	: ${MNT:?unknown mount point}
 	grep -q " $MNT " /proc/mounts && {
+		echo "killall users of $HOSTNAME:$MNT/"
 		fuser -TERM -vkm $MNT/ && sleep 2 &&
 		while fuser -vkm $MNT/ ; do sleep 1 ; done
 	}
@@ -144,6 +145,7 @@ generic_wait_for_boot()
 	[[ -z $initial ]] && initial=false || initial=true
 	: ${ip:?unknown admin ip} 
 	: ${hostname:?unknown hostname} 
+	SECONDS=0   # reset bash magic variable
 	while true; do
 		ping -c 1 $ip > /dev/null && break
 		[[ $? == 2 ]] && exit 2
@@ -259,7 +261,7 @@ drbd_append_config()							# {{{3
 	# USIZE=${USIZE:+$[(USIZE+128)*1024]} # FIXME assert USIZE <= RSIZE
 	: ${USIZE:=$RSIZE}
 	let "MLOC=USIZE-128*1024"
-	echo -n "Wipeout GC and AL area on $LO_DEV via /dev/mapper/$NAME for resource $RES"
+	echo -n "Wipeout GC and AL area on $HOSTNAME:$LO_DEV via /dev/mapper/$NAME for resource $RES"
 	# drbdadm down $RES
 	dd if=/dev/zero bs=1024 seek=$MLOC count=128 of=/dev/mapper/$NAME &>/dev/null
 	sync

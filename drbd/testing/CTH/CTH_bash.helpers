@@ -1,5 +1,5 @@
 #!/bin/bash -nv
-# $Id: CTH_bash.helpers,v 1.1.2.2 2004/05/27 17:46:58 lars Exp $
+# $Id: CTH_bash.helpers,v 1.1.2.3 2004/05/28 08:32:52 lars Exp $
 #
 # define some implicit magic
 # so the definition of the DRBDs will be easier
@@ -8,6 +8,8 @@
 ID_DISK=0
 ID_DRBD=0
 DRBD_CONF=""
+unset ${!Node_*} ${!Link_*} ${!Disk_*} ${!Drbd_*} ${!FS_*} ${!RS_*}
+
 link_for_each_node()
 {
 	local link=$1 doit=$2
@@ -139,41 +141,50 @@ new_drbd()
 }	
 
 
-crash_Node()
+Crash_Node()
 {
 	local n=$1
 	on ${!n}: generic_do_crash
 }
 
-wait_for_boot()
+Wait_for_boot()
 {
 	local n=$1
 	node_to_env $n
-	on ${!n}: generic_do_crash
 	ip=$admin_ip
 	generic_wait_for_boot
 }
 
-fail_Link()
+cat_proc_blah()
+{
+	cat /proc/{drbd,loadavg,meminfo} 2>&1
+	grep "drbd\|xfs\|reiser\|ext" /proc/slabinfo
+}
+Node_State()
+{
+	on ${!1}: cat_proc_blah
+}
+
+Fail_Link()
 {
 	local l=$1
 	link_for_each_node $l 'on ${!node}: iptables_DROP   nic=$nic hostname=$hostname'
 }
 
-heal_Link()
+Heal_Link()
 {
 	local l=$1
 	link_for_each_node $l 'on ${!node}: iptables_UNDROP   nic=$nic hostname=$hostname'
 }
 
-fail_Disk()
+Fail_Disk()
 {
 	local d=$1
 	disk_to_env $d
 	on ${!node}: dmsetup_error name=$name dev=$real_dev
 }
 
-heal_Disk()
+Heal_Disk()
 {
 	local d=$1
 	disk_to_env $d
@@ -182,19 +193,20 @@ heal_Disk()
 
 # initial boot
 boot_and_setup_nodes()
-{
+{ (
 	initial=true
 	for n in ${!Node_*}; do
 		node_to_env $n
 		ip=$admin_ip
+		echo "looking for $hostname ($ip)"
 		generic_wait_for_boot
 	done
 
 	# undrop all links
-	for l in ${!Link_*} ; do heal_Link $l ; done
+	for l in ${!Link_*} ; do Heal_Link $l ; done
 
 	# configure all dm disks
-	for d in ${!Disk_*} ; do heal_Disk $d ; done
+	for d in ${!Disk_*} ; do Heal_Disk $d ; done
 
 	# reset and up all DRBDs
 	for d in ${!Drbd_*} ; do
@@ -226,9 +238,9 @@ boot_and_setup_nodes()
 	done
 
 	initial=false
-}
+) }
 
-resource_Start_on_Node()
+Start()
 {
 	local rs=$1 nn=$2
 	i=${rs#RS_}
@@ -236,24 +248,26 @@ resource_Start_on_Node()
 	fs=FS_$i; CN=""
 	eval ${!fs}
 
-	[[ -z $CN && -z $cn ]] || exit 101
-	[[ $nn == Node_* ]]    || exit 102
+	[[ -z $CN && -z $cn ]] || return 101
+	[[ $nn == Node_* ]]    || return 102
 
 	drbd_to_env $DRBD
+	on ${!nn}: drbd_wait_peer_not_pri minor=$minor
 	on ${!nn}: drbdadm_pri   name=$name
 	on ${!nn}: do_mount      DEV=/dev/nb$minor TYPE=$TYPE MNT=$MNT
 
 	# START IN BACKGROUND
-	on ${!nn}: ${which}_start   MNT=$MNT &
+	on ${!nn}: ${which}_start   MNT=$MNT </dev/null &
 
 	# rememeber current node
 	eval "$fs=\"\$$fs CN=$nn\""
 	eval "$rs=\"\$$rs CN=$nn\""
 
 	echo "$rs now RUNNING on $nn"
+	Dump_RS
 }
 
-resource_Stop()
+Stop()
 {
 	local rs=$1
 	i=${rs#RS_}
@@ -261,9 +275,9 @@ resource_Stop()
 	fs=FS_$i; CN=""
 	eval "${!fs}"
 
-	[[ -z $CN || -z $cn ]] && exit 101
-	[[ $CN == $cn ]]       || exit 102
-	[[ $cn == Node_* ]]    || exit 103
+	[[ -z $CN || -z $cn ]] && return 101
+	[[ $CN == $cn ]]       || return 102
+	[[ $cn == Node_* ]]    || return 103
 
 	drbd_to_env $DRBD
 	on ${!cn}: generic_test_stop MNT=$MNT
@@ -271,15 +285,16 @@ resource_Stop()
 	on ${!cn}: drbdadm_sec       name=$name
 	eval "$fs=\${$fs% CN=*}"   # forget current node
 	eval "$rs=\${$rs% CN=*}"   # forget current node
+	Dump_RS
 }
 
-resource_relocate_to_Node()
+Relocate()
 {
 	local rs=$1 nn=$2
 	if [[ ${!rs} == *CN=* ]] ; then
-		resource_Stop $rs
+		Stop $rs
 	fi
-	resource_Start_on_Node $rs $nn
+	Start $rs $nn
 }
 
 # for verification
@@ -295,3 +310,45 @@ Dump_All()
 		Dump $n
 	done
 }
+Dump_RS()
+{
+	for r in ${!RS_*}; do
+		printf "%s=%q\n" "$r" "${!r}"
+	done
+}
+
+Help()
+{
+	cat <<-___
+	#
+	#  start something on some node:
+	#     Start RS_1 Node_1
+	#
+	#  relocate it:
+	#     Reloc RS_1 Node_2
+	#
+	#  stop it again:
+	#     Stop RS_1
+	#
+	#  sleep \$for_a_while # ;-)
+	#
+	#  fail and heal hardware:
+	#     Crash_Node    Node_#
+	#     Wait_for_boot Node_#
+	#     Fail_Link Link_#
+	#     Heal_Link Link_#
+	#     Fail_Disk Disk_#
+	#     Heal_Disk Disk_#
+	#
+	# see this text again:
+	#     Help  # <<=== note the capital H
+	# 
+	# see your resources:
+	#     Dump_RS
+	# 
+	# ask for
+	#     Node_State Node_1
+	#
+___
+}
+
