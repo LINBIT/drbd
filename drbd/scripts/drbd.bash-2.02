@@ -8,17 +8,38 @@
 # released under the same terms as drbd itself,
 # or the GPL, whatever suits you best.
 #
+# for questions wrt the functionality search for QQQ in the comments below
+# for style issues see end of file
+#
+### BEGIN INIT INFO
+# Provides: drbd
+# Required-Start: $network $syslog
+# Required-Stop:
+# Default-Start:  3 5
+# Default-Stop:   0 1 2 6
+# Description:    Control drbd resources.
+### END INIT INFO
+#
+# QQQ Required-Start: $sshd
+#
+# QQQ Provides: datadisk ?
+#
+# QQQ should there be an auto background mode as to not block other init
+#     scripts? How should we go about that?
+#     Maybe check an environment variable set by init?
+#
 # functionality translated from drbd.pl CVS 1.5 to
 # BASH_VERSINFO=(2 05 0 1 release i386-suse-linux)
+# should now work with
+# BASH_VERSINFO=(2 02 1 1 release i686-pc-linux-gnu)
+# and better, too
+# 
 # parser is more permissive wrt whitespace
 # easily extended for new options or more than two partners
 #
 # shouldn't there be more descriptive comments? ;)
 #
-# for questions wrt the functionality search for QQQ in the comments below
-# for style issues see end of file
-#
-CVSID='$Id: drbd.bash-2.02,v 1.1 2002/07/26 09:25:45 lars Exp $'
+CVSID='$Id: drbd.bash-2.02,v 1.2 2002/07/28 01:08:08 lars Exp $'
 CONTACT='Lars Ellenberg <l.g.e@web.de>, drbd-devel@lists.sourceforge.net'
 #
 
@@ -56,6 +77,7 @@ fi
 		 echo "This script will not work with this version of bash."
 		 exit -1
 	fi
+	unset try1 try2
 	case yes713 in
 	@(no|yes)+([0-9])) ;; 
 	*)
@@ -713,8 +735,7 @@ CONF=(__hash__0)
 		debug 2 "  %s" $SEEN_RESOURCES
 		[ $VERBOSITY -ge 2 ] && Dump CONF
 		check_sanity
-		if [ -z "$OPT_DRY_RUN" ] && [ "$COMMAND" != checkconfig ] \
-		&& [ -w "$CONFIG_PARSED" ]
+		if [ -z "$OPT_DRY_RUN" ] && [ "$COMMAND" != checkconfig ]
 		then
 			{   # store this config to avoid parsing again and again
 				echo "SEEN_RESOURCES='$SEEN_RESOURCES'"
@@ -1207,7 +1228,6 @@ CONF=(__hash__0)
 		#     can this happen? or does drbd refuse to configure such a device...
 		[ "$major" == 43 ] || echo "$link: WARN: $device major is not 43; you risk deadlock"
 
-echo "$(<$PROC_DRBD)"
 		while read line ; do
 			# yep, pattern matching in bash is noisy
 			# would it be sufficient to check for "$minor:*" ?
