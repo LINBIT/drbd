@@ -65,6 +65,7 @@ struct ioctl_drbd_config
   IN int      timeout;
   IN int      sync_rate; /* KB/sec */
   IN int      skip_sync; 
+  IN int      tl_size; /* size of the transfer log */
 };
 
 /* This is the layout for a Packet on the wire! 

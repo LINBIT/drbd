@@ -116,10 +116,10 @@ int main(int argc, char** argv)
       other_addr->sin_family = AF_INET;
       other_addr->sin_addr.s_addr = resolv(argv[4]);
 
-      config.timeout = 30 ; /* = 3 seconds */
+      config.timeout = 30; /* = 3 seconds */
       config.sync_rate = 250; /* KB/sec */
       config.skip_sync = 0; 
-
+      config.tl_size = 512;
 
       err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&config);      
       if(err)
