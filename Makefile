@@ -25,7 +25,7 @@ ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
 # or to forcefully include the cvs date in the tgz name:
-#   make distclean doc update.filelist tgz FORCE=1
+#   make distclean doc tgz FORCE=1
 #
 REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .Date: \(.\{10\}\).*/\1-\2/;s,/,,g;p;q;}' drbd_config.h)
 else
@@ -85,16 +85,21 @@ check_changelogs_up2date:
 	   up2date=false; fi ; \
 	$$up2date
 
-update.filelist:
-	find $$(svn st -v | sed '/^?/d;s/^. \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;') \
+# update of .filelist is forced:
+.PHONY: .filelist
+
+.filelist:
+	@ svn info >/dev/null || { echo "you need a svn checkout to do this." ; false ; }
+	@find $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;') \
 	\! -type d -maxdepth 0 |\
 	sed 's:^:drbd-$(DIST_VERSION)/:' > .filelist
-	[ -s .filelist ] # assert there is something in .filelist now
-	find documentation -name "[^.]*.[58]" -o -name "*.html" | \
+	@[ -s .filelist ] # assert there is something in .filelist now
+	@find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
 	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
+	@echo "./.filelist updated."
 
 update.filelist.cvs:
 	cvs status | grep -o "/drbd/drbd/[^,]*" |                 \
@@ -106,10 +111,6 @@ update.filelist.cvs:
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
 	for d in documentation/{ja,pt_BR}; do test -e $$d/Makefile && echo drbd-$(DIST_VERSION)/$$d/Makefile >> .filelist ; done
-
-.filelist:
-	@ echo -e "\nto create the filelist:   make update.filelist\nyou need cvs access, though.\n"
-	@ false
 
 tgz: .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
@@ -123,7 +124,7 @@ ifeq ($(FORCE),)
 tgz: check_changelogs_up2date doc
 endif
 
-tarball: distclean doc update.filelist tgz
+tarball: distclean doc tgz
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
 KVER := $(shell \
