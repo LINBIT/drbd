@@ -534,6 +534,9 @@ void drbd_read_bm(struct Drbd_Conf *mdev)
  * on disk location.
  *
  * @enr: The extent number of the bits we should write to disk.
+ *       ATTENTION: Based on AL_EXTENT_SIZE, although the chunk
+ *                  we write might represent more storage. 
+ *                  ( actually AL_EXTENT_SIZE*EXTENTS_PER_SECTOR )
  */
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 {
@@ -575,8 +578,6 @@ STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *mdev,unsigned int enr)
 
 	mdev->bm_writ_cnt++;
 }
-#undef BM_WORDS_PER_EXTENT
-#undef EXTENTS_PER_SECTOR
 
 STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
