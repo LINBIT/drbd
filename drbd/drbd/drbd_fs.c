@@ -489,6 +489,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err = copy_from_user(&drbd_conf[minor].sync_conf,
 			   &(((struct ioctl_syncer_config*)arg)->config),
 				     sizeof(struct syncer_config));
+		// THINK         > WFReportParams? Connected?
 		if (mdev->cstate > WFConnection)
 			drbd_send_sync_param(mdev);
 		// TODO Need to signal dsender() ?
@@ -530,6 +531,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 
 		set_cstate(mdev,Unconfigured);
+		mdev->state = Secondary;
 
 		break;
 

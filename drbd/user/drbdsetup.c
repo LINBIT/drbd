@@ -1094,7 +1094,7 @@ int main(int argc, char** argv)
 	    {
 	      while(*args++) num_of_args++;
 	    }
-	  if (argc-3 < num_of_args)
+	  if (help || argc-3 < num_of_args)
 	      print_command_usage(i,help?"":"Not enough arguments.");
 	  if (argc-3-num_of_args>0 && commands[i].options==0)
 	    {

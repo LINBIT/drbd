@@ -1169,6 +1169,8 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	return TRUE;
 }
 
+#if 0
+// XXX remove again?
 STATIC int receive_param_value(struct Drbd_Conf* mdev,int command)
 {
 	// XXX harmless(?) race with ioctl
@@ -1191,6 +1193,31 @@ STATIC int receive_param_value(struct Drbd_Conf* mdev,int command)
 	}
 
 	return TRUE;
+}
+#endif
+
+STATIC int receive_sync_param(struct Drbd_Conf* mdev)
+{
+	Drbd_SyncParam_P p;
+	int ok = TRUE;
+
+	if (drbd_recv(mdev, &p, sizeof(p),0) != sizeof(p))
+		return FALSE;
+
+	// XXX harmless race with ioctl ...
+	mdev->sync_conf.rate      = be32_to_cpu(p.rate);
+	mdev->sync_conf.use_csums = be32_to_cpu(p.use_csums);
+	mdev->sync_conf.skip      = be32_to_cpu(p.skip);
+	mdev->sync_conf.group     = be32_to_cpu(p.group);
+
+	if (   (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
+	    && !mdev->sync_conf.skip )
+	{
+		set_cstate(mdev,WFReportParams);
+		ok = drbd_send_param(mdev);
+	}
+
+	return ok;
 }
 
 STATIC int receive_param(struct Drbd_Conf* mdev)
@@ -1231,10 +1258,16 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 	}
 
 	// XXX harmless race with ioctl ...
-	mdev->sync_conf.group =
-		min_t(int,mdev->sync_conf.group,be32_to_cpu(param.sync_group));
 	mdev->sync_conf.rate  =
-		max_t(int,mdev->sync_conf.rate, be32_to_cpu(param.sync_rate));
+		max_t(int,mdev->sync_conf.rate, be32_to_cpu(param.sync_conf.rate));
+	/* FIXME how to decide when use_csums differs??
+		mdev->sync_conf.use_csums  = ???
+	 */
+	// if one of them wants to skip, both of them should skip.
+	mdev->sync_conf.skip  =
+		mdev->sync_conf.skip != 0 || param.sync_conf.skip != 0;
+	mdev->sync_conf.group =
+		min_t(int,mdev->sync_conf.group,be32_to_cpu(param.sync_conf.group));
 
 	/* should be removed ?
 	if(be64_to_cpu(param.protocol)!=mdev->lo_usize) {
@@ -1281,7 +1314,15 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 		       "%d: have_good=%d sync=%d quick=%d\n",
 		       minor,have_good,sync,quick);
 
-		if( sync && !mdev->sync_conf.skip && !no_sync) {
+		if ( mdev->sync_conf.skip && sync && !no_sync ) {
+			if (have_good == 1)
+				set_cstate(mdev,SkippedSyncS);
+			else // have_good == -1
+				set_cstate(mdev,SkippedSyncT);
+			goto skipped;
+		}
+
+		if( sync && !no_sync ) {
 			if(have_good == 1) {
 				if(quick) {
 					drbd_send_bitmap(mdev);
@@ -1311,8 +1352,10 @@ STATIC int receive_param(struct Drbd_Conf* mdev)
 			}
 		}
 	}
-
 	drbd_md_write(mdev); // update connected indicator, la_size.
+
+	// do not adopt gen counts when sync was skipped ...
+skipped:
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(param.state);
@@ -1519,10 +1562,8 @@ STATIC void drbdd(int minor)
 					     be16_to_cpu(header.command)))
 				goto err;
 			break;
-		case SetSyncGroup:
-		case SetSyncRate:
-			if(!receive_param_value(mdev,
-				be16_to_cpu(header.command)))
+		case SetSyncParam:
+			if(!receive_sync_param(mdev))
 				goto err;
 			break;
 		case SyncStop:
@@ -1531,7 +1572,6 @@ STATIC void drbdd(int minor)
 			break;
 		case SyncCont:
 			D_ASSERT(mdev->cstate == PausedSyncS);
-			D_ASSERT(mdev->sync_side == SyncSource);
 			set_cstate(mdev,SyncSource);
 			break;
 		default:

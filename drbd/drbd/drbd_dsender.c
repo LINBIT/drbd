@@ -154,7 +154,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 		for (i=0; i < minor_count; i++) {
 			if (signal_pending(current)) return;
 			if ( drbd_conf[i].sync_conf.group < mdev->sync_conf.group
-			  && drbd_conf[i].cstate > Connected )
+			  && drbd_conf[i].cstate > SkippedSyncT )
 			{
 				printk(KERN_INFO DEVICE_NAME
 					"%d: Syncer waits for sync group %i\n",
@@ -163,7 +163,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 				);
 				// CAUTION magic +2 !!
 				drbd_send_cmd(mdev,SyncStop,0);
-				set_cstate(mdev,mdev->sync_side+2);
+				set_cstate(mdev,PausedSyncT);
 				interruptible_sleep_on(&drbd_conf[i].cstate_wait);
 				did_wait=1;
 				current->state = TASK_INTERRUPTIBLE;
@@ -178,7 +178,7 @@ void drbd_wait_for_other_sync_groups(struct Drbd_Conf *mdev)
 			(mdev-drbd_conf)
 		);
 		drbd_send_cmd(mdev,SyncCont,0);
-		set_cstate(mdev,mdev->sync_side);
+		set_cstate(mdev,SyncTarget);
 	}
 }
 
@@ -240,14 +240,18 @@ void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 	mdev->rs_start=jiffies;
 	mdev->rs_mark_left=mdev->rs_left;
 	mdev->rs_mark_time=mdev->rs_start;
-	mdev->sync_side = side;
 
 	if(side == SyncTarget) {
 		spin_lock_irq(&mdev->ee_lock); // (ab)use ee_lock see, below.
 		set_bit(START_SYNC,&mdev->flags);
+		// FIXME do this more elegant ...
+		// for now, this ensures that meta data is "consistent"
+		if ( mdev->rs_total == 0 )
+			set_bit(SYNC_FINISHED,&mdev->flags);
 		spin_unlock_irq(&mdev->ee_lock);
 		wake_up_interruptible(&mdev->dsender_wait);
-	}
+	} else if ( mdev->rs_total == 0 )
+		set_cstate(mdev,Connected);
 }
 
 int drbd_dsender(struct Drbd_thread *thi)
@@ -303,7 +307,6 @@ int drbd_dsender(struct Drbd_thread *thi)
 				drbd_md_write(mdev);
 			}
 			mdev->rs_total = 0;
-			mdev->sync_side = 0;
 			set_cstate(mdev,Connected);
 		}
 

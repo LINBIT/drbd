@@ -132,6 +132,8 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 		[WFConnection]   = "WFConnection",
 		[WFReportParams] = "WFReportParams",
 		[Connected]      = "Connected",
+		[SkippedSyncS]   = "SkippedSyncS",
+		[SkippedSyncT]   = "SkippedSyncT",
 		[WFBitMap]       = "WFBitMap",
 		[SyncSource]     = "SyncSource",
 		[SyncTarget]     = "SyncTarget",
@@ -159,15 +161,16 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	  pe .. pending (waiting for ack)
 	  ua .. unack'd (still need to send ack)
 	*/
-	char *need_sync, *not_consistent;
 	for (i = 0; i < minor_count; i++) {
 		rlen += sprintf(buf + rlen,
-			   "%d: cs:%s st:%s/%s ns:%u nr:%u dw:%u dr:%u"
+			   "%d: cs:%s st:%s/%s %c ns:%u nr:%u dw:%u dr:%u"
 			   " pe:%u ua:%u\n",
 			   i,
 			   cstate_names[drbd_conf[i].cstate],
 			   state_names[drbd_conf[i].state],
 			   state_names[drbd_conf[i].o_state],
+			   (drbd_conf[i].gen_cnt[Flags]
+			    & MDF_Consistent) ? 'C' : 'I',
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,
@@ -176,20 +179,6 @@ STATIC int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].unacked_cnt)
 		);
 
-		if ( drbd_conf[i].cstate >  Unconfigured
-		  && drbd_conf[i].cstate <= Connected   )
-		{
-			need_sync = not_consistent = "";
-			if ( drbd_conf[i].sync_side )
-				need_sync = "NEEDS_SYNC";
-			if (!(drbd_conf[i].gen_cnt[Flags] & MDF_Consistent)) {
-				not_consistent = "INCONSISTENT";
-				need_sync = "NEEDS_SYNC";
-			}
-			if (need_sync[0] || not_consistent[0])
-				rlen += sprintf(buf + rlen, "\t%s\t%s\n",
-						need_sync,not_consistent);
-		}
 		if ( drbd_conf[i].cstate == SyncSource ||
 		     drbd_conf[i].cstate == SyncTarget )
 			rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);

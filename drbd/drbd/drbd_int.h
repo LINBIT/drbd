@@ -169,12 +169,21 @@ typedef struct {
 }  __attribute((packed)) Drbd_Data_P;
 MKPACKET(Drbd_Data_P)
 
+// unused again...
 typedef struct {
   __u32       barrier;   /* may be 0 or a barrier number  */
   __u32       _fill;     /* Without the _fill gcc may add fillbytes on
 			    64 bit plaforms, but does not so an 32 bits... */
 }  __attribute((packed)) Drbd_Barrier_P;
 MKPACKET(Drbd_Barrier_P)
+
+typedef struct {
+  __u32       rate;
+  __u32       use_csums;
+  __u32       skip;
+  __u32       group;
+}  __attribute((packed)) Drbd_SyncParam_P;
+MKPACKET(Drbd_SyncParam_P)
 
 typedef struct {
   __u64       p_size;  // size of disk
@@ -184,8 +193,7 @@ typedef struct {
   __u32       version;
   __u32       gen_cnt[GEN_CNT_SIZE];
   __u32       bit_map_gen[GEN_CNT_SIZE];
-  __u32       sync_group;
-  __u32       sync_rate;
+  Drbd_SyncParam_P sync_conf;
 }  __attribute((packed)) Drbd_Parameter_P;
 MKPACKET(Drbd_Parameter_P)
 
@@ -212,8 +220,8 @@ MKPACKET(Drbd_BlockRequest_P)
 typedef enum {
   Data,
   DataReply,
-  RecvAck,      /* Used in protocol B */
-  WriteAck,     /* Used in protocol C */
+  RecvAck,      // Used in protocol B
+  WriteAck,     // Used in protocol C
   Barrier,
   BarrierAck,
   ReportParams,
@@ -223,15 +231,15 @@ typedef enum {
   PingAck,
   BecomeSyncTarget,
   BecomeSyncSource,
-  BecomeSec,     /* Secondary asking primary to become secondary */
-  WriteHint,     /* Used in protocol C to hint the secondary to call tq_disk */
-  DataRequest,   /* Used to ask for a data block */
-  RSDataRequest, /* Used to ask for a data block */
-  BlockInSync,   /* Possible anser to CondDataRequest. No data will be send */
-  SetSyncRate,
-  SetSyncGroup,
+  BecomeSec,     // Secondary asking primary to become secondary
+  WriteHint,     // Used in protocol C to hint the secondary to call tq_disk
+  DataRequest,   // Used to ask for a data block
+  RSDataRequest, // Used to ask for a data block
+  BlockInSync,   // Possible anser to CondDataRequest. No data will be send
+  SetSyncParam,
   SyncStop,
   SyncCont,
+  MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 } Drbd_Packet_Cmd;
 
 
@@ -332,7 +340,6 @@ struct BitMap {
 struct Drbd_Conf {
 	struct net_config conf;
 	struct syncer_config sync_conf;
-	Drbd_CState sync_side;
 	int do_panic;
 	struct socket *sock;  /* for data/barrier/cstate/parameter packets */
 	struct socket *msock; /* for ping/ack (metadata) packets */

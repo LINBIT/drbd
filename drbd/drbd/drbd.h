@@ -142,6 +142,8 @@ typedef enum {
 	WFConnection,
 	WFReportParams, // we have a socket
 	Connected,      // we have introduced each other
+	SkippedSyncS,   // we should have synced, but user said no
+	SkippedSyncT,
 	WFBitMap,
 	SyncSource,
 	SyncTarget,

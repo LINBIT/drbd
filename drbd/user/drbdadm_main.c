@@ -548,8 +548,10 @@ int main(int argc, char** argv)
   dry_run=0;
   yyin=NULL;
 
-  if( (basename=rindex(argv[0],'/')) )
+  if( (basename=strrchr(argv[0],'/')) )
     argv[0] = ++basename;
+  else
+    basename=argv[0];
   if(argc == 1) print_usage(); // arguments missing.
 
   opterr=1;

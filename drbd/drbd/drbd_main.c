@@ -8,6 +8,9 @@
    Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
 	main author.
 
+   Copyright (C) 2003, Lars Ellenberg <l.g.e@web.de>.
+	main contributor.
+
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
 	Early 2.3.x work.
 
@@ -434,6 +437,8 @@ int drbd_send_cmd(struct Drbd_Conf *mdev,Drbd_Packet_Cmd cmd, int via_msock)
 	return (err == sizeof(head));
 }
 
+#if 0
+// hm, possibly remove these again...
 // XXX should these go over sock or msock??
 int _drbd_send_u32_param(struct Drbd_Conf *mdev,
 			Drbd_Packet_Cmd which, int value)
@@ -462,16 +467,33 @@ int drbd_send_u32_param(struct Drbd_Conf *mdev,
 	up(&mdev->sock_mutex);
 	return ret;
 }
+#endif
 
 int drbd_send_sync_param(struct Drbd_Conf *mdev)
 {
-	int ret;
-	// or should we introduce a special SetSyncParam packet?
-	down(&mdev->sock_mutex);
-	ret = _drbd_send_u32_param(mdev,SetSyncRate,mdev->sync_conf.rate)
-	   && _drbd_send_u32_param(mdev,SetSyncGroup,mdev->sync_conf.group);
-	up(&mdev->sock_mutex);
-	return ret;
+	Drbd_SyncParam_Packet p;
+	int err, ok;
+
+	p.p.command   = cpu_to_be16(SetSyncParam);
+	p.h.rate      = cpu_to_be32(mdev->sync_conf.rate);
+	p.h.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
+	p.h.skip      = cpu_to_be32(mdev->sync_conf.skip);
+	p.h.group     = cpu_to_be32(mdev->sync_conf.group);
+
+	err = drbd_send(mdev, (Drbd_Packet*)&p,sizeof(p),0,0,0);
+
+	D_ASSERT(err == sizeof(p));
+	ok = (err == sizeof(p));
+
+	if ( ok
+	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
+	    && !mdev->sync_conf.skip )
+	{
+		set_cstate(mdev,WFReportParams);
+		ok = drbd_send_param(mdev);
+	}
+
+	return ok;
 }
 
 int drbd_send_param(struct Drbd_Conf *mdev)
@@ -493,8 +515,10 @@ int drbd_send_param(struct Drbd_Conf *mdev)
 		param.h.gen_cnt[i]=cpu_to_be32(mdev->gen_cnt[i]);
 		param.h.bit_map_gen[i]=cpu_to_be32(mdev->bit_map_gen[i]);
 	}
-	param.h.sync_group = mdev->sync_conf.group;
-	param.h.sync_rate  = mdev->sync_conf.rate;
+	param.h.sync_conf.rate      = cpu_to_be32(mdev->sync_conf.rate);
+	param.h.sync_conf.use_csums = cpu_to_be32(mdev->sync_conf.use_csums);
+	param.h.sync_conf.skip      = cpu_to_be32(mdev->sync_conf.skip);
+	param.h.sync_conf.group     = cpu_to_be32(mdev->sync_conf.group);
 
 	down(&mdev->sock_mutex);
 	err = drbd_send(mdev, (Drbd_Packet*)&param,sizeof(param),0,0,0);
@@ -1048,7 +1072,6 @@ int __init drbd_init(void)
 		drbd_conf[i].sync_conf.group=0;
 		drbd_conf[i].sync_conf.use_csums=0;
 		drbd_conf[i].sync_conf.skip=0;
-		drbd_conf[i].sync_side=0;
 		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
 		drbd_sizes[i] = 0;
 		set_device_ro(MKDEV(MAJOR_NR, i), TRUE );
