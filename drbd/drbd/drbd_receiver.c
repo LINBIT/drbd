@@ -117,7 +117,7 @@
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 
-	mdev=drbd_lldev_to_mdev(bh->b_rdev);
+	mdev=drbd_lldev_to_mdev(bh->b_dev);
 
 	/*
 	printk(KERN_ERR DEVICE_NAME "%d: dio_end_sec in_irq()=%d\n",
