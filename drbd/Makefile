@@ -33,7 +33,7 @@ uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
 
 tgz:    
-	tar -czvf drbd-$(VERSION).tar.gz \
+	tar -czvf drbd-$(REL_VERSION).tar.gz \
 	--exclude *.o  --exclude CVS \
 	--exclude *~ --exclude .deps --exclude *.tar.gz \
 	--exclude drbdsetup --exclude dm --exclude config \
