@@ -921,7 +921,26 @@ void drbdd(int minor)
 	drbd_thread_stop(&drbd_conf[minor].syncer);
 	drbd_thread_stop(&drbd_conf[minor].asender);
 	drbd_collect_zombies(minor);
+
+	while(down_trylock(&drbd_conf[minor].send_mutex))
+	{
+		struct send_timer_info *ti;
+		spin_lock(&drbd_conf[minor].send_proc_lock);
+		if((ti=drbd_conf[minor].send_proc)) {
+			ti->timeout_happened=1;
+			drbd_queue_signal(DRBD_SIG, ti->task);
+			spin_unlock(&drbd_conf[minor].send_proc_lock);
+			down(&drbd_conf[minor].send_mutex);
+			break;
+		} else {
+			spin_unlock(&drbd_conf[minor].send_proc_lock);
+			schedule_timeout(HZ / 10);
+		}
+	}
+	/* By grabbing the send_mutex we make shure that no one 
+	   uses the socket right now. */
 	drbd_free_sock(minor);
+	up(&drbd_conf[minor].send_mutex);
 
 	if(drbd_conf[minor].cstate != StandAlone) 
 	        set_cstate(&drbd_conf[minor],Unconnected);
@@ -1033,17 +1052,11 @@ inline int drbd_try_send_barrier(struct Drbd_Conf *mdev)
 void drbd_ping_timeout(unsigned long arg)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
-	struct send_timer_info *ti;
 
 	printk(KERN_ERR DEVICE_NAME"%d: ping ack did not arrive\n",
 	       (int)(mdev-drbd_conf));
 
 	drbd_thread_restart_nowait(&mdev->receiver);
-
-	if((ti=mdev->send_proc)) {
-		ti->timeout_happened=1;
-		drbd_queue_signal(DRBD_SIG, ti->task);
-	}
 }
 
 

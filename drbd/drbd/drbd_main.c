@@ -641,10 +641,12 @@ static void drbd_timeout(unsigned long arg)
 
 		ti->timeout_happened=1;
 		drbd_queue_signal(DRBD_SIG, ti->task);
+		spin_lock(&ti->mdev->send_proc_lock);		
 		if((ti=ti->mdev->send_proc)) {
 			ti->timeout_happened=1;
 			drbd_queue_signal(DRBD_SIG, ti->task);
 		}
+		spin_unlock(&ti->mdev->send_proc_lock);		
 	} else {
 		/*
 		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg time expired"
@@ -738,15 +740,19 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	msg.msg_namelen = 0;
 	msg.msg_flags = MSG_NOSIGNAL;
 
-	if (mdev->conf.timeout) {
-		ti.mdev=mdev;
-		ti.timeout_happened=0;
-		ti.via_msock=via_msock;
-		ti.task=current;
-		ti.restart=1;
-		ti.counter=0;
-		if(!via_msock) mdev->send_proc=&ti;
+	ti.mdev=mdev;
+	ti.timeout_happened=0;
+	ti.via_msock=via_msock;
+	ti.task=current;
+	ti.restart=1;
+	ti.counter=0;
+	if(!via_msock) {
+		spin_lock(&ti->mdev->send_proc_lock); 
+		mdev->send_proc=&ti; 
+		spin_unlock(&ti->mdev->send_proc_lock);		
+	}
 
+	if (mdev->conf.timeout) {
 		init_timer(&ti.s_timeout);
 		ti.s_timeout.function = drbd_timeout;
 		ti.s_timeout.data = (unsigned long) &ti;
@@ -812,11 +818,18 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 	set_fs(oldfs);
 	unlock_kernel();
 
+	ti.restart=0;
+
 	if (mdev->conf.timeout) {
-		ti.restart=0;
-		if(!via_msock) mdev->send_proc=NULL;
 		del_timer_sync(&ti.s_timeout);
 	}
+
+	if(!via_msock) {
+		spin_lock(&ti->mdev->send_proc_lock);		
+		mdev->send_proc=NULL;
+		spin_unlock(&ti->mdev->send_proc_lock);		
+	}
+
 
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	current->blocked = oldset;
@@ -974,6 +987,7 @@ int __init drbd_init(void)
 		drbd_conf[i].synced_to=0;
 		init_MUTEX(&drbd_conf[i].send_mutex);
 		drbd_conf[i].send_proc=NULL;
+		drbd_conf[i].send_proc_lock = SPIN_LOCK_UNLOCKED;
 		drbd_thread_init(i, &drbd_conf[i].receiver, drbdd_init);
 		drbd_thread_init(i, &drbd_conf[i].syncer, drbd_syncer);
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);

@@ -250,6 +250,7 @@ struct Drbd_Conf {
 	struct timer_list a_timeout; /* ack timeout */
 	struct semaphore send_mutex;
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
+	spinlock_t send_proc_lock;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
 	struct Drbd_thread receiver;
 	struct Drbd_thread syncer;
