@@ -25,33 +25,29 @@
 
 #include <linux/ioctl.h>
 
+#define SS_OUT_OF_SYNC (1)
+#define SS_IN_SYNC     (0)
+
 /* Mirroring block device's syncer operations */
 struct mbds_operations { 
-  void (*block_not_replicated) (kdev_t dev, unsigned long blocknr); 
-  int (*get_blocks_need_sync) (kdev_t dev, unsigned long *blocknrs, int count);
+	void* (*init)               (kdev_t dev);
+	/* May _not_ return NULL */
+	void (*cleanup)            (void* id);
+	void (*reset)              (void* id,int ln2_bs);
+	void (*set_block_status)   (void* id,unsigned long blocknr,
+				    int ln2_bs, int status);	
+	/*
+	  id          is the pointer returned by init(kdev_t)
+	  blocknr     block number
+	  ln2_bs      ln2(blocksize); e.g. ln2_bs=10 <=> blocksize=1024
+	  status      one of SS_OUT_OF_SYNC or SS_IN_SYNC
+	*/
+	unsigned long (*get_block) (void* id, int ln2_bs);
 };
 
-#define MBDS_SYNC_ALL -2
-#define MBDS_DONE -3
+#define MBDS_SYNC_ALL (-2)
+#define MBDS_DONE     (-3)
 
-/*
-    
-  mirror_lost()
-  mirror_rejoined()
-     I think these are too loose, what happens to all that blocks
-     somwhere on the fly??
-
-  block_not_replicated(blocknr)
-                     This block was not replicated by drbd.
-
-  get_blocks_need_sync(*blocknrs,count)
-                     get_blocks_need_sync should write up to count
-		     block numbers into blocknrs and return the nuber
-		     of entries written. 
-		     If all blocks are synced it should return MBDS_DONE.
-                     If the filesystem can not fullfill the request it
-                     may return MBDS_SYNC_ALL.
-*/
 
 #define BLKSYNCISET   _IOW(0x12,106, struct mbds_operations) 
 #define BLKSYNCIUNSET _IO(0x23,107)

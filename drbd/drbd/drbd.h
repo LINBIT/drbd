@@ -110,6 +110,7 @@ typedef struct {
 MKPACKET(Drbd_Parameter_P)
 
 typedef struct {
+  __u64       block_nr;
   __u64       block_id;
 } Drbd_BlockAck_P;
 MKPACKET(Drbd_BlockAck_P)
@@ -137,7 +138,8 @@ typedef enum {
   Unconnected, 
   WFConnection,
   WFReportParams,
-  Syncing, 
+  SyncingAll,
+  SyncingQuick,
   Connected 
 } Drbd_CState; 
 
