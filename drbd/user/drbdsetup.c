@@ -390,23 +390,6 @@ int open_drbd_device(const char* device)
   return drbd_fd;
 }
 
-void check_state_dir(void)
-{
-  struct stat drbd_stat;
-  if(stat(DRBD_MD_PATH,&drbd_stat))
-    {
-      if (errno==ENOENT)
-	{
-	  fprintf(stderr,DRBD_MD_PATH " does not exists. Creating it.\n");
-	  if(!mkdir(DRBD_MD_PATH,00600)) return;
-	  fprintf(stderr,"Can not create " DRBD_MD_PATH "\n");
-	  exit(20);
-	}
-      fprintf(stderr,"Something is wrong with " DRBD_MD_PATH "\n");
-      exit(20);
-    }
-}
-
 int scan_disk_options(char **argv,
 		      int argc,
 		      struct ioctl_disk_config* cn,
@@ -1169,7 +1152,6 @@ int main(int argc, char** argv)
 	    }
 
 	  drbd_fd=open_drbd_device(argv[1]);
-	  check_state_dir();
 
 	  opterr = 1; /* let getopt() print error messages */
 	  optind = 3+num_of_args;

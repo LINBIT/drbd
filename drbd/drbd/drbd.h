@@ -182,10 +182,6 @@ struct ioctl_get_config {
        	OUT int               meta_index;
 };
 
-
-#define DRBD_MD_PATH   "/var/lib/drbd"
-#define DRBD_MD_FILES  DRBD_MD_PATH"/drbd%d"
-
 #define DRBD_MAGIC 0x83740267
 #define BE_DRBD_MAGIC __constant_cpu_to_be32(DRBD_MAGIC)
 
