@@ -18,6 +18,7 @@ static struct d_option* new_opt(char* name,char* value)
 
   cn->name=name;
   cn->value=value;
+  cn->mentioned=0;
   
   return cn;
 }
@@ -68,7 +69,7 @@ static struct d_resource* new_resource(char* name)
 
 %token TK_RESOURCE TK_DISK TK_NET TK_SYNCER TK_ON
 %token TK_PORT TK_DEVICE TK_ADDRESS
-%token <txt> TK_PROTOCOL TK_FSCK_CMD TK_DISK TK_DO_PANIC
+%token <txt> TK_PROTOCOL TK_DISK TK_DO_PANIC
 %token <txt> TK_SIZE TK_TL_SIZE TK_TIMEOUT TK_CONNECT_INT 
 %token <txt> TK_RATE TK_USE_CSUMS TK_SKIP_SYNC TK_PING_INT 
 %token <txt> TK_INTEGER TK_STRING TK_IPADDR TK_INCON_DEGR_CMD 

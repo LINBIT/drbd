@@ -48,7 +48,6 @@ tl-size          { DP; CP; return TK_TL_SIZE;       }
 timeout          { DP; CP; return TK_TIMEOUT;       }
 ping-int         { DP; CP; return TK_PING_INT;      } 
 protocol         { DP; CP; return TK_PROTOCOL;      }
-fsck-cmd         { DP; CP; return TK_FSCK_CMD;      }
 do-panic         { DP; CP; return TK_DO_PANIC;      }
 use-csums        { DP; CP; return TK_USE_CSUMS;     }
 skip-sync        { DP; CP; return TK_SKIP_SYNC;     }

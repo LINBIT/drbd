@@ -946,7 +946,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 	 cn.lower_device_minor,
 	 guess_dev_name("/dev",cn.lower_device_major,cn.lower_device_minor));
   printf("Disk options:\n");
-  if( cn.disk_size_user ) printf(" disk-size = %d KB\n",cn.disk_size_user);
+  if( cn.disk_size_user ) printf(" size = %d KB\n",cn.disk_size_user);
   if( cn.do_panic ) printf(" do-panic\n");
 
   if( cn.cstate < Unconnected ) return 0;

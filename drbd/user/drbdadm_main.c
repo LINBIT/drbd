@@ -33,6 +33,7 @@
 #include <errno.h>
 #define _GNU_SOURCE
 #include <getopt.h>
+#include <signal.h>
 
 #include "drbdadm.h"
 
@@ -40,6 +41,8 @@ struct adm_cmd {
   const char* name;
   int (* function)(struct d_resource*,char* );
   char* arg;
+  int show_in_usage;
+  int res_name_required;
 };
 
 extern int yyparse();
@@ -52,6 +55,7 @@ int dry_run;
 char* drbdsetup;
 char* setup_opts[10];
 int soi=0;
+int alarm_raised;
 
 struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
@@ -60,29 +64,31 @@ struct option admopt[] = {
   { 0,              0,                0, 0   } 
 };
 
-static int adm_attach(struct d_resource* ,char* );
-static int adm_connect(struct d_resource* ,char* );
-static int adm_generic(struct d_resource* ,char* );
+int adm_attach(struct d_resource* ,char* );
+int adm_connect(struct d_resource* ,char* );
+int adm_generic(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
+static int helper_dev(struct d_resource* ,char* );
 
 struct adm_cmd cmds[] = {
-  { "attach",            adm_attach,  0                   },
-  //{ "detach",            adm_generic, "??missing??"     },  
-  { "connect",           adm_connect, 0                   },
-  { "disconnect",        adm_generic, "disconnect"        },
-  { "up",                adm_up,      0                   },
-  { "down",              adm_generic, "down"              },
-  { "primary",           adm_generic, "primary"           },
-  { "secondary",         adm_generic, "secondary"         },
-  { "secondary_remote",  adm_generic, "secondary_remote"  },
-  { "invalidate",        adm_generic, "invalidate"        },
-  { "invalidate_remote", adm_generic, "invalidate_remote" },
-  { "resize",            adm_generic, "resize"            },
-  { "adjust",            adm_adjust,  0                   },
-  { "dump",              adm_dump,    0                   }
-// "helper" for scripts to get info from the global section...
+  { "attach",            adm_attach,  0                  ,1,1 },
+  //{ "detach",            adm_generic, "??missing??"    ,1,1 },  
+  { "connect",           adm_connect, 0                  ,1,1 },
+  { "disconnect",        adm_generic, "disconnect"       ,1,1 },
+  { "up",                adm_up,      0                  ,1,1 },
+  { "down",              adm_generic, "down"             ,1,1 },
+  { "primary",           adm_generic, "primary"          ,1,1 },
+  { "secondary",         adm_generic, "secondary"        ,1,1 },
+  { "secondary_remote",  adm_generic, "secondary_remote" ,1,1 },
+  { "invalidate",        adm_generic, "invalidate"       ,1,1 },
+  { "invalidate_remote", adm_generic, "invalidate_remote",1,1 },
+  { "resize",            adm_generic, "resize"           ,1,1 },
+  { "adjust",            adm_adjust,  0                  ,1,1 },
+  { "dump",              adm_dump,    0                  ,1,1 },
+  { "sh-devices",        helper_dev,  0                  ,0,0 },
+  //{ "sh-globals",      helper_globals,  0              ,0,0 },
 };
 
 /* ssprintf() places the result of the printf in the current stack
@@ -152,6 +158,21 @@ static int adm_dump(struct d_resource* res,char* unused)
   return 1;
 }
 
+static int helper_dev(struct d_resource* res,char* unused)
+{
+  while(1) {
+    printf("%s",esc(res->name));
+    res=res->next;
+    if(res) printf(" ");
+    else {
+      printf("\n");
+      break;
+    }
+  }
+
+  return 0;
+}
+
 static void free_host_info(struct d_host_info* hi)
 {
   if(!hi) return;
@@ -211,9 +232,22 @@ static void find_drbdsetup(char** pathes)
   exit(20);
 }
 
+static void alarm_handler(int signo)
+{
+  alarm_raised=1;
+}
+
 static int m_system(char** argv)
 {
   int pid,status;
+  int rv=-1;
+
+  struct sigaction so;
+  struct sigaction sa;
+
+  sa.sa_handler=&alarm_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags=0;
 
   if(dry_run) {
     while(*argv) {
@@ -234,13 +268,30 @@ static int m_system(char** argv)
     fprintf(stderr,"Can not exec");
     exit(20);    
   }
+
+  sigaction(SIGALRM,&sa,&so);
+  alarm_raised=0;
+  alarm(2);
+
   while(1) {
     if (waitpid(pid, &status, 0) == -1) {
-      if (errno != EINTR)
-	return -1;
-    } else
-      return status;    
+      if (errno != EINTR) break;
+      if (alarm_raised) {
+	fprintf(stderr,"Child process does not terminate!\nExiting.\n");
+	exit(20);
+      }
+    } else {
+      if(WIFEXITED(status)) {
+	rv=WEXITSTATUS(status);
+	break;
+      }
+    }
   }
+  
+  alarm(0);
+  sigaction(SIGALRM,&so,NULL);  
+
+  return rv;
 }
 
 
@@ -254,7 +305,7 @@ static int m_system(char** argv)
     OPT=OPT->next; \
   }
 
-static int adm_attach(struct d_resource* res,char* unused)
+int adm_attach(struct d_resource* res,char* unused)
 {
   char* argv[20];
   struct d_option* opt;  
@@ -271,7 +322,7 @@ static int adm_attach(struct d_resource* res,char* unused)
   return m_system(argv);
 }
 
-static int adm_generic(struct d_resource* res,char* cmd)
+int adm_generic(struct d_resource* res,char* cmd)
 {
   char* argv[20];
   int argc=0,i;
@@ -287,7 +338,7 @@ static int adm_generic(struct d_resource* res,char* cmd)
   return m_system(argv);
 }
 
-static int adm_connect(struct d_resource* res,char* unused)
+int adm_connect(struct d_resource* res,char* unused)
 {
   char* argv[20];
   struct d_option* opt;  
@@ -356,6 +407,7 @@ void print_usage(const char* prgname)
   printf("\nCOMMANDS:\n");
   
   for(i=0;i<ARRY_SIZE(cmds);i++) {
+    if(cmds[i].show_in_usage==0) break;
     if(i%2) {
       printf("%-35s\n",cmds[i].name);      
     } else {
@@ -371,8 +423,7 @@ void print_usage(const char* prgname)
 int main(int argc, char** argv)
 {
   int i;
-  int (* function)(struct d_resource*,char* );
-  char* argument;
+  struct adm_cmd* cmd;
   struct d_resource* res;
 
   drbdsetup=NULL;
@@ -420,9 +471,9 @@ int main(int argc, char** argv)
     }
 
   if(yyin==NULL) {
-    yyin = fopen(argv[1],"/etc/drbd-07.conf");
+    yyin = fopen("/etc/drbd-07.conf","r");
     if(yyin == 0) {
-      yyin = fopen(argv[1],"/etc/drbd.conf");
+      yyin = fopen("/etc/drbd.conf","r");
       if(yyin == 0) {
 	fprintf(stderr,"Can not open '/etc/drbd.conf'.\n.");
 	exit(20);	
@@ -442,38 +493,44 @@ int main(int argc, char** argv)
     setup_opts[soi++]=argv[optind++];
   }
 
-  if(optind+2 > argc) print_usage(argv[0]); // arguments missing.
+  //missing check if command name is given.
 
-  function=NULL;
+  cmd=NULL;
   for(i=0;i<ARRY_SIZE(cmds);i++) {
       if(!strcmp(cmds[i].name,argv[optind])) {
-	function=cmds[i].function;
-	argument=cmds[i].arg;
+	cmd=cmds+i;
       }
   }
 
-  if(function==NULL) {
+  if(cmd==NULL) {
     fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
     exit(20);	
   }
   optind++;
 
-  if(!strcmp(argv[optind],"all")) {
-    res=config;
-    while(res) {
-      function(res,argument);
-      res=res->next;
-    }
-  } else {
-    int i;
-    res=config;
-    while(res) {
-      for(i=optind;i<argc;i++) {
-	if(!strcmp(argv[i],res->name)) function(res,argument);
+  if(cmd->res_name_required) 
+    {
+      if (optind+1 > argc) print_usage(argv[0]); // arguments missing.
+
+      if(!strcmp(argv[optind],"all")) {
+	res=config;
+	while(res) {
+	  cmd->function(res,cmd->arg);
+	  res=res->next;
+	}
+      } else {
+	int i;
+	res=config;
+	while(res) {
+	  for(i=optind;i<argc;i++) {
+	    if(!strcmp(argv[i],res->name)) cmd->function(res,cmd->arg);
+	  }
+	  res=res->next;
+	}    
       }
-      res=res->next;
-    }    
-  }
+    } else { // Commands which does not need a resource name
+      cmd->function(config,cmd->arg);
+    }
 
   free_config(config);
 
@@ -482,6 +539,6 @@ int main(int argc, char** argv)
 
 void yyerror(char* text)
 {
-  printf("LEXICAL ERROR in Line %d: %s\n",line,text);
-  exit(1); 
+  printf("%s in %d of config file.\n",text,line);
+  exit(20); 
 }

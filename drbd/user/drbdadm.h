@@ -15,6 +15,7 @@ struct d_option
   char* name;
   char* value;
   struct d_option* next;
+  int mentioned; // for the adjust command.
 };
 
 struct d_resource
@@ -30,6 +31,9 @@ struct d_resource
   struct d_resource* next;
 };
 
+extern int adm_attach(struct d_resource* ,char* );
+extern int adm_connect(struct d_resource* ,char* );
+
 extern int config_valid;
 extern struct d_resource* config;
 extern int line;
@@ -37,4 +41,5 @@ extern int line;
 extern int dry_run;
 extern char* drbdsetup;
 extern char ss_buffer[255];
+
 #endif
