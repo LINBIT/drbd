@@ -21,7 +21,7 @@
 
 SUBDIRS     = user drbd scripts benchmark documentation #testing
 ALLSUBDIRS  = user drbd scripts benchmark documentation testing
-REL_VERSION = $(word 3, $(shell grep REL_VERSION drbd/linux/drbd_config.h))
+REL_VERSION = $(shell sed -ne '/REL_VERSION/{s/^.*"\(.*\) cvs .*/\1/;p;q;}' drbd/linux/drbd_config.h)
 
 LN_S = ln -s
 RPMBUILD=rpmbuild
