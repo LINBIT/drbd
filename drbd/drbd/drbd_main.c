@@ -632,12 +632,36 @@ int drbd_send_drequest(drbd_dev *mdev, int cmd,
 	return ok;
 }
 
+/* called on sndtimeo
+ * returns TRUE if we should retry,
+ * FALSE if we think connection is dead,
+ * or someone signaled us.
+ */
+STATIC int drbd_retry_send(drbd_dev *mdev, struct socket *sock)
+{
+	long elapsed = (long)(jiffies - mdev->last_received);
+	DUMPLU(elapsed);
+	if ( signal_pending(current) || mdev->cstate <= WFConnection )
+		return FALSE;
+	if ( elapsed < mdev->conf.timeout*HZ/20 )
+		return TRUE;
+	if ( current != mdev->asender.task ) {
+		// FIXME ko_count--
+		DBG("sock_sendmsg timed out, requesting ping\n");
+		request_ping(mdev);
+		return TRUE;
+	}
+	ERR("sock_sendmsg timed out, aborting connection\n");
+	return FALSE;
+}
+
 int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 {
 	int sent,ok;
 	struct page *page = bh->b_page;
 	size_t size = bh->b_size;
 	int offset;
+	int retry = 10;
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -653,9 +677,17 @@ int _drbd_send_zc_bh(drbd_dev *mdev, struct buffer_head *bh)
 		offset = (int)bh->b_data - (int)page_address(page);
 	do {
 		sent = mdev->sock->ops->sendpage(mdev->sock, page, offset, size, MSG_NOSIGNAL);
+		if (sent == -EINTR) {
+			// FIXME move "retry--" into drbd_retry_send()
+			if (drbd_retry_send(mdev,mdev->sock) && retry--)
+				continue;
+			else
+				break;
+		}
 		if (sent <= 0) break;
 		size   -= sent;
 		offset += sent;
+		// FIXME test "last_received" ...
 	} while(size > 0 /* THINK && mdev->cstate >= Connected*/);
 
 	spin_lock(&mdev->send_task_lock);
@@ -712,7 +744,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		_drbd_send_barrier(mdev);
-	// THINK swap with the if() above?
 	tl_add(mdev,req);
 	ok =  (drbd_send(mdev,mdev->sock,&p,sizeof(p),MSG_MORE) == sizeof(p))
 	   && _drbd_send_zc_bh(mdev,req->bh);
@@ -777,31 +808,6 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 					      and close all sockets
 */
 
-/* called on sndtimeo
- * returns TRUE if we should retry,
- * FALSE if we think connection is dead,
- * or someone signaled us.
- */
-STATIC int drbd_retry_send(drbd_dev *mdev, struct socket *sock)
-{
-	long elapsed = (long)(jiffies - mdev->last_received);
-	DUMPLU(elapsed);
-	if ( signal_pending(current) || mdev->cstate <= WFConnection )
-		return FALSE;
-	if ( elapsed < mdev->conf.timeout*HZ/20 )
-		return TRUE;
-	if ( current != mdev->asender.task ) {
-		DBG("sock_sendmsg timed out, requesting ping\n");
-		/* FIXME can I safely send it myself right here,
-		 * or do I need to kill asender, and let it do this?
-		 */
-		request_ping(mdev);
-		return TRUE;
-	}
-	ERR("sock_sendmsg timed out, aborting connection\n");
-	return FALSE;
-}
-
 /*
  * you should have down()ed the appropriate [m]sock_mutex elsewhere!
  */
@@ -843,6 +849,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 		 */
 		rv = sock_sendmsg(sock, &msg, iov.iov_len );
 		if (rv == -EINTR) {
+			// FIXME move "retry--" into drbd_retry_send()
 			if (drbd_retry_send(mdev,sock) && retry--)
 				continue;
 			else
