@@ -243,14 +243,14 @@ int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item)
 }
 
 // Returns true if this sector is currently on the fly to our ll_disk
-int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector)
+int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 {
 	struct list_head *le;
 	struct drbd_barrier *b;
 	struct drbd_request *r;
 	int rv=FALSE;
 
-	if((mdev->send_block<<(mdev->blk_size_b-9)) == sector) return TRUE;
+	if(mdev->send_sector == sector) return TRUE;
 
 	spin_lock_irq(&mdev->tl_lock);
 	b=mdev->oldest_barrier;
@@ -522,13 +522,13 @@ int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,u32 set_size)
 
 
 int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
-		  unsigned long block_nr,u64 block_id)
+		  sector_t sector,u64 block_id)
 {
         Drbd_BlockAck_Packet head;
 	int ret;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.block_nr = cpu_to_be64(block_nr);
+	head.h.sector = cpu_to_be64(sector);
         head.h.block_id = block_id;
 	down(&mdev->msock_mutex);
 	ret=drbd_send(mdev,(Drbd_Packet*)&head,sizeof(head),0,0,1);
@@ -537,13 +537,13 @@ int drbd_send_ack(struct Drbd_Conf *mdev, int cmd,
 }
 
 int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
-		       unsigned long block_nr, u64 block_id)
+		       sector_t sector, u64 block_id)
 {
         Drbd_BlockRequest_Packet head;
 	int ret;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.block_nr = cpu_to_be64(block_nr);
+	head.h.sector = cpu_to_be64(sector);
         head.h.block_id = block_id;
 	head.h.blksize = cpu_to_be32(1 << mdev->blk_size_b);
 
@@ -553,13 +553,13 @@ int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd,
 	return (ret == sizeof(head));
 }
 
-int drbd_send_insync(struct Drbd_Conf *mdev,unsigned long blocknr,u64 block_id)
+int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,u64 block_id)
 {
 	Drbd_Data_Packet head;
 	int ret;
 
 	head.p.command = cpu_to_be16(BlockInSync);
-	head.h.block_nr = cpu_to_be64(blocknr);
+	head.h.sector = cpu_to_be64(sector);
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
@@ -576,7 +576,7 @@ int drbd_send_dblock(struct Drbd_Conf *mdev, struct buffer_head *bh,
 	int ret,ok;
 
 	head.p.command = cpu_to_be16(Data);
-	head.h.block_nr = cpu_to_be64(bh->b_blocknr);
+	head.h.sector = cpu_to_be64(bh->b_rsector);
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
@@ -609,7 +609,7 @@ int drbd_send_block(struct Drbd_Conf *mdev, int cmd, struct buffer_head *bh,
 	int ret,ok;
 
 	head.p.command = cpu_to_be16(cmd);
-	head.h.block_nr = cpu_to_be64(bh->b_blocknr);
+	head.h.sector = cpu_to_be64(bh->b_rsector);
 	head.h.block_id = block_id;
 
 	down(&mdev->sock_mutex);
@@ -1006,7 +1006,7 @@ int __init drbd_init(void)
 		init_waitqueue_head(&drbd_conf[i].cstate_wait);
 		drbd_conf[i].open_cnt = 0;
 		drbd_conf[i].epoch_size=0;
-		drbd_conf[i].send_block=-1;
+		drbd_conf[i].send_sector=-1;
 		INIT_LIST_HEAD(&drbd_conf[i].free_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
 		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
@@ -1221,14 +1221,18 @@ void bm_cleanup(struct BitMap* sbm)
 /* THINK:
    What happens when the block_size (ln2_block_size) changes between
    calls 
+
+   TODO: bm_set_bit/bm_get_bit totally buggy, there needs to be a
+         size parameter!!!
 */
 
+#define CB (BM_BLOCK_SIZE_B-9)
+
 int 
-bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
+bm_set_bit(struct BitMap* sbm, sector_t sector, int bit)
 {
         unsigned long* bm;
 	unsigned long bitnr;
-	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
 	int ret=0;
 
 	if(sbm == NULL) {
@@ -1239,15 +1243,15 @@ bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
 
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
-	bitnr = blocknr >> cb;
+	bitnr = sector >> CB;
 
-	if(!bit && cb) {
+	if(!bit && CB) {
 		if(sbm->sb_bitnr == bitnr) {
-		        sbm->sb_mask |= 1L << (blocknr & ((1L<<cb)-1));
-			if(sbm->sb_mask != (1L<<(1<<cb))-1) goto out;
+		        sbm->sb_mask |= 1L << (blocknr & ((1L<<CB)-1));
+			if(sbm->sb_mask != (1L<<(1<<CB))-1) goto out;
 		} else {
 	                sbm->sb_bitnr = bitnr;
-			sbm->sb_mask = 1L << (blocknr & ((1L<<cb)-1));
+			sbm->sb_mask = 1L << (blocknr & ((1L<<CB)-1));
 			goto out;
 		}
 	}
@@ -1269,13 +1273,11 @@ bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit)
 	return ret;
 }
 
-int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size)
+int bm_get_bit(struct BitMap* sbm, sector_t sector)
 {
         unsigned long* bm;
 	unsigned long bitnr;
 	int bit;
-
-	int cb = (BM_BLOCK_SIZE_B-ln2_block_size);
 
 	if(sbm == NULL) {
 		printk(KERN_ERR DEVICE_NAME"X: You need to specify the "
@@ -1285,7 +1287,7 @@ int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size)
 
  	spin_lock(&sbm->bm_lock);
 	bm = sbm->bm;
-	bitnr = blocknr >> cb;
+	bitnr = blocknr >> CB;
 
 	bit=(bm[bitnr>>LN2_BPL]&( 1L << (bitnr & ((1L<<LN2_BPL)-1)))) ? 1 : 0;
 	spin_unlock(&sbm->bm_lock);
@@ -1304,7 +1306,7 @@ static inline int bm_get_bn(unsigned long word,int nr)
 	return nr;
 }
 
-unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size)
+sector_t bm_get_sector(struct BitMap* sbm,int ln2_block_size)
 {
         unsigned long* bm;
 	unsigned long wnr;
@@ -1341,7 +1343,7 @@ unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size)
 	    blk_size[MAJOR(sbm->dev)][MINOR(sbm->dev)] ) rv = MBDS_DONE;
  r_out:
  	spin_unlock(&sbm->bm_lock);	
-	return rv;
+	return rv << (ln2_block_size-9);
 }
 
 void bm_reset(struct BitMap* sbm,int ln2_block_size)

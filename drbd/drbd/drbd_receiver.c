@@ -1,4 +1,7 @@
 /*
+  Mess: drbd_set_in_sync(), bm_set_bit(), bm_get_bit()
+*/
+/*
 -*- linux-c -*-
    drbd_receiver.c
    Kernel module for 2.2.x/2.4.x Kernels
@@ -869,18 +872,14 @@ STATIC void receive_data_tail(struct Drbd_Conf* mdev,int data_size)
 }
 
 int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
-		    unsigned long block_nr, int data_size)
+		    sector_t sector, int data_size)
 {
 	struct buffer_head *bh;
 	int ok,rr;
 
  	bh = pr->d.bh;
 
-        if(block_nr != bh->b_blocknr) {
-                printk(KERN_ERR DEVICE_NAME "%d: dleass_read: blocknr! "
-		       "g=%lu e=%lu\n",
-                       (int)(mdev-drbd_conf),block_nr,bh->b_blocknr );
-        }
+	D_ASSERT( sector == BH_SECTOR(bh) );
 
 	rr=drbd_recv(mdev,bh_kmap(bh),data_size,0);
 	bh_kunmap(bh);
@@ -894,23 +893,23 @@ int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 STATIC int e_end_resync_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 {
-	drbd_set_in_sync(mdev,e->bh->b_blocknr,drbd_log2(e->bh->b_size));
-	drbd_send_ack(mdev,WriteAck,e->bh->b_blocknr,ID_SYNCER);
+	drbd_set_in_sync(mdev,BH_SECTOR(e->bh),e->bh->b_size);
+	drbd_send_ack(mdev,WriteAck,BH_SECTOR(e->bh),ID_SYNCER);
 	dec_unacked(mdev);
 
 	return TRUE;
 }
 
 int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
-		     unsigned long block_nr, int data_size)
+		     sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 
-	D_ASSERT( pr->d.block_nr == block_nr);
+	D_ASSERT( pr->d.sector == sector);
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
-	drbd_set_bh(e->bh,block_nr,mdev->lo_device);
+	drbd_set_bh(e->bh, sector ,mdev->lo_device);
         e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
@@ -930,14 +929,14 @@ int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 
 int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
-		   unsigned long block_nr, int data_size)
+		   sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 	struct buffer_head *bh;
 
 	bh = pr->d.bh;
 
-        D_ASSERT(block_nr == bh->b_blocknr);
+	D_ASSERT( sector == bh->b_blocknr * (bh->b_size >> 9) );
 
 	e = read_in_block(mdev,data_size);
 
@@ -952,7 +951,7 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 
 	bh->b_end_io(bh,1);
 
-	drbd_set_bh(e->bh,block_nr,mdev->lo_device);
+	drbd_set_bh(e->bh,sector,mdev->lo_device);
         e->block_id = ID_SYNCER;
 	e->e_end_io = e_end_resync_block;
 
@@ -971,14 +970,14 @@ int recv_both_read(struct Drbd_Conf* mdev, struct Pending_read *pr,
 }
 
 int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr, 
-		 unsigned long block_nr, int data_size)
+		 sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev,data_size);
 	if(!e)	return FALSE;
 	
-	drbd_send_ack(mdev,WriteAck,block_nr,ID_SYNCER);
+	drbd_send_ack(mdev,WriteAck,sector,ID_SYNCER);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
@@ -990,7 +989,7 @@ int recv_discard(struct Drbd_Conf* mdev, struct Pending_read *pr,
 STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 {
 	struct Pending_read *pr;
-	unsigned long block_nr;
+	sector_t sector;
 	Drbd_Data_P header;
 	int ok;
 
@@ -1007,7 +1006,7 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
  
 	ensure_blocksize(mdev,data_size);
       
-	block_nr = be64_to_cpu(header.block_nr);
+	sector = be64_to_cpu(header.sector);
 
 	pr = (struct Pending_read *)(long)header.block_id;
 
@@ -1019,7 +1018,7 @@ STATIC int receive_data_reply(struct Drbd_Conf* mdev,int data_size)
 	list_del(&pr->list); 
 	spin_unlock(&mdev->pr_lock);
 
-	ok = funcs[pr->cause](mdev,pr,block_nr,data_size);
+	ok = funcs[pr->cause](mdev,pr,sector,data_size);
 
 	kfree(pr);
 
@@ -1033,7 +1032,7 @@ STATIC int e_end_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 
 	mdev->epoch_size++;
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
-		ok=drbd_send_ack(mdev,WriteAck,e->bh->b_blocknr,e->block_id);
+		ok=drbd_send_ack(mdev,WriteAck,BH_SECTOR(e->bh),e->block_id);
 		dec_unacked(mdev);
 	}
 
@@ -1042,7 +1041,7 @@ STATIC int e_end_block(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 
 STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 {
-	unsigned long block_nr;
+	sector_t sector;
 	struct Tl_epoch_entry *e;
 	Drbd_Data_P header;
 
@@ -1051,11 +1050,11 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
        
 	ensure_blocksize(mdev,data_size);
 
-	block_nr = be64_to_cpu(header.block_nr);	
+	sector = be64_to_cpu(header.sector);	
 
 	e = read_in_block(mdev,data_size);
 	if(!e) return FALSE;
-	drbd_set_bh(e->bh,block_nr,mdev->lo_device);
+	drbd_set_bh(e->bh,sector,mdev->lo_device);
         e->block_id=header.block_id;
 	e->e_end_io = e_end_block;
 
@@ -1070,7 +1069,7 @@ STATIC int receive_data(struct Drbd_Conf* mdev,int data_size)
 		inc_unacked(mdev);
 		break;
 	case DRBD_PROT_B:
-		drbd_send_ack(mdev, RecvAck, block_nr,header.block_id);
+		drbd_send_ack(mdev, RecvAck, sector,header.block_id);
 		break;
 	case DRBD_PROT_A:
 		// nothing to do
@@ -1105,7 +1104,7 @@ STATIC int e_end_rsdata_req(struct Drbd_Conf* mdev, struct Tl_epoch_entry *e)
 STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 {
 	Drbd_BlockRequest_P header;
-	unsigned long block_nr;
+	sector_t sector;
 	struct Tl_epoch_entry *e;
         struct buffer_head *bh;
 	int data_size;
@@ -1125,11 +1124,11 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 		return FALSE;
 	}
 
-	block_nr = be64_to_cpu(header.block_nr);
+	sector = be64_to_cpu(header.sector);
 
 	spin_lock_irq(&mdev->ee_lock);
 	e=drbd_get_ee(mdev,TRUE);
-	drbd_set_bh(e->bh,block_nr,mdev->lo_device);
+	drbd_set_bh(e->bh,sector,mdev->lo_device);
 	e->block_id=header.block_id;
 	list_add(&e->list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
@@ -1145,15 +1144,14 @@ STATIC int receive_drequest(struct Drbd_Conf* mdev,int command)
 	e->bh->b_end_io = drbd_dio_end_read;	
 
 	spin_lock_irq(&mdev->bb_lock);
-	// TODO: Rethink mdev->blk_size_b
-	if(tl_check_sector(mdev,block_nr << (mdev->blk_size_b))) {
+	if(tl_check_sector(mdev,sector)) {
 		struct busy_block bl;
-		bb_wait_prepare(mdev,block_nr,&bl);
+		bb_wait_prepare(mdev,sector,&bl);
 		spin_unlock_irq(&mdev->bb_lock);
 		bb_wait(&bl);
 	} else spin_unlock_irq(&mdev->bb_lock);
 
-	mdev->read_cnt+=(1<<(mdev->blk_size_b-10)); //reconsider blk_size_b
+	mdev->read_cnt += bh->b_size >> 10;
 	submit_bh(READ,e->bh);
 	inc_unacked(mdev);
 	
@@ -1396,7 +1394,7 @@ STATIC int receive_in_sync(struct Drbd_Conf* mdev)
 
 	dec_pending(mdev);
 	
-	drbd_set_in_sync(mdev,be64_to_cpu(header.block_nr),mdev->blk_size_b);
+	drbd_set_in_sync(mdev,be64_to_cpu(header.sector),mdev->blk_size_b);
 
 	return TRUE;
 }
@@ -1658,7 +1656,7 @@ STATIC void got_block_ack(struct Drbd_Conf* mdev,Drbd_BlockAck_Packet* pkt)
 
 	if( is_syncer_blk(mdev,pkt->h.block_id)) {
 		drbd_set_in_sync(mdev,
-				 be64_to_cpu(pkt->h.block_nr),
+				 be64_to_cpu(pkt->h.sector),
 				 mdev->blk_size_b);
 	} else {
 		req=(drbd_request_t*)(long)pkt->h.block_id;

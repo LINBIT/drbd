@@ -106,7 +106,7 @@ int drbd_process_rdone_ee(struct Drbd_Conf* mdev)
 }
 
 
-int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
+int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector)
 {
 	/* When intoducing active/active this must also consider pending read
 	   requests. (currently only unacked requests are considered.) */
@@ -120,7 +120,7 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 
 	list_for_each(le,&mdev->read_ee) {
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(e->bh->b_blocknr == bnr) {
+		if(BH_SECTOR(e->bh) == sector) {
 			rv=TRUE;
 			goto out;
 		}
@@ -128,7 +128,7 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 
 	list_for_each(le,&mdev->rdone_ee) {
 		e = list_entry(le, struct Tl_epoch_entry,list);
-		if(e->bh->b_blocknr == bnr) {
+		if(BH_SECTOR(e->bh) == sector) {
 			rv=TRUE;
 			goto out;
 		}
@@ -142,7 +142,7 @@ int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr)
 STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 {
 	int number,i;
-	unsigned long block_nr;
+	sector_t sector;
 
 #define SLEEP_TIME 10
 
@@ -165,20 +165,20 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 		pr = kmalloc(sizeof(struct Pending_read), GFP_USER );
 		if (!pr) return TRUE;
 
-		// TODO: Rethink mdev->blk_size_b
-		block_nr = bm_get_blocknr(mdev->mbds_id,mdev->blk_size_b);
-		if(block_nr == MBDS_DONE) {
+		// TODO: Make mdev->blk_size_b constant 4K !
+		sector = bm_get_sector(mdev->mbds_id,mdev->blk_size_b);
+		if(sector == MBDS_DONE) {
 			kfree(pr);
 			return FALSE;
 		}
 
-		pr->d.block_nr = block_nr;
+		pr->d.sector = sector;
 		pr->cause = Resync;
 		spin_lock(&mdev->pr_lock);
 		list_add(&pr->list,&mdev->resync_reads);
 		spin_unlock(&mdev->pr_lock);
 
-		if(drbd_send_drequest(mdev,RSDataRequest,block_nr,
+		if(drbd_send_drequest(mdev,RSDataRequest,sector,
 				      (unsigned long)pr))
 			inc_pending(mdev);
 	}

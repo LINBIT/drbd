@@ -79,7 +79,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags)
 	}
 	
 	spin_lock_irqsave(&mdev->bb_lock,flags);
-	bb_done(mdev,req->bh->b_blocknr);
+	bb_done(mdev,BH_SECTOR(req->bh));
 	spin_unlock_irqrestore(&mdev->bb_lock,flags);
 
 	req->bh->b_end_io(req->bh,(0x0001 & er_flags & req->rq_status));
@@ -103,19 +103,19 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, uptodate);
 	// BIG TODO: Only set it, iff it is the case!
-	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),req->bh->b_blocknr,
+	drbd_set_in_sync(drbd_conf+MINOR(req->bh->b_rdev),BH_SECTOR(req->bh),
 			 drbd_log2(req->bh->b_size));
 }
 
 STATIC struct Pending_read* 
-drbd_find_read(unsigned long block_nr, struct list_head *in)
+drbd_find_read(sector_t sector, struct list_head *in)
 {
 	struct list_head *le;
 	struct Pending_read *pr;
 	
 	list_for_each(le,in) {
 		pr = list_entry(le, struct Pending_read, list);
-		if(pr->d.block_nr == block_nr) return pr;
+		if(pr->d.sector == sector) return pr;
 	}
 
 	return NULL;
@@ -139,9 +139,7 @@ STATIC void drbd_issue_drequest(struct Drbd_Conf* mdev,struct buffer_head *bh)
 	spin_lock(&mdev->pr_lock);
 	list_add(&pr->list,&mdev->app_reads);
 	spin_unlock(&mdev->pr_lock);
-	drbd_send_drequest(mdev,DataRequest,
-			   bh->b_rsector>>(mdev->blk_size_b-9),
-			   (unsigned long)pr);
+	drbd_send_drequest(mdev,DataRequest, bh->b_rsector, (unsigned long)pr);
 	inc_pending(mdev);
 }
 
@@ -152,7 +150,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	struct buffer_head *nbh;
 	drbd_request_t *req;
 	int cbs = 1 << mdev->blk_size_b;
-	int size_kb, bnr, send_ok;
+	int size_kb, send_ok;
 
 	if (bh->b_size != cbs) {
 		/* If someone called set_blocksize() from fs/buffer.c ... */
@@ -220,13 +218,12 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	}
 
 	if( mdev->cstate == SyncTarget &&
-	    bm_get_bit(mdev->mbds_id,bh->b_rsector >> (mdev->blk_size_b-9),
+	    bm_get_bit(mdev->mbds_id,bh->b_rsector,
 		       mdev->blk_size_b) ) {
 		struct Pending_read *pr;
 		if( rw == WRITE ) {
 			spin_lock(&mdev->pr_lock); 	
-			pr=drbd_find_read(bh->b_rsector>>(mdev->blk_size_b-9),
-					  &mdev->resync_reads);
+			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 
 			if(pr) {
 				pr->cause = Discard; 
@@ -239,8 +236,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 			// Set some flag to clear it in the bitmap
 		} else { // rw == READ || rw == READA
 			spin_lock(&mdev->pr_lock); 	
-			pr=drbd_find_read(bh->b_rsector>>(mdev->blk_size_b-9),
-					  &mdev->resync_reads);
+			pr=drbd_find_read(bh->b_rsector,&mdev->resync_reads);
 			if(pr) {
 				pr->cause |= Application;
 				pr->d.bh=bh;
@@ -290,9 +286,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	nbh->b_page=bh->b_page; // instead of set_bh_page()
 	nbh->b_data=bh->b_data; // instead of set_bh_page()
 
-	drbd_set_bh(nbh,
-		    bh->b_rsector / (bh->b_size >> 9),
-		    mdev->lo_device);
+	drbd_set_bh(nbh,bh->b_rsector,mdev->lo_device);
 
 	if(mdev->cstate < StandAlone || MINOR(bh->b_rdev) >= minor_count) {
 		buffer_IO_error(bh);
@@ -304,21 +298,19 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 
 	req->bh=bh;
 
-	bnr = bh->b_rsector >> (mdev->blk_size_b - 9);
-
 	req->rq_status = RQ_DRBD_NOTHING;
 	
 	spin_lock_irq(&mdev->bb_lock);
-	mdev->send_block=bnr;
-	if( ds_check_block(mdev,bnr) ) {
+	mdev->send_sector=bh->b_rsector;
+	if( ds_check_sector(mdev,bh->b_rsector) ) {
 		struct busy_block bl;
-		bb_wait_prepare(mdev,bnr,&bl);
+		bb_wait_prepare(mdev,bh->b_rsector,&bl);
 		spin_unlock_irq(&mdev->bb_lock);
 		bb_wait(&bl);
 	} else spin_unlock_irq(&mdev->bb_lock);
 
 	send_ok=drbd_send_dblock(mdev,bh,(unsigned long)req);
-	mdev->send_block=-1;
+	mdev->send_sector=-1;
 	if(send_ok && mdev->conf.wire_protocol!=DRBD_PROT_A) inc_pending(mdev);
 	if(mdev->conf.wire_protocol==DRBD_PROT_A || (!send_ok) ) {
 				/* If sending failed, we can not expect

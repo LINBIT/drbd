@@ -31,6 +31,11 @@
 #include <linux/version.h>
 #include <linux/list.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+typedef unsigned long sector_t;
+#endif
+#define BH_SECTOR(BH) ( (BH)->b_blocknr * ((BH)->b_size>>9) )
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,7)
 #define completion semaphore
 #define init_completion(A) init_MUTEX_LOCKED(A)
@@ -150,7 +155,7 @@ typedef struct { \
 }  __attribute((packed)) NAME##acket ;
 
 typedef struct {
-  __u64       block_nr;  /* 64 bits block number */
+  __u64       sector;    /* 64 bits sector number */
   __u64       block_id;  /* Used in protocol B&C for the address of the req. */
 }  __attribute((packed)) Drbd_Data_P;
 MKPACKET(Drbd_Data_P)
@@ -175,7 +180,7 @@ typedef struct {
 MKPACKET(Drbd_Parameter_P)
 
 typedef struct {
-  __u64       block_nr;
+  __u64       sector;
   __u64       block_id;
 } __attribute((packed)) Drbd_BlockAck_P;
 MKPACKET(Drbd_BlockAck_P)
@@ -187,7 +192,7 @@ typedef struct {
 MKPACKET(Drbd_BarrierAck_P)
 
 typedef struct {
-  __u64       block_nr;
+  __u64       sector;
   __u64       block_id;
   __u32       blksize;
 } __attribute((packed)) Drbd_BlockRequest_P;
@@ -268,7 +273,7 @@ struct Pending_read {
 	struct list_head list;
 	union {
 		struct buffer_head* bh;
-		unsigned long block_nr;
+		sector_t sector;
 	} d;
 	enum {
 		Discard = 0,
@@ -347,7 +352,7 @@ struct Drbd_Conf {
 	struct timer_list a_timeout; /* ack timeout */
 	struct send_timer_info* send_proc; /* about pid calling drbd_send */
 	spinlock_t send_proc_lock;
-	unsigned long send_block;     // block which is processed by send_data
+	sector_t send_sector;      // block which is processed by send_data
 	unsigned long rs_left;     // blocks not up-to-date [unit KB]
 	unsigned long rs_total;    // blocks to sync in this run [unit KB]
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
@@ -393,7 +398,7 @@ extern void tl_release(struct Drbd_Conf *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct Drbd_Conf *mdev);
 extern int tl_dependence(struct Drbd_Conf *mdev, drbd_request_t * item);
-extern int tl_check_sector(struct Drbd_Conf *mdev, unsigned long sector);
+extern int tl_check_sector(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_free_sock(int minor);
 /*extern int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
 		     Drbd_Packet* header, size_t header_size, 
@@ -405,19 +410,19 @@ extern int drbd_send_cstate(struct Drbd_Conf *mdev);
 extern int drbd_send_b_ack(struct Drbd_Conf *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, 
-			 unsigned long block_nr,u64 block_id);
+			 sector_t sector,u64 block_id);
 extern int drbd_send_block(struct Drbd_Conf *mdev, int cmd,
 			   struct buffer_head *bh, u64 block_id);
 extern int drbd_send_dblock(struct Drbd_Conf *mdev, 
 			    struct buffer_head *bh, u64 block_id);
 extern int _drbd_send_barrier(struct Drbd_Conf *mdev);
 extern int drbd_send_drequest(struct Drbd_Conf *mdev, int cmd, 
-			      unsigned long block_nr, u64 block_id);
-extern int drbd_send_insync(struct Drbd_Conf *mdev,unsigned long blocknr,
+			      sector_t sector, u64 block_id);
+extern int drbd_send_insync(struct Drbd_Conf *mdev,sector_t sector,
 			    u64 block_id);
 extern int drbd_send_bitmap(struct Drbd_Conf *mdev);
 
-extern int ds_check_block(struct Drbd_Conf *mdev, unsigned long bnr);
+extern int ds_check_sector(struct Drbd_Conf *mdev, sector_t sector);
 
 /* drbd_req*/ 
 #define ERF_NOTLD    2   /* do not call tl_dependence */
@@ -463,11 +468,11 @@ struct BitMap;
 extern struct BitMap* bm_init(kdev_t dev);
 extern int bm_resize(struct BitMap* sbm, unsigned long size_kb);
 extern void bm_cleanup(struct BitMap* sbm);
-extern int bm_set_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size, int bit);
-extern unsigned long bm_get_blocknr(struct BitMap* sbm,int ln2_block_size);
+extern int bm_set_bit(struct BitMap* sbm, sector_t sector, int bit);
+extern sector_t bm_get_sector(struct BitMap* sbm,int ln2_block_size);
 extern void bm_reset(struct BitMap* sbm,int ln2_block_size);
 extern void bm_fill_bm(struct BitMap* sbm,int value);
-extern int bm_get_bit(struct BitMap* sbm,unsigned long blocknr,int ln2_block_size);
+extern int bm_get_bit(struct BitMap* sbm, sector_t sector);
 
 extern struct Drbd_Conf *drbd_conf;
 extern int minor_count;
@@ -552,30 +557,29 @@ static inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)
 	return drbd_conf;
 }
 
-static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,unsigned long s)
+static inline void drbd_set_out_of_sync(struct Drbd_Conf* mdev,
+					sector_t sector, int blk_size)
 {
 	int before;
-	before=bm_set_bit(mdev->mbds_id,  s >> (mdev->blk_size_b-9), 
-			  mdev->blk_size_b, SS_OUT_OF_SYNC);
+	before=bm_set_bit(mdev->mbds_id,  sector, SS_OUT_OF_SYNC);
+
 	if(before == SS_IN_SYNC) {
-		mdev->rs_total = mdev->rs_total + 
-			( 1 << (mdev->blk_size_b - 10) );
+		mdev->rs_total += blk_size >> 10;
 	}
 }
 
 static inline void drbd_set_in_sync(struct Drbd_Conf* mdev, 
-				    unsigned long blocknr,
-				    int b_size_bits)
+				    sector_t sector, int blk_size)
 {
 	/* Is called by drbd_dio_end possibly from IRQ context, but
 	   from other places in non IRQ */
 	unsigned long flags=0; 
-	bm_set_bit(mdev->mbds_id, blocknr, b_size_bits, SS_IN_SYNC);
+	bm_set_bit(mdev->mbds_id, sector, SS_IN_SYNC);
 
 	spin_lock_irqsave(&mdev->rs_lock,flags);
-	mdev->rs_left = mdev->rs_left-(1 << (b_size_bits - 10));
+	mdev->rs_left -= blk_size >> 10;
 	if( mdev->rs_left == 0 ) {
-		spin_lock(&mdev->ee_lock); // IRQ already taken by rs_lock
+		spin_lock(&mdev->ee_lock); // IRQ lock already taken by rs_lock
 		set_bit(SYNC_FINISHED,&mdev->flags);
 		spin_unlock(&mdev->ee_lock);
                 wake_up_interruptible(&mdev->dsender_wait);		
@@ -595,9 +599,9 @@ extern struct Tl_epoch_entry* drbd_get_ee(struct Drbd_Conf* mdev,
 					  int may_sleep);
 extern int _drbd_process_ee(struct Drbd_Conf *,struct list_head *);
 extern int recv_resync_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
-			    unsigned long block_nr, int data_size);
+			    sector_t sector, int data_size);
 extern int recv_dless_read(struct Drbd_Conf* mdev, struct Pending_read *pr, 
-			   unsigned long block_nr, int data_size);
+			   sector_t sector, int data_size);
 
 
 
@@ -652,16 +656,16 @@ extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
 struct busy_block {
 	struct list_head list; 
 	struct completion event;
-	unsigned long bnr;
+	sector_t sector;
 };
 
-static inline void bb_wait_prepare(struct Drbd_Conf *mdev,unsigned long bnr,
+static inline void bb_wait_prepare(struct Drbd_Conf *mdev,sector_t sector,
 				   struct busy_block *bl)
 {
 	MUST_HOLD(&mdev->bb_lock);
 
 	init_completion(&bl->event);
-	bl->bnr=bnr;
+	bl->sector=sector;
 	list_add(&bl->list,&mdev->busy_blocks);
 }
 
@@ -673,7 +677,7 @@ static inline void bb_wait(struct busy_block *bl)
 	wait_for_completion(&bl->event);
 }
 
-static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
+static inline void bb_done(struct Drbd_Conf *mdev,sector_t sector)
 {
 	struct list_head *le;
 	struct busy_block *bl;
@@ -682,7 +686,7 @@ static inline void bb_done(struct Drbd_Conf *mdev,unsigned long bnr)
 
 	list_for_each(le,&mdev->busy_blocks) {
 		bl = list_entry(le, struct busy_block,list);
-		if(bl->bnr == bnr) {
+		if(bl->sector == sector) {
 			//printk(KERN_ERR DEVICE_NAME " completing %lu\n",bnr);
 			list_del(le);
 			complete(&bl->event);
@@ -705,10 +709,10 @@ static inline void drbd_init_bh(struct buffer_head *bh,
 
 
 static inline void drbd_set_bh(struct buffer_head *bh,
-			       unsigned long block,
+			       sector_t sector,
 			       kdev_t dev)
 {
-	bh->b_blocknr=block;
+	bh->b_blocknr = sector / (bh->b_size>>9);
 	bh->b_dev = dev;
 }
 
