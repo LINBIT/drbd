@@ -316,6 +316,7 @@ int drbd_io_error(drbd_dev* mdev)
 	} else {
 		WARN("Releasing backing storage device.\n");
 		drbd_free_ll_dev(mdev);
+		mdev->la_size=0;
 	}
 
 	return ok;
@@ -1414,7 +1415,7 @@ NOT_IN_26(
 		mdev->mbds_id = bm_init(0);
 		if (!mdev->mbds_id) goto Enomem;
 		// no need to lock access, we are still initializing the module.
-		mdev->resync = lc_alloc(13, sizeof(struct bm_extent),mdev);
+		mdev->resync = lc_alloc(17, sizeof(struct bm_extent),mdev);
 		if (!mdev->resync) goto Enomem;
 		mdev->act_log = lc_alloc(mdev->sync_conf.al_extents,
 					 sizeof(struct lc_element), mdev);

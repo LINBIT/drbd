@@ -797,6 +797,7 @@ ONLY_IN_26(
 		}
 
 		drbd_free_ll_dev(mdev);
+		mdev->la_size=0;
 
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
 		if (mdev->cstate == StandAlone) set_cstate(mdev,Unconfigured);
