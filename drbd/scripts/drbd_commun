@@ -4,6 +4,7 @@
 
 HOST=`hostname -s`
 CONFIG="/etc/sysconfig/drbd"
+STATE="/var/state/drbd"
 
 # RETVAL will work as a "stuck bit" for any error. The construct
 # RV=$?
@@ -79,7 +80,7 @@ action()
 
 isMasterBoot()
 {
-	if [ $CONFIG/"$1"_master ]; then
+	if [ $STATE/"$1"_master ]; then
 		return 1
 	else
 		return 0
@@ -88,12 +89,12 @@ isMasterBoot()
 
 setMasterBoot()
 {
-	touch $CONFIG/"$1"_master
+	touch $STATE/"$1"_master
 }
 
 setSlaveBoot()
 {
-	rm -f $CONFIG/"$1"_master
+	rm -f $STATE/"$1"_master
 }
 
 # Information grabbing
