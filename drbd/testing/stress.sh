@@ -73,7 +73,7 @@ RDM=$R_DRBD_DIR"benchmark/dm"
 MODULE=../drbd/drbd.o
 RMODULE=$R_DRBD_DIR"drbd/drbd.o"
 OPRTIONS="-t 1"
-PROT="B"
+PROT="C"
 
 unset LC_ALL
 unset LANG
