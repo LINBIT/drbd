@@ -1,3 +1,18 @@
+Latest:
+------
+ Last updated 2004-08-22.
+ Cumulative changes since last tarball.
+ For even more detail, use "svn log".
+
+ * prevent possible in-kernel buffer overflow in drbd_proc.c
+ * Fixed debian's postinst script to create /dev/drbd? instead of /dev/nb?
+ * drbd status:
+   be nice to heartbeat, include "OK" in output.
+ * added FullSync meta data flag to read/write gc.pl
+ * make the RHEL3 happy (page_count no longer in mm.h, but in mm_inline.h)
+ * [Patch by Pavel Semerad]. Also use the drbd_devfs_name on Linux-2.4.x
+ * fix missing dependencies on drbd_config.h
+
 0.7.2 (api:75/proto:74)
 -----
   *) Proper handling of backing storage devices that occasionally fail 
