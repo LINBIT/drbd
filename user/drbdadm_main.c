@@ -68,6 +68,13 @@ struct adm_cmd {
   int res_name_required;
 };
 
+struct deferred_cmd
+{
+  int (* function)(struct d_resource*,char* );
+  struct d_resource* res;
+  struct deferred_cmd* next;
+};
+
 extern int yyparse();
 extern FILE* yyin;
 
@@ -105,6 +112,53 @@ char* drbdsetup;
 char* setup_opts[10];
 int soi=0;
 volatile int alarm_raised;
+
+struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
+
+void schedule_dcmd( int (* function)(struct d_resource*,char* ),
+		    struct d_resource* res,
+		    int order)
+{
+  struct deferred_cmd *d;
+
+  if( (d = malloc(sizeof(struct deferred_cmd))) == NULL) 
+    {
+      perror("waitpid");
+      exit(E_exec_error);
+    }
+
+  d->function = function;
+  d->res = res;
+  d->next = deferred_cmds[order];
+
+  deferred_cmds[order] = d;
+}
+
+int _run_dcmds(struct deferred_cmd *d)
+{
+  int rv;
+  if(d == NULL) return 0;
+
+  if(d->next == NULL) 
+    {
+      rv = d->function(d->res,NULL);
+      free(d);
+      return rv;
+    }
+
+  rv = _run_dcmds(d->next);
+  if(!rv) rv |= d->function(d->res,NULL);
+  free(d);
+
+  return rv;
+}
+
+int run_dcmds(void)
+{
+  return _run_dcmds(deferred_cmds[0]) || 
+    _run_dcmds(deferred_cmds[1]) || 
+    _run_dcmds(deferred_cmds[2]);
+}
 
 struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
@@ -573,10 +627,11 @@ int adm_syncer(struct d_resource* res,char* unused)
 
 static int adm_up(struct d_resource* res,char* unused)
 {
-  int r;
-  if( (r=adm_attach(res,unused)) ) return r;
-  if( (r=adm_syncer(res,unused)) ) return r;
-  return adm_connect(res,unused);
+  schedule_dcmd(adm_attach,res,0);
+  schedule_dcmd(adm_syncer,res,1);
+  schedule_dcmd(adm_connect,res,2);
+
+  return 0;
 }
 
 static int on_primary(struct d_resource* res ,char* flag)
@@ -1239,6 +1294,8 @@ int main(int argc, char** argv)
 	exit(E_exec_error);
       }
     }
+
+  run_dcmds();
 
   free_config(config);
 
