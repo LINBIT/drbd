@@ -51,19 +51,39 @@ function assure_module_is_loaded
     done
 }
 
+function adjust_with_progress
+{
+    IFS_O=$IFS
+    NEWLINE='
+'
+    IFS=$NEWLINE
+    local D=0
+    local S=0
+    local N=0
+
+    COMMANDS=`$DRBDADM -d adjust all` || exit 20
+    echo -n "[ "
+
+    for CMD in $COMMANDS; do 
+	if echo $CMD | grep -q disk; then echo -n "d$D "; D=$(( D+1 )); 
+	elif echo $CMD | grep -q syncer; then echo -n "s$S "; S=$(( S+1 )); 
+	elif echo $CMD | grep -q net; then echo -n "n$N "; N=$(( N+1 ));
+	else echo echo -n ".. ";
+	fi
+	IFS=$IFS_O
+	$CMD
+	IFS=$NEWLINE
+    done
+    echo -n "]"
+
+    IFS=$IFS_O
+}
+
 case "$1" in
     start)
 	echo -n "Starting DRBD resources:    "
 	assure_module_is_loaded
-	RESOURCES=`$DRBDADM sh-resources` || exit 20	
-	for I in $RESOURCES; do
-	    if $DRBDADM adjust $I; then
-	        echo -n "[$I]"
-            else
-                echo -e "\n Failed setting up $I"
-		exit 20
-	    fi
-	done
+	adjust_with_progress
 	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd  # for RedHat
 	echo "."
 	$DRBDADM wait_con_int # User interruptible version of wait_connect all

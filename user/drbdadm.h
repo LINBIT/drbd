@@ -77,6 +77,9 @@ extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
 extern int check_uniq(const char* what, const char *fmt, ...);
 extern void verify_ips(struct d_resource* res);
+extern void schedule_dcmd( int (* function)(struct d_resource*,char* ),
+			   struct d_resource* res,
+			   int order);
 
 
 extern char* config_file;

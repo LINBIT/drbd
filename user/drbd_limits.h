@@ -20,7 +20,7 @@ const unsigned long long DRBD_ ## what ## _MIN = (min); \
 const unsigned long long DRBD_ ## what ## _MAX = (max)
 
 RANGE(MINOR_COUNT,1,255);
-RANGE(DIALOG_REFRESH,1,600);
+RANGE(DIALOG_REFRESH,0,600);
 
 /* valid port number */
 RANGE(PORT,1,0xffff);
@@ -50,7 +50,7 @@ RANGE(PORT,1,0xffff);
   RANGE(SNDBUF_SIZE, 1, 10000000);
 
   /* arbitrary. */
-  RANGE(MAX_BUFFERS, 32, 5000);
+  RANGE(MAX_BUFFERS, 32, 10000);
 
   /* 0 is disabled.
    * 200 should be more than enough even for very short timeouts */

@@ -67,6 +67,13 @@ struct adm_cmd {
   int res_name_required;
 };
 
+struct deferred_cmd
+{
+  int (* function)(struct d_resource*,char* );
+  struct d_resource* res;
+  struct deferred_cmd* next;
+};
+
 extern int yyparse();
 extern FILE* yyin;
 
@@ -106,6 +113,53 @@ char* drbdmeta;
 char* setup_opts[10];
 int soi=0;
 volatile int alarm_raised;
+
+struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
+
+void schedule_dcmd( int (* function)(struct d_resource*,char* ),
+		    struct d_resource* res,
+		    int order)
+{
+  struct deferred_cmd *d;
+
+  if( (d = malloc(sizeof(struct deferred_cmd))) == NULL) 
+    {
+      perror("waitpid");
+      exit(E_exec_error);
+    }
+
+  d->function = function;
+  d->res = res;
+  d->next = deferred_cmds[order];
+
+  deferred_cmds[order] = d;
+}
+
+int _run_dcmds(struct deferred_cmd *d)
+{
+  int rv;
+  if(d == NULL) return 0;
+
+  if(d->next == NULL) 
+    {
+      rv = d->function(d->res,NULL);
+      free(d);
+      return rv;
+    }
+
+  rv = _run_dcmds(d->next);
+  if(!rv) rv |= d->function(d->res,NULL);
+  free(d);
+
+  return rv;
+}
+
+int run_dcmds(void)
+{
+  return _run_dcmds(deferred_cmds[0]) || 
+    _run_dcmds(deferred_cmds[1]) || 
+    _run_dcmds(deferred_cmds[2]);
+}
 
 struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
@@ -609,10 +663,11 @@ int adm_syncer(struct d_resource* res,const char* unused)
 
 static int adm_up(struct d_resource* res,const char* unused)
 {
-  int r;
-  if( (r=adm_attach(res,unused)) ) return r;
-  if( (r=adm_syncer(res,unused)) ) return r;
-  return adm_connect(res,unused);
+  schedule_dcmd(adm_attach,res,0);
+  schedule_dcmd(adm_syncer,res,1);
+  schedule_dcmd(adm_connect,res,2);
+
+  return 0;
 }
 
 static int on_primary(struct d_resource* res ,char* flag)
@@ -658,7 +713,17 @@ int minor_of_res(struct d_resource *res)
   struct stat sb;
 
   if(stat(res->me->device,&sb)) {
-    perror("stat");
+    // On udev/devfs based system the device nodes does not
+    // exist before the module is loaded. Therefore assume that
+    // the number in the device name is the minor number.
+    char *c;
+
+    c=res->me->device;
+    while(*c) {
+      if(isdigit(*c)) return strtol(c,NULL,10);
+      c++;
+    }
+    return 0;
   }
 
   return minor(sb.st_rdev);
@@ -1217,6 +1282,9 @@ int main(int argc, char** argv)
       nr_resources++;
     }
 
+    // Just for the case that minor_of_res() returned 0 for all devices.
+    if( nr_resources > (highest_minor+1) ) highest_minor=nr_resources-1;
+
     if( mc && mc<(highest_minor+1) ) {
       fprintf(stderr,"The highest minor you have in your config is %d"
 	      "but a minor_count of %d in your config!\n", highest_minor,mc);
@@ -1267,6 +1335,8 @@ int main(int argc, char** argv)
 	exit(E_exec_error);
       }
     }
+
+  run_dcmds();
 
   free_config(config);
 

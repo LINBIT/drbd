@@ -966,7 +966,7 @@ extern int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 
-// drbd_dsender.c
+// drbd_worker.c
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sg(drbd_dev *mdev, int ng);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
@@ -985,6 +985,7 @@ extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
 extern int w_try_send_barrier    (drbd_dev *, struct drbd_work *, int);
 extern int w_send_write_hint     (drbd_dev *, struct drbd_work *, int);
 extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
+extern void resync_timer_fn(unsigned long data);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);

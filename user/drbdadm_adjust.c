@@ -336,12 +336,12 @@ int adm_adjust(struct d_resource* res,char* unused)
   if (err) return err;
 
   if(do_attach) {
-    if( (rv=adm_attach(res,0)) ) return rv;
+    schedule_dcmd(adm_attach,res,0);
     do_resize=0;
   }
-  if(do_resize)  if( (rv=adm_resize(res,0)) ) return rv;
-  if(do_syncer)  if( (rv=adm_syncer(res,0)) ) return rv;
-  if(do_connect) if( (rv=adm_connect(res,0))) return rv;
+  if(do_resize)  schedule_dcmd(adm_resize,res,0);
+  if(do_syncer)  schedule_dcmd(adm_syncer,res,1);
+  if(do_connect) schedule_dcmd(adm_connect,res,2);
 
   return 0;
 }

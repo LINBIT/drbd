@@ -310,7 +310,6 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
 	if(unlikely(cancel)) return 1;
-	/* FIXME THINK what about w_resume_next_sg ?? */
 
 	if(unlikely(mdev->state.s.conn < Connected)) {
 		ERR("Confused in w_make_resync_request()! cstate < Connected");
@@ -406,9 +405,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	drbd_md_write(mdev);
 
-	/* FIXME
-	 * _queueing_ of w_resume_next_sg() gets _scheduled_ here.
-	 * maybe rather _do_ it right here instead? */
+
 	return 1;
 }
 
@@ -644,11 +641,11 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->sync_conf.group == mdev->sync_conf.group
+		if ( odev->sync_conf.group <= mdev->sync_conf.group
 		     && ( odev->state.s.conn == SyncSource || 
 			  odev->state.s.conn == SyncTarget ) ) {
 			goto out; // Sync on an other device in this group
-			          // still runs.
+			          // or a lower group still runs.
 		}
 	}
 
@@ -746,11 +743,6 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		return;
 	}
 
-	if (side == SyncTarget) {
-		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
-		mod_timer(&mdev->resync_timer,jiffies);
-	}
-
 	drbd_global_lock();
 	if ( mdev->state.s.conn == SyncTarget || 
 	     mdev->state.s.conn == SyncSource ) {
@@ -764,6 +756,14 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	   * I really hate it that we can't have a consistent view of cstate.
 	   */
 	drbd_global_unlock();
+
+	if (mdev->cstate == SyncTarget) {
+		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+		mod_timer(&mdev->resync_timer,jiffies);
+	} else if (mdev->cstate == PausedSyncT) { 
+		D_ASSERT(test_bit(STOP_SYNC_TIMER,&mdev->flags));
+		clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+	}
 }
 
 int drbd_worker(struct Drbd_thread *thi)
@@ -774,9 +774,6 @@ int drbd_worker(struct Drbd_thread *thi)
 	int intr,i;
 
 	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
-
-	mdev->resync_timer.function = resync_timer_fn;
-	mdev->resync_timer.data = (unsigned long) mdev;
 
 	for (;;) {
 		intr = down_interruptible(&mdev->data.work.s);

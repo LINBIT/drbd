@@ -1456,6 +1456,8 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->barrier_work.cb = w_try_send_barrier;
 	mdev->unplug_work.cb  = w_send_write_hint;
 	init_timer(&mdev->resync_timer);
+	mdev->resync_timer.function = resync_timer_fn;
+	mdev->resync_timer.data = (unsigned long) mdev;
 
 	init_waitqueue_head(&mdev->cstate_wait);
 	init_waitqueue_head(&mdev->ee_wait);

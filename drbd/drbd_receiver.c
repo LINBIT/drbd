@@ -1367,6 +1367,8 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	consider_sync = ((nconn=mdev->state.s.conn) == WFReportParams);
 	if(drbd_determin_dev_size(mdev)) consider_sync=0;
 
+	if(test_bit(DISKLESS, &mdev->flags)) consider_sync=0;
+
 	drbd_bm_unlock(mdev); // }
 
 	if(be32_to_cpu(p->flags)&1) {
