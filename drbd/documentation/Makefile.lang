@@ -28,19 +28,23 @@ TARGETS=$(shell if [ -e drbd.conf.sgml ]; then echo -n "drbd.conf.5 " ; fi ; if 
 .SUFFIXES: .sgml .5 .8 .html .pdf .ps
 
 .sgml.5:
-	if [ "$(DB2MAN)" ]; then $(DB2MAN) $< ; fi
+	$(DB2MAN) $<
 
 .sgml.8:
-	if [ "$(DB2MAN)" ]; then $(DB2MAN) $< ; fi
+	$(DB2MAN) $<
 
 .sgml.html:
-	if [ "$(DB2HTML)" ]; then $(DB2HTML) $< ; mv index.html $@; fi
+	$(DB2HTML) $<
+	mv index.html $@
 
 .sgml.pdf:
-	if [ "$(DB2PDF)" ]; then $(DB2PDF) $< ; if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi ; fi
+	$(DB2PDF) $<
+	if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi
 
 .sgml.ps:
-	if [ "$(DB2PS)" ]; then $(DB2PS) $< ; if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi; gzip -c $@ > $@.gz; fi
+	$(DB2PS) $<
+	if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi
+	gzip -c $@ > $@.gz
 
 #######
 
@@ -49,17 +53,23 @@ man:	$(TARGETS)
 all:	man HOWTO/index.html
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
-	if [ "$(DB2HTML)" ]; then cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd .. ; fi
+	cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd ..
 
 clean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
 	rm -f *.ps.gz *.pdf *.ps *.html
 
 install:
-	if [ -e drbdsetup.8 ]; then install -D drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8 ; fi
-	if [ -e drbd.conf.5 ]; then install -D drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5 ; fi
-	if [ -e drbd.8 ]; then install -D drbd.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8 ; fi
-	if [ -e datadisk.8 ]; then install -D datadisk.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8 ; fi
+	install -D drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8
+	install -D drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5
+	install -D drbd.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8
+	install -D datadisk.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8
+
+uninstall:
+	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8
+	rm $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5
+	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8
+	rm $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8
 
 html:	$(shell ls *.sgml | sed s/sgml/html/g)
 pdf:	$(shell ls *.sgml | sed s/sgml/pdf/g)

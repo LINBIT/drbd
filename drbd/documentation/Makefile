@@ -32,29 +32,55 @@ LANGS=ja pt_BR
 .SUFFIXES: .sgml .5 .8 .html .pdf .ps
 
 .sgml.5:
-	if [ "$(DB2MAN)" ]; then $(DB2MAN) $< ; fi
+	$(DB2MAN) $<
 
 .sgml.8:
-	if [ "$(DB2MAN)" ]; then $(DB2MAN) $< ; fi
+	$(DB2MAN) $<
 
 .sgml.html:
-	if [ "$(DB2HTML)" ]; then $(DB2HTML) $< ; mv index.html $@; fi
+	$(DB2HTML) $<
+	mv index.html $@
 
 .sgml.pdf:
-	if [ "$(DB2PDF)" ]; then $(DB2PDF) $< ; if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi ; fi
+	$(DB2PDF) $< 
+	if [ $@ = drbd.conf.pdf ]; then mv drbd.pdf drbd.conf.pdf; fi 
 
 .sgml.ps:
-	if [ "$(DB2PS)" ]; then $(DB2PS) $< ; if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi; gzip -c $@ > $@.gz; fi
+	$(DB2PS) $< 
+	if [ $@ = drbd.conf.ps ]; then mv drbd.ps drbd.conf.ps; fi 
+	gzip -c $@ > $@.gz
 
 #######
+
+ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
+all:	prepare man HOWTO/index.html
+
+install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
+	install -d $(PREFIX)usr/share/man/man8
+	install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8
+	install -d $(PREFIX)usr/share/man/man5
+	install -m 644 drbd.conf.5 $(PREFIX)usr/share/man/man5
+	install -d $(PREFIX)usr/share/man/man8
+	install -m 644 drbd.8 $(PREFIX)usr/share/man/man8
+	install -d $(PREFIX)usr/share/man/man8
+	install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
+
+else
+
+all:
+	@echo "could not find docbook tools, sorry."
+
+install:
+	@echo "could not find docbook tools, sorry."
+
+endif
 
 prepare:
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
 
 man:	drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
-
-all:	prepare man HOWTO/index.html
 
 HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 	if [ "$(DB2HTML)" ]; then cd HOWTO ; $(DB2HTML) DRBD-HOWTO.sgml ; cd .. ; fi
@@ -64,24 +90,12 @@ clean:
 	rm -f *.ps.gz *.pdf *.ps *.html
 	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
-install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
-	if [ -e drbdsetup.8 ]; then \
-		install -d $(PREFIX)usr/share/man/man8; \
-		install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8; \
-	fi
-	if [ -e drbd.conf.5 ]; then \
-		install -d $(PREFIX)usr/share/man/man5; \
-		install -m 644 drbd.conf.5 $(PREFIX)usr/share/man/man5; \
-	fi
-	if [ -e drbd.8 ]; then \
-		install -d $(PREFIX)usr/share/man/man8; \
-		install -m 644 drbd.8 $(PREFIX)usr/share/man/man8; \
-	fi
-	if [ -e datadisk.8 ]; then \
-		install -d $(PREFIX)usr/share/man/man8; \
-		install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8; \
-	fi
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
+uninstall:
+	rm $(PREFIX)usr/share/man/man8/drbdsetup.8
+	rm $(PREFIX)usr/share/man/man5/drbd.conf.5
+	rm $(PREFIX)usr/share/man/man8/drbd.8
+	rm $(PREFIX)usr/share/man/man8/datadisk.8
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i uninstall; done
 
 html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)	
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i html; done	
