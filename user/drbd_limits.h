@@ -13,7 +13,7 @@
 #ifndef DRBD_LIMITS_H
 #define DRBD_LIMITS_H 1
 
-#define DEBUG_RANGE_CHECK 1
+#define DEBUG_RANGE_CHECK 0
 
 #define RANGE(what,min,max) \
 const unsigned long long DRBD_ ## what ## _MIN = (min); \
