@@ -21,13 +21,22 @@ include ../Makefile.vars
 
 KSUBD = $(shell if [ -e /lib/modules/$(KERNVER)/kernel ]; then echo "kernel/drivers/block"; else echo "block"; fi )
 
+OBJS=drbd_fs.o drbd_main.o drbd_proc.o drbd_receiver.o drbd_syncer.o
+
+####### Implicit rules
+
+.SUFFIXES: .c .o
+
+.c.o:
+	$(CC) -c $(KERNFLAGS) -DMOD_VERSION=$(MOD_VERSION) -DEXPORT_SYMTAB $<
+
+#######
+
 
 all: drbd.o 
 
-drbd.o: drbd.c drbd.h mbds.h
-	$(CC) -c $(KERNFLAGS) -DMOD_VERSION=$(MOD_VERSION) -DEXPORT_SYMTAB drbd.c
-
-#	$(LD) -r -o $@ $^
+drbd.o: $(OBJS)
+	$(LD) -r -o $@ $^
 
 clean:
 	rm -f *.o
@@ -38,3 +47,8 @@ install:
 	install -d /lib/modules/$(KERNVER)/$(KSUBD)
 	install -m 644 drbd.o /lib/modules/$(KERNVER)/$(KSUBD)
 	/sbin/depmod -a
+
+### dependencies:
+
+$(OBJS): drbd_int.h drbd.h mbds.h
+
