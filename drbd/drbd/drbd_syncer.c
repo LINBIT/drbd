@@ -237,23 +237,15 @@ int ds_buffer_send(struct ds_buffer *this,int minor)
 
 unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
 {
-	unsigned long rv,old_sync_to;
 	struct Drbd_Conf *mdev=(struct Drbd_Conf *)id;
 	int shift=ln2_bs - 9;
-
+	
 	if(mdev->synced_to == 0) {
 		return MBDS_DONE;
 	}
-
-	rv = mdev->synced_to >> shift;
-	old_sync_to = mdev->synced_to;
+	
 	mdev->synced_to -= (1L<<shift);
-	if(mdev->synced_to > old_sync_to) {
-		mdev->synced_to = 0;
-		return MBDS_DONE;
-	}
-
-	return rv;	
+	return mdev->synced_to >> shift;
 }
 
 #define swap(a,b) { tmp=a; a=b; b=tmp; }
@@ -264,7 +256,7 @@ int drbd_syncer(struct Drbd_thread *thi)
 	struct ds_buffer buffers[2];
 	struct ds_buffer *disk_b, *net_b, *tmp;
 	int amount,amount_blks,interval;
-	int my_blksize,retry;
+	int my_blksize,ln2_bs,retry;
 	unsigned long (*get_blk)(void*,int);
 	void* id;
 
@@ -274,15 +266,17 @@ int drbd_syncer(struct Drbd_thread *thi)
 	/* We want to fill half of the send buffer in KB */
 	interval = max_t(int, amount*HZ/drbd_conf[minor].conf.sync_rate, 1);
 	my_blksize=blksize_size[MAJOR_NR][minor];
+	ln2_bs = drbd_log2(my_blksize);
 	amount_blks=(amount<<10)/my_blksize;
 
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation started "
 	       "blks=%d int=%d \n",minor,amount_blks,interval);
 
 	if(drbd_conf[minor].cstate == SyncingAll) {
-		drbd_conf[minor].synced_to=
-			(blk_size[MAJOR_NR][minor] -
-			 (blksize_size[MAJOR_NR][minor] >> 10)) << 1;
+		drbd_conf[minor].synced_to =
+			( (blk_size[MAJOR_NR][minor] >> (ln2_bs-10))
+			  << (ln2_bs-9) );
+		// truncate to full blocks; convert to sectors;
 		get_blk=&ds_sync_all_get_blk;
 		id=drbd_conf+minor;
         } else if(drbd_conf[minor].cstate == SyncingQuick) {
