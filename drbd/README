@@ -1,0 +1,132 @@
+
+				 DRBD
+				======
+		   by Philipp Reisner <kde@ist.org>
+
+
+What is it ?
+------------
+
+Drbd is a block device which is designed to build high availability clusters.
+This is done by mirroring a whole block device via ( a dedicated ) network.
+You could see it as a network raid 1.
+
+
+
+What is the scope of drbd, what else do I need to build a HA cluster ?
+----------------------------------------------------------------------
+
+Drbd takes over the data, writes it to the local disk and sends
+it to the other host. On the other host, it takes it to the disk there.
+
+The other components needed are a cluster membership service, which is
+supposed to be _heartbeat_, and some kind of application that works
+on top of a block device. 
+ Examples:
+  *) A filesystem & fsck.
+  *) A journaling FS.
+  *) A database with recovery capabilities.
+
+
+
+How does it work ?
+------------------
+
+Each device (drbd provides more than one of these devices) has a state,
+which can be 'primary' or 'secondary'. On the node with the primary device
+the application is supposed to run and to access the device (/dev/nbX).
+Every write is sent to the local 'lower level block device' and to the
+node with the device in 'secondary' state. The secondary device simply
+writes the data to its lower level block device. Reads are always carried 
+out locally. 
+
+If the primary node fails, heartbeat is switching the secondary device
+into primary state and starts the application there. (If you are using
+it with a non-journaling FS this involves running fsck)
+
+If the failed node comes up again, it is a new secondary node and has
+to synchronise its content to the primary. This, of course, will happen
+whithout interruption of service in the background. 
+
+
+
+Howto !
+-------
+
+Let's assume that your two machines are named 'node1' and 'node2', and
+that you want to use /dev/hdc6 as the lower level block device on both,
+then these commands are needed on node1 to setup drbd:
+
+insmod drbd.o
+drbdsetup /dev/nb0 /dev/hdc6 node1 node2
+
+On node2 you need:
+
+insmod drbd.o
+drbdsetup /dev/nb0 /dev/hdc6 node2 node1
+
+And finally your cluster membership service needs to tell one of 
+the two to become primary by running:
+
+drbdsetup /dev/nb0 p 
+
+
+
+Implementation details
+----------------------
+
+At first I wanted to use UDP so that I could benefit from UDP's multicasting
+abilities to implement clusters of more than two nodes. But after I
+finished the first experimental UDP implementation it turned out that
+the kernel is only storing up to 64 kb of incoming data on an UDP socket.
+And with faster networks it happens quite easily that your intel box 
+(timer interrupt @ 100 times per second) is not scheduling your receiving
+process often enough and you get an enormous amount of lost packets.
+(Alpha did a *lot* better, there you have 1024 interrupts per second).
+
+So for now I am using TCP.
+
+Accessing the lower level block device is done with a temporary copy
+of the buffer_head and a call to ll_rw_block. Thus you should never
+access the lower level block device directly when you have a drbd
+running on top of it!
+
+I am using /dev/nb0 (and major 43) because of 
+
+~linux-2.2.7/drivers/block/ll_rw_blk.c  line ~447 :
+--snip--
+     /* Loop uses two requests, 1 for loop and 1 for the real device.
+      * Cut max_req in half to avoid running out and deadlocking. */
+        if ((major == LOOP_MAJOR) || (major == NBD_MAJOR))
+            max_req >>= 1;
+--snap--
+
+It _will_ _deadlock_ if you use another major number than one of these two!!
+
+
+
+Compatibility
+-------------
+
+Drbd works fine on top of ide and scsi partitions and whole drives,
+it is not working on top of the loop block device. (If you dare it,
+it will deadlock)
+
+Drbd also does not like the loop-back network device. (You will 
+also observe a nice deadlock: all requests are occupied by the sending
+device and the sending process is blocked in sock_sendmsg(). The 
+receiving thread is fetching a block from the network and tries
+to put it on the cache, but unfortunately the system may decide
+to bring some blocks from the cache to the disk. This happens 
+in the context of the receiver and since all requests are already
+occupied the reciever blocks.)
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,36 @@
+0.3
+---
+
+There is a new timeout. If the primary node cannot send (TCP!)
+within the timeout, it falls back into unconnected operation.
+
+You can also disable the timeout (by setting it to zero), but in
+case of a failure of the secondary node, your primary node will block!
+
+Currently the timeout is hardcoded into drbdsetup (3 Seconds).
+
+0.2
+---
+
+This time I worked a lot looking into all possible deadlocks...
+I think if you do not use any loop-back device it should
+work without deadlocking. It is not working on top of the loop
+block device and it is not working via the loop-back network!
+
+This time it should handle all block size issues, and thus
+reiserfs is feeling happy on top of drbd.
+
+
+
+Status of drbd-0.1.tar.gz
+-------------------------
+
+This is a proof-it-is-no-vapo-ware-release and not more!
+It is the first time it is somehow working without immediately crashing
+my machine (you can "even" unload the module). It is not able to 
+handle blocksized other than 1024 and there is not a single line of code
+of the sync-a-new-secondary stuff yet.
+The used port is hardcoded into drbdsetup (7788) for now.
+I have tested it on an intel box and an alpha machine.
+
+

@@ -1,0 +1,47 @@
+# Makefile for drbd
+#
+# This file is part of drbd by Philipp Richter & Philipp Reisner
+#
+# drbd is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+#
+# drbd is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with drbd; see the file COPYING.  If not, write to
+# the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+#
+
+include Makefile.vars
+
+all:
+	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i all; done
+
+install:
+	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
+
+clean:
+	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
+	rm -f *~
+
+uninstall:
+	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
+
+dev:
+	echo "Generating special block device..."
+	mknod /dev/drbd0 b 240 0
+	mknod /dev/drbd1 b 240 1
+	mknod /dev/drbd2 b 240 2
+	chmod 666 /dev/drbd0
+	chmod 666 /dev/drbd1
+	chmod 666 /dev/drbd2
+
+tgz:    
+	tar -czvf drbd-$(VERSION).tar.gz \
+	--exclude *.o  --exclude CVS --exclude drbd \
+	--exclude *~ --exclude .deps --exclude *.tar.gz -C .. drbd
