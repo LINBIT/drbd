@@ -1373,7 +1373,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->done_ee);
 	INIT_LIST_HEAD(&mdev->read_ee);
 	INIT_LIST_HEAD(&mdev->net_ee);
-	INIT_LIST_HEAD(&mdev->busy_blocks);
 	INIT_LIST_HEAD(&mdev->app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
 	INIT_LIST_HEAD(&mdev->data.work.q);
@@ -1493,7 +1492,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->done_ee));
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->net_ee));
-	D_ASSERT(list_empty(&mdev->busy_blocks));
 	D_ASSERT(list_empty(&mdev->app_reads));
 	D_ASSERT(list_empty(&mdev->resync_reads));
 	D_ASSERT(list_empty(&mdev->data.work.q));

@@ -815,7 +815,6 @@ struct Drbd_Conf {
 	int ee_vacant;
 	int ee_in_use;
 	wait_queue_head_t ee_wait;
-	struct list_head busy_blocks;
 	NOT_IN_26(struct tq_struct write_hint_tq;)
 	struct page *md_io_page;      // one page buffer for md_io
 	struct page *md_io_tmpp;     // in case hardsect != 512 [ s390 only? ]
