@@ -1151,10 +1151,10 @@ int __init drbd_init(void)
 		drbd_conf[i].al_nr_extents = 0;
 		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
 		drbd_conf[i].al_writ_cnt = 0;
-		drbd_conf[i].al_tr_buffer = 0;
 		drbd_conf[i].al_tr_cycle = 0;
 		drbd_conf[i].al_tr_pos = 0;
-		init_MUTEX(&drbd_conf[i].al_tr_mutex);
+		drbd_conf[i].md_io_bh = 0;
+		init_MUTEX(&drbd_conf[i].md_io_mutex);
 		drbd_al_init(drbd_conf+i);
 		{
 			int j;
@@ -1552,6 +1552,7 @@ void bm_fill_bm(struct BitMap* sbm,int value)
 /*********************************/
 /* meta data management */
 
+/* Simply disabled for now... 
 struct meta_data_on_disk {
 	__u64 la_size;           // last agreed size.
 	__u32 gc[GEN_CNT_SIZE];  // generation counter
@@ -1626,12 +1627,112 @@ void drbd_md_read(drbd_dev *mdev)
 	drbd_md_write(mdev);
 	return;
 }
-
-
-/* Returns  1 if I have the good bits,
-	    0 if both are nice
-	   -1 if the partner has the good bits.
 */
+
+struct meta_data_on_disk {
+	u64 la_size;           // last agreed size.
+	u32 gc[GEN_CNT_SIZE];  // generation counter
+	u32 magic;
+	u32 md_size;
+	u32 al_offset;         // offset to this block
+	u32 al_nr_extents;     // important for restoring the AL
+	u32 bm_offset;         // offset to the bitmap, from here
+};
+
+void drbd_generic_end_io(struct buffer_head *bh, int uptodate)
+{ // This is a rough copy of end_buffer_io_sync
+	mark_buffer_uptodate(bh, uptodate);
+	unlock_buffer(bh);
+}
+
+void drbd_md_write(drbd_dev *mdev)
+{
+	kdev_t ll_dev = mdev->lo_device;
+	struct meta_data_on_disk * buffer;
+	u32 flags;
+	sector_t sector;
+	int i;
+
+	if( ll_dev == 0) return;
+
+	down(&mdev->md_io_mutex);
+	buffer = (struct meta_data_on_disk *)bh_kmap(mdev->md_io_bh);
+
+	flags=mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
+	if(mdev->state==Primary) flags |= MDF_PrimaryInd;
+	if(mdev->cstate>=WFReportParams) flags |= MDF_ConnectedInd;
+	mdev->gen_cnt[Flags]=flags;
+
+	for(i=Flags;i<=ArbitraryCnt;i++)
+		buffer->gc[i]=cpu_to_be32(mdev->gen_cnt[i]);
+	buffer->la_size=cpu_to_be64(blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]);
+	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
+
+	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
+	buffer->al_offset = __constant_cpu_to_be32(MD_AL_OFFSET);
+	buffer->al_nr_extents = cpu_to_be32(mdev->al_nr_extents);
+	
+	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
+
+	bh_kunmap(mdev->md_io_bh);
+	sector = ((blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]>>2)-1)<<3;
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	generic_make_request(WRITE,mdev->md_io_bh);
+	wait_on_buffer(mdev->md_io_bh);
+
+	up(&mdev->md_io_mutex);
+}
+
+void drbd_md_read(drbd_dev *mdev)
+{
+	kdev_t ll_dev = mdev->lo_device;
+	struct meta_data_on_disk * buffer;
+	sector_t sector;
+	int i;
+
+	if( ll_dev == 0) return;
+
+	down(&mdev->md_io_mutex);
+
+	sector = ((blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]>>2)-1)<<3;
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	generic_make_request(READ,mdev->md_io_bh);
+	wait_on_buffer(mdev->md_io_bh);
+	ERR_IF( ! buffer_uptodate(mdev->md_io_bh) ) goto err;
+
+	buffer = (struct meta_data_on_disk *)bh_kmap(mdev->md_io_bh);
+
+	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) goto err;
+
+	for(i=Flags;i<=ArbitraryCnt;i++)
+		mdev->gen_cnt[i]=be32_to_cpu(buffer->gc[i]);
+	mdev->la_size = be64_to_cpu(buffer->la_size);
+	up(&mdev->md_io_mutex);
+	return;
+
+ err:
+	up(&mdev->md_io_mutex);
+
+	INFO("Creating state block\n");
+
+	for(i=HumanCnt;i<=ArbitraryCnt;i++) mdev->gen_cnt[i]=1;
+	mdev->gen_cnt[Flags]=MDF_Consistent;
+
+	drbd_md_write(mdev);
+
+	return;
+}
+
+
+//  Returns  1 if I have the good bits,
+//           0 if both are nice
+//          -1 if the partner has the good bits.
 int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 {
 	int i;
@@ -1657,9 +1758,8 @@ int drbd_md_compare(drbd_dev *mdev,Drbd_Parameter_Packet *partner)
 	return 0;
 }
 
-/* Returns  1 if SyncingQuick is sufficient
-	    0 if SyncAll is needed.
-*/
+//  Returns  1 if SyncingQuick is sufficient
+//           0 if SyncAll is needed.
 int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int i_am_pri)
 {
 	int i;

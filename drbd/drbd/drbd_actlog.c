@@ -36,13 +36,14 @@
 #define AL_EXTENT_SIZE_B 22             // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 #define AL_FREE (-1)
-#define AL_EXTENTS_PT 61
+#define AL_EXTENTS_PT 59
 
 struct al_transaction {
 	u32       magic;
 	u32       tr_number;
-	u32       updated_extents[3]; //BUG! need to store slot nr _AND_ extent
-	u32       cyclic_extents[AL_EXTENTS_PT];
+	struct { 
+		u32 pos;
+		u32 extent; } updated[3],cyclic[AL_EXTENTS_PT];
 	u32       xor_sum;      
        // I do not believe that all storage medias can guarantee atomic
        // 512 byte write operations. When the journal is read, only
@@ -72,18 +73,19 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 		return;
 	}
 
-	if(!mdev->al_tr_buffer) {
-		mdev->al_tr_buffer=kmalloc(sizeof(struct al_transaction),
-					   GFP_KERNEL);
-		if(!mdev->al_tr_buffer) {
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: can not kmalloc() al_tr_buffer\n",
-			       (int)(mdev-drbd_conf));
+	if(!mdev->md_io_bh) {
+		struct page * page = alloc_page(GFP_KERNEL);
+		ERR_IF(!page) return;
+		mdev->md_io_bh=kmem_cache_alloc(bh_cachep, GFP_KERNEL);
+		ERR_IF(!mdev->md_io_bh) {
+			__free_page(page);
 			return;
 		}
+		drbd_init_bh(mdev->md_io_bh,512);
+		set_bh_page(mdev->md_io_bh,page,0);
 	}
 
-	down(&mdev->al_tr_mutex);
+	down(&mdev->md_io_mutex);
 	spin_lock(&mdev->al_lock);
 	INIT_LIST_HEAD(&mdev->al_lru);
 	INIT_LIST_HEAD(&mdev->al_free);
@@ -100,14 +102,18 @@ void drbd_al_init(struct Drbd_Conf *mdev)
 	mdev->al_tr_cycle = 0;
 	mdev->al_tr_pos = 0;
 	spin_unlock(&mdev->al_lock);
-	up(&mdev->al_tr_mutex);
+	up(&mdev->md_io_mutex);
 }
 
 void drbd_al_free(struct Drbd_Conf *mdev)
 {
 	if(mdev->al_extents) kfree(mdev->al_extents);
-	if(mdev->al_tr_buffer) kfree(mdev->al_tr_buffer);
+	if(mdev->md_io_bh) {
+		__free_page(mdev->md_io_bh->b_page);
+		kmem_cache_free(bh_cachep, mdev->md_io_bh);
+	}
 	mdev->al_extents=0;
+	mdev->md_io_bh=0;
 	mdev->al_nr_extents=0;
 }
 
@@ -252,11 +258,12 @@ void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 {
 	int i,n,mx;
 	struct al_transaction* buffer;
+	sector_t sector;
 	unsigned int extent_nr;
 	u32 xor_sum=0;
 
-	down(&mdev->al_tr_mutex); // protects al_tr_buffer, al_tr_cycle, ...
-	buffer = mdev->al_tr_buffer;
+	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
+	buffer = (struct al_transaction*)bh_kmap(mdev->md_io_bh);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number++);
@@ -272,18 +279,21 @@ void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 		} else {
 			extent_nr = AL_FREE;
 		}
-		buffer->updated_extents[i] = cpu_to_be32(extent_nr);
+		buffer->updated[i].pos = cpu_to_be32(n);
+		buffer->updated[i].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
 
 	mx = min_t(int,AL_EXTENTS_PT,mdev->al_nr_extents-mdev->al_tr_cycle);
 	for(i=0;i<mx;i++) {
 		extent_nr = mdev->al_extents[mdev->al_tr_cycle+i].extent_nr;
-		buffer->cyclic_extents[i] = cpu_to_be32(extent_nr);
+		buffer->cyclic[i].pos = cpu_to_be32(mdev->al_tr_cycle+i);
+		buffer->cyclic[i].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
 	for(;i<AL_EXTENTS_PT;i++) {
-		buffer->cyclic_extents[i] = __constant_cpu_to_be32(AL_FREE);
+		buffer->cyclic[i].pos = __constant_cpu_to_be32(-1);
+		buffer->cyclic[i].extent = __constant_cpu_to_be32(AL_FREE);
 		xor_sum ^= AL_FREE;
 	}
 	mdev->al_tr_cycle += AL_EXTENTS_PT;
@@ -291,15 +301,23 @@ void drbd_al_write_transaction(struct Drbd_Conf *mdev)
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-	// TODO; continue...
-	// write this transaction to the journal.
-	// write_...(buffer, mdev->al_tr_pos);
+	bh_kunmap(mdev->md_io_bh);
+
+	sector = (blk_size[MAJOR_NR][(int)(mdev-drbd_conf)]<<1) + MD_AL_OFFSET +
+	  mdev->al_tr_pos ;
+	
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	generic_make_request(WRITE,mdev->md_io_bh);
+	wait_on_buffer(mdev->md_io_bh);
 
 	if( ++mdev->al_tr_pos > div_ceil(mdev->al_nr_extents,AL_EXTENTS_PT) ) {
 		mdev->al_tr_pos=0;
 	}
 
-	up(&mdev->al_tr_mutex);
+	up(&mdev->md_io_mutex);
 }
 
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)

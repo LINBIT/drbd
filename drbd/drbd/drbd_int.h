@@ -88,6 +88,7 @@ extern int disable_io_hints;
 // handy macro: DUMPP(somepointer)
 #define DUMPP(A) ERR( #A " = %p in %s:%d\n",(A),__FILE__,__LINE__);
 #define DUMPLU(A) ERR( #A " = %lu in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n",(A),__FILE__,__LINE__);
 #define DUMPLX(A) ERR( #A " = %lx in %s:%d\n",(A),__FILE__,__LINE__);
 
 
@@ -588,10 +589,10 @@ struct Drbd_Conf {
 	unsigned int al_writ_cnt;
 	int al_updates[3];
 	unsigned int al_tr_number;
-	struct al_transaction* al_tr_buffer;
+	struct buffer_head *md_io_bh; // a (one page) Byte buffer for md_io
+	struct semaphore md_io_mutex; // protects the md_io_buffer
 	int al_tr_cycle;  
 	int al_tr_pos;     // position of the next transaction in the journal
-	struct semaphore al_tr_mutex;
 #ifdef ES_SIZE_STATS
 	unsigned int essss[ES_SIZE_STATS];
 #endif
@@ -639,6 +640,7 @@ extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int ds_check_sector(drbd_dev *mdev, sector_t sector);
 
 // drbd_meta-data.c (still in drbd_main.c)
+extern void drbd_generic_end_io(struct buffer_head *bh, int uptodate);
 extern void drbd_md_write(drbd_dev *mdev);
 extern void drbd_md_read(drbd_dev *mdev);
 extern void drbd_md_inc(drbd_dev *mdev, enum MetaDataIndex order);
@@ -659,7 +661,10 @@ extern int drbd_md_syncq_ok(drbd_dev *mdev,Drbd_Parameter_Packet *partner,int ha
 #define BM_IN_SYNC       0
 #define BM_OUT_OF_SYNC   1
 
-#define MD_RESERVED_SIZE 128 * (1<<10)  // 128 MB  ( in units of 1 KB )
+#define MD_RESERVED_SIZE 128 * (1<<10) // 128 MB  ( in units of 1 KB )
+#define MD_AL_OFFSET 8                 // 8 Sectors after start of meta area
+#define MD_AL_MAX_SIZE 64              // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
+#define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) // Allows up to about 3.8TB
 
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5

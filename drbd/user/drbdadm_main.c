@@ -65,6 +65,7 @@ static int adm_dump(struct d_resource* ,char* );
 static int adm_wait_c(struct d_resource* ,char* );
 static int sh_devices(struct d_resource* ,char* );
 static int sh_mod_parms(struct d_resource* ,char* );
+static int sh_ll_dev(struct d_resource* ,char* );
 
 char ss_buffer[255];
 int line=1;
@@ -104,6 +105,7 @@ struct adm_cmd cmds[] = {
   { "dump",              adm_dump,    0                  ,1,1, "FIXME dump help" },
   { "sh-devices",        sh_devices,  0                  ,0,0, "FIXME sh-devices help" },
   { "sh-mod-parms",      sh_mod_parms,0                  ,0,0, "FIXME sh-mod-parms help" },
+  { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1, "FIXME sh-ll-dev help" },
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -193,6 +195,14 @@ static int sh_devices(struct d_resource* res,char* unused)
 
   return 0;
 }
+
+static int sh_ll_dev(struct d_resource* res,char* unused)
+{
+  printf("%s\n",res->me->disk);
+
+  return 0;
+}
+
 
 static int sh_mod_parms(struct d_resource* res,char* unused)
 {
