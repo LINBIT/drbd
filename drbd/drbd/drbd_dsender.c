@@ -255,7 +255,7 @@ static inline int _dsender_cond(struct Drbd_Conf *mdev)
 		|| test_bit(SYNC_FINISHED,&mdev->flags);
 
 	spin_lock_irq(&mdev->ee_lock);
-	rv |= !list_empty(!&mdev->rdone_ee);
+	rv |= !list_empty(&mdev->rdone_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
 	return rv;

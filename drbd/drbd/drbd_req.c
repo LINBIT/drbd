@@ -154,29 +154,6 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	drbd_request_t *req;
 	int send_ok;
 
-#if 0
-	{
-		static const char *strs[3] =
-		{
-			[READ]="READ",
-			[READA]="READA",
-			[WRITE]="WRITE",
-		};
-
-		/* I don't understand it yet, but
-		 * drbdadm primary drbd0 ; drbdadm invalidate drbd0 ;
-		 * dd if=/dev/zero of=/dev/nb0
-		 * "Upgraded a resync read to an app read"
-		 * so (rw == READ) for some reason ...
-		 */
-		// if (rw == READ)
-		WARN("%s make_request(cmd=%s,sec=0x%04lx,size=0x%x)\n",
-		     current->comm,
-		     strs[rw],bh->b_rsector,bh->b_size);
-
-	}
-#endif
-
 	if( mdev->lo_device == 0 ) {
 		if( mdev->cstate < Connected ) {
 			bh->b_end_io(bh,0);

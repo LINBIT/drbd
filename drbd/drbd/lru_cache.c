@@ -106,7 +106,7 @@ void lc_resize(struct lru_cache* lc, unsigned int nr_elements,spinlock_t *lck)
 void lc_free(struct lru_cache* lc)
 {
 	PARANOIA_ENTRY();
-	if(lc->slot) kfree(lc->slot);
+	if (lc->slot) kfree(lc->slot);
 	lc->slot = 0;
 	lc->nr_elements = 0;
 	RETURN();

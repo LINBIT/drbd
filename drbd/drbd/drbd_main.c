@@ -86,8 +86,6 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 static devfs_handle_t devfs_handle;
 #endif
 
-/* #define ES_SIZE_STATS 50 */
-
 int drbdd_init(struct Drbd_thread*);
 int drbd_dsender(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
@@ -170,7 +168,6 @@ STATIC void tl_init(drbd_dev *mdev)
 STATIC void tl_cleanup(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
-
 	kfree(mdev->oldest_barrier);
 }
 
@@ -1001,29 +998,283 @@ STATIC void drbd_send_write_hint(void *data)
 	}
 }
 
+void drbd_init_set_defaults(drbd_dev *mdev)
+{
+	// the implicit memset(,0,) of kcalloc did most of this
+	// note: only assignments, no allocation in here
+
+#ifdef PARANOIA
+	mdev->magic = (DRBD_MAGIC ^ (long)mdev);
+#endif
+
+	/* If the WRITE_HINT_QUEUED flag is set but it is not
+	   actually queued the functionality is completely disabled */
+	if (disable_io_hints) mdev->flags=1<<WRITE_HINT_QUEUED;
+
+	mdev->sync_conf.rate       = 250;
+	mdev->sync_conf.al_extents = 128; // 512 MB active set
+	mdev->state                = Secondary;
+	mdev->o_state              = Unknown;
+	mdev->cstate               = Unconfigured;
+
+	atomic_set(&mdev->pending_cnt,0);
+	atomic_set(&mdev->unacked_cnt,0);
+
+	init_MUTEX(&mdev->sock_mutex);
+	init_MUTEX(&mdev->msock_mutex);
+	init_MUTEX(&mdev->ctl_mutex);
+	init_MUTEX(&mdev->md_io_mutex);
+
+	mdev->rs_lock        = SPIN_LOCK_UNLOCKED;
+	mdev->al_lock        = SPIN_LOCK_UNLOCKED;
+	mdev->tl_lock        = SPIN_LOCK_UNLOCKED;
+	mdev->ee_lock        = SPIN_LOCK_UNLOCKED;
+	mdev->req_lock       = SPIN_LOCK_UNLOCKED;
+	mdev->bb_lock        = SPIN_LOCK_UNLOCKED;
+	mdev->pr_lock        = SPIN_LOCK_UNLOCKED;
+	mdev->send_task_lock = SPIN_LOCK_UNLOCKED;
+
+	mdev->send_sector=-1;
+	INIT_LIST_HEAD(&mdev->free_ee);
+	INIT_LIST_HEAD(&mdev->active_ee);
+	INIT_LIST_HEAD(&mdev->sync_ee);
+	INIT_LIST_HEAD(&mdev->done_ee);
+	INIT_LIST_HEAD(&mdev->read_ee);
+	INIT_LIST_HEAD(&mdev->rdone_ee);
+	INIT_LIST_HEAD(&mdev->busy_blocks);
+	INIT_LIST_HEAD(&mdev->app_reads);
+	INIT_LIST_HEAD(&mdev->resync_reads);
+
+	init_waitqueue_head(&mdev->state_wait);
+	init_waitqueue_head(&mdev->cstate_wait);
+	init_waitqueue_head(&mdev->dsender_wait);
+	init_waitqueue_head(&mdev->ee_wait);
+	init_waitqueue_head(&mdev->al_wait);
+
+	drbd_thread_init(mdev, &mdev->receiver, drbdd_init);
+	drbd_thread_init(mdev, &mdev->dsender, drbd_dsender);
+	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
+
+	mdev->write_hint_tq.routine = &drbd_send_write_hint;
+	mdev->write_hint_tq.data    = mdev;
+
+#ifdef __arch_um__
+	INFO("mdev = 0x%p\n",mdev);
+#endif
+}
+
+void drbd_destroy_mempools(void)
+{
+	if (drbd_pr_mempool)
+		mempool_destroy(drbd_pr_mempool);
+	if (drbd_request_mempool)
+		mempool_destroy(drbd_request_mempool);
+	if (kmem_cache_destroy(drbd_ee_cache))
+		printk(KERN_ERR DEVICE_NAME
+		       ": kmem_cache_destroy(drbd_ee_cache) FAILED\n");
+	if (kmem_cache_destroy(drbd_pr_cache))
+		printk(KERN_ERR DEVICE_NAME
+		       ": kmem_cache_destroy(drbd_pr_cache) FAILED\n");
+	if (kmem_cache_destroy(drbd_request_cache))
+		printk(KERN_ERR DEVICE_NAME
+		       ": kmem_cache_destroy(drbd_request_cache) FAILED\n");
+
+	drbd_pr_mempool      = NULL;
+	drbd_request_mempool = NULL;
+	drbd_ee_cache        = NULL;
+	drbd_pr_cache        = NULL;
+	drbd_request_cache   = NULL;
+
+	return;
+}
+
+int drbd_create_mempools(void)
+{
+	// prepare our caches and mempools
+	drbd_pr_mempool      = NULL;
+	drbd_request_mempool = NULL;
+	drbd_ee_cache        = NULL;
+	drbd_pr_cache        = NULL;
+	drbd_request_cache   = NULL;
+
+	// caches
+	drbd_request_cache = kmem_cache_create(
+		"drbd_req_cache", sizeof(drbd_request_t),
+		0, SLAB_NO_REAP, NULL, NULL);
+	if (drbd_request_cache == NULL)
+		goto Enomem;
+
+	drbd_pr_cache = kmem_cache_create(
+		"drbd_pr_cache", sizeof(struct Pending_read),
+		0, SLAB_NO_REAP, NULL, NULL);
+	if (drbd_pr_cache == NULL)
+		goto Enomem;
+
+	drbd_ee_cache = kmem_cache_create(
+		"drbd_ee_cache", sizeof(struct Tl_epoch_entry),
+		0, SLAB_NO_REAP, NULL, NULL);
+	if (drbd_ee_cache == NULL)
+		goto Enomem;
+
+	// mempools
+	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
+		mempool_alloc_slab, mempool_free_slab, drbd_request_cache);
+	if (drbd_request_mempool == NULL)
+		goto Enomem;
+
+	drbd_pr_mempool = mempool_create(16, //TODO; reasonable value
+		mempool_alloc_slab, mempool_free_slab, drbd_pr_cache);
+	if (drbd_pr_mempool == NULL)
+		goto Enomem;
+
+		return 0;
+
+  Enomem:
+	drbd_destroy_mempools(); // in case we allocated some
+	return -ENOMEM;
+}
+
+void drbd_cleanup(void)
+{
+	int i, rr;
+	if (drbd_conf) {
+		if (drbd_proc)
+			remove_proc_entry("drbd",&proc_root);
+		drbd_destroy_mempools();
+		i=minor_count;
+		while (i--) {
+			drbd_dev        *mdev  = &drbd_conf[i];
+
+			drbd_free_resources(mdev);
+			tl_cleanup(mdev);
+			if (mdev->mbds_id) bm_cleanup(mdev->mbds_id);
+			lc_free(&mdev->resync);
+			// free the receiver's stuff
+
+			drbd_release_ee(mdev,&mdev->free_ee);
+			rr = drbd_release_ee(mdev,&mdev->active_ee);
+			if(rr) printk(KERN_ERR DEVICE_NAME
+				       "%d: %d EEs in active list found!\n",i,rr);
+
+			rr = drbd_release_ee(mdev,&mdev->sync_ee);
+			if(rr) printk(KERN_ERR DEVICE_NAME
+				       "%d: %d EEs in sync list found!\n",i,rr);
+
+			rr = drbd_release_ee(mdev,&mdev->done_ee);
+			if(rr) printk(KERN_ERR DEVICE_NAME
+				       "%d: %d EEs in done list found!\n",i,rr);
+
+			rr = drbd_release_ee(mdev,&mdev->rdone_ee);
+			if(rr) printk(KERN_ERR DEVICE_NAME
+				       "%d: %d EEs in rdone list found!\n",i,rr);
+
+			rr = drbd_release_ee(mdev,&mdev->read_ee);
+			if(rr) printk(KERN_ERR DEVICE_NAME
+				       "%d: %d EEs in read list found!\n",i,rr);
+
+			if(mdev->md_io_bh) {
+				__free_page(mdev->md_io_bh->b_page);
+				kmem_cache_free(bh_cachep, mdev->md_io_bh);
+			}
+
+			lc_free(&mdev->act_log);
+		}
+	}
+
+	// kfree(NULL) is noop
+	kfree(drbd_conf);
+	kfree(drbd_blocksizes);
+	kfree(drbd_sizes);
+	blksize_size[MAJOR_NR] = NULL;
+	blk_size[MAJOR_NR]     = NULL;
+
+	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
+		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
+
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
+void *
+kcalloc(size_t size, int type)
+{
+	void *addr;
+	addr = kmalloc(size, type);
+	if (addr)
+		memset(addr, 0, size);
+	return addr;
+}
+#endif
+
 int __init drbd_init(void)
 {
 
-	int i;
+	int i,err;
+
+	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops))
+		return -EBUSY;
+
+	/*
+	 * allocate all necessary structs
+	 */
+	err = -ENOMEM;
+
+	drbd_proc       = NULL; // play safe for drbd_cleanup
+	drbd_conf       = kcalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
+	drbd_sizes      = kcalloc(sizeof(int)*minor_count,GFP_KERNEL);
+	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
+	if (!drbd_conf || !drbd_blocksizes || !drbd_sizes)
+		goto Enomem;
+
+	if ((err = drbd_create_mempools()))
+		goto Enomem;
+
+	for (i = 0; i < minor_count; i++) {
+		drbd_dev    *mdev = &drbd_conf[i];
+		struct page *page = alloc_page(GFP_KERNEL);
+
+		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
+		set_device_ro( MKDEV(MAJOR_NR, i), TRUE );
+
+		if(!page) goto Enomem;
+		mdev->md_io_bh = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
+		if(!mdev->md_io_bh) {
+			__free_page(page);
+			goto Enomem;
+		}
+		drbd_init_bh(mdev->md_io_bh,512);
+		set_bh_page(mdev->md_io_bh,page,0);
+
+		mdev->mbds_id = bm_init(0);
+		if (!mdev->mbds_id) goto Enomem;
+
+		lc_init(&drbd_conf[i].resync);
+		// maybe better give the element size to lc_init
+		drbd_conf[i].resync.element_size = sizeof(struct bm_extent);
+		// FIXME protect lc_resize from concurrent access
+		lc_resize(&drbd_conf[i].resync,5,&drbd_conf[i].al_lock);
+
+		tl_init(mdev);
+		drbd_init_ee(mdev);
+		drbd_al_init(mdev);
+
+		drbd_init_set_defaults(mdev);
+	}
+
+#if CONFIG_PROC_FS
+	/*
+	 * register with procfs
+	 */
+	// XXX maybe move to a seq_file interface
 	drbd_proc = create_proc_read_entry("drbd", 0, &proc_root,
 					   drbd_proc_get_info, NULL);
 	if (!drbd_proc)	{
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
-		return -EIO;
+		goto Enomem;
 	}
-
 	drbd_proc->owner = THIS_MODULE;
-
-	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_ops)) {
-
-		printk(KERN_ERR DEVICE_NAME ": Unable to get major %d\n",
-		       MAJOR_NR);
-
-		if (drbd_proc) remove_proc_entry("drbd", &proc_root);
-
-		return -EBUSY;
-	}
-
+#else
+# error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
+#endif
 
 #ifdef CONFIG_DEVFS_FS
 	devfs_handle = devfs_mk_dir (NULL, "nbd", NULL);
@@ -1033,185 +1284,35 @@ int __init drbd_init(void)
 			      &drbd_ops, NULL);
 # endif
 
-	drbd_blocksizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	drbd_sizes = kmalloc(sizeof(int)*minor_count,GFP_KERNEL);
-	drbd_conf = kmalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
-
-	drbd_request_cache = kmem_cache_create("drbd_req_cache",
-					       sizeof(drbd_request_t),
-					       0, SLAB_NO_REAP,
-					       NULL, NULL);
-	if (drbd_request_cache == NULL)
-		return -ENOMEM;
-
-	drbd_pr_cache = kmem_cache_create("drbd_pr_cache",
-					  sizeof(struct Pending_read),
-					  0, SLAB_NO_REAP,
-					  NULL, NULL);
-	if (drbd_pr_cache == NULL)
-		return -ENOMEM;
-
-	drbd_ee_cache = kmem_cache_create("drbd_ee_cache",
-					  sizeof(struct Tl_epoch_entry),
-					  0, SLAB_NO_REAP,
-					  NULL, NULL);
-
-	if (drbd_ee_cache == NULL)
-		return -ENOMEM;
-
-
-	drbd_request_mempool = mempool_create(16, //TODO; reasonable value
-					      mempool_alloc_slab,
-					      mempool_free_slab,
-					      drbd_request_cache);
-	if (drbd_request_mempool == NULL)
-		return -ENOMEM;
-
-	drbd_pr_mempool = mempool_create(16, //TODO; reasonable value
-						   mempool_alloc_slab,
-						   mempool_free_slab,
-						   drbd_pr_cache);
-	if (drbd_pr_mempool == NULL)
-		return -ENOMEM;
-
-	blksize_size[MAJOR_NR] = drbd_blocksizes;
-	blk_size[MAJOR_NR] = drbd_sizes;	/* Size in Kb */
-
-	for (i = 0; i < minor_count; i++) {
-		drbd_conf[i].sync_conf.rate=250;
-		drbd_conf[i].sync_conf.group=0;
-		drbd_conf[i].sync_conf.use_csums=0;
-		drbd_conf[i].sync_conf.skip=0;
-		drbd_conf[i].sync_conf.al_extents=128; // 512 MB active set
-		drbd_blocksizes[i] = INITIAL_BLOCK_SIZE;
-		drbd_sizes[i] = 0;
-		set_device_ro(MKDEV(MAJOR_NR, i), TRUE );
-		drbd_conf[i].do_panic = 0;
-		drbd_conf[i].sock = 0;
-		drbd_conf[i].msock = 0;
-		drbd_conf[i].lo_file = 0;
-		drbd_conf[i].lo_device = 0;
-		drbd_conf[i].lo_usize = 0;
-		drbd_conf[i].md_file = 0;
-		drbd_conf[i].md_device = 0;
-		drbd_conf[i].p_size = 0;
-		drbd_conf[i].state = Secondary;
-		init_waitqueue_head(&drbd_conf[i].state_wait);
-		drbd_conf[i].o_state = Unknown;
-		drbd_conf[i].la_size = 0;
-		drbd_conf[i].cstate = Unconfigured;
-		drbd_conf[i].send_cnt = 0;
-		drbd_conf[i].recv_cnt = 0;
-		drbd_conf[i].writ_cnt = 0;
-		drbd_conf[i].read_cnt = 0;
-		drbd_conf[i].al_writ_cnt = 0;
-		drbd_conf[i].bm_writ_cnt = 0;
-		atomic_set(&drbd_conf[i].pending_cnt,0);
-		atomic_set(&drbd_conf[i].unacked_cnt,0);
-		drbd_conf[i].mbds_id = bm_init(0);
-		drbd_conf[i].al_lock = SPIN_LOCK_UNLOCKED;
-		lc_init(&drbd_conf[i].resync);
-		drbd_conf[i].resync.element_size = sizeof(struct bm_extent);
-		lc_resize(&drbd_conf[i].resync,5,&drbd_conf[i].al_lock);
-		/* If the WRITE_HINT_QUEUED flag is set but it is not
-		   actually queued the functionality is completely disabled */
-		if(disable_io_hints) drbd_conf[i].flags=1<<WRITE_HINT_QUEUED;
-		else drbd_conf[i].flags=0;
-		drbd_conf[i].rs_total=0;
-		//drbd_conf[i].rs_left=0;
-		//drbd_conf[i].rs_start=0;
-		//drbd_conf[i].rs_mark_left=0;
-		//drbd_conf[i].rs_mark_time=0;
-		drbd_conf[i].rs_lock = SPIN_LOCK_UNLOCKED;
-		tl_init(&drbd_conf[i]);
-		init_MUTEX(&drbd_conf[i].sock_mutex);
-		init_MUTEX(&drbd_conf[i].msock_mutex);
-		init_MUTEX(&drbd_conf[i].ctl_mutex);
-		drbd_conf[i].send_task=NULL;
-		drbd_conf[i].send_task_lock = SPIN_LOCK_UNLOCKED;
-		drbd_thread_init(drbd_conf+i, &drbd_conf[i].receiver, drbdd_init);
-		drbd_thread_init(drbd_conf+i, &drbd_conf[i].dsender, drbd_dsender);
-		drbd_thread_init(drbd_conf+i, &drbd_conf[i].asender, drbd_asender);
-		init_waitqueue_head(&drbd_conf[i].dsender_wait);
-		drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].ee_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].req_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].bb_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].pr_lock = SPIN_LOCK_UNLOCKED;
-		init_waitqueue_head(&drbd_conf[i].cstate_wait);
-		drbd_conf[i].open_cnt = 0;
-		drbd_conf[i].epoch_size=0;
-		drbd_conf[i].send_sector=-1;
-		INIT_LIST_HEAD(&drbd_conf[i].free_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].active_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].sync_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].done_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].read_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].rdone_ee);
-		INIT_LIST_HEAD(&drbd_conf[i].busy_blocks);
-		INIT_LIST_HEAD(&drbd_conf[i].app_reads);
-		INIT_LIST_HEAD(&drbd_conf[i].resync_reads);
-		drbd_conf[i].ee_vacant=0;
-		drbd_conf[i].ee_in_use=0;
-		drbd_init_ee(drbd_conf+i);
-		init_waitqueue_head(&drbd_conf[i].ee_wait);
-		drbd_conf[i].write_hint_tq.sync	= 0;
-		drbd_conf[i].write_hint_tq.routine = &drbd_send_write_hint;
-		drbd_conf[i].write_hint_tq.data = drbd_conf+i;
-		drbd_al_init(drbd_conf + i);
-		init_waitqueue_head(&drbd_conf[i].al_wait);
-		init_MUTEX(&drbd_conf[i].md_io_mutex);
-		{
-			struct page * page = alloc_page(GFP_KERNEL);
-			if(!page) return -ENOMEM;
-			drbd_conf[i].md_io_bh=
-				kmem_cache_alloc(bh_cachep, GFP_KERNEL);
-			if(!drbd_conf[i].md_io_bh) {
-				__free_page(page);
-				return -ENOMEM;
-			}
-			drbd_init_bh(drbd_conf[i].md_io_bh,512);
-			set_bh_page(drbd_conf[i].md_io_bh,page,0);
-		}
-		drbd_conf[i].al_tr_number = 0;
-		drbd_conf[i].al_tr_cycle = 0;
-		drbd_conf[i].al_tr_pos = 0;
-		{
-			int j;
-			for(j=0;j<=ArbitraryCnt;j++) drbd_conf[i].gen_cnt[j]=0;
-#ifdef ES_SIZE_STATS
-			for(j=0;j<ES_SIZE_STATS;j++) drbd_conf[i].essss[j]=0;
-#endif
-		}
-
-#ifdef __arch_um__
-		printk(KERN_INFO DEVICE_NAME"%d: mdev = 0x%p\n",i,drbd_conf+i);
-#endif
-	}
-
 	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request);
-	/*   blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), NULL); */
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
+	// tell the kernel that we think our ioctls are 64bit clean
 	lock_kernel();
-	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,sys_ioctl);
-	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,sys_ioctl);
+	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SECONDARY_REM,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_BOTH,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
 	unlock_kernel();
 #endif
 
-	return 0;
+	return 0; // Success!
+
+  Enomem:
+	drbd_cleanup();
+	if (err == -ENOMEM) // currently always the case
+		printk(KERN_ERR DEVICE_NAME ": ran out of memory\n");
+	return err;
 }
 
 int __init init_module(void)
@@ -1227,13 +1328,11 @@ int __init init_module(void)
 	       API_VERSION,PRO_VERSION);
 
 	return drbd_init();
-
 }
 
 void cleanup_module(void)
 {
 	int i;
-	int rr;
 
 #ifdef CONFIG_DEVFS_FS
 	devfs_unregister(devfs_handle);
@@ -1246,54 +1345,7 @@ void cleanup_module(void)
 		drbd_thread_stop(&drbd_conf[i].dsender);
 		drbd_thread_stop(&drbd_conf[i].receiver);
 		drbd_thread_stop(&drbd_conf[i].asender);
-		drbd_free_resources(drbd_conf+i);
-		tl_cleanup(drbd_conf+i);
-		if (drbd_conf[i].mbds_id) bm_cleanup(drbd_conf[i].mbds_id);
-		lc_free(&drbd_conf[i].resync);
-		// free the receiver's stuff
-
-		drbd_release_ee(drbd_conf+i,&drbd_conf[i].free_ee);
-		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].active_ee);
-		if(rr) printk(KERN_ERR DEVICE_NAME
-			       "%d: %d EEs in active list found!\n",i,rr);
-
-		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].sync_ee);
-		if(rr) printk(KERN_ERR DEVICE_NAME
-			       "%d: %d EEs in sync list found!\n",i,rr);
-
-		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].done_ee);
-		if(rr) printk(KERN_ERR DEVICE_NAME
-			       "%d: %d EEs in done list found!\n",i,rr);
-
-		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].rdone_ee);
-		if(rr) printk(KERN_ERR DEVICE_NAME
-			       "%d: %d EEs in rdone list found!\n",i,rr);
-
-		rr = drbd_release_ee(drbd_conf+i,&drbd_conf[i].read_ee);
-		if(rr) printk(KERN_ERR DEVICE_NAME
-			       "%d: %d EEs in read list found!\n",i,rr);
-
-		if(drbd_conf[i].md_io_bh) {
-			__free_page(drbd_conf[i].md_io_bh->b_page);
-			kmem_cache_free(bh_cachep, drbd_conf[i].md_io_bh);
-		}
-
-		lc_free(&drbd_conf[i].act_log);
 	}
-
-	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
-		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
-
-
-	blksize_size[MAJOR_NR] = NULL;
-	blk_size[MAJOR_NR] = NULL;
-
-	if (drbd_proc)
-		remove_proc_entry("drbd", &proc_root);
-
-	kfree(drbd_blocksizes);
-	kfree(drbd_sizes);
-	kfree(drbd_conf);
 
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	lock_kernel();
@@ -1314,19 +1366,8 @@ void cleanup_module(void)
 	unlock_kernel();
 #endif
 
-	mempool_destroy(drbd_request_mempool);
-	mempool_destroy(drbd_pr_mempool);
-	if (kmem_cache_destroy(drbd_request_cache))
-		printk(KERN_ERR DEVICE_NAME
-		       ": kmem_cache_destroy(drbd_request_cache) FAILED\n");
-	if (kmem_cache_destroy(drbd_pr_cache))
-		printk(KERN_ERR DEVICE_NAME
-		       ": kmem_cache_destroy(drbd_pr_cache) FAILED\n");
-	if (kmem_cache_destroy(drbd_ee_cache))
-		printk(KERN_ERR DEVICE_NAME
-		       ": kmem_cache_destroy(drbd_ee_cache) FAILED\n");
+	drbd_cleanup();
 }
-
 
 void drbd_free_ll_dev(drbd_dev *mdev)
 {
@@ -1369,9 +1410,6 @@ void drbd_free_resources(drbd_dev *mdev)
   Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
   Bit 0 ==> Primary and secondary nodes are in sync.
   Bit 1 ==> secondary node's block must be updated. (')
-
-  A wicked bug was found and pointed out by
-		     Guzovsky, Eduard <EGuzovsky@crossbeamsys.com>
 */
 
 

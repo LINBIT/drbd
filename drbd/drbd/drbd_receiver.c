@@ -348,7 +348,7 @@ static inline int _get_ee_cond(struct Drbd_Conf* mdev)
 	av = !list_empty(&mdev->free_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 	if(!av) {
-		if((mdev->ee_vacant+mdev->ee_in_use) < EE_MAXIMUM) {
+		if((mdev->ee_vacant+mdev->ee_in_use) < mdev->conf.max_buffers){
 			if(drbd_alloc_ee(mdev,GFP_TRY)) av = 1;
 		}
 	}
@@ -906,7 +906,7 @@ read_in_block(drbd_dev *mdev,int data_size)
 	int rr;
 
 	spin_lock_irq(&mdev->ee_lock);
-	e=drbd_get_ee(mdev,TRUE);
+	e=drbd_get_ee(mdev);
 	spin_unlock_irq(&mdev->ee_lock);
 	bh=e->bh;
 
@@ -1240,7 +1240,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	data_size = be32_to_cpu(p->blksize);
 
 	spin_lock_irq(&mdev->ee_lock);
-	e=drbd_get_ee(mdev,TRUE);
+	e=drbd_get_ee(mdev);
 	drbd_set_bh(mdev, e->bh, sector, data_size);
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
 	list_add(&e->list,&mdev->read_ee);

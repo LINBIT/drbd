@@ -193,18 +193,6 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
 	}
 
-#ifdef ES_SIZE_STATS
-	for(i=0;i<ES_SIZE_STATS;i++) {
-		int j;
-		rlen=rlen+sprintf(buf+rlen,"\n%d: ",i);
-		for (j = 0; j < minor_count; j++) {
-			rlen=rlen+sprintf(buf+rlen,"%4d ",
-					  drbd_conf[j].essss[i]);
-		}
-	}
-	rlen=rlen+sprintf(buf+rlen,"\n");
-#endif
-
 	/* DEBUG & profile stuff end */
 
 	return rlen;

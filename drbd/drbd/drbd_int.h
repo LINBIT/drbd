@@ -531,6 +531,9 @@ struct drbd_extent;
 // MAYBE group them further
 
 struct Drbd_Conf {
+#ifdef PARANOIA
+	long magic;
+#endif
 	struct net_config conf;
 	struct syncer_config sync_conf;
 	int do_panic;
@@ -608,9 +611,6 @@ struct Drbd_Conf {
 	unsigned int al_tr_number;
 	int al_tr_cycle;  
 	int al_tr_pos;     // position of the next transaction in the journal
-#ifdef ES_SIZE_STATS
-	unsigned int essss[ES_SIZE_STATS];
-#endif
 };
 
 
