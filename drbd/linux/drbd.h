@@ -134,6 +134,7 @@ enum ret_codes {
 	LDDeviceTooLarge,
 	MDIOError,
 	MDInvalid,
+	CRAMAlgNotAvail,
 };
 
 struct ioctl_disk_config {

@@ -33,7 +33,7 @@
 #include <linux/sched.h>
 #include <linux/bitops.h>
 #include <linux/slab.h>
-
+#include <linux/crypto.h>
 #include "lru_cache.h"
 
 // module parameter, defined in drbd_main.c
@@ -295,6 +295,8 @@ typedef enum {
 	ReportGenCnt,
 	ReportSizes,
 	ReportState,
+	AuthChallenge,
+	AuthResponse,
 
 	Ping,         // These are sent on the meta socket...
 	PingAck,
@@ -333,6 +335,8 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ReportGenCnt]     = "ReportGenCnt",
 		[ReportSizes]      = "ReportSizes",
 		[ReportState]      = "ReportState",
+		[AuthChallenge]    = "AuthChallenge",
+		[AuthResponse]     = "AuthResponse",
 		[Ping]             = "Ping",
 		[PingAck]          = "PingAck",
 		[RecvAck]          = "RecvAck",
@@ -742,6 +746,7 @@ struct Drbd_Conf {
 	unsigned int al_tr_number;
 	int al_tr_cycle;
 	int al_tr_pos;     // position of the next transaction in the journal
+	struct crypto_tfm* cram_hmac_tfm;
 };
 
 
@@ -779,6 +784,8 @@ extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  size_t size, unsigned msg_flags);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
+extern int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+			  char* data, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);

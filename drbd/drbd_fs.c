@@ -518,6 +518,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	int i,minor;
 	enum ret_codes retcode;
 	struct net_config new_conf;
+	struct crypto_tfm* tfm = NULL;
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -547,6 +548,20 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #undef M_PORT
 #undef O_ADDR
 #undef O_PORT
+
+	if( new_conf.cram_hmac_alg[0] != 0) {
+		tfm = crypto_alloc_tfm(new_conf.cram_hmac_alg, 0);
+		if (tfm == NULL) {
+			retcode=CRAMAlgNotAvail;
+			goto fail_ioctl;
+		}
+	}
+
+	if ( mdev->cram_hmac_tfm ) {
+		crypto_free_tfm(mdev->cram_hmac_tfm);
+	}
+
+	mdev->cram_hmac_tfm = tfm;
 
 	/* IMPROVE:
 	   We should warn the user if the LL_DEV is
@@ -1075,6 +1090,11 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			break;
 		} 
 		/* r == 1 which means that we changed the state... */
+
+		if ( mdev->cram_hmac_tfm ) {
+			crypto_free_tfm(mdev->cram_hmac_tfm);
+			mdev->cram_hmac_tfm = NULL;
+		}
 
 		drbd_sync_me(mdev); /* FIXME what if fsync returns error */
 

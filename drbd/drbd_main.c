@@ -807,6 +807,33 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	return ok;
 }
 
+int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data, 
+		   size_t size)
+{
+	sigset_t old_blocked;
+	Drbd_Header h;
+	int ok;
+
+	down(&mdev->data.mutex);
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=current;
+	spin_unlock(&mdev->send_task_lock);
+
+	old_blocked = drbd_block_all_signals();
+
+	ok = _drbd_send_cmd(mdev,mdev->data.socket,cmd,&h,size,0);
+	ok = ok && ( size == drbd_send(mdev,mdev->data.socket,data,size,0) );
+
+	restore_old_sigset(old_blocked);
+
+	spin_lock(&mdev->send_task_lock);
+	mdev->send_task=NULL;
+	spin_unlock(&mdev->send_task_lock);
+	up(&mdev->data.mutex);
+
+	return ok;
+}
+
 int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 {
 	Drbd_SyncParam_Packet p;
@@ -2031,6 +2058,10 @@ void drbd_free_sock(drbd_dev *mdev)
 
 void drbd_free_resources(drbd_dev *mdev)
 {
+	if ( mdev->cram_hmac_tfm ) {
+		crypto_free_tfm(mdev->cram_hmac_tfm);
+		mdev->cram_hmac_tfm = NULL;
+	}
 	drbd_free_sock(mdev);
 	drbd_free_ll_dev(mdev);
 }

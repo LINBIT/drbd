@@ -30,7 +30,7 @@
 #    time it asks you if it should ad the fingerprint to the list
 #    of known hosts: Say yes here.
 #
-# 4. To this a second time for each IP address, now it should not ask
+# 4. Do this a second time for each IP address, now it should not ask
 #    any questions...
 #
 # Repeate this 4 steps for the other direction, BTW, you can not
