@@ -331,7 +331,8 @@ ONLY_IN_26({
 	drbd_determin_dev_size(mdev);
 	if(i) drbd_read_bm(mdev);
 	else {
-		WARN("You have to start initial sync if it is needed!\n");
+		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
+		bm_fill_bm(mdev->mbds_id,-1);
 		drbd_write_bm(mdev);
 	}
 
@@ -792,7 +793,13 @@ ONLY_IN_26(
 
 		set_bit(DISKLESS,&mdev->flags);
 		smp_mb__after_clear_bit();
-		wait_event(mdev->cstate_wait,atomic_read(&mdev->local_cnt)==0);
+		if ( wait_event_interruptible(mdev->cstate_wait,
+					      atomic_read(&mdev->local_cnt)==0) ) {
+			clear_bit(DISKLESS,&mdev->flags);
+			err=-EINTR;
+			break;
+		}
+
 		drbd_free_ll_dev(mdev);
 
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);

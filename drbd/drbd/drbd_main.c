@@ -556,7 +556,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	int ok,i;
 	unsigned long m_size; // sector_t ??
 
-	if(!test_bit(DISKLESS,&mdev->flags)) {
+	if(!test_bit(DISKLESS,&mdev->flags) || test_bit(MD_IO_ALLOWED,&mdev->flags)) {
 		if (mdev->md_index == -1 ) m_size = drbd_md_ss(mdev)>>1;
 		else m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
 	} else m_size = 0;

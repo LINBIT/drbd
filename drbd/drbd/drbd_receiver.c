@@ -772,7 +772,6 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w)
 	drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
 	drbd_send_ack(mdev,WriteAck,e);
 	dec_unacked(mdev,HERE); // FIXME unconditional ??
-	dec_local(mdev);
 	return TRUE;
 }
 
@@ -941,7 +940,6 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w)
 		dec_unacked(mdev,HERE); // FIXME unconditional ??
 	}
 
-	dec_local(mdev);
 	return ok;
 }
 
@@ -1174,7 +1172,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			set_cstate(mdev,Connected);
 		}
 	}
-	else clear_bit(PARTNER_DISKLESS, &mdev->flags);
 
 	if (mdev->cstate == WFReportParams) {
 		INFO("Connection established.\n");
@@ -1217,9 +1214,10 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		}
 	}
 
-	if (mdev->cstate == WFReportParams) set_cstate(mdev,Connected);
-
 skipped:	// do not adopt gen counts when sync was skipped ...
+
+	if (mdev->cstate == WFReportParams) set_cstate(mdev,Connected);
+	if (p_size && mdev->cstate==Connected) clear_bit(PARTNER_DISKLESS,&mdev->flags);
 
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(p->state);
@@ -1279,12 +1277,11 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(0);
 	}
 
-	if(test_bit(MD_IO_ALLOWED,&mdev->flags) &&
-	   test_bit(DISKLESS,&mdev->flags)) {
-		clear_bit(DISKLESS,&mdev->flags);
-		smp_wmb();
-		clear_bit(MD_IO_ALLOWED,&mdev->flags);
-	}
+	// We just started resync. Now we can be sure that local disk IO is okay.
+	clear_bit(PARTNER_DISKLESS,&mdev->flags);
+	clear_bit(DISKLESS,&mdev->flags);
+	smp_wmb();
+	clear_bit(MD_IO_ALLOWED,&mdev->flags);
 
 	ok=TRUE;
  out:

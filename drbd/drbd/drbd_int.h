@@ -1080,6 +1080,7 @@ static inline void dec_unacked(drbd_dev* mdev,const char* where)
 static inline int inc_local(drbd_dev* mdev)
 {
 	int io_allowed;
+
 	atomic_inc(&mdev->local_cnt);
 	io_allowed = !test_bit(DISKLESS,&mdev->flags);
 	if( !io_allowed ) {
@@ -1091,6 +1092,7 @@ static inline int inc_local(drbd_dev* mdev)
 static inline int inc_local_md_only(drbd_dev* mdev)
 {
 	int io_allowed;
+
 	atomic_inc(&mdev->local_cnt);
 	io_allowed = !test_bit(DISKLESS,&mdev->flags) ||
 		test_bit(MD_IO_ALLOWED,&mdev->flags);
@@ -1105,10 +1107,10 @@ static inline void dec_local(drbd_dev* mdev)
 	if(atomic_dec_and_test(&mdev->local_cnt) && 
 	   test_bit(DISKLESS,&mdev->flags) &&
 	   mdev->lo_file) {
-		wake_up(&mdev->cstate_wait);
+		wake_up_interruptible(&mdev->cstate_wait);
 	}
 
-	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
+	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
 
 static inline void drbd_set_out_of_sync(drbd_dev* mdev,

@@ -91,6 +91,7 @@ void enslaved_read_bi_end_io(drbd_bio_t *bh, int uptodate)
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	drbd_queue_work(mdev,&mdev->data.work,&e->w);
+	dec_local(mdev);
 }
 
 /* writes on behalf of the partner, or resync writes,
@@ -132,6 +133,7 @@ void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	}
 
 	wake_asender(mdev);
+	dec_local(mdev);
 }
 
 /* writes on Primary comming from drbd_make_request
@@ -193,6 +195,7 @@ int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	drbd_queue_work(mdev,&mdev->data.work,&e->w);
+	dec_local(mdev);
 	return 0;
 }
 
@@ -232,6 +235,7 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 	}
 
 	wake_asender(mdev);
+	dec_local(mdev);
 	return 0;
 }
 
@@ -254,6 +258,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 
 	drbd_end_req(req, RQ_DRBD_WRITTEN, (error == 0), drbd_req_get_sector(req));
 	drbd_al_complete_io(mdev,drbd_req_get_sector(req));
+	dec_local(mdev);
 	return 0;
 }
 #endif
@@ -372,7 +377,6 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w)
 
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
-	dec_local(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
@@ -391,7 +395,6 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w)
 	inc_rs_pending(mdev);
 	ok=drbd_send_block(mdev, DataReply, e);
 	dec_unacked(mdev,HERE); // THINK unconditional?
-	dec_local(mdev);
 
 	spin_lock_irq(&mdev->ee_lock);
 	drbd_put_ee(mdev,e);
