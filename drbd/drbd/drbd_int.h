@@ -511,8 +511,8 @@ static inline void dec_pending(struct Drbd_Conf* mdev)
 		wake_up_interruptible(&mdev->state_wait);
 
 	if(atomic_read(&mdev->pending_cnt)<0)  /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt <0 !!!\n",
-		       (int)(mdev-drbd_conf));
+		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt = %d < 0 !\n",
+		       (int)(mdev-drbd_conf), atomic_read(&mdev->pending_cnt));
 		
 	if(mdev->conf.timeout ) {
 		if(atomic_read(&mdev->pending_cnt) > 0) {
@@ -536,8 +536,8 @@ static inline void dec_unacked(struct Drbd_Conf* mdev)
 		wake_up_interruptible(&mdev->state_wait);
 
 	if(atomic_read(&mdev->unacked_cnt)<0)  /* CHK */
-		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt <0 !!!\n",
-		       (int)(mdev-drbd_conf));
+		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt = %d < 0 !\n",
+		       (int)(mdev-drbd_conf), atomic_read(&mdev->unacked_cnt));
 }
 
 static inline struct Drbd_Conf* drbd_lldev_to_mdev(kdev_t dev)

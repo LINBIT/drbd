@@ -366,7 +366,7 @@ int drbd_set_state(int minor,Drbd_State newstate)
 	       atomic_read(&drbd_conf[minor].unacked_cnt) > 0 ) {
 		
 		printk(KERN_ERR DEVICE_NAME
-		       "%d: set_state(%d,%d,%d)\n",
+		       "%d: set_state(st:%d,pe:%d,ua:%d)\n",
 		       minor,
 		       drbd_conf[minor].state,
 		       atomic_read(&drbd_conf[minor].pending_cnt),
