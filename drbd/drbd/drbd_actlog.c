@@ -62,6 +62,7 @@ STATIC void drbd_al_set(struct Drbd_Conf*, unsigned int, int);
 STATIC int drbd_al_fixup_hash_next(struct Drbd_Conf*);
 STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev);
 STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *,unsigned int);
+STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev);
 
 void drbd_al_init(struct Drbd_Conf *mdev)
 {
@@ -534,6 +535,8 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 	INFO("Found %d transactions (%d active extents) in activity log.\n",
 	     transactions,active_extents);
 
+	// Think if we should call drbd_read_bitmap() here...
+	drbd_read_bitmap(mdev);
 	// TODO only call setup_bitmap() iff it is necessary.
 	drbd_al_setup_bitmap(mdev);
 }
@@ -601,11 +604,92 @@ STATIC void drbd_al_setup_bitmap(struct Drbd_Conf *mdev)
 }
 
 /**
+ * drbd_read_bitmap: Read the whole bitmap from its on disk location.
+ */
+STATIC void drbd_read_bitmap(struct Drbd_Conf *mdev)
+{
+	unsigned long * buffer, * bm, word;
+	sector_t sector;
+	int want,bm_words,bm_i,buf_i;
+	unsigned long bits=0;
+	int so = 0;
+
+	bm_i = 0;
+	bm_words = mdev->mbds_id->size/sizeof(unsigned long);
+	bm = mdev->mbds_id->bm;
+
+	down(&mdev->md_io_mutex);
+
+	while (1) {
+		want=min_t(int,512/sizeof(long),bm_words-bm_i);
+		if(want == 0) break;
+
+		sector = drbd_md_ss(mdev) + MD_BM_OFFSET + so;
+		so++;
+
+		drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+		clear_bit(BH_Uptodate, &mdev->md_io_bh->b_state);
+		set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+		mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+		generic_make_request(READ,mdev->md_io_bh);
+		wait_on_buffer(mdev->md_io_bh);
+
+		buffer = (unsigned long *)bh_kmap(mdev->md_io_bh);
+
+		for(buf_i=0;buf_i<want;buf_i++) {
+			word = lel_to_cpu(buffer[buf_i]);
+			bits += parallel_bitcount(word);
+			bm[bm_i++] = word;
+		}
+		bh_kunmap(mdev->md_io_bh);
+	}
+
+	up(&mdev->md_io_mutex);
+
+	mdev->rs_total = bits << (BM_BLOCK_SIZE_B - 9); // in sectors
+}
+
+/**
  * drbd_update_on_disk_bitmap: Writes a piece of the bitmap to its
  * on disk location. 
  * @enr: The extent number of the bits we should write to disk.
+ *
+ * TODO: Implement cleaning of the on disk bitmap somewhere...
  */
 STATIC void drbd_update_on_disk_bitmap(struct Drbd_Conf *mdev,unsigned int enr)
 {
-	// TODO
+	unsigned long * buffer, * bm;
+	int want,buf_i,bm_words,bm_i;
+	sector_t sector;
+
+#define BM_WORDS_PER_EXTENT ( (AL_EXTENT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
+#define EXTENTS_PER_SECTOR  ( 512 / BM_WORDS_PER_EXTENT )
+
+	enr = (enr & ~(EXTENTS_PER_SECTOR-1) );
+
+	bm = mdev->mbds_id->bm;
+	bm_words = mdev->mbds_id->size/sizeof(unsigned long);
+	bm_i = enr * BM_WORDS_PER_EXTENT ;
+	want=min_t(int,512/sizeof(long),bm_words-bm_i);
+
+	down(&mdev->md_io_mutex); // protects md_io_buffer
+	buffer = (unsigned long *)bh_kmap(mdev->md_io_bh);
+
+	for(buf_i=0;buf_i<want;buf_i++) {
+		buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
+	}
+
+	bh_kunmap(mdev->md_io_bh);
+
+	sector = drbd_md_ss(mdev) + MD_BM_OFFSET + enr;
+
+	drbd_set_bh(mdev, mdev->md_io_bh, sector, 512);
+	set_bit(BH_Dirty, &mdev->md_io_bh->b_state);
+	set_bit(BH_Lock, &mdev->md_io_bh->b_state);
+	mdev->md_io_bh->b_end_io = drbd_generic_end_io;
+	generic_make_request(WRITE,mdev->md_io_bh);
+	wait_on_buffer(mdev->md_io_bh);
+
+	up(&mdev->md_io_mutex);
+
 }

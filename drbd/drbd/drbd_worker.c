@@ -236,14 +236,13 @@ STATIC int ds_issue_requests(struct Drbd_Conf* mdev)
 
 void drbd_start_resync(struct Drbd_Conf *mdev, Drbd_CState side)
 {
-	/*printk(KERN_ERR DEVICE_NAME "%d: rs_total=%lu\n",
-	  (int)(mdev-drbd_conf),mdev->rs_total);*/
-
 	set_cstate(mdev,side);
 	mdev->rs_left=mdev->rs_total;
 	mdev->rs_start=jiffies;
 	mdev->rs_mark_left=mdev->rs_left;
 	mdev->rs_mark_time=mdev->rs_start;
+
+	INFO("resync started (need to sync %lu KB).\n",mdev->rs_left/2);
 
 	if(side == SyncTarget) {
 		spin_lock_irq(&mdev->ee_lock); // (ab)use ee_lock see, below.
@@ -314,11 +313,14 @@ int drbd_dsender(struct Drbd_thread *thi)
 			mdev->gen_cnt[Flags] &= ~MDF_Consistent;
 			drbd_md_write(mdev);
 			bm_reset(mdev->mbds_id);
-			INFO("resync started.\n");
 		}
 
 		if(sync_finished) {
-			INFO("resync done, rs_left == %ld.\n",mdev->rs_left);
+			unsigned long dt;
+			dt = (jiffies - mdev->rs_mark_time) / HZ;
+			INFO("resync done (running time was %lu sec)\n",
+			     mdev->rs_left,dt);
+
 			if(mdev->cstate == SyncTarget) {
 				mdev->gen_cnt[Flags] |= MDF_Consistent;
 				drbd_md_write(mdev);

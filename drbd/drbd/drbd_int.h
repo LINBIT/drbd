@@ -689,8 +689,12 @@ static inline sector_t drbd_md_ss(drbd_dev *mdev) {
 
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5
+#define cpu_to_lel(A) cpu_to_le32(A)
+#define lel_to_cpu(A) le32_to_cpu(A)
 #elif BITS_PER_LONG == 64
 #define LN2_BPL 6
+#define cpu_to_lel(A) cpu_to_le64(A)
+#define lel_to_cpu(A) le64_to_cpu(A)
 #else
 #error "LN2 of BITS_PER_LONG unknown!"
 #endif
@@ -1086,4 +1090,37 @@ static inline sector_t APP_BH_SECTOR(struct buffer_head *bh)
 # define DRBD_BH_SECTOR(BH) ( (BH)->b_blocknr )
 # define APP_BH_SECTOR(BH)  ( (BH)->b_blocknr * ((BH)->b_size>>9) )
 #endif
+
+/* Author: Gurmeet Singh Manku    (manku@cs.stanford.edu)
+
+   Parallel   Count   carries   out    bit   counting   in   a   parallel
+   fashion.   Consider   n   after    the   first   line   has   finished
+   executing. Imagine splitting n into  pairs of bits. Each pair contains
+   the <em>number of ones</em> in those two bit positions in the original
+   n.  After the second line has finished executing, each nibble contains
+   the  <em>number of  ones</em>  in  those four  bits  positions in  the
+   original n. Continuing  this for five iterations, the  64 bits contain
+   the  number  of ones  among  these  sixty-four  bit positions  in  the
+   original n. That is what we wanted to compute. */
+
+#define TWO(c) (0x1lu << (c))
+#define MASK(c) (((unsigned long)(-1)) / (TWO(TWO(c)) + 1lu))
+#define COUNT(x,c) ((x) & MASK(c)) + (((x) >> (TWO(c))) & MASK(c))
+
+static inline unsigned long parallel_bitcount (unsigned long n)
+{
+	n = COUNT(n, 0); //MASK(c)=01010101 // (n&mask)+((n>>1)&mask)
+	n = COUNT(n, 1); //MASK(c)=00110011 // (n&mask)+((n>>2)&mask)
+	n = COUNT(n, 2); //MASK(c)=00001111 // (n&mask)+((n>>4)&mask)
+	n = COUNT(n, 3); // ...etc...
+	n = COUNT(n, 4);
+#if BITS_PER_LONG == 64
+	n = COUNT(n, 5);
+#endif
+	return n ;
+}
+
+#undef TWO
+#undef MASK
+#undef COUNT
 

@@ -1482,39 +1482,6 @@ skipped:
 	return TRUE;
 }
 
-/* Author: Gurmeet Singh Manku    (manku@cs.stanford.edu)
-
-   Parallel   Count   carries   out    bit   counting   in   a   parallel
-   fashion.   Consider   n   after    the   first   line   has   finished
-   executing. Imagine splitting n into  pairs of bits. Each pair contains
-   the <em>number of ones</em> in those two bit positions in the original
-   n.  After the second line has finished executing, each nibble contains
-   the  <em>number of  ones</em>  in  those four  bits  positions in  the
-   original n. Continuing  this for five iterations, the  64 bits contain
-   the  number  of ones  among  these  sixty-four  bit positions  in  the
-   original n. That is what we wanted to compute. */
-
-#define TWO(c) (0x1lu << (c))
-#define MASK(c) (((unsigned long)(-1)) / (TWO(TWO(c)) + 1lu))
-#define COUNT(x,c) ((x) & MASK(c)) + (((x) >> (TWO(c))) & MASK(c))
-
-static inline unsigned long parallel_bitcount (unsigned long n)
-{
-	n = COUNT(n, 0); //MASK(c)=01010101 // (n&mask)+((n>>1)&mask)
-	n = COUNT(n, 1); //MASK(c)=00110011 // (n&mask)+((n>>2)&mask)
-	n = COUNT(n, 2); //MASK(c)=00001111 // (n&mask)+((n>>4)&mask)
-	n = COUNT(n, 3); // ...etc...
-	n = COUNT(n, 4);
-#if BITS_PER_LONG == 64
-	n = COUNT(n, 5);
-#endif
-	return n ;
-}
-
-#undef TWO
-#undef MASK
-#undef COUNT
-
 /* Since we are processing the bitfild from lower addresses to higher,
    it does not matter if the process it in 32 bit chunks or 64 bit
    chunks as long as it is little endian. (Understand it as byte stream,
@@ -1540,13 +1507,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		if (drbd_recv(mdev, mdev->sock, buffer, want) != want)
 			goto out;
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++) {
-#if BITS_PER_LONG == 32
-			word = le32_to_cpu(buffer[buf_i]);
-#elif BITS_PER_LONG == 64
-			word = le64_to_cpu(buffer[buf_i]);
-#else
-#error "BITS_PER_LONG unknown!"
-#endif
+			word = lel_to_cpu(buffer[buf_i]);
 			bits += parallel_bitcount(word);
 			bm[bm_i++] = word;
 		}

@@ -610,13 +610,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	do {
 		want=min_t(int,MBDS_PACKET_SIZE,(bm_words-bm_i)*sizeof(long));
 		for(buf_i=0;buf_i<want/sizeof(unsigned long);buf_i++)
-#if BITS_PER_LONG == 32
-			buffer[buf_i] = cpu_to_le32(bm[bm_i++]);
-#elif BITS_PER_LONG == 64
-			buffer[buf_i] = cpu_to_le64(bm[bm_i++]);
-#else
-#error "BITS_PER_LONG unknown!"
-#endif
+			buffer[buf_i] = cpu_to_lel(bm[bm_i++]);
 		ok = drbd_send_cmd(mdev,mdev->sock,ReportBitMap,
 				   p, sizeof(*p) + want);
 	} while (ok && want);
