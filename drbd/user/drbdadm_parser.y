@@ -1,7 +1,10 @@
 %{
+#include <unistd.h>
+
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
+#include <string.h>
+
 #include "drbdadm.h"
 
 extern void yyerror(char* text);

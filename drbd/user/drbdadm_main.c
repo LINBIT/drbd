@@ -45,14 +45,6 @@ struct adm_cmd {
   int res_name_required;
 };
 
-struct option admopt[] = {
-  { "dry-run",      no_argument,      0, 'd' },
-  { "config-file",  required_argument,0, 'c' },
-  { "drbdsetup",    required_argument,0, 's' },
-  { 0,              0,                0, 0   } 
-};
-
-
 extern int yyparse();
 extern FILE* yyin;
 
@@ -60,6 +52,7 @@ int adm_attach(struct d_resource* ,char* );
 int adm_connect(struct d_resource* ,char* );
 int adm_generic(struct d_resource* ,char* );
 int adm_resize(struct d_resource* ,char* );
+int adm_syncer(struct d_resource* ,char* );
 static int adm_up(struct d_resource* ,char* );
 extern int adm_adjust(struct d_resource* ,char* );
 static int adm_dump(struct d_resource* ,char* );
@@ -75,6 +68,13 @@ char* setup_opts[10];
 int soi=0;
 int alarm_raised;
 
+struct option admopt[] = {
+  { "dry-run",      no_argument,      0, 'd' },
+  { "config-file",  required_argument,0, 'c' },
+  { "drbdsetup",    required_argument,0, 's' },
+  { 0,              0,                0, 0   } 
+};
+
 struct adm_cmd cmds[] = {
   { "attach",            adm_attach,  0                  ,1,1 },
   //{ "detach",            adm_generic, "??missing??"    ,1,1 },  
@@ -88,6 +88,7 @@ struct adm_cmd cmds[] = {
   { "invalidate",        adm_generic, "invalidate"       ,1,1 },
   { "invalidate_remote", adm_generic, "invalidate_remote",1,1 },
   { "resize",            adm_resize,  0                  ,1,1 },
+  { "syncer",            adm_syncer,  0                  ,1,1 },
   { "adjust",            adm_adjust,  0                  ,1,1 },
   { "dump",              adm_dump,    0                  ,1,1 },
   { "sh-devices",        helper_dev,  0                  ,0,0 },
@@ -379,12 +380,28 @@ int adm_connect(struct d_resource* res,char* unused)
   return m_system(argv);
 }
 
+int adm_syncer(struct d_resource* res,char* unused)
+{
+  char* argv[20];
+  struct d_option* opt;  
+  int argc=0;
+    
+  argv[argc++]=drbdsetup;
+  argv[argc++]=res->me->device;
+  argv[argc++]="syncer";
+  opt=res->sync_options;
+  make_options(opt);
+  argv[argc++]=0;
+
+  return m_system(argv);
+}
+
 static int adm_up(struct d_resource* res,char* unused)
 {
-  int r1,r2;
-  r1=adm_attach(res,unused);
-  r2=adm_connect(res,unused);
-  return  r1 && r2;
+  int r;
+  if( (r=adm_attach(res,unused)) ) return r;
+  if( (r=adm_connect(res,unused)) ) return r;
+  return adm_syncer(res,unused);
 }
 
 
@@ -510,11 +527,12 @@ int main(int argc, char** argv)
 
   if(!config_valid) exit(10);
 
+  if (optind == argc) print_usage(argv[0]);
+
   while(argv[optind][0]=='-') {
     setup_opts[soi++]=argv[optind++];
+    if (optind == argc) print_usage(argv[0]);
   }
-
-  //missing check if command name is given.
 
   cmd=NULL;
   for(i=0;i<ARRY_SIZE(cmds);i++) {

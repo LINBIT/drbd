@@ -31,6 +31,13 @@
 
 #include "drbdadm.h"
 
+
+/******
+ This is a bit uggly. 
+ If you think you are clever, then consider to contribute a nicer
+ implementation of adm_adjust()
+*/
+
 FILE *m_popen(int *pid,char** argv)
 {
   int mpid;
@@ -92,12 +99,13 @@ int adm_adjust(struct d_resource* res,char* unused)
   int rv,pid,argc=0;
   FILE *in;
   char str1[255],str2[255];
-  unsigned long  ul1;
+  unsigned long  ul1,ul2;
   struct d_option* o;
   char uu[2];
   int do_attach=0;
   int do_resize=0;
   int do_connect=0;
+  int do_syncer=0;
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
@@ -111,31 +119,33 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_attach=1;
   }
 
-  fscanf(in,"Disk options%[:]\n",uu);
-  rv=fscanf(in," size = %lu KB\n",&ul1);
+  rv=fscanf(in,"Disk options%[:]\n",uu);
   if(rv==1) {
-    o=find_opt(res->disk_options,"size");
-    o->mentioned=1;
-    if(o) {
-      if(m_strtol(o->value,1024) != ul1) {
-	do_resize=1;
+    rv=fscanf(in," size = %lu KB\n",&ul1);
+    if(rv==1) {
+      o=find_opt(res->disk_options,"size");
+      if(o) {
+	o->mentioned=1;
+	if(m_strtol(o->value,1024) != ul1) {
+	  do_resize=1;
+	}
+      } else {
+	do_attach=1;
       }
-    } else {
-      do_attach=1;
     }
-  }
-  rv=fscanf(in," do-pani%[c]\n",uu); // 1 == SUCCESS
-  if(rv==1) {
-    o=find_opt(res->disk_options,"do-panic");
-    o->mentioned=1;
-    if(!o) do_attach=1;
-  }
+    rv=fscanf(in," do-pani%[c]\n",uu); // 1 == SUCCESS
+    if(rv==1) {
+      o=find_opt(res->disk_options,"do-panic");
+      if(o) o->mentioned=1;
+      else do_attach=1;
+    }
 
-  // Check if every options is also present in drbdsetup show's output.
-  o=res->disk_options;
-  while(o) {
-    if(o->mentioned == 0) do_attach=1;
-    o=o->next;
+    // Check if every options is also present in drbdsetup show's output.
+    o=res->disk_options;
+    while(o) {
+      if(o->mentioned == 0) do_attach=1;
+      o=o->next;
+    }
   }
 
   rv=fscanf(in,"Local address: %[0-9.]:%s\n",str1,str2);
@@ -154,19 +164,82 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_connect=1;
   }
 
-  fscanf(in,"Net options%[:]\n",uu);
+  rv=fscanf(in,"Net options%[:]\n",uu);
+  if(rv==1) {
+    rv=fscanf(in," timeout = %lu.%lu sec (%[d]efault)\n",&ul1,&ul2,uu);
+    o=find_opt(res->net_options,"timeout");
+    if(o) {
+      o->mentioned=1;
+      if(m_strtol(o->value,0) != ul1*10 + ul2) do_connect=1;
+    } else {
+      if( uu[0] != 'd' ) do_connect=1;
+    }
 
-  fscanf(in,"Syncer options%[:]\n",uu);
-  
-  if(do_attach) {
-    adm_attach(res,0);
-    do_resize=0;
+    rv=fscanf(in," tl-size = %lu (%[d]efault)\n",&ul1,uu);
+    o=find_opt(res->net_options,"tl-size");
+    if(o) {
+      o->mentioned=1;
+      if(m_strtol(o->value,0) != ul1) do_connect=1;
+    } else {
+      if( uu[0] != 'd' ) do_connect=1;
+    }
+
+    rv=fscanf(in," connect-int = %lu sec (%[d]efault)\n",&ul1,uu);
+    o=find_opt(res->net_options,"connect-int");
+    if(o) {
+      o->mentioned=1;
+      if(m_strtol(o->value,0) != ul1) do_connect=1;
+    } else {
+      if( uu[0] != 'd' ) do_connect=1;
+    }
+
+    rv=fscanf(in," ping-int = %lu sec (%[d]efault)\n",&ul1,uu);
+    o=find_opt(res->net_options,"ping-int");
+    if(o) {
+      o->mentioned=1;
+      if(m_strtol(o->value,0) != ul1) do_connect=1;
+    } else {
+      if( uu[0] != 'd' ) do_connect=1;
+    }    
+
+    // Check if every option was present...
+    o=res->net_options;
+    while(o) {
+      if(o->mentioned == 0) do_connect=1;
+      o=o->next;
+    }
+
   }
-  if(do_resize)  adm_resize(res,0);
-  if(do_connect) adm_connect(res,0);
+  
+  rv=fscanf(in,"Syncer options%[:]\n",uu);
+  if(rv==1) {
+    rv=fscanf(in," rate = %lu KB/sec (%[d]efault)\n",&ul1,uu);
+    o=find_opt(res->sync_options,"rate");
+    if(o) {
+      o->mentioned=1;
+      if(m_strtol(o->value,0) != ul1) do_syncer=1;
+    } else {
+      if( uu[0] != 'd' ) do_syncer=1;
+    }
+
+    // Check if every option was present...
+    o=res->sync_options;
+    while(o) {
+      if(o->mentioned == 0) do_syncer=1;
+      o=o->next;
+    }
+  }
   
   fclose(in);
   waitpid(pid,0,0);
-
+  
+  if(do_attach) {
+    if( (rv=adm_attach(res,0)) ) return rv;
+    do_resize=0;
+  }
+  if(do_resize)  if( (rv=adm_resize(res,0)) ) return rv;
+  if(do_connect) if( (rv=adm_connect(res,0))) return rv;
+  if(do_syncer)  if( (rv=adm_syncer(res,0)) ) return rv;
+  
   return 0;
 }
