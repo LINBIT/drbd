@@ -6,27 +6,78 @@
 # Source function library.
 . /etc/rc.d/init.d/functions
 
-# Source drbd.conf
-. /etc/drbd.conf
-
 RETVAL=0
+RETVAL2=0
+
+if [ $# -eq 2 ]; then
+    RESOURCE=$1
+    shift
+fi
+
+cd /etc/sysconfig/drbd
+HOST=`hostname -s`
 
 # See how we were called.
 case "$1" in
   start)
-	action "Becoming primary node" /usr/sbin/drbdsetup $DR_DEVICE PRI
-	RETVAL=$?
-	action "Mounting cluster's FS" mount -o sync $DR_DEVICE $DR_MNTPOINT
-	RETVAL2=$?
-	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && touch /var/lock/subsys/datadisk\
-           || RETVAL=1
+	if [ "${RESOURCE}" != "" ]; then
+	    . $RESOURCE
+	    if [ ${HOST} = `echo ${MASTER_NODE} | cut -d: -f1` ]; then
+		action "Becoming primary on DRBD resource %s" $RESOURCE \
+		    /usr/sbin/drbdsetup $MASTER_DEVICE PRI
+		RETVAL=$?
+		action "Mounting shared device on %s" $MASTER_MNTPOINT \
+		    mount -o sync $MASTER_MNTPOINT
+		RETVAL2=$?
+	    elif [ ${HOST} = `echo ${SLAVE_NODE} | cut -d: -f1` ]; then
+		action "Becoming primary on DRBD resource %s" $RESOURCE \
+		    /usr/sbin/drbdsetup $SLAVE_DEVICE PRI
+		RETVAL=$?
+		action "Mounting shared device on %s" $SLAVE_MNTPOINT \
+		    mount -o sync $SLAVE_MNTPOINT
+		RETVAL2=$?
+	    else
+		echo This machine is neither master nor slave!
+		exit 1
+	    fi
+	    [ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && touch \
+		/var/lock/subsys/datadisk || RETVAL=1
+	else
+	    DEVICES=`ls drbd[0-9] 2>/dev/null`
+	    for D in $DEVICES; do
+		$0 $D start
+	    done
+	fi
 	;;
   stop)
-	action "Unmounting cluster's FS: " umount $DR_MNTPOINT
-	RETVAL=$?
-	action "Becoming secondary node"  /usr/sbin/drbdsetup $DR_DEVICE SEC
-	RETVAL2=$?
-	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && rm -f /var/lock/subsys/datadisk
+	if [ "${RESOURCE}" != "" ]; then
+	    . $RESOURCE
+	    if [ ${HOST} = `echo ${MASTER_NODE} | cut -d: -f1` ]; then
+		action "Unmounting shared device on %s" $MASTER_MNTPOINT \
+		    umount $MASTER_MNTPOINT
+		RETVAL2=$?
+		action "Becoming secondary on DRBD resource %s" $RESOURCE \
+		    /usr/sbin/drbdsetup $MASTER_DEVICE SEC
+		RETVAL=$?
+	    elif [ ${HOST} = `echo ${SLAVE_NODE} | cut -d: -f1` ]; then
+		action "Unmounting shared device on %s" $SLAVE_MNTPOINT \
+		    umount $SLAVE_MNTPOINT
+		RETVAL2=$?
+		action "Becoming secondary on DRBD resource %s" $RESOURCE \
+		    /usr/sbin/drbdsetup $SLAVE_DEVICE SEC
+		RETVAL=$?
+	    else
+		echo This machine is neither master nor slave!
+		exit 1
+	    fi
+	    [ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && rm -f \
+		/var/lock/subsys/datadisk
+	else
+	    DEVICES=`ls drbd[0-9] 2>/dev/null`
+	    for D in $DEVICES; do
+		$0 $D stop
+	    done
+	fi
 	;;
   restart)
 	$0 stop
@@ -34,13 +85,15 @@ case "$1" in
 	RETVAL=$?
 	;;
   status)
-	cat /proc/drbd
-	RETVAL=$?
+	if [ -r /proc/drbd ]; then
+		cat /proc/drbd
+	else
+		echo "DRBD module not loaded."
+	fi
 	;;
   *)
 	echo "Usage: $0 {start|stop|restart|status}"
 	exit 1
 esac
 
-exit 0
-#exit $RETVAL
+exit $RETVAL

@@ -1,5 +1,8 @@
-# drbd configuration file
+# Example of a DRBD device description file
 #
+# Alter this skeleton and copy it as drbd[0,1,2,...] as needed
+# Fábio Olivé Leite <olive@conectiva.com.br>
+# 
 # This file is part of drbd by Philipp Reisner
 #
 # drbd is free software; you can redistribute it and/or modify
@@ -17,10 +20,11 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-# local and remote addr addr[:port]
+# master and slave addr addr[:port]
 # default port: 7788
-DR_LOCAL_NODE=lha1
-DR_REMOTE_NODE=lha2
+# Important: don't use domain names here, only the hostnames/IPs
+MASTER_NODE=ha1
+SLAVE_NODE=ha2
 
 # Options:
 #       -t --timeout  val
@@ -44,21 +48,34 @@ DR_REMOTE_NODE=lha2
 #          if the TL is too small.
 #          Default: 256 entries
 #
-DR_OPTIONS="-r 500"
+#       -d --disk-size val
+#          Sets drbd's size. When set to 0 drbd negotiates the
+#          size with the remote node.
+#          Default: 0 KB.
+#
+#       -p --do-panic
+#          drbd will trigger a kernel panic if there is an
+#          IO error on the lower_device. May be usefull when
+#          drbd is used in a HA cluster.
+OPTIONS="-r 500"
 
-#       protocol
-#          protocol may be A, B or C.
-DR_PROTOCOL=A
+# A device size of zero means drbd should negotiate the size by itself
+# If specified, the device can be used even without connecting, but make
+# sure sizes match and are valid in both nodes.
+SIZE=514080
 
-# device 
-DR_DEVICE=/dev/nb0
+# Protocol used for this device
+# protocol may be A, B or C.
+PROTOCOL=B
 
-# Your local device for drbd
-DR_LL_DEVICE=/dev/sda6
+# Devices used in master and slave (may be different on each machine)
+MASTER_DEVICE=/dev/nb0
+SLAVE_DEVICE=/dev/nb0
 
-# Mountpoint
-DR_MNTPOINT=/mnt/data
+# Partitions for drbd (can be a different partition on each machine)
+MASTER_PARTITION=/dev/hda3
+SLAVE_PARTITION=/dev/hda3
 
-
-
-
+# Mountpoints (may be different on each machine)
+MASTER_MNTPOINT=/home/httpd/html
+SLAVE_MNTPOINT=/home/httpd/html
