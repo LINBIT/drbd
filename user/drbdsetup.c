@@ -1165,6 +1165,18 @@ const char* guess_dev_name(const char* dir,int major,int minor)
   return NULL;
 }
 
+const char* check_dev_name(const char* dev_name , int major, int minor)
+{
+  // this is because the SmartArray (Compaq, HP, whatever...) driver
+  // returns a closing bracket in the device name...
+
+  if(!dev_name[0] || index(dev_name,')'))
+    {
+      return guess_dev_name("/dev",major,minor);
+    }
+  return dev_name;
+}
+
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_get_config cn;
@@ -1188,8 +1200,8 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   printf("Lower device: %02d:%02d   (%s)\n",
 	 cn.lower_device_major,
 	 cn.lower_device_minor,
-	 cn.lower_device_name[0] ? cn.lower_device_name :
-	 guess_dev_name("/dev",cn.lower_device_major,cn.lower_device_minor));
+        check_dev_name(cn.lower_device_name,cn.lower_device_major,
+                       cn.lower_device_minor));
   if( cn.lower_device_major == cn.meta_device_major && 
        cn.lower_device_minor == cn.meta_device_minor ) {
     printf("Meta device: internal\n");
@@ -1197,8 +1209,8 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
     printf("Meta device: %02d:%02d   (%s)\n",
 	   cn.meta_device_major,
 	   cn.meta_device_minor,
-	   cn.meta_device_name[0] ? cn.meta_device_name :
-	   guess_dev_name("/dev",cn.meta_device_major,cn.meta_device_minor));
+          check_dev_name(cn.meta_device_name,cn.meta_device_major,
+                         cn.meta_device_minor));
     printf("Meta index: %d\n",cn.meta_index);
   }
 
