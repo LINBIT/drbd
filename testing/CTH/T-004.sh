@@ -10,6 +10,9 @@
 #
 # does work.
 #
+
+: ${RS_1:?no RS_1 defined...}
+
 Start RS_1 Node_1
 
 sleep 2
@@ -27,11 +30,11 @@ sleep 30 # so we have something to sync...
 # bitmap handshake... currently it may even cause both nodes to hang!
 # # not yet. Heal_Disk Disk_1
 # # see what happens:
-# on $Node_1: drbd_reattach minor=0 name=r0
+# on $Node_1: drbd_reattach DEV=/dev/${DRBD_DEVNAME}0 name=r0
 
 # attaching a good disk *does* work
 Heal_Disk Disk_1
-on $Node_1: drbd_reattach minor=0 name=r0
+on $Node_1: drbd_reattach DEV=/dev/${DRBD_DEVNAME}0 name=r0
 
 sleep 4
 
@@ -43,7 +46,7 @@ Fail_Disk Disk_1
 sleep 10
 
 Heal_Disk Disk_1
-on $Node_1: drbd_reattach minor=0 name=r0
-on $Node_1: drbd_wait_sync minor=0
+on $Node_1: drbd_reattach DEV=/dev/${DRBD_DEVNAME}0 name=r0
+on $Node_1: drbd_wait_sync DEV=/dev/${DRBD_DEVNAME}0
 
 Stop RS_1

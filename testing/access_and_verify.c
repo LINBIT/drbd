@@ -22,6 +22,8 @@
 
  */
 
+#define _GNU_SOURCE /* want lseek64 to be declared */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -31,7 +33,6 @@
 #include <time.h>
 #include <linux/fs.h>
 #include <unistd.h>
-#define _GNU_SOURCE
 #include <getopt.h>
 #include <string.h>
 #include <signal.h>

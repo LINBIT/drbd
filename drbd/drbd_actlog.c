@@ -671,15 +671,19 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
  * called by worker on SyncTarget and receiver on SyncSource.
  *
  */
-void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size)
+void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr,ebnr,lbnr,bnr;
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
+	int strange_state;
 
-	if (mdev->cstate < Connected || test_bit(DISKLESS,&mdev->flags)) {
-		ERR("%s:%d: %s flags=0x%02lx\n", __FILE__ , __LINE__ ,
+	strange_state = (mdev->cstate <= Connected) ||
+	                test_bit(DISKLESS,&mdev->flags) ||
+	                test_bit(PARTNER_DISKLESS,&mdev->flags);
+	if (strange_state) {
+		ERR("%s:%d: %s flags=0x%02lx\n", file , line ,
 				cstate_to_name(mdev->cstate), mdev->flags);
 	}
 
@@ -745,13 +749,18 @@ void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size)
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-void drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size)
+void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line)
 {
 	unsigned long sbnr,ebnr,lbnr,bnr;
 	sector_t esector, nr_sectors;
+	int strange_state;
 
-	if (mdev->cstate >= Connected) {
-		ERR("%s:%d: %s flags=0x%02lx\n", __FILE__ , __LINE__ ,
+	strange_state = ( mdev->cstate  > Connected ) ||
+	                ( mdev->cstate == Connected &&
+	                 !(test_bit(DISKLESS,&mdev->flags) ||
+	                   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
+	if (strange_state) {
+		ERR("%s:%d: %s flags=0x%02lx\n", file , line ,
 				cstate_to_name(mdev->cstate), mdev->flags);
 	}
 

@@ -3,9 +3,12 @@
 
 #
 # Fail Link; Heal Link; wait for sync; Relocate service.
+# every 10th iteration, compare md5sums of lower level devices.
 #
 # in a loop. does work.
 #
+
+: ${RS_1:?no RS_1 defined...}
 
 sleeptime=30
 
@@ -21,7 +24,7 @@ while (( iter-- )); do
 
 	Heal_Link Link_1
 	SECONDS=0
-	on $Node_1: drbd_wait_sync minor=0
+	on $Node_1: drbd_wait_sync DEV=/dev/${DRBD_DEVNAME}0
 	if (( sleeptime - SECONDS > 0)) ; then
 		sleep $(( sleeptime - SECONS ))
 	fi
@@ -34,7 +37,7 @@ while (( iter-- )); do
 
 	Heal_Link Link_1
 	SECONDS=0
-	on $Node_2: drbd_wait_sync minor=0
+	on $Node_2: drbd_wait_sync DEV=/dev/${DRBD_DEVNAME}0
 	if (( sleeptime - SECONDS > 0)) ; then
 		sleep $(( sleeptime - SECONS ))
 	fi

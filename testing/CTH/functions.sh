@@ -106,9 +106,12 @@ $(printf '%q\n' "${@:3}")
 do_initial_sanity_check()
 {
 	: ${hostname:?unknown hostname} 
+	: ${DRBD_MAJOR:?missing DRBD_MAJOR}
+	: ${DRBD_DEVNAME:?missing DRBD_DEVNAME}
+	: ${MINOR_COUNT:?missing MINOR_COUNT}
 	[[ `uname -n` == $hostname ]]
 	if [ -e /proc/drbd ] ; then
-		for d in `grep -o "^/dev/nb[^ ]\+" /proc/mounts` ; do
+		for d in `grep -o "^/dev/$DRBD_DEVNAME[^ ]\+" /proc/mounts` ; do
 			fuser -vmk $d || true
 			umount $d
 		done
@@ -120,7 +123,16 @@ do_initial_sanity_check()
 		fi
 	fi
 	> /etc/drbd-07.conf # no more drbd-07.conf hehehe...
-	[ -e /proc/drbd ] || modprobe drbd minor_count=4 || exit 1
+	ls_line=$(LANG= ls -l /dev/${DRBD_DEVNAME}0)
+	egrep_pat="^brw-..---- +1 root +root +$DRBD_MAJOR, +0 [A-Za-z0-9-: ]*/dev/${DRBD_DEVNAME}0\$"
+	if ! echo $ls_line | grep -E "$egrep_pat" ; then
+		echo "unexpected drbd device settings"
+		echo " $ls_line"
+		echo "    does not match"
+		echo "$egrep_pat"
+		exit 1
+	fi
+	[ -e /proc/drbd ] || modprobe drbd minor_count=$MINOR_COUNT major_nr=$DRBD_MAJOR || exit 1
 	echo "$hostname just forgot its configuration..."
 	# FIXME more paranoia
 }
@@ -148,6 +160,11 @@ generic_wait_for_boot()
 {
 	: ${ip:?unknown admin ip} 
 	: ${hostname:?unknown hostname} 
+	# You can override these in your config
+	: ${DRBD_MAJOR:=43}
+	: ${DRBD_DEVNAME:=nb}
+	: ${MINOR_COUNT:=4}
+
 
 	: ${initial:=false} ${have_drbd:=true}
 	[[ $initial   == true ]] || [[ $initial   == false ]] || return 1
@@ -171,13 +188,18 @@ generic_wait_for_boot()
 	while (( retry-- )) ; do
 		if $initial; then
 			if $have_drbd ; then
-				on $ip: do_initial_sanity_check hostname=$hostname && break
+				on $ip: do_initial_sanity_check \
+					hostname=$hostname \
+					DRBD_DEVNAME=$DRBD_DEVNAME \
+					DRBD_MAJOR=$DRBD_MAJOR \
+					MINOR_COUNT=$MINOR_COUNT && break
 			else
 				# fixme sanity check *no drbd*
-				on $ip: do_sanity_check         hostname=$hostname && break
+				on $ip: do_sanity_check \
+					hostname=$hostname && break
 			fi
 		else
-			on $ip: do_sanity_check         hostname=$hostname && break
+			on $ip: do_sanity_check hostname=$hostname && break
 		fi
 		echo "admin connect failed, retrying $retry times"
 		sleep 5
@@ -263,6 +285,9 @@ drbd_append_config()							# {{{3
 	: ${RES:?unknown resource name}
 	: ${LO_DEV:?unknown lo level device}
 	: ${NAME:?unknown dm name}
+
+	: START_CLEAN=${START_CLEAN:+true}
+	: ${START_CLEAN:=false}
 	# : ${USIZE:?unknown device size} # TODO
 
 	# FIXME support external meta data
@@ -275,9 +300,19 @@ drbd_append_config()							# {{{3
 	: ${USIZE:=$RSIZE}
 	(( USIZE <= RSIZE )) # assert USIZE <= RSIZE
 	let "MLOC=(USIZE & ~3) -128*1024"
-	echo -n "Wipeout GC and AL area on $HOSTNAME:$LO_DEV via /dev/mapper/$NAME for resource $RES"
-	# drbdadm down $RES
-	dd if=/dev/zero bs=4k seek=$[MLOC/4] count=$[128*256] of=/dev/mapper/$NAME
+	if $START_CLEAN ; then
+		perl -e 'print pack "N8", 0,0, 1,1,1,1,1, 0x8374026a;
+			 print "\x00" x (4096 - 32);
+			 # and, just to see how the bitmap behaves:
+			 print "\xff" x (4096 * 19);
+			' | dd bs=4k seek=$[MLOC/4] of=/dev/mapper/$NAME
+	else
+		echo "Wipeout GC and AL area on $HOSTNAME:$LO_DEV via /dev/mapper/$NAME for resource $RES"
+		# drbdadm down $RES
+		# dd if=/dev/zero bs=4k seek=$[MLOC/4] count=$[128*256] of=/dev/mapper/$NAME
+		# well, killing the first 80k of meta data should be enough for now...
+		dd if=/dev/zero bs=4k seek=$[MLOC/4] count=20 of=/dev/mapper/$NAME
+	fi
 	sync
 	echo .
 	drbdadm up $RES
@@ -303,9 +338,9 @@ drbdadm_down()								# {{{3
 
 drbd_wait_sync()							# {{{3
 {
-	: ${minor:?unknown minor number} 
-	drbdsetup /dev/nb$minor wait_connect -d 0 -t 0
-	drbdsetup /dev/nb$minor wait_sync -t 0
+	: ${DEV:?unknown device name} 
+	drbdsetup $DEV wait_connect -d 0 -t 0
+	drbdsetup $DEV wait_sync -t 0
 	# cat /proc/drbd
 }
 
@@ -323,9 +358,9 @@ drbd_wait_peer_not_pri()						# {{{3
 
 drbd_reattach()								# {{{3
 {
-	: ${minor:?unknown minor number} 
+	: ${DEV:?unknown device name} 
 	: ${name:?unknown resource name} 
-	if drbdsetup /dev/nb$minor show | grep -q "^Lower device:.*null"; then
+	if drbdsetup $DEV show | grep -q "^Lower device:.*null"; then
 		# NO. drbdadm attach $name
 		# But rather:
 		drbdadm down $name
@@ -339,11 +374,6 @@ drbdadm_pri()
 	: ${name:?unknown resource name} 
 	: ${force:=}
 	drbdadm $force primary $name
-	# FIXME should not be neccessary!
-	# patch already done, needs to be checked in...
-	# if [[ $force ]] ; then
-	# 	drbdadm invalidate_remote $name || true
-	# fi
 	echo "$name now Primary on $HOSTNAME"
 }
 

@@ -9,7 +9,10 @@ our @ISA = "Exporter";
 our @EXPORT = (qw{ Configure Run Log });
 our @EXPORT_OK = (qw{ mytimestr _spawn pid_is_pending kill_if_pending });
 our %EXPORT_TAGS = (
-	util => [qw{ Log mytimestr _spawn pid_is_pending kill_if_pending }], # for internal use only
+	util => [qw{
+		Log mytimestr _spawn pid_is_pending kill_if_pending
+		DRBD_DEVNAME DRBD_MAJOR MINOR_COUNT
+	}], # for internal use only
 ); 
 
 use POSIX;
@@ -35,6 +38,13 @@ sub Log;
 
 my  $clean_exit = 0;
 sub clean_exit { $clean_exit = 1; exit @_; };
+
+our $MINOR_COUNT =  4;
+our $DRBD_MAJOR  = 43;
+our $DRBD_DEVNAME = "nb";   # the part between /dev/ and the minor number.
+		# = "nbd/";
+		# = "drbd";
+		# = "drbd/";
 
 ##
 ## private

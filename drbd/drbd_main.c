@@ -90,9 +90,11 @@ STATIC int drbd_close(struct inode *inode, struct file *file);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
+MODULE_PARM_DESC(major_nr, "Major nr to use -- default 43 (NBD_MAJOR)");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+MODULE_PARM(major_nr,"i");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM(disable_io_hints,"i");
 #else
@@ -108,14 +110,16 @@ MODULE_PARM(disable_io_hints,"i");
  */
 
 /* thanks to these macros, if compiled into the kernel (not-module),
- * these become boot parameters: drbd.minor_count and
+ * these become boot parameters: drbd.major_nr, drbd.minor_count and
  * drbd.disable_io_hints
  */
+module_param(major_nr,        int,0);
 module_param(minor_count,     int,0);
 module_param(disable_io_hints,int,0);
 #endif
 
 // module parameter, defined
+int major_nr = NBD_MAJOR;
 #ifdef MODULE
 int minor_count = 2;
 #else
@@ -369,6 +373,7 @@ int drbd_io_error(drbd_dev* mdev)
 	if(mdev->cstate > Connected ) {
 		WARN("Resync aborted.\n");
 		set_cstate(mdev,Connected);
+		mdev->rs_total = 0;
 	}
 	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
 		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
@@ -805,12 +810,6 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
 	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
-
-	// YES, this happens. There is some race with the syncer!
-	if ((unsigned long)e->block_id <= 1) {
-		ERR("%s: e->block_id == %lx\n",__func__,(long)e->block_id);
-		return FALSE;
-	}
 
 	if (!mdev->meta.socket || mdev->cstate < Connected) return FALSE;
 	ok = drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
@@ -1635,6 +1634,17 @@ int __init drbd_init(void)
 		return -EINVAL;
 	}
 
+	/* FIXME maybe allow only certain ranges? */
+	if (1 > major_nr||major_nr > 254) {
+		printk(KERN_ERR DEVICE_NAME
+			": invalid major_nr (%d)\n",major_nr);
+#ifdef MODULE
+		return -EINVAL;
+#else
+		major_nr = NBD_MAJOR;
+#endif
+	}
+
 	if (1 > minor_count||minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
 			": invalid minor_count (%d)\n",minor_count);
@@ -1794,6 +1804,7 @@ NOT_IN_26(
 	printk(KERN_INFO DEVICE_NAME ": initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
+	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", major_nr);
 
 	return 0; // Success!
 

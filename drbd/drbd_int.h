@@ -42,6 +42,7 @@
 // module parameter, defined in drbd_main.c
 extern int minor_count;
 extern int disable_io_hints;
+extern int major_nr;
 
 /* Using the major_nr of the network block device
    prevents us from deadlocking with no request entries
@@ -61,16 +62,20 @@ extern int disable_io_hints;
 # define DEVICE_NR(device) (MINOR(device))
 # define LOCAL_END_REQUEST
 # include <linux/blk.h>
-# define DRBD_MAJOR NBD_MAJOR
+# define DRBD_MAJOR major_nr
 #else
 # include <linux/blkdev.h>
 # include <linux/bio.h>
-# define MAJOR_NR NBD_MAJOR
+# define MAJOR_NR major_nr
 #endif
 
 #undef DEVICE_NAME
 #define DEVICE_NAME "drbd"
 #define DEVFS_NAME "nbd"    // This make sense as long as we are MAJOR 43
+/* FIXME we are no longer strictly MAJOR 43.
+ * so, should this too become "configurable" ?
+ * or shall we fix it to "drbd" ?
+ */
 
 // XXX do we need this?
 #ifndef TRUE
@@ -93,15 +98,10 @@ extern int disable_io_hints;
  * Cannot use SIGTERM nor SIGKILL, since these
  * are sent out by init on runlevel changes
  * I choose SIGHUP for now.
+ *
+ * FIXME btw, we should register some reboot notifier.
  */
 #define DRBD_SIGKILL SIGHUP
-
-/* To temporarily block signals during network operations.
- * as long as we send directly from make_request, I'd like to
- * allow KILL, so the user can kill -9 hanging write processes.
- * If it does not succeed, it _should_ timeout anyways, but...
- */
-#define DRBD_SHUTDOWNSIGMASK sigmask(DRBD_SIG)|sigmask(DRBD_SIGKILL)
 
 #define ID_SYNCER (-1LL)
 #define ID_VACANT 0     // All EEs on the free list should have this value
@@ -341,7 +341,7 @@ typedef enum {
 	ReportBitMap,
 	BecomeSyncTarget,
 	BecomeSyncSource,
-	WriteHint,     // Used in protocol C to hint the secondary to hurry up
+	UnplugRemote,  // Used at various times to hint the peer to hurry up
 	DataRequest,   // Used to ask for a data block
 	RSDataRequest, // Used to ask for a data block
 	SyncParam,
@@ -376,7 +376,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ReportBitMap]     = "ReportBitMap",
 		[BecomeSyncTarget] = "BecomeSyncTarget",
 		[BecomeSyncSource] = "BecomeSyncSource",
-		[WriteHint]        = "WriteHint",
+		[UnplugRemote]     = "UnplugRemote",
 		[DataRequest]      = "DataRequest",
 		[RSDataRequest]    = "RSDataRequest",
 		[SyncParam]        = "SyncParam",
@@ -420,7 +420,7 @@ typedef struct {
  *   PingAck
  *   BecomeSyncTarget
  *   BecomeSyncSource
- *   WriteHint
+ *   UnplugRemote
  */
 
 /*
@@ -649,7 +649,7 @@ enum {
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
 	DO_NOT_INC_CONCNT,	// well, don't ...
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
-	UNPLUG_REMOTE,		// whether sending a "WriteHint" makes sense
+	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
 	DISKLESS,		// no local disk
 	PARTNER_DISKLESS,	// partner has no storage
 	PARTNER_CONSISTENT,	// partner has consistent data
@@ -1032,8 +1032,12 @@ extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern void drbd_al_read_log(struct Drbd_Conf *mdev);
-extern void drbd_set_in_sync(drbd_dev* mdev, sector_t sector,int blk_size);
-extern void drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector,int blk_size);
+extern void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
+#define drbd_set_in_sync(mdev,sector,size) \
+	__drbd_set_in_sync(mdev,sector,size, __FILE__, __LINE__ )
+extern void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
+#define drbd_set_out_of_sync(mdev,sector,size) \
+	__drbd_set_out_of_sync(mdev,sector,size, __FILE__, __LINE__ )
 extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_shrink(struct Drbd_Conf *mdev);
@@ -1382,7 +1386,7 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 	case PingAck:
 	case BecomeSyncTarget:
 	case BecomeSyncSource:
-	case WriteHint:
+	case UnplugRemote:
 
 	case SyncParam:
 	case ReportParams:

@@ -881,8 +881,17 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	int ok;
 
 	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
-	if(likely(drbd_bio_uptodate(&e->private_bio))) {
-		drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
+	if (likely( drbd_bio_uptodate(&e->private_bio) )) {
+		ok = !test_bit(DISKLESS,&mdev->flags) &&
+		     !test_bit(PARTNER_DISKLESS,&mdev->flags);
+		if (likely( ok )) {
+			drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
+			/* THINK maybe don't send ack either
+			 * when we are suddenly diskless?
+			 * Dropping it here should do no harm,
+			 * since peer has no structs referencing this.
+			 */
+		}
 		ok = drbd_send_ack(mdev,WriteAck,e);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
@@ -1004,10 +1013,14 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(&e->private_bio))) {
 			ok=drbd_send_ack(mdev,WriteAck,e);
-			if(ok && mdev->rs_total) drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
+			if (ok && mdev->rs_total)
+				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
 			ok&= drbd_io_error(mdev);
+			/* we expect it to be marked out of sync anyways...
+			 * maybe assert this?
+			 */
 		}
 		dec_unacked(mdev,HERE);
 
@@ -1281,7 +1294,7 @@ STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
 		}
 	} else {
 		set_cstate(mdev,Connected);
-		if(mdev->rs_total) {
+		if(drbd_bm_total_weight(mdev)) {
 			if (drbd_md_test_flag(mdev,MDF_Consistent)) {
 				/* We are not going to do a resync but there
 				   are marks in the bitmap.
@@ -1290,7 +1303,7 @@ STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
 				   Clean the bitmap...
 				 */
 				INFO("No resync -> clearing bit map.\n");
-				drbd_bm_set_all(mdev);
+				drbd_bm_clear_all(mdev);
 				drbd_bm_write(mdev);
 			} else {
 				WARN("I am inconsistent, but there is no sync? BOTH nodes inconsistent!\n");
@@ -1450,6 +1463,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			 * on the next _drbd_send_bitmap this will be done.
 			 */
 			WARN("PARTNER DISKLESS\n");
+			mdev->rs_total = 0;
 		}
 		if(mdev->cstate >= Connected ) {
 			if(mdev->state == Primary) tl_clear(mdev);
@@ -1465,8 +1479,10 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 			set_cstate(mdev,Connected);
 		}
 	} else {
-		if (test_and_clear_bit(PARTNER_DISKLESS, &mdev->flags))
+		if (test_and_clear_bit(PARTNER_DISKLESS, &mdev->flags)) {
 			WARN("Partner no longer diskless\n");
+			D_ASSERT(consider_sync);
+		}
 	}
 
 	if (be32_to_cpu(p->gen_cnt[Flags]) & MDF_Consistent) {
@@ -1649,7 +1665,7 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail ?
 }
 
-STATIC int receive_WriteHint(drbd_dev *mdev, Drbd_Header *h)
+STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 {
 	if (!test_bit(DISKLESS,&mdev->flags)) drbd_kick_lo(mdev);
 	return TRUE; // cannot fail.
@@ -1671,7 +1687,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[PingAck]          = NULL, //receive_PingAck,
 	[BecomeSyncTarget] = receive_BecomeSyncTarget,
 	[BecomeSyncSource] = receive_BecomeSyncSource,
-	[WriteHint]        = receive_WriteHint,
+	[UnplugRemote]     = receive_UnplugRemote,
 	[DataRequest]      = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
 	[SyncParam]        = receive_SyncParam,
@@ -1767,6 +1783,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->done_ee)); // done here
 
 	mdev->epoch_size=0;
+	mdev->rs_total=0;
 
 	if(atomic_read(&mdev->unacked_cnt)) {
 		ERR("unacked_cnt = %d\n",atomic_read(&mdev->unacked_cnt));
@@ -1888,6 +1905,11 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 
 	if ( p->protocol_version == PRO_VERSION ||
 	     p->protocol_version == (PRO_VERSION+1) ) {
+		if (p->protocol_version == (PRO_VERSION+1)) {
+			WARN( "You should upgrade me! "
+			      "Peer wants protocol version: %u\n",
+			      p->protocol_version );
+		}
 		INFO( "Handshake successful: DRBD Protocol version %u\n",
 		      PRO_VERSION );
 	} /* else if ( p->protocol_version == (PRO_VERSION-1) ) {
@@ -1991,9 +2013,8 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 
-			/* TODO maybe optimize: don't do the set_in_sync
-			 * if not neccessary */
-			if(mdev->conf.wire_protocol == DRBD_PROT_C)
+			if (mdev->rs_total && 
+			    mdev->conf.wire_protocol == DRBD_PROT_C)
 				drbd_set_in_sync(mdev,sector,blksize);
 		}
 	}

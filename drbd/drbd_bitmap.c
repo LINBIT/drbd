@@ -723,8 +723,16 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 	int i;
 	D_BUG_ON(!(b && b->bm));
 
-	if (mdev->cstate >= Connected)
+/*
+ * only called from drbd_set_out_of_sync.
+ * strange_state blubber is already in place there...
+	strange_state = ( mdev->cstate  > Connected ) ||
+	                ( mdev->cstate == Connected &&
+	                 !(test_bit(DISKLESS,&mdev->flags) ||
+	                   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
+	if (strange_state)
 		ERR("%s in drbd_bm_set_bit\n", cstate_to_name(mdev->cstate));
+*/
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
@@ -761,10 +769,13 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 	}
 	spin_unlock_irq(&b->bm_lock);
 
-	/* clearing bits should only take place when sync is in progress! */
+	/* clearing bits should only take place when sync is in progress!
+	 * this is only called from drbd_set_in_sync.
+	 * strange_state blubber is already in place there ...
 	if (i && mdev->cstate <= Connected)
 		ERR("drbd_bm_clear_bit: cleared a bitnr=%lu while %s\n",
 				bitnr, cstate_to_name(mdev->cstate));
+	 */
 
 	return i;
 }

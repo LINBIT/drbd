@@ -41,7 +41,7 @@ sub CheckConfig {
 sub env {
 	my $me = shift;
 	my $minor = $me->{_config}->{bdev}->{_config}->{minor};
-	return "TYPE=$me->{_config}->{type} DEV=/dev/nb$minor MNT=$me->{_config}->{mount_point}";
+	return "TYPE=$me->{_config}->{type} DEV=/dev/$DRBD_DEVNAME$minor MNT=$me->{_config}->{mount_point}";
 }
 
 sub DRBD_Resource_changed {

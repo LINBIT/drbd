@@ -647,7 +647,7 @@ int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	if (cancel) return 1;
 	NOT_IN_26(clear_bit(UNPLUG_QUEUED,&mdev->flags));
-	return drbd_send_short_cmd(mdev,WriteHint);
+	return drbd_send_short_cmd(mdev,UnplugRemote);
 }
 
 STATIC void drbd_global_lock(void)

@@ -42,7 +42,7 @@ sub wait_sync {
 	} elsif ($node->{_busy} and $node->{_busy} !~ /^wait_sync/) {
 		warn "$node->{_id} busy: $node->{_busy}\n";
 	} else {
-		$cmd = "on $ip: drbd_wait_sync minor=$minor";
+		$cmd = "on $ip: drbd_wait_sync DEV=/dev/$DRBD_DEVNAME$minor";
 		$node->{_busy} = "wait_sync" unless $node->{_busy};
 		$node->{_busy} .= " $name ";
 		$LGE_CTH::FAILED += 1000;
@@ -109,7 +109,7 @@ sub Disk_changed {
 	return if $event ne 'heal';
 	return if $node->{_status}->{status} ne 'up';
 
-	$cmd = "on $ip: drbd_reattach minor=$minor name=$name";
+	$cmd = "on $ip: drbd_reattach DEV=/dev/$DRBD_DEVNAME$minor name=$name";
 	_spawn( "drbd_reattach $name on $hostname", $cmd, 'SYNC');
 	$me->wait_sync("attach");
 }
@@ -228,7 +228,7 @@ ___
 		my $ip = $link->{_config}->{_nodes}->{$n->{node}->id}->{ip};
 		$s .= <<___ ;
     on $n->{node}->{_config}->{hostname} {
-        device         /dev/nb$c->{minor};
+        device         /dev/$DRBD_DEVNAME$c->{minor};
         disk           /dev/mapper/$c->{name};
         address        $ip:$n->{port};
         meta-disk      $n->{'meta-disk'}@{[ $n->{'meta-disk'} eq "internal" ? ";" : "[$n->{'meta-index'}];" ]}

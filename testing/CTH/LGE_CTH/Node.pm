@@ -118,6 +118,7 @@ sub wait_for_boot {
 	my $initial = $me->{_status}->{status} eq '__UNDEF__' ? "true" : "false";
 	my $have_drbd = scalar(grep { /^DRBD/ } keys %{$me->{_users}}) ? "true" : "false";
 	my $cmd = "ip=$ip\nhostname=$hostname\ntimeout=$timeout\ninitial=$initial\nhave_drbd=$have_drbd\n"
+		. "DRBD_MAJOR=$DRBD_MAJOR\nDRBD_DEVNAME=$DRBD_DEVNAME\nMINOR_COUNT=$MINOR_COUNT\n"
 		. $me->{_config}->{boot_script};
 
 	$me->{_busy} = "wait_for_boot";

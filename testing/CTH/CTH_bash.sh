@@ -28,6 +28,9 @@ Run()
 	clear_env
 	source $CONF              || return
 
+	: ${Node_1:?no Node_1 defined...}
+	: ${Node_2:?no Node_2 defined...}
+
 	# verify
 	# Dump_All
 	# exit 0
@@ -48,13 +51,12 @@ Run()
 	trap 'ex=$?; echo "exit_code: $ex"' ERR # show exit codes != 0
 	if [[ -e $CASE ]] ; then
 		echo "now run CASE=$CASE"
-		source $CASE || return
+		( set -e; source $CASE ) || return
 	fi
 
 	return
 }
 
-set +e
 if Run; then
 	cat <<-___
 	#--- $CASE ----

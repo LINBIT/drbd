@@ -1,6 +1,9 @@
 #!/usr/bin/env - /bin/bash
 # $Id: T-001.sh,v 1.1.2.3 2004/06/01 09:36:55 lars Exp $
 
+: ${RS_1:?no RS_1 defined...}
+: ${RS_2:?no RS_2 defined...}
+
 echo "START"
 Start RS_1 Node_1
 Start RS_2 Node_2
