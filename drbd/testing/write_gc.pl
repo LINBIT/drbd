@@ -1,48 +1,83 @@
 #!/usr/bin/perl -w
 
 use strict;
-use constant F_SIZE => 24;
-use constant DRBD_MAGIC => 0x83740267;
 use Fcntl;
-use File::Path;
+use Fcntl ":seek";
 
-sub write_gc_file($ $ $ $ $ $)
-  {
-      my $minor        = $_[0];
-      my $Consistent   = $_[1];
-      my $HumanCnt     = $_[2];
-      my $ConnectedCnt = $_[3];
-      my $ArbitraryCnt = $_[4];
-      my $PrimaryInd   = $_[5];
-      my $MagicNr = DRBD_MAGIC;
-      my ($out, $written);
-      my @entry;
-      
-      # Delete the existing meta-data file.
-      unlink ("/var/lib/drbd/drbd".$minor); # ignore return code 
+use constant F_SIZE => 32;
+use constant DRBD_MD_MAGIC => 0x83740267+3;
+use constant BLKFLSBUF => 0x1261; # 0x1261 is BLKFLSBUF on intel.
 
-      # Create the directory if needed.
-      @entry = stat("/var/lib/drbd")
-          or mkpath( "/var/lib/drbd", 0, 0755 );
+sub ensure_default
+{
+    my($ref,$text,$default) = @_;
 
-      $out = pack("N6", $Consistent,$HumanCnt,$ConnectedCnt,
-                  $ArbitraryCnt,$PrimaryInd, $MagicNr);
+    if(!defined($$ref)) {
+	print "Assuming $text = $default\n";
+	$$ref = $default;
+    }
+}
 
-      sysopen GCF, "/var/lib/drbd/drbd".$minor, O_RDWR | O_CREAT
-          or die "sysopen /var/lib/drbd/drbd\n";
+sub write_gc_file
+{
+    my ($ll_dev,$Consistent,$HumanCnt,$TimeoutCnt,$ConnectedCnt,$ArbitraryCnt,
+	$lastState,$ConnectedInd) = @_;
+    my ($Flags,$rr,$pos,$out);
 
-      $written = syswrite(GCF, $out, length($out));
-      die "syswrite failed: $!\n" unless $written == length($out);
+    ensure_default(\$Consistent,"Consistent",1);
+    ensure_default(\$HumanCnt,"HumanCnt",1);
+    ensure_default(\$TimeoutCnt,"TimeoutCnt",1);
+    ensure_default(\$ConnectedCnt,"ConnectedCnt",1);
+    ensure_default(\$ArbitraryCnt,"ArbitraryCnt",1);
+    ensure_default(\$lastState,"lastState",0);
+    ensure_default(\$ConnectedInd,"ConnectedInd",0);
 
-      printf(" device  | Consistent | HumanCnt | ConnectedCnt | ArbitraryCnt |".
-             " lastState\n");
-      printf(" drbd%d       %3d          %3d           %3d           %3d   ".
-             "      %s\n",
-             $minor,$Consistent,$HumanCnt,$ConnectedCnt,$ArbitraryCnt,
-             $PrimaryInd ? "primary" : "secondary" );
-      close(GCF);
-  }
+    sysopen (GCF,$ll_dev,O_WRONLY)
+	or die "can not open GC file";
 
-my ($f1, $f2, $f3, $f4, $f5, $f6) = @ARGV;
-write_gc_file($f1, $f2, $f3, $f4, $f5, $f6);
+    ioctl(GCF,BLKFLSBUF,0);
+    # DRBD uses its private buffer for writing meta data, therefore
+    # we flush all the buffer cache's buffers of the device. Without
+    # this we would simply the same values at subsequent calls, that
+    # we saw at the first call.
+
+    $pos=sysseek(GCF, 0, SEEK_END);
+    $pos = (int($pos / (4*1024)) - 1) * (4*1024) + 8;
+
+    $rr=sysseek(GCF, $pos, SEEK_SET);
+    die "2nd seek failed rr=$rr pos=$pos" if ($rr != $pos) ;
+
+    $Flags = 0;
+    if($Consistent)    { $Flags |= 0x01; }
+    if($lastState)     { $Flags |= 0x02; }
+    if($ConnectedInd)  { $Flags |= 0x04; }
+
+    $out = pack("N6", $Flags,$HumanCnt,$TimeoutCnt,$ConnectedCnt,
+		$ArbitraryCnt, DRBD_MD_MAGIC);
+
+    $rr = syswrite(GCF, $out, length($out));
+    die "syswrite failed: $!\n" unless $rr == length($out);
+
+    ioctl(GCF,BLKFLSBUF,0);  # Ask the buffer cache to forget this buffer. 
+
+    close(GCF);
+}
+
+sub main
+{
+    my ($res, @other_args) = @_;
+    my $disk;
+
+    if(!defined($res)) {
+	print "USAGE: write_gc.pl resource-name\n";
+	exit 10;
+    }
+    chomp($disk = `drbdadm sh-ll-dev $res`);
+
+    write_gc_file($disk,@other_args);
+
+}
+
+
+main(@ARGV);
 
