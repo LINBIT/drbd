@@ -5,8 +5,8 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999 2000, Philipp Reisner <philipp@linuxfreak.com>.
-        Initial author.
+   Copyright (C) 1999-2001, Philipp Reisner <philipp.reisner@gmx.at>.
+        main author.
 
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
         Added code for Linux 2.3.x
@@ -119,7 +119,7 @@ typedef struct wait_queue*  wait_queue_head_t;
 #define DEVICE_NAME "drbd"
 
 #define DRBD_SIG SIGXCPU
-#define SYNC_LOG_S 60
+#define SYNC_LOG_S 80
 
 typedef enum { 
 	Running,
@@ -276,21 +276,12 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 #else
 /*static */ struct file_operations drbd_ops =
 {
-	NULL,			/* lseek - default */
-	block_read,		/* read - general block-dev read */
-	block_write,		/* write - general block-dev write */
-	NULL,			/* readdir - bad */
-	NULL,			/* poll */
-	drbd_ioctl,		/* ioctl */
-	NULL,			/* mmap */
-	drbd_open,		/* open */
-	NULL,			/* flush */
-	drbd_close,		/* release */
-	block_fsync,		/* fsync */
-	NULL,			/* fasync */
-	NULL,			/* check_media_change */
-	NULL,			/* revalidate */
-	NULL			/* lock */
+	read:           block_read,
+	write:          block_write,
+	ioctl:          drbd_ioctl,
+	open:           drbd_open,
+	release:        drbd_close,
+	fsync:          block_fsync
 };
 #endif
 
@@ -441,12 +432,16 @@ struct request *my_all_requests = NULL;
 int drbd_log2(int i)
 {
 	int bits = 0;
+	int add_one=0; /* In case there is not a whole-numbered solution,
+			  round up */
 	while (i != 1) {
 		bits++;
+		if ( (i & 1) == 1) add_one=1;
 		i >>= 1;
 	}
-	return bits;
+	return bits+add_one;
 }
+
 
 
 /************************* The transfer log start */
@@ -1124,6 +1119,9 @@ void drbd_setup_sock(struct Drbd_Conf *mdev)
 #else
 		mdev->sock->sk->nonagle=0;
 #endif
+		mdev->sock->sk->sndbuf = 2*65535; 
+		/* This boosts the performance of the syncer to 6M/s max */
+
 		break;
 	case Secondary:
 		mdev->sock->sk->priority=TC_PRIO_INTERACTIVE;
@@ -1132,6 +1130,9 @@ void drbd_setup_sock(struct Drbd_Conf *mdev)
 #else
 		mdev->sock->sk->nonagle=1;
 #endif
+		mdev->sock->sk->sndbuf = 2*32767;
+		/* Small buffer -> small response time */
+
 		break;
 	case Unknown:
 	}
@@ -1316,6 +1317,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		/* Do disk - IO */
 		{
 			struct buffer_head *bh;
+			int size_kb=1<<(drbd_conf[minor].blk_size_b-10);
+		
 			bh = kmalloc(sizeof(struct buffer_head), GFP_DRBD);
 			if (!bh) {
 				printk(KERN_ERR DEVICE_NAME
@@ -1341,8 +1344,9 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			bh->b_dev_id = req;
 			bh->b_end_io = drbd_dio_end;
 			
-			if(req->cmd == WRITE) drbd_conf[minor].writ_cnt++;
-			else drbd_conf[minor].read_cnt++;
+			if(req->cmd == WRITE) 
+				drbd_conf[minor].writ_cnt+=size_kb;
+			else drbd_conf[minor].read_cnt+=size_kb;
 
 			if (sending)
 				req->rq_status = RQ_DRBD_NOTHING;
@@ -1363,6 +1367,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				req->rq_status = RQ_DRBD_READ | 0x0001;
 
 			ll_rw_block(req->cmd, 1, &bh);
+
 		}
 
 		/* Send it out to the network */
@@ -1375,7 +1380,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 					   bnr,(unsigned long)req);
 
 			if(send_ok) {
-			        drbd_conf[minor].send_cnt++;
+			        drbd_conf[minor].send_cnt+=
+					req->current_nr_sectors<<1;
 			}
 
 			if( drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A ||
@@ -2412,7 +2418,7 @@ inline int receive_data(int minor,int data_size)
 
 	/* </HACK> */
 
-	drbd_conf[minor].recv_cnt++;
+	drbd_conf[minor].recv_cnt+=data_size>>10;
 	
 	return TRUE;
 }     
@@ -2807,169 +2813,231 @@ void drbd_free_resources(int minor)
   We really need to read in the data from our disk.
 */
 
+struct ds_buffer {
+	void* buffers;
+	struct buffer_head *bhs;
+	struct buffer_head **bhsp;
+	int number;
+	int io_pending_number;
+};
+
+void ds_buffer_init(struct ds_buffer *this,int minor)
+{
+	int amount,amount_blks,i,blocksize;
+	struct buffer_head *bh;
+
+	amount=drbd_conf[minor].sock->sk->sndbuf >> 1;
+	/* We want to fill half of the send buffer*/
+	blocksize=blksize_size[MAJOR_NR][minor];
+	amount_blks=amount/blocksize;
+	this->number=amount_blks;
+
+	this->buffers = (void*)__get_free_pages(GFP_USER,
+					      drbd_log2(amount>>PAGE_SHIFT));
+	this->bhs = (struct buffer_head*)
+		kmalloc(sizeof(struct buffer_head) * amount_blks,GFP_USER);
+
+	this->bhsp = (struct buffer_head**)
+		kmalloc(sizeof(struct buffer_head *) * amount_blks,GFP_USER);
+/*
+	printk(KERN_INFO DEVICE_NAME "%d: amount=%d\n",minor,amount);
+	printk(KERN_INFO DEVICE_NAME "%d: amount_blks=%d\n",minor,amount_blks);
+*/
+
+	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
+	memcpy(&this->bhs[0],bh,sizeof(struct buffer_head));
+	/* this->bhs[0]=*bh; */
+	bforget(bh); /* hehe this is the way to initialize a BH :)  */
+
+	this->bhs[0].b_dev = drbd_conf[minor].lo_device;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+	this->bhs[0].b_state = (1 << BH_Req) | (1 << BH_Mapped);
+#else
+	this->bhs[0].b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#endif
+	this->bhs[0].b_list = BUF_LOCKED;
+	init_waitqueue_head(&this->bhs[0].b_wait);
+
+	this->bhs[0].b_next = 0;
+	this->bhs[0].b_this_page = 0;
+	this->bhs[0].b_next_free = 0;
+	this->bhs[0].b_pprev = 0;
+	this->bhs[0].b_data = this->buffers;
+
+	for (i=1;i<amount_blks;i++) {
+		memcpy(&this->bhs[i],&this->bhs[0],sizeof(struct buffer_head));
+		/*this->bhs[i]=this->bhs[0];*/
+		this->bhs[i].b_data = this->buffers + i*blocksize;
+	}
+}
+
+void ds_buffer_free(struct ds_buffer *this)
+{
+	free_page((unsigned long)this->buffers);
+	kfree(this->bhs);
+	kfree(this->bhsp);
+}
+
+int ds_buffer_read(struct ds_buffer *this,
+		   unsigned long (*get_blk)(void*,int),
+		   void* id,
+		   int minor)
+{
+	int count=0;
+	int amount_blks=this->number;
+
+	while (count < amount_blks) {
+		unsigned long block_nr;
+
+		block_nr=get_blk(id,drbd_conf[minor].blk_size_b);
+		if(block_nr == MBDS_DONE) break;
+				
+		this->bhs[count].b_blocknr=block_nr;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+		this->bhs[count].b_state = (1 << BH_Req) | (1 << BH_Mapped);
+#else
+		this->bhs[count].b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#endif
+		init_waitqueue_head(&this->bhs[count].b_wait);
+		/* Hmmm, why do I need this ? */
+
+		this->bhsp[count]=&this->bhs[count];
+		
+		count++;
+	}
+	ll_rw_block(READ, count, this->bhsp);
+	this->io_pending_number=count;
+	return count;
+}
+
+int ds_buffer_wait_on(struct ds_buffer *this,int minor)
+{
+	int i;
+	int pending=this->io_pending_number;
+	int size_kb=blksize_size[MAJOR_NR][minor]>>10;
+	
+	for(i=0;i<pending;i++) {
+		struct buffer_head *bh;
+		bh=&this->bhs[i];		
+		if (!buffer_uptodate(bh)) wait_on_buffer(bh);
+		if (!buffer_uptodate(bh))
+			printk(KERN_ERR DEVICE_NAME
+			       "%d: !uptodate\n", minor);
+		drbd_conf[minor].read_cnt+=size_kb;
+	}
+	return pending;
+}
+
+int ds_buffer_send(struct ds_buffer *this,int minor)
+{
+	int i,blocksize,rr;
+	int pending=this->io_pending_number;
+
+	blocksize=blksize_size[MAJOR_NR][minor];
+
+	for(i=0;i<pending;i++) {
+		rr=drbd_send_data(&drbd_conf[minor], this->bhs[i].b_data,
+				  blocksize,this->bhs[i].b_blocknr,ID_SYNCER);
+		if(rr < blocksize) {
+			printk(KERN_ERR DEVICE_NAME 
+			       "%d: syncer send failed!!\n",minor);
+			return FALSE;
+		}
+		drbd_conf[minor].send_cnt+=blocksize>>10;
+	}
+	return TRUE;
+}
+
+unsigned long ds_sync_all_get_blk(void* id, int ln2_bs)
+{
+	unsigned long rv,old_sync_to;
+	struct Drbd_Conf *mdev=(struct Drbd_Conf *)id;
+	int shift=ln2_bs - 9;
+
+	if(mdev->synced_to == 0) return MBDS_DONE;
+
+	rv = mdev->synced_to >> shift;
+	mdev->synced_to -= (1L<<shift);
+
+	return rv;	
+}
+
+#define swap(a,b) { tmp=a; a=b; b=tmp; }
+
 int drbd_syncer(struct Drbd_thread *thi)
 {
 	int minor = thi->minor;
-	int interval,wait;
-	unsigned long before;
-	int amount;
-	int blocks;
-	int blocksize;
-	void* page;
-	struct buffer_head rbh,*bh;
-	unsigned long bcount=0;
+	struct ds_buffer buffers[2];
+	struct ds_buffer *disk_b, *net_b, *tmp;
+	int amount,amount_blks,interval;
+	unsigned long (*get_blk)(void*,int);
+	void* id;
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
 
-
 	amount=drbd_conf[minor].sock->sk->sndbuf >> (1+10);
-	/* We want to fill half of the send buffer, we need the size
-	   in KB */
-
-	page = (void*)__get_free_page(GFP_USER);
-
-	/* printk(KERN_DEBUG DEVICE_NAME ": syncer living/m=%d\n", minor); */
-
- cstate_change:
-	if(drbd_conf[minor].cstate == SyncingAll) {
-		drbd_conf[minor].synced_to=
-			(blk_size[MAJOR_NR][minor] -
-			 (blksize_size[MAJOR_NR][minor] >> 10)) << 1;
-	} else {
-		drbd_conf[minor].mops->reset(drbd_conf[minor].mbds_id,
-					     drbd_conf[minor].blk_size_b);
-	}
-restart:
-        blocksize = blksize_size[MAJOR_NR][minor];
-	/* TODO: Ensure that ll_dev also has the new block-size! */
-
-	/* align synced_to to blocksize */
-	if(drbd_conf[minor].cstate == SyncingAll)
-		drbd_conf[minor].synced_to=
-			drbd_conf[minor].synced_to & ~((blocksize >> 9) - 1);
-
-	interval = amount * HZ / drbd_conf[minor].conf.sync_rate;
-	blocks = (amount << 10) / blocksize;
+	/* We want to fill half of the send buffer in KB */
+	interval = max( amount * HZ / drbd_conf[minor].conf.sync_rate , 1 );
+	amount_blks=(amount<<10)/blksize_size[MAJOR_NR][minor];
 
 	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation started "
-	       "blks=%d int=%d \n",minor,blocks, interval);
+	       "blks=%d int=%d \n",minor,amount_blks,interval);
 
-	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
-	memcpy(&rbh,bh,sizeof(struct buffer_head));
-	bforget(bh); /* hehe this is the way to initialize a BH :)  */
+	if(drbd_conf[minor].cstate == SyncingAll) {
+                drbd_conf[minor].synced_to=
+                        (blk_size[MAJOR_NR][minor] -
+                         (blksize_size[MAJOR_NR][minor] >> 10)) << 1;
+		get_blk=ds_sync_all_get_blk;
+		id=drbd_conf+minor;
+        } else if(drbd_conf[minor].cstate == SyncingQuick) {
+                drbd_conf[minor].mops->reset(drbd_conf[minor].mbds_id,
+                                             drbd_conf[minor].blk_size_b);
+		get_blk=drbd_conf[minor].mops->get_block;
+		id=drbd_conf[minor].mbds_id;
+        } else { 
+                /* print warning/error ? */
+		return 0;
+	}
 
-	rbh.b_dev = drbd_conf[minor].lo_device;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-	rbh.b_state = (1 << BH_Req) | (1 << BH_Mapped);
-#else
-	rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#endif
-	rbh.b_list = BUF_LOCKED;
-	rbh.b_data = page;
-	init_waitqueue_head(&rbh.b_wait);
 
-	rbh.b_next = 0;
-	rbh.b_this_page = 0;
-	rbh.b_next_free = 0;
-	rbh.b_pprev = 0;
-
-	bh=&rbh;
-
-	before = jiffies;
-
+	ds_buffer_init(&buffers[0],minor);
+	ds_buffer_init(&buffers[1],minor);
+	disk_b=buffers;
+	net_b=buffers+1;
+	
+	ds_buffer_read(disk_b,get_blk,id,minor);
 	while (TRUE) {
-		int i, rr;
-		unsigned long block_nr, new_sector;
-
-		wait = max( interval - (int)(jiffies - before) , 1 );
 		current->state = TASK_INTERRUPTIBLE;
-		schedule_timeout(wait);
-		before = jiffies;
-
-		for (i = 0; i < blocks; i++) {
-			if (thi->t_state == Exiting) goto out;
-			if (blocksize != blksize_size[MAJOR_NR][minor])
-				goto restart;
-
-			if(drbd_conf[minor].cstate == SyncingAll) {
-				block_nr=drbd_conf[minor].synced_to >> 
-					(drbd_conf[minor].blk_size_b - 9);
-			} else {
-				block_nr=drbd_conf[minor].mops->
-					get_block(drbd_conf[minor].mbds_id,
-						  drbd_conf[minor].blk_size_b);
-				if(block_nr == MBDS_DONE) goto done;
-				if(block_nr == MBDS_SYNC_ALL) {
-					set_cstate(&drbd_conf[minor],
-						   SyncingAll);
-					drbd_send_cstate(&drbd_conf[minor]);
-					goto cstate_change;
-				}					
-			}
-
-			rbh.b_blocknr=block_nr;
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
-			rbh.b_state = (1 << BH_Req) | (1 << BH_Mapped);
-#else
-			rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
-#endif
-			init_waitqueue_head(&rbh.b_wait);
-			  /* Hmmm, why do I need this ? */
-
-			ll_rw_block(READ, 1, &bh);
-		        if (!buffer_uptodate(bh)) wait_on_buffer(bh);
-			if (!buffer_uptodate(bh)) {
-                                printk(KERN_ERR DEVICE_NAME "%d: !uptodate\n",
-				       minor);
-			        goto out;
-			}
-
-			rr = drbd_send_data(&drbd_conf[minor], page,
-				       blocksize, block_nr, ID_SYNCER);
-
-			if (rr > 0) {
-				drbd_conf[minor].send_cnt++;
-				bcount++;
-			} else {
-				printk(KERN_ERR DEVICE_NAME
-				       "%d: syncer send failed!!\n",minor);
-				goto out;
-			}
-
-
-			/*
-			   printk(KERN_DEBUG DEVICE_NAME ": syncer send: "
-			   "block_nr=%ld len=%d\n",
-			   block_nr,
-			   blocksize);
-			 */
-
-			if(drbd_conf[minor].cstate == SyncingAll) {
-				new_sector = drbd_conf[minor].synced_to -
-					(blocksize >> 9);
-				if (new_sector > drbd_conf[minor].synced_to)
-					goto done;
-				drbd_conf[minor].synced_to=new_sector;
-			} 			
+		schedule_timeout(interval);
+		if(!ds_buffer_wait_on(disk_b,minor)) break;
+		swap(disk_b,net_b);
+		if(thi->t_state == Exiting) {
+			ds_buffer_send(net_b,minor);
+			break;
+		}
+		ds_buffer_read(disk_b,get_blk,id,minor);       
+		if(!ds_buffer_send(net_b,minor)) {
+			ds_buffer_wait_on(disk_b,minor);
+			goto out;
 		}
 	}
- done:
+
 	if(drbd_conf[minor].cstate == SyncingAll ||
            drbd_conf[minor].cstate == SyncingQuick) {
 		set_cstate(&drbd_conf[minor],Connected);
 		drbd_send_cstate(&drbd_conf[minor]);
 	}
+	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done.\n",minor);
 
  out:
-	free_page((unsigned long)page);
-	
+	ds_buffer_free(&buffers[0]);
+	ds_buffer_free(&buffers[1]);
+
 	drbd_conf[minor].synced_to=0; /* this is ok. */
-	printk(KERN_INFO DEVICE_NAME "%d: Synchronisation done. "
-	       "%lu blks sent\n", minor,bcount);
 
 	return 0;
 }
+
 
 /* ********* acknowledge sender for protocol C ******** */
 int drbd_asender(struct Drbd_thread *thi)
