@@ -313,6 +313,7 @@ have_env CONFIG $CONFIG
 have_env INSTALL $INSTALL
 
 have_dir $CONFIG
+have_dir $STATE
 have_file $INSTALL/drbd_commun
 have_command drbdsetup fuser lsmod modprobe
 
