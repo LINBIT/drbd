@@ -513,10 +513,25 @@ int set_state(int drbd_fd,Drbd_State state)
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
   if(err) {
     perror("ioctl() failed");
-    if(errno==EBUSY)	    
-      fprintf(stderr,"Someone has opened the device for RW access!\n");
-    if(errno==EINPROGRESS)
-      fprintf(stderr,"Resynchronization process currently running!\n");
+    switch(errno) 
+      {
+      case EBUSY:
+	fprintf(stderr,"Someone has opened the device for RW access!\n");
+	break;
+      case EINPROGRESS:
+	fprintf(stderr,"Resynchronization process currently running!\n");
+	break;
+      case ENXIO:
+	fprintf(stderr,"Device not configured\n");
+	break;
+      case EACCES:
+	fprintf(stderr,"Partnet is already primary\n");
+	break;
+      case EIO:
+	fprintf(stderr,"Local replica of data is inconsistent\n");
+	return 21;
+      default:
+      }
     return 20;
   }
   return 0;
