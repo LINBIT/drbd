@@ -54,6 +54,9 @@ struct d_resource* config;
 int config_valid=1;
 int dry_run;
 char* drbdsetup;
+char* setup_opts[10];
+int soi=0;
+
 
 /*** These functions are used to the print the config ***/
 
@@ -96,7 +99,7 @@ static void dump_host_info(struct d_host_info* hi)
   printf("  }\n");
 }
 
-static int dump_conf(struct d_resource* res)
+static int adm_dump(struct d_resource* res,char* unused)
 {
   printf("resource %s {\n",esc(res->name));
   printf("  protocol=%s\n",res->protocol);
@@ -213,7 +216,7 @@ static int m_system(char** argv)
     OPT=OPT->next; \
   }
 
-static int conf_disk(struct d_resource* res)
+static int adm_attach(struct d_resource* res,char* unused)
 {
   char* argv[20];
   struct d_option* opt;  
@@ -231,7 +234,23 @@ static int conf_disk(struct d_resource* res)
   return m_system(argv);
 }
 
-static int conf_net(struct d_resource* res)
+static int adm_generic(struct d_resource* res,char* cmd)
+{
+  char* argv[20];
+  int argc=0,i;
+    
+  argv[argc++]=drbdsetup;
+  argv[argc++]=res->me->device;
+  argv[argc++]=cmd;
+  for(i=0;i<soi;i++) {
+    argv[argc++]=setup_opts[i];
+  }
+  argv[argc++]=0;
+
+  return m_system(argv);
+}
+
+static int adm_connect(struct d_resource* res,char* unused)
 {
   char* argv[20];
   struct d_option* opt;  
@@ -249,6 +268,12 @@ static int conf_net(struct d_resource* res)
   argv[argc++]=0;
 
   return m_system(argv);
+}
+
+static int adm_adjust(struct d_resource* res,char* unused)
+{
+  printf("Not yet implementd.\n");
+  return 0;
 }
 
 const char* make_optstring(struct option *options)
@@ -279,47 +304,34 @@ struct option admopt[] = {
 
 struct adm_cmd {
   const char* name;
-  int (* function)(struct d_resource*);
+  int (* function)(struct d_resource*,char* );
+  char* arg;
 };
 
 struct adm_cmd cmds[] = {
-  {"disk",     conf_disk},
-  {"connect",  conf_net},
-  {"dump",     dump_conf}
+  { "attach",            adm_attach,  0                   },
+  { "detach",            adm_generic, "down"              },
+  { "connect",           adm_connect, 0                   },
+  { "disconnect",        adm_generic, "disconnect"        },
+  { "primary",           adm_generic, "primary"           },
+  { "secondary",         adm_generic, "secondary"         },
+  { "secondary_remote",  adm_generic, "secondary_remote"  },
+  { "invalidate",        adm_generic, "invalidate"        },
+  { "invalidate_remote", adm_generic, "invalidate_remote" },
+  { "resize",            adm_generic, "resize"            },
+  { "adjust",            adm_adjust,  0                   },
+  { "dump",              adm_dump,    0                   }
+// "helper" for scripts to get info from the global section...
 };
 
-  // TODO write real functionality...
-  /*
-    commands:
-    drbdadm mount/disk [drbd0|all]
-    drbdadm unmount/down [drbd0|all]
-    drbdadm connect [drbd0|all]
-    drbdadm disconnect [drbd0|all]
-    drbdadm primary [drbd0|all]
-    drbdadm secondary [drbd0|all]
-    drbdadm secondary_remote [drbd0|all]
-    drbdadm invalidate drbd0
-    drbdadm invalidate_remote drbd0
-    drbdadm resize drbd0
-    drbdadm helper #for scripts..
-    drbdadm dump
-    drbdadm readjust 
-
-    drbdadm options... cmd [resources...]
-
-    options:
-    --dry-run -d
-    --verbose -v
-    --config -c
-    -- drbdsetup options following
-  */
 
 void print_usage(const char* prgname)
 {
   int i;
   struct option *opt;
 
-  printf("\nUSAGE: %s [OPTION]... COMMAND [RESOURCE-NAME]...\n\n"
+  printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
+	 "{ALL|RESOURCE...}\n\n"
 	 "OPTIONS:\n",prgname);
 
   opt=admopt;
@@ -334,7 +346,11 @@ void print_usage(const char* prgname)
   printf("\nCOMMANDS:\n");
   
   for(i=0;i<ARRY_SIZE(cmds);i++) {
-      printf(" %s\n",cmds[i].name);
+    if(i%2) {
+      printf("%-35s\n",cmds[i].name);      
+    } else {
+      printf(" %-35s",cmds[i].name);      
+    }
   }
 
   printf("\nVersion: "REL_VERSION" (api:%d)\n",API_VERSION);
@@ -345,14 +361,13 @@ void print_usage(const char* prgname)
 int main(int argc, char** argv)
 {
   int i;
-  int (* function)(struct d_resource*);
+  int (* function)(struct d_resource*,char* );
+  char* argument;
   struct d_resource* res;
 
   drbdsetup=NULL;
   dry_run=0;
   yyin=NULL;
-
-  if(argc==1) print_usage(argv[0]);
 
   optind=0;
   while(1)
@@ -411,9 +426,18 @@ int main(int argc, char** argv)
 
   if(!config_valid) exit(10);
 
+  while(argv[optind][0]=='-') {
+    setup_opts[soi++]=argv[optind++];
+  }
+
+  if(optind+2 > argc) print_usage(argv[0]); // arguments missing.
+
   function=NULL;
   for(i=0;i<ARRY_SIZE(cmds);i++) {
-      if(!strcmp(cmds[i].name,argv[optind])) function=cmds[i].function;
+      if(!strcmp(cmds[i].name,argv[optind])) {
+	function=cmds[i].function;
+	argument=cmds[i].arg;
+      }
   }
 
   if(function==NULL) {
@@ -422,13 +446,21 @@ int main(int argc, char** argv)
   }
   optind++;
 
-  // if optind < argc resource list follows...
-
-  // for all known resources...
-  res=config;
-  while(res) {
-    function(res);
-    res=res->next;
+  if(!strcmp(argv[optind],"all")) {
+    res=config;
+    while(res) {
+      function(res,argument);
+      res=res->next;
+    }
+  } else {
+    int i;
+    res=config;
+    while(res) {
+      for(i=optind;i<argc;i++) {
+	if(!strcmp(argv[i],res->name)) function(res,argument);
+      }
+      res=res->next;
+    }    
   }
 
   free_config(config);

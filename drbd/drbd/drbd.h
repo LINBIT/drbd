@@ -56,7 +56,7 @@
 
 struct disk_config {
 	IN int      lower_device;
-	IN unsigned int disk_size;  // Remove this member.
+	IN unsigned int disk_size;
         IN int      do_panic;  /* Panic on error upon LL_DEV */
 };
 

@@ -103,13 +103,12 @@ struct drbd_cmd commands[] = {
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_device",0},
    (struct option[]) {
-     //     { "disk-size",  required_argument, 0, 'd' }, 
+     { "size",  required_argument,      0, 'd' }, 
      { "do-panic",   no_argument,       0, 'p' },
      { 0,            0,                 0, 0 } } },
   {"resize", cmd_disk_size,             0,
    (struct option[]) {
-     { "disk-size",  required_argument, 0, 'd' }, 
-     //     { "do-panic",   no_argument,       0, 'p' },
+     { "size",  required_argument,      0, 'd' }, 
      { 0,            0,                 0, 0 } } },
   {"disconnect", cmd_disconnect,     0, 0 },
   {"show", cmd_show,                 0, 0 },
