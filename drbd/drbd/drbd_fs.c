@@ -462,6 +462,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	case BLKROGET:
 	case BLKFLSBUF:
 	case BLKSSZGET:
+	case BLKBSZGET:
+	case BLKBSZSET:
 	case BLKPG:
  		err=blk_ioctl(inode->i_rdev, cmd, arg);
 		break;
