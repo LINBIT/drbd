@@ -109,7 +109,8 @@ struct Drbd_Conf {
 	struct Drbd_thread syncer;
         struct Drbd_thread ack_sender;
         struct mbds_operations* mops;
-        struct wait_queue* wqueue;  
+        struct wait_queue* ack_wait;  
+  //struct wait_queue* sync_wait;  
 };
 
 struct Drbd_buffer_head {
@@ -118,8 +119,9 @@ struct Drbd_buffer_head {
 };
 
 
-int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, int len,
-	      unsigned long sect_nr, u64 block_id, void *data);
+int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
+	      Drbd_Packet* header, size_t header_size, 
+	      void* data, size_t data_size);
 int drbd_send_param(int minor, int cmd);
 void drbd_thread_start(struct Drbd_thread *thi);
 #define drbd_thread_stop(A)     _drbd_thread_stop(A,FALSE)
@@ -271,7 +273,7 @@ struct request *my_all_requests = NULL;
 				   drbd_conf[i].longest_epoch);
 	}
 
-#if DBG
+#if 1
 
 	if (my_all_requests != NULL) {
 		char major_to_letter[256];
@@ -328,9 +330,6 @@ int drbd_log2(int i)
 
 /************************* The transfer log start */
 #define TL_BARRIER    0
-
-
-
 
 inline void tl_add(struct Drbd_Conf *mdev, struct request * new_item)
 {
@@ -427,13 +426,12 @@ inline int tl_dependence(struct Drbd_Conf *mdev, unsigned long sect_nr)
 	while( TRUE )
 	  {
 	    if ( p==mdev->transfer_log) p = p + mdev->conf.tl_size;
-	    if ( p==mdev->tl_begin ) {r=FALSE; goto out;}
+	    if ( p==mdev->tl_begin ) {r=FALSE; break;}
 	    p--;
-	    if ( p->req==TL_BARRIER) {r=FALSE; goto out;}
-	    if ( p->sector_nr == sect_nr) {r=TRUE; goto out;}
+	    if ( p->req==TL_BARRIER) {r=FALSE; break;}
+	    if ( p->sector_nr == sect_nr) {r=TRUE; break;}
 	  }
 
- out:	
 	spin_unlock(&mdev->tl_lock);
 	return r;
 }
@@ -460,6 +458,37 @@ inline void tl_clear(struct Drbd_Conf *mdev)
 	}
 }     
 
+int drbd_send_ack(struct Drbd_Conf *mdev, int cmd, u64 block_id)
+{
+        Drbd_BlockAck_Packet head;
+       
+	if(block_id == 0) return sizeof(head); 
+	        /* Do not send ACKs for syncer packets */
+
+        head.h.block_id = block_id;
+	return drbd_send(mdev,cmd,(Drbd_Packet*)&head,sizeof(head),0,0);
+}
+
+int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
+		   unsigned long block_nr, u64 block_id)
+{
+        Drbd_Data_Packet head;
+
+	head.h.block_nr = cpu_to_be64(block_nr);
+	head.h.block_id = block_id;
+
+	head.h.barrier = 0; 
+
+	if(mdev->need_to_issue_barrier) {
+	        head.h.barrier = (u32) tl_add_barrier(mdev);
+		mdev->need_to_issue_barrier=0;
+             /* printk(KERN_ERR DEVICE_NAME": issuing a barrier\n"); */	  
+	}
+	
+	return drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),
+			 data,data_size);
+}
+
 void drbd_send_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
@@ -470,14 +499,13 @@ void drbd_send_timeout(unsigned long arg)
 
 }
 
-
-int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, int len,
-	      unsigned long sect_nr, u64 block_id, void *data)
+int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, 
+	      Drbd_Packet* header, size_t header_size, 
+	      void* data, size_t data_size)
 {
 	mm_segment_t oldfs;
 	struct msghdr msg;
 	struct iovec iov[2];
-	Drbd_Packet packet_header;
 
 	int err;
 
@@ -486,27 +514,17 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, int len,
 	down(&mdev->send_mutex);
 	/* Without this sock_sendmsg() somehow mixes bytes :-) */
 
-	packet_header.magic = cpu_to_be32(DRBD_MAGIC);
-	packet_header.command = cpu_to_be16(cmd);
-	packet_header.length = cpu_to_be16(len);
-	packet_header.block_nr = cpu_to_be64(sect_nr);
-	packet_header.block_id = block_id;
+	header->magic  =  cpu_to_be32(DRBD_MAGIC);
+	header->command = cpu_to_be16(cmd);
+	header->length  = cpu_to_be16(data_size);
 
-	packet_header.barrier = 0; 
-
-	if(cmd == Data && mdev->need_to_issue_barrier) {
-	  packet_header.barrier = (u32) tl_add_barrier(mdev);
-	  mdev->need_to_issue_barrier=0;
-	  /* printk(KERN_ERR DEVICE_NAME": issuing a barrier\n"); */	  
-	}
-
-	iov[0].iov_base = (void *) &packet_header;
-	iov[0].iov_len = sizeof(packet_header);
+	iov[0].iov_base = header;
+	iov[0].iov_len = header_size;
 	iov[1].iov_base = data;
-	iov[1].iov_len = len;
+	iov[1].iov_len = data_size;
 
 	msg.msg_iov = iov;
-	msg.msg_iovlen = len > 0 ? 2 : 1;
+	msg.msg_iovlen = data_size > 0 ? 2 : 1;
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_name = 0;
@@ -522,8 +540,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, int len,
 	lock_kernel();
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
-	err = sock_sendmsg(mdev->sock, &msg,
-			   iov[1].iov_len + sizeof(packet_header));
+	err = sock_sendmsg(mdev->sock, &msg, header_size+data_size);
 	set_fs(oldfs);
 	unlock_kernel();
 
@@ -539,10 +556,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd, int len,
 			       ": send timed out!!\n");
 
 			drbd_thread_restart(&mdev->receiver);
-		} else
-			spin_unlock_irq(&current->sigmask_lock);
+		} else spin_unlock_irq(&current->sigmask_lock);
 	}
-	if (err != len + sizeof(packet_header)) {
+	if (err != header_size+data_size) {
 		printk(KERN_ERR DEVICE_NAME ": sock_sendmsg returned %d\n",
 		       err);
 	}
@@ -577,12 +593,16 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate,
 		  struct Drbd_Conf *mdev)
 {
   int wake_ack_sender=0;
+
   /* TODO: The pointer to mdev can also be obtained by looking
            at req->rq_dev
   */
+  struct Drbd_Conf* mdev2 = &drbd_conf[MINOR(req->rq_dev)];
+  if(mdev2 != mdev) 
+    printk(KERN_ERR DEVICE_NAME ": Strange things inside\n");
 
-#if DBG
 
+  /*
 	switch (nextstate) {
 	case RQ_DRBD_SENT:
 		printk("S");
@@ -597,7 +617,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate,
 		printk("N");
 		break;
 	}
-#endif
+  */
 
 	if (req->cmd == READ)
 		goto end_it;
@@ -642,7 +662,7 @@ void drbd_end_req(struct request *req, int nextstate, int uptodate,
 
 	if(wake_ack_sender && 
 	   mdev->conf.wire_protocol == DRBD_PROT_C) {
-	      wake_up_interruptible(&mdev->wqueue);
+	      wake_up_interruptible(&mdev->ack_wait);
 	}
 }
 
@@ -793,11 +813,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 		/* Send it out to the network */
 		if (sending) {
-			if (drbd_send(&drbd_conf[minor], Data,
-				      req->current_nr_sectors << 9,
-				      req->sector, (unsigned long) req,
-				      req->buffer) > 0) {
-				drbd_conf[minor].send_cnt++;
+     		        if (drbd_send_data(&drbd_conf[minor], req->buffer,
+					   req->current_nr_sectors << 9,
+					   req->sector,(unsigned long)req)>0) {
+			        drbd_conf[minor].send_cnt++;
 				tl_add(&drbd_conf[minor],req);
 			}
 			if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A) {
@@ -847,7 +866,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		break;
 
 	case DRBD_IOCTL_SET_CONFIG:
-		printk(KERN_ERR DEVICE_NAME ": set_config()\n");
+	        /* printk(KERN_ERR DEVICE_NAME ": set_config()\n"); */
 		if (
 			   (err =
 		     copy_from_user(&drbd_conf[minor].conf, (void *) arg,
@@ -995,7 +1014,8 @@ __initfunc(int drbd_init(void))
 		drbd_thread_init(i, &drbd_conf[i].syncer, drbd_syncer);
 		drbd_thread_init(i, &drbd_conf[i].ack_sender, drbd_ack_sender);
 		drbd_conf[i].tl_lock = SPIN_LOCK_UNLOCKED;
-		drbd_conf[i].wqueue= NULL;
+		drbd_conf[i].ack_wait= NULL;
+		//drbd_conf[i].sync_wait= NULL;
 	}
 #if LINUX_VERSION_CODE > 0x20330
 	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
@@ -1023,6 +1043,20 @@ __initfunc(int init_module())
 void cleanup_module()
 {
 	int i;
+	int wait=0;
+
+	/* Sending out barriers */
+	for (i = 0; i < MINOR_COUNT; i++) {
+	        if(drbd_conf[i].sock && drbd_conf[i].state == Primary) {
+		        drbd_send_data(&drbd_conf[i],0,0,0,0);
+			wait = max(drbd_conf[i].conf.timeout/2,wait);
+		}
+	}	
+	/* And giving the barrier acks some time to come in */
+	current->state = TASK_INTERRUPTIBLE;
+	schedule_timeout(wait * HZ / 10);
+
+	/*TODO: think about a tl_clear() call here?? */
 
 	for (i = 0; i < MINOR_COUNT; i++) {
 		fsync_dev(MKDEV(MAJOR_NR, i));
@@ -1058,34 +1092,34 @@ void cleanup_module()
 /************************* Receiving part */
 int drbd_send_param(int minor, int cmd)
 {
-	Drbd_ParameterBlock param;
+	Drbd_Parameter_Packet param;
 	int err;
 	kdev_t ll_dev =
 	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
 
 	if (blk_size[MAJOR(ll_dev)]) {
-		param.my_size =
+		param.h.size =
 		    cpu_to_be64(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)]);
 	} else
 		printk(KERN_ERR DEVICE_NAME
 		       ": LL device has no size ?!?\n\n");
 
-	param.my_blksize = cpu_to_be32(drbd_ll_blocksize(minor));
+	param.h.blksize = cpu_to_be32(drbd_ll_blocksize(minor));
+	param.h.state = cpu_to_be32(drbd_conf[minor].state);
+	param.h.protocol = cpu_to_be32(drbd_conf[minor].conf.wire_protocol);
+	param.h.version = cpu_to_be32(MOD_VERSION);
 
-	param.my_state = cpu_to_be32(drbd_conf[minor].state);
-
-	err = drbd_send(&drbd_conf[minor], cmd,
-			sizeof(Drbd_ParameterBlock), 0, 0, &param);
+	err = drbd_send(&drbd_conf[minor], cmd,(Drbd_Packet*)&param, 
+			sizeof(param),0,0);
 	
-	if(err < sizeof(Drbd_ParameterBlock))
+	if(err < sizeof(Drbd_Parameter_Packet))
 		printk(KERN_ERR DEVICE_NAME
 		       ": Sending of parameter block failed!!\n");	  
 
 	return err;
 }
 
-struct socket *
- drbd_accept(struct socket *sock)
+struct socket* drbd_accept(struct socket* sock)
 {
 	struct socket *newsock;
 	int err = 0;
@@ -1225,211 +1259,225 @@ struct Tl_epoch_entry {
   u64    block_id;
 };
 
-void drbdd(int minor)
+inline int receive_data(int minor,int data_size)
 {
-	Drbd_Packet packet_header;
-	kdev_t ll_dev =	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
-	struct socket *my_sock = drbd_conf[minor].sock;
+        struct buffer_head *bh;
+	unsigned long block_nr;
 	struct Tl_epoch_entry *epoch = 
 	  (struct Tl_epoch_entry *)drbd_conf[minor].transfer_log;
-	int epoch_size;
+	int ep_size;
+	Drbd_Data_P header;
+
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	        return FALSE;
+
+	ep_size=drbd_conf[minor].epoch_size;
+	
+	if(header.barrier) {
+	        int i;
+
+		/* printk(KERN_ERR DEVICE_NAME ": got Barrier\n"); */
+
+		for(i=0;i<ep_size;i++) {
+		        if(!buffer_uptodate(epoch[i].bh))
+			        wait_on_buffer(epoch[i].bh);
+			brelse(epoch[i].bh); 
+		}
+		if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C) {
+		        for(i=0;i<ep_size;i++) {
+			        if(epoch[i].block_id)
+				  drbd_send_ack(&drbd_conf[minor], WriteAck,
+						epoch[i].block_id);
+			}
+		}
+		/* FIXME: neet to protect the epoch set with
+		   spinlocks */
+
+		drbd_send_ack(&drbd_conf[minor], BarrierAck,
+			      header.barrier );
+
+		ep_size=0;
+	}
+
+	if(data_size==0) return TRUE; 
+	/* This packets was a barrier without data. */
+			
+	/*
+	  printk(KERN_ERR DEVICE_NAME ": recv Data "
+	  "block_nr=%ld len=%d/m=%d bs_bits=%d\n",
+	  be64_to_cpu(header.block_nr),
+	  (int)be16_to_cpu(header.length),
+	  minor,drbd_conf[minor].blk_size_b); 
+	*/
+	block_nr = be64_to_cpu(header.block_nr)
+	  >> (drbd_conf[minor].blk_size_b - 9);
+
+	bh = getblk(MKDEV(MAJOR_NR, minor), block_nr,data_size);
+
+	if (!bh) {
+	        printk(KERN_ERR DEVICE_NAME": getblk()=0/m=%d\n",minor);
+	        return FALSE;
+	}
+
+	/* Blocks from syncer are not going into the epoch set */
+	if(header.block_id) { 
+	        epoch[ep_size].bh = bh;
+		epoch[ep_size].block_id = header.block_id;
+		ep_size++;
+
+		drbd_conf[minor].longest_epoch = 
+		  max(ep_size,drbd_conf[minor].longest_epoch);
+	}
+
+	drbd_conf[minor].epoch_size=ep_size;
+
+	if (drbd_recv(drbd_conf[minor].sock, bh->b_data, data_size) <= 0)
+	        return FALSE;
+
+	mark_buffer_uptodate(bh, 0);
+	mark_buffer_dirty(bh, 1);
+
+	if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_B) {
+	        /*  printk(KERN_ERR DEVICE_NAME": Sending RecvAck"
+		    " %ld\n",header.block_id); */
+	        drbd_send_ack(&drbd_conf[minor], RecvAck,
+			      header.block_id);
+	}
+				    
+	ll_rw_block(WRITE, 1, &bh);
+	drbd_conf[minor].recv_cnt++;
+	if(!header.block_id) brelse(bh);
+	return TRUE;
+}     
+
+inline int receive_block_ack(int minor)
+{     
+        struct request *req;
+	Drbd_BlockAck_P header;
+
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	        return FALSE;
+
+	req=(struct request*)(long)header.block_id;
+	drbd_end_req(req, RQ_DRBD_SENT, 1,&drbd_conf[minor]);
+	return TRUE;
+}
+
+inline int receive_barrier_ack(int minor)
+{
+	Drbd_BarrierAck_P header;
+
+	if (drbd_recv(drbd_conf[minor].sock, &header, sizeof(header)) <= 0)
+	        return FALSE;
+
+        tl_release(&drbd_conf[minor],header.barrier);
+	return TRUE;
+}
+
+
+inline int receive_param(int minor,int command)
+{
+	kdev_t ll_dev =	drbd_conf[minor].lo_file->f_dentry->d_inode->i_rdev;
+        Drbd_Parameter_P param;
+	int blksize;
+
+	/*printk(KERN_ERR DEVICE_NAME
+	  ": recv ReportParams/m=%d\n",minor);*/
+
+	/* TODO: Check the state values */
+
+	if (drbd_recv(drbd_conf[minor].sock, &param, sizeof(param)) <= 0)
+	        return FALSE;
+
+	if(be32_to_cpu(param.version)!=MOD_VERSION) {
+	        printk(KERN_ERR DEVICE_NAME": incompatible releases \n");
+		return FALSE;
+	}
+
+	if(be32_to_cpu(param.protocol)!=drbd_conf[minor].conf.wire_protocol) {
+	        printk(KERN_ERR DEVICE_NAME": incompatible protocols \n");
+		return FALSE;
+	}
+
+	if(command == BlkSizeChanged ) {
+	        blksize = be32_to_cpu(param.blksize);
+	} else {
+	        if (blk_size[MAJOR(ll_dev)]) {
+		        blk_size[MAJOR_NR][minor] =
+			  min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
+			      be64_to_cpu(param.size));
+			printk(KERN_ERR DEVICE_NAME
+			       ": agreed size = %d KB\n",
+			       blk_size[MAJOR_NR][minor]);
+			/*set_device_ro(MKDEV(MAJOR_NR,minor),
+			  drbd_conf[minor].state != Primary);      */
+		} else {
+		        blk_size[MAJOR_NR][minor] = 0;
+			printk(KERN_ERR DEVICE_NAME"LL Device has no size!\n");
+		}
+		blksize = max(be32_to_cpu(param.blksize),
+			      drbd_ll_blocksize(minor));
+	}
+
+	set_blocksize(MKDEV(MAJOR_NR, minor),blksize);
+	set_blocksize(drbd_conf[minor].lo_device,blksize);
+	drbd_conf[minor].blk_size_b = drbd_log2(blksize);
+
+	printk(KERN_ERR DEVICE_NAME": agreed blksize = %d B\n", blksize);
+
+	/* Do wee nedd to adjust device size to end on block 
+	   boundary ?? I do not think so ! */
+	
+	if (drbd_conf[minor].cstate == WFReportParams) {
+	        if (drbd_conf[minor].state == Primary
+		    && !drbd_conf[minor].conf.skip_sync) {
+		        drbd_conf[minor].cstate = Syncing;
+			drbd_thread_start(&drbd_conf[minor].syncer);
+		} else drbd_conf[minor].cstate = Connected;
+	}
+	return TRUE;
+}
+
+
+void drbdd(int minor)
+{
+	Drbd_Packet header;
+	struct socket *my_sock = drbd_conf[minor].sock;
 
 	while (TRUE) {
-		if (drbd_recv(my_sock,&packet_header,sizeof(Drbd_Packet)) <= 0)
+		if (drbd_recv(my_sock,&header,sizeof(Drbd_Packet)) <= 0)
 			break;
 
-		if (be32_to_cpu(packet_header.magic) != DRBD_MAGIC) {
+		if (be32_to_cpu(header.magic) != DRBD_MAGIC) {
 			printk(KERN_ERR DEVICE_NAME ": magic?? m: %ld "
 			       "c: %d "
-			       "l: %d "
-			       "b: %ld\n",
-			       (long) be32_to_cpu(packet_header.magic),
-			       (int) be16_to_cpu(packet_header.command),
-			       (int) be16_to_cpu(packet_header.length),
-			       (long) be64_to_cpu(packet_header.block_nr));
+			       "l: %d \n",
+			       (long) be32_to_cpu(header.magic),
+			       (int) be16_to_cpu(header.command),
+			       (int) be16_to_cpu(header.length));
 
-			continue;
+			break;
 		}
-		switch (be16_to_cpu(packet_header.command)) {
-		case Data: {
-			struct buffer_head *bh;
-			unsigned long block_nr;
-
-			drbd_conf[minor].recv_cnt++;
-
-			epoch_size=drbd_conf[minor].epoch_size;
-
-			if(packet_header.barrier) {
-			  int i;
-
-			  /* printk(KERN_ERR DEVICE_NAME ": got Barrier\n"); */
-
-			  for(i=0;i<epoch_size;i++) {
-			    if(!buffer_uptodate(epoch[i].bh))
-			      wait_on_buffer(epoch[i].bh);
-			    brelse(epoch[i].bh); 
-			  }
-			  if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C){
-			    for(i=0;i<epoch_size;i++) {
-			      if(epoch[i].block_id)
-				drbd_send(&drbd_conf[minor], WriteAck, 0,
-					  0,epoch[i].block_id,0);
-			    }
-			  }
-			  /* FIXME: neet to protect the epoch set with
-			            spinlocks */
-
-			  drbd_send(&drbd_conf[minor], BarrierAck, 0,
-				    0,packet_header.barrier,0);
-
-			  epoch_size=0;
-			}
-			
-			/*
-			printk(KERN_ERR DEVICE_NAME ": recv Data "
-			       "block_nr=%ld len=%d/m=%d bs_bits=%d\n",
-			       be64_to_cpu(packet_header.block_nr),
-			       (int)be16_to_cpu(packet_header.length),
-			       minor,drbd_conf[minor].blk_size_b); 
-			*/
-			block_nr = be64_to_cpu(packet_header.block_nr)
-			  >> (drbd_conf[minor].blk_size_b - 9);
-
-			bh = getblk(MKDEV(MAJOR_NR, minor), block_nr,
-			            be16_to_cpu(packet_header.length));
-
-			if (!bh) {
-			        printk(KERN_ERR DEVICE_NAME
-				       ": getblk()=0/m=%d\n",
-				       minor);
-				goto out;
-			}
-
-			epoch[epoch_size].bh = bh;
-			epoch[epoch_size].block_id = packet_header.block_id;
-			epoch_size++;
-
-			drbd_conf[minor].longest_epoch = 
-			  max(epoch_size,drbd_conf[minor].longest_epoch);
-
-			drbd_conf[minor].epoch_size=epoch_size;
-
-
-			if (drbd_recv(my_sock, bh->b_data,
-				      be16_to_cpu(packet_header.length)) <= 0)
+		switch (be16_to_cpu(header.command)) {
+		case Data: 
+		        if (!receive_data(minor,be16_to_cpu(header.length)))
 			        goto out;
+			break;
 
-			mark_buffer_uptodate(bh, 0);
-			mark_buffer_dirty(bh, 1);
-
-			if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_B) {
-			    /*  printk(KERN_ERR DEVICE_NAME": Sending RecvAck"
-				" %ld\n",packet_header.block_id); */
-			        drbd_send(&drbd_conf[minor], RecvAck, 0,
-					  0,packet_header.block_id,0);
-			}
-				    
-			ll_rw_block(WRITE, 1, &bh);
-			 
-			break; 
-		        }
-
-		        {
-		        struct request *req;
 		case RecvAck:
-		        if(drbd_conf[minor].conf.wire_protocol!=DRBD_PROT_B) {
-			        printk(KERN_ERR DEVICE_NAME
-				       ": Protocol mismatch!/m=%d\n",minor);
-			}
-			goto Ack;
 		case WriteAck:
-		        if(drbd_conf[minor].conf.wire_protocol!=DRBD_PROT_C) {
-			        printk(KERN_ERR DEVICE_NAME
-				       ": Protocol mismatch!/m=%d\n",minor);
-			}
-
-			Ack:
-			req=(struct request*)(long)packet_header.block_id;
-			drbd_end_req(req, RQ_DRBD_SENT, 1,&drbd_conf[minor]);
-			/*printk(KERN_ERR DEVICE_NAME
-			       ": calling drbd_end_req(%ld)/m=%d\n",
-			       req->sector,minor); */
-
+		        if (!receive_block_ack(minor)) goto out;
 			break;
-	 	        }
+
 		case BarrierAck:
-		        tl_release(&drbd_conf[minor],packet_header.block_id);
+		        if (!receive_barrier_ack(minor)) goto out;
 			break;
-		case BlkSizeChanged:	/* fall trough */
+
+		case BlkSizeChanged:
 		case ReportParams:
-			{
-			Drbd_ParameterBlock param;
-			int blksize;
-
-			/*printk(KERN_ERR DEVICE_NAME
-			  ": recv ReportParams/m=%d\n",minor);*/
-
-			if (drbd_recv(my_sock, &param,
-				      sizeof(Drbd_ParameterBlock)) <= 0)
-			  break;
-
-			if (be16_to_cpu(packet_header.command) ==
-			    BlkSizeChanged) {
-			  blksize =
-			    be32_to_cpu(param.my_blksize);
-			} else {
-			  if (blk_size[MAJOR(ll_dev)]) {
-			    blk_size[MAJOR_NR][minor] =
-			      min(blk_size[MAJOR(ll_dev)][MINOR(ll_dev)],
-				  be64_to_cpu(param.my_size));
-			    printk(KERN_ERR DEVICE_NAME
-				   ": reported size=%ld\n",
-				   (long)be64_to_cpu(param.my_size));
-			       /*set_device_ro(MKDEV(MAJOR_NR,minor),
-				drbd_conf[minor].state != Primary);      */
-					} else {
-						blk_size[MAJOR_NR][minor] =
-						    0;
-						printk(KERN_ERR DEVICE_NAME
-						       "LL Device has no size?!?\n");
-					}
-
-					blksize =
-					    max(be32_to_cpu
-						(param.my_blksize),
-						drbd_ll_blocksize(minor));
-				}
-
-				set_blocksize(MKDEV(MAJOR_NR, minor),
-					      blksize);
-				set_blocksize(drbd_conf[minor].lo_device,
-					      blksize);
-				drbd_conf[minor].blk_size_b =
-				    drbd_log2(blksize);
-
-				printk(KERN_ERR DEVICE_NAME
-				       ": agreed blksize=%d\n", blksize);
-
-				/* Do wee nedd to adjust device size to end on block 
-				   boundary ?? I do not think so ! */
-
-				if (drbd_conf[minor].cstate ==
-				    WFReportParams) {
-					if (drbd_conf[minor].state ==
-					    Primary
-					    && !drbd_conf[minor].conf.
-					    skip_sync) {
-						drbd_conf[minor].cstate =
-						    Syncing;
-						drbd_thread_start
-						    (&drbd_conf[minor].
-						     syncer);
-					} else
-						drbd_conf[minor].cstate =
-						    Connected;
-				}
-				break;
-			}
+		        if (!receive_param(minor,be16_to_cpu(header.command)))
+			        goto out;
+			break;
 		default:
 			printk(KERN_ERR DEVICE_NAME
 			       ": unknown packet type!/m=%d\n", minor);
@@ -1443,7 +1491,7 @@ void drbdd(int minor)
 		drbd_conf[minor].sock = 0;
 	}
 	drbd_conf[minor].cstate = Unconnected;
-	if(drbd_conf[minor].state == Primary) tl_clear(&drbd_conf[minor]);
+	if (drbd_conf[minor].state == Primary) tl_clear(&drbd_conf[minor]);
 }
 
 int drbdd_init(void *arg)
@@ -1560,6 +1608,19 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart)
 
 /* ********* the syncer ******** */
 
+/*
+  We can not use getblk()/brelse() here, because we can not
+  sind (maybe dirty) blocks of the buffer cache.
+  We really need to read in the data from our disk.
+*/
+
+
+void syncer_dio_end(struct buffer_head *bh, int uptodate)
+{
+	mark_buffer_uptodate(bh, uptodate);
+        wake_up(&bh->b_wait);
+}
+
 int drbd_syncer(void *arg)
 {
   /* TODO: do not use getblk. Use a private buffer head, ... */
@@ -1570,6 +1631,8 @@ int drbd_syncer(void *arg)
 	/* TODO: get the half of the size of the socket write buffer */
 	int blocks;
 	int blocksize;
+	void* page;
+	struct buffer_head rbh,*bh;
 
 	lock_kernel();
 	exit_mm(current);	/* give up UL-memory context */
@@ -1579,6 +1642,8 @@ int drbd_syncer(void *arg)
 	current->fs->umask = 0;
 
 	sprintf(current->comm, "drbd_syncer_%d", minor);
+
+	page = (void*)__get_free_page(GFP_USER);
 
 	down(&thi->sem);	/* wait until parent has written its
 				   rpid variable */
@@ -1605,10 +1670,24 @@ int drbd_syncer(void *arg)
 	       (unsigned long) atomic_read(&drbd_conf[minor].synced_to),
 	       blocks, interval);
 
+	bh = getblk(MKDEV(MAJOR_NR, minor), 1,blocksize);
+	memcpy(&rbh,bh,sizeof(struct buffer_head));
+	brelse(bh); /* hehe this is the way to initialize a BH :)  */
+
+	rbh.b_dev = drbd_conf[minor].lo_device;
+	rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
+	rbh.b_list = BUF_LOCKED;
+	rbh.b_data = page;
+	rbh.b_wait = 0;
+	rbh.b_dev_id = 0;
+	rbh.b_end_io = &syncer_dio_end;	
+
+	bh=&rbh;
+
 	while (TRUE) {
 		int i, rr;
 		unsigned long block_nr, new_sector;
-		struct buffer_head* bh;
+
 
 		current->state = TASK_INTERRUPTIBLE;
 		schedule_timeout(interval);
@@ -1622,22 +1701,20 @@ int drbd_syncer(void *arg)
 			block_nr = atomic_read(&drbd_conf[minor].synced_to) >> 
 			  (drbd_conf[minor].blk_size_b - 9);
 
-			bh = getblk(MKDEV(MAJOR_NR, minor), block_nr,
-				   blocksize);
+			rbh.b_blocknr=block_nr;
 
+			rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
+			rbh.b_wait = 0; /* Hmmm, why do I need this ? */
+
+			ll_rw_block(READ, 1, &bh);
+			if (!buffer_uptodate(bh)) sleep_on(&bh->b_wait);
 			if (!buffer_uptodate(bh)) {
-				ll_rw_block(READ, 1, &bh);
-				wait_on_buffer(bh);
-				if (!buffer_uptodate(bh)) {
-					brelse(bh);
-					goto out;
-				}
+                                printk(KERN_ERR DEVICE_NAME ": !uptodate\n");
+			        goto out;
 			}
-			rr = drbd_send(&drbd_conf[minor], Data,
-				       blocksize, block_nr,0, bh->b_data);
 
-			brelse(bh);
-
+			rr = drbd_send_data(&drbd_conf[minor], page,
+				       blocksize, block_nr, 0);
 			if (rr > 0) {
 				drbd_conf[minor].send_cnt++;
 			} else {
@@ -1654,12 +1731,10 @@ int drbd_syncer(void *arg)
 			   blocksize);
 			 */
 
-			new_sector =
-			    atomic_read(&drbd_conf[minor].synced_to) -
-			    (blocksize >> 9);
+			new_sector = atomic_read(&drbd_conf[minor].synced_to) -
+			   (blocksize >> 9);
 			if (new_sector >
-			    atomic_read(&drbd_conf[minor].
-					synced_to))
+			    atomic_read(&drbd_conf[minor].synced_to))
 				goto done;
 			atomic_set(&drbd_conf[minor].synced_to,
 				   new_sector);
@@ -1669,7 +1744,9 @@ int drbd_syncer(void *arg)
 	drbd_conf[minor].cstate = Connected;
 
       out:
-	atomic_set(&drbd_conf[minor].synced_to, 0); /* FIXME ? */
+	free_page((unsigned long)page);
+
+	atomic_set(&drbd_conf[minor].synced_to, 0); /* this is ok. */
 	printk(KERN_ERR DEVICE_NAME ": syncer exiting/m=%d\n", minor);
 	thi->pid = 0;
 	up(&thi->sem);
@@ -1701,7 +1778,7 @@ int drbd_ack_sender(void *arg)
 	while(thi->exit != 1) {
 	  int i;
 
-	  interruptible_sleep_on(&drbd_conf[minor].wqueue);
+	  interruptible_sleep_on(&drbd_conf[minor].ack_wait);
 
 	  /*printk(KERN_ERR DEVICE_NAME ": scanning... epoch_size=%d\n",
 	                     drbd_conf[minor].epoch_size);*/
@@ -1712,8 +1789,8 @@ int drbd_ack_sender(void *arg)
 
 	    if(epoch[i].block_id) {
 	      if(buffer_uptodate(epoch[i].bh)) {
-		drbd_send(&drbd_conf[minor], WriteAck, 0,
-			  0,epoch[i].block_id,0);	  
+		drbd_send_ack(&drbd_conf[minor], WriteAck,
+			      epoch[i].block_id);	  
 		epoch[i].block_id=0;
 		/* printk(KERN_ERR DEVICE_NAME ": sending WriteAck for %ld\n",
 		   epoch[i].bh->b_blocknr); */

@@ -55,8 +55,7 @@
 					 */
 
 
-struct ioctl_drbd_config
-{
+struct ioctl_drbd_config {
   IN int      lower_device;
   IN char     other_addr[MAX_SOCK_ADDR];
   IN int      other_addr_len;
@@ -76,25 +75,46 @@ struct ioctl_drbd_config
 /* This is the layout for a Packet on the wire! 
  * The byteorder is the network byte order!
  */
-typedef struct
-{
-  __u32 magic;
-  __u16 command;
-  __u16 length;    /* obsolete ?? hmmm, maybe ... */
-  __u64 block_nr;  /* 64 Bits Block number */
-  __u64 block_id;  /* Used in protocol B & C for the address of the request */
-  __u32 barrier;   /* may be 0 or a barrier number  */
-  __u32 _fill;     /* Without the _fill gcc may add fillbytes on 
-		      64 Bit Plaforms, but does not so an 32 bits... */
+typedef struct {
+  __u32       magic;
+  __u16       command;
+  __u16       length;
 } Drbd_Packet;
 
+#define MKPACKET(NAME) \
+typedef struct { \
+  Drbd_Packet p; \
+  NAME        h; \
+} NAME##acket;
 
-typedef struct
-{
-  __u64 my_size;
-  __u32 my_state;
-  __u32 my_blksize;
-} Drbd_ParameterBlock;
+typedef struct {
+  __u64       block_nr;  /* 64 Bits Block number */
+  __u64       block_id;  /* Used in protocol B&C for the address of the req. */
+  __u32       barrier;   /* may be 0 or a barrier number  */
+  __u32       _fill;     /* Without the _fill gcc may add fillbytes on 
+                            64 Bit Plaforms, but does not so an 32 bits... */
+} Drbd_Data_P;
+MKPACKET(Drbd_Data_P)
+
+typedef struct {
+  __u64       size;
+  __u32       state;
+  __u32       blksize;
+  __u32       protocol;
+  __u32       version;
+} Drbd_Parameter_P;
+MKPACKET(Drbd_Parameter_P)
+
+typedef struct {
+  __u64       block_id;
+} Drbd_BlockAck_P;
+MKPACKET(Drbd_BlockAck_P)
+
+typedef struct {
+  __u32       barrier;
+  __u32       _fill;
+} Drbd_BarrierAck_P;
+MKPACKET(Drbd_BarrierAck_P)
 
 typedef enum { 
   Data, 
@@ -102,7 +122,8 @@ typedef enum {
   WriteAck,     /* Used in protocol C */
   BarrierAck,  
   ReportParams,
-  BlkSizeChanged } Drbd_Packet_Cmd;
+  BlkSizeChanged 
+} Drbd_Packet_Cmd;
 
 typedef enum { Primary, Secondary } Drbd_State;
 
@@ -112,7 +133,8 @@ typedef enum {
   WFConnection,
   WFReportParams,
   Syncing, 
-  Connected } Drbd_CState; 
+  Connected 
+} Drbd_CState; 
 
 #define DRBD_MAGIC 0x83740267
 
