@@ -1098,20 +1098,6 @@ STATIC void drbd_unplug_fn(void *data)
 	struct Drbd_Conf* mdev = (drbd_dev*)data;
 	int i;
 
-	/* In case the receiver calls run_task_queue(&tq_disk) itself,
-	   in order to flush blocks to the ll_dev (for a device in
-	   secondary state), it could happen that it has to send the
-	   WRITE_HINT for an other device (which is in primary state).
-	   This could lead to a distributed deadlock!!
-	 */
-
-	for (i = 0; i < minor_count; i++) {
-		if(current == drbd_conf[i].receiver.task) {
-			queue_task(&mdev->write_hint_tq, &tq_disk);
-			return;
-		}
-	}
-
 	spin_lock_irq(&mdev->req_lock);
 	if (list_empty(&mdev->unplug_work.list))
 		_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
@@ -1149,8 +1135,8 @@ STATIC void drbd_unplug_fn(void *data)
 			_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
 		spin_unlock_irq(&mdev->req_lock);
 	}
-	/* allways */
-	drbd_kick_lo(mdev);
+
+	if(!test_bit(DISKLESS,&mdev->flags)) drbd_kick_lo(mdev);
 }
 #endif
 
