@@ -2,7 +2,7 @@
 
 use strict;
 use constant F_SIZE => 32;
-use constant DRBD_MD_MAGIC => 0x83740269;
+use constant DRBD_MD_MAGIC => 0x83740267+3;
 
 sub read_print_gc_file($)
   {
@@ -22,10 +22,10 @@ sub read_print_gc_file($)
 
     die "state file corrupt" if($MagicNr != DRBD_MD_MAGIC);
 
-    printf(" drbd%d | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %6d \n",
+    printf(" drbd%d | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %6d KB\n",
 	   $minor,$Flags & 0x01 ? "1/c" : "0/i",$HumanCnt,$TimeoutCnt,
 	   $ConnectedCnt,$ArbitraryCnt,$Flags & 0x02 ? "1/p" : "0/s",
-	   $Flags & 0x04 ? "1/c" : "0/n",size);
+	   $Flags & 0x04 ? "1/c" : "0/n",$size);
     close(GCF);
   }
 
@@ -40,8 +40,8 @@ print <<EOS;
               TimeoutCnt |     |     |     |     |
           HumanCnt |     |     |     |     |     |
   Consistent |     |     |     |     |     |     |
-device |     |     |     |     |     |     |     |  Size
--------+-----+-----+-----+-----+-----+-----+-----+--------+
+device |     |     |     |     |     |     |     |   Size
+-------+-----+-----+-----+-----+-----+-----+-----+----------+
 EOS
 while( -e "/var/lib/drbd/drbd$count" ) {
   read_print_gc_file($count);
