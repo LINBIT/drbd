@@ -870,7 +870,7 @@ extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
    * either at the end of the backing device
    * or on a seperate meta data device. */
 
-#define MD_RESERVED_SIZE ( 128 * (1<<10) )  // 128 MB  ( in units of kb )
+#define MD_RESERVED_SIZE ( 128LU * (1<<10) )  // 128 MB  ( in units of kb )
 // The following numbers are sectors
 #define MD_GC_OFFSET 0
 #define MD_AL_OFFSET 8      // 8 Sectors after start of meta area
