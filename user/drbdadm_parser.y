@@ -100,6 +100,16 @@ void check_meta_disk()
   }
 }
 
+void range_check(int i, char *what, int rmin, int rmax)
+{
+  if (rmin > i || i > rmax) {
+    fprintf(stderr,
+	    "%s:%d: value of %s (%d) out of range [%d..%d].\n",
+	    config_file, fline, what, i, rmin, rmax);
+    exit(E_config_invalid);
+  }
+}
+
 #define CHKU(what,val) \
 	c_host->what = val; \
 	check_uniq( #what, "%s:%s",c_hostname,val)
@@ -149,9 +159,15 @@ glob_stmts:	  /* empty */
 glob_stmt:	  TK_DISABLE_IO_HINTS
 			{ global_options.disable_io_hints=1;   }
 		| TK_MINOR_COUNT TK_INTEGER
-			{ global_options.minor_count=atoi($2); }
-		| TK_DIALOG_REFRESH TK_INTEGER   
-                        { global_options.dialog_refresh=atoi($2); }
+		{
+			global_options.minor_count=atoi($2);
+			range_check(global_options.minor_count,"minor_count",1,255);
+		}
+		| TK_DIALOG_REFRESH TK_INTEGER
+                {
+			global_options.dialog_refresh=atoi($2);
+			range_check(global_options.dialog_refresh,"dialog_refresh",0,600);
+		}
 		;
 
 resources:	  /* empty */	     { $$ = 0; }
