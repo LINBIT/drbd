@@ -48,6 +48,7 @@
 
 #include <asm/uaccess.h>
 #include <asm/bitops.h> 
+#include <net/sock.h>
 #include <linux/module.h>
 #include <linux/smp_lock.h>
 #include <linux/fs.h>
@@ -118,6 +119,7 @@ struct Drbd_Conf {
         int    need_to_issue_barrier;
         int    epoch_size;
 	spinlock_t es_lock;
+	//struct semaphore es_sem;
 	struct timer_list s_timeout_t;
 	struct semaphore send_mutex;
 	atomic_t synced_to;	/* Unit: sectors (512 Bytes) */
@@ -177,7 +179,6 @@ struct mbds_operations bm_mops;
 
 #define ID_SYNCER (-1LL)
 
-#define MODULE_NAME DEVICE_NAME": "
 #define MINOR_COUNT 2
 
 #ifndef TRUE
@@ -478,8 +479,6 @@ int drbd_send_barrier(struct Drbd_Conf *mdev, u32 barrier_nr)
 {
         Drbd_Barrier_Packet head;
        
-	printk("drbd_send_barrier()\n");
-
         head.h.barrier = barrier_nr;
 	return drbd_send(mdev,Barrier,(Drbd_Packet*)&head,sizeof(head),0,0);
 }
@@ -524,7 +523,7 @@ void drbd_send_timeout(unsigned long arg)
 {
 	struct task_struct *p = (struct task_struct *) arg;
 
-	printk(KERN_INFO DEVICE_NAME ": timeout detected!\n");
+	printk(KERN_ERR DEVICE_NAME ": timeout detected!\n");
 
 	send_sig_info(DRBD_SIG, NULL, p);
 
@@ -584,7 +583,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 			sigdelset(&current->signal, DRBD_SIG);
 			recalc_sigpending(current);
 			spin_unlock_irq(&current->sigmask_lock);
-			printk(KERN_INFO DEVICE_NAME
+			printk(KERN_ERR DEVICE_NAME
 			       ": send timed out!!\n");
 
 			drbd_thread_restart(&mdev->receiver);
@@ -844,8 +843,8 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 					   req->current_nr_sectors << 9,
 					   bnr,(unsigned long)req) > 0 ) {
 			        drbd_conf[minor].send_cnt++;
-				tl_add(&drbd_conf[minor],req);
 			}
+			tl_add(&drbd_conf[minor],req);
 			if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_A) {
 			         drbd_end_req(req, RQ_DRBD_SENT, 1);
 			}
@@ -1001,7 +1000,7 @@ __initfunc(int drbd_init(void))
 	if (proc_register(&proc_root, &drbd_proc_dir))
 #endif
 	{
-		printk(MODULE_NAME "unable to register proc file.\n");
+		printk(KERN_ERR DEVICE_NAME "unable to register proc file.\n");
 		return -EIO;
 	}
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &drbd_fops)) {
@@ -1039,6 +1038,7 @@ __initfunc(int drbd_init(void))
 		drbd_thread_init(i, &drbd_conf[i].asender, drbd_asender);
 		drbd_conf[i].tl_lock = RW_LOCK_UNLOCKED;
 		drbd_conf[i].es_lock = SPIN_LOCK_UNLOCKED;
+		//init_MUTEX(&drbd_conf[i].es_sem);
 		drbd_conf[i].asender_wait= NULL;
 	}
 #if LINUX_VERSION_CODE > 0x20330
@@ -1057,7 +1057,7 @@ int init_module()
 __initfunc(int init_module())
 #endif
 {
-	printk(MODULE_NAME "module initialised. Version: %d\n",
+	printk(KERN_INFO DEVICE_NAME ": module initialised. Version: %d\n",
 	       MOD_VERSION);
 
 	return drbd_init();
@@ -1081,7 +1081,7 @@ void cleanup_module()
 	}
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
-		printk(MODULE_NAME "unregister of device failed\n");
+		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
 
 #if LINUX_VERSION_CODE > 0x20330
@@ -1211,7 +1211,6 @@ int drbd_connect(int minor)
 {
 	int err;
 	struct socket *sock;
-	int on=1;
 
 	if (drbd_conf[minor].sock) {
 		printk(KERN_ERR DEVICE_NAME
@@ -1224,13 +1223,6 @@ int drbd_connect(int minor)
 	}
 
 	lock_kernel();	
-	err=sock_setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,(char*)&on,
-			    sizeof(int));
-	if(err) printk(KERN_ERR DEVICE_NAME ": sock_setsockopt(..)=%d\n", err);
-	err=sock->ops->setsockopt(sock,SOL_TCP,TCP_NODELAY,(char*)&on,
-				  sizeof(int));
-	if(err) printk(KERN_ERR DEVICE_NAME ": ->setsockopt(..)=%d\n", err);
-	// SO_LINGER too ??
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) drbd_conf[minor].conf.
 				 other_addr,
@@ -1250,16 +1242,6 @@ int drbd_connect(int minor)
 		}
 
 		lock_kernel();
-
-		err=sock_setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,(char*)&on,
-				    sizeof(int));
-		if(err) printk(KERN_ERR DEVICE_NAME 
-			       ": sock_setsockopt(..)=%d\n", err);
-		err=sock->ops->setsockopt(sock,SOL_TCP,TCP_NODELAY,(char*)&on,
-					  sizeof(int));
-		if(err) printk(KERN_ERR DEVICE_NAME 
-			       ": ->setsockopt(..)=%d\n", err);
-
 		err = sock->ops->bind(sock,
 				      (struct sockaddr *) drbd_conf[minor].
 				      conf.my_addr,
@@ -1282,6 +1264,15 @@ int drbd_connect(int minor)
 			return 0;
 		}
 	}
+
+	//err=sock_setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,pon,sizeof(int));
+	sock->sk->reuse=1;
+
+	//err=sock->ops->setsockopt(sock,SOL_TCP,TCP_NODELAY,pon,sizeof(int));
+	sock->sk->nonagle=1;
+
+	// SO_LINGER too ??
+
 	drbd_conf[minor].sock = sock;
 
 	drbd_thread_start(&drbd_conf[minor].asender);
@@ -1308,6 +1299,7 @@ inline int receive_barrier(int minor)
 	        return FALSE;
 
 	spin_lock(&drbd_conf[minor].es_lock);
+
 	ep_size=drbd_conf[minor].epoch_size;
 	
 	/* printk(KERN_DEBUG DEVICE_NAME ": got Barrier\n"); */
@@ -1319,17 +1311,22 @@ inline int receive_barrier(int minor)
 
 	if(drbd_conf[minor].conf.wire_protocol==DRBD_PROT_C) {
 	        for(i=0;i<ep_size;i++) {
-		        if(epoch[i].block_id)
-			  drbd_send_ack(&drbd_conf[minor], WriteAck,
-					epoch[i].bh->b_blocknr,
-					epoch[i].block_id);
+		        if(epoch[i].block_id) {
+				u64 block_id = epoch[i].block_id;
+				epoch[i].block_id=0;
+				spin_unlock(&drbd_conf[minor].es_lock);
+				drbd_send_ack(&drbd_conf[minor], WriteAck,
+					      epoch[i].bh->b_blocknr,
+					      block_id);
+				spin_lock(&drbd_conf[minor].es_lock);
+				ep_size=drbd_conf[minor].epoch_size;
+			}
 		}
 	}
 
-	drbd_send_b_ack(&drbd_conf[minor], header.barrier );
-	
 	drbd_conf[minor].epoch_size=0;
 	spin_unlock(&drbd_conf[minor].es_lock);
+	drbd_send_b_ack(&drbd_conf[minor], header.barrier );
 
 	return TRUE;
 }
@@ -1892,17 +1889,22 @@ int drbd_asender(void *arg)
 	  if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_C) continue;
 
 	  spin_lock(&drbd_conf[minor].es_lock);
+
 	  for(i=0;i<drbd_conf[minor].epoch_size;i++) {
 		  if(epoch[i].block_id) {
 			  if(buffer_uptodate(epoch[i].bh)) {
+				  u64 block_id = epoch[i].block_id;
+				  epoch[i].block_id=0;
+				  spin_unlock(&drbd_conf[minor].es_lock);
 				  drbd_send_ack(&drbd_conf[minor],WriteAck,
 						epoch[i].bh->b_blocknr,
-						epoch[i].block_id);
-				  epoch[i].block_id=0;
+						block_id);
+				  spin_lock(&drbd_conf[minor].es_lock);
 			  }
 		  }
 	  }
 	  spin_unlock(&drbd_conf[minor].es_lock);
+
 	}
 
 	thi->pid = 0;

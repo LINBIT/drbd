@@ -22,7 +22,7 @@ include ../Makefile.vars
 all: drbd.o 
 
 drbd.o: drbd.c
-	$(CC) -c $(KERNFLAGS) $(KERNINFO) -DMOD_VERSION=$(MOD_VERSION) -DEXPORT_SYMTAB drbd.c
+	$(CC) -c $(KERNFLAGS) -DMOD_VERSION=$(MOD_VERSION) -DEXPORT_SYMTAB drbd.c
 
 #	$(LD) -r -o $@ $^
 
