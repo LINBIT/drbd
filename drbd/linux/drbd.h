@@ -62,7 +62,7 @@ enum io_error_handler {
 };
 
 
-struct disk_config {
+struct __attribute__((packed)) disk_config {
 	IN int      lower_device;
 	IN __u64    disk_size;
 	IN enum io_error_handler on_io_error;
@@ -76,7 +76,7 @@ enum disconnect_handler {
 	FreezeIO
 };
 
-struct net_config {
+struct __attribute__((packed)) net_config {
 	IN char     my_addr[MAX_SOCK_ADDR];
 	IN int      my_addr_len;
 	IN char     other_addr[MAX_SOCK_ADDR];
@@ -92,7 +92,7 @@ struct net_config {
 	IN enum disconnect_handler on_disconnect;
 };
 
-struct syncer_config {
+struct __attribute__((packed)) syncer_config {
 	int      rate; /* KB/sec */
 	int      use_csums;   /* use checksum based syncing*/
 	int      skip;
@@ -122,22 +122,22 @@ enum ret_codes {
 	LDDeviceTooLarge,
 };
 
-struct ioctl_disk_config {
+struct __attribute__((packed)) ioctl_disk_config {
 	struct disk_config    config;
 	OUT enum ret_codes    ret_code;
 };
 
-struct ioctl_net_config {
+struct __attribute__((packed)) ioctl_net_config {
 	struct net_config     config;
 	OUT enum ret_codes    ret_code;
 };
 
-struct ioctl_syncer_config {
+struct __attribute__((packed)) ioctl_syncer_config {
 	struct syncer_config  config;
 	OUT enum ret_codes    ret_code;
 };
 
-struct ioctl_wait {
+struct __attribute__((packed)) ioctl_wait {
 	IN int wfc_timeout;
 	IN int degr_wfc_timeout;
 	OUT int ret_code;
@@ -189,7 +189,7 @@ typedef enum {
 # define BDEVNAME_SIZE 32
 #endif
 
-struct ioctl_get_config {
+struct __attribute__((packed)) ioctl_get_config {
 	struct net_config     nconf;
 	struct syncer_config  sconf;
 	OUT int               lower_device_major;
