@@ -40,11 +40,9 @@ extern FILE* yyin;
    frame and sets ptr to the resulting string. If the current stack
    frame is destroyed (=function returns), the allocated memory is 
    freed automatically */
+char ss_buffer[255];
 #define ssprintf(ptr,...) \
-do { \
-  char buffer[255]; \
-  ptr=strcpy(alloca(snprintf(buffer,255,__VA_ARGS__)+1),buffer); \
-} while(0)
+  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer) 
 
 int line=1;
 struct d_resource* config;
