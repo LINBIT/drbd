@@ -2,6 +2,19 @@
 #ifndef HLIST_H
 #define HLIST_H
 
+#ifdef REDHAT_HLIST_BACKPORT
+#undef hlist_node
+#undef hlist_head
+#undef HLIST_HEAD
+#undef INIT_HLIST_HEAD
+#undef hlist_empty
+#undef hlist_del_init
+#undef hlist_entry
+#undef hlist_add_head
+#undef hlist_for_each
+#undef hlist_for_each_safe
+#endif
+
 // from linux-2.6.x linux/list.h
 // I copied only the part which actually is used in lru_cache.h
 

@@ -28,4 +28,7 @@
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
 
+//#define SIGHAND_HACK           // Needed for RH 2.4.20 and later kernels.
+//#define REDHAT_HLIST_BACKPORT  // Makes DRBD work on RH9 kernels
+
 #endif
