@@ -713,12 +713,9 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet* header, size_t header_size,
 		init_timer(&ti.s_timeout);
 		ti.s_timeout.function = drbd_timeout;
 		ti.s_timeout.data = (unsigned long) &ti;
-		ti.s_timeout.expires = jiffies + via_msock ? 
-			(mdev->artt*4) : (mdev->conf.timeout * HZ / 10);
+		ti.s_timeout.expires = jiffies + 
+		  (via_msock ? (mdev->artt*4) : (mdev->conf.timeout*HZ/10));
 		add_timer(&ti.s_timeout);
-/*		printk(KERN_ERR DEVICE_NAME"%d: sock_sendmsg timer armed"
-		"(pid=%d)\n",(int)(mdev-drbd_conf),current->pid); */
-
 	}
 
 	lock_kernel();  //  check if this is still necessary
