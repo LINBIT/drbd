@@ -226,11 +226,6 @@ setLocal()
 
 runForAll ()
 {
-	pushd . > /dev/null
-		cd $CONFIG
-		DEVICES=`ls drbd[0-9] | sort 2>/dev/null`
-	popd > /dev/null
-
 	if [ ! $DEVICES ]; then
 		failed "No configuration file present"
 		exit 1
@@ -337,3 +332,14 @@ else
 	OPTION=$1
 	RESOURCE=""
 fi
+
+pushd . > /dev/null
+	cd $CONFIG
+	DEVICES=`ls drbd[0-9]* | sort 2>/dev/null`
+popd > /dev/null
+
+if [ ! $DEVICES ]; then
+	failed "No configuration file present"
+	exit 1
+fi
+

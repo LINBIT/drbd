@@ -38,11 +38,18 @@ fi
 case "$1" in
 	# Start the service
 	start)
-		MINOR_COUNT=`echo $DEVICES | wc --words | sed -e s/\ //g`
-		action "Loading DRBD module " modprobe -s drbd minor_count=$MINOR_COUNT 2> /dev/null
+		INSERTED=`lsmod | grep drbd | wc -l | sed -e s/\ //g`
 
-		if [ $? -eq 1 ]; then
-			exit 1
+		if [ "$INSERTED" -eq 1 ]; then
+			MINOR_COUNT=`echo $DEVICES | wc -w | sed -e s/\ //g`
+			action "Loading DRBD module " \
+			modprobe -s drbd minor_count=$MINOR_COUNT 2> /dev/null
+
+			if [ $? -eq 1 ]; then
+				exit 1
+			fi
+		else
+			succed "DRBD module is already aded"
 		fi
 
 		if [ -z "$RESOURCE" ]; then
@@ -63,6 +70,7 @@ case "$1" in
 		action "Configuring DRBD resource $RESOURCE" \
 			drbdsetup $LOCAL_DEVICE $LOCAL_PARTITION \
 			$PROTOCOL $LOCAL_IF $REMOTE_IF $OPTIONS 2> /dev/null
+			#$PROTOCOL $LOCAL_IF $REMOTE_IF $OPTIONS
 
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV

@@ -21,27 +21,6 @@
 INSTALL="/etc/ha.d/resource.d"
 . $INSTALL/drbd_commun
 
-RETVAL=0
-
-# Check if the node is primary
-# Param : The resource
-# Return "1" or "0"
-isPrimary()
-{
-	NUMBER=`echo $1 | cut -b5`
-	return `cat /proc/drbd | grep ":Primary/" | grep "^$NUMBER" | wc -l | cut -b7`
-}
-
-# Check if the node is in a connected state
-# Param : The resource
-# Return "1" or "0"
-isConnected()
-{
-	NUMBER=`echo $1 | cut -b5`
-	return `cat /proc/drbd | grep "Connected" | grep "^$NUMBER" | wc -l | cut -b7`
-}
-
-
 # Return a boolean
 isMounted()
 {
@@ -104,7 +83,7 @@ case "$1" in
 		fi
 
 		action "Becoming primary on DRBD resource $RESOURCE" \
-			drbdsetup $LOCAL_DEVICE PRI
+			drbdsetup $LOCAL_DEVICE PRI 2>/dev/null
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
@@ -124,7 +103,7 @@ case "$1" in
 		fi
 
 		action "Becoming secondary on DRBD resource $RESOURCE" \
-			drbdsetup $LOCAL_DEVICE SEC
+			drbdsetup $LOCAL_DEVICE SEC 2> /dev/null
 		RV=$?
 		[ $RETVAL -eq 0 ] && RETVAL=$RV
 		;;
@@ -209,7 +188,7 @@ case "$1" in
 		PRIMARY=$?
 
 		if [ $PRIMARY -eq 0 ]; then
-			failure "Can not mount $LOCAL_DEVICE as $LOCAL_NODE is slave"
+			failed "Can not mount $LOCAL_DEVICE (slave)"
 			exit 1
 		fi
 
@@ -235,13 +214,13 @@ case "$1" in
 
 		setLocal $CONFIG $RESOURCE
 
-		isPrimary $RESOURCE
-		PRIMARY=$?
+		#isPrimary $RESOURCE
+		#PRIMARY=$?
 
-		if [ $PRIMARY -eq 0 ]; then
-			failure "Can not mount $LOCAL_DEVICE as $LOCAL_NODE is slave"
-			exit 1
-		fi
+		#if [ $PRIMARY -eq 0 ]; then
+		#	failed "Can not umount $LOCAL_DEVICE (slave)"
+		#	exit 1
+		#fi
 
 		isMounted $RESOURCE
 		MOUNTED=$?
@@ -269,7 +248,7 @@ case "$1" in
 		isPrimary $RESOURCE
 		PRIMARY=$?
 
-		if [ "$PRIMARY" -eq 1 ]; then
+		if [ "$PRIMARY" -ne 1 ]; then
 			failed "Can not perform fsck on secondary $RESOURCE "
 			exit 1
 		fi
@@ -287,6 +266,9 @@ case "$1" in
 			failed "$LOCAL_DEVICE still mounted can't check"
 			exit 1
 		fi
+
+		# It seems that fsck.ext2 like to return 0 whatever happend
+		# difficult know if succed of failed ..
 
 		echo -n "performing fsck on $RESOURCE " 
 		$LOCAL_FSCK $LOCAL_DEVICE > /dev/null 2>/dev/null
@@ -319,7 +301,7 @@ case "$1" in
 		fi
 
 		# TODO:DRDB sometimes lies about its connection status !!
-		# See how to understand the slave/?? line 
+		# See how to understand the proc/drbd lines
 
 		isConnected
 		CONNECTED=$?
@@ -329,7 +311,7 @@ case "$1" in
 			exit 1
 		fi
 
-		drbdsetup $LOCAL_DEVICE repl
+		drbdsetup $LOCAL_DEVICE repl 2> /dev/null
 		RETVAL=$?
 		;;
 		
@@ -437,8 +419,10 @@ case "$1" in
 		echo "         depending on the node settings"
 		echo "boot   : Return the string 'Master' or 'Slave'"
 		echo "         Depending how the device is going to be bring"
-		echo "         at boot time"
+		echo "         at boot time in restore mode"
 		echo "help   : Contact the mailing list to learn about this option"
+		echo
+		echo "$* are not valid as parameter"
 		RETVAL=1
 		;;
 	*)
