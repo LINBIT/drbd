@@ -304,7 +304,7 @@ extern void drbd_md_write(int minor);
 extern void drbd_md_read(int minor);
 extern void drbd_md_inc(int minor, enum MetaDataIndex order);
 extern int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
-extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner);
+extern int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good);
 
 /* drbd_bitmap.c (still in drbd_main.c) */
 #define SS_OUT_OF_SYNC (1)

@@ -84,8 +84,6 @@ typedef struct wait_queue*  wait_queue_head_t;
 int drbdd_init(struct Drbd_thread*);
 int drbd_syncer(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
-int drbd_md_compare(int minor,Drbd_Parameter_P* partner);
-int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 /*static */ int drbd_proc_get_info(char *, char **, off_t, int, int *,
@@ -1327,17 +1325,31 @@ int drbd_md_compare(int minor,Drbd_Parameter_P* partner)
 /* Returns  1 if SyncingQuick is sufficient
             0 if SyncAll is needed.
 */
-int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner)
+int drbd_md_syncq_ok(int minor,Drbd_Parameter_P* partner,int have_good)
 {
 	int i;
 	u32 me,other;
 
-	if(be32_to_cpu(partner->gen_cnt[PrimaryInd])==1) return 0;
-	for(i=HumanCnt;i<=ArbitraryCnt;i++) {
-		me=drbd_conf[minor].bit_map_gen[i];
-		other=be32_to_cpu(partner->gen_cnt[i]);
-		if( me != other ) return 0;
+	// crash during sync forces SyncAll:
+	if( (have_good && be32_to_cpu(partner->gen_cnt[Consistent])==0) ||
+	    (!have_good && drbd_conf[minor].gen_cnt[Consistent]==0)) return 0;
+
+	// primary crash forces SyncAll:
+	if( (have_good && be32_to_cpu(partner->gen_cnt[PrimaryInd])==1) ||
+	    (!have_good && drbd_conf[minor].gen_cnt[PrimaryInd]==1)) return 0;
+
+	// If partner's GC not equal our bitmap's GC force SyncAll
+	// (On the secondary, we assume SyncQuick which may be updated 
+	// to SyncAll by the primary.)
+	if( have_good ) {
+		for(i=HumanCnt;i<=ArbitraryCnt;i++) {
+			me=drbd_conf[minor].bit_map_gen[i];
+			other=be32_to_cpu(partner->gen_cnt[i]);
+			if( me != other ) return 0;
+		}
 	}
+
+	// SyncQuick sufficient
 	return 1;
 }
 

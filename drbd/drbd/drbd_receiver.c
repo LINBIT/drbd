@@ -747,18 +747,30 @@ inline int receive_param(int minor,int command)
 		       minor,blk_size[MAJOR_NR][minor],blksize);
 
 		pri=drbd_md_compare(minor,&param);
-		method=drbd_md_syncq_ok(minor,&param)?SyncingQuick:SyncingAll;
-		sync=(drbd_conf[minor].state!=drbd_conf[minor].o_state);
+		method=drbd_md_syncq_ok(minor,&param,pri)?SyncingQuick:SyncingAll;
 
+		if(pri==0) sync=0;
+		else sync=1;
+/*
+		printk(KERN_INFO DEVICE_NAME "%d: my gc:%d %d %d %d %d\n",
+		       minor,
+		       drbd_conf[minor].gen_cnt[Consistent],
+		       drbd_conf[minor].gen_cnt[HumanCnt],
+		       drbd_conf[minor].gen_cnt[ConnectedCnt],
+		       drbd_conf[minor].gen_cnt[ArbitraryCnt],
+		       drbd_conf[minor].gen_cnt[PrimaryInd] );
+
+		printk(KERN_INFO DEVICE_NAME "%d: ot gc:%d %d %d %d %d\n",
+		       minor,
+		       be32_to_cpu(param.gen_cnt[Consistent]),
+		       be32_to_cpu(param.gen_cnt[HumanCnt]),
+		       be32_to_cpu(param.gen_cnt[ConnectedCnt]),
+		       be32_to_cpu(param.gen_cnt[ArbitraryCnt]),
+		       be32_to_cpu(param.gen_cnt[PrimaryInd]) );
+*/
 		if(be32_to_cpu(param.state) == Secondary &&
 		   drbd_conf[minor].state == Secondary ) {
-			switch(pri) {
-			case 1: drbd_set_state(minor,Primary);
-			case -1:sync=1;
-				break;
-			case 0: sync=0;
-				break;
-			}
+			if(pri==1) drbd_set_state(minor,Primary);
 		} else {
 			if( ( pri == 1 ) == 
 			    (drbd_conf[minor].state == Secondary) ) {
@@ -771,7 +783,10 @@ inline int receive_param(int minor,int command)
 				sync=0;
 			}
 		}
-
+/*
+		printk(KERN_INFO DEVICE_NAME "%d: pri=%d sync=%d meth=%c\n",
+		       minor,pri,sync,method==SyncingAll?'a':'q');
+*/
 		if( sync && !drbd_conf[minor].conf.skip_sync ) {
 			set_cstate(&drbd_conf[minor],method);
 			if(drbd_conf[minor].state == Primary) {
