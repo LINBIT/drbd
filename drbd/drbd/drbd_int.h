@@ -203,6 +203,7 @@ struct drbd_event {
 #define WRITER_PRESENT    3
 #define SEND_POSTPONE     4
 #define DO_NOT_INC_CONCNT 5
+#define SEND_TIMEOUTED    6
 
 struct Drbd_Conf {
 	struct net_config conf;
@@ -234,6 +235,7 @@ struct Drbd_Conf {
 	struct timer_list a_timeout; /* ack timeout */
 	struct timer_list p_timeout; /* processing timeout */
 	struct timer_list s_timeout; /* send timeout */
+	struct task_struct* send_proc; /* process calling drbd's send_msg() */ 
 	struct semaphore send_mutex;
 	unsigned long synced_to;	/* Unit: sectors (512 Bytes) */
 	struct Drbd_thread receiver;

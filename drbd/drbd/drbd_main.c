@@ -619,12 +619,12 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 
 void drbd_timeout(unsigned long arg)
 {
-	struct task_struct *p = (struct task_struct *) arg;
+	struct Drbd_Conf *mdev = (struct Drbd_Conf *) arg;
 
-	printk(KERN_ERR DEVICE_NAME" : timeout detected! (pid=%d)\n",p->pid);
-
-	drbd_queue_signal(DRBD_SIG, p->pid);
-
+	printk(KERN_ERR DEVICE_NAME" : timeout detected! (pid=%d)\n",
+	       mdev->send_proc->pid);
+	set_bit(SEND_TIMEOUTED, &mdev->flags);
+	drbd_queue_signal(DRBD_SIG, mdev->send_proc->pid);
 }
 
 void drbd_a_timeout(unsigned long arg)
@@ -676,7 +676,7 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 
 	if (mdev->conf.timeout) {
 		init_timer(&mdev->s_timeout);
-		mdev->s_timeout.data = (unsigned long) current;
+		mdev->send_proc = current;
 		mdev->s_timeout.expires =
 		    jiffies + mdev->conf.timeout * HZ / 10;
 		add_timer(&mdev->s_timeout);
@@ -726,35 +726,36 @@ int drbd_send(struct Drbd_Conf *mdev, Drbd_Packet_Cmd cmd,
 	set_fs(oldfs);
 	unlock_kernel();
 
+	if (mdev->conf.timeout) {
+		del_timer(&mdev->s_timeout);
+	}
+
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	current->blocked = oldset;
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
-	if (mdev->conf.timeout) {
-		unsigned long flags;
-		del_timer(&mdev->s_timeout);
+	if (mdev->conf.timeout && 
+	    test_and_clear_bit(SEND_TIMEOUTED,&mdev->flags)) {
+
 		spin_lock_irqsave(&current->sigmask_lock,flags);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
-		if (sigismember(&current->signal, DRBD_SIG)) {
-			sigdelset(&current->signal, DRBD_SIG);
+		sigdelset(&current->signal, DRBD_SIG);
 #else
-		if (sigismember(&current->pending.signal, DRBD_SIG)) {
-			sigdelset(&current->pending.signal, DRBD_SIG);
+		sigdelset(&current->pending.signal, DRBD_SIG);
 #endif
-			recalc_sigpending(current);
-			spin_unlock_irqrestore(&current->sigmask_lock,flags);
+		recalc_sigpending(current);
+		spin_unlock_irqrestore(&current->sigmask_lock,flags);
 
-			printk(KERN_ERR DEVICE_NAME
-			       "%d: send timed out!! (pid=%d)\n",
-			       (int)(mdev-drbd_conf),current->pid);
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: send timed out!! (pid=%d)\n",
+		       (int)(mdev-drbd_conf),current->pid);
 
-			set_cstate(mdev,Timeout);
-
-			drbd_thread_restart_nowait(&mdev->receiver);
-
-			return -1002;
-		} else spin_unlock_irqrestore(&current->sigmask_lock,flags);
+		set_cstate(mdev,Timeout);
+		
+		drbd_thread_restart_nowait(&mdev->receiver);
+		
+		return -1002;
 	}
 
 	if (rv <= 0) {
@@ -918,6 +919,7 @@ int __init drbd_init(void)
 		drbd_conf[i].p_timeout.data = (unsigned long) &drbd_conf[i];
 		init_timer(&drbd_conf[i].p_timeout);
 		drbd_conf[i].s_timeout.function = drbd_timeout;
+		drbd_conf[i].s_timeout.data = (unsigned long) &drbd_conf[i];
 		init_timer(&drbd_conf[i].s_timeout);
 		drbd_conf[i].synced_to=0;
 		init_MUTEX(&drbd_conf[i].send_mutex);
