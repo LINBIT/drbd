@@ -798,6 +798,10 @@ inline void inc_pending(int minor)
 inline void dec_pending(int minor)
 {
 	drbd_conf[minor].pending_cnt--;
+	if(drbd_conf[minor].pending_cnt<0)  /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: pending_cnt <0 !!!\n",
+		       minor);
+		
 	if(drbd_conf[minor].conf.timeout ) {
 		if(drbd_conf[minor].pending_cnt > 0) {
 			mod_timer(&drbd_conf[minor].a_timeout,
@@ -939,10 +943,12 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	ret=drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),data,
 		      data_size);
 
-	if(head.h.block_id != ID_SYNCER) {
+	if(block_id != ID_SYNCER) {
 		if( ret == data_size + sizeof(head)) {
 			/* This must be within the semaphore */
 			tl_add(mdev,(struct request*)(unsigned long)block_id);
+			if(mdev->conf.wire_protocol != DRBD_PROT_A)
+				inc_pending((int)(mdev-drbd_conf));
 		} else {
 			mdev->mops->set_block_status(mdev->mbds_id,
 			      block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
@@ -951,11 +957,6 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	}
 
 	up(&mdev->send_mutex);
-
-	if( ret == data_size + sizeof(head) &&
-	    mdev->conf.wire_protocol != DRBD_PROT_A )   {
-		inc_pending((int)(mdev-drbd_conf));
-	}
 
 	return ret;
 }
@@ -1844,6 +1845,9 @@ void drbd_p_timeout(unsigned long arg)
 {
 	struct Drbd_Conf* mdev = (struct Drbd_Conf*)arg;
 
+	printk(KERN_ERR DEVICE_NAME "%d: it's getting late\n", 
+	       (int)(mdev-drbd_conf));
+
 	set_bit(SEND_POSTPONE,&mdev->flags);
 	wake_up_interruptible(&mdev->asender_wait);
 }
@@ -2083,6 +2087,10 @@ inline void inc_unacked(int minor)
 inline void dec_unacked(int minor)
 {
 	drbd_conf[minor].unacked_cnt--;
+	if(drbd_conf[minor].unacked_cnt<0)  /* CHK */
+		printk(KERN_ERR DEVICE_NAME "%d: unacked_cnt <0 !!!\n",
+		       minor);
+
 	if(drbd_conf[minor].conf.timeout) {
 		if(drbd_conf[minor].unacked_cnt > 0) {
 			mod_timer(&drbd_conf[minor].p_timeout,
@@ -2209,6 +2217,9 @@ inline int receive_data(int minor,int data_size)
 		if (ep_size > drbd_conf[minor].conf.tl_size)
 			printk(KERN_ERR DEVICE_NAME "%d: tl_size too small"
 			       " (ep_size > tl_size)\n",minor);
+		if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
+			inc_unacked(minor);
+
 	} else {	       
 		int i;
 		struct buffer_head ** sync_log = drbd_conf[minor].sync_log;
@@ -2251,6 +2262,7 @@ inline int receive_data(int minor,int data_size)
 		    " %ld\n",header.block_id); */
 	        drbd_send_ack(&drbd_conf[minor], RecvAck,
 			      block_nr,header.block_id);
+		dec_unacked(minor);
 	}
 
 	ll_rw_block(WRITE, 1, &bh);
@@ -2268,12 +2280,10 @@ inline int receive_data(int minor,int data_size)
 	 * but we already start when we have NR_REQUESTS / 4 blocks.
 	 */
 
-	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C && 
-	    header.block_id != ID_SYNCER) {
+	if (drbd_conf[minor].conf.wire_protocol == DRBD_PROT_C) {
 		if (drbd_conf[minor].unacked_cnt >= (NR_REQUEST / 4)) {
 			run_task_queue(&tq_disk);
 		}
-		inc_unacked(minor);
 	}
 
 	/* </HACK> */
@@ -2295,18 +2305,6 @@ inline int receive_block_ack(int minor)
 	if (drbd_recv(&drbd_conf[minor], &header, sizeof(header)) != 
 	    sizeof(header))
 	        return FALSE;
-	
-	if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A &&
-	   drbd_conf[minor].conf.timeout ) {
-		if(--drbd_conf[minor].pending_cnt > 0) {
-			mod_timer(&drbd_conf[minor].a_timeout,
-				  jiffies + drbd_conf[minor].conf.timeout 
-				  * HZ / 10);
-		} else {
-			del_timer(&drbd_conf[minor].a_timeout);
-		}
-	}
-
 
 	if( header.block_id == ID_SYNCER) {
 		drbd_conf[minor].mops->
@@ -2319,6 +2317,8 @@ inline int receive_block_ack(int minor)
 		drbd_end_req(req, RQ_DRBD_SENT, 1);
 		/* printk(KERN_ERR DEVICE_NAME "%d: got blk-ack for sec %ld\n",
 		   minor,req->sector); */
+		if(drbd_conf[minor].conf.wire_protocol != DRBD_PROT_A)
+			dec_pending(minor);
 	}
 
 	return TRUE;
@@ -2339,15 +2339,7 @@ inline int receive_barrier_ack(int minor)
         tl_release(&drbd_conf[minor],header.barrier,
 		   be32_to_cpu(header.set_size));
 
-	if(drbd_conf[minor].conf.timeout ) {
-		if(--drbd_conf[minor].pending_cnt > 0) {
-			mod_timer(&drbd_conf[minor].a_timeout,
-				  jiffies + drbd_conf[minor].conf.timeout 
-				  * HZ / 10);
-		} else {
-			del_timer(&drbd_conf[minor].a_timeout);
-		}
-	}	
+	dec_pending(minor);
 
 	return TRUE;
 }
@@ -2447,16 +2439,19 @@ inline int receive_param(int minor,int command)
 
 inline void receive_postpone(int minor)
 {
-	printk(KERN_ERR DEVICE_NAME
-	       "%d: got Postpone\n",minor);
+	printk(KERN_ERR DEVICE_NAME"%d: got Postpone\n",minor);
 
-	if(timer_pending(&drbd_conf[minor].a_timeout))
+	if(timer_pending(&drbd_conf[minor].a_timeout)) {
 		mod_timer(&drbd_conf[minor].a_timeout,
 			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
+		printk(KERN_ERR DEVICE_NAME"%d: pushing ack timeout\n",minor);
+	}
 
-	if(timer_pending(&drbd_conf[minor].s_timeout))
+	if(timer_pending(&drbd_conf[minor].s_timeout)) {
 		mod_timer(&drbd_conf[minor].s_timeout,
 			  jiffies + drbd_conf[minor].conf.timeout * HZ / 10);
+		printk(KERN_ERR DEVICE_NAME"%d: pushing send timeout\n",minor);
+	}
 }
 
 
@@ -2592,7 +2587,8 @@ void drbdd(int minor)
 	case Secondary: 
 		es_clear(&drbd_conf[minor]);
 		sl_clear(&drbd_conf[minor]);
-		drbd_conf[minor].unacked_cnt=0;
+		drbd_conf[minor].unacked_cnt=0;		
+		del_timer(&drbd_conf[minor].p_timeout);
 		wake_up_interruptible(&drbd_conf[minor].state_wait);
 		break;
 	case Unknown:
@@ -2605,7 +2601,7 @@ int drbdd_init(struct Drbd_thread *thi)
 	int minor = thi->minor;
 
 	sprintf(current->comm, "drbdd_%d", minor);
-
+	
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 	
 	while (TRUE) {
@@ -2853,6 +2849,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	  }
 
 	  if(test_and_clear_bit(SEND_POSTPONE,&drbd_conf[minor].flags)) {
+		  printk(KERN_ERR DEVICE_NAME
+			 "%d: sending postpone packet!\n", minor);
 		  drbd_send_cmd(minor,Postpone);
 	  }
 
