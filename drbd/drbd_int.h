@@ -566,6 +566,7 @@ struct drbd_request {
 	struct drbd_barrier *barrier; // The next barrier.
 	struct bio *master_bio;       // master bio pointer
 	struct bio private_bio;       // private bio struct
+	struct hlist_node colision;
 };
 
 struct drbd_barrier {
@@ -701,6 +702,8 @@ struct Drbd_Conf {
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
+	struct hlist_head * tl_hash;
+	unsigned int tl_hash_s;
 	unsigned long flags;
 	struct task_struct *send_task; /* about pid calling drbd_send */
 	spinlock_t send_task_lock;
@@ -767,6 +770,7 @@ extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
+extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);

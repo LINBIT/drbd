@@ -576,6 +576,19 @@ FIXME
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
 
+	if (mdev->tl_hash_s != mdev->conf.max_epoch_size/8 ) {
+		if (mdev->tl_hash) kfree(mdev->tl_hash);
+		mdev->tl_hash_s = mdev->conf.max_epoch_size/8;
+		mdev->tl_hash = kmalloc(mdev->tl_hash_s * sizeof(void*),
+					GFP_KERNEL);
+		if(!mdev->tl_hash) {
+			mdev->tl_hash_s = 0;
+			return -ENOMEM;
+		}
+
+		memset(mdev->tl_hash, 0, mdev->tl_hash_s * sizeof(void*));
+	}
+
 	drbd_thread_start(&mdev->worker);
 	if( drbd_request_state(mdev,NS(conn,Unconnected)) > 0) {
 		drbd_thread_start(&mdev->receiver);

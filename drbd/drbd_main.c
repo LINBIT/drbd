@@ -146,6 +146,9 @@ STATIC int tl_init(drbd_dev *mdev)
 	mdev->oldest_barrier = b;
 	mdev->newest_barrier = b;
 
+	mdev->tl_hash = NULL;
+	mdev->tl_hash_s = 0;
+
 	return 1;
 }
 
@@ -153,7 +156,18 @@ STATIC void tl_cleanup(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	kfree(mdev->oldest_barrier);
+	if(mdev->tl_hash) {
+		kfree(mdev->tl_hash);
+		mdev->tl_hash_s = 0;
+	}
 }
+
+STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
+{
+	// map sectors in the same 4k block to the same hash key.
+	return (sector>>3) % mdev->tl_hash_s;
+}
+
 
 STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 {
@@ -170,6 +184,10 @@ STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 	if( b->n_req++ > mdev->conf.max_epoch_size ) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
 	}
+
+	INIT_HLIST_NODE(&new_item->colision);
+	hlist_add_head( &new_item->colision, mdev->tl_hash + 
+			tl_hash_fn(mdev, drbd_req_get_sector(new_item) ));
 
 	spin_unlock_irq(&mdev->tl_lock);
 }
@@ -241,6 +259,21 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	D_ASSERT(b->n_req == set_size);
 
 	kfree(b);
+}
+
+int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
+{
+	struct hlist_head *slot = mdev->tl_hash + tl_hash_fn(mdev,sector);
+	struct hlist_node *n;
+	drbd_request_t * i;
+
+	hlist_for_each_entry(i, n, slot, colision) {
+		if (i==item) {
+			D_ASSERT(drbd_req_get_sector(i) == sector);
+			return 1;
+		}
+	}
+	return 0;
 }
 
 /* tl_dependence reports if this sector was present in the current

@@ -89,7 +89,7 @@ DRBD 0.8 Roadmap
 
   Note: The actual key to the hash should be (sector & ~0x7).
         See item 9 for more details.
-  0% DONE
+  99% DONE
 
 7 Handle split brain situations; Support IO fencing; 
   introduce the "Dead" peer state (o_state)

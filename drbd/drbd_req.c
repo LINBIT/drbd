@@ -56,7 +56,10 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
 	req->rq_status |= nextstate;
 	req->rq_status &= er_flags | ~0x0001;
-	if( (req->rq_status & RQ_DRBD_DONE) == RQ_DRBD_DONE ) goto end_it;
+	if( (req->rq_status & RQ_DRBD_DONE) == RQ_DRBD_DONE ) {
+		hlist_del(&req->colision);
+		goto end_it;
+	}
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
