@@ -529,7 +529,7 @@ sub drbd()
     } elsif ($command eq "status") { 
 	print status_fcaller( \&drbd_status) . "\n";
     } else {
-	print "USAGE: drbd [resource] start|reconnect|stop\n";
+	print "USAGE: drbd [resource] start|reconnect|status|stop\n";
     }
     exit 0;
 }
