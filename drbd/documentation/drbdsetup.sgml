@@ -1,0 +1,352 @@
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<refentry>
+<docinfo><date>15 Apr 2001</date></docinfo>
+
+<refmeta>
+ <refentrytitle>drbdsetup</refentrytitle>
+ <manvolnum>8</manvolnum>
+</refmeta>
+
+<refnamediv>
+ <refname>drbdsetup</refname>
+ <refpurpose>Setup tool for DRBD</refpurpose>
+</refnamediv>
+
+<refsynopsisdiv>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>disk</arg>
+  <arg choice=req><replaceable>lower_device</replaceable></arg>
+  <arg>-d<arg choice=req><replaceable>size</replaceable></arg></arg>
+  <arg>-p</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>net</arg>
+  <arg choice=req><replaceable>local_addr</replaceable></arg>
+  <arg><replaceable>:port</replaceable></arg>
+  <arg choice=req><replaceable>remote_addr</replaceable></arg>
+  <arg><replaceable>:port</replaceable></arg>
+  <arg choice=req><replaceable>protocol</replaceable></arg>
+  <arg>-r<arg choice=req><replaceable>rate</replaceable></arg></arg>
+  <arg>-s<arg choice=req><replaceable>size</replaceable></arg></arg>
+  <arg>-c<arg choice=req><replaceable>time</replaceable></arg></arg>
+  <arg>-i<arg choice=req><replaceable>time</replaceable></arg></arg>
+  <arg>-k</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>disconnect</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>down</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>primary</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>secondary</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>replicate</arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>wait</arg>
+  <arg>-r<arg choice=req><replaceable>connect_timeout</replaceable></arg></arg>
+ </cmdsynopsis>
+ <cmdsynopsis>
+  <command>drbdsetup</command>
+  <arg choice=req><replaceable>device</replaceable></arg>
+  <arg choice=req>show</arg>
+ </cmdsynopsis>
+</refsynopsisdiv>
+
+<refsect1>
+ <title>Description</title>
+ <para>
+drbdsetup is used to associate drbd devices with their lower
+level block devices, to set up drbd device pairs to mirror their
+lower level block devices and to inspect the configuration of
+running drbd devices.
+ </para>
+</refsect1>
+
+<refsect1>
+<title>Note</title>
+<para>
+drbdsetup is a low level tool of the drbd program suite. It is
+used by the drbd, datadisk and drbdc scripts to communicate with
+the device driver.
+</para>
+</refsect1>
+
+<refsect1>
+<title>Commands</title>
+<para>
+Each drbd sub command might require arguments and brings it's own
+set of options. All values have default units which might be overruled
+by K, M or G. These units are defined in the usual way (eg. K = 2^10).
+</para>
+
+<refsect2>
+<title>disk</title>
+<para>
+Associates <replaceable>device</replaceable> with 
+<replaceable>lower_device</replaceable> to store its data blocks on.
+The <replaceable>device</replaceable> is only ready for immedate use
+when also using the <option>-d</option> (or <option>--disk-size</option>)
+option.
+When not specifying the size of the <replaceable>device</replaceable>,
+it will become ready for use as
+soon as it is successfully 
+connected to its partner device with the <option>net</option> command.
+</para>
+
+<variablelist>
+ <varlistentry>
+  <term><option>-d</option>,
+   <option>--disk-size <replaceable>size</replaceable></option></term>
+  <listitem><para>
+If you need to use the device before connecting, use this option
+to pass the <replaceable>size</replaceable> of the drbd device to 
+the driver. Default unit is KB.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-p</option>,
+   <option>--do-panic</option></term>
+  <listitem><para>
+If the driver of the <replaceable>lower_device</replaceable> reports 
+an error to drbd, drbd passes this error on to the upper 
+layers of the operating 
+system per default. With the <option>-p</option> or 
+<option>--do-panic</option> you can request that
+drbd triggers a kernel panic instead.
+  </para></listitem>
+ </varlistentry>
+</variablelist>
+</refsect2>
+<refsect2>
+<title>net</title>
+<para>
+Sets up the <replaceable>device</replaceable> to listen on 
+<replaceable>local_addr:port</replaceable> for incomming connections
+and to try to connect to <replaceable>remote_addr:port</replaceable>.
+If <replaceable>port</replaceable> is omitted, 7788 is used as default.
+On the tcp/ip link the specified <replaceable>protocol</replaceable> 
+is used. Valid protocol spezifiers are A, B and C.
+</para>
+<variablelist>
+ <varlistentry>
+  <term><option>-r</option>,
+   <option>--sync-rate <replaceable>rate</replaceable></option></term>
+  <listitem><para>
+To ensure smoth operation of the application on top of drbd it is
+possible to limit the bandwith which may be used by background 
+synchronisations. The default is 250 KB/sec, the default unit is KB. 
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-c</option>,
+   <option>--connect-int <replaceable>time</replaceable></option></term>
+  <listitem><para>
+In case it is not possible to connect to the remote drbd device immediately, 
+drbd
+keeps on trying to connect. With this option you can set the time
+between two tries. The default value is 10 seconds, the unit is 1 second.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-k</option>,
+   <option>--skip-sync </option></term>
+  <listitem><para>
+This option supresses the automatic start of the resynchronisation 
+process, which
+is triggered as soon as two drbd devices are connected.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-i</option>,
+   <option>--ping-int <replaceable>time</replaceable></option></term>
+  <listitem><para>
+If the tcp/ip connection linking a drbd device pair is idle for more than
+<replaceable>time</replaceable> seconds, drbd will generate a keep-alive 
+packet to check if its partner is still alive. The default is 10 seconds.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-t</option>,
+   <option>--timeout <replaceable>val</replaceable></option></term>
+  <listitem><para>
+If the partner node failes to send an expected response packet within 
+<replaceable>val</replaceable> 10ths of a second, the partner node
+is considered dead and therefore the tcp/ip connection is abandoned.
+The default value is 60 = 6 seconds.
+  </para></listitem>
+ </varlistentry>
+ <varlistentry>
+  <term><option>-s</option>,
+   <option>--tl-size <replaceable>size</replaceable></option></term>
+  <listitem><para>
+The driver uses a cyclic data structure to keep track of sent data
+blocks. When using protocol A over a network with high latency it might
+be necessary to increase the size of this data structure. 
+If this is the case, the driver will write messages to the syslog 
+saying that the transfer-log is too small.The default 
+<replaceable>size</replaceable> is 256 entrys.
+  </para></listitem>
+ </varlistentry>
+</variablelist>
+</refsect2>
+<refsect2>
+<title>primary</title>
+<para>
+Sets the <replaceable>device</replaceable> into primary state, this
+means that applications (eg. a file system) may open the 
+<replaceable>device</replaceable> for read and write access. Data written
+to the <replaceable>device</replaceable> in primary state is mirrored to
+the device in secondary state.
+</para>
+<para>
+If you set both devices of a connected drbd device pair to primary
+state, they will disconnect immediately.
+</para>
+</refsect2>
+<refsect2>
+<title>secondary</title>
+<para>
+Sets the <replaceable>device</replaceable> into secondary state, this
+operation fails as long as at lease one application (or file system) has 
+the device open for write access.
+</para>
+<para>
+It is leagal that both devices of a connected drbd device pair are in 
+secondary state.
+</para>
+</refsect2>
+<refsect2>
+<title>replicate</title>
+<para>
+This forces the pair of connected drbd devices into SyncAll state, which
+means that all data blocks of the device in primary state are copied to
+the device in secondary state.
+</para>
+<para>
+This command will fail if the <replaceable>device</replaceable> is not
+part of a connected device pair of if both devices of the pair are in 
+secondary state.
+</para>
+</refsect2>
+<refsect2>
+<title>wait</title>
+<para>
+Returns as soon as the <replaceable>device</replaceable> leaves any
+synchronisation state and returns into connected state.
+</para>
+<variablelist>
+ <varlistentry>
+  <term><option>-t</option>,
+   <option>--time <replaceable>cpmmect_timeout</replaceable></option></term>
+  <listitem><para>
+This command will fail if the <replaceable>device</replaceable> stays
+for <replaceable>connect_timeout</replaceable> seconds in unconnected 
+state. The default value is 8 seconds. 
+If it is set to 0 the command will wait forever for a connection.
+  </para></listitem>
+ </varlistentry>
+</variablelist>
+</refsect2>
+<refsect2>
+<title>disconnect</title>
+<para>
+Removes the information set by the <option>net</option> command 
+from the <replaceable>device</replaceable>. This means
+that the <replaceable>device</replaceable> goes into unconnected 
+states and that it will not listen for incomming connections any longer.
+</para>
+</refsect2>
+<refsect2>
+<title>down</title>
+<para>
+Removes all configuration information from the 
+<replaceable>device</replaceable> and forces it back to 
+unconfigured state. 
+</para>
+</refsect2>
+<refsect2>
+<title>show</title>
+<para>
+Shows all available configuration information of the 
+<replaceable>device</replaceable>.
+</para>
+</refsect2>
+</refsect1>
+<refsect1>
+<title>Examples</title>
+<example>
+<title>setting up a device pair</title>
+<para>In this example we have the hosts <replaceable>tc1</replaceable>
+and <replaceable>tc2</replaceable>, and they are connected by a
+crossover cable via the interfaces <replaceable>192.168.37.2</replaceable>
+(on tc1) and 
+<replaceable>192.168.37.3</replaceable> (on tc2).
+We want to turn /dev/hda6 into a virtually shared disk.</para>
+<para>On tc2 we need:</para>
+<screen>
+$ drbdsetup /dev/nb0 disk /dev/hda6
+$ drbdsetup /dev/nb0 net 192.168.37.2 192.168.37.3 B
+</screen>
+<para>On tc1 we need:</para>
+<screen>
+$ drbdsetup /dev/nb0 disk /dev/hda6
+$ drbdsetup /dev/nb0 net 192.168.37.3 192.168.37.2 B
+$ drbdsetup /dev/nb0 primary
+$ cat /proc/drbd
+<computeroutput>version       : 58
+
+0: cs:Connected st:Primary/Secondary ns:0 nr:0 dw:0 dr:0 of:0
+1: cs:WFConnection st:Secondary/Unknown ns:0 nr:0 dw:0 dr:0 of:0
+</computeroutput>
+</screen>
+<para>From /prod/drbd we can see, that our device pair is connected, and
+that the device is ready to use on tc1.</para>
+<para>We can now run our application on top of it:</para>
+<screen>
+$ mkfs -b 4096 /dev/nb0
+$ mount /dev/nb0 /mnt/mountpoint
+</screen>
+</example>
+</refsect1>
+<refsect1>
+<title>Author</title>
+<simpara>Written by Philipp Reisner <email>phil@ist.org</email>.</simpara>
+</refsect1>
+<refsect1>
+<title>Reporting Bugs</title>
+<simpara>Report bugs to <email>drbd-devel@lists.sourceforge.net</email>.
+</simpara>
+</refsect1>
+<refsect1>
+<title>Copyright</title>
+<simpara>Copyright (c) 2001 Philipp Reisner. This is free software;
+see covered by the GNU public licence version 2.0. There is NO 
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+</simpara>
+</refsect1>
+</refentry>
+
+
+
