@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# to be managed by heartbeat.
+# description: Mounts and unmounts the cluster filesystem
+#	  
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source drbd.conf
+. /etc/drbd.conf
+
+RETVAL=0
+
+# See how we were called.
+case "$1" in
+  start)
+	action "Becoming primary node" /usr/sbin/drbdsetup ${DR_DEVICE} PRI
+	RETVAL=$?
+	action "Mounting cluster's FS" mount ${DR_DEVICE} ${DR_MNTPOINT}
+	RETVAL2=$?
+	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && touch /var/lock/subsys/datadisk\
+           || RETVAL=1
+	;;
+  stop)
+	action "Unmounting cluster's FS: " umount ${DR_MNTPOINT}
+	RETVAL=$?
+	action "Becoming secondary node"  /usr/sbin/drbdsetup ${DR_DEVICE} SEC
+	RETVAL2=$?
+	[ $RETVAL -eq 0 -a $RETVAL2 -eq 0 ] && rm -f /var/lock/subsys/datadisk
+	;;
+  restart)
+	$0 stop
+	$0 start
+	RETVAL=$?
+	;;
+  status)
+	cat /proc/drbd
+	RETVAL=$?
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart|status}"
+	exit 1
+esac
+
+exit $RETVAL

@@ -1,4 +1,4 @@
-# Makefile for drbd.o
+# Makefile for scripts
 #
 # This file is part of drbd by Philipp Reisner
 #
@@ -19,18 +19,11 @@
 
 include ../Makefile.vars
 
-all: drbd.o 
-
-drbd.o: drbd.c drbd.h mbds.h
-	$(CC) -c $(KERNFLAGS) -DMOD_VERSION=$(MOD_VERSION) -DEXPORT_SYMTAB drbd.c
-
-#	$(LD) -r -o $@ $^
-
-clean:
-	rm -f *.o
-	rm -f *~
-
+all:
+	echo 
 
 install:
-	install drbd.o /lib/modules/$(KERNVER)/block/
-	/sbin/depmod -a
+	install drbd /etc/rc.d/init.d/
+	install datadisk /etc/ha.d/resource.d/
+	install drbd.conf /etc/
+	chkconfig --add drbd

@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# chkconfig: 345 30 70
+# description: Loads and unloads the drbd module
+#	       
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Source drbd.conf
+. /etc/drbd.conf
+
+# Check that networking is up.
+[ ${NETWORKING} = "no" ] && exit 0
+
+RETVAL=0
+
+# See how we were called.
+case "$1" in
+  start)
+        action "Loading DRBD module" /sbin/modprobe drbd
+	action "Configuring DRBD Module" /usr/sbin/drbdsetup ${DR_DEVICE} \
+           ${DR_LL_DEVICE} ${DR_PROTOCOL} ${DR_LOCAL_NODE} ${DR_REMOTE_NODE} \
+           ${DR_OPTIONS}
+	RETVAL=$?
+	;;
+  stop)
+	action "Unloading DRBD module" /sbin/modprobe -r drbd
+	RETVAL=$?
+	;;
+  restart)
+	$0 stop
+	$0 start
+	RETVAL=$?
+	;;
+  status)
+	status smbd
+	status nmbd
+	RETVAL=$?
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart|status}"
+	exit 1
+esac
+
+exit $RETVAL

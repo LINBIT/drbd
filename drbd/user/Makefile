@@ -38,4 +38,6 @@ clean:
 	rm -f drbdsetup *.o 
 	rm -f *~
 
+install:
+	install drbdsetup /usr/sbin/
 
