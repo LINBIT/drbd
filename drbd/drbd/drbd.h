@@ -54,8 +54,7 @@
 					   :unix_mkname()).  
 					 */
 
-
-struct ioctl_drbd_config {
+struct drbd_config {
   IN int      lower_device;
   IN char     other_addr[MAX_SOCK_ADDR];
   IN int      other_addr_len;
@@ -68,6 +67,21 @@ struct ioctl_drbd_config {
   IN int      wire_protocol;  
   IN unsigned int disk_size;  /* Size given by user */
   IN int      do_panic;
+};
+
+enum ret_codes { 
+	NoError=0,
+	LAAlreadyInUse,
+	OAAlreadyInUse,
+	LDFDInvalid,
+	LDAlreadyInUse,
+	LDNoBlockDev,
+	LDOpenFailed
+};
+
+struct ioctl_drbd_config {
+	struct drbd_config    config;
+	OUT enum ret_codes    ret_code;
 };
 
 #define DRBD_PROT_A   1
@@ -161,7 +175,4 @@ typedef enum {
 #define DRBD_IOCTL_DO_SYNC_ALL   _IO ( 'D', 0x04 )
 
 #endif
-
-
-
 

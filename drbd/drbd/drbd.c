@@ -58,6 +58,7 @@
 #include <linux/file.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/in.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 
@@ -119,7 +120,7 @@ struct Tl_epoch_entry {
 };
 
 struct Drbd_Conf {
-	struct ioctl_drbd_config conf;
+	struct drbd_config conf;
 	struct socket *sock;
 	kdev_t lo_device;
 	struct file *lo_file;
@@ -1100,8 +1101,10 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			   unsigned int cmd, unsigned long arg)
 {
 	int err;
-	int minor;
+	int minor,i;
 	struct file *filp;
+	struct drbd_config new_conf;
+	enum ret_codes retcode;
 
 	minor = MINOR(inode->i_rdev);
 
@@ -1142,28 +1145,79 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	case DRBD_IOCTL_SET_CONFIG:
 	        /* printk(KERN_DEBUG DEVICE_NAME ": set_config()\n"); */
-		if ((err =
-		     copy_from_user(&drbd_conf[minor].conf, (void *) arg,
-				    sizeof(struct ioctl_drbd_config))))
-			 return err;
 
-		filp = fget(drbd_conf[minor].conf.lower_device);
-		if (!filp)
-			return -EINVAL;
+		if ((err = copy_from_user(&new_conf, 
+				    &((struct ioctl_drbd_config *)arg)->config,
+				    sizeof(struct drbd_config))))
+			return err;
+
+#define M_ADDR(A) (((struct sockaddr_in *)&A##.my_addr)->sin_addr.s_addr)
+#define M_PORT(A) (((struct sockaddr_in *)&A##.my_addr)->sin_port)
+#define O_ADDR(A) (((struct sockaddr_in *)&A##.other_addr)->sin_addr.s_addr)
+#define O_PORT(A) (((struct sockaddr_in *)&A##.other_addr)->sin_port)
+		for(i=0;i<MINOR_COUNT;i++) {
+			if( M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
+			    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
+				retcode=LAAlreadyInUse;
+				goto fail_ioctl;
+			}
+			if( O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
+			    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
+				retcode=OAAlreadyInUse;
+				goto fail_ioctl;
+			}
+		}
+#undef M_ADDR
+#undef M_PORT
+#undef O_ADDR
+#undef O_PORT
+
+		filp = fget(new_conf.lower_device);
+		if (!filp) {
+			retcode=LDFDInvalid;
+			goto fail_ioctl;
+		}
+
 		inode = filp->f_dentry->d_inode;
-		if (!S_ISBLK(inode->i_mode))
-			return -EINVAL;
+
+		for(i=0;i<MINOR_COUNT;i++) {
+			if(inode->i_rdev == drbd_conf[i].lo_device) {
+				retcode=LDAlreadyInUse;
+				goto fail_ioctl;
+			}
+		}
+
+		if (!S_ISBLK(inode->i_mode)) {			
+			fput(filp);
+			retcode=LDNoBlockDev;
+			goto fail_ioctl;
+		}
+
 		if ((err = blkdev_open(inode, filp))) {
 			printk(KERN_ERR DEVICE_NAME
 			       ": blkdev_open( %d:%d ,) returned %d\n",
 			       MAJOR(inode->i_rdev), MINOR(inode->i_rdev),err);
-			return err;
+			fput(filp);
+			retcode=LDOpenFailed;
+			/* goto fail_ioctl; */
+		fail_ioctl:
+			if ((err=put_user(retcode, 
+				&((struct ioctl_drbd_config *)arg)->ret_code)))
+				return err;
+			return -EINVAL;
 		}
+
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_thread_stop(&drbd_conf[minor].syncer);
 		drbd_thread_stop(&drbd_conf[minor].asender);
 		drbd_thread_stop(&drbd_conf[minor].receiver);
 		drbd_free_resources(minor);
+
+		memcpy(&drbd_conf[minor].conf,&new_conf,
+		       sizeof(struct drbd_config));
+
+		drbd_conf[minor].lo_device = inode->i_rdev;
+		drbd_conf[minor].lo_file = filp;
 
 		if (!drbd_conf[minor].transfer_log) {
 			drbd_conf[minor].transfer_log =
@@ -1172,8 +1226,6 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 				    GFP_KERNEL);
 			tl_init(&drbd_conf[minor]);
 		}
-		drbd_conf[minor].lo_device = inode->i_rdev;
-		drbd_conf[minor].lo_file = filp;
 
 		if (drbd_conf[minor].conf.disk_size) {
 		        kdev_t ll_dev = drbd_conf[minor].lo_device;

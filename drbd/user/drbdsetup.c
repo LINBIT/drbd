@@ -39,7 +39,9 @@
 #define _GNU_SOURCE
 #include <getopt.h>
 #include <stdlib.h>
-#include <linux/kdev_t.h>
+#include <errno.h>
+
+#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 unsigned long resolv(const char* name)
 {
@@ -224,7 +226,7 @@ int main(int argc, char** argv)
     {
 
       int lower_device;
-      struct ioctl_drbd_config config;
+      struct ioctl_drbd_config cn;
       struct sockaddr_in *other_addr;
       struct sockaddr_in *my_addr;
       int err;
@@ -247,45 +249,45 @@ int main(int argc, char** argv)
 	  exit(20);
 	}
 
-      config.lower_device=lower_device;
+      cn.config.lower_device=lower_device;
 
       switch(argv[3][0])
 	{
 	case 'a':
 	case 'A':
-	  config.wire_protocol = DRBD_PROT_A;
+	  cn.config.wire_protocol = DRBD_PROT_A;
 	  break;
 	case 'b':
 	case 'B':
-	  config.wire_protocol = DRBD_PROT_B;
+	  cn.config.wire_protocol = DRBD_PROT_B;
 	  break;
 	case 'c':
 	case 'C':
-	  config.wire_protocol = DRBD_PROT_C;
+	  cn.config.wire_protocol = DRBD_PROT_C;
 	  break;
 	default:	  
 	  fprintf(stderr,"Invalid protocol specifier.\n");
 	  exit(20);	  
 	}
 
-      config.my_addr_len = sizeof(struct sockaddr_in);
-      my_addr = (struct sockaddr_in *)config.my_addr;
+      cn.config.my_addr_len = sizeof(struct sockaddr_in);
+      my_addr = (struct sockaddr_in *)cn.config.my_addr;
       my_addr->sin_port = htons(port_part(argv[4]));
       my_addr->sin_family = AF_INET;
       my_addr->sin_addr.s_addr = resolv(addr_part(argv[4]));
 
-      config.other_addr_len = sizeof(struct sockaddr_in);
-      other_addr = (struct sockaddr_in *)config.other_addr;
+      cn.config.other_addr_len = sizeof(struct sockaddr_in);
+      other_addr = (struct sockaddr_in *)cn.config.other_addr;
       other_addr->sin_port = htons(port_part(argv[5]));
       other_addr->sin_family = AF_INET;
       other_addr->sin_addr.s_addr = resolv(addr_part(argv[5]));
 
-      config.timeout = 30; /* = 3 seconds */
-      config.sync_rate = 250; /* KB/sec */
-      config.skip_sync = 0; 
-      config.tl_size = 256;
-      config.disk_size = 0;
-      config.do_panic  = 0;
+      cn.config.timeout = 30; /* = 3 seconds */
+      cn.config.sync_rate = 250; /* KB/sec */
+      cn.config.skip_sync = 0; 
+      cn.config.tl_size = 256;
+      cn.config.disk_size = 0;
+      cn.config.do_panic  = 0;
 
       optind=6;
       while(1)
@@ -306,30 +308,45 @@ int main(int argc, char** argv)
 	  switch(c)
 	    {
 	    case 't': 
-	      config.timeout = m_strtol(optarg);
+	      cn.config.timeout = m_strtol(optarg);
 	      break;
 	    case 'r':
-	      config.sync_rate = m_strtol(optarg);
+	      cn.config.sync_rate = m_strtol(optarg);
 	      break;
 	    case 'k':
-	      config.skip_sync=1;
+	      cn.config.skip_sync=1;
 	      break;
 	    case 's':
-	      config.tl_size = m_strtol(optarg);
+	      cn.config.tl_size = m_strtol(optarg);
 	      break;
 	    case 'd':
-	      config.disk_size = m_strtol(optarg);
+	      cn.config.disk_size = m_strtol(optarg);
 	      break;
 	    case 'p':
-	      config.do_panic=1;
+	      cn.config.do_panic=1;
 	      break;
 	    }
 	}
 
-      err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&config);      
+      err=ioctl(dtbd_fd,DRBD_IOCTL_SET_CONFIG,&cn);
       if(err)
 	{
 	  perror("ioctl() failed");
+	  if(errno == EINVAL)
+	    {
+	      const char *etext[] = {
+		"No further Information available.\n"/*NoError*/,
+		"Local address(port) already in use.\n"/*LAAlreadyInUse*/,
+		"Remove address(port) already in use.\n"/* OAAlreadyInUse*/,
+		"Filedescriptor for lower device invalid.\n"/*LDFDInvalid*/,
+		"Lower device already in use.\n"/*LDAlreadyInUse*/,
+		"Lower device is not a block device.\n"/*LDNoBlockDev*/,
+		"Open of lower device failed.\n"/*LDOpenFailed*/
+	      };
+	      int i = cn.ret_code;
+	      if (i>ARRY_SIZE(etext) || i<0) i=0;
+	      fprintf(stderr,etext[i]);
+	    }
 	}
     }
   return 0;

@@ -20,12 +20,10 @@
 include ../Makefile.vars
 
 all:
-	echo 
 
 install:
 	install drbd /etc/rc.d/init.d/
 	install datadisk /etc/ha.d/resource.d/
-#	install drbd.conf /etc/
 	install -d /etc/sysconfig/drbd
 	install drbd.example /etc/sysconfig/drbd/
 
