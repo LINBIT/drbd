@@ -786,12 +786,6 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 
 	down(&mdev->send_mutex);
 	
-	if(mdev->conf.wire_protocol != DRBD_PROT_A && mdev->conf.timeout) {
-		mdev->pending_cnt++;
-		mod_timer(&mdev->a_timeout,
-			  jiffies + mdev->conf.timeout * HZ / 10);
-	}
-
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 	        _drbd_send_barrier(mdev);
 	}
@@ -799,13 +793,22 @@ int drbd_send_data(struct Drbd_Conf *mdev, void* data, size_t data_size,
 	ret=drbd_send(mdev,Data,(Drbd_Packet*)&head,sizeof(head),data,
 		      data_size);
 
+	if( ret == data_size + sizeof(head) &&
+	    mdev->conf.wire_protocol != DRBD_PROT_A && 
+	    mdev->conf.timeout)   {
+		mdev->pending_cnt++;
+		mod_timer(&mdev->a_timeout,
+			  jiffies + mdev->conf.timeout * HZ / 10);
+	}
+
+
 	if(head.h.block_id != ID_SYNCER) {
-		if( ret == data_size + sizeof(head) ) {
+		if( ret == data_size + sizeof(head)) {
 			/* This must be within the semaphore */
 			tl_add(mdev,(struct request*)(unsigned long)block_id);
 		} else {
-	                mdev->mops->set_block_status(mdev->mbds_id,
-				   block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
+			mdev->mops->set_block_status(mdev->mbds_id,
+			      block_nr,mdev->blk_size_b,SS_OUT_OF_SYNC);
 			ret=0;
 		}
 	}
@@ -899,12 +902,19 @@ void drbd_set_sock_prio(struct Drbd_Conf *mdev)
 	switch(mdev->state) {
 	case Primary: 
 		mdev->sock->sk->priority=TC_PRIO_BULK;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+		mdev->sock->sk->tp_pinfo.af_tcp.nonagle=0;
+#else
 		mdev->sock->sk->nonagle=0;
+#endif
 		break;
 	case Secondary:
 		mdev->sock->sk->priority=TC_PRIO_INTERACTIVE;
-		// sock->sk->tp_pinfo.af_tcp.nonagle=1;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+		mdev->sock->sk->tp_pinfo.af_tcp.nonagle=1;
+#else
 		mdev->sock->sk->nonagle=1;
+#endif
 		break;
 	}
 }
@@ -1118,7 +1128,11 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			memcpy(bh, req->bh, sizeof(struct buffer_head));
 
 			bh->b_dev = drbd_conf[minor].lo_device;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+			bh->b_state = (1 << BH_Req) | (1 << BH_Mapped);
+#else
 			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#endif
 			bh->b_list = BUF_LOCKED;
 			bh->b_dev_id = req;
 			bh->b_end_io = drbd_dio_end;
@@ -1402,11 +1416,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 }
 
 
-//#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 int __init drbd_init(void)
-     //#else
-     //__initfunc(int drbd_init(void))
-     //#endif
 {
 
 	int i;
@@ -1484,11 +1494,8 @@ int __init drbd_init(void)
 
 	return 0;
 }
-//#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+
 int __init init_module()
-     //#else
-     //__initfunc(int init_module())
-     //#endif
 {
 	printk(KERN_INFO DEVICE_NAME ": module initialised. Version: %d\n",
 	       MOD_VERSION);
@@ -2177,7 +2184,11 @@ restart:
 	brelse(bh); /* hehe this is the way to initialize a BH :)  */
 
 	rbh.b_dev = drbd_conf[minor].lo_device;
-	rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+			bh->b_state = (1 << BH_Req) | (1 << BH_Mapped);
+#else
+			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#endif
 	rbh.b_list = BUF_LOCKED;
 	rbh.b_data = page;
 	init_waitqueue_head(&rbh.b_wait);
@@ -2223,7 +2234,11 @@ restart:
 
 			rbh.b_blocknr=block_nr;
 
-			rbh.b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
+			bh->b_state = (1 << BH_Req) | (1 << BH_Mapped);
+#else
+			bh->b_state = (1 << BH_Req) | (1 << BH_Dirty);
+#endif
 			init_waitqueue_head(&rbh.b_wait);
 			  /* Hmmm, why do I need this ? */
 
