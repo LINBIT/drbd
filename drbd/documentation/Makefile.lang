@@ -43,10 +43,9 @@ HOWTO/index.html: HOWTO/DRBD-HOWTO.sgml
 clean:
 	rm -f *.ps *.[58] manpage.links manpage.refs *~ manpage.log HOWTO/*.html
 
-install: drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8
-	if [ -e drbdsetup.8 ]; then install drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8; fi
-	if [ -e drbd.conf.5 ]; then install drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5; fi
-	if [ -e drbd.8 ]; then install drbd.8 $(PREFIX)usr/share/$(C_LANG)/man/man8; fi
-	if [ -e datadisk.8 ]; then install datadisk.8 $(PREFIX)usr/share/$(C_LANG)/man/man8; fi
-
+install:
+	if [ -e drbdsetup.8 ]; then install -D drbdsetup.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbdsetup.8 ; fi
+	if [ -e drbd.conf.5 ]; then install -D drbd.conf.5 $(PREFIX)usr/share/man/$(C_LANG)/man5/drbd.conf.5 ; fi
+	if [ -e drbd.8 ]; then install -D drbd.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/drbd.8 ; fi
+	if [ -e datadisk.8 ]; then install -D datadisk.8 $(PREFIX)usr/share/man/$(C_LANG)/man8/datadisk.8 ; fi
 
