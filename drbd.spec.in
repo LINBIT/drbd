@@ -150,6 +150,11 @@ ___
 %post
 chkconfig --add drbd
 
+for i in `seq 0 15` ; do 
+    test -b /dev/drbd$i || mknod /dev/drbd$i b 147 $i; 
+done
+
+
 %preun
 if type -p service ; then
 	service drbd stop
