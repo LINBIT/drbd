@@ -1506,9 +1506,11 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 	}
 
+	// worker was stopped..., run w_resume_next_sg() if it is scheduled...
+	if(mdev->resync_work.cb == w_resume_next_sg) {
+		w_resume_next_sg(mdev,&mdev->resync_work,0);
+	}
 	INFO("receiver exiting\n");
-
-	/* set_cstate(mdev,StandAlone); */
 
 	return 0;
 }
