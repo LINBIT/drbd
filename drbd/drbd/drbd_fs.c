@@ -63,9 +63,8 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	if (mdev->open_cnt > 1)
 		return -EBUSY;
 
-	if ((err = copy_from_user(&new_conf, &arg->config,
-				  sizeof(struct disk_config))))
-		return err;
+	if (copy_from_user(&new_conf, &arg->config,sizeof(struct disk_config)))
+		return -EFAULT;
 
 	filp = fget(new_conf.lower_device);
 	if (!filp) {
@@ -144,7 +143,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 	return 0;
 	
  fail_ioctl:
-	if ((err=put_user(retcode, &arg->ret_code))) return err;
+	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
 
@@ -152,7 +151,6 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 {
 	struct ioctl_get_config cn;
-	int err;
 
 	cn.cstate=mdev->cstate;
 	cn.lower_device_major=MAJOR(mdev->lo_device);
@@ -161,8 +159,8 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	cn.do_panic=mdev->do_panic;
 	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
 
-	if ((err = copy_to_user(arg,&cn,sizeof(struct ioctl_get_config))))
-		return err;
+	if (copy_to_user(arg,&cn,sizeof(struct ioctl_get_config)))
+		return -EFAULT;
 
 	return 0;
 }
@@ -171,16 +169,15 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 /*static */
 int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 {
-	int err,i,minor;
+	int i,minor;
 	enum ret_codes retcode;
 	struct net_config new_conf;
 	static unsigned long mg[]={0xE6167704,0xE6167704,0xFB187102};
 
 	minor=(int)(mdev-drbd_conf);
 
-	if ((err = copy_from_user(&new_conf, &arg->config,
-				  sizeof(struct net_config))))
-		return err;
+	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
+		return -EFAULT;
 
 	if( mdev->lo_file == 0 || mdev->lo_device == 0 ) {
 		retcode=LDNoConfig;
@@ -245,7 +242,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	return 0;
 
 	fail_ioctl:
-	if ((err=put_user(retcode, &arg->ret_code))) return err;
+	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
 
@@ -316,7 +313,6 @@ int drbd_set_state(int minor,Drbd_State newstate)
 /*static */ int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
-	int err;
 	int minor;
 	long time;
 
@@ -325,8 +321,8 @@ int drbd_set_state(int minor,Drbd_State newstate)
 
 	switch (cmd) {
 	case BLKGETSIZE:
-		if ((err=put_user(blk_size[MAJOR_NR][minor]<<1, (long *)arg)))
-			return err;
+		if (put_user(blk_size[MAJOR_NR][minor]<<1, (long *)arg))
+			return -EFAULT;
 		break;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
@@ -341,8 +337,8 @@ int drbd_set_state(int minor,Drbd_State newstate)
 #endif
 
 	case DRBD_IOCTL_GET_VERSION:
-		if ((err = put_user(API_VERSION, (int *) arg)))
-			return err;
+		if (put_user(API_VERSION, (int *) arg))
+			return -EFAULT;
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
@@ -400,8 +396,8 @@ int drbd_set_state(int minor,Drbd_State newstate)
 		break;
 
 	case DRBD_IOCTL_WAIT_CONNECT:
-		if ((err = get_user(time, (int *) arg)))
-			return err;
+		if (get_user(time, (int *) arg))
+			return -EFAULT;
 
 		time=time*HZ;
 		if(time==0) time=MAX_SCHEDULE_TIMEOUT;
@@ -416,15 +412,15 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			if(signal_pending(current)) return -EINTR;
 		}
 			
-		if ((err = put_user(drbd_conf[minor].cstate >= Connected, 
-				    (int *) arg)))
-			return err;
+		if (put_user(drbd_conf[minor].cstate >= Connected, 
+			     (int *) arg))
+			return -EFAULT;
 		break;
 
 
 	case DRBD_IOCTL_WAIT_SYNC:
-		if ((err = get_user(time, (int *) arg)))
-			return err;
+		if (get_user(time, (int *) arg))
+			return -EFAULT;
 
 		time=time*HZ;
 		if(time==0) time=MAX_SCHEDULE_TIMEOUT;
@@ -443,9 +439,9 @@ int drbd_set_state(int minor,Drbd_State newstate)
 			if(signal_pending(current)) return -EINTR;
 		}
 			
-		if ((err = put_user(drbd_conf[minor].cstate == Connected, 
-				    (int *) arg)))
-			return err;
+		if (put_user(drbd_conf[minor].cstate == Connected, 
+			     (int *) arg))
+			return -EFAULT;
 		break;
 
 	case DRBD_IOCTL_DO_SYNC_ALL:
