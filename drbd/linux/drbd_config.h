@@ -63,4 +63,7 @@ extern const char * drbd_buildtag(void);
 // don't enable this, unless you can cope with gigabyte syslogs :)
 //#define DUMP_EACH_PACKET
 
+// Dump every hour the usage / not usage of zero copy IO 
+//#define SHOW_SENDPAGE_USAGE
+
 #endif

@@ -908,6 +908,8 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 {
 	int sent,ok;
 	int len   = size;
+
+#ifdef SHOW_SENDPAGE_USAGE
 	unsigned long now = jiffies;
 	static unsigned long total = 0;
 	static unsigned long fallback = 0;
@@ -915,18 +917,15 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 
 	/* report statistics every hour,
 	 * if we had at least one fallback.
-	 * XXX remove this statistics again,
-	 * or introduce some set of interessting per device real statistics,
-	 * and report them every hour...
-	 * currently these are global counters only.
 	 */
 	++total;
 	if (fallback && time_before(last_rep+3600*HZ, now)) {
 		last_rep = now;
 		printk(KERN_INFO DEVICE_NAME
-		       ": sendpage() omitted: %lu/%lu "
-		       "[XFS' broken IO requests?]\n", fallback, total);
+		       ": sendpage() omitted: %lu/%lu\n", fallback, total);
 	}
+#endif
+
 
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
@@ -941,9 +940,10 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	if ( (page_count(page) < 1) || PageSlab(page) ) {
 		/* e.g. XFS meta- & log-data is in slab pages, which have a
 		 * page_count of 0 and/or have PageSlab() set...
-		 * FIXME: This is a workaround.
 		 */
+#ifdef SHOW_SENDPAGE_USAGE
 		++fallback;
+#endif
 		sent =  _drbd_no_send_page(mdev, page, offset, size);
 		if (likely(sent > 0)) len -= sent;
 		goto out;
