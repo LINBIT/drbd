@@ -115,6 +115,7 @@ case "$1" in
 	;;
 	
   status)
+  	# Duplicated code from drbdc
 	if [ -r /proc/drbd ]; then
 		cat /proc/drbd
 	else
