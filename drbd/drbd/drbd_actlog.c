@@ -105,7 +105,8 @@ struct update_odbm_work {
 	unsigned int enr;
 };
 
-STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *);
+STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *,
+				      unsigned int );
 STATIC void drbd_update_on_disk_bm(struct Drbd_Conf *,unsigned int);
 
 #define SM (BM_EXTENT_SIZE / AL_EXTENT_SIZE)
@@ -153,12 +154,11 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		unsigned int evicted;
 
 		evicted = al_ext->lc_number;
-		al_ext->lc_number = enr;
 
 		if(mdev->cstate < Connected && evicted != LC_FREE ) {
 			drbd_update_on_disk_bm(mdev,evicted);
 		}
-		drbd_al_write_transaction(mdev,al_ext);
+		drbd_al_write_transaction(mdev,al_ext,enr);
 		mdev->al_writ_cnt++;
 
 		spin_lock_irq(&mdev->al_lock);
@@ -192,7 +192,8 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 }
 
 STATIC void
-drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
+drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
+			  unsigned int new_enr)
 {
 	int i,n,mx;
 	unsigned int extent_nr;
@@ -209,13 +210,13 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated)
 	n = lc_index_of(mdev->act_log, updated);
 
 	buffer->updates[0].pos = cpu_to_be32(n);
-	buffer->updates[0].extent = cpu_to_be32(updated->lc_number);
+	buffer->updates[0].extent = cpu_to_be32(new_enr);
 
 #if 0	/* Use this printf with the test_al.pl program */
-	ERR("T%03d S%03d=E%06d\n", mdev->al_tr_number,n,updated->lc_number);
+	ERR("T%03d S%03d=E%06d\n", mdev->al_tr_number,n,new_enr);
 #endif
 
-	xor_sum ^= updated->lc_number;
+	xor_sum ^= new_enr;
 
 	mx = min_t(int,AL_EXTENTS_PT,
 		   mdev->act_log->nr_elements - mdev->al_tr_cycle);
