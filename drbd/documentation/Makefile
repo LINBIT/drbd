@@ -95,21 +95,21 @@ install:
 	@ok=true; for f in drbdsetup.8 drbd.conf.5 drbd.8 datadisk.8 ; \
 		do [ -e $$f ] || { echo $$f missing ; ok=false; } ; \
 	done ; $$ok
-	install -d $(PREFIX)usr/share/man/man8
-	install -m 644 drbdsetup.8 $(PREFIX)usr/share/man/man8
-	install -d $(PREFIX)usr/share/man/man5
-	install -m 644 drbd.conf.5 $(PREFIX)usr/share/man/man5
-	install -d $(PREFIX)usr/share/man/man8
-	install -m 644 drbd.8 $(PREFIX)usr/share/man/man8
-	install -d $(PREFIX)usr/share/man/man8
-	install -m 644 datadisk.8 $(PREFIX)usr/share/man/man8
+	install -d $(PREFIX)/usr/share/man/man8
+	install -m 644 drbdsetup.8 $(PREFIX)/usr/share/man/man8
+	install -d $(PREFIX)/usr/share/man/man5
+	install -m 644 drbd.conf.5 $(PREFIX)/usr/share/man/man5
+	install -d $(PREFIX)/usr/share/man/man8
+	install -m 644 drbd.8 $(PREFIX)/usr/share/man/man8
+	install -d $(PREFIX)/usr/share/man/man8
+	install -m 644 datadisk.8 $(PREFIX)/usr/share/man/man8
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
 
 uninstall:
-	rm $(PREFIX)usr/share/man/man8/drbdsetup.8
-	rm $(PREFIX)usr/share/man/man5/drbd.conf.5
-	rm $(PREFIX)usr/share/man/man8/drbd.8
-	rm $(PREFIX)usr/share/man/man8/datadisk.8
+	rm $(PREFIX)/usr/share/man/man8/drbdsetup.8
+	rm $(PREFIX)/usr/share/man/man5/drbd.conf.5
+	rm $(PREFIX)/usr/share/man/man8/drbd.8
+	rm $(PREFIX)/usr/share/man/man8/datadisk.8
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i uninstall; done
 
 html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)	

@@ -57,6 +57,10 @@ KDIR := /lib/modules/$(shell uname -r)/build
 endif
 PWD  := $(shell pwd)
 
+# for the install target. (also works if kernel source is not there)
+KERNVER = $(strip $(shell uname -r))
+KSUBD = block
+
 default:
 	@echo "" ;\
 	echo "    Calling toplevel makefile of kernel source tree." ;\
@@ -68,7 +72,7 @@ clean:
 	rm -f *.o *~
 
 install:
-	install -d $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
-	install -m 644 drbd.o $(PREFIX)lib/modules/$(KERNVER)/$(KSUBD)
+	install -d $(PREFIX)/lib/modules/$(KERNVER)/$(KSUBD)
+	install -m 644 drbd.o $(PREFIX)/lib/modules/$(KERNVER)/$(KSUBD)
 
 endif

@@ -48,13 +48,13 @@ clean:
 distclean: clean
 
 install:
-	install -d $(PREFIX)sbin/
-	install -m 755 drbdsetup $(PREFIX)sbin/
-	install -m 755 drbdadm $(PREFIX)sbin/
+	install -d $(PREFIX)/sbin/
+	install -m 755 drbdsetup $(PREFIX)/sbin/
+	install -m 755 drbdadm $(PREFIX)/sbin/
 
 uninstall:
-	rm -f $(PREFIX)sbin/drbdsetup
-	rm -f $(PREFIX)sbin/drbdadm
+	rm -f $(PREFIX)/sbin/drbdsetup
+	rm -f $(PREFIX)/sbin/drbdadm
 
 ###dependencies
 drbdadm_adjust.o: drbdadm.h drbdadm_adjust.c
