@@ -1471,8 +1471,6 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		}
 		if(mdev->cstate > Connected ) {
 			WARN("Resync aborted.\n");
-			if(mdev->cstate == SyncTarget)
-				set_bit(STOP_SYNC_TIMER,&mdev->flags);
 			set_cstate(mdev,Connected);
 		}
 	} else {

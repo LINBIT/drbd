@@ -67,8 +67,9 @@ static inline void list_splice_init(struct list_head *list,
 extern int minor_count;
 extern int disable_io_hints;
 extern int major_nr;
+extern int use_nbd_major;
 
-// major == nbd_major ? "nbd" : "drbd";
+// use_nbd_major ? "nbd" : "drbd";
 extern char* drbd_devfs_name;
 
 #include <linux/major.h>

@@ -31,7 +31,7 @@ extern const char * drbd_buildtag(void);
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
 //#define DUMP_MD 1       // Dump metadata to syslog upon connect
-//#define DUMP_MD 2       // Dump even all cstate changes (I like it!)
+#define DUMP_MD 2       // Dump even all cstate changes (I like it!)
 //#define DUMP_MD 3       // Dump even all meta data access
                           // (don't! unless we track down a bug...)
 

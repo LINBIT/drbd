@@ -95,11 +95,12 @@ STATIC int drbd_close(struct inode *inode, struct file *file);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
-MODULE_PARM_DESC(major_nr, "Major nr to use -- default " __stringify(CONFIG_DRBD_MAJOR) );
+MODULE_PARM_DESC(use_nbd_major, "DEPRECATED! use nbd device major nr (43) "
+		                "instead of the default " __stringify(LANANA_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-MODULE_PARM(major_nr,"i");
+MODULE_PARM(use_nbd_major,"i");
 MODULE_PARM(minor_count,"i");
 MODULE_PARM(disable_io_hints,"i");
 #else
@@ -118,12 +119,13 @@ MODULE_PARM(disable_io_hints,"i");
  * these become boot parameters: [-drbd.major_nr-], drbd.minor_count and
  * drbd.disable_io_hints
  */
-module_param(major_nr,        int,0);
-module_param(minor_count,     int,0);
-module_param(disable_io_hints,int,0);
+module_param(use_nbd_major,   bool,0);
+module_param(minor_count,      int,0);
+module_param(disable_io_hints,bool,0);
 #endif
 
 // module parameter, defined
+int use_nbd_major = 0;
 int major_nr = LANANA_DRBD_MAJOR;
 #ifdef MODULE
 int minor_count = 2;
@@ -134,7 +136,7 @@ int minor_count = 8;
 int disable_io_hints = 0;
 
 // devfs name
-char* drbd_devfs_name = "nbd";
+char* drbd_devfs_name = "drbd";
 
 
 // global panic flag
@@ -445,9 +447,9 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 
 	os = mdev->cstate;
 
-#if DUMP_MD > 1
-	INFO("%s [%d]: cstate %s(%d) --> %s(%d)\n", current->comm, current->pid,
-	   cstate_to_name(os),os, cstate_to_name(ns),ns );
+#if DUMP_MD >= 2
+	INFO("%s [%d]: cstate %s --> %s\n", current->comm, current->pid,
+	   cstate_to_name(os), cstate_to_name(ns) );
 #endif
 
 	mdev->cstate = ns;
@@ -1680,15 +1682,8 @@ int __init drbd_init(void)
 		return -EINVAL;
 	}
 
-	/* FIXME maybe allow only certain ranges? */
-	if (1 > major_nr||major_nr > 254) {
-		printk(KERN_ERR DEVICE_NAME
-			": invalid major_nr (%d)\n",major_nr);
-#ifdef MODULE
-		return -EINVAL;
-#else
-		major_nr = LANANA_DRBD_MAJOR;
-#endif
+	if (use_nbd_major) {
+		major_nr = NBD_MAJOR;
 	}
 
 	if (1 > minor_count||minor_count > 255) {
@@ -1859,6 +1854,9 @@ NOT_IN_26(
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
 	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
+	if (use_nbd_major) {
+		printk(KERN_INFO DEVICE_NAME": hijacking NBD device major!\n");
+	}
 	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", MAJOR_NR);
 
 	return 0; // Success!
@@ -2060,7 +2058,7 @@ int drbd_md_read(drbd_dev *mdev)
 	return 0;
 }
 
-#if DUMP_MD
+#if DUMP_MD >= 1
 #define MeGC(x) mdev->gen_cnt[x]
 #define PeGC(x) be32_to_cpu(peer->gen_cnt[x])
 
