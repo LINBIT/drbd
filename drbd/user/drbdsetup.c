@@ -3,13 +3,13 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
         Initial author.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks before using the device.
 
-   Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>
+   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>
 	main contributor.
 
    drbd is free software; you can redistribute it and/or modify

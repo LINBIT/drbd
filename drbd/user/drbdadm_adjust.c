@@ -3,7 +3,7 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 2003, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 2003-2004, Philipp Reisner <philipp.reisner@linbit.com>.
         Initial author.
 
    drbd is free software; you can redistribute it and/or modify

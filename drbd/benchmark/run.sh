@@ -214,7 +214,7 @@ done
 echo "--------------- report --------------"
 cat report
 echo "-------------------------------------"
-echo "Please send the report file to philipp.reisner@gmx.at."
+echo "Please send the report file to philipp.reisner@linbit.com."
 echo "     Thank you."
 echo 
 echo "PS: Do not forget to disable rsh again."

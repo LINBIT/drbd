@@ -1,15 +1,13 @@
 /*
 -*- linux-c -*-
-   drbd_dsender.c
+   drbd_worker.c
    Kernel module for 2.4.x/2.6.x Kernels
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
-	main author.
-
-   Copyright 2003 Lars Ellenberg <l.g.e@web.de>
-       contributions.
+   Copyright (C) 2003-2004,, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2003-2004,, Lars Ellenberg <l.g.e@web.de>.
+	authors.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

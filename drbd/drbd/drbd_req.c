@@ -1,12 +1,15 @@
 /*
 -*- linux-c -*-
-   drbd.c
-   Kernel module for 2.4.x Kernels
+   drbd_req.c
+   Kernel module for 2.4.x/2.6.x Kernels
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
 	main author.
+
+   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
+	main contributor.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

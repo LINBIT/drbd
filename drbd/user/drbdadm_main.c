@@ -3,10 +3,10 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 2002-2003, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 2002-2004, Philipp Reisner <philipp.reisner@linbit.com>.
         Initial author.
 
-   Copyright (C) 2003, Lars Ellenberg <l.g.e@web.de>
+   Copyright (C) 2003-2004, Lars Ellenberg <l.g.e@web.de>
         contributions.
 
    drbd is free software; you can redistribute it and/or modify

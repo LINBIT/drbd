@@ -5,14 +5,11 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@gmx.at>.
+   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
 	main author.
 
-   Copyright (C) 2002-2003, Lars Ellenberg <l.g.e@web.de>.
+   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
 	main contributor.
-
-   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-	Code to prevent zombie threads.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

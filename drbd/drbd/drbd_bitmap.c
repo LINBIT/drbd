@@ -1,3 +1,31 @@
+/*
+-*- linux-c -*-
+   drbd_bitmap.c
+   Kernel module for 2.4.x/2.6.x Kernels
+
+   This file is part of drbd by Philipp Reisner.
+
+   Copyright (C) 2004, Lars Ellenberg <l.g.e@web.de>.
+	main author.
+
+   Copyright (C) 2004, Philipp Reisner <philipp.reisner@linbit.com>.
+	contributions.
+
+   drbd is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
+
+   drbd is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with drbd; see the file COPYING.  If not, write to
+   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
+
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h> // for memset
