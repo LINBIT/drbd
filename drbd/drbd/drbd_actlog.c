@@ -520,8 +520,11 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			// since drbd_rs_begin_io() pulled it already in.
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 			lc_changed(mdev->resync,&ext->lce);
+			// wake_up(&mdev->al_wait);
 		}
 		lc_put(mdev->resync,&ext->lce);
+		// if (!lc_put(mdev->resync,&ext->lce))
+		//	wake_up(&mdev->al_wait);
 	} else {
 		ERR("lc_get() failed! Probabely something stays"
 		    " dirty in the on disk BM\n");
@@ -540,10 +543,13 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			udw->w.cb = w_update_odbm;
 			drbd_queue_work(mdev,&mdev->data.work,&udw->w);
 			lc_del(mdev->resync,&ext->lce);
+			// wake_up(&mdev->al_wait);
 		}
 	}
 
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
+	// just wake_up unconditional now.
+	wake_up(&mdev->al_wait);
 }
 
 void drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int blk_size)

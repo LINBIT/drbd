@@ -596,6 +596,10 @@ ONLY_IN_26(
 );
 
 	switch (cmd) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+/* see how sys_ioctl and blkdev_ioctl handle it in 2.6 .
+ * If I understand correctly, only "private" ioctl end up here.
+ */
 	case BLKGETSIZE:
 		err = put_user(drbd_get_my_capacity(mdev), (long *)arg);
 		break;
@@ -613,10 +617,9 @@ ONLY_IN_26(
 	case BLKBSZGET:
 	case BLKBSZSET: // THINK do we want to intercept this one ?
 	case BLKPG:
-		NOT_IN_26( err=blk_ioctl(inode->i_rdev, cmd, arg); )
-#warning "FIXME verify this does not create an infine recursion!"
-		ONLY_IN_26( err=blkdev_ioctl(inode, file, cmd, arg); )
+		err=blk_ioctl(inode->i_rdev, cmd, arg);
 		break;
+#endif
 	case DRBD_IOCTL_GET_VERSION:
 		err = put_user(API_VERSION, (int *) arg);
 		break;

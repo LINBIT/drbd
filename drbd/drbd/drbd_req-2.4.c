@@ -141,7 +141,7 @@ int drbd_make_request(request_queue_t *q, int rw, struct buffer_head *bio)
 int drbd_make_request(request_queue_t *q, struct bio *bio)
 #endif
 {
-	struct Drbd_Conf* mdev = 
+	struct Drbd_Conf* mdev =
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 		drbd_conf + MINOR(bio->b_rdev);
 #else

@@ -398,6 +398,11 @@ static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
 	return 0;
 }
 
+static inline short drbd_bio_get_size(struct buffer_head *bh)
+{
+	return 0;
+}
+
 static inline char *drbd_bio_kmap(struct bio *bio)
 {
 	return NULL;

@@ -130,7 +130,7 @@ STATIC struct block_device_operations drbd_ops = {
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
-static int errno;
+int errno;
 
 /************************* The transfer log start */
 STATIC void tl_init(drbd_dev *mdev)
@@ -2005,10 +2005,11 @@ void drbd_queue_signal(int signal,struct task_struct *task)
 	read_unlock(&tasklist_lock);
 }
 
-#if defined(SIGHAND_HACK) && LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+#ifdef SIGHAND_HACK
 
-// copied from redhat's kernel-2.4.20-13.9 kernel/signal.c
-// to avoid a recompile of the redhat kernel
+/* copied from linux-2.6/kernel/signal.c
+ * because recalc_sigpending_tsk is not exported,
+ * and we still don't use the kernel mechanisms to send signals */
 
 #include <asm/signal.h> // for _NSIG_WORDS
 
@@ -2049,9 +2050,11 @@ inline void recalc_sigpending_tsk(struct task_struct *t)
         if (t->signal->group_stop_count > 0 ||
             PENDING(&t->pending, &t->blocked) ||
             PENDING(&t->signal->shared_pending, &t->blocked))
-                t->sigpending = 1;
+		NOT_IN_26(t->sigpending = 1;)
+		ONLY_IN_26(set_tsk_thread_flag(t, TIF_SIGPENDING);)
         else
-                t->sigpending = 0;
+		NOT_IN_26(t->sigpending = 0;)
+		ONLY_IN_26(clear_tsk_thread_flag(t, TIF_SIGPENDING);)
 }
 
 #endif

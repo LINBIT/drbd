@@ -15,7 +15,7 @@
 #include <linux/module.h>
 #include "mempool.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,19)
+#ifndef BUG_ON
 # define BUG_ON(condition) do { if (unlikely((condition)!=0)) BUG(); } while(0)
 #endif
 
@@ -267,7 +267,9 @@ repeat_alloc:
 	if (gfp_mask == gfp_nowait)
 		return NULL;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	run_task_queue(&tq_disk);
+#endif
 
 	add_wait_queue_exclusive(&pool->wait, &wait);
 	set_task_state(current, TASK_UNINTERRUPTIBLE);
