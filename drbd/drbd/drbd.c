@@ -344,6 +344,7 @@ struct request *my_all_requests = NULL;
 
 	}
 
+	/* DEBUG & profile stuff */
 #if 1
 
 	if (my_all_requests != NULL) {
@@ -395,6 +396,7 @@ struct request *my_all_requests = NULL;
 	rlen=rlen+sprintf(buf+rlen,"\n");
 #endif  
 
+	/* DEBUG & profile stuff end */
 
 	return rlen;
 }
@@ -1233,6 +1235,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	enum ret_codes retcode;
 
 	minor = MINOR(inode->i_rdev);
+	if(minor >= minor_count) return -ENODEV;
 
 	switch (cmd) {
 	case BLKGETSIZE:
@@ -1344,6 +1347,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 			return -EINVAL;
 		}
 
+		if (filp->f_count > 2) { /* drbdsetup and the module = 2 */
+			printk(KERN_ERR DEVICE_NAME 
+			       ": The lower dev open_count=%d!!\n",
+			       filp->f_count);
+		}
+
 		fsync_dev(MKDEV(MAJOR_NR, minor));
 		drbd_thread_stop(&drbd_conf[minor].syncer);
 		drbd_thread_stop(&drbd_conf[minor].asender);
@@ -1394,6 +1403,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 		while (drbd_conf[minor].cstate == SyncingAll ||
 		       drbd_conf[minor].cstate == SyncingQuick ) {
 			interruptible_sleep_on(&drbd_conf[minor].cstate_wait);
+			if(signal_pending(current)) return -EINTR;
 		}
 			
 		if ((err = put_user(drbd_conf[minor].cstate == Connected, 
@@ -1403,12 +1413,12 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 
 	case DRBD_IOCTL_DO_SYNC_ALL:
 		if( drbd_conf[minor].state != Primary) {
-			printk(KERN_DEBUG DEVICE_NAME 
+			printk(KERN_ERR DEVICE_NAME 
 			       ": Can not start SyncAll. not Primary!\n");
 			break;
 		}
 		if( drbd_conf[minor].cstate != Connected) {
-			printk(KERN_DEBUG DEVICE_NAME 
+			printk(KERN_ERR DEVICE_NAME 
 			       ": Can not start SyncAll. not connected!\n");
 			break;
 		}
@@ -1428,6 +1438,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	int minor;
 
 	minor = MINOR(inode->i_rdev);
+	if(minor >= minor_count) return -ENODEV;
 
 	if ((file->f_mode & FMODE_WRITE)
 	    && drbd_conf[minor].state == Secondary) {
@@ -1448,6 +1459,7 @@ void drbd_dio_end(struct buffer_head *bh, int uptodate)
 	int minor;
 
 	minor = MINOR(inode->i_rdev);
+	if(minor >= minor_count) return -ENODEV;
 
 	/*printk(KERN_DEBUG DEVICE_NAME ": close(inode=%p,file=%p)"
 	  "current=%p,minor=%d\n", inode, file, current, minor); */
