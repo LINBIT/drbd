@@ -215,6 +215,7 @@ You must not have the ee_lock:
 		e->bh=bh;
 		BH_PRIVATE(bh)=e;
 
+		e->block_id=0;
 		list_add(&e->list,&mdev->free_ee);
 		mdev->ee_vacant++;
 		if (lbh) {
