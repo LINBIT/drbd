@@ -1102,7 +1102,6 @@ void drbd_cleanup(void)
 	if (drbd_conf) {
 		if (drbd_proc)
 			remove_proc_entry("drbd",&proc_root);
-		drbd_destroy_mempools();
 		i=minor_count;
 		while (i--) {
 			drbd_dev        *mdev  = &drbd_conf[i];
@@ -1140,6 +1139,7 @@ void drbd_cleanup(void)
 
 			if (mdev->act_log) lc_free(mdev->act_log);
 		}
+		drbd_destroy_mempools();
 	}
 
 	// kfree(NULL) is noop

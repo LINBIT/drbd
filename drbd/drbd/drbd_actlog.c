@@ -525,6 +525,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			ext->rs_left -= cleared;
 			D_ASSERT((long)ext->rs_left >= 0);
 		} else {
+			WARN("Recounting sectors (resync LRU too small?)\n");
 			ext->lce.lc_number = enr;
 			ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
 		}
@@ -598,12 +599,18 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
-	if(bm_ext) set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
+	if(bm_ext) {
+		if(bm_ext->lce.lc_number != enr) {
+			bm_ext->lce.lc_number = enr;
+			bm_ext->rs_left = bm_count_sectors(mdev->mbds_id,enr);
+		}
+		set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
+	}
 	if(bm_ext == 0)	rs_flags=mdev->resync->flags;
 	spin_unlock_irq(&mdev->al_lock);
 
 	if(rs_flags & LC_STARVING) {
-		WARN("Have to wait for element (resync too small?)\n");
+		WARN("Have to wait for element (resync LRU too small?)\n");
 	}
 	if(rs_flags & LC_DIRTY) {
 		BUG(); // WARN("Ongoing RS update (???)\n");
@@ -660,7 +667,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr);
 	if(!bm_ext) {
 		spin_unlock_irq(&mdev->al_lock);
-		ERR("bme_put() called, but extent not found");
+		ERR("drbd_rs_complete_io() called, but extent not found");
 		return;
 	}
 
