@@ -761,11 +761,9 @@ inline void sl_clear(struct Drbd_Conf *mdev)
 
 inline void drbd_collect_zombies(int minor)
 {
-  /*
 	if(test_and_clear_bit(COLLECT_ZOMBIES,&drbd_conf[minor].flags)) {
 		while( waitpid(-1, NULL, __WCLONE|WNOHANG) > 0 );
 	}
-  */
 }
 
 void drbdd(int minor)
