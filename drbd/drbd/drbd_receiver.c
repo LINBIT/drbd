@@ -494,8 +494,6 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	struct socket *newsock;
 	int err = 0;
 
-	//lock_kernel(); tcp stack has per socket locks now
-
 	err = sock->ops->listen(sock, 5);
 	if (err)
 		goto out;
@@ -510,13 +508,11 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	if (err < 0)
 		goto out_release;
 
-	// unlock_kernel();
 	return newsock;
 
       out_release:
 	sock_release(newsock);
       out:
-	unlock_kernel();
 	if(err != -EAGAIN && err != -EINTR)
 		ERR("accept failed! %d\n", err);
 	return 0;
@@ -541,7 +537,6 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	msg.msg_namelen = 0;
 	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
 
-	// lock_kernel(); // SMP only. Do we need still need this ?
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -607,7 +602,6 @@ int drbd_recv(drbd_dev *mdev, struct socket* sock,
 	};
 
 	set_fs(oldfs);
-	// unlock_kernel();
 
 	return rv;
 }
@@ -626,11 +620,9 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	sock->sk->rcvtimeo =
 	sock->sk->sndtimeo =  mdev->conf.try_connect_int*HZ;
 
-	//lock_kernel(); no No NO! connect may sleep!
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) mdev->conf.other_addr,
 				 mdev->conf.other_addr_len, 0);
-	//unlock_kernel();
 
 	if (err) {
 		sock_release(sock);
@@ -654,11 +646,9 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	sock2->sk->rcvtimeo =
 	sock2->sk->sndtimeo =  mdev->conf.try_connect_int*HZ;
 
-	//lock_kernel(); tcp stack has per socket locks now
 	err = sock2->ops->bind(sock2,
 			      (struct sockaddr *) mdev->conf.my_addr,
 			      mdev->conf.my_addr_len);
-	//unlock_kernel();
 	if (err) {
 		ERR("Unable to bind (%d)\n", err);
 		sock_release(sock2);
