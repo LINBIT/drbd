@@ -715,6 +715,7 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 	if(!strcmp(answer,"yes\n")) {
 	  kill_childs(pids);
 	  childs_running(pids,0);
+	  rr = -1;
 	} else {
 	  printf(" To abort waiting enter 'yes' [ -- ]:");
 	}
