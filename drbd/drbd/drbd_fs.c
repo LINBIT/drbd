@@ -364,7 +364,10 @@ ONLY_IN_26({
 
 	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
 
-	if(mdev->cstate == Unconfigured ) set_cstate(mdev,StandAlone);
+	if(mdev->cstate == Unconfigured ) {
+		drbd_thread_start(&mdev->worker);
+		set_cstate(mdev,StandAlone);
+	}
 	if(mdev->cstate >= Connected ) {
 		drbd_send_param(mdev,1);
 	} else {
@@ -465,7 +468,6 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	*/
 
 	drbd_sync_me(mdev);
-	drbd_thread_stop(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 	drbd_thread_stop(&mdev->receiver);
 	drbd_free_sock(mdev);
@@ -501,7 +503,8 @@ FIXME
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
 
-	set_cstate(&drbd_conf[minor],Unconnected);
+	drbd_thread_start(&mdev->worker);
+	set_cstate(mdev,Unconnected);
 	drbd_thread_start(&mdev->receiver);
 
 	return 0;
@@ -775,12 +778,13 @@ ONLY_IN_26(
 		/* FIXME what if fsync returns error */
 		drbd_sync_me(mdev);
 		set_bit(DO_NOT_INC_CONCNT,&mdev->flags);
-		drbd_thread_stop(&mdev->worker);
 		drbd_thread_stop(&mdev->asender);
 		drbd_thread_stop(&mdev->receiver);
 
-		if (test_bit(DISKLESS,&mdev->flags)) set_cstate(mdev,Unconfigured);
-		else set_cstate(mdev,StandAlone);
+		if (test_bit(DISKLESS,&mdev->flags)) {
+			set_cstate(mdev,Unconfigured);
+			drbd_mdev_cleanup(mdev);
+		} else set_cstate(mdev,StandAlone);
 
 		break;
 
@@ -822,7 +826,10 @@ ONLY_IN_26(
 /* FIXME race with sync start
  */
 		if (mdev->cstate == Connected) drbd_send_param(mdev,0);
-		if (mdev->cstate == StandAlone) set_cstate(mdev,Unconfigured);
+		if (mdev->cstate == StandAlone) {
+			set_cstate(mdev,Unconfigured);
+			drbd_mdev_cleanup(mdev);
+		}
 
 		break;
 

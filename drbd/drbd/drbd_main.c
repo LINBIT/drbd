@@ -1189,6 +1189,8 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	 * oldest_barrier
 	 */
 
+	drbd_thread_stop(&mdev->worker);
+
 	if (   mdev->ee_in_use  !=  0
 	    || mdev->ee_vacant  != 32 /* EE_MININUM */
 	    || mdev->epoch_size !=  0)

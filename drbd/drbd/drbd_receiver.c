@@ -661,7 +661,6 @@ int drbd_connect(drbd_dev *mdev)
 	D_ASSERT(mdev->worker.task == NULL);
 
 	drbd_thread_start(&mdev->asender);
-	drbd_thread_start(&mdev->worker);
 
 	drbd_send_param(mdev,0);
 
@@ -1123,6 +1122,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	if(p_size == 0 && test_bit(DISKLESS,&mdev->flags)) {
 		ERR("some backing storage is needed\n");
 		set_cstate(mdev,Unconfigured);
+		drbd_mdev_cleanup(mdev); // FIXME. Is this valid here ?
 		mdev->receiver.t_state = Exiting;
 		return FALSE;
 	}
@@ -1483,6 +1483,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	up(&mdev->data.mutex);
 
 	drbd_thread_stop(&mdev->worker);
+	drbd_thread_start(&mdev->worker);
 
 	if(mdev->cstate != StandAlone)
 		set_cstate(mdev,Unconnected);
@@ -1533,12 +1534,6 @@ int drbdd_init(struct Drbd_thread *thi)
 		if (thi->t_state == Exiting) break;
 		drbdd(mdev);
 		drbd_disconnect(mdev);
-
-		// worker was stopped..., ev. w_resume_next_sg()
-		if(mdev->resync_work.cb == w_resume_next_sg) {
-			w_resume_next_sg(mdev,&mdev->resync_work,0);
-		}
-
 		if (thi->t_state == Exiting) break;
 		else {
 			if (signal_pending(current)) {

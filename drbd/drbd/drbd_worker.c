@@ -120,7 +120,7 @@ void drbd_dio_end_sec(struct buffer_head *bh, int uptodate)
 	smp_mb__after_clear_bit();
 
 	list_del(&e->w.list);
-	list_add(&e->w.list,&mdev->done_ee);
+	list_add_tail(&e->w.list,&mdev->done_ee);
 
 	if (waitqueue_active(&mdev->ee_wait) &&
 	    (list_empty(&mdev->active_ee) ||
@@ -253,7 +253,7 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	spin_lock_irqsave(&mdev->ee_lock,flags);
 	list_del(&e->w.list);
-	list_add(&e->w.list,&mdev->done_ee);
+	list_add_tail(&e->w.list,&mdev->done_ee);
 
 	if (waitqueue_active(&mdev->ee_wait) &&
 	    (list_empty(&mdev->active_ee) ||
@@ -700,6 +700,24 @@ STATIC int _drbd_lower_sg_running(drbd_dev *mdev)
 	return rv;
 }
 
+STATIC int _drbd_resume_lower_sg(drbd_dev *mdev)
+{
+	drbd_dev *odev;
+	int i,rv=0;
+
+	for (i=0; i < minor_count; i++) {
+		odev = drbd_conf + i;
+		if ( odev->sync_conf.group < mdev->sync_conf.group
+		     && ( odev->cstate == PausedSyncS || 
+			  odev->cstate == PausedSyncT ) ) {
+			_drbd_rs_resume(odev);
+			rv = 1;
+		}
+	}
+
+	return rv;
+}
+
 int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 {
 	drbd_dev *odev;
@@ -745,7 +763,7 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 void drbd_alter_sg(drbd_dev *mdev, int ng)
 {
-	int c = 0;
+	int c = 0, p = 0;
 	int d = (ng - mdev->sync_conf.group);
 
 	drbd_global_lock();
@@ -760,8 +778,9 @@ void drbd_alter_sg(drbd_dev *mdev, int ng)
 
 	if( ( mdev->cstate == SyncSource || 
 	      mdev->cstate == SyncTarget ) && ( d > 0 ) ) {
-		if(_drbd_lower_sg_running(mdev)) c=1;
-		if(c) _drbd_rs_pause(mdev);
+		if(_drbd_resume_lower_sg(mdev)) p=1;
+		else if(_drbd_lower_sg_running(mdev)) p=1;
+		if(p) _drbd_rs_pause(mdev);
 	}
 	drbd_global_unlock();
 }
@@ -850,7 +869,6 @@ int drbd_worker(struct Drbd_thread *thi)
 	if(0) {
 	err:
 		ERR("A work callback returned not ok!\n");
-		// ?? drbd_thread_restart_nowait(&mdev->asender);
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 

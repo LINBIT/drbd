@@ -952,8 +952,6 @@ static inline void set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	_set_cstate(mdev,ns);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	if (ns == Unconfigured)
-		drbd_mdev_cleanup(mdev);
 }
 
 /**

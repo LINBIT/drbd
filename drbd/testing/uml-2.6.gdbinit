@@ -82,8 +82,13 @@ document linux-bt
   tasks on the system
 end
 
+define drbd-resync-show
+  set $sr_base = ((struct Drbd_Conf *)$arg0)->resync
+  lru-show $sr_base
+end
+
 define drbd-al-show
-  set $sa_base = &((struct Drbd_Conf *)$arg0)->act_log
+  set $sa_base = ((struct Drbd_Conf *)$arg0)->act_log
   lru-show $sa_base
 end
 
@@ -91,11 +96,14 @@ define lru-show
   set $ls_nr=((struct lru_cache *)$arg0)->nr_elements
   set $ls_elements=(void *) (((struct lru_cache *)$arg0)->slot + $ls_nr)
   set $ls_esize=((struct lru_cache *)$arg0)->element_size
-  printf "-#-  ---ADDR---  -EXTENT-  -HASH-NEXT-   TABLE\n"
+
+  printf "%d %p %d\n",$ls_nr,$ls_elements,$ls_esize
+  printf "-#-  ---ADDR---  -EXTENT-  -REFCNT-  -HASH-NEXT-   TABLE\n"
   set $ls_i=0
   while $ls_i < $ls_nr
     set $ls_element = (struct lc_element *)($ls_elements + $ls_i * $ls_esize)
     printf "%3d  0x%8x  %8d ", $ls_i, $ls_element, $ls_element->lc_number
+    printf " %8d ", $ls_element->refcnt
     if $ls_element->colision.next
       printf "  %3d", ((void *)$ls_element->colision.next - $ls_elements)/$ls_esize
     end
