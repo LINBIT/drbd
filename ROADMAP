@@ -411,7 +411,7 @@ DRBD 0.8 Roadmap
 
   When the cluster is in Connected state, then the bitmpat gen-UUID
   is set to 0 (Since the Bitmap is empty). When we create a new current
-  gen-UUID while we are disconencted the (old) current gets backuped
+  gen-UUID while we are disconencted the (old) current gets backed-up
   to the bitmap gen-UUID. (This allowes us to identify the base of
   of the bitmap later)
 

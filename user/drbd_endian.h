@@ -162,8 +162,19 @@ static inline unsigned long hweight_long(unsigned long w)
 # define U32 "%u"
 # define U64 "%lu"
 #else
-# error "sorry, weird endianness on this box"
+# error "sorry, unsupported word length on this box"
 #endif
+
+
+
+#if BITS_PER_LONG == 32
+# define strto_u64 strtoull
+#elif BITS_PER_LONG == 64
+# define strto_u64 strtoul
+#else
+# error "sorry, unsupported word length on this box"
+#endif
+
 
 #endif
 

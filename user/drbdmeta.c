@@ -443,8 +443,9 @@ struct format_ops {
 	int (*md_initialize) (struct format *);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
-	void (*get_gi) (struct format *);
-	void (*show_gi) (struct format *);
+	void (*get_gi) (struct md_cpu *md);
+	void (*show_gi) (struct md_cpu *md);
+	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
 };
 
 /*
@@ -458,32 +459,14 @@ enum Known_Formats {
 	Drbd_Unknown,
 };
 
-/*
- * Some glue
- */
-
-void m_get_gc(struct format *cfg)
-{
-	dt_print_gc(cfg->md.gc);
-}
-
-void m_show_gc(struct format *cfg)
-{
-	dt_pretty_print_gc(cfg->md.gc);
-}
-
-void m_get_uuid(struct format *cfg)
-{
-	dt_print_uuids(cfg->md.uuid,cfg->md.flags);
-}
-
-void m_show_uuid(struct format *cfg)
-{
-	dt_pretty_print_uuids(cfg->md.uuid,cfg->md.flags);
-}
-
-
 /* pre declarations */
+void m_get_gc(struct md_cpu *md);
+void m_show_gc(struct md_cpu *md);
+void m_set_gc(struct md_cpu *md, char **argv, int argc);
+void m_get_uuid(struct md_cpu *md);
+void m_show_uuid(struct md_cpu *md);
+void m_set_uuid(struct md_cpu *md, char **argv, int argc);
+
 int v06_md_close(struct format *cfg);
 int v06_md_cpu_to_disk(struct format *cfg);
 int v06_md_disk_to_cpu(struct format *cfg);
@@ -515,6 +498,7 @@ struct format_ops f_ops[] = {
 		     .md_cpu_to_disk = v06_md_cpu_to_disk,
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
+		     .set_gi = m_set_gc,
 		     },
 	[Drbd_07] = {
 		     .name = "v07",
@@ -527,6 +511,7 @@ struct format_ops f_ops[] = {
 		     .md_cpu_to_disk = v07_md_cpu_to_disk,
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
+		     .set_gi = m_set_gc,
 		     },
 	[Drbd_08] = {
 		     .name = "v08",
@@ -539,6 +524,7 @@ struct format_ops f_ops[] = {
 		     .md_cpu_to_disk = v08_md_cpu_to_disk,
 		     .get_gi = m_get_uuid,
 		     .show_gi = m_show_uuid,
+		     .set_gi = m_set_uuid,
 		     },
 };
 
@@ -554,24 +540,24 @@ struct meta_cmd {
 };
 
 /* pre declarations */
-int meta_get_gc(struct format *cfg, char **argv, int argc);
-int meta_show_gc(struct format *cfg, char **argv, int argc);
+int meta_get_gi(struct format *cfg, char **argv, int argc);
+int meta_show_gi(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
-int meta_set_gc(struct format *cfg, char **argv, int argc);
-int meta_outdate_gc(struct format *cfg, char **argv, int argc);
+int meta_set_gi(struct format *cfg, char **argv, int argc);
+int meta_outdate(struct format *cfg, char **argv, int argc);
 int meta_set_uuid(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
-	{"get-gi", 0, meta_get_gc, 1},
-	{"show-gi", 0, meta_show_gc, 1},
+	{"get-gi", 0, meta_get_gi, 1},
+	{"show-gi", 0, meta_show_gi, 1},
 	{"dump-md", 0, meta_dump_md, 1},
 	{"create-md", 0, meta_create_md, 1},
 	/* FIXME convert still missing.
 	 * implicit convert from v07 to v08 by create-md
 	 * see comments there */
-	{"outdate", 0, meta_outdate_gc, 1},
-	{"set-gi", ":::VAL:VAL:...", meta_set_gc, 0},
+	{"outdate", 0, meta_outdate, 1},
+	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
 };
 
 /*
@@ -751,6 +737,144 @@ int new_style_md_open(struct format *cfg, size_t size)
 
 	return 0;
 }
+
+void m_get_gc(struct md_cpu *md)
+{
+	dt_print_gc(md->gc);
+}
+
+void m_show_gc(struct md_cpu *md)
+{
+	dt_pretty_print_gc(md->gc);
+}
+
+void m_get_uuid(struct md_cpu *md)
+{
+	dt_print_uuids(md->uuid,md->flags);
+}
+
+void m_show_uuid(struct md_cpu *md)
+{
+	dt_pretty_print_uuids(md->uuid,md->flags);
+}
+
+int m_strsep_u32(char **s, u32 *val)
+{
+	char *t, *e;
+	u32 v;
+
+	if ((t = strsep(s, ":"))) {
+		if (strlen(t)) {
+			e = t;
+			v = strtol(t, &e, 0);
+			if (*e != 0) {
+				fprintf(stderr, "'%s' is not a number.\n", *s);
+				exit(10);
+			}
+			if (v < 0) {
+				fprintf(stderr, "'%s' is negative.\n", *s);
+				exit(10);
+			}
+			if (v > 0xFFffFFff) {
+				fprintf(stderr,
+					"'%s' is out of range (max 0xFFffFFff).\n",
+					*s);
+				exit(10);
+			}
+			*val = v;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+int m_strsep_u64(char **s, u64 *val)
+{
+	char *t, *e;
+	u64 v;
+
+	if ((t = strsep(s, ":"))) {
+		if (strlen(t)) {
+			e = t;
+			v = strto_u64(t, &e, 16);
+			if (*e != 0) {
+				fprintf(stderr, "'%s' is not a number.\n", *s);
+				exit(10);
+			}
+			if (v < 0) {
+				fprintf(stderr, "'%s' is negative.\n", *s);
+				exit(10);
+			}
+			*val = v;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+int m_strsep_bit(char **s, int *val, int mask)
+{
+	int d;
+	int rv;
+
+	d = *val & mask;
+
+	rv = m_strsep_u32(s, &d);
+
+	if (d > 1) {
+		fprintf(stderr, "'%d' is not 0 or 1.\n", d);
+		exit(10);
+	}
+
+	if (d)
+		*val |= mask;
+	else
+		*val &= ~mask;
+
+	return rv;
+}
+
+void m_set_gc(struct md_cpu *md, char **argv, int argc)
+{
+	char **str;
+
+	str = &argv[0];
+
+	do {
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_Consistent)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_WasUpToDate)) break;
+		if (!m_strsep_u32(str, &md->gc[HumanCnt])) break;
+		if (!m_strsep_u32(str, &md->gc[TimeoutCnt])) break;
+		if (!m_strsep_u32(str, &md->gc[ConnectedCnt])) break;
+		if (!m_strsep_u32(str, &md->gc[ArbitraryCnt])) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_PrimaryInd)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_ConnectedInd)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_FullSync)) break;
+	} while (0);
+}
+
+void m_set_uuid(struct md_cpu *md, char **argv, int argc)
+{
+	char **str;
+	int i;
+
+	str = &argv[0];
+
+	do {
+		for ( i=Current ; i<UUID_SIZE ; i++ ) {
+			if (!m_strsep_u64(str, &md->uuid[i])) goto done;
+		}
+		if (!m_strsep_bit(str, &md->flags, MDF_Consistent)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_WasUpToDate)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PrimaryInd)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_ConnectedInd)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_FullSync)) break;
+	} while (0);
+	done:
+}
+
+
+
 
 /******************************************
  begin of v06 {{{
@@ -1101,7 +1225,7 @@ int v08_md_initialize(struct format *cfg)
 /******************************************
   }}} end of v08
  ******************************************/
-int meta_get_gc(struct format *cfg, char **argv, int argc)
+int meta_get_gi(struct format *cfg, char **argv, int argc)
 {
 	if (argc > 0) {
 		fprintf(stderr, "Ignoring additional arguments\n");
@@ -1110,12 +1234,12 @@ int meta_get_gc(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	cfg->ops->get_gi(cfg);
+	cfg->ops->get_gi(&cfg->md);
 
 	return cfg->ops->close(cfg);
 }
 
-int meta_show_gc(struct format *cfg, char **argv, int argc)
+int meta_show_gi(struct format *cfg, char **argv, int argc)
 {
 	char ppb[10];
 
@@ -1126,7 +1250,7 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	cfg->ops->show_gi(cfg);
+	cfg->ops->show_gi(&cfg->md);
 
 	if (cfg->md.la_sect) {
 		printf("last agreed size: %s\n",
@@ -1138,6 +1262,45 @@ int meta_show_gc(struct format *cfg, char **argv, int argc)
 	}
 
 	return cfg->ops->close(cfg);
+}
+
+int meta_set_gi(struct format *cfg, char **argv, int argc)
+{
+	struct md_cpu tmp;
+	int err;
+
+	if (argc > 1) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+	if (argc < 1) {
+		fprintf(stderr, "Required Argument missing\n");
+		exit(10);
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	tmp = cfg->md;
+
+	cfg->ops->set_gi(&tmp,argv,argc);
+	printf("previously ");
+	cfg->ops->get_gi(&cfg->md);
+	printf("set GI to  ");
+	cfg->ops->get_gi(&tmp);
+
+	if (!confirmed("Write new GI to disk?")) {
+		printf("Operation cancelled.\n");
+		exit(0);
+	}
+
+	cfg->md = tmp;
+
+	err = cfg->ops->md_cpu_to_disk(cfg)
+	    || cfg->ops->close(cfg);
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
 }
 
 int meta_dump_md(struct format *cfg, char **argv, int argc)
@@ -1243,112 +1406,7 @@ int meta_create_md(struct format *cfg, char **argv, int argc)
 	return err;
 }
 
-int m_strsep(char **s, int *val)
-{
-	char *t, *e;
-	long v;
-
-	if ((t = strsep(s, ":"))) {
-		if (strlen(t)) {
-			e = t;
-			v = strtol(t, &e, 0);
-			if (*e != 0) {
-				fprintf(stderr, "'%s' is not a number.\n", *s);
-				exit(10);
-			}
-			if (v < 0) {
-				fprintf(stderr, "'%s' is negative.\n", *s);
-				exit(10);
-			}
-			if (v > 0xFFffFFff) {
-				fprintf(stderr,
-					"'%s' is out of range (max 0xFFffFFff).\n",
-					*s);
-				exit(10);
-			}
-			*val = v;
-		}
-		return 1;
-	}
-	return 0;
-}
-
-int m_strsep_b(char **s, int *val, int mask)
-{
-	int d;
-	int rv;
-
-	d = *val & mask;
-
-	rv = m_strsep(s, &d);
-
-	if (d > 1) {
-		fprintf(stderr, "'%d' is not 0 or 1.\n", d);
-		exit(10);
-	}
-
-	if (d)
-		*val |= mask;
-	else
-		*val &= ~mask;
-
-	return rv;
-}
-
-int meta_set_gc(struct format *cfg, char **argv, int argc)
-{
-	struct md_cpu tmp;
-	int err;
-	char **str;
-
-	if (argc > 1) {
-		fprintf(stderr, "Ignoring additional arguments\n");
-	}
-	if (argc < 1) {
-		fprintf(stderr, "Required Argument missing\n");
-		exit(10);
-	}
-
-	if (cfg->ops->open(cfg))
-		return -1;
-
-	tmp = cfg->md;
-	str = &argv[0];
-
-	do {
-		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_Consistent)) break;
-		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_WasUpToDate)) break;
-		if (!m_strsep(str, &tmp.gc[HumanCnt])) break;
-		if (!m_strsep(str, &tmp.gc[TimeoutCnt])) break;
-		if (!m_strsep(str, &tmp.gc[ConnectedCnt])) break;
-		if (!m_strsep(str, &tmp.gc[ArbitraryCnt])) break;
-		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_PrimaryInd)) break;
-		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_ConnectedInd)) break;
-		if (!m_strsep_b(str, &tmp.gc[Flags], MDF_FullSync)) break;
-	} while (0);
-
-	printf("  consistent:H:T:C:A:p:c:f\n");
-	printf("previously ");
-	dt_print_gc(cfg->md.gc);
-	printf("GCs set to ");
-	dt_print_gc(tmp.gc);
-
-	if (!confirmed("Write new GCs to disk?")) {
-		printf("Operation cancelled.\n");
-		exit(0);
-	}
-
-	cfg->md = tmp;
-
-	err = cfg->ops->md_cpu_to_disk(cfg)
-	    || cfg->ops->close(cfg);
-	if (err)
-		fprintf(stderr, "update failed\n");
-
-	return err;
-}
-
-int meta_outdate_gc(struct format *cfg, char **argv, int argc)
+int meta_outdate(struct format *cfg, char **argv, int argc)
 {
 	int err;
 
