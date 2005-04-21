@@ -225,7 +225,7 @@ int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
 	
 	dev_major = 147; //LANANA_DRBD_MAJOR;
 
-	if( stat(device, &drbd_stat) ) {
+	if( !stat(device, &drbd_stat) ) {
 
 		if(!S_ISBLK(drbd_stat.st_mode)) {
 			fprintf(stderr, "%s is not a block device!\n", device);
@@ -353,6 +353,6 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "                             -<  Data was/is currently up-to-date  >--+ | | |\n"
 "                                  -<  Node was/is currently primary  >--+ | |\n"
 "                                  -<  Node was/is currently connected  >--+ |\n"
-"          -<  Node was in to progress of setting all bits in the bitmap  >--+\n"
+"         -<  Node was in the progress of setting all bits in the bitmap  >--+\n"
 "\n");
 }

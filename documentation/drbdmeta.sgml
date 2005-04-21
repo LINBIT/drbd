@@ -1,0 +1,144 @@
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<refentry>
+  <docinfo><date>19 Apr 2005</date></docinfo>
+  
+  <refmeta>
+    <refentrytitle>drbdmeta</refentrytitle>
+    <manvolnum>8</manvolnum>
+  </refmeta>
+  
+  <refnamediv>
+    <refname>drbdmeta</refname>
+    <refpurpose>DRBD's meta data management tool</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>drbdmeta</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <group>
+	<arg choice="plain">v06<replaceable>minor</replaceable></arg>
+	<arg choice="plain">v07<replaceable>meta_dev index</replaceable></arg>
+	<arg choice="plain">v08<replaceable>meta_dev index</replaceable></arg>
+      </group>
+      <arg choice="req"><replaceable>command</replaceable></arg>
+      <arg rep="repeat"><replaceable>cmd args</replaceable></arg>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+    <title>Description</title>
+    <para>
+      Drbdmeta is used to create, display and modify the contents of
+      DRBD's meta data storage. Usually you do not want to use this
+      command directly but use it through the front end drbdadm.
+    </para>
+    <para>
+      This command only works if the DRBD resource is currently down, 
+      or at least detached from its backing stoage. The first parameter
+      is the device node assosiated to the resource. With the second
+      parameter you select which the version of the meta data. Currently
+      all major DRBD releases (0.6, 0.7 and 0.8) are supported.
+    </para>    
+  </refsect1>
+  <refsect1>
+    <title>Commands</title>
+    <variablelist>
+      <varlistentry>
+        <term>create-md</term>
+        <listitem><para>
+          Create-md initializes the meta data storage. This needs to be
+	  done before a DRBD resource can be taken online for the first 
+	  time. In case there is already a meta data signature of an
+	  older format in place, drbdmeta will ask you if it should
+	  convert the older format to the selected format.
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>get-gi</term>
+        <listitem><para>
+          Get-gi shows a short textual repesentation of the data generation
+	  identifier. In version 0.6 and 0.7 this are generation counters,
+	  while in version 0.8 this is a set of UUIDs.
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>show-gi</term>
+        <listitem><para>
+	  Show-gi prints a textual representation of the data generation
+	  identifiers including explanatory information.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>dump-md</term>
+        <listitem><para>
+          Dumps the whole contents of the meta data storage including
+	  the stored bit-map and activity-log, in a textual representation.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>outdate</term>
+        <listitem><para>
+          Sets the outdated flag in the meta data. This is used by the
+	  peer node when it wants to become primary, but can not reach
+	  communicate with the DRBD stack on this host.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1>
+    <title>Expert's commands</title>
+    <para>
+      Drbdmeta allows you to modifiy the meta data as well. This is
+      intetionally omitted for the commad's usage output, since you
+      should only use this if you really know what you are doing.
+      By setting the generation identifiers to wrong values you
+      risk to overwrite your up-to-data data by an older version 
+      of your data.
+    </para>
+    <variablelist>
+      <varlistentry>
+        <term>set-gi <replaceable>gi</replaceable></term>
+        <listitem><para>
+          Set-gi allows you to set the generation identifier. 
+	  <replaceable>Gi</replaceable> needs to be a generation 
+	  counter for the 0.6 and 0.7 format, and a UUID set for 0.8.
+	  Specify it in the same way as get-gi shows it.
+	</para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>Version</title>
+    <simpara>
+      This document is correct for version 0.8 of the DRBD distribution.
+    </simpara>
+  </refsect1>
+
+  <refsect1>
+    <title>Author</title>
+    <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>.
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>Reporting Bugs</title>
+    <simpara>Report bugs to <email>drbd-user@lists.linbit.com</email>.
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>Copyright</title>
+    <simpara>
+      Copyright (c) 2004 Philipp Reisner. This  is  free software; 
+      see the source for copying conditions.  There is NO warranty; 
+      not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>See Also</title>
+    <para>
+      <citerefentry><refentrytitle>drbdadm</refentrytitle>
+      <manvolnum>8</manvolnum></citerefentry>
+    </para>
+  </refsect1>
+</refentry>

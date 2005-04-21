@@ -1,0 +1,53 @@
+%{
+
+#include "drbd_endian.h"
+#include "drbdmeta_parser.h"
+
+static void unescape(void);
+
+//#define DP printf("%s ",yytext);
+#define DP
+
+%}
+
+%option noyywrap
+
+WS		[ \t\n]
+COMMENT		\#[^\n]*
+NUM		[0-9]{1,9}
+U64		0x[0-9A-Fa-f]{16}
+OP		[{};]
+STRING		\"[^\"]*\"
+
+%%
+
+{WS}
+{COMMENT}
+{OP}		DP; return yytext[0];
+{STRING}	unescape(); yylval.txt=yytext; DP; return TK_STRING; 
+{U64}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U64;
+{NUM}		yylval.u64 = strto_u64(yytext, NULL, 10); DP; return TK_NUM;
+gc		DP; return TK_GC;
+bm		DP; return TK_BM;
+uuid		DP; return TK_UUID;
+version		DP; return TK_VERSION;
+la-size-sect	DP; return TK_LA_SIZE;
+
+%%
+
+static void unescape(void)
+{
+  /* backslash escapes from string */
+  char *ue, *e;
+  e = ue = yytext;
+  for (;;) {
+    if (*ue == '"')
+      ue++;
+    if (*ue == '\\')
+      ue++;
+    if (!*ue)
+      break;
+    *e++ = *ue++;
+  }
+  *e = '\0';
+}

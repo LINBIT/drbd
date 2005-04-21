@@ -46,6 +46,10 @@
 #include "drbdtool_common.h"
 #include "drbd_endian.h"
 
+#include "drbdmeta_parser.h"
+extern FILE* yyin;
+YYSTYPE yylval;
+
 /* FIXME? should use sector_t and off_t, not long/u64 ... */
 /* FIXME? rename open -> mmap, close -> munmap */
 
@@ -543,6 +547,7 @@ struct meta_cmd {
 int meta_get_gi(struct format *cfg, char **argv, int argc);
 int meta_show_gi(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
+int meta_restore_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
 int meta_set_gi(struct format *cfg, char **argv, int argc);
 int meta_outdate(struct format *cfg, char **argv, int argc);
@@ -552,6 +557,7 @@ struct meta_cmd cmds[] = {
 	{"get-gi", 0, meta_get_gi, 1},
 	{"show-gi", 0, meta_show_gi, 1},
 	{"dump-md", 0, meta_dump_md, 1},
+	{"restore-md", "file", meta_restore_md, 1},
 	{"create-md", 0, meta_create_md, 1},
 	/* FIXME convert still missing.
 	 * implicit convert from v07 to v08 by create-md
@@ -613,12 +619,6 @@ u64 bdev_size(int fd)
 	return size64;
 }
 
-#if BITS_PER_LONG == 32
-# define FMT " 0x%016llX;"
-#else
-# define FMT " 0x%016lX;"
-#endif
-
 /* le_u64, because we want to be able to hexdump it reliably
  * regardless of sizeof(long) */
 void printf_bm(const le_u64 * bm, const unsigned int n)
@@ -632,26 +632,9 @@ void printf_bm(const le_u64 * bm, const unsigned int n)
 			else
 				printf("\n   ");
 		}
-		printf(FMT, le64_to_cpu(bm[i].le));
+		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
 	}
 	printf("\n}\n");
-}
-
-#undef FMT
-
-
-int get_real_random(void * p, int size)
-{
-	int fd,rv;
-
-	fd = open("/dev/random", O_RDONLY);
-	if(fd == -1) {
-		PERROR("open('/dev/random',O_RDONLY)");
-		exit(20);
-	}
-	rv = size == read(fd,p,size);
-	close(fd);
-	return rv;
 }
 
 u64 new_style_offset(struct format * cfg)
@@ -1314,10 +1297,7 @@ int meta_dump_md(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	/* FIXME invent some sceme to identify this dump,
-	 * so we can safely restore it later */
-	printf("DRBD meta data dump version <FIXME drbdmeta dump version>\n");
-	printf("meta data version %s\n\n", cfg->ops->name);
+	printf("version \"%s\";\n\n", cfg->ops->name);
 	if (cfg->ops < f_ops + Drbd_08) {
 		printf("gc {");
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
@@ -1347,8 +1327,81 @@ int meta_dump_md(struct format *cfg, char **argv, int argc)
 	return cfg->ops->close(cfg);
 }
 
+void md_parse_error(const char *etext)
+{
+	fprintf(stderr,"Parse error '%s' expected.",etext);
+	exit(10);
+}
+
+#define EXP(TOKEN) if(yylex() != TOKEN) md_parse_error( #TOKEN );
+
+int meta_restore_md(struct format *cfg, char **argv, int argc)
+{
+	int i;
+	le_u64 *bm;
+
+	if (argc > 0) {
+		yyin = fopen(argv[0],"r");
+		if(yyin == NULL) {
+			fprintf(stderr, "open of '%s' failed.\n",argv[0]);
+			exit(20);
+		}
+	}
+
+	if (!cfg->ops->open(cfg)) {
+		if (!confirmed("Valid meta-data in place, overwrite?"))
+			return -1;
+	}
+
+	EXP(TK_VERSION); EXP(TK_STRING);
+	if(strcmp(yylval.txt,cfg->ops->name)) {
+		fprintf(stderr,"dump is '%s' you requested '%s'.\n",
+			yylval.txt,cfg->ops->name);
+		exit(10);
+	}
+	EXP(';');
+	if (cfg->ops < f_ops + Drbd_08) {
+		EXP(TK_GC); EXP('{');
+		for (i = 0; i < GEN_CNT_SIZE; i++) {
+			EXP(TK_U64); EXP(';');
+			cfg->md.gc[i] = yylval.u64;
+		}
+		EXP('}');
+	} else { // >? 08
+		EXP(TK_UUID); EXP('{');
+		for ( i=Current ; i<UUID_SIZE ; i++ ) {
+			EXP(TK_U64); EXP(';');
+			cfg->md.uuid[i] = yylval.u64;
+		}
+		EXP('}');
+	}
+	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
+	cfg->md.la_sect = yylval.u64;
+	EXP(TK_BM); EXP('{');
+	bm = (le_u64 *)cfg->on_disk.bm;
+	i = 0;
+	while(yylex() == TK_U64) {
+		bm[i].le = cpu_to_le64(yylval.u64);
+		i++;
+		EXP(';');
+	}
+
+	if (cfg->ops->md_cpu_to_disk(cfg)
+	    || cfg->ops->close(cfg)) {
+		fprintf(stderr, "Writing failed\n");
+		return -1;
+	}
+
+	printf("Successfully restored meta data\n");
+
+	return 0;
+}
+
+#undef EXP
+
 int md_convert_07_to_08(struct format *cfg)
 {
+	int i,j=1;
 	/* Note that al and bm are not touched!
 	 * (they are currently not even mmaped)
 	 *
@@ -1356,15 +1409,31 @@ int md_convert_07_to_08(struct format *cfg)
 	 * We only need to adjust the magic here. */
 	printf("Converting meta data...\n");
 	cfg->md.magic = DRBD_MD_MAGIC_08;
-	// get_real_random(&cfg->md.uuid,sizeof(u64));
-	// cfg->md.peer_uuid = 0;
+
+	// The MDF Flags are the same in 07 and 08
+	cfg->md.flags = cfg->md.gc[Flags];
+	/* 
+	 */
+	cfg->md.uuid[Current] = 
+		(u64)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
+		(u64)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
+		(u64)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
+		       & 0xffff) << 16 |
+		(u64)0xbabe;
+	cfg->md.uuid[Bitmap] = (u64)0;
+	if (cfg->bits_set) i = Bitmap;
+	else i = History_start;
+	for ( ; i<=History_end ; i++ ) {
+		cfg->md.uuid[i] = cfg->md.uuid[Current] - j*0x10000;
+		j++;
+	}
+
 	if (cfg->ops->md_cpu_to_disk(cfg)
 	    || cfg->ops->close(cfg)) {
 		fprintf(stderr, "conversion failed\n");
 		return -1;
 	}
-	printf("Convertion Currently BROKEN!\n");
-	//printf("Successfully converted v07 meta data to v08 format.\n");
+	printf("Successfully converted v07 meta data to v08 format.\n");
 	return 0;
 }
 

@@ -18,6 +18,7 @@
       <arg>-d</arg>
       <arg>-c<arg choice="req"><replaceable>file</replaceable></arg></arg>
       <arg>-s<arg choice="req"><replaceable>cmd</replaceable></arg></arg>
+      <arg>-m<arg choice="req"><replaceable>cmd</replaceable></arg></arg>
       <arg choice="req"><replaceable>command</replaceable></arg>
       <group>
 	<arg choice="plain">all</arg>
@@ -30,8 +31,9 @@
     <title>Description</title>
     <para>
       Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to 
-      drbdsetup what ifup/ifdown is to ifconfig. Drbdadm reads its configuration
-      file and performs the specified commands by calling the drbdsetup program.
+      drbdsetup and drbdmeta what ifup/ifdown is to ifconfig. Drbdadm reads its 
+      configuration file and performs the specified commands by calling the drbdsetup 
+      program.
     </para>    
   </refsect1>
   <refsect1>
@@ -59,6 +61,14 @@
         <listitem><para>
           Specifies the full path to the drbdsetup program. If this option is
 	  omitted, drbdadm will look for /sbin/drbdsetup and ./drbdsetup.
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-m</option>, <option>--drbdmeta</option>
+          <replaceable>file</replaceable></term>
+        <listitem><para>
+          Specifies the full path to the drbdmeta program. If this option is
+	  omitted, drbdadm will look for /sbin/drbdmeta and ./drbdsetup.
 	</para></listitem>
       </varlistentry>
     </variablelist>
@@ -151,6 +161,41 @@
 	  size of your backing storage devices (on both nodes of course),
 	  then DRBD will adopt to the new size after you called 
 	  this command on _both_ nodes.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>create-md</term>
+        <listitem><para>
+          Create-md initializes the meta data storage. This needs to be
+	  done before a DRBD resource can be taken online for the first 
+	  time.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>get-gi</term>
+        <listitem><para>
+          Get-gi shows a short textual repesentation of the data generation
+	  identifier.
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>show-gi</term>
+        <listitem><para>
+	  Show-gi prints a textual representation of the data generation
+	  identifiers including explanatory information.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>dump-md</term>
+        <listitem><para>
+          Dumps the whole contents of the meta data storage including
+	  the stored bit-map and activity-log, in a textual representation.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>outdate</term>
+        <listitem><para>
+          Sets the outdated flag in the meta data.
         </para></listitem>
       </varlistentry>
       <varlistentry>

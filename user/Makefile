@@ -26,7 +26,7 @@ drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
 	        ../drbd/drbd_strings.o
 
-drbdmeta-obj = drbdmeta.o drbdtool_common.o ../drbd/drbd_buildtag.o
+drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o ../drbd/drbd_buildtag.o
 
 all: drbdsetup drbdadm drbdmeta
 
@@ -35,6 +35,9 @@ drbdadm: $(drbdadm-obj)
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
+
+drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
+	flex -odrbdmeta_scanner.c drbdmeta_scanner.fl
 
 # for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
