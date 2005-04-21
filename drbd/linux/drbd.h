@@ -273,16 +273,6 @@ enum MetaDataFlags {
 #define MDF_FullSync        (1<<__MDF_FullSync)
 #define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
 
-/* MetaDataIndex is scheduled for removal! */
-enum MetaDataIndex {
-	Flags,			/* Consistency flag,connected-ind,primary-ind */
-	HumanCnt,		/* human-intervention-count */
-	TimeoutCnt,		/* timout-count */
-	ConnectedCnt,		/* connected-count */
-	ArbitraryCnt,		/* arbitrary-count */
-	GEN_CNT_SIZE		/* MUST BE LAST! (and Flags must stay first...) */
-};
-
 enum UuidIndex {
 	Current,
 	Bitmap,

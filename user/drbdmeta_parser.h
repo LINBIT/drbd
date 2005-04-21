@@ -5,6 +5,7 @@ typedef union YYSTYPE {
 
 #define YYSTYPE_IS_DECLARED 1
 #define YYSTYPE_IS_TRIVIAL 1
+#define YY_NO_UNPUT 1
 
 extern YYSTYPE yylval;
 
@@ -19,3 +20,5 @@ enum yytokentype {
 	TK_LA_SIZE
 };
 
+/* avoid compiler warnings about implicit declaration */
+int yylex(void);

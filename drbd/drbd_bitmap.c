@@ -235,6 +235,12 @@ int drbd_bm_init(drbd_dev *mdev)
 	return 0;
 }
 
+sector_t drbd_bm_capacity(drbd_dev *mdev)
+{
+	ERR_IF(!mdev->bitmap) return 0;
+	return mdev->bitmap->bm_dev_capacity;
+}
+
 /* called on driver unload. TODO: call when a device is destroyed.
  */
 void drbd_bm_cleanup(drbd_dev *mdev)
@@ -270,7 +276,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 		cleared += hweight_long(b->bm[w]);
 		b->bm[w++]=0;
 	}
-	
+
 	return cleared;
 }
 
@@ -368,6 +374,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 			bytes = (words+1)*sizeof(long);
 			nbm = vmalloc(bytes);
 			if (!nbm) {
+				ERR("bitmap: failed to vmalloc %lu bytes\n",bytes);
 				err = -ENOMEM;
 				goto out;
 			}
@@ -375,6 +382,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		spin_lock_irq(&b->bm_lock);
 		obm = b->bm;
 		// brgs. move several MB within spinlock...
+		// FIXME this should go into userspace!
 		if (obm) {
 			bm_set_surplus(b);
 			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
@@ -382,8 +390,9 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		}
 		growing = words > b->bm_words;
 		if (growing) { // set all newly allocated bits
-			memset( nbm+b->bm_words, -1,
-				(words - b->bm_words) * sizeof(long) );
+			// start at -1, just to be sure.
+			memset( nbm + (b->bm_words?:1)-1 , 0xff,
+				(words - ((b->bm_words?:1)-1)) * sizeof(long) );
 			b->bm_set  += bits - b->bm_bits;
 		}
 		nbm[words] = DRBD_MAGIC;
@@ -418,7 +427,9 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 	unsigned long s;
 	unsigned long flags;
 
-	D_BUG_ON(!(b && b->bm));
+	D_BUG_ON(!b);
+	if (b->bm_bits == 0) return 0;
+	D_BUG_ON(!b->bm);
 	// MUST_BE_LOCKED(); well. yes. but ...
 
 	spin_lock_irqsave(&b->bm_lock,flags);
@@ -431,7 +442,9 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 size_t drbd_bm_words(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(!(b && b->bm));
+	D_BUG_ON(!b);
+	if (b->bm_words == 0) return 0;
+	D_BUG_ON(!b->bm);
 
 	/* FIXME
 	 * actually yes. really. otherwise it could just change its size ...
@@ -453,6 +466,7 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 	unsigned long word, bits;
 	size_t n = number;
 
+	if (number == 0) return;
 	D_BUG_ON(!(b && b->bm));
 	D_BUG_ON(offset        >= b->bm_words);
 	D_BUG_ON(offset+number >  b->bm_words);
@@ -492,6 +506,7 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 	unsigned long word, bits;
 	size_t n = number;
 
+	if (number == 0) return;
 	D_BUG_ON(!(b && b->bm));
 	D_BUG_ON(offset        >= b->bm_words);
 	D_BUG_ON(offset+number >  b->bm_words);
@@ -529,6 +544,7 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
 
+	if (number == 0) return;
 	D_BUG_ON(!(b && b->bm));
 	if ( (offset        >= b->bm_words) ||
 	     (offset+number >  b->bm_words) ||
@@ -555,13 +571,16 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 void drbd_bm_set_all(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(!(b && b->bm));
+
+	D_BUG_ON(!b);
+	if (b->bm_bits == 0) return;
+	D_BUG_ON(!b->bm);
 
 	MUST_BE_LOCKED();
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	memset(b->bm,-1,b->bm_words*sizeof(long));
+	memset(b->bm,0xff,b->bm_words*sizeof(long));
 	bm_clear_surplus(b);
 	b->bm_set = b->bm_bits;
 	spin_unlock_irq(&b->bm_lock);
@@ -699,7 +718,10 @@ void drbd_bm_write(struct Drbd_Conf *mdev)
 void drbd_bm_clear_all(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(!(b && b->bm));
+
+	D_BUG_ON(!b);
+	if (b->bm_bits == 0) return;
+	D_BUG_ON(!b->bm);
 
 	MUST_BE_LOCKED();						\
 
@@ -713,7 +735,8 @@ void drbd_bm_clear_all(drbd_dev *mdev)
 void drbd_bm_reset_find(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(!(b && b->bm));
+
+	D_BUG_ON(!b);
 
 	MUST_BE_LOCKED();
 
@@ -733,7 +756,11 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long i = -1UL;
-	D_BUG_ON(!(b && b->bm));
+
+
+	D_BUG_ON(!b);
+	if (b->bm_bits == 0) return i;
+	D_BUG_ON(!b->bm);
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();

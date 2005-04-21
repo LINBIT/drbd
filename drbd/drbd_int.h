@@ -556,16 +556,6 @@ struct drbd_work {
 	drbd_work_cb cb;
 };
 
-/*
- * since we eventually don't want to "remap" any bhs, but allways need a
- * private bh, it may as well be part of the struct so we do not need to
- * allocate it separately.  it is only used as a clone, and since we own it, we
- * can abuse certain fields of if for our own needs.  and, since it is part of
- * the struct, we can use b_private for other things than the req, e.g. mdev,
- * since we get the request struct by means of the "container_of()" macro.
- *	-lge
- */
-
 struct drbd_barrier;
 struct drbd_request {
 	struct drbd_work w;
@@ -968,6 +958,7 @@ extern void drbd_bm_read      (drbd_dev *mdev);
 extern void drbd_bm_write     (drbd_dev *mdev);
 extern unsigned long drbd_bm_ALe_set_all (drbd_dev *mdev, unsigned long al_enr);
 extern size_t        drbd_bm_words       (drbd_dev *mdev);
+extern sector_t      drbd_bm_capacity    (drbd_dev *mdev);
 extern unsigned long drbd_bm_find_next   (drbd_dev *mdev);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
 extern int drbd_bm_rs_done(drbd_dev *mdev);
@@ -1485,7 +1476,7 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 
 static inline void drbd_suicide(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
+#ifdef TASK_ZOMBIE
 	set_current_state(TASK_ZOMBIE);
 #else
 	current->exit_state = EXIT_ZOMBIE;

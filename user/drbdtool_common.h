@@ -5,6 +5,17 @@
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
+
+/* MetaDataIndex for v06 / v07 style meta data blocks */
+enum MetaDataIndex {
+	Flags,			/* Consistency flag,connected-ind,primary-ind */
+	HumanCnt,		/* human-intervention-count */
+	TimeoutCnt,		/* timout-count */
+	ConnectedCnt,		/* connected-count */
+	ArbitraryCnt,		/* arbitrary-count */
+	GEN_CNT_SIZE		/* MUST BE LAST! (and Flags must stay first...) */
+};
+
 /*
 #define PERROR(fmt, args...) \
 do { fprintf(stderr,fmt ": " , ##args); perror(0); } while (0)

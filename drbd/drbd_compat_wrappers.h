@@ -28,7 +28,10 @@ static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
-	return bdev ? bdev->bd_inode->i_size >> 9 : 0;
+	loff_t capacity = bdev ? bdev->bd_inode->i_size >> 9 : 0;
+	if ((sector_t)capacity != capacity)
+		printk(KERN_ERR "drbd: overflow in drbd_get_capacity\n");
+	return (sector_t)capacity;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */

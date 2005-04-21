@@ -71,7 +71,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 char* ppsize(char* buf, size_t size) 
 {
 	// Needs 9 bytes at max.
-	static char units[] = { 'K','M','G','T' };
+	static char units[] = { 'K','M','G','T','P','E' };
 	int base = 0;
 	while (size >= 10000 ) {
 		size = size >> 10;
@@ -144,16 +144,23 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		int err;
 		err = drbd_bm_resize(mdev,size);
 		if (unlikely(err)) {
-			ERR("BM resizing failed. "
-			    "Size unchanged = %s (%lu sect)\n", 
-			    ppsize(ppb,size>>1),(unsigned long)size);
-		} else {
-			// racy, see comments above.
-			drbd_set_my_capacity(mdev,size);
-			mdev->la_size = size;
-			INFO("size = %s (%lu sect)\n",ppsize(ppb,size>>1),
-			     (unsigned long)size);
+			/* currently there is only one error: ENOMEM! */
+			size = drbd_bm_capacity(mdev)>>1;
+			if (size == 0) {
+				ERR("Could not allocate bitmap! Set device size => 0\n");
+			} else {
+				/* FIXME this is problematic,
+				 * if we in fact are smaller now! */
+				ERR("BM resizing failed. "
+				    "Leaving size unchanged at size = %lu KB\n", 
+				    (unsigned long)size);
+			}
 		}
+		// racy, see comments above.
+		drbd_set_my_capacity(mdev,size<<1);
+		mdev->la_size = size;
+		INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
+		     (unsigned long)size);
 	}
 
 	return rv;
@@ -345,6 +352,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	if ((drbd_get_capacity(bdev)>>1) < new_conf.disk_size) {
+		/* FIXME maybe still allow,
+		 * but leave only DRBD_MAX_SECTORS usable */
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail_ioctl;
 	}
@@ -398,15 +407,16 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 
 	md_gc_valid = drbd_md_read(mdev);
 
-	if (md_gc_valid == -1 ) {
-		retcode = MDIOError;
+	if (md_gc_valid != NoError) {
+		retcode = md_gc_valid;
 		goto unset_fail_ioctl;
 	}
 
-	if (md_gc_valid == -2 ) {
-		retcode = MDInvalid;
-		goto unset_fail_ioctl;
-	}
+	/* We reach this only if we have a valid meta data block,
+	 * so we no longer create one here, if we don't find one.
+	 * That means that initially, you HAVE to use the drbdmeta
+	 * command to create one in user space.
+	 */
 
 	drbd_bm_lock(mdev); // racy...
 	drbd_determin_dev_size(mdev);
@@ -414,13 +424,13 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * what if we now have la_size == 0 ?? eh?
 	 */
 
-	if (md_gc_valid <= 0) {
+	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
-	} else { // md_gc_valid > 0
+	} else {
 		/* FIXME this still does not propagate io errors! */
 		drbd_bm_read(mdev);
 	}

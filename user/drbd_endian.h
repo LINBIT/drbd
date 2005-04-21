@@ -20,8 +20,11 @@
 
 #define u64 uint64_t
 #define u32 uint32_t
+#define s32 int32_t
+#define u16 uint16_t
 #define __u64 uint64_t
 #define __u32 uint32_t
+#define __u16 uint16_t
 
 /* linux/byteorder/swab.h */
 
@@ -33,6 +36,14 @@
  * __asm__("bswap %0" : "=r" (x) : "0" (x));
  * oh, well...
  */
+
+#define __swab16(x) \
+({ \
+	__u16 __x = (x); \
+	((__u16)( \
+		(((__u16)(__x) & (__u16)0x00ffUL) << 8) | \
+		(((__u16)(__x) & (__u16)0xff00UL) >> 8) )); \
+})
 
 #define __swab32(x) \
 ({ \
@@ -74,19 +85,27 @@
 #define le64_to_cpu(x) ((__u64)(x))
 #define cpu_to_le32(x) ((__u32)(x))
 #define le32_to_cpu(x) ((__u32)(x))
+#define cpu_to_le16(x) ((__u16)(x))
+#define le16_to_cpu(x) ((__u16)(x))
 #define cpu_to_be64(x) __swab64((x))
 #define be64_to_cpu(x) __swab64((x))
 #define cpu_to_be32(x) __swab32((x))
 #define be32_to_cpu(x) __swab32((x))
+#define cpu_to_be16(x) __swab16((x))
+#define be16_to_cpu(x) __swab16((x))
 #elif __BYTE_ORDER == __BIG_ENDIAN
 # define cpu_to_le64(x) __swab64((x))
 # define le64_to_cpu(x) __swab64((x))
 # define cpu_to_le32(x) __swab32((x))
 # define le32_to_cpu(x) __swab32((x))
+# define cpu_to_le16(x) __swab16((x))
+# define le16_to_cpu(x) __swab16((x))
 # define cpu_to_be64(x) ((__u64)(x))
 # define be64_to_cpu(x) ((__u64)(x))
 # define cpu_to_be32(x) ((__u32)(x))
 # define be32_to_cpu(x) ((__u32)(x))
+# define cpu_to_be16(x) ((__u16)(x))
+# define be16_to_cpu(x) ((__u16)(x))
 #else
 # error "sorry, weird endianness on this box"
 #endif

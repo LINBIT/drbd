@@ -1105,7 +1105,16 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
 	p.block_id = e->block_id;
 	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
+/*
+ * FIXME kernel source <= 2.6.8 don't have atomic_add_return!
+ */
+#if 0
+#warning "YES I KNOW. JUST SO IT COMPILES NOW."
+	atomic_inc(&mdev->packet_seq);
+	p.seq_num = atomic_read(&mdev->packet_seq);
+#else
 	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
+#endif
 
 	if (!mdev->meta.socket || mdev->state.s.conn < Connected) return FALSE;
 	ok=drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
@@ -1335,8 +1344,14 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 		p.sector   = cpu_to_be64(drbd_req_get_sector(req));
 		p.block_id = (unsigned long)req;
+#if 0
+#warning "YES I KNOW. JUST SO IT COMPILES NOW."
+		atomic_inc(&mdev->packet_seq);
+		p.seq_num = atomic_read(&mdev->packet_seq);
+#else
 		p.seq_num  = cpu_to_be32( req->seq_num =
 				     atomic_add_return(1,&mdev->packet_seq) );
+#endif
 
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
@@ -2289,21 +2304,20 @@ void drbd_md_write(drbd_dev *mdev)
 
 /*
  * return:
- *   < 0 if we had an error 
- *       -1  no meta data IO allowed
- *       -2  magic number not present
- *   = 0 if we need a FullSync because either the flag is set,
- *       or the gen counts are invalid
- *   > 0 if we could read valid gen counts,
+ *   = 0 if we could read valid gen counts,
  *       and reading the bitmap and act log does make sense.
+ *  != 0 if we had an error
+ *       MDIOError no meta data IO allowed
+ *       MDIOError IO not possible
+ *       MDInvalid no correct magic present
  */
 int drbd_md_read(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
 	sector_t sector;
-	int i,rv;
+	int i,rv = NoError;
 
-	if(!inc_local_md_only(mdev)) return -1;
+	if(!inc_local_md_only(mdev)) return MDIOError;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
@@ -2327,18 +2341,12 @@ int drbd_md_read(drbd_dev *mdev)
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;
 
-	up(&mdev->md_io_mutex);
-	dec_local(mdev);
-
-	return !drbd_md_test_flag(mdev,MDF_FullSync);
-
  err:
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 
 	return rv;
 }
-
 
 
 
