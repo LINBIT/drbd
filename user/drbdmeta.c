@@ -1210,7 +1210,6 @@ int v08_md_cpu_to_disk(struct format *cfg)
 		return -1;
 	}
 	md_cpu_to_disk_08(cfg->on_disk.md8, &cfg->md);
-	fprintf(stderr,"msync\n");
 	err = msync(cfg->on_disk.md8, sizeof(*cfg->on_disk.md8),
 		    MS_SYNC | MS_INVALIDATE);
 	if (err) {
@@ -1270,9 +1269,7 @@ int v08_md_initialize(struct format *cfg)
 	}
 
 	/* do you want to initilize al to something more usefull? */
-	//fprintf(stderr,"memset al\n");
 	memset(cfg->on_disk.al, 0x00, MD_AL_MAX_SIZE_07);
-	//fprintf(stderr,"memset bm\n");
 	memset(cfg->on_disk.bm, 0xff, MD_BM_MAX_SIZE_07);
 	return 0;
 }
