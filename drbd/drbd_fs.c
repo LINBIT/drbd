@@ -131,12 +131,11 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if(u_size) {
-		/* FIXME size now in sectors, user still provides KB */
-		if(u_size > size) {
+		if(u_size<<1 > size) {
 			ERR("Requested disk size is too big (%lu > %lu)\n",
-			    (unsigned long)u_size, (unsigned long)size);
+			    (unsigned long)u_size, (unsigned long)size>>1);
 		} else {
-			size = u_size;
+			size = u_size<<1;
 		}
 	}
 
@@ -157,10 +156,10 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 			}
 		}
 		// racy, see comments above.
-		drbd_set_my_capacity(mdev,size<<1);
+		drbd_set_my_capacity(mdev,size);
 		mdev->la_size = size;
-		INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
-		     (unsigned long)size);
+		INFO("size = %s (%lu KB)\n",ppsize(ppb,size>>1),
+		     (unsigned long)size>>1);
 	}
 
 	return rv;
