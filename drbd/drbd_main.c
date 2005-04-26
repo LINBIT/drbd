@@ -2257,11 +2257,11 @@ void drbd_md_write(drbd_dev *mdev)
 	if (mdev->state.s.disk >  Outdated)       flags |= MDF_WasUpToDate;
 	mdev->md_flags = flags;
 
+	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	for (i = Current; i < UUID_SIZE; i++)
 		buffer->uuid[i]=cpu_to_be64(mdev->uuid[i]);
-	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
-
-	buffer->magic=cpu_to_be32(DRBD_MD_MAGIC);
+	buffer->flags = cpu_to_be32(flags);
+	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC);
 
 	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
 	buffer->al_offset = __constant_cpu_to_be32(MD_AL_OFFSET);
@@ -2334,9 +2334,10 @@ int drbd_md_read(drbd_dev *mdev)
 		goto err;
 	}
 
+	mdev->la_size = be64_to_cpu(buffer->la_size);
 	for (i = Current; i < UUID_SIZE; i++)
 		mdev->uuid[i]=be64_to_cpu(buffer->uuid[i]);
-	mdev->la_size = be64_to_cpu(buffer->la_size);
+	mdev->md_flags = be32_to_cpu(buffer->flags);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;

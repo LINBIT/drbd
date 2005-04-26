@@ -1290,7 +1290,7 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 	if (self == peer) return -1;
 
 	for ( i=History_start ; i<=History_end ; i++ ) {
-		peer = mdev->p_uuid[i];
+		peer = mdev->p_uuid[i] & ~((u64)1);
 		if (self == peer) return -2;
 	}
 
