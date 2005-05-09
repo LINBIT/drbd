@@ -59,7 +59,13 @@ if grep_q "^PATCHLEVEL *= *4" $KDIR/Makefile ; then
     cat 2>/dev/null $KDIR/include/asm{,/arch}/bitops.h |
     grep_q 'find_next_bit'
   then
-    have_find_next_bit=1
+    # on ppc64, it's declared but not exported, so we use our own copy
+    if grep_q '^CONFIG_PPC64=y' $KDIR/.config
+    then
+      have_find_next_bit=0
+    else
+      have_find_next_bit=1
+    fi
   else
     have_find_next_bit=0
   fi

@@ -33,6 +33,49 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
+/* special handling for ppc64 on 2.4 kernel -- find_next_bit is not exported
+ * so we include it here (verbatim, from linux 2.4.21 sources) */
+#if defined(__powerpc64__) && LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+
+unsigned long find_next_bit(unsigned long *addr, unsigned long size, unsigned long offset)
+{
+        unsigned long *p = addr + (offset >> 6);
+        unsigned long result = offset & ~63UL;
+        unsigned long tmp;
+
+        if (offset >= size)
+                return size;
+        size -= result;
+        offset &= 63UL;
+        if (offset) {
+                tmp = *(p++);
+                tmp &= (~0UL << offset);
+                if (size < 64)
+                        goto found_first;
+                if (tmp)
+                        goto found_middle;
+                size -= 64;
+                result += 64;
+        }
+        while (size & ~63UL) {
+                if ((tmp = *(p++)))
+                        goto found_middle;
+                result += 64;
+                size -= 64;
+        }
+        if (!size)
+                return result;
+        tmp = *p;
+
+found_first:
+        tmp &= (~0UL >> (64 - size));
+        if (tmp == 0UL)        /* Are any bits set? */
+                return result + size; /* Nope. */
+found_middle:
+        return result + __ffs(tmp);
+}
+#endif /* NEED_PPC64_WORKAROUND */
+
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
  *

@@ -296,8 +296,8 @@ find_next_bit(void * addr, unsigned long size, unsigned long offset)
 #undef _x10000
 #undef _xSHIFT
 
-#else
-#warning "You probabely need to copy find_next_bit() from a 2.6.x kernel."
+#elif !defined(__powerpc64__) /* ppc64 is taken care of, see drbd_bitmap.c */
+#warning "You probably need to copy find_next_bit() from a 2.6.x kernel."
 #warning "Or enable low performance generic C-code"
 #warning "(USE_GENERIC_FIND_NEXT_BIT in drbd_config.h)"
 #endif
