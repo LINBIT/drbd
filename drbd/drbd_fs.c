@@ -711,8 +711,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 	case 4: /* peer is outdated */
 		nps = Outdated;
 		break;
-	case 5: /* peer was down, increase GENCNT ... */
-		drbd_uuid_new_current(mdev);
+	case 5: /* peer was down, we will(have) create(d) a new UUID anyways... */
+		/* If we would be more strict, we would return DUnknown here. */
 		nps = Outdated;
 		break;
 	case 6: /* Peer is primary, voluntarily outdate myself */
@@ -721,11 +721,13 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		break;
 	default:
 		/* The script is broken ... */
-		drbd_uuid_new_current(mdev);
 		nps = DUnknown;
-		ERR("outdate-peer helper returned %d (%d)\n",(r>>8)&0xff,r);
+		drbd_request_state(mdev,NS(disk,Outdated));
+		ERR("outdate-peer helper broken, returned %d \n",(r>>8)&0xff);
+		return nps;
 	}
 
+	INFO("outdate-peer helper returned %d \n",(r>>8)&0xff);
 	return nps;
 }
 

@@ -648,6 +648,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 #if DUMP_MD >= 2
+	char *pbp,pb[300];
 	pbp = pb;
 	PSC(role);
 	PSC(peer);

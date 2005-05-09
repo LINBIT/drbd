@@ -41,7 +41,9 @@ DRBD 0.8 Roadmap
    discard-less-modified
                   Auto sync from is the node that did more modifications
    discard-NODENAME 
-                  Auto sync to the named node 
+                  Auto sync to the named node
+   discard-current-secondary
+   		  Auto sync from current primary (What if there is no primary?)
   
   pri-sees-sec-with-newer-data =
    disconnect         (current behaviour)

@@ -1883,11 +1883,19 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	if ( mdev->state.s.role == Primary ) {
+		if ( mdev->state.s.pdsk >= DUnknown &&
+		     mdev->uuid[Bitmap] == 0 ) {
+			/* We only create a new UUID if the peer might
+			   possibly be UpToDate. Since the connection is
+			   already gone it is DUnknown by now. 
+			   In case we already created a BitMap there is
+			   no need to create a new UUID.
+			*/
+			drbd_uuid_new_current(mdev);
+		}
 		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
-		} else {
-			drbd_uuid_new_current(mdev);
 		}
 		drbd_md_write(mdev);
 	}
