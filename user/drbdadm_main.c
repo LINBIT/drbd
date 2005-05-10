@@ -672,7 +672,7 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   if(rv == 17) return rv; 
   // 17 returned by drbdsetup outdate, if it is already primary.
 
-  if( rv ) {
+  if( rv || dry_run ) {
     rv = admm_generic(res,cmd);
   }
   return rv;

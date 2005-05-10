@@ -698,8 +698,8 @@ int do_net_conf(int drbd_fd,
 
 int set_state(int drbd_fd,drbd_role_t state)
 {
-  int err;
-  err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,state);
+  int err, arg = state;
+  err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE,&arg);
   if(err) {
     err=errno;
     PERROR("ioctl(,SET_STATE,) failed");
@@ -708,17 +708,9 @@ int set_state(int drbd_fd,drbd_role_t state)
       case EBUSY:
 	fprintf(stderr,"Someone has opened the device for RW access!\n");
 	break;
-      case EINPROGRESS:
-	fprintf(stderr,"Resynchronization process currently running!\n");
-	break;
-      case ENXIO:
-	fprintf(stderr,"Device not configured\n");
-	break;
-      case EACCES:
-	fprintf(stderr,"Partner is already primary\n");
-	break;
       case EIO:
-	fprintf(stderr,"Local replica is inconsistent (--do-what-I-say ?)\n");
+	fprintf(stderr,"%s\n", set_st_err_name(arg));
+        break;
       }
     return 20;
   }

@@ -23,7 +23,6 @@
 #include <linux/drbd.h>
 
 static const char *drbd_conn_s_names[] = {
-	[Unconfigured]   = "Unconfigured",
 	[StandAlone]     = "StandAlone",
 	[Unconnected]    = "Unconnected",
 	[Timeout]        = "Timeout",
@@ -69,7 +68,7 @@ static const char *drbd_state_sw_errors[] = {
 };
 
 const char* conns_to_name(drbd_conns_t s) {
-	return s < Unconfigured ? "TO_SMALL" :
+	return s < StandAlone   ? "TO_SMALL" :
 	       s > PausedSyncT  ? "TO_LARGE"
 		                : drbd_conn_s_names[s];
 }

@@ -555,13 +555,13 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #define O_ADDR(A) (((struct sockaddr_in *)&A.other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A.other_addr)->sin_port)
 	for(i=0;i<minor_count;i++) {
-		if( i!=minor && drbd_conf[i].state.s.conn==Unconfigured &&
+		if( i!=minor && drbd_conf[i].state.s.conn > StandAlone &&
 		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
 		    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
 			retcode=LAAlreadyInUse;
 			goto fail_ioctl;
 		}
-		if( i!=minor && drbd_conf[i].state.s.conn!=Unconfigured &&
+		if( i!=minor && drbd_conf[i].state.s.conn > StandAlone &&
 		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
 		    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
 			retcode=OAAlreadyInUse;
@@ -731,8 +731,9 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 	return nps;
 }
 
-int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
+int drbd_set_role(drbd_dev *mdev, int* arg)
 {
+	drbd_role_t newstate = *arg;
 	int r,forced = 0;
 	drbd_state_t os,ns;
 
@@ -763,11 +764,12 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 	spin_unlock_irq(&mdev->req_lock);
 	after_state_ch(mdev,os,ns);
 
-	if ( r == 2 ) { return 0; }
+	if ( r == 2 ) { return 0; /* nothing to do */ }
 	if ( r == -2 ) {
 		/* request state does not like the new state. */
 		if (! (newstate & DontBlameDrbd)) {
 			print_st_err(mdev,os,ns,r);
+			*arg = r;
 			return -EIO;
 		}
 
@@ -776,7 +778,10 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 			WARN("Forcefully set to UpToDate!\n");
 			r = drbd_request_state(mdev,NS2(role,newstate & role_mask,
 							disk,UpToDate));
-			if(r<=0) return -EIO;
+			if ( r <= 0 ) {
+				*arg = r;
+				return -EIO;
+			}
 
 			forced = 1;
 		}
@@ -786,7 +791,10 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 		r = drbd_request_state(mdev,NS2(role,newstate & role_mask,pdsk,nps));
 	} else if ( r <= 0 ) print_st_err(mdev,os,ns,r);
 
-	if ( r <= 0 ) return -EACCES; 
+	if ( r <= 0 ) {
+		*arg = r;
+		return -EIO;
+	}
 
 	drbd_sync_me(mdev);
 
@@ -1055,10 +1063,17 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		if (arg & ~(Primary|Secondary|DontBlameDrbd) ) {
+		if (copy_from_user(&r, (int *) arg, sizeof(int)))
+			return -EFAULT;
+
+		if (r & ~(Primary|Secondary|DontBlameDrbd) ) {
 			err = -EINVAL;
 		} else {
-			err = drbd_set_role(mdev,arg);
+			err = drbd_set_role(mdev, &r);
+			if ( err == -EIO ) {
+				err = put_user(r, (int *) arg);
+				if(err == 0) err=-EIO;
+			}
 		}
 		break;
 
@@ -1102,7 +1117,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_NET:
-		if ( mdev->state.s.conn == Unconfigured) break;
+		if ( mdev->state.s.conn == StandAlone) break;
 
 		r = drbd_request_state(mdev,NS(conn,StandAlone));
 		if( r == 2 ) { break; }
@@ -1120,12 +1135,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_sync_me(mdev); /* FIXME what if fsync returns error */
 
 		drbd_thread_stop(&mdev->receiver);
-
-		if ( mdev->state.s.conn == StandAlone && 
-		     mdev->state.s.disk == Diskless ) {
-			drbd_mdev_cleanup(mdev);  // Move to after_state_ch() ?
-			module_put(THIS_MODULE);
-		}
 
 		break;
 

@@ -616,7 +616,7 @@ int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *sock,*msock;
 
-	D_ASSERT(mdev->state.s.conn > Unconfigured);
+	D_ASSERT(mdev->state.s.conn > StandAlone);
 	D_ASSERT(!mdev->data.socket);
 
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) <= 0 ) return 0;

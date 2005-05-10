@@ -500,6 +500,7 @@ struct format_ops {
 	void (*get_gi) (struct md_cpu *md);
 	void (*show_gi) (struct md_cpu *md);
 	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
+	int (*outdate_gi) (struct md_cpu *md);
 };
 
 /*
@@ -517,9 +518,11 @@ enum Known_Formats {
 void m_get_gc(struct md_cpu *md);
 void m_show_gc(struct md_cpu *md);
 void m_set_gc(struct md_cpu *md, char **argv, int argc);
+int m_outdate_gc(struct md_cpu *md);
 void m_get_uuid(struct md_cpu *md);
 void m_show_uuid(struct md_cpu *md);
 void m_set_uuid(struct md_cpu *md, char **argv, int argc);
+int m_outdate_uuid(struct md_cpu *md);
 
 int v06_md_close(struct format *cfg);
 int v06_md_cpu_to_disk(struct format *cfg);
@@ -553,6 +556,7 @@ struct format_ops f_ops[] = {
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
+		     .outdate_gi = m_outdate_gc,
 		     },
 	[Drbd_07] = {
 		     .name = "v07",
@@ -566,6 +570,7 @@ struct format_ops f_ops[] = {
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
+		     .outdate_gi = m_outdate_gc,
 		     },
 	[Drbd_08] = {
 		     .name = "v08",
@@ -579,6 +584,7 @@ struct format_ops f_ops[] = {
 		     .get_gi = m_get_uuid,
 		     .show_gi = m_show_uuid,
 		     .set_gi = m_set_uuid,
+		     .outdate_gi = m_outdate_uuid,
 		     },
 };
 
@@ -923,6 +929,27 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc)
 	} while (0);
 }
 
+int m_outdate_gc(struct md_cpu *md)
+{
+	if ( !(md->gc[Flags] & MDF_Consistent) ) {
+		return 5;
+	}
+
+	md->gc[Flags] &= ~MDF_WasUpToDate;
+
+	return 0;
+}
+
+int m_outdate_uuid(struct md_cpu *md)
+{
+	if ( !(md->flags & MDF_Consistent) ) {
+		return 5;
+	}
+
+	md->flags &= ~MDF_WasUpToDate;
+
+	return 0;
+}
 
 
 
@@ -1777,12 +1804,10 @@ int meta_outdate(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	if ( !(cfg->md.gc[Flags] & MDF_Consistent) ) {
+	if (cfg->ops->outdate_gi(&cfg->md)) {
 		fprintf(stderr, "Device is inconsistent.\n");
 		exit(5);
 	}
-
-	cfg->md.gc[Flags] &= ~MDF_WasUpToDate;
 
 	err = cfg->ops->md_cpu_to_disk(cfg)
 		|| cfg->ops->close(cfg);

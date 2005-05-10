@@ -1000,7 +1000,7 @@ extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
 extern char* ppsize(char* buf, size_t size);
 extern int drbd_determin_dev_size(drbd_dev*);
 extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
-extern int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate);
+extern int drbd_set_role(drbd_dev *mdev, int *arg);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);

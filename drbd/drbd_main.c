@@ -555,6 +555,10 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if ( ns.s.pdsk > DUnknown ) ns.s.pdsk = DUnknown;
 	}
 
+	if( ns.s.conn == StandAlone && ns.s.disk == Diskless ) {
+		ns.s.pdsk = DUnknown;
+	}
+
 	if( ns.s.conn > Connected && ns.s.disk <= Failed ) {
 		warn_sync_abort=1;
 		ns.s.conn = Connected;
@@ -668,9 +672,15 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
 
-	if ( os.s.disk == Diskless && os.s.peer == StandAlone &&
-	     (ns.s.disk >= Inconsistent || ns.s.peer > StandAlone) ) {
+	if ( os.s.disk == Diskless && os.s.conn == StandAlone &&
+	     (ns.s.disk >= Inconsistent || ns.s.conn > StandAlone) ) {
 		__module_get(THIS_MODULE);
+	}
+
+	if ( (os.s.disk >= Inconsistent || ns.s.conn > StandAlone) &&
+	     ns.s.disk == Diskless && ns.s.conn == StandAlone ) {
+		drbd_mdev_cleanup(mdev);
+		module_put(THIS_MODULE);
 	}
 
 	if ( ns.s.role == Primary && ns.s.conn < Connected &&
@@ -1876,7 +1886,8 @@ static void __exit drbd_cleanup(void)
 
 			if (mdev) {
 				down(&mdev->device_mutex);
-				drbd_set_role(mdev,Secondary);
+				rr = Secondary;
+				drbd_set_role(mdev,&rr);
 				up(&mdev->device_mutex);
 				drbd_sync_me(mdev);
 				drbd_thread_stop(&mdev->receiver);
