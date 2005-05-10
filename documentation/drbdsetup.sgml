@@ -406,29 +406,6 @@
       </para>
       <variablelist>
 	<varlistentry>
-	  <term><option>-h</option>,
-	  <option>--human</option></term>
-	  <listitem>
-	    <para>
-	      Indicates that this state change was issued by an
-	      administrator and has at cluster restart time precedence over
-	      decisions made by other parties.  
-	  </para>
-	  </listitem>
-	</varlistentry>
-	<varlistentry>
-	  <term><option>-t</option>,
-	  <option>--timeout-expired</option></term>
-	  <listitem>
-	    <para>
-	      Indicates that this state change was caused because a node did
-	      not showed up on cluster startup (The cluster started in
-	      degraded mode). At cluster restart this has precedence over
-	      decisions made by the cluster manager.
-	    </para>
-	  </listitem>
-	</varlistentry>
-	<varlistentry>
 	  <term><option>-d</option>,
 	  <option>--do-what-I-say</option></term>
 	  <listitem>
@@ -452,22 +429,6 @@
       <para>
 	It is however, possible that both devices of a connected DRBD device
 	pair are in secondary state.
-      </para>
-    </refsect2>
-    <refsect2>
-      <title>on_primary</title>
-      <para>
-	This sets additional flags for the next
-	transition into primary state. The flags are only preserved as long 
-	as the <replaceable>device</replaceable> can not connect to its peer.
-	The possible flags are <option>--inc-human</option> and 
-	<option>--inc-timeout-expired</option>.
-      </para>
-      <para>
-	This is a conevenience command. It has the same effect as passing
-	this options to the following <option>primary</option> command
-	directly. See the <option>primary</option> command for a detailed
-	description of the two flags.
       </para>
     </refsect2>
     <refsect2>

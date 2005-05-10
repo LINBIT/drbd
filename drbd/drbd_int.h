@@ -617,8 +617,6 @@ enum {
 	SEND_PING,		// whether asender should send a ping asap
 	WRITER_PRESENT,		// somebody opened us with write intent
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
-	ON_PRI_INC_HUMAN,       // When we become primary increase human-count
-	ON_PRI_INC_TIMEOUTEX,   // When " - "  increase timeout-count
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
 	PROCESS_EE_RUNNING,	// eek!

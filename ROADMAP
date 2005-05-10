@@ -406,11 +406,6 @@ DRBD 0.8 Roadmap
   As well as the currently known flags: 
    Consistent, WasUpToDate, LastState, ConnectedInd, WantFullSync
 
-  The difference here is that the former flags are determined
-  when the current-UUID is created, while the latter are modified
-  as the state changes. When drbdmeta initializes the meta-data
-  block it sets the current-UUID to JustCreated (a 64 bit constant ).
-
   When the cluster is in Connected state, then the bitmpat gen-UUID
   is set to 0 (Since the Bitmap is empty). When we create a new current
   gen-UUID while we are disconencted the (old) current gets backed-up

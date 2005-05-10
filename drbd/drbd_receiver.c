@@ -703,9 +703,6 @@ int drbd_connect(drbd_dev *mdev)
 		}
 	}
 
-	clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
-	clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
-
 	sock->sk->sk_sndtimeo = mdev->conf.timeout*HZ/20;
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 

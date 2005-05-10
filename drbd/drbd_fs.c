@@ -738,7 +738,7 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
 
-	if ( (newstate & 0x3) == mdev->state.s.role ) return 0; /* nothing to do */
+	if ( (newstate & role_mask) == mdev->state.s.role ) return 0; /* nothing to do */
 
 	// exactly one of sec or pri. not both.
 	if ( !((newstate ^ (newstate >> 1)) & 1) ) return -EINVAL;
@@ -758,7 +758,7 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	r = _drbd_set_state(mdev, _NS(role,newstate & 0x3), 0);
+	r = _drbd_set_state(mdev, _NS(role,newstate & role_mask), 0);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 	after_state_ch(mdev,os,ns);
@@ -774,7 +774,7 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 		/* --do-what-I-say*/
 		if (mdev->state.s.disk < UpToDate) {
 			WARN("Forcefully set to UpToDate!\n");
-			r = drbd_request_state(mdev,NS2(role,newstate & 0x3,
+			r = drbd_request_state(mdev,NS2(role,newstate & role_mask,
 							disk,UpToDate));
 			if(r<=0) return -EIO;
 
@@ -783,19 +783,10 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 	}
 	if ( r == -7 ) {
 		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
-		r = drbd_request_state(mdev,NS2(role,newstate & 0x3,pdsk,nps));
+		r = drbd_request_state(mdev,NS2(role,newstate & role_mask,pdsk,nps));
 	} else if ( r <= 0 ) print_st_err(mdev,os,ns,r);
 
 	if ( r <= 0 ) return -EACCES; 
-
-	if (mdev->state.s.conn >= Connected) {
-		/* do NOT increase the Human count if we are connected,
-		 * and there is no reason for it.  See
-		 * drbd_lk9.pdf middle of Page 7
-		 */
-		newstate &= ~(Human|DontBlameDrbd);
-	}
-
 
 	drbd_sync_me(mdev);
 
@@ -824,16 +815,6 @@ int drbd_set_role(drbd_dev *mdev,drbd_role_t newstate)
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
 		mdev->this_bdev->bd_disk = mdev->vdisk;
-
-		if(test_bit(ON_PRI_INC_HUMAN,&mdev->flags)) {
-			newstate |= Human;
-			clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
-		}
-
-		if(test_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags)) {
-			newstate |= TimeoutExpired;
-			clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
-		}
 
 		if ( (mdev->state.s.conn < WFReportParams &&
 		      mdev->uuid[Bitmap] == 0) || forced ) {
@@ -1074,25 +1055,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_STATE:
-		if (arg & ~(Primary|Secondary|Human|TimeoutExpired|
-			    DontBlameDrbd) ) {
+		if (arg & ~(Primary|Secondary|DontBlameDrbd) ) {
 			err = -EINVAL;
 		} else {
 			err = drbd_set_role(mdev,arg);
-		}
-		break;
-
-	case DRBD_IOCTL_SET_STATE_FLAGS:
-		if (arg & ~(Human|TimeoutExpired) ) {
-			err = -EINVAL;
-		} else {
-			clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
-			clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
-
-			if (arg & Human ) 
-				set_bit(ON_PRI_INC_HUMAN,&mdev->flags);
-			if (arg & TimeoutExpired )
-				set_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
 		}
 		break;
 

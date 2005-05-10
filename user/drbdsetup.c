@@ -98,7 +98,6 @@ struct drbd_cmd {
 
 int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options);
-int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_wait_connect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options);
@@ -120,16 +119,9 @@ int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options);
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
    (struct option[]) {
-     { "human",      no_argument,       0, 'h' },
      { "do-what-I-say",no_argument,     0, 'd' },
-     { "timeout-expired",no_argument,   0, 't' },
      { 0,            0,                 0, 0   } } },
   {"secondary", cmd_secondary,       0, 0, },
-  {"on_primary", cmd_on_primary,           0,
-   (struct option[]) {
-     { "inc-human",      no_argument,    0, 'h' },
-     { "inc-timeout-expired",no_argument,0, 't' },
-     { 0,            0,                 0, 0   } } },
   {"wait_sync", cmd_wait_sync,       0,
    (struct option[]) {
      { "wfc-timeout",required_argument, 0, 't' },
@@ -745,20 +737,11 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	  int c;
 
 	  PRINT_ARGV;
-	  /* only --timeout-expired may be abbreviated to -t
-	   * --human and --do-what-I-say have to be spelled out */
+	  /* --do-what-I-say have to be spelled out */
 	  c = getopt_long_only(argc,argv,make_optstring(options,'-'),options,0);
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'h':
-	      if (strcmp("--human",argv[optind-1])) {
-		      fprintf(stderr,"%s\nYou have to spell out --human, if you mean it\n",
-				      argv[optind-1]);
-		      return 20;
-	      }
-	      newstate |= Human;
-	      break;
 	    case 'd':
 	      if (strcmp("--do-what-I-say",argv[optind-1])) {
 		      fprintf(stderr,"%s\nYou have to spell out --do-what-I-say, if you mean it\n",
@@ -766,9 +749,6 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 		      return 20;
 	      }
 	      newstate |= DontBlameDrbd;
-	      break;
-	    case 't':
-	      newstate |= TimeoutExpired;
 	      break;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
@@ -785,48 +765,6 @@ int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options)
 {
   return set_state(drbd_fd,Secondary);
 }
-
-int cmd_on_primary(int drbd_fd,char** argv,int argc,struct option *options)
-{
-  int err;
-  drbd_role_t flags=0;
-
-  if(argc > 0)
-    {
-      while(1)
-	{
-	  int c;
-
-	  PRINT_ARGV;
-
-	  c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
-	  if(c == -1) break;
-	  switch(c)
-	    {
-	    case 'h':
-	      flags |= Human;
-	      break;
-	    case 't':
-	      flags |= TimeoutExpired;
-	      break;
-	    case 1:	// non option argument. see getopt_long(3)
-	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
-	    case '?':
-	      return 20;
-	    }
-	}
-    }
-
-  err=ioctl(drbd_fd,DRBD_IOCTL_SET_STATE_FLAGS,flags);
-  if(err)
-    {
-      PERROR("ioctl(,SET_STATE_FLAGS,) failed");
-      exit(20);
-    }
-
-  return 0;
-}
-
 
 int wait_on(int drbd_fd,char** argv,int argc,int wfct,int dwfct, int req,
 	    struct option *options)

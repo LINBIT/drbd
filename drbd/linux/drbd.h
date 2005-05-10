@@ -175,9 +175,7 @@ typedef enum {
 	Primary=1,     // role
 	Secondary=2,   // role
 	role_mask=3,
-	Human=4,           // flag for set_state
-	TimeoutExpired=8,  // flag for set_state
-	DontBlameDrbd=16   // flag for set_state
+	DontBlameDrbd=4   // flag for set_state
 } drbd_role_t;
 
 /* The order of these constants is important.

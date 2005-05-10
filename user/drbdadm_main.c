@@ -740,22 +740,6 @@ static int adm_up(struct d_resource* res,const char* unused)
   return 0;
 }
 
-static int on_primary(struct d_resource* res ,char* flag)
-{
-  char* argv[20];
-  int argc=0;
-
-  argc=0;
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="on_primary";
-  argv[argc++]=flag;
-  argv[argc++]=0;
-
-  return m_system(argv,SLEEPS_SHORT);
-}
-
-
 static int adm_wait_c(struct d_resource* res ,const char* unused)
 {
   char* argv[20];
@@ -771,10 +755,6 @@ static int adm_wait_c(struct d_resource* res ,const char* unused)
 
   rv = m_system(argv,SLEEPS_FOREVER);
   
-  if(rv == 5) { // Timer expired
-    rv = on_primary(res,"--inc-timeout-expired");
-  }
-
   return rv;
 }
 
@@ -900,12 +880,7 @@ static int check_exit_codes(pid_t* pids)
   int i=0,rv=0;
 
   for_each_resource(res,t,config) {
-    if (pids[i] == -5) {
-      rv |= on_primary(res,"--inc-timeout-expired");
-      pids[i]=0;
-    }
-    if (pids[i] == -1000) {
-      rv |= on_primary(res,"--inc-human");
+    if (pids[i] == -5 || pids[i] == -1000) {
       pids[i]=0;
     }
     if (pids[i] == -20) rv = 20;
