@@ -464,9 +464,9 @@ DRBD 0.8 Roadmap
            NB: If they are needed, I think they can be implemented
                as special UUID values.
 
-  90% DONE. Kernel part is implemented, userlang parts are implemented,
-	    only "drbdadm set-gi" is still unimplemented.
-	    Everything seems to work so far. Should be tested more.
+  99% DONE. Kernel part is implemented, userlang parts are implemented,
+	    --humand and --timeout-expired are removed.
+	    Everything seems to work so far.
 
 17 Something like
 
@@ -475,7 +475,17 @@ DRBD 0.8 Roadmap
   would be nice at (initial) full sync.
   drbdx: WARNING disk sizes more than 10% different   
 
+18 Connection-Teardown Packet. Currently the new state-checks
+  disallows "drbdadm disconnect res" on the primary node of a
+  connected cluster.
+  Thes Teardown Packet causes the secondary-node to outdate
+  its data and to close the connection in one go.
+  0% DONE.
 
+19 Should we expect the user to use "set-gi" to recover from a
+  aplit brain (two disconnected primaries) situation ?
+  Should we provide him commands like "drbdadm winner res"
+  "drbdadm looser res", to resolve the situation.
 
 plus-banches:
 ----------------------
@@ -500,3 +510,6 @@ plus-banches:
   setup.
 
 7 Support to pass LockFS calls / make taking of snapshots possible (?)
+
+8 Dynamic device allocation (displace minor_count module parameter)
+
