@@ -1,8 +1,20 @@
 Latest:
 ------
- ChangeLog last updated: r1730 2005-01-25
+ ChangeLog last updated: r1778 2005-05-09
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.11 (api:77/proto:74)
+-----
+ * The upper limit of the runtime tuning parameter max_buffers 
+   was ways too low for today's IBM storage controllers. 
+   Was 32 - 10000 ; Now it is 32 - 131072 ( Now one could 
+   allow DRBD to allocate up to half a gigabyte of memory as 
+   receive buffers)
+ * A fix to the Makefiles to make building of RPMs work on RAHS4.
+ * A workaround to have DBRD running on PPC64 with Linux-2.4.x kernels,
+   on Linux-2.6.x everything was fine already.
+ * Removal of dead code (busy_blocks).
 
 0.7.10 (api:77/proto:74)
 -----
