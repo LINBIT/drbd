@@ -1,6 +1,6 @@
 Latest:
 ------
- ChangeLog last updated: r1798 2005-05-23
+ ChangeLog last updated: r1801 2005-05-23
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
@@ -15,6 +15,11 @@ Latest:
  * A workaround to have DBRD running on PPC64 with Linux-2.4.x kernels,
    on Linux-2.6.x everything was fine already.
  * Removal of dead code (busy_blocks).
+ * LINBIT drbd rpms now conflict with km_drbd
+   (SuSE's kernel module source hook)
+ * possibly existing /lib/modules/*/extra/drbd.ko are renamed to .orig in the
+   post-install scripts to avoid conflicts with existing modules from
+   distribution kernel packages
 
 0.7.10 (api:77/proto:74)
 -----

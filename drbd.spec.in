@@ -171,6 +171,12 @@ fi
 
 #%post -n kernel%{?ksmp}-module-drbd
 %post km-%{krelver}
+# hack for distribution kernel packages,
+# which already contain some (probably outdated) drbd module
+EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
+if test -e $EXTRA_DRBD_KO; then
+	mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
+fi
 uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
@@ -190,6 +196,11 @@ uname -r | grep BOOT ||
  * A workaround to have DBRD running on PPC64 with Linux-2.4.x kernels,
    on Linux-2.6.x everything was fine already.
  * Removal of dead code (busy_blocks).
+ * LINBIT drbd rpms now conflict with km_drbd
+   (SuSE's kernel module source hook)
+ * possibly existing /lib/modules/*/extra/drbd.ko are renamed to .orig in the
+   post-install scripts to avoid conflicts with existing modules from
+   distribution kernel packages
 
 * Mon Jan 31 2005 10:17:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.10-1)
