@@ -78,8 +78,13 @@ mkdir -p %{buildroot}
 make clean
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
-#       unset LOCALVERSION for building on RHEL AS 4
-make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
+if [ -e /etc/redhat-release ]; then
+       # unset LOCALVERSION for building on RHEL AS 4
+       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
+else
+       # LOCALVERSION necessary for building on SuSE-9.3
+       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
+fi
 %install
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd drbd
