@@ -32,11 +32,16 @@ ifdef FORCE
 # or to forcefully include the svn-last-changed-date in the tgz name:
 #   make distclean doc tgz FORCE=1
 #
-REL_VERSION := $(REL_VERSION)-$(shell svn info| \
-		  sed -ne 's/^Last Changed Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1\2\3/p')
+REL_VERSION := $(REL_VERSION)-$(shell LANG= svn info| \
+	sed -n -e 's/^Last Changed Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1\2\3/p' \
+	)-$(shell svnversion .)
 endif
 
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
+FDIST_VERSION := $(shell sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
+ifeq ($(FDIST_VERSION),)
+FDIST_VERSION := $(DIST_VERSION)
+endif
 
 LN_S = ln -s
 RPMBUILD=rpmbuild
@@ -139,22 +144,27 @@ drbd/drbd_buildtag.c:
 tgz:
 	test -e .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
-	rm -f drbd-$(DIST_VERSION)
-	ln -s . drbd-$(DIST_VERSION)
+	rm -f drbd-$(FDIST_VERSION)
+	ln -s . drbd-$(FDIST_VERSION)
 	set -e ; for f in $$(<.filelist) ; do [ -e $$f ] ; done
-	tar --owner=0 --group=0 -czf drbd-$(DIST_VERSION).tar.gz -T .filelist
-	rm drbd-$(DIST_VERSION)
+	grep debian .filelist >/dev/null 2>&1 && _DEB=-debian || _DEB="" ; \
+	tar --owner=0 --group=0 -czf drbd-$(FDIST_VERSION)$$_DEB.tar.gz -T .filelist
+	rm drbd-$(FDIST_VERSION)
 
 ifeq ($(FORCE),)
 tgz: check_changelogs_up2date doc
 endif
 
 check_all_committed:
-	@modified=`svn st -q`; 		\
+	@$(if $(FORCE),-,)modified=`svn st -q`; 		\
 	if test -n "$$modified" ; then	\
 		echo "$$modified";	\
 	       	false;			\
 	fi
+
+prepare_release:
+	$(MAKE) tarball
+	$(MAKE) tarball PRESERVE_DEBIAN=1
 
 tarball: check_all_committed distclean doc .filelist tgz
 all tools doc .filelist: drbd/drbd_buildtag.c
@@ -181,11 +191,11 @@ rpm: tgz
 	         dist/TMP \
 	         dist/install \
 	         dist/SRPMS
-	[ -h dist/SOURCES/drbd-$(DIST_VERSION).tar.gz ] || \
-	  $(LN_S) $(PWD)/drbd-$(DIST_VERSION).tar.gz \
-	          $(PWD)/dist/SOURCES/drbd-$(DIST_VERSION).tar.gz
+	[ -h dist/SOURCES/drbd-$(FDIST_VERSION).tar.gz ] || \
+	  $(LN_S) $(PWD)/drbd-$(FDIST_VERSION).tar.gz \
+	          $(PWD)/dist/SOURCES/drbd-$(FDIST_VERSION).tar.gz
 	if test drbd.spec.in -nt dist/SPECS/drbd.spec ; then \
-	   sed -e "s/^\(Version:\).*/\1 $(DIST_VERSION)/;" \
+	   sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" \
 	       -e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;" < drbd.spec.in \
 	   > dist/SPECS/drbd.spec ; \
 	fi
