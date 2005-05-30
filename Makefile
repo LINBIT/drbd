@@ -127,7 +127,7 @@ drbd/drbd_buildtag.c:
 	@ svn info >/dev/null || { echo "you need a svn checkout to do this." ; false ; }
 	@find $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;$(if $(PRESERVE_DEBIAN),,/^debian/d)' ) \
 	\! -type d -maxdepth 0 |\
-	sed 's:^:drbd-$(DIST_VERSION)/:' > .filelist
+	sed 's#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
@@ -166,7 +166,9 @@ prepare_release:
 	$(MAKE) tarball
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
-tarball: check_all_committed distclean doc .filelist tgz
+tarball: check_all_committed distclean doc .filelist
+	$(MAKE) tgz
+
 all tools doc .filelist: drbd/drbd_buildtag.c
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
