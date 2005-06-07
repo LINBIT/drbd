@@ -1,6 +1,6 @@
 Latest:
 ------
- ChangeLog last updated: r1801 2005-05-23
+ ChangeLog last updated: r1806 2005-05-23
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
@@ -20,6 +20,11 @@ Latest:
  * possibly existing /lib/modules/*/extra/drbd.ko are renamed to .orig in the
    post-install scripts to avoid conflicts with existing modules from
    distribution kernel packages
+ * fixed flex input buffer overflow
+   drbdadm_scanner.fl produced tokens of arbitrary length due to excessive use
+   of "+" and "*" modifiers. Now these are replaced with "{x,y}" modifiers, so
+   it should no longer segfault, which was actually observed e.g. with long
+   continuous comment blocks (~5k). 
 
 0.7.10 (api:77/proto:74)
 -----

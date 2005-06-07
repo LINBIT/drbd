@@ -190,7 +190,7 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Mon May 23 2005 15:11:39 +0200 Lars Ellenberg <lars@linbit.com>
+* Tue Jun  7 2005 19:13:00 +0200 Lars Ellenberg <lars@linbit.com>
 - drbd (0.7.11-1)
  * The upper limit of the runtime tuning parameter max_buffers 
    was ways too low for today's IBM storage controllers. 
@@ -206,6 +206,11 @@ uname -r | grep BOOT ||
  * possibly existing /lib/modules/*/extra/drbd.ko are renamed to .orig in the
    post-install scripts to avoid conflicts with existing modules from
    distribution kernel packages
+ * fixed flex input buffer overflow
+   drbdadm_scanner.fl produced tokens of arbitrary length due to excessive use
+   of "+" and "*" modifiers. Now these are replaced with "{x,y}" modifiers, so
+   it should no longer segfault, which was actually observed e.g. with long
+   continuous comment blocks (~5k). 
 
 * Mon Jan 31 2005 10:17:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.10-1)
