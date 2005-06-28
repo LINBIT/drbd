@@ -30,6 +30,7 @@ static const char *drbd_conn_s_names[] = {
 	[NetworkFailure] = "NetworkFailure",
 	[WFConnection]   = "WFConnection",
 	[WFReportParams] = "WFReportParams",
+	[TearDown]       = "TearDown",
 	[Connected]      = "Connected",
 	[SkippedSyncS]   = "SkippedSyncS",
 	[SkippedSyncT]   = "SkippedSyncT",

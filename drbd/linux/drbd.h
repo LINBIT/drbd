@@ -195,6 +195,7 @@ typedef enum {
 	NetworkFailure,
 	WFConnection,
 	WFReportParams, // we have a socket
+	TearDown, 
 	Connected,      // we have introduced each other
 	SkippedSyncS,   // we should have synced, but user said no
 	SkippedSyncT,

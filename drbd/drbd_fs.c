@@ -1002,6 +1002,43 @@ STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 	return 0;
 }
 
+STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
+{
+	drbd_state_t os,ns;
+	int r;
+
+	// Request state silently:
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	r = _drbd_set_state(mdev, _NS(conn,StandAlone), 0);
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
+	after_state_ch(mdev,os,ns);
+
+	if ( r == 2 )  return 0;
+	if ( r == -7 ) {
+		drbd_send_short_cmd(mdev, OutdateRequest);
+		wait_event(mdev->cstate_wait,
+			   mdev->state.s.pdsk <= Outdated || 
+			   mdev->state.s.conn < TearDown );
+		if( mdev->state.s.conn < TearDown ) return 0;
+
+		r = drbd_request_state(mdev,NS(conn,StandAlone));
+	}
+
+	if( r <= 0 ) return -ENODATA;
+
+	if ( mdev->cram_hmac_tfm ) {
+		crypto_free_tfm(mdev->cram_hmac_tfm);
+		mdev->cram_hmac_tfm = NULL;
+	}
+
+	drbd_sync_me(mdev); /* FIXME what if fsync returns error */
+	drbd_thread_stop(&mdev->receiver);
+	
+	return 0;
+}
+
 
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
@@ -1117,25 +1154,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_NET:
-		if ( mdev->state.s.conn == StandAlone) break;
-
-		r = drbd_request_state(mdev,NS(conn,StandAlone));
-		if( r == 2 ) { break; }
-		if( r <= 0 ) {
-			err=-ENODATA;
-			break;
-		} 
-		/* r == 1 which means that we changed the state... */
-
-		if ( mdev->cram_hmac_tfm ) {
-			crypto_free_tfm(mdev->cram_hmac_tfm);
-			mdev->cram_hmac_tfm = NULL;
-		}
-
-		drbd_sync_me(mdev); /* FIXME what if fsync returns error */
-
-		drbd_thread_stop(&mdev->receiver);
-
+		err = drbd_ioctl_unconfig_net(mdev);
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_DISK:

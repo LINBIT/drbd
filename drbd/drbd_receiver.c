@@ -1713,6 +1713,50 @@ STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail.
 }
 
+STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
+{
+	drbd_state_t os,ns;
+	int r;
+
+	WARN("OutdateRequest\n");
+
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	if( os.s.disk < Outdated ) { 
+		r=-999;
+	} else {
+		r = _drbd_set_state(mdev, _NS2(disk,Outdated,conn,TearDown),
+				    ChgStateVerbose);
+	}
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
+	after_state_ch(mdev,os,ns);
+
+	if( r >= 0 ) {
+		drbd_md_write(mdev);
+		drbd_send_short_cmd(mdev, OutdatedReply);
+		return TRUE;
+	}
+	
+	return FALSE;
+}
+
+STATIC int receive_outdated(drbd_dev *mdev, Drbd_Header *h)
+{
+	int r;
+
+	WARN("OutdatedReply\n");
+
+	drbd_uuid_new_current(mdev);
+	drbd_md_write(mdev);
+
+	r = drbd_request_state(mdev,NS2(pdsk,Outdated,conn,TearDown));
+	WARN("r=%d\n",r);
+	D_ASSERT(r >= 0);
+
+	return TRUE;
+}
+
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
@@ -1736,6 +1780,8 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportUUIDs]      = receive_uuids,
 	[ReportSizes]      = receive_sizes,
 	[ReportState]      = receive_state,
+	[OutdateRequest]   = receive_outdate,
+	[OutdatedReply]    = receive_outdated,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
@@ -1890,7 +1936,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			*/
 			drbd_uuid_new_current(mdev);
 		}
-		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) ) {
+		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
+		     mdev->state.s.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
 		}

@@ -298,6 +298,8 @@ typedef enum {
 	ReportState,
 	AuthChallenge,
 	AuthResponse,
+	OutdateRequest,
+	OutdatedReply,
 
 	Ping,         // These are sent on the meta socket...
 	PingAck,
@@ -334,11 +336,13 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[RSDataRequest]    = "RSDataRequest",
 		[SyncParam]        = "SyncParam",
 		[ReportProtocol]   = "ReportProtocol",
-		[ReportUUIDs]     = "ReportUUIDs",
+		[ReportUUIDs]      = "ReportUUIDs",
 		[ReportSizes]      = "ReportSizes",
 		[ReportState]      = "ReportState",
 		[AuthChallenge]    = "AuthChallenge",
 		[AuthResponse]     = "AuthResponse",
+		[OutdateRequest]   = "OutdateRequest",
+		[OutdatedReply]    = "OutdatedReply",
 		[Ping]             = "Ping",
 		[PingAck]          = "PingAck",
 		[RecvAck]          = "RecvAck",
@@ -347,7 +351,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[NegDReply]        = "NegDReply",
 		[NegRSDReply]      = "NegRSDReply",
 		[BarrierAck]       = "BarrierAck",
-		[DiscardNote]      = "DiscardNote"
+		[DiscardNote]      = "DiscardNote",
 	};
 
 	if (cmd == HandShake) return "HandShake";

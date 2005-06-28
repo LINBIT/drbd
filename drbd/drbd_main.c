@@ -564,7 +564,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		ns.s.conn = Connected;
 	}
 
-	if( ns.s.conn >= Connected && ns.s.disk == Consistent ) {
+	if( ns.s.conn >= Connected && 
+	    ( ns.s.disk == Consistent || ns.s.disk == Outdated ) ) {
 		switch(ns.s.conn) {
 		case SkippedSyncT:
 		case WFBitMapT:
@@ -583,9 +584,13 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			WARN("Implicit set disk state Inconsistent!\n");
 			break;
 		}
+		if( os.s.disk == Outdated && ns.s.disk == UpToDate ) {
+			WARN("Implicit set disk from Outdate to UpToDate\n");
+		}
 	}
 
-	if( ns.s.conn >= Connected && ns.s.pdsk == Consistent ) {
+	if( ns.s.conn >= Connected && 
+	    ( ns.s.pdsk == Consistent || ns.s.pdsk == Outdated ) ) {
 		switch(ns.s.conn) {
 		case Connected:
 		case SkippedSyncT:
@@ -603,6 +608,9 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			ns.s.pdsk = Inconsistent;
 			WARN("Implicit set pdsk Inconsistent!\n");
 			break;
+		}
+		if( os.s.pdsk == Outdated && ns.s.pdsk == UpToDate ) {
+			WARN("Implicit set pdsk from Outdate to UpToDate\n");
 		}
 	}
 
