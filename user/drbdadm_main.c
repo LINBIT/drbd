@@ -708,6 +708,22 @@ int adm_connect(struct d_resource* res,const char* unused)
   ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
   ssprintf(argv[argc++],"%s:%s",res->peer->address,res->peer->port);
   argv[argc++]=res->protocol;
+
+  // need to convert discard-node-nodename to discard-local or discard-remote.
+  opt=res->net_options;
+  while(opt) {
+    if(!strcmp(opt->name,"after-sb-0pri")) {
+      if(!strncmp(opt->value,"discard-node-",13)) {
+	if(!strcmp(nodeinfo.nodename,opt->value+13)) {
+	  opt->value=strdup("discard-local");
+	} else {
+	  opt->value=strdup("discard-remote");
+	}
+      }
+    }
+    opt=opt->next;
+  }
+
   opt=res->net_options;
   make_options(opt);
   argv[argc++]=0;

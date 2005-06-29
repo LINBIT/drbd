@@ -1254,6 +1254,111 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	return TRUE;
 }
 
+STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
+{
+	int self, peer, rv=-100;
+
+	self = mdev->uuid[Bitmap] & 1;
+	peer = mdev->p_uuid[Bitmap] & 1;
+
+	switch ( mdev->conf.after_sb_0p ) {
+	case Consensus:
+	case DiscardSecondary:
+	case PanicPrimary:
+		ERR("Configuration error.\n");
+		break;
+	case Disconnect: 
+		break;
+	case DiscardYoungerPri: 
+		if (self == 0 && peer == 1) rv = -1;
+		if (self == 1 && peer == 0) rv =  1;
+		D_ASSERT(self != peer);
+		break;
+	case DiscardOlderPri:
+		if (self == 0 && peer == 1) rv =  1;
+		if (self == 1 && peer == 0) rv = -1;
+		D_ASSERT(self != peer);
+		break;
+	case DiscardLeastChg:
+		ERR("Not yet implemented.\n");
+		break;
+	case DiscardLocal:
+		rv = -1;
+		break;
+	case DiscardRemote:
+		rv =  1;
+	}
+
+	return rv;
+}
+
+STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
+{
+	int self, peer, hg, rv=-100;
+
+	self = mdev->uuid[Bitmap] & 1;
+	peer = mdev->p_uuid[Bitmap] & 1;
+
+	switch ( mdev->conf.after_sb_1p ) {
+	case DiscardYoungerPri:
+	case DiscardOlderPri:
+	case DiscardLeastChg:
+	case DiscardLocal:
+	case DiscardRemote:
+		ERR("Configuration error.\n");
+		break;
+	case Disconnect:
+		break;
+	case Consensus:
+		hg = drbd_asb_recover_0p(mdev);
+		if( hg == -1 && mdev->state.s.role==Secondary) rv=hg;
+		if( hg == 1  && mdev->state.s.role==Primary)   rv=hg;
+		break;
+	case DiscardSecondary:
+		return mdev->state.s.role==Primary ? 1 : -1;
+	case PanicPrimary:
+		hg = drbd_asb_recover_0p(mdev);
+		if( hg == -1 && mdev->state.s.role==Primary) {
+			int sec = Secondary;
+			if(drbd_set_role(mdev,&sec)) {
+				drbd_panic("Panic by after-sb-1pri handler.");
+			} else rv = hg;
+		} else rv = hg;
+	}
+	return rv;
+}
+
+STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
+{
+	int self, peer, hg, rv=-100;
+
+	self = mdev->uuid[Bitmap] & 1;
+	peer = mdev->p_uuid[Bitmap] & 1;
+
+	switch ( mdev->conf.after_sb_1p ) {
+	case DiscardYoungerPri:
+	case DiscardOlderPri:
+	case DiscardLeastChg:
+	case DiscardLocal:
+	case DiscardRemote:
+	case Consensus:
+	case DiscardSecondary:
+		ERR("Configuration error.\n");
+		break;
+	case Disconnect:
+		break;
+	case PanicPrimary:
+		hg = drbd_asb_recover_0p(mdev);
+		if( hg == -1 ) {
+			int sec = Secondary;
+			if(drbd_set_role(mdev,&sec)) {
+				drbd_panic("Panic by after-sb-2pri handler.");
+			} else rv = hg;
+		} else rv = hg;
+	}
+	return rv;
+}
+
 /*
   100   after split brain try auto recover
     2   SyncSource set BitMap
@@ -1320,14 +1425,38 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 /* drbd_sync_handshake() returns the new conn state on success, or 
    conn_mask (-1) on failure.
  */
-STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev)
+STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 {
 	int hg;
 	drbd_conns_t rv = conn_mask;
 
 	hg = drbd_uuid_compare(mdev);
 
-	if (abs(hg) >= 100) {
+	if (hg == 100) {
+		if ( mdev->state.s.role==Secondary && peer_role==Secondary ) {
+			hg = drbd_asb_recover_0p(mdev);
+		} else if (mdev->state.s.role==Primary && peer_role==Primary) {
+			hg = drbd_asb_recover_2p(mdev);
+		} else {
+			hg = drbd_asb_recover_1p(mdev);
+		}
+		/* PRE TODO: consider want_loose here
+		if ( hg == -100 && mdev->conf.want_loose ) {
+			hg = -1;
+		}*/
+		if( hg != -100 ) {
+			WARN("Split-Brain detected, automatically solved.\n");
+		}
+	}
+
+	if (hg == -1000) {
+		ALERT("Unrelated data, dropping connection!\n");
+		drbd_force_state(mdev,NS(conn,StandAlone));
+		drbd_thread_stop_nowait(&mdev->receiver);
+		return conn_mask;
+	}
+
+	if (hg == -100) {
 		ALERT("Split-Brain detected, dropping connection!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
@@ -1463,7 +1592,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	drbd_bm_unlock(mdev); // }
 	
 	if (mdev->p_uuid) {
-		nconn=drbd_sync_handshake(mdev);
+		nconn=drbd_sync_handshake(mdev,mdev->state.s.peer);
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
@@ -1529,14 +1658,14 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	nconn = mdev->state.s.conn;
 	if (nconn == WFReportParams ) nconn = Connected;
 
+	peer_state.i = be32_to_cpu(p->state);
+
 	if (mdev->p_uuid) {
-		nconn=drbd_sync_handshake(mdev);
+		nconn=drbd_sync_handshake(mdev,peer_state.s.role);
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
 	}
-
-	peer_state.i = be32_to_cpu(p->state);
 
 	if (mdev->state.s.conn > WFReportParams ) {
 		if( nconn > Connected && peer_state.s.conn == Connected) {

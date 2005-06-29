@@ -86,6 +86,18 @@ enum disconnect_handler {
 	FreezeIO
 };
 
+enum after_sb_handler {
+	Disconnect,
+	DiscardYoungerPri,
+	DiscardOlderPri,
+	DiscardLeastChg,
+	DiscardLocal,
+	DiscardRemote,
+	Consensus,
+	DiscardSecondary,
+	PanicPrimary
+};
+
 struct net_config {
 	IN char     my_addr[MAX_SOCK_ADDR];
 	IN char     other_addr[MAX_SOCK_ADDR];
@@ -102,7 +114,9 @@ struct net_config {
 	IN int      sndbuf_size;  /* socket send buffer size */
 	IN int      two_primaries;
 	IN unsigned int ko_count;
+	IN int      want_loose;
 	IN enum disconnect_handler on_disconnect;
+	IN enum after_sb_handler after_sb_0p, after_sb_1p, after_sb_2p;
 };
 
 struct syncer_config {

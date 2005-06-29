@@ -70,6 +70,9 @@
 #define DEF_KO_COUNT                 0
 #define DEF_ON_DISCONNECT       Reconnect
 #define DEF_TWO_PRIMARIES            0
+#define DEF_AFTER_SB_0P       Disconnect
+#define DEF_AFTER_SB_1P       Disconnect
+#define DEF_AFTER_SB_2P       Disconnect
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -157,6 +160,10 @@ struct drbd_cmd commands[] = {
      { "allow-two-primaries",no_argument, 0, 'm' },
      { "cram-hmac-alg",required_argument, 0, 'a' },
      { "shared-secret",required_argument, 0, 'x' },
+     { "after-sb-0pri",required_argument, 0, 'A' },
+     { "after-sb-1pri",required_argument, 0, 'B' },
+     { "after-sb-2pri",required_argument, 0, 'C' },
+     { "discard-my-data",    no_argument, 0, 'D' },
      { 0,            0,                 0, 0 } } },
   {"disk", cmd_disk_conf,(char *[]){"lower_dev","meta_data_dev",
 				    "meta_data_index",0},
@@ -189,6 +196,42 @@ const char *dh_names[] = {
   [DropNetConf] = "stand_alone",
   // [FreezeIO]    = "freeze_io" // TODO on the kernel side...
 };
+
+const char *asb0p_names[] = {
+  [Disconnect]        = "disconnect",
+  [DiscardYoungerPri] = "discard-younger-primary",
+  [DiscardOlderPri]   = "discard-older-primary",
+  [DiscardLeastChg]   = "discard-least-changes",
+  [DiscardLocal]      = "discard-local",
+  [DiscardRemote]     = "discard-remote"
+};
+
+const char *asb1p_names[] = {
+  [Disconnect]        = "disconnect",
+  [Consensus]         = "consensus",
+  [DiscardSecondary]  = "discard-secondary",
+  [PanicPrimary]      = "panic-primary"
+};
+
+const char *asb2p_names[] = {
+  [Disconnect]        = "disconnect",
+  [PanicPrimary]      = "panic"
+};
+
+int _lookup_handler(const char* text, const char** handlers, int size)
+{
+  int i;
+
+  for(i=0;i<size;i++) {
+    if (handlers[i]==0) continue;
+    if (strcmp(text,handlers[i])==0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+#define lookup_handler(A,B) _lookup_handler(A,B,ARRY_SIZE(B))
 
 unsigned long resolv(const char* name)
 {
@@ -402,10 +445,9 @@ int scan_disk_options(char **argv,
 
   while(1)
     {
-      int c,i;
+      int c;
 
       PRINT_ARGV;
-      next_option:
       c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
       if(c == -1) break;
       switch(c)
@@ -416,15 +458,13 @@ int scan_disk_options(char **argv,
 			      DRBD_DISK_SIZE_SECT_MAX>>1 ) << 1;
 	  break;
 	case 'e':
-	  for(i=0;i<ARRY_SIZE(eh_names);i++) {
-	    if (strcmp(optarg,eh_names[i])==0) {
-	      cn->config.on_io_error=i;
-	      goto next_option;
-	    }
+	  cn->config.on_io_error=lookup_handler(optarg,eh_names);
+	  if( cn->config.on_io_error == -1 ) {
+	    fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
+		    cmdname,optarg);
+	    return 20;
 	  }
-	  fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
-		  cmdname,optarg);
-	  return 20;
+	  break;
 	case 'b':
 	  cn->config.split_brain_fix = 1;
 	  break;
@@ -452,15 +492,18 @@ int scan_net_options(char **argv,
   cn->config.two_primaries = DEF_TWO_PRIMARIES;
   cn->config.cram_hmac_alg[0] = 0;
   cn->config.shared_secret[0] = 0;
+  cn->config.after_sb_0p = DEF_AFTER_SB_0P;
+  cn->config.after_sb_1p = DEF_AFTER_SB_1P;
+  cn->config.after_sb_2p = DEF_AFTER_SB_2P;
+  cn->config.want_loose = 0;
 
   if(argc==0) return 0;
 
   while(1)
     {
-      int c,i;
+      int c;
 
       PRINT_ARGV;
-      next_option:
       c = getopt_long(argc,argv,make_optstring(options,'-'),options,0);
       if(c == -1) break;
       switch(c)
@@ -498,21 +541,48 @@ int scan_net_options(char **argv,
 	  cn->config.two_primaries = 1;
           break;
 	case 'd':
-	  for(i=0;i<ARRY_SIZE(dh_names);i++) {
-	    if (strcmp(optarg,dh_names[i])==0) {
-	      cn->config.on_disconnect=i;
-	      goto next_option;
-	    }
+	  cn->config.on_disconnect = lookup_handler(optarg,dh_names);
+	  if( cn->config.on_disconnect == -1 ) {
+	    fprintf(stderr,"%s: '%s' is an invalid on-disconnect handler.\n",
+		    cmdname,optarg);
+	    return 20;
 	  }
-	  fprintf(stderr,"%s: '%s' is an invalid on-disconnect handler.\n",
-		  cmdname,optarg);
-	  return 20;
+	  break;
 	case 'a':
 	  strncpy(cn->config.cram_hmac_alg,optarg,CRYPTO_MAX_ALG_NAME);
 	  break;
 	case 'x':
 	  strncpy(cn->config.shared_secret,optarg,SHARED_SECRET_MAX);
 	  break;
+	case 'A':
+	  cn->config.after_sb_0p = lookup_handler(optarg,asb0p_names);
+	  if( cn->config.after_sb_0p == -1 ) {
+	    fprintf(stderr,"%s: '%s' is an invalid after-sb-0pri handler.\n",
+		    cmdname,optarg);
+	    return 20;
+	  }
+	  break;
+	case 'B':
+	  cn->config.after_sb_1p = lookup_handler(optarg,asb1p_names);
+	  if( cn->config.after_sb_0p == -1 ) {
+	    fprintf(stderr,"%s: '%s' is an invalid after-sb-1pri handler.\n",
+		    cmdname,optarg);
+	    return 20;
+	  }
+	  break;
+	case 'C':
+	  cn->config.after_sb_2p = lookup_handler(optarg,asb2p_names);
+	  if( cn->config.after_sb_0p == -1 ) {
+	    fprintf(stderr,"%s: '%s' is an invalid after-sb-2pri handler.\n",
+		    cmdname,optarg);
+	    return 20;
+	  }
+	  break;
+       case 'D':
+	  cn->config.want_loose = 1;
+          break;
+
+
 	case 1:	// non option argument. see getopt_long(3)
 	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	case '?':
@@ -1214,10 +1284,15 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
       SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
       SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
-      if( cn.nconf.on_disconnect != DEF_ON_DISCONNECT) {
-	printf(" on-disconnect = %s\n",dh_names[cn.nconf.on_disconnect]);
-      }
+
+#define SHOW_H(T,M,D,H) if( M != D ) { printf(" " T " = %s\n",H[M]); }
+      SHOW_H("on-disconnect",cn.nconf.on_disconnect,DEF_ON_DISCONNECT,dh_names);
+
       if( cn.nconf.two_primaries ) printf(" allow-two-primaries\n");
+
+      SHOW_H("after-sb-0pri",cn.nconf.after_sb_0p,DEF_AFTER_SB_0P,asb0p_names);
+      SHOW_H("after-sb-1pri",cn.nconf.after_sb_1p,DEF_AFTER_SB_0P,asb1p_names);
+      SHOW_H("after-sb-2pri",cn.nconf.after_sb_2p,DEF_AFTER_SB_0P,asb2p_names);
 
       printf("Syncer options:\n");
 

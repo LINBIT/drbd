@@ -16,13 +16,13 @@ int sizeof_drbd_structs_sanity_check(void)
 {
 	int err = 0, s = 0;
 	SZO(struct disk_config,		 32)
-	SZO(struct net_config,		432)
+	SZO(struct net_config,		444)
 	SZO(struct syncer_config,	 24)
 	SZO(struct ioctl_disk_config,	 40)
-	SZO(struct ioctl_net_config,	440)
+	SZO(struct ioctl_net_config,	452)
 	SZO(struct ioctl_syncer_config,	 32)
 	SZO(struct ioctl_wait,		 16)
-	SZO(struct ioctl_get_config,	560)
+	SZO(struct ioctl_get_config,	572)
 	SZO(struct ioctl_get_uuids,      48)
 	if (err) printk("<3>ioctls won't work, aborting\n");
 	return err;

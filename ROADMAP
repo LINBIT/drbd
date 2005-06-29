@@ -47,7 +47,7 @@ DRBD 0.8 Roadmap
      "discard-least-changes"
                       Auto sync from the node that touched more
                       blocks during the split brain situation.
-     "discard-NODENAME"
+     "discard-node-NODENAME"
                       Auto sync _to_ the named node.
 
   In one of the nodes is already primary, then the auto-recovery
@@ -60,9 +60,9 @@ DRBD 0.8 Roadmap
                       discard the version of the secondary.
      "panic-primary"  Always honour the outcome of the "after-sb-2sc"
                       algorithm. In case it decides the the current
-                      secondary has the right data, it panics the
-                      current primary.
-     "suspend-primary" ???
+                      secondary has the right data, it tries to make the
+                      the current primary secondary, if that fails 
+                      it panics the current primary.
 
   In case both nodes are primary you control DRBD's strategy by
   the "after-sb-2pri" option.
@@ -74,6 +74,15 @@ DRBD 0.8 Roadmap
   after-sb-0pri = disconnect;
   after-sb-1pri = disconnect;
   after-sb-2pri = disconnect;
+
+  DRBD-07 was:
+  after-sb-0pri = discard-younger-primary;
+  after-sb-1pri = consensus;
+  after-sb-2pri = disconnect;
+
+  NB: To allow the user to resolve from such situations manually
+      the "drbdadm connect" command (this is the "drbdsetup net"
+      command) gets a short-living flag called "--I-want-to-be-discarded".
 
 6 It is possible that a secondary node crashes a primary by 
   returning invalid block_ids in ACK packets. [This might be 
@@ -495,7 +504,18 @@ DRBD 0.8 Roadmap
 
 20 Make the updates to the bitmap transactional. Esp for resizing.
   Make updates to the superblock transactional
-  
+
+21 There are quite a number of parameters that must be set equal
+   (or some reciprocal) on the two nodes. We need to ensure that
+   the config is valid, from a viewpoint of the whole cluster.
+   E.g.
+   protocol				equal
+   cram-hmac-alg			equal
+   after-sb-0pri / discard-local/remote	equal / reciprocal
+   after-sb-1pri			equal
+   after-sb-2pri			equal
+   syncer/group				equal
+
 plus-banches:
 ----------------------
 
