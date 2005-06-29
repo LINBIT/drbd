@@ -27,47 +27,53 @@ DRBD 0.8 Roadmap
   cstate-error states into a single "NetworkFailure" state.
   50% DONE
 
-5 Two new configuration options, to allow more fine grained definition of
-  DRDBs behaviour after a split-brain situation:
+5 Three configuration options, to allow more fine grained definition
+  of DRBDs behaviour after a split-brain situation:
 
-  after-sb-2pri = 
-   disconnect     No automatic resynchronisation gets performed. Both
-                  nodes should drop their net-conf
-                  DEFAULT.
-   discard-younger-primary
-                  Auto sync from is the older primary (curr.behaviour i.t.s.)
-   discard-older-primary
-                  Auto sync from is the younger primary
-   discard-less-modified
-                  Auto sync from is the node that did more modifications
-   discard-NODENAME 
-                  Auto sync to the named node
-   discard-current-secondary
-   		  Auto sync from current primary (What if there is no primary?)
-  
-  pri-sees-sec-with-newer-data =
-   disconnect         (current behaviour)
-   discard-secondary  Auto sync from is the current primary
-   suspend_io          The current primary freezes IO.
+  In case the nodes of your cluster nodes see each other again, after
+  an split brain situation in which both nodes where primary 
+  at the same time, you have two diverged versions of your data.
+ 
+  In case both nodes are secondary you can control DRBD's
+  auto recovery strategy by the "after-sb-0pri" options. The
+  default is to disconnect. 
+     "disconnect" ... No automatic resynchronisation, simply disconnect.
+     "discard-younger-primary"
+                      Auto sync from the node that was primary before
+                      the split brain situation happened.
+     "discard-older-primary"
+                      Auto sync from the node that became primary 
+                      as second during the split brain situation.
+     "discard-least-changes"
+                      Auto sync from the node that touched more
+                      blocks during the split brain situation.
+     "discard-NODENAME"
+                      Auto sync _to_ the named node.
 
-  pri-sees-sec-with-newer-data-cmd "command";
-                      In the same event this command will be executed.
-  
-  
-  Notes:
-  1) The disconnect actions cause the sync-target or the secondary
-     (better both) node to go into StandAlone state.
-  2) If two nodes in primary state try to connect one (better both)
-     of them goes into StandAlone state (=curr. behaviour)
-  3) As soon as the decision is takes the sync-target adopts the
-     GC of the sync source. 
-     [ The whole algorithm would also work if both would reset their 
-       GCs to <0,0,0...> after the decision, but since we also
-       use the GC to tag the bitmap it is better the current way ]
-  4) The execution of the pri-sees-sec-with-higher-gc-cmd should
-     be implemented like the kernel can execute modprobe...
-  5) To implement this we have the "primary" bit in the data-gen-UUIDs.
-  0% DONE
+  In one of the nodes is already primary, then the auto-recovery
+  strategie is controled by the "after-sb-1pri" options.
+     "disconnect" ... always disconnect 
+     "consensus"  ... discard the version of the secondary if the outcome
+                      of the "after-sb-0pri" algorithm would also destroy 
+                      the current secondary's data. Otherwise disconnect.
+     "discard-secondary"     
+                      discard the version of the secondary.
+     "panic-primary"  Always honour the outcome of the "after-sb-2sc"
+                      algorithm. In case it decides the the current
+                      secondary has the right data, it panics the
+                      current primary.
+     "suspend-primary" ???
+
+  In case both nodes are primary you control DRBD's strategy by
+  the "after-sb-2pri" option.
+     "disconnect" ... Go to StandAlone mode on both sides.
+     "panic"      ... Honor the outcome of the "after-sb-0pri" algorithm
+                      and panic the other node.
+
+  Defaults:
+  after-sb-0pri = disconnect;
+  after-sb-1pri = disconnect;
+  after-sb-2pri = disconnect;
 
 6 It is possible that a secondary node crashes a primary by 
   returning invalid block_ids in ACK packets. [This might be 
@@ -487,6 +493,9 @@ DRBD 0.8 Roadmap
   Should we provide him commands like "drbdadm winner res"
   "drbdadm looser res", to resolve the situation.
 
+20 Make the updates to the bitmap transactional. Esp for resizing.
+  Make updates to the superblock transactional
+  
 plus-banches:
 ----------------------
 
