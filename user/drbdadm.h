@@ -19,6 +19,8 @@ enum {
 
   RETURN_PID           = 2,
   SLEEPS_FOREVER       = 4,
+
+  DONT_REPORT_FAILED   = 0x80,
 };
 
 /* for check_uniq(): Check for uniqueness of certain values...

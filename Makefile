@@ -38,7 +38,7 @@ REL_VERSION := $(REL_VERSION)-$(shell LANG= svn info| \
 endif
 
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
-FDIST_VERSION := $(shell sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
+FDIST_VERSION := $(shell test -e .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
 ifeq ($(FDIST_VERSION),)
 FDIST_VERSION := $(DIST_VERSION)
 endif

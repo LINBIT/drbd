@@ -1,5 +1,7 @@
 %{
 
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +11,8 @@
 
 extern void yyerror(char* text);
 extern int  yylex(void);
+
+#define YYDEBUG 1
 
 #define APPEND(LIST,ITEM) ({		      \
   typeof((LIST)) _l = (LIST);		      \
@@ -24,6 +28,7 @@ extern int  yylex(void);
 })
 
 static struct d_resource* c_res;
+static struct d_resource* c_config;
 static struct d_host_info* c_host;
 static char* c_hostname;
 static int   c_section_start, n_hosts;
@@ -302,7 +307,7 @@ void check_meta_disk()
 
 #define CHKU(what,val) \
 	c_host->what = val; \
-	check_uniq( #what, "%s:%s",c_hostname,val)
+	check_uniq( #what, "%s:%s:%s", #what, c_hostname,val)
 
 #define CHKS(sname) \
 	check_uniq(sname " section","%s:" sname, c_res->name)
@@ -360,8 +365,8 @@ glob_stmt:	  TK_DISABLE_IO_HINTS
 		}
 		;
 
-resources:	  /* empty */	     { $$ = 0; }
-		| resources resource { $$=APPEND($1,$2); }
+resources:	  /* empty */	     { $$ = 0; c_config = 0; }
+		| resources resource { $$=APPEND($1,$2); c_config=$$; }
 		;
 
 resource:	TK_RESOURCE { n_hosts = 0; } resource_name res_stmts

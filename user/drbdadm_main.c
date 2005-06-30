@@ -65,8 +65,9 @@ struct adm_cmd {
   const char* name;
   int (* function)(struct d_resource*,char* );
   char* arg;
-  int show_in_usage;
-  int res_name_required;
+  int show_in_usage     :1;
+  int res_name_required :1;
+  int verify_ips        :1;
 };
 
 struct deferred_cmd
@@ -77,6 +78,7 @@ struct deferred_cmd
 };
 
 extern int yyparse();
+extern int yydebug;
 extern FILE* yyin;
 
 int adm_attach(struct d_resource* ,char* );
@@ -109,6 +111,7 @@ int nr_resources;
 int highest_minor;
 int config_valid=1;
 int dry_run;
+int do_verify_ips;
 char* drbdsetup;
 char* setup_opts[10];
 int soi=0;
@@ -169,34 +172,35 @@ struct option admopt[] = {
 };
 
 struct adm_cmd cmds[] = {
-  { "attach",            adm_attach,  0                  ,1,1 },
-  { "detach",            adm_generic_s,"detach"          ,1,1 },
-  { "connect",           adm_connect, 0                  ,1,1 },
-  { "disconnect",        adm_generic_s,"disconnect"      ,1,1 },
-  { "up",                adm_up,      0                  ,1,1 },
-  { "down",              adm_generic_s,"down"            ,1,1 },
-  { "primary",           adm_primary, 0                  ,1,1 },
-  { "secondary",         adm_generic_s,"secondary"       ,1,1 },
-  { "invalidate",        adm_generic_l,"invalidate"      ,1,1 },
-  { "invalidate_remote", adm_generic_l,"invalidate_remote",1,1 },
-  { "resize",            adm_resize,  0                  ,1,1 },
-  { "syncer",            adm_syncer,  0                  ,1,1 },
-  { "adjust",            adm_adjust,  0                  ,1,1 },
-  { "wait_connect",      adm_wait_c,  0                  ,1,1 },
-  { "state",             adm_generic_s,"state"           ,1,1 },
-  { "cstate",            adm_generic_s,"cstate"          ,1,1 },
-  { "dump",              adm_dump,    0                  ,1,1 },
-  { "wait_con_int",      adm_wait_ci, 0                  ,1,0 },
-  { "sh-resources",      sh_resources,0                  ,0,0 },
-  { "sh-mod-parms",      sh_mod_parms,0                  ,0,0 },
-  { "sh-dev",            sh_dev,      0                  ,0,1 },
-  { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1 },
-  { "sh-md-dev",         sh_md_dev,   0                  ,0,1 },
-  { "sh-md-idx",         sh_md_idx,   0                  ,0,1 }
+/*   name, function, arg,                     show, needs res, verify_ips */
+  { "attach",            adm_attach,  0                  ,1,1,1 },
+  { "detach",            adm_generic_s,"detach"          ,1,1,1 },
+  { "connect",           adm_connect, 0                  ,1,1,1 },
+  { "disconnect",        adm_generic_s,"disconnect"      ,1,1,0 },
+  { "up",                adm_up,      0                  ,1,1,1 },
+  { "down",              adm_generic_s,"down"            ,1,1,0 },
+  { "primary",           adm_primary, 0                  ,1,1,1 },
+  { "secondary",         adm_generic_s,"secondary"       ,1,1,1 },
+  { "invalidate",        adm_generic_l,"invalidate"      ,1,1,1 },
+  { "invalidate_remote", adm_generic_l,"invalidate_remote",1,1,1 },
+  { "resize",            adm_resize,  0                  ,1,1,1 },
+  { "syncer",            adm_syncer,  0                  ,1,1,1 },
+  { "adjust",            adm_adjust,  0                  ,1,1,1 },
+  { "wait_connect",      adm_wait_c,  0                  ,1,1,1 },
+  { "state",             adm_generic_s,"state"           ,1,1,0 },
+  { "cstate",            adm_generic_s,"cstate"          ,1,1,1 },
+  { "dump",              adm_dump,    0                  ,1,1,1 },
+  { "wait_con_int",      adm_wait_ci, 0                  ,1,0,1 },
+  { "sh-resources",      sh_resources,0                  ,0,0,0 },
+  { "sh-mod-parms",      sh_mod_parms,0                  ,0,0,0 },
+  { "sh-dev",            sh_dev,      0                  ,0,1,0 },
+  { "sh-ll-dev",         sh_ll_dev,   0                  ,0,1,0 },
+  { "sh-md-dev",         sh_md_dev,   0                  ,0,1,0 },
+  { "sh-md-idx",         sh_md_idx,   0                  ,0,1,0 },
 };
 
 
-#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
+#define ARRY_SIZE(A) (int)(sizeof(A)/sizeof(A[0]))
 
 /*** These functions are used to the print the config ***/
 
@@ -477,7 +481,7 @@ pid_t m_system(char** argv,int flags)
   if( flags & SLEEPS_FINITE ) {
     alarm(0);
     sigaction(SIGALRM,&so,NULL);
-    if(rv) {
+    if(rv && !(flags & DONT_REPORT_FAILED)) {
       fprintf(stderr,"Command '");
       while(*argv) {
 	fprintf(stderr,"%s",*argv++);
@@ -863,15 +867,21 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
     pids[i++]=m_system(argv,RETURN_PID);
   }
 
-  wtime = global_options.dialog_refresh ? 
+  wtime = global_options.dialog_refresh ?
     global_options.dialog_refresh : -1;
 
   start = time(0);
-  rr = gets_timeout(pids,0,0,3*1000); // no string, but timeout of 3 seconds.
-  check_exit_codes(pids);
+  for (i = 0; i < 10; i++) {
+    // no string, but timeout
+    rr = gets_timeout(pids,0,0,1*1000);
+    if (rr < 0) break;
+    putchar('.');
+    fflush(stdout);
+    check_exit_codes(pids);
+  }
 
   if(rr == 0) {
-    printf("***************************************************************\n"
+    printf("\n***************************************************************\n"
 	   " DRBD's startup script waits for the peer node(s) to appear.\n"
 	   " - In case this node was already a degraded cluster before the\n"
 	   "   reboot the timeout is %s seconds. [degr-wfc-timeout]\n"
@@ -899,7 +909,6 @@ static int adm_wait_ci(struct d_resource* ignored ,char* unused)
 	  printf(" To abort waiting enter 'yes' [ -- ]:");
 	}
       }
-      
     } while( rr != -1 );
     printf("\n");
   }
@@ -931,7 +940,7 @@ const char* make_optstring(struct option *options)
   return buffer;
 }
 
-void print_usage()
+void print_usage_and_exit(const char* addinfo)
 {
   int i;
   struct option *opt;
@@ -963,6 +972,9 @@ void print_usage()
   printf("\nVersion: "REL_VERSION" (api:%d)\n%s\n",
 		  API_VERSION, drbd_buildtag());
 
+  if (addinfo)
+      printf("\n%s\n",addinfo);
+
   exit(E_usage);
 }
 
@@ -975,7 +987,7 @@ void verify_ips(struct d_resource* res)
   char *argv[] = { "/bin/bash", "-c", NULL, "drbdadm:verify_ips", NULL };
   int ex;
 
-  if (dry_run == 1) return;
+  if (dry_run == 1 || do_verify_ips == 0) return;
 
   if (!(res && res->me   && res->me->address
 	    && res->peer && res->peer->address)) {
@@ -997,7 +1009,7 @@ void verify_ips(struct d_resource* res)
 	"fi >/dev/null",
 	my_ip);
   if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(argv,SLEEPS_SHORT);
+  ex = m_system(argv,SLEEPS_SHORT|DONT_REPORT_FAILED);
   free(argv[2]); argv[2] = NULL;
 
   if (ex != 0) {
@@ -1141,17 +1153,27 @@ int main(int argc, char** argv)
   int i,rv;
   struct adm_cmd *cmd;
   struct d_resource *res,*tmp;
+  char *env_drbd_nodename = NULL;
 
   drbdsetup=NULL;
   dry_run=0;
   yyin=NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
 
+  env_drbd_nodename = getenv("__DRBD_NODE__");
+  if (env_drbd_nodename && *env_drbd_nodename) {
+    strncpy(nodeinfo.nodename,env_drbd_nodename,sizeof(nodeinfo.nodename)-1);
+    nodeinfo.nodename[sizeof(nodeinfo.nodename)] = 0;
+    fprintf(stderr, "\n"
+            "   found __DRBD_NODE__ in environment\n"
+            "   PRETENDING that I am >>%s<<\n\n",nodeinfo.nodename);
+  }
+
   if( (progname=strrchr(argv[0],'/')) )
     argv[0] = ++progname;
   else
     progname=argv[0];
-  if(argc == 1) print_usage(); // arguments missing.
+  if(argc == 1) print_usage_and_exit("missing arguments"); // arguments missing.
 
   opterr=1;
   optind=0;
@@ -1190,18 +1212,19 @@ int main(int argc, char** argv)
 	case '?':
 	  // commented out, since opterr=1
 	  //fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+	  fprintf(stderr,"try '%s help'\n",progname);
 	  return 20;
 	  break;
 	}
     }
 
-  if ( optind == argc ) print_usage();
+  if ( optind == argc ) print_usage_and_exit(0);
 
   while(argv[optind][0]=='-') {
     setup_opts[soi++]=argv[optind++];
-    if (optind == argc) print_usage();
+    if (optind == argc) print_usage_and_exit(0);
   }
-  if (optind == argc) print_usage();
+  if (optind == argc) print_usage_and_exit(0);
 
   cmd=NULL;
   for(i=0;i<ARRY_SIZE(cmds);i++) {
@@ -1212,10 +1235,12 @@ int main(int argc, char** argv)
   }
 
   if(cmd==NULL) {
+    if (!strncmp("help",argv[optind],5)) print_usage_and_exit(0);
     fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
     exit(E_usage);
   }
   optind++;
+  do_verify_ips = cmd->verify_ips;
 
   if (!config_file) {
     i=0;
@@ -1255,11 +1280,17 @@ int main(int argc, char** argv)
     exit(E_exec_error);
   };
 
+  //yydebug = 1;
   yyparse();
 
   if(!config_valid) exit(E_config_invalid);
 
-  {
+  if (config == NULL) {
+    fprintf(stderr, "no resources defined!\n");
+    exit(0); /* THINK exit here? what code? */
+  }
+
+  { /* block for mc to avoid compiler warnings */
     int mc=global_options.minor_count;
 
     highest_minor=0;
@@ -1285,11 +1316,12 @@ int main(int argc, char** argv)
 
   if(cmd->res_name_required)
     {
-      if (optind + 1 > argc && cmd->function != adm_dump)
-        print_usage (argv[0]);	// arguments missing.
+      int is_dump = (cmd->function == adm_dump);
+      if (optind + 1 > argc && !is_dump)
+        print_usage_and_exit("missing arguments"); // arguments missing.
 
-      if(optind==argc || !strcmp(argv[optind],"all")) {
-        if (cmd->function == adm_dump) dump_global_info();
+      if ( optind==argc || !strcmp(argv[optind],"all") ) {
+        if (is_dump) dump_global_info();
         for_each_resource(res,tmp,config) {
 	  if( (rv=cmd->function(res,cmd->arg)) ) {
 	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);

@@ -976,11 +976,15 @@ struct bm_extent {
 #define BM_EXT_PER_SECT	    ( 512 / BM_BYTES_PER_EXTENT )        //   4
  */
 
-#if ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
-# define DRBD_MAX_SECTORS (0xffffffffLU)
-#else 
-# define DRBD_MAX_SECTORS \
+#define DRBD_MAX_SECTORS_32 (0xffffffffLU)
+#define DRBD_MAX_SECTORS_BM \
           ( (MD_RESERVED_SIZE*2LL - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
+#if DRBD_MAX_SECTORS_BM < DRBD_MAX_SECTORS_32
+#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
+#elif ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
+#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_32
+#else
+#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
 #endif
 
 extern int  drbd_bm_init      (drbd_dev *mdev);
@@ -1553,7 +1557,7 @@ static inline unsigned long hweight_long(unsigned long w)
 
 static inline void drbd_suicide(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
+#ifdef TASK_ZOMBIE
 	set_current_state(TASK_ZOMBIE);
 #else
 	current->exit_state = EXIT_ZOMBIE;

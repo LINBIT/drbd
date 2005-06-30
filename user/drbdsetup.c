@@ -50,7 +50,7 @@
 
 #include "drbd_limits.h"
 
-#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
+#define ARRY_SIZE(A) (int)(sizeof(A)/sizeof(A[0]))
 
 /* Default values */
 #define DEF_NET_TIMEOUT             60      //  6 seconds

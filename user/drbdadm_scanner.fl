@@ -197,7 +197,8 @@ PORT			  {WS}port{ASSIGN}{NUM}
 }
 
 <IGNORE_SECTION>{
-  [^{}]			update_lcnt(); /* no ECHO */
+  [^{}\n]{1,80}		/* no ECHO */
+  {WS}			update_lcnt(); /* no ECHO */
   \{			yy_push_state(IGNORE_SECTION);
 }
 

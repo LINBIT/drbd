@@ -131,6 +131,7 @@ else
   endif
 
   clean:
+	rm -rf .tmp_versions
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
   distclean: clean
