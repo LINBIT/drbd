@@ -146,9 +146,9 @@ tgz:
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
 	rm -f drbd-$(FDIST_VERSION)
 	ln -s . drbd-$(FDIST_VERSION)
-	set -e ; for f in $$(<.filelist) ; do [ -e $$f ] ; done
+	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
 	grep debian .filelist >/dev/null 2>&1 && _DEB=-debian || _DEB="" ; \
-	tar --owner=0 --group=0 -czf drbd-$(FDIST_VERSION)$$_DEB.tar.gz -T .filelist
+	tar --owner=0 --group=0 -czf - -T .filelist > drbd-plus-$(FDIST_VERSION)$$_DEB.tar.gz
 	rm drbd-$(FDIST_VERSION)
 
 ifeq ($(FORCE),)
