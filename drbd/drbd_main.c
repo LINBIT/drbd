@@ -978,6 +978,9 @@ int drbd_send_uuids(drbd_dev *mdev)
 		p.uuid[i] = cpu_to_be64(mdev->uuid[i]);
 	}
 
+	p.uuid[UUID_SIZE] = cpu_to_be64(drbd_bm_total_weight(mdev));
+	p.uuid[UUID_FLAGS] = cpu_to_be64(mdev->conf.want_loose);
+
 	return drbd_send_cmd(mdev,mdev->data.socket,ReportUUIDs,
 			     (Drbd_Header*)&p,sizeof(p));
 }

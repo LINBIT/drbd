@@ -114,7 +114,7 @@ struct net_config {
 	IN int      sndbuf_size;  /* socket send buffer size */
 	IN int      two_primaries;
 	IN unsigned int ko_count;
-	IN int      want_loose;
+	   int      want_loose;
 	IN enum disconnect_handler on_disconnect;
 	IN enum after_sb_handler after_sb_0p, after_sb_1p, after_sb_2p;
 };
@@ -153,6 +153,7 @@ enum ret_codes {
 	CRAMAlgNotAvail,
 	CRAMAlgNotDigest,
 	KMallocFailed,
+	DiscardNotAllowed,
 };
 
 struct ioctl_disk_config {
@@ -290,7 +291,9 @@ enum UuidIndex {
 	Bitmap,
 	History_start,
 	History_end,
-	UUID_SIZE
+	UUID_SIZE,      // In the packet we store the number of dirty bits here
+	UUID_FLAGS,     // In the packet we store flags here.
+	EXT_UUID_SIZE   // Everything.
 };
 
 #define UUID_JUST_CREATED ((__u64)4)

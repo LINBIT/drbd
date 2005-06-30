@@ -82,7 +82,7 @@ DRBD 0.8 Roadmap
 
   NB: To allow the user to resolve from such situations manually
       the "drbdadm connect" command (this is the "drbdsetup net"
-      command) gets a short-living flag called "--I-want-to-be-discarded".
+      command) gets a short-living flag called "--discard-my-data".
 
 6 It is possible that a secondary node crashes a primary by 
   returning invalid block_ids in ACK packets. [This might be 
@@ -497,15 +497,10 @@ DRBD 0.8 Roadmap
   its data and to close the connection in one go.
   0% DONE.
 
-19 Should we expect the user to use "set-gi" to recover from a
-  aplit brain (two disconnected primaries) situation ?
-  Should we provide him commands like "drbdadm winner res"
-  "drbdadm looser res", to resolve the situation.
-
-20 Make the updates to the bitmap transactional. Esp for resizing.
+19 Make the updates to the bitmap transactional. Esp for resizing.
   Make updates to the superblock transactional
 
-21 There are quite a number of parameters that must be set equal
+20 There are quite a number of parameters that must be set equal
    (or some reciprocal) on the two nodes. We need to ensure that
    the config is valid, from a viewpoint of the whole cluster.
    E.g.

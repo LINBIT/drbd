@@ -470,7 +470,7 @@ typedef struct {
 
 typedef struct {
 	Drbd_Header head;
-	u64         uuid[UUID_SIZE];
+	u64         uuid[EXT_UUID_SIZE];
 } __attribute((packed)) Drbd_GenCnt_Packet;
 
 typedef struct {

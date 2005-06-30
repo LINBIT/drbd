@@ -630,7 +630,8 @@ void print_config_ioctl_err(int err_no)
     [CRAMAlgNotAvail]="The 'cram-hmac-alg' you specified is not known in "
                       "the kernel.\n",
     [CRAMAlgNotDigest]="The 'cram-hmac-alg' you specified is not a digest.",
-    [KMallocFailed]="kmalloc() failed. Out of memory?"
+    [KMallocFailed]="kmalloc() failed. Out of memory?",
+    [DiscardNotAllowed]="--discard-my-data not allowed when primary."
   };
 
   if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;
@@ -1293,6 +1294,8 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       SHOW_H("after-sb-0pri",cn.nconf.after_sb_0p,DEF_AFTER_SB_0P,asb0p_names);
       SHOW_H("after-sb-1pri",cn.nconf.after_sb_1p,DEF_AFTER_SB_0P,asb1p_names);
       SHOW_H("after-sb-2pri",cn.nconf.after_sb_2p,DEF_AFTER_SB_0P,asb2p_names);
+
+      if( cn.nconf.want_loose ) printf(" discard-my-data\n");
 
       printf("Syncer options:\n");
 

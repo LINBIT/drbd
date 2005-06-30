@@ -1257,6 +1257,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 {
 	int self, peer, rv=-100;
+	unsigned long ch_self, ch_peer;
 
 	self = mdev->uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
@@ -1280,7 +1281,14 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 		D_ASSERT(self != peer);
 		break;
 	case DiscardLeastChg:
-		ERR("Not yet implemented.\n");
+		ch_peer = mdev->p_uuid[UUID_SIZE];
+		ch_self = drbd_bm_total_weight(mdev);
+		if( ch_self < ch_peer ) rv = -1;
+		if( ch_self > ch_peer ) rv =  1;
+		if( ch_self == ch_peer ) {
+			if( ch_self == 0 && ch_peer == 0 ) rv =  0;
+			else ERR("Do not know what to do!\n"); // TODO
+		}
 		break;
 	case DiscardLocal:
 		rv = -1;
@@ -1440,11 +1448,14 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 		} else {
 			hg = drbd_asb_recover_1p(mdev);
 		}
-		/* PRE TODO: consider want_loose here
-		if ( hg == -100 && mdev->conf.want_loose ) {
-			hg = -1;
-		}*/
-		if( hg != -100 ) {
+		if ( hg == -100 ) {
+			if(mdev->conf.want_loose && !mdev->p_uuid[UUID_FLAGS]){
+				hg = -1;
+			}
+			if(!mdev->conf.want_loose && mdev->p_uuid[UUID_FLAGS]){
+				hg = 1;
+			}
+		} else {
 			WARN("Split-Brain detected, automatically solved.\n");
 		}
 	}
@@ -1631,9 +1642,9 @@ STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	p_uuid = kmalloc(sizeof(u64)*UUID_SIZE, GFP_KERNEL);
+	p_uuid = kmalloc(sizeof(u64)*EXT_UUID_SIZE, GFP_KERNEL);
 
-	for (i = Current; i < UUID_SIZE; i++) {
+	for (i = Current; i < EXT_UUID_SIZE; i++) {
 		p_uuid[i] = be64_to_cpu(p->uuid[i]);
 	}
 
@@ -1688,6 +1699,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
 	}
+
+	mdev->conf.want_loose = 0;
 
 	/* FIXME assertion for (gencounts do not diverge) */
 	drbd_md_write(mdev); // update connected indicator, la_size, ...

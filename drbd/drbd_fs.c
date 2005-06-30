@@ -546,6 +546,11 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 	minor=(int)(mdev-drbd_conf);
 
+	if( mdev->state.s.role == Primary && mdev->conf.want_loose ) {
+		retcode=DiscardNotAllowed;
+		goto fail_ioctl;		
+	}
+
 	// FIXME plausibility check
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
 		return -EFAULT;
@@ -755,6 +760,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		 * become Secondary. */
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
 			return -EBUSY;
+		// PRE TODO, there are a lot of returns in there. We
+		// need to bd_release() in case we fail later...
 	}
 
 	spin_lock_irq(&mdev->req_lock);
@@ -819,6 +826,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	if (newstate & Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
 	} else {
+		mdev->conf.want_loose = 0;
 		set_disk_ro(mdev->vdisk, FALSE );
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
