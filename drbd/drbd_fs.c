@@ -739,7 +739,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 int drbd_set_role(drbd_dev *mdev, int* arg)
 {
 	drbd_role_t newstate = *arg;
-	int r,forced = 0;
+	int rv,r,forced = 0;
 	drbd_state_t os,ns;
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
@@ -777,7 +777,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		if (! (newstate & DontBlameDrbd)) {
 			print_st_err(mdev,os,ns,r);
 			*arg = r;
-			return -EIO;
+			rv = -EIO;
+			goto fail;
 		}
 
 		/* --do-what-I-say*/
@@ -787,7 +788,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 							disk,UpToDate));
 			if ( r <= 0 ) {
 				*arg = r;
-				return -EIO;
+				rv = -EIO;
+				goto fail;
 			}
 
 			forced = 1;
@@ -800,19 +802,17 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 
 	if ( r <= 0 ) {
 		*arg = r;
-		return -EIO;
+		rv = -EIO;
+		goto fail;
 	}
 
 	drbd_sync_me(mdev);
 
 	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->cstate_wait,
-			atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
-		if ( newstate & Secondary ) {
-			D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
-			bd_release(mdev->this_bdev);
-		}
-		return -EINTR;
+			         atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
+		rv = -EINTR;
+		goto fail;
 	}
 
 	/* FIXME RACE here: if our direct user is not using bd_claim (i.e. 
@@ -851,6 +851,12 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	}
 
 	return 0;
+ fail:
+	if ( newstate & Secondary ) {
+		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
+		bd_release(mdev->this_bdev);
+	}
+	return rv;
 }
 
 static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
