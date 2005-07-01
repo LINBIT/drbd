@@ -126,7 +126,7 @@ void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 
   if( (d = malloc(sizeof(struct deferred_cmd))) == NULL) 
     {
-      perror("waitpid");
+      perror("malloc");
       exit(E_exec_error);
     }
 
@@ -710,18 +710,14 @@ int adm_connect(struct d_resource* res,const char* unused)
   argv[argc++]=res->protocol;
 
   // need to convert discard-node-nodename to discard-local or discard-remote.
-  opt=res->net_options;
-  while(opt) {
-    if(!strcmp(opt->name,"after-sb-0pri")) {
-      if(!strncmp(opt->value,"discard-node-",13)) {
-	if(!strcmp(nodeinfo.nodename,opt->value+13)) {
-	  opt->value=strdup("discard-local");
-	} else {
-	  opt->value=strdup("discard-remote");
-	}
+  if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
+    if(!strncmp(opt->value,"discard-node-",13)) {
+      if(!strcmp(nodeinfo.nodename,opt->value+13)) {
+	opt->value=strdup("discard-local");
+      } else {
+	opt->value=strdup("discard-remote");
       }
     }
-    opt=opt->next;
   }
 
   opt=res->net_options;
@@ -1176,6 +1172,8 @@ int check_uniq(const char* what, const char *fmt, ...)
 
 void validate_resource(struct d_resource * res)
 {
+  struct d_option* opt;
+
   if (!res->protocol) {
     fprintf(stderr,
 	    "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
@@ -1197,8 +1195,29 @@ void validate_resource(struct d_resource * res)
 	    config_file, c_resource_start, res->name);
     config_valid = 0;
   }
-  if (res->me && res->peer)
+  if (res->me && res->peer) {
     verify_ips(res);
+
+    // need to verify that in the discard-node-nodename options only known
+    // nodenames are mentioned.
+    if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
+      if(!strncmp(opt->value,"discard-node-",13)) {
+	if(strcmp(res->peer->name,opt->value+13) &&
+	   strcmp(res->me->name,opt->value+13)) {
+	  fprintf(stderr,
+		  "%s:%d: in resource %s:\n\t"
+		  "the nodename in the '%s' option is "
+		  "not known.\n\t"
+		  "valid nodenames are: '%s' and '%s'.\n",
+		  config_file, c_resource_start, res->name, opt->value,
+		  res->me->name, res->peer->name );
+	  config_valid = 0;
+	}
+      }
+    }
+
+  }
+
 }
 
 
