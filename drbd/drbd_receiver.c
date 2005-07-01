@@ -1283,11 +1283,19 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	case DiscardLeastChg:
 		ch_peer = mdev->p_uuid[UUID_SIZE];
 		ch_self = drbd_bm_total_weight(mdev);
-		if( ch_self < ch_peer ) rv = -1;
-		if( ch_self > ch_peer ) rv =  1;
-		if( ch_self == ch_peer ) {
-			if( ch_self == 0 && ch_peer == 0 ) rv =  0;
-			else ERR("Do not know what to do!\n"); // TODO
+		if      ( ch_self < ch_peer ) rv = -1;
+		else if ( ch_self > ch_peer ) rv =  1;
+		else /* ( ch_self == ch_peer ) */ {
+			// Well, then use the order of the IP addresses...
+			ch_self = (unsigned long)
+				(((struct sockaddr_in *)mdev->conf.my_addr)
+				 ->sin_addr.s_addr);
+			ch_peer = (unsigned long)
+				(((struct sockaddr_in *)mdev->conf.other_addr)
+				 ->sin_addr.s_addr);
+			if      ( ch_self < ch_peer ) rv = -1;
+			else if ( ch_self > ch_peer ) rv =  1;
+			else ERR("Everything equal!?!\n");
 		}
 		break;
 	case DiscardLocal:
@@ -1343,7 +1351,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	self = mdev->uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
 
-	switch ( mdev->conf.after_sb_1p ) {
+	switch ( mdev->conf.after_sb_2p ) {
 	case DiscardYoungerPri:
 	case DiscardOlderPri:
 	case DiscardLeastChg:
@@ -1860,8 +1868,6 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 	drbd_state_t os,ns;
 	int r;
 
-	WARN("OutdateRequest\n");
-
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
 	if( os.s.disk < Outdated ) { 
@@ -1886,8 +1892,6 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 STATIC int receive_outdated(drbd_dev *mdev, Drbd_Header *h)
 {
 	int r;
-
-	WARN("OutdatedReply\n");
 
 	drbd_uuid_new_current(mdev);
 	drbd_md_write(mdev);

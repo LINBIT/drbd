@@ -721,6 +721,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		nps = Outdated;
 		break;
 	case 6: /* Peer is primary, voluntarily outdate myself */
+		WARN("Peer is primary, outdating myself.\n");
 		nps = DUnknown;
 		drbd_request_state(mdev,NS(disk,Outdated));
 		break;
@@ -740,11 +741,10 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 {
 	drbd_role_t newstate = *arg;
 	int rv,r,forced = 0;
-	drbd_state_t os,ns;
+	drbd_state_t os,ns,rs;
+	drbd_disks_t nps;
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
-
-	if ( (newstate & role_mask) == mdev->state.s.role ) return 0; /* nothing to do */
 
 	// exactly one of sec or pri. not both.
 	if ( !((newstate ^ (newstate >> 1)) & 1) ) return -EINVAL;
@@ -760,51 +760,46 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		 * become Secondary. */
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
 			return -EBUSY;
-		// PRE TODO, there are a lot of returns in there. We
-		// need to bd_release() in case we fail later...
 	}
 
+	nps = disk_mask;
+ retry:
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	r = _drbd_set_state(mdev, _NS(role,newstate & role_mask), 0);
-	ns = mdev->state;
-	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns);
+	rs.i = os.i;
+	rs.s.role = newstate & role_mask;
+	if(nps != disk_mask) rs.s.pdsk = nps;
+	r = _drbd_set_state(mdev, rs, 0);
 
-	if ( r == 2 ) { return 0; /* nothing to do */ }
 	if ( r == -2 ) {
-		/* request state does not like the new state. */
-		if (! (newstate & DontBlameDrbd)) {
-			print_st_err(mdev,os,ns,r);
-			*arg = r;
-			rv = -EIO;
-			goto fail;
-		}
-
-		/* --do-what-I-say*/
-		if (mdev->state.s.disk < UpToDate) {
-			WARN("Forcefully set to UpToDate!\n");
-			r = drbd_request_state(mdev,NS2(role,newstate & role_mask,
-							disk,UpToDate));
-			if ( r <= 0 ) {
-				*arg = r;
-				rv = -EIO;
-				goto fail;
-			}
-
+		if ( newstate & DontBlameDrbd && mdev->state.s.disk<UpToDate) {
+			rs.s.disk = UpToDate;
 			forced = 1;
+			r = _drbd_set_state(mdev, rs, 0);
 		}
 	}
-	if ( r == -7 ) {
-		drbd_disks_t nps = drbd_try_outdate_peer(mdev);
-		r = drbd_request_state(mdev,NS2(role,newstate & role_mask,pdsk,nps));
-	} else if ( r <= 0 ) print_st_err(mdev,os,ns,r);
+       
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
 
+	if ( r == 2 ) { rv = 0; goto fail; }
+	if ( r == -7 && nps == disk_mask ) {
+		nps = drbd_try_outdate_peer(mdev);
+		if ( newstate & DontBlameDrbd && nps > Outdated ) {
+			WARN("Forced into split brain situation!\n");
+			nps = Outdated;
+		}
+		goto retry;
+	}
 	if ( r <= 0 ) {
+		print_st_err(mdev,os,rs,r);
 		*arg = r;
 		rv = -EIO;
 		goto fail;
-	}
+	}	
+	after_state_ch(mdev,os,ns);
+
+	if(forced) WARN("Forced to conisder local data as UpToDate!\n");
 
 	drbd_sync_me(mdev);
 
@@ -851,6 +846,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	}
 
 	return 0;
+
  fail:
 	if ( newstate & Secondary ) {
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
