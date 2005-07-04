@@ -83,6 +83,7 @@ DRBD 0.8 Roadmap
   NB: To allow the user to resolve from such situations manually
       the "drbdadm connect" command (this is the "drbdsetup net"
       command) gets a short-living flag called "--discard-my-data".
+  99% DONE
 
 6 It is possible that a secondary node crashes a primary by 
   returning invalid block_ids in ACK packets. [This might be 
