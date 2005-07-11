@@ -149,15 +149,15 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 
 	if (sector < drbd_md_ss(mdev)  ||
 	    sector > drbd_md_ss(mdev)+MD_BM_OFFSET+BM_SECT_TO_EXT(capacity)) {
-		ALERT("%s [%d]:%s(,%ld,%s) out of range md access!\n",
+		ALERT("%s [%d]:%s(,%llu,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
-		     (long)sector, rw ? "WRITE" : "READ");
+		     (unsigned long long)sector, rw ? "WRITE" : "READ");
 	}
 
 	ok = _drbd_md_sync_page_io(mdev,iop,sector,rw,hardsect);
 	if (unlikely(!ok)) {
-		ERR("drbd_md_sync_page_io(,%lu,%s) failed!\n",
-		    (unsigned long)sector,rw ? "WRITE" : "READ");
+		ERR("drbd_md_sync_page_io(,%llu,%s) failed!\n",
+		    (unsigned long long)sector,rw ? "WRITE" : "READ");
 	}
 
 	if( hardsect != MD_HARDSECT && rw == READ ) {
