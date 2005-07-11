@@ -727,6 +727,8 @@ int adm_connect(struct d_resource* res,const char* unused)
   return m_system(argv,SLEEPS_SHORT);
 }
 
+struct d_resource* res_by_name(const char *name);
+
 int adm_syncer(struct d_resource* res,const char* unused)
 {
   char* argv[20];
@@ -736,6 +738,15 @@ int adm_syncer(struct d_resource* res,const char* unused)
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="syncer";
+
+  // Need to convert after from resourcename to minor_number.
+  if ( (opt = find_opt(res->sync_options, "after")) ) {
+    char *ptr;
+    ssprintf(ptr,"%d",dt_minor_of_dev(res_by_name(opt->value)->me->device));
+    free(opt->value);
+    opt->value=strdup(ptr);
+  }
+
   opt=res->sync_options;
   make_options(opt);
   argv[argc++]=0;
@@ -780,6 +791,16 @@ struct d_resource* res_by_minor(const char *id)
 
   for_each_resource(res,t,config) {
     if( mm == dt_minor_of_dev(res->me->device)) return res;
+  }
+  return NULL;
+}
+
+struct d_resource* res_by_name(const char *name)
+{
+  struct d_resource *res,*t;
+
+  for_each_resource(res,t,config) {
+    if( strcmp(name,res->name) == 0 ) return res;
   }
   return NULL;
 }
@@ -1172,8 +1193,6 @@ int check_uniq(const char* what, const char *fmt, ...)
 
 void validate_resource(struct d_resource * res)
 {
-  struct d_option* opt;
-
   if (!res->protocol) {
     fprintf(stderr,
 	    "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
@@ -1197,6 +1216,28 @@ void validate_resource(struct d_resource * res)
   }
   if (res->me && res->peer) {
     verify_ips(res);
+  }
+}
+
+static void global_validate(void)
+{
+  struct d_resource *res,*tmp;
+  struct d_option* opt;
+
+  for_each_resource(res,tmp,config) {
+
+    // need to verify that in the "after" key words only valid resources
+    // are named.
+    if ( (opt = find_opt(res->sync_options, "after")) ) {
+      if( res_by_name(opt->value) == NULL ) {
+	fprintf(stderr,
+		" in resource %s:\n\t"
+		"the resource named '%s' in the after option is "
+		"not known.\n\t",
+		res->name, opt->value);
+	config_valid = 0;
+      }
+    }
 
     // need to verify that in the discard-node-nodename options only known
     // nodenames are mentioned.
@@ -1205,19 +1246,17 @@ void validate_resource(struct d_resource * res)
 	if(strcmp(res->peer->name,opt->value+13) &&
 	   strcmp(res->me->name,opt->value+13)) {
 	  fprintf(stderr,
-		  "%s:%d: in resource %s:\n\t"
+		  " in resource %s:\n\t"
 		  "the nodename in the '%s' option is "
 		  "not known.\n\t"
 		  "valid nodenames are: '%s' and '%s'.\n",
-		  config_file, c_resource_start, res->name, opt->value,
+		  res->name, opt->value,
 		  res->me->name, res->peer->name );
 	  config_valid = 0;
 	}
       }
     }
-
   }
-
 }
 
 
@@ -1393,6 +1432,8 @@ int main(int argc, char** argv)
 	  dump_common_info();
 	} else {
 	  expand_common(); // Propagate common options to resources.
+	  global_validate(); 
+	  if(!config_valid) exit(E_config_invalid);
 	}
         for_each_resource(res,tmp,config) {
 	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
@@ -1402,14 +1443,12 @@ int main(int argc, char** argv)
 	}
       } else {
 	for(i=optind;i<argc;i++) {
-	  struct d_resource *tmp;
-	  for_each_resource(res,tmp,config) {
-	    if(!strcmp(argv[i],res->name)) goto found;
+	  res = res_by_name(argv[i]);
+	  if( !res ) res=res_by_minor(argv[i]);
+	  if( !res ) {
+	    fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
+	    exit(E_usage);
 	  }
-	  if( (res=res_by_minor(argv[i])) ) goto found;
-	  fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
-	  exit(E_usage);
-	found:
 	  if( (rv=cmd->function(res,cmd->name)) >= 20 ) {
 	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(rv);

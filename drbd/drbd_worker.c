@@ -568,126 +568,83 @@ STATIC void _drbd_rs_pause(drbd_dev *mdev)
 	// mdev->rs_mark_left = drbd_bm_total_weight(mdev); // I don't care...
 	_drbd_set_state(mdev,_NS(conn,ncs),ChgStateHard);
 
-	INFO("Syncer waits for sync group.\n");
+	INFO("Syncer waits for drbd%d to finish.\n",mdev->sync_conf.after);
 }
 
-STATIC int _drbd_pause_higher_sg(drbd_dev *mdev)
+STATIC int _drbd_may_sync_now(drbd_dev *mdev)
+{
+	drbd_dev *odev = mdev;
+
+	while(1) {
+		if( odev->sync_conf.after == -1 ) return 1;
+		odev = drbd_conf + odev->sync_conf.after;
+		if( odev->state.s.conn == SyncSource || 
+		    odev->state.s.conn == SyncTarget ) return 0;
+	}
+}
+
+STATIC int _drbd_pause_after(drbd_dev *mdev)
 {
 	drbd_dev *odev;
-	int i,rv=0;
+	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->sync_conf.group > mdev->sync_conf.group
-		     && ( odev->state.s.conn == SyncSource || 
-			  odev->state.s.conn == SyncTarget ) ) {
-			_drbd_rs_pause(odev);
-			rv = 1;
+		if ( odev->state.s.conn == SyncSource || 
+		     odev->state.s.conn == SyncTarget ) {
+			if (! _drbd_may_sync_now(odev)) {
+				_drbd_rs_pause(odev);
+				rv = 1;
+			}
 		}
 	}
 
 	return rv;
 }
 
-STATIC int _drbd_lower_sg_running(drbd_dev *mdev)
+STATIC int _drbd_resume_next(drbd_dev *mdev)
 {
 	drbd_dev *odev;
-	int i,rv=0;
+	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->sync_conf.group < mdev->sync_conf.group
-		     && ( odev->state.s.conn == SyncSource || 
-			  odev->state.s.conn == SyncTarget ) ) {
-			rv = 1;
+		if ( odev->state.s.conn == PausedSyncS || 
+		     odev->state.s.conn == PausedSyncT ) {
+			if (_drbd_may_sync_now(odev)) {
+				_drbd_rs_resume(odev);
+				rv = 1;
+			}
 		}
 	}
-
-	return rv;
-}
-
-STATIC int _drbd_resume_lower_sg(drbd_dev *mdev)
-{
-	drbd_dev *odev;
-	int i,rv=0;
-
-	for (i=0; i < minor_count; i++) {
-		odev = drbd_conf + i;
-		if ( odev->sync_conf.group < mdev->sync_conf.group
-		     && ( odev->state.s.conn == PausedSyncS || 
-			  odev->state.s.conn == PausedSyncT ) ) {
-			_drbd_rs_resume(odev);
-			rv = 1;
-		}
-	}
-
 	return rv;
 }
 
 int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 {
-	drbd_dev *odev;
-	int i,ng=10000;
-
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
 	drbd_global_lock();
-
-	for (i=0; i < minor_count; i++) {
-		odev = drbd_conf + i;
-		if ( odev->sync_conf.group <= mdev->sync_conf.group
-		     && ( odev->state.s.conn == SyncSource || 
-			  odev->state.s.conn == SyncTarget ) ) {
-			goto out; // Sync on an other device in this group
-			          // or a lower group still runs.
-		}
-	}
-
-	for (i=0; i < minor_count; i++) { // find next sync group
-		odev = drbd_conf + i;
-		if ( odev->sync_conf.group > mdev->sync_conf.group
-		     && odev->sync_conf.group < ng && 
-		     (odev->state.s.conn==PausedSyncS || odev->state.s.conn==PausedSyncT)){
-		  ng = odev->sync_conf.group;
-		}
-	}
-
-	for (i=0; i < minor_count; i++) { // resume all devices in next group
-		odev = drbd_conf + i;
-		if ( odev->sync_conf.group == ng &&
-		     (odev->state.s.conn==PausedSyncS || odev->state.s.conn==PausedSyncT)){
-			_drbd_rs_resume(odev);
-		}
-	}
-
- out:
+	_drbd_resume_next(mdev);
 	drbd_global_unlock();
+
 	w->cb = w_resync_inactive;
 
 	return 1;
 }
 
-void drbd_alter_sg(drbd_dev *mdev, int ng)
+void drbd_alter_sa(drbd_dev *mdev, int na)
 {
-	int c = 0, p = 0;
-	int d = (ng - mdev->sync_conf.group);
+	int changes;
 
 	drbd_global_lock();
-	mdev->sync_conf.group = ng;
+	mdev->sync_conf.after = na;
 
-	if( ( mdev->state.s.conn == PausedSyncS || 
-	      mdev->state.s.conn == PausedSyncT ) && ( d < 0 ) ) {
-		if(_drbd_pause_higher_sg(mdev)) c=1;
-		else if(!_drbd_lower_sg_running(mdev)) c=1;
-		if(c) _drbd_rs_resume(mdev);
-	}
+	do {
+		changes  = _drbd_pause_after(mdev);
+		changes |= _drbd_resume_next(mdev);
+	} while (changes);
 
-	if( ( mdev->state.s.conn == SyncSource || 
-	      mdev->state.s.conn == SyncTarget ) && ( d > 0 ) ) {
-		if(_drbd_resume_lower_sg(mdev)) p=1;
-		else if(_drbd_lower_sg_running(mdev)) p=1;
-		if(p) _drbd_rs_pause(mdev);
-	}
 	drbd_global_unlock();
 }
 
@@ -740,10 +697,10 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	drbd_global_lock();
 	if ( mdev->state.s.conn == SyncTarget || 
 	     mdev->state.s.conn == SyncSource ) {
-		_drbd_pause_higher_sg(mdev);
-		if(_drbd_lower_sg_running(mdev)) {
+		if(!_drbd_may_sync_now(mdev)) {
 			_drbd_rs_pause(mdev);
 		}
+		_drbd_pause_after(mdev);
 	} /* else:
 	   * thread of other mdev already paused us,
 	   * or something very strange happend to our cstate!

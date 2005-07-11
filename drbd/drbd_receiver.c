@@ -1587,7 +1587,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	mdev->sync_conf.rate      = be32_to_cpu(p->rate);
 	mdev->sync_conf.use_csums = be32_to_cpu(p->use_csums);
 	mdev->sync_conf.skip      = be32_to_cpu(p->skip);
-	drbd_alter_sg(mdev, be32_to_cpu(p->group));
+	drbd_alter_sa(mdev, be32_to_cpu(p->after));
 
 	return ok;
 }

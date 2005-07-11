@@ -122,9 +122,6 @@ range_check(const enum range_checks what, const char *name, const char *value)
     case R_RATE:
       m_strtoll_range(value, 'K', name, DRBD_RATE_MIN, DRBD_RATE_MAX);
       break;
-    case R_GROUP:
-      m_strtoll_range(value, 1, name, DRBD_GROUP_MIN, DRBD_GROUP_MAX);
-      break;
     case R_AL_EXTENTS:
       m_strtoll_range(value, 1, name, DRBD_AL_EXTENTS_MIN,
 		      DRBD_AL_EXTENTS_MAX);
@@ -244,7 +241,7 @@ void check_meta_disk()
 %token <txt> TK_ON_IO_ERROR TK_SIZE TK_SPLIT_BRAIN_FIX
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
 %token <txt> TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
-%token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_GROUP TK_AL_EXTENTS
+%token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_AFTER TK_AL_EXTENTS
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
 %token <txt> TK_ALLOW_TWO_PRIMARIES
@@ -393,8 +390,7 @@ sync_stmt:	  TK_SKIP_SYNC		   { $$=new_opt($1,NULL);  }
 		| TK_USE_CSUMS		   { $$=new_opt($1,NULL);  }
 		| TK_RATE	TK_INTEGER
 		{ range_check(R_RATE,$1,$2); $$=new_opt($1,$2); }
-		| TK_SYNC_GROUP TK_INTEGER { $$=new_opt($1,$2); }
-		{ range_check(R_GROUP,$1,$2); $$=new_opt($1,$2); }
+		| TK_SYNC_AFTER TK_STRING  { $$=new_opt($1,$2); }
 		| TK_AL_EXTENTS TK_INTEGER { $$=new_opt($1,$2); }
 		{ range_check(R_AL_EXTENTS,$1,$2); $$=new_opt($1,$2); }
 		;

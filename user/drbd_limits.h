@@ -61,9 +61,6 @@ RANGE(PORT,1,0xffff);
   /* FIXME allow rate to be zero? */
   RANGE(RATE,1,700000);
 
-  /* arbitrary. you have more than device numbers now. */
-  RANGE(GROUP,0,1000);
-
   /* less than 7 would hit performance unneccessarily.
    * 3833 is the largest prime that still does fit
    * into 64 sectors of activity log */

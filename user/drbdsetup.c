@@ -56,7 +56,7 @@
 #define DEF_NET_TRY_CON_I           10      // 10 seconds
 #define DEF_NET_PING_I              10      // 10 seconds
 #define DEF_SYNC_RATE              250
-#define DEF_SYNC_GROUP               0
+#define DEF_SYNC_AFTER              -1
 #define DEF_WFC_TIMEOUT              0      // forever
 #define DEF_DEGR_WFC_TIMEOUT        60      // 60 Seconds
 #define DEF_SYNC_WFC_TIMEOUT         8      // 8 seconds
@@ -141,7 +141,7 @@ struct drbd_cmd commands[] = {
    (struct option[]) {
      { "use-csums",  no_argument,       0, 'c' },
      { "skip-sync",  no_argument,       0, 'k' },
-     { "group",      required_argument, 0, 'g' },
+     { "after",      required_argument, 0, 'a' },
      { "rate",       required_argument, 0, 'r' },
      { "al-extents", required_argument, 0, 'e' },
      { 0,            0,                 0, 0 } } },
@@ -906,7 +906,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
     }
 
   cn.config.rate = current_cn.sconf.rate;
-  cn.config.group = current_cn.sconf.group;
+  cn.config.after = current_cn.sconf.after;
   cn.config.al_extents = current_cn.sconf.al_extents;
   cn.config.use_csums = 0; //current_cn.sconf.use_csums;
   cn.config.skip = 0; //current_cn.sconf.skip;
@@ -932,9 +932,8 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	      cn.config.rate=m_strtoll_range(optarg,'K', "rate",
 			      DRBD_RATE_MIN, DRBD_RATE_MAX);
 	      break;
-	    case 'g':
-	      cn.config.group=m_strtoll_range(optarg,1, "group",
-			      DRBD_GROUP_MIN, DRBD_GROUP_MAX);
+	    case 'a':
+	      cn.config.after=m_strtoll(optarg,1);
 	      break;
 	    case 'e':
 	      cn.config.al_extents=m_strtoll_range(optarg,1, "al-extents",
@@ -955,7 +954,10 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   err=ioctl(drbd_fd,DRBD_IOCTL_SET_SYNC_CONFIG,&cn);
   if(err)
     {
+      err=errno;
       PERROR("ioctl(,SET_SYNC_CONFIG,) failed");
+      if(err == EBADMSG) fprintf(stderr,"Sync-after cycle found!\n");
+      if(err == ERANGE) fprintf(stderr,"Sync-after to small or big.\n");
       return 20;
     }
 
@@ -1300,7 +1302,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       printf("Syncer options:\n");
 
       SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
-      SHOW_I("group","", cn.sconf.group, DEF_SYNC_GROUP);
+      SHOW_I("after","", cn.sconf.after, DEF_SYNC_AFTER);
       SHOW_I("al-extents","", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
 
       if( cn.sconf.skip ) printf(" skip-sync\n");

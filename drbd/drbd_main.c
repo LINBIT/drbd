@@ -954,7 +954,7 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 	p.rate      = cpu_to_be32(sc->rate);
 	p.use_csums = cpu_to_be32(sc->use_csums);
 	p.skip      = cpu_to_be32(sc->skip);
-	p.group     = cpu_to_be32(sc->group);
+	p.after     = cpu_to_be32(sc->after);
 
 	return drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
 }
@@ -1625,6 +1625,7 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 
 void drbd_set_defaults(drbd_dev *mdev)
 {
+	mdev->sync_conf.after      = -1;
 	mdev->sync_conf.rate       = 250;
 	mdev->sync_conf.al_extents = 127; // 512 MB active set
 	mdev->state = (drbd_state_t){ { Secondary,

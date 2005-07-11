@@ -460,7 +460,7 @@ typedef struct {
 	u32         rate;
 	u32         use_csums;
 	u32         skip;
-	u32         group;
+	u32         after;
 } __attribute((packed)) Drbd_SyncParam_Packet;
 
 typedef struct {
@@ -1011,7 +1011,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
 
 // drbd_worker.c
 extern int drbd_worker(struct Drbd_thread *thi);
-extern void drbd_alter_sg(drbd_dev *mdev, int ng);
+extern void drbd_alter_sa(drbd_dev *mdev, int na);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
 extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?

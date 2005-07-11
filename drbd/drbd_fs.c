@@ -885,9 +885,21 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 				 struct ioctl_syncer_config* arg)
 {
 	struct syncer_config sc;
+	drbd_dev *odev;
+
 	int err;
 
 	if(copy_from_user(&sc,&arg->config,sizeof(sc))) return -EFAULT;
+
+	if( sc.after != -1) {
+		if( sc.after < -1 || sc.after > minor_count ) return -ERANGE;
+		odev = drbd_conf + sc.after; // check against loops in
+		while(1) {
+			if( odev == mdev ) return -EBADMSG; // cycle found.
+			if( odev->sync_conf.after == -1 ) break; // no cycles.
+			odev = drbd_conf + odev->sync_conf.after;
+		}
+	}
 
 	sc.use_csums = 0; // TODO, NYI
 	ERR_IF (sc.rate < 1) sc.rate = 1;
@@ -911,7 +923,7 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	if (mdev->state.s.conn >= Connected)
 		drbd_send_sync_param(mdev,&sc);
 
-	drbd_alter_sg(mdev, sc.group);
+	drbd_alter_sa(mdev, sc.after);
 
 	return 0;
 }

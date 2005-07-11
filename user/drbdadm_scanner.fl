@@ -268,9 +268,9 @@ AFTER_SB_PRI		  after-sb-[012]pri
 
 <SYNCER>{
   rate			do_assign(NUM_U); CP; return TK_RATE;
-  group			do_assign(NUM);   CP; return TK_SYNC_GROUP;
+  after			do_assign(STRING);CP; return TK_SYNC_AFTER;
   al-extents		do_assign(NUM);   CP; return TK_AL_EXTENTS;
-  {NDELIM}		expect_error("one of 'rate|group|al-extents'");
+  {NDELIM}		expect_error("one of 'rate|after|al-extents'");
 }
 
 <HOST>{

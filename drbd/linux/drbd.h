@@ -123,7 +123,7 @@ struct syncer_config {
 	int      rate; /* KB/sec */
 	int      use_csums;   /* use checksum based syncing*/
 	int      skip;
-	int      group;
+	int      after;
 	int      al_extents;
 	const int _pad;
 };
