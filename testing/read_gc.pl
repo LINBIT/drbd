@@ -42,7 +42,7 @@ sub read_print_gc_file($$$)
 
     die "state file corrupt" if($MagicNr != DRBD_MD_MAGIC);
 
-    printf(" %6s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s | %6d KB\n",
+    printf(" %8s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s | %6lu KB\n",
 	   $resource,
 	   $Flags & 0x01 ? "1/c" : "0/i", # is consistent
 	                                  # (may become sync source)
@@ -65,17 +65,17 @@ sub main()
 
     @resources = sort(split(' ',`drbdadm sh-resources`));
 
-    print <<EOS;
-                                           WantFullSync |
-                                     ConnectedInd |     |
-                                  lastState |     |     |
-                         ArbitraryCnt |     |     |     |
-                   ConnectedCnt |     |     |     |     |
-               TimeoutCnt |     |     |     |     |     |
-           HumanCnt |     |     |     |     |     |     |
-   Consistent |     |     |     |     |     |     |     |
-resource|     |     |     |     |     |     |     |     |   Size
---------+-----+-----+-----+-----+-----+-----+-----+-----+----------+
+      print <<EOS;
+                                             WantFullSync |
+                                       ConnectedInd |     |
+                                    lastState |     |     |
+                           ArbitraryCnt |     |     |     |
+                     ConnectedCnt |     |     |     |     |
+                 TimeoutCnt |     |     |     |     |     |
+             HumanCnt |     |     |     |     |     |     |
+     Consistent |     |     |     |     |     |     |     |
+  resource|     |     |     |     |     |     |     |     |   Size
+----------+-----+-----+-----+-----+-----+-----+-----+-----+----------+
 EOS
 
     for $res (@resources) {

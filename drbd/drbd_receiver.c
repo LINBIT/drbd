@@ -407,7 +407,6 @@ STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		if(!be_sleepy) {
-			clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
 			return 3;
 		}
 		spin_unlock_irq(&mdev->ee_lock);
