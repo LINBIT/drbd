@@ -1003,6 +1003,7 @@ extern void drbd_bm_read      (drbd_dev *mdev);
 extern void drbd_bm_write     (drbd_dev *mdev);
 extern unsigned long drbd_bm_ALe_set_all (drbd_dev *mdev, unsigned long al_enr);
 extern size_t        drbd_bm_words       (drbd_dev *mdev);
+extern sector_t      drbd_bm_capacity    (drbd_dev *mdev);
 extern unsigned long drbd_bm_find_next   (drbd_dev *mdev);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
 extern int drbd_bm_rs_done(drbd_dev *mdev);

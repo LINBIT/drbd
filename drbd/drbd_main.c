@@ -1692,6 +1692,7 @@ int __init drbd_init(void)
 	int i,err;
 
 #if 0
+#warning "DEBUGGING"
 /* I am too lazy to calculate this by hand	-lge
  */
 #define SZO(x) printk(KERN_ERR "sizeof(" #x ") = %d\n", sizeof(x))

@@ -273,6 +273,12 @@ int drbd_bm_init(drbd_dev *mdev)
 	return 0;
 }
 
+sector_t drbd_bm_capacity(drbd_dev *mdev)
+{
+	ERR_IF(!mdev->bitmap) return 0;
+	return mdev->bitmap->bm_dev_capacity;
+}
+
 /* called on driver unload. TODO: call when a device is destroyed.
  */
 void drbd_bm_cleanup(drbd_dev *mdev)

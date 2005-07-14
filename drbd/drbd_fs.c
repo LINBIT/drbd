@@ -182,16 +182,23 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		int err;
 		err = drbd_bm_resize(mdev,size<<1); // wants sectors
 		if (unlikely(err)) {
-			ERR("BM resizing failed. "
-			    "Leaving size unchanged at size = %lu KB\n", 
-			    (unsigned long)size);
-		} else {
-			// racy, see comments above.
-			drbd_set_my_capacity(mdev,size<<1);
-			mdev->la_size = size;
-			INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
-			     (unsigned long)size);
+			/* currently there is only one error: ENOMEM! */
+			size = drbd_bm_capacity(mdev)>>1;
+			if (size == 0) {
+				ERR("Could not allocate bitmap! Set device size => 0\n");
+			} else {
+				/* FIXME this is problematic,
+				 * if we in fact are smaller now! */
+				ERR("BM resizing failed. "
+				    "Leaving size unchanged at size = %lu KB\n", 
+				    (unsigned long)size);
+			}
 		}
+		// racy, see comments above.
+		drbd_set_my_capacity(mdev,size<<1);
+		mdev->la_size = size;
+		INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
+		     (unsigned long)size);
 	}
 
 	return rv;
@@ -474,6 +481,7 @@ ONLY_IN_26({
 	drbd_determin_dev_size(mdev);
 	/* FIXME
 	 * what if we now have la_size == 0 ?? eh?
+	 * BOOM?
 	 */
 
 	if (md_gc_valid <= 0) {
