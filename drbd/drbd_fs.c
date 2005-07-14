@@ -88,9 +88,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	if ( md_moved ) {
 		WARN("Moving meta-data.\n");
 		D_ASSERT(mdev->md_index == -1);
+	}
+
+	if( mdev->la_size < la_size || md_moved) {
 		drbd_al_shrink(mdev); // All extents inactive.
 		drbd_bm_write(mdev);  // write bitmap
 	}
+
 	if ( la_size_changed || md_moved ) {
 		// Write mdev->la_size to [possibly new position on] disk.
 		drbd_md_write(mdev);
