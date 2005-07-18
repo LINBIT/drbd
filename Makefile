@@ -105,21 +105,7 @@ check_changelogs_up2date:
 # update of drbd_buildtag.c is forced:
 .PHONY: drbd/drbd_buildtag.c
 drbd/drbd_buildtag.c:
-	@is_tarball=`test -e .svn/. && echo false || echo true`;		\
-	set -e; exec > $@.new;							\
-	echo -e "/* automatically generated. DO NOT EDIT. */";			\
-	echo -e "const char * drbd_buildtag(void)\n{";			\
-	if $$is_tarball; then							\
-	  if ! test -e $@ ; then 						\
-	  	echo >&2 "your DRBD source tree is broken. unpack again.";	\
-		exit 1;								\
-	  fi;									\
-	  grep return $@ ;							\
-	else									\
-	  echo -ne "\treturn \"SVN Revision: "; svnversion -n .; echo \";	\
-	fi ;									\
-	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-       	mv $@{.new,}
+	$(MAKE) -C drbd drbd_buildtag.c
 
 # update of .filelist is forced:
 .PHONY: .filelist
