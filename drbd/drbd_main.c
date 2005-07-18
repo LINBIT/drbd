@@ -1975,7 +1975,7 @@ struct meta_data_on_disk {
 	u32 al_offset;         // offset to this block
 	u32 al_nr_extents;     // important for restoring the AL
 	u32 bm_offset;         // offset to the bitmap, from here
-};
+} __attribute((packed));
 
 /*
 
