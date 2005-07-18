@@ -1348,7 +1348,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
 	int consider_sync;
 	int oo_state;
-	sector_t p_size;
+	sector_t p_size, p_usize;
 
 	if (h->length != (sizeof(*p)-sizeof(*h))) {
 		ERR("Incompatible packet size of Parameter packet!\n");
@@ -1425,11 +1425,28 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 
 	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
 
-	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
-		mdev->lo_usize = be64_to_cpu(p->u_size);
+	p_usize=be64_to_cpu(p->u_size);
+	/*
+	 * you may get a flip-flop connection established/connection loss, in
+	 * case both really have different usize uppon first connect!
+	 * try to solve it thus:
+	 ***/
+#define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
+	if (mdev->cstate == WFReportParams) {
+		/* this is first connect, or an otherwise expected param
+		 * exchange.  choose the minimum */
+		p_usize = min_not_zero(mdev->lo_usize, p_usize);
+	} else {
+		/* this was an "unexpected" param packet,
+		 * just do what the peer suggests */
+	}
+#undef min_not_zero
+	if( mdev->lo_usize != p_usize ) {
+		mdev->lo_usize = p_usize;
 		INFO("Peer sets u_size to %lu KB\n",
 		     (unsigned long)mdev->lo_usize);
 	}
+
 
 /*lge:
  * FIXME
