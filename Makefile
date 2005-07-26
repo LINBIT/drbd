@@ -134,7 +134,7 @@ tgz:
 	ln -s . drbd-$(FDIST_VERSION)
 	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
 	grep debian .filelist >/dev/null 2>&1 && _DEB=-debian || _DEB="" ; \
-	tar --owner=0 --group=0 -czf - -T .filelist > drbd-plus-$(FDIST_VERSION)$$_DEB.tar.gz
+	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION)$$_DEB.tar.gz
 	rm drbd-$(FDIST_VERSION)
 
 ifeq ($(FORCE),)
