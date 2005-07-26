@@ -526,7 +526,7 @@ int scan_disk_options(char **argv,
       switch(c)
 	{
 	case 'd':
-	  cn->config.disk_size = m_strtoll_range(optarg,'K', "disk-size",
+	  cn->config.disk_size = m_strtoll_range(optarg,'K', "size",
 			      DRBD_DISK_SIZE_SECT_MIN>>1,
 			      DRBD_DISK_SIZE_SECT_MAX>>1 );
 	  break;
@@ -1179,7 +1179,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
 	  switch(c)
 	    {
 	    case 'd':
-	      u_size=m_strtoll_range(optarg,'K', "disk-size",
+	      u_size=m_strtoll_range(optarg,'K', "size",
 			      DRBD_DISK_SIZE_SECT_MIN>>1,
 			      DRBD_DISK_SIZE_SECT_MAX>>1 );
 	      break;

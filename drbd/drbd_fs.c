@@ -731,6 +731,8 @@ int drbd_set_state(drbd_dev *mdev,Drbd_State newstate)
 		 * become Secondary. */
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
 			return -EBUSY;
+		if (disable_bd_claim)
+			bd_release(mdev->this_bdev);
 	}
 #endif
 

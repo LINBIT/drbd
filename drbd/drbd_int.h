@@ -72,7 +72,7 @@ static inline void list_splice_init(struct list_head *list,
 
 // module parameter, defined in drbd_main.c
 extern int minor_count;
-extern int disable_io_hints;
+extern int disable_bd_claim;
 extern int major_nr;
 extern int use_nbd_major;
 

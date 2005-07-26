@@ -322,6 +322,7 @@ void check_meta_disk()
 %token TK_GLOBAL TK_RESOURCE
 %token TK_ON TK_NET TK_DISK_S TK_SYNCER TK_STARTUP
 %token TK_DISABLE_IO_HINTS
+%token TK_DISABLE_IP_VERIFICATION
 %token TK_PROTOCOL TK_INCON_DEGR_CMD
 %token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
@@ -352,7 +353,14 @@ glob_stmts:	  /* empty */
 		;
 
 glob_stmt:	  TK_DISABLE_IO_HINTS
-			{ global_options.disable_io_hints=1;   }
+		{
+		    fprintf(stderr,
+			    "%s:%d: in global section, "
+			    "useless use of no longer available option \"disable_io_hints\".\n",
+			    config_file, line);
+		}
+		|  TK_DISABLE_IP_VERIFICATION
+		{ global_options.disable_ip_verification=1; }
 		| TK_MINOR_COUNT TK_INTEGER
 		{
 			range_check(R_MINOR_COUNT,$1,$2);

@@ -104,7 +104,7 @@ char ss_buffer[255];
 struct utsname nodeinfo;
 int line=1;
 int fline, c_resource_start;
-struct d_globals global_options = { 0, 0, 1 };
+struct d_globals global_options = { 0, 0, 0, 1 };
 char *config_file = NULL;
 struct d_resource* config = NULL;
 int nr_resources;
@@ -245,17 +245,17 @@ static void dump_options(char* name,struct d_option* opts)
 
 static void dump_global_info()
 {
-  if (global_options.minor_count || global_options.disable_io_hints)
-    {
-      printI("global {\n"); ++indent;
-      if (global_options.disable_io_hints)
-	printI("disable-io-hints;\n");
-      if (global_options.minor_count)
-	printI("minor-count %i;\n", global_options.minor_count);
-      if (global_options.dialog_refresh != 1)
-	printI("dialog-refresh %i;\n", global_options.dialog_refresh);
-      --indent; printI("}\n\n");
-    }
+  if (  !global_options.minor_count
+     && !global_options.disable_ip_verification
+     &&  global_options.dialog_refresh == 1 ) return;
+  printI("global {\n"); ++indent;
+  if (global_options.disable_ip_verification)
+    printI("disable-ip-verification;\n");
+  if (global_options.minor_count)
+    printI("minor-count %i;\n", global_options.minor_count);
+  if (global_options.dialog_refresh != 1)
+    printI("dialog-refresh %i;\n", global_options.dialog_refresh);
+  --indent; printI("}\n\n");
 }
 
 static void dump_host_info(struct d_host_info* hi)
@@ -987,6 +987,7 @@ void verify_ips(struct d_resource* res)
   char *argv[] = { "/bin/bash", "-c", NULL, "drbdadm:verify_ips", NULL };
   int ex;
 
+  if (global_options.disable_ip_verification) return;
   if (dry_run == 1 || do_verify_ips == 0) return;
 
   if (!(res && res->me   && res->me->address

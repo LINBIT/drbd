@@ -30,9 +30,11 @@ enum {
 /* for verify_ips(): make not verifyable ips fatal */
 //#define INVALID_IP_IS_INVALID_CONF
 
+
 struct d_globals
 {
   int disable_io_hints;
+  int disable_ip_verification;
   int minor_count;
   int dialog_refresh;
 };

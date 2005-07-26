@@ -103,13 +103,12 @@ MODULE_LICENSE("GPL");
 MODULE_PARM_DESC(use_nbd_major, "DEPRECATED! use nbd device major nr (43) "
 		                "instead of the default " __stringify(LANANA_DRBD_MAJOR) );
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
-MODULE_PARM_DESC(disable_io_hints, "Necessary if the loopback network device is used for DRBD" );
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 MODULE_PARM(use_nbd_major,"i");
 MODULE_PARM(minor_count,"i");
-MODULE_PARM(disable_io_hints,"i");
 #else
 #include <linux/moduleparam.h>
+MODULE_PARM_DESC(disable_bd_claim, "DONT USE! disables block device claiming" );
 /*
  * please somebody explain to me what the "perm" of the module_param
  * macro is good for (yes, permission for it in the "driverfs", but what
@@ -126,7 +125,7 @@ MODULE_PARM(disable_io_hints,"i");
  */
 module_param(use_nbd_major,   bool,0);
 module_param(minor_count,      int,0);
-module_param(disable_io_hints,bool,0);
+module_param(disable_bd_claim,bool,0);
 #endif
 
 // module parameter, defined
@@ -137,8 +136,7 @@ int minor_count = 2;
 #else
 int minor_count = 8;
 #endif
-// FIXME disable_io_hints shall die
-int disable_io_hints = 0;
+int disable_bd_claim = 0;
 
 // devfs name
 char* drbd_devfs_name = "drbd";
@@ -1325,10 +1323,6 @@ void drbd_set_defaults(drbd_dev *mdev)
 {
 	mdev->flags = 1<<DISKLESS;
 
-	/* If the UNPLUG_QUEUED flag is set but it is not
-	   actually queued the functionality is completely disabled */
-	if (disable_io_hints) mdev->flags |= 1<<UNPLUG_QUEUED;
-
 	mdev->sync_conf.rate       = 250;
 	mdev->sync_conf.al_extents = 127; // 512 MB active set
 	mdev->state                = Secondary;
@@ -1809,6 +1803,8 @@ int __init drbd_init(void)
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
 			// Initial we are Secondary -> should claim myself.
 			WARN("Could not bd_claim() myself.");
+		} else if (disable_bd_claim) {
+			bd_release(mdev->this_bdev);
 		}
 
 		blk_queue_make_request(q,drbd_make_request_26);

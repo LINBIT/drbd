@@ -193,9 +193,11 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * [ ... until we implement some shared mode, and our users confirm by
 	 * configuration, that they handle cache coherency themselves ... ]
 	 */
-	if (mdev->state != Primary) {
+	if (mdev->state != Primary &&
+		( !disable_bd_claim || rw == WRITE ) ) {
 		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("Not in Primary state, no IO requests allowed\n");
+			ERR("Not in Primary state, no %s requests allowed\n",
+					disable_bd_claim ? "WRITE" : "IO");
 		}
 		drbd_bio_IO_error(bio);
 		return 0;
