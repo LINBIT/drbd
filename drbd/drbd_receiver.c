@@ -274,6 +274,8 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	e->private_bio = bio;
 	e->block_id = ID_VACANT;
 	INIT_HLIST_NODE(&e->colision);
+	e->barrier_nr = 0;
+	e->barrier_nr2 = 0;
 
 	return e;
  fail2:
@@ -743,7 +745,42 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int receive_Barrier(drbd_dev *mdev, Drbd_Header* h)
+STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
+{
+	int rv=TRUE;
+	int epoch_size=0;
+	Drbd_Barrier_Packet *p = (Drbd_Barrier_Packet*)h;
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+
+	rv = drbd_recv(mdev, h->payload, h->length);
+	ERR_IF(rv != h->length) return FALSE;
+
+	inc_unacked(mdev);
+
+	// DBG("got Barrier\n");
+
+	spin_lock_irq(&mdev->ee_lock);
+	if(list_empty(&mdev->active_ee)) {
+		rv = _drbd_process_ee(mdev,1);
+		epoch_size=atomic_read(&mdev->epoch_size);
+		atomic_set(&mdev->epoch_size,0);
+	} else if (mdev->last_write_w_barrier) {
+		mdev->last_write_w_barrier->barrier_nr2=be32_to_cpu(p->barrier);
+	} else {
+		mdev->next_barrier_nr = be32_to_cpu(p->barrier);
+	}
+	spin_unlock_irq(&mdev->ee_lock);
+
+	if(epoch_size) {
+		rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
+		dec_unacked(mdev);
+	}
+
+	return rv;
+}
+
+STATIC int receive_Barrier_usual(drbd_dev *mdev, Drbd_Header* h)
 {
 	int rv;
 	int epoch_size;
@@ -979,20 +1016,41 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	return ok;
 }
 
+/* e_end_block() is called via process_ee(). this means this function
+   might run in all DRBD threads. Serialisation is done in process_ee()
+   on the PROCESS_EE_RUNNING flag. */
 STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = drbd_ee_get_sector(e);
+	unsigned int epoch_size;
 	int ok=1;
 
-	atomic_inc(&mdev->epoch_size);
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
-			ok=drbd_send_ack(mdev,WriteAck,e);
+			if(e->barrier_nr) {
+				epoch_size=atomic_read(&mdev->epoch_size);
+				atomic_set(&mdev->epoch_size,0);
+				ok&=drbd_send_b_ack(mdev, 
+						    cpu_to_be32(e->barrier_nr),
+						    epoch_size);
+				dec_unacked(mdev);
+			}
+			ok &= drbd_send_ack(mdev,WriteAck,e);
+			atomic_inc(&mdev->epoch_size);
+			if(e->barrier_nr2) {
+				atomic_set(&mdev->epoch_size,0);
+				ok&=drbd_send_b_ack(mdev, 
+						   cpu_to_be32(e->barrier_nr2),
+						    1);
+				dec_unacked(mdev);
+			}
+
 			if (ok && test_bit(SYNC_STARTED,&mdev->flags) )
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
+			atomic_inc(&mdev->epoch_size);
 			ok&= drbd_io_error(mdev);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?
@@ -1140,7 +1198,19 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->active_ee);
+	if (mdev->next_barrier_nr) {
+		e->barrier_nr = mdev->next_barrier_nr;
+		mdev->next_barrier_nr = 0;
+		mdev->last_write_w_barrier = e;
+		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+	} else {
+		mdev->last_write_w_barrier = 0;
+	}
 	spin_unlock_irq(&mdev->ee_lock);
+
+	if ( be32_to_cpu(p->dp_flags) & DP_HARDBARRIER ) {
+		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+	}
 
 	switch(mdev->conf.wire_protocol) {
 	case DRBD_PROT_C:
@@ -1592,6 +1662,38 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 	return ok;
 }
 
+STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
+{
+	int self = drbd_queue_order_type(mdev);
+	int type;
+
+	static char *order_txt[] = {
+		[QUEUE_ORDERED_NONE]  = "none - oldIDE",
+		[QUEUE_ORDERED_FLUSH] = "flush - IDE",
+		[QUEUE_ORDERED_TAG]   = "tag - TCQ",
+	};
+	
+	if(self == QUEUE_ORDERED_NONE ||
+	   peer == QUEUE_ORDERED_NONE) { 
+		type = QUEUE_ORDERED_NONE; 
+	} else if (self == QUEUE_ORDERED_FLUSH ||
+		   peer == QUEUE_ORDERED_FLUSH) { 
+		type = QUEUE_ORDERED_FLUSH;
+	} else if(self == QUEUE_ORDERED_TAG ||
+		  peer == QUEUE_ORDERED_TAG) {
+		type = QUEUE_ORDERED_TAG;
+	} else {
+		D_ASSERT(0);
+		type = QUEUE_ORDERED_NONE;
+	}
+	
+	if (type != self ) {
+		INFO("Exposing an order type of '%s' to the kernel\n",
+		     order_txt[type]);
+		blk_queue_ordered(mdev->rq_queue,type);
+	}
+}
+
 STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
@@ -1640,6 +1742,8 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		drbd_setup_queue_param(mdev, max_seg_s);
 	}
 
+	drbd_setup_order_type(mdev,be32_to_cpu(p->queue_order_type));
+	
 	if (mdev->state.s.conn > WFReportParams ) {
 		if( be64_to_cpu(p->c_size) != 
 		    drbd_get_capacity(mdev->this_bdev) ) {
@@ -1923,7 +2027,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[RSDataReply]      = receive_RSDataReply,
 	[RecvAck]          = NULL, //receive_RecvAck,
 	[WriteAck]         = NULL, //receive_WriteAck,
-	[Barrier]          = receive_Barrier,
+	[Barrier]          = receive_Barrier_usual, // see drbd_set_tcq()
 	[BarrierAck]       = NULL, //receive_BarrierAck,
 	[ReportBitMap]     = receive_bitmap,
 	[Ping]             = NULL, //receive_Ping,
@@ -1944,6 +2048,18 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
 static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
+
+void drbd_set_recv_tcq(drbd_dev * mdev, int tcq_enabled)
+{
+	if(tcq_enabled) {
+		if( drbd_default_handler[Barrier] == receive_Barrier_usual) {
+			INFO("Enabling TCQ for barrier processing on our"
+			     "backing storage\n");
+		}
+		drbd_default_handler[Barrier] = receive_Barrier_tcq;
+	}
+	else drbd_default_handler[Barrier] = receive_Barrier_usual;
+}
 
 STATIC void drbdd(drbd_dev *mdev)
 {

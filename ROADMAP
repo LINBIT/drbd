@@ -517,6 +517,124 @@ DRBD 0.8 Roadmap
    after-sb-2pri			equal
    syncer/group				equal
 
+21 Write barriers in the kernel
+  In Linux-2.6 write barriers in the block-io layer are represented as
+  REQ_SOFTBARRIER, REQ_HARDBARRIER and REQ_NOMERGE flags on requests.
+  In the BIO layer this is BIO_RW_BARRIER, which is usually set on
+  BIO_RW (=write) requests.
+
+  The REQ_HARDBARRIER bit is currently used to do a cache flush on 
+  IDE devices. Actually not all IDE devices can do cache flushes, there
+  are some older models out there that can do write-caching but can
+  not perform a cache flush!
+
+  Journaling file systems should use this barrier mechanism in their journal
+  writes (actually on the commit block, this is the last write in a
+  transactional updated to the jouernal).
+
+  As for DRBD we should probabely ship the REQ_HARDBARRIER flags with
+  our wire protocol (or should they be expressed by Barrier packets?)
+
+  We will only see such REQ_HARDBARRIER flags if we state to the upper layers
+  that we are able to deal with them. We need to do this by announcing it:
+  blk_queue_ordered(q, QUEUE_ORDERED_FLUSH or QUEUE_ORDERED_TAG ) .
+  Default ist QUEUE_ORDERED_NONE. This is the reason why we never see
+  the REQ_HARDBARRIER flag currently.
+
+  An other consequence of this is, that IDE devices that do _not_ support 
+  cache flushes and have write cache enabled are inherent buggy to use with
+  a journaled file system.
+
+  SCSI's Tagged queuing (seems to be presenet in SATA as well)
+    [excerpt from http://www.scsimechanic.com/scsi/SCSI2-07.html]
+
+    Tagged queuing allows a target to accept multiple I/O processes from 
+    the same or different initiators until the logical unit's command queue 
+    is full.
+
+    If only SIMPLE QUEUE TAG messages are used, the target may execute the
+    commands in any order that is deemed desirable within the constraints
+    of the queue management algorithm specified in the control mode page
+    (see 8.3.3.1).  
+
+    If ORDERED QUEUE TAG messages are used, the target shall execute the
+    commands in the order received with respect to other commands received
+    with ORDERED QUEUE TAG messages. All commands received with a SIMPLE
+    QUEUE TAG message prior to a command received with an ORDERED QUEUE
+    TAG message, regardless of initiator, shall be executed before that
+    command with the ORDERED QUEUE TAG message. All commands received with
+    a SIMPLE QUEUE TAG message after a command received with an ORDERED
+    QUEUE TAG message, regardless of initiator, shall be executed after
+    that command with the ORDERED QUEUE TAG message.  
+
+    A command received with a HEAD OF QUEUE TAG message is placed first in
+    the queue, to be executed next. A command received with a HEAD OF
+    QUEUE TAG message shall be executed prior to any queued I/O
+    process. Consecutive commands received with HEAD OF QUEUE TAG messages
+    are executed in a last- in-first-out order.
+
+  I think in the context of SCSI the kernel usually issues write requests
+  with the SIMPLE QUEUE TAG, and requests with the REQ_HARDBARRIER 
+  (i.e. bio's with the BIO_RW_BARRIER) with an ORDERED QUEUE TAG.
+
+  What QUEUE_ORDERED_ type should we expose ?
+
+    In order to support capable IDE devices right, we should ship the
+    BIO_RW_BARRIER bit with our data packets in case the peer's backing
+    storage is of the QUEUE_ORDERED_FLUSH type.
+
+    If both devices are of the QUEUE_ORDERED_TAG type should also claim
+    to be of that type, and ship the BIO_RW_BARRIER bit as well.
+
+    self   peer      DRBD
+    ---------------------
+    NONE , NONE  =>  NONE
+    NONE , FLUSH =>  NONE
+    NONE , TAG   =>  NONE
+    FLUSH, NONE  =>  NONE
+    FLUSH, FLUSH =>  FLUSH
+    FLUSH, TAG   =>  FLUSH
+    TAG,   NONE  =>  NONE
+    TAG,   FLUSH =>  FLUSH
+    TAG,   TAG   =>  TAG
+
+  How should we deal with our self generated barrier packets ?
+
+    In case our backing device is of the QUEUE_ORDERED_NONE class, we
+    have to stay with the current code.
+
+    In case our backing device only supports QUEUE_ORDERED_FLUSH we
+    will to use the current code. That means, when we receive a write 
+    barrier packet we wait until all of our pending local write
+    requests are done. (This potentially causes congestion on the TCP
+    socket...)
+
+    In cause our backing device's queue properties are set to 
+    QUEUE_ORDERED_TAG we offload the complete barrier logic to the
+    backing storage device:
+
+    * When we receive a barrier packet
+      - If we have no local pending requests, we send the barrier ACK 
+        immediately. (= current code)
+      - If the last_write_w_barrier member of mdev points to an epoch_entry
+        we set barrier_nr2 of the ee.
+      - If we have local pending requests, we remeber (next_barrier_nr) the 
+	barrier number so that the next data packet has to be written with 
+        the BIO_RW_BARRIER flag set.
+
+    * When receiving data packets we check if next_barrier_nr is set and
+      set the BIO_RW_BARRIER on the write request. We also set
+      the last_write_w_barrier member of mdev.
+      [Normal writes clear the last_write_w_barrier member of mdev]
+
+    * When a write completes and it has the barrier_nr set, send the barrier
+      ack before sending the ack for the write. In case barrier_nr2 is
+      set as well, also send the barrier ack following the write ack 
+      of the data packet.
+
+  90% DONE [ Not tested yet. ]
+
+
 plus-banches:
 ----------------------
 

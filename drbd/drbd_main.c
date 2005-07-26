@@ -224,7 +224,7 @@ STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t * item)
 STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 {
 	unsigned int bnr;
-	static int barrier_nr_issue=1;
+	static unsigned int barrier_nr_issue=1;
 	struct drbd_barrier *b;
 
 	barrier_nr_issue++;
@@ -1002,6 +1002,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	p.d_size = cpu_to_be64(d_size);
 	p.c_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	p.max_segment_size = cpu_to_be32(mdev->rq_queue->max_segment_size);
+	p.queue_order_type = cpu_to_be32(drbd_queue_order_type(mdev));
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportSizes,
 			   (Drbd_Header*)&p,sizeof(p));
@@ -1316,6 +1317,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	int ok=1;
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
+	unsigned int dp_flags=0;
 
 	ERR_IF(!req || !req->master_bio) return FALSE;
 
@@ -1374,7 +1376,10 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		p.seq_num  = cpu_to_be32( req->seq_num =
 				     atomic_add_return(1,&mdev->packet_seq) );
 #endif
-
+		if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
+			dp_flags = DP_HARDBARRIER;
+		}
+		p.dp_flags = cpu_to_be32(dp_flags);
 		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);

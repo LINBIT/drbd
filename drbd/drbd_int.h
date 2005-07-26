@@ -392,12 +392,15 @@ typedef struct {
  *   ReportBitMap    (no additional fields)
  *   Data, DataReply (see Drbd_Data_Packet)
  */
+
+#define DP_HARDBARRIER 1
+
 typedef struct {
 	Drbd_Header head;
 	u64         sector;    // 64 bits sector number
 	u64         block_id;  // Used in protocol B&C for the address of the req.
 	u32         seq_num;
-	u32         pad;
+	u32         dp_flags;
 } __attribute((packed)) Drbd_Data_Packet;
 
 /*
@@ -479,6 +482,7 @@ typedef struct {
 	u64         u_size;  // user requested size
 	u64         c_size;  // current exported size
 	u32         max_segment_size;  // Maximal size of a BIO
+	u32         queue_order_type;
 } __attribute((packed)) Drbd_Sizes_Packet;
 
 typedef struct {
@@ -590,19 +594,6 @@ typedef struct drbd_request drbd_request_t;
    read_ee   .. [RS]DataRequest being read
 */
 
-/* Since whenever we allocate a Tl_epoch_entry, we allocated a buffer_head,
- * at the same time, we might as well put it as member into the struct.
- * Yes, we may "waste" a little memory since the unused EEs on the free_ee list
- * are somewhat larger. For 2.6, this will be a struct_bio, which is fairly
- * small, and since we adopt the amount dynamically anyways, this is not an
- * issue.
- *
- * TODO
- * I'd like to "drop" the free list altogether, since we use mempools, which
- * are designed for this. We probably would still need a private "page pool"
- * to do the "bio_add_page" from.
- *	-lge
- */
 struct Tl_epoch_entry {
 	struct drbd_work    w;
 	struct bio *private_bio;
@@ -612,6 +603,13 @@ struct Tl_epoch_entry {
 	sector_t ee_sector;
 	struct hlist_node colision;
 	drbd_dev *mdev;
+	unsigned int barrier_nr;
+	unsigned int barrier_nr2;
+	/* If we issue the bio with RIO_RW_BARRIER we have to
+	   send a barrier ACK before we send the ACK to this 
+	   write. We store the barrier number in here.
+	   In case the barrier after this write has been coalesced
+	   as well, we set it's barrier_nr into barrier_nr2 */
 };
 
 /* flag bits */
@@ -742,7 +740,9 @@ struct Drbd_Conf {
 	struct list_head read_ee;   // IO in progress
 	struct list_head net_ee;    // zero-copy network send in progress
 	struct hlist_head * ee_hash; // is proteced by tl_lock!
-	unsigned int ee_hash_s;     
+	unsigned int ee_hash_s;
+	struct Tl_epoch_entry * last_write_w_barrier; // ee_lock, single thread
+	int next_barrier_nr;  // ee_lock, single thread
 	spinlock_t pr_lock;
 	struct list_head app_reads;
 	struct list_head resync_reads;
@@ -1037,7 +1037,8 @@ extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 					    unsigned int data_size,
 					    unsigned int gfp_mask);
 extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
-extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
+extern void drbd_wait_ee(drbd_dev *mdev, struct list_head *head);
+extern void drbd_set_recv_tcq(drbd_dev *mdev, int tcq_enabled);
 
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
@@ -1486,3 +1487,16 @@ static inline void drbd_suicide(void)
 	schedule();
 }
 
+static inline int drbd_queue_order_type(drbd_dev* mdev)
+{
+	int rv;
+#if !defined(QUEUE_FLAG_ORDERED) 
+	rv = bdev_get_queue(mdev->backing_bdev)->ordered;
+#else
+# define QUEUE_ORDERED_TAG 2
+# define QUEUE_ORDERED_FLUSH 1
+# define QUEUE_ORDERED_NONE 0
+	rv = QUEUE_ORDERED_NONE; // Kernels before 2.6.12 had not had TCQ support.
+#endif 
+	return rv;
+}

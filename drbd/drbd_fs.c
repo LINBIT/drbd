@@ -401,6 +401,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	mdev->writ_cnt = 0;
 
 	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
+	drbd_set_recv_tcq(mdev,drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
 
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
 
