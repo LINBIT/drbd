@@ -1408,7 +1408,7 @@ int meta_dump_md(struct format *cfg, char **argv, int argc)
 	printf(" }\n");
 
 	if (cfg->ops >= f_ops + Drbd_07) {
-		printf("la-size-sect %llu;\n", cfg->md.la_sect);
+		printf("la-size-sect "U64";\n", cfg->md.la_sect);
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf("# bits-set %u;\n", cfg->bits_set);
 		if (cfg->on_disk.bm)
@@ -1716,8 +1716,8 @@ void check_for_exiting_data(struct format *cfg)
 #endif
 
 		/* looks like file system data */
-		printf("which uses %llu kB\n", fs_kB);
-		printf("current configuration leaves usable %llu kB\n", max_usable_kB);
+		printf("which uses "U64" kB\n", fs_kB);
+		printf("current configuration leaves usable "U64" kB\n", max_usable_kB);
 		if (fs_kB > max_usable_kB) {
 			printf(
 "\nDevice size would be truncated, which\n"
@@ -1979,14 +1979,14 @@ int main(int argc, char **argv)
 #if 1
 	if (sizeof(struct md_on_disk_07) != 4096) {
 		fprintf(stderr, "Where did you get this broken build!?\n"
-			        "sizeof(md_on_disk_07) == %u, should be 4096\n",
-				sizeof(struct md_on_disk_07));
+			        "sizeof(md_on_disk_07) == %lu, should be 4096\n",
+				(unsigned long)sizeof(struct md_on_disk_07));
 		exit(111);
 	}
 	if (sizeof(struct md_on_disk_08) != 4096) {
 		fprintf(stderr, "Where did you get this broken build!?\n"
-			        "sizeof(md_on_disk_08) == %u, should be 4096\n",
-				sizeof(struct md_on_disk_08));
+			        "sizeof(md_on_disk_08) == %lu, should be 4096\n",
+				(unsigned long)sizeof(struct md_on_disk_08));
 		exit(111);
 	}
 #endif
