@@ -1493,9 +1493,10 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 #if !defined(QUEUE_FLAG_ORDERED) 
 	rv = bdev_get_queue(mdev->backing_bdev)->ordered;
 #else
-# define QUEUE_ORDERED_TAG 2
-# define QUEUE_ORDERED_FLUSH 1
 # define QUEUE_ORDERED_NONE 0
+# define QUEUE_ORDERED_TAG 1
+# define QUEUE_ORDERED_FLUSH 2
+# warning "TCQ code disabled at compile time."
 	rv = QUEUE_ORDERED_NONE; // Kernels before 2.6.12 had not had TCQ support.
 #endif 
 	return rv;

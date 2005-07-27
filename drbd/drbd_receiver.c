@@ -2027,7 +2027,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[RSDataReply]      = receive_RSDataReply,
 	[RecvAck]          = NULL, //receive_RecvAck,
 	[WriteAck]         = NULL, //receive_WriteAck,
-	[Barrier]          = receive_Barrier_usual, // see drbd_set_tcq()
+	[Barrier]          = NULL, // see drbd_set_tcq()
 	[BarrierAck]       = NULL, //receive_BarrierAck,
 	[ReportBitMap]     = receive_bitmap,
 	[Ping]             = NULL, //receive_Ping,
@@ -2051,14 +2051,18 @@ static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
 
 void drbd_set_recv_tcq(drbd_dev * mdev, int tcq_enabled)
 {
-	if(tcq_enabled) {
-		if( drbd_default_handler[Barrier] == receive_Barrier_usual) {
-			INFO("Enabling TCQ for barrier processing on our"
-			     "backing storage\n");
-		}
+	if(tcq_enabled &&
+	   drbd_default_handler[Barrier] != receive_Barrier_tcq) {
+		INFO("Enabling TCQ for barrier processing on backend.\n");
 		drbd_default_handler[Barrier] = receive_Barrier_tcq;
 	}
-	else drbd_default_handler[Barrier] = receive_Barrier_usual;
+
+	if(!tcq_enabled &&
+	   drbd_default_handler[Barrier] != receive_Barrier_usual) {
+		INFO("Using conventional (non TCQ) barrier processing"
+		     " on backend.\n");
+		drbd_default_handler[Barrier] = receive_Barrier_usual;
+	}
 }
 
 STATIC void drbdd(drbd_dev *mdev)
