@@ -614,14 +614,36 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 {
 	int err;
 	struct socket *sock;
+	struct sockaddr_in src_in;
 
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 	if (err) {
 		ERR("sock_creat(..)=%d\n", err);
+		return NULL;
 	}
 
 	sock->sk->SK_(rcvtimeo) =
 	sock->sk->SK_(sndtimeo) =  mdev->conf.try_connect_int*HZ;
+
+       /* explicitly bind to the configured IP as source IP 
+	   for the outgoing connections.
+	   This is needed for multihomed hosts and to be 
+	   able to use lo: interfaces for drbd.
+          Make sure to use 0 as portnumber, so linux selects
+	   a free one dynamically.
+	*/
+	memcpy (&src_in, &(mdev->conf.my_addr), sizeof(struct sockaddr_in));
+	src_in.sin_port = 0; 
+
+	err = sock->ops->bind(sock,
+			      (struct sockaddr * ) &src_in,
+			      sizeof (struct sockaddr_in));
+	if (err) {
+		ERR("Unable to bind source sock (%d)\n", err);
+		sock_release(sock);
+		sock = NULL;
+		return sock;
+	}
 
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *) mdev->conf.other_addr,
@@ -642,7 +664,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock2);
 	if (err) {
 		ERR("sock_creat(..)=%d\n", err);
-		// FIXME return NULL ?
+		return NULL;
 	}
 
 	sock2->sk->SK_(reuse)    = 1; /* SO_REUSEADDR */
@@ -653,7 +675,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 			      (struct sockaddr *) mdev->conf.my_addr,
 			      mdev->conf.my_addr_len);
 	if (err) {
-		ERR("Unable to bind (%d)\n", err);
+		ERR("Unable to bind sock2 (%d)\n", err);
 		sock_release(sock2);
 		set_cstate(mdev,Unconnected);
 		return 0;
