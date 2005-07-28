@@ -974,10 +974,15 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 
 	req = (drbd_request_t *)(long)p->block_id;
+	if(unlikely(!drbd_pr_verify(mdev,req,sector))) {
+		ERR("Got a corrupt block_id/sector pair(1).\n");
+		return FALSE;
+	}
+
 	D_ASSERT(req->w.cb == w_is_app_read);
 
 	spin_lock(&mdev->pr_lock);
-	list_del(&req->w.list);
+	hlist_del(&req->colision);
 	spin_unlock(&mdev->pr_lock);
 
 	ok = recv_dless_read(mdev,req,sector,data_size);
@@ -1903,19 +1908,28 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
+	struct hlist_head *slot;
+	struct hlist_node *n;
+	drbd_request_t * req;
 	struct list_head *le;
 	struct bio *bio;
 	LIST_HEAD(workset);
+	int i;
 
 	/*
 	 * Application READ requests
 	 */
 	spin_lock(&mdev->pr_lock);
-	list_splice_init(&mdev->app_reads,&workset);
+	for(i=0;i<APP_R_HSIZE;i++) {
+		slot = mdev->app_reads_hash+i;
+		hlist_for_each_entry(req, n, slot, colision) {
+			list_add(&req->w.list, &workset);
+		}
+	}
+	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
 	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
-		drbd_request_t *req;
 		le = workset.next;
 		req = list_entry(le, drbd_request_t, w.list);
 		list_del(le);
@@ -2525,7 +2539,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 			req=(drbd_request_t*)(unsigned long)p->block_id;
 
 			if (unlikely(!tl_verify(mdev,req,sector))) {
-				ERR("Got a corrupt block_id/sector pair.\n");
+				ERR("Got a corrupt block_id/sector pair(2).\n");
 				return FALSE;
 			}
 
@@ -2569,8 +2583,13 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 {
 	drbd_request_t *req;
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+	sector_t sector = be64_to_cpu(p->sector);
 
 	req = (drbd_request_t *)(unsigned long)p->block_id;
+	if(unlikely(!drbd_pr_verify(mdev,req,sector))) {
+		ERR("Got a corrupt block_id/sector pair(3).\n");
+		return FALSE;
+	}
 	D_ASSERT(req->w.cb == w_is_app_read);
 
 	spin_lock(&mdev->pr_lock);

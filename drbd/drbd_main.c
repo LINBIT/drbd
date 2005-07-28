@@ -1681,7 +1681,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->read_ee);
 	INIT_LIST_HEAD(&mdev->net_ee);
 	INIT_LIST_HEAD(&mdev->busy_blocks);
-	INIT_LIST_HEAD(&mdev->app_reads);
 	INIT_LIST_HEAD(&mdev->resync_reads);
 	INIT_LIST_HEAD(&mdev->data.work.q);
 	INIT_LIST_HEAD(&mdev->meta.work.q);
@@ -1794,7 +1793,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->net_ee));
 	D_ASSERT(list_empty(&mdev->busy_blocks));
-	D_ASSERT(list_empty(&mdev->app_reads));
 	D_ASSERT(list_empty(&mdev->resync_reads));
 	D_ASSERT(list_empty(&mdev->data.work.q));
 	D_ASSERT(list_empty(&mdev->meta.work.q));
@@ -1974,6 +1972,10 @@ static void __exit drbd_cleanup(void)
 				kfree(mdev->ee_hash);
 				mdev->ee_hash_s = 0;
 			}
+			if(mdev->app_reads_hash) {
+				kfree(mdev->app_reads_hash);
+				mdev->app_reads_hash = 0;
+			}
 		}
 		drbd_destroy_mempools();
 	}
@@ -2147,6 +2149,11 @@ int __init drbd_init(void)
 
 		init_MUTEX(&mdev->device_mutex);
 		if (!tl_init(mdev)) goto Enomem;
+
+		mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*), 
+					     GFP_KERNEL);
+		if (!mdev->app_reads_hash) goto Enomem;
+		memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
 	}
 
 #if CONFIG_PROC_FS

@@ -744,7 +744,7 @@ struct Drbd_Conf {
 	struct Tl_epoch_entry * last_write_w_barrier; // ee_lock, single thread
 	int next_barrier_nr;  // ee_lock, single thread
 	spinlock_t pr_lock;
-	struct list_head app_reads;
+	struct hlist_head * app_reads_hash; // is proteced by pr_lock
 	struct list_head resync_reads;
 	atomic_t pp_in_use;
 	wait_queue_head_t ee_wait;
@@ -944,6 +944,9 @@ struct bm_extent {
 #define HT_SHIFT 6
 #define DRBD_MAX_SEGMENT_SIZE (1<<(9+HT_SHIFT)) 
 
+/* Number of elements in the app_reads_hash */
+#define APP_R_HSIZE 15
+
 extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);
 extern void drbd_bm_cleanup   (drbd_dev *mdev);
@@ -999,6 +1002,8 @@ extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
 extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
+extern int drbd_pr_verify(drbd_dev *, drbd_request_t *, sector_t);
+
 
 // drbd_fs.c
 extern char* ppsize(char* buf, size_t size);

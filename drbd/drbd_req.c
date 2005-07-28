@@ -119,6 +119,11 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	}
 }
 
+static unsigned int ar_hash_fn(drbd_dev *mdev, sector_t sector)
+{
+	return (unsigned int)(sector) % APP_R_HSIZE;
+}
+
 int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 {
 	int rv;
@@ -126,11 +131,36 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 
 	req->w.cb = w_is_app_read;
 	spin_lock(&mdev->pr_lock);
-	list_add(&req->w.list,&mdev->app_reads);
+	INIT_HLIST_NODE(&req->colision);
+	hlist_add_head( &req->colision, mdev->app_reads_hash + 
+			ar_hash_fn(mdev, drbd_req_get_sector(req) ));
 	spin_unlock(&mdev->pr_lock);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
 	rv=drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
 			      (unsigned long)req);
+	return rv;
+}
+
+int drbd_pr_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
+{
+	struct hlist_head *slot = mdev->app_reads_hash + 
+		ar_hash_fn(mdev, drbd_req_get_sector(req) );
+	struct hlist_node *n;
+	drbd_request_t * i;
+	int rv=0;
+
+	spin_lock(&mdev->pr_lock);
+
+	hlist_for_each_entry(i, n, slot, colision) {
+		if (i==req) {
+			D_ASSERT(drbd_req_get_sector(i) == sector);
+			rv=1;
+			break;
+		}
+	}
+
+	spin_unlock(&mdev->pr_lock);
+
 	return rv;
 }
 

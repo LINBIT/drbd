@@ -105,9 +105,7 @@ DRBD 0.8 Roadmap
 
   Note: The actual key to the hash should be (sector & ~0x7).
         See item 9 for more details.
-  80% DONE ; There are more places where we case an block_id
-             to an req pointer, need to make sure that we
-             cover all of these places.
+  99% DONE
 
 7 Handle split brain situations; Support IO fencing; 
   
