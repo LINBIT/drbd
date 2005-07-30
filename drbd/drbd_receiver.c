@@ -1698,6 +1698,17 @@ STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 	}
 }
 
+/* warn if the arguments differ by more than 12.5% */
+static void warn_if_differ_considerably(drbd_dev *mdev, const char *s, sector_t a, sector_t b)
+{
+	if (a == 0 || b == 0) return;
+	sector_t d = (a > b) ? (a - b) : (b - a);
+	if ( d > (a>>3) || d > (b>>3)) {
+		WARN("Considerable difference in %s: %llu vs. %llu\n", s,
+		     (unsigned long long)a, (unsigned long long)b);
+	}
+}
+
 STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
@@ -1710,6 +1721,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 
 	p_size=be64_to_cpu(p->d_size);
+	p_usize=be64_to_cpu(p->u_size);
 
 	if(p_size == 0 && mdev->state.disk == Diskless ) {
 		ERR("some backing storage is needed\n");
@@ -1718,9 +1730,13 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
+	warn_if_differ_considerably(mdev, "lower level device sizes",
+			p_size, drbd_get_capacity(mdev->backing_bdev));
+	warn_if_differ_considerably(mdev, "user requested size",
+			p_usize, mdev->lo_usize);
+
 	drbd_bm_lock(mdev); // {
 	mdev->p_size=p_size;
-	p_usize=be64_to_cpu(p->u_size);
 	/*
 	 * you may get a flip-flop connection established/connection loss, in
 	 * case both really have different usize uppon first connect!
