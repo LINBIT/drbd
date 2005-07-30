@@ -243,7 +243,7 @@ typedef union {
 		unsigned pdsk : 3 ;   // 7/8      from Diskless to UpToDate
 		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
 		unsigned _pad : 16;   // 0        unused
-	} s;
+	};
 	unsigned int i;
 } drbd_state_t;
 

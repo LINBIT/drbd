@@ -219,8 +219,8 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	smp_rmb();
 	if ( cancel ||
-	     mdev->state.s.conn < Connected ||
-	     mdev->state.s.pdsk <= Inconsistent ) {
+	     mdev->state.conn < Connected ||
+	     mdev->state.pdsk <= Inconsistent ) {
 		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
 
 		// does not make much sense, but anyways...
@@ -302,13 +302,13 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	if(unlikely(cancel)) return 1;
 
-	if(unlikely(mdev->state.s.conn < Connected)) {
+	if(unlikely(mdev->state.conn < Connected)) {
 		ERR("Confused in w_make_resync_request()! cstate < Connected");
 		return 0;
 	}
 
-	if (mdev->state.s.conn != SyncTarget) {
-		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.s.conn));
+	if (mdev->state.conn != SyncTarget) {
+		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.conn));
 	}
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
@@ -390,7 +390,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_total  = 0;
 	mdev->rs_paused = 0;
 
-	if ( mdev->state.s.conn == SyncTarget ) {
+	if ( mdev->state.conn == SyncTarget ) {
 		/* Do not pushin the peer's Bitmap UUID into my History. */
 		_drbd_uuid_set(mdev,Current,mdev->as_c_uuid);
 		// mdev->as_c_uuid = 0xf0deadbeefbabe0fLL;
@@ -456,7 +456,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
 
 	if(likely(drbd_bio_uptodate(e->private_bio))) {
-		if (likely( mdev->state.s.pdsk >= Inconsistent )) {
+		if (likely( mdev->state.pdsk >= Inconsistent )) {
 			inc_rs_pending(mdev);
 			ok=drbd_send_block(mdev, RSDataReply, e);
 		} else {
@@ -531,14 +531,14 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 {
 	drbd_conns_t ncs;
 
-	ncs = mdev->state.s.conn - (PausedSyncS - SyncSource);
+	ncs = mdev->state.conn - (PausedSyncS - SyncSource);
 	D_ASSERT(ncs == SyncSource || ncs == SyncTarget);
 
 	INFO("Syncer continues.\n");
 	mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
 	_drbd_set_state(mdev,_NS(conn,ncs),ChgStateHard);
 
-	if(mdev->state.s.conn == SyncTarget) {
+	if(mdev->state.conn == SyncTarget) {
 		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
 			unsigned long rs_left = drbd_bm_total_weight(mdev);
 			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
@@ -559,10 +559,10 @@ STATIC void _drbd_rs_pause(drbd_dev *mdev)
 {
 	drbd_conns_t ncs;
 
-	D_ASSERT(mdev->state.s.conn == SyncSource || mdev->state.s.conn == SyncTarget);
-	ncs = mdev->state.s.conn + (PausedSyncS - SyncSource);
+	D_ASSERT(mdev->state.conn == SyncSource || mdev->state.conn == SyncTarget);
+	ncs = mdev->state.conn + (PausedSyncS - SyncSource);
 
-	if(mdev->state.s.conn == SyncTarget) set_bit(STOP_SYNC_TIMER,&mdev->flags);
+	if(mdev->state.conn == SyncTarget) set_bit(STOP_SYNC_TIMER,&mdev->flags);
 
 	mdev->rs_mark_time = jiffies;
 	// mdev->rs_mark_left = drbd_bm_total_weight(mdev); // I don't care...
@@ -578,8 +578,8 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 	while(1) {
 		if( odev->sync_conf.after == -1 ) return 1;
 		odev = drbd_conf + odev->sync_conf.after;
-		if( odev->state.s.conn == SyncSource || 
-		    odev->state.s.conn == SyncTarget ) return 0;
+		if( odev->state.conn == SyncSource || 
+		    odev->state.conn == SyncTarget ) return 0;
 	}
 }
 
@@ -590,8 +590,8 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->state.s.conn == SyncSource || 
-		     odev->state.s.conn == SyncTarget ) {
+		if ( odev->state.conn == SyncSource || 
+		     odev->state.conn == SyncTarget ) {
 			if (! _drbd_may_sync_now(odev)) {
 				_drbd_rs_pause(odev);
 				rv = 1;
@@ -609,8 +609,8 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->state.s.conn == PausedSyncS || 
-		     odev->state.s.conn == PausedSyncT ) {
+		if ( odev->state.conn == PausedSyncS || 
+		     odev->state.conn == PausedSyncT ) {
 			if (_drbd_may_sync_now(odev)) {
 				_drbd_rs_resume(odev);
 				rv = 1;
@@ -659,7 +659,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	} else if (side == SyncSource) {
 		r = drbd_request_state(mdev,NS2(conn,SyncSource,
 						pdsk,Inconsistent));
-		D_ASSERT(mdev->state.s.disk == UpToDate);
+		D_ASSERT(mdev->state.disk == UpToDate);
 	}
 
 	if(r != 1) return;
@@ -695,8 +695,8 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 
 	drbd_global_lock();
-	if ( mdev->state.s.conn == SyncTarget || 
-	     mdev->state.s.conn == SyncSource ) {
+	if ( mdev->state.conn == SyncTarget || 
+	     mdev->state.conn == SyncSource ) {
 		if(!_drbd_may_sync_now(mdev)) {
 			_drbd_rs_pause(mdev);
 		}
@@ -708,10 +708,10 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	   */
 	drbd_global_unlock();
 
-	if (mdev->state.s.conn == SyncTarget) {
+	if (mdev->state.conn == SyncTarget) {
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		mod_timer(&mdev->resync_timer,jiffies);
-	} else if (mdev->state.s.conn == PausedSyncT) { 
+	} else if (mdev->state.conn == PausedSyncT) { 
 		D_ASSERT(test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		clear_bit(STOP_SYNC_TIMER,&mdev->flags);
 	}
@@ -753,9 +753,9 @@ int drbd_worker(struct Drbd_thread *thi)
 		list_del_init(&w->list);
 		spin_unlock_irq(&mdev->req_lock);
 
-		if(!w->cb(mdev,w, mdev->state.s.conn < Connected )) {
+		if(!w->cb(mdev,w, mdev->state.conn < Connected )) {
 			//WARN("worker: a callback failed! \n");
-			if (mdev->state.s.conn >= Connected)
+			if (mdev->state.conn >= Connected)
 				drbd_force_state(mdev,NS(conn,NetworkFailure));
 			drbd_thread_restart_nowait(&mdev->receiver);
 		}

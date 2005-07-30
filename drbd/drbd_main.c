@@ -474,10 +474,10 @@ int drbd_io_error(drbd_dev* mdev)
 	if(mdev->on_io_error != Panic && mdev->on_io_error != Detach) return 1;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
-	if( (send = (mdev->state.s.disk == Failed)) ) {
+	if( (send = (mdev->state.disk == Failed)) ) {
 		_drbd_set_state(mdev,_NS(disk,Diskless),ChgStateHard);
 	}
-	D_ASSERT(mdev->state.s.disk <= Failed);
+	D_ASSERT(mdev->state.disk <= Failed);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	if(!send) return ok;
@@ -516,11 +516,11 @@ static void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 {
 	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s }\n",
 	    name,
-	    conns_to_name(ns.s.conn),
-	    roles_to_name(ns.s.role),
-	    roles_to_name(ns.s.peer),
-	    disks_to_name(ns.s.disk),
-	    disks_to_name(ns.s.pdsk));
+	    conns_to_name(ns.conn),
+	    roles_to_name(ns.role),
+	    roles_to_name(ns.peer),
+	    disks_to_name(ns.disk),
+	    disks_to_name(ns.pdsk));
 }
 
 void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
@@ -535,10 +535,10 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 #define pdsks_to_name disks_to_name
 
 #define PSC(A) \
-	({ if( ns.s.A != os.s.A ) { \
+	({ if( ns.A != os.A ) { \
 		pbp += sprintf(pbp, #A "( %s -> %s ) ", \
-		              A##s_to_name(os.s.A), \
-		              A##s_to_name(ns.s.A)); \
+		              A##s_to_name(os.A), \
+		              A##s_to_name(ns.A)); \
 	} })
 
 
@@ -553,66 +553,66 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	if( ns.i == os.i ) return 2;
 
 	/*  State sanitising  */
-	if( ns.s.conn < Connected ) {
-		ns.s.peer = Unknown;
-		if ( ns.s.pdsk > DUnknown ) ns.s.pdsk = DUnknown;
+	if( ns.conn < Connected ) {
+		ns.peer = Unknown;
+		if ( ns.pdsk > DUnknown ) ns.pdsk = DUnknown;
 	}
 
-	if( ns.s.conn == StandAlone && ns.s.disk == Diskless ) {
-		ns.s.pdsk = DUnknown;
+	if( ns.conn == StandAlone && ns.disk == Diskless ) {
+		ns.pdsk = DUnknown;
 	}
 
-	if( ns.s.conn > Connected && ns.s.disk <= Failed ) {
+	if( ns.conn > Connected && ns.disk <= Failed ) {
 		warn_sync_abort=1;
-		ns.s.conn = Connected;
+		ns.conn = Connected;
 	}
 
-	if( ns.s.conn >= Connected && 
-	    ( ns.s.disk == Consistent || ns.s.disk == Outdated ) ) {
-		switch(ns.s.conn) {
+	if( ns.conn >= Connected && 
+	    ( ns.disk == Consistent || ns.disk == Outdated ) ) {
+		switch(ns.conn) {
 		case SkippedSyncT:
 		case WFBitMapT:
 		case PausedSyncT:
-			ns.s.disk = Outdated;
+			ns.disk = Outdated;
 			break;
 		case Connected:
 		case SkippedSyncS:
 		case WFBitMapS:
 		case SyncSource:
 		case PausedSyncS:
-			ns.s.disk = UpToDate;
+			ns.disk = UpToDate;
 			break;
 		case SyncTarget:
-			ns.s.disk = Inconsistent;
+			ns.disk = Inconsistent;
 			WARN("Implicit set disk state Inconsistent!\n");
 			break;
 		}
-		if( os.s.disk == Outdated && ns.s.disk == UpToDate ) {
+		if( os.disk == Outdated && ns.disk == UpToDate ) {
 			WARN("Implicit set disk from Outdate to UpToDate\n");
 		}
 	}
 
-	if( ns.s.conn >= Connected && 
-	    ( ns.s.pdsk == Consistent || ns.s.pdsk == Outdated ) ) {
-		switch(ns.s.conn) {
+	if( ns.conn >= Connected && 
+	    ( ns.pdsk == Consistent || ns.pdsk == Outdated ) ) {
+		switch(ns.conn) {
 		case Connected:
 		case SkippedSyncT:
 		case WFBitMapT:
 		case PausedSyncT:
 		case SyncTarget:
-			ns.s.pdsk = UpToDate;
+			ns.pdsk = UpToDate;
 			break;
 		case SkippedSyncS:
 		case WFBitMapS:
 		case PausedSyncS:
-			ns.s.pdsk = Outdated;
+			ns.pdsk = Outdated;
 			break;
 		case SyncSource:
-			ns.s.pdsk = Inconsistent;
+			ns.pdsk = Inconsistent;
 			WARN("Implicit set pdsk Inconsistent!\n");
 			break;
 		}
-		if( os.s.pdsk == Outdated && ns.s.pdsk == UpToDate ) {
+		if( os.pdsk == Outdated && ns.pdsk == UpToDate ) {
 			WARN("Implicit set pdsk from Outdate to UpToDate\n");
 		}
 	}
@@ -623,34 +623,34 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
 		if( !mdev->conf.two_primaries && 
-		    ns.s.role == Primary && ns.s.peer == Primary ) rv=-1;
+		    ns.role == Primary && ns.peer == Primary ) rv=-1;
 
-		else if( ns.s.role == Primary && ns.s.conn < Connected &&
-			 ns.s.disk <= Outdated ) rv=-2;
+		else if( ns.role == Primary && ns.conn < Connected &&
+			 ns.disk <= Outdated ) rv=-2;
 
 		else if( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) && 
-			 ns.s.role == Primary && ns.s.conn < Connected &&
-			 ns.s.pdsk >= DUnknown ) rv=-7;
+			 ns.role == Primary && ns.conn < Connected &&
+			 ns.pdsk >= DUnknown ) rv=-7;
 
-		else if( ns.s.role == Primary && ns.s.disk <= Inconsistent && 
-			 ns.s.pdsk <= Inconsistent ) rv=-2;
+		else if( ns.role == Primary && ns.disk <= Inconsistent && 
+			 ns.pdsk <= Inconsistent ) rv=-2;
 
-		else if( ns.s.peer == Primary && ns.s.pdsk <= Inconsistent ) 
+		else if( ns.peer == Primary && ns.pdsk <= Inconsistent ) 
 			rv=-3;
 
-		else if( ns.s.conn > Connected && 
-			 ns.s.disk < UpToDate && ns.s.pdsk < UpToDate ) rv=-4;
+		else if( ns.conn > Connected && 
+			 ns.disk < UpToDate && ns.pdsk < UpToDate ) rv=-4;
 
-		else if( ns.s.conn > Connected && 
-			 (ns.s.disk == Diskless || ns.s.pdsk == Diskless ) ) 
+		else if( ns.conn > Connected && 
+			 (ns.disk == Diskless || ns.pdsk == Diskless ) ) 
 			rv=-5;
 
-		else if( (ns.s.conn == Connected ||
-			  ns.s.conn == SkippedSyncS ||
-			  ns.s.conn == WFBitMapS ||
-			  ns.s.conn == SyncSource ||
-			  ns.s.conn == PausedSyncS) &&
-			 ns.s.disk == Outdated ) rv=-6;
+		else if( (ns.conn == Connected ||
+			  ns.conn == SkippedSyncS ||
+			  ns.conn == WFBitMapS ||
+			  ns.conn == SyncSource ||
+			  ns.conn == PausedSyncS) &&
+			 ns.disk == Outdated ) rv=-6;
 	}
 
 	if(rv <= 0) {
@@ -677,25 +677,25 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	wake_up(&mdev->cstate_wait);
 
 	/**   post-state-change actions   **/
-	if ( os.s.conn >= SyncSource   && ns.s.conn <= Connected ) {
+	if ( os.conn >= SyncSource   && ns.conn <= Connected ) {
 		clear_bit(SYNC_STARTED,&mdev->flags);
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		mod_timer(&mdev->resync_timer,jiffies);
 	}
 
-	if ( os.s.disk == Diskless && os.s.conn == StandAlone &&
-	     (ns.s.disk >= Inconsistent || ns.s.conn > StandAlone) ) {
+	if ( os.disk == Diskless && os.conn == StandAlone &&
+	     (ns.disk >= Inconsistent || ns.conn > StandAlone) ) {
 		__module_get(THIS_MODULE);
 	}
 
-	if ( (os.s.disk >= Inconsistent || ns.s.conn > StandAlone) &&
-	     ns.s.disk == Diskless && ns.s.conn == StandAlone ) {
+	if ( (os.disk >= Inconsistent || ns.conn > StandAlone) &&
+	     ns.disk == Diskless && ns.conn == StandAlone ) {
 		drbd_mdev_cleanup(mdev);
 		module_put(THIS_MODULE);
 	}
 
-	if ( ns.s.role == Primary && ns.s.conn < Connected &&
-	     ns.s.disk < Consistent ) {
+	if ( ns.role == Primary && ns.conn < Connected &&
+	     ns.disk < Consistent ) {
 		drbd_panic("No access to good data anymore.\n");
 	}
 
@@ -708,15 +708,15 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	   state change. This function might sleep */
 
 	/*  Added disk, tell peer.  */
-	if ( os.s.disk == Diskless && ns.s.disk >= Inconsistent &&
-	     ns.s.conn >= Connected ) {
+	if ( os.disk == Diskless && ns.disk >= Inconsistent &&
+	     ns.conn >= Connected ) {
 		drbd_send_sizes(mdev);
 		drbd_send_state(mdev);
 	}
 
 	/*  Removed disk, tell peer.  */
-	if ( os.s.disk >= Inconsistent && ns.s.disk == Diskless &&
-	     ns.s.conn >= Connected ) {
+	if ( os.disk >= Inconsistent && ns.disk == Diskless &&
+	     ns.conn >= Connected ) {
 		drbd_send_state(mdev);
 	}
 }
@@ -1053,7 +1053,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
-		if (unlikely(mdev->state.s.disk <= Failed )) {
+		if (unlikely(mdev->state.disk <= Failed )) {
 			/* write_bm did fail! panic.
 			 * FIXME can we do something better than panic?
 			 */
@@ -1142,7 +1142,7 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
 #endif
 
-	if (!mdev->meta.socket || mdev->state.s.conn < Connected) return FALSE;
+	if (!mdev->meta.socket || mdev->state.conn < Connected) return FALSE;
 	ok=drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
@@ -1174,7 +1174,7 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
 		|| get_t_state(&mdev->asender) != Running
-		|| (volatile int)mdev->state.s.conn < Connected;
+		|| (volatile int)mdev->state.conn < Connected;
 
 	if (drop_it)
 		return TRUE;
@@ -1479,7 +1479,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	int rv,sent=0;
 
 	if (!sock) return -1000;
-	if ((volatile int)mdev->state.s.conn < WFReportParams) return -1001;
+	if ((volatile int)mdev->state.conn < WFReportParams) return -1001;
 
 	// THINK  if (signal_pending) return ... ?
 
@@ -1572,7 +1572,7 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	if(minor >= minor_count) return -ENODEV;
 
 	if (file->f_mode & FMODE_WRITE) {
-		if( drbd_conf[minor].state.s.role == Secondary) {
+		if( drbd_conf[minor].state.role == Secondary) {
 			return -EROFS;
 		}
 		set_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
@@ -1615,8 +1615,8 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 
 	/* only if connected */
 	spin_lock_irq(&mdev->req_lock);
-	if (mdev->state.s.pdsk >= Inconsistent) /* implies cs >= Connected */ {
-		D_ASSERT(mdev->state.s.role == Primary);
+	if (mdev->state.pdsk >= Inconsistent) /* implies cs >= Connected */ {
+		D_ASSERT(mdev->state.role == Primary);
 		if (test_and_clear_bit(UNPLUG_REMOTE,&mdev->flags)) {
 			/* add to the front of the data.work queue,
 			 * unless already queued.
@@ -1628,7 +1628,7 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
-	if(mdev->state.s.disk >= Inconsistent) drbd_kick_lo(mdev);
+	if(mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
 }
 
 void drbd_set_defaults(drbd_dev *mdev)
@@ -2291,10 +2291,10 @@ void drbd_md_write(drbd_dev *mdev)
 
 	flags = mdev->md_flags & ~(MDF_Consistent|MDF_PrimaryInd|
 				   MDF_ConnectedInd|MDF_WasUpToDate);
-	if (mdev->state.s.role == Primary)        flags |= MDF_PrimaryInd;
-	if (mdev->state.s.conn >= WFReportParams) flags |= MDF_ConnectedInd;
-	if (mdev->state.s.disk >  Inconsistent)   flags |= MDF_Consistent;
-	if (mdev->state.s.disk >  Outdated)       flags |= MDF_WasUpToDate;
+	if (mdev->state.role == Primary)        flags |= MDF_PrimaryInd;
+	if (mdev->state.conn >= WFReportParams) flags |= MDF_ConnectedInd;
+	if (mdev->state.disk >  Inconsistent)   flags |= MDF_Consistent;
+	if (mdev->state.disk >  Outdated)       flags |= MDF_WasUpToDate;
 	mdev->md_flags = flags;
 
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
@@ -2323,7 +2323,7 @@ void drbd_md_write(drbd_dev *mdev)
 	if (drbd_md_sync_page_io(mdev,sector,WRITE)) {
 		clear_bit(MD_DIRTY,&mdev->flags);
 	} else {
-		if (mdev->state.s.disk <= Failed) {
+		if (mdev->state.disk <= Failed) {
 			/* this was a try anyways ... */
 			ERR("meta data update failed!\n");
 		} else {
@@ -2402,7 +2402,7 @@ static void drbd_uuid_move_history(drbd_dev *mdev)
 
 void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
-	if (mdev->state.s.role == Primary) {
+	if (mdev->state.role == Primary) {
 		mdev->uuid[idx] = val | 1;
 	} else {
 		mdev->uuid[idx] = val & ~((u64)1);
@@ -2424,7 +2424,7 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 	D_ASSERT(mdev->uuid[Bitmap] == 0);
 	mdev->uuid[Bitmap] = mdev->uuid[Current];
 	get_random_bytes(&mdev->uuid[Current], sizeof(u64));
-	if (mdev->state.s.role == Primary) {
+	if (mdev->state.role == Primary) {
 		mdev->uuid[Current] |= 1;
 	} else {
 		mdev->uuid[Current] &= ~((u64)1);

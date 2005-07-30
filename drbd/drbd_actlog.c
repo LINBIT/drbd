@@ -210,7 +210,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 		evicted = al_ext->lc_number;
 
-		if(mdev->state.s.conn < Connected && evicted != LC_FREE ) {
+		if(mdev->state.conn < Connected && evicted != LC_FREE ) {
 			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT );
 		}
 		drbd_al_write_transaction(mdev,al_ext,enr);
@@ -539,8 +539,8 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 	kfree(udw);
 
 	if(drbd_bm_total_weight(mdev) == 0 &&
-	   ( mdev->state.s.conn == SyncSource || mdev->state.s.conn == SyncTarget ||
-	     mdev->state.s.conn == PausedSyncS || mdev->state.s.conn == PausedSyncT ) ) {
+	   ( mdev->state.conn == SyncSource || mdev->state.conn == SyncTarget ||
+	     mdev->state.conn == PausedSyncS || mdev->state.conn == PausedSyncT ) ) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
 		drbd_bm_lock(mdev);
 		drbd_resync_finished(mdev);

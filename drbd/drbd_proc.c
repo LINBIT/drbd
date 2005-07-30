@@ -171,7 +171,7 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		sn = conns_to_name(drbd_conf[i].state.s.conn);
+		sn = conns_to_name(drbd_conf[i].state.conn);
 		
 		/* PRE FIXME
 		if(drbd_conf[i].cstate == Connected) {
@@ -181,8 +181,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 				sn = "ServerForDLess";
 				} */
 		
-		if ( drbd_conf[i].state.s.conn == StandAlone && 
-		     drbd_conf[i].state.s.disk == Diskless) {
+		if ( drbd_conf[i].state.conn == StandAlone && 
+		     drbd_conf[i].state.disk == Diskless) {
 			rlen += sprintf( buf + rlen,
 			   "%2d: Unconfigured\n", i);
 		} else {
@@ -191,10 +191,10 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
-			   roles_to_name(drbd_conf[i].state.s.role),
-			   roles_to_name(drbd_conf[i].state.s.peer),
-			   disks_to_name(drbd_conf[i].state.s.disk),
-			   disks_to_name(drbd_conf[i].state.s.pdsk),
+			   roles_to_name(drbd_conf[i].state.role),
+			   roles_to_name(drbd_conf[i].state.peer),
+			   disks_to_name(drbd_conf[i].state.disk),
+			   disks_to_name(drbd_conf[i].state.pdsk),
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,
@@ -208,8 +208,8 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].ap_bio_cnt)
 			);
 
-			if ( drbd_conf[i].state.s.conn == SyncSource ||
-			     drbd_conf[i].state.s.conn == SyncTarget ) {
+			if ( drbd_conf[i].state.conn == SyncSource ||
+			     drbd_conf[i].state.conn == SyncTarget ) {
 				rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
 			}
 

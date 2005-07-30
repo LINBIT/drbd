@@ -1081,26 +1081,26 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 #define peer_mask role_mask
 #define pdsk_mask disk_mask
 
-#define NS(T,S) ({drbd_state_t mask; mask.i=0; mask.s.T = T##_mask; mask;}), \
-                ({drbd_state_t val; val.i=0; val.s.T = (S); val;})
+#define NS(T,S) ({drbd_state_t mask; mask.i=0; mask.T = T##_mask; mask;}), \
+                ({drbd_state_t val; val.i=0; val.T = (S); val;})
 #define NS2(T1,S1,T2,S2) \
-                ({drbd_state_t mask; mask.i=0; mask.s.T1 = T1##_mask; \
-		  mask.s.T2 = T2##_mask; mask;}), \
-                ({drbd_state_t val; val.i=0; val.s.T1 = (S1); \
-                  val.s.T2 = (S2); val;})
+                ({drbd_state_t mask; mask.i=0; mask.T1 = T1##_mask; \
+		  mask.T2 = T2##_mask; mask;}), \
+                ({drbd_state_t val; val.i=0; val.T1 = (S1); \
+                  val.T2 = (S2); val;})
 #define NS3(T1,S1,T2,S2,T3,S3) \
-                ({drbd_state_t mask; mask.i=0; mask.s.T1 = T1##_mask; \
-		  mask.s.T2 = T2##_mask; mask.s.T3 = T3##_mask; mask;}), \
-                ({drbd_state_t val; val.i=0; val.s.T1 = (S1); \
-                  val.s.T2 = (S2); val.s.T3 = (S3); val;})
+                ({drbd_state_t mask; mask.i=0; mask.T1 = T1##_mask; \
+		  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask;}), \
+                ({drbd_state_t val; val.i=0; val.T1 = (S1); \
+                  val.T2 = (S2); val.T3 = (S3); val;})
 
-#define _NS(T,S) ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T = (S); ns;})
+#define _NS(T,S) ({drbd_state_t ns; ns.i = mdev->state.i; ns.T = (S); ns;})
 #define _NS2(T1,S1,T2,S2) \
-                ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T1 = (S1); \
-                ns.s.T2 = (S2); ns;})
+                ({drbd_state_t ns; ns.i = mdev->state.i; ns.T1 = (S1); \
+                ns.T2 = (S2); ns;})
 #define _NS3(T1,S1,T2,S2,T3,S3) \
-                ({drbd_state_t ns; ns.i = mdev->state.i; ns.s.T1 = (S1); \
-                ns.s.T2 = (S2); ns.s.T3 = (S3); ns;})
+                ({drbd_state_t ns; ns.i = mdev->state.i; ns.T1 = (S1); \
+                ns.T2 = (S2); ns.T3 = (S3); ns;})
 
 static inline int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 				    drbd_state_t mask, drbd_state_t val)
@@ -1362,7 +1362,7 @@ static inline int inc_local(drbd_dev* mdev)
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = (mdev->state.s.disk >= Inconsistent);
+	io_allowed = (mdev->state.disk >= Inconsistent);
 	if( !io_allowed ) {
 		atomic_dec(&mdev->local_cnt);
 	}
@@ -1374,7 +1374,7 @@ static inline int inc_local_md_only(drbd_dev* mdev)
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = (mdev->state.s.disk >= Inconsistent) ||
+	io_allowed = (mdev->state.disk >= Inconsistent) ||
 		test_bit(MD_IO_ALLOWED,&mdev->flags);
 	if( !io_allowed ) {
 		atomic_dec(&mdev->local_cnt);
@@ -1385,7 +1385,7 @@ static inline int inc_local_md_only(drbd_dev* mdev)
 static inline void dec_local(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->local_cnt) && 
-	   mdev->state.s.disk == Diskless &&
+	   mdev->state.disk == Diskless &&
 	   mdev->lo_file) {
 		wake_up(&mdev->cstate_wait);
 	}

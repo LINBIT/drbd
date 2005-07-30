@@ -273,7 +273,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 
 	/* if you want to reconfigure, please tear down first */
 	smp_rmb();
-	if (mdev->state.s.disk > Diskless)
+	if (mdev->state.disk > Diskless)
 		return -EBUSY;
 
 	/* if this was "adding" a lo dev to a previously "diskless" node,
@@ -281,7 +281,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * if it was mounted, we had an open_cnt > 1,
 	 * so it would be BUSY anyways...
 	 */
-	ERR_IF (mdev->state.s.role != Secondary)
+	ERR_IF (mdev->state.role != Secondary)
 		return -EBUSY;
 
 	if (mdev->open_cnt > 1)
@@ -309,7 +309,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * currently there are strange races leading to a distributed
 	 * deadlock in that case...
 	 */
-	if ( mdev->state.s.conn > StandAlone ) {
+	if ( mdev->state.conn > StandAlone ) {
 		return -EBUSY;
 	}
 
@@ -561,7 +561,7 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 	minor=(int)(mdev-drbd_conf);
 
-	if( mdev->state.s.role == Primary && mdev->conf.want_loose ) {
+	if( mdev->state.role == Primary && mdev->conf.want_loose ) {
 		retcode=DiscardNotAllowed;
 		goto fail_ioctl;		
 	}
@@ -575,13 +575,13 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #define O_ADDR(A) (((struct sockaddr_in *)&A.other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A.other_addr)->sin_port)
 	for(i=0;i<minor_count;i++) {
-		if( i!=minor && drbd_conf[i].state.s.conn > StandAlone &&
+		if( i!=minor && drbd_conf[i].state.conn > StandAlone &&
 		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
 		    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
 			retcode=LAAlreadyInUse;
 			goto fail_ioctl;
 		}
-		if( i!=minor && drbd_conf[i].state.s.conn > StandAlone &&
+		if( i!=minor && drbd_conf[i].state.conn > StandAlone &&
 		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
 		    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
 			retcode=OAAlreadyInUse;
@@ -720,7 +720,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 	int r;
 	drbd_disks_t nps;
 
-	D_ASSERT(mdev->state.s.pdsk == DUnknown);
+	D_ASSERT(mdev->state.pdsk == DUnknown);
 
 	r=drbd_khelper(mdev,"outdate-peer");
 
@@ -784,13 +784,13 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
 	rs.i = os.i;
-	rs.s.role = newstate & role_mask;
-	if(nps != disk_mask) rs.s.pdsk = nps;
+	rs.role = newstate & role_mask;
+	if(nps != disk_mask) rs.pdsk = nps;
 	r = _drbd_set_state(mdev, rs, 0);
 
 	if ( r == -2 ) {
-		if ( newstate & DontBlameDrbd && mdev->state.s.disk<UpToDate) {
-			rs.s.disk = UpToDate;
+		if ( newstate & DontBlameDrbd && mdev->state.disk<UpToDate) {
+			rs.disk = UpToDate;
 			forced = 1;
 			r = _drbd_set_state(mdev, rs, 0);
 		}
@@ -844,19 +844,19 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		bd_release(mdev->this_bdev);
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 
-		if ( (mdev->state.s.conn < WFReportParams &&
+		if ( (mdev->state.conn < WFReportParams &&
 		      mdev->uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}
 	}
 
-	if(mdev->state.s.disk > Diskless && (newstate & Secondary)) {
+	if(mdev->state.disk > Diskless && (newstate & Secondary)) {
 		drbd_al_to_on_disk_bm(mdev);
 	}
 	/* Primary indicator has changed in any case. */
 	drbd_md_write(mdev);
 
-	if (mdev->state.s.conn >= WFReportParams) {
+	if (mdev->state.conn >= WFReportParams) {
 		/* if this was forced, we should consider sync */
 		if(forced) drbd_send_uuids(mdev);
 		drbd_send_state(mdev);
@@ -937,7 +937,7 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	err = drbd_check_al_size(mdev);
 	if (err) return err;
 
-	if (mdev->state.s.conn >= Connected)
+	if (mdev->state.conn >= Connected)
 		drbd_send_sync_param(mdev,&sc);
 
 	drbd_alter_sa(mdev, sc.after);
@@ -967,7 +967,7 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	interrupted = wait_event_interruptible(mdev->cstate_wait,
 				      atomic_read(&mdev->local_cnt)==0);
 	if ( interrupted ) {
-		drbd_force_state(mdev,NS(disk,os.s.disk));
+		drbd_force_state(mdev,NS(disk,os.disk));
 		return -EINTR;
 	}
 
@@ -991,7 +991,7 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	if( mdev->state.s.disk < Outdated ) { 
+	if( mdev->state.disk < Outdated ) { 
 		r=-999;
 	} else {
 		r = _drbd_set_state(mdev, _NS(disk,Outdated), ChgStateVerbose);
@@ -1022,7 +1022,7 @@ STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 	struct ioctl_get_uuids cn;
 	int i;
 
-	if( mdev->state.s.disk <= Failed ) {
+	if( mdev->state.disk <= Failed ) {
 		return -EIO;
 	}
 
@@ -1058,9 +1058,9 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 	if ( r == -7 ) {
 		drbd_send_short_cmd(mdev, OutdateRequest);
 		wait_event(mdev->cstate_wait,
-			   mdev->state.s.pdsk <= Outdated || 
-			   mdev->state.s.conn < TearDown );
-		if( mdev->state.s.conn < TearDown ) return 0;
+			   mdev->state.pdsk <= Outdated || 
+			   mdev->state.conn < TearDown );
+		if( mdev->state.conn < TearDown ) return 0;
 
 		r = drbd_request_state(mdev,NS(conn,StandAlone));
 	}
@@ -1158,12 +1158,12 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_DISK_SIZE:
-		if (mdev->state.s.conn > Connected) {
+		if (mdev->state.conn > Connected) {
 			err = -EBUSY;
 			break;
 		}
-		if ( mdev->state.s.role == Secondary && 
-		     mdev->state.s.peer == Secondary) {
+		if ( mdev->state.role == Secondary && 
+		     mdev->state.peer == Secondary) {
 			err = -EINPROGRESS;
 			break;
 		}
@@ -1173,7 +1173,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_determin_dev_size(mdev);
 		drbd_md_write(mdev); // Write mdev->la_size to disk.
 		drbd_bm_unlock(mdev);
-		if (mdev->state.s.conn == Connected) {
+		if (mdev->state.conn == Connected) {
 			drbd_send_uuids(mdev); // to start sync...
 			drbd_send_sizes(mdev);
 		}
@@ -1197,7 +1197,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_UNCONFIG_DISK:
-		if (mdev->state.s.disk == Diskless) break;
+		if (mdev->state.disk == Diskless) break;
 		err = drbd_detach_ioctl(mdev);
 		break;
 
@@ -1210,8 +1210,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 		time = wait_event_interruptible_timeout(
 			mdev->cstate_wait,
-			mdev->state.s.conn < Unconnected
-			|| mdev->state.s.conn >= Connected,
+			mdev->state.conn < Unconnected
+			|| mdev->state.conn >= Connected,
 			time );
 		if (time < 0) {
 			err = time;
@@ -1223,7 +1223,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 		err=0; // no error
 
-		if(put_user(mdev->state.s.conn>=Connected,&wp->ret_code))err=-EFAULT;
+		if(put_user(mdev->state.conn>=Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
 
 	case DRBD_IOCTL_WAIT_SYNC:
@@ -1235,8 +1235,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		do {
 			time = wait_event_interruptible_timeout(
 				mdev->cstate_wait,
-				mdev->state.s.conn == Connected
-				|| mdev->state.s.conn < Unconnected,
+				mdev->state.conn == Connected
+				|| mdev->state.conn < Unconnected,
 				time );
 
 			if (time < 0 ) {
@@ -1244,7 +1244,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 				goto out_unlocked;
 			}
 
-			if (mdev->state.s.conn > Connected) {
+			if (mdev->state.conn > Connected) {
 				time=MAX_SCHEDULE_TIMEOUT;
 			}
 
@@ -1252,12 +1252,12 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 				err = -ETIME;
 				goto out_unlocked;
 			}
-		} while ( mdev->state.s.conn != Connected
-			  && mdev->state.s.conn >= Unconnected );
+		} while ( mdev->state.conn != Connected
+			  && mdev->state.conn >= Unconnected );
 
 		err=0; // no error
 
-		if(put_user(mdev->state.s.conn==Connected,&wp->ret_code))err=-EFAULT;
+		if(put_user(mdev->state.conn==Connected,&wp->ret_code))err=-EFAULT;
 		goto out_unlocked;
 
 	case DRBD_IOCTL_INVALIDATE:

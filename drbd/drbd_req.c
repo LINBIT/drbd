@@ -177,7 +177,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	unsigned long sbnr,ebnr,bnr;
 	sector_t esector, nr_sectors;
 
-	if (mdev->state.s.disk == UpToDate) return 1;
+	if (mdev->state.disk == UpToDate) return 1;
 
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
@@ -207,7 +207,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		return 0;
 	}
 
-	if (mdev->state.s.role != Primary &&
+	if (mdev->state.role != Primary &&
 		( !disable_bd_claim || rw == WRITE ) ) {
 		if (DRBD_ratelimit(5*HZ,5)) {
 			ERR("Not in Primary state, no %s requests allowed\n",
@@ -226,8 +226,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * to serialize state changes, this is racy, since we may lose
 	 * the connection *after* we test for the cstate.
 	 */
-	if ( mdev->state.s.disk <= Inconsistent && 
-	     mdev->state.s.conn < Connected) {
+	if ( mdev->state.disk <= Inconsistent && 
+	     mdev->state.conn < Connected) {
 		ERR("Sorry, I have no access to good data anymore.\n");
 /*
   FIXME suspend, loop waiting on cstate wait? panic?
@@ -261,8 +261,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	// down_read(mdev->device_lock);
 
 	wait_event( mdev->cstate_wait,
-		    (volatile int)(mdev->state.s.conn < WFBitMapS || 
-				   mdev->state.s.conn > WFBitMapT) );
+		    (volatile int)(mdev->state.conn < WFBitMapS || 
+				   mdev->state.conn > WFBitMapT) );
 
 	local = inc_local(mdev);
 	if (rw == READ || rw == READA) {
@@ -292,7 +292,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				dec_local(mdev);
 			}
 		}
-		remote = !local && mdev->state.s.pdsk >= UpToDate;//Consistent;
+		remote = !local && mdev->state.pdsk >= UpToDate;//Consistent;
 	} else {
 		remote = 1;
 	}
@@ -305,7 +305,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 *        or make this configurable...
 	 *        if network is slow, READA won't do any good.
 	 */
-	if (rw == READA && mdev->state.s.disk >= Inconsistent && !local) {
+	if (rw == READA && mdev->state.disk >= Inconsistent && !local) {
 		drbd_bio_IO_error(bio);
 		return 0;
 	}
@@ -313,7 +313,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (rw == WRITE && local)
 		drbd_al_begin_io(mdev, sector);
 
-	remote = remote && (mdev->state.s.pdsk >= Inconsistent);
+	remote = remote && (mdev->state.pdsk >= Inconsistent);
 
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");
@@ -343,7 +343,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		if (rw == WRITE) {
 			switch(drbd_send_dblock(mdev,req)) {
 			case 0: /* sending failed */
-				if (mdev->state.s.conn >= Connected)
+				if (mdev->state.conn >= Connected)
 					drbd_force_state(mdev,NS(conn,NetworkFailure));
 				dec_ap_pending(mdev);
 				drbd_thread_restart_nowait(&mdev->receiver);
@@ -402,7 +402,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
 	unsigned int s_enr,e_enr;
 	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
-	if (mdev->state.s.disk < Inconsistent) {
+	if (mdev->state.disk < Inconsistent) {
 		drbd_bio_IO_error(bio);
 		return 0;
 	}

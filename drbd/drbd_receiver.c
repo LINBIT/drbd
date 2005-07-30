@@ -617,7 +617,7 @@ int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *sock,*msock;
 
-	D_ASSERT(mdev->state.s.conn > StandAlone);
+	D_ASSERT(mdev->state.conn > StandAlone);
 	D_ASSERT(!mdev->data.socket);
 
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) <= 0 ) return 0;
@@ -648,7 +648,7 @@ int drbd_connect(drbd_dev *mdev)
 				sock_release(sock);
 			}
 		}
-		if(mdev->state.s.conn == Unconnected) return 0;
+		if(mdev->state.conn == Unconnected) return 0;
 		if(signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
@@ -895,8 +895,8 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
 	if (likely( drbd_bio_uptodate(e->private_bio) )) {
-		ok = mdev->state.s.disk >= Inconsistent &&
-			mdev->state.s.pdsk >= Inconsistent;
+		ok = mdev->state.disk >= Inconsistent &&
+			mdev->state.pdsk >= Inconsistent;
 		if (likely( ok )) {
 			drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
 			/* THINK maybe don't send ack either
@@ -1284,7 +1284,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
 
-	if(!inc_local(mdev) || mdev->state.s.disk < UpToDate ) {
+	if(!inc_local(mdev) || mdev->state.disk < UpToDate ) {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not satisfy peer's read request, no local data.\n");
 		drbd_send_ack(mdev,NegDReply,e);
@@ -1401,14 +1401,14 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 		break;
 	case Consensus:
 		hg = drbd_asb_recover_0p(mdev);
-		if( hg == -1 && mdev->state.s.role==Secondary) rv=hg;
-		if( hg == 1  && mdev->state.s.role==Primary)   rv=hg;
+		if( hg == -1 && mdev->state.role==Secondary) rv=hg;
+		if( hg == 1  && mdev->state.role==Primary)   rv=hg;
 		break;
 	case DiscardSecondary:
-		return mdev->state.s.role==Primary ? 1 : -1;
+		return mdev->state.role==Primary ? 1 : -1;
 	case PanicPrimary:
 		hg = drbd_asb_recover_0p(mdev);
-		if( hg == -1 && mdev->state.s.role==Primary) {
+		if( hg == -1 && mdev->state.role==Primary) {
 			int sec = Secondary;
 			int got_mutex=!down_interruptible(&mdev->device_mutex);
 			if (got_mutex) self = drbd_set_role(mdev,&sec);
@@ -1535,9 +1535,9 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 	hg = drbd_uuid_compare(mdev);
 
 	if (hg == 100) {
-		if ( mdev->state.s.role==Secondary && peer_role==Secondary ) {
+		if ( mdev->state.role==Secondary && peer_role==Secondary ) {
 			hg = drbd_asb_recover_0p(mdev);
-		} else if (mdev->state.s.role==Primary && peer_role==Primary) {
+		} else if (mdev->state.role==Primary && peer_role==Primary) {
 			hg = drbd_asb_recover_2p(mdev);
 		} else {
 			hg = drbd_asb_recover_1p(mdev);
@@ -1568,13 +1568,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 		return conn_mask;
 	}
 
-	if (hg > 0 && mdev->state.s.disk <= Inconsistent ) {
+	if (hg > 0 && mdev->state.disk <= Inconsistent ) {
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return conn_mask;
 	}
-	if (hg < 0 && mdev->state.s.role == Primary ) {
+	if (hg < 0 && mdev->state.role == Primary ) {
 		ERR("I shall become SyncTarget, but I am primary!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
@@ -1711,7 +1711,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	p_size=be64_to_cpu(p->d_size);
 
-	if(p_size == 0 && mdev->state.s.disk == Diskless ) {
+	if(p_size == 0 && mdev->state.disk == Diskless ) {
 		ERR("some backing storage is needed\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
@@ -1727,7 +1727,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	 * try to solve it thus:
 	 ***/
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
-	if (mdev->state.s.conn == WFReportParams) {
+	if (mdev->state.conn == WFReportParams) {
 		/* this is first connect, or an otherwise expected param
 		 * exchange.  choose the minimum */
 		p_usize = min_not_zero(mdev->lo_usize, p_usize);
@@ -1745,7 +1745,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	drbd_bm_unlock(mdev); // }
 
 	if (mdev->p_uuid) {
-		nconn=drbd_sync_handshake(mdev,mdev->state.s.peer);
+		nconn=drbd_sync_handshake(mdev,mdev->state.peer);
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
@@ -1763,9 +1763,9 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	drbd_setup_order_type(mdev,be32_to_cpu(p->queue_order_type));
-	
-	if (mdev->state.s.conn > WFReportParams ) {
-		if( be64_to_cpu(p->c_size) != 
+
+	if (mdev->state.conn > WFReportParams ) {
+		if( be64_to_cpu(p->c_size) !=
 		    drbd_get_capacity(mdev->this_bdev) ) {
 			// we have different sizes, probabely peer
 			// needs to know my new size...
@@ -1810,20 +1810,20 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	nconn = mdev->state.s.conn;
+	nconn = mdev->state.conn;
 	if (nconn == WFReportParams ) nconn = Connected;
 
 	peer_state.i = be32_to_cpu(p->state);
 
 	if (mdev->p_uuid) {
-		nconn=drbd_sync_handshake(mdev,peer_state.s.role);
+		nconn=drbd_sync_handshake(mdev,peer_state.role);
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = 0;
 		if(nconn == conn_mask) return FALSE;
 	}
 
-	if (mdev->state.s.conn > WFReportParams ) {
-		if( nconn > Connected && peer_state.s.conn == Connected) {
+	if (mdev->state.conn > WFReportParams ) {
+		if( nconn > Connected && peer_state.conn == Connected) {
 			// we want resync, peer has not yet decided to sync...
 			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
@@ -1832,9 +1832,9 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	spin_lock_irq(&mdev->req_lock);
 	ns.i = mdev->state.i;
-	ns.s.conn = nconn;
-	ns.s.peer = peer_state.s.role;
-	ns.s.pdsk = peer_state.s.disk;
+	ns.conn = nconn;
+	ns.peer = peer_state.role;
+	ns.pdsk = peer_state.disk;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -1889,15 +1889,15 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
-	if (mdev->state.s.conn == WFBitMapS) {
+	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
-	} else if (mdev->state.s.conn == WFBitMapT) {
+	} else if (mdev->state.conn == WFBitMapT) {
 		ok = drbd_send_bitmap(mdev);
 		if (!ok) goto out;
 		drbd_start_resync(mdev,SyncTarget); // XXX cannot fail ???
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
-		    conns_to_name(mdev->state.s.conn));
+		    conns_to_name(mdev->state.conn));
 	}
 
 	// We just started resync. Now we can be sure that local disk IO is okay.
@@ -1909,8 +1909,8 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
  *  FIXME this should only be D_ASSERT here.
  *        *doing* it here masks a logic bug elsewhere, I think.
  */
-	D_ASSERT(mdev->state.s.disk >= Inconsistent);
-	D_ASSERT(mdev->state.s.pdsk >= Inconsistent);
+	D_ASSERT(mdev->state.disk >= Inconsistent);
+	D_ASSERT(mdev->state.pdsk >= Inconsistent);
 // EXPLAIN:
 	clear_bit(MD_IO_ALLOWED,&mdev->flags);
 
@@ -2004,7 +2004,7 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 {
-	if (mdev->state.s.disk >= Inconsistent) drbd_kick_lo(mdev);
+	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
 	return TRUE; // cannot fail.
 }
 
@@ -2015,7 +2015,7 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	if( os.s.disk < Outdated ) { 
+	if( os.disk < Outdated ) { 
 		r=-999;
 	} else {
 		r = _drbd_set_state(mdev, _NS2(disk,Outdated,conn,TearDown),
@@ -2128,7 +2128,7 @@ STATIC void drbdd(drbd_dev *mdev)
 
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
-	D_ASSERT(mdev->state.s.conn < Connected);
+	D_ASSERT(mdev->state.conn < Connected);
 
 	/* in case we have been syncing, and then we drop the connection,
 	 * we need to "w_resume_next_sg", which we try to achieve by
@@ -2232,8 +2232,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		drbd_thread_start(&mdev->worker);
 	}
 
-	if ( mdev->state.s.role == Primary ) {
-		if ( mdev->state.s.pdsk >= DUnknown &&
+	if ( mdev->state.role == Primary ) {
+		if ( mdev->state.pdsk >= DUnknown &&
 		     mdev->uuid[Bitmap] == 0 ) {
 			/* We only create a new UUID if the peer might
 			   possibly be UpToDate. Since the connection is
@@ -2244,7 +2244,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			drbd_uuid_new_current(mdev);
 		}
 		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
-		     mdev->state.s.pdsk >= DUnknown ) {
+		     mdev->state.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
 		}
@@ -2538,7 +2538,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	smp_rmb();
-	if(likely(mdev->state.s.pdsk >= Inconsistent )) {
+	if(likely(mdev->state.pdsk >= Inconsistent )) {
 		// test_bit(PARTNER_DISKLESS,&mdev->flags)
 		// This happens if one a few IO requests on the peer
 		// failed, and some subsequest completed sucessfull
@@ -2645,7 +2645,7 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
 
 	smp_rmb();
-	if(unlikely(mdev->state.s.pdsk <= Diskless)) return TRUE;
+	if(unlikely(mdev->state.pdsk <= Diskless)) return TRUE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
 	dec_ap_pending(mdev);
@@ -2793,7 +2793,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	if(0) {
 	err:
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
-		if (mdev->state.s.conn >= Connected)
+		if (mdev->state.conn >= Connected)
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
