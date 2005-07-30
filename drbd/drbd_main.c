@@ -51,6 +51,8 @@
 #include <linux/slab.h>
 #include <linux/devfs_fs_kernel.h>
 #include <linux/random.h>
+#include <linux/reboot.h>
+#include <linux/notifier.h>
 
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
@@ -1892,9 +1894,26 @@ int drbd_create_mempools(void)
 	return -ENOMEM;
 }
 
+static int drbd_notify_sys(struct notifier_block *this, unsigned long code,
+	void *unused)
+{
+	/* just so we have it.  you never know what interessting things we
+	 * might want to do here some day...
+	 */
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block drbd_notifier = {
+	.notifier_call = drbd_notify_sys,
+};
+
+
 static void __exit drbd_cleanup(void)
 {
 	int i, rr;
+
+	unregister_reboot_notifier(&drbd_notifier);
 
 	if (drbd_conf) {
 		for (i = 0; i < minor_count; i++) {
@@ -2070,6 +2089,7 @@ int __init drbd_init(void)
 		       MAJOR_NR);
 		return err;
 	}
+	register_reboot_notifier(&drbd_notifier);
 
 	drbd_devfs_name = (major_nr == NBD_MAJOR) ? "nbd" : "drbd";
 
