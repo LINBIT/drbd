@@ -1229,13 +1229,13 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
-  if( cn.state.s.conn == StandAlone && cn.state.s.disk == Diskless)
+  if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
     {
       printf("Not configured\n");
       return 0;
     }
 
-  if( cn.state.s.disk > Diskless)
+  if( cn.state.disk > Diskless)
     {
 
       printf("Lower device: %02d:%02d   (%s)\n",
@@ -1264,7 +1264,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
 
     }
 
-  if( cn.state.s.conn > StandAlone)
+  if( cn.state.conn > StandAlone)
     {
       my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
       other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
@@ -1324,14 +1324,14 @@ int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
-  if( cn.state.s.conn == StandAlone && cn.state.s.disk == Diskless)
+  if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
     {
       printf("Not configured\n");
       return 0;
     }
 
-  printf("%s/%s\n",roles_to_name(cn.state.s.role),
-	 roles_to_name(cn.state.s.peer));
+  printf("%s/%s\n",roles_to_name(cn.state.role),
+	 roles_to_name(cn.state.peer));
 
   return 0;
 }
@@ -1348,13 +1348,13 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
-  if( cn.state.s.conn == StandAlone && cn.state.s.disk == Diskless)
+  if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
     {
       printf("Not configured\n");
       return 0;
     }
 
-  printf("%s\n",conns_to_name(cn.state.s.conn));
+  printf("%s\n",conns_to_name(cn.state.conn));
 
   return 0;
 }
