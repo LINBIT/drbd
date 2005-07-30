@@ -359,7 +359,6 @@ STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy)
 
 	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
 		if(!be_sleepy) {
-			clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
 			return 3;
 		}
 		spin_unlock_irq(&mdev->ee_lock);
@@ -1703,7 +1702,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
 	unsigned int max_seg_s;
-	sector_t p_size;
+	sector_t p_size, p_usize;
 	drbd_conns_t nconn;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -1721,14 +1720,30 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	drbd_bm_lock(mdev); // {
 	mdev->p_size=p_size;
-	if( mdev->lo_usize != be64_to_cpu(p->u_size) ) {
-		mdev->lo_usize = be64_to_cpu(p->u_size);
+	p_usize=be64_to_cpu(p->u_size);
+	/*
+	 * you may get a flip-flop connection established/connection loss, in
+	 * case both really have different usize uppon first connect!
+	 * try to solve it thus:
+	 ***/
+#define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
+	if (mdev->state.s.conn == WFReportParams) {
+		/* this is first connect, or an otherwise expected param
+		 * exchange.  choose the minimum */
+		p_usize = min_not_zero(mdev->lo_usize, p_usize);
+	} else {
+		/* this was an "unexpected" param packet,
+		 * just do what the peer suggests */
+	}
+#undef min_not_zero
+	if( mdev->lo_usize != p_usize ) {
+		mdev->lo_usize = p_usize;
 		INFO("Peer sets u_size to %lu KB\n",
 		     (unsigned long)mdev->lo_usize);
 	}
 	drbd_determin_dev_size(mdev);
 	drbd_bm_unlock(mdev); // }
-	
+
 	if (mdev->p_uuid) {
 		nconn=drbd_sync_handshake(mdev,mdev->state.s.peer);
 		kfree(mdev->p_uuid);

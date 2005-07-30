@@ -207,11 +207,15 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		return 0;
 	}
 
-	/* FIXME
-	 * not always true, e.g. someone trying to mount on Secondary
-	 * maybe error out immediately here?
-	 */
-	D_ASSERT(mdev->state.s.role == Primary);
+	if (mdev->state.s.role != Primary &&
+		( !disable_bd_claim || rw == WRITE ) ) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("Not in Primary state, no %s requests allowed\n",
+					disable_bd_claim ? "WRITE" : "IO");
+		}
+		drbd_bio_IO_error(bio);
+		return 0;
+	}
 
 	/*
 	 * Paranoia: we might have been primary, but sync target, or

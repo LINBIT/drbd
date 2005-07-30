@@ -22,6 +22,8 @@ enum {
   SLEEPS_FOREVER       = 4,
 
   SUPRESS_STDERR       = 16,
+
+  DONT_REPORT_FAILED   = 0x80,
 };
 
 /* for check_uniq(): Check for uniqueness of certain values...
@@ -31,9 +33,11 @@ enum {
 /* for verify_ips(): are not verifyable ips fatal? */
 #define INVALID_IP_IS_INVALID_CONF 0
 
+
 struct d_globals
 {
   int disable_io_hints;
+  int disable_ip_verification;
   int minor_count;
   int dialog_refresh;
 };

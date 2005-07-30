@@ -735,8 +735,7 @@ int new_style_md_open(struct format *cfg, size_t size)
 	}
 
 	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
-		PERROR("ioctl(,BLKFLSBUF,) failed");
-		exit(20);
+		PERROR("WARN: ioctl(,BLKFLSBUF,) failed");
 	}
 
 	offset = new_style_offset(cfg);

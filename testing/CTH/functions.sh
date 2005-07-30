@@ -104,7 +104,7 @@ on()
 	local cmd=`type $2|tail +2`
 	local env="\
 set -o errexit $DEBUG
-PATH=/root/bin:/usr/bin:/bin:/usr/sbin:/sbin
+PATH=/root/bin:/sbin:/usr/sbin:/usr/local/bin:/usr/bin:/bin
 $(printf '%q\n' "${@:3}")
 "
 	local err
@@ -339,9 +339,17 @@ drbd_append_config()							# {{{3
 	fi
 	sync
 	echo .
-	drbdadm up $RES
+	drbdadm attach $RES
 	# cat /proc/drbd
-	echo "up'ed drbd $RES on $HOSTNAME"
+	echo "attached drbd $RES on $HOSTNAME"
+}
+
+drbdadm_adjust()							# {{{3
+{
+	: ${name:?unknown resource name} 
+	drbdadm adjust $name
+	# cat /proc/drbd
+	echo "adjusted drbd $name on $HOSTNAME"
 }
 
 drbdadm_up()								# {{{3

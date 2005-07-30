@@ -64,18 +64,10 @@ else
     KDIR := /lib/modules/$(shell uname -r)/build
   endif
 
-  KDIR_Makefile_PATCHLEVEL = $(shell grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3 )
+  KDIR_Makefile_PATCHLEVEL = $(shell test -e $(KDIR)/Makefile && grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3)
   ifneq ($(findstring $(KDIR_Makefile_PATCHLEVEL),12345),)
     $(error "won't compile with this kernel version")
   endif
-
-  # shell ls, because some of them may be missing
-  # inside a patched kernel source tree
-  SRC_FILES := $(shell ls 2>/dev/null\
-	linux/drbd_config.h linux/drbd.h drbd_actlog.c drbd_bitmap.c drbd_fs.c \
-	drbd_main.c drbd_proc.c drbd_receiver.c drbd_req.c drbd_worker.c \
-	drbd_strings.c lru_cache.c drbd_compat_wrappers.h drbd_int.h \
-	lru_cache.h )
 
   .PHONY: drbd.o default all greeting clean kbuild install dep
 
@@ -87,16 +79,30 @@ else
 	@echo "" ;\
 	echo "    Calling toplevel makefile of kernel source tree, which I believe is in" ;\
 	echo "    KDIR=$(KDIR)" ; \
-	echo ""
+	echo "";
+	@if ! test -e $(KDIR)/Makefile ; then \
+		echo -e "    SORRY, kernel makefile not found. You need to tell me a correct KDIR!\n" ;\
+		false;\
+	fi
 
-  drbd_buildtag.c: $(SRC_FILES)
-	@if grep ^drbd/drbd_buildtag.c: ../Makefile &>/dev/null; then \
-	  $(MAKE) -C .. drbd/drbd_buildtag.c ;\
-	 else \
-	  echo "drbd_buildtag.c outdated." ;\
-	  echo "you probably need to do a 'make' in DRBDs toplevel directory.";\
-	  false ;\
-	 fi
+.PHONY: drbd_buildtag.c
+
+  drbd_buildtag.c:
+	@is_tarball=`test -e .svn/. -a -e ../.svn/. && echo false || echo true`;\
+	set -e; exec > $@.new;							\
+	echo -e "/* automatically generated. DO NOT EDIT. */";			\
+	echo -e "const char * drbd_buildtag(void)\n{";				\
+	if $$is_tarball; then							\
+	  if ! test -e $@ ; then 						\
+	  	echo >&2 "your DRBD source tree is broken. unpack again.";	\
+		exit 1;								\
+	  fi;									\
+	  grep return $@ ;							\
+	else									\
+	  echo -ne "\treturn \"SVN Revision: "; svnversion -n ..; echo \";	\
+	fi ;									\
+	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
+       	mv $@{.new,}
 
   kbuild: drbd_buildtag.c
 	@rm -f .kernelrelease*
@@ -118,6 +124,7 @@ else
 	@echo "done."
 
   clean:
+	rm -rf .tmp_versions
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
   distclean: clean

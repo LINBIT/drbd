@@ -32,11 +32,16 @@ ifdef FORCE
 # or to forcefully include the svn-last-changed-date in the tgz name:
 #   make distclean doc tgz FORCE=1
 #
-REL_VERSION := $(REL_VERSION)-$(shell svn info| \
-		  sed -ne 's/^Last Changed Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1\2\3/p')
+REL_VERSION := $(REL_VERSION)-$(shell LANG= svn info| \
+	sed -n -e 's/^Last Changed Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1\2\3/p' \
+	)-$(shell svnversion .)
 endif
 
 DIST_VERSION := $(subst -,_,$(REL_VERSION))
+FDIST_VERSION := $(shell test -e .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
+ifeq ($(FDIST_VERSION),)
+FDIST_VERSION := $(DIST_VERSION)
+endif
 
 LN_S = ln -s
 RPMBUILD=rpmbuild
@@ -100,21 +105,7 @@ check_changelogs_up2date:
 # update of drbd_buildtag.c is forced:
 .PHONY: drbd/drbd_buildtag.c
 drbd/drbd_buildtag.c:
-	@is_tarball=`test -e .svn/. && echo false || echo true`;		\
-	set -e; exec > $@.new;							\
-	echo -e "/* automatically generated. DO NOT EDIT. */";			\
-	echo -e "const char * drbd_buildtag(void)\n{";			\
-	if $$is_tarball; then							\
-	  if ! test -e $@ ; then 						\
-	  	echo >&2 "your DRBD source tree is broken. unpack again.";	\
-		exit 1;								\
-	  fi;									\
-	  grep return $@ ;							\
-	else									\
-	  echo -ne "\treturn \"SVN Revision: "; svnversion -n .; echo \";	\
-	fi ;									\
-	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-       	mv $@{.new,}
+	$(MAKE) -C drbd drbd_buildtag.c
 
 # update of .filelist is forced:
 .PHONY: .filelist
@@ -122,7 +113,7 @@ drbd/drbd_buildtag.c:
 	@ svn info >/dev/null || { echo "you need a svn checkout to do this." ; false ; }
 	@find $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z]\+ *//;$(if $(PRESERVE_DEBIAN),,/^debian/d)' ) \
 	\! -type d -maxdepth 0 |\
-	sed 's:^:drbd-$(DIST_VERSION)/:' > .filelist
+	sed 's#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
@@ -139,24 +130,31 @@ drbd/drbd_buildtag.c:
 tgz:
 	test -e .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h
-	rm -f drbd-$(DIST_VERSION)
-	ln -s . drbd-$(DIST_VERSION)
-	set -e ; for f in $$(<.filelist) ; do [ -e $$f ] ; done
-	tar --owner=0 --group=0 -czf drbd-$(DIST_VERSION).tar.gz -T .filelist
-	rm drbd-$(DIST_VERSION)
+	rm -f drbd-$(FDIST_VERSION)
+	ln -s . drbd-$(FDIST_VERSION)
+	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
+	grep debian .filelist >/dev/null 2>&1 && _DEB=-debian || _DEB="" ; \
+	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION)$$_DEB.tar.gz
+	rm drbd-$(FDIST_VERSION)
 
 ifeq ($(FORCE),)
 tgz: check_changelogs_up2date doc
 endif
 
 check_all_committed:
-	@modified=`svn st -q`; 		\
+	@$(if $(FORCE),-,)modified=`svn st -q`; 		\
 	if test -n "$$modified" ; then	\
 		echo "$$modified";	\
 	       	false;			\
 	fi
 
-tarball: check_all_committed distclean doc .filelist tgz
+prepare_release:
+	$(MAKE) tarball
+	$(MAKE) tarball PRESERVE_DEBIAN=1
+
+tarball: check_all_committed distclean doc .filelist
+	$(MAKE) tgz
+
 all tools doc .filelist: drbd/drbd_buildtag.c
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
@@ -181,11 +179,11 @@ rpm: tgz
 	         dist/TMP \
 	         dist/install \
 	         dist/SRPMS
-	[ -h dist/SOURCES/drbd-$(DIST_VERSION).tar.gz ] || \
-	  $(LN_S) $(PWD)/drbd-$(DIST_VERSION).tar.gz \
-	          $(PWD)/dist/SOURCES/drbd-$(DIST_VERSION).tar.gz
+	[ -h dist/SOURCES/drbd-$(FDIST_VERSION).tar.gz ] || \
+	  $(LN_S) $(PWD)/drbd-$(FDIST_VERSION).tar.gz \
+	          $(PWD)/dist/SOURCES/drbd-$(FDIST_VERSION).tar.gz
 	if test drbd.spec.in -nt dist/SPECS/drbd.spec ; then \
-	   sed -e "s/^\(Version:\).*/\1 $(DIST_VERSION)/;" \
+	   sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" \
 	       -e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;" < drbd.spec.in \
 	   > dist/SPECS/drbd.spec ; \
 	fi

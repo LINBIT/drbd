@@ -1,5 +1,7 @@
 %{
 
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +12,8 @@
 
 extern void yyerror(char* text);
 extern int  yylex(void);
+
+#define YYDEBUG 1
 
 #define APPEND(LIST,ITEM) ({		      \
   typeof((LIST)) _l = (LIST);		      \
@@ -25,6 +29,7 @@ extern int  yylex(void);
 })
 
 static struct d_resource* c_res;
+static struct d_resource* c_config;
 static struct d_host_info* c_host;
 static char* c_hostname;
 static int   c_section_start, n_hosts;
@@ -220,7 +225,7 @@ void check_meta_disk()
 
 #define CHKU(what,val) \
 	c_host->what = val; \
-	check_uniq( #what, "%s:%s",c_hostname,val)
+	check_uniq( #what, "%s:%s:%s", #what, c_hostname,val)
 
 #define CHKS(sname) \
 	check_uniq(sname " section","%s:" sname, c_res->name)
@@ -235,6 +240,7 @@ void check_meta_disk()
 %token TK_GLOBAL TK_RESOURCE
 %token TK_ON TK_NET TK_DISK_S TK_SYNCER TK_STARTUP
 %token TK_DISABLE_IO_HINTS
+%token TK_DISABLE_IP_VERIFICATION
 %token TK_PROTOCOL TK_HANDLERS TK_COMMON
 %token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK 
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
@@ -270,7 +276,14 @@ glob_stmts:	  /* empty */
 		;
 
 glob_stmt:	  TK_DISABLE_IO_HINTS
-			{ global_options.disable_io_hints=1;   }
+		{
+		    fprintf(stderr,
+			    "%s:%d: in global section, "
+			    "useless use of no longer available option \"disable_io_hints\".\n",
+			    config_file, line);
+		}
+		|  TK_DISABLE_IP_VERIFICATION
+		{ global_options.disable_ip_verification=1; }
 		| TK_MINOR_COUNT TK_INTEGER
 		{
 			range_check(R_MINOR_COUNT,$1,$2);
@@ -288,8 +301,8 @@ common:		  /* empty */	      { common = NULL;  }
 			res_stmts { common = c_res; }
 		;
 
-resources:	  /* empty */	     { $$ = NULL; }
-		| resources resource { $$=APPEND($1,$2); }
+resources:	  /* empty */	     { $$ = 0; c_config = 0; }
+		| resources resource { $$=APPEND($1,$2); c_config=$$; }
 		;
 
 resource:	TK_RESOURCE { n_hosts = 0; } resource_name res_stmts

@@ -121,15 +121,15 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 
 	if (sector < drbd_md_ss(mdev)  ||
 	    sector > drbd_md_ss(mdev)+MD_BM_OFFSET+BM_SECT_TO_EXT(capacity)) {
-		ALERT("%s [%d]:%s(,%ld,%s) out of range md access!\n",
+		ALERT("%s [%d]:%s(,%llu,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
-		     (long)sector, rw ? "WRITE" : "READ");
+		     (unsigned long long)sector, rw ? "WRITE" : "READ");
 	}
 
 	ok = _drbd_md_sync_page_io(mdev,iop,sector,rw,hardsect);
 	if (unlikely(!ok)) {
-		ERR("drbd_md_sync_page_io(,%lu,%s) failed!\n",
-		    (unsigned long)sector,rw ? "WRITE" : "READ");
+		ERR("drbd_md_sync_page_io(,%llu,%s) failed!\n",
+		    (unsigned long long)sector,rw ? "WRITE" : "READ");
 	}
 
 	if( hardsect != MD_HARDSECT && rw == READ ) {
@@ -643,6 +643,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	unsigned long sbnr,ebnr,lbnr,bnr;
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
+	int wake_up=0;
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
 		ERR("drbd_set_in_sync: sector=%lu size=%d nonsense!\n",
@@ -680,23 +681,24 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	 * ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
+	spin_lock_irq(&mdev->al_lock);
 	for(bnr=sbnr; bnr <= ebnr; bnr++) {
 		if (drbd_bm_clear_bit(mdev,bnr)) count++;
 	}
 	if (count) {
 		// we need the lock for drbd_try_clear_on_disk_bm
-		spin_lock_irq(&mdev->al_lock);
 		if(jiffies - mdev->rs_mark_time > HZ*10) {
 			/* should be roling marks, but we estimate only anyways. */
 			mdev->rs_mark_time = jiffies;
 			mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 		}
 		drbd_try_clear_on_disk_bm(mdev,sector,count);
-		spin_unlock_irq(&mdev->al_lock);
 		/* just wake_up unconditional now,
 		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
-		wake_up(&mdev->al_wait);
+		wake_up=1;
 	}
+	spin_unlock_irq(&mdev->al_lock);
+	if(wake_up) wake_up(&mdev->al_wait);
 }
 
 /*

@@ -614,21 +614,21 @@ DRBD 0.8 Roadmap
     * When we receive a barrier packet
       - If we have no local pending requests, we send the barrier ACK 
         immediately. (= current code)
-      - If the last_write_w_barrier member of mdev points to an epoch_entry
-        we set barrier_nr2 of the ee.
-      - If we have local pending requests, we remeber (next_barrier_nr) the 
-	barrier number so that the next data packet has to be written with 
-        the BIO_RW_BARRIER flag set.
+      - If the last_barrier_write member of mdev points to an epoch_entry
+        we set bit 31 of bnum.
+      - If we have local pending requests, we set a flag that the next
+        data packet has to be written with the BIO_RW_BARRIER flag.
+        (That flag should be called BARRIER_NEEDED)
 
-    * When receiving data packets we check if next_barrier_nr is set and
-      set the BIO_RW_BARRIER on the write request. We also set
-      the last_write_w_barrier member of mdev.
-      [Normal writes clear the last_write_w_barrier member of mdev]
+    * When receiving data packets we test_and_clear BARRIER_NEEDED,
+      and add set the BIO_RW_BARRIER on the write request. We also set
+      the last_barrier_write member of mdev.
+      [Normal writes clear the last_barrier_write member of mdev]
 
-    * When a write completes and it has the barrier_nr set, send the barrier
-      ack before sending the ack for the write. In case barrier_nr2 is
-      set as well, also send the barrier ack following the write ack 
-      of the data packet.
+    * When a write completes and it has the bnum set, send the barrier
+      ack before sending the ack for the write. In case the highest
+      bit of bnum is set as well, also send the barrier ack following
+      the write ack of the data packet.
 
   90% DONE [ Not tested yet. ]
 

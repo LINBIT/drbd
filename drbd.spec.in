@@ -51,6 +51,8 @@ Summary: Kernel driver for DRBD.
 #Release: %{release}_%{krelver}
 Group: System Environment/Kernel
 Requires: %{name} = %{version}, /sbin/depmod
+# conflicts with the suse km_drbd package. use either theirs, or ours... 
+Conflicts: km_drbd
 #%{?ksmp:Provides: kernel-module-drbd = %{version}-%{release}_%{krelver}}
 
 #%description -n kernel%{?ksmp}-module-drbd
@@ -76,8 +78,13 @@ mkdir -p %{buildroot}
 make clean
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
-make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
-
+if [ -e /etc/redhat-release ]; then
+       # unset LOCALVERSION for building on RHEL AS 4
+       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
+else
+       # LOCALVERSION necessary for building on SuSE-9.3
+       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
+fi
 %install
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd drbd
@@ -137,6 +144,12 @@ ___
 %doc drbd/k-config-%{kernelversion}.gz
 
 %post
+# hack for distribution kernel packages,
+# which already contain some (probably outdated) drbd module
+EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
+if test -e $EXTRA_DRBD_KO; then
+	mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
+fi
 chkconfig --add drbd
 
 for i in `seq 0 15` ; do 
@@ -163,6 +176,12 @@ fi
 
 #%post -n kernel%{?ksmp}-module-drbd
 %post km-%{krelver}
+# hack for distribution kernel packages,
+# which already contain some (probably outdated) drbd module
+EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
+if test -e $EXTRA_DRBD_KO; then
+	mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
+fi
 uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
@@ -171,10 +190,109 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Fri Oct 15 2004 19:53:21 +0200 Lars Ellenberg <l.g.e@web.de>
-- drbd (0.8_pre1-1)
+* Tue Jul 26 2005 11:53:11 +0200 Lars Ellenberg <lars@linbit.com>
+- drbd (0.8_pre1-3)
   * remove all kernel 2.4.x compatibility crap
-  * ioctl sanity checks about Unconfigured and CAP_SYS_ADMIN
+
+  FIXME mention all the great things we did so far
+
+* Tue Jun  7 2005 19:13:00 +0200 Lars Ellenberg <lars@linbit.com>
+- drbd (0.7.11-1)
+ * The upper limit of the runtime tuning parameter max_buffers 
+   was ways too low for today's IBM storage controllers. 
+   Was 32 - 10000 ; Now it is 32 - 131072 ( Now one could 
+   allow DRBD to allocate up to half a gigabyte of memory as 
+   receive buffers)
+ * A fix to the Makefiles to make building of RPMs work on RAHS4.
+ * A workaround to have DBRD running on PPC64 with Linux-2.4.x kernels,
+   on Linux-2.6.x everything was fine already.
+ * Removal of dead code (busy_blocks).
+ * LINBIT drbd rpms now conflict with km_drbd
+   (SuSE's kernel module source hook)
+ * possibly existing /lib/modules/*/extra/drbd.ko are renamed to .orig in the
+   post-install scripts to avoid conflicts with existing modules from
+   distribution kernel packages
+ * fixed flex input buffer overflow
+   drbdadm_scanner.fl produced tokens of arbitrary length due to excessive use
+   of "+" and "*" modifiers. Now these are replaced with "{x,y}" modifiers, so
+   it should no longer segfault, which was actually observed e.g. with long
+   continuous comment blocks (~5k). 
+
+* Mon Jan 31 2005 10:17:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.10-1)
+ * 0.7.9 had a memory corruption bug and memory leakage (BIOs).
+   This time I did the clone_bio() fix myself, and this release is
+   supposed to work with SLES9 SP1, Linux-2.6.11 and Linux-2.6.12.
+
+* Tue Jan 25 2005 11:31:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.9-1)
+ * A fix that makes DRBD work on SLES9 SP1 kernel, and 
+   probabely will be also necessary for Linux-2.6.11
+
+* Mon Jan 17 2005 12:55:01 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.8-1)
+  * Fixed a bug that caused the syncer to starve on devices 
+    bigger than 2 TB on 32bit systems (=CONFIG_LBA).
+  * Made online resizing actually work. Now it makes a lot
+    more sense to put DRBD on top of LVM.
+  * Made the user dialog to work on RedHat based distributions.
+  * A small optimization that improves the performance of the 
+    syncer when woking with IBM's ServRaid Controllers (ips).
+    May have a positive effect with other Controllers as well.
+  * Made epoch_size atomic. This removes a SMP race condition that
+    could lead on some Xeon CPUs to an ASSERT printk, but did no other
+    harm than printing messages to the syslog
+  * Fixed write_gc.pl to work with the perl version delivered
+    with RHAS3.
+  * Made the initscript to abort if one of the setup commands fails.
+
+* Tue Dec 15 2004 15:50:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.7-1)
+  * "drbdadm adjust [res...]" now does the calls to drbdsetup 
+    in an improved order, first the disk config of all devices,
+    then the syncer and net config last. With the old scheme
+    drbdadm run in a timeout when setting up more than about 
+    6 devices at once (startup script...).
+  * New progress indication in the startup script.
+  * Bugfix to a race that could cause a OOPS on a BUG() macro
+    in mod_timer while starting resync. The more devices you have 
+    the higher the probability to hit this race condition.
+  * Fixed a bug in the sync-groups conde, that only showed up
+    when you have more than 4 resources in your config. 
+    The resync process was continued too early on the node in
+    SyncTarget state.
+  * Fixed a stupid typo in the range-check code, that was intoduced
+    in 0.7.6. Drbdsetup allowed "max-buffers" to be in the range 
+    from 32 to 32.
+  * Makefiles are gcc-2.95 compatible again.
+
+* Tue Nov 16 2004 14:59:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.6-1)
+  * Fixed bug that could cause a lockup of the receiver and
+    asender threads, the visible outcome was that the syncer
+    starves.
+  * Fixed a bug that under specific circumstandes caused that the
+    SyncSource node did not recognised that a resync process was
+    finished.
+  * "drbdadm invalidate [res]" was not working correct, while
+    "drbdadm invalidate_remote [res]" works. Fixed the former.
+  * Make DRBD work on Linux-2.6.10-rc2 and newer: Replaced
+    sock_alloc() by sock_create(), replaced TASK_ZOMBIE by 
+    EXIT_ZOMBIE.
+  * Range checks in drbdadm for all numeric configure parameters.
+  * A fix to make ioctl()s work on machines with 64bit kernel space 
+    and 32bit user space. 
+  * Ioctl()s are only allowed if the caller has CAP_SYS_ADMIN set.
+  * Removal of warnings on 64bit architectures.
+  * Backport of find_first_bit() for x86_64 aka AMD64 for use on 
+    that architecture under Linux-2.4.x
+  * Changed drbdadm to do the syncer config before the net config.
+  * Changed the way drbdadm determines the minor_count parameter for
+    module loading.
+  * Improvements to the drbddisk script, to do the right thing
+    in case Heartbeat is configured with a small timeout than DRBD.
+  * On request of the debian package maintainers, the debian directory
+    from SVN is not longer included in the tar.gz releases.
 
 * Fri Oct 1 2004 11:33:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.5-1)

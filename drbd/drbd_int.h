@@ -38,6 +38,7 @@
 
 // module parameter, defined in drbd_main.c
 extern int minor_count;
+extern int disable_bd_claim;
 extern int major_nr;
 extern int use_nbd_major;
 
@@ -748,7 +749,6 @@ struct Drbd_Conf {
 	struct list_head resync_reads;
 	atomic_t pp_in_use;
 	wait_queue_head_t ee_wait;
-	struct list_head busy_blocks;
 	struct page *md_io_page;      // one page buffer for md_io
 	struct page *md_io_tmpp;     // in case hardsect != 512 [ s390 only? ]
 	struct semaphore md_io_mutex; // protects the md_io_buffer
@@ -931,11 +931,15 @@ struct bm_extent {
 #define BM_EXT_PER_SECT	    ( 512 / BM_BYTES_PER_EXTENT )        //   4
  */
 
-#if ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
-# define DRBD_MAX_SECTORS (0xffffffffLU)
-#else
-# define DRBD_MAX_SECTORS \
+#define DRBD_MAX_SECTORS_32 (0xffffffffLU)
+#define DRBD_MAX_SECTORS_BM \
           ( (MD_RESERVED_SIZE*2LL - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
+#if DRBD_MAX_SECTORS_BM < DRBD_MAX_SECTORS_32
+#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
+#elif ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
+#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_32
+#else
+#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
 #endif
 
 /* Sector shift value for hash functions for tl_hash table and ee_hash

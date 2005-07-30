@@ -236,11 +236,11 @@ typedef enum {
 
 typedef union {
 	struct {
-		unsigned role : 2 ;   // 3/3      primary/secondary/unknown
-		unsigned peer : 2 ;   // 3/3      primary/secondary/unknown
+		unsigned role : 2 ;   // 3/4      primary/secondary/unknown
+		unsigned peer : 2 ;   // 3/4      primary/secondary/unknown
 		unsigned conn : 5 ;   // 17/32    cstates
-		unsigned disk : 3 ;   // 7/7      from Diskless to UpToDate
-		unsigned pdsk : 3 ;   // 7/7      from Diskless to UpToDate
+		unsigned disk : 3 ;   // 7/8      from Diskless to UpToDate
+		unsigned pdsk : 3 ;   // 7/8      from Diskless to UpToDate
 		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
 		unsigned _pad : 16;   // 0        unused
 	} s;

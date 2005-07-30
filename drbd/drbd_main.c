@@ -82,6 +82,7 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_ALIAS_BLOCKDEV_MAJOR(LANANA_DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
+MODULE_PARM_DESC(disable_bd_claim, "DONT USE! disables block device claiming" );
 /*
  * please somebody explain to me what the "perm" of the module_param
  * macro is good for (yes, permission for it in the "driverfs", but what
@@ -96,6 +97,7 @@ MODULE_ALIAS_BLOCKDEV_MAJOR(LANANA_DRBD_MAJOR);
  * this becomes the boot parameter drbd.minor_count
  */
 module_param(minor_count,      int,0);
+module_param(disable_bd_claim,bool,0);
 
 // module parameter, defined
 int major_nr = LANANA_DRBD_MAJOR;
@@ -104,6 +106,7 @@ int minor_count = 2;
 #else
 int minor_count = 8;
 #endif
+int disable_bd_claim = 0;
 
 // devfs name
 char* drbd_devfs_name = "drbd";
@@ -1680,7 +1683,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->done_ee);
 	INIT_LIST_HEAD(&mdev->read_ee);
 	INIT_LIST_HEAD(&mdev->net_ee);
-	INIT_LIST_HEAD(&mdev->busy_blocks);
 	INIT_LIST_HEAD(&mdev->resync_reads);
 	INIT_LIST_HEAD(&mdev->data.work.q);
 	INIT_LIST_HEAD(&mdev->meta.work.q);
@@ -1792,7 +1794,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->done_ee));
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->net_ee));
-	D_ASSERT(list_empty(&mdev->busy_blocks));
 	D_ASSERT(list_empty(&mdev->resync_reads));
 	D_ASSERT(list_empty(&mdev->data.work.q));
 	D_ASSERT(list_empty(&mdev->meta.work.q));
@@ -2014,6 +2015,7 @@ int __init drbd_init(void)
 	int i,err;
 
 #if 0
+#warning "DEBUGGING"
 /* I am too lazy to calculate this by hand	-lge
  */
 #define SZO(x) printk(KERN_ERR "sizeof(" #x ") = %d\n", sizeof(x))
@@ -2118,6 +2120,8 @@ int __init drbd_init(void)
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
 			// Initial we are Secondary -> should claim myself.
 			WARN("Could not bd_claim() myself.");
+		} else if (disable_bd_claim) {
+			bd_release(mdev->this_bdev);
 		}
 
 		blk_queue_make_request(q, drbd_make_request_26);
@@ -2265,7 +2269,7 @@ struct meta_data_on_disk {
 	u32 al_offset;         // offset to this block
 	u32 al_nr_extents;     // important for restoring the AL
 	u32 bm_offset;         // offset to the bitmap, from here
-};
+} __attribute((packed));
 
 /*
 

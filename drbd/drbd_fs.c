@@ -52,16 +52,29 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
 	sector_t pmdss; // previous meta data start sector
+	sector_t la_size;
+	int md_moved, la_size_changed;
 	int rv;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 	pmdss = drbd_md_ss(mdev);
+	la_size = mdev->la_size;
+
 	rv = do_determin_dev_size(mdev);
-	if ( pmdss != drbd_md_ss(mdev) && mdev->md_index == -1 ) {
+
+	la_size_changed = (la_size != mdev->la_size);
+	md_moved = pmdss != drbd_md_ss(mdev) /* && mdev->md_index == -1 */;
+
+	if ( md_moved ) {
 		WARN("Moving meta-data.\n");
+		D_ASSERT(mdev->md_index == -1);
+	}
+
+	if ( la_size_changed || md_moved ) {
 		drbd_al_shrink(mdev); // All extents inactive.
 		drbd_bm_write(mdev);  // write bitmap
-		drbd_md_write(mdev);  // Write mdev->la_size to disk.
+		// Write mdev->la_size to [possibly new position on] disk.
+		drbd_md_write(mdev);
 	}
 	lc_unlock(mdev->act_log);
 
@@ -422,6 +435,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	drbd_determin_dev_size(mdev);
 	/* FIXME
 	 * what if we now have la_size == 0 ?? eh?
+	 * BOOM?
 	 */
 
 	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
@@ -761,6 +775,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		 * become Secondary. */
 		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
 			return -EBUSY;
+		if (disable_bd_claim)
+			bd_release(mdev->this_bdev);
 	}
 
 	nps = disk_mask;

@@ -49,8 +49,8 @@ RANGE(PORT,1,0xffff);
   /* I don't think that a tcp send buffer of more than 10M is usefull */
   RANGE(SNDBUF_SIZE, 1, 10000000);
 
-  /* arbitrary. */
-  RANGE(MAX_BUFFERS, 32, 10000);
+  /* @4k PageSize -> 128kB - 512MB */
+  RANGE(MAX_BUFFERS, 32, 131072);
 
   /* 0 is disabled.
    * 200 should be more than enough even for very short timeouts */

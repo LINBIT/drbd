@@ -321,7 +321,7 @@ boot_and_setup_nodes()
 	# configure all dm disks
 	for d in ${!Disk_*} ; do Heal_Disk $d ; done
 
-	# reset and up all DRBDs
+	# reset and attach all DRBDs
 	for d in ${!Drbd_*} ; do
 		drbd_to_env $d
 		echo "$conf" | on ${!left}:  drbd_append_config USIZE=$USIZE \
@@ -330,6 +330,13 @@ boot_and_setup_nodes()
 		echo "$conf" | on ${!right}: drbd_append_config USIZE=$USIZE \
 			NAME=$name RES=$name LO_DEV=$right_real_dev \
 			START_CLEAN=$DRBD_SKIP_INITIAL_SYNC
+	done
+
+	# configure syncer and network
+	for d in ${!Drbd_*} ; do
+		drbd_to_env $d
+		on ${!left}:  drbdadm_adjust name=$name
+		on ${!right}:  drbdadm_adjust name=$name
 	done
 
 	# wait for connect and initial sync (which should be skipped automatically)

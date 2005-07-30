@@ -31,16 +31,6 @@ static int yy_top_state(void) __attribute((unused)); /* no unused warning */
  *		-- lge
  */ 
 
-/*
- * Philipp dislikes syntax diversity, and wants terminating semicolons.
- * So I drop what I thought would be nice to have: plain English and
- * punctuation...
-ASSIGN			  {LS}*[:=]{LS}*|{LS}(is{LS})?
-DISK			  disk|"on top of"
-IGNORE			  ({WSC}*(use|with)*)+
-NDELIM			  [^ \t\n#=:;{}]+
-*/
-
 %}
 
 %option noyywrap
@@ -52,28 +42,29 @@ NDELIM			  [^ \t\n#=:;{}]+
 %x IP_AND_PORT PORT META_DISK META_IDX
 %x LS LBRACE IGNORE_SECTION
 
-LS			  [ \t]+
-WS			  [ \t\n]+
-COMMENT			  \#[^\n]*
-WSC			  ({WS}|{COMMENT}\n)+
+LS			  [ \t]{1,80}
+WS			  ({LS}|\n)
+COMMENT_START		  \#
 ASSIGN			  {LS}
 OUT_OF_RANGE_NUM	  [0-9]{10,}[kmgKMG]? 
 NUM			  [0-9]{1,9}
 NUM_U			  [0-9]{1,9}[kmgKMG]? 
-NAME			  [/_.A-Za-z0-9-]+
-STRING			  ({NAME}|\"([^\"\\\n]*|\\.)*\")+
-USTRING			  \"([^\"\\\n]*|\\.)*
+NAME			  [/_.A-Za-z0-9-]{1,80}
+ENAME			  [/_.A-Za-z0-9-]{81}
+L_NO_DQUOTES		  [^\"\\\n]
+STRING			  ({NAME}|\"{L_NO_DQUOTES}{1,80}\")
+ESTRING			  (\"{L_NO_DQUOTES}{81}|\"\")
 DISK			  disk
 INTERN			  internal|\"internal\"
-META_IDX		  {LS}*\[{LS}*{NUM}{LS}*\]
-O_IDX			  {WSC}meta-index{ASSIGN}
-IGNORE			  {WSC}
-SKIP			  skip({LS}[^{\n]*)?
-NDELIM			  [^ \t\n#;{}]+
-_1_254			  [1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-4]
-_0_255			  0|[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-5]
+META_IDX		  {LS}?\[{LS}?{NUM}{LS}?\]
+O_IDX			  {WS}meta-index{ASSIGN}
+IGNORE			  {WS}
+SKIP			  skip({LS}[^{\n]{0,80})?
+NDELIM			  [^ \t\n#;{}]{1,50}
+_1_254			  [1-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-4]
+_0_255			  0|[1-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]
 IPV4ADDR		  {_1_254}\.{_0_255}\.{_0_255}\.{_1_254}
-PORT			  {WSC}port{ASSIGN}{NUM}
+PORT			  {WS}port{ASSIGN}{NUM}
 COMMON			  common
 AFTER_SB_PRI		  after-sb-[012]pri
 
@@ -83,9 +74,16 @@ AFTER_SB_PRI		  after-sb-[012]pri
   {SKIP}		section(IGNORE_SECTION);
 }
 
+<INITIAL,ASSIGN,LBRACE,META_IDX,RESOURCE,GLOBAL,STARTUP,DISK,NET,SYNCER,HOST,PORT>{
+  {COMMENT_START}	{
+  				char c;
+				while ((c = input()) != '\n' && c != EOF);
+				if (c == '\n') ++line;
+			}
+}
+
 <INITIAL>{
-  {COMMENT}		/* discard last comment if no eol at eof */
-  {WSC}			update_lcnt();
+  {WS}			update_lcnt();
   global		section(GLOBAL); return TK_GLOBAL;
   resource		named_section(RESOURCE); return TK_RESOURCE;
   \}			syntax_error("unmached closing brace.");
@@ -99,8 +97,9 @@ AFTER_SB_PRI		  after-sb-[012]pri
 }
 
 <NAME>{
+  {ENAME}		syntax_error("name too long.\n");
   {NAME}		yy_pop_state(); CP; return TK_STRING;
-  [^ \t\n#]+		expect_error("name"); /* not referenced currently */
+  [^ \t\n#]{1,80}	expect_error("name"); /* not referenced currently */
 }
 
 <SEMICOLON>{
@@ -113,7 +112,7 @@ AFTER_SB_PRI		  after-sb-[012]pri
 <ASSIGN>{
   {ASSIGN}		yy_pop_state(); fline = line;
   =			syntax_error("don't use '=' signs anymore!");
-  {WSC}			syntax_error("linebreak between option and value not allowed.\n");
+  {WS}			syntax_error("linebreak between option and value not allowed.\n");
   {NDELIM}		expect_error("whitespace");
 }
 
@@ -135,8 +134,9 @@ AFTER_SB_PRI		  after-sb-[012]pri
 }
 
 <STRING>{
+  {ENAME}		syntax_error("name too long.\n");
+  {ESTRING}		syntax_error("string terminator missing or string too long.\n");
   {STRING}		yy_pop_state(); unescape(); CP; return TK_STRING;
-  {USTRING}		syntax_error("string terminator missing.\n");
   {NDELIM}		expect_error("string"); yy_pop_state();
 }
 
@@ -148,7 +148,8 @@ AFTER_SB_PRI		  after-sb-[012]pri
 
 <PORT>{
   :			BEGIN(NUM); /* this is only reached when I have a colon */
-  {WSC}port{ASSIGN}	{
+  {WS}			update_lcnt();
+  port{ASSIGN}		{
 			  /* or a 'port = ' following the 'address = ' */
 			  update_lcnt(); BEGIN(NUM);
 			  PRINTF("'port=<port>' deprecated, "
@@ -157,16 +158,17 @@ AFTER_SB_PRI		  after-sb-[012]pri
 }
 
 <IP_AND_PORT>{
+  {LS}			/* ignore */
+  \"			syntax_error("please do not quote IP:PORT.\n");
   {IPV4ADDR}/:{NUM}	BEGIN(PORT); CP; return TK_IPADDR;
   {IPV4ADDR}/{PORT}	BEGIN(PORT); CP; return TK_IPADDR;
   {IPV4ADDR}		syntax_error("':PORT' missing from IP:PORT.\n");
-  \"{IPV4ADDR}[^ \t\n]+	syntax_error("please do not quote IP:PORT.\n");
-  [0-9.:]+		expect_error("valid IP");
   {NDELIM}		expect_error("IP and port 'XXX.XXX.XXX.XXX:PORT'");
 }
 
 <META_IDX>{
   {META_IDX}		unescape_midx(); yy_pop_state(); CP; return TK_INTEGER;
+  {WS}			update_lcnt();
   {O_IDX}		{
 			  update_lcnt(); BEGIN(NUM);
 			  PRINTF("'meta-index=<idx>' deprecated, "
@@ -178,9 +180,10 @@ AFTER_SB_PRI		  after-sb-[012]pri
   {INTERN}		unescape(); yy_pop_state();  CP; return TK_STRING;
   {INTERN}{META_IDX}	|
   {INTERN}{O_IDX}	syntax_error("don't give an index for internal meta-data.");
+  {ESTRING}		syntax_error("string terminator missing or string too long.\n");
   {STRING}/{META_IDX}	|
   {STRING}/{O_IDX}{NUM} unescape(); BEGIN(META_IDX); CP; return TK_STRING;
-  {STRING}{LS}*{NDELIM}	expect_error("meta-disk: index missing; either 'internal' or '/dev/ice/name [index]'");
+  {STRING}{LS}?{NDELIM}	expect_error("meta-disk: index missing; either 'internal' or '/dev/ice/name [index]'");
   {NDELIM}		expect_error("either 'internal' or '/dev/ice/name [index]'");
 }
 
@@ -190,12 +193,14 @@ AFTER_SB_PRI		  after-sb-[012]pri
 }
 
 <LBRACE>{
-  {WSC}*\{{WSC}*	update_lcnt(); yy_pop_state();
-  {WSC}*[^{ \t\n]+	expect_error("'{'");
+  {WS}			update_lcnt();
+  \{			update_lcnt(); yy_pop_state();
+  [^{ \t\n]{1,40}	expect_error("'{'");
 }
 
 <IGNORE_SECTION>{
-  [^{}]+		update_lcnt(); /* no ECHO */
+  [^{}\n]{1,80}		/* no ECHO */
+  {WS}			update_lcnt(); /* no ECHO */
   \{			yy_push_state(IGNORE_SECTION);
 }
 
@@ -203,6 +208,7 @@ AFTER_SB_PRI		  after-sb-[012]pri
   minor-count	do_assign(NUM); CP; return TK_MINOR_COUNT;
   disable-io-hints yy_push_state(SEMICOLON); return TK_DISABLE_IO_HINTS;
   dialog-refresh        do_assign(NUM); CP; return TK_DIALOG_REFRESH;
+  disable-ip-verification  yy_push_state(SEMICOLON); return TK_DISABLE_IP_VERIFICATION;
   {NDELIM}		expect_error("'minor-count|disable-io-hints|dialog-refresh'");
 }
 
@@ -232,7 +238,8 @@ AFTER_SB_PRI		  after-sb-[012]pri
 <DISK>{
   on-io-error		do_assign(IO_ERROR); CP; return TK_ON_IO_ERROR;
   split-brain-fix 	yy_push_state(SEMICOLON); CP; return TK_SPLIT_BRAIN_FIX;
-  {NDELIM}		expect_error("'on-io-error|split-brain-fix'");
+  size                  do_assign(NUM_U); CP; return TK_SIZE;
+  {NDELIM}		expect_error("'on-io-error|split-brain-fix|size'");
 }
 
 <IO_ERROR>{
