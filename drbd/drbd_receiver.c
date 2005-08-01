@@ -1914,6 +1914,9 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 	clear_bit(DO_NOT_INC_CONCNT,&mdev->flags);
 
+	/* it may still be set, because some unplug was on the fly */
+	NOT_IN_26(mdev->flags &= ~(1<<UNPLUG_QUEUED);)
+
 	INFO("Connection lost.\n");
 }
 

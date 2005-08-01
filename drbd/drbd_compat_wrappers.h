@@ -292,7 +292,9 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	if (mdev->cstate < Connected)
 		return;
 	if (!test_and_set_bit(UNPLUG_QUEUED,&mdev->flags)) {
-		queue_task(&mdev->write_hint_tq, &tq_disk); // IO HINT
+		/* if it could not be queued, clear our flag again, too */
+		if (!queue_task(&mdev->write_hint_tq, &tq_disk))
+			clear_bit(UNPLUG_QUEUED,&mdev->flags);
 	}
 }
 
