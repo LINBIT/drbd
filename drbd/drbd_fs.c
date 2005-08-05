@@ -1268,9 +1268,9 @@ ONLY_IN_26(
 		/* disallow "invalidation" of local replica
 		 * when currently in primary state (would be a Bad Idea),
 		 * or during a running sync (won't make any sense) */
-		if( mdev->state == Primary ||
-		    mdev->cstate < StandAlone ||
-		    mdev->cstate > Connected ||
+		if( (mdev->state == Primary ||
+		      (mdev->cstate != Connected &&
+		       mdev->cstate != StandAlone)) ||
 		    test_bit(DISKLESS,&mdev->flags) ||
 		    test_bit(PARTNER_DISKLESS,&mdev->flags) ) {
 			err = -EINPROGRESS;

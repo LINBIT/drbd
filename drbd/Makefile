@@ -96,7 +96,8 @@ else
 	  fi;									\
 	  grep return $@ ;							\
 	else									\
-	  echo -ne "\treturn \"SVN Revision: "; svnversion -n ..; echo \";	\
+	  SVNREV=$$(svnversion -n -c ..);					\
+	  echo -e "\treturn \"SVN Revision: $${SVNREV##*:}\"";	 		\
 	fi ;									\
 	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
        	mv $@{.new,}

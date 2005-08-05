@@ -484,8 +484,10 @@ STATIC int drbd_thread_setup(void* arg)
 	drbd_daemonize();
 	D_ASSERT(get_t_state(thi) == Running);
 	D_ASSERT(thi->task == NULL);
+	spin_lock(&thi->t_lock);
 	thi->task = current;
 	smp_mb();
+	spin_unlock(&thi->t_lock);
 	complete(&thi->startstop); // notify: thi->task is set.
 
 	retval = thi->function(thi);
