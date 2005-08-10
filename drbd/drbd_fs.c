@@ -81,6 +81,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	la_size = mdev->la_size;
 
 	rv = do_determin_dev_size(mdev);
+	if (rv < 0) goto out;
 
 	la_size_changed = (la_size != mdev->la_size);
 	md_moved = pmdss != drbd_md_ss(mdev) /* && mdev->md_index == -1 */;
@@ -96,6 +97,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		// Write mdev->la_size to [possibly new position on] disk.
 		drbd_md_write(mdev);
 	}
+  out:
 	lc_unlock(mdev->act_log);
 
 	return rv;
@@ -116,7 +118,9 @@ char* ppsize(char* buf, size_t size)
 }
 
 
-/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
+/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk.
+ * -ENOMEM if we could not allocate the bitmap
+ */
 /*
  * THINK do we want the size to be KB or sectors ?
  * note, *_capacity operates in 512 byte sectors!!
@@ -182,7 +186,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(mdev)>>1;
 			if (size == 0) {
-				ERR("Could not allocate bitmap! Set device size => 0\n");
+				ERR("OUT OF MEMORY! Could not allocate bitmap! Set device size => 0\n");
 			} else {
 				/* FIXME this is problematic,
 				 * if we in fact are smaller now! */
@@ -190,6 +194,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 				    "Leaving size unchanged at size = %lu KB\n", 
 				    (unsigned long)size);
 			}
+			rv = err;
 		}
 		// racy, see comments above.
 		drbd_set_my_capacity(mdev,size<<1);
@@ -252,6 +257,8 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	return 0;
 }
 
+STATIC int drbd_detach_ioctl(drbd_dev *mdev);
+
 STATIC
 int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
@@ -305,6 +312,9 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 		__module_get(THIS_MODULE);
 		mput = 1;
 	} else {
+		/* We currently cannot handle reattach while connected */
+		return -EBUSY;
+
 		/* FIXME allow reattach while connected,
 		 * and allow it in Primary/Diskless state...
 		 * currently there are strange races leading to a distributed
@@ -475,11 +485,22 @@ ONLY_IN_26({
 /* FIXME if (md_gc_valid < 0) META DATA IO NOT POSSIBLE! */
 
 	drbd_bm_lock(mdev); // racy...
-	drbd_determin_dev_size(mdev);
-	/* FIXME
-	 * what if we now have la_size == 0 ?? eh?
-	 * BOOM?
-	 */
+	if (drbd_determin_dev_size(mdev) < 0) {
+		/* could not allocate bitmap.
+		 * try to undo ... */
+		D_ASSERT(mdev->cstate == Unconfigured);
+		D_ASSERT(mput == 1);
+
+		drbd_bm_unlock(mdev);
+
+		/* from drbd_detach_ioctl */
+		drbd_free_ll_dev(mdev);
+
+		set_cstate(mdev,Unconfigured);
+		drbd_mdev_cleanup(mdev);
+		module_put(THIS_MODULE);
+		return -ENOMEM;
+	}
 
 	if (md_gc_valid <= 0) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
@@ -494,7 +515,6 @@ ONLY_IN_26({
 
 	i = drbd_check_al_size(mdev);
 	if (i) {
-// FATAL!
 		/* FIXME see the comment above.
 		 * if this fails I need to undo all changes,
 		 * go back into Unconfigured,
@@ -502,7 +522,6 @@ ONLY_IN_26({
 		 */
 		// return i;
 		drbd_panic("Cannot allocate act_log\n");
-		drbd_suicide();
 	}
 
 	if (md_gc_valid > 0) {
@@ -1277,6 +1296,10 @@ ONLY_IN_26(
 			break;
 		}
 
+		drbd_md_set_flag(mdev,MDF_FullSync);
+		drbd_md_clear_flag(mdev,MDF_Consistent);
+		drbd_md_write(mdev);
+
 		if (mdev->cstate == Connected) {
 			/* avoid races with set_in_sync
 			 * for successfull mirrored writes
@@ -1287,10 +1310,6 @@ ONLY_IN_26(
 		}
 
 		drbd_bm_lock(mdev); // racy...
-
-		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_clear_flag(mdev,MDF_Consistent);
-		drbd_md_write(mdev);
 
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);

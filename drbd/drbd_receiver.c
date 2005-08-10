@@ -1690,12 +1690,11 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 {
 	ERR_IF(!mdev->bitmap) return FALSE;
-
-	/* THINK
-	 * otherwise this does not make much sense, no?
-	 * and some other assertion maybe about cstate...
-	 */
-	ERR_IF(mdev->state != Secondary || mdev->cstate != Connected)
+	ERR_IF(mdev->state != Secondary)
+		return FALSE;
+	ERR_IF(mdev->cstate != Connected)
+		return FALSE;
+	ERR_IF(test_bit(DISKLESS,&mdev->flags))
 		return FALSE;
 
 	drbd_bm_lock(mdev);
@@ -1703,18 +1702,24 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	drbd_bm_write(mdev);
 	drbd_start_resync(mdev,SyncTarget);
 	drbd_bm_unlock(mdev);
-	return TRUE; // cannot fail ?
+	return TRUE;
 }
 
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
-	// FIXME asserts ?
+	ERR_IF(mdev->cstate != Connected)
+		return FALSE;
+	ERR_IF(test_bit(DISKLESS,&mdev->flags))
+		return FALSE;
+	ERR_IF(!drbd_md_test_flag(mdev,MDF_Consistent))
+		return FALSE;
+
 	drbd_bm_lock(mdev);
 	drbd_bm_set_all(mdev);
 	drbd_bm_write(mdev);
 	drbd_start_resync(mdev,SyncSource);
 	drbd_bm_unlock(mdev);
-	return TRUE; // cannot fail ?
+	return TRUE;
 }
 
 STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
@@ -2144,25 +2149,40 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 
 STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 {
-	drbd_request_t *req;
+	/* drbd_request_t *req;
+	 * unused now */
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 
+	if (is_syncer_blk(mdev,p->block_id)) {
+		/* no resync data available. don't panic just yet ... */
+		printk(KERN_EMERG DEVICE_NAME "%d: "
+		       "Got NegDReply for resync request. "
+		       "WE ARE LOST. We lost our up-to-date disk.\n",
+			(int)(mdev-drbd_conf));
+		return FALSE;
+	} /* else { */
+
+#if 0
+	/* hey, we panic anyways. so why bother? */
 	req = (drbd_request_t *)(long)p->block_id;
-	D_ASSERT(req->w.cb == w_is_app_read);
+	if (VALID_POINTER(req)) {
+		D_ASSERT(req->w.cb == w_is_app_read);
 
-	spin_lock(&mdev->pr_lock);
-	list_del(&req->w.list);
-	spin_unlock(&mdev->pr_lock);
+		spin_lock(&mdev->pr_lock);
+		list_del(&req->w.list);
+		spin_unlock(&mdev->pr_lock);
 
-	INVALIDATE_MAGIC(req);
-	mempool_free(req,drbd_request_mempool);
+		INVALIDATE_MAGIC(req);
+		mempool_free(req,drbd_request_mempool);
+	}
+#endif
 
 	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 
 	// THINK do we have other options, but panic?
 	//       what about bio_endio, in case we don't panic ??
 
-	return TRUE;
+	return FALSE;
 }
 
 STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)

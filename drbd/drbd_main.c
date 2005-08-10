@@ -1472,6 +1472,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->rs_mark_time = 0;
 	mdev->send_task    = NULL;
 	drbd_set_my_capacity(mdev,0);
+	drbd_bm_resize(mdev,0);
 
 	// just in case
 	drbd_free_resources(mdev);
