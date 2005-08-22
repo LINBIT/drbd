@@ -1852,13 +1852,15 @@ NOT_IN_26(
 	/*
 	 * register with procfs
 	 */
-	// XXX maybe move to a seq_file interface
-	drbd_proc = create_proc_read_entry("drbd", 0, &proc_root,
-					   drbd_proc_get_info, NULL);
+	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO | S_IWUSR,
+				      &proc_root);
+
 	if (!drbd_proc)	{
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
 		goto Enomem;
 	}
+	
+	drbd_proc->proc_fops = &drbd_proc_fops;
 	drbd_proc->owner = THIS_MODULE;
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"

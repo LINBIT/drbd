@@ -1078,7 +1078,7 @@ extern void drbd_wait_ee(drbd_dev *mdev,struct list_head *head);
 
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
-extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
+extern struct file_operations drbd_proc_fops;
 extern const char* cstate_to_name(Drbd_CState s);
 extern const char* nodestate_to_name(Drbd_State s);
 
