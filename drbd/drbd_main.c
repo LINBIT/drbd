@@ -1852,8 +1852,7 @@ NOT_IN_26(
 	/*
 	 * register with procfs
 	 */
-	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO | S_IWUSR,
-				      &proc_root);
+	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , &proc_root);
 
 	if (!drbd_proc)	{
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");

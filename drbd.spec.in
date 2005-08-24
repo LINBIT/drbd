@@ -110,7 +110,7 @@ test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
 cat <<___ > etc/drbd.conf
 #
 # please have a a look at the example configuration file in
-# %{_docdir}/drbd.conf
+# %{_docdir}/%{name}/drbd.conf
 #
 ___
 
