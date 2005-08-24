@@ -12,7 +12,7 @@
 extern void yyerror(char* text);
 extern int  yylex(void);
 
-#define YYDEBUG 1
+// #define YYDEBUG 1
 
 #define APPEND(LIST,ITEM) ({		      \
   typeof((LIST)) _l = (LIST);		      \

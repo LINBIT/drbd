@@ -1,8 +1,33 @@
 Latest:
 ------
- ChangeLog last updated: r1806 2005-05-23
+ ChangeLog last updated: r1915 2005-08-22
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.12 (api:77/proto:74)
+-----
+ * The /proc/drbd code used a fixed single page buffer. This breaks 
+   at about 30 configured devices. Changed that to use the seq_file
+   interface.
+ * Bind the source of TCP connections to the IP address that is
+   mentioned in the configuration. 
+ * Fixed a connection flip-flop bug when the two peers used different
+   user provided sizes.
+ * Various fixes in the online-resize code path, including online shrinking
+   and handling the case that the memory allocation for the new bitmap
+   failed.
+ * Random improvements to drbdadm: 
+   * The "size" option is now allowed in the disk section
+   * A new "disable-ip-verification" option for the global section
+   * The "disable-io-hints" option is not longer available.
+ * Fixed a potential very unlikely race condigtion that in the end would
+   trigger an ERR in drbd_actlog.c:607. Actually I never saw this trigger.
+ * Fixed a logic bug in _drbd_process_ee() that, paired with a race condition
+   could trigger a "ASSERT(b->n_req == set_size)" upon disconnect.
+ * Removed the "disable_io_hints" module parameter.
+ * Added the "disable_bd_claim" module parameter, to allow users, WHO 
+   KNOW WHAT THEY DO, to read-access the data on the secondary node.
+ * Allow "drbdadm invalidate" only in StandAlone and Connected states. 
 
 0.7.11 (api:77/proto:74)
 -----
