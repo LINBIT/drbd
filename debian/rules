@@ -7,7 +7,9 @@
 # build-arch and build-indep targets  by Bill Allombert 2001
 
 # Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+# export DH_VERBOSE=1
+
+include /usr/share/dpatch/dpatch.make
 
 # This has to be exported to make some magic below work.
 export DH_OPTIONS
@@ -34,7 +36,7 @@ ifeq ($(MAJOR),2.6)
 KO=k
 endif
 
-kdist_clean:
+kdist_clean: unpatch
 	dh_clean
 	-$(MAKE) -C drbd clean
 
@@ -60,11 +62,11 @@ binary-modules: prep-deb-files
 	dh_md5sums
 	dh_builddeb --destdir=$(DEB_DESTDIR)
 
-#Architecture 
-build: build-arch build-indep
+#Architecture
+build: patch build-arch build-indep
 
 build-arch: build-arch-stamp
-build-arch-stamp: 
+build-arch-stamp:
 	dh_testdir
 	$(MAKE) -C user
 	$(MAKE) -C scripts
@@ -73,10 +75,10 @@ build-arch-stamp:
 	touch build-arch-stamp
 
 build-indep: build-indep-stamp
-build-indep-stamp: 
+build-indep-stamp:
 	touch build-indep-stamp
 
-clean:
+clean: unpatch
 	dh_testdir
 	dh_testroot
 	rm -f build-arch-stamp build-indep-stamp #CONFIGURE-STAMP#
@@ -89,13 +91,13 @@ clean:
 	-$(MAKE) -C benchmark clean
 	-$(MAKE) -C documentation clean
 	-$(MAKE) -C drbd clean
-	dh_clean 
+	dh_clean
 
 install: install-arch install-indep
 install-indep:
 	dh_testdir
 	dh_testroot
-	dh_clean -k -i 
+	dh_clean -k -i
 	dh_installdirs -i
 	cp -a drbd/* debian/$(PACKAGE)-source/usr/src/modules/drbd/drbd
 	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd
@@ -115,7 +117,7 @@ install-indep:
 install-arch:
 	dh_testdir
 	dh_testroot
-	dh_clean -k -s 
+	dh_clean -k -s
 	dh_installdirs -s
 	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C user install
 	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C scripts install
@@ -133,8 +135,8 @@ binary-common:
 	dh_installdocs
 	dh_installexamples
 #	dh_installmenu
-#	dh_installdebconf	
-#	dh_installlogrotate	
+#	dh_installdebconf
+#	dh_installlogrotate
 #	dh_installemacsen
 #	dh_installpam
 #	dh_installmime
@@ -144,7 +146,7 @@ binary-common:
 	dh_installman
 	dh_link
 	dh_strip
-	dh_compress 
+	dh_compress
 	dh_fixperms
 #	dh_perl
 #	dh_python
@@ -163,4 +165,4 @@ binary-arch: build-arch install-arch
 	$(MAKE) -f debian/rules DH_OPTIONS=-a binary-common
 
 binary: binary-arch binary-indep
-.PHONY: build clean binary-indep binary-arch binary install install-indep install-arch
+.PHONY: build clean binary-indep binary-arch binary install install-indep install-arch patch unpatch

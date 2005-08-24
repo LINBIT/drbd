@@ -111,7 +111,7 @@ resource drbd0 {
   <listitem><para>
     Configures some global parameters. Currently only
     <option>minor-count</option>, <option>dialog-refresh</option> 
-    and <option>disable-io-hints</option>
+    and <option>disable-ip-verification</option>
     are allowed here. You may only have one global section, preferably
     as the first section.
   </para>
@@ -155,7 +155,8 @@ resource drbd0 {
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry> for detailed description of 
     the parameters.
-    Optional parameter: <option>on-io-error</option>.
+    Optional parameter: <option>on-io-error</option>,
+    <option>size</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -238,13 +239,13 @@ resource drbd0 {
 </varlistentry>
 
 <varlistentry>
-  <term><option>disable-io-hints</option></term>
+  <term><option>disable-ip-verification</option></term>
   <listitem>
-  <para>Use <replaceable>disable-io-hints</replaceable>
-   if you want to set up a DRBD device via the
-   loopback network interface or between two virtual machines on the same
-   box, for testing/simulating/presentationn
-   otherwise it could trigger a run_tasq_queue deadlock.</para>
+  <para>Use <replaceable>disable-ip-verification</replaceable>
+   if, for some obscure reasons, drbdadm can/might not use ip or ifconfig
+   to do a santiy check for the IP address, you can disable it with this
+   this option.
+   </para>
    </listitem>
 </varlistentry>
 

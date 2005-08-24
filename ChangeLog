@@ -20,7 +20,7 @@ Latest:
    * The "size" option is now allowed in the disk section
    * A new "disable-ip-verification" option for the global section
    * The "disable-io-hints" option is not longer available.
- * Fixed a potential very unlikely race condigtion that in the end would
+ * Fixed a potential very unlikely race condition that in the end would
    trigger an ERR in drbd_actlog.c:607. Actually I never saw this trigger.
  * Fixed a logic bug in _drbd_process_ee() that, paired with a race condition
    could trigger a "ASSERT(b->n_req == set_size)" upon disconnect.
