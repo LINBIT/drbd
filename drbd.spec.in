@@ -190,7 +190,7 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Wed 24 Aug 2005 15:01:10 +0200 Philipp Reisner <phil@linbit.com>
+* Wed Aug 24 2005 15:01:10 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.12-1)
  * The /proc/drbd code used a fixed single page buffer. This breaks 
    at about 30 configured devices. Changed that to use the seq_file
