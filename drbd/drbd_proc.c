@@ -40,6 +40,7 @@
 #include "drbd_int.h"
 
 STATIC int drbd_proc_open(struct inode *inode, struct file *file);
+STATIC int drbd_seq_show(struct seq_file *seq, void *v);
 
 
 struct proc_dir_entry *drbd_proc;
@@ -48,7 +49,31 @@ struct file_operations drbd_proc_fops = {
 	.open		= drbd_proc_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
-	.release	= single_release,
+	.release	= seq_release,
+};
+
+// We ommit single_open and single_release, since that is only available
+// after 2.4.23
+static void *single_start(struct seq_file *p, loff_t *pos)
+{
+	return NULL + (*pos == 0);
+}
+
+static void *single_next(struct seq_file *p, void *v, loff_t *pos)
+{
+	++*pos;
+	return NULL;
+}
+
+static void single_stop(struct seq_file *p, void *v)
+{
+}
+
+struct seq_operations drbd_proc_seq_ops = {
+	.start		= single_start,
+	.next		= single_next,
+	.stop		= single_stop,
+	.show		= drbd_seq_show,
 };
 
 /*lge
@@ -255,7 +280,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 STATIC int drbd_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, drbd_seq_show, PDE(inode)->data);
+	return seq_open(file, &drbd_proc_seq_ops);
 }
 
 /* PROC FS stuff end */
