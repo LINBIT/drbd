@@ -1905,7 +1905,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			// Secondary
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
-			module_put(THIS_MODULE);
 		} else {
 			set_cstate(mdev,StandAlone);
 			drbd_thread_start(&mdev->worker);
