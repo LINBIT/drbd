@@ -1209,7 +1209,8 @@ ONLY_IN_26(
 		if (test_bit(DISKLESS,&mdev->flags)) {
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
-			module_put(THIS_MODULE);
+			/* was done in disconnect already.
+			 * module_put(THIS_MODULE); */
 		} else set_cstate(mdev,StandAlone);
 
 		break;

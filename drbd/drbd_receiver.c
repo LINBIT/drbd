@@ -1895,7 +1895,9 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	if ( mdev->state == Primary &&
 	    ( test_bit(DISKLESS,&mdev->flags)
 	    || !drbd_md_test_flag(mdev,MDF_Consistent) ) ) {
+		drbd_thread_stop_nowait(&mdev->receiver);
 		drbd_panic("Sorry, I have no access to good data anymore.\n");
+		return;
 	}
 
 	if (get_t_state(&mdev->receiver) == Exiting) {
@@ -1903,6 +1905,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			// Secondary
 			set_cstate(mdev,Unconfigured);
 			drbd_mdev_cleanup(mdev);
+			module_put(THIS_MODULE);
 		} else {
 			set_cstate(mdev,StandAlone);
 			drbd_thread_start(&mdev->worker);

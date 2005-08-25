@@ -98,6 +98,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
 
 	if (!mdev->md_bdev) {
+		if (test_bit(DISKLESS,&mdev->flags)) return 0;
 		if (DRBD_ratelimit(5*HZ,5)) {
 			ERR("mdev->md_bdev==NULL\n");
 			dump_stack();
