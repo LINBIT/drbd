@@ -206,6 +206,7 @@ uname -r | grep BOOT ||
    * The "size" option is now allowed in the disk section
    * A new "disable-ip-verification" option for the global section
    * The "disable-io-hints" option is not longer available.
+   * Allow "drbdadm -- --size=XXX resize r0".
  * Fixed a potential very unlikely race condition that in the end would
    trigger an ERR in drbd_actlog.c:607. Actually I never saw this trigger.
  * Fixed a logic bug in _drbd_process_ee() that, paired with a race condition
@@ -214,6 +215,10 @@ uname -r | grep BOOT ||
  * Added the "disable_bd_claim" module parameter, to allow users, WHO 
    KNOW WHAT THEY DO, to read-access the data on the secondary node.
  * Allow "drbdadm invalidate" only in StandAlone and Connected states. 
+ * DRBD no longer goes into StandAlone mode, if there is an random network 
+   error during the handshake phase, instead it retries the to connect.
+   Only critical problems, e.g. incompatible protocols will cause it 
+   to go into StandAlone mode.
 
 * Tue Jun  7 2005 19:13:00 +0200 Lars Ellenberg <lars@linbit.com>
 - drbd (0.7.11-1)

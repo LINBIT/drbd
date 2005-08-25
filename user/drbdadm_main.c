@@ -543,13 +543,16 @@ int adm_resize(struct d_resource* res,char* unused)
 {
   char* argv[20];
   struct d_option* opt;
-  int argc=0;
+  int i,argc=0;
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="resize";
   opt=find_opt(res->disk_options,"size");
   if(opt) ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
+  for(i=0;i<soi;i++) {
+    argv[argc++]=setup_opts[i];
+  }
   argv[argc++]=0;
 
   return m_system(argv,SLEEPS_SHORT);

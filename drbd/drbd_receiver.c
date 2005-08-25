@@ -689,9 +689,17 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 
 STATIC int drbd_do_handshake(drbd_dev *mdev);
 
+/*
+ * return values:
+ *   1 yess, we have a valid connection
+ *   0 oops, did not work out, please try again
+ *  -1 peer talks different language,
+ *     no point in trying again, please go standalone.
+ */
 int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *sock,*msock;
+	int h;
 
 	D_ASSERT(mdev->cstate!=Unconfigured);
 	D_ASSERT(!mdev->data.socket);
@@ -720,12 +728,12 @@ int drbd_connect(drbd_dev *mdev)
 				sock_release(sock);
 			}
 		}
-		if(mdev->cstate==Unconnected) return 0;
+		if(mdev->cstate==Unconnected) return -1;
 		if(signal_pending(current)) {
 			drbd_flush_signals(current);
 			smp_rmb();
 			if (get_t_state(&mdev->receiver) == Exiting)
-				return 0;
+				return -1;
 		}
 	}
 
@@ -767,9 +775,8 @@ int drbd_connect(drbd_dev *mdev)
 	set_cstate(mdev,WFReportParams);
 	D_ASSERT(mdev->asender.task == NULL);
 
-	if (!drbd_do_handshake(mdev)) {
-		return 0;
-	}
+	h = drbd_do_handshake(mdev);
+	if (h <= 0) return h;
 
 	clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
 	clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
@@ -1954,6 +1961,13 @@ int drbd_send_handshake(drbd_dev *mdev)
 	return ok;
 }
 
+/*
+ * return values:
+ *   1 yess, we have a valid connection
+ *   0 oops, did not work out, please try again
+ *  -1 peer talks different language,
+ *     no point in trying again, please go standalone.
+ */
 STATIC int drbd_do_handshake(drbd_dev *mdev)
 {
 	// ASSERT current == mdev->receiver ...
@@ -1970,17 +1984,17 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	if (p->head.command == ReportParams) {
 		ERR("expected HandShake packet, received ReportParams...\n");
 		ERR("peer probaly runs some incompatible 0.7 -preX version\n");
-		return 0;
+		return -1;
 	} else if (p->head.command != HandShake) {
 		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
 		     cmdname(p->head.command), p->head.command );
-		return 0;
+		return -1;
 	}
 
 	if (p->head.length != expect) {
 		ERR( "expected HandShake length: %u, received: %u\n",
 		     expect, p->head.length );
-		return 0;
+		return -1;
 	}
 
 	rv = drbd_recv(mdev, &p->head.payload, expect);
@@ -2012,7 +2026,7 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 		ERR( "incompatible DRBD dialects: "
 		     "I support %u, peer wants %u\n",
 		     PRO_VERSION, p->protocol_version );
-		return 0;
+		return -1;
 	}
 
 	return 1;
@@ -2022,19 +2036,26 @@ int drbdd_init(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
 	int minor = (int)(mdev-drbd_conf);
+	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
 
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 
 	while (TRUE) {
-		if (!drbd_connect(mdev)) {
-			WARN("Discarding network configuration.\n");
+		h = drbd_connect(mdev);
+		if (h <= 0) {
 			/* FIXME DISKLESS StandAlone
 			 * does not make much sense...
 			 * drbd_disconnect should set cstate properly...
 			 */
 			drbd_disconnect(mdev);
+			if (h == 0) {
+				schedule_timeout(HZ);
+				continue;
+			}
+
+			WARN("Discarding network configuration.\n");
 			set_cstate(mdev,StandAlone);
 			break;
 		}
