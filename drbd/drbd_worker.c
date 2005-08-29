@@ -63,7 +63,7 @@ int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
@@ -95,7 +95,7 @@ int enslaved_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
@@ -135,7 +135,7 @@ int drbd_dio_end_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 /* writes on Primary comming from drbd_make_request
  */
-int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_endio_write_pri(struct bio *bio, unsigned int bytes_done, int error)
 {
 	drbd_request_t *req=bio->bi_private;
 	struct Drbd_Conf* mdev=req->mdev;
@@ -156,7 +156,7 @@ int drbd_dio_end(struct bio *bio, unsigned int bytes_done, int error)
 
 /* reads on Primary comming from drbd_make_request
  */
-int drbd_read_bi_end_io(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_endio_read_pri(struct bio *bio, unsigned int bytes_done, int error)
 {
 	drbd_request_t *req=bio->bi_private;
 	struct Drbd_Conf* mdev=req->mdev;

@@ -14,11 +14,12 @@ extern char* drbd_sec_holder;
 
 // bi_end_io handlers
 // int (bio_end_io_t) (struct bio *, unsigned int, int);
-extern int drbd_md_io_complete     (struct bio *bio, unsigned int bytes_done, int error);
-extern int enslaved_read_bi_end_io (struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_dio_end_sec        (struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_dio_end            (struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_read_bi_end_io     (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_md_io_complete (struct bio *bio, unsigned int bytes_done, int error);
+
+extern int drbd_endio_read_sec (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_read_pri (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_write_pri(struct bio *bio, unsigned int bytes_done, int error);
 
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 {
@@ -149,26 +150,16 @@ static inline void drbd_bio_kunmap(struct bio *bio)
 }
 #endif
 
-static inline void drbd_bio_set_pages_dirty(struct bio *bio)
-{
-	bio_set_pages_dirty(bio);
-}
-
-static inline void drbd_bio_set_end_io(struct bio *bio, bio_end_io_t * h)
-{
-	bio->bi_end_io = h;
-}
-
 static inline void
 drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e)
 {
-	e->private_bio->bi_end_io = drbd_dio_end_sec;
+	e->private_bio->bi_end_io = drbd_endio_write_sec;
 }
 
 static inline void
 drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e)
 {
-	e->private_bio->bi_end_io = enslaved_read_bi_end_io;
+	e->private_bio->bi_end_io = drbd_endio_read_sec;
 }
 
 static inline void
@@ -179,7 +170,7 @@ drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
 	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = req;
-	bio->bi_end_io  = drbd_dio_end;
+	bio->bi_end_io  = drbd_endio_write_pri;
 	bio->bi_next    = 0;
 
 	req->rq_status = RQ_DRBD_NOTHING;
@@ -194,7 +185,7 @@ drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
 	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
 	bio->bi_bdev    = mdev->backing_bdev;
 	bio->bi_private = req;
-	bio->bi_end_io  = drbd_read_bi_end_io;	// <- only difference
+	bio->bi_end_io  = drbd_endio_read_pri;	// <- only difference
 	bio->bi_next    = 0;
 
 	req->rq_status = RQ_DRBD_NOTHING;
