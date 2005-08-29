@@ -984,7 +984,7 @@ int drbd_send_uuids(drbd_dev *mdev)
 	}
 
 	p.uuid[UUID_SIZE] = cpu_to_be64(drbd_bm_total_weight(mdev));
-	p.uuid[UUID_FLAGS] = cpu_to_be64(mdev->conf.want_loose);
+	p.uuid[UUID_FLAGS] = cpu_to_be64(mdev->conf.want_lose);
 
 	return drbd_send_cmd(mdev,mdev->data.socket,ReportUUIDs,
 			     (Drbd_Header*)&p,sizeof(p));
@@ -1336,7 +1336,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	   is there!)
 	3. Q: Why can we add it to tl_ even when drbd_send() might fail ?
 	      There could be a tl_cancel() to remove it within the semaphore!
-	   A: If drbd_send fails, we will loose the connection. Then
+	   A: If drbd_send fails, we will lose the connection. Then
 	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
 	      for everything in the data structure.
 	*/

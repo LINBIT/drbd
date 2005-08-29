@@ -114,7 +114,7 @@ struct net_config {
 	IN int      sndbuf_size;  /* socket send buffer size */
 	IN int      two_primaries;
 	IN unsigned int ko_count;
-	   int      want_loose;
+	   int      want_lose;
 	IN enum disconnect_handler on_disconnect;
 	IN enum after_sb_handler after_sb_0p, after_sb_1p, after_sb_2p;
 };

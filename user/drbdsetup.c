@@ -495,7 +495,7 @@ int scan_net_options(char **argv,
   cn->config.after_sb_0p = DEF_AFTER_SB_0P;
   cn->config.after_sb_1p = DEF_AFTER_SB_1P;
   cn->config.after_sb_2p = DEF_AFTER_SB_2P;
-  cn->config.want_loose = 0;
+  cn->config.want_lose = 0;
 
   if(argc==0) return 0;
 
@@ -579,7 +579,7 @@ int scan_net_options(char **argv,
 	  }
 	  break;
        case 'D':
-	  cn->config.want_loose = 1;
+	  cn->config.want_lose = 1;
           break;
 
 
@@ -1297,7 +1297,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
       SHOW_H("after-sb-1pri",cn.nconf.after_sb_1p,DEF_AFTER_SB_0P,asb1p_names);
       SHOW_H("after-sb-2pri",cn.nconf.after_sb_2p,DEF_AFTER_SB_0P,asb2p_names);
 
-      if( cn.nconf.want_loose ) printf(" discard-my-data\n");
+      if( cn.nconf.want_lose ) printf(" discard-my-data\n");
 
       printf("Syncer options:\n");
 

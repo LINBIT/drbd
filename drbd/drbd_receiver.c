@@ -1543,10 +1543,10 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 			hg = drbd_asb_recover_1p(mdev);
 		}
 		if ( hg == -100 ) {
-			if(mdev->conf.want_loose && !mdev->p_uuid[UUID_FLAGS]){
+			if(mdev->conf.want_lose && !mdev->p_uuid[UUID_FLAGS]){
 				hg = -1;
 			}
-			if(!mdev->conf.want_loose && mdev->p_uuid[UUID_FLAGS]){
+			if(!mdev->conf.want_lose && mdev->p_uuid[UUID_FLAGS]){
 				hg = 1;
 			}
 		} else {
@@ -1860,7 +1860,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
-	mdev->conf.want_loose = 0;
+	mdev->conf.want_lose = 0;
 
 	/* FIXME assertion for (gencounts do not diverge) */
 	drbd_md_write(mdev); // update connected indicator, la_size, ...

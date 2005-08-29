@@ -561,9 +561,9 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 
 	minor=(int)(mdev-drbd_conf);
 
-	if( mdev->state.role == Primary && mdev->conf.want_loose ) {
+	if( mdev->state.role == Primary && mdev->conf.want_lose ) {
 		retcode=DiscardNotAllowed;
-		goto fail_ioctl;		
+		goto fail_ioctl;
 	}
 
 	// FIXME plausibility check
@@ -838,7 +838,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	if (newstate & Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
 	} else {
-		mdev->conf.want_loose = 0;
+		mdev->conf.want_lose = 0;
 		set_disk_ro(mdev->vdisk, FALSE );
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
