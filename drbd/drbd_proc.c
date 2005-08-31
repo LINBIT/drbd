@@ -146,6 +146,14 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	 * rt: remaining time
 	 */
 	dt = (jiffies - mdev->rs_mark_time) / HZ;
+
+	if (dt > HZ*20) {
+		/* if we made no update to rs_mark_time for too long,
+		 * we are stalled. show that. */
+		seq_printf(seq, "stalled\n");
+		return;
+	}
+
 	if (!dt) dt++;
 	db = mdev->rs_mark_left - rs_left;
 	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
