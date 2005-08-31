@@ -934,7 +934,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 */
 		}
 		ok = drbd_send_ack(mdev,WriteAck,e);
-		__set_bit(SYNC_STARTED,&mdev->flags);
+		set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
 		ok&= drbd_io_error(mdev);
@@ -2118,7 +2118,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 		if( is_syncer_blk(mdev,p->block_id)) {
 			drbd_set_in_sync(mdev,sector,blksize);
-			__set_bit(SYNC_STARTED,&mdev->flags);
+			set_bit(SYNC_STARTED,&mdev->flags);
 		} else {
 			req=(drbd_request_t*)(long)p->block_id;
 
