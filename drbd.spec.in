@@ -190,6 +190,14 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Thu Sep  1 2005 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.13-1)
+ * Fixed a SMP race condition that caused the resync process to stall
+   after a few seconds to minutes.
+ * The sync speed display is replaced by the word "stalled" in case the 
+   syncer makes no progress within 20 seconds.
+ * Some improvements to the documentation.
+
 * Wed Aug 24 2005 15:01:10 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.12-1)
  * The /proc/drbd code used a fixed single page buffer. This breaks 

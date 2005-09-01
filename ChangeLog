@@ -4,6 +4,14 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.7.13 (api:77/proto:74)
+-----
+ * Fixed a SMP race condition that caused the resync process to stall
+   after a few seconds to minutes.
+ * The sync speed display is replaced by the word "stalled" in case the 
+   syncer makes no progress within 20 seconds.
+ * Some improvements to the documentation.
+
 0.7.12 (api:77/proto:74)
 -----
  * The /proc/drbd code used a fixed single page buffer. This breaks 
