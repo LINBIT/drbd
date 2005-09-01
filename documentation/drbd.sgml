@@ -20,6 +20,9 @@
       <arg choice=req>start</arg>
       <arg choice=req>stop</arg>
       <arg choice=req>status</arg>
+      <arg choice=req>reload</arg>
+      <arg choice=req>restart</arg>
+      <arg choice=req>force-reload</arg>
     </group>
     </arg>
  </cmdsynopsis>
@@ -49,6 +52,12 @@
 </refsect1>
 
 <refsect1>
+  <title>Version</title>
+  <simpara>This document is correct for version 0.7.13 of the DRBD distribution.
+  </simpara>
+</refsect1>
+
+<refsect1>
   <title>Author</title>
   <simpara>
     Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>.
@@ -65,9 +74,9 @@
 <refsect1>
   <title>Copyright</title>
   <simpara>
-    Copyright (c) 2001 Philipp Reisner. This  is  free software; 
+    Copyright (c) 2001-2005 Philipp Reisner. This  is  free software; 
     see the source for copying conditions.  There is NO warranty; 
-    not even for MERCHANTABILIT  or FITNESS FOR A PARTICULAR PURPOSE.
+    not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   </simpara>
 </refsect1>
 
@@ -76,9 +85,11 @@
   <para>
     <citerefentry><refentrytitle>drbd.conf</refentrytitle>
     <manvolnum>5</manvolnum></citerefentry>,
-    <citerefentry><refentrytitle>datadisk</refentrytitle>
+    <citerefentry><refentrytitle>drbddisk</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+    <manvolnum>8</manvolnum></citerefentry>
+    <citerefentry><refentrytitle>drbdadm</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>
   </para>
 </refsect1>
