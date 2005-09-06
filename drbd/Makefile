@@ -163,9 +163,9 @@ else
 	install -d $(PREFIX)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -m 644 $(MODOBJ) $(PREFIX)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
     ifeq ($(shell uname -r),$(KERNELRELEASE))
-	/sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
+	[ -n "$(PREFIX)" ] || /sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
     else
-	[ -e $(LINUX)/System.map ] && \
+	[ -z "$(PREFIX)" -a -e $(LINUX)/System.map ] && \
 	   /sbin/depmod -F $(LINUX)/System.map -e ./$(MODOBJ) 2>&1 >/dev/null || true
     endif
   else
