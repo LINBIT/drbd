@@ -162,11 +162,13 @@ else
 # install -d $(PREFIX)/var/lib/drbd
 	install -d $(PREFIX)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -m 644 $(MODOBJ) $(PREFIX)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-    ifeq ($(shell uname -r),$(KERNELRELEASE))
-	[ -n "$(PREFIX)" ] || /sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
-    else
-	[ -z "$(PREFIX)" -a -e $(LINUX)/System.map ] && \
+    ifeq ($(PREFIX),/)
+      ifeq ($(shell uname -r),$(KERNELRELEASE))
+	/sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
+      else
+	[ -e $(LINUX)/System.map ] && \
 	   /sbin/depmod -F $(LINUX)/System.map -e ./$(MODOBJ) 2>&1 >/dev/null || true
+      endif
     endif
   else
     install:
