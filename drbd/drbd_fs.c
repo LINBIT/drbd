@@ -893,13 +893,27 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 	if(copy_from_user(&p,arg,sizeof(p))) {
 		return -EFAULT;
 	}
-
-	if( drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
-		time=p.wfc_timeout;
-		//ERR("using wfc_timeout.\n");
-	} else {
+	/* If I am currently not Primary,
+	 * but meta data primary indicator is set,
+	 * I just now recover from a hard crash,
+	 * and have been Primary before that crash.
+	 *
+	 * Now, if I had no connection before that crash
+	 * (have been degraded Primary), chances are that
+	 * I won't find my peer now either.
+	 *
+	 * In that case, and _only_ in that case,
+	 * we use the degr-wfc-timeout instead of the default,
+	 * so we can automatically recover from a crash of a
+	 * degraded but active "cluster" after a certain timeout.
+	 */
+	if ( mdev->state != Primary &&
+	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
+	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
 		time=p.degr_wfc_timeout;
-		//ERR("using degr_wfc_timeout.\n");
+		if (time) WARN("using degr_wfc_timeout=%ld seconds\n", time);
+	} else {
+		time=p.wfc_timeout;
 	}
 
 	time=time*HZ;
@@ -1147,10 +1161,26 @@ ONLY_IN_26(
 		} else {
 			clear_bit(ON_PRI_INC_HUMAN,&mdev->flags);
 			clear_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
+			if (arg == 0) break;
 
-			if (arg & Human ) 
+			// XXX reduce race: don't set it,
+			// if we have a connection.
+			// this does not avoid the race completely, though.
+			if (mdev->cstate > WFConnection) {
+				WARN("race avoidance: did not set "
+				     "the state flags (%s), cstate=%s\n",
+				        arg == (Human|TimeoutExpired)
+				     ?  "Human|TimeoutExpired"
+				     : arg == Human
+				     ? "Human"
+				     : "TimeoutExpired",
+				     cstate_to_name(mdev->cstate));
+				break;
+			}
+
+			if (arg & Human)
 				set_bit(ON_PRI_INC_HUMAN,&mdev->flags);
-			if (arg & TimeoutExpired )
+			if (arg & TimeoutExpired)
 				set_bit(ON_PRI_INC_TIMEOUTEX,&mdev->flags);
 		}
 		break;
