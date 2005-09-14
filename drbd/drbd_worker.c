@@ -576,7 +576,7 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 	while(1) {
 		if( odev->sync_conf.after == -1 ) return 1;
 		odev = drbd_conf + odev->sync_conf.after;
-		if( odev->state.conn == SyncSource || 
+		if( odev->state.conn == SyncSource ||
 		    odev->state.conn == SyncTarget ) return 0;
 	}
 }
@@ -588,7 +588,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->state.conn == SyncSource || 
+		if ( odev->state.conn == SyncSource ||
 		     odev->state.conn == SyncTarget ) {
 			if (! _drbd_may_sync_now(odev)) {
 				_drbd_rs_pause(odev);
@@ -607,7 +607,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->state.conn == PausedSyncS || 
+		if ( odev->state.conn == PausedSyncS ||
 		     odev->state.conn == PausedSyncT ) {
 			if (_drbd_may_sync_now(odev)) {
 				_drbd_rs_resume(odev);
@@ -693,7 +693,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 
 	drbd_global_lock();
-	if ( mdev->state.conn == SyncTarget || 
+	if ( mdev->state.conn == SyncTarget ||
 	     mdev->state.conn == SyncSource ) {
 		if(!_drbd_may_sync_now(mdev)) {
 			_drbd_rs_pause(mdev);
@@ -709,7 +709,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	if (mdev->state.conn == SyncTarget) {
 		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		mod_timer(&mdev->resync_timer,jiffies);
-	} else if (mdev->state.conn == PausedSyncT) { 
+	} else if (mdev->state.conn == PausedSyncT) {
 		D_ASSERT(test_bit(STOP_SYNC_TIMER,&mdev->flags));
 		clear_bit(STOP_SYNC_TIMER,&mdev->flags);
 	}

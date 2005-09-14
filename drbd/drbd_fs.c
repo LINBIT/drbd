@@ -81,7 +81,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	return rv;
 }
 
-char* ppsize(char* buf, size_t size) 
+char* ppsize(char* buf, size_t size)
 {
 	// Needs 9 bytes at max.
 	static char units[] = { 'K','M','G','T','P','E' };
@@ -164,7 +164,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 				/* FIXME this is problematic,
 				 * if we in fact are smaller now! */
 				ERR("BM resizing failed. "
-				    "Leaving size unchanged at size = %lu KB\n", 
+				    "Leaving size unchanged at size = %lu KB\n",
 				    (unsigned long)size);
 			}
 		}
@@ -181,7 +181,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 /* checks that the al lru is of requested size, and if neccessary tries to
  * allocate a new one. returns -EBUSY if current al lru is still used,
  * -ENOMEM when allocation failed, and 0 on success.
- */  
+ */
 STATIC int drbd_check_al_size(drbd_dev *mdev)
 {
 	struct lru_cache *n,*t;
@@ -352,7 +352,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	bdev2 = inode2->i_bdev;
-	if (bd_claim(bdev2, new_conf.meta_index== - 1 ? 
+	if (bd_claim(bdev2, new_conf.meta_index== - 1 ?
 		     (void *)mdev : (void*) drbd_m_holder )) {
 		retcode=MDMounted;
 		goto release_bdev_fail_ioctl;
@@ -710,7 +710,7 @@ int drbd_khelper(drbd_dev *mdev, char* cmd)
 				"TERM=linux",
 				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
 				NULL };
-	
+
 	snprintf(mb,12,"minor-%d",(int)(mdev-drbd_conf));
 	return call_usermodehelper("/sbin/drbdadm",argv,envp,1);
 }
@@ -795,7 +795,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 			r = _drbd_set_state(mdev, rs, 0);
 		}
 	}
-       
+
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -813,7 +813,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		*arg = r;
 		rv = -EIO;
 		goto fail;
-	}	
+	}
 	after_state_ch(mdev,os,ns);
 
 	if(forced) WARN("Forced to conisder local data as UpToDate!\n");
@@ -827,8 +827,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		goto fail;
 	}
 
-	/* FIXME RACE here: if our direct user is not using bd_claim (i.e. 
-	 *  not a filesystem) since cstate might still be >= Connected, new 
+	/* FIXME RACE here: if our direct user is not using bd_claim (i.e.
+	 *  not a filesystem) since cstate might still be >= Connected, new
 	 * ap requests may come in and increase ap_pending_cnt again!
 	 * but that means someone is misusing DRBD...
 	 * */
@@ -973,8 +973,8 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 
 	if( r == 2 ) { return 0; }
-	if( r <= 0 ) { 
-		return -ENETRESET; 
+	if( r <= 0 ) {
+		return -ENETRESET;
 	}
 
 	drbd_sync_me(mdev);
@@ -1006,32 +1006,32 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	if( mdev->state.disk < Outdated ) { 
+	if( mdev->state.disk < Outdated ) {
 		r=-999;
 	} else {
 		r = _drbd_set_state(mdev, _NS(disk,Outdated), ChgStateVerbose);
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	
+
 	if( r == 2 ) return 0;
 	if( r == -999 ) {
 		return -EINVAL;
 	}
 	after_state_ch(mdev,os,ns); // TODO decide if neccesarry.
-	
+
 	if( r <= 0 ) {
 		err = put_user(r, reason);
 		if(!err) err=-EIO;
 		return err;
 	}
-	
+
 	drbd_md_write(mdev);
 
 	return 0;
 }
 
-STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev, 
+STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 				struct ioctl_get_uuids* arg)
 {
 	struct ioctl_get_uuids cn;
@@ -1073,7 +1073,7 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 	if ( r == -7 ) {
 		drbd_send_short_cmd(mdev, OutdateRequest);
 		wait_event(mdev->cstate_wait,
-			   mdev->state.pdsk <= Outdated || 
+			   mdev->state.pdsk <= Outdated ||
 			   mdev->state.conn < TearDown );
 		if( mdev->state.conn < TearDown ) return 0;
 
@@ -1089,7 +1089,7 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 
 	drbd_sync_me(mdev); /* FIXME what if fsync returns error */
 	drbd_thread_stop(&mdev->receiver);
-	
+
 	return 0;
 }
 
@@ -1177,7 +1177,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			err = -EBUSY;
 			break;
 		}
-		if ( mdev->state.role == Secondary && 
+		if ( mdev->state.role == Secondary &&
 		     mdev->state.peer == Secondary) {
 			err = -EINPROGRESS;
 			break;
@@ -1293,7 +1293,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		if( r <= 0 ) {
 			err = -EINPROGRESS;
 			break;
-		} 
+		}
 
 		/* avoid races with set_in_sync
 		 * for successfull mirrored writes
@@ -1331,7 +1331,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		if( r <= 0 ) {
 			err = -EINPROGRESS;
 			break;
-		} 
+		}
 
 		drbd_md_set_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);

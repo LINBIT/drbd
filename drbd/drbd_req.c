@@ -73,8 +73,8 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
 	if( req->rq_status & RQ_DRBD_IN_TL ) {
 		if( ! ( er_flags & ERF_NOTLD ) ) {
-			/*If this call is from tl_clear() we may not call 
-			  tl_dependene, otherwhise we have a homegrown 
+			/*If this call is from tl_clear() we may not call
+			  tl_dependene, otherwhise we have a homegrown
 			  spinlock deadlock.   */
 			if(tl_dependence(mdev,req))
 				set_bit(ISSUE_BARRIER,&mdev->flags);
@@ -131,7 +131,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	req->w.cb = w_is_app_read;
 	spin_lock(&mdev->pr_lock);
 	INIT_HLIST_NODE(&req->colision);
-	hlist_add_head( &req->colision, mdev->app_reads_hash + 
+	hlist_add_head( &req->colision, mdev->app_reads_hash +
 			ar_hash_fn(mdev, drbd_req_get_sector(req) ));
 	spin_unlock(&mdev->pr_lock);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
@@ -142,7 +142,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 
 int drbd_pr_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
 {
-	struct hlist_head *slot = mdev->app_reads_hash + 
+	struct hlist_head *slot = mdev->app_reads_hash +
 		ar_hash_fn(mdev, drbd_req_get_sector(req) );
 	struct hlist_node *n;
 	drbd_request_t * i;
@@ -245,7 +245,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	// down_read(mdev->device_lock);
 
 	wait_event( mdev->cstate_wait,
-		    (volatile int)(mdev->state.conn < WFBitMapS || 
+		    (volatile int)(mdev->state.conn < WFBitMapS ||
 				   mdev->state.conn > WFBitMapT) );
 
 	local = inc_local(mdev);
@@ -421,7 +421,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 	 * to serialize state changes, this is racy, since we may lose
 	 * the connection *after* we test for the cstate.
 	 */
-	if ( mdev->state.disk <= Inconsistent && 
+	if ( mdev->state.disk <= Inconsistent &&
 	     mdev->state.conn < Connected) {
 		ERR("Sorry, I have no access to good data anymore.\n");
 		/*
@@ -469,7 +469,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 		 * split it. [So far, only XFS is known to do this...]
 		 */
 		struct bio_pair *bp;
-		bp = bio_split(bio, bio_split_pool, 
+		bp = bio_split(bio, bio_split_pool,
 			       (e_enr<<(AL_EXTENT_SIZE_B-9)) - bio->bi_sector);
 		drbd_make_request_26(q,&bp->bio1);
 		drbd_make_request_26(q,&bp->bio2);
@@ -482,7 +482,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 }
 
 /* This is called by bio_add_page(). With this function we prevent
-   that we get BIOs that span over multiple AL_EXTENTs. 
+   that we get BIOs that span over multiple AL_EXTENTs.
  */
 int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 {
@@ -491,7 +491,7 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 
 	if (bio->bi_size == 0) {
 		s = max_t(unsigned int,
-			  AL_EXTENT_SIZE - (s & (AL_EXTENT_SIZE-1)), 
+			  AL_EXTENT_SIZE - (s & (AL_EXTENT_SIZE-1)),
 			  PAGE_SIZE);
 		// As long as the BIO is emtpy we allow at least one page.
 	} else {

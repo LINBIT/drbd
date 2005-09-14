@@ -34,7 +34,7 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page, 
+STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
 				 sector_t sector, int rw, int size)
 {
 	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
@@ -603,7 +603,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		// no race, we are within the al_lock!
 	} else {
 		ERR("lc_get() failed! locked=%d/%d flags=%lu\n",
-		    atomic_read(&mdev->resync_locked), 
+		    atomic_read(&mdev->resync_locked),
 		    mdev->resync->nr_elements,
 		    mdev->resync->flags);
 	}
@@ -883,7 +883,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 		clear_bit(BME_NO_WRITES,&bm_ext->flags);
 		lc_del(mdev->resync,&bm_ext->lce);
 	}
-	atomic_set(&mdev->resync_locked,0);   
+	atomic_set(&mdev->resync_locked,0);
 	spin_unlock_irq(&mdev->al_lock);
 	wake_up(&mdev->al_wait);
 }

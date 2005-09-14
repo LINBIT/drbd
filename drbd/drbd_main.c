@@ -200,7 +200,7 @@ STATIC void _tl_add(drbd_dev *mdev, drbd_request_t * new_item)
 	}
 
 	INIT_HLIST_NODE(&new_item->colision);
-	hlist_add_head( &new_item->colision, mdev->tl_hash + 
+	hlist_add_head( &new_item->colision, mdev->tl_hash +
 			tl_hash_fn(mdev, drbd_req_get_sector(new_item) ));
 }
 
@@ -398,7 +398,7 @@ drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	struct hlist_head *slot;
 	struct hlist_node *n;
 	drbd_request_t * req;
-	sector_t sector = drbd_ee_get_sector(e);	
+	sector_t sector = drbd_ee_get_sector(e);
 	int size = drbd_ee_get_size(e);
 	int i;
 
@@ -419,7 +419,7 @@ drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	req = NULL;
 	// Good, no conflict found
 	INIT_HLIST_NODE(&e->colision);
-	hlist_add_head( &e->colision, mdev->ee_hash + 
+	hlist_add_head( &e->colision, mdev->ee_hash +
 			ee_hash_fn(mdev, sector) );
  out:
 	spin_unlock_irq(&mdev->tl_lock);
@@ -427,7 +427,7 @@ drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	return req;
 }
 
-STATIC struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev, 
+STATIC struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
 					     drbd_request_t * req)
 {
 	struct hlist_head *slot;
@@ -572,7 +572,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		ns.conn = Connected;
 	}
 
-	if( ns.conn >= Connected && 
+	if( ns.conn >= Connected &&
 	    ( ns.disk == Consistent || ns.disk == Outdated ) ) {
 		switch(ns.conn) {
 		case SkippedSyncT:
@@ -597,7 +597,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		}
 	}
 
-	if( ns.conn >= Connected && 
+	if( ns.conn >= Connected &&
 	    ( ns.pdsk == Consistent || ns.pdsk == Outdated ) ) {
 		switch(ns.conn) {
 		case Connected:
@@ -627,27 +627,27 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		if( !mdev->conf.two_primaries && 
+		if( !mdev->conf.two_primaries &&
 		    ns.role == Primary && ns.peer == Primary ) rv=-1;
 
 		else if( ns.role == Primary && ns.conn < Connected &&
 			 ns.disk <= Outdated ) rv=-2;
 
-		else if( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) && 
+		else if( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
 			 ns.role == Primary && ns.conn < Connected &&
 			 ns.pdsk >= DUnknown ) rv=-7;
 
-		else if( ns.role == Primary && ns.disk <= Inconsistent && 
+		else if( ns.role == Primary && ns.disk <= Inconsistent &&
 			 ns.pdsk <= Inconsistent ) rv=-2;
 
-		else if( ns.peer == Primary && ns.pdsk <= Inconsistent ) 
+		else if( ns.peer == Primary && ns.pdsk <= Inconsistent )
 			rv=-3;
 
-		else if( ns.conn > Connected && 
+		else if( ns.conn > Connected &&
 			 ns.disk < UpToDate && ns.pdsk < UpToDate ) rv=-4;
 
-		else if( ns.conn > Connected && 
-			 (ns.disk == Diskless || ns.pdsk == Diskless ) ) 
+		else if( ns.conn > Connected &&
+			 (ns.disk == Diskless || ns.pdsk == Diskless ) )
 			rv=-5;
 
 		else if( (ns.conn == Connected ||
@@ -924,7 +924,7 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	return ok;
 }
 
-int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data, 
+int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 		   size_t size)
 {
 	sigset_t old_blocked;
@@ -1308,7 +1308,7 @@ STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;
-	
+
 	bio_for_each_segment(bvec, bio, i) {
 		if (! _drbd_send_page(mdev, bvec->bv_page, bvec->bv_offset,
 				      bvec->bv_len) ) {
@@ -1738,7 +1738,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 
 	 * backing_bdev   ** re-initialized in drbd_free_ll_dev
 	 * lo_file
-	 * md_bdev 
+	 * md_bdev
 	 * md_file
 	 * md_index
 
@@ -2181,7 +2181,7 @@ int __init drbd_init(void)
 		init_MUTEX(&mdev->device_mutex);
 		if (!tl_init(mdev)) goto Enomem;
 
-		mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*), 
+		mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*),
 					     GFP_KERNEL);
 		if (!mdev->app_reads_hash) goto Enomem;
 		memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));

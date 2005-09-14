@@ -607,7 +607,7 @@ struct Tl_epoch_entry {
 	unsigned int barrier_nr;
 	unsigned int barrier_nr2;
 	/* If we issue the bio with RIO_RW_BARRIER we have to
-	   send a barrier ACK before we send the ACK to this 
+	   send a barrier ACK before we send the ACK to this
 	   write. We store the barrier number in here.
 	   In case the barrier after this write has been coalesced
 	   as well, we set it's barrier_nr into barrier_nr2 */
@@ -693,7 +693,7 @@ struct Drbd_Conf {
 	sector_t lo_usize;   /* user provided size */
 	sector_t p_size;     /* partner's disk size */
 	/* volatile */ drbd_state_t state;
-	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait". 
+	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
 	sector_t la_size;     // last agreed disk size in sectors.
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -801,7 +801,7 @@ extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  size_t size, unsigned msg_flags);
 extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
-extern int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+extern int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			  char* data, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
@@ -1042,7 +1042,7 @@ extern void resync_timer_fn(unsigned long data);
 
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
-extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev, 
+extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 					    sector_t sector,
 					    unsigned int data_size,
 					    unsigned int gfp_mask);
@@ -1121,13 +1121,13 @@ static inline int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 	return rv;
 }
 
-static inline void drbd_force_state(drbd_dev* mdev, 
+static inline void drbd_force_state(drbd_dev* mdev,
 				    drbd_state_t mask, drbd_state_t val)
 {
 	drbd_change_state(mdev,ChgStateHard,mask,val);
 }
 
-static inline int drbd_request_state(drbd_dev* mdev, 
+static inline int drbd_request_state(drbd_dev* mdev,
 				    drbd_state_t mask, drbd_state_t val)
 {
 	return drbd_change_state(mdev,ChgStateVerbose,mask,val);
@@ -1168,7 +1168,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 	}
 }
 
-static inline int semaphore_is_locked(struct semaphore* s) 
+static inline int semaphore_is_locked(struct semaphore* s)
 {
 	if(!down_trylock(s)) {
 		up(s);
@@ -1391,7 +1391,7 @@ static inline int inc_local_md_only(drbd_dev* mdev)
 
 static inline void dec_local(drbd_dev* mdev)
 {
-	if(atomic_dec_and_test(&mdev->local_cnt) && 
+	if(atomic_dec_and_test(&mdev->local_cnt) &&
 	   mdev->state.disk == Diskless &&
 	   mdev->lo_file) {
 		wake_up(&mdev->cstate_wait);
@@ -1506,7 +1506,7 @@ static inline void drbd_suicide(void)
 static inline int drbd_queue_order_type(drbd_dev* mdev)
 {
 	int rv;
-#if !defined(QUEUE_FLAG_ORDERED) 
+#if !defined(QUEUE_FLAG_ORDERED)
 	rv = bdev_get_queue(mdev->backing_bdev)->ordered;
 #else
 # define QUEUE_ORDERED_NONE 0
@@ -1514,6 +1514,6 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 # define QUEUE_ORDERED_FLUSH 2
 # warning "TCQ code disabled at compile time."
 	rv = QUEUE_ORDERED_NONE; // Kernels before 2.6.12 had not had TCQ support.
-#endif 
+#endif
 	return rv;
 }

@@ -119,7 +119,7 @@ struct drbd_bitmap {
 #else
 #define MUST_NOT_BE_LOCKED() do {(void)b;} while (0)
 #define MUST_BE_LOCKED() do {(void)b;} while (0)
-#endif 
+#endif
 void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;

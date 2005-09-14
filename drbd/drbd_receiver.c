@@ -147,7 +147,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	struct page *page;
 	DEFINE_WAIT(wait);
 
-	if ( drbd_pp_vacant == 
+	if ( drbd_pp_vacant ==
 // FIXME this watermark does not make sense
 	     (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count/2 ) {
 		drbd_kick_lo(mdev);
@@ -162,7 +162,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	if ( page ) goto got_page;
 
 	drbd_process_ee(mdev,1);
- 
+
 	spin_lock(&drbd_pp_lock);
 	if ( (page = drbd_pp_pool) ) {
 		drbd_pp_pool = (struct page*)page->private;
@@ -192,11 +192,11 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 			WARN("drbd_pp_alloc interrupted!\n");
 			return NULL;
 		}
-		// finish wait is inside, so that we are TASK_RUNNING 
+		// finish wait is inside, so that we are TASK_RUNNING
 		// in _drbd_process_ee (which might sleep by itself.)
 		drbd_process_ee(mdev,1);
 	}
-	finish_wait(&drbd_pp_wait, &wait); 
+	finish_wait(&drbd_pp_wait, &wait);
 
  got_page:
 	atomic_inc(&mdev->pp_in_use);
@@ -236,7 +236,7 @@ You must not have the ee_lock:
  drbd_wait_ee()
 */
 
-struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev, 
+struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 				     sector_t sector,
 				     unsigned int data_size,
 				     unsigned int gfp_mask)
@@ -285,7 +285,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	bio_put(bio);
  fail1:
 	mempool_free(e, drbd_ee_mempool);
-	
+
 	return NULL;
 }
 
@@ -862,12 +862,12 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 
 	bio = req->master_bio;
 	D_ASSERT( sector == drbd_req_get_sector(req) );
-	
+
 	bio_for_each_segment(bvec, bio, i) {
 		expect = min_t(int,data_size,bvec->bv_len);
 		rr=drbd_recv(mdev,
 			     kmap(bvec->bv_page)+bvec->bv_offset,
-			     expect);	
+			     expect);
 		kunmap(bvec->bv_page);
 		if (rr != expect) {
 			ok = 0;
@@ -1031,7 +1031,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 				/* only happens when using receive_Barrier_tcq */
 				epoch_size=atomic_read(&mdev->epoch_size);
 				atomic_set(&mdev->epoch_size,0);
-				ok&=drbd_send_b_ack(mdev, 
+				ok&=drbd_send_b_ack(mdev,
 						    cpu_to_be32(e->barrier_nr),
 						    epoch_size);
 				dec_unacked(mdev);
@@ -1040,7 +1040,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			atomic_inc(&mdev->epoch_size);
 			if(e->barrier_nr2) {
 				atomic_set(&mdev->epoch_size,0);
-				ok&=drbd_send_b_ack(mdev, 
+				ok&=drbd_send_b_ack(mdev,
 						   cpu_to_be32(e->barrier_nr2),
 						    1);
 				dec_unacked(mdev);
@@ -1131,8 +1131,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 	/* This wait_event is here to make sure that never ever an
 	   DATA packet traveling via sock can overtake an ACK packet
-	   traveling on msock 
-	   PRE TODO: Wrap around of seq_num !!! 
+	   traveling on msock
+	   PRE TODO: Wrap around of seq_num !!!
 	*/
 	if (mdev->conf.two_primaries) {
 		packet_seq = be32_to_cpu(p->seq_num);
@@ -1140,13 +1140,13 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			WARN(" will wait till (packet_seq) %d <= %d\n",
 			     packet_seq,peer_seq(mdev)+1);
 			     } */
-		if( wait_event_interruptible(mdev->cstate_wait, 
+		if( wait_event_interruptible(mdev->cstate_wait,
 					     packet_seq <= peer_seq(mdev)+1)) {
 			rv = FALSE;
 			goto out2;
 		}
 
-		spin_lock(&mdev->peer_seq_lock); 
+		spin_lock(&mdev->peer_seq_lock);
 		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
 		/* is update_peer_seq(mdev,packet_seq); */
 		discard = drbd_chk_discard(mdev,e);
@@ -1160,7 +1160,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		}
 
 		req = req_have_write(mdev, e);
-		
+
 		if(req) {
 			if( req->rq_status & RQ_DRBD_SENT ) {
 				/* Conflicting write, got ACK */
@@ -1338,9 +1338,9 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	case PanicPrimary:
 		ERR("Configuration error.\n");
 		break;
-	case Disconnect: 
+	case Disconnect:
 		break;
-	case DiscardYoungerPri: 
+	case DiscardYoungerPri:
 		if (self == 0 && peer == 1) rv = -1;
 		if (self == 1 && peer == 0) rv =  1;
 		D_ASSERT(self != peer);
@@ -1478,10 +1478,10 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 	if (self == UUID_JUST_CREATED &&
 	    peer == UUID_JUST_CREATED) return 0;
 
-	if (self == UUID_JUST_CREATED && 
+	if (self == UUID_JUST_CREATED &&
 	    peer != UUID_JUST_CREATED) return -2;
 
-	if (self != UUID_JUST_CREATED && 
+	if (self != UUID_JUST_CREATED &&
 	    peer == UUID_JUST_CREATED) return 2;
 
 	if (self == peer) return 0;
@@ -1498,7 +1498,7 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 	peer = mdev->p_uuid[Current] & ~((u64)1);
 
 	if (self == peer) return 1;
-	
+
 	for ( i=History_start ; i<=History_end ; i++ ) {
 		self = mdev->uuid[i] & ~((u64)1);
 		if (self == peer) return 2;
@@ -1520,7 +1520,7 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 	return -1000;
 }
 
-/* drbd_sync_handshake() returns the new conn state on success, or 
+/* drbd_sync_handshake() returns the new conn state on success, or
    conn_mask (-1) on failure.
  */
 STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
@@ -1600,7 +1600,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_uuid_set(mdev,Current,mdev->p_uuid[Bitmap]);
 		mdev->as_c_uuid = mdev->p_uuid[Current];
-		rv = WFBitMapT;		
+		rv = WFBitMapT;
 	} else {
 		rv = Connected;
 		drbd_bm_lock(mdev);   // {
@@ -1672,12 +1672,12 @@ STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 		[QUEUE_ORDERED_FLUSH] = "flush - IDE",
 		[QUEUE_ORDERED_TAG]   = "tag - TCQ",
 	};
-	
+
 	if(self == QUEUE_ORDERED_NONE ||
-	   peer == QUEUE_ORDERED_NONE) { 
-		type = QUEUE_ORDERED_NONE; 
+	   peer == QUEUE_ORDERED_NONE) {
+		type = QUEUE_ORDERED_NONE;
 	} else if (self == QUEUE_ORDERED_FLUSH ||
-		   peer == QUEUE_ORDERED_FLUSH) { 
+		   peer == QUEUE_ORDERED_FLUSH) {
 		type = QUEUE_ORDERED_FLUSH;
 	} else if(self == QUEUE_ORDERED_TAG ||
 		  peer == QUEUE_ORDERED_TAG) {
@@ -1686,7 +1686,7 @@ STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 		D_ASSERT(0);
 		type = QUEUE_ORDERED_NONE;
 	}
-	
+
 	if (type != self ) {
 		INFO("Exposing an order type of '%s' to the kernel\n",
 		     order_txt[type]);
@@ -2026,7 +2026,7 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	if( os.disk < Outdated ) { 
+	if( os.disk < Outdated ) {
 		r=-999;
 	} else {
 		r = _drbd_set_state(mdev, _NS2(disk,Outdated,conn,TearDown),
@@ -2041,7 +2041,7 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 		drbd_send_short_cmd(mdev, OutdatedReply);
 		return TRUE;
 	}
-	
+
 	return FALSE;
 }
 
@@ -2216,15 +2216,15 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		atomic_set(&mdev->unacked_cnt,0);
 	}
 
-	/* We do not have data structures that would allow us to 
+	/* We do not have data structures that would allow us to
 	   get the rs_pending_cnt down to 0 again.
-	   * On SyncTarget we do not have any data structures describing 
+	   * On SyncTarget we do not have any data structures describing
 	     the pending RSDataRequest's we have sent.
 	   * On SyncSource there is no data structure that tracks
 	     the RSDataReply blocks that we sent to the SyncTarget.
-	   And no, it is not the sum of the reference counts in the 
+	   And no, it is not the sum of the reference counts in the
 	   resync_LRU. The resync_LRU tracks the whole operation including
-           the disk-IO, while the rs_pending_cnt only tracks the blocks 
+           the disk-IO, while the rs_pending_cnt only tracks the blocks
 	   on the fly. */
 	atomic_set(&mdev->rs_pending_cnt,0);
 
@@ -2248,7 +2248,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		     mdev->uuid[Bitmap] == 0 ) {
 			/* We only create a new UUID if the peer might
 			   possibly be UpToDate. Since the connection is
-			   already gone it is DUnknown by now. 
+			   already gone it is DUnknown by now.
 			   In case we already created a BitMap there is
 			   no need to create a new UUID.
 			*/
@@ -2372,9 +2372,9 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	unsigned int key_len = strlen(mdev->conf.shared_secret);
 	unsigned int resp_size;
 	int rv;
-	
+
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
-	
+
 	rv = drbd_send_cmd2(mdev,AuthChallenge,my_challenge,CHALLENGE_LEN);
 	if (!rv) goto fail;
 
@@ -2456,7 +2456,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		rv = 0;
 		goto fail;
 	}
-	
+
 	sg.page   = virt_to_page(my_challenge);
 	sg.offset = offset_in_page(my_challenge);
 	sg.length = CHALLENGE_LEN;
@@ -2464,7 +2464,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		    &key_len, &sg, 1, right_response);
 
 	rv = ! memcmp(response,right_response,resp_size);
-	
+
 	if(rv) {
 		INFO("Peer authenticated usind %d bytes of '%s' HMAC\n",
 		     resp_size,mdev->conf.cram_hmac_alg);
