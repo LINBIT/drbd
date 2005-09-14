@@ -180,8 +180,7 @@ int drbd_endio_read_pri(struct bio *bio, unsigned int bytes_done, int error)
 		bio_endio(req->master_bio,req->master_bio->bi_size,error);
 		dec_ap_bio(mdev);
 
-		INVALIDATE_MAGIC(req);
-		mempool_free(req,drbd_request_mempool);
+		drbd_req_free(req);
 	}
 
 	bio_put(bio);
@@ -202,8 +201,7 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 */
 	D_ASSERT(mdev->on_io_error != PassOn);
 
-	INVALIDATE_MAGIC(req);
-	mempool_free(req,drbd_request_mempool);
+	drbd_req_free(req);
 
 	if(unlikely(cancel)) return 1;
 
@@ -226,7 +224,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		// does not make much sense, but anyways...
 		drbd_bio_endio(req->master_bio,0);
 		dec_ap_bio(mdev);
-		mempool_free(req,drbd_request_mempool);
+		drbd_req_free(req);
 		return 1;
 	}
 

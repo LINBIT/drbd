@@ -982,8 +982,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	ok = recv_dless_read(mdev,req,sector,data_size);
 
-	INVALIDATE_MAGIC(req);
-	mempool_free(req,drbd_request_mempool);
+	drbd_req_free(req);
 
 	return ok;
 }
@@ -1968,8 +1967,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		dec_ap_bio(mdev);
 		dec_ap_pending(mdev);
 
-		INVALIDATE_MAGIC(req);
-		mempool_free(req,drbd_request_mempool);
+		drbd_req_free(req);
 	}
 }
 
@@ -2624,8 +2622,7 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	list_del(&req->w.list);
 	spin_unlock(&mdev->pr_lock);
 
-	INVALIDATE_MAGIC(req);
-	mempool_free(req,drbd_request_mempool);
+	drbd_req_free(req);
 
 	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 

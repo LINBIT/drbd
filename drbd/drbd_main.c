@@ -1319,15 +1319,15 @@ STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 	return 1;
 }
 
-// Used to send write requests: bh->b_rsector !!
+/* Used to send write requests
+ * Primary -> Peer	(Data)
+ */
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 {
 	int ok=1;
 	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 	unsigned int dp_flags=0;
-
-	ERR_IF(!req || !req->master_bio) return FALSE;
 
 	/* About tl_add():
 	1. This must be within the semaphor,
@@ -1417,6 +1417,10 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	return ok;
 }
 
+/* answer packet, used to send data back for read requests:
+ *  Peer       -> (diskless) Primary   (DataReply)
+ *  SyncSource -> SyncTarget         (RSDataReply)
+ */
 int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 		    struct Tl_epoch_entry *e)
 {
