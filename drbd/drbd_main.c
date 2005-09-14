@@ -180,6 +180,7 @@ STATIC void tl_cleanup(drbd_dev *mdev)
 
 STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
 {
+	BUG_ON(mdev->tl_hash_s == 0);
 	return (unsigned int)(sector>>HT_SHIFT) % mdev->tl_hash_s;
 }
 
@@ -383,6 +384,7 @@ void tl_clear(drbd_dev *mdev)
 
 STATIC unsigned int ee_hash_fn(drbd_dev *mdev, sector_t sector)
 {
+	BUG_ON(mdev->ee_hash_s == 0);
 	return (unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s;
 }
 
@@ -547,6 +549,7 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 /* PRE TODO: Should return ernno numbers from the pre-state-change checks. */
 int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
+	MUST_HOLD(&mdev->req_lock);
 	drbd_state_t os;
 	int rv=1,warn_sync_abort=0;
 
@@ -1880,7 +1883,7 @@ int drbd_create_mempools(void)
 	spin_lock_init(&drbd_pp_lock);
 
 	for (i=0;i< number;i++) {
-		page = alloc_page(GFP_KERNEL);
+		page = alloc_page(GFP_HIGHUSER);
 		if(!page) goto Enomem;
 		page->private = (unsigned long)drbd_pp_pool;
 		drbd_pp_pool = page;

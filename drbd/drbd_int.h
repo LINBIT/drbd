@@ -942,11 +942,11 @@ struct bm_extent {
 #define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
 #endif
 
-/* Sector shift value for hash functions for tl_hash table and ee_hash
-   table. A value of 6 makes all IOs in on 32K block to make to the same
-   slot of the hash table. */
+/* Sector shift value for the "hash" functions of tl_hash and ee_hash tables.
+ * With a value of 6 all IO in one 32K block make it to the same slot of the
+ * hash table. */
 #define HT_SHIFT 6
-#define DRBD_MAX_SEGMENT_SIZE (1<<(9+HT_SHIFT)) 
+#define DRBD_MAX_SEGMENT_SIZE (1UL<<(9+HT_SHIFT))
 
 /* Number of elements in the app_reads_hash */
 #define APP_R_HSIZE 15
@@ -994,6 +994,7 @@ extern int minor_count;
 extern kmem_cache_t *drbd_request_cache;
 extern kmem_cache_t *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
+extern mempool_t *drbd_ee_mempool;
 
 extern struct page* drbd_pp_pool; // drbd's page pool
 extern spinlock_t   drbd_pp_lock;

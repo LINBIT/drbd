@@ -882,12 +882,27 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 		return -EFAULT;
 	}
 
-	if( drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
-		time=p.wfc_timeout;
-		//ERR("using wfc_timeout.\n");
-	} else {
+	/* If I am currently not Primary,
+	 * but meta data primary indicator is set,
+	 * I just now recover from a hard crash,
+	 * and have been Primary before that crash.
+	 *
+	 * Now, if I had no connection before that crash
+	 * (have been degraded Primary), chances are that
+	 * I won't find my peer now either.
+	 *
+	 * In that case, and _only_ in that case,
+	 * we use the degr-wfc-timeout instead of the default,
+	 * so we can automatically recover from a crash of a
+	 * degraded but active "cluster" after a certain timeout.
+	 */
+	if ( mdev->state.role != Primary &&
+	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
+	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
 		time=p.degr_wfc_timeout;
-		//ERR("using degr_wfc_timeout.\n");
+		if (time) WARN("using degr_wfc_timeout=%ld seconds\n", time);
+	} else {
+		time=p.wfc_timeout;
 	}
 
 	time=time*HZ;

@@ -148,6 +148,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	DEFINE_WAIT(wait);
 
 	if ( drbd_pp_vacant == 
+// FIXME this watermark does not make sense
 	     (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count/2 ) {
 		drbd_kick_lo(mdev);
 	}
@@ -226,7 +227,6 @@ You need to hold the ee_lock:
  _drbd_process_ee()
 
 You must not have the ee_lock:
- _drbd_alloc_ee()
  drbd_alloc_ee()
  drbd_init_ee()
  drbd_release_ee()
@@ -248,7 +248,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	unsigned int ds;
 	int bio_add,i;
 
-	e = kmem_cache_alloc(drbd_ee_cache, gfp_mask);
+	e = mempool_alloc(drbd_ee_mempool, gfp_mask);
 	if (!e) return NULL;
 
 	bio = bio_alloc(GFP_KERNEL, div_ceil(data_size,PAGE_SIZE));
@@ -284,7 +284,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	}
 	bio_put(bio);
  fail1:
-	kmem_cache_free(drbd_ee_cache, e);
+	mempool_free(e, drbd_ee_mempool);
 	
 	return NULL;
 }
@@ -301,7 +301,7 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 
 	bio_put(bio);
 
-	kmem_cache_free(drbd_ee_cache, e);
+	mempool_free(e, drbd_ee_mempool);
 }
 
 int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
@@ -757,8 +757,6 @@ STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 
 	inc_unacked(mdev);
 
-	// DBG("got Barrier\n");
-
 	spin_lock_irq(&mdev->ee_lock);
 	if(list_empty(&mdev->active_ee)) {
 		rv = _drbd_process_ee(mdev,1);
@@ -791,8 +789,6 @@ STATIC int receive_Barrier_usual(drbd_dev *mdev, Drbd_Header* h)
 	ERR_IF(rv != h->length) return FALSE;
 
 	inc_unacked(mdev);
-
-	// DBG("got Barrier\n");
 
 	if (mdev->conf.wire_protocol != DRBD_PROT_C)
 		drbd_kick_lo(mdev);
@@ -1033,6 +1029,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
 			if(e->barrier_nr) {
+				/* only happens when using receive_Barrier_tcq */
 				epoch_size=atomic_read(&mdev->epoch_size);
 				atomic_set(&mdev->epoch_size,0);
 				ok&=drbd_send_b_ack(mdev, 
@@ -2072,7 +2069,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[RSDataReply]      = receive_RSDataReply,
 	[RecvAck]          = NULL, //receive_RecvAck,
 	[WriteAck]         = NULL, //receive_WriteAck,
-	[Barrier]          = NULL, // see drbd_set_tcq()
+	[Barrier]          = NULL, // see drbd_set_recv_tcq()
 	[BarrierAck]       = NULL, //receive_BarrierAck,
 	[ReportBitMap]     = receive_bitmap,
 	[Ping]             = NULL, //receive_Ping,
