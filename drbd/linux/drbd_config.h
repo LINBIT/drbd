@@ -22,7 +22,7 @@
 
 extern const char * drbd_buildtag(void);
 
-#define REL_VERSION "0.8-pre1"
+#define REL_VERSION "0.8-pre2"
 #define API_VERSION 80
 #define PRO_VERSION 80
 

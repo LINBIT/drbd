@@ -1133,6 +1133,12 @@ static inline int drbd_request_state(drbd_dev* mdev,
 	return drbd_change_state(mdev,ChgStateVerbose,mask,val);
 }
 
+static inline void drbd_req_free(drbd_request_t *req)
+{
+	INVALIDATE_MAGIC(req);
+	mempool_free(req,drbd_request_mempool);
+}
+
 /**
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
  * all io completion handlers. See also drbd_io_error().

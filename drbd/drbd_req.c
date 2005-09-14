@@ -106,8 +106,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	drbd_bio_endio(req->master_bio,uptodate);
 	dec_ap_bio(mdev);
 
-	INVALIDATE_MAGIC(req);
-	mempool_free(req,drbd_request_mempool);
+	drbd_req_free(req);
 
  out:
 	if (test_bit(ISSUE_BARRIER,&mdev->flags)) {
@@ -169,8 +168,8 @@ int drbd_pr_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
  * - we are consistent (of course),
  * - or we are generally inconsistent,
  *   BUT we are still/already IN SYNC for this area.
- *   since size may be up to PAGE_SIZE, but BM_BLOCK_SIZE may be smaller
- *   than PAGE_SIZE, we may need to check several bits.
+ *   since size may be bigger than BM_BLOCK_SIZE,
+ *   we may need to check several bits.
  */
 STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 {
@@ -194,6 +193,31 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	return 1;
 }
 
+static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
+{
+	struct bio *bio;
+	drbd_request_t *req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
+	if (req) {
+		SET_MAGIC(req);
+
+		bio = bio_clone(bio_src, GFP_NOIO); /* XXX cannot fail?? */
+
+		req->rq_status   = RQ_DRBD_NOTHING;
+		req->mdev        = mdev;
+		req->master_bio  = bio_src;
+		req->private_bio = bio;
+
+		bio->bi_bdev     = mdev->backing_bdev;
+		bio->bi_private  = req;
+		bio->bi_end_io   =
+			bio_data_dir(bio) == WRITE
+			? drbd_endio_write_pri
+			: drbd_endio_read_pri;
+		bio->bi_next    = 0;
+	}
+	return req;
+}
+
 STATIC int
 drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			 sector_t sector, struct bio *bio)
@@ -202,43 +226,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	int local, remote;
 	int target_area_out_of_sync = FALSE; // only relevant for reads
 
-	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
-		drbd_bio_IO_error(bio);
-		return 0;
-	}
-
-	if (mdev->state.role != Primary &&
-		( !disable_bd_claim || rw == WRITE ) ) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("Not in Primary state, no %s requests allowed\n",
-					disable_bd_claim ? "WRITE" : "IO");
-		}
-		drbd_bio_IO_error(bio);
-		return 0;
-	}
-
-	/*
-	 * Paranoia: we might have been primary, but sync target, or
-	 * even diskless, then lost the connection.
-	 * This should have been handled (panic? suspend?) somehwere
-	 * else. But maybe it was not, so check again here.
-	 * Caution: as long as we do not have a read/write lock on mdev,
-	 * to serialize state changes, this is racy, since we may lose
-	 * the connection *after* we test for the cstate.
-	 */
-	if ( mdev->state.disk <= Inconsistent && 
-	     mdev->state.conn < Connected) {
-		ERR("Sorry, I have no access to good data anymore.\n");
-/*
-  FIXME suspend, loop waiting on cstate wait? panic?
-*/
-		drbd_bio_IO_error(bio);
-		return 0;
-	}
-
 	/* allocate outside of all locks
 	 */
-	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
+	req = drbd_req_new(mdev,bio);
 	if (!req) {
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, thats not our business.
@@ -247,12 +237,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		drbd_bio_IO_error(bio);
 		return 0;
 	}
-	SET_MAGIC(req);
-	req->master_bio = bio;
-
-	// XXX maybe merge both variants into one
-	if (rw == WRITE) drbd_req_prepare_write(mdev,req);
-	else             drbd_req_prepare_read(mdev,req);
 
 	/* XXX req->w.cb = something; drbd_queue_work() ....
 	 * Not yet.
@@ -268,7 +252,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (rw == READ || rw == READA) {
 		if (local) {
 			if (!drbd_may_do_local_read(mdev,sector,size)) {
-				/* whe could kick the syncer to
+				/* we could kick the syncer to
 				 * sync this extent asap, wait for
 				 * it, then continue locally.
 				 * Or just issue the request remotely.
@@ -288,6 +272,10 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				 * results" on _any_ io stack, even just the
 				 * local io stack.
 				 */
+
+/* XXX SHARED DISK mode
+ * think this over again for two primaries */
+
 				local = 0;
 				dec_local(mdev);
 			}
@@ -306,8 +294,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 *        if network is slow, READA won't do any good.
 	 */
 	if (rw == READA && mdev->state.disk >= Inconsistent && !local) {
-		drbd_bio_IO_error(bio);
-		return 0;
+		goto fail_and_free_req;
 	}
 
 	if (rw == WRITE && local)
@@ -317,9 +304,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");
-		// FIXME PANIC ??
-		drbd_bio_IO_error(bio);
-		return 0;
+		goto fail_and_free_req;
 	}
 
 	/* do this first, so I do not need to call drbd_end_req,
@@ -333,7 +318,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
 	drbd_plug_device(mdev);
 
-	inc_ap_bio(mdev);
+	inc_ap_bio(mdev); // XXX maybe make this the first thing to do in drbd_make_request
 	if (remote) {
 		/* either WRITE and Connected,
 		 * or READ, and no local disk,
@@ -396,16 +381,76 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	// up_read(mdev->device_lock);
 	return 0;
+
+  fail_and_free_req:
+	drbd_bio_IO_error(bio);
+	drbd_req_free(req);
+	return 0;
+}
+
+/* helper function for drbd_make_request
+ * if we can determine just by the mdev (state) that this reques will fail,
+ * return 1
+ * otherwise return 0
+ */
+static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
+{
+	if (unlikely(drbd_did_panic == DRBD_MAGIC))
+		return 1;
+
+	// Unconfigured
+	if (mdev->state.conn == StandAlone &&
+	    mdev->state.disk == Diskless)
+		return 1;
+
+	if (mdev->state.role != Primary &&
+		( !disable_bd_claim || is_write) ) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("Process %s[%u] tried to %s; since we are not in Primary state, we cannot allow this\n",
+			    current->comm, current->pid, is_write ? "WRITE" : "READ");
+		}
+		return 1;
+	}
+
+	/*
+	 * Paranoia: we might have been primary, but sync target, or
+	 * even diskless, then lost the connection.
+	 * This should have been handled (panic? suspend?) somehwere
+	 * else. But maybe it was not, so check again here.
+	 * Caution: as long as we do not have a read/write lock on mdev,
+	 * to serialize state changes, this is racy, since we may lose
+	 * the connection *after* we test for the cstate.
+	 */
+	if ( mdev->state.disk <= Inconsistent && 
+	     mdev->state.conn < Connected) {
+		ERR("Sorry, I have no access to good data anymore.\n");
+		/*
+		 * FIXME suspend, loop waiting on cstate wait?
+		 * panic?
+		 */
+		return 1;
+	}
+
+
+	return 0;
 }
 
 int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
 	unsigned int s_enr,e_enr;
 	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
-	if (mdev->state.disk < Inconsistent) {
+
+/* FIXME
+ * I think we need to grab some sort of reference count right here.
+ * Would make it easier to serialize with size changes and other funny stuff.
+ * Maybe move inc_ap_bio right here?
+ */
+
+	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
 		drbd_bio_IO_error(bio);
 		return 0;
 	}
+
 
 	/*
 	 * what we "blindly" assume:

@@ -162,36 +162,6 @@ drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e)
 	e->private_bio->bi_end_io = drbd_endio_read_sec;
 }
 
-static inline void
-drbd_req_prepare_write(drbd_dev *mdev, struct drbd_request *req)
-{
-	struct bio *bio;
-
-	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
-	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_private = req;
-	bio->bi_end_io  = drbd_endio_write_pri;
-	bio->bi_next    = 0;
-
-	req->rq_status = RQ_DRBD_NOTHING;
-	req->mdev      = mdev;
-}
-
-static inline void
-drbd_req_prepare_read(drbd_dev *mdev, struct drbd_request *req)
-{
-	struct bio *bio;
-
-	bio = req->private_bio = bio_clone(req->master_bio, GFP_NOIO );
-	bio->bi_bdev    = mdev->backing_bdev;
-	bio->bi_private = req;
-	bio->bi_end_io  = drbd_endio_read_pri;	// <- only difference
-	bio->bi_next    = 0;
-
-	req->rq_status = RQ_DRBD_NOTHING;
-	req->mdev      = mdev;
-}
-
 static inline int drbd_bio_has_active_page(struct bio *bio)
 {
 	struct bio_vec *bvec;
