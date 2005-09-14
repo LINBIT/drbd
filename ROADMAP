@@ -59,8 +59,8 @@ DRBD 0.8 Roadmap
      "discard-secondary"     
                       discard the version of the secondary.
      "panic-primary"  Always honour the outcome of the "after-sb-2sc"
-                      algorithm. In case it decides the the current
-                      secondary has the right data, it tries to make the
+                      algorithm. In case it decides that the current
+                      secondary has the right data, it tries to make
                       the current primary secondary, if that fails 
                       it panics the current primary.
 
