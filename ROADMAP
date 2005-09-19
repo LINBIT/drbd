@@ -410,7 +410,7 @@ DRBD 0.8 Roadmap
      on both nodes, while the data is not in sync for sure.
    * They are completely unsuitable if a 3rd node is used for 
      e.g. weekly snapshots.
-   * Lots of other shortcommings.
+   * Gracefull takeover while disconnected not possible.
 
   We associate each data generation with an unique UUID (=64 bit random
   number). A new data generation is created if a primary node is 
@@ -464,8 +464,8 @@ DRBD 0.8 Roadmap
                  flag causes a new UUID to be generated.
 
   Upon start of resync:
-   Clear the consistent-flag on the SyncTarget. The SyncTarget sets its
-   current-UUID to the peer's bitmap-UUID.
+   Clear the consistent-flag on the SyncTarget. Generate a new UUID for
+   the bitmap-UUID of the SyncSource and the current-UUID of the SyncTarget.
 
   Upon finish of resync:
    Set the bitmap-UUID to 0. The SyncTarget addopts the current-UUID
