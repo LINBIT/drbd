@@ -83,12 +83,13 @@ extern char* drbd_devfs_name;
  */
 #define DRBD_SIGKILL SIGHUP
 
-#define ID_SYNCER (-1LL)
+#define ID_SYNCER (-1ULL)
 #define ID_VACANT 0     // All EEs on the free list should have this value
                         // freshly allocated EEs get !ID_VACANT (== 1)
 			// so if it says "cannot dereference null
 			// pointer at adress 0x00000001, it is most
 			// probably one of these :(
+#define is_syncer_block_id(id) ((id)==ID_SYNCER)
 
 struct Drbd_Conf;
 typedef struct Drbd_Conf drbd_dev;
@@ -417,6 +418,7 @@ typedef struct {
 	u32         seq_num;
 } __attribute((packed)) Drbd_BlockAck_Packet;
 
+
 typedef struct {
 	Drbd_Header head;
 	u64         sector;
@@ -606,7 +608,7 @@ struct Tl_epoch_entry {
 	drbd_dev *mdev;
 	unsigned int barrier_nr;
 	unsigned int barrier_nr2;
-	/* If we issue the bio with RIO_RW_BARRIER we have to
+	/* If we issue the bio with BIO_RW_BARRIER we have to
 	   send a barrier ACK before we send the ACK to this
 	   write. We store the barrier number in here.
 	   In case the barrier after this write has been coalesced
@@ -733,8 +735,8 @@ struct Drbd_Conf {
 	u64 uuid[UUID_SIZE];
 	u64 as_c_uuid;         // Store the peers c-uuid until resync finished.
 	u64 *p_uuid;
-	atomic_t epoch_size;
 	spinlock_t ee_lock;
+	unsigned int epoch_size;
 	struct list_head active_ee; // IO in progress
 	struct list_head sync_ee;   // IO in progress
 	struct list_head done_ee;   // send ack
@@ -1047,7 +1049,8 @@ extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 					    unsigned int data_size,
 					    unsigned int gfp_mask);
 extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
-extern void drbd_wait_ee(drbd_dev *mdev, struct list_head *head);
+extern void drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
+extern void _drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void drbd_set_recv_tcq(drbd_dev *mdev, int tcq_enabled);
 
 // drbd_proc.c

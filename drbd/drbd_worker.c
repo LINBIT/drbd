@@ -100,6 +100,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
+	int do_wake;
 
 	e = bio->bi_private;
 	mdev = e->mdev;
@@ -111,15 +112,17 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	D_ASSERT(e->block_id != ID_VACANT);
 
 	spin_lock_irqsave(&mdev->ee_lock,flags);
+	mdev->epoch_size++;
 	list_del(&e->w.list);
 	list_add_tail(&e->w.list,&mdev->done_ee);
 
-	if (waitqueue_active(&mdev->ee_wait) &&
-	    (list_empty(&mdev->active_ee) ||
-	     list_empty(&mdev->sync_ee)))
-		wake_up(&mdev->ee_wait);
+	do_wake = is_syncer_block_id(e->block_id)
+		? list_empty(&mdev->sync_ee)
+		: list_empty(&mdev->active_ee);
 
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+
+	if (do_wake) wake_up(&mdev->ee_wait);
 
 	if( !hlist_unhashed(&e->colision) ) {
 		spin_lock_irqsave(&mdev->tl_lock,flags);
@@ -740,7 +743,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		}
 
 		if (get_t_state(thi) != Running) break;
-		/* With this break, we have done an down() but not consumed
+		/* With this break, we have done a down() but not consumed
 		   the entry from the list. The cleanup code takes care of
 		   this...   */
 
@@ -759,7 +762,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		}
 	}
 
-	drbd_wait_ee(mdev,&mdev->read_ee);
+	drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
 
 	i = 0;
 	spin_lock_irq(&mdev->req_lock);

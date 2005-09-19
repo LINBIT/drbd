@@ -194,21 +194,27 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 	generic_make_request(bio);
 }
 
-static inline void drbd_blk_run_queue(request_queue_t *q)
-{
-	if (q && q->unplug_fn)
-		q->unplug_fn(q);
-}
-
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
 	if (!mdev->backing_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("backing_bdev==NULL in drbd_kick_lo\n");
+			ERR("backing_bdev==NULL in drbd_kick_lo! The following call trace is for debuggin purposes only. Don't worry.\n");
 			dump_stack();
 		}
 	} else {
-		drbd_blk_run_queue(bdev_get_queue(mdev->backing_bdev));
+		request_queue_t *q = bdev_get_queue(mdev->backing_bdev);
+		/*
+		 * FIXME investigate what makes most sense:
+		 * struct backing_dev_info *bdi;
+		 * bdi = mdev->backing_bdev->bd_inode->i_mapping->backing_dev_info;
+		 * bdi = &q->backing_dev_info;
+		 * blk_run_queue(q);
+		 *
+		 * bdi = &q->backing_dev_info;
+		 * blk_run_backing_dev(bdi,NULL);
+		 */
+		if (q && q->unplug_fn)
+			q->unplug_fn(q);
 	}
 }
 

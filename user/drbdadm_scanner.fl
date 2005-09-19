@@ -52,8 +52,8 @@ NUM_U			  [0-9]{1,9}[kmgKMG]?
 NAME			  [/_.A-Za-z0-9-]{1,80}
 ENAME			  [/_.A-Za-z0-9-]{81}
 L_NO_DQUOTES		  [^\"\\\n]
-STRING			  ({NAME}|\"{L_NO_DQUOTES}{1,80}\")
-ESTRING			  (\"{L_NO_DQUOTES}{81}|\"\")
+STRING			  ({NAME}|\"{L_NO_DQUOTES}{1,220}\")
+ESTRING			  (\"{L_NO_DQUOTES}{221}|\"\")
 DISK			  disk
 INTERN			  internal|\"internal\"
 META_IDX		  {LS}?\[{LS}?{NUM}{LS}?\]

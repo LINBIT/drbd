@@ -396,8 +396,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 
 	drbd_free_ll_dev(mdev);
 
-	if(new_conf.split_brain_fix) __set_bit(SPLIT_BRAIN_FIX,&mdev->flags);
-	else __clear_bit(SPLIT_BRAIN_FIX,&mdev->flags);
+	if (new_conf.split_brain_fix) set_bit(SPLIT_BRAIN_FIX,&mdev->flags);
+	else clear_bit(SPLIT_BRAIN_FIX,&mdev->flags);
 
 	mdev->md_bdev  = bdev2;
 	mdev->md_file  = filp2;
@@ -414,7 +414,10 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	mdev->writ_cnt = 0;
 
 	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
-	drbd_set_recv_tcq(mdev,drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
+	/*
+	 * FIXME currently broken.
+	 * drbd_set_recv_tcq(mdev,drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
+	 */
 
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
 

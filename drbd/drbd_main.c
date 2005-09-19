@@ -185,58 +185,61 @@ STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
 }
 
 
-STATIC void _tl_add(drbd_dev *mdev, drbd_request_t * new_item)
+STATIC void _tl_add(drbd_dev *mdev, drbd_request_t *req)
 {
 	struct drbd_barrier *b;
 
 	b=mdev->newest_barrier;
 
-	new_item->barrier = b;
-	new_item->rq_status |= RQ_DRBD_IN_TL;
-	list_add(&new_item->w.list,&b->requests);
+	req->barrier = b;
+	req->rq_status |= RQ_DRBD_IN_TL;
+	list_add(&req->w.list,&b->requests);
 
 	if( b->n_req++ > mdev->conf.max_epoch_size ) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
 	}
 
-	INIT_HLIST_NODE(&new_item->colision);
-	hlist_add_head( &new_item->colision, mdev->tl_hash +
-			tl_hash_fn(mdev, drbd_req_get_sector(new_item) ));
+	INIT_HLIST_NODE(&req->colision);
+	hlist_add_head( &req->colision, mdev->tl_hash +
+			tl_hash_fn(mdev, drbd_req_get_sector(req) ));
 }
 
-STATIC void tl_add(drbd_dev *mdev, drbd_request_t * new_item)
+STATIC void tl_add(drbd_dev *mdev, drbd_request_t * req)
 {
 	spin_lock_irq(&mdev->tl_lock);
-	_tl_add(mdev,new_item);
+	_tl_add(mdev,req);
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
-STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t * item)
+STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t *req)
 {
 	struct drbd_barrier *b;
 
 	spin_lock_irq(&mdev->tl_lock);
 
-	b=item->barrier;
+	b=req->barrier;
 	b->n_req--;
 
-	list_del(&item->w.list);
-	hlist_del(&item->colision);
-	item->rq_status &= ~RQ_DRBD_IN_TL;
+	list_del(&req->w.list);
+	hlist_del(&req->colision);
+	req->rq_status &= ~RQ_DRBD_IN_TL;
 
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
 STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 {
-	unsigned int bnr;
+# warning "remove this comment again"
+/*
+ * why static? why not per mdev?
 	static unsigned int barrier_nr_issue=1;
+ * if globally static, does it really work
+ * without global locking under all circumstances?
+ * why not use the struct barrier itself?
+ */
+	unsigned int bnr;
 	struct drbd_barrier *b;
 
-	barrier_nr_issue++;
-
-	// THINK this is called in the IO path with the send_mutex held
-	// and GFP_KERNEL may itself start IO. set it to GFP_NOIO.
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
 	if(!b) {
 		ERR("could not kmalloc() barrier\n");
@@ -244,15 +247,15 @@ STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 	}
 	INIT_LIST_HEAD(&b->requests);
 	b->next=0;
-	b->br_number=barrier_nr_issue;
 	b->n_req=0;
 
 	spin_lock_irq(&mdev->tl_lock);
-
-	bnr = mdev->newest_barrier->br_number;
+	/* mdev->newest_barrier == NULL "cannot happen". but anyways... */
+	bnr = mdev->newest_barrier ? mdev->newest_barrier->br_number : 1;
+	/* never send a barrier number == 0 */
+	b->br_number = (bnr+1) ?: 1;
 	mdev->newest_barrier->next = b;
 	mdev->newest_barrier = b;
-
 	spin_unlock_irq(&mdev->tl_lock);
 
 	return bnr;
@@ -281,7 +284,7 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	kfree(b);
 }
 
-int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
+int tl_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
 {
 	struct hlist_head *slot = mdev->tl_hash + tl_hash_fn(mdev,sector);
 	struct hlist_node *n;
@@ -291,7 +294,7 @@ int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
 	spin_lock_irq(&mdev->tl_lock);
 
 	hlist_for_each_entry(i, n, slot, colision) {
-		if (i==item) {
+		if (i==req) {
 			D_ASSERT(drbd_req_get_sector(i) == sector);
 			rv=1;
 			break;
@@ -312,18 +315,18 @@ int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector)
    communication)
 */
 /* bool */
-int tl_dependence(drbd_dev *mdev, drbd_request_t * item)
+int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
 {
 	unsigned long flags;
 	int r=TRUE;
 
 	spin_lock_irqsave(&mdev->tl_lock,flags);
 
-	r = ( item->barrier == mdev->newest_barrier );
-	list_del(&item->w.list);
-	hlist_del(&item->colision);
+	r = ( req->barrier == mdev->newest_barrier );
+	list_del(&req->w.list);
+	hlist_del(&req->colision);
 
-	if( item->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
+	if( req->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
 
 	spin_unlock_irqrestore(&mdev->tl_lock,flags);
 	return r;
@@ -693,15 +696,16 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		__module_get(THIS_MODULE);
 	}
 
+	if ( ns.role == Primary && ns.conn < Connected &&
+	     ns.disk < Consistent ) {
+		drbd_panic("No access to good data anymore.\n");
+	}
+
+	/* it feels better to have the module_put last ... */
 	if ( (os.disk >= Inconsistent || ns.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
 		drbd_mdev_cleanup(mdev);
 		module_put(THIS_MODULE);
-	}
-
-	if ( ns.role == Primary && ns.conn < Connected &&
-	     ns.disk < Consistent ) {
-		drbd_panic("No access to good data anymore.\n");
 	}
 
 	return rv;
@@ -1763,8 +1767,9 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 
 	drbd_thread_stop(&mdev->worker);
 
-	if ( atomic_read(&mdev->epoch_size) !=  0)
-		ERR("epoch_size:%d\n",atomic_read(&mdev->epoch_size));
+	/* no need to lock it, I'm the only thread alive */
+	if ( mdev->epoch_size !=  0)
+		ERR("epoch_size:%d\n",mdev->epoch_size);
 #define ZAP(x) memset(&x,0,sizeof(x))
 	ZAP(mdev->conf);
 	ZAP(mdev->sync_conf);

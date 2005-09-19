@@ -51,8 +51,6 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-#define is_syncer_blk(A,B) ((B)==ID_SYNCER)
-
 #ifdef __arch_um__
 void *to_virt(unsigned long phys)
 {
@@ -119,25 +117,7 @@ void check_list(drbd_dev *mdev,struct list_head *list,char *t)
 }
 #endif
 
-#if 0
-STATIC inline int is_syncer_blk(drbd_dev *mdev, u64 block_id)
-{
-	if ( block_id == ID_SYNCER ) return 1;
-	/* Use this code if you are working with a VIA based mboard :) */
-	if ( (long)block_id == (long)-1) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: strange block_id %lx%lx\n",(int)(mdev-drbd_conf),
-		       (unsigned long)(block_id>>32),
-		       (unsigned long)block_id);
-		return 1;
-	}
-	return 0;
-}
-#endif //PARANOIA
-
 #define GFP_TRY	( __GFP_HIGHMEM | __GFP_NOWARN )
-
-STATIC int drbd_process_ee(drbd_dev *mdev, int be_sleepy);
 
 /**
  * drbd_bp_alloc: Returns a page. Fails only if a signal comes in.
@@ -147,67 +127,66 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	struct page *page;
 	DEFINE_WAIT(wait);
 
-	if ( drbd_pp_vacant ==
-// FIXME this watermark does not make sense
-	     (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count/2 ) {
-		drbd_kick_lo(mdev);
-	}
+	/* FIXME Add some usefull watermark again to "kick_lo", if pages get
+	 * used up too quickly. The watermark that had been in place here did
+	 * not make sense.
+	 */
 
+	/* first, use our pool. */
 	spin_lock(&drbd_pp_lock);
 	if ( (page = drbd_pp_pool) ) {
 		drbd_pp_pool = (struct page*)page->private;
 		drbd_pp_vacant--;
 	}
 	spin_unlock(&drbd_pp_lock);
-	if ( page ) goto got_page;
+	if (page) goto got_page;
 
-	drbd_process_ee(mdev,1);
-
-	spin_lock(&drbd_pp_lock);
-	if ( (page = drbd_pp_pool) ) {
-		drbd_pp_pool = (struct page*)page->private;
-		drbd_pp_vacant--;
-	}
-	spin_unlock(&drbd_pp_lock);
-	if ( page ) goto got_page;
+	drbd_kick_lo(mdev);
 
 	for (;;) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
+		/* try the pool again, maybe the drbd_kick_log set some free */
 		spin_lock(&drbd_pp_lock);
 		if ( (page = drbd_pp_pool) ) {
 			drbd_pp_pool = (struct page*)page->private;
 			drbd_pp_vacant--;
 		}
 		spin_unlock(&drbd_pp_lock);
-		if ( page ) break;
 
+		if (page) break;
+
+		/* hm. pool was empty. try to allocate from kernel.
+		 * don't wait, if none is available, though.
+		 */
 		if ( atomic_read(&mdev->pp_in_use) < mdev->conf.max_buffers ) {
-			if( (page = alloc_page(GFP_TRY)) ) break;
+			if( (page = alloc_page(GFP_TRY)) )
+				break;
+		}
+
+		/* doh. still no page.
+		 * either used up the configured maximum number,
+		 * or we are low on memory.
+		 * wait for someone to return a page into the pool.
+		 * unless, of course, someone signalled us.
+		 */
+		if (signal_pending(current)) {
+			WARN("drbd_pp_alloc interrupted!\n");
+			finish_wait(&drbd_pp_wait, &wait);
+			return NULL;
 		}
 		drbd_kick_lo(mdev);
 		schedule();
-		finish_wait(&drbd_pp_wait, &wait);
-		if (signal_pending(current)) {
-			WARN("drbd_pp_alloc interrupted!\n");
-			return NULL;
-		}
-		// finish wait is inside, so that we are TASK_RUNNING
-		// in _drbd_process_ee (which might sleep by itself.)
-		drbd_process_ee(mdev,1);
 	}
 	finish_wait(&drbd_pp_wait, &wait);
 
  got_page:
 	atomic_inc(&mdev->pp_in_use);
-
 	return page;
 }
 
 STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
 {
-	atomic_dec(&mdev->pp_in_use);
-
 	spin_lock(&drbd_pp_lock);
 	if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
 		__free_page(page);
@@ -218,22 +197,29 @@ STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
 	}
 	spin_unlock(&drbd_pp_lock);
 
+	atomic_dec(&mdev->pp_in_use);
+
+	/*
+	 * FIXME
+	 * typically there are no waiters.
+	 * we should try to avoid any unnecessary call to wake_up.
+	 */
 	wake_up(&drbd_pp_wait);
 }
 
 /*
 You need to hold the ee_lock:
  drbd_free_ee()
- _drbd_process_ee()
+ _drbd_wait_ee_list_empty()
 
 You must not have the ee_lock:
  drbd_alloc_ee()
  drbd_init_ee()
  drbd_release_ee()
  drbd_ee_fix_bhs()
- drbd_process_ee()
+ drbd_process_done_ee()
  drbd_clear_done_ee()
- drbd_wait_ee()
+ drbd_wait_ee_list_empty()
 */
 
 struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
@@ -327,7 +313,7 @@ STATIC void reclaim_net_ee(drbd_dev *mdev)
 	struct Tl_epoch_entry *e;
 	struct list_head *le,*tle;
 
-	/* The EEs are always appended to the end of the list, since
+	/* The EEs are always appended to the end of the list. Since
 	   they are sent in order over the wire, they have to finish
 	   in order. As soon as we see the first not finished we can
 	   stop to examine the list... */
@@ -341,65 +327,50 @@ STATIC void reclaim_net_ee(drbd_dev *mdev)
 }
 
 
-/* It is important that the head list is really empty when returning,
-   from this function. Note, this function is called from all three
-   threads (receiver, worker and asender). To ensure this I only allow
-   one thread at a time in the body of the function */
-STATIC int _drbd_process_ee(drbd_dev *mdev, int be_sleepy)
+/*
+ * This function is called from _asender only_
+ *
+ * Move entries from net_ee to done_ee, if ready.
+ * Grab done_ee, call all callbacks, free the entries.
+ * The callbacks typically send out ACKs.
+ */
+STATIC int drbd_process_done_ee(drbd_dev *mdev)
 {
-	struct Tl_epoch_entry *e;
-	struct list_head *head = &mdev->done_ee;
-	struct list_head *le;
+	LIST_HEAD(work_list);
+	struct Tl_epoch_entry *e, *t;
 	int ok=1;
-	int got_sig;
 
-	MUST_HOLD(&mdev->ee_lock);
-
+	spin_lock_irq(&mdev->ee_lock);
 	reclaim_net_ee(mdev);
+	list_splice_init(&mdev->done_ee,&work_list);
+	spin_unlock_irq(&mdev->ee_lock);
 
-	if( test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) ) {
-		if(!be_sleepy) {
-			return 3;
-		}
-		spin_unlock_irq(&mdev->ee_lock);
-		got_sig = wait_event_interruptible(mdev->ee_wait,
-		       test_and_set_bit(PROCESS_EE_RUNNING,&mdev->flags) == 0);
-		spin_lock_irq(&mdev->ee_lock);
-		if(got_sig) return 2;
-	}
+	/* XXX maybe wake_up here already?
+	 * or wake_up withing drbd_free_ee just after mempool_free?
+	 */
 
-	while(!list_empty(head)) {
-		le = head->next;
-		list_del(le);
-		spin_unlock_irq(&mdev->ee_lock);
-		e = list_entry(le, struct Tl_epoch_entry, w.list);
+	/* possible callbacks here:
+	 * e_end_block, and e_end_resync_block.
+	 * both ignore the last argument.
+	 */
+	list_for_each_entry_safe(e, t, &work_list, w.list) {
+		// list_del not necessary, next/prev members not touched
 		ok = ok && e->w.cb(mdev,&e->w,0);
 		drbd_free_ee(mdev,e);
-		spin_lock_irq(&mdev->ee_lock);
 	}
-
-	clear_bit(PROCESS_EE_RUNNING,&mdev->flags);
 	wake_up(&mdev->ee_wait);
 
 	return ok;
 }
 
-STATIC int drbd_process_ee(drbd_dev *mdev, int be_sleepy)
-{
-	int rv;
-	spin_lock_irq(&mdev->ee_lock);
-	rv=_drbd_process_ee(mdev,be_sleepy);
-	spin_unlock_irq(&mdev->ee_lock);
-	return rv;
-}
-
-STATIC void drbd_clear_done_ee(drbd_dev *mdev)
+/* clean-up helper for drbd_disconnect */
+STATIC void _drbd_clear_done_ee(drbd_dev *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry *e;
 	int n = 0;
 
-	spin_lock_irq(&mdev->ee_lock);
+	MUST_HOLD(&mdev->ee_lock);
 
 	reclaim_net_ee(mdev);
 
@@ -408,31 +379,36 @@ STATIC void drbd_clear_done_ee(drbd_dev *mdev)
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
 		if(mdev->conf.wire_protocol == DRBD_PROT_C ||
-		   is_syncer_blk(mdev,e->block_id)) {
+		   is_syncer_block_id(e->block_id)) {
 			++n;
 		}
 		drbd_free_ee(mdev,e);
 	}
 
-	spin_unlock_irq(&mdev->ee_lock);
-
 	sub_unacked(mdev, n);
 }
 
-
-static inline int _wait_ee_cond(struct Drbd_Conf* mdev,struct list_head *head)
+void _drbd_wait_ee_list_empty(drbd_dev *mdev,struct list_head *head)
 {
-	int rv;
-	spin_lock_irq(&mdev->ee_lock);
-	rv = list_empty(head);
-	spin_unlock_irq(&mdev->ee_lock);
-	if(!rv) drbd_kick_lo(mdev);
-	return rv;
+	DEFINE_WAIT(wait);
+	MUST_HOLD(&mdev->req_lock);
+
+	/* avoids spin_lock/unlock and calling prepare_to_wait in the fast path */
+	while (!list_empty(head)) {
+		prepare_to_wait(&mdev->ee_wait,&wait,TASK_UNINTERRUPTIBLE);
+		spin_unlock_irq(&mdev->ee_lock);
+		drbd_kick_lo(mdev);
+		schedule();
+		finish_wait(&mdev->ee_wait, &wait);
+		spin_lock_irq(&mdev->ee_lock);
+	}
 }
 
-void drbd_wait_ee(drbd_dev *mdev,struct list_head *head)
+void drbd_wait_ee_list_empty(drbd_dev *mdev,struct list_head *head)
 {
-	wait_event(mdev->ee_wait,_wait_ee_cond(mdev,head));
+	spin_lock_irq(&mdev->ee_lock);
+	_drbd_wait_ee_list_empty(mdev, head);
+	spin_unlock_irq(&mdev->ee_lock);
 }
 
 STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
@@ -744,6 +720,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
+#if 0
 STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 {
 	int rv=TRUE;
@@ -759,11 +736,10 @@ STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 
 	spin_lock_irq(&mdev->ee_lock);
 	if(list_empty(&mdev->active_ee)) {
-		rv = _drbd_process_ee(mdev,1);
-		epoch_size=atomic_read(&mdev->epoch_size);
-		atomic_set(&mdev->epoch_size,0);
+		epoch_size = mdev->epoch_size;
+		mdev->epoch_size = 0;
 	} else if (mdev->last_write_w_barrier) {
-		mdev->last_write_w_barrier->barrier_nr2=be32_to_cpu(p->barrier);
+		mdev->last_write_w_barrier->barrier_nr2 = be32_to_cpu(p->barrier);
 	} else {
 		mdev->next_barrier_nr = be32_to_cpu(p->barrier);
 	}
@@ -776,8 +752,9 @@ STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 
 	return rv;
 }
+#endif
 
-STATIC int receive_Barrier_usual(drbd_dev *mdev, Drbd_Header* h)
+STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 {
 	int rv;
 	int epoch_size;
@@ -793,13 +770,11 @@ STATIC int receive_Barrier_usual(drbd_dev *mdev, Drbd_Header* h)
 	if (mdev->conf.wire_protocol != DRBD_PROT_C)
 		drbd_kick_lo(mdev);
 
-	drbd_wait_ee(mdev,&mdev->active_ee);
 
 	spin_lock_irq(&mdev->ee_lock);
-	rv = _drbd_process_ee(mdev,1);
-
-	epoch_size=atomic_read(&mdev->epoch_size);
-	atomic_set(&mdev->epoch_size,0);
+	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	epoch_size = mdev->epoch_size;
+	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->ee_lock);
 
 	rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
@@ -883,6 +858,9 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 	return ok;
 }
 
+/* e_end_resync_block() is called via drbd_process_done_ee().
+ * this means this function only runs in the asender thread
+ */
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
@@ -902,7 +880,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 */
 		}
 		ok = drbd_send_ack(mdev,WriteAck,e);
-		__set_bit(SYNC_STARTED,&mdev->flags);
+		set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
 		ok&= drbd_io_error(mdev);
@@ -1015,21 +993,27 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	return ok;
 }
 
-/* e_end_block() is called via process_ee(). this means this function
-   might run in all DRBD threads. Serialisation is done in process_ee()
-   on the PROCESS_EE_RUNNING flag. */
+/* e_end_block() is called via drbd_process_done_ee().
+ * this means this function only runs in the asender thread
+ */
+#if 0
+
+	/* disabled for now.
+	 * barrier handling via tcq currently broken!
+	 */
 STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = drbd_ee_get_sector(e);
-	unsigned int epoch_size;
+	// unsigned int epoch_size;
 	int ok=1;
 
 	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
 			if(e->barrier_nr) {
-				/* only happens when using receive_Barrier_tcq */
-				epoch_size=atomic_read(&mdev->epoch_size);
+# warning "epoch_size no more atomic_t"
+				/* only when using TCQ */
+				epoch_size = atomic_read(&mdev->epoch_size);
 				atomic_set(&mdev->epoch_size,0);
 				ok&=drbd_send_b_ack(mdev,
 						    cpu_to_be32(e->barrier_nr),
@@ -1037,20 +1021,20 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 				dec_unacked(mdev);
 			}
 			ok &= drbd_send_ack(mdev,WriteAck,e);
-			atomic_inc(&mdev->epoch_size);
 			if(e->barrier_nr2) {
+				/* only when using TCQ */
 				atomic_set(&mdev->epoch_size,0);
 				ok&=drbd_send_b_ack(mdev,
 						   cpu_to_be32(e->barrier_nr2),
 						    1);
 				dec_unacked(mdev);
 			}
-
-			if (ok && test_bit(SYNC_STARTED,&mdev->flags) )
+			/* FIXME
+			 * explain why we need this SYNC_STARTED flag bit */
+			if (test_bit(SYNC_STARTED,&mdev->flags) )
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
 			ok = drbd_send_ack(mdev,NegAck,e);
-			atomic_inc(&mdev->epoch_size);
 			ok&= drbd_io_error(mdev);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?
@@ -1067,6 +1051,42 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	return ok;
 }
+#else
+
+STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
+{
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	sector_t sector = drbd_ee_get_sector(e);
+	// unsigned int epoch_size;
+	int ok=1;
+
+	if(mdev->conf.wire_protocol == DRBD_PROT_C) {
+		if(likely(drbd_bio_uptodate(e->private_bio))) {
+			ok &= drbd_send_ack(mdev,WriteAck,e);
+			/* FIXME
+			 * explain why we need this SYNC_STARTED flag bit */
+			if (test_bit(SYNC_STARTED,&mdev->flags))
+				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
+		} else {
+			ok = drbd_send_ack(mdev,NegAck,e);
+			ok&= drbd_io_error(mdev);
+			/* we expect it to be marked out of sync anyways...
+			 * maybe assert this?
+			 */
+		}
+		dec_unacked(mdev);
+
+		return ok;
+	}
+
+	if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
+		ok = drbd_io_error(mdev);
+	}
+
+	return ok;
+}
+
+#endif
 
 STATIC int drbd_chk_discard(drbd_dev *mdev,struct Tl_epoch_entry *e)
 {
@@ -1100,6 +1120,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	drbd_request_t * req;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
 	int header_size, data_size, packet_seq, discard, rv;
+	unsigned int barrier_nr = 0;
+	unsigned int epoch_size = 0;
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -1196,20 +1218,77 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		}
 	}
 
-	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->w.list,&mdev->active_ee);
-	if (mdev->next_barrier_nr) {
-		e->barrier_nr = mdev->next_barrier_nr;
-		mdev->next_barrier_nr = 0;
-		mdev->last_write_w_barrier = e;
-		e->private_bio->bi_rw |= BIO_RW_BARRIER;
-	} else {
-		mdev->last_write_w_barrier = 0;
-	}
-	spin_unlock_irq(&mdev->ee_lock);
-
 	if ( be32_to_cpu(p->dp_flags) & DP_HARDBARRIER ) {
 		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+	}
+
+	/* when using TCQ:
+	 * note that, when using tagged command queuing, we may
+	 * have more than one reorder domain "active" at a time.
+	 *
+	 * THINK:
+	 * do we have any guarantees that we get the completion
+	 * events of the different reorder domains in order?
+	 * or does the api only "guarantee" that the events
+	 * _happened_ in order, but eventually the completion
+	 * callbacks are shuffeled again?
+	 *
+	 * note that I wonder about the order in which the
+	 * callbacks are run, I am reasonable confident that the
+	 * actual completion happens in order.
+	 *
+	 * - can it happen that the tagged write completion is
+	 *   called even though not all of the writes before it
+	 *   have run their completion callback?
+	 * - can it happen that some completion callback of some
+	 *   write after the tagged one is run, even though the
+	 *   callback of the tagged one itself is still pending?
+	 *
+	 * if this can happen, we either need to drop our "debug
+	 * assertion" about the epoch size and just trust our code
+	 * and the layers below us (nah, won't do that).
+	 *
+	 * or we need to replace the "active_ee" list by some sort
+	 * of "transfer log" on the receiving side, too, which
+	 * uses epoch counters per reorder domain.
+	 */
+
+	/* when using tcq:
+	 * if we got a barrier packet before, but at that time the active_ee
+	 * was not yet empty, we just "remembered" this barrier request.
+	 *
+	 * if this is the first data packet since that barrier, maybe meanwhile
+	 * all previously active writes have been completed?
+	 * if so, send the b_ack right now
+	 * (though, maybe rather move it into the e_end_block callback,
+	 * where it would be sent as soon as possible).
+	 *
+	 * otherwise, tag the write with the barrier number, so it
+	 * will trigger the b_ack before its own ack.
+	 */
+
+	spin_lock_irq(&mdev->ee_lock);
+	if (mdev->next_barrier_nr) {
+		/* only when using TCQ */
+		if (list_empty(&mdev->active_ee)) {
+			barrier_nr = mdev->next_barrier_nr;
+			epoch_size = mdev->epoch_size;
+			mdev->epoch_size = 0;
+		} else {
+			e->barrier_nr = mdev->next_barrier_nr;
+		}
+		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+		mdev->next_barrier_nr = 0;
+	}
+	list_add(&e->w.list,&mdev->active_ee);
+	spin_unlock_irq(&mdev->ee_lock);
+
+	if (barrier_nr) {
+		/* only when using TCQ
+		 * maybe rather move it into the e_end_block callback,
+		 * where it would be sent as soon as possible).
+		 */
+		(void)drbd_send_b_ack(mdev, cpu_to_be32(barrier_nr), epoch_size);
 	}
 
 	switch(mdev->conf.wire_protocol) {
@@ -1230,7 +1309,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	return TRUE;
 
  out2:
-	atomic_inc(&mdev->epoch_size);
+	/* yes, the epoch_size now is imbalanced.
+	 * but we drop the connection anyways, so we don't have a chance to
+	 * receive a barrier... atomic_inc(&mdev->epoch_size); */
 	dec_local(mdev);
  out1:
 	drbd_free_ee(mdev,e);
@@ -2065,13 +2146,13 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[Data]             = receive_Data,
 	[DataReply]        = receive_DataReply,
 	[RSDataReply]      = receive_RSDataReply,
-	[RecvAck]          = NULL, //receive_RecvAck,
-	[WriteAck]         = NULL, //receive_WriteAck,
-	[Barrier]          = NULL, // see drbd_set_recv_tcq()
-	[BarrierAck]       = NULL, //receive_BarrierAck,
+	[RecvAck]          = NULL, // via msock: got_RecvAck,
+	[WriteAck]         = NULL, // via msock: got_WriteAck,
+	[Barrier]          = receive_Barrier_no_tcq,
+	[BarrierAck]       = NULL, // via msock: got_BarrierAck,
 	[ReportBitMap]     = receive_bitmap,
-	[Ping]             = NULL, //receive_Ping,
-	[PingAck]          = NULL, //receive_PingAck,
+	[Ping]             = NULL, // via msock: got_Ping,
+	[PingAck]          = NULL, // via msock: got_PingAck,
 	[BecomeSyncTarget] = receive_BecomeSyncTarget,
 	[BecomeSyncSource] = receive_BecomeSyncSource,
 	[UnplugRemote]     = receive_UnplugRemote,
@@ -2089,8 +2170,12 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
 static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
 
+#if 0
+	/* FIXME lge thinks the implementation of barrier handling via
+	 * tcq is currently broken */
 void drbd_set_recv_tcq(drbd_dev * mdev, int tcq_enabled)
 {
+#warning "FIXME make drbd_cmd_handler a member of mdev"
 	if(tcq_enabled &&
 	   drbd_default_handler[Barrier] != receive_Barrier_tcq) {
 		INFO("Enabling TCQ for barrier processing on backend.\n");
@@ -2104,6 +2189,7 @@ void drbd_set_recv_tcq(drbd_dev * mdev, int tcq_enabled)
 		drbd_default_handler[Barrier] = receive_Barrier_usual;
 	}
 }
+#endif
 
 STATIC void drbdd(drbd_dev *mdev)
 {
@@ -2189,12 +2275,17 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	drbd_fail_pending_reads(mdev);
 	drbd_thread_stop(&mdev->worker);
+	// now worker is dead and read_ee is empty
 	drbd_rs_cancel_all(mdev);
 
-	// secondary
-	drbd_wait_ee(mdev,&mdev->active_ee);
-	drbd_wait_ee(mdev,&mdev->sync_ee);
-	drbd_clear_done_ee(mdev);
+	// Receiving side (may be primary, in case we had two primaries)
+	spin_lock_irq(&mdev->ee_lock);
+	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
+	_drbd_clear_done_ee(mdev);
+	mdev->epoch_size = 0;
+	spin_unlock_irq(&mdev->ee_lock);
 
 	// primary
 	tl_clear(mdev);
@@ -2208,7 +2299,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
 	D_ASSERT(list_empty(&mdev->done_ee)); // done here
 
-	atomic_set(&mdev->epoch_size,0);
 	mdev->rs_total=0;
 
 	if(atomic_read(&mdev->unacked_cnt)) {
@@ -2558,9 +2648,9 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 		// But we killed everything out of the transferlog
 		// as we got the news hat IO is broken on the peer.
 
-		if( is_syncer_blk(mdev,p->block_id)) {
+		if( is_syncer_block_id(p->block_id)) {
 			drbd_set_in_sync(mdev,sector,blksize);
-			__set_bit(SYNC_STARTED,&mdev->flags);
+			set_bit(SYNC_STARTED,&mdev->flags);
 		} else {
 			req=(drbd_request_t*)(unsigned long)p->block_id;
 
@@ -2577,7 +2667,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 		}
 	}
 
-	if(is_syncer_blk(mdev,p->block_id)) {
+	if(is_syncer_block_id(p->block_id)) {
 		dec_rs_pending(mdev);
 	} else {
 		D_ASSERT(mdev->conf.wire_protocol != DRBD_PROT_A);
@@ -2596,7 +2686,7 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	 * we expect to get a "report param" on the data socket soon,
 	 * and will do the cleanup then and there.
 	 */
-	if(is_syncer_blk(mdev,p->block_id)) {
+	if(is_syncer_block_id(p->block_id)) {
 		dec_rs_pending(mdev);
 	}
 	if (DRBD_ratelimit(5*HZ,5))
@@ -2726,16 +2816,8 @@ int drbd_asender(struct Drbd_thread *thi)
 				mdev->conf.timeout*HZ/20;
 		}
 
-		/* FIXME this *should* be below drbd_process_ee,
-		 * but that leads to some distributed deadlock :-(
-		 * this needs to be fixed properly, I'd vote for a separate
-		 * msock sender thread, but others will frown upon yet an other
-		 * kernel thread...
-		 *	-- lge
-		 */
+		if (!drbd_process_done_ee(mdev)) goto err;
 		set_bit(SIGNAL_ASENDER, &mdev->flags);
-
-		if (!drbd_process_ee(mdev,0)) goto err;
 
 		rv = drbd_recv_short(mdev,buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
