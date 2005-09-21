@@ -1316,7 +1316,9 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_md_write(mdev);
 
 		if (drbd_send_short_cmd(mdev,BecomeSyncSource)) {
-			drbd_start_resync(mdev,SyncTarget);
+			int ok;
+			ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
+			D_ASSERT( ok == 1 );
 		}
 
 		drbd_bm_unlock(mdev);
@@ -1353,6 +1355,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_write(mdev);
 
+		drbd_send_uuids(mdev);
 		drbd_send_short_cmd(mdev,BecomeSyncTarget);
 		drbd_start_resync(mdev,SyncSource);
 

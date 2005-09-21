@@ -997,6 +997,16 @@ int drbd_send_uuids(drbd_dev *mdev)
 			     (Drbd_Header*)&p,sizeof(p));
 }
 
+int drbd_send_sync_uuid(drbd_dev *mdev, u64 val)
+{
+	Drbd_SyncUUID_Packet p;
+
+	p.uuid = cpu_to_be64(val);
+
+	return drbd_send_cmd(mdev,mdev->data.socket,ReportSyncUUID,
+			     (Drbd_Header*)&p,sizeof(p));
+}
+
 int drbd_send_sizes(drbd_dev *mdev)
 {
 	Drbd_Sizes_Packet p;
@@ -2008,6 +2018,10 @@ static void __exit drbd_cleanup(void)
 				kfree(mdev->app_reads_hash);
 				mdev->app_reads_hash = 0;
 			}
+			if ( mdev->p_uuid ) {
+				kfree(mdev->p_uuid);
+				mdev->p_uuid = NULL;
+			}
 		}
 		drbd_destroy_mempools();
 	}
@@ -2463,14 +2477,22 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 	}
 }
 
-void drbd_uuid_reset_bm(drbd_dev *mdev)
+void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 {
-	if (mdev->uuid[Bitmap] == 0) return;
+	if( mdev->uuid[Bitmap]==0 && val==0 ) return;
 
-	drbd_uuid_move_history(mdev);
-	mdev->uuid[History_start]=mdev->uuid[Bitmap];
-	mdev->uuid[Bitmap]=0;
+	if(val==0) {
+		drbd_uuid_move_history(mdev);
+		mdev->uuid[History_start]=mdev->uuid[Bitmap];
+		mdev->uuid[Bitmap]=0;
+	} else {
+		if( mdev->uuid[Bitmap] ) WARN("bm UUID already set");
+
+		mdev->uuid[Bitmap] = val;
+		mdev->uuid[Bitmap] &= ~((u64)1);
+	}
 }
+
 
 void drbd_md_set_flag(drbd_dev *mdev, int flag)
 {

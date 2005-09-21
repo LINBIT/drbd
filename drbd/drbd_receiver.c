@@ -1680,7 +1680,6 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 	} else if (hg < 0) { // become sync target
 		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_uuid_set(mdev,Current,mdev->p_uuid[Bitmap]);
-		mdev->as_c_uuid = mdev->p_uuid[Current];
 		rv = WFBitMapT;
 	} else {
 		rv = Connected;
@@ -1837,10 +1836,9 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	drbd_determin_dev_size(mdev);
 	drbd_bm_unlock(mdev); // }
 
-	if (mdev->p_uuid) {
+	if (mdev->p_uuid && mdev->state.conn <= Connected ) {
 		nconn=drbd_sync_handshake(mdev,mdev->state.peer);
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = 0;
+
 		if(nconn == conn_mask) return FALSE;
 
 		if(drbd_request_state(mdev,NS(conn,nconn)) <= 0) {
@@ -1908,10 +1906,9 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (mdev->p_uuid) {
+	if (mdev->p_uuid && mdev->state.conn <= Connected ) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role);
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = 0;
+
 		if(nconn == conn_mask) return FALSE;
 	}
 
@@ -1945,6 +1942,23 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
+STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
+{
+	Drbd_SyncUUID_Packet *p = (Drbd_SyncUUID_Packet*)h;
+
+	D_ASSERT( mdev->state.conn == WFSyncUUID );
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+		return FALSE;
+	
+	_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
+	_drbd_uuid_set(mdev,Bitmap,0UL);
+
+	drbd_start_resync(mdev,SyncTarget);
+
+	return TRUE;
+}
 
 /* Since we are processing the bitfild from lower addresses to higher,
    it does not matter if the process it in 32 bit chunks or 64 bit
@@ -1987,7 +2001,8 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	} else if (mdev->state.conn == WFBitMapT) {
 		ok = drbd_send_bitmap(mdev);
 		if (!ok) goto out;
-		drbd_start_resync(mdev,SyncTarget); // XXX cannot fail ???
+		ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
+		D_ASSERT( ok == 1 );
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
 		    conns_to_name(mdev->state.conn));
@@ -2073,19 +2088,22 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 {
-	ERR_IF(!mdev->bitmap) return FALSE;
+	int ok;
 
+	ERR_IF(!mdev->bitmap) return FALSE;
+	D_ASSERT(mdev->p_uuid);
 	drbd_bm_lock(mdev);
 	drbd_bm_set_all(mdev);
 	drbd_bm_write(mdev);
-	drbd_start_resync(mdev,SyncTarget);
+	ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
+	D_ASSERT( ok == 1 );
 	drbd_bm_unlock(mdev);
 	return TRUE; // cannot fail ?
 }
 
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 {
-	// FIXME asserts ?
+	drbd_send_uuids(mdev);
 	drbd_bm_lock(mdev);
 	drbd_bm_set_all(mdev);
 	drbd_bm_write(mdev);
@@ -2163,6 +2181,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportUUIDs]      = receive_uuids,
 	[ReportSizes]      = receive_sizes,
 	[ReportState]      = receive_state,
+	[ReportSyncUUID]   = receive_sync_uuid,
 	[OutdateRequest]   = receive_outdate,
 	[OutdatedReply]    = receive_outdated,
 };

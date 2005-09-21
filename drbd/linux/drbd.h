@@ -216,6 +216,7 @@ typedef enum {
 	SkippedSyncT,
 	WFBitMapS,
 	WFBitMapT,
+	WFSyncUUID,
 	SyncSource,     // The distance between original state and pause
 	SyncTarget,     // state must be the same for source and target. (+2)
 	PausedSyncS,    // see _drbd_rs_resume() and _drbd_rs_pause()

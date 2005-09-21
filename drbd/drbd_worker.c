@@ -36,6 +36,7 @@
 #include <linux/drbd_config.h>
 #include <linux/mm_inline.h> // for the page_count macro on RH/Fedora
 #include <linux/slab.h>
+#include <linux/random.h>
 
 #include <linux/drbd.h>
 #include "drbd_int.h"
@@ -392,18 +393,30 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_paused = 0;
 
 	if ( mdev->state.conn == SyncTarget ) {
-		/* Do not pushin the peer's Bitmap UUID into my History. */
-		_drbd_uuid_set(mdev,Current,mdev->as_c_uuid);
-		// mdev->as_c_uuid = 0xf0deadbeefbabe0fLL;
+		if( mdev->p_uuid ) {
+			int i;
+			for ( i=Bitmap ; i<=History_end ; i++ ) {
+				_drbd_uuid_set(mdev,i,mdev->p_uuid[i]);
+			}
+			drbd_uuid_set_bm(mdev,0UL); //Rotate peer's bitmap-UUID
+			drbd_uuid_set(mdev,Current,mdev->p_uuid[Current]);
+		} else {
+			ERR("mdev->p_uuid is NULL! BUG\n");
+		}
 	}
-	drbd_uuid_reset_bm(mdev);
+
+	drbd_uuid_set_bm(mdev,0UL);
+
+	if ( mdev->p_uuid ) {
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = NULL;
+	}
 
 	drbd_request_state(mdev,NS3(conn,Connected,
 				    disk,UpToDate,
 				    pdsk,UpToDate));
 
 	drbd_md_write(mdev);
-
 
 	return 1;
 }
@@ -658,6 +671,12 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		r = drbd_request_state(mdev,NS2(conn,SyncTarget,
 						disk,Inconsistent));
 	} else if (side == SyncSource) {
+		u64 uuid;
+
+		get_random_bytes(&uuid, sizeof(u64));
+		drbd_uuid_set(mdev, Bitmap, uuid);
+		drbd_send_sync_uuid(mdev,uuid);
+		
 		r = drbd_request_state(mdev,NS2(conn,SyncSource,
 						pdsk,Inconsistent));
 		D_ASSERT(mdev->state.disk == UpToDate);

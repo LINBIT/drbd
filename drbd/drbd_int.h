@@ -298,6 +298,7 @@ typedef enum {
 	ReportUUIDs,
 	ReportSizes,
 	ReportState,
+	ReportSyncUUID,
 	AuthChallenge,
 	AuthResponse,
 	OutdateRequest,
@@ -341,6 +342,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ReportUUIDs]      = "ReportUUIDs",
 		[ReportSizes]      = "ReportSizes",
 		[ReportState]      = "ReportState",
+		[ReportSyncUUID]   = "ReportSyncUUID",
 		[AuthChallenge]    = "AuthChallenge",
 		[AuthResponse]     = "AuthResponse",
 		[OutdateRequest]   = "OutdateRequest",
@@ -478,6 +480,11 @@ typedef struct {
 	Drbd_Header head;
 	u64         uuid[EXT_UUID_SIZE];
 } __attribute((packed)) Drbd_GenCnt_Packet;
+
+typedef struct {
+	Drbd_Header head;
+	u64         uuid;
+} __attribute((packed)) Drbd_SyncUUID_Packet;
 
 typedef struct {
 	Drbd_Header head;
@@ -733,7 +740,6 @@ struct Drbd_Conf {
 	int open_cnt;
 	unsigned int md_flags;
 	u64 uuid[UUID_SIZE];
-	u64 as_c_uuid;         // Store the peers c-uuid until resync finished.
 	u64 *p_uuid;
 	spinlock_t ee_lock;
 	unsigned int epoch_size;
@@ -796,6 +802,7 @@ extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
 extern int drbd_send_protocol(drbd_dev *mdev);
 extern int drbd_send_uuids(drbd_dev *mdev);
+extern int drbd_send_sync_uuid(drbd_dev *mdev, u64 val);
 extern int drbd_send_sizes(drbd_dev *mdev);
 extern int drbd_send_state(drbd_dev *mdev);
 extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
@@ -832,7 +839,7 @@ extern int drbd_md_read(drbd_dev *mdev);
 extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val);
 extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
 extern void drbd_uuid_new_current(drbd_dev *mdev);
-extern void drbd_uuid_reset_bm(drbd_dev *mdev);
+extern void drbd_uuid_set_bm(drbd_dev *mdev, u64 val);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
 extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
 extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
