@@ -541,6 +541,11 @@ STATIC void drbd_global_unlock(void)
 	local_irq_enable();
 }
 
+/** 
+ * _drbd_rs_resume:
+ * Resumes the resynchronisation process. You must host the
+ * global_lock, only called from process context ( ioctl and worker )
+ */ 
 STATIC void _drbd_rs_resume(drbd_dev *mdev)
 {
 	drbd_conns_t ncs;
@@ -616,6 +621,12 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	return rv;
 }
 
+/** 
+ * _drbd_resume_next:
+ * Finds the next device that can resume its resynchronisation
+ * process. If there is one, its resync gets continued.
+ * Called from process context only ( ioctl and worker ).
+ */ 
 STATIC int _drbd_resume_next(drbd_dev *mdev)
 {
 	drbd_dev *odev;
@@ -662,78 +673,74 @@ void drbd_alter_sa(drbd_dev *mdev, int na)
 	drbd_global_unlock();
 }
 
+/**
+ * drbd_start_resync:
+ * @side: Either SyncSource or SyncTarget
+ * Start the resync process. Called from process context only,
+ * either ioctl or drbd_receiver.
+ * Note, this function might bring your directly into one of the
+ * PausedSync* states.
+ */
 void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 {
-	int r=0;
+	drbd_state_t os,ns;
+	int r=0,p=0;
 
 	if(side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
-		r = drbd_request_state(mdev,NS2(conn,SyncTarget,
-						disk,Inconsistent));
-	} else if (side == SyncSource) {
+	} else /* side == SyncSource */ {
 		u64 uuid;
 
 		get_random_bytes(&uuid, sizeof(u64));
 		drbd_uuid_set(mdev, Bitmap, uuid);
 		drbd_send_sync_uuid(mdev,uuid);
 		
-		r = drbd_request_state(mdev,NS2(conn,SyncSource,
-						pdsk,Inconsistent));
 		D_ASSERT(mdev->state.disk == UpToDate);
 	}
 
-	if(r != 1) return;
-
-	drbd_md_write(mdev);
-
-	mdev->rs_total     =
-	mdev->rs_mark_left = drbd_bm_total_weight(mdev);
-	mdev->rs_paused    = 0;
-	mdev->rs_start     =
-	mdev->rs_mark_time = jiffies;
-
-	INFO("Resync started as %s (need to sync %lu KB [%lu bits set]).\n",
-	     conns_to_name(side),
-	     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
-	     (unsigned long) mdev->rs_total);
-
-	// FIXME: this was a PARANOIA_BUG_ON, but it triggered! ??
-	if (mdev->resync_work.cb != w_resync_inactive) {
-		if (mdev->resync_work.cb == w_make_resync_request)
-			ERR("resync_work.cb == w_make_resync_request, should be w_resync_inactive\n");
-		else if (mdev->resync_work.cb == w_resume_next_sg)
-			ERR("resync_work.cb == w_resume_next_sg, should be w_resync_inactive\n");
-		else
-			ERR("resync_work.cb == %p ???, should be w_resync_inactive\n",
-					mdev->resync_work.cb);
-		return;
-	}
-
-	if ( mdev->rs_total == 0 ) {
-		drbd_resync_finished(mdev);
-		return;
-	}
-
 	drbd_global_lock();
-	if ( mdev->state.conn == SyncTarget ||
-	     mdev->state.conn == SyncSource ) {
-		if(!_drbd_may_sync_now(mdev)) {
-			_drbd_rs_pause(mdev);
-		}
+	ns = os = mdev->state;
+
+	if(!_drbd_may_sync_now(mdev)) p = (PausedSyncS - SyncSource);
+	ns.conn = side + p;
+
+	if(side == SyncTarget) {
+		ns.disk = Inconsistent;
+	} else /* side == SyncSource */ {
+		ns.pdsk = Inconsistent;
+	}
+
+	r = _drbd_set_state(mdev,ns,ChgStateVerbose);
+
+	if ( r==1 ) {
+		mdev->rs_total     =
+		mdev->rs_mark_left = drbd_bm_total_weight(mdev);
+		mdev->rs_paused    = 0;
+		mdev->rs_start     =
+		mdev->rs_mark_time = jiffies;
 		_drbd_pause_after(mdev);
-	} /* else:
-	   * thread of other mdev already paused us,
-	   * or something very strange happend to our cstate!
-	   * I really hate it that we can't have a consistent view of cstate.
-	   */
+	}
 	drbd_global_unlock();
 
-	if (mdev->state.conn == SyncTarget) {
-		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
-		mod_timer(&mdev->resync_timer,jiffies);
-	} else if (mdev->state.conn == PausedSyncT) {
-		D_ASSERT(test_bit(STOP_SYNC_TIMER,&mdev->flags));
-		clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+	if ( r==1 ) {
+		after_state_ch(mdev,os,ns);
+
+		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
+		     conns_to_name(ns.conn),
+		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
+		     (unsigned long) mdev->rs_total);
+
+		if ( mdev->rs_total == 0 ) {
+			drbd_resync_finished(mdev);
+			return;
+		}
+
+		drbd_md_write(mdev);
+
+		if( ns.conn == SyncTarget ) {
+			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+			mod_timer(&mdev->resync_timer,jiffies);
+		}
 	}
 }
 
