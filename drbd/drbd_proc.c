@@ -173,14 +173,6 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 	for (i = 0; i < minor_count; i++) {
 		sn = conns_to_name(drbd_conf[i].state.conn);
 
-		/* PRE FIXME
-		if(drbd_conf[i].cstate == Connected) {
-			if(test_bit(DISKLESS,&drbd_conf[i].flags))
-				sn = "DiskLessClient";
-			if(test_bit(PARTNER_DISKLESS,&drbd_conf[i].flags))
-				sn = "ServerForDLess";
-				} */
-
 		if ( drbd_conf[i].state.conn == StandAlone &&
 		     drbd_conf[i].state.disk == Diskless) {
 			rlen += sprintf( buf + rlen,

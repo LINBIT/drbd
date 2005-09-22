@@ -113,6 +113,8 @@ int cmd_outdate(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_pause_sync(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_resume_sync(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_state(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options);
@@ -145,6 +147,8 @@ struct drbd_cmd commands[] = {
      { "rate",       required_argument, 0, 'r' },
      { "al-extents", required_argument, 0, 'e' },
      { 0,            0,                 0, 0 } } },
+  {"pause-sync",  cmd_pause_sync,       0, },
+  {"resume-sync", cmd_resume_sync,      0, },
   {"down", cmd_down,                 0, 0, },
   {"detach", cmd_detach,             0, 0, },
   {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0},
@@ -961,6 +965,36 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
       return 20;
     }
 
+  return 0;
+}
+
+int cmd_pause_sync(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_PAUSE_SYNC);
+  if(err)
+    {
+      err=errno;
+      PERROR("ioctl(,PAUSE_SYNC,) failed");
+      if(err == EINPROGRESS) fprintf(stderr,"Pause flag is already set!\n");
+      return 20;
+    }
+  return 0;
+}
+
+int cmd_resume_sync(int drbd_fd,char** argv,int argc,struct option *options)
+{
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_RESUME_SYNC);
+  if(err)
+    {
+      err=errno;
+      PERROR("ioctl(,RESUME_SYNC,) failed");
+      if(err == EINPROGRESS) fprintf(stderr,"Pause flag is not set!\n");
+      return 20;
+    }
   return 0;
 }
 

@@ -219,8 +219,8 @@ typedef enum {
 	WFSyncUUID,
 	SyncSource,     // The distance between original state and pause
 	SyncTarget,     // state must be the same for source and target. (+2)
-	PausedSyncS,    // see _drbd_rs_resume() and _drbd_rs_pause()
-	PausedSyncT,    // is sync target, but higher priority groups first
+	PausedSyncS,    // All SyncStates are tested with this comparison
+	PausedSyncT,    // xx >= SyncSource && xx <= PausedSyncT
 	conn_mask=31
 } drbd_conns_t;
 
@@ -243,7 +243,10 @@ typedef union {
 		unsigned disk : 3 ;   // 7/8      from Diskless to UpToDate
 		unsigned pdsk : 3 ;   // 7/8      from Diskless to UpToDate
 		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
-		unsigned _pad : 16;   // 0        unused
+		unsigned aftr_isp : 1 ; // isp .. imposed sync pause
+		unsigned peer_isp : 1 ;
+		unsigned user_isp : 1 ; 
+		unsigned _pad : 13;   // 0        unused
 	};
 	unsigned int i;
 } drbd_state_t;
@@ -328,7 +331,8 @@ struct ioctl_get_uuids {
 #define DRBD_IOCTL_UNCONFIG_DISK    _IO ( DRBD_IOCTL_LETTER, 0x13 )
 #define DRBD_IOCTL_OUTDATE_DISK     _IOW( DRBD_IOCTL_LETTER, 0x15, int )
 #define DRBD_IOCTL_GET_UUIDS        _IOR( DRBD_IOCTL_LETTER, 0x16, struct ioctl_get_uuids )
-
+#define DRBD_IOCTL_PAUSE_SYNC       _IO ( DRBD_IOCTL_LETTER, 0x17)
+#define DRBD_IOCTL_RESUME_SYNC      _IO ( DRBD_IOCTL_LETTER, 0x18)
 
 #endif
 

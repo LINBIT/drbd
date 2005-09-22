@@ -69,6 +69,12 @@
 # include <linux/ioctl32.h>
 #endif
 
+struct after_state_chg_work {
+	struct drbd_work w;
+	drbd_state_t os;
+	drbd_state_t ns;
+};
+
 int drbdd_init(struct Drbd_thread*);
 int drbd_worker(struct Drbd_thread*);
 int drbd_asender(struct Drbd_thread*);
@@ -76,6 +82,7 @@ int drbd_asender(struct Drbd_thread*);
 int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
+STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
@@ -701,6 +708,20 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		drbd_panic("No access to good data anymore.\n");
 	}
 
+	if( flags & ScheduleAfter ) {
+		struct after_state_chg_work* ascw;
+
+		ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
+		if(ascw) {
+			ascw->os = os;
+			ascw->ns = ns;
+			ascw->w.cb = w_after_state_ch;
+			drbd_queue_work_front(mdev,&mdev->data.work,&ascw->w);
+		} else {
+			WARN("Could not kmalloc an ascw\n");
+		}
+	}
+
 	/* it feels better to have the module_put last ... */
 	if ( (os.disk >= Inconsistent || ns.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
@@ -709,6 +730,17 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	return rv;
+}
+
+STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
+{
+	struct after_state_chg_work* ascw;
+
+	ascw = (struct after_state_chg_work*) w;
+	after_state_ch(mdev, ascw->os, ascw->ns);
+	kfree(ascw);
+
+	return 1;
 }
 
 void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
@@ -728,6 +760,20 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	     ns.conn >= Connected ) {
 		drbd_send_state(mdev);
 	}
+
+	/* We want to pause resync, tell peer. */
+	if (  ( os.aftr_isp == 0 && ns.aftr_isp == 1 ) ||
+	      ( os.user_isp == 0 && ns.user_isp == 1 ) ) {
+		drbd_send_short_cmd(mdev,PauseResync);
+	}
+
+	/* We want to continue resync, tell peer. */
+	if (  ( os.aftr_isp == 1 || os.user_isp == 1 ) &&
+	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
+		drbd_send_short_cmd(mdev,ResumeResync);
+	}
+
+
 }
 
 

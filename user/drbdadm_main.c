@@ -189,6 +189,8 @@ struct adm_cmd cmds[] = {
   { "outdate",           adm_generic_b, 1,1,0 },
   { "resize",            adm_resize,    1,1,1 },
   { "syncer",            adm_syncer,    1,1,1 },
+  { "pause-sync",        adm_generic_s, 1,1,1 },
+  { "resume-sync",       adm_generic_s, 1,1,1 },
   { "adjust",            adm_adjust,    1,1,1 },
   { "wait_connect",      adm_wait_c,    1,1,1 },
   { "state",             adm_generic_s, 1,1,0 },

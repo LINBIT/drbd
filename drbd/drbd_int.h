@@ -299,6 +299,8 @@ typedef enum {
 	ReportSizes,
 	ReportState,
 	ReportSyncUUID,
+	PauseResync,
+	ResumeResync,
 	AuthChallenge,
 	AuthResponse,
 	OutdateRequest,
@@ -343,6 +345,8 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ReportSizes]      = "ReportSizes",
 		[ReportState]      = "ReportState",
 		[ReportSyncUUID]   = "ReportSyncUUID",
+		[PauseResync]      = "PauseResync",
+		[ResumeResync]     = "ResumeResync",
 		[AuthChallenge]    = "AuthChallenge",
 		[AuthResponse]     = "AuthResponse",
 		[OutdateRequest]   = "OutdateRequest",
@@ -783,6 +787,7 @@ struct Drbd_Conf {
 enum chg_state_flags {
 	ChgStateHard    = 1,
 	ChgStateVerbose = 2,
+	ScheduleAfter   = 4,
 };
 
 extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
@@ -1029,8 +1034,16 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
 
 // drbd_worker.c
+enum RSPauseReason {
+	AfterDependency,
+	PeerImposed,
+	UserImposed
+};
+
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sa(drbd_dev *mdev, int na);
+extern int drbd_resync_pause(drbd_dev *mdev, enum RSPauseReason);
+extern int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
 extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?

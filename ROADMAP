@@ -633,6 +633,19 @@ DRBD 0.8 Roadmap
   90% DONE [ Not tested yet. ]
 
 22 Reboot notifier. 
+
+23 External imposed SyncPause states. 
+   There are two new commands: 'drbdadm pause-sync res'
+                               'drbdadm resume-sync res'
+   These may be used to suspend the resynchronisation process while
+   e.g. the backing storages' raid controller does its resynchronisation.
+
+   While implementing this, I also made shure that in a 3 node 
+   setup the two peers of a connection will agree if a resynchronisation
+   is paused under all conditions you can think of, if there are more
+   than two nodes!
+
+   99% DONE
    
 
 plus-banches:

@@ -1371,6 +1371,14 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		err=drbd_ioctl_get_uuids(mdev,(void *)arg);
 		break;
 
+	case DRBD_IOCTL_PAUSE_SYNC:
+		if(!drbd_resync_pause(mdev, UserImposed)) err = -EINPROGRESS;
+		break;
+
+	case DRBD_IOCTL_RESUME_SYNC:
+		if(!drbd_resync_resume(mdev, UserImposed)) err = -EINPROGRESS;
+		break;
+
 	default:
 		err = -EINVAL;
 	}

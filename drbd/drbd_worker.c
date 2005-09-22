@@ -543,51 +543,85 @@ STATIC void drbd_global_unlock(void)
 
 /** 
  * _drbd_rs_resume:
- * Resumes the resynchronisation process. You must host the
- * global_lock, only called from process context ( ioctl and worker )
+ * @reason: Name of the flag
+ * Clears one of the three reason flags that could cause the suspension
+ * of the resynchronisation process. In case all three are cleared it 
+ * actually changes the state to SyncSource or SyncTarget.
+ * Returns 1 iff the flag got cleared; 0 iff the flag was already cleared.
  */ 
-STATIC void _drbd_rs_resume(drbd_dev *mdev)
+STATIC int _drbd_rs_resume(drbd_dev *mdev, enum RSPauseReason reason)
 {
-	drbd_conns_t ncs;
+	drbd_state_t os,ns;
+	int r,doing=0;
 
-	ncs = mdev->state.conn - (PausedSyncS - SyncSource);
-	D_ASSERT(ncs == SyncSource || ncs == SyncTarget);
+	ns = os = mdev->state;
 
-	INFO("Syncer continues.\n");
-	mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
-	_drbd_set_state(mdev,_NS(conn,ncs),ChgStateHard);
-
-	if(mdev->state.conn == SyncTarget) {
-		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
-			unsigned long rs_left = drbd_bm_total_weight(mdev);
-			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
-			if (rs_left == 0) {
-				INFO("rs_left==0 in _drbd_rs_resume\n");
-			} else {
-				ERR("STOP_SYNC_TIMER was set in "
-				    "_drbd_rs_resume, but rs_left still %lu\n",
-				    rs_left);
-			}
-		}
-		mod_timer(&mdev->resync_timer,jiffies);
+	switch(reason) {
+	case AfterDependency:	ns.aftr_isp = 0;	break;
+	case PeerImposed:	ns.peer_isp = 0;	break;
+	case UserImposed:	ns.user_isp = 0;	break;
 	}
+	if(ns.aftr_isp == 0 && ns.peer_isp == 0 && ns.user_isp == 0) {
+		if(os.conn == PausedSyncS) ns.conn=SyncSource, doing=1;
+		if(os.conn == PausedSyncT) ns.conn=SyncTarget, doing=1;
+	}
+
+	// Call _drbd_set_state() in any way to set the _isp bits.
+	r = _drbd_set_state(mdev,ns,ChgStateHard|ScheduleAfter);
+
+	if(doing) {
+		INFO("Syncer continues.\n");
+		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
+
+		if(ns.conn == SyncTarget) {
+			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+			mod_timer(&mdev->resync_timer,jiffies);
+		}
+	}
+	return r != 2;
 }
 
-
-STATIC void _drbd_rs_pause(drbd_dev *mdev)
+/** 
+ * _drbd_rs_pause:
+ * @reason: Name of the flag
+ * Sets one of the three reason flags that could cause the suspension
+ * of the resynchronisation process. In case the state was not alreay
+ * PausedSyncT or PausedSyncS it changes the state into one of these.
+ * Returns 1 iff the flag got set; 0 iff the flag was already set.
+ */ 
+STATIC int _drbd_rs_pause(drbd_dev *mdev, enum RSPauseReason reason)
 {
-	drbd_conns_t ncs;
+	drbd_state_t os,ns;
+	int r,doing=0;
 
-	D_ASSERT(mdev->state.conn == SyncSource || mdev->state.conn == SyncTarget);
-	ncs = mdev->state.conn + (PausedSyncS - SyncSource);
+	static const char *reason_txt[] = {
+		[AfterDependency] = "dependency",
+		[PeerImposed]     = "peer",
+		[UserImposed]     = "user",
+	};
 
-	if(mdev->state.conn == SyncTarget) set_bit(STOP_SYNC_TIMER,&mdev->flags);
+	ns = os = mdev->state;
 
-	mdev->rs_mark_time = jiffies;
-	// mdev->rs_mark_left = drbd_bm_total_weight(mdev); // I don't care...
-	_drbd_set_state(mdev,_NS(conn,ncs),ChgStateHard);
+	if(os.conn == SyncSource) ns.conn=PausedSyncS, doing=1;
+	if(os.conn == SyncTarget) ns.conn=PausedSyncT, doing=1;
+	switch(reason) {
+	case AfterDependency:	ns.aftr_isp = 1;	break;
+	case PeerImposed:	ns.peer_isp = 1;	break;
+	case UserImposed:	ns.user_isp = 1;	break;
+	}
 
-	INFO("Syncer waits for drbd%d to finish.\n",mdev->sync_conf.after);
+	// Call _drbd_set_state() in any way to set the _isp bits.
+	r = _drbd_set_state(mdev,ns,ChgStateHard|ScheduleAfter);
+
+	if(doing) {
+		if( ns.conn == PausedSyncT ) 
+			set_bit(STOP_SYNC_TIMER,&mdev->flags);
+
+		mdev->rs_mark_time = jiffies;
+		INFO("Resync suspended by %s.\n",reason_txt[reason]);
+	}
+
+	return r != 2;
 }
 
 STATIC int _drbd_may_sync_now(drbd_dev *mdev)
@@ -597,11 +631,17 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 	while(1) {
 		if( odev->sync_conf.after == -1 ) return 1;
 		odev = drbd_conf + odev->sync_conf.after;
-		if( odev->state.conn == SyncSource ||
-		    odev->state.conn == SyncTarget ) return 0;
+		if( odev->state.conn >= SyncSource &&
+		    odev->state.conn <= PausedSyncT ) return 0;
 	}
 }
 
+/** 
+ * _drbd_pause_after:
+ * Finds all devices that may not resync now, and causes them to
+ * pause their resynchronisation.
+ * Called from process context only ( ioctl and receiver ).
+ */ 
 STATIC int _drbd_pause_after(drbd_dev *mdev)
 {
 	drbd_dev *odev;
@@ -612,7 +652,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 		if ( odev->state.conn == SyncSource ||
 		     odev->state.conn == SyncTarget ) {
 			if (! _drbd_may_sync_now(odev)) {
-				_drbd_rs_pause(odev);
+				_drbd_rs_pause(odev,AfterDependency);
 				rv = 1;
 			}
 		}
@@ -623,8 +663,8 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 
 /** 
  * _drbd_resume_next:
- * Finds the next device that can resume its resynchronisation
- * process. If there is one, its resync gets continued.
+ * Finds all devices that can resume resynchronisation
+ * process, and causes them to resume.
  * Called from process context only ( ioctl and worker ).
  */ 
 STATIC int _drbd_resume_next(drbd_dev *mdev)
@@ -637,7 +677,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 		if ( odev->state.conn == PausedSyncS ||
 		     odev->state.conn == PausedSyncT ) {
 			if (_drbd_may_sync_now(odev)) {
-				_drbd_rs_resume(odev);
+				_drbd_rs_resume(odev,AfterDependency);
 				rv = 1;
 			}
 		}
@@ -673,6 +713,25 @@ void drbd_alter_sa(drbd_dev *mdev, int na)
 	drbd_global_unlock();
 }
 
+int drbd_resync_pause(drbd_dev *mdev, enum RSPauseReason reason)
+{
+	int rv;
+	drbd_global_lock();
+	rv = _drbd_rs_pause(mdev,reason);
+	drbd_global_unlock();
+	return rv;
+}
+
+int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason reason)
+{
+	int rv;
+	drbd_global_lock();
+	rv = _drbd_rs_resume(mdev,reason);
+	drbd_global_unlock();
+	return rv;
+}
+
+
 /**
  * drbd_start_resync:
  * @side: Either SyncSource or SyncTarget
@@ -701,7 +760,12 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	drbd_global_lock();
 	ns = os = mdev->state;
 
-	if(!_drbd_may_sync_now(mdev)) p = (PausedSyncS - SyncSource);
+	if(!_drbd_may_sync_now(mdev)) {
+		ns.aftr_isp = 1;
+		p = (PausedSyncS - SyncSource);
+	}
+	if( ns.peer_isp || ns.user_isp ) p = (PausedSyncS - SyncSource);
+
 	ns.conn = side + p;
 
 	if(side == SyncTarget) {

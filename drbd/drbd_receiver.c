@@ -1925,6 +1925,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.conn = nconn;
 	ns.peer = peer_state.role;
 	ns.pdsk = peer_state.disk;
+	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -2112,6 +2113,20 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail ?
 }
 
+STATIC int receive_pause_resync(drbd_dev *mdev, Drbd_Header *h)
+{
+	drbd_resync_pause(mdev, PeerImposed);
+	return TRUE;
+
+}
+
+STATIC int receive_resume_resync(drbd_dev *mdev, Drbd_Header *h)
+{
+	drbd_resync_resume(mdev, PeerImposed);
+	return TRUE;
+}
+
+
 STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 {
 	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
@@ -2182,6 +2197,8 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportSizes]      = receive_sizes,
 	[ReportState]      = receive_state,
 	[ReportSyncUUID]   = receive_sync_uuid,
+	[PauseResync]      = receive_pause_resync,
+	[ResumeResync]     = receive_resume_resync,
 	[OutdateRequest]   = receive_outdate,
 	[OutdatedReply]    = receive_outdated,
 };
