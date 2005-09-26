@@ -374,6 +374,10 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	// FIXME: what if partner was SyncTarget, and is out of sync for
 	// this area ?? ... should be handled in the receiver.
+
+	ok = drbd_io_error(mdev);
+	if(unlikely(!ok)) ERR("Sending in w_read_retry_remote() failed\n");
+	
 	inc_ap_pending(mdev);
 	ok = drbd_read_remote(mdev,req);
 	if(unlikely(!ok)) {
