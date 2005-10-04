@@ -51,29 +51,36 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	sector_t pmdss; // previous meta data start sector
+	sector_t prev_first_sect, prev_size; // previous meta location
 	sector_t la_size;
 	int md_moved, la_size_changed;
 	int rv;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
-	pmdss = drbd_md_ss(mdev);
-	la_size = mdev->la_size;
 
+	prev_first_sect = drbd_md_first_sector(mdev);
+	prev_size = mdev->md.md_size_sect;
+	la_size = mdev->md.la_size_sect;
+
+	// TODO: should only be some assert here, not (re)init...
+	drbd_md_set_sector_offsets(mdev);
 	rv = do_determin_dev_size(mdev);
 
-	la_size_changed = (la_size != mdev->la_size);
-	md_moved = pmdss != drbd_md_ss(mdev) /* && mdev->md_index == -1 */;
+	la_size_changed = (la_size != mdev->md.la_size_sect);
+
+#warning flexible device size!! is this the right thing to test?
+	md_moved = prev_first_sect != drbd_md_first_sector(mdev)
+		|| prev_size       != mdev->md.md_size_sect;
 
 	if ( md_moved ) {
 		WARN("Moving meta-data.\n");
-		D_ASSERT(mdev->md_index == -1);
+		/* assert: (flexible) internal meta data */
 	}
 
 	if ( la_size_changed || md_moved ) {
 		drbd_al_shrink(mdev); // All extents inactive.
 		drbd_bm_write(mdev);  // write bitmap
-		// Write mdev->la_size to [possibly new position on] disk.
+		// Write mdev->md.la_size_sect to [possibly new position on] disk.
 		drbd_md_write(mdev);
 	}
 	lc_unlock(mdev->act_log);
@@ -110,19 +117,15 @@ char* ppsize(char* buf, size_t size)
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
 	sector_t p_size = mdev->p_size;   // partner's disk size.
-	sector_t la_size = mdev->la_size; // last agreed size.
+	sector_t la_size = mdev->md.la_size_sect; // last agreed size.
 	sector_t m_size; // my size
 	sector_t u_size = mdev->lo_usize; // size requested by user.
 	sector_t size=0;
 	int rv;
 	char ppb[10];
 
-	m_size = drbd_get_capacity(mdev->backing_bdev);
-
-	if (mdev->md_index == -1 && m_size) {// internal metadata
-		D_ASSERT(m_size > MD_RESERVED_SIZE);
-		m_size = drbd_md_ss(mdev);
-	}
+	m_size = drbd_get_max_capacity(mdev);
+	INFO("msize = %llu\n", (unsigned long long) m_size);
 
 	if(p_size && m_size) {
 		rv=0;
@@ -170,7 +173,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		}
 		// racy, see comments above.
 		drbd_set_my_capacity(mdev,size);
-		mdev->la_size = size;
+		mdev->md.la_size_sect = size;
 		INFO("size = %s (%lu KB)\n",ppsize(ppb,size>>1),
 		     (unsigned long)size>>1);
 	}
@@ -313,7 +316,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		return -EBUSY;
 	}
 
-	if ( new_conf.meta_index < -1) {
+#warning "FIXME hardcoded"
+	if ( new_conf.meta_index < -3) {
 		retcode=LDMDInvalid;
 		goto fail_ioctl;
 	}
@@ -352,7 +356,11 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	bdev2 = inode2->i_bdev;
-	if (bd_claim(bdev2, new_conf.meta_index== - 1 ?
+
+
+#warning checks below no longer valid
+// --- rewrite
+	if (bd_claim(bdev2, new_conf.meta_index == -1 ?
 		     (void *)mdev : (void*) drbd_m_holder )) {
 		retcode=MDMounted;
 		goto release_bdev_fail_ioctl;
@@ -363,6 +371,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev2_fail_ioctl;
 	}
 
+#if 0
 	if ((drbd_get_capacity(bdev)>>1) < new_conf.disk_size) {
 		/* FIXME maybe still allow,
 		 * but leave only DRBD_MAX_SECTORS usable */
@@ -387,12 +396,14 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * FIXME this is arbitrary and needs to be reconsidered as soon as we
 	 * move to flexible size meta data.
 	 */
-	if( drbd_get_capacity(bdev2) < 2*MD_RESERVED_SIZE*i
+	if( drbd_get_capacity(bdev2) < MD_RESERVED_SECT*i
 				+ (new_conf.meta_index == -1) ? (1<<16) : 0 )
 	{
 		retcode = MDDeviceTooSmall;
 		goto release_bdev2_fail_ioctl;
 	}
+#endif
+// --- up to here
 
 	drbd_free_ll_dev(mdev);
 
@@ -420,7 +431,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 */
 
 	set_bit(MD_IO_ALLOWED,&mdev->flags);
-
+	drbd_md_set_sector_offsets(mdev);
 	md_gc_valid = drbd_md_read(mdev);
 
 	if (md_gc_valid != NoError) {
@@ -848,7 +859,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 
 		if ( (mdev->state.conn < WFReportParams &&
-		      mdev->uuid[Bitmap] == 0) || forced ) {
+		      mdev->md.uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}
 	}
@@ -1047,9 +1058,9 @@ STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 	memset(&cn,0,sizeof(cn));
 
 	for (i = Current; i < UUID_SIZE; i++) {
-		cn.uuid[i]=mdev->uuid[i];
+		cn.uuid[i]=mdev->md.uuid[i];
 	}
-	cn.flags = mdev->md_flags;
+	cn.flags = mdev->md.flags;
 	cn.bits_set = drbd_bm_total_weight(mdev);
 	cn.current_size = drbd_get_capacity(mdev->this_bdev);
 
@@ -1189,7 +1200,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		mdev->lo_usize = (sector_t)(u64)arg;
 		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
-		drbd_md_write(mdev); // Write mdev->la_size to disk.
+		drbd_md_write(mdev); // Write mdev->md.la_size_sect to disk.
 		drbd_bm_unlock(mdev);
 		if (mdev->state.conn == Connected) {
 			drbd_send_uuids(mdev); // to start sync...

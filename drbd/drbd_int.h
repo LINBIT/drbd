@@ -112,10 +112,10 @@ typedef struct Drbd_Conf drbd_dev;
 
 // handy macro: DUMPP(somepointer)
 #define DUMPP(A)   ERR( #A " = %p in %s:%d\n",  (A),__FILE__,__LINE__);
-#define DUMPLU(A)  ERR( #A " = %lu in %s:%d\n", (A),__FILE__,__LINE__);
-#define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n",(A),__FILE__,__LINE__);
+#define DUMPLU(A)  ERR( #A " = %lu in %s:%d\n", (unsigned long)(A),__FILE__,__LINE__);
+#define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n",(unsigned long long)(A),__FILE__,__LINE__);
 #define DUMPLX(A)  ERR( #A " = %lx in %s:%d\n", (A),__FILE__,__LINE__);
-#define DUMPI(A)   ERR( #A " = %d in %s:%d\n",  (A),__FILE__,__LINE__);
+#define DUMPI(A)   ERR( #A " = %d in %s:%d\n",  (int)(A),__FILE__,__LINE__);
 
 #define DUMPST(A) DUMPLLU((unsigned long long)(A))
 
@@ -679,14 +679,50 @@ struct drbd_discard_note {
 	int seq_num;
 };
 
+struct drbd_md {
+	u64 md_offset;		/* sector offset to 'super' block */
+
+	u64 la_size_sect;	/* last agreed size, unit sectors */
+	u64 uuid[UUID_SIZE];
+	unsigned long flags;
+	u32 md_size_sect;
+
+	s32 al_offset;	/* signed relative sector offset to al area */
+	s32 bm_offset;	/* signed relative sector offset to bitmap */
+
+	/* u32 al_nr_extents;	   important for restoring the AL
+	 * is stored into  sync_conf.al_extents, which in turn
+	 * gets applied to act_log->nr_elements
+	 */
+};
+
 struct Drbd_Conf {
 #ifdef PARANOIA
 	long magic;
 #endif
+	/* things that are stored as / read from meta data on disk */
+	unsigned long flags;
+
+	struct drbd_md md;
+
+	/* config data protected by: */
+	struct semaphore device_mutex;
+
+	/* configured by drbdsetup */
 	struct net_config conf;
 	struct syncer_config sync_conf;
 	enum io_error_handler on_io_error;
-	struct semaphore device_mutex;
+
+	/* to become struct disk_config soonish */
+	struct file *lo_file;
+	struct file *md_file;
+	int md_index;
+	struct block_device *backing_bdev;
+	struct block_device *this_bdev;
+	struct block_device *md_bdev;
+	struct gendisk      *vdisk;
+	request_queue_t     *rq_queue;
+
 	struct drbd_socket data; // for data/barrier/cstate/parameter packets
 	struct drbd_socket meta; // for ping/ack (metadata) packets
 	volatile unsigned long last_received; // in jiffies, either socket
@@ -695,19 +731,12 @@ struct Drbd_Conf {
 			  barrier_work,
 			  unplug_work;
 	struct timer_list resync_timer;
-	struct block_device *backing_bdev;
-	struct block_device *this_bdev;
-	struct block_device *md_bdev;
-	struct gendisk      *vdisk;
-	request_queue_t     *rq_queue;
-	struct file *lo_file;
-	struct file *md_file;
-	int md_index;
+
 	sector_t lo_usize;   /* user provided size */
 	sector_t p_size;     /* partner's disk size */
-	/* volatile */ drbd_state_t state;
+	drbd_state_t state;
+
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
-	sector_t la_size;     // last agreed disk size in sectors.
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -725,7 +754,6 @@ struct Drbd_Conf {
 	struct drbd_barrier* oldest_barrier;
 	struct hlist_head * tl_hash;
 	unsigned int tl_hash_s;
-	unsigned long flags;
 	struct task_struct *send_task; /* about pid calling drbd_send */
 	spinlock_t send_task_lock;
 	// sector_t rs_left;	   // blocks not up-to-date [unit BM_BLOCK_SIZE]
@@ -742,8 +770,6 @@ struct Drbd_Conf {
 	struct lru_cache* resync; // Used to track operations of resync...
 	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
-	unsigned int md_flags;
-	u64 uuid[UUID_SIZE];
 	u64 *p_uuid;
 	spinlock_t ee_lock;
 	unsigned int epoch_size;
@@ -854,9 +880,8 @@ extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
    * either at the end of the backing device
    * or on a seperate meta data device. */
 
-#define MD_RESERVED_SIZE ( 128LU * (1<<10) )  // 128 MB  ( in units of kb )
+#define MD_RESERVED_SECT ( 128LU << 11 )  // 128 MB, unit sectors
 // The following numbers are sectors
-#define MD_GC_OFFSET 0
 #define MD_AL_OFFSET 8      // 8 Sectors after start of meta area
 #define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
@@ -907,6 +932,10 @@ struct bm_extent {
 #define BM_EXT_SIZE_B    (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3 )  // = 24
 #define BM_EXT_SIZE      (1<<BM_EXT_SIZE_B)
 
+#if (BM_EXT_SIZE_B != 24) || (BM_BLOCK_SIZE_B != 12)
+#error "HAVE YOU FIXED drbdmeta AS WELL??"
+#endif
+
 /* thus many _storage_ sectors are described by one bit */
 #define BM_SECT_TO_BIT(x)   ((x)>>(BM_BLOCK_SIZE_B-9))
 #define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SIZE_B-9))
@@ -918,6 +947,9 @@ struct bm_extent {
 /* in which _bitmap_ extent (resp. sector) the bit for a certain
  * _storage_ sector is located in */
 #define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SIZE_B-9))
+
+/* who much _storage_ sectors we have per bitmap sector */
+#define BM_SECT_PER_EXT     (1ULL << (BM_EXT_SIZE_B-9))
 
 /* in one sector of the bitmap, we have this many activity_log extents. */
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B) )
@@ -947,13 +979,17 @@ struct bm_extent {
 
 #define DRBD_MAX_SECTORS_32 (0xffffffffLU)
 #define DRBD_MAX_SECTORS_BM \
-          ( (MD_RESERVED_SIZE*2LL - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
+          ( (MD_RESERVED_SECT - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
 #if DRBD_MAX_SECTORS_BM < DRBD_MAX_SECTORS_32
-#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
+#define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
+#define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_BM
 #elif ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
-#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_32
+#define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
+#define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
-#define DRBD_MAX_SECTORS DRBD_MAX_SECTORS_BM
+#define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
+/* 16 TB in units of sectors */
+#define DRBD_MAX_SECTORS_FLEX (1ULL<<(32+BM_BLOCK_SIZE_B-9))
 #endif
 
 /* Sector shift value for the "hash" functions of tl_hash and ee_hash tables.
@@ -1199,13 +1235,63 @@ static inline int semaphore_is_locked(struct semaphore* s)
 	}
 	return 1;
 }
-/* Returns the start sector for metadata, aligned to 4K
- * which happens to be the capacity we announce for
- * our lower level device if it includes the meta data
+
+/* Returns the first sector number of our meta data,
+ * which, for internal meta data, happens to be the maximum capacity
+ * we could agree upon with our peer
  */
-static inline sector_t drbd_md_ss(drbd_dev *mdev)
+static inline sector_t drbd_md_first_sector(drbd_dev *mdev)
 {
-	if( mdev->md_index == -1 ) {
+	switch (mdev->md_index) {
+	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_FLEX_INT:
+		return mdev->md.md_offset + mdev->md.bm_offset;
+	case DRBD_MD_INDEX_FLEX_EXT:
+	default:
+		return mdev->md.md_offset;
+	}
+}
+
+/* returns the last sector number of our meta data,
+ * to be able to catch out of band md access */
+static inline sector_t drbd_md_last_sector(drbd_dev *mdev)
+{
+	switch (mdev->md_index) {
+	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_FLEX_INT:
+		return mdev->md.md_offset + MD_AL_OFFSET -1;
+	case DRBD_MD_INDEX_FLEX_EXT:
+	default:
+		return mdev->md.md_offset + mdev->md.md_size_sect;
+	}
+}
+
+/* returns the capacity we announce to out peer */
+static inline sector_t drbd_get_max_capacity(drbd_dev *mdev)
+{
+	switch (mdev->md_index) {
+	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_FLEX_INT:
+		return drbd_get_capacity(mdev->backing_bdev)
+			? drbd_md_first_sector(mdev)
+			: 0;
+	case DRBD_MD_INDEX_FLEX_EXT:
+	default:
+		return drbd_get_capacity(mdev->backing_bdev);
+	}
+}
+
+/* returns the sector number of our meta data 'super' block */
+static inline sector_t drbd_md_ss__(drbd_dev *mdev)
+{
+	switch (mdev->md_index) {
+	default: /* external, some index */
+		return MD_RESERVED_SECT * mdev->md_index;
+	case DRBD_MD_INDEX_INTERNAL:
+		/* with drbd08, internal meta data is always "flexible" */
+	case DRBD_MD_INDEX_FLEX_INT:
+		/* sizeof(struct md_on_disk_07) == 4k
+		 * position: last 4k aligned block of 4k size */
 		if (!mdev->backing_bdev) {
 			if (DRBD_ratelimit(5*HZ,5)) {
 				ERR("mdev->backing_bdev==NULL\n");
@@ -1213,11 +1299,56 @@ static inline sector_t drbd_md_ss(drbd_dev *mdev)
 			}
 			return 0;
 		}
-		return (  (drbd_get_capacity(mdev->backing_bdev) & ~7L)
-			- (MD_RESERVED_SIZE<<1) );
-	} else {
-		return 2 * MD_RESERVED_SIZE * mdev->md_index;
+		return (drbd_get_capacity(mdev->backing_bdev) & ~7ULL)
+			- MD_AL_OFFSET;
+	case DRBD_MD_INDEX_FLEX_EXT:
+		return 0;
 	}
+}
+
+/* initializes the md.*_offset members, so we are able to find
+ * the on disk meta data */
+static inline void drbd_md_set_sector_offsets(drbd_dev *mdev)
+{
+	sector_t md_size_sect = 0;
+	mdev->md.md_offset = drbd_md_ss__(mdev);
+	switch(mdev->md_index) {
+	default:
+	case DRBD_MD_INDEX_FLEX_EXT:
+		/* just occupy the full device; unit: sectors */
+		mdev->md.md_size_sect = drbd_get_capacity(mdev->md_bdev);
+		mdev->md.md_offset = 0;
+		mdev->md.al_offset = MD_AL_OFFSET;
+		mdev->md.bm_offset = MD_BM_OFFSET;
+		break;
+	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_FLEX_INT:
+		/* al size is still fixed */
+		mdev->md.al_offset = -MD_AL_MAX_SIZE;
+#warning FIXME max size check missing.
+		/* we need (slightly less than) ~ this much bitmap sectors: */
+		md_size_sect = drbd_get_capacity(mdev->backing_bdev);
+		DUMPI(md_size_sect);
+		md_size_sect = ALIGN(md_size_sect,BM_SECT_PER_EXT);
+		DUMPI(md_size_sect);
+		md_size_sect = BM_SECT_TO_EXT(md_size_sect);
+		DUMPI(md_size_sect);
+		md_size_sect = ALIGN(md_size_sect,8);
+		DUMPI(md_size_sect);
+
+		/* plus the "drbd meta data super block",
+		 * and the activity log; */
+		md_size_sect += MD_BM_OFFSET;
+
+		mdev->md.md_size_sect = md_size_sect;
+		/* bitmap offset is adjusted by 'super' block size */
+		mdev->md.bm_offset   = -md_size_sect + MD_AL_OFFSET;
+		break;
+	}
+	DUMPI(mdev->md.md_offset);
+	DUMPI(mdev->md.al_offset);
+	DUMPI(mdev->md.bm_offset);
+	DUMPI(md_size_sect);
 }
 
 static inline void

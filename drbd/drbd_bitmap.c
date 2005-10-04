@@ -330,6 +330,8 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		down(&b->bm_change);
 	}
 
+	INFO("drbd_bm_resize called with capacity == %llu\n", (unsigned long long)capacity);
+
 	if (capacity == b->bm_dev_capacity)
 		goto out;
 
@@ -345,8 +347,8 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		spin_unlock_irq(&b->bm_lock);
 		goto free_obm;
 	} else {
-		bits  = ALIGN(capacity,BM_SECTORS_PER_BIT)
-		      >> (BM_BLOCK_SIZE_B-9);
+		bits = BM_SECT_TO_BIT(ALIGN(capacity,BM_SECTORS_PER_BIT));
+		DUMPI(bits);
 
 		/* if we would use
 		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
@@ -355,7 +357,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		*/
 		words = ALIGN(bits,64) >> LN2_BPL;
 
-		D_ASSERT(bits < ((MD_RESERVED_SIZE<<1)-MD_BM_OFFSET)<<12 );
+		D_ASSERT((u64)bits <= (((u64)mdev->md.md_size_sect-MD_BM_OFFSET) << 12));
 
 		if ( words == b->bm_words ) {
 			/* optimize: capacity has changed,
@@ -593,7 +595,8 @@ void drbd_bm_set_all(drbd_dev *mdev)
  */
 int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 {
-	sector_t on_disk_sector = enr + drbd_md_ss(mdev) + MD_BM_OFFSET;
+#warning check outcome of addition of sector_t/u64/s32
+	sector_t on_disk_sector = mdev->md.md_offset + mdev->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global ...
@@ -613,8 +616,8 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 		int i;
 		err = -EIO;
 		ERR( "IO ERROR reading bitmap sector %lu "
-		     "(meta-disk sector %lu)\n",
-		     enr, (unsigned long)on_disk_sector );
+		     "(meta-disk sector %llu)\n",
+		     enr, (unsigned long long)on_disk_sector );
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
@@ -657,7 +660,7 @@ void drbd_bm_read(struct Drbd_Conf *mdev)
  */
 int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 {
-	sector_t on_disk_sector = enr + drbd_md_ss(mdev) + MD_BM_OFFSET;
+	sector_t on_disk_sector = enr + mdev->md.md_offset + mdev->md.bm_offset;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global...

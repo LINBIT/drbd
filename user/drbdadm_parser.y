@@ -207,19 +207,26 @@ static struct d_resource* new_resource(char* name)
 
 void check_meta_disk()
 {
-  if (strcmp(c_host->meta_disk, "internal")) {
+  if (strcmp(c_host->meta_disk, "internal") != 0) {
+    /* external */
     if (c_host->meta_index == NULL) {
       fprintf(stderr, "%s:%d: expected 'meta-disk = %s [index]'.\n",
 	      config_file, fline, c_host->meta_disk);
     }
+    /* index either some number, or "flexible" */
     check_uniq("meta-disk", "%s:%s[%s]", c_hostname,
 	       c_host->meta_disk, c_host->meta_index);
   } else if (c_host->meta_index) {
-    fprintf(stderr,
-	    "%s:%d: no index allowed with 'meta-disk = internal'.\n",
-	    config_file, fline);
+    /* internal */
+    if (strcmp(c_host->meta_index,"flexible") != 0) {
+      /* internal, not flexible, but index given: no sir! */
+      fprintf(stderr,
+	      "%s:%d: no index allowed with 'meta-disk = internal'.\n",
+	      config_file, fline);
+    } /* else internal, flexible: fine */
   } else {
-    c_host->meta_index = strdup("-1");
+    /* internal, not flexible */
+    c_host->meta_index = strdup("internal");
   }
 }
 
@@ -242,7 +249,7 @@ void check_meta_disk()
 %token TK_DISABLE_IO_HINTS
 %token TK_DISABLE_IP_VERIFICATION
 %token TK_PROTOCOL TK_HANDLERS TK_COMMON
-%token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK 
+%token TK_ADDRESS TK_DISK TK_DEVICE TK_META_DISK TK_FLEX_META_DISK
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
 %token <txt> TK_ON_IO_ERROR TK_SIZE TK_SPLIT_BRAIN_FIX
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
@@ -417,6 +424,7 @@ host_stmt:	  TK_DISK    TK_STRING	  { CHKU(disk,$2); }
 		| TK_ADDRESS ip_and_port
 		{ check_uniq("IP","%s:%s", c_host->address,c_host->port); }
 		| TK_META_DISK meta_disk_and_index { check_meta_disk(); }
+		| TK_FLEX_META_DISK flex_meta_disk { check_meta_disk(); }
 		;
 
 
@@ -427,6 +435,14 @@ ip_and_port:	  TK_IPADDR TK_INTEGER
 		}
 		;
 
+flex_meta_disk:
+		  TK_STRING
+		{
+			c_host->meta_disk = $1;
+			/* overload index once more */
+			c_host->meta_index = strdup("flexible");
+		}
+		;
 meta_disk_and_index:
 		  TK_STRING TK_INTEGER
 		{ c_host->meta_disk = $1; c_host->meta_index = $2; }

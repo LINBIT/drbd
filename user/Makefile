@@ -17,7 +17,7 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-CFLAGS = -g -O2 -c -Wall -I../drbd
+CFLAGS = -g -O2 -c -W -Wall -I../drbd -Werror
 CC = gcc
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \

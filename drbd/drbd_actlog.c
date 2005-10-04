@@ -64,7 +64,6 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
 int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 {
 	int hardsect,mask,ok,offset=0;
-	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	struct page *iop = mdev->md_io_page;
 
 	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
@@ -119,8 +118,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	     sector, rw ? "WRITE" : "READ");
 #endif
 
-	if (sector < drbd_md_ss(mdev)  ||
-	    sector > drbd_md_ss(mdev)+MD_BM_OFFSET+BM_SECT_TO_EXT(capacity)) {
+	if (sector < drbd_md_first_sector(mdev)  || sector > drbd_md_last_sector(mdev)) {
 		ALERT("%s [%d]:%s(,%llu,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, rw ? "WRITE" : "READ");
@@ -296,8 +294,8 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-
-	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + mdev->al_tr_pos ;
+#warning check outcome of addition u64/sector_t/s32
+	sector = mdev->md.md_offset + mdev->md.al_offset + mdev->al_tr_pos;
 
 	if(!drbd_md_sync_page_io(mdev,sector,WRITE)) {
 		drbd_chk_io_error(mdev, 1);
@@ -321,7 +319,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	int rv,i;
 	u32 xor_sum=0;
 
-	sector = drbd_md_ss(mdev) + MD_AL_OFFSET + index;
+	sector = mdev->md.md_offset + mdev->md.al_offset + index;
 
 	if(!drbd_md_sync_page_io(mdev,sector,READ)) {
 		drbd_chk_io_error(mdev, 1);

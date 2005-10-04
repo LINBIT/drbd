@@ -19,8 +19,9 @@ static void expect_error(char*);
 
 #define CP		yylval.txt = strdup(yytext);
 
-#define YY_NO_UNPUT
+#define YY_NO_UNPUT 1
 static int yy_top_state(void) __attribute((unused)); /* no unused warning */
+static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
 #define PRINTF(fmt, args...) \
   fprintf(stderr, "%s:%d: " fmt, config_file, line , ## args )
@@ -39,7 +40,7 @@ static int yy_top_state(void) __attribute((unused)); /* no unused warning */
 %x RESOURCE GLOBAL
 %x STARTUP DISK NET SYNCER HOST HANDLERS COMMON
 %x SEMICOLON ASSIGN NUM NUM_U NAME STRING PROTO IO_ERROR ON_DISCONNECT
-%x IP_AND_PORT PORT META_DISK META_IDX
+%x IP_AND_PORT PORT FLEX_META_DISK META_DISK META_IDX
 %x LS LBRACE IGNORE_SECTION
 
 LS			  [ \t]{1,80}
@@ -74,7 +75,7 @@ AFTER_SB_PRI		  after-sb-[012]pri
   {SKIP}		section(IGNORE_SECTION);
 }
 
-<INITIAL,ASSIGN,LBRACE,META_IDX,RESOURCE,GLOBAL,STARTUP,DISK,NET,SYNCER,HOST,PORT>{
+<INITIAL,ASSIGN,LBRACE,META_IDX,RESOURCE,GLOBAL,STARTUP,DISK,NET,SYNCER,HOST,HANDLERS,PORT>{
   {COMMENT_START}	{
   				char c;
 				while ((c = input()) != '\n' && c != EOF);
@@ -174,6 +175,18 @@ AFTER_SB_PRI		  after-sb-[012]pri
 			  PRINTF("'meta-index=<idx>' deprecated, "
 				 "please use 'meta-disk /di/sk [idx]' instead.\n");
 			}
+}
+
+<FLEX_META_DISK>{
+  {INTERN}		unescape(); yy_pop_state();  CP; return TK_STRING;
+  {INTERN}{META_IDX}	|
+  {INTERN}{O_IDX}	syntax_error("don't give an index for flexible meta-data.");
+  {ESTRING}		syntax_error("string terminator missing or string too long.\n");
+  {STRING}		unescape(); yy_pop_state(); CP; return TK_STRING;
+  {STRING}{META_IDX}	|
+  {STRING}{O_IDX}{NUM}  syntax_error("don't give an index for flexible meta-data.");
+  {STRING}{LS}?{NDELIM}	|
+  {NDELIM}		expect_error("either 'internal' or '/dev/ice/name [index]'");
 }
 
 <META_DISK>{
@@ -284,6 +297,8 @@ AFTER_SB_PRI		  after-sb-[012]pri
   address		do_assign(IP_AND_PORT); CP; return TK_ADDRESS;
   device		do_assign(STRING);	CP; return TK_DEVICE;
   {DISK}		do_assign(STRING);	CP; return TK_DISK;
+  flex-meta-disk	|
+  flexible-meta-disk	do_assign(FLEX_META_DISK);CP; return TK_FLEX_META_DISK;
   meta-disk		do_assign(META_DISK);	CP; return TK_META_DISK;
   {NDELIM}		expect_error("one of 'address|device|disk|meta-disk'");
 }

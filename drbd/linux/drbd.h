@@ -312,6 +312,11 @@ struct ioctl_get_uuids {
 #define DRBD_MAGIC 0x83740267
 #define BE_DRBD_MAGIC __constant_cpu_to_be32(DRBD_MAGIC)
 
+/* these are of type "int" */
+#define DRBD_MD_INDEX_INTERNAL -1
+#define DRBD_MD_INDEX_FLEX_EXT -2
+#define DRBD_MD_INDEX_FLEX_INT -3
+
 /* 'D' already taken by s390 dasd driver.
  *  maybe we want to change to something else, and register it officially?
  */

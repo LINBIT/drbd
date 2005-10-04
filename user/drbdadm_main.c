@@ -51,6 +51,7 @@ static int indent = 0;
 #define BFMT  "%s;\n"
 #define IPFMT "%-16s %s:%s;\n"
 #define MDISK "%-16s %s [%s];\n"
+#define FMDISK "%-16s %s;\n"
 #define printI(fmt, args... ) printf("%*s" fmt,INDENT_WIDTH * indent,"" , ## args )
 #define printA(name, val ) \
 	printf("%*s%*s %3s;\n", \
@@ -292,14 +293,16 @@ static void dump_host_info(struct d_host_info* hi)
   printA("device", esc(hi->device));
   printA("disk"  , esc(hi->disk));
   printI(IPFMT,"address"   , hi->address, hi->port);
-  if (!strcmp(hi->meta_index,"-1"))
+  if (!strncmp(hi->meta_index,"flex",4))
+    printI(FMDISK,"flexible-meta-disk", esc(hi->meta_disk));
+  else if (!strcmp(hi->meta_index,"internal"))
     printA("meta-disk", "internal");
   else
     printI(MDISK,"meta-disk", esc(hi->meta_disk), hi->meta_index);
   --indent; printI("}\n");
 }
 
-static int adm_dump(struct d_resource* res,const char* unused)
+static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printI("resource %s {\n",esc(res->name)); ++indent;
   printA("protocol",res->protocol);
@@ -315,7 +318,7 @@ static int adm_dump(struct d_resource* res,const char* unused)
   return 0;
 }
 
-static int sh_resources(struct d_resource* ignored,const char* unused)
+static int sh_resources(struct d_resource* ignored __attribute((unused)),const char* unused __attribute((unused)))
 {
   struct d_resource *res,*t;
   for_each_resource(res,t,config) {
@@ -326,21 +329,21 @@ static int sh_resources(struct d_resource* ignored,const char* unused)
   return 0;
 }
 
-static int sh_dev(struct d_resource* res,const char* unused)
+static int sh_dev(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printf("%s\n",res->me->device);
 
   return 0;
 }
 
-static int sh_ll_dev(struct d_resource* res,const char* unused)
+static int sh_ll_dev(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printf("%s\n",res->me->disk);
 
   return 0;
 }
 
-static int sh_md_dev(struct d_resource* res,const char* unused)
+static int sh_md_dev(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char *r;
 
@@ -352,7 +355,7 @@ static int sh_md_dev(struct d_resource* res,const char* unused)
   return 0;
 }
 
-static int sh_md_idx(struct d_resource* res,const char* unused)
+static int sh_md_idx(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printf("%s\n",res->me->meta_index);
 
@@ -360,7 +363,7 @@ static int sh_md_idx(struct d_resource* res,const char* unused)
 }
 
 
-static int sh_mod_parms(struct d_resource* res,const char* unused)
+static int sh_mod_parms(struct d_resource* res __attribute((unused)),const char* unused __attribute((unused)))
 {
   int mc=global_options.minor_count;
 
@@ -468,7 +471,7 @@ static void find_drbdcmd(char** cmd, char** pathes)
   exit(E_exec_error);
 }
 
-static void alarm_handler(int signo)
+static void alarm_handler(int __attribute((unused)) signo)
 {
   alarm_raised=1;
 }
@@ -574,7 +577,7 @@ pid_t m_system(char** argv,int flags)
     OPT=OPT->next; \
   }
 
-int adm_attach(struct d_resource* res,const char* unused)
+int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
   struct d_option* opt;
@@ -604,7 +607,7 @@ struct d_option* find_opt(struct d_option* base,char* name)
   return 0;
 }
 
-int adm_resize(struct d_resource* res,const char* unused)
+int adm_resize(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
   struct d_option* opt;
@@ -633,7 +636,15 @@ static int admm_generic(struct d_resource* res ,const char* cmd)
   } else {
     argv[argc++]=res->me->meta_disk;
   }
-  argv[argc++]=res->me->meta_index;
+  if(!strcmp(res->me->meta_index,"flexible")) {
+	if(!strcmp(res->me->meta_disk,"internal")) {
+		argv[argc++]="flex-internal";
+	} else {
+		argv[argc++]="flex-external";
+	}
+  } else {
+	  argv[argc++]=res->me->meta_index;
+  }
   argv[argc++]=(char*)cmd;
   for(i=0;i<soi;i++) {
     argv[argc++]=setup_opts[i];
@@ -701,7 +712,7 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
   return rv;
 }
 
-int adm_connect(struct d_resource* res,const char* unused)
+int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
   struct d_option* opt;
@@ -735,7 +746,7 @@ int adm_connect(struct d_resource* res,const char* unused)
 
 struct d_resource* res_by_name(const char *name);
 
-int adm_syncer(struct d_resource* res,const char* unused)
+int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
   struct d_option* opt;
@@ -760,7 +771,7 @@ int adm_syncer(struct d_resource* res,const char* unused)
   return m_system(argv,SLEEPS_SHORT);
 }
 
-static int adm_up(struct d_resource* res,const char* unused)
+static int adm_up(struct d_resource* res,const char* unused __attribute((unused)))
 {
   schedule_dcmd(adm_attach,res,0);
   schedule_dcmd(adm_syncer,res,1);
@@ -769,7 +780,7 @@ static int adm_up(struct d_resource* res,const char* unused)
   return 0;
 }
 
-static int adm_wait_c(struct d_resource* res ,const char* unused)
+static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((unused)))
 {
   char* argv[20];
   struct d_option* opt;
@@ -908,7 +919,7 @@ static char* get_opt_val(struct d_option* base,const char* name,char* def)
   return def;
 }
 
-void chld_sig_hand(int unused)
+void chld_sig_hand(int __attribute((unused)) unused)
 {
   // do nothing. But interrupt systemcalls :)
 }
@@ -928,7 +939,7 @@ static int check_exit_codes(pid_t* pids)
   return rv;
 }
 
-static int adm_wait_ci(struct d_resource* ignored ,const char* unused)
+static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const char* unused __attribute((unused)))
 {
   struct d_resource *res,*t;
   char *argv[20], answer[40];
@@ -1031,7 +1042,7 @@ static int adm_wait_ci(struct d_resource* ignored ,const char* unused)
 
 void print_usage_and_exit(const char* addinfo)
 {
-  int i;
+  size_t i;
   struct option *opt;
 
   printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
@@ -1276,7 +1287,8 @@ static void global_validate(void)
 
 int main(int argc, char** argv)
 {
-  int i,rv=0;
+  size_t i;
+  int rv=0;
   struct adm_cmd *cmd;
   struct d_resource *res,*tmp;
   char *env_drbd_nodename = NULL;
@@ -1476,7 +1488,7 @@ int main(int argc, char** argv)
 	  }
 	}
       } else {
-	for(i=optind;i<argc;i++) {
+	for(i=optind;(int)i<argc;i++) {
 	  res = res_by_name(argv[i]);
 	  if( !res ) res=res_by_minor(argv[i]);
 	  if( !res ) {

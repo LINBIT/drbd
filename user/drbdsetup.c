@@ -88,6 +88,10 @@
 # define PRINT_ARGV
 #endif
 
+/* avoid warnings with -W for unused function arguments;
+ * alternative use __attribute((unused))
+#define UNUSED(x)	(void)(x == x)
+ */
 
 // some globals
 char* cmdname = 0;
@@ -147,8 +151,8 @@ struct drbd_cmd commands[] = {
      { "rate",       required_argument, 0, 'r' },
      { "al-extents", required_argument, 0, 'e' },
      { 0,            0,                 0, 0 } } },
-  {"pause-sync",  cmd_pause_sync,       0, },
-  {"resume-sync", cmd_resume_sync,      0, },
+  {"pause-sync",  cmd_pause_sync,       0, 0, },
+  {"resume-sync", cmd_resume_sync,      0, 0, },
   {"down", cmd_down,                 0, 0, },
   {"detach", cmd_detach,             0, 0, },
   {"net", cmd_net_conf, (char *[]){"local_addr","remote_addr","protocol",0},
@@ -382,7 +386,7 @@ void print_command_usage(int i, const char *addinfo)
 
 void print_usage(const char* addinfo)
 {
-  int i;
+  size_t i;
 
   printf("\nUSAGE: %s device command arguments options\n\n"
 	 "Device is usually /dev/drbdX or /dev/drbd/X.\n"
@@ -414,7 +418,7 @@ void print_usage(const char* addinfo)
 
 int open_drbd_device(const char* device)
 {
-  int err,drbd_fd,version;
+  int err,drbd_fd,version = 0;
 
   drbd_fd = dt_lock_open_drbd(device,NULL,0);
 
@@ -463,7 +467,7 @@ int scan_disk_options(char **argv,
 	  break;
 	case 'e':
 	  cn->config.on_io_error=lookup_handler(optarg,eh_names);
-	  if( cn->config.on_io_error == -1 ) {
+	  if( cn->config.on_io_error == -1U ) {
 	    fprintf(stderr,"%s: '%s' is an invalid on-io-error handler.\n",
 		    cmdname,optarg);
 	    return 20;
@@ -546,7 +550,7 @@ int scan_net_options(char **argv,
           break;
 	case 'd':
 	  cn->config.on_disconnect = lookup_handler(optarg,dh_names);
-	  if( cn->config.on_disconnect == -1 ) {
+	  if( cn->config.on_disconnect == -1U ) {
 	    fprintf(stderr,"%s: '%s' is an invalid on-disconnect handler.\n",
 		    cmdname,optarg);
 	    return 20;
@@ -560,7 +564,7 @@ int scan_net_options(char **argv,
 	  break;
 	case 'A':
 	  cn->config.after_sb_0p = lookup_handler(optarg,asb0p_names);
-	  if( cn->config.after_sb_0p == -1 ) {
+	  if( cn->config.after_sb_0p == -1U ) {
 	    fprintf(stderr,"%s: '%s' is an invalid after-sb-0pri handler.\n",
 		    cmdname,optarg);
 	    return 20;
@@ -568,7 +572,7 @@ int scan_net_options(char **argv,
 	  break;
 	case 'B':
 	  cn->config.after_sb_1p = lookup_handler(optarg,asb1p_names);
-	  if( cn->config.after_sb_0p == -1 ) {
+	  if( cn->config.after_sb_0p == -1U ) {
 	    fprintf(stderr,"%s: '%s' is an invalid after-sb-1pri handler.\n",
 		    cmdname,optarg);
 	    return 20;
@@ -576,7 +580,7 @@ int scan_net_options(char **argv,
 	  break;
 	case 'C':
 	  cn->config.after_sb_2p = lookup_handler(optarg,asb2p_names);
-	  if( cn->config.after_sb_0p == -1 ) {
+	  if( cn->config.after_sb_0p == -1U ) {
 	    fprintf(stderr,"%s: '%s' is an invalid after-sb-2pri handler.\n",
 		    cmdname,optarg);
 	    return 20;
@@ -638,7 +642,7 @@ void print_config_ioctl_err(int err_no)
     [DiscardNotAllowed]="--discard-my-data not allowed when primary."
   };
 
-  if (err_no>ARRY_SIZE(etext) || err_no<0) err_no=0;
+  if (err_no<0 || (size_t)err_no>ARRY_SIZE(etext)) err_no=0;
   fprintf(stderr,"%s\n",etext[err_no]);
 }
 
@@ -828,7 +832,7 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
   return set_state(drbd_fd,newstate);
 }
 
-int cmd_secondary(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_secondary(int drbd_fd,char **argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   return set_state(drbd_fd,Secondary);
 }
@@ -968,7 +972,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_pause_sync(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_pause_sync(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
 
@@ -983,7 +987,7 @@ int cmd_pause_sync(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_resume_sync(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_resume_sync(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
 
@@ -998,7 +1002,7 @@ int cmd_resume_sync(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_invalidate(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
 
@@ -1014,7 +1018,7 @@ int cmd_invalidate(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_invalidate_rem(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
 
@@ -1030,7 +1034,7 @@ int cmd_invalidate_rem(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_outdate(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_outdate(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
   int reason;
@@ -1059,7 +1063,7 @@ int cmd_down(int drbd_fd,char** argv,int argc,struct option *options)
   return err;
 }
 
-int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_detach(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
 
@@ -1084,7 +1088,7 @@ int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_disconnect(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_disconnect(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   int err;
 
@@ -1112,24 +1116,46 @@ int cmd_net_conf(int drbd_fd,char** argv,int argc,struct option *options)
   return do_net_conf(drbd_fd,argv[5],argv[3],argv[4],&cn);
 }
 
-int cmd_disk_conf(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_disk_conf(int drbd_fd, char **argv, int argc, struct option *options)
 {
   struct ioctl_disk_config cn;
-  int retval,mi;
+  int retval, mi = 0;
 
+  retval = scan_disk_options(argv, argc, &cn, options);
+  if (retval)
+    return retval;
 
-  retval=scan_disk_options(argv,argc,&cn,options);
-  if(retval) return retval;
-
-  mi = m_strtoll(argv[5],1);
-  if( mi < -1 ) {
-    fprintf(stderr,"meta_index may not be smaller than -1.\n");
-    return 20;
+  if (argc == 5) {
+    if (!strcmp("internal", argv[4])) {
+      mi = DRBD_MD_INDEX_INTERNAL;
+    } else {
+      fprintf(stderr, "meta_index missing.\n");
+    }
+  } else {
+    if (!strcmp("internal", argv[4])) {
+      if (!strncmp("flex", argv[5], 4)) {
+	  mi = DRBD_MD_INDEX_FLEX_INT;
+      } else if (strcmp("-1", argv[5]) != 0) {
+	  fprintf(stderr, "invalid meta_index for 'internal'.\n");
+	  return 20;
+      } else {
+	  mi = DRBD_MD_INDEX_INTERNAL;
+      }
+    } else {
+      if (!strncmp("flex", argv[5], 4)) {
+	  mi = DRBD_MD_INDEX_FLEX_EXT;
+      } else {
+	mi = m_strtoll(argv[5], 1);
+	if (mi < 0) {
+	  fprintf(stderr, "meta_index may not be negative.\n");
+	  return 20;
+	}
+      }
+    }
   }
   //FIXME check that mi*128M is not bigger than meta device!
   cn.config.meta_index = mi;
-
-  return do_disk_conf(drbd_fd,argv[3],argv[4],&cn);
+  return do_disk_conf(drbd_fd, argv[3], argv[4], &cn);
 }
 
 int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
@@ -1249,7 +1275,7 @@ const char* check_dev_name(const char* dev_name , int major, int minor)
   else return "n.a.";
 }
 
-int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_show(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   struct ioctl_get_config cn;
   struct sockaddr_in *other_addr;
@@ -1346,7 +1372,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_state(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   struct ioctl_get_config cn;
   int err;
@@ -1370,7 +1396,7 @@ int cmd_state(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_cstate(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   struct ioctl_get_config cn;
   int err;
@@ -1393,7 +1419,7 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_get_gi(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   struct ioctl_get_uuids cn;
   int err;
@@ -1410,7 +1436,7 @@ int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-int cmd_show_gi(int drbd_fd,char** argv,int argc,struct option *options)
+int cmd_show_gi(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
 {
   struct ioctl_get_uuids cn;
   char ppb[10];
@@ -1434,10 +1460,11 @@ int cmd_show_gi(int drbd_fd,char** argv,int argc,struct option *options)
 
 int main(int argc, char** argv)
 {
-  int drbd_fd,i;
+  int drbd_fd;
   int num_of_args;
   int help = 0;
   int err;
+  size_t i;
   char **args;
 
   if ( (cmdname = strrchr(argv[0],'/')) )
@@ -1461,6 +1488,11 @@ int main(int argc, char** argv)
 	    {
 	      while(*args++) num_of_args++;
 	    }
+	  if (0 == strcmp(argv[2],"disk") && (argc == 5) &&
+	      0 == strcmp(argv[4],"internal") ) {
+	      --num_of_args;
+	      /* don't require that stupid "-1" */
+	  }
 	  if (help || argc-3 < num_of_args)
 	      print_command_usage(i,help?"":"Not enough arguments.");
 	  if (argc-3-num_of_args>0 && commands[i].options==0)

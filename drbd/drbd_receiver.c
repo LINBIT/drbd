@@ -1410,7 +1410,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	int self, peer, rv=-100;
 	unsigned long ch_self, ch_peer;
 
-	self = mdev->uuid[Bitmap] & 1;
+	self = mdev->md.uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
 
 	switch ( mdev->conf.after_sb_0p ) {
@@ -1463,7 +1463,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 {
 	int self, peer, hg, rv=-100;
 
-	self = mdev->uuid[Bitmap] & 1;
+	self = mdev->md.uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
 
 	switch ( mdev->conf.after_sb_1p ) {
@@ -1505,7 +1505,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 {
 	int self, peer, hg, rv=-100;
 
-	self = mdev->uuid[Bitmap] & 1;
+	self = mdev->md.uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
 
 	switch ( mdev->conf.after_sb_2p ) {
@@ -1553,7 +1553,7 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 	u64 self, peer;
 	int i,j;
 
-	self = mdev->uuid[Current] & ~((u64)1);
+	self = mdev->md.uuid[Current] & ~((u64)1);
 	peer = mdev->p_uuid[Current] & ~((u64)1);
 
 	if (self == UUID_JUST_CREATED &&
@@ -1575,17 +1575,17 @@ static int drbd_uuid_compare(drbd_dev *mdev)
 		if (self == peer) return -2;
 	}
 
-	self = mdev->uuid[Bitmap] & ~((u64)1);
+	self = mdev->md.uuid[Bitmap] & ~((u64)1);
 	peer = mdev->p_uuid[Current] & ~((u64)1);
 
 	if (self == peer) return 1;
 
 	for ( i=History_start ; i<=History_end ; i++ ) {
-		self = mdev->uuid[i] & ~((u64)1);
+		self = mdev->md.uuid[i] & ~((u64)1);
 		if (self == peer) return 2;
 	}
 
-	self = mdev->uuid[Bitmap] & ~((u64)1);
+	self = mdev->md.uuid[Bitmap] & ~((u64)1);
 	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
 
 	if (self == peer) return 100;
@@ -2371,7 +2371,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	if ( mdev->state.role == Primary ) {
 		if ( mdev->state.pdsk >= DUnknown &&
-		     mdev->uuid[Bitmap] == 0 ) {
+		     mdev->md.uuid[Bitmap] == 0 ) {
 			/* We only create a new UUID if the peer might
 			   possibly be UpToDate. Since the connection is
 			   already gone it is DUnknown by now.

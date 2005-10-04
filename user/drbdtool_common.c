@@ -14,8 +14,8 @@
 #include <ctype.h>
 #include <linux/drbd.h>
 
-#include "drbdtool_common.h"
 #include "drbd_endian.h"
+#include "drbdtool_common.h"
 
 char* ppsize(char* buf, size_t size) 
 {
@@ -129,7 +129,7 @@ m_strtoll(const char *s, const char def_unit)
   return r << shift;
 }
 
-void alarm_handler(int signo)
+void alarm_handler(int __attribute((unused)) signo)
 { /* nothing. just interrupt F_SETLKW */ }
 
 /* it is implicitly unlocked when the process dies.

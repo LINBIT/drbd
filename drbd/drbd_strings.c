@@ -69,19 +69,19 @@ static const char *drbd_state_sw_errors[] = {
 };
 
 const char* conns_to_name(drbd_conns_t s) {
-	return s < StandAlone   ? "TO_SMALL" :
+	return /* enums are unsigned... s < StandAlone   ? "TO_SMALL" : */
 	       s > PausedSyncT  ? "TO_LARGE"
 		                : drbd_conn_s_names[s];
 }
 
 const char* roles_to_name(drbd_role_t s) {
-	return s < Unknown    ? "TO_SMALL" :
+	return /* s < Unknown    ? "TO_SMALL" : */
 	       s > Secondary  ? "TO_LARGE"
 		              : drbd_role_s_names[s];
 }
 
 const char* disks_to_name(drbd_disks_t s) {
-	return s < Diskless    ? "TO_SMALL" :
+	return /* s < Diskless    ? "TO_SMALL" : */
 	       s > UpToDate    ? "TO_LARGE"
 		               : drbd_disk_s_names[s];
 }

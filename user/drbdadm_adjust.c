@@ -181,7 +181,7 @@ int m_fscanf(FILE *stream,const char *fmt, ...)
  * the next ioctl failing because of the zombie still holding an open_cnt on
  * the drbd device. so don't do that.
  */
-int adm_adjust(struct d_resource* res,char* unused)
+int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 {
   char* argv[20];
   int rv,pid,argc=0;

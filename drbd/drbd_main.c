@@ -236,14 +236,6 @@ STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t *req)
 
 STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
 {
-# warning "remove this comment again"
-/*
- * why static? why not per mdev?
-	static unsigned int barrier_nr_issue=1;
- * if globally static, does it really work
- * without global locking under all circumstances?
- * why not use the struct barrier itself?
- */
 	unsigned int bnr;
 	struct drbd_barrier *b;
 
@@ -519,7 +511,7 @@ int drbd_io_error(drbd_dev* mdev)
 		 * and no real references on the device. */
 		WARN("Releasing backing storage device.\n");
 		drbd_free_ll_dev(mdev);
-		mdev->la_size=0;
+		mdev->md.la_size_sect=0;
 	}
 
 	return ok;
@@ -1033,7 +1025,7 @@ int drbd_send_uuids(drbd_dev *mdev)
 	int i;
 
 	for (i = Current; i < UUID_SIZE; i++) {
-		p.uuid[i] = cpu_to_be64(mdev->uuid[i]);
+		p.uuid[i] = cpu_to_be64(mdev->md.uuid[i]);
 	}
 
 	p.uuid[UUID_SIZE] = cpu_to_be64(drbd_bm_total_weight(mdev));
@@ -1062,8 +1054,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	have_disk=inc_local(mdev);
 	if(have_disk) {
 		D_ASSERT(mdev->backing_bdev);
-		if (mdev->md_index == -1 ) d_size = drbd_md_ss(mdev);
-		else d_size = drbd_get_capacity(mdev->backing_bdev);
+		d_size = drbd_get_max_capacity(mdev->backing_bdev);
 	} else d_size = 0;
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
@@ -1831,7 +1822,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	ZAP(mdev->sync_conf);
 	// ZAP(mdev->data); Not yet!
 	// ZAP(mdev->meta); Not yet!
-	ZAP(mdev->uuid);
+	ZAP(mdev->md.uuid);
 #undef ZAP
 	mdev->al_writ_cnt  =
 	mdev->bm_writ_cnt  =
@@ -1839,7 +1830,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->recv_cnt     =
 	mdev->send_cnt     =
 	mdev->writ_cnt     =
-	mdev->la_size      =
+	mdev->md.la_size_sect      =
 	mdev->lo_usize     =
 	mdev->p_size       =
 	mdev->rs_start     =
@@ -2126,12 +2117,12 @@ int __init drbd_init(void)
 	SZO(Drbd_Barrier_Packet);
 	SZO(Drbd_BarrierAck_Packet);
 	SZO(Drbd_SyncParam_Packet);
-	SZO(Drbd_Parameter_Packet);
 	SZO(Drbd06_Parameter_P);
 	SZO(Drbd_Data_Packet);
 	SZO(Drbd_BlockAck_Packet);
 	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);
 	printk(KERN_ERR "DRBD_MAX_SECTORS = %llu\n",DRBD_MAX_SECTORS);
+	printk(KERN_ERR "DRBD_MAX_SECTORS_FLEX = %llu\n",DRBD_MAX_SECTORS_FLEX);
 	return -EBUSY;
 #endif
 
@@ -2357,9 +2348,10 @@ struct meta_data_on_disk {
 	u64 uuid[UUID_SIZE];   // UUIDs.
 	u32 flags;             // MDF
 	u32 magic;
-	u32 md_size;
+	u32 md_size_sect;
 	u32 al_offset;         // offset to this block
 	u32 al_nr_extents;     // important for restoring the AL
+	      // `-- act_log->nr_elements <-- sync_conf.al_extents
 	u32 bm_offset;         // offset to the bitmap, from here
 } __attribute((packed));
 
@@ -2381,27 +2373,28 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer,0,512);
 
-	flags = mdev->md_flags & ~(MDF_Consistent|MDF_PrimaryInd|
+	flags = mdev->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 				   MDF_ConnectedInd|MDF_WasUpToDate);
 	if (mdev->state.role == Primary)        flags |= MDF_PrimaryInd;
 	if (mdev->state.conn >= WFReportParams) flags |= MDF_ConnectedInd;
 	if (mdev->state.disk >  Inconsistent)   flags |= MDF_Consistent;
 	if (mdev->state.disk >  Outdated)       flags |= MDF_WasUpToDate;
-	mdev->md_flags = flags;
+	mdev->md.flags = flags;
 
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	for (i = Current; i < UUID_SIZE; i++)
-		buffer->uuid[i]=cpu_to_be64(mdev->uuid[i]);
+		buffer->uuid[i]=cpu_to_be64(mdev->md.uuid[i]);
 	buffer->flags = cpu_to_be32(flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC);
 
-	buffer->md_size = __constant_cpu_to_be32(MD_RESERVED_SIZE);
-	buffer->al_offset = __constant_cpu_to_be32(MD_AL_OFFSET);
+	buffer->md_size_sect  = cpu_to_be32(mdev->md.md_size_sect);
+	buffer->al_offset     = cpu_to_be32(mdev->md.al_offset);
 	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
 
-	buffer->bm_offset = __constant_cpu_to_be32(MD_BM_OFFSET);
+	buffer->bm_offset = cpu_to_be32(mdev->md.bm_offset);
 
-	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
+	D_ASSERT(drbd_md_ss__(mdev) == mdev->md.md_offset);
+	sector = mdev->md.md_offset;
 
 #if 0
 	/* FIXME sooner or later I'd like to use the MD_DIRTY flag everywhere,
@@ -2427,8 +2420,8 @@ void drbd_md_write(drbd_dev *mdev)
 		}
 	}
 
-	// Update mdev->la_size, since we updated it on metadata.
-	mdev->la_size = drbd_get_capacity(mdev->this_bdev);
+	// Update mdev->md.la_size_sect, since we updated it on metadata.
+	mdev->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
@@ -2446,7 +2439,6 @@ void drbd_md_write(drbd_dev *mdev)
 int drbd_md_read(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
-	sector_t sector;
 	int i,rv = NoError;
 
 	if(!inc_local_md_only(mdev)) return MDIOError;
@@ -2454,9 +2446,7 @@ int drbd_md_read(drbd_dev *mdev)
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
-	sector = drbd_md_ss(mdev) + MD_GC_OFFSET;
-
-	if ( ! drbd_md_sync_page_io(mdev,sector,READ) ) {
+	if ( ! drbd_md_sync_page_io(mdev,mdev->md.md_offset,READ) ) {
 		rv = MDIOError;
 		goto err;
 	}
@@ -2465,14 +2455,36 @@ int drbd_md_read(drbd_dev *mdev)
 		rv = MDInvalid;
 		goto err;
 	}
+	if (be32_to_cpu(buffer->al_offset) != mdev->md.al_offset) {
+		ERR("unexpected al_offset: %d (expected %d)\n",
+		    be32_to_cpu(buffer->al_offset), mdev->md.al_offset);
+		rv = MDInvalid;
+		goto err;
+	}
+	if (be32_to_cpu(buffer->bm_offset) != mdev->md.bm_offset) {
+		ERR("unexpected bm_offset: %d (expected %d)\n",
+		    be32_to_cpu(buffer->bm_offset), mdev->md.bm_offset);
+		rv = MDInvalid;
+		goto err;
+	}
+	if (be32_to_cpu(buffer->md_size_sect) != mdev->md.md_size_sect) {
+		ERR("unexpected md_size: %u (expected %u)\n",
+		    be32_to_cpu(buffer->md_size_sect), mdev->md.md_size_sect);
+		rv = MDInvalid;
+		goto err;
+	}
 
-	mdev->la_size = be64_to_cpu(buffer->la_size);
+	mdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
 	for (i = Current; i < UUID_SIZE; i++)
-		mdev->uuid[i]=be64_to_cpu(buffer->uuid[i]);
-	mdev->md_flags = be32_to_cpu(buffer->flags);
+		mdev->md.uuid[i]=be64_to_cpu(buffer->uuid[i]);
+	mdev->md.flags = be32_to_cpu(buffer->flags);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
+
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;
+		/* FIXME if this ever happens when reading meta data,
+		 * it possibly screws up reading of the activity log?
+		 */
 
  err:
 	up(&mdev->md_io_mutex);
@@ -2488,75 +2500,78 @@ static void drbd_uuid_move_history(drbd_dev *mdev)
 	int i;
 
 	for ( i=History_start ; i<History_end ; i++ ) {
-		mdev->uuid[i+1] = mdev->uuid[i];
+		mdev->md.uuid[i+1] = mdev->md.uuid[i];
 	}
 }
 
 void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
 	if (mdev->state.role == Primary) {
-		mdev->uuid[idx] = val | 1;
+		mdev->md.uuid[idx] = val | 1;
 	} else {
-		mdev->uuid[idx] = val & ~((u64)1);
+		mdev->md.uuid[idx] = val & ~((u64)1);
 	}
 }
 
 
 void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
-	if(mdev->uuid[idx]) {
+	if(mdev->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
-		mdev->uuid[History_start]=mdev->uuid[idx];
+		mdev->md.uuid[History_start]=mdev->md.uuid[idx];
 	}
 	_drbd_uuid_set(mdev,idx,val);
 }
 
 void drbd_uuid_new_current(drbd_dev *mdev)
 {
-	D_ASSERT(mdev->uuid[Bitmap] == 0);
-	mdev->uuid[Bitmap] = mdev->uuid[Current];
-	get_random_bytes(&mdev->uuid[Current], sizeof(u64));
+	D_ASSERT(mdev->md.uuid[Bitmap] == 0);
+	mdev->md.uuid[Bitmap] = mdev->md.uuid[Current];
+	get_random_bytes(&mdev->md.uuid[Current], sizeof(u64));
 	if (mdev->state.role == Primary) {
-		mdev->uuid[Current] |= 1;
+		mdev->md.uuid[Current] |= 1;
 	} else {
-		mdev->uuid[Current] &= ~((u64)1);
+		mdev->md.uuid[Current] &= ~((u64)1);
 	}
 }
 
 void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 {
-	if( mdev->uuid[Bitmap]==0 && val==0 ) return;
+	if( mdev->md.uuid[Bitmap]==0 && val==0 ) return;
 
 	if(val==0) {
 		drbd_uuid_move_history(mdev);
-		mdev->uuid[History_start]=mdev->uuid[Bitmap];
-		mdev->uuid[Bitmap]=0;
+		mdev->md.uuid[History_start]=mdev->md.uuid[Bitmap];
+		mdev->md.uuid[Bitmap]=0;
 	} else {
-		if( mdev->uuid[Bitmap] ) WARN("bm UUID already set");
+		if( mdev->md.uuid[Bitmap] ) WARN("bm UUID already set");
 
-		mdev->uuid[Bitmap] = val;
-		mdev->uuid[Bitmap] &= ~((u64)1);
+		mdev->md.uuid[Bitmap] = val;
+		mdev->md.uuid[Bitmap] &= ~((u64)1);
 	}
 }
 
 
 void drbd_md_set_flag(drbd_dev *mdev, int flag)
 {
-	if ( (mdev->md_flags & flag) != flag) {
+	MUST_HOLD(mdev->req_lock);
+	if ( (mdev->md.flags & flag) != flag) {
 		set_bit(MD_DIRTY,&mdev->flags);
-		mdev->md_flags |= flag;
+		mdev->md.flags |= flag;
 	}
 }
 void drbd_md_clear_flag(drbd_dev *mdev, int flag)
 {
-	if ( (mdev->md_flags & flag) != 0 ) {
+	MUST_HOLD(mdev->req_lock);
+	if ( (mdev->md.flags & flag) != 0 ) {
 		set_bit(MD_DIRTY,&mdev->flags);
-		mdev->md_flags &= ~flag;
+		mdev->md.flags &= ~flag;
 	}
 }
 int drbd_md_test_flag(drbd_dev *mdev, int flag)
 {
-	return ((mdev->md_flags & flag) != 0);
+	MUST_HOLD(mdev->req_lock);
+	return ((mdev->md.flags & flag) != 0);
 }
 
 module_init(drbd_init)
