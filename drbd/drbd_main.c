@@ -1054,7 +1054,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	have_disk=inc_local(mdev);
 	if(have_disk) {
 		D_ASSERT(mdev->backing_bdev);
-		d_size = drbd_get_max_capacity(mdev->backing_bdev);
+		d_size = drbd_get_max_capacity(mdev);
 	} else d_size = 0;
 
 	p.u_size = cpu_to_be64(mdev->lo_usize);
