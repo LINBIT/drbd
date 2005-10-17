@@ -132,7 +132,6 @@ ___
 %{_mandir}/man8/drbdadm.8.gz
 %{_mandir}/man5/drbd.conf.5.gz
 %doc scripts/drbd.conf
-%doc documentation/NFS-Server-README.txt
 %doc COPYING
 %doc README
 %doc file.list
