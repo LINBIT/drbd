@@ -22,7 +22,7 @@ Other helpful links:
 	http://www.drbd.org
 	http://www.drbd.org/drbd-article.html
 	http://www.linux-mag.com/2003-11/toc.html
-	http://linuxha.trick.ca/DRBD , and of course,
+	http://www.linux-ha.org/DRBD , and of course,
 	http://www.drbd.org/support.html
 
 == Prerequisites ==
@@ -244,7 +244,7 @@ Other helpful links:
    Added on your feedback and request, if necessary... ;-)
 
    Also, have a look at http://www.drbd.org , the FAQ at
-   http://linuxha.trick.ca/DRBD , and the other links mentioned
+   http://www.linux-ha.org/DRBD , and the other links mentioned
    at the top of this page.
 
 == Building a .rpm of it ==
