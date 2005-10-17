@@ -1,8 +1,19 @@
 Latest:
 ------
- ChangeLog last updated: r1915 2005-08-22
+ ChangeLog last updated: r1986 2005-10-17
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.14 (api:77/proto:74)
+-----
+ * Fixed a SMP race condition introduced in 0.7.12, that could cause
+   a lockup on a busy node in Primary/SyncSource state.
+ * In case a disc failes during a read requests, the read requests
+   is reissued to the peer. Now it also tells the peer that the disk
+   broke. 
+   Without that fix this bug could cause a resync in the wrong direction
+   after a cluster restart.
+ * Some improvements to the documentation.
 
 0.7.13 (api:77/proto:74)
 -----
