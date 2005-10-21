@@ -394,16 +394,21 @@ static void find_drbdsetup(char** pathes)
   struct stat buf;
   char **path;
 
+  if (drbdsetup) {
+    free(drbdsetup);
+    drbdsetup = NULL;
+  }
+
   path=pathes;
   while(*path) {
     if(stat(*path,&buf)==0) {
-      drbdsetup=*path;
+      drbdsetup = strdup(*path);
       return;
     }
     path++;
   }
 
-  fprintf(stderr,"Can not find drbdsetup");
+  fprintf(stderr,"Can not find drbdsetup\n");
   exit(E_exec_error);
 }
 
@@ -439,7 +444,7 @@ pid_t m_system(char** argv,int flags)
     exit(E_exec_error);
   }
   if(pid == 0) {
-    execv(argv[0],argv);
+    execvp(argv[0],argv);
     fprintf(stderr,"Can not exec\n");
     exit(E_exec_error);
   }
@@ -1159,7 +1164,6 @@ int main(int argc, char** argv)
   struct d_resource *res,*tmp;
   char *env_drbd_nodename = NULL;
 
-  drbdsetup=NULL;
   dry_run=0;
   yyin=NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
@@ -1167,17 +1171,35 @@ int main(int argc, char** argv)
   env_drbd_nodename = getenv("__DRBD_NODE__");
   if (env_drbd_nodename && *env_drbd_nodename) {
     strncpy(nodeinfo.nodename,env_drbd_nodename,sizeof(nodeinfo.nodename)-1);
-    nodeinfo.nodename[sizeof(nodeinfo.nodename)] = 0;
+    nodeinfo.nodename[sizeof(nodeinfo.nodename)-1] = 0;
     fprintf(stderr, "\n"
             "   found __DRBD_NODE__ in environment\n"
             "   PRETENDING that I am >>%s<<\n\n",nodeinfo.nodename);
   }
 
-  if( (progname=strrchr(argv[0],'/')) )
-    argv[0] = ++progname;
-  else
-    progname=argv[0];
   if(argc == 1) print_usage_and_exit("missing arguments"); // arguments missing.
+
+  /* in case drbdadm is called with an absolut or relative pathname
+   * look for the drbdsetup binary in the same location,
+   * otherwise, just let execvp sort it out... */
+  if( (progname=strrchr(argv[0],'/')) == 0 ) {
+    progname=argv[0];
+    drbdsetup = strdup("drbdsetup");
+  } else {
+    size_t len = strlen(argv[0]) + 1;
+    ++progname;
+    len += strlen("drbdsetup") - strlen(progname);
+    drbdsetup = malloc(len);
+    if (drbdsetup) {
+      strncpy(drbdsetup, argv[0], (progname - argv[0]));
+      strcpy(drbdsetup + (progname - argv[0]), "drbdsetup");
+    }
+    argv[0] = progname;
+  }
+  if (drbdsetup == NULL) {
+    fprintf(stderr,"could not strdup argv[0].\n");
+    exit(E_exec_error);
+  }
 
   opterr=1;
   optind=0;
@@ -1312,10 +1334,6 @@ int main(int argc, char** argv)
 	      "but a minor_count of %d in your config!\n", highest_minor,mc);
       exit(E_usage);
     }
-  }
-
-  if(drbdsetup == NULL) {
-    find_drbdsetup((char *[]){"./drbdsetup", "/sbin/drbdsetup", 0 });
   }
 
   if(cmd->res_name_required)
