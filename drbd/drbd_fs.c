@@ -254,6 +254,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	} else {
 		if (t) lc_free(t);
 	}
+	drbd_md_write(mdev);
 	return 0;
 }
 
