@@ -25,7 +25,6 @@
   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
 */
-
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/version.h>
@@ -1047,6 +1046,7 @@ extern int drbd_determin_dev_size(drbd_dev*);
 extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
+extern long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
 
 // drbd_worker.c
 extern int drbd_worker(struct Drbd_thread *thi);
@@ -1102,19 +1102,6 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 /*
  * event macros
  *************************/
-
-// we use these within spin_lock_irq() ...
-#ifndef wq_write_lock
-#if USE_RW_WAIT_QUEUE_SPINLOCK
-# define wq_write_lock write_lock
-# define wq_write_unlock write_unlock
-# define wq_write_unlock_irq write_unlock_irq
-#else
-# define wq_write_lock spin_lock
-# define wq_write_unlock spin_unlock
-# define wq_write_unlock_irq spin_unlock_irq
-#endif
-#endif
 
 // sched.h does not have it with timeout, so here goes:
 

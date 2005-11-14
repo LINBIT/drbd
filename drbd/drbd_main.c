@@ -76,7 +76,15 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 # endif
 #else
 # ifdef CONFIG_COMPAT
-#  include <linux/ioctl32.h>
+#  if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,10)
+    /* FIXME on which thing could we test instead of the KERNEL_VERSION
+     * again?  register_ioctl32_conversion was deprecated in 2.610, got
+     * "officially" deprecated somewhen in 2.6.12, and removed in 2.6.14.
+     * so lets assume all vendor kernels did the transition.  */
+#    define HAVE_COMPAT_IOCTL_MEMBER
+#  else
+#   include <linux/ioctl32.h>
+#  endif
 # endif
 #endif
 
@@ -163,7 +171,10 @@ STATIC struct block_device_operations drbd_ops = {
 #endif
 	.open =    drbd_open,
 	.release = drbd_close,
-	.ioctl =   drbd_ioctl
+	.ioctl =   drbd_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = drbd_compat_ioctl,
+#endif
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -1644,6 +1655,7 @@ ONLY_IN_26(
 		drbd_destroy_mempools();
 	}
 
+#ifndef HAVE_COMPAT_IOCTL_MEMBER
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	lock_kernel();
 	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
@@ -1660,6 +1672,7 @@ ONLY_IN_26(
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
 	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
 	unlock_kernel();
+#endif
 #endif
 
 NOT_IN_26(
@@ -1879,6 +1892,7 @@ NOT_IN_26(
 
 	NOT_IN_26(blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),drbd_make_request_24);)
 
+#ifndef HAVE_COMPAT_IOCTL_MEMBER
 #if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	// tell the kernel that we think our ioctls are 64bit clean
 	lock_kernel();
@@ -1896,6 +1910,7 @@ NOT_IN_26(
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
 	unlock_kernel();
+#endif
 #endif
 
 	printk(KERN_INFO DEVICE_NAME ": initialised. "

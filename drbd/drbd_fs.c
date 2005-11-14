@@ -1021,6 +1021,17 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	return 0;
 }
 
+#ifdef CONFIG_COMPAT
+long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
+{
+	int ret;
+	lock_kernel();
+	ret = drbd_ioctl(f->f_dentry->d_inode, f, cmd, arg);
+	unlock_kernel();
+	return ret;
+}
+#endif
+
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
@@ -1404,4 +1415,3 @@ ONLY_IN_26(
  out_unlocked:
 	return err;
 }
-
