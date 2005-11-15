@@ -58,19 +58,19 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	prev_first_sect = drbd_md_first_sector(mdev);
-	prev_size = mdev->md.md_size_sect;
-	la_size = mdev->md.la_size_sect;
+	prev_first_sect = drbd_md_first_sector(mdev->bc);
+	prev_size = mdev->bc->md.md_size_sect;
+	la_size = mdev->bc->md.la_size_sect;
 
 	// TODO: should only be some assert here, not (re)init...
-	drbd_md_set_sector_offsets(mdev);
+	drbd_md_set_sector_offsets(mdev,mdev->bc);
 	rv = do_determin_dev_size(mdev);
 
-	la_size_changed = (la_size != mdev->md.la_size_sect);
+	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
 
 #warning flexible device size!! is this the right thing to test?
-	md_moved = prev_first_sect != drbd_md_first_sector(mdev)
-		|| prev_size       != mdev->md.md_size_sect;
+	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
+		|| prev_size       != mdev->bc->md.md_size_sect;
 
 	if ( md_moved ) {
 		WARN("Moving meta-data.\n");
@@ -80,7 +80,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	if ( la_size_changed || md_moved ) {
 		drbd_al_shrink(mdev); // All extents inactive.
 		drbd_bm_write(mdev);  // write bitmap
-		// Write mdev->md.la_size_sect to [possibly new position on] disk.
+		// Write mdev->bc->md.la_size_sect to [possibly new position on] disk.
 		drbd_md_write(mdev);
 	}
 	lc_unlock(mdev->act_log);
@@ -117,9 +117,9 @@ char* ppsize(char* buf, size_t size)
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 {
 	sector_t p_size = mdev->p_size;   // partner's disk size.
-	sector_t la_size = mdev->md.la_size_sect; // last agreed size.
+	sector_t la_size = mdev->bc->md.la_size_sect; // last agreed size.
 	sector_t m_size; // my size
-	sector_t u_size = mdev->lo_usize; // size requested by user.
+	sector_t u_size = mdev->bc->u_size; // size requested by user.
 	sector_t size=0;
 	int rv;
 	char ppb[10];
@@ -173,7 +173,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		}
 		// racy, see comments above.
 		drbd_set_my_capacity(mdev,size);
-		mdev->md.la_size_sect = size;
+		mdev->bc->md.la_size_sect = size;
 		INFO("size = %s (%lu KB)\n",ppsize(ppb,size>>1),
 		     (unsigned long)size>>1);
 	}
@@ -181,7 +181,9 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 	return rv;
 }
 
-/* checks that the al lru is of requested size, and if neccessary tries to
+/** 
+ * drbd_check_al_size:
+ * checks that the al lru is of requested size, and if neccessary tries to
  * allocate a new one. returns -EBUSY if current al lru is still used,
  * -ENOMEM when allocation failed, and 0 on success.
  */
@@ -235,7 +237,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 {
 	request_queue_t * const q = mdev->rq_queue;
-	request_queue_t * const b = mdev->backing_bdev->bd_disk->queue;
+	request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
 
 	unsigned int old_max_seg_s = q->max_segment_size;
 
@@ -265,121 +267,93 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 {
 	int i, md_gc_valid, minor;
 	enum ret_codes retcode;
-	struct disk_config new_conf;
-	struct file *filp = 0;
-	struct file *filp2 = 0;
+	struct disk_config new_conf;  // local copy of ioctl() args.
+	struct drbd_backing_dev* nbc; // new_backing_conf
 	struct inode *inode, *inode2;
-	struct block_device *bdev, *bdev2;
 	drbd_disks_t nds;
 
 	minor=(int)(mdev-drbd_conf);
 
 	/* if you want to reconfigure, please tear down first */
-	smp_rmb();
 	if (mdev->state.disk > Diskless)
-		return -EBUSY;
-
-	/* if this was "adding" a lo dev to a previously "diskless" node,
-	 * there still could be requests comming in right now. brrks.
-	 * if it was mounted, we had an open_cnt > 1,
-	 * so it would be BUSY anyways...
-	 */
-	ERR_IF (mdev->state.role != Secondary)
-		return -EBUSY;
-
-	if (mdev->open_cnt > 1)
 		return -EBUSY;
 
 	if (copy_from_user(&new_conf, &arg->config,sizeof(struct disk_config)))
 		return -EFAULT;
 
-	/* FIXME
-	 * I'd like to do it here, so I can just fail this ioctl with ENOMEM.
-	 * but drbd_md_read below might change the al_nr_extens again, so need
-	 * to do it there again anyways...
-	 * but then I already changed it all and cannot easily undo it..
-	 * for now, do it there, but then if it fails, rather panic than later
-	 * have a NULL pointer dereference.
-	 *
-	i = drbd_check_al_size(mdev);
-	if (i) return i;
-	 *
-	 */
-
-
-	/* FIXME allow reattach while connected,
-	 * and allow it in Primary/Diskless state...
-	 * currently there are strange races leading to a distributed
-	 * deadlock in that case...
-	 */
-	if ( mdev->state.conn > StandAlone ) {
-		return -EBUSY;
+	nbc = kmalloc(sizeof(struct drbd_backing_dev),GFP_KERNEL);
+	if(!nbc) {			
+		retcode=KMallocFailed;
+		goto fail_ioctl;
 	}
+	nbc->lo_file = NULL;
+	nbc->md_file = NULL;
 
-#warning "FIXME hardcoded"
-	if ( new_conf.meta_index < -3) {
+	if ( new_conf.meta_index < DRBD_MD_INDEX_FLEX_INT) {
 		retcode=LDMDInvalid;
 		goto fail_ioctl;
 	}
 
-	filp = fget(new_conf.lower_device);
-	if (!filp) {
+	nbc->lo_file = fget(new_conf.lower_device);
+	if (!nbc->lo_file) {
 		retcode=LDFDInvalid;
 		goto fail_ioctl;
 	}
 
-	inode = filp->f_dentry->d_inode;
+	inode = nbc->lo_file->f_dentry->d_inode;
 
 	if (!S_ISBLK(inode->i_mode)) {
 		retcode=LDNoBlockDev;
 		goto fail_ioctl;
 	}
 
-	filp2 = fget(new_conf.meta_device);
+	nbc->md_file = fget(new_conf.meta_device);
 
-	if (!filp2) {
+	if (!nbc->md_file) {
 		retcode=MDFDInvalid;
 		goto fail_ioctl;
 	}
 
-	inode2 = filp2->f_dentry->d_inode;
+	inode2 = nbc->md_file->f_dentry->d_inode;
 
 	if (!S_ISBLK(inode2->i_mode)) {
 		retcode=MDNoBlockDev;
 		goto fail_ioctl;
 	}
 
-	bdev = inode->i_bdev;
-	if (bd_claim(bdev, mdev)) {
+	nbc->backing_bdev = inode->i_bdev;
+	if (bd_claim(nbc->backing_bdev, mdev)) {
 		retcode=LDMounted;
 		goto fail_ioctl;
 	}
 
-	bdev2 = inode2->i_bdev;
-
-
-#warning checks below no longer valid
-// --- rewrite
-	if (bd_claim(bdev2, new_conf.meta_index == -1 ?
+	nbc->md_bdev = inode2->i_bdev;
+	if (bd_claim(nbc->md_bdev,
+		     (new_conf.meta_index==DRBD_MD_INDEX_INTERNAL ||
+		      new_conf.meta_index==DRBD_MD_INDEX_FLEX_INT) ?
 		     (void *)mdev : (void*) drbd_m_holder )) {
 		retcode=MDMounted;
 		goto release_bdev_fail_ioctl;
 	}
 
-	if ( (bdev == bdev2) != (new_conf.meta_index == -1) ) {
+	if ( (nbc->backing_bdev==nbc->md_bdev) != 
+	     (new_conf.meta_index==DRBD_MD_INDEX_INTERNAL ||
+	      new_conf.meta_index==DRBD_MD_INDEX_FLEX_INT) ) {
 		retcode=LDMDInvalid;
 		goto release_bdev2_fail_ioctl;
 	}
 
-#if 0
-	if ((drbd_get_capacity(bdev)>>1) < new_conf.disk_size) {
+	if ((drbd_get_capacity(nbc->backing_bdev)>>1) < new_conf.disk_size) {
 		/* FIXME maybe still allow,
 		 * but leave only DRBD_MAX_SECTORS usable */
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail_ioctl;
 	}
 
-	if (drbd_get_capacity(bdev) >= (sector_t)DRBD_MAX_SECTORS) {
+#warning checks below no longer valid
+// --- rewrite
+#if 0
+	if (drbd_get_capacity(nbc->backing_bdev) >= (sector_t)DRBD_MAX_SECTORS) {
 		retcode = LDDeviceTooLarge;
 		goto release_bdev2_fail_ioctl;
 	}
@@ -396,28 +370,44 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * FIXME this is arbitrary and needs to be reconsidered as soon as we
 	 * move to flexible size meta data.
 	 */
-	if( drbd_get_capacity(bdev2) < MD_RESERVED_SECT*i
+	if( drbd_get_capacity(nbc->md_bdev) < 2*MD_RESERVED_SIZE*i
 				+ (new_conf.meta_index == -1) ? (1<<16) : 0 )
 	{
 		retcode = MDDeviceTooSmall;
 		goto release_bdev2_fail_ioctl;
 	}
 #endif
-// --- up to here
+// -- up to here
 
-	drbd_free_ll_dev(mdev);
+	if(drbd_request_state(mdev,NS(disk,Attaching)) <= 0 ) {
+		retcode = StateNotAllowed;
+		goto release_bdev2_fail_ioctl;
+	}
+
+	nbc->md_index = new_conf.meta_index;
+	nbc->u_size = new_conf.disk_size;
+	nbc->on_io_error = new_conf.on_io_error;
+	drbd_md_set_sector_offsets(mdev,nbc);
+
+	md_gc_valid = drbd_md_read(mdev,nbc);
+	if ( md_gc_valid != NoError ) {
+		retcode = md_gc_valid;
+		goto release_bdev3_fail_ioctl;
+	}
+
+	// Since ware are diskless, fix the AL first...
+	if (drbd_check_al_size(mdev)) {
+		retcode = KMallocFailed;
+		goto release_bdev3_fail_ioctl;
+	}
+
+	// Point of no return reached.
+
+	D_ASSERT(mdev->bc == NULL);
+	mdev->bc = nbc;
 
 	if (new_conf.split_brain_fix) set_bit(SPLIT_BRAIN_FIX,&mdev->flags);
 	else clear_bit(SPLIT_BRAIN_FIX,&mdev->flags);
-
-	mdev->md_bdev  = bdev2;
-	mdev->md_file  = filp2;
-	mdev->md_index = new_conf.meta_index;
-
-	mdev->backing_bdev = bdev;
-	mdev->lo_file  = filp;
-	mdev->lo_usize = new_conf.disk_size;
-	mdev->on_io_error = new_conf.on_io_error;
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -428,21 +418,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	/*
 	 * FIXME currently broken.
 	 * drbd_set_recv_tcq(mdev,drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
-	 */
-
-	set_bit(MD_IO_ALLOWED,&mdev->flags);
-	drbd_md_set_sector_offsets(mdev);
-	md_gc_valid = drbd_md_read(mdev);
-
-	if (md_gc_valid != NoError) {
-		retcode = md_gc_valid;
-		goto unset_fail_ioctl;
-	}
-
-	/* We reach this only if we have a valid meta data block,
-	 * so we no longer create one here, if we don't find one.
-	 * That means that initially, you HAVE to use the drbdmeta
-	 * command to create one in user space.
 	 */
 
 	drbd_bm_lock(mdev); // racy...
@@ -486,8 +461,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	     FIXME wipe out on disk al!
 	} */
 
-	drbd_set_blocksize(mdev,INITIAL_BLOCK_SIZE);
-
 	/* If MDF_Consistent is not set go into inconsistent state, otherwise
 	   investige MDF_WasUpToDate...
 	   If MDF_WasUpToDate is not set go into Outdated disk state, otherwise
@@ -507,29 +480,19 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		drbd_thread_start(&mdev->worker);
 	}
 
-// FIXME EXPLAIN:
-	clear_bit(MD_IO_ALLOWED,&mdev->flags);
-
 	drbd_bm_unlock(mdev);
 
 	return 0;
-
- unset_fail_ioctl:
-	mdev->md_bdev  = 0;
-	mdev->md_file  = 0;
-	mdev->md_index = 0;
-
-	mdev->backing_bdev = 0;
-	mdev->lo_file  = 0;
-	mdev->lo_usize = 0;
-	mdev->on_io_error = 0;
+ release_bdev3_fail_ioctl:
+	drbd_force_state(mdev,NS(disk,Diskless));
  release_bdev2_fail_ioctl:
-	bd_release(bdev2);
+	bd_release(nbc->md_bdev);
  release_bdev_fail_ioctl:
-	bd_release(bdev);
+	bd_release(nbc->backing_bdev);
  fail_ioctl:
-	if (filp) fput(filp);
-	if (filp2) fput(filp2);
+	if (nbc->lo_file) fput(nbc->lo_file);
+	if (nbc->md_file) fput(nbc->md_file);
+	if (nbc) kfree(nbc);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
@@ -540,20 +503,22 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 	struct ioctl_get_config cn;
 	memset(&cn,0,sizeof(cn));
 
-	if (mdev->backing_bdev) {
-		cn.lower_device_major = MAJOR(mdev->backing_bdev->bd_dev);
-		cn.lower_device_minor = MINOR(mdev->backing_bdev->bd_dev);
-		bdevname(mdev->backing_bdev,cn.lower_device_name);
-	}
-	if (mdev->md_bdev) {
-		cn.meta_device_major  = MAJOR(mdev->md_bdev->bd_dev);
-		cn.meta_device_minor  = MINOR(mdev->md_bdev->bd_dev);
-		bdevname(mdev->md_bdev,cn.meta_device_name);
+	if(inc_local(mdev)) {
+		cn.lower_device_major = MAJOR(mdev->bc->backing_bdev->bd_dev);
+		cn.lower_device_minor = MINOR(mdev->bc->backing_bdev->bd_dev);
+		bdevname(mdev->bc->backing_bdev,cn.lower_device_name);
+		cn.meta_device_major  = MAJOR(mdev->bc->md_bdev->bd_dev);
+		cn.meta_device_minor  = MINOR(mdev->bc->md_bdev->bd_dev);
+		bdevname(mdev->bc->md_bdev,cn.meta_device_name);
+		cn.meta_index=mdev->bc->md_index;
+		cn.on_io_error=mdev->bc->on_io_error;
+		dec_local(mdev);
 	}
 	cn.state=mdev->state;
-	cn.meta_index=mdev->md_index;
-	cn.on_io_error=mdev->on_io_error;
-	memcpy(&cn.nconf, &mdev->conf, sizeof(struct net_config));
+	if(inc_net(mdev)) {
+		memcpy(&cn.nconf, mdev->net_conf, sizeof(struct net_config));
+		dec_net(mdev);
+	}
 	memcpy(&cn.sconf, &mdev->sync_conf, sizeof(struct syncer_config));
 
 	if (copy_to_user(arg,&cn,sizeof(struct ioctl_get_config)))
@@ -568,36 +533,41 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 {
 	int i,minor;
 	enum ret_codes retcode;
-	struct net_config new_conf;
+	struct net_config *new_conf = NULL;
 	struct crypto_tfm* tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
 
 	minor=(int)(mdev-drbd_conf);
 
-	if( mdev->state.role == Primary && mdev->conf.want_lose ) {
+	new_conf = kmalloc(sizeof(struct net_config),GFP_KERNEL);
+	if(!new_conf) {			
+		retcode=KMallocFailed;
+		goto fail_ioctl;
+	}
+
+	if (copy_from_user(new_conf, &arg->config,sizeof(struct net_config)))
+		return -EFAULT;
+
+	if( mdev->state.role == Primary && new_conf->want_lose ) {
 		retcode=DiscardNotAllowed;
 		goto fail_ioctl;
 	}
 
-	// FIXME plausibility check
-	if (copy_from_user(&new_conf, &arg->config,sizeof(struct net_config)))
-		return -EFAULT;
-
-#define M_ADDR(A) (((struct sockaddr_in *)&A.my_addr)->sin_addr.s_addr)
-#define M_PORT(A) (((struct sockaddr_in *)&A.my_addr)->sin_port)
-#define O_ADDR(A) (((struct sockaddr_in *)&A.other_addr)->sin_addr.s_addr)
-#define O_PORT(A) (((struct sockaddr_in *)&A.other_addr)->sin_port)
+#define M_ADDR(A) (((struct sockaddr_in *)&A->my_addr)->sin_addr.s_addr)
+#define M_PORT(A) (((struct sockaddr_in *)&A->my_addr)->sin_port)
+#define O_ADDR(A) (((struct sockaddr_in *)&A->other_addr)->sin_addr.s_addr)
+#define O_PORT(A) (((struct sockaddr_in *)&A->other_addr)->sin_port)
 	for(i=0;i<minor_count;i++) {
 		if( i!=minor && drbd_conf[i].state.conn > StandAlone &&
-		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].conf) &&
-		    M_PORT(new_conf) == M_PORT(drbd_conf[i].conf) ) {
+		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].net_conf) &&
+		    M_PORT(new_conf) == M_PORT(drbd_conf[i].net_conf) ) {
 			retcode=LAAlreadyInUse;
 			goto fail_ioctl;
 		}
 		if( i!=minor && drbd_conf[i].state.conn > StandAlone &&
-		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].conf) &&
-		    O_PORT(new_conf) == O_PORT(drbd_conf[i].conf) ) {
+		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].net_conf) &&
+		    O_PORT(new_conf) == O_PORT(drbd_conf[i].net_conf) ) {
 			retcode=OAAlreadyInUse;
 			goto fail_ioctl;
 		}
@@ -607,8 +577,8 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #undef O_ADDR
 #undef O_PORT
 
-	if( new_conf.cram_hmac_alg[0] != 0) {
-		tfm = crypto_alloc_tfm(new_conf.cram_hmac_alg, 0);
+	if( new_conf->cram_hmac_alg[0] != 0) {
+		tfm = crypto_alloc_tfm(new_conf->cram_hmac_alg, 0);
 		if (tfm == NULL) {
 			retcode=CRAMAlgNotAvail;
 			goto fail_ioctl;
@@ -621,23 +591,25 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	}
 
 
-	if (mdev->tl_hash_s != new_conf.max_epoch_size/8 ) {
-		new_tl_hash=kmalloc((new_conf.max_epoch_size/8)*sizeof(void*),
+	if (mdev->tl_hash_s != new_conf->max_epoch_size/8 ) {
+		new_tl_hash=kmalloc((new_conf->max_epoch_size/8)*sizeof(void*),
 				    GFP_KERNEL);
 		if(!new_tl_hash) {
 			retcode=KMallocFailed;
 			goto fail_ioctl;
 		}
+		memset(new_tl_hash, 0, mdev->tl_hash_s * sizeof(void*));
 	}
 
-	if (new_conf.two_primaries &&
-	    ( mdev->ee_hash_s != new_conf.max_buffers/8 ) ) {
-		new_ee_hash=kmalloc((new_conf.max_buffers/8)*sizeof(void*),
+	if (new_conf->two_primaries &&
+	    ( mdev->ee_hash_s != new_conf->max_buffers/8 ) ) {
+		new_ee_hash=kmalloc((new_conf->max_buffers/8)*sizeof(void*),
 				    GFP_KERNEL);
 		if(!new_ee_hash) {
 			retcode=KMallocFailed;
 			goto fail_ioctl;
 		}
+		memset(new_ee_hash, 0, mdev->ee_hash_s * sizeof(void*));
 	}
 
 	/* IMPROVE:
@@ -645,16 +617,10 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	   used already. E.g. some FS mounted on it.
 	*/
 
-	drbd_sync_me(mdev);
-	drbd_thread_stop(&mdev->receiver);
-	drbd_free_sock(mdev);
+	((char*)new_conf->shared_secret)[SHARED_SECRET_MAX-1]=0;
 
-	// TODO plausibility check ...
-	memcpy(&mdev->conf,&new_conf,sizeof(struct net_config));
-
-	((char*)mdev->conf.shared_secret)[SHARED_SECRET_MAX-1]=0;
 #if 0
-FIXME
+FIXME LGE
 	/* for the connection loss logic in drbd_recv
 	 * I _need_ the resulting timeo in jiffies to be
 	 * non-zero and different
@@ -668,37 +634,50 @@ FIXME
 	 */
 	// unlikely: someone disabled the timeouts ...
 	// just put some huge values in there.
-	if (!mdev->conf.ping_int)
-		mdev->conf.ping_int = MAX_SCHEDULE_TIMEOUT/HZ;
-	if (!mdev->conf.timeout)
-		mdev->conf.timeout = MAX_SCHEDULE_TIMEOUT/HZ*10;
-	if (mdev->conf.ping_int*10 < mdev->conf.timeout)
-		mdev->conf.timeout = mdev->conf.ping_int*10/6;
-	if (mdev->conf.ping_int*10 == mdev->conf.timeout)
-		mdev->conf.ping_int = mdev->conf.ping_int+1;
+	if (!new_conf->ping_int)
+		new_conf->ping_int = MAX_SCHEDULE_TIMEOUT/HZ;
+	if (!new_conf->timeout)
+		new_conf->timeout = MAX_SCHEDULE_TIMEOUT/HZ*10;
+	if (new_conf->ping_int*10 < new_conf->timeout)
+		new_conf->timeout = new_conf->ping_int*10/6;
+	if (new_conf->ping_int*10 == new_conf->timeout)
+		new_conf->ping_int = new_conf->ping_int+1;
 #endif
+
+	drbd_sync_me(mdev);
+	drbd_thread_stop(&mdev->receiver); // conn = StadAlone afterwards
+	drbd_free_sock(mdev);
+
+	/* As soon as mdev->state.conn < Unconnected nobody can increase
+	   the net_cnt. Wait until the net_cnt is 0. */
+	if ( wait_event_interruptible( mdev->cstate_wait,
+				       atomic_read(&mdev->net_cnt) == 0 ) ) {
+		retcode=GotSignal;
+		goto fail_ioctl;
+	}
+
+	/* Now we may touch net_conf */
+	if (mdev->net_conf) kfree(mdev->net_conf);
+	mdev->net_conf = new_conf;
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
 
 	if(new_tl_hash) {
 		if (mdev->tl_hash) kfree(mdev->tl_hash);
-		mdev->tl_hash_s = mdev->conf.max_epoch_size/8;
+		mdev->tl_hash_s = mdev->net_conf->max_epoch_size/8;
 		mdev->tl_hash = new_tl_hash;
-		memset(mdev->tl_hash, 0, mdev->tl_hash_s * sizeof(void*));
 	}
 
 	if(new_ee_hash) {
 		if (mdev->ee_hash) kfree(mdev->ee_hash);
-		mdev->ee_hash_s = mdev->conf.max_buffers/8;
+		mdev->ee_hash_s = mdev->net_conf->max_buffers/8;
 		mdev->ee_hash = new_ee_hash;
-		memset(mdev->ee_hash, 0, mdev->ee_hash_s * sizeof(void*));
 	}
 
 	if ( mdev->cram_hmac_tfm ) {
 		crypto_free_tfm(mdev->cram_hmac_tfm);
 	}
-
 	mdev->cram_hmac_tfm = tfm;
 
 	drbd_thread_start(&mdev->worker);
@@ -712,6 +691,7 @@ FIXME
 	if (tfm) crypto_free_tfm(tfm);
 	if (new_tl_hash) kfree(new_tl_hash);
 	if (new_ee_hash) kfree(new_ee_hash);
+	if (new_conf) kfree(new_conf);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
@@ -852,14 +832,17 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	if (newstate & Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
 	} else {
-		mdev->conf.want_lose = 0;
+		if(inc_net(mdev)) {
+			mdev->net_conf->want_lose = 0;
+			dec_net(mdev);
+		}
 		set_disk_ro(mdev->vdisk, FALSE );
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 
 		if ( (mdev->state.conn < WFReportParams &&
-		      mdev->md.uuid[Bitmap] == 0) || forced ) {
+		      mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}
 	}
@@ -974,7 +957,6 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	return 0;
 }
 
-/* new */
 STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 {
 	int interrupted,r;
@@ -993,14 +975,16 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 
 	drbd_sync_me(mdev);
 
+	/* since inc_local() only works as long as disk >= Inconsistent,
+	   and it is Diskless here, local_cnt can only go down, it can
+	   not increase... It will reach zero */
 	interrupted = wait_event_interruptible(mdev->cstate_wait,
-				      atomic_read(&mdev->local_cnt)==0);
+					       !atomic_read(&mdev->local_cnt));
 	if ( interrupted ) {
 		drbd_force_state(mdev,NS(disk,os.disk));
 		return -EINTR;
 	}
 
-	drbd_free_ll_dev(mdev);
 	after_state_ch(mdev, os, ns);
 
 /* FIXME
@@ -1058,9 +1042,9 @@ STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 	memset(&cn,0,sizeof(cn));
 
 	for (i = Current; i < UUID_SIZE; i++) {
-		cn.uuid[i]=mdev->md.uuid[i];
+		cn.uuid[i]=mdev->bc->md.uuid[i];
 	}
-	cn.flags = mdev->md.flags;
+	cn.flags = mdev->bc->md.flags;
 	cn.bits_set = drbd_bm_total_weight(mdev);
 	cn.current_size = drbd_get_capacity(mdev->this_bdev);
 
@@ -1197,10 +1181,10 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			break;
 		}
 		err=0;
-		mdev->lo_usize = (sector_t)(u64)arg;
+		mdev->bc->u_size = (sector_t)(u64)arg;
 		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
-		drbd_md_write(mdev); // Write mdev->md.la_size_sect to disk.
+		drbd_md_write(mdev); // Write mdev->bc->md.la_size_sect to disk.
 		drbd_bm_unlock(mdev);
 		if (mdev->state.conn == Connected) {
 			drbd_send_uuids(mdev); // to start sync...

@@ -85,7 +85,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	}
 
 	uptodate = req->rq_status & 0x0001;
-	if( !uptodate && mdev->on_io_error == Detach) {
+	if( !uptodate && mdev->bc->on_io_error == Detach) {
 		drbd_set_out_of_sync(mdev,rsector, drbd_req_get_size(req));
 		// It should also be as out of sync on
 		// the other side!  See w_io_error()
@@ -207,7 +207,7 @@ static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 		req->master_bio  = bio_src;
 		req->private_bio = bio;
 
-		bio->bi_bdev     = mdev->backing_bdev;
+		bio->bi_bdev     = mdev->bc->backing_bdev;
 		bio->bi_private  = req;
 		bio->bi_end_io   =
 			bio_data_dir(bio) == WRITE
@@ -342,7 +342,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
 				break;
 			default: /* block was sent */
-				if(mdev->conf.wire_protocol == DRBD_PROT_A) {
+			  if(mdev->net_conf->wire_protocol == DRBD_PROT_A) { // PRE LOCKING
 					dec_ap_pending(mdev);
 					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 				}

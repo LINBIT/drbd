@@ -29,29 +29,15 @@ static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
-	loff_t capacity = bdev ? bdev->bd_inode->i_size >> 9 : 0;
-	if ((sector_t)capacity != capacity)
-		printk(KERN_ERR "drbd: overflow in drbd_get_capacity\n");
-	return (sector_t)capacity;
+	return bdev ? bdev->bd_inode->i_size >> 9 : 0;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */
-static inline void drbd_set_my_capacity(drbd_dev *mdev, sector_t size)
+static inline void drbd_set_my_capacity(drbd_dev *mdev,
+					sector_t size)
 {
 	set_capacity(mdev->vdisk,size);
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
-}
-
-//#warning "FIXME why don't we care for the return value?"
-static inline void drbd_set_blocksize(drbd_dev *mdev, int blksize)
-{
-	set_blocksize(mdev->this_bdev,blksize);
-	if (mdev->backing_bdev) {
-		set_blocksize(mdev->backing_bdev, blksize);
-	} else {
-		D_ASSERT(mdev->backing_bdev);
-		// FIXME send some package over to the peer?
-	}
 }
 
 static inline int drbd_sync_me(drbd_dev *mdev)
@@ -196,17 +182,18 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 
 static inline void drbd_kick_lo(drbd_dev *mdev)
 {
-	if (!mdev->backing_bdev) {
+	if (!mdev->bc->backing_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
 			ERR("backing_bdev==NULL in drbd_kick_lo! The following call trace is for debuggin purposes only. Don't worry.\n");
 			dump_stack();
 		}
 	} else {
-		request_queue_t *q = bdev_get_queue(mdev->backing_bdev);
+		request_queue_t *q;
+		q = bdev_get_queue(mdev->bc->backing_bdev);
 		/*
 		 * FIXME investigate what makes most sense:
 		 * struct backing_dev_info *bdi;
-		 * bdi = mdev->backing_bdev->bd_inode->i_mapping->backing_dev_info;
+		 * bdi = mdev->bc->backing_bdev->bd_inode->i_mapping->backing_dev_info;
 		 * bdi = &q->backing_dev_info;
 		 * blk_run_queue(q);
 		 *
@@ -220,7 +207,8 @@ static inline void drbd_kick_lo(drbd_dev *mdev)
 
 static inline void drbd_plug_device(drbd_dev *mdev)
 {
-	request_queue_t *q = bdev_get_queue(mdev->this_bdev);
+	request_queue_t *q;
+	q = bdev_get_queue(mdev->this_bdev);
 
 	spin_lock_irq(q->queue_lock);
 

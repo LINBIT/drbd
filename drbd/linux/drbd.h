@@ -154,6 +154,8 @@ enum ret_codes {
 	CRAMAlgNotDigest,
 	KMallocFailed,
 	DiscardNotAllowed,
+	StateNotAllowed,
+	GotSignal, // EINTR
 };
 
 struct ioctl_disk_config {
@@ -227,6 +229,7 @@ typedef enum {
 typedef enum {
 	Diskless,
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
+	Attaching,      /* In the process of reading the meta-data */
 	Inconsistent,
 	Outdated,
 	DUnknown,

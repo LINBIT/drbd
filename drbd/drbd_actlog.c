@@ -34,14 +34,15 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
-				 sector_t sector, int rw, int size)
+STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev, 
+				 struct page *page, sector_t sector, 
+				 int rw, int size)
 {
 	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
 	struct completion event;
 	int ok;
 
-	bio->bi_bdev = mdev->md_bdev;
+	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
 	bio_add_page(bio, page, size, 0);
 	init_completion(&event);
@@ -52,7 +53,7 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
 	submit_bio(rw | (1 << BIO_RW_SYNC), bio);
 #else
 	submit_bio(rw, bio);
-	drbd_blk_run_queue(bdev_get_queue(mdev->md_bdev));
+	drbd_blk_run_queue(bdev_get_queue(bdev->md_bdev));
 #endif
 	wait_for_completion(&event);
 
@@ -61,23 +62,24 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
 	return ok;
 }
 
-int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
+int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
+			 sector_t sector, int rw)
 {
 	int hardsect,mask,ok,offset=0;
 	struct page *iop = mdev->md_io_page;
 
 	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
 
-	if (!mdev->md_bdev) {
+	if (!bdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("mdev->md_bdev==NULL\n");
+			ERR("bdev->md_bdev==NULL\n");
 			dump_stack();
 		}
 		return 0;
 	}
 
 
-	hardsect = drbd_get_hardsect(mdev->md_bdev);
+	hardsect = drbd_get_hardsect(bdev->md_bdev);
 
 	// in case hardsect != 512 [ s390 only? ]
 	if( hardsect != MD_HARDSECT ) {
@@ -103,7 +105,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 			void *p = page_address(mdev->md_io_page);
 			void *hp = page_address(mdev->md_io_tmpp);
 
-			ok = _drbd_md_sync_page_io(mdev,iop,
+			ok = _drbd_md_sync_page_io(bdev,iop,
 						   sector,READ,hardsect);
 
 			if (unlikely(!ok)) return 0;
@@ -118,13 +120,13 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	     sector, rw ? "WRITE" : "READ");
 #endif
 
-	if (sector < drbd_md_first_sector(mdev)  || sector > drbd_md_last_sector(mdev)) {
+	if (sector < drbd_md_first_sector(bdev)  || sector > drbd_md_last_sector(bdev)) {
 		ALERT("%s [%d]:%s(,%llu,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, rw ? "WRITE" : "READ");
 	}
 
-	ok = _drbd_md_sync_page_io(mdev,iop,sector,rw,hardsect);
+	ok = _drbd_md_sync_page_io(bdev,iop,sector,rw,hardsect);
 	if (unlikely(!ok)) {
 		ERR("drbd_md_sync_page_io(,%llu,%s) failed!\n",
 		    (unsigned long long)sector,rw ? "WRITE" : "READ");
@@ -295,9 +297,9 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
 #warning check outcome of addition u64/sector_t/s32
-	sector = mdev->md.md_offset + mdev->md.al_offset + mdev->al_tr_pos;
+	sector = mdev->bc->md.md_offset + mdev->bc->md.al_offset + mdev->al_tr_pos;
 
-	if(!drbd_md_sync_page_io(mdev,sector,WRITE)) {
+	if(!drbd_md_sync_page_io(mdev,mdev->bc,sector,WRITE)) {
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
 	}
@@ -319,9 +321,9 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	int rv,i;
 	u32 xor_sum=0;
 
-	sector = mdev->md.md_offset + mdev->md.al_offset + index;
+	sector = mdev->bc->md.md_offset + mdev->bc->md.al_offset + index;
 
-	if(!drbd_md_sync_page_io(mdev,sector,READ)) {
+	if(!drbd_md_sync_page_io(mdev,mdev->bc,sector,READ)) {
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
 		return 0;
@@ -442,9 +444,9 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	i=inc_local_md_only(mdev);
+	i=inc_md_only(mdev,Attaching);
 	D_ASSERT( i ); // Assertions should not have side effects.
-	// I do not want to have D_ASSERT( inc_local_md_only(mdev) );
+	// I do not want to have D_ASSERT( inc_md_only(mdev,Attaching) );
 
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
@@ -525,7 +527,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
-	if( !inc_local_md_only(mdev) ) {
+	if( !inc_md_only(mdev,Attaching) ) {
 		if (DRBD_ratelimit(5*HZ,5))
 			WARN("Can not update on disk bitmap, local IO disabled.\n");
 		return 1;

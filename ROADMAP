@@ -358,13 +358,9 @@ DRBD 0.8 Roadmap
 
   Remove config options   syncer { group <number>; }
   Introduce config options   syncer { after <resource>; }
-  50% DONE
+  99% DONE
       Finished the implementation. Tested.
 
-  TOOD: Rethink the whole thing and consider:
-        * 3 node setups.
-        * Coordinate with the resync of raid controllers.
-  
 11 Take into account that the two systems could have different 
   PAGE_SIZE. 
 
@@ -646,7 +642,16 @@ DRBD 0.8 Roadmap
    than two nodes!
 
    99% DONE
-   
+
+24 Make it possible to hot-add disk drives == Atomic configuration changes.
+   80% DONE [ The net and disk config changes are atomic by now ]
+
+25 Add reserved fields to DRBD-meta-data, add a bytes per bit field to
+   metadata.
+
+26 Implement a kind of "dstate" command to make integration with 
+   Heartbeat-2.0's master/slave-support possible.
+
 
 plus-banches:
 ----------------------

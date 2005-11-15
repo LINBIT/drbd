@@ -65,8 +65,6 @@ extern char* drbd_devfs_name;
 #define FALSE 0
 #endif
 
-#define INITIAL_BLOCK_SIZE (1<<12)  // 4K
-
 /* I don't remember why XCPU ...
  * This is used to wake the asender,
  * and to interrupt sending the sending task
@@ -636,7 +634,6 @@ enum {
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
 	PROCESS_EE_RUNNING,	// eek!
-	MD_IO_ALLOWED,		// EXPLAIN
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	UNIQUE,                 // Set on one node, cleared on the peer!
@@ -696,6 +693,17 @@ struct drbd_md {
 	 */
 };
 
+struct drbd_backing_dev {
+	struct block_device *backing_bdev;
+	struct block_device *md_bdev;
+	struct file *lo_file;
+	struct file *md_file;
+	int md_index;
+	enum io_error_handler on_io_error;
+	sector_t u_size;   /* user provided size */
+	struct drbd_md md;
+};
+
 struct Drbd_Conf {
 #ifdef PARANOIA
 	long magic;
@@ -703,25 +711,18 @@ struct Drbd_Conf {
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
 
-	struct drbd_md md;
-
 	/* config data protected by: */
 	struct semaphore device_mutex;
 
 	/* configured by drbdsetup */
-	struct net_config conf;
+	struct net_config *net_conf; // protected by inc_net() and dec_net()
 	struct syncer_config sync_conf;
-	enum io_error_handler on_io_error;
+	struct drbd_backing_dev *bc; // protected by inc_local() dec_local()
 
-	/* to become struct disk_config soonish */
-	struct file *lo_file;
-	struct file *md_file;
-	int md_index;
-	struct block_device *backing_bdev;
-	struct block_device *this_bdev;
-	struct block_device *md_bdev;
-	struct gendisk      *vdisk;
+	sector_t p_size;     /* partner's disk size */
 	request_queue_t     *rq_queue;
+	struct block_device *this_bdev;
+	struct gendisk      *vdisk;
 
 	struct drbd_socket data; // for data/barrier/cstate/parameter packets
 	struct drbd_socket meta; // for ping/ack (metadata) packets
@@ -732,10 +733,7 @@ struct Drbd_Conf {
 			  unplug_work;
 	struct timer_list resync_timer;
 
-	sector_t lo_usize;   /* user provided size */
-	sector_t p_size;     /* partner's disk size */
 	drbd_state_t state;
-
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -748,6 +746,7 @@ struct Drbd_Conf {
 	atomic_t rs_pending_cnt; // RS request/data packets on the wire
 	atomic_t unacked_cnt;    // Need to send replys for
 	atomic_t local_cnt;      // Waiting for local disk to signal completion
+	atomic_t net_cnt;        // Users of net_conf
 	spinlock_t req_lock;
 	spinlock_t tl_lock;
 	struct drbd_barrier* newest_barrier;
@@ -859,13 +858,13 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req);
-extern void drbd_free_ll_dev(drbd_dev *mdev);
+extern void drbd_free_bc(struct drbd_backing_dev* bc);
 extern int drbd_io_error(drbd_dev* mdev);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
 // drbd_meta-data.c (still in drbd_main.c)
 extern void drbd_md_write(drbd_dev *mdev);
-extern int drbd_md_read(drbd_dev *mdev);
+extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev * bdev);
 // maybe define them below as inline?
 extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val);
 extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
@@ -1083,7 +1082,8 @@ extern int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
 extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?
-extern int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw);
+extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
+				sector_t sector, int rw);
 // worker callbacks
 extern int w_is_app_read         (drbd_dev *, struct drbd_work *, int);
 extern int w_is_resync_read      (drbd_dev *, struct drbd_work *, int);
@@ -1208,7 +1208,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 		unsigned long flags;
 		spin_lock_irqsave(&mdev->req_lock,flags);
 
-		switch(mdev->on_io_error) {
+		switch(mdev->bc->on_io_error) {
 		case PassOn:
 			ERR("Ignoring local IO error!\n");
 			break;
@@ -1217,7 +1217,6 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 			drbd_panic("IO error on backing device!\n");
 			break;
 		case Detach:
-			set_bit(MD_IO_ALLOWED,&mdev->flags);
 			if (_drbd_set_state(mdev,_NS(disk,Failed),1) == 1) {
 				ERR("Local IO failed. Detaching...\n");
 			}
@@ -1240,66 +1239,67 @@ static inline int semaphore_is_locked(struct semaphore* s)
  * which, for internal meta data, happens to be the maximum capacity
  * we could agree upon with our peer
  */
-static inline sector_t drbd_md_first_sector(drbd_dev *mdev)
+static inline sector_t drbd_md_first_sector(struct drbd_backing_dev *bdev)
 {
-	switch (mdev->md_index) {
+	switch (bdev->md_index) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return mdev->md.md_offset + mdev->md.bm_offset;
+		return bdev->md.md_offset + bdev->md.bm_offset;
 	case DRBD_MD_INDEX_FLEX_EXT:
 	default:
-		return mdev->md.md_offset;
+		return bdev->md.md_offset;
 	}
 }
 
 /* returns the last sector number of our meta data,
  * to be able to catch out of band md access */
-static inline sector_t drbd_md_last_sector(drbd_dev *mdev)
+static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 {
-	switch (mdev->md_index) {
+	switch (bdev->md_index) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return mdev->md.md_offset + MD_AL_OFFSET -1;
+		return bdev->md.md_offset + MD_AL_OFFSET -1;
 	case DRBD_MD_INDEX_FLEX_EXT:
 	default:
-		return mdev->md.md_offset + mdev->md.md_size_sect;
+		return bdev->md.md_offset + bdev->md.md_size_sect;
 	}
 }
 
 /* returns the capacity we announce to out peer */
 static inline sector_t drbd_get_max_capacity(drbd_dev *mdev)
 {
-	switch (mdev->md_index) {
+	switch (mdev->bc->md_index) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return drbd_get_capacity(mdev->backing_bdev)
-			? drbd_md_first_sector(mdev)
+		return drbd_get_capacity(mdev->bc->backing_bdev)
+			? drbd_md_first_sector(mdev->bc)
 			: 0;
 	case DRBD_MD_INDEX_FLEX_EXT:
 	default:
-		return drbd_get_capacity(mdev->backing_bdev);
+		return drbd_get_capacity(mdev->bc->backing_bdev);
 	}
 }
 
 /* returns the sector number of our meta data 'super' block */
-static inline sector_t drbd_md_ss__(drbd_dev *mdev)
+static inline sector_t drbd_md_ss__(drbd_dev *mdev,
+				    struct drbd_backing_dev *bdev)
 {
-	switch (mdev->md_index) {
+	switch (bdev->md_index) {
 	default: /* external, some index */
-		return MD_RESERVED_SECT * mdev->md_index;
+		return MD_RESERVED_SECT * bdev->md_index;
 	case DRBD_MD_INDEX_INTERNAL:
 		/* with drbd08, internal meta data is always "flexible" */
 	case DRBD_MD_INDEX_FLEX_INT:
 		/* sizeof(struct md_on_disk_07) == 4k
 		 * position: last 4k aligned block of 4k size */
-		if (!mdev->backing_bdev) {
+		if (!bdev->backing_bdev) {
 			if (DRBD_ratelimit(5*HZ,5)) {
-				ERR("mdev->backing_bdev==NULL\n");
+				ERR("bdev->backing_bdev==NULL\n");
 				dump_stack();
 			}
 			return 0;
 		}
-		return (drbd_get_capacity(mdev->backing_bdev) & ~7ULL)
+		return (drbd_get_capacity(bdev->backing_bdev) & ~7ULL)
 			- MD_AL_OFFSET;
 	case DRBD_MD_INDEX_FLEX_EXT:
 		return 0;
@@ -1308,26 +1308,27 @@ static inline sector_t drbd_md_ss__(drbd_dev *mdev)
 
 /* initializes the md.*_offset members, so we are able to find
  * the on disk meta data */
-static inline void drbd_md_set_sector_offsets(drbd_dev *mdev)
+static inline void drbd_md_set_sector_offsets(drbd_dev *mdev,
+					      struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
-	mdev->md.md_offset = drbd_md_ss__(mdev);
-	switch(mdev->md_index) {
+	bdev->md.md_offset = drbd_md_ss__(mdev,bdev);
+	switch(bdev->md_index) {
 	default:
 	case DRBD_MD_INDEX_FLEX_EXT:
 		/* just occupy the full device; unit: sectors */
-		mdev->md.md_size_sect = drbd_get_capacity(mdev->md_bdev);
-		mdev->md.md_offset = 0;
-		mdev->md.al_offset = MD_AL_OFFSET;
-		mdev->md.bm_offset = MD_BM_OFFSET;
+		bdev->md.md_size_sect = drbd_get_capacity(bdev->md_bdev);
+		bdev->md.md_offset = 0;
+		bdev->md.al_offset = MD_AL_OFFSET;
+		bdev->md.bm_offset = MD_BM_OFFSET;
 		break;
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
 		/* al size is still fixed */
-		mdev->md.al_offset = -MD_AL_MAX_SIZE;
+		bdev->md.al_offset = -MD_AL_MAX_SIZE;
 #warning FIXME max size check missing.
 		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = drbd_get_capacity(mdev->backing_bdev);
+		md_size_sect = drbd_get_capacity(bdev->backing_bdev);
 		DUMPI(md_size_sect);
 		md_size_sect = ALIGN(md_size_sect,BM_SECT_PER_EXT);
 		DUMPI(md_size_sect);
@@ -1340,14 +1341,14 @@ static inline void drbd_md_set_sector_offsets(drbd_dev *mdev)
 		 * and the activity log; */
 		md_size_sect += MD_BM_OFFSET;
 
-		mdev->md.md_size_sect = md_size_sect;
+		bdev->md.md_size_sect = md_size_sect;
 		/* bitmap offset is adjusted by 'super' block size */
-		mdev->md.bm_offset   = -md_size_sect + MD_AL_OFFSET;
+		bdev->md.bm_offset   = -md_size_sect + MD_AL_OFFSET;
 		break;
 	}
-	DUMPI(mdev->md.md_offset);
-	DUMPI(mdev->md.al_offset);
-	DUMPI(mdev->md.bm_offset);
+	DUMPI(bdev->md.md_offset);
+	DUMPI(bdev->md.al_offset);
+	DUMPI(bdev->md.bm_offset);
 	DUMPI(md_size_sect);
 }
 
@@ -1515,6 +1516,27 @@ static inline void drbd_push_msock(drbd_dev* mdev)
 
 
 /**
+ * inc_net: Returns TRUE when it is ok to access mdev->net_conf. You
+ * should call dec_net() when finished looking at mdev->net_conf.
+ */
+static inline int inc_net(drbd_dev* mdev)
+{
+	int have_net_conf;
+
+	atomic_inc(&mdev->net_cnt);
+	have_net_conf = mdev->state.conn >= Unconnected;
+	if(!have_net_conf) atomic_dec(&mdev->net_cnt);
+	return have_net_conf;
+}
+
+static inline void dec_net(drbd_dev* mdev)
+{
+	if(atomic_dec_and_test(&mdev->net_cnt)) {
+		wake_up(&mdev->cstate_wait);
+	}
+}
+
+/**
  * inc_local: Returns TRUE when local IO is possible. If it returns
  * TRUE you should call dec_local() after IO is completed.
  */
@@ -1530,13 +1552,12 @@ static inline int inc_local(drbd_dev* mdev)
 	return io_allowed;
 }
 
-static inline int inc_local_md_only(drbd_dev* mdev)
+static inline int inc_md_only(drbd_dev* mdev, drbd_disks_t mins)
 {
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = (mdev->state.disk >= Inconsistent) ||
-		test_bit(MD_IO_ALLOWED,&mdev->flags);
+	io_allowed = (mdev->state.disk >= mins ); 
 	if( !io_allowed ) {
 		atomic_dec(&mdev->local_cnt);
 	}
@@ -1546,8 +1567,7 @@ static inline int inc_local_md_only(drbd_dev* mdev)
 static inline void dec_local(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->local_cnt) &&
-	   mdev->state.disk == Diskless &&
-	   mdev->lo_file) {
+	   mdev->state.disk == Diskless && mdev->bc ) {
 		wake_up(&mdev->cstate_wait);
 	}
 
@@ -1661,7 +1681,7 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 {
 	int rv;
 #if !defined(QUEUE_FLAG_ORDERED)
-	rv = bdev_get_queue(mdev->backing_bdev)->ordered;
+	rv = bdev_get_queue(mdev->bc->backing_bdev)->ordered;
 #else
 # define QUEUE_ORDERED_NONE 0
 # define QUEUE_ORDERED_TAG 1

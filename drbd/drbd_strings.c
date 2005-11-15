@@ -52,6 +52,7 @@ static const char *drbd_disk_s_names[] = {
 	[DUnknown]     = "DUnknown",
 	[Diskless]     = "Diskless",
 	[Failed]       = "Failed",
+	[Attaching]    = "Attaching",
 	[Inconsistent] = "Inconsistent",
 	[Outdated]     = "Outdated",
 	[Consistent]   = "Consistent",

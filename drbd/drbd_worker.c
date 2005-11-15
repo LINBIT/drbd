@@ -172,7 +172,7 @@ int drbd_endio_read_pri(struct bio *bio, unsigned int bytes_done, int error)
 	if (bio_rw(bio) == READA) goto pass_on;
 	if (error) {
 		drbd_chk_io_error(mdev,error); // handle panic and detach.
-		if(mdev->on_io_error == PassOn) goto pass_on;
+		if(mdev->bc->on_io_error == PassOn) goto pass_on;
 		// ok, if we survived this, retry:
 		// FIXME sector ...
 		if (DRBD_ratelimit(5*HZ,5))
@@ -203,7 +203,7 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 * a "we are diskless" param packet anyways, and the peer
 	 * will then set the FullSync bit in the meta data ...
 	 */
-	D_ASSERT(mdev->on_io_error != PassOn);
+	D_ASSERT(mdev->bc->on_io_error != PassOn);
 
 	drbd_req_free(req);
 

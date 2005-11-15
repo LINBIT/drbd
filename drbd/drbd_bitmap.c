@@ -357,7 +357,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		*/
 		words = ALIGN(bits,64) >> LN2_BPL;
 
-		D_ASSERT((u64)bits <= (((u64)mdev->md.md_size_sect-MD_BM_OFFSET) << 12));
+		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
 
 		if ( words == b->bm_words ) {
 			/* optimize: capacity has changed,
@@ -596,13 +596,13 @@ void drbd_bm_set_all(drbd_dev *mdev)
 int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 {
 #warning check outcome of addition of sector_t/u64/s32
-	sector_t on_disk_sector = mdev->md.md_offset + mdev->md.bm_offset + enr;
+	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global ...
 
 	down(&mdev->md_io_mutex);
-	if(drbd_md_sync_page_io(mdev,on_disk_sector,READ)) {
+	if(drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,READ)) {
 		bm_words  = drbd_bm_words(mdev);
 		offset    = S2W(enr);	// word offset into bitmap
 		num_words = min(S2W(1), bm_words - offset);
@@ -660,7 +660,7 @@ void drbd_bm_read(struct Drbd_Conf *mdev)
  */
 int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 {
-	sector_t on_disk_sector = enr + mdev->md.md_offset + mdev->md.bm_offset;
+	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global...
@@ -678,7 +678,7 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 	}
 	drbd_bm_get_lel( mdev, offset, num_words,
 			 page_address(mdev->md_io_page) );
-	if (!drbd_md_sync_page_io(mdev,on_disk_sector,WRITE)) {
+	if (!drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,WRITE)) {
 		int i;
 		err = -EIO;
 		ERR( "IO ERROR writing bitmap sector %lu "

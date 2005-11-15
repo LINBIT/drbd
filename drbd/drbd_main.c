@@ -202,7 +202,7 @@ STATIC void _tl_add(drbd_dev *mdev, drbd_request_t *req)
 	req->rq_status |= RQ_DRBD_IN_TL;
 	list_add(&req->w.list,&b->requests);
 
-	if( b->n_req++ > mdev->conf.max_epoch_size ) {
+	if( b->n_req++ > mdev->net_conf->max_epoch_size ) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
 	}
 
@@ -366,12 +366,12 @@ void tl_clear(drbd_dev *mdev)
 			sector = drbd_req_get_sector(r);
 			size   = drbd_req_get_size(r);
 			if( !(r->rq_status & RQ_DRBD_SENT) ) {
-				if(mdev->conf.wire_protocol != DRBD_PROT_A )
+				if(mdev->net_conf->wire_protocol != DRBD_PROT_A )
 					dec_ap_pending(mdev);
 				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
 				goto mark;
 			}
-			if(mdev->conf.wire_protocol != DRBD_PROT_C ) {
+			if(mdev->net_conf->wire_protocol != DRBD_PROT_C ) {
 			mark:
 				drbd_set_out_of_sync(mdev, sector, size);
 			}
@@ -477,7 +477,7 @@ int drbd_io_error(drbd_dev* mdev)
 	unsigned long flags;
 	int send,ok=1;
 
-	if(mdev->on_io_error != Panic && mdev->on_io_error != Detach) return 1;
+	if(mdev->bc->on_io_error != Panic && mdev->bc->on_io_error != Detach) return 1;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
@@ -510,8 +510,9 @@ int drbd_io_error(drbd_dev* mdev)
 		 * further references to local_cnt are shortlived,
 		 * and no real references on the device. */
 		WARN("Releasing backing storage device.\n");
-		drbd_free_ll_dev(mdev);
-		mdev->md.la_size_sect=0;
+		drbd_free_bc(mdev->bc);
+		mdev->bc=0;
+		mdev->bc->md.la_size_sect=0;
 	}
 
 	return ok;
@@ -629,8 +630,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		if( !mdev->conf.two_primaries &&
-		    ns.role == Primary && ns.peer == Primary ) rv=-1;
+		if(inc_net(mdev)) {
+			if( !mdev->net_conf->two_primaries &&
+			    ns.role == Primary && ns.peer == Primary ) rv=-1;
+			dec_net(mdev);
+		}
 
 		else if( ns.role == Primary && ns.conn < Connected &&
 			 ns.disk <= Outdated ) rv=-2;
@@ -691,7 +695,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
-	     (ns.disk >= Inconsistent || ns.conn > StandAlone) ) {
+	     (ns.disk > Diskless || ns.conn > StandAlone) ) {
 		__module_get(THIS_MODULE);
 	}
 
@@ -715,7 +719,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	/* it feels better to have the module_put last ... */
-	if ( (os.disk >= Inconsistent || ns.conn > StandAlone) &&
+	if ( (os.disk > Diskless || ns.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
 		drbd_mdev_cleanup(mdev);
 		module_put(THIS_MODULE);
@@ -1013,7 +1017,7 @@ int drbd_send_protocol(drbd_dev *mdev)
 {
 	Drbd_Protocol_Packet p;
 
-	p.protocol = cpu_to_be32(mdev->conf.wire_protocol);
+	p.protocol = cpu_to_be32(mdev->net_conf->wire_protocol);
 
 	return drbd_send_cmd(mdev,mdev->data.socket,ReportProtocol,
 			     (Drbd_Header*)&p,sizeof(p));
@@ -1025,11 +1029,11 @@ int drbd_send_uuids(drbd_dev *mdev)
 	int i;
 
 	for (i = Current; i < UUID_SIZE; i++) {
-		p.uuid[i] = cpu_to_be64(mdev->md.uuid[i]);
+		p.uuid[i] = cpu_to_be64(mdev->bc->md.uuid[i]);
 	}
 
 	p.uuid[UUID_SIZE] = cpu_to_be64(drbd_bm_total_weight(mdev));
-	p.uuid[UUID_FLAGS] = cpu_to_be64(mdev->conf.want_lose);
+	p.uuid[UUID_FLAGS] = cpu_to_be64(mdev->net_conf->want_lose);
 
 	return drbd_send_cmd(mdev,mdev->data.socket,ReportUUIDs,
 			     (Drbd_Header*)&p,sizeof(p));
@@ -1048,16 +1052,16 @@ int drbd_send_sync_uuid(drbd_dev *mdev, u64 val)
 int drbd_send_sizes(drbd_dev *mdev)
 {
 	Drbd_Sizes_Packet p;
-	int ok, have_disk;
 	sector_t d_size;
+	int ok;
 
-	have_disk=inc_local(mdev);
-	if(have_disk) {
-		D_ASSERT(mdev->backing_bdev);
+	if(inc_local(mdev)) {
+		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev);
+		p.u_size = cpu_to_be64(mdev->bc->u_size);
+		dec_local(mdev);
 	} else d_size = 0;
 
-	p.u_size = cpu_to_be64(mdev->lo_usize);
 	p.d_size = cpu_to_be64(d_size);
 	p.c_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	p.max_segment_size = cpu_to_be32(mdev->rq_queue->max_segment_size);
@@ -1065,8 +1069,6 @@ int drbd_send_sizes(drbd_dev *mdev)
 
 	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportSizes,
 			   (Drbd_Header*)&p,sizeof(p));
-	if (have_disk) dec_local(mdev);
-
 	return ok;
 }
 
@@ -1411,7 +1413,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
 		ok = _drbd_send_barrier(mdev);
 	if(ok) {
-		if (mdev->conf.two_primaries) {
+		if (mdev->net_conf->two_primaries) {
 			if(ee_have_write(mdev,req)) {
 				ok=-1;
 				goto out;
@@ -1443,7 +1445,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		set_bit(UNPLUG_REMOTE,&mdev->flags);
 		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 		if(ok) {
-			if(mdev->conf.wire_protocol == DRBD_PROT_A) {
+			if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 				ok = _drbd_send_bio(mdev,drbd_req_private_bio(req));
 			} else {
 				ok = _drbd_send_zc_bio(mdev,drbd_req_private_bio(req));
@@ -1562,7 +1564,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 #endif
 
 	if (sock == mdev->data.socket)
-		mdev->ko_count = mdev->conf.ko_count;
+		mdev->ko_count = mdev->net_conf->ko_count;
 	do {
 		/* STRANGE
 		 * tcp_sendmsg does _not_ use its size parameter at all ?
@@ -1720,6 +1722,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->rs_pending_cnt,0);
 	atomic_set(&mdev->unacked_cnt,0);
 	atomic_set(&mdev->local_cnt,0);
+	atomic_set(&mdev->net_cnt,0);
 	atomic_set(&mdev->resync_locked,0);
 	atomic_set(&mdev->packet_seq,0);
 	atomic_set(&mdev->pp_in_use, 0);
@@ -1818,11 +1821,9 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	if ( mdev->epoch_size !=  0)
 		ERR("epoch_size:%d\n",mdev->epoch_size);
 #define ZAP(x) memset(&x,0,sizeof(x))
-	ZAP(mdev->conf);
 	ZAP(mdev->sync_conf);
 	// ZAP(mdev->data); Not yet!
 	// ZAP(mdev->meta); Not yet!
-	ZAP(mdev->md.uuid);
 #undef ZAP
 	mdev->al_writ_cnt  =
 	mdev->bm_writ_cnt  =
@@ -1830,13 +1831,13 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->recv_cnt     =
 	mdev->send_cnt     =
 	mdev->writ_cnt     =
-	mdev->md.la_size_sect      =
-	mdev->lo_usize     =
+	mdev->bc->md.la_size_sect      =
 	mdev->p_size       =
 	mdev->rs_start     =
 	mdev->rs_total     =
 	mdev->rs_mark_left =
 	mdev->rs_mark_time = 0;
+	mdev->net_conf     = NULL;
 	mdev->send_task    = NULL;
 	drbd_set_my_capacity(mdev,0);
 
@@ -2295,26 +2296,17 @@ int __init drbd_init(void)
 	return err;
 }
 
-void drbd_free_ll_dev(drbd_dev *mdev)
+void drbd_free_bc(struct drbd_backing_dev* bc)
 {
-	struct file *lo_file;
+	if(bc == NULL) return;
 
-	lo_file = mdev->lo_file;
-	mdev->lo_file = 0;
-	wmb();
+	bd_release(bc->backing_bdev);
+	bd_release(bc->md_bdev);
 
-	if (lo_file) {
-		bd_release(mdev->backing_bdev);
-		bd_release(mdev->md_bdev);
+	fput(bc->lo_file);
+	fput(bc->md_file);
 
-		mdev->md_bdev =
-		mdev->backing_bdev = 0;
-
-		fput(lo_file);
-		fput(mdev->md_file);
-		// mdev->lo_file = 0;
-		mdev->md_file = 0;
-	}
+	kfree(bc);
 }
 
 void drbd_free_sock(drbd_dev *mdev)
@@ -2337,7 +2329,8 @@ void drbd_free_resources(drbd_dev *mdev)
 		mdev->cram_hmac_tfm = NULL;
 	}
 	drbd_free_sock(mdev);
-	drbd_free_ll_dev(mdev);
+	drbd_free_bc(mdev->bc);
+	mdev->bc=0;
 }
 
 /*********************************/
@@ -2367,34 +2360,34 @@ void drbd_md_write(drbd_dev *mdev)
 	sector_t sector;
 	int i;
 
-	ERR_IF(!inc_local_md_only(mdev)) return;
+	ERR_IF(!inc_md_only(mdev,Attaching)) return;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer,0,512);
 
-	flags = mdev->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
+	flags = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 				   MDF_ConnectedInd|MDF_WasUpToDate);
 	if (mdev->state.role == Primary)        flags |= MDF_PrimaryInd;
 	if (mdev->state.conn >= WFReportParams) flags |= MDF_ConnectedInd;
 	if (mdev->state.disk >  Inconsistent)   flags |= MDF_Consistent;
 	if (mdev->state.disk >  Outdated)       flags |= MDF_WasUpToDate;
-	mdev->md.flags = flags;
+	mdev->bc->md.flags = flags;
 
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	for (i = Current; i < UUID_SIZE; i++)
-		buffer->uuid[i]=cpu_to_be64(mdev->md.uuid[i]);
+		buffer->uuid[i]=cpu_to_be64(mdev->bc->md.uuid[i]);
 	buffer->flags = cpu_to_be32(flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC);
 
-	buffer->md_size_sect  = cpu_to_be32(mdev->md.md_size_sect);
-	buffer->al_offset     = cpu_to_be32(mdev->md.al_offset);
+	buffer->md_size_sect  = cpu_to_be32(mdev->bc->md.md_size_sect);
+	buffer->al_offset     = cpu_to_be32(mdev->bc->md.al_offset);
 	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
 
-	buffer->bm_offset = cpu_to_be32(mdev->md.bm_offset);
+	buffer->bm_offset = cpu_to_be32(mdev->bc->md.bm_offset);
 
-	D_ASSERT(drbd_md_ss__(mdev) == mdev->md.md_offset);
-	sector = mdev->md.md_offset;
+	D_ASSERT(drbd_md_ss__(mdev,mdev->bc) == mdev->bc->md.md_offset);
+	sector = mdev->bc->md.md_offset;
 
 #if 0
 	/* FIXME sooner or later I'd like to use the MD_DIRTY flag everywhere,
@@ -2405,7 +2398,7 @@ void drbd_md_write(drbd_dev *mdev)
 	}
 #endif
 
-	if (drbd_md_sync_page_io(mdev,sector,WRITE)) {
+	if (drbd_md_sync_page_io(mdev,mdev->bc,sector,WRITE)) {
 		clear_bit(MD_DIRTY,&mdev->flags);
 	} else {
 		if (mdev->state.disk <= Failed) {
@@ -2420,64 +2413,64 @@ void drbd_md_write(drbd_dev *mdev)
 		}
 	}
 
-	// Update mdev->md.la_size_sect, since we updated it on metadata.
-	mdev->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
+	// Update mdev->bc->md.la_size_sect, since we updated it on metadata.
+	mdev->bc->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
 	up(&mdev->md_io_mutex);
 	dec_local(mdev);
 }
 
-/*
- * return:
- *   = 0 if we could read valid gen counts,
- *       and reading the bitmap and act log does make sense.
- *  != 0 if we had an error
- *       MDIOError no meta data IO allowed
- *       MDIOError IO not possible
- *       MDInvalid no correct magic present
- */
-int drbd_md_read(drbd_dev *mdev)
+/** 
+ * drbd_md_read:
+ * @bdev: describes the backing storage and the meta-data storage
+ * Reads the meta data from bdev. Return 0 (NoError) on success, and an 
+ * enum ret_codes in case something goes wrong. 
+ * Currently only: MDIOError, MDInvalid.
+ */ 
+int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 {
 	struct meta_data_on_disk * buffer;
 	int i,rv = NoError;
 
-	if(!inc_local_md_only(mdev)) return MDIOError;
+	if(!inc_md_only(mdev,Attaching)) return MDIOError;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
-	if ( ! drbd_md_sync_page_io(mdev,mdev->md.md_offset,READ) ) {
+	if ( ! drbd_md_sync_page_io(mdev,bdev,bdev->md.md_offset,READ) ) {
+		ERR("Error while reading metadata.\n");
 		rv = MDIOError;
 		goto err;
 	}
 
 	if(be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) {
+		ERR("Error while reading metadata, magic not found.\n");
 		rv = MDInvalid;
 		goto err;
 	}
-	if (be32_to_cpu(buffer->al_offset) != mdev->md.al_offset) {
+	if (be32_to_cpu(buffer->al_offset) != bdev->md.al_offset) {
 		ERR("unexpected al_offset: %d (expected %d)\n",
-		    be32_to_cpu(buffer->al_offset), mdev->md.al_offset);
+		    be32_to_cpu(buffer->al_offset), bdev->md.al_offset);
 		rv = MDInvalid;
 		goto err;
 	}
-	if (be32_to_cpu(buffer->bm_offset) != mdev->md.bm_offset) {
+	if (be32_to_cpu(buffer->bm_offset) != bdev->md.bm_offset) {
 		ERR("unexpected bm_offset: %d (expected %d)\n",
-		    be32_to_cpu(buffer->bm_offset), mdev->md.bm_offset);
+		    be32_to_cpu(buffer->bm_offset), bdev->md.bm_offset);
 		rv = MDInvalid;
 		goto err;
 	}
-	if (be32_to_cpu(buffer->md_size_sect) != mdev->md.md_size_sect) {
+	if (be32_to_cpu(buffer->md_size_sect) != bdev->md.md_size_sect) {
 		ERR("unexpected md_size: %u (expected %u)\n",
-		    be32_to_cpu(buffer->md_size_sect), mdev->md.md_size_sect);
+		    be32_to_cpu(buffer->md_size_sect), bdev->md.md_size_sect);
 		rv = MDInvalid;
 		goto err;
 	}
 
-	mdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
+	bdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
 	for (i = Current; i < UUID_SIZE; i++)
-		mdev->md.uuid[i]=be64_to_cpu(buffer->uuid[i]);
-	mdev->md.flags = be32_to_cpu(buffer->flags);
+		bdev->md.uuid[i]=be64_to_cpu(buffer->uuid[i]);
+	bdev->md.flags = be32_to_cpu(buffer->flags);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 
 	if (mdev->sync_conf.al_extents < 7)
@@ -2493,61 +2486,59 @@ int drbd_md_read(drbd_dev *mdev)
 	return rv;
 }
 
-
-
 static void drbd_uuid_move_history(drbd_dev *mdev)
 {
 	int i;
 
 	for ( i=History_start ; i<History_end ; i++ ) {
-		mdev->md.uuid[i+1] = mdev->md.uuid[i];
+		mdev->bc->md.uuid[i+1] = mdev->bc->md.uuid[i];
 	}
 }
 
 void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
 	if (mdev->state.role == Primary) {
-		mdev->md.uuid[idx] = val | 1;
+		mdev->bc->md.uuid[idx] = val | 1;
 	} else {
-		mdev->md.uuid[idx] = val & ~((u64)1);
+		mdev->bc->md.uuid[idx] = val & ~((u64)1);
 	}
 }
 
 
 void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
-	if(mdev->md.uuid[idx]) {
+	if(mdev->bc->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
-		mdev->md.uuid[History_start]=mdev->md.uuid[idx];
+		mdev->bc->md.uuid[History_start]=mdev->bc->md.uuid[idx];
 	}
 	_drbd_uuid_set(mdev,idx,val);
 }
 
 void drbd_uuid_new_current(drbd_dev *mdev)
 {
-	D_ASSERT(mdev->md.uuid[Bitmap] == 0);
-	mdev->md.uuid[Bitmap] = mdev->md.uuid[Current];
-	get_random_bytes(&mdev->md.uuid[Current], sizeof(u64));
+	D_ASSERT(mdev->bc->md.uuid[Bitmap] == 0);
+	mdev->bc->md.uuid[Bitmap] = mdev->bc->md.uuid[Current];
+	get_random_bytes(&mdev->bc->md.uuid[Current], sizeof(u64));
 	if (mdev->state.role == Primary) {
-		mdev->md.uuid[Current] |= 1;
+		mdev->bc->md.uuid[Current] |= 1;
 	} else {
-		mdev->md.uuid[Current] &= ~((u64)1);
+		mdev->bc->md.uuid[Current] &= ~((u64)1);
 	}
 }
 
 void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 {
-	if( mdev->md.uuid[Bitmap]==0 && val==0 ) return;
+	if( mdev->bc->md.uuid[Bitmap]==0 && val==0 ) return;
 
 	if(val==0) {
 		drbd_uuid_move_history(mdev);
-		mdev->md.uuid[History_start]=mdev->md.uuid[Bitmap];
-		mdev->md.uuid[Bitmap]=0;
+		mdev->bc->md.uuid[History_start]=mdev->bc->md.uuid[Bitmap];
+		mdev->bc->md.uuid[Bitmap]=0;
 	} else {
-		if( mdev->md.uuid[Bitmap] ) WARN("bm UUID already set");
+		if( mdev->bc->md.uuid[Bitmap] ) WARN("bm UUID already set");
 
-		mdev->md.uuid[Bitmap] = val;
-		mdev->md.uuid[Bitmap] &= ~((u64)1);
+		mdev->bc->md.uuid[Bitmap] = val;
+		mdev->bc->md.uuid[Bitmap] &= ~((u64)1);
 	}
 }
 
@@ -2555,23 +2546,23 @@ void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 void drbd_md_set_flag(drbd_dev *mdev, int flag)
 {
 	MUST_HOLD(mdev->req_lock);
-	if ( (mdev->md.flags & flag) != flag) {
+	if ( (mdev->bc->md.flags & flag) != flag) {
 		set_bit(MD_DIRTY,&mdev->flags);
-		mdev->md.flags |= flag;
+		mdev->bc->md.flags |= flag;
 	}
 }
 void drbd_md_clear_flag(drbd_dev *mdev, int flag)
 {
 	MUST_HOLD(mdev->req_lock);
-	if ( (mdev->md.flags & flag) != 0 ) {
+	if ( (mdev->bc->md.flags & flag) != 0 ) {
 		set_bit(MD_DIRTY,&mdev->flags);
-		mdev->md.flags &= ~flag;
+		mdev->bc->md.flags &= ~flag;
 	}
 }
 int drbd_md_test_flag(drbd_dev *mdev, int flag)
 {
 	MUST_HOLD(mdev->req_lock);
-	return ((mdev->md.flags & flag) != 0);
+	return ((mdev->bc->md.flags & flag) != 0);
 }
 
 module_init(drbd_init)
