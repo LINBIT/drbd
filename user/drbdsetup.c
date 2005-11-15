@@ -1126,20 +1126,24 @@ int cmd_disk_conf(int drbd_fd, char **argv, int argc, struct option *options)
     return retval;
 
   if (argc == 5) {
+    /* short variant, index and other options omitted */
     if (!strcmp("internal", argv[4])) {
-      mi = DRBD_MD_INDEX_INTERNAL;
+      mi = DRBD_MD_INDEX_FLEX_INT;
     } else {
       fprintf(stderr, "meta_index missing.\n");
     }
   } else {
+    /* index or any options given. check the index */
     if (!strcmp("internal", argv[4])) {
-      if (!strncmp("flex", argv[5], 4)) {
+      /* in drbd8, internal is always flexible */
+      if (!strncmp("flex", argv[5], 4) ||
+	  !strcmp("-1", argv[5]) ||
+	  !strcmp("internal", argv[5]))
+      {
 	  mi = DRBD_MD_INDEX_FLEX_INT;
-      } else if (strcmp("-1", argv[5]) != 0) {
+      } else {
 	  fprintf(stderr, "invalid meta_index for 'internal'.\n");
 	  return 20;
-      } else {
-	  mi = DRBD_MD_INDEX_INTERNAL;
       }
     } else {
       if (!strncmp("flex", argv[5], 4)) {
