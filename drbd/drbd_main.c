@@ -636,6 +636,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			dec_net(mdev);
 		}
 
+		if( rv <= 0 ) /* already found a reason to abort */;
 		else if( ns.role == Primary && ns.conn < Connected &&
 			 ns.disk <= Outdated ) rv=-2;
 
@@ -1831,7 +1832,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->recv_cnt     =
 	mdev->send_cnt     =
 	mdev->writ_cnt     =
-	mdev->bc->md.la_size_sect      =
 	mdev->p_size       =
 	mdev->rs_start     =
 	mdev->rs_total     =

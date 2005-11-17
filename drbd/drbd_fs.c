@@ -531,7 +531,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 STATIC
 int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 {
-	int i,minor;
+	int i,minor,ns;
 	enum ret_codes retcode;
 	struct net_config *new_conf = NULL;
 	struct crypto_tfm* tfm = NULL;
@@ -591,25 +591,24 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 	}
 
 
-	if (mdev->tl_hash_s != new_conf->max_epoch_size/8 ) {
-		new_tl_hash=kmalloc((new_conf->max_epoch_size/8)*sizeof(void*),
-				    GFP_KERNEL);
+	ns = new_conf->max_epoch_size/8;
+	if (mdev->tl_hash_s != ns) {
+		new_tl_hash=kmalloc(ns*sizeof(void*), GFP_KERNEL);
 		if(!new_tl_hash) {
 			retcode=KMallocFailed;
 			goto fail_ioctl;
 		}
-		memset(new_tl_hash, 0, mdev->tl_hash_s * sizeof(void*));
+		memset(new_tl_hash, 0, ns*sizeof(void*));
 	}
 
-	if (new_conf->two_primaries &&
-	    ( mdev->ee_hash_s != new_conf->max_buffers/8 ) ) {
-		new_ee_hash=kmalloc((new_conf->max_buffers/8)*sizeof(void*),
-				    GFP_KERNEL);
+	ns = new_conf->max_buffers/8;
+	if (new_conf->two_primaries && ( mdev->ee_hash_s != ns ) ) {
+		new_ee_hash=kmalloc(ns*sizeof(void*), GFP_KERNEL);
 		if(!new_ee_hash) {
 			retcode=KMallocFailed;
 			goto fail_ioctl;
 		}
-		memset(new_ee_hash, 0, mdev->ee_hash_s * sizeof(void*));
+		memset(new_ee_hash, 0, ns*sizeof(void*));
 	}
 
 	/* IMPROVE:

@@ -1329,13 +1329,9 @@ static inline void drbd_md_set_sector_offsets(drbd_dev *mdev,
 #warning FIXME max size check missing.
 		/* we need (slightly less than) ~ this much bitmap sectors: */
 		md_size_sect = drbd_get_capacity(bdev->backing_bdev);
-		DUMPI(md_size_sect);
 		md_size_sect = ALIGN(md_size_sect,BM_SECT_PER_EXT);
-		DUMPI(md_size_sect);
 		md_size_sect = BM_SECT_TO_EXT(md_size_sect);
-		DUMPI(md_size_sect);
 		md_size_sect = ALIGN(md_size_sect,8);
-		DUMPI(md_size_sect);
 
 		/* plus the "drbd meta data super block",
 		 * and the activity log; */
@@ -1346,10 +1342,6 @@ static inline void drbd_md_set_sector_offsets(drbd_dev *mdev,
 		bdev->md.bm_offset   = -md_size_sect + MD_AL_OFFSET;
 		break;
 	}
-	DUMPI(bdev->md.md_offset);
-	DUMPI(bdev->md.al_offset);
-	DUMPI(bdev->md.bm_offset);
-	DUMPI(md_size_sect);
 }
 
 static inline void

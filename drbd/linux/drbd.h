@@ -235,7 +235,7 @@ typedef enum {
 	DUnknown,
 	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	UpToDate,
-	disk_mask=7
+	disk_mask=15
 } drbd_disks_t;
 
 typedef union {
@@ -243,13 +243,13 @@ typedef union {
 		unsigned role : 2 ;   // 3/4      primary/secondary/unknown
 		unsigned peer : 2 ;   // 3/4      primary/secondary/unknown
 		unsigned conn : 5 ;   // 17/32    cstates
-		unsigned disk : 3 ;   // 7/8      from Diskless to UpToDate
-		unsigned pdsk : 3 ;   // 7/8      from Diskless to UpToDate
+		unsigned disk : 4 ;   // 8/16     from Diskless to UpToDate
+		unsigned pdsk : 4 ;   // 8/16     from Diskless to UpToDate
 		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
 		unsigned aftr_isp : 1 ; // isp .. imposed sync pause
 		unsigned peer_isp : 1 ;
 		unsigned user_isp : 1 ; 
-		unsigned _pad : 13;   // 0        unused
+		unsigned _pad : 11;   // 0        unused
 	};
 	unsigned int i;
 } drbd_state_t;
