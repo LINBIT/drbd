@@ -733,7 +733,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 #if 0
 STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 {
-	int rv=TRUE;
+	int rv;
 	int epoch_size=0;
 	Drbd_Barrier_Packet *p = (Drbd_Barrier_Packet*)h;
 
@@ -756,7 +756,7 @@ STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 	spin_unlock_irq(&mdev->ee_lock);
 
 	if(epoch_size) {
-		rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
+		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
 		dec_unacked(mdev);
 	}
 
@@ -780,14 +780,13 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	if (mdev->net_conf->wire_protocol != DRBD_PROT_C)
 		drbd_kick_lo(mdev);
 
-
 	spin_lock_irq(&mdev->ee_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
 	epoch_size = mdev->epoch_size;
 	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->ee_lock);
 
-	rv &= drbd_send_b_ack(mdev, p->barrier, epoch_size);
+	rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
 	dec_unacked(mdev);
 
 	return rv;
