@@ -955,6 +955,9 @@ struct bm_extent {
 #define BM_WORDS_PER_AL_EXT (1 << (AL_EXTENT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 
 
+#define BM_BLOCKS_PER_BM_EXT_B ( BM_EXT_SIZE_B - BM_BLOCK_SIZE_B )
+#define BM_BLOCKS_PER_BM_EXT_MASK  ( (1<<BM_BLOCKS_PER_BM_EXT_B) - 1 )
+
 /* I want the packet to fit within one page
  * THINK maybe use a special bitmap header,
  * including offset and compression scheme and whatnot
@@ -995,7 +998,7 @@ struct bm_extent {
  * With a value of 6 all IO in one 32K block make it to the same slot of the
  * hash table. */
 #define HT_SHIFT 6
-#define DRBD_MAX_SEGMENT_SIZE (1UL<<(9+HT_SHIFT))
+#define DRBD_MAX_SEGMENT_SIZE (1U<<(9+HT_SHIFT))
 
 /* Number of elements in the app_reads_hash */
 #define APP_R_HSIZE 15
@@ -1018,6 +1021,7 @@ extern unsigned long drbd_bm_ALe_set_all (drbd_dev *mdev, unsigned long al_enr);
 extern size_t        drbd_bm_words       (drbd_dev *mdev);
 extern sector_t      drbd_bm_capacity    (drbd_dev *mdev);
 extern unsigned long drbd_bm_find_next   (drbd_dev *mdev);
+extern void drbd_bm_set_find(drbd_dev *mdev, unsigned long i);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
 extern int drbd_bm_rs_done(drbd_dev *mdev);
 // for receive_bitmap

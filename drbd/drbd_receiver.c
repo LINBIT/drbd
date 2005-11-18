@@ -720,7 +720,7 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 	h->command = be16_to_cpu(h->command);
 	h->length  = be16_to_cpu(h->length);
 	if (unlikely( h->magic != BE_DRBD_MAGIC )) {
-		ERR("magic?? m: 0x%lx c: %d l: %d\n",
+		ERR("magic?? on data m: 0x%lx c: %d l: %d\n",
 		    (long)be32_to_cpu(h->magic),
 		    h->command, h->length);
 		return FALSE;
@@ -989,7 +989,7 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	 */
 	ERR_IF(data_size == 0) return FALSE;
 	ERR_IF(data_size &  0x1ff) return FALSE;
-	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
+	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
@@ -1136,7 +1136,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
-	if( data_size > 4096 ) INFO("data_size=%d\n",data_size);
 	ERR_IF(data_size == 0) return FALSE;
 	ERR_IF(data_size &  0x1ff) return FALSE;
 	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
@@ -2910,7 +2909,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			cmd = be16_to_cpu(h->command);
 			len = be16_to_cpu(h->length);
 			if (unlikely( h->magic != BE_DRBD_MAGIC )) {
-				ERR("magic?? m: 0x%lx c: %d l: %d\n",
+				ERR("magic?? on meta m: 0x%lx c: %d l: %d\n",
 				    (long)be32_to_cpu(h->magic),
 				    h->command, h->length);
 				goto err;

@@ -1362,8 +1362,7 @@ STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;
-
-	bio_for_each_segment(bvec, bio, i) {
+	__bio_for_each_segment(bvec, bio, i, 0) {
 		if (! _drbd_send_page(mdev, bvec->bv_page, bvec->bv_offset,
 				      bvec->bv_len) ) {
 			return 0;

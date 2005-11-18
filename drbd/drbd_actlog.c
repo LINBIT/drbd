@@ -645,7 +645,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	sector_t esector, nr_sectors;
 	int wake_up=0;
 
-	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("drbd_set_in_sync: sector=%lu size=%d nonsense!\n",
 				(unsigned long)sector,size);
 		return;

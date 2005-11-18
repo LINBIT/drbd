@@ -348,6 +348,20 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 			goto next_sector;
 		}
 
+#if DRBD_MAX_SEGMENT_SIZE > BM_BLOCK_SIZE
+		// try to find some adjacent bits...
+		while ( drbd_bm_test_bit(mdev,bit+1) ) {
+			// stop if we have the already the maximum req size
+			if(size == DRBD_MAX_SEGMENT_SIZE) break;
+			// do not leafe the current BM_EXTEND
+			if(( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0) break;
+			bit++;
+			size += BM_BLOCK_SIZE;
+			i++;
+		}
+		drbd_bm_set_find(mdev,bit+1);
+#endif
+
 		if (sector + (size>>9) > capacity) size = (capacity-sector)<<9;
 		inc_rs_pending(mdev);
 		if(!drbd_send_drequest(mdev,RSDataRequest,

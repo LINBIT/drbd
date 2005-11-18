@@ -782,6 +782,19 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	return i;
 }
 
+void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+
+	spin_lock_irq(&b->bm_lock);
+	BM_PARANOIA_CHECK();
+
+	b->bm_fo = i;
+
+	spin_unlock_irq(&b->bm_lock);
+}
+
+
 int drbd_bm_rs_done(drbd_dev *mdev)
 {
 	return mdev->bitmap->bm_fo == 0;
