@@ -849,18 +849,38 @@ unsigned long bm_words(u64 sectors)
 	return words;
 }
 
+static void printf_bm_eol(unsigned int i)
+{
+	if ((i & 31) == 0)
+		printf("\n   # at %llukB\n   ", (256LLU * i));
+	else
+		printf("\n   ");
+}
+
 /* le_u64, because we want to be able to hexdump it reliably
  * regardless of sizeof(long) */
 void printf_bm(const le_u64 * bm, const unsigned int n)
 {
 	unsigned int i;
+	unsigned int j;
+
 	printf("bm {");
 	for (i = 0; i < n; i++) {
 		if ((i & 3) == 0) {
-			if ((i & 31) == 0)
-				printf("\n   # %llukB\n   ", (256LLU * i));
-			else
-				printf("\n   ");
+			printf_bm_eol(i);
+
+			// RLL encoding 
+			for (j = i+1; j < n; j++) {
+				if(bm[i].le != bm[j].le) break;
+			}
+			j &= ~3; // round down to a multiple of 4
+			if (j-i > 4 && i > 1) {
+				printf(" %d times 0x"X64(016)";",
+				       j-i, le64_to_cpu(bm[i].le));
+				i = j;
+
+				printf_bm_eol(i);
+			}
 		}
 		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
 	}
@@ -1661,9 +1681,9 @@ void md_parse_error(const char *etext)
 
 int meta_restore_md(struct format *cfg, char **argv, int argc)
 {
-	int i;
+	int i,times;
 	int err;
-	le_u64 *bm;
+	le_u64 *bm, value;
 
 	if (argc > 0) {
 		yyin = fopen(argv[0],"r");
@@ -1705,11 +1725,29 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 	EXP(TK_BM); EXP('{');
 	bm = (le_u64 *)cfg->on_disk.bm;
 	i = 0;
-	while(yylex() == TK_U64) {
-		bm[i].le = cpu_to_le64(yylval.u64);
-		i++;
-		EXP(';');
+	while(1) {
+		switch(yylex()) {
+		case TK_U64:
+			bm[i].le = cpu_to_le64(yylval.u64);
+			i++;
+			EXP(';');
+			break;
+		case TK_NUM:
+			EXP(TK_TIMES);
+			times = yylval.u64;
+			EXP(TK_U64);
+			value.le = cpu_to_le64(yylval.u64);
+			EXP(';');
+			while(times--) bm[i++] = value;
+			break;
+		case '}': 
+			goto break_loop;
+		default:
+			md_parse_error("TK_U64, TK_NUM or }");
+			goto break_loop;
+		}
 	}
+	break_loop:
 
 	err = cfg->ops->md_cpu_to_disk(cfg);
 	err = cfg->ops->close(cfg) || err;

@@ -34,6 +34,7 @@ bm		DP; return TK_BM;
 uuid		DP; return TK_UUID;
 version		DP; return TK_VERSION;
 la-size-sect	DP; return TK_LA_SIZE;
+times		DP; return TK_TIMES;
 
 %%
 

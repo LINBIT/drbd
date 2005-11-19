@@ -394,9 +394,11 @@ DRBD 0.8 Roadmap
   0% DONE
 
 15 Accept BIOs bigger than one page, probabely up to 32k (8 pages) 
-  currently. When this is done make the bits in the bitmap to account 
-  for more then 4k e.g. 64k
-  50% DONE we handle big BIOs now, a bitmap bit is still 4k.
+  currently.
+  * Normal Requsts. -> DONE
+  * Make the syncer to commulate adjacent bits into bigger requests. -> DONE
+  * Make the bitmap more coarse grained. -> TODO
+  66% DONE
 
 16 Displace the current generation-counters with a data-generation-UUID 
    concept.

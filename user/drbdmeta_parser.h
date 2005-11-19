@@ -17,7 +17,8 @@ enum yytokentype {
 	TK_BM,
 	TK_UUID,
 	TK_VERSION,
-	TK_LA_SIZE
+	TK_LA_SIZE,
+	TK_TIMES
 };
 
 /* avoid compiler warnings about implicit declaration */
