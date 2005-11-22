@@ -23,9 +23,9 @@ fi
 
 case "$CMD" in
     start)
-    	# try several times, in case heartbeat deadtime
+	# try several times, in case heartbeat deadtime
 	# was smaller than drbd ping time
-    	try=6
+	try=6
 	while true; do
 		$DRBDADM primary $RES && break
 		let "--try" || exit 20
@@ -33,21 +33,23 @@ case "$CMD" in
 	done
 	;;
     stop)
-    	# exec, so the exit code of drbdadm propagates
+	# exec, so the exit code of drbdadm propagates
 	exec $DRBDADM secondary $RES
 	;;
     status)
 	if [ "$RES" = "all" ]; then
 	    echo "A resource name is required for status inquiries."
 	    exit 10
-        fi
-	ST=$( $DRBDADM state $RES 2> /dev/null )
-	ST=${ST%/*}
-	if [ "$ST" = "Primary" ]; then
+	fi
+	ST=$( $DRBDADM state $RES 2>&1 )
+	STATE=${ST%/*}
+	if [ "$STATE" = "Primary" ]; then
 	    echo "running"
-	else
+	elif [ "$STATE" = "Secondary" ]; then
 	    echo "stopped"
-        fi
+	else
+	    echo "$ST"
+	fi
 	;;
     *)
 	echo "Usage: drbddisk [resource] {start|stop|status}"
