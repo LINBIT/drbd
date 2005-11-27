@@ -720,7 +720,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	/* it feels better to have the module_put last ... */
-	if ( (os.disk > Diskless || ns.conn > StandAlone) &&
+	if ( (os.disk > Diskless || os.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
 		drbd_mdev_cleanup(mdev);
 		module_put(THIS_MODULE);
@@ -745,11 +745,21 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */
 
-	/*  Added disk, tell peer.  */
-	if ( os.disk == Diskless && ns.disk >= Inconsistent &&
-	     ns.conn >= Connected ) {
-		drbd_send_sizes(mdev);
-		drbd_send_state(mdev);
+	if (os.conn != WFBitMapS && ns.conn == WFBitMapS) {
+		wait_event(mdev->cstate_wait,!atomic_read(&mdev->ap_bio_cnt));
+		drbd_bm_lock(mdev);   // {
+		drbd_send_bitmap(mdev);
+		drbd_bm_unlock(mdev); // }
+	}
+
+	/*  Lost contact to peer's copy of the data  */
+	if (ns.role == Primary &&
+	    os.pdsk > DUnknown && ns.pdsk <= DUnknown ) {
+		/* Only do it if we have not yet done it... */
+		if ( mdev->bc->md.uuid[Bitmap] == 0 ) {
+			INFO("Creating new current UUID\n");
+			drbd_uuid_new_current(mdev);
+		}
 	}
 
 	/*  Removed disk, tell peer.  */
@@ -769,8 +779,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
 		drbd_send_short_cmd(mdev,ResumeResync);
 	}
-
-
 }
 
 
@@ -1056,7 +1064,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	sector_t d_size;
 	int ok;
 
-	if(inc_local(mdev)) {
+	if(inc_md_only(mdev,Attaching)) {
 		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev);
 		p.u_size = cpu_to_be64(mdev->bc->u_size);
@@ -1147,6 +1155,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 int drbd_send_bitmap(drbd_dev *mdev)
 {
 	int ok;
+
 	down(&mdev->data.mutex);
 	ok=_drbd_send_bitmap(mdev);
 	up(&mdev->data.mutex);

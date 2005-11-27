@@ -36,10 +36,11 @@ static const char *drbd_conn_s_names[] = {
 	[SkippedSyncT]   = "SkippedSyncT",
 	[WFBitMapS]      = "WFBitMapS",
 	[WFBitMapT]      = "WFBitMapT",
+	[WFSyncUUID]     = "WFSyncUUID",
 	[SyncSource]     = "SyncSource",
 	[SyncTarget]     = "SyncTarget",
 	[PausedSyncS]    = "PausedSyncS",
-	[PausedSyncT]    = "PausedSyncT",
+	[PausedSyncT]    = "PausedSyncT"
 };
 
 static const char *drbd_role_s_names[] = {

@@ -177,7 +177,8 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	sector_t esector, nr_sectors;
 
 	if (mdev->state.disk == UpToDate) return 1;
-
+	if (mdev->state.disk <  Inconsistent) return 0;
+	// We will have a look at the BitMap
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
 

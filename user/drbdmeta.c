@@ -1643,17 +1643,17 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	printf("version \"%s\";\n\n", cfg->ops->name);
 	if (format_version(cfg) < Drbd_08) {
-		printf("gc {");
+		printf("gc {\n   ");
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
 			printf(" 0x%X;", cfg->md.gc[i]);
 		}
 	} else { // >= 08
-		printf("uuid {");
+		printf("uuid {\n   ");
 		for ( i=Current ; i<UUID_SIZE ; i++ ) {
 			printf(" 0x"X64(016)";", cfg->md.uuid[i]);
 		}
 	}
-	printf(" }\n");
+	printf("\n}\n");
 
 	if (format_version(cfg) >= Drbd_07) {
 		printf("la-size-sect "U64";\n", cfg->md.la_sect);
@@ -2220,19 +2220,20 @@ int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 	return cfg->ops->parse(cfg, argv + 1, argc - 1, ai);
 }
 
-int is_configured(int minor)
+int is_attached(int minor)
 {
 	FILE *pr;
-	char line[120], tok[40];
+	char line[120], cs[40],st[40],ds[40];
 	int m,rv=0;
 
 	pr = fopen("/proc/drbd","r");
 	if(!pr) return rv;
 
 	while(fgets(line,120,pr)) {
-		if(sscanf(line,"%2d: %s",&m,tok)) {
+		if(sscanf(line,"%2d: %s %s %s",&m,cs,st,ds)) {
 			if( m == minor ) {
-				rv = strcmp(tok,"Unconfigured");
+				rv = strcmp(cs,"Unconfigured");
+				if(rv) rv = strncmp(ds,"ds:Diskless/",11);
 				break;
 			}
 		}
@@ -2319,7 +2320,7 @@ int main(int argc, char **argv)
 
 	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
 	if (cfg->drbd_fd > -1) {
-		if (is_configured(dt_minor_of_dev(cfg->drbd_dev_name))) {
+		if (is_attached(dt_minor_of_dev(cfg->drbd_dev_name))) {
 			fprintf(stderr, "Device '%s' is configured!\n",
 				cfg->drbd_dev_name);
 			exit(20);

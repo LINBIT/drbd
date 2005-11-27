@@ -30,7 +30,7 @@ extern const char * drbd_buildtag(void);
 
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function
-
+#define DUMP_MD 2       // Dump even all cstate changes (I like it!)
 //#define PARANOIA // some extra checks
 
 // don't enable this, unless you can cope with gigabyte syslogs :)

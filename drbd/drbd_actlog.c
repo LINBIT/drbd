@@ -713,7 +713,7 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	unsigned long sbnr,ebnr,lbnr,bnr;
 	sector_t esector, nr_sectors;
 
-	if (size <= 0 || (size & 0x1ff) != 0 || size > PAGE_SIZE) {
+	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("sector: %lu, size: %d\n",(unsigned long)sector,size);
 		return;
 	}

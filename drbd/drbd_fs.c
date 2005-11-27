@@ -265,7 +265,7 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 STATIC
 int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 {
-	int i, md_gc_valid, minor;
+	int minor;
 	enum ret_codes retcode;
 	struct disk_config new_conf;  // local copy of ioctl() args.
 	struct drbd_backing_dev* nbc; // new_backing_conf
@@ -344,8 +344,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	if ((drbd_get_capacity(nbc->backing_bdev)>>1) < new_conf.disk_size) {
-		/* FIXME maybe still allow,
-		 * but leave only DRBD_MAX_SECTORS usable */
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail_ioctl;
 	}
@@ -379,6 +377,13 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 #endif
 // -- up to here
 
+	// Make sure the new disk is big enough
+	if (drbd_get_capacity(nbc->backing_bdev) < 
+	    drbd_get_capacity(mdev->this_bdev) ) {
+		retcode = LDDeviceTooSmall;
+		goto release_bdev2_fail_ioctl;
+	}
+
 	if(drbd_request_state(mdev,NS(disk,Attaching)) <= 0 ) {
 		retcode = StateNotAllowed;
 		goto release_bdev2_fail_ioctl;
@@ -389,9 +394,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	nbc->on_io_error = new_conf.on_io_error;
 	drbd_md_set_sector_offsets(mdev,nbc);
 
-	md_gc_valid = drbd_md_read(mdev,nbc);
-	if ( md_gc_valid != NoError ) {
-		retcode = md_gc_valid;
+	retcode = drbd_md_read(mdev,nbc);
+	if ( retcode != NoError ) {
 		goto release_bdev3_fail_ioctl;
 	}
 
@@ -422,10 +426,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 
 	drbd_bm_lock(mdev); // racy...
 	drbd_determin_dev_size(mdev);
-	/* FIXME
-	 * what if we now have la_size == 0 ?? eh?
-	 * BOOM?
-	 */
 
 	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
@@ -438,51 +438,45 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		drbd_bm_read(mdev);
 	}
 
-	i = drbd_check_al_size(mdev);
-	if (i) {
-// FATAL!
-		/* FIXME see the comment above.
-		 * if this fails I need to undo all changes,
-		 * go back into Unconfigured,
-		 * and fail the ioctl with ENOMEM...
-		 */
-		// return i;
-		drbd_panic("Cannot allocate act_log\n");
-		drbd_suicide();
+	drbd_al_read_log(mdev);
+	if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
+		drbd_al_apply_to_bm(mdev);
+		drbd_al_to_on_disk_bm(mdev);
 	}
-
-	if (md_gc_valid > 0) {
-		drbd_al_read_log(mdev);
-		if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
-			drbd_al_apply_to_bm(mdev);
-			drbd_al_to_on_disk_bm(mdev);
-		}
-	} /* else {
+	/* else {
 	     FIXME wipe out on disk al!
 	} */
 
-	/* If MDF_Consistent is not set go into inconsistent state, otherwise
-	   investige MDF_WasUpToDate...
-	   If MDF_WasUpToDate is not set go into Outdated disk state, otherwise
-	   into Consistent state.
-	*/
-	if(drbd_md_test_flag(mdev,MDF_Consistent)) {
-		if(drbd_md_test_flag(mdev,MDF_WasUpToDate)) {
-			nds = Consistent;
-		} else {
-			nds = Outdated;
-		}
-	} else {
-		nds = Inconsistent;
-	}
 
-	if(drbd_request_state(mdev,NS(disk,nds)) > 0) {
+	if(mdev->state.conn == Connected) {
+		drbd_send_sizes(mdev);  // to start sync...
+		drbd_send_uuids(mdev);
+		drbd_send_state(mdev);
 		drbd_thread_start(&mdev->worker);
+	} else {
+		/* If MDF_Consistent is not set go into inconsistent state, 
+		   otherwise investige MDF_WasUpToDate...
+		   If MDF_WasUpToDate is not set go into Outdated disk state, 
+		   otherwise into Consistent state.
+		*/
+		if(drbd_md_test_flag(mdev,MDF_Consistent)) {
+			if(drbd_md_test_flag(mdev,MDF_WasUpToDate)) {
+				nds = Consistent;
+			} else {
+				nds = Outdated;
+			}
+		} else {
+			nds = Inconsistent;
+		}
+		
+		if(drbd_request_state(mdev,NS(disk,nds)) > 0) {
+			drbd_thread_start(&mdev->worker);
+		}
 	}
 
 	drbd_bm_unlock(mdev);
-
 	return 0;
+
  release_bdev3_fail_ioctl:
 	drbd_force_state(mdev,NS(disk,Diskless));
  release_bdev2_fail_ioctl:
@@ -984,15 +978,11 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 		return -EINTR;
 	}
 
+	drbd_free_bc(mdev->bc);
+	mdev->bc=0;
+
 	after_state_ch(mdev, os, ns);
 
-/* FIXME
-* if you detach while connected, you are *at least* inconsistent now,
-* and should clear MDF_Consistent in metadata, and maybe even set the bitmap
-* out of sync.
-* since if you reattach, this might be a different lo dev, and then it needs
-* to receive a sync!
-*/
 	return 0;
 }
 

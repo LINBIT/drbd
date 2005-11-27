@@ -1680,11 +1680,6 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 	if (hg > 0) { // become sync source.
 		D_ASSERT(drbd_md_test_flag(mdev,MDF_Consistent));
 		rv = WFBitMapS;
-		wait_event(mdev->cstate_wait,
-			   atomic_read(&mdev->ap_bio_cnt)==0);
-		drbd_bm_lock(mdev);   // {
-		drbd_send_bitmap(mdev);
-		drbd_bm_unlock(mdev); // }
 	} else if (hg < 0) { // become sync target
 		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_uuid_set(mdev,Current,mdev->p_uuid[Bitmap]);
@@ -1905,7 +1900,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_State_Packet *p = (Drbd_State_Packet*)h;
 	drbd_conns_t nconn;
-	drbd_state_t ns,peer_state;
+	drbd_state_t os,ns,peer_state;
 	int rv;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -1928,17 +1923,24 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			// we want resync, peer has not yet decided to sync...
 			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
+		} else if ( peer_state.disk == Attaching ) {
+			// Peer should promote from Attaching to UpToDate.
+			drbd_send_state(mdev);
+			peer_state.disk = UpToDate;
 		}
 	}
 
 	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
 	ns.peer = peer_state.role;
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
+	if(nconn == Connected && ns.disk == Attaching) ns.disk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	spin_unlock_irq(&mdev->req_lock);
+	after_state_ch(mdev,os,ns);
 
 	if(rv <= 0) {
 		drbd_force_state(mdev,NS(conn,StandAlone));
@@ -2025,12 +2027,6 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	/* no, actually we can't. failures happen asynchronously, anytime.
 	 * we can never be sure. disk may have failed while we where busy shaking hands...
 	 */
-/*
- *  FIXME this should only be D_ASSERT here.
- *        *doing* it here masks a logic bug elsewhere, I think.
- */
-	D_ASSERT(mdev->state.disk >= Inconsistent);
-	D_ASSERT(mdev->state.pdsk >= Inconsistent);
 
 	ok=TRUE;
  out:
@@ -2172,12 +2168,10 @@ STATIC int receive_outdated(drbd_dev *mdev, Drbd_Header *h)
 {
 	int r;
 
-	drbd_uuid_new_current(mdev);
-	drbd_md_write(mdev);
-
 	r = drbd_request_state(mdev,NS2(pdsk,Outdated,conn,TearDown));
 	WARN("r=%d\n",r);
 	D_ASSERT(r >= 0);
+	drbd_md_write(mdev); // because drbd_request_state created a new UUID.
 
 	return TRUE;
 }
@@ -2379,16 +2373,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	if ( mdev->state.role == Primary ) {
-		if ( mdev->state.pdsk >= DUnknown &&
-		     mdev->bc->md.uuid[Bitmap] == 0 ) {
-			/* We only create a new UUID if the peer might
-			   possibly be UpToDate. Since the connection is
-			   already gone it is DUnknown by now.
-			   In case we already created a BitMap there is
-			   no need to create a new UUID.
-			*/
-			drbd_uuid_new_current(mdev);
-		}
 		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
 		     mdev->state.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
