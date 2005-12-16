@@ -1376,7 +1376,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
 	int consider_sync;
-	int oo_state;
+	int oo_state,i;
 	sector_t p_size, p_usize;
 
 	if (h->length != (sizeof(*p)-sizeof(*h))) {
@@ -1562,8 +1562,12 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	oo_state = mdev->o_state;
 	mdev->o_state = be32_to_cpu(p->state);
 	if(oo_state == Secondary && mdev->o_state == Primary) {
-		drbd_md_inc(mdev,ConnectedCnt);
+		/* Secondary has to adopt primary's gen_cnt. */
+		for(i=HumanCnt;i<GEN_CNT_SIZE;i++) {
+			mdev->gen_cnt[i]=be32_to_cpu(p->gen_cnt[i]);
+		}
 	}
+
 	if (oo_state != mdev->o_state) {
 		INFO( "%s/%s --> %s/%s\n",
 		      nodestate_to_name(mdev->state),
