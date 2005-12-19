@@ -1,8 +1,19 @@
 Latest:
 ------
- ChangeLog last updated: r1986 2005-10-17
+ ChangeLog last updated: r2014 2005-12-19
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.15 (api:77/proto:74)
+-----
+ * Fixed a bug in the GC code that could cause a resync attempt
+   in the wrong direction.
+ * Made DRBD's compat_ioctls work with kernels higher than 2.6.14. This
+   means DRBD builds on AMD64/x86_64 with 2.6.15 and higher again.
+ * drbdadm no longer looks in the current directory for its 
+   backend programs (=drbdsetup), but instead looks in the directory
+   of the drbdadm executable and in $PATH.
+ * Removed the examples from manpage, added a pointer to the HA-wiki.
 
 0.7.14 (api:77/proto:74)
 -----

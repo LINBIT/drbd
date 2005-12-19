@@ -190,6 +190,17 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Mon Dec 19 2005 14:44:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.15-1)
+ * Fixed a bug in the GC code that could cause a resync attempt
+   in the wrong direction.
+ * Made DRBD's compat_ioctls work with kernels higher than 2.6.14. This
+   means DRBD builds on AMD64/x86_64 with 2.6.15 and higher again.
+ * drbdadm no longer looks in the current directory for its 
+   backend programs (=drbdsetup), but instead looks in the directory
+   of the drbdadm executable and in $PATH.
+ * Removed the examples from manpage, added a pointer to the HA-wiki.
+
 * Mon Oct 17 2005 16:44:09 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.14-1)
  * Fixed a SMP race condition introduced in 0.7.12, that could cause
