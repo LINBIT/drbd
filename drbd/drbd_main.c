@@ -78,7 +78,7 @@ extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 # ifdef CONFIG_COMPAT
 #  if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,10)
     /* FIXME on which thing could we test instead of the KERNEL_VERSION
-     * again?  register_ioctl32_conversion was deprecated in 2.610, got
+     * again?  register_ioctl32_conversion was deprecated in 2.6.10, got
      * "officially" deprecated somewhen in 2.6.12, and removed in 2.6.14.
      * so lets assume all vendor kernels did the transition.  */
 #    define HAVE_COMPAT_IOCTL_MEMBER
@@ -172,7 +172,7 @@ STATIC struct block_device_operations drbd_ops = {
 	.open =    drbd_open,
 	.release = drbd_close,
 	.ioctl =   drbd_ioctl,
-#ifdef CONFIG_COMPAT
+#ifdef HAVE_COMPAT_IOCTL_MEMBER
 	.compat_ioctl = drbd_compat_ioctl,
 #endif
 };

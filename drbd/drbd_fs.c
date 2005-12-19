@@ -1025,9 +1025,9 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
 {
 	int ret;
-	lock_kernel();
+	// lock_kernel(); Not needed, since we have mdev->device_mutex
 	ret = drbd_ioctl(f->f_dentry->d_inode, f, cmd, arg);
-	unlock_kernel();
+	// unlock_kernel();
 	return ret;
 }
 #endif
