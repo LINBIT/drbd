@@ -64,7 +64,7 @@ FILE *m_popen(int *pid,char** argv)
     close(pipes[0]); // close reading end
     dup2(pipes[1],1); // 1 = stdout
     close(pipes[1]);
-    execv(argv[0],argv);
+    execvp(argv[0],argv);
     fprintf(stderr,"Can not exec");
     exit(E_exec_error);
   }
