@@ -188,7 +188,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		if ( drbd_conf[i].state.conn == StandAlone &&
 		     drbd_conf[i].state.disk == Diskless) {
 			seq_printf( seq, "%2d: cs:Unconfigured\n", i);
-		else
+		} else {
 			seq_printf( seq,
 			   "%2d: cs:%s st:%s/%s ds:%s/%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
@@ -210,11 +210,11 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   atomic_read(&drbd_conf[i].unacked_cnt),
 			   atomic_read(&drbd_conf[i].ap_bio_cnt)
 			);
-
-		if ( drbd_conf[i].cstate == SyncSource ||
-		     drbd_conf[i].cstate == SyncTarget )
+		}
+		if ( drbd_conf[i].state.conn == SyncSource ||
+		     drbd_conf[i].state.conn == SyncTarget ) {
 			drbd_syncer_progress(drbd_conf+i,seq);
-
+		}
 		lc_printf_stats(seq,drbd_conf[i].resync);
 		lc_printf_stats(seq,drbd_conf[i].act_log);
 	}

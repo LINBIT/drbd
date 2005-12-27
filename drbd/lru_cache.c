@@ -28,6 +28,7 @@
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h> // for memset
+#include <linux/seq_file.h> // for seq_printf
 #include "lru_cache.h"
 
 #define STATIC static
