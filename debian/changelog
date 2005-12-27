@@ -1,23 +1,69 @@
-drbd (0.7.11-0) unstable; urgency=low
+drbd (0.7.13-0) unstable; urgency=low
 
-  * (Philipp Reisner)
+  * New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Thu, 1 Sep 2005 10:00:00 +0200
+
+drbd (0.7.12-0) unstable; urgency=low
+
+  * New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Wed, 24 Aug 2005 15:01:10 +0200
+
+drbd (0.7.11-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Mon, 20 Jun 2005 15:49:40 +0300
+
+drbd (0.7.10-4) unstable; urgency=low
+
+  * debian/control: added missing dependency to dpatch for
+    drbd0.7-module-source (closes: #308295).
+  * debian/control: updated Maintainer and Uploaders fields to match
+    reality.
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Mon, 30 May 2005 11:22:46 +0300
+
+drbd (0.7.10-3) unstable; urgency=low
+
+  * (Cyril Bouthors)
+     - scripts/drbd: explicit modprobe and rmmod pathnames
+       (initscript_explicit_pathname.patch) (closes: #303060, #302556).
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Sun, 17 Apr 2005 18:08:30 +0300
+
+drbd (0.7.10-2) unstable; urgency=low
+
+  * (Cyril Bouthors)
+     - debian/drbd0.7-utils.prerm: silently ignore the initscript return
+       code if we remove or deconfigure the package or carefully pay
+       attention to it if we upgrade the package. (closes: #295533).
+     - debian/control: fixed drbd0.7-module-source description.
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Wed, 16 Feb 2005 21:05:51 +0100
+
+drbd (0.7.10-1) unstable; urgency=low
+
+  * (Cyril Bouthors)
      - New upstream release
 
- -- Philipp Reisner <phil@linbit.com>  Mon, 23 May 2005 15:29:21 +0200
+ -- Cyril Bouthors <cyril@bouthors.org>  Mon, 31 Jan 2005 17:29:27 +0300
 
-drbd (0.7.10-0) unstable; urgency=low
+drbd (0.7.9-2) unstable; urgency=low
 
-  * (Philipp Reisner)
+  * (Cyril Bouthors)
+     - Applied patch from Lars Marowsky-Bree <lmb@suse.de> that fixes a
+       "severe [...] memory corruption bug [...]".
+
+ -- Cyril Bouthors <cyril@bouthors.org>  Thu, 27 Jan 2005 13:55:00 +0300
+
+drbd (0.7.9-1) unstable; urgency=low
+
+  * (Cyril Bouthors)
      - New upstream release
 
- -- Philipp Reisner <phil@linbit.com>  Mon, 31 Jan 2005 10:17:00 +0100
-
-drbd (0.7.9-0) unstable; urgency=low
-
-  * (Philipp Reisner)
-     - New upstream release
-
- -- Philipp Reisner <phil@linbit.com>  Tue, 25 Jan 2005 11:31:00 +0100
+ -- Cyril Bouthors <cyril@bouthors.org>  Thu, 27 Jan 2005 11:35:19 +0300
 
 drbd (0.7.8-1) unstable; urgency=low
 

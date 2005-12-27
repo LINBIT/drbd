@@ -14,6 +14,44 @@ Latest:
 0.7 branch
 ----------
 
+0.7.13 (api:77/proto:74)
+-----
+ * Fixed a SMP race condition that caused the resync process to stall
+   after a few seconds to minutes.
+ * The sync speed display is replaced by the word "stalled" in case the 
+   syncer makes no progress within 20 seconds.
+ * Some improvements to the documentation.
+
+0.7.12 (api:77/proto:74)
+-----
+ * The /proc/drbd code used a fixed single page buffer. This breaks 
+   at about 30 configured devices. Changed that to use the seq_file
+   interface.
+ * Bind the source of TCP connections to the IP address that is
+   mentioned in the configuration. 
+ * Fixed a connection flip-flop bug when the two peers used different
+   user provided sizes.
+ * Various fixes in the online-resize code path, including online shrinking
+   and handling the case that the memory allocation for the new bitmap
+   failed.
+ * Random improvements to drbdadm: 
+   * The "size" option is now allowed in the disk section
+   * A new "disable-ip-verification" option for the global section
+   * The "disable-io-hints" option is not longer available.
+   * Allow "drbdadm -- --size=XXX resize r0".
+ * Fixed a potential very unlikely race condition that in the end would
+   trigger an ERR in drbd_actlog.c:607. Actually I never saw this trigger.
+ * Fixed a logic bug in _drbd_process_ee() that, paired with a race condition
+   could trigger a "ASSERT(b->n_req == set_size)" upon disconnect.
+ * Removed the "disable_io_hints" module parameter.
+ * Added the "disable_bd_claim" module parameter, to allow users, WHO 
+   KNOW WHAT THEY DO, to read-access the data on the secondary node.
+ * Allow "drbdadm invalidate" only in StandAlone and Connected states. 
+ * DRBD no longer goes into StandAlone mode, if there is an random network 
+   error during the handshake phase, instead it retries the to connect.
+   Only critical problems, e.g. incompatible protocols will cause it 
+   to go into StandAlone mode.
+
 0.7.11 (api:77/proto:74)
 -----
  * The upper limit of the runtime tuning parameter max_buffers 

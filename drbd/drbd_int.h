@@ -1115,7 +1115,7 @@ extern void drbd_set_recv_tcq(drbd_dev *mdev, int tcq_enabled);
 
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
-extern int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
+extern struct file_operations drbd_proc_fops;
 extern const char* conns_to_name(drbd_conns_t s);
 extern const char* roles_to_name(drbd_role_t s);
 

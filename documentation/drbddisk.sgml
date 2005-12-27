@@ -1,28 +1,25 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
-<docinfo><date>01 Oct 2001</date></docinfo>
+<docinfo><date>30 Aug 2005</date></docinfo>
 
 <refmeta>
- <refentrytitle>drbd</refentrytitle>
+ <refentrytitle>drbddisk</refentrytitle>
  <manvolnum>8</manvolnum>
 </refmeta>
 
 <refnamediv>
- <refname>/etc/init.d/drbd</refname>
- <refpurpose>The start and stop script for DRBD</refpurpose>
+ <refname>/etc/ha.d/resource.d/drbddisk</refname>
+ <refpurpose>Script to mark devices as primary and mount filesystems</refpurpose>
 </refnamediv>
 
 <refsynopsisdiv>
  <cmdsynopsis>
-  <command>/etc/init.d/drbd</command>
+  <command>/etc/ha.d/resource.d/drbddisk</command>
   <arg><replaceable>resource</replaceable></arg>
   <arg choice=req><group choice=plain>
       <arg choice=req>start</arg>
       <arg choice=req>stop</arg>
       <arg choice=req>status</arg>
-      <arg choice=req>reload</arg>
-      <arg choice=req>restart</arg>
-      <arg choice=req>force-reload</arg>
     </group>
     </arg>
  </cmdsynopsis>
@@ -31,30 +28,25 @@
 <refsect1>
  <title>Introduction</title>
  <para>
-   The <option>/etc/init.d/drbd</option> script is used
-   to start and stop drbd on a system V style init system.
+   The <option>/etc/ha.d/resource.d/drbddisk</option> script
+   brings the local device of <replaceable>resource</replaceable> into
+   primary state. It is designed to be
+   used by heartbeat.
   </para>
   <para>
-    In order to use <option>/etc/init.d/drbd</option> you must define 
-    a resource, a host, and any other configuration options in the drbd
+    In order to use <option>/etc/ha.d/resource.d/drbddisk</option> you must 
+    define 
+    a resource, a host, and any other configuration options in the DRBD
     configuration file.  See <option>/etc/drbd.conf</option> for details.
-    If <replaceable>resource</replaceable> is omited, then all of the 
-    resouces listed in the config file are configured.
-  </para>
-  <para>
-    This script might ask you <quote>Do you want to abort waiting for 
-    other server and make this one primary?</quote>
-  </para>
-  <para>
-    Only answer this question with <quote>yes</quote> if you are sure
-    that it is impossible to repair the other node.
+    If <replaceable>resource</replaceable> is omitted, then all of the 
+    resources listed in the config file are affected.
   </para>
 </refsect1>
 
 <refsect1>
-  <title>Version</title>
-  <simpara>This document is correct for version 0.7.13 of the DRBD distribution.
-  </simpara>
+<title>Version</title>
+<simpara>This document is correct for version 0.7.13 of the DRBD distribution.
+</simpara>
 </refsect1>
 
 <refsect1>
@@ -67,14 +59,14 @@
 <refsect1>
   <title>Reporting Bugs</title>
   <simpara>
-    Report bugs to <email>drbd-devel@lists.sourceforge.net</email>.
+    Report bugs to <email>drbd-user@lists.linbit.com</email>.
   </simpara>
 </refsect1>
 
 <refsect1>
   <title>Copyright</title>
   <simpara>
-    Copyright (c) 2001-2005 Philipp Reisner. This  is  free software; 
+    Copyright (c) 2004-2005 Philipp Reisner. This  is  free software; 
     see the source for copying conditions.  There is NO warranty; 
     not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   </simpara>
@@ -85,7 +77,7 @@
   <para>
     <citerefentry><refentrytitle>drbd.conf</refentrytitle>
     <manvolnum>5</manvolnum></citerefentry>,
-    <citerefentry><refentrytitle>drbddisk</refentrytitle>
+    <citerefentry><refentrytitle>drbd</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>

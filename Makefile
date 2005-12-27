@@ -149,6 +149,7 @@ check_all_committed:
 	fi
 
 prepare_release:
+	svn up
 	$(MAKE) tarball
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 

@@ -536,6 +536,7 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 {
 	int err;
 	struct socket *sock;
+	struct sockaddr_in src_in;
 
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
 	if (err) {
@@ -547,6 +548,26 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 
 	sock->sk->sk_rcvtimeo =
 	sock->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
+
+       /* explicitly bind to the configured IP as source IP 
+	   for the outgoing connections.
+	   This is needed for multihomed hosts and to be 
+	   able to use lo: interfaces for drbd.
+          Make sure to use 0 as portnumber, so linux selects
+	   a free one dynamically.
+	*/
+	memcpy (&src_in, &(mdev->conf.my_addr), sizeof(struct sockaddr_in));
+	src_in.sin_port = 0; 
+
+	err = sock->ops->bind(sock,
+			      (struct sockaddr * ) &src_in,
+			      sizeof (struct sockaddr_in));
+	if (err) {
+		ERR("Unable to bind source sock (%d)\n", err);
+		sock_release(sock);
+		sock = NULL;
+		return sock;
+	}
 
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *)mdev->net_conf->other_addr,
@@ -569,7 +590,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock2);
 	if (err) {
 		ERR("sock_creat(..)=%d\n", err);
-		// FIXME return NULL ?
+		return NULL;
 	}
 
 	if(!inc_net(mdev)) return NULL;
@@ -584,7 +605,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	dec_net(mdev);
 
 	if (err) {
-		ERR("Unable to bind (%d)\n", err);
+		ERR("Unable to bind sock2 (%d)\n", err);
 		sock_release(sock2);
 		drbd_force_state(mdev,NS(conn,Unconnected));
 		return NULL;
@@ -599,9 +620,17 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 STATIC int drbd_do_handshake(drbd_dev *mdev);
 STATIC int drbd_do_auth(drbd_dev *mdev);
 
+/*
+ * return values:
+ *   1 yess, we have a valid connection
+ *   0 oops, did not work out, please try again
+ *  -1 peer talks different language,
+ *     no point in trying again, please go standalone.
+ */
 int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *sock,*msock;
+	int h;
 
 	D_ASSERT(mdev->state.conn > StandAlone);
 	D_ASSERT(!mdev->data.socket);
@@ -634,12 +663,12 @@ int drbd_connect(drbd_dev *mdev)
 				sock_release(sock);
 			}
 		}
-		if(mdev->state.conn == Unconnected) return 0;
+		if(mdev->state.conn == Unconnected) return -1;
 		if(signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
 			if (get_t_state(&mdev->receiver) == Exiting)
-				return 0;
+				return -1;
 		}
 	}
 
@@ -679,9 +708,8 @@ int drbd_connect(drbd_dev *mdev)
 	if(drbd_request_state(mdev,NS(conn,WFReportParams)) <= 0) return 0;
 	D_ASSERT(mdev->asender.task == NULL);
 
-	if (!drbd_do_handshake(mdev)) {
-		return 0;
-	}
+	h = drbd_do_handshake(mdev);
+	if (h <= 0) return h;
 
 	if ( mdev->cram_hmac_tfm ) {
 		if (!drbd_do_auth(mdev)) {
@@ -2104,7 +2132,7 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
 	D_ASSERT( ok == 1 );
 	drbd_bm_unlock(mdev);
-	return TRUE; // cannot fail ?
+	return ok == 1 ? TRUE : FALSE;
 }
 
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
@@ -2115,7 +2143,7 @@ STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
 	drbd_bm_write(mdev);
 	drbd_start_resync(mdev,SyncSource);
 	drbd_bm_unlock(mdev);
-	return TRUE; // cannot fail ?
+	return TRUE;
 }
 
 STATIC int receive_pause_resync(drbd_dev *mdev, Drbd_Header *h)
@@ -2411,6 +2439,13 @@ int drbd_send_handshake(drbd_dev *mdev)
 	return ok;
 }
 
+/*
+ * return values:
+ *   1 yess, we have a valid connection
+ *   0 oops, did not work out, please try again
+ *  -1 peer talks different language,
+ *     no point in trying again, please go standalone.
+ */
 STATIC int drbd_do_handshake(drbd_dev *mdev)
 {
 	// ASSERT current == mdev->receiver ...
@@ -2427,13 +2462,13 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	if (p->head.command != HandShake) {
 		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
 		     cmdname(p->head.command), p->head.command );
-		return 0;
+		return -1;
 	}
 
 	if (p->head.length != expect) {
 		ERR( "expected HandShake length: %u, received: %u\n",
 		     expect, p->head.length );
-		return 0;
+		return -1;
 	}
 
 	rv = drbd_recv(mdev, &p->head.payload, expect);
@@ -2465,7 +2500,7 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 		ERR( "incompatible DRBD dialects: "
 		     "I support %u, peer wants %u\n",
 		     PRO_VERSION, p->protocol_version );
-		return 0;
+		return -1;
 	}
 
 	return 1;
@@ -2603,19 +2638,26 @@ int drbdd_init(struct Drbd_thread *thi)
 	enum disconnect_handler on_disconnect = Reconnect;
 	drbd_dev *mdev = thi->mdev;
 	int minor = (int)(mdev-drbd_conf);
+	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
 
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 
 	while (TRUE) {
-		if (!drbd_connect(mdev)) {
-			WARN("Discarding network configuration.\n");
+		h = drbd_connect(mdev);
+		if (h <= 0) {
 			/* FIXME DISKLESS StandAlone
 			 * does not make much sense...
 			 * drbd_disconnect should set cstate properly...
 			 */
 			drbd_disconnect(mdev);
+			if (h == 0) {
+				schedule_timeout(HZ);
+				continue;
+			}
+
+			WARN("Discarding network configuration.\n");
 			drbd_force_state(mdev,NS(conn,StandAlone));
 			break;
 		}

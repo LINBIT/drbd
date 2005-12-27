@@ -35,13 +35,22 @@
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
 #include "lru_cache.h" /* for lc_sprintf_stats */
 
-int drbd_proc_get_info(char *, char **, off_t, int, int *, void *);
+STATIC int drbd_proc_open(struct inode *inode, struct file *file);
+
 
 struct proc_dir_entry *drbd_proc;
+struct file_operations drbd_proc_fops = {
+	.owner		= THIS_MODULE,
+	.open		= drbd_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 /*lge
  * progress bars shamelessly adapted from driver/md/md.c
@@ -49,9 +58,8 @@ struct proc_dir_entry *drbd_proc;
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
-STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
+STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 {
-	int sz = 0;
 	unsigned long res , db, dt, dbdt, rt, rs_left;
 
 	/* the whole sector_div thingy was wrong (did overflow,
@@ -83,23 +91,23 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	}
 	{
 		int i, y = res/50, x = 20-y;
-		sz += sprintf(buf + sz, "\t[");
+		seq_printf(seq, "\t[");
 		for (i = 1; i < x; i++)
-			sz += sprintf(buf + sz, "=");
-		sz += sprintf(buf + sz, ">");
+			seq_printf(seq, "=");
+		seq_printf(seq, ">");
 		for (i = 0; i < y; i++)
-			sz += sprintf(buf + sz, ".");
-		sz += sprintf(buf + sz, "] ");
+			seq_printf(seq, ".");
+		seq_printf(seq, "] ");
 	}
 	res = 1000L - res;
-	sz+=sprintf(buf+sz,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
+	seq_printf(seq,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
 	/* if more than 1 GB display in MB */
 	if (mdev->rs_total > 0x100000L) {
-		sz+=sprintf(buf+sz,"(%lu/%lu)M\n\t",
+		seq_printf(seq,"(%lu/%lu)M\n\t",
 			    (unsigned long) Bit2KB(rs_left) >> 10,
 			    (unsigned long) Bit2KB(mdev->rs_total) >> 10 );
 	} else {
-		sz+=sprintf(buf+sz,"(%lu/%lu)K\n\t",
+		seq_printf(seq,"(%lu/%lu)K\n\t",
 			    (unsigned long) Bit2KB(rs_left),
 			    (unsigned long) Bit2KB(mdev->rs_total) );
 	}
@@ -114,20 +122,28 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	 * rt: remaining time
 	 */
 	dt = (jiffies - mdev->rs_mark_time) / HZ;
+
+	if (dt > 20) {
+		/* if we made no update to rs_mark_time for too long,
+		 * we are stalled. show that. */
+		seq_printf(seq, "stalled\n");
+		return;
+	}
+
 	if (!dt) dt++;
 	db = mdev->rs_mark_left - rs_left;
 	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
 
-	sz += sprintf(buf + sz, "finish: %lu:%02lu:%02lu",
+	seq_printf(seq, "finish: %lu:%02lu:%02lu",
 		rt / 3600, (rt % 3600) / 60, rt % 60);
 
 	/* current speed average over (SYNC_MARKS * SYNC_MARK_STEP) jiffies */
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
-		sz += sprintf(buf + sz, " speed: %ld,%03ld",
+		seq_printf(seq, " speed: %ld,%03ld",
 			dbdt/1000,dbdt % 1000);
 	else
-		sz += sprintf(buf + sz, " speed: %ld", dbdt);
+		seq_printf(seq, " speed: %ld", dbdt);
 
 	/* mean speed since syncer started
 	 * we do account for PausedSync periods */
@@ -136,26 +152,22 @@ STATIC int drbd_syncer_progress(struct Drbd_Conf* mdev,char *buf)
 	db = mdev->rs_total - rs_left;
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
-		sz += sprintf(buf + sz, " (%ld,%03ld)",
+		seq_printf(seq, " (%ld,%03ld)",
 			dbdt/1000,dbdt % 1000);
 	else
-		sz += sprintf(buf + sz, " (%ld)", dbdt);
+		seq_printf(seq, " (%ld)", dbdt);
 
-	sz += sprintf(buf+sz," K/sec\n");
-
-	return sz;
+	seq_printf(seq," K/sec\n");
 }
 
-/* FIXME we should use snprintf, we only have guaranteed room for one page...
- * we should eventually use seq_file for this */
-int drbd_proc_get_info(char *buf, char **start, off_t offset,
-		       int len, int *unused, void *data)
+
+STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
-	int rlen, i;
+	int i;
 	const char *sn;
 
-	rlen = sprintf(buf, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
-		       API_VERSION,PRO_VERSION, drbd_buildtag());
+	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
+		    API_VERSION,PRO_VERSION, drbd_buildtag());
 
 	/*
 	  cs .. connection state
@@ -175,10 +187,9 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 
 		if ( drbd_conf[i].state.conn == StandAlone &&
 		     drbd_conf[i].state.disk == Diskless) {
-			rlen += sprintf( buf + rlen,
-			   "%2d: Unconfigured\n", i);
-		} else {
-			rlen += sprintf( buf + rlen,
+			seq_printf( seq, "%2d: cs:Unconfigured\n", i);
+		else
+			seq_printf( seq,
 			   "%2d: cs:%s st:%s/%s ds:%s/%s\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
@@ -200,20 +211,20 @@ int drbd_proc_get_info(char *buf, char **start, off_t offset,
 			   atomic_read(&drbd_conf[i].ap_bio_cnt)
 			);
 
-			if ( drbd_conf[i].state.conn == SyncSource ||
-			     drbd_conf[i].state.conn == SyncTarget ) {
-				rlen += drbd_syncer_progress(drbd_conf+i,buf+rlen);
-			}
+		if ( drbd_conf[i].cstate == SyncSource ||
+		     drbd_conf[i].cstate == SyncTarget )
+			drbd_syncer_progress(drbd_conf+i,seq);
 
-			rlen += lc_sprintf_stats(buf+rlen,drbd_conf[i].resync);
-			rlen += lc_sprintf_stats(buf+rlen,drbd_conf[i].act_log);
-		}
-
+		lc_printf_stats(seq,drbd_conf[i].resync);
+		lc_printf_stats(seq,drbd_conf[i].act_log);
 	}
 
-	/* DEBUG & profile stuff end */
+	return 0;
+}
 
-	return rlen;
+STATIC int drbd_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, drbd_seq_show, PDE(inode)->data);
 }
 
 /* PROC FS stuff end */

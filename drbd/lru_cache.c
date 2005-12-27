@@ -85,7 +85,7 @@ void lc_free(struct lru_cache* lc)
 	vfree(lc);
 }
 
-size_t	lc_sprintf_stats(char* buf, struct lru_cache* lc)
+size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
 {
 	/* NOTE:
 	 * total calls to lc_get are
@@ -93,7 +93,7 @@ size_t	lc_sprintf_stats(char* buf, struct lru_cache* lc)
 	 * misses include "dirty" count (update from an other thread in progress)
 	 * and "changed", when this in fact lead to an successful update of the cache.
 	 */
-	return sprintf(buf,"\t%s: elements:%u "
+	return seq_printf(seq,"\t%s: elements:%u "
 		"hits:%lu misses:%lu starving:%lu dirty:%lu changed:%lu\n",
 		lc->name, lc->nr_elements,
 		lc->hits, lc->misses, lc->starving, lc->dirty, lc->changed);

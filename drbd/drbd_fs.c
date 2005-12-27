@@ -65,6 +65,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	// TODO: should only be some assert here, not (re)init...
 	drbd_md_set_sector_offsets(mdev,mdev->bc);
 	rv = do_determin_dev_size(mdev);
+	if (rv < 0) goto out;
 
 	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
 
@@ -83,6 +84,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		// Write mdev->bc->md.la_size_sect to [possibly new position on] disk.
 		drbd_md_write(mdev);
 	}
+  out:
 	lc_unlock(mdev->act_log);
 
 	return rv;
@@ -103,7 +105,9 @@ char* ppsize(char* buf, size_t size)
 }
 
 
-/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk. */
+/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk.
+ * -ENOMEM if we could not allocate the bitmap
+ */
 /*
  * *_size is in sectors.
  *
@@ -162,7 +166,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(mdev)>>1;
 			if (size == 0) {
-				ERR("Could not allocate bitmap! Set device size => 0\n");
+				ERR("OUT OF MEMORY! Could not allocate bitmap! Set device size => 0\n");
 			} else {
 				/* FIXME this is problematic,
 				 * if we in fact are smaller now! */
@@ -170,6 +174,7 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 				    "Leaving size unchanged at size = %lu KB\n",
 				    (unsigned long)size);
 			}
+			rv = err;
 		}
 		// racy, see comments above.
 		drbd_set_my_capacity(mdev,size);

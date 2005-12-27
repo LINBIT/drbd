@@ -1,6 +1,30 @@
 #!/bin/sh
 
-if [ -x "/etc/init.d/drbd" ]; then
-	/etc/init.d/drbd stop
+# This script silently ignores the initscript return code if we remove
+# or deconfigure the package or carefully pay attention to it if we
+# upgrade the package.
+
+# Cyril Bouthors <cyril@bouthors.org>
+# Wed Feb 16 21:01:11 CET 2005
+
+set -e
+
+if [ -x "/etc/init.d/drbd" ]
+then
+    case "$1" in
+	remove|deconfigure)
+	    /etc/init.d/drbd stop || true
+	    ;;
+
+	upgrade|failed-upgrade)
+	    /etc/init.d/drbd stop
+	    ;;
+
+	*)
+	    echo "prerm called with unknown argument \`$1'" >&2
+	    exit 0
+	    ;;
+    esac
 fi
+
 #DEBHELPER#

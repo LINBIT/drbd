@@ -620,7 +620,7 @@
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document is intended to be correct for version 0.7.x of the DRBD distribution.
+    <simpara>This document is correct for version 0.7.13 of the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -637,7 +637,7 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-      Copyright (c) 2001 Philipp Reisner. This  is  free software; 
+      Copyright (c) 2001-2005 Philipp Reisner. This  is  free software; 
       see the source for copying conditions.  There is NO warranty; 
       not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     </simpara>
@@ -649,7 +649,9 @@
       <manvolnum>5</manvolnum></citerefentry>,
       <citerefentry><refentrytitle>drbd</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>,
-      <citerefentry><refentrytitle>datadisk</refentrytitle>
+      <citerefentry><refentrytitle>drbddisk</refentrytitle>
+      <manvolnum>8</manvolnum></citerefentry>
+      <citerefentry><refentrytitle>drbdadm</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
     </para>
   </refsect1>

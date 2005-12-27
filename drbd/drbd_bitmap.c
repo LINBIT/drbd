@@ -323,7 +323,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 	unsigned long bits, bytes, words, *nbm, *obm = 0;
 	int err = 0, growing;
 
-	D_BUG_ON(!b);
+	ERR_IF(!b) return -ENOMEM;
 	MUST_BE_LOCKED();
 
 	ERR_IF (down_trylock(&b->bm_change)) {
@@ -429,9 +429,7 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 	unsigned long s;
 	unsigned long flags;
 
-	D_BUG_ON(!b);
-	if (b->bm_bits == 0) return 0;
-	D_BUG_ON(!b->bm);
+	ERR_IF(!b) return 0;
 	// MUST_BE_LOCKED(); well. yes. but ...
 
 	spin_lock_irqsave(&b->bm_lock,flags);
@@ -444,9 +442,7 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 size_t drbd_bm_words(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(!b);
-	if (b->bm_words == 0) return 0;
-	D_BUG_ON(!b->bm);
+	ERR_IF(!b) return 0;
 
 	/* FIXME
 	 * actually yes. really. otherwise it could just change its size ...
@@ -469,7 +465,8 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 	size_t n = number;
 
 	if (number == 0) return;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return;
+	ERR_IF(!b->bm) return;
 	D_BUG_ON(offset        >= b->bm_words);
 	D_BUG_ON(offset+number >  b->bm_words);
 	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
@@ -509,7 +506,8 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 	size_t n = number;
 
 	if (number == 0) return;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return;
+	ERR_IF(!b->bm) return;
 	D_BUG_ON(offset        >= b->bm_words);
 	D_BUG_ON(offset+number >  b->bm_words);
 	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
@@ -547,7 +545,8 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 	unsigned long *bm;
 
 	if (number == 0) return;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return;
+	ERR_IF(!b->bm) return;
 	if ( (offset        >= b->bm_words) ||
 	     (offset+number >  b->bm_words) ||
 	     (number > PAGE_SIZE/sizeof(long)) ||
@@ -573,6 +572,8 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 void drbd_bm_set_all(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+	ERR_IF(!b) return;
+	ERR_IF(!b->bm) return;
 
 	D_BUG_ON(!b);
 	if (b->bm_bits == 0) return;
@@ -722,9 +723,8 @@ void drbd_bm_clear_all(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
-	D_BUG_ON(!b);
-	if (b->bm_bits == 0) return;
-	D_BUG_ON(!b->bm);
+	ERR_IF(!b) return;
+	ERR_IF(!b->bm) return;
 
 	MUST_BE_LOCKED();						\
 
@@ -739,7 +739,7 @@ void drbd_bm_reset_find(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
-	D_BUG_ON(!b);
+	ERR_IF(!b) return;
 
 	MUST_BE_LOCKED();
 
@@ -760,10 +760,8 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long i = -1UL;
 
-
-	D_BUG_ON(!b);
-	if (b->bm_bits == 0) return i;
-	D_BUG_ON(!b->bm);
+	ERR_IF(!b) return i;
+	ERR_IF(!b->bm) return i;
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
@@ -809,7 +807,8 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int i;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return 1;
+	ERR_IF(!b->bm) return 1;
 
 /*
  * only called from drbd_set_out_of_sync.
@@ -843,7 +842,8 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int i;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return 0;
+	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
@@ -876,7 +876,8 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int i;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return 0;
+	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
@@ -910,7 +911,8 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 	int count, s, e;
 	unsigned long flags;
 
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return 0;
+	ERR_IF(!b->bm) return 0;
 	spin_lock_irqsave(&b->bm_lock,flags);
 	BM_PARANOIA_CHECK();
 
@@ -937,7 +939,8 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long weight;
 	int count, s, e;
-	D_BUG_ON(!(b && b->bm));
+	ERR_IF(!b) return 0;
+	ERR_IF(!b->bm) return 0;
 
 	MUST_BE_LOCKED();
 

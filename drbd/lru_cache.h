@@ -107,7 +107,7 @@ extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
 extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
 extern void            lc_changed(struct lru_cache* lc, struct lc_element* e);
 
-extern size_t lc_sprintf_stats(char* buf, struct lru_cache* lc);
+extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache* lc);
 
 /* This can be used to stop lc_get from changing the set of active elements.
  * Note that the reference counts and order on the lru list may still change.

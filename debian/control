@@ -1,9 +1,9 @@
 Source: drbd
 Section: admin
 Priority: extra
-Maintainer: David Krovich <dkrovich@csee.wvu.edu>
-Uploaders: Philipp Hug <debian@hug.cx>, Cyril Bouthors <cyril@bouthors.org>
-Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, bison, flex
+Maintainer: Cyril Bouthors <cyril@bouthors.org>
+Uploaders: David Krovich <dkrovich@csee.wvu.edu>, Philipp Hug <debian@hug.cx>
+Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, bison, flex, dpatch
 Standards-Version: 3.6.1
 
 Package: drbd0.7-utils
@@ -16,34 +16,32 @@ Replaces: drbd-utils, drbd
 Suggests: heartbeat
 Description: RAID 1 over tcp/ip for Linux utilities
  Drbd is a block device which is designed to build high availability
- clusters by providing a virtual shared device which keeps disks in nodes
- synchronised using TCP/IP. This simulates RAID 1 but avoiding the 
- use of uncommon hardware (shared SCSI buses or Fibre Channel). 
+ clusters by providing a virtual shared device which keeps disks in
+ nodes synchronised using TCP/IP. This simulates RAID 1 but avoiding
+ the use of uncommon hardware (shared SCSI buses or Fibre Channel).
  It is currently limited to fail-over HA clusters.
  .
- This package contains the programs that will control the 
- drbd kernel module provided in drbd-source. You will need a clustering
- service (such as heartbeat) to fully implement it.
+ This package contains the programs that will control the drbd kernel
+ module provided in drbd-source. You will need a clustering service
+ (such as heartbeat) to fully implement it.
  .
  Homepage: http://www.drbd.org
 
 Package: drbd0.7-module-source
 Architecture: all
 Section: admin
-Depends: module-assistant
+Depends: module-assistant, debhelper (>= 4), dpatch
 Conflicts: drbd-module-source, drbd-source
 Provides: drbd-module-source
 Replaces: drbd-module-source, drbd-source
 Recommends:  dpkg-dev, kernel-package, debhelper (>= 4), debconf-utils
 Description: RAID 1 over tcp/ip for Linux module source
  Drbd is a block device which is designed to build high availability
- clusters by providing a virtual shared device which keeps disks in nodes
- synchronised using TCP/IP. This simulates RAID 1 but avoiding the 
- use of uncommon hardware (shared SCSI buses or Fibre Channel). 
+ clusters by providing a virtual shared device which keeps disks in
+ nodes synchronised using TCP/IP. This simulates RAID 1 but avoiding
+ the use of uncommon hardware (shared SCSI buses or Fibre Channel).
  It is currently limited to fail-over HA clusters.
  .
- This package contains the programs that will control the 
- drbd kernel module provided in drbd-source. You will need a clustering
- service (such as heartbeat) to fully implement it.
+ This package contains the source code for the drbd kernel module.
  .
  Homepage: http://www.drbd.org

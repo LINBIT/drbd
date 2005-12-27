@@ -689,8 +689,10 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 		// we need the lock for drbd_try_clear_on_disk_bm
 		if(jiffies - mdev->rs_mark_time > HZ*10) {
 			/* should be roling marks, but we estimate only anyways. */
-			mdev->rs_mark_time = jiffies;
-			mdev->rs_mark_left = drbd_bm_total_weight(mdev);
+			if( mdev->rs_mark_left != drbd_bm_total_weight(mdev)) {
+				mdev->rs_mark_time =jiffies;
+				mdev->rs_mark_left =drbd_bm_total_weight(mdev);
+			}
 		}
 		drbd_try_clear_on_disk_bm(mdev,sector,count);
 		/* just wake_up unconditional now,

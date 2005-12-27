@@ -791,8 +791,10 @@ STATIC int drbd_thread_setup(void* arg)
 	daemonize("drbd_thread");
 	D_ASSERT(get_t_state(thi) == Running);
 	D_ASSERT(thi->task == NULL);
+	spin_lock(&thi->t_lock);
 	thi->task = current;
 	smp_mb();
+	spin_unlock(&thi->t_lock);
 	complete(&thi->startstop); // notify: thi->task is set.
 
 	retval = thi->function(thi);
@@ -1848,6 +1850,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->net_conf     = NULL;
 	mdev->send_task    = NULL;
 	drbd_set_my_capacity(mdev,0);
+	drbd_bm_resize(mdev,0);
 
 	// just in case
 	drbd_free_resources(mdev);
@@ -2256,13 +2259,14 @@ int __init drbd_init(void)
 	/*
 	 * register with procfs
 	 */
-	// XXX maybe move to a seq_file interface
-	drbd_proc = create_proc_read_entry("drbd", 0, &proc_root,
-					   drbd_proc_get_info, NULL);
+	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , &proc_root);
+
 	if (!drbd_proc)	{
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
 		goto Enomem;
 	}
+	
+	drbd_proc->proc_fops = &drbd_proc_fops;
 	drbd_proc->owner = THIS_MODULE;
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
