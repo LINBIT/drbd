@@ -66,7 +66,15 @@
 #define LANANA_DRBD_MAJOR 147
 
 #ifdef CONFIG_COMPAT
-# include <linux/ioctl32.h>
+# if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,10)
+    /* FIXME on which thing could we test instead of the KERNEL_VERSION
+     * again?  register_ioctl32_conversion was deprecated in 2.6.10, got
+     * "officially" deprecated somewhen in 2.6.12, and removed in 2.6.14.
+     * so lets assume all vendor kernels did the transition.  */
+#   define HAVE_COMPAT_IOCTL_MEMBER
+# else
+#  include <linux/ioctl32.h>
+# endif
 #endif
 
 struct after_state_chg_work {
@@ -149,7 +157,10 @@ STATIC struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_close,
-	.ioctl =   drbd_ioctl
+	.ioctl =   drbd_ioctl,
+#ifdef HAVE_COMPAT_IOCTL_MEMBER
+	.compat_ioctl = drbd_compat_ioctl,
+#endif
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -2289,6 +2300,7 @@ int __init drbd_init(void)
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
 	unlock_kernel();
+#endif
 #endif
 
 	printk(KERN_INFO DEVICE_NAME ": initialised. "

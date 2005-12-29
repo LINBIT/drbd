@@ -841,11 +841,12 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+	unsigned long flags;
 	int i;
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 
-	spin_lock_irq(&b->bm_lock);
+	spin_lock_irqsave(&b->bm_lock,flags);
 	BM_PARANOIA_CHECK();
 	MUST_NOT_BE_LOCKED();
 	ERR_IF (bitnr >= b->bm_bits) {
@@ -855,7 +856,7 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 		i = (0 != __test_and_clear_bit(bitnr, b->bm));
 		b->bm_set -= i;
 	}
-	spin_unlock_irq(&b->bm_lock);
+	spin_unlock_irqrestore(&b->bm_lock,flags);
 
 	/* clearing bits should only take place when sync is in progress!
 	 * this is only called from drbd_set_in_sync.

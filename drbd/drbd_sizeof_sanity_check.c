@@ -1,9 +1,5 @@
 #include <linux/drbd.h>
-#include <linux/linkage.h>
-
-/* from linux/kernel.h */
-asmlinkage int printk(const char * fmt, ...)
-	__attribute__ ((format (printf, 1, 2)));
+#include <linux/kernel.h>
 
 #define SZO(type,size) \
 	s = sizeof(type); \

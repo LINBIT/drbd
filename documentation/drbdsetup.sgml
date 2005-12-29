@@ -549,78 +549,16 @@
   </refsect1>
   <refsect1>
     <title>Examples</title>
-    <example>
-      <title>Setting up a device pair</title>
       <para>
-	In this example the hosts, <replaceable>tc1</replaceable> and
-	<replaceable>tc2</replaceable>, are connected by a crossover cable
-	via the interfaces <replaceable>192.168.37.2</replaceable> (on tc1)
-	and <replaceable>192.168.37.3</replaceable> (on tc2).  We want to
-	turn /dev/hda6 into a virtually shared disk.</para>
-      <para>On tc1 we need:</para>
-      <screen>
-	$ drbdsetup /dev/drbd0 disk /dev/hda6
-	$ drbdsetup /dev/drbd0 net 192.168.37.2 192.168.37.3 B
-      </screen>
-      <para>On tc2 we need:</para>
-      <screen>
-	$ drbdsetup /dev/drbd0 disk /dev/hda6
-	$ drbdsetup /dev/drbd0 net 192.168.37.3 192.168.37.2 B
-	$ drbdsetup /dev/drbd0 primary
-	$ cat /proc/drbd
-	<computeroutput>version: 0.7.0 (api:xx/proto:yy)
-
-	0: cs:Connected st:Primary/Secondary ns:0 nr:0 dw:0 dr:0 of:0
-	1: cs:WFConnection st:Secondary/Unknown ns:0 nr:0 dw:0 dr:0 of:0
-	</computeroutput>
-      </screen>
-      <para>From /proc/drbd we can see, that our device pair is connected, and
-      that the device is ready for use on tc2.</para>
-      <para>We can now run our application on top of it:</para>
-      <screen>
-	$ mkfs -b 4096 /dev/drbd0
-	$ mount /dev/drbd0 /mnt/mountpoint
-      </screen>
-    </example>
-    <example>
-      <title>Snapshot a device to a third machine</title>
-      <para>
-	In this example the hosts, <replaceable>tc1</replaceable> and
-	<replaceable>tc2</replaceable>, are connected and
-	<replaceable>tc2</replaceable> is primary on the /dev/drbd0 device.
-	The resource should be snapshotted to <replaceable>tc3's
-	/dev/hda6</replaceable>.</para>
-      <para>We need to prepare tc3:</para>
-      <screen>
-	$ drbdsetup /dev/drbd0 disk /dev/hda6
-	$ drbdsetup /dev/drbd0 net tc3 tc2 B
-      </screen>
-      <para>On tc2 we have to issue:</para>
-      <screen>
-	$ drbdsetup /dev/drbd0 disconnect
-	$ drbdsetup /dev/drbd0 net tc2 tc3 B --sync-rate 4M
-	$ #drbdsetup /dev/drbd0 replicate
-	$ drbdsetup /dev/drbd0 wait_sync
-	$ drbdsetup /dev/drbd0 disconnect
-	$ drbdsetup /dev/drbd0 net tc2 tc1 B
-	$ #drbdsetup /dev/drbd0 replicate
-      </screen>
-      <para>With release 0.6.x DRBD's meta-data management still can not detect changing
-      mirroring partners. Therefore you might have to issue
-      the replicate commands as outlined in the example.</para>
-      <para>Since the snapshot was taken without bringing the on disk file 
-      system into a consistent state we need these commands on tc3:</para>
-      <screen>
-	$ drbdsetup /dev/drbd0 down
-	$ fsck /dev/hda6
-	$ mount /dev/hda6 /some/mountpoint
-      </screen>
-    </example>
+      For examples please have a look at the
+      <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
+      <citetitle>DRBD Quickstart Guide</citetitle></ulink>.
+      </para>
   </refsect1>
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document is correct for version 0.7.13 of the DRBD distribution.
+    <simpara>This document is correct for version 0.7.15 of the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -653,6 +591,8 @@
       <manvolnum>8</manvolnum></citerefentry>
       <citerefentry><refentrytitle>drbdadm</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
+      <ulink url="http://www.drbd.org/">
+      <citetitle>DRBD Homepage</citetitle></ulink>
     </para>
   </refsect1>
 </refentry>

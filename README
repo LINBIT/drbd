@@ -3,12 +3,16 @@
 				======
         		   by Philipp Reisner
 		   		   
-
 Reference documentation is included in the documentation directory.
+
+Please refer to the web pages at
+http://www.drbd.org/ and 
+http://www.linux-ha.org/DRBD
+http://www.linux-ha.org/DRBD/FAQ
+to find maintained information.
 
 Please have a look at INSTALL or INSTALL.html, too.
 BTW, if there is no INSTALL.html, say "make INSTALL.html" :)
-
 
 DEBUGING:
 ---------
@@ -24,16 +28,4 @@ BUILD RPMS:
 -----------
 
 Read INSTALL.
-
- 
-GENERAL ISSUES
---------------
-
-Unfortunately our time does not allow us to
-maintain this README besides the software. 
-
-Please refer to the web pages at
-http://www.drbd.org/ and 
-http://linuxha.trick.ca/DRBD
-to find maintained information.
 

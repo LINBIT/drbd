@@ -118,6 +118,7 @@ fi
 
 # Bring over the current kernel Kconfig and Makefile
 for f in drivers/block/{Kconfig,Makefile} arch/um/Kconfig_block ; do
+	test -e $KERNEL/$f || continue
 	cp -a $KERNEL/$f $KERNEL_BASE/$f
 	cp -a $KERNEL/$f $DRBD_BASE/$f
 done
@@ -138,6 +139,7 @@ source "drivers/block/drbd/Kconfig"\
 #	}'
 }
 for f in drivers/block/Kconfig arch/um/Kconfig_block ; do
+	test -e $KERNEL_BASE/$f || continue
 	grep drbd/ $DRBD_BASE/$f >/dev/null && continue
 	patch_Kconfig < $KERNEL_BASE/$f > $DRBD_BASE/$f
 done

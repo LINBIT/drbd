@@ -25,7 +25,6 @@
   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
 */
-
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/version.h>
@@ -1071,6 +1070,7 @@ extern int drbd_set_role(drbd_dev *mdev, int *arg);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
+extern long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
 
 // drbd_worker.c
 enum RSPauseReason {
@@ -1140,8 +1140,11 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
  * inline helper functions
  *************************/
 
+<<<<<<< .working
 #include "drbd_compat_wrappers.h"
 
+=======
+>>>>>>> .merge-right.r2000
 #define peer_mask role_mask
 #define pdsk_mask disk_mask
 

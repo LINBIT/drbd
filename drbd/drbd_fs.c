@@ -236,6 +236,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	} else {
 		if (t) lc_free(t);
 	}
+	drbd_md_write(mdev);
 	return 0;
 }
 
@@ -1085,6 +1086,16 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 	return 0;
 }
 
+#ifdef CONFIG_COMPAT
+long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
+{
+	int ret;
+	// lock_kernel(); Not needed, since we have mdev->device_mutex
+	ret = drbd_ioctl(f->f_dentry->d_inode, f, cmd, arg);
+	// unlock_kernel();
+	return ret;
+}
+#endif
 
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
@@ -1376,4 +1387,3 @@ int drbd_ioctl(struct inode *inode, struct file *file,
  out_unlocked:
 	return err;
 }
-

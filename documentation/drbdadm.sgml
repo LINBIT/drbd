@@ -237,7 +237,7 @@
   <refsect1>
     <title>Version</title>
     <simpara>
-      This document is correct for version 0.7.13 of the DRBD distribution.
+      This document is correct for version 0.7.15 of the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -270,6 +270,8 @@
       <manvolnum>8</manvolnum></citerefentry>
       <citerefentry><refentrytitle>drbdsetup</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
+      <ulink url="http://www.drbd.org/">
+      <citetitle>DRBD Homepage</citetitle></ulink>
     </para>
   </refsect1>
 </refentry>
