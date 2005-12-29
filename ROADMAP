@@ -658,6 +658,9 @@ DRBD 0.8 Roadmap
 26 Implement a kind of "dstate" command to make integration with 
    Heartbeat-2.0's master/slave-support possible.
 
+27 Remove all explicit drbd_md_write() calls, and create a mechanism,
+   that always keeps the on disk-metadata up-to-date implicit. 
+   Calling drbd_md_write() explicit is too errorprone.
 
 plus-banches:
 ----------------------

@@ -1140,11 +1140,8 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
  * inline helper functions
  *************************/
 
-<<<<<<< .working
 #include "drbd_compat_wrappers.h"
 
-=======
->>>>>>> .merge-right.r2000
 #define peer_mask role_mask
 #define pdsk_mask disk_mask
 

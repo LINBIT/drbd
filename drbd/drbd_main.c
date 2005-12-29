@@ -2301,7 +2301,6 @@ int __init drbd_init(void)
 	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
 	unlock_kernel();
 #endif
-#endif
 
 	printk(KERN_INFO DEVICE_NAME ": initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
