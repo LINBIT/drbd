@@ -596,7 +596,6 @@ void drbd_bm_set_all(drbd_dev *mdev)
  */
 int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 {
-#warning check outcome of addition of sector_t/u64/s32
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
 

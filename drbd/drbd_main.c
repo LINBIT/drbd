@@ -563,13 +563,14 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 /* PRE TODO: Should return ernno numbers from the pre-state-change checks. */
 int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
-	MUST_HOLD(&mdev->req_lock);
 	drbd_state_t os;
-	int rv=1,warn_sync_abort=0;
+	int rv=SS_Success, warn_sync_abort=0;
+
+	MUST_HOLD(&mdev->req_lock);
 
 	os = mdev->state;
 
-	if( ns.i == os.i ) return 2;
+	if( ns.i == os.i ) return SS_NothingToDo;
 
 	/*  State sanitising  */
 	if( ns.conn < Connected ) {
@@ -643,40 +644,39 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 		if(inc_net(mdev)) {
 			if( !mdev->net_conf->two_primaries &&
-			    ns.role == Primary && ns.peer == Primary ) rv=-1;
+			    ns.role == Primary && ns.peer == Primary ) 
+				rv=SS_TowPrimaries;
 			dec_net(mdev);
 		}
 
 		if( rv <= 0 ) /* already found a reason to abort */;
 		else if( ns.role == Primary && ns.conn < Connected &&
-			 ns.disk <= Outdated ) rv=-2;
+			 ns.disk <= Outdated ) rv=SS_NoConsistnetDisk;
 
 		else if( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
 			 ns.role == Primary && ns.conn < Connected &&
-			 ns.pdsk >= DUnknown ) rv=-7;
+			 ns.pdsk >= DUnknown ) rv=SS_PrimaryNOP;
 
 		else if( ns.role == Primary && ns.disk <= Inconsistent &&
-			 ns.pdsk <= Inconsistent ) rv=-2;
-
-		else if( ns.peer == Primary && ns.pdsk <= Inconsistent )
-			rv=-3;
+			 ns.pdsk <= Inconsistent ) rv=SS_NoConsistnetDisk;
 
 		else if( ns.conn > Connected &&
-			 ns.disk < UpToDate && ns.pdsk < UpToDate ) rv=-4;
+			 ns.disk < UpToDate && ns.pdsk < UpToDate ) 
+			rv=SS_BothInconsistent;
 
 		else if( ns.conn > Connected &&
 			 (ns.disk == Diskless || ns.pdsk == Diskless ) )
-			rv=-5;
+			rv=SS_SyncingDiskless;
 
 		else if( (ns.conn == Connected ||
 			  ns.conn == SkippedSyncS ||
 			  ns.conn == WFBitMapS ||
 			  ns.conn == SyncSource ||
 			  ns.conn == PausedSyncS) &&
-			 ns.disk == Outdated ) rv=-6;
+			 ns.disk == Outdated ) rv=SS_ConnectedOutdates;
 	}
 
-	if(rv <= 0) {
+	if(rv < SS_Success) {
 		if( flags & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
 		return rv;
 	}
@@ -2148,6 +2148,10 @@ int __init drbd_init(void)
 	printk(KERN_ERR "DRBD_MAX_SECTORS_FLEX = %llu\n",DRBD_MAX_SECTORS_FLEX);
 	return -EBUSY;
 #endif
+#ifdef __arch_um__
+	printk(KERN_INFO "drbd_module = 0x%p core = 0x%p\n",
+	       THIS_MODULE,THIS_MODULE->module_core);
+#endif
 
 	if (sizeof(Drbd_HandShake_Packet) != 80) {
 		printk(KERN_ERR DEVICE_NAME
@@ -2382,6 +2386,9 @@ void drbd_md_write(drbd_dev *mdev)
 	u32 flags;
 	sector_t sector;
 	int i;
+
+	if(!mdev->bc) return; // because of drbd_check_al_size(mdev) in 
+			      // drbd_ioctl_set_disk() should be removed....
 
 	ERR_IF(!inc_md_only(mdev,Attaching)) return;
 

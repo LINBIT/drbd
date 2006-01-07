@@ -596,7 +596,7 @@ STATIC int _drbd_rs_resume(drbd_dev *mdev, enum RSPauseReason reason)
 			mod_timer(&mdev->resync_timer,jiffies);
 		}
 	}
-	return r != 2;
+	return r != SS_NothingToDo;
 }
 
 /** 
@@ -639,7 +639,7 @@ STATIC int _drbd_rs_pause(drbd_dev *mdev, enum RSPauseReason reason)
 		INFO("Resync suspended by %s.\n",reason_txt[reason]);
 	}
 
-	return r != 2;
+	return r != SS_NothingToDo;
 }
 
 STATIC int _drbd_may_sync_now(drbd_dev *mdev)
@@ -794,7 +794,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	r = _drbd_set_state(mdev,ns,ChgStateVerbose);
 
-	if ( r==1 ) {
+	if ( r == SS_Success ) {
 		mdev->rs_total     =
 		mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 		mdev->rs_paused    = 0;
@@ -804,7 +804,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 	drbd_global_unlock();
 
-	if ( r==1 ) {
+	if ( r == SS_Success ) {
 		after_state_ch(mdev,os,ns);
 
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",

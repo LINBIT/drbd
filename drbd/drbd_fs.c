@@ -48,6 +48,46 @@
 char *drbd_sec_holder = "Secondary DRBD cannot be bd_claimed ;)";
 char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
+
+
+/* initializes the md.*_offset members, so we are able to find
+ * the on disk meta data */
+STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
+				       struct drbd_backing_dev *bdev)
+{
+	sector_t md_size_sect = 0;
+	switch(bdev->md_index) {
+	default:
+	case DRBD_MD_INDEX_FLEX_EXT:
+		/* just occupy the full device; unit: sectors */
+		bdev->md.md_size_sect = drbd_get_capacity(bdev->md_bdev);
+		bdev->md.md_offset = 0;
+		bdev->md.al_offset = MD_AL_OFFSET;
+		bdev->md.bm_offset = MD_BM_OFFSET;
+		break;
+	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_FLEX_INT:
+		bdev->md.md_offset = drbd_md_ss__(mdev,bdev);
+		/* al size is still fixed */
+		bdev->md.al_offset = -MD_AL_MAX_SIZE;
+                //LGE FIXME max size check missing.
+		/* we need (slightly less than) ~ this much bitmap sectors: */
+		md_size_sect = drbd_get_capacity(bdev->backing_bdev);
+		md_size_sect = ALIGN(md_size_sect,BM_SECT_PER_EXT);
+		md_size_sect = BM_SECT_TO_EXT(md_size_sect);
+		md_size_sect = ALIGN(md_size_sect,8);
+
+		/* plus the "drbd meta data super block",
+		 * and the activity log; */
+		md_size_sect += MD_BM_OFFSET;
+
+		bdev->md.md_size_sect = md_size_sect;
+		/* bitmap offset is adjusted by 'super' block size */
+		bdev->md.bm_offset   = -md_size_sect + MD_AL_OFFSET;
+		break;
+	}
+}
+
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
@@ -69,7 +109,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
 
-#warning flexible device size!! is this the right thing to test?
+	//LGE: flexible device size!! is this the right thing to test?
 	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
 		|| prev_size       != mdev->bc->md.md_size_sect;
 
@@ -390,7 +430,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev2_fail_ioctl;
 	}
 
-	if(drbd_request_state(mdev,NS(disk,Attaching)) <= 0 ) {
+	if(drbd_request_state(mdev,NS(disk,Attaching)) < SS_Success ) {
 		retcode = StateNotAllowed;
 		goto release_bdev2_fail_ioctl;
 	}
@@ -475,7 +515,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 			nds = Inconsistent;
 		}
 		
-		if(drbd_request_state(mdev,NS(disk,nds)) > 0) {
+		if(drbd_request_state(mdev,NS(disk,nds)) >= SS_Success ) {
 			drbd_thread_start(&mdev->worker);
 		}
 	}
@@ -680,7 +720,7 @@ FIXME LGE
 	mdev->cram_hmac_tfm = tfm;
 
 	drbd_thread_start(&mdev->worker);
-	if( drbd_request_state(mdev,NS(conn,Unconnected)) > 0) {
+	if( drbd_request_state(mdev,NS(conn,Unconnected)) >= SS_Success ) {
 		drbd_thread_start(&mdev->receiver);
 	}
 
@@ -781,7 +821,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	if(nps != disk_mask) rs.pdsk = nps;
 	r = _drbd_set_state(mdev, rs, 0);
 
-	if ( r == -2 ) {
+	if ( r == SS_NoConsistnetDisk ) {
 		if ( newstate & DontBlameDrbd && mdev->state.disk<UpToDate) {
 			rs.disk = UpToDate;
 			forced = 1;
@@ -792,8 +832,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
-	if ( r == 2 ) { rv = 0; goto fail; }
-	if ( r == -7 && nps == disk_mask ) {
+	if ( r == SS_NothingToDo ) { rv = 0; goto fail; }
+	if ( r == SS_PrimaryNOP && nps == disk_mask ) {
 		nps = drbd_try_outdate_peer(mdev);
 		if ( newstate & DontBlameDrbd && nps > Outdated ) {
 			WARN("Forced into split brain situation!\n");
@@ -801,7 +841,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		}
 		goto retry;
 	}
-	if ( r <= 0 ) {
+	if ( r < SS_Success ) {
 		print_st_err(mdev,os,rs,r);
 		*arg = r;
 		rv = -EIO;
@@ -967,8 +1007,8 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
-	if( r == 2 ) { return 0; }
-	if( r <= 0 ) {
+	if( r == SS_NothingToDo ) { return 0; }
+	if( r < SS_Success ) {
 		return -ENETRESET;
 	}
 
@@ -1007,13 +1047,13 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
-	if( r == 2 ) return 0;
+	if( r == SS_NothingToDo ) return 0;
 	if( r == -999 ) {
 		return -EINVAL;
 	}
 	after_state_ch(mdev,os,ns); // TODO decide if neccesarry.
 
-	if( r <= 0 ) {
+	if( r < SS_Success ) {
 		err = put_user(r, reason);
 		if(!err) err=-EIO;
 		return err;
@@ -1062,8 +1102,8 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 	after_state_ch(mdev,os,ns);
 
-	if ( r == 2 )  return 0;
-	if ( r == -7 ) {
+	if ( r == SS_NothingToDo )  return 0;
+	if ( r == SS_PrimaryNOP ) {
 		drbd_send_short_cmd(mdev, OutdateRequest);
 		wait_event(mdev->cstate_wait,
 			   mdev->state.pdsk <= Outdated ||
@@ -1073,7 +1113,7 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 		r = drbd_request_state(mdev,NS(conn,StandAlone));
 	}
 
-	if( r <= 0 ) return -ENODATA;
+	if( r < SS_Success ) return -ENODATA;
 
 	if ( mdev->cram_hmac_tfm ) {
 		crypto_free_tfm(mdev->cram_hmac_tfm);
@@ -1292,8 +1332,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		r = drbd_request_state(mdev,NS2(disk,Inconsistent,
 					        conn,WFBitMapT));
 
-		if( r == 2 ) { break; }
-		if( r <= 0 ) {
+		if( r == SS_NothingToDo ) { break; }
+		if( r < SS_Success ) {
 			err = -EINPROGRESS;
 			break;
 		}
@@ -1332,8 +1372,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		r = drbd_request_state(mdev,NS2(pdsk,Inconsistent,
 					        conn,WFBitMapS));
 
-		if( r == 2 ) { break; }
-		if( r <= 0 ) {
+		if( r == SS_NothingToDo ) { break; }
+		if( r < SS_Success ) {
 			err = -EINPROGRESS;
 			break;
 		}

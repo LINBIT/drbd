@@ -254,11 +254,24 @@ typedef union {
 	unsigned int i;
 } drbd_state_t;
 
+typedef enum {
+	SS_NothingToDo=2,
+	SS_Success=1,
+	SS_UnknownError=0,
+	SS_TowPrimaries=-1,
+	SS_NoConsistnetDisk=-2,
+	SS_REMOVE_ME=-3,
+	SS_BothInconsistent=-4,
+	SS_SyncingDiskless=-5,
+	SS_ConnectedOutdates=-6,
+	SS_PrimaryNOP=-7
+} set_st_err_t;
+
 /* from drbd_strings.c */
 extern const char* conns_to_name(drbd_conns_t);
 extern const char* roles_to_name(drbd_role_t);
 extern const char* disks_to_name(drbd_disks_t);
-extern const char* set_st_err_name(int);
+extern const char* set_st_err_name(set_st_err_t);
 
 #ifndef BDEVNAME_SIZE
 # define BDEVNAME_SIZE 32

@@ -458,11 +458,6 @@ static void find_drbdcmd(char** cmd, char** pathes)
 {
   char **path;
 
-  if (drbdsetup) {
-    free(drbdsetup);
-    drbdsetup = NULL;
-  }
-
   path=pathes;
   while(*path) {
     if(access(*path,X_OK)==0) {
@@ -1301,6 +1296,7 @@ int main(int argc, char** argv)
   struct d_resource *res,*tmp;
   char *env_drbd_nodename = NULL;
 
+  drbdsetup=NULL;
   drbdmeta=NULL;
   dry_run=0;
   yyin=NULL;

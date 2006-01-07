@@ -635,7 +635,7 @@ int drbd_connect(drbd_dev *mdev)
 	D_ASSERT(mdev->state.conn > StandAlone);
 	D_ASSERT(!mdev->data.socket);
 
-	if(drbd_request_state(mdev,NS(conn,WFConnection)) <= 0 ) return 0;
+	if(drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success ) return 0;
 
 	clear_bit(UNIQUE, &mdev->flags);
 	while(1) {
@@ -705,7 +705,7 @@ int drbd_connect(drbd_dev *mdev)
 	mdev->meta.socket = msock;
 	mdev->last_received = jiffies;
 
-	if(drbd_request_state(mdev,NS(conn,WFReportParams)) <= 0) return 0;
+	if(drbd_request_state(mdev,NS(conn,WFReportParams)) < SS_Success) return 0;
 	D_ASSERT(mdev->asender.task == NULL);
 
 	h = drbd_do_handshake(mdev);
@@ -1875,7 +1875,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 		if(nconn == conn_mask) return FALSE;
 
-		if(drbd_request_state(mdev,NS(conn,nconn)) <= 0) {
+		if(drbd_request_state(mdev,NS(conn,nconn)) < SS_Success) {
 			drbd_force_state(mdev,NS(conn,StandAlone));
 			drbd_thread_stop_nowait(&mdev->receiver);
 			return FALSE;
@@ -1970,7 +1970,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	spin_unlock_irq(&mdev->req_lock);
 	after_state_ch(mdev,os,ns);
 
-	if(rv <= 0) {
+	if(rv < SS_Success) {
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return FALSE;
@@ -2044,7 +2044,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		ok = drbd_send_bitmap(mdev);
 		if (!ok) goto out;
 		ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
-		D_ASSERT( ok == 1 );
+		D_ASSERT( ok == SS_Success );
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
 		    conns_to_name(mdev->state.conn));
@@ -2130,9 +2130,9 @@ STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
 	drbd_bm_set_all(mdev);
 	drbd_bm_write(mdev);
 	ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
-	D_ASSERT( ok == 1 );
+	D_ASSERT( ok == SS_Success );
 	drbd_bm_unlock(mdev);
-	return ok == 1 ? TRUE : FALSE;
+	return ok == SS_Success ? TRUE : FALSE;
 }
 
 STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
@@ -2198,7 +2198,7 @@ STATIC int receive_outdated(drbd_dev *mdev, Drbd_Header *h)
 
 	r = drbd_request_state(mdev,NS2(pdsk,Outdated,conn,TearDown));
 	WARN("r=%d\n",r);
-	D_ASSERT(r >= 0);
+	D_ASSERT(r >= SS_Success);
 	drbd_md_write(mdev); // because drbd_request_state created a new UUID.
 
 	return TRUE;

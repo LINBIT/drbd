@@ -61,13 +61,14 @@ static const char *drbd_disk_s_names[] = {
 };
 
 static const char *drbd_state_sw_errors[] = {
-	[1] = "Multiple primaries now allowed by config",
-	[2] = "Refusing to be Primary without at least one consistent disk",
-	[3] = "Refusing to make peer Primary without disk",
-	[4] = "Refusing to be inconsistent on both nodes",
-	[5] = "Refusing to be syncing and diskless",
-	[6] = "Refusing to be Outdated while Connected",
-	[7] = "Refusing to be Primary while peer is not outdated",
+	[-SS_TowPrimaries] = "Multiple primaries now allowed by config",
+	[-SS_NoConsistnetDisk] = 
+		"Refusing to be Primary without at least one consistent disk",
+	[-SS_REMOVE_ME] = "Refusing to make peer Primary without disk",
+	[-SS_BothInconsistent] = "Refusing to be inconsistent on both nodes",
+	[-SS_SyncingDiskless] = "Refusing to be syncing and diskless",
+	[-SS_ConnectedOutdates] = "Refusing to be Outdated while Connected",
+	[-SS_PrimaryNOP] = "Refusing to be Primary while peer is not outdated",
 };
 
 const char* conns_to_name(drbd_conns_t s) {
@@ -86,8 +87,8 @@ const char* disks_to_name(drbd_disks_t s) {
 		               : drbd_disk_s_names[s];
 }
 
-const char* set_st_err_name(int err) {
-	return err < -7 ? "TOO_SMALL" :
-	       err > -1 ? "TOO_LARGE"
+const char* set_st_err_name(set_st_err_t err) {
+	return err < SS_PrimaryNOP ? "TOO_SMALL" :
+	       err > SS_TowPrimaries ? "TOO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }

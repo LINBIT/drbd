@@ -1047,7 +1047,7 @@ int cmd_outdate(int drbd_fd,char** argv __attribute((unused)),int argc __attribu
       if(err==EIO) 
 	{
 	  fprintf(stderr,"%s\n",set_st_err_name(reason));
-	  if(reason == -2) return 17;
+	  if(reason == SS_NoConsistnetDisk) return 17;
 	}
       return 20;
     }
