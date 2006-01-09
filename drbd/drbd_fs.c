@@ -880,8 +880,9 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		bd_release(mdev->this_bdev);
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 
-		if ( (mdev->state.conn < WFReportParams &&
-		      mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
+		if ( ( ( mdev->state.conn < Connected ||
+			 mdev->state.pdsk <= Attaching ) &&
+		       mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}
 	}

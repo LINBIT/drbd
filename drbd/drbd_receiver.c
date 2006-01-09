@@ -1870,8 +1870,9 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	drbd_determin_dev_size(mdev);
 	drbd_bm_unlock(mdev); // }
 
-	if (mdev->p_uuid && mdev->state.conn <= Connected ) {
+	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev)) {
 		nconn=drbd_sync_handshake(mdev,mdev->state.peer);
+		dec_local(mdev);
 
 		if(nconn == conn_mask) return FALSE;
 
@@ -1940,8 +1941,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (mdev->p_uuid && mdev->state.conn <= Connected ) {
+	if (mdev->p_uuid && mdev->state.conn <= Connected && 
+	    inc_md_only(mdev,Attaching) ) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role);
+		dec_local(mdev);
 
 		if(nconn == conn_mask) return FALSE;
 	}
@@ -1954,7 +1957,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		}
 	}
 
-        if ( peer_state.disk == Attaching ) {
+        if ( peer_state.disk == Attaching && nconn == Connected ) {
 		// Peer should promote from Attaching to UpToDate.
 		drbd_send_state(mdev);
 		peer_state.disk = UpToDate;

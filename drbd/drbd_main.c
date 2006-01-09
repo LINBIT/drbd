@@ -764,10 +764,13 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	}
 
 	/*  Lost contact to peer's copy of the data  */
-	if (ns.role == Primary &&
-	    os.pdsk > DUnknown && ns.pdsk <= DUnknown ) {
-		/* Only do it if we have not yet done it... */
-		if ( mdev->bc->md.uuid[Bitmap] == 0 ) {
+	if ( os.pdsk > DUnknown && ns.pdsk <= DUnknown ) {
+		if ( mdev->p_uuid ) {
+			kfree(mdev->p_uuid);
+			mdev->p_uuid = NULL;
+		}
+		if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 ) {
+			/* Only do it if we have not yet done it... */
 			INFO("Creating new current UUID\n");
 			drbd_uuid_new_current(mdev);
 		}
