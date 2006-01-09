@@ -1951,11 +1951,13 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			// we want resync, peer has not yet decided to sync...
 			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
-		} else if ( peer_state.disk == Attaching ) {
-			// Peer should promote from Attaching to UpToDate.
-			drbd_send_state(mdev);
-			peer_state.disk = UpToDate;
 		}
+	}
+
+        if ( peer_state.disk == Attaching ) {
+		// Peer should promote from Attaching to UpToDate.
+		drbd_send_state(mdev);
+		peer_state.disk = UpToDate;
 	}
 
 	spin_lock_irq(&mdev->req_lock);
