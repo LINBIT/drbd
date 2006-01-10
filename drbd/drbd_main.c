@@ -773,6 +773,20 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 			/* Only do it if we have not yet done it... */
 			INFO("Creating new current UUID\n");
 			drbd_uuid_new_current(mdev);
+			drbd_md_write(mdev);
+		}
+		if (ns.peer == Primary ) { 
+ 			/* Note: The condition ns.peer == Primary implies
+			         that we are connected. Otherwise it would
+				 be ns.peer == Unknown. */
+ 			/* Our peer lost its disk.
+			   Not rotation into BitMap-UUID! A FullSync is 
+			   required after a primary detached from it disk! */
+			u64 uuid;
+			INFO("Creating new current UUID [no BitMap]\n");
+			get_random_bytes(&uuid, sizeof(u64));
+			drbd_uuid_set(mdev, Current, uuid);
+			drbd_md_write(mdev);
 		}
 	}
 

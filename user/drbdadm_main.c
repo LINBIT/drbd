@@ -719,7 +719,7 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
   struct d_option* opt;
-
+  int i;
   int argc=0;
 
   argv[argc++]=drbdsetup;
@@ -742,6 +742,11 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 
   opt=res->net_options;
   make_options(opt);
+
+  for(i=0;i<soi;i++) {
+    argv[argc++]=setup_opts[i];
+  }
+
   argv[argc++]=0;
 
   return m_system(argv,SLEEPS_SHORT);

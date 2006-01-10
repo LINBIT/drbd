@@ -1655,15 +1655,21 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 		} else {
 			hg = drbd_asb_recover_1p(mdev);
 		}
-		if ( hg == -100 ) {
-			if(mdev->net_conf->want_lose && !mdev->p_uuid[UUID_FLAGS]){
-				hg = -1;
-			}
-			if(!mdev->net_conf->want_lose && mdev->p_uuid[UUID_FLAGS]){
-				hg = 1;
-			}
-		} else {
+		if ( abs(hg) < 100 ) {
 			WARN("Split-Brain detected, automatically solved.\n");
+		}
+	}
+
+	if ( hg == -100 ) {
+		if(mdev->net_conf->want_lose && !mdev->p_uuid[UUID_FLAGS]) {
+			hg = -1;
+		}
+		if(!mdev->net_conf->want_lose && mdev->p_uuid[UUID_FLAGS]) {
+			hg = 1;
+		}
+
+		if ( abs(hg) < 100 ) {
+			WARN("Split-Brain detected, manually solved.\n");
 		}
 	}
 
@@ -1687,7 +1693,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return conn_mask;
 	}
-	if (hg < 0 && mdev->state.role == Primary ) {
+	if (hg < 0 && 
+	    mdev->state.role == Primary && mdev->state.disk != Attaching ) {
 		ERR("I shall become SyncTarget, but I am primary!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
