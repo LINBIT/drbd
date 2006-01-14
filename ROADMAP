@@ -660,6 +660,25 @@ DRBD 0.8 Roadmap
    that always keeps the on disk-metadata up-to-date implicit. 
    Calling drbd_md_write() explicit is too errorprone.
 
+   90% DONE [ Needs testing, drbd_md_sync() is the new call ]
+
+28 Implement a kind of 'call home', a single HTTP get request, that
+   gets counted in a data base. The initiator calculates a simple
+   hash over the machine and resource names. Each time a meta-data
+   set gets generated, the 'call home' is initiated. The user might
+   of course opt out of this.
+
+29 Make all the commands to have 'expert' switches to also show
+   the hidden sub-commands in the ussage.
+
+30 The current drbdadm_scanner is 1MB in source and as binary.
+   Use a _basic_ flex scanner, and a hand written parser for superb
+   errror reporting.
+
+31 Resizing several GB results in ko-count timeouts, maybe since the
+   secondary node does the enlargement of the bitmap in the receiver (?)
+
+
 plus-banches:
 ----------------------
 

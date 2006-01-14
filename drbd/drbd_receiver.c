@@ -1703,13 +1703,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 
 	if (abs(hg) >= 2) {
 		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
 
 		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 	}
 
 	if (hg > 0) { // become sync source.
@@ -1991,7 +1991,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	mdev->net_conf->want_lose = 0;
 
 	/* FIXME assertion for (gencounts do not diverge) */
-	drbd_md_write(mdev); // update connected indicator, la_size, ...
+	drbd_md_sync(mdev); // update connected indicator, la_size, ...
 
 	return TRUE;
 }
@@ -2196,7 +2196,7 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 	after_state_ch(mdev,os,ns);
 
 	if( r >= 0 ) {
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 		drbd_send_short_cmd(mdev, OutdatedReply);
 		return TRUE;
 	}
@@ -2211,7 +2211,7 @@ STATIC int receive_outdated(drbd_dev *mdev, Drbd_Header *h)
 	r = drbd_request_state(mdev,NS2(pdsk,Outdated,conn,TearDown));
 	WARN("r=%d\n",r);
 	D_ASSERT(r >= SS_Success);
-	drbd_md_write(mdev); // because drbd_request_state created a new UUID.
+	drbd_md_sync(mdev); // because drbd_request_state created a new UUID.
 
 	return TRUE;
 }
@@ -2418,7 +2418,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
 		}
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 	}
 
 	INFO("Connection lost.\n");

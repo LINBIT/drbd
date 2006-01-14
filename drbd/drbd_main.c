@@ -91,6 +91,8 @@ int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
 STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused);
+STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused);
+STATIC void md_sync_timer_fn(unsigned long data);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
@@ -504,10 +506,7 @@ int drbd_io_error(drbd_dev* mdev)
 
 	D_ASSERT(drbd_md_test_flag(mdev,MDF_FullSync));
 	D_ASSERT(!drbd_md_test_flag(mdev,MDF_Consistent));
-	if (test_bit(MD_DIRTY,&mdev->flags)) {
-		// try to get "inconsistent, need full sync" to MD
-		drbd_md_write(mdev);
-	}
+	drbd_md_sync(mdev);
 
 	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
 		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
@@ -753,6 +752,20 @@ STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 {
+	u32 mdf;
+
+	mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
+				     MDF_ConnectedInd|MDF_WasUpToDate);
+	if (mdev->state.role == Primary)        mdf |= MDF_PrimaryInd;
+	if (mdev->state.conn >= WFReportParams) mdf |= MDF_ConnectedInd;
+	if (mdev->state.disk >  Inconsistent)   mdf |= MDF_Consistent;
+	if (mdev->state.disk >  Outdated)       mdf |= MDF_WasUpToDate;
+
+	if( mdf != mdev->bc->md.flags) {
+		mdev->bc->md.flags = mdf;
+		drbd_md_mark_dirty(mdev);
+	}
+
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */
 
@@ -773,7 +786,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 			/* Only do it if we have not yet done it... */
 			INFO("Creating new current UUID\n");
 			drbd_uuid_new_current(mdev);
-			drbd_md_write(mdev);
 		}
 		if (ns.peer == Primary ) { 
  			/* Note: The condition ns.peer == Primary implies
@@ -786,7 +798,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 			INFO("Creating new current UUID [no BitMap]\n");
 			get_random_bytes(&uuid, sizeof(u64));
 			drbd_uuid_set(mdev, Current, uuid);
-			drbd_md_write(mdev);
 		}
 	}
 
@@ -807,6 +818,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
 		drbd_send_short_cmd(mdev,ResumeResync);
 	}
+	drbd_md_sync(mdev);
 }
 
 
@@ -1159,7 +1171,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 			goto out;
 		}
 		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 	}
 
 	/*
@@ -1791,13 +1803,18 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->resync_work.list);
 	INIT_LIST_HEAD(&mdev->barrier_work.list);
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
+	INIT_LIST_HEAD(&mdev->md_sync_work.list);
 	INIT_LIST_HEAD(&mdev->discard);
 	mdev->resync_work.cb  = w_resync_inactive;
 	mdev->barrier_work.cb = w_try_send_barrier;
 	mdev->unplug_work.cb  = w_send_write_hint;
+	mdev->md_sync_work.cb = w_md_sync;
 	init_timer(&mdev->resync_timer);
+	init_timer(&mdev->md_sync_timer);
 	mdev->resync_timer.function = resync_timer_fn;
 	mdev->resync_timer.data = (unsigned long) mdev;
+	mdev->md_sync_timer.function = md_sync_timer_fn;
+	mdev->md_sync_timer.data = (unsigned long) mdev;
 
 	init_waitqueue_head(&mdev->cstate_wait);
 	init_waitqueue_head(&mdev->ee_wait);
@@ -2392,20 +2409,18 @@ struct meta_data_on_disk {
 	u32 bm_offset;         // offset to the bitmap, from here
 } __attribute((packed));
 
-/*
-
-FIXME md_io might fail unnoticed sometimes ...
-
-*/
-void drbd_md_write(drbd_dev *mdev)
+/** 
+ * drbd_md_sync:
+ * Writes the meta data super block if the MD_DIRTY flag bit is set.
+ */ 
+void drbd_md_sync(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
-	u32 flags;
 	sector_t sector;
 	int i;
 
-	if(!mdev->bc) return; // because of drbd_check_al_size(mdev) in 
-			      // drbd_ioctl_set_disk() should be removed....
+	if (!test_and_clear_bit(MD_DIRTY,&mdev->flags)) return;
+	del_timer(&mdev->resync_timer);
 
 	ERR_IF(!inc_md_only(mdev,Attaching)) return;
 
@@ -2413,18 +2428,10 @@ void drbd_md_write(drbd_dev *mdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer,0,512);
 
-	flags = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
-				   MDF_ConnectedInd|MDF_WasUpToDate);
-	if (mdev->state.role == Primary)        flags |= MDF_PrimaryInd;
-	if (mdev->state.conn >= WFReportParams) flags |= MDF_ConnectedInd;
-	if (mdev->state.disk >  Inconsistent)   flags |= MDF_Consistent;
-	if (mdev->state.disk >  Outdated)       flags |= MDF_WasUpToDate;
-	mdev->bc->md.flags = flags;
-
 	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	for (i = Current; i < UUID_SIZE; i++)
 		buffer->uuid[i]=cpu_to_be64(mdev->bc->md.uuid[i]);
-	buffer->flags = cpu_to_be32(flags);
+	buffer->flags = cpu_to_be32(mdev->bc->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC);
 
 	buffer->md_size_sect  = cpu_to_be32(mdev->bc->md.md_size_sect);
@@ -2533,6 +2540,18 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 	return rv;
 }
 
+/** 
+ * drbd_md_mark_dirty:
+ * Call this function if you change enything that should be written to
+ * the meta-data super block. This function sets MD_DIRTY, and starts a 
+ * timer that ensures that within one second you have to call drbd_md_sync().
+ */
+void drbd_md_mark_dirty(drbd_dev *mdev)
+{
+	set_bit(MD_DIRTY,&mdev->flags);
+	mod_timer(&mdev->resync_timer,jiffies + HZ );
+}
+
 static void drbd_uuid_move_history(drbd_dev *mdev)
 {
 	int i;
@@ -2549,6 +2568,7 @@ void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 	} else {
 		mdev->bc->md.uuid[idx] = val & ~((u64)1);
 	}
+	drbd_md_mark_dirty(mdev);
 }
 
 
@@ -2571,6 +2591,7 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 	} else {
 		mdev->bc->md.uuid[Current] &= ~((u64)1);
 	}
+	drbd_md_mark_dirty(mdev);
 }
 
 void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
@@ -2587,6 +2608,7 @@ void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 		mdev->bc->md.uuid[Bitmap] = val;
 		mdev->bc->md.uuid[Bitmap] &= ~((u64)1);
 	}
+	drbd_md_mark_dirty(mdev);
 }
 
 
@@ -2594,7 +2616,7 @@ void drbd_md_set_flag(drbd_dev *mdev, int flag)
 {
 	MUST_HOLD(mdev->req_lock);
 	if ( (mdev->bc->md.flags & flag) != flag) {
-		set_bit(MD_DIRTY,&mdev->flags);
+		drbd_md_mark_dirty(mdev);
 		mdev->bc->md.flags |= flag;
 	}
 }
@@ -2602,7 +2624,7 @@ void drbd_md_clear_flag(drbd_dev *mdev, int flag)
 {
 	MUST_HOLD(mdev->req_lock);
 	if ( (mdev->bc->md.flags & flag) != 0 ) {
-		set_bit(MD_DIRTY,&mdev->flags);
+		drbd_md_mark_dirty(mdev);
 		mdev->bc->md.flags &= ~flag;
 	}
 }
@@ -2610,6 +2632,22 @@ int drbd_md_test_flag(drbd_dev *mdev, int flag)
 {
 	MUST_HOLD(mdev->req_lock);
 	return ((mdev->bc->md.flags & flag) != 0);
+}
+
+STATIC void md_sync_timer_fn(unsigned long data)
+{
+	drbd_dev* mdev = (drbd_dev*) data;
+
+	WARN("md_sync_timer expired!\n");
+	drbd_queue_work_front(mdev,&mdev->data.work,&mdev->md_sync_work);
+}
+
+STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)
+{
+	WARN("Worker calls drbd_md_sync() now.\n");
+	drbd_md_sync(mdev);
+
+	return 1;
 }
 
 module_init(drbd_init)

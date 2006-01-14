@@ -433,9 +433,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 	drbd_request_state(mdev,NS3(conn,Connected,
 				    disk,UpToDate,
 				    pdsk,UpToDate));
-
-	drbd_md_write(mdev);
-
 	return 1;
 }
 
@@ -816,8 +813,6 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 			drbd_resync_finished(mdev);
 			return;
 		}
-
-		drbd_md_write(mdev);
 
 		if( ns.conn == SyncTarget ) {
 			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));

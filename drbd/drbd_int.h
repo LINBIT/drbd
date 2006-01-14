@@ -680,7 +680,7 @@ struct drbd_md {
 
 	u64 la_size_sect;	/* last agreed size, unit sectors */
 	u64 uuid[UUID_SIZE];
-	unsigned long flags;
+	u32 flags;
 	u32 md_size_sect;
 
 	s32 al_offset;	/* signed relative sector offset to al area */
@@ -729,8 +729,10 @@ struct Drbd_Conf {
 	volatile unsigned int ko_count;
 	struct drbd_work  resync_work,
 			  barrier_work,
-			  unplug_work;
+			  unplug_work,
+	                  md_sync_work;
 	struct timer_list resync_timer;
+	struct timer_list md_sync_timer;
 
 	drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
@@ -862,7 +864,7 @@ extern int drbd_io_error(drbd_dev* mdev);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
 // drbd_meta-data.c (still in drbd_main.c)
-extern void drbd_md_write(drbd_dev *mdev);
+extern void drbd_md_sync(drbd_dev *mdev);
 extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev * bdev);
 // maybe define them below as inline?
 extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val);
@@ -872,6 +874,7 @@ extern void drbd_uuid_set_bm(drbd_dev *mdev, u64 val);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
 extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
 extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
+extern void drbd_md_mark_dirty(drbd_dev *mdev);
 
 /* Meta data layout
    We reserve a 128MB Block (4k aligned)

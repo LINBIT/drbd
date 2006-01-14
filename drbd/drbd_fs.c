@@ -87,7 +87,8 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 		break;
 	}
 }
-
+/* You should call drbd_md_sync() after calling this.
+ */
 STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
 int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
@@ -122,7 +123,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		drbd_al_shrink(mdev); // All extents inactive.
 		drbd_bm_write(mdev);  // write bitmap
 		// Write mdev->bc->md.la_size_sect to [possibly new position on] disk.
-		drbd_md_write(mdev);
+		drbd_md_mark_dirty(mdev);
 	}
   out:
 	lc_unlock(mdev->act_log);
@@ -230,7 +231,8 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
  * drbd_check_al_size:
  * checks that the al lru is of requested size, and if neccessary tries to
  * allocate a new one. returns -EBUSY if current al lru is still used,
- * -ENOMEM when allocation failed, and 0 on success.
+ * -ENOMEM when allocation failed, and 0 on success. You should call
+ * drbd_md_sync() after you called this function.
  */
 STATIC int drbd_check_al_size(drbd_dev *mdev)
 {
@@ -276,7 +278,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	} else {
 		if (t) lc_free(t);
 	}
-	drbd_md_write(mdev);
+	drbd_md_mark_dirty(mdev);	//we changed mdev->act_log->nr_elemens
 	return 0;
 }
 
@@ -478,7 +480,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
 		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
 	} else {
 		/* FIXME this still does not propagate io errors! */
 		drbd_bm_read(mdev);
@@ -521,6 +522,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	drbd_bm_unlock(mdev);
+	drbd_md_sync(mdev);
+
 	return 0;
 
  release_bdev3_fail_ioctl:
@@ -866,8 +869,6 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	 * but that means someone is misusing DRBD...
 	 * */
 
-	set_bit(MD_DIRTY,&mdev->flags); // we are changing state!
-
 	if (newstate & Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
 	} else {
@@ -890,8 +891,6 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	if(mdev->state.disk > Diskless && (newstate & Secondary)) {
 		drbd_al_to_on_disk_bm(mdev);
 	}
-	/* Primary indicator has changed in any case. */
-	drbd_md_write(mdev);
 
 	if (mdev->state.conn >= WFReportParams) {
 		/* if this was forced, we should consider sync */
@@ -987,6 +986,7 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	mdev->sync_conf.al_extents = sc.al_extents;
 
 	err = drbd_check_al_size(mdev);
+	drbd_md_sync(mdev);
 	if (err) return err;
 
 	if (mdev->state.conn >= Connected)
@@ -1052,15 +1052,13 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 	if( r == -999 ) {
 		return -EINVAL;
 	}
-	after_state_ch(mdev,os,ns); // TODO decide if neccesarry.
+	after_state_ch(mdev,os,ns);
 
 	if( r < SS_Success ) {
 		err = put_user(r, reason);
 		if(!err) err=-EIO;
 		return err;
 	}
-
-	drbd_md_write(mdev);
 
 	return 0;
 }
@@ -1230,7 +1228,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		mdev->bc->u_size = (sector_t)(u64)arg;
 		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
-		drbd_md_write(mdev); // Write mdev->bc->md.la_size_sect to disk.
+		drbd_md_sync(mdev);
 		drbd_bm_unlock(mdev);
 		if (mdev->state.conn == Connected) {
 			drbd_send_uuids(mdev); // to start sync...
@@ -1348,13 +1346,13 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_bm_lock(mdev); // racy...
 
 		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
 
 		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 
 		if (drbd_send_short_cmd(mdev,BecomeSyncSource)) {
 			int ok;
@@ -1380,7 +1378,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		}
 
 		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
+		drbd_md_sync(mdev);
 
 		/* avoid races with set_in_sync
 		 * for successfull mirrored writes
@@ -1394,7 +1392,6 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		drbd_bm_write(mdev);
 
 		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_write(mdev);
 
 		drbd_send_uuids(mdev);
 		drbd_send_short_cmd(mdev,BecomeSyncTarget);
