@@ -754,16 +754,18 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 {
 	u32 mdf;
 
-	mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
-				     MDF_ConnectedInd|MDF_WasUpToDate);
-	if (mdev->state.role == Primary)        mdf |= MDF_PrimaryInd;
-	if (mdev->state.conn >= WFReportParams) mdf |= MDF_ConnectedInd;
-	if (mdev->state.disk >  Inconsistent)   mdf |= MDF_Consistent;
-	if (mdev->state.disk >  Outdated)       mdf |= MDF_WasUpToDate;
+	if(mdev->bc) {
+		mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
+					     MDF_ConnectedInd|MDF_WasUpToDate);
+		if (mdev->state.role == Primary)       mdf |= MDF_PrimaryInd;
+		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
+		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
+		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
 
-	if( mdf != mdev->bc->md.flags) {
-		mdev->bc->md.flags = mdf;
-		drbd_md_mark_dirty(mdev);
+		if( mdf != mdev->bc->md.flags) {
+			mdev->bc->md.flags = mdf;
+			drbd_md_mark_dirty(mdev);
+		}
 	}
 
 	/* Here we have the actions that are performed after a
@@ -818,7 +820,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
 		drbd_send_short_cmd(mdev,ResumeResync);
 	}
-	drbd_md_sync(mdev);
 }
 
 
@@ -2420,8 +2421,8 @@ void drbd_md_sync(drbd_dev *mdev)
 	int i;
 
 	if (!test_and_clear_bit(MD_DIRTY,&mdev->flags)) return;
-	del_timer(&mdev->resync_timer);
-
+	del_timer(&mdev->md_sync_timer);
+	INFO("Writing meta data super block now.\n");
 	ERR_IF(!inc_md_only(mdev,Attaching)) return;
 
 	down(&mdev->md_io_mutex);
@@ -2549,7 +2550,7 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 void drbd_md_mark_dirty(drbd_dev *mdev)
 {
 	set_bit(MD_DIRTY,&mdev->flags);
-	mod_timer(&mdev->resync_timer,jiffies + HZ );
+	mod_timer(&mdev->md_sync_timer,jiffies + HZ );
 }
 
 static void drbd_uuid_move_history(drbd_dev *mdev)
@@ -2638,13 +2639,12 @@ STATIC void md_sync_timer_fn(unsigned long data)
 {
 	drbd_dev* mdev = (drbd_dev*) data;
 
-	WARN("md_sync_timer expired!\n");
 	drbd_queue_work_front(mdev,&mdev->data.work,&mdev->md_sync_work);
 }
 
 STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	WARN("Worker calls drbd_md_sync() now.\n");
+	WARN("BUG! md_sync_timer expired! Worker calls drbd_md_sync().\n");
 	drbd_md_sync(mdev);
 
 	return 1;

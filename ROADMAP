@@ -646,9 +646,8 @@ DRBD 0.8 Roadmap
    99% DONE
 
 24 Make it possible to hot-add disk drives == Atomic configuration changes.
-   Missing: Think about and test detach/attach of the primary's disk.
 
-   80% DONE [ The net and disk config changes are atomic by now ]
+   99% DONE
 
 25 Add reserved fields to DRBD-meta-data, add a bytes per bit field to
    metadata.
@@ -660,7 +659,7 @@ DRBD 0.8 Roadmap
    that always keeps the on disk-metadata up-to-date implicit. 
    Calling drbd_md_write() explicit is too errorprone.
 
-   90% DONE [ Needs testing, drbd_md_sync() is the new call ]
+   99% DONE
 
 28 Implement a kind of 'call home', a single HTTP get request, that
    gets counted in a data base. The initiator calculates a simple

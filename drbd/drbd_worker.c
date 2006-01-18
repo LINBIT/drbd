@@ -433,6 +433,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 	drbd_request_state(mdev,NS3(conn,Connected,
 				    disk,UpToDate,
 				    pdsk,UpToDate));
+
+	drbd_md_sync(mdev);
+
 	return 1;
 }
 
@@ -818,6 +821,8 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 			mod_timer(&mdev->resync_timer,jiffies);
 		}
+
+		drbd_md_sync(mdev);
 	}
 }
 

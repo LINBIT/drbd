@@ -208,7 +208,6 @@ static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 		req->master_bio  = bio_src;
 		req->private_bio = bio;
 
-		bio->bi_bdev     = mdev->bc->backing_bdev;
 		bio->bi_private  = req;
 		bio->bi_end_io   =
 			bio_data_dir(bio) == WRITE
@@ -377,6 +376,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 		// in 2.4.X, READA are submitted as READ.
 		req->private_bio->bi_rw = rw;
+		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 		generic_make_request(req->private_bio);
 	}
 

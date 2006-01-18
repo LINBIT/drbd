@@ -898,6 +898,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		drbd_send_state(mdev);
 	}
 
+	drbd_md_sync(mdev);
+
 	return 0;
 
  fail:

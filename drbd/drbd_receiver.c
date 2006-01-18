@@ -2418,9 +2418,9 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
 		}
-		drbd_md_sync(mdev);
 	}
 
+	drbd_md_sync(mdev);
 	INFO("Connection lost.\n");
 }
 
