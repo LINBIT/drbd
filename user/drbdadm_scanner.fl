@@ -305,12 +305,12 @@ AFTER_SB_PRI		  after-sb-[012]pri
 
 <HANDLERS>{
   pri-on-incon-degr	do_assign(STRING); CP; return TK_PRI_ON_INCON_DEGR;
-  pri-sees-sec-with-higher-gc	do_assign(STRING); CP; return TK_PRI_SEES_SEC_WITH_HIGHER_GC;
+  pri-lost-after-sb     do_assign(STRING); CP; return TK_PRI_LOST_AFTER_SB;
   outdate-peer		do_assign(STRING); CP; return TK_OUTDATE_PEER;
   {NDELIM}		{
 	  		  expect_error(
 				"one of 'pri-on-incon-degr|"
-				"pri-sees-sec-with-higher-gc|"
+				"pri-lost-after-sb|"
 				"outdate-peer");
 			}
 }

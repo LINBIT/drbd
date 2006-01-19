@@ -1526,6 +1526,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 			int got_mutex=!down_interruptible(&mdev->device_mutex);
 			if (got_mutex) self = drbd_set_role(mdev,&sec);
 			if (self || !got_mutex) {
+				drbd_khelper(mdev,"pri-lost-after-sb");
 				drbd_panic("Panic by after-sb-1pri handler\n");
 			} else {
 				WARN("Sucessfully gave up primary role.\n");
@@ -1563,6 +1564,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 			int got_mutex=!down_interruptible(&mdev->device_mutex);
 			if (got_mutex) self = drbd_set_role(mdev,&sec);
 			if (self || !got_mutex) {
+				drbd_khelper(mdev,"pri-lost-after-sb");
 				drbd_panic("Panic by after-sb-2pri handler\n");
 			} else {
 				WARN("Sucessfully gave up primary role.\n");
@@ -2802,6 +2804,7 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	drbd_req_free(req);
 
+	drbd_khelper(mdev,"pri-on-incon-degr");
 	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 
 	// THINK do we have other options, but panic?
@@ -2819,6 +2822,9 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 	D_ASSERT(p->block_id == ID_SYNCER);
 
 	drbd_rs_complete_io(mdev,sector);
+
+
+	// In case we are not primary, we could simply live on...
 
 	drbd_panic("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 

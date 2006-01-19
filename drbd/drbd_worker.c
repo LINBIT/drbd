@@ -223,6 +223,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	if ( cancel ||
 	     mdev->state.conn < Connected ||
 	     mdev->state.pdsk <= Inconsistent ) {
+		drbd_khelper(mdev,"pri-on-incon-degr");
 		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
 
 		// does not make much sense, but anyways...

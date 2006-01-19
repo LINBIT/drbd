@@ -258,7 +258,7 @@ void check_meta_disk()
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
 %token <txt> TK_ALLOW_TWO_PRIMARIES
-%token <txt> TK_PRI_ON_INCON_DEGR TK_PRI_SEES_SEC_WITH_HIGHER_GC
+%token <txt> TK_PRI_ON_INCON_DEGR TK_PRI_LOST_AFTER_SB
 %token <txt> TK_OUTDATE_PEER TK_CRAM_HMAC_ALG TK_SHARED_SECRET
 %token <txt> TK_AFTER_SB_PRI
 
@@ -464,7 +464,6 @@ handler_stmts:	  /* empty */	           { $$ = NULL; }
 		;
 
 handler_stmt:	  TK_PRI_ON_INCON_DEGR TK_STRING	{ $$=new_opt($1,$2); }
-		| TK_PRI_SEES_SEC_WITH_HIGHER_GC TK_STRING
-		{ $$=new_opt($1,$2); }
+		| TK_PRI_LOST_AFTER_SB TK_STRING	{ $$=new_opt($1,$2); }
 		| TK_OUTDATE_PEER TK_STRING		{ $$=new_opt($1,$2); }
 		;

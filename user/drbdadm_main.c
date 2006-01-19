@@ -203,7 +203,7 @@ struct adm_cmd cmds[] = {
   { "dump-md",           admm_generic,  1,1,0 },
   { "set-gi",            admm_generic,  0,1,0 },
   { "pri-on-incon-degr", adm_khelper,   0,1,0 },
-  { "pri-sees-sec-with-higher-gc", adm_khelper, 0,1,0 },
+  { "pri-lost-after-sb", adm_khelper,   0,1,0 },
   { "outdate-peer",      adm_khelper,   0,1,0 },
   { "wait_con_int",      adm_wait_ci,   1,0,1 },
   { "sh-resources",      sh_resources,  0,0,0 },

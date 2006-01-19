@@ -1074,6 +1074,7 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
 extern long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
+extern int drbd_khelper(drbd_dev *mdev, char* cmd);
 
 // drbd_worker.c
 enum RSPauseReason {
