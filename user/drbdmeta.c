@@ -801,9 +801,8 @@ int meta_show_gi(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
 int meta_restore_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
-int meta_set_gi(struct format *cfg, char **argv, int argc);
 int meta_outdate(struct format *cfg, char **argv, int argc);
-int meta_set_uuid(struct format *cfg, char **argv, int argc);
+int meta_set_gi(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
 	{"get-gi", 0, meta_get_gi, 1},

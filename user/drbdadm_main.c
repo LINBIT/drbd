@@ -64,9 +64,9 @@ char* progname;
 struct adm_cmd {
   const char* name;
   int (* function)(struct d_resource*,const char* );
-  int show_in_usage     :1;
-  int res_name_required :1;
-  int verify_ips        :1;
+  unsigned int show_in_usage     :3;
+  unsigned int res_name_required :1;
+  unsigned int verify_ips        :1;
 };
 
 struct deferred_cmd
@@ -100,6 +100,7 @@ static int sh_md_idx(struct d_resource* ,const char* );
 static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
+static int hidden_cmds(struct d_resource* ,const char* );
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -201,17 +202,18 @@ struct adm_cmd cmds[] = {
   { "show-gi",           adm_generic_b, 1,1,0 },
   { "get-gi",            adm_generic_b, 1,1,0 },
   { "dump-md",           admm_generic,  1,1,0 },
-  { "set-gi",            admm_generic,  0,1,0 },
-  { "pri-on-incon-degr", adm_khelper,   0,1,0 },
-  { "pri-lost-after-sb", adm_khelper,   0,1,0 },
-  { "outdate-peer",      adm_khelper,   0,1,0 },
   { "wait_con_int",      adm_wait_ci,   1,0,1 },
-  { "sh-resources",      sh_resources,  0,0,0 },
-  { "sh-mod-parms",      sh_mod_parms,  0,0,0 },
-  { "sh-dev",            sh_dev,        0,1,0 },
-  { "sh-ll-dev",         sh_ll_dev,     0,1,0 },
-  { "sh-md-dev",         sh_md_dev,     0,1,0 },
-  { "sh-md-idx",         sh_md_idx,     0,1,0 },
+  { "hidden-commands",   hidden_cmds,   1,0,0 },
+  { "sh-resources",      sh_resources,  2,0,0 },
+  { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
+  { "sh-dev",            sh_dev,        2,1,0 },
+  { "sh-ll-dev",         sh_ll_dev,     2,1,0 },
+  { "sh-md-dev",         sh_md_dev,     2,1,0 },
+  { "sh-md-idx",         sh_md_idx,     2,1,0 },
+  { "pri-on-incon-degr", adm_khelper,   3,1,0 },
+  { "pri-lost-after-sb", adm_khelper,   3,1,0 },
+  { "outdate-peer",      adm_khelper,   3,1,0 },
+  { "set-gi",            admm_generic,  4,1,0 },
 };
 
 /*** These functions are used to the print the config ***/
@@ -1048,9 +1050,46 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
   return 0;
 }
 
-void print_usage_and_exit(const char* addinfo)
+static void print_cmds(int level)
 {
   size_t i;
+  int j=0;
+
+  for(i=0;i<ARRY_SIZE(cmds);i++) {
+    if(cmds[i].show_in_usage!=level) continue;
+    if(j++ % 2) {
+      printf("%-35s\n",cmds[i].name);
+    } else {
+      printf(" %-35s",cmds[i].name);
+    }
+  }
+  if(j % 2) printf("\n");
+}
+
+static int hidden_cmds(struct d_resource* ignored __attribute((unused)),
+		       const char* ignored2 __attribute((unused)) )
+{
+  printf("\nThese additional commands might be usefull for writing\n"
+	 "nifty shell scripts around drbdadm\n\n");
+
+  print_cmds(2);
+
+  printf("\nThese command are used by the kernel part of DRBD to\n"
+	 "invoke user mode helper programs\n\n");
+
+  print_cmds(3);
+
+  printf("\nThese commands ought to be used by experts and developers\n\n");
+  
+  print_cmds(4);
+
+  printf("\n");
+
+  exit(0);
+}
+
+void print_usage_and_exit(const char* addinfo)
+{
   struct option *opt;
 
   printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
@@ -1068,14 +1107,7 @@ void print_usage_and_exit(const char* addinfo)
 
   printf("\nCOMMANDS:\n");
 
-  for(i=0;i<ARRY_SIZE(cmds);i++) {
-    if(cmds[i].show_in_usage==0) break;
-    if(i%2) {
-      printf("%-35s\n",cmds[i].name);
-    } else {
-      printf(" %-35s",cmds[i].name);
-    }
-  }
+  print_cmds(1);
 
   printf("\nVersion: "REL_VERSION" (api:%d)\n%s\n",
 		  API_VERSION, drbd_buildtag());
@@ -1399,6 +1431,12 @@ int main(int argc, char** argv)
     if (optind == argc) print_usage_and_exit(0);
   }
   if (optind == argc) print_usage_and_exit(0);
+
+  if(!strcmp("hidden-commands",argv[optind])) {
+    // before parsing the configuration file...
+    hidden_cmds(NULL,NULL);
+    exit(0);
+  }
 
   cmd=NULL;
   for(i=0;i<ARRY_SIZE(cmds);i++) {
