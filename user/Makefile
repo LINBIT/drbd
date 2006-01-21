@@ -41,12 +41,6 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 
 # for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
-drbdadm_parser.h: drbdadm_parser.y
-	bison -d -o drbdadm_parser.c drbdadm_parser.y
-
-drbdadm_parser.c: drbdadm_parser.y drbdadm.h drbd_limits.h drbdtool_common.h
-	bison -d -o drbdadm_parser.c drbdadm_parser.y
-
 drbdsetup: $(drbdsetup-obj)
 	$(CC) -o $@ $^ 
 
@@ -55,8 +49,6 @@ drbdmeta: $(drbdmeta-obj)
 
 clean:
 	rm -f drbdadm_scanner.c
-	rm -f drbdadm_parser.c
-	rm -f drbdadm_parser.h
 	rm -f drbdsetup drbdadm drbdmeta *.o
 	rm -f *~
 

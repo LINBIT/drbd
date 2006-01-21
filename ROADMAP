@@ -676,6 +676,8 @@ DRBD 0.8 Roadmap
    Use a _basic_ flex scanner, and a hand written parser for superb
    errror reporting.
 
+   99% DONE
+
 31 Resizing several GB results in ko-count timeouts, maybe since the
    secondary node does the enlargement of the bitmap in the receiver (?)
 
