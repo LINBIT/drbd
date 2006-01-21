@@ -48,7 +48,7 @@ drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^ 
 
 clean:
-	rm -f drbdadm_scanner.c
+	rm -f drbdadm_scanner.c drbdmeta_scanner.c
 	rm -f drbdsetup drbdadm drbdmeta *.o
 	rm -f *~
 
