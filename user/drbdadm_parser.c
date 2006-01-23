@@ -73,32 +73,14 @@ m_strtoll_range(const char *s, char def_unit,
     }
 }
 
-enum range_checks
-{
-  R_MINOR_COUNT,
-  R_DIALOG_REFRESH,
-  R_DISK_SIZE,
-  R_TIMEOUT,
-  R_CONNECT_INT,
-  R_PING_INT,
-  R_MAX_BUFFERS,
-  R_MAX_EPOCH_SIZE,
-  R_SNDBUF_SIZE,
-  R_KO_COUNT,
-  R_RATE,
-  R_GROUP,
-  R_AL_EXTENTS,
-  R_PORT,
-  R_META_IDX,
-  R_WFC_TIMEOUT,
-  R_DEGR_WFC_TIMEOUT,
-};
 
 void
 range_check(const enum range_checks what, const char *name, const char *value)
 {
   switch (what)
     {
+    case R_NO_CHECK: 
+      break;
     default:
       fprintf(stderr, "%s:%d: unknown range for %s => %s\n",
 	      config_file, fline, name, value);
@@ -277,6 +259,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 {
 	char *opt_name;
 	int token;
+	enum range_checks rc;
 
 	struct d_option* options = NULL;
 
@@ -286,8 +269,10 @@ static struct d_option* parse_options(int token_switch,int token_option)
 		if( token == token_switch) {
 			options = APPEND(options,new_opt(yylval.txt,NULL));
 		} else if ( token == token_option) {
-			opt_name=yylval.txt;
+			opt_name = yylval.txt;
+			rc = yylval.rc;
 			EXP2(TK_STRING,TK_INTEGER);
+			range_check(rc,opt_name,yylval.txt);
 			options = APPEND(options,new_opt(opt_name,yylval.txt));
 		} else if ( token == '}' ) {
 			return options;
