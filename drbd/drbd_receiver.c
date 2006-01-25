@@ -38,6 +38,7 @@
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/in.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)) || defined(HAVE_MM_INLINE_H)
