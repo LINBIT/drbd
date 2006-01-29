@@ -191,8 +191,15 @@ struct update_odbm_work {
 	unsigned int enr;
 };
 
-STATIC void drbd_al_write_transaction(struct Drbd_Conf *,struct lc_element *,
-				      unsigned int );
+struct update_al_work {
+	struct drbd_work w;
+	struct lc_element * al_ext;
+	struct completion event;
+	unsigned int enr;
+};
+
+STATIC int w_al_write_transaction(struct Drbd_Conf *, struct drbd_work *, int);
+
 static inline
 struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
@@ -229,6 +236,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *al_ext;
+	struct update_al_work al_work;
 
 	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
 	wait_event(mdev->al_wait, (al_ext = _al_get(mdev,enr)) );
@@ -242,7 +250,19 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		if(mdev->cstate < Connected && evicted != LC_FREE ) {
 			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT );
 		}
-		drbd_al_write_transaction(mdev,al_ext,enr);
+
+		/* drbd_al_write_transaction(mdev,al_ext,enr);
+		   generic_make_request() are serialized on the 
+		   current->bio_tail list now. Therefore we have
+		   to deligate writing something to AL to the
+		   worker thread. */
+		init_completion(&al_work.event);
+		al_work.al_ext = al_ext;
+		al_work.enr = enr;
+		al_work.w.cb = w_al_write_transaction;
+		drbd_queue_work_front(mdev,&mdev->data.work,&al_work.w);
+		wait_for_completion(&al_work.event);
+		
 		mdev->al_writ_cnt++;
 
 		/*
@@ -279,15 +299,17 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	spin_unlock_irqrestore(&mdev->al_lock,flags);
 }
 
-STATIC void
-drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
-			  unsigned int new_enr)
+STATIC int
+w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 {
 	int i,n,mx;
 	unsigned int extent_nr;
 	struct al_transaction* buffer;
 	sector_t sector;
 	u32 xor_sum=0;
+
+	struct lc_element *updated = ((struct update_al_work*)w)->al_ext;
+	unsigned int new_enr = ((struct update_al_work*)w)->enr;
 
 	down(&mdev->md_io_mutex); // protects md_io_buffer, al_tr_cycle, ...
 	buffer = (struct al_transaction*)page_address(mdev->md_io_page);
@@ -340,6 +362,10 @@ drbd_al_write_transaction(struct Drbd_Conf *mdev,struct lc_element *updated,
 	mdev->al_tr_number++;
 
 	up(&mdev->md_io_mutex);
+
+	complete(&((struct update_al_work*)w)->event);
+
+	return 1;
 }
 
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
