@@ -1644,7 +1644,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	if (format_version(cfg) < Drbd_08) {
 		printf("gc {\n   ");
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
-			printf(" 0x%X;", cfg->md.gc[i]);
+			printf(" %d;", cfg->md.gc[i]);
 		}
 	} else { // >= 08
 		printf("uuid {\n   ");
@@ -1707,7 +1707,7 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 	if (format_version(cfg) < Drbd_08) {
 		EXP(TK_GC); EXP('{');
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
-			EXP(TK_U64); EXP(';');
+			EXP(TK_NUM); EXP(';');
 			cfg->md.gc[i] = yylval.u64;
 		}
 		EXP('}');
