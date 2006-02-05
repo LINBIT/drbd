@@ -205,6 +205,7 @@ void check_meta_disk(struct d_host_info *host)
 	token = yylex(); 				\
 	if(token != TOKEN1)				\
 		pe_expected_got( #TOKEN1, token ); 	\
+	token;						\
 })
 
 #define EXP2(TOKEN1,TOKEN2)					\
@@ -213,6 +214,7 @@ void check_meta_disk(struct d_host_info *host)
 	token = yylex(); 					\
 	if(token != TOKEN1 && token != TOKEN2) 			\
 		pe_expected_got( #TOKEN1 "|" # TOKEN2, token );	\
+	token;							\
 })
 
 static void pe_expected(const char *exp)
@@ -244,6 +246,14 @@ static void parse_global(void) {
 			EXP(TK_INTEGER);
 			range_check(R_DIALOG_REFRESH,"dialog-refresh",yylval.txt);
 			global_options.dialog_refresh=atoi(yylval.txt);
+			break;
+		case TK_USAGE_COUNT:
+			switch(yylex()) {
+			case TK_YES: global_options.usage_count=UC_YES; break; 
+			case TK_NO:  global_options.usage_count=UC_NO;  break; 
+			case TK_ASK: global_options.usage_count=UC_ASK; break; 
+			default:     pe_expected("yes | no | ask");
+			}
 			break;
 		case '}':
 			return;

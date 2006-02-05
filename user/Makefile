@@ -21,7 +21,8 @@ CFLAGS = -g -O2 -c -W -Wall -I../drbd
 CC = gcc
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
-	      drbdadm_adjust.o drbdtool_common.o ../drbd/drbd_buildtag.o
+	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
+	      ../drbd/drbd_buildtag.o
 
 drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
 	        ../drbd/drbd_strings.o
@@ -73,3 +74,4 @@ drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h
 drbdsetup.o:       drbdtool_common.h           drbd_limits.h
 drbdsetup.o: ../drbd/linux/drbd.h ../drbd/linux/drbd_config.h
 drbdmeta.o:        drbdtool_common.h drbd_endian.h 
+drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h

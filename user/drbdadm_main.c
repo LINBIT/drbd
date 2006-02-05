@@ -106,7 +106,7 @@ char ss_buffer[255];
 struct utsname nodeinfo;
 int line=1;
 int fline, c_resource_start;
-struct d_globals global_options = { 0, 0, 0, 1 };
+struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 char *config_file = NULL;
 struct d_resource* config = NULL;
 struct d_resource* common = NULL;
@@ -1529,6 +1529,8 @@ int main(int argc, char** argv)
   if(drbdmeta == NULL) {
     find_drbdcmd(&drbdmeta,(char *[]){"./drbdmeta", "/sbin/drbdmeta", 0 });
   }
+
+  uc_node(global_options.usage_count);
 
   if(cmd->res_name_required)
     {

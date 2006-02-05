@@ -44,7 +44,10 @@ LONG_STRING	[a-zA-Z0-9/._-]{81}
 {WS}			/* ignore whitespaces */
 {OPCHAR}		{ DP; return yytext[0];			}
 on			{ DP; return TK_ON;			}
+no			{ DP; return TK_NO;			}
 net			{ DP; return TK_NET;			}
+yes			{ DP; return TK_YES;			}
+ask			{ DP; return TK_ASK;			}
 skip			{ DP; return TK_SKIP;			}
 disk			{ DP; return TK_DISK;			}
 syncer			{ DP; return TK_SYNCER;			}
@@ -62,6 +65,7 @@ dialog-refresh		{ DP; return TK_DIALOG_REFRESH;		}
 resource		{ DP; return TK_RESOURCE;		}
 meta-disk		{ DP; return TK_META_DISK;		}
 flexible-meta-disk	{ DP; return TK_FLEX_META_DISK;		}
+usage-count 		{ DP; return TK_USAGE_COUNT;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
 split-brain-fix		{ DP; CP; return TK_DISK_SWITCH;	}

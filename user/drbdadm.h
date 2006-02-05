@@ -33,13 +33,19 @@ enum {
 /* for verify_ips(): are not verifyable ips fatal? */
 #define INVALID_IP_IS_INVALID_CONF 0
 
-
+enum usage_count_type {
+  UC_YES,
+  UC_NO,
+  UC_ASK,
+};
+  
 struct d_globals
 {
   int disable_io_hints;
   int disable_ip_verification;
   int minor_count;
   int dialog_refresh;
+  enum usage_count_type usage_count;
 };
 
 struct d_host_info
@@ -87,7 +93,7 @@ extern void verify_ips(struct d_resource* res);
 extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 			   struct d_resource* res,
 			   int order);
-
+extern void uc_node(enum usage_count_type type);
 
 extern char* config_file;
 extern int config_valid;

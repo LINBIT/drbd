@@ -166,12 +166,12 @@ static inline unsigned long hweight_long(unsigned long w)
  */
 
 #if BITS_PER_LONG == 32
-# define X32 "%lX"
+# define X32 "%X"
 //# define X64 "%llX"
 # define X64(a) "%"#a"llX"
-# define D32 "%ld"
+# define D32 "%d"
 # define D64 "%lld"
-# define U32 "%lu"
+# define U32 "%u"
 # define U64 "%llu"
 #elif BITS_PER_LONG == 64
 # define X32 "%X"
