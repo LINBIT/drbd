@@ -2222,19 +2222,20 @@ int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 int is_attached(int minor)
 {
 	FILE *pr;
-	char line[120], cs[40],st[40],ds[40];
-	int m,rv=0;
+	char token[40];
+	int rv=1;
+	long m,cm=-1;
+	char *p;
 
 	pr = fopen("/proc/drbd","r");
-	if(!pr) return rv;
+	if(!pr) return 0;
 
-	while(fgets(line,120,pr)) {
-		if(sscanf(line,"%2d: %s %s %s",&m,cs,st,ds)) {
-			if( m == minor ) {
-				rv = strcmp(cs,"Unconfigured");
-				if(rv) rv = strncmp(ds,"ds:Diskless/",11);
-				break;
-			}
+	while(fget_token(token,40,pr) != EOF) {
+		m=strtol(token,&p,10);
+		if(*p==':' && p-token == (long)strlen(token)-1 ) cm=m;
+		if( cm == minor ) {
+			if(!strcmp(token,"cs:Unconfigured")) rv = 0;
+			if(!strncmp(token,"ds:Diskless",11)) rv = 0;
 		}
 	}
 	fclose(pr);

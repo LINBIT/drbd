@@ -47,7 +47,8 @@
 #define HTTP_PORT 80
 #define HTTP_HOST "usage.drbd.org"
 #define HTTP_ADDR "212.69.162.23"
-#define NODE_ID_FILE "/var/lib/drbd/node_id"
+#define DRBD_LIB_DIR "/var/lib/drbd"
+#define NODE_ID_FILE DRBD_LIB_DIR"/node_id"
 
 struct node_info {
 	u64	node_uuid;
@@ -108,6 +109,11 @@ static void write_node_id(struct node_info *ni)
 	struct node_info_od on_disk;
 
 	fd = open(NODE_ID_FILE,O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR);
+	if( fd == -1 && errno == ENOENT) {
+		mkdir(DRBD_LIB_DIR,S_IRWXU);
+		fd = open(NODE_ID_FILE,O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR);
+	}
+
 	if( fd == -1) {
 		perror("Creation of "NODE_ID_FILE" failed.");
 		exit(20);

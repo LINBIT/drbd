@@ -356,3 +356,23 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "         -<  Node was in the progress of setting all bits in the bitmap  >--+\n"
 "\n");
 }
+
+int fget_token(char *s, int size, FILE* stream)
+{
+	int c;
+	char* sp = s;
+
+	do { // eat white spaces in front.
+		c = getc(stream);
+		if( c == EOF) return EOF;
+	} while (!isgraph(c));
+
+	do { // read the first word into s
+		*sp++ = c;
+		c = getc(stream);
+		if ( c == EOF) break;
+	} while (isgraph(c) && --size);
+
+	*sp=0;
+	return 1;
+}
