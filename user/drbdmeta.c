@@ -389,32 +389,16 @@ struct __attribute__ ((packed)) md_on_disk_06 {
 void md_disk_06_to_cpu(struct md_cpu *cpu, const struct md_on_disk_06 *disk)
 {
 	int i;
-	u32 flags;
 
 	MEMSET(cpu, 0, sizeof(*cpu));
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
-
-	/* 06 does not have the UpToDate flag, set it according to
-	   the Consistent Flag */
-	flags = cpu->gc[Flags];
-	if( flags & MDF_Consistent) flags = flags | MDF_WasUpToDate;
-	cpu->gc[Flags]=flags;
 }
 
 void md_cpu_to_disk_06(struct md_on_disk_06 *disk, struct md_cpu *cpu)
 {
 	int i;
-	u32 flags;
-
-	/* clear Consistent flag if UpToDate is not set*/
-	flags = cpu->gc[Flags];
-	if(!((flags & MDF_Consistent) && (flags & MDF_WasUpToDate))) {
-		flags &= ~MDF_Consistent;
-	}
-	flags &= ~MDF_WasUpToDate;
-	cpu->gc[Flags]=flags;
 
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
@@ -448,7 +432,6 @@ struct __attribute__ ((packed)) md_on_disk_07 {
 void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 {
 	int i;
-	u32 flags;
 
 	MEMSET(cpu, 0, sizeof(*cpu));
 	cpu->la_sect = be64_to_cpu(disk->la_kb.be) << 1;
@@ -459,26 +442,11 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
-
-	/* 07 does not have the UpToDate flag, set it according to
-	   the Consistent Flag */
-	flags = cpu->gc[Flags];
-	if( flags & MDF_Consistent) flags = flags | MDF_WasUpToDate;
-	cpu->gc[Flags]=flags;
 }
 
 void md_cpu_to_disk_07(struct md_on_disk_07 *disk, struct md_cpu *cpu)
 {
 	int i;
-	u32 flags;
-
-	/* clear Consistent flag if UpToDate is not set*/
-	flags = cpu->gc[Flags];
-	if(!((flags & MDF_Consistent) && (flags & MDF_WasUpToDate))) {
-		flags &= ~MDF_Consistent;
-	}
-	flags &= ~MDF_WasUpToDate;
-	cpu->gc[Flags]=flags;
 
 	disk->la_kb.be = cpu_to_be64(cpu->la_sect >> 1);
 	for (i = 0; i < GEN_CNT_SIZE; i++)
@@ -1070,7 +1038,6 @@ void m_set_gc(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 
 	do {
 		if (!m_strsep_bit(str, &md->gc[Flags], MDF_Consistent)) break;
-		if (!m_strsep_bit(str, &md->gc[Flags], MDF_WasUpToDate)) break;
 		if (!m_strsep_u32(str, &md->gc[HumanCnt])) break;
 		if (!m_strsep_u32(str, &md->gc[TimeoutCnt])) break;
 		if (!m_strsep_u32(str, &md->gc[ConnectedCnt])) break;
@@ -1100,15 +1067,11 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 	} while (0);
 }
 
-int m_outdate_gc(struct md_cpu *md)
+int m_outdate_gc(struct md_cpu *md __attribute((unused)))
 {
-	if ( !(md->gc[Flags] & MDF_Consistent) ) {
-		return 5;
-	}
+	fprintf(stderr, "Can not outdate GC based meta data!\n");
 
-	md->gc[Flags] &= ~MDF_WasUpToDate;
-
-	return 0;
+	return 5;
 }
 
 int m_outdate_uuid(struct md_cpu *md)

@@ -282,9 +282,8 @@ int dt_close_drbd_unlock(int drbd_fd, int lock_fd)
 
 void dt_print_gc(const __u32* gen_cnt)
 {
-	printf("%d:%d:%d:%d:%d:%d:%d:%d:%d\n",
+	printf("%d:%d:%d:%d:%d:%d:%d:%d\n",
 	       gen_cnt[Flags] & MDF_Consistent ? 1 : 0,
-	       gen_cnt[Flags] & MDF_WasUpToDate ? 1 : 0,
 	       gen_cnt[HumanCnt],
 	       gen_cnt[TimeoutCnt],
 	       gen_cnt[ConnectedCnt],
@@ -297,20 +296,18 @@ void dt_print_gc(const __u32* gen_cnt)
 void dt_pretty_print_gc(const __u32* gen_cnt)
 {
 	printf("\n"
-	       "                                              WantFullSync |\n"
-	       "                                        ConnectedInd |     |\n"
-	       "                                     lastState |     |     |\n"
-	       "                            ArbitraryCnt |     |     |     |\n"
-	       "                      ConnectedCnt |     |     |     |     |\n"
-	       "                  TimeoutCnt |     |     |     |     |     |\n"
-	       "              HumanCnt |     |     |     |     |     |     |\n"
-	       "     WasUpToDate |     |     |     |     |     |     |     |\n"
-	       "Consistent |     |     |     |     |     |     |     |     |\n"
-	       "   --------+-----+-----+-----+-----+-----+-----+-----+-----+\n"
-	       "       %3s | %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
+	       "                                        WantFullSync |\n"
+	       "                                  ConnectedInd |     |\n"
+	       "                               lastState |     |     |\n"
+	       "                      ArbitraryCnt |     |     |     |\n"
+	       "                ConnectedCnt |     |     |     |     |\n"
+	       "            TimeoutCnt |     |     |     |     |     |\n"
+	       "        HumanCnt |     |     |     |     |     |     |\n"
+	       "Consistent |     |     |     |     |     |     |     |\n"
+	       "   --------+-----+-----+-----+-----+-----+-----+-----+\n"
+	       "       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
 	       "\n",
 	       gen_cnt[Flags] & MDF_Consistent ? "1/c" : "0/i",
-	       gen_cnt[Flags] & MDF_WasUpToDate ? "1/y" : "0/n",
 	       gen_cnt[HumanCnt],
 	       gen_cnt[TimeoutCnt],
 	       gen_cnt[ConnectedCnt],
