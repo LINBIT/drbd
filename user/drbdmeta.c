@@ -337,7 +337,7 @@ u64 bdev_size(int fd)
 }
 
 void *my_mmap(const char* func, const unsigned int line, const char* what,
-	size_t length, int prot , int flags, int fd, off_t offset)
+	size_t length, int prot , int flags, int fd, __off64_t offset)
 {
     void *p;
     u64 have = bdev_size(fd);
@@ -353,7 +353,7 @@ void *my_mmap(const char* func, const unsigned int line, const char* what,
 	    (unsigned long long)length, (unsigned long long)offset);
     */
     length = PAGE_ALIGN(length) + ((offset & ~PAGE_MASK) ? PAGE_SIZE : 0);
-    p = mmap(NULL, length, prot, flags, fd, offset & PAGE_MASK);
+    p = mmap64(NULL, length, prot, flags, fd, offset & PAGE_MASK);
     // fprintf(stderr,"mmap %s: %p %lu @%lu\n",what, p,(unsigned long)length, (unsigned long) (offset & PAGE_MASK));
     if (p == MAP_FAILED) {
 	PERROR("%s:%u: mmap(%s) failed", func, line, what);
