@@ -68,41 +68,6 @@ STATIC enum { NotMounted=0,MountedRO,MountedRW } drbd_is_mounted(int minor)
 }
 #endif
 
-STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
-{
-	sector_t pmdss; // previous meta data start sector
-	sector_t la_size;
-	int md_moved, la_size_changed;
-	int rv;
-
-	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
-	pmdss = drbd_md_ss(mdev);
-	la_size = mdev->la_size;
-
-	rv = do_determin_dev_size(mdev);
-	if (rv < 0) goto out;
-
-	la_size_changed = (la_size != mdev->la_size);
-	md_moved = pmdss != drbd_md_ss(mdev) /* && mdev->md_index == -1 */;
-
-	if ( md_moved ) {
-		WARN("Moving meta-data.\n");
-		D_ASSERT(mdev->md_index == -1);
-	}
-
-	if ( la_size_changed || md_moved ) {
-		drbd_al_shrink(mdev); // All extents inactive.
-		drbd_bm_write(mdev);  // write bitmap
-		// Write mdev->la_size to [possibly new position on] disk.
-		drbd_md_write(mdev);
-	}
-  out:
-	lc_unlock(mdev->act_log);
-
-	return rv;
-}
-
 char* ppsize(char* buf, size_t size) 
 {
 	// Needs 9 bytes at max.
@@ -117,13 +82,7 @@ char* ppsize(char* buf, size_t size)
 	return buf;
 }
 
-
-/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk.
- * -ENOMEM if we could not allocate the bitmap
- */
-/*
- * THINK do we want the size to be KB or sectors ?
- * note, *_capacity operates in 512 byte sectors!!
+/* Returns -ENOMEM if we could not allocate the bitmap
  *
  * currently *_size is in KB.
  *
@@ -134,50 +93,21 @@ char* ppsize(char* buf, size_t size)
  * but again, this is a state change, and thus should be serialized with other
  * state changes on a more general level already.
  */
-STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
+int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	sector_t p_size = mdev->p_size;  // partner's disk size.
-	sector_t la_size = mdev->la_size; // last agreed size.
-	sector_t m_size; // my size
-	sector_t u_size = mdev->lo_usize; // size requested by user.
-	sector_t size=0;
-	int rv;
+	sector_t pmdss; // previous meta data start sector
+	sector_t la_size;
+	sector_t size;
 	char ppb[10];
 
-	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
+	int md_moved, la_size_changed;
+	int rv=0;
 
-	if (mdev->md_index == -1 && m_size) {// internal metadata
-		D_ASSERT(m_size > MD_RESERVED_SIZE);
-		m_size = drbd_md_ss(mdev)>>1;
-	}
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+	pmdss = drbd_md_ss(mdev);
+	la_size = mdev->la_size;
 
-	if(p_size && m_size) {
-		rv=0;
-		size=min_t(sector_t,p_size,m_size);
-	} else {
-		rv=1;
-		if(la_size) {
-			size=la_size;
-			if(m_size && m_size < size) size=m_size;
-			if(p_size && p_size < size) size=p_size;
-		} else {
-			if(m_size) size=m_size;
-			if(p_size) size=p_size;
-		}
-	}
-
-	if(size == 0) {
-		ERR("Both nodes diskless!\n");
-	}
-
-	if(u_size) {
-		if(u_size > size) {
-			ERR("Requested disk size is too big (%lu > %lu)\n",
-			    (unsigned long)u_size, (unsigned long)size);
-		} else {
-			size = u_size;
-		}
-	}
+	size = drbd_new_dev_size(mdev);
 
 	if( (drbd_get_capacity(mdev->this_bdev)>>1) != size ) {
 		int err;
@@ -202,8 +132,73 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		INFO("size = %s (%lu KB)\n",ppsize(ppb,size),
 		     (unsigned long)size);
 	}
+	if (rv < 0) goto out;
+
+	la_size_changed = (la_size != mdev->la_size);
+	md_moved = pmdss != drbd_md_ss(mdev) /* && mdev->md_index == -1 */;
+
+	if ( md_moved ) {
+		WARN("Moving meta-data.\n");
+		D_ASSERT(mdev->md_index == -1);
+	}
+
+	if ( la_size_changed || md_moved ) {
+		drbd_al_shrink(mdev); // All extents inactive.
+		drbd_bm_write(mdev);  // write bitmap
+		// Write mdev->la_size to [possibly new position on] disk.
+		drbd_md_write(mdev);
+	}
+  out:
+	lc_unlock(mdev->act_log);
 
 	return rv;
+}
+
+/*
+ * currently *_size is in KB.
+ */
+sector_t drbd_new_dev_size(struct Drbd_Conf* mdev)
+{
+	sector_t p_size = mdev->p_size;  // partner's disk size.
+	sector_t la_size = mdev->la_size; // last agreed size.
+	sector_t m_size; // my size
+	sector_t u_size = mdev->lo_usize; // size requested by user.
+	sector_t size=0;
+
+	m_size = drbd_get_capacity(mdev->backing_bdev)>>1;
+
+	if (mdev->md_index == -1 && m_size) {// internal metadata
+		D_ASSERT(m_size > MD_RESERVED_SIZE);
+		m_size = drbd_md_ss(mdev)>>1;
+	}
+
+	if(p_size && m_size) {
+		size=min_t(sector_t,p_size,m_size);
+	} else {
+		if(la_size) {
+			size=la_size;
+			if(m_size && m_size < size) size=m_size;
+			if(p_size && p_size < size) size=p_size;
+		} else {
+			if(m_size) size=m_size;
+			if(p_size) size=p_size;
+		}
+	}
+
+	if(size == 0) {
+		ERR("Both nodes diskless!\n");
+	}
+
+	if(u_size) {
+		if(u_size > size) {
+			ERR("Requested disk size is too big (%lu > %lu)\n",
+			    (unsigned long)u_size, (unsigned long)size);
+		} else {
+			size = u_size;
+		}
+	}
+
+	return size;
 }
 
 /* checks that the al lru is of requested size, and if neccessary tries to
@@ -507,6 +502,21 @@ ONLY_IN_26({
 	}
 
 	drbd_bm_lock(mdev); // racy...
+
+	if(drbd_md_test_flag(mdev,MDF_Consistent) &&
+	   drbd_new_dev_size(mdev) < mdev->la_size ) {
+		D_ASSERT(mdev->cstate == Unconfigured);
+		D_ASSERT(mput == 1);
+		/* Do not attach a too small disk.*/
+		drbd_bm_unlock(mdev);
+		ERR("Lower device smaller than last agreed size!\n");
+		drbd_free_ll_dev(mdev);
+		set_cstate(mdev,Unconfigured);
+		retcode = LDDeviceTooSmall;
+		module_put(THIS_MODULE);
+		if (put_user(retcode, &arg->ret_code)) return -EFAULT;
+		return -EINVAL;
+	}
 	if (drbd_determin_dev_size(mdev) < 0) {
 		/* could not allocate bitmap.
 		 * try to undo ... */

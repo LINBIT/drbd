@@ -1044,6 +1044,7 @@ extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 // drbd_fs.c
 extern char* ppsize(char* buf, size_t size);
 extern int drbd_determin_dev_size(drbd_dev*);
+extern sector_t drbd_new_dev_size(struct Drbd_Conf*);
 extern int drbd_set_state(drbd_dev *mdev,Drbd_State newstate);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
@@ -1144,6 +1145,14 @@ do {									\
  *************************/
 
 #include "drbd_compat_wrappers.h"
+
+static inline int drbd_disk_less_node_present(struct Drbd_Conf* mdev)
+{
+	sector_t p_size = mdev->p_size;
+	sector_t m_size = drbd_get_capacity(mdev->backing_bdev);
+
+	return ! ( p_size && m_size ) ;
+}
 
 static inline void
 drbd_flush_signals(struct task_struct *t)

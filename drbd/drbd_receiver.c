@@ -1379,7 +1379,7 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 	Drbd_Parameter_Packet *p = (Drbd_Parameter_Packet*)h;
 	int consider_sync;
 	int oo_state,i;
-	sector_t p_size, p_usize;
+	sector_t p_size, p_usize, my_usize;
 
 	if (h->length != (sizeof(*p)-sizeof(*h))) {
 		ERR("Incompatible packet size of Parameter packet!\n");
@@ -1472,22 +1472,28 @@ STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
 		 * just do what the peer suggests */
 	}
 #undef min_not_zero
-	if( mdev->lo_usize != p_usize ) {
+
+	my_usize = mdev->lo_usize;
+
+	if( mdev->lo_usize > p_usize ) {
 		mdev->lo_usize = p_usize;
 		INFO("Peer sets u_size to %lu KB\n",
 		     (unsigned long)mdev->lo_usize);
 	}
 
-
-/*lge:
- * FIXME
- * please get the order of tests (re)settings for consider_sync
- * right, and comment them!
- */
+	if( drbd_new_dev_size(mdev) <
+	    (drbd_get_capacity(mdev->this_bdev)>>1) &&
+	    mdev->gen_cnt[Flags] & MDF_Consistent ) {
+		ERR("The peer's disk size is too small!\n");
+		set_cstate(mdev,StandAlone);
+		drbd_thread_stop_nowait(&mdev->receiver);
+		mdev->lo_usize = my_usize;
+		return FALSE;
+	}
 
 	consider_sync = (mdev->cstate == WFReportParams);
-	if(drbd_determin_dev_size(mdev)) consider_sync=0;
-
+	drbd_determin_dev_size(mdev);
+	if(drbd_disk_less_node_present(mdev)) consider_sync=0;
 	if(test_bit(DISKLESS, &mdev->flags)) consider_sync=0;
 
 	drbd_bm_unlock(mdev); // }
