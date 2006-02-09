@@ -788,6 +788,7 @@ int drbd_connect(drbd_dev *mdev)
 	drbd_thread_start(&mdev->asender);
 
 	drbd_send_param(mdev,0);
+	clear_bit(USE_DEGR_WFC_T,&mdev->flags);
 
 	return 1;
 }

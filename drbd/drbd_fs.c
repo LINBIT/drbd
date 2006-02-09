@@ -485,6 +485,27 @@ ONLY_IN_26({
 
 /* FIXME if (md_gc_valid < 0) META DATA IO NOT POSSIBLE! */
 
+	/* If I am currently not Primary,
+	 * but meta data primary indicator is set,
+	 * I just now recover from a hard crash,
+	 * and have been Primary before that crash.
+	 *
+	 * Now, if I had no connection before that crash
+	 * (have been degraded Primary), chances are that
+	 * I won't find my peer now either.
+	 *
+	 * In that case, and _only_ in that case,
+	 * we use the degr-wfc-timeout instead of the default,
+	 * so we can automatically recover from a crash of a
+	 * degraded but active "cluster" after a certain timeout.
+	 */
+	clear_bit(USE_DEGR_WFC_T,&mdev->flags);
+	if ( mdev->state != Primary &&
+	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
+	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
+		set_bit(USE_DEGR_WFC_T,&mdev->flags);
+	}
+
 	drbd_bm_lock(mdev); // racy...
 	if (drbd_determin_dev_size(mdev) < 0) {
 		/* could not allocate bitmap.
@@ -894,23 +915,8 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 	if(copy_from_user(&p,arg,sizeof(p))) {
 		return -EFAULT;
 	}
-	/* If I am currently not Primary,
-	 * but meta data primary indicator is set,
-	 * I just now recover from a hard crash,
-	 * and have been Primary before that crash.
-	 *
-	 * Now, if I had no connection before that crash
-	 * (have been degraded Primary), chances are that
-	 * I won't find my peer now either.
-	 *
-	 * In that case, and _only_ in that case,
-	 * we use the degr-wfc-timeout instead of the default,
-	 * so we can automatically recover from a crash of a
-	 * degraded but active "cluster" after a certain timeout.
-	 */
-	if ( mdev->state != Primary &&
-	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
-	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
+
+	if ( test_bit(USE_DEGR_WFC_T,&mdev->flags) ) {
 		time=p.degr_wfc_timeout;
 		if (time) WARN("using degr_wfc_timeout=%ld seconds\n", time);
 	} else {
