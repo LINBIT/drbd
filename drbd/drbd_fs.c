@@ -143,10 +143,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if ( la_size_changed || md_moved ) {
-		drbd_al_shrink(mdev); // All extents inactive.
-		drbd_bm_write(mdev);  // write bitmap
-		// Write mdev->la_size to [possibly new position on] disk.
-		drbd_md_write(mdev);
+		if( inc_local_md_only(mdev)) {
+			drbd_al_shrink(mdev); // All extents inactive.
+			drbd_bm_write(mdev);  // write bitmap
+			// Write mdev->la_size to on disk.
+			drbd_md_write(mdev);
+			dec_local(mdev);
+		}
 	}
   out:
 	lc_unlock(mdev->act_log);
