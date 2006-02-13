@@ -190,6 +190,20 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Mon Feb 13 2006 15:52:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.16-1)
+ * DRBD no longer shrinks an consistent device if it gets connected to
+   an smaller peer or attached to a smaller disk.
+ * There was a bug related to the degr-wcf-timeout config option, it was
+   never used in recent DRBD releases. Fixed.
+ * Made DRBD work with Neil Brown's patch, that serializes recusive
+   ralls to generic_make_request(). FC4 included that patch in its
+   later kernels.
+ * Minor fixes to drbdadm
+ * Compiles now also with Linux-2.6.16-rc1
+ * Updates to documentation and example config file to make it more
+   clear that we talk about byte/second and not bit/second.
+
 * Mon Dec 19 2005 14:44:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.15-1)
  * Fixed a bug in the GC code that could cause a resync attempt
