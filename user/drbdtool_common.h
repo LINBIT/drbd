@@ -36,6 +36,6 @@ extern void dt_pretty_print_gc(const __u32* gen_cnt);
 extern void dt_print_uuids(const __u64* uuid, unsigned int flags);
 extern void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags);
 extern int fget_token(char *s, int size, FILE* stream);
-extern int sget_token(char *s, int size, char** text);
+extern int sget_token(char *s, int size, const char** text);
 
 #endif

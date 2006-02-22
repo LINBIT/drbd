@@ -87,7 +87,7 @@ static char* slurp_proc_drbd()
 	return buffer;
 }
 
-static unsigned int extract_svn_revision(char* text)
+static unsigned int extract_svn_revision(const char* text)
 {
 	char token[40];
 	unsigned int svn_rev = 0;
@@ -284,8 +284,33 @@ static int insert_resource(u64 node_uuid, u64 res_uuid, u64 res_size) {
 	return make_get_request(req_buf);
 }
 
+static void url_encode(char* in, char* out)
+{
+	char *h = "0123456789abcdef";
+	char c;
+
+	while( (c = *in++) != 0 ) {
+		if( c == '\n' ) break;
+		if( ( 'a' <= c && c <= 'z' )
+		    || ( 'A' <= c && c <= 'Z' )
+		    || ( '0' <= c && c <= '9' )
+		    || c == '-' || c == '_' || c == '.' )
+			*out++ = c;
+		else if( c == ' ' )
+			*out++ = '+';
+		else {
+			*out++ = '%';
+			*out++ = h[c >> 4];
+			*out++ = h[c & 0x0f];
+		}
+	}
+	*out = 0;
+}
+
 /* Ensure that the node is counted on http://usage.drbd.org
  */
+#define ANSWER_SIZE 80
+
 void uc_node(enum usage_count_type type)
 {
 	struct node_info ni;
@@ -293,7 +318,8 @@ void uc_node(enum usage_count_type type)
 	u32 current;
 	int send = 0;
 	int update = 0;
-	char answer[10];
+	char answer[ANSWER_SIZE];
+	char n_comment[ANSWER_SIZE*3];
 
 	if( type == UC_NO ) return;
 
@@ -324,7 +350,7 @@ void uc_node(enum usage_count_type type)
 "DRBD's version number are sent to "HTTP_HOST".\n\n"
 "The benifits for you are:\n"
 " * As a respose to your data, the server ("HTTP_HOST") will tell you\n"
-"   how many users before your have installed this version (%s).\n"
+"   how many users before you have installed this version (%s).\n"
 " * With a high counter the DRBD developers have a high motivation to\n"
 "   continue development of the software.\n\n"
 "The following string will be send to the server:\n"
@@ -333,16 +359,21 @@ void uc_node(enum usage_count_type type)
 "simply issue the query string with your favourite web browser or wget\n\n"
 "You can control all this by setting 'usage-count' in the globals section\n"
 "of your drbd.conf\n\n"
-"Just press [enter] or enter 'no'[enter] to opt out: ",
+"Just press [return], 'no' to opt out or give an optional node comment: ",
 			update ? "an update" : "a new installation",
 			REL_VERSION,ni.node_uuid, ni.version_code);
-		fgets(answer,9,stdin);
+		fgets(answer,ANSWER_SIZE,stdin);
 		if(!strcmp(answer,"no")) send = 0;
 	}
 
-        ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-		 "nu="U64"&nv="U32" HTTP/1.0\n\n",
-		 ni.node_uuid, ni.version_code);
+
+	n_comment[0]=0;
+	url_encode(answer,n_comment);
+
+	ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
+		 "nu="U64"&nv="U32"%s%s HTTP/1.0\n\n",
+		 ni.node_uuid, ni.version_code,
+		 n_comment[0] ? "&nc=" : "", n_comment);
 
 	if (send) {
 		write_node_id(&ni);

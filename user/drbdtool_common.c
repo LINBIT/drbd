@@ -374,7 +374,7 @@ int fget_token(char *s, int size, FILE* stream)
 	return 1;
 }
 
-int sget_token(char *s, int size, char** text)
+int sget_token(char *s, int size, const char** text)
 {
 	int c;
 	char* sp = s;
