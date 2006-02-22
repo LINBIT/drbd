@@ -373,3 +373,23 @@ int fget_token(char *s, int size, FILE* stream)
 	*sp=0;
 	return 1;
 }
+
+int sget_token(char *s, int size, char** text)
+{
+	int c;
+	char* sp = s;
+
+	do { // eat white spaces in front.
+		c = *(*text)++;
+		if( c == 0) return EOF;
+	} while (!isgraph(c));
+
+	do { // read the first word into s
+		*sp++ = c;
+		c = *(*text)++;
+		if ( c == 0) break;
+	} while (isgraph(c) && --size);
+
+	*sp=0;
+	return 1;
+}

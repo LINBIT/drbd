@@ -41,6 +41,7 @@
 #include <netdb.h>
 
 #include "drbdadm.h"
+#include "drbdtool_common.h"
 #include "drbd_endian.h"
 #include "linux/drbd.h"		/* only use DRBD_MAGIC from here! */
 
@@ -60,31 +61,73 @@ struct node_info_od {
 	struct node_info ni;
 } __attribute((packed));
 
-/* FIX: mark plus versions, mark production vs beta releases.
-        read the version string from the /proc file, so we
-	look at the version of the module and not at the version
-	of the drbdadm executable.
+/* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */
-static unsigned int numeric_version_code(char* text)
+static char* slurp_proc_drbd()
 {
-	unsigned int nc;
-	char buffer[5], *c, *b;
-	unsigned m = 1000000;
+	const int SLURP_SIZE = 4096;
+	char* buffer;
+	int rr, fd;
 
-	nc = 0;
-	c = text;
+	fd = open("/proc/drbd",O_RDONLY);
+	if( fd == -1) return 0;
+	
+	buffer = malloc(SLURP_SIZE);
+	if(!buffer) return 0;
 
-	while(*c) {
-		while(!isdigit(*c)) c++;
-		b = buffer;
-		while(isdigit(*c)) *b++=*c++;
-		*b=0;
+	rr = read(fd, buffer, SLURP_SIZE-1);
+	if( rr == -1) {
+		free(buffer);
+		return 0;
+	}
+	
+	buffer[rr]=0;
+	close(fd);
 
-		nc = nc + atoi( buffer ) * m;
-		m=m/1000;
+	return buffer;
+}
+
+static unsigned int extract_svn_revision(char* text)
+{
+	char token[40];
+	unsigned int svn_rev = 0;
+	int plus=0;
+	enum { begin,f_svn,f_rev } ex=begin;
+
+	while(sget_token(token,40,&text) != EOF) {
+		switch(ex) {
+		case begin: 
+			if(!strcmp(token,"plus")) plus = 1;
+			if(!strcmp(token,"SVN"))  ex = f_svn;
+			break;
+		case f_svn:
+			if(!strcmp(token,"Revision:"))  ex = f_rev;
+			break;
+		case f_rev:
+			svn_rev = atol(token); 
+			goto out;
+		}
+	}
+ out:
+	svn_rev = svn_rev * 10;
+	if( svn_rev && plus ) svn_rev += 1;
+	return svn_rev;
+}
+
+static unsigned int current_svn_revision()
+{
+	char* version_txt;
+	unsigned int svn_rev;
+
+	version_txt = slurp_proc_drbd();
+	if(version_txt) {
+		svn_rev = extract_svn_revision(version_txt);
+		free(version_txt);
+	} else {
+		svn_rev = extract_svn_revision(drbd_buildtag());
 	}
 
-	return nc;
+	return svn_rev;
 }
 
 static void get_random_bytes(void* buffer, int len)
@@ -254,7 +297,7 @@ void uc_node(enum usage_count_type type)
 
 	if( type == UC_NO ) return;
 
-	current = numeric_version_code(REL_VERSION);
+	current = current_svn_revision();
 
 	if( ! read_node_id(&ni) ) {
 		get_random_bytes(&ni.node_uuid,sizeof(ni.node_uuid));
@@ -319,3 +362,4 @@ void uc_node(enum usage_count_type type)
 		fgets(answer,9,stdin);
 	}
 }
+
