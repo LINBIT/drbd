@@ -40,8 +40,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <linux/fs.h>           /* for BLKGETSIZE64 */
 #include <linux/drbd.h>		/* only use DRBD_MAGIC from here! */
+#include <linux/fs.h>           /* for BLKFLSBUF */
 
 #include "drbd_endian.h"
 #include "drbdtool_common.h"
@@ -233,6 +233,7 @@ struct md_cpu {
 	/* Since DRBD 0.8 we have uuid instead of gc */
 	u64 uuid[UUID_SIZE];
 	u32 flags;
+	u64 device_uuid;
 };
 
 /*
@@ -310,31 +311,6 @@ struct format_ops {
 	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
 	int (*outdate_gi) (struct md_cpu *md);
 };
-
-u64 bdev_size(int fd)
-{
-	u64 size64;		/* size in byte. */
-	long size;		/* size in sectors. */
-	int err;
-
-	err = ioctl(fd, BLKGETSIZE64, &size64);
-	if (err) {
-		if (errno == EINVAL) {
-			printf("INFO: falling back to BLKGETSIZE\n");
-			err = ioctl(fd, BLKGETSIZE, &size);
-			if (err) {
-				perror("ioctl(,BLKGETSIZE,) failed");
-				exit(20);
-			}
-			size64 = (u64)512 *size;
-		} else {
-			perror("ioctl(,BLKGETSIZE64,) failed");
-			exit(20);
-		}
-	}
-
-	return size64;
-}
 
 void *my_mmap(const char* func, const unsigned int line, const char* what,
 	size_t length, int prot , int flags, int fd, __off64_t offset)
@@ -547,13 +523,15 @@ struct __attribute__ ((packed)) al_sector_on_disk {
 struct __attribute__ ((packed)) md_on_disk_08 {
 	be_u64 la_sect;		/* last agreed size. */
 	be_u64 uuid[UUID_SIZE];   // UUIDs.
+	be_u64 device_uuid;
 	be_u32 flags;
 	be_u32 magic;
 	be_u32 md_size_sect;
 	be_s32 al_offset;	/* signed sector offset to this block */
 	be_u32 al_nr_extents;	/* important for restoring the AL */
 	be_s32 bm_offset;	/* signed sector offset to the bitmap, from here */
-	char reserved[8 * 512 - (8*(UUID_SIZE+1)+4*6)];
+	
+	char reserved[8 * 512 - (8*(UUID_SIZE+2)+4*6)];
 };
 
 void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
@@ -564,6 +542,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
 	for ( i=Current ; i<UUID_SIZE ; i++ )
 		cpu->uuid[i] = be64_to_cpu(disk->uuid[i].be);
+	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
 	cpu->flags = be32_to_cpu(disk->flags.be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
 	cpu->md_size_sect = be32_to_cpu(disk->md_size_sect.be);
@@ -579,6 +558,7 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	for ( i=Current ; i<UUID_SIZE ; i++ ) {
 		disk->uuid[i].be = cpu_to_be64(cpu->uuid[i]);
 	}
+	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
 	disk->flags.be = cpu_to_be32(cpu->flags);
 	disk->magic.be = cpu_to_be32(cpu->magic);
 	disk->md_size_sect.be = cpu_to_be32(cpu->md_size_sect);
@@ -771,6 +751,9 @@ int meta_restore_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
 int meta_outdate(struct format *cfg, char **argv, int argc);
 int meta_set_gi(struct format *cfg, char **argv, int argc);
+int meta_read_dev_uuid(struct format *cfg, char **argv, int argc);
+int meta_write_dev_uuid(struct format *cfg, char **argv, int argc);
+
 
 struct meta_cmd cmds[] = {
 	{"get-gi", 0, meta_get_gi, 1},
@@ -782,6 +765,8 @@ struct meta_cmd cmds[] = {
 	 * implicit convert from v07 to v08 by create-md
 	 * see comments there */
 	{"outdate", 0, meta_outdate, 1},
+	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
+	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
 };
 
@@ -2125,6 +2110,45 @@ int meta_set_size(struct format *cfg, char **argv, int argc)
 	return err;
 }
 #endif
+
+int meta_read_dev_uuid(struct format *cfg, char **argv __attribute((unused)), int argc)
+{
+	if (argc > 0) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	printf(X64(016)"\n",cfg->md.device_uuid);
+
+	return cfg->ops->close(cfg);	
+}
+
+int meta_write_dev_uuid(struct format *cfg, char **argv, int argc)
+{
+	int err;
+
+	if (argc > 1) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+	if (argc < 1) {
+		fprintf(stderr, "Required Argument missing\n");
+		exit(10);
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	cfg->md.device_uuid = strto_u64(argv[0],NULL,16);
+
+	err = cfg->ops->md_cpu_to_disk(cfg);
+	err = cfg->ops->close(cfg) || err;
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
+}
 
 char *progname = NULL;
 void print_usage_and_exit()

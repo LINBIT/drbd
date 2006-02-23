@@ -97,7 +97,7 @@ static int sh_dev(struct d_resource* ,const char* );
 static int sh_ll_dev(struct d_resource* ,const char* );
 static int sh_md_dev(struct d_resource* ,const char* );
 static int sh_md_idx(struct d_resource* ,const char* );
-static int admm_generic(struct d_resource* ,const char* );
+       int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
 static int hidden_cmds(struct d_resource* ,const char* );
@@ -198,7 +198,7 @@ struct adm_cmd cmds[] = {
   { "state",             adm_generic_s, 1,1,0 },
   { "cstate",            adm_generic_s, 1,1,1 },
   { "dump",              adm_dump,      1,1,1 },
-  { "create-md",         admm_generic,  1,1,0 },
+  { "create-md",         adm_create_md, 1,1,0 },
   { "show-gi",           adm_generic_b, 1,1,0 },
   { "get-gi",            adm_generic_b, 1,1,0 },
   { "dump-md",           admm_generic,  1,1,0 },
@@ -628,7 +628,7 @@ int adm_resize(struct d_resource* res,const char* unused __attribute((unused)))
   return m_system(argv,SLEEPS_SHORT);
 }
 
-static int admm_generic(struct d_resource* res ,const char* cmd)
+int admm_generic(struct d_resource* res ,const char* cmd)
 {
   char* argv[20];
   int argc=0,i;

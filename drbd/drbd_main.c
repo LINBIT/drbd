@@ -2401,6 +2401,7 @@ void drbd_free_resources(drbd_dev *mdev)
 struct meta_data_on_disk {
 	u64 la_size;           // last agreed size.
 	u64 uuid[UUID_SIZE];   // UUIDs.
+	u64 device_uuid;
 	u32 flags;             // MDF
 	u32 magic;
 	u32 md_size_sect;

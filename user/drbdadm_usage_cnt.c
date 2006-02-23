@@ -276,14 +276,6 @@ static int make_get_request(char *req_buf) {
 	return 0;
 }
 
-static int insert_resource(u64 node_uuid, u64 res_uuid, u64 res_size) {
-	char *req_buf;
-        ssprintf( req_buf, "GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-		  "nu="U64"&ru="U64"&rs="U64" HTTP/1.0\n\n",
-		  node_uuid, res_uuid, res_size);
-	return make_get_request(req_buf);
-}
-
 static void url_encode(char* in, char* out)
 {
 	char *h = "0123456789abcdef";
@@ -392,5 +384,108 @@ void uc_node(enum usage_count_type type)
 "Just press [enter] to continue: ");
 		fgets(answer,9,stdin);
 	}
+}
+
+/* For our purpose (finding the revision) SLURP_SIZE is always enough.
+ */
+char* run_adm_function( int (* function)(struct d_resource*,const char* ), 
+			struct d_resource* res ,const char* cmd)
+{
+	const int SLURP_SIZE = 4096;
+	int rr,pipes[2];
+	char* buffer;
+	pid_t pid;
+
+	buffer = malloc(SLURP_SIZE);
+	if(!buffer) return 0;
+
+	if(pipe(pipes)) return 0;
+
+	pid = fork();
+	if(pid == -1) {
+		fprintf(stderr,"Can not fork\n");
+		exit(E_exec_error);
+	}
+	if(pid == 0) {
+		// child
+		close(pipes[0]); // close reading end
+		dup2(pipes[1],1); // 1 = stdout
+		close(pipes[1]);
+		exit(function(res,cmd));
+	}
+	close(pipes[1]); // close writing end
+
+	rr = read(pipes[0], buffer, SLURP_SIZE-1);
+	if( rr == -1) {
+		free(buffer);
+		// FIXME cleanup
+		return 0;
+	}
+	buffer[rr]=0;
+	close(pipes[0]);
+	
+	waitpid(pid,0,0);
+
+	return buffer;
+}
+
+int adm_create_md(struct d_resource* res ,const char* cmd)
+{
+	char answer[ANSWER_SIZE];
+	struct node_info ni;
+	u64 device_uuid=0;
+	u64 device_size=0;
+	char *req_buf;
+	int send=0;
+	char *tb;
+	int rv,fd;
+
+	tb = run_adm_function(admm_generic, res, "read-dev-uuid");
+	device_uuid = strto_u64(tb,NULL,16);
+	free(tb);
+
+	rv = admm_generic(res, cmd); // cmd is "create-md".
+
+	if(!device_uuid) {
+		get_random_bytes(&device_uuid, sizeof(u64));
+	}
+
+	fd = open(res->me->disk,O_RDONLY);
+	if( fd != -1) {
+		device_size = bdev_size(fd);
+		close(fd);
+	}
+
+	if( read_node_id(&ni) && device_size ) {
+		if( global_options.usage_count == UC_YES ) send = 1;
+		if( global_options.usage_count == UC_ASK ) {
+			printf(
+"\n"
+"\t\t--== Creating metadata ==--\n"
+"As with nodes we count the total number of devices mirrored by DRBD at\n"
+"at http://"HTTP_HOST".\n\n"
+"The conter works completely anonymous. A random number gets created for\n"
+"this device, and that randomer number and the devices size will be sent.\n\n"
+"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&ru="U64"&rs="U64"\n\n"
+"Enter 'no' to opt out, or just press [return] to continue:",
+				ni.node_uuid,device_uuid,device_size
+				);
+		fgets(answer,ANSWER_SIZE,stdin);
+		if(strcmp(answer,"no")) send = 1;
+		}
+	}
+
+	if (send) {
+		ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
+			 "nu="U64"&ru="U64"&rs="U64" HTTP/1.0\n\n",
+			 ni.node_uuid, device_uuid, device_size);
+		make_get_request(req_buf);
+	}
+
+	ssprintf( setup_opts[0], X64(016), device_uuid);
+	soi=1;
+	admm_generic(res, "write-dev-uuid");
+
+	return rv;
 }
 

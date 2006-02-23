@@ -13,8 +13,8 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <linux/drbd.h>
+#include <linux/fs.h>           /* for BLKGETSIZE64 */
 
-#include "drbd_endian.h"
 #include "drbdtool_common.h"
 
 char* ppsize(char* buf, size_t size) 
@@ -392,4 +392,29 @@ int sget_token(char *s, int size, const char** text)
 
 	*sp=0;
 	return 1;
+}
+
+u64 bdev_size(int fd)
+{
+	u64 size64;		/* size in byte. */
+	long size;		/* size in sectors. */
+	int err;
+
+	err = ioctl(fd, BLKGETSIZE64, &size64);
+	if (err) {
+		if (errno == EINVAL) {
+			printf("INFO: falling back to BLKGETSIZE\n");
+			err = ioctl(fd, BLKGETSIZE, &size);
+			if (err) {
+				perror("ioctl(,BLKGETSIZE,) failed");
+				exit(20);
+			}
+			size64 = (u64)512 *size;
+		} else {
+			perror("ioctl(,BLKGETSIZE64,) failed");
+			exit(20);
+		}
+	}
+
+	return size64;
 }

@@ -2,6 +2,7 @@
 #define DRBDTOOL_COMMON_H
 
 #include <asm/types.h>
+#include "drbd_endian.h"
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -37,5 +38,5 @@ extern void dt_print_uuids(const __u64* uuid, unsigned int flags);
 extern void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags);
 extern int fget_token(char *s, int size, FILE* stream);
 extern int sget_token(char *s, int size, const char** text);
-
+extern u64 bdev_size(int fd);
 #endif

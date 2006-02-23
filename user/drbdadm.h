@@ -85,6 +85,7 @@ extern int adm_attach(struct d_resource* ,const char* );
 extern int adm_connect(struct d_resource* ,const char* );
 extern int adm_resize(struct d_resource* ,const char* );
 extern int adm_syncer(struct d_resource* ,const char* );
+extern int admm_generic(struct d_resource* ,const char* );
 extern int m_system(char**,int );
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
@@ -93,7 +94,9 @@ extern void verify_ips(struct d_resource* res);
 extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 			   struct d_resource* res,
 			   int order);
+
 extern void uc_node(enum usage_count_type type);
+extern int adm_create_md(struct d_resource* res ,const char* cmd);
 
 extern char* config_file;
 extern int config_valid;
@@ -106,6 +109,9 @@ extern int dry_run;
 extern char* drbdsetup;
 extern char ss_buffer[255];
 extern struct utsname nodeinfo;
+
+extern char* setup_opts[10];
+extern int soi;
 
 
 /* ssprintf() places the result of the printf in the current stack
