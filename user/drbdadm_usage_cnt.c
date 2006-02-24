@@ -345,13 +345,14 @@ void uc_node(enum usage_count_type type)
 "   how many users before you have installed this version (%s).\n"
 " * With a high counter the DRBD developers have a high motivation to\n"
 "   continue development of the software.\n\n"
-"The following string will be send to the server:\n"
 "http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&nv="U32"\n\n"
 "In case you want to participate but know that this machines is firewalled\n"
-"simply issue the query string with your favourite web browser or wget\n\n"
-"You can control all this by setting 'usage-count' in the globals section\n"
-"of your drbd.conf\n\n"
-"Just press [return], 'no' to opt out or give an optional node comment: ",
+"simply issue the query string with your favourite web browser or wget.\n"
+"You can control all this by setting 'usage-count' in your drbd.conf.\n\n"
+"* You may enter a free form comment about your machine, that gets\n"
+"  used on "HTTP_HOST" instead of the big random number.\n"
+"* Enter 'no' to opt out.\n"
+"* To count this node without comment, just press [RETURN]\n",
 			update ? "an update" : "a new installation",
 			REL_VERSION,ni.node_uuid, ni.version_code);
 		fgets(answer,ANSWER_SIZE,stdin);
@@ -388,8 +389,7 @@ void uc_node(enum usage_count_type type)
 
 /* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */
-char* run_adm_function( int (* function)(struct d_resource*,const char* ), 
-			struct d_resource* res ,const char* cmd)
+char* run_admm_generic(struct d_resource* res ,const char* cmd)
 {
 	const int SLURP_SIZE = 4096;
 	int rr,pipes[2];
@@ -411,7 +411,9 @@ char* run_adm_function( int (* function)(struct d_resource*,const char* ),
 		close(pipes[0]); // close reading end
 		dup2(pipes[1],1); // 1 = stdout
 		close(pipes[1]);
-		exit(function(res,cmd));
+		exit(_admm_generic(res,cmd,
+				   SLEEPS_VERY_LONG|SUPRESS_STDERR|
+				   DONT_REPORT_FAILED));
 	}
 	close(pipes[1]); // close writing end
 
@@ -440,11 +442,11 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	char *tb;
 	int rv,fd;
 
-	tb = run_adm_function(admm_generic, res, "read-dev-uuid");
+	tb = run_admm_generic(res, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
 	free(tb);
 
-	rv = admm_generic(res, cmd); // cmd is "create-md".
+	rv = _admm_generic(res, cmd, SLEEPS_VERY_LONG); // cmd is "create-md".
 
 	if(!device_uuid) {
 		get_random_bytes(&device_uuid, sizeof(u64));
@@ -484,7 +486,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 
 	ssprintf( setup_opts[0], X64(016), device_uuid);
 	soi=1;
-	admm_generic(res, "write-dev-uuid");
+	_admm_generic(res, "write-dev-uuid", SLEEPS_VERY_LONG);
 
 	return rv;
 }

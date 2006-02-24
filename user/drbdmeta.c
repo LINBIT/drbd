@@ -867,7 +867,7 @@ int v07_style_md_open(struct format *cfg, size_t size)
 	}
 
 	(void) cfg->ops->md_get_byte_offset(cfg);
-	fprintf(stderr,"offset: "U64"\n", cfg->md_offset);
+	// fprintf(stderr,"offset: "U64"\n", cfg->md_offset);
 
 	cfg->md_mmaped_length = size;
 	cfg->on_disk.md =
@@ -1239,11 +1239,11 @@ int md_initialize_common(struct format *cfg)
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
 
-	fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
-	fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-	fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-	fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
-	fprintf(stderr,"bm_mmaped_length: %lu\n", (unsigned long)cfg->bm_mmaped_length);
+	//fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
+	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
+	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+	//fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
+	//fprintf(stderr,"bm_mmaped_length: %lu\n", (unsigned long)cfg->bm_mmaped_length);
 
 	cfg->al_mmaped_length = MD_AL_MAX_SECT_07 * 512;
 	cfg->on_disk.al =
@@ -1255,7 +1255,7 @@ int md_initialize_common(struct format *cfg)
 		 MAP_SHARED, cfg->md_fd, cfg->bm_offset);
 
 	/* do you want to initilize al to something more usefull? */
-	fprintf(stderr,"initialising activity log\n");
+	printf("initialising activity log\n");
 	MEMSET(cfg->on_disk.al, 0x00, MD_AL_MAX_SECT_07*512);
 	/* THINK
 	 * do we really need to initialize the bitmap? */
@@ -1280,10 +1280,10 @@ int md_initialize_common(struct format *cfg)
 			}
 		}
 #else
-		fprintf(stderr,"initialising bitmap (%u KB)\n", (bm_bytes>>10));
+		printf("initialising bitmap (%u KB)\n", (bm_bytes>>10));
 		MEMSET((void*)cfg->on_disk.bm, 0xff, bm_bytes);
 #endif
-		fprintf(stderr,"\r100%%\n");
+		//fprintf(stderr,"\r100%%\n");
 	}
 #endif
 	return 0;
@@ -2002,7 +2002,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	MEMSET(&cfg->md, 0, sizeof(cfg->md));
 	err = cfg->ops->md_initialize(cfg);
 	err = err || cfg->ops->md_cpu_to_disk(cfg); // <- short circuit
-	fprintf(stderr,"munmap... fsync...\n");
+	//fprintf(stderr,"munmap... fsync...\n");
 	err = cfg->ops->close(cfg)          || err; // <- close always
 	if (err)
 		fprintf(stderr, "operation failed\n");

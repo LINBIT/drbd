@@ -1372,14 +1372,6 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	sector = be64_to_cpu(p->sector);
 	size   = be32_to_cpu(p->blksize);
 
-	/*
-	 * handled by NegDReply below ...
-	ERR_IF (test_bit(DISKLESS,&mdev->flags)) {
-		return FALSE;
-	ERR_IF ( (mdev->gen_cnt[Flags] & MDF_Consistent) == 0 )
-		return FALSE;
-	*/
-
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("%s:%d: sector: %lu, size: %d\n", __FILE__, __LINE__,
 				(unsigned long)sector,size);
@@ -1717,10 +1709,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 	}
 
 	if (hg > 0) { // become sync source.
-		D_ASSERT(drbd_md_test_flag(mdev->bc,MDF_Consistent));
 		rv = WFBitMapS;
 	} else if (hg < 0) { // become sync target
-		drbd_md_clear_flag(mdev,MDF_Consistent);
 		drbd_uuid_set(mdev,Current,mdev->p_uuid[Bitmap]);
 		rv = WFBitMapT;
 	} else {
