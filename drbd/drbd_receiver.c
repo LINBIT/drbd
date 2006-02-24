@@ -1717,7 +1717,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 	}
 
 	if (hg > 0) { // become sync source.
-		D_ASSERT(drbd_md_test_flag(mdev,MDF_Consistent));
+		D_ASSERT(drbd_md_test_flag(mdev->bc,MDF_Consistent));
 		rv = WFBitMapS;
 	} else if (hg < 0) { // become sync target
 		drbd_md_clear_flag(mdev,MDF_Consistent);
@@ -1831,7 +1831,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
 	unsigned int max_seg_s;
-	sector_t p_size, p_usize;
+	sector_t p_size, p_usize, my_usize;
 	drbd_conns_t nconn;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -1861,10 +1861,24 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 			p_usize = min_not_zero(mdev->bc->u_size, p_usize);
 		}
 
+		my_usize = mdev->bc->u_size;
+
 		if( mdev->bc->u_size != p_usize ) {
 			mdev->bc->u_size = p_usize;
 			INFO("Peer sets u_size to %lu KB\n",
 			     (unsigned long)mdev->bc->u_size);
+		}
+
+		// Never shrink a device with usable data.
+		if(drbd_new_dev_size(mdev,mdev->bc) < 
+		   drbd_get_capacity(mdev->this_bdev) &&
+		   mdev->state.disk >= Outdated ) {
+			dec_local(mdev);
+			ERR("The peer's disk size is too small!\n");
+			drbd_force_state(mdev,NS(conn,StandAlone));
+			drbd_thread_stop_nowait(&mdev->receiver);
+			mdev->bc->u_size = my_usize;
+			return FALSE;
 		}
 		dec_local(mdev);
 	}

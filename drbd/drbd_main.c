@@ -504,8 +504,8 @@ int drbd_io_error(drbd_dev* mdev)
 	ok = drbd_send_state(mdev);
 	WARN("Notified peer that my disk is broken.\n");
 
-	D_ASSERT(drbd_md_test_flag(mdev,MDF_FullSync));
-	D_ASSERT(!drbd_md_test_flag(mdev,MDF_Consistent));
+	D_ASSERT(drbd_md_test_flag(mdev->bc,MDF_FullSync));
+	D_ASSERT(!drbd_md_test_flag(mdev->bc,MDF_Consistent));
 	drbd_md_sync(mdev);
 
 	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
@@ -1109,7 +1109,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 
 	if(inc_md_only(mdev,Attaching)) {
 		D_ASSERT(mdev->bc->backing_bdev);
-		d_size = drbd_get_max_capacity(mdev);
+		d_size = drbd_get_max_capacity(mdev->bc);
 		p.u_size = cpu_to_be64(mdev->bc->u_size);
 		dec_local(mdev);
 	} else d_size = 0;
@@ -1160,7 +1160,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
 	buffer = (unsigned long*)p->payload;
 
-	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
+	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
 		if (unlikely(mdev->state.disk <= Failed )) {
@@ -2630,10 +2630,9 @@ void drbd_md_clear_flag(drbd_dev *mdev, int flag)
 		mdev->bc->md.flags &= ~flag;
 	}
 }
-int drbd_md_test_flag(drbd_dev *mdev, int flag)
+int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
 {
-	MUST_HOLD(mdev->req_lock);
-	return ((mdev->bc->md.flags & flag) != 0);
+	return ((bdev->md.flags & flag) != 0);
 }
 
 STATIC void md_sync_timer_fn(unsigned long data)

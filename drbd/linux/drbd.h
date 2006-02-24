@@ -232,7 +232,7 @@ typedef enum {
 	Attaching,      /* In the process of reading the meta-data */
 	Inconsistent,
 	Outdated,
-	DUnknown,
+	DUnknown,       /* Only used for the peer, never for myself */
 	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	UpToDate,
 	disk_mask=15

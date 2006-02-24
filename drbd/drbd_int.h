@@ -874,7 +874,7 @@ extern void drbd_uuid_new_current(drbd_dev *mdev);
 extern void drbd_uuid_set_bm(drbd_dev *mdev, u64 val);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
 extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
-extern int drbd_md_test_flag(drbd_dev *mdev, int flag);
+extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
 extern void drbd_md_mark_dirty(drbd_dev *mdev);
 
 /* Meta data layout
@@ -1068,6 +1068,7 @@ extern int drbd_pr_verify(drbd_dev *, drbd_request_t *, sector_t);
 
 // drbd_fs.c
 extern char* ppsize(char* buf, size_t size);
+extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
 extern int drbd_determin_dev_size(drbd_dev*);
 extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
 extern int drbd_set_role(drbd_dev *mdev, int *arg);
@@ -1275,17 +1276,17 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 }
 
 /* returns the capacity we announce to out peer */
-static inline sector_t drbd_get_max_capacity(drbd_dev *mdev)
+static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 {
-	switch (mdev->bc->md_index) {
+	switch (bdev->md_index) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return drbd_get_capacity(mdev->bc->backing_bdev)
-			? drbd_md_first_sector(mdev->bc)
+		return drbd_get_capacity(bdev->backing_bdev)
+			? drbd_md_first_sector(bdev)
 			: 0;
 	case DRBD_MD_INDEX_FLEX_EXT:
 	default:
-		return drbd_get_capacity(mdev->bc->backing_bdev);
+		return drbd_get_capacity(bdev->backing_bdev);
 	}
 }
 

@@ -87,52 +87,6 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 		break;
 	}
 }
-/* You should call drbd_md_sync() after calling this.
- */
-STATIC int do_determin_dev_size(struct Drbd_Conf* mdev);
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
-{
-	sector_t prev_first_sect, prev_size; // previous meta location
-	sector_t la_size;
-	int md_moved, la_size_changed;
-	int rv;
-
-	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
-
-	prev_first_sect = drbd_md_first_sector(mdev->bc);
-	prev_size = mdev->bc->md.md_size_sect;
-	la_size = mdev->bc->md.la_size_sect;
-
-	// TODO: should only be some assert here, not (re)init...
-	drbd_md_set_sector_offsets(mdev,mdev->bc);
-	rv = do_determin_dev_size(mdev);
-	if (rv < 0) goto out;
-
-	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
-
-	//LGE: flexible device size!! is this the right thing to test?
-	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
-		|| prev_size       != mdev->bc->md.md_size_sect;
-
-	if ( md_moved ) {
-		WARN("Moving meta-data.\n");
-		/* assert: (flexible) internal meta data */
-	}
-
-	if ( la_size_changed || md_moved ) {
-		if( inc_local_md_only(mdev)) {
-			drbd_al_shrink(mdev); // All extents inactive.
-			drbd_bm_write(mdev);  // write bitmap
-			// Write mdev->la_size to on disk.
-			drbd_md_mark_dirty(mdev);
-			dec_local(mdev);
-		}
-	}
-  out:
-	lc_unlock(mdev->act_log);
-
-	return rv;
-}
 
 char* ppsize(char* buf, size_t size)
 {
@@ -148,60 +102,28 @@ char* ppsize(char* buf, size_t size)
 	return buf;
 }
 
-
-/* Returns 1 if there is a disk-less node, 0 if both nodes have a disk.
- * -ENOMEM if we could not allocate the bitmap
+/* You should call drbd_md_sync() after calling this.
  */
-/*
- * *_size is in sectors.
- *
- * FIXME
- * since this is done by drbd receiver as well as from drbdsetup,
- * this actually needs proper locking!
- * drbd_bm_resize already protects itself with a mutex.
- * but again, this is a state change, and thus should be serialized with other
- * state changes on a more general level already.
- */
-STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
+int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 {
-	sector_t p_size = mdev->p_size;   // partner's disk size.
-	sector_t la_size = mdev->bc->md.la_size_sect; // last agreed size.
-	sector_t m_size; // my size
-	sector_t u_size = mdev->bc->u_size; // size requested by user.
-	sector_t size=0;
-	int rv;
+	sector_t prev_first_sect, prev_size; // previous meta location
+	sector_t la_size;
+	sector_t size;
 	char ppb[10];
 
-	m_size = drbd_get_max_capacity(mdev);
-	INFO("msize = %llu\n", (unsigned long long) m_size);
+	int md_moved, la_size_changed;
+	int rv=0;
 
-	if(p_size && m_size) {
-		rv=0;
-		size=min_t(sector_t,p_size,m_size);
-	} else {
-		rv=1;
-		if(la_size) {
-			size=la_size;
-			if(m_size && m_size < size) size=m_size;
-			if(p_size && p_size < size) size=p_size;
-		} else {
-			if(m_size) size=m_size;
-			if(p_size) size=p_size;
-		}
-	}
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	if(size == 0) {
-		ERR("Both nodes diskless!\n");
-	}
+	prev_first_sect = drbd_md_first_sector(mdev->bc);
+	prev_size = mdev->bc->md.md_size_sect;
+	la_size = mdev->bc->md.la_size_sect;
 
-	if(u_size) {
-		if(u_size<<1 > size) {
-			ERR("Requested disk size is too big (%lu > %lu)\n",
-			    (unsigned long)u_size, (unsigned long)size>>1);
-		} else {
-			size = u_size<<1;
-		}
-	}
+	// TODO: should only be some assert here, not (re)init...
+	drbd_md_set_sector_offsets(mdev,mdev->bc);
+
+	size = drbd_new_dev_size(mdev,mdev->bc);
 
 	if( drbd_get_capacity(mdev->this_bdev) != size ) {
 		int err;
@@ -226,8 +148,72 @@ STATIC int do_determin_dev_size(struct Drbd_Conf* mdev)
 		INFO("size = %s (%lu KB)\n",ppsize(ppb,size>>1),
 		     (unsigned long)size>>1);
 	}
+	if (rv < 0) goto out;
+
+	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
+
+	//LGE: flexible device size!! is this the right thing to test?
+	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
+		|| prev_size       != mdev->bc->md.md_size_sect;
+
+	if ( md_moved ) {
+		WARN("Moving meta-data.\n");
+		/* assert: (flexible) internal meta data */
+	}
+
+	if ( la_size_changed || md_moved ) {
+		if( inc_md_only(mdev,Attaching) ) {
+			drbd_al_shrink(mdev); // All extents inactive.
+			drbd_bm_write(mdev);  // write bitmap
+			// Write mdev->la_size to on disk.
+			drbd_md_mark_dirty(mdev);
+			dec_local(mdev);
+		}
+	}
+  out:
+	lc_unlock(mdev->act_log);
 
 	return rv;
+}
+
+sector_t 
+drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
+{
+	sector_t p_size = mdev->p_size;   // partner's disk size.
+	sector_t la_size = bdev->md.la_size_sect; // last agreed size.
+	sector_t m_size; // my size
+	sector_t u_size = bdev->u_size; // size requested by user.
+	sector_t size=0;
+
+	m_size = drbd_get_max_capacity(bdev);
+
+	if(p_size && m_size) {
+		size=min_t(sector_t,p_size,m_size);
+	} else {
+		if(la_size) {
+			size=la_size;
+			if(m_size && m_size < size) size=m_size;
+			if(p_size && p_size < size) size=p_size;
+		} else {
+			if(m_size) size=m_size;
+			if(p_size) size=p_size;
+		}
+	}
+
+	if(size == 0) {
+		ERR("Both nodes diskless!\n");
+	}
+
+	if(u_size) {
+		if(u_size<<1 > size) {
+			ERR("Requested disk size is too big (%lu > %lu)\n",
+			    (unsigned long)u_size, (unsigned long)size>>1);
+		} else {
+			size = u_size<<1;
+		}
+	}
+
+	return size;
 }
 
 /** 
@@ -456,6 +442,13 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev3_fail_ioctl;
 	}
 
+	// Prevent shrinking of consistent devices !
+	if(drbd_md_test_flag(nbc,MDF_Consistent) &&
+	   drbd_new_dev_size(mdev,nbc) < nbc->md.la_size_sect) {
+		retcode = LDDeviceTooSmall;
+		goto release_bdev3_fail_ioctl;
+	}
+
 	// Point of no return reached.
 
 	D_ASSERT(mdev->bc == NULL);
@@ -490,16 +483,16 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * degraded but active "cluster" after a certain timeout.
 	 */
 	clear_bit(USE_DEGR_WFC_T,&mdev->flags);
-	if ( mdev->state != Primary &&
-	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
-	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
+	if ( mdev->state.role != Primary &&
+	     drbd_md_test_flag(mdev->bc,MDF_PrimaryInd) &&
+	    !drbd_md_test_flag(mdev->bc,MDF_ConnectedInd) ) {
 		set_bit(USE_DEGR_WFC_T,&mdev->flags);
 	}
 
 	drbd_bm_lock(mdev); // racy...
 	drbd_determin_dev_size(mdev);
 
-	if (drbd_md_test_flag(mdev,MDF_FullSync)) {
+	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
@@ -510,7 +503,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	drbd_al_read_log(mdev);
-	if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
+	if (drbd_md_test_flag(mdev->bc,MDF_PrimaryInd)) {
 		drbd_al_apply_to_bm(mdev);
 		drbd_al_to_on_disk_bm(mdev);
 	}
@@ -530,8 +523,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		   If MDF_WasUpToDate is not set go into Outdated disk state, 
 		   otherwise into Consistent state.
 		*/
-		if(drbd_md_test_flag(mdev,MDF_Consistent)) {
-			if(drbd_md_test_flag(mdev,MDF_WasUpToDate)) {
+		if(drbd_md_test_flag(mdev->bc,MDF_Consistent)) {
+			if(drbd_md_test_flag(mdev->bc,MDF_WasUpToDate)) {
 				nds = Consistent;
 			} else {
 				nds = Outdated;
