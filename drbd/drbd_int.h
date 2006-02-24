@@ -637,6 +637,7 @@ enum {
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	UNIQUE,                 // Set on one node, cleared on the peer!
 	SPLIT_BRAIN_FIX,        // Set if split-brain-fix is configured
+	USE_DEGR_WFC_T		// Use degr-wfc-timeout instead of wfc-timeout.
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

@@ -38,6 +38,7 @@
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/in.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
 #include <linux/mm_inline.h>
@@ -731,6 +732,7 @@ int drbd_connect(drbd_dev *mdev)
 	drbd_send_sizes(mdev);
 	drbd_send_uuids(mdev);
 	drbd_send_state(mdev);
+	clear_bit(USE_DEGR_WFC_T,&mdev->flags);
 
 	return 1;
 }

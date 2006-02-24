@@ -323,8 +323,11 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
 static int sh_resources(struct d_resource* ignored __attribute((unused)),const char* unused __attribute((unused)))
 {
   struct d_resource *res,*t;
+  int first=1;
+
   for_each_resource(res,t,config) {
-    printf(res==config?"%s":" %s",esc(res->name));
+    printf(first?"%s":" %s",esc(res->name));
+    first=0;
   }
   printf("\n");
 

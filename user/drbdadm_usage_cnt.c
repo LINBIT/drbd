@@ -464,7 +464,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 "\t\t--== Creating metadata ==--\n"
 "As with nodes we count the total number of devices mirrored by DRBD at\n"
 "at http://"HTTP_HOST".\n\n"
-"The conter works completely anonymous. A random number gets created for\n"
+"The counter works completely anonymous. A random number gets created for\n"
 "this device, and that randomer number and the devices size will be sent.\n\n"
 "http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&ru="U64"&rs="U64"\n\n"
 "Enter 'no' to opt out, or just press [return] to continue:",

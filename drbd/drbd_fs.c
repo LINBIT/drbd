@@ -120,10 +120,13 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if ( la_size_changed || md_moved ) {
-		drbd_al_shrink(mdev); // All extents inactive.
-		drbd_bm_write(mdev);  // write bitmap
-		// Write mdev->bc->md.la_size_sect to [possibly new position on] disk.
-		drbd_md_mark_dirty(mdev);
+		if( inc_local_md_only(mdev)) {
+			drbd_al_shrink(mdev); // All extents inactive.
+			drbd_bm_write(mdev);  // write bitmap
+			// Write mdev->la_size to on disk.
+			drbd_md_mark_dirty(mdev);
+			dec_local(mdev);
+		}
 	}
   out:
 	lc_unlock(mdev->act_log);
@@ -471,6 +474,27 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	 * FIXME currently broken.
 	 * drbd_set_recv_tcq(mdev,drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
 	 */
+
+	/* If I am currently not Primary,
+	 * but meta data primary indicator is set,
+	 * I just now recover from a hard crash,
+	 * and have been Primary before that crash.
+	 *
+	 * Now, if I had no connection before that crash
+	 * (have been degraded Primary), chances are that
+	 * I won't find my peer now either.
+	 *
+	 * In that case, and _only_ in that case,
+	 * we use the degr-wfc-timeout instead of the default,
+	 * so we can automatically recover from a crash of a
+	 * degraded but active "cluster" after a certain timeout.
+	 */
+	clear_bit(USE_DEGR_WFC_T,&mdev->flags);
+	if ( mdev->state != Primary &&
+	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
+	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
+		set_bit(USE_DEGR_WFC_T,&mdev->flags);
+	}
 
 	drbd_bm_lock(mdev); // racy...
 	drbd_determin_dev_size(mdev);
@@ -919,24 +943,7 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 	if(copy_from_user(&p,arg,sizeof(p))) {
 		return -EFAULT;
 	}
-
-	/* If I am currently not Primary,
-	 * but meta data primary indicator is set,
-	 * I just now recover from a hard crash,
-	 * and have been Primary before that crash.
-	 *
-	 * Now, if I had no connection before that crash
-	 * (have been degraded Primary), chances are that
-	 * I won't find my peer now either.
-	 *
-	 * In that case, and _only_ in that case,
-	 * we use the degr-wfc-timeout instead of the default,
-	 * so we can automatically recover from a crash of a
-	 * degraded but active "cluster" after a certain timeout.
-	 */
-	if ( mdev->state.role != Primary &&
-	     drbd_md_test_flag(mdev,MDF_PrimaryInd) &&
-	    !drbd_md_test_flag(mdev,MDF_ConnectedInd) ) {
+	if ( test_bit(USE_DEGR_WFC_T,&mdev->flags) ) {
 		time=p.degr_wfc_timeout;
 		if (time) WARN("using degr_wfc_timeout=%ld seconds\n", time);
 	} else {
