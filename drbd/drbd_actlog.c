@@ -143,9 +143,9 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	}
 
 #if DUMP_MD >= 3
-	INFO("%s [%d]:%s(,%ld,%s)\n",
+	INFO("%s [%d]:%s(,%llu,%s)\n",
 	     current->comm, current->pid, __func__,
-	     sector, rw ? "WRITE" : "READ");
+	     (unsigned long long)sector, rw ? "WRITE" : "READ");
 #endif
 
 	if (sector < drbd_md_ss(mdev)  ||
@@ -540,7 +540,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	wake_up(&mdev->al_wait);
 
 	INFO("Marked additional %s as out-of-sync based on AL.\n",
-	     ppsize(ppb,add >> 1));
+	     ppsize(ppb,Bit2KB(add)));
 }
 
 static inline int _try_lc_del(struct Drbd_Conf *mdev,struct lc_element *al_ext)
