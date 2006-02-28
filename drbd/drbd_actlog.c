@@ -453,7 +453,12 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		trn=be32_to_cpu(buffer->tr_number);
 
 		spin_lock_irq(&mdev->al_lock);
-		for(j=0;j<AL_EXTENTS_PT+1;j++) {
+
+		/* This loop runs backwards because in the cyclic 
+		   elements there might be an old version of the
+		   updated element (in slot 0). So the element in slot 0
+		   can overwrite old versions. */
+		for(j=AL_EXTENTS_PT;j>=0;j--) {
 			pos = be32_to_cpu(buffer->updates[j].pos);
 			extent_nr = be32_to_cpu(buffer->updates[j].extent);
 

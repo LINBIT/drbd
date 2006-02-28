@@ -263,7 +263,7 @@ int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
 			struct ioctl_disk_config * arg)
 {
 	NOT_IN_26(int err;) // unused in 26 ?? cannot believe it ...
-	int i, md_gc_valid, minor, mput=0;
+	int i, md_gc_valid, minor, mput=0, apply_al;
 	enum ret_codes retcode;
 	struct disk_config new_conf;
 	struct file *filp = 0;
@@ -520,6 +520,13 @@ ONLY_IN_26({
 		if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 		return -EINVAL;
 	}
+
+	apply_al = drbd_md_test_flag(mdev,MDF_PrimaryInd);
+	/* All tests on MDF_PrimaryInd and MDF_ConnectedInd must happen before 
+	   this point, because determin_dev_size() might call drbd_md_write(), 
+	   which in turn modifies these flags. Exceptions are where, we want
+	   to test the current state (drbd_md_compare(), drbd_send_param()). */
+
 	if (drbd_determin_dev_size(mdev) < 0) {
 		/* could not allocate bitmap.
 		 * try to undo ... */
@@ -561,7 +568,7 @@ ONLY_IN_26({
 
 	if (md_gc_valid > 0) {
 		drbd_al_read_log(mdev);
-		if (drbd_md_test_flag(mdev,MDF_PrimaryInd)) {
+		if (apply_al) {
 			drbd_al_apply_to_bm(mdev);
 			drbd_al_to_on_disk_bm(mdev);
 		}
