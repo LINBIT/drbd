@@ -655,6 +655,8 @@ DRBD 0.8 Roadmap
 26 Implement a kind of "dstate" command to make integration with 
    Heartbeat-2.0's master/slave-support possible.
 
+   99% DONE
+
 27 Remove all explicit drbd_md_write() calls, and create a mechanism,
    that always keeps the on disk-metadata up-to-date implicit. 
    Calling drbd_md_write() explicit is too errorprone.
@@ -667,8 +669,7 @@ DRBD 0.8 Roadmap
    set gets generated, the 'call home' is initiated. The user might
    of course opt out of this.
 
-   50% DONE [ Counting of resources is missing, counting of DRBD releases
-              is alrady implemented. ]
+   99% DONE
 
 29 Make drbdadm to have 'hidden-commands' command to also show
    the hidden sub-commands in the ussage.

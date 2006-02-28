@@ -197,6 +197,7 @@ struct adm_cmd cmds[] = {
   { "wait_connect",      adm_wait_c,    1,1,1 },
   { "state",             adm_generic_s, 1,1,0 },
   { "cstate",            adm_generic_s, 1,1,1 },
+  { "dstate",            adm_generic_b, 1,1,1 },
   { "dump",              adm_dump,      1,1,1 },
   { "create-md",         adm_create_md, 1,1,0 },
   { "show-gi",           adm_generic_b, 1,1,0 },

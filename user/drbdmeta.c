@@ -753,7 +753,7 @@ int meta_outdate(struct format *cfg, char **argv, int argc);
 int meta_set_gi(struct format *cfg, char **argv, int argc);
 int meta_read_dev_uuid(struct format *cfg, char **argv, int argc);
 int meta_write_dev_uuid(struct format *cfg, char **argv, int argc);
-
+int meta_dstate(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
 	{"get-gi", 0, meta_get_gi, 1},
@@ -765,6 +765,7 @@ struct meta_cmd cmds[] = {
 	 * implicit convert from v07 to v08 by create-md
 	 * see comments there */
 	{"outdate", 0, meta_outdate, 1},
+	{"dstate", 0, meta_dstate, 1},
 	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
 	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
@@ -893,9 +894,9 @@ int v07_style_md_open(struct format *cfg, size_t size)
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
 	cfg->bm_mmaped_length = (u64)(cfg->md.md_size_sect - MD_BM_OFFSET_07)*512;
 
-	fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-	fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-	fprintf(stderr,"bm_mmaped_length: %lu\n",(unsigned long)cfg->bm_mmaped_length);
+	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
+	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+	//fprintf(stderr,"bm_mmaped_length: %lu\n",(unsigned long)cfg->bm_mmaped_length);
 
 	cfg->al_mmaped_length = MD_AL_MAX_SECT_07 * 512;
 	cfg->on_disk.al =
@@ -1533,6 +1534,28 @@ int meta_show_gi(struct format *cfg, char **argv __attribute((unused)), int argc
 		       cfg->bits_set, ppsize(ppb, cfg->bits_set * 4));
 	} else {
 		printf("zero size device -- never seen peer yet?\n");
+	}
+
+	return cfg->ops->close(cfg);
+}
+
+int meta_dstate(struct format *cfg, char **argv __attribute((unused)), int argc)
+{
+	if (argc > 0) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	if(cfg->md.flags & MDF_Consistent) {
+		if(cfg->md.flags & MDF_WasUpToDate) {
+			printf("Consistent/DUnknown\n");
+		} else {
+			printf("Outdated/DUnknown\n");
+		}
+	} else {
+		printf("Inconsistent/DUnknown\n");
 	}
 
 	return cfg->ops->close(cfg);

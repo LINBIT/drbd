@@ -122,6 +122,7 @@ int cmd_resume_sync(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_detach(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_state(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_dstate(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show_gi(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options);
 
@@ -188,6 +189,7 @@ struct drbd_cmd commands[] = {
   {"disconnect", cmd_disconnect,     0, 0, },
   {"state", cmd_state,               0, 0, },
   {"cstate", cmd_cstate,             0, 0, },
+  {"dstate", cmd_dstate,             0, 0, },
   {"show-gi", cmd_show_gi,           0, 0, },
   {"get-gi", cmd_get_gi,             0, 0, },
   {"show", cmd_show,                 0, 0, },
@@ -1390,8 +1392,8 @@ int cmd_state(int drbd_fd,char** argv __attribute((unused)),int argc __attribute
 
   if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
     {
-      printf("Not configured\n");
-      return 0;
+      fprintf(stderr,"Not configured\n");
+      return 10;
     }
 
   printf("%s/%s\n",roles_to_name(cn.state.role),
@@ -1414,11 +1416,34 @@ int cmd_cstate(int drbd_fd,char** argv __attribute((unused)),int argc __attribut
 
   if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
     {
-      printf("Not configured\n");
-      return 0;
+      fprintf(stderr,"Not configured\n");
+      return 10;
     }
 
   printf("%s\n",conns_to_name(cn.state.conn));
+
+  return 0;
+}
+
+int cmd_dstate(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
+{
+  struct ioctl_get_config cn;
+  int err;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
+  if(err)
+    {
+      PERROR("ioctl(,GET_CONFIG,) failed");
+      return 20;
+    }
+
+  if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
+    {
+      fprintf(stderr,"Not configured\n");
+      return 10;
+    }
+
+  printf("%s/%s\n",disks_to_name(cn.state.disk),disks_to_name(cn.state.pdsk));
 
   return 0;
 }
