@@ -532,7 +532,11 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		} else {
 			nds = Inconsistent;
 		}
-		
+
+		/* All tests on MDF_PrimaryInd, MDF_ConnectedInd, 
+		   MDF_Consistent and MDF_WasUpToDate must happen before 
+		   this point, because drbd_request_state() modifies these
+		   flags. */
 		if(drbd_request_state(mdev,NS(disk,nds)) >= SS_Success ) {
 			drbd_thread_start(&mdev->worker);
 		}
