@@ -2402,6 +2402,7 @@ struct meta_data_on_disk {
 	u64 la_size;           // last agreed size.
 	u64 uuid[UUID_SIZE];   // UUIDs.
 	u64 device_uuid;
+	u64 reserved_u64_1;
 	u32 flags;             // MDF
 	u32 magic;
 	u32 md_size_sect;
@@ -2409,6 +2410,9 @@ struct meta_data_on_disk {
 	u32 al_nr_extents;     // important for restoring the AL
 	      // `-- act_log->nr_elements <-- sync_conf.al_extents
 	u32 bm_offset;         // offset to the bitmap, from here
+	u32 bm_bytes_per_bit;  // BM_BLOCK_SIZE
+	u32 reserved_u32[4];
+
 } __attribute((packed));
 
 /** 
@@ -2439,6 +2443,8 @@ void drbd_md_sync(drbd_dev *mdev)
 	buffer->md_size_sect  = cpu_to_be32(mdev->bc->md.md_size_sect);
 	buffer->al_offset     = cpu_to_be32(mdev->bc->md.al_offset);
 	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
+	buffer->bm_bytes_per_bit = cpu_to_be32(BM_BLOCK_SIZE);
+	buffer->device_uuid = cpu_to_be64(mdev->bc->md.device_uuid);
 
 	buffer->bm_offset = cpu_to_be32(mdev->bc->md.bm_offset);
 
@@ -2523,11 +2529,19 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 		goto err;
 	}
 
+	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
+		ERR("unexpected bm_bytes_per_bit: %u (expected %u)\n",
+		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
+		rv = MDInvalid;
+		goto err;
+	}
+
 	bdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
 	for (i = Current; i < UUID_SIZE; i++)
 		bdev->md.uuid[i]=be64_to_cpu(buffer->uuid[i]);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
+	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;

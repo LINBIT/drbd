@@ -18,6 +18,8 @@ enum yytokentype {
 	TK_UUID,
 	TK_VERSION,
 	TK_LA_SIZE,
+	TK_BM_BYTE_PER_BIT,
+	TK_DEVICE_UUID,
 	TK_TIMES
 };
 

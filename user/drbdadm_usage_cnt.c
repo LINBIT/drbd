@@ -356,7 +356,7 @@ void uc_node(enum usage_count_type type)
 			update ? "an update" : "a new installation",
 			REL_VERSION,ni.node_uuid, ni.version_code);
 		fgets(answer,ANSWER_SIZE,stdin);
-		if(!strcmp(answer,"no")) send = 0;
+		if(!strcmp(answer,"no\n")) send = 0;
 	}
 
 
@@ -448,17 +448,15 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 
 	rv = _admm_generic(res, cmd, SLEEPS_VERY_LONG); // cmd is "create-md".
 
-	if(!device_uuid) {
-		get_random_bytes(&device_uuid, sizeof(u64));
-	}
-
 	fd = open(res->me->disk,O_RDONLY);
 	if( fd != -1) {
 		device_size = bdev_size(fd);
 		close(fd);
 	}
 
-	if( read_node_id(&ni) && device_size ) {
+	if( read_node_id(&ni) && device_size && !device_uuid) {
+		get_random_bytes(&device_uuid, sizeof(u64));
+
 		if( global_options.usage_count == UC_YES ) send = 1;
 		if( global_options.usage_count == UC_ASK ) {
 			printf(
@@ -473,8 +471,12 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 				ni.node_uuid,device_uuid,device_size
 				);
 		fgets(answer,ANSWER_SIZE,stdin);
-		if(strcmp(answer,"no")) send = 1;
+		if(strcmp(answer,"no\n")) send = 1;
 		}
+	}
+
+	if(!device_uuid) {
+		get_random_bytes(&device_uuid, sizeof(u64));
 	}
 
 	if (send) {

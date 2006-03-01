@@ -124,6 +124,8 @@ YYSTYPE yylval;
 #define MD_BM_MAX_BYTE_07      ( (u64)(MD_RESERVED_SECT_07 - MD_BM_OFFSET_07)*512 )
 #define MD_BM_MAX_BYTE_FLEX    ( (u64)(1ULL << (32-3)) )
 
+#define DEFAULT_BM_BLOCK_SIZE  (1<<12)
+
 #define DRBD_MD_MAGIC_06   (DRBD_MAGIC+2)
 #define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
 #define DRBD_MD_MAGIC_08   (DRBD_MAGIC+4)
@@ -234,6 +236,7 @@ struct md_cpu {
 	u64 uuid[UUID_SIZE];
 	u32 flags;
 	u64 device_uuid;
+	u32 bm_bytes_per_bit;
 };
 
 /*
@@ -524,14 +527,17 @@ struct __attribute__ ((packed)) md_on_disk_08 {
 	be_u64 la_sect;		/* last agreed size. */
 	be_u64 uuid[UUID_SIZE];   // UUIDs.
 	be_u64 device_uuid;
+	be_u64 reserved_u64_1;
 	be_u32 flags;
 	be_u32 magic;
 	be_u32 md_size_sect;
 	be_s32 al_offset;	/* signed sector offset to this block */
 	be_u32 al_nr_extents;	/* important for restoring the AL */
 	be_s32 bm_offset;	/* signed sector offset to the bitmap, from here */
+	be_u32 bm_bytes_per_bit;
+	be_u32 reserved_u32[4];
 	
-	char reserved[8 * 512 - (8*(UUID_SIZE+2)+4*6)];
+	char reserved[8 * 512 - (8*(UUID_SIZE+3)+4*11)];
 };
 
 void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
@@ -549,6 +555,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
+	cpu->bm_bytes_per_bit = be32_to_cpu(disk->bm_bytes_per_bit.be);
 }
 
 void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
@@ -565,6 +572,7 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	disk->al_offset.be = cpu_to_be32(cpu->al_offset);
 	disk->al_nr_extents.be = cpu_to_be32(cpu->al_nr_extents);
 	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
+	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
 	MEMSET(disk->reserved, 0, sizeof(disk->reserved));
 }
 
@@ -1235,6 +1243,7 @@ int md_initialize_common(struct format *cfg)
 		break;
 	}
 	cfg->md.al_nr_extents = 257;	/* arbitrary. */
+	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	cfg->bm_mmaped_length = ((u64)cfg->md.md_size_sect - MD_BM_OFFSET_07)*512;
 
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
@@ -1627,6 +1636,8 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	if (format_version(cfg) >= Drbd_07) {
 		printf("la-size-sect "U64";\n", cfg->md.la_sect);
+		printf("bm-byte-per-bit "U32";\n",cfg->md.bm_bytes_per_bit);
+		printf("device-uuid 0x"X64(016)";\n",cfg->md.device_uuid);
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf("# bits-set %u;\n", cfg->bits_set);
 		if (cfg->on_disk.bm)
@@ -1692,6 +1703,10 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
 	cfg->md.la_sect = yylval.u64;
+	EXP(TK_BM_BYTE_PER_BIT); EXP(TK_NUM); EXP(';');
+	cfg->md.bm_bytes_per_bit = yylval.u64;
+	EXP(TK_DEVICE_UUID); EXP(TK_U64); EXP(';');
+	cfg->md.device_uuid = yylval.u64;
 	EXP(TK_BM); EXP('{');
 	bm = (le_u64 *)cfg->on_disk.bm;
 	i = 0;

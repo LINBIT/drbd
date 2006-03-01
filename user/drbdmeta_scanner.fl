@@ -34,6 +34,8 @@ bm		DP; return TK_BM;
 uuid		DP; return TK_UUID;
 version		DP; return TK_VERSION;
 la-size-sect	DP; return TK_LA_SIZE;
+bm-byte-per-bit DP; return TK_BM_BYTE_PER_BIT;
+device-uuid	DP; return TK_DEVICE_UUID;
 times		DP; return TK_TIMES;
 
 %%

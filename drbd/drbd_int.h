@@ -681,6 +681,7 @@ struct drbd_md {
 
 	u64 la_size_sect;	/* last agreed size, unit sectors */
 	u64 uuid[UUID_SIZE];
+	u64 device_uuid;
 	u32 flags;
 	u32 md_size_sect;
 
