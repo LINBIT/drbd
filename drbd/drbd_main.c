@@ -729,13 +729,6 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		}
 	}
 
-	/* it feels better to have the module_put last ... */
-	if ( (os.disk > Diskless || os.conn > StandAlone) &&
-	     ns.disk == Diskless && ns.conn == StandAlone ) {
-		drbd_mdev_cleanup(mdev);
-		module_put(THIS_MODULE);
-	}
-
 	return rv;
 }
 
@@ -819,6 +812,13 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	if (  ( os.aftr_isp == 1 || os.user_isp == 1 ) &&
 	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
 		drbd_send_short_cmd(mdev,ResumeResync);
+	}
+
+	/* it feels better to have the module_put last ... */
+	if ( (os.disk > Diskless || os.conn > StandAlone) &&
+	     ns.disk == Diskless && ns.conn == StandAlone ) {
+		drbd_mdev_cleanup(mdev);
+		module_put(THIS_MODULE);
 	}
 }
 
