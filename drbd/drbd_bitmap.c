@@ -786,7 +786,11 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 
-	b->bm_fo = i;
+	if (i < b->bm_bits) {
+		b->bm_fo = i;
+	} else {
+		b->bm_fo = 0;
+	}
 
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -871,6 +875,9 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 /* returns bit state
  * wants bitnr, NOT sector.
  * inherently racy... area needs to be locked by means of {al,rs}_lru
+ *  1 ... bit set
+ *  0 ... bit not set
+ * -1 ... first out of bounds access, stop testing for bits!
  */
 int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
@@ -881,12 +888,15 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	ERR_IF (bitnr >= b->bm_bits) {
-		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
-		i = 0;
-	} else {
+	if (bitnr < b->bm_bits) {
 		i = test_bit(bitnr, b->bm);
+	} else if (bitnr == b->bm_bits) {
+		i = -1;
+	} else /* (bitnr > b->bm_bits) */ {
+		ERR("bitnr=%lu > bm_bits=%lu\n",bitnr, b->bm_bits);
+		i = 0;		
 	}
+
 	spin_unlock_irq(&b->bm_lock);
 	return i;
 }

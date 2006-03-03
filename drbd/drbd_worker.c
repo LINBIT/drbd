@@ -355,7 +355,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 #if DRBD_MAX_SEGMENT_SIZE > BM_BLOCK_SIZE
 		// try to find some adjacent bits...
-		while ( drbd_bm_test_bit(mdev,bit+1) ) {
+		while ( drbd_bm_test_bit(mdev,bit+1) == 1 ) {
 			// stop if we have the already the maximum req size
 			if(size == DRBD_MAX_SEGMENT_SIZE) break;
 			// do not leafe the current BM_EXTEND

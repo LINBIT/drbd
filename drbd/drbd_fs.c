@@ -307,6 +307,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	struct disk_config new_conf;  // local copy of ioctl() args.
 	struct drbd_backing_dev* nbc; // new_backing_conf
 	struct inode *inode, *inode2;
+	struct lru_cache* resync_lru = NULL;
 	drbd_disks_t nds;
 
 	minor=(int)(mdev-drbd_conf);
@@ -361,6 +362,12 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	nbc->backing_bdev = inode->i_bdev;
 	if (bd_claim(nbc->backing_bdev, mdev)) {
 		retcode=LDMounted;
+		goto fail_ioctl;
+	}
+
+	resync_lru = lc_alloc("resync",7, sizeof(struct bm_extent),mdev);
+	if(!resync_lru) {
+		retcode=KMallocFailed;
 		goto fail_ioctl;
 	}
 
@@ -453,6 +460,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 
 	D_ASSERT(mdev->bc == NULL);
 	mdev->bc = nbc;
+	mdev->resync = resync_lru;
 
 	if (new_conf.split_brain_fix) set_bit(SPLIT_BRAIN_FIX,&mdev->flags);
 	else clear_bit(SPLIT_BRAIN_FIX,&mdev->flags);
@@ -557,6 +565,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	if (nbc->lo_file) fput(nbc->lo_file);
 	if (nbc->md_file) fput(nbc->md_file);
 	if (nbc) kfree(nbc);
+	if (resync_lru) lc_free(resync_lru);
 	if (put_user(retcode, &arg->ret_code)) return -EFAULT;
 	return -EINVAL;
 }
@@ -1031,8 +1040,9 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 		return -EINTR;
 	}
 
-	drbd_free_bc(mdev->bc);
-	mdev->bc=0;
+	drbd_free_bc(mdev->bc);	mdev->bc = NULL;
+	lc_free(mdev->resync);  mdev->resync = NULL;
+	lc_free(mdev->act_log); mdev->act_log = NULL;
 
 	after_state_ch(mdev, os, ns);
 

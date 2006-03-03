@@ -215,8 +215,12 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		     drbd_conf[i].state.conn == SyncTarget ) {
 			drbd_syncer_progress(drbd_conf+i,seq);
 		}
-		lc_printf_stats(seq,drbd_conf[i].resync);
-		lc_printf_stats(seq,drbd_conf[i].act_log);
+		if(drbd_conf[i].resync) {
+			lc_printf_stats(seq,drbd_conf[i].resync);
+		}
+		if(drbd_conf[i].act_log) {
+			lc_printf_stats(seq,drbd_conf[i].act_log);
+		}
 	}
 
 	return 0;

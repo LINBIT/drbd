@@ -521,8 +521,7 @@ int drbd_io_error(drbd_dev* mdev)
 		 * and no real references on the device. */
 		WARN("Releasing backing storage device.\n");
 		drbd_free_bc(mdev->bc);
-		mdev->bc=0;
-		mdev->bc->md.la_size_sect=0;
+		mdev->bc=NULL;
 	}
 
 	return ok;
@@ -2290,12 +2289,6 @@ int __init drbd_init(void)
 
 		if (drbd_bm_init(mdev)) goto Enomem;
 		// no need to lock access, we are still initializing the module.
-		mdev->resync = lc_alloc("resync",17, sizeof(struct bm_extent),mdev);
-		if (!mdev->resync) goto Enomem;
-		mdev->act_log = lc_alloc("act_log",mdev->sync_conf.al_extents,
-					 sizeof(struct lc_element), mdev);
-		if (!mdev->act_log) goto Enomem;
-
 		init_MUTEX(&mdev->device_mutex);
 		if (!tl_init(mdev)) goto Enomem;
 
