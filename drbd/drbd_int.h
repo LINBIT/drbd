@@ -116,6 +116,19 @@ typedef struct Drbd_Conf drbd_dev;
 
 #define DUMPST(A) DUMPLLU((unsigned long long)(A))
 
+#if 0
+#define D_DUMPP(A)   DUMPP(A)
+#define D_DUMPLU(A)  DUMPLU(A)
+#define D_DUMPLLU(A) DUMPLLU(A)
+#define D_DUMPLX(A)  DUMPLX(A)
+#define D_DUMPI(A)   DUMPI(A)
+#else
+#define D_DUMPP(A)
+#define D_DUMPLU(A)
+#define D_DUMPLLU(A)
+#define D_DUMPLX(A)
+#define D_DUMPI(A)
+#endif
 
 // Info: do not remove the spaces around the "," before ##
 //       Otherwise this is not portable from gcc-2.95 to gcc-3.3

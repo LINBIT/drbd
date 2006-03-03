@@ -52,7 +52,7 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-#ifdef __arch_um__
+#if defined(__arch_um__) && !defined(HAVE_UML_TO_VIRT)
 void *to_virt(unsigned long phys)
 {
 	return((void *) uml_physmem + phys);
@@ -136,7 +136,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	/* first, use our pool. */
 	spin_lock(&drbd_pp_lock);
 	if ( (page = drbd_pp_pool) ) {
-		drbd_pp_pool = (struct page*)page->private;
+		drbd_pp_pool = (struct page*)page->U_PRIVATE;
 		drbd_pp_vacant--;
 	}
 	spin_unlock(&drbd_pp_lock);
@@ -150,7 +150,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 		/* try the pool again, maybe the drbd_kick_log set some free */
 		spin_lock(&drbd_pp_lock);
 		if ( (page = drbd_pp_pool) ) {
-			drbd_pp_pool = (struct page*)page->private;
+			drbd_pp_pool = (struct page*)page->U_PRIVATE;
 			drbd_pp_vacant--;
 		}
 		spin_unlock(&drbd_pp_lock);
@@ -192,7 +192,7 @@ STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
 	if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
 		__free_page(page);
 	} else {
-		page->private = (unsigned long)drbd_pp_pool;
+		page->U_PRIVATE = (unsigned long)drbd_pp_pool;
 		drbd_pp_pool = page;
 		drbd_pp_vacant++;
 	}

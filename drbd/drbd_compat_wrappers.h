@@ -7,6 +7,14 @@
 # error "use a 2.6 kernel, please"
 #endif
 
+
+/* struct page has a union since 2.6.15 ... */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
+#define U_PRIVATE private
+#else
+#define U_PRIVATE u.private
+#endif
+
 #include <linux/buffer_head.h> // for fsync_bdev
 
 /* see get_sb_bdev and bd_claim */

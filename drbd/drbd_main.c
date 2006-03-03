@@ -1929,7 +1929,7 @@ void drbd_destroy_mempools(void)
 
 	while(drbd_pp_pool) {
 		page = drbd_pp_pool;
-		drbd_pp_pool = (struct page*)page->private;
+		drbd_pp_pool = (struct page*)page->U_PRIVATE;
 		__free_page(page);
 		drbd_pp_vacant--;
 	}
@@ -1998,7 +1998,7 @@ int drbd_create_mempools(void)
 	for (i=0;i< number;i++) {
 		page = alloc_page(GFP_HIGHUSER);
 		if(!page) goto Enomem;
-		page->private = (unsigned long)drbd_pp_pool;
+		page->U_PRIVATE = (unsigned long)drbd_pp_pool;
 		drbd_pp_pool = page;
 	}
 	drbd_pp_vacant = number;
