@@ -8,8 +8,9 @@
 #endif
 
 
-/* struct page has a union since 2.6.15 ... */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
+/* struct page has a union in 2.6.15 ...
+ * an anonymous union and struct since 2.6.16 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)) || LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16)
 #define U_PRIVATE private
 #else
 #define U_PRIVATE u.private
