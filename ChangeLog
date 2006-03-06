@@ -1,8 +1,17 @@
 Latest:
 ------
- ChangeLog last updated: r2014 2005-12-19
+ ChangeLog last updated: r2085 2006-03-06
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.17 (api:77/proto:74)
+-----
+ * There was a bug that could cause the activity log to be not applied 
+   after a primary crash, when an other size than 127 elements was configured.
+ * There was a bug in the activity log code, that could cause that the
+   latest update to the AL is omitted at recovery time.
+ * The "Marked additional XXKB as out-of-synced based on AL." message
+   showed one one eighth of the real amount, fixed.
 
 0.7.16 (api:77/proto:74)
 -----

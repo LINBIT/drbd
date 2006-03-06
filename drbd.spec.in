@@ -190,6 +190,15 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Mon Mar  6 2006 14:43:41 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.17-1)
+ * There was a bug that could cause the activity log to be not applied 
+   after a primary crash, when an other size than 127 elements was configured.
+ * There was a bug in the activity log code, that could cause that the
+   latest update to the AL is omitted at recovery time.
+ * The "Marked additional XXKB as out-of-synced based on AL." message
+   showed one one eighth of the real amount, fixed.
+
 * Mon Feb 13 2006 15:52:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.16-1)
  * DRBD no longer shrinks an consistent device if it gets connected to
