@@ -906,7 +906,7 @@ extern void drbd_md_mark_dirty(drbd_dev *mdev);
 #define MD_HARDSECT      (1<<MD_HARDSECT_B)
 
 // activity log
-#define AL_EXTENTS_PT    (MD_HARDSECT-12)/8-1 // 61 ; Extents per 512B sector
+#define AL_EXTENTS_PT    ((MD_HARDSECT-12)/8-1) // 61 ; Extents per 512B sector
 #define AL_EXTENT_SIZE_B 22      // One extent represents 4M Storage
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 
