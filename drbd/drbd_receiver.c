@@ -125,6 +125,7 @@ void check_list(drbd_dev *mdev,struct list_head *list,char *t)
  */
 STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 {
+	unsigned long flags=0;
 	struct page *page;
 	DEFINE_WAIT(wait);
 
@@ -133,13 +134,14 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	 * not make sense.
 	 */
 
-	/* first, use our pool. */
-	spin_lock(&drbd_pp_lock);
+	spin_lock_irqsave(&drbd_pp_lock,flags);
+	/* This lock needs to be IRQ save because we might call drdb_pp_free()
+	   from IRQ context. */
 	if ( (page = drbd_pp_pool) ) {
 		drbd_pp_pool = (struct page*)page->U_PRIVATE;
 		drbd_pp_vacant--;
 	}
-	spin_unlock(&drbd_pp_lock);
+	spin_unlock_irqrestore(&drbd_pp_lock,flags);
 	if (page) goto got_page;
 
 	drbd_kick_lo(mdev);
@@ -148,12 +150,12 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
 		/* try the pool again, maybe the drbd_kick_log set some free */
-		spin_lock(&drbd_pp_lock);
+		spin_lock_irqsave(&drbd_pp_lock,flags);
 		if ( (page = drbd_pp_pool) ) {
 			drbd_pp_pool = (struct page*)page->U_PRIVATE;
 			drbd_pp_vacant--;
 		}
-		spin_unlock(&drbd_pp_lock);
+		spin_unlock_irqrestore(&drbd_pp_lock,flags);
 
 		if (page) break;
 
@@ -188,17 +190,23 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 
 STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
 {
-	spin_lock(&drbd_pp_lock);
+	unsigned long flags=0;
+	int free_it;
+
+	spin_lock_irqsave(&drbd_pp_lock,flags);
 	if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
-		__free_page(page);
+		free_it = 1;
 	} else {
 		page->U_PRIVATE = (unsigned long)drbd_pp_pool;
 		drbd_pp_pool = page;
 		drbd_pp_vacant++;
+		free_it = 0;
 	}
-	spin_unlock(&drbd_pp_lock);
+	spin_unlock_irqrestore(&drbd_pp_lock,flags);
 
 	atomic_dec(&mdev->pp_in_use);
+
+	if(free_it) __free_page(page);
 
 	/*
 	 * FIXME

@@ -102,6 +102,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
 	int do_wake;
+	int is_syncer_req;
 
 	e = bio->bi_private;
 	mdev = e->mdev;
@@ -113,11 +114,13 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	D_ASSERT(e->block_id != ID_VACANT);
 
 	spin_lock_irqsave(&mdev->ee_lock,flags);
-	mdev->epoch_size++;
+	is_syncer_req = is_syncer_block_id(e->block_id);
 	list_del(&e->w.list);
 	list_add_tail(&e->w.list,&mdev->done_ee);
 
-	do_wake = is_syncer_block_id(e->block_id)
+	if(!is_syncer_req) mdev->epoch_size++;
+
+	do_wake = is_syncer_req
 		? list_empty(&mdev->sync_ee)
 		: list_empty(&mdev->active_ee);
 
@@ -371,7 +374,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		inc_rs_pending(mdev);
 		if(!drbd_send_drequest(mdev,RSDataRequest,
 				       sector,size,ID_SYNCER)) {
-			ERR("drbd_send_drequest() failed, aborting...");
+			ERR("drbd_send_drequest() failed, aborting...\n");
 			dec_rs_pending(mdev);
 			return 0; // FAILED. worker will abort!
 		}
