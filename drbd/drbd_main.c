@@ -722,7 +722,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			ascw->os = os;
 			ascw->ns = ns;
 			ascw->w.cb = w_after_state_ch;
-			drbd_queue_work_front(mdev,&mdev->data.work,&ascw->w);
+			_drbd_queue_work_front(&mdev->data.work,&ascw->w);
 		} else {
 			WARN("Could not kmalloc an ascw\n");
 		}
