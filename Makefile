@@ -188,7 +188,7 @@ rpm: tgz
 	       -e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;" < drbd.spec.in \
 	   > dist/SPECS/drbd.spec ; \
 	fi
-	$(RPMBUILD) -ba \
+	$(RPMBUILD) -bb \
 	    --define "_topdir $(PWD)/dist" \
 	    --define "buildroot $(PWD)/dist/install" \
 	    --define "kernelversion $(KVER)" \

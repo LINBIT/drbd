@@ -57,8 +57,8 @@
 
 #define is_syncer_blk(A,B) ((B)==ID_SYNCER)
 
-#ifdef __arch_um__
-void *to_virt(unsigned long phys)
+#if defined(__arch_um__) && !defined(HAVE_UML_TO_VIRT)
+static inline void *to_virt(unsigned long phys)
 {
 	return((void *) uml_physmem + phys);
 }

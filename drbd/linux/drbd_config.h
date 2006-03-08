@@ -65,4 +65,8 @@ extern const char * drbd_buildtag(void);
 // for troubles.
 // #define DRBD_DISABLE_SENDPAGE
 
+// older, unpached kernel sources do not have it, so we added it in drbd_receiver.c
+// but more recent kernels define it in arch/um/include/mem.h
+#define HAVE_UML_TO_VIRT
+
 #endif
