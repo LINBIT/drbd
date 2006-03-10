@@ -1076,8 +1076,6 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 						    1);
 				dec_unacked(mdev);
 			}
-			/* FIXME
-			 * explain why we need this SYNC_STARTED flag bit */
 			if (test_bit(SYNC_STARTED,&mdev->flags) )
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {
@@ -1110,8 +1108,6 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->net_conf->wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
 			ok &= drbd_send_ack(mdev,WriteAck,e);
-			/* FIXME
-			 * explain why we need this SYNC_STARTED flag bit */
 			if (test_bit(SYNC_STARTED,&mdev->flags))
 				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
 		} else {

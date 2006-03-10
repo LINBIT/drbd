@@ -160,6 +160,17 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	seq_printf(seq," K/sec\n");
 }
 
+#if 0
+STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
+{
+	struct bm_extent *bme = (struct bm_extent *)e;
+
+	seq_printf(seq,"%5d %s %s\n",bme->rs_left,
+		   bme->flags & BME_NO_WRITES ? "NO_WRITES" : "---------",
+		   bme->flags & BME_LOCKED ? "LOCKED" : "------"
+		   );
+}
+#endif
 
 STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
@@ -221,6 +232,13 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		if(drbd_conf[i].act_log) {
 			lc_printf_stats(seq,drbd_conf[i].act_log);
 		}
+#if 0
+		if(drbd_conf[i].resync) {
+			lc_dump(drbd_conf[i].resync,seq,"rs_left",
+				resync_dump_detail);
+		}
+#endif
+
 	}
 
 	return 0;

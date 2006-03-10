@@ -313,3 +313,29 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
+#if 0
+/**
+ * lc_dump: Dump a complete LRU cache to seq in textual form.
+ */
+void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
+	     void (*detail) (struct seq_file *, struct lc_element *) )
+{
+	unsigned int nr_elements = lc->nr_elements;
+	struct lc_element *e;
+	int i;
+
+	seq_printf(seq,"\tnn: lc_number refcnt %s\n ",utext);
+	for(i=0;i<nr_elements;i++) {
+		e = lc_entry(lc,i);
+		if( e->lc_number == LC_FREE ) {
+			seq_printf(seq,"\t%2d: FREE\n",i );
+		} else {
+			seq_printf(seq,"\t%2d: %4u %4u    ", i, 
+				   e->lc_number,
+				   e->refcnt );
+			detail(seq,e);
+		}
+	}
+}
+
+#endif

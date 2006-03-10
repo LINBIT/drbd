@@ -2180,6 +2180,9 @@ int __init drbd_init(void)
 	printk(KERN_ERR "AL_EXTENTS_PT = %d\n",AL_EXTENTS_PT);
 	printk(KERN_ERR "DRBD_MAX_SECTORS = %llu\n",DRBD_MAX_SECTORS);
 	printk(KERN_ERR "DRBD_MAX_SECTORS_FLEX = %llu\n",DRBD_MAX_SECTORS_FLEX);
+#define OOF(t,m) printk(KERN_ERR "offsetof("#t","#m") = %d\n", offsetof(t,m))
+	OOF(struct Drbd_Conf,bitmap);
+	//OOF(struct drbd_bitmap,bm_set);
 	return -EBUSY;
 #endif
 #ifdef __arch_um__

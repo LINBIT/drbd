@@ -591,7 +591,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				      int cleared)
 {
 	struct list_head *le, *tmp;
-	struct bm_extent* ext;
+	struct bm_extent* ext, *ext1;
 	struct update_odbm_work * udw;
 
 	unsigned int enr;
@@ -640,23 +640,32 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	}
 
 	list_for_each_safe(le,tmp,&mdev->resync->lru) {
-		ext=(struct bm_extent *)list_entry(le,struct lc_element,list);
-		if(ext->rs_left == 0) {
+		ext1=(struct bm_extent *)list_entry(le,struct lc_element,list);
+		if(ext1->rs_left == 0) {
+			if(ext1 == ext) ext=NULL;
 			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
 			if(!udw) {
 				WARN("Could not kmalloc an udw\n");
 				break;
 			}
-			udw->enr = ext->lce.lc_number;
+			udw->enr = ext1->lce.lc_number;
 			udw->w.cb = w_update_odbm;
 			drbd_queue_work_front(mdev,&mdev->data.work,&udw->w);
-			if (ext->flags != 0) {
+			if (ext1->flags != 0) {
 				WARN("deleting resync lce: %d[%u;%02lx]\n",
-				     ext->lce.lc_number, ext->rs_left,
-				     ext->flags);
-				ext->flags = 0;
+				     ext1->lce.lc_number, ext1->rs_left,
+				     ext1->flags);
+				ext1->flags = 0;
 			}
-			lc_del(mdev->resync,&ext->lce);
+			lc_del(mdev->resync,&ext1->lce);
+		}
+	}
+
+	if(ext) {
+		if (ext->rs_left == 0) {
+			ERR("BUG! missed lc_number:%u refcnt: %u\n",
+			    ext->lce.lc_number,
+			    ext->lce.refcnt);
 		}
 	}
 }
