@@ -64,7 +64,7 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page,
 STATIC int _drbd_md_sync_page_io(drbd_dev *mdev, struct page *page, 
 				 sector_t sector, int rw, int size)
 {
-	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
+	struct bio *bio = bio_alloc(GFP_NOIO, 1);
 	struct completion event;
 	int ok;
 
