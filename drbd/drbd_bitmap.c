@@ -786,11 +786,7 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 
-	if (i < b->bm_bits) {
-		b->bm_fo = i;
-	} else {
-		b->bm_fo = 0;
-	}
+	b->bm_fo = max_t(unsigned long, i, b->bm_bits);
 
 	spin_unlock_irq(&b->bm_lock);
 }
