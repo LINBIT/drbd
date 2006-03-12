@@ -29,7 +29,6 @@
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h> // for memset
-#include <linux/swap.h>   // for total_swapcache_pages
 
 #include <linux/drbd.h>
 #include "drbd_int.h"
@@ -58,13 +57,12 @@
 
 /*
  * NOTE
- *  Access to the *bm_pages is protected by bm_lock.
+ *  Access to the *bm is protected by bm_lock.
  *  It is safe to read the other members within the lock.
  *
  *  drbd_bm_set_bit is called from bio_endio callbacks,
  *  so there we need a spin_lock_irqsave.
  *  Everywhere else we need a spin_lock_irq.
- *  And we need the kmap_atomic :-(
  *
  * FIXME
  *  Actually you need to serialize all resize operations.
@@ -80,28 +78,17 @@
  *  than have two resize operations interfere somewhen.
  */
 struct drbd_bitmap {
-	struct page **bm_pages;
+	unsigned long *bm;
 	spinlock_t bm_lock;
-	/* WARNING unsigned long bm_fo and friends:
-	 * 32bit number of bit offset is just enough for 512 MB bitmap.
-	 * it will blow up if we make the bitmap bigger...
-	 * not that it makes much sense to have a bitmap that large,
-	 * rather change the granularity to 16k or 64k or something.
-	 */
 	unsigned long bm_fo;        // next offset for drbd_bm_find_next
 	unsigned long bm_set;       // nr of set bits; THINK maybe atomic_t ?
 	unsigned long bm_bits;
 	size_t   bm_words;
-	size_t   bm_number_of_pages;
 	sector_t bm_dev_capacity;
 	struct semaphore bm_change; // serializes resize operations
 
-	atomic_t bm_async_io;
-	wait_queue_head_t bm_io_wait;
-
-	unsigned long  bm_flags;
-
 	// { REMOVE
+	unsigned long  bm_flags;     // currently debugging aid only
 	unsigned long  bm_line;
 	char          *bm_file;
 	// }
@@ -109,9 +96,7 @@ struct drbd_bitmap {
 
 // { REMOVE once we serialize all state changes properly
 #define D_BUG_ON(x)	ERR_IF(x) { dump_stack(); }
-#define BM_LOCKED      0
-#define BM_MD_IO_ERROR (BITS_PER_LONG-1) // 31? 63?
-
+#define BM_LOCKED 0
 #if 0 // simply disabled for now...
 #define MUST_NOT_BE_LOCKED() do {					\
 	if (test_bit(BM_LOCKED,&b->bm_flags)) {				\
@@ -173,6 +158,7 @@ void drbd_bm_unlock(drbd_dev *mdev)
 // has been very helpful to indicate that rs_total and rs_left have been
 // used in a non-smp safe way...
 #define BM_PARANOIA_CHECK() do {						\
+	D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);				\
 	D_ASSERT(b->bm_dev_capacity == drbd_get_capacity(mdev->this_bdev));	\
 	if ( (b->bm_set != mdev->rs_total) &&					\
 	     (b->bm_set != mdev->rs_left) ) {					\
@@ -185,6 +171,7 @@ void drbd_bm_unlock(drbd_dev *mdev)
 } while (0)
 #else
 #define BM_PARANOIA_CHECK() do {					\
+	D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);			\
 	if (b->bm_dev_capacity != drbd_get_capacity(mdev->this_bdev)) {	\
 		ERR("%s:%d: bm_dev_capacity:%llu drbd_get_capacity:%llu\n", \
 		__FILE__, __LINE__,					\
@@ -197,7 +184,6 @@ void drbd_bm_unlock(drbd_dev *mdev)
 
 #if DUMP_MD >= 3
 /* debugging aid */
-#error "FIXME"
 STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
@@ -216,51 +202,8 @@ STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 #define bm_end_info(ignored...)	((void)(0))
 #endif
 
-#if 0
-#define catch_oob_access_start() do {	\
-	do {				\
-		if ((bm-p_addr) >= PAGE_SIZE/sizeof(long)) { \
-			printk(KERN_ALERT "drbd_bitmap.c:%u %s: p_addr:%p bm:%p %d\n", \
-					__LINE__ , __func__ , p_addr, bm, (bm-p_addr)); \
-			break;		\
-		}
-#define catch_oob_access_end()	\
-	} while(0); } while (0)
-#else
-#define catch_oob_access_start() ((void)0)
-#define catch_oob_access_end() ((void)0)
-#endif
-
-/* word offset to long pointer */
-STATIC unsigned long * bm_map_paddr(struct drbd_bitmap* b, unsigned long offset)
-{
-	struct page * page;
-	unsigned long page_nr;
-
-	// page_nr = (word*sizeof(long)) >> PAGE_SHIFT;
-	page_nr = offset >> (PAGE_SHIFT - LN2_BPL + 3);
-	BUG_ON(page_nr >= b->bm_number_of_pages);
-	page = b->bm_pages[page_nr];
-
-	return (unsigned long*) kmap_atomic(page,KM_USER0);
-}
-
-STATIC void bm_unmap(unsigned long *p_addr) {
-	kunmap_atomic(p_addr, KM_USER0);
-};
-
 /* long word offset of _bitmap_ sector */
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
-/* word offset from start of bitmap to word number _in_page_
- * modulo longs per page
-#define MLPP(X) ((X) % (PAGE_SIZE/sizeof(long))
- hm, well, Philipp thinks gcc might not optimze the % into & (... - 1)
- so do it explicitly:
- */
-#define MLPP(X) ((X) & ((PAGE_SIZE/sizeof(long))-1))
-
-/* Long words per page */
-#define LWPP (PAGE_SIZE/sizeof(long))
 
 /*
  * actually most functions herein should take a struct drbd_bitmap*, not a
@@ -273,112 +216,6 @@ STATIC void bm_unmap(unsigned long *p_addr) {
  * this is ok [as long as we dont run on a 24 bit arch :)].
  * But it is NOT strictly ok.
  */
-
-STATIC void bm_free_pages(struct page ** pages, unsigned long number)
-{
-	unsigned long i;
-	if (!pages)
-		return;
-
-	for(i=0;i<number;i++) {
-		if (!pages[i]) {
-			printk(KERN_ALERT "drbd: bm_free_pages tried to free "
-					  "a NULL pointer; i=%lu n=%lu\n",
-					  i, number);
-			continue;
-		}
-		__free_page(pages[i]);
-		pages[i] = NULL;
-	}
-}
-
-/*
- * "have" and "want" are NUMBER OF PAGES.
- */
-STATIC struct page ** bm_realloc_pages(struct page ** old_pages,
-				       unsigned long have,
-				       unsigned long want)
-{
-	struct page** new_pages, *page;
-	unsigned int i, bytes;
-
-	BUG_ON(have == 0 && old_pages != NULL);
-	BUG_ON(have != 0 && old_pages == NULL);
-
-	if (have == want)
-		return old_pages;
-
-	/* don't even try if it is likely to be too much */
-	if (want > have) {
-		unsigned long nfree, nleft;
-		nfree = nr_free_pages();
-		nleft = nfree + get_page_cache_size()-total_swapcache_pages;
-
-		if (nleft <= (want-have)) {
-			printk(KERN_ALERT "drbd: bm_realloc_pages: OOM!\n");
-			return NULL;
-		}
-
-		nleft -= (want-have);
-
-		/* protect me agains the infamous oom killer.
-		 * FIXME sorry, now it does no longer work on embeded boxes with less than 16MB main ram :-)
-		 */
-		if ( nleft < (10 << (20 - PAGE_SHIFT)) ) {
-			printk(KERN_ALERT "drbd: bm_realloc_pages would have left less than 10MB ram free; OOM!\n");
-			printk(KERN_ALERT "drbd: free:%lu buf+cache:%lu want:%lu have:%lu left:%lu\n"
-			,	nfree
-			,	get_page_cache_size()-total_swapcache_pages
-			,	want, have, nleft
-			);
-			return NULL;
-		}
-	}
-
-	/* To use kmalloc here is ok, as long as we support 4TB at max...
-	 * otherwise this might become bigger than 128KB, which is
-	 * the maximum for kmalloc.
-	 *
-	 * no, it is not: on 64bit boxes, sizeof(void*) == 8,
-	 * 128MB bitmap @ 4K pages -> 256K of page pointers.
-	 * ==> use vmalloc for now again.
-	 * then again, we could do something like
-	 *   if (nr_pages > watermark) vmalloc else kmalloc :*> ...
-	 * or do cascading page arrays:
-	 *   one page for the page array of the page array,
-	 *   those pages for the real bitmap pages.
-	 *   there we could even add some optimization members,
-	 *   so we won't need to kmap_atomic in bm_find_next_bit just to see
-	 *   that the page has no bits set ...
-	 */
-	bytes = sizeof(struct page*)*want;
-	new_pages = vmalloc(bytes);
-	if(!new_pages) return NULL;
-
-	memset(new_pages,0,bytes);
-	if( want >= have ) {
-		for(i=0;i<have;i++) {
-			new_pages[i] = old_pages[i];
-		}
-		for(;i<want;i++) {
-			if ( !(page = alloc_page(GFP_HIGHUSER)) ) {
-				bm_free_pages(new_pages + have, i - have);
-				vfree(new_pages);
-				return NULL;
-			}
-			new_pages[i] = page;
-		}
-	} else {
-		for(i=0;i<want;i++) {
-			new_pages[i] = old_pages[i];
-		}
-		/* NOT HERE, we are outside the spinlock!
-		bm_free_pages(old_pages + want, have - want);
-		*/
-	}
-
-	return new_pages;
-}
 
 /*
  * called on driver init only. TODO call when a device is created.
@@ -394,7 +231,6 @@ int drbd_bm_init(drbd_dev *mdev)
 	memset(b,0,sizeof(*b));
 	spin_lock_init(&b->bm_lock);
 	init_MUTEX(&b->bm_change);
-	init_waitqueue_head(&b->bm_io_wait);
 	mdev->bitmap = b;
 	return 0;
 }
@@ -415,8 +251,7 @@ void drbd_bm_cleanup(drbd_dev *mdev)
 	 *
 	D_BUG_ON(mdev->bitmap->bm);
 	 */
-	bm_free_pages(mdev->bitmap->bm_pages,mdev->bitmap->bm_number_of_pages);
-	vfree(mdev->bitmap->bm_pages);
+	vfree(mdev->bitmap->bm);
 	kfree(mdev->bitmap);
 	mdev->bitmap = NULL;
 }
@@ -431,25 +266,17 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
 	int cleared=0;
-	unsigned long *p_addr, *bm;
 
-	p_addr = bm_map_paddr(b,w);
-	bm = p_addr + MLPP(w);
 	if ( w < b->bm_words ) {
-		catch_oob_access_start();
-		cleared = hweight_long(*bm & ~mask);
-		*bm &= mask;
-		catch_oob_access_end();
-		w++; bm++;
+		cleared = hweight_long(b->bm[w] & ~mask);
+		b->bm[w++] &= mask;
 	}
 
 	if ( w < b->bm_words ) {
-		catch_oob_access_start();
-		cleared += hweight_long(*bm);
-		*bm=0;
-		catch_oob_access_end();
+		cleared += hweight_long(b->bm[w]);
+		b->bm[w++]=0;
 	}
-	bm_unmap(p_addr);
+
 	return cleared;
 }
 
@@ -457,79 +284,30 @@ STATIC void bm_set_surplus(struct drbd_bitmap * b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
-	unsigned long *p_addr, *bm;
 
-	p_addr = bm_map_paddr(b,w);
-	bm = p_addr + MLPP(w);
 	if ( w < b->bm_words ) {
-		catch_oob_access_start();
-		*bm |= ~mask;
-		bm++; w++;
-		catch_oob_access_end();
+		b->bm[w++] |= ~mask;
 	}
 
 	if ( w < b->bm_words ) {
-		catch_oob_access_start();
-		*bm = ~(0UL);
-		catch_oob_access_end();
+		b->bm[w++] = ~(0UL);
 	}
-	bm_unmap(p_addr);
 }
 
-STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
+STATIC unsigned long bm_count_bits(struct drbd_bitmap * b)
 {
-	unsigned long *p_addr, *bm, offset = 0;
+	unsigned long *bm = b->bm;
+	unsigned long *ep = b->bm + b->bm_words;
 	unsigned long bits = 0;
-	unsigned long i,do_now;
 
-	while ( offset < b->bm_words ) {
-		i = do_now = min_t( size_t, b->bm_words-offset, LWPP );
-		p_addr = bm_map_paddr(b,offset);
-		bm = p_addr + MLPP(offset);
-		while(i--) {
-			catch_oob_access_start();
-			/* on little endian, this is *bm = *bm;
-			 * and should be optimized away by the compiler */
-			if (just_read) *bm = lel_to_cpu(*bm);
-			bits += hweight_long(*bm++);
-			catch_oob_access_end();
-		}
-		bm_unmap(p_addr);
-		offset += do_now;
+	while ( bm < ep ) {
+		bits += hweight_long(*bm++);
 	}
 
 	return bits;
 }
 
-/* offset and len in long words.*/
-STATIC void bm_memset(struct drbd_bitmap * b, size_t offset, int c, size_t len)
-{
-	unsigned long *p_addr, *bm;
-	size_t do_now, end;
-
-	end = offset+len;
-
-	if( end > b->bm_words ) {
-		printk(KERN_ALERT "drbd: bm_memset end > bm_words\n");
-		return;
-	}
-
-	while (offset < end) {
-		do_now = min_t(size_t,ALIGN(offset+1,LWPP),end) - offset;
-		p_addr = bm_map_paddr(b,offset);
-		bm = p_addr + MLPP(offset);
-		catch_oob_access_start();
-		if ( bm+do_now > p_addr + LWPP ) {
-			printk(KERN_ALERT "drbd: BUG BUG BUG! p_addr:%p bm:%p do_now:%d\n",
-					p_addr, bm, do_now);
-			break;
-		}
-		memset(bm,c,do_now*sizeof(long));
-		catch_oob_access_end();
-		bm_unmap(p_addr);
-		offset += do_now;
-	}
-}
+#define BM_SECTORS_PER_BIT (BM_BLOCK_SIZE/512)
 
 /*
  * make sure the bitmap has enough room for the attached storage,
@@ -542,9 +320,7 @@ STATIC void bm_memset(struct drbd_bitmap * b, size_t offset, int c, size_t len)
 int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long bits, words, owords, obits, *p_addr, *bm;
-	unsigned long want, have, onpages; // number of pages
-	struct page **npages, **opages = NULL;
+	unsigned long bits, bytes, words, *nbm, *obm = 0;
 	int err = 0, growing;
 
 	ERR_IF(!b) return -ENOMEM;
@@ -561,89 +337,79 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 
 	if (capacity == 0) {
 		spin_lock_irq(&b->bm_lock);
-		opages = b->bm_pages;
-		onpages = b->bm_number_of_pages;
-		owords = b->bm_words;
-		b->bm_pages = NULL;
-		b->bm_number_of_pages =
+		obm = b->bm;
+		b->bm = NULL;
 		b->bm_fo    =
 		b->bm_set   =
 		b->bm_bits  =
 		b->bm_words =
 		b->bm_dev_capacity = 0;
 		spin_unlock_irq(&b->bm_lock);
-		bm_free_pages(opages, onpages);
-		vfree(opages);
-		goto out;
-	}
-	bits  = BM_SECT_TO_BIT(ALIGN(capacity,BM_SECT_PER_BIT));
-
-	/* if we would use
-	   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
-	   a 32bit host could present the wrong number of words
-	   to a 64bit host.
-	*/
-	words = ALIGN(bits,64) >> LN2_BPL;
-
-	D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
-
-	/* one extra long to catch off by one errors */
-	want = ALIGN( (words+1)*sizeof(long) ,PAGE_SIZE) >> PAGE_SHIFT;
-	have = b->bm_number_of_pages;
-	if (want == have) {
-		D_ASSERT(b->bm_pages != NULL);
-		npages = b->bm_pages;
+		goto free_obm;
 	} else {
-		npages = bm_realloc_pages(b->bm_pages,have,want);
+		bits = BM_SECT_TO_BIT(ALIGN(capacity,BM_SECTORS_PER_BIT));
+		DUMPI(bits);
+
+		/* if we would use
+		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
+		   a 32bit host could present the wrong number of words
+		   to a 64bit host.
+		*/
+		words = ALIGN(bits,64) >> LN2_BPL;
+
+		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
+
+		if ( words == b->bm_words ) {
+			/* optimize: capacity has changed,
+			 * but only within one long word worth of bits.
+			 * just update the bm_dev_capacity and bm_bits members.
+			 */
+			spin_lock_irq(&b->bm_lock);
+			b->bm_bits    = bits;
+			b->bm_dev_capacity = capacity;
+			b->bm_set -= bm_clear_surplus(b);
+			bm_end_info(mdev, __FUNCTION__ );
+			spin_unlock_irq(&b->bm_lock);
+			goto out;
+		} else {
+		        /* one extra long to catch off by one errors */
+			bytes = (words+1)*sizeof(long);
+			nbm = vmalloc(bytes);
+			if (!nbm) {
+				ERR("bitmap: failed to vmalloc %lu bytes\n",bytes);
+				err = -ENOMEM;
+				goto out;
+			}
+		}
+		spin_lock_irq(&b->bm_lock);
+		obm = b->bm;
+		// brgs. move several MB within spinlock...
+		// FIXME this should go into userspace!
+		if (obm) {
+			bm_set_surplus(b);
+			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
+			memcpy(nbm,obm,min_t(size_t,b->bm_words,words)*sizeof(long));
+		}
+		growing = words > b->bm_words;
+		if (growing) { // set all newly allocated bits
+			// start at -1, just to be sure.
+			memset( nbm + (b->bm_words?:1)-1 , 0xff,
+				(words - ((b->bm_words?:1)-1)) * sizeof(long) );
+			b->bm_set  += bits - b->bm_bits;
+		}
+		nbm[words] = DRBD_MAGIC;
+		b->bm = nbm;
+		b->bm_bits  = bits;
+		b->bm_words = words;
+		b->bm_dev_capacity = capacity;
+		bm_clear_surplus(b);
+		if( !growing ) b->bm_set = bm_count_bits(b);
+		bm_end_info(mdev, __FUNCTION__ );
+		spin_unlock_irq(&b->bm_lock);
+		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
 	}
-
-	if (!npages) {
-		err = -ENOMEM;
-		goto out;
-	}
-
-	spin_lock_irq(&b->bm_lock);
-	opages = b->bm_pages;
-	owords = b->bm_words;
-	obits  = b->bm_bits;
-
-	growing = bits > obits;
-	if (opages) {
-		bm_set_surplus(b);
-	}
-
-	b->bm_pages = npages;
-	b->bm_number_of_pages = want;
-	b->bm_bits  = bits;
-	b->bm_words = words;
-	b->bm_dev_capacity = capacity;
-
-	if( growing ) {
-		bm_memset(b,owords,0xff,words-owords);
-		b->bm_set += bits - obits;
-	}
-
-	if ( want < have ) {
-		/* implicit: (opages != NULL) && (opages != npages) */
-		bm_free_pages(opages + want, have - want);
-	}
-
-	p_addr = bm_map_paddr(b,words);
-	bm = p_addr + MLPP(words);
-	catch_oob_access_start();
-	*bm = DRBD_MAGIC;
-	catch_oob_access_end();
-	bm_unmap(p_addr);
-
-	(void)bm_clear_surplus(b);
-	if( !growing )
-		b->bm_set = bm_count_bits(b, 0 /* not just read */ );
-
-	bm_end_info(mdev, __FUNCTION__ );
-	spin_unlock_irq(&b->bm_lock);
-	if (opages != npages) vfree(opages);
-	INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
-
+ free_obm:
+	vfree(obm); // vfree(NULL) is noop
  out:
 	up(&b->bm_change);
 	return err;
@@ -664,7 +430,6 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 	unsigned long flags;
 
 	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm_pages) return 0;
 	// MUST_BE_LOCKED(); well. yes. but ...
 
 	spin_lock_irqsave(&b->bm_lock,flags);
@@ -678,7 +443,6 @@ size_t drbd_bm_words(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm_pages) return 0;
 
 	/* FIXME
 	 * actually yes. really. otherwise it could just change its size ...
@@ -696,42 +460,34 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 			unsigned long* buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr, *bm;
+	unsigned long *bm;
 	unsigned long word, bits;
-	size_t end, do_now;
+	size_t n = number;
 
-	end = offset + number;
-
+	if (number == 0) return;
 	ERR_IF(!b) return;
-	ERR_IF(!b->bm_pages) return;
-	D_BUG_ON(offset >= b->bm_words);
-	D_BUG_ON(end    >  b->bm_words);
+	ERR_IF(!b->bm) return;
+	D_BUG_ON(offset        >= b->bm_words);
+	D_BUG_ON(offset+number >  b->bm_words);
+	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
 
 	MUST_BE_LOCKED();
 
 	spin_lock_irq(&b->bm_lock);
 	// BM_PARANOIA_CHECK(); no.
-	while(offset < end) {
-		do_now = min_t(size_t,ALIGN(offset+1,LWPP),end) - offset;
-		p_addr = bm_map_paddr(b,offset);
-		bm = p_addr + MLPP(offset);
-		offset += do_now;
-		while(do_now--) {
-			catch_oob_access_start();
-			bits = hweight_long(*bm);
-			word = *bm | lel_to_cpu(*buffer++);
-			*bm++ = word;
-			b->bm_set += hweight_long(word) - bits;
-			catch_oob_access_end();
-		}
-		bm_unmap(p_addr);
+	bm = b->bm + offset;
+	while(n--) {
+		bits = hweight_long(*bm);
+		word = *bm | lel_to_cpu(*buffer++);
+		*bm++ = word;
+		b->bm_set += hweight_long(word) - bits;
 	}
 	/* with 32bit <-> 64bit cross-platform connect
 	 * this is only correct for current usage,
 	 * where we _know_ that we are 64 bit aligned,
 	 * and know that this function is used in this way, too...
 	 */
-	if (end == b->bm_words) {
+	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
 		bm_end_info(mdev, __FUNCTION__ );
 	}
@@ -745,42 +501,34 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 		      unsigned long* buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr, *bm;
+	unsigned long *bm;
 	unsigned long word, bits;
-	size_t end, do_now;
+	size_t n = number;
 
-	end = offset + number;
-
+	if (number == 0) return;
 	ERR_IF(!b) return;
-	ERR_IF(!b->bm_pages) return;
-	D_BUG_ON(offset >= b->bm_words);
-	D_BUG_ON(end    >  b->bm_words);
+	ERR_IF(!b->bm) return;
+	D_BUG_ON(offset        >= b->bm_words);
+	D_BUG_ON(offset+number >  b->bm_words);
+	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
 
 	MUST_BE_LOCKED();
 
 	spin_lock_irq(&b->bm_lock);
 	// BM_PARANOIA_CHECK(); no.
-	while(offset < end) {
-		do_now = min_t(size_t,ALIGN(offset+1,LWPP),end) - offset;
-		p_addr = bm_map_paddr(b,offset);
-		bm = p_addr + MLPP(offset);
-		offset += do_now;
-		while(do_now--) {
-			catch_oob_access_start();
-			bits = hweight_long(*bm);
-			word = lel_to_cpu(*buffer++);
-			*bm++ = word;
-			b->bm_set += hweight_long(word) - bits;
-			catch_oob_access_end();
-		}
-		bm_unmap(p_addr);
+	bm = b->bm + offset;
+	while(n--) {
+		bits = hweight_long(*bm);
+		word = lel_to_cpu(*buffer++);
+		*bm++ = word;
+		b->bm_set += hweight_long(word) - bits;
 	}
 	/* with 32bit <-> 64bit cross-platform connect
 	 * this is only correct for current usage,
 	 * where we _know_ that we are 64 bit aligned,
 	 * and know that this function is used in this way, too...
 	 */
-	if (end == b->bm_words) {
+	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
 		bm_end_info(mdev, __FUNCTION__ );
 	}
@@ -794,16 +542,14 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 		      unsigned long* buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr, *bm;
-	size_t end, do_now;
+	unsigned long *bm;
 
-	end = offset + number;
-
+	if (number == 0) return;
 	ERR_IF(!b) return;
-	ERR_IF(!b->bm_pages) return;
-
-	if ( (offset >= b->bm_words) ||
-	     (end    >  b->bm_words) ||
+	ERR_IF(!b->bm) return;
+	if ( (offset        >= b->bm_words) ||
+	     (offset+number >  b->bm_words) ||
+	     (number > PAGE_SIZE/sizeof(long)) ||
 	     (number <= 0) ) {
 		// yes, there is "%z", but that gives compiler warnings...
 		ERR("offset=%lu number=%lu bm_words=%lu\n",
@@ -817,18 +563,8 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	while(offset < end) {
-		do_now = min_t(size_t,ALIGN(offset+1,LWPP),end) - offset;
-		p_addr = bm_map_paddr(b,offset);
-		bm = p_addr + MLPP(offset);
-		offset += do_now;
-		while(do_now--) {
-			catch_oob_access_start();
-			*buffer++ = cpu_to_lel(*bm++);
-			catch_oob_access_end();
-		}
-		bm_unmap(p_addr);
-	}
+	bm = b->bm + offset;
+	while(number--) *buffer++ = cpu_to_lel(*bm++);
 	spin_unlock_irq(&b->bm_lock);
 }
 
@@ -837,60 +573,20 @@ void drbd_bm_set_all(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	ERR_IF(!b) return;
-	ERR_IF(!b->bm_pages) return;
+	ERR_IF(!b->bm) return;
+
+	D_BUG_ON(!b);
+	if (b->bm_bits == 0) return;
+	D_BUG_ON(!b->bm);
 
 	MUST_BE_LOCKED();
 
 	spin_lock_irq(&b->bm_lock);
-	bm_memset(b,0,0xff,b->bm_words);
-	(void)bm_clear_surplus(b);
+	BM_PARANOIA_CHECK();
+	memset(b->bm,0xff,b->bm_words*sizeof(long));
+	bm_clear_surplus(b);
 	b->bm_set = b->bm_bits;
 	spin_unlock_irq(&b->bm_lock);
-}
-
-int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int error)
-{
-	struct drbd_bitmap *b = bio->bi_private;
-
-	if (bio->bi_size)
-		return 1;
-
-	if (error) {
-		/* doh. what now?
-		 * for now, set all bits, and flag MD_IO_ERROR
-		 */
-		/* FIXME kmap_atomic memset etc. pp. */
-		__set_bit(BM_MD_IO_ERROR,&b->bm_flags);
-	}
-	if (atomic_dec_and_test(&b->bm_async_io))
-		wake_up(&b->bm_io_wait);
-
-	bio_put(bio);
-
-	return 0;
-}
-
-STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
-{
-	/* we are process context. we always get a bio */
-	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
-	unsigned int len;
-	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
-	on_disk_sector += ((sector_t)page_nr) << (PAGE_SHIFT-9);
-
-	/* this might happen with very small flexible external meta data device */
-	len = min_t(unsigned int, PAGE_SIZE,
-		(drbd_md_last_sector(mdev->bc) - on_disk_sector + 1)<<9);
-
-	D_DUMPLU(on_disk_sector);
-	D_DUMPI(len);
-
-	bio->bi_bdev = mdev->bc->md_bdev;
-	bio->bi_sector = on_disk_sector;
-	bio_add_page(bio, b->bm_pages[page_nr], len, 0);
-	bio->bi_private = b;
-	bio->bi_end_io = drbd_bm_async_io_complete;
-	submit_bio(rw, bio);
 }
 
 /* read one sector of the on disk bitmap into memory.
@@ -900,13 +596,11 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
  */
 int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 {
-	/* addition of sector_t/u64/s32... works anyways */
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
 
 	// MUST_BE_LOCKED(); not neccessarily global ...
 
-	D_DUMPLU(on_disk_sector);
 	down(&mdev->md_io_mutex);
 	if(drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,READ)) {
 		bm_words  = drbd_bm_words(mdev);
@@ -935,50 +629,12 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 
 /**
  * drbd_bm_read: Read the whole bitmap from its on disk location.
- *
- * currently only called from "drbd_ioctl_set_disk"
- * FIXME need to be able to return an error!!
- *
  */
-# if defined(__LITTLE_ENDIAN)
-	/* nothing to do, on disk == in memory */
-# define bm_cpu_to_lel(x) ((void)0)
-# else
-void bm_cpu_to_lel(struct drbd_bitmap *b)
-{
-	/* need to cpu_to_lel all the pages ...
-	 * this may be optimized by using
-	 * cpu_to_lel(-1) == -1 and cpu_to_lel(0) == 0;
-	 * the following is still not optimal, but better than nothing */
-	if (b->bm_set == 0) {
-		/* no page at all; avoid swap if all is 0 */
-		i = b->bm_number_of_pages;
-	} else if (b->bm_set == b->bm_bits) {
-		/* only the last page */
-		i = b->bm_number_of_pages -1;
-	} else {
-		/* all pages */
-		i = 0;
-	}
-	for (; i < b->bm_number_of_pages; i++) {
-		unsigned long *bm;
-		p_addr = kmap_atomic(b->bm_pages[i],KM_USER0)
-		for (bm = p_addr; bm < p_addr+PAGE_SIZE/sizeof(long); bm++) {
-			*bm = cpu_to_lel(*bm);
-		}
-		kunmap_atomic(p_addr);
-	}
-}
-# endif
-/* lel_to_cpu == cpu_to_lel */
-# define bm_lel_to_cpu(x) bm_cpu_to_lel(x)
-
-STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
+void drbd_bm_read(struct Drbd_Conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	/* sector_t sector; */
-	int bm_words, num_sectors, i;
-	unsigned long now;
+	sector_t sector;
+	int bm_words, num_sectors;
 	char ppb[10];
 
 	MUST_BE_LOCKED();
@@ -986,60 +642,13 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	bm_words    = drbd_bm_words(mdev);
 	num_sectors = (bm_words*sizeof(long) + 511) >> 9;
 
-	/* OK, I manipulate the bitmap low level,
-	 * and I expect to be the exclusive user.
-	 * If not, I am really in a bad mood...
-	 * to catch such bugs early, make all people who want to access the
-	 * bitmap while I read it dereference a NULL pointer :->
-	 */
-	mdev->bitmap = NULL;
-
-	if(rw == WRITE)	bm_cpu_to_lel(b);
-
-	now = jiffies;
-	atomic_set(&b->bm_async_io, b->bm_number_of_pages);
-	for (i = 0; i < b->bm_number_of_pages; i++) {
-		/* let the layers below us try to merge these bios... */
-		drbd_bm_page_io_async(mdev,b,i,rw);
+	for (sector = 0; sector < num_sectors; sector++) {
+		// FIXME do something on io error here?
+		drbd_bm_read_sect(mdev,sector);
 	}
-
-	blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
-	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
-	INFO("%s of bitmap took %lu jiffies\n",
-	     rw == READ ? "reading" : "writing", jiffies - now);
-
-	if (test_bit(BM_MD_IO_ERROR,&b->bm_flags)) {
-		/* FIXME correct handling of this.
-		 * detach?
-		 */
-		ALERT("we had at least one MD IO ERROR during bitmap IO\n");
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
-	}
-
-	now = jiffies;
-	/* just read, if neccessary adjust endianness */
-	if(rw == WRITE) {
-		bm_lel_to_cpu(b);
-	} else /* rw == READ */ {
-		b->bm_set = bm_count_bits(b, 1);
-		INFO("recounting of set bits took additional %lu jiffies\n", 
-		     jiffies - now);
-	}
-
-	/* ok, done,
-	 * now it is visible again
-	 */
-
-	mdev->bitmap = b;
 
 	INFO("%s marked out-of-sync by on disk bit-map.\n",
 	     ppsize(ppb,drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
-}
-
-void drbd_bm_read(struct Drbd_Conf *mdev)
-{
-	drbd_bm_rw(mdev, READ);
 }
 
 /**
@@ -1069,7 +678,6 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 	}
 	drbd_bm_get_lel( mdev, offset, num_words,
 			 page_address(mdev->md_io_page) );
-	D_DUMPLU(on_disk_sector);
 	if (!drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,WRITE)) {
 		int i;
 		err = -EIO;
@@ -1088,27 +696,25 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 
 /**
  * drbd_bm_write: Write the whole bitmap to its on disk location.
- *
- * called at various occasions:
- *
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
-int drbd_ioctl_set_disk(struct Drbd_Conf *mdev,
-			struct ioctl_disk_config * arg)
-	case DRBD_IOCTL_INVALIDATE:
-	case DRBD_IOCTL_INVALIDATE_REM:
-	case DRBD_IOCTL_SET_DISK_SIZE:
-int _drbd_send_bitmap(drbd_dev *mdev)
-STATIC int drbd_sync_handshake(drbd_dev *mdev, Drbd_Parameter_Packet *p)
-STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
-STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
-STATIC int receive_param(drbd_dev *mdev, Drbd_Header *h)
- *
- * FIXME need to be able to return an error!!
  */
-
 void drbd_bm_write(struct Drbd_Conf *mdev)
 {
-	drbd_bm_rw(mdev, WRITE);
+	struct drbd_bitmap *b = mdev->bitmap;
+	sector_t sector;
+	int bm_words, num_sectors;
+
+	MUST_BE_LOCKED();
+
+	bm_words    = drbd_bm_words(mdev);
+	num_sectors = (bm_words*sizeof(long) + 511) >> 9;
+
+	for (sector = 0; sector < num_sectors; sector++) {
+		// FIXME do something on io error here?
+		drbd_bm_write_sect(mdev,sector);
+	}
+
+	INFO("%lu KB now marked out-of-sync by on disk bit-map.\n",
+	      drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10) );
 }
 
 /* clear all bits in the bitmap */
@@ -1117,12 +723,13 @@ void drbd_bm_clear_all(drbd_dev *mdev)
 	struct drbd_bitmap *b = mdev->bitmap;
 
 	ERR_IF(!b) return;
-	ERR_IF(!b->bm_pages) return;
+	ERR_IF(!b->bm) return;
 
-	MUST_BE_LOCKED();
+	MUST_BE_LOCKED();						\
 
 	spin_lock_irq(&b->bm_lock);
-	bm_memset(b,0,0x00,b->bm_words);
+	BM_PARANOIA_CHECK();
+	memset(b->bm,0,b->bm_words*sizeof(long));
 	b->bm_set = 0;
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -1145,44 +752,29 @@ void drbd_bm_reset_find(drbd_dev *mdev)
 /* NOTE
  * find_first_bit returns int, we return unsigned long.
  * should not make much difference anyways, but ...
- *
  * this returns a bit number, NOT a sector!
  */
-#define BPP_MASK ((1UL << (PAGE_SHIFT+3) ) - 1)
 unsigned long drbd_bm_find_next(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long i = -1UL;
-	unsigned long *p_addr;
-	unsigned long bit_offset; //bit offset of the mapped page.
 
 	ERR_IF(!b) return i;
-	ERR_IF(!b->bm_pages) return i;
+	ERR_IF(!b->bm) return i;
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	if (b->bm_fo > b->bm_bits) {
+	if (b->bm_fo < b->bm_bits) {
+		i = find_next_bit(b->bm,b->bm_bits,b->bm_fo);
+	} else if (b->bm_fo > b->bm_bits) {
 		ERR("bm_fo=%lu bm_bits=%lu\n",b->bm_fo, b->bm_bits);
-	} else {
-		while (b->bm_fo < b->bm_bits) {
-			unsigned long offset;
-			bit_offset = b->bm_fo & ~BPP_MASK; // bit offset of the page
-			offset = bit_offset >> LN2_BPL;    // word offset of the page
-			p_addr = bm_map_paddr(b,offset);
-			i = find_next_bit(p_addr,PAGE_SIZE*8,b->bm_fo&BPP_MASK);
-			bm_unmap(p_addr);
-			if (i < PAGE_SIZE*8) {
-				i = bit_offset + i;
-				if( i >= b->bm_bits ) break;
-				b->bm_fo = i+1;
-				goto found;
-			}
-			b->bm_fo = bit_offset + PAGE_SIZE*8;
-		}
+	}
+	if (i >= b->bm_bits) {
 		i = -1UL;
 		b->bm_fo = 0;
+	} else {
+		b->bm_fo = i+1;
 	}
- found:
 	spin_unlock_irq(&b->bm_lock);
 	return i;
 }
@@ -1203,6 +795,7 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 	spin_unlock_irq(&b->bm_lock);
 }
 
+
 int drbd_bm_rs_done(drbd_dev *mdev)
 {
 	return mdev->bitmap->bm_fo == 0;
@@ -1216,11 +809,9 @@ int drbd_bm_rs_done(drbd_dev *mdev)
 int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr;
 	int i;
-
 	ERR_IF(!b) return 1;
-	ERR_IF(!b->bm_pages) return 1;
+	ERR_IF(!b->bm) return 1;
 
 /*
  * only called from drbd_set_out_of_sync.
@@ -1240,10 +831,7 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
 		i = 0;
 	} else {
-		unsigned long offset = bitnr>>LN2_BPL;
-		p_addr = bm_map_paddr(b,offset);
-		i = (0 != __test_and_set_bit(bitnr & BPP_MASK, p_addr));
-		bm_unmap(p_addr);
+		i = (0 != __test_and_set_bit(bitnr, b->bm));
 		b->bm_set += !i;
 	}
 	spin_unlock_irq(&b->bm_lock);
@@ -1256,12 +844,10 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr;
 	unsigned long flags;
 	int i;
-
 	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm_pages) return 0;
+	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irqsave(&b->bm_lock,flags);
 	BM_PARANOIA_CHECK();
@@ -1270,10 +856,7 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
 		i = 0;
 	} else {
-		unsigned long offset = bitnr>>LN2_BPL;
-		p_addr = bm_map_paddr(b,offset);
-		i = (0 != __test_and_clear_bit(bitnr & BPP_MASK, p_addr));
-		bm_unmap(p_addr);
+		i = (0 != __test_and_clear_bit(bitnr, b->bm));
 		b->bm_set -= i;
 	}
 	spin_unlock_irqrestore(&b->bm_lock,flags);
@@ -1299,19 +882,14 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr;
 	int i;
-
 	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm_pages) return 0;
+	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	if (bitnr < b->bm_bits) {
-		unsigned long offset = bitnr>>LN2_BPL;
-		p_addr = bm_map_paddr(b,offset);
-		i = test_bit(bitnr & BPP_MASK, p_addr);
-		bm_unmap(p_addr);
+		i = test_bit(bitnr, b->bm) ? 1 : 0;
 	} else if (bitnr == b->bm_bits) {
 		i = -1;
 	} else /* (bitnr > b->bm_bits) */ {
@@ -1342,11 +920,9 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 	struct drbd_bitmap *b = mdev->bitmap;
 	int count, s, e;
 	unsigned long flags;
-	unsigned long *p_addr, *bm;
 
 	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm_pages) return 0;
-
+	ERR_IF(!b->bm) return 0;
 	spin_lock_irqsave(&b->bm_lock,flags);
 	BM_PARANOIA_CHECK();
 
@@ -1354,15 +930,9 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 	e = min((size_t)S2W(enr+1),b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
+		const unsigned long* w = b->bm+s;
 		int n = e-s;
-		p_addr = bm_map_paddr(b,s);
-		bm = p_addr + MLPP(s);
-		while (n--) {
-			catch_oob_access_start();
-			count += hweight_long(*bm++);
-			catch_oob_access_end();
-		}
-		bm_unmap(p_addr);
+		while (n--) count += hweight_long(*w++);
 	} else {
 		ERR("start offset (%d) too large in drbd_bm_e_weight\n", s);
 	}
@@ -1377,11 +947,10 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *p_addr, *bm;
 	unsigned long weight;
-	int count, s, e, i, do_now;
+	int count, s, e;
 	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm_pages) return 0;
+	ERR_IF(!b->bm) return 0;
 
 	MUST_BE_LOCKED();
 
@@ -1391,23 +960,14 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 
 	s = al_enr * BM_WORDS_PER_AL_EXT;
 	e = min_t(size_t, s + BM_WORDS_PER_AL_EXT, b->bm_words);
-	/* assert that s and e are on the same page */
-	D_ASSERT(  (e-1) >> (PAGE_SHIFT - LN2_BPL + 3)
-		==  s    >> (PAGE_SHIFT - LN2_BPL + 3) );
 	count = 0;
 	if (s < b->bm_words) {
-		i = do_now = e-s;
-		p_addr = bm_map_paddr(b,s);
-		bm = p_addr + MLPP(s);
-		while (i--) {
-			catch_oob_access_start();
-			count += hweight_long(*bm);
-			*bm = -1UL;
-			catch_oob_access_end();
-			bm++;
-		}
-		bm_unmap(p_addr);
-		b->bm_set += do_now*BITS_PER_LONG - count;
+		const unsigned long* w = b->bm+s;
+		int n = e-s;
+		while (n--) count += hweight_long(*w++);
+		n = e-s;
+		memset(b->bm+s,-1,n*sizeof(long));
+		b->bm_set += n*BITS_PER_LONG - count;
 		if (e == b->bm_words) {
 			b->bm_set -= bm_clear_surplus(b);
 		}
