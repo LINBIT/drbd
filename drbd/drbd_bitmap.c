@@ -80,6 +80,12 @@
 struct drbd_bitmap {
 	unsigned long *bm;
 	spinlock_t bm_lock;
+	/* WARNING unsigned long bm_fo and friends:
+	 * 32bit number of bit offset is just enough for 512 MB bitmap.
+	 * it will blow up if we make the bitmap bigger...
+	 * not that it makes much sense to have a bitmap that large,
+	 * rather change the granularity to 16k or 64k or something.
+	 */
 	unsigned long bm_fo;        // next offset for drbd_bm_find_next
 	unsigned long bm_set;       // nr of set bits; THINK maybe atomic_t ?
 	unsigned long bm_bits;
@@ -87,8 +93,12 @@ struct drbd_bitmap {
 	sector_t bm_dev_capacity;
 	struct semaphore bm_change; // serializes resize operations
 
+	atomic_t bm_async_io;
+	wait_queue_head_t bm_io_wait;
+
+	unsigned long  bm_flags;
+
 	// { REMOVE
-	unsigned long  bm_flags;     // currently debugging aid only
 	unsigned long  bm_line;
 	char          *bm_file;
 	// }
@@ -97,6 +107,8 @@ struct drbd_bitmap {
 // { REMOVE once we serialize all state changes properly
 #define D_BUG_ON(x)	ERR_IF(x) { dump_stack(); }
 #define BM_LOCKED 0
+#define BM_MD_IO_ERROR (BITS_PER_LONG-1) // 31? 63?
+
 #if 0 // simply disabled for now...
 #define MUST_NOT_BE_LOCKED() do {					\
 	if (test_bit(BM_LOCKED,&b->bm_flags)) {				\
@@ -294,13 +306,16 @@ STATIC void bm_set_surplus(struct drbd_bitmap * b)
 	}
 }
 
-STATIC unsigned long bm_count_bits(struct drbd_bitmap * b)
+STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
 {
 	unsigned long *bm = b->bm;
 	unsigned long *ep = b->bm + b->bm_words;
 	unsigned long bits = 0;
 
 	while ( bm < ep ) {
+		/* on little endian, this is *bm = *bm;
+		 * and should be optimized away by the compiler */
+		if (just_read) *bm = lel_to_cpu(*bm);
 		bits += hweight_long(*bm++);
 	}
 
@@ -403,7 +418,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
-		if( !growing ) b->bm_set = bm_count_bits(b);
+		if( !growing ) b->bm_set = bm_count_bits(b,0);
 		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
@@ -589,6 +604,52 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
+int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int error)
+{
+	struct drbd_bitmap *b = bio->bi_private;
+
+	if (bio->bi_size)
+		return 1;
+
+	if (error) {
+		/* doh. what now?
+		 * for now, set all bits, and flag MD_IO_ERROR
+		 */
+		/* FIXME kmap_atomic memset etc. pp. */
+		__set_bit(BM_MD_IO_ERROR,&b->bm_flags);
+	}
+	if (atomic_dec_and_test(&b->bm_async_io))
+		wake_up(&b->bm_io_wait);
+
+	bio_put(bio);
+
+	return 0;
+}
+
+STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
+{
+	/* we are process context. we always get a bio */
+	/* THINK: do we need GFP_NOIO here? */
+	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
+	struct page *page = virt_to_page((char*)(b->bm) + (PAGE_SIZE*page_nr));
+	unsigned int len;
+	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
+	on_disk_sector += ((sector_t)page_nr) << (PAGE_SHIFT-9);
+
+	/* this might happen with very small flexible external meta data device */
+	len = min_t(unsigned int, PAGE_SIZE,
+		(drbd_md_last_sector(mdev->bc) - on_disk_sector + 1)<<9);
+
+	D_DUMPLU(on_disk_sector);
+	D_DUMPI(len);
+
+	bio->bi_bdev = mdev->bc->md_bdev;
+	bio->bi_sector = on_disk_sector;
+	bio_add_page(bio, page, len, 0);
+	bio->bi_private = b;
+	bio->bi_end_io = drbd_bm_async_io_complete;
+	submit_bio(rw, bio);
+}
 /* read one sector of the on disk bitmap into memory.
  * on disk bitmap is little endian.
  * @enr is _sector_ offset from start of on disk bitmap (aka bm-extent nr).
@@ -629,26 +690,108 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 
 /**
  * drbd_bm_read: Read the whole bitmap from its on disk location.
+ *
+ * currently only called from "drbd_ioctl_set_disk"
+ * FIXME need to be able to return an error!!
+ *
  */
-void drbd_bm_read(struct Drbd_Conf *mdev)
+# if defined(__LITTLE_ENDIAN)
+	/* nothing to do, on disk == in memory */
+# define bm_cpu_to_lel(x) ((void)0)
+# else
+void bm_cpu_to_lel(struct drbd_bitmap *b)
+{
+	/* need to cpu_to_lel all the pages ...
+	 * this may be optimized by using
+	 * cpu_to_lel(-1) == -1 and cpu_to_lel(0) == 0;
+	 * the following is still not optimal, but better than nothing */
+	const unsigned long *end = b->bm+b->bm_words;
+	unsigned long *bm;
+	if (b->bm_set == 0) {
+		/* no page at all; avoid swap if all is 0 */
+		return;
+	} else if (b->bm_set == b->bm_bits) {
+		/* only the last words */
+		bm = end-2;
+	} else {
+		/* all pages */
+		bm = b->bm;
+	}
+	for (; bm < end; bm++) {
+		*bm = cpu_to_lel(*bm);
+	}
+}
+# endif
+/* lel_to_cpu == cpu_to_lel */
+# define bm_lel_to_cpu(x) bm_cpu_to_lel(x)
+
+STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	sector_t sector;
-	int bm_words, num_sectors;
+	/* sector_t sector; */
+	int bm_words, num_pages, i;
+	unsigned long now;
 	char ppb[10];
 
 	MUST_BE_LOCKED();
 
 	bm_words    = drbd_bm_words(mdev);
-	num_sectors = (bm_words*sizeof(long) + 511) >> 9;
+	num_pages = (bm_words*sizeof(long) + PAGE_SIZE-1) >> PAGE_SHIFT;
 
-	for (sector = 0; sector < num_sectors; sector++) {
-		// FIXME do something on io error here?
-		drbd_bm_read_sect(mdev,sector);
+	/* OK, I manipulate the bitmap low level,
+	 * and I expect to be the exclusive user.
+	 * If not, I am really in a bad mood...
+	 * to catch such bugs early, make all people who want to access the
+	 * bitmap while I read/write it dereference a NULL pointer :->
+	 */
+	mdev->bitmap = NULL;
+
+	if(rw == WRITE)	bm_cpu_to_lel(b);
+
+	now = jiffies;
+	atomic_set(&b->bm_async_io, num_pages);
+	for (i = 0; i < num_pages; i++) {
+		/* let the layers below us try to merge these bios... */
+		drbd_bm_page_io_async(mdev,b,i,rw);
 	}
+
+	blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
+	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
+	INFO("%s of bitmap took %lu jiffies\n", 
+	     rw == READ ? "reading" : "writing", jiffies - now);
+
+	if (test_bit(BM_MD_IO_ERROR,&b->bm_flags)) {
+		/* FIXME correct handling of this.
+		 * detach?
+		 */
+		ALERT("we had at least one MD IO ERROR during bitmap IO\n");
+		drbd_chk_io_error(mdev, 1);
+		drbd_io_error(mdev);
+	}
+
+	now = jiffies;
+	if(rw == WRITE) {
+		bm_lel_to_cpu(b);
+	} else /* rw == READ */ {
+		/* just read, if neccessary adjust endianness */
+		b->bm_set = bm_count_bits(b, 1);
+		INFO("recounting of set bits took additional %lu jiffies\n", 
+		     jiffies - now);
+	}
+
+	/* ok, done,
+	 * now it is visible again
+	 */
+
+	mdev->bitmap = b;
 
 	INFO("%s marked out-of-sync by on disk bit-map.\n",
 	     ppsize(ppb,drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
+}
+
+void drbd_bm_read(struct Drbd_Conf *mdev)
+{
+	drbd_bm_rw(mdev, READ);
 }
 
 /**
