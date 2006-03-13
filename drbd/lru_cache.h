@@ -74,6 +74,7 @@ struct lru_cache {
 
 	/* here may or may not be a pad... */
 
+	unsigned int used;
 	unsigned long flags;
 	unsigned long hits, misses, starving, dirty, changed;
 	struct lc_element *changing_element; // just for paranoia

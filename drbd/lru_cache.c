@@ -94,9 +94,9 @@ size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
 	 * misses include "dirty" count (update from an other thread in progress)
 	 * and "changed", when this in fact lead to an successful update of the cache.
 	 */
-	return seq_printf(seq,"\t%s: elements:%u "
+	return seq_printf(seq,"\t%s: used:%u/%u "
 		"hits:%lu misses:%lu starving:%lu dirty:%lu changed:%lu\n",
-		lc->name, lc->nr_elements,
+		lc->name, lc->used, lc->nr_elements,
 		lc->hits, lc->misses, lc->starving, lc->dirty, lc->changed);
 }
 
@@ -223,7 +223,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++lc->hits;
-		++e->refcnt;
+		if( e->refcnt++ == 0) lc->used++;
 		list_move(&e->list,&lc->in_use); // Not evictable...
 		RETURN(e);
 	}
@@ -252,6 +252,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 
 	clear_bit(__LC_STARVING,&lc->flags);
 	BUG_ON(++e->refcnt != 1);
+	lc->used++;
 
 	lc->changing_element = e;
 	lc->new_number = enr;
@@ -285,6 +286,7 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	BUG_ON(e->refcnt == 0);
 	if ( --e->refcnt == 0) {
 		list_move(&e->list,&lc->lru); // move it to the front of LRU.
+		lc->used--;
 		clear_bit(__LC_STARVING,&lc->flags);
 		smp_mb__after_clear_bit();
 	}

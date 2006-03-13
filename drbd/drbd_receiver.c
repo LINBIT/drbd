@@ -1574,6 +1574,16 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	return rv;
 }
 
+STATIC void drbd_uuid_dump(drbd_dev *mdev,char* text,u64* uuid)
+{
+	WARN("%s %016llX:%016llX:%016llX:%016llX\n",
+	     text,
+	     uuid[Current],
+	     uuid[Bitmap],
+	     uuid[History_start],
+	     uuid[History_end]);
+}
+
 /*
   100   after split brain try auto recover
     2   SyncSource set BitMap
@@ -1584,7 +1594,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
  -100   after split brain, disconnect
 -1000   unrelated data
  */
-static int drbd_uuid_compare(drbd_dev *mdev)
+STATIC int drbd_uuid_compare(drbd_dev *mdev)
 {
 	u64 self, peer;
 	int i,j;
@@ -1645,7 +1655,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 	int hg;
 	drbd_conns_t rv = conn_mask;
 
+
+	//drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
+	//drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
+
 	hg = drbd_uuid_compare(mdev);
+
+	//WARN("uuid_compare()=%d\n",hg);
 
 	if (hg == 100) {
 		if ( mdev->state.role==Secondary && peer_role==Secondary ) {
@@ -2430,6 +2446,11 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
 		}
+	}
+
+	if ( mdev->p_uuid ) {
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = NULL;
 	}
 
 	drbd_md_sync(mdev);
