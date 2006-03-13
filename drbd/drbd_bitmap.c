@@ -243,7 +243,10 @@ int drbd_bm_init(drbd_dev *mdev)
 	memset(b,0,sizeof(*b));
 	spin_lock_init(&b->bm_lock);
 	init_MUTEX(&b->bm_change);
+	init_waitqueue_head(&b->bm_io_wait);
+
 	mdev->bitmap = b;
+	
 	return 0;
 }
 
@@ -791,7 +794,11 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 void drbd_bm_read(struct Drbd_Conf *mdev)
 {
+	struct drbd_bitmap *b = mdev->bitmap;
+
 	drbd_bm_rw(mdev, READ);
+
+	b->bm[b->bm_words] = DRBD_MAGIC;
 }
 
 /**
@@ -842,19 +849,7 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
  */
 void drbd_bm_write(struct Drbd_Conf *mdev)
 {
-	struct drbd_bitmap *b = mdev->bitmap;
-	sector_t sector;
-	int bm_words, num_sectors;
-
-	MUST_BE_LOCKED();
-
-	bm_words    = drbd_bm_words(mdev);
-	num_sectors = (bm_words*sizeof(long) + 511) >> 9;
-
-	for (sector = 0; sector < num_sectors; sector++) {
-		// FIXME do something on io error here?
-		drbd_bm_write_sect(mdev,sector);
-	}
+	drbd_bm_rw(mdev, WRITE);
 
 	INFO("%lu KB now marked out-of-sync by on disk bit-map.\n",
 	      drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10) );
