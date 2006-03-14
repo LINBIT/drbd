@@ -53,7 +53,7 @@
 #include "drbd_int.h"
 
 #if defined(__arch_um__) && !defined(HAVE_UML_TO_VIRT)
-void *to_virt(unsigned long phys)
+static inline void *to_virt(unsigned long phys)
 {
 	return((void *) uml_physmem + phys);
 }
