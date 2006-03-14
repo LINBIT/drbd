@@ -4,7 +4,7 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
-8.0-pre1 (api:80/proto:80)
+8.0_pre1 (api:80/proto:80)
 --------
  * Removed support for Linux-2.4.x
  * Cleanup of the wire protocol.
