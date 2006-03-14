@@ -4,15 +4,36 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
-0.8_pre1
+8.0-pre1 (api:80/proto:80)
 --------
- * remove all kernel 2.4.x compatibility crap
-
- FIXME mention all those things we did so far
-
-
-0.7 branch
-----------
+ * Removed support for Linux-2.4.x
+ * Cleanup of the wire protocol.
+ * Added optional peer authentication with a shared secret.
+ * Consolidated state changes into a central function.
+ * Improved, tunable after-split-braine recovery strategies.
+ * Always verify all IDs used in the protocol that are used as pointers.
+ * Introduced the "outdate" disk state, and commands for managing it.
+ * Introduced the "drbdmeta" command, and require the user to create 
+   meta-data explicitly.
+ * Support for primary/primary (for OCFS2, GFS...) 
+ * Replaced the sync-groups with the sync-after mechanism.
+ * The "common" section in the configuration file.
+ * Replaced the generation counters (GCs) with data-generation-UUIDs
+ * Imporved performance by using Linux-2.6's BIOs with up to 32k per
+   IO request. Before we transfered only up to 4k per IO request.
+ * A Warning if the disk sizes are more than 10% different.
+ * A connection teardown packet to differentiate between a crash
+   of the peer and a peer that is shut down gracefully.
+ * External impasable SyncPause states, to serialize DRBD's resynchronisation
+   with the resynchronisation of backing storage's RAID configurations.
+ * Backing storage can be hot added to disk less nodes.
+ * Prepared for advanced intregration to Heartbeat-2.0
+ * Changed internal APIs so that missed writes of the meta-data super
+   block are reported as they happen.
+ * The http://usage.drbd.org sub project.
+ * Rewrote the scanner/parser of drbd.conf. 10 times smaller/faster and 
+   easier to maintain.
+ * Asynchronous meta-data IO [ Code drop from the DRBD+ branch ]
 
 0.7.13 (api:77/proto:74)
 -----

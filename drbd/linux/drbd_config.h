@@ -22,7 +22,7 @@
 
 extern const char * drbd_buildtag(void);
 
-#define REL_VERSION "0.8-pre2"
+#define REL_VERSION "8.0-pre1"
 #define API_VERSION 80
 #define PRO_VERSION 80
 
@@ -46,9 +46,5 @@ extern const char * drbd_buildtag(void);
 // IO )  If you have the feeling that this might be the cause
 // for troubles.
 // #define DRBD_DISABLE_SENDPAGE
-
-// older, unpached kernel sources do not have it, so we added it in drbd_receiver.c
-// but more recent kernels define it in arch/um/include/mem.h
-#define HAVE_UML_TO_VIRT
 
 #endif
