@@ -10,7 +10,7 @@ Latest:
  * Cleanup of the wire protocol.
  * Added optional peer authentication with a shared secret.
  * Consolidated state changes into a central function.
- * Improved, tunable after-split-braine recovery strategies.
+ * Improved, tunable after-split-brain recovery strategies.
  * Always verify all IDs used in the protocol that are used as pointers.
  * Introduced the "outdate" disk state, and commands for managing it.
  * Introduced the "drbdmeta" command, and require the user to create 
@@ -19,15 +19,15 @@ Latest:
  * Replaced the sync-groups with the sync-after mechanism.
  * The "common" section in the configuration file.
  * Replaced the generation counters (GCs) with data-generation-UUIDs
- * Imporved performance by using Linux-2.6's BIOs with up to 32k per
-   IO request. Before we transfered only up to 4k per IO request.
+ * Improved performance by using Linux-2.6's BIOs with up to 32k per
+   IO request. Before we transferred only up to 4k per IO request.
  * A Warning if the disk sizes are more than 10% different.
  * A connection teardown packet to differentiate between a crash
    of the peer and a peer that is shut down gracefully.
- * External impasable SyncPause states, to serialize DRBD's resynchronisation
+ * External imposable SyncPause states, to serialize DRBD's resynchronisation
    with the resynchronisation of backing storage's RAID configurations.
  * Backing storage can be hot added to disk less nodes.
- * Prepared for advanced intregration to Heartbeat-2.0
+ * Prepared for advanced integration to Heartbeat-2.0
  * Changed internal APIs so that missed writes of the meta-data super
    block are reported as they happen.
  * The http://usage.drbd.org sub project.
