@@ -2556,12 +2556,12 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
  * drbd_md_mark_dirty:
  * Call this function if you change enything that should be written to
  * the meta-data super block. This function sets MD_DIRTY, and starts a 
- * timer that ensures that within one second you have to call drbd_md_sync().
+ * timer that ensures that within five seconds you have to call drbd_md_sync().
  */
 void drbd_md_mark_dirty(drbd_dev *mdev)
 {
 	set_bit(MD_DIRTY,&mdev->flags);
-	mod_timer(&mdev->md_sync_timer,jiffies + HZ );
+	mod_timer(&mdev->md_sync_timer,jiffies + 5*HZ );
 }
 
 static void drbd_uuid_move_history(drbd_dev *mdev)

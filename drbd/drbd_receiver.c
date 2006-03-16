@@ -1796,6 +1796,7 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 {
+#if 0
 	int self = drbd_queue_order_type(mdev);
 	int type;
 
@@ -1824,6 +1825,7 @@ STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 		     order_txt[type]);
 		blk_queue_ordered(mdev->rq_queue,type);
 	}
+#endif 
 }
 
 /* warn if the arguments differ by more than 12.5% */

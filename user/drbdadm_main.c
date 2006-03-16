@@ -436,8 +436,8 @@ static void expand_opts(struct d_option* co, struct d_option** opts)
     if(!find_opt(*opts,co->name)) {
       // prepend new item to opts
       no = malloc(sizeof(struct d_option));
-      no->name=strdup(co->name);
-      no->value=strdup(co->value);
+      no->name = strdup(co->name);
+      no->value = co->value ? strdup(co->value) : NULL ;
       no->next = *opts;
       *opts = no;
     }
@@ -1547,12 +1547,13 @@ int main(int argc, char** argv)
       if (optind + 1 > argc && !is_dump)
         print_usage_and_exit("missing arguments"); // arguments missing.
 
+      if(!is_dump) expand_common();
+
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
         if (is_dump) {
 	  dump_global_info();
 	  dump_common_info();
 	} else {
-	  expand_common(); // Propagate common options to resources.
 	  global_validate(); 
 	  if(!config_valid) exit(E_config_invalid);
 	}
