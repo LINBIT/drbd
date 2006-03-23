@@ -28,7 +28,7 @@ LANGS =
 
 MAKEFILES_LANG := $(foreach dir,$(LANGS),$(dir)/Makefile)
 
-MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbddisk.8
+MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbddisk.8 drbdmeta.8
 
 #
 # Docbook Magic for SuSE, Worksforme...
