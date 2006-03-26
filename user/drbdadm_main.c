@@ -456,10 +456,13 @@ pid_t m_system(char** argv,int flags)
     int timeout;
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
-    switch(flags) {
+    switch(flags & 0x0f) {
     case SLEEPS_SHORT:     timeout = 5; break;
     case SLEEPS_LONG:      timeout = 120; break;
     case SLEEPS_VERY_LONG: timeout = 600; break;
+    default:
+			   fprintf(stderr,"%s:%u: oops... flags=%02x\n", __FILE__ , __LINE__ , flags);
+			   exit(E_thinko);
     }
     alarm(timeout);
   }
