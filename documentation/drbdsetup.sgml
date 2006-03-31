@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry> 
-  <docinfo><date>6 Apr 2003</date></docinfo>
+  <docinfo><date>30 March 2006</date></docinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -22,6 +22,7 @@
       <arg choice="req"><replaceable>meta_data_index</replaceable></arg>
       <arg>-d<arg choice="req"><replaceable>size</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>err_handler</replaceable></arg></arg>
+      <arg>-b</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -38,13 +39,23 @@
       <arg>-S<arg choice="req"><replaceable>size</replaceable></arg></arg>
       <arg>-k<arg choice="req"><replaceable>count</replaceable></arg></arg>
       <arg>-d<arg choice="req"><replaceable>discon_handler</replaceable></arg></arg>
+      <arg>-e<arg choice="req"><replaceable>max_epoch_size</replaceable></arg></arg>
+      <arg>-b<arg choice="req"><replaceable>max_buffers</replaceable></arg></arg>
+      <arg>-m</arg>
+      <arg>-a<arg choice="req"><replaceable>hash_alg</replaceable></arg></arg>
+      <arg>-x<arg choice="req"><replaceable>shared_secret</replaceable></arg></arg>
+      <arg>-A<arg choice="req"><replaceable>asb-0p-policy</replaceable></arg></arg>
+      <arg>-B<arg choice="req"><replaceable>asb-1p-policy</replaceable></arg></arg>
+      <arg>-C<arg choice="req"><replaceable>asb-2p-policy</replaceable></arg></arg>
+      <arg>-D</arg>
+
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">syncer</arg>
       <arg>-k</arg>
-      <arg>-g<arg choice="req"><replaceable>group</replaceable></arg></arg>
+      <arg>-a<arg choice="req"><replaceable>dev_minor</replaceable></arg></arg>
       <arg>-r<arg choice="req"><replaceable>rate</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>extents</replaceable></arg></arg>
     </cmdsynopsis>
@@ -67,21 +78,12 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">primary</arg>
-      <arg>-h</arg>
-      <arg>-t</arg>
       <arg>-d</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">secondary</arg>
-    </cmdsynopsis>
-    <cmdsynopsis>
-      <command>drbdsetup</command>
-      <arg choice="req"><replaceable>device</replaceable></arg>
-      <arg choice="req">on_primary</arg>
-      <arg>-h</arg>
-      <arg>-t</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -120,8 +122,38 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">dstate</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">resize</arg>
       <arg>-d<arg choice="req"><replaceable>size</replaceable></arg></arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">pause-sync</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">resume-sync</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">outdate</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">show-gi</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">get-gi</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -197,6 +229,22 @@
 	      valid <replaceable>err_handler</replaceable> are:
 	      <option>pass_on</option>, <option>panic</option> and
 	      <option>detach</option>.  
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-b</option>,
+	  <option>--split-brain-fix</option></term>
+	  <listitem>
+	    <para>
+	      With that options set a primary node that looses contact to its
+	      its peer tries to outdate the peer. (This communication
+	      may happen over alternative communication pathes, see
+	      the <option>outdate-peer</option> handler). An outdated node
+	      refuses to become primary (although that can be overruled
+	      by an administrator).
+	      This mechanism helps to circumvent after split brain 
+	      situations before they happen.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -326,6 +374,147 @@
 	    </para>
 	  </listitem>
 	</varlistentry>
+	<varlistentry>
+	  <term><option>-m</option>,
+	  <option>--allow-two-primaries </option></term>
+	  <listitem>
+	    <para>
+	      With this option set you might make both nodes primary. You
+	      only should use this options if you use a shared storage
+	      file system on top of DRBD. At the time of writing the only
+	      ones are: OCFS2 and GFS. If you use this option with any 
+	      other filesystem you are goint to crash your nodes and to
+	      corrupt your data!
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-a</option>,
+	  <option>--cram-hmac-alg </option><replaceable>alg</replaceable></term>
+	  <listitem>
+	    <para>
+	      You need to specifying the HMAC algorithm to enable peer
+	      authentication at all. It is strongly enouraged to use
+	      peer authentication.
+	      The HMAC algorithm which will be used for the challenge
+	      response authentication of the peer. You might specify any
+	      digest algorithm that is named in /proc/crypto.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-x</option>,
+	  <option>--shared-secret </option><replaceable>secret</replaceable></term>
+	  <listitem>
+	    <para>
+	      The shared secret used in peer authentication. May be up to
+	      64 characters.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-A</option>,
+	  <option>--asb-0p-policy </option><replaceable>asb-0p-policy</replaceable></term>
+	  <listitem>
+	    <para>
+	    possible policies are:
+	    </para>
+            <variablelist>
+              <varlistentry><term><option>disconnect</option></term>
+	        <listitem><para>
+		  No automatic resynchronisation, simply disconnect.
+		</para></listitem></varlistentry>
+	        <varlistentry><term><option>discard-younger-primary</option></term>
+		<listitem><para>
+		  Auto sync from the node that was primary before the split 
+		  brain situation happened.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>discard-older-primary</option></term> 
+		<listitem><para>
+		Auto sync from the node that became primary as second during 
+		the split brain situation.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>discard-least-changes</option></term> 
+		<listitem><para>
+		Auto sync from the node that touched more blocks during the 
+		split brain situation.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>discard-node-NODENAME</option></term> 
+		<listitem><para>
+		Auto sync to the named node.
+		</para></listitem></varlistentry>
+              </variablelist>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-B</option>,
+	  <option>--asb-1p-policy </option><replaceable>asb-1p-policy</replaceable></term>
+	  <listitem>
+	    <para>
+	    possible policies are:
+	    </para>
+            <variablelist>
+              <varlistentry><term><option>disconnect</option></term>
+	        <listitem><para>
+		  No automatic resynchronisation, simply disconnect.
+		</para></listitem></varlistentry>
+	        <varlistentry><term><option>consensus</option></term>
+		<listitem><para>
+		  Discard the version of the secondary if the outcome
+                  if the <option>after-sb-0pri</option> algorithm would also 
+		  destroy the current secondary's data. Otherwise disconnect.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>discard-secondary</option></term> 
+		<listitem><para>
+		  Discard the secondary's version.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>panic-primary</option></term> 
+		<listitem><para>
+		  Always honour the outcome of the <option>after-sb-0pri
+		  </option> algorithm. In case it decides the the current
+		  secondary has the right data, it panics the
+		  current primary.
+		</para></listitem></varlistentry>
+              </variablelist>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-C</option>,
+	  <option>--asb-2p-policy </option><replaceable>asb-2p-policy</replaceable></term>
+	  <listitem>
+	    <para>
+	    possible policies are:
+	    </para>
+            <variablelist>
+              <varlistentry><term><option>disconnect</option></term>
+	        <listitem><para>
+		  No automatic resynchronisation, simply disconnect.
+		</para></listitem></varlistentry>
+	        <varlistentry><term><option>panic</option></term>
+		<listitem><para>
+		  Honour the outcome of the <option>after-sb-0pri</option> 
+		  policy and panic the other node.
+		</para></listitem></varlistentry>
+              </variablelist>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-D</option>,
+	  <option>--discard-my-data </option></term>
+	  <listitem>
+	    <para>
+	      Use this option to manually recover from a split brain 
+	      situation. In case you do not have any automatic after
+	      split brain policies selected, the nodes refuse to 
+	      connect. By passing this option you make a node to
+	      sync target immediatly after sucessfull connect.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
       </variablelist>
     </refsect2>
     <refsect2>
@@ -358,15 +547,13 @@
 	  </para></listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term><option>-g</option>,
-	  <option>--sync-group <replaceable>group</replaceable></option></term>
+	  <term><option>-a</option>,
+	  <option>--after <replaceable>minor</replaceable></option></term>
 	  <listitem>
 	    <para> 
-	      Resynchronization of all devices in one group runs
-	      parallel. Groups are serialized in ascending order. You should
-	      avoid that devices which lower devices share one and the same
-	      physical disk sync in parallel. The default group is
-	      0. I.e. per default all devices sync parallel.
+	      Start resync on this device only if the device with
+	      <replaceable>minor</replaceable> is already in connected 
+	      state. Other wise this device wait in SyncPause state.
 	  </para>
 	  </listitem>
 	</varlistentry>
@@ -530,6 +717,12 @@
       </para>
     </refsect2>
     <refsect2>
+      <title>dstate</title>
+      <para>
+	Show the current state of the backing storeage devices. (local/peer)
+      </para>
+    </refsect2>
+    <refsect2>
       <title>resize</title>
       <para>
 	This causes DRBD to reexamine the size of the
@@ -537,6 +730,43 @@
 	actually do online growing you need to extend the backing storages
 	on both devices and call the <option>resize</option> command on both
 	nodes.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>pause-sync</title>
+      <para>
+        Temporarily suspend an ongoing resynchronisation by setting the local
+	pause flag. Resync only progresses if neighter the local nor the
+	remote pause flag is set.It might be desirable to postpone DRBD's 
+	resynchronisation after eventual resynchronisation of the backing
+	storage's RAID setup.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>resume-sync</title>
+      <para>
+        Unset the local sync pause flag.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>outdate</title>
+      <para>
+        Mark the data on the local backing storage as outdated. An outdated
+	device refuses to become primary. This is used in conjuction with 
+	<option>split-brain-fix</option> and by the peer's outdate-peer 
+	handler.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>show-gi</title>
+      <para>
+        Displays the device's data generaion identifiers verbosily.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>get-gi</title>
+      <para>
+        Displays the device's data generaion identifiers.
       </para>
     </refsect2>
     <refsect2>
@@ -558,7 +788,7 @@
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document is correct for version 0.7.15 of the DRBD distribution.
+    <simpara>This document is for version 8.0 of the DRBD distribution.
     </simpara>
   </refsect1>
 

@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
-  <docinfo><date>19 Apr 2005</date></docinfo>
+  <docinfo><date>31 March 2006</date></docinfo>
   
   <refmeta>
     <refentrytitle>drbdmeta</refentrytitle>
@@ -17,9 +17,9 @@
       <command>drbdmeta</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <group>
-	<arg choice="plain">v06<replaceable>minor</replaceable></arg>
-	<arg choice="plain">v07<replaceable>meta_dev index</replaceable></arg>
-	<arg choice="plain">v08<replaceable>meta_dev index</replaceable></arg>
+	<arg choice="plain">v06 <replaceable>minor</replaceable></arg>
+	<arg choice="plain">v07 <replaceable>meta_dev index</replaceable></arg>
+	<arg choice="plain">v08 <replaceable>meta_dev index</replaceable></arg>
       </group>
       <arg choice="req"><replaceable>command</replaceable></arg>
       <arg rep="repeat"><replaceable>cmd args</replaceable></arg>
@@ -84,6 +84,15 @@
 	  communicate with the DRBD stack on this host.
         </para></listitem>
       </varlistentry>
+      <varlistentry>
+        <term>dstate</term>
+        <listitem><para>
+          Prints the state of the backing storag's data. The output 
+	  is always followed by '/DUnknown' since drbdmeta only looks
+	  at the local meta data.
+        </para></listitem>
+      </varlistentry>
+
     </variablelist>
   </refsect1>
   <refsect1>
@@ -104,6 +113,13 @@
 	  <replaceable>Gi</replaceable> needs to be a generation 
 	  counter for the 0.6 and 0.7 format, and a UUID set for 0.8.
 	  Specify it in the same way as get-gi shows it.
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>restore-md <replaceable>dump_file</replaceable></term>
+        <listitem><para>
+          Reads the <replaceable>dump_file</replaceable> and writes
+	  the it to the meta data.
 	</para></listitem>
       </varlistentry>
     </variablelist>
