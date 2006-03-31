@@ -201,7 +201,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf( seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			seq_printf( seq,
-			   "%2d: cs:%s st:%s/%s ds:%s/%s\n"
+			   "%2d: cs:%s st:%s/%s ds:%s/%s %c%c%c%c\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
@@ -209,6 +209,10 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   roles_to_name(drbd_conf[i].state.peer),
 			   disks_to_name(drbd_conf[i].state.disk),
 			   disks_to_name(drbd_conf[i].state.pdsk),
+			   drbd_conf[i].state.susp ? 's' : 'r',
+			   drbd_conf[i].state.aftr_isp ? 'a' : '-',
+			   drbd_conf[i].state.peer_isp ? 'p' : '-',
+			   drbd_conf[i].state.user_isp ? 'u' : '-',
 			   drbd_conf[i].send_cnt/2,
 			   drbd_conf[i].recv_cnt/2,
 			   drbd_conf[i].writ_cnt/2,

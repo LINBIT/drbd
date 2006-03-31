@@ -527,16 +527,20 @@ int drbd_io_error(drbd_dev* mdev)
 	return ok;
 }
 
-
 static void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 {
-	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s }\n",
+	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    name,
 	    conns_to_name(ns.conn),
 	    roles_to_name(ns.role),
 	    roles_to_name(ns.peer),
 	    disks_to_name(ns.disk),
-	    disks_to_name(ns.pdsk));
+	    disks_to_name(ns.pdsk),
+	    ns.susp ? 's' : 'r',
+	    ns.aftr_isp ? 'a' : '-',
+	    ns.peer_isp ? 'p' : '-',
+	    ns.user_isp ? 'u' : '-'
+	    );
 }
 
 void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
@@ -549,6 +553,11 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 
 #define peers_to_name roles_to_name
 #define pdsks_to_name disks_to_name
+
+#define susps_to_name(A) ( (A) ? "1" : "0" )
+#define aftr_isps_to_name(A) ( (A) ? "1" : "0" )
+#define peer_isps_to_name(A) ( (A) ? "1" : "0" )
+#define user_isps_to_name(A) ( (A) ? "1" : "0" )
 
 #define PSC(A) \
 	({ if( ns.A != os.A ) { \
@@ -686,11 +695,16 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 #if DUMP_MD >= 2
 	char *pbp,pb[300];
 	pbp = pb;
+	*pbp=0;
 	PSC(role);
 	PSC(peer);
 	PSC(conn);
 	PSC(disk);
 	PSC(pdsk);
+	PSC(susp);
+	PSC(aftr_isp);
+	PSC(peer_isp);
+	PSC(user_isp);
 	INFO("%s\n", pb);
 #endif
 
