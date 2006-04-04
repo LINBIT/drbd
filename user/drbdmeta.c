@@ -306,9 +306,9 @@ struct format_ops {
 	int (*open) (struct format *);
 	int (*close) (struct format *);
 	int (*md_initialize) (struct format *);
-	int (*md_get_byte_offset) (struct format *);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
+	void (*md_erase_other_sbs) (struct format *);
 	void (*get_gi) (struct md_cpu *md);
 	void (*show_gi) (struct md_cpu *md);
 	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
@@ -660,6 +660,7 @@ int v06_md_disk_to_cpu(struct format *cfg);
 int v06_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v06_md_open(struct format *cfg);
 int v06_md_initialize(struct format *cfg);
+void v06_md_erase_others(struct format *cfg);
 
 int v07_md_close(struct format *cfg);
 int v07_md_cpu_to_disk(struct format *cfg);
@@ -667,13 +668,15 @@ int v07_md_disk_to_cpu(struct format *cfg);
 int v07_md_open(struct format *cfg);
 int v07_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v07_md_initialize(struct format *cfg);
-int v07_md_get_byte_offset(struct format * cfg);
+void v07_md_erase_others(struct format *cfg);
+u64 v07_md_get_byte_offset(struct format * cfg);
 
 int v08_md_open(struct format *cfg);
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
 int v08_md_initialize(struct format *cfg);
-int v08_md_get_byte_offset(struct format * cfg);
+void v08_md_erase_others(struct format *cfg);
+u64 v08_md_get_byte_offset(struct format * cfg);
 
 struct format_ops f_ops[] = {
 	[Drbd_06] = {
@@ -683,9 +686,9 @@ struct format_ops f_ops[] = {
 		     .open = v06_md_open,
 		     .close = v06_md_close,
 		     .md_initialize = v06_md_initialize,
-		     .md_get_byte_offset = NULL, /* unused */
 		     .md_disk_to_cpu = v06_md_disk_to_cpu,
 		     .md_cpu_to_disk = v06_md_cpu_to_disk,
+		     .md_erase_other_sbs = v06_md_erase_others,
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
@@ -698,9 +701,9 @@ struct format_ops f_ops[] = {
 		     .open = v07_md_open,
 		     .close = v07_md_close,
 		     .md_initialize = v07_md_initialize,
-		     .md_get_byte_offset = v07_md_get_byte_offset,
 		     .md_disk_to_cpu = v07_md_disk_to_cpu,
 		     .md_cpu_to_disk = v07_md_cpu_to_disk,
+		     .md_erase_other_sbs = v07_md_erase_others,
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
@@ -713,9 +716,9 @@ struct format_ops f_ops[] = {
 		     .open = v08_md_open,
 		     .close = v07_md_close,
 		     .md_initialize = v08_md_initialize,
-		     .md_get_byte_offset = v08_md_get_byte_offset,
 		     .md_disk_to_cpu = v08_md_disk_to_cpu,
 		     .md_cpu_to_disk = v08_md_cpu_to_disk,
+		     .md_erase_other_sbs = v08_md_erase_others,
 		     .get_gi = m_get_uuid,
 		     .show_gi = m_show_uuid,
 		     .set_gi = m_set_uuid,
@@ -769,9 +772,6 @@ struct meta_cmd cmds[] = {
 	{"dump-md", 0, meta_dump_md, 1},
 	{"restore-md", "file", meta_restore_md, 1},
 	{"create-md", 0, meta_create_md, 1},
-	/* FIXME convert still missing.
-	 * implicit convert from v07 to v08 by create-md
-	 * see comments there */
 	{"outdate", 0, meta_outdate, 1},
 	{"dstate", 0, meta_dstate, 1},
 	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
@@ -848,7 +848,9 @@ void printf_bm(const le_u64 * bm, const unsigned int n)
 	printf("\n}\n");
 }
 
-int v07_style_md_open(struct format *cfg, size_t size)
+int v07_style_md_open(struct format *cfg,
+		      u64 (*md_get_byte_offset) (struct format *),
+		      size_t size)
 {
 	struct stat sb;
 	unsigned long words;
@@ -875,7 +877,7 @@ int v07_style_md_open(struct format *cfg, size_t size)
 		PERROR("WARN: ioctl(,BLKFLSBUF,) failed");
 	}
 
-	(void) cfg->ops->md_get_byte_offset(cfg);
+	cfg->md_offset = md_get_byte_offset(cfg);
 	// fprintf(stderr,"offset: "U64"\n", cfg->md_offset);
 
 	cfg->md_mmaped_length = size;
@@ -922,6 +924,39 @@ int v07_style_md_open(struct format *cfg, size_t size)
 	/* FIXME paranoia verify that unused bits and words are unset... */
 
 	return 0;
+}
+
+void md_erase_sb(struct format *cfg,
+		 u64 (*md_get_byte_offset) (struct format *))
+{
+	/* in case these are internal meta data, we need to 
+	   make sure that there is no v08 superblock at the end
+	   of the meta data area. */
+
+	unsigned char zero_sector[512];
+	struct format cfg_f;
+	u64 offset;
+	int bw;
+	
+	if(cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
+	   cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) {
+		memset(zero_sector,0,512);
+		cfg_f = *cfg;
+		cfg_f.md_index = DRBD_MD_INDEX_INTERNAL;
+		/* Need to set it to INTERNAL, to hit the superblock
+		   in the front of the meta data area. */
+
+		offset = md_get_byte_offset(&cfg_f);
+		if(lseek64(cfg->md_fd, offset, SEEK_SET) == -1) {
+			PERROR("lseek64() failed");
+			exit(20);
+		}
+
+		if( (bw=write(cfg->md_fd,zero_sector,512)) != 512) {
+			PERROR("write() returned %d",bw);
+			exit(20);
+		}
+	}
 }
 
 void m_get_gc(struct md_cpu *md)
@@ -1191,6 +1226,11 @@ int v06_md_initialize(struct format *cfg)
 	return 0;
 }
 
+void v06_md_erase_others(struct format *cfg __attribute((unused)))
+{
+	/* nothing to do */
+}
+
 /******************************************
   }}} end of v06
  ******************************************/
@@ -1303,7 +1343,7 @@ int md_initialize_common(struct format *cfg)
  begin of v07 {{{
  ******************************************/
 
-int v07_md_get_byte_offset(struct format *cfg)
+u64 v07_md_get_byte_offset(struct format *cfg)
 {
 	u64 offset;
 
@@ -1325,8 +1365,8 @@ int v07_md_get_byte_offset(struct format *cfg)
 		offset = 0;
 		break;
 	}
-	cfg->md_offset = offset;
-	return 0;
+
+	return offset;
 }
 
 int v07_md_disk_to_cpu(struct format *cfg)
@@ -1391,7 +1431,9 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 
 int v07_md_open(struct format *cfg)
 {
-	return v07_style_md_open(cfg, sizeof(struct md_on_disk_07));
+	return v07_style_md_open(cfg, 
+				 &v07_md_get_byte_offset,
+				 sizeof(struct md_on_disk_07));
 }
 
 int v07_md_close(struct format *cfg)
@@ -1430,6 +1472,11 @@ int v07_md_initialize(struct format *cfg)
 	return md_initialize_common(cfg);
 }
 
+void v07_md_erase_others(struct format *cfg)
+{
+	md_erase_sb(cfg,&v08_md_get_byte_offset);
+}
+
 /******************************************
   }}} end of v07
  ******************************************/
@@ -1437,7 +1484,7 @@ int v07_md_initialize(struct format *cfg)
  begin of v08 {{{
  ******************************************/
 
-int v08_md_get_byte_offset(struct format *cfg)
+u64 v08_md_get_byte_offset(struct format *cfg)
 {
 	u64 offset;
 
@@ -1456,8 +1503,8 @@ int v08_md_get_byte_offset(struct format *cfg)
 		offset = 0;
 		break;
 	}
-	cfg->md_offset = offset;
-	return 0;
+
+	return offset;
 }
 
 int v08_md_disk_to_cpu(struct format *cfg)
@@ -1487,7 +1534,9 @@ int v08_md_cpu_to_disk(struct format *cfg)
 
 int v08_md_open(struct format *cfg)
 {
-	return v07_style_md_open(cfg, sizeof(struct md_on_disk_08));
+	return v07_style_md_open(cfg, 
+				 &v08_md_get_byte_offset,
+				 sizeof(struct md_on_disk_08));
 }
 
 int v08_md_initialize(struct format *cfg)
@@ -1504,6 +1553,11 @@ int v08_md_initialize(struct format *cfg)
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
 	return md_initialize_common(cfg);
+}
+
+void v08_md_erase_others(struct format *cfg)
+{
+	md_erase_sb(cfg,&v07_md_get_byte_offset);
 }
 
 /******************************************
@@ -2036,6 +2090,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 		}
 	}
 
+	cfg->ops->md_erase_other_sbs(cfg);
 	printf("Creating meta data...\n");
 	MEMSET(&cfg->md, 0, sizeof(cfg->md));
 	err = cfg->ops->md_initialize(cfg);

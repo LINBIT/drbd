@@ -687,13 +687,19 @@ DRBD 0.8 Roadmap
 31 Resizing several GB results in ko-count timeouts, maybe since the
    secondary node does the enlargement of the bitmap in the receiver (?)
 
+   DONE, by using the async bitmap IO code.
+
 32 drbdmeta: with internal meta-data v07 and v08 meta-data super blocks
    are in different places. -> It is possible to have v07 AND v08 meta
    data on one device. 
    => drbdmeta should make sure that it overwrites the other location
       in case it create a meta-data block.
 
-33? Online verification.
+   99% DONE
+
+33 Save the minor number and the backing device in the (external) meta
+   data as sanity check.
+
 
 plus-banches:
 ----------------------
