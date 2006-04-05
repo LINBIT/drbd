@@ -1093,6 +1093,7 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 		if (!m_strsep_bit(str, &md->flags, MDF_PrimaryInd)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_ConnectedInd)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_FullSync)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PeerOutDated)) break;
 	} while (0);
 }
 
@@ -1814,7 +1815,7 @@ int md_convert_07_to_08(struct format *cfg)
 	printf("Converting meta data...\n");
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
-	// The MDF Flags are the same in 07 and 08
+	// The MDF Flags are (nearly) the same in 07 and 08
 	cfg->md.flags = cfg->md.gc[Flags];
 	/* 
 	 */

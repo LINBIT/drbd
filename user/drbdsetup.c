@@ -69,6 +69,7 @@
 #define DEF_ON_IO_ERROR         PassOn
 #define DEF_KO_COUNT                 0
 #define DEF_ON_DISCONNECT       Reconnect
+#define DEF_FENCING             DontCare
 #define DEF_TWO_PRIMARIES            0
 #define DEF_AFTER_SB_0P       Disconnect
 #define DEF_AFTER_SB_1P       Disconnect
@@ -179,7 +180,7 @@ struct drbd_cmd commands[] = {
    (struct option[]) {
      { "size",       required_argument, 0, 'd' },
      { "on-io-error",required_argument, 0, 'e' },
-     { "split-brain-fix",  no_argument, 0, 'b' },
+     { "fencing",    required_argument, 0, 'f' },
      { 0,            0,                 0, 0 } } },
   {"resize", cmd_disk_size,             0,
    (struct option[]) {
@@ -205,6 +206,12 @@ const char *dh_names[] = {
   [Reconnect]   = "reconnect",
   [DropNetConf] = "stand_alone",
   // [FreezeIO]    = "freeze_io" // TODO on the kernel side...
+};
+
+const char *fencing_names[] = {
+  [DontCare] = "dont-care",
+  [Resource] = "resource-only",
+  [Stonith]  = "resource-and-stonith" 
 };
 
 const char *asb0p_names[] = {
@@ -410,6 +417,12 @@ void print_usage(const char* addinfo)
     if(i < ARRY_SIZE(dh_names)-1) printf(",");
   }
 
+  printf("\nAvailable fencing policies:");
+  for(i=0;i<ARRY_SIZE(fencing_names);i++) {
+    printf(" %s",fencing_names[i]);
+    if(i < ARRY_SIZE(fencing_names)-1) printf(",");
+  }
+
   printf("\n\nVersion: "REL_VERSION" (api:%d)\n%s\n",
 		  API_VERSION, drbd_buildtag());
   if (addinfo)
@@ -449,7 +462,7 @@ int scan_disk_options(char **argv,
 {
   cn->config.disk_size = 0; /* default not known */
   cn->config.on_io_error = DEF_ON_IO_ERROR;
-  cn->config.split_brain_fix = 0;
+  cn->config.fencing = DEF_FENCING;
 
   if(argc==0) return 0;
 
@@ -475,8 +488,13 @@ int scan_disk_options(char **argv,
 	    return 20;
 	  }
 	  break;
-	case 'b':
-	  cn->config.split_brain_fix = 1;
+	case 'f':
+	  cn->config.fencing = lookup_handler(optarg,fencing_names);
+	  if( cn->config.fencing == -1U ) {
+	    fprintf(stderr,"%s: '%s' is an invalid fency policy.\n",
+		    cmdname,optarg);
+	    return 20;
+	  }
 	  break;
 	case 1:	// non option argument. see getopt_long(3)
 	  fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);

@@ -649,7 +649,6 @@ enum {
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	UNIQUE,                 // Set on one node, cleared on the peer!
-	SPLIT_BRAIN_FIX,        // Set if split-brain-fix is configured
 	USE_DEGR_WFC_T		// Use degr-wfc-timeout instead of wfc-timeout.
 };
 
@@ -714,6 +713,7 @@ struct drbd_backing_dev {
 	struct file *md_file;
 	int md_index;
 	enum io_error_handler on_io_error;
+	enum fencing_policy fencing;
 	sector_t u_size;   /* user provided size */
 	struct drbd_md md;
 };
@@ -1164,6 +1164,7 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 
 #define peer_mask role_mask
 #define pdsk_mask disk_mask
+#define susp_mask 1
 
 #define NS(T,S) ({drbd_state_t mask; mask.i=0; mask.T = T##_mask; mask;}), \
                 ({drbd_state_t val; val.i=0; val.T = (S); val;})

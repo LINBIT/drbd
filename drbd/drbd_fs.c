@@ -308,7 +308,8 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	struct drbd_backing_dev* nbc; // new_backing_conf
 	struct inode *inode, *inode2;
 	struct lru_cache* resync_lru = NULL;
-	drbd_disks_t nds;
+	drbd_state_t ns,os;
+	int rv;
 
 	minor=(int)(mdev-drbd_conf);
 
@@ -436,6 +437,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	nbc->md_index = new_conf.meta_index;
 	nbc->u_size = new_conf.disk_size;
 	nbc->on_io_error = new_conf.on_io_error;
+	nbc->fencing = new_conf.fencing;
 	drbd_md_set_sector_offsets(mdev,nbc);
 
 	retcode = drbd_md_read(mdev,nbc);
@@ -461,9 +463,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	D_ASSERT(mdev->bc == NULL);
 	mdev->bc = nbc;
 	mdev->resync = resync_lru;
-
-	if (new_conf.split_brain_fix) set_bit(SPLIT_BRAIN_FIX,&mdev->flags);
-	else clear_bit(SPLIT_BRAIN_FIX,&mdev->flags);
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -526,6 +525,9 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		drbd_send_state(mdev);
 		drbd_thread_start(&mdev->worker);
 	} else {
+		spin_lock_irq(&mdev->req_lock);
+		os = mdev->state;
+		ns.i = os.i;
 		/* If MDF_Consistent is not set go into inconsistent state, 
 		   otherwise investige MDF_WasUpToDate...
 		   If MDF_WasUpToDate is not set go into Outdated disk state, 
@@ -533,20 +535,33 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		*/
 		if(drbd_md_test_flag(mdev->bc,MDF_Consistent)) {
 			if(drbd_md_test_flag(mdev->bc,MDF_WasUpToDate)) {
-				nds = Consistent;
+				ns.disk = Consistent;
 			} else {
-				nds = Outdated;
+				ns.disk = Outdated;
 			}
 		} else {
-			nds = Inconsistent;
+			ns.disk = Inconsistent;
 		}
 
+		if(drbd_md_test_flag(mdev->bc,MDF_PeerOutDated)) {
+			ns.pdsk = Outdated;
+		}
+		
 		/* All tests on MDF_PrimaryInd, MDF_ConnectedInd, 
 		   MDF_Consistent and MDF_WasUpToDate must happen before 
 		   this point, because drbd_request_state() modifies these
 		   flags. */
-		if(drbd_request_state(mdev,NS(disk,nds)) >= SS_Success ) {
+
+		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
+		ns = mdev->state;
+		spin_unlock_irq(&mdev->req_lock);
+		after_state_ch(mdev,os,ns);
+
+		if(rv >= SS_Success ) {
 			drbd_thread_start(&mdev->worker);
+		} else {
+			drbd_bm_unlock(mdev);
+			goto  release_bdev3_fail_ioctl;
 		}
 	}
 
@@ -557,6 +572,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 
  release_bdev3_fail_ioctl:
 	drbd_force_state(mdev,NS(disk,Diskless));
+	drbd_md_sync(mdev);
  release_bdev2_fail_ioctl:
 	bd_release(nbc->md_bdev);
  release_bdev_fail_ioctl:
@@ -785,8 +801,15 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 {
 	int r;
 	drbd_disks_t nps;
+	enum fencing_policy fp;
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->fencing;
+		dec_local(mdev);
+	}
 
 	r=drbd_khelper(mdev,"outdate-peer");
 
@@ -806,10 +829,15 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		nps = DUnknown;
 		drbd_request_state(mdev,NS(disk,Outdated));
 		break;
+	case 7:
+		if( fp != Stonith ) {
+			ERR("outdate-peer() = 7 && fencing != Stonith !!!\n");
+		}
+		nps = Outdated;
+		break;
 	default:
 		/* The script is broken ... */
 		nps = DUnknown;
-		drbd_request_state(mdev,NS(disk,Outdated));
 		ERR("outdate-peer helper broken, returned %d \n",(r>>8)&0xff);
 		return nps;
 	}
@@ -1063,13 +1091,15 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
+	after_state_ch(mdev,os,ns);
 
 	if( r == SS_NothingToDo ) return 0;
 	if( r == -999 ) {
 		return -EINVAL;
 	}
-	after_state_ch(mdev,os,ns);
 
+	drbd_md_sync(mdev);
+	
 	if( r < SS_Success ) {
 		err = put_user(r, reason);
 		if(!err) err=-EIO;

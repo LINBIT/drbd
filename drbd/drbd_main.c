@@ -566,18 +566,73 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 		              A##s_to_name(ns.A)); \
 	} })
 
+STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
+{
+	/* See drbd_state_sw_errors in drbd_strings.c */
 
-/* PRE TODO: Should return ernno numbers from the pre-state-change checks. */
+	enum fencing_policy fp;
+	int rv=SS_Success;
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->fencing;
+		dec_local(mdev);
+	}
+
+	if(inc_net(mdev)) {
+		if( !mdev->net_conf->two_primaries &&
+		    ns.role == Primary && ns.peer == Primary ) 
+			rv=SS_TowPrimaries;
+		dec_net(mdev);
+	}
+
+	if( rv <= 0 ) /* already found a reason to abort */;
+	else if( ns.role == Primary && ns.conn < Connected &&
+		 ns.disk <= Outdated ) rv=SS_NoConsistnetDisk;
+
+	else if( fp >= Resource &&
+		 ns.role == Primary && ns.conn < Connected &&
+		 ns.pdsk >= DUnknown ) rv=SS_PrimaryNOP;
+
+	else if( ns.role == Primary && ns.disk <= Inconsistent &&
+		 ns.pdsk <= Inconsistent ) rv=SS_NoConsistnetDisk;
+	
+	else if( ns.conn > Connected &&
+		 ns.disk < UpToDate && ns.pdsk < UpToDate ) 
+		rv=SS_BothInconsistent;
+
+	else if( ns.conn > Connected &&
+		 (ns.disk == Diskless || ns.pdsk == Diskless ) )
+		rv=SS_SyncingDiskless;
+
+	else if( (ns.conn == Connected ||
+		  ns.conn == SkippedSyncS ||
+		  ns.conn == WFBitMapS ||
+		  ns.conn == SyncSource ||
+		  ns.conn == PausedSyncS) &&
+		 ns.disk == Outdated ) rv=SS_ConnectedOutdates;
+
+	return rv;
+}
+
+
 int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
 	drbd_state_t os;
 	int rv=SS_Success, warn_sync_abort=0;
+	enum fencing_policy fp;
 
 	MUST_HOLD(&mdev->req_lock);
 
 	os = mdev->state;
 
 	if( ns.i == os.i ) return SS_NothingToDo;
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->fencing;
+		dec_local(mdev);
+	}
 
 	/*  State sanitising  */
 	if( ns.conn < Connected ) {
@@ -644,43 +699,33 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		}
 	}
 
-
+	if( fp == Stonith ) {
+		if( !(os.role == Primary && os.conn < Connected) &&
+		     (ns.role == Primary && ns.conn < Connected) ) {
+			ns.susp = 1;
+			ERR("ap_pending_cnt = %d while suspending IO.\n",
+			    atomic_read(&mdev->ap_pending_cnt));
+		}
+	}
+	
 	if( !(flags & ChgStateHard) ) {
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		if(inc_net(mdev)) {
-			if( !mdev->net_conf->two_primaries &&
-			    ns.role == Primary && ns.peer == Primary ) 
-				rv=SS_TowPrimaries;
-			dec_net(mdev);
+		rv = pre_state_checks(mdev,ns);
+		if(rv < SS_Success) {
+			/* If the old state was illegal as well, then let
+			   this happen...*/
+
+			if( pre_state_checks(mdev,os) == rv ) {
+				ERR("State change from bad state. "
+				    "Error would be: '%s'\n", 
+				    set_st_err_name(rv));
+				print_st(mdev,"old",os);
+				print_st(mdev,"new",ns);
+				rv = SS_Success;
+			}
 		}
-
-		if( rv <= 0 ) /* already found a reason to abort */;
-		else if( ns.role == Primary && ns.conn < Connected &&
-			 ns.disk <= Outdated ) rv=SS_NoConsistnetDisk;
-
-		else if( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
-			 ns.role == Primary && ns.conn < Connected &&
-			 ns.pdsk >= DUnknown ) rv=SS_PrimaryNOP;
-
-		else if( ns.role == Primary && ns.disk <= Inconsistent &&
-			 ns.pdsk <= Inconsistent ) rv=SS_NoConsistnetDisk;
-
-		else if( ns.conn > Connected &&
-			 ns.disk < UpToDate && ns.pdsk < UpToDate ) 
-			rv=SS_BothInconsistent;
-
-		else if( ns.conn > Connected &&
-			 (ns.disk == Diskless || ns.pdsk == Diskless ) )
-			rv=SS_SyncingDiskless;
-
-		else if( (ns.conn == Connected ||
-			  ns.conn == SkippedSyncS ||
-			  ns.conn == WFBitMapS ||
-			  ns.conn == SyncSource ||
-			  ns.conn == PausedSyncS) &&
-			 ns.disk == Outdated ) rv=SS_ConnectedOutdates;
 	}
 
 	if(rv < SS_Success) {
@@ -758,15 +803,24 @@ STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 {
+	enum fencing_policy fp;
 	u32 mdf;
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->fencing;
+		dec_local(mdev);
+	}
 
 	if(mdev->bc) {
 		mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
-					     MDF_ConnectedInd|MDF_WasUpToDate);
+					     MDF_ConnectedInd|MDF_WasUpToDate|
+					     MDF_PeerOutDated );
 		if (mdev->state.role == Primary)       mdf |= MDF_PrimaryInd;
 		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
 		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
+		if (mdev->state.pdsk <= Outdated)      mdf |= MDF_PeerOutDated;
 
 		if( mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
@@ -777,6 +831,19 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */
 
+	if( fp == Stonith && ns.susp && os.susp ) {
+		// case1: The outdate peer handler is successfull:
+		// case2: The connection was established again:
+		if ( (os.pdsk > Outdated  && ns.pdsk <= Outdated) || // case1
+		     (os.conn < Connected && ns.conn >= Connected) ) {
+			tl_clear(mdev);
+			spin_lock_irq(&mdev->req_lock);
+			_drbd_set_state(mdev,_NS(susp,0), 
+					ChgStateVerbose | ScheduleAfter );
+			spin_unlock_irq(&mdev->req_lock);
+		}
+	}
+	// Do not change the order of the if above and below...
 	if (os.conn != WFBitMapS && ns.conn == WFBitMapS) {
 		wait_event(mdev->cstate_wait,!atomic_read(&mdev->ap_bio_cnt));
 		drbd_bm_lock(mdev);   // {

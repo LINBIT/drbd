@@ -68,7 +68,7 @@ flexible-meta-disk	{ DP; return TK_FLEX_META_DISK;		}
 usage-count 		{ DP; return TK_USAGE_COUNT;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
-split-brain-fix		{ DP; CP; return TK_DISK_SWITCH;	}
+fencing			{ DP; CP; return TK_DISK_OPTION;	}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}

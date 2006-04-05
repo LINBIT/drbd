@@ -245,8 +245,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	// down_read(mdev->device_lock);
 
 	wait_event( mdev->cstate_wait,
-		    (volatile int)(mdev->state.conn < WFBitMapS ||
-				   mdev->state.conn > WFBitMapT) );
+		    (volatile int)((mdev->state.conn < WFBitMapS ||
+				    mdev->state.conn > WFBitMapT) &&
+				   !mdev->state.susp ) );
 
 	local = inc_local(mdev);
 	if (rw == READ || rw == READA) {
@@ -451,7 +452,6 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 		drbd_bio_IO_error(bio);
 		return 0;
 	}
-
 
 	/*
 	 * what we "blindly" assume:

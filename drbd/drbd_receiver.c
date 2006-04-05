@@ -2334,7 +2334,15 @@ STATIC void drbdd(drbd_dev *mdev)
 
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
+	enum fencing_policy fp;
+
 	D_ASSERT(mdev->state.conn < Connected);
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->fencing;
+		dec_local(mdev);
+	}
 
 	/* in case we have been syncing, and then we drop the connection,
 	 * we need to "w_resume_next_sg", which we try to achieve by
@@ -2397,10 +2405,20 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->ee_lock);
 
 	// primary
-	tl_clear(mdev);
 	clear_bit(ISSUE_BARRIER,&mdev->flags);
-	wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt)==0 );
-	D_ASSERT(mdev->oldest_barrier->n_req == 0);
+
+	if(fp != Stonith ) {
+		tl_clear(mdev);
+		wait_event( mdev->cstate_wait, 
+			    atomic_read(&mdev->ap_pending_cnt)==0 );
+		D_ASSERT(mdev->oldest_barrier->n_req == 0);
+
+		if(atomic_read(&mdev->ap_pending_cnt)) {
+			ERR("ap_pending_cnt = %d\n",
+			    atomic_read(&mdev->ap_pending_cnt));
+			atomic_set(&mdev->ap_pending_cnt,0);
+		}
+	}
 
 	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
 	D_ASSERT(list_empty(&mdev->read_ee)); // done by termination of worker
@@ -2427,11 +2445,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	   on the fly. */
 	atomic_set(&mdev->rs_pending_cnt,0);
 
-	if(atomic_read(&mdev->ap_pending_cnt)) {
-		ERR("ap_pending_cnt = %d\n",atomic_read(&mdev->ap_pending_cnt));
-		atomic_set(&mdev->ap_pending_cnt,0);
-	}
-
 	wake_up(&mdev->cstate_wait);
 
 	if (get_t_state(&mdev->receiver) == Exiting) {
@@ -2442,9 +2455,9 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		drbd_thread_start(&mdev->worker);
 	}
 
-	if ( mdev->state.role == Primary ) {
-		if ( test_bit(SPLIT_BRAIN_FIX,&mdev->flags) &&
-		     mdev->state.pdsk >= DUnknown ) {
+	if ( mdev->state.role == Primary ) {		
+		if( fp >= Resource &&
+		    mdev->state.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev,NS(pdsk,nps));
 		}

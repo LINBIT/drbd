@@ -69,6 +69,11 @@ enum io_error_handler {
 	Detach
 };
 
+enum fencing_policy {
+	DontCare,
+	Resource,
+	Stonith
+};
 
 struct disk_config {
 	IN __u64    disk_size;
@@ -76,7 +81,7 @@ struct disk_config {
 	IN enum io_error_handler on_io_error;
 	IN int      meta_device;
 	IN int      meta_index;
-	IN int      split_brain_fix;
+	IN enum fencing_policy fencing;
 	const int   _pad;
 };
 
@@ -299,12 +304,14 @@ enum MetaDataFlags {
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
 	__MDF_WasUpToDate,
+	__MDF_PeerOutDated // or less/lower.
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
 #define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
 #define MDF_FullSync        (1<<__MDF_FullSync)
 #define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
+#define MDF_PeerOutDated    (1<<__MDF_PeerOutDated)
 
 enum UuidIndex {
 	Current,
