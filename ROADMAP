@@ -116,13 +116,13 @@ DRBD 0.8 Roadmap
     In the other case it modifies the meta data directly by 
     calling drbdmeta.
 
-  remove option value: on-disconnect=suspend_io
+  remove option: on-disconnect
 
   New meta-data flag: "Outdated"
 
   introduce:
   disk {
-    split-brain-fix;
+    fencing [ dont-care | resource-only | resource-and-stonith ];
   }
 
   handlers {
@@ -133,10 +133,11 @@ DRBD 0.8 Roadmap
   handler (yes a call to userspace from kernel space). The handler's
   returncodes are:
 
-  3 -> peer is inconsistent
-  4 -> peer is outdated (presumabely this handler outdated it)
+  3 -> peer is inconsistent 
+  4 -> peer is outdated (this handler outdated it) [ resource fencing ]
   5 -> peer was down / unreachable
   6 -> peer is primary
+  7 -> peer got stonithed [ node fencing ]
 
   Let us assume that we have two boxes (N1 and N2) and that these
   two boxes are connected by two networks (net and cnet [ clinets'-net ]).
@@ -144,15 +145,15 @@ DRBD 0.8 Roadmap
   Net is used by DRBD, while heartbeat uses both, net and cnet
 
   I know that you are talking about fencing by STONITH, but DRBD is
-  not limited to that. Here comes my understanding of how fencing
-  (other than STONITH) should work with DRBD-0.8 :
+  not limited to that. Here comes my understanding of how resource fencing
+  should works with DRBDv8 :
 
    N1  net   N2
    P/S ---  S/P     everything up and running.
    P/? - -  S/?     network breaks ; N1 freezes IO
    P/? - -  S/?     N1 fences N2:
                     In the STONITH case: turn off N2.
-                    In the "smart" case: 
+                    In the resource fencing case: 
                     N1 asks N2 to fence itself from the storage via cnet.
                     HB calls "drbdadm outdate r0" on N2.
                     N2 replies to N1 that fencing is done via cnet.
@@ -162,14 +163,39 @@ DRBD 0.8 Roadmap
   N2 got the the "Outdated" flag set in its meta-data, by the outdate 
   command. 
 
-  The "split-brain-fix" enables this behaviour. If this option is
-  omitted, the handler is not called nor IO is frozen on disconnect.
+  The fencing is set to resource-only enables this behaviour. In the 
+  resource-only case the outdate-peer handler should have a return
+  value of 3, 4, 5 or 6, but should not return 7.
 
-  Eventually introduce a "suspend" and a "resume" command to 
-  to reach the freezed state without the need to disconnect the peer. 
-  It might turn out to be usefull for other tasks as well.
+  In case "fencing" is set to "resource-and-stonith", all IO operations
+  get immediately frozen (even all currently outstanding IO operations
+  will not finish) upon loss of connection.
 
-  66% DONE / TODO: IO freezing is not done yet.
+  Then the "outdate-peer" handler is started. In this configuration
+  the outdate peer handler might return any of the documented return
+  values.
+
+  When the outdate-peer handler returns IO is resumed.
+
+  Notes: 
+  * Why do we need to freeze IO in the "resource-and-stonith" case:
+      Stonith protects you when all communication pathes fail. In
+      that case both (isolated) nodes try to stonith each other.
+      If the current primary would continue to allow IO it could
+      accept transactions, but could get stonithed by the 
+      currently secondary node. 
+      -> Therefore others could see commited transactions that
+         would be gone after the successfull stonith operation.
+
+  * The outedate peer handler also gets called if an unconnected
+    secondary wants to become primary.
+    In other words it only may become primary when it knows that
+    the peer is outdated/inconsistent.
+
+  * We need to store the fact that the peer is outdated/inconsistent
+    in the meta-data. To allow an stand allone primary to be rebooted.
+
+  50% DONE / TODO: IO freezing is not done yet.
 
 8 New command drbdmeta
 
@@ -481,7 +507,7 @@ DRBD 0.8 Roadmap
            NB: If they are needed, I think they can be implemented
                as special UUID values.
 
-  99% DONE. Kernel part is implemented, userlang parts are implemented,
+  99% DONE. Kernel part is implemented, userland parts are implemented,
 	    --humand and --timeout-expired are removed.
 	    Everything seems to work so far.
 
