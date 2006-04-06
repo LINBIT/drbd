@@ -121,6 +121,8 @@ ___
 %defattr(755,root,root)
 /sbin/drbdsetup
 /sbin/drbdadm
+/sbin/drbdmeta
+/usr/lib/drbd/outdate-peer.sh
 /etc/ha.d/resource.d/drbddisk
 
 %defattr(644,root,root)
@@ -132,6 +134,7 @@ ___
 %{_mandir}/man8/drbdadm.8.gz
 %{_mandir}/man8/drbddisk.8.gz
 %{_mandir}/man5/drbd.conf.5.gz
+%{_mandir}/man8/drbdmeta.8.gz
 %doc scripts/drbd.conf
 %doc COPYING
 %doc README
