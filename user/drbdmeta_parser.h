@@ -12,6 +12,7 @@ extern YYSTYPE yylval;
 enum yytokentype {
 	TK_STRING = 258,
 	TK_U64,
+	TK_U32,
 	TK_NUM,
 	TK_GC,
 	TK_BM,
@@ -20,7 +21,8 @@ enum yytokentype {
 	TK_LA_SIZE,
 	TK_BM_BYTE_PER_BIT,
 	TK_DEVICE_UUID,
-	TK_TIMES
+	TK_TIMES,
+	TK_FLAGS,
 };
 
 /* avoid compiler warnings about implicit declaration */

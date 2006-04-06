@@ -1681,13 +1681,16 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
 			printf(" %d;", cfg->md.gc[i]);
 		}
+		printf("\n}\n");
 	} else { // >= 08
 		printf("uuid {\n   ");
 		for ( i=Current ; i<UUID_SIZE ; i++ ) {
 			printf(" 0x"X64(016)";", cfg->md.uuid[i]);
 		}
+		printf("\n");
+		printf("    flags 0x"X32(08)";\n",cfg->md.flags);
+		printf("}\n");
 	}
-	printf("\n}\n");
 
 	if (format_version(cfg) >= Drbd_07) {
 		printf("la-size-sect "U64";\n", cfg->md.la_sect);
@@ -1748,12 +1751,14 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 			cfg->md.gc[i] = yylval.u64;
 		}
 		EXP('}');
-	} else { // >? 08
+	} else { // >= 08
 		EXP(TK_UUID); EXP('{');
 		for ( i=Current ; i<UUID_SIZE ; i++ ) {
 			EXP(TK_U64); EXP(';');
 			cfg->md.uuid[i] = yylval.u64;
 		}
+		EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
+		cfg->md.flags = (u32)yylval.u64;
 		EXP('}');
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
