@@ -31,9 +31,9 @@
     <title>Description</title>
     <para>
       Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to 
-      drbdsetup and drbdmeta what ifup/ifdown is to ifconfig. Drbdadm reads its 
-      configuration file and performs the specified commands by calling the drbdsetup 
-      program.
+      drbdsetup and drbdmeta what ifup/ifdown is to ifconfig. Drbdadm reads its
+      configuration file and performs the specified commands by calling the 
+      drbdsetup and/or the drbdmeta program.
     </para>    
   </refsect1>
   <refsect1>
@@ -51,7 +51,7 @@
           <replaceable>file</replaceable></term>
         <listitem><para>
           Specifies the configuration file drbdadm will use. If this parameter
-	  is not specified, drbdadm will look for <option>/etc/drbd-07.conf</option> and
+	  is not specified, drbdadm will look for <option>/etc/drbd-08.conf</option> and
           <option>/etc/drbd.conf</option>.
 	</para></listitem>
       </varlistentry>
@@ -68,7 +68,8 @@
           <replaceable>file</replaceable></term>
         <listitem><para>
           Specifies the full path to the drbdmeta program. If this option is
-	  omitted, drbdadm will look for /sbin/drbdmeta and ./drbdsetup.
+	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and 
+	  <option>./drbdsetup</option>.
 	</para></listitem>
       </varlistentry>
     </variablelist>
@@ -232,12 +233,53 @@
 	  be used to check the configuration file for syntactical correctness.
         </para></listitem>
       </varlistentry>
+
+      <varlistentry>
+        <term>outdate</term>
+        <listitem><para>
+          Used to mark the node's data as outdated. Usually used by the
+	  peer's oudate-peer handler.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>pause-sync</term> 
+        <listitem><para> 
+          Temporarily suspend an ongoing resynchronisation by setting the
+          local pause flag. Resync only progresses if neighter the local
+          nor the remote pause flag is set. It might be desirable to
+          postpone DRBD's resynchronisation after eventual
+          resynchronisation of the backing storage's RAID setup.  
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>resume-sync</term>
+        <listitem><para>
+          Unset the local sync pause flag.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>dstate</term>
+        <listitem><para>
+  	  Show the current state of the backing storeage devices. (local/peer)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>hidden-commands</term>
+        <listitem><para>
+  	  Shows all on purpose undocumented commands.
+        </para></listitem>
+      </varlistentry>
+
     </variablelist>
   </refsect1>
   <refsect1>
     <title>Version</title>
     <simpara>
-      This document is correct for version 0.7.15 of the DRBD distribution.
+      This document is correct for version 8.0 the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -269,6 +311,8 @@
       <citerefentry><refentrytitle>drbddisk</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
       <citerefentry><refentrytitle>drbdsetup</refentrytitle>
+      <manvolnum>8</manvolnum></citerefentry>
+      <citerefentry><refentrytitle>drbdmeta</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
       <ulink url="http://www.drbd.org/">
       <citetitle>DRBD Homepage</citetitle></ulink>

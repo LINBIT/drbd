@@ -22,7 +22,8 @@
       <arg choice="req"><replaceable>meta_data_index</replaceable></arg>
       <arg>-d<arg choice="req"><replaceable>size</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>err_handler</replaceable></arg></arg>
-      <arg>-b</arg>
+      <arg>-f<arg choice="req"><replaceable>fencing_policy</replaceable></arg></arg>
+
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -160,6 +161,16 @@
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">show</arg>
     </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">suspend-io</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">resume-io</arg>
+    </cmdsynopsis>
   </refsynopsisdiv>
 
   <refsect1>
@@ -233,19 +244,43 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term><option>-b</option>,
-	  <option>--split-brain-fix</option></term>
+	  <term><option>-f</option>,
+	  <option>--fencing <replaceable>fencing_policy</replaceable></option></term>
 	  <listitem>
 	    <para>
-	      With that options set a primary node that looses contact to its
-	      its peer tries to outdate the peer. (This communication
-	      may happen over alternative communication pathes, see
-	      the <option>outdate-peer</option> handler). An outdated node
-	      refuses to become primary (although that can be overruled
-	      by an administrator).
-	      This mechanism helps to circumvent after split brain 
-	      situations before they happen.
+	      Under <option>fencing</option> we understand preventative
+	      measures to avoid situations where both nodes are primary
+	      and disconnected (AKA split brain).
 	    </para>
+	    <para>
+	      Valid fencing policies are:
+	    </para>
+
+            <variablelist>
+              <varlistentry><term><option>dont-care</option></term>
+	        <listitem><para>
+		  This is the default policy. No fencing actions are untertaken.
+		</para></listitem></varlistentry>
+	        <varlistentry><term><option>resource-only</option></term>
+		<listitem><para>
+		  If a node becomes a disconnected primary it tries to outdate
+		  the peer's disk. This is done by calling the outdate-peer
+		  handler. The handler is supposed to reach the other node over
+		  alternative communication pathes and call 'drbdadm outdate 
+		  res' there.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>resource-and-stonith</option></term> 
+		<listitem><para>
+		  If a node becomes a disconnected primary it freezes all
+		  its IO operations and calls its outdate-peer handler. The
+		  outdate-peer hander is supposed to reach the peer over
+		  alternative communicaton pathes and call 'drbdadm outdate 
+		  res' there. In case it can not reach the peer it should
+		  stonith the peer. IO is resumed as soon as the situation
+		  is resolved. In case your handler fails you can resume
+		  IO with the <option>resume-io</option> command.
+		</para></listitem></varlistentry>
+              </variablelist>
 	  </listitem>
 	</varlistentry>
       </variablelist>
@@ -414,7 +449,7 @@
 	</varlistentry>
 	<varlistentry>
 	  <term><option>-A</option>,
-	  <option>--asb-0p-policy </option><replaceable>asb-0p-policy</replaceable></term>
+	  <option>--after-sb-0pri </option><replaceable>asb-0p-policy</replaceable></term>
 	  <listitem>
 	    <para>
 	    possible policies are:
@@ -449,7 +484,7 @@
 
 	<varlistentry>
 	  <term><option>-B</option>,
-	  <option>--asb-1p-policy </option><replaceable>asb-1p-policy</replaceable></term>
+	  <option>--after-sb-1pri </option><replaceable>asb-1p-policy</replaceable></term>
 	  <listitem>
 	    <para>
 	    possible policies are:
@@ -482,7 +517,7 @@
 
 	<varlistentry>
 	  <term><option>-C</option>,
-	  <option>--asb-2p-policy </option><replaceable>asb-2p-policy</replaceable></term>
+	  <option>--after-sb-2pri </option><replaceable>asb-2p-policy</replaceable></term>
 	  <listitem>
 	    <para>
 	    possible policies are:
@@ -737,7 +772,7 @@
       <para>
         Temporarily suspend an ongoing resynchronisation by setting the local
 	pause flag. Resync only progresses if neighter the local nor the
-	remote pause flag is set.It might be desirable to postpone DRBD's 
+	remote pause flag is set. It might be desirable to postpone DRBD's 
 	resynchronisation after eventual resynchronisation of the backing
 	storage's RAID setup.
       </para>
@@ -753,8 +788,7 @@
       <para>
         Mark the data on the local backing storage as outdated. An outdated
 	device refuses to become primary. This is used in conjuction with 
-	<option>split-brain-fix</option> and by the peer's outdate-peer 
-	handler.
+	<option>fencing</option> and by the peer's outdate-peer handler.
       </para>
     </refsect2>
     <refsect2>
@@ -776,6 +810,23 @@
 	<replaceable>device</replaceable>.
       </para>
     </refsect2>
+    <refsect2>
+      <title>suspend-io</title>
+      <para>
+	This command is of no apparent use and just provided for the sake
+	of completeness.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>resume-io</title>
+      <para>
+	In the the outdate-peer handler fails to stonith the peer node,
+	and your <option>fencing</option> policy is set to
+	resource-and-stonith, you can unfreeze IO operations with this
+	command.
+      </para>
+    </refsect2>
+
   </refsect1>
   <refsect1>
     <title>Examples</title>
