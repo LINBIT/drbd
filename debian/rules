@@ -14,7 +14,7 @@ include /usr/share/dpatch/dpatch.make
 # This has to be exported to make some magic below work.
 export DH_OPTIONS
 
-PACKAGE=drbd0.7-module
+PACKAGE=drbd8-module
 MA_DIR ?= /usr/share/modass
 -include $(MA_DIR)/include/generic.make
 -include $(MA_DIR)/include/common-rules.make
@@ -83,8 +83,8 @@ clean: unpatch
 	dh_testroot
 	rm -f build-arch-stamp build-indep-stamp #CONFIGURE-STAMP#
 #	remove these files from upstream tgz
-	rm -f debian/drbd0.7.*
-	rm -f debian/drbd0.7-source.dirs
+	rm -f debian/drbd8.*
+	rm -f debian/drbd8-source.dirs
 	rm -f debian/kernel-patch-wup.kpatches debian/kernel-patch-wup.README.Debian debian/kernel-export-wup.patch
 	-$(MAKE) -C user clean
 	-$(MAKE) -C scripts clean
@@ -103,15 +103,15 @@ install-indep:
 	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd
 	cp drbd/linux/drbd_config.h debian/$(PACKAGE)-source/usr/src/modules/drbd
 	mkdir debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
-	cp -a scripts/adjust_drbd_config_h.sh debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
+#	cp -a scripts/adjust_drbd_config_h.sh debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
 
 #	 install debian/ files
 	cd debian ; cp changelog control compat *.modules.in rules copyright $(PACKAGE)-source/usr/src/modules/drbd/debian
 
 #	 tar the stuff
-	cd debian/$(PACKAGE)-source/usr/src/ ; tar pzfvc drbd0.7.tar.gz modules ; rm -rf modules
+	cd debian/$(PACKAGE)-source/usr/src/ ; tar pzfvc drbd8.tar.gz modules ; rm -rf modules
 
-	install -m 755 $(CURDIR)/debian/modass.drbd0.7-module-source $(CURDIR)/debian/$(PACKAGE)-source/usr/share/modass/overrides/drbd0.7-module-source
+	install -m 755 $(CURDIR)/debian/modass.drbd8-module-source $(CURDIR)/debian/$(PACKAGE)-source/usr/share/modass/overrides/drbd8-module-source
 	dh_install -i
 
 install-arch:
@@ -119,10 +119,10 @@ install-arch:
 	dh_testroot
 	dh_clean -k -s
 	dh_installdirs -s
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C user install
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C scripts install
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C benchmark install
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd0.7-utils/ -C documentation install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C user install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C scripts install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C benchmark install
+	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C documentation install
 
 	dh_install -s
 # Must not depend on anything. This is to be called by

@@ -8,7 +8,7 @@
 
 MA_DIR=${MA_DIR:-/usr/share/modass}
 
-TARBALL=/usr/src/drbd0.7.tar.gz
+TARBALL=/usr/src/drbd8.tar.gz
 BUILDDIR=${MODULE_LOC:-/usr/src/modules}/drbd
 
 . $MA_DIR/packages/generic.sh
