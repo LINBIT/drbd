@@ -194,6 +194,17 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Tue Apr  6 2006 17:53:56 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0-pre2-1)
+ * removed the "on-disconnect" and "split-brain-fix" config options and
+   added the "fencing" config option instead.
+ * Updated all manpages to cover drbd-8.0
+ * /proc/drbd shows the whole drbd_state_t, as well the logging of state
+   changes shows every field of drbd_state_t now.
+ * Deactivated most of the TCQ code for now, since it changed again
+   in the mainline kernel.
+ * Minor other fixes.
+
 * Tue Mar 14 2006 11:37:56 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0_pre1-1)
  * Removed support for Linux-2.4.x

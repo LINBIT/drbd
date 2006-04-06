@@ -111,7 +111,7 @@
         <listitem><para>
           Set-gi allows you to set the generation identifier. 
 	  <replaceable>Gi</replaceable> needs to be a generation 
-	  counter for the 0.6 and 0.7 format, and a UUID set for 0.8.
+	  counter for the 0.6 and 0.7 format, and a UUID set for 8.0.
 	  Specify it in the same way as get-gi shows it.
 	</para></listitem>
       </varlistentry>
@@ -128,7 +128,7 @@
   <refsect1>
     <title>Version</title>
     <simpara>
-      This document is correct for version 0.8 of the DRBD distribution.
+      This document is correct for version 8.0 of the DRBD distribution.
     </simpara>
   </refsect1>
 

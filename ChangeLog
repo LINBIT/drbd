@@ -1,8 +1,19 @@
 Latest:
 ------
- ChangeLog last updated: r1806 2005-05-23
+ ChangeLog last updated: r2130 2006-04-06
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+8.0-pre2 (api:81/proto:80)
+--------
+ * removed the "on-disconnect" and "split-brain-fix" config options and
+   added the "fencing" config option instead.
+ * Updated all manpages to cover drbd-8.0
+ * /proc/drbd shows the whole drbd_state_t, as well the logging of state
+   changes shows every field of drbd_state_t now.
+ * Deactivated most of the TCQ code for now, since it changed again
+   in the mainline kernel.
+ * Minor other fixes.
 
 8.0_pre1 (api:80/proto:80)
 --------

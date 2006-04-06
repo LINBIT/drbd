@@ -838,6 +838,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 	default:
 		/* The script is broken ... */
 		nps = DUnknown;
+		drbd_request_state(mdev,NS(disk,Outdated));
 		ERR("outdate-peer helper broken, returned %d \n",(r>>8)&0xff);
 		return nps;
 	}
