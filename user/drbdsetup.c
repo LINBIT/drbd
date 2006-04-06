@@ -1309,6 +1309,7 @@ int cmd_show(int drbd_fd,char** argv __attribute((unused)),int argc __attribute(
   struct ioctl_get_config cn;
   struct sockaddr_in *other_addr;
   struct sockaddr_in *my_addr;
+  struct stat sb;
   int err;
 
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&cn);
@@ -1318,84 +1319,101 @@ int cmd_show(int drbd_fd,char** argv __attribute((unused)),int argc __attribute(
       return 20;
     }
 
-  if( cn.state.conn == StandAlone && cn.state.disk == Diskless)
-    {
-      printf("Not configured\n");
-      return 0;
-    }
+#define SHOW_I(T,U,M,D) \
+if(M==D) printf("\t# "); \
+else printf("\t"); \
+printf( T "\t%d; # " U "\n",M)
+
+#define SHOW_H(T,M,D,H) \
+if(M==D) printf("\t# "); \
+else printf("\t"); \
+printf( T "\t%s;\n",H[M])
 
   if( cn.state.disk > Diskless)
     {
-
-      printf("Lower device: %02d:%02d   (%s)\n",
-	     cn.lower_device_major,
-	     cn.lower_device_minor,
-	     check_dev_name(cn.lower_device_name,cn.lower_device_major,
-			    cn.lower_device_minor));
-      if( cn.lower_device_major == cn.meta_device_major && 
-	  cn.lower_device_minor == cn.meta_device_minor ) {
-	printf("Meta device: internal\n");
-      } else {
-	printf("Meta device: %02d:%02d   (%s)\n",
-	       cn.meta_device_major,
-	       cn.meta_device_minor,
-	       check_dev_name(cn.meta_device_name,cn.meta_device_major,
-			      cn.meta_device_minor));
-	printf("Meta index: %d\n",cn.meta_index);
-      }
-
-      printf("Disk options:\n");
-      if( cn.disk_size_user ) printf(" size = %lu KB\n",
+      printf("disk {\n");
+      SHOW_H("on-io-error",cn.on_io_error,DEF_ON_IO_ERROR,eh_names);
+      // SHOW_H("fencing",cn.fencing,DEF_FENCING,fencing_names);
+      if( cn.disk_size_user ) printf("\tsize\t%luK;\n",
 				     (unsigned long)cn.disk_size_user);
-      if( cn.on_io_error != DEF_ON_IO_ERROR) {
-	printf(" on-io-error = %s\n",eh_names[cn.on_io_error]);
-      }
-
+      printf("}\n");
     }
 
   if( cn.state.conn > StandAlone)
     {
-      my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
-      other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
-      printf("Local address: %s:%d\n",
-	     inet_ntoa(my_addr->sin_addr),
-	     ntohs(my_addr->sin_port));
-      printf("Remote address: %s:%d\n",
-	     inet_ntoa(other_addr->sin_addr),
-	     ntohs(other_addr->sin_port));
-      printf("Wire protocol: %c\n",'A'-1+cn.nconf.wire_protocol);
-      printf("Net options:\n");
-      printf(" timeout = %d.%d sec %s\n",cn.nconf.timeout/10,cn.nconf.timeout%10,
-	     cn.nconf.timeout == DEF_NET_TIMEOUT ? "(default)" : "" );
-
-#define SHOW_I(T,U,M,D) printf(" " T " = %d " U " %s\n", M, M == D ? "(default)" : "")
-
+      printf("net {\n");
+      SHOW_I("timeout","1/10 seconds",cn.nconf.timeout,DEF_NET_TIMEOUT);
       SHOW_I("connect-int","sec", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
       SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
       SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
       SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
       SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
       SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
-
-#define SHOW_H(T,M,D,H) if( M != D ) { printf(" " T " = %s\n",H[M]); }
       SHOW_H("on-disconnect",cn.nconf.on_disconnect,DEF_ON_DISCONNECT,dh_names);
-
-      if( cn.nconf.two_primaries ) printf(" allow-two-primaries\n");
-
       SHOW_H("after-sb-0pri",cn.nconf.after_sb_0p,DEF_AFTER_SB_0P,asb0p_names);
       SHOW_H("after-sb-1pri",cn.nconf.after_sb_1p,DEF_AFTER_SB_0P,asb1p_names);
       SHOW_H("after-sb-2pri",cn.nconf.after_sb_2p,DEF_AFTER_SB_0P,asb2p_names);
+      if( cn.nconf.two_primaries ) printf("\tallow-two-primaries;\n");
+      if( cn.nconf.want_lose ) printf("\tdiscard-my-data;\n");
+      printf("}\n");
+    }
 
-      if( cn.nconf.want_lose ) printf(" discard-my-data\n");
-
-      printf("Syncer options:\n");
-
-      SHOW_I("rate","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
-      SHOW_I("after","", cn.sconf.after, DEF_SYNC_AFTER);
+  if( cn.state.conn > StandAlone)
+    {
+      printf("syncer {\n");
+      SHOW_I("rate\t","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
+      SHOW_I("after\t","", cn.sconf.after, DEF_SYNC_AFTER);
       SHOW_I("al-extents","", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
+      if( cn.sconf.skip ) printf("\tskip-sync;\n");
+      if( cn.sconf.use_csums ) printf("\tuse-csums;\n");
+      printf("}\n");
+    }
 
-      if( cn.sconf.skip ) printf(" skip-sync\n");
-      if( cn.sconf.use_csums ) printf(" use-csums\n");
+  if( cn.state.disk > Diskless || cn.state.conn > StandAlone)
+    {
+      err=fstat(drbd_fd,&sb);
+      if(err)
+	{
+	  PERROR("fstat() failed");
+	  return 20;
+	}
+      printf("on _localhost_ {\n");
+      printf("\tdevice\t\t\"/dev/drbd%d\";\n",minor(sb.st_rdev));
+      printf("\tdisk\t\t\"/dev/%s\"; # (%d:%d)\n",
+	     check_dev_name(cn.lower_device_name,cn.lower_device_major,
+			    cn.lower_device_minor),
+	     cn.lower_device_major,
+	     cn.lower_device_minor);
+
+      if( cn.lower_device_major == cn.meta_device_major && 
+	  cn.lower_device_minor == cn.meta_device_minor ) {
+	printf("\tmeta-disk\tinternal;\n");
+      } else {
+	printf("\tmeta-disk\t\"%s\" [%d]; #(%d:%d)\n",
+	       check_dev_name(cn.meta_device_name,cn.meta_device_major,
+			      cn.meta_device_minor),
+	       cn.meta_index,
+	       cn.meta_device_major,
+	       cn.meta_device_minor);
+      }
+
+      if( cn.state.conn > StandAlone) {
+	my_addr = (struct sockaddr_in *)cn.nconf.my_addr;
+	printf("\taddress\t\t%s:%d;\n",
+	       inet_ntoa(my_addr->sin_addr),
+	       ntohs(my_addr->sin_port));
+      }
+      printf("}\n");
+    }
+
+  if( cn.state.conn > StandAlone)
+    {
+      other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
+      printf("on _remote_ {\n");
+      printf("\taddress\t%s:%d;\n",
+	     inet_ntoa(other_addr->sin_addr),
+	     ntohs(other_addr->sin_port));
+      printf("}\n");
     }
 
   return 0;
