@@ -1185,7 +1185,7 @@ long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
 int drbd_ioctl(struct inode *inode, struct file *file,
 			   unsigned int cmd, unsigned long arg)
 {
-	int r,minor,err=0;
+	int r,minor,err=0,io_suspend=0;
 	long time;
 	struct Drbd_Conf *mdev;
 	struct ioctl_wait* wp;
@@ -1461,6 +1461,17 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 
 	case DRBD_IOCTL_RESUME_SYNC:
 		if(!drbd_resync_resume(mdev, UserImposed)) err = -EINPROGRESS;
+		break;
+		
+	case DRBD_IOCTL_SUSPEND_IO:
+		io_suspend=1;
+	case DRBD_IOCTL_RESUME_IO:
+		r = drbd_request_state(mdev,NS(susp,io_suspend));
+		if( r < SS_Success ) {
+			err = put_user(r, (int *) arg);
+			if(!err) err=-EIO;
+			else err=-EINVAL;
+		}
 		break;
 
 	default:

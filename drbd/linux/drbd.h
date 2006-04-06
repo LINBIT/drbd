@@ -265,7 +265,6 @@ typedef enum {
 	SS_UnknownError=0,
 	SS_TowPrimaries=-1,
 	SS_NoConsistnetDisk=-2,
-	SS_REMOVE_ME=-3,
 	SS_BothInconsistent=-4,
 	SS_SyncingDiskless=-5,
 	SS_ConnectedOutdates=-6,
@@ -361,6 +360,8 @@ struct ioctl_get_uuids {
 #define DRBD_IOCTL_GET_UUIDS        _IOR( DRBD_IOCTL_LETTER, 0x16, struct ioctl_get_uuids )
 #define DRBD_IOCTL_PAUSE_SYNC       _IO ( DRBD_IOCTL_LETTER, 0x17)
 #define DRBD_IOCTL_RESUME_SYNC      _IO ( DRBD_IOCTL_LETTER, 0x18)
+#define DRBD_IOCTL_SUSPEND_IO       _IOW( DRBD_IOCTL_LETTER, 0x19, int )
+#define DRBD_IOCTL_RESUME_IO        _IOW( DRBD_IOCTL_LETTER, 0x1A, int )
 
 #endif
 

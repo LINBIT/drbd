@@ -126,6 +126,9 @@ int cmd_cstate(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_dstate(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_show_gi(int drbd_fd,char** argv,int argc,struct option *options);
 int cmd_get_gi(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_suspend_io(int drbd_fd,char** argv,int argc,struct option *options);
+int cmd_resume_io(int drbd_fd,char** argv,int argc,struct option *options);
+
 
 struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
@@ -194,6 +197,8 @@ struct drbd_cmd commands[] = {
   {"show-gi", cmd_show_gi,           0, 0, },
   {"get-gi", cmd_get_gi,             0, 0, },
   {"show", cmd_show,                 0, 0, },
+  {"suspend-io", cmd_suspend_io,     0, 0, },
+  {"resume-io", cmd_resume_io,       0, 0, },
 };
 
 const char *eh_names[] = {
@@ -1502,6 +1507,46 @@ int cmd_show_gi(int drbd_fd,char** argv __attribute((unused)),int argc __attribu
   printf("%u bits set in the bitmap [ %s out of sync ]\n",
 	 cn.bits_set, ppsize(ppb, cn.bits_set * 4));
 
+  return 0;
+}
+
+int cmd_suspend_io(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
+{
+  int err;
+  int reason;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_SUSPEND_IO, &reason);
+  if(err)
+    {
+      err=errno;
+      PERROR("ioctl(,DRBD_IOCTL_SUSPEND_IO) failed");
+      if(err==EIO) 
+	{
+	  fprintf(stderr,"%s\n",set_st_err_name(reason));
+	}
+      return 20;
+    }
+  
+  return 0;
+}
+
+int cmd_resume_io(int drbd_fd,char** argv __attribute((unused)),int argc __attribute((unused)),struct option *options __attribute((unused)))
+{
+  int err;
+  int reason;
+
+  err=ioctl(drbd_fd,DRBD_IOCTL_RESUME_IO, &reason);
+  if(err)
+    {
+      err=errno;
+      PERROR("ioctl(,DRBD_IOCTL_RESUME_IO) failed");
+      if(err==EIO) 
+	{
+	  fprintf(stderr,"%s\n",set_st_err_name(reason));
+	}
+      return 20;
+    }
+  
   return 0;
 }
 
