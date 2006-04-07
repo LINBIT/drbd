@@ -1320,14 +1320,14 @@ int cmd_show(int drbd_fd,char** argv __attribute((unused)),int argc __attribute(
     }
 
 #define SHOW_I(T,U,M,D) \
-if(M==D) printf("\t# "); \
-else printf("\t"); \
-printf( T "\t%d; # " U "\n",M)
+printf("\t" T "\t%d",M); \
+if(M==D) printf(" _is_default"); \
+printf(";   # " U "\n")
 
 #define SHOW_H(T,M,D,H) \
-if(M==D) printf("\t# "); \
-else printf("\t"); \
-printf( T "\t%s;\n",H[M])
+printf("\t" T "\t%s",H[M]); \
+if(M==D) printf(" _is_default"); \
+printf(";\n")
 
   if( cn.state.disk > Diskless)
     {
@@ -1343,13 +1343,13 @@ printf( T "\t%s;\n",H[M])
     {
       printf("protocol %c;\n",'A'-1+cn.nconf.wire_protocol);
       printf("net {\n");
-      SHOW_I("timeout","1/10 seconds",cn.nconf.timeout,DEF_NET_TIMEOUT);
-      SHOW_I("connect-int","sec", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
-      SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
-      SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
-      SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
-      SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
-      SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
+      SHOW_I("timeout\t","1/10 seconds",cn.nconf.timeout,DEF_NET_TIMEOUT);
+      SHOW_I("connect-int","seconds", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
+      SHOW_I("ping-int","seconds", cn.nconf.ping_int, DEF_NET_PING_I);
+      SHOW_I("max-epoch-size","write requests", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
+      SHOW_I("max-buffers","pages", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
+      SHOW_I("sndbuf-size","byte", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
+      SHOW_I("ko-count","1", cn.nconf.ko_count, DEF_KO_COUNT);
       SHOW_H("on-disconnect",cn.nconf.on_disconnect,DEF_ON_DISCONNECT,dh_names);
       SHOW_H("after-sb-0pri",cn.nconf.after_sb_0p,DEF_AFTER_SB_0P,asb0p_names);
       SHOW_H("after-sb-1pri",cn.nconf.after_sb_1p,DEF_AFTER_SB_0P,asb1p_names);
@@ -1362,9 +1362,9 @@ printf( T "\t%s;\n",H[M])
   if( cn.state.conn > StandAlone)
     {
       printf("syncer {\n");
-      SHOW_I("rate\t","KB/sec", cn.sconf.rate, DEF_SYNC_RATE);
-      SHOW_I("after\t","", cn.sconf.after, DEF_SYNC_AFTER);
-      SHOW_I("al-extents","", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
+      SHOW_I("rate\t","KByte/second", cn.sconf.rate, DEF_SYNC_RATE);
+      SHOW_I("after\t","minor", cn.sconf.after, DEF_SYNC_AFTER);
+      SHOW_I("al-extents","4MByte", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
       if( cn.sconf.skip ) printf("\tskip-sync;\n");
       if( cn.sconf.use_csums ) printf("\tuse-csums;\n");
       printf("}\n");
@@ -1378,9 +1378,9 @@ printf( T "\t%s;\n",H[M])
 	  PERROR("fstat() failed");
 	  return 20;
 	}
-      printf("on _localhost_ {\n");
+      printf("_this_host {\n");
       printf("\tdevice\t\t\"/dev/drbd%d\";\n",minor(sb.st_rdev));
-      printf("\tdisk\t\t\"/dev/%s\"; # (%d:%d)\n",
+      printf("\tdisk\t\t\"/dev/%s\" _major %d _minor %d;\n",
 	     check_dev_name(cn.lower_device_name,cn.lower_device_major,
 			    cn.lower_device_minor),
 	     cn.lower_device_major,
@@ -1390,7 +1390,7 @@ printf( T "\t%s;\n",H[M])
 	  cn.lower_device_minor == cn.meta_device_minor ) {
 	printf("\tmeta-disk\tinternal;\n");
       } else {
-	printf("\tmeta-disk\t\"%s\" [%d]; #(%d:%d)\n",
+	printf("\tmeta-disk\t\"%s\" [%d] _major %d _minor %d;\n",
 	       check_dev_name(cn.meta_device_name,cn.meta_device_major,
 			      cn.meta_device_minor),
 	       cn.meta_index,
@@ -1410,7 +1410,7 @@ printf( T "\t%s;\n",H[M])
   if( cn.state.conn > StandAlone)
     {
       other_addr = (struct sockaddr_in *)cn.nconf.other_addr;
-      printf("on _remote_ {\n");
+      printf("_remote_host {\n");
       printf("\taddress\t%s:%d;\n",
 	     inet_ntoa(other_addr->sin_addr),
 	     ntohs(other_addr->sin_port));
