@@ -601,6 +601,7 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 		bdevname(mdev->bc->md_bdev,cn.meta_device_name);
 		cn.meta_index=mdev->bc->md_index;
 		cn.on_io_error=mdev->bc->on_io_error;
+		cn.fencing=mdev->bc->fencing;
 		dec_local(mdev);
 	}
 	cn.state=mdev->state;

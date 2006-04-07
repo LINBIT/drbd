@@ -290,6 +290,7 @@ struct ioctl_get_config {
 	OUT int               lower_device_major;
 	OUT int               lower_device_minor;
 	OUT enum io_error_handler on_io_error;
+	OUT enum fencing_policy fencing;
 	OUT int               meta_device_major;
 	OUT int               meta_device_minor;
 	OUT int               meta_index;

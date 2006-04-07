@@ -1333,7 +1333,7 @@ printf( T "\t%s;\n",H[M])
     {
       printf("disk {\n");
       SHOW_H("on-io-error",cn.on_io_error,DEF_ON_IO_ERROR,eh_names);
-      // SHOW_H("fencing",cn.fencing,DEF_FENCING,fencing_names);
+      SHOW_H("fencing\t",cn.fencing,DEF_FENCING,fencing_names);
       if( cn.disk_size_user ) printf("\tsize\t%luK;\n",
 				     (unsigned long)cn.disk_size_user);
       printf("}\n");
@@ -1341,6 +1341,7 @@ printf( T "\t%s;\n",H[M])
 
   if( cn.state.conn > StandAlone)
     {
+      printf("protocol %c;\n",'A'-1+cn.nconf.wire_protocol);
       printf("net {\n");
       SHOW_I("timeout","1/10 seconds",cn.nconf.timeout,DEF_NET_TIMEOUT);
       SHOW_I("connect-int","sec", cn.nconf.try_connect_int, DEF_NET_TRY_CON_I);
