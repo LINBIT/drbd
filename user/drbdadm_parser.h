@@ -83,7 +83,12 @@ enum yytokentype {
 	TK_USAGE_COUNT,
 	TK_ASK,
 	TK_YES,
-	TK_NO
+	TK_NO,
+	TK__IS_DEFAULT,
+	TK__MAJOR,
+	TK__MINOR,
+	TK__THIS_HOST,
+	TK__REMOTE_HOST
 };
 
 typedef struct YYSTYPE {

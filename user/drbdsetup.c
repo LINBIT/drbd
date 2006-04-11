@@ -1322,12 +1322,27 @@ int cmd_show(int drbd_fd,char** argv __attribute((unused)),int argc __attribute(
 #define SHOW_I(T,U,M,D) \
 printf("\t" T "\t%d",M); \
 if(M==D) printf(" _is_default"); \
-printf(";   # " U "\n")
+printf(";  \t# " U "\n")
+
+#define SHOW_IU(T,U1,U2,M,D) \
+printf("\t" T "\t%d",M); \
+if(M==D) printf(" _is_default"); \
+printf(U1";  \t# " U2 "\n")
 
 #define SHOW_H(T,M,D,H) \
 printf("\t" T "\t%s",H[M]); \
 if(M==D) printf(" _is_default"); \
 printf(";\n")
+
+#define SHOW_S(T,M,D) \
+printf("\t" T "\t\"%s\"",M); \
+if(!strcmp(M,D)) printf(" _is_default"); \
+printf(";\n")
+
+  if( cn.state.disk == Diskless && cn.state.conn == StandAlone)
+    {
+      printf("# not configured.\n");
+    }
 
   if( cn.state.disk > Diskless)
     {
@@ -1350,10 +1365,12 @@ printf(";\n")
       SHOW_I("max-buffers","pages", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
       SHOW_I("sndbuf-size","byte", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
       SHOW_I("ko-count","1", cn.nconf.ko_count, DEF_KO_COUNT);
-      SHOW_H("on-disconnect",cn.nconf.on_disconnect,DEF_ON_DISCONNECT,dh_names);
+      // SHOW_H("on-disconnect",cn.nconf.on_disconnect,DEF_ON_DISCONNECT,dh_names);
       SHOW_H("after-sb-0pri",cn.nconf.after_sb_0p,DEF_AFTER_SB_0P,asb0p_names);
       SHOW_H("after-sb-1pri",cn.nconf.after_sb_1p,DEF_AFTER_SB_0P,asb1p_names);
       SHOW_H("after-sb-2pri",cn.nconf.after_sb_2p,DEF_AFTER_SB_0P,asb2p_names);
+      SHOW_S("cram-hmac-alg",cn.nconf.cram_hmac_alg,"");
+      SHOW_S("shared-secret",cn.nconf.shared_secret,"");
       if( cn.nconf.two_primaries ) printf("\tallow-two-primaries;\n");
       if( cn.nconf.want_lose ) printf("\tdiscard-my-data;\n");
       printf("}\n");
@@ -1362,7 +1379,7 @@ printf(";\n")
   if( cn.state.conn > StandAlone)
     {
       printf("syncer {\n");
-      SHOW_I("rate\t","KByte/second", cn.sconf.rate, DEF_SYNC_RATE);
+      SHOW_IU("rate\t","K","(K)Byte/second", cn.sconf.rate, DEF_SYNC_RATE);
       SHOW_I("after\t","minor", cn.sconf.after, DEF_SYNC_AFTER);
       SHOW_I("al-extents","4MByte", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
       if( cn.sconf.skip ) printf("\tskip-sync;\n");

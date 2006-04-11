@@ -157,6 +157,7 @@ static struct d_option* new_opt(char* name,char* value)
 	cn->name=name;
 	cn->value=value;
 	cn->mentioned=0;
+	cn->is_default=0;
 
 	return cn;
 }
@@ -271,7 +272,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 	int token;
 	enum range_checks rc;
 
-	struct d_option* options = NULL;
+	struct d_option* options = NULL, *ro = NULL;
 
 	EXP('{');
 	while(1) {
@@ -283,14 +284,114 @@ static struct d_option* parse_options(int token_switch,int token_option)
 			rc = yylval.rc;
 			EXP2(TK_STRING,TK_INTEGER);
 			range_check(rc,opt_name,yylval.txt);
-			options = APPEND(options,new_opt(opt_name,yylval.txt));
+			ro = new_opt(opt_name,yylval.txt);
+			options = APPEND(options,ro);
 		} else if ( token == '}' ) {
 			return options;
 		} else {
 			pe_expected("An option keyword");
 		}
-		EXP(';');
+		switch(yylex()) {
+		case TK__IS_DEFAULT:
+			ro->is_default=1;
+			EXP(';');
+			break;
+		case ';':
+			break;
+		default:
+			pe_expected("_is_default | ;");
+		}
 	}
+}
+
+static void parse_host_body(struct d_host_info *host, 
+			    struct d_resource* res,
+			    int require_all) 
+{
+	EXP('{');
+	while(1) {
+		switch(yylex()) {
+		case TK_DISK:
+			EXP(TK_STRING);
+			host->disk = yylval.txt;
+			check_uniq("disk", "%s:%s:%s","disk",
+				   host->name,yylval.txt);
+			switch(yylex()) {
+			case TK__MAJOR:
+				EXP(TK_INTEGER);
+				host->disk_major = atoi(yylval.txt);
+				EXP(TK__MINOR);
+				EXP(TK_INTEGER);
+				host->disk_minor = atoi(yylval.txt);
+				EXP(';');
+			case ';':
+				break;
+			default:
+				pe_expected("_major | ;");
+			}
+			break;
+		case TK_DEVICE:
+			EXP(TK_STRING);
+			host->device = yylval.txt;
+			check_uniq("device", "%s:%s:%s","device",
+				   host->name,yylval.txt);
+			EXP(';');
+			break;
+		case TK_ADDRESS:
+			EXP(TK_IPADDR);
+			host->address = yylval.txt;
+			EXP(':');
+			EXP(TK_INTEGER);
+			host->port = yylval.txt;
+			range_check(R_PORT, "port", yylval.txt);
+			EXP(';');
+			break;
+		case TK_META_DISK:
+			EXP(TK_STRING);
+			host->meta_disk = yylval.txt;
+			if(strcmp("internal",yylval.txt)) {
+				EXP('[');
+				EXP(TK_INTEGER);
+				host->meta_index = yylval.txt;
+				EXP(']');
+				EXP(';');
+			} else {
+				switch(yylex()) {
+				case TK__MAJOR:
+					EXP(TK_INTEGER);
+					host->meta_major = atoi(yylval.txt);
+					EXP(TK__MINOR);
+					EXP(TK_INTEGER);
+					host->meta_minor = atoi(yylval.txt);
+					EXP(';');
+				case ';':
+					break;
+				default:
+					pe_expected("_major | ;");
+				}
+			}
+			check_meta_disk(host);
+			break;
+		case TK_FLEX_META_DISK:
+			EXP(TK_STRING);
+			host->meta_disk = yylval.txt;
+			host->meta_index = strdup("flexible");
+			check_meta_disk(host);
+			EXP(';');
+			break;
+		case '}':
+			goto break_loop;
+		default:
+			pe_expected("disk | device | address | meta-disk "
+				    "| flex-meta-disk");
+		}
+	}
+ break_loop:
+	if (!require_all) return;
+	if (!host->device)	derror(host,res,"device");
+	if (!host->disk)	derror(host,res,"disk");
+	if (!host->address)	derror(host,res,"address");
+	if (!host->meta_disk)	derror(host,res,"meta-disk");
 }
 
 static void parse_host_section(struct d_resource* res)
@@ -316,73 +417,37 @@ static void parse_host_section(struct d_resource* res)
 		}
 		res->peer = host;
 	}
+	parse_host_body(host,res,1);
+}
 
-	EXP('{');
-	while(1) {
-		switch(yylex()) {
-		case TK_DISK:
-			EXP(TK_STRING);
-			host->disk = yylval.txt;
-			check_uniq("disk", "%s:%s:%s","disk",
-				   host->name,yylval.txt);
-			break;
-		case TK_DEVICE:
-			EXP(TK_STRING);
-			host->device = yylval.txt;
-			check_uniq("device", "%s:%s:%s","device",
-				   host->name,yylval.txt);
-			break;
-		case TK_ADDRESS:
-			EXP(TK_IPADDR);
-			host->address = yylval.txt;
-			EXP(':');
-			EXP(TK_INTEGER);
-			host->port = yylval.txt;
-			range_check(R_PORT, "port", yylval.txt);
-			break;
-		case TK_META_DISK:
-			EXP(TK_STRING);
-			host->meta_disk = yylval.txt;
-			if(strcmp("internal",yylval.txt)) {
-				EXP('[');
-				EXP(TK_INTEGER);
-				host->meta_index = yylval.txt;
-				EXP(']');
-			}
-			check_meta_disk(host);
-			break;
-		case TK_FLEX_META_DISK:
-			EXP(TK_STRING);
-			host->meta_disk = yylval.txt;
-			host->meta_index = strdup("flexible");
-			check_meta_disk(host);
-			break;
-		case '}':
-			goto break_loop;
-		default:
-			pe_expected("disk | device | address | meta-disk "
-				    "| flex-meta-disk");
-		}
-		EXP(';');
+static void parse_drbdsetup_host_dump(struct d_resource* res, int local)
+{
+	struct d_host_info *host;
+
+	c_section_start = line;
+
+	host=calloc(1,sizeof(struct d_host_info));
+
+	if(local) {
+		res->me = host;
+	} else {
+		res->peer = host;
 	}
- break_loop:
-	if (!host->device)	derror(host,res,"device");
-	if (!host->disk)	derror(host,res,"disk");
-	if (!host->address)	derror(host,res,"address");
-	if (!host->meta_disk)	derror(host,res,"meta-disk");
+
+	parse_host_body(host,res,0);
 }
 
 struct d_resource* parse_resource(char* res_name)
 {
 	struct d_resource* res;
+	int token;
 
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
 	res->next = NULL;
 
-	EXP('{');
 	while(1) {
-		switch(yylex()) {
+		switch((token=yylex())) {
 		case TK_PROTOCOL:
 			EXP(TK_STRING);
 			res->protocol=yylval.txt;
@@ -390,6 +455,12 @@ struct d_resource* parse_resource(char* res_name)
 			break;
 		case TK_ON:
 			parse_host_section(res);
+			break;
+		case TK__THIS_HOST:
+			parse_drbdsetup_host_dump(res, 1);
+			break;
+		case TK__REMOTE_HOST:
+			parse_drbdsetup_host_dump(res, 0);
 			break;
 		case TK_DISK:
 			res->disk_options = parse_options(TK_DISK_SWITCH,
@@ -411,10 +482,12 @@ struct d_resource* parse_resource(char* res_name)
 			res->handlers =  parse_options(0,
 						       TK_HANDLER_OPTION);
 			break;
-		case '}': return res;
+		case '}': 
+		case 0:	
+			return res;
 		default:
-			pe_expected("protocol | on | disk | net | syncer |"
-				    " startup | handler");
+			pe_expected_got("protocol | on | disk | net | syncer |"
+					" startup | handler",token);
 		}
 	}
 }
@@ -442,9 +515,13 @@ void yyparse(void)
 	while(1) {
 		switch(yylex()) {
 		case TK_GLOBAL: parse_global(); break;
-		case TK_COMMON: common = parse_resource("common"); break;
+		case TK_COMMON: 
+			EXP('{');
+			common = parse_resource("common"); 
+			break;
 		case TK_RESOURCE: 
 			EXP(TK_STRING);
+			EXP('{');
 			config = APPEND( config , parse_resource(yylval.txt) );
 			break;
 		case TK_SKIP: parse_skip(); break;

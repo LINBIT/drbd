@@ -31,7 +31,7 @@ SNUMB		[0-9]{1,3}
 IPV4ADDR	({SNUMB}"."){3}{SNUMB}
 WS		[ \t]
 OPCHAR		[{};\[\]:]
-DQSTRING	\"[^\"\\\n]{1,255}\"
+DQSTRING	\"[^\"\\\n]{0,255}\"
 STRING		[a-zA-Z0-9/._-]{1,80}
 LONG_STRING	[a-zA-Z0-9/._-]{81}
 
@@ -66,6 +66,11 @@ resource		{ DP; return TK_RESOURCE;		}
 meta-disk		{ DP; return TK_META_DISK;		}
 flexible-meta-disk	{ DP; return TK_FLEX_META_DISK;		}
 usage-count 		{ DP; return TK_USAGE_COUNT;		}
+_is_default 		{ DP; return TK__IS_DEFAULT;		}
+_major	 		{ DP; return TK__MAJOR;			}
+_minor	 		{ DP; return TK__MINOR;			}
+_this_host 		{ DP; return TK__THIS_HOST;		}
+_remote_host 		{ DP; return TK__REMOTE_HOST;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
 fencing			{ DP; CP; return TK_DISK_OPTION;	}

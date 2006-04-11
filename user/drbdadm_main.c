@@ -728,6 +728,24 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
   return rv;
 }
 
+// need to convert discard-node-nodename to discard-local or discard-remote.
+void convert_discard_opt(struct d_resource* res)
+{
+  struct d_option* opt;
+
+  if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
+    if(!strncmp(opt->value,"discard-node-",13)) {
+      if(!strcmp(nodeinfo.nodename,opt->value+13)) {
+	free(opt->value);
+	opt->value=strdup("discard-local");
+      } else {
+	free(opt->value);
+	opt->value=strdup("discard-remote");
+      }
+    }
+  }
+}
+
 int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
@@ -742,16 +760,7 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
   ssprintf(argv[argc++],"%s:%s",res->peer->address,res->peer->port);
   argv[argc++]=res->protocol;
 
-  // need to convert discard-node-nodename to discard-local or discard-remote.
-  if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
-    if(!strncmp(opt->value,"discard-node-",13)) {
-      if(!strcmp(nodeinfo.nodename,opt->value+13)) {
-	opt->value=strdup("discard-local");
-      } else {
-	opt->value=strdup("discard-remote");
-      }
-    }
-  }
+  convert_discard_opt(res);
 
   opt=res->net_options;
   make_options(opt);
@@ -767,6 +776,19 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 
 struct d_resource* res_by_name(const char *name);
 
+// Need to convert after from resourcename to minor_number.
+void convert_after_option(struct d_resource* res)
+{
+  struct d_option* opt;
+
+  if ( (opt = find_opt(res->sync_options, "after")) ) {
+    char *ptr;
+    ssprintf(ptr,"%d",dt_minor_of_dev(res_by_name(opt->value)->me->device));
+    free(opt->value);
+    opt->value=strdup(ptr);
+  }
+}
+
 int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[20];
@@ -777,13 +799,7 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
   argv[argc++]=res->me->device;
   argv[argc++]="syncer";
 
-  // Need to convert after from resourcename to minor_number.
-  if ( (opt = find_opt(res->sync_options, "after")) ) {
-    char *ptr;
-    ssprintf(ptr,"%d",dt_minor_of_dev(res_by_name(opt->value)->me->device));
-    free(opt->value);
-    opt->value=strdup(ptr);
-  }
+  convert_after_option(res);
 
   opt=res->sync_options;
   make_options(opt);

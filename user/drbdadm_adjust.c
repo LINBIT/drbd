@@ -28,6 +28,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -36,312 +37,176 @@
 #include "drbdadm.h"
 #include "drbdtool_common.h"
 
-/******
- This is a bit uggly.
- If you think you are clever, then consider to contribute a nicer
- implementation of adm_adjust()
+extern FILE* yyin;
+extern struct d_resource* parse_resource(char*);
 
-*/
-
-FILE *m_popen(int *pid,char** argv)
+static FILE *m_popen(int *pid,char** argv)
 {
-  int mpid;
-  int pipes[2];
+	int mpid;
+	int pipes[2];
 
-  if(pipe(pipes)) {
-    perror("Creation of pipes failed");
-    exit(E_exec_error);
-  }
+	if(pipe(pipes)) {
+		perror("Creation of pipes failed");
+		exit(E_exec_error);
+	}
 
-  mpid = fork();
-  if(mpid == -1) {
-    fprintf(stderr,"Can not fork");
-    exit(E_exec_error);
-  }
-  if(mpid == 0) {
-    close(pipes[0]); // close reading end
-    dup2(pipes[1],1); // 1 = stdout
-    close(pipes[1]);
-    execvp(argv[0],argv);
-    fprintf(stderr,"Can not exec");
-    exit(E_exec_error);
-  }
+	mpid = fork();
+	if(mpid == -1) {
+		fprintf(stderr,"Can not fork");
+		exit(E_exec_error);
+	}
+	if(mpid == 0) {
+		close(pipes[0]); // close reading end
+		dup2(pipes[1],1); // 1 = stdout
+		close(pipes[1]);
+		execvp(argv[0],argv);
+		fprintf(stderr,"Can not exec");
+		exit(E_exec_error);
+	}
 
-  close(pipes[1]); // close writing end
-  *pid=mpid;
-  return fdopen(pipes[0],"r");
+	close(pipes[1]); // close writing end
+	*pid=mpid;
+	return fdopen(pipes[0],"r");
 }
 
-int check_opt_b(FILE *in,char* name,struct d_option* base)
+/* option value equal? */
+static int ov_eq(char* val1, char* val2)
 {
-  struct d_option* o;
-  char uu[2],scs[200],sn[50];
-  int l,rv=0;
+	unsigned long long v1,v2;
 
-  strcpy(sn,name);
-  l=strlen(sn)-1;
-  sn[l]=0;
-  sprintf(scs," %*s%%[%c]\n",l,sn,name[l]);
+	if(val1 == NULL && val2 == NULL) return 1;
+	if(val1 == NULL || val2 == NULL) return 0;
 
-  if(fscanf(in,scs,uu)>0) {
-    o=find_opt(base,name);
-    if(o) o->mentioned=1;
-    else rv=1;
-  } // else { unexpected input... }
+	if(isdigit(val1[0])) {
+		v1 = m_strtoll(val1,0);
+		v2 = m_strtoll(val2,0);
 
-  //printf("check_opt_b(%s)=%d\n",name,rv);
-  return rv;
+		return v1 == v2;
+	}
+
+	return !strcmp(val1,val2);
 }
 
-int check_opt_d(FILE *in,char* name,char du, char* unit,struct d_option* base)
+static int opts_equal(struct d_option* conf, struct d_option* running)
 {
-  unsigned long  ul;
-  struct d_option* o;
-  char uu[2];
-  char scs[200];
-  int rv=0;
+	struct d_option* opt;
 
-  sprintf(scs," %s = %%lu %s (%%[d]efault)\n",name,unit);
-  if(fscanf(in,scs,&ul,uu)>0) {
-    o=find_opt(base,name);
-    if(o) {
-      o->mentioned=1;
-      if(m_strtoll(o->value,du) != ul) rv=1;
-    } else {
-      if( uu[0] != 'd' ) rv=1;
-    }
-  }
-  //printf("check_opt_d(%s)=%d\n",name,rv);
+	while(running) {
+		if((opt=find_opt(conf,running->name))) {
+			if(!ov_eq(running->value,opt->value)) {
+				/*printf("Value of '%s' differs: r=%s c=%s\n",
+				  opt->name,running->value,opt->value);*/
+				return 0;
+			}
+			opt->mentioned=1;
+		} else {
+			if(!running->is_default) {
+				/*printf("Only in running config %s: %s\n",
+				  running->name,running->value);*/
+				return 0;
+			}
+		}
+		running=running->next;
+	}
 
-  return rv;
+	while(conf) {
+		if(conf->mentioned==0) {
+			/*printf("Only in config file %s: %s\n",
+			  conf->name,conf->value);*/
+			return 0;
+		}
+		conf=conf->next;
+	}
+	return 1;
 }
 
-int check_opt_s(FILE *in,char* name,struct d_option* base)
+static int addr_equal(struct d_resource* conf, struct d_resource* running)
 {
-  struct d_option* o;
-  char scs[200];
-  char value[200];
-  int rv=0;
+	if (conf->peer == NULL && running->peer == NULL) return 1;
+	if (conf->peer == NULL || running->peer == NULL) return 0;
 
-  sprintf(scs," %s = %%s\n",name);
-  if(fscanf(in,scs,value)>0) {
-    o=find_opt(base,name);
-    if(o) {
-      o->mentioned=1;
-      if(strcmp(o->value,value)) rv=1;
-    } else {
-      rv=1;
-    }
-  }
-
-  //printf("check_opt_s(%s)=%d [value=%s]\n",name,rv,value);
-
-  return rv;
+	return !strcmp(conf->me->address,  running->me->address) &&
+		!strcmp(conf->me->port,     running->me->port) &&
+		!strcmp(conf->peer->address,running->peer->address) &&
+		!strcmp(conf->peer->port,   running->peer->port) ;
 }
 
-int complete(struct d_option* base)
+static int proto_equal(struct d_resource* conf, struct d_resource* running)
 {
-  int rv=0;
+	if (conf->protocol == NULL && running->protocol == NULL) return 1;
+	if (conf->protocol == NULL || running->protocol == NULL) return 0;
 
-  while(base) {
-    if(base->mentioned == 0) {
-      //printf("complete(): '%s'\n",base->name);
-      rv=1;
-      break;
-    }
-    base=base->next;
-  }
-
-  //printf("complete()=%d\n",rv);
-
-  return rv;
+	return !strcmp(conf->protocol, running->protocol);
 }
 
-int m_fscanf(FILE *stream,const char *fmt, ...)
+static int dev_eq(char* device_name, int g_major, int g_minor)
 {
-  va_list ap;
-  int rv;
+	struct stat sb;
+	
+	if(stat(device_name,&sb)) return 0;
 
-  va_start(ap, fmt);
-  rv=vfscanf(stream,fmt,ap);
-  va_end(ap);
-
-  if(rv==0) {
-    fprintf(stderr,"fscanf() faild for fmt string: %s\n",fmt);
-  }
-
-  return rv;
+	return major(sb.st_rdev) == g_major && minor(sb.st_rdev) == g_minor;
 }
 
+/* Are both internal, or are both not internal. */
+static int int_eq(char* m_conf, char* m_running)
+{
+	return !strcmp(m_conf,"internal") == !strcmp(m_running,"internal");
+}
 
-/* NOTE
- * return before waitpit is a BUG. "goto out;" instead!
- *
+static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
+{
+	int eq = 1;
+
+	eq &= dev_eq(conf->disk,running->disk_major,running->disk_minor);
+	eq &= int_eq(conf->meta_disk,running->meta_disk);
+	if(!strcmp(conf->meta_disk,"internal")) return eq;
+	eq &= dev_eq(conf->meta_disk,running->meta_major,running->meta_minor);
+
+	return eq;
+}
+
+/*
  * calling drbdsetup again before waitpid("drbdsetup show") has a race with
  * the next ioctl failing because of the zombie still holding an open_cnt on
  * the drbd device. so don't do that.
  */
 int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 {
-  char* argv[20];
-  int rv,pid,argc=0;
-  FILE *in;
-  char str1[255],str2[255];
-  unsigned long  ul1,ul2;
-  struct d_option* o;
-  char uu[2];
-  int do_attach=0;
-  int do_resize=0;
-  int do_connect=0;
-  int do_syncer=0;
+	char* argv[20];
+	int pid,argc=0;
+	struct d_resource* running;
+	int do_attach=0;
+	int do_connect=0;
+	int do_syncer=0;
 
-  struct stat sb;
-  int c_major, c_minor;
-  int err = 10;
+	argv[argc++]=drbdsetup;
+	argv[argc++]=res->me->device;
+	argv[argc++]="show";
+	argv[argc++]=0;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="show";
-  argv[argc++]=0;
+	yyin = m_popen(&pid,argv);
+	line = 1;
+	running = parse_resource("drbdsetup/show");
+	fclose(yyin);
+	waitpid(pid,0,0);
 
-  in=m_popen(&pid,argv);
+	convert_discard_opt(res);
+	convert_after_option(res);
 
-  rv=fscanf(in,"%[Not] configured",str1);
-  if(rv==1 && !strcmp("Not",str1) ) {
-    do_attach=1;
-    do_connect=1;
-    do_syncer=1;
-    goto do_up;
-  }
+	do_attach  = !opts_equal(res->disk_options, running->disk_options);
+	do_attach |= strcmp(res->me->device, running->me->device);
+	do_attach |= !disk_equal(res->me, running->me);
 
-  if (stat(res->me->disk, &sb)) {
-    PERROR("stat '%s' failed:", res->me->device);
-    goto out;
-  }
-  if (!S_ISBLK(sb.st_mode)) {
-    fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
-    goto out;
-  }
-  rv=m_fscanf(in,"Lower device: %d:%d (%*[^)])\n",&c_major,&c_minor);
-  if( (rv!=2) || makedev(c_major,c_minor) != sb.st_rdev) do_attach=1;
+	do_connect  = !opts_equal(res->net_options, running->net_options);
+	do_connect |= !addr_equal(res,running);
+	do_connect |= !proto_equal(res,running);
 
-  if (strcmp("internal", res->me->meta_disk)) {
-    if (stat(res->me->meta_disk, &sb)) {
-      PERROR("stat '%s' failed:", res->me->meta_disk);
-      goto out;
-    }
-    if (!S_ISBLK(sb.st_mode)) {
-      fprintf(stderr, "'%s' not a block device!\n", res->me->disk);
-      goto out;
-    }
-  } else {
-    sb.st_rdev = 0;
-  }
+	do_syncer = !opts_equal(res->sync_options, running->sync_options);
 
-  rv = m_fscanf(in, "Meta device: %s (%[^)])\n", str1, str2);
-  if (rv == 1) {
-    if (!strcmp("internal", str1)) {
-      if (strcmp("internal", res->me->meta_disk))
-	do_attach = 1;
-    } else {
-      fprintf(stderr, "parse error, '%s' read, 'internal' expected\n", str1);
-      goto out;
-    }
-  }
-  if (rv == 2) {
-    sscanf(str1, "%d:%d", &c_major, &c_minor);
-    if ((rv != 2) || makedev(c_major,c_minor) != sb.st_rdev)
-      do_attach = 1;
-    rv = m_fscanf(in, "Meta index: %[0-9]\n", str1);
-    if (rv == 1) {
-      if (strcmp(str1, res->me->meta_index))
-	do_attach = 1;
-    } else {
-      fprintf(stderr, "parse error\n");
-      goto out;
-    }
-  }
+	if(do_attach)  schedule_dcmd(adm_attach,res,0);
+	if(do_syncer)  schedule_dcmd(adm_syncer,res,1);
+	if(do_connect) schedule_dcmd(adm_connect,res,2);
 
-  rv=m_fscanf(in,"Disk options%[:]\n",uu);
-  if(rv==1) {
-    do_resize |= check_opt_d(in,"size",'K',"KB",res->disk_options);
-    do_attach |= check_opt_s(in,"on-io-error",res->disk_options);
-
-    // Check if every options is also present in drbdsetup show's output.
-    o=res->disk_options;
-    while(o) {
-      if(o->mentioned == 0) {
-	if(!strcmp(o->name,"size")) do_resize=1;
-	   else do_attach=1;
-      }
-      o=o->next;
-    }
-  }
-
-  rv=m_fscanf(in,"Local address: %[0-9.]:%s\n",str1,str2);
-  if(rv!=2 || strcmp(str1,res->me->address) || strcmp(str2,res->me->port) ) {
-    do_connect=1;
-  }
-
-  rv=m_fscanf(in,"Remote address: %[0-9.]:%s\n",str1,str2);
-  if(rv!=2 || strcmp(str1,res->peer->address) ||
-     strcmp(str2,res->peer->port) ) {
-    do_connect=1;
-  }
-
-  rv=m_fscanf(in,"Wire protocol: %1[ABC]\n",str1);
-  if(rv!=1 || strcmp(str1,res->protocol) ) {
-    do_connect=1;
-  }
-
-  rv=m_fscanf(in,"Net options%[:]\n",uu);
-  if(rv==1) {
-    rv=m_fscanf(in," timeout = %lu.%lu sec (%[d]efault)\n",&ul1,&ul2,uu);
-    o=find_opt(res->net_options,"timeout");
-    if(o) {
-      o->mentioned=1;
-      if(m_strtoll(o->value,1) != ul1*10 + ul2) do_connect=1;
-    } else {
-      if( uu[0] != 'd' ) do_connect=1;
-    }
-
-    do_connect |= check_opt_d(in,"connect-int",1,"sec",res->net_options);
-    do_connect |= check_opt_d(in,"ping-int",1,"sec",res->net_options);
-    do_connect |= check_opt_d(in,"max-epoch-size",1,"",res->net_options);
-    do_connect |= check_opt_d(in,"max-buffers",1,"",res->net_options);
-    do_connect |= check_opt_d(in,"sndbuf-size",1,"",res->net_options);
-    do_connect |= check_opt_d(in,"ko-count",1,"",res->net_options);
-    do_connect |= check_opt_s(in,"on-disconnect",res->net_options);
-    do_connect |= check_opt_b(in,"allow-two-primaries",res->net_options);
-    do_connect |= complete(res->net_options);
-  }
-
-  rv=m_fscanf(in,"Syncer options%[:]\n",uu);
-  if(rv==1) {
-    do_syncer |= check_opt_d(in,"rate",'K',"KB/sec",res->sync_options);
-    do_syncer |= check_opt_d(in,"group",1,"",res->sync_options);
-    do_syncer |= check_opt_d(in,"al-extents",1,"",res->sync_options);
-    do_syncer |= check_opt_b(in,"skip-sync",res->sync_options);
-    do_syncer |= check_opt_b(in,"use-csums",res->sync_options);
-    do_syncer |= complete(res->sync_options);
-  } else do_syncer=1;
-
- do_up:
-  err = 0;
- out:
-  // drain, close, wait for drbdsetup to "officially die".
-  { static char drain[1024]; while (fgets(drain,1024,in)); }
-  fclose(in);
-  waitpid(pid,0,0);
-  if (err) return err;
-
-  if(do_attach) {
-    schedule_dcmd(adm_attach,res,0);
-    do_resize=0;
-  }
-  if(do_resize)  schedule_dcmd(adm_resize,res,0);
-  if(do_syncer)  schedule_dcmd(adm_syncer,res,1);
-  if(do_connect) schedule_dcmd(adm_connect,res,2);
-
-  return 0;
+	return 0;
 }

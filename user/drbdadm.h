@@ -53,9 +53,13 @@ struct d_host_info
   char* name;
   char* device;
   char* disk;
+  int disk_major;
+  int disk_minor;
   char* address;
   char* port;
   char* meta_disk;
+  int meta_major;
+  int meta_minor;
   char* meta_index;
 };
 
@@ -64,7 +68,8 @@ struct d_option
   char* name;
   char* value;
   struct d_option* next;
-  int mentioned; // for the adjust command.
+  unsigned int mentioned  :1 ; // for the adjust command.
+  unsigned int is_default :1 ; // for the adjust command.
 };
 
 struct d_resource
@@ -97,6 +102,8 @@ extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 
 extern void uc_node(enum usage_count_type type);
 extern int adm_create_md(struct d_resource* res ,const char* cmd);
+extern void convert_discard_opt(struct d_resource* res);
+extern void convert_after_option(struct d_resource* res);
 
 extern char* config_file;
 extern int config_valid;
