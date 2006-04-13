@@ -134,6 +134,7 @@ struct drbd_cmd commands[] = {
   {"primary", cmd_primary,           0,
    (struct option[]) {
      { "do-what-I-say",no_argument,     0, 'd' },
+     { "overwrite-data-of-peer",no_argument, 0, 'o' },
      { 0,            0,                 0, 0   } } },
   {"secondary", cmd_secondary,       0, 0, },
   {"wait_sync", cmd_wait_sync,       0,
@@ -529,6 +530,7 @@ int scan_net_options(char **argv,
   cn->config.after_sb_1p = DEF_AFTER_SB_1P;
   cn->config.after_sb_2p = DEF_AFTER_SB_2P;
   cn->config.want_lose = 0;
+  cn->config.ko_count = DEF_KO_COUNT;
 
   if(argc==0) return 0;
 
@@ -838,14 +840,22 @@ int cmd_primary(int drbd_fd,char** argv,int argc,struct option *options)
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'd':
-	      if (strcmp("--do-what-I-say",argv[optind-1])) {
-		      fprintf(stderr,"%s\nYou have to spell out --do-what-I-say, if you mean it\n",
+	    case 'o':
+	      if (strcmp("--overwrite-data-of-peer",argv[optind-1])) {
+		      fprintf(stderr,"%s\nYou have to spell out --overwrite-data-of-peer, if you mean it\n",
 				      argv[optind-1]);
 		      return 20;
 	      }
 	      newstate |= DontBlameDrbd;
 	      break;
+	    case 'd':
+	      fprintf(stderr,
+"--do-what-I-say was renamed to --overwrite-data-of-peer, since that is\n"
+"less ambiguous.\n"
+"Only do it if you really know what you are doing. DRBD is going to save\n"
+"this fact to its metadata, and it will really overwrite the peer's copy\n"
+"of data with the local copy.\n");
+	      return 20;
 	    case 1:	// non option argument. see getopt_long(3)
 	      fprintf(stderr,"%s: Unexpected nonoption argument '%s'\n",cmdname,optarg);
 	    case '?':

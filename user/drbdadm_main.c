@@ -91,6 +91,7 @@ extern int adm_adjust(struct d_resource* ,const char* );
 static int adm_dump(struct d_resource* ,const char* );
 static int adm_wait_c(struct d_resource* ,const char* );
 static int adm_wait_ci(struct d_resource* ,const char* );
+static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
@@ -205,6 +206,7 @@ struct adm_cmd cmds[] = {
   { "dump-md",           admm_generic,  1,1,0 },
   { "wait_con_int",      adm_wait_ci,   1,0,1 },
   { "hidden-commands",   hidden_cmds,   1,0,0 },
+  { "sh-nop",            sh_nop,        2,0,0 },
   { "sh-resources",      sh_resources,  2,0,0 },
   { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
   { "sh-dev",            sh_dev,        2,1,0 },
@@ -320,6 +322,12 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
   dump_options("handlers",res->handlers);
   --indent; printf("}\n\n");
 
+  return 0;
+}
+
+static int sh_nop(struct d_resource* ignored __attribute((unused)),
+		  const char* unused __attribute((unused)))
+{
   return 0;
 }
 

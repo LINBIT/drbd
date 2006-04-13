@@ -79,7 +79,7 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">primary</arg>
-      <arg>-d</arg>
+      <arg>-o</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -628,8 +628,8 @@
       </para>
       <variablelist>
 	<varlistentry>
-	  <term><option>-d</option>,
-	  <option>--do-what-I-say</option></term>
+	  <term><option>-o</option>,
+	  <option>--overwrite-data-of-peer</option></term>
 	  <listitem>
 	    <para>
 	      Becoming primary fails if the local replica is

@@ -81,6 +81,12 @@ function adjust_with_progress
     IFS=$IFS_O
 }
 
+# Just in case drbdadm want to display any errors in the configuration
+# file, or we need to ask the user about registering this installation
+# at http://usage.drbd.org, we call drbdadm here without any IO 
+# redirection.
+$DRBDADM sh-nop
+
 case "$1" in
     start)
 	echo -n "Starting DRBD resources:    "

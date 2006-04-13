@@ -366,7 +366,6 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		goto free_obm;
 	} else {
 		bits = BM_SECT_TO_BIT(ALIGN(capacity,BM_SECTORS_PER_BIT));
-		DUMPI(bits);
 
 		/* if we would use
 		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
