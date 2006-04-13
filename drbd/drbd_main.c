@@ -2201,7 +2201,8 @@ static void __exit drbd_cleanup(void)
 		drbd_destroy_mempools();
 	}
 
-#if defined(CONFIG_COMPAT)
+#ifndef HAVE_COMPAT_IOCTL_MEMBER
+#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	lock_kernel();
 	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
 	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
@@ -2218,7 +2219,7 @@ static void __exit drbd_cleanup(void)
 	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
 	unlock_kernel();
 #endif
-
+#endif
 	kfree(drbd_conf);
 
 	devfs_remove(drbd_devfs_name);
@@ -2399,7 +2400,8 @@ int __init drbd_init(void)
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
 
-#if defined(CONFIG_COMPAT)
+#ifndef HAVE_COMPAT_IOCTL_MEMBER
+#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
 	// tell the kernel that we think our ioctls are 64bit clean
 	lock_kernel();
 	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,NULL);
@@ -2416,6 +2418,7 @@ int __init drbd_init(void)
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
 	unlock_kernel();
+#endif
 #endif
 
 	printk(KERN_INFO DEVICE_NAME ": initialised. "
