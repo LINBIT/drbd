@@ -25,8 +25,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
-#include <fcntl.h>
 #define __USE_LARGEFILE64
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -155,7 +155,7 @@ int main(int argc, char** argv)
       switch(c)
 	{
 	case 'i': 
-	  in_fd = open(optarg,O_RDONLY);
+	  in_fd = open(optarg,O_RDONLY|O_LARGEFILE);
 	  if(in_fd==-1)
 	    {
 	      fprintf(stderr,"Can not open input file/device\n");
