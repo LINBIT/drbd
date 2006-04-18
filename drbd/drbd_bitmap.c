@@ -734,6 +734,7 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	int bm_words, num_pages, i;
 	unsigned long now;
 	char ppb[10];
+	request_queue_t *q;
 
 	MUST_BE_LOCKED();
 
@@ -756,8 +757,8 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 		/* let the layers below us try to merge these bios... */
 		drbd_bm_page_io_async(mdev,b,i,rw);
 	}
-
-	blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
+	q=bdev_get_queue(mdev->bc->md_bdev);
+	if(q->request_fn) blk_run_queue(q);
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
 	INFO("%s of bitmap took %lu jiffies\n", 
 	     rw == READ ? "reading" : "writing", jiffies - now);
