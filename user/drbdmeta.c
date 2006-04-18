@@ -814,7 +814,7 @@ unsigned long bm_words(u64 sectors, int bytes_per_bit)
 	unsigned long long words;
 	int shift;
 
-	shift = 9 - int_ln2(bytes_per_bit);
+	shift = int_ln2(bytes_per_bit) - 9;
 
 	bits = ALIGN(sectors, 8) >> shift;
 	words = ALIGN(bits, 64) >> LN2_BPL;
@@ -915,11 +915,14 @@ int v07_style_md_open(struct format *cfg,
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
 
+	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
+	cfg->bm_bytes = words * sizeof(long);
+
 #define max(x,y) ((x) > (y) ? (x) : (y))
 	// For the case that someone modified la_sect by hand..
 	cfg->bm_mmaped_length = 
 		max((u64)(cfg->md.md_size_sect - MD_BM_OFFSET_07)*512,
-		    (u64)bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit)<<(LN2_BPL-3));
+		    (u64)cfg->bm_bytes);
 
 	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
 	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
@@ -933,8 +936,6 @@ int v07_style_md_open(struct format *cfg,
 	cfg->on_disk.bm = MMAP(cfg->on_disk.bm, cfg->bm_mmaped_length, PROT_READ | PROT_WRITE,
 			       MAP_SHARED, cfg->md_fd, cfg->bm_offset);
 
-	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
-	cfg->bm_bytes = words * sizeof(long);
 	cfg->bits_set =
 	    count_bits((const unsigned long *)cfg->on_disk.bm, words);
 
