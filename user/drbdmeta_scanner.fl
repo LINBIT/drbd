@@ -16,7 +16,7 @@ static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
 WS		[ \t\n]
 COMMENT		\#[^\n]*
-NUM		[0-9]{1,9}
+NUM		[0-9]{1,10}
 U64		0x[0-9A-Fa-f]{16}
 U32		0x[0-9A-Fa-f]{8}
 OP		[{};]
