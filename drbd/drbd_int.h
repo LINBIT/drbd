@@ -1671,3 +1671,23 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 #endif
 	return rv;
 }
+
+/*
+ * FIXME investigate what makes most sense:
+ * a) blk_run_queue(q);
+ *
+ * b) struct backing_dev_info *bdi;
+ *    b1) bdi = &q->backing_dev_info;
+ *    b2) bdi = mdev->bc->backing_bdev->bd_inode->i_mapping->backing_dev_info;
+ *    blk_run_backing_dev(bdi,NULL);
+ *
+ * c) generic_unplug(q) ? __generic_unplug(q) ?
+ *
+ * d) q->unplug_fn(q), which is what all the drivers/md/ stuff uses...
+ *
+ */
+static inline void drbd_blk_run_queue(request_queue_t *q)
+{
+	if (q && q->unplug_fn)
+		q->unplug_fn(q);
+}

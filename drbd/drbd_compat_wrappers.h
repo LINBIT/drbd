@@ -197,20 +197,7 @@ static inline void drbd_kick_lo(drbd_dev *mdev)
 			dump_stack();
 		}
 	} else {
-		request_queue_t *q;
-		q = bdev_get_queue(mdev->bc->backing_bdev);
-		/*
-		 * FIXME investigate what makes most sense:
-		 * struct backing_dev_info *bdi;
-		 * bdi = mdev->bc->backing_bdev->bd_inode->i_mapping->backing_dev_info;
-		 * bdi = &q->backing_dev_info;
-		 * blk_run_queue(q);
-		 *
-		 * bdi = &q->backing_dev_info;
-		 * blk_run_backing_dev(bdi,NULL);
-		 */
-		if (q && q->unplug_fn)
-			q->unplug_fn(q);
+		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
 	}
 }
 
