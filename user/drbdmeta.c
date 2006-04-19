@@ -799,24 +799,12 @@ int confirmed(const char *text)
 	return ok;
 }
 
-int int_ln2(int v)
-{
-	int r=0;
-
-	while((v = v>>1)) r++;
-
-	return r;
-}
-
 unsigned long bm_words(u64 sectors, int bytes_per_bit)
 {
 	unsigned long long bits;
 	unsigned long long words;
-	int shift;
 
-	shift = int_ln2(bytes_per_bit) - 9;
-
-	bits = ALIGN(sectors, 8) >> shift;
+	bits = ALIGN(sectors, 8) / (bytes_per_bit / 512);
 	words = ALIGN(bits, 64) >> LN2_BPL;
 
 	return words;
