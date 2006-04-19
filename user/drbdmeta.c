@@ -903,14 +903,15 @@ int v07_style_md_open(struct format *cfg,
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
 
+	// For the case that someone modified la_sect by hand..
+	if(cfg->md.la_sect*512 > cfg->md_offset) {
+		printf("la-size-sect was too big, fixed.\n");
+		cfg->md.la_sect = cfg->md_offset/512;
+	}
 	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
 	cfg->bm_bytes = words * sizeof(long);
 
-#define max(x,y) ((x) > (y) ? (x) : (y))
-	// For the case that someone modified la_sect by hand..
-	cfg->bm_mmaped_length = 
-		max((u64)(cfg->md.md_size_sect - MD_BM_OFFSET_07)*512,
-		    (u64)cfg->bm_bytes);
+	cfg->bm_mmaped_length=(u64)(cfg->md.md_size_sect-MD_BM_OFFSET_07)*512;
 
 	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
 	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
