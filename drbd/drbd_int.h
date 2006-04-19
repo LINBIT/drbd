@@ -1691,3 +1691,15 @@ static inline void drbd_blk_run_queue(request_queue_t *q)
 	if (q && q->unplug_fn)
 		q->unplug_fn(q);
 }
+
+static inline void drbd_kick_lo(drbd_dev *mdev)
+{
+	if (!mdev->bc->backing_bdev) {
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("backing_bdev==NULL in drbd_kick_lo! The following call trace is for debuggin purposes only. Don't worry.\n");
+			dump_stack();
+		}
+	} else {
+		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
+	}
+}

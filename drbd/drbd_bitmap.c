@@ -734,7 +734,6 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	int bm_words, num_pages, i;
 	unsigned long now;
 	char ppb[10];
-	request_queue_t *q;
 
 	MUST_BE_LOCKED();
 

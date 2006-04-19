@@ -189,18 +189,6 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 	generic_make_request(bio);
 }
 
-static inline void drbd_kick_lo(drbd_dev *mdev)
-{
-	if (!mdev->bc->backing_bdev) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("backing_bdev==NULL in drbd_kick_lo! The following call trace is for debuggin purposes only. Don't worry.\n");
-			dump_stack();
-		}
-	} else {
-		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
-	}
-}
-
 static inline void drbd_plug_device(drbd_dev *mdev)
 {
 	request_queue_t *q;
