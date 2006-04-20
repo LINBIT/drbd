@@ -633,7 +633,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
 	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
-	struct page *page = virt_to_page((char*)(b->bm) + (PAGE_SIZE*page_nr));
+	struct page *page = vmalloc_to_page((char*)(b->bm) + (PAGE_SIZE*page_nr));
 	unsigned int len;
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	on_disk_sector += ((sector_t)page_nr) << (PAGE_SHIFT-9);
