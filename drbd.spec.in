@@ -194,6 +194,16 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Tue Apr 20 2006 13:46:18 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0pre3-1)
+ * Now it works on device mapper (LVM) as well as on "real" block devices.
+ * Finally (after years) a sane "drbdadm adjust" imprementation, which is
+   really really robust.
+ * Fixes for 64bit kernel / 32 bit userland environments
+ * Fixes in the sys-v init script
+ * Renamed "--do-what-I-say" to "--overwrite-data-of-peer". Hopefully
+   people now understand what this option does. 
+
 * Tue Apr  6 2006 17:53:56 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0-pre2-1)
  * removed the "on-disconnect" and "split-brain-fix" config options and

@@ -1,3 +1,9 @@
+drbd (8.0pre3-0) unstable; urgency=low
+
+  * New major release.
+
+ -- Philipp Reisner <phil@linbit.com>  Thu, 20 Apr 2006 13:46:18 +0200
+
 drbd (8.0-pre2-0) unstable; urgency=low
 
   * New major release.

@@ -4,6 +4,16 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0pre3 (api:82/proto:80)
+--------
+ * Now it works on device mapper (LVM) as well as on "real" block devices.
+ * Finally (after years) a sane "drbdadm adjust" imprementation, which is
+   really really robust.
+ * Fixes for 64bit kernel / 32 bit userland environments
+ * Fixes in the sys-v init script
+ * Renamed "--do-what-I-say" to "--overwrite-data-of-peer". Hopefully
+   people now understand what this option does. 
+
 8.0-pre2 (api:81/proto:80)
 --------
  * removed the "on-disconnect" and "split-brain-fix" config options and
