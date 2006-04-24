@@ -112,7 +112,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, sector_t sector, int rw)
 	// in case hardsect != 512 [ s390 only? ]
 	if( hardsect != MD_HARDSECT ) {
 		if(!mdev->md_io_tmpp) {
-			struct page *page = alloc_page(GFP_KERNEL);
+			struct page *page = alloc_page(GFP_NOIO);
 			if(!page) return 0;
 
 			WARN("Meta data's bdev hardsect_size != %d\n",

@@ -322,7 +322,7 @@ void tl_clear(drbd_dev *mdev)
 	sector_t sector;
 	unsigned int size;
 
-	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
+	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
 	if(!new_first) {
 		ERR("could not kmalloc() barrier\n");
 	}
