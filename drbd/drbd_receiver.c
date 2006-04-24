@@ -707,6 +707,10 @@ int drbd_connect(drbd_dev *mdev)
 
 	set_cstate(mdev,WFConnection);
 
+	/* Break out of unknown connect loops by random wait here. */
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(net_random() % ((mdev->conf.try_connect_int*HZ)/4));
+
 	while(1) {
 		sock=drbd_try_connect(mdev);
 		if(sock) {
@@ -1988,10 +1992,10 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	int rv;
 
 	rv = drbd_send_handshake(mdev);
-	if (!rv) return 0;
+	if (!rv) goto break_c_loop;
 
 	rv = drbd_recv_header(mdev,&p->head);
-	if (!rv) return 0;
+	if (!rv) goto break_c_loop;
 
 	if (p->head.command == ReportParams) {
 		ERR("expected HandShake packet, received ReportParams...\n");
@@ -2042,6 +2046,23 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	}
 
 	return 1;
+
+ break_c_loop:
+	WARN( "My msock connect got accepted onto peer's sock!\n");
+	/* In case a tcp connection set-up takes longer than 
+	   connect-int, we might get into the situation that this
+	   node's msock gets connected to the peer's sock!
+	   
+	   To break out of this endless loop behaviour, we need to 
+	   wait unti the peer's msock connect tries are over. (1 Second)
+
+	   Additionally we wait connect-int/2 to hit with our next 
+	   connect try exactly in the peer's window of expectation. */
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(HZ + (mdev->conf.try_connect_int*HZ)/2);
+	
+	return 0;
 }
 
 int drbdd_init(struct Drbd_thread *thi)
