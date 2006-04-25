@@ -128,6 +128,7 @@ enum ret_codes {
 	MDMounted,
 	LDMDInvalid,
 	LDDeviceTooLarge,
+	MDIOError
 };
 
 struct ioctl_disk_config {

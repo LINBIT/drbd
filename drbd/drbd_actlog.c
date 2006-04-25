@@ -368,6 +368,12 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 	return 1;
 }
 
+/**
+ * drbd_al_read_tr: Reads a single transaction record form the 
+ * on disk activity log.
+ * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
+ * record.
+ */
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 			   struct al_transaction* b,
 			   int index)
@@ -381,7 +387,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	if(!drbd_md_sync_page_io(mdev,sector,READ)) {
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
-		return 0;
+		return -1;
 	}
 
 	rv = ( be32_to_cpu(b->magic) == DRBD_MAGIC );
@@ -394,7 +400,12 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	return rv;
 }
 
-void drbd_al_read_log(struct Drbd_Conf *mdev)
+/**
+ * drbd_al_read_log: Restores the activity log from its on disk
+ * representation. Returns 1 on success, returns 0 when 
+ * reading the log failed due to IO errors.
+ */
+int drbd_al_read_log(struct Drbd_Conf *mdev)
 {
 	struct al_transaction* buffer;
 	int from=-1,to=-1,i,cnr, overflow=0,rv;
@@ -413,7 +424,12 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	// Find the valid transaction in the log
 	for(i=0;i<=mx;i++) {
-		if(!drbd_al_read_tr(mdev,buffer,i)) continue;
+		rv = drbd_al_read_tr(mdev,buffer,i);
+		if(rv == 0) continue;
+		if(rv == -1) {
+			up(&mdev->md_io_mutex);
+			return 0;
+		}
 		cnr = be32_to_cpu(buffer->tr_number);
 		// INFO("index %d valid tnr=%d\n",i,cnr);
 
@@ -433,7 +449,7 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		WARN("No usable activity log found.\n");
 
 		up(&mdev->md_io_mutex);
-		return;
+		return 1;
 	}
 
 	// Read the valid transactions.
@@ -448,7 +464,11 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 		unsigned int trn;
 
 		rv = drbd_al_read_tr(mdev,buffer,i);
-		ERR_IF(!rv) goto cancel;
+		ERR_IF(rv == 0) goto cancel;
+		if(rv == -1) {
+			up(&mdev->md_io_mutex);
+			return 0;
+		}
 
 		trn=be32_to_cpu(buffer->tr_number);
 
@@ -489,6 +509,8 @@ void drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	INFO("Found %d transactions (%d active extents) in activity log.\n",
 	     transactions,active_extents);
+
+	return 1;
 }
 
 /**

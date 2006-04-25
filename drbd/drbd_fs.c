@@ -567,10 +567,19 @@ ONLY_IN_26({
 	}
 
 	if (md_gc_valid > 0) {
-		drbd_al_read_log(mdev);
-		if (apply_al) {
+		i = drbd_al_read_log(mdev);
+		if (apply_al && i) {
 			drbd_al_apply_to_bm(mdev);
 			drbd_al_to_on_disk_bm(mdev);
+		}
+		if(!i) {
+			ERR("IO error on meta device while reading AL\n");
+			drbd_free_ll_dev(mdev);
+			set_cstate(mdev,Unconfigured);
+			retcode = MDIOError;
+			module_put(THIS_MODULE);
+			if (put_user(retcode, &arg->ret_code)) return -EFAULT;
+			return -EINVAL;
 		}
 	} /* else {
 	     FIXME wipe out on disk al!
