@@ -1,3 +1,9 @@
+drbd (0.7.18-0) unstable; urgency=low
+
+  * New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Mon, 26 Apr 2006 14:10:07 +0200
+
 drbd (0.7.17-0) unstable; urgency=low
 
   * New upstream release

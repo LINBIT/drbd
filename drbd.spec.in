@@ -190,6 +190,22 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Mon Apr 26 2006 14:10:07 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.18-1)
+ * Under high memory pressure it was possible to hit a deadlock 
+   on a kmalloc(). Changed the GFP mask, it is no longer possible to
+   deadlock it with memory pressure.
+ * With very unlucky network timing during connect DRBD falls into 
+   a connect / drop-connection loop, that as soon as DRBD is in this 
+   loop is very stable. This is fixed now, DRBD detects this situation
+   an breaks out of it.
+ * Fix to the init-script. Now it waits until udev has created
+   the device nodes of _all_ resources.
+ * A small fix for the 32bit userland 64bit kernel people, running
+   older kernels.
+ * Improved handling of IO errors during initial read in of the
+   activity log.
+
 * Mon Mar  6 2006 14:43:41 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.17-1)
  * There was a bug that could cause the activity log to be not applied 
