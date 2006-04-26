@@ -1674,6 +1674,7 @@ ONLY_IN_26(
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
 	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
 	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
+	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE_FLAGS);
 	unlock_kernel();
 #endif
 #endif
@@ -1912,6 +1913,7 @@ NOT_IN_26(
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
 	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
+	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE_FLAGS,NULL);
 	unlock_kernel();
 #endif
 #endif
