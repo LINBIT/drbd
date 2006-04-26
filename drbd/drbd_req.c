@@ -172,7 +172,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 {
 	drbd_request_t *req;
 	int local, remote;
-	int target_area_out_of_sync = FALSE; // only relevant for reads
 
 	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
 		drbd_bio_IO_error(bio);
@@ -340,8 +339,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				dec_ap_pending(mdev);
 				drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 			}
-		} else if (target_area_out_of_sync) {
-			drbd_read_remote(mdev,req);
 		} else {
 			// this node is diskless ...
 			drbd_read_remote(mdev,req);

@@ -327,6 +327,9 @@ void tl_clear(drbd_dev *mdev)
 		ERR("could not kmalloc() barrier\n");
 	}
 
+	/* FIXME if indeed we could not kmalloc, this will Oops!
+	 * can we somehow just recycle one of the existing barriers?
+	 */
 	INIT_LIST_HEAD(&new_first->requests);
 	new_first->next=0;
 	new_first->br_number=4711;
