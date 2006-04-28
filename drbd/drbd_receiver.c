@@ -181,7 +181,7 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 	page=alloc_page(mask);
 	if(!page) return FALSE;
 
-	if(!_drbd_alloc_ee(mdev,page,GFP_KERNEL)) {
+	if(!_drbd_alloc_ee(mdev,page,mask)) {
 		__free_page(page);
 		return FALSE;
 	}

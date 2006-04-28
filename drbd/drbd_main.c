@@ -1542,13 +1542,13 @@ int drbd_create_mempools(void)
 	// caches
 	drbd_request_cache = kmem_cache_create(
 		"drbd_req_cache", sizeof(drbd_request_t),
-		0, SLAB_NO_REAP, NULL, NULL);
+		0, 0, NULL, NULL);
 	if (drbd_request_cache == NULL)
 		goto Enomem;
 
 	drbd_ee_cache = kmem_cache_create(
 		"drbd_ee_cache", sizeof(struct Tl_epoch_entry),
-		0, SLAB_NO_REAP, NULL, NULL);
+		0, 0, NULL, NULL);
 	if (drbd_ee_cache == NULL)
 		goto Enomem;
 
