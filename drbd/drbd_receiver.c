@@ -161,7 +161,11 @@ STATIC int _drbd_alloc_ee(drbd_dev *mdev,struct page* page,int mask)
 {
 	struct Tl_epoch_entry* e;
 
-	e = kmem_cache_alloc(drbd_ee_cache, mask);
+	/* kmem_cache does not like to mix different memory types.
+	 * so even if we alloc'ed the page from HIGHMEM,
+	 * the ee comes from normal memory.
+	 */
+	e = kmem_cache_alloc(drbd_ee_cache, mask & ~(__GFP_HIGHMEM));
 	if( e == NULL ) return FALSE;
 
 	drbd_ee_init(e,page);
@@ -181,7 +185,12 @@ STATIC int drbd_alloc_ee(drbd_dev *mdev,int mask)
 	page=alloc_page(mask);
 	if(!page) return FALSE;
 
-	if(!_drbd_alloc_ee(mdev,page,mask)) {
+	/* if we got the page, we really want the ee, too,
+	 * even for "GFP_TRY".
+	 * we may wait, but better not cause IO,
+	 * we might be in the IO path (of our peer).
+	 */
+	if(!_drbd_alloc_ee(mdev,page,mask | GFP_NOIO)) {
 		__free_page(page);
 		return FALSE;
 	}
