@@ -137,7 +137,7 @@ void lc_del(struct lru_cache* lc, struct lc_element *e)
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt);
 	list_del(&e->list);
-	hlist_del(&e->colision);
+	hlist_del_init(&e->colision);
 	e->lc_number = LC_FREE;
 	e->refcnt = 0;
 	list_add(&e->list,&lc->free);
