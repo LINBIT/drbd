@@ -225,7 +225,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	/* allocate outside of all locks
 	 */
-	req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
+	req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
 	if (!req) {
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, thats not our business.

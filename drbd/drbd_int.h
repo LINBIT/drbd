@@ -289,21 +289,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	( typecheck(struct Drbd_Conf*,x) && \
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0))
 
-
-/*
- * GFP_DRBD is used for allocations inside drbd_make_request,
- * and for the sk->allocation scheme.
- *
- * Try to get away with GFP_NOIO, which is
- * in 2.4.x:	(__GFP_HIGH | __GFP_WAIT) // HIGH == EMERGENCY, not HIGHMEM!
- * in 2.6.x:	             (__GFP_WAIT)
- *
- * As far as i can see we do not allocate from interrupt context...
- * if we do, we certainly should fix that.
- * - lge
- */
-#define GFP_DRBD GFP_NOIO
-
 /* these defines should go into blkdev.h
    (if it will be ever includet into linus' linux) */
 #define RQ_DRBD_NOTHING	  0x0001

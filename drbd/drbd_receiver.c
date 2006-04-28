@@ -309,6 +309,11 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 			if( ( mdev->ee_vacant+mdev->ee_in_use) < 
 			      mdev->conf.max_buffers ) {
 				if(drbd_alloc_ee(mdev,GFP_TRY)) {
+	/* race race race
+	 * (currently harmless for drbd07, since drbd_get_ee is called by
+	 * receiver_thread only. solved with different implementation in
+	 * drbd-plus already.)
+	 */
 					spin_lock_irq(&mdev->ee_lock);
 					break;
 				}
@@ -328,6 +333,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 		finish_wait(&mdev->ee_wait, &wait); 
 	}
 
+	/* race race race */
 	le=mdev->free_ee.next;
 	list_del(le);
 	mdev->ee_vacant--;
@@ -747,10 +753,8 @@ int drbd_connect(drbd_dev *mdev)
 	msock->sk->SK_(reuse)=1; /* SO_REUSEADDR */
 	sock->sk->SK_(reuse)=1; /* SO_REUSEADDR */
 
-	/* to prevent oom deadlock... */
-	/* The default allocation priority was GFP_KERNEL */
-	sock->sk->SK_(allocation) = GFP_DRBD;
-	msock->sk->SK_(allocation) = GFP_DRBD;
+	sock->sk->SK_(allocation) = GFP_NOIO;
+	msock->sk->SK_(allocation) = GFP_NOIO;
 
 	sock->sk->SK_(priority)=TC_PRIO_BULK;
 	NOT_IN_26(sock->sk->tp_pinfo.af_tcp.nonagle=0;)
