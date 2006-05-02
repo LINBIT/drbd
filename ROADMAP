@@ -723,8 +723,18 @@ DRBD 0.8 Roadmap
 
    99% DONE
 
-33 Save the minor number and the backing device in the (external) meta
-   data as sanity check.
+33 Make some of the state changes atomic in the whole cluster. So
+   far I identified the following state transitions:
+
+      role <- primary
+      conn <- SyncSource
+      conn <- SyncTarget
+      disk <- Diskless (as long as it happens as administrative command)
+      pdsk <- Outdated (= a 'disconnect' issued on a primary node)
+
+
+34 Improve the initial hand-shake, to identify the sockets (and TCP-
+   links) by an initial message, and not only by the connection timming.
 
 
 plus-banches:
