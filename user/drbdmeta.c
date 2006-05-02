@@ -421,6 +421,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
+	cpu->bm_bytes_per_bit = 4096;
 }
 
 void md_cpu_to_disk_07(struct md_on_disk_07 *disk, struct md_cpu *cpu)
@@ -904,7 +905,9 @@ int v07_style_md_open(struct format *cfg,
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
 
 	// For the case that someone modified la_sect by hand..
-	if(cfg->md.la_sect*512 > cfg->md_offset) {
+	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
+	     cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) &&
+	    (cfg->md.la_sect*512 > cfg->md_offset) ) {
 		printf("la-size-sect was too big, fixed.\n");
 		cfg->md.la_sect = cfg->md_offset/512;
 	}
@@ -1701,8 +1704,12 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	if (format_version(cfg) >= Drbd_07) {
 		printf("la-size-sect "U64";\n", cfg->md.la_sect);
-		printf("bm-byte-per-bit "U32";\n",cfg->md.bm_bytes_per_bit);
-		printf("device-uuid 0x"X64(016)";\n",cfg->md.device_uuid);
+		if (format_version(cfg) >= Drbd_08) {
+			printf("bm-byte-per-bit "U32";\n",
+			       cfg->md.bm_bytes_per_bit);
+			printf("device-uuid 0x"X64(016)";\n",
+			       cfg->md.device_uuid);
+		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf("# bits-set %u;\n", cfg->bits_set);
 		if (cfg->on_disk.bm)
@@ -1770,10 +1777,14 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
 	cfg->md.la_sect = yylval.u64;
-	EXP(TK_BM_BYTE_PER_BIT); EXP(TK_NUM); EXP(';');
-	cfg->md.bm_bytes_per_bit = yylval.u64;
-	EXP(TK_DEVICE_UUID); EXP(TK_U64); EXP(';');
-	cfg->md.device_uuid = yylval.u64;
+	if (format_version(cfg) >= Drbd_08) {
+		EXP(TK_BM_BYTE_PER_BIT); EXP(TK_NUM); EXP(';');
+		cfg->md.bm_bytes_per_bit = yylval.u64;
+		EXP(TK_DEVICE_UUID); EXP(TK_U64); EXP(';');
+		cfg->md.device_uuid = yylval.u64;
+	} else {
+		cfg->md.bm_bytes_per_bit = 4096;
+	}
 	EXP(TK_BM); EXP('{');
 	bm = (le_u64 *)cfg->on_disk.bm;
 	i = 0;
