@@ -1,4 +1,4 @@
-Source: drbd
+Source: drbd8
 Section: misc
 Priority: extra
 Maintainer: David Krovich <dkrovich@csee.wvu.edu>
