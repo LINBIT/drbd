@@ -331,7 +331,8 @@ void uc_node(enum usage_count_type type)
 	}
 
 	if(!send) return;
-	
+
+	n_comment[0]=0;
 	if (type == UC_ASK ) {
 		printf(
 "\n"
@@ -357,11 +358,8 @@ void uc_node(enum usage_count_type type)
 			REL_VERSION,ni.node_uuid, ni.version_code);
 		fgets(answer,ANSWER_SIZE,stdin);
 		if(!strcmp(answer,"no\n")) send = 0;
+		url_encode(answer,n_comment);
 	}
-
-
-	n_comment[0]=0;
-	url_encode(answer,n_comment);
 
 	ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
 		 "nu="U64"&nv="U32"%s%s HTTP/1.0\n\n",
