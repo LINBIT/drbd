@@ -723,8 +723,8 @@ DRBD 0.8 Roadmap
 
    99% DONE
 
-33 Make some of the state changes atomic in the whole cluster. So
-   far I identified the following state transitions:
+33 Serialize state changes like secondary -> primary and 
+   Connected -> SyncSource in the cluster.
 
       role <- primary
       conn <- SyncSource
@@ -732,6 +732,54 @@ DRBD 0.8 Roadmap
       disk <- Diskless (as long as it happens as administrative command)
       pdsk <- Outdated (= a 'disconnect' issued on a primary node)
 
+   * When a state change might sleep ( reuqest_state() ) and it is 
+     to be cluster wide atomic ( pre_state_checks() determines this!).
+	1. Aquire the cluster state change lock (bit & waitqueue) ?
+	2. We send a request_state packet.
+
+   * When a request_state packet is received
+
+	1. * If we are UNIQUE we take the cluster lock (potentially
+	     waiting for it) and try to apply the remote's request
+	     as soon as we have the lock.
+	   * When we are not UNIQUE we try to apply the state change
+	     immediately (without taking the cluster lock).
+	2. We send the ACK / NACK.
+	   ( Do we actually need an ACK/NACK ? 
+ 		* On the not UNIQUE side, we will fail the request as
+		  soon as the offending state request comes in.
+                * On the UNIQUE side we need to positive ACK to 
+		  continue.
+		) I guess for the sake of completeness, we should
+                  have both packets, although currently the need for
+		  the NACK packet is not abvious.
+
+   * When we receive an ACK / NACK we either sucessfully finish or
+     fail the the request_state() call. (Error codes should be passed
+     from the peer.)
+
+   * When the connection failes ( = actually a non-cluster wide state
+     change happens while a cluster wide state change goes on), we
+     need to re-evaluate the pre state change check. In case the
+     pre state change check allows the new state we can procees,
+     otherwise we need to fail the request. 
+
+   * How to do the synchronisation form the receive of the ACK / NACK
+     packet to the termination of the request_state() function ?
+       * wait_queue & bit.
+
+   DATA STRUCTURES:
+	* A CLUSTER_STATE_CHANGE bit == the cluster lock bit.
+	* A CL_ST_CHG_SUCCESS  bit set by the receiver.
+	* A CL_ST_CHG_FAIL     bit set by the receiver.
+	* A wait queue.
+
+   TODOS: 
+    Make sure it is used for getting PRIMARY.
+    Evaluate if it is possible to use it for starting resync. (invalidate)
+    Evaluate it for the other cases...
+
+  50 % Is implemented, needs testing etc...
 
 34 Improve the initial hand-shake, to identify the sockets (and TCP-
    links) by an initial message, and not only by the connection timming.
