@@ -314,6 +314,7 @@ void uc_node(enum usage_count_type type)
 	char n_comment[ANSWER_SIZE*3];
 
 	if( type == UC_NO ) return;
+	if( getuid() != 0 ) return;
 
 	current = current_svn_revision();
 

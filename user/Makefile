@@ -57,9 +57,15 @@ distclean: clean
 
 install:
 	install -d $(PREFIX)/sbin/
-	install -m 755 drbdsetup $(PREFIX)/sbin/
-	install -m 755 drbdmeta $(PREFIX)/sbin/
-	install -m 755 drbdadm $(PREFIX)/sbin/
+	if getent group haclient > /dev/null 2> /dev/null ; then	\
+		install -g haclient -m 4750 drbdsetup $(PREFIX)/sbin/ ;	\
+		install -g haclient -m 4750 drbdmeta $(PREFIX)/sbin/ ;	\
+		install -m 755 drbdadm $(PREFIX)/sbin/ ;		\
+	else								\
+		install -m 755 drbdsetup $(PREFIX)/sbin/ ;		\
+		install -m 755 drbdmeta $(PREFIX)/sbin/ ;		\
+		install -m 755 drbdadm $(PREFIX)/sbin/ ; 		\
+	fi
 
 uninstall:
 	rm -f $(PREFIX)/sbin/drbdsetup
