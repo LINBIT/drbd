@@ -10,6 +10,10 @@ chown .haclient drbdmeta
 chmod o-x drbdmeta
 chmod u+s drbdmeta
 
+chown .haclient drbdsetup
+chmod o-x drbdsetup
+chmod u+s drbdsetup
+
 3) Configure Heartbeat to run the DRBD outdate peer daemon
 
 Add these lines to /etc/ha.d/ha.cf
