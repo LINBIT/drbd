@@ -911,6 +911,10 @@ int v07_style_md_open(struct format *cfg,
 		printf("la-size-sect was too big, fixed.\n");
 		cfg->md.la_sect = cfg->md_offset/512;
 	}
+	if(cfg->md.bm_bytes_per_bit == 0 ) {
+		printf("bm-byte-per-bit was 0, fixed. (Set to 4096)\n");
+		cfg->md.bm_bytes_per_bit = 4096;
+	}
 	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
 	cfg->bm_bytes = words * sizeof(long);
 
