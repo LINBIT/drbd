@@ -1,0 +1,20 @@
+1) compile
+
+copy this directory into heartbeat tools directory and compile it 
+with heartbeat.
+
+2) prepare drbdmeta
+
+cd /sbin
+chown .haclient drbdmeta
+chmod o-x drbdmeta
+chmod u+s drbdmeta
+
+3) Configure Heartbeat to run the DRBD outdate peer daemon
+
+Add these lines to /etc/ha.d/ha.cf
+---
+respawn hacluster /usr/lib/heartbeat/dopd
+apiauth dopd gid=haclient uid=hacluster
+---
+
