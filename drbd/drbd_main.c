@@ -527,6 +527,104 @@ int drbd_io_error(drbd_dev* mdev)
 	return ok;
 }
 
+/** 
+ * cl_wide_st_chg:
+ * Returns TRUE if this state change should be preformed as a cluster wide
+ * transaction. 
+ */ 
+STATIC int cl_wide_st_chg(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
+{
+	return ( ns.conn >= Connected &&
+		 ( ( os.role != Primary && ns.role == Primary ) ||
+		   // ( os.conn != SyncSource && ns.role == SyncSource ) ||
+		   // ( os.conn != SyncTarget && ns.role == SyncTarget ) ||
+		   // ( os.disk != Diskless && ns.role == Diskless ) ||
+		   // ( os.conn != TearDown && ns.conn == TearDown ) ||
+		   0
+		   ) );
+}
+
+int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
+		      drbd_state_t mask, drbd_state_t val)
+{
+	unsigned long flags;
+	drbd_state_t os,ns;
+	int rv;
+
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	os = mdev->state;
+	ns.i = (os.i & ~mask.i) | val.i;
+	rv = _drbd_set_state(mdev, ns, f);
+	ns = mdev->state;
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	after_state_ch(mdev,os,ns);
+
+	return rv;
+}
+
+void drbd_force_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
+{
+	drbd_change_state(mdev,ChgStateHard,mask,val);
+}
+
+static inline enum { REQS_SUCCESS=1, REQS_FAIL=2, REQS_NO_NEED=3 } 
+_req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
+{
+	drbd_state_t os,ns;
+
+	if(test_and_clear_bit(CL_ST_CHG_SUCCESS,&mdev->flags)) return REQS_SUCCESS;
+	if(test_and_clear_bit(CL_ST_CHG_FAIL,&mdev->flags)) return REQS_FAIL;
+
+	os = mdev->state;
+	ns.i = (os.i & ~mask.i) | val.i;
+
+	if(!cl_wide_st_chg(mdev,os,ns)) return REQS_NO_NEED;
+
+	return 0;
+}
+
+STATIC int drbd_send_state_req(drbd_dev *, drbd_state_t, drbd_state_t);
+
+int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
+		       enum chg_state_flags f)
+{
+	unsigned long flags;
+	drbd_state_t os,ns;
+	int rv;
+
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	os = mdev->state;
+	ns.i = (os.i & ~mask.i) | val.i;
+
+	if(cl_wide_st_chg(mdev,os,ns)) {
+		// TODO do the pre checks here as well ;
+		spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+		drbd_state_lock(mdev);
+		drbd_send_state_req(mdev,mask,val);
+
+		wait_event(mdev->cstate_wait,(rv=_req_st_cond(mdev,mask,val)));
+
+		if(rv == REQS_FAIL) {
+			drbd_state_unlock(mdev);
+			return SS_FailedByPeer; // Nearly dead code ;)
+		}
+		spin_lock_irqsave(&mdev->req_lock,flags);
+		os = mdev->state;
+		ns.i = (os.i & ~mask.i) | val.i;
+		drbd_state_unlock(mdev);
+	}
+
+	rv = _drbd_set_state(mdev, ns, f);
+	ns = mdev->state;
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	if (rv == SS_Success) after_state_ch(mdev,os,ns);
+
+	return rv;
+}
+
+
 static void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 {
 	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
@@ -614,7 +712,6 @@ STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
 
 	return rv;
 }
-
 
 int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 {
@@ -1224,6 +1321,28 @@ int drbd_send_state(drbd_dev *mdev)
 	return drbd_send_cmd(mdev,mdev->data.socket,ReportState,
 			     (Drbd_Header*)&p,sizeof(p));
 }
+
+STATIC int drbd_send_state_req(drbd_dev *mdev, drbd_state_t mask, drbd_state_t val)
+{
+	Drbd_Req_State_Packet p;
+
+	p.mask    = cpu_to_be32(mask.i);
+	p.val     = cpu_to_be32(val.i);
+
+	return drbd_send_cmd(mdev,mdev->data.socket,StateChgRequest,
+			     (Drbd_Header*)&p,sizeof(p));
+}
+
+int drbd_send_sr_reply(drbd_dev *mdev, int retcode)
+{
+	Drbd_RqS_Reply_Packet p;
+
+	p.retcode    = cpu_to_be32(retcode);
+
+	return drbd_send_cmd(mdev,mdev->meta.socket,StateChgReply,
+			     (Drbd_Header*)&p,sizeof(p));
+}
+
 
 /* See the comment at receive_bitmap() */
 int _drbd_send_bitmap(drbd_dev *mdev)

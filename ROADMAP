@@ -775,11 +775,11 @@ DRBD 0.8 Roadmap
 	* A wait queue.
 
    TODOS: 
-    Make sure it is used for getting PRIMARY.
     Evaluate if it is possible to use it for starting resync. (invalidate)
     Evaluate it for the other cases...
 
-  50 % Is implemented, needs testing etc...
+  60 % Is implemented. Changing the role to primary already uses this 
+       mechanism. Seems to work.
 
 34 Improve the initial hand-shake, to identify the sockets (and TCP-
    links) by an initial message, and not only by the connection timming.

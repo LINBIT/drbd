@@ -217,7 +217,7 @@ typedef enum {
 	NetworkFailure,
 	WFConnection,
 	WFReportParams, // we have a socket
-	TearDown, 
+	TearDown,
 	Connected,      // we have introduced each other
 	SkippedSyncS,   // we should have synced, but user said no
 	SkippedSyncT,
@@ -268,7 +268,8 @@ typedef enum {
 	SS_BothInconsistent=-4,
 	SS_SyncingDiskless=-5,
 	SS_ConnectedOutdates=-6,
-	SS_PrimaryNOP=-7
+	SS_PrimaryNOP=-7,
+	SS_FailedByPeer=-8
 } set_st_err_t;
 
 /* from drbd_strings.c */

@@ -68,6 +68,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_SyncingDiskless] = "Refusing to be syncing and diskless",
 	[-SS_ConnectedOutdates] = "Refusing to be Outdated while Connected",
 	[-SS_PrimaryNOP] = "Refusing to be Primary while peer is not outdated",
+	[-SS_FailedByPeer] = "State changed was refused by peer node"
 };
 
 const char* conns_to_name(drbd_conns_t s) {

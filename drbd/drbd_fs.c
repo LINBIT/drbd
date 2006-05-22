@@ -851,8 +851,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 int drbd_set_role(drbd_dev *mdev, int* arg)
 {
 	drbd_role_t newstate = *arg;
-	int rv,r,forced = 0;
-	drbd_state_t os,ns,rs;
+	int rv,r,forced = 0, try=0;
+	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
 	D_ASSERT(semaphore_is_locked(&mdev->device_mutex));
@@ -875,42 +875,42 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 			bd_release(mdev->this_bdev);
 	}
 
-	nps = disk_mask;
- retry:
-	spin_lock_irq(&mdev->req_lock);
-	os = mdev->state;
-	rs.i = os.i;
-	rs.role = newstate & role_mask;
-	if(nps != disk_mask) rs.pdsk = nps;
-	r = _drbd_set_state(mdev, rs, 0);
+	mask.i = 0; mask.role = role_mask;
+	val.i  = 0; val.role  = newstate & role_mask;
 
-	if ( r == SS_NoConsistnetDisk ) {
-		if ( newstate & DontBlameDrbd && mdev->state.disk<UpToDate) {
-			rs.disk = UpToDate;
+	while (try++ < 3) {
+		r = _drbd_request_state(mdev,mask,val,0);
+		if( r == SS_NoConsistnetDisk && (newstate & DontBlameDrbd) && 
+		    mdev->state.disk < UpToDate) {
+			mask.disk = disk_mask;
+			val.disk  = UpToDate;
 			forced = 1;
-			r = _drbd_set_state(mdev, rs, 0);
+			continue;
 		}
-	}
+		if ( r == SS_NothingToDo ) { rv = 0; goto fail; }
+		if ( r == SS_PrimaryNOP ) {
+			nps = drbd_try_outdate_peer(mdev);
 
-	ns = mdev->state;
-	spin_unlock_irq(&mdev->req_lock);
+			if ( newstate & DontBlameDrbd && nps > Outdated ) {
+				WARN("Forced into split brain situation!\n");
+				nps = Outdated;
+			}
 
-	if ( r == SS_NothingToDo ) { rv = 0; goto fail; }
-	if ( r == SS_PrimaryNOP && nps == disk_mask ) {
-		nps = drbd_try_outdate_peer(mdev);
-		if ( newstate & DontBlameDrbd && nps > Outdated ) {
-			WARN("Forced into split brain situation!\n");
-			nps = Outdated;
+			mask.pdsk = disk_mask;
+			val.pdsk  = nps;
+
+			continue;
 		}
-		goto retry;
+
+		if ( r < SS_Success ) {
+			r = drbd_request_state(mdev,mask,val); // Be verbose.
+			if( r < SS_Success ) {
+				rv = -EIO;
+				goto fail;
+			}
+		}
+		break;
 	}
-	if ( r < SS_Success ) {
-		print_st_err(mdev,os,rs,r);
-		*arg = r;
-		rv = -EIO;
-		goto fail;
-	}
-	after_state_ch(mdev,os,ns);
 
 	if(forced) WARN("Forced to conisder local data as UpToDate!\n");
 

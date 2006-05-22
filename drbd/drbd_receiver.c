@@ -1831,8 +1831,9 @@ STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 /* warn if the arguments differ by more than 12.5% */
 static void warn_if_differ_considerably(drbd_dev *mdev, const char *s, sector_t a, sector_t b)
 {
+	sector_t d;
 	if (a == 0 || b == 0) return;
-	sector_t d = (a > b) ? (a - b) : (b - a);
+	d = (a > b) ? (a - b) : (b - a);
 	if ( d > (a>>3) || d > (b>>3)) {
 		WARN("Considerable difference in %s: %llu vs. %llu\n", s,
 		     (unsigned long long)a, (unsigned long long)b);
@@ -1961,6 +1962,66 @@ STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
+/** 
+ * convert_state:
+ * Switches the view of the state.
+ */ 
+STATIC drbd_state_t convert_state(drbd_state_t ps)
+{
+	drbd_state_t ms;
+
+	static drbd_conns_t c_tab[] = {
+		[Connected] = Connected,
+		[SkippedSyncS] = SkippedSyncT,
+		[SkippedSyncT] = SkippedSyncS,
+		[WFBitMapS] = WFBitMapT,
+		[WFBitMapT] = WFBitMapS,
+		[WFSyncUUID] = SyncSource,
+		[SyncSource] = SyncTarget,
+		[SyncTarget] = WFSyncUUID,
+		[PausedSyncS] = PausedSyncT,
+		[PausedSyncT] = PausedSyncS,
+		[conn_mask]   = conn_mask,
+	};
+
+	ms.i = ps.i;
+
+	ms.conn = c_tab[ps.conn];
+	ms.peer = ps.role;
+	ms.role = ps.peer;
+	ms.pdsk = ps.disk;
+	ms.disk = ps.pdsk;
+	ms.peer_isp = ( ps.aftr_isp | ps.user_isp );
+
+	return ms;
+}
+
+STATIC int receive_req_state(drbd_dev *mdev, Drbd_Header *h)
+{
+	Drbd_Req_State_Packet *p = (Drbd_Req_State_Packet*)h;
+	drbd_state_t mask,val;
+	int rv;
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+		return FALSE;
+
+	mask.i = be32_to_cpu(p->mask);
+	val.i = be32_to_cpu(p->val);
+
+	if (test_bit(UNIQUE,&mdev->flags)) drbd_state_lock(mdev);
+
+	mask = convert_state(mask);
+	val = convert_state(val);
+
+	rv = drbd_change_state(mdev,ChgStateVerbose,mask,val);
+
+	if (test_bit(UNIQUE,&mdev->flags)) drbd_state_unlock(mdev);
+
+	drbd_send_sr_reply(mdev,rv);
+
+	return TRUE;
+}
 
 STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 {
@@ -2269,6 +2330,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportUUIDs]      = receive_uuids,
 	[ReportSizes]      = receive_sizes,
 	[ReportState]      = receive_state,
+	[StateChgRequest]  = receive_req_state,
 	[ReportSyncUUID]   = receive_sync_uuid,
 	[PauseResync]      = receive_pause_resync,
 	[ResumeResync]     = receive_resume_resync,
@@ -2751,6 +2813,24 @@ int drbdd_init(struct Drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
+STATIC int got_RqSReply(drbd_dev *mdev, Drbd_Header* h)
+{
+	Drbd_RqS_Reply_Packet *p = (Drbd_RqS_Reply_Packet*)h;
+
+	int retcode = be32_to_cpu(p->retcode);
+
+	if(retcode >= SS_Success) {
+		set_bit(CL_ST_CHG_SUCCESS,&mdev->flags);
+	} else {
+		set_bit(CL_ST_CHG_FAIL,&mdev->flags);
+		ERR("Requested state change failed by peer: %s\n",
+		    set_st_err_name(retcode));
+	}
+	wake_up(&mdev->cstate_wait);
+
+	return TRUE;
+}
+
 STATIC int got_Ping(drbd_dev *mdev, Drbd_Header* h)
 {
 	return drbd_send_ping_ack(mdev);
@@ -2940,6 +3020,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		[NegRSDReply]={sizeof(Drbd_BlockAck_Packet),  got_NegRSDReply},
 		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet),got_BarrierAck },
 		[DiscardNote]={sizeof(Drbd_Discard_Packet),   got_Discard },
+		[StateChgReply]={sizeof(Drbd_RqS_Reply_Packet),got_RqSReply },
 	};
 
 	sprintf(current->comm, "drbd%d_asender", (int)(mdev-drbd_conf));

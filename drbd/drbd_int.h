@@ -315,6 +315,7 @@ typedef enum {
 	AuthResponse,
 	OutdateRequest,
 	OutdatedReply,
+	StateChgRequest,
 
 	Ping,         // These are sent on the meta socket...
 	PingAck,
@@ -325,6 +326,7 @@ typedef enum {
 	NegRSDReply,  // Local disk is broken...
 	BarrierAck,
 	DiscardNote,
+	StateChgReply,
 
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
@@ -370,6 +372,8 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[NegRSDReply]      = "NegRSDReply",
 		[BarrierAck]       = "BarrierAck",
 		[DiscardNote]      = "DiscardNote",
+		[StateChgRequest]  = "StateChgRequest",
+		[StateChgReply]    = "StateChgReply"
 	};
 
 	if (cmd == HandShake) return "HandShake";
@@ -515,6 +519,17 @@ typedef struct {
 } __attribute((packed)) Drbd_State_Packet;
 
 typedef struct {
+	Drbd_Header head;
+	u32         mask;
+	u32         val;
+} __attribute((packed)) Drbd_Req_State_Packet;
+
+typedef struct {
+	Drbd_Header head;
+	u32         retcode;
+} __attribute((packed)) Drbd_RqS_Reply_Packet;
+
+typedef struct {
 	u64       size;
 	u32       state;
 	u32       blksize;
@@ -649,7 +664,10 @@ enum {
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	UNIQUE,                 // Set on one node, cleared on the peer!
-	USE_DEGR_WFC_T		// Use degr-wfc-timeout instead of wfc-timeout.
+	USE_DEGR_WFC_T,		// Use degr-wfc-timeout instead of wfc-timeout.
+	CLUSTER_ST_CHANGE,      // Cluster wide state change going on...
+	CL_ST_CHG_SUCCESS,
+	CL_ST_CHG_FAIL
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf
@@ -831,6 +849,11 @@ enum chg_state_flags {
 	ScheduleAfter   = 4,
 };
 
+extern int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
+			     drbd_state_t mask, drbd_state_t val);
+extern void drbd_force_state(drbd_dev*, drbd_state_t, drbd_state_t);
+extern int _drbd_request_state(drbd_dev*, drbd_state_t, drbd_state_t, 
+			       enum chg_state_flags);
 extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
 extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
 extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns);
@@ -874,6 +897,7 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req);
+extern int drbd_send_sr_reply(drbd_dev *mdev, int retcode);
 extern void drbd_free_bc(struct drbd_backing_dev* bc);
 extern int drbd_io_error(drbd_dev* mdev);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
@@ -1187,34 +1211,22 @@ extern void drbd_al_shrink(struct Drbd_Conf *mdev);
                 ({drbd_state_t ns; ns.i = mdev->state.i; ns.T1 = (S1); \
                 ns.T2 = (S2); ns.T3 = (S3); ns;})
 
-static inline int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
-				    drbd_state_t mask, drbd_state_t val)
+static inline void drbd_state_lock(drbd_dev *mdev)
 {
-	unsigned long flags;
-	drbd_state_t os,ns;
-	int rv;
-
-	spin_lock_irqsave(&mdev->req_lock,flags);
-	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i;
-	rv = _drbd_set_state(mdev, ns, f);
-	ns = mdev->state;
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	after_state_ch(mdev,os,ns);
-
-	return rv;
+	wait_event(mdev->cstate_wait,
+		   !test_and_set_bit(CLUSTER_ST_CHANGE,&mdev->flags));
 }
 
-static inline void drbd_force_state(drbd_dev* mdev,
-				    drbd_state_t mask, drbd_state_t val)
+static inline void drbd_state_unlock(drbd_dev *mdev)
 {
-	drbd_change_state(mdev,ChgStateHard,mask,val);
+	clear_bit(CLUSTER_ST_CHANGE,&mdev->flags);
+	wake_up(&mdev->cstate_wait);
 }
 
-static inline int drbd_request_state(drbd_dev* mdev,
-				    drbd_state_t mask, drbd_state_t val)
+static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
+				     drbd_state_t val)
 {
-	return drbd_change_state(mdev,ChgStateVerbose,mask,val);
+	return _drbd_request_state(mdev, mask, val, ChgStateVerbose);
 }
 
 static inline void drbd_req_free(drbd_request_t *req)
