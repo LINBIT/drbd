@@ -530,7 +530,7 @@ int drbd_io_error(drbd_dev* mdev)
 /** 
  * cl_wide_st_chg:
  * Returns TRUE if this state change should be preformed as a cluster wide
- * transaction. 
+ * transaction. Of courese it returns 0 as soon as the connection is lost.
  */ 
 STATIC int cl_wide_st_chg(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 {
@@ -567,24 +567,41 @@ void drbd_force_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 	drbd_change_state(mdev,ChgStateHard,mask,val);
 }
 
-static inline enum { REQS_SUCCESS=1, REQS_FAIL=2, REQS_NO_NEED=3 } 
-_req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
-{
-	drbd_state_t os,ns;
-
-	if(test_and_clear_bit(CL_ST_CHG_SUCCESS,&mdev->flags)) return REQS_SUCCESS;
-	if(test_and_clear_bit(CL_ST_CHG_FAIL,&mdev->flags)) return REQS_FAIL;
-
-	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i;
-
-	if(!cl_wide_st_chg(mdev,os,ns)) return REQS_NO_NEED;
-
-	return 0;
-}
-
+STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns);
 STATIC int drbd_send_state_req(drbd_dev *, drbd_state_t, drbd_state_t);
 
+set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
+{
+	drbd_state_t os,ns;
+	unsigned long flags;
+	int rv;
+
+	if(test_and_clear_bit(CL_ST_CHG_SUCCESS,&mdev->flags)) 
+		return SS_CW_Success;
+
+	if(test_and_clear_bit(CL_ST_CHG_FAIL,&mdev->flags)) 
+		return SS_CW_FailedByPeer;
+
+	rv=0;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	os = mdev->state;
+	ns.i = (os.i & ~mask.i) | val.i;
+	if( !cl_wide_st_chg(mdev,os,ns) ) rv = SS_CW_NoNeed;
+	if( !rv ) {
+		rv = pre_state_checks(mdev,ns);
+		if(rv==SS_Success) rv = 0; // cont waiting, otherwise fail.
+	}
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	return rv;
+}
+
+/** 
+ * _drbd_request_state:
+ * This function is the most gracefull way to change state. For some state
+ * transition this function even does a cluster wide transaction.
+ * It has a cousin named drbd_request_state(), which is always verbose.
+ */ 
 int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		       enum chg_state_flags f)
 {
@@ -597,17 +614,24 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	ns.i = (os.i & ~mask.i) | val.i;
 
 	if(cl_wide_st_chg(mdev,os,ns)) {
-		// TODO do the pre checks here as well ;
+		rv = pre_state_checks(mdev,ns);
 		spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+		if( rv < SS_Success ) {
+			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
+			return rv;
+		}
 
 		drbd_state_lock(mdev);
 		drbd_send_state_req(mdev,mask,val);
 
 		wait_event(mdev->cstate_wait,(rv=_req_st_cond(mdev,mask,val)));
 
-		if(rv == REQS_FAIL) {
+		if( rv < SS_Success ) {
+			// nearly dead code.
 			drbd_state_unlock(mdev);
-			return SS_FailedByPeer; // Nearly dead code ;)
+			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
+			return rv;
 		}
 		spin_lock_irqsave(&mdev->req_lock,flags);
 		os = mdev->state;

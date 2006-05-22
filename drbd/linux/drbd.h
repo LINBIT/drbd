@@ -260,16 +260,18 @@ typedef union {
 } drbd_state_t;
 
 typedef enum {
+	SS_CW_NoNeed=4,
+	SS_CW_Success=3,
 	SS_NothingToDo=2,
 	SS_Success=1,
-	SS_UnknownError=0,
+	SS_UnknownError=0, // Used to sleep longer in _drbd_request_state
 	SS_TowPrimaries=-1,
 	SS_NoConsistnetDisk=-2,
 	SS_BothInconsistent=-4,
 	SS_SyncingDiskless=-5,
 	SS_ConnectedOutdates=-6,
 	SS_PrimaryNOP=-7,
-	SS_FailedByPeer=-8
+	SS_CW_FailedByPeer=-8
 } set_st_err_t;
 
 /* from drbd_strings.c */

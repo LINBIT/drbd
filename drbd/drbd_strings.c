@@ -68,7 +68,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_SyncingDiskless] = "Refusing to be syncing and diskless",
 	[-SS_ConnectedOutdates] = "Refusing to be Outdated while Connected",
 	[-SS_PrimaryNOP] = "Refusing to be Primary while peer is not outdated",
-	[-SS_FailedByPeer] = "State changed was refused by peer node"
+	[-SS_CW_FailedByPeer] = "State changed was refused by peer node"
 };
 
 const char* conns_to_name(drbd_conns_t s) {
@@ -88,7 +88,7 @@ const char* disks_to_name(drbd_disks_t s) {
 }
 
 const char* set_st_err_name(set_st_err_t err) {
-	return err < SS_PrimaryNOP ? "TOO_SMALL" :
+	return err < SS_CW_FailedByPeer ? "TOO_SMALL" :
 	       err > SS_TowPrimaries ? "TOO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }
