@@ -37,6 +37,10 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/poll.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -102,6 +106,8 @@ static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
 static int hidden_cmds(struct d_resource* ,const char* );
+
+static struct ifi_info* get_ifi_info(int family);
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -1153,87 +1159,162 @@ void print_usage_and_exit(const char* addinfo)
   exit(E_usage);
 }
 
-/* if not verifyable, prints a message to stderr,
- * and sets config_valid = 0 if INVALID_IP_IS_INVALID_CONF is defined */
-#define INVALID_IP_IS_INVALID_CONF 0
+static void free_ifi_info(struct ifi_info *ifihead)
+{
+  struct ifi_info *ifi, *ifinext;
+  for (ifi = ifihead; ifi != NULL; ifi = ifinext) {
+    if (ifi->ifi_addr != NULL)
+      free(ifi->ifi_addr);
+    ifinext = ifi->ifi_next;
+    free(ifi);
+  }
+}
+
+static struct ifi_info* get_ifi_info(int family)
+{
+  struct ifi_info *ifi, *ifihead, **ifipnext;
+  int sockfd, len, lastlen, flags, myflags;
+  char *ptr, *buf, lastname[IFNAMSIZ], *cptr;
+  struct ifconf ifc;
+  struct ifreq *ifr, ifrcopy;
+  struct sockaddr_in *sinptr;
+    
+  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sockfd < 0) {
+    fprintf(stderr, "sockfd < 0\n");
+    return NULL;
+  }
+
+  lastlen = 0;
+  len = 100 * sizeof(struct ifreq); /* initial guess */
+    
+  for (;;) {
+    buf = malloc(len);
+    if (!buf)
+      return NULL;
+    ifc.ifc_len = len;
+    ifc.ifc_buf = buf;
+        
+    if (ioctl(sockfd, SIOCGIFCONF, &ifc) < 0) {
+      if (errno != EINVAL || lastlen != 0)
+	return NULL;
+    } else {
+      if (ifc.ifc_len == lastlen)
+	break; /* success, len has not changed */
+      lastlen = ifc.ifc_len;
+    }
+    len += 10 * sizeof(struct ifreq); /* increment */
+    free(buf);
+  }
+
+  ifihead = NULL;
+  ifipnext = &ifihead;
+  lastname[0] = 0;
+
+  for (ptr = buf; ptr < buf + ifc.ifc_len; ) {
+    ifr = (struct ifreq*) ptr;
+
+    switch (ifr->ifr_addr.sa_family) {
+      /*         case AF_INET6: len = sizeof(struct sockaddr_in6); break; */
+    case AF_INET:
+    default:
+      len = sizeof(struct sockaddr);
+      break;
+    }
+        
+    ptr += sizeof(ifr->ifr_name) + len; /* for next one in buffer */
+        
+    if (ifr->ifr_addr.sa_family != family)
+      continue; /* ignore if not desired address family */
+        
+    myflags = 0;
+    if ((cptr = strchr(ifr->ifr_name, ':')) != NULL)
+      *cptr = 0; /* replace colon with null */
+
+    if (strncmp(lastname, ifr->ifr_name, IFNAMSIZ) == 0)
+      myflags = IFI_ALIAS;
+
+    memcpy(lastname, ifr->ifr_name, IFNAMSIZ);
+
+    ifrcopy = *ifr;
+    if (ioctl(sockfd, SIOCGIFFLAGS, &ifrcopy) < 0)
+      return NULL;
+
+    flags = ifrcopy.ifr_flags;
+    if ((flags & IFF_UP) == 0)
+      continue; /* ignore if the interface is not up */
+
+    ifi = calloc(1, sizeof(struct ifi_info));
+    if (!ifi)
+      return NULL;
+        
+    *ifipnext = ifi; /* prev points to this new one */
+    ifipnext = &ifi->ifi_next; /* pointer to next one goes here */
+
+    ifi->ifi_flags = flags; /* IFI_xxx values */
+    ifi->ifi_myflags = myflags; /* IFI_xxx values */
+    memcpy(ifi->ifi_name, ifr->ifr_name, IFNAMSIZ);
+    ifi->ifi_name[IFNAMSIZ - 1] = '\0';
+
+    switch(ifr->ifr_addr.sa_family) {
+      /*         case AF_INET6: return NULL; */
+    case AF_INET:
+      sinptr = (struct sockaddr_in *)&ifr->ifr_addr;
+      if (ifi->ifi_addr == NULL) {
+	ifi->ifi_addr = calloc(1, sizeof(struct sockaddr));
+	if (!ifi->ifi_addr)
+	  return NULL;
+
+	memcpy(ifi->ifi_addr, sinptr, sizeof(struct sockaddr));
+      }
+      /* IFF_BROADCAST and IFF_POINTTOPOINT are ignored */
+    default:
+      break;
+    }
+  }
+
+  free(buf);
+  close(sockfd);
+
+  return ifihead;
+}
+
 void verify_ips(struct d_resource* res)
 {
-  char *my_ip = NULL;
-  char *his_ip = NULL;
-  char *argv[] = { "/bin/bash", "-c", NULL, "drbdadm:verify_ips", NULL };
-  int ex;
+  struct ifi_info *ifi, *ifihead;
+  int family, valid = 0;
+  uint32_t addr = 0;
+  struct in_addr sin_addr;
+  const char *my_ip;
 
-  if (global_options.disable_ip_verification) return;
-  if (dry_run == 1 || do_verify_ips == 0) return;
+  my_ip = res->me->address;
 
-  if (!(res && res->me   && res->me->address
-	    && res->peer && res->peer->address)) {
-    fprintf(stderr, "OOPS, no resource info in verify_ips!\n");
-    exit(E_config_invalid);
-  }
-  my_ip  = res->me->address;
-  his_ip = res->peer->address;
+  /* does DRBD support inet6? */
+  family = AF_INET;
+    
+  for (ifihead = ifi = get_ifi_info(family); ifi != NULL; ifi = ifi->ifi_next) {        
+    switch (family) {
+    case AF_INET: {
+      struct sockaddr_in * sin = (struct sockaddr_in *)ifi->ifi_addr;
+      addr = sin->sin_addr.s_addr;
 
-  ex = asprintf(&argv[2],
-	"IP=%s; IP=${IP//./\\\\.};"
-	"LANG=; PATH=/sbin/:$PATH;"
-	"if   type -p ip       ; then"
-	"  ip addr show | grep -qE 'inet '$IP'[ /]';"
-	"elif type -p ifconfig ; then"
-	"  ifconfig | grep -qE ' inet addr:'$IP' ';"
-	"else"
-	"  echo >&2 $0: 'neither ip nor ifconfig found!';"
-	"fi >/dev/null",
-	my_ip);
-  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(argv,SLEEPS_SHORT|DONT_REPORT_FAILED);
-  free(argv[2]); argv[2] = NULL;
-
-  if (ex != 0) {
-    ENTRY e, *ep;
-    e.key = e.data = ep = NULL;
-    asprintf(&e.key,"%s:%s",my_ip,res->me->port);
-    ep = hsearch(e, FIND);
-    fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
-		    "IP %s not found on this host.\n",
-	    config_file,(int)(long)ep->data,res->name, res->me->name,my_ip);
-    if (INVALID_IP_IS_INVALID_CONF)
-	    config_valid = 0;
-    free(e.key);
-    return;
+      if (addr == sin_addr.s_addr) /* loop a few times needlessly */
+	valid = 1;
+      break;
+    }
+    default:
+      break;
+    }
   }
 
-#if 1
-/* seems to not work as expected with aliases.
- * maybe drop it completely and trust the admin.
- */
-  ex = asprintf(&argv[2],
-	"IP=%s; IPQ=${IP//./\\\\.};"
-	"peerIP=%s; peerIPQ=${peerIP//./\\\\.};"
-	"LANG=; PATH=/sbin/:$PATH;"
-	"if type -p ip ; then "
-	"  ip -o route get to $peerIP from $IP 2>/dev/null |"
-	"    grep -qE ^$peerIPQ' from '$IPQ' ';"
-	/* "else"
-	 * "  echo >&2 $0: 'cannot check route to peer';" */
-	"fi >/dev/null",
-	my_ip,his_ip);
-  if (ex < 0) { perror("asprintf"); exit(E_thinko); }
-  ex = m_system(argv,SLEEPS_SHORT);
-  free(argv[2]); argv[2] = NULL;
-  if (ex != 0) {
-    ENTRY e, *ep;
-    e.key = e.data = ep = NULL;
-    asprintf(&e.key,"%s:%s",his_ip,res->peer->port);
-    ep = hsearch(e, FIND);
-    fprintf(stderr, "%s:%d: in resource %s:\n\tNo route from me (%s) to peer (%s).\n",
-	    config_file,(int)(long)ep->data,res->name, my_ip, his_ip);
-    if (INVALID_IP_IS_INVALID_CONF)
-	    config_valid = 0;
-    return;
-  }
+  free_ifi_info(ifihead);
+
+  if (valid == 0) {
+    fprintf(stderr, "OOPS, the IP address %s isn't configure/up on your system!\n", my_ip);
+#ifdef INVALID_IP_IS_INVALID_CONF
+    config_valid = 0;
 #endif
-
+  }
   return;
 }
 

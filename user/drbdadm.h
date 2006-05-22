@@ -4,6 +4,8 @@
 #include <linux/drbd_config.h>
 #include <sys/utsname.h>
 #include <sys/types.h>
+#include <net/if.h>
+#include <stdint.h>
 
 #define E_syntax	  2
 #define E_usage		  3
@@ -46,6 +48,19 @@ struct d_globals
   int minor_count;
   int dialog_refresh;
   enum usage_count_type usage_count;
+};
+
+#define IFI_HADDR 8
+#define IFI_ALIAS 1
+
+struct ifi_info {
+  char ifi_name[IFNAMSIZ];      /* interface name, nul terminated */
+  uint8_t ifi_haddr[IFI_HADDR]; /* hardware address */
+  uint16_t ifi_hlen;            /* bytes in hardware address, 0, 6, 8 */
+  short ifi_flags;              /* IFF_xxx constants from <net/if.h> */
+  short ifi_myflags;            /* our own IFI_xxx flags */
+  struct sockaddr *ifi_addr;    /* primary address */
+  struct ifi_info *ifi_next;    /* next ifi_info structure */
 };
 
 struct d_host_info
