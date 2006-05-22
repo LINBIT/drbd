@@ -727,10 +727,13 @@ DRBD 0.8 Roadmap
    Connected -> SyncSource in the cluster.
 
       role <- primary
-      conn <- SyncSource
-      conn <- SyncTarget
+      disk <- inconsistent (conn <- SyncTarget) **
+      pdsk <- inconsistent (conn <- SyncSource)
       disk <- Diskless (as long as it happens as administrative command)
       pdsk <- Outdated (= a 'disconnect' issued on a primary node)
+
+   ** It is more feasable to make the change on disk/pdsk cluster
+      wide atomic than working with the connection state.
 
    * When a state change might sleep ( reuqest_state() ) and it is 
      to be cluster wide atomic ( pre_state_checks() determines this!).
