@@ -22,3 +22,22 @@ respawn hacluster /usr/lib/heartbeat/dopd
 apiauth dopd gid=haclient uid=hacluster
 ---
 
+4) Configure DRBD to use this facility
+   
+   resource rX {
+     ...
+     handlers {
+       ...
+       outdate-peer "/usr/sbin/drbd-peer-outdater";   
+     }
+     disk {
+       ...
+       fencing resource-only;
+       # or
+       # fencing resource-and-stonith;
+       # in case you configure heartbeat to use stonith
+     }
+     ...
+   }
+
+
