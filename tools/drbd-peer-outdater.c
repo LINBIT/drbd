@@ -150,10 +150,10 @@ main(int argc, char ** argv)
 			case 'h':		/* Help message */
 				usage(crm_system_name, LSB_EXIT_OK);
 				break;
-			case 't':		/* Help message */
+			case 't':
 				timeout = atoi(optarg);
 				break;
-			case 'r':		/* Help message */
+			case 'r':
 				drbd_resource = crm_strdup(optarg);
 				break;
 			default:

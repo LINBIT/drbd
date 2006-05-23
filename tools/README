@@ -6,11 +6,11 @@ with heartbeat.
 2) prepare drbdmeta
 
 cd /sbin
-chown .haclient drbdmeta
+chgrp haclient drbdmeta
 chmod o-x drbdmeta
 chmod u+s drbdmeta
 
-chown .haclient drbdsetup
+chgrp haclient drbdsetup
 chmod o-x drbdsetup
 chmod u+s drbdsetup
 
