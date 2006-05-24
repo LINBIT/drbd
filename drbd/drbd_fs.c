@@ -471,7 +471,8 @@ ONLY_IN_26({
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
 
 	if( q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
-		INFO("Adjusting our ra_pages to backing device's (%lu)\n",
+		INFO("Adjusting my ra_pages to backing device's (%lu -> %lu)\n",
+		     q->backing_dev_info.ra_pages,
 		     b->backing_dev_info.ra_pages);
 		q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
 	}
