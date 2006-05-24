@@ -195,8 +195,10 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	convert_after_option(res);
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
-	do_attach |= strcmp(res->me->device, running->me->device);
-	do_attach |= !disk_equal(res->me, running->me);
+	if(running->me) {
+		do_attach |= strcmp(res->me->device, running->me->device);
+		do_attach |= !disk_equal(res->me, running->me);
+	} else  do_attach |= 1;
 
 	do_connect  = !opts_equal(res->net_options, running->net_options);
 	do_connect |= !addr_equal(res,running);

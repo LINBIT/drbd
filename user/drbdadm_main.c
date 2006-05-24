@@ -473,6 +473,7 @@ static void expand_common(void)
     expand_opts(common->sync_options,    &res->sync_options);
     expand_opts(common->startup_options, &res->startup_options);
     expand_opts(common->handlers,        &res->handlers);
+    validate_resource(res);
   }
 }
 
@@ -747,6 +748,8 @@ void convert_discard_opt(struct d_resource* res)
 {
   struct d_option* opt;
 
+  if (res==NULL) return;
+
   if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
     if(!strncmp(opt->value,"discard-node-",13)) {
       if(!strcmp(nodeinfo.nodename,opt->value+13)) {
@@ -794,6 +797,8 @@ struct d_resource* res_by_name(const char *name);
 void convert_after_option(struct d_resource* res)
 {
   struct d_option* opt;
+
+  if (res==NULL) return;
 
   if ( (opt = find_opt(res->sync_options, "after")) ) {
     char *ptr;
@@ -1374,6 +1379,8 @@ int check_uniq(const char* what, const char *fmt, ...)
 
 void validate_resource(struct d_resource * res)
 {
+  struct d_option* opt;
+
   if (!res->protocol) {
     fprintf(stderr,
 	    "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
@@ -1394,6 +1401,13 @@ void validate_resource(struct d_resource * res)
 	    "missing section 'on <PEER> { ... }'.\n",
 	    config_file, c_resource_start, res->name);
     config_valid = 0;
+  }
+  if ( (opt = find_opt(res->sync_options, "after")) ) {
+    if (res_by_name(opt->value) == NULL) {
+      fprintf(stderr,"In resource %s:\n\tresource '%s' mentioned in "
+	      "'after' option is not known.\n",res->name,opt->value);
+      config_valid=0;
+    }
   }
   if (res->me && res->peer) {
     verify_ips(res);
