@@ -354,8 +354,6 @@ static void parse_host_body(struct d_host_info *host,
 				EXP(TK_INTEGER);
 				host->meta_index = yylval.txt;
 				EXP(']');
-				EXP(';');
-			} else {
 				switch(yylex()) {
 				case TK__MAJOR:
 					EXP(TK_INTEGER);
@@ -369,6 +367,8 @@ static void parse_host_body(struct d_host_info *host,
 				default:
 					pe_expected("_major | ;");
 				}
+			} else {
+				EXP(';');
 			}
 			check_meta_disk(host);
 			break;
