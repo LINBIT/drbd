@@ -1,8 +1,19 @@
 Latest:
 ------
- ChangeLog last updated: r2085 2006-03-06
+ ChangeLog last updated: r2211 2006-05-24
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
+
+0.7.19 (api:78/proto:74)
+-----
+ * Fixed a bug where lc_del() left a list poison in an LRU chache's
+   hash table. The only way to trigger this bug was:
+   up (>>200M), primary, mkfs, resize to 200M, down, up
+ * DRBD now propagates the backing storage's read ahead properties
+   to upper layers. With devices that read very fast, this is 
+   important.
+ * GFP_KERNEL was changed to GFP_NOIO in a few places, to make it
+   more save against deadlocks in the memory subsystem.
 
 0.7.18 (api:78/proto:74)
 -----

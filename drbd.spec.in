@@ -190,6 +190,17 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Mon May 24 2006 14:03:07 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.19-1)
+ * Fixed a bug where lc_del() left a list poison in an LRU chache's
+   hash table. The only way to trigger this bug was:
+   up (>>200M), primary, mkfs, resize to 200M, down, up
+ * DRBD now propagates the backing storage's read ahead properties
+   to upper layers. With devices that read very fast, this is 
+   important.
+ * GFP_KERNEL was changed to GFP_NOIO in a few places, to make it
+   more save against deadlocks in the memory subsystem.
+
 * Mon Apr 26 2006 14:10:07 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.18-1)
  * Under high memory pressure it was possible to hit a deadlock 
