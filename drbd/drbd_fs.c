@@ -469,6 +469,13 @@ ONLY_IN_26({
 	q->hardsect_size     = max((unsigned short)512,b->hardsect_size);
 	q->seg_boundary_mask = PAGE_SIZE-1;
 	D_ASSERT(q->hardsect_size <= PAGE_SIZE); // or we are really screwed ;-)
+
+	if( q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
+		INFO("Adjusting our ra_pages to backing device's (%lu)\n",
+		     b->backing_dev_info.ra_pages);
+		q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
+	}
+
 })
 #undef min_not_zero
 
