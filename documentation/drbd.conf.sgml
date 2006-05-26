@@ -175,6 +175,7 @@ resource drbd0 {
     <option>sndbuf-size</option>, <option>timeout</option>,
     <option>connect-int</option>, <option>ping-int</option>,
     <option>max-buffers</option>, <option>max-epoch-size</option>,
+    <option>bdev-treshold</option>,
     <option>ko-count</option>, <option>on-disconnect</option>.
   </para>
   </listitem>
@@ -427,6 +428,21 @@ the unit is 1 second.
 </varlistentry>
 
 <varlistentry>
+  <term><option>bdev-treshold <replaceable>number</replaceable></option></term>
+  <listitem>
+    <para>
+      When the number of pending write requests on the standby
+      (secondary) node exceeds the bdev-treshold, we trigger
+      the request processing of our backing storage device.
+      Some storage controllers deliver better performance with small
+      values, other deliver best performance when it is set to
+      the same value as max-buffers. Minimum 16, default 128, maximum
+      131072.
+    </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
   <term><option>ko-count <replaceable>count</replaceable></option></term>
   <listitem><para>
   In case the secondary node fails to complete a single write request
@@ -441,17 +457,14 @@ The default is 0, which disables this feature.
   <term><option>on-disconnect <replaceable>handler</replaceable></option></term>
   <listitem><para>
   When the connection to the peer is lost, DRBD can either
-  go into stand alone mode, try to reconnect to the peer or
-  freeze all further IO requests (think of an NFS hard mount).
-  Valid handler specifiers are <option>stand_alone</option>,
-  <option>reconnect</option> and <option>freeze_io</option>.
+  go into stand alone mode, or try to reconnect to the peer.
+  Valid handler specifiers are <option>stand_alone</option> and
+  <option>reconnect</option>.
   The default handler is <option>reconnect</option>.
   </para>
   <para><option>stand_alone</option>: Do not reconnect, go into
   StandAlone state.</para>
   <para><option>reconnect</option>: Try to reconnect.</para>
-  <para><option>freeze_io</option>: Try to reconnect, but freeze all
-  IO until the connection is established again.</para>
   </listitem>
 </varlistentry>
 
@@ -530,7 +543,7 @@ The default is 0, which disables this feature.
 </refsect1>
 <refsect1>
 <title>Version</title>
-<simpara>This document is correct for version 0.7.15 of the DRBD distribution.
+<simpara>This document is correct for version 0.7.20 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>
@@ -547,7 +560,7 @@ Man pages were reviewed and rewritten by Helmut Wollmersdorfer <email>helmut.wol
 <refsect1>
 <title>Copyright</title>
 <simpara>
-Copyright (c) 2001-2005 Philipp Reisner. This  is  free software; 
+Copyright (c) 2001-2006 Philipp Reisner. This  is  free software; 
 see the source for copying conditions.  There is NO warranty; 
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 </simpara>

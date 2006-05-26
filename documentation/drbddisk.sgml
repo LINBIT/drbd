@@ -45,7 +45,7 @@
 
 <refsect1>
 <title>Version</title>
-<simpara>This document is correct for version 0.7.15 of the DRBD distribution.
+<simpara>This document is correct for version 0.7.20 of the DRBD distribution.
 </simpara>
 </refsect1>
 
@@ -66,7 +66,7 @@
 <refsect1>
   <title>Copyright</title>
   <simpara>
-    Copyright (c) 2004-2005 Philipp Reisner. This  is  free software; 
+    Copyright (c) 2004-2006 Philipp Reisner. This  is  free software; 
     see the source for copying conditions.  There is NO warranty; 
     not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   </simpara>
