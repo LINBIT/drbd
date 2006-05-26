@@ -301,7 +301,8 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 
 	MUST_HOLD(&mdev->ee_lock);
 
-	if(mdev->ee_vacant == EE_MININUM / 2) {
+	if(mdev->ee_vacant == EE_MININUM / 2 && 
+	   (mdev->conf.bdev_treshold != mdev->conf.max_buffers) ) {
 		spin_unlock_irq(&mdev->ee_lock);
 		drbd_kick_lo(mdev);
 		spin_lock_irq(&mdev->ee_lock);
@@ -903,11 +904,8 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	/* kick lower level device, if we have more than (arbitrary number)
 	 * reference counts on it, which typically are locally submitted io
 	 * requests.  don't use unacked_cnt, so we speed up proto A and B, too.
-	 *
-	 * XXX maybe: make that arbitrary number configurable.
-	 * for now, I choose 1/16 of max-epoch-size.
 	 */
-	if (atomic_read(&mdev->local_cnt) >= (mdev->conf.max_epoch_size>>4) ) {
+	if (atomic_read(&mdev->local_cnt) >= mdev->conf.bdev_treshold ) {
 		drbd_kick_lo(mdev);
 	}
 	mdev->writ_cnt+=data_size>>9;

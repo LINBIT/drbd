@@ -52,6 +52,9 @@ RANGE(PORT,1,0xffff);
   /* @4k PageSize -> 128kB - 512MB */
   RANGE(MAX_BUFFERS, 32, 131072);
 
+  /* @4k PageSize -> 64kB - 512MB */
+  RANGE(BDEV_TRESHOLD, 16, 131072);
+
   /* 0 is disabled.
    * 200 should be more than enough even for very short timeouts */
   RANGE(KO_COUNT,0, 200);

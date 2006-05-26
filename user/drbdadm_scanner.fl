@@ -258,10 +258,11 @@ PORT			  {WS}port{ASSIGN}{NUM}
   ping-int		do_assign(NUM);   CP; return TK_PING_INT;
   connect-int		do_assign(NUM);   CP; return TK_CONNECT_INT;
   max-buffers		do_assign(NUM);   CP; return TK_MAX_BUFFERS;
+  bdev-treshold		do_assign(NUM);   CP; return TK_BDEV_TRESHOLD;
   max-epoch-size	do_assign(NUM);   CP; return TK_MAX_EPOCH_SIZE;
   ko-count		do_assign(NUM);   CP; return TK_KO_COUNT;
   on-disconnect 	do_assign(ON_DISCONNECT); CP; return TK_ON_DISCONNECT;
-  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|max-epoch-size|ko-count|on-disconnect'");
+  {NDELIM}		expect_error("one of 'sndbuf-size|timeout|ping-int|connect-int|max-buffers|bdev-treshold|max-epoch-size|ko-count|on-disconnect'");
 }
 
 <SYNCER>{

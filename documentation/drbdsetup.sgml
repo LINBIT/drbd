@@ -313,6 +313,21 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
+	  <term><option>-l</option>,
+	  <option>--bdev-treshold <replaceable>val</replaceable></option></term>
+	  <listitem>
+	    <para>
+	      When the number of pending write requests on the standby
+	      (secondary) nodes goes over bdev-treshold we trigger
+	      the request processing of out backing storage device.
+	      Some storage controllers deliver better performance with small
+	      values, other delivers beste performance when it is set to
+	      the same value as max-buffers. Minimum 16, default 128, maximum
+	      131072.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
 	  <term><option>-d</option>,
 	  <option>--on-disconnect <replaceable>discon_handler</replaceable></option></term>
 	  <listitem>
