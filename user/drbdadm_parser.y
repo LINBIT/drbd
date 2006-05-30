@@ -457,7 +457,7 @@ net_stmt:	  TK_TIMEOUT	    TK_INTEGER
 		{ range_check(R_PING_INT,$1,$2);	$$=new_opt($1,$2); }
 		| TK_MAX_BUFFERS    TK_INTEGER
 		{ range_check(R_MAX_BUFFERS,$1,$2);	$$=new_opt($1,$2); }
-		| TK_BDEV_THRESHOLD    TK_INTEGER
+		| TK_BDEV_THRESHOLD TK_INTEGER
 		{ range_check(R_BDEV_THRESHOLD,$1,$2);	$$=new_opt($1,$2); }
 		| TK_MAX_EPOCH_SIZE TK_INTEGER
 		{ range_check(R_MAX_EPOCH_SIZE,$1,$2);	$$=new_opt($1,$2); }
