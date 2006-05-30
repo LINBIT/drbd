@@ -337,7 +337,7 @@ int adm_adjust(struct d_resource* res,char* unused)
     do_connect |= check_opt_d(in,"ping-int",1,"sec",res->net_options);
     do_connect |= check_opt_d(in,"max-epoch-size",1,"",res->net_options);
     do_connect |= check_opt_d(in,"max-buffers",1,"",res->net_options);
-    do_connect |= check_opt_d(in,"bdev-treshold",1,"",res->net_options);
+    do_connect |= check_opt_d(in,"bdev-threshold",1,"",res->net_options);
     do_connect |= check_opt_d(in,"sndbuf-size",1,"",res->net_options);
     do_connect |= check_opt_d(in,"ko-count",1,"",res->net_options);
     do_connect |= check_opt_s(in,"on-disconnect",res->net_options);

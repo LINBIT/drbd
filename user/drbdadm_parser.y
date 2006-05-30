@@ -144,7 +144,7 @@ enum range_checks
   R_CONNECT_INT,
   R_PING_INT,
   R_MAX_BUFFERS,
-  R_BDEV_TRESHOLD,
+  R_BDEV_THRESHOLD,
   R_MAX_EPOCH_SIZE,
   R_SNDBUF_SIZE,
   R_KO_COUNT,
@@ -193,9 +193,9 @@ range_check(const enum range_checks what, const char *name, const char *value)
       m_strtoll_range(value, 1, name, DRBD_MAX_BUFFERS_MIN,
 		      DRBD_MAX_BUFFERS_MAX);
       break;
-    case R_BDEV_TRESHOLD:
-      m_strtoll_range(value, 1, name, DRBD_BDEV_TRESHOLD_MIN,
-		      DRBD_BDEV_TRESHOLD_MAX);
+    case R_BDEV_THRESHOLD:
+      m_strtoll_range(value, 1, name, DRBD_BDEV_THRESHOLD_MIN,
+		      DRBD_BDEV_THRESHOLD_MAX);
       break;
     case R_MAX_EPOCH_SIZE:
       m_strtoll_range(value, 1, name, DRBD_MAX_EPOCH_SIZE_MIN,
@@ -333,7 +333,7 @@ void check_meta_disk()
 %token <txt> TK_MINOR_COUNT TK_INTEGER TK_STRING
 %token <txt> TK_ON_IO_ERROR TK_SIZE
 %token <txt> TK_TIMEOUT TK_CONNECT_INT TK_PING_INT TK_MAX_BUFFERS TK_IPADDR
-%token <txt> TK_BDEV_TRESHOLD TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
+%token <txt> TK_BDEV_THRESHOLD TK_MAX_EPOCH_SIZE TK_SNDBUF_SIZE
 %token <txt> TK_SKIP_SYNC TK_USE_CSUMS TK_RATE TK_SYNC_GROUP TK_AL_EXTENTS
 %token <txt> TK_WFC_TIMEOUT TK_DEGR_WFC_TIMEOUT
 %token <txt> TK_KO_COUNT TK_ON_DISCONNECT TK_DIALOG_REFRESH
@@ -457,8 +457,8 @@ net_stmt:	  TK_TIMEOUT	    TK_INTEGER
 		{ range_check(R_PING_INT,$1,$2);	$$=new_opt($1,$2); }
 		| TK_MAX_BUFFERS    TK_INTEGER
 		{ range_check(R_MAX_BUFFERS,$1,$2);	$$=new_opt($1,$2); }
-		| TK_BDEV_TRESHOLD    TK_INTEGER
-		{ range_check(R_BDEV_TRESHOLD,$1,$2);	$$=new_opt($1,$2); }
+		| TK_BDEV_THRESHOLD    TK_INTEGER
+		{ range_check(R_BDEV_THRESHOLD,$1,$2);	$$=new_opt($1,$2); }
 		| TK_MAX_EPOCH_SIZE TK_INTEGER
 		{ range_check(R_MAX_EPOCH_SIZE,$1,$2);	$$=new_opt($1,$2); }
 		| TK_SNDBUF_SIZE    TK_INTEGER

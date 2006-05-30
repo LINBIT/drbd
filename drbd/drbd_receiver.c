@@ -300,7 +300,7 @@ struct Tl_epoch_entry* drbd_get_ee(drbd_dev *mdev)
 	MUST_HOLD(&mdev->ee_lock);
 
 	if(mdev->ee_vacant == EE_MININUM / 2 && 
-	   (mdev->conf.bdev_treshold != mdev->conf.max_buffers) ) {
+	   (mdev->conf.bdev_threshold != mdev->conf.max_buffers) ) {
 		spin_unlock_irq(&mdev->ee_lock);
 		drbd_kick_lo(mdev);
 		spin_lock_irq(&mdev->ee_lock);
@@ -903,7 +903,7 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	 * reference counts on it, which typically are locally submitted io
 	 * requests.  don't use unacked_cnt, so we speed up proto A and B, too.
 	 */
-	if (atomic_read(&mdev->local_cnt) >= mdev->conf.bdev_treshold ) {
+	if (atomic_read(&mdev->local_cnt) >= mdev->conf.bdev_threshold ) {
 		drbd_kick_lo(mdev);
 	}
 	mdev->writ_cnt+=data_size>>9;

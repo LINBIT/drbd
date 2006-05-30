@@ -93,7 +93,7 @@ struct net_config {
 	IN int      ping_int;         /* seconds */
 	IN int      max_epoch_size;
 	IN int      max_buffers;
-	IN int      bdev_treshold;
+	IN int      bdev_threshold;
 	IN int      sndbuf_size;  /* socket send buffer size */
 	IN unsigned int ko_count;
 	IN enum disconnect_handler on_disconnect;

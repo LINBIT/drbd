@@ -145,7 +145,7 @@ void mempool_resize(mempool_t *pool, int new_min_nr, int gfp_mask)
 	spin_unlock_irqrestore(&pool->lock, flags);
 
 	/*
-	 * We refill the pool up to the new treshold - but we dont
+	 * We refill the pool up to the new threshold - but we dont
 	 * (cannot) guarantee that the refill succeeds.
 	 */
 	while (delta) {

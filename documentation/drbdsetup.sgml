@@ -314,11 +314,11 @@
 	</varlistentry>
 	<varlistentry>
 	  <term><option>-l</option>,
-	  <option>--bdev-treshold <replaceable>val</replaceable></option></term>
+	  <option>--bdev-threshold <replaceable>val</replaceable></option></term>
 	  <listitem>
 	    <para>
 	      When the number of pending write requests on the standby
-	      (secondary) node exceeds the bdev-treshold, we trigger
+	      (secondary) node exceeds the bdev-threshold, we trigger
 	      the request processing of our backing storage device.
 	      Some storage controllers deliver better performance with small
 	      values, other deliver best performance when it is set to
