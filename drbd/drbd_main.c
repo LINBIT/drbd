@@ -1736,9 +1736,6 @@ int __init drbd_init(void)
 		       ": never change the size or layout of the HandShake packet.\n");
 		return -EINVAL;
 	}
-	if (sizeof_drbd_structs_sanity_check()) {
-		return -EINVAL;
-	}
 
 	if (use_nbd_major) {
 		major_nr = NBD_MAJOR;

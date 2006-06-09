@@ -53,7 +53,7 @@ RANGE(PORT,1,0xffff);
   RANGE(MAX_BUFFERS, 32, 131072);
 
   /* @4k PageSize -> 64kB - 512MB */
-  RANGE(BDEV_THRESHOLD, 16, 131072);
+  RANGE(UNPLUG_WATERMARK, 16, 131072);
 
   /* 0 is disabled.
    * 200 should be more than enough even for very short timeouts */

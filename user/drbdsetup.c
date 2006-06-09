@@ -68,7 +68,7 @@
 #define DEF_ON_IO_ERROR         PassOn
 #define DEF_KO_COUNT                 0
 #define DEF_ON_DISCONNECT       Reconnect
-#define DEF_BDEV_THRESHOLD       (DEF_MAX_BUFFERS/16)
+#define DEF_UNPLUG_WATERMARK       (DEF_MAX_BUFFERS/16)
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -156,7 +156,7 @@ struct drbd_cmd commands[] = {
      { "timeout",    required_argument, 0, 't' },
      { "max-epoch-size", required_argument, 0, 'e' },
      { "max-buffers",required_argument, 0, 'b' },
-     { "bdev-threshold",required_argument, 0, 'l' },
+     { "unplug-watermark",required_argument, 0, 'l' },
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
      { "sndbuf-size",required_argument, 0, 'S' },
@@ -562,7 +562,7 @@ int scan_net_options(char **argv,
   cn->config.sndbuf_size = DEF_SNDBUF_SIZE ;
   cn->config.on_disconnect = DEF_ON_DISCONNECT;
   cn->config.ko_count = DEF_KO_COUNT;
-  cn->config.bdev_threshold = DEF_BDEV_THRESHOLD;
+  cn->config.unplug_watermark = DEF_UNPLUG_WATERMARK;
 
   if(argc==0) return 0;
 
@@ -590,8 +590,8 @@ int scan_net_options(char **argv,
 			  DRBD_MAX_BUFFERS_MIN, DRBD_MAX_BUFFERS_MAX);
 	  break;
 	case 'l':
-	  cn->config.bdev_threshold = m_strtoll_range(optarg,1, "bdev-threshold",
-			  DRBD_BDEV_THRESHOLD_MIN, DRBD_BDEV_THRESHOLD_MAX);
+	  cn->config.unplug_watermark = m_strtoll_range(optarg,1, "unplug-watermark",
+			  DRBD_UNPLUG_WATERMARK_MIN, DRBD_UNPLUG_WATERMARK_MAX);
 	  break;
 	case 'c':
 	  cn->config.try_connect_int = m_strtoll_range(optarg,1, "connect-int",
@@ -1350,7 +1350,7 @@ int cmd_show(int drbd_fd,char** argv,int argc,struct option *options)
   SHOW_I("ping-int","sec", cn.nconf.ping_int, DEF_NET_PING_I);
   SHOW_I("max-epoch-size","", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
   SHOW_I("max-buffers","", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
-  SHOW_I("bdev-threshold","", cn.nconf.bdev_threshold, DEF_BDEV_THRESHOLD);
+  SHOW_I("unplug-watermark","", cn.nconf.unplug_watermark, DEF_UNPLUG_WATERMARK);
   SHOW_I("sndbuf-size","", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
   SHOW_I("ko-count","", cn.nconf.ko_count, DEF_KO_COUNT);
   if( cn.nconf.on_disconnect != DEF_ON_DISCONNECT) {

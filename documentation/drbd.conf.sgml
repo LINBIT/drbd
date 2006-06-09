@@ -175,7 +175,7 @@ resource drbd0 {
     <option>sndbuf-size</option>, <option>timeout</option>,
     <option>connect-int</option>, <option>ping-int</option>,
     <option>max-buffers</option>, <option>max-epoch-size</option>,
-    <option>bdev-threshold</option>,
+    <option>unplug-watermark</option>,
     <option>ko-count</option>, <option>on-disconnect</option>.
   </para>
   </listitem>
@@ -428,11 +428,11 @@ the unit is 1 second.
 </varlistentry>
 
 <varlistentry>
-  <term><option>bdev-threshold <replaceable>number</replaceable></option></term>
+  <term><option>unplug-watermark <replaceable>number</replaceable></option></term>
   <listitem>
     <para>
       When the number of pending write requests on the standby
-      (secondary) node exceeds the bdev-threshold, we trigger
+      (secondary) node exceeds the unplug-watermark, we trigger
       the request processing of our backing storage device.
       Some storage controllers deliver better performance with small
       values, other deliver best performance when it is set to
