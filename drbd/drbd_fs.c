@@ -460,7 +460,7 @@ ONLY_IN_26({
 	request_queue_t * const q = mdev->rq_queue;
 	request_queue_t * const b = bdev->bd_disk->queue;
 
-	q->max_sectors = min_not_zero((unsigned short)(PAGE_SIZE >> 9), b->max_sectors);
+	q->max_sectors = min_not_zero((typeof(q->max_sectors))(PAGE_SIZE >> 9), b->max_sectors);
 	q->max_phys_segments = 1;
 	q->max_hw_segments   = 1;
 	q->max_segment_size  = min((unsigned)PAGE_SIZE,b->max_segment_size);
