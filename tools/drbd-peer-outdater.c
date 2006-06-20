@@ -37,6 +37,7 @@
 #include <dopd.h>
 
 #define OPTARGS      "hVt:r:"
+#define DEFAULT_TIMEOUT 60 // timeout in seconds
 
 typedef struct dop_client_s
 {
@@ -133,8 +134,7 @@ main(int argc, char ** argv)
 	int argerr = 0;
 	int flag;
 	char *drbd_resource = NULL;
-	char drbd_resource_default[] = "r0";
-	int timeout = 60; // timeout in seconds
+	int timeout = DEFAULT_TIMEOUT;
 
 	dop_client_t *new_client = NULL;
 	GCHSource *src = NULL;
@@ -165,9 +165,9 @@ main(int argc, char ** argv)
 	crm_debug_3("Option processing complete");
 
 	/* the caller drbdadm sets DRBD_RESOURCE env variable, use it if
-	 * -r option was not specified, or use default value */
+	 * -r option was not specified */
 	if ((drbd_resource == NULL) && !(drbd_resource = getenv("DRBD_RESOURCE"))) {
-		drbd_resource = drbd_resource_default;
+		++argerr;
 	}
 
 	if (optind > argc) {
@@ -206,7 +206,7 @@ main(int argc, char ** argv)
 	}
 
 	Gmain_timeout_add_full(G_PRIORITY_DEFAULT, new_client->timeout * 1000,
-	                       outdater_timeout_dispatch, (gpointer)new_client,
+			       outdater_timeout_dispatch, (gpointer)new_client,
 			       outdater_dispatch_destroy);
 
 	g_main_run(new_client->mainloop);
@@ -220,9 +220,14 @@ usage(const char* cmd, int exit_status)
 	FILE* stream;
 
 	stream = exit_status ? stderr : stdout;
-	fprintf(stream, "usage: %s [-tr]\n", cmd);
-	fprintf(stream, "\t-t <int>\ttimeout in seconds\n");
-	fprintf(stream, "\t-r <string>\tdrbd resource, default is r0\n");
+	fprintf(stream, "usage: %s -r <string> [-t <int>]\n", cmd);
+	fprintf(stream, "\t-t <int>\ttimeout in seconds; default: %d\n",
+			DEFAULT_TIMEOUT);
+	fprintf(stream, "\t-r <string>\tdrbd resource\n\n"
+		"The drbd resource has to be specified,\n"
+		"either on the commandline using the -r option,\n"
+		"or unsing the $DRBD_RESOURCE environment variable,\n"
+		"which will be ignored, if the -r option is used.\n");
 	fflush(stream);
 
 	exit(exit_status);
