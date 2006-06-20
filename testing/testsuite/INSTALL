@@ -20,8 +20,8 @@ Perl 5.6 (or higher)
         Perl is a language optimized for scanning arbitrary text files, 
         extracting information from those text files, and printing reports 
         based on that information.  
-        The Perl module is needed, because Agents and Testsuite files are 
-        written as Perl scripts.
+        Perl is needed, because Agents and Testsuite files are written as 
+        Perl scripts.
 
 
 Time::HiRes
