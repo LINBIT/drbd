@@ -787,30 +787,45 @@ DRBD 0.8 Roadmap
 34 Improve the initial hand-shake, to identify the sockets (and TCP-
    links) by an initial message, and not only by the connection timming.
 
+35 Bigger AL-extents (e.g. 16MB)
+
+36 Increase the number of UUID history slots.
+
+Maybe:
+
+*  Switch to protocol C in case we are running without a local 
+   disk and are configured to use protocol A or B.
+
+*  Dynamic misc char device instead of IOCTLs for configuration. Evaluate 
+   if the configuration could be done over a netlink socket as well...
+
+*  A netlink socket to communicate events to userspace.
+   - All state changes
+   - the need to outdate the peer
+
+*  Write some heartbeat glue to do a gracefull switchover in case of
+   a local IO failue. (requires the netlink socket thing)
 
 plus-banches:
 ----------------------
 
-1 wait-sync-target  
+1 Make use-csums to use the kernel's crypto API
 
-2 Implement the checksum based resync
-  and online verification.
+2 Implement online verification
 
-3 Have protocol version 74 available in drbd-0.8, to allow rolling 
-  upgrades
+3 dynamic device allocation 
+  (requires configuration throu a new mechanism (netlink socket/misc dev)
 
 4 Change the bitmap code to work with unmapped highmem pages, instead
   of using vmalloc()ed memory. This allows users of 32bit platforms
   to use drbd on big devices (in the ~3TB range)
 
-5 Support for variable sized meta data (esp bitmap) = Support for more
-  than 4TB of storage.
-
-6 3 node support. Do and test a 3 node setup (2nd DRBD stacked over
+5 3 node support. Do and test a 3 node setup (2nd DRBD stacked over
   a DRBD pair). Enhance the user level tools to support the 3 node
   setup.
 
-7 Support to pass LockFS calls / make taking of snapshots possible (?)
+6 Have protocol version 74 available in drbd-0.8, to allow rolling 
+  upgrades
 
-8 Dynamic device allocation (displace minor_count module parameter)
+
 
