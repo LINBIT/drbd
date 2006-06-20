@@ -1,16 +1,16 @@
 drbd8 (8.0pre3-0) unstable; urgency=low
 
-  * New major release.
+  * New upstream release.
 
  -- Philipp Reisner <phil@linbit.com>  Thu, 20 Apr 2006 13:46:18 +0200
 
-drbd (8.0-pre2-0) unstable; urgency=low
+drbd8 (8.0-pre2-0) unstable; urgency=low
 
-  * New major release.
+  * New upstream release.
 
  -- Philipp Reisner <phil@linbit.com>  Thu, 6 Apr 2006 17:53:56 +0200
 
-drbd (8.0_pre1-0) unstable; urgency=low
+drbd8 (8.0_pre1-0) unstable; urgency=low
 
   * New major release.
 
