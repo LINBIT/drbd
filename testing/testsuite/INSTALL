@@ -1,0 +1,94 @@
+This document explains how the DRBD Testsuite has to be installed.
+
+Verion 1.0
+       This document is correct for version 1.0 of the Testsuite.
+
+Written by:     Dworschak, Roland       <roland.dworschak@fh-hagenberg.at>
+                Hofmann, Florian        <florian.hofmann@fh-hagenberg.at>
+                Huber, Sabine           <sabine.huber@fh-hagenberg.at>
+                Leitner, Alexander      <alexander.leitner@fh-hagenberg.at> 
+                Poettinger, Joachim     <joachim.poettinger@fh-hagenberg.at> 
+
+
+
+==================
+== REQUIREMENTS ==
+==================
+
+
+Perl 5.6 (or higher)
+        Perl is a language optimized for scanning arbitrary text files, 
+        extracting information from those text files, and printing reports 
+        based on that information.  
+        The Perl module is needed, because Agents and Testsuite files are 
+        written as Perl scripts.
+
+
+Time::HiRes
+        This mdoule implements an interface to high resolution time and timers
+        like "usleep".
+
+        perl -MCPAN -e shell
+        install Time::HiRes
+
+
+Time::Local
+        This module implements the inverse of the built-in perl functions local-
+        time and gmtime. It is used to convert a timestamp to UTC format.
+
+        perl -MCPAN -e shell
+        install Time::Local
+
+
+IO::Socket
+        Provides an object interface to create and use sockets.
+
+        perl -MCPAN -e shell
+        install IO::Socket
+
+
+=============
+== INSTALL ==
+=============
+
+
+1.) Unpack the testsuite.tar.gz to any directory.
+
+      $ tar -xzvf testsuite.tar.gz
+
+== on both drbd nodes ==
+
+2a.) Edit agent.conf according to your system configuration:
+      - interface on which drbd is connected
+      - ip address on which the Agent is connected
+      - port on which the Agent is listening
+      - drbd resource which should be used
+      - mountpoint of the drbd device
+      - drbd device which shoud be used
+
+     Example given in agent.conf
+
+3a.) Start agent.pl on each Agent. If you want the Agent to run in realtime
+     (priority scheduling), you need root privileges.
+
+      $ ./agent.pl
+
+
+== on the Testsuite client ==
+
+2b.) Edit testsuite.conf according to your system configuration:
+      - Node configuration (address and port)
+      - Seq_commands
+      - Default values (timeout, latency, timeserver)
+
+     Example given in testsuite.conf
+
+
+== testing procedure ==
+
+4.) Now you are ready to start the Testsuite.
+
+      $ ./testsuite.pl -v
+
+
+

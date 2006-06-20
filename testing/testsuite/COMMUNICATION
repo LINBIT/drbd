@@ -1,0 +1,87 @@
+This document explains the internal communication between the Testsuite and the
+Agents of the DRBDv8 TestSuite.
+
+Verion 1.0
+       This document is correct for version 1.0 of the Testsuite.
+
+Written by:     Dworschak, Roland       <roland.dworschak@fh-hagenberg.at>
+                Hofmann, Florian        <florian.hofmann@fh-hagenberg.at>
+                Huber, Sabine           <sabine.huber@fh-hagenberg.at>
+                Leitner, Alexander      <alexander.leitner@fh-hagenberg.at>
+                Poettinger, Joachim     <joachim.poettinger@fh-hagenberg.at>
+
+
+=====================
+=== COMMUNICATION ===
+=====================
+
+== Sending replies:
+
+Agent -> Testsuite:
+<success> <timestamp> <execution time>
+<output>
+.
+
+success
+        is either 0 (failed, timed out, other state than expected) or
+        1 (everything ok).
+
+timestamp
+        local timestamp of the Agent (might be 0).
+
+execution time
+        time needed to execute requested command (might be 0).
+
+output
+        output of the requested command. A single point in a new line signals 
+        the end of the reply.
+
+
+== Sending commands:
+
+* setup:
+
+        used to test latency of the Agents and to get the time difference of
+        both Agents.
+
+Testsuite -> Agent:
+setup(<timestamp>);
+
+Agent -> Testsuite:
+1 0 0
+<timestamp> <time difference>;
+
+timestamp
+        local timestamp of the Testsuite or the Agent.
+
+time difference
+        difference of received timestamp and local timestamp.
+
+
+
+* execute:
+
+        used to execute given commands by cmd, expected and get.
+
+Testsuite -> Agent:
+execute(<command>, <timeout>, <timestamp>[, state]);
+
+Agent -> Testsuite:
+<success> <timestamp> <execution time>
+$output
+.
+
+
+
+* send_log:
+
+        used to get logs (specified in agent.conf) of the Agent.
+
+Testsuite -> Agent:
+send_log();
+
+Agent -> Testsuite:
+1 0 0
+$log
+.
+
