@@ -880,7 +880,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 
 	while (try++ < 3) {
 		r = _drbd_request_state(mdev,mask,val,0);
-		if( r == SS_NoConsistnetDisk && (newstate & DontBlameDrbd) && 
+		if( r == SS_NoConsistentDisk && (newstate & DontBlameDrbd) && 
 		    mdev->state.disk < UpToDate) {
 			mask.disk = disk_mask;
 			val.disk  = UpToDate;
@@ -967,6 +967,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
 	}
+	*arg = r;
 	return rv;
 }
 
