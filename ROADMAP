@@ -791,6 +791,11 @@ DRBD 0.8 Roadmap
 
 36 Increase the number of UUID history slots.
 
+37 In case heartbeat (or some one else) makes us primary, we need to
+   check first if the peer is alive. 
+   Currently we habe a problem is when heartbeat's dead time is smaller 
+   than DRBD's network timeout.
+
 Maybe:
 
 *  Switch to protocol C in case we are running without a local 
