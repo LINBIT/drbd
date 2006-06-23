@@ -544,7 +544,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 		D_ASSERT(thi->task == NULL);
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
-
+		drbd_flush_signals(current); // otherw. may get -ERESTARTNOINTR
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
