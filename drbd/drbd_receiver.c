@@ -1647,6 +1647,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
+	clear_bit(CRASHED_PRIMARY, &mdev->flags); // md_write() is in drbd_start_resync.
 	if (mdev->cstate == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->cstate == WFBitMapT) {

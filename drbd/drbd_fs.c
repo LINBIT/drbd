@@ -528,6 +528,8 @@ ONLY_IN_26({
 	}
 
 	apply_al = drbd_md_test_flag(mdev,MDF_PrimaryInd);
+	if(apply_al) set_bit(CRASHED_PRIMARY, &mdev->flags);
+	else       clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	/* All tests on MDF_PrimaryInd and MDF_ConnectedInd must happen before 
 	   this point, because determin_dev_size() might call drbd_md_write(), 
 	   which in turn modifies these flags. Exceptions are where, we want
@@ -922,6 +924,7 @@ ONLY_IN_26(
 			    mdev->cstate >= Connected ?
 			    ConnectedCnt : ArbitraryCnt);
 		}
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	} else {
 		NOT_IN_26( set_device_ro(MKDEV(MAJOR_NR, minor), TRUE ); )
 		ONLY_IN_26( set_disk_ro(mdev->vdisk, TRUE ); )

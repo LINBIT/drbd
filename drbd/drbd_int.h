@@ -681,6 +681,7 @@ enum {
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	USE_DEGR_WFC_T,		// Use degr-wfc-timeout instad of wfc-timeout.
+	CRASHED_PRIMARY         // This node was a crashed primary
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

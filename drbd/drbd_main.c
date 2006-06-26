@@ -2009,7 +2009,8 @@ void drbd_md_write(drbd_dev *mdev)
 	memset(buffer,0,512);
 
 	flags = mdev->gen_cnt[Flags] & ~(MDF_PrimaryInd|MDF_ConnectedInd);
-	if (mdev->state  == Primary)        flags |= MDF_PrimaryInd;
+	if (mdev->state  == Primary || 
+	    test_bit(CRASHED_PRIMARY, &mdev->flags))   flags |= MDF_PrimaryInd;
 	if (mdev->cstate >= WFReportParams) flags |= MDF_ConnectedInd;
 	mdev->gen_cnt[Flags] = flags;
 
