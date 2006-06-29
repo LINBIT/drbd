@@ -928,8 +928,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	enum fencing_policy fp;
 	u32 mdf;
 
-	if ( os.role != Primary && ns.role == Primary ||
-	     os.conn != Conneted && ns.conn == Connected ) {
+	if ( (os.role != Primary && ns.role == Primary)    ||
+	     (os.conn != Connected && ns.conn == Connected) ) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	}
 

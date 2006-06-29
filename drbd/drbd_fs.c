@@ -450,12 +450,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev3_fail_ioctl;
 	}
 
-	if(drbd_md_test_flag(nbc,MDF_PrimaryInd)) {
-		set_bit(CRASHED_PRIMARY, &mdev->flags);
-	} else {		
-		clear_bit(CRASHED_PRIMARY, &mdev->flags);
-	}
-
 	// Since ware are diskless, fix the AL first...
 	if (drbd_check_al_size(mdev)) {
 		retcode = KMallocFailed;
@@ -475,6 +469,12 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	}
 
 	// Point of no return reached.
+
+	if(drbd_md_test_flag(nbc,MDF_PrimaryInd)) {
+		set_bit(CRASHED_PRIMARY, &mdev->flags);
+	} else {		
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+	}
 
 	D_ASSERT(mdev->bc == NULL);
 	mdev->bc = nbc;
@@ -586,7 +586,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	return 0;
 
  release_bdev3_fail_ioctl:
-	clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	drbd_force_state(mdev,NS(disk,Diskless));
 	drbd_md_sync(mdev);
  release_bdev2_fail_ioctl:
@@ -962,7 +961,6 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		       mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}
-		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	}
 
 	if(mdev->state.disk > Diskless && (newstate & Secondary)) {
