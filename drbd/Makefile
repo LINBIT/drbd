@@ -27,7 +27,11 @@
 # note: if you get strange make errors when ARCH=um, you
 # probably need to "make mrproper" in the KDIR first... 
 
-ifneq ($(KERNELRELEASE),)
+# since 2.6.16, KERNELRELEASE may be empty,
+# e.g. when building agains some (broken?) linux-header package.
+# Lets test on PATCHLEVEL, that won't change too soon...
+
+ifneq ($(PATCHLEVEL),)
   ifneq ($(VERSION),2)
     $(error "won't compile with this kernel version")
   endif
@@ -45,8 +49,10 @@ ifneq ($(KERNELRELEASE),)
                   "PATCHLEVEL=$(PATCHLEVEL)\n"       \
                   "SUBLEVEL=$(SUBLEVEL)\n"           \
                   "EXTRAVERSION=$(EXTRAVERSION)\n"   \
-                  "KERNELRELEASE=$(KERNELRELEASE)" \
-          > $(DRBDSRC)/.kernelrelease.new \
+                  "LOCALVERSION=$(LOCALVERSION)\n"   \
+                  "KERNELRELEASE=$(KERNELRELEASE)\n" \
+                  "KERNELVERSION=$(KERNELVERSION)"   \
+          > $(DRBDSRC)/.drbd_kernelrelease.new       \
    )
 else
   # called from command line in current directory
@@ -106,21 +112,21 @@ else
        	mv $@{.new,}
 
   kbuild: drbd_buildtag.c
-	@rm -f .kernelrelease*
+	@rm -f .drbd_kernelrelease*
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
-	@mv .kernelrelease.new .kernelrelease
+	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
 	@{ echo -e "#\n# drbd.o was compiled with"          ; \
 	  echo "#  `gcc -v 2>&1 | tail -1`"                 ; \
 	  echo "# against this kernelrelease:"              ; \
-	  sed 's/^/#  /' .kernelrelease                     ; \
-          echo    "# kernel .config from"                   ; \
+	  sed 's/^/#  /' .drbd_kernelrelease                ; \
+	  echo    "# kernel .config from"                   ; \
 	  echo -n "#  $(KDIR)/.config"                      ; \
-          test -L "$(KDIR)" && echo "	alias"   &&           \
+	  test -L "$(KDIR)" && echo "	alias"   &&           \
 	  echo "#  $$(readlink $(KDIR))/.config" || echo "" ; \
-	  echo -e "# follows\n#\n"                             ; \
+	  echo -e "# follows\n#\n"                          ; \
 	  cat $(KDIR)/.config ; } | gzip > .kernel.config.gz
 	@echo "done."
 
@@ -130,9 +136,9 @@ else
 
   distclean: clean
 
-  ifneq ($(wildcard .kernelrelease),)
+  ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
-    include .kernelrelease
+    include .drbd_kernelrelease
     MODOBJ := drbd.ko
     MODSUBDIR := kernel/drivers/block
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
@@ -154,7 +160,7 @@ else
     endif
   else
     install:
-	@echo "No .kernelrelease found. Do you need to 'make' the module first?"
+	@echo "No .drbd_kernelrelease found. Do you need to 'make' the module first?"
 	@false
   endif
 

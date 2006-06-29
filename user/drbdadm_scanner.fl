@@ -84,6 +84,7 @@ cram-hmac-alg		{ DP; CP; return TK_NET_OPTION;		}
 shared-secret		{ DP; CP; return TK_NET_OPTION;		}
 max-epoch-size		{ DP; CP; RC(MAX_EPOCH_SIZE); return TK_NET_OPTION;}
 after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		}
+unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
 allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
 after			{ DP; CP; return TK_SYNCER_OPTION;	}

@@ -519,6 +519,21 @@ the unit is 1 second.
 </varlistentry>
 
 <varlistentry>
+  <term><option>unplug-watermark <replaceable>number</replaceable></option></term>
+  <listitem>
+    <para>
+      When the number of pending write requests on the standby
+      (secondary) node exceeds the unplug-watermark, we trigger
+      the request processing of our backing storage device.
+      Some storage controllers deliver better performance with small
+      values, other deliver best performance when it is set to
+      the same value as max-buffers. Minimum 16, default 128, maximum
+      131072.
+    </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
   <term><option>cram-hmac-alg</option></term>
   <listitem><para>
     You need to specifying the HMAC algorithm to enable peer authentication

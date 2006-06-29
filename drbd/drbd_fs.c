@@ -5,11 +5,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-	main author.
-
-   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
-	main contributor.
+   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
 	Some sanity checks in IOCTL_SET_STATE.
@@ -297,6 +295,13 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 		INFO("max_segment_size ( = BIO size ) = %u\n",
 		     q->max_segment_size);
 	}
+
+	if( q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
+		INFO("Adjusting my ra_pages to backing device's (%lu -> %lu)\n",
+		     q->backing_dev_info.ra_pages,
+		     b->backing_dev_info.ra_pages);
+		q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
+	}
 }
 
 STATIC
@@ -445,6 +450,12 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev3_fail_ioctl;
 	}
 
+	if(drbd_md_test_flag(nbc,MDF_PrimaryInd)) {
+		set_bit(CRASHED_PRIMARY, &mdev->flags);
+	} else {		
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+	}
+
 	// Since ware are diskless, fix the AL first...
 	if (drbd_check_al_size(mdev)) {
 		retcode = KMallocFailed;
@@ -456,6 +467,11 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	   drbd_new_dev_size(mdev,nbc) < nbc->md.la_size_sect) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev3_fail_ioctl;
+	}
+
+	if(!drbd_al_read_log(mdev)) {
+		retcode = MDIOError;
+		goto release_bdev3_fail_ioctl;		
 	}
 
 	// Point of no return reached.
@@ -509,8 +525,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		drbd_bm_read(mdev);
 	}
 
-	drbd_al_read_log(mdev);
-	if (drbd_md_test_flag(mdev->bc,MDF_PrimaryInd)) {
+	if(test_bit(CRASHED_PRIMARY, &mdev->flags)) {
 		drbd_al_apply_to_bm(mdev);
 		drbd_al_to_on_disk_bm(mdev);
 	}
@@ -571,6 +586,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	return 0;
 
  release_bdev3_fail_ioctl:
+	clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	drbd_force_state(mdev,NS(disk,Diskless));
 	drbd_md_sync(mdev);
  release_bdev2_fail_ioctl:
@@ -946,6 +962,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 		       mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	}
 
 	if(mdev->state.disk > Diskless && (newstate & Secondary)) {

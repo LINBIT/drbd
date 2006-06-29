@@ -5,11 +5,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-	main author.
-
-   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
-	main contributor.
+   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
    Copyright (C) 2000, Marcelo Tosatti <marcelo@conectiva.com.br>.
 	Early 2.3.x work.
@@ -352,11 +350,14 @@ void tl_clear(drbd_dev *mdev)
 	sector_t sector;
 	unsigned int size;
 
-	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
+	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
 	if(!new_first) {
 		ERR("could not kmalloc() barrier\n");
 	}
 
+	/* FIXME if indeed we could not kmalloc, this will Oops!
+	 * can we somehow just recycle one of the existing barriers?
+	 */
 	INIT_LIST_HEAD(&new_first->requests);
 	new_first->next=0;
 	new_first->br_number=4711;
@@ -927,6 +928,11 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	enum fencing_policy fp;
 	u32 mdf;
 
+	if ( os.role != Primary && ns.role == Primary ||
+	     os.conn != Conneted && ns.conn == Connected ) {
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+	}
+
 	fp = DontCare;
 	if(inc_local(mdev)) {
 		fp = mdev->bc->fencing;
@@ -937,7 +943,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 		mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 					     MDF_ConnectedInd|MDF_WasUpToDate|
 					     MDF_PeerOutDated );
-		if (mdev->state.role == Primary)       mdf |= MDF_PrimaryInd;
+		if (test_bit(CRASHED_PRIMARY,&mdev->flags) ||
+		    mdev->state.role == Primary)       mdf |= MDF_PrimaryInd;
 		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
 		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
@@ -1083,7 +1090,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 		D_ASSERT(thi->task == NULL);
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
-
+		flush_signals(current); // otherw. may get -ERESTARTNOINTR
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);

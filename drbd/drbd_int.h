@@ -4,11 +4,9 @@
 
   This file is part of drbd by Philipp Reisner.
 
-  Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-	main author.
-
-  Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
-	main contributor.
+  Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+  Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+  Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -229,21 +227,6 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define IS_VALID_MDEV(x)  \
 	( typecheck(struct Drbd_Conf*,x) && \
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0))
-
-
-/*
- * GFP_DRBD is used for allocations inside drbd_make_request,
- * and for the sk->allocation scheme.
- *
- * Try to get away with GFP_NOIO, which is
- * in 2.4.x:	(__GFP_HIGH | __GFP_WAIT) // HIGH == EMERGENCY, not HIGHMEM!
- * in 2.6.x:	             (__GFP_WAIT)
- *
- * As far as i can see we do not allocate from interrupt context...
- * if we do, we certainly should fix that.
- * - lge
- */
-#define GFP_DRBD GFP_NOIO
 
 /* these defines should go into blkdev.h
    (if it will be ever includet into linus' linux) */
@@ -667,7 +650,8 @@ enum {
 	USE_DEGR_WFC_T,		// Use degr-wfc-timeout instead of wfc-timeout.
 	CLUSTER_ST_CHANGE,      // Cluster wide state change going on...
 	CL_ST_CHG_SUCCESS,
-	CL_ST_CHG_FAIL
+	CL_ST_CHG_FAIL,
+	CRASHED_PRIMARY         // This node was a crashed primary
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf
@@ -1169,7 +1153,7 @@ extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
-extern void drbd_al_read_log(struct Drbd_Conf *mdev);
+extern int drbd_al_read_log(struct Drbd_Conf *mdev);
 extern void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
 #define drbd_set_in_sync(mdev,sector,size) \
 	__drbd_set_in_sync(mdev,sector,size, __FILE__, __LINE__ )

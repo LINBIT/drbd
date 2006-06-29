@@ -5,11 +5,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-	main author.
-
-   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
-	main contributor.
+   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -316,6 +314,7 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 
 	return count;
 }
+
 
 STATIC void reclaim_net_ee(drbd_dev *mdev)
 {
@@ -647,6 +646,11 @@ int drbd_connect(drbd_dev *mdev)
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success ) return 0;
 
 	clear_bit(UNIQUE, &mdev->flags);
+
+	/* Break out of unknown connect loops by random wait here. */
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(net_random()%((mdev->net_conf->try_connect_int*HZ)/4));
+
 	while(1) {
 		sock=drbd_try_connect(mdev);
 		if(sock) {
@@ -686,10 +690,8 @@ int drbd_connect(drbd_dev *mdev)
 	msock->sk->sk_reuse=1; /* SO_REUSEADDR */
 	sock->sk->sk_reuse=1; /* SO_REUSEADDR */
 
-	/* to prevent oom deadlock... */
-	/* The default allocation priority was GFP_KERNEL */
-	sock->sk->sk_allocation = GFP_DRBD;
-	msock->sk->sk_allocation = GFP_DRBD;
+	sock->sk->sk_allocation = GFP_NOIO;
+	msock->sk->sk_allocation = GFP_NOIO;
 
 	sock->sk->sk_priority=TC_PRIO_BULK;
 	tcp_sk(sock->sk)->nonagle = 0;
@@ -865,11 +867,8 @@ STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
 	/* kick lower level device, if we have more than (arbitrary number)
 	 * reference counts on it, which typically are locally submitted io
 	 * requests.  don't use unacked_cnt, so we speed up proto A and B, too.
-	 *
-	 * XXX maybe: make that arbitrary number configurable.
-	 * for now, I choose 1/16 of max-epoch-size.
 	 */
-	if (atomic_read(&mdev->local_cnt) >= (mdev->net_conf->max_epoch_size>>4) ) {
+	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark ) {
 		drbd_kick_lo(mdev);
 	}
 	mdev->writ_cnt+=data_size>>9;
@@ -2141,6 +2140,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
+	clear_bit(CRASHED_PRIMARY, &mdev->flags); // md_write() is in drbd_start_resync.
 	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
@@ -2576,10 +2576,10 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	int rv;
 
 	rv = drbd_send_handshake(mdev);
-	if (!rv) return 0;
+	if (!rv) goto break_c_loop;
 
 	rv = drbd_recv_header(mdev,&p->head);
-	if (!rv) return 0;
+	if (!rv) goto break_c_loop;
 
 	if (p->head.command != HandShake) {
 		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
@@ -2626,6 +2626,23 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	}
 
 	return 1;
+
+ break_c_loop:
+	WARN( "My msock connect got accepted onto peer's sock!\n");
+	/* In case a tcp connection set-up takes longer than 
+	   connect-int, we might get into the situation that this
+	   node's msock gets connected to the peer's sock!
+	   
+	   To break out of this endless loop behaviour, we need to 
+	   wait unti the peer's msock connect tries are over. (1 Second)
+
+	   Additionally we wait connect-int/2 to hit with our next 
+	   connect try exactly in the peer's window of expectation. */
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(HZ + (mdev->net_conf->try_connect_int*HZ)/2);
+	
+	return 0;
 }
 
 #ifndef CONFIG_CRYPTO_HMAC

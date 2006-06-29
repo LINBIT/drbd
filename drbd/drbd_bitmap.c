@@ -5,11 +5,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 2004, Lars Ellenberg <l.g.e@web.de>.
-	main author.
-
-   Copyright (C) 2004, Philipp Reisner <philipp.reisner@linbit.com>.
-	contributions.
+   Copyright (C) 2004-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2004-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2004-2006, LINBIT Information Technologies GmbH.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

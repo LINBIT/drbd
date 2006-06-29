@@ -396,15 +396,29 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
+	  <term><option>-l</option>,
+	  <option>--unplug-watermark <replaceable>val</replaceable></option></term>
+	  <listitem>
+	    <para>
+	      When the number of pending write requests on the standby
+	      (secondary) node exceeds the unplug-watermark, we trigger
+	      the request processing of our backing storage device.
+	      Some storage controllers deliver better performance with small
+	      values, other deliver best performance when it is set to
+	      the same value as max-buffers. Minimum 16, default 128, maximum
+	      131072.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
 	  <term><option>-d</option>,
 	  <option>--on-disconnect <replaceable>discon_handler</replaceable></option></term>
 	  <listitem>
 	    <para>
 	      When the connection to the peer is lost, DRBD can either
-	      go into stand alone mode, try to reconnect to the peer or
-	      freeze all further IO requests (think of an NFS hard mount).
-	      The keywords are: <option>stand_alone</option>, 
-	      <option>reconnect</option> and <option>freeze_io</option>.
+	      go into stand alone mode, or try to reconnect to the peer.
+	      The keywords are: <option>stand_alone</option> and
+	      <option>reconnect</option>.
 	      The default handler is <option>reconnect</option>.
 	    </para>
 	  </listitem>
@@ -856,7 +870,7 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-      Copyright (c) 2001-2005 Philipp Reisner. This  is  free software; 
+      Copyright (c) 2001-2006 Philipp Reisner. This  is  free software; 
       see the source for copying conditions.  There is NO warranty; 
       not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     </simpara>

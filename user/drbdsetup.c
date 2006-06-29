@@ -3,14 +3,12 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-        Initial author.
+   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
    Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
         Added sanity checks before using the device.
-
-   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>
-	main contributor.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -74,6 +72,7 @@
 #define DEF_AFTER_SB_0P       Disconnect
 #define DEF_AFTER_SB_1P       Disconnect
 #define DEF_AFTER_SB_2P       Disconnect
+#define DEF_UNPLUG_WATERMARK       (DEF_MAX_BUFFERS/16)
 
 #if 0
 # define ioctl(X...) (fprintf(stderr,"ioctl(%s)\n",#X),0);
@@ -166,6 +165,7 @@ struct drbd_cmd commands[] = {
      { "timeout",    required_argument, 0, 't' },
      { "max-epoch-size", required_argument, 0, 'e' },
      { "max-buffers",required_argument, 0, 'b' },
+     { "unplug-watermark",required_argument, 0, 'l' },
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
      { "sndbuf-size",required_argument, 0, 'S' },
@@ -531,6 +531,7 @@ int scan_net_options(char **argv,
   cn->config.after_sb_2p = DEF_AFTER_SB_2P;
   cn->config.want_lose = 0;
   cn->config.ko_count = DEF_KO_COUNT;
+  cn->config.unplug_watermark = DEF_UNPLUG_WATERMARK;
 
   if(argc==0) return 0;
 
@@ -555,6 +556,10 @@ int scan_net_options(char **argv,
 	case 'b':
 	  cn->config.max_buffers = m_strtoll_range(optarg,1, "max-buffers",
 			  DRBD_MAX_BUFFERS_MIN, DRBD_MAX_BUFFERS_MAX);
+	  break;
+	case 'l':
+	  cn->config.unplug_watermark = m_strtoll_range(optarg,1, "unplug-watermark",
+			  DRBD_UNPLUG_WATERMARK_MIN, DRBD_UNPLUG_WATERMARK_MAX);
 	  break;
 	case 'c':
 	  cn->config.try_connect_int = m_strtoll_range(optarg,1, "connect-int",
@@ -1373,6 +1378,7 @@ printf(";\n")
       SHOW_I("ping-int","seconds", cn.nconf.ping_int, DEF_NET_PING_I);
       SHOW_I("max-epoch-size","write requests", cn.nconf.max_epoch_size, DEF_MAX_EPOCH_SIZE);
       SHOW_I("max-buffers","pages", cn.nconf.max_buffers, DEF_MAX_BUFFERS);
+      SHOW_I("unplug-watermark","write requests", cn.nconf.unplug_watermark, DEF_UNPLUG_WATERMARK);
       SHOW_I("sndbuf-size","byte", cn.nconf.sndbuf_size, DEF_SNDBUF_SIZE);
       SHOW_I("ko-count","1", cn.nconf.ko_count, DEF_KO_COUNT);
       // SHOW_H("on-disconnect",cn.nconf.on_disconnect,DEF_ON_DISCONNECT,dh_names);

@@ -5,11 +5,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-	main author.
-
-   Copyright (C) 2002-2004, Lars Ellenberg <l.g.e@web.de>.
-	main contributor.
+   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -197,7 +195,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 {
 	struct bio *bio;
-	drbd_request_t *req = mempool_alloc(drbd_request_mempool, GFP_DRBD);
+	drbd_request_t *req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
 	if (req) {
 		SET_MAGIC(req);
 
@@ -224,7 +222,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 {
 	drbd_request_t *req;
 	int local, remote;
-	int target_area_out_of_sync = FALSE; // only relevant for reads
 
 	/* allocate outside of all locks
 	 */
@@ -348,8 +345,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
 				}
 			}
-		} else if (target_area_out_of_sync) {
-			drbd_read_remote(mdev,req);
 		} else {
 			// this node is diskless ...
 			drbd_read_remote(mdev,req);

@@ -5,9 +5,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 2003-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2003-2004, Lars Ellenberg <l.g.e@web.de>.
-        authors.
+   Copyright (C) 2003-2006, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2003-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2003-2006, LINBIT Information Technologies GmbH.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -153,7 +153,7 @@ void lc_del(struct lru_cache* lc, struct lc_element *e)
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt);
 	list_del(&e->list);
-	hlist_del(&e->colision);
+	hlist_del_init(&e->colision);
 	e->lc_number = LC_FREE;
 	e->refcnt = 0;
 	list_add(&e->list,&lc->free);
