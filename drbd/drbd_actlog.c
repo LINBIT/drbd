@@ -346,6 +346,7 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
  * record.
  */
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
+			   struct drbd_backing_dev *bdev,
 			   struct al_transaction* b,
 			   int index)
 {
@@ -353,9 +354,9 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	int rv,i;
 	u32 xor_sum=0;
 
-	sector = mdev->bc->md.md_offset + mdev->bc->md.al_offset + index;
+	sector = bdev->md.md_offset + bdev->md.al_offset + index;
 
-	if(!drbd_md_sync_page_io(mdev,mdev->bc,sector,READ)) {
+	if(!drbd_md_sync_page_io(mdev,bdev,sector,READ)) {
 		drbd_chk_io_error(mdev, 1);
 		drbd_io_error(mdev);
 		return -1;
@@ -376,7 +377,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
  * representation. Returns 1 on success, returns 0 when 
  * reading the log failed due to IO errors.
  */
-int drbd_al_read_log(struct Drbd_Conf *mdev)
+int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *bdev)
 {
 	struct al_transaction* buffer;
 	int from=-1,to=-1,i,cnr, overflow=0,rv;
@@ -395,7 +396,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev)
 
 	// Find the valid transaction in the log
 	for(i=0;i<=mx;i++) {
-		rv = drbd_al_read_tr(mdev,buffer,i);
+		rv = drbd_al_read_tr(mdev,bdev,buffer,i);
 		if(rv == 0) continue;
 		if(rv == -1) {
 			up(&mdev->md_io_mutex);
@@ -434,7 +435,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev)
 		unsigned int extent_nr;
 		unsigned int trn;
 
-		rv = drbd_al_read_tr(mdev,buffer,i);
+		rv = drbd_al_read_tr(mdev,bdev,buffer,i);
 		ERR_IF(rv == 0) goto cancel;
 		if(rv == -1) {
 			up(&mdev->md_io_mutex);

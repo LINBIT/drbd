@@ -123,6 +123,7 @@ struct net_config {
 	   int      want_lose;
 	IN enum disconnect_handler on_disconnect;
 	IN enum after_sb_handler after_sb_0p, after_sb_1p, after_sb_2p;
+	const int _pad;  
 };
 
 struct syncer_config {
@@ -299,7 +300,6 @@ struct ioctl_get_config {
 	OUT int               meta_device_minor;
 	OUT int               meta_index;
 	OUT drbd_state_t      state;
-	int                   _pad;
 };
 
 enum MetaDataFlags {

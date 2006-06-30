@@ -5,7 +5,7 @@
 ({ int _i = sizeof(x); printf("sizeof(" #x ") = %d\n", _i); \
  if( _i % 8 ) printf(" WARN sizeof(" #x ") %% 8 != 0\n"); _i; })
 
-#define DRBD_08_SUM 1176
+#define DRBD_08_SUM 1696
 
 int main()
 {
@@ -19,6 +19,7 @@ int main()
 	sum += SZO(struct ioctl_syncer_config);
 	sum += SZO(struct ioctl_wait);
 	sum += SZO(struct ioctl_get_config);
+	sum += SZO(struct ioctl_get_uuids);
 
 	printf("sum = %d  DRBD_08_SUM = %d\n",sum,DRBD_08_SUM);
 

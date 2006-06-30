@@ -1153,7 +1153,7 @@ extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
-extern int drbd_al_read_log(struct Drbd_Conf *mdev);
+extern int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *);
 extern void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
 #define drbd_set_in_sync(mdev,sector,size) \
 	__drbd_set_in_sync(mdev,sector,size, __FILE__, __LINE__ )

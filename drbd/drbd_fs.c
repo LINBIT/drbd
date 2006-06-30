@@ -463,7 +463,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev3_fail_ioctl;
 	}
 
-	if(!drbd_al_read_log(mdev)) {
+	if(!drbd_al_read_log(mdev,nbc)) {
 		retcode = MDIOError;
 		goto release_bdev3_fail_ioctl;		
 	}

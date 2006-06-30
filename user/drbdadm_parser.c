@@ -200,34 +200,36 @@ void check_meta_disk(struct d_host_info *host)
 ///////////////////////////
 
 
-#define EXP(TOKEN1)					\
-({ 							\
-	int token; 					\
-	token = yylex(); 				\
-	if(token != TOKEN1)				\
-		pe_expected_got( #TOKEN1, token ); 	\
-	token;						\
-})
-
-#define EXP2(TOKEN1,TOKEN2)					\
+#define EXP(TOKEN1)						\
 ({ 								\
 	int token; 						\
 	token = yylex(); 					\
-	if(token != TOKEN1 && token != TOKEN2) 			\
-		pe_expected_got( #TOKEN1 "|" # TOKEN2, token );	\
+	if(token != TOKEN1)					\
+		pe_expected_got( #TOKEN1, token, yylval.txt); 	\
 	token;							\
 })
 
-static void pe_expected(const char *exp)
+#define EXP2(TOKEN1,TOKEN2)						\
+({ 									\
+	int token; 							\
+	token = yylex(); 						\
+	if(token != TOKEN1 && token != TOKEN2) 				\
+		pe_expected_got( #TOKEN1 "|" # TOKEN2, token, yylval.txt ); \
+	token;								\
+})
+
+static void pe_expected(const char *exp, char* got_txt)
 {
-	fprintf(stderr,"Parse error '%s' expected, at line %d\n",exp,line);
+	fprintf(stderr,"Parse error '%s' expected,\n"
+		"but got '%s' at line %d\n",exp,got_txt,line);
 	exit(10);
 }
 
-static void pe_expected_got(const char *exp, int got)
+static void pe_expected_got(const char *exp, int got, char* got_txt)
 {
-	fprintf(stderr,"Parse error '%s' expected but got %d, at line %d\n",
-		exp,got,line);
+	fprintf(stderr,"Parse error '%s' expected,\n"
+		"but got '%s' (TK %d) at line %d\n",
+		exp,got_txt,got,line);
 	exit(10);
 }
 
@@ -253,14 +255,14 @@ static void parse_global(void) {
 			case TK_YES: global_options.usage_count=UC_YES; break; 
 			case TK_NO:  global_options.usage_count=UC_NO;  break; 
 			case TK_ASK: global_options.usage_count=UC_ASK; break; 
-			default:     pe_expected("yes | no | ask");
+			default:     pe_expected("yes | no | ask",yylval.txt);
 			}
 			break;
 		case '}':
 			return;
 		default:
 			pe_expected("dialog-refresh | minor-count | "
-				    "disable-ip-verification");
+				    "disable-ip-verification",yylval.txt);
 		}
 		EXP(';');
 	}
@@ -289,7 +291,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 		} else if ( token == '}' ) {
 			return options;
 		} else {
-			pe_expected("An option keyword");
+			pe_expected("an option keyword",yylval.txt);
 		}
 		switch(yylex()) {
 		case TK__IS_DEFAULT:
@@ -299,7 +301,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 		case ';':
 			break;
 		default:
-			pe_expected("_is_default | ;");
+			pe_expected("_is_default | ;",yylval.txt);
 		}
 	}
 }
@@ -327,7 +329,7 @@ static void parse_host_body(struct d_host_info *host,
 			case ';':
 				break;
 			default:
-				pe_expected("_major | ;");
+				pe_expected("_major | ;",yylval.txt);
 			}
 			break;
 		case TK_DEVICE:
@@ -365,7 +367,7 @@ static void parse_host_body(struct d_host_info *host,
 				case ';':
 					break;
 				default:
-					pe_expected("_major | ;");
+					pe_expected("_major | ;",yylval.txt);
 				}
 			} else {
 				EXP(';');
@@ -383,7 +385,7 @@ static void parse_host_body(struct d_host_info *host,
 			goto break_loop;
 		default:
 			pe_expected("disk | device | address | meta-disk "
-				    "| flex-meta-disk");
+				    "| flex-meta-disk",yylval.txt);
 		}
 	}
  break_loop:
@@ -487,7 +489,7 @@ struct d_resource* parse_resource(char* res_name)
 			return res;
 		default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
-					" startup | handler",token);
+					" startup | handler",token,yylval.txt);
 		}
 	}
 }
@@ -527,7 +529,8 @@ void yyparse(void)
 		case TK_SKIP: parse_skip(); break;
 		case 0: return;
 		default:
-			pe_expected("global | common | resource | skip");
+			pe_expected("global | common | resource | skip",
+				    yylval.txt);
 		}
 	}
 }
