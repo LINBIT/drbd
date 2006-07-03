@@ -775,8 +775,6 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
   ssprintf(argv[argc++],"%s:%s",res->peer->address,res->peer->port);
   argv[argc++]=res->protocol;
 
-  convert_discard_opt(res);
-
   opt=res->net_options;
   make_options(opt);
 
@@ -815,8 +813,6 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
   argv[argc++]="syncer";
-
-  convert_after_option(res);
 
   opt=res->sync_options;
   make_options(opt);
@@ -1291,6 +1287,7 @@ void verify_ips(struct d_resource* res)
   const char *my_ip;
 
   my_ip = res->me->address;
+  sin_addr.s_addr = inet_addr(my_ip);
 
   /* does DRBD support inet6? */
   family = AF_INET;
@@ -1314,7 +1311,7 @@ void verify_ips(struct d_resource* res)
 
   if (valid == 0) {
     fprintf(stderr, "OOPS, the IP address %s isn't configure/up on your system!\n", my_ip);
-#ifdef INVALID_IP_IS_INVALID_CONF
+#if INVALID_IP_IS_INVALID_CONF
     config_valid = 0;
 #endif
   }
@@ -1666,15 +1663,22 @@ int main(int argc, char** argv)
       if (optind + 1 > argc && !is_dump)
         print_usage_and_exit("missing arguments"); // arguments missing.
 
-      if(!is_dump) expand_common();
+      if(!is_dump) {
+	expand_common();
+
+	global_validate(); 
+	if(!config_valid) exit(E_config_invalid);
+
+        for_each_resource(res,tmp,config) {
+	  convert_after_option(res);
+	  convert_discard_opt(res);
+	}
+      }
 
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
         if (is_dump) {
 	  dump_global_info();
 	  dump_common_info();
-	} else {
-	  global_validate(); 
-	  if(!config_valid) exit(E_config_invalid);
 	}
         for_each_resource(res,tmp,config) {
 	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {

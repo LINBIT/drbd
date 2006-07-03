@@ -191,9 +191,6 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	fclose(yyin);
 	waitpid(pid,0,0);
 
-	convert_discard_opt(res);
-	convert_after_option(res);
-
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
 	if(running->me) {
 		do_attach |= strcmp(res->me->device, running->me->device);
