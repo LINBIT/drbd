@@ -22,16 +22,16 @@
 
  */
 
+#define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
-#define __USE_LARGEFILE64
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/time.h>
-#define _GNU_SOURCE
 #include <getopt.h>
 #include <string.h>
 
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
 			break;
 		switch (c) {
 		case 'i':
-			in_fd = open(optarg, O_RDONLY | O_LARGEFILE);
+			in_fd = open(optarg, O_RDONLY);
 			if (in_fd == -1) {
 				fprintf(stderr,
 					"Can not open input file/device\n");
@@ -207,7 +207,7 @@ int main(int argc, char **argv)
 	}
 
 	if (seek_offs_i) {
-		if (lseek64(in_fd, seek_offs_i, SEEK_SET) == -1) {
+		if (lseek(in_fd, seek_offs_i, SEEK_SET) == -1) {
 			fprintf(stderr,
 				"Can not lseek(2) in input file/device\n");
 			exit(20);
@@ -215,7 +215,7 @@ int main(int argc, char **argv)
 	}
 
 	if (seek_offs_o) {
-		if (lseek64(out_fd, seek_offs_o, SEEK_SET) == -1) {
+		if (lseek(out_fd, seek_offs_o, SEEK_SET) == -1) {
 			fprintf(stderr,
 				"Can not lseek(2) in output file/device\n");
 			exit(20);
