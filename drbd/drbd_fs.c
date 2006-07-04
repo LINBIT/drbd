@@ -1069,9 +1069,10 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
 {
 	int ret;
-	// lock_kernel(); Not needed, since we have mdev->device_mutex
 	ret = drbd_ioctl(f->f_dentry->d_inode, f, cmd, arg);
-	// unlock_kernel();
+	/* need to map "unknown" to ENOIOCTLCMD
+	 * to get the generic fallback path going */
+	if (ret == -ENOTTY) ret = -ENOIOCTLCMD;
 	return ret;
 }
 #endif
@@ -1123,7 +1124,9 @@ ONLY_IN_26(
 		switch (cmd) {
 		default:
 			/* oops, unknown IOCTL ?? */
-			err = -EINVAL;
+			/* Sorry, 2.4 kernel will get "no such ioctl" for BLK* ioctls
+			 * on an unconfigured DRBD.  I don't care right now. */
+			err = -ENOTTY;
 			goto out_unlocked;
 
 		case DRBD_IOCTL_GET_CONFIG:
@@ -1176,6 +1179,10 @@ ONLY_IN_26(
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 /* see how sys_ioctl and blkdev_ioctl handle it in 2.6 .
  * If I understand correctly, only "private" ioctl end up here.
+ *
+ * unless, of course, we are called by the compat_ioctl, in which case our
+ * drbd_compat_ioctl wrapper will convert ENOTTY into ENOIOCTLCMD, which in
+ * turn will cause the fallback path in the generic compat_sys_ioctl.
  */
 	case BLKGETSIZE:
 		err = put_user(drbd_get_capacity(mdev->this_bdev),(long *)arg);
@@ -1452,7 +1459,7 @@ ONLY_IN_26(
 		break;
 
 	default:
-		err = -EINVAL;
+		err = -ENOTTY;
 	}
  /* out: */
 	up(&mdev->device_mutex);
