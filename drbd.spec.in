@@ -190,6 +190,17 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Tue Jul  4 2006 15:13:15 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (0.7.20-1)
+ * The GC comparison code failed to start a resync in case the two
+   cluster node failed simultaniously (common power failure).
+ * Fixed DRBD's code to start kernel threads to work on 2.6.17 also.
+ * IOCTL return codes fixed for 32bit userland - 64 bit kernel
+   setups.
+ * New config option "unplug-watermark".
+ * Released the drbd_alloc_ee() / drbd_free_ee() implementation from 
+   the DRBD+ branch to the main branch.
+
 * Mon May 24 2006 14:03:07 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (0.7.19-1)
  * Fixed a bug where lc_del() left a list poison in an LRU chache's

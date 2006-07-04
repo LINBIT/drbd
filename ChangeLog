@@ -6,6 +6,17 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+0.7.20 (api:79/proto:74)
+-----
+ * The GC comparison code failed to start a resync in case the two
+   cluster node failed simultaniously (common power failure).
+ * Fixed DRBD's code to start kernel threads to work on 2.6.17 also.
+ * IOCTL return codes fixed for 32bit userland - 64 bit kernel
+   setups.
+ * New config option "unplug-watermark".
+ * Released the drbd_alloc_ee() / drbd_free_ee() implementation from 
+   the DRBD+ branch to the main branch.
+
 0.7.19 (api:78/proto:74)
 -----
  * Fixed a bug where lc_del() left a list poison in an LRU chache's
