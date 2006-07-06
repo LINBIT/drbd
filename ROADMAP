@@ -798,6 +798,10 @@ DRBD 0.8 Roadmap
    Currently we habe a problem is when heartbeat's dead time is smaller 
    than DRBD's network timeout.
 
+38 Create an other on-io-error hander, that does retry failed read
+   operations on the peer, but does not detach from the local disk.
+   And it sets that block in the bitmap as out-of-date.
+
 Maybe:
 
 *  Switch to protocol C in case we are running without a local 
