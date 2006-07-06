@@ -448,7 +448,8 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	return 0;
 }
 
-STATIC int drbd_recv_short(drbd_dev *mdev, void *buf, size_t size)
+STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
+			   void *buf, size_t size)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
@@ -472,7 +473,7 @@ STATIC int drbd_recv_short(drbd_dev *mdev, void *buf, size_t size)
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 
-	rv = sock_recvmsg(mdev->meta.socket, &msg, size, msg.msg_flags);
+	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
 
 	set_fs(oldfs);
 
@@ -628,6 +629,27 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 STATIC int drbd_do_handshake(drbd_dev *mdev);
 STATIC int drbd_do_auth(drbd_dev *mdev);
 
+STATIC int drbd_send_fp(drbd_dev *mdev,struct socket *sock,Drbd_Packet_Cmd cmd)
+{
+	Drbd_Header *h = (Drbd_Header *) &mdev->data.sbuf.head;
+
+	return _drbd_send_cmd(mdev,sock,cmd,h,sizeof(*h),0);
+}
+
+STATIC Drbd_Packet_Cmd drbd_recv_fp(drbd_dev *mdev,struct socket *sock)
+{
+	Drbd_Header *h = (Drbd_Header *) &mdev->data.sbuf.head;
+	int rr;
+
+	rr = drbd_recv_short(mdev, sock, h, sizeof(*h));
+
+	if( rr==sizeof(*h) && h->magic==BE_DRBD_MAGIC ) {
+		return be16_to_cpu(h->command);
+	}
+
+	return 0xffff;
+}
+
 /*
  * return values:
  *   1 yess, we have a valid connection
@@ -637,55 +659,80 @@ STATIC int drbd_do_auth(drbd_dev *mdev);
  */
 int drbd_connect(drbd_dev *mdev)
 {
-	struct socket *sock,*msock;
-	int h;
+	struct socket *s, *sock,*msock;
+	int try,h;
 
 	D_ASSERT(mdev->state.conn > StandAlone);
 	D_ASSERT(!mdev->data.socket);
 
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success ) return 0;
-
 	clear_bit(UNIQUE, &mdev->flags);
 
-	/* Break out of unknown connect loops by random wait here. */
-	set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout(net_random()%((mdev->net_conf->try_connect_int*HZ)/4));
+	sock  = NULL;
+	msock = NULL;
 
-	while(1) {
-		sock=drbd_try_connect(mdev);
-		if(sock) {
-			msock=drbd_wait_for_connect(mdev);
-			if(msock) {
-				set_bit(UNIQUE, &mdev->flags);
-				break;
-			}
-			else sock_release(sock);
-		} else {
-			sock=drbd_wait_for_connect(mdev);
-			if(sock) {
-				int retry;
-				for (retry=1; retry <= 10; retry++) {
-					// give the other side time to call
-					// bind() & listen()
-					set_current_state(TASK_INTERRUPTIBLE);
-					schedule_timeout(HZ / 10);
-					msock=drbd_try_connect(mdev);
-					if(msock) goto connected;
-					ERR("msock try_connect %d\n",retry);
+	do {
+		for(try=0;;) { // 3 tries, this should take less than a second!
+			s=drbd_try_connect(mdev);
+			if(s || ++try >= 3 ) break;
+			// give the other side time to call bind() & listen()
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout(HZ / 10);
+		}
+
+		if(s) {
+			if( !sock ) {
+				if( drbd_send_fp(mdev, s, HandShakeS) ) {
+					sock = s;
+					s = NULL;
 				}
-				sock_release(sock);
+			} else if( !msock ) {
+				if( drbd_send_fp(mdev, s, HandShakeM) ) {
+					msock = s;
+					s = NULL;
+				}
+			} else {
+				ERR("Logic error in drbd_connect()\n");
+				return -1;
+			}
+			if(s) {
+				ERR("Error during sending initial packet.\n");
+				sock_release(s);
 			}
 		}
+
+		if(sock && msock) break;
+
+		s=drbd_wait_for_connect(mdev);		
+		if(s) {
+			switch(drbd_recv_fp(mdev,s)) {
+			case HandShakeS:
+				if(sock) sock_release(sock);
+				sock = s;
+				break;
+			case HandShakeM:
+				if(msock) sock_release(msock);
+				msock = s;
+				if(sock) set_bit(UNIQUE, &mdev->flags);
+				break;
+			default:
+				WARN("Error receiving initial packet\n");
+				sock_release(s);
+			}
+		}
+
 		if(mdev->state.conn == Unconnected) return -1;
 		if(signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
-			if (get_t_state(&mdev->receiver) == Exiting)
+			if (get_t_state(&mdev->receiver) == Exiting) {
+				if(sock) sock_release(sock);
+				if(msock) sock_release(msock);
 				return -1;
+			}
 		}
-	}
 
- connected:
+	} while( !sock || !msock );
 
 	msock->sk->sk_reuse=1; /* SO_REUSEADDR */
 	sock->sk->sk_reuse=1; /* SO_REUSEADDR */
@@ -3057,7 +3104,8 @@ int drbd_asender(struct Drbd_thread *thi)
 		if (!drbd_process_done_ee(mdev)) goto err;
 		set_bit(SIGNAL_ASENDER, &mdev->flags);
 
-		rv = drbd_recv_short(mdev,buf,expect-received);
+		rv = drbd_recv_short(mdev, mdev->meta.socket,
+				     buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 		flush_signals(current);

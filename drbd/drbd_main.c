@@ -1823,7 +1823,6 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	int rv,sent=0;
 
 	if (!sock) return -1000;
-	if ((volatile int)mdev->state.conn < WFReportParams) return -1001;
 
 	// THINK  if (signal_pending) return ... ?
 

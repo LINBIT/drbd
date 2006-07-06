@@ -315,7 +315,9 @@ typedef enum {
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
 
-	HandShake = 0xfffe // FIXED for the next century!
+	HandShakeM = 0xfff1, // First Packet on the MetaSock
+	HandShakeS = 0xfff2, // First Packet on the Socket
+	HandShake  = 0xfffe  // FIXED for the next century!
 } Drbd_Packet_Cmd;
 
 static inline const char* cmdname(Drbd_Packet_Cmd cmd)
