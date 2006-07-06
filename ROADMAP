@@ -787,6 +787,8 @@ DRBD 0.8 Roadmap
 34 Improve the initial hand-shake, to identify the sockets (and TCP-
    links) by an initial message, and not only by the connection timming.
 
+   99% DONE   
+
 35 Bigger AL-extents (e.g. 16MB)
 
 36 Increase the number of UUID history slots.
