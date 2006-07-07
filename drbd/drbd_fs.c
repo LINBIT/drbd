@@ -827,6 +827,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
+	if( fp == Stonith ) drbd_request_state(mdev,NS(susp,1));
+
 	r=drbd_khelper(mdev,"outdate-peer");
 
 	switch( (r>>8) & 0xff ) {
@@ -896,7 +898,8 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 	while (try++ < 3) {
 		r = _drbd_request_state(mdev,mask,val,0);
 		if( r == SS_NoConsistentDisk && (newstate & DontBlameDrbd) && 
-		    mdev->state.disk < UpToDate) {
+		    ( mdev->state.disk == Inconsistent || 
+		      mdev->state.disk == Outdated ) ) {
 			mask.disk = disk_mask;
 			val.disk  = UpToDate;
 			forced = 1;

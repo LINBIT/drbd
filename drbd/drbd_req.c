@@ -298,7 +298,10 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (rw == WRITE && local)
 		drbd_al_begin_io(mdev, sector);
 
-	remote = remote && (mdev->state.pdsk >= Inconsistent);
+	remote = remote && (mdev->state.pdsk == Inconsistent ||
+			    mdev->state.pdsk == UpToDate);
+
+	D_ASSERT( (rw != WRITE) || (remote == (mdev->state.conn >= Connected)) );
 
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");

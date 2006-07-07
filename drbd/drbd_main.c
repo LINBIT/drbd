@@ -822,11 +822,10 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if( fp == Stonith ) {
-		if( !(os.role == Primary && os.conn < Connected) &&
-		     (ns.role == Primary && ns.conn < Connected) ) {
+		if(ns.role == Primary &&
+		   ns.conn < Connected &&
+		   ns.pdsk > Outdated ) {
 			ns.susp = 1;
-			ERR("ap_pending_cnt = %d while suspending IO.\n",
-			    atomic_read(&mdev->ap_pending_cnt));
 		}
 	}
 	
@@ -959,7 +958,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */
 
-	if( fp == Stonith && ns.susp && os.susp ) {
+	if( fp == Stonith && ns.susp ) {
 		// case1: The outdate peer handler is successfull:
 		// case2: The connection was established again:
 		if ( (os.pdsk > Outdated  && ns.pdsk <= Outdated) || // case1
