@@ -1056,7 +1056,7 @@ int m_strsep_bit(char **s, int *val, int mask)
 	int d;
 	int rv;
 
-	d = *val & mask;
+	d = *val & mask ? 1 : 0;
 
 	rv = m_strsep_u32(s, &d);
 
