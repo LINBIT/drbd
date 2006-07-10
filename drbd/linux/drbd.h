@@ -241,7 +241,7 @@ typedef enum {
 	Outdated,
 	DUnknown,       /* Only used for the peer, never for myself */
 	Consistent,     /* Might be Outdated, might be UpToDate ... */
-	UpToDate,
+	UpToDate,       /* Only this disk state allows applications' IO ! */
 	disk_mask=15
 } drbd_disks_t;
 
@@ -268,7 +268,7 @@ typedef enum {
 	SS_Success=1,
 	SS_UnknownError=0, // Used to sleep longer in _drbd_request_state
 	SS_TowPrimaries=-1,
-	SS_NoConsistentDisk=-2,
+	SS_NoUpToDateDisk=-2,
 	SS_BothInconsistent=-4,
 	SS_SyncingDiskless=-5,
 	SS_ConnectedOutdates=-6,

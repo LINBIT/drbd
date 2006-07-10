@@ -711,14 +711,14 @@ STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
 
 	if( rv <= 0 ) /* already found a reason to abort */;
 	else if( ns.role == Primary && ns.conn < Connected &&
-		 ns.disk <= Outdated ) rv=SS_NoConsistentDisk;
+		 ns.disk < UpToDate ) rv=SS_NoUpToDateDisk;
 
 	else if( fp >= Resource &&
 		 ns.role == Primary && ns.conn < Connected &&
 		 ns.pdsk >= DUnknown ) rv=SS_PrimaryNOP;
 
 	else if( ns.role == Primary && ns.disk <= Inconsistent &&
-		 ns.pdsk <= Inconsistent ) rv=SS_NoConsistentDisk;
+		 ns.pdsk <= Inconsistent ) rv=SS_NoUpToDateDisk;
 	
 	else if( ns.conn > Connected &&
 		 ns.disk < UpToDate && ns.pdsk < UpToDate ) 

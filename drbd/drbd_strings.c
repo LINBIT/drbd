@@ -62,8 +62,8 @@ static const char *drbd_disk_s_names[] = {
 
 static const char *drbd_state_sw_errors[] = {
 	[-SS_TowPrimaries] = "Multiple primaries now allowed by config",
-	[-SS_NoConsistentDisk] = 
-		"Refusing to be Primary without at least one consistent disk",
+	[-SS_NoUpToDateDisk] = 
+		"Refusing to be Primary without at least one UpToDate disk",
 	[-SS_BothInconsistent] = "Refusing to be inconsistent on both nodes",
 	[-SS_SyncingDiskless] = "Refusing to be syncing and diskless",
 	[-SS_ConnectedOutdates] = "Refusing to be Outdated while Connected",

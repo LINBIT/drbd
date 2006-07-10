@@ -561,6 +561,11 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		if(drbd_md_test_flag(mdev->bc,MDF_PeerOutDated)) {
 			ns.pdsk = Outdated;
 		}
+
+		if( ns.disk == Consistent && 
+		    ( ns.pdsk == Outdated || nbc->fencing == DontCare ) ) {
+			ns.disk = UpToDate;
+		}
 		
 		/* All tests on MDF_PrimaryInd, MDF_ConnectedInd, 
 		   MDF_Consistent and MDF_WasUpToDate must happen before 
@@ -827,6 +832,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
+	D_ASSERT( fp > DontCare );
+
 	if( fp == Stonith ) drbd_request_state(mdev,NS(susp,1));
 
 	r=drbd_khelper(mdev,"outdate-peer");
@@ -897,7 +904,7 @@ int drbd_set_role(drbd_dev *mdev, int* arg)
 
 	while (try++ < 3) {
 		r = _drbd_request_state(mdev,mask,val,0);
-		if( r == SS_NoConsistentDisk && (newstate & DontBlameDrbd) && 
+		if( r == SS_NoUpToDateDisk && (newstate & DontBlameDrbd) && 
 		    ( mdev->state.disk == Inconsistent || 
 		      mdev->state.disk == Outdated ) ) {
 			mask.disk = disk_mask;
