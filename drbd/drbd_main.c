@@ -79,6 +79,7 @@ struct after_state_chg_work {
 	struct drbd_work w;
 	drbd_state_t os;
 	drbd_state_t ns;
+	enum chg_state_flags flags;
 };
 
 int drbdd_init(struct Drbd_thread*);
@@ -531,14 +532,14 @@ int drbd_io_error(drbd_dev* mdev)
 /** 
  * cl_wide_st_chg:
  * Returns TRUE if this state change should be preformed as a cluster wide
- * transaction. Of courese it returns 0 as soon as the connection is lost.
+ * transaction. Of course it returns 0 as soon as the connection is lost.
  */ 
 STATIC int cl_wide_st_chg(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 {
-	return ( ns.conn >= Connected &&
+	return ( os.conn >= Connected && ns.conn >= Connected &&
 		 ( ( os.role != Primary && ns.role == Primary ) ||
-		   // ( os.conn != SyncSource && ns.role == SyncSource ) ||
-		   // ( os.conn != SyncTarget && ns.role == SyncTarget ) ||
+		   ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
+		   ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ||
 		   // ( os.disk != Diskless && ns.role == Diskless ) ||
 		   // ( os.conn != TearDown && ns.conn == TearDown ) ||
 		   0
@@ -558,7 +559,7 @@ int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 	rv = _drbd_set_state(mdev, ns, f);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	after_state_ch(mdev,os,ns);
+	if (rv == SS_Success) after_state_ch(mdev,os,ns,f);
 
 	return rv;
 }
@@ -624,7 +625,10 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		}
 
 		drbd_state_lock(mdev);
-		drbd_send_state_req(mdev,mask,val);
+		if( !drbd_send_state_req(mdev,mask,val) ) {
+			drbd_state_unlock(mdev);
+			return SS_CW_FailedByPeer;
+		}
 
 		wait_event(mdev->cstate_wait,(rv=_req_st_cond(mdev,mask,val)));
 
@@ -644,7 +648,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	if (rv == SS_Success) after_state_ch(mdev,os,ns);
+	if (rv == SS_Success) after_state_ch(mdev,os,ns,f);
 
 	return rv;
 }
@@ -747,6 +751,13 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	MUST_HOLD(&mdev->req_lock);
 
 	os = mdev->state;
+
+	/* Early state sanitising. Dissalow the invalidate ioctl to connect  */
+	if( (ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
+		os.conn < Connected ) {
+		ns.conn = os.conn;
+		ns.pdsk = os.pdsk;
+	}
 
 	if( ns.i == os.i ) return SS_NothingToDo;
 
@@ -901,6 +912,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if(ascw) {
 			ascw->os = os;
 			ascw->ns = ns;
+			ascw->flags = flags;
 			ascw->w.cb = w_after_state_ch;
 			_drbd_queue_work_front(&mdev->data.work,&ascw->w);
 		} else {
@@ -916,13 +928,14 @@ STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
 	struct after_state_chg_work* ascw;
 
 	ascw = (struct after_state_chg_work*) w;
-	after_state_ch(mdev, ascw->os, ascw->ns);
+	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
 	kfree(ascw);
 
 	return 1;
 }
 
-void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
+void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
+		    enum chg_state_flags flags)
 {
 	enum fencing_policy fp;
 	u32 mdf;
@@ -1020,6 +1033,57 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
 		drbd_send_short_cmd(mdev,ResumeResync);
 	}
+
+	/* We are in the progress to start a full sync... */
+	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
+	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
+
+		/* avoid races with set_in_sync
+		 * for successfull mirrored writes
+		 */
+		wait_event(mdev->cstate_wait,
+			   atomic_read(&mdev->ap_bio_cnt)==0);
+
+		drbd_bm_lock(mdev); // racy...
+
+		drbd_md_set_flag(mdev,MDF_FullSync);
+		drbd_md_sync(mdev);
+
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
+
+		drbd_md_clear_flag(mdev,MDF_FullSync);
+		drbd_md_sync(mdev);
+
+		drbd_bm_unlock(mdev);
+
+		if (ns.conn == StartingSyncT) {
+			spin_lock_irq(&mdev->req_lock);
+			_drbd_set_state(mdev,_NS(conn,WFSyncUUID), 
+					ChgStateVerbose | ScheduleAfter );
+			spin_unlock_irq(&mdev->req_lock);
+		} else /* StartingSyncS */ {
+			drbd_start_resync(mdev,SyncSource);
+		}
+	}
+
+	/* We are invalidating our self... */
+	if ( os.conn < Connected && ns.conn < Connected &&
+	       os.disk > Inconsistent && ns.disk == Inconsistent ) {
+		drbd_bm_lock(mdev); // racy...
+
+		drbd_md_set_flag(mdev,MDF_FullSync);
+		drbd_md_sync(mdev);
+
+		drbd_bm_set_all(mdev);
+		drbd_bm_write(mdev);
+
+		drbd_md_clear_flag(mdev,MDF_FullSync);
+		drbd_md_sync(mdev);
+
+		drbd_bm_unlock(mdev);		
+	}
+
 
 	/* it feels better to have the module_put last ... */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&

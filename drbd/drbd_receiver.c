@@ -1696,7 +1696,8 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev)
 /* drbd_sync_handshake() returns the new conn state on success, or
    conn_mask (-1) on failure.
  */
-STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
+STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
+					drbd_disks_t peer_disk)
 {
 	int hg;
 	drbd_conns_t rv = conn_mask;
@@ -1733,6 +1734,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role)
 		if ( abs(hg) < 100 ) {
 			WARN("Split-Brain detected, manually solved.\n");
 		}
+	}
+	
+	if (hg == 0) {
+		// This is needed in case someone does an invalidate on an
+		// disconnected node.
+		if(mdev->state.disk==Inconsistent && peer_disk>Inconsistent) hg=-1;
+		if(mdev->state.disk>Inconsistent && peer_disk==Inconsistent) hg= 1;
 	}
 
 	if (hg == -1000) {
@@ -1955,7 +1963,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	drbd_bm_unlock(mdev); // }
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev)) {
-		nconn=drbd_sync_handshake(mdev,mdev->state.peer);
+		nconn=drbd_sync_handshake(mdev,mdev->state.peer,mdev->state.pdsk);
 		dec_local(mdev);
 
 		if(nconn == conn_mask) return FALSE;
@@ -2018,15 +2026,10 @@ STATIC drbd_state_t convert_state(drbd_state_t ps)
 
 	static drbd_conns_t c_tab[] = {
 		[Connected] = Connected,
-		[SkippedSyncS] = SkippedSyncT,
-		[SkippedSyncT] = SkippedSyncS,
-		[WFBitMapS] = WFBitMapT,
-		[WFBitMapT] = WFBitMapS,
-		[WFSyncUUID] = SyncSource,
-		[SyncSource] = SyncTarget,
-		[SyncTarget] = WFSyncUUID,
-		[PausedSyncS] = PausedSyncT,
-		[PausedSyncT] = PausedSyncS,
+
+		[StartingSyncS] = StartingSyncT,
+		[StartingSyncT] = StartingSyncS,
+
 		[conn_mask]   = conn_mask,
 	};
 
@@ -2087,7 +2090,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && 
 	    inc_md_only(mdev,Attaching) ) {
-		nconn=drbd_sync_handshake(mdev,peer_state.role);
+		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
 
 		if(nconn == conn_mask) return FALSE;
@@ -2117,7 +2120,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if(nconn == Connected && ns.disk == Attaching) ns.disk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns);
+	after_state_ch(mdev,os,ns,ChgStateVerbose);
 
 	if(rv < SS_Success) {
 		drbd_force_state(mdev,NS(conn,StandAlone));
@@ -2137,7 +2140,10 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_SyncUUID_Packet *p = (Drbd_SyncUUID_Packet*)h;
 
-	D_ASSERT( mdev->state.conn == WFSyncUUID );
+	wait_event( mdev->cstate_wait, 
+		    mdev->state.conn < Connected || mdev->state.conn == WFSyncUUID);
+
+	// D_ASSERT( mdev->state.conn == WFSyncUUID );
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
@@ -2270,32 +2276,6 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	return (size == 0);
 }
 
-STATIC int receive_BecomeSyncTarget(drbd_dev *mdev, Drbd_Header *h)
-{
-	int ok;
-
-	ERR_IF(!mdev->bitmap) return FALSE;
-	D_ASSERT(mdev->p_uuid);
-	drbd_bm_lock(mdev);
-	drbd_bm_set_all(mdev);
-	drbd_bm_write(mdev);
-	ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
-	D_ASSERT( ok == SS_Success );
-	drbd_bm_unlock(mdev);
-	return ok == SS_Success ? TRUE : FALSE;
-}
-
-STATIC int receive_BecomeSyncSource(drbd_dev *mdev, Drbd_Header *h)
-{
-	drbd_send_uuids(mdev);
-	drbd_bm_lock(mdev);
-	drbd_bm_set_all(mdev);
-	drbd_bm_write(mdev);
-	drbd_start_resync(mdev,SyncSource);
-	drbd_bm_unlock(mdev);
-	return TRUE;
-}
-
 STATIC int receive_pause_resync(drbd_dev *mdev, Drbd_Header *h)
 {
 	drbd_resync_pause(mdev, PeerImposed);
@@ -2331,7 +2311,7 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns);
+	after_state_ch(mdev,os,ns,ChgStateVerbose);
 
 	if( r >= 0 ) {
 		drbd_md_sync(mdev);
@@ -2367,8 +2347,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportBitMap]     = receive_bitmap,
 	[Ping]             = NULL, // via msock: got_Ping,
 	[PingAck]          = NULL, // via msock: got_PingAck,
-	[BecomeSyncTarget] = receive_BecomeSyncTarget,
-	[BecomeSyncSource] = receive_BecomeSyncSource,
 	[UnplugRemote]     = receive_UnplugRemote,
 	[DataRequest]      = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,

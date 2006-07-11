@@ -223,6 +223,8 @@ typedef enum {
 	Connected,      // we have introduced each other
 	SkippedSyncS,   // we should have synced, but user said no
 	SkippedSyncT,
+	StartingSyncS,  // starting full sync by IOCTL.
+	StartingSyncT,  // stariing full sync by IOCTL.
 	WFBitMapS,
 	WFBitMapT,
 	WFSyncUUID,

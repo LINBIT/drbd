@@ -575,7 +575,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
 		ns = mdev->state;
 		spin_unlock_irq(&mdev->req_lock);
-		after_state_ch(mdev,os,ns);
+		after_state_ch(mdev,os,ns,ChgStateVerbose);
 
 		if(rv >= SS_Success ) {
 			drbd_thread_start(&mdev->worker);
@@ -1100,7 +1100,7 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	lc_free(mdev->resync);  mdev->resync = NULL;
 	lc_free(mdev->act_log); mdev->act_log = NULL;
 
-	after_state_ch(mdev, os, ns);
+	after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	return 0;
 }
@@ -1119,7 +1119,7 @@ STATIC int drbd_outdate_ioctl(drbd_dev *mdev, int *reason)
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns);
+	after_state_ch(mdev,os,ns, ChgStateVerbose);
 
 	if( r == SS_NothingToDo ) return 0;
 	if( r == -999 ) {
@@ -1173,7 +1173,7 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 	r = _drbd_set_state(mdev, _NS(conn,StandAlone), 0);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns);
+	after_state_ch(mdev,os,ns,0);
 
 	if ( r == SS_NothingToDo )  return 0;
 	if ( r == SS_PrimaryNOP ) {
@@ -1392,87 +1392,15 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		goto out_unlocked;
 
 	case DRBD_IOCTL_INVALIDATE:
-		/* TODO
-		 * differentiate between different error cases,
-		 * or report the current connection state and flags back
-		 * to userspace */
-
-		/* disallow "invalidation" of local replica
-		 * when currently in primary state (would be a Bad Idea),
-		 * or during a running sync (won't make any sense) */
-
-		/* PRE TODO disallow invalidate if we are primary */
-		r = drbd_request_state(mdev,NS2(disk,Inconsistent,
-					        conn,WFBitMapT));
-
-		if( r == SS_NothingToDo ) { break; }
-		if( r < SS_Success ) {
-			err = -EINPROGRESS;
-			break;
-		}
-
-		/* avoid races with set_in_sync
-		 * for successfull mirrored writes
-		 */
-		wait_event(mdev->cstate_wait,
-			   atomic_read(&mdev->ap_bio_cnt)==0);
-
-		drbd_bm_lock(mdev); // racy...
-
-		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
-
-		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		if (drbd_send_short_cmd(mdev,BecomeSyncSource)) {
-			int ok;
-			ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
-			D_ASSERT( ok == 1 );
-		}
-
-		drbd_bm_unlock(mdev);
-
+		r = drbd_request_state(mdev,NS2(conn,StartingSyncT,
+						disk,Inconsistent));
+		if ( r != SS_Success) err = -EINPROGRESS;
 		break;
 
 	case DRBD_IOCTL_INVALIDATE_REM:
-
-		/* PRE TODO disallow invalidate if we peer is primary */
-		/* remove EINVAL from error output... */
-		r = drbd_request_state(mdev,NS2(pdsk,Inconsistent,
-					        conn,WFBitMapS));
-
-		if( r == SS_NothingToDo ) { break; }
-		if( r < SS_Success ) {
-			err = -EINPROGRESS;
-			break;
-		}
-
-		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		/* avoid races with set_in_sync
-		 * for successfull mirrored writes
-		 */
-		wait_event(mdev->cstate_wait,
-		     atomic_read(&mdev->ap_bio_cnt)==0);
-
-		drbd_bm_lock(mdev); // racy...
-
-		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
-
-		drbd_md_clear_flag(mdev,MDF_FullSync);
-
-		drbd_send_uuids(mdev);
-		drbd_send_short_cmd(mdev,BecomeSyncTarget);
-		drbd_start_resync(mdev,SyncSource);
-
-		drbd_bm_unlock(mdev);
-
+		r = drbd_request_state(mdev,NS2(conn,StartingSyncS,
+						pdsk,Inconsistent));
+		if ( r != SS_Success) err = -EINPROGRESS;
 		break;
 
 	case DRBD_IOCTL_OUTDATE_DISK:

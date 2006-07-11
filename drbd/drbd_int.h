@@ -842,7 +842,8 @@ extern int _drbd_request_state(drbd_dev*, drbd_state_t, drbd_state_t,
 			       enum chg_state_flags);
 extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
 extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
-extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns);
+extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
+			   enum chg_state_flags);
 extern void drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(drbd_dev *mdev);

@@ -759,7 +759,7 @@ int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason reason)
  * @side: Either SyncSource or SyncTarget
  * Start the resync process. Called from process context only,
  * either ioctl or drbd_receiver.
- * Note, this function might bring your directly into one of the
+ * Note, this function might bring you directly into one of the
  * PausedSync* states.
  */
 void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
@@ -809,7 +809,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	drbd_global_unlock();
 
 	if ( r == SS_Success ) {
-		after_state_ch(mdev,os,ns);
+		after_state_ch(mdev,os,ns,ChgStateVerbose);
 
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     conns_to_name(ns.conn),
