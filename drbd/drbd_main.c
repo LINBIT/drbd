@@ -496,7 +496,8 @@ int drbd_io_error(drbd_dev* mdev)
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
-		_drbd_set_state(mdev,_NS(disk,Diskless),ChgStateHard);
+		_drbd_set_state(mdev,_NS(disk,Diskless),
+				ChgStateHard|ScheduleAfter);
 	}
 	D_ASSERT(mdev->state.disk <= Failed);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
@@ -510,21 +511,7 @@ int drbd_io_error(drbd_dev* mdev)
 	D_ASSERT(!drbd_md_test_flag(mdev->bc,MDF_Consistent));
 	drbd_md_sync(mdev);
 
-	if ( wait_event_interruptible_timeout(mdev->cstate_wait,
-		     atomic_read(&mdev->local_cnt) == 0 , HZ ) <= 0) {
-		WARN("Not releasing backing storage device.\n");
-		/* FIXME if there *are* still references,
-		 * we should be here again soon enough.
-		 * but what if not?
-		 * we still should free our ll and md devices */
-	} else {
-		/* no race. since the DISKLESS bit is set first,
-		 * further references to local_cnt are shortlived,
-		 * and no real references on the device. */
-		WARN("Releasing backing storage device.\n");
-		drbd_free_bc(mdev->bc);
-		mdev->bc=NULL;
-	}
+	/* Releasing the backing device is done in after_state_ch() */
 
 	return ok;
 }
@@ -1079,6 +1066,19 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_bm_unlock(mdev);		
 	}
 
+	if ( os.disk > Diskless && ns.disk == Diskless ) {
+		drbd_sync_me(mdev);
+
+		/* since inc_local() only works as long as disk>=Inconsistent,
+		   and it is Diskless here, local_cnt can only go down, it can
+		   not increase... It will reach zero */
+		wait_event(mdev->cstate_wait, !atomic_read(&mdev->local_cnt));
+
+		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
+		lc_free(mdev->resync);  mdev->resync = NULL;
+		lc_free(mdev->act_log); mdev->act_log = NULL;
+	}
+
 	/* it feels better to have the module_put last ... */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
@@ -1173,7 +1173,6 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
-
 	if (thi->t_state == None) {
 		spin_unlock(&thi->t_lock);
 		return;
@@ -1202,6 +1201,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	spin_unlock(&thi->t_lock);
 
 	if (wait) {
+		if (thi->task == current) return;
 		D_ASSERT(thi->t_state == Exiting);
 		wait_for_completion(&thi->startstop);
 		spin_lock(&thi->t_lock);
@@ -2158,6 +2158,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	 * oldest_barrier
 	 */
 
+	drbd_thread_stop(&mdev->receiver);
 	drbd_thread_stop(&mdev->worker);
 
 	/* no need to lock it, I'm the only thread alive */
@@ -2710,7 +2711,10 @@ void drbd_md_sync(drbd_dev *mdev)
 	if (!test_and_clear_bit(MD_DIRTY,&mdev->flags)) return;
 	del_timer(&mdev->md_sync_timer);
 	INFO("Writing meta data super block now.\n");
-	ERR_IF(!inc_md_only(mdev,Attaching)) return;
+
+	// We use here Failed and not Attaching because we try to write
+	// metadata even if we detach due to a disk failure!
+	ERR_IF(!inc_md_only(mdev,Failed)) return;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);

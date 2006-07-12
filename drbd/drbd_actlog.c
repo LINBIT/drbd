@@ -939,14 +939,17 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 	spin_lock_irq(&mdev->al_lock);
 
-	for(i=0;i<mdev->resync->nr_elements;i++) {
-		bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
-		if(bm_ext->lce.lc_number == LC_FREE) continue;
-		bm_ext->lce.refcnt = 0; // Rude but ok.
-		bm_ext->rs_left = 0;
-		clear_bit(BME_LOCKED,&bm_ext->flags);
-		clear_bit(BME_NO_WRITES,&bm_ext->flags);
-		lc_del(mdev->resync,&bm_ext->lce);
+	if(inc_md_only(mdev,Failed)) { // Makes sure mdev->resync is there.
+		for(i=0;i<mdev->resync->nr_elements;i++) {
+			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
+			if(bm_ext->lce.lc_number == LC_FREE) continue;
+			bm_ext->lce.refcnt = 0; // Rude but ok.
+			bm_ext->rs_left = 0;
+			clear_bit(BME_LOCKED,&bm_ext->flags);
+			clear_bit(BME_NO_WRITES,&bm_ext->flags);
+			lc_del(mdev->resync,&bm_ext->lce);
+		}
+		dec_local(mdev);
 	}
 	atomic_set(&mdev->resync_locked,0);
 	spin_unlock_irq(&mdev->al_lock);

@@ -645,7 +645,6 @@ enum {
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
-	PROCESS_EE_RUNNING,	// eek!
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	UNIQUE,                 // Set on one node, cleared on the peer!
@@ -1237,11 +1236,12 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 			ERR("Ignoring local IO error!\n");
 			break;
 		case Panic:
-			_drbd_set_state(mdev,_NS(disk,Failed),1);
+			_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard);
 			drbd_panic("IO error on backing device!\n");
 			break;
 		case Detach:
-			if (_drbd_set_state(mdev,_NS(disk,Failed),1) == 1) {
+			if (_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard) 
+			    == SS_Success) {
 				ERR("Local IO failed. Detaching...\n");
 			}
 			break;

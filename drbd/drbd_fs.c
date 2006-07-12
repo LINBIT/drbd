@@ -1079,17 +1079,6 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 		return -ENETRESET;
 	}
 
-	drbd_sync_me(mdev);
-
-	/* since inc_local() only works as long as disk >= Inconsistent,
-	   and it is Diskless here, local_cnt can only go down, it can
-	   not increase... It will reach zero */
-	wait_event(mdev->cstate_wait, !atomic_read(&mdev->local_cnt));
-
-	drbd_free_bc(mdev->bc);	mdev->bc = NULL;
-	lc_free(mdev->resync);  mdev->resync = NULL;
-	lc_free(mdev->act_log); mdev->act_log = NULL;
-
 	return 0;
 }
 
@@ -1152,16 +1141,9 @@ STATIC int drbd_ioctl_get_uuids(struct Drbd_Conf *mdev,
 
 STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 {
-	drbd_state_t os,ns;
 	int r;
 
-	// Request state silently:
-	spin_lock_irq(&mdev->req_lock);
-	os = mdev->state;
-	r = _drbd_set_state(mdev, _NS(conn,StandAlone), 0);
-	ns = mdev->state;
-	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns,0);
+	r = _drbd_request_state(mdev,NS(conn,StandAlone),0);	// silently.
 
 	if ( r == SS_NothingToDo )  return 0;
 	if ( r == SS_PrimaryNOP ) {
@@ -1180,9 +1162,6 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 		crypto_free_tfm(mdev->cram_hmac_tfm);
 		mdev->cram_hmac_tfm = NULL;
 	}
-
-	drbd_sync_me(mdev); /* FIXME what if fsync returns error */
-	drbd_thread_stop(&mdev->receiver);
 
 	return 0;
 }
