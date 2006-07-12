@@ -1070,14 +1070,9 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 
 STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 {
-	int interrupted,r;
-	drbd_state_t os,ns;
+	int r;
 
-	spin_lock_irq(&mdev->req_lock);
-	os = mdev->state;
-	r = _drbd_set_state(mdev,_NS(disk,Diskless),ChgStateVerbose);
-	ns = mdev->state;
-	spin_unlock_irq(&mdev->req_lock);
+	r = drbd_request_state(mdev,NS(disk,Diskless));
 
 	if( r == SS_NothingToDo ) { return 0; }
 	if( r < SS_Success ) {
@@ -1089,18 +1084,11 @@ STATIC int drbd_detach_ioctl(drbd_dev *mdev)
 	/* since inc_local() only works as long as disk >= Inconsistent,
 	   and it is Diskless here, local_cnt can only go down, it can
 	   not increase... It will reach zero */
-	interrupted = wait_event_interruptible(mdev->cstate_wait,
-					       !atomic_read(&mdev->local_cnt));
-	if ( interrupted ) {
-		drbd_force_state(mdev,NS(disk,os.disk));
-		return -EINTR;
-	}
+	wait_event(mdev->cstate_wait, !atomic_read(&mdev->local_cnt));
 
 	drbd_free_bc(mdev->bc);	mdev->bc = NULL;
 	lc_free(mdev->resync);  mdev->resync = NULL;
 	lc_free(mdev->act_log); mdev->act_log = NULL;
-
-	after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	return 0;
 }

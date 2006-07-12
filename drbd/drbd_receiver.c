@@ -713,7 +713,7 @@ int drbd_connect(drbd_dev *mdev)
 			case HandShakeM:
 				if(msock) sock_release(msock);
 				msock = s;
-				if(sock) set_bit(UNIQUE, &mdev->flags);
+				set_bit(UNIQUE, &mdev->flags);
 				break;
 			default:
 				WARN("Error receiving initial packet\n");

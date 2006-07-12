@@ -540,7 +540,7 @@ STATIC int cl_wide_st_chg(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 		 ( ( os.role != Primary && ns.role == Primary ) ||
 		   ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
 		   ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ||
-		   // ( os.disk != Diskless && ns.role == Diskless ) ||
+		   ( os.disk != Diskless && ns.disk == Diskless ) ||
 		   // ( os.conn != TearDown && ns.conn == TearDown ) ||
 		   0
 		   ) );
@@ -951,7 +951,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		dec_local(mdev);
 	}
 
-	if(mdev->bc) {
+	if( ns.disk >= Inconsistent ) {
 		mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 					     MDF_ConnectedInd|MDF_WasUpToDate|
 					     MDF_PeerOutDated );
@@ -960,7 +960,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
 		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
-		if (mdev->state.pdsk <= Outdated)      mdf |= MDF_PeerOutDated;
+		if (mdev->state.pdsk <= Outdated && 
+		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;
 
 		if( mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
@@ -1014,12 +1015,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			get_random_bytes(&uuid, sizeof(u64));
 			drbd_uuid_set(mdev, Current, uuid);
 		}
-	}
-
-	/*  Removed disk, tell peer.  */
-	if ( os.disk >= Inconsistent && ns.disk == Diskless &&
-	     ns.conn >= Connected ) {
-		drbd_send_state(mdev);
 	}
 
 	/* We want to pause resync, tell peer. */
@@ -1083,7 +1078,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 		drbd_bm_unlock(mdev);		
 	}
-
 
 	/* it feels better to have the module_put last ... */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&
