@@ -428,7 +428,7 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 	if (err)
 		goto out;
 
-	if (sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &newsock))
+	if (sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &newsock))
 		goto out;
 
 	newsock->type = sock->type;
@@ -547,7 +547,7 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	struct socket *sock;
 	struct sockaddr_in src_in;
 
-	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock);
+	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err) {
 		ERR("sock_creat(..)=%d\n", err);
 		return NULL;
@@ -596,7 +596,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	int err;
 	struct socket *sock,*sock2;
 
-	err = sock_create(AF_INET, SOCK_STREAM, 0, &sock2);
+	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock2);
 	if (err) {
 		ERR("sock_creat(..)=%d\n", err);
 		return NULL;
