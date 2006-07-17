@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <getopt.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -49,6 +50,13 @@
 #include "drbdmeta_parser.h"
 extern FILE* yyin;
 YYSTYPE yylval;
+
+int     force = 0;
+
+struct option metaopt[] = {
+    { "force",  no_argument,    0, 'f' },
+    { NULL,     0,              0, 0 },
+};
 
 #define PAGE_SIZE  getpagesize()
 #define PAGE_MASK  (~(PAGE_SIZE-1))
@@ -792,11 +800,19 @@ int confirmed(const char *text)
 	size_t n = 0;
 	int ok;
 
-	printf("\n%s\n[need to type '%s' to confirm] ", text, yes);
-	ok = getline(&answer,&n,stdin) == N &&
-	     strncmp(answer,yes,N-1) == 0;
-	if (answer) free(answer);
-	printf("\n");
+        printf("\n%s\n", text);
+
+        if (force) {
+            printf("*** confirmation forced via --force option ***\n");
+            ok = 1;
+        }
+        else {
+            printf("[need to type '%s' to confirm] ", yes);
+            ok = getline(&answer,&n,stdin) == N &&
+                strncmp(answer,yes,N-1) == 0;
+            if (answer) free(answer);
+            printf("\n");
+        }
 	return ok;
 }
 
@@ -2278,7 +2294,7 @@ void print_usage_and_exit()
 	size_t i;
 
 	printf
-	    ("\nUSAGE: %s DEVICE FORMAT [FORMAT ARGS...] COMMAND [CMD ARGS...]\n",
+	    ("\nUSAGE: %s [--force] DEVICE FORMAT [FORMAT ARGS...] COMMAND [CMD ARGS...]\n",
 	     progname);
 
 	printf("\nFORMATS:\n");
@@ -2408,14 +2424,32 @@ int main(int argc, char **argv)
 	if (argc < 4)
 		print_usage_and_exit();
 
+        /* Check for options (e.g. --force) */
+        while (1) {
+            int c = getopt_long(argc,argv,make_optstring(metaopt,0),metaopt,0);
+
+            if (c == -1)
+                break;
+
+            switch (c) {
+            case 'f':
+                force = 1;
+                break;
+            default:
+                print_usage_and_exit();
+                break;
+            }
+        }
+
+        // Next argument to process is specified by optind...
+        ai = optind;
+
 	/* FIXME should have a "drbd_cfg_new" and a "drbd_cfg_free"
 	 * function, maybe even a "get" and "put" ?
 	 */
 	cfg = calloc(1, sizeof(struct format));
-	cfg->drbd_dev_name = argv[1];
+	cfg->drbd_dev_name = argv[ai++];
 
-	/* argv[0] is progname, argv[1] was drbd_dev_name. */
-	ai = 2;
 	if (parse_format(cfg, argv + ai, argc - ai, &ai)) {
 		/* parse has already printed some error message */
 		exit(20);
