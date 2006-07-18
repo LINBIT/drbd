@@ -469,10 +469,6 @@ void _set_cstate(drbd_dev* mdev,Drbd_CState ns)
 	smp_mb();
 	wake_up(&mdev->cstate_wait);
 
-	/* THINK.
-	 * was:
-	 * if ( ( os==SyncSource || os==SyncTarget ) && ns <= Connected ) {
-	 */
 	if ( ( os >= SyncSource ) && ns <= Connected ) {
 		clear_bit(SYNC_STARTED,&mdev->flags);
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);

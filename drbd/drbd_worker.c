@@ -690,9 +690,10 @@ STATIC void _drbd_rs_resume(drbd_dev *mdev)
 	_set_cstate(mdev,ns);
 
 	if(mdev->cstate == SyncTarget) {
-		ERR_IF(test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+		int stop_syncer_timer_was_set =
+			test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+		ERR_IF(stop_syncer_timer_was_set) {
 			unsigned long rs_left = drbd_bm_total_weight(mdev);
-			clear_bit(STOP_SYNC_TIMER,&mdev->flags);
 			if (rs_left == 0) {
 				INFO("rs_left==0 in _drbd_rs_resume\n");
 			} else {
@@ -778,6 +779,8 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 {
 	drbd_dev *odev;
 	int i,ng=10000;
+	/* FIXME need to document that 10000 somewhere!
+	 * maybe better: first iterate to find the max sync group number */
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
@@ -785,6 +788,9 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
+		/* currently we should never reach this while being
+		 * mdev->cstate == Sync*, but just incase: skip ourselves */
+		if (odev == mdev) continue;
 		if ( odev->sync_conf.group <= mdev->sync_conf.group
 		     && ( odev->cstate == SyncSource || 
 			  odev->cstate == SyncTarget ) ) {
@@ -795,6 +801,7 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 	for (i=0; i < minor_count; i++) { // find next sync group
 		odev = drbd_conf + i;
+		if (odev == mdev) continue;
 		if ( odev->sync_conf.group > mdev->sync_conf.group
 		     && odev->sync_conf.group < ng && 
 		     (odev->cstate==PausedSyncS || odev->cstate==PausedSyncT)){
@@ -804,6 +811,7 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 	for (i=0; i < minor_count; i++) { // resume all devices in next group
 		odev = drbd_conf + i;
+		if (odev == mdev) continue;
 		if ( odev->sync_conf.group == ng &&
 		     (odev->cstate==PausedSyncS || odev->cstate==PausedSyncT)){
 			_drbd_rs_resume(odev);
@@ -811,8 +819,8 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 	}
 
  out:
-	drbd_global_unlock();
 	w->cb = w_resync_inactive;
+	drbd_global_unlock();
 
 	return 1;
 }
@@ -884,7 +892,6 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 		else
 			ERR("resync_work.cb == %p ???, should be w_resync_inactive\n",
 					mdev->resync_work.cb);
-		return;
 	}
 
 	if ( mdev->rs_total == 0 ) {
@@ -905,12 +912,16 @@ void drbd_start_resync(drbd_dev *mdev, Drbd_CState side)
 	   */
 	drbd_global_unlock();
 
-	if (mdev->cstate == SyncTarget) {
-		D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
-		mod_timer(&mdev->resync_timer,jiffies);
-	} else if (mdev->cstate == PausedSyncT) { 
-		D_ASSERT(test_bit(STOP_SYNC_TIMER,&mdev->flags));
-		clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+	/* THINK: for consistency, should this be before the drbd_global_unlock() ? */
+	{
+		int stop_syncer_timer_was_set =
+			test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags);
+		if (mdev->cstate == SyncTarget) {
+			D_ASSERT(!stop_syncer_timer_was_set);
+			mod_timer(&mdev->resync_timer,jiffies);
+		} else if (mdev->cstate == PausedSyncT) {
+			D_ASSERT(stop_syncer_timer_was_set);
+		}
 	}
 }
 
@@ -960,8 +971,40 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	drbd_wait_ee(mdev,&mdev->read_ee);
 
-	i = 0;
+	/* When we terminate a resync process, either because it finished
+	 * sucessfully, or because (like in this case here) we lost
+	 * communications, we need to "w_resume_next_sg".
+	 * We cannot use del_timer_sync from within _set_cstate, and since the
+	 * resync timer may still be scheduled and would then trigger anyways,
+	 * we set the STOP_SYNC_TIMER bit, and schedule the timer for immediate
+	 * execution from within _set_cstate().
+	 * The timer should then clear that bit and queue w_resume_next_sg.
+	 *
+	 * This is fine for the normal "resync finished" case.
+	 *
+	 * In this case (worker thread beeing stopped), there is a race:
+	 * we cannot be sure that the timer already triggered.
+	 *
+	 * So we del_timer_sync here, and check that "STOP_SYNC_TIMER" bit.
+	 * if it is still set, we queue w_resume_next_sg anyways,
+	 * just to be sure.
+	 */
+
+	del_timer_sync(&mdev->resync_timer);
+	/* possible paranoia check: the STOP_SYNC_TIMER bit should be set
+	 * if and only if del_timer_sync returns true ... */
+
 	spin_lock_irq(&mdev->req_lock);
+	if (test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+		mdev->resync_work.cb = w_resume_next_sg;
+		if (list_empty(&mdev->resync_work.list))
+			_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+		// else: already queued
+	} else {
+		mdev->resync_work.cb = w_resync_inactive;
+	}
+
+	i = 0;
   again:
 	list_splice_init(&mdev->data.work.q,&work_list);
 	spin_unlock_irq(&mdev->req_lock);
@@ -970,7 +1013,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		w = list_entry(work_list.next, struct drbd_work,list);
 		list_del_init(&w->list);
 		w->cb(mdev,w,1);
-		i++;
+		i++; /* dead debugging code */
 	}
 
 	spin_lock_irq(&mdev->req_lock);
