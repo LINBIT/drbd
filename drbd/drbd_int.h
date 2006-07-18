@@ -591,6 +591,7 @@ struct drbd_work {
 struct drbd_barrier;
 struct drbd_request {
 	struct drbd_work w;
+	struct list_head tl_requests; // double linked list in the TL
 	struct drbd_barrier *barrier; // The next barrier.
 	struct bio *master_bio;       // master bio pointer
 	struct bio *private_bio;
@@ -602,6 +603,7 @@ struct drbd_request {
 };
 
 struct drbd_barrier {
+	struct drbd_work w;
 	struct list_head requests; // requests before
 	struct drbd_barrier *next; // pointer to the next barrier
 	int br_number;  // the barriers identifier.
@@ -849,6 +851,9 @@ extern void drbd_free_resources(drbd_dev *mdev);
 extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
+extern void tl_add(drbd_dev *mdev, drbd_request_t *req);
+extern struct drbd_barrier *tl_add_barrier(drbd_dev *mdev);
+extern struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,drbd_request_t * req);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
 extern drbd_request_t * req_have_write(drbd_dev *, struct Tl_epoch_entry *);
@@ -877,7 +882,7 @@ extern int _drbd_send_page(drbd_dev *mdev, struct page *page,
 extern int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			   struct Tl_epoch_entry *e);
 extern int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req);
-extern int _drbd_send_barrier(drbd_dev *mdev);
+extern int _drbd_send_barrier(drbd_dev *mdev, struct drbd_barrier *barrier);
 extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
@@ -1130,6 +1135,8 @@ extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
 extern int w_try_send_barrier    (drbd_dev *, struct drbd_work *, int);
 extern int w_send_write_hint     (drbd_dev *, struct drbd_work *, int);
 extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
+extern int w_send_dblock         (drbd_dev *, struct drbd_work *, int);
+extern int w_send_barrier        (drbd_dev *, struct drbd_work *, int);
 extern void resync_timer_fn(unsigned long data);
 
 // drbd_receiver.c

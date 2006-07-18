@@ -802,6 +802,12 @@ DRBD 0.8 Roadmap
 
    Simon works on this. 
 
+39 Send mirrored write requests out of the worker context.
+   30% DONE
+   TODO:   Honour the max-buffers setting for this.
+           Think about read requests.
+
+
 Maybe:
 
 *  Switch to protocol C in case we are running without a local 

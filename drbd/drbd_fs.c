@@ -875,7 +875,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 int drbd_set_role(drbd_dev *mdev, int* arg)
 {
 	drbd_role_t newstate = *arg;
-	int rv,r,forced = 0, try=0;
+	int rv,r=0,forced = 0, try=0;
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 

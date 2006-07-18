@@ -326,31 +326,48 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		inc_ap_pending(mdev);
 		if (rw == WRITE) {
-			switch(drbd_send_dblock(mdev,req)) {
-			case 0: /* sending failed */
-				if (mdev->state.conn >= Connected)
-					drbd_force_state(mdev,NS(conn,NetworkFailure));
-				dec_ap_pending(mdev);
-				drbd_thread_restart_nowait(&mdev->receiver);
-				break;
-			case -1: /* concurrent write */
-				WARN("Concurrent write! [DISCARD L] sec=%lu\n",
-				     (unsigned long)sector);
-				dec_local(mdev);
-				dec_ap_pending(mdev);
-				local=0;
-				drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
-				break;
-			default: /* block was sent */
-			  if(mdev->net_conf->wire_protocol == DRBD_PROT_A) { // PRE LOCKING
-					dec_ap_pending(mdev);
-					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
-				}
+
+	/* About tl_add():
+	1. This must be within the semaphor,
+	   to ensure right order in tl_ data structure and to
+	   ensure right order of packets on the write
+	2. This must happen before sending, otherwise we might
+	   get in the BlockAck packet before we have it on the
+	   tl_ datastructure (=> We would want to remove it before it
+	   is there!)
+	3. Q: Why can we add it to tl_ even when drbd_send() might fail ?
+	      There could be a tl_cancel() to remove it within the semaphore!
+	   A: If drbd_send fails, we will lose the connection. Then
+	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
+	      for everything in the data structure.
+	*/
+			down(&mdev->data.mutex);
+			if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
+				struct drbd_barrier *b = tl_add_barrier(mdev);
+				b->w.cb =  w_send_barrier;
+				drbd_queue_work(mdev,&mdev->data.work, &b->w);
 			}
+
+			if (mdev->net_conf->two_primaries) {
+				if(ee_have_write(mdev,req)) {
+					WARN("Concurrent write! [DISCARD L] sec=%lu\n",
+					     (unsigned long)sector);
+					dec_local(mdev);
+					dec_ap_pending(mdev);
+					local=0;
+					drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
+				}
+			} else {
+				tl_add(mdev,req);
+			}
+			req->w.cb =  w_send_dblock;
+			drbd_queue_work(mdev,&mdev->data.work, &req->w);
+
+			up(&mdev->data.mutex);
 		} else {
 			// this node is diskless ...
+			inc_ap_pending(mdev);
 			drbd_read_remote(mdev,req);
 		}
 	}

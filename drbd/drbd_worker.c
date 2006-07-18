@@ -530,8 +530,22 @@ int w_try_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 	down(&mdev->data.mutex);
 	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-		ok = _drbd_send_barrier(mdev);
+		ok = _drbd_send_barrier(mdev,tl_add_barrier(mdev));
 	}
+	up(&mdev->data.mutex);
+
+	return ok;
+}
+
+int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	struct drbd_barrier *b = (struct drbd_barrier *)w;
+	int ok=1;
+
+	if(unlikely(cancel)) return ok;
+
+	down(&mdev->data.mutex);
+	ok = _drbd_send_barrier(mdev,b);
 	up(&mdev->data.mutex);
 
 	return ok;
@@ -541,6 +555,30 @@ int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	if (cancel) return 1;
 	return drbd_send_short_cmd(mdev,UnplugRemote);
+}
+
+int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	drbd_request_t *req = (drbd_request_t *)w;
+	int ok;
+
+	if (unlikely(cancel)) { 
+		/* Nothing to do, here. tl_clear() does the work. */
+		return 1;
+	}
+
+	inc_ap_pending(mdev);
+	ok = drbd_send_dblock(mdev,req);
+	if (!ok) {
+		if (mdev->state.conn >= Connected) 
+			drbd_force_state(mdev,NS(conn,NetworkFailure));
+		drbd_thread_restart_nowait(&mdev->receiver);
+	} else if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
+		dec_ap_pending(mdev);
+		drbd_end_req(req, RQ_DRBD_SENT, 1, drbd_req_get_sector(req));
+	}
+
+	return ok;
 }
 
 STATIC void drbd_global_lock(void)

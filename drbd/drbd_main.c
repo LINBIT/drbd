@@ -212,7 +212,7 @@ STATIC void _tl_add(drbd_dev *mdev, drbd_request_t *req)
 
 	req->barrier = b;
 	req->rq_status |= RQ_DRBD_IN_TL;
-	list_add(&req->w.list,&b->requests);
+	list_add(&req->tl_requests,&b->requests);
 
 	if( b->n_req++ > mdev->net_conf->max_epoch_size ) {
 		set_bit(ISSUE_BARRIER,&mdev->flags);
@@ -223,7 +223,7 @@ STATIC void _tl_add(drbd_dev *mdev, drbd_request_t *req)
 			tl_hash_fn(mdev, drbd_req_get_sector(req) ));
 }
 
-STATIC void tl_add(drbd_dev *mdev, drbd_request_t * req)
+void tl_add(drbd_dev *mdev, drbd_request_t * req)
 {
 	spin_lock_irq(&mdev->tl_lock);
 	_tl_add(mdev,req);
@@ -239,37 +239,41 @@ STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t *req)
 	b=req->barrier;
 	b->n_req--;
 
-	list_del(&req->w.list);
+	list_del(&req->tl_requests);
 	hlist_del(&req->colision);
 	req->rq_status &= ~RQ_DRBD_IN_TL;
 
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
-STATIC unsigned int tl_add_barrier(drbd_dev *mdev)
+/**
+ * tl_add_barrier: Creates a new barrier object and links it into the
+ * transfer log. It returns the the newest (but not the just created 
+ * barrier to the caller.
+ */
+struct drbd_barrier *tl_add_barrier(drbd_dev *mdev)
 {
-	unsigned int bnr;
-	struct drbd_barrier *b;
+	struct drbd_barrier *new, *newest_before;
 
-	b=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
-	if(!b) {
+	new=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
+	if(!new) {
 		ERR("could not kmalloc() barrier\n");
 		return 0;
 	}
-	INIT_LIST_HEAD(&b->requests);
-	b->next=0;
-	b->n_req=0;
+	INIT_LIST_HEAD(&new->requests);
+	new->next=0;
+	new->n_req=0;
 
 	spin_lock_irq(&mdev->tl_lock);
 	/* mdev->newest_barrier == NULL "cannot happen". but anyways... */
-	bnr = mdev->newest_barrier ? mdev->newest_barrier->br_number : 1;
+	newest_before = mdev->newest_barrier;
 	/* never send a barrier number == 0 */
-	b->br_number = (bnr+1) ?: 1;
-	mdev->newest_barrier->next = b;
-	mdev->newest_barrier = b;
+	new->br_number = (newest_before->br_number+1) ?: 1;
+	mdev->newest_barrier->next = new;
+	mdev->newest_barrier = new;
 	spin_unlock_irq(&mdev->tl_lock);
 
-	return bnr;
+	return newest_before;
 }
 
 void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
@@ -290,7 +294,15 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	spin_unlock_irq(&mdev->tl_lock);
 
 	D_ASSERT(b->br_number == barrier_nr);
+	if(b->br_number != barrier_nr) {
+		DUMPI(b->br_number);
+		DUMPI(barrier_nr);
+	}
 	D_ASSERT(b->n_req == set_size);
+	if(b->n_req != set_size) {
+		DUMPI(b->n_req);
+		DUMPI(set_size);
+	}
 
 	kfree(b);
 }
@@ -334,7 +346,7 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
 	spin_lock_irqsave(&mdev->tl_lock,flags);
 
 	r = ( req->barrier == mdev->newest_barrier );
-	list_del(&req->w.list);
+	list_del(&req->tl_requests);
 	hlist_del(&req->colision);
 
 	if( req->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
@@ -376,7 +388,7 @@ void tl_clear(drbd_dev *mdev)
 
 	while ( b ) {
 		list_for_each_safe(le, tle, &b->requests) {
-			r = list_entry(le, struct drbd_request,w.list);
+			r = list_entry(le, struct drbd_request,tl_requests);
 			// bi_size and bi_sector are modified in bio_endio!
 			sector = drbd_req_get_sector(r);
 			size   = drbd_req_get_size(r);
@@ -444,7 +456,7 @@ drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	return req;
 }
 
-STATIC struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
+struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
 					     drbd_request_t * req)
 {
 	struct hlist_head *slot;
@@ -1492,19 +1504,16 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	return ok;
 }
 
-int _drbd_send_barrier(drbd_dev *mdev)
+int _drbd_send_barrier(drbd_dev *mdev, struct drbd_barrier *barrier)
 {
 	int ok;
 	Drbd_Barrier_Packet p;
 
-	/* printk(KERN_DEBUG DEVICE_NAME": issuing a barrier\n"); */
-	/* tl_add_barrier() must be called with the sock_mutex aquired */
-	p.barrier=tl_add_barrier(mdev);
+	p.barrier=barrier->br_number;
 
 	inc_ap_pending(mdev);
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)&p,sizeof(p),0);
 
-//	if (!ok) dec_ap_pending(mdev); // is done in tl_clear()
 	return ok;
 }
 
@@ -1721,85 +1730,36 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	Drbd_Data_Packet p;
 	unsigned int dp_flags=0;
 
-	/* About tl_add():
-	1. This must be within the semaphor,
-	   to ensure right order in tl_ data structure and to
-	   ensure right order of packets on the write
-	2. This must happen before sending, otherwise we might
-	   get in the BlockAck packet before we have it on the
-	   tl_ datastructure (=> We would want to remove it before it
-	   is there!)
-	3. Q: Why can we add it to tl_ even when drbd_send() might fail ?
-	      There could be a tl_cancel() to remove it within the semaphore!
-	   A: If drbd_send fails, we will lose the connection. Then
-	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
-	      for everything in the data structure.
-	*/
-
-	/* Still called directly by drbd_make_request,
-	 * so all sorts of processes may end up here.
-	 * They may be interrupted by DRBD_SIG in response to
-	 * ioctl or some other "connection lost" event.
-	 * This is not propagated.
-	 */
-
 	old_blocked = drbd_block_all_signals();
 	down(&mdev->data.mutex);
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=current;
 	spin_unlock(&mdev->send_task_lock);
 
-	if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags))
-		ok = _drbd_send_barrier(mdev);
-	if(ok) {
-		if (mdev->net_conf->two_primaries) {
-			if(ee_have_write(mdev,req)) {
-				ok=-1;
-				goto out;
-			}
-		} else {
-			tl_add(mdev,req);
-		}
-
-		p.head.magic   = BE_DRBD_MAGIC;
-		p.head.command = cpu_to_be16(Data);
-		p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
+	p.head.magic   = BE_DRBD_MAGIC;
+	p.head.command = cpu_to_be16(Data);
+	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
 					      + drbd_req_get_size(req) );
 
-		p.sector   = cpu_to_be64(drbd_req_get_sector(req));
-		p.block_id = (unsigned long)req;
-#if 0
-#warning "YES I KNOW. JUST SO IT COMPILES NOW."
-		atomic_inc(&mdev->packet_seq);
-		p.seq_num = atomic_read(&mdev->packet_seq);
-#else
-		p.seq_num  = cpu_to_be32( req->seq_num =
-				     atomic_add_return(1,&mdev->packet_seq) );
-#endif
-		if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
-			dp_flags = DP_HARDBARRIER;
-		}
-		p.dp_flags = cpu_to_be32(dp_flags);
-		dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
-		set_bit(UNPLUG_REMOTE,&mdev->flags);
-		ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
-		if(ok) {
-			if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
-				ok = _drbd_send_bio(mdev,drbd_req_private_bio(req));
-			} else {
-				ok = _drbd_send_zc_bio(mdev,drbd_req_private_bio(req));
-			}
-		}
-		if(!ok) tl_cancel(mdev,req);
+	p.sector   = cpu_to_be64(drbd_req_get_sector(req));
+	p.block_id = (unsigned long)req;
+	p.seq_num  = cpu_to_be32( req->seq_num =
+				  atomic_add_return(1,&mdev->packet_seq) );
+	if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
+		dp_flags = DP_HARDBARRIER;
 	}
-	if (!ok) {
-		drbd_set_out_of_sync(mdev,
-				     drbd_req_get_sector(req),
-				     drbd_req_get_size(req));
-		drbd_end_req(req,RQ_DRBD_SENT,ERF_NOTLD|1,
-			     drbd_req_get_sector(req));
+	p.dp_flags = cpu_to_be32(dp_flags);
+	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
+	set_bit(UNPLUG_REMOTE,&mdev->flags);
+	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
+	if(ok) {
+		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
+			ok = _drbd_send_bio(mdev,req->master_bio);
+		} else {
+			ok = _drbd_send_zc_bio(mdev,req->master_bio);
+		}
 	}
- out:
+
 	spin_lock(&mdev->send_task_lock);
 	mdev->send_task=NULL;
 	spin_unlock(&mdev->send_task_lock);
