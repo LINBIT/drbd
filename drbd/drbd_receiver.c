@@ -1032,7 +1032,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	 */
 	ERR_IF(data_size == 0) return FALSE;
 	ERR_IF(data_size &  0x1ff) return FALSE;
-	ERR_IF(data_size >  PAGE_SIZE) return FALSE;
+	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
