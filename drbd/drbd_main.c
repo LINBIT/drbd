@@ -660,6 +660,13 @@ int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 
 	if (sock == mdev->data.socket) {
 		down(&mdev->data.mutex);
+		if (sock != mdev->data.socket) {
+			/* verify drbd_disconnect: drbd_free_sock may free this
+			 * socket while we have been waiting in down.
+			 */
+			up(&mdev->data.mutex);
+			return 0; /* not ok */
+		}
 		spin_lock(&mdev->send_task_lock);
 		mdev->send_task=current;
 		spin_unlock(&mdev->send_task_lock);
