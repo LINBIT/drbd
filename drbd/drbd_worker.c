@@ -562,12 +562,13 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_request_t *req = (drbd_request_t *)w;
 	int ok;
 
+	inc_ap_pending(mdev); // Right here, since tl_clear() will decrease it
+
 	if (unlikely(cancel)) { 
 		/* Nothing to do, here. tl_clear() does the work. */
 		return 1;
 	}
 
-	inc_ap_pending(mdev);
 	ok = drbd_send_dblock(mdev,req);
 	if (!ok) {
 		if (mdev->state.conn >= Connected) 

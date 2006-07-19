@@ -230,22 +230,6 @@ void tl_add(drbd_dev *mdev, drbd_request_t * req)
 	spin_unlock_irq(&mdev->tl_lock);
 }
 
-STATIC void tl_cancel(drbd_dev *mdev, drbd_request_t *req)
-{
-	struct drbd_barrier *b;
-
-	spin_lock_irq(&mdev->tl_lock);
-
-	b=req->barrier;
-	b->n_req--;
-
-	list_del(&req->tl_requests);
-	hlist_del(&req->colision);
-	req->rq_status &= ~RQ_DRBD_IN_TL;
-
-	spin_unlock_irq(&mdev->tl_lock);
-}
-
 /**
  * tl_add_barrier: Creates a new barrier object and links it into the
  * transfer log. It returns the the newest (but not the just created 
@@ -294,15 +278,18 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	spin_unlock_irq(&mdev->tl_lock);
 
 	D_ASSERT(b->br_number == barrier_nr);
+	D_ASSERT(b->n_req == set_size);
+
+#ifdef DBG_ASSERTS
 	if(b->br_number != barrier_nr) {
 		DUMPI(b->br_number);
 		DUMPI(barrier_nr);
 	}
-	D_ASSERT(b->n_req == set_size);
 	if(b->n_req != set_size) {
 		DUMPI(b->n_req);
 		DUMPI(set_size);
 	}
+#endif
 
 	kfree(b);
 }
@@ -348,6 +335,7 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
 	r = ( req->barrier == mdev->newest_barrier );
 	list_del(&req->tl_requests);
 	hlist_del(&req->colision);
+	// req->barrier->n_req--; // Barrier migh be free'ed already!
 
 	if( req->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
 
@@ -358,35 +346,20 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
 void tl_clear(drbd_dev *mdev)
 {
 	struct list_head *le,*tle;
-	struct drbd_barrier *b,*f,*new_first;
+	struct drbd_barrier *b,*f;
 	struct drbd_request *r;
 	sector_t sector;
 	unsigned int size;
 
-	new_first=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
-	if(!new_first) {
-		ERR("could not kmalloc() barrier\n");
-	}
-
-	/* FIXME if indeed we could not kmalloc, this will Oops!
-	 * can we somehow just recycle one of the existing barriers?
-	 */
-	INIT_LIST_HEAD(&new_first->requests);
-	new_first->next=0;
-	new_first->br_number=4711;
-	new_first->n_req=0;
-
 	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->oldest_barrier;
-	mdev->oldest_barrier = new_first;
-	mdev->newest_barrier = new_first;
+	mdev->oldest_barrier = NULL;
+	mdev->newest_barrier = NULL; 
 
 	spin_unlock_irq(&mdev->tl_lock);
 
-	inc_ap_pending(mdev); // Since we count the old first as well...
-
-	while ( b ) {
+	while ( 1 ) {
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,tl_requests);
 			// bi_size and bi_sector are modified in bio_endio!
@@ -406,9 +379,24 @@ void tl_clear(drbd_dev *mdev)
 		f=b;
 		b=b->next;
 		list_del(&f->requests);
+		if (!b) break;
 		kfree(f);
 		dec_ap_pending(mdev); // for the barrier
 	}
+
+	// f is now the last barrier, we use it as new first barrier.
+
+	INIT_LIST_HEAD(&f->requests);
+	f->next=NULL;
+	f->br_number=4711;
+	f->n_req=0;
+
+	spin_lock_irq(&mdev->tl_lock);
+
+	mdev->oldest_barrier = f;
+	mdev->newest_barrier = f;
+
+	spin_unlock_irq(&mdev->tl_lock);
 }
 
 STATIC unsigned int ee_hash_fn(drbd_dev *mdev, sector_t sector)
