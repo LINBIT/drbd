@@ -628,6 +628,7 @@ inline void restore_old_sigset(sigset_t oldset)
 	UNLOCK_SIGMASK(current,flags);
 }
 
+/* the appropriate socket mutex must be held already */
 int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
 			  size_t size, unsigned msg_flags)
@@ -652,32 +653,36 @@ int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	return ok;
 }
 
-int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+/* don't pass the socket. we may only look at it
+ * when we hold the appropriate socket mutex.
+ */
+int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
-	int ok;
+	int ok = 0;
 	sigset_t old_blocked;
+	struct socket *sock;
 
-	if (sock == mdev->data.socket) {
+	if (use_data_socket) {
 		down(&mdev->data.mutex);
-		if (sock != mdev->data.socket) {
-			/* verify drbd_disconnect: drbd_free_sock may free this
-			 * socket while we have been waiting in down.
-			 */
-			up(&mdev->data.mutex);
-			return 0; /* not ok */
-		}
 		spin_lock(&mdev->send_task_lock);
 		mdev->send_task=current;
 		spin_unlock(&mdev->send_task_lock);
-	} else
+		sock = mdev->data.socket;
+	} else {
 		down(&mdev->meta.mutex);
+		sock = mdev->meta.socket;
+	}
 
-	old_blocked = drbd_block_all_signals();
-	ok = _drbd_send_cmd(mdev,sock,cmd,h,size,0);
-	restore_old_sigset(old_blocked);
+	/* drbd_disconnect() could have called drbd_free_sock()
+	 * while we were waiting in down()... */
+	if (likely(sock != NULL)) {
+		old_blocked = drbd_block_all_signals();
+		ok = _drbd_send_cmd(mdev, sock, cmd, h, size, 0);
+		restore_old_sigset(old_blocked);
+	}
 
-	if (sock == mdev->data.socket) {
+	if (use_data_socket) {
 		spin_lock(&mdev->send_task_lock);
 		mdev->send_task=NULL;
 		spin_unlock(&mdev->send_task_lock);
@@ -697,7 +702,7 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 	p.skip      = cpu_to_be32(sc->skip);
 	p.group     = cpu_to_be32(sc->group);
 
-	ok = drbd_send_cmd(mdev,mdev->data.socket,SyncParam,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET,SyncParam,(Drbd_Header*)&p,sizeof(p));
 	if ( ok
 	    && (mdev->cstate == SkippedSyncS || mdev->cstate == SkippedSyncT)
 	    && !sc->skip )
@@ -739,7 +744,7 @@ int drbd_send_param(drbd_dev *mdev, int flags)
 	p.flags          = cpu_to_be32(flags);
 	p.magic          = BE_DRBD_MAGIC;
 
-	ok = drbd_send_cmd(mdev,mdev->data.socket,ReportParams,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET,ReportParams,(Drbd_Header*)&p,sizeof(p));
 	if (have_disk) dec_local(mdev);
 	return ok;
 }
@@ -827,7 +832,7 @@ int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
 	p.barrier  = barrier_nr;
 	p.set_size = cpu_to_be32(set_size);
 
-	ok = drbd_send_cmd(mdev,mdev->meta.socket,BarrierAck,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,USE_META_SOCKET,BarrierAck,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -842,7 +847,7 @@ int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
 
 	if (!mdev->meta.socket || mdev->cstate < Connected) return FALSE;
-	ok = drbd_send_cmd(mdev,mdev->meta.socket,cmd,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,USE_META_SOCKET,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -856,7 +861,7 @@ int drbd_send_drequest(drbd_dev *mdev, int cmd,
 	p.block_id = block_id;
 	p.blksize  = cpu_to_be32(size);
 
-	ok = drbd_send_cmd(mdev,mdev->data.socket,cmd,(Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
 
@@ -1151,7 +1156,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 */
 
 /*
- * you should have down()ed the appropriate [m]sock_mutex elsewhere!
+ * you must have down()ed the appropriate [m]sock_mutex elsewhere!
  */
 int drbd_send(drbd_dev *mdev, struct socket *sock,
 	      void* buf, size_t size, unsigned msg_flags)

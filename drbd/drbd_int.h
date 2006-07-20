@@ -832,7 +832,9 @@ extern int drbd_send_param(drbd_dev *mdev, int flags);
 extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
 			  size_t size, unsigned msg_flags);
-extern int drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
+#define USE_DATA_SOCKET 1
+#define USE_META_SOCKET 0
+extern int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
@@ -1271,19 +1273,19 @@ static inline void request_ping(drbd_dev *mdev) {
 static inline int drbd_send_short_cmd(drbd_dev *mdev, Drbd_Packet_Cmd cmd)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->data.socket,cmd,&h,sizeof(h));
+	return drbd_send_cmd(mdev,USE_DATA_SOCKET,cmd,&h,sizeof(h));
 }
 
 static inline int drbd_send_ping(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->meta.socket,Ping,&h,sizeof(h));
+	return drbd_send_cmd(mdev,USE_META_SOCKET,Ping,&h,sizeof(h));
 }
 
 static inline int drbd_send_ping_ack(drbd_dev *mdev)
 {
 	Drbd_Header h;
-	return drbd_send_cmd(mdev,mdev->meta.socket,PingAck,&h,sizeof(h));
+	return drbd_send_cmd(mdev,USE_META_SOCKET,PingAck,&h,sizeof(h));
 }
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
