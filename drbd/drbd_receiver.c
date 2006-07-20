@@ -2043,20 +2043,20 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	return 1;
 
  break_c_loop:
-	WARN( "My msock connect got accepted onto peer's sock!\n");
-	/* In case a tcp connection set-up takes longer than 
+	WARN( "Network error during initial handshake. I'll try again.\n");
+	/* In case a tcp connection set-up takes longer than
 	   connect-int, we might get into the situation that this
 	   node's msock gets connected to the peer's sock!
-	   
-	   To break out of this endless loop behaviour, we need to 
-	   wait unti the peer's msock connect tries are over. (1 Second)
 
-	   Additionally we wait connect-int/2 to hit with our next 
-	   connect try exactly in the peer's window of expectation. */
+	   To break out of this endless loop behaviour, we need to
+	   wait until the peer's msock connect tries are over. (1 Second)
+
+	   Additionally we wait connect-int/2 to increase the chance for
+	   our next connect() to hit exactly the peer's accept() window. */
 
 	set_current_state(TASK_INTERRUPTIBLE);
 	schedule_timeout(HZ + (mdev->conf.try_connect_int*HZ)/2);
-	
+
 	return 0;
 }
 
