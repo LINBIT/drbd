@@ -956,7 +956,21 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		w = 0;
 		spin_lock_irq(&mdev->req_lock);
-		D_ASSERT(!list_empty(&mdev->data.work.q));
+		ERR_IF(list_empty(&mdev->data.work.q)) {
+			/* something terribly wrong in our logic.
+			 * we were able to down() the semaphore,
+			 * but the list is empty... doh.
+			 *
+			 * what is the best thing to do now?
+			 * try again from scratch, restarting the receiver,
+			 * asender, whatnot? could break even more ugly,
+			 * e.g. when we are primary, but no good local data.
+			 *
+			 * I'll try to get away just starting over this loop.
+			 */
+			spin_unlock_irq(&mdev->req_lock);
+			continue;
+		}
 		w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
 		list_del_init(&w->list);
 		spin_unlock_irq(&mdev->req_lock);
@@ -1020,6 +1034,11 @@ int drbd_worker(struct Drbd_thread *thi)
 	ERR_IF(!list_empty(&mdev->data.work.q))
 		goto again;
 	sema_init(&mdev->data.work.s,0);
+	/* DANGEROUS race: if someone did queue his work within the spinlock,
+	 * but up() ed outside the spinlock, we could get an up() on the
+	 * semaphore without corresponding list entry.
+	 * So don't do that.
+	 */
 	spin_unlock_irq(&mdev->req_lock);
 
 	INFO("worker terminated\n");

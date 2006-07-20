@@ -1244,8 +1244,9 @@ drbd_queue_work_front(drbd_dev *mdev, struct drbd_work_queue *q,
 	unsigned long flags;
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	list_add(&w->list,&q->q);
+	up(&q->s); /* within the spinlock,
+		      see comment near end of drbd_worker() */
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	up(&q->s);
 }
 
 static inline void
@@ -1255,8 +1256,9 @@ drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
 	unsigned long flags;
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	list_add_tail(&w->list,&q->q);
+	up(&q->s); /* within the spinlock,
+		      see comment near end of drbd_worker() */
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	up(&q->s);
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
