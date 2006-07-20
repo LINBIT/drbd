@@ -1015,7 +1015,16 @@ int drbd_worker(struct Drbd_thread *thi)
 			_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 		// else: already queued
 	} else {
-		mdev->resync_work.cb = w_resync_inactive;
+		/* timer already consumed that bit, or it was never set */
+		if (list_empty(&mdev->resync_work.list)) {
+			/* not queued, should be inactive */
+			ERR_IF (mdev->resync_work.cb != w_resync_inactive)
+				mdev->resync_work.cb = w_resync_inactive;
+		} else {
+			/* still queued; should be w_resume_next_sg */
+			ERR_IF (mdev->resync_work.cb != w_resume_next_sg)
+				mdev->resync_work.cb = w_resume_next_sg;
+		}
 	}
 
 	i = 0;
