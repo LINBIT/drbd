@@ -1170,9 +1170,10 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
 {
 	int ret;
-	// lock_kernel(); Not needed, since we have mdev->device_mutex
 	ret = drbd_ioctl(f->f_dentry->d_inode, f, cmd, arg);
-	// unlock_kernel();
+	/* need to map "unknown" to ENOIOCTLCMD
+	 * to get the generic fallback path going */
+	if (ret == -ENOTTY) ret = -ENOIOCTLCMD;
 	return ret;
 }
 #endif
@@ -1398,7 +1399,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	default:
-		err = -EINVAL;
+		err = -ENOTTY;
 	}
  /* out: */
 	up(&mdev->device_mutex);

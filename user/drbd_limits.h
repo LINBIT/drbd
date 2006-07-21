@@ -52,8 +52,8 @@ RANGE(PORT,1,0xffff);
   /* @4k PageSize -> 128kB - 512MB */
   RANGE(MAX_BUFFERS, 32, 131072);
 
-  /* @4k PageSize -> 64kB - 512MB */
-  RANGE(UNPLUG_WATERMARK, 16, 131072);
+  /* @4k PageSize -> 4kB - 512MB */
+  RANGE(UNPLUG_WATERMARK, 1, 131072);
 
   /* 0 is disabled.
    * 200 should be more than enough even for very short timeouts */

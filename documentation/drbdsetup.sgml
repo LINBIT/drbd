@@ -396,7 +396,7 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term><option>-l</option>,
+	  <term><option>-u</option>,
 	  <option>--unplug-watermark <replaceable>val</replaceable></option></term>
 	  <listitem>
 	    <para>

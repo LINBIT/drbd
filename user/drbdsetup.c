@@ -165,7 +165,7 @@ struct drbd_cmd commands[] = {
      { "timeout",    required_argument, 0, 't' },
      { "max-epoch-size", required_argument, 0, 'e' },
      { "max-buffers",required_argument, 0, 'b' },
-     { "unplug-watermark",required_argument, 0, 'l' },
+     { "unplug-watermark",required_argument, 0, 'u' },
      { "connect-int",required_argument, 0, 'c' },
      { "ping-int",   required_argument, 0, 'i' },
      { "sndbuf-size",required_argument, 0, 'S' },
@@ -557,7 +557,7 @@ int scan_net_options(char **argv,
 	  cn->config.max_buffers = m_strtoll_range(optarg,1, "max-buffers",
 			  DRBD_MAX_BUFFERS_MIN, DRBD_MAX_BUFFERS_MAX);
 	  break;
-	case 'l':
+	case 'u':
 	  cn->config.unplug_watermark = m_strtoll_range(optarg,1, "unplug-watermark",
 			  DRBD_UNPLUG_WATERMARK_MIN, DRBD_UNPLUG_WATERMARK_MAX);
 	  break;

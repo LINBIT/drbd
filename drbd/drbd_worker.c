@@ -752,9 +752,8 @@ int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
 
 	drbd_global_lock();
 	_drbd_resume_next(mdev);
-	drbd_global_unlock();
-
 	w->cb = w_resync_inactive;
+	drbd_global_unlock();
 
 	return 1;
 }
@@ -900,7 +899,21 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		w = 0;
 		spin_lock_irq(&mdev->req_lock);
-		D_ASSERT(!list_empty(&mdev->data.work.q));
+		ERR_IF(list_empty(&mdev->data.work.q)) {
+			/* something terribly wrong in our logic.
+			 * we were able to down() the semaphore,
+			 * but the list is empty... doh.
+			 *
+			 * what is the best thing to do now?
+			 * try again from scratch, restarting the receiver,
+			 * asender, whatnot? could break even more ugly,
+			 * e.g. when we are primary, but no good local data.
+			 *
+			 * I'll try to get away just starting over this loop.
+			 */
+			spin_unlock_irq(&mdev->req_lock);
+			continue;
+		}
 		w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
 		list_del_init(&w->list);
 		spin_unlock_irq(&mdev->req_lock);
@@ -915,8 +928,49 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
 
-	i = 0;
+	/* When we terminate a resync process, either because it finished
+	 * sucessfully, or because (like in this case here) we lost
+	 * communications, we need to "w_resume_next_sg".
+	 * We cannot use del_timer_sync from within _set_cstate, and since the
+	 * resync timer may still be scheduled and would then trigger anyways,
+	 * we set the STOP_SYNC_TIMER bit, and schedule the timer for immediate
+	 * execution from within _set_cstate().
+	 * The timer should then clear that bit and queue w_resume_next_sg.
+	 *
+	 * This is fine for the normal "resync finished" case.
+	 *
+	 * In this case (worker thread beeing stopped), there is a race:
+	 * we cannot be sure that the timer already triggered.
+	 *
+	 * So we del_timer_sync here, and check that "STOP_SYNC_TIMER" bit.
+	 * if it is still set, we queue w_resume_next_sg anyways,
+	 * just to be sure.
+	 */
+
+	del_timer_sync(&mdev->resync_timer);
+	/* possible paranoia check: the STOP_SYNC_TIMER bit should be set
+	 * if and only if del_timer_sync returns true ... */
+
 	spin_lock_irq(&mdev->req_lock);
+	if (test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+		mdev->resync_work.cb = w_resume_next_sg;
+		if (list_empty(&mdev->resync_work.list))
+			_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+		// else: already queued
+	} else {
+		/* timer already consumed that bit, or it was never set */
+		if (list_empty(&mdev->resync_work.list)) {
+			/* not queued, should be inactive */
+			ERR_IF (mdev->resync_work.cb != w_resync_inactive)
+				mdev->resync_work.cb = w_resync_inactive;
+		} else {
+			/* still queued; should be w_resume_next_sg */
+			ERR_IF (mdev->resync_work.cb != w_resume_next_sg)
+				mdev->resync_work.cb = w_resume_next_sg;
+		}
+	}
+
+	i = 0;
   again:
 	list_splice_init(&mdev->data.work.q,&work_list);
 	spin_unlock_irq(&mdev->req_lock);
@@ -925,13 +979,18 @@ int drbd_worker(struct Drbd_thread *thi)
 		w = list_entry(work_list.next, struct drbd_work,list);
 		list_del_init(&w->list);
 		w->cb(mdev,w,1);
-		i++;
+		i++; /* dead debugging code */
 	}
 
 	spin_lock_irq(&mdev->req_lock);
 	ERR_IF(!list_empty(&mdev->data.work.q))
 		goto again;
 	sema_init(&mdev->data.work.s,0);
+	/* DANGEROUS race: if someone did queue his work within the spinlock,
+	 * but up() ed outside the spinlock, we could get an up() on the
+	 * semaphore without corresponding list entry.
+	 * So don't do that.
+	 */
 	spin_unlock_irq(&mdev->req_lock);
 
 	INFO("worker terminated\n");
