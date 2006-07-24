@@ -1045,8 +1045,6 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 		return FALSE;
 	}
 
-	D_ASSERT(req->w.cb == w_is_app_read);
-
 	spin_lock(&mdev->pr_lock);
 	hlist_del(&req->colision);
 	spin_unlock(&mdev->pr_lock);
@@ -2940,7 +2938,6 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 		ERR("Got a corrupt block_id/sector pair(3).\n");
 		return FALSE;
 	}
-	D_ASSERT(req->w.cb == w_is_app_read);
 
 	spin_lock(&mdev->pr_lock);
 	list_del(&req->w.list);

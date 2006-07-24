@@ -242,7 +242,6 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	ok = drbd_io_error(mdev);
 	if(unlikely(!ok)) ERR("Sending in w_read_retry_remote() failed\n");
 	
-	inc_ap_pending(mdev);
 	ok = drbd_read_remote(mdev,req);
 	if(unlikely(!ok)) {
 		ERR("drbd_read_remote() failed\n");
@@ -265,15 +264,6 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
  * maybe remove again?
  */
 int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w, int unused)
-{
-	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
-	return 0;
-}
-
-/* in case we need it. currently unused,
- * since should be assigned to "w_read_retry_remote"
- */
-int w_is_app_read(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
 	return 0;
@@ -443,6 +433,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 	return 1;
 }
 
+/**
+ * w_e_end_data_req: Send the answer (DataReply) to a DataRequest.
+ */
 int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
@@ -478,6 +471,9 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
+/**
+ * w_e_end_data_req: Send the answer (RSDataReply) to a RSDataRequest.
+ */
 int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
@@ -557,6 +553,9 @@ int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return drbd_send_short_cmd(mdev,UnplugRemote);
 }
 
+/**
+ * w_send_dblock: Send a mirrored write request.
+ */
 int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	drbd_request_t *req = (drbd_request_t *)w;
@@ -577,6 +576,31 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	} else if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 		dec_ap_pending(mdev);
 		drbd_end_req(req, RQ_DRBD_SENT, 1, drbd_req_get_sector(req));
+	}
+
+	return ok;
+}
+
+/**
+ * w_send_read_req: Send a read requests.
+ */
+int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	drbd_request_t *req = (drbd_request_t *)w;
+	struct bio *bio = req->master_bio;
+	int ok;
+
+	inc_ap_pending(mdev);
+
+	if (unlikely(cancel)) return 1;
+
+	ok = drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
+				(unsigned long)req);
+
+	if (!ok) {
+		if (mdev->state.conn >= Connected) 
+			drbd_force_state(mdev,NS(conn,NetworkFailure));
+		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
 	return ok;

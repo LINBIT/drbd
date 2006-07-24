@@ -756,6 +756,7 @@ struct Drbd_Conf {
 
 	drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
+	wait_queue_head_t rq_wait;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -1126,7 +1127,6 @@ extern int drbd_resync_finished(drbd_dev *mdev);
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 				sector_t sector, int rw);
 // worker callbacks
-extern int w_is_app_read         (drbd_dev *, struct drbd_work *, int);
 extern int w_is_resync_read      (drbd_dev *, struct drbd_work *, int);
 extern int w_read_retry_remote   (drbd_dev *, struct drbd_work *, int);
 extern int w_e_end_data_req      (drbd_dev *, struct drbd_work *, int);
@@ -1139,6 +1139,8 @@ extern int w_send_write_hint     (drbd_dev *, struct drbd_work *, int);
 extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
 extern int w_send_dblock         (drbd_dev *, struct drbd_work *, int);
 extern int w_send_barrier        (drbd_dev *, struct drbd_work *, int);
+extern int w_send_read_req       (drbd_dev *, struct drbd_work *, int);
+
 extern void resync_timer_fn(unsigned long data);
 
 // drbd_receiver.c
@@ -1564,15 +1566,24 @@ static inline void dec_local(drbd_dev* mdev)
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
 
+/* 
 static inline void inc_ap_bio(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->ap_bio_cnt);
 }
+*/
 
 static inline void dec_ap_bio(drbd_dev* mdev)
 {
-	if(atomic_dec_and_test(&mdev->ap_bio_cnt))
-		wake_up(&mdev->cstate_wait);
+	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
+
+	if(ap_bio == 0) wake_up(&mdev->cstate_wait);
+
+	if(inc_net(mdev)) {
+		if(ap_bio < mdev->net_conf->max_buffers) 
+			wake_up(&mdev->rq_wait);
+		dec_net(mdev);
+	}
 
 	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)>=0);
 }

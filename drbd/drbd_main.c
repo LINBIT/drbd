@@ -1978,12 +1978,12 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 	if (mdev->state.pdsk >= Inconsistent) /* implies cs >= Connected */ {
 		D_ASSERT(mdev->state.role == Primary);
 		if (test_and_clear_bit(UNPLUG_REMOTE,&mdev->flags)) {
-			/* add to the front of the data.work queue,
+			/* add to the data.work queue,
 			 * unless already queued.
 			 * XXX this might be a good addition to drbd_queue_work
 			 * anyways, to detect "double queuing" ... */
 			if (list_empty(&mdev->unplug_work.list))
-				_drbd_queue_work_front(&mdev->data.work,&mdev->unplug_work);
+				_drbd_queue_work(&mdev->data.work,&mdev->unplug_work);
 		}
 	}
 	spin_unlock_irq(&mdev->req_lock);
@@ -2064,6 +2064,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->md_sync_timer.data = (unsigned long) mdev;
 
 	init_waitqueue_head(&mdev->cstate_wait);
+	init_waitqueue_head(&mdev->rq_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
 

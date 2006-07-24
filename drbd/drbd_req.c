@@ -124,19 +124,17 @@ static unsigned int ar_hash_fn(drbd_dev *mdev, sector_t sector)
 
 int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 {
-	int rv;
-	struct bio *bio = req->master_bio;
-
-	req->w.cb = w_is_app_read;
+	req->w.cb = w_send_read_req;
 	spin_lock(&mdev->pr_lock);
 	INIT_HLIST_NODE(&req->colision);
 	hlist_add_head( &req->colision, mdev->app_reads_hash +
 			ar_hash_fn(mdev, drbd_req_get_sector(req) ));
 	spin_unlock(&mdev->pr_lock);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
-	rv=drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
-			      (unsigned long)req);
-	return rv;
+
+	drbd_queue_work(mdev, &mdev->data.work, &req->w);
+
+	return 1;
 }
 
 int drbd_pr_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
@@ -224,6 +222,13 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 {
 	drbd_request_t *req;
 	int local, remote;
+	int mxb;
+
+	mxb = 1000000; /* Artificial limit on open requests */
+	if(inc_net(mdev)) {
+		mxb = mdev->net_conf->max_buffers;
+		dec_net(mdev);
+	}
 
 	/* allocate outside of all locks
 	 */
@@ -236,10 +241,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		drbd_bio_IO_error(bio);
 		return 0;
 	}
-
-	/* XXX req->w.cb = something; drbd_queue_work() ....
-	 * Not yet.
-	 */
 
 	// down_read(mdev->device_lock);
 
@@ -321,7 +322,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
 	drbd_plug_device(mdev);
 
-	inc_ap_bio(mdev); // XXX maybe make this the first thing to do in drbd_make_request
+	// inc_ap_bio(mdev); do not allow more open requests than max_buffers!
+	wait_event( mdev->rq_wait,atomic_add_unless(&mdev->ap_bio_cnt,1,mxb) );
+
 	if (remote) {
 		/* either WRITE and Connected,
 		 * or READ, and no local disk,
@@ -368,7 +371,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			up(&mdev->data.mutex);
 		} else {
 			// this node is diskless ...
-			inc_ap_pending(mdev);
 			drbd_read_remote(mdev,req);
 		}
 	}
