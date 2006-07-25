@@ -775,8 +775,6 @@ struct Drbd_Conf {
 	struct drbd_barrier* oldest_barrier;
 	struct hlist_head * tl_hash;
 	unsigned int tl_hash_s;
-	struct task_struct *send_task; /* about pid calling drbd_send */
-	spinlock_t send_task_lock;
 	// sector_t rs_left;	   // blocks not up-to-date [unit BM_BLOCK_SIZE]
 	// moved into bitmap->bm_set
 	unsigned long rs_total;    // blocks to sync in this run [unit BM_BLOCK_SIZE]

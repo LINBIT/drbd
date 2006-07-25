@@ -301,8 +301,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (rw == WRITE && local)
 		drbd_al_begin_io(mdev, sector);
 
-	remote = remote && (mdev->state.pdsk == Inconsistent ||
-			    mdev->state.pdsk == UpToDate);
+	remote = remote && (mdev->state.pdsk == UpToDate || 
+			    ( mdev->state.pdsk == Inconsistent && 
+			      mdev->state.conn >= Connected ) );
 
 	D_ASSERT( (rw != WRITE) || (remote == (mdev->state.conn >= Connected)) );
 

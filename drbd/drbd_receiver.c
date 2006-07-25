@@ -2066,6 +2066,7 @@ STATIC int receive_req_state(drbd_dev *mdev, Drbd_Header *h)
 	if (test_bit(UNIQUE,&mdev->flags)) drbd_state_unlock(mdev);
 
 	drbd_send_sr_reply(mdev,rv);
+	drbd_md_sync(mdev);
 
 	return TRUE;
 }
@@ -2432,20 +2433,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 
-	while(down_trylock(&mdev->data.mutex)) {
-		struct task_struct *task;
-		spin_lock(&mdev->send_task_lock);
-		if((task=mdev->send_task)) {
-			force_sig(DRBD_SIG, task);
-			spin_unlock(&mdev->send_task_lock);
-			down(&mdev->data.mutex);
-			break;
-		} else {
-			spin_unlock(&mdev->send_task_lock);
-			set_current_state(TASK_INTERRUPTIBLE);
-			schedule_timeout(HZ / 10);
-		}
-	}
+	down(&mdev->data.mutex);
 	/* By grabbing the sock_mutex we make sure that no one
 	   uses the socket right now. */
 	drbd_free_sock(mdev);

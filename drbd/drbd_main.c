@@ -1212,29 +1212,6 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 }
 
-inline sigset_t drbd_block_all_signals(void)
-{
-	unsigned long flags;
-	sigset_t oldset;
-	LOCK_SIGMASK(current,flags);
-	oldset = current->blocked;
-	sigfillset(&current->blocked);
-	RECALC_SIGPENDING();
-	UNLOCK_SIGMASK(current,flags);
-	return oldset;
-}
-
-inline void restore_old_sigset(sigset_t oldset)
-{
-	unsigned long flags;
-	LOCK_SIGMASK(current,flags);
-	// _never_ propagate this to anywhere...
-	sigdelset(&current->pending.signal, DRBD_SIG);
-	current->blocked = oldset;
-	RECALC_SIGPENDING();
-	UNLOCK_SIGMASK(current,flags);
-}
-
 /* the appropriate socket mutex must be held already */
 int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h,
@@ -1267,14 +1244,10 @@ int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 		  Drbd_Packet_Cmd cmd, Drbd_Header* h, size_t size)
 {
 	int ok = 0;
-	sigset_t old_blocked;
 	struct socket *sock;
 
 	if (use_data_socket) {
 		down(&mdev->data.mutex);
-		spin_lock(&mdev->send_task_lock);
-		mdev->send_task=current;
-		spin_unlock(&mdev->send_task_lock);
 		sock = mdev->data.socket;
 	} else {
 		down(&mdev->meta.mutex);
@@ -1284,15 +1257,10 @@ int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 	/* drbd_disconnect() could have called drbd_free_sock()
 	 * while we were waiting in down()... */
 	if (likely(sock != NULL)) {
-		old_blocked = drbd_block_all_signals();
 		ok = _drbd_send_cmd(mdev, sock, cmd, h, size, 0);
-		restore_old_sigset(old_blocked);
 	}
 
 	if (use_data_socket) {
-		spin_lock(&mdev->send_task_lock);
-		mdev->send_task=NULL;
-		spin_unlock(&mdev->send_task_lock);
 		up(&mdev->data.mutex);
 	} else
 		up(&mdev->meta.mutex);
@@ -1302,7 +1270,6 @@ int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 		   size_t size)
 {
-	sigset_t old_blocked;
 	Drbd_Header h;
 	int ok;
 
@@ -1311,20 +1278,10 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 	h.length  = cpu_to_be16(size);
 
 	down(&mdev->data.mutex);
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=current;
-	spin_unlock(&mdev->send_task_lock);
-
-	old_blocked = drbd_block_all_signals();
 
 	ok = ( sizeof(h) == drbd_send(mdev,mdev->data.socket,&h,sizeof(h),0) );
 	ok = ok && ( size == drbd_send(mdev,mdev->data.socket,data,size,0) );
 
-	restore_old_sigset(old_blocked);
-
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=NULL;
-	spin_unlock(&mdev->send_task_lock);
 	up(&mdev->data.mutex);
 
 	return ok;
@@ -1649,11 +1606,6 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	}
 #endif
 
-
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=current;
-	spin_unlock(&mdev->send_task_lock);
-
 	/* PARANOIA. if this ever triggers,
 	 * something in the layers above us is really kaputt.
 	 *one roundtrip later:
@@ -1696,10 +1648,6 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	set_fs(oldfs);
 
   out:
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=NULL;
-	spin_unlock(&mdev->send_task_lock);
-
 	ok = (len == 0);
 	if (likely(ok))
 		mdev->send_cnt += size>>9;
@@ -1726,15 +1674,10 @@ STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 {
 	int ok=1;
-	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 	unsigned int dp_flags=0;
 
-	old_blocked = drbd_block_all_signals();
 	down(&mdev->data.mutex);
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=current;
-	spin_unlock(&mdev->send_task_lock);
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
@@ -1760,12 +1703,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		}
 	}
 
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=NULL;
-	spin_unlock(&mdev->send_task_lock);
-
 	up(&mdev->data.mutex);
-	restore_old_sigset(old_blocked);
 	return ok;
 }
 
@@ -1777,7 +1715,6 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 		    struct Tl_epoch_entry *e)
 {
 	int ok;
-	sigset_t old_blocked;
 	Drbd_Data_Packet p;
 
 	p.head.magic   = BE_DRBD_MAGIC;
@@ -1793,21 +1730,13 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
 	 * in response to ioctl or module unload.
 	 */
-	old_blocked = drbd_block_all_signals();
 	down(&mdev->data.mutex);
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=current;
-	spin_unlock(&mdev->send_task_lock);
 
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 	if (ok) ok = _drbd_send_zc_bio(mdev,e->private_bio);
 
-	spin_lock(&mdev->send_task_lock);
-	mdev->send_task=NULL;
-	spin_unlock(&mdev->send_task_lock);
 	up(&mdev->data.mutex);
-	restore_old_sigset(old_blocked);
 	return ok;
 }
 
@@ -2036,7 +1965,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	spin_lock_init(&mdev->ee_lock);
 	spin_lock_init(&mdev->req_lock);
 	spin_lock_init(&mdev->pr_lock);
-	spin_lock_init(&mdev->send_task_lock);
 	spin_lock_init(&mdev->peer_seq_lock);
 
 	INIT_LIST_HEAD(&mdev->active_ee);
@@ -2142,7 +2070,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->rs_mark_left =
 	mdev->rs_mark_time = 0;
 	mdev->net_conf     = NULL;
-	mdev->send_task    = NULL;
 	drbd_set_my_capacity(mdev,0);
 	drbd_bm_resize(mdev,0);
 
