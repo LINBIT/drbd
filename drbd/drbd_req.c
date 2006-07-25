@@ -355,7 +355,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			}
 
 			if (mdev->net_conf->two_primaries) {
-				if(ee_have_write(mdev,req)) {
+				if(ee_have_write(mdev,req)) { // tl_add() here
 					WARN("Concurrent write! [DISCARD L] sec=%lu\n",
 					     (unsigned long)sector);
 					dec_local(mdev);

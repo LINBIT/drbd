@@ -949,6 +949,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 			clear_bit(BME_NO_WRITES,&bm_ext->flags);
 			lc_del(mdev->resync,&bm_ext->lce);
 		}
+		mdev->resync->used=0;
 		dec_local(mdev);
 	}
 	atomic_set(&mdev->resync_locked,0);
