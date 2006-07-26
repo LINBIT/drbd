@@ -1704,10 +1704,6 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
 	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 	if(ok) {
-		spin_lock_irq(&mdev->req_lock);
-		req->rq_status |= RQ_DRBD_ON_WIRE;
-		spin_unlock_irq(&mdev->req_lock);
-
 		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 			ok = _drbd_send_bio(mdev,req->master_bio);
 		} else {
