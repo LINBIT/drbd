@@ -1079,9 +1079,15 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		lc_free(mdev->act_log); mdev->act_log = NULL;
 	}
 
+	if ( os.disk == Diskless && os.conn == StandAlone &&
+	     (ns.disk > Diskless || ns.conn > StandAlone) ) {
+		drbd_thread_start(&mdev->worker);
+	}
+
 	/* it feels better to have the module_put last ... */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
+		drbd_thread_stop(&mdev->worker);
 		drbd_mdev_cleanup(mdev);
 		module_put(THIS_MODULE);
 	}
@@ -2218,7 +2224,6 @@ static void __exit drbd_cleanup(void)
 				up(&mdev->device_mutex);
 				drbd_sync_me(mdev);
 				drbd_thread_stop(&mdev->receiver);
-				drbd_thread_stop(&mdev->worker);
 			}
 		}
 

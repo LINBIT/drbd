@@ -2430,7 +2430,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
-	drbd_thread_stop_nowait(&mdev->worker);
 	drbd_thread_stop(&mdev->asender);
 
 	down(&mdev->data.mutex);
@@ -2440,7 +2439,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	up(&mdev->data.mutex);
 
 	drbd_fail_pending_reads(mdev);
-	drbd_thread_stop(&mdev->worker);
 	// now worker is dead and read_ee is empty
 	drbd_rs_cancel_all(mdev);
 
@@ -2498,10 +2496,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	if (get_t_state(&mdev->receiver) == Exiting) {
 		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_start(&mdev->worker);
 	} else {
 		drbd_force_state(mdev,NS(conn,Unconnected));
-		drbd_thread_start(&mdev->worker);
 	}
 
 	if ( mdev->state.role == Primary ) {		

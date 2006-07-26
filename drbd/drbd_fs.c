@@ -538,7 +538,6 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		drbd_send_sizes(mdev);  // to start sync...
 		drbd_send_uuids(mdev);
 		drbd_send_state(mdev);
-		drbd_thread_start(&mdev->worker);
 	} else {
 		spin_lock_irq(&mdev->req_lock);
 		os = mdev->state;
@@ -577,9 +576,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		spin_unlock_irq(&mdev->req_lock);
 		after_state_ch(mdev,os,ns,ChgStateVerbose);
 
-		if(rv >= SS_Success ) {
-			drbd_thread_start(&mdev->worker);
-		} else {
+		if(rv < SS_Success ) {
 			drbd_bm_unlock(mdev);
 			goto  release_bdev3_fail_ioctl;
 		}
@@ -789,7 +786,6 @@ FIXME LGE
 	}
 	mdev->cram_hmac_tfm = tfm;
 
-	drbd_thread_start(&mdev->worker);
 	if( drbd_request_state(mdev,NS(conn,Unconnected)) >= SS_Success ) {
 		drbd_thread_start(&mdev->receiver);
 	}
