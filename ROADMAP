@@ -842,36 +842,3 @@ plus-banches:
 6 Have protocol version 74 available in drbd-0.8, to allow rolling 
   upgrades
 
-
-
-
-Currently known bug(s):
------------------------
-The client (kjournald) hangs in drbd_al_begin_io(). It waits for
-the completion of w_al_write_transaction(). That will not happen
-since the worker exited alrady.
-
-The receiver hangs in drbd_disconnect(), actuall at this line:
-wait_event( mdev->cstate_wait, atomic_read(&mdev->ap_pending_cnt)==0 );
-
-BTW, mdev->ap_pending_cnt is -1. 
-
-The counter could got below zero, since the requests gets onto the
-TL first, and then it gets queued on the worker's queue.
-
-The the disconnect code comes in, and decreases mdev->ap_pending_cnt
-for each entry in the TL.
-
-The entry on the worker's queue is still there and would increase 
-the counter again, but the worker is dead by now.
-
-Solution:
-
- * Mark requests as they are moved from the queue to the socket.
-   The tl_clear() function should only decrease mdev->ap_pending_cnt
-   for requests that where already on the socket...
- * The worker should not exit upon loss of connection.
-
-
-
-

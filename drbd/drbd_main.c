@@ -337,8 +337,6 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
 	hlist_del(&req->colision);
 	// req->barrier->n_req--; // Barrier migh be free'ed already!
 
-	if( req->rq_status & RQ_DRBD_RECVW ) wake_up(&mdev->cstate_wait);
-
 	spin_unlock_irqrestore(&mdev->tl_lock,flags);
 	return r;
 }
@@ -365,9 +363,13 @@ void tl_clear(drbd_dev *mdev)
 			// bi_size and bi_sector are modified in bio_endio!
 			sector = drbd_req_get_sector(r);
 			size   = drbd_req_get_size(r);
+			
+			if( r->rq_status & RQ_DRBD_ON_WIRE &&
+			    mdev->net_conf->wire_protocol != DRBD_PROT_A ) {
+				dec_ap_pending(mdev);
+			}
+
 			if( !(r->rq_status & RQ_DRBD_SENT) ) {
-				if(mdev->net_conf->wire_protocol != DRBD_PROT_A )
-					dec_ap_pending(mdev);
 				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
 				goto mark;
 			}
@@ -1702,6 +1704,10 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
 	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 	if(ok) {
+		spin_lock_irq(&mdev->req_lock);
+		req->rq_status |= RQ_DRBD_ON_WIRE;
+		spin_unlock_irq(&mdev->req_lock);
+
 		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 			ok = _drbd_send_bio(mdev,req->master_bio);
 		} else {

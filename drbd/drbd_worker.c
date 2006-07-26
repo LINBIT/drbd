@@ -561,21 +561,24 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_request_t *req = (drbd_request_t *)w;
 	int ok;
 
-	inc_ap_pending(mdev); // Right here, since tl_clear() will decrease it
-
 	if (unlikely(cancel)) { 
 		/* Nothing to do, here. tl_clear() does the work. */
 		return 1;
 	}
 
 	ok = drbd_send_dblock(mdev,req);
-	if (!ok) {
+	if (ok) {
+		inc_ap_pending(mdev);
+
+		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
+			dec_ap_pending(mdev);
+			drbd_end_req(req, RQ_DRBD_SENT, 1, 
+				     drbd_req_get_sector(req));
+		}
+	} else {
 		if (mdev->state.conn >= Connected) 
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
 		drbd_thread_restart_nowait(&mdev->receiver);
-	} else if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
-		dec_ap_pending(mdev);
-		drbd_end_req(req, RQ_DRBD_SENT, 1, drbd_req_get_sector(req));
 	}
 
 	return ok;
