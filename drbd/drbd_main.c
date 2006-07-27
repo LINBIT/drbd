@@ -349,6 +349,8 @@ void tl_clear(drbd_dev *mdev)
 	sector_t sector;
 	unsigned int size;
 
+	WARN("tl_clear()\n");
+
 	spin_lock_irq(&mdev->tl_lock);
 
 	b=mdev->oldest_barrier;

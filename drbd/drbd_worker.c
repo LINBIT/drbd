@@ -656,15 +656,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
  */
 int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
-	enum fencing_policy fp;
-
 	D_ASSERT(cancel);
-
-	fp = DontCare;
-	if(inc_local(mdev)) {
-		fp = mdev->bc->fencing;
-		dec_local(mdev);
-	}
 
 	down(&mdev->data.mutex);
 	/* By grabbing the sock_mutex we make sure that no one
@@ -687,7 +679,7 @@ int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	// primary
 	clear_bit(ISSUE_BARRIER,&mdev->flags);
 
-	if(fp != Stonith ) {
+	if(!mdev->state.susp) {
 		tl_clear(mdev);
 		D_ASSERT(mdev->oldest_barrier->n_req == 0);
 
