@@ -903,7 +903,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			ascw->ns = ns;
 			ascw->flags = flags;
 			ascw->w.cb = w_after_state_ch;
-			_drbd_queue_work_front(&mdev->data.work,&ascw->w);
+			_drbd_queue_work(&mdev->data.work,&ascw->w);
 		} else {
 			WARN("Could not kmalloc an ascw\n");
 		}
@@ -1022,12 +1022,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
 	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
 
-		/* avoid races with set_in_sync
-		 * for successfull mirrored writes
-		 */
-		wait_event(mdev->cstate_wait,
-			   atomic_read(&mdev->ap_bio_cnt)==0);
-
 		drbd_bm_lock(mdev); // racy...
 
 		drbd_md_set_flag(mdev,MDF_FullSync);
@@ -1079,6 +1073,11 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
 		lc_free(mdev->resync);  mdev->resync = NULL;
 		lc_free(mdev->act_log); mdev->act_log = NULL;
+	}
+
+	if ( os.conn != Unconnected && ns.conn == Unconnected ) {
+		drbd_thread_stop(&mdev->receiver);
+		drbd_thread_start(&mdev->receiver);
 	}
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
@@ -1187,7 +1186,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	}
 
 	if (thi->t_state != ns) {
-		ERR_IF (thi->task == NULL) {
+		if (thi->task == NULL) {
 			spin_unlock(&thi->t_lock);
 			return;
 		}

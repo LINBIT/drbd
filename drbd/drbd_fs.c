@@ -786,9 +786,7 @@ FIXME LGE
 	}
 	mdev->cram_hmac_tfm = tfm;
 
-	if( drbd_request_state(mdev,NS(conn,Unconnected)) >= SS_Success ) {
-		drbd_thread_start(&mdev->receiver);
-	}
+	drbd_request_state(mdev,NS(conn,Unconnected));
 
 	return 0;
 

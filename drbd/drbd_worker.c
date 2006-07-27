@@ -613,6 +613,129 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
+STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
+{
+	struct hlist_head *slot;
+	struct hlist_node *n;
+	drbd_request_t * req;
+	struct list_head *le;
+	struct bio *bio;
+	LIST_HEAD(workset);
+	int i;
+
+	/*
+	 * Application READ requests
+	 */
+	spin_lock(&mdev->pr_lock);
+	for(i=0;i<APP_R_HSIZE;i++) {
+		slot = mdev->app_reads_hash+i;
+		hlist_for_each_entry(req, n, slot, colision) {
+			list_add(&req->w.list, &workset);
+		}
+	}
+	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
+	spin_unlock(&mdev->pr_lock);
+
+	while(!list_empty(&workset)) {
+		le = workset.next;
+		req = list_entry(le, drbd_request_t, w.list);
+		list_del(le);
+
+		bio = req->master_bio;
+
+		drbd_bio_IO_error(bio);
+		dec_ap_bio(mdev);
+		dec_ap_pending(mdev);
+
+		drbd_req_free(req);
+	}
+}
+
+/**
+ * w_disconnect clean up everything, and restart the receiver.
+ */
+int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	enum fencing_policy fp;
+
+	D_ASSERT(cancel);
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->fencing;
+		dec_local(mdev);
+	}
+
+	down(&mdev->data.mutex);
+	/* By grabbing the sock_mutex we make sure that no one
+	   uses the socket right now. */
+	drbd_free_sock(mdev);
+	up(&mdev->data.mutex);
+
+	drbd_fail_pending_reads(mdev);
+	drbd_rs_cancel_all(mdev);
+
+	// Receiving side (may be primary, in case we had two primaries)
+	spin_lock_irq(&mdev->ee_lock);
+	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
+	_drbd_clear_done_ee(mdev);
+	mdev->epoch_size = 0;
+	spin_unlock_irq(&mdev->ee_lock);
+
+	// primary
+	clear_bit(ISSUE_BARRIER,&mdev->flags);
+
+	if(fp != Stonith ) {
+		tl_clear(mdev);
+		D_ASSERT(mdev->oldest_barrier->n_req == 0);
+
+		if(atomic_read(&mdev->ap_pending_cnt)) {
+			ERR("ap_pending_cnt = %d\n",
+			    atomic_read(&mdev->ap_pending_cnt));
+			atomic_set(&mdev->ap_pending_cnt,0);
+		}
+	}
+
+	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
+	D_ASSERT(list_empty(&mdev->read_ee));
+	D_ASSERT(list_empty(&mdev->active_ee)); // done here
+	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
+	D_ASSERT(list_empty(&mdev->done_ee)); // done here
+
+	mdev->rs_total=0;
+
+	if(atomic_read(&mdev->unacked_cnt)) {
+		ERR("unacked_cnt = %d\n",atomic_read(&mdev->unacked_cnt));
+		atomic_set(&mdev->unacked_cnt,0);
+	}
+
+	/* We do not have data structures that would allow us to
+	   get the rs_pending_cnt down to 0 again.
+	   * On SyncTarget we do not have any data structures describing
+	     the pending RSDataRequest's we have sent.
+	   * On SyncSource there is no data structure that tracks
+	     the RSDataReply blocks that we sent to the SyncTarget.
+	   And no, it is not the sum of the reference counts in the
+	   resync_LRU. The resync_LRU tracks the whole operation including
+           the disk-IO, while the rs_pending_cnt only tracks the blocks
+	   on the fly. */
+	atomic_set(&mdev->rs_pending_cnt,0);
+	wake_up(&mdev->cstate_wait);
+
+	if ( mdev->p_uuid ) {
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = NULL;
+	}
+
+	INFO("Connection closed\n");
+
+	if(w) kfree(w);
+
+	return 1;
+}
+
 STATIC void drbd_global_lock(void)
 {
 	int i;

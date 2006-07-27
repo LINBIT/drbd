@@ -372,7 +372,7 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 }
 
 /* clean-up helper for drbd_disconnect */
-STATIC void _drbd_clear_done_ee(drbd_dev *mdev)
+void _drbd_clear_done_ee(drbd_dev *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry *e;
@@ -616,7 +616,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	if (err) {
 		ERR("Unable to bind sock2 (%d)\n", err);
 		sock_release(sock2);
-		drbd_force_state(mdev,NS(conn,Unconnected));
+		drbd_force_state(mdev,NS(conn,StandAlone));
 		return NULL;
 	}
 
@@ -721,7 +721,7 @@ int drbd_connect(drbd_dev *mdev)
 			}
 		}
 
-		if(mdev->state.conn == Unconnected) return -1;
+		if(mdev->state.conn == StandAlone) return -1;
 		if(signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
@@ -2218,44 +2218,6 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	return ok;
 }
 
-STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
-{
-	struct hlist_head *slot;
-	struct hlist_node *n;
-	drbd_request_t * req;
-	struct list_head *le;
-	struct bio *bio;
-	LIST_HEAD(workset);
-	int i;
-
-	/*
-	 * Application READ requests
-	 */
-	spin_lock(&mdev->pr_lock);
-	for(i=0;i<APP_R_HSIZE;i++) {
-		slot = mdev->app_reads_hash+i;
-		hlist_for_each_entry(req, n, slot, colision) {
-			list_add(&req->w.list, &workset);
-		}
-	}
-	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
-	spin_unlock(&mdev->pr_lock);
-
-	while(!list_empty(&workset)) {
-		le = workset.next;
-		req = list_entry(le, drbd_request_t, w.list);
-		list_del(le);
-
-		bio = req->master_bio;
-
-		drbd_bio_IO_error(bio);
-		dec_ap_bio(mdev);
-		dec_ap_pending(mdev);
-
-		drbd_req_free(req);
-	}
-}
-
 STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 {
 	// TODO zero copy sink :)
@@ -2422,7 +2384,11 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	enum fencing_policy fp;
 
+	struct drbd_work *disconnect_work;
+
 	D_ASSERT(mdev->state.conn < Connected);
+
+	drbd_thread_stop(&mdev->asender);
 
 	fp = DontCare;
 	if(inc_local(mdev)) {
@@ -2430,75 +2396,17 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
-	drbd_thread_stop(&mdev->asender);
 
-	down(&mdev->data.mutex);
-	/* By grabbing the sock_mutex we make sure that no one
-	   uses the socket right now. */
-	drbd_free_sock(mdev);
-	up(&mdev->data.mutex);
-
-	drbd_fail_pending_reads(mdev);
-	// now worker is dead and read_ee is empty
-	drbd_rs_cancel_all(mdev);
-
-	// Receiving side (may be primary, in case we had two primaries)
-	spin_lock_irq(&mdev->ee_lock);
-	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
-	_drbd_clear_done_ee(mdev);
-	mdev->epoch_size = 0;
-	spin_unlock_irq(&mdev->ee_lock);
-
-	// primary
-	clear_bit(ISSUE_BARRIER,&mdev->flags);
-
-	if(fp != Stonith ) {
-		tl_clear(mdev);
-		wait_event( mdev->cstate_wait, 
-			    atomic_read(&mdev->ap_pending_cnt)==0 );
-		D_ASSERT(mdev->oldest_barrier->n_req == 0);
-
-		if(atomic_read(&mdev->ap_pending_cnt)) {
-			ERR("ap_pending_cnt = %d\n",
-			    atomic_read(&mdev->ap_pending_cnt));
-			atomic_set(&mdev->ap_pending_cnt,0);
-		}
-	}
-
-	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
-	D_ASSERT(list_empty(&mdev->read_ee)); // done by termination of worker
-	D_ASSERT(list_empty(&mdev->active_ee)); // done here
-	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
-	D_ASSERT(list_empty(&mdev->done_ee)); // done here
-
-	mdev->rs_total=0;
-
-	if(atomic_read(&mdev->unacked_cnt)) {
-		ERR("unacked_cnt = %d\n",atomic_read(&mdev->unacked_cnt));
-		atomic_set(&mdev->unacked_cnt,0);
-	}
-
-	/* We do not have data structures that would allow us to
-	   get the rs_pending_cnt down to 0 again.
-	   * On SyncTarget we do not have any data structures describing
-	     the pending RSDataRequest's we have sent.
-	   * On SyncSource there is no data structure that tracks
-	     the RSDataReply blocks that we sent to the SyncTarget.
-	   And no, it is not the sum of the reference counts in the
-	   resync_LRU. The resync_LRU tracks the whole operation including
-           the disk-IO, while the rs_pending_cnt only tracks the blocks
-	   on the fly. */
-	atomic_set(&mdev->rs_pending_cnt,0);
-
-	wake_up(&mdev->cstate_wait);
-
-	if (get_t_state(&mdev->receiver) == Exiting) {
-		drbd_force_state(mdev,NS(conn,StandAlone));
+	disconnect_work = kmalloc(sizeof(struct drbd_work),GFP_KERNEL);
+	if(disconnect_work) {
+		disconnect_work->cb = w_disconnect;
+		drbd_queue_work(mdev,&mdev->data.work,disconnect_work);
 	} else {
-		drbd_force_state(mdev,NS(conn,Unconnected));
+		WARN("kmalloc failed, taking messy shortcut.\n");
+		w_disconnect(mdev,NULL,1);
 	}
+
+	drbd_md_sync(mdev);
 
 	if ( mdev->state.role == Primary ) {		
 		if( fp >= Resource &&
@@ -2508,13 +2416,14 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		}
 	}
 
-	if ( mdev->p_uuid ) {
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = NULL;
+	spin_lock_irq(&mdev->req_lock);
+	if ( mdev->state.conn > Unconnected ) {
+		// Do not restart in case we are StandAlone
+		_drbd_set_state(mdev, _NS(conn,Unconnected), ScheduleAfter);
 	}
+	spin_unlock_irq(&mdev->req_lock);
 
 	drbd_md_sync(mdev);
-	INFO("Connection lost.\n");
 }
 
 /*
@@ -2757,7 +2666,6 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 
 int drbdd_init(struct Drbd_thread *thi)
 {
-	enum disconnect_handler on_disconnect = Reconnect;
 	drbd_dev *mdev = thi->mdev;
 	int minor = (int)(mdev-drbd_conf);
 	int h;
@@ -2766,48 +2674,28 @@ int drbdd_init(struct Drbd_thread *thi)
 
 	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
 
-	while (TRUE) {
+	do {
 		h = drbd_connect(mdev);
-		if (h <= 0) {
-			/* FIXME DISKLESS StandAlone
-			 * does not make much sense...
-			 * drbd_disconnect should set cstate properly...
-			 */
+		if (h == 0) {
 			drbd_disconnect(mdev);
-			if (h == 0) {
-				schedule_timeout(HZ);
-				continue;
-			}
-
+			schedule_timeout(HZ);
+		}
+		if( h < 0 ) {
 			WARN("Discarding network configuration.\n");
 			drbd_force_state(mdev,NS(conn,StandAlone));
-			break;
 		}
-		if (get_t_state(thi) == Exiting) break;
+	} while ( h == 0 );
+
+	if( h > 0 ) {
 		if(inc_net(mdev)) {
 			drbdd(mdev);
-			on_disconnect = mdev->net_conf->on_disconnect;
 			dec_net(mdev);
-		}
-		drbd_disconnect(mdev);
-		if (get_t_state(thi) == Exiting) break;
-		if(on_disconnect == DropNetConf) {
-			drbd_force_state(mdev,NS(conn,StandAlone));
-			break;
-		}
-		else {
-			if (signal_pending(current)) {
-				flush_signals(current);
-			}
-			spin_lock(&thi->t_lock);
-			D_ASSERT(thi->t_state == Restarting);
-			thi->t_state = Running;
-			spin_unlock(&thi->t_lock);
 		}
 	}
 
-	INFO("receiver terminated\n");
+	drbd_disconnect(mdev);
 
+	INFO("receiver terminated\n");
 	return 0;
 }
 

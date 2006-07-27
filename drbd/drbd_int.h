@@ -1138,6 +1138,7 @@ extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
 extern int w_send_dblock         (drbd_dev *, struct drbd_work *, int);
 extern int w_send_barrier        (drbd_dev *, struct drbd_work *, int);
 extern int w_send_read_req       (drbd_dev *, struct drbd_work *, int);
+extern int w_disconnect          (drbd_dev *, struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 
@@ -1151,6 +1152,7 @@ extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
 extern void drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void _drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void drbd_set_recv_tcq(drbd_dev *mdev, int tcq_enabled);
+extern void _drbd_clear_done_ee(drbd_dev *mdev);
 
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
