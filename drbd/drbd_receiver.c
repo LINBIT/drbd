@@ -2396,6 +2396,16 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
+	// Receiving side (may be primary, in case we had two primaries)
+	spin_lock_irq(&mdev->ee_lock);
+	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
+	_drbd_clear_done_ee(mdev);
+	mdev->epoch_size = 0;
+	spin_unlock_irq(&mdev->ee_lock);
+	// Needs to happen before we schedule the disconnect work callback,
+	// Since they might have something for the worker's queue as well.
 
 	disconnect_work = kmalloc(sizeof(struct drbd_work),GFP_KERNEL);
 	if(disconnect_work) {

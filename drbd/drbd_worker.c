@@ -667,15 +667,6 @@ int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	drbd_fail_pending_reads(mdev);
 	drbd_rs_cancel_all(mdev);
 
-	// Receiving side (may be primary, in case we had two primaries)
-	spin_lock_irq(&mdev->ee_lock);
-	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
-	_drbd_clear_done_ee(mdev);
-	mdev->epoch_size = 0;
-	spin_unlock_irq(&mdev->ee_lock);
-
 	// primary
 	clear_bit(ISSUE_BARRIER,&mdev->flags);
 
