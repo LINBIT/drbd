@@ -1067,9 +1067,9 @@ int m_strsep_u64(char **s, u64 *val)
 	return 0;
 }
 
-int m_strsep_bit(char **s, int *val, int mask)
+int m_strsep_bit(char **s, u32 *val, int mask)
 {
-	int d;
+	u32 d;
 	int rv;
 
 	d = *val & mask ? 1 : 0;

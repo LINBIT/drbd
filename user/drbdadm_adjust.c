@@ -139,7 +139,7 @@ static int proto_equal(struct d_resource* conf, struct d_resource* running)
 	return !strcmp(conf->protocol, running->protocol);
 }
 
-static int dev_eq(char* device_name, int g_major, int g_minor)
+static int dev_eq(char* device_name, unsigned int g_major, unsigned int g_minor)
 {
 	struct stat sb;
 	

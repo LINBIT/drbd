@@ -101,6 +101,7 @@ typedef struct YYSTYPE {
 #define YYSTYPE_IS_TRIVIAL 1
 
 extern yystype yylval;
+extern char* yytext;
 
 /* avoid compiler warnings about implicit declaration */
 int yylex(void);

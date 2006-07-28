@@ -33,7 +33,7 @@ enum {
 #define EXIT_ON_CONFLICT 1
 
 /* for verify_ips(): are not verifyable ips fatal? */
-#define INVALID_IP_IS_INVALID_CONF 0
+#define INVALID_IP_IS_INVALID_CONF 1
 
 enum usage_count_type {
   UC_YES,

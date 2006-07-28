@@ -1247,7 +1247,7 @@ int cmd_disk_size(int drbd_fd,char** argv,int argc,struct option *options)
   return 0;
 }
 
-const char* guess_dev_name(const char* dir,int g_major,int g_minor)
+const char* guess_dev_name(const char* dir,unsigned int g_major,unsigned int g_minor)
 {
   DIR* device_dir;
   struct dirent* dde;

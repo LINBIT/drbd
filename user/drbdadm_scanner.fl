@@ -20,8 +20,6 @@ static void unescape(void);
 #define YY_NO_UNPUT 1
 static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
-int skip_level=0;
-
 %}
 
 %option noyywrap
@@ -35,12 +33,10 @@ DQSTRING	\"[^\"\\\n]{0,255}\"
 STRING		[a-zA-Z0-9/._-]{1,80}
 LONG_STRING	[a-zA-Z0-9/._-]{81}
 
-%x in_string id skip
-
 %%
 
 \n			{ line++; 				}
-#[^\n]*			/* ignore comments */
+\#.*			/* ignore comments */
 {WS}			/* ignore whitespaces */
 {OPCHAR}		{ DP; return yytext[0];			}
 on			{ DP; return TK_ON;			}
@@ -101,7 +97,7 @@ outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
 {DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
 {STRING}		{ DP; CP; return TK_STRING;		}
 {LONG_STRING}		{ long_string( yylval.txt ); 		}
-[^\n]			{ DP; return TK_ELSE;			}
+.			{ DP; return TK_ELSE;			}
 
 %%
 

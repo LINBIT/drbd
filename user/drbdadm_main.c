@@ -97,6 +97,7 @@ static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
+static int sh_ip(struct d_resource* ,const char* );
 static int sh_ll_dev(struct d_resource* ,const char* );
 static int sh_md_dev(struct d_resource* ,const char* );
 static int sh_md_idx(struct d_resource* ,const char* );
@@ -115,6 +116,7 @@ struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 char *config_file = NULL;
 struct d_resource* config = NULL;
 struct d_resource* common = NULL;
+struct ifi_info *my_ifis = NULL;
 int nr_resources;
 int highest_minor;
 int config_valid=1;
@@ -183,13 +185,13 @@ struct option admopt[] = {
 
 struct adm_cmd cmds[] = {
 /*   name, function,                  show, needs res, verify_ips */
-  { "attach",            adm_attach,    1,1,1 },
-  { "detach",            adm_generic_s, 1,1,1 },
+  { "attach",            adm_attach,    1,1,0 },
+  { "detach",            adm_generic_s, 1,1,0 },
   { "connect",           adm_connect,   1,1,1 },
   { "disconnect",        adm_generic_s, 1,1,0 },
   { "up",                adm_up,        1,1,1 },
   { "down",              adm_generic_s, 1,1,0 },
-  { "primary",           adm_generic_s, 1,1,1 },
+  { "primary",           adm_generic_s, 1,1,0 },
   { "secondary",         adm_generic_s, 1,1,1 },
   { "invalidate",        adm_generic_l, 1,1,1 },
   { "invalidate_remote", adm_generic_l, 1,1,1 },
@@ -217,6 +219,7 @@ struct adm_cmd cmds[] = {
   { "sh-ll-dev",         sh_ll_dev,     2,1,0 },
   { "sh-md-dev",         sh_md_dev,     2,1,0 },
   { "sh-md-idx",         sh_md_idx,     2,1,0 },
+  { "sh-ip",             sh_ip,         0,1,0 },
   { "pri-on-incon-degr", adm_khelper,   3,1,0 },
   { "pri-lost-after-sb", adm_khelper,   3,1,0 },
   { "outdate-peer",      adm_khelper,   3,1,0 },
@@ -356,6 +359,13 @@ static int sh_dev(struct d_resource* res,const char* unused __attribute((unused)
   return 0;
 }
 
+static int sh_ip(struct d_resource* res,const char* unused __attribute((unused)))
+{
+  printf("%s\n",res->me->address);
+
+  return 0;
+}
+
 static int sh_ll_dev(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printf("%s\n",res->me->disk);
@@ -417,6 +427,7 @@ static void free_options(struct d_option* opts)
   }
 }
 
+static void free_ifi_info(struct ifi_info *ifihead);
 static void free_config(struct d_resource* res)
 {
   struct d_resource *f,*t;
@@ -440,6 +451,7 @@ static void free_config(struct d_resource* res)
     free_options(common->handlers);
     free(common);
   }
+  if (my_ifis) free_ifi_info(my_ifis);
 }
 
 static void expand_opts(struct d_option* co, struct d_option** opts)
@@ -1278,28 +1290,28 @@ static struct ifi_info* get_ifi_info(int family)
   return ifihead;
 }
 
-void verify_ips(struct d_resource* res)
+int have_ip(const char *ip)
 {
   struct ifi_info *ifi, *ifihead;
-  int family, valid = 0;
+  int family;
   uint32_t addr = 0;
   struct in_addr sin_addr;
-  const char *my_ip;
 
-  my_ip = res->me->address;
-  sin_addr.s_addr = inet_addr(my_ip);
+  sin_addr.s_addr = inet_addr(ip);
 
-  /* does DRBD support inet6? */
+  /* FIXME make DRBD support inet6 */
   family = AF_INET;
+  if (!my_ifis) my_ifis = get_ifi_info(family);
     
-  for (ifihead = ifi = get_ifi_info(family); ifi != NULL; ifi = ifi->ifi_next) {        
+  for (ifihead = ifi = my_ifis; ifi != NULL; ifi = ifi->ifi_next) {
     switch (family) {
     case AF_INET: {
       struct sockaddr_in * sin = (struct sockaddr_in *)ifi->ifi_addr;
       addr = sin->sin_addr.s_addr;
 
-      if (addr == sin_addr.s_addr) /* loop a few times needlessly */
-	valid = 1;
+      if (addr == sin_addr.s_addr) {
+	return 1;
+      }
       break;
     }
     default:
@@ -1307,15 +1319,26 @@ void verify_ips(struct d_resource* res)
     }
   }
 
-  free_ifi_info(ifihead);
+  return 0;
+}
 
-  if (valid == 0) {
-    fprintf(stderr, "OOPS, the IP address %s isn't configure/up on your system!\n", my_ip);
-#if INVALID_IP_IS_INVALID_CONF
+void verify_ips(struct d_resource *res)
+{
+	if (global_options.disable_ip_verification) return;
+	if (dry_run == 1 || do_verify_ips == 0) return;
+
+	if (! have_ip(res->me->address)) {
+		ENTRY e, *ep;
+		e.key = e.data = ep = NULL;
+		asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
+		ep = hsearch(e, FIND);
+		fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
+			"IP %s not found on this host.\n",
+			config_file, (int)(long)ep->data, res->name,
+			res->me->name, res->me->address);
+		if (INVALID_IP_IS_INVALID_CONF)
     config_valid = 0;
-#endif
   }
-  return;
 }
 
 static char* conf_file[] = {

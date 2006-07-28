@@ -3,8 +3,9 @@
 
    This file is part of drbd by Philipp Reisner.
 
-   Copyright (C) 2006, Philipp Reisner <philipp.reisner@linbit.com>.
-        Initial author.
+   Copyright (C) 2006, Philipp Reisner <philipp.reisner@linbit.com>
+   Copyright (C) 2006, Lars Ellenberg  <lars.ellenberg@linbit.com>
+   Copyright (C) 2006, LINBIT Information Technologies GmbH
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +22,7 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
  */
+
 #define _GNU_SOURCE
 
 #include <stdlib.h>
@@ -205,7 +207,7 @@ void check_meta_disk(struct d_host_info *host)
 	int token; 						\
 	token = yylex(); 					\
 	if(token != TOKEN1)					\
-		pe_expected_got( #TOKEN1, token, yylval.txt); 	\
+		pe_expected_got( #TOKEN1, token);		\
 	token;							\
 })
 
@@ -214,26 +216,37 @@ void check_meta_disk(struct d_host_info *host)
 	int token; 							\
 	token = yylex(); 						\
 	if(token != TOKEN1 && token != TOKEN2) 				\
-		pe_expected_got( #TOKEN1 "|" # TOKEN2, token, yylval.txt ); \
+		pe_expected_got( #TOKEN1 "|" # TOKEN2, token);		\
 	token;								\
 })
 
-static void pe_expected(const char *exp, char* got_txt)
+static void pe_expected(const char *exp)
 {
-	fprintf(stderr,"Parse error '%s' expected,\n"
-		"but got '%s' at line %d\n",exp,got_txt,line);
-	exit(10);
+	fprintf(stderr,"%s:%u: Parse error: '%s' expected,\n\t"
+		"but got '%s'\n",config_file,line,exp,yytext);
+	exit(E_config_invalid);
 }
 
-static void pe_expected_got(const char *exp, int got, char* got_txt)
+static void pe_expected_got(const char *exp, int got)
 {
-	fprintf(stderr,"Parse error '%s' expected,\n"
-		"but got '%s' (TK %d) at line %d\n",
-		exp,got_txt,got,line);
-	exit(10);
+	static char tmp[2] = "\0";
+	if (exp[0] == '\'' && exp[1] && exp[2] == '\'' && exp[3] == 0) {
+		tmp[0] = exp[1];
+	}
+	fprintf(stderr,"%s:%u: Parse error: '%s' expected,\n\t"
+		"but got '%s' (TK %d)\n",config_file,line,exp,yytext,got);
+	exit(E_config_invalid);
 }
 
 static void parse_global(void) {
+	fline = line;
+	check_uniq("global section","global");
+	if (config) {
+		fprintf(stderr,
+			"%s:%u: You should put the global {} section\n\t"
+			"in front of any resource {} section\n",
+			config_file,line);
+	}
 	EXP('{');
 	while(1) {
 		switch(yylex()) {
@@ -255,14 +268,14 @@ static void parse_global(void) {
 			case TK_YES: global_options.usage_count=UC_YES; break; 
 			case TK_NO:  global_options.usage_count=UC_NO;  break; 
 			case TK_ASK: global_options.usage_count=UC_ASK; break; 
-			default:     pe_expected("yes | no | ask",yylval.txt);
+			default:     pe_expected("yes | no | ask");
 			}
 			break;
 		case '}':
 			return;
 		default:
 			pe_expected("dialog-refresh | minor-count | "
-				    "disable-ip-verification",yylval.txt);
+				    "disable-ip-verification");
 		}
 		EXP(';');
 	}
@@ -275,6 +288,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 	enum range_checks rc;
 
 	struct d_option* options = NULL, *ro = NULL;
+	fline = line;
 
 	EXP('{');
 	while(1) {
@@ -291,7 +305,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 		} else if ( token == '}' ) {
 			return options;
 		} else {
-			pe_expected("an option keyword",yylval.txt);
+			pe_expected("an option keyword");
 		}
 		switch(yylex()) {
 		case TK__IS_DEFAULT:
@@ -301,7 +315,7 @@ static struct d_option* parse_options(int token_switch,int token_option)
 		case ';':
 			break;
 		default:
-			pe_expected("_is_default | ;",yylval.txt);
+			pe_expected("_is_default | ;");
 		}
 	}
 }
@@ -314,6 +328,7 @@ static void parse_host_body(struct d_host_info *host,
 	while(1) {
 		switch(yylex()) {
 		case TK_DISK:
+			check_uniq("disk statement","%s:%s:disk",res->name,host->name);
 			EXP(TK_STRING);
 			host->disk = yylval.txt;
 			check_uniq("disk", "%s:%s:%s","disk",
@@ -329,10 +344,11 @@ static void parse_host_body(struct d_host_info *host,
 			case ';':
 				break;
 			default:
-				pe_expected("_major | ;",yylval.txt);
+				pe_expected("_major | ;");
 			}
 			break;
 		case TK_DEVICE:
+			check_uniq("device statement","%s:%s:device",res->name,host->name);
 			EXP(TK_STRING);
 			host->device = yylval.txt;
 			check_uniq("device", "%s:%s:%s","device",
@@ -340,15 +356,18 @@ static void parse_host_body(struct d_host_info *host,
 			EXP(';');
 			break;
 		case TK_ADDRESS:
+			check_uniq("address statement","%s:%s:address",res->name,host->name);
 			EXP(TK_IPADDR);
 			host->address = yylval.txt;
 			EXP(':');
 			EXP(TK_INTEGER);
 			host->port = yylval.txt;
 			range_check(R_PORT, "port", yylval.txt);
+			check_uniq("IP","%s:%s", host->address,host->port);
 			EXP(';');
 			break;
 		case TK_META_DISK:
+			check_uniq("meta-disk statement","%s:%s:meta-disk",res->name,host->name);
 			EXP(TK_STRING);
 			host->meta_disk = yylval.txt;
 			if(strcmp("internal",yylval.txt)) {
@@ -367,7 +386,7 @@ static void parse_host_body(struct d_host_info *host,
 				case ';':
 					break;
 				default:
-					pe_expected("_major | ;",yylval.txt);
+					pe_expected("_major | ;");
 				}
 			} else {
 				EXP(';');
@@ -375,6 +394,7 @@ static void parse_host_body(struct d_host_info *host,
 			check_meta_disk(host);
 			break;
 		case TK_FLEX_META_DISK:
+			check_uniq("meta-disk statement","%s:%s:meta-disk",res->name,host->name);
 			EXP(TK_STRING);
 			host->meta_disk = yylval.txt;
 			host->meta_index = strdup("flexible");
@@ -385,7 +405,7 @@ static void parse_host_body(struct d_host_info *host,
 			goto break_loop;
 		default:
 			pe_expected("disk | device | address | meta-disk "
-				    "| flex-meta-disk",yylval.txt);
+				    "| flex-meta-disk");
 		}
 	}
  break_loop:
@@ -396,16 +416,55 @@ static void parse_host_body(struct d_host_info *host,
 	if (!host->meta_disk)	derror(host,res,"meta-disk");
 }
 
+void parse_skip()
+{
+	int level;
+	fline = line;
+
+	switch (yylex()) {
+		case TK_STRING:
+			EXP('{');
+			break;
+		case '{':
+			break;
+		default:
+			pe_expected("[ some_text ] {");
+	}
+
+	level = 1;
+	while(level) {
+		switch(yylex()) {
+		case '{':
+			level++; /* if you really want to,
+				    you can wrap this with a GB size config file :) */
+			break;
+		case '}':
+			level--;
+			break;
+		case 0:
+			fprintf(stderr,"%s:%u: reached eof "
+				"while parsing this skip block.\n",
+				config_file, fline);
+			exit(E_config_invalid);
+		}
+	} while(level);
+}
+
+
 static void parse_host_section(struct d_resource* res)
 {
 	struct d_host_info *host;
 
 	c_section_start = line;
+	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
 	EXP(TK_STRING);
 	host->name = yylval.txt;
+
+	check_uniq("host section", "%s: on %s", res->name, host->name);
 	if(strcmp(host->name, nodeinfo.nodename) == 0) {
+		// if (res->me) die duplicate entry ... done by check_uniq above
 		res->me = host;
 	} else {
 		if (res->peer) {
@@ -444,6 +503,8 @@ struct d_resource* parse_resource(char* res_name)
 	struct d_resource* res;
 	int token;
 
+	fline = line;
+
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
 	res->next = NULL;
@@ -451,6 +512,7 @@ struct d_resource* parse_resource(char* res_name)
 	while(1) {
 		switch((token=yylex())) {
 		case TK_PROTOCOL:
+			check_uniq("protocol statement","%s: protocol",res->name);
 			EXP(TK_STRING);
 			res->protocol=yylval.txt;
 			EXP(';');
@@ -465,48 +527,37 @@ struct d_resource* parse_resource(char* res_name)
 			parse_drbdsetup_host_dump(res, 0);
 			break;
 		case TK_DISK:
+			check_uniq("disk section", "%s:disk", res->name);
 			res->disk_options = parse_options(TK_DISK_SWITCH,
 							  TK_DISK_OPTION);
 			break;
 		case TK_NET: 
+			check_uniq("net section", "%s:net", res->name);
 			res->net_options = parse_options(TK_NET_SWITCH,
 							 TK_NET_OPTION);
 			break;
 		case TK_SYNCER:
+			check_uniq("syncer section", "%s:syncer", res->name);
 			res->sync_options = parse_options(TK_SYNCER_SWITCH,
 							  TK_SYNCER_OPTION);
 			break;
 		case TK_STARTUP:
+			check_uniq("startup section", "%s:startup", res->name);
 			res->startup_options=parse_options(TK_STARTUP_SWITCH,
 							   TK_STARTUP_OPTION);
 			break;
 		case TK_HANDLER:
-			res->handlers =  parse_options(0,
-						       TK_HANDLER_OPTION);
+			check_uniq("handlers section", "%s:handlers", res->name);
+			res->handlers =  parse_options(0, TK_HANDLER_OPTION);
 			break;
 		case '}': 
 		case 0:	
 			return res;
 		default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
-					" startup | handler",token,yylval.txt);
+					" startup | handler",token);
 		}
 	}
-}
-
-void parse_skip()
-{
-	int level=0;
-	do {
-		switch(yylex()) {
-		case '{': 
-			level++;
-			break;
-		case '}': 
-			level--;
-			break;
-		}
-	} while(level);
 }
 
 void yyparse(void)
@@ -516,7 +567,9 @@ void yyparse(void)
 
 	while(1) {
 		switch(yylex()) {
-		case TK_GLOBAL: parse_global(); break;
+		case TK_GLOBAL:
+			parse_global();
+			break;
 		case TK_COMMON: 
 			EXP('{');
 			common = parse_resource("common"); 
@@ -529,8 +582,7 @@ void yyparse(void)
 		case TK_SKIP: parse_skip(); break;
 		case 0: return;
 		default:
-			pe_expected("global | common | resource | skip",
-				    yylval.txt);
+			pe_expected("global | common | resource | skip");
 		}
 	}
 }
