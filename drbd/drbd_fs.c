@@ -1157,6 +1157,8 @@ STATIC int drbd_ioctl_unconfig_net(struct Drbd_Conf *mdev)
 		mdev->cram_hmac_tfm = NULL;
 	}
 
+	drbd_md_sync(mdev);
+
 	return 0;
 }
 

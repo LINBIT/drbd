@@ -550,7 +550,7 @@ int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 	rv = _drbd_set_state(mdev, ns, f);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	if (rv == SS_Success) after_state_ch(mdev,os,ns,f);
+	if (rv==SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev,os,ns,f);
 
 	return rv;
 }
@@ -639,7 +639,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	if (rv == SS_Success) after_state_ch(mdev,os,ns,f);
+	if (rv==SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev,os,ns,f);
 
 	return rv;
 }
@@ -748,6 +748,12 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		os.conn < Connected ) {
 		ns.conn = os.conn;
 		ns.pdsk = os.pdsk;
+	}
+
+	/* Dissalow Network errors to configure a device's network part */
+	if( (ns.conn >= BrokenPipe && ns.conn <= NetworkFailure ) && 
+	    os.conn == StandAlone ) {
+		ns.conn = os.conn;
 	}
 
 	if( ns.i == os.i ) return SS_NothingToDo;
@@ -1075,6 +1081,10 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
 		lc_free(mdev->resync);  mdev->resync = NULL;
 		lc_free(mdev->act_log); mdev->act_log = NULL;
+	}
+
+	if ( os.conn != StandAlone && ns.conn == StandAlone ) {
+		drbd_thread_stop(&mdev->receiver);
 	}
 
 	if ( os.conn != Unconnected && ns.conn == Unconnected ) {
@@ -2606,11 +2616,12 @@ void drbd_md_sync(drbd_dev *mdev)
 
 	if (!test_and_clear_bit(MD_DIRTY,&mdev->flags)) return;
 	del_timer(&mdev->md_sync_timer);
-	INFO("Writing meta data super block now.\n");
 
 	// We use here Failed and not Attaching because we try to write
 	// metadata even if we detach due to a disk failure!
-	ERR_IF(!inc_md_only(mdev,Failed)) return;
+	if(!inc_md_only(mdev,Failed)) return;
+
+	INFO("Writing meta data super block now.\n");
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
