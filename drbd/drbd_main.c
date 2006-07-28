@@ -211,7 +211,7 @@ STATIC void _tl_add(drbd_dev *mdev, drbd_request_t *req)
 	b=mdev->newest_barrier;
 
 	req->barrier = b;
-	req->rq_status |= RQ_DRBD_IN_TL;
+	req->rq_status |= RQ_DRBD_IN_TL; /* BUG, not holding req_lock */
 	list_add(&req->tl_requests,&b->requests);
 
 	if( b->n_req++ > mdev->net_conf->max_epoch_size ) {

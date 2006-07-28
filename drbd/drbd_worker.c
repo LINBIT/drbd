@@ -559,10 +559,21 @@ int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	drbd_request_t *req = (drbd_request_t *)w;
+	sector_t sector;
+	unsigned int size;
 	int ok;
 
-	if (unlikely(cancel)) { 
-		/* Nothing to do, here. tl_clear() does the work. */
+	D_ASSERT( !(req->rq_status & RQ_DRBD_SENT) );
+
+	if (unlikely(cancel)) {
+		/* We clear it up here explicit, since we might be _after_ the
+		   run of tl_clear() */
+		sector = drbd_req_get_sector(req);
+		size   = drbd_req_get_size(req);
+
+		drbd_end_req(req,RQ_DRBD_SENT,1, sector);
+		drbd_set_out_of_sync(mdev, sector, size);
+
 		return 1;
 	}
 
@@ -583,6 +594,7 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		if (mdev->state.conn >= Connected) 
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
 		drbd_thread_restart_nowait(&mdev->receiver);
+		/* The request gets cleared up by tl_clear() */
 	}
 
 	return ok;

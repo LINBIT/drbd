@@ -32,6 +32,22 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
+/*
+void drbd_show_req(struct Drbd_Conf* mdev, char *txt, drbd_request_t *req)
+{
+	INFO("req %s %p %c%c%c%c%c %p\n",
+	     txt,
+	     req,
+	     req->rq_status & RQ_DRBD_ON_WIRE ? 'w' :'_',
+	     req->rq_status & RQ_DRBD_IN_TL   ? 't' :'_',
+	     req->rq_status & RQ_DRBD_SENT    ? 's' :'_',
+	     req->rq_status & RQ_DRBD_LOCAL   ? 'l' :'_',
+	     req->rq_status & RQ_DRBD_NOTHING ? 'u' :'_',
+	     req->barrier
+	     );
+}
+*/
+
 void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 		  sector_t rsector)
 {
@@ -205,6 +221,7 @@ static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 		req->mdev        = mdev;
 		req->master_bio  = bio_src;
 		req->private_bio = bio;
+		req->barrier     = NULL;
 
 		bio->bi_private  = req;
 		bio->bi_end_io   =
@@ -326,6 +343,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	// inc_ap_bio(mdev); do not allow more open requests than max_buffers!
 	wait_event( mdev->rq_wait,atomic_add_unless(&mdev->ap_bio_cnt,1,mxb) );
 
+	/* remote might be already wrong here, since we might slept after
+	   looking at the connection state, but this is ok. */
 	if (remote) {
 		/* either WRITE and Connected,
 		 * or READ, and no local disk,
