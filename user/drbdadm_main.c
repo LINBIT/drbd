@@ -78,7 +78,7 @@ struct deferred_cmd
   struct deferred_cmd* next;
 };
 
-extern int yyparse();
+extern int my_parse();
 extern int yydebug;
 extern FILE* yyin;
 
@@ -1641,7 +1641,7 @@ int main(int argc, char** argv)
   };
 
   //yydebug = 1;
-  yyparse();
+  my_parse();
 
   if(!config_valid) exit(E_config_invalid);
 
