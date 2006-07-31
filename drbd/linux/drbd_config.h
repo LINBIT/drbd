@@ -22,9 +22,9 @@
 
 extern const char * drbd_buildtag(void);
 
-#define REL_VERSION "8.0pre3"
-#define API_VERSION 82
-#define PRO_VERSION 81
+#define REL_VERSION "8.0pre4"
+#define API_VERSION 83
+#define PRO_VERSION 82
 
 // undef if you need the workaround in drbd_receiver
 #define HAVE_UML_TO_VIRT 1

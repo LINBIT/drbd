@@ -4,6 +4,16 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0pre4 (api:83/proto:82)
+--------
+ * Added the "drbd-peer-outdater" heartbeat plugin.
+ * New ("cluster wide") state changes. (Cluster wide serialisation of
+   major state changes, like becomming primary, invalidateing a disk etc...)
+ * Write requests are now sent by the worker instead out of the process's
+   context that calls make_request().
+ * The worker thread no longer gets restarted upon loss of connection.
+ * A testsuite developed by students of 'FH Hagenberg' was added.
+	
 8.0pre3 (api:82/proto:80)
 --------
  * Now it works on device mapper (LVM) as well as on "real" block devices.

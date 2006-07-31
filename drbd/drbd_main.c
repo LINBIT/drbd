@@ -280,7 +280,7 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	D_ASSERT(b->br_number == barrier_nr);
 	D_ASSERT(b->n_req == set_size);
 
-#ifdef DBG_ASSERTS
+#if 1
 	if(b->br_number != barrier_nr) {
 		DUMPI(b->br_number);
 		DUMPI(barrier_nr);

@@ -194,6 +194,16 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Mon Jul 31 2006 12:04:41 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0pre4-1)
+ * Added the "drbd-peer-outdater" heartbeat plugin.
+ * New ("cluster wide") state changes. (Cluster wide serialisation of
+   major state changes, like becomming primary, invalidateing a disk etc...)
+ * Write requests are now sent by the worker instead out of the process's
+   context that calls make_request().
+ * The worker thread no longer gets restarted upon loss of connection.
+ * A testsuite developed by students of 'FH Hagenberg' was added.
+
 * Tue Apr 20 2006 13:46:18 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0pre3-1)
  * Now it works on device mapper (LVM) as well as on "real" block devices.
