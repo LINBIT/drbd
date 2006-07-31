@@ -106,7 +106,7 @@ static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
 static int hidden_cmds(struct d_resource* ,const char* );
 
-static struct ifi_info* get_ifi_info(int family);
+static struct ifreq* get_ifreq();
 
 char ss_buffer[255];
 struct utsname nodeinfo;
@@ -116,7 +116,7 @@ struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 char *config_file = NULL;
 struct d_resource* config = NULL;
 struct d_resource* common = NULL;
-struct ifi_info *my_ifis = NULL;
+struct ifreq *ifreq_list = NULL;
 int nr_resources;
 int highest_minor;
 int config_valid=1;
@@ -427,7 +427,6 @@ static void free_options(struct d_option* opts)
   }
 }
 
-static void free_ifi_info(struct ifi_info *ifihead);
 static void free_config(struct d_resource* res)
 {
   struct d_resource *f,*t;
@@ -451,7 +450,7 @@ static void free_config(struct d_resource* res)
     free_options(common->handlers);
     free(common);
   }
-  if (my_ifis) free_ifi_info(my_ifis);
+  if (ifreq_list) free(ifreq_list);
 }
 
 static void expand_opts(struct d_option* co, struct d_option** opts)
@@ -483,7 +482,6 @@ static void expand_common(void)
     expand_opts(common->sync_options,    &res->sync_options);
     expand_opts(common->startup_options, &res->startup_options);
     expand_opts(common->handlers,        &res->handlers);
-    validate_resource(res);
   }
 }
 
@@ -1170,174 +1168,105 @@ void print_usage_and_exit(const char* addinfo)
   exit(E_usage);
 }
 
-static void free_ifi_info(struct ifi_info *ifihead)
+/*
+ * I'd really rather parse the output of
+ *   ip -o a s
+ * once, and be done.
+ * But anyways....
+ */
+
+static struct ifreq * get_ifreq(void)
 {
-  struct ifi_info *ifi, *ifinext;
-  for (ifi = ifihead; ifi != NULL; ifi = ifinext) {
-    if (ifi->ifi_addr != NULL)
-      free(ifi->ifi_addr);
-    ifinext = ifi->ifi_next;
-    free(ifi);
-  }
-}
+  int                sockfd, num_ifaces;
+  struct ifreq       *ifr;
+  struct ifconf      ifc;
+  size_t buf_size;
 
-static struct ifi_info* get_ifi_info(int family)
-{
-  struct ifi_info *ifi, *ifihead, **ifipnext;
-  int sockfd, len, lastlen, flags, myflags;
-  char *ptr, *buf, lastname[IFNAMSIZ], *cptr;
-  struct ifconf ifc;
-  struct ifreq *ifr, ifrcopy;
-  struct sockaddr_in *sinptr;
-    
-  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd < 0) {
-    fprintf(stderr, "sockfd < 0\n");
-    return NULL;
+  if (0 > (sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP ))) {
+    perror("Cannot open socket");
+    exit(EXIT_FAILURE);
   }
 
-  lastlen = 0;
-  len = 100 * sizeof(struct ifreq); /* initial guess */
-    
-  for (;;) {
-    buf = malloc(len);
-    if (!buf)
+  num_ifaces = 0;
+  ifc.ifc_req = NULL;
+
+  /* realloc buffer size until no overflow occurs  */
+  do {
+    num_ifaces += 16; /* initial guess and increment */
+    buf_size = ++num_ifaces * sizeof(struct ifreq);
+    ifc.ifc_len = buf_size;
+    if (NULL == (ifc.ifc_req = realloc(ifc.ifc_req, ifc.ifc_len))) {
+      fprintf(stderr, "Out of memory.\n");
       return NULL;
-    ifc.ifc_len = len;
-    ifc.ifc_buf = buf;
-        
-    if (ioctl(sockfd, SIOCGIFCONF, &ifc) < 0) {
-      if (errno != EINVAL || lastlen != 0)
-	return NULL;
-    } else {
-      if (ifc.ifc_len == lastlen)
-	break; /* success, len has not changed */
-      lastlen = ifc.ifc_len;
     }
-    len += 10 * sizeof(struct ifreq); /* increment */
-    free(buf);
-  }
-
-  ifihead = NULL;
-  ifipnext = &ifihead;
-  lastname[0] = 0;
-
-  for (ptr = buf; ptr < buf + ifc.ifc_len; ) {
-    ifr = (struct ifreq*) ptr;
-
-    switch (ifr->ifr_addr.sa_family) {
-      /*         case AF_INET6: len = sizeof(struct sockaddr_in6); break; */
-    case AF_INET:
-    default:
-      len = sizeof(struct sockaddr);
-      break;
+    if (ioctl(sockfd, SIOCGIFCONF, &ifc)) {
+      perror("ioctl SIOCFIFCONF");
+      free(ifc.ifc_req);
+      return NULL;
     }
-        
-    ptr += sizeof(ifr->ifr_name) + len; /* for next one in buffer */
-        
-    if (ifr->ifr_addr.sa_family != family)
-      continue; /* ignore if not desired address family */
-        
-    myflags = 0;
-    if ((cptr = strchr(ifr->ifr_name, ':')) != NULL)
-      *cptr = 0; /* replace colon with null */
+  } while  (buf_size <= (size_t)ifc.ifc_len);
 
-    if (strncmp(lastname, ifr->ifr_name, IFNAMSIZ) == 0)
-      myflags = IFI_ALIAS;
-
-    memcpy(lastname, ifr->ifr_name, IFNAMSIZ);
-
-    ifrcopy = *ifr;
-    if (ioctl(sockfd, SIOCGIFFLAGS, &ifrcopy) < 0)
-      return NULL;
-
-    flags = ifrcopy.ifr_flags;
-    if ((flags & IFF_UP) == 0)
-      continue; /* ignore if the interface is not up */
-
-    ifi = calloc(1, sizeof(struct ifi_info));
-    if (!ifi)
-      return NULL;
-        
-    *ifipnext = ifi; /* prev points to this new one */
-    ifipnext = &ifi->ifi_next; /* pointer to next one goes here */
-
-    ifi->ifi_flags = flags; /* IFI_xxx values */
-    ifi->ifi_myflags = myflags; /* IFI_xxx values */
-    memcpy(ifi->ifi_name, ifr->ifr_name, IFNAMSIZ);
-    ifi->ifi_name[IFNAMSIZ - 1] = '\0';
-
-    switch(ifr->ifr_addr.sa_family) {
-      /*         case AF_INET6: return NULL; */
-    case AF_INET:
-      sinptr = (struct sockaddr_in *)&ifr->ifr_addr;
-      if (ifi->ifi_addr == NULL) {
-	ifi->ifi_addr = calloc(1, sizeof(struct sockaddr));
-	if (!ifi->ifi_addr)
-	  return NULL;
-
-	memcpy(ifi->ifi_addr, sinptr, sizeof(struct sockaddr));
-      }
-      /* IFF_BROADCAST and IFF_POINTTOPOINT are ignored */
-    default:
-      break;
+  num_ifaces = ifc.ifc_len / sizeof(struct ifreq);
+  /* Since we allocated at least one more than neccessary,
+   * this serves as a stop marker for the iteration in
+   * have_ip() */
+  ifc.ifc_req[num_ifaces].ifr_name[0] = 0;
+  for (ifr = ifc.ifc_req; ifr->ifr_name[0] != 0; ifr++) {
+    /* we only want to look up the presence or absence of a certain address
+     * here. but we want to skip "down" interfaces.  if an interface is down,
+     * we store an invalid sa_family, so the lookup will skip it.
+     */
+    struct ifreq ifr_for_flags = *ifr; /* get a copy to work with */
+    if (ioctl(sockfd, SIOCGIFFLAGS, &ifr_for_flags) < 0) {
+      perror("ioctl SIOCGIFFLAGS");
+      ifr->ifr_addr.sa_family = -1; /* what's wrong here? anyways: skip */
+      continue;
+    }
+    if (!(ifr_for_flags.ifr_flags & IFF_UP)) {
+      ifr->ifr_addr.sa_family = -1; /* is not up: skip */
+      continue;
     }
   }
-
-  free(buf);
   close(sockfd);
-
-  return ifihead;
+  return ifc.ifc_req;
 }
 
 int have_ip(const char *ip)
 {
-  struct ifi_info *ifi, *ifihead;
-  int family;
-  uint32_t addr = 0;
-  struct in_addr sin_addr;
+  struct ifreq *ifr;
+  struct in_addr query_addr;
 
-  sin_addr.s_addr = inet_addr(ip);
+  query_addr.s_addr = inet_addr(ip);
 
-  /* FIXME make DRBD support inet6 */
-  family = AF_INET;
-  if (!my_ifis) my_ifis = get_ifi_info(family);
-    
-  for (ifihead = ifi = my_ifis; ifi != NULL; ifi = ifi->ifi_next) {
-    switch (family) {
-    case AF_INET: {
-      struct sockaddr_in * sin = (struct sockaddr_in *)ifi->ifi_addr;
-      addr = sin->sin_addr.s_addr;
+  if (!ifreq_list) ifreq_list = get_ifreq();
 
-      if (addr == sin_addr.s_addr) {
-	return 1;
-      }
-      break;
-    }
-    default:
-      break;
-    }
+  for (ifr = ifreq_list; ifr && ifr->ifr_name[0] != 0; ifr++) {
+    /* currently we only support AF_INET */
+    struct sockaddr_in * list_addr = (struct sockaddr_in *)&ifr->ifr_addr;
+    if (ifr->ifr_addr.sa_family != AF_INET)
+      continue;
+    if (query_addr.s_addr == list_addr->sin_addr.s_addr)
+      return 1;
   }
-
   return 0;
 }
 
 void verify_ips(struct d_resource *res)
 {
-	if (global_options.disable_ip_verification) return;
-	if (dry_run == 1 || do_verify_ips == 0) return;
+  if (global_options.disable_ip_verification) return;
+  if (dry_run == 1 || do_verify_ips == 0) return;
 
-	if (! have_ip(res->me->address)) {
-		ENTRY e, *ep;
-		e.key = e.data = ep = NULL;
-		asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
-		ep = hsearch(e, FIND);
-		fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
-			"IP %s not found on this host.\n",
-			config_file, (int)(long)ep->data, res->name,
-			res->me->name, res->me->address);
-		if (INVALID_IP_IS_INVALID_CONF)
-    config_valid = 0;
+  if (! have_ip(res->me->address)) {
+    ENTRY e, *ep;
+    e.key = e.data = ep = NULL;
+    asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
+    ep = hsearch(e, FIND);
+    fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
+      "IP %s not found on this host.\n",
+      config_file, (int)(long)ep->data, res->name,
+      res->me->name, res->me->address);
+    if (INVALID_IP_IS_INVALID_CONF)
+      config_valid = 0;
   }
 }
 
@@ -1427,6 +1356,23 @@ void validate_resource(struct d_resource * res)
       config_valid=0;
     }
   }
+  // need to verify that in the discard-node-nodename options only known
+  // nodenames are mentioned.
+  if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
+    if(!strncmp(opt->value,"discard-node-",13)) {
+      if(strcmp(res->peer->name,opt->value+13) &&
+	 strcmp(res->me->name,opt->value+13)) {
+	fprintf(stderr,
+		" in resource %s:\n\t"
+		"the nodename in the '%s' option is "
+		"not known.\n\t"
+		"valid nodenames are: '%s' and '%s'.\n",
+		res->name, opt->value,
+		res->me->name, res->peer->name );
+	config_valid = 0;
+      }
+    }
+  }
   if (res->me && res->peer) {
     verify_ips(res);
   }
@@ -1435,40 +1381,8 @@ void validate_resource(struct d_resource * res)
 static void global_validate(void)
 {
   struct d_resource *res,*tmp;
-  struct d_option* opt;
-
   for_each_resource(res,tmp,config) {
-
-    // need to verify that in the "after" key words only valid resources
-    // are named.
-    if ( (opt = find_opt(res->sync_options, "after")) ) {
-      if( res_by_name(opt->value) == NULL ) {
-	fprintf(stderr,
-		" in resource %s:\n\t"
-		"the resource named '%s' in the after option is "
-		"not known.\n\t",
-		res->name, opt->value);
-	config_valid = 0;
-      }
-    }
-
-    // need to verify that in the discard-node-nodename options only known
-    // nodenames are mentioned.
-    if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
-      if(!strncmp(opt->value,"discard-node-",13)) {
-	if(strcmp(res->peer->name,opt->value+13) &&
-	   strcmp(res->me->name,opt->value+13)) {
-	  fprintf(stderr,
-		  " in resource %s:\n\t"
-		  "the nodename in the '%s' option is "
-		  "not known.\n\t"
-		  "valid nodenames are: '%s' and '%s'.\n",
-		  res->name, opt->value,
-		  res->me->name, res->peer->name );
-	  config_valid = 0;
-	}
-      }
-    }
+    validate_resource(res);
   }
 }
 
@@ -1688,8 +1602,7 @@ int main(int argc, char** argv)
 
       if(!is_dump) {
 	expand_common();
-
-	global_validate(); 
+	global_validate();
 	if(!config_valid) exit(E_config_invalid);
 
         for_each_resource(res,tmp,config) {
