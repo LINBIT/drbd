@@ -204,7 +204,7 @@ STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
 }
 
 
-STATIC void _tl_add(drbd_dev *mdev, drbd_request_t *req)
+void _tl_add(drbd_dev *mdev, drbd_request_t *req)
 {
 	struct drbd_barrier *b;
 
@@ -256,6 +256,24 @@ struct drbd_barrier *tl_add_barrier(drbd_dev *mdev)
 	mdev->newest_barrier->next = new;
 	mdev->newest_barrier = new;
 	spin_unlock_irq(&mdev->tl_lock);
+
+	return newest_before;
+}
+
+struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
+{
+	struct drbd_barrier *newest_before;
+
+	INIT_LIST_HEAD(&new->requests);
+	new->next=0;
+	new->n_req=0;
+
+	/* mdev->newest_barrier == NULL "cannot happen". but anyways... */
+	newest_before = mdev->newest_barrier;
+	/* never send a barrier number == 0 */
+	new->br_number = (newest_before->br_number+1) ?: 1;
+	mdev->newest_barrier->next = new;
+	mdev->newest_barrier = new;
 
 	return newest_before;
 }
@@ -452,8 +470,7 @@ drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 	return req;
 }
 
-struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
-					     drbd_request_t * req)
+struct Tl_epoch_entry * _ee_have_write(drbd_dev *mdev, drbd_request_t * req)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
@@ -463,8 +480,6 @@ struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
 	int i;
 
 	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
-
-	spin_lock_irq(&mdev->tl_lock);
 
 	for(i=-1;i<=1;i++ ) {
 		slot = mdev->ee_hash + ee_hash_fn(mdev,
@@ -480,7 +495,6 @@ struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,
 	// Good, no conflict found
 	_tl_add(mdev,req);
  out:
-	spin_unlock_irq(&mdev->tl_lock);
 
 	return ee;
 }
@@ -915,7 +929,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			ascw->ns = ns;
 			ascw->flags = flags;
 			ascw->w.cb = w_after_state_ch;
-			_drbd_queue_work(&mdev->data.work,&ascw->w);
+			drbd_queue_work(&mdev->data.work,&ascw->w);
 		} else {
 			WARN("Could not kmalloc an ascw\n");
 		}
@@ -1935,7 +1949,7 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 			 * XXX this might be a good addition to drbd_queue_work
 			 * anyways, to detect "double queuing" ... */
 			if (list_empty(&mdev->unplug_work.list))
-				_drbd_queue_work(&mdev->data.work,&mdev->unplug_work);
+				drbd_queue_work(&mdev->data.work,&mdev->unplug_work);
 		}
 	}
 	spin_unlock_irq(&mdev->req_lock);
@@ -1982,6 +1996,9 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	init_MUTEX(&mdev->meta.mutex);
 	sema_init(&mdev->data.work.s,0);
 	sema_init(&mdev->meta.work.s,0);
+
+	spin_lock_init(&mdev->data.work.q_lock);
+	spin_lock_init(&mdev->meta.work.q_lock);
 
 	spin_lock_init(&mdev->al_lock);
 	spin_lock_init(&mdev->tl_lock);
@@ -2850,7 +2867,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 {
 	drbd_dev* mdev = (drbd_dev*) data;
 
-	drbd_queue_work_front(mdev,&mdev->data.work,&mdev->md_sync_work);
+	drbd_queue_work_front(&mdev->data.work,&mdev->md_sync_work);
 }
 
 STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)

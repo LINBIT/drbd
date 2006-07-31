@@ -2410,7 +2410,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	disconnect_work = kmalloc(sizeof(struct drbd_work),GFP_KERNEL);
 	if(disconnect_work) {
 		disconnect_work->cb = w_disconnect;
-		drbd_queue_work(mdev,&mdev->data.work,disconnect_work);
+		drbd_queue_work(&mdev->data.work,disconnect_work);
 	} else {
 		WARN("kmalloc failed, taking messy shortcut.\n");
 		w_disconnect(mdev,NULL,1);

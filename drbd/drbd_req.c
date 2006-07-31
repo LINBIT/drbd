@@ -112,7 +112,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 // FIXME proto A and diskless :)
 
 		req->w.cb = w_io_error;
-		drbd_queue_work(mdev,&mdev->data.work,&req->w);
+		drbd_queue_work(&mdev->data.work,&req->w);
 
 		goto out;
 
@@ -125,11 +125,11 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 
  out:
 	if (test_bit(ISSUE_BARRIER,&mdev->flags)) {
-		spin_lock_irqsave(&mdev->req_lock,flags);
+		spin_lock_irqsave(&mdev->data.work.q_lock,flags);
 		if(list_empty(&mdev->barrier_work.list)) {
 			_drbd_queue_work(&mdev->data.work,&mdev->barrier_work);
 		}
-		spin_unlock_irqrestore(&mdev->req_lock,flags);
+		spin_unlock_irqrestore(&mdev->data.work.q_lock,flags);
 	}
 }
 
@@ -148,7 +148,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 	spin_unlock(&mdev->pr_lock);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
 
-	drbd_queue_work(mdev, &mdev->data.work, &req->w);
+	drbd_queue_work(&mdev->data.work, &req->w);
 
 	return 1;
 }
@@ -237,6 +237,7 @@ STATIC int
 drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			 sector_t sector, struct bio *bio)
 {
+	struct drbd_barrier *b;
 	drbd_request_t *req;
 	int local, remote;
 	int mxb;
@@ -352,43 +353,43 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 */
 		if (rw == WRITE) {
 
-	/* About tl_add():
-	1. This must be within the semaphor,
-	   to ensure right order in tl_ data structure and to
-	   ensure right order of packets on the write
-	2. This must happen before sending, otherwise we might
-	   get in the BlockAck packet before we have it on the
-	   tl_ datastructure (=> We would want to remove it before it
-	   is there!)
-	3. Q: Why can we add it to tl_ even when drbd_send() might fail ?
-	      There could be a tl_cancel() to remove it within the semaphore!
-	   A: If drbd_send fails, we will lose the connection. Then
-	      tl_cear() will simulate a RQ_DRBD_SEND and set it out of sync
-	      for everything in the data structure.
-	*/
-			down(&mdev->data.mutex);
+			b = kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
+			if(!b) {
+				ERR("Failed to alloc barrier.");
+				goto fail_and_free_req;
+			}
+
+			spin_lock_irq(&mdev->tl_lock);
+
 			if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
-				struct drbd_barrier *b = tl_add_barrier(mdev);
+				b = _tl_add_barrier(mdev,b);
 				b->w.cb =  w_send_barrier;
-				drbd_queue_work(mdev,&mdev->data.work, &b->w);
+				drbd_queue_work(&mdev->data.work, &b->w);
+				b = NULL;
 			}
 
 			if (mdev->net_conf->two_primaries) {
-				if(ee_have_write(mdev,req)) { // tl_add() here
+				if(_ee_have_write(mdev,req)) { // tl_add() here
+					spin_unlock_irq(&mdev->tl_lock);
+
 					WARN("Concurrent write! [DISCARD L] sec=%lu\n",
 					     (unsigned long)sector);
 					dec_local(mdev);
 					dec_ap_pending(mdev);
 					local=0;
+
 					drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
+					return 0;
 				}
 			} else {
-				tl_add(mdev,req);
+				_tl_add(mdev,req);
 			}
 			req->w.cb =  w_send_dblock;
-			drbd_queue_work(mdev,&mdev->data.work, &req->w);
+			drbd_queue_work(&mdev->data.work, &req->w);
 
-			up(&mdev->data.mutex);
+			spin_unlock_irq(&mdev->tl_lock);
+
+			if(b) kfree(b);
 		} else {
 			// this node is diskless ...
 			drbd_read_remote(mdev,req);

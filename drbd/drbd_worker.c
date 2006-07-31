@@ -88,7 +88,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	spin_unlock_irqrestore(&mdev->ee_lock,flags);
 
 	drbd_chk_io_error(mdev,error);
-	drbd_queue_work(mdev,&mdev->data.work,&e->w);
+	drbd_queue_work(&mdev->data.work,&e->w);
 	dec_local(mdev);
 	return 0;
 }
@@ -181,7 +181,7 @@ int drbd_endio_read_pri(struct bio *bio, unsigned int bytes_done, int error)
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("local read failed, retrying remotely\n");
 		req->w.cb = w_read_retry_remote;
-		drbd_queue_work(mdev,&mdev->data.work,&req->w);
+		drbd_queue_work(&mdev->data.work,&req->w);
 	} else {
 	pass_on:
 		bio_endio(req->master_bio,req->master_bio->bi_size,error);
@@ -282,11 +282,11 @@ void resync_timer_fn(unsigned long data)
 		mdev->resync_work.cb = w_resume_next_sg;
 	}
 
-	if(list_empty(&mdev->resync_work.list)) {
-		_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
-	} else INFO("Avoided requeue of resync_work\n");
-
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
+
+	if(list_empty(&mdev->resync_work.list)) {
+		drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+	} else INFO("Avoided requeue of resync_work\n");
 }
 
 #define SLEEP_TIME (HZ/10)
@@ -1047,7 +1047,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		   this...   */
 
 		w = 0;
-		spin_lock_irq(&mdev->req_lock);
+		spin_lock_irq(&mdev->data.work.q_lock);
 		ERR_IF(list_empty(&mdev->data.work.q)) {
 			/* something terribly wrong in our logic.
 			 * we were able to down() the semaphore,
@@ -1060,12 +1060,12 @@ int drbd_worker(struct Drbd_thread *thi)
 			 *
 			 * I'll try to get away just starting over this loop.
 			 */
-			spin_unlock_irq(&mdev->req_lock);
+			spin_unlock_irq(&mdev->data.work.q_lock);
 			continue;
 		}
 		w = list_entry(mdev->data.work.q.next,struct drbd_work,list);
 		list_del_init(&w->list);
-		spin_unlock_irq(&mdev->req_lock);
+		spin_unlock_irq(&mdev->data.work.q_lock);
 
 		if(!w->cb(mdev,w, mdev->state.conn < Connected )) {
 			//WARN("worker: a callback failed! \n");
@@ -1100,11 +1100,11 @@ int drbd_worker(struct Drbd_thread *thi)
 	/* possible paranoia check: the STOP_SYNC_TIMER bit should be set
 	 * if and only if del_timer_sync returns true ... */
 
-	spin_lock_irq(&mdev->req_lock);
+	spin_lock_irq(&mdev->data.work.q_lock);
 	if (test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags)) {
 		mdev->resync_work.cb = w_resume_next_sg;
 		if (list_empty(&mdev->resync_work.list))
-			_drbd_queue_work(&mdev->data.work,&mdev->resync_work);
+			drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 		// else: already queued
 	} else {
 		/* timer already consumed that bit, or it was never set */
@@ -1122,7 +1122,7 @@ int drbd_worker(struct Drbd_thread *thi)
 	i = 0;
   again:
 	list_splice_init(&mdev->data.work.q,&work_list);
-	spin_unlock_irq(&mdev->req_lock);
+	spin_unlock_irq(&mdev->data.work.q_lock);
 
 	while(!list_empty(&work_list)) {
 		w = list_entry(work_list.next, struct drbd_work,list);
@@ -1131,7 +1131,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		i++; /* dead debugging code */
 	}
 
-	spin_lock_irq(&mdev->req_lock);
+	spin_lock_irq(&mdev->data.work.q_lock);
 	ERR_IF(!list_empty(&mdev->data.work.q))
 		goto again;
 	sema_init(&mdev->data.work.s,0);
@@ -1140,7 +1140,7 @@ int drbd_worker(struct Drbd_thread *thi)
 	 * semaphore without corresponding list entry.
 	 * So don't do that.
 	 */
-	spin_unlock_irq(&mdev->req_lock);
+	spin_unlock_irq(&mdev->data.work.q_lock);
 
 	INFO("worker terminated\n");
 

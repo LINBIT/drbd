@@ -231,7 +231,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		al_work.al_ext = al_ext;
 		al_work.enr = enr;
 		al_work.w.cb = w_al_write_transaction;
-		drbd_queue_work_front(mdev,&mdev->data.work,&al_work.w);
+		drbd_queue_work_front(&mdev->data.work,&al_work.w);
 		wait_for_completion(&al_work.event);
 		
 		mdev->al_writ_cnt++;
@@ -673,7 +673,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			}
 			udw->enr = ext1->lce.lc_number;
 			udw->w.cb = w_update_odbm;
-			drbd_queue_work_front(mdev,&mdev->data.work,&udw->w);
+			drbd_queue_work_front(&mdev->data.work,&udw->w);
 			if (ext1->flags != 0) {
 				WARN("deleting resync lce: %d[%u;%02lx]\n",
 				     ext1->lce.lc_number, ext1->rs_left,

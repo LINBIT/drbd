@@ -672,6 +672,7 @@ struct drbd_bitmap; // opaque for Drbd_Conf
 struct drbd_work_queue {
 	struct list_head q;
 	struct semaphore s; // producers up it, worker down()s it
+	spinlock_t q_lock;  // to protect the list.
 };
 
 /* If Philipp agrees, we remove the "mutex", and make_request will only
@@ -851,8 +852,10 @@ extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
 extern void tl_add(drbd_dev *mdev, drbd_request_t *req);
+extern void _tl_add(drbd_dev *mdev, drbd_request_t *req);
 extern struct drbd_barrier *tl_add_barrier(drbd_dev *mdev);
-extern struct Tl_epoch_entry * ee_have_write(drbd_dev *mdev,drbd_request_t * req);
+extern struct drbd_barrier *_tl_add_barrier(drbd_dev *,struct drbd_barrier *);
+extern struct Tl_epoch_entry * _ee_have_write(drbd_dev *mdev,drbd_request_t * req);
 extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
 extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
 extern drbd_request_t * req_have_write(drbd_dev *, struct Tl_epoch_entry *);
@@ -1341,7 +1344,6 @@ static inline sector_t drbd_md_ss__(drbd_dev *mdev,
 	}
 }
 
-
 static inline void
 _drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
@@ -1350,34 +1352,25 @@ _drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 }
 
 static inline void
-_drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
-{
-	list_add(&w->list,&q->q);
-	up(&q->s);
-}
-
-static inline void
-drbd_queue_work_front(drbd_dev *mdev, struct drbd_work_queue *q,
-			struct drbd_work *w)
+drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;
-	spin_lock_irqsave(&mdev->req_lock,flags);
+	spin_lock_irqsave(&q->q_lock,flags);
 	list_add(&w->list,&q->q);
 	up(&q->s); /* within the spinlock,
 		      see comment near end of drbd_worker() */
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	spin_unlock_irqrestore(&q->q_lock,flags);
 }
 
 static inline void
-drbd_queue_work(drbd_dev *mdev, struct drbd_work_queue *q,
-		  struct drbd_work *w)
+drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;
-	spin_lock_irqsave(&mdev->req_lock,flags);
+	spin_lock_irqsave(&q->q_lock,flags);
 	list_add_tail(&w->list,&q->q);
 	up(&q->s); /* within the spinlock,
 		      see comment near end of drbd_worker() */
-	spin_unlock_irqrestore(&mdev->req_lock,flags);
+	spin_unlock_irqrestore(&q->q_lock,flags);
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
