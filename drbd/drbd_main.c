@@ -341,66 +341,70 @@ int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
 	return r;
 }
 
-void tl_clear(drbd_dev *mdev)
+STATIC void tl_clear_barrier(drbd_dev *mdev, struct list_head *requests)
 {
-	struct list_head *le,*tle;
-	struct drbd_barrier *b,*f;
+	struct list_head *le, *tle;
 	struct drbd_request *r;
 	sector_t sector;
 	unsigned int size;
 
+	list_for_each_safe(le, tle, requests) {
+		r = list_entry(le, struct drbd_request,tl_requests);
+		// bi_size and bi_sector are modified in bio_endio!
+		sector = drbd_req_get_sector(r);
+		size   = drbd_req_get_size(r);
+		
+		if( r->rq_status & RQ_DRBD_ON_WIRE &&
+		    mdev->net_conf->wire_protocol != DRBD_PROT_A ) {
+			dec_ap_pending(mdev);
+		}
+		
+		if( !(r->rq_status & RQ_DRBD_SENT) ) {
+			drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
+			goto mark;
+		}
+		if(mdev->net_conf->wire_protocol != DRBD_PROT_C ) {
+		mark:
+			drbd_set_out_of_sync(mdev, sector, size);
+		}
+	}
+}
+
+void tl_clear(drbd_dev *mdev)
+{
+	struct list_head tmp;
+	struct drbd_barrier *b,*f;
+
 	WARN("tl_clear()\n");
+	INIT_LIST_HEAD(&tmp);
 
 	spin_lock_irq(&mdev->tl_lock);
 
-	b=mdev->oldest_barrier;
-	mdev->oldest_barrier = NULL;
-	mdev->newest_barrier = NULL; 
+	f = mdev->oldest_barrier;
+	b = f->next;
 
-	spin_unlock_irq(&mdev->tl_lock);
+	// mdev->oldest_barrier = f;
+	mdev->newest_barrier = f;
 
-	while ( 1 ) {
-		list_for_each_safe(le, tle, &b->requests) {
-			r = list_entry(le, struct drbd_request,tl_requests);
-			// bi_size and bi_sector are modified in bio_endio!
-			sector = drbd_req_get_sector(r);
-			size   = drbd_req_get_size(r);
-			
-			if( r->rq_status & RQ_DRBD_ON_WIRE &&
-			    mdev->net_conf->wire_protocol != DRBD_PROT_A ) {
-				dec_ap_pending(mdev);
-			}
+	list_add(&tmp,&f->requests);
+	list_del_init(&f->requests);
 
-			if( !(r->rq_status & RQ_DRBD_SENT) ) {
-				drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
-				goto mark;
-			}
-			if(mdev->net_conf->wire_protocol != DRBD_PROT_C ) {
-			mark:
-				drbd_set_out_of_sync(mdev, sector, size);
-			}
-		}
-		f=b;
-		b=b->next;
-		list_del(&f->requests);
-		if (!b) break;
-		kfree(f);
-		dec_ap_pending(mdev); // for the barrier
-	}
-
-	// f is now the last barrier, we use it as new first barrier.
-
-	INIT_LIST_HEAD(&f->requests);
 	f->next=NULL;
 	f->br_number=4711;
 	f->n_req=0;
 
-	spin_lock_irq(&mdev->tl_lock);
-
-	mdev->oldest_barrier = f;
-	mdev->newest_barrier = f;
-
 	spin_unlock_irq(&mdev->tl_lock);
+
+	tl_clear_barrier(mdev,&tmp);
+
+	while ( b ) {
+		tl_clear_barrier(mdev,&b->requests);
+		f=b;
+		b=b->next;
+		list_del(&f->requests);
+		kfree(f);
+		dec_ap_pending(mdev); // for the barrier
+	}
 }
 
 STATIC unsigned int ee_hash_fn(drbd_dev *mdev, sector_t sector)
