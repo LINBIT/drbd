@@ -946,6 +946,7 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   struct ioctl_get_config current_cn;
   int err;
 
+  /*
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&current_cn);
   if(err)
     {
@@ -958,6 +959,13 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   cn.config.al_extents = current_cn.sconf.al_extents;
   cn.config.use_csums = 0; //current_cn.sconf.use_csums;
   cn.config.skip = 0; //current_cn.sconf.skip;
+  */
+  cn.config.rate = DEF_SYNC_RATE;
+  cn.config.after = DEF_SYNC_AFTER;
+  cn.config.al_extents = DEF_SYNC_AL_EXTENTS;
+  cn.config.use_csums = 0; //current_cn.sconf.use_csums;
+  cn.config.skip = 0; //current_cn.sconf.skip;
+
 
   if(argc > 0)
     {
@@ -1340,9 +1348,9 @@ if(M==D) printf(" _is_default"); \
 printf(";  \t# " U "\n")
 
 #define SHOW_IU(T,U1,U2,M,D) \
-printf("\t" T "\t%d",M); \
+printf("\t" T "\t%d"U1,M); \
 if(M==D) printf(" _is_default"); \
-printf(U1";  \t# " U2 "\n")
+printf(";  \t# " U2 "\n")
 
 #define SHOW_H(T,M,D,H) \
 printf("\t" T "\t%s",H[M]); \
@@ -1392,7 +1400,7 @@ printf(";\n")
       printf("}\n");
     }
 
-  if( cn.state.conn > StandAlone)
+  if( cn.state.disk > Diskless || cn.state.conn > StandAlone)
     {
       printf("syncer {\n");
       SHOW_IU("rate\t","K","(K)Byte/second", cn.sconf.rate, DEF_SYNC_RATE);
@@ -1401,10 +1409,7 @@ printf(";\n")
       if( cn.sconf.skip ) printf("\tskip-sync;\n");
       if( cn.sconf.use_csums ) printf("\tuse-csums;\n");
       printf("}\n");
-    }
 
-  if( cn.state.disk > Diskless || cn.state.conn > StandAlone)
-    {
       err=fstat(drbd_fd,&sb);
       if(err)
 	{
@@ -1423,12 +1428,20 @@ printf(";\n")
 	  cn.lower_device_minor == cn.meta_device_minor ) {
 	printf("\tmeta-disk\tinternal;\n");
       } else {
-	printf("\tmeta-disk\t\"%s\" [%d] _major %d _minor %d;\n",
-	       check_dev_name(cn.meta_device_name,cn.meta_device_major,
-			      cn.meta_device_minor),
-	       cn.meta_index,
-	       cn.meta_device_major,
-	       cn.meta_device_minor);
+	if( cn.meta_index == DRBD_MD_INDEX_FLEX_EXT ) {
+  	  printf("\tflexible-meta-disk\t\"%s\" _major %d _minor %d;\n",
+		 check_dev_name(cn.meta_device_name,cn.meta_device_major,
+				cn.meta_device_minor),
+		 cn.meta_device_major,
+		 cn.meta_device_minor);
+	} else {
+  	  printf("\tmeta-disk\t\"%s\" [%d] _major %d _minor %d;\n",
+		 check_dev_name(cn.meta_device_name,cn.meta_device_major,
+				cn.meta_device_minor),
+		 cn.meta_index,
+		 cn.meta_device_major,
+		 cn.meta_device_minor);
+	}
       }
 
       if( cn.state.conn > StandAlone) {
