@@ -187,6 +187,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	yyin = m_popen(&pid,argv);
 	line = 1;
+	config_file = "drbdsetup/show";
 	running = parse_resource("drbdsetup/show");
 	fclose(yyin);
 	waitpid(pid,0,0);
