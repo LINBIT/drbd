@@ -844,11 +844,8 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 
 	for (i=0; i < minor_count; i++) {
 		odev = drbd_conf + i;
-		if ( odev->state.conn == SyncSource ||
-		     odev->state.conn == SyncTarget ) {
-			if (! _drbd_may_sync_now(odev)) {
-				rv |= _drbd_rs_pause(odev,AfterDependency);
-			}
+		if (! _drbd_may_sync_now(odev)) {
+			rv |= _drbd_rs_pause(odev,AfterDependency);
 		}
 	}
 
