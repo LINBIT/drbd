@@ -413,7 +413,7 @@ static void parse_host_body(struct d_host_info *host,
 			goto break_loop;
 		default:
 			pe_expected("disk | device | address | meta-disk "
-				    "| flex-meta-disk");
+				    "| flexible-meta-disk");
 		}
 	}
       break_loop:

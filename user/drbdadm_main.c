@@ -319,7 +319,7 @@ static void dump_host_info(struct d_host_info* hi)
 static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printI("resource %s {\n",esc(res->name)); ++indent;
-  printA("protocol",res->protocol);
+  if(res->protocol) printA("protocol",res->protocol);
   dump_host_info(res->me);
   dump_host_info(res->peer);
   dump_options("net",res->net_options);
@@ -482,6 +482,9 @@ static void expand_common(void)
     expand_opts(common->sync_options,    &res->sync_options);
     expand_opts(common->startup_options, &res->startup_options);
     expand_opts(common->handlers,        &res->handlers);
+    if(common->protocol && ! res->protocol) {
+      res->protocol = strdup(common->protocol);
+    }
   }
 }
 
