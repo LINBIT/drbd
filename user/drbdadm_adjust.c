@@ -179,6 +179,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	int do_attach=0;
 	int do_connect=0;
 	int do_syncer=0;
+	char config_file_dummy[250];
 
 	argv[argc++]=drbdsetup;
 	argv[argc++]=res->me->device;
@@ -187,8 +188,9 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	yyin = m_popen(&pid,argv);
 	line = 1;
-	config_file = "drbdsetup/show";
-	running = parse_resource("drbdsetup/show");
+	sprintf(config_file_dummy,"drbdsetup %s show", res->me->device);
+	config_file = config_file_dummy;
+	running = parse_resource(config_file_dummy);
 	fclose(yyin);
 	waitpid(pid,0,0);
 

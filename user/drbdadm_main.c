@@ -1291,6 +1291,11 @@ int check_uniq(const char* what, const char *fmt, ...)
   ENTRY e, *ep;
   e.key = e.data = ep = NULL;
 
+  /* if we are done parsing the config file,
+   * switch off this paranoia */
+  if (config_valid >= 2)
+	  return 1;
+
   va_start(ap, fmt);
   rv=vasprintf(&e.key,fmt,ap);
   va_end(ap);
@@ -1561,6 +1566,10 @@ int main(int argc, char** argv)
   my_parse();
 
   if(!config_valid) exit(E_config_invalid);
+
+  /* disable check_uniq, so it won't interfere
+   * with parsing of drbdsetup show output */
+  config_valid = 2;
 
   if (config == NULL) {
     fprintf(stderr, "no resources defined!\n");

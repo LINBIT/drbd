@@ -368,8 +368,7 @@ static void parse_host_body(struct d_host_info *host,
 			EXP(TK_INTEGER);
 			host->port = yylval.txt;
 			range_check(R_PORT, "port", yylval.txt);
-			if (!require_all) /* if not drbdsetup_dump */
-				check_uniq("IP", "%s:%s", host->address, host->port);
+			check_uniq("IP", "%s:%s", host->address, host->port);
 			EXP(';');
 			break;
 		case TK_META_DISK:
