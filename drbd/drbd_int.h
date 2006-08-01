@@ -749,7 +749,6 @@ struct Drbd_Conf {
 	volatile unsigned long last_received; // in jiffies, either socket
 	volatile unsigned int ko_count;
 	struct drbd_work  resync_work,
-			  barrier_work,
 			  unplug_work,
 	                  md_sync_work;
 	struct timer_list resync_timer;

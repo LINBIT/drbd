@@ -57,6 +57,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	   Try to get the locking right :) */
 
 	struct Drbd_Conf* mdev = drbd_req_get_mdev(req);
+	struct drbd_barrier *b;
 	unsigned long flags=0;
 	int uptodate;
 
@@ -124,12 +125,17 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	drbd_req_free(req);
 
  out:
-	if (test_bit(ISSUE_BARRIER,&mdev->flags)) {
-		spin_lock_irqsave(&mdev->data.work.q_lock,flags);
-		if(list_empty(&mdev->barrier_work.list)) {
-			_drbd_queue_work(&mdev->data.work,&mdev->barrier_work);
+	b = kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
+	if(b) {
+		spin_lock_irq(&mdev->tl_lock);
+		if(test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
+			b = _tl_add_barrier(mdev,b);
+			b->w.cb =  w_send_barrier;
+			drbd_queue_work(&mdev->data.work, &b->w);
+		} else {
+			kfree(b);
 		}
-		spin_unlock_irqrestore(&mdev->data.work.q_lock,flags);
+		spin_unlock_irq(&mdev->tl_lock);
 	}
 }
 
@@ -379,6 +385,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 					local=0;
 
 					drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
+					if(b) kfree(b);
 					return 0;
 				}
 			} else {

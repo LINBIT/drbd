@@ -231,35 +231,9 @@ void tl_add(drbd_dev *mdev, drbd_request_t * req)
 }
 
 /**
- * tl_add_barrier: Creates a new barrier object and links it into the
- * transfer log. It returns the the newest (but not the just created 
- * barrier to the caller.
+ * _tl_add_barrier: Adds a barrier to the TL. It returns the the newest 
+ * (but not the just created barrier) to the caller.
  */
-struct drbd_barrier *tl_add_barrier(drbd_dev *mdev)
-{
-	struct drbd_barrier *new, *newest_before;
-
-	new=kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
-	if(!new) {
-		ERR("could not kmalloc() barrier\n");
-		return 0;
-	}
-	INIT_LIST_HEAD(&new->requests);
-	new->next=0;
-	new->n_req=0;
-
-	spin_lock_irq(&mdev->tl_lock);
-	/* mdev->newest_barrier == NULL "cannot happen". but anyways... */
-	newest_before = mdev->newest_barrier;
-	/* never send a barrier number == 0 */
-	new->br_number = (newest_before->br_number+1) ?: 1;
-	mdev->newest_barrier->next = new;
-	mdev->newest_barrier = new;
-	spin_unlock_irq(&mdev->tl_lock);
-
-	return newest_before;
-}
-
 struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 {
 	struct drbd_barrier *newest_before;
@@ -2016,12 +1990,10 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->data.work.q);
 	INIT_LIST_HEAD(&mdev->meta.work.q);
 	INIT_LIST_HEAD(&mdev->resync_work.list);
-	INIT_LIST_HEAD(&mdev->barrier_work.list);
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
 	INIT_LIST_HEAD(&mdev->md_sync_work.list);
 	INIT_LIST_HEAD(&mdev->discard);
 	mdev->resync_work.cb  = w_resync_inactive;
-	mdev->barrier_work.cb = w_try_send_barrier;
 	mdev->unplug_work.cb  = w_send_write_hint;
 	mdev->md_sync_work.cb = w_md_sync;
 	init_timer(&mdev->resync_timer);
@@ -2132,7 +2104,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->data.work.q));
 	D_ASSERT(list_empty(&mdev->meta.work.q));
 	D_ASSERT(list_empty(&mdev->resync_work.list));
-	D_ASSERT(list_empty(&mdev->barrier_work.list));
 	D_ASSERT(list_empty(&mdev->unplug_work.list));
 
 	drbd_set_defaults(mdev);
