@@ -847,8 +847,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 		if ( odev->state.conn == SyncSource ||
 		     odev->state.conn == SyncTarget ) {
 			if (! _drbd_may_sync_now(odev)) {
-				_drbd_rs_pause(odev,AfterDependency);
-				rv = 1;
+				rv |= _drbd_rs_pause(odev,AfterDependency);
 			}
 		}
 	}
@@ -872,8 +871,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 		if ( odev->state.conn == PausedSyncS ||
 		     odev->state.conn == PausedSyncT ) {
 			if (_drbd_may_sync_now(odev)) {
-				_drbd_rs_resume(odev,AfterDependency);
-				rv = 1;
+				rv |= _drbd_rs_resume(odev,AfterDependency);
 			}
 		}
 	}
