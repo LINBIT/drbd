@@ -127,6 +127,7 @@ extern struct d_resource* common;
 extern struct d_globals global_options;
 extern int line, fline, c_resource_start;
 
+extern int no_tty;
 extern int dry_run;
 extern char* drbdsetup;
 extern char ss_buffer[255];

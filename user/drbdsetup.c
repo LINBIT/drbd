@@ -943,10 +943,10 @@ int cmd_wait_sync(int drbd_fd,char** argv,int argc,struct option *options)
 int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 {
   struct ioctl_syncer_config cn;
-  struct ioctl_get_config current_cn;
   int err;
 
   /*
+  struct ioctl_get_config current_cn;
   err=ioctl(drbd_fd,DRBD_IOCTL_GET_CONFIG,&current_cn);
   if(err)
     {

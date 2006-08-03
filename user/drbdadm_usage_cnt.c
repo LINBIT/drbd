@@ -268,7 +268,7 @@ static int make_get_request(char *req_buf) {
 			if (buffer[0] == '\r' || buffer[0] == '\n')
 				writeit = 1;
 		} else {
-			printf("%s", buffer);
+			fprintf(stderr,"%s", buffer);
 		}
 	}
 	fclose(sockfd);
@@ -316,6 +316,14 @@ void uc_node(enum usage_count_type type)
 	if( type == UC_NO ) return;
 	if( getuid() != 0 ) return;
 
+	/* not when running directly from init,
+	 * or if stdout is no tty.
+	 * you do not want to have the "user information message"
+	 * as output from `drbdadm sh-resources all`
+	 */
+	if (getenv("INIT_VERSION")) return;
+	if (no_tty) return;
+
 	current = current_svn_revision();
 
 	if( ! read_node_id(&ni) ) {
@@ -335,7 +343,7 @@ void uc_node(enum usage_count_type type)
 
 	n_comment[0]=0;
 	if (type == UC_ASK ) {
-		printf(
+		fprintf(stderr,
 "\n"
 "\t\t--== This is %s of DRBD ==--\n"
 "Please take part in the global DRBD usage count at http://"HTTP_HOST".\n\n"
@@ -370,12 +378,12 @@ void uc_node(enum usage_count_type type)
 	if (send) {
 		write_node_id(&ni);
 
-		printf(
+		fprintf(stderr,
 "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 "  --==  Thank you for participating in the global usage survey  ==--\n"
 "The server's response is:\n\n");
 		make_get_request(req_buf);
-		printf(
+		fprintf(stderr,
 "\n"
 "In the future drbdadm will only contact "HTTP_HOST" when you update\n"
 "DRBD or when you use 'drbdadm create-md'. Of course it will continue\n"
@@ -458,7 +466,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 
 		if( global_options.usage_count == UC_YES ) send = 1;
 		if( global_options.usage_count == UC_ASK ) {
-			printf(
+			fprintf(stderr,
 "\n"
 "\t\t--== Creating metadata ==--\n"
 "As with nodes we count the total number of devices mirrored by DRBD at\n"

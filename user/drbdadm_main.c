@@ -120,6 +120,7 @@ struct ifreq *ifreq_list = NULL;
 int nr_resources;
 int highest_minor;
 int config_valid=1;
+int no_tty;
 int dry_run;
 int do_verify_ips;
 char* drbdsetup;
@@ -320,6 +321,7 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
 {
   printI("resource %s {\n",esc(res->name)); ++indent;
   if(res->protocol) printA("protocol",res->protocol);
+  // else if (common && common->protocol) printA("# common protocol", common->protocol);
   dump_host_info(res->me);
   dump_host_info(res->peer);
   dump_options("net",res->net_options);
@@ -1016,7 +1018,7 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
 
   saved_stdin = -1;
   saved_stdout = -1;
-  if( isatty(fileno(stdin)) == 0 || isatty(fileno(stdout)) == 0 ) {
+  if (no_tty) {
     fprintf(stderr,"WARN: stdin/stdout is not a TTY; using /dev/console");
     fprintf(stdout,"WARN: stdin/stdout is not a TTY; using /dev/console");
     saved_stdin  = dup(fileno(stdin));
@@ -1337,10 +1339,13 @@ void validate_resource(struct d_resource * res)
   struct d_option* opt;
 
   if (!res->protocol) {
-    fprintf(stderr,
-	    "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
-	    config_file, c_resource_start, res->name);
-    config_valid = 0;
+    if (!common || !common->protocol) {
+      fprintf(stderr,
+	      "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
+	      config_file, c_resource_start, res->name);
+      config_valid = 0;
+    } /* else:
+       * may not have been expanded yet for "dump" subcommand */
   } else {
     res->protocol[0] = toupper(res->protocol[0]);
   }
@@ -1408,6 +1413,7 @@ int main(int argc, char** argv)
   dry_run=0;
   yyin=NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
+  no_tty = (!isatty(fileno(stdin)) || !isatty(fileno(stdout)));
 
   env_drbd_nodename = getenv("__DRBD_NODE__");
   if (env_drbd_nodename && *env_drbd_nodename) {
@@ -1612,9 +1618,9 @@ int main(int argc, char** argv)
       if (optind + 1 > argc && !is_dump)
         print_usage_and_exit("missing arguments"); // arguments missing.
 
-      if(!is_dump) {
-	expand_common();
-	global_validate();
+      if (!is_dump || dry_run) expand_common();
+      global_validate();
+      if (!is_dump) {
 	if(!config_valid) exit(E_config_invalid);
 
         for_each_resource(res,tmp,config) {
