@@ -1442,7 +1442,8 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	if(!inc_local(mdev) || mdev->state.disk < UpToDate ) {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not satisfy peer's read request, no local data.\n");
-		drbd_send_ack(mdev,NegDReply,e);
+		drbd_send_ack(mdev,h->command == DataRequest ? NegDReply :
+			      NegRSDReply ,e);
 		drbd_free_ee(mdev,e);
 		return TRUE;
 	}

@@ -161,8 +161,7 @@ int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req)
 
 int drbd_pr_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
 {
-	struct hlist_head *slot = mdev->app_reads_hash +
-		ar_hash_fn(mdev, drbd_req_get_sector(req) );
+	struct hlist_head *slot = mdev->app_reads_hash+ar_hash_fn(mdev,sector);
 	struct hlist_node *n;
 	drbd_request_t * i;
 	int rv=0;
