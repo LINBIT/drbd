@@ -357,8 +357,6 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	sector = bdev->md.md_offset + bdev->md.al_offset + index;
 
 	if(!drbd_md_sync_page_io(mdev,bdev,sector,READ)) {
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
 		return -1;
 	}
 
