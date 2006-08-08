@@ -880,6 +880,10 @@ extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			 struct Tl_epoch_entry *e);
+extern int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+			    Drbd_BlockRequest_Packet *rp);
+extern int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+			    Drbd_Data_Packet *dp);
 extern int _drbd_send_page(drbd_dev *mdev, struct page *page,
 			   int offset, size_t size);
 extern int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,

@@ -988,18 +988,14 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev,sector,data_size);
-	if(!e) return FALSE;
+	if(!e) {
+		dec_local(mdev);
+		return FALSE;
+	}
 
 	dec_rs_pending(mdev);
 
 	e->block_id = ID_SYNCER;
-	if(!inc_local(mdev)) {
-		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Can not write resync data to local disk.\n");
-		drbd_send_ack(mdev,NegAck,e);
-		drbd_free_ee(mdev,e);
-		return TRUE;
-	}
 
 	drbd_ee_prepare_write(mdev,e);
 	e->w.cb     = e_end_resync_block;
@@ -1078,6 +1074,13 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	sector = be64_to_cpu(p->sector);
 	D_ASSERT(p->block_id == ID_SYNCER);
+
+	if(!inc_local(mdev)) {
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Can not write resync data to local disk.\n");
+		drbd_send_ack_dp(mdev,NegAck,p);
+		return TRUE;
+	}
 
 	ok = recv_resync_read(mdev,sector,data_size);
 
@@ -1221,16 +1224,18 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
-	sector = be64_to_cpu(p->sector);
-	e = read_in_block(mdev,sector,data_size);
-	if (!e) return FALSE;
-
 	if(!inc_local(mdev)) {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write mirrored data block to local disk.\n");
-		drbd_send_ack(mdev,NegAck,e);
-		rv = TRUE;
-		goto out1;
+		drbd_send_ack_dp(mdev,NegAck,p);
+		return TRUE;
+	}
+
+	sector = be64_to_cpu(p->sector);
+	e = read_in_block(mdev,sector,data_size);
+	if (!e) {
+		dec_local(mdev);
+		return FALSE;
 	}
 
 	e->block_id = p->block_id; // no meaning on this side, e* on partner
@@ -1399,7 +1404,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	 * but we drop the connection anyways, so we don't have a chance to
 	 * receive a barrier... atomic_inc(&mdev->epoch_size); */
 	dec_local(mdev);
- out1:
 	drbd_free_ee(mdev,e);
 	return rv;
 }
@@ -1431,22 +1435,24 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
+	if(!inc_local(mdev) || mdev->state.disk < UpToDate ) {
+		if (DRBD_ratelimit(5*HZ,5))
+			ERR("Can not satisfy peer's read request, no local data.\n");
+		drbd_send_ack_rp(mdev,h->command == DataRequest ? NegDReply :
+				 NegRSDReply ,p);
+		return TRUE;
+	}
+
 	e = drbd_alloc_ee(mdev,sector,size,GFP_KERNEL);
-	if (!e) return FALSE;
+	if (!e) {
+		dec_local(mdev);
+		return FALSE;
+	}
 
 	e->block_id = p->block_id; // no meaning on this side, pr* on partner
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);
-
-	if(!inc_local(mdev) || mdev->state.disk < UpToDate ) {
-		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Can not satisfy peer's read request, no local data.\n");
-		drbd_send_ack(mdev,h->command == DataRequest ? NegDReply :
-			      NegRSDReply ,e);
-		drbd_free_ee(mdev,e);
-		return TRUE;
-	}
 
 	drbd_ee_prepare_read(mdev,e);
 

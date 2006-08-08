@@ -1497,29 +1497,50 @@ int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
 	return ok;
 }
 
-
-int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
+/** 
+ * _drbd_send_ack:
+ * This helper function expects the sector and block_id parameter already
+ * in big endian!
+ */ 
+static int _drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+			  sector_t sector,
+			  unsigned int blksize,
+			  u64 block_id)
 {
 	int ok;
 	Drbd_BlockAck_Packet p;
 
-	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
-	p.block_id = e->block_id;
-	p.blksize  = cpu_to_be32(drbd_ee_get_size(e));
-/*
- * FIXME kernel source <= 2.6.8 don't have atomic_add_return!
- */
-#if 0
-#warning "YES I KNOW. JUST SO IT COMPILES NOW."
-	atomic_inc(&mdev->packet_seq);
-	p.seq_num = atomic_read(&mdev->packet_seq);
-#else
+	p.sector   = sector;
+	p.block_id = block_id;
+	p.blksize  = blksize;
 	p.seq_num  = cpu_to_be32(atomic_add_return(1,&mdev->packet_seq));
-#endif
 
 	if (!mdev->meta.socket || mdev->state.conn < Connected) return FALSE;
 	ok=drbd_send_cmd(mdev,USE_META_SOCKET,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
+}
+
+int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+		     Drbd_Data_Packet *dp)
+{
+	const int header_size = sizeof(Drbd_Data_Packet) - sizeof(Drbd_Header);
+	int data_size  = ((Drbd_Header*)dp)->length - header_size;
+
+	return _drbd_send_ack(mdev,cmd,dp->sector,data_size,dp->block_id);
+}
+
+int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+		     Drbd_BlockRequest_Packet *rp)
+{
+	return _drbd_send_ack(mdev,cmd,rp->sector,rp->blksize,rp->block_id);
+}
+
+int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
+{
+	return _drbd_send_ack(mdev,cmd,
+			      cpu_to_be64(drbd_ee_get_sector(e)),
+			      cpu_to_be32(drbd_ee_get_size(e)),
+			      e->block_id);
 }
 
 int drbd_send_drequest(drbd_dev *mdev, int cmd,
