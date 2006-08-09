@@ -2124,9 +2124,11 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
 	if(nconn == Connected && ns.disk == Attaching) ns.disk = UpToDate;
-	rv = _drbd_set_state(mdev,ns,ChgStateVerbose);
+	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns,ChgStateVerbose);
+	if (rv==SS_Success) {
+		after_state_ch(mdev,os,ns,ChgStateVerbose | ChgStateHard);
+	}
 
 	if(rv < SS_Success) {
 		drbd_force_state(mdev,NS(conn,StandAlone));
