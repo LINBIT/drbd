@@ -2281,9 +2281,9 @@ STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	after_state_ch(mdev,os,ns,ChgStateVerbose);
+	if( r == SS_Success) after_state_ch(mdev,os,ns,ChgStateVerbose);
 
-	if( r >= 0 ) {
+	if( r >= SS_Success) {
 		drbd_md_sync(mdev);
 		drbd_send_short_cmd(mdev, OutdatedReply);
 		return TRUE;
