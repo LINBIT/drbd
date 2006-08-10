@@ -732,8 +732,10 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
 #ifdef DUMP_EACH_PACKET
-	INFO("drbd_set_in_sync: sector=%lu size=%d sbnr=%lu ebnr=%lu\n",
-			(unsigned long)sector, size, sbnr, ebnr);
+	if (dump_packets >= DUMP_MAX) {
+	    INFO("drbd_set_in_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
+		 (long long)sector, size, sbnr, ebnr);
+	}
 #endif
 
 	if (sbnr > ebnr) return;
@@ -793,6 +795,13 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	 * we do not need to round anything here */
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
+
+#ifdef DUMP_EACH_PACKET
+	if (dump_packets >= DUMP_MAX) {
+	    INFO("drbd_set_out_of_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
+		 (long long)sector, size, sbnr, ebnr);
+	}
+#endif
 
 	/*
 	 * ok, (capacity & 7) != 0 sometimes, but who cares...

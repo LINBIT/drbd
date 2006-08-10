@@ -126,6 +126,14 @@ int minor_count = 8;
 #endif
 int disable_bd_claim = 0;
 
+#ifdef DUMP_EACH_PACKET
+int dump_packets = 0;	// Module parameter that controls packet tracing
+			// 0 = none
+			// 1 = summary (trace 'interesting' packets in summary fmt)
+			// 2 = verbose (trace all packets in full format)
+module_param(dump_packets,int,0644);
+#endif
+
 // devfs name
 char* drbd_devfs_name = "drbd";
 
@@ -859,6 +867,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 #if DUMP_MD >= 2
+	{
 	char *pbp,pb[300];
 	pbp = pb;
 	*pbp=0;
@@ -872,6 +881,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	PSC(peer_isp);
 	PSC(user_isp);
 	INFO("%s\n", pb);
+	}
 #endif
 
 	mdev->state.i = ns.i;
@@ -2869,6 +2879,146 @@ STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	return 1;
 }
+
+#ifdef DUMP_EACH_PACKET
+#define PSM(A) \
+do { \
+	if( mask.A ) { \
+		int i = snprintf(p, len, " " #A "( %s )", \
+				A##s_to_name(val.A)); \
+		if (i >= len) return op; \
+		p += i; \
+		len -= i; \
+	} \
+} while (0)
+
+STATIC char *dump_st(char *p, int len, drbd_state_t mask, drbd_state_t val)
+{
+	char *op=p;
+	*p = '\0';
+	PSM(role);
+	PSM(peer);
+	PSM(conn);
+	PSM(disk);
+	PSM(pdsk);
+
+	return op;
+}
+
+#define INFOP(fmt, args...) \
+do { \
+	if (dump_packets > DUMP_SUMMARY) { \
+		INFO("%s:%d: %s [%d] %s %s " fmt , \
+		     file, line, current->comm, current->pid, \
+		     sockname, recv?"<<<":">>>" \
+		     , ## args ); \
+	} \
+	else { \
+		INFO("%s " fmt, recv?"<<<":">>>", ## args ); \
+	} \
+} while (0)
+
+void
+_dump_packet(drbd_dev *mdev, struct socket *sock,
+	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
+{
+	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
+	int cmd = (recv == 2) ? p->head.command : be16_to_cpu(p->head.command);
+	char tmp[300];
+	drbd_state_t m,v;
+
+	switch (cmd) {
+	case HandShake:
+		INFOP("%s (protocol %u)\n", cmdname(cmd), be32_to_cpu(p->HandShake.protocol_version));
+		break;
+
+	case ReportBitMap: /* don't report this */
+		break;
+
+	case Data:
+	case DataReply:
+	case RSDataReply:
+		INFOP("%s (sector %llx, id %llx, seq %x, f %x)\n", cmdname(cmd),
+		     (long long)be64_to_cpu(p->Data.sector), 
+		     (long long)be64_to_cpu(p->Data.block_id),
+		     be32_to_cpu(p->Data.seq_num),
+		     be32_to_cpu(p->Data.dp_flags)
+		);
+		break;
+
+	case RecvAck:
+	case WriteAck:
+	case NegAck:
+		INFOP("%s (sector %llx, size %x, id %llx, seq %x)\n", cmdname(cmd),
+		     (long long)be64_to_cpu(p->BlockAck.sector), 
+		     be32_to_cpu(p->BlockAck.blksize),
+		     (long long)be64_to_cpu(p->BlockAck.block_id),
+		     be32_to_cpu(p->BlockAck.seq_num)
+		);
+		break;
+
+	case DataRequest:
+	case RSDataRequest:
+		INFOP("%s (sector %llx, size %x, id %llx)\n", cmdname(cmd),
+		     (long long)be64_to_cpu(p->BlockRequest.sector), 
+		     be32_to_cpu(p->BlockRequest.blksize),
+		     (long long)be64_to_cpu(p->BlockRequest.block_id)
+		);
+		break;
+
+	case Barrier:
+	case BarrierAck:
+		INFOP("%s (barrier %u)\n", cmdname(cmd), p->Barrier.barrier);
+		break;
+
+	case ReportSizes:
+		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, max bio %x, q order %x)\n", cmdname(cmd), 
+		     (long long)(be64_to_cpu(p->Sizes.d_size)>>(20-9)),
+		     (long long)(be64_to_cpu(p->Sizes.u_size)>>(20-9)),
+		     (long long)(be64_to_cpu(p->Sizes.c_size)>>(20-9)),
+		     be32_to_cpu(p->Sizes.max_segment_size),
+		     be32_to_cpu(p->Sizes.queue_order_type));
+		break;
+
+	case ReportState:
+		v.i = be32_to_cpu(p->State.state);
+		m.i = 0xffffffff;
+		dump_st(tmp,sizeof(tmp),m,v);
+		INFOP("%s (s %x {%s})\n", cmdname(cmd), v.i, tmp);
+		break;
+
+	case StateChgRequest:
+		m.i = be32_to_cpu(p->ReqState.mask);
+		v.i = be32_to_cpu(p->ReqState.val);
+		dump_st(tmp,sizeof(tmp),m,v);
+		INFOP("%s (m %x v %x {%s})\n", cmdname(cmd), m.i, v.i, tmp);
+		break;
+
+	case StateChgReply:
+		INFOP("%s (ret %x)\n", cmdname(cmd), 
+		     be32_to_cpu(p->RqSReply.retcode));
+		break;
+
+	case DiscardNote:
+		INFOP("%s (id %llx, seq %x)\n", cmdname(cmd),
+		     (long long)be64_to_cpu(p->Discard.block_id),
+		     be32_to_cpu(p->Discard.seq_num));
+		break;
+
+	case Ping:
+	case PingAck:
+		/*
+		 * Dont trace pings at summary level
+		 */
+		if (dump_packets <= DUMP_SUMMARY)
+			break;
+		/* fall through... */
+	default:
+		INFOP("%s (%u)\n",cmdname(cmd), cmd);
+		break;
+	}
+}
+#endif
 
 module_init(drbd_init)
 module_exit(drbd_cleanup)

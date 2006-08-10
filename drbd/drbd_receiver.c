@@ -2375,6 +2375,8 @@ STATIC void drbdd(drbd_dev *mdev)
 		else
 			handler = NULL;
 
+		dump_packet(mdev,mdev->data.socket,2,&mdev->data.rbuf, __FILE__, __LINE__);
+
 		if (unlikely(!handler)) {
 			ERR("unknown packet type %d, l: %d!\n",
 			    header->command, header->length);
@@ -2385,7 +2387,6 @@ STATIC void drbdd(drbd_dev *mdev)
 			    cmdname(header->command), header->length);
 			break;
 		}
-		dump_packet(mdev,mdev->data.socket,2,&mdev->data.rbuf, __FILE__, __LINE__);
 	}
 }
 

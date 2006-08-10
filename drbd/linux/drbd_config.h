@@ -36,7 +36,8 @@ extern const char * drbd_buildtag(void);
 #define DUMP_MD 2       // Dump even all cstate changes (I like it!)
 //#define PARANOIA // some extra checks
 
-// don't enable this, unless you can cope with gigabyte syslogs :)
+// Define this to enable printing of packets under control of dump_packets
+// module parameter (/sys/module/drbd/parameters/dump_packets)
 //#define DUMP_EACH_PACKET
 
 // Dump every hour the usage / not usage of zero copy IO

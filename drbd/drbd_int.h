@@ -361,8 +361,22 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[StateChgReply]    = "StateChgReply"
 	};
 
-	if (cmd == HandShake) return "HandShake";
-	if (Data > cmd || cmd >= MAX_CMD) return "Unknown";
+	if (Data > cmd || cmd >= MAX_CMD) {
+	    switch (cmd) {
+	    case HandShakeM:
+		return "HandShakeM";
+		break;
+	    case HandShakeS:
+		return "HandShakeS";
+		break;
+	    case HandShake:
+		return "HandShake";
+		break;
+	    default:
+		return "Unknown";
+		break;
+	    }
+	}
 	return cmdnames[cmd];
 }
 
@@ -543,7 +557,10 @@ typedef union {
 	Drbd_Sizes_Packet        Sizes;
 	Drbd_GenCnt_Packet       GenCnt;
 	Drbd_State_Packet        State;
+	Drbd_Req_State_Packet	 ReqState;
+	Drbd_RqS_Reply_Packet	 RqSReply;
 	Drbd_BlockRequest_Packet BlockRequest;
+	Drbd_Discard_Packet	 Discard;
 } __attribute((packed)) Drbd_Polymorph_Packet;
 
 /**********************************************************************/
@@ -1602,63 +1619,29 @@ static inline int peer_seq(drbd_dev* mdev)
 }
 
 #ifdef DUMP_EACH_PACKET
+
+/*
+ * variable that controls dumping
+ */
+extern int dump_packets;
+
+#define DUMP_NONE 0
+#define DUMP_SUMMARY 1
+#define DUMP_ALL 2
+#define DUMP_MAX 3
+
 /*
  * enable to dump information about every packet exchange.
  */
-#define INFOP(fmt, args...) \
-	INFO("%s:%d: %s [%d] %s %s " fmt , \
-	     file, line, current->comm, current->pid, \
-	     sockname, recv?"<<<":">>>" \
-	     , ## args )
+extern void _dump_packet(drbd_dev *mdev, struct socket *sock,
+			 int recv, Drbd_Polymorph_Packet *p, char* file, int line);
+
 static inline void
 dump_packet(drbd_dev *mdev, struct socket *sock,
 	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
 {
-	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
-	int cmd = (recv == 2) ? p->head.command : be16_to_cpu(p->head.command);
-	switch (cmd) {
-	case HandShake:
-		INFOP("%s (%u)\n", be32_to_cpu(p->HandShake.protocol_version));
-		break;
-
-	case Ping:
-	case PingAck:
-	case BecomeSyncTarget:
-	case BecomeSyncSource:
-	case UnplugRemote:
-
-	case SyncParam:
-	case ReportParams:
-		INFOP("%s\n", cmdname(cmd));
-		break;
-
-	case ReportBitMap: /* don't report this */
-		break;
-
-	case Data:
-	case DataReply:
-	case RSDataReply:
-
-	case RecvAck:   /* yes I know. but it is the same layout */
-	case WriteAck:
-	case NegAck:
-
-	case DataRequest:
-	case RSDataRequest:
-		INFOP("%s (%lu,%llx)\n", cmdname(cmd),
-		     (long)be64_to_cpu(p->Data.sector), (long long)p->Data.block_id
-		);
-		break;
-
-	case Barrier:
-	case BarrierAck:
-		INFOP("%s (%u)\n", cmdname(cmd), p->Barrier.barrier);
-		break;
-
-	default:
-		INFOP("%s (%u)\n",cmdname(cmd), cmd);
-		break;
-	}
+	if (dump_packets > DUMP_NONE)
+		_dump_packet(mdev,sock,recv,p,file,line);
 }
 #else
 #define dump_packet(ignored...) ((void)0)
