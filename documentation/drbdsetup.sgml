@@ -55,7 +55,6 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">syncer</arg>
-      <arg>-k</arg>
       <arg>-a<arg choice="req"><replaceable>dev_minor</replaceable></arg></arg>
       <arg>-r<arg choice="req"><replaceable>rate</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>extents</replaceable></arg></arg>
@@ -585,15 +584,6 @@
 	      default unit is KB/sec.  
 	    </para>
 	  </listitem>
-	</varlistentry>
-	<varlistentry>
-	  <term><option>-k</option>,
-	  <option>--skip-sync </option></term>
-	  <listitem><para>
-	  This option suppresses the automatic start of the resynchronization
-	  process, which
-	  is triggered as soon as two DRBD devices are connected.
-	  </para></listitem>
 	</varlistentry>
 	<varlistentry>
 	  <term><option>-a</option>,

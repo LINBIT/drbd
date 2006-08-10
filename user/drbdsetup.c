@@ -957,14 +957,10 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
   cn.config.rate = current_cn.sconf.rate;
   cn.config.after = current_cn.sconf.after;
   cn.config.al_extents = current_cn.sconf.al_extents;
-  cn.config.use_csums = 0; //current_cn.sconf.use_csums;
-  cn.config.skip = 0; //current_cn.sconf.skip;
   */
   cn.config.rate = DEF_SYNC_RATE;
   cn.config.after = DEF_SYNC_AFTER;
   cn.config.al_extents = DEF_SYNC_AL_EXTENTS;
-  cn.config.use_csums = 0; //current_cn.sconf.use_csums;
-  cn.config.skip = 0; //current_cn.sconf.skip;
 
 
   if(argc > 0)
@@ -978,12 +974,6 @@ int cmd_syncer(int drbd_fd,char** argv,int argc,struct option *options)
 	  if(c == -1) break;
 	  switch(c)
 	    {
-	    case 'c':
-	      cn.config.use_csums=1;
-	      break;
-	    case 'k':
-	      cn.config.skip=1;
-	      break;
 	    case 'r':
 	      cn.config.rate=m_strtoll_range(optarg,'K', "rate",
 			      DRBD_RATE_MIN, DRBD_RATE_MAX);
@@ -1406,8 +1396,6 @@ printf(";\n")
       SHOW_IU("rate\t","K","(K)Byte/second", cn.sconf.rate, DEF_SYNC_RATE);
       SHOW_I("after\t","minor", cn.sconf.after, DEF_SYNC_AFTER);
       SHOW_I("al-extents","4MByte", cn.sconf.al_extents, DEF_SYNC_AL_EXTENTS);
-      if( cn.sconf.skip ) printf("\tskip-sync;\n");
-      if( cn.sconf.use_csums ) printf("\tuse-csums;\n");
       printf("}\n");
 
       err=fstat(drbd_fd,&sb);

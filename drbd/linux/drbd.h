@@ -128,8 +128,6 @@ struct net_config {
 
 struct syncer_config {
 	int      rate; /* KB/sec */
-	int      use_csums;   /* use checksum based syncing*/
-	int      skip;
 	int      after;
 	int      al_extents;
 	const int _pad;
@@ -221,8 +219,6 @@ typedef enum {
 	WFReportParams, // we have a socket
 	TearDown,
 	Connected,      // we have introduced each other
-	SkippedSyncS,   // we should have synced, but user said no
-	SkippedSyncT,
 	StartingSyncS,  // starting full sync by IOCTL.
 	StartingSyncT,  // stariing full sync by IOCTL.
 	WFBitMapS,

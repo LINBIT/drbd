@@ -724,7 +724,6 @@ STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
 		rv=SS_SyncingDiskless;
 
 	else if( (ns.conn == Connected ||
-		  ns.conn == SkippedSyncS ||
 		  ns.conn == WFBitMapS ||
 		  ns.conn == SyncSource ||
 		  ns.conn == PausedSyncS) &&
@@ -782,13 +781,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	if( ns.conn >= Connected &&
 	    ( ns.disk == Consistent || ns.disk == Outdated ) ) {
 		switch(ns.conn) {
-		case SkippedSyncT:
 		case WFBitMapT:
 		case PausedSyncT:
 			ns.disk = Outdated;
 			break;
 		case Connected:
-		case SkippedSyncS:
 		case WFBitMapS:
 		case SyncSource:
 		case PausedSyncS:
@@ -808,13 +805,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	    ( ns.pdsk == Consistent || ns.pdsk == Outdated ) ) {
 		switch(ns.conn) {
 		case Connected:
-		case SkippedSyncT:
 		case WFBitMapT:
 		case PausedSyncT:
 		case SyncTarget:
 			ns.pdsk = UpToDate;
 			break;
-		case SkippedSyncS:
 		case WFBitMapS:
 		case PausedSyncS:
 			ns.pdsk = Outdated;
@@ -1313,8 +1308,6 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
 	Drbd_SyncParam_Packet p;
 
 	p.rate      = cpu_to_be32(sc->rate);
-	p.use_csums = cpu_to_be32(sc->use_csums);
-	p.skip      = cpu_to_be32(sc->skip);
 	p.after     = cpu_to_be32(sc->after);
 
 	return drbd_send_cmd(mdev,USE_DATA_SOCKET,SyncParam,(Drbd_Header*)&p,sizeof(p));

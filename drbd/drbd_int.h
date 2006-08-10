@@ -483,8 +483,6 @@ typedef struct {
 typedef struct {
 	Drbd_Header head;
 	u32         rate;
-	u32         use_csums;
-	u32         skip;
 	u32         after;
 } __attribute((packed)) Drbd_SyncParam_Packet;
 

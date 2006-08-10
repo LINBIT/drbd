@@ -9,11 +9,11 @@ void __assert_sizeof_ ##type ## _modulo_8_eq_0(void) { COMPILETIME_ASSERT(sizeof
 
 SZO(disk_config,	 32)
 SZO(net_config,		456)
-SZO(syncer_config,	 24)
+SZO(syncer_config,	 16)
 SZO(ioctl_disk_config,	 40)
 SZO(ioctl_net_config,	464)
-SZO(ioctl_syncer_config, 32)
+SZO(ioctl_syncer_config, 24)
 SZO(ioctl_wait,		 16)
-SZO(ioctl_get_config,	584)
+SZO(ioctl_get_config,	576)
 SZO(ioctl_get_uuids,     48)
 
