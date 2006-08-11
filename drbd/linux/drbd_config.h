@@ -38,7 +38,7 @@ extern const char * drbd_buildtag(void);
 
 // Define this to enable printing of packets under control of dump_packets
 // module parameter (/sys/module/drbd/parameters/dump_packets)
-//#define DUMP_EACH_PACKET
+#define DUMP_EACH_PACKET
 
 // Dump every hour the usage / not usage of zero copy IO
 //#define SHOW_SENDPAGE_USAGE

@@ -1521,9 +1521,9 @@ int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
  * This helper function expects the sector and block_id parameter already
  * in big endian!
  */ 
-static int _drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
-			  sector_t sector,
-			  unsigned int blksize,
+static int _drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
+			  u64 sector,
+			  u32 blksize,
 			  u64 block_id)
 {
 	int ok;
