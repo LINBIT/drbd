@@ -150,8 +150,6 @@ struct drbd_cmd commands[] = {
   {"invalidate_remote", cmd_invalidate_rem,0, 0, },
   {"syncer", cmd_syncer,                0,
    (struct option[]) {
-     { "use-csums",  no_argument,       0, 'c' },
-     { "skip-sync",  no_argument,       0, 'k' },
      { "after",      required_argument, 0, 'a' },
      { "rate",       required_argument, 0, 'r' },
      { "al-extents", required_argument, 0, 'e' },
