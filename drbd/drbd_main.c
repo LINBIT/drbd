@@ -131,7 +131,12 @@ int dump_packets = 0;	// Module parameter that controls packet tracing
 			// 0 = none
 			// 1 = summary (trace 'interesting' packets in summary fmt)
 			// 2 = verbose (trace all packets in full format)
+int dump_packet_devs = 0;// bitmap of drbd devices to have tracing
+			// enabled
+
 module_param(dump_packets,int,0644);
+module_param(dump_packet_devs,int,0644);
+
 #endif
 
 // devfs name
@@ -305,13 +310,22 @@ int tl_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
 
 	hlist_for_each_entry(i, n, slot, colision) {
 		if (i==req) {
-			D_ASSERT(drbd_req_get_sector(i) == sector);
-			rv=1;
-			break;
+		  if (drbd_req_get_sector(i) != sector) {
+			  ERR("tl_verify: found req %p but it has wrong sector (%llx versus %llx)\n",
+			      req, (long long)drbd_req_get_sector(i), (long long)sector);
+		  }
+		  rv=1;
+		  break;
 		}
 	}
 
 	spin_unlock_irq(&mdev->tl_lock);
+
+	// Really better find it!
+	if (!rv) {
+		ERR("tl_verify: failed to find req %p, sector %llx in list\n", 
+		    req, (long long)sector);
+	}
 
 	return rv;
 }
@@ -1294,6 +1308,8 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 	h.length  = cpu_to_be16(size);
 
 	down(&mdev->data.mutex);
+
+	dump_packet(mdev,mdev->data.socket,0,(void*)&h, __FILE__, __LINE__);
 
 	ok = ( sizeof(h) == drbd_send(mdev,mdev->data.socket,&h,sizeof(h),0) );
 	ok = ok && ( size == drbd_send(mdev,mdev->data.socket,data,size,0) );
@@ -2903,11 +2919,13 @@ do { \
 	if (dump_packets > DUMP_SUMMARY) { \
 		INFO("%s:%d: %s [%d] %s %s " fmt , \
 		     file, line, current->comm, current->pid, \
-		     sockname, recv?"<<<":">>>" \
-		     , ## args ); \
+		     sockname, recv?"<<<":">>>", \
+		     ## args ); \
 	} \
 	else { \
-		INFO("%s " fmt, recv?"<<<":">>>", ## args ); \
+		INFO("%s %s " fmt, sockname, \
+		     recv?"<<<":">>>", \
+		     ## args ); \
 	} \
 } while (0)
 
@@ -2929,13 +2947,19 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		break;
 
 	case Data:
-	case DataReply:
-	case RSDataReply:
 		INFOP("%s (sector %llx, id %llx, seq %x, f %x)\n", cmdname(cmd),
 		     (long long)be64_to_cpu(p->Data.sector), 
 		     (long long)be64_to_cpu(p->Data.block_id),
 		     be32_to_cpu(p->Data.seq_num),
 		     be32_to_cpu(p->Data.dp_flags)
+		);
+		break;
+
+	case DataReply:
+	case RSDataReply:
+		INFOP("%s (sector %llx, id %llx)\n", cmdname(cmd),
+		     (long long)be64_to_cpu(p->Data.sector), 
+		     (long long)be64_to_cpu(p->Data.block_id)
 		);
 		break;
 

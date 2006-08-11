@@ -1619,9 +1619,10 @@ static inline int peer_seq(drbd_dev* mdev)
 #ifdef DUMP_EACH_PACKET
 
 /*
- * variable that controls dumping
+ * variables that controls dumping
  */
 extern int dump_packets;
+extern int dump_packet_devs; 
 
 #define DUMP_NONE 0
 #define DUMP_SUMMARY 1
@@ -1638,7 +1639,8 @@ static inline void
 dump_packet(drbd_dev *mdev, struct socket *sock,
 	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
 {
-	if (dump_packets > DUMP_NONE)
+	if (dump_packets > DUMP_NONE &&
+	    ( ( 1 << (int)(mdev-drbd_conf)) & dump_packet_devs) )
 		_dump_packet(mdev,sock,recv,p,file,line);
 }
 #else
