@@ -1350,7 +1350,7 @@ int md_initialize_common(struct format *cfg)
 		size_t i;
 		unsigned int percent_done = 0;
 		unsigned int percent_last_report = 0;
-		fprintf(stderr,"initialising bitmap (%u KB)\n", (bm_bytes>>10));
+		fprintf(stderr,"initialising bitmap (%u KB)\n", (unsigned int)(bm_bytes>>10));
 		/* give some progress */
 		for (i = 0; i < bm_bytes; i += chunk) {
 			MEMSET((char*)cfg->on_disk.bm+i, 0xff, chunk);
@@ -1360,11 +1360,11 @@ int md_initialize_common(struct format *cfg)
 				percent_last_report = percent_done;
 			}
 		}
+		fprintf(stderr,"\r100%%\n");
 #else
 		printf("initialising bitmap (%u KB)\n", (bm_bytes>>10));
 		MEMSET((void*)cfg->on_disk.bm, 0xff, bm_bytes);
 #endif
-		//fprintf(stderr,"\r100%%\n");
 	}
 #endif
 	return 0;
@@ -2460,16 +2460,6 @@ int main(int argc, char **argv)
 		exit(20);
 	}
 
-	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
-	if (cfg->drbd_fd > -1) {
-		if (is_attached(dt_minor_of_dev(cfg->drbd_dev_name))) {
-			fprintf(stderr, "Device '%s' is configured!\n",
-				cfg->drbd_dev_name);
-			exit(20);
-		}
-	}
-
-
 	for (i = 0; i < ARRY_SIZE(cmds); i++) {
 		if (!strcmp(cmds[i].name, argv[ai])) {
 			command = cmds + i;
@@ -2481,6 +2471,17 @@ int main(int argc, char **argv)
 		exit(20);
 	}
 	ai++;
+
+	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
+	if (cfg->drbd_fd > -1) {
+		if (is_attached(dt_minor_of_dev(cfg->drbd_dev_name))) {
+			if (!(force && (command->function == meta_dump_md))) {
+				fprintf(stderr, "Device '%s' is configured!\n",
+					cfg->drbd_dev_name);
+				exit(20);
+			}
+		}
+	}
 
 	return command->function(cfg, argv + ai, argc - ai);
 	/* and if we want an explicit free,

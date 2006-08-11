@@ -1424,26 +1424,37 @@ int main(int argc, char** argv)
             "   PRETENDING that I am >>%s<<\n\n",nodeinfo.nodename);
   }
 
-  if(argc == 1) print_usage_and_exit("missing arguments"); // arguments missing.
-
   /* in case drbdadm is called with an absolut or relative pathname
    * look for the drbdsetup binary in the same location,
    * otherwise, just let execvp sort it out... */
   if( (progname=strrchr(argv[0],'/')) == 0 ) {
     progname=argv[0];
     drbdsetup = strdup("drbdsetup");
+    drbdmeta = strdup("drbdmeta");
   } else {
     size_t len = strlen(argv[0]) + 1;
     ++progname;
+
     len += strlen("drbdsetup") - strlen(progname);
     drbdsetup = malloc(len);
     if (drbdsetup) {
       strncpy(drbdsetup, argv[0], (progname - argv[0]));
       strcpy(drbdsetup + (progname - argv[0]), "drbdsetup");
     }
+
+    len += strlen("drbdmeta") - strlen(progname);
+    drbdmeta = malloc(len);
+    if (drbdmeta) {
+      strncpy(drbdmeta, argv[0], (progname - argv[0]));
+      strcpy(drbdmeta + (progname - argv[0]), "drbdmeta");
+    }
+
     argv[0] = progname;
   }
-  if (drbdsetup == NULL) {
+
+  if(argc == 1) print_usage_and_exit("missing arguments"); // arguments missing.
+
+  if (drbdsetup == NULL || drbdmeta == NULL) {
     fprintf(stderr,"could not strdup argv[0].\n");
     exit(E_exec_error);
   }
@@ -1600,14 +1611,6 @@ int main(int argc, char** argv)
 	      "but a minor_count of %d in your config!\n", highest_minor,mc);
       exit(E_usage);
     }
-  }
-
-  if(drbdsetup == NULL) {
-    find_drbdcmd(&drbdsetup,(char *[]){"./drbdsetup", "/sbin/drbdsetup", 0 });
-  }
-
-  if(drbdmeta == NULL) {
-    find_drbdcmd(&drbdmeta,(char *[]){"./drbdmeta", "/sbin/drbdmeta", 0 });
   }
 
   uc_node(global_options.usage_count);
