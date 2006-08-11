@@ -2120,7 +2120,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	if (!virgin) {
 		if (!confirmed("Valid meta-data already in place, recreate new?")) {
 			printf("Operation cancelled.\n");
-			exit(0);
+			exit(1); // 1 to avoid online resource counting
 		}
 	} else {
 		printf("About to create a new drbd meta data block\non %s.\n",
@@ -2130,7 +2130,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 		if (!confirmed(" ==> This might destroy existing data! <==\n\n"
 				"Do you want to proceed?")) {
 			printf("Operation cancelled.\n");
-			exit(0);
+			exit(1); // 1 to avoid online resource counting
 		}
 	}
 

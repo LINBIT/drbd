@@ -229,8 +229,8 @@ static void pe_expected_got(const char *exp, int got)
 	}
 	fprintf(stderr, "%s:%u: Parse error: '%s' expected,\n\t"
 		"but got '%s' (TK %d)\n",
-		config_file, line,
-		"but got '%s' (TK %d)\n", config_file, line, exp, yytext, got);
+		config_file, line, 
+		tmp[0] ? tmp : exp, yytext, got);
 	exit(E_config_invalid);
 }
 

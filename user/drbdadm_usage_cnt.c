@@ -455,6 +455,8 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 
 	rv = _admm_generic(res, cmd, SLEEPS_VERY_LONG); // cmd is "create-md".
 
+	if(rv || dry_run) return rv;
+
 	fd = open(res->me->disk,O_RDONLY);
 	if( fd != -1) {
 		device_size = bdev_size(fd);
