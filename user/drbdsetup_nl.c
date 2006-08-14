@@ -188,7 +188,7 @@ struct drbd_cmd commands[] = {
 		 { "ping-int",'i',	T_ping_int,	   EN0 },
 		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN0 },
 		 { "ko-count",'k',	T_ko_count,	   EN0 },
-		 { "allow-two-primaries",'m',T_two_primaries, EN0 },
+		 { "allow-two-primaries",'m',T_two_primaries, EB },
 		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   EN0 },
 		 { "shared-secret",'x',	T_shared_secret,   EN0 },
 		 { "after-sb-0pri",'A',	T_after_sb_0p,     EH(asb0p_n) },
@@ -196,6 +196,39 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-2pri",'C',	T_after_sb_2p,     EH(asb2p_n) },
 		 { "discard-my-data",'D', T_want_lose,     EB },
 		 { NULL,0,0,NULL, { } }, }, },
+
+	{"disconnect", P_disconnect, generic_config_cmd, NULL, NULL },
+
+	{"resize", P_resize, generic_config_cmd, NULL,
+	 (struct drbd_option[]) {
+		 { "size",'s',T_resize_size,		EN0 },
+		 { NULL,0,0,NULL, { } }, }, },
+
+	{"syncer", P_syncer_conf, generic_config_cmd, NULL,
+	 (struct drbd_option[]) {
+		 { "rate",'r',T_sync_rate,		EN0 },
+		 { "after",'a',T_sync_after,		EN0 },
+		 { "al-extents",'e',T_al_extents,	EN0 },
+		 { NULL,0,0,NULL, { } }, }, },
+
+	{"invalidate", P_invalidate, generic_config_cmd, NULL, NULL },
+	{"invalidate-remote", P_invalidate_peer, generic_config_cmd, NULL, NULL },
+	{"pause-sync", P_pause_sync, generic_config_cmd, NULL, NULL },
+	{"resume-sync", P_resume_sync, generic_config_cmd, NULL, NULL },
+	{"suspend-io", P_suspend_io, generic_config_cmd, NULL, NULL },
+	{"resume-io", P_resume_io, generic_config_cmd, NULL, NULL },
+	{"outdate", P_outdate, generic_config_cmd, NULL, NULL },
+
+	// {"down", 0 , down_cmd, NULL, NULL },
+
+	/*
+	{"state", cmd_state,               0, 0, },
+	{"cstate", cmd_cstate,             0, 0, },
+	{"dstate", cmd_dstate,             0, 0, },
+	{"show-gi", cmd_show_gi,           0, 0, },
+	{"get-gi", cmd_get_gi,             0, 0, },
+	{"show", cmd_show,                 0, 0, },
+	*/
 };
 
 char* cmdname = 0;
@@ -211,28 +244,29 @@ void dump_tag_list(struct drbd_tag_list *tl)
 	char* string;
 
 	while(*tlc != TT_END) {
-		tag = tag_number(*tlc++);
-		printf("(%d) %s = ",tag,tag_descriptions[tag].name);
+		tag = *tlc++;
+		printf("(%2d) %16s = ",tag_number(tag),
+		       tag_descriptions[tag_number(tag)].name);
 		len = *tlc++;
 		switch(tag_type(tag)) {
 		case TT_INTEGER: 
 			integer = *(int*)tlc;
-			printf("%d",integer);
+			printf("(integer) %d",integer);
 			break;
 		case TT_INT64:
 			int64 = *(__u64*)tlc;
-			printf("%lld",(long long)int64);
+			printf("(int64) %lld",(long long)int64);
 			break;
 		case TT_BIT:
 			bit = *(char*)tlc;
-			printf( bit ? "on" : "off");
+			printf("(bit) %s", bit ? "on" : "off");
 			break;
 		case TT_STRING:
 			string = (char*)tlc;
-			printf("%s",string);
+			printf("(string)'%s'",string);
 			break;
 		}
-		printf(" (len: %u)\n",len);
+		printf(" \t[len: %u]\n",len);
 		tlc = (unsigned short*)((char*)tlc + len);
 	}
 }
@@ -528,13 +562,12 @@ int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return rv;
 }
 
-
 void print_command_usage(int i, const char *addinfo)
     // CAUTION no range check for i
 {
 	struct drbd_argument *args;
 	struct drbd_option *options;
-#define  maxcol 70 // plus initial tab ...
+#define  maxcol 100 // plus initial tab ...
 	static char line[maxcol+1];
 	int col,prevcol;
 
@@ -556,11 +589,11 @@ void print_command_usage(int i, const char *addinfo)
 	if ((options = commands[i].options)) {
 		while (options->name) {
 			if (tag_type(options->tag) == TT_BIT) {
-				col += snprintf(line+col, maxcol-col, 
+				col += snprintf(line+col, maxcol-col,
 						" [{--%s|-%c}]",
 						options->name, options->short_name);
 			} else {
-				col += snprintf(line+col, maxcol-col, 
+				col += snprintf(line+col, maxcol-col,
 						" [{--%s|-%c} val]",
 						options->name, options->short_name);
 			}
@@ -582,6 +615,19 @@ void print_command_usage(int i, const char *addinfo)
 	}
 }
 
+void print_handler(const char* info, const char** handlers, unsigned int size)
+{
+	unsigned int i;
+
+	printf(info);
+
+	for(i=0;i<size;i++) {
+		if(handlers[i]) {
+			printf(" %s",handlers[i]);
+			if(i < size-1) printf(",");
+		}
+	}
+}
 
 void print_usage(const char* addinfo)
 {
@@ -595,17 +641,13 @@ void print_usage(const char* addinfo)
 	for (i = 0; i < ARRY_SIZE(commands); i++)
 		print_command_usage(i, 0);
 
-	printf("\nAvailable on-io-error handlers:");
-	for(i=0;i<ARRY_SIZE(on_error);i++) {
-		printf(" %s",on_error[i]);
-		if(i < ARRY_SIZE(on_error)-1) printf(",");
-	}
+	print_handler("\non-io-error handlers:",on_error,ARRY_SIZE(on_error));
+	print_handler("\nfencing policies:",fencing_n,ARRY_SIZE(fencing_n));
+	print_handler("\nafter-sb-0pri handler:",asb0p_n,ARRY_SIZE(asb0p_n));
+	print_handler("\nafter-sb-1pri handler:",asb1p_n,ARRY_SIZE(asb1p_n));
+	print_handler("\nafter-sb-2pri handler:",asb2p_n,ARRY_SIZE(asb2p_n));
 
-	printf("\nAvailable fencing policies:");
-	for(i=0;i<ARRY_SIZE(fencing_n);i++) {
-		printf(" %s",fencing_n[i]);
-		if(i < ARRY_SIZE(fencing_n)-1) printf(",");
-	}
+	printf("\n\n");
 	/*
 	printf("\n\nVersion: "REL_VERSION" (api:%d)\n%s\n",
 	       API_VERSION, drbd_buildtag());

@@ -51,6 +51,26 @@ PACKET(net_conf,
 	BIT(		28,	T_MAY_IGNORE,	two_primaries)
 )
 
+PACKET(disconnect, )
+
+PACKET(resize,
+	INT64(  	29,	T_MAY_IGNORE,	resize_size)
+)
+
+PACKET(syncer_conf,
+	INTEGER(	30,	T_MAY_IGNORE,	sync_rate)
+	INTEGER(  	31,	T_MAY_IGNORE,	sync_after)
+	INTEGER(  	32,	T_MAY_IGNORE,	al_extents)
+)
+
+PACKET(invalidate, )
+PACKET(invalidate_peer, )
+PACKET(pause_sync, )
+PACKET(resume_sync, )
+PACKET(suspend_io, )
+PACKET(resume_io, )
+PACKET(outdate, )
+
 #undef PACKET
 #undef INTEGER
 #undef INT64

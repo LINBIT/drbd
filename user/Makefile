@@ -29,7 +29,7 @@ drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
 
 drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o ../drbd/drbd_buildtag.o
 
-all: drbdsetup drbdadm drbdmeta
+all: drbdsetup drbdadm drbdmeta drbdsetup_nl
 
 drbdadm: $(drbdadm-obj)
 	$(CC) -o $@ $^ 
@@ -41,6 +41,9 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 	flex -odrbdmeta_scanner.c drbdmeta_scanner.fl
 
 # for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
+
+drbdsetup_nl: drbdsetup_nl.o drbdtool_common.o
+	$(CC) -o $@ $^ 
 
 drbdsetup: $(drbdsetup-obj)
 	$(CC) -o $@ $^ 
@@ -72,6 +75,7 @@ uninstall:
 	rm -f $(PREFIX)/sbin/drbdadm
 
 ###dependencies
+drbdsetup.o:       drbdtool_common.h           drbd_limits.h
 drbdtool_common.o: drbdtool_common.h          
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
