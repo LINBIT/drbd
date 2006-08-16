@@ -380,7 +380,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 					WARN("Concurrent write! [DISCARD L] sec=%lu\n",
 					     (unsigned long)sector);
 					dec_local(mdev);
-					dec_ap_pending(mdev);
 					local=0;
 
 					drbd_end_req(req, RQ_DRBD_DONE, 1, sector);
