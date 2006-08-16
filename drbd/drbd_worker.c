@@ -564,11 +564,9 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 	ok = drbd_send_dblock(mdev,req);
 	if (ok) {
-		spin_lock_irq(&mdev->req_lock);
-		req->rq_status |= RQ_DRBD_ON_WIRE;
-		spin_unlock_irq(&mdev->req_lock);
-
 		inc_ap_pending(mdev);
+
+		drbd_end_req(req,RQ_DRBD_ON_WIRE,1,drbd_req_get_sector(req));
 
 		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 			dec_ap_pending(mdev);

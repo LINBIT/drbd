@@ -341,7 +341,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (!local)
 		req->rq_status |= RQ_DRBD_LOCAL;
 	if (!remote)
-		req->rq_status |= RQ_DRBD_SENT;
+		req->rq_status |= RQ_DRBD_SENT | RQ_DRBD_ON_WIRE;
 
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev */
 	drbd_plug_device(mdev);

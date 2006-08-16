@@ -233,9 +233,9 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #define RQ_DRBD_NOTHING	  0x0001
 #define RQ_DRBD_SENT      0x0010   // We got an ack
 #define RQ_DRBD_LOCAL     0x0020   // We wrote it to the local disk
-#define RQ_DRBD_DONE      0x0030   // We are done ;)
 #define RQ_DRBD_IN_TL     0x0040   // Set when it is in the TL
 #define RQ_DRBD_ON_WIRE   0x0080   // Set as soon as it is on the socket...
+#define RQ_DRBD_DONE      ( RQ_DRBD_SENT + RQ_DRBD_LOCAL + RQ_DRBD_ON_WIRE )
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
