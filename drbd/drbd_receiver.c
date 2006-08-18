@@ -256,31 +256,81 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 		page = drbd_pp_alloc(mdev, gfp_mask);
 		if (!page) goto fail2;
 		if (!bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0)) {
-			/* if this happens, it indicates we are not doing correct
-			 * stacking of device limits.
-			 * or that the syncer (which may choose to ignore the
-			 * device limits) happend to request something which
-			 * does not work on this side...
-			 *
-			 * if this happens for the _first_ page, however, my
-			 * understanding is it would indicate a bug in the
-			 * lower levels, since adding _one_ page is
-			 * "guaranteed" to work.
+			/*
+			 * actually:
+			drbd_pp_free(page);
+			goto fail2;
+			 * But see below.
 			 */
+			break;
+		}
+		ds -= min_t(int, ds, PAGE_SIZE);
+	}
+
+	/* D_ASSERT( data_size == bio->bi_size); */
+	if (ds) {
+		/*
+		 * bio_add_page failed.
+		 *
+		 * if this happens, it indicates we are not doing correct
+		 * stacking of device limits.
+		 *
+		 * ---
+		 * this may also happen on the SyncSource for syncer requests:
+		 * for performance, the syncer may choose to ignore the
+		 * agreed-upon device limits (max_segment_size may be
+		 * arbitrarily set to PAGE_SIZE because the lower level device
+		 * happens to have a merge_bvec_fn).
+		 *
+		 * we would then just "split" the request here,
+		 * and then send multiple RSDataReply packets to the peer.
+		 *
+		 * FIXME to implement that, we'd need ot be able to
+		 * "return several Tl_epoch_entry" here,
+		 * so we'd need to either recurse, or add more state to the
+		 * return valud of this function.
+		 * or let the caller check e->ee_size against what he requested,
+		 * and reiterate there.
+		 *
+		 * It is probably just not worth the hassle,
+		 * but I'll check it in unfinished now anyways.
+		 *
+		 * TODO
+		 * either complete support on this side, or rip it out
+		 * and do the one-liner patch in w_make_resync_request
+		 * exchanging DRBD_MAX_SEGMENT_SIZE with q->max_segment_size
+		 * ---
+		 *
+		 * if this happens for the _first_ page, however, my
+		 * understanding is it would indicate a bug in the lower levels,
+		 * since adding _one_ page is "guaranteed" to work.
+		 */
+		if (ds < data_size && id == ID_SYNCER) {
+			/* this currently only serves the first part of that
+			 * request. you have to restart the syncer...
+			 * this is currently still very buggy and get our
+			 * housekeeping about in-sync areas completely wrong.
+			 */
+			ERR("should have split resync request: "
+			    "sector/data_size/rest %llu %u %u\n",
+			    (unsigned long long)sector, data_size, ds);
+		} else {
+			/* this should not happen,
+			 * if we correctly stacked limits. */
 			ERR("bio_add_page failed: "
 			    "id/sector/data_size/rest 0x%llx %llu %u %u\n",
 			    (unsigned long long)id,
 			    (unsigned long long)sector, data_size, ds);
-			break;
+			drbd_pp_free(mdev,page);
+			goto fail2;
 		}
-		ds -= min_t(int, ds, PAGE_SIZE);
 	}
 
 	bio->bi_private = e;
 	e->mdev = mdev;
 	e->ee_sector = sector;
 	e->ee_size = bio->bi_size;
-	D_ASSERT( data_size == bio->bi_size);
+
 	e->private_bio = bio;
 	e->block_id = id;
 	INIT_HLIST_NODE(&e->colision);

@@ -322,6 +322,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
+		/* as of now, we are the only user of drbd_bm_find_next */
 		bit  = drbd_bm_find_next(mdev);
 
 		if (bit == -1UL) {
@@ -347,19 +348,38 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		}
 
 #if DRBD_MAX_SEGMENT_SIZE > BM_BLOCK_SIZE
-		// try to find some adjacent bits...
-		while ( drbd_bm_test_bit(mdev,bit+1) == 1 ) {
-			// stop if we have the already the maximum req size
-			if(size == DRBD_MAX_SEGMENT_SIZE) break;
-			// do not leafe the current BM_EXTEND
-			if(( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0) break;
+		/* try to find some adjacent bits.
+		 * we stop if we have already the maximum req size
+		 * or if it the request would cross a 32k boundary
+		 * (play more nicely with most raid devices).
+		 *
+		 * we don't care about the agreed-uppon q->max_segment_size
+		 * here, because we don't keep a reference on this side.
+		 * the sync source will split the requests approrpiately as
+		 * needed, and may send multiple RSDataReply packets.
+		 */
+		for (;;) {
+			if (size < DRBD_MAX_SEGMENT_SIZE)
+				break;
+			if ((sector & ~63ULL) + BM_BIT_TO_SECT(2) <= 64ULL)
+				break;
+			// do not cross extent boundaries
+			if (( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0)
+				break;
+			// now, is it actually dirty, after all?
+			if ( drbd_bm_test_bit(mdev,bit+1) == 0 )
+				break;
 			bit++;
 			size += BM_BLOCK_SIZE;
 			i++;
 		}
-		drbd_bm_set_find(mdev,bit+1);
+		/* if we merged some,
+		 * reset the offset to start the next drbd_bm_find_next from */
+		if (size > BM_BLOCK_SIZE)
+			drbd_bm_set_find(mdev,bit+1);
 #endif
 
+		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity) size = (capacity-sector)<<9;
 		inc_rs_pending(mdev);
 		if(!drbd_send_drequest(mdev,RSDataRequest,
