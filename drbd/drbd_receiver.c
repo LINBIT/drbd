@@ -230,6 +230,7 @@ You must not have the ee_lock:
 */
 
 struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
+				     u64 id,
 				     sector_t sector,
 				     unsigned int data_size,
 				     unsigned int gfp_mask)
@@ -239,7 +240,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	struct page *page;
 	struct bio *bio;
 	unsigned int ds;
-	int bio_add,i;
+	int i;
 
 	e = mempool_alloc(drbd_ee_mempool, gfp_mask);
 	if (!e) return NULL;
@@ -254,8 +255,24 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	while(ds) {
 		page = drbd_pp_alloc(mdev, gfp_mask);
 		if (!page) goto fail2;
-		bio_add=bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0);
-		D_ASSERT(bio_add);
+		if (!bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0)) {
+			/* if this happens, it indicates we are not doing correct
+			 * stacking of device limits.
+			 * or that the syncer (which may choose to ignore the
+			 * device limits) happend to request something which
+			 * does not work on this side...
+			 *
+			 * if this happens for the _first_ page, however, my
+			 * understanding is it would indicate a bug in the
+			 * lower levels, since adding _one_ page is
+			 * "guaranteed" to work.
+			 */
+			ERR("bio_add_page failed: "
+			    "id/sector/data_size/rest 0x%llx %llu %u %u\n",
+			    (unsigned long long)id,
+			    (unsigned long long)sector, data_size, ds);
+			break;
+		}
 		ds -= min_t(int, ds, PAGE_SIZE);
 	}
 
@@ -265,7 +282,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	e->ee_size = bio->bi_size;
 	D_ASSERT( data_size == bio->bi_size);
 	e->private_bio = bio;
-	e->block_id = ID_VACANT;
+	e->block_id = id;
 	INIT_HLIST_NODE(&e->colision);
 	e->barrier_nr = 0;
 	e->barrier_nr2 = 0;
@@ -880,7 +897,7 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 }
 
 STATIC struct Tl_epoch_entry *
-read_in_block(drbd_dev *mdev, sector_t sector, int data_size)
+read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 	struct bio_vec *bvec;
@@ -888,7 +905,7 @@ read_in_block(drbd_dev *mdev, sector_t sector, int data_size)
 	struct bio *bio;
 	int ds,i,rr;
 
-	e = drbd_alloc_ee(mdev,sector,data_size,GFP_KERNEL);
+	e = drbd_alloc_ee(mdev,id,sector,data_size,GFP_KERNEL);
 	if(!e) return 0;
 	bio = e->private_bio;
 	ds = data_size;
@@ -987,15 +1004,13 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 {
 	struct Tl_epoch_entry *e;
 
-	e = read_in_block(mdev,sector,data_size);
+	e = read_in_block(mdev,ID_SYNCER,sector,data_size);
 	if(!e) {
 		dec_local(mdev);
 		return FALSE;
 	}
 
 	dec_rs_pending(mdev);
-
-	e->block_id = ID_SYNCER;
 
 	drbd_ee_prepare_write(mdev,e);
 	e->w.cb     = e_end_resync_block;
@@ -1232,13 +1247,12 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	sector = be64_to_cpu(p->sector);
-	e = read_in_block(mdev,sector,data_size);
+	e = read_in_block(mdev,p->block_id,sector,data_size);
 	if (!e) {
 		dec_local(mdev);
 		return FALSE;
 	}
 
-	e->block_id = p->block_id; // no meaning on this side, e* on partner
 	drbd_ee_prepare_write(mdev, e);
 	e->w.cb     = e_end_block;
 
@@ -1443,13 +1457,12 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return TRUE;
 	}
 
-	e = drbd_alloc_ee(mdev,sector,size,GFP_KERNEL);
+	e = drbd_alloc_ee(mdev,p->block_id,sector,size,GFP_KERNEL);
 	if (!e) {
 		dec_local(mdev);
 		return FALSE;
 	}
 
-	e->block_id = p->block_id; // no meaning on this side, pr* on partner
 	spin_lock_irq(&mdev->ee_lock);
 	list_add(&e->w.list,&mdev->read_ee);
 	spin_unlock_irq(&mdev->ee_lock);

@@ -271,7 +271,13 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		    (volatile int)((mdev->state.conn < WFBitMapS ||
 				    mdev->state.conn > WFBitMapT) &&
 				   !mdev->state.susp ) );
-
+	/* FIXME RACE
+	 * the wait condition may already be wrong again...
+	 * ok, thats "academic" atm, but probably not good in the long term.
+	 *
+	 * we should have a function that does wait for the condition,
+	 * and do the inc_local within what ever lock is necessary...
+	 */
 	local = inc_local(mdev);
 	if (rw == READ || rw == READA) {
 		if (local) {

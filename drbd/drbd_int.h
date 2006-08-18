@@ -39,9 +39,6 @@ extern int disable_bd_claim;
 extern int major_nr;
 extern int use_nbd_major;
 
-// use_nbd_major ? "nbd" : "drbd";
-extern char* drbd_devfs_name;
-
 #include <linux/major.h>
 #ifdef DRBD_MAJOR
 # warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
@@ -628,7 +625,6 @@ struct drbd_barrier {
 typedef struct drbd_request drbd_request_t;
 
 /* These Tl_epoch_entries may be in one of 6 lists:
-   free_ee   .. free entries
    active_ee .. data packet being written
    sync_ee   .. syncer block being written
    done_ee   .. block written, need to send WriteAck
@@ -1166,6 +1162,7 @@ extern void resync_timer_fn(unsigned long data);
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev,struct list_head* list);
 extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
+					    u64 id,
 					    sector_t sector,
 					    unsigned int data_size,
 					    unsigned int gfp_mask);

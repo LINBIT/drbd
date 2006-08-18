@@ -47,7 +47,6 @@
 #include <linux/drbd_config.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
-#include <linux/devfs_fs_kernel.h>
 #include <linux/random.h>
 #include <linux/reboot.h>
 #include <linux/notifier.h>
@@ -138,10 +137,6 @@ module_param(dump_packets,int,0644);
 module_param(dump_packet_devs,int,0644);
 
 #endif
-
-// devfs name
-char* drbd_devfs_name = "drbd";
-
 
 // global panic flag
 volatile int drbd_did_panic = 0;
@@ -2131,9 +2126,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	/*
 	 * currently we drbd_init_ee only on module load, so
 	 * we may do drbd_release_ee only on module unload!
-	 * drbd_release_ee(&mdev->free_ee);
-	 * D_ASSERT(list_emptry(&mdev->free_ee));
-	 *
 	 */
 	D_ASSERT(list_empty(&mdev->active_ee));
 	D_ASSERT(list_empty(&mdev->sync_ee));
@@ -2367,8 +2359,6 @@ static void __exit drbd_cleanup(void)
 #endif
 	kfree(drbd_conf);
 
-	devfs_remove(drbd_devfs_name);
-
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
@@ -2441,8 +2431,6 @@ int __init drbd_init(void)
 	}
 	register_reboot_notifier(&drbd_notifier);
 
-	drbd_devfs_name = (major_nr == NBD_MAJOR) ? "nbd" : "drbd";
-
 	/*
 	 * allocate all necessary structs
 	 */
@@ -2455,8 +2443,6 @@ int __init drbd_init(void)
 	if (likely(drbd_conf!=NULL))
 		memset(drbd_conf,0,sizeof(drbd_dev)*minor_count);
 	else goto Enomem;
-
-	devfs_mk_dir(drbd_devfs_name);
 
 	for (i = 0; i < minor_count; i++) {
 		drbd_dev    *mdev = drbd_conf + i;
@@ -2480,7 +2466,6 @@ int __init drbd_init(void)
 		disk->first_minor = i;
 		disk->fops = &drbd_ops;
 		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
-		sprintf(disk->devfs_name, "%s/%d", drbd_devfs_name, i);
 		disk->private_data = mdev;
 		add_disk(disk);
 
