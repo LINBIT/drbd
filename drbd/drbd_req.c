@@ -94,6 +94,11 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 			if(tl_dependence(mdev,req))
 				set_bit(ISSUE_BARRIER,&mdev->flags);
 		} else {
+			/* FIXME not longer true!
+			 * we don't have the tl_lock here anymore...
+			 * sorry sir.
+			 **/
+			MUST_HOLD(&mdev->tl_lock);
 			list_del(&req->tl_requests); // we have the tl_lock...
 			hlist_del(&req->colision);
 			// req->barrier->n_req--; // Barrier migh be free'ed !

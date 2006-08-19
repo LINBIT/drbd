@@ -576,18 +576,16 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		sector = drbd_req_get_sector(req);
 		size   = drbd_req_get_size(req);
 
-		drbd_end_req(req,RQ_DRBD_SENT,1, sector);
+		drbd_end_req(req,RQ_DRBD_SENT|RQ_DRBD_ON_WIRE,1, sector);
 		drbd_set_out_of_sync(mdev, sector, size);
 
 		return 1;
 	}
 
+	inc_ap_pending(mdev);
 	ok = drbd_send_dblock(mdev,req);
+	drbd_end_req(req,RQ_DRBD_ON_WIRE,1,drbd_req_get_sector(req));
 	if (ok) {
-		inc_ap_pending(mdev);
-
-		drbd_end_req(req,RQ_DRBD_ON_WIRE,1,drbd_req_get_sector(req));
-
 		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 			dec_ap_pending(mdev);
 			drbd_end_req(req, RQ_DRBD_SENT, 1, 

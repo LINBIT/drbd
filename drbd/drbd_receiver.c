@@ -1100,7 +1100,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	sector = be64_to_cpu(p->sector);
 
-	req = (drbd_request_t *)(long)p->block_id;
+	req = (drbd_request_t *)(unsigned long)p->block_id;
 	if(unlikely(!drbd_pr_verify(mdev,req,sector))) {
 		ERR("Got a corrupt block_id/sector pair(1).\n");
 		return FALSE;
