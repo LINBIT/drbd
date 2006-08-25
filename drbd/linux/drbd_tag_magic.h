@@ -2,6 +2,7 @@
 #define DRBD_TAG_MAGIC_H
 
 #define TT_END     0
+#define TT_REMOVED 0xE000
 
 // declare packet_type enums
 enum packet_types {
@@ -11,15 +12,8 @@ enum packet_types {
 #define BIT(pn,pr,member)
 #define STRING(pn,pr,member,len)
 #include "drbd_nl.h"
+	P_nl_after_last_packet,
 };
-
-// declate structs
-#define PACKET(name, fields) struct name { fields };
-#define INTEGER(pn,pr,member) int member;
-#define INT64(pn,pr,member) __u64 member;
-#define BIT(pn,pr,member)   unsigned member : 1;
-#define STRING(pn,pr,member,len) unsigned char member[len];
-#include "drbd_nl.h"
 
 // declate tag-list-sizes
 #define PACKET(name,fields) const int name ## _tag_size = 2 fields ;

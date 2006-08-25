@@ -129,7 +129,7 @@ typedef struct Drbd_Conf drbd_dev;
 //       Otherwise this is not portable from gcc-2.95 to gcc-3.3
 #define PRINTK(level,fmt,args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
-		(int)(mdev-drbd_conf) , ##args)
+		mdev->minor , ##args)
 
 #define ALERT(fmt,args...) PRINTK(KERN_ALERT, fmt , ##args)
 #define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt , ##args)
@@ -246,24 +246,25 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
  */
 
 extern volatile int drbd_did_panic;
+extern struct Drbd_Conf **minor_table;
 
 #if    DRBD_PANIC == 0
 #define drbd_panic(fmt, args...) \
-	panic(DEVICE_NAME "%d: " fmt, (int)(mdev-drbd_conf) , ##args)
+	panic(DEVICE_NAME "%d: " fmt, mdev_to_minor(mdev) , ##args)
 #elif  DRBD_PANIC == 1
 #error "sorry , this does not work, please contribute"
 #elif  DRBD_PANIC == 2
 #define drbd_panic(fmt, args...) do {					\
 	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
-			(int)(mdev-drbd_conf) , ##args);		\
+			mdev_to_minor(mdev) , ##args);		\
 	drbd_did_panic = DRBD_MAGIC;					\
 	smp_mb();							\
-	panic(DEVICE_NAME "%d: " fmt, (int)(mdev-drbd_conf) , ##args);	\
+	panic(DEVICE_NAME "%d: " fmt, mdev_to_minor(mdev) , ##args);	\
 } while (0)
 #else
 #define drbd_panic(fmt, args...) do {					\
 	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
-			(int)(mdev-drbd_conf) , ##args);		\
+			mdev_to_minor(mdev) , ##args);		\
 } while (0)
 #endif
 #undef DRBD_PANIC
@@ -723,16 +724,21 @@ struct drbd_md {
 	 */
 };
 
+// for sync_conf and other types...
+#define PACKET(name, fields) struct name { fields };
+#define INTEGER(pn,pr,member) int member;
+#define INT64(pn,pr,member) __u64 member;
+#define BIT(pn,pr,member)   unsigned member : 1;
+#define STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len;
+#include "linux/drbd_nl.h"
+
 struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct file *lo_file;
 	struct file *md_file;
-	int md_index;
-	enum io_error_handler on_io_error;
-	enum fencing_policy fencing;
-	sector_t u_size;   /* user provided size */
 	struct drbd_md md;
+	struct disk_conf dc; /* The user provided config... */
 };
 
 struct Drbd_Conf {
@@ -746,8 +752,8 @@ struct Drbd_Conf {
 	struct semaphore device_mutex;
 
 	/* configured by drbdsetup */
-	struct net_config *net_conf; // protected by inc_net() and dec_net()
-	struct syncer_config sync_conf;
+	struct net_conf *net_conf; // protected by inc_net() and dec_net()
+	struct syncer_conf sync_conf;
 	struct drbd_backing_dev *bc; // protected by inc_local() dec_local()
 
 	sector_t p_size;     /* partner's disk size */
@@ -831,7 +837,22 @@ struct Drbd_Conf {
 	int peer_seq;
 	spinlock_t peer_seq_lock;
 	struct list_head discard;
+	int minor;
 };
+
+static inline drbd_dev *minor_to_mdev(int minor)
+{
+	drbd_dev *mdev;
+
+	mdev = minor < minor_count ? minor_table[minor] : NULL;
+
+	return mdev;
+}
+
+static inline int mdev_to_minor(drbd_dev *mdev)
+{
+	return mdev->minor;
+}
 
 
 /*
@@ -886,7 +907,7 @@ extern int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			  char* data, size_t size);
-extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc);
+extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_conf *sc);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
@@ -1092,7 +1113,6 @@ extern void drbd_bm_unlock    (drbd_dev *mdev);
 
 
 // drbd_main.c
-extern drbd_dev *drbd_conf;
 extern int minor_count;
 extern kmem_cache_t *drbd_request_cache;
 extern kmem_cache_t *drbd_ee_cache;
@@ -1103,6 +1123,8 @@ extern struct page* drbd_pp_pool; // drbd's page pool
 extern spinlock_t   drbd_pp_lock;
 extern int          drbd_pp_vacant;
 extern wait_queue_head_t drbd_pp_wait;
+
+extern drbd_dev *drbd_new_device(int minor);
 
 // drbd_req
 #define ERF_NOTLD    2   /* do not call tl_dependence */
@@ -1118,7 +1140,7 @@ extern char* ppsize(char* buf, size_t size);
 extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
 extern int drbd_determin_dev_size(drbd_dev*);
 extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
-extern int drbd_set_role(drbd_dev *mdev, int *arg);
+extern int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
@@ -1195,6 +1217,12 @@ extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 
+
+// drbd_nl.c
+
+void drbd_nl_cleanup(void);
+int __init drbd_nl_init(void);
+
 /*
  * inline helper functions
  *************************/
@@ -1260,7 +1288,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 		unsigned long flags;
 		spin_lock_irqsave(&mdev->req_lock,flags);
 
-		switch(mdev->bc->on_io_error) {
+		switch(mdev->bc->dc.on_io_error) {
 		case PassOn:
 			ERR("Ignoring local IO error!\n");
 			break;
@@ -1294,7 +1322,7 @@ static inline int semaphore_is_locked(struct semaphore* s)
  */
 static inline sector_t drbd_md_first_sector(struct drbd_backing_dev *bdev)
 {
-	switch (bdev->md_index) {
+	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
 		return bdev->md.md_offset + bdev->md.bm_offset;
@@ -1308,7 +1336,7 @@ static inline sector_t drbd_md_first_sector(struct drbd_backing_dev *bdev)
  * to be able to catch out of band md access */
 static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 {
-	switch (bdev->md_index) {
+	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
 		return bdev->md.md_offset + MD_AL_OFFSET -1;
@@ -1321,7 +1349,7 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 /* returns the capacity we announce to out peer */
 static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 {
-	switch (bdev->md_index) {
+	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
 		return drbd_get_capacity(bdev->backing_bdev)
@@ -1337,9 +1365,9 @@ static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 static inline sector_t drbd_md_ss__(drbd_dev *mdev,
 				    struct drbd_backing_dev *bdev)
 {
-	switch (bdev->md_index) {
+	switch (bdev->dc.meta_dev_idx) {
 	default: /* external, some index */
-		return MD_RESERVED_SECT * bdev->md_index;
+		return MD_RESERVED_SECT * bdev->dc.meta_dev_idx;
 	case DRBD_MD_INDEX_INTERNAL:
 		/* with drbd08, internal meta data is always "flexible" */
 	case DRBD_MD_INDEX_FLEX_INT:
@@ -1637,7 +1665,7 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
 {
 	if (dump_packets > DUMP_NONE &&
-	    ( ( 1 << (int)(mdev-drbd_conf)) & dump_packet_devs) )
+	    ( ( 1 << mdev_to_minor(mdev)) & dump_packet_devs) )
 		_dump_packet(mdev,sock,recv,p,file,line);
 }
 #else

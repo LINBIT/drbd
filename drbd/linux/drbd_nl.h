@@ -19,8 +19,8 @@ PACKET(secondary, )
 
 PACKET(disk_conf,
 	INT64(  	2,	T_MAY_IGNORE,	disk_size)
-	INTEGER(	3,	T_MANDATORY,	backing_dev)
-	INTEGER(	4,	T_MANDATORY,	meta_dev)
+	STRING(		3,	T_MANDATORY,	backing_dev,	32)
+	STRING(		4,	T_MANDATORY,	meta_dev,	32)
 	INTEGER(	5,	T_MANDATORY,	meta_dev_idx)
 	INTEGER(	6,	T_MAY_IGNORE,	on_io_error)
 	INTEGER(	7,	T_MAY_IGNORE,	fencing)
@@ -31,10 +31,8 @@ PACKET(detach, )
 PACKET(net_conf,
 	STRING(		8,	T_MANDATORY,	my_addr,	128)
 	STRING(		9,	T_MANDATORY,	peer_addr,	128)
-	STRING(		10,	T_MAY_IGNORE,	shared_secret,	128)
-	STRING(		11,	T_MAY_IGNORE,	cram_hmac_alg,	128)
-	INTEGER(	12,	T_MANDATORY,	my_addr_len)
-	INTEGER(	13,	T_MANDATORY,	peer_addr_len)
+	STRING(		10,	T_MAY_IGNORE,	shared_secret,	SHARED_SECRET_MAX)
+	STRING(		11,	T_MAY_IGNORE,	cram_hmac_alg,	SHARED_SECRET_MAX)
 	INTEGER(	14,	T_MAY_IGNORE,	timeout)
 	INTEGER(	15,	T_MANDATORY,	wire_protocol)
 	INTEGER(	16,	T_MAY_IGNORE,	try_connect_int)
@@ -58,8 +56,8 @@ PACKET(resize,
 )
 
 PACKET(syncer_conf,
-	INTEGER(	30,	T_MAY_IGNORE,	sync_rate)
-	INTEGER(  	31,	T_MAY_IGNORE,	sync_after)
+	INTEGER(	30,	T_MAY_IGNORE,	rate)
+	INTEGER(  	31,	T_MAY_IGNORE,	after)
 	INTEGER(  	32,	T_MAY_IGNORE,	al_extents)
 )
 
@@ -70,6 +68,7 @@ PACKET(resume_sync, )
 PACKET(suspend_io, )
 PACKET(resume_io, )
 PACKET(outdate, )
+PACKET(get_config, )
 
 #undef PACKET
 #undef INTEGER

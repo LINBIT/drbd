@@ -54,7 +54,7 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
-	switch(bdev->md_index) {
+	switch(bdev->dc.meta_dev_idx) {
 	default:
 	case DRBD_MD_INDEX_FLEX_EXT:
 		/* just occupy the full device; unit: sectors */
@@ -180,7 +180,7 @@ drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
 	sector_t p_size = mdev->p_size;   // partner's disk size.
 	sector_t la_size = bdev->md.la_size_sect; // last agreed size.
 	sector_t m_size; // my size
-	sector_t u_size = bdev->u_size; // size requested by user.
+	sector_t u_size = bdev->dc.disk_size; // size requested by user.
 	sector_t size=0;
 
 	m_size = drbd_get_max_capacity(bdev);
@@ -316,7 +316,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 	drbd_state_t ns,os;
 	int rv;
 
-	minor=(int)(mdev-drbd_conf);
+	minor=mdev_to_minor(mdev);
 
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > Diskless)
@@ -439,10 +439,10 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev2_fail_ioctl;
 	}
 
-	nbc->md_index = new_conf.meta_index;
-	nbc->u_size = new_conf.disk_size;
-	nbc->on_io_error = new_conf.on_io_error;
-	nbc->fencing = new_conf.fencing;
+	nbc->dc.meta_dev_idx = new_conf.meta_index;
+	nbc->dc.disk_size = new_conf.disk_size;
+	nbc->dc.on_io_error = new_conf.on_io_error;
+	nbc->dc.fencing = new_conf.fencing;
 	drbd_md_set_sector_offsets(mdev,nbc);
 
 	retcode = drbd_md_read(mdev,nbc);
@@ -562,7 +562,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		}
 
 		if( ns.disk == Consistent && 
-		    ( ns.pdsk == Outdated || nbc->fencing == DontCare ) ) {
+		    ( ns.pdsk == Outdated || nbc->dc.fencing == DontCare ) ) {
 			ns.disk = UpToDate;
 		}
 		
@@ -616,17 +616,17 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 		cn.meta_device_major  = MAJOR(mdev->bc->md_bdev->bd_dev);
 		cn.meta_device_minor  = MINOR(mdev->bc->md_bdev->bd_dev);
 		bdevname(mdev->bc->md_bdev,cn.meta_device_name);
-		cn.meta_index=mdev->bc->md_index;
-		cn.on_io_error=mdev->bc->on_io_error;
-		cn.fencing=mdev->bc->fencing;
+		cn.meta_index=mdev->bc->dc.meta_dev_idx;
+		cn.on_io_error=mdev->bc->dc.on_io_error;
+		cn.fencing=mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
 	cn.state=mdev->state;
 	if(inc_net(mdev)) {
-		memcpy(&cn.nconf, mdev->net_conf, sizeof(struct net_config));
+		memcpy(&cn.nconf, mdev->net_conf, sizeof(struct net_conf));
 		dec_net(mdev);
 	}
-	memcpy(&cn.sconf, &mdev->sync_conf, sizeof(struct syncer_config));
+	memcpy(&cn.sconf, &mdev->sync_conf, sizeof(struct syncer_conf));
 
 	if (copy_to_user(arg,&cn,sizeof(struct ioctl_get_config)))
 		return -EFAULT;
@@ -636,24 +636,23 @@ int drbd_ioctl_get_conf(struct Drbd_Conf *mdev, struct ioctl_get_config* arg)
 
 
 STATIC
-int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
+int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_conf * arg)
 {
-	int i,minor,ns;
+	int i,ns;
 	enum ret_codes retcode;
-	struct net_config *new_conf = NULL;
+	struct net_conf *new_conf = NULL;
 	struct crypto_tfm* tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
+	struct Drbd_Conf *odev;
 
-	minor=(int)(mdev-drbd_conf);
-
-	new_conf = kmalloc(sizeof(struct net_config),GFP_KERNEL);
+	new_conf = kmalloc(sizeof(struct net_conf),GFP_KERNEL);
 	if(!new_conf) {			
 		retcode=KMallocFailed;
 		goto fail_ioctl;
 	}
 
-	if (copy_from_user(new_conf, &arg->config,sizeof(struct net_config)))
+	if (copy_from_user(new_conf, &arg->config,sizeof(struct net_conf)))
 		return -EFAULT;
 
 	if( mdev->state.role == Primary && new_conf->want_lose ) {
@@ -665,16 +664,17 @@ int drbd_ioctl_set_net(struct Drbd_Conf *mdev, struct ioctl_net_config * arg)
 #define M_PORT(A) (((struct sockaddr_in *)&A->my_addr)->sin_port)
 #define O_ADDR(A) (((struct sockaddr_in *)&A->other_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A->other_addr)->sin_port)
-	for(i=0;i<minor_count;i++) {
-		if( i!=minor && drbd_conf[i].state.conn > StandAlone &&
-		    M_ADDR(new_conf) == M_ADDR(drbd_conf[i].net_conf) &&
-		    M_PORT(new_conf) == M_PORT(drbd_conf[i].net_conf) ) {
+	for(i=0;i<next_minor;i++) {
+		odev = minor_to_mdev(i);
+		if( mdev != odev && odev->state.conn > StandAlone &&
+		    M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
+		    M_PORT(new_conf) == M_PORT(odev->net_conf) ) {
 			retcode=LAAlreadyInUse;
 			goto fail_ioctl;
 		}
-		if( i!=minor && drbd_conf[i].state.conn > StandAlone &&
-		    O_ADDR(new_conf) == O_ADDR(drbd_conf[i].net_conf) &&
-		    O_PORT(new_conf) == O_PORT(drbd_conf[i].net_conf) ) {
+		if( mdev != odev && odev->state.conn > StandAlone &&
+		    O_ADDR(new_conf) == O_ADDR(odev->net_conf) &&
+		    O_PORT(new_conf) == O_PORT(odev->net_conf) ) {
 			retcode=OAAlreadyInUse;
 			goto fail_ioctl;
 		}
@@ -808,7 +808,7 @@ int drbd_khelper(drbd_dev *mdev, char* cmd)
 				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
 				NULL };
 
-	snprintf(mb,12,"minor-%d",(int)(mdev-drbd_conf));
+	snprintf(mb,12,"minor-%d",mdev_to_minor(mdev));
 	return call_usermodehelper("/sbin/drbdadm",argv,envp,1);
 }
 
@@ -822,7 +822,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	fp = DontCare;
 	if(inc_local(mdev)) {
-		fp = mdev->bc->fencing;
+		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
 
@@ -1015,9 +1015,9 @@ static int drbd_get_wait_time(long *tp, struct Drbd_Conf *mdev,
 }
 
 STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
-				 struct ioctl_syncer_config* arg)
+				 struct ioctl_syncer_conf* arg)
 {
-	struct syncer_config sc;
+	struct syncer_conf sc;
 	drbd_dev *odev;
 
 	int err;
@@ -1025,12 +1025,12 @@ STATIC int drbd_ioctl_set_syncer(struct Drbd_Conf *mdev,
 	if(copy_from_user(&sc,&arg->config,sizeof(sc))) return -EFAULT;
 
 	if( sc.after != -1) {
-		if( sc.after < -1 || sc.after > minor_count ) return -ERANGE;
-		odev = drbd_conf + sc.after; // check against loops in
+		if( sc.after < -1 || sc.after > next_minor ) return -ERANGE;
+		odev = minor_to_mdev(sc.after); // check against loops in
 		while(1) {
 			if( odev == mdev ) return -EBADMSG; // cycle found.
 			if( odev->sync_conf.after == -1 ) break; // no cycles.
-			odev = drbd_conf + odev->sync_conf.after;
+			odev = minor_to_mdev(odev->sync_conf.after);
 		}
 	}
 
@@ -1181,8 +1181,8 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 	struct gendisk *disk = bdev->bd_disk;
 
 	minor = MINOR(inode->i_rdev);
-	if (minor >= minor_count) return -ENODEV;
-	mdev = drbd_conf + minor;
+	if (minor >= next_minor) return -ENODEV;
+	mdev = minor_to_mdev(minor);
 
 	D_ASSERT(MAJOR(inode->i_rdev) == MAJOR_NR);
 
@@ -1259,7 +1259,7 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 			break;
 		}
 		err=0;
-		mdev->bc->u_size = (sector_t)(u64)arg;
+		mdev->bc->dc.disk_size = (sector_t)(u64)arg;
 		drbd_bm_lock(mdev);
 		drbd_determin_dev_size(mdev);
 		drbd_md_sync(mdev);
@@ -1271,12 +1271,12 @@ int drbd_ioctl(struct inode *inode, struct file *file,
 		break;
 
 	case DRBD_IOCTL_SET_NET_CONFIG:
-		err = drbd_ioctl_set_net(mdev,(struct ioctl_net_config*) arg);
+		err = drbd_ioctl_set_net(mdev,(struct ioctl_net_conf*) arg);
 		break;
 
 	case DRBD_IOCTL_SET_SYNC_CONFIG:
 		err = drbd_ioctl_set_syncer(mdev,
-					    (struct ioctl_syncer_config*) arg);
+					    (struct ioctl_syncer_conf*) arg);
 		break;
 
 	case DRBD_IOCTL_GET_CONFIG:

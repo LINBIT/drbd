@@ -17,7 +17,7 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-CFLAGS = -g -O2 -c -W -Wall -I../drbd
+CFLAGS = -g -O2 -c -W -Wall -I../drbd -I$(KDIR)/include
 CC = gcc
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
@@ -29,7 +29,7 @@ drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
 
 drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o ../drbd/drbd_buildtag.o
 
-all: drbdsetup drbdadm drbdmeta drbdsetup_nl
+all: drbdadm drbdmeta drbdsetup_nl
 
 drbdadm: $(drbdadm-obj)
 	$(CC) -o $@ $^ 
@@ -42,11 +42,11 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 
 # for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
-drbdsetup_nl: drbdsetup_nl.o drbdtool_common.o
+drbdsetup_nl: drbdsetup_nl.o drbdtool_common.o ../drbd/drbd_strings.o
 	$(CC) -o $@ $^ 
 
-drbdsetup: $(drbdsetup-obj)
-	$(CC) -o $@ $^ 
+#drbdsetup: $(drbdsetup-obj)
+#	$(CC) -o $@ $^ 
 
 drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^ 
@@ -75,13 +75,13 @@ uninstall:
 	rm -f $(PREFIX)/sbin/drbdadm
 
 ###dependencies
-drbdsetup.o:       drbdtool_common.h           drbd_limits.h
+drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
 drbdtool_common.o: drbdtool_common.h          
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
-drbdadm_parser.o:  drbdtool_common.h drbdadm.h drbd_limits.h
+drbdadm_parser.o:  drbdtool_common.h drbdadm.h ../drbd/linux/drbd_limits.h
 drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h 
-drbdsetup.o:       drbdtool_common.h           drbd_limits.h
+drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
 drbdsetup.o: ../drbd/linux/drbd.h ../drbd/linux/drbd_config.h
 drbdmeta.o:        drbdtool_common.h drbd_endian.h 
 drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h

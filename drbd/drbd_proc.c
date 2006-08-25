@@ -172,8 +172,9 @@ STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
 
 STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
-	int i;
+	int i,hole=0;
 	const char *sn;
+	drbd_dev *mdev;
 
 	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
 		    API_VERSION,PRO_VERSION, drbd_buildtag());
@@ -192,10 +193,20 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 	*/
 
 	for (i = 0; i < minor_count; i++) {
-		sn = conns_to_name(drbd_conf[i].state.conn);
+		mdev = minor_to_mdev(i);
+		if(!mdev) {
+			hole=1;
+			continue;
+		}
+		if( hole ) {
+			hole=0;
+			seq_printf( seq, "\n");
+		}
 
-		if ( drbd_conf[i].state.conn == StandAlone &&
-		     drbd_conf[i].state.disk == Diskless) {
+		sn = conns_to_name(mdev->state.conn);
+
+		if ( mdev->state.conn == StandAlone &&
+		     mdev->state.disk == Diskless) {
 			seq_printf( seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			seq_printf( seq,
@@ -203,40 +214,40 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
-			   roles_to_name(drbd_conf[i].state.role),
-			   roles_to_name(drbd_conf[i].state.peer),
-			   disks_to_name(drbd_conf[i].state.disk),
-			   disks_to_name(drbd_conf[i].state.pdsk),
-			   drbd_conf[i].state.susp ? 's' : 'r',
-			   drbd_conf[i].state.aftr_isp ? 'a' : '-',
-			   drbd_conf[i].state.peer_isp ? 'p' : '-',
-			   drbd_conf[i].state.user_isp ? 'u' : '-',
-			   drbd_conf[i].send_cnt/2,
-			   drbd_conf[i].recv_cnt/2,
-			   drbd_conf[i].writ_cnt/2,
-			   drbd_conf[i].read_cnt/2,
-			   drbd_conf[i].al_writ_cnt,
-			   drbd_conf[i].bm_writ_cnt,
-			   atomic_read(&drbd_conf[i].local_cnt),
-			   atomic_read(&drbd_conf[i].ap_pending_cnt) +
-			   atomic_read(&drbd_conf[i].rs_pending_cnt),
-			   atomic_read(&drbd_conf[i].unacked_cnt),
-			   atomic_read(&drbd_conf[i].ap_bio_cnt)
+			   roles_to_name(mdev->state.role),
+			   roles_to_name(mdev->state.peer),
+			   disks_to_name(mdev->state.disk),
+			   disks_to_name(mdev->state.pdsk),
+			   mdev->state.susp ? 's' : 'r',
+			   mdev->state.aftr_isp ? 'a' : '-',
+			   mdev->state.peer_isp ? 'p' : '-',
+			   mdev->state.user_isp ? 'u' : '-',
+			   mdev->send_cnt/2,
+			   mdev->recv_cnt/2,
+			   mdev->writ_cnt/2,
+			   mdev->read_cnt/2,
+			   mdev->al_writ_cnt,
+			   mdev->bm_writ_cnt,
+			   atomic_read(&mdev->local_cnt),
+			   atomic_read(&mdev->ap_pending_cnt) +
+			   atomic_read(&mdev->rs_pending_cnt),
+			   atomic_read(&mdev->unacked_cnt),
+			   atomic_read(&mdev->ap_bio_cnt)
 			);
 		}
-		if ( drbd_conf[i].state.conn == SyncSource ||
-		     drbd_conf[i].state.conn == SyncTarget ) {
-			drbd_syncer_progress(drbd_conf+i,seq);
+		if ( mdev->state.conn == SyncSource ||
+		     mdev->state.conn == SyncTarget ) {
+			drbd_syncer_progress(mdev,seq);
 		}
-		if(drbd_conf[i].resync) {
-			lc_printf_stats(seq,drbd_conf[i].resync);
+		if(mdev->resync) {
+			lc_printf_stats(seq,mdev->resync);
 		}
-		if(drbd_conf[i].act_log) {
-			lc_printf_stats(seq,drbd_conf[i].act_log);
+		if(mdev->act_log) {
+			lc_printf_stats(seq,mdev->act_log);
 		}
 #if 0
-		if(drbd_conf[i].resync) {
-			lc_dump(drbd_conf[i].resync,seq,"rs_left",
+		if(mdev->resync) {
+			lc_dump(mdev->resync,seq,"rs_left",
 				resync_dump_detail);
 		}
 #endif

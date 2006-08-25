@@ -29,7 +29,7 @@ extern const char * drbd_buildtag(void);
 // undef if you need the workaround in drbd_receiver
 #define HAVE_UML_TO_VIRT 1
 
-//#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
+#define DBG_ALL_SYMBOLS // no static functs, improves quality of OOPS traces
 
 //#define DBG_SPINLOCKS   // enables MUST_HOLD macro (assertions for spinlocks)
 //#define DBG_ASSERTS     // drbd_assert_breakpoint() function

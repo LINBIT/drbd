@@ -30,7 +30,7 @@
 #include <string.h>
 
 #include "drbdadm.h"
-#include "drbd_limits.h"
+#include "linux/drbd_limits.h"
 #include "drbdtool_common.h"
 #include "drbdadm_parser.h"
 

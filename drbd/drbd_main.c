@@ -56,23 +56,12 @@
 #include <linux/vmalloc.h>
 
 #include <linux/drbd.h>
+#include <linux/drbd_limits.h>
 #include "drbd_int.h"
 
 /* YES. We got an official device major from lanana
  */
 #define LANANA_DRBD_MAJOR 147
-
-#ifdef CONFIG_COMPAT
-# if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,10)
-    /* FIXME on which thing could we test instead of the KERNEL_VERSION
-     * again?  register_ioctl32_conversion was deprecated in 2.6.10, got
-     * "officially" deprecated somewhen in 2.6.12, and removed in 2.6.14.
-     * so lets assume all vendor kernels did the transition.  */
-#   define HAVE_COMPAT_IOCTL_MEMBER
-# else
-#  include <linux/ioctl32.h>
-# endif
-#endif
 
 struct after_state_chg_work {
 	struct drbd_work w;
@@ -118,11 +107,8 @@ module_param(disable_bd_claim,bool,0);
 
 // module parameter, defined
 int major_nr = LANANA_DRBD_MAJOR;
-#ifdef MODULE
-int minor_count = 2;
-#else
-int minor_count = 8;
-#endif
+int minor_count = 32;
+
 int disable_bd_claim = 0;
 
 #ifdef DUMP_EACH_PACKET
@@ -144,7 +130,8 @@ volatile int drbd_did_panic = 0;
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */
-struct Drbd_Conf *drbd_conf;
+struct Drbd_Conf **minor_table = NULL;
+
 kmem_cache_t *drbd_request_cache;
 kmem_cache_t *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
@@ -161,15 +148,10 @@ spinlock_t   drbd_pp_lock;
 int          drbd_pp_vacant;
 wait_queue_head_t drbd_pp_wait;
 
-
 STATIC struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_close,
-	.ioctl =   drbd_ioctl,
-#ifdef HAVE_COMPAT_IOCTL_MEMBER
-	.compat_ioctl = drbd_compat_ioctl,
-#endif
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -505,7 +487,7 @@ int drbd_io_error(drbd_dev* mdev)
 	unsigned long flags;
 	int send,ok=1;
 
-	if(mdev->bc->on_io_error != Panic && mdev->bc->on_io_error != Detach) return 1;
+	if(mdev->bc->dc.on_io_error != Panic && mdev->bc->dc.on_io_error != Detach) return 1;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
@@ -702,7 +684,7 @@ STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
 
 	fp = DontCare;
 	if(inc_local(mdev)) {
-		fp = mdev->bc->fencing;
+		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
 
@@ -768,7 +750,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	fp = DontCare;
 	if(inc_local(mdev)) {
-		fp = mdev->bc->fencing;
+		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
 
@@ -900,7 +882,9 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
 	     (ns.disk > Diskless || ns.conn > StandAlone) ) {
-		__module_get(THIS_MODULE);
+		int i;
+		i = try_module_get(THIS_MODULE);
+		D_ASSERT(i);
 	}
 
 	if ( ns.role == Primary && ns.conn < Connected &&
@@ -950,7 +934,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 	fp = DontCare;
 	if(inc_local(mdev)) {
-		fp = mdev->bc->fencing;
+		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
 
@@ -1314,7 +1298,7 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 	return ok;
 }
 
-int drbd_send_sync_param(drbd_dev *mdev, struct syncer_config *sc)
+int drbd_send_sync_param(drbd_dev *mdev, struct syncer_conf *sc)
 {
 	Drbd_SyncParam_Packet p;
 
@@ -1369,7 +1353,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	if(inc_md_only(mdev,Attaching)) {
 		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev->bc);
-		p.u_size = cpu_to_be64(mdev->bc->u_size);
+		p.u_size = cpu_to_be64(mdev->bc->dc.disk_size);
 		dec_local(mdev);
 	} else d_size = 0;
 
@@ -1901,19 +1885,19 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 
 STATIC int drbd_open(struct inode *inode, struct file *file)
 {
-	int minor;
+	drbd_dev *mdev;
 
-	minor = MINOR(inode->i_rdev);
-	if(minor >= minor_count) return -ENODEV;
+	mdev = minor_to_mdev(MINOR(inode->i_rdev));
+	if(!mdev) return -ENODEV;
 
 	if (file->f_mode & FMODE_WRITE) {
-		if( drbd_conf[minor].state.role == Secondary) {
+		if( mdev->state.role == Secondary) {
 			return -EROFS;
 		}
-		set_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
+		set_bit(WRITER_PRESENT, &mdev->flags);
 	}
 
-	drbd_conf[minor].open_cnt++;
+	mdev->open_cnt++;
 
 	return 0;
 }
@@ -1921,10 +1905,10 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 STATIC int drbd_close(struct inode *inode, struct file *file)
 {
 	/* do not use *file (May be NULL, in case of a unmount :-) */
-	int minor;
+	drbd_dev *mdev;
 
-	minor = MINOR(inode->i_rdev);
-	if(minor >= minor_count) return -ENODEV;
+	mdev = minor_to_mdev(MINOR(inode->i_rdev));
+	if(!mdev) return -ENODEV;
 
 	/*
 	printk(KERN_ERR DEVICE_NAME ": close(inode=%p,file=%p)"
@@ -1932,8 +1916,8 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 	       inode->i_writecount);
 	*/
 
-	if (--drbd_conf[minor].open_cnt == 0) {
-		clear_bit(WRITER_PRESENT, &drbd_conf[minor].flags);
+	if (--mdev->open_cnt == 0) {
+		clear_bit(WRITER_PRESENT, &mdev->flags);
 	}
 
 	return 0;
@@ -1968,9 +1952,9 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 
 void drbd_set_defaults(drbd_dev *mdev)
 {
-	mdev->sync_conf.after      = -1;
-	mdev->sync_conf.rate       = 250;
-	mdev->sync_conf.al_extents = 127; // 512 MB active set
+	mdev->sync_conf.after      = DRBD_AFTER_DEF;
+	mdev->sync_conf.rate       = DRBD_RATE_DEF;
+	mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_DEF; // 512 MB active set
 	mdev->state = (drbd_state_t){ { Secondary,
 					Unknown,
 					StandAlone,
@@ -2138,7 +2122,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	D_ASSERT(list_empty(&mdev->resync_work.list));
 	D_ASSERT(list_empty(&mdev->unplug_work.list));
 
-	drbd_set_defaults(mdev);
 }
 
 
@@ -2250,28 +2233,29 @@ static void __exit drbd_cleanup(void)
 
 	unregister_reboot_notifier(&drbd_notifier);
 
-	if (drbd_conf) {
-		for (i = 0; i < minor_count; i++) {
-			drbd_dev    *mdev = drbd_conf + i;
+	drbd_nl_cleanup();
 
-			if (mdev) {
-				down(&mdev->device_mutex);
-				rr = Secondary;
-				drbd_set_role(mdev,&rr);
-				up(&mdev->device_mutex);
-				drbd_sync_me(mdev);
-				drbd_thread_stop(&mdev->receiver);
-			}
+	if (minor_table) {
+		for (i = 0; i < minor_count; i++) {
+			drbd_dev    *mdev = minor_to_mdev(i);
+			if(!mdev) continue;
+
+			down(&mdev->device_mutex);
+			drbd_set_role(mdev,Secondary,0);
+			up(&mdev->device_mutex);
+			drbd_sync_me(mdev);
+			drbd_thread_stop(&mdev->receiver);
 		}
 
 		if (drbd_proc)
 			remove_proc_entry("drbd",&proc_root);
 		i=minor_count;
 		while (i--) {
-			drbd_dev        *mdev  = drbd_conf+i;
+			drbd_dev        *mdev  = minor_to_mdev(i);
 			struct gendisk  **disk = &mdev->vdisk;
 			request_queue_t **q    = &mdev->rq_queue;
 
+			if(!mdev) continue;
 			drbd_free_resources(mdev);
 
 			if (*disk) {
@@ -2338,26 +2322,7 @@ static void __exit drbd_cleanup(void)
 		drbd_destroy_mempools();
 	}
 
-#ifndef HAVE_COMPAT_IOCTL_MEMBER
-#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
-	lock_kernel();
-	unregister_ioctl32_conversion(DRBD_IOCTL_GET_VERSION);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_STATE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET);
-	unregister_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG);
-	unregister_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE);
-	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT);
-	unregister_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC);
-	unregister_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK);
-	unlock_kernel();
-#endif
-#endif
-	kfree(drbd_conf);
+	kfree(minor_table);
 
 	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
@@ -2365,9 +2330,83 @@ static void __exit drbd_cleanup(void)
 	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
 }
 
+drbd_dev *drbd_new_device(int minor)
+{
+	drbd_dev *mdev = NULL;
+	struct gendisk *disk;
+	request_queue_t *q;
+
+	mdev = kmalloc(sizeof(drbd_dev),GFP_KERNEL);
+	if(!mdev) goto Enomem;
+	memset(mdev,0,sizeof(drbd_dev ));
+
+	mdev->minor = minor;
+
+	drbd_init_set_defaults(mdev);
+
+	q = blk_alloc_queue(GFP_KERNEL);
+	if (!q) goto Enomem;
+	mdev->rq_queue = q;
+	q->queuedata   = mdev;
+	q->max_segment_size = DRBD_MAX_SEGMENT_SIZE;
+
+	disk = alloc_disk(1);
+	if (!disk) goto Enomem;
+	mdev->vdisk = disk;
+
+	set_disk_ro( disk, TRUE );
+
+	disk->queue = q;
+	disk->major = MAJOR_NR;
+	disk->first_minor = minor;
+	disk->fops = &drbd_ops;
+	sprintf(disk->disk_name, DEVICE_NAME "%d", minor);
+	sprintf(disk->devfs_name, "%s/%d", drbd_devfs_name, minor);
+	disk->private_data = mdev;
+	add_disk(disk);
+		
+	mdev->this_bdev = bdget(MKDEV(MAJOR_NR,minor));
+	// we have no partitions. we contain only ourselves.
+	mdev->this_bdev->bd_contains = mdev->this_bdev;
+	if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
+		// Initial we are Secondary -> should claim myself.
+		WARN("Could not bd_claim() myself.");
+	} else if (disable_bd_claim) {
+		bd_release(mdev->this_bdev);
+	}
+
+	blk_queue_make_request(q, drbd_make_request_26);
+	blk_queue_merge_bvec(q, drbd_merge_bvec);
+	q->queue_lock = &mdev->req_lock; // needed since we use
+		// plugging on a queue, that actually has no requests!
+	q->unplug_fn = drbd_unplug_fn;
+
+	mdev->md_io_page = alloc_page(GFP_KERNEL);
+	if(!mdev->md_io_page) goto Enomem;
+
+	if (drbd_bm_init(mdev)) goto Enomem;
+	// no need to lock access, we are still initializing the module.
+	init_MUTEX(&mdev->device_mutex);
+	if (!tl_init(mdev)) goto Enomem;
+
+	mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*),GFP_KERNEL);
+	if (!mdev->app_reads_hash) goto Enomem;
+	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
+
+	return mdev;
+
+ Enomem:
+	if(mdev) {
+		if(mdev->app_reads_hash) kfree(mdev->app_reads_hash);
+		if(mdev->md_io_page) __free_page(mdev->md_io_page);
+		kfree(mdev);
+	}
+	return NULL;
+}
+
 int __init drbd_init(void)
 {
-	int i,err;
+	int err;
 
 #if 0
 #warning "DEBUGGING"
@@ -2422,6 +2461,10 @@ int __init drbd_init(void)
 #endif
 	}
 
+	if( (err = drbd_nl_init()) ) {
+		return err;
+	}
+
 	err = register_blkdev(MAJOR_NR, DEVICE_NAME);
 	if (err) {
 		printk(KERN_ERR DEVICE_NAME
@@ -2429,6 +2472,7 @@ int __init drbd_init(void)
 		       MAJOR_NR);
 		return err;
 	}
+
 	register_reboot_notifier(&drbd_notifier);
 
 	/*
@@ -2439,75 +2483,12 @@ int __init drbd_init(void)
 	init_waitqueue_head(&drbd_pp_wait);
 
 	drbd_proc = NULL; // play safe for drbd_cleanup
-	drbd_conf = kmalloc(sizeof(drbd_dev)*minor_count,GFP_KERNEL);
-	if (likely(drbd_conf!=NULL))
-		memset(drbd_conf,0,sizeof(drbd_dev)*minor_count);
-	else goto Enomem;
-
-	for (i = 0; i < minor_count; i++) {
-		drbd_dev    *mdev = drbd_conf + i;
-		struct gendisk         *disk;
-		request_queue_t        *q;
-
-		q = blk_alloc_queue(GFP_KERNEL);
-		if (!q) goto Enomem;
-		mdev->rq_queue = q;
-		q->queuedata   = mdev;
-		q->max_segment_size = DRBD_MAX_SEGMENT_SIZE;
-
-		disk = alloc_disk(1);
-		if (!disk) goto Enomem;
-		mdev->vdisk = disk;
-
-		set_disk_ro( disk, TRUE );
-
-		disk->queue = q;
-		disk->major = MAJOR_NR;
-		disk->first_minor = i;
-		disk->fops = &drbd_ops;
-		sprintf(disk->disk_name, DEVICE_NAME "%d", i);
-		disk->private_data = mdev;
-		add_disk(disk);
-
-		mdev->this_bdev = bdget(MKDEV(MAJOR_NR,i));
-		// we have no partitions. we contain only ourselves.
-		mdev->this_bdev->bd_contains = mdev->this_bdev;
-		if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
-			// Initial we are Secondary -> should claim myself.
-			WARN("Could not bd_claim() myself.");
-		} else if (disable_bd_claim) {
-			bd_release(mdev->this_bdev);
-		}
-
-		blk_queue_make_request(q, drbd_make_request_26);
-		blk_queue_merge_bvec(q, drbd_merge_bvec);
-		q->queue_lock = &mdev->req_lock; // needed since we use
-		// plugging on a queue, that actually has no requests!
-		q->unplug_fn = drbd_unplug_fn;
-	}
+	minor_table = kmalloc(sizeof(drbd_dev *)*minor_count,GFP_KERNEL);
+	if(!minor_table) goto Enomem;
+	memset(minor_table,0,sizeof(drbd_dev *)*minor_count);
 
 	if ((err = drbd_create_mempools()))
 		goto Enomem;
-
-	for (i = 0; i < minor_count; i++) {
-		drbd_dev    *mdev = &drbd_conf[i];
-		struct page *page = alloc_page(GFP_KERNEL);
-
-		drbd_init_set_defaults(mdev);
-
-		if(!page) goto Enomem;
-		mdev->md_io_page = page;
-
-		if (drbd_bm_init(mdev)) goto Enomem;
-		// no need to lock access, we are still initializing the module.
-		init_MUTEX(&mdev->device_mutex);
-		if (!tl_init(mdev)) goto Enomem;
-
-		mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*),
-					     GFP_KERNEL);
-		if (!mdev->app_reads_hash) goto Enomem;
-		memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
-	}
 
 #if CONFIG_PROC_FS
 	/*
@@ -2524,27 +2505,6 @@ int __init drbd_init(void)
 	drbd_proc->owner = THIS_MODULE;
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
-#endif
-
-#ifndef HAVE_COMPAT_IOCTL_MEMBER
-#if defined(CONFIG_PPC64) || defined(CONFIG_SPARC64) || defined(CONFIG_X86_64)
-	// tell the kernel that we think our ioctls are 64bit clean
-	lock_kernel();
-	register_ioctl32_conversion(DRBD_IOCTL_GET_VERSION,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_STATE,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_NET_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_NET,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_GET_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_INVALIDATE_REM,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_SYNC_CONFIG,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_SET_DISK_SIZE,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_WAIT_CONNECT,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_WAIT_SYNC,NULL);
-	register_ioctl32_conversion(DRBD_IOCTL_UNCONFIG_DISK,NULL);
-	unlock_kernel();
-#endif
 #endif
 
 	printk(KERN_INFO DEVICE_NAME ": initialised. "

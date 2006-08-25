@@ -417,7 +417,40 @@ DRBD 0.8 Roadmap
   at the beginning, including the expected API version.
   Consider using DRBD ioctls with some char device similar to
   /dev/mapper/control
-  0% DONE
+
+  The new interface is now based on netlink (actually connector).
+  It is based on the concept of tag lists. The idea is that on the
+  interface we pass lists (actually arrays) of tags. Where each
+  tag identifies the following sniplet of data. 
+  Each tag also states if it is mandatory.
+
+  In case we have to add a new value to the interface, the
+  existing userland tools continue to work with newer kernel
+  modules and vice versa. (Only the older part of the two will
+  inform the user with a warning, that there was a unknown
+  tag on the interface, and that the unknown tag got ignored) 
+  But the basic functionality stays intact!
+
+  While implementing this, we also implemented dynamic device allocation.
+
+  drbdsetup is basically call compatible to its ioctl based
+  ancestor, but has two now options:
+
+    --create-device ___ create the device in case int does not exist yet.
+    --set-defaults ____ set all not mentioned options to it's default values.
+
+  Things to do:
+  
+  * Fix drbdadm (nees to use --create-device and --set-defaults; adjust
+      needs to be changes since the kernel can not return the device
+      names of backing and meta device.)
+  * Remove the memset( .., 0, ...) from drbd_nl.c. Use the defaults instead.
+  * Use only one connector callback.
+  * use try_module_get() and put_module() when control enters a/the connector
+    callback.
+  * Locking in userspace, to prevent multiple instances of drbdsetup
+
+  50% DONE
 
 15 Accept BIOs bigger than one page, probabely up to 32k (8 pages) 
   currently.
@@ -785,7 +818,7 @@ DRBD 0.8 Roadmap
 34 Improve the initial hand-shake, to identify the sockets (and TCP-
    links) by an initial message, and not only by the connection timming.
 
-   99% DONE   
+   99% DONE
 
 35 Bigger AL-extents (e.g. 16MB)
 
@@ -828,17 +861,14 @@ plus-banches:
 
 2 Implement online verification
 
-3 dynamic device allocation 
-  (requires configuration throu a new mechanism (netlink socket/misc dev)
-
-4 Change the bitmap code to work with unmapped highmem pages, instead
+3 Change the bitmap code to work with unmapped highmem pages, instead
   of using vmalloc()ed memory. This allows users of 32bit platforms
   to use drbd on big devices (in the ~3TB range)
 
-5 3 node support. Do and test a 3 node setup (2nd DRBD stacked over
+4 3 node support. Do and test a 3 node setup (2nd DRBD stacked over
   a DRBD pair). Enhance the user level tools to support the 3 node
   setup.
 
-6 Have protocol version 74 available in drbd-0.8, to allow rolling 
+5 Have protocol version 74 available in drbd-0.8, to allow rolling 
   upgrades
 

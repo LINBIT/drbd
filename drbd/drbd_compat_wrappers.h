@@ -174,14 +174,11 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
  */
 static inline void drbd_generic_make_request(int rw, struct bio *bio)
 {
-	drbd_dev *mdev = drbd_conf -1; // for DRBD_ratelimit
 	bio->bi_rw = rw; // on the receiver side, e->..rw was not yet defined.
 
 	if (!bio->bi_bdev) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			printk(KERN_ERR "drbd_generic_make_request: bio->bi_bdev == NULL\n");
-			dump_stack();
-		}
+		printk(KERN_ERR "drbd_generic_make_request: bio->bi_bdev == NULL\n");
+		dump_stack();
 		drbd_bio_IO_error(bio);
 		return;
 	}

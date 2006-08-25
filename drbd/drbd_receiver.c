@@ -80,13 +80,13 @@ void check_list(drbd_dev *mdev,struct list_head *list,char *t)
 		if( le->prev != la ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: %s list fucked.\n",
-			       (int)(mdev-drbd_conf),t);
+			       mdev_to_minor(mdev),t);
 			break;
 		}
 		if( forward++ > CHECK_LIST_LIMIT ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: %s forward > 1000\n",
-			       (int)(mdev-drbd_conf),t);
+			       mdev_to_minor(mdev),t);
 			break;
 		}
 	} while(le != list);
@@ -98,20 +98,20 @@ void check_list(drbd_dev *mdev,struct list_head *list,char *t)
 		if( le->next != la ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: %s list fucked.\n",
-			       (int)(mdev-drbd_conf),t);
+			       mdev_to_minor(mdev),t);
 			break;
 		}
 		if( backward++ > CHECK_LIST_LIMIT ) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: %s backward > 1000\n",
-			       (int)(mdev-drbd_conf),t);
+			       mdev_to_minor(mdev),t);
 			break;
 		}
 	} while(le != list);
 
 	if(forward != backward) {
 		printk(KERN_ERR DEVICE_NAME "%d: forward=%d, backward=%d\n",
-		       (int)(mdev-drbd_conf),forward,backward);
+		       mdev_to_minor(mdev),forward,backward);
 	}
 }
 #endif
@@ -646,8 +646,8 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	}
 
 	err = sock->ops->connect(sock,
-				 (struct sockaddr *)mdev->net_conf->other_addr,
-				 mdev->net_conf->other_addr_len, 0);
+				 (struct sockaddr *)mdev->net_conf->peer_addr,
+				 mdev->net_conf->peer_addr_len, 0);
 
 	if (err) {
 		sock_release(sock);
@@ -1590,7 +1590,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 				(((struct sockaddr_in *)mdev->net_conf->my_addr)
 				 ->sin_addr.s_addr);
 			ch_peer = (unsigned long)
-				(((struct sockaddr_in *)mdev->net_conf->other_addr)
+				(((struct sockaddr_in *)mdev->net_conf->peer_addr)
 				 ->sin_addr.s_addr);
 			if      ( ch_self < ch_peer ) rv = -1;
 			else if ( ch_self > ch_peer ) rv =  1;
@@ -1634,10 +1634,9 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 	case PanicPrimary:
 		hg = drbd_asb_recover_0p(mdev);
 		if( hg == -1 && mdev->state.role==Primary) {
-			int sec = Secondary;
 			int got_mutex=!down_interruptible(&mdev->device_mutex);
-			if (got_mutex) self = drbd_set_role(mdev,&sec);
-			if (self || !got_mutex) {
+			if (got_mutex) self = drbd_set_role(mdev,Secondary,0);
+			if (self != SS_Success || !got_mutex) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
 				drbd_panic("Panic by after-sb-1pri handler\n");
 			} else {
@@ -1672,10 +1671,9 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	case PanicPrimary:
 		hg = drbd_asb_recover_0p(mdev);
 		if( hg == -1 ) {
-			int sec = Secondary;
 			int got_mutex=!down_interruptible(&mdev->device_mutex);
-			if (got_mutex) self = drbd_set_role(mdev,&sec);
-			if (self || !got_mutex) {
+			if (got_mutex) self = drbd_set_role(mdev,Secondary,0);
+			if (self != SS_Success || !got_mutex) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
 				drbd_panic("Panic by after-sb-2pri handler\n");
 			} else {
@@ -1986,20 +1984,20 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		warn_if_differ_considerably(mdev, "lower level device sizes",
 			   p_size, drbd_get_capacity(mdev->bc->backing_bdev));
 		warn_if_differ_considerably(mdev, "user requested size",
-					    p_usize, mdev->bc->u_size);
+					    p_usize, mdev->bc->dc.disk_size);
 
 		if (mdev->state.conn == WFReportParams) {
 			/* this is first connect, or an otherwise expected 
 			   param exchange.  choose the minimum */
-			p_usize = min_not_zero(mdev->bc->u_size, p_usize);
+			p_usize = min_not_zero(mdev->bc->dc.disk_size, p_usize);
 		}
 
-		my_usize = mdev->bc->u_size;
+		my_usize = mdev->bc->dc.disk_size;
 
-		if( mdev->bc->u_size != p_usize ) {
-			mdev->bc->u_size = p_usize;
+		if( mdev->bc->dc.disk_size != p_usize ) {
+			mdev->bc->dc.disk_size = p_usize;
 			INFO("Peer sets u_size to %lu KB\n",
-			     (unsigned long)mdev->bc->u_size);
+			     (unsigned long)mdev->bc->dc.disk_size);
 		}
 
 		// Never shrink a device with usable data.
@@ -2010,7 +2008,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 			ERR("The peer's disk size is too small!\n");
 			drbd_force_state(mdev,NS(conn,StandAlone));
 			drbd_thread_stop_nowait(&mdev->receiver);
-			mdev->bc->u_size = my_usize;
+			mdev->bc->dc.disk_size = my_usize;
 			return FALSE;
 		}
 		dec_local(mdev);
@@ -2463,7 +2461,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	fp = DontCare;
 	if(inc_local(mdev)) {
-		fp = mdev->bc->fencing;
+		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
 
@@ -2748,7 +2746,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 int drbdd_init(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
-	int minor = (int)(mdev-drbd_conf);
+	int minor = mdev_to_minor(mdev);
 	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
@@ -2991,7 +2989,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		[StateChgReply]={sizeof(Drbd_RqS_Reply_Packet),got_RqSReply },
 	};
 
-	sprintf(current->comm, "drbd%d_asender", (int)(mdev-drbd_conf));
+	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));
 
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */

@@ -28,29 +28,40 @@
 
 #define _GNU_SOURCE
 
+#include <errno.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <mntent.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
-#include <linux/drbd.h>
-#include <linux/drbd_config.h>
 #include <getopt.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <unistd.h>
-#include <dirent.h>
-#include <mntent.h>
+
+#include <linux/netlink.h>
+#include <linux/connector.h>
+
+#include <linux/drbd.h>
+#include <linux/drbd_config.h>
+#include <linux/drbd_tag_magic.h>
+#include <linux/drbd_limits.h>
+
 #include "drbdtool_common.h"
-#include "drbd_limits.h"
-#include "drbd_tag_magic.h"
+
+
 
 struct drbd_tag_list {
+	struct nlmsghdr *nl_header;
+	struct cn_msg   *cn_header;
+	struct drbd_nl_cfg_req* drbd_p_header;
 	unsigned short *tag_list_start;
 	unsigned short *tag_list_cpos;
 	int    tag_size;
@@ -71,6 +82,7 @@ struct drbd_option {
 	int (*convert_function)(struct drbd_option *,
 				struct drbd_tag_list *,
 				char *);
+	void (*show_function)(struct drbd_option *,unsigned short*);
 	union {
 		struct {
 			const unsigned long long min;
@@ -81,6 +93,7 @@ struct drbd_option {
 		struct {
 			const char** handler_names;
 			const int number_of_handlers;
+			const int def;
 		} handler_param;
 	};
 };
@@ -88,10 +101,39 @@ struct drbd_option {
 struct drbd_cmd {
 	const char* cmd;
 	const int packet_id;
-	int (*function)(struct drbd_cmd *, int, char **);
+	int (*function)(struct drbd_cmd *, int, int, char **);
 	struct drbd_argument *args;
 	struct drbd_option *options;
 };
+
+
+// Connector functions
+int open_cn();
+int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
+int send_tag_list_cn(int, struct drbd_tag_list *, const int, int, int);
+int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
+void close_cn(int sk_nl);
+
+// other functions
+void print_command_usage(int i, const char *addinfo);
+// command functions
+int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+// convert functions for arguments
+int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+// convert functions for options
+int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+// show functions for options
+void show_numeric(struct drbd_option *od, unsigned short* tp);
+void show_handler(struct drbd_option *od, unsigned short* tp);
+void show_bit(struct drbd_option *od, unsigned short* tp);
+void show_string(struct drbd_option *od, unsigned short* tp);
 
 
 const char *on_error[] = {
@@ -127,35 +169,21 @@ const char *asb2p_n[] = {
 	[PanicPrimary]      = "panic"
 };
 
-// other functions
-void print_command_usage(int i, const char *addinfo);
-// command functions
-int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv);
-// convert functions for arguments
-int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-// convert functions for options
-int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-
 #define EN(N) \
-	conv_numeric, { .numeric_param = { N ## _min, N ## _max, N ## _default } }
-#define EN0 	conv_numeric, { .numeric_param = { 0, -1, 0, 0 } }
-#define EH(N) \
-	conv_handler, { .handler_param = { N, ARRY_SIZE(N) } }
-#define EB      conv_bit, { } 
-
-
-
+	conv_numeric, show_numeric, \
+	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
+		DRBD_ ## N ## _DEF ,0  } }
+#define EH(N,D) \
+	conv_handler, show_handler, { .handler_param = { N, ARRY_SIZE(N), \
+	DRBD_ ## D ## _DEF } }
+#define EB      conv_bit, show_bit, { } 
+#define ES      conv_string, show_string, { } 
 
 struct drbd_cmd commands[] = {
 	{"primary", P_primary, generic_config_cmd, NULL,
 	 (struct drbd_option[]) {
-		 { "overwrite-data-of-peer",'o',T_disk_size, EB	     },
-		 { NULL,0,0,NULL, { } }, }, },
+		 { "overwrite-data-of-peer",'o',T_overwrite_peer, EB   },
+		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"secondary", P_secondary, generic_config_cmd, NULL, NULL },
 
@@ -166,10 +194,10 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "size",'d',		T_disk_size,	EN0 },
-		 { "on-io-error",'e',	T_on_io_error,	EH(on_error) },
-		 { "fencing",'f',	T_fencing,	EH(fencing_n) },
-		 { NULL,0,0,NULL, { } }, }, },
+		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT) },
+		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
+		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
+		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"detach", P_detach, generic_config_cmd, NULL, NULL },
 
@@ -180,36 +208,36 @@ struct drbd_cmd commands[] = {
 		 { "protocol",		T_wire_protocol,conv_protocol },
  		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "timeout",'t',	T_timeout,	EN0 },
-		 { "max-epoch-size",'e',T_max_epoch_size,EN0 },
-		 { "max-buffers",'b',	T_max_buffers,	EN0 },
-		 { "unplug-watermark",'u',T_unplug_watermark, EN0 },
-		 { "connect-int",'c',	T_try_connect_int, EN0 },
-		 { "ping-int",'i',	T_ping_int,	   EN0 },
-		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN0 },
-		 { "ko-count",'k',	T_ko_count,	   EN0 },
+		 { "timeout",'t',	T_timeout,	EN(TIMEOUT) },
+		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE) },
+		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS) },
+		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK) },
+		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT) },
+		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT) },
+		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE) },
+		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT) },
 		 { "allow-two-primaries",'m',T_two_primaries, EB },
-		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   EN0 },
-		 { "shared-secret",'x',	T_shared_secret,   EN0 },
-		 { "after-sb-0pri",'A',	T_after_sb_0p,     EH(asb0p_n) },
-		 { "after-sb-1pri",'B',	T_after_sb_1p,     EH(asb1p_n) },
-		 { "after-sb-2pri",'C',	T_after_sb_2p,     EH(asb2p_n) },
+		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },
+		 { "shared-secret",'x',	T_shared_secret,   ES },
+		 { "after-sb-0pri",'A',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) },
+		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
+		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
 		 { "discard-my-data",'D', T_want_lose,     EB },
-		 { NULL,0,0,NULL, { } }, }, },
+		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"disconnect", P_disconnect, generic_config_cmd, NULL, NULL },
 
 	{"resize", P_resize, generic_config_cmd, NULL,
 	 (struct drbd_option[]) {
-		 { "size",'s',T_resize_size,		EN0 },
-		 { NULL,0,0,NULL, { } }, }, },
+		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT) },
+		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"syncer", P_syncer_conf, generic_config_cmd, NULL,
 	 (struct drbd_option[]) {
-		 { "rate",'r',T_sync_rate,		EN0 },
-		 { "after",'a',T_sync_after,		EN0 },
-		 { "al-extents",'e',T_al_extents,	EN0 },
-		 { NULL,0,0,NULL, { } }, }, },
+		 { "rate",'r',T_rate,			EN(RATE) },
+		 { "after",'a',T_after,			EN(AFTER) },
+		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS) },
+		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"invalidate", P_invalidate, generic_config_cmd, NULL, NULL },
 	{"invalidate-remote", P_invalidate_peer, generic_config_cmd, NULL, NULL },
@@ -226,28 +254,80 @@ struct drbd_cmd commands[] = {
 	{"cstate", cmd_cstate,             0, 0, },
 	{"dstate", cmd_dstate,             0, 0, },
 	{"show-gi", cmd_show_gi,           0, 0, },
-	{"get-gi", cmd_get_gi,             0, 0, },
-	{"show", cmd_show,                 0, 0, },
-	*/
+	{"get-gi", cmd_get_gi,             0, 0, }, */
+	{"show", P_get_config, show_cmd, NULL, NULL },
+};
+
+#define EM(C) [ C - RetCodeBase ]
+
+static const char *error_messages[] = {
+	EM(NoError) = "No further Information available.",
+	EM(LAAlreadyInUse) = "Local address(port) already in use.",
+	EM(OAAlreadyInUse) = "Remote address(port) already in use.",
+	EM(LDNameInvalid) = "Can not open backing device.",
+	EM(MDNameInvalid) = "Can not open meta device.",
+	EM(LDAlreadyInUse) = "Lower device already in use.",
+	EM(LDNoBlockDev) = "Lower device is not a block device.",
+	EM(MDNoBlockDev) = "Meta device is not a block device.",
+	EM(LDOpenFailed) = "Open of lower device failed.",
+	EM(MDOpenFailed) = "Open of meta device failed.",
+	EM(LDDeviceTooSmall) = "Low.dev. smaller than requested DRBD-dev. size.",
+	EM(MDDeviceTooSmall) = "Meta device too small.",
+	EM(LDNoConfig) = "You have to use the disk command first.",
+	EM(LDMounted) = "Lower device is already mounted.",
+	EM(MDMounted) = "Meta device is already mounted.",
+	EM(LDMDInvalid) = "Lower device / meta device / index combination invalid.",
+	EM(LDDeviceTooLarge) = "Currently we only support devices up to 3.998TB.\n"
+	"(up to 2TB in case you do not have CONFIG_LBD set)"
+	"Contact office@linbit.com, if you need more.",
+	EM(MDIOError) = "IO error(s) orruced during initial access to meta-data.\n",
+	EM(MDInvalid) = "No valid meta-data signature found.\n)"
+	"Use 'drbdadm create-md res' to initialize meta-data area.\n",
+	EM(CRAMAlgNotAvail) = "The 'cram-hmac-alg' you specified is not known in )"
+	"the kernel.\n",
+	EM(CRAMAlgNotDigest) = "The 'cram-hmac-alg' you specified is not a digest.",
+	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
+	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
+	EM(HaveDiskConfig) = "HaveDiskConfig",
+	EM(UnknownMandatoryTag) = "UnknownMandatoryTag",
+	EM(MinorNotKnown) = "MinorNotKnown",
+	EM(StateNotAllowed) = "StateNotAllowed",
+	EM(GotSignal) = "GotSignal",
+	EM(NoResizeDuringResync) = "Resize not allowed during resync.",
+	EM(APrimaryNodeNeeded) = "Need the a primary node to resize.",
+	EM(SyncAfterInvalid) = "The sync after minor number is invalid",
+	EM(SyncAfterCycle-) = "This would cause a sync-after dependency cycle",
+	EM(PauseFlagAlreadySet) = "PauseFlagAlreadySet",
+	EM(PauseFlagAlreadyClear) = "PauseFlagAlreadyClear",
+	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
+	EM(FailedToClaimMyself) = "FailedToClaimMyself",
 };
 
 char* cmdname = 0;
 
-void dump_tag_list(struct drbd_tag_list *tl)
+int dump_tag_list(unsigned short *tlc)
 {
-	unsigned short *tlc = tl->tag_list_start;
 	enum drbd_tags tag;
+	unsigned int tag_nr;
 	int len;
 	int integer;
 	char bit;
 	__u64 int64;
 	char* string;
+	int found_unknown=0;
 
-	while(*tlc != TT_END) {
-		tag = *tlc++;
-		printf("(%2d) %16s = ",tag_number(tag),
-		       tag_descriptions[tag_number(tag)].name);
+	while( (tag = *tlc++ ) != TT_END) {
 		len = *tlc++;
+		if(tag == TT_REMOVED) goto skip;
+
+		tag_nr = tag_number(tag);
+		if(tag_nr<ARRY_SIZE(tag_descriptions)) {
+			string = tag_descriptions[tag_nr].name;
+		} else {
+			string = "unknown tag";
+			found_unknown=1;
+		}
+		printf("# (%2d) %16s = ",tag_nr,string);
 		switch(tag_type(tag)) {
 		case TT_INTEGER: 
 			integer = *(int*)tlc;
@@ -267,16 +347,24 @@ void dump_tag_list(struct drbd_tag_list *tl)
 			break;
 		}
 		printf(" \t[len: %u]\n",len);
+	skip:
 		tlc = (unsigned short*)((char*)tlc + len);
 	}
+
+	return found_unknown;
 }
 
 struct drbd_tag_list *create_tag_list(int size)
 {
 	struct drbd_tag_list *tl;
-
+	
 	tl = malloc(sizeof(struct drbd_tag_list));
-	tl->tag_list_start = malloc(size);
+	tl->nl_header  = malloc(NLMSG_SPACE( sizeof(struct cn_msg) +
+					     sizeof(struct drbd_nl_cfg_req) + 
+					     size) );
+	tl->cn_header = NLMSG_DATA(tl->nl_header);
+	tl->drbd_p_header = (struct drbd_nl_cfg_req*) tl->cn_header->data;
+	tl->tag_list_start = tl->drbd_p_header->tag_list;
 	tl->tag_list_cpos = tl->tag_list_start;
 	tl->tag_size = size;
 
@@ -298,7 +386,7 @@ void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
 
 void free_tag_list(struct drbd_tag_list *tl)
 {
-	free(tl->tag_list_start);
+	free(tl->nl_header);
 	free(tl);
 }
 
@@ -322,8 +410,10 @@ int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg
 		fprintf(stderr, "%s is not a block device!\n", arg);
 		return 20;
 	}
+	
+	close(device_fd);
 
-	add_tag(tl,ad->tag,&device_fd,sizeof(device_fd));
+	add_tag(tl,ad->tag,arg,strlen(arg)+1); // include the null byte. 
 
 	return 0;
 }
@@ -391,18 +481,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = resolv(addr_part(arg));
 
-	switch(ad->tag) {
-	case T_my_addr:
-		add_tag(tl,T_my_addr,&addr,addr_len);
-		add_tag(tl,T_my_addr_len,&addr_len,sizeof(addr_len));
-		break;
-	case T_peer_addr:
-		add_tag(tl,T_peer_addr,&addr,addr_len);
-		add_tag(tl,T_peer_addr_len,&addr_len,sizeof(addr_len));
-		break;
-	default:
-		fprintf(stderr, "internal error in conv_address()\n");
-	}
+	add_tag(tl,ad->tag,&addr,addr_len);
 
 	return 0;
 }
@@ -444,7 +523,6 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	unsigned long long l;
 	int i;
 	char unit[] = {0,0};
-
 
 	l = m_strtoll(arg, default_unit);
 
@@ -488,12 +566,19 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	return 0;
 }
 
+int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+{
+	add_tag(tl,od->tag,arg,strlen(arg)+1);
+
+	return 0;
+}
+
 struct option *	make_longoptions(struct drbd_option* od)
 {
 	static struct option buffer[20];
 	int i=0;
 
-	while(od->name) {
+	while(od && od->name) {
 		buffer[i].name = od->name;
 		buffer[i].has_arg = tag_type(od->tag) == TT_BIT ? 
 			no_argument : required_argument ;
@@ -504,6 +589,20 @@ struct option *	make_longoptions(struct drbd_option* od)
 		}
 		od++;
 	}
+	
+	// The two omnipresent options:
+	buffer[i].name = "set-defaults";
+	buffer[i].has_arg = 0;
+	buffer[i].flag = NULL;
+	buffer[i].val = '(';
+	i++;
+
+	buffer[i].name = "create-device";
+	buffer[i].has_arg = 0;
+	buffer[i].flag = NULL;
+	buffer[i].val = ')';
+	i++;
+
 	buffer[i].name = NULL;
 	buffer[i].has_arg = 0;
 	buffer[i].flag = NULL;
@@ -522,17 +621,44 @@ struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 	return NULL;
 }
 
-int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv)
+void print_config_error( struct drbd_nl_cfg_reply *reply)
 {
+	int err_no = reply->ret_code;
+
+	if (err_no == NoError) return;
+	if (err_no == SS_Success) return;
+
+	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
+	     ( err_no > SS_TowPrimaries || err_no < SS_CW_FailedByPeer) ) {
+		fprintf(stderr,"Error code %d unknown.\n"
+			"You should updated the drbd userland tools.\n",err_no);
+	} else {
+		if(err_no > RetCodeBase ) {
+			fprintf(stderr,"Failure: (%d) %s\n",err_no,
+				error_messages[err_no-RetCodeBase]);
+		} else {
+			fprintf(stderr,"State change failed: (%d) %s\n",
+				err_no, set_st_err_name(err_no));
+		}
+	}
+}
+
+#define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
+
+int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+{
+	char buffer[ RCV_SIZE ];
+	struct drbd_nl_cfg_reply *reply;
 	struct drbd_argument *ad = cm->args;
 	struct drbd_option *od;
 	static struct option *lo;
 	struct drbd_tag_list *tl;
-	int c,i=0,rv=0;
+	int c,i=0,rv=0,sk_nl;
+	int flags=0;
 
 	tl = create_tag_list(4096);
 
-	while(ad->name) {
+	while(ad && ad->name) {
 		if(argc < i+1) {
 			fprintf(stderr,"Missing argument '%s'\n", ad->name);
 			print_command_usage(cm-commands, "");
@@ -545,21 +671,243 @@ int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	}
 
 	lo = make_longoptions(cm->options);
+	opterr=0;
 	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
 		od = find_opt_by_short_name(cm->options,c);
 		if(od) rv |= od->convert_function(od,tl,optarg);
 		else {
-			fprintf(stderr,"opt for short '%c' (%d) not found\n",
-				c,c);
-			rv=20;			
+			if(c=='(') flags |= DRBD_NL_SET_DEFAULTS;
+			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
+			else {
+				fprintf(stderr,
+					"%s: unrecognized option '%s'\n",
+					cmdname, argv[optind-1]);
+				rv=20;
+			}
 		}
 		if(rv) break;
 	}
 
-	if(rv == 0) dump_tag_list(tl);
+	add_tag(tl,TT_END,NULL,0); // close the tag list
+
+	if(rv == 0) {
+		// dump_tag_list(tl->tag_list_start);
+		sk_nl = open_cn();
+		if(sk_nl < 0) return 20;
+
+		send_tag_list_cn(sk_nl,tl,cm->packet_id,minor,flags);
+
+		receive_cn(sk_nl, (struct nlmsghdr*)buffer, RCV_SIZE );
+		close_cn(sk_nl);
+		reply = (struct drbd_nl_cfg_reply *)
+			((struct cn_msg *)NLMSG_DATA(buffer))->data;
+		print_config_error(reply);
+	}
 	free_tag_list(tl);
 
 	return rv;
+}
+
+#define ASSERT(exp) if (!(exp)) \
+		fprintf(stderr,"ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__);
+
+void show_numeric(struct drbd_option *od, unsigned short* tp)
+{
+	long long val;
+
+	switch(tag_type(*tp++)) {
+	case TT_INTEGER: 
+		ASSERT( *tp++ == sizeof(int) );
+		val = *(int*)tp;
+		break;
+	case TT_INT64:
+		ASSERT( *tp++ == sizeof(__u64) );
+		val = *(__u64*)tp;
+		break;
+	default: 
+		ASSERT(0);
+		val=0;
+	}
+
+	printf("\t%s\t\t%lld",od->name,val);
+	if(val == (long long) od->numeric_param.def) printf(" _is_default");
+	printf(";\n");
+}
+
+void show_handler(struct drbd_option *od, unsigned short* tp)
+{
+	const char** handler_names = od->handler_param.handler_names;
+	int i;
+
+	ASSERT( tag_type(*tp++) == TT_INTEGER );
+	ASSERT( *tp++ == sizeof(int) );
+	i = *(int*)tp;
+	printf("\t%s\t\t%s",od->name,handler_names[i]);
+	if( i == (long long)od->numeric_param.def) printf(" _is_default");
+	printf(";\n");
+}
+
+void show_bit(struct drbd_option *od, unsigned short* tp)
+{
+	ASSERT( tag_type(*tp++) == TT_BIT );
+	ASSERT( *tp++ == sizeof(char) );
+	if(*(char*)tp) printf("\t%s;\n",od->name);
+}
+
+void show_string(struct drbd_option *od, unsigned short* tp)
+{
+	ASSERT( tag_type(*tp++) == TT_STRING );
+	if( *tp++ > 0) printf("\t%s\t\t\"%s\";\n",od->name,(char*)tp);
+}
+
+unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
+{
+	enum drbd_tags t;
+	int len;
+
+	while( (t = *tlc) != TT_END ) {
+		if(t == tag) return tlc;
+		tlc++;
+		len = *tlc++;
+		tlc = (unsigned short*)((char*)tlc + len);
+	}
+	return NULL;
+}
+
+void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect_name)
+{
+	unsigned short *tp;
+	int opened = 0;
+
+	while(od->name) {
+		tp = look_for_tag(tlc,od->tag);
+		if(tp) {
+			if(!opened) {
+				opened=1;
+				printf("%s {\n",sect_name);
+			}
+			od->show_function(od,tp);
+			*tp = TT_REMOVED;
+		}
+		od++;
+	}
+	if(opened) {
+		printf("}\n");
+	}
+}
+
+char* consume_tag_string(enum drbd_tags tag, unsigned short *tlc)
+{
+	unsigned short *tp;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		if( *tp++ > 0) return (char*)tp;
+	}
+	return "";
+}
+
+int consume_tag_int(enum drbd_tags tag, unsigned short *tlc)
+{
+	unsigned short *tp;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		tp++;
+		return *(int *)tp;
+	}
+	return 0;
+}
+
+int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+{
+	char buffer[ 4096 ];
+	struct drbd_tag_list *tl;
+	struct drbd_nl_cfg_reply *reply;
+	struct sockaddr_in *addr;
+	int sk_nl;
+	unsigned short *rtl;
+
+	int idx;
+	char* str;
+
+	ASSERT(cm->packet_id == P_get_config);
+
+	if(argc > 1) {
+		fprintf(stderr,"Ignoring excess arguments\n");
+	
+	}
+
+	tl = create_tag_list(2);
+	add_tag(tl,TT_END,NULL,0); // close the tag list
+
+	sk_nl = open_cn();
+	if(sk_nl < 0) return 20;
+
+	send_tag_list_cn(sk_nl,tl,cm->packet_id,minor,0);
+
+	receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
+	close_cn(sk_nl);
+	reply = (struct drbd_nl_cfg_reply *)
+		((struct cn_msg *)NLMSG_DATA(buffer))->data;
+
+	rtl = reply->tag_list;
+
+	// find all commands that have options and print those...
+	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {
+		if(cm->options)
+			print_options(cm->options, rtl, cm->cmd);
+	}
+
+	// start of spagethi code...
+	idx = consume_tag_int(T_wire_protocol,rtl);
+	if(idx) printf("protocol %c;\n",'A'+idx-1);
+	str = consume_tag_string(T_backing_dev,rtl);
+	if(str) {
+		printf("_this_host {\n");
+		printf("\tdevice\t\t\"/dev/drbd%d\";\n",minor);
+		printf("\tdisk\t\t\"%s\";\n",str);
+		idx=consume_tag_int(T_meta_dev_idx,rtl);
+		switch(idx) {
+		case DRBD_MD_INDEX_INTERNAL:
+		case DRBD_MD_INDEX_FLEX_INT:
+			printf("\tmeta-disk\tinternal;\n");
+			consume_tag_string(T_meta_dev,rtl);
+			break;
+		case DRBD_MD_INDEX_FLEX_EXT:
+			printf("\tflexible-meta-disk\t\"%s\";\n",
+			       consume_tag_string(T_meta_dev,rtl));
+			break;
+		default:
+			printf("\tmeta-disk\t\"%s\" [ %d ];\n",
+			       consume_tag_string(T_meta_dev,rtl),idx);
+		}
+		str = consume_tag_string(T_my_addr,rtl);
+		if(str) {
+			addr = (struct sockaddr_in *)str;
+			printf("\taddress\t\t%s:%d;\n",
+			       inet_ntoa(addr->sin_addr),
+			       ntohs(addr->sin_port));
+		}
+		printf("}\n");
+	}
+
+	str = consume_tag_string(T_peer_addr,rtl);
+	if(str) {
+		printf("_remote_host {\n");
+		addr = (struct sockaddr_in *)str;
+		printf("\taddress\t\t%s:%d;\n",
+		       inet_ntoa(addr->sin_addr),
+		       ntohs(addr->sin_port));
+		printf("}\n");
+	}
+
+	if(dump_tag_list(reply->tag_list)) {
+		printf("# Found unknown tags, you should update your\n"
+		       "# userland tools\n");
+	}
+
+	return 0;
 }
 
 void print_command_usage(int i, const char *addinfo)
@@ -641,6 +989,8 @@ void print_usage(const char* addinfo)
 	for (i = 0; i < ARRY_SIZE(commands); i++)
 		print_command_usage(i, 0);
 
+	printf("\nGeneral options: --create-device, --set-defaults\n");
+
 	print_handler("\non-io-error handlers:",on_error,ARRY_SIZE(on_error));
 	print_handler("\nfencing policies:",fencing_n,ARRY_SIZE(fencing_n));
 	print_handler("\nafter-sb-0pri handler:",asb0p_n,ARRY_SIZE(asb0p_n));
@@ -658,10 +1008,99 @@ void print_usage(const char* addinfo)
 	exit(20);
 }
 
+int open_cn()
+{
+	int sk_nl;
+	int err;
+	struct sockaddr_nl my_nla;
+
+	sk_nl = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_CONNECTOR);
+	if (sk_nl == -1) {
+		perror("socket() failed");
+		return -1;
+	}
+
+	my_nla.nl_family = AF_NETLINK;
+	my_nla.nl_groups = -1; //CN_IDX_DRBD; 
+	my_nla.nl_pid = getpid();
+
+	err = bind(sk_nl, (struct sockaddr *)&my_nla, sizeof(my_nla));
+	if (err == -1) {
+		err = errno;
+		perror("bind() failed");
+		if(err == ENOENT) {
+			fprintf(stderr,"DRBD driver not present in the kernel?\n");
+		}
+		return -1;
+	}
+
+	return sk_nl;
+}
+
+
+int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
+{
+	struct cn_msg *cn_hdr;
+	cn_hdr = (struct cn_msg *)NLMSG_DATA(nl_hdr);
+	int rr;
+
+	/* fill the netlink header */
+	nl_hdr->nlmsg_len = NLMSG_LENGTH(size - sizeof(struct nlmsghdr));
+	nl_hdr->nlmsg_type = NLMSG_DONE;
+	nl_hdr->nlmsg_flags = 0;
+	nl_hdr->nlmsg_seq = 0;
+	nl_hdr->nlmsg_pid = getpid();
+	/* fill the connector header */
+	cn_hdr->id.idx = CN_IDX_DRBD;
+	cn_hdr->seq = 0;
+	cn_hdr->ack = 0;
+	cn_hdr->len = size - sizeof(struct nlmsghdr) - sizeof(struct cn_msg);
+
+	rr = send(sk_nl,nl_hdr,nl_hdr->nlmsg_len,0);
+	if( rr != (ssize_t)nl_hdr->nlmsg_len) {
+		perror("send() failed");
+		return -1;
+	}
+	return rr;
+}
+
+int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
+{
+	int rr;
+
+	rr = recv(sk_nl,nl_hdr,size,0);
+
+	if( rr < 0 ) {
+		perror("recv() failed");
+		return -1;
+	}
+	return rr;
+}
+
+int send_tag_list_cn(int sk_nl, struct drbd_tag_list *tl, const int packet_id, int minor, int flags)
+{
+	tl->cn_header->id.val = packet_id;
+	tl->drbd_p_header->drbd_minor = minor;
+	tl->drbd_p_header->flags = flags;
+
+	return send_cn(sk_nl, tl->nl_header, (char*)tl->tag_list_cpos - 
+		       (char*)tl->nl_header);
+}
+
+void close_cn(int sk_nl)
+{
+	close(sk_nl);
+}
+
 int main(int argc, char** argv)
 {
 	int help = 0;
 	unsigned int i;
+	int minor;
+	int drbd_fd,lock_fd;
+	struct drbd_cmd *cmd;
+
+	chdir("/");
 
 	if ( (cmdname = strrchr(argv[0],'/')) )
 		argv[0] = ++cmdname;
@@ -671,14 +1110,24 @@ int main(int argc, char** argv)
 	/* == '-' catches -h, --help, and similar */
 	if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-'))
 		help = 1;
+
 	if (argc < 3) print_usage(argc==1 ? 0 : " Insufficient arguments");
 
-	chdir("/");
-
+	cmd=NULL;
 	for(i=0;i<ARRY_SIZE(commands);i++) {
 		if(strcmp(argv[2],commands[i].cmd)==0) {
-			commands[i].function(commands+i,argc-3,argv+3);
+			cmd = commands+i;
+			break;
 		}
+	}
+
+	if(cmd) {
+		drbd_fd = dt_lock_open_drbd(argv[1], &lock_fd, 1 );
+		minor=dt_minor_of_dev(argv[1]);
+		commands[i].function(commands+i,minor,argc-3,argv+3);
+		dt_close_drbd_unlock(drbd_fd,lock_fd);
+	} else {
+		print_usage("invalid command");
 	}
 
 	return 0;

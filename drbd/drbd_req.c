@@ -106,7 +106,7 @@ void drbd_end_req(drbd_request_t *req, int nextstate, int er_flags,
 	}
 
 	uptodate = req->rq_status & 0x0001;
-	if( !uptodate && mdev->bc->on_io_error == Detach) {
+	if( !uptodate && mdev->bc->dc.on_io_error == Detach) {
 		drbd_set_out_of_sync(mdev,rsector, drbd_req_get_size(req));
 		// It should also be as out of sync on
 		// the other side!  See w_io_error()

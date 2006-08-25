@@ -175,7 +175,7 @@ int drbd_endio_read_pri(struct bio *bio, unsigned int bytes_done, int error)
 	if (bio_rw(bio) == READA) goto pass_on;
 	if (error) {
 		drbd_chk_io_error(mdev,error); // handle panic and detach.
-		if(mdev->bc->on_io_error == PassOn) goto pass_on;
+		if(mdev->bc->dc.on_io_error == PassOn) goto pass_on;
 		// ok, if we survived this, retry:
 		// FIXME sector ...
 		if (DRBD_ratelimit(5*HZ,5))
@@ -206,7 +206,7 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 * a "we are diskless" param packet anyways, and the peer
 	 * will then set the FullSync bit in the meta data ...
 	 */
-	D_ASSERT(mdev->bc->on_io_error != PassOn);
+	D_ASSERT(mdev->bc->dc.on_io_error != PassOn);
 
 	drbd_req_free(req);
 
@@ -734,20 +734,24 @@ int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 STATIC void drbd_global_lock(void)
 {
+	drbd_dev *mdev;
 	int i;
 
 	local_irq_disable();
 	for (i=0; i < minor_count; i++) {
-		spin_lock(&drbd_conf[i].req_lock);
+		if(!(mdev = minor_to_mdev(i))) continue;
+		spin_lock(&mdev->req_lock);
 	}
 }
 
 STATIC void drbd_global_unlock(void)
 {
+	drbd_dev *mdev;
 	int i;
 
 	for (i=0; i < minor_count; i++) {
-		spin_unlock(&drbd_conf[i].req_lock);
+		if(!(mdev = minor_to_mdev(i))) continue;
+		spin_unlock(&mdev->req_lock);
 	}
 	local_irq_enable();
 }
@@ -841,7 +845,7 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 
 	while(1) {
 		if( odev->sync_conf.after == -1 ) return 1;
-		odev = drbd_conf + odev->sync_conf.after;
+		odev = minor_to_mdev(odev->sync_conf.after);
 		if( odev->state.conn >= SyncSource &&
 		    odev->state.conn <= PausedSyncT ) return 0;
 	}
@@ -859,7 +863,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
-		odev = drbd_conf + i;
+		if( !(odev = minor_to_mdev(i)) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
 			rv |= _drbd_rs_pause(odev,AfterDependency);
 		}
@@ -880,7 +884,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
-		odev = drbd_conf + i;
+		if( !(odev = minor_to_mdev(i)) ) continue;
 		if ( odev->state.conn == PausedSyncS ||
 		     odev->state.conn == PausedSyncT ) {
 			if (_drbd_may_sync_now(odev)) {
@@ -1020,7 +1024,7 @@ int drbd_worker(struct Drbd_thread *thi)
 	LIST_HEAD(work_list);
 	int intr,i;
 
-	sprintf(current->comm, "drbd%d_worker", (int)(mdev-drbd_conf));
+	sprintf(current->comm, "drbd%d_worker", mdev_to_minor(mdev));
 
 	for (;;) {
 		intr = down_interruptible(&mdev->data.work.s);
