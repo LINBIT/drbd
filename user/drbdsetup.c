@@ -56,7 +56,9 @@
 
 #include "drbdtool_common.h"
 
-
+#ifndef __CONNECTOR_H
+#error "You need to set KDIR while building drbdsetup."
+#endif
 
 struct drbd_tag_list {
 	struct nlmsghdr *nl_header;

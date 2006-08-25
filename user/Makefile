@@ -29,7 +29,7 @@ drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
 
 drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o ../drbd/drbd_buildtag.o
 
-all: drbdadm drbdmeta drbdsetup_nl
+all: drbdadm drbdmeta drbdsetup
 
 drbdadm: $(drbdadm-obj)
 	$(CC) -o $@ $^ 
@@ -42,11 +42,8 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 
 # for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
-drbdsetup_nl: drbdsetup_nl.o drbdtool_common.o ../drbd/drbd_strings.o
+drbdsetup: $(drbdsetup-obj)
 	$(CC) -o $@ $^ 
-
-#drbdsetup: $(drbdsetup-obj)
-#	$(CC) -o $@ $^ 
 
 drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^ 
