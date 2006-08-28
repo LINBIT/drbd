@@ -338,19 +338,7 @@ static void parse_host_body(struct d_host_info *host,
 			host->disk = yylval.txt;
 			check_uniq("disk", "%s:%s:%s", "disk",
 				   host->name, yylval.txt);
-			switch (yylex()) {
-			case TK__MAJOR:
-				EXP(TK_INTEGER);
-				host->disk_major = atoi(yylval.txt);
-				EXP(TK__MINOR);
-				EXP(TK_INTEGER);
-				host->disk_minor = atoi(yylval.txt);
-				EXP(';');
-			case ';':
-				break;
-			default:
-				pe_expected("_major | ;");
-			}
+			EXP(';');
 			break;
 		case TK_DEVICE:
 			check_uniq("device statement", "%s:%s:device",
@@ -383,19 +371,7 @@ static void parse_host_body(struct d_host_info *host,
 				EXP(TK_INTEGER);
 				host->meta_index = yylval.txt;
 				EXP(']');
-				switch (yylex()) {
-				case TK__MAJOR:
-					EXP(TK_INTEGER);
-					host->meta_major = atoi(yylval.txt);
-					EXP(TK__MINOR);
-					EXP(TK_INTEGER);
-					host->meta_minor = atoi(yylval.txt);
-					EXP(';');
-				case ';':
-					break;
-				default:
-					pe_expected("_major | ;");
-				}
+				EXP(';');
 			} else {
 				EXP(';');
 			}

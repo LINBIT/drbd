@@ -80,6 +80,10 @@ m_strtoll(const char *s, const char def_unit)
       shift = -10;
       break;
 
+    case 's':
+      shift = -9;   // sectors 
+      break;
+
       /*
          case 'M':
          case 'm':

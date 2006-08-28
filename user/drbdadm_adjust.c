@@ -139,15 +139,6 @@ static int proto_equal(struct d_resource* conf, struct d_resource* running)
 	return !strcmp(conf->protocol, running->protocol);
 }
 
-static int dev_eq(char* device_name, unsigned int g_major, unsigned int g_minor)
-{
-	struct stat sb;
-	
-	if(stat(device_name,&sb)) return 0;
-
-	return major(sb.st_rdev) == g_major && minor(sb.st_rdev) == g_minor;
-}
-
 /* Are both internal, or are both not internal. */
 static int int_eq(char* m_conf, char* m_running)
 {
@@ -158,10 +149,10 @@ static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
 {
 	int eq = 1;
 
-	eq &= dev_eq(conf->disk,running->disk_major,running->disk_minor);
+	eq &= !strcmp(conf->disk,running->disk);
 	eq &= int_eq(conf->meta_disk,running->meta_disk);
 	if(!strcmp(conf->meta_disk,"internal")) return eq;
-	eq &= dev_eq(conf->meta_disk,running->meta_major,running->meta_minor);
+	eq &= !strcmp(conf->meta_disk,running->meta_disk);
 
 	return eq;
 }

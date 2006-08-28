@@ -2084,11 +2084,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	/* no need to lock it, I'm the only thread alive */
 	if ( mdev->epoch_size !=  0)
 		ERR("epoch_size:%d\n",mdev->epoch_size);
-#define ZAP(x) memset(&x,0,sizeof(x))
-	ZAP(mdev->sync_conf);
-	// ZAP(mdev->data); Not yet!
-	// ZAP(mdev->meta); Not yet!
-#undef ZAP
 	mdev->al_writ_cnt  =
 	mdev->bm_writ_cnt  =
 	mdev->read_cnt     =
@@ -2361,7 +2356,6 @@ drbd_dev *drbd_new_device(int minor)
 	disk->first_minor = minor;
 	disk->fops = &drbd_ops;
 	sprintf(disk->disk_name, DEVICE_NAME "%d", minor);
-	sprintf(disk->devfs_name, "%s/%d", drbd_devfs_name, minor);
 	disk->private_data = mdev;
 	add_disk(disk);
 		

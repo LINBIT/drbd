@@ -68,8 +68,6 @@ struct d_host_info
   char* name;
   char* device;
   char* disk;
-  int disk_major;
-  int disk_minor;
   char* address;
   char* port;
   char* meta_disk;

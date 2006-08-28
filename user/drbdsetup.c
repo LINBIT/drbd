@@ -87,9 +87,9 @@ struct drbd_option {
 	void (*show_function)(struct drbd_option *,unsigned short*);
 	union {
 		struct {
-			const unsigned long long min;
-			const unsigned long long max;
-			const unsigned long long def;
+			const long long min;
+			const long long max;
+			const long long def;
 			const unsigned char default_unit;
 		} numeric_param;
 		struct {
@@ -118,9 +118,11 @@ void close_cn(int sk_nl);
 
 // other functions
 void print_command_usage(int i, const char *addinfo);
+
 // command functions
 int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 // convert functions for arguments
 int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
@@ -171,10 +173,10 @@ const char *asb2p_n[] = {
 	[PanicPrimary]      = "panic"
 };
 
-#define EN(N) \
+#define EN(N,U) \
 	conv_numeric, show_numeric, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
-		DRBD_ ## N ## _DEF ,0  } }
+		DRBD_ ## N ## _DEF ,U  } }
 #define EH(N,D) \
 	conv_handler, show_handler, { .handler_param = { N, ARRY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
@@ -196,7 +198,7 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT) },
+		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s') },
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
 		 { NULL,0,0,NULL,NULL, { } }, }, },
@@ -210,14 +212,14 @@ struct drbd_cmd commands[] = {
 		 { "protocol",		T_wire_protocol,conv_protocol },
  		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "timeout",'t',	T_timeout,	EN(TIMEOUT) },
-		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE) },
-		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS) },
-		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK) },
-		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT) },
-		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT) },
-		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE) },
-		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT) },
+		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1) },
+		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1) },
+		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1) },
+		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1) },
+		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1) },
+		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT,1) },
+		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1) },
+		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1) },
 		 { "allow-two-primaries",'m',T_two_primaries, EB },
 		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },
 		 { "shared-secret",'x',	T_shared_secret,   ES },
@@ -231,14 +233,14 @@ struct drbd_cmd commands[] = {
 
 	{"resize", P_resize, generic_config_cmd, NULL,
 	 (struct drbd_option[]) {
-		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT) },
+		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s') },
 		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"syncer", P_syncer_conf, generic_config_cmd, NULL,
 	 (struct drbd_option[]) {
-		 { "rate",'r',T_rate,			EN(RATE) },
-		 { "after",'a',T_after,			EN(AFTER) },
-		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS) },
+		 { "rate",'r',T_rate,			EN(RATE,'k') },
+		 { "after",'a',T_after,			EN(AFTER,1) },
+		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1) },
 		 { NULL,0,0,NULL,NULL, { } }, }, },
 
 	{"invalidate", P_invalidate, generic_config_cmd, NULL, NULL },
@@ -248,8 +250,7 @@ struct drbd_cmd commands[] = {
 	{"suspend-io", P_suspend_io, generic_config_cmd, NULL, NULL },
 	{"resume-io", P_resume_io, generic_config_cmd, NULL, NULL },
 	{"outdate", P_outdate, generic_config_cmd, NULL, NULL },
-
-	// {"down", 0 , down_cmd, NULL, NULL },
+	{"down", 0, down_cmd, NULL, NULL },
 
 	/*
 	{"state", cmd_state,               0, 0, },
@@ -298,13 +299,14 @@ static const char *error_messages[] = {
 	EM(NoResizeDuringResync) = "Resize not allowed during resync.",
 	EM(APrimaryNodeNeeded) = "Need the a primary node to resize.",
 	EM(SyncAfterInvalid) = "The sync after minor number is invalid",
-	EM(SyncAfterCycle-) = "This would cause a sync-after dependency cycle",
+	EM(SyncAfterCycle) = "This would cause a sync-after dependency cycle",
 	EM(PauseFlagAlreadySet) = "PauseFlagAlreadySet",
 	EM(PauseFlagAlreadyClear) = "PauseFlagAlreadyClear",
 	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
 	EM(FailedToClaimMyself) = "FailedToClaimMyself",
 };
 
+const char empty_string[] = "";
 char* cmdname = 0;
 
 int dump_tag_list(unsigned short *tlc)
@@ -315,7 +317,7 @@ int dump_tag_list(unsigned short *tlc)
 	int integer;
 	char bit;
 	__u64 int64;
-	char* string;
+	const char* string;
 	int found_unknown=0;
 
 	while( (tag = *tlc++ ) != TT_END) {
@@ -425,7 +427,7 @@ int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	int idx;
 
 	if(!strcmp(arg,"internal")) idx = DRBD_MD_INDEX_FLEX_INT;
-	else if(!strcmp(arg,"flex")) idx = DRBD_MD_INDEX_FLEX_EXT;
+	else if(!strcmp(arg,"flexible")) idx = DRBD_MD_INDEX_FLEX_EXT;
 	else idx = m_strtoll(arg,1);
 
 	add_tag(tl,ad->tag,&idx,sizeof(idx));
@@ -508,7 +510,7 @@ int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	return 0;
 }
 
-int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attribute((unused)))
 {
 	char bit=1;
 
@@ -519,10 +521,10 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
-	const unsigned long long min = od->numeric_param.min;
-	const unsigned long long max = od->numeric_param.max;
+	const long long min = od->numeric_param.min;
+	const long long max = od->numeric_param.max;
 	const unsigned char default_unit = od->numeric_param.default_unit;
-	unsigned long long l;
+	long long l;
 	int i;
 	char unit[] = {0,0};
 
@@ -731,7 +733,7 @@ void show_numeric(struct drbd_option *od, unsigned short* tp)
 		val=0;
 	}
 
-	printf("\t%s\t\t%lld",od->name,val);
+	printf("\t%-16s\t%lld",od->name,val);
 	if(val == (long long) od->numeric_param.def) printf(" _is_default");
 	printf(";\n");
 }
@@ -744,7 +746,7 @@ void show_handler(struct drbd_option *od, unsigned short* tp)
 	ASSERT( tag_type(*tp++) == TT_INTEGER );
 	ASSERT( *tp++ == sizeof(int) );
 	i = *(int*)tp;
-	printf("\t%s\t\t%s",od->name,handler_names[i]);
+	printf("\t%-16s\t%s",od->name,handler_names[i]);
 	if( i == (long long)od->numeric_param.def) printf(" _is_default");
 	printf(";\n");
 }
@@ -753,13 +755,13 @@ void show_bit(struct drbd_option *od, unsigned short* tp)
 {
 	ASSERT( tag_type(*tp++) == TT_BIT );
 	ASSERT( *tp++ == sizeof(char) );
-	if(*(char*)tp) printf("\t%s;\n",od->name);
+	if(*(char*)tp) printf("\t%-16s;\n",od->name);
 }
 
 void show_string(struct drbd_option *od, unsigned short* tp)
 {
 	ASSERT( tag_type(*tp++) == TT_STRING );
-	if( *tp++ > 0) printf("\t%s\t\t\"%s\";\n",od->name,(char*)tp);
+	if( *tp++ > 0) printf("\t%-16s\t\"%s\";\n",od->name,(char*)tp);
 }
 
 unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
@@ -798,7 +800,7 @@ void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect
 	}
 }
 
-char* consume_tag_string(enum drbd_tags tag, unsigned short *tlc)
+const char* consume_tag_string(enum drbd_tags tag, unsigned short *tlc)
 {
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
@@ -806,7 +808,7 @@ char* consume_tag_string(enum drbd_tags tag, unsigned short *tlc)
 		*tp++ = TT_REMOVED;
 		if( *tp++ > 0) return (char*)tp;
 	}
-	return "";
+	return empty_string;
 }
 
 int consume_tag_int(enum drbd_tags tag, unsigned short *tlc)
@@ -821,7 +823,7 @@ int consume_tag_int(enum drbd_tags tag, unsigned short *tlc)
 	return 0;
 }
 
-int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv __attribute((unused)))
 {
 	char buffer[ 4096 ];
 	struct drbd_tag_list *tl;
@@ -831,13 +833,12 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	unsigned short *rtl;
 
 	int idx;
-	char* str;
+	const char* str;
 
 	ASSERT(cm->packet_id == P_get_config);
 
 	if(argc > 1) {
 		fprintf(stderr,"Ignoring excess arguments\n");
-	
 	}
 
 	tl = create_tag_list(2);
@@ -865,15 +866,15 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	idx = consume_tag_int(T_wire_protocol,rtl);
 	if(idx) printf("protocol %c;\n",'A'+idx-1);
 	str = consume_tag_string(T_backing_dev,rtl);
-	if(str) {
+	if(str != empty_string) {
 		printf("_this_host {\n");
-		printf("\tdevice\t\t\"/dev/drbd%d\";\n",minor);
-		printf("\tdisk\t\t\"%s\";\n",str);
+		printf("\tdevice\t\t\t\"/dev/drbd%d\";\n",minor);
+		printf("\tdisk\t\t\t\"%s\";\n",str);
 		idx=consume_tag_int(T_meta_dev_idx,rtl);
 		switch(idx) {
 		case DRBD_MD_INDEX_INTERNAL:
 		case DRBD_MD_INDEX_FLEX_INT:
-			printf("\tmeta-disk\tinternal;\n");
+			printf("\tmeta-disk\t\tinternal;\n");
 			consume_tag_string(T_meta_dev,rtl);
 			break;
 		case DRBD_MD_INDEX_FLEX_EXT:
@@ -881,13 +882,13 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			       consume_tag_string(T_meta_dev,rtl));
 			break;
 		default:
-			printf("\tmeta-disk\t\"%s\" [ %d ];\n",
+			printf("\tmeta-disk\t\t\"%s\" [ %d ];\n",
 			       consume_tag_string(T_meta_dev,rtl),idx);
 		}
 		str = consume_tag_string(T_my_addr,rtl);
-		if(str) {
+		if(str != empty_string ) {
 			addr = (struct sockaddr_in *)str;
-			printf("\taddress\t\t%s:%d;\n",
+			printf("\taddress\t\t\t%s:%d;\n",
 			       inet_ntoa(addr->sin_addr),
 			       ntohs(addr->sin_port));
 		}
@@ -895,10 +896,10 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	}
 
 	str = consume_tag_string(T_peer_addr,rtl);
-	if(str) {
+	if(str != empty_string) {
 		printf("_remote_host {\n");
 		addr = (struct sockaddr_in *)str;
-		printf("\taddress\t\t%s:%d;\n",
+		printf("\taddress\t\t\t%s:%d;\n",
 		       inet_ntoa(addr->sin_addr),
 		       ntohs(addr->sin_port));
 		printf("}\n");
@@ -910,6 +911,35 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	}
 
 	return 0;
+}
+
+static struct drbd_cmd *find_cmd_by_name(const char* name)
+{
+	unsigned int i;
+
+	for(i=0;i<ARRY_SIZE(commands);i++) {
+		if(!strcmp(name,commands[i].cmd)) {
+			return commands+i;
+		}
+	}
+	return NULL;
+}
+
+int down_cmd(struct drbd_cmd *cm __attribute((unused)), int minor, int argc, char **argv)
+{
+	struct drbd_cmd *cmd;
+	int rv = 0;
+
+	if(argc > 1) {
+		fprintf(stderr,"Ignoring excess arguments\n");	
+	}
+
+	cmd = find_cmd_by_name("disconnect");
+	rv |= cmd->function(cmd,minor,argc,argv);
+	cmd = find_cmd_by_name("detach");
+	rv |= cmd->function(cmd,minor,argc,argv);
+
+	return rv;
 }
 
 void print_command_usage(int i, const char *addinfo)
@@ -1096,11 +1126,9 @@ void close_cn(int sk_nl)
 
 int main(int argc, char** argv)
 {
-	int help = 0;
-	unsigned int i;
-	int minor;
-	int drbd_fd,lock_fd;
+	int minor,drbd_fd,lock_fd;
 	struct drbd_cmd *cmd;
+	int help = 0, rv=0;
 
 	chdir("/");
 
@@ -1115,22 +1143,16 @@ int main(int argc, char** argv)
 
 	if (argc < 3) print_usage(argc==1 ? 0 : " Insufficient arguments");
 
-	cmd=NULL;
-	for(i=0;i<ARRY_SIZE(commands);i++) {
-		if(strcmp(argv[2],commands[i].cmd)==0) {
-			cmd = commands+i;
-			break;
-		}
-	}
+	cmd=find_cmd_by_name(argv[2]);
 
 	if(cmd) {
 		drbd_fd = dt_lock_open_drbd(argv[1], &lock_fd, 1 );
 		minor=dt_minor_of_dev(argv[1]);
-		commands[i].function(commands+i,minor,argc-3,argv+3);
+		rv = cmd->function(cmd,minor,argc-3,argv+3);
 		dt_close_drbd_unlock(drbd_fd,lock_fd);
 	} else {
 		print_usage("invalid command");
 	}
 
-	return 0;
+	return rv;
 }

@@ -690,12 +690,11 @@ STATIC void drbd_nl_disk_conf (void *data)
 		goto fail;
 	}
 
-	if(inc_local(mdev)) {
+	if( !(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_local(mdev) ) {
 		memcpy(&nbc->dc,&mdev->bc->dc,sizeof(struct disk_conf));
 		dec_local(mdev);
-	} else memset(&nbc->dc,0,sizeof(struct disk_conf));
-
-	if(nlp->flags & DRBD_NL_SET_DEFAULTS) {
+	} else {
+		memset(&nbc->dc,0,sizeof(struct disk_conf));
 		nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
 		nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
 		nbc->dc.fencing     = DRBD_FENCING_DEF;
@@ -1019,12 +1018,11 @@ STATIC void drbd_nl_net_conf (void *data)
 		goto fail;
 	}
 
-	if(inc_net(mdev)) {
+	if( !(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_net(mdev)) {
 		memcpy(new_conf,mdev->net_conf,sizeof(struct net_conf));
 		dec_local(mdev);
-	} else memset(new_conf,0,sizeof(struct net_conf));
-
-	if(nlp->flags & DRBD_NL_SET_DEFAULTS) {
+	} else {
+		memset(new_conf,0,sizeof(struct net_conf));
 		new_conf->timeout         = DRBD_TIMEOUT_DEF;
 		new_conf->try_connect_int = DRBD_CONNECT_INT_DEF;
 		new_conf->ping_int        = DRBD_PING_INT_DEF;

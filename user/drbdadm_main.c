@@ -623,8 +623,14 @@ int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
   argv[argc++]=res->me->device;
   argv[argc++]="disk";
   argv[argc++]=res->me->disk;
-  argv[argc++]=res->me->meta_disk;
+  if(!strcmp(res->me->meta_disk,"internal")) {
+    argv[argc++]=res->me->disk;
+  } else {
+    argv[argc++]=res->me->meta_disk;
+  }
   argv[argc++]=res->me->meta_index;
+  argv[argc++]="--set-defaults";
+  argv[argc++]="--create-device";
   opt=res->disk_options;
   make_options(opt);
   argv[argc++]=0;
@@ -790,6 +796,8 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
   ssprintf(argv[argc++],"%s:%s",res->peer->address,res->peer->port);
   argv[argc++]=res->protocol;
 
+  argv[argc++]="--set-defaults";
+  argv[argc++]="--create-device";
   opt=res->net_options;
   make_options(opt);
 
@@ -829,6 +837,8 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
   argv[argc++]=res->me->device;
   argv[argc++]="syncer";
 
+  argv[argc++]="--set-defaults";
+  argv[argc++]="--create-device";
   opt=res->sync_options;
   make_options(opt);
   argv[argc++]=0;

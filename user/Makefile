@@ -17,19 +17,27 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
+KDIR := /lib/modules/$(shell uname -r)/build
+
 CFLAGS = -g -O2 -c -W -Wall -I../drbd -I$(KDIR)/include
 CC = gcc
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
-	      ../drbd/drbd_buildtag.o
+	      drbd_buildtag.o
 
-drbdsetup-obj = drbdsetup.o drbdtool_common.o ../drbd/drbd_buildtag.o \
-	        ../drbd/drbd_strings.o
+drbdsetup-obj = drbdsetup.o drbdtool_common.o drbd_buildtag.o \
+	        drbd_strings.o
 
-drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o ../drbd/drbd_buildtag.o
+drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
 
 all: drbdadm drbdmeta drbdsetup
+
+drbd_buildtag.c: ../drbd/drbd_buildtag.c
+	cp $^ $@ 
+
+drbd_strings.c: ../drbd/drbd_strings.c
+	cp $^ $@ 
 
 drbdadm: $(drbdadm-obj)
 	$(CC) -o $@ $^ 
@@ -51,6 +59,7 @@ drbdmeta: $(drbdmeta-obj)
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
 	rm -f drbdsetup drbdadm drbdmeta *.o
+	rm -f drbd_buildtag.c drbd_strings.c
 	rm -f *~
 
 distclean: clean
@@ -72,13 +81,14 @@ uninstall:
 	rm -f $(PREFIX)/sbin/drbdadm
 
 ###dependencies
-drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
-drbdtool_common.o: drbdtool_common.h          
+drbdsetup.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
+drbdsetup.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
+drbdsetup.o:       ../drbd/linux/drbd_config.h ../drbd/linux/drbd_nl.h
+drbdtool_common.o: drbdtool_common.h    
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
 drbdadm_parser.o:  drbdtool_common.h drbdadm.h ../drbd/linux/drbd_limits.h
 drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h 
 drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
-drbdsetup.o: ../drbd/linux/drbd.h ../drbd/linux/drbd_config.h
 drbdmeta.o:        drbdtool_common.h drbd_endian.h 
 drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h
