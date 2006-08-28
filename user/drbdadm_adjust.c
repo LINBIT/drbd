@@ -94,8 +94,8 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 	while(running) {
 		if((opt=find_opt(conf,running->name))) {
 			if(!ov_eq(running->value,opt->value)) {
-				/*printf("Value of '%s' differs: r=%s c=%s\n",
-				  opt->name,running->value,opt->value);*/
+			/* printf("Value of '%s' differs: r=%s c=%s\n",
+			   opt->name,running->value,opt->value); */
 				return 0;
 			}
 			opt->mentioned=1;

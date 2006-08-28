@@ -24,7 +24,7 @@ static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
 %option noyywrap
 
-NUM		[0-9]{1,8}[MKG]?
+NUM		[0-9]{1,8}[MKGs]?
 SNUMB		[0-9]{1,3}
 IPV4ADDR	({SNUMB}"."){3}{SNUMB}
 WS		[ \t]

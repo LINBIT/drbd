@@ -718,6 +718,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 void show_numeric(struct drbd_option *od, unsigned short* tp)
 {
 	long long val;
+	const unsigned char def_unit = od->numeric_param.default_unit;
 
 	switch(tag_type(*tp++)) {
 	case TT_INTEGER: 
@@ -733,7 +734,8 @@ void show_numeric(struct drbd_option *od, unsigned short* tp)
 		val=0;
 	}
 
-	printf("\t%-16s\t%lld",od->name,val);
+	if(def_unit == 1) printf("\t%-16s\t%lld",od->name,val);
+	else printf("\t%-16s\t%lld%c",od->name,val,def_unit);
 	if(val == (long long) od->numeric_param.def) printf(" _is_default");
 	printf(";\n");
 }

@@ -51,7 +51,6 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 	int tag; \
 	int dlen; \
 	\
-	memset(arg,0,sizeof(struct name)); \
 	while( (tag = *tags++) != TT_END ) { \
 		dlen = *tags++; \
 		switch( tag_number(tag) ) { \
@@ -376,6 +375,7 @@ STATIC void drbd_nl_primary (void *data)
 		goto fail;
 	}
 	
+	memset(&primary_args, 0, sizeof(struct primary));
 	if(!primary_from_tags(mdev,nlp->tag_list,&primary_args)) {
 		retcode=UnknownMandatoryTag;
 		goto fail;
@@ -1243,6 +1243,7 @@ STATIC void drbd_nl_resize (void *data)
 		goto fail;
 	}
 
+	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev,nlp->tag_list,&rs)) {
 		retcode=UnknownMandatoryTag;
 		goto fail;

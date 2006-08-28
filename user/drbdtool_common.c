@@ -122,6 +122,9 @@ m_strtoll(const char *s, const char def_unit)
     case 'g':
       shift += 30;
       break;
+    case 's':
+      shift += 9;
+      break;
     default:
       fprintf(stderr, "%s is not a valid number\n", s);
       exit(20);
