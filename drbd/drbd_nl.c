@@ -1538,6 +1538,102 @@ STATIC void drbd_nl_get_config (void *data)
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	kfree(cn_reply);
+	return;
+ fail:
+	drbd_nl_send_reply(req, retcode);
+}
+
+STATIC void drbd_nl_get_state (void *data)
+{
+	struct cn_msg *req = data;
+	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
+	drbd_dev *mdev;
+	int retcode=NoError,rr;
+	struct drbd_nl_cfg_reply* reply;
+	struct cn_msg *cn_reply;
+	unsigned short *tl;
+	int size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply) +
+		get_state_tag_size;
+
+	if( !(mdev = ensure_mdev(nlp)) ) {
+		retcode=MinorNotKnown;
+		goto fail;
+	}
+	
+	if( !(cn_reply = kmalloc(size,GFP_KERNEL)) ) {
+		retcode=KMallocFailed;
+		goto fail;
+	}
+	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
+	tl = reply->tag_list;
+
+	tl = get_state_to_tags(mdev,(struct get_state*)&mdev->state,tl);
+	*tl++ = TT_END; /* Close the tag list */
+
+	cn_reply->id = req->id;
+	cn_reply->seq = req->seq;
+	cn_reply->ack = req->ack  + 1;
+	cn_reply->len = (char*)tl - (char *)reply;
+	cn_reply->flags = 0;
+
+	reply->minor = nlp->drbd_minor;
+	reply->ret_code = retcode;
+
+	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	kfree(cn_reply);
+	return;
+ fail:
+	drbd_nl_send_reply(req, retcode);
+}
+
+STATIC void drbd_nl_get_uuids (void *data)
+{
+	struct cn_msg *req = data;
+	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
+	drbd_dev *mdev;
+	int retcode=NoError,rr;
+	struct drbd_nl_cfg_reply* reply;
+	struct cn_msg *cn_reply;
+	unsigned short *tl;
+	int size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply) +
+		get_uuids_tag_size;
+
+	if( !(mdev = ensure_mdev(nlp)) ) {
+		retcode=MinorNotKnown;
+		goto fail;
+	}
+	
+	if( !(cn_reply = kmalloc(size,GFP_KERNEL)) ) {
+		retcode=KMallocFailed;
+		goto fail;
+	}
+	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
+	tl = reply->tag_list;
+
+	if(inc_local(mdev)) {
+		// This is a hand crafted add tag ;)
+		*tl++ = T_uuids;
+		*tl++ = UUID_SIZE*sizeof(u64);
+		memcpy(tl,mdev->bc->md.uuid,UUID_SIZE*sizeof(u64));
+		tl= (unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
+		dec_local(mdev);
+	}
+	*tl++ = TT_END; /* Close the tag list */
+
+	cn_reply->id = req->id;
+	cn_reply->seq = req->seq;
+	cn_reply->ack = req->ack  + 1;
+	cn_reply->len = (char*)tl - (char *)reply;
+	cn_reply->flags = 0;
+
+	reply->minor = nlp->drbd_minor;
+	reply->ret_code = retcode;
+
+	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	kfree(cn_reply);
 	return;
  fail:
 	drbd_nl_send_reply(req, retcode);

@@ -257,7 +257,7 @@ struct drbd_nl_cfg_req {
 struct drbd_nl_cfg_reply {
 	int minor;
 	int ret_code; // enum ret_code or set_st_err_t
-	unsigned short tag_list[]; // only used with get_config()...
+	unsigned short tag_list[]; // only used with get_* calls
 };
 
 #endif

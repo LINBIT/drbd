@@ -69,6 +69,14 @@ PACKET(suspend_io, )
 PACKET(resume_io, )
 PACKET(outdate, )
 PACKET(get_config, )
+PACKET(get_state,
+	INTEGER(	33,	T_MAY_IGNORE,	state_i)
+)
+
+PACKET(get_uuids,
+	STRING(		34,	T_MAY_IGNORE,	uuids,	(UUID_SIZE*sizeof(__u64)))
+	INTEGER(  	35,	T_MAY_IGNORE,	uuids_flags)
+)
 
 #undef PACKET
 #undef INTEGER

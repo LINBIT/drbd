@@ -104,8 +104,16 @@ struct drbd_cmd {
 	const char* cmd;
 	const int packet_id;
 	int (*function)(struct drbd_cmd *, int, int, char **);
-	struct drbd_argument *args;
-	struct drbd_option *options;
+	union {
+		struct {
+			struct drbd_argument *args;
+			struct drbd_option *options;
+		} cp;
+		struct {
+			int (*show_function)(struct drbd_cmd *, int, 
+					     unsigned short* );
+		} gp;
+	};
 };
 
 
@@ -121,18 +129,28 @@ void print_command_usage(int i, const char *addinfo);
 
 // command functions
 int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+
+// sub commands for generic_get_cmd
+int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int state_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int dstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int uuids_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+
 // convert functions for arguments
 int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+
 // convert functions for options
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+
 // show functions for options
 void show_numeric(struct drbd_option *od, unsigned short* tp);
 void show_handler(struct drbd_option *od, unsigned short* tp);
@@ -184,14 +202,14 @@ const char *asb2p_n[] = {
 #define ES      conv_string, show_string, { } 
 
 struct drbd_cmd commands[] = {
-	{"primary", P_primary, generic_config_cmd, NULL,
+	{"primary", P_primary, generic_config_cmd, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "overwrite-data-of-peer",'o',T_overwrite_peer, EB   },
-		 { NULL,0,0,NULL,NULL, { } }, }, },
+		 { NULL,0,0,NULL,NULL, { } }, }} }, },
 
-	{"secondary", P_secondary, generic_config_cmd, NULL, NULL },
+	{"secondary", P_secondary, generic_config_cmd, {{NULL, NULL}} },
 
-	{"disk", P_disk_conf, generic_config_cmd,
+	{"disk", P_disk_conf, generic_config_cmd, {{
 	 (struct drbd_argument[]) {
 		 { "lower_dev",		T_backing_dev,	conv_block_dev },
 		 { "meta_data_dev",	T_meta_dev,	conv_block_dev },
@@ -201,11 +219,11 @@ struct drbd_cmd commands[] = {
 		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s') },
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
-		 { NULL,0,0,NULL,NULL, { } }, }, },
+		 { NULL,0,0,NULL,NULL, { } }, }, }} },
 
-	{"detach", P_detach, generic_config_cmd, NULL, NULL },
+	{"detach", P_detach, generic_config_cmd, {{NULL, NULL}} },
 
-	{"net", P_net_conf, generic_config_cmd,
+	{"net", P_net_conf, generic_config_cmd, {{
 	 (struct drbd_argument[]) {
 		 { "local_addr",	T_my_addr,	conv_address },
 		 { "remote_addr",	T_peer_addr,	conv_address },
@@ -227,38 +245,36 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
 		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
 		 { "discard-my-data",'D', T_want_lose,     EB },
-		 { NULL,0,0,NULL,NULL, { } }, }, },
+		 { NULL,0,0,NULL,NULL, { } }, }, }} },
 
-	{"disconnect", P_disconnect, generic_config_cmd, NULL, NULL },
+	{"disconnect", P_disconnect, generic_config_cmd, {{NULL, NULL}} },
 
-	{"resize", P_resize, generic_config_cmd, NULL,
+	{"resize", P_resize, generic_config_cmd, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s') },
-		 { NULL,0,0,NULL,NULL, { } }, }, },
+		 { NULL,0,0,NULL,NULL, { } }, }, }} },
 
-	{"syncer", P_syncer_conf, generic_config_cmd, NULL,
+	{"syncer", P_syncer_conf, generic_config_cmd, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "rate",'r',T_rate,			EN(RATE,'k') },
 		 { "after",'a',T_after,			EN(AFTER,1) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1) },
-		 { NULL,0,0,NULL,NULL, { } }, }, },
+		 { NULL,0,0,NULL,NULL, { } }, }, }} },
 
-	{"invalidate", P_invalidate, generic_config_cmd, NULL, NULL },
-	{"invalidate-remote", P_invalidate_peer, generic_config_cmd, NULL, NULL },
-	{"pause-sync", P_pause_sync, generic_config_cmd, NULL, NULL },
-	{"resume-sync", P_resume_sync, generic_config_cmd, NULL, NULL },
-	{"suspend-io", P_suspend_io, generic_config_cmd, NULL, NULL },
-	{"resume-io", P_resume_io, generic_config_cmd, NULL, NULL },
-	{"outdate", P_outdate, generic_config_cmd, NULL, NULL },
-	{"down", 0, down_cmd, NULL, NULL },
-
-	/*
-	{"state", cmd_state,               0, 0, },
-	{"cstate", cmd_cstate,             0, 0, },
-	{"dstate", cmd_dstate,             0, 0, },
-	{"show-gi", cmd_show_gi,           0, 0, },
-	{"get-gi", cmd_get_gi,             0, 0, }, */
-	{"show", P_get_config, show_cmd, NULL, NULL },
+	{"invalidate", P_invalidate, generic_config_cmd, {{ NULL, NULL }} },
+	{"invalidate-remote", P_invalidate_peer, generic_config_cmd, {{NULL, NULL}} },
+	{"pause-sync", P_pause_sync, generic_config_cmd, {{ NULL, NULL }} },
+	{"resume-sync", P_resume_sync, generic_config_cmd, {{ NULL, NULL }} },
+	{"suspend-io", P_suspend_io, generic_config_cmd, {{ NULL, NULL }} },
+	{"resume-io", P_resume_io, generic_config_cmd, {{ NULL, NULL }} },
+	{"outdate", P_outdate, generic_config_cmd, {{ NULL, NULL }} },
+	{"down",            0, down_cmd,  { {NULL, NULL }} },
+	{"state", P_get_state, generic_get_cmd, { .gp={ state_scmd} } },
+	{"cstate", P_get_state, generic_get_cmd, {.gp={ cstate_scmd} } },
+	{"dstate", P_get_state, generic_get_cmd, {.gp={ dstate_scmd} } },
+	{"show-gi", P_get_uuids, generic_get_cmd, {.gp={ uuids_scmd} }},
+	{"get-gi", P_get_uuids, generic_get_cmd, {.gp={ uuids_scmd} } },
+	{"show", P_get_config, generic_get_cmd, {.gp={ show_scmd} } },
 };
 
 #define EM(C) [ C - RetCodeBase ]
@@ -653,7 +669,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
 	struct drbd_nl_cfg_reply *reply;
-	struct drbd_argument *ad = cm->args;
+	struct drbd_argument *ad = cm->cp.args;
 	struct drbd_option *od;
 	static struct option *lo;
 	struct drbd_tag_list *tl;
@@ -674,10 +690,10 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		ad++;
 	}
 
-	lo = make_longoptions(cm->options);
+	lo = make_longoptions(cm->cp.options);
 	opterr=0;
 	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
-		od = find_opt_by_short_name(cm->options,c);
+		od = find_opt_by_short_name(cm->cp.options,c);
 		if(od) rv |= od->convert_function(od,tl,optarg);
 		else {
 			if(c=='(') flags |= DRBD_NL_SET_DEFAULTS;
@@ -802,6 +818,20 @@ void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect
 	}
 }
 
+
+const char* consume_tag_blob(enum drbd_tags tag, unsigned short *tlc, 
+			     unsigned int* len)
+{
+	unsigned short *tp;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		*len = *tp++;
+		return (char*)tp;
+	}
+	return NULL;
+}
+
 const char* consume_tag_string(enum drbd_tags tag, unsigned short *tlc)
 {
 	unsigned short *tp;
@@ -825,19 +855,13 @@ int consume_tag_int(enum drbd_tags tag, unsigned short *tlc)
 	return 0;
 }
 
-int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv __attribute((unused)))
+int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, 
+		    char **argv __attribute((unused)))
 {
 	char buffer[ 4096 ];
 	struct drbd_tag_list *tl;
 	struct drbd_nl_cfg_reply *reply;
-	struct sockaddr_in *addr;
-	int sk_nl;
-	unsigned short *rtl;
-
-	int idx;
-	const char* str;
-
-	ASSERT(cm->packet_id == P_get_config);
+	int sk_nl,rv;
 
 	if(argc > 1) {
 		fprintf(stderr,"Ignoring excess arguments\n");
@@ -856,12 +880,26 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv __attribute((
 	reply = (struct drbd_nl_cfg_reply *)
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
 
-	rtl = reply->tag_list;
+	rv = cm->gp.show_function(cm,minor,reply->tag_list);
+
+	if(dump_tag_list(reply->tag_list)) {
+		printf("# Found unknown tags, you should update your\n"
+		       "# userland tools\n");
+	}
+
+	return rv;
+}
+
+int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
+{
+	int idx;
+	const char* str;
+	struct sockaddr_in *addr;
 
 	// find all commands that have options and print those...
 	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {
-		if(cm->options)
-			print_options(cm->options, rtl, cm->cmd);
+		if(cm->cp.options)
+			print_options(cm->cp.options, rtl, cm->cmd);
 	}
 
 	// start of spagethi code...
@@ -907,11 +945,61 @@ int show_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv __attribute((
 		printf("}\n");
 	}
 
-	if(dump_tag_list(reply->tag_list)) {
-		printf("# Found unknown tags, you should update your\n"
-		       "# userland tools\n");
-	}
+	return 0;
+}
 
+int state_scmd(struct drbd_cmd *cm __attribute((unused)), 
+	       int minor __attribute((unused)), 
+	       unsigned short *rtl)
+{
+	drbd_state_t state;
+	state = (drbd_state_t)(unsigned int)consume_tag_int(T_state_i,rtl);
+	printf("%s\n",roles_to_name(state.role));
+	return 0;
+}
+
+int cstate_scmd(struct drbd_cmd *cm __attribute((unused)), 
+		int minor __attribute((unused)), 
+		unsigned short *rtl)
+{
+	drbd_state_t state;
+	state = (drbd_state_t)(unsigned int)consume_tag_int(T_state_i,rtl);
+	printf("%s\n",conns_to_name(state.conn));
+	return 0;
+}
+
+int dstate_scmd(struct drbd_cmd *cm __attribute((unused)), 
+		int minor __attribute((unused)), 
+		unsigned short *rtl)
+{
+	drbd_state_t state;
+	state = (drbd_state_t)(unsigned int)consume_tag_int(T_state_i,rtl);
+	printf("%s\n",disks_to_name(state.disk));
+	return 0;
+}
+
+int uuids_scmd(struct drbd_cmd *cm, 
+	       int minor __attribute((unused)), 
+	       unsigned short *rtl)
+{
+	__u64 *uuids;
+	int flags;
+	unsigned int len ;
+
+	uuids = (__u64 *)consume_tag_blob(T_uuids,rtl,&len);
+	flags = consume_tag_int(T_uuids_flags,rtl);
+	if( len == UUID_SIZE * sizeof(__u64)) {
+		if(!strcmp(cm->cmd,"show-gi")) {
+			dt_pretty_print_uuids(uuids,flags);
+		} else if(!strcmp(cm->cmd,"get-gi")) {
+			dt_print_uuids(uuids,flags);
+		} else {
+			ASSERT( 0 );
+		}
+	} else {
+		printf("Unexpected length of T_uuids tag. You should upgrade your\n"
+		       "userland tools\n");
+	}
 	return 0;
 }
 
@@ -927,19 +1015,18 @@ static struct drbd_cmd *find_cmd_by_name(const char* name)
 	return NULL;
 }
 
-int down_cmd(struct drbd_cmd *cm __attribute((unused)), int minor, int argc, char **argv)
+int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
-	struct drbd_cmd *cmd;
 	int rv = 0;
 
 	if(argc > 1) {
 		fprintf(stderr,"Ignoring excess arguments\n");	
 	}
 
-	cmd = find_cmd_by_name("disconnect");
-	rv |= cmd->function(cmd,minor,argc,argv);
-	cmd = find_cmd_by_name("detach");
-	rv |= cmd->function(cmd,minor,argc,argv);
+	cm = find_cmd_by_name("disconnect");
+	rv |= cm->function(cm,minor,argc,argv);
+	cm = find_cmd_by_name("detach");
+	rv |= cm->function(cm,minor,argc,argv);
 
 	return rv;
 }
@@ -956,7 +1043,7 @@ void print_command_usage(int i, const char *addinfo)
 	prevcol=col=0;
 
 	col += snprintf(line+col, maxcol-col, " %s", commands[i].cmd);
-	if ((args = commands[i].args)) {
+	if ((args = commands[i].cp.args)) {
 		while (args->name) {
 			col += snprintf(line+col, maxcol-col, " %s", args->name);
 			args++;
@@ -968,7 +1055,7 @@ void print_command_usage(int i, const char *addinfo)
 		col=0;
 	}
 	prevcol=col;
-	if ((options = commands[i].options)) {
+	if ((options = commands[i].cp.options)) {
 		while (options->name) {
 			if (tag_type(options->tag) == TT_BIT) {
 				col += snprintf(line+col, maxcol-col,
