@@ -1617,8 +1617,12 @@ STATIC void drbd_nl_get_uuids (void *data)
 		*tl++ = T_uuids;
 		*tl++ = UUID_SIZE*sizeof(u64);
 		memcpy(tl,mdev->bc->md.uuid,UUID_SIZE*sizeof(u64));
-		tl= (unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
+		tl=(unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
 		dec_local(mdev);
+		*tl++ = T_uuids_flags;
+		*tl++ = sizeof(int);
+		memcpy(tl,&mdev->bc->md.flags,sizeof(int));
+		tl=(unsigned short*)((char*)tl + sizeof(int));
 	}
 	*tl++ = TT_END; /* Close the tag list */
 

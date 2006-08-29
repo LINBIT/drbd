@@ -151,7 +151,7 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 
-// show functions for options
+// show functions for options (used by show_scmd)
 void show_numeric(struct drbd_option *od, unsigned short* tp);
 void show_handler(struct drbd_option *od, unsigned short* tp);
 void show_bit(struct drbd_option *od, unsigned short* tp);
@@ -649,13 +649,18 @@ void print_config_error( struct drbd_nl_cfg_reply *reply)
 	if (err_no == SS_Success) return;
 
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
-	     ( err_no > SS_TowPrimaries || err_no < SS_CW_FailedByPeer) ) {
+	     ( err_no > SS_CW_NoNeed || err_no < SS_CW_FailedByPeer) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should updated the drbd userland tools.\n",err_no);
 	} else {
 		if(err_no > RetCodeBase ) {
 			fprintf(stderr,"Failure: (%d) %s\n",err_no,
 				error_messages[err_no-RetCodeBase]);
+		} else if (err_no == SS_UnknownError) {
+			fprintf(stderr,"State change failed: (%d)"
+				"unknown error.\n", err_no);
+		} else if (err_no > SS_TowPrimaries) {
+			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success... 
 		} else {
 			fprintf(stderr,"State change failed: (%d) %s\n",
 				err_no, set_st_err_name(err_no));
@@ -984,9 +989,14 @@ int uuids_scmd(struct drbd_cmd *cm,
 {
 	__u64 *uuids;
 	int flags;
-	unsigned int len ;
+	unsigned int len = 4711;
 
 	uuids = (__u64 *)consume_tag_blob(T_uuids,rtl,&len);
+	if(len == 4711) {
+		fprintf(stderr,"Reply payload did not carry an uuid-tag,\n"
+			"Probabely the device has no disk!\n");
+		return 1;
+	}
 	flags = consume_tag_int(T_uuids_flags,rtl);
 	if( len == UUID_SIZE * sizeof(__u64)) {
 		if(!strcmp(cm->cmd,"show-gi")) {
@@ -997,8 +1007,8 @@ int uuids_scmd(struct drbd_cmd *cm,
 			ASSERT( 0 );
 		}
 	} else {
-		printf("Unexpected length of T_uuids tag. You should upgrade your\n"
-		       "userland tools\n");
+		fprintf(stderr, "Unexpected length of T_uuids tag. "
+			"You should upgrade your userland tools\n");
 	}
 	return 0;
 }
