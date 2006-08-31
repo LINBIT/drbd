@@ -15,13 +15,24 @@ enum packet_types {
 	P_nl_after_last_packet,
 };
 
+// These struct are used to deduce the size of the tag lists:
+#define PACKET(name, fields) struct name ## _tag_len_struct { fields };
+#define INTEGER(pn,pr,member) int member; int tag_and_len ## member;
+#define INT64(pn,pr,member) __u64 member; int tag_and_len ## member;
+#define BIT(pn,pr,member)   unsigned char member : 1; int tag_and_len ## member;
+#define STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len; \
+				 int tag_and_len ## member;
+#include "linux/drbd_nl.h"
+
 // declate tag-list-sizes
-#define PACKET(name,fields) const int name ## _tag_size = 2 fields ;
+const int tag_list_sizes[] = {
+#define PACKET(name,fields) 2 fields ,
 #define INTEGER(pn,pr,member)     +4+4 
 #define INT64(pn,pr,member)       +4+8
 #define BIT(pn,pr,member)         +4+1
 #define STRING(pn,pr,member,len)  +4+len
 #include "drbd_nl.h"
+};
 
 /* The two highest bits are used for the tag type */
 #define TT_MASK      0xC000

@@ -103,6 +103,7 @@ enum ret_codes {
 	PauseFlagAlreadyClear,
 	DiskLowerThanOutdated,
 	FailedToClaimMyself,
+	UnknownNetLinkPacket,
 	AfterLastRetCode,
 };
 
@@ -247,8 +248,10 @@ enum UuidIndex {
 // The following line should be moved over to linux/connector.h
 // when the time comes
 #define CN_IDX_DRBD			0x4
+#define CN_VAL_DRBD			0x1
 
 struct drbd_nl_cfg_req {
+	int packet_type;
 	int drbd_minor;
 	int flags;
 	unsigned short tag_list[];

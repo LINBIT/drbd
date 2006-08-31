@@ -1053,6 +1053,10 @@ void print_command_usage(int i, const char *addinfo)
 	prevcol=col=0;
 
 	col += snprintf(line+col, maxcol-col, " %s", commands[i].cmd);
+
+	// Only those config commands have arguments and options...
+	if(commands[i].function != generic_config_cmd) goto out;
+
 	if ((args = commands[i].cp.args)) {
 		while (args->name) {
 			col += snprintf(line+col, maxcol-col, " %s", args->name);
@@ -1087,6 +1091,8 @@ void print_command_usage(int i, const char *addinfo)
 		}
 	}
 	line[col]=0;
+
+ out:
 	printf("%s\n",line);
 	if (addinfo) {
 		printf("%s\n",addinfo);
@@ -1210,7 +1216,8 @@ int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 
 int send_tag_list_cn(int sk_nl, struct drbd_tag_list *tl, const int packet_id, int minor, int flags)
 {
-	tl->cn_header->id.val = packet_id;
+	tl->cn_header->id.val = CN_VAL_DRBD;
+	tl->drbd_p_header->packet_type = packet_id;
 	tl->drbd_p_header->drbd_minor = minor;
 	tl->drbd_p_header->flags = flags;
 

@@ -120,35 +120,6 @@ extern void drbd_init_set_defaults(drbd_dev *mdev);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
 
-STATIC void drbd_nl_create (void *data)
-{ 
-	static int next_minor=0;
-	int minor,ok;
-	drbd_dev *mdev = NULL;
-
-	minor = next_minor;
-
-	mdev = drbd_new_device(minor);
-	if(!mdev) goto out;
-
-	spin_lock_irq(&drbd_pp_lock); // just to protect this from itself
-	if ( (ok = next_minor < minor_count && minor == next_minor) ) {
-		minor_table[minor] = mdev;
-		wmb();
-		next_minor++;
-	}
-	spin_unlock_irq(&drbd_pp_lock);
-
-	if(!ok) {
-	out:
-		if(mdev) {
-			if(mdev->app_reads_hash) kfree(mdev->app_reads_hash);
-			if(mdev->md_io_page) __free_page(mdev->md_io_page);
-			kfree(mdev);
-		}
-	}
-}
-
 int drbd_khelper(drbd_dev *mdev, char* cmd)
 {
 	char mb[12];
@@ -332,77 +303,29 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	return r;
 }
 
-STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
+
+STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			   struct drbd_nl_cfg_reply *reply)
 {
-	drbd_dev *mdev;
-
-	mdev = minor_to_mdev(nlp->drbd_minor);
-
-	if(!mdev && (nlp->flags & DRBD_NL_CREATE_DEVICE)) {
-		mdev = drbd_new_device(nlp->drbd_minor);
-		
-		spin_lock_irq(&drbd_pp_lock);
-		if( minor_table[nlp->drbd_minor] == NULL) {
-			minor_table[nlp->drbd_minor] = mdev;
-			mdev = NULL;
-		}
-		spin_unlock_irq(&drbd_pp_lock);
-		
-		if(mdev) {
-			if(mdev->app_reads_hash) kfree(mdev->app_reads_hash);
-			if(mdev->md_io_page) __free_page(mdev->md_io_page);
-			kfree(mdev);
-			mdev = NULL;
-		}
-
-		mdev = minor_to_mdev(nlp->drbd_minor);
-	}
-
-	return mdev;
-}
-
-
-STATIC void drbd_nl_primary (void *data) 
-{
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
 	struct primary primary_args;
-	int retcode;
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-	
 	memset(&primary_args, 0, sizeof(struct primary));
 	if(!primary_from_tags(mdev,nlp->tag_list,&primary_args)) {
-		retcode=UnknownMandatoryTag;
-		goto fail;
+		reply->ret_code=UnknownMandatoryTag;
+		return 0;
 	}
 
-	retcode = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
+	reply->ret_code = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
 
- fail:
-	drbd_nl_send_reply(req, retcode );
+	return 0;
 }
 
-STATIC void drbd_nl_secondary (void *data) 
+STATIC int drbd_nl_secondary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			     struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode;
+	reply->ret_code = drbd_set_role(mdev, Secondary, 0);
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-	
-	retcode = drbd_set_role(mdev, Secondary, 0);
-
- fail:
-	drbd_nl_send_reply(req, retcode );
+	return 0;
 }
 
 /* initializes the md.*_offset members, so we are able to find
@@ -661,23 +584,16 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	}
 }
 
-STATIC void drbd_nl_disk_conf (void *data) 
+STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			     struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
 	enum ret_codes retcode;
 	struct drbd_backing_dev* nbc=NULL; // new_backing_conf
 	struct inode *inode, *inode2;
 	struct lru_cache* resync_lru = NULL;
 	drbd_state_t ns,os;
-	drbd_dev *mdev;
 	int rv;
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-	
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > Diskless) {
 		retcode=HaveDiskConfig;
@@ -955,8 +871,8 @@ STATIC void drbd_nl_disk_conf (void *data)
 	drbd_bm_unlock(mdev);
 	drbd_md_sync(mdev);
 
-	drbd_nl_send_reply(req, NoError);
-	return;
+	reply->ret_code = retcode;
+	return 0;
 
  release_bdev3_fail:
 	drbd_force_state(mdev,NS(disk,Diskless));
@@ -973,31 +889,21 @@ STATIC void drbd_nl_disk_conf (void *data)
 	}
 	if (resync_lru) lc_free(resync_lru);
 
-	drbd_nl_send_reply(req, retcode );
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_detach (void *data) 
+STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			  struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode;
+	reply->ret_code = drbd_request_state(mdev,NS(disk,Diskless));
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-
-	retcode = drbd_request_state(mdev,NS(disk,Diskless));
-
- fail:
-	drbd_nl_send_reply(req, retcode);
+	return 0;
 }
 
-STATIC void drbd_nl_net_conf (void *data) 
+STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			    struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
 	int i,ns;
 	enum ret_codes retcode;
 	struct net_conf *new_conf = NULL;
@@ -1005,12 +911,6 @@ STATIC void drbd_nl_net_conf (void *data)
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
 	struct Drbd_Conf *odev;
-	drbd_dev *mdev;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 
 	new_conf = kmalloc(sizeof(struct net_conf),GFP_KERNEL);
 	if(!new_conf) {			
@@ -1177,8 +1077,8 @@ FIXME LGE
 
 	retcode = drbd_request_state(mdev,NS(conn,Unconnected));
 
-	drbd_nl_send_reply(req, retcode);
-	return ;
+	reply->ret_code = retcode;
+	return 0;
 
   fail:
 	if (tfm) crypto_free_tfm(tfm);
@@ -1186,21 +1086,14 @@ FIXME LGE
 	if (new_ee_hash) kfree(new_ee_hash);
 	if (new_conf) kfree(new_conf);
 
-	drbd_nl_send_reply(req, retcode);
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_disconnect (void *data) 
+STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			      struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
 	int retcode;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-
 
 	retcode = _drbd_request_state(mdev,NS(conn,StandAlone),0);	// silently.
 
@@ -1226,22 +1119,15 @@ STATIC void drbd_nl_disconnect (void *data)
 	retcode = NoError;
  fail:
 	drbd_md_sync(mdev);
-	drbd_nl_send_reply(req, retcode);
-	return ;
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_resize (void *data) 
+STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			  struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
 	struct resize rs;
-	drbd_dev *mdev;
 	int retcode=NoError;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 
 	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev,nlp->tag_list,&rs)) {
@@ -1270,23 +1156,17 @@ STATIC void drbd_nl_resize (void *data)
 	}
 
  fail:
-	drbd_nl_send_reply(req, retcode);
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_syncer_conf (void *data) 
+STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			       struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
 	int retcode=NoError;
 	struct syncer_conf sc;
 	drbd_dev *odev;
 	int err;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 
 	memcpy(&sc,&mdev->sync_conf,sizeof(struct syncer_conf));
 
@@ -1342,130 +1222,68 @@ STATIC void drbd_nl_syncer_conf (void *data)
 	drbd_alter_sa(mdev, sc.after);
 
  fail:
-	drbd_nl_send_reply(req, retcode);
-	return;
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_invalidate (void *data) 
+STATIC int drbd_nl_invalidate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			      struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-
-	retcode = drbd_request_state(mdev,NS2(conn,StartingSyncT,
-					disk,Inconsistent));
- fail:
-	drbd_nl_send_reply(req, retcode);
-	return;
+	reply->ret_code = drbd_request_state(mdev,NS2(conn,StartingSyncT,
+						      disk,Inconsistent));
+	return 0;
 }
 
-STATIC void drbd_nl_invalidate_peer (void *data) 
+STATIC int drbd_nl_invalidate_peer(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+				   struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode;
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
+	reply->ret_code = drbd_request_state(mdev,NS2(conn,StartingSyncS,
+						      pdsk,Inconsistent));
 
-	retcode = drbd_request_state(mdev,NS2(conn,StartingSyncS,
-					      pdsk,Inconsistent));
- fail:
-	drbd_nl_send_reply(req, retcode);
-	return;
+	return 0;
 }
 
-STATIC void drbd_nl_pause_sync (void *data) 
+STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			      struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
 	int retcode=NoError;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 	
 	if(!drbd_resync_pause(mdev, UserImposed)) retcode = PauseFlagAlreadySet;
- fail:
-	drbd_nl_send_reply(req, retcode);
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_resume_sync (void *data) 
+STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			       struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
 	int retcode=NoError;
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-	
 	if(!drbd_resync_resume(mdev, UserImposed)) retcode = PauseFlagAlreadyClear;
- fail:
-	drbd_nl_send_reply(req, retcode);
+	reply->ret_code = retcode;
+	return 0;
 }
 
-STATIC void drbd_nl_suspend_io (void *data) 
+STATIC int drbd_nl_suspend_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			      struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode;
+	reply->ret_code = drbd_request_state(mdev,NS(susp,1));
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-
-	retcode = drbd_request_state(mdev,NS(susp,1));
-
- fail:
-	drbd_nl_send_reply(req, retcode);
+	return 0;
 }
 
-STATIC void drbd_nl_resume_io (void *data) 
+STATIC int drbd_nl_resume_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			     struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode=NoError;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-
-	retcode = drbd_request_state(mdev,NS(susp,0));
-
- fail:
-	drbd_nl_send_reply(req, retcode);
+	reply->ret_code = drbd_request_state(mdev,NS(susp,0));
+	return 0;
 }
 
-STATIC void drbd_nl_outdate (void *data) 
+STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			   struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
 	int retcode;
 	drbd_state_t os,ns;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
@@ -1486,32 +1304,15 @@ STATIC void drbd_nl_outdate (void *data)
 	drbd_md_sync(mdev);
 
  fail:
-	drbd_nl_send_reply(req, retcode);
+	reply->ret_code = retcode;
+	return 0;
 }
 
-
-STATIC void drbd_nl_get_config (void *data)
+STATIC int drbd_nl_get_config(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			   struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode=NoError,rr;
-	struct drbd_nl_cfg_reply* reply;
-	struct cn_msg *cn_reply;
 	unsigned short *tl;
-	int size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply) +
-		disk_conf_tag_size + net_conf_tag_size + syncer_conf_tag_size + 2;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 	
-	if( !(cn_reply = kmalloc(size,GFP_KERNEL)) ) {
-		retcode=KMallocFailed;
-		goto fail;
-	}
-	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
 	tl = reply->tag_list;
 
 	if(inc_local(mdev)) {
@@ -1527,89 +1328,27 @@ STATIC void drbd_nl_get_config (void *data)
 
 	*tl++ = TT_END; /* Close the tag list */
 
-	cn_reply->id = req->id;
-	cn_reply->seq = req->seq;
-	cn_reply->ack = req->ack  + 1;
-	cn_reply->len = (char*)tl - (char *)reply;
-	cn_reply->flags = 0;
-
-	reply->minor = nlp->drbd_minor;
-	reply->ret_code = retcode;
-
-	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
-	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
-	kfree(cn_reply);
-	return;
- fail:
-	drbd_nl_send_reply(req, retcode);
+	return (int)((char*)tl - (char*)reply->tag_list);
 }
 
-STATIC void drbd_nl_get_state (void *data)
+STATIC int drbd_nl_get_state(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			     struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode=NoError,rr;
-	struct drbd_nl_cfg_reply* reply;
-	struct cn_msg *cn_reply;
 	unsigned short *tl;
-	int size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply) +
-		get_state_tag_size;
 
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
-	
-	if( !(cn_reply = kmalloc(size,GFP_KERNEL)) ) {
-		retcode=KMallocFailed;
-		goto fail;
-	}
-	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
 	tl = reply->tag_list;
 
 	tl = get_state_to_tags(mdev,(struct get_state*)&mdev->state,tl);
 	*tl++ = TT_END; /* Close the tag list */
 
-	cn_reply->id = req->id;
-	cn_reply->seq = req->seq;
-	cn_reply->ack = req->ack  + 1;
-	cn_reply->len = (char*)tl - (char *)reply;
-	cn_reply->flags = 0;
-
-	reply->minor = nlp->drbd_minor;
-	reply->ret_code = retcode;
-
-	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
-	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
-	kfree(cn_reply);
-	return;
- fail:
-	drbd_nl_send_reply(req, retcode);
+	return (int)((char*)tl - (char*)reply->tag_list);
 }
 
-STATIC void drbd_nl_get_uuids (void *data)
+STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+			     struct drbd_nl_cfg_reply *reply)
 {
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
-	drbd_dev *mdev;
-	int retcode=NoError,rr;
-	struct drbd_nl_cfg_reply* reply;
-	struct cn_msg *cn_reply;
 	unsigned short *tl;
-	int size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply) +
-		get_uuids_tag_size;
-
-	if( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
-		goto fail;
-	}
 	
-	if( !(cn_reply = kmalloc(size,GFP_KERNEL)) ) {
-		retcode=KMallocFailed;
-		goto fail;
-	}
-	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
 	tl = reply->tag_list;
 
 	if(inc_local(mdev)) {
@@ -1626,47 +1365,137 @@ STATIC void drbd_nl_get_uuids (void *data)
 	}
 	*tl++ = TT_END; /* Close the tag list */
 
+	return (int)((char*)tl - (char*)reply->tag_list);
+}
+
+STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
+{
+	drbd_dev *mdev;
+
+	mdev = minor_to_mdev(nlp->drbd_minor);
+
+	if(!mdev && (nlp->flags & DRBD_NL_CREATE_DEVICE)) {
+		mdev = drbd_new_device(nlp->drbd_minor);
+		
+		spin_lock_irq(&drbd_pp_lock);
+		if( minor_table[nlp->drbd_minor] == NULL) {
+			minor_table[nlp->drbd_minor] = mdev;
+			mdev = NULL;
+		}
+		spin_unlock_irq(&drbd_pp_lock);
+		
+		if(mdev) {
+			if(mdev->app_reads_hash) kfree(mdev->app_reads_hash);
+			if(mdev->md_io_page) __free_page(mdev->md_io_page);
+			kfree(mdev);
+			mdev = NULL;
+		}
+
+		mdev = minor_to_mdev(nlp->drbd_minor);
+	}
+
+	return mdev;
+}
+
+struct cn_handler_struct {
+	int (*function)(drbd_dev *,
+			 struct drbd_nl_cfg_req *, 
+			 struct drbd_nl_cfg_reply* );
+	int reply_body_size;
+};
+
+static struct cn_handler_struct cnd_table[] = {
+	[ P_primary ]		= { &drbd_nl_primary,		0 },
+	[ P_secondary ]		= { &drbd_nl_secondary,		0 },
+	[ P_disk_conf ]		= { &drbd_nl_disk_conf,		0 },
+	[ P_detach ]		= { &drbd_nl_detach,		0 },
+	[ P_net_conf ]		= { &drbd_nl_net_conf,		0 },
+	[ P_disconnect ]	= { &drbd_nl_disconnect,	0 },
+	[ P_resize ]		= { &drbd_nl_resize,		0 },
+	[ P_syncer_conf ]	= { &drbd_nl_syncer_conf,	0 },
+	[ P_invalidate ]	= { &drbd_nl_invalidate,	0 },
+	[ P_invalidate_peer ]	= { &drbd_nl_invalidate_peer,	0 },
+	[ P_pause_sync ]	= { &drbd_nl_pause_sync,	0 },
+	[ P_resume_sync ]	= { &drbd_nl_resume_sync,	0 },
+	[ P_suspend_io ]	= { &drbd_nl_suspend_io,	0 },
+	[ P_resume_io ]		= { &drbd_nl_resume_io,		0 },
+	[ P_outdate ]		= { &drbd_nl_outdate,		0 },
+	[ P_get_config ]	= { &drbd_nl_get_config,
+				    sizeof(struct syncer_conf_tag_len_struct) +
+				    sizeof(struct disk_conf_tag_len_struct) +
+				    sizeof(struct net_conf_tag_len_struct) },
+	[ P_get_state ]		= { &drbd_nl_get_state,
+				    sizeof(struct get_state_tag_len_struct) },
+	[ P_get_uuids ]		= { &drbd_nl_get_uuids,
+				    sizeof(struct get_uuids_tag_len_struct) },
+};
+
+void drbd_connector_callback(void *data)
+{
+	struct cn_msg *req = data;
+	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
+	struct cn_handler_struct *cm;
+	struct cn_msg *cn_reply;
+	struct drbd_nl_cfg_reply* reply;
+	drbd_dev *mdev;
+	int retcode,rr;
+	int reply_size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply);
+	
+	if(!try_module_get(THIS_MODULE)) {
+		printk(KERN_ERR DEVICE_NAME "try_module_get() failed!\n");
+		return;
+	}
+
+	if( !(mdev = ensure_mdev(nlp)) ) {
+		retcode=MinorNotKnown;
+		goto fail;
+	}
+
+	if( nlp->packet_type >= P_nl_after_last_packet ) {
+		retcode=UnknownNetLinkPacket;
+		goto fail;
+	}
+
+	cm = cnd_table + nlp->packet_type;
+	reply_size += cm->reply_body_size;
+
+	if( !(cn_reply = kmalloc(reply_size,GFP_KERNEL)) ) {
+		retcode=KMallocFailed;
+		goto fail;
+	}
+	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
+
+	reply->minor = nlp->drbd_minor;
+	reply->ret_code = NoError; // Might by modified by cm->function.
+	// reply->tag_list; might be modified by cm->fucntion.
+
+	rr = cm->function(mdev,nlp,reply);
+	
 	cn_reply->id = req->id;
 	cn_reply->seq = req->seq;
 	cn_reply->ack = req->ack  + 1;
-	cn_reply->len = (char*)tl - (char *)reply;
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + rr;
 	cn_reply->flags = 0;
-
-	reply->minor = nlp->drbd_minor;
-	reply->ret_code = retcode;
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
 	kfree(cn_reply);
+	module_put(THIS_MODULE);
 	return;
  fail:
 	drbd_nl_send_reply(req, retcode);
+	module_put(THIS_MODULE);
 }
-
-// Generate the packet_number to callback table...
-typedef void (*cn_handler)(void*);
-
-static cn_handler cnd_table[] = {
-#define PACKET(name, fields) [ P_ ## name ] = & drbd_nl_ ## name,
-#define INTEGER(pn,pr,member)
-#define INT64(pn,pr,member)
-#define BIT(pn,pr,member)
-#define STRING(pn,pr,member,len)
-#include "linux/drbd_nl.h"
-};
 
 int __init drbd_nl_init()
 {
-	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, 0 };
-	int i,err;
+	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
+	int err;
 
-	for(i=0;i<P_nl_after_last_packet;i++) {
-		cn_id_drbd.val = i;
-		err = cn_add_callback(&cn_id_drbd,"cn_drbd",cnd_table[i]);
-		if(err) {
-			printk(KERN_ERR DEVICE_NAME "cn_drbd failed to register\n");
-			return err;
-		}
+	err = cn_add_callback(&cn_id_drbd,"cn_drbd",&drbd_connector_callback);
+	if(err) {
+		printk(KERN_ERR DEVICE_NAME "cn_drbd failed to register\n");
+		return err;
 	}
 
 	return 0;

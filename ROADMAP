@@ -441,13 +441,6 @@ DRBD 0.8 Roadmap
 
   Things to do:
   
-  * Fix drbdadm (nees to use --create-device and --set-defaults; adjust
-      needs to be changes since the kernel can not return the device
-      names of backing and meta device.)
-  * Remove the memset( .., 0, ...) from drbd_nl.c. Use the defaults instead.
-  * Use only one connector callback.
-  * use try_module_get() and put_module() when control enters a/the connector
-    callback.
   * Locking in userspace, to prevent multiple instances of drbdsetup
 
   50% DONE
