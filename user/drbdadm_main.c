@@ -122,6 +122,7 @@ int highest_minor;
 int config_valid=1;
 int no_tty;
 int dry_run;
+int verbose;
 int do_verify_ips;
 char* drbdsetup;
 char* drbdmeta;
@@ -178,6 +179,7 @@ int run_dcmds(void)
 
 struct option admopt[] = {
   { "dry-run",      no_argument,      0, 'd' },
+  { "verbose",      no_argument,      0, 'v' },
   { "config-file",  required_argument,0, 'c' },
   { "drbdsetup",    required_argument,0, 's' },
   { "drbdmeta",     required_argument,0, 'm' },
@@ -525,12 +527,12 @@ pid_t m_system(char** argv,int flags)
   sigemptyset(&sa.sa_mask);
   sa.sa_flags=0;
 
-  if(dry_run) {
+  if(dry_run || verbose) {
     while(*cmdline) {
       fprintf(stdout,"%s ",*cmdline++);
     }
     fprintf(stdout,"\n");
-    return 0;
+    if (dry_run) return 0;
   }
 
   pid = fork();
@@ -1421,6 +1423,7 @@ int main(int argc, char** argv)
   drbdsetup=NULL;
   drbdmeta=NULL;
   dry_run=0;
+  verbose=0;
   yyin=NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
   no_tty = (!isatty(fileno(stdin)) || !isatty(fileno(stdout)));
@@ -1479,6 +1482,9 @@ int main(int argc, char** argv)
       if(c == -1) break;
       switch(c)
 	{
+	case 'v':
+	  verbose++;
+	  break;
 	case 'd':
 	  dry_run++;
 	  break;
@@ -1644,6 +1650,7 @@ int main(int argc, char** argv)
 
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
         if (is_dump) {
+	  printf("# %s\n",config_file);
 	  dump_global_info();
 	  dump_common_info();
 	}

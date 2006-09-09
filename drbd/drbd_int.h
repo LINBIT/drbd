@@ -23,6 +23,10 @@
   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
 */
+
+#ifndef _DRBD_INT_H
+#define _DRBD_INT_H
+
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/version.h>
@@ -214,25 +218,12 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
  * our structs
  *************************/
 
-#define SET_MAGIC(x)       ((x)->magic = (long)(x) ^ DRBD_MAGIC)
-#define VALID_POINTER(x)   ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0)
-#define INVALIDATE_MAGIC(x) (x->magic--)
-
 #define SET_MDEV_MAGIC(x) \
 	({ typecheck(struct Drbd_Conf*,x); \
 	  (x)->magic = (long)(x) ^ DRBD_MAGIC; })
 #define IS_VALID_MDEV(x)  \
 	( typecheck(struct Drbd_Conf*,x) && \
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0))
-
-/* these defines should go into blkdev.h
-   (if it will be ever includet into linus' linux) */
-#define RQ_DRBD_NOTHING	  0x0001
-#define RQ_DRBD_SENT      0x0010   // We got an ack
-#define RQ_DRBD_LOCAL     0x0020   // We wrote it to the local disk
-#define RQ_DRBD_IN_TL     0x0040   // Set when it is in the TL
-#define RQ_DRBD_ON_WIRE   0x0080   // Set as soon as it is on the socket...
-#define RQ_DRBD_DONE      ( RQ_DRBD_SENT + RQ_DRBD_LOCAL + RQ_DRBD_ON_WIRE )
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
@@ -266,6 +257,7 @@ extern struct Drbd_Conf **minor_table;
 	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
 			mdev_to_minor(mdev) , ##args);		\
 } while (0)
+#warning "drbd_panic() does nothing but printk()!"
 #endif
 #undef DRBD_PANIC
 
@@ -413,6 +405,7 @@ typedef struct {
  */
 
 #define DP_HARDBARRIER 1
+/* FIXME map BIO_RW_SYNC, too ... */
 
 typedef struct {
 	Drbd_Header head;
@@ -466,6 +459,10 @@ typedef struct {
 } __attribute((packed)) Drbd_HandShake_Packet;
 // 80 bytes, FIXED for the next century
 
+/* FIXME do we actually send a barrier packet with "0" as barrier number?
+ * what for?
+ * couldn't we send the pointer as handle as well, as we do with block_id?
+ */
 typedef struct {
 	Drbd_Header head;
 	u32         barrier;   // may be 0 or a barrier number
@@ -604,14 +601,24 @@ struct drbd_work {
 struct drbd_barrier;
 struct drbd_request {
 	struct drbd_work w;
-	struct list_head tl_requests; // double linked list in the TL
-	struct drbd_barrier *barrier; // The next barrier.
-	struct bio *master_bio;       // master bio pointer
+	drbd_dev *mdev;
 	struct bio *private_bio;
 	struct hlist_node colision;
-	drbd_dev *mdev;
-	long magic;
-	int rq_status;
+	sector_t sector;
+	unsigned int size;
+	unsigned int epoch; /* barrier_nr */
+
+	/* barrier_nr: used to check on "completion" whether this req was in
+	 * the current epoch, and we therefore have to close it,
+	 * starting a new epoch...
+	 */
+
+	/* up to here, the struct layout is identical to Tl_epoch_entry;
+	 * we might be able to use that to our advantage...  */
+
+	struct list_head tl_requests; /* ring list in the transfer log */
+	struct bio *master_bio;       /* master bio pointer */
+	unsigned long rq_state; /* see comments above _req_mod() */
 	int seq_num;
 };
 
@@ -619,7 +626,7 @@ struct drbd_barrier {
 	struct drbd_work w;
 	struct list_head requests; // requests before
 	struct drbd_barrier *next; // pointer to the next barrier
-	int br_number;  // the barriers identifier.
+	unsigned int br_number;  // the barriers identifier.
 	int n_req;      // number of requests attached before this barrier
 };
 
@@ -634,20 +641,24 @@ typedef struct drbd_request drbd_request_t;
 
 struct Tl_epoch_entry {
 	struct drbd_work    w;
-	struct bio *private_bio;
-	u64    block_id;
-	long magic;
-	unsigned int ee_size;
-	sector_t ee_sector;
-	struct hlist_node colision;
 	drbd_dev *mdev;
+	struct bio *private_bio;
+	struct hlist_node colision;
+	sector_t sector;
+	unsigned int size;
 	unsigned int barrier_nr;
+
+	/* up to here, the struct layout is identical to drbd_request;
+	 * we might be able to use that to our advantage...  */
+
 	unsigned int barrier_nr2;
 	/* If we issue the bio with BIO_RW_BARRIER we have to
 	   send a barrier ACK before we send the ACK to this
 	   write. We store the barrier number in here.
 	   In case the barrier after this write has been coalesced
 	   as well, we set it's barrier_nr into barrier_nr2 */
+
+	u64    block_id;
 };
 
 /* flag bits */
@@ -787,7 +798,7 @@ struct Drbd_Conf {
 	atomic_t local_cnt;      // Waiting for local disk to signal completion
 	atomic_t net_cnt;        // Users of net_conf
 	spinlock_t req_lock;
-	spinlock_t tl_lock;
+	struct drbd_barrier* unused_spare_barrier; /* for pre-allocation */
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
 	struct hlist_head * tl_hash;
@@ -807,19 +818,22 @@ struct Drbd_Conf {
 	atomic_t resync_locked;   // Number of locked elements in resync LRU
 	int open_cnt;
 	u64 *p_uuid;
-	spinlock_t ee_lock;
+	/* no more ee_lock
+	 * we had to grab both req_lock _and_ ee_lock in almost every place we
+	 * needed one of them. so why bother having too spinlocks?
+	 * FIXME clean comments, restructure so it is more obvious which
+	 * members areprotected by what */
 	unsigned int epoch_size;
 	struct list_head active_ee; // IO in progress
 	struct list_head sync_ee;   // IO in progress
 	struct list_head done_ee;   // send ack
 	struct list_head read_ee;   // IO in progress
 	struct list_head net_ee;    // zero-copy network send in progress
-	struct hlist_head * ee_hash; // is proteced by tl_lock!
+	struct hlist_head * ee_hash; // is proteced by req_lock!
 	unsigned int ee_hash_s;
 	struct Tl_epoch_entry * last_write_w_barrier; // ee_lock, single thread
 	int next_barrier_nr;  // ee_lock, single thread
-	spinlock_t pr_lock;
-	struct hlist_head * app_reads_hash; // is proteced by pr_lock
+	struct hlist_head * app_reads_hash; // is proteced by req_lock
 	struct list_head resync_reads;
 	atomic_t pp_in_use;
 	wait_queue_head_t ee_wait;
@@ -882,14 +896,7 @@ extern void drbd_free_resources(drbd_dev *mdev);
 extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
-extern void tl_add(drbd_dev *mdev, drbd_request_t *req);
-extern void _tl_add(drbd_dev *mdev, drbd_request_t *req);
-extern struct drbd_barrier *tl_add_barrier(drbd_dev *mdev);
 extern struct drbd_barrier *_tl_add_barrier(drbd_dev *,struct drbd_barrier *);
-extern struct Tl_epoch_entry * _ee_have_write(drbd_dev *mdev,drbd_request_t * req);
-extern int tl_dependence(drbd_dev *mdev, drbd_request_t * item);
-extern int tl_verify(drbd_dev *mdev, drbd_request_t * item, sector_t sector);
-extern drbd_request_t * req_have_write(drbd_dev *, struct Tl_epoch_entry *);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
@@ -1081,6 +1088,8 @@ extern void drbd_bm_set_all   (drbd_dev *mdev);
 extern void drbd_bm_clear_all (drbd_dev *mdev);
 extern void drbd_bm_reset_find(drbd_dev *mdev);
 extern int  drbd_bm_set_bit   (drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_set_bits_in_irq(
+		drbd_dev *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_clear_bit (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
@@ -1127,12 +1136,10 @@ extern wait_queue_head_t drbd_pp_wait;
 extern drbd_dev *drbd_new_device(int minor);
 
 // drbd_req
-#define ERF_NOTLD    2   /* do not call tl_dependence */
-extern void drbd_end_req(drbd_request_t *, int, int, sector_t);
 extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
-extern int drbd_pr_verify(drbd_dev *, drbd_request_t *, sector_t);
+extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 
 
 // drbd_fs.c
@@ -1164,7 +1171,7 @@ extern int drbd_resync_finished(drbd_dev *mdev);
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 				sector_t sector, int rw);
 // worker callbacks
-extern int w_is_resync_read      (drbd_dev *, struct drbd_work *, int);
+extern int w_req_cancel_conflict (drbd_dev *, struct drbd_work *, int);
 extern int w_read_retry_remote   (drbd_dev *, struct drbd_work *, int);
 extern int w_e_end_data_req      (drbd_dev *, struct drbd_work *, int);
 extern int w_e_end_rsdata_req    (drbd_dev *, struct drbd_work *, int);
@@ -1273,37 +1280,39 @@ static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
 	return _drbd_request_state(mdev, mask, val, ChgStateVerbose);
 }
 
-static inline void drbd_req_free(drbd_request_t *req)
-{
-	INVALIDATE_MAGIC(req);
-	mempool_free(req,drbd_request_mempool);
-}
-
 /**
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
  * all io completion handlers. See also drbd_io_error().
  */
+static inline void __drbd_chk_io_error(drbd_dev* mdev)
+{
+	/* FIXME cleanup the messages here */
+	switch(mdev->bc->dc.on_io_error) {
+	case PassOn: /* FIXME should the better be named "Ignore"? */
+		ERR("Ignoring local IO error!\n");
+		break;
+	case Panic:
+		_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard);
+		/* FIXME this is very ugly anyways.
+		 * but in case we panic, we should at least not panic
+		 * while holding the req_lock hand with irq disabled. */
+		drbd_panic("IO error on backing device!\n");
+		break;
+	case Detach:
+		if (_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard) 
+		    == SS_Success) {
+			ERR("Local IO failed. Detaching...\n");
+		}
+		break;
+	}
+}
+
 static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
 {
 	if (error) {
 		unsigned long flags;
 		spin_lock_irqsave(&mdev->req_lock,flags);
-
-		switch(mdev->bc->dc.on_io_error) {
-		case PassOn:
-			ERR("Ignoring local IO error!\n");
-			break;
-		case Panic:
-			_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard);
-			drbd_panic("IO error on backing device!\n");
-			break;
-		case Detach:
-			if (_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard) 
-			    == SS_Success) {
-				ERR("Local IO failed. Detaching...\n");
-			}
-			break;
-		}
+		__drbd_chk_io_error(mdev);
 		spin_unlock_irqrestore(&mdev->req_lock,flags);
 	}
 }
@@ -1461,6 +1470,29 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
 	_drbd_thread_stop(thi,TRUE,FALSE);
 }
 
+/* counts how many answer packets packets we expect from our peer,
+ * for either explicit application requests,
+ * or implicit barrier packets as necessary.
+ * increased:
+ *  w_send_barrier
+ *  _req_mod(req, queue_for_net_write or queue_for_net_read);
+ *    it is much easier and equally valid to count what we queue for the
+ *    worker, even before it actually was queued or send.
+ *    (drbd_make_request_common; recovery path on read io-error)
+ * decreased:
+ *  got_BarrierAck (respective tl_clear, tl_clear_barrier)
+ *  _req_mod(req, data_received)
+ *     [from receive_DataReply]
+ *  _req_mod(req, write_acked_by_peer or recv_acked_by_peer or neg_acked)
+ *     [from got_BlockAck (WriteAck, RecvAck)]
+ *     FIXME
+ *     for some reason it is NOT decreased in got_NegAck,
+ *     but in the resulting cleanup code from report_params.
+ *     we should try to remember the reason for that...
+ *  _req_mod(req, send_failed or send_canceled)
+ *  _req_mod(req, connection_lost_while_pending)
+ *     [from tl_clear_barrier]
+ */
 static inline void inc_ap_pending(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->ap_pending_cnt);
@@ -1478,6 +1510,12 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 		wake_up(&mdev->cstate_wait);			\
 	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt)
 
+/* counts how many resync-related answers we still expect from the peer
+ *                   increase                   decrease
+ * SyncTarget sends RSDataRequest (and expects RSDataReply)
+ * SyncSource sends RSDataReply   (and expects WriteAck whith ID_SYNCER)
+ *                                         (or NegAck with ID_SYNCER)
+ */
 static inline void inc_rs_pending(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->rs_pending_cnt);
@@ -1488,50 +1526,20 @@ static inline void inc_rs_pending(drbd_dev* mdev)
 	atomic_dec(&mdev->rs_pending_cnt);			\
 	ERR_IF_CNT_IS_NEGATIVE(rs_pending_cnt)
 
+/* counts how many answers we still need to send to the peer.
+ * increased on
+ *  receive_Data        unless protocol A;
+ *                      we need to send a RecvAck (proto B)
+ *                      or WriteAck (proto C)
+ *  receive_RSDataReply (recv_resync_read) we need to send a WriteAck
+ *  receive_DataRequest (receive_RSDataRequest) we need to send back Data
+ *  receive_Barrier_*   we need to send a BarrierAck
+ */ 
 static inline void inc_unacked(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-#if 0 && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
-/*
- * idea was to forcefully push the tcp stack whenever the
- * currently last pending packet is in the buffer.
- * should be benchmarked on some real box to see if it has any
- * effect on overall latency.
- */
-
-/* this only works with 2.6 kernels because of some conflicting defines
- * in header files included from net.tcp.h.
- */
-
-#include <net/tcp.h>
-static inline void drbd_push_msock(drbd_dev* mdev)
-{
-	struct sock    *sk;
-	struct tcp_opt *tp;
-	if (mdev->meta.socket == NULL) return;
-	sk = mdev->meta.socket->sk;
-	tp = tcp_sk(sk);
-	lock_sock(sk);
-	__tcp_push_pending_frames(sk, tp, tcp_current_mss(sk, 1), TCP_NAGLE_PUSH);
-	release_sock(sk);
-}
-
-#define dec_unacked(mdev)					\
-	might_sleep();						\
-	typecheck(drbd_dev*,mdev);				\
-	if (atomic_dec_and_test(&mdev->unacked_cnt))		\
-		drbd_push_msock(mdev);				\
-	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt);
-
-#define sub_unacked(mdev, n)					\
-	might_sleep();						\
-	typecheck(drbd_dev*,mdev);				\
-	if (atomic_sub_and_test(n, &mdev->unacked_cnt))		\
-		drbd_push_msock(mdev);				\
-	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt);
-#else
 #define dec_unacked(mdev)					\
 	typecheck(drbd_dev*,mdev);				\
 	atomic_dec(&mdev->unacked_cnt);				\
@@ -1541,9 +1549,9 @@ static inline void drbd_push_msock(drbd_dev* mdev)
 	typecheck(drbd_dev*,mdev);				\
 	atomic_sub(n, &mdev->unacked_cnt);			\
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
-#endif
 
 
+#warning "FIXME inherently racy. this is buggy by design :("
 /**
  * inc_net: Returns TRUE when it is ok to access mdev->net_conf. You
  * should call dec_net() when finished looking at mdev->net_conf.
@@ -1565,23 +1573,17 @@ static inline void dec_net(drbd_dev* mdev)
 	}
 }
 
+/* strictly speaking,
+ * these would have to hold the req_lock while looking at
+ * the disk state. But since we cannot submit within a spinlock,
+ * this is mood...
+ */
+
 /**
  * inc_local: Returns TRUE when local IO is possible. If it returns
  * TRUE you should call dec_local() after IO is completed.
  */
-static inline int inc_local(drbd_dev* mdev)
-{
-	int io_allowed;
-
-	atomic_inc(&mdev->local_cnt);
-	io_allowed = (mdev->state.disk >= Inconsistent);
-	if( !io_allowed ) {
-		atomic_dec(&mdev->local_cnt);
-	}
-	return io_allowed;
-}
-
-static inline int inc_md_only(drbd_dev* mdev, drbd_disks_t mins)
+static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 {
 	int io_allowed;
 
@@ -1592,6 +1594,11 @@ static inline int inc_md_only(drbd_dev* mdev, drbd_disks_t mins)
 	}
 	return io_allowed;
 }
+static inline int inc_local(drbd_dev* mdev)
+{
+	return inc_local_if_state(mdev, Inconsistent);
+}
+
 
 static inline void dec_local(drbd_dev* mdev)
 {
@@ -1603,12 +1610,24 @@ static inline void dec_local(drbd_dev* mdev)
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
 
-/* 
+/* this throttles on-the-fly application requests
+ * according to max_buffers settings;
+ * maybe re-implement using semaphores? */
 static inline void inc_ap_bio(drbd_dev* mdev)
 {
-	atomic_inc(&mdev->ap_bio_cnt);
+	int mxb = 1000000; /* arbitrary limit on open requests */
+
+	if(inc_net(mdev)) {
+		mxb = mdev->net_conf->max_buffers;
+		dec_net(mdev);
+		/* decrease here already, so you can reconfigure
+		 * the max buffer setting even under load.
+		 * alternative: use rw_semaphore. I'd like that.
+		 */
+	}
+
+	wait_event( mdev->rq_wait,atomic_add_unless(&mdev->ap_bio_cnt,1,mxb) );
 }
-*/
 
 static inline void dec_ap_bio(drbd_dev* mdev)
 {
@@ -1625,12 +1644,15 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)>=0);
 }
 
+/* FIXME does not handle wrap around yet */
 static inline void update_peer_seq(drbd_dev* mdev, int new_seq)
 {
 	spin_lock(&mdev->peer_seq_lock);
 	mdev->peer_seq = max(mdev->peer_seq, new_seq);
 	spin_unlock(&mdev->peer_seq_lock);
 	wake_up(&mdev->cstate_wait);
+	/* FIXME introduce seq_wait, no point in waking up a number of
+	 * processes with each and every Ack received... */
 }
 
 static inline int peer_seq(drbd_dev* mdev)
@@ -1729,3 +1751,4 @@ static inline void drbd_kick_lo(drbd_dev *mdev)
 		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
 	}
 }
+#endif

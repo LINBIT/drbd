@@ -58,6 +58,7 @@
 #include <linux/drbd.h>
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
+#include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 
 /* YES. We got an official device major from lanana
  */
@@ -187,42 +188,10 @@ STATIC void tl_cleanup(drbd_dev *mdev)
 	}
 }
 
-STATIC unsigned int tl_hash_fn(drbd_dev *mdev, sector_t sector)
-{
-	BUG_ON(mdev->tl_hash_s == 0);
-	return (unsigned int)(sector>>HT_SHIFT) % mdev->tl_hash_s;
-}
-
-
-void _tl_add(drbd_dev *mdev, drbd_request_t *req)
-{
-	struct drbd_barrier *b;
-
-	b=mdev->newest_barrier;
-
-	req->barrier = b;
-	req->rq_status |= RQ_DRBD_IN_TL; /* BUG, not holding req_lock */
-	list_add(&req->tl_requests,&b->requests);
-
-	if( b->n_req++ > mdev->net_conf->max_epoch_size ) {
-		set_bit(ISSUE_BARRIER,&mdev->flags);
-	}
-
-	INIT_HLIST_NODE(&req->colision);
-	hlist_add_head( &req->colision, mdev->tl_hash +
-			tl_hash_fn(mdev, drbd_req_get_sector(req) ));
-}
-
-void tl_add(drbd_dev *mdev, drbd_request_t * req)
-{
-	spin_lock_irq(&mdev->tl_lock);
-	_tl_add(mdev,req);
-	spin_unlock_irq(&mdev->tl_lock);
-}
-
 /**
- * _tl_add_barrier: Adds a barrier to the TL. It returns the the newest 
- * (but not the just created barrier) to the caller.
+ * _tl_add_barrier: Adds a barrier to the TL.
+ * It returns the previously newest barrier
+ * (not the just created barrier) to the caller.
  */
 struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 {
@@ -234,7 +203,8 @@ struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 
 	/* mdev->newest_barrier == NULL "cannot happen". but anyways... */
 	newest_before = mdev->newest_barrier;
-	/* never send a barrier number == 0 */
+	/* never send a barrier number == 0, because that is special-cased
+	 * when using TCQ for our write ordering code */
 	new->br_number = (newest_before->br_number+1) ?: 1;
 	mdev->newest_barrier->next = new;
 	mdev->newest_barrier = new;
@@ -242,22 +212,33 @@ struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 	return newest_before;
 }
 
+/* when we receive a barrier ack */
 void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size)
 {
 	struct drbd_barrier *b;
+	struct list_head *le, *tle;
+	struct drbd_request *r;
 
-	spin_lock_irq(&mdev->tl_lock);
+	spin_lock_irq(&mdev->req_lock);
 
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
 
+	/* in protocol C this list should be empty,
+	 * unless there is local io pending.
+	 * in protocol A and B, this should not be empty, even though the
+	 * master_bio's could already been completed.  */
+	list_for_each_safe(le, tle, &b->requests) {
+		r = list_entry(le, struct drbd_request,tl_requests);
+		_req_mod(r, barrier_acked);
+	}
 	list_del(&b->requests);
 	/* There could be requests on the list waiting for completion
 	   of the write to the local disk, to avoid corruptions of
 	   slab's data structures we have to remove the lists head */
 
-	spin_unlock_irq(&mdev->tl_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	D_ASSERT(b->br_number == barrier_nr);
 	D_ASSERT(b->n_req == set_size);
@@ -276,162 +257,68 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	kfree(b);
 }
 
-int tl_verify(drbd_dev *mdev, drbd_request_t * req, sector_t sector)
-{
-	struct hlist_head *slot = mdev->tl_hash + tl_hash_fn(mdev,sector);
-	struct hlist_node *n;
-	drbd_request_t * i;
-	int rv=0;
-
-	spin_lock_irq(&mdev->tl_lock);
-
-	hlist_for_each_entry(i, n, slot, colision) {
-		if (i==req) {
-		  if (drbd_req_get_sector(i) != sector) {
-			  ERR("tl_verify: found req %p but it has wrong sector (%llx versus %llx)\n",
-			      req, (long long)drbd_req_get_sector(i), (long long)sector);
-		  }
-		  rv=1;
-		  break;
-		}
-	}
-
-	spin_unlock_irq(&mdev->tl_lock);
-
-	// Really better find it!
-	if (!rv) {
-		ERR("tl_verify: failed to find req %p, sector %llx in list\n", 
-		    req, (long long)sector);
-	}
-
-	return rv;
-}
-
-/* tl_dependence reports if this sector was present in the current
-   epoch.
-   As side effect it clears also the pointer to the request if it
-   was present in the transfert log. (Since tl_dependence indicates
-   that IO is complete and that drbd_end_req() should not be called
-   in case tl_clear has to be called due to interruption of the
-   communication)
-*/
-/* bool */
-int tl_dependence(drbd_dev *mdev, drbd_request_t * req)
-{
-	unsigned long flags;
-	int r=TRUE;
-
-	spin_lock_irqsave(&mdev->tl_lock,flags);
-
-	r = ( req->barrier == mdev->newest_barrier );
-	list_del(&req->tl_requests);
-	hlist_del(&req->colision);
-	// req->barrier->n_req--; // Barrier migh be free'ed already!
-
-	spin_unlock_irqrestore(&mdev->tl_lock,flags);
-	return r;
-}
-
-STATIC void tl_clear_barrier(drbd_dev *mdev, struct list_head *requests)
-{
-	struct list_head *le, *tle;
-	struct drbd_request *r;
-	sector_t sector;
-	unsigned int size;
-
-	list_for_each_safe(le, tle, requests) {
-		r = list_entry(le, struct drbd_request,tl_requests);
-		// bi_size and bi_sector are modified in bio_endio!
-		sector = drbd_req_get_sector(r);
-		size   = drbd_req_get_size(r);
-		
-		if( r->rq_status & RQ_DRBD_ON_WIRE &&
-		    mdev->net_conf->wire_protocol != DRBD_PROT_A ) {
-			dec_ap_pending(mdev);
-		}
-		
-		if( !(r->rq_status & RQ_DRBD_SENT) ) {
-			drbd_end_req(r,RQ_DRBD_SENT,ERF_NOTLD|1, sector);
-			goto mark;
-		}
-		if(mdev->net_conf->wire_protocol != DRBD_PROT_C ) {
-		mark:
-			drbd_set_out_of_sync(mdev, sector, size);
-		}
-	}
-}
-
+/* FIXME called by whom? worker only? */
 void tl_clear(drbd_dev *mdev)
 {
-	struct list_head tmp;
-	struct drbd_barrier *b,*f;
+	struct drbd_barrier *b, *tmp;
 
 	WARN("tl_clear()\n");
-	INIT_LIST_HEAD(&tmp);
 
-	spin_lock_irq(&mdev->tl_lock);
-
-	f = mdev->oldest_barrier;
-	b = f->next;
-
-	// mdev->oldest_barrier = f;
-	mdev->newest_barrier = f;
-
-	list_add(&tmp,&f->requests);
-	list_del_init(&f->requests);
-
-	f->next=NULL;
-	f->br_number=4711;
-	f->n_req=0;
-
-	spin_unlock_irq(&mdev->tl_lock);
-
-	tl_clear_barrier(mdev,&tmp);
-
+	spin_lock_irq(&mdev->req_lock);
+	b = mdev->oldest_barrier;
 	while ( b ) {
-		tl_clear_barrier(mdev,&b->requests);
-		f=b;
-		b=b->next;
-		list_del(&f->requests);
-		kfree(f);
-		dec_ap_pending(mdev); // for the barrier
+		struct list_head *le, *tle;
+		struct drbd_request *r;
+		list_for_each_safe(le, tle, &b->requests) {
+			r = list_entry(le, struct drbd_request,tl_requests);
+			_req_mod(r, connection_lost_while_pending);
+		}
+		tmp = b->next;
+		/* FIXME can there still be requests on that ring list now?
+		 * funny race conditions ... */
+		if (!list_empty(&b->requests)) {
+			WARN("FIXME explain this race...");
+			list_del(&b->requests);
+		}
+		dec_ap_pending(mdev); /* for the barrier */
+		if (b == mdev->newest_barrier) {
+			D_ASSERT(tmp == NULL);
+			b->br_number=4711;
+			b->n_req=0;
+			INIT_LIST_HEAD(&b->requests);
+			mdev->oldest_barrier = b;
+			break;
+		}
+		kfree(b);
+		b = tmp;
 	}
+	D_ASSERT(mdev->newest_barrier == mdev->oldest_barrier);
+	D_ASSERT(mdev->newest_barrier->br_number == 4711);
+	spin_unlock_irq(&mdev->req_lock);
 }
 
-STATIC unsigned int ee_hash_fn(drbd_dev *mdev, sector_t sector)
-{
-	BUG_ON(mdev->ee_hash_s == 0);
-	return (unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s;
-}
-
-STATIC int overlaps(sector_t s1, int l1, sector_t s2, int l2)
-{
-	return !( ( s1 + (l1>>9) <= s2 ) || ( s1 >= s2 + (l2>>9) ) );
-}
-
-drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
+#warning "FIXME code missing"
+#if 0
+/* FIXME "wrong"
+ * see comment in receive_Data */
+drbd_request_t * _req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
 	drbd_request_t * req;
-	sector_t sector = drbd_ee_get_sector(e);
-	int size = drbd_ee_get_size(e);
+	sector_t sector = e->sector;
+	int size = e->drbd_ee_get_size(e);
 	int i;
 
+	MUST_HOLD(&mdev->req_lock);
 	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
 
-	spin_lock_irq(&mdev->tl_lock);
-
-	for(i=-1;i<=1;i++ ) {
-		slot = mdev->tl_hash + tl_hash_fn(mdev,
-						  sector + i*(1<<(HT_SHIFT)));
-		hlist_for_each_entry(req, n, slot, colision) {
-			if( overlaps(drbd_req_get_sector(req),
-				     drbd_req_get_size(req),
-				     sector,
-				     size) ) goto out;
-		} // hlist_for_each_entry()
-	}
+#define OVERLAPS overlaps(req->sector, req->size, sector, size)
+	slot = mdev->tl_hash + tl_hash_fn(mdev, sector);
+	hlist_for_each_entry(req, n, slot, colision) {
+		if (OVERLAPS) return req;
+	} // hlist_for_each_entry()
+#undef OVERLAPS
 	req = NULL;
 	// Good, no conflict found
 	INIT_HLIST_NODE(&e->colision);
@@ -442,35 +329,7 @@ drbd_request_t * req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
 
 	return req;
 }
-
-struct Tl_epoch_entry * _ee_have_write(drbd_dev *mdev, drbd_request_t * req)
-{
-	struct hlist_head *slot;
-	struct hlist_node *n;
-	struct Tl_epoch_entry *ee;
-	sector_t sector = drbd_req_get_sector(req);
-	int size = drbd_req_get_size(req);
-	int i;
-
-	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
-
-	for(i=-1;i<=1;i++ ) {
-		slot = mdev->ee_hash + ee_hash_fn(mdev,
-						  sector + i*(1<<(HT_SHIFT)));
-		hlist_for_each_entry(ee, n, slot, colision) {
-			if( overlaps(drbd_ee_get_sector(ee),
-				     drbd_ee_get_size(ee),
-				     sector,
-				     size) ) goto out;
-		} // hlist_for_each_entry()
-	}
-	ee = NULL;
-	// Good, no conflict found
-	_tl_add(mdev,req);
- out:
-
-	return ee;
-}
+#endif
 
 /**
  * drbd_io_error: Handles the on_io_error setting, should be called in the
@@ -500,7 +359,8 @@ int drbd_io_error(drbd_dev* mdev)
 	if(!send) return ok;
 
 	ok = drbd_send_state(mdev);
-	WARN("Notified peer that my disk is broken.\n");
+	if (ok) WARN("Notified peer that my disk is broken.\n");
+	else ERR("Sending state in drbd_io_error() failed\n");
 
 	D_ASSERT(drbd_md_test_flag(mdev->bc,MDF_FullSync));
 	D_ASSERT(!drbd_md_test_flag(mdev->bc,MDF_Consistent));
@@ -889,6 +749,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	if ( ns.role == Primary && ns.conn < Connected &&
 	     ns.disk < Consistent ) {
+#warning "ugly and wrong"
+#warning "FIXME code missing"
 		drbd_panic("No access to good data anymore.\n");
 	}
 
@@ -1353,7 +1215,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	sector_t d_size;
 	int ok;
 
-	if(inc_md_only(mdev,Attaching)) {
+	if(inc_local_if_state(mdev,Attaching)) {
 		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev->bc);
 		p.u_size = cpu_to_be64(mdev->bc->dc.disk_size);
@@ -1435,6 +1297,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 			/* write_bm did fail! panic.
 			 * FIXME can we do something better than panic?
 			 */
+#warning "ugly and wrong"
 			drbd_panic("Failed to write bitmap to disk\n!");
 			ok = FALSE;
 			goto out;
@@ -1470,19 +1333,6 @@ int drbd_send_bitmap(drbd_dev *mdev)
 	down(&mdev->data.mutex);
 	ok=_drbd_send_bitmap(mdev);
 	up(&mdev->data.mutex);
-	return ok;
-}
-
-int _drbd_send_barrier(drbd_dev *mdev, struct drbd_barrier *barrier)
-{
-	int ok;
-	Drbd_Barrier_Packet p;
-
-	p.barrier=barrier->br_number;
-
-	inc_ap_pending(mdev);
-	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)&p,sizeof(p),0);
-
 	return ok;
 }
 
@@ -1539,8 +1389,8 @@ int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd, struct Tl_epoch_entry *e)
 {
 	return _drbd_send_ack(mdev,cmd,
-			      cpu_to_be64(drbd_ee_get_sector(e)),
-			      cpu_to_be32(drbd_ee_get_size(e)),
+			      cpu_to_be64(e->sector),
+			      cpu_to_be32(e->size),
 			      e->block_id);
 }
 
@@ -1553,6 +1403,8 @@ int drbd_send_drequest(drbd_dev *mdev, int cmd,
 	p.sector   = cpu_to_be64(sector);
 	p.block_id = block_id;
 	p.blksize  = cpu_to_be32(size);
+
+	/* FIXME BIO_RW_SYNC ? */
 
 	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET,cmd,(Drbd_Header*)&p,sizeof(p));
 	return ok;
@@ -1714,16 +1566,17 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
-	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
-					      + drbd_req_get_size(req) );
+	p.head.length  = cpu_to_be16(sizeof(p)-sizeof(Drbd_Header)+req->size);
 
-	p.sector   = cpu_to_be64(drbd_req_get_sector(req));
+	p.sector   = cpu_to_be64(req->sector);
 	p.block_id = (unsigned long)req;
 	p.seq_num  = cpu_to_be32( req->seq_num =
 				  atomic_add_return(1,&mdev->packet_seq) );
 	if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
 		dp_flags = DP_HARDBARRIER;
 	}
+	/* FIXME BIO_RW_SYNC */
+
 	p.dp_flags = cpu_to_be32(dp_flags);
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
@@ -1752,10 +1605,9 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
-	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header)
-				     + drbd_ee_get_size(e) );
+	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(Drbd_Header) + e->size);
 
-	p.sector   = cpu_to_be64(drbd_ee_get_sector(e));
+	p.sector   = cpu_to_be64(e->sector);
 	p.block_id = e->block_id;
 	/* p.seq_num  = 0;    No sequence numbers here.. */
 
@@ -1997,10 +1849,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	spin_lock_init(&mdev->meta.work.q_lock);
 
 	spin_lock_init(&mdev->al_lock);
-	spin_lock_init(&mdev->tl_lock);
-	spin_lock_init(&mdev->ee_lock);
 	spin_lock_init(&mdev->req_lock);
-	spin_lock_init(&mdev->pr_lock);
 	spin_lock_init(&mdev->peer_seq_lock);
 
 	INIT_LIST_HEAD(&mdev->active_ee);
@@ -2239,6 +2088,8 @@ static void __exit drbd_cleanup(void)
 			if(!mdev) continue;
 
 			down(&mdev->device_mutex);
+			/* shouldn't this be an assert only?
+			 * we are removing the module here! */
 			drbd_set_role(mdev,Secondary,0);
 			up(&mdev->device_mutex);
 			drbd_sync_me(mdev);
@@ -2593,7 +2444,7 @@ void drbd_md_sync(drbd_dev *mdev)
 
 	// We use here Failed and not Attaching because we try to write
 	// metadata even if we detach due to a disk failure!
-	if(!inc_md_only(mdev,Failed)) return;
+	if(!inc_local_if_state(mdev,Failed)) return;
 
 	INFO("Writing meta data super block now.\n");
 
@@ -2638,6 +2489,7 @@ void drbd_md_sync(drbd_dev *mdev)
 			 * but we are supposed to be able to,
 			 * tough!
 			 */
+#warning "ugly and wrong"
 			drbd_panic("meta data update failed!\n");
 		}
 	}
@@ -2661,7 +2513,7 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 	struct meta_data_on_disk * buffer;
 	int i,rv = NoError;
 
-	if(!inc_md_only(mdev,Attaching)) return MDIOError;
+	if(!inc_local_if_state(mdev,Attaching)) return MDIOError;
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);

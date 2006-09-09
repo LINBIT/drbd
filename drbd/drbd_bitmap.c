@@ -27,6 +27,8 @@
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h> // for memset
+#include <linux/hardirq.h> /* for D_ASSERT(in_interrupt()) */
+
 
 #include <linux/drbd.h>
 #include "drbd_int.h"
@@ -53,14 +55,20 @@
  * or wether I want it to do all the sector<->bit calculation in here.
  */
 
+#warning "verify all spin_lock_irq here, and their call path"
+#warning "and change to irqsave where applicable"
+#warning "so we don't accidentally nest spin_lock_irq()"
 /*
  * NOTE
  *  Access to the *bm is protected by bm_lock.
  *  It is safe to read the other members within the lock.
  *
  *  drbd_bm_set_bit is called from bio_endio callbacks,
- *  so there we need a spin_lock_irqsave.
- *  Everywhere else we need a spin_lock_irq.
+ *  We may be called with irq already disabled,
+ *  so we need spin_lock_irqsave().
+ * FIXME
+ *  for performance reasons, when we _know_ we have irq disabled, we should
+ *  probably introduce some _in_irq variants, so we know to only spin_lock().
  *
  * FIXME
  *  Actually you need to serialize all resize operations.
@@ -83,6 +91,7 @@ struct drbd_bitmap {
 	 * it will blow up if we make the bitmap bigger...
 	 * not that it makes much sense to have a bitmap that large,
 	 * rather change the granularity to 16k or 64k or something.
+	 * (that implies other problems, however...)
 	 */
 	unsigned long bm_fo;        // next offset for drbd_bm_find_next
 	unsigned long bm_set;       // nr of set bits; THINK maybe atomic_t ?
@@ -590,10 +599,6 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
 
-	D_BUG_ON(!b);
-	if (b->bm_bits == 0) return;
-	D_BUG_ON(!b->bm);
-
 	MUST_BE_LOCKED();
 
 	spin_lock_irq(&b->bm_lock);
@@ -967,6 +972,33 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 	}
 	spin_unlock_irq(&b->bm_lock);
 	return i;
+}
+
+/* returns number of bits actually changed (0->1)
+ * wants bitnr, not sector */
+int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigned long e)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	unsigned long bitnr;
+	int c = 0;
+	ERR_IF(!b) return 1;
+	ERR_IF(!b->bm) return 1;
+
+	D_BUG_ON(!in_interrupt()); /* called within spin_lock_irq(&mdev->req_lock) */
+
+	spin_lock(&b->bm_lock);
+	BM_PARANOIA_CHECK();
+	MUST_NOT_BE_LOCKED();
+	for (bitnr = s; bitnr <=e; bitnr++) {
+		ERR_IF (bitnr >= b->bm_bits) {
+			ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
+		} else {
+			c += (0 == __test_and_set_bit(bitnr, b->bm));
+		}
+	}
+	b->bm_set += c;
+	spin_unlock(&b->bm_lock);
+	return c;
 }
 
 /* returns previous bit state

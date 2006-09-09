@@ -27,8 +27,7 @@ extern int drbd_md_io_complete (struct bio *bio, unsigned int bytes_done, int er
 
 extern int drbd_endio_read_sec (struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_endio_read_pri (struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_endio_write_pri(struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_pri      (struct bio *bio, unsigned int bytes_done, int error);
 
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 {
@@ -55,48 +54,6 @@ static inline int drbd_sync_me(drbd_dev *mdev)
 }
 
 #define drbd_bio_uptodate(bio) bio_flagged(bio,BIO_UPTODATE)
-
-static inline void drbd_bio_IO_error(struct bio *bio)
-{
-	bio_endio(bio,bio->bi_size,-EIO);
-}
-
-static inline void drbd_bio_endio(struct bio *bio, int uptodate)
-{
-	bio_endio(bio,bio->bi_size,uptodate ? 0 : -EIO);
-}
-
-static inline drbd_dev* drbd_req_get_mdev(struct drbd_request *req)
-{
-	return (drbd_dev*) req->mdev;
-}
-
-static inline sector_t drbd_req_get_sector(struct drbd_request *req)
-{
-	return req->master_bio->bi_sector;
-}
-
-static inline unsigned short drbd_req_get_size(struct drbd_request *req)
-{
-	drbd_dev* mdev = req->mdev;
-	D_ASSERT(req->master_bio->bi_size);
-	return req->master_bio->bi_size;
-}
-
-static inline struct bio* drbd_req_private_bio(struct drbd_request *req)
-{
-	return req->private_bio;
-}
-
-static inline sector_t drbd_ee_get_sector(struct Tl_epoch_entry *ee)
-{
-	return ee->ee_sector;
-}
-
-static inline unsigned short drbd_ee_get_size(struct Tl_epoch_entry *ee)
-{
-	return ee->ee_size;
-}
 
 #ifdef CONFIG_HIGHMEM
 /*
@@ -179,7 +136,7 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR "drbd_generic_make_request: bio->bi_bdev == NULL\n");
 		dump_stack();
-		drbd_bio_IO_error(bio);
+		bio_endio(bio, bio->bi_size, -ENODEV);
 		return;
 	}
 

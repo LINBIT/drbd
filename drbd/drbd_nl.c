@@ -440,7 +440,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	}
 
 	if ( la_size_changed || md_moved ) {
-		if( inc_md_only(mdev,Attaching) ) {
+		if( inc_local_if_state(mdev,Attaching) ) {
 			drbd_al_shrink(mdev); // All extents inactive.
 			drbd_bm_write(mdev);  // write bitmap
 			// Write mdev->la_size to on disk.

@@ -49,6 +49,7 @@
 #include <linux/random.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
+#include "drbd_req.h"
 
 #if defined(__arch_um__) && !defined(HAVE_UML_TO_VIRT)
 static inline void *to_virt(unsigned long phys)
@@ -133,8 +134,11 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	 */
 
 	spin_lock_irqsave(&drbd_pp_lock,flags);
-	/* This lock needs to be IRQ save because we might call drdb_pp_free()
-	   from IRQ context. */
+	/* This lock needs to lock out irq because we might call drdb_pp_free()
+	   from IRQ context.
+	   FIXME but why irq _save_ ?
+	   this is only called from drbd_alloc_ee,
+	   and that is strictly process context! */
 	if ( (page = drbd_pp_pool) ) {
 		drbd_pp_pool = (struct page*)page->U_PRIVATE;
 		drbd_pp_vacant--;
@@ -147,7 +151,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	for (;;) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		/* try the pool again, maybe the drbd_kick_log set some free */
+		/* try the pool again, maybe the drbd_kick_lo set some free */
 		spin_lock_irqsave(&drbd_pp_lock,flags);
 		if ( (page = drbd_pp_pool) ) {
 			drbd_pp_pool = (struct page*)page->U_PRIVATE;
@@ -215,11 +219,11 @@ STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
 }
 
 /*
-You need to hold the ee_lock:
+You need to hold the req_lock:
  drbd_free_ee()
  _drbd_wait_ee_list_empty()
 
-You must not have the ee_lock:
+You must not have the req_lock:
  drbd_alloc_ee()
  drbd_init_ee()
  drbd_release_ee()
@@ -256,80 +260,19 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 		page = drbd_pp_alloc(mdev, gfp_mask);
 		if (!page) goto fail2;
 		if (!bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0)) {
-			/*
-			 * actually:
-			drbd_pp_free(page);
+			drbd_pp_free(mdev,page);
 			goto fail2;
-			 * But see below.
-			 */
 			break;
 		}
 		ds -= min_t(int, ds, PAGE_SIZE);
 	}
 
-	/* D_ASSERT( data_size == bio->bi_size); */
-	if (ds) {
-		/*
-		 * bio_add_page failed.
-		 *
-		 * if this happens, it indicates we are not doing correct
-		 * stacking of device limits.
-		 *
-		 * ---
-		 * this may also happen on the SyncSource for syncer requests:
-		 * for performance, the syncer may choose to ignore the
-		 * agreed-upon device limits (max_segment_size may be
-		 * arbitrarily set to PAGE_SIZE because the lower level device
-		 * happens to have a merge_bvec_fn).
-		 *
-		 * we would then just "split" the request here,
-		 * and then send multiple RSDataReply packets to the peer.
-		 *
-		 * FIXME to implement that, we'd need ot be able to
-		 * "return several Tl_epoch_entry" here,
-		 * so we'd need to either recurse, or add more state to the
-		 * return valud of this function.
-		 * or let the caller check e->ee_size against what he requested,
-		 * and reiterate there.
-		 *
-		 * It is probably just not worth the hassle,
-		 * but I'll check it in unfinished now anyways.
-		 *
-		 * TODO
-		 * either complete support on this side, or rip it out
-		 * and do the one-liner patch in w_make_resync_request
-		 * exchanging DRBD_MAX_SEGMENT_SIZE with q->max_segment_size
-		 * ---
-		 *
-		 * if this happens for the _first_ page, however, my
-		 * understanding is it would indicate a bug in the lower levels,
-		 * since adding _one_ page is "guaranteed" to work.
-		 */
-		if (ds < data_size && id == ID_SYNCER) {
-			/* this currently only serves the first part of that
-			 * request. you have to restart the syncer...
-			 * this is currently still very buggy and get our
-			 * housekeeping about in-sync areas completely wrong.
-			 */
-			ERR("should have split resync request: "
-			    "sector/data_size/rest %llu %u %u\n",
-			    (unsigned long long)sector, data_size, ds);
-		} else {
-			/* this should not happen,
-			 * if we correctly stacked limits. */
-			ERR("bio_add_page failed: "
-			    "id/sector/data_size/rest 0x%llx %llu %u %u\n",
-			    (unsigned long long)id,
-			    (unsigned long long)sector, data_size, ds);
-			drbd_pp_free(mdev,page);
-			goto fail2;
-		}
-	}
+	D_ASSERT( data_size == bio->bi_size);
 
 	bio->bi_private = e;
 	e->mdev = mdev;
-	e->ee_sector = sector;
-	e->ee_size = bio->bi_size;
+	e->sector = sector;
+	e->size = bio->bi_size;
 
 	e->private_bio = bio;
 	e->block_id = id;
@@ -338,6 +281,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	e->barrier_nr2 = 0;
 
 	return e;
+
  fail2:
 	__bio_for_each_segment(bvec, bio, i, 0) {
 		drbd_pp_free(mdev,bvec->bv_page);
@@ -364,20 +308,21 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 	mempool_free(e, drbd_ee_mempool);
 }
 
+/* currently on module unload only */
 int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 {
 	int count=0;
 	struct Tl_epoch_entry* e;
 	struct list_head *le;
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	while(!list_empty(list)) {
 		le = list->next;
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
 		drbd_free_ee(mdev,e);
 		count++;
 	}
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	return count;
 }
@@ -415,10 +360,10 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 	struct Tl_epoch_entry *e, *t;
 	int ok=1;
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	reclaim_net_ee(mdev);
 	list_splice_init(&mdev->done_ee,&work_list);
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	/* XXX maybe wake_up here already?
 	 * or wake_up withing drbd_free_ee just after mempool_free?
@@ -437,6 +382,8 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 
 	return ok;
 }
+
+
 
 /* clean-up helper for drbd_disconnect */
 void _drbd_clear_done_ee(drbd_dev *mdev)
@@ -471,19 +418,19 @@ void _drbd_wait_ee_list_empty(drbd_dev *mdev,struct list_head *head)
 	/* avoids spin_lock/unlock and calling prepare_to_wait in the fast path */
 	while (!list_empty(head)) {
 		prepare_to_wait(&mdev->ee_wait,&wait,TASK_UNINTERRUPTIBLE);
-		spin_unlock_irq(&mdev->ee_lock);
+		spin_unlock_irq(&mdev->req_lock);
 		drbd_kick_lo(mdev);
 		schedule();
 		finish_wait(&mdev->ee_wait, &wait);
-		spin_lock_irq(&mdev->ee_lock);
+		spin_lock_irq(&mdev->req_lock);
 	}
 }
 
 void drbd_wait_ee_list_empty(drbd_dev *mdev,struct list_head *head)
 {
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev, head);
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 }
 
 STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
@@ -934,11 +881,11 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	if (mdev->net_conf->wire_protocol != DRBD_PROT_C)
 		drbd_kick_lo(mdev);
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
 	epoch_size = mdev->epoch_size;
 	mdev->epoch_size = 0;
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
 	dec_unacked(mdev);
@@ -946,6 +893,8 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	return rv;
 }
 
+/* used from receive_RSDataReply (recv_resync_read)
+ * and from receive_Data */
 STATIC struct Tl_epoch_entry *
 read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 {
@@ -965,7 +914,7 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 		kunmap(page);
 		if( rr != min_t(int,ds,PAGE_SIZE) ) {
 			drbd_free_ee(mdev,e);
-			WARN("short read recev data: read %d expected %d\n",
+			WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int,ds,PAGE_SIZE));
 			return 0;
 		}
@@ -976,16 +925,15 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 	return e;
 }
 
-STATIC void receive_data_tail(drbd_dev *mdev,int data_size)
+/* kick lower level device, if we have more than (arbitrary number)
+ * reference counts on it, which typically are locally submitted io
+ * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
+static void maybe_kick_lo(drbd_dev *mdev)
 {
-	/* kick lower level device, if we have more than (arbitrary number)
-	 * reference counts on it, which typically are locally submitted io
-	 * requests.  don't use unacked_cnt, so we speed up proto A and B, too.
-	 */
 	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark ) {
+		/* FIXME hysteresis ?? */
 		drbd_kick_lo(mdev);
 	}
-	mdev->writ_cnt+=data_size>>9;
 }
 
 STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
@@ -993,10 +941,10 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 {
 	struct bio_vec *bvec;
 	struct bio *bio;
-	int rr,i,expect,ok=1;
+	int rr,i,expect;
 
 	bio = req->master_bio;
-	D_ASSERT( sector == drbd_req_get_sector(req) );
+	D_ASSERT( sector == bio->bi_sector );
 
 	bio_for_each_segment(bvec, bio, i) {
 		expect = min_t(int,data_size,bvec->bv_len);
@@ -1005,41 +953,50 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 			     expect);
 		kunmap(bvec->bv_page);
 		if (rr != expect) {
-			ok = 0;
-			break;
+			WARN("short read receiving data reply: read %d expected %d\n",
+			     rr, expect);
+			return 0;
 		}
 		data_size -= rr;
 	}
 
-	D_ASSERT(data_size == 0 || !ok);
-	drbd_bio_endio(bio,ok);
-	dec_ap_bio(mdev);
-	dec_ap_pending(mdev);
-	return ok;
+	D_ASSERT(data_size == 0);
+	/* FIXME recv_cnt accounting ?? */
+	return 1;
 }
 
-/* e_end_resync_block() is called via drbd_process_done_ee().
- * this means this function only runs in the asender thread
+/* e_end_resync_block() is called via
+ * drbd_process_done_ee() or _drbd_clear_done_ee().
+ * only runs in the asender thread
  */
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	sector_t sector = drbd_ee_get_sector(e);
+	sector_t sector = e->sector;
 	int ok;
 
-	drbd_rs_complete_io(mdev,sector); // before set_in_sync() !
+	D_ASSERT(hlist_unhashed(&e->colision));
+
+	/* before set_in_sync()
+	 * FIXME because ... */
+	drbd_rs_complete_io(mdev,sector);
 	if (likely( drbd_bio_uptodate(e->private_bio) )) {
+		/* "optimization" only...  state could still change anytime
+		 * while we are calling drbd_set_in_sync */
 		ok = mdev->state.disk >= Inconsistent &&
 			mdev->state.pdsk >= Inconsistent;
 		if (likely( ok )) {
-			drbd_set_in_sync(mdev, sector, drbd_ee_get_size(e));
-			/* THINK maybe don't send ack either
-			 * when we are suddenly diskless?
-			 * Dropping it here should do no harm,
-			 * since peer has no structs referencing this.
-			 */
+			drbd_set_in_sync(mdev, sector, e->size);
+			ok = drbd_send_ack(mdev,WriteAck,e);
+		} else {
+			/* FIXME think:
+			 * send a WriteAck anyways?
+			 * send a NegAck?
+			 * just ignore it?  (ignoring it is valid, peer has no
+			 * structs referencing this) */
 		}
-		ok = drbd_send_ack(mdev,WriteAck,e);
+		/* FIXME what exactly do we need this flag for, again??
+		 * and why do we set it only in the "up-to-date" branch? */
 		set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
@@ -1055,25 +1012,25 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev,ID_SYNCER,sector,data_size);
-	if(!e) {
-		dec_local(mdev);
-		return FALSE;
-	}
+	if(!e) return FALSE;
 
 	dec_rs_pending(mdev);
 
 	drbd_ee_prepare_write(mdev,e);
 	e->w.cb     = e_end_resync_block;
 
-	spin_lock_irq(&mdev->ee_lock);
-	list_add(&e->w.list,&mdev->sync_ee);
-	spin_unlock_irq(&mdev->ee_lock);
-
 	inc_unacked(mdev);
+	/* corresponding dec_unacked() in e_end_resync_block()
+	 * respective _drbd_clear_done_ee */
+
+	spin_lock_irq(&mdev->req_lock);
+	list_add(&e->w.list,&mdev->sync_ee);
+	spin_unlock_irq(&mdev->req_lock);
 
 	drbd_generic_make_request(WRITE,e->private_bio);
+	/* accounting done in endio */
 
-	receive_data_tail(mdev,data_size);
+	maybe_kick_lo(mdev);
 	return TRUE;
 }
 
@@ -1088,9 +1045,9 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
-	/* I expect a block to be a multiple of 512 byte, and
-	 * no more than 4K (PAGE_SIZE). is this too restrictive?
-	 */
+	/* I expect a block to be a multiple of 512 byte,
+	 * and no more than DRBD_MAX_SEGMENT_SIZE.
+	 * is this too restrictive?  */
 	ERR_IF(data_size == 0) return FALSE;
 	ERR_IF(data_size &  0x1ff) return FALSE;
 	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
@@ -1100,19 +1057,23 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 
 	sector = be64_to_cpu(p->sector);
 
-	req = (drbd_request_t *)(unsigned long)p->block_id;
-	if(unlikely(!drbd_pr_verify(mdev,req,sector))) {
+	spin_lock_irq(&mdev->req_lock);
+	req = _ar_id_to_req(mdev,p->block_id, sector);
+	spin_unlock_irq(&mdev->req_lock);
+	if (unlikely(!req)) {
 		ERR("Got a corrupt block_id/sector pair(1).\n");
 		return FALSE;
 	}
 
-	spin_lock(&mdev->pr_lock);
-	hlist_del(&req->colision);
-	spin_unlock(&mdev->pr_lock);
-
+	/* hlist_del(&req->colision) is done in _req_may_be_done, to avoid
+	 * special casing it there for the various failure cases.
+	 * still no race with drbd_fail_pending_reads */
 	ok = recv_dless_read(mdev,req,sector,data_size);
 
-	drbd_req_free(req);
+	if (ok) req_mod(req, data_received);
+	/* else: nothing. handled from drbd_disconnect...
+	 * I don't think we may complete this just yet
+	 * in case we are "on-disconnect: freeze" */
 
 	return ok;
 }
@@ -1127,9 +1088,9 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
-	/* I expect a block to be a multiple of 512 byte, and
-	 * no more than 4K (PAGE_SIZE). is this too restrictive?
-	 */
+	/* I expect a block to be a multiple of 512 byte,
+	 * and no more than DRBD_MAX_SEGMENT_SIZE.
+	 * is this too restrictive?  */
 	ERR_IF(data_size == 0) return FALSE;
 	ERR_IF(data_size &  0x1ff) return FALSE;
 	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
@@ -1140,80 +1101,43 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 	D_ASSERT(p->block_id == ID_SYNCER);
 
-	if(!inc_local(mdev)) {
+	if(inc_local(mdev)) {
+		/* data is submitted to disk within recv_resync_read.
+		 * corresponding dec_local done below on error,
+		 * or in drbd_endio_write_sec. */
+		/* FIXME paranoia:
+		 * verify that the corresponding bit is set.
+		 * in case we are Primary SyncTarget,
+		 * verify there are no pending write request to that area.
+		 */
+		ok = recv_resync_read(mdev,sector,data_size);
+		if (!ok) dec_local(mdev);
+	} else {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write resync data to local disk.\n");
 		drbd_send_ack_dp(mdev,NegAck,p);
-		return TRUE;
+		/* FIXME:
+		 * we need to drain the data.  only then can we keep the
+		 * connection open.
+		 * without draining, we'd see an invalid packet header next,
+		 * and drop the connection there. */
+		/* ok = 1; not yet: keep connection open */
+		ok = 0;
 	}
-
-	ok = recv_resync_read(mdev,sector,data_size);
 
 	return ok;
 }
 
 /* e_end_block() is called via drbd_process_done_ee().
  * this means this function only runs in the asender thread
+ *
+ * for a broken example implementation of the TCQ barrier version of
+ * e_end_block see older revisions...
  */
-#if 0
-
-	/* disabled for now.
-	 * barrier handling via tcq currently broken!
-	 */
 STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	sector_t sector = drbd_ee_get_sector(e);
-	// unsigned int epoch_size;
-	int ok=1;
-
-	if(mdev->net_conf->wire_protocol == DRBD_PROT_C) {
-		if(likely(drbd_bio_uptodate(e->private_bio))) {
-			if(e->barrier_nr) {
-# warning "epoch_size no more atomic_t"
-				/* only when using TCQ */
-				epoch_size = atomic_read(&mdev->epoch_size);
-				atomic_set(&mdev->epoch_size,0);
-				ok&=drbd_send_b_ack(mdev,
-						    cpu_to_be32(e->barrier_nr),
-						    epoch_size);
-				dec_unacked(mdev);
-			}
-			ok &= drbd_send_ack(mdev,WriteAck,e);
-			if(e->barrier_nr2) {
-				/* only when using TCQ */
-				atomic_set(&mdev->epoch_size,0);
-				ok&=drbd_send_b_ack(mdev,
-						   cpu_to_be32(e->barrier_nr2),
-						    1);
-				dec_unacked(mdev);
-			}
-			if (test_bit(SYNC_STARTED,&mdev->flags) )
-				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
-		} else {
-			ok = drbd_send_ack(mdev,NegAck,e);
-			ok&= drbd_io_error(mdev);
-			/* we expect it to be marked out of sync anyways...
-			 * maybe assert this?
-			 */
-		}
-		dec_unacked(mdev);
-
-		return ok;
-	}
-
-	if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
-		ok = drbd_io_error(mdev);
-	}
-
-	return ok;
-}
-#else
-
-STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
-{
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	sector_t sector = drbd_ee_get_sector(e);
+	sector_t sector = e->sector;
 	// unsigned int epoch_size;
 	int ok=1;
 
@@ -1221,36 +1145,56 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
 			ok &= drbd_send_ack(mdev,WriteAck,e);
 			if (test_bit(SYNC_STARTED,&mdev->flags))
-				drbd_set_in_sync(mdev,sector,drbd_ee_get_size(e));
+				drbd_set_in_sync(mdev,sector,e->size);
 		} else {
+			/* FIXME I think we should send a NegAck regardless of
+			 * which protocol is in effect.
+			 * In which case we would need to make sure that any
+			 * NegAck is sent. basically that means that drbd_process_done_ee
+			 * may not list_del() the ee before this callback did run...
+			 * maybe even move the list_del(e) in here... */
 			ok = drbd_send_ack(mdev,NegAck,e);
 			ok&= drbd_io_error(mdev);
 			/* we expect it to be marked out of sync anyways...
-			 * maybe assert this?
-			 */
+			 * maybe assert this?  */
 		}
 		dec_unacked(mdev);
-
 		return ok;
-	}
-
-	if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
+	} else if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
 		ok = drbd_io_error(mdev);
 	}
+
+#warning "FIXME code missing"
+#if 0
+	/* we delete from the conflict detection hash _after_ we sent out the
+	 * WriteAck / NegAck, to get the sequence number right.  */
+	D_ASSERT(!hlist_unhashed(&e->colision));
+	/* FIXME "wake" any conflicting requests
+	 * that have been waiting for this one to finish */
+	hlist_del_init(&e->colision);
+#endif
 
 	return ok;
 }
 
-#endif
-
+/* FIXME implementation wrong.
+ * For the algorithm to be correct, we need to send and store the
+ * sector and size, not the block id. We have to check for overlap.
+ * We may _only_ remove the info when its sequence number is less than
+ * the current sequence number.
+ *
+ * I think the "discard info" are the wrong way, anyways.
+ * Instead of silently discarding such writes, we should send a DiscardAck,
+ * and we should retard sending of the data until we get that Discard Ack
+ * and thus the conflicting request is done.
+ */
 STATIC int drbd_chk_discard(drbd_dev *mdev,struct Tl_epoch_entry *e)
 {
 	struct drbd_discard_note *dn;
-	struct list_head *le;
+	struct list_head *le,*tmp;
 
 	MUST_HOLD(&mdev->peer_seq_lock);
- start_over:
-	list_for_each(le,&mdev->discard) {
+	list_for_each_safe(le,tmp,&mdev->discard) {
 		dn = list_entry(le, struct drbd_discard_note, list);
 		if( dn->seq_num == mdev->peer_seq ) {
 			D_ASSERT( dn->block_id == e->block_id );
@@ -1261,7 +1205,6 @@ STATIC int drbd_chk_discard(drbd_dev *mdev,struct Tl_epoch_entry *e)
 		if( dn->seq_num < mdev->peer_seq ) {
 			list_del(le);
 			kfree(dn);
-			goto start_over;
 		}
 	}
 	return 0;
@@ -1272,6 +1215,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 {
 	sector_t sector;
 	struct Tl_epoch_entry *e;
+	/* FIXME currently some unused variable intended
+	 * for the now not-implemented conflict detection */
 	drbd_request_t * req;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
 	int header_size, data_size, packet_seq, discard, rv;
@@ -1290,6 +1235,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		return FALSE;
 
 	if(!inc_local(mdev)) {
+		/* data is submitted to disk at the end of this function.
+		 * corresponding dec_local done either below (on error),
+		 * or in drbd_endio_write_sec. */
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write mirrored data block to local disk.\n");
 		drbd_send_ack_dp(mdev,NegAck,p);
@@ -1306,23 +1254,32 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	drbd_ee_prepare_write(mdev, e);
 	e->w.cb     = e_end_block;
 
-	/* This wait_event is here to make sure that never ever an
-	   DATA packet traveling via sock can overtake an ACK packet
-	   traveling on msock
-	   PRE TODO: Wrap around of seq_num !!!
-	*/
+	/* FIXME drbd_al_begin_io in case we have two primaries... */
+
+#warning "FIXME code missing"
+#if 0 
+/* sorry.
+ * to get this patch in a shape where it can be committed,
+ * I need to disable the broken conflict detection code for now.
+ * will implement the correct as soon as possible...
+ * it is done in my head already, "only have to write it down",
+ * which will take an other couple of days, probably.
+ */
+
+	/* This wait_event is here so even when a DATA packet traveling via
+	 * sock overtook an ACK packet traveling on msock, they are still
+	 * processed in the order they have been sent.
+	 * FIXME TODO: Wrap around of seq_num !!!
+	 */
 	if (mdev->net_conf->two_primaries) {
 		packet_seq = be32_to_cpu(p->seq_num);
-		/* if( packet_seq > peer_seq(mdev)+1 ) {
-			WARN(" will wait till (packet_seq) %d <= %d\n",
-			     packet_seq,peer_seq(mdev)+1);
-			     } */
 		if( wait_event_interruptible(mdev->cstate_wait,
 					     packet_seq <= peer_seq(mdev)+1)) {
 			rv = FALSE;
 			goto out2;
 		}
 
+		/* FIXME current discard implementation is wrong */
 		spin_lock(&mdev->peer_seq_lock);
 		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
 		/* is update_peer_seq(mdev,packet_seq); */
@@ -1339,6 +1296,13 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		req = req_have_write(mdev, e);
 
 		if(req) {
+			/* FIXME RACE
+			 * rq_status may be changing while we are looking.
+			 * in rare cases it could even disappear right now.
+			 * e.g. when it has already been ACK'ed, and the local
+			 * storage has been way too slow, and only now
+			 * completes the thing.
+			 */
 			if( req->rq_status & RQ_DRBD_SENT ) {
 				/* Conflicting write, got ACK */
 				/* write afterwards ...*/
@@ -1372,6 +1336,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			}
 		}
 	}
+#endif
 
 	if ( be32_to_cpu(p->dp_flags) & DP_HARDBARRIER ) {
 		e->private_bio->bi_rw |= BIO_RW_BARRIER;
@@ -1422,7 +1387,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	 * will trigger the b_ack before its own ack.
 	 */
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	if (mdev->next_barrier_nr) {
 		/* only when using TCQ */
 		if (list_empty(&mdev->active_ee)) {
@@ -1436,7 +1401,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		mdev->next_barrier_nr = 0;
 	}
 	list_add(&e->w.list,&mdev->active_ee);
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	if (barrier_nr) {
 		/* only when using TCQ
@@ -1449,8 +1414,12 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	switch(mdev->net_conf->wire_protocol) {
 	case DRBD_PROT_C:
 		inc_unacked(mdev);
+		/* corresponding dec_unacked() in e_end_block()
+		 * respective _drbd_clear_done_ee */
 		break;
 	case DRBD_PROT_B:
+		/* I really don't like it that the receiver thread
+		 * sends on the msock, but anyways */
 		drbd_send_ack(mdev, RecvAck, e);
 		break;
 	case DRBD_PROT_A:
@@ -1458,9 +1427,11 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
+	/* FIXME drbd_al_begin_io in case we have two primaries... */
 	drbd_generic_make_request(WRITE,e->private_bio);
+	/* accounting done in endio */
 
-	receive_data_tail(mdev,data_size);
+	maybe_kick_lo(mdev);
 	return TRUE;
 
  out2:
@@ -1499,7 +1470,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
-	if(!inc_local(mdev) || mdev->state.disk < UpToDate ) {
+	if(!inc_local_if_state(mdev, UpToDate)) {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not satisfy peer's read request, no local data.\n");
 		drbd_send_ack_rp(mdev,h->command == DataRequest ? NegDReply :
@@ -1513,9 +1484,9 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	list_add(&e->w.list,&mdev->read_ee);
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	drbd_ee_prepare_read(mdev,e);
 
@@ -1531,24 +1502,21 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		 * the drbd_work_queue mechanism is made for this...
 		 */
 		if (!drbd_rs_begin_io(mdev,sector)) {
-			// we have been interrupted, probably connection lost!
+			/* we have been interrupted,
+			 * probably connection lost! */
 			D_ASSERT(signal_pending(current));
+			dec_local(mdev);
 			drbd_free_ee(mdev,e);
 			return 0;
 		}
 		break;
-	default:
-		ERR("unexpected command (%s) in receive_DataRequest\n",
-		    cmdname(h->command));
+	default:; /* avoid compiler warning */
 	}
 
-	mdev->read_cnt += size >> 9;
 	inc_unacked(mdev);
+	/* FIXME actually, it could be a READA originating from the peer ... */
 	drbd_generic_make_request(READ,e->private_bio);
-	if (atomic_read(&mdev->local_cnt) >= (mdev->net_conf->max_epoch_size>>4) ) {
-		drbd_kick_lo(mdev);
-	}
-
+	maybe_kick_lo(mdev);
 
 	return TRUE;
 }
@@ -2154,7 +2122,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	peer_state.i = be32_to_cpu(p->state);
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && 
-	    inc_md_only(mdev,Attaching) ) {
+	    inc_local_if_state(mdev,Attaching) ) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
 
@@ -2466,13 +2434,13 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	// Receiving side (may be primary, in case we had two primaries)
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
 	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
 	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
 	_drbd_clear_done_ee(mdev);
 	mdev->epoch_size = 0;
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 	// Needs to happen before we schedule the disconnect work callback,
 	// Since they might have something for the worker's queue as well.
 
@@ -2822,27 +2790,44 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	smp_rmb();
+	/* FIXME smp_rmb() is probably not good enough.
+	 * we have to make sure that, no matter what,
+	 * we do not set something "in sync" when
+	 * the peer has no disk (anymore)
+	 * I think this has to be looked at under the req_lock.
+	 * since we need to grab that anyways, lets do that.
+	 */
 	if(likely(mdev->state.pdsk >= Inconsistent )) {
-		// test_bit(PARTNER_DISKLESS,&mdev->flags)
-		// This happens if one a few IO requests on the peer
-		// failed, and some subsequest completed sucessfull
-		// afterwards.
-
-		// But we killed everything out of the transferlog
-		// as we got the news hat IO is broken on the peer.
+		/*
+		 * If one of a few IO requests on the peer failed (got_NegAck),
+		 * but some subsequent requests completed sucessfull
+		 * afterwards, verification of the block_id below would fail,
+		 * since we killed everything out of the transferlog when we
+		 * got the news hat IO is broken on the peer.
+		 *
+		 * FIXME
+		 * could this be handled better?
+		 * do we need to look over this again for freeze-io?
+		 */
 
 		if( is_syncer_block_id(p->block_id)) {
 			drbd_set_in_sync(mdev,sector,blksize);
 			set_bit(SYNC_STARTED,&mdev->flags);
 		} else {
-			req=(drbd_request_t*)(unsigned long)p->block_id;
+			spin_lock_irq(&mdev->req_lock);
+			req = _ack_id_to_req(mdev, p->block_id, sector);
 
-			if (unlikely(!tl_verify(mdev,req,sector))) {
+			if (unlikely(!req)) {
+				spin_unlock_irq(&mdev->req_lock);
 				ERR("Got a corrupt block_id/sector pair(2).\n");
 				return FALSE;
 			}
 
-			drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
+			_req_mod(req,
+				 h->command == WriteAck
+				 ? write_acked_by_peer
+				 : recv_acked_by_peer);
+			spin_unlock_irq(&mdev->req_lock);
 
 			if (test_bit(SYNC_STARTED,&mdev->flags) &&
 			    mdev->net_conf->wire_protocol == DRBD_PROT_C)
@@ -2852,10 +2837,9 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 	if(is_syncer_block_id(p->block_id)) {
 		dec_rs_pending(mdev);
-	} else {
-		D_ASSERT(mdev->net_conf->wire_protocol != DRBD_PROT_A);
-		dec_ap_pending(mdev);
 	}
+	/* dec_ap_pending is handled within _req_mod */
+
 	return TRUE;
 }
 
@@ -2884,18 +2868,19 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 	sector_t sector = be64_to_cpu(p->sector);
 
-	req = (drbd_request_t *)(unsigned long)p->block_id;
-	if(unlikely(!drbd_pr_verify(mdev,req,sector))) {
+	spin_lock_irq(&mdev->req_lock);
+	req = _ar_id_to_req(mdev,p->block_id, sector);
+	if (unlikely(!req)) {
+		spin_unlock_irq(&mdev->req_lock);
 		ERR("Got a corrupt block_id/sector pair(3).\n");
 		return FALSE;
 	}
 
-	spin_lock(&mdev->pr_lock);
-	list_del(&req->w.list);
-	spin_unlock(&mdev->pr_lock);
+	/* FIXME what for ?? list_del(&req->w.list); */
+	_req_mod(req, neg_acked);
+	spin_unlock_irq(&mdev->req_lock);
 
-	drbd_req_free(req);
-
+#warning "ugly and wrong"
 	drbd_khelper(mdev,"pri-on-incon-degr");
 	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 
@@ -2918,6 +2903,7 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	// In case we are not primary, we could simply live on...
 
+#warning "ugly and wrong"
 	drbd_panic("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 
 	// THINK do we have other options, but panic?
@@ -2939,6 +2925,10 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	return TRUE;
 }
 
+/* FIXME implementation wrong.
+ * For the algorithm to be correct, we need to send and store the
+ * sector and size too.
+ */
 STATIC int got_Discard(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_Discard_Packet *p = (Drbd_Discard_Packet*)h;

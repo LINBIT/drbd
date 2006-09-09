@@ -40,6 +40,7 @@
 
 #include <linux/drbd.h>
 #include "drbd_int.h"
+#include "drbd_req.h"
 
 /* I choose to have all block layer end_io handlers defined here.
 
@@ -75,17 +76,16 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	/* We are called each time a part of the bio is finished, but
 	 * we are only interested when the whole bio is finished, therefore
-	 * return as long as bio->bio_size is positive.
-	 */
+	 * return as long as bio->bio_size is positive.  */
 	if (bio->bi_size) return 1;
 
-	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
-	spin_lock_irqsave(&mdev->ee_lock,flags);
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	mdev->read_cnt += e->size >> 9;
 	list_del(&e->w.list);
 	if(list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	drbd_chk_io_error(mdev,error);
 	drbd_queue_work(&mdev->data.work,&e->w);
@@ -100,7 +100,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
-	struct Drbd_Conf* mdev;
+	drbd_dev *mdev;
 	int do_wake;
 	int is_syncer_req;
 
@@ -110,88 +110,56 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	// see above
 	if (bio->bi_size) return 1;
 
-	PARANOIA_BUG_ON(!VALID_POINTER(e));
 	D_ASSERT(e->block_id != ID_VACANT);
 
-	spin_lock_irqsave(&mdev->ee_lock,flags);
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	mdev->writ_cnt += e->size >> 9;
 	is_syncer_req = is_syncer_block_id(e->block_id);
-	list_del(&e->w.list);
+	list_del(&e->w.list); /* has been on active_ee or sync_ee */
 	list_add_tail(&e->w.list,&mdev->done_ee);
 
-	if(!is_syncer_req) mdev->epoch_size++;
+	/* No hlist_del_init(&e->colision) here, we did not send the Ack yet,
+	 * neither did we wake possibly waiting conflicting requests.
+	 * done from "drbd_process_done_ee" or _drbd_clear_done_ee
+	 * within the appropriate w.cb (e_end_block) */
 
+	if(!is_syncer_req) mdev->epoch_size++;
+	
 	do_wake = is_syncer_req
 		? list_empty(&mdev->sync_ee)
 		: list_empty(&mdev->active_ee);
 
-	spin_unlock_irqrestore(&mdev->ee_lock,flags);
+	if (error) __drbd_chk_io_error(mdev);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	if (do_wake) wake_up(&mdev->ee_wait);
 
-	if( !hlist_unhashed(&e->colision) ) {
-		spin_lock_irqsave(&mdev->tl_lock,flags);
-		hlist_del_init(&e->colision);
-		spin_unlock_irqrestore(&mdev->tl_lock,flags);
-	}
-
-	drbd_chk_io_error(mdev,error);
 	wake_asender(mdev);
 	dec_local(mdev);
 	return 0;
 }
 
-/* writes on Primary comming from drbd_make_request
+/* read, readA or write requests on Primary comming from drbd_make_request
  */
-int drbd_endio_write_pri(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 {
+	unsigned long flags;
 	drbd_request_t *req=bio->bi_private;
-	struct Drbd_Conf* mdev=req->mdev;
-	sector_t rsector;
+	drbd_dev *mdev = req->mdev;
+	drbd_req_event_t what;
 
 	// see above
 	if (bio->bi_size) return 1;
 
-	drbd_chk_io_error(mdev,error);
-	rsector = drbd_req_get_sector(req);
-        // the bi_sector of the bio gets modified somewhere in drbd_end_req()!
-	drbd_end_req(req, RQ_DRBD_LOCAL, (error == 0), rsector);
-	drbd_al_complete_io(mdev,rsector);
-	dec_local(mdev);
-	bio_put(bio);
-	return 0;
-}
-
-/* reads on Primary comming from drbd_make_request
- */
-int drbd_endio_read_pri(struct bio *bio, unsigned int bytes_done, int error)
-{
-	drbd_request_t *req=bio->bi_private;
-	struct Drbd_Conf* mdev=req->mdev;
-
-	if (bio->bi_size) return 1;
-
-	/* READAs may fail.
-	 * upper layers need to be able to handle that themselves */
-	if (bio_rw(bio) == READA) goto pass_on;
-	if (error) {
-		drbd_chk_io_error(mdev,error); // handle panic and detach.
-		if(mdev->bc->dc.on_io_error == PassOn) goto pass_on;
-		// ok, if we survived this, retry:
-		// FIXME sector ...
-		if (DRBD_ratelimit(5*HZ,5))
-			ERR("local read failed, retrying remotely\n");
-		req->w.cb = w_read_retry_remote;
-		drbd_queue_work(&mdev->data.work,&req->w);
-	} else {
-	pass_on:
-		bio_endio(req->master_bio,req->master_bio->bi_size,error);
-		dec_ap_bio(mdev);
-
-		drbd_req_free(req);
-	}
-
-	bio_put(bio);
-	dec_local(mdev);
+	/* to avoid recursion in _req_mod */
+	what = error
+	       ? (bio_data_dir(bio) == WRITE)
+	         ? write_completed_with_error
+	         : read_completed_with_error
+	       : completed_ok;
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	_req_mod(req, what);
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
 	return 0;
 }
 
@@ -208,6 +176,8 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 */
 	D_ASSERT(mdev->bc->dc.on_io_error != PassOn);
 
+	/* the only way this callback is scheduled is from _req_may_be_done,
+	 * when it is done and had a local write error, see comments there */
 	drbd_req_free(req);
 
 	if(unlikely(cancel)) return 1;
@@ -220,36 +190,24 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
 	drbd_request_t *req = (drbd_request_t*)w;
-	int ok;
 
-	smp_rmb();
+	spin_lock_irq(&mdev->req_lock);
 	if ( cancel ||
 	     mdev->state.conn < Connected ||
 	     mdev->state.pdsk <= Inconsistent ) {
-		drbd_khelper(mdev,"pri-on-incon-degr");
-		drbd_panic("WE ARE LOST. Local IO failure, no peer.\n");
-
-		// does not make much sense, but anyways...
-		drbd_bio_endio(req->master_bio,0);
-		dec_ap_bio(mdev);
-		drbd_req_free(req);
+		_req_mod(req, send_canceled); /* FIXME freeze? ... */
+		spin_unlock_irq(&mdev->req_lock);
+		drbd_khelper(mdev,"pri-on-incon-degr"); /* FIXME REALLY? */
+		ALERT("WE ARE LOST. Local IO failure, no peer.\n");
 		return 1;
 	}
+	spin_unlock_irq(&mdev->req_lock);
 
-	// FIXME: what if partner was SyncTarget, and is out of sync for
-	// this area ?? ... should be handled in the receiver.
-
-	ok = drbd_io_error(mdev);
-	if(unlikely(!ok)) ERR("Sending in w_read_retry_remote() failed\n");
-	
-	ok = drbd_read_remote(mdev,req);
-	if(unlikely(!ok)) {
-		ERR("drbd_read_remote() failed\n");
-		/* dec_ap_pending and bio_io_error are done in
-		 * drbd_fail_pending_reads
-		 */
-	}
-	return ok;
+	/* FIXME this is ugly. we should not detach for read io-error,
+	 * but try to WRITE the DataReply to the failed location,
+	 * to give the disk the chance to relocate that block */
+	drbd_io_error(mdev); /* tries to schedule a detach and notifies peer */
+	return w_send_read_req(mdev,w,0);
 }
 
 int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
@@ -259,13 +217,11 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return 0;
 }
 
-/* FIXME
- * not used any longer, they now use e_end_resync_block.
- * maybe remove again?
- */
-int w_is_resync_read(drbd_dev *mdev, struct drbd_work *w, int unused)
+/* for debug assertion only */
+int w_req_cancel_conflict(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
-	ERR("%s: Typecheck only, should never be called!\n", __FUNCTION__ );
+	ERR("w_req_cancel_conflict: this callback should never be called!\n");
+	if (cancel) return 1; /* does it matter? */
 	return 0;
 }
 
@@ -296,6 +252,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
+	int max_segment_size = mdev->rq_queue->max_segment_size;
 	int number,i,size;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
@@ -353,21 +310,26 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		 * or if it the request would cross a 32k boundary
 		 * (play more nicely with most raid devices).
 		 *
-		 * we don't care about the agreed-uppon q->max_segment_size
-		 * here, because we don't keep a reference on this side.
-		 * the sync source will split the requests approrpiately as
-		 * needed, and may send multiple RSDataReply packets.
+		 * we _do_ care about the agreed-uppon q->max_segment_size
+		 * here, as splitting up the requests on the other side is more
+		 * difficult.  the consequence is, that on lvm and md and other
+		 * "indirect" devices, this is dead code, since
+		 * q->max_segment_size will be PAGE_SIZE.
 		 */
 		for (;;) {
-			if (size < DRBD_MAX_SEGMENT_SIZE)
+			if (size + BM_BLOCK_SIZE > max_segment_size)
 				break;
 			if ((sector & ~63ULL) + BM_BIT_TO_SECT(2) <= 64ULL)
 				break;
 			// do not cross extent boundaries
 			if (( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0)
 				break;
-			// now, is it actually dirty, after all?
-			if ( drbd_bm_test_bit(mdev,bit+1) == 0 )
+			/* now, is it actually dirty, after all?
+			 * caution, drbd_bm_test_bit is tri-state for some
+			 * obscure reason; ( b == 0 ) would get the out-of-band
+			 * only accidentally right because of the "oddly sized"
+			 * adjustment below */
+			if ( drbd_bm_test_bit(mdev,bit+1) != 1 )
 				break;
 			bit++;
 			size += BM_BLOCK_SIZE;
@@ -454,7 +416,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 }
 
 /**
- * w_e_end_data_req: Send the answer (DataReply) to a DataRequest.
+ * w_e_end_data_req: Send the answer (DataReply) in response to a DataRequest.
  */
 int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
@@ -473,19 +435,22 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		ok=drbd_send_ack(mdev,NegDReply,e);
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Sending NegDReply. I guess it gets messy.\n");
+		/* FIXME we should not detach for read io-errors, in particular
+		 * not now: when the peer asked us for our data, we are likely
+		 * the only remaining disk... */
 		drbd_io_error(mdev);
 	}
 
 	dec_unacked(mdev);
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	if( drbd_bio_has_active_page(e->private_bio) ) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list,&mdev->net_ee);
 	} else {
 		drbd_free_ee(mdev,e);
 	}
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
@@ -505,7 +470,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		return 1;
 	}
 
-	drbd_rs_complete_io(mdev,drbd_ee_get_sector(e));
+	drbd_rs_complete_io(mdev,e->sector);
 
 	if(likely(drbd_bio_uptodate(e->private_bio))) {
 		if (likely( mdev->state.pdsk >= Inconsistent )) {
@@ -525,14 +490,14 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 	dec_unacked(mdev);
 
-	spin_lock_irq(&mdev->ee_lock);
+	spin_lock_irq(&mdev->req_lock);
 	if( drbd_bio_has_active_page(e->private_bio) ) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list,&mdev->net_ee);
 	} else {
 		drbd_free_ee(mdev,e);
 	}
-	spin_unlock_irq(&mdev->ee_lock);
+	spin_unlock_irq(&mdev->req_lock);
 
 	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
@@ -541,13 +506,19 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_barrier *b = (struct drbd_barrier *)w;
+	Drbd_Barrier_Packet *p = &mdev->data.sbuf.Barrier;
 	int ok=1;
 
 	if(unlikely(cancel)) return ok;
 
 	down(&mdev->data.mutex);
-	ok = _drbd_send_barrier(mdev,b);
+	p->barrier = b->br_number;
+	inc_ap_pending(mdev);
+	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)p,sizeof(*p),0);
 	up(&mdev->data.mutex);
+
+	/* pairing dec_ap_pending() happens in got_BarrierAck,
+	 * or (on connection loss) in tl_clear.  */
 
 	return ok;
 }
@@ -564,39 +535,15 @@ int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	drbd_request_t *req = (drbd_request_t *)w;
-	sector_t sector;
-	unsigned int size;
 	int ok;
 
-	D_ASSERT( !(req->rq_status & RQ_DRBD_SENT) );
-
 	if (unlikely(cancel)) {
-		/* We clear it up here explicit, since we might be _after_ the
-		   run of tl_clear() */
-		sector = drbd_req_get_sector(req);
-		size   = drbd_req_get_size(req);
-
-		drbd_end_req(req,RQ_DRBD_SENT|RQ_DRBD_ON_WIRE,1, sector);
-		drbd_set_out_of_sync(mdev, sector, size);
-
+		req_mod(req, send_canceled);
 		return 1;
 	}
 
-	inc_ap_pending(mdev);
 	ok = drbd_send_dblock(mdev,req);
-	drbd_end_req(req,RQ_DRBD_ON_WIRE,1,drbd_req_get_sector(req));
-	if (ok) {
-		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
-			dec_ap_pending(mdev);
-			drbd_end_req(req, RQ_DRBD_SENT, 1, 
-				     drbd_req_get_sector(req));
-		}
-	} else {
-		if (mdev->state.conn >= Connected) 
-			drbd_force_state(mdev,NS(conn,NetworkFailure));
-		drbd_thread_restart_nowait(&mdev->receiver);
-		/* The request gets cleared up by tl_clear() */
-	}
+	req_mod(req,ok ? handed_over_to_network : send_failed);
 
 	return ok;
 }
@@ -607,39 +554,44 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	drbd_request_t *req = (drbd_request_t *)w;
-	struct bio *bio = req->master_bio;
 	int ok;
 
-	inc_ap_pending(mdev);
+	if (unlikely(cancel)) {
+		req_mod(req, send_canceled);
+		return 1;
+	}
 
-	if (unlikely(cancel)) return 1;
-
-	ok = drbd_send_drequest(mdev, DataRequest, bio->bi_sector, bio->bi_size,
+	ok = drbd_send_drequest(mdev, DataRequest, req->sector, req->size,
 				(unsigned long)req);
 
 	if (!ok) {
+		/* ?? we set Timeout or BrokenPipe in drbd_send() */
 		if (mdev->state.conn >= Connected) 
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
 		drbd_thread_restart_nowait(&mdev->receiver);
+		/* req_mod(req, send_failed); we should not fail it here,
+		 * we might have to "freeze" on disconnect.
+		 * handled by req_mod(req, connection_lost_while_pending);
+		 * in drbd_fail_pending_reads soon enough. */
 	}
 
 	return ok;
 }
 
+/* FIXME how should freeze-io be handled? */
 STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
 	drbd_request_t * req;
 	struct list_head *le;
-	struct bio *bio;
 	LIST_HEAD(workset);
 	int i;
 
 	/*
 	 * Application READ requests
 	 */
-	spin_lock(&mdev->pr_lock);
+	spin_lock_irq(&mdev->req_lock);
 	for(i=0;i<APP_R_HSIZE;i++) {
 		slot = mdev->app_reads_hash+i;
 		hlist_for_each_entry(req, n, slot, colision) {
@@ -647,21 +599,15 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		}
 	}
 	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
-	spin_unlock(&mdev->pr_lock);
 
 	while(!list_empty(&workset)) {
 		le = workset.next;
 		req = list_entry(le, drbd_request_t, w.list);
 		list_del(le);
 
-		bio = req->master_bio;
-
-		drbd_bio_IO_error(bio);
-		dec_ap_bio(mdev);
-		dec_ap_pending(mdev);
-
-		drbd_req_free(req);
+		_req_mod(req, connection_lost_while_pending);
 	}
+	spin_unlock_irq(&mdev->req_lock);
 }
 
 /**

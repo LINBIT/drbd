@@ -160,7 +160,7 @@ struct __attribute__((packed)) al_transaction {
 struct update_odbm_work {
 	struct drbd_work w;
 	unsigned int enr;
-};
+} ;
 
 struct update_al_work {
 	struct drbd_work w;
@@ -203,6 +203,9 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	return al_ext;
 }
 
+/* FIXME
+ * this should be able to return failure when meta data update has failed.
+ */
 void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
@@ -319,6 +322,7 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
 #warning check outcome of addition u64/sector_t/s32
+#warning "FIXME code missing"
 	sector = mdev->bc->md.md_offset + mdev->bc->md.al_offset + mdev->al_tr_pos;
 
 	if(!drbd_md_sync_page_io(mdev,mdev->bc,sector,WRITE)) {
@@ -496,7 +500,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	i=inc_md_only(mdev,Attaching);
+	i=inc_local_if_state(mdev,Attaching);
 	D_ASSERT( i ); // Assertions should not have side effects.
 	// I do not want to have D_ASSERT( inc_md_only(mdev,Attaching) );
 
@@ -579,7 +583,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
-	if( !inc_md_only(mdev,Attaching) ) {
+	if( !inc_local_if_state(mdev,Attaching) ) {
 		if (DRBD_ratelimit(5*HZ,5))
 			WARN("Can not update on disk bitmap, local IO disabled.\n");
 		return 1;
@@ -768,14 +772,14 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 
 /*
  * this is intended to set one request worth of data out of sync.
- * affects at least 1 bit, and at most 1+PAGE_SIZE/BM_BLOCK_SIZE bits.
+ * affects at least 1 bit, and at most 1+DRBD_MAX_SEGMENT_SIZE/BM_BLOCK_SIZE bits.
  *
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
 void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line)
 {
-	unsigned long sbnr,ebnr,lbnr,bnr;
+	unsigned long sbnr,ebnr,lbnr;
 	sector_t esector, nr_sectors;
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
@@ -803,11 +807,9 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	}
 #endif
 
-	/*
-	 * ok, (capacity & 7) != 0 sometimes, but who cares...
-	 * we count rs_{total,left} in bits, not sectors.
-	 */
-	for(bnr=sbnr; bnr <= ebnr; bnr++) drbd_bm_set_bit(mdev,bnr);
+	/* ok, (capacity & 7) != 0 sometimes, but who cares...
+	 * we count rs_{total,left} in bits, not sectors.  */
+	drbd_bm_set_bits_in_irq(mdev,sbnr,ebnr);
 }
 
 static inline
@@ -946,7 +948,8 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if(inc_md_only(mdev,Failed)) { // Makes sure mdev->resync is there.
+	/* inc_local to make sure mdev->resync is there */
+	if(inc_local_if_state(mdev,Failed)) {
 		for(i=0;i<mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 			if(bm_ext->lce.lc_number == LC_FREE) continue;

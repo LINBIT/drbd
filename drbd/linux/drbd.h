@@ -34,7 +34,7 @@
 #endif
 
 enum io_error_handler {
-	PassOn,
+	PassOn, /* FIXME should the better be named "Ignore"? */
 	Panic,
 	Detach
 };

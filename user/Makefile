@@ -19,8 +19,10 @@
 
 KDIR := /lib/modules/$(shell uname -r)/build
 
-CFLAGS = -g -O2 -c -W -Wall -I../drbd -I$(KDIR)/include
 CC = gcc
+CFLAGS = -g -O2 -c -W -Wall -I../drbd
+# for the netlink connector stuff <linux/connector.h>:
+drbdsetup: CFLAGS += -I$(KDIR)/include
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \

@@ -13,7 +13,7 @@ Latest:
    context that calls make_request().
  * The worker thread no longer gets restarted upon loss of connection.
  * A testsuite developed by students of 'FH Hagenberg' was added.
-	
+
 8.0pre3 (api:82/proto:80)
 --------
  * Now it works on device mapper (LVM) as well as on "real" block devices.

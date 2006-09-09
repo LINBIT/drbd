@@ -756,6 +756,10 @@ FIXME LGE
 
 	/* As soon as mdev->state.conn < Unconnected nobody can increase
 	   the net_cnt. Wait until the net_cnt is 0. */
+	/* FIXME this is buggy by design.
+	 * And, we currently do not wrap all dereferences to net_conf in
+	 * inc_net...  this needs to become a rw_semaphore!
+	 */
 	if ( wait_event_interruptible( mdev->cstate_wait,
 				       atomic_read(&mdev->net_cnt) == 0 ) ) {
 		retcode=GotSignal;
