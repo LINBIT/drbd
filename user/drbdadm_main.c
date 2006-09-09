@@ -202,7 +202,7 @@ struct adm_cmd cmds[] = {
   { "pause-sync",        adm_generic_s, 1,1,1 },
   { "resume-sync",       adm_generic_s, 1,1,1 },
   { "adjust",            adm_adjust,    1,1,1 },
-  { "wait_connect",      adm_wait_c,    1,1,1 },
+  { "wait-connect",      adm_wait_c,    1,1,1 },
   { "state",             adm_generic_s, 1,1,0 },
   { "cstate",            adm_generic_s, 1,1,1 },
   { "dstate",            adm_generic_b, 1,1,1 },
@@ -211,7 +211,7 @@ struct adm_cmd cmds[] = {
   { "show-gi",           adm_generic_b, 1,1,0 },
   { "get-gi",            adm_generic_b, 1,1,0 },
   { "dump-md",           admm_generic,  1,1,0 },
-  { "wait_con_int",      adm_wait_ci,   1,0,1 },
+  { "wait-con-int",      adm_wait_ci,   1,0,1 },
   { "hidden-commands",   hidden_cmds,   1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0 },
   { "sh-resources",      sh_resources,  2,0,0 },
@@ -863,7 +863,7 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
 
   argv[argc++]=drbdsetup;
   argv[argc++]=res->me->device;
-  argv[argc++]="wait_connect";
+  argv[argc++]="wait-connect";
   opt=res->startup_options;
   make_options(opt);
   argv[argc++]=0;
@@ -1054,7 +1054,7 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
     argc=0;
     argv[argc++]=drbdsetup;
     argv[argc++]=res->me->device;
-    argv[argc++]="wait_connect";
+    argv[argc++]="wait-connect";
     opt=res->startup_options;
     make_options(opt);
     argv[argc++]=0;

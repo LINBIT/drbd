@@ -956,6 +956,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		}
 	}
 
+	/* Inform userspace about the change... */
+	drbd_bcast_state(mdev);
+
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */
 

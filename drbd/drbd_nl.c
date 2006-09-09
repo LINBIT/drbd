@@ -1487,6 +1487,36 @@ void drbd_connector_callback(void *data)
 	module_put(THIS_MODULE);
 }
 
+void drbd_bcast_state(drbd_dev *mdev)
+{
+	char buffer[sizeof(struct cn_msg)+
+		    sizeof(struct drbd_nl_cfg_reply)+
+		    sizeof(struct get_state_tag_len_struct)];
+	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	unsigned short *tl = reply->tag_list;
+	static atomic_t seq = ATOMIC_INIT(2); // two.
+
+	WARN("drbd_bcast_state() got called\n");
+
+	tl = get_state_to_tags(mdev,(struct get_state*)&mdev->state,tl);
+	*tl++ = TT_END; /* Close the tag list */
+
+	cn_reply->id.idx = CN_IDX_DRBD;
+	cn_reply->id.val = CN_VAL_DRBD;
+
+	cn_reply->seq = atomic_add_return(1,&seq);
+	cn_reply->ack = 0; // not used here.
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + 
+		(int)((char*)tl - (char*)reply->tag_list);
+	cn_reply->flags = 0;
+
+	reply->minor = mdev_to_minor(mdev);
+	reply->ret_code = NoError;
+
+	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+}
+
 int __init drbd_nl_init()
 {
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
@@ -1503,13 +1533,9 @@ int __init drbd_nl_init()
 
 void drbd_nl_cleanup()
 {
-	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, 0 };
-	int i;
+	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 
-	for(i=0;i<P_nl_after_last_packet;i++) {
-		cn_id_drbd.val = i;
-		cn_del_callback(&cn_id_drbd);
-	}
+	cn_del_callback(&cn_id_drbd);
 }
 
 void drbd_nl_send_reply( struct cn_msg *req, 

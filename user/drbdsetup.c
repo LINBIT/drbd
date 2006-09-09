@@ -45,6 +45,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <linux/netlink.h>
 #include <linux/connector.h>
@@ -85,18 +86,19 @@ struct drbd_option {
 				struct drbd_tag_list *,
 				char *);
 	void (*show_function)(struct drbd_option *,unsigned short*);
+	int (*usage_function)(struct drbd_option *, char*, int);
 	union {
 		struct {
 			const long long min;
 			const long long max;
 			const long long def;
 			const unsigned char default_unit;
-		} numeric_param;
+		} numeric_param; // for conv_numeric
 		struct {
 			const char** handler_names;
 			const int number_of_handlers;
 			const int def;
-		} handler_param;
+		} handler_param; // conv_handler
 	};
 };
 
@@ -104,15 +106,20 @@ struct drbd_cmd {
 	const char* cmd;
 	const int packet_id;
 	int (*function)(struct drbd_cmd *, int, int, char **);
+	void (*usage)(struct drbd_cmd *, int );
 	union {
 		struct {
 			struct drbd_argument *args;
 			struct drbd_option *options;
-		} cp;
+		} cp; // for generic_config_cmd, config_usage
 		struct {
 			int (*show_function)(struct drbd_cmd *, int, 
 					     unsigned short* );
-		} gp;
+		} gp; // for generic_get_cmd, get_usage
+		struct {
+			struct option *options;
+			int (*proc_event)();
+		} ep; // for events_cmd, events_usage
 	};
 };
 
@@ -131,6 +138,18 @@ void print_command_usage(int i, const char *addinfo);
 int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+int events_cmd(struct drbd_cmd *cm, int minor, int argc,char **argv);
+
+// usage functions 
+void config_usage(struct drbd_cmd *cm, int);
+void get_usage(struct drbd_cmd *cm, int);
+void events_usage(struct drbd_cmd *cm, int);
+
+// sub usage functions for config_usage
+int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
+int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
+int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
+int string_opt_usage(struct drbd_option *option, char* str, int strlen);
 
 // sub commands for generic_get_cmd
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -157,6 +176,10 @@ void show_handler(struct drbd_option *od, unsigned short* tp);
 void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
 
+// sub functions for events_cmd
+int print_state(unsigned int seq, int minor, drbd_state_t ns);
+int w_connected_state(unsigned int seq, int minor, drbd_state_t ns);
+int w_synced_state(unsigned int seq, int minor, drbd_state_t ns);
 
 const char *on_error[] = {
 	[PassOn] = "pass_on",
@@ -192,24 +215,30 @@ const char *asb2p_n[] = {
 };
 
 #define EN(N,U) \
-	conv_numeric, show_numeric, \
+	conv_numeric, show_numeric, numeric_opt_usage, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
 		DRBD_ ## N ## _DEF ,U  } }
 #define EH(N,D) \
-	conv_handler, show_handler, { .handler_param = { N, ARRY_SIZE(N), \
+	conv_handler, show_handler, handler_opt_usage, \
+	{ .handler_param = { N, ARRY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
-#define EB      conv_bit, show_bit, { } 
-#define ES      conv_string, show_string, { } 
+#define EB      conv_bit, show_bit, bit_opt_usage, { } 
+#define ES      conv_string, show_string, string_opt_usage, { } 
+#define CLOSE_OPTIONS  { NULL,0,0,NULL,NULL,NULL, { } }, }} }, },
+
+#define F_CONFIG_CMD	generic_config_cmd, config_usage
+#define F_GET_CMD	generic_get_cmd, get_usage
+#define F_EVENTS_CMD	events_cmd, events_usage
 
 struct drbd_cmd commands[] = {
-	{"primary", P_primary, generic_config_cmd, {{ NULL,
+	{"primary", P_primary, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "overwrite-data-of-peer",'o',T_overwrite_peer, EB   },
-		 { NULL,0,0,NULL,NULL, { } }, }} }, },
+                 CLOSE_OPTIONS
 
-	{"secondary", P_secondary, generic_config_cmd, {{NULL, NULL}} },
+	{"secondary", P_secondary, F_CONFIG_CMD, {{NULL, NULL}} },
 
-	{"disk", P_disk_conf, generic_config_cmd, {{
+	{"disk", P_disk_conf, F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
 		 { "lower_dev",		T_backing_dev,	conv_block_dev },
 		 { "meta_data_dev",	T_meta_dev,	conv_block_dev },
@@ -219,11 +248,11 @@ struct drbd_cmd commands[] = {
 		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s') },
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
-		 { NULL,0,0,NULL,NULL, { } }, }, }} },
+		 CLOSE_OPTIONS
 
-	{"detach", P_detach, generic_config_cmd, {{NULL, NULL}} },
+	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },
 
-	{"net", P_net_conf, generic_config_cmd, {{
+	{"net", P_net_conf, F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
 		 { "local_addr",	T_my_addr,	conv_address },
 		 { "remote_addr",	T_peer_addr,	conv_address },
@@ -245,36 +274,44 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
 		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
 		 { "discard-my-data",'D', T_want_lose,     EB },
-		 { NULL,0,0,NULL,NULL, { } }, }, }} },
+		 CLOSE_OPTIONS
 
-	{"disconnect", P_disconnect, generic_config_cmd, {{NULL, NULL}} },
+	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },
 
-	{"resize", P_resize, generic_config_cmd, {{ NULL,
+	{"resize", P_resize, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s') },
-		 { NULL,0,0,NULL,NULL, { } }, }, }} },
+		 CLOSE_OPTIONS
 
-	{"syncer", P_syncer_conf, generic_config_cmd, {{ NULL,
+	{"syncer", P_syncer_conf, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "rate",'r',T_rate,			EN(RATE,'k') },
 		 { "after",'a',T_after,			EN(AFTER,1) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1) },
-		 { NULL,0,0,NULL,NULL, { } }, }, }} },
+		 CLOSE_OPTIONS
 
-	{"invalidate", P_invalidate, generic_config_cmd, {{ NULL, NULL }} },
-	{"invalidate-remote", P_invalidate_peer, generic_config_cmd, {{NULL, NULL}} },
-	{"pause-sync", P_pause_sync, generic_config_cmd, {{ NULL, NULL }} },
-	{"resume-sync", P_resume_sync, generic_config_cmd, {{ NULL, NULL }} },
-	{"suspend-io", P_suspend_io, generic_config_cmd, {{ NULL, NULL }} },
-	{"resume-io", P_resume_io, generic_config_cmd, {{ NULL, NULL }} },
-	{"outdate", P_outdate, generic_config_cmd, {{ NULL, NULL }} },
-	{"down",            0, down_cmd,  { {NULL, NULL }} },
-	{"state", P_get_state, generic_get_cmd, { .gp={ state_scmd} } },
-	{"cstate", P_get_state, generic_get_cmd, {.gp={ cstate_scmd} } },
-	{"dstate", P_get_state, generic_get_cmd, {.gp={ dstate_scmd} } },
-	{"show-gi", P_get_uuids, generic_get_cmd, {.gp={ uuids_scmd} }},
-	{"get-gi", P_get_uuids, generic_get_cmd, {.gp={ uuids_scmd} } },
-	{"show", P_get_config, generic_get_cmd, {.gp={ show_scmd} } },
+	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"invalidate-remote", P_invalidate_peer, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"pause-sync", P_pause_sync, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"resume-sync", P_resume_sync, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"suspend-io", P_suspend_io, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"resume-io", P_resume_io, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"outdate", P_outdate, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
+	{"state", P_get_state, F_GET_CMD, { .gp={ state_scmd} } },
+	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
+	{"dstate", P_get_state, F_GET_CMD, {.gp={ dstate_scmd} } },
+	{"show-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} }},
+	{"get-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} } },
+	{"show", P_get_config, F_GET_CMD, {.gp={ show_scmd} } },
+	{"events",          0, F_EVENTS_CMD, { .ep = {
+		(struct option[]) {
+			{ "unfiltered", no_argument, 0, 'u' },
+			{ "all-devices",no_argument, 0, 'd' },
+			{ 0,            0,           0,  0  } },
+		print_state } } },
+	{"wait-connect", 0, F_EVENTS_CMD, {.ep = {NULL,w_connected_state} } },
+	{"wait-sync", 0, F_EVENTS_CMD, {.ep = {NULL,w_synced_state} } },
 };
 
 #define EM(C) [ C - RetCodeBase ]
@@ -676,9 +713,9 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	struct drbd_nl_cfg_reply *reply;
 	struct drbd_argument *ad = cm->cp.args;
 	struct drbd_option *od;
-	static struct option *lo;
+	struct option *lo;
 	struct drbd_tag_list *tl;
-	int c,i=0,rv=0,sk_nl;
+	int c,i=1,rv=0,sk_nl;
 	int flags=0;
 
 	tl = create_tag_list(4096);
@@ -1041,8 +1078,137 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	return rv;
 }
 
-void print_command_usage(int i, const char *addinfo)
-    // CAUTION no range check for i
+int print_state(unsigned int seq, int minor, drbd_state_t ns)
+{
+	/*
+	char stime[20];
+	time_t now;
+	time(&now);
+	strftime(stime,20,"%a %e %T",gmtime(&now));
+	*/
+
+	printf("%u ST %d { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
+	       seq,
+	       minor,
+	       conns_to_name(ns.conn),
+	       roles_to_name(ns.role),
+	       roles_to_name(ns.peer),
+	       disks_to_name(ns.disk),
+	       disks_to_name(ns.pdsk),
+	       ns.susp ? 's' : 'r',
+	       ns.aftr_isp ? 'a' : '-',
+	       ns.peer_isp ? 'p' : '-',
+	       ns.user_isp ? 'u' : '-' );
+
+	return 1;
+}
+
+int w_connected_state(unsigned int seq __attribute((unused)), 
+		      int minor __attribute((unused)), 
+		      drbd_state_t ns)
+{
+	if(ns.conn >= Connected) return 0;
+	return 1;
+}
+
+int w_synced_state(unsigned int seq __attribute((unused)), 
+		   int minor __attribute((unused)), 
+		   drbd_state_t ns)
+{
+	if(ns.conn == Connected || ns.conn < Unconnected ) return 0;
+	return 1;
+}
+
+int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
+{
+	char buffer[ 4096 ];
+	struct cn_msg *cn_reply;
+	struct drbd_nl_cfg_reply *reply;
+	struct drbd_tag_list *tl;
+	struct option *lo;
+	unsigned int seq=0;
+	int sk_nl,c,cont=1;
+	drbd_state_t state;
+	int unfiltered=0, all_devices=0;
+	
+	lo = cm->ep.options;
+
+	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+		// This code block is actually only relevant for the "events" 
+		// command. not for wait-connect, or wait-sync.
+		switch(c) {
+		case 'u': unfiltered=1; break;
+		case 'd': all_devices=1; break;
+		}
+	}
+
+	if(optind > argc) {
+		fprintf(stderr,"Ignoring excess arguments\n");
+	}
+
+	sk_nl = open_cn();
+	if(sk_nl < 0) return 20;
+
+	// ask for the current state before waiting for state updates...
+	tl = create_tag_list(2);
+	add_tag(tl,TT_END,NULL,0); // close the tag list
+	send_tag_list_cn(sk_nl,tl,P_get_state,minor,0);
+
+	do {
+		receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
+
+		cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
+		reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+
+		// dump_tag_list(reply->tag_list);
+		
+		if(!unfiltered && cn_reply->seq <= seq) continue;
+		seq = cn_reply->seq;
+
+		state.i = consume_tag_int(T_state_i,reply->tag_list);
+		
+		if(dump_tag_list(reply->tag_list)) {
+			printf("# Found unknown tags, you should update your\n"
+			       "# userland tools\n");
+		}
+
+		if( all_devices || minor == reply->minor ) {
+			cont=cm->ep.proc_event(cn_reply->seq, reply->minor, state);
+		}
+	} while(cont);
+
+	close_cn(sk_nl);
+
+	return 0;
+}
+
+int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str,strlen," [{--%s|-%c} %lld ... %lld]",
+			option->name, option->short_name,
+			option->numeric_param.min,
+			option->numeric_param.max);
+}
+
+int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str,strlen," [{--%s|-%c} hdlr]",
+			option->name, option->short_name);
+}
+
+int bit_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str,strlen," [{--%s|-%c}]",
+			option->name, option->short_name);
+}
+
+int string_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str,strlen," [{--%s|-%c} <str>]",
+			option->name, option->short_name);
+}
+
+void config_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
 {
 	struct drbd_argument *args;
 	struct drbd_option *options;
@@ -1052,12 +1218,9 @@ void print_command_usage(int i, const char *addinfo)
 
 	prevcol=col=0;
 
-	col += snprintf(line+col, maxcol-col, " %s", commands[i].cmd);
+	col += snprintf(line+col, maxcol-col, " %s", cm->cmd);
 
-	// Only those config commands have arguments and options...
-	if(commands[i].function != generic_config_cmd) goto out;
-
-	if ((args = commands[i].cp.args)) {
+	if ((args = cm->cp.args)) {
 		while (args->name) {
 			col += snprintf(line+col, maxcol-col, " %s", args->name);
 			args++;
@@ -1069,17 +1232,9 @@ void print_command_usage(int i, const char *addinfo)
 		col=0;
 	}
 	prevcol=col;
-	if ((options = commands[i].cp.options)) {
+	if ((options = cm->cp.options)) {
 		while (options->name) {
-			if (tag_type(options->tag) == TT_BIT) {
-				col += snprintf(line+col, maxcol-col,
-						" [{--%s|-%c}]",
-						options->name, options->short_name);
-			} else {
-				col += snprintf(line+col, maxcol-col,
-						" [{--%s|-%c} val]",
-						options->name, options->short_name);
-			}
+			col += options->usage_function(options,line+col,maxcol-col);
 			if (col >= maxcol) {
 				line[prevcol]=0;
 				printf("%s\n\t",line);
@@ -1092,8 +1247,31 @@ void print_command_usage(int i, const char *addinfo)
 	}
 	line[col]=0;
 
- out:
 	printf("%s\n",line);
+}
+
+void get_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
+{
+	printf(" %s\n", cm->cmd);
+}
+
+void events_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
+{
+	struct option *lo;
+	printf(" %s", cm->cmd);
+
+	lo = cm->ep.options;
+	while(lo && lo->name) {
+		printf(" [{--%s|-%c}]",lo->name,lo->val);
+		lo++;
+	}
+	printf("\n");
+}
+
+void print_command_usage(int i, const char *addinfo)
+{
+	commands[i].usage(commands+i,0);
+
 	if (addinfo) {
 		printf("%s\n",addinfo);
 		exit(20);
@@ -1189,7 +1367,7 @@ int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 	nl_hdr->nlmsg_pid = getpid();
 	/* fill the connector header */
 	cn_hdr->id.idx = CN_IDX_DRBD;
-	cn_hdr->seq = 0;
+	cn_hdr->seq = 1;
 	cn_hdr->ack = 0;
 	cn_hdr->len = size - sizeof(struct nlmsghdr) - sizeof(struct cn_msg);
 
@@ -1252,10 +1430,12 @@ int main(int argc, char** argv)
 	cmd=find_cmd_by_name(argv[2]);
 
 	if(cmd) {
-		drbd_fd = dt_lock_open_drbd(argv[1], &lock_fd, 1 );
+		//drbd_fd = dt_lock_open_drbd(argv[1], &lock_fd, 1 );
 		minor=dt_minor_of_dev(argv[1]);
-		rv = cmd->function(cmd,minor,argc-3,argv+3);
-		dt_close_drbd_unlock(drbd_fd,lock_fd);
+		rv = cmd->function(cmd,minor,argc-2,argv+2);
+		// by passing argc-2, argv+2 the function has the command name
+		// in argv[0], e.g. "syncer"
+		//dt_close_drbd_unlock(drbd_fd,lock_fd);
 	} else {
 		print_usage("invalid command");
 	}

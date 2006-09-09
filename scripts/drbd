@@ -95,7 +95,7 @@ case "$1" in
 	adjust_with_progress
 	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd  # for RedHat
 	echo "."
-	$DRBDADM wait_con_int # User interruptible version of wait_connect all
+	$DRBDADM wait-con-int # User interruptible version of wait-connect all
 	;;
     stop)
 	echo -n "Stopping all DRBD resources"
