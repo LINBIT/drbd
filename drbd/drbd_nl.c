@@ -1368,6 +1368,24 @@ STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char*)tl - (char*)reply->tag_list);
 }
 
+
+STATIC int drbd_nl_get_timeout_flag(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+				    struct drbd_nl_cfg_reply *reply)
+{
+	unsigned short *tl;
+
+	tl = reply->tag_list;
+
+	// This is a hand crafted add tag ;)
+	*tl++ = T_use_degraded;
+	*tl++ = sizeof(char);
+	*((char*)tl) = test_bit(USE_DEGR_WFC_T,&mdev->flags) ? 1 : 0 ;
+	tl=(unsigned short*)((char*)tl + sizeof(char));
+	*tl++ = TT_END;
+
+	return (int)((char*)tl - (char*)reply->tag_list);
+}
+
 STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
 	drbd_dev *mdev;
@@ -1428,6 +1446,9 @@ static struct cn_handler_struct cnd_table[] = {
 				    sizeof(struct get_state_tag_len_struct) },
 	[ P_get_uuids ]		= { &drbd_nl_get_uuids,
 				    sizeof(struct get_uuids_tag_len_struct) },
+	[ P_get_timeout_flag ]	= { &drbd_nl_get_timeout_flag,
+				    sizeof(struct get_timeout_flag_tag_len_struct)},
+
 };
 
 void drbd_connector_callback(void *data)
@@ -1497,7 +1518,7 @@ void drbd_bcast_state(drbd_dev *mdev)
 	unsigned short *tl = reply->tag_list;
 	static atomic_t seq = ATOMIC_INIT(2); // two.
 
-	WARN("drbd_bcast_state() got called\n");
+	// WARN("drbd_bcast_state() got called\n");
 
 	tl = get_state_to_tags(mdev,(struct get_state*)&mdev->state,tl);
 	*tl++ = TT_END; /* Close the tag list */

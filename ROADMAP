@@ -442,7 +442,7 @@ DRBD 0.8 Roadmap
   Things to do:
   
   * Locking in userspace, to prevent multiple instances of drbdsetup
-  * The timeout options of wait-connect and wait-sync are still missing.
+  * Think about locking in kernel space ( device_mutex? )
 
   80% DONE
 

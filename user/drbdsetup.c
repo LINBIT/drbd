@@ -45,6 +45,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include <linux/netlink.h>
@@ -224,7 +225,7 @@ const char *asb2p_n[] = {
 	DRBD_ ## D ## _DEF } }
 #define EB      conv_bit, show_bit, bit_opt_usage, { } 
 #define ES      conv_string, show_string, string_opt_usage, { } 
-#define CLOSE_OPTIONS  { NULL,0,0,NULL,NULL,NULL, { } }, }} }, },
+#define CLOSE_OPTIONS  { NULL,0,0,NULL,NULL,NULL, { } }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
 #define F_GET_CMD	generic_get_cmd, get_usage
@@ -234,7 +235,7 @@ struct drbd_cmd commands[] = {
 	{"primary", P_primary, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "overwrite-data-of-peer",'o',T_overwrite_peer, EB   },
-                 CLOSE_OPTIONS
+                 CLOSE_OPTIONS }} }, },
 
 	{"secondary", P_secondary, F_CONFIG_CMD, {{NULL, NULL}} },
 
@@ -248,7 +249,7 @@ struct drbd_cmd commands[] = {
 		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s') },
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
-		 CLOSE_OPTIONS
+		 CLOSE_OPTIONS }} }, },
 
 	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },
 
@@ -274,21 +275,21 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
 		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
 		 { "discard-my-data",'D', T_want_lose,     EB },
-		 CLOSE_OPTIONS
+		 CLOSE_OPTIONS }} }, },
 
 	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },
 
 	{"resize", P_resize, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s') },
-		 CLOSE_OPTIONS
+		 CLOSE_OPTIONS }} }, },
 
 	{"syncer", P_syncer_conf, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "rate",'r',T_rate,			EN(RATE,'k') },
 		 { "after",'a',T_after,			EN(AFTER,1) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1) },
-		 CLOSE_OPTIONS
+		 CLOSE_OPTIONS }} }, },
 
 	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"invalidate-remote", P_invalidate_peer, F_CONFIG_CMD, {{NULL, NULL}} },
@@ -307,11 +308,21 @@ struct drbd_cmd commands[] = {
 	{"events",          0, F_EVENTS_CMD, { .ep = {
 		(struct option[]) {
 			{ "unfiltered", no_argument, 0, 'u' },
-			{ "all-devices",no_argument, 0, 'd' },
+			{ "all-devices",no_argument, 0, 'a' },
 			{ 0,            0,           0,  0  } },
 		print_state } } },
-	{"wait-connect", 0, F_EVENTS_CMD, {.ep = {NULL,w_connected_state} } },
-	{"wait-sync", 0, F_EVENTS_CMD, {.ep = {NULL,w_synced_state} } },
+	{"wait-connect", 0, F_EVENTS_CMD, {.ep = {
+		(struct option[]) {
+			{ "wfc-timeout",required_argument, 0, 't' },
+			{ "degr-wfc-timeout",required_argument,0,'d'},
+			{ 0,            0,           0,  0  } },
+		w_connected_state} } },
+	{"wait-sync", 0, F_EVENTS_CMD, {.ep = {
+		(struct option[]) {
+			{ "wfc-timeout",required_argument, 0, 't' },
+			{ "degr-wfc-timeout",required_argument,0,'d'},
+			{ 0,            0,           0,  0  } },
+		w_synced_state} } },
 };
 
 #define EM(C) [ C - RetCodeBase ]
@@ -609,18 +620,18 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const char** handler_names = od->handler_param.handler_names;
 	const int number_of_handlers = od->handler_param.number_of_handlers;
-	int i,nr;
+	int i,nr=-1;
 
 	for(i=0;i<number_of_handlers;i++) {
+		if(handler_names[i]==NULL) continue;
 		if(strcmp(arg,handler_names[i])==0) {
-			nr = i;
-			break;
+			add_tag(tl,od->tag,&nr,sizeof(i));
+			return 0;
 		}
 	}
-
-	add_tag(tl,od->tag,&nr,sizeof(nr));
-
-	return 0;
+	
+	fprintf(stderr, "Handler not known\n");
+	return 20;
 }
 
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
@@ -753,7 +764,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	add_tag(tl,TT_END,NULL,0); // close the tag list
 
 	if(rv == 0) {
-		// dump_tag_list(tl->tag_list_start);
+		//dump_tag_list(tl->tag_list_start);
 		sk_nl = open_cn();
 		if(sk_nl < 0) return 20;
 
@@ -893,6 +904,18 @@ int consume_tag_int(enum drbd_tags tag, unsigned short *tlc)
 		*tp++ = TT_REMOVED;
 		tp++;
 		return *(int *)tp;
+	}
+	return 0;
+}
+
+char consume_tag_bit(enum drbd_tags tag, unsigned short *tlc)
+{
+	unsigned short *tp;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		tp++;
+		return *(char *)tp;
 	}
 	return 0;
 }
@@ -1080,12 +1103,10 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 int print_state(unsigned int seq, int minor, drbd_state_t ns)
 {
-	/*
-	char stime[20];
-	time_t now;
-	time(&now);
-	strftime(stime,20,"%a %e %T",gmtime(&now));
-	*/
+	/*char stime[20];
+	  time_t now;
+	  time(&now);
+	  strftime(stime,20,"%a %e %T",gmtime(&now)); */
 
 	printf("%u ST %d { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
 	       seq,
@@ -1127,18 +1148,41 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct drbd_tag_list *tl;
 	struct option *lo;
 	unsigned int seq=0;
-	int sk_nl,c,cont=1;
+	int sk_nl,c,cont=1,rr;
 	drbd_state_t state;
 	int unfiltered=0, all_devices=0;
+	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
+	struct pollfd pfd;
+	struct timeval before,after;
 	
 	lo = cm->ep.options;
 
 	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
-		// This code block is actually only relevant for the "events" 
-		// command. not for wait-connect, or wait-sync.
 		switch(c) {
 		case 'u': unfiltered=1; break;
-		case 'd': all_devices=1; break;
+		case 'a': all_devices=1; break;
+		case 't': 
+			wfc_timeout=m_strtoll(optarg,1);
+			if(DRBD_WFC_TIMEOUT_MIN > wfc_timeout || 
+			   wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					wfc_timeout, DRBD_WFC_TIMEOUT_MIN,
+					DRBD_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+		case 'd':
+			degr_wfc_timeout=m_strtoll(optarg,1);
+			if(DRBD_DEGR_WFC_TIMEOUT_MIN > degr_wfc_timeout || 
+			   degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "degr_wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					degr_wfc_timeout, DRBD_DEGR_WFC_TIMEOUT_MIN,
+					DRBD_DEGR_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
 		}
 	}
 
@@ -1146,15 +1190,37 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		fprintf(stderr,"Ignoring excess arguments\n");
 	}
 
+	tl = create_tag_list(2);
+	add_tag(tl,TT_END,NULL,0); // close the tag list
+
 	sk_nl = open_cn();
 	if(sk_nl < 0) return 20;
 
+	// Find out which timeout value to use.
+	send_tag_list_cn(sk_nl,tl,P_get_timeout_flag,minor,0);
+	receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
+	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
+	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	rr = consume_tag_bit(T_use_degraded,reply->tag_list);
+	timeout_ms= 1000 * (  rr ? degr_wfc_timeout : wfc_timeout) - 1;
+
 	// ask for the current state before waiting for state updates...
-	tl = create_tag_list(2);
-	add_tag(tl,TT_END,NULL,0); // close the tag list
 	send_tag_list_cn(sk_nl,tl,P_get_state,minor,0);
 
 	do {
+		pfd.fd = sk_nl;
+		pfd.events = POLLIN;
+
+		// printf("calling poll(,,%d)\n",timeout_ms);
+		gettimeofday(&before,NULL);
+		rr = poll(&pfd,1,timeout_ms);
+		if(rr == 0) return 5; // timeout expired.
+		gettimeofday(&after,NULL);
+
+		if(timeout_ms > 0 ) {
+			timeout_ms -= ( (after.tv_sec - before.tv_sec) * 1000 +
+					(after.tv_usec - before.tv_usec) / 1000 );
+		}
 		receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
 
 		cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);

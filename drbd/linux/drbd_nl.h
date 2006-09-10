@@ -78,6 +78,10 @@ PACKET(get_uuids,
 	INTEGER(  	35,	T_MAY_IGNORE,	uuids_flags)
 )
 
+PACKET(get_timeout_flag,
+	BIT(		36,	T_MAY_IGNORE,	use_degraded)
+)
+
 #undef PACKET
 #undef INTEGER
 #undef INT64
