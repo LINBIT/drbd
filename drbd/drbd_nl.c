@@ -689,7 +689,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-#warning checks below no longer valid
+// warning LGE checks below no longer valid
 // --- rewrite
 #if 0
 	if (drbd_get_capacity(nbc->backing_bdev) >= (sector_t)DRBD_MAX_SECTORS) {

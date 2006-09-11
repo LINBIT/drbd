@@ -257,7 +257,7 @@ extern struct Drbd_Conf **minor_table;
 	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
 			mdev_to_minor(mdev) , ##args);		\
 } while (0)
-#warning "drbd_panic() does nothing but printk()!"
+// warning LGE "drbd_panic() does nothing but printk()!"
 #endif
 #undef DRBD_PANIC
 
@@ -1551,7 +1551,7 @@ static inline void inc_unacked(drbd_dev* mdev)
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
 
 
-#warning "FIXME inherently racy. this is buggy by design :("
+// warning LGE "FIXME inherently racy. this is buggy by design :("
 /**
  * inc_net: Returns TRUE when it is ok to access mdev->net_conf. You
  * should call dec_net() when finished looking at mdev->net_conf.

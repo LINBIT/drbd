@@ -1164,7 +1164,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		ok = drbd_io_error(mdev);
 	}
 
-#warning "FIXME code missing"
+// warning LGE "FIXME code missing"
 #if 0
 	/* we delete from the conflict detection hash _after_ we sent out the
 	 * WriteAck / NegAck, to get the sequence number right.  */
@@ -1256,7 +1256,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
 
-#warning "FIXME code missing"
+// warning LGE "FIXME code missing"
 #if 0 
 /* sorry.
  * to get this patch in a shape where it can be committed,
@@ -2368,7 +2368,7 @@ static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
 	 * tcq is currently broken */
 void drbd_set_recv_tcq(drbd_dev * mdev, int tcq_enabled)
 {
-#warning "FIXME make drbd_cmd_handler a member of mdev"
+// warning LGE "FIXME make drbd_cmd_handler a member of mdev"
 	if(tcq_enabled &&
 	   drbd_default_handler[Barrier] != receive_Barrier_tcq) {
 		INFO("Enabling TCQ for barrier processing on backend.\n");
@@ -2880,7 +2880,7 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	_req_mod(req, neg_acked);
 	spin_unlock_irq(&mdev->req_lock);
 
-#warning "ugly and wrong"
+// warning LGE "ugly and wrong"
 	drbd_khelper(mdev,"pri-on-incon-degr");
 	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 
@@ -2903,7 +2903,7 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	// In case we are not primary, we could simply live on...
 
-#warning "ugly and wrong"
+// warning LGE "ugly and wrong"
 	drbd_panic("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
 
 	// THINK do we have other options, but panic?

@@ -297,7 +297,7 @@ void tl_clear(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-#warning "FIXME code missing"
+// warning LGE "FIXME code missing"
 #if 0
 /* FIXME "wrong"
  * see comment in receive_Data */
@@ -749,8 +749,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	if ( ns.role == Primary && ns.conn < Connected &&
 	     ns.disk < Consistent ) {
-#warning "ugly and wrong"
-#warning "FIXME code missing"
+// warning LGE "ugly and wrong"
+// warning LGE "FIXME code missing"
 		drbd_panic("No access to good data anymore.\n");
 	}
 
@@ -1297,7 +1297,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 			/* write_bm did fail! panic.
 			 * FIXME can we do something better than panic?
 			 */
-#warning "ugly and wrong"
+// warning LGE "ugly and wrong"
 			drbd_panic("Failed to write bitmap to disk\n!");
 			ok = FALSE;
 			goto out;
@@ -2257,7 +2257,7 @@ int __init drbd_init(void)
 	int err;
 
 #if 0
-#warning "DEBUGGING"
+// warning LGE "DEBUGGING"
 /* I am too lazy to calculate this by hand	-lge
  */
 #define SZO(x) printk(KERN_ERR "sizeof(" #x ") = %d\n", sizeof(x))
@@ -2489,7 +2489,7 @@ void drbd_md_sync(drbd_dev *mdev)
 			 * but we are supposed to be able to,
 			 * tough!
 			 */
-#warning "ugly and wrong"
+// warning LGE "ugly and wrong"
 			drbd_panic("meta data update failed!\n");
 		}
 	}

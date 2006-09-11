@@ -398,7 +398,7 @@ int drbd_ioctl_set_disk(drbd_dev *mdev, struct ioctl_disk_config * arg)
 		goto release_bdev2_fail_ioctl;
 	}
 
-#warning checks below no longer valid
+// warning LGE checks below no longer valid
 // --- rewrite
 #if 0
 	if (drbd_get_capacity(nbc->backing_bdev) >= (sector_t)DRBD_MAX_SECTORS) {

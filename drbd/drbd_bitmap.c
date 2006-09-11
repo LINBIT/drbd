@@ -55,9 +55,9 @@
  * or wether I want it to do all the sector<->bit calculation in here.
  */
 
-#warning "verify all spin_lock_irq here, and their call path"
-#warning "and change to irqsave where applicable"
-#warning "so we don't accidentally nest spin_lock_irq()"
+// warning LGE "verify all spin_lock_irq here, and their call path"
+// warning LGE "and change to irqsave where applicable"
+// warning LGE "so we don't accidentally nest spin_lock_irq()"
 /*
  * NOTE
  *  Access to the *bm is protected by bm_lock.

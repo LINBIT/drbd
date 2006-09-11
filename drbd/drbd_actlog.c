@@ -321,8 +321,8 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-#warning check outcome of addition u64/sector_t/s32
-#warning "FIXME code missing"
+// warning LGE check outcome of addition u64/sector_t/s32
+// warning LGE "FIXME code missing"
 	sector = mdev->bc->md.md_offset + mdev->bc->md.al_offset + mdev->al_tr_pos;
 
 	if(!drbd_md_sync_page_io(mdev,mdev->bc,sector,WRITE)) {
