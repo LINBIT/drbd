@@ -562,17 +562,17 @@ static inline void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 	 * can probably be merged with some if (what == xy) */
 
 	case completed_ok:
-		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
-		req->rq_state &= ~RQ_LOCAL_PENDING;
+		if (bio_data_dir(req->private_bio) == WRITE)
+			mdev->writ_cnt += req->size>>9;
+		else
+			mdev->read_cnt += req->size>>9;
 
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
 		dec_local(mdev);
 
-		if (bio_data_dir(req->private_bio) == WRITE)
-			mdev->writ_cnt += req->size>>9;
-		else
-			mdev->read_cnt += req->size>>9;
+		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
+		req->rq_state &= ~RQ_LOCAL_PENDING;
 
 		_req_may_be_done(req);
 		break;
