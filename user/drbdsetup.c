@@ -215,6 +215,12 @@ const char *asb2p_n[] = {
 	[PanicPrimary]      = "panic"
 };
 
+struct option wait_cmds_options[] = {
+	{ "wfc-timeout",required_argument, 0, 't' },
+	{ "degr-wfc-timeout",required_argument,0,'d'},
+	{ 0,            0,           0,  0  } 
+};
+
 #define EN(N,U) \
 	conv_numeric, show_numeric, numeric_opt_usage, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
@@ -311,18 +317,10 @@ struct drbd_cmd commands[] = {
 			{ "all-devices",no_argument, 0, 'a' },
 			{ 0,            0,           0,  0  } },
 		print_state } } },
-	{"wait-connect", 0, F_EVENTS_CMD, {.ep = {
-		(struct option[]) {
-			{ "wfc-timeout",required_argument, 0, 't' },
-			{ "degr-wfc-timeout",required_argument,0,'d'},
-			{ 0,            0,           0,  0  } },
-		w_connected_state} } },
-	{"wait-sync", 0, F_EVENTS_CMD, {.ep = {
-		(struct option[]) {
-			{ "wfc-timeout",required_argument, 0, 't' },
-			{ "degr-wfc-timeout",required_argument,0,'d'},
-			{ 0,            0,           0,  0  } },
-		w_synced_state} } },
+	{"wait-connect", 0, F_EVENTS_CMD, { .ep = {
+		wait_cmds_options, w_connected_state } } },
+	{"wait-sync", 0, F_EVENTS_CMD, { .ep = {
+		wait_cmds_options, w_synced_state } } },
 };
 
 #define EM(C) [ C - RetCodeBase ]

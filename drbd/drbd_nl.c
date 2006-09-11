@@ -1538,11 +1538,21 @@ void drbd_bcast_state(drbd_dev *mdev)
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
+#ifdef NETLINK_ROUTE6 
+int __init cn_init(void);
+void __exit cn_fini(void);
+#endif
+
 int __init drbd_nl_init()
 {
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 	int err;
 
+#ifdef NETLINK_ROUTE6 
+	/* pre 2.6.16 */
+	err = cn_init();
+	if(err) return err;
+#endif
 	err = cn_add_callback(&cn_id_drbd,"cn_drbd",&drbd_connector_callback);
 	if(err) {
 		printk(KERN_ERR DEVICE_NAME "cn_drbd failed to register\n");
@@ -1557,6 +1567,11 @@ void drbd_nl_cleanup()
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 
 	cn_del_callback(&cn_id_drbd);
+
+#ifdef NETLINK_ROUTE6 
+	/* pre 2.6.16 */
+	cn_fini();
+#endif
 }
 
 void drbd_nl_send_reply( struct cn_msg *req, 
