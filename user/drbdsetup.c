@@ -618,12 +618,12 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const char** handler_names = od->handler_param.handler_names;
 	const int number_of_handlers = od->handler_param.number_of_handlers;
-	int i,nr=-1;
+	int i;
 
 	for(i=0;i<number_of_handlers;i++) {
 		if(handler_names[i]==NULL) continue;
 		if(strcmp(arg,handler_names[i])==0) {
-			add_tag(tl,od->tag,&nr,sizeof(i));
+			add_tag(tl,od->tag,&i,sizeof(i));
 			return 0;
 		}
 	}

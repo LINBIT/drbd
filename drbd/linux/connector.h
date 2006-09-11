@@ -31,12 +31,6 @@
 #define CN_IDX_CONNECTOR		0xffffffff
 #define CN_VAL_CONNECTOR		0xffffffff
 
-#ifdef NETLINK_ROUTE6
-   /* pre 2.6.16 */
-   /* This ifdef check needs to be refined */
-typedef unsigned __bitwise__ gfp_t;
-#endif
-
 /*
  * Process Events connector unique ids -- used for message routing
  */
@@ -99,6 +93,12 @@ struct cn_ctl_msg {
 };
 
 #ifdef __KERNEL__
+
+#ifdef NETLINK_ROUTE6
+   /* pre 2.6.16 */
+   /* This ifdef check needs to be refined */
+typedef unsigned __bitwise__ gfp_t;
+#endif
 
 #include <asm/atomic.h>
 
