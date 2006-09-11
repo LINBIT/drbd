@@ -31,6 +31,12 @@
 #define CN_IDX_CONNECTOR		0xffffffff
 #define CN_VAL_CONNECTOR		0xffffffff
 
+#ifdef NETLINK_ROUTE6
+   /* pre 2.6.16 */
+   /* This ifdef check needs to be refined */
+typedef unsigned __bitwise__ gfp_t;
+#endif
+
 /*
  * Process Events connector unique ids -- used for message routing
  */
@@ -161,7 +167,7 @@ struct cn_dev {
 
 int cn_add_callback(struct cb_id *, char *, void (*callback) (void *));
 void cn_del_callback(struct cb_id *);
-int cn_netlink_send(struct cn_msg *, u32, int);
+int cn_netlink_send(struct cn_msg *, u32, gfp_t);
 
 int cn_queue_add_callback(struct cn_queue_dev *dev, char *name, struct cb_id *id, void (*callback)(void *));
 void cn_queue_del_callback(struct cn_queue_dev *dev, struct cb_id *id);
