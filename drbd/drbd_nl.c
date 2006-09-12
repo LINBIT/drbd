@@ -1499,7 +1499,9 @@ void drbd_connector_callback(void *data)
 	cn_reply->flags = 0;
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
-	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	if(rr && rr != -ESRCH) {
+		printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	}
 	kfree(cn_reply);
 	module_put(THIS_MODULE);
 	return;
@@ -1593,6 +1595,8 @@ void drbd_nl_send_reply( struct cn_msg *req,
 	reply->ret_code = ret_code;
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
-	if(rr) printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	if(rr && rr != -ESRCH) {
+		printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n",rr);
+	}
 }
 

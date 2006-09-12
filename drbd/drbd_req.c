@@ -154,10 +154,12 @@ void _req_may_be_done(drbd_request_t *req)
 			 * and maybe even hash tables? */
 #undef OVERLAPS
 #define OVERLAPS overlaps(req->sector, req->size, e->sector, e->size)
-			slot = ee_hash_slot(mdev,req->sector);
-			hlist_for_each_entry(e, n, slot, colision) {
-				if (OVERLAPS)
-					drbd_queue_work(&mdev->data.work,&e->w);
+			if(mdev->ee_hash_s) {
+				slot = ee_hash_slot(mdev,req->sector);
+				hlist_for_each_entry(e, n, slot, colision) {
+					if (OVERLAPS)
+						drbd_queue_work(&mdev->data.work,&e->w);
+				}
 			}
 #undef OVERLAPS
 		}
@@ -284,18 +286,20 @@ STATIC int _req_add_hash_check_colision(drbd_request_t *req)
 	 * register in front */
 	hlist_add_head(&req->colision,slot);
 
-	/* now, check for overlapping requests with remote origin */
+	if(mdev->ee_hash_s) {
+		/* now, check for overlapping requests with remote origin */
 #undef OVERLAPS
 #define OVERLAPS overlaps(e->sector, e->size, sector, size)
-	slot = ee_hash_slot(mdev,sector);
-	hlist_for_each_entry(e, n, slot, colision) {
-		if (OVERLAPS) {
-			ALERT("%s[%u] Concurrent remote write detected!"
-			      "	[DISCARD L] new: %llu +%d; pending: %llu +%d\n",
-			      current->comm, current->pid,
-			      (unsigned long long)sector, size,
-			      e->sector, e->size);
-			return 1;
+		slot = ee_hash_slot(mdev,sector);
+		hlist_for_each_entry(e, n, slot, colision) {
+			if (OVERLAPS) {
+				ALERT("%s[%u] Concurrent remote write detected!"
+				      "	[DISCARD L] new: %llu +%d; pending: %llu +%d\n",
+				      current->comm, current->pid,
+				      (unsigned long long)sector, size,
+				      e->sector, e->size);
+				return 1;
+			}
 		}
 	}
 #undef OVERLAPS

@@ -195,14 +195,14 @@ enum drbd_req_state_bits {
 #define RQ_NET_MASK        (((RQ_NET_OK << 1)-1) & ~RQ_LOCAL_MASK) /* 0xf8 */
 
 /* epoch entries */
-static struct hlist_head* ee_hash_slot(drbd_dev *mdev, sector_t sector)
+static inline struct hlist_head* ee_hash_slot(drbd_dev *mdev, sector_t sector)
 {
 	BUG_ON(mdev->ee_hash_s == 0);
 	return mdev->ee_hash + ((unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s);
 }
 
 /* transfer log (drbd_request objects) */
-static struct hlist_head* tl_hash_slot(drbd_dev *mdev, sector_t sector)
+static inline struct hlist_head* tl_hash_slot(drbd_dev *mdev, sector_t sector)
 {
 	BUG_ON(mdev->tl_hash_s == 0);
 	return mdev->tl_hash +
