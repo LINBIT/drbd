@@ -856,6 +856,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
             test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 		struct drbd_barrier *b = mdev->unused_spare_barrier;
 		b = _tl_add_barrier(mdev,b);
+		mdev->unused_spare_barrier = NULL;
 		b->w.cb =  w_send_barrier;
 		drbd_queue_work(&mdev->data.work, &b->w);
 	} else {
