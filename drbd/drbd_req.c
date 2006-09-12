@@ -33,12 +33,68 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
+// #define VERBOSE_REQUEST_CODE
+#ifdef VERBOSE_REQUEST_CODE
+void print_req_mod(drbd_request_t *req,drbd_req_event_t what) 
+{
+	drbd_dev *mdev = req->mdev;
+
+	static const char *rq_event_names[] = {
+		[created] = "created",
+		[to_be_send] = "to_be_send",
+		[to_be_submitted] = "to_be_submitted",
+		[suspend_because_of_conflict] = "suspend_because_of_conflict",
+		[conflicting_req_done] = "conflicting_req_done",
+		[conflicting_ee_done] = "conflicting_ee_done",
+		[queue_for_net_write] = "queue_for_net_write",
+		[queue_for_net_read] = "queue_for_net_read",
+		[send_canceled] = "send_canceled",
+		[send_failed] = "send_failed",
+		[handed_over_to_network] = "handed_over_to_network",
+		[connection_lost_while_pending] = "connection_lost_while_pending",
+		[recv_acked_by_peer] = "recv_acked_by_peer",
+		[write_acked_by_peer] = "write_acked_by_peer",
+		[neg_acked] = "neg_acked",
+		[barrier_acked] = "barrier_acked",
+		[data_received] = "data_received",
+		[read_completed_with_error] = "read_completed_with_error",
+		[write_completed_with_error] = "write_completed_with_error",
+		[completed_ok] = "completed_ok",
+	};
+
+	INFO("_req_mod(%p,%s)\n",req,rq_event_names[what]);
+}
+
+void print_rq_state(drbd_request_t *req, const char *txt)
+{
+	const unsigned long s = req->rq_state;
+	drbd_dev *mdev = req->mdev;
+
+	INFO("%s%p L%c%c%cN%c%c%c%c%c)\n",
+	     txt,
+	     req,
+	     s & RQ_LOCAL_PENDING ? 'p' : '-',
+	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
+	     s & RQ_LOCAL_OK ? 'o' : '-',
+	     s & RQ_NET_PENDING ? 'p' : '-',
+	     s & RQ_NET_QUEUED ? 'q' : '-',
+	     s & RQ_NET_SENT ? 's' : '-',
+	     s & RQ_NET_DONE ? 'd' : '-',
+	     s & RQ_NET_OK ? 'o' : '-' );
+}
+
+#else
+#define print_rq_state(R,T) 
+#define print_req_mod(T,W)
+#endif
+
 void _req_may_be_done(drbd_request_t *req)
 {
 	const unsigned long s = req->rq_state;
 	drbd_dev *mdev = req->mdev;
 	int rw;
 
+	print_rq_state(req, "_req_may_be_done(");
 	MUST_HOLD(&mdev->req_lock)
 
 	if (s & RQ_NET_PENDING) return;
@@ -263,6 +319,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 {
 	drbd_dev *mdev = req->mdev;
 	MUST_HOLD(&mdev->req_lock);
+
+	print_req_mod(req,what);
 
 	switch(what) {
 	default:
