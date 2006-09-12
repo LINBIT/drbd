@@ -33,7 +33,7 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
-// #define VERBOSE_REQUEST_CODE
+//#define VERBOSE_REQUEST_CODE
 #ifdef VERBOSE_REQUEST_CODE
 void print_req_mod(drbd_request_t *req,drbd_req_event_t what) 
 {
@@ -62,7 +62,10 @@ void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 		[completed_ok] = "completed_ok",
 	};
 
-	INFO("_req_mod(%p,%s)\n",req,rq_event_names[what]);
+	INFO("_req_mod(%p %c ,%s)\n",
+	     req,
+	     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
+	     rq_event_names[what]);
 }
 
 void print_rq_state(drbd_request_t *req, const char *txt)
@@ -70,9 +73,10 @@ void print_rq_state(drbd_request_t *req, const char *txt)
 	const unsigned long s = req->rq_state;
 	drbd_dev *mdev = req->mdev;
 
-	INFO("%s%p L%c%c%cN%c%c%c%c%c)\n",
+	INFO("%s%p %c L%c%c%cN%c%c%c%c%c)\n",
 	     txt,
 	     req,
+	     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
 	     s & RQ_LOCAL_PENDING ? 'p' : '-',
 	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
 	     s & RQ_LOCAL_OK ? 'o' : '-',
@@ -161,7 +165,7 @@ void _req_may_be_done(drbd_request_t *req)
 
 		/* remove the request from the conflict detection
 		 * respective block_id verification hash */
-		hlist_del(&req->colision);
+		if(!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
 
 		/* FIXME not yet implemented...
 		 * in case we got "suspended" (on_disconnect: freeze io)
