@@ -2155,7 +2155,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.peer = peer_state.role;
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
-	if(nconn == Connected && ns.disk == Attaching) ns.disk = UpToDate;
+	if(nconn == Connected && ns.disk == Consistent) ns.disk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv==SS_Success) {
