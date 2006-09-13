@@ -868,6 +868,31 @@ static inline int mdev_to_minor(drbd_dev *mdev)
 	return mdev->minor;
 }
 
+/* returns 1 if it was successfull,
+ * returns 0 if there was no data socket.
+ * so wherever you are going to use the data.socket, e.g. do
+ * if (!drbd_get_data_sock(mdev))
+ *	return 0;
+ *	CODE();
+ * drbd_put_data_sock(mdev);
+ */
+static inline int drbd_get_data_sock(drbd_dev *mdev)
+{
+	down(&mdev->data.mutex);
+	/* drbd_disconnect() could have called drbd_free_sock()
+	 * while we were waiting in down()... */
+	if (unlikely(mdev->data.socket == NULL)) {
+		up(&mdev->data.mutex);
+		return 0;
+	}
+	return 1;
+}
+
+static inline void drbd_put_data_sock(drbd_dev *mdev)
+{
+	up(&mdev->data.mutex);
+}
+
 
 /*
  * function declarations

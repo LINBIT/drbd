@@ -1155,14 +1155,15 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 	h.command = cpu_to_be16(cmd);
 	h.length  = cpu_to_be16(size);
 
-	down(&mdev->data.mutex);
+	if (!drbd_get_data_sock(mdev))
+		return 0;
 
 	dump_packet(mdev,mdev->data.socket,0,(void*)&h, __FILE__, __LINE__);
 
 	ok = ( sizeof(h) == drbd_send(mdev,mdev->data.socket,&h,sizeof(h),0) );
 	ok = ok && ( size == drbd_send(mdev,mdev->data.socket,data,size,0) );
 
-	up(&mdev->data.mutex);
+	drbd_put_data_sock(mdev);
 
 	return ok;
 }
@@ -1340,9 +1341,10 @@ int drbd_send_bitmap(drbd_dev *mdev)
 {
 	int ok;
 
-	down(&mdev->data.mutex);
+	if (!drbd_get_data_sock(mdev))
+		return 0;
 	ok=_drbd_send_bitmap(mdev);
-	up(&mdev->data.mutex);
+	drbd_put_data_sock(mdev);
 	return ok;
 }
 
@@ -1572,7 +1574,8 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	Drbd_Data_Packet p;
 	unsigned int dp_flags=0;
 
-	down(&mdev->data.mutex);
+	if (!drbd_get_data_sock(mdev))
+		return 0;
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
@@ -1599,7 +1602,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		}
 	}
 
-	up(&mdev->data.mutex);
+	drbd_put_data_sock(mdev);
 	return ok;
 }
 
@@ -1625,13 +1628,14 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
 	 * in response to ioctl or module unload.
 	 */
-	down(&mdev->data.mutex);
+	if (!drbd_get_data_sock(mdev))
+		return 0;
 
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
 	if (ok) ok = _drbd_send_zc_bio(mdev,e->private_bio);
 
-	up(&mdev->data.mutex);
+	drbd_put_data_sock(mdev);
 	return ok;
 }
 

@@ -2492,6 +2492,12 @@ int drbd_send_handshake(drbd_dev *mdev)
 		ERR("interrupted during initial handshake\n");
 		return 0; /* interrupted. not ok. */
 	}
+	/* FIXME do we need to verify this here? */
+	if (mdev->data.socket == NULL) {
+		up(&mdev->data.mutex);
+		return 0;
+	}
+
 	memset(p,0,sizeof(*p));
 	p->protocol_version = cpu_to_be32(PRO_VERSION);
 	ok = _drbd_send_cmd( mdev, mdev->data.socket, HandShake,

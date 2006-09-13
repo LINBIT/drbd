@@ -511,11 +511,12 @@ int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 	if(unlikely(cancel)) return ok;
 
-	down(&mdev->data.mutex);
+	if (!drbd_get_data_sock(mdev))
+		return 0;
 	p->barrier = b->br_number;
 	inc_ap_pending(mdev);
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)p,sizeof(*p),0);
-	up(&mdev->data.mutex);
+	drbd_put_data_sock(mdev);
 
 	/* pairing dec_ap_pending() happens in got_BarrierAck,
 	 * or (on connection loss) in tl_clear.  */
