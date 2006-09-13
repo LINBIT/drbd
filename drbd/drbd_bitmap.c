@@ -984,7 +984,13 @@ int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigne
 	ERR_IF(!b) return 1;
 	ERR_IF(!b->bm) return 1;
 
+#if 0
+	/* hm. I assumed that, when inside of lock_irq/unlock_irq,
+	 * in_interrupt() would be true ?
+	 * how else can I assert that this called with irq disabled without using
+	 * spin_lock_irqsave? */
 	D_BUG_ON(!in_interrupt()); /* called within spin_lock_irq(&mdev->req_lock) */
+#endif
 
 	spin_lock(&b->bm_lock);
 	BM_PARANOIA_CHECK();
