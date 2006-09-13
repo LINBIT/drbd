@@ -114,6 +114,9 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
+	/* FIXME how to handle DISKLESS?
+	 * mdev->bc may be NULL !! */
+
 	prev_first_sect = drbd_md_first_sector(mdev->bc);
 	prev_size = mdev->bc->md.md_size_sect;
 	la_size = mdev->bc->md.la_size_sect;

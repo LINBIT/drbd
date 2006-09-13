@@ -1189,7 +1189,10 @@ int drbd_send_uuids(drbd_dev *mdev)
 	int i;
 
 	for (i = Current; i < UUID_SIZE; i++) {
-		p.uuid[i] = cpu_to_be64(mdev->bc->md.uuid[i]);
+		/* FIXME howto handle diskless ? */
+		p.uuid[i] = mdev->bc
+			? cpu_to_be64(mdev->bc->md.uuid[i])
+			: 0;
 	}
 
 	p.uuid[UUID_SIZE] = cpu_to_be64(drbd_bm_total_weight(mdev));
@@ -1219,13 +1222,16 @@ int drbd_send_sizes(drbd_dev *mdev)
 		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev->bc);
 		p.u_size = cpu_to_be64(mdev->bc->dc.disk_size);
+		p.queue_order_type = cpu_to_be32(drbd_queue_order_type(mdev));
 		dec_local(mdev);
-	} else d_size = 0;
+	} else {
+		d_size = 0;
+		p.queue_order_type = cpu_to_be32(QUEUE_ORDERED_NONE);
+	}
 
 	p.d_size = cpu_to_be64(d_size);
 	p.c_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	p.max_segment_size = cpu_to_be32(mdev->rq_queue->max_segment_size);
-	p.queue_order_type = cpu_to_be32(drbd_queue_order_type(mdev));
 
 	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET,ReportSizes,
 			   (Drbd_Header*)&p,sizeof(p));

@@ -1709,6 +1709,7 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 {
 	int rv;
 #if !defined(QUEUE_FLAG_ORDERED)
+	ERR_IF(mdev->bc == NULL) return QUEUE_ORDERED_NONE;
 	rv = bdev_get_queue(mdev->bc->backing_bdev)->ordered;
 #else
 # define QUEUE_ORDERED_NONE 0
