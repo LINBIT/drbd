@@ -280,7 +280,6 @@ void tl_clear(drbd_dev *mdev)
 			WARN("FIXME explain this race...");
 			list_del(&b->requests);
 		}
-		dec_ap_pending(mdev); /* for the barrier */
 		if (b == mdev->newest_barrier) {
 			D_ASSERT(tmp == NULL);
 			b->br_number=4711;
@@ -291,6 +290,11 @@ void tl_clear(drbd_dev *mdev)
 		}
 		kfree(b);
 		b = tmp;
+		/* dec_ap_pending corresponding to _drbd_send_barrier;
+		 * note: the barrier for the current epoch (newest_barrier)
+		 * has not been sent yet, so we don't dec_ap_pending for it
+		 * here, either */
+		dec_ap_pending(mdev);
 	}
 	D_ASSERT(mdev->newest_barrier == mdev->oldest_barrier);
 	D_ASSERT(mdev->newest_barrier->br_number == 4711);
