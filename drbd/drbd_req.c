@@ -177,9 +177,9 @@ void _req_may_be_done(drbd_request_t *req)
 		 * up here anyways during the freeze ...
 		 * then again, if it is a READ, it is not in the TL at all.
 		 * is it still leagal to complete a READ during freeze? */
-		dec_ap_bio(mdev);
 		bio_endio(req->master_bio, req->master_bio->bi_size, ok ? 0 : -EIO);
 		req->master_bio = NULL;
+		dec_ap_bio(mdev);
 	} else {
 		/* only WRITE requests can end up here without a master_bio */
 		rw = WRITE;
@@ -195,8 +195,10 @@ void _req_may_be_done(drbd_request_t *req)
 		 * bit(s) out-of-sync first. If it had a local part, we need to
 		 * release the reference to the activity log. */
 		if (rw == WRITE) {
-			/* remove it from the transfer log */
-			list_del(&req->tl_requests);
+			/* remove it from the transfer log.  well, only if it
+			 * had been there in the first place... */
+			if (s & RQ_NET_MASK)
+				list_del(&req->tl_requests);
 			/* Set out-of-sync unless both OK flags are set 
 			 * (local only or remote failed).
 			 * Other places where we set out-of-sync:
