@@ -299,8 +299,9 @@ extern void _req_mod(drbd_request_t *req, drbd_req_event_t what);
 /* If you need it irqsave, do it your self! */
 static inline void req_mod(drbd_request_t *req, drbd_req_event_t what)
 {
-	spin_lock_irq(&req->mdev->req_lock);
+	drbd_dev *mdev = req->mdev;
+	spin_lock_irq(&mdev->req_lock);
 	_req_mod(req,what);
-	spin_unlock_irq(&req->mdev->req_lock);
+	spin_unlock_irq(&mdev->req_lock);
 }
 #endif
