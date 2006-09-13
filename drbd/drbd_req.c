@@ -195,10 +195,13 @@ void _req_may_be_done(drbd_request_t *req)
 		 * bit(s) out-of-sync first. If it had a local part, we need to
 		 * release the reference to the activity log. */
 		if (rw == WRITE) {
-			/* remove it from the transfer log.  well, only if it
-			 * had been there in the first place... */
-			if (s & RQ_NET_MASK)
-				list_del(&req->tl_requests);
+			/* remove it from the transfer log.
+			 * well, only if it had been there in the first
+			 * place... if it had not (local only or conflicting
+			 * and never sent), it should still be "empty" as
+			 * initialised in drbd_req_new(), so we can list_del() it
+			 * here unconditionally */
+			list_del(&req->tl_requests);
 			/* Set out-of-sync unless both OK flags are set 
 			 * (local only or remote failed).
 			 * Other places where we set out-of-sync:
@@ -1029,15 +1032,32 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	 * only force allignment within AL_EXTENT boundaries */
 	s_enr = bio->bi_sector >> (AL_EXTENT_SIZE_B-9);
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> (AL_EXTENT_SIZE_B-9);
-#endif
 	D_ASSERT(e_enr >= s_enr);
+#endif
 
 	if(unlikely(s_enr != e_enr)) {
 		/* This bio crosses some boundary, so we have to split it.
 		 * [So far, only XFS is known to do this...] */
 		struct bio_pair *bp;
+#if 1
+		/* works for the "do not cross hash slot boundaries" case
+		 * e.g. sector 262269, size 4096
+		 * s_enr = 262269 >> 6 = 4097
+		 * e_enr = (262269+8-1) >> 6 = 4098
+		 * HT_SHIFT = 6
+		 * sps = 64, mask = 63
+		 * first_sectors = 64 - (262269 & 63) = 3
+		 */
+		const sector_t sect = bio->bi_sector;
+		const int sps = 1<<HT_SHIFT; /* sectors per slot */
+		const int mask = sps -1;
+		const sector_t first_sectors = sps - (sect & mask);
+		bp = bio_split(bio, bio_split_pool, first_sectors);
+#else
+		/* works for the al-extent boundary case */
 		bp = bio_split(bio, bio_split_pool,
 			       (e_enr<<(AL_EXTENT_SIZE_B-9)) - bio->bi_sector);
+#endif
 		drbd_make_request_26(q,&bp->bio1);
 		drbd_make_request_26(q,&bp->bio2);
 		bio_pair_release(bp);
@@ -1068,7 +1088,11 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 	unsigned int bio_size = bio->bi_size;
 	int max;
 
+#if 1
+	max = DRBD_MAX_SEGMENT_SIZE - ((bio_offset & (DRBD_MAX_SEGMENT_SIZE-1)) + bio_size);
+#else
 	max = AL_EXTENT_SIZE - ((bio_offset & (AL_EXTENT_SIZE-1)) + bio_size);
+#endif
 	if (max < 0) max = 0;
 	if (max <= bvec->bv_len && bio_size == 0)
 		return bvec->bv_len;

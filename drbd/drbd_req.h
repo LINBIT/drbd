@@ -273,6 +273,7 @@ static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 		req->sector      = bio->bi_sector;
 		req->size        = bio->bi_size;
 		INIT_HLIST_NODE(&req->colision);
+		INIT_LIST_HEAD(&req->tl_requests);
 
 		bio->bi_private  = req;
 		bio->bi_end_io   = drbd_endio_pri;
