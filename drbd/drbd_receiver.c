@@ -1984,15 +1984,18 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 #undef min_not_zero
 
 	mdev->p_size=p_size;
-	drbd_bm_lock(mdev); // {
-	/*
-	 * you may get a flip-flop connection established/connection loss, in
-	 * case both really have different usize uppon first connect!
-	 * try to solve it thus:
-	 ***/
+	if(inc_local(mdev)) {
+		drbd_bm_lock(mdev); // {
+		/*
+		 * you may get a flip-flop connection established/connection loss, 
+		 * in case both really have different usize uppon first connect!
+		 * try to solve it thus:
+		 ***/
 
-	drbd_determin_dev_size(mdev);
-	drbd_bm_unlock(mdev); // }
+		drbd_determin_dev_size(mdev);
+		drbd_bm_unlock(mdev); // }
+		dec_local(mdev);
+	}
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev)) {
 		nconn=drbd_sync_handshake(mdev,mdev->state.peer,mdev->state.pdsk);
@@ -2007,12 +2010,15 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		}
 	}
 
-	max_seg_s = be32_to_cpu(p->max_segment_size);
-	if( max_seg_s != mdev->rq_queue->max_segment_size ) {
-		drbd_setup_queue_param(mdev, max_seg_s);
-	}
+	if(inc_local(mdev)) {
+		max_seg_s = be32_to_cpu(p->max_segment_size);
+		if( max_seg_s != mdev->rq_queue->max_segment_size ) {
+			drbd_setup_queue_param(mdev, max_seg_s);
+		}
 
-	drbd_setup_order_type(mdev,be32_to_cpu(p->queue_order_type));
+		drbd_setup_order_type(mdev,be32_to_cpu(p->queue_order_type));
+		dec_local(mdev);
+	}
 
 	if (mdev->state.conn > WFReportParams ) {
 		if( be64_to_cpu(p->c_size) !=
@@ -2121,8 +2127,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (mdev->p_uuid && mdev->state.conn <= Connected && 
-	    inc_local_if_state(mdev,Attaching) ) {
+	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev) ) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
 

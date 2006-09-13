@@ -568,13 +568,15 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	q->seg_boundary_mask = PAGE_SIZE-1;
 	blk_queue_stack_limits(q, b);
 
-	if( old_max_seg_s != q->max_segment_size ) {
-		if(b->merge_bvec_fn) {
-			WARN("Backing device has merge_bvec_fn()!\n");
-		}
+
+	if(b->merge_bvec_fn) {
+		WARN("Backing device has merge_bvec_fn()!\n");
+	}
+
+	//if( old_max_seg_s != q->max_segment_size ) {
 		INFO("max_segment_size ( = BIO size ) = %u\n",
 		     q->max_segment_size);
-	}
+	//}
 
 	if( q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
 		INFO("Adjusting my ra_pages to backing device's (%lu -> %lu)\n",
