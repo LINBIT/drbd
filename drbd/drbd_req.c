@@ -806,8 +806,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			    ( mdev->state.pdsk == Inconsistent &&
 			      mdev->state.conn >= Connected ) );
 
-	D_ASSERT( (rw != WRITE) || (remote == (mdev->state.conn >= Connected)) );
-
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");
 		goto fail_and_free_req;

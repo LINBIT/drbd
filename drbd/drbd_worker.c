@@ -565,7 +565,9 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	ok = drbd_send_drequest(mdev, DataRequest, req->sector, req->size,
 				(unsigned long)req);
 
-	if (!ok) {
+	if(ok) {
+		req_mod(req, handed_over_to_network);
+	} else {
 		/* ?? we set Timeout or BrokenPipe in drbd_send() */
 		if (mdev->state.conn >= Connected) 
 			drbd_force_state(mdev,NS(conn,NetworkFailure));

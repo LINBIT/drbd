@@ -154,6 +154,7 @@ typedef enum {
 	Diskless,
 	Attaching,      /* In the process of reading the meta-data */
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
+			/* when >= Failed it is legal to access mdev->bc */
 	Inconsistent,
 	Outdated,
 	DUnknown,       /* Only used for the peer, never for myself */

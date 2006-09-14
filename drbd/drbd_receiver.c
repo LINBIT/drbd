@@ -1995,6 +1995,9 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		drbd_determin_dev_size(mdev);
 		drbd_bm_unlock(mdev); // }
 		dec_local(mdev);
+	} else {
+		// I am diskless, need to accept the peer's size.
+		drbd_set_my_capacity(mdev,p_size);
 	}
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev)) {
