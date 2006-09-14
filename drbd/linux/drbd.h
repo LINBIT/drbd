@@ -152,8 +152,8 @@ typedef enum {
 
 typedef enum {
 	Diskless,
-	Failed,         /* Becomes Diskless as soon as we told it the peer */
 	Attaching,      /* In the process of reading the meta-data */
+	Failed,         /* Becomes Diskless as soon as we told it the peer */
 	Inconsistent,
 	Outdated,
 	DUnknown,       /* Only used for the peer, never for myself */

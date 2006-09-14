@@ -274,7 +274,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 		mdev->this_bdev->bd_disk = mdev->vdisk;
 
 		if ( ( ( mdev->state.conn < Connected ||
-			 mdev->state.pdsk <= Attaching ) &&
+			 mdev->state.pdsk <= Failed ) &&
 		       mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
 			drbd_uuid_new_current(mdev);
 		}

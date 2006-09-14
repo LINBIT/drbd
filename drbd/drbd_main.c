@@ -357,7 +357,6 @@ int drbd_io_error(drbd_dev* mdev)
 		_drbd_set_state(mdev,_NS(disk,Diskless),
 				ChgStateHard|ScheduleAfter);
 	}
-	D_ASSERT(mdev->state.disk <= Failed);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	if(!send) return ok;

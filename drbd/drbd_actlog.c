@@ -945,17 +945,10 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 {
 	struct bm_extent* bm_ext;
 	int i;
-	int have_resync;
-
-	/* inc_local variation to make sure mdev->resync is there */
-	spin_lock_irq(&mdev->req_lock);
-	atomic_inc(&mdev->local_cnt);
-	have_resync = ( mdev->state.disk >= Inconsistent || 
-			mdev->state.disk == Failed);
-	spin_unlock_irq(&mdev->req_lock);
 
 	spin_lock_irq(&mdev->al_lock);
-	if(have_resync) {
+
+	if(inc_md_only(mdev,Failed)) { // Makes sure mdev->resync is there.
 		for(i=0;i<mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 			if(bm_ext->lce.lc_number == LC_FREE) continue;
@@ -966,9 +959,9 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 			lc_del(mdev->resync,&bm_ext->lce);
 		}
 		mdev->resync->used=0;
+		dec_local(mdev);
 	}
 	atomic_set(&mdev->resync_locked,0);
 	spin_unlock_irq(&mdev->al_lock);
 	wake_up(&mdev->al_wait);
-	dec_local(mdev);
 }
