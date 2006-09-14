@@ -948,7 +948,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if(inc_md_only(mdev,Failed)) { // Makes sure mdev->resync is there.
+	if(inc_local_if_state(mdev,Failed)) { // Makes sure ->resync is there.
 		for(i=0;i<mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 			if(bm_ext->lce.lc_number == LC_FREE) continue;
