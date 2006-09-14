@@ -938,14 +938,13 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	}
 #endif
 
-	req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 	spin_unlock_irq(&mdev->req_lock);
 	if (b) kfree(b); /* if someone else has beaten us to it... */
 
 	/* extra if branch so I don't need to write spin_unlock_irq twice */
 
 	if (local) {
-		BUG_ON(req->private_bio->bi_bdev == NULL);
+		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 		generic_make_request(req->private_bio);
 	}
 	return 0;
@@ -1018,7 +1017,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	 */
 	D_ASSERT(bio->bi_size > 0);
 	D_ASSERT( (bio->bi_size & 0x1ff) == 0);
-	D_ASSERT(bio->bi_size <= q->max_segment_size);
+	// D_ASSERT(bio->bi_size <= q->max_segment_size); // wrong.
 	D_ASSERT(bio->bi_idx == 0);
 
 #if 1
