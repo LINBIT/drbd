@@ -1085,14 +1085,15 @@ static struct drbd_cmd *find_cmd_by_name(const char* name)
 
 int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
-	int rv = 0;
+	int rv;
 
 	if(argc > 1) {
 		fprintf(stderr,"Ignoring excess arguments\n");	
 	}
 
 	cm = find_cmd_by_name("secondary");
-	rv |= cm->function(cm,minor,argc,argv);
+	rv = cm->function(cm,minor,argc,argv);
+	if( rv ) return rv;
 	cm = find_cmd_by_name("disconnect");
 	rv |= cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");

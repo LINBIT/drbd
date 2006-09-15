@@ -155,6 +155,7 @@ typedef enum {
 	Attaching,      /* In the process of reading the meta-data */
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
 			/* when >= Failed it is legal to access mdev->bc */
+	Negotiating,    /* Late attaching state, we need to talk to the peer... */
 	Inconsistent,
 	Outdated,
 	DUnknown,       /* Only used for the peer, never for myself */

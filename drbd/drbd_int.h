@@ -782,6 +782,7 @@ struct Drbd_Conf {
 	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;
 
+	drbd_state_t new_state_tmp; // Used after attach while negotiating new disk state.
 	drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
 	wait_queue_head_t rq_wait;

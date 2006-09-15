@@ -821,53 +821,54 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	     FIXME wipe out on disk al!
 	} */
 
-
-	if(mdev->state.conn == Connected) {
-		drbd_send_sizes(mdev);  // to start sync...
-		drbd_send_uuids(mdev);
-		drbd_send_state(mdev);
-	} else {
-		spin_lock_irq(&mdev->req_lock);
-		os = mdev->state;
-		ns.i = os.i;
-		/* If MDF_Consistent is not set go into inconsistent state, 
-		   otherwise investige MDF_WasUpToDate...
-		   If MDF_WasUpToDate is not set go into Outdated disk state, 
-		   otherwise into Consistent state.
-		*/
-		if(drbd_md_test_flag(mdev->bc,MDF_Consistent)) {
-			if(drbd_md_test_flag(mdev->bc,MDF_WasUpToDate)) {
-				ns.disk = Consistent;
-			} else {
-				ns.disk = Outdated;
-			}
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	ns.i = os.i;
+	/* If MDF_Consistent is not set go into inconsistent state, 
+	   otherwise investige MDF_WasUpToDate...
+	   If MDF_WasUpToDate is not set go into Outdated disk state, 
+	   otherwise into Consistent state.
+	*/
+	if(drbd_md_test_flag(mdev->bc,MDF_Consistent)) {
+		if(drbd_md_test_flag(mdev->bc,MDF_WasUpToDate)) {
+			ns.disk = Consistent;
 		} else {
-			ns.disk = Inconsistent;
+			ns.disk = Outdated;
 		}
+	} else {
+		ns.disk = Inconsistent;
+	}
+	
+	if(drbd_md_test_flag(mdev->bc,MDF_PeerOutDated)) {
+		ns.pdsk = Outdated;
+	}
+	
+	if( ns.disk == Consistent && 
+	    ( ns.pdsk == Outdated || nbc->dc.fencing == DontCare ) ) {
+		ns.disk = UpToDate;
+	}
 
-		if(drbd_md_test_flag(mdev->bc,MDF_PeerOutDated)) {
-			ns.pdsk = Outdated;
-		}
+	/* All tests on MDF_PrimaryInd, MDF_ConnectedInd, 
+	   MDF_Consistent and MDF_WasUpToDate must happen before 
+	   this point, because drbd_request_state() modifies these
+	   flags. */
 
-		if( ns.disk == Consistent && 
-		    ( ns.pdsk == Outdated || nbc->dc.fencing == DontCare ) ) {
-			ns.disk = UpToDate;
-		}
-		
-		/* All tests on MDF_PrimaryInd, MDF_ConnectedInd, 
-		   MDF_Consistent and MDF_WasUpToDate must happen before 
-		   this point, because drbd_request_state() modifies these
-		   flags. */
+	/* In case we are Connected postpony any desicion on the new disk
+	   state after the negotiatin phase. */
+	if(mdev->state.conn == Connected) {
+		mdev->new_state_tmp.i = ns.i;
+		ns.i = os.i;
+		ns.disk = Negotiating;
+	}
 
-		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
-		ns = mdev->state;
-		spin_unlock_irq(&mdev->req_lock);
-		after_state_ch(mdev,os,ns,ChgStateVerbose);
+	rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
+	ns = mdev->state;
+	spin_unlock_irq(&mdev->req_lock);
+	if (rv==SS_Success) after_state_ch(mdev,os,ns,ChgStateVerbose);
 
-		if(rv < SS_Success ) {
-			drbd_bm_unlock(mdev);
-			goto  release_bdev3_fail;
-		}
+	if(rv < SS_Success ) {
+		drbd_bm_unlock(mdev);
+		goto  release_bdev3_fail;
 	}
 
 	drbd_bm_unlock(mdev);

@@ -678,6 +678,12 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		}
 	}
 
+	/* Connection breaks down before we finished "Negotiating" */
+	if (ns.conn < Connected && ns.disk == Negotiating ) {
+		ns.disk = mdev->new_state_tmp.disk;
+		ns.pdsk = mdev->new_state_tmp.pdsk;
+	}
+
 	if( fp == Stonith ) {
 		if(ns.role == Primary &&
 		   ns.conn < Connected &&
@@ -870,6 +876,13 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			get_random_bytes(&uuid, sizeof(u64));
 			drbd_uuid_set(mdev, Current, uuid);
 		}
+	}
+
+	/* Last part of the attaching process ... */
+	if ( os.disk == Attaching && ns.disk == Negotiating ) {
+		drbd_send_sizes(mdev);  // to start sync...
+		drbd_send_uuids(mdev);
+		drbd_send_state(mdev);
 	}
 
 	/* We want to pause resync, tell peer. */
@@ -1192,7 +1205,7 @@ int drbd_send_uuids(drbd_dev *mdev)
 	Drbd_GenCnt_Packet p;
 	int i;
 
-	if(!inc_local(mdev)) return 1; // ok
+	if(!inc_local_if_state(mdev,Negotiating)) return 1; // ok.
 
 	for (i = Current; i < UUID_SIZE; i++) {
 		/* FIXME howto handle diskless ? */
@@ -1227,7 +1240,7 @@ int drbd_send_sizes(drbd_dev *mdev)
 	int q_order_type;
 	int ok;
 
-	if(inc_local(mdev)) {
+	if(inc_local_if_state(mdev,Negotiating)) {
 		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev->bc);
 		u_size = mdev->bc->dc.disk_size;

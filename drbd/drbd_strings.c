@@ -50,12 +50,13 @@ static const char *drbd_role_s_names[] = {
 };
 
 static const char *drbd_disk_s_names[] = {
-	[DUnknown]     = "DUnknown",
 	[Diskless]     = "Diskless",
-	[Failed]       = "Failed",
 	[Attaching]    = "Attaching",
+	[Failed]       = "Failed",
+	[Negotiating]  = "Negotiating",
 	[Inconsistent] = "Inconsistent",
 	[Outdated]     = "Outdated",
+	[DUnknown]     = "DUnknown",
 	[Consistent]   = "Consistent",
 	[UpToDate]     = "UpToDate",
 };

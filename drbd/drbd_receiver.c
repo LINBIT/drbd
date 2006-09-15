@@ -2130,7 +2130,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev) ) {
+	if (mdev->p_uuid && mdev->state.conn <= Connected && 
+	    inc_local_if_state(mdev,Negotiating) ) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
 
@@ -2145,11 +2146,13 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		}
 	}
 
-        if ( peer_state.disk == Attaching && nconn == Connected ) {
-		// Peer should promote from Attaching to UpToDate.
+	/*
+        if ( peer_state.disk == Negotiating && nconn == Connected ) {
+		// Peer should promote from Negotiating to UpToDate.
 		drbd_send_state(mdev);
 		peer_state.disk = UpToDate;
 	}
+	*/
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
@@ -2158,7 +2161,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.peer = peer_state.role;
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
-	if(nconn == Connected && ns.disk == Consistent) ns.disk = UpToDate;
+	if(nconn == Connected && ns.disk == Negotiating ) ns.disk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv==SS_Success) {
