@@ -1001,7 +1001,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		ok = drbd_send_ack(mdev,NegAck,e);
-		ok&= drbd_io_error(mdev);
+		ok&= drbd_io_error(mdev, FALSE);
 	}
 	dec_unacked(mdev);
 
@@ -1028,7 +1028,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->req_lock);
 
-	drbd_generic_make_request(WRITE,e->private_bio);
+	drbd_generic_make_request(WRITE,DRBD_FAULT_RS_WR,e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1155,14 +1155,14 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 * may not list_del() the ee before this callback did run...
 			 * maybe even move the list_del(e) in here... */
 			ok = drbd_send_ack(mdev,NegAck,e);
-			ok&= drbd_io_error(mdev);
+			ok&= drbd_io_error(mdev, FALSE);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
 		}
 		dec_unacked(mdev);
 		return ok;
 	} else if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
-		ok = drbd_io_error(mdev);
+		ok = drbd_io_error(mdev, FALSE);
 	}
 
 // warning LGE "FIXME code missing"
@@ -1436,7 +1436,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
-	drbd_generic_make_request(WRITE,e->private_bio);
+	drbd_generic_make_request(WRITE,DRBD_FAULT_DT_WR,e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1457,6 +1457,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	struct Tl_epoch_entry *e;
 	int size;
+	unsigned int fault_type;
 	Drbd_BlockRequest_Packet *p = (Drbd_BlockRequest_Packet*)h;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -1501,9 +1502,11 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	switch (h->command) {
 	case DataRequest:
 		e->w.cb = w_e_end_data_req;
+		fault_type = DRBD_FAULT_DT_RD;
 		break;
 	case RSDataRequest:
 		e->w.cb = w_e_end_rsdata_req;
+		fault_type = DRBD_FAULT_RS_RD;
 		/* Eventually this should become asynchrously. Currently it
 		 * blocks the whole receiver just to delay the reading of a
 		 * resync data block.
@@ -1519,11 +1522,12 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		}
 		break;
 	default:; /* avoid compiler warning */
+		fault_type = DRBD_FAULT_MAX;
 	}
 
 	inc_unacked(mdev);
 	/* FIXME actually, it could be a READA originating from the peer ... */
-	drbd_generic_make_request(READ,e->private_bio);
+	drbd_generic_make_request(READ,fault_type,e->private_bio);
 	maybe_kick_lo(mdev);
 
 	return TRUE;
@@ -1753,15 +1757,22 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	//WARN("uuid_compare()=%d\n",hg);
 
 	if (hg == 100) {
-		if ( mdev->state.role==Secondary && peer_role==Secondary ) {
+		int pcount = (mdev->state.role==Primary) + (peer_role==Primary);
+
+		switch (pcount) {
+		case 0:
 			hg = drbd_asb_recover_0p(mdev);
-		} else if (mdev->state.role==Primary && peer_role==Primary) {
-			hg = drbd_asb_recover_2p(mdev);
-		} else {
+			break;
+		case 1:
 			hg = drbd_asb_recover_1p(mdev);
+			break;
+		case 2:
+			hg = drbd_asb_recover_2p(mdev);
+			break;
 		}
 		if ( abs(hg) < 100 ) {
-			WARN("Split-Brain detected, automatically solved.\n");
+			WARN("Split-Brain detected, %d primaries, automatically solved. Sync from %s node\n",
+			     pcount, (hg < 0) ? "peer":"this");
 		}
 	}
 
@@ -1774,7 +1785,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		}
 
 		if ( abs(hg) < 100 ) {
-			WARN("Split-Brain detected, manually solved.\n");
+			WARN("Split-Brain detected, manually solved. Sync from %s node\n",
+			     (hg < 0) ? "peer":"this");
 		}
 	}
 	
@@ -1794,6 +1806,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 
 	if (hg == -100) {
 		ALERT("Split-Brain detected, dropping connection!\n");
+		drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
+		drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
 		return conn_mask;
@@ -2413,8 +2427,6 @@ STATIC void drbdd(drbd_dev *mdev)
 		else
 			handler = NULL;
 
-		dump_packet(mdev,mdev->data.socket,2,&mdev->data.rbuf, __FILE__, __LINE__);
-
 		if (unlikely(!handler)) {
 			ERR("unknown packet type %d, l: %d!\n",
 			    header->command, header->length);
@@ -2425,6 +2437,8 @@ STATIC void drbdd(drbd_dev *mdev)
 			    cmdname(header->command), header->length);
 			break;
 		}
+
+		dump_packet(mdev,mdev->data.socket,2,&mdev->data.rbuf, __FILE__, __LINE__);
 	}
 }
 
@@ -2893,16 +2907,14 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 		return FALSE;
 	}
 
-	/* FIXME what for ?? list_del(&req->w.list); */
+	ERR("Got NegDReply; Sector %llx, len %x; Fail original request.\n",
+	    (unsigned long long)sector,be32_to_cpu(p->blksize));
+
 	_req_mod(req, neg_acked);
 	spin_unlock_irq(&mdev->req_lock);
 
 // warning LGE "ugly and wrong"
 	drbd_khelper(mdev,"pri-on-incon-degr");
-	drbd_panic("Got NegDReply. WE ARE LOST. We lost our up-to-date disk.\n");
-
-	// THINK do we have other options, but panic?
-	//       what about bio_endio, in case we don't panic ??
 
 	return TRUE;
 }

@@ -48,4 +48,7 @@ extern const char * drbd_buildtag(void);
 // for troubles.
 // #define DRBD_DISABLE_SENDPAGE
 
+// Enable fault insertion code
+//#define DRBD_ENABLE_FAULTS
+
 #endif

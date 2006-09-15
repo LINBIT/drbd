@@ -50,6 +50,7 @@
 #include <linux/random.h>
 #include <linux/reboot.h>
 #include <linux/notifier.h>
+#include <linux/byteorder/swabb.h>
 
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
@@ -105,6 +106,13 @@ MODULE_PARM_DESC(disable_bd_claim, "DONT USE! disables block device claiming" );
  */
 module_param(minor_count,      int,0);
 module_param(disable_bd_claim,bool,0);
+
+#ifdef DRBD_ENABLE_FAULTS
+int enable_faults = 0;
+int fault_rate;
+module_param(enable_faults,int,0664);	// bitmap of enabled faults
+module_param(fault_rate,int,0664);	// fault rate % value - applies to all enabled faults
+#endif
 
 // module parameter, defined
 int major_nr = LANANA_DRBD_MAJOR;
@@ -340,17 +348,22 @@ drbd_request_t * _req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
  * unlikely(!drbd_bio_uptodate(e->bio)) case from kernel thread context.
  * See also drbd_chk_io_error
  *
- * NOTE: we set ourselves DISKLESS here.
- * But we try to write the "need full sync bit" here anyways.  This is to make sure
- * that you get a resynchronisation of the full device the next time you
- * connect.
+ * NOTE: we set ourselves FAILED here if on_io_error is Detach or Panic OR
+ *	 if the forcedetach flag is set. This flag is set when failures
+ *	 occur writing the meta data portion of the disk as they are
+ *	 not recoverable. We also try to write the "need full sync bit" here 
+ *	 anyways.  This is to make sure that you get a resynchronisation of 
+ *	 the full device the next time you connect.
  */
-int drbd_io_error(drbd_dev* mdev)
+int drbd_io_error(drbd_dev* mdev, int forcedetach)
 {
 	unsigned long flags;
 	int send,ok=1;
 
-	if(mdev->bc->dc.on_io_error != Panic && mdev->bc->dc.on_io_error != Detach) return 1;
+	if(!forcedetach &&
+	   mdev->bc->dc.on_io_error != Panic && 
+	   mdev->bc->dc.on_io_error != Detach) 
+		return 1;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
@@ -365,9 +378,18 @@ int drbd_io_error(drbd_dev* mdev)
 	if (ok) WARN("Notified peer that my disk is broken.\n");
 	else ERR("Sending state in drbd_io_error() failed\n");
 
+#if 0
+// warning SPG
+// This code seems wrong -- we only get here if we are set to
+// detach in which case we have no local disk, so there's no
+// point asserting that a full sync is needed.
+// Flushing the meta data is probably also wrong -- we want
+// this node to appear out of date so we should deliberately
+// NOT update the meta data with the latest epoch info!
 	D_ASSERT(drbd_md_test_flag(mdev->bc,MDF_FullSync));
 	D_ASSERT(!drbd_md_test_flag(mdev->bc,MDF_Consistent));
 	drbd_md_sync(mdev);
+#endif
 
 	/* Releasing the backing device is done in after_state_ch() */
 
@@ -756,13 +778,6 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		D_ASSERT(i);
 	}
 
-	if ( ns.role == Primary && ns.conn < Connected &&
-	     ns.disk < Consistent ) {
-// warning LGE "ugly and wrong"
-// warning LGE "FIXME code missing"
-		drbd_panic("No access to good data anymore.\n");
-	}
-
 	if( flags & ScheduleAfter ) {
 		struct after_state_chg_work* ascw;
 
@@ -861,22 +876,25 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
 		}
-		if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 ) {
-			/* Only do it if we have not yet done it... */
-			INFO("Creating new current UUID\n");
-			drbd_uuid_new_current(mdev);
-		}
-		if (ns.peer == Primary ) { 
- 			/* Note: The condition ns.peer == Primary implies
-			         that we are connected. Otherwise it would
-				 be ns.peer == Unknown. */
- 			/* Our peer lost its disk.
-			   Not rotation into BitMap-UUID! A FullSync is 
-			   required after a primary detached from it disk! */
-			u64 uuid;
-			INFO("Creating new current UUID [no BitMap]\n");
-			get_random_bytes(&uuid, sizeof(u64));
-			drbd_uuid_set(mdev, Current, uuid);
+		if (inc_local(mdev)) {
+			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 ) {
+				/* Only do it if we have not yet done it... */
+				INFO("Creating new current UUID\n");
+				drbd_uuid_new_current(mdev);
+			}
+			if (ns.peer == Primary ) { 
+				/* Note: The condition ns.peer == Primary implies
+				   that we are connected. Otherwise it would
+				   be ns.peer == Unknown. */
+				/* Our peer lost its disk.
+				   Not rotation into BitMap-UUID! A FullSync is 
+				   required after a primary detached from it disk! */
+				u64 uuid;
+				INFO("Creating new current UUID [no BitMap]\n");
+				get_random_bytes(&uuid, sizeof(u64));
+				drbd_uuid_set(mdev, Current, uuid);
+			}
+			dec_local(mdev);
 		}
 	}
 
@@ -1040,7 +1058,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 
 	spin_lock(&thi->t_lock);
 
-	/* INFO("%s [%d]: %s %d -> Running\n",
+	/* INFO("drbd_thread_start: %s [%d]: %s %d -> Running\n",
 	     current->comm, current->pid,
 	     thi == &mdev->receiver ? "receiver" :
              thi == &mdev->asender  ? "asender"  :
@@ -1073,7 +1091,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 
 	spin_lock(&thi->t_lock);
 
-	/* INFO("%s [%d]: %s %d -> %d; %d\n",
+	/* INFO("drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
@@ -1100,7 +1118,6 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 			force_sig(DRBD_SIGKILL,thi->task);
 		else
 			D_ASSERT(!wait);
-
 	}
 	spin_unlock(&thi->t_lock);
 
@@ -1340,16 +1357,15 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 		drbd_bm_set_all(mdev);
 		drbd_bm_write(mdev);
 		if (unlikely(mdev->state.disk <= Failed )) {
-			/* write_bm did fail! panic.
-			 * FIXME can we do something better than panic?
-			 */
-// warning LGE "ugly and wrong"
-			drbd_panic("Failed to write bitmap to disk\n!");
-			ok = FALSE;
-			goto out;
+			/* write_bm did fail! Leave full sync flag set in Meta Data
+			 * but otherwise process as per normal - need to tell other
+			 * side that a full resync is required! */
+			ERR("Failed to write bitmap to disk!\n");
 		}
-		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_sync(mdev);
+		else {
+			drbd_md_clear_flag(mdev,MDF_FullSync);
+			drbd_md_sync(mdev);
+		}
 	}
 
 	/*
@@ -1367,7 +1383,6 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 		bm_i += num_words;
 	} while (ok && want);
 
-  out:
 	vfree(p);
 	return ok;
 }
@@ -2530,17 +2545,11 @@ void drbd_md_sync(drbd_dev *mdev)
 	if (drbd_md_sync_page_io(mdev,mdev->bc,sector,WRITE)) {
 		clear_bit(MD_DIRTY,&mdev->flags);
 	} else {
-		if (mdev->state.disk <= Failed) {
-			/* this was a try anyways ... */
-			ERR("meta data update failed!\n");
-		} else {
-			/* If we cannot write our meta data,
-			 * but we are supposed to be able to,
-			 * tough!
-			 */
-// warning LGE "ugly and wrong"
-			drbd_panic("meta data update failed!\n");
-		}
+		/* this was a try anyways ... */
+		ERR("meta data update failed!\n");
+
+		drbd_chk_io_error(mdev, 1, TRUE);
+		drbd_io_error(mdev, TRUE);
 	}
 
 	// Update mdev->bc->md.la_size_sect, since we updated it on metadata.
@@ -2568,6 +2577,8 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
 	if ( ! drbd_md_sync_page_io(mdev,bdev,bdev->md.md_offset,READ) ) {
+		/* NOTE: cant do normal error processing here as this is
+		   called BEFORE disk is attached */
 		ERR("Error while reading metadata.\n");
 		rv = MDIOError;
 		goto err;
@@ -2731,6 +2742,65 @@ STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	return 1;
 }
+
+#ifdef DRBD_ENABLE_FAULTS
+// Fault insertion support including random number generator shamelessly
+// stolen from kernel/rcutorture.c
+struct fault_random_state {
+	unsigned long state;
+	unsigned long count;
+};
+
+#define FAULT_RANDOM_MULT 39916801  /* prime */
+#define FAULT_RANDOM_ADD	479001701 /* prime */
+#define FAULT_RANDOM_REFRESH 10000
+
+/*
+ * Crude but fast random-number generator.  Uses a linear congruential
+ * generator, with occasional help from get_random_bytes().
+ */
+static unsigned long
+_drbd_fault_random(struct fault_random_state *rsp)
+{
+	long refresh;
+
+	if (--rsp->count < 0) {
+		get_random_bytes(&refresh, sizeof(refresh));
+		rsp->state += refresh;
+		rsp->count = FAULT_RANDOM_REFRESH;
+	}
+	rsp->state = rsp->state * FAULT_RANDOM_MULT + FAULT_RANDOM_ADD;
+	return swahw32(rsp->state);
+}
+
+static char *
+_drbd_fault_str(unsigned int type) {
+    static char *_faults[] = {
+	"Meta-data write",
+	"Meta-data read",
+	"Resync write",
+	"Resync read",
+	"Data write",
+	"Data read",
+    };
+
+    return (type < DRBD_FAULT_MAX)? _faults[type] : "**Unknown**";
+}
+
+unsigned int
+_drbd_insert_fault(unsigned int type)
+{
+    static struct fault_random_state rrs = {0,0};
+
+    unsigned int rnd = ((_drbd_fault_random(&rrs) % 100) + 1);
+    unsigned int ret = (rnd <= fault_rate);
+
+    if (ret)
+	printk(KERN_ALERT "Simulating %s failure\n", _drbd_fault_str(type));
+
+    return ret;
+}
+#endif
 
 #ifdef DUMP_EACH_PACKET
 #define PSM(A) \

@@ -738,7 +738,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev3_fail;
 	}
 
-	// Since ware are diskless, fix the AL first...
+	// Since we are diskless, fix the AL first...
 	if (drbd_check_al_size(mdev)) {
 		retcode = KMallocFailed;
 		goto release_bdev3_fail;
@@ -878,8 +878,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 
  release_bdev3_fail:
+	nbc = NULL; /* will be freed by state change below */
 	drbd_force_state(mdev,NS(disk,Diskless));
 	drbd_md_sync(mdev);
+	goto fail;
  release_bdev2_fail:
 	bd_release(nbc->md_bdev);
  release_bdev_fail:

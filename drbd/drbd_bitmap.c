@@ -653,7 +653,13 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	bio_add_page(bio, page, len, 0);
 	bio->bi_private = b;
 	bio->bi_end_io = drbd_bm_async_io_complete;
-	submit_bio(rw, bio);
+
+	if (FAULT_ACTIVE((rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
+		bio->bi_rw |= rw;
+		bio_endio(bio,bio->bi_size,-EIO);
+	}
+	else
+		submit_bio(rw, bio);
 }
 /* read one sector of the on disk bitmap into memory.
  * on disk bitmap is little endian.
@@ -684,8 +690,8 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 		ERR( "IO ERROR reading bitmap sector %lu "
 		     "(meta-disk sector %llu)\n",
 		     enr, (unsigned long long)on_disk_sector );
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
+		drbd_chk_io_error(mdev, 1, TRUE);
+		drbd_io_error(mdev, TRUE);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
 			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
 	}
@@ -755,6 +761,8 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 	now = jiffies;
 	atomic_set(&b->bm_async_io, num_pages);
+	__clear_bit(BM_MD_IO_ERROR,&b->bm_flags);
+
 	for (i = 0; i < num_pages; i++) {
 		/* let the layers below us try to merge these bios... */
 		drbd_bm_page_io_async(mdev,b,i,rw);
@@ -770,8 +778,8 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 		 * detach?
 		 */
 		ALERT("we had at least one MD IO ERROR during bitmap IO\n");
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
+		drbd_chk_io_error(mdev, 1, TRUE);
+		drbd_io_error(mdev, TRUE);
 	}
 
 	now = jiffies;
@@ -836,8 +844,8 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 		ERR( "IO ERROR writing bitmap sector %lu "
 		     "(meta-disk sector %lu)\n",
 		     enr, (unsigned long)on_disk_sector );
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
+		drbd_chk_io_error(mdev, 1, TRUE);
+		drbd_io_error(mdev, TRUE);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
 			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
 	}

@@ -49,12 +49,18 @@ STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
 	bio->bi_private = &event;
 	bio->bi_end_io = drbd_md_io_complete;
 
+	if (FAULT_ACTIVE((rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
+		bio->bi_rw |= rw;
+		bio_endio(bio,bio->bi_size,-EIO);
+	}
+	else {
 #ifdef BIO_RW_SYNC
-	submit_bio(rw | (1 << BIO_RW_SYNC), bio);
+		submit_bio(rw | (1 << BIO_RW_SYNC), bio);
 #else
-	submit_bio(rw, bio);
-	drbd_blk_run_queue(bdev_get_queue(bdev->md_bdev));
+		submit_bio(rw, bio);
+		drbd_blk_run_queue(bdev_get_queue(bdev->md_bdev));
 #endif
+	}
 	wait_for_completion(&event);
 
 	ok = test_bit(BIO_UPTODATE, &bio->bi_flags);
@@ -108,7 +114,11 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 			ok = _drbd_md_sync_page_io(bdev,iop,
 						   sector,READ,hardsect);
 
-			if (unlikely(!ok)) return 0;
+			if (unlikely(!ok)) {
+				ERR("drbd_md_sync_page_io(,%llu,READ [hardsect!=512]) failed!\n",
+				    (unsigned long long)sector);
+				return 0;
+			}
 
 			memcpy(hp + offset*MD_HARDSECT , p, MD_HARDSECT);
 		}
@@ -130,6 +140,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 	if (unlikely(!ok)) {
 		ERR("drbd_md_sync_page_io(,%llu,%s) failed!\n",
 		    (unsigned long long)sector,rw ? "WRITE" : "READ");
+		return 0;
 	}
 
 	if( hardsect != MD_HARDSECT && rw == READ ) {
@@ -326,8 +337,8 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 	sector = mdev->bc->md.md_offset + mdev->bc->md.al_offset + mdev->al_tr_pos;
 
 	if(!drbd_md_sync_page_io(mdev,mdev->bc,sector,WRITE)) {
-		drbd_chk_io_error(mdev, 1);
-		drbd_io_error(mdev);
+		drbd_chk_io_error(mdev, 1, TRUE);
+		drbd_io_error(mdev, TRUE);
 	}
 
 	if( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements,AL_EXTENTS_PT) ) {
@@ -361,6 +372,8 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 	sector = bdev->md.md_offset + bdev->md.al_offset + index;
 
 	if(!drbd_md_sync_page_io(mdev,bdev,sector,READ)) {
+		// Dont process error normally as this is done before
+		// disk is atached!
 		return -1;
 	}
 
@@ -500,22 +513,20 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	i=inc_local_if_state(mdev,Attaching);
-	D_ASSERT( i ); // Assertions should not have side effects.
-	// I do not want to have D_ASSERT( inc_md_only(mdev,Attaching) );
+	if (inc_local_if_state(mdev,Attaching)) {
+		for(i=0;i<mdev->act_log->nr_elements;i++) {
+			enr = lc_entry(mdev->act_log,i)->lc_number;
+			if(enr == LC_FREE) continue;
+			/* TODO encapsulate and optimize within drbd_bitmap
+			 * currently, if we have al-extents 16..19 active,
+			 * sector 4 will be written four times! */
+			drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
+		}
 
-	for(i=0;i<mdev->act_log->nr_elements;i++) {
-		enr = lc_entry(mdev->act_log,i)->lc_number;
-		if(enr == LC_FREE) continue;
-		/* TODO encapsulate and optimize within drbd_bitmap
-		 * currently, if we have al-extents 16..19 active,
-		 * sector 4 will be written four times! */
-		drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
-	}
-
-	lc_unlock(mdev->act_log);
-	wake_up(&mdev->al_wait);
-	dec_local(mdev);
+		lc_unlock(mdev->act_log);
+		wake_up(&mdev->al_wait);
+		dec_local(mdev);
+	} else D_ASSERT(0);
 }
 
 /**

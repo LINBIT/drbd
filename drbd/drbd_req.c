@@ -116,7 +116,7 @@ void _req_may_be_done(drbd_request_t *req)
 		/*
 		 * figure out whether to report success or failure.
 		 *
-		 * report success when at least one of the oprations suceeded.
+		 * report success when at least one of the operations suceeded.
 		 * or, to put the other way,
 		 * only report failure, when both operations failed.
 		 *
@@ -302,7 +302,7 @@ STATIC int _req_add_hash_check_colision(drbd_request_t *req)
 				      "	[DISCARD L] new: %llu +%d; pending: %llu +%d\n",
 				      current->comm, current->pid,
 				      (unsigned long long)sector, size,
-				      e->sector, e->size);
+				      (unsigned long long)e->sector, e->size);
 				return 1;
 			}
 		}
@@ -399,10 +399,10 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		req->private_bio = NULL;
 		dec_local(mdev);
 		ALERT("Local WRITE failed sec=%llu size=%u\n",
-					req->sector, req->size);
+		      (unsigned long long)req->sector, req->size);
 		/* and now: check how to handle local io error.
 		 * FIXME see comment below in read_completed_with_error */
-		__drbd_chk_io_error(mdev);
+		__drbd_chk_io_error(mdev,FALSE);
 		_req_may_be_done(req);
 		break;
 
@@ -419,7 +419,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			break;
 		/* else */
 		ALERT("Local READ failed sec=%llu size=%u\n",
-					req->sector, req->size);
+		      (unsigned long long)req->sector, req->size);
 		/* _req_mod(req,to_be_send); oops, recursion in static inline */
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
 		req->rq_state |= RQ_NET_PENDING;
@@ -434,7 +434,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		 * private bio then, and round the offset and size so
 		 * we get back enough data to be able to clear the bits again.
 		 */
-		__drbd_chk_io_error(mdev);
+		__drbd_chk_io_error(mdev,FALSE);
 		/* fall through: _req_mod(req,queue_for_net_read); */
 
 	case queue_for_net_read:
@@ -943,7 +943,11 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	if (local) {
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
-		generic_make_request(req->private_bio);
+
+		if (FAULT_ACTIVE(rw==WRITE? DRBD_FAULT_DT_WR : DRBD_FAULT_DT_RD))
+			bio_endio(req->private_bio, req->private_bio->bi_size, -EIO);
+		else
+			generic_make_request(req->private_bio);
 	}
 	return 0;
 
@@ -991,7 +995,6 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 		ERR("Sorry, I have no access to good data anymore.\n");
 		/*
 		 * FIXME suspend, loop waiting on cstate wait?
-		 * panic?
 		 */
 		return 1;
 	}

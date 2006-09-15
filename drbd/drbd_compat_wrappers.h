@@ -129,7 +129,7 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(int rw, struct bio *bio)
+static inline void drbd_generic_make_request(int rw, int fault_type, struct bio *bio)
 {
 	bio->bi_rw = rw; // on the receiver side, e->..rw was not yet defined.
 
@@ -140,7 +140,10 @@ static inline void drbd_generic_make_request(int rw, struct bio *bio)
 		return;
 	}
 
-	generic_make_request(bio);
+	if (FAULT_ACTIVE(fault_type))
+		bio_endio(bio,bio->bi_size,-EIO);
+	else
+		generic_make_request(bio);
 }
 
 static inline void drbd_plug_device(drbd_dev *mdev)

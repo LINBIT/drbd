@@ -43,6 +43,11 @@ extern int disable_bd_claim;
 extern int major_nr;
 extern int use_nbd_major;
 
+#ifdef DRBD_ENABLE_FAULTS
+extern int enable_faults;
+extern int fault_rate;
+#endif
+
 #include <linux/major.h>
 #ifdef DRBD_MAJOR
 # warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
@@ -186,6 +191,27 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	if (_b) ERR("%s: (" #exp ") in %s:%d\n", __func__, __FILE__,__LINE__); \
 	 _b; \
 	}))
+
+// Defines to control fault insertion
+enum {
+    DRBD_FAULT_MD_WR = 0,
+    DRBD_FAULT_MD_RD,
+    DRBD_FAULT_RS_WR,
+    DRBD_FAULT_RS_RD,
+    DRBD_FAULT_DT_WR,
+    DRBD_FAULT_DT_RD,
+
+    DRBD_FAULT_MAX,
+};
+
+#ifdef DRBD_ENABLE_FAULTS
+#define FAULT_ACTIVE(_t) \
+    (fault_rate && (enable_faults & (1<<(_t))) && _drbd_insert_fault(_t))
+
+extern unsigned int _drbd_insert_fault(unsigned int type);
+#else
+#define FAULT_ACTIVE(_t) (0)
+#endif
 
 #include <linux/stringify.h>
 // integer division, round _UP_ to the next integer
@@ -970,7 +996,7 @@ extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req);
 extern int drbd_send_sr_reply(drbd_dev *mdev, int retcode);
 extern void drbd_free_bc(struct drbd_backing_dev* bc);
-extern int drbd_io_error(drbd_dev* mdev);
+extern int drbd_io_error(drbd_dev* mdev, int forcedetach);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
 // drbd_meta-data.c (still in drbd_main.c)
@@ -1318,12 +1344,21 @@ static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
  * all io completion handlers. See also drbd_io_error().
  */
-static inline void __drbd_chk_io_error(drbd_dev* mdev)
+static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 {
 	/* FIXME cleanup the messages here */
 	switch(mdev->bc->dc.on_io_error) {
-	case PassOn: /* FIXME should the better be named "Ignore"? */
-		ERR("Ignoring local IO error!\n");
+	case PassOn: /* FIXME would this be better named "Ignore"? */
+	    if (!forcedetach) {
+		ERR("Local IO failed. Passing error on...\n");
+		break;
+	    }
+	    /* NOTE fall through to detach case if forcedetach set */
+	case Detach:
+		if (_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard) 
+		    == SS_Success) {
+			ERR("Local IO failed. Detaching...\n");
+		}
 		break;
 	case Panic:
 		_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard);
@@ -1332,21 +1367,15 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev)
 		 * while holding the req_lock hand with irq disabled. */
 		drbd_panic("IO error on backing device!\n");
 		break;
-	case Detach:
-		if (_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard) 
-		    == SS_Success) {
-			ERR("Local IO failed. Detaching...\n");
-		}
-		break;
 	}
 }
 
-static inline void drbd_chk_io_error(drbd_dev* mdev, int error)
+static inline void drbd_chk_io_error(drbd_dev* mdev, int error, int forcedetach)
 {
 	if (error) {
 		unsigned long flags;
 		spin_lock_irqsave(&mdev->req_lock,flags);
-		__drbd_chk_io_error(mdev);
+		__drbd_chk_io_error(mdev,forcedetach);
 		spin_unlock_irqrestore(&mdev->req_lock,flags);
 	}
 }

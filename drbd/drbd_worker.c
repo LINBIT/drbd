@@ -87,7 +87,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	if(list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	drbd_chk_io_error(mdev,error);
+	drbd_chk_io_error(mdev,error,FALSE);
 	drbd_queue_work(&mdev->data.work,&e->w);
 	dec_local(mdev);
 	return 0;
@@ -129,7 +129,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 		? list_empty(&mdev->sync_ee)
 		: list_empty(&mdev->active_ee);
 
-	if (error) __drbd_chk_io_error(mdev);
+	if (error) __drbd_chk_io_error(mdev,FALSE);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	if (do_wake) wake_up(&mdev->ee_wait);
@@ -184,7 +184,7 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	if(unlikely(cancel)) return 1;
 
-	ok = drbd_io_error(mdev);
+	ok = drbd_io_error(mdev, FALSE);
 	if(unlikely(!ok)) ERR("Sending in w_io_error() failed\n");
 	return ok;
 }
@@ -208,7 +208,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	/* FIXME this is ugly. we should not detach for read io-error,
 	 * but try to WRITE the DataReply to the failed location,
 	 * to give the disk the chance to relocate that block */
-	drbd_io_error(mdev); /* tries to schedule a detach and notifies peer */
+	drbd_io_error(mdev,FALSE); /* tries to schedule a detach and notifies peer */
 	return w_send_read_req(mdev,w,0);
 }
 
@@ -440,7 +440,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		/* FIXME we should not detach for read io-errors, in particular
 		 * not now: when the peer asked us for our data, we are likely
 		 * the only remaining disk... */
-		drbd_io_error(mdev);
+		drbd_io_error(mdev,FALSE);
 	}
 
 	dec_unacked(mdev);
@@ -486,8 +486,8 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	} else {
 		ok=drbd_send_ack(mdev,NegRSDReply,e);
 		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Sending NegDReply. I guess it gets messy.\n");
-		drbd_io_error(mdev);
+			ERR("Sending NegRSDReply. I guess it gets messy.\n");
+		drbd_io_error(mdev, FALSE);
 	}
 
 	dec_unacked(mdev);
