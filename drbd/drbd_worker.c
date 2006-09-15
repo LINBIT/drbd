@@ -134,6 +134,8 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	if (do_wake) wake_up(&mdev->ee_wait);
 
+	if(e->flags & CALL_AL_COMPLETE_IO) drbd_al_complete_io(mdev,e->sector);
+
 	wake_asender(mdev);
 	dec_local(mdev);
 	return 0;

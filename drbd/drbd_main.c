@@ -814,7 +814,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 					     MDF_ConnectedInd|MDF_WasUpToDate|
 					     MDF_PeerOutDated );
 		if (test_bit(CRASHED_PRIMARY,&mdev->flags) ||
-		    mdev->state.role == Primary)       mdf |= MDF_PrimaryInd;
+		    mdev->state.role == Primary ||
+		    ( mdev->state.pdsk < Inconsistent && 
+		      mdev->state.peer == Primary ) )  mdf |= MDF_PrimaryInd;
 		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
 		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
@@ -875,6 +877,18 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			INFO("Creating new current UUID [no BitMap]\n");
 			get_random_bytes(&uuid, sizeof(u64));
 			drbd_uuid_set(mdev, Current, uuid);
+		}
+	}
+
+	if( ns.pdsk < Inconsistent ) {
+		/* Diskless Peer becomes primary */
+		if (os.peer == Secondary && ns.peer == Primary ) {
+			INFO("Creating new current UUID\n");
+			drbd_uuid_new_current(mdev);
+		}
+		/* Diskless Peer becomes secondary */
+		if (os.peer == Primary && ns.peer == Secondary ) {
+			drbd_al_to_on_disk_bm(mdev);
 		}
 	}
 

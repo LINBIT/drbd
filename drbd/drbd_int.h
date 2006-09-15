@@ -658,10 +658,18 @@ struct Tl_epoch_entry {
 	   In case the barrier after this write has been coalesced
 	   as well, we set it's barrier_nr into barrier_nr2 */
 
+	unsigned int flags;
 	u64    block_id;
 };
 
-/* flag bits */
+/* ee flag bits */
+enum {
+	__CALL_AL_COMPLETE_IO,
+};
+#define CALL_AL_COMPLETE_IO (1<<__CALL_AL_COMPLETE_IO)
+
+
+/* global flag bits */
 enum {
 	ISSUE_BARRIER,		// next Data is preceeded by a Barrier
 	SIGNAL_ASENDER,		// whether asender wants to be interrupted

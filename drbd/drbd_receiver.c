@@ -279,6 +279,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	INIT_HLIST_NODE(&e->colision);
 	e->barrier_nr = 0;
 	e->barrier_nr2 = 0;
+	e->flags = 0;
 
 	return e;
 
@@ -1427,6 +1428,13 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
+	if(mdev->state.pdsk <= Inconsistent) {
+		// In case we have the only disk of the cluster, 
+		drbd_set_out_of_sync(mdev,e->sector,e->size);
+		e->flags >= CALL_AL_COMPLETE_IO;
+		drbd_al_begin_io(mdev, e->sector);
+	}
+
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
 	drbd_generic_make_request(WRITE,e->private_bio);
 	/* accounting done in endio */
@@ -1798,7 +1806,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		return conn_mask;
 	}
 	if (hg < 0 && 
-	    mdev->state.role == Primary && mdev->state.disk != Attaching ) {
+	    mdev->state.role == Primary && mdev->state.disk != Negotiating ) {
 		ERR("I shall become SyncTarget, but I am primary!\n");
 		drbd_force_state(mdev,NS(conn,StandAlone));
 		drbd_thread_stop_nowait(&mdev->receiver);
@@ -2145,14 +2153,6 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			drbd_send_state(mdev);
 		}
 	}
-
-	/*
-        if ( peer_state.disk == Negotiating && nconn == Connected ) {
-		// Peer should promote from Negotiating to UpToDate.
-		drbd_send_state(mdev);
-		peer_state.disk = UpToDate;
-	}
-	*/
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
