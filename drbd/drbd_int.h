@@ -711,7 +711,7 @@ enum {
 	CLUSTER_ST_CHANGE,      // Cluster wide state change going on...
 	CL_ST_CHG_SUCCESS,
 	CL_ST_CHG_FAIL,
-	CRASHED_PRIMARY         // This node was a crashed primary
+	CRASHED_PRIMARY		// This node was a crashed primary
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

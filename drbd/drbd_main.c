@@ -987,7 +987,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	if ( os.conn != StandAlone && ns.conn == StandAlone ) {
-		drbd_thread_stop(&mdev->receiver);
+		drbd_thread_stop_nowait(&mdev->receiver);
 	}
 
 	if ( os.conn != Unconnected && ns.conn == Unconnected ) {
@@ -1003,9 +1003,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	/* it feels better to have the module_put last ... */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
-		drbd_thread_stop(&mdev->worker);
-		drbd_mdev_cleanup(mdev);
-		module_put(THIS_MODULE);
+		drbd_thread_stop_nowait(&mdev->worker);
 	}
 }
 
@@ -2011,7 +2009,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->rs_total     =
 	mdev->rs_mark_left =
 	mdev->rs_mark_time = 0;
-	mdev->net_conf     = NULL;
+	D_ASSERT(mdev->net_conf == NULL);
 	drbd_set_my_capacity(mdev,0);
 	drbd_bm_resize(mdev,0);
 

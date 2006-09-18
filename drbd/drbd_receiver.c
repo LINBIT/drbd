@@ -1431,7 +1431,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	if(mdev->state.pdsk <= Inconsistent) {
 		// In case we have the only disk of the cluster, 
 		drbd_set_out_of_sync(mdev,e->sector,e->size);
-		e->flags >= CALL_AL_COMPLETE_IO;
+		e->flags |= CALL_AL_COMPLETE_IO;
 		drbd_al_begin_io(mdev, e->sector);
 	}
 

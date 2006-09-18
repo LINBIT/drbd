@@ -680,6 +680,11 @@ int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 	if(w) kfree(w);
 
+	if(mdev->state.conn == StandAlone && mdev->net_conf ) {
+		kfree(mdev->net_conf);
+		mdev->net_conf = NULL;
+	}
+
 	return 1;
 }
 
@@ -1082,8 +1087,10 @@ int drbd_worker(struct Drbd_thread *thi)
 		i++; /* dead debugging code */
 	}
 
+	drbd_thread_stop(&mdev->receiver);
+
 	spin_lock_irq(&mdev->data.work.q_lock);
-	ERR_IF(!list_empty(&mdev->data.work.q))
+	if(!list_empty(&mdev->data.work.q))
 		goto again;
 	sema_init(&mdev->data.work.s,0);
 	/* DANGEROUS race: if someone did queue his work within the spinlock,
@@ -1092,6 +1099,10 @@ int drbd_worker(struct Drbd_thread *thi)
 	 * So don't do that.
 	 */
 	spin_unlock_irq(&mdev->data.work.q_lock);
+
+	D_ASSERT( mdev->state.disk == Diskless && mdev->state.conn == StandAlone );
+	drbd_mdev_cleanup(mdev);
+	module_put(THIS_MODULE);
 
 	INFO("worker terminated\n");
 
