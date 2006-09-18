@@ -442,7 +442,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	if ( la_size_changed || md_moved ) {
 		if( inc_local_if_state(mdev,Attaching) ) {
 			drbd_al_shrink(mdev); // All extents inactive.
-			drbd_bm_write(mdev);  // write bitmap
+			rv = drbd_bm_write(mdev);  // write bitmap
 			// Write mdev->la_size to on disk.
 			drbd_md_mark_dirty(mdev);
 			dec_local(mdev);
@@ -806,11 +806,16 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
+		if (unlikely(drbd_bm_write(mdev) < 0)) {
+			retcode = MDIOError;
+			goto release_bdev3_fail;		
+		}
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 	} else {
-		/* FIXME this still does not propagate io errors! */
-		drbd_bm_read(mdev);
+		if (unlikely(drbd_bm_read(mdev) < 0)) {
+			retcode = MDIOError;
+			goto release_bdev3_fail;		
+		}
 	}
 
 	if(test_bit(CRASHED_PRIMARY, &mdev->flags)) {
@@ -853,8 +858,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	   this point, because drbd_request_state() modifies these
 	   flags. */
 
-	/* In case we are Connected postpony any desicion on the new disk
-	   state after the negotiatin phase. */
+	/* In case we are Connected postpone any desicion on the new disk
+	   state after the negotiation phase. */
 	if(mdev->state.conn == Connected) {
 		mdev->new_state_tmp.i = ns.i;
 		ns.i = os.i;
@@ -878,7 +883,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 
  release_bdev3_fail:
-	nbc = NULL; /* will be freed by state change below */
+	/* The following will be freed by state change below */
+	nbc = NULL; 
+	resync_lru = NULL;
+
 	drbd_force_state(mdev,NS(disk,Diskless));
 	drbd_md_sync(mdev);
 	goto fail;

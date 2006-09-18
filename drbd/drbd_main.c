@@ -494,7 +494,9 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		drbd_state_lock(mdev);
 		if( !drbd_send_state_req(mdev,mask,val) ) {
 			drbd_state_unlock(mdev);
-			return SS_CW_FailedByPeer;
+			rv = SS_CW_FailedByPeer;
+			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
+			return rv;
 		}
 
 		wait_event(mdev->cstate_wait,(rv=_req_st_cond(mdev,mask,val)));
@@ -724,7 +726,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			   this happen...*/
 
 			if( pre_state_checks(mdev,os) == rv ) {
-				ERR("State change from bad state. "
+				ERR("Forcing state change from bad state. "
 				    "Error would be: '%s'\n", 
 				    set_st_err_name(rv));
 				print_st(mdev,"old",os);
@@ -2899,6 +2901,14 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		INFOP("%s (barrier %u)\n", cmdname(cmd), p->Barrier.barrier);
 		break;
 
+	case ReportUUIDs:
+		INFOP("%s Curr:%016llX, Bitmap:%016llX, HisSt:%016llX, HisEnd:%016llX\n", cmdname(cmd),
+		      p->GenCnt.uuid[Current],
+		      p->GenCnt.uuid[Bitmap],
+		      p->GenCnt.uuid[History_start],
+		      p->GenCnt.uuid[History_end]);
+		break;
+		      
 	case ReportSizes:
 		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, max bio %x, q order %x)\n", cmdname(cmd), 
 		     (long long)(be64_to_cpu(p->Sizes.d_size)>>(20-9)),

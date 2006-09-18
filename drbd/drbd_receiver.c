@@ -1832,7 +1832,10 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		drbd_md_sync(mdev);
 
 		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
+
+		if (unlikely(drbd_bm_write(mdev) < 0)) {
+			return conn_mask;
+		}
 
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_sync(mdev);
@@ -1849,7 +1852,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		if(drbd_bm_total_weight(mdev)) {
 			INFO("No resync -> clearing bit map.\n");
 			drbd_bm_clear_all(mdev);
-			drbd_bm_write(mdev);
+			if (unlikely(drbd_bm_write(mdev) < 0))
+				return conn_mask;
 		}
 		drbd_bm_unlock(mdev); // }
 	}

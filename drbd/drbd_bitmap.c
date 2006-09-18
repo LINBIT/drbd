@@ -736,13 +736,14 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 /* lel_to_cpu == cpu_to_lel */
 # define bm_lel_to_cpu(x) bm_cpu_to_lel(x)
 
-STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
+STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	/* sector_t sector; */
 	int bm_words, num_pages, i;
 	unsigned long now;
 	char ppb[10];
+	int err = 0;
 
 	MUST_BE_LOCKED();
 
@@ -774,12 +775,10 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	     rw == READ ? "reading" : "writing", jiffies - now);
 
 	if (test_bit(BM_MD_IO_ERROR,&b->bm_flags)) {
-		/* FIXME correct handling of this.
-		 * detach?
-		 */
 		ALERT("we had at least one MD IO ERROR during bitmap IO\n");
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
+		err = -EIO;
 	}
 
 	now = jiffies;
@@ -800,15 +799,20 @@ STATIC void drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 	INFO("%s marked out-of-sync by on disk bit-map.\n",
 	     ppsize(ppb,drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
+
+	return err;
 }
 
-void drbd_bm_read(struct Drbd_Conf *mdev)
+int drbd_bm_read(struct Drbd_Conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
-	drbd_bm_rw(mdev, READ);
+	int err = drbd_bm_rw(mdev, READ);
 
-	b->bm[b->bm_words] = DRBD_MAGIC;
+	if (err == 0)
+	    b->bm[b->bm_words] = DRBD_MAGIC;
+
+	return err;
 }
 
 /**
@@ -857,12 +861,14 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 /**
  * drbd_bm_write: Write the whole bitmap to its on disk location.
  */
-void drbd_bm_write(struct Drbd_Conf *mdev)
+int drbd_bm_write(struct Drbd_Conf *mdev)
 {
-	drbd_bm_rw(mdev, WRITE);
+	int err = drbd_bm_rw(mdev, WRITE);
 
 	INFO("%lu KB now marked out-of-sync by on disk bit-map.\n",
 	      drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10) );
+
+	return err;
 }
 
 /* clear all bits in the bitmap */
