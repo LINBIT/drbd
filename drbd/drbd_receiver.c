@@ -2166,6 +2166,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
 		}
+		else if (nconn == Connected && peer_state.disk == Negotiating) {
+			// peer is waiting for us to respond...
+			drbd_send_state(mdev);
+		}
 	}
 
 	spin_lock_irq(&mdev->req_lock);
@@ -2176,6 +2180,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
 	if(nconn == Connected && ns.disk == Negotiating ) ns.disk = UpToDate;
+	if(nconn == Connected && ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv==SS_Success) {
