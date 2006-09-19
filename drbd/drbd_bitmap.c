@@ -806,11 +806,15 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 int drbd_bm_read(struct Drbd_Conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+	int err=0;
 
-	int err = drbd_bm_rw(mdev, READ);
+	if (b->bm) {
+	    // bitmap size > 0
+	    err = drbd_bm_rw(mdev, READ);
 
-	if (err == 0)
-	    b->bm[b->bm_words] = DRBD_MAGIC;
+	    if (err == 0)
+		b->bm[b->bm_words] = DRBD_MAGIC;
+	}
 
 	return err;
 }

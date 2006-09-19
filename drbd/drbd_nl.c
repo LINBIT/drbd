@@ -883,6 +883,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 
  release_bdev3_fail:
+	drbd_bm_unlock(mdev);
+
 	/* The following will be freed by state change below */
 	nbc = NULL; 
 	resync_lru = NULL;

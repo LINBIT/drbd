@@ -83,6 +83,16 @@ $commands{'drbd_make'} = 'drbdadm create-md {resource}';
 #FILESYSTEM:
 $commands{'fs_make'} = 'mkfs.{filesystem} /dev/{device}'; #FIXME FileSystem - agent.conf!!'
 
+#FAULTS
+$commands{'set_fr'} = 'echo 10 >/sys/module/drbd/parameters/fault_rate';
+$commands{'clr_fr'} = 'echo 0 >/sys/module/drbd/parameters/fault_rate; echo 0 >/sys/module/drbd/parameters/enable_faults';
+$commands{'set_md_wr'} = 'echo 1 >/sys/module/drbd/parameters/enable_faults';
+$commands{'set_md_rd'} = 'echo 2 >/sys/module/drbd/parameters/enable_faults';
+$commands{'set_rs_wr'} = 'echo 4 >/sys/module/drbd/parameters/enable_faults';
+$commands{'set_rs_rd'} = 'echo 8 >/sys/module/drbd/parameters/enable_faults';
+$commands{'set_dt_wr'} = 'echo 16 >/sys/module/drbd/parameters/enable_faults';
+$commands{'set_dt_rd'} = 'echo 32 >/sys/module/drbd/parameters/enable_faults';
+
 ###############################################################################
 
 require 'getopts.pl';
@@ -154,10 +164,10 @@ sub load_conf {
     elsif ($section == 4) {
       push @seqcommands, $_;
       if (/{/) {
-        $seqsection = 1;
+        $seqsection += 1;
       }
       if (/}/) {
-        $seqsection = 0;
+        $seqsection -= 1;
       }
     }
     elsif ($section == 1 or $section == 2) {
@@ -210,7 +220,7 @@ sub load_conf {
       $section = 4;
     }
     else {
-      ERROR ("unknown configuration");
+      ERROR ("unknown configuration: ".$_);
     }
   }
 }
@@ -334,7 +344,6 @@ sub get {
 
   return $reply;
 }
-
 
 ###############################################################################
 ######  functions
@@ -603,7 +612,7 @@ sub show_report {
     my $yday;
 
     print LOGFILE "--------- TestSuite --------\n";
-    foreach(sort(@logList)) {
+    foreach(@logList) {
       ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday) = (localtime($$_[0]));
       printf LOGFILE "%s %02d %02d:%02d:%02d ", $mnames[$mon], $mday, $hour, $min, $sec;
       print LOGFILE $$_[1]."\n";    
@@ -674,6 +683,7 @@ sub process_seqcommands {
   
   while(($key, $value) = each(%commands)) {
     $seqcommands_eval =~ s/cmd $key/cmd '$value'/g;
+    $seqcommands_eval =~ s/get $key/get '$value'/g;
   }
   
   set_default_vars();
@@ -756,6 +766,19 @@ sub LOG {
   return;
 }
 
+
+# print info messages
+sub INFO {
+  my ($msg) = @_;
+  
+ if (defined($opt_l)) {
+       LOG($msg);
+  }
+
+  print $msg. "\n";
+
+  return;
+}
 
 # print warn messages
 sub WARN {

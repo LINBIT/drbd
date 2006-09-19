@@ -1668,7 +1668,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 
 STATIC void drbd_uuid_dump(drbd_dev *mdev,char* text,u64* uuid)
 {
-	WARN("%s %016llX:%016llX:%016llX:%016llX\n",
+	INFO("%s %016llX:%016llX:%016llX:%016llX\n",
 	     text,
 	     uuid[Current],
 	     uuid[Bitmap],
@@ -1748,13 +1748,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	int hg;
 	drbd_conns_t rv = conn_mask;
 
-
+	//INFO("drbd_sync_handshake:\n");
 	//drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 	//drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
 
 	hg = drbd_uuid_compare(mdev);
 
-	//WARN("uuid_compare()=%d\n",hg);
+	//INFO("uuid_compare()=%d\n",hg);
 
 	if (hg == 100) {
 		int pcount = (mdev->state.role==Primary) + (peer_role==Primary);

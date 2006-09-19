@@ -378,18 +378,12 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 	if (ok) WARN("Notified peer that my disk is broken.\n");
 	else ERR("Sending state in drbd_io_error() failed\n");
 
-#if 0
-// warning SPG
-// This code seems wrong -- we only get here if we are set to
-// detach in which case we have no local disk, so there's no
-// point asserting that a full sync is needed.
-// Flushing the meta data is probably also wrong -- we want
-// this node to appear out of date so we should deliberately
-// NOT update the meta data with the latest epoch info!
-	D_ASSERT(drbd_md_test_flag(mdev->bc,MDF_FullSync));
-	D_ASSERT(!drbd_md_test_flag(mdev->bc,MDF_Consistent));
+	// Make sure we try to flush meta-data to disk - we come
+	// in here because of a local disk error so it might fail
+	// but we still need to try -- both because the error might
+	// be in the data portion of the disk and because we need
+	// to ensure the md-sync-timer is stopped if running.
 	drbd_md_sync(mdev);
-#endif
 
 	/* Releasing the backing device is done in after_state_ch() */
 
@@ -2903,10 +2897,10 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case ReportUUIDs:
 		INFOP("%s Curr:%016llX, Bitmap:%016llX, HisSt:%016llX, HisEnd:%016llX\n", cmdname(cmd),
-		      p->GenCnt.uuid[Current],
-		      p->GenCnt.uuid[Bitmap],
-		      p->GenCnt.uuid[History_start],
-		      p->GenCnt.uuid[History_end]);
+		      be64_to_cpu(p->GenCnt.uuid[Current]),
+		      be64_to_cpu(p->GenCnt.uuid[Bitmap]),
+		      be64_to_cpu(p->GenCnt.uuid[History_start]),
+		      be64_to_cpu(p->GenCnt.uuid[History_end]));
 		break;
 		      
 	case ReportSizes:
