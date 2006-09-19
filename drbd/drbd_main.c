@@ -993,7 +993,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
 	     (ns.disk > Diskless || ns.conn > StandAlone) ) {
-		drbd_thread_start(&mdev->worker);
+		if(!drbd_thread_start(&mdev->worker)) {
+			module_put(THIS_MODULE);
+		}
 	}
 
 	/* it feels better to have the module_put last ... */
@@ -1022,8 +1024,8 @@ STATIC int drbd_thread_setup(void* arg)
 	retval = thi->function(thi);
 
 	spin_lock(&thi->t_lock);
-	thi->task = 0;
-	thi->t_state = Exiting;
+	thi->task = NULL;
+	thi->t_state = None;
 	smp_mb();
 	spin_unlock(&thi->t_lock);
 
@@ -1045,7 +1047,7 @@ STATIC void drbd_thread_init(drbd_dev *mdev, struct Drbd_thread *thi,
 	thi->mdev = mdev;
 }
 
-void drbd_thread_start(struct Drbd_thread *thi)
+int drbd_thread_start(struct Drbd_thread *thi)
 {
 	int pid;
 	drbd_dev *mdev = thi->mdev;
@@ -1067,7 +1069,7 @@ void drbd_thread_start(struct Drbd_thread *thi)
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
-			return;
+			return FALSE;
 		}
 		wait_for_completion(&thi->startstop); // waits until thi->task is set
 		D_ASSERT(thi->task);
@@ -1075,6 +1077,8 @@ void drbd_thread_start(struct Drbd_thread *thi)
 	} else {
 		spin_unlock(&thi->t_lock);
 	}
+
+	return TRUE;
 }
 
 
@@ -1116,13 +1120,11 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 	spin_unlock(&thi->t_lock);
 
 	if (wait) {
-		if (thi->task == current) return;
-		D_ASSERT(thi->t_state == Exiting);
+		D_ASSERT(thi->task != current);
 		wait_for_completion(&thi->startstop);
 		spin_lock(&thi->t_lock);
-		thi->t_state = None;
-		smp_mb();
 		D_ASSERT(thi->task == NULL);
+		D_ASSERT(thi->t_state == None);
 		spin_unlock(&thi->t_lock);
 	}
 }
@@ -1989,7 +1991,6 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	 */
 
 	drbd_thread_stop(&mdev->receiver);
-	drbd_thread_stop(&mdev->worker);
 
 	/* no need to lock it, I'm the only thread alive */
 	if ( mdev->epoch_size !=  0)
