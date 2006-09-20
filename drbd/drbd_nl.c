@@ -553,11 +553,13 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 {
 	request_queue_t * const q = mdev->rq_queue;
 	request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
+	//unsigned int old_max_seg_s = q->max_segment_size;
 
-	unsigned int old_max_seg_s = q->max_segment_size;
-
-	if(b->merge_bvec_fn) {
+	if(b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
+		mdev->bc->bmbf = b->merge_bvec_fn;
+	} else {
 		max_seg_s = PAGE_SIZE;
+		mdev->bc->bmbf = NULL;
 	}
 
 	q->max_sectors       = max_seg_s >> 9;
@@ -568,15 +570,19 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	q->seg_boundary_mask = PAGE_SIZE-1;
 	blk_queue_stack_limits(q, b);
 
+	// KERNEL BUG. in ll_rw_blk.c
+	// t->max_segment_size = min(t->max_segment_size,b->max_segment_size);
+	// should be 
+	// t->max_segment_size = min_not_zero(...,...)
+	
+	// workaround here:
+	if(q->max_segment_size == 0) q->max_segment_size = max_seg_s;
 
 	if(b->merge_bvec_fn) {
-		WARN("Backing device has merge_bvec_fn()!\n");
+		WARN("Backing device's merge_bvec_fn() = %p\n",
+		     b->merge_bvec_fn);
 	}
-
-	//if( old_max_seg_s != q->max_segment_size ) {
-		INFO("max_segment_size ( = BIO size ) = %u\n",
-		     q->max_segment_size);
-	//}
+	INFO("max_segment_size ( = BIO size ) = %u\n", q->max_segment_size);
 
 	if( q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
 		INFO("Adjusting my ra_pages to backing device's (%lu -> %lu)\n",

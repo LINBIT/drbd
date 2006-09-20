@@ -24,6 +24,7 @@ PACKET(disk_conf,
 	INTEGER(	5,	T_MANDATORY,	meta_dev_idx)
 	INTEGER(	6,	T_MAY_IGNORE,	on_io_error)
 	INTEGER(	7,	T_MAY_IGNORE,	fencing)
+	BIT(		37,	T_MAY_IGNORE,	use_bmbv)
 )
 
 PACKET(detach, )

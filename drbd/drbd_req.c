@@ -1084,18 +1084,25 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
  * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 {
-	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; // 32 bit...
+	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
+	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; // 32 bit
 	unsigned int bio_size = bio->bi_size;
-	int max;
+	int limit, backing_limit;
 
 #if 1
-	max = DRBD_MAX_SEGMENT_SIZE - ((bio_offset & (DRBD_MAX_SEGMENT_SIZE-1)) + bio_size);
+	limit = DRBD_MAX_SEGMENT_SIZE - ((bio_offset & (DRBD_MAX_SEGMENT_SIZE-1)) + bio_size);
 #else
-	max = AL_EXTENT_SIZE - ((bio_offset & (AL_EXTENT_SIZE-1)) + bio_size);
+	limit = AL_EXTENT_SIZE - ((bio_offset & (AL_EXTENT_SIZE-1)) + bio_size);
 #endif
-	if (max < 0) max = 0;
-	if (max <= bvec->bv_len && bio_size == 0)
-		return bvec->bv_len;
-	else
-		return max;
+	if (limit < 0) limit = 0;
+	if (limit <= bvec->bv_len && bio_size == 0)
+		limit = bvec->bv_len;
+
+	if(limit && inc_local(mdev)) {
+		backing_limit = mdev->bc->bmbf(q,bio,bvec);
+		limit = min(limit,backing_limit);
+		dec_local(mdev);
+	}
+
+	return limit;
 }

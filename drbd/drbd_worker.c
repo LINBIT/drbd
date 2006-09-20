@@ -256,6 +256,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int max_segment_size = mdev->rq_queue->max_segment_size;
 	int number,i,size;
+	int align;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
@@ -308,9 +309,10 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 #if DRBD_MAX_SEGMENT_SIZE > BM_BLOCK_SIZE
 		/* try to find some adjacent bits.
-		 * we stop if we have already the maximum req size
-		 * or if it the request would cross a 32k boundary
-		 * (play more nicely with most raid devices).
+		 * we stop if we have already the maximum req size.
+		 *
+		 * Aditionally always align bigger requests, in order to
+		 * be prepared for all stripe sizes of software RAIDs.
 		 *
 		 * we _do_ care about the agreed-uppon q->max_segment_size
 		 * here, as splitting up the requests on the other side is more
@@ -318,11 +320,18 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		 * "indirect" devices, this is dead code, since
 		 * q->max_segment_size will be PAGE_SIZE.
 		 */
+		align=1;
 		for (;;) {
 			if (size + BM_BLOCK_SIZE > max_segment_size)
 				break;
-			if ((sector & ~63ULL) + BM_BIT_TO_SECT(2) <= 64ULL)
+
+			// Be always aligned
+			if (sector & ((1<<(align+3))-1) ) {
+				WARN("sector %llu w.b. unaligned size "
+				     "%d (%d)\n",sector,size,align);
 				break;
+			}
+
 			// do not cross extent boundaries
 			if (( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0)
 				break;
@@ -335,6 +344,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 				break;
 			bit++;
 			size += BM_BLOCK_SIZE;
+			if( (BM_BLOCK_SIZE<<align) <= size) align++;
 			i++;
 		}
 		/* if we merged some,

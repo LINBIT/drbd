@@ -638,7 +638,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	/*  State sanitising  */
 	if( ns.conn < Connected ) {
 		ns.peer = Unknown;
-		if ( ns.pdsk > DUnknown ) ns.pdsk = DUnknown;
+		if ( ns.pdsk > DUnknown || 
+		     ns.pdsk < Inconsistent ) ns.pdsk = DUnknown;
 	}
 
 	if( ns.conn == StandAlone && ns.disk == Diskless ) {
