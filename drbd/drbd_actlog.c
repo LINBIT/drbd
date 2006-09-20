@@ -618,16 +618,15 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 }
 
 
-/* ATTENTION. The AL's extents are 4MB each, while the extents in the  *
- * resync LRU-cache are 16MB each.                                     *
+/* ATTENTION. The AL's extents are 4MB each, while the extents in the
+ * resync LRU-cache are 16MB each.
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				      int cleared)
 {
-	struct list_head *le, *tmp;
-	struct bm_extent* ext, *ext1;
+	struct bm_extent* ext;
 	struct update_odbm_work * udw;
 
 	unsigned int enr;
@@ -652,9 +651,12 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				return;
 			}
 		} else {
-			//WARN("Recounting sectors in %d (resync LRU too small?)\n", enr);
+			//WARN("Counting bits in %d (resync LRU small?)\n",enr);
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
+
+			// OR an application write finished, and therefore 
+			// we set something in this area in sync.
 			int rs_left = drbd_bm_e_weight(mdev,enr);
 			if (ext->flags != 0) {
 				WARN("changing resync lce: %d[%u;%02lx]"
@@ -668,41 +670,23 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		}
 		lc_put(mdev->resync,&ext->lce);
 		// no race, we are within the al_lock!
+
+		if (ext->rs_left == 0) {
+			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
+			if(udw) {
+				udw->enr = ext->lce.lc_number;
+				udw->w.cb = w_update_odbm;
+				drbd_queue_work_front(&mdev->data.work,&udw->w);
+			} else {
+				WARN("Could not kmalloc an udw\n");
+				set_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags);
+			}
+		}
 	} else {
 		ERR("lc_get() failed! locked=%d/%d flags=%lu\n",
 		    atomic_read(&mdev->resync_locked),
 		    mdev->resync->nr_elements,
 		    mdev->resync->flags);
-	}
-
-	list_for_each_safe(le,tmp,&mdev->resync->lru) {
-		ext1=(struct bm_extent *)list_entry(le,struct lc_element,list);
-		if(ext1->rs_left == 0) {
-			if(ext1 == ext) ext=NULL;
-			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
-			if(!udw) {
-				WARN("Could not kmalloc an udw\n");
-				break;
-			}
-			udw->enr = ext1->lce.lc_number;
-			udw->w.cb = w_update_odbm;
-			drbd_queue_work_front(&mdev->data.work,&udw->w);
-			if (ext1->flags != 0) {
-				WARN("deleting resync lce: %d[%u;%02lx]\n",
-				     ext1->lce.lc_number, ext1->rs_left,
-				     ext1->flags);
-				ext1->flags = 0;
-			}
-			lc_del(mdev->resync,&ext1->lce);
-		}
-	}
-
-	if(ext) {
-		if (ext->rs_left == 0) {
-			ERR("BUG! missed lc_number:%u refcnt: %u\n",
-			    ext->lce.lc_number,
-			    ext->lce.refcnt);
-		}
 	}
 }
 

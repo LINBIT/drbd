@@ -326,11 +326,8 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 				break;
 
 			// Be always aligned
-			if (sector & ((1<<(align+3))-1) ) {
-				WARN("sector %llu w.b. unaligned size "
-				     "%d (%d)\n",sector,size,align);
+			if (sector & ((1<<(align+3))-1) ) 
 				break;
-			}
 
 			// do not cross extent boundaries
 			if (( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0)
@@ -416,6 +413,11 @@ int drbd_resync_finished(drbd_dev* mdev)
 	if ( mdev->p_uuid ) {
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
+	}
+
+	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags)) {
+		WARN("Writing the whole bitmap, due to failed kmalloc\n");
+		drbd_bm_write(mdev);
 	}
 
 	drbd_request_state(mdev,NS3(conn,Connected,
