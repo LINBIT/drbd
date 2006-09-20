@@ -1042,8 +1042,6 @@ STATIC void drbd_thread_init(drbd_dev *mdev, struct Drbd_thread *thi,
 	spin_lock_init(&thi->t_lock);
 	thi->task    = NULL;
 	thi->t_state = None;
-	init_completion(&thi->startstop);
-
 	thi->function = func;
 	thi->mdev = mdev;
 }
@@ -1063,6 +1061,7 @@ int drbd_thread_start(struct Drbd_thread *thi)
 	     thi->t_state); */
 
 	if (thi->t_state == None) {
+		init_completion(&thi->startstop);
 		D_ASSERT(thi->task == NULL);
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
@@ -1113,10 +1112,10 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 
 		thi->t_state = ns;
 		smp_mb();
-		if (thi->task != current)
+		if (thi->task != current) {
+			if(wait) init_completion(&thi->startstop);
 			force_sig(DRBD_SIGKILL,thi->task);
-		else
-			D_ASSERT(!wait);
+		} else D_ASSERT(!wait);
 	}
 	spin_unlock(&thi->t_lock);
 
