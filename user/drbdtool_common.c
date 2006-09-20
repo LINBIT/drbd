@@ -428,3 +428,19 @@ u64 bdev_size(int fd)
 
 	return size64;
 }
+
+void get_random_bytes(void* buffer, int len)
+{
+	int fd;
+
+	fd = open("/dev/urandom",O_RDONLY);
+	if( fd == -1) {
+		perror("Open of /dev/urandom failed");
+		exit(20);
+	}
+	if(read(fd,buffer,len) != len) {
+		fprintf(stderr,"Reading from /dev/urandom failed\n");
+		exit(20);
+	}
+	close(fd);	
+}

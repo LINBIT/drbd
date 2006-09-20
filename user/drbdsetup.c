@@ -128,8 +128,9 @@ struct drbd_cmd {
 // Connector functions
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
-int send_tag_list_cn(int, struct drbd_tag_list *, const int, int, int);
 int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
+int send_tag_list_cn(int, struct drbd_tag_list *, const int, int, int);
+int receive_reply_cn(int, struct drbd_tag_list *, struct nlmsghdr*,int);
 void close_cn(int sk_nl);
 
 // other functions
@@ -255,6 +256,7 @@ struct drbd_cmd commands[] = {
 		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s') },
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
+		 { "use-bmbv",'b',	T_use_bmbv,     EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },
@@ -368,7 +370,6 @@ static const char *error_messages[] = {
 	EM(FailedToClaimMyself) = "FailedToClaimMyself",
 };
 
-const char empty_string[] = "";
 char* cmdname = 0;
 
 int dump_tag_list(unsigned short *tlc)
@@ -767,8 +768,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		if(sk_nl < 0) return 20;
 
 		send_tag_list_cn(sk_nl,tl,cm->packet_id,minor,flags);
-
-		receive_cn(sk_nl, (struct nlmsghdr*)buffer, RCV_SIZE );
+		receive_reply_cn(sk_nl, tl, (struct nlmsghdr*)buffer, RCV_SIZE );
 		close_cn(sk_nl);
 		reply = (struct drbd_nl_cfg_reply *)
 			((struct cn_msg *)NLMSG_DATA(buffer))->data;
@@ -870,50 +870,57 @@ void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect
 }
 
 
-const char* consume_tag_blob(enum drbd_tags tag, unsigned short *tlc, 
-			     unsigned int* len)
+int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc, 
+		     char** val, unsigned int* len)
 {
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
 	if(tp) {
 		*tp++ = TT_REMOVED;
 		*len = *tp++;
-		return (char*)tp;
-	}
-	return NULL;
-}
-
-const char* consume_tag_string(enum drbd_tags tag, unsigned short *tlc)
-{
-	unsigned short *tp;
-	tp = look_for_tag(tlc,tag);
-	if(tp) {
-		*tp++ = TT_REMOVED;
-		if( *tp++ > 0) return (char*)tp;
-	}
-	return empty_string;
-}
-
-int consume_tag_int(enum drbd_tags tag, unsigned short *tlc)
-{
-	unsigned short *tp;
-	tp = look_for_tag(tlc,tag);
-	if(tp) {
-		*tp++ = TT_REMOVED;
-		tp++;
-		return *(int *)tp;
+		*val = (char*)tp;
+		return 1;
 	}
 	return 0;
 }
 
-char consume_tag_bit(enum drbd_tags tag, unsigned short *tlc)
+int consume_tag_string(enum drbd_tags tag, unsigned short *tlc, char** val)
+{
+	unsigned short *tp;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		if( *tp++ > 0 )
+			*val = (char*)tp;
+		else 
+			*val = "";
+		return 1;
+	}
+	return 0;
+}
+
+int consume_tag_int(enum drbd_tags tag, unsigned short *tlc, int* val)
 {
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
 	if(tp) {
 		*tp++ = TT_REMOVED;
 		tp++;
-		return *(char *)tp;
+		*val = *(int *)tp;
+		return 1;
+	}
+	return 0;
+}
+
+int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
+{
+	unsigned short *tp;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		tp++;
+		*val = (int)(*(char *)tp);
+		return 1;
 	}
 	return 0;
 }
@@ -937,8 +944,8 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	if(sk_nl < 0) return 20;
 
 	send_tag_list_cn(sk_nl,tl,cm->packet_id,minor,0);
+	receive_reply_cn(sk_nl,tl, (struct nlmsghdr*)buffer, 4096 );
 
-	receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
 	close_cn(sk_nl);
 	reply = (struct drbd_nl_cfg_reply *)
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
@@ -956,7 +963,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
 	int idx;
-	const char* str;
+	char* str;
 	struct sockaddr_in *addr;
 
 	// find all commands that have options and print those...
@@ -966,30 +973,26 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 	}
 
 	// start of spagethi code...
-	idx = consume_tag_int(T_wire_protocol,rtl);
-	if(idx) printf("protocol %c;\n",'A'+idx-1);
-	str = consume_tag_string(T_backing_dev,rtl);
-	if(str != empty_string) {
+	if(consume_tag_int(T_wire_protocol,rtl,&idx))
+		printf("protocol %c;\n",'A'+idx-1);
+	if(consume_tag_string(T_backing_dev,rtl,&str)) {
 		printf("_this_host {\n");
 		printf("\tdevice\t\t\t\"/dev/drbd%d\";\n",minor);
 		printf("\tdisk\t\t\t\"%s\";\n",str);
-		idx=consume_tag_int(T_meta_dev_idx,rtl);
+		consume_tag_int(T_meta_dev_idx,rtl,&idx);
+		consume_tag_string(T_meta_dev,rtl,&str);
 		switch(idx) {
 		case DRBD_MD_INDEX_INTERNAL:
 		case DRBD_MD_INDEX_FLEX_INT:
 			printf("\tmeta-disk\t\tinternal;\n");
-			consume_tag_string(T_meta_dev,rtl);
 			break;
 		case DRBD_MD_INDEX_FLEX_EXT:
-			printf("\tflexible-meta-disk\t\"%s\";\n",
-			       consume_tag_string(T_meta_dev,rtl));
+			printf("\tflexible-meta-disk\t\"%s\";\n",str);
 			break;
 		default:
-			printf("\tmeta-disk\t\t\"%s\" [ %d ];\n",
-			       consume_tag_string(T_meta_dev,rtl),idx);
+			printf("\tmeta-disk\t\t\"%s\" [ %d ];\n",str,idx);
 		}
-		str = consume_tag_string(T_my_addr,rtl);
-		if(str != empty_string ) {
+		if(consume_tag_string(T_my_addr,rtl,&str)) {
 			addr = (struct sockaddr_in *)str;
 			printf("\taddress\t\t\t%s:%d;\n",
 			       inet_ntoa(addr->sin_addr),
@@ -998,8 +1001,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 		printf("}\n");
 	}
 
-	str = consume_tag_string(T_peer_addr,rtl);
-	if(str != empty_string) {
+	if(consume_tag_string(T_peer_addr,rtl,&str)) {
 		printf("_remote_host {\n");
 		addr = (struct sockaddr_in *)str;
 		printf("\taddress\t\t\t%s:%d;\n",
@@ -1016,7 +1018,7 @@ int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       unsigned short *rtl)
 {
 	drbd_state_t state;
-	state = (drbd_state_t)(unsigned int)consume_tag_int(T_state_i,rtl);
+	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	printf("%s\n",roles_to_name(state.role));
 	return 0;
 }
@@ -1026,7 +1028,7 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		unsigned short *rtl)
 {
 	drbd_state_t state;
-	state = (drbd_state_t)(unsigned int)consume_tag_int(T_state_i,rtl);
+	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	printf("%s\n",conns_to_name(state.conn));
 	return 0;
 }
@@ -1036,7 +1038,7 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		unsigned short *rtl)
 {
 	drbd_state_t state;
-	state = (drbd_state_t)(unsigned int)consume_tag_int(T_state_i,rtl);
+	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	printf("%s\n",disks_to_name(state.disk));
 	return 0;
 }
@@ -1047,15 +1049,14 @@ int uuids_scmd(struct drbd_cmd *cm,
 {
 	__u64 *uuids;
 	int flags;
-	unsigned int len = 4711;
+	unsigned int len;
 
-	uuids = (__u64 *)consume_tag_blob(T_uuids,rtl,&len);
-	if(len == 4711) {
+	if(!consume_tag_blob(T_uuids,rtl,(char **) &uuids,&len)) {
 		fprintf(stderr,"Reply payload did not carry an uuid-tag,\n"
 			"Probabely the device has no disk!\n");
 		return 1;
 	}
-	flags = consume_tag_int(T_uuids_flags,rtl);
+	consume_tag_int(T_uuids_flags,rtl,&flags);
 	if( len == UUID_SIZE * sizeof(__u64)) {
 		if(!strcmp(cm->cmd,"show-gi")) {
 			dt_pretty_print_uuids(uuids,flags);
@@ -1199,10 +1200,10 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 	// Find out which timeout value to use.
 	send_tag_list_cn(sk_nl,tl,P_get_timeout_flag,minor,0);
-	receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
+	receive_reply_cn(sk_nl,tl, (struct nlmsghdr*)buffer, 4096 );
 	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
-	rr = consume_tag_bit(T_use_degraded,reply->tag_list);
+	consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
 	timeout_ms= 1000 * (  rr ? degr_wfc_timeout : wfc_timeout) - 1;
 
 	// ask for the current state before waiting for state updates...
@@ -1232,8 +1233,14 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		if(!unfiltered && cn_reply->seq <= seq) continue;
 		seq = cn_reply->seq;
 
-		state.i = consume_tag_int(T_state_i,reply->tag_list);
-		
+		if(!consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
+			if( all_devices || minor == reply->minor ) {
+				printf("%u ?? %d <other message>\n",cn_reply->seq,
+				       reply->minor);
+			}
+			continue;
+		}
+
 		if(dump_tag_list(reply->tag_list)) {
 			printf("# Found unknown tags, you should update your\n"
 			       "# userland tools\n");
@@ -1422,6 +1429,7 @@ int open_cn()
 
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 {
+	static __u32 cn_seq = 1;
 	struct cn_msg *cn_hdr;
 	cn_hdr = (struct cn_msg *)NLMSG_DATA(nl_hdr);
 	int rr;
@@ -1434,8 +1442,8 @@ int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 	nl_hdr->nlmsg_pid = getpid();
 	/* fill the connector header */
 	cn_hdr->id.idx = CN_IDX_DRBD;
-	cn_hdr->seq = 1;
-	cn_hdr->ack = 0;
+	cn_hdr->seq = cn_seq++;
+	get_random_bytes(&cn_hdr->ack,sizeof(cn_hdr->ack));
 	cn_hdr->len = size - sizeof(struct nlmsghdr) - sizeof(struct cn_msg);
 
 	rr = send(sk_nl,nl_hdr,nl_hdr->nlmsg_len,0);
@@ -1456,6 +1464,31 @@ int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 		perror("recv() failed");
 		return -1;
 	}
+	return rr;
+}
+
+int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
+		     int size)
+{
+	struct cn_msg *request_cn_hdr;
+	struct cn_msg *reply_cn_hdr;
+	int rr;
+
+	request_cn_hdr = (struct cn_msg *)NLMSG_DATA(tl->nl_header);
+	reply_cn_hdr = (struct cn_msg *)NLMSG_DATA(nl_hdr);
+
+	while(1) {
+		rr = receive_cn(sk_nl,nl_hdr,size);
+		if( rr < 0 ) return -1;
+		if(reply_cn_hdr->seq == request_cn_hdr->seq &&
+		   reply_cn_hdr->ack == request_cn_hdr->ack+1 ) return rr;
+		/* printf("INFO: got other message \n"
+		   "got seq: %d ; ack %d \n"
+		   "exp seq: %d ; ack %d \n", 
+		   reply_cn_hdr->seq,reply_cn_hdr->ack,
+		   request_cn_hdr->seq,request_cn_hdr->ack); */
+	}
+
 	return rr;
 }
 

@@ -68,6 +68,7 @@ _remote_host 		{ DP; return TK__REMOTE_HOST;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
 fencing			{ DP; CP; return TK_DISK_OPTION;	}
+use-bmbv		{ DP; CP; return TK_DISK_SWITCH;		}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}

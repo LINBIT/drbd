@@ -130,22 +130,6 @@ static unsigned int current_svn_revision()
 	return svn_rev;
 }
 
-static void get_random_bytes(void* buffer, int len)
-{
-	int fd;
-
-	fd = open("/dev/random",O_RDONLY);
-	if( fd == -1) {
-		perror("Open of /dev/random failed");
-		exit(20);
-	}
-	if(read(fd,buffer,len) != len) {
-		fprintf(stderr,"Reading from /dev/random failed\n");
-		exit(20);
-	}
-	close(fd);	
-}
-
 static void write_node_id(struct node_info *ni)
 {
 	int fd;
