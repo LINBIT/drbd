@@ -1544,7 +1544,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	switch ( mdev->net_conf->after_sb_0p ) {
 	case Consensus:
 	case DiscardSecondary:
-	case PanicPrimary:
+	case CallHelper:
 		ERR("Configuration error.\n");
 		break;
 	case Disconnect:
@@ -1611,13 +1611,12 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 		break;
 	case DiscardSecondary:
 		return mdev->state.role==Primary ? 1 : -1;
-	case PanicPrimary:
+	case CallHelper:
 		hg = drbd_asb_recover_0p(mdev);
 		if( hg == -1 && mdev->state.role==Primary) {
 			self = drbd_set_role(mdev,Secondary,0);
 			if (self != SS_Success) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
-				drbd_panic("Panic by after-sb-1pri handler\n");
 			} else {
 				WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
@@ -1646,13 +1645,12 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 		break;
 	case Disconnect:
 		break;
-	case PanicPrimary:
+	case CallHelper:
 		hg = drbd_asb_recover_0p(mdev);
 		if( hg == -1 ) {
 			self = drbd_set_role(mdev,Secondary,0);
 			if (self != SS_Success) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
-				drbd_panic("Panic by after-sb-2pri handler\n");
 			} else {
 				WARN("Sucessfully gave up primary role.\n");
 				rv = hg;

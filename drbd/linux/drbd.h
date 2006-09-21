@@ -60,7 +60,7 @@ enum after_sb_handler {
 	DiscardRemote,
 	Consensus,
 	DiscardSecondary,
-	PanicPrimary
+	CallHelper
 };
 
 /* KEEP the order, do not delete or insert!
@@ -260,6 +260,7 @@ struct drbd_nl_cfg_req {
 };
 
 struct drbd_nl_cfg_reply {
+	int packet_type;
 	int minor;
 	int ret_code; // enum ret_code or set_st_err_t
 	unsigned short tag_list[]; // only used with get_* calls

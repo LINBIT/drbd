@@ -58,17 +58,23 @@ DRBD 0.8 Roadmap
                       the current secondary's data. Otherwise disconnect.
      "discard-secondary"     
                       discard the version of the secondary.
-     "panic-primary"  Always honour the outcome of the "after-sb-2sc"
+     "call-pri-lost-after-sb"    
+                      Always honour the outcome of the "after-sb-2sc"
                       algorithm. In case it decides that the current
                       secondary has the right data, it tries to make
                       the current primary secondary, if that fails 
-                      it panics the current primary.
+                      it calls the "pri-lost-after-sb" helper program
+                      on the current primary. That helper program is
+                      expected to halt the machine.
 
   In case both nodes are primary you control DRBD's strategy by
   the "after-sb-2pri" option.
      "disconnect" ... Go to StandAlone mode on both sides.
-     "panic"      ... Honor the outcome of the "after-sb-0pri" algorithm
-                      and panic the other node.
+     "call-pri-lost-after-sb"
+	              Honor the outcome of the "after-sb-0pri" algorithm
+                      and calls the "pri-lost-after-sb" program on the
+		      other node. That helper program is expected to
+                      halt the machine.
 
   Defaults:
   after-sb-0pri = disconnect;

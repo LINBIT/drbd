@@ -179,9 +179,9 @@ void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
-int print_state(unsigned int seq, int minor, drbd_state_t ns);
-int w_connected_state(unsigned int seq, int minor, drbd_state_t ns);
-int w_synced_state(unsigned int seq, int minor, drbd_state_t ns);
+int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
+int w_connected_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
+int w_synced_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
 
 const char *on_error[] = {
 	[PassOn] = "pass_on",
@@ -208,12 +208,12 @@ const char *asb1p_n[] = {
 	[Disconnect]        = "disconnect",
 	[Consensus]         = "consensus",
 	[DiscardSecondary]  = "discard-secondary",
-	[PanicPrimary]      = "panic-primary"
+	[CallHelper]        = "call-pri-lost-after-sb"
 };
 
 const char *asb2p_n[] = {
 	[Disconnect]        = "disconnect",
-	[PanicPrimary]      = "panic"
+	[CallHelper]        = "call-pri-lost-after-sb"
 };
 
 struct option wait_cmds_options[] = {
@@ -1103,42 +1103,66 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	return rv;
 }
 
-int print_state(unsigned int seq, int minor, drbd_state_t ns)
+int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 {
-	/*char stime[20];
-	  time_t now;
-	  time(&now);
-	  strftime(stime,20,"%a %e %T",gmtime(&now)); */
+	drbd_state_t state;
+	char* str;
 
-	printf("%u ST %d { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
-	       seq,
-	       minor,
-	       conns_to_name(ns.conn),
-	       roles_to_name(ns.role),
-	       roles_to_name(ns.peer),
-	       disks_to_name(ns.disk),
-	       disks_to_name(ns.pdsk),
-	       ns.susp ? 's' : 'r',
-	       ns.aftr_isp ? 'a' : '-',
-	       ns.peer_isp ? 'p' : '-',
-	       ns.user_isp ? 'u' : '-' );
+	switch (reply->packet_type) {
+	case P_get_state:
+		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
+			printf("%u ST %d { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
+			       seq,
+			       reply->minor,
+			       conns_to_name(state.conn),
+			       roles_to_name(state.role),
+			       roles_to_name(state.peer),
+			       disks_to_name(state.disk),
+			       disks_to_name(state.pdsk),
+			       state.susp ? 's' : 'r',
+			       state.aftr_isp ? 'a' : '-',
+			       state.peer_isp ? 'p' : '-',
+			       state.user_isp ? 'u' : '-' );
+		} else fprintf(stderr,"Missing tag !?\n");
+		break;
+	case P_call_helper:
+		if(consume_tag_string(T_helper,reply->tag_list,&str)) {
+			printf("%u UH %d %s\n", seq, reply->minor, str);
+		} else fprintf(stderr,"Missing tag !?\n");
+		break;
+	default:
+		printf("%u ?? %d <other message>\n",seq, reply->minor);
+		break;
+	}
 
 	return 1;
 }
 
-int w_connected_state(unsigned int seq __attribute((unused)), 
-		      int minor __attribute((unused)), 
-		      drbd_state_t ns)
+int w_connected_state(unsigned int seq __attribute((unused)),
+		      struct drbd_nl_cfg_reply *reply)
 {
-	if(ns.conn >= Connected) return 0;
+	drbd_state_t state;
+
+	if(reply->packet_type == P_get_state) {
+		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
+			if(state.conn >= Connected) return 0;
+		} else fprintf(stderr,"Missing tag !?\n");
+	}
+
 	return 1;
 }
 
 int w_synced_state(unsigned int seq __attribute((unused)), 
-		   int minor __attribute((unused)), 
-		   drbd_state_t ns)
+		   struct drbd_nl_cfg_reply *reply)
 {
-	if(ns.conn == Connected || ns.conn < Unconnected ) return 0;
+	drbd_state_t state;
+
+	if(reply->packet_type == P_get_state) {
+		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
+			if(state.conn == Connected || state.conn < Unconnected ) 
+				return 0;
+		} else fprintf(stderr,"Missing tag !?\n");
+	}
 	return 1;
 }
 
@@ -1151,7 +1175,6 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct option *lo;
 	unsigned int seq=0;
 	int sk_nl,c,cont=1,rr;
-	drbd_state_t state;
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
 	struct pollfd pfd;
@@ -1233,21 +1256,8 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		if(!unfiltered && cn_reply->seq <= seq) continue;
 		seq = cn_reply->seq;
 
-		if(!consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			if( all_devices || minor == reply->minor ) {
-				printf("%u ?? %d <other message>\n",cn_reply->seq,
-				       reply->minor);
-			}
-			continue;
-		}
-
-		if(dump_tag_list(reply->tag_list)) {
-			printf("# Found unknown tags, you should update your\n"
-			       "# userland tools\n");
-		}
-
 		if( all_devices || minor == reply->minor ) {
-			cont=cm->ep.proc_event(cn_reply->seq, reply->minor, state);
+			cont=cm->ep.proc_event(cn_reply->seq, reply);
 		}
 	} while(cont);
 

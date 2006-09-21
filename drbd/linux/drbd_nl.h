@@ -83,6 +83,10 @@ PACKET(get_timeout_flag,
 	BIT(		36,	T_MAY_IGNORE,	use_degraded)
 )
 
+PACKET(call_helper,
+	STRING(		38,	T_MAY_IGNORE,	helper,		32)
+)
+
 #undef PACKET
 #undef INTEGER
 #undef INT64

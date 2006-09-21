@@ -117,6 +117,7 @@ name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 
 
 extern void drbd_init_set_defaults(drbd_dev *mdev);
+void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
 
@@ -130,6 +131,8 @@ int drbd_khelper(drbd_dev *mdev, char* cmd)
 				NULL };
 
 	snprintf(mb,12,"minor-%d",mdev_to_minor(mdev));
+
+	drbd_bcast_ev_helper(mdev,cmd);
 	return call_usermodehelper("/sbin/drbdadm",argv,envp,1);
 }
 
@@ -1507,6 +1510,7 @@ void drbd_connector_callback(void *data)
 	}
 	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
 
+	reply->packet_type = cm->reply_body_size ? nlp->packet_type : P_nl_after_last_packet;
 	reply->minor = nlp->drbd_minor;
 	reply->ret_code = NoError; // Might by modified by cm->function.
 	// reply->tag_list; might be modified by cm->fucntion.
@@ -1531,6 +1535,8 @@ void drbd_connector_callback(void *data)
 	module_put(THIS_MODULE);
 }
 
+atomic_t drbd_nl_seq = ATOMIC_INIT(2); // two.
+
 void drbd_bcast_state(drbd_dev *mdev)
 {
 	char buffer[sizeof(struct cn_msg)+
@@ -1539,7 +1545,6 @@ void drbd_bcast_state(drbd_dev *mdev)
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
 	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
-	static atomic_t seq = ATOMIC_INIT(2); // two.
 
 	// WARN("drbd_bcast_state() got called\n");
 
@@ -1549,12 +1554,48 @@ void drbd_bcast_state(drbd_dev *mdev)
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
 
-	cn_reply->seq = atomic_add_return(1,&seq);
+	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
 	cn_reply->ack = 0; // not used here.
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + 
 		(int)((char*)tl - (char*)reply->tag_list);
 	cn_reply->flags = 0;
 
+	reply->packet_type = P_get_state;
+	reply->minor = mdev_to_minor(mdev);
+	reply->ret_code = NoError;
+
+	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+}
+
+void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
+{
+	char buffer[sizeof(struct cn_msg)+
+		    sizeof(struct drbd_nl_cfg_reply)+
+		    sizeof(struct call_helper_tag_len_struct)];
+	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	unsigned short *tl = reply->tag_list;
+	int str_len;
+
+	// WARN("drbd_bcast_state() got called\n");
+
+	str_len = strlen(helper_name)+1;
+	*tl++ = T_helper;
+	*tl++ = str_len;
+	memcpy(tl,helper_name,str_len);
+	tl=(unsigned short*)((char*)tl + str_len);
+	*tl++ = TT_END; /* Close the tag list */
+
+	cn_reply->id.idx = CN_IDX_DRBD;
+	cn_reply->id.val = CN_VAL_DRBD;
+
+	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
+	cn_reply->ack = 0; // not used here.
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + 
+		(int)((char*)tl - (char*)reply->tag_list);
+	cn_reply->flags = 0;
+
+	reply->packet_type = P_call_helper;
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NoError;
 
