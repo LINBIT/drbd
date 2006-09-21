@@ -1614,16 +1614,14 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 	case PanicPrimary:
 		hg = drbd_asb_recover_0p(mdev);
 		if( hg == -1 && mdev->state.role==Primary) {
-			int got_mutex=!down_interruptible(&mdev->device_mutex);
-			if (got_mutex) self = drbd_set_role(mdev,Secondary,0);
-			if (self != SS_Success || !got_mutex) {
+			self = drbd_set_role(mdev,Secondary,0);
+			if (self != SS_Success) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
 				drbd_panic("Panic by after-sb-1pri handler\n");
 			} else {
 				WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
-			if (got_mutex) up(&mdev->device_mutex);
 		} else rv = hg;
 	}
 	return rv;
@@ -1651,16 +1649,14 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	case PanicPrimary:
 		hg = drbd_asb_recover_0p(mdev);
 		if( hg == -1 ) {
-			int got_mutex=!down_interruptible(&mdev->device_mutex);
-			if (got_mutex) self = drbd_set_role(mdev,Secondary,0);
-			if (self != SS_Success || !got_mutex) {
+			self = drbd_set_role(mdev,Secondary,0);
+			if (self != SS_Success) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
 				drbd_panic("Panic by after-sb-2pri handler\n");
 			} else {
 				WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
-			if (got_mutex) up(&mdev->device_mutex);
 		} else rv = hg;
 	}
 	return rv;

@@ -2142,19 +2142,6 @@ static void __exit drbd_cleanup(void)
 	drbd_nl_cleanup();
 
 	if (minor_table) {
-		for (i = 0; i < minor_count; i++) {
-			drbd_dev    *mdev = minor_to_mdev(i);
-			if(!mdev) continue;
-
-			down(&mdev->device_mutex);
-			/* shouldn't this be an assert only?
-			 * we are removing the module here! */
-			drbd_set_role(mdev,Secondary,0);
-			up(&mdev->device_mutex);
-			drbd_sync_me(mdev);
-			drbd_thread_stop(&mdev->receiver);
-		}
-
 		if (drbd_proc)
 			remove_proc_entry("drbd",&proc_root);
 		i=minor_count;
@@ -2293,7 +2280,6 @@ drbd_dev *drbd_new_device(int minor)
 
 	if (drbd_bm_init(mdev)) goto Enomem;
 	// no need to lock access, we are still initializing the module.
-	init_MUTEX(&mdev->device_mutex);
 	if (!tl_init(mdev)) goto Enomem;
 
 	mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*),GFP_KERNEL);

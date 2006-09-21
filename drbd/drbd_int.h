@@ -795,9 +795,6 @@ struct Drbd_Conf {
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
 
-	/* config data protected by: */
-	struct semaphore device_mutex;
-
 	/* configured by drbdsetup */
 	struct net_conf *net_conf; // protected by inc_net() and dec_net()
 	struct syncer_conf sync_conf;
