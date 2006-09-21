@@ -368,7 +368,13 @@ sub send_command {
 
       exit 0;
     }
- 
+    $local_reply = "";
+    while (<CHILD1>) {
+        $local_reply .= $_;
+    }
+    push @reply, $local_reply;
+    close(CHILD1);
+
     my $pid2 = open(CHILD2, "-|");
     if ($pid2 == 0) {
       print {$config{'node2'}} $command."\n";
@@ -378,16 +384,11 @@ sub send_command {
     }
 
     $local_reply = "";
-    while (<CHILD1>) {
-      $local_reply .= $_;
-    }
-    push @reply, $local_reply;
-
-    $local_reply = "";
     while (<CHILD2>) {
       $local_reply .= $_;
     }
     push @reply, $local_reply;
+    close(CHILD2);
   }
 
   return process_reply($command, @reply);
