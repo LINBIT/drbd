@@ -410,6 +410,11 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	drbd_uuid_set_bm(mdev,0UL);
 
+	// Remove all elements form the resync LRU. Since future actions
+	// might set bits in the (main) bitmap, then the entries in the 
+	// resync LRU would be wrong.
+	drbd_rs_del_all(mdev);
+
 	if ( mdev->p_uuid ) {
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;

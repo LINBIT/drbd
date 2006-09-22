@@ -960,3 +960,29 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 	spin_unlock_irq(&mdev->al_lock);
 	wake_up(&mdev->al_wait);
 }
+
+/**
+ * drbd_rs_del_all: Gracefully remove all extents from the resync LRU.
+ */
+void drbd_rs_del_all(drbd_dev* mdev)
+{
+	struct bm_extent* bm_ext;
+	int i;
+
+	spin_lock_irq(&mdev->al_lock);
+
+	if(inc_local_if_state(mdev,Failed)) { // Makes sure ->resync is there.
+		for(i=0;i<mdev->resync->nr_elements;i++) {
+			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
+			if(bm_ext->lce.lc_number == LC_FREE) continue;
+			D_ASSERT(bm_ext->lce.refcnt == 0);
+			D_ASSERT(bm_ext->rs_left == 0);
+			D_ASSERT(!test_bit(BME_LOCKED,&bm_ext->flags));
+			D_ASSERT(!test_bit(BME_NO_WRITES,&bm_ext->flags));
+			lc_del(mdev->resync,&bm_ext->lce);
+		}
+		D_ASSERT(mdev->resync->used==0);
+		dec_local(mdev);
+	}
+	spin_unlock_irq(&mdev->al_lock);
+}
