@@ -716,9 +716,24 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	drbd_request_t *req;
 	int local, remote;
 
+	/* we wait here
+	 *    as long as the device is suspended
+	 *    until the bitmap is no longer on the fly during connection handshake
+	 */
+	wait_event( mdev->cstate_wait,
+		    (volatile int)((mdev->state.conn < WFBitMapS ||
+				    mdev->state.conn > WFBitMapT) &&
+				   !mdev->state.susp ) );
+
+	/* FIXME RACE here in case of freeze io.
+	 * maybe put the inc_ap_bio within the condition of the wait_event? */
+
+	/* compare with after_state_ch,
+	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
+	inc_ap_bio(mdev);
+
 	/* allocate outside of all locks; get a "reference count" (ap_bio_cnt)
 	 * to avoid races with the disconnect/reconnect code.  */
-	inc_ap_bio(mdev);
 	req = drbd_req_new(mdev,bio);
 	if (!req) {
 		dec_ap_bio(mdev);
@@ -728,15 +743,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		bio_endio(bio, bio->bi_size, -ENOMEM);
 		return 0;
 	}
-
-	/* we wait here
-	 *    as long as the device is suspended
-	 *    until the bitmap is no longer on the fly during connection handshake
-	 */
-	wait_event( mdev->cstate_wait,
-		    (volatile int)((mdev->state.conn < WFBitMapS ||
-				    mdev->state.conn > WFBitMapT) &&
-				   !mdev->state.susp ) );
 
 	local = inc_local(mdev);
 	if (!local) {
@@ -836,6 +842,21 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	/* GOOD, everything prepared, grab the spin_lock */
 	spin_lock_irq(&mdev->req_lock);
 
+	/* FIXME race with drbd_disconnect and tl_clear? */
+	if (remote) {
+		remote = (mdev->state.pdsk == UpToDate ||
+			    ( mdev->state.pdsk == Inconsistent &&
+			      mdev->state.conn >= Connected ) );
+		if (!remote) {
+			WARN("lost connection while grabbing the req_lock!\n");
+		}
+		if (!(local || remote)) {
+			ERR("IO ERROR: neither local nor remote disk\n");
+			spin_unlock_irq(&mdev->req_lock);
+			goto fail_and_free_req;
+		}
+	}
+
 	if (b && mdev->unused_spare_barrier == NULL) {
 		mdev->unused_spare_barrier = b;
 		b = NULL;
@@ -848,6 +869,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		spin_unlock_irq(&mdev->req_lock);
 		goto allocate_barrier;
 	}
+
 
 	/* _maybe_start_new_epoch(mdev);
 	 * If we need to generate a write barrier packet, we have to add the
@@ -865,6 +887,11 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		b = _tl_add_barrier(mdev,b);
 		mdev->unused_spare_barrier = NULL;
 		b->w.cb =  w_send_barrier;
+		/* inc_ap_pending done here, so we won't
+		 * get imbalanced on connection loss.
+		 * dec_ap_pending will be done in got_BarrierAck
+		 * or (on connection loss) in tl_clear.  */
+		inc_ap_pending(mdev);
 		drbd_queue_work(&mdev->data.work, &b->w);
 	} else {
 		D_ASSERT(!(remote && rw == WRITE &&

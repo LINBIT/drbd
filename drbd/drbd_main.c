@@ -91,16 +91,6 @@ MODULE_ALIAS_BLOCKDEV_MAJOR(LANANA_DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
 MODULE_PARM_DESC(disable_bd_claim, "DONT USE! disables block device claiming" );
-/*
- * please somebody explain to me what the "perm" of the module_param
- * macro is good for (yes, permission for it in the "driverfs", but what
- * do we need to do for them to show up, to begin with?)
- * once I understand this, and the rest of the sysfs stuff, I probably
- * be able to understand how we can move from our ioctl interface to a
- * proper sysfs based one.
- *	-- lge
- */
-
 /* thanks to these macros, if compiled into the kernel (not-module),
  * this becomes the boot parameter drbd.minor_count
  */
@@ -173,6 +163,7 @@ STATIC int tl_init(drbd_dev *mdev)
 	b=kmalloc(sizeof(struct drbd_barrier),GFP_KERNEL);
 	if(!b) return 0;
 	INIT_LIST_HEAD(&b->requests);
+	INIT_LIST_HEAD(&b->w.list);
 	b->next=0;
 	b->br_number=4711;
 	b->n_req=0;
@@ -206,10 +197,10 @@ struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 	struct drbd_barrier *newest_before;
 
 	INIT_LIST_HEAD(&new->requests);
+	INIT_LIST_HEAD(&new->w.list);
 	new->next=0;
 	new->n_req=0;
 
-	/* mdev->newest_barrier == NULL "cannot happen". but anyways... */
 	newest_before = mdev->newest_barrier;
 	/* never send a barrier number == 0, because that is special-cased
 	 * when using TCQ for our write ordering code */
@@ -265,7 +256,7 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	kfree(b);
 }
 
-/* FIXME called by whom? worker only? */
+/* called by drbd_disconnect (exiting receiver only) */
 void tl_clear(drbd_dev *mdev)
 {
 	struct drbd_barrier *b, *tmp;
@@ -277,17 +268,21 @@ void tl_clear(drbd_dev *mdev)
 	while ( b ) {
 		struct list_head *le, *tle;
 		struct drbd_request *r;
+
+		ERR_IF(!list_empty(&b->w.list)) {
+			DUMPI(b->br_number);
+		}
+
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,tl_requests);
 			_req_mod(r, connection_lost_while_pending);
 		}
 		tmp = b->next;
-		/* FIXME can there still be requests on that ring list now?
-		 * funny race conditions ... */
-		if (!list_empty(&b->requests)) {
-			WARN("FIXME explain this race...");
-			list_del(&b->requests);
-		}
+
+		/* there could still be requests on that ring list,
+		 * in case local io is still pending */
+		list_del(&b->requests);
+
 		if (b == mdev->newest_barrier) {
 			D_ASSERT(tmp == NULL);
 			b->br_number=4711;
@@ -876,6 +871,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 	// Do not change the order of the if above and below...
 	if (os.conn != WFBitMapS && ns.conn == WFBitMapS) {
+		/* compare with drbd_make_request_common,
+		 * wait_event and inc_ap_bio */
 		wait_event(mdev->cstate_wait,!atomic_read(&mdev->ap_bio_cnt));
 		drbd_bm_lock(mdev);   // {
 		drbd_send_bitmap(mdev);

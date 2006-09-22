@@ -1031,11 +1031,6 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		memset(new_ee_hash, 0, ns*sizeof(void*));
 	}
 
-	/* IMPROVE:
-	   We should warn the user if the LL_DEV is
-	   used already. E.g. some FS mounted on it.
-	*/
-
 	((char*)new_conf->shared_secret)[SHARED_SECRET_MAX-1]=0;
 
 #if 0

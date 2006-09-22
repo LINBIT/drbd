@@ -1614,7 +1614,13 @@ static inline void inc_unacked(drbd_dev* mdev)
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
 
 
-// warning LGE "FIXME inherently racy. this is buggy by design :("
+static inline void dec_net(drbd_dev* mdev)
+{
+	if(atomic_dec_and_test(&mdev->net_cnt)) {
+		wake_up(&mdev->cstate_wait);
+	}
+}
+
 /**
  * inc_net: Returns TRUE when it is ok to access mdev->net_conf. You
  * should call dec_net() when finished looking at mdev->net_conf.
@@ -1625,15 +1631,8 @@ static inline int inc_net(drbd_dev* mdev)
 
 	atomic_inc(&mdev->net_cnt);
 	have_net_conf = mdev->state.conn >= Unconnected;
-	if(!have_net_conf) atomic_dec(&mdev->net_cnt);
+	if(!have_net_conf) dec_net(mdev);
 	return have_net_conf;
-}
-
-static inline void dec_net(drbd_dev* mdev)
-{
-	if(atomic_dec_and_test(&mdev->net_cnt)) {
-		wake_up(&mdev->cstate_wait);
-	}
 }
 
 /* strictly speaking,
@@ -1676,35 +1675,29 @@ static inline void dec_local(drbd_dev* mdev)
 /* this throttles on-the-fly application requests
  * according to max_buffers settings;
  * maybe re-implement using semaphores? */
-static inline void inc_ap_bio(drbd_dev* mdev)
+static inline int drbd_get_max_buffers(drbd_dev* mdev)
 {
 	int mxb = 1000000; /* arbitrary limit on open requests */
-
 	if(inc_net(mdev)) {
 		mxb = mdev->net_conf->max_buffers;
 		dec_net(mdev);
-		/* decrease here already, so you can reconfigure
-		 * the max buffer setting even under load.
-		 * alternative: use rw_semaphore. I'd like that.
-		 */
 	}
+	return mxb;
+}
 
+static inline void inc_ap_bio(drbd_dev* mdev)
+{
+	int mxb = drbd_get_max_buffers(mdev);
 	wait_event( mdev->rq_wait,atomic_add_unless(&mdev->ap_bio_cnt,1,mxb) );
 }
 
 static inline void dec_ap_bio(drbd_dev* mdev)
 {
+	int mxb = drbd_get_max_buffers(mdev);
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
-	if(ap_bio == 0) wake_up(&mdev->cstate_wait);
-
-	if(inc_net(mdev)) {
-		if(ap_bio < mdev->net_conf->max_buffers) 
-			wake_up(&mdev->rq_wait);
-		dec_net(mdev);
-	}
-
-	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)>=0);
+	D_ASSERT(ap_bio>=0);
+	if (ap_bio < mxb) wake_up(&mdev->rq_wait);
 }
 
 /* FIXME does not handle wrap around yet */

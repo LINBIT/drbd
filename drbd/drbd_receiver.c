@@ -2445,14 +2445,49 @@ STATIC void drbdd(drbd_dev *mdev)
 	}
 }
 
+/* FIXME how should freeze-io be handled? */
+STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
+{
+	struct hlist_head *slot;
+	struct hlist_node *n;
+	drbd_request_t * req;
+	struct list_head *le;
+	LIST_HEAD(workset);
+	int i;
+
+	/*
+	 * Application READ requests
+	 */
+	spin_lock_irq(&mdev->req_lock);
+	for(i=0;i<APP_R_HSIZE;i++) {
+		slot = mdev->app_reads_hash+i;
+		hlist_for_each_entry(req, n, slot, colision) {
+			list_add(&req->w.list, &workset);
+		}
+	}
+	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
+
+	while(!list_empty(&workset)) {
+		le = workset.next;
+		req = list_entry(le, drbd_request_t, w.list);
+		list_del(le);
+
+		_req_mod(req, connection_lost_while_pending);
+	}
+	spin_unlock_irq(&mdev->req_lock);
+}
+
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	enum fencing_policy fp;
 
-	struct drbd_work *disconnect_work;
-
 	D_ASSERT(mdev->state.conn < Connected);
+	/* FIXME verify that:
+	 * the state change magic prevents us from becoming >= Connected again
+	 * while we are still cleaning up.
+	 */
 
+	/* asender cleans up active_ee, sync_ee and done_ee */
 	drbd_thread_stop(&mdev->asender);
 
 	fp = DontCare;
@@ -2461,29 +2496,74 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
-	// Receiving side (may be primary, in case we had two primaries)
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
-	_drbd_clear_done_ee(mdev);
-	mdev->epoch_size = 0;
+	reclaim_net_ee(mdev);
 	spin_unlock_irq(&mdev->req_lock);
-	// Needs to happen before we schedule the disconnect work callback,
-	// Since they might have something for the worker's queue as well.
 
-	disconnect_work = kmalloc(sizeof(struct drbd_work),GFP_KERNEL);
-	if(disconnect_work) {
-		disconnect_work->cb = w_disconnect;
-		drbd_queue_work(&mdev->data.work,disconnect_work);
-	} else {
-		WARN("kmalloc failed, taking messy shortcut.\n");
-		w_disconnect(mdev,NULL,1);
+	/* would be nice to be able to wait for all ee and req objects
+	 * currently on the worker queue to be "canceled",
+	 * but that's not really necessary. */
+
+	down(&mdev->data.mutex);
+	drbd_free_sock(mdev);
+	up(&mdev->data.mutex);
+
+	/* FIXME were is the correct place for these? tl_clear? */
+	clear_bit(ISSUE_BARRIER,&mdev->flags);
+	mdev->epoch_size = 0;
+
+	/* FIXME: fail pending reads?
+	 * when we are configured for freeze io,
+	 * we could retry them once we un-freeze. */
+	drbd_fail_pending_reads(mdev);
+
+	/* FIXME maybe the cleanup of the resync should go
+	 * into w_make_resync_request or w_resume_next_sg
+	 * or something like that. */
+
+	/* We do not have data structures that would allow us to
+	   get the rs_pending_cnt down to 0 again.
+	   * On SyncTarget we do not have any data structures describing
+	     the pending RSDataRequest's we have sent.
+	   * On SyncSource there is no data structure that tracks
+	     the RSDataReply blocks that we sent to the SyncTarget.
+	   And no, it is not the sum of the reference counts in the
+	   resync_LRU. The resync_LRU tracks the whole operation including
+           the disk-IO, while the rs_pending_cnt only tracks the blocks
+	   on the fly. */
+	drbd_rs_cancel_all(mdev);
+	mdev->rs_total=0;
+	atomic_set(&mdev->rs_pending_cnt,0);
+	wake_up(&mdev->cstate_wait);
+
+	if(!mdev->state.susp) {
+		/* FIXME should go into some "after_state_change" handler */
+		tl_clear(mdev);
+	}
+
+	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
+	D_ASSERT(list_empty(&mdev->read_ee));
+	D_ASSERT(list_empty(&mdev->active_ee));
+	D_ASSERT(list_empty(&mdev->sync_ee));
+	D_ASSERT(list_empty(&mdev->done_ee));
+
+	if ( mdev->p_uuid ) {
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = NULL;
+	}
+
+	INFO("Connection closed\n");
+
+	/* FIXME I'm not sure, there may still be a race? */
+	if(mdev->state.conn == StandAlone && mdev->net_conf ) {
+		kfree(mdev->net_conf);
+		mdev->net_conf = NULL;
 	}
 
 	drbd_md_sync(mdev);
 
-	if ( mdev->state.role == Primary ) {		
+	if ( mdev->state.role == Primary ) {
 		if( fp >= Resource &&
 		    mdev->state.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
@@ -3099,6 +3179,14 @@ int drbd_asender(struct Drbd_thread *thi)
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
+
+	INFO("asender starting cleanup\n");
+
+	spin_lock_irq(&mdev->req_lock);
+	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
+	_drbd_clear_done_ee(mdev);
+	spin_unlock_irq(&mdev->req_lock);
 
 	INFO("asender terminated\n");
 

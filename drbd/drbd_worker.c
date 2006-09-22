@@ -389,8 +389,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
-	// assert that all bit-map parts are cleared.
-	D_ASSERT(list_empty(&mdev->resync->lru));
 	D_ASSERT(drbd_bm_total_weight(mdev) == 0);
 	mdev->rs_total  = 0;
 	mdev->rs_paused = 0;
@@ -533,12 +531,11 @@ int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 	p->barrier = b->br_number;
-	inc_ap_pending(mdev);
+	/* inc_ap_pending was done where this was queued.
+	 * dec_ap_pending will be done in got_BarrierAck
+	 * or (on connection loss) in tl_clear.  */
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)p,sizeof(*p),0);
 	drbd_put_data_sock(mdev);
-
-	/* pairing dec_ap_pending() happens in got_BarrierAck,
-	 * or (on connection loss) in tl_clear.  */
 
 	return ok;
 }
@@ -598,111 +595,6 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	}
 
 	return ok;
-}
-
-/* FIXME how should freeze-io be handled? */
-STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
-{
-	struct hlist_head *slot;
-	struct hlist_node *n;
-	drbd_request_t * req;
-	struct list_head *le;
-	LIST_HEAD(workset);
-	int i;
-
-	/*
-	 * Application READ requests
-	 */
-	spin_lock_irq(&mdev->req_lock);
-	for(i=0;i<APP_R_HSIZE;i++) {
-		slot = mdev->app_reads_hash+i;
-		hlist_for_each_entry(req, n, slot, colision) {
-			list_add(&req->w.list, &workset);
-		}
-	}
-	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
-
-	while(!list_empty(&workset)) {
-		le = workset.next;
-		req = list_entry(le, drbd_request_t, w.list);
-		list_del(le);
-
-		_req_mod(req, connection_lost_while_pending);
-	}
-	spin_unlock_irq(&mdev->req_lock);
-}
-
-/**
- * w_disconnect clean up everything, and restart the receiver.
- */
-int w_disconnect(drbd_dev *mdev, struct drbd_work *w, int cancel)
-{
-	D_ASSERT(cancel);
-
-	down(&mdev->data.mutex);
-	/* By grabbing the sock_mutex we make sure that no one
-	   uses the socket right now. */
-	drbd_free_sock(mdev);
-	up(&mdev->data.mutex);
-
-	drbd_fail_pending_reads(mdev);
-	drbd_rs_cancel_all(mdev);
-
-	// primary
-	clear_bit(ISSUE_BARRIER,&mdev->flags);
-
-	if(!mdev->state.susp) {
-		tl_clear(mdev);
-		D_ASSERT(mdev->oldest_barrier->n_req == 0);
-
-		if(atomic_read(&mdev->ap_pending_cnt)) {
-			ERR("ap_pending_cnt = %d\n",
-			    atomic_read(&mdev->ap_pending_cnt));
-			atomic_set(&mdev->ap_pending_cnt,0);
-		}
-	}
-
-	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
-	D_ASSERT(list_empty(&mdev->read_ee));
-	D_ASSERT(list_empty(&mdev->active_ee)); // done here
-	D_ASSERT(list_empty(&mdev->sync_ee)); // done here
-	D_ASSERT(list_empty(&mdev->done_ee)); // done here
-
-	mdev->rs_total=0;
-
-	if(atomic_read(&mdev->unacked_cnt)) {
-		ERR("unacked_cnt = %d\n",atomic_read(&mdev->unacked_cnt));
-		atomic_set(&mdev->unacked_cnt,0);
-	}
-
-	/* We do not have data structures that would allow us to
-	   get the rs_pending_cnt down to 0 again.
-	   * On SyncTarget we do not have any data structures describing
-	     the pending RSDataRequest's we have sent.
-	   * On SyncSource there is no data structure that tracks
-	     the RSDataReply blocks that we sent to the SyncTarget.
-	   And no, it is not the sum of the reference counts in the
-	   resync_LRU. The resync_LRU tracks the whole operation including
-           the disk-IO, while the rs_pending_cnt only tracks the blocks
-	   on the fly. */
-	atomic_set(&mdev->rs_pending_cnt,0);
-	wake_up(&mdev->cstate_wait);
-
-	if ( mdev->p_uuid ) {
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = NULL;
-	}
-
-	INFO("Connection closed\n");
-
-	if(w) kfree(w);
-
-	if(mdev->state.conn == StandAlone && mdev->net_conf ) {
-		kfree(mdev->net_conf);
-		mdev->net_conf = NULL;
-	}
-
-	return 1;
 }
 
 STATIC void drbd_global_lock(void)
