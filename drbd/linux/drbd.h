@@ -192,7 +192,8 @@ typedef enum {
 	SS_SyncingDiskless=-5,
 	SS_ConnectedOutdates=-6,
 	SS_PrimaryNOP=-7,
-	SS_CW_FailedByPeer=-8
+	SS_ResyncRunning=-8,
+	SS_CW_FailedByPeer=-10
 } set_st_err_t;
 
 /* from drbd_strings.c */

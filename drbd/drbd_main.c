@@ -430,7 +430,8 @@ void drbd_force_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 	drbd_change_state(mdev,ChgStateHard,mask,val);
 }
 
-STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns);
+STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns);
+STATIC int is_valid_state_transition(drbd_dev*, drbd_state_t, drbd_state_t);
 STATIC int drbd_send_state_req(drbd_dev *, drbd_state_t, drbd_state_t);
 
 set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
@@ -451,8 +452,11 @@ set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
 	ns.i = (os.i & ~mask.i) | val.i;
 	if( !cl_wide_st_chg(mdev,os,ns) ) rv = SS_CW_NoNeed;
 	if( !rv ) {
-		rv = pre_state_checks(mdev,ns);
-		if(rv==SS_Success) rv = 0; // cont waiting, otherwise fail.
+		rv = is_valid_state(mdev,ns);
+		if(rv==SS_Success) {
+			rv = is_valid_state_transition(mdev,ns,os);
+			if(rv==SS_Success) rv = 0; // cont waiting, otherwise fail.
+		}
 	}
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
@@ -477,7 +481,8 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	ns.i = (os.i & ~mask.i) | val.i;
 
 	if(cl_wide_st_chg(mdev,os,ns)) {
-		rv = pre_state_checks(mdev,ns);
+		rv = is_valid_state(mdev,ns);
+		if(rv == SS_Success ) rv = is_valid_state_transition(mdev,ns,os);
 		spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 		if( rv < SS_Success ) {
@@ -556,7 +561,7 @@ void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 		              A##s_to_name(ns.A)); \
 	} })
 
-STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
+STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 {
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
@@ -600,6 +605,16 @@ STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
 		  ns.conn == SyncSource ||
 		  ns.conn == PausedSyncS) &&
 		 ns.disk == Outdated ) rv=SS_ConnectedOutdates;
+
+	return rv;
+}
+
+STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t os)
+{
+	int rv=SS_Success;
+
+	if( (ns.conn == StartingSyncT || ns.conn == StartingSyncS ) &&
+	    os.conn > Connected) rv=SS_ResyncRunning;
 
 	return rv;
 }
@@ -715,12 +730,12 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		rv = pre_state_checks(mdev,ns);
+		rv = is_valid_state(mdev,ns);
 		if(rv < SS_Success) {
 			/* If the old state was illegal as well, then let
 			   this happen...*/
 
-			if( pre_state_checks(mdev,os) == rv ) {
+			if( is_valid_state(mdev,os) == rv ) {
 				ERR("Forcing state change from bad state. "
 				    "Error would be: '%s'\n", 
 				    set_st_err_name(rv));
@@ -728,7 +743,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 				print_st(mdev,"new",ns);
 				rv = SS_Success;
 			}
-		}
+		} else rv = is_valid_state_transition(mdev,ns,os);
 	}
 
 	if(rv < SS_Success) {
