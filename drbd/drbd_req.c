@@ -1122,14 +1122,17 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 	limit = AL_EXTENT_SIZE - ((bio_offset & (AL_EXTENT_SIZE-1)) + bio_size);
 #endif
 	if (limit < 0) limit = 0;
-	if (limit <= bvec->bv_len && bio_size == 0)
-		limit = bvec->bv_len;
-
-	if(limit && inc_local(mdev)) {
-		backing_limit = mdev->bc->bmbf(q,bio,bvec);
-		limit = min(limit,backing_limit);
+	if (bio_size == 0) {
+		if (limit <= bvec->bv_len) limit = bvec->bv_len;
+	} else if (limit && inc_local(mdev)) {
+		/* FIXME
+		 * I don't think taking a shortcut is valid, the backing device
+		 * is allowed to change its merge bvec function anytime... */
+		if (mdev->bc->bmbf) {
+			backing_limit = mdev->bc->bmbf(q,bio,bvec);
+			limit = min(limit,backing_limit);
+		}
 		dec_local(mdev);
 	}
-
 	return limit;
 }
