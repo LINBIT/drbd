@@ -1697,6 +1697,7 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
 	D_ASSERT(ap_bio>=0);
+	if (ap_bio == 0) wake_up(&mdev->cstate_wait);
 	if (ap_bio < mxb) wake_up(&mdev->rq_wait);
 }
 
