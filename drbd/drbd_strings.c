@@ -24,6 +24,7 @@
 
 static const char *drbd_conn_s_names[] = {
 	[StandAlone]     = "StandAlone",
+	[Disconnecting]  = "Disconnecting",
 	[Unconnected]    = "Unconnected",
 	[Timeout]        = "Timeout",
 	[BrokenPipe]     = "BrokenPipe",
@@ -70,6 +71,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_ConnectedOutdates] = "Refusing to be Outdated while Connected",
 	[-SS_PrimaryNOP] = "Refusing to be Primary while peer is not outdated",
 	[-SS_ResyncRunning] = "Can not start resync since it is already active",
+	[-SS_AlreadyStandAlone] = "Can not disconnect a StandAlone device",
 	[-SS_CW_FailedByPeer] = "State changed was refused by peer node"
 };
 

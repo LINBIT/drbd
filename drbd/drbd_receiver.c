@@ -548,10 +548,7 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 
 	set_fs(oldfs);
 
-	if(rv != size) {
-		drbd_force_state(mdev,NS(conn,BrokenPipe));
-		drbd_thread_restart_nowait(&mdev->receiver);
-	}
+	if(rv != size) drbd_force_state(mdev,NS(conn,BrokenPipe));
 
 	return rv;
 }
@@ -631,7 +628,7 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	if (err) {
 		ERR("Unable to bind sock2 (%d)\n", err);
 		sock_release(sock2);
-		drbd_force_state(mdev,NS(conn,StandAlone));
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return NULL;
 	}
 
@@ -677,7 +674,7 @@ int drbd_connect(drbd_dev *mdev)
 	struct socket *s, *sock,*msock;
 	int try,h;
 
-	D_ASSERT(mdev->state.conn > StandAlone);
+	D_ASSERT(mdev->state.conn >= Unconnected);
 	D_ASSERT(!mdev->data.socket);
 
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success ) return 0;
@@ -736,7 +733,7 @@ int drbd_connect(drbd_dev *mdev)
 			}
 		}
 
-		if(mdev->state.conn == StandAlone) return -1;
+		if(mdev->state.conn <= Disconnecting) return -1;
 		if(signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
@@ -1793,8 +1790,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 
 	if (hg == -1000) {
 		ALERT("Unrelated data, dropping connection!\n");
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
 
@@ -1802,22 +1798,19 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		ALERT("Split-Brain detected, dropping connection!\n");
 		drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 		drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
 
 	if (hg > 0 && mdev->state.disk <= Inconsistent ) {
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
 	if (hg < 0 && 
 	    mdev->state.role == Primary && mdev->state.disk != Negotiating ) {
 		ERR("I shall become SyncTarget, but I am primary!\n");
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
 
@@ -1876,8 +1869,7 @@ STATIC int receive_protocol(drbd_dev *mdev, Drbd_Header *h)
 				'A'-1+mdev->net_conf->wire_protocol,
 				peer_proto);
 		}
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return FALSE;
 	}
 
@@ -1962,8 +1954,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	if(p_size == 0 && mdev->state.disk == Diskless ) {
 		ERR("some backing storage is needed\n");
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return FALSE;
 	}
 
@@ -1994,8 +1985,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		   mdev->state.disk >= Outdated ) {
 			dec_local(mdev);
 			ERR("The peer's disk size is too small!\n");
-			drbd_force_state(mdev,NS(conn,StandAlone));
-			drbd_thread_stop_nowait(&mdev->receiver);
+			drbd_force_state(mdev,NS(conn,Disconnecting));
 			mdev->bc->dc.disk_size = my_usize;
 			return FALSE;
 		}
@@ -2027,8 +2017,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		if(nconn == conn_mask) return FALSE;
 
 		if(drbd_request_state(mdev,NS(conn,nconn)) < SS_Success) {
-			drbd_force_state(mdev,NS(conn,StandAlone));
-			drbd_thread_stop_nowait(&mdev->receiver);
+			drbd_force_state(mdev,NS(conn,Disconnecting));
 			return FALSE;
 		}
 	}
@@ -2186,8 +2175,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if(rv < SS_Success) {
-		drbd_force_state(mdev,NS(conn,StandAlone));
-		drbd_thread_stop_nowait(&mdev->receiver);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return FALSE;
 	}
 
@@ -2555,12 +2543,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	INFO("Connection closed\n");
 
-	/* FIXME I'm not sure, there may still be a race? */
-	if(mdev->state.conn == StandAlone && mdev->net_conf ) {
-		kfree(mdev->net_conf);
-		mdev->net_conf = NULL;
-	}
-
 	drbd_md_sync(mdev);
 
 	if ( mdev->state.role == Primary ) {
@@ -2573,12 +2555,17 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	spin_lock_irq(&mdev->req_lock);
 	if ( mdev->state.conn > Unconnected ) {
-		// Do not restart in case we are StandAlone
-		_drbd_set_state(mdev, _NS(conn,Unconnected), ScheduleAfter);
+		// Do not restart in case we are Disconnecting
+		_drbd_set_state(mdev, _NS(conn,Unconnected),0);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
-	drbd_md_sync(mdev);
+	if(mdev->state.conn == Disconnecting) {
+		wait_event( mdev->cstate_wait,atomic_read(&mdev->net_cnt) == 0 );
+		kfree(mdev->net_conf);
+		mdev->net_conf=NULL;
+		drbd_request_state(mdev, NS(conn,StandAlone));
+	}
 }
 
 /*
@@ -2843,7 +2830,7 @@ int drbdd_init(struct Drbd_thread *thi)
 		}
 		if( h < 0 ) {
 			WARN("Discarding network configuration.\n");
-			drbd_force_state(mdev,NS(conn,StandAlone));
+			drbd_force_state(mdev,NS(conn,Disconnecting));
 		}
 	} while ( h == 0 );
 

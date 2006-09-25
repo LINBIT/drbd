@@ -611,6 +611,9 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	if( (ns.conn == StartingSyncT || ns.conn == StartingSyncS ) &&
 	    os.conn > Connected) rv=SS_ResyncRunning;
 
+	if( ns.conn == Disconnecting && os.conn == StandAlone) 
+		rv=SS_AlreadyStandAlone;
+
 	return rv;
 }
 
@@ -633,7 +636,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	/* Dissalow Network errors to configure a device's network part */
 	if( (ns.conn >= BrokenPipe && ns.conn <= NetworkFailure ) && 
-	    os.conn == StandAlone ) {
+	    os.conn <= Disconnecting ) {
 		ns.conn = os.conn;
 	}
 
@@ -652,7 +655,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		     ns.pdsk < Inconsistent ) ns.pdsk = DUnknown;
 	}
 
-	if( ns.conn == StandAlone && ns.disk == Diskless ) {
+	if( ns.conn <= Disconnecting && ns.disk == Diskless ) {
 		ns.pdsk = DUnknown;
 	}
 
@@ -779,7 +782,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
-	     (ns.disk > Diskless || ns.conn > StandAlone) ) {
+	     (ns.disk > Diskless || ns.conn >= Unconnected) ) {
 		int i;
 		i = try_module_get(THIS_MODULE);
 		D_ASSERT(i);
@@ -995,17 +998,16 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		lc_free(mdev->act_log); mdev->act_log = NULL;
 	}
 
-	if ( os.conn != StandAlone && ns.conn == StandAlone ) {
+	if ( os.conn != Disconnecting && ns.conn <= Disconnecting ) {
 		drbd_thread_stop_nowait(&mdev->receiver);
 	}
 
 	if ( os.conn != Unconnected && ns.conn == Unconnected ) {
-		drbd_thread_stop(&mdev->receiver);
-		drbd_thread_start(&mdev->receiver);
+		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
-	if ( os.disk == Diskless && os.conn == StandAlone &&
-	     (ns.disk > Diskless || ns.conn > StandAlone) ) {
+	if ( os.disk == Diskless && os.conn <= Disconnecting &&
+	     (ns.disk > Diskless || ns.conn >= Unconnected) ) {
 		if(!drbd_thread_start(&mdev->worker)) {
 			module_put(THIS_MODULE);
 		}
@@ -1034,7 +1036,11 @@ STATIC int drbd_thread_setup(void* arg)
 	spin_unlock(&thi->t_lock);
 	complete(&thi->startstop); // notify: thi->task is set.
 
-	retval = thi->function(thi);
+	while(1) {
+		retval = thi->function(thi);
+		if(get_t_state(thi) != Restarting) break;
+		thi->t_state = Running;
+	}
 
 	spin_lock(&thi->t_lock);
 	thi->task = NULL;
@@ -1107,17 +1113,12 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 
 	if (thi->t_state == None) {
 		spin_unlock(&thi->t_lock);
+		if(restart) drbd_thread_start(thi);
 		return;
 	}
 
 	if (thi->t_state != ns) {
 		if (thi->task == NULL) {
-			spin_unlock(&thi->t_lock);
-			return;
-		}
-
-		if (ns == Restarting && thi->t_state == Exiting) {
-			// Already Exiting. Cannot restart!
 			spin_unlock(&thi->t_lock);
 			return;
 		}

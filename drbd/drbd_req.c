@@ -995,7 +995,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 		return 1;
 
 	// Unconfigured
-	if (mdev->state.conn == StandAlone &&
+	if (mdev->state.conn == Disconnecting &&
 	    mdev->state.disk == Diskless)
 		return 1;
 

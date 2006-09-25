@@ -356,6 +356,7 @@ static const char *error_messages[] = {
 	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
 	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
 	EM(HaveDiskConfig) = "HaveDiskConfig",
+	EM(HaveNetConfig) = "HaveNetConfig",
 	EM(UnknownMandatoryTag) = "UnknownMandatoryTag",
 	EM(MinorNotKnown) = "MinorNotKnown",
 	EM(StateNotAllowed) = "StateNotAllowed",
@@ -1096,7 +1097,7 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	rv = cm->function(cm,minor,argc,argv);
 	if( rv ) return rv;
 	cm = find_cmd_by_name("disconnect");
-	rv |= cm->function(cm,minor,argc,argv);
+	cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");
 	rv |= cm->function(cm,minor,argc,argv);
 

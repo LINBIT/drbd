@@ -934,7 +934,12 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	struct crypto_tfm* tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
-	struct Drbd_Conf *odev;
+	drbd_dev *odev;
+
+	if (mdev->state.conn > StandAlone) {
+		retcode=HaveNetConfig;
+		goto fail;
+	}
 
 	new_conf = kmalloc(sizeof(struct net_conf),GFP_KERNEL);
 	if(!new_conf) {			
@@ -976,20 +981,21 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 #define M_PORT(A) (((struct sockaddr_in *)&A->my_addr)->sin_port)
 #define O_ADDR(A) (((struct sockaddr_in *)&A->peer_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A->peer_addr)->sin_port)
+	retcode = NoError;
 	for(i=0;i<minor_count;i++) {
 		odev = minor_to_mdev(i);
-		if(!odev) continue;
-		if( mdev != odev && odev->state.conn > StandAlone &&
-		    M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
-		    M_PORT(new_conf) == M_PORT(odev->net_conf) ) {
-			retcode=LAAlreadyInUse;
-			goto fail;
-		}
-		if( mdev != odev && odev->state.conn > StandAlone &&
-		    O_ADDR(new_conf) == O_ADDR(odev->net_conf) &&
-		    O_PORT(new_conf) == O_PORT(odev->net_conf) ) {
-			retcode=OAAlreadyInUse;
-			goto fail;
+		if(!odev || odev == mdev) continue;
+		if( inc_net(odev)) {
+			if( M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
+			    M_PORT(new_conf) == M_PORT(odev->net_conf) ) {
+				retcode=LAAlreadyInUse;
+			}
+			if(O_ADDR(new_conf) == O_ADDR(odev->net_conf) &&
+			   O_PORT(new_conf) == O_PORT(odev->net_conf) ) {
+				retcode=OAAlreadyInUse;
+			}
+			dec_net(odev);
+			if(retcode != NoError) goto fail;
 		}
 	}
 #undef M_ADDR
@@ -1058,20 +1064,7 @@ FIXME LGE
 		new_conf->ping_int = new_conf->ping_int+1;
 #endif
 
-	drbd_sync_me(mdev);
-	drbd_thread_stop(&mdev->receiver); // conn = StadAlone afterwards
-	drbd_free_sock(mdev);
-
-	/* As soon as mdev->state.conn < Unconnected nobody can increase
-	   the net_cnt. Wait until the net_cnt is 0. */
-	if ( wait_event_interruptible( mdev->cstate_wait,
-				       atomic_read(&mdev->net_cnt) == 0 ) ) {
-		retcode=GotSignal;
-		goto fail;
-	}
-
-	/* Now we may touch net_conf */
-	if (mdev->net_conf) kfree(mdev->net_conf);
+	D_ASSERT(mdev->net_conf==NULL);
 	mdev->net_conf = new_conf;
 
 	mdev->send_cnt = 0;
@@ -1114,7 +1107,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode;
 
-	retcode = _drbd_request_state(mdev,NS(conn,StandAlone),0);	// silently.
+	retcode = _drbd_request_state(mdev,NS(conn,Disconnecting),0);	// silently.
 
 	if ( retcode == SS_NothingToDo ) goto done;
 	if ( retcode == SS_PrimaryNOP ) {
@@ -1124,7 +1117,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			   mdev->state.conn < TearDown );
 		if( mdev->state.conn < TearDown ) goto done;
 
-		retcode = drbd_request_state(mdev,NS(conn,StandAlone));
+		retcode = drbd_request_state(mdev,NS(conn,Disconnecting));
 	}
 
 	if( retcode < SS_Success ) goto fail;

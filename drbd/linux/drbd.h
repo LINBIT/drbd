@@ -91,6 +91,7 @@ enum ret_codes {
 	KMallocFailed,
 	DiscardNotAllowed,
 	HaveDiskConfig,
+	HaveNetConfig,
 	UnknownMandatoryTag,
 	MinorNotKnown,
 	StateNotAllowed,
@@ -130,7 +131,8 @@ typedef enum {
  */
 typedef enum {
 	StandAlone,
-	Unconnected,
+	Disconnecting,  // Temporal state on the way to StandAlone.
+	Unconnected,    // >= Unconnected -> inc_net() succeeds
 	Timeout,
 	BrokenPipe,
 	NetworkFailure,
@@ -193,6 +195,7 @@ typedef enum {
 	SS_ConnectedOutdates=-6,
 	SS_PrimaryNOP=-7,
 	SS_ResyncRunning=-8,
+	SS_AlreadyStandAlone=-9,
 	SS_CW_FailedByPeer=-10
 } set_st_err_t;
 
