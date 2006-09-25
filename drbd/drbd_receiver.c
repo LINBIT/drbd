@@ -2899,7 +2899,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 			}
 
 			_req_mod(req,
-				 h->command == WriteAck
+				 h->command == be16_to_cpu(WriteAck)
 				 ? write_acked_by_peer
 				 : recv_acked_by_peer);
 			spin_unlock_irq(&mdev->req_lock);
