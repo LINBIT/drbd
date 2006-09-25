@@ -1123,11 +1123,6 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if( retcode < SS_Success ) goto fail;
 
-	if ( mdev->cram_hmac_tfm ) {
-		crypto_free_tfm(mdev->cram_hmac_tfm);
-		mdev->cram_hmac_tfm = NULL;
-	}
-
  done:
 	retcode = NoError;
  fail:
