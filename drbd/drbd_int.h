@@ -814,7 +814,6 @@ struct Drbd_Conf {
 	drbd_state_t new_state_tmp; // Used after attach while negotiating new disk state.
 	drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
-	wait_queue_head_t rq_wait;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
@@ -1681,10 +1680,44 @@ static inline int drbd_get_max_buffers(drbd_dev* mdev)
 	return mxb;
 }
 
+static inline int __inc_ap_bio_cond(drbd_dev* mdev) {
+	int mxb = drbd_get_max_buffers(mdev);
+	if (mdev->state.susp) return 0;
+	if (mdev->state.conn == WFBitMapS) return 0;
+	if (mdev->state.conn == WFBitMapT) return 0;
+	/* since some older kernels don't have atomic_add_unless,
+	 * and we are within the spinlock anyways, we have this workaround.  */
+	if (atomic_read(&mdev->ap_bio_cnt) > mxb) return 0;
+	atomic_inc(&mdev->ap_bio_cnt);
+	return 1;
+}
+
+/* I'd like to use wait_event_lock_irq,
+ * but I'm not sure when it got introduced,
+ * and not sure when it has 3 or 4 arguments */
 static inline void inc_ap_bio(drbd_dev* mdev)
 {
-	int mxb = drbd_get_max_buffers(mdev);
-	wait_event( mdev->rq_wait,atomic_add_unless(&mdev->ap_bio_cnt,1,mxb) );
+	/* compare with after_state_ch,
+	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
+	DEFINE_WAIT(wait);
+
+	/* we wait here
+	 *    as long as the device is suspended
+	 *    until the bitmap is no longer on the fly during connection handshake
+	 *    as long as we would exeed the max_buffer limit.
+	 *
+	 * to avoid races with the reconnect code,
+	 * we need to atomic_inc within the spinlock. */
+
+	spin_lock_irq(&mdev->req_lock);
+	while (!__inc_ap_bio_cond(mdev)) {
+		prepare_to_wait(&mdev->cstate_wait,&wait,TASK_UNINTERRUPTIBLE);
+		spin_unlock_irq(&mdev->req_lock);
+		schedule();
+		finish_wait(&mdev->cstate_wait, &wait);
+		spin_lock_irq(&mdev->req_lock);
+	}
+	spin_unlock_irq(&mdev->req_lock);
 }
 
 static inline void dec_ap_bio(drbd_dev* mdev)
@@ -1693,8 +1726,7 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
 	D_ASSERT(ap_bio>=0);
-	if (ap_bio == 0) wake_up(&mdev->cstate_wait);
-	if (ap_bio < mxb) wake_up(&mdev->rq_wait);
+	if (ap_bio < mxb) wake_up(&mdev->cstate_wait);
 }
 
 /* FIXME does not handle wrap around yet */

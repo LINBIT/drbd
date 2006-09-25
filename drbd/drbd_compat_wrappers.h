@@ -102,18 +102,6 @@ static inline void drbd_bio_kunmap(struct bio *bio)
 }
 #endif
 
-static inline void
-drbd_ee_prepare_write(drbd_dev *mdev, struct Tl_epoch_entry* e)
-{
-	e->private_bio->bi_end_io = drbd_endio_write_sec;
-}
-
-static inline void
-drbd_ee_prepare_read(drbd_dev *mdev, struct Tl_epoch_entry* e)
-{
-	e->private_bio->bi_end_io = drbd_endio_read_sec;
-}
-
 static inline int drbd_bio_has_active_page(struct bio *bio)
 {
 	struct bio_vec *bvec;

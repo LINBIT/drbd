@@ -1014,8 +1014,8 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 
 	dec_rs_pending(mdev);
 
-	drbd_ee_prepare_write(mdev,e);
-	e->w.cb     = e_end_resync_block;
+	e->private_bio->bi_end_io = drbd_endio_write_sec;
+	e->w.cb = e_end_resync_block;
 
 	inc_unacked(mdev);
 	/* corresponding dec_unacked() in e_end_resync_block()
@@ -1249,8 +1249,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		return FALSE;
 	}
 
-	drbd_ee_prepare_write(mdev, e);
-	e->w.cb     = e_end_block;
+	e->private_bio->bi_end_io = drbd_endio_write_sec;
+	e->w.cb = e_end_block;
 
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
 
@@ -1490,11 +1490,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
-	spin_lock_irq(&mdev->req_lock);
-	list_add(&e->w.list,&mdev->read_ee);
-	spin_unlock_irq(&mdev->req_lock);
-
-	drbd_ee_prepare_read(mdev,e);
+	e->private_bio->bi_end_io = drbd_endio_read_sec;
 
 	switch (h->command) {
 	case DataRequest:
@@ -1521,6 +1517,10 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	default:; /* avoid compiler warning */
 		fault_type = DRBD_FAULT_MAX;
 	}
+
+	spin_lock_irq(&mdev->req_lock);
+	list_add(&e->w.list,&mdev->read_ee);
+	spin_unlock_irq(&mdev->req_lock);
 
 	inc_unacked(mdev);
 	/* FIXME actually, it could be a READA originating from the peer ... */

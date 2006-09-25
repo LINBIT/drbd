@@ -640,6 +640,9 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		/* can even happen for protocol C,
 		 * when local io is stil pending.
 		 * in which case it does nothing. */
+		if (req->rq_state & RQ_NET_PENDING) {
+			print_rq_state(req, "FIXME");
+		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;
 		_req_may_be_done(req);
@@ -716,24 +719,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	drbd_request_t *req;
 	int local, remote;
 
-	/* we wait here
-	 *    as long as the device is suspended
-	 *    until the bitmap is no longer on the fly during connection handshake
-	 */
-	wait_event( mdev->cstate_wait,
-		    (volatile int)((mdev->state.conn < WFBitMapS ||
-				    mdev->state.conn > WFBitMapT) &&
-				   !mdev->state.susp ) );
-
-	/* FIXME RACE here in case of freeze io.
-	 * maybe put the inc_ap_bio within the condition of the wait_event? */
-
-	/* compare with after_state_ch,
-	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
-	inc_ap_bio(mdev);
-
 	/* allocate outside of all locks; get a "reference count" (ap_bio_cnt)
 	 * to avoid races with the disconnect/reconnect code.  */
+	inc_ap_bio(mdev);
 	req = drbd_req_new(mdev,bio);
 	if (!req) {
 		dec_ap_bio(mdev);
@@ -881,7 +869,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * barrier packet.  To get the write ordering right, we only have to
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
-	if (mdev->unused_spare_barrier &&
+	if (remote && mdev->unused_spare_barrier &&
             test_and_clear_bit(ISSUE_BARRIER,&mdev->flags)) {
 		struct drbd_barrier *b = mdev->unused_spare_barrier;
 		b = _tl_add_barrier(mdev,b);

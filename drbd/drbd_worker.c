@@ -940,27 +940,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		}
 	}
 
-	drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
-
-	/* When we terminate a resync process, either because it finished
-	 * sucessfully, or because (like in this case here) we lost
-	 * communications, we need to "w_resume_next_sg".
-	 * We cannot use del_timer_sync from within _set_cstate, and since the
-	 * resync timer may still be scheduled and would then trigger anyways,
-	 * we set the STOP_SYNC_TIMER bit, and schedule the timer for immediate
-	 * execution from within _set_cstate().
-	 * The timer should then clear that bit and queue w_resume_next_sg.
-	 *
-	 * This is fine for the normal "resync finished" case.
-	 *
-	 * In this case (worker thread beeing stopped), there is a race:
-	 * we cannot be sure that the timer already triggered.
-	 *
-	 * So we del_timer_sync here, and check that "STOP_SYNC_TIMER" bit.
-	 * if it is still set, we queue w_resume_next_sg anyways,
-	 * just to be sure.
-	 */
-
+	/* FIXME this should go into drbd_disconnect */
 	del_timer_sync(&mdev->resync_timer);
 	/* possible paranoia check: the STOP_SYNC_TIMER bit should be set
 	 * if and only if del_timer_sync returns true ... */

@@ -269,10 +269,6 @@ void tl_clear(drbd_dev *mdev)
 		struct list_head *le, *tle;
 		struct drbd_request *r;
 
-		ERR_IF(!list_empty(&b->w.list)) {
-			DUMPI(b->br_number);
-		}
-
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,tl_requests);
 			_req_mod(r, connection_lost_while_pending);
@@ -873,8 +869,12 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	// Do not change the order of the if above and below...
 	if (os.conn != WFBitMapS && ns.conn == WFBitMapS) {
 		/* compare with drbd_make_request_common,
-		 * wait_event and inc_ap_bio */
-		wait_event(mdev->cstate_wait,!atomic_read(&mdev->ap_bio_cnt));
+		 * wait_event and inc_ap_bio.
+		 * Note: we may lose connection whilst waiting here.
+		 * no worries though, should work out ok... */
+		wait_event(mdev->cstate_wait,
+			mdev->state.conn != WFBitMapS ||
+			!atomic_read(&mdev->ap_bio_cnt));
 		drbd_bm_lock(mdev);   // {
 		drbd_send_bitmap(mdev);
 		drbd_bm_unlock(mdev); // }
@@ -1946,7 +1946,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->md_sync_timer.data = (unsigned long) mdev;
 
 	init_waitqueue_head(&mdev->cstate_wait);
-	init_waitqueue_head(&mdev->rq_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
 
