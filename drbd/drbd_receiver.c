@@ -2523,9 +2523,19 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 
 	if(mdev->state.conn == Disconnecting) {
 		wait_event( mdev->cstate_wait,atomic_read(&mdev->net_cnt) == 0 );
-		if(mdev->ee_hash) kfree(mdev->ee_hash);
-		if(mdev->tl_hash) kfree(mdev->tl_hash);
-		if(mdev->cram_hmac_tfm) crypto_free_tfm(mdev->cram_hmac_tfm);
+		if(mdev->ee_hash) {
+			kfree(mdev->ee_hash);
+			mdev->ee_hash = NULL;
+		}
+
+		if(mdev->tl_hash) {
+			kfree(mdev->tl_hash);
+			mdev->tl_hash = NULL;
+		}
+		if(mdev->cram_hmac_tfm) {
+			crypto_free_tfm(mdev->cram_hmac_tfm);
+			mdev->cram_hmac_tfm = NULL;
+		}
 		kfree(mdev->net_conf);
 		mdev->net_conf=NULL;
 		drbd_request_state(mdev, NS(conn,StandAlone));
