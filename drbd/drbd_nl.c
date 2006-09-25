@@ -1110,7 +1110,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	retcode = _drbd_request_state(mdev,NS(conn,Disconnecting),0);	// silently.
 
 	if ( retcode == SS_NothingToDo ) goto done;
-	else if ( retcode == AlreadyStandAlone ) goto done;
+	else if ( retcode == SS_AlreadyStandAlone ) goto done;
 	else if ( retcode == SS_PrimaryNOP ) {
 		// Our statche checking code wants to see the peer outdated.
 		retcode = drbd_request_state(mdev,NS2(conn,Disconnecting,
