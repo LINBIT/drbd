@@ -283,8 +283,9 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 		}
 	}
 
-	if(mdev->state.disk > Diskless && (new_role & Secondary)) {
+	if((new_role & Secondary) && inc_local(mdev) ) {
 		drbd_al_to_on_disk_bm(mdev);
+		dec_local(mdev);
 	}
 
 	if (mdev->state.conn >= WFReportParams) {
