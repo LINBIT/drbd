@@ -1808,7 +1808,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		return conn_mask;
 	}
 	if (hg < 0 && 
-	    mdev->state.role == Primary && mdev->state.disk != Negotiating ) {
+	    mdev->state.role == Primary && mdev->state.disk >= Consistent ) {
 		ERR("I shall become SyncTarget, but I am primary!\n");
 		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
