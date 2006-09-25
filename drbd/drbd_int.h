@@ -312,8 +312,6 @@ typedef enum {
 	ResumeResync,
 	AuthChallenge,
 	AuthResponse,
-	OutdateRequest,
-	OutdatedReply,
 	StateChgRequest,
 
 	Ping,         // These are sent on the meta socket...
@@ -362,8 +360,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ResumeResync]     = "ResumeResync",
 		[AuthChallenge]    = "AuthChallenge",
 		[AuthResponse]     = "AuthResponse",
-		[OutdateRequest]   = "OutdateRequest",
-		[OutdatedReply]    = "OutdatedReply",
 		[Ping]             = "Ping",
 		[PingAck]          = "PingAck",
 		[RecvAck]          = "RecvAck",

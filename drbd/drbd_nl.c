@@ -1110,14 +1110,15 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	retcode = _drbd_request_state(mdev,NS(conn,Disconnecting),0);	// silently.
 
 	if ( retcode == SS_NothingToDo ) goto done;
-	if ( retcode == SS_PrimaryNOP ) {
-		drbd_send_short_cmd(mdev, OutdateRequest);
-		wait_event(mdev->cstate_wait,
-			   mdev->state.pdsk <= Outdated ||
-			   mdev->state.conn < TearDown );
-		if( mdev->state.conn < TearDown ) goto done;
-
-		retcode = drbd_request_state(mdev,NS(conn,Disconnecting));
+	else if ( retcode == AlreadyStandAlone ) goto done;
+	else if ( retcode == SS_PrimaryNOP ) {
+		// Our statche checking code wants to see the peer outdated.
+		retcode = drbd_request_state(mdev,NS2(conn,Disconnecting,
+						      pdsk,Outdated));
+	} else if (retcode == SS_CW_FailedByPeer) {
+		// The peer probabely wants to see us outdated.
+		retcode = drbd_request_state(mdev,NS2(conn,Disconnecting,
+						      disk,Outdated));
 	}
 
 	if( retcode < SS_Success ) goto fail;

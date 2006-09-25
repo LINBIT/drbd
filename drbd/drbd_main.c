@@ -396,10 +396,8 @@ STATIC int cl_wide_st_chg(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 		 ( ( os.role != Primary && ns.role == Primary ) ||
 		   ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
 		   ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ||
-		   ( os.disk != Diskless && ns.disk == Diskless ) ||
-		   // ( os.conn != TearDown && ns.conn == TearDown ) ||
-		   0
-		   ) );
+		   ( os.disk != Diskless && ns.disk == Diskless ) ) ) ||
+		(os.conn >= Connected && ns.conn == Disconnecting);
 }
 
 int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,

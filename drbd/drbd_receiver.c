@@ -2079,6 +2079,7 @@ STATIC drbd_state_t convert_state(drbd_state_t ps)
 
 		[StartingSyncS] = StartingSyncT,
 		[StartingSyncT] = StartingSyncS,
+		[Disconnecting] = TearDown, // NetworkFailure,
 
 		[conn_mask]   = conn_mask,
 	};
@@ -2309,44 +2310,6 @@ STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE; // cannot fail.
 }
 
-STATIC int receive_outdate(drbd_dev *mdev, Drbd_Header *h)
-{
-	drbd_state_t os,ns;
-	int r;
-
-	spin_lock_irq(&mdev->req_lock);
-	os = mdev->state;
-	if( os.disk < Outdated ) {
-		r=-999;
-	} else {
-		r = _drbd_set_state(mdev, _NS2(disk,Outdated,conn,TearDown),
-				    ChgStateVerbose);
-	}
-	ns = mdev->state;
-	spin_unlock_irq(&mdev->req_lock);
-	if( r == SS_Success) after_state_ch(mdev,os,ns,ChgStateVerbose);
-
-	if( r >= SS_Success) {
-		drbd_md_sync(mdev);
-		drbd_send_short_cmd(mdev, OutdatedReply);
-		return TRUE;
-	}
-
-	return FALSE;
-}
-
-STATIC int receive_outdated(drbd_dev *mdev, Drbd_Header *h)
-{
-	int r;
-
-	r = drbd_request_state(mdev,NS2(pdsk,Outdated,conn,TearDown));
-	WARN("r=%d\n",r);
-	D_ASSERT(r >= SS_Success);
-	drbd_md_sync(mdev); // because drbd_request_state created a new UUID.
-
-	return TRUE;
-}
-
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
@@ -2372,8 +2335,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportSyncUUID]   = receive_sync_uuid,
 	[PauseResync]      = receive_pause_resync,
 	[ResumeResync]     = receive_resume_resync,
-	[OutdateRequest]   = receive_outdate,
-	[OutdatedReply]    = receive_outdated,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
