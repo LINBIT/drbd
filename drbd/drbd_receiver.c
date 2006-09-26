@@ -896,13 +896,9 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	 * had a chance to send all the write acks corresponding to this epoch,
 	 * wait_for that bit to clear... */
 	rv = wait_event_interruptible(mdev->ee_wait,
-				      !test_bit(DONT_ACK_BARRIER,&mdev->flags));
-	if(rv) {
-		dec_unacked(mdev);
-		return FALSE;
-	}
-		
-	if (mdev->state.conn >= Connected)
+			      !test_bit(DONT_ACK_BARRIER,&mdev->flags));
+
+	if (rv == 0 && mdev->state.conn >= Connected)
 		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
 	else
 		rv = 0;
@@ -2466,6 +2462,10 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		dec_local(mdev);
 	}
 
+	down(&mdev->data.mutex);
+	drbd_free_sock(mdev);
+	up(&mdev->data.mutex);
+
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
 	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
@@ -2473,10 +2473,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
 	reclaim_net_ee(mdev);
 	spin_unlock_irq(&mdev->req_lock);
-
-	down(&mdev->data.mutex);
-	drbd_free_sock(mdev);
-	up(&mdev->data.mutex);
 
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
@@ -3176,11 +3172,6 @@ int drbd_asender(struct Drbd_thread *thi)
 	}
 
 	D_ASSERT(mdev->state.conn < Connected);
-	/* the receiver may still be stuck in receive_Barrier.
-	 * help him out */
-	if (test_and_clear_bit(DONT_ACK_BARRIER,&mdev->flags))
-		wake_up(&mdev->ee_wait);
-
 	INFO("asender terminated\n");
 
 	return 0;
