@@ -350,6 +350,8 @@ STATIC void reclaim_net_ee(drbd_dev *mdev)
 
 /*
  * This function is called from _asender only_
+ * but see also comments in _req_mod(,barrier_acked)
+ * and receive_Barrier_no_tcq.
  *
  * Move entries from net_ee to done_ee, if ready.
  * Grab done_ee, call all callbacks, free the entries.
@@ -361,6 +363,7 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 	struct Tl_epoch_entry *e, *t;
 	int ok=1;
 
+	set_bit(DONT_ACK_BARRIER,&mdev->flags);
 	spin_lock_irq(&mdev->req_lock);
 	reclaim_net_ee(mdev);
 	list_splice_init(&mdev->done_ee,&work_list);
@@ -379,6 +382,7 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 		ok = ok && e->w.cb(mdev,&e->w,0);
 		drbd_free_ee(mdev,e);
 	}
+	clear_bit(DONT_ACK_BARRIER,&mdev->flags);
 	wake_up(&mdev->ee_wait);
 
 	return ok;
@@ -393,7 +397,7 @@ void _drbd_clear_done_ee(drbd_dev *mdev)
 	struct Tl_epoch_entry *e;
 	int n = 0;
 
-	MUST_HOLD(&mdev->ee_lock);
+	MUST_HOLD(&mdev->req_lock);
 
 	reclaim_net_ee(mdev);
 
@@ -881,11 +885,21 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	if (!list_empty(&mdev->done_ee))
+		set_bit(DONT_ACK_BARRIER,&mdev->flags);
 	epoch_size = mdev->epoch_size;
 	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->req_lock);
 
-	rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
+	/* FIXME CAUTION! receiver thread sending via msock.
+	 * to make sure this BarrierAck will not be received before the asender
+	 * had a chance to send all the write acks corresponding to this epoch,
+	 * wait_for that bit to clear... */
+	wait_event(mdev->ee_wait, !test_bit(DONT_ACK_BARRIER,&mdev->flags));
+	if (mdev->state.conn >= Connected)
+		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
+	else
+		rv = 0;
 	dec_unacked(mdev);
 
 	return rv;
@@ -964,9 +978,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 }
 
 /* e_end_resync_block() is called via
- * drbd_process_done_ee() or _drbd_clear_done_ee().
- * only runs in the asender thread
- */
+ * drbd_process_done_ee() by asender only */
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
@@ -2429,6 +2441,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
 	enum fencing_policy fp;
+	struct drbd_work prev_work_done;
 
 	D_ASSERT(mdev->state.conn < Connected);
 	/* FIXME verify that:
@@ -2436,7 +2449,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	 * while we are still cleaning up.
 	 */
 
-	/* asender cleans up active_ee, sync_ee and done_ee */
+	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
 
 	fp = DontCare;
@@ -2446,30 +2459,29 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	spin_lock_irq(&mdev->req_lock);
+	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
+	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
+	_drbd_clear_done_ee(mdev);
 	_drbd_wait_ee_list_empty(mdev,&mdev->read_ee);
 	reclaim_net_ee(mdev);
 	spin_unlock_irq(&mdev->req_lock);
-
-	/* would be nice to be able to wait for all ee and req objects
-	 * currently on the worker queue to be "canceled",
-	 * but that's not really necessary. */
 
 	down(&mdev->data.mutex);
 	drbd_free_sock(mdev);
 	up(&mdev->data.mutex);
 
-	/* FIXME were is the correct place for these? tl_clear? */
-	clear_bit(ISSUE_BARRIER,&mdev->flags);
-	mdev->epoch_size = 0;
+	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
+	 * w_make_resync_request etc. which may still be on the worker queue
+	 * to be "canceled" */
+	set_bit(WORK_PENDING,&mdev->flags);
+	prev_work_done.cb = w_prev_work_done;
+	drbd_queue_work(&mdev->data.work,&prev_work_done);
+	wait_event(mdev->cstate_wait, !test_bit(WORK_PENDING,&mdev->flags));
 
 	/* FIXME: fail pending reads?
 	 * when we are configured for freeze io,
 	 * we could retry them once we un-freeze. */
 	drbd_fail_pending_reads(mdev);
-
-	/* FIXME maybe the cleanup of the resync should go
-	 * into w_make_resync_request or w_resume_next_sg
-	 * or something like that. */
 
 	/* We do not have data structures that would allow us to
 	   get the rs_pending_cnt down to 0 again.
@@ -2486,21 +2498,25 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	atomic_set(&mdev->rs_pending_cnt,0);
 	wake_up(&mdev->cstate_wait);
 
-	if(!mdev->state.susp) {
-		/* FIXME should go into some "after_state_change" handler */
-		tl_clear(mdev);
-	}
-
 	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
 	D_ASSERT(list_empty(&mdev->read_ee));
+	D_ASSERT(list_empty(&mdev->net_ee));
 	D_ASSERT(list_empty(&mdev->active_ee));
 	D_ASSERT(list_empty(&mdev->sync_ee));
 	D_ASSERT(list_empty(&mdev->done_ee));
+
+	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
+	mdev->epoch_size = 0;
 
 	if ( mdev->p_uuid ) {
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 	}
+
+	/* queue cleanup for the worker.
+	 * FIXME this should go into after_state_ch  */
+	if (!mdev->state.susp)
+		tl_clear(mdev);
 
 	INFO("Connection closed\n");
 
@@ -2794,7 +2810,7 @@ int drbdd_init(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
 
-	/* printk(KERN_INFO DEVICE_NAME ": receiver living/m=%d\n", minor); */
+	INFO("receiver (re)started\n");
 
 	do {
 		h = drbd_connect(mdev);
@@ -2990,6 +3006,9 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
 
 	smp_rmb();
+	/* FIXME
+	 * and who is going to clear those request objects
+	 * from this epoch object in protocol != C ?? */
 	if(unlikely(mdev->state.pdsk <= Diskless)) return TRUE;
 
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
@@ -3141,13 +3160,11 @@ int drbd_asender(struct Drbd_thread *thi)
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
-	INFO("asender starting cleanup\n");
-
-	spin_lock_irq(&mdev->req_lock);
-	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
-	_drbd_wait_ee_list_empty(mdev,&mdev->sync_ee);
-	_drbd_clear_done_ee(mdev);
-	spin_unlock_irq(&mdev->req_lock);
+	D_ASSERT(mdev->state.conn < Connected);
+	/* the receiver may still be stuck in receive_Barrier.
+	 * help him out */
+	if (test_and_clear_bit(DONT_ACK_BARRIER,&mdev->flags))
+		wake_up(&mdev->ee_wait);
 
 	INFO("asender terminated\n");
 

@@ -556,10 +556,11 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 	case send_canceled:
 		/* for the request, this is the same thing */
 	case send_failed:
-		D_ASSERT(req->rq_state & RQ_NET_PENDING);
-		dec_ap_pending(mdev);
-		req->rq_state &= ~(RQ_NET_PENDING|RQ_NET_QUEUED|RQ_NET_OK);
-		req->rq_state |= RQ_NET_DONE;
+		/* real cleanup will be done from tl_clear.  just update flags so
+		 * it is no longer marked as on the worker queue */
+		req->rq_state &= ~RQ_NET_QUEUED;
+		/* if we did it right, tl_clear should be scheduled only after this,
+		 * so this should not be necessary! */
 		_req_may_be_done(req);
 		break;
 
@@ -603,7 +604,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		/* if it is still queued, we may not complete it here.
 		 * it will be canceled soon.
 		 * FIXME we should change the code so this can not happen. */
-		if (!(req->rq_state & RQ_NET_QUEUED)) 
+		if (!(req->rq_state & RQ_NET_QUEUED))
 			_req_may_be_done(req);
 		break;
 
@@ -638,10 +639,26 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 
 	case barrier_acked:
 		/* can even happen for protocol C,
-		 * when local io is stil pending.
+		 * when local io is still pending.
 		 * in which case it does nothing. */
 		if (req->rq_state & RQ_NET_PENDING) {
-			print_rq_state(req, "FIXME");
+			/* barrier came in before all requests have been acked.
+			 * this is bad, because if the connection is lost now,
+			 * we won't be able to clean them up... */
+			const unsigned long s = req->rq_state;
+			INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u\n",
+			     "FIXME",
+			     req,
+			     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
+			     s & RQ_LOCAL_PENDING ? 'p' : '-',
+			     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
+			     s & RQ_LOCAL_OK ? 'o' : '-',
+			     s & RQ_NET_PENDING ? 'p' : '-',
+			     s & RQ_NET_QUEUED ? 'q' : '-',
+			     s & RQ_NET_SENT ? 's' : '-',
+			     s & RQ_NET_DONE ? 'd' : '-',
+			     s & RQ_NET_OK ? 'o' : '-',
+			     req->epoch);
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;

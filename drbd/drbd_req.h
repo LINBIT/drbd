@@ -169,7 +169,7 @@ enum drbd_req_state_bits {
 	/* well, actually only "handed over to the network stack" */
 	__RQ_NET_SENT,
 
-     	/* when set, the request may be freed.
+	/* when set, the request may be freed.
 	 * in (C) this happens when WriteAck is received,
 	 * in (B,A) when the corresponding BarrierAck is received */
 	__RQ_NET_DONE,

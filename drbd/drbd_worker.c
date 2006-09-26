@@ -120,11 +120,11 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	/* No hlist_del_init(&e->colision) here, we did not send the Ack yet,
 	 * neither did we wake possibly waiting conflicting requests.
-	 * done from "drbd_process_done_ee" or _drbd_clear_done_ee
-	 * within the appropriate w.cb (e_end_block) */
+	 * done from "drbd_process_done_ee" within the appropriate w.cb
+	 * (e_end_block/e_end_resync_block) or from _drbd_clear_done_ee */
 
 	if(!is_syncer_req) mdev->epoch_size++;
-	
+
 	do_wake = is_syncer_req
 		? list_empty(&mdev->sync_ee)
 		: list_empty(&mdev->active_ee);
@@ -520,20 +520,37 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
+int w_prev_work_done(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	clear_bit(WORK_PENDING,&mdev->flags);
+	wake_up(&mdev->cstate_wait);
+	return 1;
+}
+
 int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_barrier *b = (struct drbd_barrier *)w;
 	Drbd_Barrier_Packet *p = &mdev->data.sbuf.Barrier;
 	int ok=1;
 
-	if(unlikely(cancel)) return ok;
+	/* really avoid racing with tl_clear.  w.cb may have been referenced
+	 * just before it was reassigned and requeued, so double check that.
+	 * actually, this race was harmless, since we only try to send the
+	 * barrier packet here, and otherwise do nothing with the object.
+	 * but compare with the head of w_clear_epoch */
+	spin_lock_irq(&mdev->req_lock);
+	if (w->cb != w_send_barrier || mdev->state.conn < Connected)
+		cancel = 1;
+	spin_unlock_irq(&mdev->req_lock);
+	if (cancel)
+		return 1;
 
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 	p->barrier = b->br_number;
 	/* inc_ap_pending was done where this was queued.
 	 * dec_ap_pending will be done in got_BarrierAck
-	 * or (on connection loss) in tl_clear.  */
+	 * or (on connection loss) in w_clear_epoch.  */
 	ok = _drbd_send_cmd(mdev,mdev->data.socket,Barrier,(Drbd_Header*)p,sizeof(*p),0);
 	drbd_put_data_sock(mdev);
 

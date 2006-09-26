@@ -696,6 +696,8 @@ enum {
 	ISSUE_BARRIER,		// next Data is preceeded by a Barrier
 	SIGNAL_ASENDER,		// whether asender wants to be interrupted
 	SEND_PING,		// whether asender should send a ping asap
+	DONT_ACK_BARRIER,	// so BarrierAck won't overtake WriteAck
+	WORK_PENDING,		// completion flag for drbd_disconnect
 	WRITER_PRESENT,		// somebody opened us with write intent
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
@@ -1232,13 +1234,12 @@ extern int w_e_end_rsdata_req    (drbd_dev *, struct drbd_work *, int);
 extern int w_resync_inactive     (drbd_dev *, struct drbd_work *, int);
 extern int w_resume_next_sg      (drbd_dev *, struct drbd_work *, int);
 extern int w_io_error            (drbd_dev *, struct drbd_work *, int);
-extern int w_try_send_barrier    (drbd_dev *, struct drbd_work *, int);
 extern int w_send_write_hint     (drbd_dev *, struct drbd_work *, int);
 extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
 extern int w_send_dblock         (drbd_dev *, struct drbd_work *, int);
 extern int w_send_barrier        (drbd_dev *, struct drbd_work *, int);
 extern int w_send_read_req       (drbd_dev *, struct drbd_work *, int);
-extern int w_disconnect          (drbd_dev *, struct drbd_work *, int);
+extern int w_prev_work_done      (drbd_dev *, struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 

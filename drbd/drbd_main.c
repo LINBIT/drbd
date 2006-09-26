@@ -208,6 +208,8 @@ struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 	mdev->newest_barrier->next = new;
 	mdev->newest_barrier = new;
 
+	DUMPI(new->br_number);
+
 	return newest_before;
 }
 
@@ -223,6 +225,9 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
+
+	DUMPI(b->br_number);
+	DUMPI(b->n_req);
 
 	/* in protocol C this list should be empty,
 	 * unless there is local io pending.
@@ -256,7 +261,9 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	kfree(b);
 }
 
-/* called by drbd_disconnect (exiting receiver only) */
+
+/* called by drbd_disconnect (exiting receiver thread)
+ * or from some after_state_ch */
 void tl_clear(drbd_dev *mdev)
 {
 	struct drbd_barrier *b, *tmp;
@@ -268,6 +275,9 @@ void tl_clear(drbd_dev *mdev)
 	while ( b ) {
 		struct list_head *le, *tle;
 		struct drbd_request *r;
+
+		DUMPI(b->br_number);
+		DUMPI(b->n_req);
 
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,tl_requests);
