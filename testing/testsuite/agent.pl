@@ -215,7 +215,7 @@ sub execute {
     do {
       $output = `$command 2>&1`;
       chomp($output);
-    } while (defined($expected) && !($output eq $expected));
+    } while (defined($expected) && !($output eq $expected) && usleep(100000));
     alarm 0;
   };
   if ($@) {
