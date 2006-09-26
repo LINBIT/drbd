@@ -362,8 +362,8 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 	LIST_HEAD(work_list);
 	struct Tl_epoch_entry *e, *t;
 	int ok=1;
+	int do_clear_bit = test_bit(WRITE_ACK_PENDING,&mdev->flags);
 
-	set_bit(DONT_ACK_BARRIER,&mdev->flags);
 	spin_lock_irq(&mdev->req_lock);
 	reclaim_net_ee(mdev);
 	list_splice_init(&mdev->done_ee,&work_list);
@@ -382,7 +382,8 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 		ok = ok && e->w.cb(mdev,&e->w,0);
 		drbd_free_ee(mdev,e);
 	}
-	clear_bit(DONT_ACK_BARRIER,&mdev->flags);
+	if (do_clear_bit)
+		clear_bit(WRITE_ACK_PENDING,&mdev->flags);
 	wake_up(&mdev->ee_wait);
 
 	return ok;
@@ -885,8 +886,6 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev,&mdev->active_ee);
-	if (!list_empty(&mdev->done_ee))
-		set_bit(DONT_ACK_BARRIER,&mdev->flags);
 	epoch_size = mdev->epoch_size;
 	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->req_lock);
@@ -895,8 +894,10 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	 * to make sure this BarrierAck will not be received before the asender
 	 * had a chance to send all the write acks corresponding to this epoch,
 	 * wait_for that bit to clear... */
+	set_bit(WRITE_ACK_PENDING,&mdev->flags);
+	wake_asender(mdev);
 	rv = wait_event_interruptible(mdev->ee_wait,
-			      !test_bit(DONT_ACK_BARRIER,&mdev->flags));
+			      !test_bit(WRITE_ACK_PENDING,&mdev->flags));
 
 	if (rv == 0 && mdev->state.conn >= Connected)
 		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
@@ -2474,14 +2475,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	reclaim_net_ee(mdev);
 	spin_unlock_irq(&mdev->req_lock);
 
-	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
-	 * w_make_resync_request etc. which may still be on the worker queue
-	 * to be "canceled" */
-	set_bit(WORK_PENDING,&mdev->flags);
-	prev_work_done.cb = w_prev_work_done;
-	drbd_queue_work(&mdev->data.work,&prev_work_done);
-	wait_event(mdev->cstate_wait, !test_bit(WORK_PENDING,&mdev->flags));
-
 	/* FIXME: fail pending reads?
 	 * when we are configured for freeze io,
 	 * we could retry them once we un-freeze. */
@@ -2502,15 +2495,14 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	atomic_set(&mdev->rs_pending_cnt,0);
 	wake_up(&mdev->cstate_wait);
 
-	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
-	D_ASSERT(list_empty(&mdev->read_ee));
-	D_ASSERT(list_empty(&mdev->net_ee));
-	D_ASSERT(list_empty(&mdev->active_ee));
-	D_ASSERT(list_empty(&mdev->sync_ee));
-	D_ASSERT(list_empty(&mdev->done_ee));
 
-	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
-	mdev->epoch_size = 0;
+	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
+	 * w_make_resync_request etc. which may still be on the worker queue
+	 * to be "canceled" */
+	set_bit(WORK_PENDING,&mdev->flags);
+	prev_work_done.cb = w_prev_work_done;
+	drbd_queue_work(&mdev->data.work,&prev_work_done);
+	wait_event(mdev->cstate_wait, !test_bit(WORK_PENDING,&mdev->flags));
 
 	if ( mdev->p_uuid ) {
 		kfree(mdev->p_uuid);
@@ -2568,6 +2560,20 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		drbd_request_state(mdev, NS(conn,StandAlone));
 		D_ASSERT(mdev->receiver.t_state == Exiting);
 	}
+
+	/* they do trigger all the time.
+	 * hm. why won't tcp release the page references,
+	 * we already released the socket!?
+	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
+	D_ASSERT(list_empty(&mdev->net_ee));
+	 */
+	D_ASSERT(list_empty(&mdev->read_ee));
+	D_ASSERT(list_empty(&mdev->active_ee));
+	D_ASSERT(list_empty(&mdev->sync_ee));
+	D_ASSERT(list_empty(&mdev->done_ee));
+
+	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
+	mdev->epoch_size = 0;
 }
 
 /*

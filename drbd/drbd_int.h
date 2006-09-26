@@ -696,7 +696,7 @@ enum {
 	ISSUE_BARRIER,		// next Data is preceeded by a Barrier
 	SIGNAL_ASENDER,		// whether asender wants to be interrupted
 	SEND_PING,		// whether asender should send a ping asap
-	DONT_ACK_BARRIER,	// so BarrierAck won't overtake WriteAck
+	WRITE_ACK_PENDING,	// so BarrierAck won't overtake WriteAck
 	WORK_PENDING,		// completion flag for drbd_disconnect
 	WRITER_PRESENT,		// somebody opened us with write intent
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
