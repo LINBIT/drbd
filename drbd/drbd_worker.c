@@ -604,7 +604,6 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		/* ?? we set Timeout or BrokenPipe in drbd_send() */
 		if (mdev->state.conn >= Connected) 
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
-		drbd_thread_restart_nowait(&mdev->receiver);
 		/* req_mod(req, send_failed); we should not fail it here,
 		 * we might have to "freeze" on disconnect.
 		 * handled by req_mod(req, connection_lost_while_pending);
@@ -953,7 +952,6 @@ int drbd_worker(struct Drbd_thread *thi)
 			//WARN("worker: a callback failed! \n");
 			if (mdev->state.conn >= Connected)
 				drbd_force_state(mdev,NS(conn,NetworkFailure));
-			drbd_thread_restart_nowait(&mdev->receiver);
 		}
 	}
 

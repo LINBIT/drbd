@@ -895,7 +895,13 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	 * to make sure this BarrierAck will not be received before the asender
 	 * had a chance to send all the write acks corresponding to this epoch,
 	 * wait_for that bit to clear... */
-	wait_event(mdev->ee_wait, !test_bit(DONT_ACK_BARRIER,&mdev->flags));
+	rv = wait_event_interruptible(mdev->ee_wait,
+				      !test_bit(DONT_ACK_BARRIER,&mdev->flags));
+	if(rv) {
+		dec_unacked(mdev);
+		return FALSE;
+	}
+		
 	if (mdev->state.conn >= Connected)
 		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
 	else
@@ -2440,8 +2446,10 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 
 STATIC void drbd_disconnect(drbd_dev *mdev)
 {
-	enum fencing_policy fp;
 	struct drbd_work prev_work_done;
+	enum fencing_policy fp;
+	drbd_state_t os,ns;
+	int rv=SS_UnknownError;
 
 	D_ASSERT(mdev->state.conn < Connected);
 	/* FIXME verify that:
@@ -2531,13 +2539,20 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	spin_lock_irq(&mdev->req_lock);
-	if ( mdev->state.conn > Unconnected ) {
+	os = mdev->state;
+	if ( os.conn >= Unconnected ) {
 		// Do not restart in case we are Disconnecting
-		_drbd_set_state(mdev, _NS(conn,Unconnected),0);
+		ns = os;
+		ns.conn = Unconnected;
+		rv=_drbd_set_state(mdev,ns,ChgStateVerbose);
 	}
 	spin_unlock_irq(&mdev->req_lock);
+	if (rv == SS_Success) {
+		after_state_ch(mdev,os,ns,ChgStateVerbose);
+		D_ASSERT(mdev->receiver.t_state == Restarting);
+	}
 
-	if(mdev->state.conn == Disconnecting) {
+	if(os.conn == Disconnecting) {
 		wait_event( mdev->cstate_wait,atomic_read(&mdev->net_cnt) == 0 );
 		if(mdev->ee_hash) {
 			kfree(mdev->ee_hash);
@@ -2555,6 +2570,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		kfree(mdev->net_conf);
 		mdev->net_conf=NULL;
 		drbd_request_state(mdev, NS(conn,StandAlone));
+		D_ASSERT(mdev->receiver.t_state == Exiting);
 	}
 }
 
@@ -2915,7 +2931,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 			}
 
 			_req_mod(req,
-				 h->command == be16_to_cpu(WriteAck)
+				 h->command == cpu_to_be16(WriteAck)
 				 ? write_acked_by_peer
 				 : recv_acked_by_peer);
 			spin_unlock_irq(&mdev->req_lock);
@@ -3157,7 +3173,6 @@ int drbd_asender(struct Drbd_thread *thi)
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 		if (mdev->state.conn >= Connected)
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
-		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
 	D_ASSERT(mdev->state.conn < Connected);

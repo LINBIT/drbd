@@ -133,12 +133,12 @@ typedef enum {
 	StandAlone,
 	Disconnecting,  // Temporal state on the way to StandAlone.
 	Unconnected,    // >= Unconnected -> inc_net() succeeds
-	Timeout,
-	BrokenPipe,
-	NetworkFailure,
+	Timeout,	/// These temporal states are all used on the way
+	BrokenPipe,	/// from >= Connected to Unconnected.
+	NetworkFailure,	/// The 'disconnect reason' states
+	TearDown,	/// I do not allow to change beween them.
 	WFConnection,
 	WFReportParams, // we have a socket
-	TearDown,
 	Connected,      // we have introduced each other
 	StartingSyncS,  // starting full sync by IOCTL.
 	StartingSyncT,  // stariing full sync by IOCTL.

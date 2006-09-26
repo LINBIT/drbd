@@ -208,8 +208,6 @@ struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev,struct drbd_barrier *new)
 	mdev->newest_barrier->next = new;
 	mdev->newest_barrier = new;
 
-	DUMPI(new->br_number);
-
 	return newest_before;
 }
 
@@ -225,9 +223,6 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
-
-	DUMPI(b->br_number);
-	DUMPI(b->n_req);
 
 	/* in protocol C this list should be empty,
 	 * unless there is local io pending.
@@ -275,9 +270,6 @@ void tl_clear(drbd_dev *mdev)
 	while ( b ) {
 		struct list_head *le, *tle;
 		struct drbd_request *r;
-
-		DUMPI(b->br_number);
-		DUMPI(b->n_req);
 
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,tl_requests);
@@ -641,6 +633,12 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	/* Dissalow Network errors to configure a device's network part */
 	if( (ns.conn >= BrokenPipe && ns.conn <= NetworkFailure ) && 
 	    os.conn <= Disconnecting ) {
+		ns.conn = os.conn;
+	}
+
+	/* Dissalow network errors (+TearDown) to overwrite each other */
+	if( os.conn >= Timeout && os.conn <= TearDown &&
+	    ns.conn >= Timeout && ns.conn <= TearDown ) {
 		ns.conn = os.conn;
 	}
 
@@ -1010,8 +1008,14 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_thread_stop_nowait(&mdev->receiver);
 	}
 
-	if ( os.conn != Unconnected && ns.conn == Unconnected ) {
+	// Upon network failure, we need to restart the receiver.
+	if ( os.conn > TearDown &&
+	     ns.conn <= TearDown && ns.conn >= Timeout) {
 		drbd_thread_restart_nowait(&mdev->receiver);
+	}
+
+	if ( os.conn == StandAlone && ns.conn == Unconnected) {
+		drbd_thread_start(&mdev->receiver);
 	}
 
 	if ( os.disk == Diskless && os.conn <= Disconnecting &&
@@ -1813,7 +1817,6 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 			drbd_force_state(mdev, NS(conn,BrokenPipe));
 		} else
 			drbd_force_state(mdev, NS(conn,Timeout));
-		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
 	return sent;
