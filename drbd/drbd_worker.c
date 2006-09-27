@@ -242,6 +242,7 @@ void resync_timer_fn(unsigned long data)
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
+	/* harmless race: list_empty outside data.work.q_lock */
 	if(list_empty(&mdev->resync_work.list)) {
 		drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 	} else INFO("Avoided requeue of resync_work\n");
@@ -955,47 +956,21 @@ int drbd_worker(struct Drbd_thread *thi)
 		}
 	}
 
-	/* FIXME this should go into drbd_disconnect */
-	del_timer_sync(&mdev->resync_timer);
-	/* possible paranoia check: the STOP_SYNC_TIMER bit should be set
-	 * if and only if del_timer_sync returns true ... */
-
 	spin_lock_irq(&mdev->data.work.q_lock);
-	if (test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags)) {
-		mdev->resync_work.cb = w_resume_next_sg;
-		if (list_empty(&mdev->resync_work.list))
-			drbd_queue_work(&mdev->data.work,&mdev->resync_work);
-		// else: already queued
-	} else {
-		/* timer already consumed that bit, or it was never set */
-		if (list_empty(&mdev->resync_work.list)) {
-			/* not queued, should be inactive */
-			ERR_IF (mdev->resync_work.cb != w_resync_inactive)
-				mdev->resync_work.cb = w_resync_inactive;
-		} else {
-			/* still queued; should be w_resume_next_sg */
-			ERR_IF (mdev->resync_work.cb != w_resume_next_sg)
-				mdev->resync_work.cb = w_resume_next_sg;
-		}
-	}
-
 	i = 0;
-  again:
-	list_splice_init(&mdev->data.work.q,&work_list);
-	spin_unlock_irq(&mdev->data.work.q_lock);
+	while (!list_empty(&mdev->data.work.q)) {
+		list_splice_init(&mdev->data.work.q,&work_list);
+		spin_unlock_irq(&mdev->data.work.q_lock);
 
-	while(!list_empty(&work_list)) {
-		w = list_entry(work_list.next, struct drbd_work,list);
-		list_del_init(&w->list);
-		w->cb(mdev,w,1);
-		i++; /* dead debugging code */
+		while(!list_empty(&work_list)) {
+			w = list_entry(work_list.next, struct drbd_work,list);
+			list_del_init(&w->list);
+			w->cb(mdev,w,1);
+			i++; /* dead debugging code */
+		}
+
+		spin_lock_irq(&mdev->data.work.q_lock);
 	}
-
-	drbd_thread_stop(&mdev->receiver);
-
-	spin_lock_irq(&mdev->data.work.q_lock);
-	if(!list_empty(&mdev->data.work.q))
-		goto again;
 	sema_init(&mdev->data.work.s,0);
 	/* DANGEROUS race: if someone did queue his work within the spinlock,
 	 * but up() ed outside the spinlock, we could get an up() on the

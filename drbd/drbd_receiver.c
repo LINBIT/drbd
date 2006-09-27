@@ -2495,6 +2495,10 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	atomic_set(&mdev->rs_pending_cnt,0);
 	wake_up(&mdev->cstate_wait);
 
+	/* make sure syncer is stopped and w_resume_next_sg queued */
+	del_timer_sync(&mdev->resync_timer);
+	set_bit(STOP_SYNC_TIMER,&mdev->flags);
+	resync_timer_fn((unsigned long)mdev);
 
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
@@ -2545,11 +2549,13 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		if(mdev->ee_hash) {
 			kfree(mdev->ee_hash);
 			mdev->ee_hash = NULL;
+			mdev->ee_hash_s = 0;
 		}
 
 		if(mdev->tl_hash) {
 			kfree(mdev->tl_hash);
 			mdev->tl_hash = NULL;
+			mdev->tl_hash_s = 0;
 		}
 		if(mdev->cram_hmac_tfm) {
 			crypto_free_tfm(mdev->cram_hmac_tfm);

@@ -2227,10 +2227,16 @@ static void __exit drbd_cleanup(void)
 			if(mdev->ee_hash) {
 				kfree(mdev->ee_hash);
 				mdev->ee_hash_s = 0;
+				mdev->ee_hash = NULL;
+			}
+			if(mdev->tl_hash) {
+				kfree(mdev->tl_hash);
+				mdev->tl_hash_s = 0;
+				mdev->tl_hash = NULL;
 			}
 			if(mdev->app_reads_hash) {
 				kfree(mdev->app_reads_hash);
-				mdev->app_reads_hash = 0;
+				mdev->app_reads_hash = NULL;
 			}
 			if ( mdev->p_uuid ) {
 				kfree(mdev->p_uuid);
