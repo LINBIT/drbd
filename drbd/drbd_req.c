@@ -35,9 +35,12 @@
 
 //#define VERBOSE_REQUEST_CODE
 #ifdef VERBOSE_REQUEST_CODE
-void print_req_mod(drbd_request_t *req,drbd_req_event_t what) 
+void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 {
 	drbd_dev *mdev = req->mdev;
+	const int rw = (req->master_bio == NULL ||
+			bio_data_dir(req->master_bio) == WRITE) ?
+		'W' : 'R';
 
 	static const char *rq_event_names[] = {
 		[created] = "created",
@@ -62,21 +65,19 @@ void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 		[completed_ok] = "completed_ok",
 	};
 
-	INFO("_req_mod(%p %c ,%s)\n",
-	     req,
-	     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
-	     rq_event_names[what]);
+	INFO("_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
 }
 
 void print_rq_state(drbd_request_t *req, const char *txt)
 {
 	const unsigned long s = req->rq_state;
 	drbd_dev *mdev = req->mdev;
+	const int rw = (req->master_bio == NULL ||
+			bio_data_dir(req->master_bio) == WRITE) ?
+		'W' : 'R';
 
-	INFO("%s%p %c L%c%c%cN%c%c%c%c%c)\n",
-	     txt,
-	     req,
-	     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
+	INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%4u:%llu) %s\n",
+	     txt, req, rw,
 	     s & RQ_LOCAL_PENDING ? 'p' : '-',
 	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
 	     s & RQ_LOCAL_OK ? 'o' : '-',
@@ -84,7 +85,9 @@ void print_rq_state(drbd_request_t *req, const char *txt)
 	     s & RQ_NET_QUEUED ? 'q' : '-',
 	     s & RQ_NET_SENT ? 's' : '-',
 	     s & RQ_NET_DONE ? 'd' : '-',
-	     s & RQ_NET_OK ? 'o' : '-' );
+	     s & RQ_NET_OK ? 'o' : '-',
+	     req->epoch, req->size, req->sector,
+	     conns_to_name(mdev->state.conn));
 }
 
 #else
@@ -98,7 +101,7 @@ void _req_may_be_done(drbd_request_t *req)
 	drbd_dev *mdev = req->mdev;
 	int rw;
 
-	print_rq_state(req, "_req_may_be_done(");
+	print_rq_state(req, "_req_may_be_done");
 	MUST_HOLD(&mdev->req_lock)
 
 	if (s & RQ_NET_PENDING) return;
@@ -185,7 +188,7 @@ void _req_may_be_done(drbd_request_t *req)
 		rw = WRITE;
 	}
 
-	if ((s == RQ_NET_MASK) == 0 || (s & RQ_NET_DONE)) {
+	if ((s & RQ_NET_MASK) == 0 || (s & RQ_NET_DONE)) {
 		/* this is disconnected (local only) operation,
 		 * or protocol C WriteAck,
 		 * or protocol A or B BarrierAck,
@@ -206,8 +209,9 @@ void _req_may_be_done(drbd_request_t *req)
 			 * (local only or remote failed).
 			 * Other places where we set out-of-sync:
 			 * READ with local io-error */
-			if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK))
+			if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK)) {
 				drbd_set_out_of_sync(mdev,req->sector,req->size);
+			}
 			if (s & RQ_LOCAL_MASK) {
 				drbd_al_complete_io(mdev, req->sector);
 			}
@@ -511,7 +515,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		D_ASSERT(test_bit(ISSUE_BARRIER, &mdev->flags) == 0);
 
 		req->epoch = mdev->newest_barrier->br_number;
-		list_add(&req->tl_requests,&mdev->newest_barrier->requests);
+		list_add_tail(&req->tl_requests,&mdev->newest_barrier->requests);
 
 		/* mark the current epoch as closed,
 		 * in case it outgrew the limit */
