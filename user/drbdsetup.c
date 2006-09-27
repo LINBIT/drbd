@@ -134,7 +134,7 @@ int receive_reply_cn(int, struct drbd_tag_list *, struct nlmsghdr*,int);
 void close_cn(int sk_nl);
 
 // other functions
-void print_command_usage(int i, const char *addinfo);
+void print_command_usage(int i, const char *addinfo, int brief);
 
 // command functions
 int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
@@ -734,7 +734,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	while(ad && ad->name) {
 		if(argc < i+1) {
 			fprintf(stderr,"Missing argument '%s'\n", ad->name);
-			print_command_usage(cm-commands, "");
+			print_command_usage(cm-commands, "",0);
 			rv=20;
 			break;
 		}
@@ -1277,8 +1277,18 @@ int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 
 int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
-	return snprintf(str,strlen," [{--%s|-%c} hdlr]",
-			option->name, option->short_name);
+	const char** handlers;
+	int i, chars=0;
+
+	chars += snprintf(str,strlen," [{--%s|-%c}",
+			  option->name, option->short_name);
+	handlers = option->handler_param.handler_names;
+	for(i=0;i<option->handler_param.number_of_handlers;i++) {
+		if(handlers[i]) chars += snprintf(str+chars,strlen,
+						  " %s",handlers[i]);
+	}
+	chars += snprintf(str+chars,strlen,"]");
+	return chars;
 }
 
 int bit_opt_usage(struct drbd_option *option, char* str, int strlen)
@@ -1293,41 +1303,57 @@ int string_opt_usage(struct drbd_option *option, char* str, int strlen)
 			option->name, option->short_name);
 }
 
-void config_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
+void config_usage(struct drbd_cmd *cm, int brief)
 {
 	struct drbd_argument *args;
 	struct drbd_option *options;
-#define  maxcol 100 // plus initial tab ...
-	static char line[maxcol+1];
-	int col,prevcol;
+	static char line[300];
+	int maxcol,col,prevcol,startcol,toolong;
+	char *colstr;
 
 	prevcol=col=0;
+	maxcol=100;
+
+	if((colstr=getenv("COLUMNS"))) maxcol=atoi(colstr)-1;
 
 	col += snprintf(line+col, maxcol-col, " %s", cm->cmd);
 
-	if ((args = cm->cp.args)) {
-		while (args->name) {
-			col += snprintf(line+col, maxcol-col, " %s", args->name);
-			args++;
+	if( (args = cm->cp.args) ) {
+		if(brief) col += snprintf(line+col, maxcol-col, " [args...]");
+		else {
+			while (args->name) {
+				col += snprintf(line+col, maxcol-col, " %s", 
+						args->name);
+				args++;
+			}
 		}
-					
 	}
+
 	if (col > maxcol) {
-		printf("%s\n\t",line);
+		printf("%s\n",line);
 		col=0;
 	}
-	prevcol=col;
-	if ((options = cm->cp.options)) {
-		while (options->name) {
-			col += options->usage_function(options,line+col,maxcol-col);
-			if (col >= maxcol) {
-				line[prevcol]=0;
-				printf("%s\n\t",line);
-				prevcol=col=0;
-			} else {
-				prevcol=col;
-				options++;
-			}
+	startcol=prevcol=col;
+
+	options = cm->cp.options;
+	if(brief) {
+		if(options)
+			col += snprintf(line+col, maxcol-col, " [opts...]");
+		printf("%-40s",line);
+		return;
+	}
+
+	while (options && options->name) {
+		col += options->usage_function(options, line+col, maxcol-col);
+		if (col >= maxcol) {
+			toolong = (prevcol == startcol);
+			if( !toolong ) line[prevcol]=0;
+			printf("%s\n",line);
+			startcol=prevcol=col = sprintf(line,"    ");
+			if( toolong) options++;
+		} else {
+			prevcol=col;
+			options++;
 		}
 	}
 	line[col]=0;
@@ -1335,45 +1361,42 @@ void config_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
 	printf("%s\n",line);
 }
 
-void get_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
+void get_usage(struct drbd_cmd *cm, int brief)
 {
-	printf(" %s\n", cm->cmd);
+	if(brief) {
+		printf(" %-39s", cm->cmd);
+	} else {
+		printf(" %s\n", cm->cmd);
+	}
 }
 
-void events_usage(struct drbd_cmd *cm, int brief __attribute((unused)))
+void events_usage(struct drbd_cmd *cm, int brief)
 {
 	struct option *lo;
-	printf(" %s", cm->cmd);
+	char line[41];
 
-	lo = cm->ep.options;
-	while(lo && lo->name) {
-		printf(" [{--%s|-%c}]",lo->name,lo->val);
-		lo++;
+	if(brief) {
+		sprintf(line,"%s [opts...]", cm->cmd);
+		printf(" %-39s",line);
+	} else {
+		printf(" %s", cm->cmd);
+		lo = cm->ep.options;
+		while(lo && lo->name) {
+			printf(" [{--%s|-%c}]",lo->name,lo->val);
+			lo++;
+		}
+		printf("\n");
 	}
-	printf("\n");
 }
 
-void print_command_usage(int i, const char *addinfo)
+void print_command_usage(int i, const char *addinfo, int brief)
 {
-	commands[i].usage(commands+i,0);
+	printf("USAGE:\n");
+	commands[i].usage(commands+i,brief);
 
 	if (addinfo) {
 		printf("%s\n",addinfo);
 		exit(20);
-	}
-}
-
-void print_handler(const char* info, const char** handlers, unsigned int size)
-{
-	unsigned int i;
-
-	printf(info);
-
-	for(i=0;i<size;i++) {
-		if(handlers[i]) {
-			printf(" %s",handlers[i]);
-			if(i < size-1) printf(",");
-		}
 	}
 }
 
@@ -1383,21 +1406,19 @@ void print_usage(const char* addinfo)
 
 	printf("\nUSAGE: %s device command arguments options\n\n"
 	       "Device is usually /dev/drbdX or /dev/drbd/X.\n"
-	       "Commands, arguments and options are:\n",cmdname);
+	       "General options: --create-device, --set-defaults\n"
+	       "\nCommands are:\n",cmdname);
 
 
-	for (i = 0; i < ARRY_SIZE(commands); i++)
-		print_command_usage(i, 0);
+	for (i = 0; i < ARRY_SIZE(commands); i++) {
+		commands[i].usage(commands+i,1);
+		if(i%2==1) printf("\n");
+	}
 
-	printf("\nGeneral options: --create-device, --set-defaults\n");
-
-	print_handler("\non-io-error handlers:",on_error,ARRY_SIZE(on_error));
-	print_handler("\nfencing policies:",fencing_n,ARRY_SIZE(fencing_n));
-	print_handler("\nafter-sb-0pri handler:",asb0p_n,ARRY_SIZE(asb0p_n));
-	print_handler("\nafter-sb-1pri handler:",asb1p_n,ARRY_SIZE(asb1p_n));
-	print_handler("\nafter-sb-2pri handler:",asb2p_n,ARRY_SIZE(asb2p_n));
-
-	printf("\n\n");
+	printf("\n\n"
+	       "To get more details about a command issue "
+	       "'drbdsetup help cmd'.\n"
+	       "\n");
 	/*
 	printf("\n\nVersion: "REL_VERSION" (api:%d)\n%s\n",
 	       API_VERSION, drbd_buildtag());
@@ -1523,7 +1544,7 @@ int main(int argc, char** argv)
 {
 	int minor,drbd_fd,lock_fd;
 	struct drbd_cmd *cmd;
-	int help = 0, rv=0;
+	int rv=0;
 
 	chdir("/");
 
@@ -1533,8 +1554,13 @@ int main(int argc, char** argv)
 		cmdname = argv[0];
 
 	/* == '-' catches -h, --help, and similar */
-	if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-'))
-		help = 1;
+	if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-')) {
+		if(argc == 3) {
+			cmd=find_cmd_by_name(argv[2]);
+			if(cmd) print_command_usage(cmd-commands,NULL,0);
+			exit(0);
+		}
+	}
 
 	if (argc < 3) print_usage(argc==1 ? 0 : " Insufficient arguments");
 
