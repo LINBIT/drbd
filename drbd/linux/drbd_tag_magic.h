@@ -6,7 +6,7 @@
 
 // declare packet_type enums
 enum packet_types {
-#define PACKET(name, fields) P_ ## name,
+#define PACKET(name, number, fields) P_ ## name = number,
 #define INTEGER(pn,pr,member)
 #define INT64(pn,pr,member)
 #define BIT(pn,pr,member)
@@ -16,7 +16,7 @@ enum packet_types {
 };
 
 // These struct are used to deduce the size of the tag lists:
-#define PACKET(name, fields) struct name ## _tag_len_struct { fields };
+#define PACKET(name, number ,fields) struct name ## _tag_len_struct { fields };
 #define INTEGER(pn,pr,member) int member; int tag_and_len ## member;
 #define INT64(pn,pr,member) __u64 member; int tag_and_len ## member;
 #define BIT(pn,pr,member)   unsigned char member : 1; int tag_and_len ## member;
@@ -26,7 +26,7 @@ enum packet_types {
 
 // declate tag-list-sizes
 const int tag_list_sizes[] = {
-#define PACKET(name,fields) 2 fields ,
+#define PACKET(name,number,fields) 2 fields ,
 #define INTEGER(pn,pr,member)     +4+4 
 #define INT64(pn,pr,member)       +4+8
 #define BIT(pn,pr,member)         +4+1
@@ -50,7 +50,7 @@ const int tag_list_sizes[] = {
 #define tag_number(T) ((T) & TN_MASK)
 
 // declare tag enums
-#define PACKET(name, fields) fields
+#define PACKET(name, number, fields) fields
 enum drbd_tags {
 #define INTEGER(pn,pr,member)    T_ ## member = pn | TT_INTEGER | pr ,
 #define INT64(pn,pr,member)      T_ ## member = pn | TT_INT64   | pr ,
@@ -65,7 +65,7 @@ struct tag {
 };
 
 // declare tag names
-#define PACKET(name, fields) fields
+#define PACKET(name, number, fields) fields
 const struct tag tag_descriptions[] = {
 #define INTEGER(pn,pr,member)    [ pn ] = { #member, TT_INTEGER | pr },
 #define INT64(pn,pr,member)      [ pn ] = { #member, TT_INT64   | pr },

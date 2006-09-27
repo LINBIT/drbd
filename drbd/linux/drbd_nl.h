@@ -11,13 +11,13 @@
 #error "The macros PACKET, STRING, INTEGER, INT64 and BIT needs to be defined"
 #endif
 
-PACKET(primary,
+PACKET(primary, 1,
        BIT(		1,	T_MAY_IGNORE,	overwrite_peer)
 )
 
-PACKET(secondary, )
+PACKET(secondary, 2, )
 
-PACKET(disk_conf,
+PACKET(disk_conf, 3,
 	INT64(  	2,	T_MAY_IGNORE,	disk_size)
 	STRING(		3,	T_MANDATORY,	backing_dev,	32)
 	STRING(		4,	T_MANDATORY,	meta_dev,	32)
@@ -27,9 +27,9 @@ PACKET(disk_conf,
 	BIT(		37,	T_MAY_IGNORE,	use_bmbv)
 )
 
-PACKET(detach, )
+PACKET(detach, 4,)
 
-PACKET(net_conf,
+PACKET(net_conf, 5,
 	STRING(		8,	T_MANDATORY,	my_addr,	128)
 	STRING(		9,	T_MANDATORY,	peer_addr,	128)
 	STRING(		10,	T_MAY_IGNORE,	shared_secret,	SHARED_SECRET_MAX)
@@ -50,40 +50,40 @@ PACKET(net_conf,
 	BIT(		28,	T_MAY_IGNORE,	two_primaries)
 )
 
-PACKET(disconnect, )
+PACKET(disconnect, 6, )
 
-PACKET(resize,
+PACKET(resize, 7, 
 	INT64(  	29,	T_MAY_IGNORE,	resize_size)
 )
 
-PACKET(syncer_conf,
+PACKET(syncer_conf, 8,
 	INTEGER(	30,	T_MAY_IGNORE,	rate)
 	INTEGER(  	31,	T_MAY_IGNORE,	after)
 	INTEGER(  	32,	T_MAY_IGNORE,	al_extents)
 )
 
-PACKET(invalidate, )
-PACKET(invalidate_peer, )
-PACKET(pause_sync, )
-PACKET(resume_sync, )
-PACKET(suspend_io, )
-PACKET(resume_io, )
-PACKET(outdate, )
-PACKET(get_config, )
-PACKET(get_state,
+PACKET(invalidate, 9, )
+PACKET(invalidate_peer, 10, )
+PACKET(pause_sync, 11, )
+PACKET(resume_sync, 12, )
+PACKET(suspend_io, 13, )
+PACKET(resume_io, 14, )
+PACKET(outdate, 15, )
+PACKET(get_config, 16, )
+PACKET(get_state, 17,
 	INTEGER(	33,	T_MAY_IGNORE,	state_i)
 )
 
-PACKET(get_uuids,
+PACKET(get_uuids, 18,
 	STRING(		34,	T_MAY_IGNORE,	uuids,	(UUID_SIZE*sizeof(__u64)))
 	INTEGER(  	35,	T_MAY_IGNORE,	uuids_flags)
 )
 
-PACKET(get_timeout_flag,
+PACKET(get_timeout_flag, 19, 
 	BIT(		36,	T_MAY_IGNORE,	use_degraded)
 )
 
-PACKET(call_helper,
+PACKET(call_helper, 20,
 	STRING(		38,	T_MAY_IGNORE,	helper,		32)
 )
 

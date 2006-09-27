@@ -769,7 +769,7 @@ struct drbd_md {
 };
 
 // for sync_conf and other types...
-#define PACKET(name, fields) struct name { fields };
+#define PACKET(name, number, fields) struct name { fields };
 #define INTEGER(pn,pr,member) int member;
 #define INT64(pn,pr,member) __u64 member;
 #define BIT(pn,pr,member)   unsigned member : 1;

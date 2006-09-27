@@ -45,7 +45,7 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 
 // Generate the tag_list to struct functions
-#define PACKET(name, fields) \
+#define PACKET(name, number, fields) \
 int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg) \
 { \
 	int tag; \
@@ -85,7 +85,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 #include "linux/drbd_nl.h"
 
 // Generate the struct to tag_list functions
-#define PACKET(name, fields) \
+#define PACKET(name, number, fields) \
 unsigned short* \
 name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 { \
