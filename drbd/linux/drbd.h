@@ -105,6 +105,7 @@ enum ret_codes {
 	DiskLowerThanOutdated,
 	FailedToClaimMyself,
 	UnknownNetLinkPacket,
+	HaveNoDiskConfig,
 	AfterLastRetCode,
 };
 

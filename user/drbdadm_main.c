@@ -74,6 +74,7 @@ struct adm_cmd {
 struct deferred_cmd
 {
   int (* function)(struct d_resource*,const char* );
+  char *arg;
   struct d_resource* res;
   struct deferred_cmd* next;
 };
@@ -134,6 +135,7 @@ struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
 
 void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 		    struct d_resource* res,
+		    char* arg,
 		    int order)
 {
   struct deferred_cmd *d;
@@ -146,6 +148,7 @@ void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 
   d->function = function;
   d->res = res;
+  d->arg = arg;
   d->next = deferred_cmds[order];
 
   deferred_cmds[order] = d;
@@ -158,13 +161,13 @@ int _run_dcmds(struct deferred_cmd *d)
 
   if(d->next == NULL) 
     {
-      rv = d->function(d->res,NULL);
+      rv = d->function(d->res,d->arg);
       free(d);
       return rv;
     }
 
   rv = _run_dcmds(d->next);
-  if(!rv) rv |= d->function(d->res,NULL);
+  if(!rv) rv |= d->function(d->res,d->arg);
   free(d);
 
   return rv;
@@ -850,9 +853,9 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 
 static int adm_up(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  schedule_dcmd(adm_attach,res,0);
-  schedule_dcmd(adm_syncer,res,1);
-  schedule_dcmd(adm_connect,res,2);
+  schedule_dcmd(adm_attach,res,NULL,0);
+  schedule_dcmd(adm_syncer,res,NULL,1);
+  schedule_dcmd(adm_connect,res,NULL,2);
 
   return 0;
 }

@@ -167,9 +167,8 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	char* argv[20];
 	int pid,argc=0;
 	struct d_resource* running;
-	int do_attach=0;
-	int do_connect=0;
-	int do_syncer=0;
+	int do_attach=0,do_connect=0,do_syncer=0;
+	int have_disk=0,have_net=0;
 	char config_file_dummy[250];
 
 	argv[argc++]=drbdsetup;
@@ -189,17 +188,25 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	if(running->me) {
 		do_attach |= strcmp(res->me->device, running->me->device);
 		do_attach |= !disk_equal(res->me, running->me);
+		have_disk = (running->me->disk != NULL);
 	} else  do_attach |= 1;
 
 	do_connect  = !opts_equal(res->net_options, running->net_options);
 	do_connect |= !addr_equal(res,running);
 	do_connect |= !proto_equal(res,running);
+	have_net = (running->protocol != NULL);
 
 	do_syncer = !opts_equal(res->sync_options, running->sync_options);
 
-	if(do_attach)  schedule_dcmd(adm_attach,res,0);
-	if(do_syncer)  schedule_dcmd(adm_syncer,res,1);
-	if(do_connect) schedule_dcmd(adm_connect,res,2);
+	if(do_attach) {
+		if(have_disk) schedule_dcmd(adm_generic_s,res,"detach",0);
+		schedule_dcmd(adm_attach,res,NULL,0);
+	}
+	if(do_syncer)  schedule_dcmd(adm_syncer,res,NULL,1);
+	if(do_connect) {
+		if(have_net) schedule_dcmd(adm_generic_s,res,"disconnect",0);
+		schedule_dcmd(adm_connect,res,NULL,2);
+	}
 
 	return 0;
 }

@@ -369,6 +369,7 @@ static const char *error_messages[] = {
 	EM(PauseFlagAlreadyClear) = "PauseFlagAlreadyClear",
 	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
 	EM(FailedToClaimMyself) = "FailedToClaimMyself",
+	EM(HaveNoDiskConfig) = "HaveNoDiskConfig",
 };
 
 char* cmdname = 0;

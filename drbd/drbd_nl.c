@@ -1154,11 +1154,18 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		retcode = APrimaryNodeNeeded;
 		goto fail;
 	}
+
+	if(!inc_local(mdev)) {
+		retcode = HaveNoDiskConfig;
+		goto fail;
+	}
+
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	drbd_bm_lock(mdev);
 	drbd_determin_dev_size(mdev);
 	drbd_md_sync(mdev);
 	drbd_bm_unlock(mdev);
+	dec_local(mdev);
 	if (mdev->state.conn == Connected) {
 		drbd_send_uuids(mdev); // to start sync...
 		drbd_send_sizes(mdev);

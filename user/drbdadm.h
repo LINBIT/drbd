@@ -103,6 +103,7 @@ extern int adm_attach(struct d_resource* ,const char* );
 extern int adm_connect(struct d_resource* ,const char* );
 extern int adm_resize(struct d_resource* ,const char* );
 extern int adm_syncer(struct d_resource* ,const char* );
+extern int adm_generic_s(struct d_resource* ,const char* );
 extern int _admm_generic(struct d_resource* ,const char*, int flags);
 extern int m_system(char**,int );
 extern struct d_option* find_opt(struct d_option*,char*);
@@ -111,6 +112,7 @@ extern int check_uniq(const char* what, const char *fmt, ...);
 extern void verify_ips(struct d_resource* res);
 extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 			   struct d_resource* res,
+			   char* arg,
 			   int order);
 
 extern void uc_node(enum usage_count_type type);
