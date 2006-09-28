@@ -1124,6 +1124,12 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if( retcode < SS_Success ) goto fail;
 
+	if( wait_event_interruptible( mdev->cstate_wait,
+				      mdev->state.conn==StandAlone) ) {
+		retcode = GotSignal;
+		goto fail;
+	}
+
  done:
 	retcode = NoError;
  fail:
