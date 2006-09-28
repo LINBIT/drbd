@@ -1235,7 +1235,6 @@ int drbd_send_sync_param(drbd_dev *mdev, struct syncer_conf *sc)
 	Drbd_SyncParam_Packet p;
 
 	p.rate      = cpu_to_be32(sc->rate);
-	p.after     = cpu_to_be32(sc->after);
 
 	return drbd_send_cmd(mdev,USE_DATA_SOCKET,SyncParam,(Drbd_Header*)&p,sizeof(p));
 }

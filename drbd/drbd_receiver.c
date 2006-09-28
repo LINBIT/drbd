@@ -1903,7 +1903,6 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 
 	// XXX harmless race with ioctl ...
 	mdev->sync_conf.rate      = be32_to_cpu(p->rate);
-	drbd_alter_sa(mdev, be32_to_cpu(p->after));
 
 	return ok;
 }
@@ -2398,11 +2397,13 @@ STATIC void drbdd(drbd_dev *mdev)
 		if (unlikely(!handler)) {
 			ERR("unknown packet type %d, l: %d!\n",
 			    header->command, header->length);
+			drbd_force_state(mdev,NS(conn,ProtocolError));
 			break;
 		}
 		if (unlikely(!handler(mdev,header))) {
 			ERR("error receiving %s, l: %d!\n",
 			    cmdname(header->command), header->length);
+			drbd_force_state(mdev,NS(conn,ProtocolError));
 			break;
 		}
 
@@ -2542,7 +2543,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv == SS_Success) {
 		after_state_ch(mdev,os,ns,ChgStateVerbose);
-		D_ASSERT(mdev->receiver.t_state == Restarting);
 	}
 
 	if(os.conn == Disconnecting) {
@@ -2565,7 +2565,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		kfree(mdev->net_conf);
 		mdev->net_conf=NULL;
 		drbd_request_state(mdev, NS(conn,StandAlone));
-		D_ASSERT(mdev->receiver.t_state == Exiting);
 	}
 
 	/* they do trigger all the time.
@@ -2857,6 +2856,15 @@ int drbdd_init(struct Drbd_thread *thi)
 	}
 
 	drbd_disconnect(mdev);
+
+	// Ensure that the thread state fits to our connection state.
+	if( mdev->state.conn == Unconnected ) {
+		ERR_IF( mdev->receiver.t_state != Restarting )
+			drbd_thread_restart_nowait(&mdev->receiver);
+	} else if( mdev->state.conn == StandAlone ) {
+		ERR_IF( mdev->receiver.t_state != Exiting )
+			drbd_thread_stop_nowait(&mdev->receiver);
+	}
 
 	INFO("receiver terminated\n");
 	return 0;

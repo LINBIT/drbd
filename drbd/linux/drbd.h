@@ -137,6 +137,7 @@ typedef enum {
 	Timeout,	/// These temporal states are all used on the way
 	BrokenPipe,	/// from >= Connected to Unconnected.
 	NetworkFailure,	/// The 'disconnect reason' states
+	ProtocolError,  /// 
 	TearDown,	/// I do not allow to change beween them.
 	WFConnection,
 	WFReportParams, // we have a socket

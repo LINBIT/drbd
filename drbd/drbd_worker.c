@@ -728,6 +728,7 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 	while(1) {
 		if( odev->sync_conf.after == -1 ) return 1;
 		odev = minor_to_mdev(odev->sync_conf.after);
+		ERR_IF(!odev) return 1;
 		if( odev->state.conn >= SyncSource &&
 		    odev->state.conn <= PausedSyncT ) return 0;
 	}

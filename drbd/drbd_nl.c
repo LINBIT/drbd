@@ -197,8 +197,9 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
-	ERR_IF (mdev->this_bdev->bd_contains == 0) {
+	if (mdev->this_bdev->bd_contains == 0) {
 		// FIXME this masks a bug somewhere else!
+		// I think this is a bug outside of DRBD
 		mdev->this_bdev->bd_contains = mdev->this_bdev;
 	}
 

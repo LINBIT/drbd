@@ -39,17 +39,6 @@ function assure_module_is_loaded
     }
     # tell klogd to reload module symbol information ...
     [ -e /var/run/klogd.pid ] && [ -x /sbin/klogd ] && /sbin/klogd -i
-
-    # make sure udev has time to create the device files
-    for RESOURCE in `$DRBDADM sh-resources`; do
-	for DEVICE in `$DRBDADM sh-dev $RESOURCE`; do
-	    UDEV_TIMEOUT_LOCAL=$UDEV_TIMEOUT
-	    while [ ! -e $DEVICE ] && [ $UDEV_TIMEOUT_LOCAL -gt 0 ] ; do
-		sleep 1
-		UDEV_TIMEOUT_LOCAL=$(( $UDEV_TIMEOUT_LOCAL-1 ))
-	    done
-	done
-    done
 }
 
 function adjust_with_progress
@@ -93,6 +82,18 @@ case "$1" in
 	echo -n "Starting DRBD resources:    "
 	assure_module_is_loaded
 	adjust_with_progress
+
+	# make sure udev has time to create the device files
+	for RESOURCE in `$DRBDADM sh-resources`; do
+	    for DEVICE in `$DRBDADM sh-dev $RESOURCE`; do
+		UDEV_TIMEOUT_LOCAL=$UDEV_TIMEOUT
+		while [ ! -e $DEVICE ] && [ $UDEV_TIMEOUT_LOCAL -gt 0 ] ; do
+		    sleep 1
+		UDEV_TIMEOUT_LOCAL=$(( $UDEV_TIMEOUT_LOCAL-1 ))
+		done
+	    done
+	done
+
 	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd  # for RedHat
 	echo "."
 	$DRBDADM wait-con-int # User interruptible version of wait-connect all

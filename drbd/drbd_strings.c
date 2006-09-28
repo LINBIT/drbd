@@ -29,6 +29,7 @@ static const char *drbd_conn_s_names[] = {
 	[Timeout]        = "Timeout",
 	[BrokenPipe]     = "BrokenPipe",
 	[NetworkFailure] = "NetworkFailure",
+	[ProtocolError]  = "ProtocolError",
 	[WFConnection]   = "WFConnection",
 	[WFReportParams] = "WFReportParams",
 	[TearDown]       = "TearDown",
