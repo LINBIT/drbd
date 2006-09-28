@@ -729,12 +729,10 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	}
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
-#ifdef DUMP_EACH_PACKET
-	if (dump_packets >= DUMP_MAX) {
-	    INFO("drbd_set_in_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
-		 (long long)sector, size, sbnr, ebnr);
-	}
-#endif
+	MTRACE(TraceTypePacket, TraceLvlAll,
+	       INFO("drbd_set_in_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
+		    (long long)sector, size, sbnr, ebnr);
+	    );
 
 	if (sbnr > ebnr) return;
 
@@ -794,12 +792,10 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-#ifdef DUMP_EACH_PACKET
-	if (dump_packets >= DUMP_MAX) {
-	    INFO("drbd_set_out_of_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
-		 (long long)sector, size, sbnr, ebnr);
-	}
-#endif
+	MTRACE(TraceTypePacket, TraceLvlAll,
+	       INFO("drbd_set_out_of_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
+		    (long long)sector, size, sbnr, ebnr);
+	    );
 
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */

@@ -254,7 +254,7 @@ extern unsigned int _drbd_insert_fault(unsigned int type);
 /* drbd_meta-data.c (still in drbd_main.c) */
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
 
-#define DRBD_PANIC 3
+#define DRBD_PANIC 2
 /* do_panic alternatives:
  *	0: panic();
  *	1: machine_halt; SORRY, this DOES NOT WORK
@@ -1191,6 +1191,98 @@ extern wait_queue_head_t drbd_pp_wait;
 
 extern drbd_dev *drbd_new_device(int minor);
 
+// Dynamic tracing framework
+#ifdef ENABLE_DYNAMIC_TRACE
+
+extern int trace_type;
+extern int trace_devs;
+extern int trace_level;
+
+enum {
+	TraceLvlAlways = 0,
+	TraceLvlSummary,
+	TraceLvlMetrics,
+	TraceLvlAll,
+	TraceLvlMax
+};
+
+enum {
+	TraceTypePacket = 0x00000001,
+	TraceTypeRq     = 0x00000002,
+	TraceTypeUuid	= 0x00000004,
+};
+
+static inline int
+is_trace(unsigned int type, unsigned int level) {
+	return ((trace_level >= level) && (type & trace_type));
+}
+static inline int
+is_mdev_trace(drbd_dev *mdev, unsigned int type, unsigned int level) {
+	return (is_trace(type, level) && 
+		( ( 1 << mdev_to_minor(mdev)) & trace_devs));
+}
+
+#define MTRACE(type,lvl,code...) \
+do { \
+	if (unlikely(is_mdev_trace(mdev,type,lvl))) { \
+		code \
+	} \
+} while (0)
+
+#define TRACE(type,lvl,code...) \
+do { \
+	if (unlikely(is_trace(type,lvl))) { \
+		code \
+	} \
+} while (0)
+
+// Buffer printing support
+// DbgPrintFlags: used for Flags arg to DbgPrintBuffer
+// - DBGPRINT_BUFFADDR; if set, each line starts with the
+//       virtual address of the line being output. If clear,
+//       each line starts with the offset from the beginning
+//       of the buffer.
+typedef enum {
+    DBGPRINT_BUFFADDR = 0x0001,
+}  DbgPrintFlags;
+
+extern void drbd_print_uuid(drbd_dev *mdev, unsigned int idx);
+
+extern void drbd_print_buffer(const char *prefix,unsigned int flags,int size,
+			      const void *buffer,const void *buffer_va,
+			      unsigned int length);
+
+// Bio printing support
+extern void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete);
+
+static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete) {
+	MTRACE(TraceTypeRq,TraceLvlSummary,
+	       _dump_bio(mdev, bio, complete);
+		);
+}
+
+// Packet dumping support
+extern void _dump_packet(drbd_dev *mdev, struct socket *sock,
+			 int recv, Drbd_Polymorph_Packet *p, char* file, int line);
+
+static inline void
+dump_packet(drbd_dev *mdev, struct socket *sock,
+	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
+{
+	MTRACE(TraceTypePacket, TraceLvlSummary,
+	       _dump_packet(mdev,sock,recv,p,file,line);
+		);
+}
+
+#else
+
+#define MTRACE(ignored...) ((void)0)
+#define TRACE(ignored...) ((void)0)
+
+#define dump_bio(ignored...) ((void)0)
+#define dump_packet(ignored...) ((void)0)
+#endif
+
 // drbd_req
 extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
@@ -1749,37 +1841,6 @@ static inline int peer_seq(drbd_dev* mdev)
 	spin_unlock(&mdev->peer_seq_lock);
 	return seq;
 }
-
-#ifdef DUMP_EACH_PACKET
-
-/*
- * variables that controls dumping
- */
-extern int dump_packets;
-extern int dump_packet_devs; 
-
-#define DUMP_NONE 0
-#define DUMP_SUMMARY 1
-#define DUMP_ALL 2
-#define DUMP_MAX 3
-
-/*
- * enable to dump information about every packet exchange.
- */
-extern void _dump_packet(drbd_dev *mdev, struct socket *sock,
-			 int recv, Drbd_Polymorph_Packet *p, char* file, int line);
-
-static inline void
-dump_packet(drbd_dev *mdev, struct socket *sock,
-	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
-{
-	if (dump_packets > DUMP_NONE &&
-	    ( ( 1 << mdev_to_minor(mdev)) & dump_packet_devs) )
-		_dump_packet(mdev,sock,recv,p,file,line);
-}
-#else
-#define dump_packet(ignored...) ((void)0)
-#endif
 
 static inline void drbd_suicide(void)
 {

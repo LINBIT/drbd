@@ -1754,13 +1754,14 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	int hg;
 	drbd_conns_t rv = conn_mask;
 
-	//INFO("drbd_sync_handshake:\n");
-	//drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
-	//drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
-
 	hg = drbd_uuid_compare(mdev);
 
-	//INFO("uuid_compare()=%d\n",hg);
+	MTRACE(TraceTypeUuid,TraceLvlSummary,
+	       INFO("drbd_sync_handshake:\n");
+	       drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
+	       drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
+	       INFO("uuid_compare()=%d\n",hg);
+	    );
 
 	if (hg == 100) {
 		int pcount = (mdev->state.role==Primary) + (peer_role==Primary);

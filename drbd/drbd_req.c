@@ -180,6 +180,7 @@ void _req_may_be_done(drbd_request_t *req)
 		 * up here anyways during the freeze ...
 		 * then again, if it is a READ, it is not in the TL at all.
 		 * is it still leagal to complete a READ during freeze? */
+		dump_bio(mdev,req->master_bio,1);
 		bio_endio(req->master_bio, req->master_bio->bi_size, ok ? 0 : -EIO);
 		req->master_bio = NULL;
 		dec_ap_bio(mdev);
@@ -752,6 +753,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		bio_endio(bio, bio->bi_size, -ENOMEM);
 		return 0;
 	}
+
+	dump_bio(mdev,bio,0);
 
 	local = inc_local(mdev);
 	if (!local) {
