@@ -1275,8 +1275,10 @@ STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode=NoError;
-	
-	if(!drbd_resync_pause(mdev, UserImposed)) retcode = PauseFlagAlreadySet;
+
+	if(drbd_request_state(mdev,NS(user_isp,1)) == SS_NothingToDo)
+		retcode = PauseFlagAlreadySet;
+
 	reply->ret_code = retcode;
 	return 0;
 }
@@ -1286,7 +1288,9 @@ STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode=NoError;
 
-	if(!drbd_resync_resume(mdev, UserImposed)) retcode = PauseFlagAlreadyClear;
+	if(drbd_request_state(mdev,NS(user_isp,0)) == SS_NothingToDo)
+		retcode = PauseFlagAlreadyClear;
+
 	reply->ret_code = retcode;
 	return 0;
 }

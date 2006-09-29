@@ -647,6 +647,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if( ns.conn < Connected ) {
+		ns.peer_isp = 0;
 		ns.peer = Unknown;
 		if ( ns.pdsk > DUnknown || 
 		     ns.pdsk < Inconsistent ) ns.pdsk = DUnknown;
@@ -957,16 +958,16 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_send_state(mdev);
 	}
 
-	/* We want to pause resync, tell peer. */
-	if (  ( os.aftr_isp == 0 && ns.aftr_isp == 1 ) ||
-	      ( os.user_isp == 0 && ns.user_isp == 1 ) ) {
-		drbd_send_short_cmd(mdev,PauseResync);
+	/* We want to pause/continue resync, tell peer. */
+	if (  ( os.aftr_isp != ns.aftr_isp ) ||
+	      ( os.user_isp != ns.user_isp ) ) {
+		drbd_send_state(mdev);
 	}
 
-	/* We want to continue resync, tell peer. */
-	if (  ( os.aftr_isp == 1 || os.user_isp == 1 ) &&
-	        ns.aftr_isp == 0 && ns.user_isp == 0   ) {
-		drbd_send_short_cmd(mdev,ResumeResync);
+	/* In case one of the isp bits got set, suspend other devices. */
+	if ( ( !os.aftr_isp && !os.peer_isp && !os.user_isp) &&
+	     ( ns.aftr_isp || ns.peer_isp || ns.user_isp) ) {
+		suspend_other_sg(mdev);
 	}
 
 	/* We are in the progress to start a full sync... */

@@ -2305,20 +2305,6 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	return (size == 0);
 }
 
-STATIC int receive_pause_resync(drbd_dev *mdev, Drbd_Header *h)
-{
-	drbd_resync_pause(mdev, PeerImposed);
-	return TRUE;
-
-}
-
-STATIC int receive_resume_resync(drbd_dev *mdev, Drbd_Header *h)
-{
-	drbd_resync_resume(mdev, PeerImposed);
-	return TRUE;
-}
-
-
 STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 {
 	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
@@ -2348,8 +2334,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportState]      = receive_state,
 	[StateChgRequest]  = receive_req_state,
 	[ReportSyncUUID]   = receive_sync_uuid,
-	[PauseResync]      = receive_pause_resync,
-	[ResumeResync]     = receive_resume_resync,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;

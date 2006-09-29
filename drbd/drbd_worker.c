@@ -641,60 +641,6 @@ STATIC void drbd_global_unlock(void)
 	local_irq_enable();
 }
 
-/** 
- * _drbd_rs_resume:
- * @reason: Name of the flag
- * Clears one of the three reason flags that could cause the suspension
- * of the resynchronisation process. In case all three are cleared it 
- * actually changes the state to SyncSource or SyncTarget.
- * Returns 1 iff the flag got cleared; 0 iff the flag was already cleared.
- */ 
-STATIC int _drbd_rs_resume(drbd_dev *mdev, enum RSPauseReason reason)
-{
-	drbd_state_t ns;
-	int r;
-
-	ns = mdev->state;
-
-	switch(reason) {
-	case AfterDependency:	ns.aftr_isp = 0;	break;
-	case PeerImposed:	ns.peer_isp = 0;	break;
-	case UserImposed:	ns.user_isp = 0;	break;
-	}
-
-	// Call _drbd_set_state() in any way to set the _isp bits.
-	r = _drbd_set_state(mdev,ns,ChgStateHard|ScheduleAfter);
-
-	return r != SS_NothingToDo;
-}
-
-/** 
- * _drbd_rs_pause:
- * @reason: Name of the flag
- * Sets one of the three reason flags that could cause the suspension
- * of the resynchronisation process. In case the state was not alreay
- * PausedSyncT or PausedSyncS it changes the state into one of these.
- * Returns 1 iff the flag got set; 0 iff the flag was already set.
- */ 
-STATIC int _drbd_rs_pause(drbd_dev *mdev, enum RSPauseReason reason)
-{
-	drbd_state_t ns;
-	int r;
-
-	ns = mdev->state;
-
-	switch(reason) {
-	case AfterDependency:	ns.aftr_isp = 1;	break;
-	case PeerImposed:	ns.peer_isp = 1;	break;
-	case UserImposed:	ns.user_isp = 1;	break;
-	}
-
-	// Call _drbd_set_state() in any way to set the _isp bits.
-	r = _drbd_set_state(mdev,ns,ChgStateHard|ScheduleAfter);
-
-	return r != SS_NothingToDo;
-}
-
 STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 {
 	drbd_dev *odev = mdev;
@@ -703,8 +649,10 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 		if( odev->sync_conf.after == -1 ) return 1;
 		odev = minor_to_mdev(odev->sync_conf.after);
 		ERR_IF(!odev) return 1;
-		if( odev->state.conn >= SyncSource &&
-		    odev->state.conn <= PausedSyncT ) return 0;
+		if( (odev->state.conn >= SyncSource &&
+		     odev->state.conn <= PausedSyncT) ||
+		    odev->state.aftr_isp || odev->state.peer_isp || 
+		    odev->state.user_isp ) return 0;
 	}
 }
 
@@ -712,7 +660,7 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
  * _drbd_pause_after:
  * Finds all devices that may not resync now, and causes them to
  * pause their resynchronisation.
- * Called from process context only ( ioctl and receiver ).
+ * Called from process context only ( ioctl and after_state_ch ).
  */ 
 STATIC int _drbd_pause_after(drbd_dev *mdev)
 {
@@ -722,7 +670,9 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	for (i=0; i < minor_count; i++) {
 		if( !(odev = minor_to_mdev(i)) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
-			rv |= _drbd_rs_pause(odev,AfterDependency);
+			rv |= ( _drbd_set_state(odev,_NS(aftr_isp,1),
+						ChgStateHard|ScheduleAfter)
+				!= SS_NothingToDo ) ;
 		}
 	}
 
@@ -742,10 +692,11 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 
 	for (i=0; i < minor_count; i++) {
 		if( !(odev = minor_to_mdev(i)) ) continue;
-		if ( odev->state.conn == PausedSyncS ||
-		     odev->state.conn == PausedSyncT ) {
+		if ( odev->state.aftr_isp ) {
 			if (_drbd_may_sync_now(odev)) {
-				rv |= _drbd_rs_resume(odev,AfterDependency);
+				rv |= ( _drbd_set_state(odev,_NS(aftr_isp,0),
+							ChgStateHard|ScheduleAfter)
+					!= SS_NothingToDo ) ;
 			}
 		}
 	}
@@ -756,6 +707,13 @@ void resume_next_sg(drbd_dev* mdev)
 {
 	drbd_global_lock();
 	_drbd_resume_next(mdev);
+	drbd_global_unlock();
+}
+
+void suspend_other_sg(drbd_dev* mdev)
+{
+	drbd_global_lock();
+	_drbd_pause_after(mdev);
 	drbd_global_unlock();
 }
 
@@ -773,25 +731,6 @@ void drbd_alter_sa(drbd_dev *mdev, int na)
 
 	drbd_global_unlock();
 }
-
-int drbd_resync_pause(drbd_dev *mdev, enum RSPauseReason reason)
-{
-	int rv;
-	drbd_global_lock();
-	rv = _drbd_rs_pause(mdev,reason);
-	drbd_global_unlock();
-	return rv;
-}
-
-int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason reason)
-{
-	int rv;
-	drbd_global_lock();
-	rv = _drbd_rs_resume(mdev,reason);
-	drbd_global_unlock();
-	return rv;
-}
-
 
 /**
  * drbd_start_resync:

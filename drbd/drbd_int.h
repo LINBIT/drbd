@@ -308,8 +308,6 @@ typedef enum {
 	ReportSizes,
 	ReportState,
 	ReportSyncUUID,
-	PauseResync,
-	ResumeResync,
 	AuthChallenge,
 	AuthResponse,
 	StateChgRequest,
@@ -356,8 +354,6 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[ReportSizes]      = "ReportSizes",
 		[ReportState]      = "ReportState",
 		[ReportSyncUUID]   = "ReportSyncUUID",
-		[PauseResync]      = "PauseResync",
-		[ResumeResync]     = "ResumeResync",
 		[AuthChallenge]    = "AuthChallenge",
 		[AuthResponse]     = "AuthResponse",
 		[Ping]             = "Ping",
@@ -1289,7 +1285,7 @@ extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
 extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 
 
-// drbd_fs.c
+// drbd_nl.c
 extern char* ppsize(char* buf, size_t size);
 extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
 extern int drbd_determin_dev_size(drbd_dev*);
@@ -1302,18 +1298,11 @@ extern long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
 extern int drbd_khelper(drbd_dev *mdev, char* cmd);
 
 // drbd_worker.c
-enum RSPauseReason {
-	AfterDependency,
-	PeerImposed,
-	UserImposed
-};
-
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sa(drbd_dev *mdev, int na);
-extern int drbd_resync_pause(drbd_dev *mdev, enum RSPauseReason);
-extern int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
 extern void resume_next_sg(drbd_dev* mdev);
+extern void suspend_other_sg(drbd_dev* mdev);
 extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
@@ -1388,6 +1377,8 @@ void drbd_bcast_state(drbd_dev *mdev);
 #define peer_mask role_mask
 #define pdsk_mask disk_mask
 #define susp_mask 1
+#define user_isp_mask 1
+#define aftr_isp_mask 1
 
 #define NS(T,S) ({drbd_state_t mask; mask.i=0; mask.T = T##_mask; mask;}), \
                 ({drbd_state_t val; val.i=0; val.T = (S); val;})

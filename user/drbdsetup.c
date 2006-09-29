@@ -965,7 +965,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
 	int idx;
-	char* str;
+	char *str, *backing_dev, *address;
 	struct sockaddr_in *addr;
 
 	// find all commands that have options and print those...
@@ -977,25 +977,31 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 	// start of spagethi code...
 	if(consume_tag_int(T_wire_protocol,rtl,&idx))
 		printf("protocol %c;\n",'A'+idx-1);
-	if(consume_tag_string(T_backing_dev,rtl,&str)) {
+	backing_dev = address = NULL;
+	consume_tag_string(T_backing_dev,rtl,&backing_dev);
+	consume_tag_string(T_my_addr,rtl,&address);
+	if(backing_dev || address) {
 		printf("_this_host {\n");
 		printf("\tdevice\t\t\t\"/dev/drbd%d\";\n",minor);
-		printf("\tdisk\t\t\t\"%s\";\n",str);
-		consume_tag_int(T_meta_dev_idx,rtl,&idx);
-		consume_tag_string(T_meta_dev,rtl,&str);
-		switch(idx) {
-		case DRBD_MD_INDEX_INTERNAL:
-		case DRBD_MD_INDEX_FLEX_INT:
-			printf("\tmeta-disk\t\tinternal;\n");
-			break;
-		case DRBD_MD_INDEX_FLEX_EXT:
-			printf("\tflexible-meta-disk\t\"%s\";\n",str);
-			break;
-		default:
-			printf("\tmeta-disk\t\t\"%s\" [ %d ];\n",str,idx);
+		if(backing_dev) {
+			printf("\tdisk\t\t\t\"%s\";\n",backing_dev);
+			consume_tag_int(T_meta_dev_idx,rtl,&idx);
+			consume_tag_string(T_meta_dev,rtl,&str);
+			switch(idx) {
+			case DRBD_MD_INDEX_INTERNAL:
+			case DRBD_MD_INDEX_FLEX_INT:
+				printf("\tmeta-disk\t\tinternal;\n");
+				break;
+			case DRBD_MD_INDEX_FLEX_EXT:
+				printf("\tflexible-meta-disk\t\"%s\";\n",str);
+				break;
+			default:
+				printf("\tmeta-disk\t\t\"%s\" [ %d ];\n",str,
+				       idx);
+			}
 		}
-		if(consume_tag_string(T_my_addr,rtl,&str)) {
-			addr = (struct sockaddr_in *)str;
+		if(address) {
+			addr = (struct sockaddr_in *)address;
 			printf("\taddress\t\t\t%s:%d;\n",
 			       inet_ntoa(addr->sin_addr),
 			       ntohs(addr->sin_port));

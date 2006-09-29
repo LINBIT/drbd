@@ -149,6 +149,9 @@ static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
 {
 	int eq = 1;
 
+	if (conf->disk == NULL && running->disk == NULL) return 1;
+	if (conf->disk == NULL || running->disk == NULL) return 0;
+
 	eq &= !strcmp(conf->disk,running->disk);
 	eq &= int_eq(conf->meta_disk,running->meta_disk);
 	if(!strcmp(conf->meta_disk,"internal")) return eq;
