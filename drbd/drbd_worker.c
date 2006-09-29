@@ -670,7 +670,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	for (i=0; i < minor_count; i++) {
 		if( !(odev = minor_to_mdev(i)) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
-			rv |= ( _drbd_set_state(odev,_NS(aftr_isp,1),
+			rv |= ( _drbd_set_state(_NS(odev,aftr_isp,1),
 						ChgStateHard|ScheduleAfter)
 				!= SS_NothingToDo ) ;
 		}
@@ -694,7 +694,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 		if( !(odev = minor_to_mdev(i)) ) continue;
 		if ( odev->state.aftr_isp ) {
 			if (_drbd_may_sync_now(odev)) {
-				rv |= ( _drbd_set_state(odev,_NS(aftr_isp,0),
+				rv |= ( _drbd_set_state(_NS(odev,aftr_isp,0),
 							ChgStateHard|ScheduleAfter)
 					!= SS_NothingToDo ) ;
 			}

@@ -1321,7 +1321,7 @@ STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if( mdev->state.disk < Outdated ) {
 		retcode = -999;
 	} else {
-		retcode = _drbd_set_state(mdev,_NS(disk,Outdated),ChgStateVerbose);
+		retcode = _drbd_set_state(_NS(mdev,disk,Outdated),ChgStateVerbose);
 	}
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);

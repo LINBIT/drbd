@@ -1393,12 +1393,12 @@ void drbd_bcast_state(drbd_dev *mdev);
                 ({drbd_state_t val; val.i=0; val.T1 = (S1); \
                   val.T2 = (S2); val.T3 = (S3); val;})
 
-#define _NS(T,S) ({drbd_state_t ns; ns.i = mdev->state.i; ns.T = (S); ns;})
-#define _NS2(T1,S1,T2,S2) \
-                ({drbd_state_t ns; ns.i = mdev->state.i; ns.T1 = (S1); \
+#define _NS(D,T,S) D,({drbd_state_t ns; ns.i = D->state.i; ns.T = (S); ns;})
+#define _NS2(D,T1,S1,T2,S2) \
+                D,({drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
                 ns.T2 = (S2); ns;})
-#define _NS3(T1,S1,T2,S2,T3,S3) \
-                ({drbd_state_t ns; ns.i = mdev->state.i; ns.T1 = (S1); \
+#define _NS3(D,T1,S1,T2,S2,T3,S3) \
+                D,({drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
                 ns.T2 = (S2); ns.T3 = (S3); ns;})
 
 static inline void drbd_state_lock(drbd_dev *mdev)
@@ -1434,13 +1434,13 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 	    }
 	    /* NOTE fall through to detach case if forcedetach set */
 	case Detach:
-		if (_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard) 
+		if (_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard) 
 		    == SS_Success) {
 			ERR("Local IO failed. Detaching...\n");
 		}
 		break;
 	case Panic:
-		_drbd_set_state(mdev,_NS(disk,Failed),ChgStateHard);
+		_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard);
 		/* FIXME this is very ugly anyways.
 		 * but in case we panic, we should at least not panic
 		 * while holding the req_lock hand with irq disabled. */

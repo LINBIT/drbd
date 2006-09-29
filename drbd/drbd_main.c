@@ -358,7 +358,7 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
-		_drbd_set_state(mdev,_NS(disk,Diskless),
+		_drbd_set_state(_NS(mdev,disk,Diskless),
 				ChgStateHard|ScheduleAfter);
 	}
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
@@ -892,7 +892,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		     (os.conn < Connected && ns.conn >= Connected) ) {
 			tl_clear(mdev);
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(mdev,_NS(susp,0), 
+			_drbd_set_state(_NS(mdev,susp,0), 
 					ChgStateVerbose | ScheduleAfter );
 			spin_unlock_irq(&mdev->req_lock);
 		}
@@ -989,7 +989,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 		if (ns.conn == StartingSyncT) {
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(mdev,_NS(conn,WFSyncUUID), 
+			_drbd_set_state(_NS(mdev,conn,WFSyncUUID), 
 					ChgStateVerbose | ScheduleAfter );
 			spin_unlock_irq(&mdev->req_lock);
 		} else /* StartingSyncS */ {
