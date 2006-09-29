@@ -1232,11 +1232,15 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->sync_conf.rate       = sc.rate;
 	mdev->sync_conf.al_extents = sc.al_extents;
 
-	err = drbd_check_al_size(mdev);
-	drbd_md_sync(mdev);
-	if (err) {
-		retcode = KMallocFailed;
-		goto fail;
+	if(inc_local(mdev)) {
+		err = drbd_check_al_size(mdev);
+		dec_local(mdev);
+		drbd_md_sync(mdev);
+
+		if (err) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
 	}
 
 	if (mdev->state.conn >= Connected)

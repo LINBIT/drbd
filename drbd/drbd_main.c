@@ -626,7 +626,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
-
+ 
 	/* Early state sanitising. Dissalow the invalidate ioctl to connect  */
 	if( (ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
 		os.conn < Connected ) {
@@ -857,13 +857,11 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	fp = DontCare;
 	if(inc_local(mdev)) {
 		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
-	}
 
-	if( ns.disk >= Inconsistent ) {
 		mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 					     MDF_ConnectedInd|MDF_WasUpToDate|
 					     MDF_PeerOutDated );
+
 		if (test_bit(CRASHED_PRIMARY,&mdev->flags) ||
 		    mdev->state.role == Primary ||
 		    ( mdev->state.pdsk < Inconsistent && 
@@ -872,12 +870,12 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
 		if (mdev->state.pdsk <= Outdated && 
-		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;
-
+		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;	
 		if( mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
 		}
+		dec_local(mdev);
 	}
 
 	/* Inform userspace about the change... */
