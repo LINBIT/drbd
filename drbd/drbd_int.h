@@ -1313,6 +1313,7 @@ extern void drbd_alter_sa(drbd_dev *mdev, int na);
 extern int drbd_resync_pause(drbd_dev *mdev, enum RSPauseReason);
 extern int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
+extern void resume_next_sg(drbd_dev* mdev);
 extern int drbd_resync_finished(drbd_dev *mdev);
 // maybe rather drbd_main.c ?
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,

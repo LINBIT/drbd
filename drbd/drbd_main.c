@@ -621,6 +621,12 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	os = mdev->state;
 
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->dc.fencing;
+		dec_local(mdev);
+	}
+
 	/* Early state sanitising. Dissalow the invalidate ioctl to connect  */
 	if( (ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
 		os.conn < Connected ) {
@@ -640,15 +646,6 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		ns.conn = os.conn;
 	}
 
-	if( ns.i == os.i ) return SS_NothingToDo;
-
-	fp = DontCare;
-	if(inc_local(mdev)) {
-		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
-	}
-
-	/*  State sanitising  */
 	if( ns.conn < Connected ) {
 		ns.peer = Unknown;
 		if ( ns.pdsk > DUnknown || 
@@ -723,6 +720,16 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 			ns.susp = 1;
 		}
 	}
+
+	if( ns.aftr_isp || ns.peer_isp || ns.user_isp ) {
+		if(ns.conn == SyncSource) ns.conn=PausedSyncS;
+		if(ns.conn == SyncTarget) ns.conn=PausedSyncT;
+	} else {
+		if(ns.conn == PausedSyncS) ns.conn=SyncSource;
+		if(ns.conn == PausedSyncT) ns.conn=SyncTarget;
+	}
+
+	if( ns.i == os.i ) return SS_NothingToDo;
 	
 	if( !(flags & ChgStateHard) ) {
 		/*  pre-state-change checks ; only look at ns  */
@@ -779,6 +786,25 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		clear_bit(SYNC_STARTED,&mdev->flags);
 		set_bit(STOP_SYNC_TIMER,&mdev->flags);
 		mod_timer(&mdev->resync_timer,jiffies);
+	}
+
+	if( (os.conn == PausedSyncT || os.conn == PausedSyncS) &&
+	    (ns.conn == SyncTarget  || ns.conn == SyncSource) ) {
+		INFO("Syncer continues.\n");
+		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
+		if( ns.conn == SyncTarget ) {
+			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
+			mod_timer(&mdev->resync_timer,jiffies);
+		}
+	}
+
+	if( (os.conn == SyncTarget  || os.conn == SyncSource) &&
+	    (ns.conn == PausedSyncT || ns.conn == PausedSyncS) ) {
+		INFO("Resync suspended\n");
+		mdev->rs_mark_time = jiffies;
+		if( ns.conn == PausedSyncT ) {
+			set_bit(STOP_SYNC_TIMER,&mdev->flags);
+		}
 	}
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
@@ -1000,6 +1026,11 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
 		lc_free(mdev->resync);  mdev->resync = NULL;
 		lc_free(mdev->act_log); mdev->act_log = NULL;
+	}
+
+	// A resync finished or aborted, wake paused devices...
+	if ( os.conn > Connected && ns.conn <= Connected) {
+		resume_next_sg(mdev);
 	}
 
 	if ( os.conn != Disconnecting && ns.conn <= Disconnecting ) {

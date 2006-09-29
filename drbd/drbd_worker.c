@@ -231,21 +231,24 @@ void resync_timer_fn(unsigned long data)
 {
 	unsigned long flags;
 	drbd_dev* mdev = (drbd_dev*) data;
+	int queue;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
 	if(likely(!test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags))) {
+		queue=1;
 		mdev->resync_work.cb = w_make_resync_request;
 	} else {
-		mdev->resync_work.cb = w_resume_next_sg;
+		queue=0;
+		mdev->resync_work.cb = w_resync_inactive;
 	}
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	/* harmless race: list_empty outside data.work.q_lock */
-	if(list_empty(&mdev->resync_work.list)) {
+	if(list_empty(&mdev->resync_work.list) && queue) {
 		drbd_queue_work(&mdev->data.work,&mdev->resync_work);
-	} else INFO("Avoided requeue of resync_work\n");
+	}
 }
 
 #define SLEEP_TIME (HZ/10)
@@ -648,33 +651,20 @@ STATIC void drbd_global_unlock(void)
  */ 
 STATIC int _drbd_rs_resume(drbd_dev *mdev, enum RSPauseReason reason)
 {
-	drbd_state_t os,ns;
-	int r,doing=0;
+	drbd_state_t ns;
+	int r;
 
-	ns = os = mdev->state;
+	ns = mdev->state;
 
 	switch(reason) {
 	case AfterDependency:	ns.aftr_isp = 0;	break;
 	case PeerImposed:	ns.peer_isp = 0;	break;
 	case UserImposed:	ns.user_isp = 0;	break;
 	}
-	if(ns.aftr_isp == 0 && ns.peer_isp == 0 && ns.user_isp == 0) {
-		if(os.conn == PausedSyncS) ns.conn=SyncSource, doing=1;
-		if(os.conn == PausedSyncT) ns.conn=SyncTarget, doing=1;
-	}
 
 	// Call _drbd_set_state() in any way to set the _isp bits.
 	r = _drbd_set_state(mdev,ns,ChgStateHard|ScheduleAfter);
 
-	if(doing) {
-		INFO("Syncer continues.\n");
-		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
-
-		if(ns.conn == SyncTarget) {
-			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
-			mod_timer(&mdev->resync_timer,jiffies);
-		}
-	}
 	return r != SS_NothingToDo;
 }
 
@@ -688,19 +678,11 @@ STATIC int _drbd_rs_resume(drbd_dev *mdev, enum RSPauseReason reason)
  */ 
 STATIC int _drbd_rs_pause(drbd_dev *mdev, enum RSPauseReason reason)
 {
-	drbd_state_t os,ns;
-	int r,doing=0;
+	drbd_state_t ns;
+	int r;
 
-	static const char *reason_txt[] = {
-		[AfterDependency] = "dependency",
-		[PeerImposed]     = "peer",
-		[UserImposed]     = "user",
-	};
+	ns = mdev->state;
 
-	ns = os = mdev->state;
-
-	if(os.conn == SyncSource) ns.conn=PausedSyncS, doing=1;
-	if(os.conn == SyncTarget) ns.conn=PausedSyncT, doing=1;
 	switch(reason) {
 	case AfterDependency:	ns.aftr_isp = 1;	break;
 	case PeerImposed:	ns.peer_isp = 1;	break;
@@ -709,14 +691,6 @@ STATIC int _drbd_rs_pause(drbd_dev *mdev, enum RSPauseReason reason)
 
 	// Call _drbd_set_state() in any way to set the _isp bits.
 	r = _drbd_set_state(mdev,ns,ChgStateHard|ScheduleAfter);
-
-	if(doing) {
-		if( ns.conn == PausedSyncT ) 
-			set_bit(STOP_SYNC_TIMER,&mdev->flags);
-
-		mdev->rs_mark_time = jiffies;
-		INFO("Resync suspended by %s.\n",reason_txt[reason]);
-	}
 
 	return r != SS_NothingToDo;
 }
@@ -778,16 +752,11 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	return rv;
 }
 
-int w_resume_next_sg(drbd_dev* mdev, struct drbd_work* w, int unused)
+void resume_next_sg(drbd_dev* mdev)
 {
-	PARANOIA_BUG_ON(w != &mdev->resync_work);
-
 	drbd_global_lock();
 	_drbd_resume_next(mdev);
-	w->cb = w_resync_inactive;
 	drbd_global_unlock();
-
-	return 1;
 }
 
 void drbd_alter_sa(drbd_dev *mdev, int na)
@@ -835,7 +804,7 @@ int drbd_resync_resume(drbd_dev *mdev, enum RSPauseReason reason)
 void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 {
 	drbd_state_t os,ns;
-	int r=0,p=0;
+	int r=0;
 
 	if(side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
@@ -852,13 +821,9 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	drbd_global_lock();
 	ns = os = mdev->state;
 
-	if(!_drbd_may_sync_now(mdev)) {
-		ns.aftr_isp = 1;
-		p = (PausedSyncS - SyncSource);
-	}
-	if( ns.peer_isp || ns.user_isp ) p = (PausedSyncS - SyncSource);
+	ns.aftr_isp = !_drbd_may_sync_now(mdev);
 
-	ns.conn = side + p;
+	ns.conn = side;
 
 	if(side == SyncTarget) {
 		ns.disk = Inconsistent;
@@ -867,6 +832,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 
 	r = _drbd_set_state(mdev,ns,ChgStateVerbose);
+	ns = mdev->state;
 
 	if ( r == SS_Success ) {
 		mdev->rs_total     =
@@ -880,7 +846,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	if ( r == SS_Success ) {
 		after_state_ch(mdev,os,ns,ChgStateVerbose);
-
+ 
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     conns_to_name(ns.conn),
 		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
