@@ -1855,6 +1855,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		if(drbd_bm_total_weight(mdev)) {
 			INFO("No resync -> clearing bit map.\n");
 			drbd_bm_clear_all(mdev);
+			drbd_uuid_set_bm(mdev,0UL);
 			if (unlikely(drbd_bm_write(mdev) < 0))
 				return conn_mask;
 		}

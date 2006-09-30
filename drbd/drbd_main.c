@@ -1028,7 +1028,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	// A resync finished or aborted, wake paused devices...
-	if ( os.conn > Connected && ns.conn <= Connected) {
+	if ( (os.conn > Connected && ns.conn <= Connected) ||
+	     (os.peer_isp && !ns.peer_isp) ||
+	     (os.user_isp && !ns.user_isp) ) {
 		resume_next_sg(mdev);
 	}
 
