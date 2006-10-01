@@ -4,6 +4,17 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0pre5 (api:84/proto:83)
+--------
+ * The request code was completely rewritten.
+ * The write conflict detection code for primary-primary is currently
+   broken, but will be fixed soon.
+ * drbdsetup is no longer based on IOCTL but works now via 
+   netlink/connector.
+ * drbd_panic() is on its way out.
+ * A runtime configurable tracing framework got added.
+ * A lot of effort was put into finding and fixing bugs.
+
 8.0pre4 (api:83/proto:82)
 --------
  * Added the "drbd-peer-outdater" heartbeat plugin.

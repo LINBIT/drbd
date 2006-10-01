@@ -194,6 +194,17 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Sun Oct 31 2006 22:03:54 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0pre5-1)
+ * The request code was completely rewritten.
+ * The write conflict detection code for primary-primary is currently
+   broken, but will be fixed soon.
+ * drbdsetup is no longer based on IOCTL but works now via 
+   netlink/connector.
+ * drbd_panic() is on its way out.
+ * A runtime configurable tracing framework got added.
+ * A lot of effort was put into finding and fixing bugs.
+
 * Mon Jul 31 2006 12:04:41 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0pre4-1)
  * Added the "drbd-peer-outdater" heartbeat plugin.
