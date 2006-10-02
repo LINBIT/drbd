@@ -348,12 +348,17 @@ drbd_request_t * _req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
  */
 int drbd_io_error(drbd_dev* mdev, int forcedetach)
 {
+	enum io_error_handler eh;
 	unsigned long flags;
 	int send,ok=1;
 
-	if(!forcedetach &&
-	   mdev->bc->dc.on_io_error != Panic && 
-	   mdev->bc->dc.on_io_error != Detach) 
+	eh = PassOn;
+	if(inc_local(mdev)) {
+		eh = mdev->bc->dc.on_io_error;
+		dec_local(mdev);
+	}
+
+	if(!forcedetach && eh == PassOn)
 		return 1;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
@@ -377,6 +382,10 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 	drbd_md_sync(mdev);
 
 	/* Releasing the backing device is done in after_state_ch() */
+
+	if(eh == CallIOEHelper) {
+		drbd_khelper(mdev,"local-io-error");
+	}
 
 	return ok;
 }

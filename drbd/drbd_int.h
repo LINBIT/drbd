@@ -254,38 +254,7 @@ extern unsigned int _drbd_insert_fault(unsigned int type);
 /* drbd_meta-data.c (still in drbd_main.c) */
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
 
-#define DRBD_PANIC 2
-/* do_panic alternatives:
- *	0: panic();
- *	1: machine_halt; SORRY, this DOES NOT WORK
- *	2: prink(EMERG ), plus flag to fail all eventual drbd IO, plus panic()
- *	3: prink(EMERG ) and nothing more. For UML debugging...
- */
-
-extern volatile int drbd_did_panic;
 extern struct Drbd_Conf **minor_table;
-
-#if    DRBD_PANIC == 0
-#define drbd_panic(fmt, args...) \
-	panic(DEVICE_NAME "%d: " fmt, mdev_to_minor(mdev) , ##args)
-#elif  DRBD_PANIC == 1
-#error "sorry , this does not work, please contribute"
-#elif  DRBD_PANIC == 2
-#define drbd_panic(fmt, args...) do {					\
-	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
-			mdev_to_minor(mdev) , ##args);		\
-	drbd_did_panic = DRBD_MAGIC;					\
-	smp_mb();							\
-	panic(DEVICE_NAME "%d: " fmt, mdev_to_minor(mdev) , ##args);	\
-} while (0)
-#else
-#define drbd_panic(fmt, args...) do {					\
-	printk(KERN_EMERG DEVICE_NAME "%d: " fmt,			\
-			mdev_to_minor(mdev) , ##args);		\
-} while (0)
-// warning LGE "drbd_panic() does nothing but printk()!"
-#endif
-#undef DRBD_PANIC
 
 /***
  * on the wire
@@ -1425,26 +1394,21 @@ static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
  */
 static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 {
-	/* FIXME cleanup the messages here */
 	switch(mdev->bc->dc.on_io_error) {
 	case PassOn: /* FIXME would this be better named "Ignore"? */
-	    if (!forcedetach) {
-		ERR("Local IO failed. Passing error on...\n");
-		break;
-	    }
-	    /* NOTE fall through to detach case if forcedetach set */
+		if (!forcedetach) {
+			ERR("Local IO failed. Passing error on...\n");
+			break;
+		}
+		/* NOTE fall through to detach case if forcedetach set */
 	case Detach:
 		if (_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard) 
 		    == SS_Success) {
 			ERR("Local IO failed. Detaching...\n");
 		}
 		break;
-	case Panic:
+	case CallIOEHelper:
 		_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard);
-		/* FIXME this is very ugly anyways.
-		 * but in case we panic, we should at least not panic
-		 * while holding the req_lock hand with irq disabled. */
-		drbd_panic("IO error on backing device!\n");
 		break;
 	}
 }
@@ -1831,16 +1795,6 @@ static inline int peer_seq(drbd_dev* mdev)
 	seq = mdev->peer_seq;
 	spin_unlock(&mdev->peer_seq_lock);
 	return seq;
-}
-
-static inline void drbd_suicide(void)
-{
-#ifdef TASK_ZOMBIE
-	set_current_state(TASK_ZOMBIE);
-#else
-	current->exit_state = EXIT_ZOMBIE;
-#endif
-	schedule();
 }
 
 static inline int drbd_queue_order_type(drbd_dev* mdev)

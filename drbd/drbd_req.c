@@ -1003,9 +1003,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
  */
 static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 {
-	if (unlikely(drbd_did_panic == DRBD_MAGIC))
-		return 1;
-
 	// Unconfigured
 	if (mdev->state.conn == Disconnecting &&
 	    mdev->state.disk == Diskless)

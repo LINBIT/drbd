@@ -35,7 +35,7 @@
 
 enum io_error_handler {
 	PassOn, /* FIXME should the better be named "Ignore"? */
-	Panic,
+	CallIOEHelper,
 	Detach
 };
 

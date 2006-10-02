@@ -476,10 +476,6 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
 	struct msghdr msg;
 	int rv;
 
-	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
-		drbd_suicide();
-	}
-
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_iovlen = 1;
@@ -506,10 +502,6 @@ int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 	struct iovec iov;
 	struct msghdr msg;
 	int rv;
-
-	if (unlikely(drbd_did_panic == DRBD_MAGIC)) {
-		drbd_suicide();
-	}
 
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
@@ -3006,15 +2998,6 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 	D_ASSERT(p->block_id == ID_SYNCER);
 
 	drbd_rs_complete_io(mdev,sector);
-
-
-	// In case we are not primary, we could simply live on...
-
-// warning LGE "ugly and wrong"
-	drbd_panic("Got NegRSDReply. WE ARE LOST. We lost our up-to-date disk.\n");
-
-	// THINK do we have other options, but panic?
-	//       what about bio_endio, in case we don't panic ??
 
 	return TRUE;
 }

@@ -184,9 +184,9 @@ int w_connected_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
 int w_synced_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
 
 const char *on_error[] = {
-	[PassOn] = "pass_on",
-	[Panic]  = "panic",
-	[Detach] = "detach",
+	[PassOn]         = "pass_on",
+	[CallIOEHelper]  = "call-local-io-error",
+	[Detach]         = "detach",
 };
 
 const char *fencing_n[] = {
