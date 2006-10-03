@@ -644,7 +644,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	/* Dissalow Network errors to configure a device's network part */
-	if( (ns.conn >= BrokenPipe && ns.conn <= NetworkFailure ) && 
+	if( (ns.conn >= Timeout && ns.conn <= TearDown ) && 
 	    os.conn <= Disconnecting ) {
 		ns.conn = os.conn;
 	}
