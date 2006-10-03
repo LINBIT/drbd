@@ -1491,8 +1491,10 @@ void drbd_connector_callback(void *data)
 	struct drbd_nl_cfg_reply* reply;
 	drbd_dev *mdev;
 	int retcode,rr;
-	int reply_size = sizeof(struct cn_msg) + sizeof(struct drbd_nl_cfg_reply);
-	
+	int reply_size = sizeof(struct cn_msg) 
+		+ sizeof(struct drbd_nl_cfg_reply)
+		+ sizeof(short int);
+
 	if(!try_module_get(THIS_MODULE)) {
 		printk(KERN_ERR DEVICE_NAME "try_module_get() failed!\n");
 		return;
@@ -1548,7 +1550,8 @@ void drbd_bcast_state(drbd_dev *mdev)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
-		    sizeof(struct get_state_tag_len_struct)];
+		    sizeof(struct get_state_tag_len_struct)+
+		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
 	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
@@ -1578,7 +1581,8 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
-		    sizeof(struct call_helper_tag_len_struct)];
+		    sizeof(struct call_helper_tag_len_struct)+
+		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
 	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
