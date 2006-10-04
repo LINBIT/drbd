@@ -970,7 +970,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 
 	// find all commands that have options and print those...
 	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {
-		if(cm->cp.options)
+		if(cm->function == generic_config_cmd && cm->cp.options )
 			print_options(cm->cp.options, rtl, cm->cmd);
 	}
 

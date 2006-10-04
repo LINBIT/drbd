@@ -1229,8 +1229,7 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 #undef AL_MAX
 
-	mdev->sync_conf.rate       = sc.rate;
-	mdev->sync_conf.al_extents = sc.al_extents;
+	mdev->sync_conf = sc;
 
 	if(inc_local(mdev)) {
 		err = drbd_check_al_size(mdev);
