@@ -584,6 +584,7 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 		ERR("Unable to bind source sock (%d)\n", err);
 		sock_release(sock);
 		sock = NULL;
+		dec_net(mdev);
 		return sock;
 	}
 
