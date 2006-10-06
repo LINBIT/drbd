@@ -89,6 +89,7 @@ degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 pri-on-incon-degr	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}
 outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
+local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
 {NUM}			{ DP; CP; return TK_INTEGER;		}
 {DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
