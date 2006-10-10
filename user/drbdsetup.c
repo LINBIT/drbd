@@ -7,9 +7,6 @@
    Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
    Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
 
-   Copyright (C) 2000, Fábio Olivé Leite <olive@conectiva.com.br>.
-        Added sanity checks before using the device.
-
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
@@ -126,11 +123,13 @@ struct drbd_cmd {
 
 
 // Connector functions
+#define NL_TRIES 3
+#define NL_TIME 300
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
-int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
-int send_tag_list_cn(int, struct drbd_tag_list *, const int, int, int);
-int receive_reply_cn(int, struct drbd_tag_list *, struct nlmsghdr*,int);
+int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
+int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
+	      int size, int timeout_ms);
 void close_cn(int sk_nl);
 
 // other functions
@@ -769,9 +768,14 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		sk_nl = open_cn();
 		if(sk_nl < 0) return 20;
 
-		send_tag_list_cn(sk_nl,tl,cm->packet_id,minor,flags);
-		receive_reply_cn(sk_nl, tl, (struct nlmsghdr*)buffer, RCV_SIZE );
+		tl->drbd_p_header->packet_type = cm->packet_id;
+		tl->drbd_p_header->drbd_minor = minor;
+		tl->drbd_p_header->flags = flags;
+
+		call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,RCV_SIZE,NL_TIME);
+
 		close_cn(sk_nl);
+
 		reply = (struct drbd_nl_cfg_reply *)
 			((struct cn_msg *)NLMSG_DATA(buffer))->data;
 		print_config_error(reply);
@@ -945,8 +949,11 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	sk_nl = open_cn();
 	if(sk_nl < 0) return 20;
 
-	send_tag_list_cn(sk_nl,tl,cm->packet_id,minor,0);
-	receive_reply_cn(sk_nl,tl, (struct nlmsghdr*)buffer, 4096 );
+	tl->drbd_p_header->packet_type = cm->packet_id;
+	tl->drbd_p_header->drbd_minor = minor;
+	tl->drbd_p_header->flags = 0;
+
+	call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,4096,NL_TIME);
 
 	close_cn(sk_nl);
 	reply = (struct drbd_nl_cfg_reply *)
@@ -1185,7 +1192,6 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	int sk_nl,c,cont=1,rr;
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
-	struct pollfd pfd;
 	struct timeval before,after;
 	
 	lo = cm->ep.options;
@@ -1230,31 +1236,33 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	if(sk_nl < 0) return 20;
 
 	// Find out which timeout value to use.
-	send_tag_list_cn(sk_nl,tl,P_get_timeout_flag,minor,0);
-	receive_reply_cn(sk_nl,tl, (struct nlmsghdr*)buffer, 4096 );
+	tl->drbd_p_header->packet_type = P_get_timeout_flag;
+	tl->drbd_p_header->drbd_minor = minor;
+	tl->drbd_p_header->flags = 0;
+
+	call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,4096,NL_TIME);
+
 	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
 	timeout_ms= 1000 * (  rr ? degr_wfc_timeout : wfc_timeout) - 1;
 
 	// ask for the current state before waiting for state updates...
-	send_tag_list_cn(sk_nl,tl,P_get_state,minor,0);
+	tl->drbd_p_header->packet_type = P_get_state;
+	tl->drbd_p_header->drbd_minor = minor;
+	tl->drbd_p_header->flags = 0;
+	send_cn(sk_nl,tl->nl_header,(char*)tl->tag_list_cpos-(char*)tl->nl_header);
 
 	do {
-		pfd.fd = sk_nl;
-		pfd.events = POLLIN;
-
-		// printf("calling poll(,,%d)\n",timeout_ms);
 		gettimeofday(&before,NULL);
-		rr = poll(&pfd,1,timeout_ms);
-		if(rr == 0) return 5; // timeout expired.
+		rr = receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096,timeout_ms );
 		gettimeofday(&after,NULL);
+		if(rr == -2) return 5; // timeout expired.
 
 		if(timeout_ms > 0 ) {
 			timeout_ms -= ( (after.tv_sec - before.tv_sec) * 1000 +
 					(after.tv_usec - before.tv_usec) / 1000 );
 		}
-		receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096 );
 
 		cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 		reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
@@ -1466,24 +1474,32 @@ int open_cn()
 }
 
 
-int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
+void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
 {
 	static __u32 cn_seq = 1;
 	struct cn_msg *cn_hdr;
 	cn_hdr = (struct cn_msg *)NLMSG_DATA(nl_hdr);
-	int rr;
 
 	/* fill the netlink header */
 	nl_hdr->nlmsg_len = NLMSG_LENGTH(size - sizeof(struct nlmsghdr));
 	nl_hdr->nlmsg_type = NLMSG_DONE;
 	nl_hdr->nlmsg_flags = 0;
-	nl_hdr->nlmsg_seq = 0;
+	nl_hdr->nlmsg_seq = cn_seq;
 	nl_hdr->nlmsg_pid = getpid();
 	/* fill the connector header */
+	cn_hdr->id.val = CN_VAL_DRBD;
 	cn_hdr->id.idx = CN_IDX_DRBD;
 	cn_hdr->seq = cn_seq++;
 	get_random_bytes(&cn_hdr->ack,sizeof(cn_hdr->ack));
 	cn_hdr->len = size - sizeof(struct nlmsghdr) - sizeof(struct cn_msg);
+}
+
+
+int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
+{
+	int rr;
+
+	prepare_nl_header(nl_hdr,size);
 
 	rr = send(sk_nl,nl_hdr,nl_hdr->nlmsg_len,0);
 	if( rr != (ssize_t)nl_hdr->nlmsg_len) {
@@ -1493,9 +1509,16 @@ int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 	return rr;
 }
 
-int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
+int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms)
 {
+	struct pollfd pfd;
 	int rr;
+
+	pfd.fd = sk_nl;
+	pfd.events = POLLIN;
+
+	rr = poll(&pfd,1,timeout_ms);
+	if(rr == 0) return -2; // timeout expired.
 
 	rr = recv(sk_nl,nl_hdr,size,0);
 
@@ -1507,7 +1530,7 @@ int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 }
 
 int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
-		     int size)
+		     int size, int timeout_ms)
 {
 	struct cn_msg *request_cn_hdr;
 	struct cn_msg *reply_cn_hdr;
@@ -1517,8 +1540,8 @@ int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hd
 	reply_cn_hdr = (struct cn_msg *)NLMSG_DATA(nl_hdr);
 
 	while(1) {
-		rr = receive_cn(sk_nl,nl_hdr,size);
-		if( rr < 0 ) return -1;
+		rr = receive_cn(sk_nl,nl_hdr,size,timeout_ms);
+		if( rr < 0 ) return rr;
 		if(reply_cn_hdr->seq == request_cn_hdr->seq &&
 		   reply_cn_hdr->ack == request_cn_hdr->ack+1 ) return rr;
 		/* printf("INFO: got other message \n"
@@ -1531,15 +1554,29 @@ int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hd
 	return rr;
 }
 
-int send_tag_list_cn(int sk_nl, struct drbd_tag_list *tl, const int packet_id, int minor, int flags)
+int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
+		     int size, int timeout_ms)
 {
-	tl->cn_header->id.val = CN_VAL_DRBD;
-	tl->drbd_p_header->packet_type = packet_id;
-	tl->drbd_p_header->drbd_minor = minor;
-	tl->drbd_p_header->flags = flags;
+	int i,rr;
+	prepare_nl_header(tl->nl_header, (char*)tl->tag_list_cpos - 
+			  (char*)tl->nl_header);
 
-	return send_cn(sk_nl, tl->nl_header, (char*)tl->tag_list_cpos - 
-		       (char*)tl->nl_header);
+	for(i=0;i<NL_TRIES;i++) {
+		rr = send(sk_nl,tl->nl_header,tl->nl_header->nlmsg_len,0);
+		if( rr != (ssize_t)tl->nl_header->nlmsg_len) {
+			perror("send() failed");
+			return -1;
+		}
+
+		rr = receive_reply_cn(sk_nl,tl,nl_hdr,size,timeout_ms/NL_TRIES);
+		if( rr == -2 ) continue; // timeout.
+		return rr;
+	}
+	if( rr == -2) {
+		fprintf(stderr,"No response from the DRBD driver!"
+			" Is the module loaded?\n");
+	}
+	return rr;
 }
 
 void close_cn(int sk_nl)
