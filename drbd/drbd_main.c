@@ -2065,6 +2065,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	mdev->p_size       =
 	mdev->rs_start     =
 	mdev->rs_total     =
+	mdev->rs_failed    =
 	mdev->rs_mark_left =
 	mdev->rs_mark_time = 0;
 	D_ASSERT(mdev->net_conf == NULL);
@@ -2874,8 +2875,8 @@ _drbd_insert_fault(unsigned int type)
     unsigned int rnd = ((_drbd_fault_random(&rrs) % 100) + 1);
     unsigned int ret = (rnd <= fault_rate);
 
-    if (ret)
-	printk(KERN_ALERT "Simulating %s failure\n", _drbd_fault_str(type));
+    if (ret && printk_ratelimit())
+	    printk(KERN_ALERT "Simulating %s failure\n", _drbd_fault_str(type));
 
     return ret;
 }
@@ -3081,6 +3082,15 @@ do { \
 	} \
 } while (0)
 
+char *_dump_block_id(u64 block_id, char *buff) {
+    if (is_syncer_block_id(block_id))
+	strcpy(buff,"SyncerId");
+    else
+	sprintf(buff,"%llx",block_id);
+
+    return buff;
+}
+
 void
 _dump_packet(drbd_dev *mdev, struct socket *sock,
 	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
@@ -3099,40 +3109,41 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		break;
 
 	case Data:
-		INFOP("%s (sector %llx, id %llx, seq %x, f %x)\n", cmdname(cmd),
-		     (long long)be64_to_cpu(p->Data.sector), 
-		     (long long)be64_to_cpu(p->Data.block_id),
-		     be32_to_cpu(p->Data.seq_num),
-		     be32_to_cpu(p->Data.dp_flags)
-		);
+		INFOP("%s (sector %llx, id %s, seq %x, f %x)\n", cmdname(cmd),
+		      (long long)be64_to_cpu(p->Data.sector), 
+		      _dump_block_id(p->Data.block_id,tmp),
+		      be32_to_cpu(p->Data.seq_num),
+		      be32_to_cpu(p->Data.dp_flags)
+			);
 		break;
 
 	case DataReply:
 	case RSDataReply:
-		INFOP("%s (sector %llx, id %llx)\n", cmdname(cmd),
-		     (long long)be64_to_cpu(p->Data.sector), 
-		     (long long)be64_to_cpu(p->Data.block_id)
-		);
+		INFOP("%s (sector %llx, id %s)\n", cmdname(cmd),
+		      (long long)be64_to_cpu(p->Data.sector), 
+		      _dump_block_id(p->Data.block_id,tmp)
+			);
 		break;
 
 	case RecvAck:
 	case WriteAck:
 	case NegAck:
-		INFOP("%s (sector %llx, size %x, id %llx, seq %x)\n", cmdname(cmd),
-		     (long long)be64_to_cpu(p->BlockAck.sector), 
-		     be32_to_cpu(p->BlockAck.blksize),
-		     (long long)be64_to_cpu(p->BlockAck.block_id),
-		     be32_to_cpu(p->BlockAck.seq_num)
-		);
+	case NegRSDReply:
+		INFOP("%s (sector %llx, size %x, id %s, seq %x)\n", cmdname(cmd),
+		      (long long)be64_to_cpu(p->BlockAck.sector), 
+		      be32_to_cpu(p->BlockAck.blksize),
+		      _dump_block_id(p->BlockAck.block_id,tmp),
+		      be32_to_cpu(p->BlockAck.seq_num)
+			);
 		break;
 
 	case DataRequest:
 	case RSDataRequest:
-		INFOP("%s (sector %llx, size %x, id %llx)\n", cmdname(cmd),
-		     (long long)be64_to_cpu(p->BlockRequest.sector), 
-		     be32_to_cpu(p->BlockRequest.blksize),
-		     (long long)be64_to_cpu(p->BlockRequest.block_id)
-		);
+		INFOP("%s (sector %llx, size %x, id %s)\n", cmdname(cmd),
+		      (long long)be64_to_cpu(p->BlockRequest.sector), 
+		      be32_to_cpu(p->BlockRequest.blksize),
+		      _dump_block_id(p->BlockRequest.block_id,tmp)
+			);
 		break;
 
 	case Barrier:
@@ -3150,11 +3161,11 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		      
 	case ReportSizes:
 		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, max bio %x, q order %x)\n", cmdname(cmd), 
-		     (long long)(be64_to_cpu(p->Sizes.d_size)>>(20-9)),
-		     (long long)(be64_to_cpu(p->Sizes.u_size)>>(20-9)),
-		     (long long)(be64_to_cpu(p->Sizes.c_size)>>(20-9)),
-		     be32_to_cpu(p->Sizes.max_segment_size),
-		     be32_to_cpu(p->Sizes.queue_order_type));
+		      (long long)(be64_to_cpu(p->Sizes.d_size)>>(20-9)),
+		      (long long)(be64_to_cpu(p->Sizes.u_size)>>(20-9)),
+		      (long long)(be64_to_cpu(p->Sizes.c_size)>>(20-9)),
+		      be32_to_cpu(p->Sizes.max_segment_size),
+		      be32_to_cpu(p->Sizes.queue_order_type));
 		break;
 
 	case ReportState:
@@ -3173,13 +3184,13 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case StateChgReply:
 		INFOP("%s (ret %x)\n", cmdname(cmd), 
-		     be32_to_cpu(p->RqSReply.retcode));
+		      be32_to_cpu(p->RqSReply.retcode));
 		break;
 
 	case DiscardNote:
 		INFOP("%s (id %llx, seq %x)\n", cmdname(cmd),
-		     (long long)be64_to_cpu(p->Discard.block_id),
-		     be32_to_cpu(p->Discard.seq_num));
+		      (long long)p->Discard.block_id,
+		      be32_to_cpu(p->Discard.seq_num));
 		break;
 
 	case Ping:

@@ -605,7 +605,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	kfree(udw);
 
-	if(drbd_bm_total_weight(mdev) == 0 &&
+	if(drbd_bm_total_weight(mdev) <= mdev->rs_failed &&
 	   ( mdev->state.conn == SyncSource || mdev->state.conn == SyncTarget ||
 	     mdev->state.conn == PausedSyncS || mdev->state.conn == PausedSyncT ) ) {
 		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
@@ -624,7 +624,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
-				      int cleared)
+				      int cleared, int success)
 {
 	struct bm_extent* ext;
 	struct update_odbm_work * udw;
@@ -640,11 +640,14 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	ext = (struct bm_extent *) lc_get(mdev->resync,enr);
 	if (ext) {
 		if( ext->lce.lc_number == enr) {
-			ext->rs_left -= cleared;
-			if (ext->rs_left < 0) {
-				ERR("BAD! sector=%lu enr=%u rs_left=%d cleared=%d\n",
+			if (success)
+				ext->rs_left -= cleared;
+			else
+				ext->rs_failed += cleared;
+			if (ext->rs_left < ext->rs_failed) {
+				ERR("BAD! sector=%lu enr=%u rs_left=%d rs_failed=%d cleared=%d\n",
 				     (unsigned long)sector,
-				     ext->lce.lc_number, ext->rs_left, cleared);
+				     ext->lce.lc_number, ext->rs_left, ext->rs_failed, cleared);
 				// FIXME brrrgs. should never happen!
 				drbd_force_state(mdev,NS(conn,Disconnecting));
 				return;
@@ -665,12 +668,16 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				ext->flags = 0;
 			}
 			ext->rs_left = rs_left;
+			if (!success)
+				ext->rs_failed = cleared;
 			lc_changed(mdev->resync,&ext->lce);
 		}
 		lc_put(mdev->resync,&ext->lce);
 		// no race, we are within the al_lock!
 
-		if (ext->rs_left == 0) {
+		if (ext->rs_left <= ext->rs_failed) {
+			ext->rs_left = ext->rs_failed = 0;
+
 			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
 			if(udw) {
 				udw->enr = ext->lce.lc_number;
@@ -729,7 +736,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	}
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
-	MTRACE(TraceTypePacket, TraceLvlAll,
+	MTRACE(TraceTypeResync, TraceLvlMetrics,
 	       INFO("drbd_set_in_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
 		    (long long)sector, size, sbnr, ebnr);
 	    );
@@ -753,7 +760,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 				mdev->rs_mark_left =drbd_bm_total_weight(mdev);
 			}
 		}
-		drbd_try_clear_on_disk_bm(mdev,sector,count);
+		drbd_try_clear_on_disk_bm(mdev,sector,count,TRUE);
 		/* just wake_up unconditional now,
 		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
 		wake_up=1;
@@ -792,7 +799,7 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	MTRACE(TraceTypePacket, TraceLvlAll,
+	MTRACE(TraceTypeResync, TraceLvlMetrics,
 	       INFO("drbd_set_out_of_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
 		    (long long)sector, size, sbnr, ebnr);
 	    );
@@ -877,6 +884,11 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	struct bm_extent* bm_ext;
 	int i, sig;
 
+	MTRACE(TraceTypeResync, TraceLvlAll,
+	       INFO("drbd_rs_begin_io: sector=%llx\n",
+		    (long long)sector);
+	    );
+
 	sig = wait_event_interruptible( mdev->al_wait,
 			(bm_ext = _bme_get(mdev,enr)) );
 	if (sig) return 0;
@@ -909,6 +921,11 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	struct bm_extent* bm_ext;
 	unsigned long flags;
 
+	MTRACE(TraceTypeResync, TraceLvlAll,
+	       INFO("drbd_rs_complete_io: sector=%llx\n",
+		    (long long)sector);
+	    );
+
 	spin_lock_irqsave(&mdev->al_lock,flags);
 	bm_ext = (struct bm_extent*) lc_find(mdev->resync,enr);
 	if(!bm_ext) {
@@ -935,6 +952,10 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 {
 	struct bm_extent* bm_ext;
 	int i;
+
+	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	       INFO("drbd_rs_cancel_all\n");
+	    );
 
 	spin_lock_irq(&mdev->al_lock);
 
@@ -964,6 +985,10 @@ void drbd_rs_del_all(drbd_dev* mdev)
 	struct bm_extent* bm_ext;
 	int i;
 
+	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	       INFO("drbd_rs_del_all\n");
+	    );
+
 	spin_lock_irq(&mdev->al_lock);
 
 	if(inc_local_if_state(mdev,Failed)) { // Makes sure ->resync is there.
@@ -980,4 +1005,70 @@ void drbd_rs_del_all(drbd_dev* mdev)
 		dec_local(mdev);
 	}
 	spin_unlock_irq(&mdev->al_lock);
+}
+
+/* Record information on a failure to resync the specified blocks
+ *
+ * called on SyncTarget when resync write fails or NegRSDReply received
+ *
+ */
+void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
+{
+	/* Is called from worker and receiver context _only_ */
+	unsigned long sbnr,ebnr,lbnr,bnr;
+	unsigned long count = 0;
+	sector_t esector, nr_sectors;
+	int wake_up=0;
+
+	MTRACE(TraceTypeResync, TraceLvlSummary,
+	       INFO("drbd_rs_failed_io: sector=%llx, size=%x\n",
+		    (long long)sector,size);
+	    );
+
+	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
+		ERR("drbd_rs_failed_io: sector=%lu size=%d nonsense!\n",
+				(unsigned long)sector,size);
+		return;
+	}
+	nr_sectors = drbd_get_capacity(mdev->this_bdev);
+	esector = sector + (size>>9) -1;
+
+	ERR_IF(sector >= nr_sectors) return;
+	ERR_IF(esector >= nr_sectors) esector = (nr_sectors-1);
+
+	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
+
+	/* 
+	 * round up start sector, round down end sector.  we make sure we only
+	 * handle full, alligned, BM_BLOCK_SIZE (4K) blocks */
+	if (unlikely(esector < BM_SECT_PER_BIT-1)) {
+		return;
+	} else if (unlikely(esector == (nr_sectors-1))) {
+		ebnr = lbnr;
+	} else {
+		ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
+	}
+	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
+
+	if (sbnr > ebnr) return;
+
+	/*
+	 * ok, (capacity & 7) != 0 sometimes, but who cares...
+	 * we count rs_{total,left} in bits, not sectors.
+	 */
+	spin_lock_irq(&mdev->al_lock);
+	for(bnr=sbnr; bnr <= ebnr; bnr++) {
+		if (drbd_bm_test_bit(mdev,bnr)>0) count++;
+	}
+	if (count) {
+		mdev->rs_failed += count;
+
+		drbd_try_clear_on_disk_bm(mdev,sector,count,FALSE);
+
+		/* just wake_up unconditional now,
+		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
+		wake_up=1;
+	}
+	spin_unlock_irq(&mdev->al_lock);
+	if(wake_up) wake_up(&mdev->al_wait);
 }

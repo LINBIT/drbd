@@ -74,15 +74,15 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
 
-	rs_left = drbd_bm_total_weight(mdev);
+	rs_left = drbd_bm_total_weight(mdev) - mdev->rs_failed;
 	/* >> 10 to prevent overflow,
 	 * +1 to prevent division by zero */
 	if (rs_left > mdev->rs_total) {
 		/* doh. logic bug somewhere.
 		 * for now, just try to prevent in-kernel buffer overflow.
 		 */
-		ERR("logic bug? rs_left=%lu > rs_total=%lu\n",
-				rs_left, mdev->rs_total);
+		ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+				rs_left, mdev->rs_total, mdev->rs_failed);
 		res = 1000;
 	} else {
 		res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);

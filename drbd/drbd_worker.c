@@ -384,6 +384,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 int drbd_resync_finished(drbd_dev* mdev)
 {
 	unsigned long db,dt,dbdt;
+	int dstate, pdstate;
 
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0) dt=1;
@@ -393,34 +394,50 @@ int drbd_resync_finished(drbd_dev* mdev)
 	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
-	D_ASSERT(drbd_bm_total_weight(mdev) == 0);
-	mdev->rs_total  = 0;
-	mdev->rs_paused = 0;
+	D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
 
-	if ( mdev->state.conn == SyncTarget ) {
-		if( mdev->p_uuid ) {
-			int i;
-			for ( i=Bitmap ; i<=History_end ; i++ ) {
-				_drbd_uuid_set(mdev,i,mdev->p_uuid[i]);
-			}
-			drbd_uuid_set_bm(mdev,0UL); //Rotate peer's bitmap-UUID
-			drbd_uuid_set(mdev,Current,mdev->p_uuid[Current]);
+	if (mdev->rs_failed) {
+		INFO("            %lu failed blocks\n",mdev->rs_failed);
+
+		if (mdev->state.conn == SyncTarget) {
+			dstate = Inconsistent;
+			pdstate = UpToDate;
 		} else {
-			ERR("mdev->p_uuid is NULL! BUG\n");
+			dstate = UpToDate;
+			pdstate = Inconsistent;
+		}
+	} else {
+		dstate = pdstate = UpToDate;
+
+		if ( mdev->state.conn == SyncTarget) {
+			if( mdev->p_uuid ) {
+				int i;
+				for ( i=Bitmap ; i<=History_end ; i++ ) {
+					_drbd_uuid_set(mdev,i,mdev->p_uuid[i]);
+				}
+				drbd_uuid_set_bm(mdev,0UL); //Rotate peer's bitmap-UUID
+				drbd_uuid_set(mdev,Current,mdev->p_uuid[Current]);
+			} else {
+				ERR("mdev->p_uuid is NULL! BUG\n");
+			}
+		}
+
+		drbd_uuid_set_bm(mdev,0UL);
+
+		if ( mdev->p_uuid ) {
+			kfree(mdev->p_uuid);
+			mdev->p_uuid = NULL;
 		}
 	}
 
-	drbd_uuid_set_bm(mdev,0UL);
+	mdev->rs_total  = 0;
+	mdev->rs_failed = 0;
+	mdev->rs_paused = 0;
 
-	// Remove all elements form the resync LRU. Since future actions
+	// Remove all elements from the resync LRU. Since future actions
 	// might set bits in the (main) bitmap, then the entries in the 
 	// resync LRU would be wrong.
 	drbd_rs_del_all(mdev);
-
-	if ( mdev->p_uuid ) {
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = NULL;
-	}
 
 	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags)) {
 		WARN("Writing the whole bitmap, due to failed kmalloc\n");
@@ -428,8 +445,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	}
 
 	drbd_request_state(mdev,NS3(conn,Connected,
-				    disk,UpToDate,
-				    pdsk,UpToDate));
+				    disk,dstate,
+				    pdsk,pdstate));
 
 	drbd_md_sync(mdev);
 
@@ -453,9 +470,12 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	if(likely(drbd_bio_uptodate(e->private_bio))) {
 		ok=drbd_send_block(mdev, DataReply, e);
 	} else {
-		ok=drbd_send_ack(mdev,NegDReply,e);
 		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Sending NegDReply. I guess it gets messy.\n");
+			ERR("Sending NegDReply. sector=%llx.\n",
+			    (unsigned long long)e->sector);
+
+		ok=drbd_send_ack(mdev,NegDReply,e);
+
 		/* FIXME we should not detach for read io-errors, in particular
 		 * not now: when the peer asked us for our data, we are likely
 		 * the only remaining disk... */
@@ -478,7 +498,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 }
 
 /**
- * w_e_end_data_req: Send the answer (RSDataReply) to a RSDataRequest.
+ * w_e_end_rsdata_req: Send the answer (RSDataReply) to a RSDataRequest.
  */
 int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
@@ -503,10 +523,16 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 			ok=1;
 		}
 	} else {
-		ok=drbd_send_ack(mdev,NegRSDReply,e);
 		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Sending NegRSDReply. I guess it gets messy.\n");
+			ERR("Sending NegRSDReply. sector %llx.\n",
+			    (unsigned long long)e->sector);
+
+		ok=drbd_send_ack(mdev,NegRSDReply,e);
+
 		drbd_io_error(mdev, FALSE);
+
+		// update resync data with failure
+		drbd_rs_failed_io(mdev, e->sector, e->size);
 	}
 
 	dec_unacked(mdev);
@@ -745,6 +771,11 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	drbd_state_t os,ns;
 	int r=0;
 
+	MTRACE(TraceTypeResync, TraceLvlSummary,
+	       INFO("Resync starting: side=%s\n",
+		    side==SyncTarget?"SyncTarget":"SyncSource");
+	    );
+
 	if(side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
@@ -776,6 +807,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	if ( r == SS_Success ) {
 		mdev->rs_total     =
 		mdev->rs_mark_left = drbd_bm_total_weight(mdev);
+		mdev->rs_failed    = 0;
 		mdev->rs_paused    = 0;
 		mdev->rs_start     =
 		mdev->rs_mark_time = jiffies;

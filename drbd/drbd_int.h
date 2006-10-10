@@ -801,6 +801,7 @@ struct Drbd_Conf {
 	// sector_t rs_left;	   // blocks not up-to-date [unit BM_BLOCK_SIZE]
 	// moved into bitmap->bm_set
 	unsigned long rs_total;    // blocks to sync in this run [unit BM_BLOCK_SIZE]
+	unsigned long rs_failed;   // number of sync IOs that failed in this run
 	unsigned long rs_start;    // Syncer's start time [unit jiffies]
 	unsigned long rs_paused;   // cumulated time in PausedSyncX state [unit jiffies]
 	unsigned long rs_mark_left;// block not up-to-date at mark [unit BM_BLOCK_SIZE]
@@ -1008,6 +1009,7 @@ extern void drbd_md_mark_dirty(drbd_dev *mdev);
 struct bm_extent {
 	struct lc_element lce;
 	int rs_left; //number of bits set (out of sync) in this extent.
+	int rs_failed; // number of failed resync requests in this extent.
 	unsigned long flags;
 };
 
@@ -1174,6 +1176,7 @@ enum {
 	TraceTypePacket = 0x00000001,
 	TraceTypeRq     = 0x00000002,
 	TraceTypeUuid	= 0x00000004,
+	TraceTypeResync = 0x00000008,
 };
 
 static inline int
@@ -1319,6 +1322,7 @@ extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern void drbd_rs_del_all(drbd_dev* mdev);
+extern void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size);
 extern int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *);
 extern void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
 #define drbd_set_in_sync(mdev,sector,size) \
@@ -1397,14 +1401,16 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 	switch(mdev->bc->dc.on_io_error) {
 	case PassOn: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
-			ERR("Local IO failed. Passing error on...\n");
+			if (printk_ratelimit())
+				ERR("Local IO failed. Passing error on...\n");
 			break;
 		}
 		/* NOTE fall through to detach case if forcedetach set */
 	case Detach:
 		if (_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard) 
 		    == SS_Success) {
-			ERR("Local IO failed. Detaching...\n");
+			if (printk_ratelimit())
+				ERR("Local IO failed. Detaching...\n");
 		}
 		break;
 	case CallIOEHelper:

@@ -1005,6 +1005,9 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		 * and why do we set it only in the "up-to-date" branch? */
 		set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
+		// Record failure to sync
+		drbd_rs_failed_io(mdev, sector, e->size);
+
 		ok = drbd_send_ack(mdev,NegAck,e);
 		ok&= drbd_io_error(mdev, FALSE);
 	}
@@ -2472,6 +2475,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	   on the fly. */
 	drbd_rs_cancel_all(mdev);
 	mdev->rs_total=0;
+	mdev->rs_failed=0;
 	atomic_set(&mdev->rs_pending_cnt,0);
 	wake_up(&mdev->cstate_wait);
 
@@ -2949,6 +2953,9 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 
+	if (DRBD_ratelimit(5*HZ,5))
+		WARN("Got NegAck packet. Peer is in troubles?\n");
+
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	/* do nothing here.
@@ -2956,10 +2963,13 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	 * and will do the cleanup then and there.
 	 */
 	if(is_syncer_block_id(p->block_id)) {
+		sector_t sector = be64_to_cpu(p->sector);
+		unsigned long size = be32_to_cpu(p->blksize);
+
 		dec_rs_pending(mdev);
+
+		drbd_rs_failed_io(mdev, sector, size);
 	}
-	if (DRBD_ratelimit(5*HZ,5))
-		WARN("Got NegAck packet. Peer is in troubles?\n");
 
 	return TRUE;
 }
@@ -2993,12 +3003,18 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 {
 	sector_t sector;
+	int size;
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
 
 	sector = be64_to_cpu(p->sector);
+	size = be32_to_cpu(p->blksize);
 	D_ASSERT(p->block_id == ID_SYNCER);
 
+	dec_rs_pending(mdev);
+
 	drbd_rs_complete_io(mdev,sector);
+
+	drbd_rs_failed_io(mdev, sector, size); 
 
 	return TRUE;
 }
