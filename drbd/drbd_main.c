@@ -649,8 +649,10 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		ns.conn = os.conn;
 	}
 
-	/* Dissalow network errors (+TearDown) to overwrite each other */
-	if( os.conn >= Timeout && os.conn <= TearDown &&
+	/* Dissalow network errors (+TearDown) to overwrite each other.
+	   Dissalow network errors to overwrite the Disconnecting state. */
+	if( ( (os.conn >= Timeout && os.conn <= TearDown) 
+	      || os.conn == Disconnecting ) &&
 	    ns.conn >= Timeout && ns.conn <= TearDown ) {
 		ns.conn = os.conn;
 	}
