@@ -689,31 +689,37 @@ struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 	return NULL;
 }
 
-void print_config_error( struct drbd_nl_cfg_reply *reply)
+int print_config_error( struct drbd_nl_cfg_reply *reply)
 {
 	int err_no = reply->ret_code;
+	int rv=0;
 
-	if (err_no == NoError) return;
-	if (err_no == SS_Success) return;
+	if (err_no == NoError) return rv;
+	if (err_no == SS_Success) return rv;
 
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
 	     ( err_no > SS_CW_NoNeed || err_no < SS_CW_FailedByPeer) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should updated the drbd userland tools.\n",err_no);
+		rv = 20;
 	} else {
 		if(err_no > RetCodeBase ) {
 			fprintf(stderr,"Failure: (%d) %s\n",err_no,
 				error_messages[err_no-RetCodeBase]);
+			rv = 10;
 		} else if (err_no == SS_UnknownError) {
 			fprintf(stderr,"State change failed: (%d)"
 				"unknown error.\n", err_no);
+			rv = 11;
 		} else if (err_no > SS_TowPrimaries) {
 			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success... 
 		} else {
 			fprintf(stderr,"State change failed: (%d) %s\n",
 				err_no, set_st_err_name(err_no));
+			rv = 11;
 		}
 	}
+	return rv;
 }
 
 #define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
@@ -778,7 +784,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 		reply = (struct drbd_nl_cfg_reply *)
 			((struct cn_msg *)NLMSG_DATA(buffer))->data;
-		print_config_error(reply);
+		rv = print_config_error(reply);
 	}
 	free_tag_list(tl);
 
