@@ -90,6 +90,11 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_chk_io_error(mdev,error,FALSE);
 	drbd_queue_work(&mdev->data.work,&e->w);
 	dec_local(mdev);
+
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("Moved EE (READ) to worker sec=%lld size=%d ee=%p\n",
+		    (long long)e->sector,e->size,e);
+	       );
 	return 0;
 }
 
@@ -138,6 +143,11 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	wake_asender(mdev);
 	dec_local(mdev);
+
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("Moved EE (WRITE) to done_ee sec=%lld size=%d ee=%p\n",
+		    (long long)e->sector,e->size,e);
+	       );
 	return 0;
 }
 

@@ -281,6 +281,11 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	e->barrier_nr2 = 0;
 	e->flags = 0;
 
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("allocated EE sec=%lld size=%d ee=%p\n",
+		    (long long)sector,data_size,e);
+	       );
+
 	return e;
 
  fail2:
@@ -299,6 +304,11 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 	struct bio *bio=e->private_bio;
 	struct bio_vec *bvec;
 	int i;
+
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("Free EE sec=%lld size=%d ee=%p\n",
+		    (long long)e->sector,e->size,e);
+	       );
 
 	__bio_for_each_segment(bvec, bio, i, 0) {
 		drbd_pp_free(mdev,bvec->bv_page);
@@ -378,6 +388,10 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 	 * both ignore the last argument.
 	 */
 	list_for_each_entry_safe(e, t, &work_list, w.list) {
+		MTRACE(TraceTypeEE,TraceLvlAll,
+		       INFO("Process EE on done_ee sec=%lld size=%d ee=%p\n",
+			    (long long)e->sector,e->size,e);
+			);
 		// list_del not necessary, next/prev members not touched
 		ok = ok && e->w.cb(mdev,&e->w,0);
 		drbd_free_ee(mdev,e);
@@ -1036,6 +1050,10 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	list_add(&e->w.list,&mdev->sync_ee);
 	spin_unlock_irq(&mdev->req_lock);
 
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("submit EE (RS)WRITE sec=%lld size=%d ee=%p\n",
+		    (long long)e->sector,e->size,e);
+	       );
 	drbd_generic_make_request(WRITE,DRBD_FAULT_RS_WR,e->private_bio);
 	/* accounting done in endio */
 
@@ -1443,6 +1461,10 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		drbd_al_begin_io(mdev, e->sector);
 	}
 
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("submit EE (DATA)WRITE sec=%lld size=%d ee=%p\n",
+		    (long long)e->sector,e->size,e);
+	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
 	drbd_generic_make_request(WRITE,DRBD_FAULT_DT_WR,e->private_bio);
 	/* accounting done in endio */
@@ -1534,6 +1556,11 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	spin_unlock_irq(&mdev->req_lock);
 
 	inc_unacked(mdev);
+
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("submit EE READ sec=%lld size=%d ee=%p\n",
+		    (long long)e->sector,e->size,e);
+	       );
 	/* FIXME actually, it could be a READA originating from the peer ... */
 	drbd_generic_make_request(READ,fault_type,e->private_bio);
 	maybe_kick_lo(mdev);
@@ -3075,6 +3102,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	int received = 0;
 	int expect   = sizeof(Drbd_Header);
 	int cmd      = -1;
+	int empty;
 
 	static struct asender_cmd asender_tbl[] = {
 		[Ping]      ={ sizeof(Drbd_Header),           got_Ping },
@@ -3103,9 +3131,16 @@ int drbd_asender(struct Drbd_thread *thi)
 				mdev->net_conf->timeout*HZ/20;
 		}
 
-		if (!drbd_process_done_ee(mdev)) goto err;
-		set_bit(SIGNAL_ASENDER, &mdev->flags);
-
+		while(1) {
+			if (!drbd_process_done_ee(mdev)) goto err;
+			set_bit(SIGNAL_ASENDER, &mdev->flags);
+			spin_lock_irq(&mdev->req_lock);
+			empty = list_empty(&mdev->done_ee);
+			spin_unlock_irq(&mdev->req_lock);
+			if(empty) break;
+			clear_bit(SIGNAL_ASENDER, &mdev->flags);
+			flush_signals(current);
+		}
 		rv = drbd_recv_short(mdev, mdev->meta.socket,
 				     buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);

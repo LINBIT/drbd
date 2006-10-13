@@ -1177,6 +1177,7 @@ enum {
 	TraceTypeRq     = 0x00000002,
 	TraceTypeUuid	= 0x00000004,
 	TraceTypeResync = 0x00000008,
+	TraceTypeEE     = 0x00000010,
 };
 
 static inline int
