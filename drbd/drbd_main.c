@@ -1907,6 +1907,11 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 {
 	drbd_dev *mdev = q->queuedata;
 
+	MTRACE(TraceTypeUnplug,TraceLvlSummary,
+	       INFO("got unplugged ap_bio_count=%d\n",
+		    atomic_read(&mdev->ap_bio_cnt));
+	       );
+
 	/* unplug FIRST */
 	spin_lock_irq(q->queue_lock);
 	blk_remove_plug(q);
