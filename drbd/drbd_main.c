@@ -1870,6 +1870,9 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	mdev = minor_to_mdev(MINOR(inode->i_rdev));
 	if(!mdev) return -ENODEV;
 
+	if( mdev->state.role == Secondary && !disable_bd_claim) {
+		return -ETXTBSY;
+	}
 	if (file->f_mode & FMODE_WRITE) {
 		if( mdev->state.role == Secondary) {
 			return -EROFS;
