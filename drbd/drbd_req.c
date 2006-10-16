@@ -829,10 +829,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		goto fail_and_free_req;
 	}
 
-	/* we need to plug ALWAYS since we possibly need to kick lo_dev
-	 * FIXME I'd like to put this within the req_lock, too... */
-	drbd_plug_device(mdev);
-
 	/* For WRITE request, we have to make sure that we have an
 	 * unused_spare_barrier, in case we need to start a new epoch.
 	 * I try to be smart and avoid to pre-allocate always "just in case",
@@ -988,6 +984,11 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		else
 			generic_make_request(req->private_bio);
 	}
+
+	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
+	 * we plug after submit, so we won't miss an unplug event */
+	drbd_plug_device(mdev);
+
 	return 0;
 
   fail_and_free_req:
