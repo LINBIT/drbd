@@ -624,7 +624,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
-				      int cleared, int success)
+				      int count, int success)
 {
 	struct bm_extent* ext;
 	struct update_odbm_work * udw;
@@ -641,13 +641,13 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	if (ext) {
 		if( ext->lce.lc_number == enr) {
 			if (success)
-				ext->rs_left -= cleared;
+				ext->rs_left -= count;
 			else
-				ext->rs_failed += cleared;
+				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				ERR("BAD! sector=%lu enr=%u rs_left=%d rs_failed=%d cleared=%d\n",
+				ERR("BAD! sector=%lu enr=%u rs_left=%d rs_failed=%d count=%d\n",
 				     (unsigned long)sector,
-				     ext->lce.lc_number, ext->rs_left, ext->rs_failed, cleared);
+				     ext->lce.lc_number, ext->rs_left, ext->rs_failed, count);
 				// FIXME brrrgs. should never happen!
 				drbd_force_state(mdev,NS(conn,Disconnecting));
 				return;
@@ -667,16 +667,21 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				     ext->flags, enr, rs_left);
 				ext->flags = 0;
 			}
+			if( ext->rs_failed ) {
+				WARN("Kicking resync_lru element enr=%u "
+				     "out with rs_failed=%d\n",
+				     ext->lce.lc_number, ext->rs_failed);
+				set_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags);
+			}
 			ext->rs_left = rs_left;
-			if (!success)
-				ext->rs_failed = cleared;
+			ext->rs_failed = success ? 0 : count;
 			lc_changed(mdev->resync,&ext->lce);
 		}
 		lc_put(mdev->resync,&ext->lce);
 		// no race, we are within the al_lock!
 
-		if (ext->rs_left <= ext->rs_failed) {
-			ext->rs_left = ext->rs_failed = 0;
+		if (ext->rs_left == ext->rs_failed) {
+			ext->rs_failed = 0;
 
 			udw=kmalloc(sizeof(*udw),GFP_ATOMIC);
 			if(udw) {
@@ -826,6 +831,7 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	if (bm_ext) {
 		if(bm_ext->lce.lc_number != enr) {
 			bm_ext->rs_left = drbd_bm_e_weight(mdev,enr);
+			bm_ext->rs_failed = 0;
 			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			wakeup = 1;
 		}
