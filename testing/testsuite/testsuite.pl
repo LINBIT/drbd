@@ -353,42 +353,17 @@ sub send_command {
   my ($command) = @_;
   my @reply;
  
+  LOG ("Sent: ".$command);
 
   if ($seqvars{'on'} > 0) { # only one node
     print {$config{'node'.$seqvars{'on'}}} $command."\n";
     push @reply, wait_for_reply($seqvars{'on'});
   }
   else {
-    my $local_reply;
-    
-    my $pid1 = open(CHILD1, "-|");
-    if ($pid1 == 0) {
-      print {$config{'node1'}} $command."\n";
-      print STDOUT wait_for_reply(1);
-
-      exit 0;
-    }
-    $local_reply = "";
-    while (<CHILD1>) {
-        $local_reply .= $_;
-    }
-    push @reply, $local_reply;
-    close(CHILD1);
-
-    my $pid2 = open(CHILD2, "-|");
-    if ($pid2 == 0) {
-      print {$config{'node2'}} $command."\n";
-      print STDOUT wait_for_reply(2);
-
-      exit 0;
-    }
-
-    $local_reply = "";
-    while (<CHILD2>) {
-      $local_reply .= $_;
-    }
-    push @reply, $local_reply;
-    close(CHILD2);
+    print {$config{'node1'}} $command."\n";
+    print {$config{'node2'}} $command."\n";
+    push @reply, wait_for_reply(1);
+    push @reply, wait_for_reply(2);
   }
 
   return process_reply($command, @reply);
@@ -473,31 +448,28 @@ sub get_connection_info {
   return;
 }
 
-
 # wait for a reply. timeout on closed socket
-# FIXME: timeout set to 5 secs for testing purpose
 sub wait_for_reply {
   my ($node_number) = @_;
-  my $reply = "";
+  my $reply = "$node_number ";
   my $timeout;
   my $buf;
 
   # FIXME, also use RC value!
+
   $timeout = ($seqvars{'timeout'} + 2);
 
   eval {
     local $SIG{ALRM} = sub { die "timeout\n" };
+
     alarm $timeout;
 
-    #read from pipe
-    
-    do {
-      $buf = <CHILD_TO_READ>;
-    } while (!$buf =~ /^$node_number\ /);
+    #read from socket
+    my $node = $config{'node'.$node_number};
 
-    while ($buf ne ".\n") {    # read unless last line
-      $reply .= $buf unless $buf eq "\n"; # skip blank lines
-      $buf = <CHILD_TO_READ>;
+    while (<$node>) {
+      last unless ($_ ne ".\n"); # last line
+      $reply .= $_ unless $_ eq "\n"; # skip blank lines
     }
 
     alarm 0;
@@ -517,7 +489,6 @@ sub process_reply {
   my ($command, @reply) = @_;
   my $return = 1;
 
-  LOG ("Sent: ".$command);
   foreach(@reply) {
     LOG ("Got reply: ". $_);
   }
@@ -854,165 +825,20 @@ if (defined($opt_l)) {
 }
 get_sockets();
 
-#fork and open pipe to read from child
-my $pid = open(CHILD_TO_READ, "-|");
 
-if ($pid > 0) {
-  # parent - send test data to agents
+$SIG{INT} = \&kill_parent;
 
-  $SIG{INT} = \&kill_parent;
-
-  # create listeners for serial devices
-  if (defined($opt_l)) {
-    my $spid1 = open(SERIAL1, "-|");
-    if ($spid1 == 0) {
-      use vars qw (
-        $seriallog;
-      );
-      my $serial;
-      $seriallog = "";
-  
-      $SIG{USR1} = sub {
-        print STDOUT $seriallog;
-        exit;
-      };
-  
-      eval {
-        open($serial, "</dev/ttyS0") or die ($!."\n");
-      };
-      if ($@) {
-        $seriallog = "Error accessing /dev/ttyS0 : ".$@;
-        while(1) { }; # wait till we die
-      }
-   
-      while (<$serial>) {
-        next if (/^\s*$/);
-        $seriallog .= gmtime()." ".$config{'node1name'}." ".$_;
-      }
-  
-      while(1) { };
-      exit 0;
-    }
-  
-    my $spid2 = open(SERIAL2, "-|");
-    if ($spid2 == 0) {
-      use vars qw (
-        $seriallog;
-      );
-      my $serial;
-      $seriallog = "";
-  
-      $SIG{USR1} = sub {
-        print STDOUT $seriallog;
-        exit;
-      };
-  
-      eval {
-        open($serial, "</dev/ttyS1") or die ($!."\n");
-      };
-      if ($@) {
-        $seriallog = "Error accessing /dev/ttyS1 : ".$@;
-        while(1) { }; # wait till we die
-      }
-
-  
-      while (<$serial>) {
-        next if (/^\s*$/);
-        $seriallog .= gmtime()." ".$config{'node2name'}." ".$_;
-      }
-  
-      while(1) { };
-      close($serial);
-      exit 0;
-    }
-  }
-
-  # check system time, process commands, show report 
-  if (!defined($opt_i)) {
+# check system time, process commands, show report 
+if (!defined($opt_i)) {
     get_connection_info();
-  }
-
-  my $result = process_seqcommands();
-
-  # get serial logs
-  if (defined($opt_l)) {
-    kill USR1 => -$$;
-    while (<SERIAL1>) {
-      $seriallog .= $_;
-    }
-
-    kill USR2 => -$$;
-    while (<SERIAL2>) {
-      $seriallog .= $_;
-    }
-  }
-
-  show_report($result);
-
-  # kill child processes  
-  local $SIG{HUP} = 'IGNORE';
-  kill HUP => -$$;
 }
-elsif ($pid == 0) {
-  # child - get data from agent
 
-  $cpid = fork();
-  if ($cpid > 0) {
-    my $node1 = $config{'node1'};
-    my $collect_reply = "";
-    my $reply;
+my $result = process_seqcommands();
 
-    while (<$node1>) { # wait for client reply
-      $collect_reply .= $_;
-      if($_ eq ".\n") {      #last line
-        $reply = $collect_reply;
-        $collect_reply = "";
+show_report($result);
 
-        #send data to pipe
-        print STDOUT "1 ".$reply."\n";
-      }
-    }
-  
-    WARN ("node1 closed connection");
-    kill INT => $pid;
-
-    exit 0;
-  }
-  elsif ($cpid == 0) {
-    my $node2 = $config{'node2'};
-    my $collect_reply = "";
-    my $reply;
-
-    while (<$node2>) { # wait for client reply
-      $collect_reply .= $_;
-      if($_ eq ".\n") {      #last line
-        $reply = $collect_reply;
-        $collect_reply = "";
-
-        #send data to pipe
-        print STDOUT "2 ".$reply."\n";
-      }
-    }
-
-    WARN ("node2 closed connection");
-    kill INT => $pid;
-
-    exit 0;
-  }
-  else {
-    # fork failed
-    ERROR ("Fork() failed... can not continue!\n");
-
-    exit 0;    
-  }
-  
-  exit 0;
-}
-else {
-  # fork failed
-  ERROR ("Fork() failed... can not continue!\n");
-
-  exit 0;
-}
+# kill child processes  
+local $SIG{HUP} = 'IGNORE';
+kill HUP => -$$;
 
 exit 0;
