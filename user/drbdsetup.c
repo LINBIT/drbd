@@ -123,8 +123,8 @@ struct drbd_cmd {
 
 
 // Connector functions
-#define NL_TRIES 3
-#define NL_TIME 300
+#define NL_TRIES 5
+#define NL_TIME 5000
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
 int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
@@ -1592,7 +1592,8 @@ void close_cn(int sk_nl)
 
 int main(int argc, char** argv)
 {
-	int minor,drbd_fd,lock_fd;
+	int minor;
+	// int drbd_fd,lock_fd;
 	struct drbd_cmd *cmd;
 	int rv=0;
 
