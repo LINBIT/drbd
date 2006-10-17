@@ -1468,7 +1468,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		break;
 	}
 
-	if(mdev->state.pdsk <= Inconsistent) {
+	if(mdev->state.pdsk == Diskless) {
 		// In case we have the only disk of the cluster, 
 		drbd_set_out_of_sync(mdev,e->sector,e->size);
 		e->flags |= CALL_AL_COMPLETE_IO;
@@ -2979,10 +2979,6 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 				 ? write_acked_by_peer
 				 : recv_acked_by_peer);
 			spin_unlock_irq(&mdev->req_lock);
-
-			if (test_bit(SYNC_STARTED,&mdev->flags) &&
-			    mdev->net_conf->wire_protocol == DRBD_PROT_C)
-				drbd_set_in_sync(mdev,sector,blksize);
 		}
 	}
 

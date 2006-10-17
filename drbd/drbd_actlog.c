@@ -645,9 +645,10 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				ERR("BAD! sector=%lu enr=%u rs_left=%d rs_failed=%d count=%d\n",
-				     (unsigned long)sector,
+				ERR("BAD! sector=%llu enr=%u rs_left=%d rs_failed=%d count=%d\n",
+				     (unsigned long long)sector,
 				     ext->lce.lc_number, ext->rs_left, ext->rs_failed, count);
+				dump_stack();
 				// FIXME brrrgs. should never happen!
 				drbd_force_state(mdev,NS(conn,Disconnecting));
 				return;
@@ -715,6 +716,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
 	int wake_up=0;
+	unsigned long flags;
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("drbd_set_in_sync: sector=%lu size=%d nonsense!\n",
@@ -752,7 +754,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	 * ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
-	spin_lock_irq(&mdev->al_lock);
+	spin_lock_irqsave(&mdev->al_lock,flags);
 	for(bnr=sbnr; bnr <= ebnr; bnr++) {
 		if (drbd_bm_clear_bit(mdev,bnr)) count++;
 	}
@@ -770,7 +772,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
 		wake_up=1;
 	}
-	spin_unlock_irq(&mdev->al_lock);
+	spin_unlock_irqrestore(&mdev->al_lock,flags);
 	if(wake_up) wake_up(&mdev->al_wait);
 }
 
@@ -785,6 +787,24 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 {
 	unsigned long sbnr,ebnr,lbnr;
 	sector_t esector, nr_sectors;
+
+	/*  Find codepoints that call set_out_of_sync()  
+	unsigned long flags;
+	unsigned int enr;
+	struct bm_extent* ext;
+
+	if(inc_local(mdev)) {
+		enr = BM_SECT_TO_EXT(sector);
+		spin_lock_irqsave(&mdev->al_lock,flags);
+		ext = (struct bm_extent *) lc_find(mdev->resync,enr);
+		if (ext) {
+			WARN("BAD! things will happen, find this.\n");
+			dump_stack();
+		}
+		spin_unlock_irqrestore(&mdev->al_lock,flags);
+		dec_local(mdev);
+	}
+	*/
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("sector: %lu, size: %d\n",(unsigned long)sector,size);

@@ -213,6 +213,12 @@ void _req_may_be_done(drbd_request_t *req)
 			if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK)) {
 				drbd_set_out_of_sync(mdev,req->sector,req->size);
 			}
+
+			if( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) && 
+			    test_bit(SYNC_STARTED,&mdev->flags) ) {
+				drbd_set_in_sync(mdev,req->sector,req->size);
+			}
+
 			if (s & RQ_LOCAL_MASK) {
 				drbd_al_complete_io(mdev, req->sector);
 			}
