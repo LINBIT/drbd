@@ -137,6 +137,8 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	if (error) __drbd_chk_io_error(mdev,FALSE);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
+	if(is_syncer_req) drbd_rs_complete_io(mdev,e->sector);
+
 	if (do_wake) wake_up(&mdev->ee_wait);
 
 	if(e->flags & CALL_AL_COMPLETE_IO) drbd_al_complete_io(mdev,e->sector);
@@ -785,6 +787,9 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	       INFO("Resync starting: side=%s\n",
 		    side==SyncTarget?"SyncTarget":"SyncSource");
 	    );
+
+	/* In case a previous resync run was aborted by an IO error... */
+	drbd_rs_cancel_all(mdev);
 
 	if(side == SyncTarget) {
 		drbd_bm_reset_find(mdev);

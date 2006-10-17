@@ -1027,9 +1027,6 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	D_ASSERT(hlist_unhashed(&e->colision));
 
-	/* before set_in_sync()
-	 * FIXME because ... */
-	drbd_rs_complete_io(mdev,sector);
 	if (likely( drbd_bio_uptodate(e->private_bio) )) {
 		drbd_set_in_sync(mdev, sector, e->size);
 		ok = drbd_send_ack(mdev,WriteAck,e);
