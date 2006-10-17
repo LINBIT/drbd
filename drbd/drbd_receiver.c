@@ -1249,6 +1249,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	int header_size, data_size, packet_seq, discard, rv;
 	unsigned int barrier_nr = 0;
 	unsigned int epoch_size = 0;
+	u32 dp_flags;
 
 	// FIXME merge this code dups into some helper function
 	header_size = sizeof(*p) - sizeof(*h);
@@ -1365,8 +1366,12 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 #endif
 
-	if ( be32_to_cpu(p->dp_flags) & DP_HARDBARRIER ) {
+	dp_flags = be32_to_cpu(p->dp_flags);
+	if ( dp_flags & DP_HARDBARRIER ) {
 		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+	}
+	if ( dp_flags & DP_RW_SYNC ) {
+		e->private_bio->bi_rw |= BIO_RW_SYNC;
 	}
 
 	/* when using TCQ:
@@ -1776,6 +1781,10 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 {
 	int hg;
 	drbd_conns_t rv = conn_mask;
+	drbd_disks_t mydisk;
+
+	mydisk = mdev->state.disk;
+	if( mydisk == Negotiating ) mydisk = mdev->new_state_tmp.disk;
 
 	hg = drbd_uuid_compare(mdev);
 
@@ -1823,8 +1832,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	if (hg == 0) {
 		// This is needed in case someone does an invalidate on an
 		// disconnected node.
-		if(mdev->state.disk==Inconsistent && peer_disk>Inconsistent) hg=-1;
-		if(mdev->state.disk>Inconsistent && peer_disk==Inconsistent) hg= 1;
+		if(mydisk==Inconsistent && peer_disk>Inconsistent) hg=-1;
+		if(mydisk>Inconsistent && peer_disk==Inconsistent) hg= 1;
 	}
 
 	if (hg == -1000) {
@@ -1841,13 +1850,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		return conn_mask;
 	}
 
-	if (hg > 0 && mdev->state.disk <= Inconsistent ) {
+	if (hg > 0 && mydisk <= Inconsistent ) {
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
 		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
 	if (hg < 0 && 
-	    mdev->state.role == Primary && mdev->state.disk >= Consistent ) {
+	    mdev->state.role == Primary && mydisk >= Consistent ) {
 		ERR("I shall become SyncTarget, but I am primary!\n");
 		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;

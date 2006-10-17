@@ -392,7 +392,7 @@ typedef struct {
  */
 
 #define DP_HARDBARRIER 1
-/* FIXME map BIO_RW_SYNC, too ... */
+#define DP_RW_SYNC     2
 
 typedef struct {
 	Drbd_Header head;

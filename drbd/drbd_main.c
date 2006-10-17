@@ -1697,10 +1697,13 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	p.block_id = (unsigned long)req;
 	p.seq_num  = cpu_to_be32( req->seq_num =
 				  atomic_add_return(1,&mdev->packet_seq) );
+	dp_flags = 0;
 	if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
 		dp_flags = DP_HARDBARRIER;
 	}
-	/* FIXME BIO_RW_SYNC */
+	if(req->master_bio->bi_rw & BIO_RW_SYNC) {
+		dp_flags = DP_RW_SYNC;
+	}
 
 	p.dp_flags = cpu_to_be32(dp_flags);
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
@@ -1871,7 +1874,7 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	if(!mdev) return -ENODEV;
 
 	if( mdev->state.role == Secondary && !disable_bd_claim) {
-		return -ETXTBSY;
+		return -EMEDIUMTYPE;
 	}
 	if (file->f_mode & FMODE_WRITE) {
 		if( mdev->state.role == Secondary) {
