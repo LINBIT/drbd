@@ -947,6 +947,36 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 	return e;
 }
 
+/* drbd_drain_block() just takes a data block out of the socket input
+ * buffer and discards ist.
+ */
+STATIC int 
+drbd_drain_block(drbd_dev *mdev, int data_size)
+{
+	struct page *page;
+	int rr, rv=1;
+	void* data;
+
+	page = drbd_pp_alloc(mdev, GFP_KERNEL);
+
+	data=kmap(page);
+	while(data_size) {
+		rr = drbd_recv(mdev,data,min_t(int,data_size,PAGE_SIZE));
+		if( rr != min_t(int,data_size,PAGE_SIZE) ) {
+			rv = 0;
+			WARN("short read receiving data: read %d expected %d\n",
+			     rr, min_t(int,data_size,PAGE_SIZE));
+			goto out;
+		}
+
+		data_size -= rr;
+	}
+	kunmap(page);
+ out:
+	drbd_pp_free(mdev,page);
+	return rv;
+}
+
 /* kick lower level device, if we have more than (arbitrary number)
  * reference counts on it, which typically are locally submitted io
  * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
@@ -1142,14 +1172,10 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	} else {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write resync data to local disk.\n");
+
+		ok = drbd_drain_block(mdev,data_size);
+
 		drbd_send_ack_dp(mdev,NegAck,p);
-		/* FIXME:
-		 * we need to drain the data.  only then can we keep the
-		 * connection open.
-		 * without draining, we'd see an invalid packet header next,
-		 * and drop the connection there. */
-		/* ok = 1; not yet: keep connection open */
-		ok = 0;
 	}
 
 	return ok;

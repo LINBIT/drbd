@@ -353,7 +353,7 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 	int send,ok=1;
 
 	eh = PassOn;
-	if(inc_local(mdev)) {
+	if(inc_local_if_state(mdev,Failed)) {
 		eh = mdev->bc->dc.on_io_error;
 		dec_local(mdev);
 	}
