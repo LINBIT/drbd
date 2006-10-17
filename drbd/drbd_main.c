@@ -668,7 +668,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		ns.pdsk = DUnknown;
 	}
 
-	if( ns.conn > Connected && ns.disk <= Failed ) {
+	if( ns.conn > Connected && (ns.disk <= Failed || ns.pdsk <= Failed )) {
 		warn_sync_abort=1;
 		ns.conn = Connected;
 	}
@@ -1027,8 +1027,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	if ( os.disk > Diskless && ns.disk == Diskless ) {
-		drbd_sync_me(mdev);
-
 		/* since inc_local() only works as long as disk>=Inconsistent,
 		   and it is Diskless here, local_cnt can only go down, it can
 		   not increase... It will reach zero */
@@ -1501,7 +1499,8 @@ int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	const int header_size = sizeof(Drbd_Data_Packet) - sizeof(Drbd_Header);
 	int data_size  = ((Drbd_Header*)dp)->length - header_size;
 
-	return _drbd_send_ack(mdev,cmd,dp->sector,data_size,dp->block_id);
+	return _drbd_send_ack(mdev,cmd,dp->sector,cpu_to_be32(data_size),
+			      dp->block_id);
 }
 
 int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 

@@ -1031,22 +1031,8 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	 * FIXME because ... */
 	drbd_rs_complete_io(mdev,sector);
 	if (likely( drbd_bio_uptodate(e->private_bio) )) {
-		/* "optimization" only...  state could still change anytime
-		 * while we are calling drbd_set_in_sync */
-		ok = mdev->state.disk >= Inconsistent &&
-			mdev->state.pdsk >= Inconsistent;
-		if (likely( ok )) {
-			drbd_set_in_sync(mdev, sector, e->size);
-			ok = drbd_send_ack(mdev,WriteAck,e);
-		} else {
-			/* FIXME think:
-			 * send a WriteAck anyways?
-			 * send a NegAck?
-			 * just ignore it?  (ignoring it is valid, peer has no
-			 * structs referencing this) */
-		}
-		/* FIXME what exactly do we need this flag for, again??
-		 * and why do we set it only in the "up-to-date" branch? */
+		drbd_set_in_sync(mdev, sector, e->size);
+		ok = drbd_send_ack(mdev,WriteAck,e);
 		set_bit(SYNC_STARTED,&mdev->flags);
 	} else {
 		// Record failure to sync
@@ -3026,7 +3012,7 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	 */
 	if(is_syncer_block_id(p->block_id)) {
 		sector_t sector = be64_to_cpu(p->sector);
-		unsigned long size = be32_to_cpu(p->blksize);
+		int size = be32_to_cpu(p->blksize);
 
 		dec_rs_pending(mdev);
 
@@ -3167,7 +3153,10 @@ int drbd_asender(struct Drbd_thread *thi)
 		}
 
 		while(1) {
-			if (!drbd_process_done_ee(mdev)) goto err;
+			if (!drbd_process_done_ee(mdev)) {
+				ERR("process_done_ee() = NOT_OK\n");
+				goto err;
+			}
 			set_bit(SIGNAL_ASENDER, &mdev->flags);
 			spin_lock_irq(&mdev->req_lock);
 			empty = list_empty(&mdev->done_ee);

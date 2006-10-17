@@ -922,6 +922,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
+	drbd_sync_me(mdev);
 	reply->ret_code = drbd_request_state(mdev,NS(disk,Diskless));
 
 	return 0;

@@ -226,7 +226,7 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	ERR_IF(cancel) return 1;
 	ERR("resync inactive, but callback triggered??\n");
-	return 0;
+	return 1; // Simply ignore this!
 }
 
 /* for debug assertion only */
