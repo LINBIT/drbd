@@ -747,6 +747,12 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	drbd_request_t *req;
 	int local, remote;
 
+	/* Currently our BARRIER code is disabled. */
+	if(unlikely(bio_barrier(bio))) {
+		bio_endio(bio, bio->bi_size, -EOPNOTSUPP);
+		return 0;
+	}
+
 	/* allocate outside of all locks; get a "reference count" (ap_bio_cnt)
 	 * to avoid races with the disconnect/reconnect code.  */
 	inc_ap_bio(mdev);

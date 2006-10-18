@@ -165,6 +165,8 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	// see above
 	if (bio->bi_size) return 1;
 
+	if(error) DUMPI(error);
+
 	/* to avoid recursion in _req_mod */
 	what = error
 	       ? (bio_data_dir(bio) == WRITE)
