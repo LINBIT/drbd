@@ -64,9 +64,7 @@ installed kernel.
 %prep
 %setup
 test -d %{kdir}/.
-test $(echo -e "#include <linux/version.h>\ndrbd_kernel_release UTS_RELEASE" |
-       gcc -nostdinc -E -P -I%{kdir}/include - |
-       sed -ne 's/^drbd_kernel_release "\(.*\)".*/\1/p') = %{kernelversion}
+test "$(scripts/get_uts_release.sh)" = %{kernelversion}
 
 %build
 echo kernelversion=%{kernelversion}

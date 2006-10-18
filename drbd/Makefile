@@ -118,16 +118,19 @@ else
 # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
-	@{ echo -e "#\n# drbd.o was compiled with"          ; \
+	@config=$$( (for x in $(KDIR)/.config $(O)/.config ; do \
+	       if test -e $$x ; then echo $$x ; exit 0; fi ; \
+	       done; echo $(KDIR)/.config) | sed -e 's,//,/,g') ; \
+	{ echo -e "#\n# drbd.o was compiled with"          ; \
 	  echo "#  `gcc -v 2>&1 | tail -1`"                 ; \
 	  echo "# against this kernelrelease:"              ; \
 	  sed 's/^/#  /' .drbd_kernelrelease                ; \
 	  echo    "# kernel .config from"                   ; \
-	  echo -n "#  $(KDIR)/.config"                      ; \
-	  test -L "$(KDIR)" && echo "	alias"   &&           \
-	  echo "#  $$(readlink $(KDIR))/.config" || echo "" ; \
+	  echo -n "#  $$config"                      ; \
+	  test -L "$${config%/.config}" && echo "	alias"   &&           \
+	  echo "#  $$(readlink $${config%/.config})/.config" || echo "" ; \
 	  echo -e "# follows\n#\n"                          ; \
-	  cat $(KDIR)/.config ; } | gzip > .kernel.config.gz
+	  cat $$config ; } | gzip > .kernel.config.gz
 	@echo "done."
 
   clean:

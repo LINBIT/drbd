@@ -159,10 +159,10 @@ tarball: check_all_committed distclean doc .filelist
 all tools doc .filelist: drbd/drbd_buildtag.c
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
-KVER := $(shell \
-	echo -e "\#include <linux/version.h>\ndrbd_kernel_release UTS_RELEASE" | \
-        gcc -nostdinc -E -P -I$(KDIR)/include - 2>&1 | \
-        sed -ne 's/^drbd_kernel_release "\(.*\)".*/\1/p')
+KVER := $(shell KDIR=$(KDIR) O=$(O) scripts/get_uts_release.sh)
+ifeq ($(KVER),)
+$(error "could not determine uts_release")
+endif
 
 kernel-patch: drbd/drbd_buildtag.c
 	set -o errexit; \
