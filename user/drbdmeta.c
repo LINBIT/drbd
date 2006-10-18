@@ -2024,13 +2024,15 @@ void check_for_existing_data(struct format *cfg)
 /* FIXME add more detection magic
  */
 
+	(void)(
 	may_be_swap     (data,&f) ||
 	may_be_LVM      (data,&f) ||
 
 	may_be_extX     (data,&f) ||
 	may_be_xfs      (data,&f) ||
 	may_be_jfs      (data,&f) ||
-	may_be_reiserfs (data,&f);
+	may_be_reiserfs (data,&f)
+	);
 
 	printf("\nFound %s ", f.type);
 	if (f.bnum) {

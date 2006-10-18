@@ -1072,7 +1072,7 @@ int uuids_scmd(struct drbd_cmd *cm,
 	int flags;
 	unsigned int len;
 
-	if(!consume_tag_blob(T_uuids,rtl,(void *) &uuids,&len)) {
+	if(!consume_tag_blob(T_uuids,rtl,(char **) &uuids,&len)) {
 		fprintf(stderr,"Reply payload did not carry an uuid-tag,\n"
 			"Probabely the device has no disk!\n");
 		return 1;
