@@ -369,7 +369,16 @@ static const char *error_messages[] = {
 	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
 	EM(FailedToClaimMyself) = "FailedToClaimMyself",
 	EM(HaveNoDiskConfig) = "HaveNoDiskConfig",
+	EM(ProtocolCRequired) = "ProtocolCRequired"
 };
+#define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
+const char * error_to_string(int err_no)
+{
+	const unsigned int idx = err_no - RetCodeBase;
+	if (idx >= MAX_ERROR) return "Unknown... maybe API_VERSION mismatch?";
+	return error_messages[idx];
+}
+#undef MAX_ERROR
 
 char* cmdname = 0;
 
@@ -705,7 +714,7 @@ int print_config_error( struct drbd_nl_cfg_reply *reply)
 	} else {
 		if(err_no > RetCodeBase ) {
 			fprintf(stderr,"Failure: (%d) %s\n",err_no,
-				error_messages[err_no-RetCodeBase]);
+					error_to_string(err_no));
 			rv = 10;
 		} else if (err_no == SS_UnknownError) {
 			fprintf(stderr,"State change failed: (%d)"
@@ -1606,9 +1615,10 @@ int main(int argc, char** argv)
 
 	/* == '-' catches -h, --help, and similar */
 	if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-')) {
-		if(argc == 3) {
+		if(argc >= 3) {
 			cmd=find_cmd_by_name(argv[2]);
 			if(cmd) print_command_usage(cmd-commands,NULL,0);
+			else print_usage("unknown command");
 			exit(0);
 		}
 	}

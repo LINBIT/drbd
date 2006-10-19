@@ -285,19 +285,23 @@ typedef enum {
 	PingAck,
 	RecvAck,      // Used in protocol B
 	WriteAck,     // Used in protocol C
+	DiscardAck,   // Used in protocol C, two-primaries conflict detection
 	NegAck,       // Sent if local disk is unusable
 	NegDReply,    // Local disk is broken...
 	NegRSDReply,  // Local disk is broken...
 	BarrierAck,
-	DiscardNote,
 	StateChgReply,
 
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
 	MAX_OPT_CMD,
 
+	/* FIXME
+	 * to get a more useful error message with drbd-8 <-> drbd 0.7.x,
+	 * these could be reimplemented as special case of HandShake. */
 	HandShakeM = 0xfff1, // First Packet on the MetaSock
 	HandShakeS = 0xfff2, // First Packet on the Socket
+
 	HandShake  = 0xfffe  // FIXED for the next century!
 } Drbd_Packet_Cmd;
 
@@ -329,11 +333,11 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[PingAck]          = "PingAck",
 		[RecvAck]          = "RecvAck",
 		[WriteAck]         = "WriteAck",
+		[DiscardAck]       = "DiscardAck",
 		[NegAck]           = "NegAck",
 		[NegDReply]        = "NegDReply",
 		[NegRSDReply]      = "NegRSDReply",
 		[BarrierAck]       = "BarrierAck",
-		[DiscardNote]      = "DiscardNote",
 		[StateChgRequest]  = "StateChgRequest",
 		[StateChgReply]    = "StateChgReply"
 	};
@@ -539,7 +543,6 @@ typedef union {
 	Drbd_Req_State_Packet	 ReqState;
 	Drbd_RqS_Reply_Packet	 RqSReply;
 	Drbd_BlockRequest_Packet BlockRequest;
-	Drbd_Discard_Packet	 Discard;
 } __attribute((packed)) Drbd_Polymorph_Packet;
 
 /**********************************************************************/
@@ -650,9 +653,11 @@ struct Tl_epoch_entry {
 
 /* ee flag bits */
 enum {
-	__CALL_AL_COMPLETE_IO,
+	__EE_CALL_AL_COMPLETE_IO,
+	__EE_CONFLICT_PENDING,
 };
-#define CALL_AL_COMPLETE_IO (1<<__CALL_AL_COMPLETE_IO)
+#define EE_CALL_AL_COMPLETE_IO (1<<__EE_CALL_AL_COMPLETE_IO)
+#define EE_CONFLICT_PENDING    (1<<__EE_CONFLICT_PENDING)
 
 
 /* global flag bits */
@@ -668,7 +673,7 @@ enum {
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
 	MD_DIRTY,		// current gen counts and flags not yet on disk
 	SYNC_STARTED,		// Needed to agree on the exact point in time..
-	UNIQUE,                 // Set on one node, cleared on the peer!
+	DISCARD_CONCURRENT,     // Set on one node, cleared on the peer!
 	USE_DEGR_WFC_T,		// Use degr-wfc-timeout instead of wfc-timeout.
 	CLUSTER_ST_CHANGE,      // Cluster wide state change going on...
 	CL_ST_CHG_SUCCESS,
@@ -706,12 +711,6 @@ struct drbd_socket {
 	struct socket    *socket;
 	Drbd_Polymorph_Packet sbuf;  // this way we get our
 	Drbd_Polymorph_Packet rbuf;  // send/receive buffers off the stack
-};
-
-struct drbd_discard_note {
-	struct list_head list;
-	u64 block_id;
-	int seq_num;
 };
 
 struct drbd_md {
@@ -843,10 +842,10 @@ struct Drbd_Conf {
 	int al_tr_cycle;
 	int al_tr_pos;     // position of the next transaction in the journal
 	struct crypto_tfm* cram_hmac_tfm;
+	wait_queue_head_t seq_wait;
 	atomic_t packet_seq;
-	int peer_seq;
+	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
-	struct list_head discard;
 	int minor;
 };
 
@@ -954,7 +953,6 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 			      sector_t sector,int size, u64 block_id);
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
-extern int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req);
 extern int drbd_send_sr_reply(drbd_dev *mdev, int retcode);
 extern void drbd_free_bc(struct drbd_backing_dev* bc);
 extern int drbd_io_error(drbd_dev* mdev, int forcedetach);
@@ -1618,11 +1616,11 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 		    __func__ , __LINE__ ,			\
 		    atomic_read(&mdev->which))
 
-#define dec_ap_pending(mdev)					\
+#define dec_ap_pending(mdev)	do {				\
 	typecheck(drbd_dev*,mdev);				\
 	if(atomic_dec_and_test(&mdev->ap_pending_cnt))		\
 		wake_up(&mdev->cstate_wait);			\
-	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt)
+	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt); } while (0)
 
 /* counts how many resync-related answers we still expect from the peer
  *                   increase                   decrease
@@ -1635,10 +1633,10 @@ static inline void inc_rs_pending(drbd_dev* mdev)
 	atomic_inc(&mdev->rs_pending_cnt);
 }
 
-#define dec_rs_pending(mdev)					\
+#define dec_rs_pending(mdev)	do {				\
 	typecheck(drbd_dev*,mdev);				\
 	atomic_dec(&mdev->rs_pending_cnt);			\
-	ERR_IF_CNT_IS_NEGATIVE(rs_pending_cnt)
+	ERR_IF_CNT_IS_NEGATIVE(rs_pending_cnt); } while (0)
 
 /* counts how many answers we still need to send to the peer.
  * increased on
@@ -1654,15 +1652,15 @@ static inline void inc_unacked(drbd_dev* mdev)
 	atomic_inc(&mdev->unacked_cnt);
 }
 
-#define dec_unacked(mdev)					\
+#define dec_unacked(mdev)	do {				\
 	typecheck(drbd_dev*,mdev);				\
 	atomic_dec(&mdev->unacked_cnt);				\
-	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
+	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
-#define sub_unacked(mdev, n)					\
+#define sub_unacked(mdev, n)	do {				\
 	typecheck(drbd_dev*,mdev);				\
 	atomic_sub(n, &mdev->unacked_cnt);			\
-	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt)
+	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
 
 static inline void dec_net(drbd_dev* mdev)
@@ -1692,6 +1690,13 @@ static inline int inc_net(drbd_dev* mdev)
  * this is mood...
  */
 
+static inline void dec_local(drbd_dev* mdev)
+{
+	if(atomic_dec_and_test(&mdev->local_cnt)) {
+		wake_up(&mdev->cstate_wait);
+	}
+	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
+}
 /**
  * inc_local: Returns TRUE when local IO is possible. If it returns
  * TRUE you should call dec_local() after IO is completed.
@@ -1701,26 +1706,15 @@ static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = (mdev->state.disk >= mins ); 
+	io_allowed = (mdev->state.disk >= mins );
 	if( !io_allowed ) {
-		atomic_dec(&mdev->local_cnt);
+		dec_local(mdev);
 	}
 	return io_allowed;
 }
 static inline int inc_local(drbd_dev* mdev)
 {
 	return inc_local_if_state(mdev, Inconsistent);
-}
-
-
-static inline void dec_local(drbd_dev* mdev)
-{
-	if(atomic_dec_and_test(&mdev->local_cnt) &&
-	   mdev->state.disk == Diskless && mdev->bc ) {
-		wake_up(&mdev->cstate_wait);
-	}
-
-	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
 
 /* this throttles on-the-fly application requests
@@ -1785,24 +1779,30 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	if (ap_bio < mxb) wake_up(&mdev->cstate_wait);
 }
 
-/* FIXME does not handle wrap around yet */
-static inline void update_peer_seq(drbd_dev* mdev, int new_seq)
+static inline int seq_cmp(u32 a, u32 b)
 {
-	spin_lock(&mdev->peer_seq_lock);
-	mdev->peer_seq = max(mdev->peer_seq, new_seq);
-	spin_unlock(&mdev->peer_seq_lock);
-	wake_up(&mdev->cstate_wait);
-	/* FIXME introduce seq_wait, no point in waking up a number of
-	 * processes with each and every Ack received... */
+	/* we assume wrap around at 32bit.
+	 * for wrap around at 24bit (old atomic_t),
+	 * we'd have to
+	 *  a <<= 8; b <<= 8;
+	 */
+	return ((s32)(a) - (s32)(b));
 }
+#define seq_lt(a,b) (seq_cmp((a),(b)) < 0)
+#define seq_gt(a,b) (seq_cmp((a),(b)) > 0)
+#define seq_ge(a,b) (seq_cmp((a),(b)) >= 0)
+#define seq_le(a,b) (seq_cmp((a),(b)) <= 0)
+/* CAUTION: please no side effects in arguments! */
+#define seq_max(a,b) ((u32)(seq_gt((a),(b)) ? (a) : (b)))
 
-static inline int peer_seq(drbd_dev* mdev)
+static inline void update_peer_seq(drbd_dev* mdev, unsigned int new_seq)
 {
-	int seq;
+	unsigned int m;
 	spin_lock(&mdev->peer_seq_lock);
-	seq = mdev->peer_seq;
+	m = seq_max(mdev->peer_seq, new_seq);
+	mdev->peer_seq = m;
 	spin_unlock(&mdev->peer_seq_lock);
-	return seq;
+	if (m == new_seq) wake_up(&mdev->seq_wait);
 }
 
 static inline int drbd_queue_order_type(drbd_dev* mdev)

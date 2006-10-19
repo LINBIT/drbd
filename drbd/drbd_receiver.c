@@ -316,6 +316,8 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 
 	bio_put(bio);
 
+	BUG_ON(!hlist_unhashed(&e->colision));
+
 	mempool_free(e, drbd_ee_mempool);
 }
 
@@ -379,13 +381,9 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 	list_splice_init(&mdev->done_ee,&work_list);
 	spin_unlock_irq(&mdev->req_lock);
 
-	/* XXX maybe wake_up here already?
-	 * or wake_up withing drbd_free_ee just after mempool_free?
-	 */
-
 	/* possible callbacks here:
-	 * e_end_block, and e_end_resync_block.
-	 * both ignore the last argument.
+	 * e_end_block, and e_end_resync_block, e_send_discard_ack.
+	 * all ignore the last argument.
 	 */
 	list_for_each_entry_safe(e, t, &work_list, w.list) {
 		MTRACE(TraceTypeEE,TraceLvlAll,
@@ -393,7 +391,7 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 			    (long long)e->sector,e->size,e);
 			);
 		// list_del not necessary, next/prev members not touched
-		ok = ok && e->w.cb(mdev,&e->w,0);
+		if (e->w.cb(mdev,&e->w,0) == 0) ok = 0;
 		drbd_free_ee(mdev,e);
 	}
 	if (do_clear_bit)
@@ -690,7 +688,7 @@ int drbd_connect(drbd_dev *mdev)
 	D_ASSERT(!mdev->data.socket);
 
 	if(drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success ) return 0;
-	clear_bit(UNIQUE, &mdev->flags);
+	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
 
 	sock  = NULL;
 	msock = NULL;
@@ -737,7 +735,7 @@ int drbd_connect(drbd_dev *mdev)
 			case HandShakeM:
 				if(msock) sock_release(msock);
 				msock = s;
-				set_bit(UNIQUE, &mdev->flags);
+				set_bit(DISCARD_CONCURRENT, &mdev->flags);
 				break;
 			default:
 				WARN("Error receiving initial packet\n");
@@ -1195,55 +1193,87 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 * maybe assert this?  */
 		}
 		dec_unacked(mdev);
-		return ok;
 	} else if(unlikely(!drbd_bio_uptodate(e->private_bio))) {
 		ok = drbd_io_error(mdev, FALSE);
 	}
 
-// warning LGE "FIXME code missing"
-#if 0
 	/* we delete from the conflict detection hash _after_ we sent out the
 	 * WriteAck / NegAck, to get the sequence number right.  */
-	D_ASSERT(!hlist_unhashed(&e->colision));
-	/* FIXME "wake" any conflicting requests
-	 * that have been waiting for this one to finish */
-	hlist_del_init(&e->colision);
-#endif
+	if (mdev->net_conf->two_primaries) {
+		spin_lock_irq(&mdev->req_lock);
+		D_ASSERT(!hlist_unhashed(&e->colision));
+		hlist_del_init(&e->colision);
+		spin_unlock_irq(&mdev->req_lock);
+	} else {
+		D_ASSERT(hlist_unhashed(&e->colision));
+	}
 
 	return ok;
 }
 
-/* FIXME implementation wrong.
- * For the algorithm to be correct, we need to send and store the
- * sector and size, not the block id. We have to check for overlap.
- * We may _only_ remove the info when its sequence number is less than
- * the current sequence number.
- *
- * I think the "discard info" are the wrong way, anyways.
- * Instead of silently discarding such writes, we should send a DiscardAck,
- * and we should retard sending of the data until we get that Discard Ack
- * and thus the conflicting request is done.
- */
-STATIC int drbd_chk_discard(drbd_dev *mdev,struct Tl_epoch_entry *e)
+STATIC int e_send_discard_ack(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	struct drbd_discard_note *dn;
-	struct list_head *le,*tmp;
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	int ok=1;
 
-	MUST_HOLD(&mdev->peer_seq_lock);
-	list_for_each_safe(le,tmp,&mdev->discard) {
-		dn = list_entry(le, struct drbd_discard_note, list);
-		if( dn->seq_num == mdev->peer_seq ) {
-			D_ASSERT( dn->block_id == e->block_id );
-			list_del(le);
-			kfree(dn);
-			return 1;
+	D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+	ok = drbd_send_ack(mdev,DiscardAck,e);
+
+	spin_lock_irq(&mdev->req_lock);
+	D_ASSERT(!hlist_unhashed(&e->colision));
+	hlist_del_init(&e->colision);
+	spin_unlock_irq(&mdev->req_lock);
+
+	dec_unacked(mdev);
+
+	return ok;
+}
+
+/* Called from receive_Data.
+ * Synchronize packets on sock with packets on msock.
+ *
+ * This is here so even when a Data packet traveling via sock overtook an Ack
+ * packet traveling on msock, they are still processed in the order they have
+ * been sent.
+ *
+ * Note: we don't care for Ack packets overtaking Data packets.
+ *
+ * In case packet_seq is larger than mdev->peer_seq number, there are
+ * outstanding packets on the msock. We wait for them to arrive.
+ * In case we are the logically next packet, we update mdev->peer_seq
+ * ourselves. Correctly handles 32bit wrap around.
+ * FIXME verify that atomic_t guarantees 32bit wrap around,
+ * otherwise we have to play tricks with << ...
+ *
+ * Assume we have a 10 GBit connection, that is about 1<<30 byte per second,
+ * about 1<<21 sectors per second. So "worst" case, we have 1<<3 == 8 seconds
+ * for the 24bit wrap (historical atomic_t guarantee on some archs), and we have
+ * 1<<9 == 512 seconds aka ages for the 32bit wrap around...
+ *
+ * returns 0 if we may process the packet,
+ * -ERESTARTSYS if we were interrupted (by disconnect signal). */
+static int drbd_wait_peer_seq(drbd_dev *mdev, const u32 packet_seq)
+{
+	DEFINE_WAIT(wait);
+	int ret = 0;
+	spin_lock(&mdev->peer_seq_lock);
+	for (;;) {
+		prepare_to_wait(&mdev->seq_wait,&wait,TASK_INTERRUPTIBLE);
+		if (seq_le(packet_seq,mdev->peer_seq+1))
+			break;
+		spin_unlock(&mdev->peer_seq_lock);
+		if (signal_pending(current)) {
+			ret = -ERESTARTSYS;
+			break;
 		}
-		if( dn->seq_num < mdev->peer_seq ) {
-			list_del(le);
-			kfree(dn);
-		}
+		schedule();
+		spin_lock(&mdev->peer_seq_lock);
 	}
-	return 0;
+	finish_wait(&mdev->seq_wait, &wait);
+	if (mdev->peer_seq+1 == packet_seq)
+		mdev->peer_seq++;
+	spin_unlock(&mdev->peer_seq_lock);
+	return ret;
 }
 
 // mirrored write
@@ -1251,11 +1281,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 {
 	sector_t sector;
 	struct Tl_epoch_entry *e;
-	/* FIXME currently some unused variable intended
-	 * for the now not-implemented conflict detection */
-	drbd_request_t * req;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
-	int header_size, data_size, packet_seq, discard, rv;
+	int header_size, data_size;
 	unsigned int barrier_nr = 0;
 	unsigned int epoch_size = 0;
 	u32 dp_flags;
@@ -1291,96 +1318,141 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	e->private_bio->bi_end_io = drbd_endio_write_sec;
 	e->w.cb = e_end_block;
 
-	/* FIXME drbd_al_begin_io in case we have two primaries... */
-
-// warning LGE "FIXME code missing"
-#if 0 
-/* sorry.
- * to get this patch in a shape where it can be committed,
- * I need to disable the broken conflict detection code for now.
- * will implement the correct as soon as possible...
- * it is done in my head already, "only have to write it down",
- * which will take an other couple of days, probably.
- */
-
-	/* This wait_event is here so even when a DATA packet traveling via
-	 * sock overtook an ACK packet traveling on msock, they are still
-	 * processed in the order they have been sent.
-	 * FIXME TODO: Wrap around of seq_num !!!
-	 */
-	if (mdev->net_conf->two_primaries) {
-		packet_seq = be32_to_cpu(p->seq_num);
-		if( wait_event_interruptible(mdev->cstate_wait,
-					     packet_seq <= peer_seq(mdev)+1)) {
-			rv = FALSE;
-			goto out2;
-		}
-
-		/* FIXME current discard implementation is wrong */
-		spin_lock(&mdev->peer_seq_lock);
-		mdev->peer_seq = max(mdev->peer_seq, packet_seq);
-		/* is update_peer_seq(mdev,packet_seq); */
-		discard = drbd_chk_discard(mdev,e);
-		spin_unlock(&mdev->peer_seq_lock);
-
-		if(discard) {
-			WARN("Concurrent write! [DISCARD BY LIST] sec=%lu\n",
-			     (unsigned long)sector);
-			rv = TRUE;
-			goto out2;
-		}
-
-		req = req_have_write(mdev, e);
-
-		if(req) {
-			/* FIXME RACE
-			 * rq_status may be changing while we are looking.
-			 * in rare cases it could even disappear right now.
-			 * e.g. when it has already been ACK'ed, and the local
-			 * storage has been way too slow, and only now
-			 * completes the thing.
-			 */
-			if( req->rq_status & RQ_DRBD_SENT ) {
-				/* Conflicting write, got ACK */
-				/* write afterwards ...*/
-				WARN("Concurrent write! [W AFTERWARDS1] "
-				     "sec=%lu\n",(unsigned long)sector);
-				if( wait_event_interruptible(mdev->cstate_wait,
-					       !req_have_write(mdev,e))) {
-					rv = FALSE;
-					goto out2;
-				}
-			} else {
-				/* Conflicting write, no ACK by now*/
-				if (test_bit(UNIQUE,&mdev->flags)) {
-					WARN("Concurrent write! [DISCARD BY FLAG] sec=%lu\n",
-					     (unsigned long)sector);
-					rv = TRUE;
-					goto out2;
-				} else {
-					/* write afterwards do not exp ACK */
-					WARN("Concurrent write! [W AFTERWARDS2] sec=%lu\n",
-					     (unsigned long)sector);
-					drbd_send_discard(mdev,req);
-					drbd_end_req(req, RQ_DRBD_SENT, 1, sector);
-					dec_ap_pending(mdev);
-					if( wait_event_interruptible(mdev->cstate_wait,
-								     !req_have_write(mdev,e))) {
-						rv = FALSE;
-						goto out2;
-					}
-				}
-			}
-		}
-	}
-#endif
-
 	dp_flags = be32_to_cpu(p->dp_flags);
 	if ( dp_flags & DP_HARDBARRIER ) {
 		e->private_bio->bi_rw |= BIO_RW_BARRIER;
 	}
 	if ( dp_flags & DP_RW_SYNC ) {
 		e->private_bio->bi_rw |= BIO_RW_SYNC;
+	}
+
+	/* I'm the receiver, I do hold a net_cnt reference. */
+	if (!mdev->net_conf->two_primaries) {
+		spin_lock_irq(&mdev->req_lock);
+	} else {
+		/* don't get the req_lock yet,
+		 * we may sleep in drbd_wait_peer_seq */
+		const sector_t sector = e->sector;
+		const int size = e->size;
+		const int discard = test_bit(DISCARD_CONCURRENT,&mdev->flags);
+		DEFINE_WAIT(wait);
+		drbd_request_t *i;
+		struct hlist_node *n;
+		struct hlist_head *slot;
+		int first;
+
+		D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+		BUG_ON(mdev->ee_hash == NULL);
+		BUG_ON(mdev->tl_hash == NULL);
+
+		/* conflict detection and handling:
+		 * 1. wait on the sequence number,
+		 *    in case this data packet overtook ACK packets.
+		 * 2. check our hash tables for conflicting requests.
+		 *    we only need to walk the tl_hash, since an ee can not
+		 *    have a conflict with an other ee: on the submitting
+		 *    node, the corresponding req had already been conflicting,
+		 *    and a conflicting req is never sent.
+		 *
+		 * Note: for two_primaries, we are protocol C,
+		 * so there cannot be any request that is DONE
+		 * but still on the transfer log.
+		 *
+		 * unconditionally add to the ee_hash.
+		 *
+		 * if no conflicting request is found:
+		 *    submit.
+		 *
+		 * if any conflicting request is found that has not yet been acked,
+		 * AND I have the "discard concurrent writes" flag:
+		 *       queue (via done_ee) the DiscardAck; OUT.
+		 *
+		 * if any conflicting request is found:
+		 *       block the receiver, waiting on cstate_wait
+		 *       until no more conflicting requests are there,
+		 *       or we get interrupted (disconnect).
+		 *
+		 *       we do not just write after local io completion of those
+		 *       requests, but only after req is done completely, i.e.
+		 *       we wait for the DiscardAck to arrive!
+		 *
+		 *       then proceed normally, i.e. submit.
+		 */
+		if (drbd_wait_peer_seq(mdev, be32_to_cpu(p->seq_num)))
+			goto out_interrupted;
+
+		spin_lock_irq(&mdev->req_lock);
+
+		hlist_add_head(&e->colision,ee_hash_slot(mdev,sector));
+
+#define OVERLAPS overlaps(i->sector, i->size, sector, size)
+		slot = tl_hash_slot(mdev,sector);
+		first = 1;
+		for(;;) {
+			int have_unacked = 0;
+			int have_conflict = 0;
+			prepare_to_wait(&mdev->cstate_wait,&wait,TASK_INTERRUPTIBLE);
+			hlist_for_each_entry(i, n, slot, colision) {
+				if (OVERLAPS) {
+					if (first) {
+						/* only ALERT on first iteration,
+						 * we may be woken up early... */
+						ALERT("%s[%u] Concurrent local write detected!"
+						      "	new: %llu +%d; pending: %llu +%d\n",
+						      current->comm, current->pid,
+						      (unsigned long long)sector, size,
+						      (unsigned long long)i->sector, i->size);
+					}
+					if (i->rq_state & RQ_NET_PENDING) ++have_unacked;
+					++have_conflict;
+				}
+			}
+#undef OVERLAPS
+			if (!have_conflict) break;
+
+			/* Discard Ack only for the _first_ iteration */
+			if (first && discard && have_unacked) {
+				ALERT("Concurrent write! [DISCARD BY FLAG] sec=%llu\n",
+				     (unsigned long long)sector);
+				inc_unacked(mdev);
+				mdev->epoch_size++;
+				e->w.cb = e_send_discard_ack;
+				list_add_tail(&e->w.list,&mdev->done_ee);
+
+				spin_unlock_irq(&mdev->req_lock);
+
+				/* we could probably send that DiscardAck ourselves,
+				 * but I don't like the receiver using the msock */
+
+				dec_local(mdev);
+				wake_asender(mdev);
+				finish_wait(&mdev->cstate_wait, &wait);
+				return TRUE;
+			}
+
+			if (signal_pending(current)) {
+				hlist_del_init(&e->colision);
+
+				spin_unlock_irq(&mdev->req_lock);
+
+				finish_wait(&mdev->cstate_wait, &wait);
+				goto out_interrupted;
+			}
+
+			spin_unlock_irq(&mdev->req_lock);
+			if (first) {
+				first = 0;
+				ALERT("Concurrent write! [W AFTERWARDS] "
+				     "sec=%llu\n",(unsigned long long)sector);
+			} else if (discard) {
+				/* we had none on the first iteration.
+				 * there must be none now. */
+				D_ASSERT(have_unacked == 0);
+			}
+			schedule();
+			spin_lock_irq(&mdev->req_lock);
+		}
+		finish_wait(&mdev->cstate_wait, &wait);
 	}
 
 	/* when using TCQ:
@@ -1427,8 +1499,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	 * otherwise, tag the write with the barrier number, so it
 	 * will trigger the b_ack before its own ack.
 	 */
-
-	spin_lock_irq(&mdev->req_lock);
 	if (mdev->next_barrier_nr) {
 		/* only when using TCQ */
 		if (list_empty(&mdev->active_ee)) {
@@ -1471,7 +1541,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	if(mdev->state.pdsk == Diskless) {
 		// In case we have the only disk of the cluster, 
 		drbd_set_out_of_sync(mdev,e->sector,e->size);
-		e->flags |= CALL_AL_COMPLETE_IO;
+		e->flags |= EE_CALL_AL_COMPLETE_IO;
 		drbd_al_begin_io(mdev, e->sector);
 	}
 
@@ -1486,13 +1556,13 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	maybe_kick_lo(mdev);
 	return TRUE;
 
- out2:
+  out_interrupted:
 	/* yes, the epoch_size now is imbalanced.
 	 * but we drop the connection anyways, so we don't have a chance to
 	 * receive a barrier... atomic_inc(&mdev->epoch_size); */
 	dec_local(mdev);
 	drbd_free_ee(mdev,e);
-	return rv;
+	return FALSE;
 }
 
 STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
@@ -2166,14 +2236,14 @@ STATIC int receive_req_state(drbd_dev *mdev, Drbd_Header *h)
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
 
-	if (test_bit(UNIQUE,&mdev->flags)) drbd_state_lock(mdev);
+	if (test_bit(DISCARD_CONCURRENT,&mdev->flags)) drbd_state_lock(mdev);
 
 	mask = convert_state(mask);
 	val = convert_state(val);
 
 	rv = drbd_change_state(mdev,ChgStateVerbose,mask,val);
 
-	if (test_bit(UNIQUE,&mdev->flags)) drbd_state_unlock(mdev);
+	if (test_bit(DISCARD_CONCURRENT,&mdev->flags)) drbd_state_unlock(mdev);
 
 	drbd_send_sr_reply(mdev,rv);
 	drbd_md_sync(mdev);
@@ -2407,6 +2477,8 @@ STATIC void drbdd(drbd_dev *mdev)
 	drbd_cmd_handler_f handler;
 	Drbd_Header *header = &mdev->data.rbuf.head;
 
+	/* FIXME test for thread state == RUNNING here,
+	 * in case we missed some signal! */
 	for (;;) {
 		if (!drbd_recv_header(mdev,header))
 			break;
@@ -2974,10 +3046,25 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 				return FALSE;
 			}
 
-			_req_mod(req,
-				 h->command == cpu_to_be16(WriteAck)
-				 ? write_acked_by_peer
-				 : recv_acked_by_peer);
+			switch (be16_to_cpu(h->command)) {
+			case WriteAck:
+				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+				_req_mod(req,write_acked_by_peer);
+				break;
+			case RecvAck:
+				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_A);
+				_req_mod(req,recv_acked_by_peer);
+				break;
+			case DiscardAck:
+				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+				ALERT("Got DiscardAck packet %llu +%u!"
+				      " DRBD is not a random data generator!\n",
+				      (unsigned long long)req->sector, req->size);
+				_req_mod(req, conflict_discarded_by_peer);
+				break;
+			default:
+				D_ASSERT(0);
+			}
 			spin_unlock_irq(&mdev->req_lock);
 		}
 	}
@@ -3076,31 +3163,6 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 	return TRUE;
 }
 
-/* FIXME implementation wrong.
- * For the algorithm to be correct, we need to send and store the
- * sector and size too.
- */
-STATIC int got_Discard(drbd_dev *mdev, Drbd_Header* h)
-{
-	Drbd_Discard_Packet *p = (Drbd_Discard_Packet*)h;
-	struct drbd_discard_note *dn;
-
-	dn = kmalloc(sizeof(struct drbd_discard_note),GFP_KERNEL);
-	if(!dn) {
-		ERR("kmalloc(drbd_discard_note) failed.");
-		return FALSE;
-	}
-
-	dn->block_id = p->block_id;
-	dn->seq_num = be32_to_cpu(p->seq_num);
-
-	spin_lock(&mdev->peer_seq_lock);
-	list_add(&dn->list,&mdev->discard);
-	spin_unlock(&mdev->peer_seq_lock);
-
-	return TRUE;
-}
-
 struct asender_cmd {
 	size_t pkt_size;
 	int (*process)(drbd_dev *mdev, Drbd_Header* h);
@@ -3123,11 +3185,11 @@ int drbd_asender(struct Drbd_thread *thi)
 		[PingAck]   ={ sizeof(Drbd_Header),           got_PingAck },
 		[RecvAck]   ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[WriteAck]  ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
+		[DiscardAck]={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[NegAck]    ={ sizeof(Drbd_BlockAck_Packet),  got_NegAck },
 		[NegDReply] ={ sizeof(Drbd_BlockAck_Packet),  got_NegDReply },
 		[NegRSDReply]={sizeof(Drbd_BlockAck_Packet),  got_NegRSDReply},
 		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet),got_BarrierAck },
-		[DiscardNote]={sizeof(Drbd_Discard_Packet),   got_Discard },
 		[StateChgReply]={sizeof(Drbd_RqS_Reply_Packet),got_RqSReply },
 	};
 

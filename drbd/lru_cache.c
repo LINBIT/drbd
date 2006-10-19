@@ -284,6 +284,7 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt == 0);
+	BUG_ON(e == lc->changing_element);
 	if ( --e->refcnt == 0) {
 		list_move(&e->list,&lc->lru); // move it to the front of LRU.
 		lc->used--;

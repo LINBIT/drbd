@@ -945,7 +945,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	new_conf = kmalloc(sizeof(struct net_conf),GFP_KERNEL);
-	if(!new_conf) {			
+	if(!new_conf) {
 		retcode=KMallocFailed;
 		goto fail;
 	}
@@ -968,12 +968,18 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->after_sb_2p     = DRBD_AFTER_SB_2P_DEF;
 		new_conf->want_lose       = 0;
 		new_conf->two_primaries   = 0;
+		new_conf->wire_protocol   = DRBD_PROT_C;
 	}
 
 	if (!net_conf_from_tags(mdev,nlp->tag_list,new_conf)) {
 		retcode=UnknownMandatoryTag;
 		goto fail;
 	}
+
+	if (new_conf->two_primaries && (new_conf->wire_protocol != DRBD_PROT_C)) {
+		retcode=ProtocolCRequired;
+		goto fail;
+	};
 
 	if( mdev->state.role == Primary && new_conf->want_lose ) {
 		retcode=DiscardNotAllowed;

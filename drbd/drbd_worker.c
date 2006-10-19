@@ -141,7 +141,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 
 	if (do_wake) wake_up(&mdev->ee_wait);
 
-	if(e->flags & CALL_AL_COMPLETE_IO) drbd_al_complete_io(mdev,e->sector);
+	if(e->flags & EE_CALL_AL_COMPLETE_IO) drbd_al_complete_io(mdev,e->sector);
 
 	wake_asender(mdev);
 	dec_local(mdev);
@@ -231,14 +231,6 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	ERR_IF(cancel) return 1;
 	ERR("resync inactive, but callback triggered??\n");
 	return 1; // Simply ignore this!
-}
-
-/* for debug assertion only */
-int w_req_cancel_conflict(drbd_dev *mdev, struct drbd_work *w, int cancel)
-{
-	ERR("w_req_cancel_conflict: this callback should never be called!\n");
-	if (cancel) return 1; /* does it matter? */
-	return 0;
 }
 
 void resync_timer_fn(unsigned long data)

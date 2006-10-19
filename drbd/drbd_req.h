@@ -88,10 +88,6 @@ typedef enum {
 	to_be_send,
 	to_be_submitted,
 
-	suspend_because_of_conflict,
-	conflicting_req_done,
-	conflicting_ee_done,
-
 	/* XXX yes, now I am inconsistent...
 	 * these two are not "events" but "actions"
 	 * oh, well... */
@@ -104,6 +100,7 @@ typedef enum {
 	connection_lost_while_pending,
 	recv_acked_by_peer,
 	write_acked_by_peer,
+	conflict_discarded_by_peer,
 	neg_acked,
 	barrier_acked, /* in protocol A and B */
 	data_received, /* (remote read) */

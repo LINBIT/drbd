@@ -300,40 +300,6 @@ void tl_clear(drbd_dev *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-// warning LGE "FIXME code missing"
-#if 0
-/* FIXME "wrong"
- * see comment in receive_Data */
-drbd_request_t * _req_have_write(drbd_dev *mdev, struct Tl_epoch_entry *e)
-{
-	struct hlist_head *slot;
-	struct hlist_node *n;
-	drbd_request_t * req;
-	sector_t sector = e->sector;
-	int size = e->drbd_ee_get_size(e);
-	int i;
-
-	MUST_HOLD(&mdev->req_lock);
-	D_ASSERT(size <= 1<<(HT_SHIFT+9) );
-
-#define OVERLAPS overlaps(req->sector, req->size, sector, size)
-	slot = mdev->tl_hash + tl_hash_fn(mdev, sector);
-	hlist_for_each_entry(req, n, slot, colision) {
-		if (OVERLAPS) return req;
-	} // hlist_for_each_entry()
-#undef OVERLAPS
-	req = NULL;
-	// Good, no conflict found
-	INIT_HLIST_NODE(&e->colision);
-	hlist_add_head( &e->colision, mdev->ee_hash +
-			ee_hash_fn(mdev, sector) );
- out:
-	spin_unlock_irq(&mdev->tl_lock);
-
-	return req;
-}
-#endif
-
 /**
  * drbd_io_error: Handles the on_io_error setting, should be called in the
  * unlikely(!drbd_bio_uptodate(e->bio)) case from kernel thread context.
@@ -1355,17 +1321,6 @@ int drbd_send_sizes(drbd_dev *mdev)
 	return ok;
 }
 
-int drbd_send_discard(drbd_dev *mdev, drbd_request_t *req)
-{
-	Drbd_Discard_Packet p;
-
-	p.block_id = (unsigned long)req;
-	p.seq_num  = cpu_to_be32(req->seq_num);
-
-	return drbd_send_cmd(mdev,USE_META_SOCKET,DiscardNote,
-			     (Drbd_Header*)&p,sizeof(p));
-}
-
 int drbd_send_state(drbd_dev *mdev)
 {
 	Drbd_State_Packet p;
@@ -1924,7 +1879,7 @@ STATIC void drbd_unplug_fn(request_queue_t *q)
 
 	/* only if connected */
 	spin_lock_irq(&mdev->req_lock);
-	if (mdev->state.pdsk >= Inconsistent) /* implies cs >= Connected */ {
+	if (mdev->state.pdsk >= Inconsistent && mdev->state.conn >= Connected) {
 		D_ASSERT(mdev->state.role == Primary);
 		if (test_and_clear_bit(UNPLUG_REMOTE,&mdev->flags)) {
 			/* add to the data.work queue,
@@ -1998,7 +1953,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	INIT_LIST_HEAD(&mdev->resync_work.list);
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
 	INIT_LIST_HEAD(&mdev->md_sync_work.list);
-	INIT_LIST_HEAD(&mdev->discard);
 	mdev->resync_work.cb  = w_resync_inactive;
 	mdev->unplug_work.cb  = w_send_write_hint;
 	mdev->md_sync_work.cb = w_md_sync;
@@ -2012,6 +1966,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	init_waitqueue_head(&mdev->cstate_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
+	init_waitqueue_head(&mdev->seq_wait);
 
 	drbd_thread_init(mdev, &mdev->receiver, drbdd_init);
 	drbd_thread_init(mdev, &mdev->worker, drbd_worker);
@@ -3140,6 +3095,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case RecvAck:
 	case WriteAck:
+	case DiscardAck:
 	case NegAck:
 	case NegRSDReply:
 		INFOP("%s (sector %llx, size %x, id %s, seq %x)\n", cmdname(cmd),
@@ -3171,7 +3127,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		      be64_to_cpu(p->GenCnt.uuid[History_start]),
 		      be64_to_cpu(p->GenCnt.uuid[History_end]));
 		break;
-		      
+
 	case ReportSizes:
 		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, max bio %x, q order %x)\n", cmdname(cmd), 
 		      (long long)(be64_to_cpu(p->Sizes.d_size)>>(20-9)),
@@ -3198,12 +3154,6 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 	case StateChgReply:
 		INFOP("%s (ret %x)\n", cmdname(cmd), 
 		      be32_to_cpu(p->RqSReply.retcode));
-		break;
-
-	case DiscardNote:
-		INFOP("%s (id %llx, seq %x)\n", cmdname(cmd),
-		      (long long)p->Discard.block_id,
-		      be32_to_cpu(p->Discard.seq_num));
 		break;
 
 	case Ping:

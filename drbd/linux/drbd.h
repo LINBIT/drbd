@@ -106,7 +106,10 @@ enum ret_codes {
 	FailedToClaimMyself,
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
-	AfterLastRetCode,
+	ProtocolCRequired,
+
+	/* insert new ones above this line */
+	AfterLastRetCode
 };
 
 #define DRBD_PROT_A   1

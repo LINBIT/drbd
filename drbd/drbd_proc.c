@@ -210,7 +210,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf( seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			seq_printf( seq,
-			   "%2d: cs:%s st:%s/%s ds:%s/%s %c%c%c%c\n"
+			   "%2d: cs:%s st:%s/%s ds:%s/%s %c %c%c%c%c\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d\n",
 			   i, sn,
@@ -218,6 +218,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   roles_to_name(mdev->state.peer),
 			   disks_to_name(mdev->state.disk),
 			   disks_to_name(mdev->state.pdsk),
+			   (mdev->net_conf == NULL ? ' ' :
+			    (mdev->net_conf->wire_protocol - DRBD_PROT_A+'A')),
 			   mdev->state.susp ? 's' : 'r',
 			   mdev->state.aftr_isp ? 'a' : '-',
 			   mdev->state.peer_isp ? 'p' : '-',

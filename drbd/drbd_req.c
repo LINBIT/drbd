@@ -34,8 +34,8 @@
 #include "drbd_req.h"
 
 //#define VERBOSE_REQUEST_CODE
-#ifdef VERBOSE_REQUEST_CODE
-void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
+#if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
+void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 {
 	drbd_dev *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||
@@ -46,9 +46,6 @@ void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 		[created] = "created",
 		[to_be_send] = "to_be_send",
 		[to_be_submitted] = "to_be_submitted",
-		[suspend_because_of_conflict] = "suspend_because_of_conflict",
-		[conflicting_req_done] = "conflicting_req_done",
-		[conflicting_ee_done] = "conflicting_ee_done",
 		[queue_for_net_write] = "queue_for_net_write",
 		[queue_for_net_read] = "queue_for_net_read",
 		[send_canceled] = "send_canceled",
@@ -58,6 +55,7 @@ void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 		[recv_acked_by_peer] = "recv_acked_by_peer",
 		[write_acked_by_peer] = "write_acked_by_peer",
 		[neg_acked] = "neg_acked",
+		[conflict_discarded_by_peer] = "conflict_discarded_by_peer",
 		[barrier_acked] = "barrier_acked",
 		[data_received] = "data_received",
 		[read_completed_with_error] = "read_completed_with_error",
@@ -68,7 +66,7 @@ void print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 	INFO("_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
 }
 
-void print_rq_state(drbd_request_t *req, const char *txt)
+void _print_rq_state(drbd_request_t *req, const char *txt)
 {
 	const unsigned long s = req->rq_state;
 	drbd_dev *mdev = req->mdev;
@@ -90,8 +88,16 @@ void print_rq_state(drbd_request_t *req, const char *txt)
 	     conns_to_name(mdev->state.conn));
 }
 
+# ifdef ENABLE_DYNAMIC_TRACE
+#  define print_rq_state(R,T) MTRACE(TraceTypeRq,TraceLvlMetrics,_print_rq_state(R,T);)
+#  define print_req_mod(T,W)  MTRACE(TraceTypeRq,TraceLvlMetrics,_print_req_mod(T,W);)
+# else
+#  define print_rq_state(R,T) _print_rq_state(R,T)
+#  define print_req_mod(T,W)  _print_req_mod(T,W)
+# endif
+
 #else
-#define print_rq_state(R,T) 
+#define print_rq_state(R,T)
 #define print_req_mod(T,W)
 #endif
 
@@ -127,7 +133,13 @@ void _req_may_be_done(drbd_request_t *req)
 		 * what we need to do here is just: complete the master_bio.
 		 */
 		int ok = (s & RQ_LOCAL_OK) || (s & RQ_NET_OK);
-		rw = bio_data_dir(req->master_bio); 
+		rw = bio_data_dir(req->master_bio);
+
+		/* remove the request from the conflict detection
+		 * respective block_id verification hash */
+		if (!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
+		else D_ASSERT((s & RQ_NET_MASK) == 0);
+
 		if (rw == WRITE) {
 			drbd_request_t *i;
 			struct Tl_epoch_entry *e;
@@ -139,38 +151,50 @@ void _req_may_be_done(drbd_request_t *req)
 			if (req->epoch == mdev->newest_barrier->br_number)
 				set_bit(ISSUE_BARRIER,&mdev->flags);
 
-			/* and maybe "wake" those conflicting requests that
-			 * wait for this request to finish.
-			 * we just have to walk starting from req->next,
-			 * see _req_add_hash_check_colision(); */
-#define OVERLAPS overlaps(req->sector, req->size, i->sector, i->size)
-			n = req->colision.next;
-			/* hlist_del ... done below */
-			hlist_for_each_entry_from(i, n, colision) {
-				if (OVERLAPS)
-					drbd_queue_work(&mdev->data.work,&i->w);
-			}
+			/* we need to do the conflict detection stuff,
+			 * if we have the ee_hash (two_primaries) and
+			 * this has been on the network */
+			if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL) {
+				const sector_t sector = req->sector;
+				const int size = req->size;
 
-			/* and maybe "wake" those conflicting epoch entries
-			 * that wait for this request to finish */
-			/* FIXME looks alot like we could consolidate some code
-			 * and maybe even hash tables? */
+				/* ASSERT:
+				 * there must be no conflicting requests, since
+				 * they must have been failed on the spot */
+#define OVERLAPS overlaps(sector, size, i->sector, i->size)
+				slot = tl_hash_slot(mdev,sector);
+				hlist_for_each_entry(i, n, slot, colision) {
+					if (OVERLAPS) {
+						ALERT("LOGIC BUG: completed: %p %llu +%d; other: %p %llu +%d\n",
+						      req, (unsigned long long)sector, size,
+						      i,   (unsigned long long)i->sector, i->size);
+					}
+				}
+
+				/* maybe "wake" those conflicting epoch entries
+				 * that wait for this request to finish.
+				 *
+				 * currently, there can be only _one_ such ee
+				 * (well, or some more, which would be pending
+				 * DiscardAck not yet sent by the asender...),
+				 * since we block the receiver thread upon the
+				 * first conflict detection, which will wait on
+				 * cstate_wait.  maybe we want to assert that?
+				 *
+				 * anyways, if we found one,
+				 * we just have to do a wake_up.  */
 #undef OVERLAPS
-#define OVERLAPS overlaps(req->sector, req->size, e->sector, e->size)
-			if(mdev->ee_hash_s) {
+#define OVERLAPS overlaps(sector, size, e->sector, e->size)
 				slot = ee_hash_slot(mdev,req->sector);
 				hlist_for_each_entry(e, n, slot, colision) {
-					if (OVERLAPS)
-						drbd_queue_work(&mdev->data.work,&e->w);
+					if (OVERLAPS) {
+						wake_up(&mdev->cstate_wait);
+						break;
+					}
 				}
 			}
 #undef OVERLAPS
 		}
-		/* else: READ, READA: nothing more to do */
-
-		/* remove the request from the conflict detection
-		 * respective block_id verification hash */
-		if(!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
 
 		/* FIXME not yet implemented...
 		 * in case we got "suspended" (on_disconnect: freeze io)
@@ -250,14 +274,13 @@ void _req_may_be_done(drbd_request_t *req)
 }
 
 /*
- * checks whether there was an overlapping request already registered.
- * if so, add the request to the colision hash
- *        _after_ the (first) overlapping request,
- *	  and return 1
- * if no overlap was found, add this request to the front of the chain,
- *        and return 0
+ * checks whether there was an overlapping request
+ * or ee already registered.
  *
- * corresponding hlist_del is in _req_may_be_done()
+ * if so, return 1, in which case this request is completed on the spot,
+ * without ever being submitted or send.
+ *
+ * return 0 if it is ok to submit this request.
  *
  * NOTE:
  * paranoia: assume something above us is broken, and issues different write
@@ -273,7 +296,7 @@ void _req_may_be_done(drbd_request_t *req)
  * second hlist_for_each_entry becomes a noop. This is even simpler than to
  * grab a reference on the net_conf, and check for the two_primaries flag...
  */
-STATIC int _req_add_hash_check_colision(drbd_request_t *req)
+STATIC int _req_conflicts(drbd_request_t *req)
 {
 	drbd_dev *mdev = req->mdev;
 	const sector_t sector = req->sector;
@@ -285,6 +308,17 @@ STATIC int _req_add_hash_check_colision(drbd_request_t *req)
 
 	MUST_HOLD(&mdev->req_lock);
 	D_ASSERT(hlist_unhashed(&req->colision));
+
+	/* FIXME should this inc_net/dec_net
+	 * rather be done in drbd_make_request_common? */
+	if (!inc_net(mdev))
+		return 0;
+
+	/* BUG_ON */
+	ERR_IF (mdev->tl_hash_s == 0)
+		goto out_no_conflict;
+	BUG_ON(mdev->tl_hash == NULL);
+
 #define OVERLAPS overlaps(i->sector, i->size, sector, size)
 	slot = tl_hash_slot(mdev,sector);
 	hlist_for_each_entry(i, n, slot, colision) {
@@ -294,16 +328,13 @@ STATIC int _req_add_hash_check_colision(drbd_request_t *req)
 			      current->comm, current->pid,
 			      (unsigned long long)sector, size,
 			      (unsigned long long)i->sector, i->size);
-			hlist_add_after(n,&req->colision);
-			return 1;
+			goto out_conflict;
 		}
 	}
-	/* no overlapping request with local origin found,
-	 * register in front */
-	hlist_add_head(&req->colision,slot);
 
 	if(mdev->ee_hash_s) {
 		/* now, check for overlapping requests with remote origin */
+		BUG_ON(mdev->ee_hash == NULL);
 #undef OVERLAPS
 #define OVERLAPS overlaps(e->sector, e->size, sector, size)
 		slot = ee_hash_slot(mdev,sector);
@@ -314,15 +345,21 @@ STATIC int _req_add_hash_check_colision(drbd_request_t *req)
 				      current->comm, current->pid,
 				      (unsigned long long)sector, size,
 				      (unsigned long long)e->sector, e->size);
-				return 1;
+				goto out_conflict;
 			}
 		}
 	}
 #undef OVERLAPS
 
+  out_no_conflict:
 	/* this is like it should be, and what we expected.
-	 * out users do behave after all... */
+	 * our users do behave after all... */
+	dec_net(mdev);
 	return 0;
+
+  out_conflict:
+	dec_net(mdev);
+	return 1;
 }
 
 /* obviously this could be coded as many single functions
@@ -371,17 +408,6 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		D_ASSERT(!(req->rq_state & RQ_LOCAL_MASK));
 		req->rq_state |= RQ_LOCAL_PENDING;
 		break;
-
-#if 0
-		/* done inline below */
-	case suspend_because_of_conflict:
-		/* assert something? */
-		/* reached via drbd_make_request_common */
-		/* update state flag? why? which one? */
-		req->w.cb = w_req_cancel_conflict;
-		/* no queue here, see below! */
-		break;
-#endif
 
 	/* FIXME these *_completed_* are basically the same.
 	 * can probably be merged with some if (what == xy) */
@@ -474,44 +500,17 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		/* assert something? */
 		/* from drbd_make_request_common only */
 
+		hlist_add_head(&req->colision,tl_hash_slot(mdev,req->sector));
+		/* corresponding hlist_del is in _req_may_be_done() */
+
 		/* NOTE
 		 * In case the req ended up on the transfer log before being
 		 * queued on the worker, it could lead to this request being
 		 * missed during cleanup after connection loss.
 		 * So we have to do both operations here,
 		 * within the same lock that protects the transfer log.
-		 */
-
-		/* register this request on the colison detection hash
-		 * tables. if we have a conflict, just leave here.
-		 * the request will be "queued" for faked "completion"
-		 * once the conflicting request is done.
-		 */
-		if (_req_add_hash_check_colision(req)) {
-			/* this is a conflicting request.
-			 * even though it may have been only _partially_
-			 * overlapping with one of the currently pending requests,
-			 * without even submitting or sending it,
-			 * we will pretend that it was successfully served
-			 * once the pending conflicting request is done.
-			 */
-			/* _req_mod(req, suspend_because_of_conflict); */
-			/* this callback is just for ASSERT purposes */
-			req->w.cb = w_req_cancel_conflict;
-
-			/* we don't add this to any epoch (barrier) object.
-			 * assign the "invalid" barrier_number 0.
-			 * it should be 0 anyways, still,
-			 * but being explicit won't harm. */
-			req->epoch = 0;
-
-			/*
-			 * EARLY break here!
-			 */
-			break;
-		}
-
-		/* _req_add_to_epoch(req); this has to be after the
+		 *
+		 * _req_add_to_epoch(req); this has to be after the
 		 * _maybe_start_new_epoch(req); which happened in
 		 * drbd_make_request_common, because we now may set the bit
 		 * again ourselves to close the current epoch.
@@ -533,31 +532,6 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb =  w_send_dblock;
 		drbd_queue_work(&mdev->data.work, &req->w);
-		break;
-
-	case conflicting_req_done:
-	case conflicting_ee_done:
-		/* reached via bio_endio of the
-		 * conflicting request or epoch entry.
-		 * we now just "fake" completion of this request.
-		 * THINK: I'm going to _FAIL_ this request.
-		 */
-		D_ASSERT(req->w.cb == w_req_cancel_conflict);
-		D_ASSERT(req->epoch == 0);
-		{
-			const unsigned long s = req->rq_state;
-			if (s & RQ_LOCAL_MASK) {
-				D_ASSERT(s & RQ_LOCAL_PENDING);
-				bio_put(req->private_bio);
-				req->private_bio = NULL;
-				dec_local(mdev);
-			}
-			D_ASSERT((s & RQ_NET_MASK) == RQ_NET_PENDING);
-			dec_ap_pending(mdev);
-		}
-		/* no _OK ... this is going to be an io-error */
-		req->rq_state = RQ_LOCAL_COMPLETED|RQ_NET_DONE;
-		_req_may_be_done(req);
 		break;
 
 	/* FIXME
@@ -619,6 +593,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			_req_may_be_done(req);
 		break;
 
+	case conflict_discarded_by_peer:
+		/* interesstingly, this is the same thing! */
 	case write_acked_by_peer:
 		/* assert something? */
 		/* protocol C; successfully written on peer */
@@ -936,59 +912,49 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	if (remote) _req_mod(req, to_be_send);
 	if (local)  _req_mod(req, to_be_submitted);
 
-	/* NOTE remote first: to get he concurrent write detection right, we
-	 * must register the request before start of local IO.  */
+	/* check this request on the colison detection hash tables.
+	 * if we have a conflict, just complete it here.
+	 * THINK do we want to check reads, too? (I don't think so...) */
+	if (rw == WRITE && _req_conflicts(req)) {
+		/* this is a conflicting request.
+		 * even though it may have been only _partially_
+		 * overlapping with one of the currently pending requests,
+		 * without even submitting or sending it, we will
+		 * pretend that it was successfully served right now.
+		 */
+		if (local) {
+			bio_put(req->private_bio);
+			req->private_bio = NULL;
+			drbd_al_complete_io(mdev, req->sector);
+			dec_local(mdev);
+			local = 0;
+		}
+		if (remote) dec_ap_pending(mdev);
+		dump_bio(mdev,req->master_bio,1);
+		/* THINK: do we want to fail it (-EIO), or pretend success? */
+		bio_endio(req->master_bio, req->master_bio->bi_size, 0);
+		req->master_bio = NULL;
+		dec_ap_bio(mdev);
+		drbd_req_free(req);
+		local = remote = 0;
+	}
+
+	/* NOTE remote first: to get the concurrent write detection right,
+	 * we must register the request before start of local IO.  */
 	if (remote) {
 		/* either WRITE and Connected,
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		_req_mod(req, rw == WRITE
-				? queue_for_net_write
-				: queue_for_net_read);
+		if (rw == WRITE) _req_mod(req,queue_for_net_write);
+		else		 _req_mod(req,queue_for_net_read);
 	}
-
-	/* still holding the req_lock.
-	 * not strictly neccessary, but for the statistic counters... */
-
-#if 0
-	if (local) {
-		/* FIXME I think this branch can go completely.  */
-		if (rw == WRITE) {
-			/* we defer the drbd_set_out_of_sync to the bio_endio
-			 * function. we only need to make sure the bit is set
-			 * before we do drbd_al_complete_io. */
-			 if (!remote) drbd_set_out_of_sync(mdev,sector,size);
-		} else {
-			D_ASSERT(!remote); /* we should not read from both */
-		}
-		/* FIXME
-		 * Should we add even local reads to some list, so
-		 * they can be grabbed and freed somewhen?
-		 *
-		 * They already have a reference count (sort of...)
-		 * on mdev via inc_local()
-		 */
-
-		/* XXX we probably should not update these here but in bio_endio.
-		 * especially the read_cnt could go wrong for all the READA
-		 * that may just be failed because of "overload"... */
-		if(rw == WRITE) mdev->writ_cnt += size>>9;
-		else            mdev->read_cnt += size>>9;
-
-		/* FIXME what ref count do we have to ensure the backing_bdev
-		 * was not detached below us? */
-		req->private_bio->bi_rw = rw; /* redundant */
-		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
-	}
-#endif
-
 	spin_unlock_irq(&mdev->req_lock);
 	if (b) kfree(b); /* if someone else has beaten us to it... */
 
-	/* extra if branch so I don't need to write spin_unlock_irq twice */
-
 	if (local) {
+		/* FIXME what ref count do we have to ensure the backing_bdev
+		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
 		if (FAULT_ACTIVE(rw==WRITE? DRBD_FAULT_DT_WR : DRBD_FAULT_DT_RD))
@@ -1004,6 +970,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	return 0;
 
   fail_and_free_req:
+	if (b) kfree(b);
 	bio_endio(bio, bio->bi_size, -EIO);
 	drbd_req_free(req);
 	return 0;
@@ -1041,7 +1008,9 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 	 */
 	if ( mdev->state.disk <= Inconsistent &&
 	     mdev->state.conn < Connected) {
-		ERR("Sorry, I have no access to good data anymore.\n");
+		if (DRBD_ratelimit(5*HZ,5)) {
+			ERR("Sorry, I have no access to good data anymore.\n");
+		}
 		/*
 		 * FIXME suspend, loop waiting on cstate wait?
 		 */
