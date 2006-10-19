@@ -1116,11 +1116,9 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 	if (bio_size == 0) {
 		if (limit <= bvec->bv_len) limit = bvec->bv_len;
 	} else if (limit && inc_local(mdev)) {
-		/* FIXME
-		 * I don't think taking a shortcut is valid, the backing device
-		 * is allowed to change its merge bvec function anytime... */
-		if (mdev->bc->bmbf) {
-			backing_limit = mdev->bc->bmbf(q,bio,bvec);
+		request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
+		if(b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
+			backing_limit = b->merge_bvec_fn(b,bio,bvec);
 			limit = min(limit,backing_limit);
 		}
 		dec_local(mdev);

@@ -560,12 +560,8 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
 	//unsigned int old_max_seg_s = q->max_segment_size;
 
-	if(b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
-		mdev->bc->bmbf = b->merge_bvec_fn;
-	} else {
+	if (b->merge_bvec_fn && !mdev->bc->dc.use_bmbv)
 		max_seg_s = PAGE_SIZE;
-		mdev->bc->bmbf = NULL;
-	}
 
 	q->max_sectors       = max_seg_s >> 9;
 	q->max_phys_segments = max_seg_s >> PAGE_SHIFT;

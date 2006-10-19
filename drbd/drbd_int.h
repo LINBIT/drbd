@@ -746,7 +746,6 @@ struct drbd_backing_dev {
 	struct file *md_file;
 	struct drbd_md md;
 	struct disk_conf dc; /* The user provided config... */
-	merge_bvec_fn *bmbf; /* short cut to backing devices' merge_bvec_fn */
 };
 
 struct Drbd_Conf {
