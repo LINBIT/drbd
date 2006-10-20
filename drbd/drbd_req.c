@@ -243,6 +243,16 @@ void _req_may_be_done(drbd_request_t *req)
 				drbd_set_in_sync(mdev,req->sector,req->size);
 			}
 
+			/* one might be tempted to move the drbd_al_complete_io
+			 * to the local io completion callback drbd_endio_pri.
+			 * but, if this was a mirror write, we may only
+			 * drbd_al_complete_io after this is RQ_NET_DONE,
+			 * otherwise the extent could be dropped from the al
+			 * before it has actually been written on the peer.
+			 * if we crash before our peer knows about the request,
+			 * but after the extent has been dropped from the al,
+			 * we would forget to resync the corresponding extent.
+			 */
 			if (s & RQ_LOCAL_MASK) {
 				drbd_al_complete_io(mdev, req->sector);
 			}

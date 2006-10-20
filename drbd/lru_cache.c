@@ -260,6 +260,32 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	RETURN(e);
 }
 
+/* similar to lc_get,
+ * but only gets a new reference on an existing element.
+ * you either get the requested element, or NULL.
+ */
+struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
+{
+	struct lc_element *e;
+
+	BUG_ON(!lc);
+	BUG_ON(!lc->nr_elements);
+
+	PARANOIA_ENTRY();
+	if ( lc->flags & LC_STARVING ) {
+		++lc->starving;
+		RETURN(NULL);
+	}
+
+	e = lc_find(lc, enr);
+	if (e) {
+		++lc->hits;
+		if( e->refcnt++ == 0) lc->used++;
+		list_move(&e->list,&lc->in_use); // Not evictable...
+	}
+	RETURN(e);
+}
+
 void lc_changed(struct lru_cache* lc, struct lc_element* e)
 {
 	PARANOIA_ENTRY();

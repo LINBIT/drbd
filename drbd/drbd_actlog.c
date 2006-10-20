@@ -696,7 +696,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 		}
 	} else {
 		ERR("lc_get() failed! locked=%d/%d flags=%lu\n",
-		    atomic_read(&mdev->resync_locked),
+		    mdev->resync_locked,
 		    mdev->resync->nr_elements,
 		    mdev->resync->flags);
 	}
@@ -841,28 +841,28 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	int wakeup = 0;
 	unsigned long     rs_flags;
 
-	if(atomic_read(&mdev->resync_locked) > mdev->resync->nr_elements-3 ) {
-		//WARN("bme_get() does not lock all elements\n");
-		return 0;
-	}
-
 	spin_lock_irq(&mdev->al_lock);
+	if (mdev->resync_locked > mdev->resync->nr_elements-3) {
+		//WARN("bme_get() does not lock all elements\n");
+		spin_unlock_irq(&mdev->al_lock);
+		return NULL;
+	}
 	bm_ext = (struct bm_extent*) lc_get(mdev->resync,enr);
 	if (bm_ext) {
-		if(bm_ext->lce.lc_number != enr) {
+		if (bm_ext->lce.lc_number != enr) {
 			bm_ext->rs_left = drbd_bm_e_weight(mdev,enr);
 			bm_ext->rs_failed = 0;
 			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
 			wakeup = 1;
 		}
-		if(bm_ext->lce.refcnt == 1) atomic_inc(&mdev->resync_locked);
-		set_bit(BME_NO_WRITES,&bm_ext->flags); // within the lock
+		if (bm_ext->lce.refcnt == 1) mdev->resync_locked++;
+		set_bit(BME_NO_WRITES,&bm_ext->flags);
 	}
 	rs_flags=mdev->resync->flags;
 	spin_unlock_irq(&mdev->al_lock);
 	if (wakeup) wake_up(&mdev->al_wait);
 
-	if(!bm_ext) {
+	if (!bm_ext) {
 		if (rs_flags & LC_STARVING) {
 			WARN("Have to wait for element"
 			     " (resync LRU too small?)\n");
@@ -903,6 +903,10 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
  * to BME_LOCKED.
  *
  * @sector: The sector number
+ *
+ * sleeps on al_wait.
+ * returns 1 if successful.
+ * returns 0 if interrupted.
  */
 int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 {
@@ -928,7 +932,7 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 			spin_lock_irq(&mdev->al_lock);
 			if( lc_put(mdev->resync,&bm_ext->lce) == 0 ) {
 				clear_bit(BME_NO_WRITES,&bm_ext->flags);
-				atomic_dec(&mdev->resync_locked);
+				mdev->resync_locked--;
 				wake_up(&mdev->al_wait);
 			}
 			spin_unlock_irq(&mdev->al_lock);
@@ -939,6 +943,112 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	set_bit(BME_LOCKED,&bm_ext->flags);
 
 	return 1;
+}
+
+/**
+ * drbd_try_rs_begin_io: Gets an extent in the resync LRU cache, sets it
+ * to BME_NO_WRITES, then tries to set it to BME_LOCKED.
+ *
+ * @sector: The sector number
+ *
+ * does not sleep.
+ * returns zero if we could set BME_LOCKED and can proceed,
+ * -EAGAIN if we need to try again.
+ */
+int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
+{
+	unsigned int enr = BM_SECT_TO_EXT(sector);
+	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
+	struct bm_extent* bm_ext;
+	int i;
+
+	spin_lock_irq(&mdev->al_lock);
+	if (mdev->resync_wenr != LC_FREE) {
+		/* in case you have very heavy scattered io, it may
+		 * stall the syncer undefined if we giveup the ref count
+		 * when we try again and requeue.
+		 *
+		 * if we don't give up the refcount, but the next time
+		 * we are scheduled this extent has been "synced" by new
+		 * application writes, we'd miss the lc_put on the
+		 * extent we keept the refcount on.
+		 * so we remembered which extent we had to try agin, and
+		 * if the next requested one is something else, we do
+		 * the lc_put here...
+		 * we also have to wake_up
+		 */
+		bm_ext = (struct bm_extent*)lc_find(mdev->resync,mdev->resync_wenr);
+		if (bm_ext) {
+			D_ASSERT(!test_bit(BME_LOCKED,&bm_ext->flags));
+			D_ASSERT(test_bit(BME_NO_WRITES,&bm_ext->flags));
+			clear_bit(BME_NO_WRITES,&bm_ext->flags);
+			mdev->resync_wenr = LC_FREE;
+			lc_put(mdev->resync,&bm_ext->lce);
+			wake_up(&mdev->al_wait);
+		} else {
+			ALERT("LOGIC BUG\n");
+		}
+	}
+	bm_ext = (struct bm_extent*)lc_try_get(mdev->resync,enr);
+	if (bm_ext) {
+		if (test_bit(BME_LOCKED,&bm_ext->flags)) {
+			goto proceed;
+		}
+		if (!test_and_set_bit(BME_NO_WRITES,&bm_ext->flags)) {
+			mdev->resync_locked++;
+		} else {
+			/* we did set the BME_NO_WRITES,
+			 * but then could not set BME_LOCKED,
+			 * so we tried again.
+			 * drop the extra reference. */
+			bm_ext->lce.refcnt--;
+			D_ASSERT(bm_ext->lce.refcnt > 0);
+		}
+		goto check_al;
+	} else {
+		if (mdev->resync_locked > mdev->resync->nr_elements-3)
+			goto try_again;
+		bm_ext = (struct bm_extent*)lc_get(mdev->resync,enr);
+		if (!bm_ext) {
+			const unsigned long rs_flags = mdev->resync->flags;
+			if (rs_flags & LC_STARVING) {
+				WARN("Have to wait for element"
+				     " (resync LRU too small?)\n");
+			}
+			if (rs_flags & LC_DIRTY) {
+				BUG(); // WARN("Ongoing RS update (???)\n");
+			}
+			goto try_again;
+		}
+		if (bm_ext->lce.lc_number != enr) {
+			bm_ext->rs_left = drbd_bm_e_weight(mdev,enr);
+			bm_ext->rs_failed = 0;
+			lc_changed(mdev->resync,(struct lc_element*)bm_ext);
+			wake_up(&mdev->al_wait);
+			D_ASSERT(test_bit(BME_LOCKED,&bm_ext->flags) == 0);
+		}
+		set_bit(BME_NO_WRITES,&bm_ext->flags);
+		D_ASSERT(bm_ext->lce.refcnt == 1);
+		mdev->resync_locked++;
+		goto check_al;
+	}
+  check_al:
+	for (i=0;i<AL_EXT_PER_BM_SECT;i++) {
+		if (unlikely(al_enr+i == mdev->act_log->new_number))
+			goto try_again;
+		if (lc_is_used(mdev->act_log,al_enr+i))
+			goto try_again;
+	}
+	set_bit(BME_LOCKED,&bm_ext->flags);
+  proceed:
+	mdev->resync_wenr = LC_FREE;
+	spin_unlock_irq(&mdev->al_lock);
+	return 0;
+
+  try_again:
+	if (bm_ext) mdev->resync_wenr = enr;
+	spin_unlock_irq(&mdev->al_lock);
+	return -EAGAIN;
 }
 
 void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
@@ -963,7 +1073,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	if( lc_put(mdev->resync,(struct lc_element *)bm_ext) == 0 ) {
 		clear_bit(BME_LOCKED,&bm_ext->flags);
 		clear_bit(BME_NO_WRITES,&bm_ext->flags);
-		atomic_dec(&mdev->resync_locked);
+		mdev->resync_locked--;
 		wake_up(&mdev->al_wait);
 	}
 
@@ -998,7 +1108,8 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 		mdev->resync->used=0;
 		dec_local(mdev);
 	}
-	atomic_set(&mdev->resync_locked,0);
+	mdev->resync_locked = 0;
+	mdev->resync_wenr = LC_FREE;
 	spin_unlock_irq(&mdev->al_lock);
 	wake_up(&mdev->al_wait);
 }

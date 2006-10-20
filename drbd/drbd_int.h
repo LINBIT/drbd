@@ -809,14 +809,12 @@ struct Drbd_Conf {
 	struct Drbd_thread asender;
 	struct drbd_bitmap* bitmap;
 	struct lru_cache* resync; // Used to track operations of resync...
-	atomic_t resync_locked;   // Number of locked elements in resync LRU
+	unsigned int resync_locked; // Number of locked elements in resync LRU
+	unsigned int resync_wenr;   // resync extent number waiting for application requests
 	int open_cnt;
 	u64 *p_uuid;
-	/* no more ee_lock
-	 * we had to grab both req_lock _and_ ee_lock in almost every place we
-	 * needed one of them. so why bother having too spinlocks?
-	 * FIXME clean comments, restructure so it is more obvious which
-	 * members areprotected by what */
+	/* FIXME clean comments, restructure so it is more obvious which
+	 * members are protected by what */
 	unsigned int epoch_size;
 	struct list_head active_ee; // IO in progress
 	struct list_head sync_ee;   // IO in progress
@@ -1319,6 +1317,7 @@ extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
+extern int drbd_try_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern void drbd_rs_del_all(drbd_dev* mdev);
 extern void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size);

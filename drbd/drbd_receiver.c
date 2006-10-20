@@ -2477,9 +2477,7 @@ STATIC void drbdd(drbd_dev *mdev)
 	drbd_cmd_handler_f handler;
 	Drbd_Header *header = &mdev->data.rbuf.head;
 
-	/* FIXME test for thread state == RUNNING here,
-	 * in case we missed some signal! */
-	for (;;) {
+	while (get_t_state(&mdev->receiver) == Running) {
 		if (!drbd_recv_header(mdev,header))
 			break;
 

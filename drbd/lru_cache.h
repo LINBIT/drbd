@@ -104,6 +104,7 @@ extern void lc_free(struct lru_cache* lc);
 extern void lc_set (struct lru_cache* lc, unsigned int enr, int index);
 extern void lc_del (struct lru_cache* lc, struct lc_element *element);
 
+extern struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr);
 extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
 extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
 extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
@@ -130,7 +131,13 @@ static inline void lc_unlock(struct lru_cache* lc)
 	smp_mb__after_clear_bit();
 }
 
-#define LC_FREE (-1)
+static inline int lc_is_used(struct lru_cache* lc, unsigned int enr)
+{
+	struct lc_element* e = lc_find(lc,enr);
+	return (e && e->refcnt);
+}
+
+#define LC_FREE (-1U)
 
 #define lc_e_base(lc)  ((char*) ( (lc)->slot + (lc)->nr_elements ) )
 #define lc_entry(lc,i) ((struct lc_element*) \

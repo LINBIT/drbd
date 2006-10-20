@@ -305,13 +305,12 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 		sector = BM_BIT_TO_SECT(bit);
 
-		if(!drbd_rs_begin_io(mdev,sector)) {
-			// we have been interrupted, probably connection lost!
-			D_ASSERT(signal_pending(current));
-			return 0;
+		if (drbd_try_rs_begin_io(mdev, sector)) {
+			drbd_bm_set_find(mdev,bit);
+			goto requeue;
 		}
 
-		if(unlikely( drbd_bm_test_bit(mdev,bit) == 0 )) {
+		if (unlikely(drbd_bm_test_bit(mdev,bit) == 0 )) {
 		      //INFO("Block got synced while in drbd_rs_begin_io()\n");
 			drbd_rs_complete_io(mdev,sector);
 			goto next_sector;
@@ -367,7 +366,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 				       sector,size,ID_SYNCER)) {
 			ERR("drbd_send_drequest() failed, aborting...\n");
 			dec_rs_pending(mdev);
-			return 0; // FAILED. worker will abort!
+			return 0;
 		}
 	}
 
@@ -855,7 +854,7 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	sprintf(current->comm, "drbd%d_worker", mdev_to_minor(mdev));
 
-	for (;;) {
+	while (get_t_state(thi) == Running) {
 		intr = down_interruptible(&mdev->data.work.s);
 
 		if (intr) {
@@ -921,6 +920,11 @@ int drbd_worker(struct Drbd_thread *thi)
 	 * So don't do that.
 	 */
 	spin_unlock_irq(&mdev->data.work.q_lock);
+	/* FIXME verify that there absolutely can not be any more work
+	 * on the queue now...
+	 * if so, the comment above is no longer true, but historic
+	 * from the times when the worker did not live as long as the
+	 * device.. */
 
 	D_ASSERT( mdev->state.disk == Diskless && mdev->state.conn == StandAlone );
 	drbd_mdev_cleanup(mdev);

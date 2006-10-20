@@ -1031,7 +1031,12 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		}
 	}
 
-	/* it feels better to have the module_put last ... */
+	/* FIXME what about Primary, Diskless, and then losing
+	 * the connection? since we survive that "somehow",
+	 * maybe we may not stop the worker yet,
+	 * since that would call drbd_mdev_cleanup.
+	 * after which we probably won't survive the next
+	 * request from the upper layers ... BOOM again :( */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&
 	     ns.disk == Diskless && ns.conn == StandAlone ) {
 		drbd_thread_stop_nowait(&mdev->worker);
@@ -1925,7 +1930,6 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	atomic_set(&mdev->unacked_cnt,0);
 	atomic_set(&mdev->local_cnt,0);
 	atomic_set(&mdev->net_cnt,0);
-	atomic_set(&mdev->resync_locked,0);
 	atomic_set(&mdev->packet_seq,0);
 	atomic_set(&mdev->pp_in_use, 0);
 
