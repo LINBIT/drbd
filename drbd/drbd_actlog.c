@@ -961,6 +961,11 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	struct bm_extent* bm_ext;
 	int i;
 
+	MTRACE(TraceTypeResync, TraceLvlAll,
+	       INFO("drbd_try_rs_begin_io: sector=%llus\n",
+		    (unsigned long long)sector);
+	    );
+
 	spin_lock_irq(&mdev->al_lock);
 	if (mdev->resync_wenr != LC_FREE) {
 		/* in case you have very heavy scattered io, it may
@@ -976,6 +981,10 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 		 * the lc_put here...
 		 * we also have to wake_up
 		 */
+		MTRACE(TraceTypeResync, TraceLvlAll,
+			INFO("dropping %u, aparently got 'synced' "
+			     "by application io\n", mdev->resync_wenr);
+		);
 		bm_ext = (struct bm_extent*)lc_find(mdev->resync,mdev->resync_wenr);
 		if (bm_ext) {
 			D_ASSERT(!test_bit(BME_LOCKED,&bm_ext->flags));
@@ -1000,6 +1009,9 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 			 * but then could not set BME_LOCKED,
 			 * so we tried again.
 			 * drop the extra reference. */
+			MTRACE(TraceTypeResync, TraceLvlAll,
+				INFO("dropping extra reference on %u\n",enr);
+			);
 			bm_ext->lce.refcnt--;
 			D_ASSERT(bm_ext->lce.refcnt > 0);
 		}
@@ -1032,6 +1044,9 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 		goto check_al;
 	}
   check_al:
+	MTRACE(TraceTypeResync, TraceLvlAll,
+		INFO("checking al for %u\n",enr);
+	);
 	for (i=0;i<AL_EXT_PER_BM_SECT;i++) {
 		if (unlikely(al_enr+i == mdev->act_log->new_number))
 			goto try_again;
@@ -1045,6 +1060,9 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	return 0;
 
   try_again:
+	MTRACE(TraceTypeResync, TraceLvlAll,
+		INFO("need to try again for %u\n",enr);
+	);
 	if (bm_ext) mdev->resync_wenr = enr;
 	spin_unlock_irq(&mdev->al_lock);
 	return -EAGAIN;
