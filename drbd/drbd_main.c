@@ -889,8 +889,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_bm_unlock(mdev); // }
 	}
 
-	/*  Lost contact to peer's copy of the data  */
-	if ( os.pdsk > DUnknown && ns.pdsk <= DUnknown ) {
+	/* Lost contact to peer's copy of the data */
+	if ( (os.pdsk >= Inconsistent && os.pdsk != DUnknown) &&
+	     (ns.pdsk < Inconsistent || ns.pdsk == DUnknown)) {
 		if ( mdev->p_uuid ) {
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
