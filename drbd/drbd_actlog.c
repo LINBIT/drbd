@@ -115,7 +115,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 						   sector,READ,hardsect);
 
 			if (unlikely(!ok)) {
-				ERR("drbd_md_sync_page_io(,%llu,READ [hardsect!=512]) failed!\n",
+				ERR("drbd_md_sync_page_io(,%llus,READ [hardsect!=512]) failed!\n",
 				    (unsigned long long)sector);
 				return 0;
 			}
@@ -125,20 +125,20 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 	}
 
 #if DUMP_MD >= 3
-	INFO("%s [%d]:%s(,%llu,%s)\n",
+	INFO("%s [%d]:%s(,%llus,%s)\n",
 	     current->comm, current->pid, __func__,
 	     (unsigned long long)sector, rw ? "WRITE" : "READ");
 #endif
 
 	if (sector < drbd_md_first_sector(bdev)  || sector > drbd_md_last_sector(bdev)) {
-		ALERT("%s [%d]:%s(,%llu,%s) out of range md access!\n",
+		ALERT("%s [%d]:%s(,%llus,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, rw ? "WRITE" : "READ");
 	}
 
 	ok = _drbd_md_sync_page_io(bdev,iop,sector,rw,hardsect);
 	if (unlikely(!ok)) {
-		ERR("drbd_md_sync_page_io(,%llu,%s) failed!\n",
+		ERR("drbd_md_sync_page_io(,%llus,%s) failed!\n",
 		    (unsigned long long)sector,rw ? "WRITE" : "READ");
 		return 0;
 	}
@@ -608,7 +608,6 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(drbd_bm_total_weight(mdev) <= mdev->rs_failed &&
 	   ( mdev->state.conn == SyncSource || mdev->state.conn == SyncTarget ||
 	     mdev->state.conn == PausedSyncS || mdev->state.conn == PausedSyncT ) ) {
-		D_ASSERT( mdev->resync_work.cb == w_resync_inactive );
 		drbd_bm_lock(mdev);
 		drbd_resync_finished(mdev);
 		drbd_bm_unlock(mdev);
@@ -645,7 +644,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				ERR("BAD! sector=%llu enr=%u rs_left=%d rs_failed=%d count=%d\n",
+				ERR("BAD! sector=%llus enr=%u rs_left=%d rs_failed=%d count=%d\n",
 				     (unsigned long long)sector,
 				     ext->lce.lc_number, ext->rs_left, ext->rs_failed, count);
 				dump_stack();
@@ -719,8 +718,8 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	unsigned long flags;
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
-		ERR("drbd_set_in_sync: sector=%lu size=%d nonsense!\n",
-				(unsigned long)sector,size);
+		ERR("drbd_set_in_sync: sector=%llus size=%d nonsense!\n",
+				(unsigned long long)sector,size);
 		return;
 	}
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
@@ -744,8 +743,8 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
 	MTRACE(TraceTypeResync, TraceLvlMetrics,
-	       INFO("drbd_set_in_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
-		    (long long)sector, size, sbnr, ebnr);
+	       INFO("drbd_set_in_sync: sector=%llus size=%u sbnr=%lu ebnr=%lu\n",
+		    (unsigned long long)sector, size, sbnr, ebnr);
 	    );
 
 	if (sbnr > ebnr) return;
@@ -788,7 +787,7 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	unsigned long sbnr,ebnr,lbnr;
 	sector_t esector, nr_sectors;
 
-	/*  Find codepoints that call set_out_of_sync()  
+	/*  Find codepoints that call set_out_of_sync()
 	unsigned long flags;
 	unsigned int enr;
 	struct bm_extent* ext;
@@ -807,7 +806,7 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	*/
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
-		ERR("sector: %lu, size: %d\n",(unsigned long)sector,size);
+		ERR("sector: %llus, size: %d\n",(unsigned long long)sector,size);
 		return;
 	}
 
@@ -825,8 +824,8 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	ebnr = BM_SECT_TO_BIT(esector);
 
 	MTRACE(TraceTypeResync, TraceLvlMetrics,
-	       INFO("drbd_set_out_of_sync: sector=%llx size=%x sbnr=%lx ebnr=%lx\n",
-		    (long long)sector, size, sbnr, ebnr);
+	       INFO("drbd_set_out_of_sync: sector=%llus size=%u sbnr=%lu ebnr=%lu\n",
+		    (unsigned long long)sector, size, sbnr, ebnr);
 	    );
 
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
@@ -915,8 +914,8 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	int i, sig;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
-	       INFO("drbd_rs_begin_io: sector=%llx\n",
-		    (long long)sector);
+	       INFO("drbd_rs_begin_io: sector=%llus\n",
+		    (unsigned long long)sector);
 	    );
 
 	sig = wait_event_interruptible( mdev->al_wait,
@@ -1058,7 +1057,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	unsigned long flags;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
-	       INFO("drbd_rs_complete_io: sector=%llx\n",
+	       INFO("drbd_rs_complete_io: sector=%llus\n",
 		    (long long)sector);
 	    );
 
@@ -1116,6 +1115,8 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 /**
  * drbd_rs_del_all: Gracefully remove all extents from the resync LRU.
+ * there may be still a reference hold by w_make_resync_request
+ * (drbd_try_rs_begin_io). we lc_del that here anyways...
  */
 void drbd_rs_del_all(drbd_dev* mdev)
 {
@@ -1158,13 +1159,13 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 	int wake_up=0;
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
-	       INFO("drbd_rs_failed_io: sector=%llx, size=%x\n",
-		    (long long)sector,size);
+	       INFO("drbd_rs_failed_io: sector=%llus, size=%u\n",
+		    (unsigned long long)sector,size);
 	    );
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
-		ERR("drbd_rs_failed_io: sector=%lu size=%d nonsense!\n",
-				(unsigned long)sector,size);
+		ERR("drbd_rs_failed_io: sector=%llus size=%d nonsense!\n",
+				(unsigned long long)sector,size);
 		return;
 	}
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);

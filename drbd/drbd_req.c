@@ -74,7 +74,7 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 			bio_data_dir(req->master_bio) == WRITE) ?
 		'W' : 'R';
 
-	INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%4u:%llu) %s\n",
+	INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
 	     txt, req, rw,
 	     s & RQ_LOCAL_PENDING ? 'p' : '-',
 	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
@@ -84,7 +84,7 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 	     s & RQ_NET_SENT ? 's' : '-',
 	     s & RQ_NET_DONE ? 'd' : '-',
 	     s & RQ_NET_OK ? 'o' : '-',
-	     req->epoch, req->size, req->sector,
+	     req->epoch, req->sector, req->size,
 	     conns_to_name(mdev->state.conn));
 }
 
@@ -165,7 +165,7 @@ void _req_may_be_done(drbd_request_t *req)
 				slot = tl_hash_slot(mdev,sector);
 				hlist_for_each_entry(i, n, slot, colision) {
 					if (OVERLAPS) {
-						ALERT("LOGIC BUG: completed: %p %llu +%d; other: %p %llu +%d\n",
+						ALERT("LOGIC BUG: completed: %p %llus +%u; other: %p %llus +%u\n",
 						      req, (unsigned long long)sector, size,
 						      i,   (unsigned long long)i->sector, i->size);
 					}
@@ -334,7 +334,7 @@ STATIC int _req_conflicts(drbd_request_t *req)
 	hlist_for_each_entry(i, n, slot, colision) {
 		if (OVERLAPS) {
 			ALERT("%s[%u] Concurrent local write detected!"
-			      "	[DISCARD L] new: %llu +%d; pending: %llu +%d\n",
+			      " [DISCARD L] new: %llus +%u; pending: %llus +%u\n",
 			      current->comm, current->pid,
 			      (unsigned long long)sector, size,
 			      (unsigned long long)i->sector, i->size);
@@ -351,7 +351,7 @@ STATIC int _req_conflicts(drbd_request_t *req)
 		hlist_for_each_entry(e, n, slot, colision) {
 			if (OVERLAPS) {
 				ALERT("%s[%u] Concurrent remote write detected!"
-				      "	[DISCARD L] new: %llu +%d; pending: %llu +%d\n",
+				      " [DISCARD L] new: %llus +%u; pending: %llus +%u\n",
 				      current->comm, current->pid,
 				      (unsigned long long)sector, size,
 				      (unsigned long long)e->sector, e->size);
@@ -445,7 +445,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
 		dec_local(mdev);
-		ALERT("Local WRITE failed sec=%llu size=%u\n",
+		ALERT("Local WRITE failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* and now: check how to handle local io error.
 		 * FIXME see comment below in read_completed_with_error */
@@ -465,7 +465,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			/* it is legal to fail READA */
 			break;
 		/* else */
-		ALERT("Local READ failed sec=%llu size=%u\n",
+		ALERT("Local READ failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* _req_mod(req,to_be_send); oops, recursion in static inline */
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
@@ -643,10 +643,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
 			const unsigned long s = req->rq_state;
-			INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u\n",
-			     "FIXME",
-			     req,
-			     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
+			INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
+			     "FIXME", req, rw ? 'W' : 'R',
 			     s & RQ_LOCAL_PENDING ? 'p' : '-',
 			     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
 			     s & RQ_LOCAL_OK ? 'o' : '-',
@@ -655,7 +653,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			     s & RQ_NET_SENT ? 's' : '-',
 			     s & RQ_NET_DONE ? 'd' : '-',
 			     s & RQ_NET_OK ? 'o' : '-',
-			     req->epoch);
+			     req->epoch, req->sector, req->size,
+			     conns_to_name(mdev->state.conn));
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;

@@ -355,7 +355,8 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		down(&b->bm_change);
 	}
 
-	INFO("drbd_bm_resize called with capacity == %llu\n", (unsigned long long)capacity);
+	INFO("drbd_bm_resize called with capacity == %llu\n",
+			(unsigned long long)capacity);
 
 	if (capacity == b->bm_dev_capacity)
 		goto out;
@@ -679,7 +680,7 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 		offset    = S2W(enr);	// word offset into bitmap
 		num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
-	INFO("read_sect: sector=%lu offset=%u num_words=%u\n",
+	INFO("read_sect: sector=%lus offset=%u num_words=%u\n",
 			enr, offset, num_words);
 #endif
 		drbd_bm_set_lel( mdev, offset, num_words,
@@ -787,7 +788,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
 		b->bm_set = bm_count_bits(b, 1);
-		INFO("recounting of set bits took additional %lu jiffies\n", 
+		INFO("recounting of set bits took additional %lu jiffies\n",
 		     jiffies - now);
 	}
 
@@ -850,8 +851,8 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 		int i;
 		err = -EIO;
 		ERR( "IO ERROR writing bitmap sector %lu "
-		     "(meta-disk sector %lu)\n",
-		     enr, (unsigned long)on_disk_sector );
+		     "(meta-disk sector %llus)\n",
+		     enr, (unsigned long long)on_disk_sector );
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)

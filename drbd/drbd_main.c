@@ -3081,8 +3081,8 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		break;
 
 	case Data:
-		INFOP("%s (sector %llx, id %s, seq %x, f %x)\n", cmdname(cmd),
-		      (long long)be64_to_cpu(p->Data.sector), 
+		INFOP("%s (sector %llus, id %s, seq %u, f %x)\n", cmdname(cmd),
+		      (unsigned long long)be64_to_cpu(p->Data.sector), 
 		      _dump_block_id(p->Data.block_id,tmp),
 		      be32_to_cpu(p->Data.seq_num),
 		      be32_to_cpu(p->Data.dp_flags)
@@ -3091,8 +3091,8 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case DataReply:
 	case RSDataReply:
-		INFOP("%s (sector %llx, id %s)\n", cmdname(cmd),
-		      (long long)be64_to_cpu(p->Data.sector), 
+		INFOP("%s (sector %llus, id %s)\n", cmdname(cmd),
+		      (unsigned long long)be64_to_cpu(p->Data.sector), 
 		      _dump_block_id(p->Data.block_id,tmp)
 			);
 		break;
@@ -3102,7 +3102,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 	case DiscardAck:
 	case NegAck:
 	case NegRSDReply:
-		INFOP("%s (sector %llx, size %x, id %s, seq %x)\n", cmdname(cmd),
+		INFOP("%s (sector %llus, size %u, id %s, seq %u)\n", cmdname(cmd),
 		      (long long)be64_to_cpu(p->BlockAck.sector), 
 		      be32_to_cpu(p->BlockAck.blksize),
 		      _dump_block_id(p->BlockAck.block_id,tmp),
@@ -3112,7 +3112,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case DataRequest:
 	case RSDataRequest:
-		INFOP("%s (sector %llx, size %x, id %s)\n", cmdname(cmd),
+		INFOP("%s (sector %llus, size %u, id %s)\n", cmdname(cmd),
 		      (long long)be64_to_cpu(p->BlockRequest.sector), 
 		      be32_to_cpu(p->BlockRequest.blksize),
 		      _dump_block_id(p->BlockRequest.block_id,tmp)

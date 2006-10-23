@@ -218,7 +218,7 @@ static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev,u64 id, sector_t sec
 		if ((unsigned long)req == (unsigned long)id) {
 			if (req->sector != sector) {
 				ERR("_ack_id_to_req: found req %p but it has "
-				    "wrong sector (%llx versus %llx)\n", req,
+				    "wrong sector (%llus versus %llus)\n", req,
 				    (unsigned long long)req->sector,
 				    (unsigned long long)sector);
 				break;
@@ -226,7 +226,7 @@ static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev,u64 id, sector_t sec
 			return req;
 		}
 	}
-	ERR("_ack_id_to_req: failed to find req %p, sector %llx in list\n", 
+	ERR("_ack_id_to_req: failed to find req %p, sector %llus in list\n", 
 		(void*)(unsigned long)id, (unsigned long long)sector);
 	return NULL;
 }

@@ -282,8 +282,8 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	e->flags = 0;
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("allocated EE sec=%lld size=%d ee=%p\n",
-		    (long long)sector,data_size,e);
+	       INFO("allocated EE sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)sector,data_size,e);
 	       );
 
 	return e;
@@ -306,8 +306,8 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 	int i;
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("Free EE sec=%lld size=%d ee=%p\n",
-		    (long long)e->sector,e->size,e);
+	       INFO("Free EE sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
 	       );
 
 	__bio_for_each_segment(bvec, bio, i, 0) {
@@ -387,8 +387,8 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 	 */
 	list_for_each_entry_safe(e, t, &work_list, w.list) {
 		MTRACE(TraceTypeEE,TraceLvlAll,
-		       INFO("Process EE on done_ee sec=%lld size=%d ee=%p\n",
-			    (long long)e->sector,e->size,e);
+		       INFO("Process EE on done_ee sec=%llus size=%u ee=%p\n",
+			    (unsigned long long)e->sector,e->size,e);
 			);
 		// list_del not necessary, next/prev members not touched
 		if (e->w.cb(mdev,&e->w,0) == 0) ok = 0;
@@ -1062,8 +1062,8 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	spin_unlock_irq(&mdev->req_lock);
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("submit EE (RS)WRITE sec=%lld size=%d ee=%p\n",
-		    (long long)e->sector,e->size,e);
+	       INFO("submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
 	       );
 	drbd_generic_make_request(WRITE,DRBD_FAULT_RS_WR,e->private_bio);
 	/* accounting done in endio */
@@ -1398,7 +1398,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 						/* only ALERT on first iteration,
 						 * we may be woken up early... */
 						ALERT("%s[%u] Concurrent local write detected!"
-						      "	new: %llu +%d; pending: %llu +%d\n",
+						      "	new: %llus +%u; pending: %llus +%u\n",
 						      current->comm, current->pid,
 						      (unsigned long long)sector, size,
 						      (unsigned long long)i->sector, i->size);
@@ -1412,7 +1412,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 			/* Discard Ack only for the _first_ iteration */
 			if (first && discard && have_unacked) {
-				ALERT("Concurrent write! [DISCARD BY FLAG] sec=%llu\n",
+				ALERT("Concurrent write! [DISCARD BY FLAG] sec=%llus\n",
 				     (unsigned long long)sector);
 				inc_unacked(mdev);
 				mdev->epoch_size++;
@@ -1443,7 +1443,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			if (first) {
 				first = 0;
 				ALERT("Concurrent write! [W AFTERWARDS] "
-				     "sec=%llu\n",(unsigned long long)sector);
+				     "sec=%llus\n",(unsigned long long)sector);
 			} else if (discard) {
 				/* we had none on the first iteration.
 				 * there must be none now. */
@@ -1546,8 +1546,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("submit EE (DATA)WRITE sec=%lld size=%d ee=%p\n",
-		    (long long)e->sector,e->size,e);
+	       INFO("submit EE (DATA)WRITE sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
 	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
 	drbd_generic_make_request(WRITE,DRBD_FAULT_DT_WR,e->private_bio);
@@ -1583,13 +1583,13 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	size   = be32_to_cpu(p->blksize);
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
-		ERR("%s:%d: sector: %lu, size: %d\n", __FILE__, __LINE__,
-				(unsigned long)sector,size);
+		ERR("%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
+				(unsigned long long)sector,size);
 		return FALSE;
 	}
 	if ( sector + (size>>9) > capacity) {
-		ERR("%s:%d: sector: %lu, size: %d\n", __FILE__, __LINE__,
-				(unsigned long)sector,size);
+		ERR("%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
+				(unsigned long long)sector,size);
 		return FALSE;
 	}
 
@@ -1642,8 +1642,8 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	inc_unacked(mdev);
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("submit EE READ sec=%lld size=%d ee=%p\n",
-		    (long long)e->sector,e->size,e);
+	       INFO("submit EE READ sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
 	       );
 	/* FIXME actually, it could be a READA originating from the peer ... */
 	drbd_generic_make_request(READ,fault_type,e->private_bio);
@@ -1964,6 +1964,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		rv = Connected;
 		drbd_bm_lock(mdev);   // {
 		if(drbd_bm_total_weight(mdev)) {
+			/* FIXME for two-primaries this is wrong and may lead
+			 * to diverging data sets! */
 			INFO("No resync -> clearing bit map.\n");
 			drbd_bm_clear_all(mdev);
 			drbd_uuid_set_bm(mdev,0UL);
@@ -2060,7 +2062,7 @@ static void warn_if_differ_considerably(drbd_dev *mdev, const char *s, sector_t 
 	if (a == 0 || b == 0) return;
 	d = (a > b) ? (a - b) : (b - a);
 	if ( d > (a>>3) || d > (b>>3)) {
-		WARN("Considerable difference in %s: %llu vs. %llu\n", s,
+		WARN("Considerable difference in %s: %llus vs. %llus\n", s,
 		     (unsigned long long)a, (unsigned long long)b);
 	}
 }
@@ -3055,7 +3057,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 				break;
 			case DiscardAck:
 				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-				ALERT("Got DiscardAck packet %llu +%u!"
+				ALERT("Got DiscardAck packet %llus +%u!"
 				      " DRBD is not a random data generator!\n",
 				      (unsigned long long)req->sector, req->size);
 				_req_mod(req, conflict_discarded_by_peer);
@@ -3114,7 +3116,9 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 		return FALSE;
 	}
 
-	ERR("Got NegDReply; Sector %llx, len %x; Fail original request.\n",
+	/* FIXME explicitly warn if protocol != C */
+
+	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector,be32_to_cpu(p->blksize));
 
 	_req_mod(req, neg_acked);

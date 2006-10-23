@@ -92,8 +92,8 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	dec_local(mdev);
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("Moved EE (READ) to worker sec=%lld size=%d ee=%p\n",
-		    (long long)e->sector,e->size,e);
+	       INFO("Moved EE (READ) to worker sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
 	       );
 	return 0;
 }
@@ -147,8 +147,8 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	dec_local(mdev);
 
 	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("Moved EE (WRITE) to done_ee sec=%lld size=%d ee=%p\n",
-		    (long long)e->sector,e->size,e);
+	       INFO("Moved EE (WRITE) to done_ee sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
 	       );
 	return 0;
 }
@@ -440,7 +440,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_paused = 0;
 
 	// Remove all elements from the resync LRU. Since future actions
-	// might set bits in the (main) bitmap, then the entries in the 
+	// might set bits in the (main) bitmap, then the entries in the
 	// resync LRU would be wrong.
 	drbd_rs_del_all(mdev);
 
@@ -476,7 +476,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		ok=drbd_send_block(mdev, DataReply, e);
 	} else {
 		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Sending NegDReply. sector=%llx.\n",
+			ERR("Sending NegDReply. sector=%llus.\n",
 			    (unsigned long long)e->sector);
 
 		ok=drbd_send_ack(mdev,NegDReply,e);
@@ -529,7 +529,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		}
 	} else {
 		if (DRBD_ratelimit(5*HZ,5))
-			ERR("Sending NegRSDReply. sector %llx.\n",
+			ERR("Sending NegRSDReply. sector %llus.\n",
 			    (unsigned long long)e->sector);
 
 		ok=drbd_send_ack(mdev,NegRSDReply,e);
@@ -825,7 +825,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	if ( r == SS_Success ) {
 		after_state_ch(mdev,os,ns,ChgStateVerbose);
- 
+
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     conns_to_name(ns.conn),
 		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
