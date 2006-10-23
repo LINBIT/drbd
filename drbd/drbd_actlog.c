@@ -967,7 +967,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	    );
 
 	spin_lock_irq(&mdev->al_lock);
-	if (mdev->resync_wenr != LC_FREE) {
+	if (mdev->resync_wenr != LC_FREE && mdev->resync_wenr != enr) {
 		/* in case you have very heavy scattered io, it may
 		 * stall the syncer undefined if we giveup the ref count
 		 * when we try again and requeue.
@@ -1151,7 +1151,27 @@ void drbd_rs_del_all(drbd_dev* mdev)
 		for(i=0;i<mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 			if(bm_ext->lce.lc_number == LC_FREE) continue;
-			D_ASSERT(bm_ext->lce.refcnt == 0);
+			if(bm_ext->lce.refcnt != 0) {
+				if (bm_ext->lce.refcnt != 1) {
+					ALERT("LOGIC BUG detected in %s:%d\n", __FILE__ , __LINE__ );
+					/* this should not happen. but rather
+					 * have some asserts trigger
+					 * than BUG() in lc_del! */
+					continue;
+				}
+				if (bm_ext->lce.lc_number != mdev->resync_wenr) {
+					ALERT("LOGIC BUG detected in %s:%d\n", __FILE__ , __LINE__ );
+					continue;
+				}
+				INFO("dropping %u in drbd_rs_del_all, "
+				     "aparently got 'synced' by application io\n",
+				     mdev->resync_wenr);
+				D_ASSERT(!test_bit(BME_LOCKED,&bm_ext->flags));
+				D_ASSERT(test_bit(BME_NO_WRITES,&bm_ext->flags));
+				clear_bit(BME_NO_WRITES,&bm_ext->flags);
+				mdev->resync_wenr = LC_FREE;
+				lc_put(mdev->resync,&bm_ext->lce);
+			}
 			D_ASSERT(bm_ext->rs_left == 0);
 			D_ASSERT(!test_bit(BME_LOCKED,&bm_ext->flags));
 			D_ASSERT(!test_bit(BME_NO_WRITES,&bm_ext->flags));
