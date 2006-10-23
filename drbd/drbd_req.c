@@ -644,7 +644,9 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			 * we won't be able to clean them up... */
 			const unsigned long s = req->rq_state;
 			INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
-			     "FIXME", req, rw ? 'W' : 'R',
+			     "FIXME", req,
+			     /* in fact, it can only be a WRITE, but anyways */
+			     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
 			     s & RQ_LOCAL_PENDING ? 'p' : '-',
 			     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
 			     s & RQ_LOCAL_OK ? 'o' : '-',
