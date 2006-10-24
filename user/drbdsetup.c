@@ -690,6 +690,7 @@ struct option *	make_longoptions(struct drbd_option* od)
 
 struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 {
+	if(!od) return NULL;
 	while(od->name) {
 		if(od->short_name == c) return od;
 		od++;
