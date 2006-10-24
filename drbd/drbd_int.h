@@ -778,6 +778,7 @@ struct Drbd_Conf {
 	drbd_state_t new_state_tmp; // Used after attach while negotiating new disk state.
 	drbd_state_t state;
 	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
+	wait_queue_head_t state_wait;  // upon each state change.
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;

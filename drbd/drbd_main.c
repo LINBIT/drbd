@@ -462,7 +462,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 			return rv;
 		}
 
-		wait_event(mdev->cstate_wait,(rv=_req_st_cond(mdev,mask,val)));
+		wait_event(mdev->state_wait,(rv=_req_st_cond(mdev,mask,val)));
 
 		if( rv < SS_Success ) {
 			// nearly dead code.
@@ -758,6 +758,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 	mdev->state.i = ns.i;
 	wake_up(&mdev->cstate_wait);
+	wake_up(&mdev->state_wait);
 
 	/**   post-state-change actions   **/
 	if ( os.conn >= SyncSource   && ns.conn <= Connected ) {
@@ -1969,6 +1970,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->md_sync_timer.data = (unsigned long) mdev;
 
 	init_waitqueue_head(&mdev->cstate_wait);
+	init_waitqueue_head(&mdev->state_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
 	init_waitqueue_head(&mdev->seq_wait);
