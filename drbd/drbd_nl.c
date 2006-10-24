@@ -408,7 +408,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	size = drbd_new_dev_size(mdev,mdev->bc);
 
-	if( drbd_get_capacity(mdev->this_bdev) != size ) {
+	if( drbd_get_capacity(mdev->this_bdev) != size || 
+	    drbd_bm_capacity(mdev) != size ) {
 		int err;
 		err = drbd_bm_resize(mdev,size);
 		if (unlikely(err)) {
