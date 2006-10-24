@@ -52,4 +52,9 @@ extern const char * drbd_buildtag(void);
 // Enable fault insertion code
 //#define DRBD_ENABLE_FAULTS
 
+// RedHat's 2.6.9 kernels have the gfp_t type. Mainline has this feature
+// since 2.6.16. If you build for RedHat enable the line below.
+// #define KERNEL_HAS_GFP_T
+
+
 #endif
