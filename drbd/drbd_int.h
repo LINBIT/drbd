@@ -777,7 +777,7 @@ struct Drbd_Conf {
 
 	drbd_state_t new_state_tmp; // Used after attach while negotiating new disk state.
 	drbd_state_t state;
-	wait_queue_head_t cstate_wait; // TODO Rename into "misc_wait".
+	wait_queue_head_t misc_wait;
 	wait_queue_head_t state_wait;  // upon each state change.
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -1375,14 +1375,14 @@ void drbd_bcast_state(drbd_dev *mdev);
 
 static inline void drbd_state_lock(drbd_dev *mdev)
 {
-	wait_event(mdev->cstate_wait,
+	wait_event(mdev->misc_wait,
 		   !test_and_set_bit(CLUSTER_ST_CHANGE,&mdev->flags));
 }
 
 static inline void drbd_state_unlock(drbd_dev *mdev)
 {
 	clear_bit(CLUSTER_ST_CHANGE,&mdev->flags);
-	wake_up(&mdev->cstate_wait);
+	wake_up(&mdev->misc_wait);
 }
 
 static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
@@ -1618,7 +1618,7 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 #define dec_ap_pending(mdev)	do {				\
 	typecheck(drbd_dev*,mdev);				\
 	if(atomic_dec_and_test(&mdev->ap_pending_cnt))		\
-		wake_up(&mdev->cstate_wait);			\
+		wake_up(&mdev->misc_wait);			\
 	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt); } while (0)
 
 /* counts how many resync-related answers we still expect from the peer
@@ -1665,7 +1665,7 @@ static inline void inc_unacked(drbd_dev* mdev)
 static inline void dec_net(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->net_cnt)) {
-		wake_up(&mdev->cstate_wait);
+		wake_up(&mdev->misc_wait);
 	}
 }
 
@@ -1692,7 +1692,7 @@ static inline int inc_net(drbd_dev* mdev)
 static inline void dec_local(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->local_cnt)) {
-		wake_up(&mdev->cstate_wait);
+		wake_up(&mdev->misc_wait);
 	}
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
@@ -1760,10 +1760,10 @@ static inline void inc_ap_bio(drbd_dev* mdev)
 
 	spin_lock_irq(&mdev->req_lock);
 	while (!__inc_ap_bio_cond(mdev)) {
-		prepare_to_wait(&mdev->cstate_wait,&wait,TASK_UNINTERRUPTIBLE);
+		prepare_to_wait(&mdev->misc_wait,&wait,TASK_UNINTERRUPTIBLE);
 		spin_unlock_irq(&mdev->req_lock);
 		schedule();
-		finish_wait(&mdev->cstate_wait, &wait);
+		finish_wait(&mdev->misc_wait, &wait);
 		spin_lock_irq(&mdev->req_lock);
 	}
 	spin_unlock_irq(&mdev->req_lock);
@@ -1775,7 +1775,7 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
 	D_ASSERT(ap_bio>=0);
-	if (ap_bio < mxb) wake_up(&mdev->cstate_wait);
+	if (ap_bio < mxb) wake_up(&mdev->misc_wait);
 }
 
 static inline int seq_cmp(u32 a, u32 b)

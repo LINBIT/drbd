@@ -253,7 +253,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	drbd_sync_me(mdev);
 
 	/* Wait until nothing is on the fly :) */
-	if ( wait_event_interruptible( mdev->cstate_wait,
+	if ( wait_event_interruptible( mdev->misc_wait,
 			         atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
 		r = GotSignal;
 		goto fail;
@@ -1129,7 +1129,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if( retcode < SS_Success ) goto fail;
 
-	if( wait_event_interruptible( mdev->cstate_wait,
+	if( wait_event_interruptible( mdev->misc_wait,
 				      mdev->state.conn==StandAlone) ) {
 		retcode = GotSignal;
 		goto fail;

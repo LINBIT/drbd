@@ -1368,7 +1368,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		 *       queue (via done_ee) the DiscardAck; OUT.
 		 *
 		 * if any conflicting request is found:
-		 *       block the receiver, waiting on cstate_wait
+		 *       block the receiver, waiting on misc_wait
 		 *       until no more conflicting requests are there,
 		 *       or we get interrupted (disconnect).
 		 *
@@ -1391,7 +1391,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		for(;;) {
 			int have_unacked = 0;
 			int have_conflict = 0;
-			prepare_to_wait(&mdev->cstate_wait,&wait,TASK_INTERRUPTIBLE);
+			prepare_to_wait(&mdev->misc_wait,&wait,TASK_INTERRUPTIBLE);
 			hlist_for_each_entry(i, n, slot, colision) {
 				if (OVERLAPS) {
 					if (first) {
@@ -1426,7 +1426,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 				dec_local(mdev);
 				wake_asender(mdev);
-				finish_wait(&mdev->cstate_wait, &wait);
+				finish_wait(&mdev->misc_wait, &wait);
 				return TRUE;
 			}
 
@@ -1435,7 +1435,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 				spin_unlock_irq(&mdev->req_lock);
 
-				finish_wait(&mdev->cstate_wait, &wait);
+				finish_wait(&mdev->misc_wait, &wait);
 				goto out_interrupted;
 			}
 
@@ -1452,7 +1452,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 			schedule();
 			spin_lock_irq(&mdev->req_lock);
 		}
-		finish_wait(&mdev->cstate_wait, &wait);
+		finish_wait(&mdev->misc_wait, &wait);
 	}
 
 	/* when using TCQ:
@@ -2323,7 +2323,7 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_SyncUUID_Packet *p = (Drbd_SyncUUID_Packet*)h;
 
-	wait_event( mdev->cstate_wait, 
+	wait_event( mdev->misc_wait, 
 		    mdev->state.conn < Connected || mdev->state.conn == WFSyncUUID);
 
 	// D_ASSERT( mdev->state.conn == WFSyncUUID );
@@ -2596,7 +2596,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	mdev->rs_total=0;
 	mdev->rs_failed=0;
 	atomic_set(&mdev->rs_pending_cnt,0);
-	wake_up(&mdev->cstate_wait);
+	wake_up(&mdev->misc_wait);
 
 	/* make sure syncer is stopped and w_resume_next_sg queued */
 	del_timer_sync(&mdev->resync_timer);
@@ -2609,7 +2609,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	set_bit(WORK_PENDING,&mdev->flags);
 	prev_work_done.cb = w_prev_work_done;
 	drbd_queue_work(&mdev->data.work,&prev_work_done);
-	wait_event(mdev->cstate_wait, !test_bit(WORK_PENDING,&mdev->flags));
+	wait_event(mdev->misc_wait, !test_bit(WORK_PENDING,&mdev->flags));
 
 	if ( mdev->p_uuid ) {
 		kfree(mdev->p_uuid);
@@ -2647,7 +2647,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	}
 
 	if(os.conn == Disconnecting) {
-		wait_event( mdev->cstate_wait,atomic_read(&mdev->net_cnt) == 0 );
+		wait_event( mdev->misc_wait,atomic_read(&mdev->net_cnt) == 0 );
 		if(mdev->ee_hash) {
 			kfree(mdev->ee_hash);
 			mdev->ee_hash = NULL;
@@ -2986,7 +2986,7 @@ STATIC int got_RqSReply(drbd_dev *mdev, Drbd_Header* h)
 		ERR("Requested state change failed by peer: %s\n",
 		    set_st_err_name(retcode));
 	}
-	wake_up(&mdev->cstate_wait);
+	wake_up(&mdev->misc_wait);
 
 	return TRUE;
 }

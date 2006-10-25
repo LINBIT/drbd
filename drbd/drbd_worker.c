@@ -558,7 +558,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int w_prev_work_done(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	clear_bit(WORK_PENDING,&mdev->flags);
-	wake_up(&mdev->cstate_wait);
+	wake_up(&mdev->misc_wait);
 	return 1;
 }
 

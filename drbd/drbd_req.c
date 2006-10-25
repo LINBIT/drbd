@@ -179,7 +179,7 @@ void _req_may_be_done(drbd_request_t *req)
 				 * DiscardAck not yet sent by the asender...),
 				 * since we block the receiver thread upon the
 				 * first conflict detection, which will wait on
-				 * cstate_wait.  maybe we want to assert that?
+				 * misc_wait.  maybe we want to assert that?
 				 *
 				 * anyways, if we found one,
 				 * we just have to do a wake_up.  */
@@ -188,7 +188,7 @@ void _req_may_be_done(drbd_request_t *req)
 				slot = ee_hash_slot(mdev,req->sector);
 				hlist_for_each_entry(e, n, slot, colision) {
 					if (OVERLAPS) {
-						wake_up(&mdev->cstate_wait);
+						wake_up(&mdev->misc_wait);
 						break;
 					}
 				}

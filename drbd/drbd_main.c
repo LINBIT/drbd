@@ -757,7 +757,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 #endif
 
 	mdev->state.i = ns.i;
-	wake_up(&mdev->cstate_wait);
+	wake_up(&mdev->misc_wait);
 	wake_up(&mdev->state_wait);
 
 	/**   post-state-change actions   **/
@@ -882,7 +882,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		 * wait_event and inc_ap_bio.
 		 * Note: we may lose connection whilst waiting here.
 		 * no worries though, should work out ok... */
-		wait_event(mdev->cstate_wait,
+		wait_event(mdev->misc_wait,
 			mdev->state.conn != WFBitMapS ||
 			!atomic_read(&mdev->ap_bio_cnt));
 		drbd_bm_lock(mdev);   // {
@@ -998,7 +998,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		/* since inc_local() only works as long as disk>=Inconsistent,
 		   and it is Diskless here, local_cnt can only go down, it can
 		   not increase... It will reach zero */
-		wait_event(mdev->cstate_wait, !atomic_read(&mdev->local_cnt));
+		wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
 		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
 		lc_free(mdev->resync);  mdev->resync = NULL;
@@ -1969,7 +1969,7 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 	mdev->md_sync_timer.function = md_sync_timer_fn;
 	mdev->md_sync_timer.data = (unsigned long) mdev;
 
-	init_waitqueue_head(&mdev->cstate_wait);
+	init_waitqueue_head(&mdev->misc_wait);
 	init_waitqueue_head(&mdev->state_wait);
 	init_waitqueue_head(&mdev->ee_wait);
 	init_waitqueue_head(&mdev->al_wait);
