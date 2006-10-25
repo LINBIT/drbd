@@ -1050,7 +1050,7 @@ int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 {
 	drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
-	printf("%s\n",roles_to_name(state.role));
+	printf("%s/%s\n",roles_to_name(state.role),roles_to_name(state.peer));
 	return 0;
 }
 
