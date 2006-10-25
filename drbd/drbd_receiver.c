@@ -1669,15 +1669,15 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	case Disconnect:
 		break;
 	case DiscardYoungerPri:
-		if (self == 0 && peer == 1) rv = -1;
-		if (self == 1 && peer == 0) rv =  1;
-		D_ASSERT(self != peer);
-		break;
+		if (self == 0 && peer == 1) { rv = -1; break; }
+		if (self == 1 && peer == 0) { rv =  1; break; }
+		/* Else fall through to one of the other strategies... */
 	case DiscardOlderPri:
-		if (self == 0 && peer == 1) rv =  1;
-		if (self == 1 && peer == 0) rv = -1;
-		D_ASSERT(self != peer);
-		break;
+		if (self == 0 && peer == 1) { rv =  1; break; }
+		if (self == 1 && peer == 0) { rv = -1; break; }
+		/* Else fall through to one of the other strategies... */
+		WARN("Discard younger/older primary did not found a decision\n"
+		     "Using discard-least-changes instead\n");
 	case DiscardLeastChg:
 		ch_peer = mdev->p_uuid[UUID_SIZE];
 		ch_self = drbd_bm_total_weight(mdev);
