@@ -1070,7 +1070,7 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 {
 	drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
-	printf("%s\n",disks_to_name(state.disk));
+	printf("%s/%s\n",disks_to_name(state.disk),disks_to_name(state.pdsk));
 	return 0;
 }
 
