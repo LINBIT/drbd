@@ -2986,7 +2986,7 @@ STATIC int got_RqSReply(drbd_dev *mdev, Drbd_Header* h)
 		ERR("Requested state change failed by peer: %s\n",
 		    set_st_err_name(retcode));
 	}
-	wake_up(&mdev->misc_wait);
+	wake_up(&mdev->state_wait);
 
 	return TRUE;
 }
