@@ -193,7 +193,7 @@ typedef enum {
 	SS_NothingToDo=2,
 	SS_Success=1,
 	SS_UnknownError=0, // Used to sleep longer in _drbd_request_state
-	SS_TowPrimaries=-1,
+	SS_TwoPrimaries=-1,
 	SS_NoUpToDateDisk=-2,
 	SS_BothInconsistent=-4,
 	SS_SyncingDiskless=-5,

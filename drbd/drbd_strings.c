@@ -64,7 +64,7 @@ static const char *drbd_disk_s_names[] = {
 };
 
 static const char *drbd_state_sw_errors[] = {
-	[-SS_TowPrimaries] = "Multiple primaries now allowed by config",
+	[-SS_TwoPrimaries] = "Multiple primaries not allowed by config",
 	[-SS_NoUpToDateDisk] = 
 		"Refusing to be Primary without at least one UpToDate disk",
 	[-SS_BothInconsistent] = "Refusing to be inconsistent on both nodes",
@@ -94,6 +94,6 @@ const char* disks_to_name(drbd_disks_t s) {
 
 const char* set_st_err_name(set_st_err_t err) {
 	return err < SS_CW_FailedByPeer ? "TOO_SMALL" :
-	       err > SS_TowPrimaries ? "TOO_LARGE"
+	       err > SS_TwoPrimaries ? "TOO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }

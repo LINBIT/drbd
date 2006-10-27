@@ -541,7 +541,7 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 	if(inc_net(mdev)) {
 		if( !mdev->net_conf->two_primaries &&
 		    ns.role == Primary && ns.peer == Primary ) 
-			rv=SS_TowPrimaries;
+			rv=SS_TwoPrimaries;
 		dec_net(mdev);
 	}
 

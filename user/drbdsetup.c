@@ -721,7 +721,7 @@ int print_config_error( struct drbd_nl_cfg_reply *reply)
 			fprintf(stderr,"State change failed: (%d)"
 				"unknown error.\n", err_no);
 			rv = 11;
-		} else if (err_no > SS_TowPrimaries) {
+		} else if (err_no > SS_TwoPrimaries) {
 			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success... 
 		} else {
 			fprintf(stderr,"State change failed: (%d) %s\n",
