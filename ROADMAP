@@ -239,15 +239,9 @@ DRBD 0.8 Roadmap
 
  Read after write dependencies
 
-  The shared state is available to clusters using protocol C
-  and B. It is not usable with protocol A.
+  The shared mode is available to clusters using protocol C.
+  It is not usable with protocol A or B.
 
-  To support the shared state with protocol B, upon a read
-  request the node has to check if a new version of the block
-  is in the progress of getting written. (== search for it on
-  active_ee and done_ee. [ Since it is on active_ee before the 
-  RecvAck is sent. ] )
-  
  Global write order
 
   [ Description of GFS-mode-arbitration2.pdf ]
@@ -268,6 +262,10 @@ DRBD 0.8 Roadmap
 
     There are many cases in which such concurrent writes would
     lead to different data on our two copies of the block. 
+
+  *** FIXME ***
+  description of algorithm here is out of date,
+  we handle things slightly differently now in the code.
 
   2. Concurrent writes, network latency is lower than disk latency
     As we can see on the left side in figure two this could lead
@@ -543,6 +541,9 @@ DRBD 0.8 Roadmap
   99% DONE. Kernel part is implemented, userland parts are implemented,
 	    --humand and --timeout-expired are removed.
 	    Everything seems to work so far.
+
+  Known issues: we have to define behaviour for two-primaries case,
+  and for connection loss when Primary with local disk != UpToDate.
 
 17 Something like
 
