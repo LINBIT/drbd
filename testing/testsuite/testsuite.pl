@@ -92,6 +92,8 @@ $commands{'set_rs_wr'} = 'echo 4 >/sys/module/drbd/parameters/enable_faults';
 $commands{'set_rs_rd'} = 'echo 8 >/sys/module/drbd/parameters/enable_faults';
 $commands{'set_dt_wr'} = 'echo 16 >/sys/module/drbd/parameters/enable_faults';
 $commands{'set_dt_rd'} = 'echo 32 >/sys/module/drbd/parameters/enable_faults';
+$commands{'fault_ct'} = 'cat /sys/module/drbd/parameters/fault_count';
+$commands{'clear_fault_ct'} = 'echo 0 >/sys/module/drbd/parameters/fault_count';
 
 ###############################################################################
 

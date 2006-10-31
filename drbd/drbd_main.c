@@ -101,8 +101,10 @@ module_param(disable_bd_claim,bool,0);
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults = 0;
 int fault_rate;
+int fault_count;
 module_param(enable_faults,int,0664);	// bitmap of enabled faults
 module_param(fault_rate,int,0664);	// fault rate % value - applies to all enabled faults
+module_param(fault_count,int,0664);	// count of faults inserted
 #endif
 
 // module parameter, defined
@@ -2830,30 +2832,34 @@ _drbd_fault_random(struct fault_random_state *rsp)
 
 STATIC char *
 _drbd_fault_str(unsigned int type) {
-    static char *_faults[] = {
-	"Meta-data write",
-	"Meta-data read",
-	"Resync write",
-	"Resync read",
-	"Data write",
-	"Data read",
-    };
+	static char *_faults[] = {
+		"Meta-data write",
+		"Meta-data read",
+		"Resync write",
+		"Resync read",
+		"Data write",
+		"Data read",
+	};
 
-    return (type < DRBD_FAULT_MAX)? _faults[type] : "**Unknown**";
+	return (type < DRBD_FAULT_MAX)? _faults[type] : "**Unknown**";
 }
 
 unsigned int
 _drbd_insert_fault(unsigned int type)
 {
-    static struct fault_random_state rrs = {0,0};
+	static struct fault_random_state rrs = {0,0};
 
-    unsigned int rnd = ((_drbd_fault_random(&rrs) % 100) + 1);
-    unsigned int ret = (rnd <= fault_rate);
+	unsigned int rnd = ((_drbd_fault_random(&rrs) % 100) + 1);
+	unsigned int ret = (rnd <= fault_rate);
 
-    if (ret && printk_ratelimit())
-	    printk(KERN_ALERT "Simulating %s failure\n", _drbd_fault_str(type));
+	if (ret) {
+		fault_count++;
 
-    return ret;
+		if (printk_ratelimit())
+			printk(KERN_ALERT "Simulating %s failure\n", _drbd_fault_str(type));
+	}
+
+	return ret;
 }
 #endif
 

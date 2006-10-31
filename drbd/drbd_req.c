@@ -84,7 +84,9 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 	     s & RQ_NET_SENT ? 's' : '-',
 	     s & RQ_NET_DONE ? 'd' : '-',
 	     s & RQ_NET_OK ? 'o' : '-',
-	     req->epoch, req->sector, req->size,
+	     req->epoch, 
+	     (unsigned long long)req->sector, 
+	     req->size,
 	     conns_to_name(mdev->state.conn));
 }
 
@@ -655,7 +657,9 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 			     s & RQ_NET_SENT ? 's' : '-',
 			     s & RQ_NET_DONE ? 'd' : '-',
 			     s & RQ_NET_OK ? 'o' : '-',
-			     req->epoch, req->sector, req->size,
+			     req->epoch, 
+			     (unsigned long long)req->sector, 
+			     req->size,
 			     conns_to_name(mdev->state.conn));
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
