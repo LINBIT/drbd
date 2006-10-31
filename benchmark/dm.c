@@ -34,6 +34,7 @@
 #include <sys/time.h>
 #include <getopt.h>
 #include <string.h>
+#include <errno.h>
 
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
 
@@ -70,15 +71,18 @@ unsigned long long m_strtol(const char *s)
 	switch (*e) {
 	case 0:
 		return r;
+	case 's':
+	case 'S':
+		return r << 9; // * 512;
 	case 'K':
 	case 'k':
-		return r * 1024;
+		return r << 10; // * 1024;
 	case 'M':
 	case 'm':
-		return r * 1024 * 1024;
+		return r << 20; // * 1024 * 1024;
 	case 'G':
 	case 'g':
-		return r * 1024 * 1024 * 1024;
+		return r << 30; // * 1024 * 1024 * 1024;
 	default:
 		fprintf(stderr, "%s is not a valid number\n", s);
 		exit(20);
@@ -96,6 +100,9 @@ void usage(char *prgname)
 		"   --seek-input val    -k val\n"
 		"   --seek-output val   -l val\n"
 		"   --size val          -s val\n"
+		"   --o_direct          -x\n"
+		"     should be given first to affect\n"
+	        "     -i/-o given later on the command line\n"
 		"   --sync              -y\n"
 		"   --progress          -m\n"
 		"   --performance       -p\n"
@@ -107,13 +114,14 @@ void usage(char *prgname)
 
 int main(int argc, char **argv)
 {
-	char *buffer;
+	void *buffer;
 	size_t rr, ww;
 	unsigned long long seek_offs_i = 0;
 	unsigned long long seek_offs_o = 0;
 	unsigned long long size = -1, rsize;
 	int in_fd = 0, out_fd = 1;
 	unsigned long buffer_size = 65536;
+	int o_direct = 0;
 	int do_sync = 0;
 	int show_progress = 0;
 	int show_performance = 0;
@@ -132,6 +140,7 @@ int main(int argc, char **argv)
 		{"seek-input", required_argument, 0, 'k'},
 		{"seek-output", required_argument, 0, 'l'},
 		{"size", required_argument, 0, 's'},
+		{"o_direct", no_argument, 0, 'x'},
 		{"sync", no_argument, 0, 'y'},
 		{"progress", no_argument, 0, 'm'},
 		{"performance", no_argument, 0, 'p'},
@@ -141,13 +150,18 @@ int main(int argc, char **argv)
 		{0, 0, 0, 0}
 	};
 
+	if (argc == 1)
+		usage(argv[0]);
+
 	while (1) {
-		c = getopt_long(argc, argv, "i:o:b:k:l:s:ympha:dw", options, 0);
+		c = getopt_long(argc, argv, "i:o:b:k:l:s:xympha:dw", options, 0);
 		if (c == -1)
 			break;
 		switch (c) {
 		case 'i':
-			in_fd = open(optarg, O_RDONLY);
+			/* make sure you specify -x before -i,
+			 * if you mean to use O_DIRECT here! */
+			in_fd = open(optarg, O_RDONLY | (o_direct ? O_DIRECT : 0));
 			if (in_fd == -1) {
 				fprintf(stderr,
 					"Can not open input file/device\n");
@@ -156,7 +170,8 @@ int main(int argc, char **argv)
 			break;
 		case 'o':
 			out_fd =
-			    open(optarg, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+			    open(optarg, O_WRONLY | O_CREAT | O_TRUNC |
+					 (o_direct? O_DIRECT : 0) , 0664);
 			if (out_fd == -1) {
 				fprintf(stderr,
 					"Can not open output file/device\n");
@@ -174,6 +189,9 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			size = m_strtol(optarg);
+			break;
+		case 'x':
+			o_direct = 1;
 			break;
 		case 'y':
 			do_sync = 1;
@@ -200,7 +218,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	buffer = malloc(buffer_size);
+	(void)posix_memalign(&buffer, sysconf(_SC_PAGESIZE), buffer_size);
 	if (!buffer) {
 		fprintf(stderr, "Can not allocate the Buffer memory\n");
 		exit(20);
@@ -232,6 +250,10 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Can not determine the size\n");
 			exit(20);
 		}
+		if (size == 0) {
+			fprintf(stderr, "Nothing to do?\n");
+			exit(20);
+		}
 	}
 
 	if (show_input_size) {
@@ -256,6 +278,11 @@ int main(int argc, char **argv)
 		if (rr == 0)
 			break;
 		if (rr == -1) {
+			if (errno == EINVAL && o_direct) {
+				fprintf(stderr,
+				"either leave off --o_direct,"
+				" or fix the alignment of the buffer/size/offset!\n");
+			}
 			perror("Read failed");
 			break;
 		}
@@ -267,6 +294,11 @@ int main(int argc, char **argv)
 
 		ww = write(out_fd, buffer, rr);
 		if (ww == -1) {
+			if (errno == EINVAL && o_direct) {
+				fprintf(stderr,
+				"either leave off --o_direct,"
+				" or fix the alignment of the buffer/size/offset!\n");
+			}
 			perror("Write failed");
 			break;
 		}
@@ -275,8 +307,7 @@ int main(int argc, char **argv)
 			int new_percentage =
 			    (int)(100.0 * (size - rsize) / size);
 			if (new_percentage != last_percentage) {
-				printf("%2d\n",
-				       (int)(100.0 * (size - rsize) / size));
+				printf("\r%3d", new_percentage);
 				fflush(stdout);
 				last_percentage = new_percentage;
 			}
@@ -290,7 +321,7 @@ int main(int argc, char **argv)
 
 	gettimeofday(&tv2, NULL);
 
-	if (show_progress)
+	if (show_progress || dialog)
 		printf("\n");
 
 	if (show_performance) {
