@@ -123,8 +123,7 @@ struct drbd_cmd {
 
 
 // Connector functions
-#define NL_TRIES 5
-#define NL_TIME 5000
+#define NL_TIME 10000
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
 int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
@@ -1573,21 +1572,18 @@ int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hd
 int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
 		     int size, int timeout_ms)
 {
-	int i,rr;
+	int rr;
 	prepare_nl_header(tl->nl_header, (char*)tl->tag_list_cpos - 
 			  (char*)tl->nl_header);
 
-	for(i=0;i<NL_TRIES;i++) {
-		rr = send(sk_nl,tl->nl_header,tl->nl_header->nlmsg_len,0);
-		if( rr != (ssize_t)tl->nl_header->nlmsg_len) {
-			perror("send() failed");
-			return -1;
-		}
-
-		rr = receive_reply_cn(sk_nl,tl,nl_hdr,size,timeout_ms/NL_TRIES);
-		if( rr == -2 ) continue; // timeout.
-		return rr;
+	rr = send(sk_nl,tl->nl_header,tl->nl_header->nlmsg_len,0);
+	if( rr != (ssize_t)tl->nl_header->nlmsg_len) {
+		perror("send() failed");
+		return -1;
 	}
+
+	rr = receive_reply_cn(sk_nl,tl,nl_hdr,size,timeout_ms);
+
 	if( rr == -2) {
 		fprintf(stderr,"No response from the DRBD driver!"
 			" Is the module loaded?\n");
