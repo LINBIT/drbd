@@ -4,6 +4,15 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0pre6 (api:85/proto:85)
+--------
+ * All panic() calls where removed from DRBD.
+ * IO errors while accessing the backing storage device are now handled
+   correct.
+ * Conflict detection for two primaries is in place and tested.
+ * More tracing stuff
+ * Lots of bugs found and fixed
+
 8.0pre5 (api:84/proto:83)
 --------
  * The request code was completely rewritten.
