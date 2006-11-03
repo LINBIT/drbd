@@ -193,7 +193,7 @@ uname -r | grep BOOT ||
 %changelog
 
 * Fri Nov  3 2006 15:20:54 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0pre5-1)
+- drbd (8.0pre6-1)
  * All panic() calls where removed from DRBD.
  * IO errors while accessing the backing storage device are now handled
    correct.
