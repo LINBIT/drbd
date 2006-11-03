@@ -1308,16 +1308,20 @@ int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	const char** handlers;
-	int i, chars=0;
+	int i, chars=0,first=1;
 
-	chars += snprintf(str,strlen," [{--%s|-%c}",
+	chars += snprintf(str,strlen," [{--%s|-%c} {",
 			  option->name, option->short_name);
 	handlers = option->handler_param.handler_names;
 	for(i=0;i<option->handler_param.number_of_handlers;i++) {
-		if(handlers[i]) chars += snprintf(str+chars,strlen,
-						  " %s",handlers[i]);
+		if(handlers[i]) {
+			if(!first) chars += snprintf(str+chars,strlen,"|");
+			first=0;
+			chars += snprintf(str+chars,strlen,
+					  "%s",handlers[i]);
+		}
 	}
-	chars += snprintf(str+chars,strlen,"]");
+	chars += snprintf(str+chars,strlen,"}]");
 	return chars;
 }
 
