@@ -567,11 +567,12 @@ DRBD 0.8 Roadmap
    the config is valid, from a viewpoint of the whole cluster.
    E.g.
    protocol				equal
-   cram-hmac-alg			equal
    after-sb-0pri / discard-local/remote	equal / reciprocal
    after-sb-1pri			equal
    after-sb-2pri			equal
-   syncer/group				equal
+   want_lose				reciprocal
+   two_primaries			equal
+  99% DONE
 
 21 Write barriers in the kernel
   In Linux-2.6 write barriers in the block-io layer are represented as

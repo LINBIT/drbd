@@ -474,6 +474,11 @@ typedef struct {
 typedef struct {
 	Drbd_Header head;
 	u32         protocol;
+	u32         after_sb_0p;
+	u32         after_sb_1p;
+	u32         after_sb_2p;
+	u32         want_lose;
+	u32         two_primaries;
 } __attribute((packed)) Drbd_Protocol_Packet;
 
 typedef struct {

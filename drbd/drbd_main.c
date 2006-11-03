@@ -1260,7 +1260,12 @@ int drbd_send_protocol(drbd_dev *mdev)
 {
 	Drbd_Protocol_Packet p;
 
-	p.protocol = cpu_to_be32(mdev->net_conf->wire_protocol);
+	p.protocol      = cpu_to_be32(mdev->net_conf->wire_protocol);
+	p.after_sb_0p   = cpu_to_be32(mdev->net_conf->after_sb_0p);
+	p.after_sb_1p   = cpu_to_be32(mdev->net_conf->after_sb_1p);
+	p.after_sb_2p   = cpu_to_be32(mdev->net_conf->after_sb_2p);
+	p.want_lose     = cpu_to_be32(mdev->net_conf->want_lose);
+	p.two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
 
 	return drbd_send_cmd(mdev,USE_DATA_SOCKET,ReportProtocol,
 			     (Drbd_Header*)&p,sizeof(p));

@@ -1978,32 +1978,77 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	return rv;
 }
 
+/* returns 1 if invalid */
+STATIC int cmp_after_sb(enum after_sb_handler peer, enum after_sb_handler self)
+{
+	// DiscardRemote - DiscardLocal is valid
+	if( (peer == DiscardRemote && self == DiscardLocal) ||
+	    (self == DiscardRemote && peer == DiscardLocal) ) return 0;
+
+	// any other things with DiscardRemote or DiscardLocal are invalid
+	if( peer == DiscardRemote || peer == DiscardLocal ||
+	    self == DiscardRemote || self == DiscardLocal ) return 1;
+	
+	// everything else is valid if they are equal on both sides.
+	if( peer == self ) return 0;
+
+	// everything es is invalid.
+	return 1;
+}
+
 STATIC int receive_protocol(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Protocol_Packet *p = (Drbd_Protocol_Packet*)h;
+
+	int p_proto, p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
+	int p_want_lose, p_two_primaries;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	if(be32_to_cpu(p->protocol)!=mdev->net_conf->wire_protocol) {
-		int peer_proto = be32_to_cpu(p->protocol);
-		if (DRBD_PROT_A <= peer_proto && peer_proto <= DRBD_PROT_C) {
-			ERR("incompatible communication protocols: "
-			    "me %c, peer %c\n",
-				'A'-1+mdev->net_conf->wire_protocol,
-				'A'-1+peer_proto);
-		} else {
-			ERR("incompatible communication protocols: "
-			    "me %c, peer [%d]\n",
-				'A'-1+mdev->net_conf->wire_protocol,
-				peer_proto);
-		}
-		drbd_force_state(mdev,NS(conn,Disconnecting));
-		return FALSE;
+	p_proto         = be32_to_cpu(p->protocol);
+	p_after_sb_0p   = be32_to_cpu(p->after_sb_0p);
+	p_after_sb_1p   = be32_to_cpu(p->after_sb_1p);
+	p_after_sb_2p   = be32_to_cpu(p->after_sb_2p);
+	p_want_lose     = be32_to_cpu(p->want_lose);
+	p_two_primaries = be32_to_cpu(p->two_primaries);
+
+	if( p_proto != mdev->net_conf->wire_protocol) {
+		ERR("incompatible communication protocols\n");
+		goto disconnect;
+	}
+
+	if( cmp_after_sb(p_after_sb_0p, mdev->net_conf->after_sb_0p) ) {
+		ERR("incompatible after-sb-0pri settings\n");
+		goto disconnect;
+	}
+
+	if( cmp_after_sb(p_after_sb_1p, mdev->net_conf->after_sb_1p) ) {
+		ERR("incompatible after-sb-1pri settings\n");
+		goto disconnect;
+	}
+
+	if( cmp_after_sb(p_after_sb_2p, mdev->net_conf->after_sb_2p) ) {
+		ERR("incompatible after-sb-2pri settings\n");
+		goto disconnect;
+	}
+
+	if( p_want_lose && mdev->net_conf->want_lose ) {
+		ERR("both sides have the 'want_lose' flag set\n");
+		goto disconnect;
+	}
+
+	if( p_two_primaries != mdev->net_conf->two_primaries ) {
+		ERR("incompatible setting of the two-primaries options\n");
+		goto disconnect;
 	}
 
 	return TRUE;
+
+ disconnect:
+	drbd_force_state(mdev,NS(conn,Disconnecting));
+	return FALSE;
 }
 
 STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
