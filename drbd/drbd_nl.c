@@ -115,11 +115,51 @@ name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 	tags = (unsigned short*)((char*)tags + arg->member ## _len);
 #include "linux/drbd_nl.h"
 
-
 extern void drbd_init_set_defaults(drbd_dev *mdev);
 void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
+char *nl_packet_name(int packet_type) {
+// Generate packet type strings
+#define PACKET(name, number, fields) \
+	[ P_ ## name ] = # name,
+#define INTEGER Argh!
+#define BIT Argh!
+#define INT64 Argh!
+#define STRING Argh!
+
+	static char *nl_tag_name[P_nl_after_last_packet] = {
+#include "linux/drbd_nl.h"
+	};
+
+	return (packet_type < sizeof(nl_tag_name)/sizeof(nl_tag_name[0])) ?
+	    nl_tag_name[packet_type] : "*Unknown*";
+}
+
+void nl_trace_packet(void *data) {
+	struct cn_msg *req = data;
+	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
+
+	printk(KERN_INFO DEVICE_NAME "%d: " 
+	       "Netlink: << %s (%d) - seq: %x, ack: %x, len: %x\n",
+	       nlp->drbd_minor,
+	       nl_packet_name(nlp->packet_type),
+	       nlp->packet_type,
+	       req->seq, req->ack, req->len);
+}
+
+void nl_trace_reply(void *data) {
+	struct cn_msg *req = data;
+	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply*)req->data;
+
+	printk(KERN_INFO DEVICE_NAME "%d: " 
+	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
+	       nlp->minor,
+	       nlp->packet_type==P_nl_after_last_packet? 
+	           "Empty-Reply" : nl_packet_name(nlp->packet_type),
+	       nlp->packet_type,
+	       req->seq, req->ack, req->len);
+}
 
 int drbd_khelper(drbd_dev *mdev, char* cmd)
 {
@@ -1508,6 +1548,8 @@ void drbd_connector_callback(void *data)
 		goto fail;
 	}
 
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_packet(data););
+
 	if( nlp->packet_type >= P_nl_after_last_packet ) {
 		retcode=UnknownNetLinkPacket;
 		goto fail;
@@ -1534,6 +1576,8 @@ void drbd_connector_callback(void *data)
 	cn_reply->ack = req->ack  + 1;
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + rr;
 	cn_reply->flags = 0;
+
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if(rr && rr != -ESRCH) {
@@ -1577,6 +1621,8 @@ void drbd_bcast_state(drbd_dev *mdev)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NoError;
 
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
+
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
@@ -1612,6 +1658,8 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 	reply->packet_type = P_call_helper;
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NoError;
+
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
 
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
@@ -1669,6 +1717,8 @@ void drbd_nl_send_reply( struct cn_msg *req,
 
 	reply->minor = ((struct drbd_nl_cfg_req *)req->data)->drbd_minor;
 	reply->ret_code = ret_code;
+
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if(rr && rr != -ESRCH) {
