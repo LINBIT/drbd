@@ -200,6 +200,7 @@ enum {
     DRBD_FAULT_RS_RD,
     DRBD_FAULT_DT_WR,
     DRBD_FAULT_DT_RD,
+    DRBD_FAULT_DT_RA,  // READA = Read ahead
 
     DRBD_FAULT_MAX,
 };

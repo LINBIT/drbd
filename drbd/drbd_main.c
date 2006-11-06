@@ -230,7 +230,7 @@ void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 	 * master_bio's could already been completed.  */
 	list_for_each_safe(le, tle, &b->requests) {
 		r = list_entry(le, struct drbd_request,tl_requests);
-		_req_mod(r, barrier_acked);
+		_req_mod(r, barrier_acked, 0);
 	}
 	list_del(&b->requests);
 	/* There could be requests on the list waiting for completion
@@ -273,7 +273,7 @@ void tl_clear(drbd_dev *mdev)
 
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request,tl_requests);
-			_req_mod(r, connection_lost_while_pending);
+			_req_mod(r, connection_lost_while_pending, 0);
 		}
 		tmp = b->next;
 
@@ -2844,6 +2844,7 @@ _drbd_fault_str(unsigned int type) {
 		"Resync read",
 		"Data write",
 		"Data read",
+		"Data read ahead",
 	};
 
 	return (type < DRBD_FAULT_MAX)? _faults[type] : "**Unknown**";

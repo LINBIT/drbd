@@ -291,15 +291,15 @@ static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 
 /* aparently too large to be inlined...
  * moved to drbd_req.c */
-extern void _req_may_be_done(drbd_request_t *req);
-extern void _req_mod(drbd_request_t *req, drbd_req_event_t what);
+extern void _req_may_be_done(drbd_request_t *req, int error);
+extern void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error);
 
 /* If you need it irqsave, do it your self! */
-static inline void req_mod(drbd_request_t *req, drbd_req_event_t what)
+static inline void req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 {
 	drbd_dev *mdev = req->mdev;
 	spin_lock_irq(&mdev->req_lock);
-	_req_mod(req,what);
+	_req_mod(req,what,error);
 	spin_unlock_irq(&mdev->req_lock);
 }
 #endif

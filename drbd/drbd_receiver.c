@@ -1108,7 +1108,7 @@ STATIC int receive_DataReply(drbd_dev *mdev,Drbd_Header* h)
 	 * still no race with drbd_fail_pending_reads */
 	ok = recv_dless_read(mdev,req,sector,data_size);
 
-	if (ok) req_mod(req, data_received);
+	if (ok) req_mod(req, data_received, 0);
 	/* else: nothing. handled from drbd_disconnect...
 	 * I don't think we may complete this just yet
 	 * in case we are "on-disconnect: freeze" */
@@ -2583,7 +2583,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 		req = list_entry(le, drbd_request_t, w.list);
 		list_del(le);
 
-		_req_mod(req, connection_lost_while_pending);
+		_req_mod(req, connection_lost_while_pending, 0);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 }
@@ -3096,18 +3096,18 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 			switch (be16_to_cpu(h->command)) {
 			case WriteAck:
 				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-				_req_mod(req,write_acked_by_peer);
+				_req_mod(req,write_acked_by_peer,0);
 				break;
 			case RecvAck:
 				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_A);
-				_req_mod(req,recv_acked_by_peer);
+				_req_mod(req,recv_acked_by_peer,0);
 				break;
 			case DiscardAck:
 				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
 				ALERT("Got DiscardAck packet %llus +%u!"
 				      " DRBD is not a random data generator!\n",
 				      (unsigned long long)req->sector, req->size);
-				_req_mod(req, conflict_discarded_by_peer);
+				_req_mod(req, conflict_discarded_by_peer, 0);
 				break;
 			default:
 				D_ASSERT(0);
@@ -3168,7 +3168,7 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector,be32_to_cpu(p->blksize));
 
-	_req_mod(req, neg_acked);
+	_req_mod(req, neg_acked, 0);
 	spin_unlock_irq(&mdev->req_lock);
 
 // warning LGE "ugly and wrong"

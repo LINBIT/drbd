@@ -103,7 +103,7 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 #define print_req_mod(T,W)
 #endif
 
-void _req_may_be_done(drbd_request_t *req)
+void _req_may_be_done(drbd_request_t *req, int error)
 {
 	const unsigned long s = req->rq_state;
 	drbd_dev *mdev = req->mdev;
@@ -207,7 +207,8 @@ void _req_may_be_done(drbd_request_t *req)
 		 * then again, if it is a READ, it is not in the TL at all.
 		 * is it still leagal to complete a READ during freeze? */
 		dump_bio(mdev,req->master_bio,1);
-		bio_endio(req->master_bio, req->master_bio->bi_size, ok ? 0 : -EIO);
+		bio_endio(req->master_bio, req->master_bio->bi_size, 
+			  ok ? 0 : ( error ? error : -EIO ) );
 		req->master_bio = NULL;
 		dec_ap_bio(mdev);
 	} else {
@@ -389,10 +390,14 @@ STATIC int _req_conflicts(drbd_request_t *req)
  * Though I think it is likely that we break this again into many
  * static inline void _req_mod_ ## what (req) ...
  */
-void _req_mod(drbd_request_t *req, drbd_req_event_t what)
+void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 {
 	drbd_dev *mdev = req->mdev;
 	MUST_HOLD(&mdev->req_lock);
+
+	if (error && ( bio_rw(req->master_bio) != READA ) ) {
+		ERR("got an _req_mod() errno of %d\n",error);
+	}
 
 	print_req_mod(req,what);
 
@@ -437,7 +442,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		_req_may_be_done(req);
+		_req_may_be_done(req,error);
 		break;
 
 	case write_completed_with_error:
@@ -452,20 +457,24 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		/* and now: check how to handle local io error.
 		 * FIXME see comment below in read_completed_with_error */
 		__drbd_chk_io_error(mdev,FALSE);
-		_req_may_be_done(req);
+		_req_may_be_done(req,error);
 		break;
 
 	case read_completed_with_error:
-		drbd_set_out_of_sync(mdev,req->sector,req->size);
+		if (bio_rw(req->master_bio) != READA) {
+			drbd_set_out_of_sync(mdev,req->sector,req->size);
+		}
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
 		dec_local(mdev);
-		if (bio_rw(req->master_bio) == READA)
+		if (bio_rw(req->master_bio) == READA) {
 			/* it is legal to fail READA */
+			_req_may_be_done(req,error);
 			break;
+		}
 		/* else */
 		ALERT("Local READ failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
@@ -558,7 +567,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		req->rq_state &= ~RQ_NET_QUEUED;
 		/* if we did it right, tl_clear should be scheduled only after this,
 		 * so this should not be necessary! */
-		_req_may_be_done(req);
+		_req_may_be_done(req,error);
 		break;
 
 	case handed_over_to_network:
@@ -589,7 +598,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		 * "completed_ok" events came in, once we return from
 		 * _drbd_send_zc_bio (drbd_send_dblock), we have to check
 		 * whether it is done already, and end it.  */
-		_req_may_be_done(req);
+		_req_may_be_done(req,error);
 		break;
 
 	case connection_lost_while_pending:
@@ -602,7 +611,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		 * it will be canceled soon.
 		 * FIXME we should change the code so this can not happen. */
 		if (!(req->rq_state & RQ_NET_QUEUED))
-			_req_may_be_done(req);
+			_req_may_be_done(req,error);
 		break;
 
 	case conflict_discarded_by_peer:
@@ -621,7 +630,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
 		if (req->rq_state & RQ_NET_SENT)
-			_req_may_be_done(req);
+			_req_may_be_done(req,error);
 		/* else: done by handed_over_to_network */
 		break;
 
@@ -632,7 +641,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		/* FIXME THINK! is it DONE now, or is it not? */
 		req->rq_state |= RQ_NET_DONE;
 		if (req->rq_state & RQ_NET_SENT)
-			_req_may_be_done(req);
+			_req_may_be_done(req,error);
 		/* else: done by handed_over_to_network */
 		break;
 
@@ -664,7 +673,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;
-		_req_may_be_done(req);
+		_req_may_be_done(req,error);
 		break;
 
 	case data_received:
@@ -675,7 +684,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what)
 		/* can it happen that we receive the DataReply
 		 * before the send DataRequest function returns? */
 		if (req->rq_state & RQ_NET_SENT)
-			_req_may_be_done(req);
+			_req_may_be_done(req,error);
 		/* else: done by handed_over_to_network */
 		break;
 	};
@@ -924,8 +933,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 	/* mark them early for readability.
 	 * this just sets some state flags. */
-	if (remote) _req_mod(req, to_be_send);
-	if (local)  _req_mod(req, to_be_submitted);
+	if (remote) _req_mod(req, to_be_send, 0);
+	if (local)  _req_mod(req, to_be_submitted, 0);
 
 	/* check this request on the colison detection hash tables.
 	 * if we have a conflict, just complete it here.
@@ -961,8 +970,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		if (rw == WRITE) _req_mod(req,queue_for_net_write);
-		else		 _req_mod(req,queue_for_net_read);
+		if (rw == WRITE) _req_mod(req,queue_for_net_write, 0);
+		else		 _req_mod(req,queue_for_net_read, 0);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 	if (b) kfree(b); /* if someone else has beaten us to it... */
@@ -972,7 +981,9 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
-		if (FAULT_ACTIVE(rw==WRITE? DRBD_FAULT_DT_WR : DRBD_FAULT_DT_RD))
+		if (FAULT_ACTIVE(rw==WRITE ? DRBD_FAULT_DT_WR : 
+				 ( rw==READ ? DRBD_FAULT_DT_RD : 
+				   DRBD_FAULT_DT_RA ) ))
 			bio_endio(req->private_bio, req->private_bio->bi_size, -EIO);
 		else
 			generic_make_request(req->private_bio);

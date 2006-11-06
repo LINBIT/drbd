@@ -165,8 +165,6 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	// see above
 	if (bio->bi_size) return 1;
 
-	if(error) DUMPI(error);
-
 	/* to avoid recursion in _req_mod */
 	what = error
 	       ? (bio_data_dir(bio) == WRITE)
@@ -174,7 +172,7 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	         : read_completed_with_error
 	       : completed_ok;
 	spin_lock_irqsave(&mdev->req_lock,flags);
-	_req_mod(req, what);
+	_req_mod(req, what, error);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 	return 0;
 }
@@ -211,7 +209,7 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	if ( cancel ||
 	     mdev->state.conn < Connected ||
 	     mdev->state.pdsk <= Inconsistent ) {
-		_req_mod(req, send_canceled); /* FIXME freeze? ... */
+		_req_mod(req, send_canceled, 0); /* FIXME freeze? ... */
 		spin_unlock_irq(&mdev->req_lock);
 		drbd_khelper(mdev,"pri-on-incon-degr"); /* FIXME REALLY? */
 		ALERT("WE ARE LOST. Local IO failure, no peer.\n");
@@ -607,12 +605,12 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	int ok;
 
 	if (unlikely(cancel)) {
-		req_mod(req, send_canceled);
+		req_mod(req, send_canceled, 0);
 		return 1;
 	}
 
 	ok = drbd_send_dblock(mdev,req);
-	req_mod(req,ok ? handed_over_to_network : send_failed);
+	req_mod(req,ok ? handed_over_to_network : send_failed, 0);
 
 	return ok;
 }
@@ -626,7 +624,7 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	int ok;
 
 	if (unlikely(cancel)) {
-		req_mod(req, send_canceled);
+		req_mod(req, send_canceled, 0);
 		return 1;
 	}
 
@@ -634,7 +632,7 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 				(unsigned long)req);
 
 	if(ok) {
-		req_mod(req, handed_over_to_network);
+		req_mod(req, handed_over_to_network, 0);
 	} else {
 		/* ?? we set Timeout or BrokenPipe in drbd_send() */
 		if (mdev->state.conn >= Connected) 
