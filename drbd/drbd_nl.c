@@ -1163,8 +1163,14 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 						      pdsk,Outdated));
 	} else if (retcode == SS_CW_FailedByPeer) {
 		// The peer probabely wants to see us outdated.
-		retcode = drbd_request_state(mdev,NS2(conn,Disconnecting,
-						      disk,Outdated));
+		retcode = _drbd_request_state(mdev,NS2(conn,Disconnecting,
+						       disk,Outdated),0);
+		if( retcode == SS_CanNotOutdateDL ) {
+			// We are diskless and our peer wants to outdate us.
+			// So, simply go away, and let the peer try to
+			// outdate us with its 'outdate-peer' handler later.
+			retcode = drbd_request_state(mdev,NS(conn,StandAlone));
+		}
 	}
 
 	if( retcode < SS_Success ) goto fail;

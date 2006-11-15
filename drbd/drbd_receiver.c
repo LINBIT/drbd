@@ -316,7 +316,7 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 
 	bio_put(bio);
 
-	BUG_ON(!hlist_unhashed(&e->colision));
+	D_ASSERT(hlist_unhashed(&e->colision));
 
 	mempool_free(e, drbd_ee_mempool);
 }
@@ -422,6 +422,7 @@ void _drbd_clear_done_ee(drbd_dev *mdev)
 		   is_syncer_block_id(e->block_id)) {
 			++n;
 		}
+		if(!hlist_unhashed(&e->colision)) hlist_del_init(&e->colision);
 		drbd_free_ee(mdev,e);
 	}
 
@@ -1305,7 +1306,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write mirrored data block to local disk.\n");
 		drbd_send_ack_dp(mdev,NegAck,p);
-		return TRUE;
+		mdev->epoch_size++; // spin lock ?
+		return drbd_drain_block(mdev,data_size);
 	}
 
 	sector = be64_to_cpu(p->sector);
@@ -2315,7 +2317,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	peer_state.i = be32_to_cpu(p->state);
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && 
-	    inc_local_if_state(mdev,Negotiating) ) {
+	    inc_local_if_state(mdev,Negotiating) && 
+	    peer_state.disk >= Negotiating) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
 
@@ -3127,16 +3130,14 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BlockAck_Packet *p = (Drbd_BlockAck_Packet*)h;
+	sector_t sector = be64_to_cpu(p->sector);
+	drbd_request_t *req;
 
 	if (DRBD_ratelimit(5*HZ,5))
 		WARN("Got NegAck packet. Peer is in troubles?\n");
 
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
-	/* do nothing here.
-	 * we expect to get a "report param" on the data socket soon,
-	 * and will do the cleanup then and there.
-	 */
 	if(is_syncer_block_id(p->block_id)) {
 		sector_t sector = be64_to_cpu(p->sector);
 		int size = be32_to_cpu(p->blksize);
@@ -3144,6 +3145,16 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 		dec_rs_pending(mdev);
 
 		drbd_rs_failed_io(mdev, sector, size);
+	} else {
+		req = _ack_id_to_req(mdev, p->block_id, sector);
+
+		if (unlikely(!req)) {
+			spin_unlock_irq(&mdev->req_lock);
+			ERR("Got a corrupt block_id/sector pair(2).\n");
+			return FALSE;
+		}
+
+		req_mod(req, neg_acked, 0);
 	}
 
 	return TRUE;
