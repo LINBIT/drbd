@@ -1305,6 +1305,11 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		 * or in drbd_endio_write_sec. */
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write mirrored data block to local disk.\n");
+		spin_lock(&mdev->peer_seq_lock);
+		if (mdev->peer_seq+1 == be32_to_cpu(p->seq_num))
+			mdev->peer_seq++;
+		spin_unlock(&mdev->peer_seq_lock);
+
 		drbd_send_ack_dp(mdev,NegAck,p);
 		mdev->epoch_size++; // spin lock ?
 		return drbd_drain_block(mdev,data_size);

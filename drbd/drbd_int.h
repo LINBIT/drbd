@@ -1182,6 +1182,7 @@ enum {
 	TraceTypeEE     = 0x00000010,
 	TraceTypeUnplug = 0x00000020,
 	TraceTypeNl     = 0x00000040,
+	TraceTypeALExts = 0x00000080,
 };
 
 static inline int

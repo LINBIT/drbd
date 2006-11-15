@@ -224,6 +224,12 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	struct update_al_work al_work;
 
 	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
+
+	MTRACE(TraceTypeALExts,TraceLvlMetrics,
+	       INFO("al_begin_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
+		    sector, enr, (int)BM_SECT_TO_EXT(sector));
+	       );
+
 	wait_event(mdev->al_wait, (al_ext = _al_get(mdev,enr)) );
 
 	if (al_ext->lc_number != enr) {
@@ -266,6 +272,11 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *extent;
 	unsigned long flags;
+
+	MTRACE(TraceTypeALExts,TraceLvlMetrics,
+	       INFO("al_complete_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
+		    sector, enr, (int)BM_SECT_TO_EXT(sector));
+	       );
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
 
@@ -914,8 +925,8 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	int i, sig;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
-	       INFO("drbd_rs_begin_io: sector=%llus\n",
-		    (unsigned long long)sector);
+	       INFO("drbd_rs_begin_io: sector=%llus (rs_end=%d)\n",
+		    (unsigned long long)sector,enr);
 	    );
 
 	sig = wait_event_interruptible( mdev->al_wait,
@@ -1075,8 +1086,8 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	unsigned long flags;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
-	       INFO("drbd_rs_complete_io: sector=%llus\n",
-		    (long long)sector);
+	       INFO("drbd_rs_complete_io: sector=%llus (rs_enr=%d)\n",
+		    (long long)sector, enr);
 	    );
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
