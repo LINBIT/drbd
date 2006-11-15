@@ -3216,12 +3216,6 @@ STATIC int got_BarrierAck(drbd_dev *mdev, Drbd_Header* h)
 {
 	Drbd_BarrierAck_Packet *p = (Drbd_BarrierAck_Packet*)h;
 
-	smp_rmb();
-	/* FIXME
-	 * and who is going to clear those request objects
-	 * from this epoch object in protocol != C ?? */
-	if(unlikely(mdev->state.pdsk <= Diskless)) return TRUE;
-
 	tl_release(mdev,p->barrier,be32_to_cpu(p->set_size));
 	dec_ap_pending(mdev);
 
