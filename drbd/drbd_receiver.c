@@ -3067,65 +3067,40 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
-	smp_rmb();
-	/* FIXME smp_rmb() is probably not good enough.
-	 * we have to make sure that, no matter what,
-	 * we do not set something "in sync" when
-	 * the peer has no disk (anymore)
-	 * I think this has to be looked at under the req_lock.
-	 * since we need to grab that anyways, lets do that.
-	 */
-	if(likely(mdev->state.pdsk >= Inconsistent )) {
-		/*
-		 * If one of a few IO requests on the peer failed (got_NegAck),
-		 * but some subsequent requests completed sucessfull
-		 * afterwards, verification of the block_id below would fail,
-		 * since we killed everything out of the transferlog when we
-		 * got the news hat IO is broken on the peer.
-		 *
-		 * FIXME
-		 * could this be handled better?
-		 * do we need to look over this again for freeze-io?
-		 */
-
-		if( is_syncer_block_id(p->block_id)) {
-			drbd_set_in_sync(mdev,sector,blksize);
-			set_bit(SYNC_STARTED,&mdev->flags);
-		} else {
-			spin_lock_irq(&mdev->req_lock);
-			req = _ack_id_to_req(mdev, p->block_id, sector);
-
-			if (unlikely(!req)) {
-				spin_unlock_irq(&mdev->req_lock);
-				ERR("Got a corrupt block_id/sector pair(2).\n");
-				return FALSE;
-			}
-
-			switch (be16_to_cpu(h->command)) {
-			case WriteAck:
-				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-				_req_mod(req,write_acked_by_peer,0);
-				break;
-			case RecvAck:
-				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_A);
-				_req_mod(req,recv_acked_by_peer,0);
-				break;
-			case DiscardAck:
-				D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-				ALERT("Got DiscardAck packet %llus +%u!"
-				      " DRBD is not a random data generator!\n",
-				      (unsigned long long)req->sector, req->size);
-				_req_mod(req, conflict_discarded_by_peer, 0);
-				break;
-			default:
-				D_ASSERT(0);
-			}
-			spin_unlock_irq(&mdev->req_lock);
-		}
-	}
-
-	if(is_syncer_block_id(p->block_id)) {
+	if( is_syncer_block_id(p->block_id)) {
+		drbd_set_in_sync(mdev,sector,blksize);
+		set_bit(SYNC_STARTED,&mdev->flags);
 		dec_rs_pending(mdev);
+	} else {
+		spin_lock_irq(&mdev->req_lock);
+		req = _ack_id_to_req(mdev, p->block_id, sector);
+
+		if (unlikely(!req)) {
+			spin_unlock_irq(&mdev->req_lock);
+			ERR("Got a corrupt block_id/sector pair(2).\n");
+			return FALSE;
+		}
+
+		switch (be16_to_cpu(h->command)) {
+		case WriteAck:
+			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+			_req_mod(req,write_acked_by_peer,0);
+			break;
+		case RecvAck:
+			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_A);
+			_req_mod(req,recv_acked_by_peer,0);
+			break;
+		case DiscardAck:
+			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+			ALERT("Got DiscardAck packet %llus +%u!"
+			      " DRBD is not a random data generator!\n",
+			      (unsigned long long)req->sector, req->size);
+			_req_mod(req, conflict_discarded_by_peer, 0);
+			break;
+		default:
+			D_ASSERT(0);
+		}
+		spin_unlock_irq(&mdev->req_lock);
 	}
 	/* dec_ap_pending is handled within _req_mod */
 
