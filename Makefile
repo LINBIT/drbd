@@ -93,7 +93,7 @@ check_changelogs_up2date:
 	then \
 	   echo "You need to update ChangeLog"; \
 	   up2date=false; fi ; \
-	if ! grep "^drbd ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
+	if ! grep "^drbd8 ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
 	   echo -e "\n\n\tdebian/changelog needs some update\n"; \
 	   : do not fail the build because of outdated debian/changelog ; fi ; \

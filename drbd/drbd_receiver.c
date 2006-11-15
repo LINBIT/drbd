@@ -1941,12 +1941,9 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
-	if (hg < 0 && 
-	    mdev->state.role == Primary && mydisk >= Consistent ) {
-		ERR("I shall become SyncTarget, but I am primary!\n");
-		drbd_force_state(mdev,NS(conn,Disconnecting));
-		return conn_mask;
-	}
+
+	/* The check "I shall become SyncTarget, but I am primary"
+	   got removed since, we now do live attachs on primary nodes! */
 
 	if (abs(hg) >= 2) {
 		drbd_md_set_flag(mdev,MDF_FullSync);
