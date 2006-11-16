@@ -25,6 +25,8 @@
 /* have the <sys/....h> first, otherwise you get e.g. "redefined" types from
  * sys/types.h and other weird stuff */
 
+#define DONT_INITIALIZE_BITMAP
+
 #define _GNU_SOURCE
 #define __USE_LARGEFILE64
 
@@ -769,6 +771,7 @@ int meta_show_gi(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
 int meta_restore_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
+int meta_wipe_md(struct format *cfg, char **argv, int argc);
 int meta_outdate(struct format *cfg, char **argv, int argc);
 int meta_set_gi(struct format *cfg, char **argv, int argc);
 int meta_read_dev_uuid(struct format *cfg, char **argv, int argc);
@@ -781,6 +784,7 @@ struct meta_cmd cmds[] = {
 	{"dump-md", 0, meta_dump_md, 1},
 	{"restore-md", "file", meta_restore_md, 1},
 	{"create-md", 0, meta_create_md, 1},
+	{"wipe-md", 0, meta_wipe_md, 1},
 	{"outdate", 0, meta_outdate, 1},
 	{"dstate", 0, meta_dstate, 1},
 	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
@@ -1341,7 +1345,7 @@ int md_initialize_common(struct format *cfg)
 	/* THINK
 	 * do we really need to initialize the bitmap? */
 #ifdef DONT_INITIALIZE_BITMAP
-	fprintf(stderr,"NOT initialized bitmap (%u KB)\n", (bm_bytes>>10));
+	fprintf(stderr,"NOT initialized bitmap (%u KB)\n", (cfg->bm_mmaped_length>>10));
 #else
 	{
 		const size_t bm_bytes = cfg->bm_mmaped_length;
@@ -2147,6 +2151,31 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 		fprintf(stderr, "operation failed\n");
 	else
 		printf("New drbd meta data block sucessfully created.\n");
+
+	return err;
+}
+
+int meta_wipe_md(struct format *cfg, char **argv __attribute((unused)), int argc)
+{
+	int virgin, err;
+	if (argc > 0) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+
+	virgin = cfg->ops->open(cfg);
+	if (virgin) {
+		fprintf(stderr,"There apears to be no drbd meta data to wipe out?\n");
+		return 0;
+	}
+
+	printf("Wiping meta data...\n");
+	MEMSET(cfg->on_disk.md, 0, 4096);
+
+	err = cfg->ops->close(cfg);
+	if (err)
+		fprintf(stderr, "operation failed\n");
+	else
+		printf("DRBD meta data block successfully wiped out.\n");
 
 	return err;
 }
