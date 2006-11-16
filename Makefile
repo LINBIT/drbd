@@ -46,13 +46,19 @@ endif
 LN_S = ln -s
 RPMBUILD=rpmbuild
 
-all:
-	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i ; done
-	@ echo -e "\n\tBuild successful."
+all: tools module
+
+module: 
+	@if [ -z "$(KVER)" ]; then \
+		echo "Could not determine uts_release" ; \
+		false ; \
+	fi
+	@ $(MAKE) -C drbd
+	@ echo -e "\n\tModule build was successful."
 
 tools:
 	@ set -e; for i in $(patsubst drbd,,$(SUBDIRS)); do $(MAKE) -C $$i ; done
-	@ echo -e "\n\tBuild successful."
+	@ echo -e "\n\tUserland tools build was successful."
 
 doc:
 	$(MAKE) -C documentation doc
@@ -87,15 +93,15 @@ check_changelogs_up2date:
 	                     -e '/^\*.* \['"$$dver_re"'-/p' < drbd.spec.in) ; \
 	if test -z "$$in_changelog" ; \
 	then \
-	   echo "You need to update the %changelog in drbd.spec.in"; \
+	   echo -e "\n\t%changelog in drbd.spec.in needs update"; \
 	   up2date=false; fi; \
 	if ! grep "^$$dver_re\>" >/dev/null 2>&1 ChangeLog; \
 	then \
-	   echo "You need to update ChangeLog"; \
+	   echo -e "\n\tChangeLog needs update"; \
 	   up2date=false; fi ; \
 	if ! grep "^drbd8 ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
-	   echo -e "\n\n\tdebian/changelog needs some update\n"; \
+	   echo -e "\n\tdebian/changelog needs update [ignored]\n"; \
 	   : do not fail the build because of outdated debian/changelog ; fi ; \
 	$$up2date
 
@@ -160,9 +166,6 @@ all tools doc .filelist: drbd/drbd_buildtag.c
 
 KDIR := $(shell echo /lib/modules/`uname -r`/build)
 KVER := $(shell KDIR=$(KDIR) O=$(O) scripts/get_uts_release.sh)
-ifeq ($(KVER),)
-$(error "could not determine uts_release")
-endif
 
 kernel-patch: drbd/drbd_buildtag.c
 	set -o errexit; \
