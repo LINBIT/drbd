@@ -29,6 +29,11 @@
 #include <linux/moduleparam.h>
 #include <linux/connector.h>
 
+#ifndef DRBD_CONNECTOR_BACKPORT_HEADER
+#error "drbd backported connector.c compiled against kernel connector.h will not work"
+#error "enable CONFIG_CONNECTOR in your kernel and try again"
+#endif
+
 #include <net/sock.h>
 
 #ifdef NETLINK_ROUTE6

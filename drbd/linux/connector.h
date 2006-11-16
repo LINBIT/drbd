@@ -23,6 +23,7 @@
 
 #ifndef __CONNECTOR_H
 #define __CONNECTOR_H
+#define DRBD_CONNECTOR_BACKPORT_HEADER
 
 #include <asm/types.h>
 
@@ -93,6 +94,7 @@ struct cn_ctl_msg {
 };
 
 #ifdef __KERNEL__
+#include <linux/drbd_config.h>
 
 #if defined(NETLINK_ROUTE6) && !defined(KERNEL_HAS_GFP_T)
    /* pre 2.6.16 */
