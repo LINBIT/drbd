@@ -197,6 +197,7 @@ const char *asb0p_n[] = {
         [Disconnect]        = "disconnect",
 	[DiscardYoungerPri] = "discard-younger-primary",
 	[DiscardOlderPri]   = "discard-older-primary",
+	[DiscardZeroChg]    = "discard-zero-changes",
 	[DiscardLeastChg]   = "discard-least-changes",
 	[DiscardLocal]      = "discard-local",
 	[DiscardRemote]     = "discard-remote"
@@ -205,12 +206,14 @@ const char *asb0p_n[] = {
 const char *asb1p_n[] = {
 	[Disconnect]        = "disconnect",
 	[Consensus]         = "consensus",
+	[ViolentlyAS0Pri]   = "violently-as0p",
 	[DiscardSecondary]  = "discard-secondary",
 	[CallHelper]        = "call-pri-lost-after-sb"
 };
 
 const char *asb2p_n[] = {
 	[Disconnect]        = "disconnect",
+	[ViolentlyAS0Pri]   = "violently-as0p",
 	[CallHelper]        = "call-pri-lost-after-sb"
 };
 

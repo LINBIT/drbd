@@ -44,6 +44,15 @@ DRBD 0.8 Roadmap
      "discard-older-primary"
                       Auto sync from the node that became primary 
                       as second during the split brain situation.
+                      If discard-younger-primary and discard-older-primary
+		      can not find a decissions, they fall back to
+                      discard-least-changes.
+     "discard-zero-changes"
+                      Auto sync from the node that modified
+                      blocks during the split brain situation, but only
+		      if the target not did not touched a single block.
+                      If both nodes touched their data, this policy 
+		      falls back to disconnect.
      "discard-least-changes"
                       Auto sync from the node that touched more
                       blocks during the split brain situation.
@@ -56,6 +65,14 @@ DRBD 0.8 Roadmap
      "consensus"  ... discard the version of the secondary if the outcome
                       of the "after-sb-0pri" algorithm would also destroy 
                       the current secondary's data. Otherwise disconnect.
+     "violently-as0p" Alsways take the decission of the "after-sb-0pri"
+                      algorithm. Even if that causes case an erratic change
+		      of the primarie's view of the data.
+	              This is only usefull if you use an 1node FS (i.e.
+		      not OCFS2 or GFS) with the allow-two-primaries
+		      flag, _AND_ you really know what you are doing.
+		      This is DANGEROUS and MAY CRASH YOUR MACHINE if you
+		      have a FS mounted on the primary node.
      "discard-secondary"     
                       discard the version of the secondary.
      "call-pri-lost-after-sb"    
@@ -70,6 +87,14 @@ DRBD 0.8 Roadmap
   In case both nodes are primary you control DRBD's strategy by
   the "after-sb-2pri" option.
      "disconnect" ... Go to StandAlone mode on both sides.
+     "violently-as0p" Alsways take the decission of the "after-sb-0pri"
+                      algorithm. Even if that causes case an erratic change
+		      of the primarie's view of the data.
+	              This is only usefull if you use an 1node FS (i.e.
+		      not OCFS2 or GFS) with the allow-two-primaries
+		      flag, _AND_ you really know what you are doing.
+		      This is DANGEROUS and MAY CRASH YOUR MACHINE if you
+		      have a FS mounted on the primary node.
      "call-pri-lost-after-sb"
 	              Honor the outcome of the "after-sb-0pri" algorithm
                       and calls the "pri-lost-after-sb" program on the

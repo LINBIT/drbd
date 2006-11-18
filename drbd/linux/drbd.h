@@ -55,12 +55,14 @@ enum after_sb_handler {
 	Disconnect,
 	DiscardYoungerPri,
 	DiscardOlderPri,
+	DiscardZeroChg,
 	DiscardLeastChg,
 	DiscardLocal,
 	DiscardRemote,
 	Consensus,
 	DiscardSecondary,
-	CallHelper
+	CallHelper,
+	ViolentlyAS0Pri
 };
 
 /* KEEP the order, do not delete or insert!

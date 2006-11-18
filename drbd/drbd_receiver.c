@@ -1667,6 +1667,9 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	self = mdev->bc->md.uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
 
+	ch_peer = mdev->p_uuid[UUID_SIZE];
+	ch_self = drbd_bm_total_weight(mdev);
+
 	switch ( mdev->net_conf->after_sb_0p ) {
 	case Consensus:
 	case DiscardSecondary:
@@ -1685,22 +1688,21 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 		/* Else fall through to one of the other strategies... */
 		WARN("Discard younger/older primary did not found a decision\n"
 		     "Using discard-least-changes instead\n");
+	case DiscardZeroChg:
+		if( ch_peer == 0 && ch_self == 0) {
+			rv=test_bit(DISCARD_CONCURRENT,&mdev->flags) ? -1 : 1;
+			break;
+		} else {
+			if ( ch_peer == 0 ) { rv =  1; break; }
+			if ( ch_self == 0 ) { rv = -1; break; }
+		}
+		if( mdev->net_conf->after_sb_0p == DiscardZeroChg ) break;
 	case DiscardLeastChg:
-		ch_peer = mdev->p_uuid[UUID_SIZE];
-		ch_self = drbd_bm_total_weight(mdev);
 		if      ( ch_self < ch_peer ) rv = -1;
 		else if ( ch_self > ch_peer ) rv =  1;
 		else /* ( ch_self == ch_peer ) */ {
-			// Well, then use the order of the IP addresses...
-			ch_self = (unsigned long)
-				(((struct sockaddr_in *)mdev->net_conf->my_addr)
-				 ->sin_addr.s_addr);
-			ch_peer = (unsigned long)
-				(((struct sockaddr_in *)mdev->net_conf->peer_addr)
-				 ->sin_addr.s_addr);
-			if      ( ch_self < ch_peer ) rv = -1;
-			else if ( ch_self > ch_peer ) rv =  1;
-			else ERR("Everything equal!?!\n");
+			// Well, then use something else.
+			rv=test_bit(DISCARD_CONCURRENT,&mdev->flags) ? -1 : 1;
 		}
 		break;
 	case DiscardLocal:
@@ -1735,6 +1737,9 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 		if( hg == -1 && mdev->state.role==Secondary) rv=hg;
 		if( hg == 1  && mdev->state.role==Primary)   rv=hg;
 		break;
+	case ViolentlyAS0Pri:
+		rv = drbd_asb_recover_0p(mdev);
+		break;
 	case DiscardSecondary:
 		return mdev->state.role==Primary ? 1 : -1;
 	case CallHelper:
@@ -1749,6 +1754,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 			}
 		} else rv = hg;
 	}
+
 	return rv;
 }
 
@@ -1769,6 +1775,9 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	case DiscardSecondary:
 		ERR("Configuration error.\n");
 		break;
+	case ViolentlyAS0Pri:
+		rv = drbd_asb_recover_0p(mdev);
+		break;
 	case Disconnect:
 		break;
 	case CallHelper:
@@ -1783,6 +1792,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 			}
 		} else rv = hg;
 	}
+
 	return rv;
 }
 
