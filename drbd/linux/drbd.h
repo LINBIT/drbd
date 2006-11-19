@@ -62,7 +62,7 @@ enum after_sb_handler {
 	Consensus,
 	DiscardSecondary,
 	CallHelper,
-	ViolentlyAS0Pri
+	Violently
 };
 
 /* KEEP the order, do not delete or insert!

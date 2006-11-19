@@ -113,6 +113,7 @@
 #define DRBD_AFTER_SB_0P_DEF Disconnect
 #define DRBD_AFTER_SB_1P_DEF Disconnect
 #define DRBD_AFTER_SB_2P_DEF Disconnect
+#define DRBD_RR_CONFLICT_DEF Disconnect
 
 #undef RANGE
 #endif

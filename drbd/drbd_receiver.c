@@ -1737,7 +1737,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 		if( hg == -1 && mdev->state.role==Secondary) rv=hg;
 		if( hg == 1  && mdev->state.role==Primary)   rv=hg;
 		break;
-	case ViolentlyAS0Pri:
+	case Violently:
 		rv = drbd_asb_recover_0p(mdev);
 		break;
 	case DiscardSecondary:
@@ -1775,7 +1775,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	case DiscardSecondary:
 		ERR("Configuration error.\n");
 		break;
-	case ViolentlyAS0Pri:
+	case Violently:
 		rv = drbd_asb_recover_0p(mdev);
 		break;
 	case Disconnect:
@@ -1833,7 +1833,22 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev)
 	if (self != UUID_JUST_CREATED &&
 	    peer == UUID_JUST_CREATED) return 2;
 
-	if (self == peer) return 0;
+	if (self == peer) { // Common power [off|failure]
+		int rct; // roles at crash time
+
+		rct = (test_bit(CRASHED_PRIMARY, &mdev->flags) ? 1 : 0) +
+			( mdev->p_uuid[UUID_FLAGS] & 2 );
+		// lowest bit is set when we were primary
+		// next bit (weight 2) is set when peer was primary
+
+		switch(rct) {
+		case 0: /* !self_pri && !peer_pri */ return 0;
+		case 1: /*  self_pri && !peer_pri */ return 1;
+		case 2: /* !self_pri &&  peer_pri */ return -1;
+		case 3: /*  self_pri &&  peer_pri */ 
+			return test_bit(DISCARD_CONCURRENT,&mdev->flags) ? -1 : 1;
+		}
+	}
 
 	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
 	if (self == peer) return -1;
@@ -1925,9 +1940,9 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		}
 	}
 	
-	if (hg == 0) {
+	if (abs(hg) < 100) {
 		// This is needed in case someone does an invalidate on an
-		// disconnected node.
+		// disconnected node. This has priority.
 		if(mydisk==Inconsistent && peer_disk>Inconsistent) hg=-1;
 		if(mydisk>Inconsistent && peer_disk==Inconsistent) hg= 1;
 	}
@@ -1952,8 +1967,21 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		return conn_mask;
 	}
 
-	/* The check "I shall become SyncTarget, but I am primary"
-	   got removed since, we now do live attachs on primary nodes! */
+	if (hg < 0 && // by intention we do not use mydisk here.
+	    mdev->state.role == Primary && mdev->state.disk >= Consistent ) {
+		switch(mdev->net_conf->rr_conflict) {
+		case CallHelper:
+			drbd_khelper(mdev,"pri-lost");
+			// fall through
+		case Disconnect:
+			ERR("I shall become SyncTarget, but I am primary!\n");
+			drbd_force_state(mdev,NS(conn,Disconnecting));
+			return conn_mask;
+		case Violently:
+			WARN("Becoming SyncTarget, violating the stable-data"
+			     "assumption\n");
+		}
+	}
 
 	if (abs(hg) >= 2) {
 		drbd_md_set_flag(mdev,MDF_FullSync);
@@ -1976,17 +2004,9 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		rv = WFBitMapT;
 	} else {
 		rv = Connected;
-		drbd_bm_lock(mdev);   // {
 		if(drbd_bm_total_weight(mdev)) {
-			/* FIXME for two-primaries this is wrong and may lead
-			 * to diverging data sets! */
-			INFO("No resync -> clearing bit map.\n");
-			drbd_bm_clear_all(mdev);
-			drbd_uuid_set_bm(mdev,0UL);
-			if (unlikely(drbd_bm_write(mdev) < 0))
-				return conn_mask;
+			INFO("No resync, but bits in bitmap!\n");
 		}
-		drbd_bm_unlock(mdev); // }
 	}
 
 	return rv;

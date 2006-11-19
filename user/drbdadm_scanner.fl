@@ -78,7 +78,8 @@ connect-int		{ DP; CP; RC(CONNECT_INT); return TK_NET_OPTION;}
 cram-hmac-alg		{ DP; CP; return TK_NET_OPTION;		}
 shared-secret		{ DP; CP; return TK_NET_OPTION;		}
 max-epoch-size		{ DP; CP; RC(MAX_EPOCH_SIZE); return TK_NET_OPTION;}
-after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		}
+after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		} 
+rr-conflict 		{ DP; CP; return TK_NET_OPTION;		} 
 unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
 allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
@@ -88,6 +89,7 @@ wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 pri-on-incon-degr	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}
+pri-lost	        { DP; CP; return TK_HANDLER_OPTION;     }
 outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
 local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}

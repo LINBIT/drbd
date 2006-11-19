@@ -206,15 +206,21 @@ const char *asb0p_n[] = {
 const char *asb1p_n[] = {
 	[Disconnect]        = "disconnect",
 	[Consensus]         = "consensus",
-	[ViolentlyAS0Pri]   = "violently-as0p",
+	[Violently]         = "violently-as0p",
 	[DiscardSecondary]  = "discard-secondary",
 	[CallHelper]        = "call-pri-lost-after-sb"
 };
 
 const char *asb2p_n[] = {
 	[Disconnect]        = "disconnect",
-	[ViolentlyAS0Pri]   = "violently-as0p",
+	[Violently]         = "violently-as0p",
 	[CallHelper]        = "call-pri-lost-after-sb"
+};
+
+const char *rrcf_n[] = {
+	[Disconnect]        = "disconnect",
+	[Violently]         = "violently",
+	[CallHelper]        = "call-pri-lost"
 };
 
 struct option wait_cmds_options[] = {
@@ -283,6 +289,7 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-0pri",'A',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) },
 		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
 		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
+		 { "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) },
 		 { "discard-my-data",'D', T_want_lose,     EB },
 		 CLOSE_OPTIONS }} }, },
 

@@ -834,8 +834,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	enum fencing_policy fp;
 	u32 mdf;
 
-	if ( (os.role != Primary && ns.role == Primary)    ||
-	     (os.conn != Connected && ns.conn == Connected) ) {
+	if ( (os.conn != Connected && ns.conn == Connected) ) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 	}
 
@@ -1278,6 +1277,7 @@ int drbd_send_uuids(drbd_dev *mdev)
 {
 	Drbd_GenCnt_Packet p;
 	int i;
+	u64 uuid_flags = 0;
 
 	if(!inc_local_if_state(mdev,Negotiating)) return 1; // ok.
 
@@ -1289,7 +1289,9 @@ int drbd_send_uuids(drbd_dev *mdev)
 	}
 
 	p.uuid[UUID_SIZE] = cpu_to_be64(drbd_bm_total_weight(mdev));
-	p.uuid[UUID_FLAGS] = cpu_to_be64(mdev->net_conf->want_lose);
+	uuid_flags |= mdev->net_conf->want_lose ? 1 : 0;
+	uuid_flags |= test_bit(CRASHED_PRIMARY, &mdev->flags) ? 2 : 0;
+	p.uuid[UUID_FLAGS] = cpu_to_be64(uuid_flags);
 
 	dec_local(mdev);
 

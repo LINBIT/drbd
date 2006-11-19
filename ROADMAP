@@ -65,7 +65,7 @@ DRBD 0.8 Roadmap
      "consensus"  ... discard the version of the secondary if the outcome
                       of the "after-sb-0pri" algorithm would also destroy 
                       the current secondary's data. Otherwise disconnect.
-     "violently-as0p" Alsways take the decission of the "after-sb-0pri"
+     "violently-as0p" Always take the decission of the "after-sb-0pri"
                       algorithm. Even if that causes case an erratic change
 		      of the primarie's view of the data.
 	              This is only usefull if you use an 1node FS (i.e.
@@ -87,7 +87,7 @@ DRBD 0.8 Roadmap
   In case both nodes are primary you control DRBD's strategy by
   the "after-sb-2pri" option.
      "disconnect" ... Go to StandAlone mode on both sides.
-     "violently-as0p" Alsways take the decission of the "after-sb-0pri"
+     "violently-as0p" Always take the decission of the "after-sb-0pri"
                       algorithm. Even if that causes case an erratic change
 		      of the primarie's view of the data.
 	              This is only usefull if you use an 1node FS (i.e.
@@ -521,7 +521,11 @@ DRBD 0.8 Roadmap
   1.  C=JC   C=JC   No Sync
   2.  C=JC   C!=JC  I am SyncTarget setting BM
   3. C!=JC   C=JC   I am SyncSource setting BM
-  4.   C   =   C    No Sync
+  4.   C   =   C    Common power [off|failure](Examine the roles at crash time)
+  4.1  sec   sec    Common power off, no sync.
+  4.2  pri   sec    Common power failure, I am SyncSource using BM
+  4.3  sec   pri    Common power failure, I am SyncTarget using BM
+  4.4  pri   pri    Common power failure, resync in arbitrary direction.
   5.   C   =   B    I am SyncTarget using BM
   6.   C   = H1|H2  I am SyncTarget setting BM
   7.   B   =   C    I am SyncSource using BM
@@ -867,8 +871,29 @@ DRBD 0.8 Roadmap
 
 40 Do something with FLUSHBUFS ioctl.
 
-41 Fix DRBD's behaviour in case of a cluster crash when both nodes
-   are in primary state.
+41 Fix DRBD's behaviour in case of a common power failuer and when 
+   both nodes were in primary role.
+
+   See the the Algorithm of Item 16, section 4 to 4.4 .
+
+   Further we need to have the resync rolces conflict  "rr-conflict" 
+   strategy option with the following values:
+
+   The available options are:
+     "disconnect" ... No automatic resynchronisation, simply disconnect.
+     "violently" .... Sync to the primary node is allowed, violating the 
+	              assumption that data on a block device is stable
+		      for one of the nodes. DANGEROUS, DO NOT USE.
+     "call-pri-lost"
+                      Call this helper program on one of the machines.
+                      This program is expected to halt or reboot the
+                      machine.
+
+   An exception of course is a primary disk-less node that gets a disk
+   attached. Such a nodes becomes sync target, but since it does not
+   show a violently data change, this state transition is always allowed.
+
+   99% DONE
 
 42 Forward port the abilitiy to resume the TL after IO was frozen,
    in case the connection is reestablished again.
