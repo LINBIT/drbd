@@ -769,7 +769,7 @@ int drbd_connect(drbd_dev *mdev)
 	sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
 	sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
 	/* NOT YET ...
-	 * sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/20;
+	 * sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	 * sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 	 * first set it to the HandShake timeout, wich is hardcoded for now: */
 	sock->sk->sk_sndtimeo =
@@ -779,7 +779,7 @@ int drbd_connect(drbd_dev *mdev)
 	msock->sk->sk_priority=TC_PRIO_INTERACTIVE;
 	tcp_sk(sock->sk)->nonagle = 1;
 	msock->sk->sk_sndbuf = 2*32767;
-	msock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/20;
+	msock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	msock->sk->sk_rcvtimeo = mdev->net_conf->ping_int*HZ;
 
 	mdev->data.socket = sock;
@@ -799,7 +799,7 @@ int drbd_connect(drbd_dev *mdev)
 		}
 	}
 
-	sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/20;
+	sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
 	atomic_set(&mdev->packet_seq,0);
@@ -3262,10 +3262,8 @@ int drbd_asender(struct Drbd_thread *thi)
 	while (get_t_state(thi) == Running) {
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
 			ERR_IF(!drbd_send_ping(mdev)) goto err;
-			// half ack timeout only,
-			// since sendmsg waited the other half already
 			mdev->meta.socket->sk->sk_rcvtimeo =
-				mdev->net_conf->timeout*HZ/20;
+				mdev->net_conf->ping_timeo*HZ/10;
 		}
 
 		while(1) {
@@ -3305,7 +3303,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			goto err;
 		} else if (rv == -EAGAIN) {
 			if( mdev->meta.socket->sk->sk_rcvtimeo ==
-			    mdev->net_conf->timeout*HZ/20) {
+			    mdev->net_conf->ping_timeo*HZ/10 ) {
 				ERR("PingAck did not arrive in time.\n");
 				goto err;
 			}

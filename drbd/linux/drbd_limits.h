@@ -54,6 +54,11 @@
 #define DRBD_PING_INT_MAX 120
 #define DRBD_PING_INT_DEF 10
 
+ /* timeout for the ping packets.*/
+#define DRBD_PING_TIMEO_MIN  1
+#define DRBD_PING_TIMEO_MAX  100
+#define DRBD_PING_TIMEO_DEF  5
+
   /* max number of write requests between write barriers */
 #define DRBD_MAX_EPOCH_SIZE_MIN 1
 #define DRBD_MAX_EPOCH_SIZE_MAX 20000

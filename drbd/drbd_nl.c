@@ -353,6 +353,7 @@ STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	struct primary primary_args;
+	int rv;
 
 	memset(&primary_args, 0, sizeof(struct primary));
 	if(!primary_from_tags(mdev,nlp->tag_list,&primary_args)) {
@@ -360,8 +361,15 @@ STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		return 0;
 	}
 
-	reply->ret_code = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
-
+	request_ping(mdev); // Detect a dead peer ASAP
+	rv = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
+	if( rv == SS_TwoPrimaries ) { 
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
+		rv = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
+	}
+	
+	reply->ret_code = rv;
 	return 0;
 }
 
@@ -1006,6 +1014,8 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->want_lose       = 0;
 		new_conf->two_primaries   = 0;
 		new_conf->wire_protocol   = DRBD_PROT_C;
+		new_conf->ping_timeo      = DRBD_PING_TIMEO_DEF;
+		new_conf->rr_conflict     = DRBD_RR_CONFLICT_DEF;
 	}
 
 	if (!net_conf_from_tags(mdev,nlp->tag_list,new_conf)) {

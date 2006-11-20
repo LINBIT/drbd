@@ -47,6 +47,7 @@ PACKET(net_conf, 5,
 	INTEGER(	25,	T_MAY_IGNORE,	after_sb_1p)
 	INTEGER(	26,	T_MAY_IGNORE,	after_sb_2p)
 	INTEGER(	39,	T_MAY_IGNORE,	rr_conflict)
+	INTEGER(	40,	T_MAY_IGNORE,	ping_timeo)
 	BIT(		27,	T_MAY_IGNORE,	want_lose)
 	BIT(		28,	T_MAY_IGNORE,	two_primaries)
 )
