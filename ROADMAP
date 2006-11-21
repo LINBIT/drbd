@@ -898,6 +898,8 @@ DRBD 0.8 Roadmap
 42 Forward port the abilitiy to resume the TL after IO was frozen,
    in case the connection is reestablished again.
 
+43 Fix indexed meta-data.
+
 Maybe:
 
 *  Switch to protocol C in case we are running without a local 

@@ -243,7 +243,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 		mdev->this_bdev->bd_contains = mdev->this_bdev;
 	}
 
-	if ( new_role & Secondary ) {
+	if ( new_role == Secondary ) {
 		/* If I got here, I am Primary. I claim me for myself. If that
 		 * does not succeed, someone other has claimed me, so I cannot
 		 * become Secondary. */
@@ -253,8 +253,12 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			bd_release(mdev->this_bdev);
 	}
 
+	if ( new_role == Primary ) {
+		request_ping(mdev); // Detect a dead peer ASAP
+	}
+
 	mask.i = 0; mask.role = role_mask;
-	val.i  = 0; val.role  = new_role & role_mask;
+	val.i  = 0; val.role  = new_role;
 
 	while (try++ < 3) {
 		r = _drbd_request_state(mdev,mask,val,0);
@@ -280,7 +284,13 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 			continue;
 		}
-
+		if( r == SS_TwoPrimaries ) {
+			// Maybe the peer is detected as dead very soon...
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
+			if(try == 1) try++; // only a single retry in this case.
+			continue;
+		}
 		if ( r < SS_Success ) {
 			r = drbd_request_state(mdev,mask,val); // Be verbose.
 			if( r < SS_Success ) goto fail;
@@ -305,7 +315,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	 * but that means someone is misusing DRBD...
 	 * */
 
-	if (new_role & Secondary) {
+	if (new_role == Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
 	} else {
 		if(inc_net(mdev)) {
@@ -324,7 +334,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 		}
 	}
 
-	if((new_role & Secondary) && inc_local(mdev) ) {
+	if((new_role == Secondary) && inc_local(mdev) ) {
 		drbd_al_to_on_disk_bm(mdev);
 		dec_local(mdev);
 	}
@@ -340,7 +350,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	return r;
 
  fail:
-	if ( new_role & Secondary ) {
+	if ( new_role == Secondary ) {
 		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
 		bd_release(mdev->this_bdev);
 	}
@@ -353,7 +363,6 @@ STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	struct primary primary_args;
-	int rv;
 
 	memset(&primary_args, 0, sizeof(struct primary));
 	if(!primary_from_tags(mdev,nlp->tag_list,&primary_args)) {
@@ -361,15 +370,8 @@ STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		return 0;
 	}
 
-	request_ping(mdev); // Detect a dead peer ASAP
-	rv = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
-	if( rv == SS_TwoPrimaries ) { 
-		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
-		rv = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
-	}
-	
-	reply->ret_code = rv;
+	reply->ret_code = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
+
 	return 0;
 }
 
