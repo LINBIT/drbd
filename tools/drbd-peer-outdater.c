@@ -2,7 +2,7 @@
 /* drbd-peer-outdater
  * Copyright (C) 2006 LINBIT <http://www.linbit.com/>
  *
- * Written by Rasto Levrinc <rasto@linbit.at>
+ * Written by Rasto Levrinc <rasto@linbit.com>
  *
  * based on attrd
  *
@@ -224,10 +224,10 @@ usage(const char* cmd, int exit_status)
 	fprintf(stream, "\t-t <int>\ttimeout in seconds; default: %d\n",
 			DEFAULT_TIMEOUT);
 	fprintf(stream, "\t-r <string>\tdrbd resource\n\n"
-		"The drbd resource has to be specified,\n"
+		"The drbd resource has to be specified \n"
 		"either on the commandline using the -r option,\n"
-		"or unsing the $DRBD_RESOURCE environment variable,\n"
-		"which will be ignored, if the -r option is used.\n");
+		"or using the $DRBD_RESOURCE environment variable.\n"
+		"$DRBD_RESOURCE will be ignored, if the -r option is used.\n");
 	fflush(stream);
 
 	exit(exit_status);

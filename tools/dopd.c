@@ -1,7 +1,7 @@
 /* $Id$ */
 /* drbd outdate peer daemon
  * Copyright (C) 2006 LINBIT <http://www.linbit.com/>
- * Written by Rasto Levrinc <rasto@linbit.at>
+ * Written by Rasto Levrinc <rasto@linbit.com>
  *
  * based on ipfail.c and attrd.c
  *
@@ -465,6 +465,7 @@ main(int argc, char **argv)
 	char pid[10];
 	char *bname, *parameter;
 	IPC_Channel *apiIPC;
+	int rc;
 
 	/* Get the name of the binary for logging purposes */
 	bname = ha_strdup(argv[0]);
@@ -536,7 +537,7 @@ main(int argc, char **argv)
 	Gmain_timeout_add_full(G_PRIORITY_DEFAULT, 1000,
 	                        dopd_timeout_dispatch, (gpointer)hb,
 	                        dopd_dispatch_destroy);
-	int rc = init_server_ipc_comms(
+	rc = init_server_ipc_comms(
 			ha_strdup(T_OUTDATER),
 			outdater_client_connect,
 			outdater_client_destroy);
