@@ -762,6 +762,7 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
   char *argv[] = { "/bin/sh", "-c", NULL , NULL };
 
   setenv("DRBD_RESOURCE",res->name,1);
+  setenv("DRBD_PEER",res->peer->name,1);
 
   if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
     argv[2]=sh_cmd;

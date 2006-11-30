@@ -39,7 +39,7 @@
 #
 
 #
-# The caller (drbdadm) sets DRBD_RESOURCE for us.
+# The caller (drbdadm) sets DRBD_RESOURCE and DRBD_PEER for us.
 #
 
 TIMEOUT=6

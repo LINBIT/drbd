@@ -226,6 +226,10 @@ DRBD 0.8 Roadmap
   * We need to store the fact that the peer is outdated/inconsistent
     in the meta-data. To allow an stand allone primary to be rebooted.
 
+  * The outdate-peer program gets two environment variables:
+    DRBD_RESOURCE the name of the DRBD-resource and DRBD_PEER
+    the host name of the peer.
+
   99% DONE
 
 8 New command drbdmeta
@@ -899,6 +903,8 @@ DRBD 0.8 Roadmap
    in case the connection is reestablished again.
 
 43 Fix indexed meta-data.
+
+44 Callbacks to userspace should run asynchronous.
 
 Maybe:
 
