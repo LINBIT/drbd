@@ -853,6 +853,7 @@ struct Drbd_Conf {
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
 	int minor;
+	unsigned long comm_bm_set; // communicated number of set bits.
 };
 
 static inline drbd_dev *minor_to_mdev(int minor)

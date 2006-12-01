@@ -1668,7 +1668,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	peer = mdev->p_uuid[Bitmap] & 1;
 
 	ch_peer = mdev->p_uuid[UUID_SIZE];
-	ch_self = drbd_bm_total_weight(mdev);
+	ch_self = mdev->comm_bm_set;
 
 	switch ( mdev->net_conf->after_sb_0p ) {
 	case Consensus:
