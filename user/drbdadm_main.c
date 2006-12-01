@@ -1353,6 +1353,37 @@ int check_uniq(const char* what, const char *fmt, ...)
   return !ep;
 }
 
+void sanity_check_cmd(char* cmd)
+{
+  struct stat sb;
+  int err;
+
+  if ( (err=stat(cmd,&sb)) ) {
+    perror("stat() of drbdsetup/drbdmeta failed");
+    exit(10);
+  }
+
+  if(!sb.st_mode&S_ISUID || sb.st_mode&S_IXOTH || sb.st_gid==0) {
+    fprintf(stderr,"WARN:\n"
+	    "  You are using the 'drbd-peer-outdater' as outdate-peer program.\n"
+	    "  If you use that mechanism the dopd heartbeat plugin program needs\n"
+	    "  to be able to call drbdsetup and drbdmeta with root privileges.\n\n"
+	    "  You need to fix this with these commands:\n"
+	    "  chgrp haclient %s ; chmod o-x %s ; chmod u+s %s\n\n\n",
+	    cmd,cmd,cmd);
+  }
+}
+
+void sanity_check_perm()
+{
+  static int checked=0;
+
+  if(checked) return;
+
+  sanity_check_cmd(drbdsetup);
+  sanity_check_cmd(drbdmeta);
+}
+
 void validate_resource(struct d_resource * res)
 {
   struct d_option* opt;
@@ -1407,6 +1438,10 @@ void validate_resource(struct d_resource * res)
   }
   if (res->me && res->peer) {
     verify_ips(res);
+  }
+
+  if ( (opt = find_opt(res->handlers, "outdate-peer")) ) {
+    if(strstr(opt->value,"drbd-peer-outdater")) sanity_check_perm();
   }
 }
 
