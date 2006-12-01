@@ -23,6 +23,7 @@
       <arg>-d<arg choice="req"><replaceable>size</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>err_handler</replaceable></arg></arg>
       <arg>-f<arg choice="req"><replaceable>fencing_policy</replaceable></arg></arg>
+      <arg>-b</arg>
 
     </cmdsynopsis>
     <cmdsynopsis>
@@ -39,7 +40,6 @@
       <arg>-t<arg choice="req"><replaceable>val</replaceable></arg></arg>
       <arg>-S<arg choice="req"><replaceable>size</replaceable></arg></arg>
       <arg>-k<arg choice="req"><replaceable>count</replaceable></arg></arg>
-      <arg>-d<arg choice="req"><replaceable>discon_handler</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>max_epoch_size</replaceable></arg></arg>
       <arg>-b<arg choice="req"><replaceable>max_buffers</replaceable></arg></arg>
       <arg>-m</arg>
@@ -49,6 +49,10 @@
       <arg>-B<arg choice="req"><replaceable>asb-1p-policy</replaceable></arg></arg>
       <arg>-C<arg choice="req"><replaceable>asb-2p-policy</replaceable></arg></arg>
       <arg>-D</arg>
+      <arg>-R<arg choice="req"><replaceable>role-resync-conflict-policy</replaceable></arg></arg>
+      <arg>-p<arg choice="req"><replaceable>ping_timeout</replaceable></arg></arg>
+      <arg>-u<arg choice="req"><replaceable>val</replaceable></arg></arg>
+
 
     </cmdsynopsis>
     <cmdsynopsis>
@@ -170,14 +174,21 @@
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">resume-io</arg>
     </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">events</arg>
+      <arg>-u</arg>
+      <arg>-a</arg>
+    </cmdsynopsis>
   </refsynopsisdiv>
 
   <refsect1>
     <title>Description</title>
     <para>
-      drbdsetup is used to associate DRBD devices with their lower
-      level block devices, to set up DRBD device pairs to mirror their
-      lower level block devices, and to inspect the configuration of
+      drbdsetup is used to associate DRBD devices with their backing
+      block devices, to set up DRBD device pairs to mirror their
+      backing block devices, and to inspect the configuration of
       running DRBD devices.
     </para>
   </refsect1>
@@ -198,6 +209,37 @@
       set of options. All values have default units which might be overruled
       by K, M or G. These units are defined in the usual way (e.g. K = 2^10 = 1024).
     </para>
+
+    <refsect2>
+      <title>Common options</title>
+      <para>
+        All drbdsetup sub-commands accept these two options
+
+	<variablelist>
+	  <varlistentry>
+	    <term><option>--create-device</option></term>
+	    <listitem>
+	      <para> 
+		In case the specified DRBD device (minor number) does not 
+		exist yet, create it implicitly.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><option>--set-defaults</option></term>
+	    <listitem>
+	      <para> 
+		When <option>--set-defaults</option> is given on the 
+		command line, all options of the invoked sub-command that 
+		are not explicitly set are reset to their default values.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	</variablelist>
+
+      </para>
+    </refsect2>
 
     <refsect2>
       <title>disk</title>
@@ -233,12 +275,12 @@
 	    <para>
 	      If the driver of the <replaceable>lower_device</replaceable>
 	      reports an error to DRBD, DRBD will either pass the error 
-	      to the upper layers of the operating system, panic the
-	      machine, or detaches the device from its backing storage and
+	      to the upper layers of the operating system, call a helper
+	      program, or detaches the device from its backing storage and
 	      perform all futher IO by requesting it from the peer. The
 	      valid <replaceable>err_handler</replaceable> are:
-	      <option>pass_on</option>, <option>panic</option> and
-	      <option>detach</option>.  
+	      <option>pass_on</option>, <option>call-local-io-error</option> 
+	      and <option>detach</option>.  
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -280,6 +322,27 @@
 		  IO with the <option>resume-io</option> command.
 		</para></listitem></varlistentry>
               </variablelist>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-b</option>,
+	  <option>--use-bmbv</option></term>
+	  <listitem>
+	    <para>
+	      In case the backing storage's driver has a merge_bvec_fn()
+	      function (At time of writing the only known drivers which
+	      have such a function are: md (software raid driver),
+	      dm (device mapper - LVM) and DRBD itself) drbd has to 
+	      pretend that it can only process IO requests in units
+	      not lager than 4kByte.</para>
+	    <para>
+	      To get best performance out of DRBD on top of software
+	      raid (or any other driver with a merge_bvec_fn() function)
+	      you might enable this function, iff you know for sure
+	      that the merge_bvec_fn() function will deliver the same
+	      results on all nodes of your cluster. I.e. the physical
+	      disks of the software raid are of the exact same type.
+              USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
 	  </listitem>
 	</varlistentry>
       </variablelist>
@@ -410,19 +473,6 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term><option>-d</option>,
-	  <option>--on-disconnect <replaceable>discon_handler</replaceable></option></term>
-	  <listitem>
-	    <para>
-	      When the connection to the peer is lost, DRBD can either
-	      go into stand alone mode, or try to reconnect to the peer.
-	      The keywords are: <option>stand_alone</option> and
-	      <option>reconnect</option>.
-	      The default handler is <option>reconnect</option>.
-	    </para>
-	  </listitem>
-	</varlistentry>
-	<varlistentry>
 	  <term><option>-m</option>,
 	  <option>--allow-two-primaries </option></term>
 	  <listitem>
@@ -517,12 +567,19 @@
 		<listitem><para>
 		  Discard the secondary's version.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>panic-primary</option></term> 
+		<varlistentry><term><option>call-pri-lost-after-sb</option></term> 
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
-		  secondary has the right data, it panics the
-		  current primary.
+		  secondary has the right data, call the 
+		  <option>pri-lost-after-sb</option> on the current primary.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>violently-as0p</option></term> 
+		<listitem><para>
+		  Always honour the outcome of the <option>after-sb-0pri
+		  </option> algorithm. In case it decides the the current
+		  secondary has the right data, accept a possible instantaneous
+		  change of the primary's data.
 		</para></listitem></varlistentry>
               </variablelist>
 	  </listitem>
@@ -540,12 +597,60 @@
 	        <listitem><para>
 		  No automatic resynchronisation, simply disconnect.
 		</para></listitem></varlistentry>
-	        <varlistentry><term><option>panic</option></term>
+		<varlistentry><term><option>call-pri-lost-after-sb</option></term> 
 		<listitem><para>
-		  Honour the outcome of the <option>after-sb-0pri</option> 
-		  policy and panic the other node.
+		  Always honour the outcome of the <option>after-sb-0pri
+		  </option> algorithm. In case it decides the the current
+		  secondary has the right data, call the 
+		  <option>pri-lost-after-sb</option> on the current primary.
+		</para></listitem></varlistentry>
+		<varlistentry><term><option>violently-as0p</option></term> 
+		<listitem><para>
+		  Always honour the outcome of the <option>after-sb-0pri
+		  </option> algorithm. In case it decides the the current
+		  secondary has the right data, accept a possible instantaneous
+		  change of the primary's data.
 		</para></listitem></varlistentry>
               </variablelist>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-R</option>,
+	  <option>--rr-conflict </option><replaceable>role-resync-conflict-policy</replaceable></term>
+	  <listitem>
+	    <para>
+	      This option sets DRBD's behaviour when DRBD deduces from its 
+	      meta data that a resynchronisation is needed, and the SyncTarget 
+	      node is already primary. The possible settings are:
+	      <option>disconnect</option>,
+	      <option>call-pri-lost</option> and
+	      <option>violently</option>. While <option>disconnect</option>
+	      speaks for itself, with the <option>call-pri-lost</option>
+	      setting the <option>pri-lost</option> handler gets called
+	      witch is expeced to either change the role of the node to
+	      secondary, or remove the node from the cluster.
+	      The default is <option>disconnect</option>.</para>
+	    <para>
+	      With the <option>violently</option> setting you allow DRBD
+	      to force a primary node into SyncTarget state. This means
+	      that with that action the data exposed by DRBD changes to
+	      the SyncSource's version of the data instantaneous.
+	      USE THIS ONLY IF YOU KNOW WHAT YOU ARE DOING.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-p</option>,
+	  <option>--ping-timeout </option><replaceable>ping_timeout</replaceable></term>
+	  <listitem>
+	    <para>
+	      The time the peer has time to answer to a keep-alive packet,
+	      it. In case the peer's reply is not received within this
+	      time period, it is considered as dead. The default is 500ms, 
+	      the default unit is 100ms.
+	    </para>
 	  </listitem>
 	</varlistentry>
 
@@ -570,7 +675,6 @@
       <para>
 	Changes the synchronization daemon parameters of
 	<replaceable>device</replaceable> at runtime.
-	Not mentioned parameters will not be changed.
       </para>
       <variablelist>
 	<varlistentry>
@@ -828,6 +932,38 @@
 	and your <option>fencing</option> policy is set to
 	resource-and-stonith, you can unfreeze IO operations with this
 	command.
+      </para>
+    </refsect2>
+
+    <refsect2>
+      <title>events</title>
+      <para>
+      	Displays every state change of DRBD and all calls to helper
+	programs. This might be used to get notifies of DRBD's state
+	changes by piping the output to an other program.
+
+	<variablelist>
+	  <varlistentry>
+	    <term><option>-a</option>,
+	    <option>--all-devices</option></term>
+	    <listitem>
+	      <para> 
+		Display the events of all DRBD minors.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><option>-u</option>,
+	    <option>--unfiltered</option></term>
+	    <listitem>
+	      <para> 
+		This is an debugging aid, and displays the content of
+		all received netlink messages.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	</variablelist>
       </para>
     </refsect2>
 
