@@ -1353,14 +1353,13 @@ int check_uniq(const char* what, const char *fmt, ...)
   return !ep;
 }
 
-void sanity_check_cmd(char* cmd)
+int sanity_check_abs_cmd(char* cmd_name)
 {
   struct stat sb;
   int err;
 
-  if ( (err=stat(cmd,&sb)) ) {
-    perror("stat() of drbdsetup/drbdmeta failed");
-    exit(10);
+  if ( (err=stat(cmd_name,&sb)) ) {
+    return 0;
   }
 
   if(!sb.st_mode&S_ISUID || sb.st_mode&S_IXOTH || sb.st_gid==0) {
@@ -1369,8 +1368,35 @@ void sanity_check_cmd(char* cmd)
 	    "  If you use that mechanism the dopd heartbeat plugin program needs\n"
 	    "  to be able to call drbdsetup and drbdmeta with root privileges.\n\n"
 	    "  You need to fix this with these commands:\n"
-	    "  chgrp haclient %s ; chmod o-x %s ; chmod u+s %s\n\n\n",
-	    cmd,cmd,cmd);
+	    "  chgrp haclient %s\n"
+	    "  chmod o-x %s\n"
+	    "  chmod u+s %s\n\n\n",
+	    cmd_name,cmd_name,cmd_name);
+  }
+  return 1;
+}
+
+void sanity_check_cmd(char* cmd_name)
+{
+  char *path,*pp,*c;
+  char abs_path[100];
+
+  if( strchr(cmd_name,'/') ) {
+    sanity_check_abs_cmd(cmd_name);
+  } else {
+    path = pp = c = strdup(getenv("PATH"));
+
+    while(1) {
+      c = strchr(pp,':');
+      if(c) *c = 0;
+      snprintf(abs_path,100,"%s/%s",pp,cmd_name);
+      if(sanity_check_abs_cmd(abs_path)) break;
+      if(!c) break;
+      c++;
+      if(!*c) break;
+      pp = c;
+    }
+    free(path);
   }
 }
 
