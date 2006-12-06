@@ -21,6 +21,7 @@
 
 
 #define T_OUTDATER		"outdater"
+#define F_OUTDATER_PEER		"outdater_peer"
 #define F_OUTDATER_RES		"outdater_res"
 #define F_DOPD_VALUE            "dop_value"
 #define F_DOPD_RES              "dop_res"
@@ -30,6 +31,7 @@
 
 /* Prototypes */
 void node_walk(ll_cluster_t *);
+gboolean check_drbd_peer(const char *);
 void set_signals(ll_cluster_t *);
 void gotsig(int);
 void set_callbacks(ll_cluster_t *);

@@ -47,12 +47,10 @@
 #include <crm/common/ipc.h>
 
 
-const char *node_name;	   /* The node we are connected to            */
-char other_node[SYS_NMLN]; /* The remote node in the pair             */
-int node_stable;           /* Other node stable?                      */
-int need_standby;          /* Are we waiting for stability?           */
-int quitnow = 0;           /* Allows a signal to break us out of loop */
-GMainLoop *mainloop;       /* Reference to the mainloop for events    */
+const char *node_name;	   /* The node we are connected to	      */
+int node_stable;	   /* Other node stable?		      */
+int quitnow = 0;	   /* Allows a signal to break us out of loop */
+GMainLoop *mainloop;	   /* Reference to the mainloop for events    */
 ll_cluster_t *dopd_cluster_conn;
 
 /* only one client can be connected at a time */
@@ -67,29 +65,28 @@ typedef struct dopd_client_s
 
 IPC_Channel *CURR_CLIENT_CHANNEL = NULL;
 
-/* send_message_to_other_node()
+/* send_message_to_the_peer()
  * send message with drbd resource to other node.
  */
 static gboolean
-send_message_to_other_node(const char *drbd_resource)
+send_message_to_the_peer(const char *drbd_peer, const char *drbd_resource)
 {
-	ll_cluster_t *hb = dopd_cluster_conn;
-        HA_Message *msg = NULL;
+	HA_Message *msg = NULL;
 
-        crm_info("sending start_outdate message to the other node %s -> %s",
-		  node_name, other_node);
+	crm_info("sending start_outdate message to the other node %s -> %s",
+		  node_name, drbd_peer);
 
-        msg = ha_msg_new(3);
-        ha_msg_add(msg, F_TYPE, "start_outdate");
-        ha_msg_add(msg, F_ORIG, node_name);
-        ha_msg_add(msg, F_DOPD_RES, drbd_resource);
+	msg = ha_msg_new(3);
+	ha_msg_add(msg, F_TYPE, "start_outdate");
+	ha_msg_add(msg, F_ORIG, node_name);
+	ha_msg_add(msg, F_DOPD_RES, drbd_resource);
 
-	crm_debug("sending [start_outdate res: %s] to other node", 
-		  drbd_resource);
-        hb->llc_ops->sendnodemsg(hb, msg, other_node);
+	crm_debug("sending [start_outdate res: %s] to node: %s", 
+		  drbd_resource, drbd_peer);
+	dopd_cluster_conn->llc_ops->sendnodemsg(dopd_cluster_conn, msg, drbd_peer);
 	ha_msg_del(msg);
 
-        return TRUE;
+	return TRUE;
 }
 
 /* msg_start_outdate()
@@ -111,12 +108,12 @@ msg_start_outdate(struct ha_msg *msg, void *private)
 	int command_ret;
 
 	char rc_string[4];
-        HA_Message *msg2 = NULL;
+	HA_Message *msg2 = NULL;
 	const char *drbd_resource = ha_msg_value(msg, F_DOPD_RES);
 	char *command;
 
 	/* execute outdate command */
-        crm_malloc0(command, strlen(OUTDATE_COMMAND) + 1 + strlen(drbd_resource) + 1);
+	crm_malloc0(command, strlen(OUTDATE_COMMAND) + 1 + strlen(drbd_resource) + 1);
 	strcpy(command, OUTDATE_COMMAND);
 	strcat(command, " ");
 	strcat(command, drbd_resource);
@@ -124,7 +121,6 @@ msg_start_outdate(struct ha_msg *msg, void *private)
 	command_ret = system(command) >> 8;
 
 	/* convert return code */
-	crm_free(command);
 	if (command_ret == 0)
 		rc = 4;
 	else if (command_ret == 5)
@@ -132,20 +128,23 @@ msg_start_outdate(struct ha_msg *msg, void *private)
 	else if (command_ret == 17)
 		rc = 6;
 	else
-		crm_info("unknown exit code from "OUTDATE_COMMAND": %i",
-				command_ret);
+		crm_info("unknown exit code from %s: %i",
+				command, command_ret);
+	crm_free(command);
 
-	crm_debug("msg_start_outdate: %s, command rc: %i, rc: %i", 
+	crm_debug("msg_start_outdate: %s, command rc: %i, rc: %i",
 			 ha_msg_value(msg, F_ORIG), command_ret, rc);
 	sprintf(rc_string, "%i", rc);
 
+	crm_info("sending return code: %s, %s -> %s\n",
+			rc_string, node_name, ha_msg_value(msg, F_ORIG));
 	/* send return code to oder node */
 	msg2 = ha_msg_new(3);
 	ha_msg_add(msg2, F_TYPE, "outdate_rc");
 	ha_msg_add(msg2, F_DOPD_VALUE, rc_string);
 	ha_msg_add(msg2, F_ORIG, node_name);
 
-	hb->llc_ops->sendnodemsg(hb, msg2, other_node);
+	hb->llc_ops->sendnodemsg(hb, msg2, ha_msg_value(msg, F_ORIG));
 	ha_msg_del(msg2);
 }
 
@@ -156,7 +155,7 @@ msg_start_outdate(struct ha_msg *msg, void *private)
 void
 msg_outdate_rc(struct ha_msg *msg_in, void *private)
 {
-        HA_Message *msg_out = NULL;
+	HA_Message *msg_out;
 	const char *rc_string = ha_msg_value(msg_in, F_DOPD_VALUE);
 
 	if (CURR_CLIENT_CHANNEL == NULL)
@@ -173,6 +172,47 @@ msg_outdate_rc(struct ha_msg *msg_in, void *private)
 	CURR_CLIENT_CHANNEL = NULL;
 }
 
+/* check_drbd_peer()
+ * walk the nodes and return TRUE if peer is not this node and it exists.
+ */
+gboolean
+check_drbd_peer(const char *drbd_peer)
+{
+	const char *node;
+	gboolean found = FALSE;
+	if (!strcmp(drbd_peer, node_name)) {
+		crm_warn("drbd peer node %s is me!\n", drbd_peer);
+		return FALSE;
+	}
+
+	crm_debug("Starting node walk");
+	if (dopd_cluster_conn->llc_ops->init_nodewalk(dopd_cluster_conn) != HA_OK) {
+		crm_warn("Cannot start node walk");
+		crm_warn("REASON: %s", dopd_cluster_conn->llc_ops->errmsg(dopd_cluster_conn));
+		return FALSE;
+	}
+	while((node = dopd_cluster_conn->llc_ops->nextnode(dopd_cluster_conn)) != NULL) {
+		crm_debug("Cluster node: %s: status: %s", node,
+			    dopd_cluster_conn->llc_ops->node_status(dopd_cluster_conn, node));
+
+		/* Look for the peer */
+		if (!strcmp("normal", dopd_cluster_conn->llc_ops->node_type(dopd_cluster_conn, node))
+			&& !strcmp(node, drbd_peer)) {
+			crm_debug("node %s found\n", node);
+			found = TRUE;
+			break;
+		}
+	}
+	if (dopd_cluster_conn->llc_ops->end_nodewalk(dopd_cluster_conn) != HA_OK) {
+		crm_info("Cannot end node walk");
+		crm_info("REASON: %s", dopd_cluster_conn->llc_ops->errmsg(dopd_cluster_conn));
+	}
+
+	if (found == FALSE)
+		crm_warn("drbd peer %s was not found\n", drbd_peer);
+	return found;
+}
+
 /* outdater_callback()
  * got message from outdater client with drbd resource, it will be sent
  * to the other node.
@@ -182,6 +222,8 @@ outdater_callback(IPC_Channel *client, gpointer user_data)
 {
 	int lpc = 0;
 	HA_Message *msg = NULL;
+	HA_Message *msg_client = NULL;
+	const char *drbd_peer = NULL;
 	const char *drbd_resource = NULL;
 	dopd_client_t *curr_client = (dopd_client_t*)user_data;
 	gboolean stay_connected = TRUE;
@@ -201,22 +243,34 @@ outdater_callback(IPC_Channel *client, gpointer user_data)
 			break;
 		}
 
-                msg = msgfromIPC_noauth(client);
-                if (msg == NULL) {
-                        crm_debug("%s: no message this time",
+		msg = msgfromIPC_noauth(client);
+		if (msg == NULL) {
+			crm_debug("%s: no message this time",
 				  curr_client->id);
-                        continue;
+			continue;
 		}
 
 		lpc++;
 
 		crm_debug("Processing msg from %s", curr_client->id);
-		crm_debug("Got message from (%s). (%s)",
+		crm_debug("Got message from (%s). (peer: %s, res :%s)",
 				ha_msg_value(msg, F_ORIG),
+				ha_msg_value(msg, F_OUTDATER_PEER),
 				ha_msg_value(msg, F_OUTDATER_RES));
 
 		drbd_resource = ha_msg_value(msg, F_OUTDATER_RES);
-		send_message_to_other_node(drbd_resource);
+		drbd_peer = ha_msg_value(msg, F_OUTDATER_PEER);
+		if (check_drbd_peer(drbd_peer))
+			send_message_to_the_peer(drbd_peer, drbd_resource);
+		else {
+			/* wrong peer was specified,
+			   send return code 5 to the client */
+			msg_client = ha_msg_new(3);
+			ha_msg_add(msg_client, F_TYPE, "outdate_rc");
+			ha_msg_add(msg_client, F_ORIG, node_name);
+			ha_msg_add(msg_client, F_DOPD_VALUE, "5");
+			msg_outdate_rc(msg_client, NULL);
+		}
 
 		crm_msg_del(msg);
 		msg = NULL;
@@ -231,7 +285,6 @@ outdater_callback(IPC_Channel *client, gpointer user_data)
 	}
 	return stay_connected;
 }
-
 
 /* outdater_ipc_connection_destroy()
  * clean client struct
@@ -265,31 +318,31 @@ outdater_ipc_connection_destroy(gpointer user_data)
 static gboolean
 outdater_client_connect(IPC_Channel *channel, gpointer user_data)
 {
-        dopd_client_t *new_client = NULL;
-        crm_debug("Connecting channel");
-        if(channel == NULL) {
-                crm_err("Channel was NULL");
-                return FALSE;
+	dopd_client_t *new_client = NULL;
+	crm_debug("Connecting channel");
+	if(channel == NULL) {
+		crm_err("Channel was NULL");
+		return FALSE;
 
-        } else if(channel->ch_status != IPC_CONNECT) {
-                crm_err("Channel was disconnected");
-                return FALSE;
-        }
+	} else if(channel->ch_status != IPC_CONNECT) {
+		crm_err("Channel was disconnected");
+		return FALSE;
+	}
 
-        crm_malloc0(new_client, sizeof(dopd_client_t));
-        new_client->channel = channel;
-        crm_malloc0(new_client->id, 10);
-        strcpy(new_client->id, "outdater");
+	crm_malloc0(new_client, sizeof(dopd_client_t));
+	new_client->channel = channel;
+	crm_malloc0(new_client->id, 10);
+	strcpy(new_client->id, "outdater");
 
-        new_client->source = G_main_add_IPC_Channel(
-                G_PRIORITY_DEFAULT, channel, FALSE, outdater_callback,
-                new_client, outdater_ipc_connection_destroy);
+	new_client->source = G_main_add_IPC_Channel(
+		G_PRIORITY_DEFAULT, channel, FALSE, outdater_callback,
+		new_client, outdater_ipc_connection_destroy);
 
-        crm_debug("Client %s (%p) connected",
+	crm_debug("Client %s (%p) connected",
 			  new_client->id,
 			  new_client->source);
 
-        return TRUE;
+	return TRUE;
 }
 
 static void
@@ -304,44 +357,12 @@ is_stable(ll_cluster_t *hb)
 	const char *resources = hb->llc_ops->get_resources(hb);
 	if (!resources)
 		/* Heartbeat is not providing resource management */
-	        return -1;
+		return -1;
 
 	if (!strcmp(resources, "transition"))
 		return 0;
 
 	return 1;
-}
-
-/* node_walk()
- * get name of other node and set other_node string
- */
-void
-node_walk(ll_cluster_t *hb)
-{
-	const char *node;
-
-	crm_debug("Starting node walk");
-	if (hb->llc_ops->init_nodewalk(hb) != HA_OK) {
-		crm_err("Cannot start node walk");
-		crm_err("REASON: %s", hb->llc_ops->errmsg(hb));
-		exit(9);
-	}
-	while((node = hb->llc_ops->nextnode(hb)) != NULL) {
-		crm_debug("Cluster node: %s: status: %s", node,
-				hb->llc_ops->node_status(hb, node));
-
-		/* Look for our partner */
-		if (!strcmp("normal", hb->llc_ops->node_type(hb, node))
-		    && strcmp(node, node_name)) {
-			strcpy(other_node, node);
-			crm_debug("[They are %s]", other_node);
-		}
-	}
-	if (hb->llc_ops->end_nodewalk(hb) != HA_OK) {
-		crm_err("Cannot end node walk");
-		crm_err("REASON: %s", hb->llc_ops->errmsg(hb));
-		exit(12);
-	}
 }
 
 /* set_callbacks()
@@ -461,7 +482,6 @@ int
 main(int argc, char **argv)
 {
 	unsigned fmask;
-	ll_cluster_t *hb;
 	char pid[10];
 	char *bname, *parameter;
 	IPC_Channel *apiIPC;
@@ -471,35 +491,31 @@ main(int argc, char **argv)
 	bname = ha_strdup(argv[0]);
 	crm_log_init(bname);
 
-	hb = ll_cluster_new("heartbeat");
-	dopd_cluster_conn = hb;
-
-	memset(other_node, 0, sizeof(other_node));
-	need_standby = 0;
+	dopd_cluster_conn = ll_cluster_new("heartbeat");
 
 	memset(pid, 0, sizeof(pid));
 	snprintf(pid, sizeof(pid), "%ld", (long)getpid());
 	crm_debug("PID=%s", pid);
 
-	open_api(hb);
+	open_api(dopd_cluster_conn);
 
-	node_stable = is_stable(hb);
+	node_stable = is_stable(dopd_cluster_conn);
 	if (node_stable == -1) {
 		crm_err("No managed resources");
 		exit(100);
 	}
 
 	/* Obtain our local node name */
-	node_name = hb->llc_ops->get_mynodeid(hb);
+	node_name = dopd_cluster_conn->llc_ops->get_mynodeid(dopd_cluster_conn);
 	if (node_name == NULL) {
 		crm_err("Cannot get my nodeid");
-		crm_err("REASON: %s", hb->llc_ops->errmsg(hb));
+		crm_err("REASON: %s", dopd_cluster_conn->llc_ops->errmsg(dopd_cluster_conn));
 		exit(19);
 	}
 	crm_debug("[We are %s]", node_name);
 
 	/* See if we should drop cores somewhere odd... */
-	parameter = hb->llc_ops->get_parameter(hb, KEY_COREROOTDIR);
+	parameter = dopd_cluster_conn->llc_ops->get_parameter(dopd_cluster_conn, KEY_COREROOTDIR);
 	if (parameter) {
 		cl_set_corerootdir(parameter);
 		cl_cdtocoredir();
@@ -507,36 +523,34 @@ main(int argc, char **argv)
 	cl_cdtocoredir();
 
 
-	set_callbacks(hb);
+	set_callbacks(dopd_cluster_conn);
 
 	fmask = LLC_FILTER_DEFAULT;
 
 	crm_debug("Setting message filter mode");
-	if (hb->llc_ops->setfmode(hb, fmask) != HA_OK) {
+	if (dopd_cluster_conn->llc_ops->setfmode(dopd_cluster_conn, fmask) != HA_OK) {
 		crm_err("Cannot set filter mode");
-		crm_err("REASON: %s", hb->llc_ops->errmsg(hb));
+		crm_err("REASON: %s", dopd_cluster_conn->llc_ops->errmsg(dopd_cluster_conn));
 		exit(8);
 	}
 
-	node_walk(hb);
-
-	set_signals(hb);
+	set_signals(dopd_cluster_conn);
 
 	crm_debug("Waiting for messages...");
 	errno = 0;
 
 	mainloop = g_main_new(TRUE);
 
-        apiIPC = hb->llc_ops->ipcchan(hb);
+	apiIPC = dopd_cluster_conn->llc_ops->ipcchan(dopd_cluster_conn);
 
 	/* Watch the API IPC for input */
-        G_main_add_IPC_Channel(G_PRIORITY_HIGH, apiIPC, FALSE,
-                               dopd_dispatch, (gpointer)hb,
-                               dopd_dispatch_destroy);
+	G_main_add_IPC_Channel(G_PRIORITY_HIGH, apiIPC, FALSE,
+			       dopd_dispatch, (gpointer)dopd_cluster_conn,
+			       dopd_dispatch_destroy);
 
 	Gmain_timeout_add_full(G_PRIORITY_DEFAULT, 1000,
-	                        dopd_timeout_dispatch, (gpointer)hb,
-	                        dopd_dispatch_destroy);
+				dopd_timeout_dispatch, (gpointer)dopd_cluster_conn,
+				dopd_dispatch_destroy);
 	rc = init_server_ipc_comms(
 			ha_strdup(T_OUTDATER),
 			outdater_client_connect,
@@ -549,10 +563,10 @@ main(int argc, char **argv)
 
 	if (!quitnow && errno != EAGAIN && errno != EINTR) {
 		crm_err("read_hb_msg returned NULL");
-		crm_err("REASON: %s", hb->llc_ops->errmsg(hb));
+		crm_err("REASON: %s", dopd_cluster_conn->llc_ops->errmsg(dopd_cluster_conn));
 	}
 
-	close_api(hb);
+	close_api(dopd_cluster_conn);
 
 	return 0;
 }

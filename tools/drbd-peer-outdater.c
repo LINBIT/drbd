@@ -36,7 +36,7 @@
 #include <clplumbing/Gmain_timeout.h>
 #include <dopd.h>
 
-#define OPTARGS      "hVt:r:"
+#define OPTARGS      "hVt:p:r:"
 #define DEFAULT_TIMEOUT 60 // timeout in seconds
 
 typedef struct dop_client_s
@@ -133,6 +133,7 @@ main(int argc, char ** argv)
 	IPC_Channel *ipc_server = NULL;
 	int argerr = 0;
 	int flag;
+	char *drbd_peer = NULL;
 	char *drbd_resource = NULL;
 	int timeout = DEFAULT_TIMEOUT;
 
@@ -150,11 +151,14 @@ main(int argc, char ** argv)
 			case 'h':		/* Help message */
 				usage(crm_system_name, LSB_EXIT_OK);
 				break;
-			case 't':
-				timeout = atoi(optarg);
+			case 'p':
+				drbd_peer = crm_strdup(optarg);
 				break;
 			case 'r':
 				drbd_resource = crm_strdup(optarg);
+				break;
+			case 't':
+				timeout = atoi(optarg);
 				break;
 			default:
 				++argerr;
@@ -163,6 +167,12 @@ main(int argc, char ** argv)
 	}
 
 	crm_debug_3("Option processing complete");
+
+	/* the caller drbdadm sets DRBD_PEER env variable, use it if
+	 * -p option was not specified */
+	if ((drbd_peer == NULL) && !(drbd_peer = getenv("DRBD_PEER"))) {
+		++argerr;
+	}
 
 	/* the caller drbdadm sets DRBD_RESOURCE env variable, use it if
 	 * -r option was not specified */
@@ -178,6 +188,7 @@ main(int argc, char ** argv)
 		usage(crm_system_name, LSB_EXIT_GENERIC);
 	}
 
+	crm_debug_2("drbd peer: %s\n", drbd_peer);
 	crm_debug_2("drbd resource: %s\n", drbd_resource);
 
 	crm_malloc0(new_client, sizeof(dop_client_t));
@@ -198,6 +209,7 @@ main(int argc, char ** argv)
 	update = ha_msg_new(3);
 	ha_msg_add(update, F_TYPE, T_OUTDATER);
 	ha_msg_add(update, F_ORIG, crm_system_name);
+	ha_msg_add(update, F_OUTDATER_PEER, drbd_peer);
 	ha_msg_add(update, F_OUTDATER_RES, drbd_resource);
 
 	if (send_ipc_message(ipc_server, update) == FALSE) {
@@ -220,14 +232,15 @@ usage(const char* cmd, int exit_status)
 	FILE* stream;
 
 	stream = exit_status ? stderr : stdout;
-	fprintf(stream, "usage: %s -r <string> [-t <int>]\n", cmd);
-	fprintf(stream, "\t-t <int>\ttimeout in seconds; default: %d\n",
+	fprintf(stream, "usage: %s -r <string> -p <string> [-t <int>]\n", cmd);
+	fprintf(stream, "\t-p <string>\tdrbd peer\n");
+	fprintf(stream, "\t-r <string>\tdrbd resource\n");
+	fprintf(stream, "\t-t <int>\ttimeout in seconds; default: %d\n\n",
 			DEFAULT_TIMEOUT);
-	fprintf(stream, "\t-r <string>\tdrbd resource\n\n"
-		"The drbd resource has to be specified \n"
-		"either on the commandline using the -r option,\n"
-		"or using the $DRBD_RESOURCE environment variable.\n"
-		"$DRBD_RESOURCE will be ignored, if the -r option is used.\n");
+	fprintf(stream, "The drbd peer and drbd resource have to be specified either on the\n"
+			"commandline using the -p and -r options, or using the $DRBD_PEER and\n"
+			"$DRBD_RESOURCE environment variables. $DRBD_RESOURCE and $DRBD_PEER\n"
+			"will be ignored, if the command line options are used.\n");
 	fflush(stream);
 
 	exit(exit_status);
