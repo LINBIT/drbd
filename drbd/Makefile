@@ -109,7 +109,7 @@ else
 	  echo -e "\treturn \"SVN Revision: $${SVNREV##*:}\"";	 		\
 	fi ;									\
 	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-       	mv $@{.new,}
+       	mv --force $@.new $@
 
   kbuild: drbd_buildtag.c
 	@rm -f .drbd_kernelrelease*
