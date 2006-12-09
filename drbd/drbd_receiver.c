@@ -2358,7 +2358,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if (mdev->state.conn > WFReportParams ) {
-		if( nconn > Connected && peer_state.conn == Connected) {
+		if( nconn > Connected && peer_state.conn <= Connected) {
 			// we want resync, peer has not yet decided to sync...
 			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
