@@ -402,7 +402,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	if (mdev->rs_failed) {
 		INFO("            %lu failed blocks\n",mdev->rs_failed);
 
-		if (mdev->state.conn == SyncTarget) {
+		if (mdev->state.conn == SyncTarget ||
+		    mdev->state.connn == PausedSyncT) {
 			dstate = Inconsistent;
 			pdstate = UpToDate;
 		} else {
@@ -412,7 +413,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	} else {
 		dstate = pdstate = UpToDate;
 
-		if ( mdev->state.conn == SyncTarget) {
+		if (mdev->state.conn == SyncTarget ||
+		    mdev->state.connn == PausedSyncT) {
 			if( mdev->p_uuid ) {
 				int i;
 				for ( i=Bitmap ; i<=History_end ; i++ ) {
