@@ -889,8 +889,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* Lost contact to peer's copy of the data */
-	if ( (os.pdsk >= Inconsistent && os.pdsk != DUnknown) &&
-	     (ns.pdsk < Inconsistent || ns.pdsk == DUnknown)) {
+	if ( (os.pdsk>=Inconsistent && os.pdsk!=DUnknown && os.pdsk!=Outdated) &&
+	     (ns.pdsk<Inconsistent || ns.pdsk==DUnknown || ns.pdsk==Outdated) ) {
 		if ( mdev->p_uuid ) {
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
@@ -898,7 +898,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		if (inc_local(mdev)) {
 			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 ) {
 				/* Only do it if we have not yet done it... */
-				INFO("Creating new current UUID\n");
 				drbd_uuid_new_current(mdev);
 			}
 			if (ns.peer == Primary ) { 
@@ -920,7 +919,6 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	if( ns.pdsk < Inconsistent ) {
 		/* Diskless Peer becomes primary */
 		if (os.peer == Secondary && ns.peer == Primary ) {
-			INFO("Creating new current UUID\n");
 			drbd_uuid_new_current(mdev);
 		}
 		/* Diskless Peer becomes secondary */
@@ -2715,6 +2713,7 @@ void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 
 void drbd_uuid_new_current(drbd_dev *mdev)
 {
+	INFO("Creating new current UUID\n");
 	D_ASSERT(mdev->bc->md.uuid[Bitmap] == 0);
 	mdev->bc->md.uuid[Bitmap] = mdev->bc->md.uuid[Current];
 	MTRACE(TraceTypeUuid,TraceLvlMetrics,
