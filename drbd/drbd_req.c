@@ -1009,7 +1009,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 		return 1;
 
 	if (mdev->state.role != Primary &&
-		( !disable_bd_claim || is_write) ) {
+		( !allow_oos || is_write) ) {
 		if (DRBD_ratelimit(5*HZ,5)) {
 			ERR("Process %s[%u] tried to %s; since we are not in Primary state, we cannot allow this\n",
 			    current->comm, current->pid, is_write ? "WRITE" : "READ");
@@ -1026,7 +1026,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 	 * to serialize state changes, this is racy, since we may lose
 	 * the connection *after* we test for the cstate.
 	 */
-	if ( mdev->state.disk <= Inconsistent &&
+	if ( mdev->state.disk < UpToDate &&
 	     mdev->state.conn < Connected) {
 		if (DRBD_ratelimit(5*HZ,5)) {
 			ERR("Sorry, I have no access to good data anymore.\n");
@@ -1036,7 +1036,6 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 		 */
 		return 1;
 	}
-
 
 	return 0;
 }

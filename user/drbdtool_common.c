@@ -218,21 +218,14 @@ int dt_minor_of_dev(const char *device)
 }
 
 
-int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
+int dt_lock_drbd(const char* device)
 {
-	int drbd_fd, lfd;
+	int lfd;
 	struct stat drbd_stat;
 	char lfname[40];
 	int dev_major,dev_minor;
 
-	drbd_fd=open(device,O_RDONLY);
-	if(drbd_fd==-1 && !open_may_fail) {
-		PERROR("can not open %s", device);
-		exit(20);
-	}
-	
 	dev_major = 147; //LANANA_DRBD_MAJOR;
-
 	if( !stat(device, &drbd_stat) ) {
 
 		if(!S_ISBLK(drbd_stat.st_mode)) {
@@ -275,17 +268,13 @@ int dt_lock_open_drbd(const char* device, int *lock_fd, int open_may_fail)
 	lfd = get_fd_lockfile_timeout(lfname,1);
 	if (lfd < 0)
 		exit(20);
-	if (lock_fd) *lock_fd = lfd;
-
-	return drbd_fd;
+	return lfd;
 }
 
-int dt_close_drbd_unlock(int drbd_fd, int lock_fd)
+/* ignore errors */
+void dt_unlock_drbd(int lock_fd)
 {
-	int err = 0;
-	if (drbd_fd >= 0) err = close(drbd_fd);
-	if (lock_fd >= 0) unlock_fd(lock_fd); /* ignore errors */
-	return err;
+	if (lock_fd >= 0) unlock_fd(lock_fd);
 }
 
 void dt_print_gc(const __u32* gen_cnt)

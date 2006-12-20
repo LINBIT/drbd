@@ -260,7 +260,7 @@ struct format {
 	char *md_device_name;	/* well, in 06 it is file name */
 	char *drbd_dev_name;
 	int lock_fd;
-	int drbd_fd;
+	int drbd_fd;		/* no longer used!   */
 	int ll_fd;		/* not yet used here */
 	int md_fd;
 
@@ -2503,14 +2503,18 @@ int main(int argc, char **argv)
 	}
 	ai++;
 
-	cfg->drbd_fd = dt_lock_open_drbd(cfg->drbd_dev_name, &cfg->lock_fd, 1);
-	if (cfg->drbd_fd > -1) {
-		if (is_attached(dt_minor_of_dev(cfg->drbd_dev_name))) {
-			if (!(force && (command->function == meta_dump_md))) {
-				fprintf(stderr, "Device '%s' is configured!\n",
-					cfg->drbd_dev_name);
-				exit(20);
-			}
+	/* does exit() unless we aquired the lock.
+	 * unlock happens implicitly when the process dies,
+	 * but may be requested implicitly
+	 */
+	cfg->lock_fd = dt_lock_drbd(cfg->drbd_dev_name);
+
+	/* unconditionally check whether this is in use */
+	if (is_attached(dt_minor_of_dev(cfg->drbd_dev_name))) {
+		if (!(force && (command->function == meta_dump_md))) {
+			fprintf(stderr, "Device '%s' is configured!\n",
+				cfg->drbd_dev_name);
+			exit(20);
 		}
 	}
 

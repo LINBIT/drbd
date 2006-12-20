@@ -40,7 +40,7 @@
 #include <linux/drbd_limits.h>
 
 /* see get_sb_bdev and bd_claim */
-char *drbd_sec_holder = "Secondary DRBD cannot be bd_claimed ;)";
+char *drbd_d_holder = "Hands off! this is DRBD's data storage device.";
 char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 
@@ -237,20 +237,18 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
-	if (mdev->this_bdev->bd_contains == 0) {
-		// FIXME this masks a bug somewhere else!
-		// I think this is a bug outside of DRBD
-		mdev->this_bdev->bd_contains = mdev->this_bdev;
-	}
-
 	if ( new_role == Secondary ) {
-		/* If I got here, I am Primary. I claim me for myself. If that
-		 * does not succeed, someone other has claimed me, so I cannot
-		 * become Secondary. */
-		if (bd_claim(mdev->this_bdev,drbd_sec_holder))
-			return FailedToClaimMyself;
-		if (disable_bd_claim)
-			bd_release(mdev->this_bdev);
+		/* If I got here, I am Primary.
+		 * I cannot become Secondary as long as someone has an open
+		 * file descriptor on me. */
+
+		/* FIXME Race here.  we need to lock out openers while we are
+		 * deciding whether we can become Secondary or not, so open_cnt
+		 * cannot increase while we are still Primary just before we
+		 * become Secondary below. */
+
+		if (mdev->open_cnt)
+			return DeviceInUse;
 	}
 
 	if ( new_role == Primary ) {
@@ -323,9 +321,9 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			dec_net(mdev);
 		}
 		set_disk_ro(mdev->vdisk, FALSE );
-		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
-		bd_release(mdev->this_bdev);
+		/* why?? what for??
 		mdev->this_bdev->bd_disk = mdev->vdisk;
+		 */
 
 		if ( ( ( mdev->state.conn < Connected ||
 			 mdev->state.pdsk <= Failed ) &&
@@ -350,11 +348,6 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	return r;
 
  fail:
-	if ( new_role == Secondary ) {
-		D_ASSERT(mdev->this_bdev->bd_holder == drbd_sec_holder);
-		bd_release(mdev->this_bdev);
-	}
-
 	return r;
 }
 
@@ -391,6 +384,12 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 	sector_t md_size_sect = 0;
 	switch(bdev->dc.meta_dev_idx) {
 	default:
+		/* v07 style fixed size indexed meta data */
+		bdev->md.md_size_sect = MD_RESERVED_SECT;
+		bdev->md.md_offset = drbd_md_ss__(mdev,bdev);
+		bdev->md.al_offset = MD_AL_OFFSET;
+		bdev->md.bm_offset = MD_BM_OFFSET;
+		break;
 	case DRBD_MD_INDEX_FLEX_EXT:
 		/* just occupy the full device; unit: sectors */
 		bdev->md.md_size_sect = drbd_get_capacity(bdev->md_bdev);
@@ -421,7 +420,7 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 	}
 }
 
-char* ppsize(char* buf, size_t size)
+char* ppsize(char* buf, unsigned long long size)
 {
 	// Needs 9 bytes at max.
 	static char units[] = { 'K','M','G','T','P','E' };
@@ -430,7 +429,7 @@ char* ppsize(char* buf, size_t size)
 		size = size >> 10;
 		base++;
 	}
-	sprintf(buf,"%ld %cB",(long)size,units[base]);
+	sprintf(buf,"%lu %cB",(long)size,units[base]);
 
 	return buf;
 }
@@ -458,7 +457,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 
 	size = drbd_new_dev_size(mdev,mdev->bc);
 
-	if( drbd_get_capacity(mdev->this_bdev) != size || 
+	if( drbd_get_capacity(mdev->this_bdev) != size ||
 	    drbd_bm_capacity(mdev) != size ) {
 		int err;
 		err = drbd_bm_resize(mdev,size);
@@ -479,8 +478,8 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 		// racy, see comments above.
 		drbd_set_my_capacity(mdev,size);
 		mdev->bc->md.la_size_sect = size;
-		INFO("size = %s (%lu KB)\n",ppsize(ppb,size>>1),
-		     (unsigned long)size>>1);
+		INFO("size = %s (%llu KB)\n",ppsize(ppb,size>>1),
+		     (unsigned long long)size>>1);
 	}
 	if (rv < 0) goto out;
 
@@ -644,6 +643,8 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	}
 }
 
+/* does always return 0;
+ * interesting return code is in reply->ret_code */
 STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
@@ -717,7 +718,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	nbc->backing_bdev = inode->i_bdev;
-	if (bd_claim(nbc->backing_bdev, mdev)) {
+	if (BD_CLAIM(nbc->backing_bdev, mdev)) {
 		retcode=LDMounted;
 		goto fail;
 	}
@@ -729,7 +730,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	nbc->md_bdev = inode2->i_bdev;
-	if (bd_claim(nbc->md_bdev,
+	if (BD_CLAIM(nbc->md_bdev,
 		     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
 		      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ?
 		     (void *)mdev : (void*) drbd_m_holder )) {
@@ -737,7 +738,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev_fail;
 	}
 
-	if ( (nbc->backing_bdev==nbc->md_bdev) != 
+	if ( (nbc->backing_bdev==nbc->md_bdev) !=
 	     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
 	      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ) {
 		retcode=LDMDInvalid;
@@ -779,7 +780,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 // -- up to here
 
 	// Make sure the new disk is big enough
-	if (drbd_get_capacity(nbc->backing_bdev) < 
+	if (drbd_get_capacity(nbc->backing_bdev) <
 	    drbd_get_capacity(mdev->this_bdev) ) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
@@ -793,38 +794,42 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	retcode = drbd_md_read(mdev,nbc);
 	if ( retcode != NoError ) {
-		goto release_bdev3_fail;
+		goto force_diskless;
 	}
 
 	// Since we are diskless, fix the AL first...
 	if (drbd_check_al_size(mdev)) {
 		retcode = KMallocFailed;
-		goto release_bdev3_fail;
+		goto force_diskless;
 	}
 
 	// Prevent shrinking of consistent devices !
 	if(drbd_md_test_flag(nbc,MDF_Consistent) &&
 	   drbd_new_dev_size(mdev,nbc) < nbc->md.la_size_sect) {
 		retcode = LDDeviceTooSmall;
-		goto release_bdev3_fail;
+		goto force_diskless;
 	}
 
 	if(!drbd_al_read_log(mdev,nbc)) {
 		retcode = MDIOError;
-		goto release_bdev3_fail;		
+		goto force_diskless;
 	}
 
-	// Point of no return reached.
-
-	if(drbd_md_test_flag(nbc,MDF_PrimaryInd)) {
-		set_bit(CRASHED_PRIMARY, &mdev->flags);
-	} else {		
-		clear_bit(CRASHED_PRIMARY, &mdev->flags);
-	}
-
+	/* Point of no return reached.
+	 * Devices and memory are no longer released by error cleanup below.
+	 * now mdev takes over responsibility, and the state engine should
+	 * clean it up somewhere.  */
 	D_ASSERT(mdev->bc == NULL);
 	mdev->bc = nbc;
 	mdev->resync = resync_lru;
+	nbc = NULL;
+	resync_lru = NULL;
+
+	if(drbd_md_test_flag(mdev->bc,MDF_PrimaryInd)) {
+		set_bit(CRASHED_PRIMARY, &mdev->flags);
+	} else {
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+	}
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -866,13 +871,13 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		drbd_bm_set_all(mdev);
 		if (unlikely(drbd_bm_write(mdev) < 0)) {
 			retcode = MDIOError;
-			goto release_bdev3_fail;		
+			goto unlock_bm;
 		}
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 	} else {
 		if (unlikely(drbd_bm_read(mdev) < 0)) {
 			retcode = MDIOError;
-			goto release_bdev3_fail;		
+			goto unlock_bm;
 		}
 	}
 
@@ -887,9 +892,9 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
 	ns.i = os.i;
-	/* If MDF_Consistent is not set go into inconsistent state, 
+	/* If MDF_Consistent is not set go into inconsistent state,
 	   otherwise investige MDF_WasUpToDate...
-	   If MDF_WasUpToDate is not set go into Outdated disk state, 
+	   If MDF_WasUpToDate is not set go into Outdated disk state,
 	   otherwise into Consistent state.
 	*/
 	if(drbd_md_test_flag(mdev->bc,MDF_Consistent)) {
@@ -901,18 +906,18 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	} else {
 		ns.disk = Inconsistent;
 	}
-	
+
 	if(drbd_md_test_flag(mdev->bc,MDF_PeerOutDated)) {
 		ns.pdsk = Outdated;
 	}
-	
-	if( ns.disk == Consistent && 
-	    ( ns.pdsk == Outdated || nbc->dc.fencing == DontCare ) ) {
+
+	if( ns.disk == Consistent &&
+	    ( ns.pdsk == Outdated || mdev->bc->dc.fencing == DontCare ) ) {
 		ns.disk = UpToDate;
 	}
 
-	/* All tests on MDF_PrimaryInd, MDF_ConnectedInd, 
-	   MDF_Consistent and MDF_WasUpToDate must happen before 
+	/* All tests on MDF_PrimaryInd, MDF_ConnectedInd,
+	   MDF_Consistent and MDF_WasUpToDate must happen before
 	   this point, because drbd_request_state() modifies these
 	   flags. */
 
@@ -929,9 +934,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv==SS_Success) after_state_ch(mdev,os,ns,ChgStateVerbose);
 
-	if(rv < SS_Success ) {
-		drbd_bm_unlock(mdev);
-		goto  release_bdev3_fail;
+	if (rv < SS_Success) {
+		goto unlock_bm;
 	}
 
 	drbd_bm_unlock(mdev);
@@ -940,20 +944,15 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	reply->ret_code = retcode;
 	return 0;
 
- release_bdev3_fail:
+ unlock_bm:
 	drbd_bm_unlock(mdev);
-
-	/* The following will be freed by state change below */
-	nbc = NULL; 
-	resync_lru = NULL;
-
+ force_diskless:
 	drbd_force_state(mdev,NS(disk,Diskless));
 	drbd_md_sync(mdev);
-	goto fail;
  release_bdev2_fail:
-	bd_release(nbc->md_bdev);
+	if (nbc) BD_RELEASE(nbc->md_bdev);
  release_bdev_fail:
-	bd_release(nbc->backing_bdev);
+	if (nbc) BD_RELEASE(nbc->backing_bdev);
  fail:
 	if (nbc) {
 		if (nbc->lo_file) fput(nbc->lo_file);

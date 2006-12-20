@@ -377,7 +377,7 @@ static const char *error_messages[] = {
 	EM(PauseFlagAlreadySet) = "PauseFlagAlreadySet",
 	EM(PauseFlagAlreadyClear) = "PauseFlagAlreadyClear",
 	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
-	EM(FailedToClaimMyself) = "FailedToClaimMyself",
+	EM(DeviceInUse) = "DeviceInUse",
 	EM(HaveNoDiskConfig) = "HaveNoDiskConfig",
 	EM(ProtocolCRequired) = "ProtocolCRequired"
 };
@@ -1614,7 +1614,7 @@ void close_cn(int sk_nl)
 int main(int argc, char** argv)
 {
 	int minor;
-	// int drbd_fd,lock_fd;
+	int lock_fd;
 	struct drbd_cmd *cmd;
 	int rv=0;
 
@@ -1640,12 +1640,12 @@ int main(int argc, char** argv)
 	cmd=find_cmd_by_name(argv[2]);
 
 	if(cmd) {
-		//drbd_fd = dt_lock_open_drbd(argv[1], &lock_fd, 1 );
+		lock_fd = dt_lock_drbd(argv[1]);
 		minor=dt_minor_of_dev(argv[1]);
-		rv = cmd->function(cmd,minor,argc-2,argv+2);
 		// by passing argc-2, argv+2 the function has the command name
 		// in argv[0], e.g. "syncer"
-		//dt_close_drbd_unlock(drbd_fd,lock_fd);
+		rv = cmd->function(cmd,minor,argc-2,argv+2);
+		dt_unlock_drbd(lock_fd);
 	} else {
 		print_usage("invalid command");
 	}

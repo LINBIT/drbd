@@ -85,12 +85,12 @@ MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_ALIAS_BLOCKDEV_MAJOR(LANANA_DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
-MODULE_PARM_DESC(disable_bd_claim, "DONT USE! disables block device claiming" );
+/* allow_open_on_secondary */
+MODULE_PARM_DESC(allow_oos, "DONT USE!");
 /* thanks to these macros, if compiled into the kernel (not-module),
- * this becomes the boot parameter drbd.minor_count
- */
-module_param(minor_count,      int,0);
-module_param(disable_bd_claim,bool,0);
+ * this becomes the boot parameter drbd.minor_count */
+module_param(minor_count, int,0);
+module_param(allow_oos, bool,0);
 
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults = 0;
@@ -105,7 +105,7 @@ module_param(fault_count,int,0664);	// count of faults inserted
 int major_nr = LANANA_DRBD_MAJOR;
 int minor_count = 32;
 
-int disable_bd_claim = 0;
+int allow_oos = 0;
 
 #ifdef ENABLE_DYNAMIC_TRACE
 int trace_type = 0;	// Bitmap of trace types to enable
@@ -1839,15 +1839,20 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	mdev = minor_to_mdev(MINOR(inode->i_rdev));
 	if(!mdev) return -ENODEV;
 
-	if( mdev->state.role == Secondary && !disable_bd_claim) {
+	/* we might allow read-only open on non-Primary */
+	if( mdev->state.role != Primary && !allow_oos) {
 		return -EMEDIUMTYPE;
 	}
+	/* but we cannot allow writes on non-Primary */
 	if (file->f_mode & FMODE_WRITE) {
-		if( mdev->state.role == Secondary) {
+		if( mdev->state.role != Primary) {
 			return -EROFS;
 		}
 		set_bit(WRITER_PRESENT, &mdev->flags);
 	}
+
+	/* FIXME race with Primary -> Secondary
+	 * state change */
 
 	mdev->open_cnt++;
 
@@ -2196,10 +2201,7 @@ STATIC void __exit drbd_cleanup(void)
 			if (*q) blk_put_queue(*q);
 			*q = NULL;
 
-			if (mdev->this_bdev->bd_holder == drbd_sec_holder) {
-				mdev->this_bdev->bd_contains = mdev->this_bdev;
-				bd_release(mdev->this_bdev);
-			}
+			D_ASSERT(mdev->open_cnt == 0);
 			if (mdev->this_bdev) bdput(mdev->this_bdev);
 
 			tl_cleanup(mdev);
@@ -2299,16 +2301,10 @@ drbd_dev *drbd_new_device(int minor)
 	sprintf(disk->disk_name, DEVICE_NAME "%d", minor);
 	disk->private_data = mdev;
 	add_disk(disk);
-		
+
 	mdev->this_bdev = bdget(MKDEV(MAJOR_NR,minor));
 	// we have no partitions. we contain only ourselves.
 	mdev->this_bdev->bd_contains = mdev->this_bdev;
-	if (bd_claim(mdev->this_bdev,drbd_sec_holder)) {
-		// Initial we are Secondary -> should claim myself.
-		WARN("Could not bd_claim() myself.");
-	} else if (disable_bd_claim) {
-		bd_release(mdev->this_bdev);
-	}
 
 	blk_queue_make_request(q, drbd_make_request_26);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
@@ -2446,6 +2442,7 @@ int __init drbd_init(void)
 	       API_VERSION,PRO_VERSION);
 	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
 	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", MAJOR_NR);
+	printk(KERN_INFO DEVICE_NAME": minor_table @ 0x%p\n", minor_table);
 
 	return 0; // Success!
 
@@ -2462,8 +2459,8 @@ void drbd_free_bc(struct drbd_backing_dev* bc)
 {
 	if(bc == NULL) return;
 
-	bd_release(bc->backing_bdev);
-	bd_release(bc->md_bdev);
+	BD_RELEASE(bc->backing_bdev);
+	BD_RELEASE(bc->md_bdev);
 
 	fput(bc->lo_file);
 	fput(bc->md_file);

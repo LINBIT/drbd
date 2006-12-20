@@ -37,6 +37,7 @@ static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
+	/* return bdev ? get_capacity(bdev->bd_disk) : 0; */
 	return bdev ? bdev->bd_inode->i_size >> 9 : 0;
 }
 
@@ -44,6 +45,7 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 static inline void drbd_set_my_capacity(drbd_dev *mdev,
 					sector_t size)
 {
+	/* set_capacity(mdev->this_bdev->bd_disk, size); */
 	set_capacity(mdev->vdisk,size);
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }

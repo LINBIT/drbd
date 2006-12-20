@@ -105,7 +105,7 @@ enum ret_codes {
 	PauseFlagAlreadySet,
 	PauseFlagAlreadyClear,
 	DiskLowerThanOutdated,
-	FailedToClaimMyself,
+	DeviceInUse,
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
 	ProtocolCRequired,
@@ -123,7 +123,6 @@ typedef enum {
 	Primary=1,     // role
 	Secondary=2,   // role
 	role_mask=3,
-	DontBlameDrbd=4   // flag for set_state
 } drbd_role_t;
 
 /* The order of these constants is important.
