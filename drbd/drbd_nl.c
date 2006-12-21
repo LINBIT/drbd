@@ -237,20 +237,6 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
-	if ( new_role == Secondary ) {
-		/* If I got here, I am Primary.
-		 * I cannot become Secondary as long as someone has an open
-		 * file descriptor on me. */
-
-		/* FIXME Race here.  we need to lock out openers while we are
-		 * deciding whether we can become Secondary or not, so open_cnt
-		 * cannot increase while we are still Primary just before we
-		 * become Secondary below. */
-
-		if (mdev->open_cnt)
-			return DeviceInUse;
-	}
-
 	if ( new_role == Primary ) {
 		request_ping(mdev); // Detect a dead peer ASAP
 	}

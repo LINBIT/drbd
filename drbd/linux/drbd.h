@@ -105,7 +105,6 @@ enum ret_codes {
 	PauseFlagAlreadySet,
 	PauseFlagAlreadyClear,
 	DiskLowerThanOutdated,
-	DeviceInUse,
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
 	ProtocolCRequired,
@@ -203,7 +202,8 @@ typedef enum {
 	SS_ResyncRunning=-8,
 	SS_AlreadyStandAlone=-9,
 	SS_CW_FailedByPeer=-10,
-	SS_CanNotOutdateDL=-11
+	SS_CanNotOutdateDL=-11,
+	SS_DeviceInUse=-12
 } set_st_err_t;
 
 /* from drbd_strings.c */

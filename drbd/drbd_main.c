@@ -542,6 +542,9 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 	}
 
 	if( rv <= 0 ) /* already found a reason to abort */;
+	else if( ns.role == Secondary && mdev->open_cnt ) 
+		rv=SS_DeviceInUse;
+
 	else if( ns.role == Primary && ns.conn < Connected &&
 		 ns.disk < UpToDate ) rv=SS_NoUpToDateDisk;
 
@@ -1835,28 +1838,25 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 STATIC int drbd_open(struct inode *inode, struct file *file)
 {
 	drbd_dev *mdev;
+	unsigned long flags;
+	int rv=0;
 
 	mdev = minor_to_mdev(MINOR(inode->i_rdev));
 	if(!mdev) return -ENODEV;
 
-	/* we might allow read-only open on non-Primary */
+	spin_lock_irqsave(&mdev->req_lock,flags);
+	/* The have a stable mdev->state.role and no race with updating open_cnt */
+
 	if( mdev->state.role != Primary && !allow_oos) {
-		return -EMEDIUMTYPE;
-	}
-	/* but we cannot allow writes on non-Primary */
-	if (file->f_mode & FMODE_WRITE) {
-		if( mdev->state.role != Primary) {
-			return -EROFS;
-		}
-		set_bit(WRITER_PRESENT, &mdev->flags);
+		rv = -EMEDIUMTYPE;
+	} else if (file->f_mode & FMODE_WRITE && mdev->state.role != Primary) {
+		rv = -EROFS;
 	}
 
-	/* FIXME race with Primary -> Secondary
-	 * state change */
+	if(!rv) mdev->open_cnt++;
+	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	mdev->open_cnt++;
-
-	return 0;
+	return rv;
 }
 
 STATIC int drbd_close(struct inode *inode, struct file *file)
@@ -1873,9 +1873,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 	       inode->i_writecount);
 	*/
 
-	if (--mdev->open_cnt == 0) {
-		clear_bit(WRITER_PRESENT, &mdev->flags);
-	}
+	mdev->open_cnt--;
 
 	return 0;
 }

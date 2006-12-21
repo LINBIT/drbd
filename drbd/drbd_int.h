@@ -673,7 +673,6 @@ enum {
 	SEND_PING,		// whether asender should send a ping asap
 	WRITE_ACK_PENDING,	// so BarrierAck won't overtake WriteAck
 	WORK_PENDING,		// completion flag for drbd_disconnect
-	WRITER_PRESENT,		// somebody opened us with write intent
 	STOP_SYNC_TIMER,	// tell timer to cancel itself
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense

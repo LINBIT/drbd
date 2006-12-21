@@ -377,7 +377,6 @@ static const char *error_messages[] = {
 	EM(PauseFlagAlreadySet) = "PauseFlagAlreadySet",
 	EM(PauseFlagAlreadyClear) = "PauseFlagAlreadyClear",
 	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
-	EM(DeviceInUse) = "DeviceInUse",
 	EM(HaveNoDiskConfig) = "HaveNoDiskConfig",
 	EM(ProtocolCRequired) = "ProtocolCRequired"
 };
