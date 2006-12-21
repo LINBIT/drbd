@@ -161,7 +161,8 @@ resource r0 {
     <replaceable>host-name</replaceable> is mandatory and must match the
     linux hostname (uname -n) of one of the nodes.
     Required parameters in this section: <option>device</option>,
-    <option>disk</option>, <option>address</option>, <option>meta-disk</option>.
+    <option>disk</option>, <option>address</option>, <option>meta-disk</option>,
+    <option>flexible-meta-disk</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -175,7 +176,7 @@ resource r0 {
     <manvolnum>8</manvolnum></citerefentry> for detailed description of 
     the parameters.
     Optional parameter: <option>on-io-error</option>,
-    <option>size</option>.
+    <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -190,6 +191,7 @@ resource r0 {
     Optional parameters:
     <option>sndbuf-size</option>, <option>timeout</option>,
     <option>connect-int</option>, <option>ping-int</option>,
+    <option>ping-timeout</option>,
     <option>max-buffers</option>, <option>max-epoch-size</option>,
     <option>ko-count</option>, <option>allow-two-primaries</option>,
     <option>cram-hmac-alg</option>, <option>shared-secret</option>,
@@ -233,7 +235,8 @@ resource r0 {
     by the DRBD system in response to certain events.
     Optional parameters:
     <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>, 
-    <option>outdate-peer</option>.
+    <option>pri-lost</option>, <option>outdate-peer</option>,
+    <option>local-io-error</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -252,13 +255,10 @@ resource r0 {
     <replaceable>count</replaceable> may be a number from 1 to 255.
   </para>
   <para>Use <replaceable>minor-count</replaceable>
-   if you want to define more resources later without reloading the DRBD kernel
-   module. Per default the module loads with exactly as many devices as
-   configured in this file. Built-in default for module is 2, and 8 for
-   monolithic kernel. For monolithic kernel
-   <replaceable>minor-count</replaceable> is ignored, and you have to pass a
-   kernel boot parameter <replaceable>drbd.minor_count=count</replaceable> to
-   change the default.</para>
+   if you want to define massively more resources later without reloading 
+   the DRBD kernel
+   module. Per default the module loads with 11 more than you have currently
+   in your config but at least 32. 
    </listitem>
 </varlistentry>
 
@@ -375,12 +375,18 @@ resource r0 {
 
 <varlistentry>
   <term><option>meta-disk <replaceable>internal</replaceable></option></term>
-  <term><option>meta-disk <replaceable>device
-  [index]</replaceable></option></term>
+  <term><option>flexible-meta-disk <replaceable>internal</replaceable></option>
+    </term>
+  <term><option>meta-disk <replaceable>device [index]</replaceable></option>
+    </term>
+  <term><option>flexible-meta-disk <replaceable>device </replaceable></option>
+    </term>
   <listitem><para>
-    internal means, that the last 128 MB of the lower device are used to store
+    internal means, that the last part of the backing device are used to store
     the meta-data. You must not use <replaceable>[index]</replaceable> with
-    internal.
+    internal. Note: Regardless if you use the <option>meta-disk</option> or
+    the <option>flexible-meta-disk</option> keyword, it will always be of
+    the size needed for the remaining storage size.
   </para>
   <para>
    You can use a single block <replaceable>device</replaceable> to store
@@ -389,6 +395,16 @@ resource r0 {
    for two different resources. In this case the meta-disk
    would need to be at least 256 MB in size.
   </para>
+
+  <para>
+   With the <option>flexible-meta-disk</option> keyword you specify
+   a block device as meta-data storage. You usually use this whith LVM,
+   which allows you to have many variable sized block devices.
+   The required size of the meta-disk block device is 
+   36kB + Backing-Storage-size / 32k. Round this number to the next 4kb
+   boundary up and you have the exact size.
+   Rule of the thumb: 32kByte per 1GByte of storage, round up to the next
+   MB.</para>
   </listitem>
 </varlistentry>
 
@@ -399,11 +415,13 @@ resource r0 {
     device reports io-error to the upper layers.
   </para>
   <para>
-  <replaceable>handler</replaceable> may be pass_on, panic, or detach.
+  <replaceable>handler</replaceable> may be pass_on, call-local-io-error 
+  or detach.
   </para>
   <para>pass_on: Report the io-error to the upper layers. On Primary report
   it to the mounted file system. On Secondary ignore it.</para>
-  <para>panic: The node leaves the cluster by doing a kernel panic.</para>
+  <para>call-local-io-error: Thall the handler script 
+         <option>local-io-error</option>.</para>
   <para>detach: The node drops its low level device, and continues in disk
   less mode.</para>
   </listitem>
@@ -443,6 +461,25 @@ resource r0 {
       </para></listitem></varlistentry>
     </variablelist>
   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>use-bmbv</option></term>
+  <listitem>
+    <para>
+      In case the backing storage's driver has a merge_bvec_fn() function
+      (At time of writing the only known drivers which have such a function
+      are: md (software raid driver), dm (device mapper - LVM) and DRBD
+      itself) drbd has to pretend that it can only process IO requests in
+      units not lager than 4kByte.</para>
+    <para>
+      To get best performance out of DRBD on top of software raid (or any
+      other driver with a merge_bvec_fn() function) you might enable this
+      function, iff you know for sure that the merge_bvec_fn() function will
+      deliver the same results on all nodes of your cluster. I.e. the
+      physical disks of the software raid are of the exact same type.  USE
+      THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
+   </listitem>
 </varlistentry>
 
 <varlistentry>
@@ -488,6 +525,15 @@ the unit is 1 second.
 </varlistentry>
 
 <varlistentry>
+  <term><option>ping-timeout <replaceable>time</replaceable></option></term>
+  <listitem><para>
+    The time the peer has time to answer to a keep-alive packet, it. In case
+    the peer's reply is not received within this time period, it is
+    considered as dead. The default is 500ms, the default unit is 100ms.
+  </para></listitem>
+</varlistentry>
+
+<varlistentry>
   <term><option>max-buffers <replaceable>number</replaceable></option></term>
   <listitem><para>
   Maximal number of requests to be allocated by DRBD. Unit is PAGE_SIZE,
@@ -496,6 +542,17 @@ the unit is 1 second.
   For high performance installations it might help, if you
   increase that number. These buffers are used to hold
   datablocks while they are written to disk.
+  </para></listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>ko-count <replaceable>number</replaceable></option></term>
+  <listitem><para>
+	      In case the secondary node fails to complete a single write
+	      request for <replaceable>count</replaceable> times the
+	      <replaceable>timeout</replaceable>, it is expelled from the
+	      cluster. (I.e. the primary node goes into StandAlone mode.)
+	      The default is 0, which disables this feature.
   </para></listitem>
 </varlistentry>
 
@@ -602,16 +659,26 @@ the unit is 1 second.
                   if the <option>after-sb-0pri</option> algorithm would also 
 		  destroy the current secondary's data. Otherwise disconnect.
 		</para></listitem></varlistentry>
+		<varlistentry><term><option>violently-as0p</option></term> 
+		<listitem><para>
+                  Always take the decission of the <option>after-sb-0pri</option>
+                  algorithm. Even if that causes case an erratic change of
+                  the primarie's view of the data.  This is only usefull if
+                  you use an 1node FS (i.e.  not OCFS2 or GFS) with the
+                  allow-two-primaries flag, _AND_ you really know what you
+                  are doing.  This is DANGEROUS and MAY CRASH YOUR MACHINE
+                  if you have a FS mounted on the primary node.
+		</para></listitem></varlistentry>
 		<varlistentry><term><option>discard-secondary</option></term> 
 		<listitem><para>
 		  Discard the secondary's version.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>panic-primary</option></term> 
+		<varlistentry><term><option>call-pri-lost-after-sb</option></term> 
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
-		  secondary has the right data, it panics the
-		  current primary.
+		  secondary has the right data, it calls the "pri-lost-after-sb"
+		  handler on the current primary.
 		</para></listitem></varlistentry>
               </variablelist>
 	  </listitem>
@@ -628,10 +695,49 @@ the unit is 1 second.
 	        <listitem><para>
 		  No automatic resynchronisation, simply disconnect.
 		</para></listitem></varlistentry>
-	        <varlistentry><term><option>panic</option></term>
+              <varlistentry><term><option>violently-as0p</option></term>
+	        <listitem><para>
+                  Always take the decission of the <option>after-sb-0pri</option>
+                  algorithm. Even if that causes case an erratic change of
+                  the primarie's view of the data.  This is only usefull if
+                  you use an 1node FS (i.e.  not OCFS2 or GFS) with the
+                  allow-two-primaries flag, _AND_ you really know what you
+                  are doing.  This is DANGEROUS and MAY CRASH YOUR MACHINE
+                  if you have a FS mounted on the primary node.
+		</para></listitem></varlistentry>
+	        <varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
-		  Honour the outcome of the <option>after-sb-0pri</option> 
-		  policy and panic the other node.
+                   Call the "pri-lost-after-sb" helper program on one of the
+    	           machines. This program is expected to reboot the
+    	           machine. (I.e. make it secondary.)
+		</para></listitem></varlistentry>
+              </variablelist>
+	  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>rr-conflict </option><replaceable>policy</replaceable></term>
+	  <listitem>
+	    <para>
+	    To solve the cases when the outcome of the resync decission is
+	    incompatible to the current role assignment in the cluster.
+	    </para>
+            <variablelist>
+              <varlistentry><term><option>disconnect</option></term>
+	        <listitem><para>
+		  No automatic resynchronisation, simply disconnect.
+		</para></listitem></varlistentry>
+              <varlistentry><term><option>violently</option></term>
+	        <listitem><para>
+                   Sync to the primary node is allowed, violating the
+    	           assumption that data on a block device is stable for one
+    	           of the nodes. DANGEROUS, DO NOT USE.
+		</para></listitem></varlistentry>
+	        <varlistentry><term><option>call-pri-lost</option></term>
+		<listitem><para>
+                   Call the "pri-lost" helper program on one of the
+    	           machines. This program is expected to reboot the
+    	           machine. (I.e. make it secondary.)
 		</para></listitem></varlistentry>
               </variablelist>
 	  </listitem>
@@ -713,11 +819,23 @@ the unit is 1 second.
   </para></listitem> </varlistentry> 
 
 <varlistentry>
+  <term><option>pri-lost <replaceable>cmd</replaceable></option></term>
+  <listitem><para> The node is currently primary, but DRBD's algorithm
+  thinks, that it should become sync target, as consequence it should
+  give up its primary state.
+  </para></listitem> </varlistentry> 
+
+<varlistentry>
   <term><option>outdate-peer <replaceable>cmd</replaceable></option></term> 
   <listitem><para> The handler is part of the <option>fencing</option>
   mechanism.  This handler is called in case the node needs to outdate the
   peer's disk. It should use other communication pathes then DRBD's network
   link.  </para></listitem> </varlistentry>
+
+<varlistentry>
+  <term><option>local-io-error <replaceable>cmd</replaceable></option></term> 
+  <listitem><para> DRBD got an IO error from the local IO subsystem.
+  </para></listitem> </varlistentry>
 
 </variablelist>
 </refsect2>
@@ -741,7 +859,7 @@ Man pages were reviewed and rewritten by Helmut Wollmersdorfer <email>helmut.wol
 <refsect1>
 <title>Copyright</title>
 <simpara>
-Copyright (c) 2001-2005 Philipp Reisner. This  is  free software; 
+Copyright (c) 2001-2006 Philipp Reisner. This  is  free software; 
 see the source for copying conditions.  There is NO warranty; 
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 </simpara>

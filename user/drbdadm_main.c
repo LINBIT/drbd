@@ -405,7 +405,6 @@ static int sh_mod_parms(struct d_resource* res __attribute((unused)),const char*
 {
   int mc=global_options.minor_count;
 
-  if(global_options.disable_io_hints) printf("disable_io_hints=1 ");
   if( mc == 0) mc = highest_minor+11;
   if( mc < 32) mc = 32;
   printf("minor_count=%d\n",mc);

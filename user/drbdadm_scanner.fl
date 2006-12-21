@@ -55,7 +55,6 @@ startup			{ DP; return TK_STARTUP;		}
 handlers		{ DP; return TK_HANDLER;		}
 protocol		{ DP; return TK_PROTOCOL;		}
 minor-count		{ DP; return TK_MINOR_COUNT;		}
-disable-io-hints	{ DP; return TK_DISABLE_IO_HINTS;	}
 disable-ip-verification { DP; return TK_DISABLE_IP_VERIFICATION;}
 dialog-refresh		{ DP; return TK_DIALOG_REFRESH;		}
 resource		{ DP; return TK_RESOURCE;		}
