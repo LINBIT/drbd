@@ -22,8 +22,8 @@
 
 extern const char * drbd_buildtag(void);
 
-#define REL_VERSION "8.0pre6"
-#define API_VERSION 85
+#define REL_VERSION "8.0rc1"
+#define API_VERSION 86
 #define PRO_VERSION 85
 
 // undef if you need the workaround in drbd_receiver

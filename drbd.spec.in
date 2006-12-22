@@ -191,6 +191,17 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Dec 22 2006 15:19:10 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0rc1-1)
+ * The drbd-peer-outdater got updated to work in multi node heartbeat
+   clusters. (But we still not suceeded to get this into Heartbeat's 
+   repository accepted.)
+ * Fixed resync decission after a crash in a pri-pri cluster.
+ * Implemented the ping-timeout option for "sub-second" failover clusters.
+ * Implemented all the "violently" options in the reconnect handling.
+ * Updated man pages of drbd.conf and drbdsetup.
+ * Removed the "self-claiming" on secondary nodes.
+ * Fixed an uncountable number of bugs.
 
 * Fri Nov  3 2006 15:20:54 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0pre6-1)

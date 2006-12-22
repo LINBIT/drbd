@@ -4,6 +4,18 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0rc1 (api:86/proto:85)
+--------
+ * The drbd-peer-outdater got updated to work in multi node heartbeat
+   clusters. (But we still not suceeded to get this into Heartbeat's 
+   repository accepted.)
+ * Fixed resync decission after a crash in a pri-pri cluster.
+ * Implemented the ping-timeout option for "sub-second" failover clusters.
+ * Implemented all the "violently" options in the reconnect handling.
+ * Updated man pages of drbd.conf and drbdsetup.
+ * Removed the "self-claiming" on secondary nodes.
+ * Fixed an uncountable number of bugs.
+
 8.0pre6 (api:85/proto:85)
 --------
  * All panic() calls where removed from DRBD.
