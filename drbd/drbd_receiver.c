@@ -1927,10 +1927,10 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	}
 
 	if ( hg == -100 ) {
-		if(mdev->net_conf->want_lose && !mdev->p_uuid[UUID_FLAGS]) {
+		if(mdev->net_conf->want_lose && !(mdev->p_uuid[UUID_FLAGS]&1)){
 			hg = -1;
 		}
-		if(!mdev->net_conf->want_lose && mdev->p_uuid[UUID_FLAGS]) {
+		if(!mdev->net_conf->want_lose && (mdev->p_uuid[UUID_FLAGS]&1)){
 			hg = 1;
 		}
 
