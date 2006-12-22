@@ -113,6 +113,8 @@ else
 
   kbuild: drbd_buildtag.c
 	@rm -f .drbd_kernelrelease*
+	-test -f ../scripts/adjust_drbd_config_h.sh && \
+	 KDIR=$(KDIR) O=$(O) $(SHELL) ../scripts/adjust_drbd_config_h.sh
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules

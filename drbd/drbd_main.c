@@ -710,7 +710,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	if( ns.i == os.i ) return SS_NothingToDo;
-	
+
 	if( !(flags & ChgStateHard) ) {
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
@@ -722,7 +722,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 
 			if( is_valid_state(mdev,os) == rv ) {
 				ERR("Forcing state change from bad state. "
-				    "Error would be: '%s'\n", 
+				    "Error would be: '%s'\n",
 				    set_st_err_name(rv));
 				print_st(mdev,"old",os);
 				print_st(mdev,"new",ns);
@@ -1845,12 +1845,14 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	if(!mdev) return -ENODEV;
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
-	/* The have a stable mdev->state.role and no race with updating open_cnt */
+	/* to have a stable mdev->state.role and no race with updating open_cnt */
 
-	if( mdev->state.role != Primary && !allow_oos) {
-		rv = -EMEDIUMTYPE;
-	} else if (file->f_mode & FMODE_WRITE && mdev->state.role != Primary) {
-		rv = -EROFS;
+	if (mdev->state.role != Primary) {
+		if (file->f_mode & FMODE_WRITE) {
+			rv = -EROFS;
+		} else if (!allow_oos) {
+			rv = -EMEDIUMTYPE;
+		}
 	}
 
 	if(!rv) mdev->open_cnt++;
