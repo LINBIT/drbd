@@ -96,10 +96,8 @@ struct cn_ctl_msg {
 #ifdef __KERNEL__
 #include <linux/drbd_config.h>
 
-#if defined(NETLINK_ROUTE6) && !defined(KERNEL_HAS_GFP_T)
-   /* pre 2.6.16 */
-   /* This ifdef check needs to be refined */
-typedef unsigned __bitwise__ gfp_t;
+#if !defined(KERNEL_HAS_GFP_T)
+typedef unsigned int gfp_t;
 #endif
 
 #include <asm/atomic.h>

@@ -166,3 +166,69 @@ static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
 	kunmap(page);
 	return ret;
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
+
+#if defined(__x86_64__)
+
+static __inline__ int atomic_add_return(int i, atomic_t *v)
+{
+        int __i = i;
+        __asm__ __volatile__(
+                LOCK_PREFIX "xaddl %0, %1;"
+                :"=r"(i)
+                :"m"(v->counter), "0"(i));
+        return i + __i;
+}
+
+static __inline__ int atomic_sub_return(int i, atomic_t *v)
+{
+        return atomic_add_return(-i,v);
+}
+
+#define atomic_inc_return(v)  (atomic_add_return(1,v))
+#define atomic_dec_return(v)  (atomic_sub_return(1,v))
+
+#elif defined(__i386__) || defined(__arch_um__)
+
+static __inline__ int atomic_add_return(int i, atomic_t *v)
+{
+        int __i;
+#ifdef CONFIG_M386
+        unsigned long flags;
+        if(unlikely(boot_cpu_data.x86==3))
+                goto no_xadd;
+#endif
+        /* Modern 486+ processor */
+        __i = i;
+        __asm__ __volatile__(
+                LOCK_PREFIX "xaddl %0, %1;"
+                :"=r"(i)
+                :"m"(v->counter), "0"(i));
+        return i + __i;
+
+#ifdef CONFIG_M386
+no_xadd: /* Legacy 386 processor */
+        local_irq_save(flags);
+        __i = atomic_read(v);
+        atomic_set(v, i + __i);
+        local_irq_restore(flags);
+        return i + __i;
+#endif
+}
+
+static __inline__ int atomic_sub_return(int i, atomic_t *v)
+{
+        return atomic_add_return(-i,v);
+}
+
+#define atomic_inc_return(v)  (atomic_add_return(1,v))
+#define atomic_dec_return(v)  (atomic_sub_return(1,v))
+
+#else 
+# error "You need to copy/past atomic_inc_return()/atomic_dec_return() here"
+# error "for your architecture. (Hint: Kernels after 2.6.10 have those"
+# error "by default! Using a later kernel might be less effort!)"
+#endif
+
+#endif
