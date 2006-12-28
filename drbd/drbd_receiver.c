@@ -31,8 +31,6 @@
 #include <asm/uaccess.h>
 #include <net/sock.h>
 
-#include <linux/tcp.h>
-
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -764,7 +762,6 @@ int drbd_connect(drbd_dev *mdev)
 	msock->sk->sk_allocation = GFP_NOIO;
 
 	sock->sk->sk_priority=TC_PRIO_BULK;
-	tcp_sk(sock->sk)->nonagle = 0;
 	// FIXME fold to limits. should be done in drbd_ioctl
 	sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
 	sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
@@ -777,7 +774,6 @@ int drbd_connect(drbd_dev *mdev)
 	sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 
 	msock->sk->sk_priority=TC_PRIO_INTERACTIVE;
-	tcp_sk(sock->sk)->nonagle = 1;
 	msock->sk->sk_sndbuf = 2*32767;
 	msock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	msock->sk->sk_rcvtimeo = mdev->net_conf->ping_int*HZ;
@@ -3279,11 +3275,15 @@ int drbd_asender(struct Drbd_thread *thi)
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
 			flush_signals(current);
 		}
+		drbd_tcp_flush(mdev->meta.socket);
+
 		rv = drbd_recv_short(mdev, mdev->meta.socket,
 				     buf,expect-received);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 		flush_signals(current);
+
+		drbd_tcp_cork(mdev->meta.socket);
 
 		/* Note:
 		 * -EINTR        (on meta) we got a signal

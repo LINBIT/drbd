@@ -850,12 +850,23 @@ int drbd_worker(struct Drbd_thread *thi)
 	drbd_dev *mdev = thi->mdev;
 	struct drbd_work *w = 0;
 	LIST_HEAD(work_list);
-	int intr,i;
+	int intr=0,i;
 
 	sprintf(current->comm, "drbd%d_worker", mdev_to_minor(mdev));
 
 	while (get_t_state(thi) == Running) {
-		intr = down_interruptible(&mdev->data.work.s);
+
+		if(down_trylock(&mdev->data.work.s)) {
+			down(&mdev->data.mutex);
+			if(mdev->data.socket)drbd_tcp_flush(mdev->data.socket);
+			up(&mdev->data.mutex);
+
+			intr = down_interruptible(&mdev->data.work.s);
+
+			down(&mdev->data.mutex);
+			if(mdev->data.socket) drbd_tcp_cork(mdev->data.socket);
+			up(&mdev->data.mutex);
+		}
 
 		if (intr) {
 			D_ASSERT(intr == -EINTR);
