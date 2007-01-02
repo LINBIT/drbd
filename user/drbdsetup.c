@@ -364,21 +364,21 @@ static const char *error_messages[] = {
 	EM(CRAMAlgNotDigest) = "The 'cram-hmac-alg' you specified is not a digest.",
 	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
 	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
-	EM(HaveDiskConfig) = "HaveDiskConfig",
-	EM(HaveNetConfig) = "HaveNetConfig",
+	EM(HaveDiskConfig) = "Device is attached to a disk (use detach first)",
+	EM(HaveNetConfig) = "Device has a net-config (use disconnect first)",
 	EM(UnknownMandatoryTag) = "UnknownMandatoryTag",
-	EM(MinorNotKnown) = "MinorNotKnown",
-	EM(StateNotAllowed) = "StateNotAllowed",
-	EM(GotSignal) = "GotSignal",
+	EM(MinorNotKnown) = "Device minor not allocated",
+	EM(StateNotAllowed) = "Resulting device state would be invalid",
+	EM(GotSignal) = "Interrupted by Signal",
 	EM(NoResizeDuringResync) = "Resize not allowed during resync.",
 	EM(APrimaryNodeNeeded) = "Need the a primary node to resize.",
 	EM(SyncAfterInvalid) = "The sync after minor number is invalid",
 	EM(SyncAfterCycle) = "This would cause a sync-after dependency cycle",
-	EM(PauseFlagAlreadySet) = "PauseFlagAlreadySet",
-	EM(PauseFlagAlreadyClear) = "PauseFlagAlreadyClear",
-	EM(DiskLowerThanOutdated) = "DiskLowerThanOutdated",
-	EM(HaveNoDiskConfig) = "HaveNoDiskConfig",
-	EM(ProtocolCRequired) = "ProtocolCRequired"
+	EM(PauseFlagAlreadySet) = "Sync-pause flag is already set",
+	EM(PauseFlagAlreadyClear) = "Sync-pause flag is already cleared",
+	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
+	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
+	EM(ProtocolCRequired) = "Protocol C required"
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
