@@ -100,6 +100,7 @@ typedef enum {
 	connection_lost_while_pending,
 	recv_acked_by_peer,
 	write_acked_by_peer,
+	write_acked_by_peer_and_sis, // and set_in_sync
 	conflict_discarded_by_peer,
 	neg_acked,
 	barrier_acked, /* in protocol A and B */
@@ -175,6 +176,9 @@ enum drbd_req_state_bits {
 	 * was successfully written on the peer.
 	 */
 	__RQ_NET_OK,
+	
+	/* peer called drbd_set_in_sync() for this write */
+	__RQ_NET_SIS,
 };
 
 #define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
@@ -188,6 +192,7 @@ enum drbd_req_state_bits {
 #define RQ_NET_SENT        (1UL << __RQ_NET_SENT)
 #define RQ_NET_DONE        (1UL << __RQ_NET_DONE)
 #define RQ_NET_OK          (1UL << __RQ_NET_OK)
+#define RQ_NET_SIS         (1UL << __RQ_NET_SIS)
 
 #define RQ_NET_MASK        (((RQ_NET_OK << 1)-1) & ~RQ_LOCAL_MASK) /* 0xf8 */
 

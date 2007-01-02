@@ -242,7 +242,7 @@ void _req_may_be_done(drbd_request_t *req, int error)
 			}
 
 			if( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) && 
-			    test_bit(SYNC_STARTED,&mdev->flags) ) {
+			    (s & RQ_NET_SIS) ) {
 				drbd_set_in_sync(mdev,req->sector,req->size);
 			}
 
@@ -614,6 +614,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 			_req_may_be_done(req,error);
 		break;
 
+	case write_acked_by_peer_and_sis:
+		req->rq_state |= RQ_NET_SIS;
 	case conflict_discarded_by_peer:
 		/* interesstingly, this is the same thing! */
 	case write_acked_by_peer:

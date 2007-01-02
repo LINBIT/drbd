@@ -288,6 +288,7 @@ typedef enum {
 	PingAck,
 	RecvAck,      // Used in protocol B
 	WriteAck,     // Used in protocol C
+	RSWriteAck,   // Is a WriteAck, additionally call set_in_sync().
 	DiscardAck,   // Used in protocol C, two-primaries conflict detection
 	NegAck,       // Sent if local disk is unusable
 	NegDReply,    // Local disk is broken...
@@ -336,6 +337,7 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 		[PingAck]          = "PingAck",
 		[RecvAck]          = "RecvAck",
 		[WriteAck]         = "WriteAck",
+		[RSWriteAck]       = "RSWriteAck",
 		[DiscardAck]       = "DiscardAck",
 		[NegAck]           = "NegAck",
 		[NegDReply]        = "NegDReply",
@@ -679,7 +681,6 @@ enum {
 	UNPLUG_QUEUED,		// only relevant with kernel 2.4
 	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
 	MD_DIRTY,		// current gen counts and flags not yet on disk
-	SYNC_STARTED,		// Needed to agree on the exact point in time..
 	DISCARD_CONCURRENT,     // Set on one node, cleared on the peer!
 	USE_DEGR_WFC_T,		// Use degr-wfc-timeout instead of wfc-timeout.
 	CLUSTER_ST_CHANGE,      // Cluster wide state change going on...

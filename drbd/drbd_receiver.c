@@ -1024,8 +1024,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	if (likely( drbd_bio_uptodate(e->private_bio) )) {
 		drbd_set_in_sync(mdev, sector, e->size);
-		ok = drbd_send_ack(mdev,WriteAck,e);
-		set_bit(SYNC_STARTED,&mdev->flags);
+		ok = drbd_send_ack(mdev,RSWriteAck,e);
 	} else {
 		// Record failure to sync
 		drbd_rs_failed_io(mdev, sector, e->size);
@@ -1170,12 +1169,15 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = e->sector;
 	// unsigned int epoch_size;
-	int ok=1;
+	int ok=1,pcmd;
 
 	if(mdev->net_conf->wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
-			ok &= drbd_send_ack(mdev,WriteAck,e);
-			if (test_bit(SYNC_STARTED,&mdev->flags))
+			pcmd = (mdev->state.conn >= SyncSource && 
+				mdev->state.conn <= PausedSyncT) ?
+				RSWriteAck : WriteAck;
+			ok &= drbd_send_ack(mdev,pcmd,e);
+			if(pcmd==RSWriteAck)
 				drbd_set_in_sync(mdev,sector,e->size);
 		} else {
 			/* FIXME I think we should send a NegAck regardless of
@@ -3092,7 +3094,6 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 
 	if( is_syncer_block_id(p->block_id)) {
 		drbd_set_in_sync(mdev,sector,blksize);
-		set_bit(SYNC_STARTED,&mdev->flags);
 		dec_rs_pending(mdev);
 	} else {
 		spin_lock_irq(&mdev->req_lock);
@@ -3105,6 +3106,10 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 		}
 
 		switch (be16_to_cpu(h->command)) {
+		case RSWriteAck:
+			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+			_req_mod(req,write_acked_by_peer_and_sis,0);
+			break;
 		case WriteAck:
 			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
 			_req_mod(req,write_acked_by_peer,0);
@@ -3242,6 +3247,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		[PingAck]   ={ sizeof(Drbd_Header),           got_PingAck },
 		[RecvAck]   ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[WriteAck]  ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
+		[RSWriteAck]={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[DiscardAck]={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
 		[NegAck]    ={ sizeof(Drbd_BlockAck_Packet),  got_NegAck },
 		[NegDReply] ={ sizeof(Drbd_BlockAck_Packet),  got_NegDReply },
