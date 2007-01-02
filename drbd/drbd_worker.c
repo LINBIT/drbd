@@ -433,6 +433,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
 		}
+		drbd_send_uuids(mdev);
 	}
 
 	mdev->rs_total  = 0;
