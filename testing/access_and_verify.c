@@ -218,7 +218,8 @@ void write_pattern(int fd,unsigned long block,int block_size,int run_number)
 
   if( write(fd,datab,block_size) != block_size ) 
     {
-      fprintf(stderr,"Write to device failed\n");
+      perror("Write to device failed");
+      fprintf(stderr,"block=%lu\n",block);
       exit(20);
     }
 
@@ -241,6 +242,7 @@ unsigned long makeup_block_nr(unsigned long long device_size,int block_size)
   else 
     {
       block++;
+      block = block % ( device_size / block_size );
       sequence--;
     }
 

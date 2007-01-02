@@ -2378,7 +2378,7 @@ int is_attached(int minor)
 {
 	FILE *pr;
 	char token[40];
-	int rv=1;
+	int rv=-1;
 	long m,cm=-1;
 	char *p;
 
@@ -2388,6 +2388,7 @@ int is_attached(int minor)
 	while(fget_token(token,40,pr) != EOF) {
 		m=strtol(token,&p,10);
 		if(*p==':' && p-token == (long)strlen(token)-1 ) cm=m;
+		if( cm == minor && rv == -1 ) rv=1;
 		if( cm == minor ) {
 			if(!strcmp(token,"cs:Unconfigured")) rv = 0;
 			if(!strncmp(token,"ds:Diskless",11)) rv = 0;
@@ -2395,6 +2396,7 @@ int is_attached(int minor)
 	}
 	fclose(pr);
 
+	if(rv == -1) rv = 0; // minor not found -> not attached.
 	return rv;
 }
 
