@@ -420,7 +420,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 				for ( i=Bitmap ; i<=History_end ; i++ ) {
 					_drbd_uuid_set(mdev,i,mdev->p_uuid[i]);
 				}
-				drbd_uuid_set_bm(mdev,0UL); //Rotate peer's bitmap-UUID
 				drbd_uuid_set(mdev,Current,mdev->p_uuid[Current]);
 			} else {
 				ERR("mdev->p_uuid is NULL! BUG\n");
@@ -430,10 +429,13 @@ int drbd_resync_finished(drbd_dev* mdev)
 		drbd_uuid_set_bm(mdev,0UL);
 
 		if ( mdev->p_uuid ) {
-			kfree(mdev->p_uuid);
-			mdev->p_uuid = NULL;
+			// Now the two UUID sets are equal, update what we 
+			// know of the peer.
+			int i;
+			for ( i=Current ; i<=History_end ; i++ ) {
+				mdev->p_uuid[i]=mdev->bc->md.uuid[i];
+			}			
 		}
-		drbd_send_uuids(mdev);
 	}
 
 	mdev->rs_total  = 0;

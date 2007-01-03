@@ -3102,6 +3102,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case RecvAck:
 	case WriteAck:
+	case RSWriteAck:
 	case DiscardAck:
 	case NegAck:
 	case NegRSDReply:
