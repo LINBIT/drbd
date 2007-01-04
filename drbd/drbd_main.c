@@ -1667,10 +1667,14 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 				  atomic_add_return(1,&mdev->packet_seq) );
 	dp_flags = 0;
 	if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
-		dp_flags = DP_HARDBARRIER;
+		dp_flags |= DP_HARDBARRIER;
 	}
 	if(req->master_bio->bi_rw & BIO_RW_SYNC) {
-		dp_flags = DP_RW_SYNC;
+		dp_flags |= DP_RW_SYNC;
+	}
+	if(mdev->state.conn >= SyncSource && 
+	   mdev->state.conn <= PausedSyncT) {
+		dp_flags |= DP_MAY_SET_IN_SYNC;
 	}
 
 	p.dp_flags = cpu_to_be32(dp_flags);
@@ -2681,11 +2685,15 @@ STATIC void drbd_uuid_move_history(drbd_dev *mdev)
 
 void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
-	if (mdev->state.role == Primary) {
-		mdev->bc->md.uuid[idx] = val | 1;
-	} else {
-		mdev->bc->md.uuid[idx] = val & ~((u64)1);
+	if(idx == Current) {
+		if (mdev->state.role == Primary) {
+			val |= 1;
+		} else {
+			val &= ~((u64)1);
+		}
 	}
+
+	mdev->bc->md.uuid[idx] = val;
 
 	MTRACE(TraceTypeUuid,TraceLvlSummary,
 	       drbd_print_uuid(mdev,idx);

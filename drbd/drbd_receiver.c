@@ -1174,7 +1174,8 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(mdev->net_conf->wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
 			pcmd = (mdev->state.conn >= SyncSource && 
-				mdev->state.conn <= PausedSyncT) ?
+				mdev->state.conn <= PausedSyncT &&
+				e->flags & EE_MAY_SET_IN_SYNC) ?
 				RSWriteAck : WriteAck;
 			ok &= drbd_send_ack(mdev,pcmd,e);
 			if(pcmd==RSWriteAck)
@@ -1329,6 +1330,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 	if ( dp_flags & DP_RW_SYNC ) {
 		e->private_bio->bi_rw |= BIO_RW_SYNC;
+	}
+	if ( dp_flags & DP_MAY_SET_IN_SYNC ) {
+		e->flags |= EE_MAY_SET_IN_SYNC;
 	}
 
 	/* I'm the receiver, I do hold a net_cnt reference. */

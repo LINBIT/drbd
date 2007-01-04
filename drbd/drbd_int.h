@@ -400,8 +400,9 @@ typedef struct {
  *   Data, DataReply (see Drbd_Data_Packet)
  */
 
-#define DP_HARDBARRIER 1
-#define DP_RW_SYNC     2
+#define DP_HARDBARRIER        1
+#define DP_RW_SYNC            2
+#define DP_MAY_SET_IN_SYNC    4
 
 typedef struct {
 	Drbd_Header head;
@@ -665,10 +666,11 @@ struct Tl_epoch_entry {
 enum {
 	__EE_CALL_AL_COMPLETE_IO,
 	__EE_CONFLICT_PENDING,
+	__EE_MAY_SET_IN_SYNC,
 };
 #define EE_CALL_AL_COMPLETE_IO (1<<__EE_CALL_AL_COMPLETE_IO)
 #define EE_CONFLICT_PENDING    (1<<__EE_CONFLICT_PENDING)
-
+#define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 
 /* global flag bits */
 enum {
