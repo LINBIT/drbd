@@ -420,7 +420,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 				for ( i=Bitmap ; i<=History_end ; i++ ) {
 					_drbd_uuid_set(mdev,i,mdev->p_uuid[i]);
 				}
-				drbd_uuid_set(mdev,Current,mdev->p_uuid[Current]);
+				drbd_uuid_set(mdev,Bitmap,mdev->bc->md.uuid[Current]);
+				_drbd_uuid_set(mdev,Current,mdev->p_uuid[Current]);
 			} else {
 				ERR("mdev->p_uuid is NULL! BUG\n");
 			}
