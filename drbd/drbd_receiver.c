@@ -1818,7 +1818,7 @@ STATIC void drbd_uuid_dump(drbd_dev *mdev,char* text,u64* uuid)
  -100   after split brain, disconnect
 -1000   unrelated data
  */
-STATIC int drbd_uuid_compare(drbd_dev *mdev)
+STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 {
 	u64 self, peer;
 	int i,j;
@@ -1826,55 +1826,67 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev)
 	self = mdev->bc->md.uuid[Current] & ~((u64)1);
 	peer = mdev->p_uuid[Current] & ~((u64)1);
 
+	*rule_nr = 1;
 	if (self == UUID_JUST_CREATED &&
 	    peer == UUID_JUST_CREATED) return 0;
 
+	*rule_nr = 2;
 	if (self == UUID_JUST_CREATED &&
 	    peer != UUID_JUST_CREATED) return -2;
 
+	*rule_nr = 3;
 	if (self != UUID_JUST_CREATED &&
 	    peer == UUID_JUST_CREATED) return 2;
 
+	*rule_nr = 4;
 	if (self == peer) { // Common power [off|failure]
-		int rct; // roles at crash time
+		int rct,dc; // roles at crash time
 
 		rct = (test_bit(CRASHED_PRIMARY, &mdev->flags) ? 1 : 0) +
 			( mdev->p_uuid[UUID_FLAGS] & 2 );
 		// lowest bit is set when we were primary
 		// next bit (weight 2) is set when peer was primary
 
+		MTRACE(TraceTypeUuid,TraceLvlMetrics, DUMPI(rct); );
+
 		switch(rct) {
 		case 0: /* !self_pri && !peer_pri */ return 0;
 		case 1: /*  self_pri && !peer_pri */ return 1;
 		case 2: /* !self_pri &&  peer_pri */ return -1;
 		case 3: /*  self_pri &&  peer_pri */ 
-			return test_bit(DISCARD_CONCURRENT,&mdev->flags) ? -1 : 1;
+			dc = test_bit(DISCARD_CONCURRENT,&mdev->flags);
+			MTRACE(TraceTypeUuid,TraceLvlMetrics, DUMPI(dc); );
+			return dc ? -1 : 1;
 		}
 	}
 
+	*rule_nr = 5;
 	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
 	if (self == peer) return -1;
 
+	*rule_nr = 6;
 	for ( i=History_start ; i<=History_end ; i++ ) {
 		peer = mdev->p_uuid[i] & ~((u64)1);
 		if (self == peer) return -2;
 	}
 
+	*rule_nr = 7;
 	self = mdev->bc->md.uuid[Bitmap] & ~((u64)1);
 	peer = mdev->p_uuid[Current] & ~((u64)1);
-
 	if (self == peer) return 1;
 
+	*rule_nr = 8;
 	for ( i=History_start ; i<=History_end ; i++ ) {
 		self = mdev->bc->md.uuid[i] & ~((u64)1);
 		if (self == peer) return 2;
 	}
 
+	*rule_nr = 9;
 	self = mdev->bc->md.uuid[Bitmap] & ~((u64)1);
 	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
-
 	if (self == peer) return 100;
 
+	*rule_nr = 10;
 	for ( i=History_start ; i<=History_end ; i++ ) {
 		self = mdev->p_uuid[i] & ~((u64)1);
 		for ( j=History_start ; j<=History_end ; j++ ) {
@@ -1892,20 +1904,20 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev)
 STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 					drbd_disks_t peer_disk)
 {
-	int hg;
+	int hg,rule_nr;
 	drbd_conns_t rv = conn_mask;
 	drbd_disks_t mydisk;
 
 	mydisk = mdev->state.disk;
 	if( mydisk == Negotiating ) mydisk = mdev->new_state_tmp.disk;
 
-	hg = drbd_uuid_compare(mdev);
+	hg = drbd_uuid_compare(mdev,&rule_nr);
 
 	MTRACE(TraceTypeUuid,TraceLvlSummary,
 	       INFO("drbd_sync_handshake:\n");
 	       drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 	       drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
-	       INFO("uuid_compare()=%d\n",hg);
+	       INFO("uuid_compare()=%d by rule %d\n",hg,rule_nr);
 	    );
 
 	if (hg == 100) {
