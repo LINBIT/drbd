@@ -832,6 +832,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 	if ( (os.conn != Connected && ns.conn == Connected) ) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+		if( mdev->p_uuid ) {
+			mdev->p_uuid[UUID_FLAGS] &= ~((u64)2);
+		}
 	}
 
 	fp = DontCare;
