@@ -437,12 +437,12 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
-		dec_local(mdev);
 
 		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
 		_req_may_be_done(req,error);
+		dec_local(mdev);
 		break;
 
 	case write_completed_with_error:
@@ -451,13 +451,13 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
-		dec_local(mdev);
 		ALERT("Local WRITE failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* and now: check how to handle local io error.
 		 * FIXME see comment below in read_completed_with_error */
 		__drbd_chk_io_error(mdev,FALSE);
 		_req_may_be_done(req,error);
+		dec_local(mdev);
 		break;
 
 	case read_completed_with_error:
