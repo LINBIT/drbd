@@ -167,7 +167,17 @@ static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
 	return ret;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
+#ifdef DEFINE_SOCK_CREATE_KERN
+#define sock_create_kern sock_create
+#endif
+
+#ifdef USE_KMEM_CACHE_S
+typedef struct kmem_cache_s drbd_kmem_cache_t;
+#else
+typedef struct kmem_cache drbd_kmem_cache_t;
+#endif
+
+#ifdef NEED_BACKPORT_OF_ATOMIC_ADD
 
 #if defined(__x86_64__)
 
@@ -225,7 +235,7 @@ static __inline__ int atomic_sub_return(int i, atomic_t *v)
 #define atomic_inc_return(v)  (atomic_add_return(1,v))
 #define atomic_dec_return(v)  (atomic_sub_return(1,v))
 
-#else 
+#else
 # error "You need to copy/past atomic_inc_return()/atomic_dec_return() here"
 # error "for your architecture. (Hint: Kernels after 2.6.10 have those"
 # error "by default! Using a later kernel might be less effort!)"

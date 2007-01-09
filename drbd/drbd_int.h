@@ -1151,11 +1151,15 @@ extern void __drbd_bm_lock    (drbd_dev *mdev, char* file, int line);
 extern void drbd_bm_unlock    (drbd_dev *mdev);
 #define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
 
-
 // drbd_main.c
+
+/* needs to be included here,
+ * because of kmem_cache_t weirdness */
+#include "drbd_compat_wrappers.h"
+
 extern int minor_count;
-extern kmem_cache_t *drbd_request_cache;
-extern kmem_cache_t *drbd_ee_cache;
+extern drbd_kmem_cache_t *drbd_request_cache;
+extern drbd_kmem_cache_t *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
 extern mempool_t *drbd_ee_mempool;
 
@@ -1406,8 +1410,6 @@ void drbd_bcast_state(drbd_dev *mdev);
 /*
  * inline helper functions
  *************************/
-
-#include "drbd_compat_wrappers.h"
 
 #define peer_mask role_mask
 #define pdsk_mask disk_mask

@@ -21,21 +21,34 @@ test -e ./linux/drbd_config.h || {
 }
 
 test -n "$KDIR"
+
+# ok, now we have a KDIR; cd into it, in case we detect relative pathes
+pushd $KDIR
+
 KDIR=${KDIR%/}
 if test -z "$O"; then
-	O=$KDIR;
+	## just in case...
+	## detect if $KDIR points to something which is actually $O ...
+	X=$( make help | sed -ne '/ -C .* O=.* help$/p' | tr -s ' ' )
+	if [[ -n $X ]]; then
+		KDIR=${X##* -C }; KDIR=${KDIR%% *}; KDIR=$(cd $KDIR && pwd)
+		O=${X##* O=}; O=${O%% *}; O=$(cd $KDIR && cd $O && pwd)
+	else
+		O=$KDIR;
+	fi
 else
 	O=${O%/}
 fi
 
 # some paranoia: check that all files are where we expect them
 ls > /dev/null \
-$KDIR/{Makefile,include/linux/{gfp,types}.h}
+$KDIR/{Makefile,include/linux/{gfp,types,slab,net}.h}
 ls > /dev/null \
 $O/{.config,Makefile,include/linux/version.h}
-# test -e $KDIR/include/asm/bitops.h ||
-# test -e $O/include2/asm/bitops.h   ||
-# exit 1
+test -e $O/include/asm/atomic.h  ||
+test -e $O/include/asm/arch/atomic.h  ||
+test -e $O/include2/asm/atomic.h ||
+exit 1
 
 if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   # do we have gfp_t?
@@ -44,19 +57,51 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_gfp_t=0
   fi
+  # stupid vendor kernels grrr...
+  have_atomic_add=0
+  # btw, don't ask why I don't use grep -qs $a $b $c 
+  # it simply does not work always...
+  for f in $O/include/asm/atomic.h \
+    $O/include/asm/arch/atomic.h \
+    $O/include2/asm/atomic.h
+  do
+    if grep_q "atomic_add_return" $f; then
+      have_atomic_add=1
+      break
+    fi
+  done
+  if grep_q "typedef.*kmem_cache_s" $KDIR/include/linux/slab.h ; then
+    have_kmem_cache_s=1
+  else
+    have_kmem_cache_s=0
+  fi
+  if grep_q "sock_create_kern" $KDIR/include/linux/net.h ; then
+    have_sock_create_kern=1
+  else
+    have_sock_create_kern=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
 fi
 
+# and back do drbd source
+popd
+
 test -e ./linux/drbd_config.h.orig || cp ./linux/drbd_config.h{,.orig}
 
 perl -pe "
  s{.*(#define KERNEL_HAS_GFP_T.*)}
-  { ( $have_gfp_t ? '' : '//' ) . \$1}e;" \
+  { ( $have_gfp_t ? '' : '//' ) . \$1}e;
+ s{.*(#define NEED_BACKPORT_OF_ATOMIC_ADD.*)}
+  { ( $have_atomic_add ? '//' : '' ) . \$1}e;
+ s{.*(#define USE_KMEM_CACHE_S.*)}
+  { ( $have_kmem_cache_s ? '' : '//' ) . \$1}e;
+ s{.*(#define DEFINE_SOCK_CREATE_KERN.*)}
+  { ( $have_sock_create_kern ? '//' : '' ) . \$1}e;
+ " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
-
 
 if ! DIFF=$(diff -s -U0 ./linux/drbd_config.h{,.new}) ; then
   mv ./linux/drbd_config.h{.new,}

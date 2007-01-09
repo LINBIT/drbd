@@ -125,8 +125,8 @@ volatile int drbd_did_panic = 0;
  */
 struct Drbd_Conf **minor_table = NULL;
 
-kmem_cache_t *drbd_request_cache;
-kmem_cache_t *drbd_ee_cache;
+drbd_kmem_cache_t *drbd_request_cache;
+drbd_kmem_cache_t *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
 mempool_t *drbd_ee_mempool;
 
