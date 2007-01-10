@@ -41,7 +41,7 @@ case "$CMD" in
 	    echo "A resource name is required for status inquiries."
 	    exit 10
 	fi
-	ST=$( $DRBDADM state $RES 2>&1 )
+	ST=$( $DRBDADM state $RES )
 	STATE=${ST%/*}
 	if [ "$STATE" = "Primary" ]; then
 	    echo "running"
