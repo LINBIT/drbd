@@ -960,16 +960,19 @@ STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
+#define HMAC_NAME_L 20
+
 STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			    struct drbd_nl_cfg_reply *reply)
 {
 	int i,ns;
 	enum ret_codes retcode;
 	struct net_conf *new_conf = NULL;
-	struct crypto_tfm* tfm = NULL;
+	struct crypto_hash *tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
 	drbd_dev *odev;
+	char hmac_name[HMAC_NAME_L];
 
 	if (mdev->state.conn > StandAlone) {
 		retcode=HaveNetConfig;
@@ -1047,13 +1050,14 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 #undef O_PORT
 
 	if( new_conf->cram_hmac_alg[0] != 0) {
-		tfm = crypto_alloc_tfm(new_conf->cram_hmac_alg, 0);
+		snprintf(hmac_name,HMAC_NAME_L,"hmac(%s)",new_conf->cram_hmac_alg);
+		tfm = crypto_alloc_hash(hmac_name, 0, CRYPTO_ALG_ASYNC);
 		if (tfm == NULL) {
 			retcode=CRAMAlgNotAvail;
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(tfm) != CRYPTO_ALG_TYPE_DIGEST) {
+		if (crypto_tfm_alg_type(crypto_hash_tfm(tfm)) != CRYPTO_ALG_TYPE_HASH ) {
 			retcode=CRAMAlgNotDigest;
 			goto fail;
 		}
@@ -1126,7 +1130,7 @@ FIXME LGE
 	}
 
 	if ( mdev->cram_hmac_tfm ) {
-		crypto_free_tfm(mdev->cram_hmac_tfm);
+		crypto_free_hash(mdev->cram_hmac_tfm);
 	}
 	mdev->cram_hmac_tfm = tfm;
 
@@ -1136,7 +1140,7 @@ FIXME LGE
 	return 0;
 
   fail:
-	if (tfm) crypto_free_tfm(tfm);
+	if (tfm) crypto_free_hash(tfm);
 	if (new_tl_hash) kfree(new_tl_hash);
 	if (new_ee_hash) kfree(new_ee_hash);
 	if (new_conf) kfree(new_conf);

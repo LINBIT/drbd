@@ -2490,7 +2490,7 @@ void drbd_free_sock(drbd_dev *mdev)
 void drbd_free_resources(drbd_dev *mdev)
 {
 	if ( mdev->cram_hmac_tfm ) {
-		crypto_free_tfm(mdev->cram_hmac_tfm);
+		crypto_free_hash(mdev->cram_hmac_tfm);
 		mdev->cram_hmac_tfm = NULL;
 	}
 	drbd_free_sock(mdev);

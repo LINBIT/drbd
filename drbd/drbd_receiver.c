@@ -2754,7 +2754,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			mdev->tl_hash_s = 0;
 		}
 		if(mdev->cram_hmac_tfm) {
-			crypto_free_tfm(mdev->cram_hmac_tfm);
+			crypto_free_hash(mdev->cram_hmac_tfm);
 			mdev->cram_hmac_tfm = NULL;
 		}
 		kfree(mdev->net_conf);
@@ -2913,7 +2913,19 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	Drbd_Header p;
 	unsigned int key_len = strlen(mdev->net_conf->shared_secret);
 	unsigned int resp_size;
+	struct hash_desc desc;
 	int rv;
+
+	desc.tfm=mdev->cram_hmac_tfm;
+	desc.flags=0;
+
+	rv = crypto_hash_setkey(mdev->cram_hmac_tfm,
+				(u8*)mdev->net_conf->shared_secret, key_len);
+	if(rv) {
+		ERR("crypto_hash_setkey() failed with %d\n",rv);
+		rv = 0;
+		goto fail;
+	}
 
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 
@@ -2951,7 +2963,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		goto fail;
 	}
 
-	resp_size = crypto_tfm_alg_digestsize(mdev->cram_hmac_tfm);
+	resp_size = crypto_hash_digestsize(mdev->cram_hmac_tfm);
 	response = kmalloc(resp_size,GFP_KERNEL);
 	if(response == NULL) {
 		ERR("kmalloc of response failed\n");
@@ -2962,8 +2974,13 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	sg.page   = virt_to_page(peers_ch);
 	sg.offset = offset_in_page(peers_ch);
 	sg.length = p.length;
-	crypto_hmac(mdev->cram_hmac_tfm, (u8*)mdev->net_conf->shared_secret,
-		    &key_len, &sg, 1, response);
+
+	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
+	if(rv) {
+		ERR( "crypto_hash_digest() failed with %d\n",rv);
+		rv = 0;
+		goto fail;		
+	}
 
 	rv = drbd_send_cmd2(mdev,AuthResponse,response,resp_size);
 	if (!rv) goto fail;
@@ -3002,8 +3019,13 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	sg.page   = virt_to_page(my_challenge);
 	sg.offset = offset_in_page(my_challenge);
 	sg.length = CHALLENGE_LEN;
-	crypto_hmac(mdev->cram_hmac_tfm, (u8*)mdev->net_conf->shared_secret,
-		    &key_len, &sg, 1, right_response);
+	
+	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
+	if(rv) {
+		ERR( "crypto_hash_digest() failed with %d\n",rv);
+		rv = 0;
+		goto fail;		
+	}
 
 	rv = ! memcmp(response,right_response,resp_size);
 

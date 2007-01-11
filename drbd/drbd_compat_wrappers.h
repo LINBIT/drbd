@@ -242,3 +242,87 @@ static __inline__ int atomic_sub_return(int i, atomic_t *v)
 #endif
 
 #endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+/* With Linux-2.6.19 the crypto API changed! */
+/* This is not a generic backport of the new api, it just implements
+   the corner case of "hmac(xxx)".  */
+
+#define CRYPTO_ALG_ASYNC 4711
+#define CRYPTO_ALG_TYPE_HASH CRYPTO_ALG_TYPE_DIGEST
+
+struct crypto_hash {
+        struct crypto_tfm *base;
+	const u8 *key;
+	int keylen;
+};
+
+struct hash_desc {
+        struct crypto_hash *tfm;
+        u32 flags;
+};
+
+static inline struct crypto_hash *
+crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
+{
+	struct crypto_hash *ch;
+	char *closing_bracket;
+
+	// "hmac(xxx)" is in alg_name we need that xxx. 
+	closing_bracket = strchr(alg_name,')');
+	if(!closing_bracket) return NULL;
+	if(closing_bracket-alg_name < 6) return NULL;
+
+	ch = kmalloc(sizeof(struct crypto_hash),GFP_KERNEL);
+	if(!ch) return NULL;
+
+	*closing_bracket = 0;
+	ch->base = crypto_alloc_tfm(alg_name + 5, 0);
+	*closing_bracket = ')';
+
+	if (ch->base == NULL) {
+		kfree(ch);
+		return NULL;
+	}
+
+	return ch;
+}
+
+static inline int 
+crypto_hash_setkey(struct crypto_hash *hash,const u8 *key,unsigned int keylen)
+{
+	hash->key = key;
+	hash->keylen = keylen;
+
+	return 0;
+}
+
+static inline int 
+crypto_hash_digest(struct hash_desc *desc, struct scatterlist *sg,
+		   unsigned int nbytes, u8 *out)
+{
+	
+	crypto_hmac(desc->tfm->base, (u8*)desc->tfm->key,
+		    &desc->tfm->keylen, sg, 1 /* ! */ , out);
+	/* ! this is not generic. Would need to convert nbytes -> nsg */
+
+	return 0;
+}
+
+static inline void crypto_free_hash(struct crypto_hash *tfm)
+{
+	crypto_free_tfm(tfm->base);
+	kfree(tfm);
+}
+
+static inline unsigned int crypto_hash_digestsize(struct crypto_hash *tfm)
+{
+	return crypto_tfm_alg_digestsize(tfm->base);
+}
+
+static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
+{
+        return tfm->base;
+}
+
+#endif

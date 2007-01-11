@@ -851,7 +851,7 @@ struct Drbd_Conf {
 	unsigned int al_tr_number;
 	int al_tr_cycle;
 	int al_tr_pos;     // position of the next transaction in the journal
-	struct crypto_tfm* cram_hmac_tfm;
+	struct crypto_hash* cram_hmac_tfm;
 	wait_queue_head_t seq_wait;
 	atomic_t packet_seq;
 	unsigned int peer_seq;
