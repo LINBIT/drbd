@@ -1176,6 +1176,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 			if(bm_ext->lce.refcnt != 0) {
 				INFO("Retrying drbd_rs_del_all() later. "
 				     "refcnt=%d\n",bm_ext->lce.refcnt);
+				dec_local(mdev);
 				spin_unlock_irq(&mdev->al_lock);
 				return -EAGAIN;
 			}
