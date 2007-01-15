@@ -778,6 +778,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	struct drbd_barrier *b = NULL;
 	drbd_request_t *req;
 	int local, remote;
+	int err = -EIO;
 
 	/* allocate outside of all locks; get a "reference count" (ap_bio_cnt)
 	 * to avoid races with the disconnect/reconnect code.  */
@@ -847,6 +848,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 *        if network is slow, READA won't do any good.
 	 */
 	if (rw == READA && mdev->state.disk >= Inconsistent && !local) {
+		err = -EWOULDBLOCK;
 		goto fail_and_free_req;
 	}
 
@@ -881,6 +883,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		b = kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
 		if(!b) {
 			ERR("Failed to alloc barrier.");
+			err = -ENOMEM;
 			goto fail_and_free_req;
 		}
 	}
@@ -1023,7 +1026,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
   fail_and_free_req:
 	if (b) kfree(b);
-	bio_endio(bio, bio->bi_size, -EIO);
+	bio_endio(bio, bio->bi_size, err);
 	drbd_req_free(req);
 	return 0;
 }
