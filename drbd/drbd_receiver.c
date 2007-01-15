@@ -578,15 +578,15 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	sock->sk->sk_rcvtimeo =
 	sock->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
 
-       /* explicitly bind to the configured IP as source IP 
+       /* explicitly bind to the configured IP as source IP
 	   for the outgoing connections.
-	   This is needed for multihomed hosts and to be 
+	   This is needed for multihomed hosts and to be
 	   able to use lo: interfaces for drbd.
           Make sure to use 0 as portnumber, so linux selects
 	   a free one dynamically.
 	*/
 	memcpy (&src_in, &(mdev->net_conf->my_addr), sizeof(struct sockaddr_in));
-	src_in.sin_port = 0; 
+	src_in.sin_port = 0;
 
 	err = sock->ops->bind(sock,
 			      (struct sockaddr * ) &src_in,
@@ -724,7 +724,7 @@ int drbd_connect(drbd_dev *mdev)
 
 		if(sock && msock) break;
 
-		s=drbd_wait_for_connect(mdev);		
+		s=drbd_wait_for_connect(mdev);
 		if(s) {
 			switch(drbd_recv_fp(mdev,s)) {
 			case HandShakeS:
@@ -945,7 +945,7 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 /* drbd_drain_block() just takes a data block out of the socket input
  * buffer and discards ist.
  */
-STATIC int 
+STATIC int
 drbd_drain_block(drbd_dev *mdev, int data_size)
 {
 	struct page *page;
@@ -1173,7 +1173,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	if(mdev->net_conf->wire_protocol == DRBD_PROT_C) {
 		if(likely(drbd_bio_uptodate(e->private_bio))) {
-			pcmd = (mdev->state.conn >= SyncSource && 
+			pcmd = (mdev->state.conn >= SyncSource &&
 				mdev->state.conn <= PausedSyncT &&
 				e->flags & EE_MAY_SET_IN_SYNC) ?
 				RSWriteAck : WriteAck;
@@ -1548,7 +1548,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	if(mdev->state.pdsk == Diskless) {
-		// In case we have the only disk of the cluster, 
+		// In case we have the only disk of the cluster,
 		drbd_set_out_of_sync(mdev,e->sector,e->size);
 		e->flags |= EE_CALL_AL_COMPLETE_IO;
 		drbd_al_begin_io(mdev, e->sector);
@@ -1853,7 +1853,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 		case 0: /* !self_pri && !peer_pri */ return 0;
 		case 1: /*  self_pri && !peer_pri */ return 1;
 		case 2: /* !self_pri &&  peer_pri */ return -1;
-		case 3: /*  self_pri &&  peer_pri */ 
+		case 3: /*  self_pri &&  peer_pri */
 			dc = test_bit(DISCARD_CONCURRENT,&mdev->flags);
 			MTRACE(TraceTypeUuid,TraceLvlMetrics, DUMPI(dc); );
 			return dc ? -1 : 1;
@@ -1953,7 +1953,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 			     (hg < 0) ? "peer":"this");
 		}
 	}
-	
+
 	if (abs(hg) < 100) {
 		// This is needed in case someone does an invalidate on an
 		// disconnected node. This has priority.
@@ -2036,7 +2036,7 @@ STATIC int cmp_after_sb(enum after_sb_handler peer, enum after_sb_handler self)
 	// any other things with DiscardRemote or DiscardLocal are invalid
 	if( peer == DiscardRemote || peer == DiscardLocal ||
 	    self == DiscardRemote || self == DiscardLocal ) return 1;
-	
+
 	// everything else is valid if they are equal on both sides.
 	if( peer == self ) return 0;
 
@@ -2145,7 +2145,7 @@ STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 		     order_txt[type]);
 		blk_queue_ordered(mdev->rq_queue,type);
 	}
-#endif 
+#endif
 }
 
 /* warn if the arguments differ by more than 12.5% */
@@ -2188,7 +2188,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 					    p_usize, mdev->bc->dc.disk_size);
 
 		if (mdev->state.conn == WFReportParams) {
-			/* this is first connect, or an otherwise expected 
+			/* this is first connect, or an otherwise expected
 			   param exchange.  choose the minimum */
 			p_usize = min_not_zero(mdev->bc->dc.disk_size, p_usize);
 		}
@@ -2202,7 +2202,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		}
 
 		// Never shrink a device with usable data.
-		if(drbd_new_dev_size(mdev,mdev->bc) < 
+		if(drbd_new_dev_size(mdev,mdev->bc) <
 		   drbd_get_capacity(mdev->this_bdev) &&
 		   mdev->state.disk >= Outdated ) {
 			dec_local(mdev);
@@ -2219,7 +2219,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	if(inc_local(mdev)) {
 		drbd_bm_lock(mdev); // {
 		/*
-		 * you may get a flip-flop connection established/connection loss, 
+		 * you may get a flip-flop connection established/connection loss,
 		 * in case both really have different usize uppon first connect!
 		 * try to solve it thus:
 		 ***/
@@ -2288,10 +2288,10 @@ STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
-/** 
+/**
  * convert_state:
  * Switches the view of the state.
- */ 
+ */
 STATIC drbd_state_t convert_state(drbd_state_t ps)
 {
 	drbd_state_t ms;
@@ -2362,8 +2362,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (mdev->p_uuid && mdev->state.conn <= Connected && 
-	    inc_local_if_state(mdev,Negotiating) && 
+	if (mdev->p_uuid && mdev->state.conn <= Connected &&
+	    inc_local_if_state(mdev,Negotiating) &&
 	    peer_state.disk >= Negotiating) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
@@ -2390,9 +2390,9 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.peer = peer_state.role;
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
-	if((nconn == Connected || nconn == WFBitMapS) && 
+	if((nconn == Connected || nconn == WFBitMapS) &&
 	   ns.disk == Negotiating ) ns.disk = UpToDate;
-	if((nconn == Connected || nconn == WFBitMapT) && 
+	if((nconn == Connected || nconn == WFBitMapT) &&
 	   ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
@@ -2417,7 +2417,7 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_SyncUUID_Packet *p = (Drbd_SyncUUID_Packet*)h;
 
-	wait_event( mdev->misc_wait, 
+	wait_event( mdev->misc_wait,
 		    mdev->state.conn < Connected || mdev->state.conn == WFSyncUUID);
 
 	// D_ASSERT( mdev->state.conn == WFSyncUUID );
@@ -2425,7 +2425,7 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
-	
+
 	_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
 	_drbd_uuid_set(mdev,Bitmap,0UL);
 
@@ -2878,19 +2878,19 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 
  break_c_loop:
 	WARN( "My msock connect got accepted onto peer's sock!\n");
-	/* In case a tcp connection set-up takes longer than 
+	/* In case a tcp connection set-up takes longer than
 	   connect-int, we might get into the situation that this
 	   node's msock gets connected to the peer's sock!
-	   
-	   To break out of this endless loop behaviour, we need to 
+
+	   To break out of this endless loop behaviour, we need to
 	   wait unti the peer's msock connect tries are over. (1 Second)
 
-	   Additionally we wait connect-int/2 to hit with our next 
+	   Additionally we wait connect-int/2 to hit with our next
 	   connect try exactly in the peer's window of expectation. */
 
 	set_current_state(TASK_INTERRUPTIBLE);
 	schedule_timeout(HZ + (mdev->net_conf->try_connect_int*HZ)/2);
-	
+
 	return 0;
 }
 
@@ -2979,7 +2979,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	if(rv) {
 		ERR( "crypto_hash_digest() failed with %d\n",rv);
 		rv = 0;
-		goto fail;		
+		goto fail;
 	}
 
 	rv = drbd_send_cmd2(mdev,AuthResponse,response,resp_size);
@@ -3019,12 +3019,12 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	sg.page   = virt_to_page(my_challenge);
 	sg.offset = offset_in_page(my_challenge);
 	sg.length = CHALLENGE_LEN;
-	
+
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if(rv) {
 		ERR( "crypto_hash_digest() failed with %d\n",rv);
 		rv = 0;
-		goto fail;		
+		goto fail;
 	}
 
 	rv = ! memcmp(response,right_response,resp_size);
@@ -3248,7 +3248,7 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	drbd_rs_complete_io(mdev,sector);
 
-	drbd_rs_failed_io(mdev, sector, size); 
+	drbd_rs_failed_io(mdev, sector, size);
 
 	return TRUE;
 }
