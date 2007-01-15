@@ -1052,7 +1052,8 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if( new_conf->cram_hmac_alg[0] != 0) {
 		snprintf(hmac_name,HMAC_NAME_L,"hmac(%s)",new_conf->cram_hmac_alg);
 		tfm = crypto_alloc_hash(hmac_name, 0, CRYPTO_ALG_ASYNC);
-		if (tfm == NULL) {
+		if (IS_ERR(tfm)) {
+			tfm = NULL;
 			retcode=CRAMAlgNotAvail;
 			goto fail;
 		}

@@ -2894,7 +2894,7 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	return 0;
 }
 
-#ifndef CONFIG_CRYPTO_HMAC
+#if !defined(CONFIG_CRYPTO_HMAC) && !defined(CONFIG_CRYPTO_HMAC_MODULE)
 STATIC int drbd_do_auth(drbd_dev *mdev)
 {
 	ERR( "This kernel was build without CONFIG_CRYPTO_HMAC.\n");
@@ -3030,7 +3030,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	rv = ! memcmp(response,right_response,resp_size);
 
 	if(rv) {
-		INFO("Peer authenticated usind %d bytes of '%s' HMAC\n",
+		INFO("Peer authenticated using %d bytes of '%s' HMAC\n",
 		     resp_size,mdev->net_conf->cram_hmac_alg);
 	}
 

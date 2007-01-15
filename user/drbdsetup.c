@@ -359,8 +359,8 @@ static const char *error_messages[] = {
 	EM(MDIOError) = "IO error(s) orruced during initial access to meta-data.\n",
 	EM(MDInvalid) = "No valid meta-data signature found.\n)"
 	"Use 'drbdadm create-md res' to initialize meta-data area.\n",
-	EM(CRAMAlgNotAvail) = "The 'cram-hmac-alg' you specified is not known in )"
-	"the kernel.\n",
+	EM(CRAMAlgNotAvail) = "The 'cram-hmac-alg' you specified is not known in "
+	"the kernel. (maybe you need to modprobe it, or modprobe hmac?)\n",
 	EM(CRAMAlgNotDigest) = "The 'cram-hmac-alg' you specified is not a digest.",
 	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
 	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
