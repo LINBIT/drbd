@@ -103,46 +103,85 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 #define print_req_mod(T,W)
 #endif
 
-void _req_may_be_done(drbd_request_t *req, int error)
+static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
-	drbd_dev *mdev = req->mdev;
-	int rw;
+	/* if it was a write, we may have to set the corresponding
+	 * bit(s) out-of-sync first. If it had a local part, we need to
+	 * release the reference to the activity log. */
+	if (rw == WRITE) {
+		/* remove it from the transfer log.
+		 * well, only if it had been there in the first
+		 * place... if it had not (local only or conflicting
+		 * and never sent), it should still be "empty" as
+		 * initialised in drbd_req_new(), so we can list_del() it
+		 * here unconditionally */
+		list_del(&req->tl_requests);
+		/* Set out-of-sync unless both OK flags are set
+		 * (local only or remote failed).
+		 * Other places where we set out-of-sync:
+		 * READ with local io-error */
+		if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK)) {
+			drbd_set_out_of_sync(mdev,req->sector,req->size);
+		}
 
-	print_rq_state(req, "_req_may_be_done");
-	MUST_HOLD(&mdev->req_lock)
+		if( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) &&
+		    (s & RQ_NET_SIS) ) {
+			drbd_set_in_sync(mdev,req->sector,req->size);
+		}
 
-	if (s & RQ_NET_PENDING) return;
-	if (s & RQ_LOCAL_PENDING) return;
-
-	if (req->master_bio) {
-		/* this is data_received (remote read)
-		 * or protocol C WriteAck
-		 * or protocol B RecvAck
-		 * or protocol A "handed_over_to_network" (SendAck)
-		 * or canceled or failed,
-		 * or killed from the transfer log due to connection loss.
+		/* one might be tempted to move the drbd_al_complete_io
+		 * to the local io completion callback drbd_endio_pri.
+		 * but, if this was a mirror write, we may only
+		 * drbd_al_complete_io after this is RQ_NET_DONE,
+		 * otherwise the extent could be dropped from the al
+		 * before it has actually been written on the peer.
+		 * if we crash before our peer knows about the request,
+		 * but after the extent has been dropped from the al,
+		 * we would forget to resync the corresponding extent.
 		 */
+		if (s & RQ_LOCAL_MASK) {
+			if (inc_local_if_state(mdev,Failed)) {
+				drbd_al_complete_io(mdev, req->sector);
+				dec_local(mdev);
+			} else {
+				WARN("Should have called drbd_al_complete_io(, %llu), "
+				     "but my Disk seems to have failed:(\n", req->sector);
+			}
+		}
+	}
 
-		/*
-		 * figure out whether to report success or failure.
-		 *
-		 * report success when at least one of the operations suceeded.
-		 * or, to put the other way,
-		 * only report failure, when both operations failed.
-		 *
-		 * what to do about the failures is handled elsewhere.
-		 * what we need to do here is just: complete the master_bio.
-		 */
-		int ok = (s & RQ_LOCAL_OK) || (s & RQ_NET_OK);
-		rw = bio_data_dir(req->master_bio);
+	/* if it was a local io error, we want to notify our
+	 * peer about that, and see if we need to
+	 * detach the disk and stuff.
+	 * to avoid allocating some special work
+	 * struct, reuse the request. */
 
-		/* remove the request from the conflict detection
-		 * respective block_id verification hash */
-		if (!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
-		else D_ASSERT((s & RQ_NET_MASK) == 0);
+	/* THINK
+	 * why do we do this not when we detect the error,
+	 * but delay it until it is "done", i.e. possibly
+	 * until the next barrier ack? */
 
-		if (rw == WRITE) {
+	if (rw == WRITE &&
+	    (( s & RQ_LOCAL_MASK) && !(s & RQ_LOCAL_OK))) {
+		if (!(req->w.list.next == LIST_POISON1 ||
+		      list_empty(&req->w.list))) {
+			/* DEBUG ASSERT only; if this triggers, we
+			 * probably corrupt the worker list here */
+			DUMPP(req->w.list.next);
+			DUMPP(req->w.list.prev);
+		}
+		req->w.cb = w_io_error;
+		drbd_queue_work(&mdev->data.work, &req->w);
+		/* drbd_req_free() is done in w_io_error */
+	} else {
+		drbd_req_free(req);
+	}
+}
+
+static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
+{
+	const unsigned long s = req->rq_state;
 			drbd_request_t *i;
 			struct Tl_epoch_entry *e;
 			struct hlist_node *n;
@@ -196,6 +235,58 @@ void _req_may_be_done(drbd_request_t *req, int error)
 				}
 			}
 #undef OVERLAPS
+}
+
+static void _complete_master_bio(drbd_dev *mdev, drbd_request_t *req, int error)
+{
+	dump_bio(mdev,req->master_bio,1);
+	bio_endio(req->master_bio, req->master_bio->bi_size, error);
+	req->master_bio = NULL;
+	dec_ap_bio(mdev);
+}
+
+void _req_may_be_done(drbd_request_t *req, int error)
+{
+	const unsigned long s = req->rq_state;
+	drbd_dev *mdev = req->mdev;
+	int rw;
+
+	print_rq_state(req, "_req_may_be_done");
+	MUST_HOLD(&mdev->req_lock)
+
+	if (s & RQ_NET_PENDING) return;
+	if (s & RQ_LOCAL_PENDING) return;
+
+	if (req->master_bio) {
+		/* this is data_received (remote read)
+		 * or protocol C WriteAck
+		 * or protocol B RecvAck
+		 * or protocol A "handed_over_to_network" (SendAck)
+		 * or canceled or failed,
+		 * or killed from the transfer log due to connection loss.
+		 */
+
+		/*
+		 * figure out whether to report success or failure.
+		 *
+		 * report success when at least one of the operations suceeded.
+		 * or, to put the other way,
+		 * only report failure, when both operations failed.
+		 *
+		 * what to do about the failures is handled elsewhere.
+		 * what we need to do here is just: complete the master_bio.
+		 */
+		int ok = (s & RQ_LOCAL_OK) || (s & RQ_NET_OK);
+		rw = bio_data_dir(req->master_bio);
+
+		/* remove the request from the conflict detection
+		 * respective block_id verification hash */
+		if (!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
+		else D_ASSERT((s & RQ_NET_MASK) == 0);
+
+		if (rw == WRITE) {
+			/* for writes we need to do some extra housekeeping */
+			_about_to_complete_local_write(mdev,req);
 		}
 
 		/* FIXME not yet implemented...
@@ -206,11 +297,9 @@ void _req_may_be_done(drbd_request_t *req, int error)
 		 * up here anyways during the freeze ...
 		 * then again, if it is a READ, it is not in the TL at all.
 		 * is it still leagal to complete a READ during freeze? */
-		dump_bio(mdev,req->master_bio,1);
-		bio_endio(req->master_bio, req->master_bio->bi_size, 
+
+		_complete_master_bio(mdev,req,
 			  ok ? 0 : ( error ? error : -EIO ) );
-		req->master_bio = NULL;
-		dec_ap_bio(mdev);
 	} else {
 		/* only WRITE requests can end up here without a master_bio */
 		rw = WRITE;
@@ -221,72 +310,7 @@ void _req_may_be_done(drbd_request_t *req, int error)
 		 * or protocol C WriteAck,
 		 * or protocol A or B BarrierAck,
 		 * or killed from the transfer log due to connection loss. */
-
-		/* if it was a write, we may have to set the corresponding
-		 * bit(s) out-of-sync first. If it had a local part, we need to
-		 * release the reference to the activity log. */
-		if (rw == WRITE) {
-			/* remove it from the transfer log.
-			 * well, only if it had been there in the first
-			 * place... if it had not (local only or conflicting
-			 * and never sent), it should still be "empty" as
-			 * initialised in drbd_req_new(), so we can list_del() it
-			 * here unconditionally */
-			list_del(&req->tl_requests);
-			/* Set out-of-sync unless both OK flags are set 
-			 * (local only or remote failed).
-			 * Other places where we set out-of-sync:
-			 * READ with local io-error */
-			if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK)) {
-				drbd_set_out_of_sync(mdev,req->sector,req->size);
-			}
-
-			if( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) && 
-			    (s & RQ_NET_SIS) ) {
-				drbd_set_in_sync(mdev,req->sector,req->size);
-			}
-
-			/* one might be tempted to move the drbd_al_complete_io
-			 * to the local io completion callback drbd_endio_pri.
-			 * but, if this was a mirror write, we may only
-			 * drbd_al_complete_io after this is RQ_NET_DONE,
-			 * otherwise the extent could be dropped from the al
-			 * before it has actually been written on the peer.
-			 * if we crash before our peer knows about the request,
-			 * but after the extent has been dropped from the al,
-			 * we would forget to resync the corresponding extent.
-			 */
-			if (s & RQ_LOCAL_MASK) {
-				if (inc_local_if_state(mdev,Failed)) {
-					drbd_al_complete_io(mdev, req->sector);
-					dec_local(mdev);
-				} else {
-					WARN("Should have called drbd_al_complete_io(, %llu), "
-					     "but my Disk seems to have failed:(\n", req->sector);
-				}
-			}
-		}
-
-		/* if it was an io error, we want to notify our
-		 * peer about that, and see if we need to
-		 * detach the disk and stuff.
-		 * to avoid allocating some special work
-		 * struct, reuse the request. */
-		if (rw == WRITE &&
-		    (( s & RQ_LOCAL_MASK) && !(s & RQ_LOCAL_OK))) {
-			if (!(req->w.list.next == LIST_POISON1 ||
-			      list_empty(&req->w.list))) {
-				/* DEBUG ASSERT only; if this triggers, we
-				 * probably corrupt the worker list here */
-				DUMPP(req->w.list.next);
-				DUMPP(req->w.list.prev);
-			}
-			req->w.cb = w_io_error;
-			drbd_queue_work(&mdev->data.work, &req->w);
-			/* drbd_req_free() is done in w_io_error */
-		} else {
-			drbd_req_free(req);
-		}
+		_req_is_done(mdev,req,rw);
 	}
 	/* else: network part and not DONE yet. that is
 	 * protocol A or B, barrier ack still pending... */
