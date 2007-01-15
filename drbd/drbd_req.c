@@ -257,7 +257,13 @@ void _req_may_be_done(drbd_request_t *req, int error)
 			 * we would forget to resync the corresponding extent.
 			 */
 			if (s & RQ_LOCAL_MASK) {
-				drbd_al_complete_io(mdev, req->sector);
+				if (inc_local_if_state(mdev,Failed)) {
+					drbd_al_complete_io(mdev, req->sector);
+					dec_local(mdev);
+				} else {
+					WARN("Should have called drbd_al_complete_io(, %llu), "
+					     "but my Disk seems to have failed:(\n", req->sector);
+				}
 			}
 		}
 
