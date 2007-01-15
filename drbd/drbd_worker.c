@@ -384,10 +384,43 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	return 1;
 }
 
+int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
+{
+	kfree(w);
+
+	drbd_bm_lock(mdev);
+	drbd_resync_finished(mdev);
+	drbd_bm_unlock(mdev);
+
+	return 1;
+}
+
 int drbd_resync_finished(drbd_dev* mdev)
 {
 	unsigned long db,dt,dbdt;
 	int dstate, pdstate;
+	struct drbd_work *w;
+
+	// Remove all elements from the resync LRU. Since future actions
+	// might set bits in the (main) bitmap, then the entries in the
+	// resync LRU would be wrong.
+	if(drbd_rs_del_all(mdev)) {
+		// In case this is not possible now, most probabely because
+		// there are RSDataReply Packets lingering on the worker's
+		// queue (or even the read operations for those packets
+		// is not finished by now).   Retry in 100ms.
+		
+		drbd_kick_lo(mdev);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(HZ / 10);
+		w = kmalloc(sizeof(struct drbd_work), GFP_ATOMIC);
+		if(w) {
+			w->cb = w_resync_finished;
+			drbd_queue_work(&mdev->data.work,w);
+			return 1;
+		}
+		ERR("Warn failed to drbd_rs_del_all() and to kmalloc(w).\n");
+	}
 
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0) dt=1;
@@ -442,11 +475,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_total  = 0;
 	mdev->rs_failed = 0;
 	mdev->rs_paused = 0;
-
-	// Remove all elements from the resync LRU. Since future actions
-	// might set bits in the (main) bitmap, then the entries in the
-	// resync LRU would be wrong.
-	drbd_rs_del_all(mdev);
 
 	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags)) {
 		WARN("Writing the whole bitmap, due to failed kmalloc\n");

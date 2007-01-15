@@ -1144,10 +1144,11 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 /**
  * drbd_rs_del_all: Gracefully remove all extents from the resync LRU.
- * there may be still a reference hold by w_make_resync_request
- * (drbd_try_rs_begin_io). we lc_del that here anyways...
+ * there may be still a reference hold by someone. In that this function
+ * returns -EAGAIN.
+ * In case all elements got removed it returns zero.
  */
-void drbd_rs_del_all(drbd_dev* mdev)
+int drbd_rs_del_all(drbd_dev* mdev)
 {
 	struct bm_extent* bm_ext;
 	int i;
@@ -1162,18 +1163,7 @@ void drbd_rs_del_all(drbd_dev* mdev)
 		for(i=0;i<mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent*) lc_entry(mdev->resync,i);
 			if(bm_ext->lce.lc_number == LC_FREE) continue;
-			if(bm_ext->lce.refcnt != 0) {
-				if (bm_ext->lce.refcnt != 1) {
-					ALERT("LOGIC BUG detected in %s:%d\n", __FILE__ , __LINE__ );
-					/* this should not happen. but rather
-					 * have some asserts trigger
-					 * than BUG() in lc_del! */
-					continue;
-				}
-				if (bm_ext->lce.lc_number != mdev->resync_wenr) {
-					ALERT("LOGIC BUG detected in %s:%d\n", __FILE__ , __LINE__ );
-					continue;
-				}
+			if (bm_ext->lce.lc_number == mdev->resync_wenr) {
 				INFO("dropping %u in drbd_rs_del_all, "
 				     "aparently got 'synced' by application io\n",
 				     mdev->resync_wenr);
@@ -1182,6 +1172,12 @@ void drbd_rs_del_all(drbd_dev* mdev)
 				clear_bit(BME_NO_WRITES,&bm_ext->flags);
 				mdev->resync_wenr = LC_FREE;
 				lc_put(mdev->resync,&bm_ext->lce);
+			}
+			if(bm_ext->lce.refcnt != 0) {
+				INFO("Retrying drbd_rs_del_all() later. "
+				     "refcnt=%d\n",bm_ext->lce.refcnt);
+				spin_unlock_irq(&mdev->al_lock);
+				return -EAGAIN;
 			}
 			D_ASSERT(bm_ext->rs_left == 0);
 			D_ASSERT(!test_bit(BME_LOCKED,&bm_ext->flags));
@@ -1192,6 +1188,8 @@ void drbd_rs_del_all(drbd_dev* mdev)
 		dec_local(mdev);
 	}
 	spin_unlock_irq(&mdev->al_lock);
+	
+	return 0;
 }
 
 /* Record information on a failure to resync the specified blocks
