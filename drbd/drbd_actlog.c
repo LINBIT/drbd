@@ -3,11 +3,11 @@
    drbd_actlog.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2003-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2003-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2003-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2003-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 2003-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2003-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,8 +34,8 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev, 
-				 struct page *page, sector_t sector, 
+STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
+				 struct page *page, sector_t sector,
 				 int rw, int size)
 {
 	struct bio *bio = bio_alloc(GFP_NOIO, 1);
@@ -243,7 +243,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		}
 
 		/* drbd_al_write_transaction(mdev,al_ext,enr);
-		   generic_make_request() are serialized on the 
+		   generic_make_request() are serialized on the
 		   current->bio_tail list now. Therefore we have
 		   to deligate writing something to AL to the
 		   worker thread. */
@@ -253,7 +253,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 		al_work.w.cb = w_al_write_transaction;
 		drbd_queue_work_front(&mdev->data.work,&al_work.w);
 		wait_for_completion(&al_work.event);
-		
+
 		mdev->al_writ_cnt++;
 
 		/*
@@ -366,7 +366,7 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 }
 
 /**
- * drbd_al_read_tr: Reads a single transaction record form the 
+ * drbd_al_read_tr: Reads a single transaction record form the
  * on disk activity log.
  * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
  * record.
@@ -400,7 +400,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 /**
  * drbd_al_read_log: Restores the activity log from its on disk
- * representation. Returns 1 on success, returns 0 when 
+ * representation. Returns 1 on success, returns 0 when
  * reading the log failed due to IO errors.
  */
 int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *bdev)
@@ -472,7 +472,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *bdev)
 
 		spin_lock_irq(&mdev->al_lock);
 
-		/* This loop runs backwards because in the cyclic 
+		/* This loop runs backwards because in the cyclic
 		   elements there might be an old version of the
 		   updated element (in slot 0). So the element in slot 0
 		   can overwrite old versions. */
@@ -668,7 +668,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
 
-			// OR an application write finished, and therefore 
+			// OR an application write finished, and therefore
 			// we set something in this area in sync.
 			int rs_left = drbd_bm_e_weight(mdev,enr);
 			if (ext->flags != 0) {
@@ -1189,7 +1189,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 		dec_local(mdev);
 	}
 	spin_unlock_irq(&mdev->al_lock);
-	
+
 	return 0;
 }
 
@@ -1224,7 +1224,7 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 
 	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
 
-	/* 
+	/*
 	 * round up start sector, round down end sector.  we make sure we only
 	 * handle full, alligned, BM_BLOCK_SIZE (4K) blocks */
 	if (unlikely(esector < BM_SECT_PER_BIT-1)) {

@@ -2,7 +2,11 @@
   drbd.h
   Kernel module for 2.6.x Kernels
 
-  This file is part of drbd by Philipp Reisner.
+  This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
+
+  Copyright (C) 2003-2007, LINBIT Information Technologies GmbH.
+  Copyright (C) 2003-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+  Copyright (C) 2003-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -65,7 +69,7 @@ static const char *drbd_disk_s_names[] = {
 
 static const char *drbd_state_sw_errors[] = {
 	[-SS_TwoPrimaries] = "Multiple primaries not allowed by config",
-	[-SS_NoUpToDateDisk] = 
+	[-SS_NoUpToDateDisk] =
 		"Refusing to be Primary without at least one UpToDate disk",
 	[-SS_BothInconsistent] = "Refusing to be inconsistent on both nodes",
 	[-SS_SyncingDiskless] = "Refusing to be syncing and diskless",

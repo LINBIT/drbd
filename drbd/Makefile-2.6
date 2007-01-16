@@ -6,6 +6,6 @@ drbd-objs  :=	drbd_buildtag.o drbd_bitmap.o drbd_proc.o \
 
 ifndef CONFIG_CONNECTOR
 	drbd-objs += connector.o cn_queue.o
-endif	
+endif
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o

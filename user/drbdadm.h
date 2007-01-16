@@ -40,7 +40,7 @@ enum usage_count_type {
   UC_NO,
   UC_ASK,
 };
-  
+
 struct d_globals
 {
   int disable_io_hints;
@@ -143,9 +143,9 @@ extern int soi;
    freed automatically */
 
 /*
-  // This is the nicer version, that does not need the ss_buffer. 
+  // This is the nicer version, that does not need the ss_buffer.
   // But it only works with very new glibcs.
-   
+
 #define ssprintf(...) \
          ({ int _ss_size = snprintf(0, 0, ##__VA_ARGS__);        \
          char *_ss_ret = __builtin_alloca(_ss_size+1);           \

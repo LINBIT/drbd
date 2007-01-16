@@ -1,6 +1,6 @@
 # Makefile for drbd.o
 #
-# This file is part of drbd by Philipp Reisner
+# This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,13 +37,13 @@ drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
 all: drbdadm drbdmeta drbdsetup
 
 drbd_buildtag.c: ../drbd/drbd_buildtag.c
-	cp $^ $@ 
+	cp $^ $@
 
 drbd_strings.c: ../drbd/drbd_strings.c
-	cp $^ $@ 
+	cp $^ $@
 
 drbdadm: $(drbdadm-obj)
-	$(CC) -o $@ $^ 
+	$(CC) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
@@ -54,10 +54,10 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 # for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
 drbdsetup: $(drbdsetup-obj)
-	$(CC) -o $@ $^ 
+	$(CC) -o $@ $^
 
 drbdmeta: $(drbdmeta-obj)
-	$(CC) -o $@ $^ 
+	$(CC) -o $@ $^
 
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
@@ -87,11 +87,11 @@ uninstall:
 drbdsetup.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
 drbdsetup.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
 drbdsetup.o:       ../drbd/linux/drbd_config.h ../drbd/linux/drbd_nl.h
-drbdtool_common.o: drbdtool_common.h    
+drbdtool_common.o: drbdtool_common.h
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
 drbdadm_parser.o:  drbdtool_common.h drbdadm.h ../drbd/linux/drbd_limits.h
-drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h 
+drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h
 drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
-drbdmeta.o:        drbdtool_common.h drbd_endian.h 
+drbdmeta.o:        drbdtool_common.h drbd_endian.h
 drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h

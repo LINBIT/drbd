@@ -7,7 +7,7 @@ Latest:
 8.0rc1 (api:86/proto:85)
 --------
  * The drbd-peer-outdater got updated to work in multi node heartbeat
-   clusters. (But we still not suceeded to get this into Heartbeat's 
+   clusters. (But we still not suceeded to get this into Heartbeat's
    repository accepted.)
  * Fixed resync decission after a crash in a pri-pri cluster.
  * Implemented the ping-timeout option for "sub-second" failover clusters.
@@ -30,7 +30,7 @@ Latest:
  * The request code was completely rewritten.
  * The write conflict detection code for primary-primary is currently
    broken, but will be fixed soon.
- * drbdsetup is no longer based on IOCTL but works now via 
+ * drbdsetup is no longer based on IOCTL but works now via
    netlink/connector.
  * drbd_panic() is on its way out.
  * A runtime configurable tracing framework got added.
@@ -54,7 +54,7 @@ Latest:
  * Fixes for 64bit kernel / 32 bit userland environments
  * Fixes in the sys-v init script
  * Renamed "--do-what-I-say" to "--overwrite-data-of-peer". Hopefully
-   people now understand what this option does. 
+   people now understand what this option does.
 
 8.0-pre2 (api:81/proto:80)
 --------
@@ -76,9 +76,9 @@ Latest:
  * Improved, tunable after-split-brain recovery strategies.
  * Always verify all IDs used in the protocol that are used as pointers.
  * Introduced the "outdate" disk state, and commands for managing it.
- * Introduced the "drbdmeta" command, and require the user to create 
+ * Introduced the "drbdmeta" command, and require the user to create
    meta-data explicitly.
- * Support for primary/primary (for OCFS2, GFS...) 
+ * Support for primary/primary (for OCFS2, GFS...)
  * Replaced the sync-groups with the sync-after mechanism.
  * The "common" section in the configuration file.
  * Replaced the generation counters (GCs) with data-generation-UUIDs
@@ -94,6 +94,6 @@ Latest:
  * Changed internal APIs so that missed writes of the meta-data super
    block are reported as they happen.
  * The http://usage.drbd.org sub project.
- * Rewrote the scanner/parser of drbd.conf. 10 times smaller/faster and 
+ * Rewrote the scanner/parser of drbd.conf. 10 times smaller/faster and
    easier to maintain.
  * Asynchronous meta-data IO [ Code drop from the DRBD+ branch ]

@@ -23,7 +23,7 @@
  a verbatim copy of the file on both nodes of the cluster.
  It is highly recommended to do so in order to keep your configuration
  manageable. The file <option>/etc/drbd.conf</option> should be the same on both  nodes of the cluster. Changes to <option>/etc/drbd.conf</option> do not apply
- immediately. 
+ immediately.
 <example>
 <title>A small drbd.conf file</title>
 <programlisting>
@@ -31,9 +31,9 @@ global { usage-count yes; }
 common { syncer { rate 10M; } }
 resource r0 {
 	protocol C;
-	net { 	
-		cram-hmac-alg sha1; 
-		shared-secret "FooFunFactory"; 
+	net {
+		cram-hmac-alg sha1;
+		shared-secret "FooFunFactory";
 	}
 	on thost1 {
 		device    /dev/drbd1;
@@ -57,7 +57,7 @@ resource r0 {
  <replaceable>/dev/drbd1</replaceable> as devices for its application, and
  <replaceable>/dev/hda7</replaceable> as low level storage for the data.
  The IP addresses are used to specify the networking interfaces to use.
- An eventually running resyncprocess should use about 10MByte/second of IO 
+ An eventually running resyncprocess should use about 10MByte/second of IO
  bandwith.
  </para>
  <para>
@@ -173,7 +173,7 @@ resource r0 {
     This section is used to fine tune DRBD's properties
     in respect to the low level storage. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
-    <manvolnum>8</manvolnum></citerefentry> for detailed description of 
+    <manvolnum>8</manvolnum></citerefentry> for detailed description of
     the parameters.
     Optional parameter: <option>on-io-error</option>,
     <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>.
@@ -234,7 +234,7 @@ resource r0 {
     In this section can define handlers (executables) that are executed
     by the DRBD system in response to certain events.
     Optional parameters:
-    <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>, 
+    <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
     <option>pri-lost</option>, <option>outdate-peer</option>,
     <option>local-io-error</option>.
   </para>
@@ -255,10 +255,10 @@ resource r0 {
     <replaceable>count</replaceable> may be a number from 1 to 255.
   </para>
   <para>Use <replaceable>minor-count</replaceable>
-   if you want to define massively more resources later without reloading 
+   if you want to define massively more resources later without reloading
    the DRBD kernel
    module. Per default the module loads with 11 more than you have currently
-   in your config but at least 32. 
+   in your config but at least 32.
    </listitem>
 </varlistentry>
 
@@ -267,8 +267,8 @@ resource r0 {
   <listitem><para>
     <replaceable>time</replaceable> may be 0 or a positive number.
   </para>
-  <para>The user dialog redraws the second count every 
-   <replaceable>time</replaceable> seconds (or does no redraws if 
+  <para>The user dialog redraws the second count every
+   <replaceable>time</replaceable> seconds (or does no redraws if
    <replaceable>time</replaceable> is zero). The default is 1.</para>
    </listitem>
 </varlistentry>
@@ -289,7 +289,7 @@ resource r0 {
   <listitem>
   <para>Please participate in
   <ulink url="http://usage.drbd.org">
-  <citetitle>DRBD's online usage counter</citetitle></ulink>. 
+  <citetitle>DRBD's online usage counter</citetitle></ulink>.
   The most convenient way to do so
   is to set this option to <option>yes</option>. Valid options are:
   <option>yes</option>, <option>no</option> and <option>ask</option>.
@@ -326,14 +326,14 @@ resource r0 {
   <term><option>device <replaceable>name</replaceable></option></term>
   <listitem><para>
     The name of the block device node of the resource being described.
-    You must use this device with your application (file system) and 
+    You must use this device with your application (file system) and
     you must not use the low level block device which is specified with the
     <option>disk</option> parameter.
   </para>
   <para>
     The device nodes must have the same major number as the DRBD
     driver has. With the current implementation major 147 is used
-    and the corresponding device nodes are usually named 
+    and the corresponding device nodes are usually named
     <option>/dev/drbd0</option>, <option>/dev/drbd1</option>, etc.
     ( All releases before drbd-0.7.1 used major 43 and the device
     files /dev/nb*. )
@@ -400,7 +400,7 @@ resource r0 {
    With the <option>flexible-meta-disk</option> keyword you specify
    a block device as meta-data storage. You usually use this whith LVM,
    which allows you to have many variable sized block devices.
-   The required size of the meta-disk block device is 
+   The required size of the meta-disk block device is
    36kB + Backing-Storage-size / 32k. Round this number to the next 4kb
    boundary up and you have the exact size.
    Rule of the thumb: 32kByte per 1GByte of storage, round up to the next
@@ -415,12 +415,12 @@ resource r0 {
     device reports io-error to the upper layers.
   </para>
   <para>
-  <replaceable>handler</replaceable> may be pass_on, call-local-io-error 
+  <replaceable>handler</replaceable> may be pass_on, call-local-io-error
   or detach.
   </para>
   <para>pass_on: Report the io-error to the upper layers. On Primary report
   it to the mounted file system. On Secondary ignore it.</para>
-  <para>call-local-io-error: Thall the handler script 
+  <para>call-local-io-error: Thall the handler script
          <option>local-io-error</option>.</para>
   <para>detach: The node drops its low level device, and continues in disk
   less mode.</para>
@@ -445,15 +445,15 @@ resource r0 {
 	If a node becomes a disconnected primary it tries to outdate
 	the peer's disk. This is done by calling the outdate-peer
 	handler. The handler is supposed to reach the other node over
-	alternative communication pathes and call 'drbdadm outdate 
+	alternative communication pathes and call 'drbdadm outdate
 	res' there.
       </para></listitem></varlistentry>
-    <varlistentry><term><option>resource-and-stonith</option></term> 
+    <varlistentry><term><option>resource-and-stonith</option></term>
       <listitem><para>
 	If a node becomes a disconnected primary it freezes all
 	its IO operations and calls its outdate-peer handler. The
 	outdate-peer hander is supposed to reach the peer over
-	alternative communicaton pathes and call 'drbdadm outdate 
+	alternative communicaton pathes and call 'drbdadm outdate
 	res' there. In case it can not reach the peer it should
 	stonith the peer. IO is resumed as soon as the situation
 	is resolved. In case your handler fails you can resume
@@ -621,20 +621,20 @@ the unit is 1 second.
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>discard-younger-primary</option></term>
 		<listitem><para>
-		  Auto sync from the node that was primary before the split 
+		  Auto sync from the node that was primary before the split
 		  brain situation happened.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-older-primary</option></term> 
+		<varlistentry><term><option>discard-older-primary</option></term>
 		<listitem><para>
-		Auto sync from the node that became primary as second during 
+		Auto sync from the node that became primary as second during
 		the split brain situation.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-least-changes</option></term> 
+		<varlistentry><term><option>discard-least-changes</option></term>
 		<listitem><para>
-		Auto sync from the node that touched more blocks during the 
+		Auto sync from the node that touched more blocks during the
 		split brain situation.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-node-NODENAME</option></term> 
+		<varlistentry><term><option>discard-node-NODENAME</option></term>
 		<listitem><para>
 		Auto sync to the named node.
 		</para></listitem></varlistentry>
@@ -656,10 +656,10 @@ the unit is 1 second.
 	        <varlistentry><term><option>consensus</option></term>
 		<listitem><para>
 		  Discard the version of the secondary if the outcome
-                  if the <option>after-sb-0pri</option> algorithm would also 
+                  if the <option>after-sb-0pri</option> algorithm would also
 		  destroy the current secondary's data. Otherwise disconnect.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>violently-as0p</option></term> 
+		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
                   Always take the decission of the <option>after-sb-0pri</option>
                   algorithm. Even if that causes case an erratic change of
@@ -669,11 +669,11 @@ the unit is 1 second.
                   are doing.  This is DANGEROUS and MAY CRASH YOUR MACHINE
                   if you have a FS mounted on the primary node.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-secondary</option></term> 
+		<varlistentry><term><option>discard-secondary</option></term>
 		<listitem><para>
 		  Discard the secondary's version.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>call-pri-lost-after-sb</option></term> 
+		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
@@ -783,8 +783,8 @@ the unit is 1 second.
 <varlistentry>
   <term><option>after <replaceable>res-name</replaceable></option></term>
   <listitem><para>
-  By default resynchronization of all devices would run in parallel. 
-  By defining an sync-after dependency the resynchronisation of this 
+  By default resynchronization of all devices would run in parallel.
+  By defining an sync-after dependency the resynchronisation of this
   resource will start only if the resoruce <replaceable>res-name</replaceable>
   is already in connected state (=finished its resynchronisation).
   </para></listitem>
@@ -810,30 +810,30 @@ the unit is 1 second.
   <term><option>pri-on-incon-degr <replaceable>cmd</replaceable></option></term>
   <listitem><para> This handler is called if the node is primary, degraded
   and the local copy of the data is inconsistent.</para></listitem>
-  </varlistentry> 
+  </varlistentry>
 
 <varlistentry>
   <term><option>pri-lost-after-sb <replaceable>cmd</replaceable></option></term>
   <listitem><para> The node is currently primary, but lost the after split
   brain auto recovery procedure. As as consequence it should go away.
-  </para></listitem> </varlistentry> 
+  </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>pri-lost <replaceable>cmd</replaceable></option></term>
   <listitem><para> The node is currently primary, but DRBD's algorithm
   thinks, that it should become sync target, as consequence it should
   give up its primary state.
-  </para></listitem> </varlistentry> 
+  </para></listitem> </varlistentry>
 
 <varlistentry>
-  <term><option>outdate-peer <replaceable>cmd</replaceable></option></term> 
+  <term><option>outdate-peer <replaceable>cmd</replaceable></option></term>
   <listitem><para> The handler is part of the <option>fencing</option>
   mechanism.  This handler is called in case the node needs to outdate the
   peer's disk. It should use other communication pathes then DRBD's network
   link.  </para></listitem> </varlistentry>
 
 <varlistentry>
-  <term><option>local-io-error <replaceable>cmd</replaceable></option></term> 
+  <term><option>local-io-error <replaceable>cmd</replaceable></option></term>
   <listitem><para> DRBD got an IO error from the local IO subsystem.
   </para></listitem> </varlistentry>
 
@@ -847,8 +847,8 @@ the unit is 1 second.
 </refsect1>
 <refsect1>
 <title>Author</title>
-<simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>.
-Man pages were reviewed and rewritten by Helmut Wollmersdorfer <email>helmut.wollmersdorfer@linbit.com</email>.
+<simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>
+        and Lars Ellenberg <email>lars.ellenberg@linbit.com</email>.
 </simpara>
 </refsect1>
 <refsect1>
@@ -859,8 +859,9 @@ Man pages were reviewed and rewritten by Helmut Wollmersdorfer <email>helmut.wol
 <refsect1>
 <title>Copyright</title>
 <simpara>
-Copyright (c) 2001-2006 Philipp Reisner. This  is  free software; 
-see the source for copying conditions.  There is NO warranty; 
+Copyright 2001-2007 LINBIT Information Technologies,
+Philipp Reisner, Lars Ellenberg. This  is  free software;
+see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 </simpara>
 </refsect1>

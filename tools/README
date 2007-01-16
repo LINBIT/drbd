@@ -1,6 +1,6 @@
 1) compile
 
-copy this directory into heartbeat tools directory and compile it 
+copy this directory into heartbeat tools directory and compile it
 with heartbeat.
 
 2) prepare drbdmeta
@@ -23,12 +23,12 @@ apiauth dopd gid=haclient uid=hacluster
 ---
 
 4) Configure DRBD to use this facility
-   
+
    resource rX {
      ...
      handlers {
        ...
-       outdate-peer "/usr/sbin/drbd-peer-outdater";   
+       outdate-peer "/usr/sbin/drbd-peer-outdater";
      }
      disk {
        ...

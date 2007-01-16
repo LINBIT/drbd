@@ -27,7 +27,7 @@ STRING		\"[^\"]*\"
 {WS}
 {COMMENT}
 {OP}		DP; return yytext[0];
-{STRING}	unescape(); yylval.txt=yytext; DP; return TK_STRING; 
+{STRING}	unescape(); yylval.txt=yytext; DP; return TK_STRING;
 {U64}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U64;
 {U32}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U32;
 {NUM}		yylval.u64 = strto_u64(yytext, NULL, 10); DP; return TK_NUM;

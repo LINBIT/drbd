@@ -1,13 +1,11 @@
 /*
    drbdadm_usage_cnt.c
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2006, Philipp Reisner <philipp.reisner@linbit.com>.
-        Initial author.
-
-   Copyright (C) 2006, Lars Ellenberg <l.g.e@web.de>
-        contributions.
+   Copyright (C) 2006-2007, LINBIT Information Technologies GmbH
+   Copyright (C) 2006-2007, Philipp Reisner <philipp.reisner@linbit.com>
+   Copyright (C) 2006-2007, Lars Ellenberg  <lars.ellenberg@linbit.com>
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -71,7 +69,7 @@ static char* slurp_proc_drbd()
 
 	fd = open("/proc/drbd",O_RDONLY);
 	if( fd == -1) return 0;
-	
+
 	buffer = malloc(SLURP_SIZE);
 	if(!buffer) return 0;
 
@@ -80,7 +78,7 @@ static char* slurp_proc_drbd()
 		free(buffer);
 		return 0;
 	}
-	
+
 	buffer[rr]=0;
 	close(fd);
 
@@ -96,7 +94,7 @@ static unsigned int extract_svn_revision(const char* text)
 
 	while(sget_token(token,40,&text) != EOF) {
 		switch(ex) {
-		case begin: 
+		case begin:
 			if(!strcmp(token,"plus")) plus = 1;
 			if(!strcmp(token,"SVN"))  ex = f_svn;
 			break;
@@ -104,7 +102,7 @@ static unsigned int extract_svn_revision(const char* text)
 			if(!strcmp(token,"Revision:"))  ex = f_rev;
 			break;
 		case f_rev:
-			svn_rev = atol(token); 
+			svn_rev = atol(token);
 			goto out;
 		}
 	}
@@ -168,7 +166,7 @@ static int read_node_id(struct node_info *ni)
 	if( fd == -1) {
 		return 0;
 	}
-	
+
 	if( read(fd,&on_disk, sizeof(on_disk)) != sizeof(on_disk)) {
 		close(fd);
 		return 0;
@@ -185,7 +183,7 @@ static int read_node_id(struct node_info *ni)
 
 /**
  * insert_usage_with_socket:
- * 
+ *
  * Return codes:
  *
  * 0 - success
@@ -416,7 +414,7 @@ char* run_admm_generic(struct d_resource* res ,const char* cmd)
 	}
 	buffer[rr]=0;
 	close(pipes[0]);
-	
+
 	waitpid(pid,0,0);
 
 	return buffer;

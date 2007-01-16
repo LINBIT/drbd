@@ -1,12 +1,12 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
 <refentry>
   <docinfo><date>09 Feb 2004</date></docinfo>
-  
+
   <refmeta>
     <refentrytitle>drbdadm</refentrytitle>
     <manvolnum>8</manvolnum>
   </refmeta>
-  
+
   <refnamediv>
     <refname>drbdadm</refname>
     <refpurpose>Administration tool for DRBD</refpurpose>
@@ -30,11 +30,11 @@
   <refsect1>
     <title>Description</title>
     <para>
-      Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to 
+      Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to
       drbdsetup and drbdmeta what ifup/ifdown is to ifconfig. Drbdadm reads its
-      configuration file and performs the specified commands by calling the 
+      configuration file and performs the specified commands by calling the
       drbdsetup and/or the drbdmeta program.
-    </para>    
+    </para>
   </refsect1>
   <refsect1>
     <title>Options</title>
@@ -43,7 +43,7 @@
         <term><option>-d</option>, <option>--dry-run</option></term>
         <listitem><para>
 	  Just prints the calls of drbdsetup to stdout, but does not run
-	  the commands. 
+	  the commands.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
@@ -68,7 +68,7 @@
           <replaceable>file</replaceable></term>
         <listitem><para>
           Specifies the full path to the drbdmeta program. If this option is
-	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and 
+	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and
 	  <option>./drbdsetup</option>.
 	</para></listitem>
       </varlistentry>
@@ -80,7 +80,7 @@
       <varlistentry>
         <term>attach</term>
         <listitem><para>
-          Attaches a local backing block device to the DRBD resource's device. 
+          Attaches a local backing block device to the DRBD resource's device.
 	  In file system language this would be the mount operation.
 	</para></listitem>
       </varlistentry>
@@ -93,7 +93,7 @@
       <varlistentry>
         <term>connect</term>
         <listitem><para>
-          Sets up the network configuration of the resource's device. If the 
+          Sets up the network configuration of the resource's device. If the
  	  peer device is already configured, the two DRBD devices will connect.
         </para></listitem>
       </varlistentry>
@@ -122,25 +122,25 @@
           Is a shortcut for disconnect and detach.
         </para></listitem>
       </varlistentry>
-      <varlistentry>    
+      <varlistentry>
         <term>primary</term>
         <listitem><para>
           Switch the resource's device into primary state. You need to do
 	  this before you may mount a filesystem onto the device.
         </para></listitem>
       </varlistentry>
-      <varlistentry>    
+      <varlistentry>
         <term>secondary</term>
         <listitem><para>
           Brings the device back into secondary state. This is needed since in
 	  a connected DRBD device pair there might only be one of the two peers
 	  in primary state.
-        </para></listitem> 
+        </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>invalidate</term>
         <listitem><para>
-          This forces DRBD to consider the data on the local backing 
+          This forces DRBD to consider the data on the local backing
 	  storage device as out-of-sync. Therefor DRBD will copy each
 	  and every block over from its peer, to bring the local storage
 	  device back in sync.
@@ -160,7 +160,7 @@
           DRBD will reexamine all sizing constraints, and re-size the
 	  resource's device accordingly. E.g. in case you increased the
 	  size of your backing storage devices (on both nodes of course),
-	  then DRBD will adopt to the new size after you called 
+	  then DRBD will adopt to the new size after you called
 	  this command on _both_ nodes.
         </para></listitem>
       </varlistentry>
@@ -168,7 +168,7 @@
         <term>create-md</term>
         <listitem><para>
           Create-md initializes the meta data storage. This needs to be
-	  done before a DRBD resource can be taken online for the first 
+	  done before a DRBD resource can be taken online for the first
 	  time.
         </para></listitem>
       </varlistentry>
@@ -204,7 +204,7 @@
         <listitem><para>
           Synchronizes the configuration of device with your configuration
 	  file. You should always examine the output of the dry-run
-	  mode before actually executing this command. 
+	  mode before actually executing this command.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -216,8 +216,8 @@
       <varlistentry>
         <term>state</term>
         <listitem><para>
-	  Shows the current states of the devices (local/peer). 
-	  E.g. primary/secondary        
+	  Shows the current states of the devices (local/peer).
+	  E.g. primary/secondary
 	</para></listitem>
       </varlistentry>
       <varlistentry>
@@ -243,13 +243,13 @@
       </varlistentry>
 
       <varlistentry>
-        <term>pause-sync</term> 
-        <listitem><para> 
+        <term>pause-sync</term>
+        <listitem><para>
           Temporarily suspend an ongoing resynchronisation by setting the
           local pause flag. Resync only progresses if neighter the local
           nor the remote pause flag is set. It might be desirable to
           postpone DRBD's resynchronisation after eventual
-          resynchronisation of the backing storage's RAID setup.  
+          resynchronisation of the backing storage's RAID setup.
         </para></listitem>
       </varlistentry>
 
@@ -285,7 +285,8 @@
 
   <refsect1>
     <title>Author</title>
-    <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>.
+    <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>
+            and Lars Ellenberg <email>lars.ellenberg@linbit.com</email>
     </simpara>
   </refsect1>
   <refsect1>
@@ -296,9 +297,10 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-      Copyright (c) 2004-2006 Philipp Reisner. This  is  free software; 
-      see the source for copying conditions.  There is NO warranty; 
-      not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+Copyright 2001-2007 LINBIT Information Technologies,
+Philipp Reisner, Lars Ellenberg. This  is  free software;
+see the source for copying conditions.  There is NO warranty;
+not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     </simpara>
   </refsect1>
   <refsect1>

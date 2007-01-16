@@ -1,6 +1,6 @@
 /*
   drbd_limits.h
-  This file is part of drbd by Philipp Reisner / Lars Ellenberg.
+  This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 */
 
 /*
@@ -110,7 +110,7 @@
  * but more than 3998G are currently not possible */
 /* DRBD_MAX_SECTORS */
 #define DRBD_DISK_SIZE_SECT_MIN  0
-#define DRBD_DISK_SIZE_SECT_MAX  (128LLU*1024*2 - 72)*512LLU*8*8 
+#define DRBD_DISK_SIZE_SECT_MAX  ((128LLU*1024*2 - 72)*512LLU*8*8)
 #define DRBD_DISK_SIZE_SECT_DEF  0 // = disabled = no user size...
 
 #define DRBD_ON_IO_ERROR_DEF PassOn

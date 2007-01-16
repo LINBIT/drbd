@@ -1,6 +1,6 @@
 # Makefile in documentation directory
 #
-# This file is part of drbd by Philipp Reisner
+# This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

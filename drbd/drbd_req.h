@@ -2,10 +2,11 @@
    drbd_req.h
    Kernel module for 2.6.x Kernels
 
-   This file is part of DRBD
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2006-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 2006-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
+   Copyright (C) 2006-2007, Philipp Reisner <philipp.reisner@linbit.com>.
 
    DRBD is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -176,7 +177,7 @@ enum drbd_req_state_bits {
 	 * was successfully written on the peer.
 	 */
 	__RQ_NET_OK,
-	
+
 	/* peer called drbd_set_in_sync() for this write */
 	__RQ_NET_SIS,
 };
@@ -231,7 +232,7 @@ static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev,u64 id, sector_t sec
 			return req;
 		}
 	}
-	ERR("_ack_id_to_req: failed to find req %p, sector %llus in list\n", 
+	ERR("_ack_id_to_req: failed to find req %p, sector %llus in list\n",
 		(void*)(unsigned long)id, (unsigned long long)sector);
 	return NULL;
 }

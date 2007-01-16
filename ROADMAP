@@ -1,8 +1,8 @@
 DRBD 0.8 Roadmap
 ----------------
 
-1 Drop support for linux-2.4.x. 
-  Do all size calculations on the base of sectors (512 Byte) as it 
+1 Drop support for linux-2.4.x.
+  Do all size calculations on the base of sectors (512 Byte) as it
   is common in Linux-2.6.x.
   (Currently they are done on a 1k base, for 2.4.x compatibility)
   90% DONE
@@ -14,8 +14,8 @@ DRBD 0.8 Roadmap
   to that huge receive_params() function we had before.
   40% DONE
 
-3 Authenticate the peer upon connect by using a shared secret. 
-  Configuration file syntax:  net { cram-hmac-alg "sha1"; 
+3 Authenticate the peer upon connect by using a shared secret.
+  Configuration file syntax:  net { cram-hmac-alg "sha1";
   shared-secret "secret-word"; }
   Using a challenge-response authentication.
   99% DONE
@@ -23,7 +23,7 @@ DRBD 0.8 Roadmap
 4 Consolidate state changes into a central function, that makes
   sure that the new state is valid. Replace set_cstate() with
   a force_state() and a request_state() function. Make all
-  state changes atomic, and consolidate the many differenct 
+  state changes atomic, and consolidate the many differenct
   cstate-error states into a single "NetworkFailure" state.
   50% DONE
 
@@ -31,18 +31,18 @@ DRBD 0.8 Roadmap
   of DRBDs behaviour after a split-brain situation:
 
   In case the nodes of your cluster nodes see each other again, after
-  an split brain situation in which both nodes where primary 
+  an split brain situation in which both nodes where primary
   at the same time, you have two diverged versions of your data.
- 
+
   In case both nodes are secondary you can control DRBD's
   auto recovery strategy by the "after-sb-0pri" options. The
-  default is to disconnect. 
+  default is to disconnect.
      "disconnect" ... No automatic resynchronisation, simply disconnect.
      "discard-younger-primary"
                       Auto sync from the node that was primary before
                       the split brain situation happened.
      "discard-older-primary"
-                      Auto sync from the node that became primary 
+                      Auto sync from the node that became primary
                       as second during the split brain situation.
                       If discard-younger-primary and discard-older-primary
 		      can not find a decissions, they fall back to
@@ -51,7 +51,7 @@ DRBD 0.8 Roadmap
                       Auto sync from the node that modified
                       blocks during the split brain situation, but only
 		      if the target not did not touched a single block.
-                      If both nodes touched their data, this policy 
+                      If both nodes touched their data, this policy
 		      falls back to disconnect.
      "discard-least-changes"
                       Auto sync from the node that touched more
@@ -61,9 +61,9 @@ DRBD 0.8 Roadmap
 
   In one of the nodes is already primary, then the auto-recovery
   strategie is controled by the "after-sb-1pri" options.
-     "disconnect" ... always disconnect 
+     "disconnect" ... always disconnect
      "consensus"  ... discard the version of the secondary if the outcome
-                      of the "after-sb-0pri" algorithm would also destroy 
+                      of the "after-sb-0pri" algorithm would also destroy
                       the current secondary's data. Otherwise disconnect.
      "violently-as0p" Always take the decission of the "after-sb-0pri"
                       algorithm. Even if that causes case an erratic change
@@ -73,13 +73,13 @@ DRBD 0.8 Roadmap
 		      flag, _AND_ you really know what you are doing.
 		      This is DANGEROUS and MAY CRASH YOUR MACHINE if you
 		      have a FS mounted on the primary node.
-     "discard-secondary"     
+     "discard-secondary"
                       discard the version of the secondary.
-     "call-pri-lost-after-sb"    
+     "call-pri-lost-after-sb"
                       Always honour the outcome of the "after-sb-2sc"
                       algorithm. In case it decides that the current
                       secondary has the right data, it tries to make
-                      the current primary secondary, if that fails 
+                      the current primary secondary, if that fails
                       it calls the "pri-lost-after-sb" helper program
                       on the current primary. That helper program is
                       expected to halt the machine.
@@ -116,35 +116,35 @@ DRBD 0.8 Roadmap
       command) gets a short-living flag called "--discard-my-data".
   99% DONE
 
-6 It is possible that a secondary node crashes a primary by 
-  returning invalid block_ids in ACK packets. [This might be 
+6 It is possible that a secondary node crashes a primary by
+  returning invalid block_ids in ACK packets. [This might be
   either caused by faulty hardware, or by a hostile modification
   of DRBD on the secondary node]
 
   Proposed solution:
 
   Have a hash table (hlist_head style), add the collision
-  member (hlist_node) to drbd_request. 
+  member (hlist_node) to drbd_request.
 
   Use the sector number of the drbd_request as key to the hash, each
-  drbd_request is also put into this hash table. We still use the 
-  pointer as block_id. 
+  drbd_request is also put into this hash table. We still use the
+  pointer as block_id.
 
   When we get an ACK packet, we lookup the hash table with the
-  block_id, and may find the drbd_request there. Otherwise it 
+  block_id, and may find the drbd_request there. Otherwise it
   was a forged ACK.
 
   Note: The actual key to the hash should be (sector & ~0x7).
         See item 9 for more details.
   99% DONE
 
-7 Handle split brain situations; Support IO fencing; 
-  
+7 Handle split brain situations; Support IO fencing;
+
   New commands:
     drbdadm outdate r0
 
     When the device is configured this works via an ioctl() call.
-    In the other case it modifies the meta data directly by 
+    In the other case it modifies the meta data directly by
     calling drbdmeta.
 
   remove option: on-disconnect
@@ -160,11 +160,11 @@ DRBD 0.8 Roadmap
     outdate-peer "some script";
   }
 
-  If the disk state of the peer is unknown, drbd calls this 
+  If the disk state of the peer is unknown, drbd calls this
   handler (yes a call to userspace from kernel space). The handler's
   returncodes are:
 
-  3 -> peer is inconsistent 
+  3 -> peer is inconsistent
   4 -> peer is outdated (this handler outdated it) [ resource fencing ]
   5 -> peer was down / unreachable
   6 -> peer is primary
@@ -184,17 +184,17 @@ DRBD 0.8 Roadmap
    P/? - -  S/?     network breaks ; N1 freezes IO
    P/? - -  S/?     N1 fences N2:
                     In the STONITH case: turn off N2.
-                    In the resource fencing case: 
+                    In the resource fencing case:
                     N1 asks N2 to fence itself from the storage via cnet.
                     HB calls "drbdadm outdate r0" on N2.
                     N2 replies to N1 that fencing is done via cnet.
                     The outdate-peer script on N1 returns sucess to DRBD.
    P/D - -  S/?     N1 thaws IO
 
-  N2 got the the "Outdated" flag set in its meta-data, by the outdate 
-  command. 
+  N2 got the the "Outdated" flag set in its meta-data, by the outdate
+  command.
 
-  The fencing is set to resource-only enables this behaviour. In the 
+  The fencing is set to resource-only enables this behaviour. In the
   resource-only case the outdate-peer handler should have a return
   value of 3, 4, 5 or 6, but should not return 7.
 
@@ -208,13 +208,13 @@ DRBD 0.8 Roadmap
 
   When the outdate-peer handler returns IO is resumed.
 
-  Notes: 
+  Notes:
   * Why do we need to freeze IO in the "resource-and-stonith" case:
       Stonith protects you when all communication pathes fail. In
       that case both (isolated) nodes try to stonith each other.
       If the current primary would continue to allow IO it could
-      accept transactions, but could get stonithed by the 
-      currently secondary node. 
+      accept transactions, but could get stonithed by the
+      currently secondary node.
       -> Therefore others could see commited transactions that
          would be gone after the successfull stonith operation.
 
@@ -234,25 +234,25 @@ DRBD 0.8 Roadmap
 
 8 New command drbdmeta
 
-  We move the read_gc.pl/write_gc.pl to the user directory. 
+  We move the read_gc.pl/write_gc.pl to the user directory.
   Make them to one C program: drbdmeta
    -> in the future the module never creates the meta data
-      block. One can use drbdmeta to create, read and 
+      block. One can use drbdmeta to create, read and
       modify the drbdmeta block. drbdmeta refuses to write
       to it as long as the module is loaded (configured).
 
   drbdsetup gets the ability to read the gc values while DRBD
   is set up via an ioctl() call. -- drbdmeta refuses to run
-  if DRBD is configured. 
+  if DRBD is configured.
 
-  drbdadm is the nice front end. It always uses the right 
+  drbdadm is the nice front end. It always uses the right
   back end (drbdmeta or drbdsetup)...
 
   drbdadm set-gi 1:2:3:4:5:6 r0
   drbdadm get-gi r0
   drbdadm md-create r0
 
-  md-create would ask nasty questions about whether you are really 
+  md-create would ask nasty questions about whether you are really
   sure and so on, and do some plausibility checks first.
   md-set would be undocumented and for wizards only.
   80% DONE
@@ -276,21 +276,21 @@ DRBD 0.8 Roadmap
   [ Description of GFS-mode-arbitration2.pdf ]
 
   1. Basic mirroring with protocol C.
-    The file system on N2 issues a write request towards DRBD, 
+    The file system on N2 issues a write request towards DRBD,
     which is written to the local disk and sent to N1. Then
     the data bock is written to the local disk here and and
     acknowledge packet is sent back. As soon as both the
-    write to the local disk and the ACK from N1 reach N2, 
+    write to the local disk and the ACK from N1 reach N2,
     DRBD signals the completion of IO to the file system.
 
     The major pitfall is the handling of concurrent writes to the
-    same block. (Concurrent writes to the same blocks should not 
+    same block. (Concurrent writes to the same blocks should not
     happen, but we have to assume that it is possible that the
-    synchronisation methods of our upper layer [i.e. openGFS] 
+    synchronisation methods of our upper layer [i.e. openGFS]
     may fail.)
 
     There are many cases in which such concurrent writes would
-    lead to different data on our two copies of the block. 
+    lead to different data on our two copies of the block.
 
   *** FIXME ***
   description of algorithm here is out of date,
@@ -302,13 +302,13 @@ DRBD 0.8 Roadmap
     ends with having the green version (=data from FS on N1).
     The solution is to flag one node (in the example N2 has the
     discard-concurrent-writes-flag).
-    As we can see on the right side, now both nodes ends with 
+    As we can see on the right side, now both nodes ends with
     the blue data.
 
   3. Concurrent writes, high latency for data packets.
     The problem now is that N2 does can not detect that this was
     a concurrent write, since it got the ACK before the conflicting
-    data packets comes in. 
+    data packets comes in.
     This can happens since in DRBD, data packets and ACK packets are
     transmitted via two independent TCP connections, therefore the
     ACK packet can overtakes a data packet.
@@ -320,25 +320,25 @@ DRBD 0.8 Roadmap
 
   4. Concurrent writes, high latency for data packets.
     This is the inverse case to case3 and already handled by the means
-    introduced with item 1. 
+    introduced with item 1.
 
   5. New write while processing a write from the peer.
-    Without further measures this would lead to an inconsistency in 
-    our mirror as the figure on the left side shows. 
+    Without further measures this would lead to an inconsistency in
+    our mirror as the figure on the left side shows.
     If we currently write a conflicting block from the peer, we simply
-    discard the write request from our FS and signal IO completion 
+    discard the write request from our FS and signal IO completion
     immediately.
 
   6. High disk latency on N2.
-    By IO reordering in the layers below us this could lead to 
-    having the blue data on N2 and the green data on N1. 
+    By IO reordering in the layers below us this could lead to
+    having the blue data on N2 and the green data on N1.
     The solution to this case is the delay the write to the local
     disk on N2 until the local write is done. This is different from
     case two since we already got the write ACK to the conflicting
     block.
 
   7. An data packet overtakes an ACK packet on the network.
-    Although this case is quite unlikely, we have to take int into 
+    Although this case is quite unlikely, we have to take int into
     account. From N2's point of fiew this looks a lot like case 4,
     but N2 should not delete the data packet now!
 
@@ -348,11 +348,11 @@ DRBD 0.8 Roadmap
   accept() in the drbd_connect() function) and mark it withe the
   discard-concurrent-writes-flag.
 
-  Each data packet and each ACK packet gets a sequence 
-  number, which is increased which every packet sent. 
+  Each data packet and each ACK packet gets a sequence
+  number, which is increased which every packet sent.
   (This is a common space of sequence numbers)
 
-  The algorithm which is performed upon the reception of a 
+  The algorithm which is performed upon the reception of a
   data packet [drbd_receiver].
 
   *  If the sequence number of the data packet is higher than
@@ -360,12 +360,12 @@ DRBD 0.8 Roadmap
      [needed to satisfy example case 7]
 
   1. If the packet's sequence number is on the discard list,
-     simply drop it. 
+     simply drop it.
      [ ex.c. 3]
   2. Do we have a concurrent request? (i.e. Do I have a request
      to the same block in my transfer log.) If not -> write now.
      [ default ]
-  3. Have I already got an ACK packet for the concurrent 
+  3. Have I already got an ACK packet for the concurrent
      request ? (Has the request the RQ_DRBD_SENT bit already set)
      If yes -> write the data from the data packet afterwards.
      [ ex.c. 6]
@@ -378,12 +378,12 @@ DRBD 0.8 Roadmap
 	      packet.
      [ ex.c. *]
 
-  The algorithm which is performed upon the reception of an 
+  The algorithm which is performed upon the reception of an
   ACK packet [drbd_asender]
 
   * If we get an ACK, store the sequence number in last_seq.
 
-  The algorithm which is performed upon the reception of an 
+  The algorithm which is performed upon the reception of an
   discard info packet [drbd_asender]
 
   * if the current last_seq is lower the the packet that should
@@ -401,7 +401,7 @@ DRBD 0.8 Roadmap
   99% DONE
 
 10 Change Sync-groups to sync-after
-  
+
   Sync groups turned out to be hard to configure and more
   complex setups, hard to implement right and last not least they
   are not flexible enough to cover all real world scenarios.
@@ -409,9 +409,9 @@ DRBD 0.8 Roadmap
   E.g. Two physical disks should be mirrored with DRBD. On one
        of the disks there is only a single partition, while the
        other one is divided into many (e.g. 4 smaller) partitions.
-       One would want to sync the big one in parallel to the 
+       One would want to sync the big one in parallel to the
        4 small ones. While the resync process of the 4 small
-       ones need to be serialized. 
+       ones need to be serialized.
        -> With the current sync groups you can not express
           this requirement.
 
@@ -420,15 +420,15 @@ DRBD 0.8 Roadmap
   99% DONE
       Finished the implementation. Tested.
 
-11 Take into account that the two systems could have different 
-  PAGE_SIZE. 
+11 Take into account that the two systems could have different
+  PAGE_SIZE.
 
   At least we should negotiate the PAGE_SIZE used by the peers,
   and use it. In case the PAGE_SIZE is not the same inform
   the user about the fact.
 
   Probably a general high performance implementation for this
-  issue is not necessary, since clusters of machines with 
+  issue is not necessary, since clusters of machines with
   different PAGE_SIZE are of academic interest only.
   100% DONE by item 15
 
@@ -439,8 +439,8 @@ DRBD 0.8 Roadmap
   99% DONE
 
 13 Introduce an UUID (universally unique identifier) in the
-  meta data. One purpose is to tag the bitmap with this UUID. 
-  If the peer's UUID is different to what we expect we know that 
+  meta data. One purpose is to tag the bitmap with this UUID.
+  If the peer's UUID is different to what we expect we know that
   we have to do a full sync....
   99% DONE
   -> Will be go out again, and become replaced by UUID for data
@@ -454,14 +454,14 @@ DRBD 0.8 Roadmap
   The new interface is now based on netlink (actually connector).
   It is based on the concept of tag lists. The idea is that on the
   interface we pass lists (actually arrays) of tags. Where each
-  tag identifies the following sniplet of data. 
+  tag identifies the following sniplet of data.
   Each tag also states if it is mandatory.
 
   In case we have to add a new value to the interface, the
   existing userland tools continue to work with newer kernel
   modules and vice versa. (Only the older part of the two will
   inform the user with a warning, that there was a unknown
-  tag on the interface, and that the unknown tag got ignored) 
+  tag on the interface, and that the unknown tag got ignored)
   But the basic functionality stays intact!
 
   While implementing this, we also implemented dynamic device allocation.
@@ -473,40 +473,40 @@ DRBD 0.8 Roadmap
     --set-defaults ____ set all not mentioned options to it's default values.
 
   Things to do:
-  
+
   * Locking in userspace, to prevent multiple instances of drbdsetup
   * Think about locking in kernel space ( device_mutex? )
 
   80% DONE
 
-15 Accept BIOs bigger than one page, probabely up to 32k (8 pages) 
+15 Accept BIOs bigger than one page, probabely up to 32k (8 pages)
   currently.
   * Normal Requsts. -> DONE
   * Make the syncer to commulate adjacent bits into bigger requests. -> DONE
   * Make the bitmap more coarse grained. -> TODO
   66% DONE
 
-16 Displace the current generation-counters with a data-generation-UUID 
+16 Displace the current generation-counters with a data-generation-UUID
    concept.
   The current generation counters have various weaknesses:
    * In a split braine'd cluster the appliance of the same events
      to both cluster nodes could lead to equal generation-counters
      on both nodes, while the data is not in sync for sure.
-   * They are completely unsuitable if a 3rd node is used for 
+   * They are completely unsuitable if a 3rd node is used for
      e.g. weekly snapshots.
    * Gracefull takeover while disconnected not possible.
 
   We associate each data generation with an unique UUID (=64 bit random
-  number). A new data generation is created if a primary node is 
-  disconnected from its secondary and when a degraded secondary 
+  number). A new data generation is created if a primary node is
+  disconnected from its secondary and when a degraded secondary
   becomes primary for the first time.
 
-  In the meta-data we store a few generations-UUIDs: 
+  In the meta-data we store a few generations-UUIDs:
    * current
    * bitmap
    * history[2]
 
-  As well as the currently known flags: 
+  As well as the currently known flags:
    Consistent, WasUpToDate, LastState, ConnectedInd, WantFullSync
 
   When the cluster is in Connected state, then the bitmpat gen-UUID
@@ -562,11 +562,11 @@ DRBD 0.8 Roadmap
   When the bitmap-UUID gets cleared, move the previous value to H1.
   In case H1 was already set copy its previous value to H2. Etc..
 
-  For the auto recover strategies after split brain (see item 5) 
+  For the auto recover strategies after split brain (see item 5)
   it is neccessary to embedd the node's role into the UUIDs.
   This is masked out of course when the UUIDs are compared.
 
-  * Note1: Discontinue the --human and --timout options when 
+  * Note1: Discontinue the --human and --timout options when
            becoming primary.
            NB: If they are needed, I think they can be implemented
                as special UUID values.
@@ -583,7 +583,7 @@ DRBD 0.8 Roadmap
    drbdx: WARNING disk sizes more than 10% different
 
   would be nice at (initial) full sync.
-  drbdx: WARNING disk sizes more than 10% different   
+  drbdx: WARNING disk sizes more than 10% different
 
 18 Connection-Teardown Packet. Currently the new state-checks
   disallows "drbdadm disconnect res" on the primary node of a
@@ -613,7 +613,7 @@ DRBD 0.8 Roadmap
   In the BIO layer this is BIO_RW_BARRIER, which is usually set on
   BIO_RW (=write) requests.
 
-  The REQ_HARDBARRIER bit is currently used to do a cache flush on 
+  The REQ_HARDBARRIER bit is currently used to do a cache flush on
   IDE devices. Actually not all IDE devices can do cache flushes, there
   are some older models out there that can do write-caching but can
   not perform a cache flush!
@@ -631,21 +631,21 @@ DRBD 0.8 Roadmap
   Default ist QUEUE_ORDERED_NONE. This is the reason why we never see
   the REQ_HARDBARRIER flag currently.
 
-  An other consequence of this is, that IDE devices that do _not_ support 
+  An other consequence of this is, that IDE devices that do _not_ support
   cache flushes and have write cache enabled are inherent buggy to use with
   a journaled file system.
 
   SCSI's Tagged queuing (seems to be presenet in SATA as well)
     [excerpt from http://www.scsimechanic.com/scsi/SCSI2-07.html]
 
-    Tagged queuing allows a target to accept multiple I/O processes from 
-    the same or different initiators until the logical unit's command queue 
+    Tagged queuing allows a target to accept multiple I/O processes from
+    the same or different initiators until the logical unit's command queue
     is full.
 
     If only SIMPLE QUEUE TAG messages are used, the target may execute the
     commands in any order that is deemed desirable within the constraints
     of the queue management algorithm specified in the control mode page
-    (see 8.3.3.1).  
+    (see 8.3.3.1).
 
     If ORDERED QUEUE TAG messages are used, the target shall execute the
     commands in the order received with respect to other commands received
@@ -655,7 +655,7 @@ DRBD 0.8 Roadmap
     command with the ORDERED QUEUE TAG message. All commands received with
     a SIMPLE QUEUE TAG message after a command received with an ORDERED
     QUEUE TAG message, regardless of initiator, shall be executed after
-    that command with the ORDERED QUEUE TAG message.  
+    that command with the ORDERED QUEUE TAG message.
 
     A command received with a HEAD OF QUEUE TAG message is placed first in
     the queue, to be executed next. A command received with a HEAD OF
@@ -664,7 +664,7 @@ DRBD 0.8 Roadmap
     are executed in a last- in-first-out order.
 
   I think in the context of SCSI the kernel usually issues write requests
-  with the SIMPLE QUEUE TAG, and requests with the REQ_HARDBARRIER 
+  with the SIMPLE QUEUE TAG, and requests with the REQ_HARDBARRIER
   (i.e. bio's with the BIO_RW_BARRIER) with an ORDERED QUEUE TAG.
 
   What QUEUE_ORDERED_ type should we expose ?
@@ -694,17 +694,17 @@ DRBD 0.8 Roadmap
     have to stay with the current code.
 
     In case our backing device only supports QUEUE_ORDERED_FLUSH we
-    will to use the current code. That means, when we receive a write 
+    will to use the current code. That means, when we receive a write
     barrier packet we wait until all of our pending local write
     requests are done. (This potentially causes congestion on the TCP
     socket...)
 
-    In cause our backing device's queue properties are set to 
+    In cause our backing device's queue properties are set to
     QUEUE_ORDERED_TAG we offload the complete barrier logic to the
     backing storage device:
 
     * When we receive a barrier packet
-      - If we have no local pending requests, we send the barrier ACK 
+      - If we have no local pending requests, we send the barrier ACK
         immediately. (= current code)
       - If the last_barrier_write member of mdev points to an epoch_entry
         we set bit 31 of bnum.
@@ -724,15 +724,15 @@ DRBD 0.8 Roadmap
 
   90% DONE [ Not tested yet. ]
 
-22 Reboot notifier. 
+22 Reboot notifier.
 
-23 External imposed SyncPause states. 
+23 External imposed SyncPause states.
    There are two new commands: 'drbdadm pause-sync res'
                                'drbdadm resume-sync res'
    These may be used to suspend the resynchronisation process while
    e.g. the backing storages' raid controller does its resynchronisation.
 
-   While implementing this, I also made shure that in a 3 node 
+   While implementing this, I also made shure that in a 3 node
    setup the two peers of a connection will agree if a resynchronisation
    is paused under all conditions you can think of, if there are more
    than two nodes!
@@ -748,13 +748,13 @@ DRBD 0.8 Roadmap
 
    99% DONE
 
-26 Implement a kind of "dstate" command to make integration with 
+26 Implement a kind of "dstate" command to make integration with
    Heartbeat-2.0's master/slave-support possible.
 
    99% DONE
 
 27 Remove all explicit drbd_md_write() calls, and create a mechanism,
-   that always keeps the on disk-metadata up-to-date implicit. 
+   that always keeps the on disk-metadata up-to-date implicit.
    Calling drbd_md_write() explicit is too errorprone.
 
    99% DONE
@@ -785,13 +785,13 @@ DRBD 0.8 Roadmap
 
 32 drbdmeta: with internal meta-data v07 and v08 meta-data super blocks
    are in different places. -> It is possible to have v07 AND v08 meta
-   data on one device. 
+   data on one device.
    => drbdmeta should make sure that it overwrites the other location
       in case it create a meta-data block.
 
    99% DONE
 
-33 Serialize state changes like secondary -> primary and 
+33 Serialize state changes like secondary -> primary and
    Connected -> SyncSource in the cluster.
 
       role <- primary
@@ -800,7 +800,7 @@ DRBD 0.8 Roadmap
       disk <- Diskless (as long as it happens as administrative command)
       pdsk <- Outdated (= a 'disconnect' issued on a primary node)
 
-   * When a state change might sleep ( reuqest_state() ) and it is 
+   * When a state change might sleep ( reuqest_state() ) and it is
      to be cluster wide atomic ( pre_state_checks() determines this!).
 	1. Aquire the cluster state change lock (bit & waitqueue) ?
 	2. We send a request_state packet.
@@ -813,10 +813,10 @@ DRBD 0.8 Roadmap
 	   * When we are not UNIQUE we try to apply the state change
 	     immediately (without taking the cluster lock).
 	2. We send the ACK / NACK.
-	   ( Do we actually need an ACK/NACK ? 
+	   ( Do we actually need an ACK/NACK ?
  		* On the not UNIQUE side, we will fail the request as
 		  soon as the offending state request comes in.
-                * On the UNIQUE side we need to positive ACK to 
+                * On the UNIQUE side we need to positive ACK to
 		  continue.
 		) I guess for the sake of completeness, we should
                   have both packets, although currently the need for
@@ -830,7 +830,7 @@ DRBD 0.8 Roadmap
      change happens while a cluster wide state change goes on), we
      need to re-evaluate the pre state change check. In case the
      pre state change check allows the new state we can procees,
-     otherwise we need to fail the request. 
+     otherwise we need to fail the request.
 
    * How to do the synchronisation form the receive of the ACK / NACK
      packet to the termination of the request_state() function ?
@@ -842,11 +842,11 @@ DRBD 0.8 Roadmap
 	* A CL_ST_CHG_FAIL     bit set by the receiver.
 	* A wait queue.
 
-   TODOS: 
+   TODOS:
     Evaluate if it is possible to use it for starting resync. (invalidate)
     Evaluate it for the other cases...
 
-  90 % Is implemented. Changing the role to primary already uses this 
+  90 % Is implemented. Changing the role to primary already uses this
        mechanism. Starting resync with invalidate and invalidate_remote
        now also uses this method. Detaching now also uses this mechanism.
 
@@ -860,32 +860,32 @@ DRBD 0.8 Roadmap
 36 Increase the number of UUID history slots.
 
 37 In case heartbeat (or some one else) makes us primary, we need to
-   check first if the peer is alive. 
-   Currently we habe a problem is when heartbeat's dead time is smaller 
+   check first if the peer is alive.
+   Currently we habe a problem is when heartbeat's dead time is smaller
    than DRBD's network timeout.
 
 38 Create an other on-io-error hander, that does retry failed read
    operations on the peer, but does not detach from the local disk.
    And it sets that block in the bitmap as out-of-date.
 
-   Simon works on this. 
+   Simon works on this.
 
 39 Send mirrored write requests out of the worker context.
    99% DONE
 
 40 Do something with FLUSHBUFS ioctl.
 
-41 Fix DRBD's behaviour in case of a common power failuer and when 
+41 Fix DRBD's behaviour in case of a common power failuer and when
    both nodes were in primary role.
 
    See the the Algorithm of Item 16, section 4 to 4.4 .
 
-   Further we need to have the resync rolces conflict  "rr-conflict" 
+   Further we need to have the resync rolces conflict  "rr-conflict"
    strategy option with the following values:
 
    The available options are:
      "disconnect" ... No automatic resynchronisation, simply disconnect.
-     "violently" .... Sync to the primary node is allowed, violating the 
+     "violently" .... Sync to the primary node is allowed, violating the
 	              assumption that data on a block device is stable
 		      for one of the nodes. DANGEROUS, DO NOT USE.
      "call-pri-lost"
@@ -908,10 +908,10 @@ DRBD 0.8 Roadmap
 
 Maybe:
 
-*  Switch to protocol C in case we are running without a local 
+*  Switch to protocol C in case we are running without a local
    disk and are configured to use protocol A or B.
 
-*  Dynamic misc char device instead of IOCTLs for configuration. Evaluate 
+*  Dynamic misc char device instead of IOCTLs for configuration. Evaluate
    if the configuration could be done over a netlink socket as well...
 
 *  A netlink socket to communicate events to userspace.
@@ -936,6 +936,6 @@ plus-banches:
   a DRBD pair). Enhance the user level tools to support the 3 node
   setup.
 
-5 Have protocol version 74 available in drbd-0.8, to allow rolling 
+5 Have protocol version 74 available in drbd-0.8, to allow rolling
   upgrades
 

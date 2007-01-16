@@ -1,7 +1,6 @@
 /* $Id$ */
 /* drbd-peer-outdater
- * Copyright (C) 2006 LINBIT <http://www.linbit.com/>
- *
+ * Copyright (C) 2006-2007 LINBIT <http://www.linbit.com/>
  * Written by Rasto Levrinc <rasto@linbit.com>
  *
  * based on attrd

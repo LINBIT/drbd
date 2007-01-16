@@ -3,11 +3,11 @@
    drbd_req.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -84,8 +84,8 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 	     s & RQ_NET_SENT ? 's' : '-',
 	     s & RQ_NET_DONE ? 'd' : '-',
 	     s & RQ_NET_OK ? 'o' : '-',
-	     req->epoch, 
-	     (unsigned long long)req->sector, 
+	     req->epoch,
+	     (unsigned long long)req->sector,
 	     req->size,
 	     conns_to_name(mdev->state.conn));
 }
@@ -698,8 +698,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 			     s & RQ_NET_SENT ? 's' : '-',
 			     s & RQ_NET_DONE ? 'd' : '-',
 			     s & RQ_NET_OK ? 'o' : '-',
-			     req->epoch, 
-			     (unsigned long long)req->sector, 
+			     req->epoch,
+			     (unsigned long long)req->sector,
 			     req->size,
 			     conns_to_name(mdev->state.conn));
 		}
@@ -1010,8 +1010,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
-		if (FAULT_ACTIVE(rw==WRITE ? DRBD_FAULT_DT_WR : 
-				 ( rw==READ ? DRBD_FAULT_DT_RD : 
+		if (FAULT_ACTIVE(rw==WRITE ? DRBD_FAULT_DT_WR :
+				 ( rw==READ ? DRBD_FAULT_DT_RD :
 				   DRBD_FAULT_DT_RA ) ))
 			bio_endio(req->private_bio, req->private_bio->bi_size, -EIO);
 		else

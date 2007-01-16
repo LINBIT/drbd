@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #  outdate-peer.sh
-#  This file is part of drbd by Philipp Reisner / Lars Ellenberg.
+#  This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 #
 
 #
@@ -24,7 +24,7 @@
 #    Start a line with from="10.9.9.181,10.99.99.1" [content of id_dsa.pub]
 #      Put the IPs of you first machine here, also the id_dsa.pub
 #      is from the first machine All needs to be in a single line.
-# 
+#
 # 3. ssh from the first machine to the second one, do this for all
 #    IP addresses of the second machine. When doing this the first
 #    time it asks you if it should ad the fingerprint to the list
@@ -45,19 +45,19 @@
 TIMEOUT=6
 
 for P in "$@"; do
-    if [ "$P" = "on" ]; then 
+    if [ "$P" = "on" ]; then
 	EXP_HOST_NAME=1
 	EXP_PEER_IP=0
 	EXP_OWN_IP=0
     else
-	if [ "$EXP_PEER_IP" = "1" ]; then 
+	if [ "$EXP_PEER_IP" = "1" ]; then
 	    PEER_IP="$PEER_IP $P"
 	fi;
-	if [ "$EXP_OWN_IP" = "1" ]; then 
+	if [ "$EXP_OWN_IP" = "1" ]; then
 	    OWN_IP="$OWN_IP $P"
 	fi;
-	if [ "$EXP_HOST_NAME" = "1" ]; then 
-	    if [ "$P" != `uname -n` ]; then 
+	if [ "$EXP_HOST_NAME" = "1" ]; then
+	    if [ "$P" != `uname -n` ]; then
 		EXP_PEER_IP=1
 	    else
 		EXP_OWN_IP=1

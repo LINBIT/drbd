@@ -7,29 +7,29 @@
 #
 # this results in strange names for e.g. smp4G, psmp,
 # -smp-lge or whatnot.
-#-- 
+#--
 # %define kversion %(echo %{kernelversion} | sed -e s/smp// -)
 # %define krelver  %(echo %{kversion} | tr -s '-' '_')
 # %if %(echo %{kernelversion} | grep -c smp)
 #   %{expand:%%define ksmp -smp}
 # %endif
-#-- 
+#--
 # so I choose to have it thus:
 %define krelver  %(echo %{kernelversion} | tr -s '-' '_')
 
 Name: drbd
 Summary: Distributed Redundant Block Device driver for Linux
-Version: 
+Version:
 Release: 3
 Source: %{name}-%{version}.tar.gz
-Vendor: DRBD 
+Vendor: DRBD
 License: GPL
 ExclusiveOS: linux
 Group: System Environment/Kernel
-Packager: 
+Packager:
 Requires: kernel
 Provides: %{name}
-URL: http://www.drbd.org/ 
+URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %description
@@ -41,7 +41,7 @@ high availability (HA) clusters.
 Authors:
 --------
     Philipp Reisner <philipp.reisner@linbit.com>
-    Lars Ellenberg  <l.g.e@web.de>
+    Lars Ellenberg  <lars.ellenberg@linbit.com>
 
 #%package -n kernel%{?ksmp}-module-drbd
 # I choose to have the kernelversion as part of the package name!
@@ -51,7 +51,7 @@ Summary: Kernel driver for DRBD.
 #Release: %{release}_%{krelver}
 Group: System Environment/Kernel
 Requires: %{name} = %{version}, /sbin/depmod
-# conflicts with the suse km_drbd package. use either theirs, or ours... 
+# conflicts with the suse km_drbd package. use either theirs, or ours...
 Conflicts: km_drbd
 #%{?ksmp:Provides: kernel-module-drbd = %{version}-%{release}_%{krelver}}
 
@@ -153,8 +153,8 @@ if test -e $EXTRA_DRBD_KO; then
 fi
 chkconfig --add drbd
 
-for i in `seq 0 15` ; do 
-    test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i; 
+for i in `seq 0 15` ; do
+    test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i;
 done
 
 
@@ -194,7 +194,7 @@ uname -r | grep BOOT ||
 * Fri Dec 22 2006 15:19:10 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0rc1-1)
  * The drbd-peer-outdater got updated to work in multi node heartbeat
-   clusters. (But we still not suceeded to get this into Heartbeat's 
+   clusters. (But we still not suceeded to get this into Heartbeat's
    repository accepted.)
  * Fixed resync decission after a crash in a pri-pri cluster.
  * Implemented the ping-timeout option for "sub-second" failover clusters.
@@ -217,7 +217,7 @@ uname -r | grep BOOT ||
  * The request code was completely rewritten.
  * The write conflict detection code for primary-primary is currently
    broken, but will be fixed soon.
- * drbdsetup is no longer based on IOCTL but works now via 
+ * drbdsetup is no longer based on IOCTL but works now via
    netlink/connector.
  * drbd_panic() is on its way out.
  * A runtime configurable tracing framework got added.
@@ -241,7 +241,7 @@ uname -r | grep BOOT ||
  * Fixes for 64bit kernel / 32 bit userland environments
  * Fixes in the sys-v init script
  * Renamed "--do-what-I-say" to "--overwrite-data-of-peer". Hopefully
-   people now understand what this option does. 
+   people now understand what this option does.
 
 * Tue Apr  6 2006 17:53:56 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0-pre2-1)
@@ -263,9 +263,9 @@ uname -r | grep BOOT ||
  * Improved, tunable after-split-brain recovery strategies.
  * Always verify all IDs used in the protocol that are used as pointers.
  * Introduced the "outdate" disk state, and commands for managing it.
- * Introduced the "drbdmeta" command, and require the user to create 
+ * Introduced the "drbdmeta" command, and require the user to create
    meta-data explicitly.
- * Support for primary/primary (for OCFS2, GFS...) 
+ * Support for primary/primary (for OCFS2, GFS...)
  * Replaced the sync-groups with the sync-after mechanism.
  * The "common" section in the configuration file.
  * Replaced the generation counters (GCs) with data-generation-UUIDs
@@ -281,6 +281,6 @@ uname -r | grep BOOT ||
  * Changed internal APIs so that missed writes of the meta-data super
    block are reported as they happen.
  * The http://usage.drbd.org sub project.
- * Rewrote the scanner/parser of drbd.conf. 10 times smaller/faster and 
+ * Rewrote the scanner/parser of drbd.conf. 10 times smaller/faster and
    easier to maintain.
  * Asynchronous meta-data IO [ Code drop from the DRBD+ branch ]

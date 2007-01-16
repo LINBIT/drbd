@@ -1,10 +1,8 @@
 /*
    dm.c
 
-   By Philipp Reisner.
-
-   Copyright (C) 1999-2003, Philipp Reisner <philipp.reisner@linbit.com>.
-        Initial author.
+   Copright 2001-2007 LINBIT Information Technologies
+   Philipp Reisner, Lars Ellenberg
 
    dm is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

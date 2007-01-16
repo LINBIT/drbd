@@ -3,11 +3,11 @@
    drbd_nl.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -81,7 +81,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
 		 arg->member ## _len = dlen; \
 		 memcpy(arg->member,tags,dlen); \
-		 break; 
+		 break;
 #include "linux/drbd_nl.h"
 
 // Generate the struct to tag_list functions
@@ -97,7 +97,7 @@ name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 	*tags++ = pn | pr | TT_INTEGER; \
 	*tags++ = sizeof(int); \
 	*(int*)tags = arg->member; \
-	tags = (unsigned short*)((char*)tags+sizeof(int)); 
+	tags = (unsigned short*)((char*)tags+sizeof(int));
 #define INT64(pn,pr,member) \
 	*tags++ = pn | pr | TT_INT64; \
 	*tags++ = sizeof(u64); \
@@ -140,7 +140,7 @@ void nl_trace_packet(void *data) {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
 
-	printk(KERN_INFO DEVICE_NAME "%d: " 
+	printk(KERN_INFO DEVICE_NAME "%d: "
 	       "Netlink: << %s (%d) - seq: %x, ack: %x, len: %x\n",
 	       nlp->drbd_minor,
 	       nl_packet_name(nlp->packet_type),
@@ -152,10 +152,10 @@ void nl_trace_reply(void *data) {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply*)req->data;
 
-	printk(KERN_INFO DEVICE_NAME "%d: " 
+	printk(KERN_INFO DEVICE_NAME "%d: "
 	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
 	       nlp->minor,
-	       nlp->packet_type==P_nl_after_last_packet? 
+	       nlp->packet_type==P_nl_after_last_packet?
 	           "Empty-Reply" : nl_packet_name(nlp->packet_type),
 	       nlp->packet_type,
 	       req->seq, req->ack, req->len);
@@ -246,8 +246,8 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 	while (try++ < 3) {
 		r = _drbd_request_state(mdev,mask,val,0);
-		if( r == SS_NoUpToDateDisk && force && 
-		    ( mdev->state.disk == Inconsistent || 
+		if( r == SS_NoUpToDateDisk && force &&
+		    ( mdev->state.disk == Inconsistent ||
 		      mdev->state.disk == Outdated ) ) {
 			mask.disk = disk_mask;
 			val.disk  = UpToDate;
@@ -495,7 +495,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	return rv;
 }
 
-sector_t 
+sector_t
 drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
 {
 	sector_t p_size = mdev->p_size;   // partner's disk size.
@@ -535,7 +535,7 @@ drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
 	return size;
 }
 
-/** 
+/**
  * drbd_check_al_size:
  * checks that the al lru is of requested size, and if neccessary tries to
  * allocate a new one. returns -EBUSY if current al lru is still used,
@@ -609,9 +609,9 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 
 	// KERNEL BUG. in ll_rw_blk.c
 	// t->max_segment_size = min(t->max_segment_size,b->max_segment_size);
-	// should be 
+	// should be
 	// t->max_segment_size = min_not_zero(...,...)
-	
+
 	// workaround here:
 	if(q->max_segment_size == 0) q->max_segment_size = max_seg_s;
 
@@ -1394,7 +1394,7 @@ STATIC int drbd_nl_get_config(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
-	
+
 	tl = reply->tag_list;
 
 	if(inc_local(mdev)) {
@@ -1430,7 +1430,7 @@ STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
-	
+
 	tl = reply->tag_list;
 
 	if(inc_local(mdev)) {
@@ -1476,14 +1476,14 @@ STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 
 	if(!mdev && (nlp->flags & DRBD_NL_CREATE_DEVICE)) {
 		mdev = drbd_new_device(nlp->drbd_minor);
-		
+
 		spin_lock_irq(&drbd_pp_lock);
 		if( minor_table[nlp->drbd_minor] == NULL) {
 			minor_table[nlp->drbd_minor] = mdev;
 			mdev = NULL;
 		}
 		spin_unlock_irq(&drbd_pp_lock);
-		
+
 		if(mdev) {
 			if(mdev->app_reads_hash) kfree(mdev->app_reads_hash);
 			if(mdev->md_io_page) __free_page(mdev->md_io_page);
@@ -1499,7 +1499,7 @@ STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 
 struct cn_handler_struct {
 	int (*function)(drbd_dev *,
-			 struct drbd_nl_cfg_req *, 
+			 struct drbd_nl_cfg_req *,
 			 struct drbd_nl_cfg_reply* );
 	int reply_body_size;
 };
@@ -1542,7 +1542,7 @@ void drbd_connector_callback(void *data)
 	struct drbd_nl_cfg_reply* reply;
 	drbd_dev *mdev;
 	int retcode,rr;
-	int reply_size = sizeof(struct cn_msg) 
+	int reply_size = sizeof(struct cn_msg)
 		+ sizeof(struct drbd_nl_cfg_reply)
 		+ sizeof(short int);
 
@@ -1578,7 +1578,7 @@ void drbd_connector_callback(void *data)
 	// reply->tag_list; might be modified by cm->fucntion.
 
 	rr = cm->function(mdev,nlp,reply);
-	
+
 	cn_reply->id = req->id;
 	cn_reply->seq = req->seq;
 	cn_reply->ack = req->ack  + 1;
@@ -1621,7 +1621,7 @@ void drbd_bcast_state(drbd_dev *mdev)
 
 	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
 	cn_reply->ack = 0; // not used here.
-	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + 
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
 		(int)((char*)tl - (char*)reply->tag_list);
 	cn_reply->flags = 0;
 
@@ -1659,7 +1659,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 
 	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
 	cn_reply->ack = 0; // not used here.
-	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + 
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
 		(int)((char*)tl - (char*)reply->tag_list);
 	cn_reply->flags = 0;
 
@@ -1672,7 +1672,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
-#ifdef NETLINK_ROUTE6 
+#ifdef NETLINK_ROUTE6
 int __init cn_init(void);
 void __exit cn_fini(void);
 #endif
@@ -1682,7 +1682,7 @@ int __init drbd_nl_init()
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 	int err;
 
-#ifdef NETLINK_ROUTE6 
+#ifdef NETLINK_ROUTE6
 	/* pre 2.6.16 */
 	err = cn_init();
 	if(err) return err;
@@ -1702,13 +1702,13 @@ void drbd_nl_cleanup()
 
 	cn_del_callback(&cn_id_drbd);
 
-#ifdef NETLINK_ROUTE6 
+#ifdef NETLINK_ROUTE6
 	/* pre 2.6.16 */
 	cn_fini();
 #endif
 }
 
-void drbd_nl_send_reply( struct cn_msg *req, 
+void drbd_nl_send_reply( struct cn_msg *req,
 			 int ret_code)
 {
 	char buffer[sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply)];

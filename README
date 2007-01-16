@@ -1,12 +1,14 @@
 
-				 DRBD
-				======
-        		   by Philipp Reisner
-		   		   
+                                 DRBD
+                                ======
+                           by Philipp Reisner
+                           and Lars Ellenberg
+                     LINBIT Information Technologies
+
 Reference documentation is included in the documentation directory.
 
 Please refer to the web pages at
-http://www.drbd.org/ and 
+http://www.drbd.org/ and
 http://www.linux-ha.org/DRBD
 http://www.linux-ha.org/DRBD/FAQ
 to find maintained information.
@@ -24,8 +26,9 @@ Run the oops through ksymoops and send it to the DRBD mailinglist.
 If you don't know what ksymoops is, read
 /usr/src/linux/Documentation/oops-tracing.txt
 
-BUILD RPMS:
+Need RPMS?
 -----------
 
-Read INSTALL.
+Have a look at http://www.linbit.com/support/drbd-current/
+or Read INSTALL.
 

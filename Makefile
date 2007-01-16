@@ -1,6 +1,10 @@
 # Makefile for drbd
 #
-# This file is part of drbd by Philipp Reisner
+# This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
+#
+# Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+# Copyright (C) 2001-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+# Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,7 +22,7 @@
 #
 
 # TODO move some of the more cryptic bash scriptlets here into scripts/*
-# and call those from here.	-- lge 
+# and call those from here.	-- lge
 
 #PREFIX      = /usr/local
 
@@ -48,7 +52,7 @@ RPMBUILD=rpmbuild
 
 all: tools module
 
-module: 
+module:
 	@if [ -z "$(KVER)" ]; then \
 		echo "Could not determine uts_release" ; \
 		false ; \
@@ -132,7 +136,7 @@ drbd/drbd_buildtag.c:
 # so the tgz and therefore rpm target will work within
 # an extracted tarball, too.
 # to generate a distribution tarball, use make tarball,
-# which will regenerate .filelist 
+# which will regenerate .filelist
 tgz:
 	test -e .filelist
 	ln -sf drbd/linux/drbd_config.h drbd_config.h

@@ -3,9 +3,8 @@
 # chkconfig: 345 70 8
 # description: Loads and unloads the drbd module
 #
-# complete rewrite from scratch by Philipp Reisner in March and April 2001
-# rewrite from scratch by Lars Ellenberg in June 2002
-# Jan 2003: Moved all the logic into a program written in C.
+# Copright 2001-2007 LINBIT Information Technologies
+# Philipp Reisner, Lars Ellenberg
 #
 ### BEGIN INIT INFO
 # Provides: drbd
@@ -34,8 +33,8 @@ function assure_module_is_loaded
 {
     [ -e "$PROC_DRBD" ] && return
 
-    $MODPROBE -s drbd `$DRBDADM sh-mod-parms` $ADD_MOD_PARAM || { 
-	echo "Can not load the drbd module."$'\n'; exit 20 
+    $MODPROBE -s drbd `$DRBDADM sh-mod-parms` $ADD_MOD_PARAM || {
+	echo "Can not load the drbd module."$'\n'; exit 20
     }
     # tell klogd to reload module symbol information ...
     [ -e /var/run/klogd.pid ] && [ -x /sbin/klogd ] && /sbin/klogd -i
@@ -54,15 +53,15 @@ function adjust_with_progress
     COMMANDS=`$DRBDADM -d adjust all` || exit 20
     echo -n "[ "
 
-    for CMD in $COMMANDS; do 
-	if echo $CMD | grep -q disk; then echo -n "d$D "; D=$(( D+1 )); 
-	elif echo $CMD | grep -q syncer; then echo -n "s$S "; S=$(( S+1 )); 
+    for CMD in $COMMANDS; do
+	if echo $CMD | grep -q disk; then echo -n "d$D "; D=$(( D+1 ));
+	elif echo $CMD | grep -q syncer; then echo -n "s$S "; S=$(( S+1 ));
 	elif echo $CMD | grep -q net; then echo -n "n$N "; N=$(( N+1 ));
 	else echo echo -n ".. ";
 	fi
 	IFS=$IFS_O
-	$CMD || { 
-	    echo -e "\ncmd $CMD failed!"; exit 20 
+	$CMD || {
+	    echo -e "\ncmd $CMD failed!"; exit 20
 	}
 	IFS=$NEWLINE
     done
@@ -73,7 +72,7 @@ function adjust_with_progress
 
 # Just in case drbdadm want to display any errors in the configuration
 # file, or we need to ask the user about registering this installation
-# at http://usage.drbd.org, we call drbdadm here without any IO 
+# at http://usage.drbd.org, we call drbdadm here without any IO
 # redirection.
 $DRBDADM sh-nop
 

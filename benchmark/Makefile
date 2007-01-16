@@ -4,7 +4,7 @@ all: dm
 
 install:
 
-clean: 
+clean:
 	rm -f dm
 
 distclean: clean

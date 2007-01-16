@@ -34,11 +34,11 @@
    used by heartbeat.
   </para>
   <para>
-    In order to use <option>/etc/ha.d/resource.d/drbddisk</option> you must 
-    define 
+    In order to use <option>/etc/ha.d/resource.d/drbddisk</option> you must
+    define
     a resource, a host, and any other configuration options in the DRBD
     configuration file.  See <option>/etc/drbd.conf</option> for details.
-    If <replaceable>resource</replaceable> is omitted, then all of the 
+    If <replaceable>resource</replaceable> is omitted, then all of the
     resources listed in the config file are affected.
   </para>
 </refsect1>
@@ -52,7 +52,8 @@
 <refsect1>
   <title>Author</title>
   <simpara>
-    Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>.
+    Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>
+            and Lars Ellenberg <email>lars.ellenberg@linbit.com</email>.
   </simpara>
 </refsect1>
 
@@ -66,9 +67,10 @@
 <refsect1>
   <title>Copyright</title>
   <simpara>
-    Copyright (c) 2004-2006 Philipp Reisner. This  is  free software; 
-    see the source for copying conditions.  There is NO warranty; 
-    not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+Copyright 2001-2007 LINBIT Information Technologies,
+Philipp Reisner, Lars Ellenberg. This  is  free software;
+see the source for copying conditions.  There is NO warranty;
+not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   </simpara>
 </refsect1>
 

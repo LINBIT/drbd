@@ -1,11 +1,11 @@
 /*
    drbdadm_parser.c a hand crafted parser
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2006, Philipp Reisner <philipp.reisner@linbit.com>
-   Copyright (C) 2006, Lars Ellenberg  <lars.ellenberg@linbit.com>
-   Copyright (C) 2006, LINBIT Information Technologies GmbH
+   Copyright (C) 2006-2007, LINBIT Information Technologies GmbH
+   Copyright (C) 2006-2007, Philipp Reisner <philipp.reisner@linbit.com>
+   Copyright (C) 2006-2007, Lars Ellenberg  <lars.ellenberg@linbit.com>
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -229,7 +229,7 @@ static void pe_expected_got(const char *exp, int got)
 	}
 	fprintf(stderr, "%s:%u: Parse error: '%s' expected,\n\t"
 		"but got '%s' (TK %d)\n",
-		config_file, line, 
+		config_file, line,
 		tmp[0] ? tmp : exp, yytext, got);
 	exit(E_config_invalid);
 }
@@ -535,7 +535,7 @@ struct d_resource* parse_resource(char* res_name)
 			res->disk_options = parse_options(TK_DISK_SWITCH,
 							  TK_DISK_OPTION);
 			break;
-		case TK_NET: 
+		case TK_NET:
 			check_uniq("net section", "%s:net", res->name);
 			res->net_options = parse_options(TK_NET_SWITCH,
 							 TK_NET_OPTION);
@@ -554,8 +554,8 @@ struct d_resource* parse_resource(char* res_name)
 			check_uniq("handlers section", "%s:handlers", res->name);
 			res->handlers =  parse_options(0, TK_HANDLER_OPTION);
 			break;
-		case '}': 
-		case 0:	
+		case '}':
+		case 0:
 			return res;
 		default:
 			pe_expected_got("protocol | on | disk | net | syncer |"

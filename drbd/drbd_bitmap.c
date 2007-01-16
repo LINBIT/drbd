@@ -3,11 +3,11 @@
    drbd_bitmap.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2004-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2004-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2004-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2004-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 2004-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2004-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -253,7 +253,7 @@ int drbd_bm_init(drbd_dev *mdev)
 	init_waitqueue_head(&b->bm_io_wait);
 
 	mdev->bitmap = b;
-	
+
 	return 0;
 }
 
@@ -772,7 +772,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
-	INFO("%s of bitmap took %lu jiffies\n", 
+	INFO("%s of bitmap took %lu jiffies\n",
 	     rw == READ ? "reading" : "writing", jiffies - now);
 
 	if (test_bit(BM_MD_IO_ERROR,&b->bm_flags)) {
@@ -1082,7 +1082,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 		i = -1;
 	} else /* (bitnr > b->bm_bits) */ {
 		ERR("bitnr=%lu > bm_bits=%lu\n",bitnr, b->bm_bits);
-		i = 0;		
+		i = 0;
 	}
 
 	spin_unlock_irq(&b->bm_lock);

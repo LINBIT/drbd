@@ -1,5 +1,5 @@
 #!/bin/bash
-{ 
+{
     for x in include/linux/{utsrelease,version}.h;
     do
         for d in $KDIR $O;

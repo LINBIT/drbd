@@ -1,4 +1,4 @@
-/* 
+/*
    PAKET( name,
           TYPE ( pn, pr, member )
           ...
@@ -18,7 +18,7 @@ PACKET(primary, 1,
 PACKET(secondary, 2, )
 
 PACKET(disk_conf, 3,
-	INT64(  	2,	T_MAY_IGNORE,	disk_size)
+	INT64(		2,	T_MAY_IGNORE,	disk_size)
 	STRING(		3,	T_MANDATORY,	backing_dev,	32)
 	STRING(		4,	T_MANDATORY,	meta_dev,	32)
 	INTEGER(	5,	T_MANDATORY,	meta_dev_idx)
@@ -54,14 +54,14 @@ PACKET(net_conf, 5,
 
 PACKET(disconnect, 6, )
 
-PACKET(resize, 7, 
-	INT64(  	29,	T_MAY_IGNORE,	resize_size)
+PACKET(resize, 7,
+	INT64(		29,	T_MAY_IGNORE,	resize_size)
 )
 
 PACKET(syncer_conf, 8,
 	INTEGER(	30,	T_MAY_IGNORE,	rate)
-	INTEGER(  	31,	T_MAY_IGNORE,	after)
-	INTEGER(  	32,	T_MAY_IGNORE,	al_extents)
+	INTEGER(	31,	T_MAY_IGNORE,	after)
+	INTEGER(	32,	T_MAY_IGNORE,	al_extents)
 )
 
 PACKET(invalidate, 9, )
@@ -78,10 +78,10 @@ PACKET(get_state, 17,
 
 PACKET(get_uuids, 18,
 	STRING(		34,	T_MAY_IGNORE,	uuids,	(UUID_SIZE*sizeof(__u64)))
-	INTEGER(  	35,	T_MAY_IGNORE,	uuids_flags)
+	INTEGER(	35,	T_MAY_IGNORE,	uuids_flags)
 )
 
-PACKET(get_timeout_flag, 19, 
+PACKET(get_timeout_flag, 19,
 	BIT(		36,	T_MAY_IGNORE,	use_degraded)
 )
 

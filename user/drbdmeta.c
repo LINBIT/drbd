@@ -1,10 +1,11 @@
 /*
    drbdmeta.c
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2004, Philipp Reisner <philipp.reisner@linbit.com>.
-        Initial author.
+   Copyright (C) 2004-2007, LINBIT Information Technologies GmbH
+   Copyright (C) 2004-2007, Philipp Reisner <philipp.reisner@linbit.com>
+   Copyright (C) 2004-2007, Lars Ellenberg  <lars.ellenberg@linbit.com>
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -547,7 +548,7 @@ struct __attribute__ ((packed)) md_on_disk_08 {
 	be_s32 bm_offset;	/* signed sector offset to the bitmap, from here */
 	be_u32 bm_bytes_per_bit;
 	be_u32 reserved_u32[4];
-	
+
 	char reserved[8 * 512 - (8*(UUID_SIZE+3)+4*11)];
 };
 
@@ -851,7 +852,7 @@ void printf_bm(const le_u64 * bm, const unsigned int n)
 		if ((i & 3) == 0) {
 			printf_bm_eol(i);
 
-			// RLL encoding 
+			// RLL encoding
 			for (j = i+1; j < n; j++) {
 				if(bm[i].le != bm[j].le) break;
 			}
@@ -903,7 +904,7 @@ int v07_style_md_open(struct format *cfg,
 
 	cfg->md_mmaped_length = size;
 	cfg->on_disk.md =
-	    MMAP(cfg->on_disk.md, cfg->md_mmaped_length, PROT_READ | PROT_WRITE, MAP_SHARED, cfg->md_fd, 
+	    MMAP(cfg->on_disk.md, cfg->md_mmaped_length, PROT_READ | PROT_WRITE, MAP_SHARED, cfg->md_fd,
 		 cfg->md_offset);
 
 	/* in case this is internal meta data, mmap first <some>KB of device,
@@ -963,7 +964,7 @@ int v07_style_md_open(struct format *cfg,
 void md_erase_sb(struct format *cfg,
 		 u64 (*md_get_byte_offset) (struct format *))
 {
-	/* in case these are internal meta data, we need to 
+	/* in case these are internal meta data, we need to
 	   make sure that there is no v08 superblock at the end
 	   of the meta data area. */
 
@@ -971,7 +972,7 @@ void md_erase_sb(struct format *cfg,
 	struct format cfg_f;
 	u64 offset;
 	int bw;
-	
+
 	if(cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
 	   cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) {
 		memset(zero_sector,0,512);
@@ -1466,7 +1467,7 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 
 int v07_md_open(struct format *cfg)
 {
-	return v07_style_md_open(cfg, 
+	return v07_style_md_open(cfg,
 				 &v07_md_get_byte_offset,
 				 sizeof(struct md_on_disk_07));
 }
@@ -1569,7 +1570,7 @@ int v08_md_cpu_to_disk(struct format *cfg)
 
 int v08_md_open(struct format *cfg)
 {
-	return v07_style_md_open(cfg, 
+	return v07_style_md_open(cfg,
 				 &v08_md_get_byte_offset,
 				 sizeof(struct md_on_disk_08));
 }
@@ -1827,7 +1828,7 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 			EXP(';');
 			while(times--) bm[i++] = value;
 			break;
-		case '}': 
+		case '}':
 			goto break_loop;
 		default:
 			md_parse_error("TK_U64, TK_NUM or }");
@@ -1864,9 +1865,9 @@ int md_convert_07_to_08(struct format *cfg)
 
 	// The MDF Flags are (nearly) the same in 07 and 08
 	cfg->md.flags = cfg->md.gc[Flags];
-	/* 
+	/*
 	 */
-	cfg->md.uuid[Current] = 
+	cfg->md.uuid[Current] =
 		(u64)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
 		(u64)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
 		(u64)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
@@ -2290,7 +2291,7 @@ int meta_read_dev_uuid(struct format *cfg, char **argv __attribute((unused)), in
 
 	printf(X64(016)"\n",cfg->md.device_uuid);
 
-	return cfg->ops->close(cfg);	
+	return cfg->ops->close(cfg);
 }
 
 int meta_write_dev_uuid(struct format *cfg, char **argv, int argc)

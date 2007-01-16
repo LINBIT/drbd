@@ -268,7 +268,7 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 	struct crypto_hash *ch;
 	char *closing_bracket;
 
-	// "hmac(xxx)" is in alg_name we need that xxx. 
+	// "hmac(xxx)" is in alg_name we need that xxx.
 	closing_bracket = strchr(alg_name,')');
 	if(!closing_bracket) return NULL;
 	if(closing_bracket-alg_name < 6) return NULL;
@@ -288,7 +288,7 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 	return ch;
 }
 
-static inline int 
+static inline int
 crypto_hash_setkey(struct crypto_hash *hash,const u8 *key,unsigned int keylen)
 {
 	hash->key = key;
@@ -297,11 +297,11 @@ crypto_hash_setkey(struct crypto_hash *hash,const u8 *key,unsigned int keylen)
 	return 0;
 }
 
-static inline int 
+static inline int
 crypto_hash_digest(struct hash_desc *desc, struct scatterlist *sg,
 		   unsigned int nbytes, u8 *out)
 {
-	
+
 	crypto_hmac(desc->tfm->base, (u8*)desc->tfm->key,
 		    &desc->tfm->keylen, sg, 1 /* ! */ , out);
 	/* ! this is not generic. Would need to convert nbytes -> nsg */

@@ -1,11 +1,11 @@
 /*
    drbdsetup.c
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -72,7 +72,7 @@ struct drbd_argument {
 	const char* name;
 	const enum drbd_tags tag;
 	int (*convert_function)(struct drbd_argument *,
-				struct drbd_tag_list *, 
+				struct drbd_tag_list *,
 				char *);
 };
 
@@ -111,7 +111,7 @@ struct drbd_cmd {
 			struct drbd_option *options;
 		} cp; // for generic_config_cmd, config_usage
 		struct {
-			int (*show_function)(struct drbd_cmd *, int, 
+			int (*show_function)(struct drbd_cmd *, int,
 					     unsigned short* );
 		} gp; // for generic_get_cmd, get_usage
 		struct {
@@ -127,7 +127,7 @@ struct drbd_cmd {
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
 int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
-int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
+int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 	      int size, int timeout_ms);
 void close_cn(int sk_nl);
 
@@ -140,7 +140,7 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int events_cmd(struct drbd_cmd *cm, int minor, int argc,char **argv);
 
-// usage functions 
+// usage functions
 void config_usage(struct drbd_cmd *cm, int);
 void get_usage(struct drbd_cmd *cm, int);
 void events_usage(struct drbd_cmd *cm, int);
@@ -226,7 +226,7 @@ const char *rrcf_n[] = {
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
-	{ 0,            0,           0,  0  } 
+	{ 0,            0,           0,  0  }
 };
 
 #define EN(N,U) \
@@ -237,8 +237,8 @@ struct option wait_cmds_options[] = {
 	conv_handler, show_handler, handler_opt_usage, \
 	{ .handler_param = { N, ARRY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
-#define EB      conv_bit, show_bit, bit_opt_usage, { } 
-#define ES      conv_string, show_string, string_opt_usage, { } 
+#define EB      conv_bit, show_bit, bit_opt_usage, { }
+#define ES      conv_string, show_string, string_opt_usage, { }
 #define CLOSE_OPTIONS  { NULL,0,0,NULL,NULL,NULL, { } }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
@@ -415,7 +415,7 @@ int dump_tag_list(unsigned short *tlc)
 		}
 		printf("# (%2d) %16s = ",tag_nr,string);
 		switch(tag_type(tag)) {
-		case TT_INTEGER: 
+		case TT_INTEGER:
 			integer = *(int*)tlc;
 			printf("(integer) %d",integer);
 			break;
@@ -443,10 +443,10 @@ int dump_tag_list(unsigned short *tlc)
 struct drbd_tag_list *create_tag_list(int size)
 {
 	struct drbd_tag_list *tl;
-	
+
 	tl = malloc(sizeof(struct drbd_tag_list));
 	tl->nl_header  = malloc(NLMSG_SPACE( sizeof(struct cn_msg) +
-					     sizeof(struct drbd_nl_cfg_req) + 
+					     sizeof(struct drbd_nl_cfg_req) +
 					     size) );
 	tl->cn_header = NLMSG_DATA(tl->nl_header);
 	tl->drbd_p_header = (struct drbd_nl_cfg_req*) tl->cn_header->data;
@@ -459,7 +459,7 @@ struct drbd_tag_list *create_tag_list(int size)
 
 void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
 {
-	if( (tl->tag_list_cpos - tl->tag_list_start) + data_len 
+	if( (tl->tag_list_cpos - tl->tag_list_start) + data_len
 	    > tl->tag_size ) {
 		fprintf(stderr, "Tag list size exceeded!\n");
 		exit(20);
@@ -496,10 +496,10 @@ int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg
 		fprintf(stderr, "%s is not a block device!\n", arg);
 		return 20;
 	}
-	
+
 	close(device_fd);
 
-	add_tag(tl,ad->tag,arg,strlen(arg)+1); // include the null byte. 
+	add_tag(tl,ad->tag,arg,strlen(arg)+1); // include the null byte.
 
 	return 0;
 }
@@ -647,7 +647,7 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 			return 0;
 		}
 	}
-	
+
 	fprintf(stderr, "Handler not known\n");
 	return 20;
 }
@@ -666,7 +666,7 @@ struct option *	make_longoptions(struct drbd_option* od)
 
 	while(od && od->name) {
 		buffer[i].name = od->name;
-		buffer[i].has_arg = tag_type(od->tag) == TT_BIT ? 
+		buffer[i].has_arg = tag_type(od->tag) == TT_BIT ?
 			no_argument : required_argument ;
 		buffer[i].flag = NULL;
 		buffer[i].val = od->short_name;
@@ -675,7 +675,7 @@ struct option *	make_longoptions(struct drbd_option* od)
 		}
 		od++;
 	}
-	
+
 	// The two omnipresent options:
 	buffer[i].name = "set-defaults";
 	buffer[i].has_arg = 0;
@@ -731,7 +731,7 @@ int print_config_error( struct drbd_nl_cfg_reply *reply)
 				"unknown error.\n", err_no);
 			rv = 11;
 		} else if (err_no > SS_TwoPrimaries) {
-			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success... 
+			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success...
 		} else {
 			fprintf(stderr,"State change failed: (%d) %s\n",
 				err_no, set_st_err_name(err_no));
@@ -819,7 +819,7 @@ void show_numeric(struct drbd_option *od, unsigned short* tp)
 	const unsigned char def_unit = od->numeric_param.default_unit;
 
 	switch(tag_type(*tp++)) {
-	case TT_INTEGER: 
+	case TT_INTEGER:
 		ASSERT( *tp++ == sizeof(int) );
 		val = *(int*)tp;
 		break;
@@ -827,7 +827,7 @@ void show_numeric(struct drbd_option *od, unsigned short* tp)
 		ASSERT( *tp++ == sizeof(__u64) );
 		val = *(__u64*)tp;
 		break;
-	default: 
+	default:
 		ASSERT(0);
 		val=0;
 	}
@@ -901,7 +901,7 @@ void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect
 }
 
 
-int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc, 
+int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc,
 		     char** val, unsigned int* len)
 {
 	unsigned short *tp;
@@ -923,7 +923,7 @@ int consume_tag_string(enum drbd_tags tag, unsigned short *tlc, char** val)
 		*tp++ = TT_REMOVED;
 		if( *tp++ > 0 )
 			*val = (char*)tp;
-		else 
+		else
 			*val = "";
 		return 1;
 	}
@@ -956,7 +956,7 @@ int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 	return 0;
 }
 
-int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, 
+int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 		    char **argv __attribute((unused)))
 {
 	char buffer[ 4096 ];
@@ -1053,8 +1053,8 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 	return 0;
 }
 
-int state_scmd(struct drbd_cmd *cm __attribute((unused)), 
-	       int minor __attribute((unused)), 
+int state_scmd(struct drbd_cmd *cm __attribute((unused)),
+	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
 	drbd_state_t state;
@@ -1063,8 +1063,8 @@ int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int cstate_scmd(struct drbd_cmd *cm __attribute((unused)), 
-		int minor __attribute((unused)), 
+int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
+		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
 	drbd_state_t state;
@@ -1073,8 +1073,8 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int dstate_scmd(struct drbd_cmd *cm __attribute((unused)), 
-		int minor __attribute((unused)), 
+int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
+		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
 	drbd_state_t state;
@@ -1083,8 +1083,8 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int uuids_scmd(struct drbd_cmd *cm, 
-	       int minor __attribute((unused)), 
+int uuids_scmd(struct drbd_cmd *cm,
+	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
 	__u64 *uuids;
@@ -1129,7 +1129,7 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	int rv;
 
 	if(argc > 1) {
-		fprintf(stderr,"Ignoring excess arguments\n");	
+		fprintf(stderr,"Ignoring excess arguments\n");
 	}
 
 	cm = find_cmd_by_name("secondary");
@@ -1192,14 +1192,14 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 	return 1;
 }
 
-int w_synced_state(unsigned int seq __attribute((unused)), 
+int w_synced_state(unsigned int seq __attribute((unused)),
 		   struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			if(state.conn == Connected || state.conn < Unconnected ) 
+			if(state.conn == Connected || state.conn < Unconnected )
 				return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
@@ -1218,16 +1218,16 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
 	struct timeval before,after;
-	
+
 	lo = cm->ep.options;
 
 	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
 		switch(c) {
 		case 'u': unfiltered=1; break;
 		case 'a': all_devices=1; break;
-		case 't': 
+		case 't':
 			wfc_timeout=m_strtoll(optarg,1);
-			if(DRBD_WFC_TIMEOUT_MIN > wfc_timeout || 
+			if(DRBD_WFC_TIMEOUT_MIN > wfc_timeout ||
 			   wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
 				fprintf(stderr, "wfc_timeout => %d"
 					" out of range [%d..%d]\n",
@@ -1238,7 +1238,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 			break;
 		case 'd':
 			degr_wfc_timeout=m_strtoll(optarg,1);
-			if(DRBD_DEGR_WFC_TIMEOUT_MIN > degr_wfc_timeout || 
+			if(DRBD_DEGR_WFC_TIMEOUT_MIN > degr_wfc_timeout ||
 			   degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
 				fprintf(stderr, "degr_wfc_timeout => %d"
 					" out of range [%d..%d]\n",
@@ -1293,7 +1293,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 
 		// dump_tag_list(reply->tag_list);
-		
+
 		if(!unfiltered && cn_reply->seq <= seq) continue;
 		seq = cn_reply->seq;
 
@@ -1366,7 +1366,7 @@ void config_usage(struct drbd_cmd *cm, int brief)
 		if(brief) col += snprintf(line+col, maxcol-col, " [args...]");
 		else {
 			while (args->name) {
-				col += snprintf(line+col, maxcol-col, " %s", 
+				col += snprintf(line+col, maxcol-col, " %s",
 						args->name);
 				args++;
 			}
@@ -1486,7 +1486,7 @@ int open_cn()
 	}
 
 	my_nla.nl_family = AF_NETLINK;
-	my_nla.nl_groups = -1; //CN_IDX_DRBD; 
+	my_nla.nl_groups = -1; //CN_IDX_DRBD;
 	my_nla.nl_pid = getpid();
 
 	err = bind(sk_nl, (struct sockaddr *)&my_nla, sizeof(my_nla));
@@ -1558,7 +1558,7 @@ int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms)
 	return rr;
 }
 
-int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
+int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 		     int size, int timeout_ms)
 {
 	struct cn_msg *request_cn_hdr;
@@ -1575,7 +1575,7 @@ int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hd
 		   reply_cn_hdr->ack == request_cn_hdr->ack+1 ) return rr;
 		/* printf("INFO: got other message \n"
 		   "got seq: %d ; ack %d \n"
-		   "exp seq: %d ; ack %d \n", 
+		   "exp seq: %d ; ack %d \n",
 		   reply_cn_hdr->seq,reply_cn_hdr->ack,
 		   request_cn_hdr->seq,request_cn_hdr->ack); */
 	}
@@ -1583,11 +1583,11 @@ int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hd
 	return rr;
 }
 
-int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr, 
+int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 		     int size, int timeout_ms)
 {
 	int rr;
-	prepare_nl_header(tl->nl_header, (char*)tl->tag_list_cpos - 
+	prepare_nl_header(tl->nl_header, (char*)tl->tag_list_cpos -
 			  (char*)tl->nl_header);
 
 	rr = send(sk_nl,tl->nl_header,tl->nl_header->nlmsg_len,0);

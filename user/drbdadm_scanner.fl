@@ -15,7 +15,7 @@ static void unescape(void);
 #endif
 
 #define CP yylval.txt = strdup(yytext); yylval.rc = R_NO_CHECK
-#define RC(N) yylval.rc = R_ ## N 
+#define RC(N) yylval.rc = R_ ## N
 
 #define YY_NO_UNPUT 1
 static void yyunput (int c, register char * yy_bp ) __attribute((unused));
@@ -77,9 +77,9 @@ connect-int		{ DP; CP; RC(CONNECT_INT); return TK_NET_OPTION;}
 cram-hmac-alg		{ DP; CP; return TK_NET_OPTION;		}
 shared-secret		{ DP; CP; return TK_NET_OPTION;		}
 max-epoch-size		{ DP; CP; RC(MAX_EPOCH_SIZE); return TK_NET_OPTION;}
-after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		} 
-rr-conflict 		{ DP; CP; return TK_NET_OPTION;		} 
-ping-timeout 		{ DP; CP; return TK_NET_OPTION;		} 
+after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		}
+rr-conflict 		{ DP; CP; return TK_NET_OPTION;		}
+ping-timeout 		{ DP; CP; return TK_NET_OPTION;		}
 unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
 allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}

@@ -3,11 +3,11 @@
    drbd_proc.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

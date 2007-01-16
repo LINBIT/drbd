@@ -3,11 +3,11 @@
    drbd.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -304,8 +304,8 @@ void tl_clear(drbd_dev *mdev)
  * NOTE: we set ourselves FAILED here if on_io_error is Detach or Panic OR
  *	 if the forcedetach flag is set. This flag is set when failures
  *	 occur writing the meta data portion of the disk as they are
- *	 not recoverable. We also try to write the "need full sync bit" here 
- *	 anyways.  This is to make sure that you get a resynchronisation of 
+ *	 not recoverable. We also try to write the "need full sync bit" here
+ *	 anyways.  This is to make sure that you get a resynchronisation of
  *	 the full device the next time you connect.
  */
 int drbd_io_error(drbd_dev* mdev, int forcedetach)
@@ -352,11 +352,11 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 	return ok;
 }
 
-/** 
+/**
  * cl_wide_st_chg:
  * Returns TRUE if this state change should be preformed as a cluster wide
  * transaction. Of course it returns 0 as soon as the connection is lost.
- */ 
+ */
 STATIC int cl_wide_st_chg(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns)
 {
 	return ( os.conn >= Connected && ns.conn >= Connected &&
@@ -400,10 +400,10 @@ set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
 	unsigned long flags;
 	int rv;
 
-	if(test_and_clear_bit(CL_ST_CHG_SUCCESS,&mdev->flags)) 
+	if(test_and_clear_bit(CL_ST_CHG_SUCCESS,&mdev->flags))
 		return SS_CW_Success;
 
-	if(test_and_clear_bit(CL_ST_CHG_FAIL,&mdev->flags)) 
+	if(test_and_clear_bit(CL_ST_CHG_FAIL,&mdev->flags))
 		return SS_CW_FailedByPeer;
 
 	rv=0;
@@ -423,12 +423,12 @@ set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
 	return rv;
 }
 
-/** 
+/**
  * _drbd_request_state:
  * This function is the most gracefull way to change state. For some state
  * transition this function even does a cluster wide transaction.
  * It has a cousin named drbd_request_state(), which is always verbose.
- */ 
+ */
 int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		       enum chg_state_flags f)
 {
@@ -536,13 +536,13 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 
 	if(inc_net(mdev)) {
 		if( !mdev->net_conf->two_primaries &&
-		    ns.role == Primary && ns.peer == Primary ) 
+		    ns.role == Primary && ns.peer == Primary )
 			rv=SS_TwoPrimaries;
 		dec_net(mdev);
 	}
 
 	if( rv <= 0 ) /* already found a reason to abort */;
-	else if( ns.role == Secondary && mdev->open_cnt ) 
+	else if( ns.role == Secondary && mdev->open_cnt )
 		rv=SS_DeviceInUse;
 
 	else if( ns.role == Primary && ns.conn < Connected &&
@@ -554,9 +554,9 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 
 	else if( ns.role == Primary && ns.disk <= Inconsistent &&
 		 ns.pdsk <= Inconsistent ) rv=SS_NoUpToDateDisk;
-	
+
 	else if( ns.conn > Connected &&
-		 ns.disk < UpToDate && ns.pdsk < UpToDate ) 
+		 ns.disk < UpToDate && ns.pdsk < UpToDate )
 		rv=SS_BothInconsistent;
 
 	else if( ns.conn > Connected &&
@@ -579,10 +579,10 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	if( (ns.conn == StartingSyncT || ns.conn == StartingSyncS ) &&
 	    os.conn > Connected) rv=SS_ResyncRunning;
 
-	if( ns.conn == Disconnecting && os.conn == StandAlone) 
+	if( ns.conn == Disconnecting && os.conn == StandAlone)
 		rv=SS_AlreadyStandAlone;
 
-	if( ns.disk == Outdated && os.disk == Diskless) 
+	if( ns.disk == Outdated && os.disk == Diskless)
 		rv=SS_CanNotOutdateDL;
 
 	return rv;
@@ -603,7 +603,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	}
- 
+
 	/* Early state sanitising. Dissalow the invalidate ioctl to connect  */
 	if( (ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
 		os.conn < Connected ) {
@@ -612,14 +612,14 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	}
 
 	/* Dissalow Network errors to configure a device's network part */
-	if( (ns.conn >= Timeout && ns.conn <= TearDown ) && 
+	if( (ns.conn >= Timeout && ns.conn <= TearDown ) &&
 	    os.conn <= Disconnecting ) {
 		ns.conn = os.conn;
 	}
 
 	/* Dissalow network errors (+TearDown) to overwrite each other.
 	   Dissalow network errors to overwrite the Disconnecting state. */
-	if( ( (os.conn >= Timeout && os.conn <= TearDown) 
+	if( ( (os.conn >= Timeout && os.conn <= TearDown)
 	      || os.conn == Disconnecting ) &&
 	    ns.conn >= Timeout && ns.conn <= TearDown ) {
 		ns.conn = os.conn;
@@ -628,7 +628,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	if( ns.conn < Connected ) {
 		ns.peer_isp = 0;
 		ns.peer = Unknown;
-		if ( ns.pdsk > DUnknown || 
+		if ( ns.pdsk > DUnknown ||
 		     ns.pdsk < Inconsistent ) ns.pdsk = DUnknown;
 	}
 
@@ -847,13 +847,13 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 		if (test_bit(CRASHED_PRIMARY,&mdev->flags) ||
 		    mdev->state.role == Primary ||
-		    ( mdev->state.pdsk < Inconsistent && 
+		    ( mdev->state.pdsk < Inconsistent &&
 		      mdev->state.peer == Primary ) )  mdf |= MDF_PrimaryInd;
 		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
 		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
-		if (mdev->state.pdsk <= Outdated && 
-		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;	
+		if (mdev->state.pdsk <= Outdated &&
+		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;
 		if( mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
@@ -874,7 +874,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		     (os.conn < Connected && ns.conn >= Connected) ) {
 			tl_clear(mdev);
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev,susp,0), 
+			_drbd_set_state(_NS(mdev,susp,0),
 					ChgStateVerbose | ScheduleAfter );
 			spin_unlock_irq(&mdev->req_lock);
 		}
@@ -905,12 +905,12 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 				/* Only do it if we have not yet done it... */
 				drbd_uuid_new_current(mdev);
 			}
-			if (ns.peer == Primary ) { 
+			if (ns.peer == Primary ) {
 				/* Note: The condition ns.peer == Primary implies
 				   that we are connected. Otherwise it would
 				   be ns.peer == Unknown. */
 				/* Our peer lost its disk.
-				   Not rotation into BitMap-UUID! A FullSync is 
+				   Not rotation into BitMap-UUID! A FullSync is
 				   required after a primary detached from it disk! */
 				u64 uuid;
 				INFO("Creating new current UUID [no BitMap]\n");
@@ -970,7 +970,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 		if (ns.conn == StartingSyncT) {
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev,conn,WFSyncUUID), 
+			_drbd_set_state(_NS(mdev,conn,WFSyncUUID),
 					ChgStateVerbose | ScheduleAfter );
 			spin_unlock_irq(&mdev->req_lock);
 		} else /* StartingSyncS */ {
@@ -992,7 +992,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_md_clear_flag(mdev,MDF_FullSync);
 		drbd_md_sync(mdev);
 
-		drbd_bm_unlock(mdev);		
+		drbd_bm_unlock(mdev);
 	}
 
 	if ( os.disk > Diskless && ns.disk == Diskless ) {
@@ -1442,11 +1442,11 @@ int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,u32 set_size)
 	return ok;
 }
 
-/** 
+/**
  * _drbd_send_ack:
  * This helper function expects the sector and block_id parameter already
  * in big endian!
- */ 
+ */
 STATIC int _drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			  u64 sector,
 			  u32 blksize,
@@ -1465,7 +1465,7 @@ STATIC int _drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	return ok;
 }
 
-int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 		     Drbd_Data_Packet *dp)
 {
 	const int header_size = sizeof(Drbd_Data_Packet) - sizeof(Drbd_Header);
@@ -1475,7 +1475,7 @@ int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			      dp->block_id);
 }
 
-int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 		     Drbd_BlockRequest_Packet *rp)
 {
 	return _drbd_send_ack(mdev,cmd,rp->sector,rp->blksize,rp->block_id);
@@ -1675,7 +1675,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	if(req->master_bio->bi_rw & BIO_RW_SYNC) {
 		dp_flags |= DP_RW_SYNC;
 	}
-	if(mdev->state.conn >= SyncSource && 
+	if(mdev->state.conn >= SyncSource &&
 	   mdev->state.conn <= PausedSyncT) {
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 	}
@@ -2436,7 +2436,7 @@ int __init drbd_init(void)
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
 		goto Enomem;
 	}
-	
+
 	drbd_proc->proc_fops = &drbd_proc_fops;
 	drbd_proc->owner = THIS_MODULE;
 #else
@@ -2518,10 +2518,10 @@ struct meta_data_on_disk {
 
 } __attribute((packed));
 
-/** 
+/**
  * drbd_md_sync:
  * Writes the meta data super block if the MD_DIRTY flag bit is set.
- */ 
+ */
 void drbd_md_sync(drbd_dev *mdev)
 {
 	struct meta_data_on_disk * buffer;
@@ -2584,13 +2584,13 @@ void drbd_md_sync(drbd_dev *mdev)
 	dec_local(mdev);
 }
 
-/** 
+/**
  * drbd_md_read:
  * @bdev: describes the backing storage and the meta-data storage
- * Reads the meta data from bdev. Return 0 (NoError) on success, and an 
- * enum ret_codes in case something goes wrong. 
+ * Reads the meta data from bdev. Return 0 (NoError) on success, and an
+ * enum ret_codes in case something goes wrong.
  * Currently only: MDIOError, MDInvalid.
- */ 
+ */
 int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 {
 	struct meta_data_on_disk * buffer;
@@ -2660,10 +2660,10 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 	return rv;
 }
 
-/** 
+/**
  * drbd_md_mark_dirty:
  * Call this function if you change enything that should be written to
- * the meta-data super block. This function sets MD_DIRTY, and starts a 
+ * the meta-data super block. This function sets MD_DIRTY, and starts a
  * timer that ensures that within five seconds you have to call drbd_md_sync().
  */
 void drbd_md_mark_dirty(drbd_dev *mdev)
@@ -2884,7 +2884,7 @@ STATIC char *_drbd_uuid_str(unsigned int idx) {
 }
 
 /* Pretty print a UUID value */
-void 
+void
 drbd_print_uuid(drbd_dev *mdev, unsigned int idx) {
 	INFO(" uuid[%s] now %016llX\n",_drbd_uuid_str(idx),mdev->bc->md.uuid[idx]);
 }
@@ -2936,7 +2936,7 @@ drbd_print_buffer(const char *prefix,unsigned int flags,int size,
 	const unsigned char *p;
 	int count;
 
-	// verify size parameter 
+	// verify size parameter
 	if (size != sizeof(char) && size != sizeof(short) && size != sizeof(int)) {
 		printk(KERN_DEBUG "drbd_print_buffer: ERROR invalid size %d\n", size);
 		return;
@@ -3096,7 +3096,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 	case Data:
 		INFOP("%s (sector %llus, id %s, seq %u, f %x)\n", cmdname(cmd),
-		      (unsigned long long)be64_to_cpu(p->Data.sector), 
+		      (unsigned long long)be64_to_cpu(p->Data.sector),
 		      _dump_block_id(p->Data.block_id,tmp),
 		      be32_to_cpu(p->Data.seq_num),
 		      be32_to_cpu(p->Data.dp_flags)
@@ -3106,7 +3106,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 	case DataReply:
 	case RSDataReply:
 		INFOP("%s (sector %llus, id %s)\n", cmdname(cmd),
-		      (unsigned long long)be64_to_cpu(p->Data.sector), 
+		      (unsigned long long)be64_to_cpu(p->Data.sector),
 		      _dump_block_id(p->Data.block_id,tmp)
 			);
 		break;
@@ -3118,7 +3118,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 	case NegAck:
 	case NegRSDReply:
 		INFOP("%s (sector %llus, size %u, id %s, seq %u)\n", cmdname(cmd),
-		      (long long)be64_to_cpu(p->BlockAck.sector), 
+		      (long long)be64_to_cpu(p->BlockAck.sector),
 		      be32_to_cpu(p->BlockAck.blksize),
 		      _dump_block_id(p->BlockAck.block_id,tmp),
 		      be32_to_cpu(p->BlockAck.seq_num)
@@ -3128,7 +3128,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 	case DataRequest:
 	case RSDataRequest:
 		INFOP("%s (sector %llus, size %u, id %s)\n", cmdname(cmd),
-		      (long long)be64_to_cpu(p->BlockRequest.sector), 
+		      (long long)be64_to_cpu(p->BlockRequest.sector),
 		      be32_to_cpu(p->BlockRequest.blksize),
 		      _dump_block_id(p->BlockRequest.block_id,tmp)
 			);
@@ -3148,7 +3148,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		break;
 
 	case ReportSizes:
-		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, max bio %x, q order %x)\n", cmdname(cmd), 
+		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, max bio %x, q order %x)\n", cmdname(cmd),
 		      (long long)(be64_to_cpu(p->Sizes.d_size)>>(20-9)),
 		      (long long)(be64_to_cpu(p->Sizes.u_size)>>(20-9)),
 		      (long long)(be64_to_cpu(p->Sizes.c_size)>>(20-9)),
@@ -3171,7 +3171,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 		break;
 
 	case StateChgReply:
-		INFOP("%s (ret %x)\n", cmdname(cmd), 
+		INFOP("%s (ret %x)\n", cmdname(cmd),
 		      be32_to_cpu(p->RqSReply.retcode));
 		break;
 
@@ -3209,7 +3209,7 @@ void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
 	     complete? "<<<":">>>",
 	     bio_rw(bio)==WRITE?"Write":"Read",bio,
 	     complete? (drbd_bio_uptodate(bio)? "Success, ":"Failed, ") : "",
-	     bio->bi_sector << SECTOR_SHIFT, 
+	     bio->bi_sector << SECTOR_SHIFT,
 	     bio->bi_size);
 
 	if (trace_level >= TraceLvlMetrics &&
@@ -3225,9 +3225,9 @@ void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
 
 				bvec_buf = bvec_kmap_irq(bvec, &flags);
 
-				drbd_print_buffer("    ",DBGPRINT_BUFFADDR,1, 
-						  bvec_buf, 
-						  faddr, 
+				drbd_print_buffer("    ",DBGPRINT_BUFFADDR,1,
+						  bvec_buf,
+						  faddr,
 						  (bvec->bv_len <= 0x80)? bvec->bv_len : 0x80);
 
 				bvec_kunmap_irq(bvec_buf, &flags);

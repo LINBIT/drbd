@@ -1,6 +1,6 @@
 # Makefile in documentation directory
 #
-# This file is part of drbd by Philipp Reisner
+# This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -46,9 +46,9 @@ ifeq ($(DIST),SuSE-9.0)
    nsgmls "$$in" |\
    sgmlspl /usr/share/sgml/docbook/utils-0.6.6/helpers/docbook2man-spec.pl;\
   }; _db2man
-  
+
   # dockbook2html produces errors and swallows tables.
-  # db2html works, but in contrast do dockbook2man creates 
+  # db2html works, but in contrast do dockbook2man creates
   # a subdirectory and some extra files ...
   # this works for me:
   DB2HTML :=\
@@ -85,10 +85,10 @@ endif
 	mv index.html $@
 
 .sgml.pdf:
-	$(DB2PDF) $< 
+	$(DB2PDF) $<
 
 .sgml.ps:
-	$(DB2PS) $< 
+	$(DB2PS) $<
 	gzip -c $@ > $@.gz
 
 #######
@@ -128,7 +128,7 @@ prepare: $(MAKEFILES_LANG)
 #	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
 
 man:	$(MANPAGES)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done	
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done
 
 install:
 	@ok=true; for f in $(MANPAGES) ; \
@@ -147,11 +147,11 @@ uninstall:
 	done
 	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i uninstall; done
 
-html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)	
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i html; done	
+html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i html; done
 pdf:	prepare $(shell ls *.sgml | sed s/sgml/pdf/g)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i pdf; done	
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i pdf; done
 ps:	prepare $(shell ls *.sgml | sed s/sgml/ps/g)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i ps; done	
+	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i ps; done
 
 

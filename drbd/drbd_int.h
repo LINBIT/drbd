@@ -2,11 +2,11 @@
   drbd_int.h
   Kernel module for 2.6.x Kernels
 
-  This file is part of drbd by Philipp Reisner.
+  This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-  Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-  Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-  Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+  Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+  Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+  Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -689,7 +689,7 @@ enum {
 	CL_ST_CHG_SUCCESS,
 	CL_ST_CHG_FAIL,
 	CRASHED_PRIMARY,	// This node was a crashed primary. Gets
-	                        // cleared when the state.conn  goes into 
+	                        // cleared when the state.conn  goes into
 	                        // Connected state.
 	WRITE_BM_AFTER_RESYNC	// A kmalloc() during resync failed
 };
@@ -915,7 +915,7 @@ enum chg_state_flags {
 extern int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 			     drbd_state_t mask, drbd_state_t val);
 extern void drbd_force_state(drbd_dev*, drbd_state_t, drbd_state_t);
-extern int _drbd_request_state(drbd_dev*, drbd_state_t, drbd_state_t, 
+extern int _drbd_request_state(drbd_dev*, drbd_state_t, drbd_state_t,
 			       enum chg_state_flags);
 extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
 extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
@@ -950,9 +950,9 @@ extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
 extern int drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			 struct Tl_epoch_entry *e);
-extern int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+extern int drbd_send_ack_rp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			    Drbd_BlockRequest_Packet *rp);
-extern int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd, 
+extern int drbd_send_ack_dp(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 			    Drbd_Data_Packet *dp);
 extern int _drbd_send_page(drbd_dev *mdev, struct page *page,
 			   int offset, size_t size);
@@ -1202,7 +1202,7 @@ is_trace(unsigned int type, unsigned int level) {
 }
 static inline int
 is_mdev_trace(drbd_dev *mdev, unsigned int type, unsigned int level) {
-	return (is_trace(type, level) && 
+	return (is_trace(type, level) &&
 		( ( 1 << mdev_to_minor(mdev)) & trace_devs));
 }
 
@@ -1471,7 +1471,7 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 		}
 		/* NOTE fall through to detach case if forcedetach set */
 	case Detach:
-		if (_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard) 
+		if (_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard)
 		    == SS_Success) {
 			if (printk_ratelimit())
 				ERR("Local IO failed. Detaching...\n");
@@ -1710,7 +1710,7 @@ static inline void inc_rs_pending(drbd_dev* mdev)
  *  receive_RSDataReply (recv_resync_read) we need to send a WriteAck
  *  receive_DataRequest (receive_RSDataRequest) we need to send back Data
  *  receive_Barrier_*   we need to send a BarrierAck
- */ 
+ */
 static inline void inc_unacked(drbd_dev* mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);

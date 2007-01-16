@@ -2,7 +2,11 @@
   drbd.h
   Kernel module for 2.6.x Kernels
 
-  This file is part of drbd by Philipp Reisner.
+  This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
+
+  Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+  Copyright (C) 2001-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+  Copyright (C) 2001-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
   drbd is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -140,7 +144,7 @@ typedef enum {
 	Timeout,	/// These temporal states are all used on the way
 	BrokenPipe,	/// from >= Connected to Unconnected.
 	NetworkFailure,	/// The 'disconnect reason' states
-	ProtocolError,  /// 
+	ProtocolError,  ///
 	TearDown,	/// I do not allow to change beween them.
 	WFConnection,
 	WFReportParams, // we have a socket
@@ -181,7 +185,7 @@ typedef union {
 		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
 		unsigned aftr_isp : 1 ; // isp .. imposed sync pause
 		unsigned peer_isp : 1 ;
-		unsigned user_isp : 1 ; 
+		unsigned user_isp : 1 ;
 		unsigned _pad : 11;   // 0        unused
 	};
 	unsigned int i;

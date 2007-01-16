@@ -1,11 +1,11 @@
 /*
    drbdadm_main.c
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2002-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2002-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2002-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 2002-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -140,7 +140,7 @@ void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 {
   struct deferred_cmd *d;
 
-  if( (d = malloc(sizeof(struct deferred_cmd))) == NULL) 
+  if( (d = malloc(sizeof(struct deferred_cmd))) == NULL)
     {
       perror("malloc");
       exit(E_exec_error);
@@ -159,7 +159,7 @@ int _run_dcmds(struct deferred_cmd *d)
   int rv;
   if(d == NULL) return 0;
 
-  if(d->next == NULL) 
+  if(d->next == NULL)
     {
       rv = d->function(d->res,d->arg);
       free(d);
@@ -175,8 +175,8 @@ int _run_dcmds(struct deferred_cmd *d)
 
 int run_dcmds(void)
 {
-  return _run_dcmds(deferred_cmds[0]) || 
-    _run_dcmds(deferred_cmds[1]) || 
+  return _run_dcmds(deferred_cmds[0]) ||
+    _run_dcmds(deferred_cmds[1]) ||
     _run_dcmds(deferred_cmds[2]);
 }
 
@@ -300,7 +300,7 @@ static void dump_common_info()
   dump_options("syncer",common->sync_options);
   dump_options("startup",common->startup_options);
   dump_options("handlers",common->handlers);
-  --indent; printf("}\n\n");  
+  --indent; printf("}\n\n");
 }
 
 static void dump_host_info(struct d_host_info* hi)
@@ -743,7 +743,7 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   int rv;
 
   rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
-  if(rv == 17) return rv; 
+  if(rv == 17) return rv;
   // 17 returned by drbdsetup outdate, if it is already primary.
 
   if( rv || dry_run ) {
@@ -877,7 +877,7 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   argv[argc++]=0;
 
   rv = m_system(argv,SLEEPS_FOREVER);
-  
+
   return rv;
 }
 
@@ -886,7 +886,7 @@ struct d_resource* res_by_minor(const char *id)
   struct d_resource *res,*t;
   int mm;
   if(strncmp(id,"minor-",6)) return NULL;
-  
+
   mm = m_strtoll(id+6,1);
 
   for_each_resource(res,t,config) {
@@ -977,7 +977,7 @@ int gets_timeout(pid_t* pids, char* s, int size, int timeout)
       exit(E_exec_error);
     }
   } while(pr == -1);
-  
+
   if( pr == 1 ) {  // Input available.
     rr = read(fileno(stdin),s,size-1);
     if(rr == -1) {
@@ -1153,7 +1153,7 @@ static int hidden_cmds(struct d_resource* ignored __attribute((unused)),
   print_cmds(3);
 
   printf("\nThese commands ought to be used by experts and developers\n\n");
-  
+
   print_cmds(4);
 
   printf("\n");
@@ -1595,7 +1595,7 @@ int main(int argc, char** argv)
 
   if ( optind == argc ) print_usage_and_exit(0);
 
-  while(argv[optind][0]=='-' || argv[optind][0]==':' || 
+  while(argv[optind][0]=='-' || argv[optind][0]==':' ||
 	isdigit(argv[optind][0]) ) {
     setup_opts[soi++]=argv[optind++];
     if (optind == argc) print_usage_and_exit(0);

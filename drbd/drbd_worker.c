@@ -3,11 +3,11 @@
    drbd_worker.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 1999-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2001-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2001-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 1999-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2002-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -333,7 +333,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 				break;
 
 			// Be always aligned
-			if (sector & ((1<<(align+3))-1) ) 
+			if (sector & ((1<<(align+3))-1) )
 				break;
 
 			// do not cross extent boundaries
@@ -409,7 +409,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 		// there are RSDataReply Packets lingering on the worker's
 		// queue (or even the read operations for those packets
 		// is not finished by now).   Retry in 100ms.
-		
+
 		drbd_kick_lo(mdev);
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(HZ / 10);
@@ -463,12 +463,12 @@ int drbd_resync_finished(drbd_dev* mdev)
 		drbd_uuid_set_bm(mdev,0UL);
 
 		if ( mdev->p_uuid ) {
-			// Now the two UUID sets are equal, update what we 
+			// Now the two UUID sets are equal, update what we
 			// know of the peer.
 			int i;
 			for ( i=Current ; i<=History_end ; i++ ) {
 				mdev->p_uuid[i]=mdev->bc->md.uuid[i];
-			}			
+			}
 		}
 	}
 
@@ -669,7 +669,7 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		req_mod(req, handed_over_to_network, 0);
 	} else {
 		/* ?? we set Timeout or BrokenPipe in drbd_send() */
-		if (mdev->state.conn >= Connected) 
+		if (mdev->state.conn >= Connected)
 			drbd_force_state(mdev,NS(conn,NetworkFailure));
 		/* req_mod(req, send_failed); we should not fail it here,
 		 * we might have to "freeze" on disconnect.
@@ -714,17 +714,17 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 		ERR_IF(!odev) return 1;
 		if( (odev->state.conn >= SyncSource &&
 		     odev->state.conn <= PausedSyncT) ||
-		    odev->state.aftr_isp || odev->state.peer_isp || 
+		    odev->state.aftr_isp || odev->state.peer_isp ||
 		    odev->state.user_isp ) return 0;
 	}
 }
 
-/** 
+/**
  * _drbd_pause_after:
  * Finds all devices that may not resync now, and causes them to
  * pause their resynchronisation.
  * Called from process context only ( ioctl and after_state_ch ).
- */ 
+ */
 STATIC int _drbd_pause_after(drbd_dev *mdev)
 {
 	drbd_dev *odev;
@@ -742,12 +742,12 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	return rv;
 }
 
-/** 
+/**
  * _drbd_resume_next:
  * Finds all devices that can resume resynchronisation
  * process, and causes them to resume.
  * Called from process context only ( ioctl and worker ).
- */ 
+ */
 STATIC int _drbd_resume_next(drbd_dev *mdev)
 {
 	drbd_dev *odev;
@@ -824,7 +824,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		get_random_bytes(&uuid, sizeof(u64));
 		drbd_uuid_set(mdev, Bitmap, uuid);
 		drbd_send_sync_uuid(mdev,uuid);
-		
+
 		D_ASSERT(mdev->state.disk == UpToDate);
 	}
 

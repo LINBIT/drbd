@@ -1,6 +1,9 @@
 # Makefile for scripts
 #
-# This file is part of drbd by Philipp Reisner
+# This file is part of DRBD by Philipp Reisner & Lars Ellenberg.
+#
+# Copright 2001-2007 LINBIT Information Technologies
+# Philipp Reisner, Lars Ellenberg
 #
 # drbd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

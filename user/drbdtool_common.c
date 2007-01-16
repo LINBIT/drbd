@@ -18,7 +18,7 @@
 
 #include "drbdtool_common.h"
 
-char* ppsize(char* buf, size_t size) 
+char* ppsize(char* buf, size_t size)
 {
 	// Needs 9 bytes at max.
 	static char units[] = { 'K','M','G','T' };
@@ -81,7 +81,7 @@ m_strtoll(const char *s, const char def_unit)
       break;
 
     case 's':
-      shift = -9;   // sectors 
+      shift = -9;   // sectors
       break;
 
       /*
@@ -340,7 +340,7 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "       |               +--<  Bitmap's base data generation UUID  >-\n"
 "       |               |                 +--<  younger historiy UUID  >-\n"
 "       |               |                 |         +-<  older history  >-\n"
-"       V               V                 V         V\n");               
+"       V               V                 V         V\n");
 	dt_print_uuids(uuid, flags);
 	printf(
 "                                                                    ^ ^ ^ ^ ^ ^\n"
@@ -431,5 +431,5 @@ void get_random_bytes(void* buffer, int len)
 		fprintf(stderr,"Reading from /dev/urandom failed\n");
 		exit(20);
 	}
-	close(fd);	
+	close(fd);
 }

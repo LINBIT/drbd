@@ -3,18 +3,19 @@ Niehusman <jan@debian.org> and updated them to sync back up with
 upstream.
 
 Debianization of this package was started by Ard van Breemen <ard@telegraafnet.nl>.
-Later, Jan Niehusmann <jan@debian.org> finished the packaging and made the 
+Later, Jan Niehusmann <jan@debian.org> finished the packaging and made the
 initial upload.
 
-It was downloaded from http://www.linbit.com/en/article/articleview/34/1/11/
+It was downloaded from http://oss.linbit.com/drbd/
 More information can be found at http://www.drbd.org/
 
-Drbd is free software; you can redistribute them and/or modify them under 
-the terms of the GNU General Public License as published by the Free Software 
-Foundation; either version 2 of the License, or (at your option) any later 
+DRBD was written by Philipp Reisner and Lars Ellenberg
+for LINBIT Information Technologies, http://www.linbit.com
+
+Drbd is free software; you can redistribute them and/or modify them under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
 version.
 
 On Debian systems, the complete text of the GNU General Public
 License can be found in /usr/share/common-licenses/GPL file.
-
-

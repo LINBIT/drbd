@@ -3,11 +3,11 @@
    lru_cache.c
    Kernel module for 2.6.x Kernels
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2003-2006, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2003-2006, Lars Ellenberg <lars.ellenberg@linbit.com>.
-   Copyright (C) 2003-2006, LINBIT Information Technologies GmbH.
+   Copyright (C) 2003-2007, LINBIT Information Technologies GmbH.
+   Copyright (C) 2003-2007, Philipp Reisner <philipp.reisner@linbit.com>.
+   Copyright (C) 2003-2007, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -359,7 +359,7 @@ void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
 		if( e->lc_number == LC_FREE ) {
 			seq_printf(seq,"\t%2d: FREE\n",i );
 		} else {
-			seq_printf(seq,"\t%2d: %4u %4u    ", i, 
+			seq_printf(seq,"\t%2d: %4u %4u    ", i,
 				   e->lc_number,
 				   e->refcnt );
 			detail(seq,e);

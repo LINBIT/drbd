@@ -1,10 +1,11 @@
 /*
    drbdadm_parser.h a hand crafted parser
 
-   This file is part of drbd by Philipp Reisner.
+   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
-   Copyright (C) 2006, Philipp Reisner <philipp.reisner@linbit.com>.
-        Initial author.
+   Copyright (C) 2006-2007, LINBIT Information Technologies GmbH
+   Copyright (C) 2006-2007, Philipp Reisner <philipp.reisner@linbit.com>
+   Copyright (C) 2006-2007, Lars Ellenberg  <lars.ellenberg@linbit.com>
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by

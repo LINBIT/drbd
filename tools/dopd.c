@@ -1,6 +1,6 @@
 /* $Id$ */
 /* drbd outdate peer daemon
- * Copyright (C) 2006 LINBIT <http://www.linbit.com/>
+ * Copyright (C) 2006-2007 LINBIT <http://www.linbit.com/>
  * Written by Rasto Levrinc <rasto@linbit.com>
  *
  * based on ipfail.c and attrd.c
@@ -81,7 +81,7 @@ send_message_to_the_peer(const char *drbd_peer, const char *drbd_resource)
 	ha_msg_add(msg, F_ORIG, node_name);
 	ha_msg_add(msg, F_DOPD_RES, drbd_resource);
 
-	crm_debug("sending [start_outdate res: %s] to node: %s", 
+	crm_debug("sending [start_outdate res: %s] to node: %s",
 		  drbd_resource, drbd_peer);
 	dopd_cluster_conn->llc_ops->sendnodemsg(dopd_cluster_conn, msg, drbd_peer);
 	ha_msg_del(msg);
@@ -149,7 +149,7 @@ msg_start_outdate(struct ha_msg *msg, void *private)
 }
 
 /* msg_outdate_rc()
- * got outdate_rc message with return code from other node. Send the 
+ * got outdate_rc message with return code from other node. Send the
  * return code to the outdater client.
  */
 void

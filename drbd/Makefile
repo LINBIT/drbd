@@ -25,7 +25,7 @@
 # as subdir Makefile, with all appropriate vars and macros set.
 #
 # note: if you get strange make errors when ARCH=um, you
-# probably need to "make mrproper" in the KDIR first... 
+# probably need to "make mrproper" in the KDIR first...
 
 # since 2.6.16, KERNELRELEASE may be empty,
 # e.g. when building agains some (broken?) linux-header package.
@@ -63,7 +63,7 @@ else
   # to be overridden on command line:
   PREFIX := /
   ifeq ($(wildcard ../build-for-uml),../build-for-uml)
-    #### for Philipp's convenience :) 
+    #### for Philipp's convenience :)
     ARCH_UM := "ARCH=um"
     KDIR := /usr/src/linux-um
   else

@@ -31,7 +31,7 @@ Other helpful links:
  files. If so, skip the "Prepare" section, and just jump to "Build DRBD".
 
        rpm.distros# rpm -Uhv kernel-source-2.4.XX-YYY.rpm
-            debian# apt-get install kernel-source 
+            debian# apt-get install kernel-source
         kernel.org# tar --bzip2 -xvf linux-2.4.XX.tar.bz2
 
  Note: this is really kernel-source.rpm, NOT kernel.src.rpm.
@@ -129,7 +129,7 @@ Other helpful links:
    now build the module
 
    Note:
-   On some distros (redhat/fedora typically), you first need to have a 
+   On some distros (redhat/fedora typically), you first need to have a
    look into ./drbd_config.h, and (un)comment some of the
    settings appropriately, if not done automagically already.
 
@@ -168,7 +168,7 @@ Other helpful links:
    You with "make menuconfig" or "make xconfig", you should find DRBD in
    the block-devices menu, select it as module, or as part of the
    kernel.
-   
+
    Rebuild the kernel modules ("make modules; make modules_install"),
    or rebuild and install the new kernel
    ("make bzImage" or "make linux ARCH=um" or ...)

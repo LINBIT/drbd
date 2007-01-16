@@ -1,5 +1,5 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
-<refentry> 
+<refentry>
   <docinfo><date>30 March 2006</date></docinfo>
 
   <refmeta>
@@ -219,8 +219,8 @@
 	  <varlistentry>
 	    <term><option>--create-device</option></term>
 	    <listitem>
-	      <para> 
-		In case the specified DRBD device (minor number) does not 
+	      <para>
+		In case the specified DRBD device (minor number) does not
 		exist yet, create it implicitly.
 	      </para>
 	    </listitem>
@@ -229,9 +229,9 @@
 	  <varlistentry>
 	    <term><option>--set-defaults</option></term>
 	    <listitem>
-	      <para> 
-		When <option>--set-defaults</option> is given on the 
-		command line, all options of the invoked sub-command that 
+	      <para>
+		When <option>--set-defaults</option> is given on the
+		command line, all options of the invoked sub-command that
 		are not explicitly set are reset to their default values.
 	      </para>
 	    </listitem>
@@ -244,12 +244,12 @@
     <refsect2>
       <title>disk</title>
       <para>
-	Associates <replaceable>device</replaceable> with 
+	Associates <replaceable>device</replaceable> with
 	<replaceable>lower_device</replaceable> to store its data blocks on.
 	The <option>-d</option> (or <option>--disk-size</option>) should
-	only be used if you wish not to use as much as possible from the 
+	only be used if you wish not to use as much as possible from the
 	backing block devices.
-	If you do not use <option>-d</option> the <replaceable>device</replaceable> 
+	If you do not use <option>-d</option> the <replaceable>device</replaceable>
 	is only ready for use as soon as it was connected to its peer once.
 	(See the <option>net</option> command.)
       </para>
@@ -274,13 +274,13 @@
 	  <listitem>
 	    <para>
 	      If the driver of the <replaceable>lower_device</replaceable>
-	      reports an error to DRBD, DRBD will either pass the error 
+	      reports an error to DRBD, DRBD will either pass the error
 	      to the upper layers of the operating system, call a helper
 	      program, or detaches the device from its backing storage and
 	      perform all futher IO by requesting it from the peer. The
 	      valid <replaceable>err_handler</replaceable> are:
-	      <option>pass_on</option>, <option>call-local-io-error</option> 
-	      and <option>detach</option>.  
+	      <option>pass_on</option>, <option>call-local-io-error</option>
+	      and <option>detach</option>.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -307,15 +307,15 @@
 		  If a node becomes a disconnected primary it tries to outdate
 		  the peer's disk. This is done by calling the outdate-peer
 		  handler. The handler is supposed to reach the other node over
-		  alternative communication pathes and call 'drbdadm outdate 
+		  alternative communication pathes and call 'drbdadm outdate
 		  res' there.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>resource-and-stonith</option></term> 
+		<varlistentry><term><option>resource-and-stonith</option></term>
 		<listitem><para>
 		  If a node becomes a disconnected primary it freezes all
 		  its IO operations and calls its outdate-peer handler. The
 		  outdate-peer hander is supposed to reach the peer over
-		  alternative communicaton pathes and call 'drbdadm outdate 
+		  alternative communicaton pathes and call 'drbdadm outdate
 		  res' there. In case it can not reach the peer it should
 		  stonith the peer. IO is resumed as soon as the situation
 		  is resolved. In case your handler fails you can resume
@@ -332,7 +332,7 @@
 	      In case the backing storage's driver has a merge_bvec_fn()
 	      function (At time of writing the only known drivers which
 	      have such a function are: md (software raid driver),
-	      dm (device mapper - LVM) and DRBD itself) drbd has to 
+	      dm (device mapper - LVM) and DRBD itself) drbd has to
 	      pretend that it can only process IO requests in units
 	      not lager than 4kByte.</para>
 	    <para>
@@ -350,7 +350,7 @@
     <refsect2>
       <title>net</title>
       <para>
-	Sets up the <replaceable>device</replaceable> to listen on 
+	Sets up the <replaceable>device</replaceable> to listen on
 	<replaceable>local_addr:port</replaceable> for incoming connections
 	and to try to connect to <replaceable>remote_addr:port</replaceable>.
 	If <replaceable>port</replaceable> is omitted, 7788 is used as default.
@@ -369,7 +369,7 @@
 	    <term><option>-c</option>,
 	    <option>--connect-int <replaceable>time</replaceable></option></term>
 	    <listitem>
-	      <para> 
+	      <para>
 		In case it is not possible to connect to the remote DRBD
 		device immediately, DRBD keeps on trying to connect. With
 		this option you can set the time between two tries. The
@@ -381,7 +381,7 @@
 	    <term><option>-i</option>,
 	    <option>--ping-int <replaceable>time</replaceable></option></term>
 	    <listitem>
-	      <para> 
+	      <para>
 	      If the TCP/IP connection linking a DRBD device pair is idle
 	      for more than <replaceable>time</replaceable> seconds, DRBD
 	      will generate a keep-alive packet to check if its partner is
@@ -406,7 +406,7 @@
 	  <term><option>-S</option>,
 	  <option>--sndbuf-size <replaceable>size</replaceable></option></term>
 	  <listitem>
-	    <para> 
+	    <para>
 	      The socket send buffer is used to store packets sent to the
 	      secondary node, which are not yet acknowledged (from a network
 	      point of view) by the secondary node. When using protocol A,
@@ -415,7 +415,7 @@
 	      and secondary nodes. But keep in mind that more asynchronism
 	      is synonymous with more data loss in the case of a primary
 	      node failure. The default <replaceable>size</replaceable> is
-	      128 KB. Default unit is KB.  
+	      128 KB. Default unit is KB.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -453,7 +453,7 @@
 	      by DRBD's receiver thread is limited. Should be set to the
 	      same as <option>--max-epoch-size </option>. Small values
 	      could lead to degraded performace. (Minimum 32) The default is
-	      2048.  
+	      2048.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -480,7 +480,7 @@
 	      With this option set you might make both nodes primary. You
 	      only should use this options if you use a shared storage
 	      file system on top of DRBD. At the time of writing the only
-	      ones are: OCFS2 and GFS. If you use this option with any 
+	      ones are: OCFS2 and GFS. If you use this option with any
 	      other filesystem you are goint to crash your nodes and to
 	      corrupt your data!
 	    </para>
@@ -524,20 +524,20 @@
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>discard-younger-primary</option></term>
 		<listitem><para>
-		  Auto sync from the node that was primary before the split 
+		  Auto sync from the node that was primary before the split
 		  brain situation happened.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-older-primary</option></term> 
+		<varlistentry><term><option>discard-older-primary</option></term>
 		<listitem><para>
-		Auto sync from the node that became primary as second during 
+		Auto sync from the node that became primary as second during
 		the split brain situation.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-least-changes</option></term> 
+		<varlistentry><term><option>discard-least-changes</option></term>
 		<listitem><para>
-		Auto sync from the node that touched more blocks during the 
+		Auto sync from the node that touched more blocks during the
 		split brain situation.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-node-NODENAME</option></term> 
+		<varlistentry><term><option>discard-node-NODENAME</option></term>
 		<listitem><para>
 		Auto sync to the named node.
 		</para></listitem></varlistentry>
@@ -560,21 +560,21 @@
 	        <varlistentry><term><option>consensus</option></term>
 		<listitem><para>
 		  Discard the version of the secondary if the outcome
-                  if the <option>after-sb-0pri</option> algorithm would also 
+                  if the <option>after-sb-0pri</option> algorithm would also
 		  destroy the current secondary's data. Otherwise disconnect.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>discard-secondary</option></term> 
+		<varlistentry><term><option>discard-secondary</option></term>
 		<listitem><para>
 		  Discard the secondary's version.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>call-pri-lost-after-sb</option></term> 
+		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
-		  secondary has the right data, call the 
+		  secondary has the right data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>violently-as0p</option></term> 
+		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
@@ -597,14 +597,14 @@
 	        <listitem><para>
 		  No automatic resynchronisation, simply disconnect.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>call-pri-lost-after-sb</option></term> 
+		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
-		  secondary has the right data, call the 
+		  secondary has the right data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para></listitem></varlistentry>
-		<varlistentry><term><option>violently-as0p</option></term> 
+		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the the current
@@ -620,8 +620,8 @@
 	  <option>--rr-conflict </option><replaceable>role-resync-conflict-policy</replaceable></term>
 	  <listitem>
 	    <para>
-	      This option sets DRBD's behaviour when DRBD deduces from its 
-	      meta data that a resynchronisation is needed, and the SyncTarget 
+	      This option sets DRBD's behaviour when DRBD deduces from its
+	      meta data that a resynchronisation is needed, and the SyncTarget
 	      node is already primary. The possible settings are:
 	      <option>disconnect</option>,
 	      <option>call-pri-lost</option> and
@@ -648,7 +648,7 @@
 	    <para>
 	      The time the peer has time to answer to a keep-alive packet,
 	      it. In case the peer's reply is not received within this
-	      time period, it is considered as dead. The default is 500ms, 
+	      time period, it is considered as dead. The default is 500ms,
 	      the default unit is 100ms.
 	    </para>
 	  </listitem>
@@ -659,9 +659,9 @@
 	  <option>--discard-my-data </option></term>
 	  <listitem>
 	    <para>
-	      Use this option to manually recover from a split brain 
+	      Use this option to manually recover from a split brain
 	      situation. In case you do not have any automatic after
-	      split brain policies selected, the nodes refuse to 
+	      split brain policies selected, the nodes refuse to
 	      connect. By passing this option you make a node to
 	      sync target immediatly after sucessfull connect.
 	    </para>
@@ -685,7 +685,7 @@
 	      To ensure smooth operation of the application on top of DRBD,
 	      it is possible to limit the bandwidth which may be used by
 	      background synchronizations. The default is 250 KB/sec, the
-	      default unit is KB/sec.  
+	      default unit is KB/sec.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -693,9 +693,9 @@
 	  <term><option>-a</option>,
 	  <option>--after <replaceable>minor</replaceable></option></term>
 	  <listitem>
-	    <para> 
+	    <para>
 	      Start resync on this device only if the device with
-	      <replaceable>minor</replaceable> is already in connected 
+	      <replaceable>minor</replaceable> is already in connected
 	      state. Other wise this device wait in SyncPause state.
 	  </para>
 	  </listitem>
@@ -715,7 +715,7 @@
 	      to the meta-data device. A higher number of extents gives
 	      longer resync times but less updates to the meta-data. The
 	      default number of <replaceable>extents</replaceable> is
-	      127. (Minimum: 7, Maximum: 3843) 
+	      127. (Minimum: 7, Maximum: 3843)
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -801,9 +801,9 @@
 	      seconds. If the peer was working before this node got
 	      rebootet, the wfc_timeout is used. If the peer was already
 	      down before this node got rebooted, the degr_wfc_timeout
-	      is used. 
-	      The default value for <replaceable>wfc_timeout</replaceable> 
-	      is 0 which means to wait forever. The default for 
+	      is used.
+	      The default value for <replaceable>wfc_timeout</replaceable>
+	      is 0 which means to wait forever. The default for
 	      <replaceable>degr_wfc_timeout</replaceable> is 120 seconds.
 	    </para>
 	  </listitem>
@@ -822,40 +822,40 @@
     <refsect2>
       <title>disconnect</title>
       <para>
-	Removes the information set by the <option>net</option> command 
+	Removes the information set by the <option>net</option> command
 	from the <replaceable>device</replaceable>. This means
-	that the <replaceable>device</replaceable> goes into unconnected 
+	that the <replaceable>device</replaceable> goes into unconnected
 	state and that it will no longer listen for incoming connections.
       </para>
     </refsect2>
     <refsect2>
       <title>detach</title>
       <para>
-	Removes the information set by the <option>disk</option> command 
+	Removes the information set by the <option>disk</option> command
 	from the <replaceable>device</replaceable>. This means
 	that the <replaceable>device</replaceable> is detached from its
-	backing storage device. 
+	backing storage device.
       </para>
     </refsect2>
     <refsect2>
       <title>down</title>
       <para>
-	Removes all configuration information from the 
-	<replaceable>device</replaceable> and forces it back to 
-	unconfigured state. 
+	Removes all configuration information from the
+	<replaceable>device</replaceable> and forces it back to
+	unconfigured state.
       </para>
     </refsect2>
     <refsect2>
       <title>state</title>
       <para>
-	Shows the current states of the <replaceable>device</replaceable> and 
-	its peer. (local/peer). 
+	Shows the current states of the <replaceable>device</replaceable> and
+	its peer. (local/peer).
       </para>
     </refsect2>
     <refsect2>
       <title>cstate</title>
       <para>
-	Shows the current connection states of the 
+	Shows the current connection states of the
 	<replaceable>device</replaceable>.
       </para>
     </refsect2>
@@ -880,7 +880,7 @@
       <para>
         Temporarily suspend an ongoing resynchronisation by setting the local
 	pause flag. Resync only progresses if neighter the local nor the
-	remote pause flag is set. It might be desirable to postpone DRBD's 
+	remote pause flag is set. It might be desirable to postpone DRBD's
 	resynchronisation after eventual resynchronisation of the backing
 	storage's RAID setup.
       </para>
@@ -895,7 +895,7 @@
       <title>outdate</title>
       <para>
         Mark the data on the local backing storage as outdated. An outdated
-	device refuses to become primary. This is used in conjuction with 
+	device refuses to become primary. This is used in conjuction with
 	<option>fencing</option> and by the peer's outdate-peer handler.
       </para>
     </refsect2>
@@ -947,7 +947,7 @@
 	    <term><option>-a</option>,
 	    <option>--all-devices</option></term>
 	    <listitem>
-	      <para> 
+	      <para>
 		Display the events of all DRBD minors.
 	      </para>
 	    </listitem>
@@ -957,7 +957,7 @@
 	    <term><option>-u</option>,
 	    <option>--unfiltered</option></term>
 	    <listitem>
-	      <para> 
+	      <para>
 		This is an debugging aid, and displays the content of
 		all received netlink messages.
 	      </para>
@@ -985,7 +985,8 @@
 
   <refsect1>
     <title>Author</title>
-    <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>.
+    <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>
+            and Lars Ellenberg <email>lars.ellenberg@linbit.com</email>
     </simpara>
   </refsect1>
   <refsect1>
@@ -996,9 +997,10 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-      Copyright (c) 2001-2006 Philipp Reisner. This  is  free software; 
-      see the source for copying conditions.  There is NO warranty; 
-      not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+Copyright 2001-2007 LINBIT Information Technologies,
+Philipp Reisner, Lars Ellenberg. This  is  free software;
+see the source for copying conditions.  There is NO warranty;
+not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     </simpara>
   </refsect1>
   <refsect1>
