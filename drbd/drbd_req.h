@@ -25,7 +25,7 @@
 #ifndef _DRBD_REQ_H
 #define _DRBD_REQ_H
 
-#include <linux/config.h>
+#include <linux/autoconf.h>
 #include <linux/module.h>
 
 #include <linux/slab.h>
