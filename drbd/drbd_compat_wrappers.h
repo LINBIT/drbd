@@ -9,11 +9,12 @@
 
 
 /* struct page has a union in 2.6.15 ...
- * an anonymous union and struct since 2.6.16 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16))
-#define U_PRIVATE private
-#else
-#define U_PRIVATE u.private
+ * an anonymous union and struct since 2.6.16
+ * or in fc5 "2.6.15" */
+#include <linux/mm.h>
+#ifndef page_private
+# define page_private(page)		((page)->private)
+# define set_page_private(page, v)	((page)->private = (v))
 #endif
 
 #include <linux/buffer_head.h> // for fsync_bdev

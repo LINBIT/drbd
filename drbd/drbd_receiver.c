@@ -138,7 +138,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	   this is only called from drbd_alloc_ee,
 	   and that is strictly process context! */
 	if ( (page = drbd_pp_pool) ) {
-		drbd_pp_pool = (struct page*)page->U_PRIVATE;
+		drbd_pp_pool = (struct page*)page_private(page);
 		drbd_pp_vacant--;
 	}
 	spin_unlock_irqrestore(&drbd_pp_lock,flags);
@@ -152,7 +152,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 		/* try the pool again, maybe the drbd_kick_lo set some free */
 		spin_lock_irqsave(&drbd_pp_lock,flags);
 		if ( (page = drbd_pp_pool) ) {
-			drbd_pp_pool = (struct page*)page->U_PRIVATE;
+			drbd_pp_pool = (struct page*)page_private(page);
 			drbd_pp_vacant--;
 		}
 		spin_unlock_irqrestore(&drbd_pp_lock,flags);
@@ -197,7 +197,7 @@ STATIC void drbd_pp_free(drbd_dev *mdev,struct page *page)
 	if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
 		free_it = 1;
 	} else {
-		page->U_PRIVATE = (unsigned long)drbd_pp_pool;
+		set_page_private(page, (unsigned long)drbd_pp_pool);
 		drbd_pp_pool = page;
 		drbd_pp_vacant++;
 		free_it = 0;
