@@ -191,6 +191,21 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Wed Jan 17 2007 17:30:23 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0rc2-1)
+ * Added the well known automagiacally adjust drbd_config.h to
+   make drbd compile on every by vendor's backports defaced 
+   kernel. ( Linux-2.6.x only of course )
+ * Fixed races with starting and finishing resync processes 
+   while heavy application IO is going on.
+ * Ported DRBD to the new crypto API (and added a emulation of the
+   now API on top of the old one for older 2.6.x kernels)
+ * Code to perform better on ethernet networks with jumbo
+   frames.
+ * Bugfixes to our request code (race conditions).
+ * Every error code that is returned by drbdsetup has a 
+   textual description by now.
+
 * Fri Dec 22 2006 15:19:10 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0rc1-1)
  * The drbd-peer-outdater got updated to work in multi node heartbeat

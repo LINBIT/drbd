@@ -4,6 +4,21 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0rc2 (api:86/proto:86)
+--------
+ * Added the well known automagiacally adjust drbd_config.h to
+   make drbd compile on every by vendor's backports defaced 
+   kernel. ( Linux-2.6.x only of course )
+ * Fixed races with starting and finishing resync processes 
+   while heavy application IO is going on.
+ * Ported DRBD to the new crypto API (and added a emulation of the
+   now API on top of the old one for older 2.6.x kernels)
+ * Code to perform better on ethernet networks with jumbo
+   frames.
+ * Bugfixes to our request code (race conditions).
+ * Every error code that is returned by drbdsetup has a 
+   textual description by now.
+
 8.0rc1 (api:86/proto:85)
 --------
  * The drbd-peer-outdater got updated to work in multi node heartbeat
