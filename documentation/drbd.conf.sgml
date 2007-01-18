@@ -1,4 +1,4 @@
-<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" "/usr/share/xml/docbook/schema/dtd/3/docbookx.dtd" []>
 <refentry>
 <docinfo><date>06 April 2006</date></docinfo>
 
@@ -258,7 +258,7 @@ resource r0 {
    if you want to define massively more resources later without reloading
    the DRBD kernel
    module. Per default the module loads with 11 more than you have currently
-   in your config but at least 32.
+   in your config but at least 32.</para>
    </listitem>
 </varlistentry>
 
@@ -805,6 +805,7 @@ the unit is 1 second.
   127. (Minimum: 7, Maximum: 3843)
   </para>
   </listitem>
+</varlistentry>
 
 <varlistentry>
   <term><option>pri-on-incon-degr <replaceable>cmd</replaceable></option></term>

@@ -1,4 +1,4 @@
-<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" "/usr/share/xml/docbook/schema/dtd/3/docbookx.dtd" []>
 <refentry>
 <docinfo><date>01 Oct 2001</date></docinfo>
 
@@ -16,13 +16,13 @@
  <cmdsynopsis>
   <command>/etc/init.d/drbd</command>
   <arg><replaceable>resource</replaceable></arg>
-  <arg choice=req><group choice=plain>
-      <arg choice=req>start</arg>
-      <arg choice=req>stop</arg>
-      <arg choice=req>status</arg>
-      <arg choice=req>reload</arg>
-      <arg choice=req>restart</arg>
-      <arg choice=req>force-reload</arg>
+  <arg choice="req"><group choice="plain">
+      <arg choice="req">start</arg>
+      <arg choice="req">stop</arg>
+      <arg choice="req">status</arg>
+      <arg choice="req">reload</arg>
+      <arg choice="req">restart</arg>
+      <arg choice="req">force-reload</arg>
     </group>
     </arg>
  </cmdsynopsis>

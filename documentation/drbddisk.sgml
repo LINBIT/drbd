@@ -1,4 +1,4 @@
-<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN">
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" "/usr/share/xml/docbook/schema/dtd/3/docbookx.dtd" []>
 <refentry>
 <docinfo><date>30 Aug 2005</date></docinfo>
 
@@ -16,10 +16,10 @@
  <cmdsynopsis>
   <command>/etc/ha.d/resource.d/drbddisk</command>
   <arg><replaceable>resource</replaceable></arg>
-  <arg choice=req><group choice=plain>
-      <arg choice=req>start</arg>
-      <arg choice=req>stop</arg>
-      <arg choice=req>status</arg>
+  <arg choice="req"><group choice="plain">
+      <arg choice="req">start</arg>
+      <arg choice="req">stop</arg>
+      <arg choice="req">status</arg>
     </group>
     </arg>
  </cmdsynopsis>
