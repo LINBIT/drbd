@@ -10,6 +10,7 @@
   <refnamediv>
     <refname>drbdsetup</refname>
     <refpurpose>Setup tool for DRBD</refpurpose>
+    <indexterm><primary>drbdsetup</primary></indexterm>
   </refnamediv>
 
   <refsynopsisdiv>
@@ -243,6 +244,7 @@
 
     <refsect2>
       <title>disk</title>
+      <indexterm><primary>drbdsetup</primary><secondary>disk</secondary></indexterm>
       <para>
 	Associates <replaceable>device</replaceable> with
 	<replaceable>lower_device</replaceable> to store its data blocks on.
@@ -349,6 +351,7 @@
     </refsect2>
     <refsect2>
       <title>net</title>
+      <indexterm><primary>drbdsetup</primary><secondary>net</secondary></indexterm>
       <para>
 	Sets up the <replaceable>device</replaceable> to listen on
 	<replaceable>local_addr:port</replaceable> for incoming connections
@@ -672,6 +675,7 @@
     </refsect2>
     <refsect2>
       <title>syncer</title>
+      <indexterm><primary>drbdsetup</primary><secondary>syncer</secondary></indexterm>
       <para>
 	Changes the synchronization daemon parameters of
 	<replaceable>device</replaceable> at runtime.
@@ -723,6 +727,7 @@
     </refsect2>
     <refsect2>
       <title>primary</title>
+      <indexterm><primary>drbdsetup</primary><secondary>primary</secondary></indexterm>
       <para>
 	Sets the <replaceable>device</replaceable> into primary state, this
 	means that applications (e.g. a file system) may open the
@@ -751,6 +756,7 @@
     </refsect2>
     <refsect2>
       <title>secondary</title>
+      <indexterm><primary>drbdsetup</primary><secondary>secondary</secondary></indexterm>
       <para>
 	Sets the <replaceable>device</replaceable> into secondary state.
 	This operation fails as long as at least one application (or file
@@ -763,6 +769,7 @@
     </refsect2>
     <refsect2>
       <title>invalidate</title>
+      <indexterm><primary>drbdsetup</primary><secondary>invalidate</secondary></indexterm>
       <para>
 	This forces the local device of a pair of connected DRBD devices
 	into SyncTarget state, which means that all data blocks of the
@@ -775,6 +782,7 @@
     </refsect2>
     <refsect2>
       <title>invalidate_remote</title>
+      <indexterm><primary>drbdsetup</primary><secondary>invalidate_remote</secondary></indexterm>
       <para>
 	This forces the local device of a pair of connected DRBD devices
 	into SyncSource state, which means that all data blocks of the
@@ -783,6 +791,7 @@
     </refsect2>
     <refsect2>
       <title>wait_connect</title>
+      <indexterm><primary>drbdsetup</primary><secondary>wait_connect</secondary></indexterm>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> can
 	communicate with its partner device.
@@ -812,6 +821,7 @@
     </refsect2>
     <refsect2>
       <title>wait_sync</title>
+      <indexterm><primary>drbdsetup</primary><secondary>wait_sync</secondary></indexterm>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> leaves any
 	synchronization state and returns into connected state. The options
@@ -821,6 +831,7 @@
     </refsect2>
     <refsect2>
       <title>disconnect</title>
+      <indexterm><primary>drbdsetup</primary><secondary>disconnect</secondary></indexterm>
       <para>
 	Removes the information set by the <option>net</option> command
 	from the <replaceable>device</replaceable>. This means
@@ -830,6 +841,7 @@
     </refsect2>
     <refsect2>
       <title>detach</title>
+      <indexterm><primary>drbdsetup</primary><secondary>detach</secondary></indexterm>
       <para>
 	Removes the information set by the <option>disk</option> command
 	from the <replaceable>device</replaceable>. This means
@@ -839,6 +851,7 @@
     </refsect2>
     <refsect2>
       <title>down</title>
+      <indexterm><primary>drbdsetup</primary><secondary>down</secondary></indexterm>
       <para>
 	Removes all configuration information from the
 	<replaceable>device</replaceable> and forces it back to
@@ -847,6 +860,7 @@
     </refsect2>
     <refsect2>
       <title>state</title>
+      <indexterm><primary>drbdsetup</primary><secondary>state</secondary></indexterm>
       <para>
 	Shows the current states of the <replaceable>device</replaceable> and
 	its peer. (local/peer).
@@ -854,6 +868,7 @@
     </refsect2>
     <refsect2>
       <title>cstate</title>
+      <indexterm><primary>drbdsetup</primary><secondary>cstate</secondary></indexterm>
       <para>
 	Shows the current connection states of the
 	<replaceable>device</replaceable>.
@@ -861,12 +876,14 @@
     </refsect2>
     <refsect2>
       <title>dstate</title>
+      <indexterm><primary>drbdsetup</primary><secondary>dstate</secondary></indexterm>
       <para>
 	Show the current state of the backing storeage devices. (local/peer)
       </para>
     </refsect2>
     <refsect2>
       <title>resize</title>
+      <indexterm><primary>drbdsetup</primary><secondary>resize</secondary></indexterm>
       <para>
 	This causes DRBD to reexamine the size of the
 	<replaceable>device</replaceable>'s backing storage device.  To
@@ -877,6 +894,7 @@
     </refsect2>
     <refsect2>
       <title>pause-sync</title>
+      <indexterm><primary>drbdsetup</primary><secondary>pause-sync</secondary></indexterm>
       <para>
         Temporarily suspend an ongoing resynchronisation by setting the local
 	pause flag. Resync only progresses if neighter the local nor the
@@ -887,12 +905,14 @@
     </refsect2>
     <refsect2>
       <title>resume-sync</title>
+      <indexterm><primary>drbdsetup</primary><secondary>resume-sync</secondary></indexterm>
       <para>
         Unset the local sync pause flag.
       </para>
     </refsect2>
     <refsect2>
       <title>outdate</title>
+      <indexterm><primary>drbdsetup</primary><secondary>outdate</secondary></indexterm>
       <para>
         Mark the data on the local backing storage as outdated. An outdated
 	device refuses to become primary. This is used in conjuction with
@@ -901,18 +921,21 @@
     </refsect2>
     <refsect2>
       <title>show-gi</title>
+      <indexterm><primary>drbdsetup</primary><secondary>show-gi</secondary></indexterm>
       <para>
         Displays the device's data generaion identifiers verbosily.
       </para>
     </refsect2>
     <refsect2>
       <title>get-gi</title>
+      <indexterm><primary>drbdsetup</primary><secondary>get-gi</secondary></indexterm>
       <para>
         Displays the device's data generaion identifiers.
       </para>
     </refsect2>
     <refsect2>
       <title>show</title>
+      <indexterm><primary>drbdsetup</primary><secondary>show</secondary></indexterm>
       <para>
 	Shows all available configuration information of the
 	<replaceable>device</replaceable>.
@@ -920,6 +943,7 @@
     </refsect2>
     <refsect2>
       <title>suspend-io</title>
+      <indexterm><primary>drbdsetup</primary><secondary>suspend-io</secondary></indexterm>
       <para>
 	This command is of no apparent use and just provided for the sake
 	of completeness.
@@ -927,6 +951,7 @@
     </refsect2>
     <refsect2>
       <title>resume-io</title>
+      <indexterm><primary>drbdsetup</primary><secondary>resume-io</secondary></indexterm>
       <para>
 	In the the outdate-peer handler fails to stonith the peer node,
 	and your <option>fencing</option> policy is set to
@@ -937,6 +962,7 @@
 
     <refsect2>
       <title>events</title>
+      <indexterm><primary>drbdsetup</primary><secondary>events</secondary></indexterm>
       <para>
       	Displays every state change of DRBD and all calls to helper
 	programs. This might be used to get notifies of DRBD's state
