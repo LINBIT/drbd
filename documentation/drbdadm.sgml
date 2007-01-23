@@ -10,6 +10,7 @@
   <refnamediv>
     <refname>drbdadm</refname>
     <refpurpose>Administration tool for DRBD</refpurpose>
+    <indexterm><primary>drbdadm</primary></indexterm>
   </refnamediv>
 
   <refsynopsisdiv>
@@ -87,12 +88,14 @@
       <varlistentry>
         <term>detach</term>
         <listitem><para>
+        <indexterm><primary>drbdadm</primary><secondary>detach</secondary></indexterm>
           Removes the backing storage device from a DRBD resources's device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>connect</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>connect</secondary></indexterm>
           Sets up the network configuration of the resource's device. If the
  	  peer device is already configured, the two DRBD devices will connect.
         </para></listitem>
@@ -100,6 +103,7 @@
       <varlistentry>
         <term>disconnect</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>disconnect</secondary></indexterm>
           Removes the network configuration from the resource. The device
 	  will go into StandAllone state.
         </para></listitem>
@@ -107,24 +111,28 @@
       <varlistentry>
         <term>syncer</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>syncer</secondary></indexterm>
           Loads the resynchronization parameters into the device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>up</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>up</secondary></indexterm>
           Is a shortcut for attach and connect.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>down</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>down</secondary></indexterm>
           Is a shortcut for disconnect and detach.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>primary</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>primary</secondary></indexterm>
           Switch the resource's device into primary state. You need to do
 	  this before you may mount a filesystem onto the device.
         </para></listitem>
@@ -132,6 +140,7 @@
       <varlistentry>
         <term>secondary</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>secondary</secondary></indexterm>
           Brings the device back into secondary state. This is needed since in
 	  a connected DRBD device pair there might only be one of the two peers
 	  in primary state.
@@ -140,6 +149,7 @@
       <varlistentry>
         <term>invalidate</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>invalidate</secondary></indexterm>
           This forces DRBD to consider the data on the local backing
 	  storage device as out-of-sync. Therefor DRBD will copy each
 	  and every block over from its peer, to bring the local storage
@@ -149,6 +159,7 @@
       <varlistentry>
         <term>invalidate_remote</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>invalidate_remote</secondary></indexterm>
           This command is similar to the invalidate command, but the
 	  backing storage of the peer is invalidated and hence rewritten
 	  with the data of the local node.
@@ -157,6 +168,7 @@
       <varlistentry>
         <term>resize</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>resize</secondary></indexterm>
           DRBD will reexamine all sizing constraints, and re-size the
 	  resource's device accordingly. E.g. in case you increased the
 	  size of your backing storage devices (on both nodes of course),
@@ -167,6 +179,7 @@
       <varlistentry>
         <term>create-md</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>create-md</secondary></indexterm>
           Create-md initializes the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
 	  time.
@@ -175,6 +188,7 @@
       <varlistentry>
         <term>get-gi</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>get-gi</secondary></indexterm>
           Get-gi shows a short textual repesentation of the data generation
 	  identifier.
 	</para></listitem>
@@ -182,6 +196,7 @@
       <varlistentry>
         <term>show-gi</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>show-gi</secondary></indexterm>
 	  Show-gi prints a textual representation of the data generation
 	  identifiers including explanatory information.
         </para></listitem>
@@ -189,6 +204,7 @@
       <varlistentry>
         <term>dump-md</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>dump-md</secondary></indexterm>
           Dumps the whole contents of the meta data storage including
 	  the stored bit-map and activity-log, in a textual representation.
         </para></listitem>
@@ -196,12 +212,14 @@
       <varlistentry>
         <term>outdate</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>outdate</secondary></indexterm>
           Sets the outdated flag in the meta data.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>adjust</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>adjust</secondary></indexterm>
           Synchronizes the configuration of device with your configuration
 	  file. You should always examine the output of the dry-run
 	  mode before actually executing this command.
@@ -210,12 +228,14 @@
       <varlistentry>
         <term>wait_connect</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>wait_connect</secondary></indexterm>
           Waits until the device is connected to its peer device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>state</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>state</secondary></indexterm>
 	  Shows the current states of the devices (local/peer).
 	  E.g. primary/secondary
 	</para></listitem>
@@ -223,12 +243,14 @@
       <varlistentry>
         <term>cstate</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>cstate</secondary></indexterm>
 	  Shows the current connection status of the devices.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
         <term>dump</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>dump</secondary></indexterm>
           Just parse the configuration file and dump it to stdout. Might
 	  be used to check the configuration file for syntactical correctness.
         </para></listitem>
@@ -237,6 +259,7 @@
       <varlistentry>
         <term>outdate</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>outdate</secondary></indexterm>
           Used to mark the node's data as outdated. Usually used by the
 	  peer's oudate-peer handler.
         </para></listitem>
@@ -245,6 +268,7 @@
       <varlistentry>
         <term>pause-sync</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>pause-sync</secondary></indexterm>
           Temporarily suspend an ongoing resynchronisation by setting the
           local pause flag. Resync only progresses if neighter the local
           nor the remote pause flag is set. It might be desirable to
@@ -256,6 +280,7 @@
       <varlistentry>
         <term>resume-sync</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>resume-sync</secondary></indexterm>
           Unset the local sync pause flag.
         </para></listitem>
       </varlistentry>
@@ -263,6 +288,7 @@
       <varlistentry>
         <term>dstate</term>
         <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>dstate</secondary></indexterm>
   	  Show the current state of the backing storeage devices. (local/peer)
         </para></listitem>
       </varlistentry>

@@ -10,6 +10,7 @@
   <refnamediv>
     <refname>drbdmeta</refname>
     <refpurpose>DRBD's meta data management tool</refpurpose>
+    <indexterm><primary>drbdmeta</primary></indexterm>
   </refnamediv>
 
   <refsynopsisdiv>
@@ -47,6 +48,7 @@
       <varlistentry>
         <term>create-md</term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
           Create-md initializes the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
 	  time. In case there is already a meta data signature of an
@@ -57,6 +59,7 @@
       <varlistentry>
         <term>get-gi</term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>get-gi</secondary></indexterm>
           Get-gi shows a short textual repesentation of the data generation
 	  identifier. In version 0.6 and 0.7 this are generation counters,
 	  while in version 0.8 this is a set of UUIDs.
@@ -65,6 +68,7 @@
       <varlistentry>
         <term>show-gi</term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>show-gi</secondary></indexterm>
 	  Show-gi prints a textual representation of the data generation
 	  identifiers including explanatory information.
         </para></listitem>
@@ -72,6 +76,7 @@
       <varlistentry>
         <term>dump-md</term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>dump-md</secondary></indexterm>
           Dumps the whole contents of the meta data storage including
 	  the stored bit-map and activity-log, in a textual representation.
         </para></listitem>
@@ -79,6 +84,7 @@
       <varlistentry>
         <term>outdate</term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>outdate</secondary></indexterm>
           Sets the outdated flag in the meta data. This is used by the
 	  peer node when it wants to become primary, but can not reach
 	  communicate with the DRBD stack on this host.
@@ -87,6 +93,7 @@
       <varlistentry>
         <term>dstate</term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>dstate</secondary></indexterm>
           Prints the state of the backing storag's data. The output
 	  is always followed by '/DUnknown' since drbdmeta only looks
 	  at the local meta data.
@@ -109,6 +116,7 @@
       <varlistentry>
         <term>set-gi <replaceable>gi</replaceable></term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>set-gi </secondary></indexterm>
           Set-gi allows you to set the generation identifier.
 	  <replaceable>Gi</replaceable> needs to be a generation
 	  counter for the 0.6 and 0.7 format, and a UUID set for 8.0.
@@ -118,6 +126,7 @@
       <varlistentry>
         <term>restore-md <replaceable>dump_file</replaceable></term>
         <listitem><para>
+	<indexterm><primary>drbdmeta</primary><secondary>restore-md </secondary></indexterm>
           Reads the <replaceable>dump_file</replaceable> and writes
 	  the it to the meta data.
 	</para></listitem>

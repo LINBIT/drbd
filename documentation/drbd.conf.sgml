@@ -10,7 +10,7 @@
 <refnamediv>
  <refname>drbd.conf</refname>
  <refpurpose>Configuration file for DRBD's devices</refpurpose>
-
+ <indexterm><primary>drbd.conf</primary></indexterm>
 </refnamediv>
 <refsect1>
  <title>Introduction</title>
@@ -102,6 +102,7 @@ resource r0 {
 <varlistentry>
   <term><option>skip</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>skip</secondary></indexterm>
     Comments out chunks of text, even spanning more than one line.
     Characters between the keyword <option>skip</option> and the opening
     brace (<quote>{</quote>)are ignored. Everything enclosed by the braces
@@ -115,6 +116,7 @@ resource r0 {
 <varlistentry>
   <term><option>global</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>global</secondary></indexterm>
     Configures some global parameters. Currently only
     <option>minor-count</option>, <option>dialog-refresh</option>,
     <option>disable-ip-verification</option> and <option>usage-count</option>
@@ -127,6 +129,7 @@ resource r0 {
 <varlistentry>
   <term><option>common</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>common</secondary></indexterm>
     All resources interhit the options set in this section.
     The common section might have a
     a <option>startup</option>,
@@ -140,6 +143,7 @@ resource r0 {
 <varlistentry>
   <term><option>resource <replaceable>name</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>resource</secondary></indexterm>
     Configures a DRBD resource.
     Each resource section needs to have two
     <option>on <replaceable>host</replaceable></option> sections
@@ -156,6 +160,7 @@ resource r0 {
 <varlistentry>
   <term><option>on <replaceable>host-name</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>on</secondary></indexterm>
     Carries the necessary configuration parameters for a DRBD
     device of the enclosing resource.
     <replaceable>host-name</replaceable> is mandatory and must match the
@@ -170,6 +175,7 @@ resource r0 {
 <varlistentry>
   <term><option>disk</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>disk</secondary></indexterm>
     This section is used to fine tune DRBD's properties
     in respect to the low level storage. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
@@ -184,6 +190,7 @@ resource r0 {
 <varlistentry>
   <term><option>net</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>net</secondary></indexterm>
     This section is used to fine tune DRBD's properties. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry> for detailed description
@@ -204,6 +211,7 @@ resource r0 {
 <varlistentry>
   <term><option>startup</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>startup</secondary></indexterm>
     This section is used to fine tune DRBD's properties. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry> for detailed description
@@ -217,6 +225,7 @@ resource r0 {
 <varlistentry>
   <term><option>syncer</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>syncer</secondary></indexterm>
     This section is used to fine tune the synchronisation daemon
     for the device. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
@@ -231,6 +240,7 @@ resource r0 {
 <varlistentry>
   <term><option>handlers</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>handlers</secondary></indexterm>
     In this section can define handlers (executables) that are executed
     by the DRBD system in response to certain events.
     Optional parameters:
@@ -252,6 +262,7 @@ resource r0 {
 <varlistentry>
   <term><option>minor-count <replaceable>count</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>minor-count </secondary></indexterm>
     <replaceable>count</replaceable> may be a number from 1 to 255.
   </para>
   <para>Use <replaceable>minor-count</replaceable>
@@ -265,6 +276,7 @@ resource r0 {
 <varlistentry>
   <term><option>dialog-refresh <replaceable>time</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>dialog-refresh </secondary></indexterm>
     <replaceable>time</replaceable> may be 0 or a positive number.
   </para>
   <para>The user dialog redraws the second count every
@@ -276,6 +288,7 @@ resource r0 {
 <varlistentry>
   <term><option>disable-ip-verification</option></term>
   <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>disable-ip-verification</secondary></indexterm>
   <para>Use <replaceable>disable-ip-verification</replaceable>
    if, for some obscure reasons, drbdadm can/might not use ip or ifconfig
    to do a sanity check for the IP address, you can disable it with this
@@ -287,6 +300,7 @@ resource r0 {
 <varlistentry>
   <term><option>usage-count <replaceable>val</replaceable></option></term>
   <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>usage-count </secondary></indexterm>
   <para>Please participate in
   <ulink url="http://usage.drbd.org">
   <citetitle>DRBD's online usage counter</citetitle></ulink>.
@@ -300,6 +314,7 @@ resource r0 {
 <varlistentry>
   <term><option>protocol <replaceable>prot-id</replaceable></option></term>
   <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>protocol</secondary></indexterm>
   <para>On the TCP/IP link the specified <replaceable>protocol</replaceable>
   is used. Valid protocol specifiers are A, B, and C.</para>
   <para>Protocol A: write IO is reported as completed, if it has
@@ -314,6 +329,7 @@ resource r0 {
 <varlistentry>
   <term><option>incon-degr-cmd <replaceable>command</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>incon-degr-cmd</secondary></indexterm>
     In case a node starts up in degraded mode (degr-wfc-timeout is set) and
     its local replica of the data is inconsistent it executes the
     <replaceable>command</replaceable>. If the command exits without
@@ -325,6 +341,7 @@ resource r0 {
 <varlistentry>
   <term><option>device <replaceable>name</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>device</secondary></indexterm>
     The name of the block device node of the resource being described.
     You must use this device with your application (file system) and
     you must not use the low level block device which is specified with the
@@ -348,6 +365,7 @@ resource r0 {
 <varlistentry>
   <term><option>disk <replaceable>name</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>disk</secondary></indexterm>
     DRBD uses this block device to actually store and retrieve the data.
     Never access such a device while DRBD is running on top of it. This
     holds also true for <citerefentry><refentrytitle>dumpe2fs</refentrytitle>
@@ -359,6 +377,7 @@ resource r0 {
 <varlistentry>
   <term><option>address <replaceable>IP:port</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>address</secondary></indexterm>
     A resource needs one <replaceable>IP</replaceable> address per device,
     which is used to wait for
     incoming connections from the partner device respectively to reach
@@ -375,13 +394,12 @@ resource r0 {
 
 <varlistentry>
   <term><option>meta-disk <replaceable>internal</replaceable></option></term>
-  <term><option>flexible-meta-disk <replaceable>internal</replaceable></option>
-    </term>
-  <term><option>meta-disk <replaceable>device [index]</replaceable></option>
-    </term>
-  <term><option>flexible-meta-disk <replaceable>device </replaceable></option>
-    </term>
+  <term><option>flexible-meta-disk <replaceable>internal</replaceable></option></term>
+  <term><option>meta-disk <replaceable>device [index]</replaceable></option></term>
+  <term><option>flexible-meta-disk <replaceable>device </replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>meta-disk</secondary></indexterm>
+  <indexterm><primary>drbd.conf</primary><secondary>flexible-meta-disk</secondary></indexterm>
     internal means, that the last part of the backing device are used to store
     the meta-data. You must not use <replaceable>[index]</replaceable> with
     internal. Note: Regardless if you use the <option>meta-disk</option> or
@@ -411,6 +429,7 @@ resource r0 {
 <varlistentry>
   <term><option>on-io-error <replaceable>handler</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>on-io-error</secondary></indexterm>
   <replaceable>handler</replaceable> is taken, if the lower level
     device reports io-error to the upper layers.
   </para>
@@ -430,6 +449,7 @@ resource r0 {
 <varlistentry>
   <term><option>fencing <replaceable>fencing_policy</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>fencing</secondary></indexterm>
   Under <option>fencing</option> we understand preventative
   measures to avoid situations where both nodes are primary
   and disconnected (AKA split brain).
@@ -466,6 +486,7 @@ resource r0 {
 <varlistentry>
   <term><option>use-bmbv</option></term>
   <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>use-bmbv</secondary></indexterm>
     <para>
       In case the backing storage's driver has a merge_bvec_fn() function
       (At time of writing the only known drivers which have such a function
@@ -485,6 +506,7 @@ resource r0 {
 <varlistentry>
   <term><option>sndbuf-size <replaceable>size</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>sndbuf-size </secondary></indexterm>
   <replaceable>size</replaceable> is size of the TCP socket send buffer.
   Default is 128K. You can specify smaller or larger values. Larger values
   are appropriate for reasonable write throughput with protocol A over high
@@ -497,6 +519,7 @@ resource r0 {
 <varlistentry>
   <term><option>timeout <replaceable>time</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>timeout</secondary></indexterm>
 If the partner node fails to send an expected response packet within
 <replaceable>time</replaceable> 10<superscript>ths</superscript>
 of a second, the partner node
@@ -508,6 +531,7 @@ The default value is 60 = 6 seconds, the unit 0.1 seconds.
 <varlistentry>
   <term><option>connect-int <replaceable>time</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>connect-int</secondary></indexterm>
 In case it is not possible to connect to the remote DRBD device immediately,
 DRBD keeps on trying to connect. With this option you can set the time
 between two tries. The default value is 10 seconds, the unit is 1 second.
@@ -517,6 +541,7 @@ between two tries. The default value is 10 seconds, the unit is 1 second.
 <varlistentry>
   <term><option>ping-int <replaceable>time</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>ping-int</secondary></indexterm>
 If the TCP/IP connection linking a DRBD device pair is idle for more than
 <replaceable>time</replaceable> seconds, DRBD will generate a keep-alive
 packet to check if its partner is still alive. The default is 10 seconds,
@@ -527,6 +552,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>ping-timeout <replaceable>time</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>ping-timeout</secondary></indexterm>
     The time the peer has time to answer to a keep-alive packet, it. In case
     the peer's reply is not received within this time period, it is
     considered as dead. The default is 500ms, the default unit is 100ms.
@@ -536,6 +562,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>max-buffers <replaceable>number</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>max-buffers </secondary></indexterm>
   Maximal number of requests to be allocated by DRBD. Unit is PAGE_SIZE,
   which is 4 KB on most systems.
   The minimum is hardcoded to 32 (=128 KB).
@@ -548,6 +575,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>ko-count <replaceable>number</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>ko-count </secondary></indexterm>
 	      In case the secondary node fails to complete a single write
 	      request for <replaceable>count</replaceable> times the
 	      <replaceable>timeout</replaceable>, it is expelled from the
@@ -559,6 +587,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>max-epoch-size <replaceable>number</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>max-epoch-size </secondary></indexterm>
   The highest number of data blocks between two write barriers.
   If you set this smaller than 10 you might decrease your performance.
   </para></listitem>
@@ -567,6 +596,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>allow-two-primaries</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>allow-two-primaries</secondary></indexterm>
     With this option set you might make both nodes primary. You only should
     use this options if you use a shared storage file system on top of
     DRBD. At the time of writing the only ones are: OCFS2 and GFS. If you
@@ -578,6 +608,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>unplug-watermark <replaceable>number</replaceable></option></term>
   <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>unplug-watermark </secondary></indexterm>
     <para>
       When the number of pending write requests on the standby
       (secondary) node exceeds the unplug-watermark, we trigger
@@ -593,6 +624,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>cram-hmac-alg</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>cram-hmac-alg</secondary></indexterm>
     You need to specifying the HMAC algorithm to enable peer authentication
     at all. It is strongly enouraged to use peer authentication. The HMAC
     algorithm which will be used for the challenge response authentication
@@ -604,6 +636,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>shared-secret</option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>shared-secret</secondary></indexterm>
     The shared secret used in peer authentication. May be up to 64 characters.
   </para></listitem>
 </varlistentry>
@@ -611,6 +644,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>after-sb-0pri </option><replaceable>policy</replaceable></term>
 	  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>after-sb-0pri </secondary></indexterm>
 	    <para>
 	    possible policies are:
 	    </para>
@@ -645,6 +679,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>after-sb-1pri </option><replaceable>policy</replaceable></term>
 	  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>after-sb-1pri </secondary></indexterm>
 	    <para>
 	    possible policies are:
 	    </para>
@@ -687,6 +722,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>after-sb-2pri </option><replaceable>policy</replaceable></term>
 	  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>after-sb-2pri </secondary></indexterm>
 	    <para>
 	    possible policies are:
 	    </para>
@@ -718,6 +754,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>rr-conflict </option><replaceable>policy</replaceable></term>
 	  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>rr-conflict </secondary></indexterm>
 	    <para>
 	    To solve the cases when the outcome of the resync decission is
 	    incompatible to the current role assignment in the cluster.
@@ -746,6 +783,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>wfc-timeout <replaceable>time</replaceable></option></term>
   <listitem><para>Wait for connection timeout.
+  <indexterm><primary>drbd.conf</primary><secondary>wfc-timeout </secondary></indexterm>
   The init script <citerefentry><refentrytitle>drbd</refentrytitle>
   <manvolnum>8</manvolnum></citerefentry> blocks the boot process
   until the DRBD resources are connected.
@@ -759,6 +797,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>degr-wfc-timeout <replaceable>time</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>degr-wfc-timeout </secondary></indexterm>
   Wait for connection timeout, if this node was a degraded cluster.
   In case a degraded cluster (= cluster with only one node left)
   is rebooted, this timeout value is used instead of wfc-timeout,
@@ -772,6 +811,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>rate <replaceable>rate</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>rate </secondary></indexterm>
   To ensure smooth operation of the application on top of DRBD,
   it is possible to limit the bandwidth which may be used by
   background synchronizations. The default is 250 KB/sec, the
@@ -783,6 +823,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>after <replaceable>res-name</replaceable></option></term>
   <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>after </secondary></indexterm>
   By default resynchronization of all devices would run in parallel.
   By defining an sync-after dependency the resynchronisation of this
   resource will start only if the resoruce <replaceable>res-name</replaceable>
@@ -793,6 +834,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>al-extents <replaceable>extents</replaceable></option></term>
   <listitem><para>DRBD automatically performs hot area detection. With this
+  <indexterm><primary>drbd.conf</primary><secondary>al-extents </secondary></indexterm>
   parameter you control how big the hot area (=active set) can
   get. Each extent marks 4M of the backing storage (=low level device).
   In case a primary node leaves the cluster unexpectedly the areas covered
@@ -810,18 +852,21 @@ the unit is 1 second.
 <varlistentry>
   <term><option>pri-on-incon-degr <replaceable>cmd</replaceable></option></term>
   <listitem><para> This handler is called if the node is primary, degraded
+  <indexterm><primary>drbd.conf</primary><secondary>pri-on-incon-degr </secondary></indexterm>
   and the local copy of the data is inconsistent.</para></listitem>
   </varlistentry>
 
 <varlistentry>
   <term><option>pri-lost-after-sb <replaceable>cmd</replaceable></option></term>
   <listitem><para> The node is currently primary, but lost the after split
+  <indexterm><primary>drbd.conf</primary><secondary>pri-lost-after-sb </secondary></indexterm>
   brain auto recovery procedure. As as consequence it should go away.
   </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>pri-lost <replaceable>cmd</replaceable></option></term>
   <listitem><para> The node is currently primary, but DRBD's algorithm
+  <indexterm><primary>drbd.conf</primary><secondary>pri-lost </secondary></indexterm>
   thinks, that it should become sync target, as consequence it should
   give up its primary state.
   </para></listitem> </varlistentry>
@@ -829,6 +874,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>outdate-peer <replaceable>cmd</replaceable></option></term>
   <listitem><para> The handler is part of the <option>fencing</option>
+  <indexterm><primary>drbd.conf</primary><secondary>outdate-peer </secondary></indexterm>
   mechanism.  This handler is called in case the node needs to outdate the
   peer's disk. It should use other communication pathes then DRBD's network
   link.  </para></listitem> </varlistentry>
@@ -836,6 +882,7 @@ the unit is 1 second.
 <varlistentry>
   <term><option>local-io-error <replaceable>cmd</replaceable></option></term>
   <listitem><para> DRBD got an IO error from the local IO subsystem.
+  <indexterm><primary>drbd.conf</primary><secondary>local-io-error </secondary></indexterm>
   </para></listitem> </varlistentry>
 
 </variablelist>
