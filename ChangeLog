@@ -4,6 +4,10 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0.0 (api:86/proto:86)
+--------
+ * No effecitve changes to rc2.
+
 8.0rc2 (api:86/proto:86)
 --------
  * Added the well known automagiacally adjust drbd_config.h to

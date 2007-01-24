@@ -191,6 +191,10 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Wed Jan 24 2007 16:10:09 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.0-1)
+ * No effecitve changes to rc2.
+
 * Wed Jan 17 2007 17:30:23 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0rc2-1)
  * Added the well known automagiacally adjust drbd_config.h to
