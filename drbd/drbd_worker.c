@@ -188,7 +188,8 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 * a "we are diskless" param packet anyways, and the peer
 	 * will then set the FullSync bit in the meta data ...
 	 */
-	D_ASSERT(mdev->bc->dc.on_io_error != PassOn);
+	// NOTE: mdev->bc can be NULL by the time we get here!
+	//D_ASSERT(mdev->bc->dc.on_io_error != PassOn);
 
 	/* the only way this callback is scheduled is from _req_may_be_done,
 	 * when it is done and had a local write error, see comments there */
