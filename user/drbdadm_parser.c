@@ -382,7 +382,9 @@ static void parse_host_body(struct d_host_info *host,
 				   res->name, host->name);
 			EXP(TK_STRING);
 			host->meta_disk = yylval.txt;
-			host->meta_index = strdup("flexible");
+			if (strcmp("internal", yylval.txt)) {
+				host->meta_index = strdup("flexible");
+			}
 			check_meta_disk(host);
 			switch (yylex()) {
 			case TK__MAJOR:
