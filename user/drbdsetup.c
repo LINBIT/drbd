@@ -289,6 +289,7 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-0pri",'A',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) },
 		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
 		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
+		 { "always-asbp",'P',   T_always_asbp,     EB },
 		 { "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) },
 		 { "ping-timeout",'p',  T_ping_timeo,	   EN(PING_TIMEO,1) },
 		 { "discard-my-data",'D', T_want_lose,     EB },

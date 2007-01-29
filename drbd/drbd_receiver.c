@@ -1884,7 +1884,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	*rule_nr = 9;
 	self = mdev->bc->md.uuid[Bitmap] & ~((u64)1);
 	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
-	if (self == peer) return 100;
+	if (self == peer && self != ((u64)0) ) return 100;
 
 	*rule_nr = 10;
 	for ( i=History_start ; i<=History_end ; i++ ) {
@@ -1920,8 +1920,9 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	       INFO("uuid_compare()=%d by rule %d\n",hg,rule_nr);
 	    );
 
-	if (hg == 100) {
+	if (hg == 100 || (hg == -100 && mdev->net_conf->always_asbp) ) {
 		int pcount = (mdev->state.role==Primary) + (peer_role==Primary);
+		int forced = (hg == -100);
 
 		switch (pcount) {
 		case 0:
@@ -1937,6 +1938,13 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		if ( abs(hg) < 100 ) {
 			WARN("Split-Brain detected, %d primaries, automatically solved. Sync from %s node\n",
 			     pcount, (hg < 0) ? "peer":"this");
+			if(forced) {
+				WARN("Doing a full sync, since"
+				     " UUIDs where ambiguous.\n");
+				drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
+				drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
+				hg=hg*2;
+			}
 		}
 	}
 

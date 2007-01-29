@@ -82,6 +82,7 @@ rr-conflict 		{ DP; CP; return TK_NET_OPTION;		}
 ping-timeout 		{ DP; CP; return TK_NET_OPTION;		}
 unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
 allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
+always-asbp		{ DP; CP; return TK_NET_SWITCH;		}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
 after			{ DP; CP; return TK_SYNCER_OPTION;	}
 al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OPTION;}

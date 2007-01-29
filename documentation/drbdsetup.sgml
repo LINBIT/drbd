@@ -619,6 +619,25 @@
 	</varlistentry>
 
 	<varlistentry>
+	  <term><option>-P</option>,
+	  <option>--always-asbp</option></term>
+	  <listitem>
+	    <para>
+	      Normally the automatic after-split-brain policies are only 
+	      used if current state of the UUIDs do not indicate the 
+	      presence of a third node.
+	    </para>
+	    <para>
+	      With this option you request that the automatic 
+	      after-split-brain policies are used as long as the data
+	      sets of the nodes are somehow related. This might cause
+	      a full sync, if the UUIDs indicates the presence of a third
+	      node. (Or double faults led to strange UUID sets.)
+	    </para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
 	  <term><option>-R</option>,
 	  <option>--rr-conflict </option><replaceable>role-resync-conflict-policy</replaceable></term>
 	  <listitem>

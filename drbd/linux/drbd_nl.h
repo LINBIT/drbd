@@ -50,6 +50,7 @@ PACKET(net_conf, 5,
 	INTEGER(	40,	T_MAY_IGNORE,	ping_timeo)
 	BIT(		27,	T_MAY_IGNORE,	want_lose)
 	BIT(		28,	T_MAY_IGNORE,	two_primaries)
+	BIT(		41,	T_MAY_IGNORE,	always_asbp)
 )
 
 PACKET(disconnect, 6, )
