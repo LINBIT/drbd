@@ -48,6 +48,8 @@
 #include "drbdtool_common.h"
 #include "drbdadm.h"
 
+#define MAX_ARGS 40
+
 static int indent = 0;
 #define INDENT_WIDTH 4
 #define BFMT  "%s;\n"
@@ -605,42 +607,44 @@ pid_t m_system(char** argv,int flags)
   return rv;
 }
 
+#define NA(ARGC) \
+  ({ if((ARGC) >= MAX_ARGS) { fprintf(stderr,"MAX_ARGS too small\n"); \
+       exit(E_thinko); \
+     } \
+     (ARGC)++; \
+  })
 
 #define make_options(OPT) \
   while(OPT) { \
-    if (argc>=20) {\
-      fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__); \
-      exit(E_thinko); \
-    } \
     if(OPT->value) { \
-      ssprintf(argv[argc++],"--%s=%s",OPT->name,OPT->value); \
+      ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
     } else { \
-      ssprintf(argv[argc++],"--%s",OPT->name); \
+      ssprintf(argv[NA(argc)],"--%s",OPT->name); \
     } \
     OPT=OPT->next; \
   }
 
 int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   struct d_option* opt;
   int argc=0;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="disk";
-  argv[argc++]=res->me->disk;
+  argv[NA(argc)]=drbdsetup;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]="disk";
+  argv[NA(argc)]=res->me->disk;
   if(!strcmp(res->me->meta_disk,"internal")) {
-    argv[argc++]=res->me->disk;
+    argv[NA(argc)]=res->me->disk;
   } else {
-    argv[argc++]=res->me->meta_disk;
+    argv[NA(argc)]=res->me->meta_disk;
   }
-  argv[argc++]=res->me->meta_index;
-  argv[argc++]="--set-defaults";
-  argv[argc++]="--create-device";
+  argv[NA(argc)]=res->me->meta_index;
+  argv[NA(argc)]="--set-defaults";
+  argv[NA(argc)]="--create-device";
   opt=res->disk_options;
   make_options(opt);
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   return m_system(argv,SLEEPS_LONG);
 }
@@ -658,51 +662,51 @@ struct d_option* find_opt(struct d_option* base,char* name)
 
 int adm_resize(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   struct d_option* opt;
   int i,argc=0;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="resize";
+  argv[NA(argc)]=drbdsetup;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]="resize";
   opt=find_opt(res->disk_options,"size");
-  if(opt) ssprintf(argv[argc++],"--%s=%s",opt->name,opt->value);
+  if(opt) ssprintf(argv[NA(argc)],"--%s=%s",opt->name,opt->value);
   for(i=0;i<soi;i++) {
-    argv[argc++]=setup_opts[i];
+    argv[NA(argc)]=setup_opts[i];
   }
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   return m_system(argv,SLEEPS_SHORT);
 }
 
 int _admm_generic(struct d_resource* res ,const char* cmd, int flags)
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   int argc=0,i;
 
-  argv[argc++]=drbdmeta;
-  argv[argc++]=res->me->device;
-  argv[argc++]="v08";
+  argv[NA(argc)]=drbdmeta;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]="v08";
   if(!strcmp(res->me->meta_disk,"internal")) {
-    argv[argc++]=res->me->disk;
+    argv[NA(argc)]=res->me->disk;
   } else {
-    argv[argc++]=res->me->meta_disk;
+    argv[NA(argc)]=res->me->meta_disk;
   }
   if(!strcmp(res->me->meta_index,"flexible")) {
 	if(!strcmp(res->me->meta_disk,"internal")) {
-		argv[argc++]="flex-internal";
+		argv[NA(argc)]="flex-internal";
 	} else {
-		argv[argc++]="flex-external";
+		argv[NA(argc)]="flex-external";
 	}
   } else {
-	  argv[argc++]=res->me->meta_index;
+	  argv[NA(argc)]=res->me->meta_index;
   }
-  argv[argc++]=(char*)cmd;
+  argv[NA(argc)]=(char*)cmd;
   for(i=0;i<soi;i++) {
-    argv[argc++]=setup_opts[i];
+    argv[NA(argc)]=setup_opts[i];
   }
 
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   return m_system(argv,flags);
 }
@@ -714,16 +718,16 @@ static int admm_generic(struct d_resource* res ,const char* cmd)
 
 static int adm_generic(struct d_resource* res,const char* cmd,int flags)
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   int argc=0,i;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]=(char*)cmd;
+  argv[NA(argc)]=drbdsetup;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]=(char*)cmd;
   for(i=0;i<soi;i++) {
-    argv[argc++]=setup_opts[i];
+    argv[NA(argc)]=setup_opts[i];
   }
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   return m_system(argv,flags);
 }
@@ -792,28 +796,28 @@ void convert_discard_opt(struct d_resource* res)
 
 int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   struct d_option* opt;
   int i;
   int argc=0;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="net";
-  ssprintf(argv[argc++],"%s:%s",res->me->address,res->me->port);
-  ssprintf(argv[argc++],"%s:%s",res->peer->address,res->peer->port);
-  argv[argc++]=res->protocol;
+  argv[NA(argc)]=drbdsetup;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]="net";
+  ssprintf(argv[NA(argc)],"%s:%s",res->me->address,res->me->port);
+  ssprintf(argv[NA(argc)],"%s:%s",res->peer->address,res->peer->port);
+  argv[NA(argc)]=res->protocol;
 
-  argv[argc++]="--set-defaults";
-  argv[argc++]="--create-device";
+  argv[NA(argc)]="--set-defaults";
+  argv[NA(argc)]="--create-device";
   opt=res->net_options;
   make_options(opt);
 
   for(i=0;i<soi;i++) {
-    argv[argc++]=setup_opts[i];
+    argv[NA(argc)]=setup_opts[i];
   }
 
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   return m_system(argv,SLEEPS_SHORT);
 }
@@ -837,19 +841,19 @@ void convert_after_option(struct d_resource* res)
 
 int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   struct d_option* opt;
   int argc=0;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="syncer";
+  argv[NA(argc)]=drbdsetup;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]="syncer";
 
-  argv[argc++]="--set-defaults";
-  argv[argc++]="--create-device";
+  argv[NA(argc)]="--set-defaults";
+  argv[NA(argc)]="--create-device";
   opt=res->sync_options;
   make_options(opt);
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   return m_system(argv,SLEEPS_SHORT);
 }
@@ -865,16 +869,16 @@ static int adm_up(struct d_resource* res,const char* unused __attribute((unused)
 
 static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((unused)))
 {
-  char* argv[20];
+  char* argv[MAX_ARGS];
   struct d_option* opt;
   int argc=0,rv;
 
-  argv[argc++]=drbdsetup;
-  argv[argc++]=res->me->device;
-  argv[argc++]="wait-connect";
+  argv[NA(argc)]=drbdsetup;
+  argv[NA(argc)]=res->me->device;
+  argv[NA(argc)]="wait-connect";
   opt=res->startup_options;
   make_options(opt);
-  argv[argc++]=0;
+  argv[NA(argc)]=0;
 
   rv = m_system(argv,SLEEPS_FOREVER);
 
@@ -1060,12 +1064,12 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
 
   for_each_resource(res,t,config) {
     argc=0;
-    argv[argc++]=drbdsetup;
-    argv[argc++]=res->me->device;
-    argv[argc++]="wait-connect";
+    argv[NA(argc)]=drbdsetup;
+    argv[NA(argc)]=res->me->device;
+    argv[NA(argc)]="wait-connect";
     opt=res->startup_options;
     make_options(opt);
-    argv[argc++]=0;
+    argv[NA(argc)]=0;
 
     pids[i++]=m_system(argv,RETURN_PID);
   }
