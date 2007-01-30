@@ -1636,13 +1636,11 @@ int main(int argc, char** argv)
 	config_file = conf_file[i];
 	break;
       }
-      if (i) {
-	fprintf(stderr,"Can not open '%s': ",conf_file[i]);
-	perror("");
-      }
     } while (conf_file[++i]);
   }
   if(!config_file) {
+    fprintf(stderr,"Can not open '%s': ",conf_file[i-1]);
+    perror("");
     exit(E_config_invalid);
   }
 
