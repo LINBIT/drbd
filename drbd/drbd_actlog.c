@@ -602,7 +602,8 @@ STATIC int drbd_atodb_ensure(struct Drbd_Conf *mdev,
 	offset = S2W(enr);
 	drbd_bm_get_lel( mdev, offset, 
 			 min_t(size_t,S2W(1), drbd_bm_words(mdev) - offset),
-			 page_address(*page) + *page_offset );
+			 kmap(*page) + *page_offset );
+	kunmap(*page);
 
 	if(bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT)
 		return -EIO;
