@@ -511,6 +511,113 @@ int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *bdev)
 	return 1;
 }
 
+void drbd_al_to_on_disk_bm_slow(struct Drbd_Conf *mdev)
+{
+	int i;
+	unsigned int enr;
+
+	WARN("Using the slow drbd_al_to_on_disk_bm()\n");
+
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+
+	if (inc_local_if_state(mdev,Attaching)) {
+		for(i=0;i<mdev->act_log->nr_elements;i++) {
+			enr = lc_entry(mdev->act_log,i)->lc_number;
+			if(enr == LC_FREE) continue;
+			/* Really slow: if we have al-extents 16..19 active,
+			 * sector 4 will be written four times! Synchronous! */
+			drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
+		}
+
+		lc_unlock(mdev->act_log);
+		wake_up(&mdev->al_wait);
+		dec_local(mdev);
+	} else D_ASSERT(0);
+}
+
+struct drbd_atodb_wait {
+	atomic_t           count;
+	struct completion  io_done;
+	struct Drbd_Conf   *mdev;
+	int                error;
+};
+
+int drbd_atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
+{
+	struct drbd_atodb_wait *wc = bio->bi_private;
+	struct Drbd_Conf *mdev=wc->mdev;
+	struct page *page;
+
+	if (bio->bi_size) return 1;
+
+	drbd_chk_io_error(mdev,error,TRUE);
+	if(error && wc->error == 0) wc->error=error;
+
+	if (atomic_dec_and_test(&wc->count)) {
+		complete(&wc->io_done);
+	}
+
+	page = bio->bi_io_vec[0].bv_page;
+	if(page) put_page(page);
+	bio_put(bio);
+	dec_local(mdev);
+
+	return 0;
+}
+
+#define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
+STATIC int drbd_atodb_ensure(struct Drbd_Conf *mdev, 
+			     struct bio **bios, 
+			     struct page **page,
+			     unsigned int *page_offset,
+			     unsigned int enr,
+			     struct drbd_atodb_wait *wc)
+{
+	int i=0,allocated_page=0;
+	struct bio *bio;
+	struct page *np;
+	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
+	int offset;
+
+	// check if that enr is already covered by an already created bio.
+	while( (bio=bios[i]) ) {
+		if(bio->bi_sector == on_disk_sector) return 0;
+		i++;
+	}
+
+	bio = bio_alloc(GFP_KERNEL, 1);
+	if(bio==NULL) return -ENOMEM;
+
+	bio->bi_bdev = mdev->bc->md_bdev;
+	bio->bi_sector = on_disk_sector;
+
+	if(*page_offset == PAGE_SIZE) {
+		np = alloc_page(__GFP_HIGHMEM);
+		if(np == NULL) return -ENOMEM;
+		*page = np;
+		*page_offset = 0;
+		allocated_page=1;
+	}
+
+	offset = S2W(enr);
+	drbd_bm_get_lel( mdev, offset, 
+			 min_t(size_t,S2W(1), drbd_bm_words(mdev) - offset),
+			 page_address(*page) + *page_offset );
+
+	if(bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT)
+		return -EIO;
+
+	if(!allocated_page) get_page(*page);
+
+	*page_offset += MD_HARDSECT;
+
+	bio->bi_private = wc;
+	bio->bi_end_io = drbd_atodb_endio;
+
+	bios[i] = bio;
+	return 0;
+}
+
 /**
  * drbd_al_to_on_disk_bm:
  * Writes the areas of the bitmap which are covered by the AL.
@@ -521,6 +628,17 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 {
 	int i;
 	unsigned int enr;
+	struct bio **bios;
+	struct page *page;
+	unsigned int page_offset=PAGE_SIZE;
+	struct drbd_atodb_wait wc;
+
+	bios = kzalloc(sizeof(struct bio*) * mdev->act_log->nr_elements,
+		       GFP_KERNEL);
+	if(!bios) {
+		drbd_al_to_on_disk_bm_slow(mdev);
+		return;
+	}
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
@@ -528,16 +646,58 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		for(i=0;i<mdev->act_log->nr_elements;i++) {
 			enr = lc_entry(mdev->act_log,i)->lc_number;
 			if(enr == LC_FREE) continue;
-			/* TODO encapsulate and optimize within drbd_bitmap
-			 * currently, if we have al-extents 16..19 active,
-			 * sector 4 will be written four times! */
-			drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
+			if(drbd_atodb_ensure(mdev,bios,&page,&page_offset,
+					     enr/AL_EXT_PER_BM_SECT,&wc))
+				goto abort;
 		}
 
 		lc_unlock(mdev->act_log);
 		wake_up(&mdev->al_wait);
+
+		atomic_set(&wc.count,1);
+		init_completion(&wc.io_done);
+		wc.mdev = mdev;
+		wc.error = 0;
+
+		for(i=0; bios[i]; i++) {
+			atomic_inc(&wc.count);
+			inc_local(mdev);
+
+			if (FAULT_ACTIVE( DRBD_FAULT_MD_WR )) {
+				bios[i]->bi_rw = WRITE;
+				bio_endio(bios[i],bios[i]->bi_size,-EIO);
+			} else {
+				submit_bio(WRITE, bios[i]);
+			}
+
+		}
+		drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
+
+		atomic_dec(&wc.count); // for the init_completion(.. ,1)
+		wait_for_completion(&wc.io_done);
+
 		dec_local(mdev);
+
+		if(wc.error) drbd_io_error(mdev, TRUE);
+
 	} else D_ASSERT(0);
+
+	kfree(bios);
+	return;
+
+ abort:
+	lc_unlock(mdev->act_log);
+	wake_up(&mdev->al_wait);
+	dec_local(mdev);
+
+	// free everything by calling the endio callback directly.
+	for(i=0; bios[i]; i++) {
+		inc_local(mdev);
+		bios[i]->bi_size=0;
+		drbd_atodb_endio(bios[i], MD_HARDSECT, 0);
+	}
+	kfree(bios);
+	drbd_al_to_on_disk_bm_slow(mdev); //.. and take the slow path.
 }
 
 /**
