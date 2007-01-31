@@ -625,8 +625,9 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
 	 * inc_local_if_state(mdev,Attaching);
-	 * so just get the extra reference for the fun of it,
-	 * but do so directly.
+	 * so just get the extra reference, so that the local_cnt 
+	 * reflects the number of pending IO requests DRBD at its
+	 * backing device.
 	 */
 	atomic_inc(&mdev->local_cnt);
 	return 0;
