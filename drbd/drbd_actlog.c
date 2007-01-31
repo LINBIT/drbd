@@ -623,7 +623,12 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 
 	bios[i] = bio;
 	atomic_inc(&wc->count);
-	inc_local(mdev);
+	/* we already know that we may do this...
+	 * inc_local_if_state(mdev,Attaching);
+	 * so just get the extra reference for the fun of it,
+	 * but do so directly.
+	 */
+	atomic_inc(&mdev->local_cnt);
 	return 0;
 }
 
