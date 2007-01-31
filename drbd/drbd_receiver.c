@@ -3254,9 +3254,11 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 
 	dec_rs_pending(mdev);
 
-	drbd_rs_complete_io(mdev,sector);
-
-	drbd_rs_failed_io(mdev, sector, size);
+	if(inc_local_if_state(mdev,Failed)) {
+		drbd_rs_complete_io(mdev,sector);
+		drbd_rs_failed_io(mdev, sector, size);
+		dec_local(mdev);
+	}
 
 	return TRUE;
 }

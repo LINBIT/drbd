@@ -287,6 +287,16 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 	number -= atomic_read(&mdev->rs_pending_cnt);
 
+	if(!inc_local(mdev)) {
+		/* Since we only need to access mdev->rsync a
+		   inc_local_if_state(mdev,Failed) would be sufficient, but
+		   to continue resync with a broken disk makes no sense at
+		   all */
+		ERR("Disk broke down during resync!\n");
+		mdev->resync_work.cb = w_resync_inactive;
+		return 1;
+	}
+
 	for(i=0;i<number;i++) {
 
 	next_sector:
@@ -299,6 +309,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 			 * or make this the _only_ place that is allowed
 			 * to assign w_resync_inactive! */
 			mdev->resync_work.cb = w_resync_inactive;
+			dec_local(mdev);
 			return 1;
 		}
 
@@ -365,6 +376,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 				       sector,size,ID_SYNCER)) {
 			ERR("drbd_send_drequest() failed, aborting...\n");
 			dec_rs_pending(mdev);
+			dec_local(mdev);
 			return 0;
 		}
 	}
@@ -377,11 +389,13 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		 * until then resync "work" is "inactive" ...
 		 */
 		mdev->resync_work.cb = w_resync_inactive;
+		dec_local(mdev);
 		return 1;
 	}
 
  requeue:
 	mod_timer(&mdev->resync_timer, jiffies + SLEEP_TIME);
+	dec_local(mdev);
 	return 1;
 }
 
@@ -549,7 +563,10 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		return 1;
 	}
 
-	drbd_rs_complete_io(mdev,e->sector);
+	if(inc_local_if_state(mdev,Failed)) {
+		drbd_rs_complete_io(mdev,e->sector);
+		dec_local(mdev);
+	}
 
 	if(likely(drbd_bio_uptodate(e->private_bio))) {
 		if (likely( mdev->state.pdsk >= Inconsistent )) {
