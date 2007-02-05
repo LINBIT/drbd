@@ -254,6 +254,23 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			forced = 1;
 			continue;
 		}
+
+		if( r == SS_NoUpToDateDisk &&
+		    mdev->state.disk == Consistent ) {
+			D_ASSERT(mdev->state.pdsk == DUnknown);
+			nps = drbd_try_outdate_peer(mdev);
+
+			if(nps == Outdated) {
+				val.disk = UpToDate;
+				mask.disk = disk_mask;
+			}
+
+			val.pdsk = nps;
+			mask.pdsk = disk_mask;
+			
+			continue;
+		}
+
 		if ( r == SS_NothingToDo ) goto fail;
 		if ( r == SS_PrimaryNOP ) {
 			nps = drbd_try_outdate_peer(mdev);
