@@ -805,6 +805,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the
  * resync LRU-cache are 16MB each.
+ * The caller of this function has to hold an inc_local() reference.
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
@@ -817,6 +818,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 	unsigned int enr;
 
 	MUST_HOLD(&mdev->al_lock);
+	D_ASSERT(atomic_read(&mdev->local_cnt));
 
 	// I simply assume that a sector/size pair never crosses
 	// a 16 MB extent border. (Currently this is true...)
@@ -952,7 +954,10 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 				mdev->rs_mark_left =drbd_bm_total_weight(mdev);
 			}
 		}
-		drbd_try_clear_on_disk_bm(mdev,sector,count,TRUE);
+		if( inc_local_if_state(mdev,Attaching) ) {
+			drbd_try_clear_on_disk_bm(mdev,sector,count,TRUE);
+			dec_local(mdev);
+		}
 		/* just wake_up unconditional now,
 		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
 		wake_up=1;
@@ -1424,7 +1429,10 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 	if (count) {
 		mdev->rs_failed += count;
 
-		drbd_try_clear_on_disk_bm(mdev,sector,count,FALSE);
+		if( inc_local_if_state(mdev,Attaching) ) {
+			drbd_try_clear_on_disk_bm(mdev,sector,count,FALSE);
+			dec_local(mdev);
+		}
 
 		/* just wake_up unconditional now,
 		 * various lc_chaged(), lc_put() in drbd_try_clear_on_disk_bm(). */
