@@ -84,8 +84,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 		return 0;
 	}
 
-
 	hardsect = drbd_get_hardsect(bdev->md_bdev);
+	if(hardsect == 0) hardsect = MD_HARDSECT;
 
 	// in case hardsect != 512 [ s390 only? ]
 	if( hardsect != MD_HARDSECT ) {
@@ -93,8 +93,8 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 			struct page *page = alloc_page(GFP_NOIO);
 			if(!page) return 0;
 
-			WARN("Meta data's bdev hardsect_size != %d\n",
-			     MD_HARDSECT);
+			WARN("Meta data's bdev hardsect = %d != %d\n",
+			     hardsect, MD_HARDSECT);
 			WARN("Workaround engaged (has performace impact).\n");
 
 			mdev->md_io_tmpp = page;
