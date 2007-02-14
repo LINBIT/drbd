@@ -44,7 +44,8 @@ STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
 
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
-	bio_add_page(bio, page, size, 0);
+	ok = bio_add_page(bio, page, size, 0);
+	if(!ok) goto out;
 	init_completion(&event);
 	bio->bi_private = &event;
 	bio->bi_end_io = drbd_md_io_complete;
@@ -62,8 +63,8 @@ STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
 #endif
 	}
 	wait_for_completion(&event);
-
 	ok = test_bit(BIO_UPTODATE, &bio->bi_flags);
+ out:
 	bio_put(bio);
 	return ok;
 }
