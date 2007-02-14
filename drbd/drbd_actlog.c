@@ -44,7 +44,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
 
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
-	ok = bio_add_page(bio, page, size, 0);
+	ok = (bio_add_page(bio, page, size, 0) == size);
 	if(!ok) goto out;
 	init_completion(&event);
 	bio->bi_private = &event;
