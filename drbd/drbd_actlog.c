@@ -1279,6 +1279,13 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 		return;
 	}
 
+	if(bm_ext->lce.refcnt == 0) {
+		spin_unlock_irqrestore(&mdev->al_lock,flags);
+		ERR("drbd_rs_complete_io(,%llu [=%u]) called, but refcnt is 0!?\n",
+		    (unsigned long long)sector, enr);
+		return;
+	}
+
 	if( lc_put(mdev->resync,(struct lc_element *)bm_ext) == 0 ) {
 		clear_bit(BME_LOCKED,&bm_ext->flags);
 		clear_bit(BME_NO_WRITES,&bm_ext->flags);
