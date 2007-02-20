@@ -245,10 +245,16 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	int i;
 
 	e = mempool_alloc(drbd_ee_mempool, gfp_mask);
-	if (!e) return NULL;
+	if (!e) {
+		ERR("alloc_ee: Allocation of an EE failed\n");
+		return NULL;
+	}
 
 	bio = bio_alloc(GFP_KERNEL, div_ceil(data_size,PAGE_SIZE));
-	if (!bio) goto fail1;
+	if (!bio) {
+		ERR("alloc_ee: Allocation of a bio failed\n");
+		goto fail1;
+	}
 
 	bio->bi_bdev = mdev->bc->backing_bdev;
 	bio->bi_sector = sector;
@@ -256,9 +262,13 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	ds = data_size;
 	while(ds) {
 		page = drbd_pp_alloc(mdev, gfp_mask);
-		if (!page) goto fail2;
+		if (!page) {
+			ERR("alloc_ee: Allocation of a page failed\n");
+			goto fail2;
+		}
 		if (!bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0)) {
 			drbd_pp_free(mdev,page);
+			ERR("alloc_ee: bio_add_page() failed\n");
 			goto fail2;
 			break;
 		}
