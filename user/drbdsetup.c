@@ -59,6 +59,12 @@
 #error "You need to set KDIR while building drbdsetup."
 #endif
 
+enum usage_type {
+  BRIEF,
+  FULL,
+  XML,
+};
+
 struct drbd_tag_list {
 	struct nlmsghdr *nl_header;
 	struct cn_msg   *cn_header;
@@ -85,12 +91,14 @@ struct drbd_option {
 				char *);
 	void (*show_function)(struct drbd_option *,unsigned short*);
 	int (*usage_function)(struct drbd_option *, char*, int);
+	void (*xml_function)(struct drbd_option *);
 	union {
 		struct {
 			const long long min;
 			const long long max;
 			const long long def;
-			const unsigned char default_unit;
+			const unsigned char unit_prefix;
+			const char* unit;
 		} numeric_param; // for conv_numeric
 		struct {
 			const char** handler_names;
@@ -104,7 +112,7 @@ struct drbd_cmd {
 	const char* cmd;
 	const int packet_id;
 	int (*function)(struct drbd_cmd *, int, int, char **);
-	void (*usage)(struct drbd_cmd *, int );
+	void (*usage)(struct drbd_cmd *, enum usage_type);
 	union {
 		struct {
 			struct drbd_argument *args;
@@ -132,7 +140,7 @@ int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 void close_cn(int sk_nl);
 
 // other functions
-void print_command_usage(int i, const char *addinfo, int brief);
+void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
 int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
@@ -141,15 +149,21 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
 int events_cmd(struct drbd_cmd *cm, int minor, int argc,char **argv);
 
 // usage functions
-void config_usage(struct drbd_cmd *cm, int);
-void get_usage(struct drbd_cmd *cm, int);
-void events_usage(struct drbd_cmd *cm, int);
+void config_usage(struct drbd_cmd *cm, enum usage_type);
+void get_usage(struct drbd_cmd *cm, enum usage_type);
+void events_usage(struct drbd_cmd *cm, enum usage_type);
 
 // sub usage functions for config_usage
 int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
 int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
 int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
 int string_opt_usage(struct drbd_option *option, char* str, int strlen);
+
+// sub usage function for config_usage as xml
+void numeric_opt_xml(struct drbd_option *option);
+void handler_opt_xml(struct drbd_option *option);
+void bit_opt_xml(struct drbd_option *option);
+void string_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -229,17 +243,17 @@ struct option wait_cmds_options[] = {
 	{ 0,            0,           0,  0  }
 };
 
-#define EN(N,U) \
-	conv_numeric, show_numeric, numeric_opt_usage, \
+#define EN(N,U,UN) \
+	conv_numeric, show_numeric, numeric_opt_usage, numeric_opt_xml, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
-		DRBD_ ## N ## _DEF ,U  } }
+		DRBD_ ## N ## _DEF ,U,UN  } }
 #define EH(N,D) \
-	conv_handler, show_handler, handler_opt_usage, \
+	conv_handler, show_handler, handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
-#define EB      conv_bit, show_bit, bit_opt_usage, { }
-#define ES      conv_string, show_string, string_opt_usage, { }
-#define CLOSE_OPTIONS  { NULL,0,0,NULL,NULL,NULL, { } }
+#define EB      conv_bit, show_bit, bit_opt_usage, bit_opt_xml, { }
+#define ES      conv_string, show_string, string_opt_usage, string_opt_xml, { }
+#define CLOSE_OPTIONS  { NULL,0,0,NULL,NULL,NULL, NULL, { } }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
 #define F_GET_CMD	generic_get_cmd, get_usage
@@ -260,7 +274,7 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s') },
+		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s',"bytes") },
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
 		 { "use-bmbv",'b',	T_use_bmbv,     EB },
@@ -275,14 +289,14 @@ struct drbd_cmd commands[] = {
 		 { "protocol",		T_wire_protocol,conv_protocol },
  		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1) },
-		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1) },
-		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1) },
-		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1) },
-		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1) },
-		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT,1) },
-		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1) },
-		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1) },
+		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") },
+		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) },
+		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) },
+		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1,NULL) },
+		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1,"seconds") },
+		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT,1,"seconds") },
+		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") },
+		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) },
 		 { "allow-two-primaries",'m',T_two_primaries, EB },
 		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },
 		 { "shared-secret",'x',	T_shared_secret,   ES },
@@ -291,7 +305,7 @@ struct drbd_cmd commands[] = {
 		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
 		 { "always-asbp",'P',   T_always_asbp,     EB },
 		 { "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) },
-		 { "ping-timeout",'p',  T_ping_timeo,	   EN(PING_TIMEO,1) },
+		 { "ping-timeout",'p',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") },
 		 { "discard-my-data",'D', T_want_lose,     EB },
 		 CLOSE_OPTIONS }} }, },
 
@@ -299,14 +313,14 @@ struct drbd_cmd commands[] = {
 
 	{"resize", P_resize, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s') },
+		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s',"bytes") },
 		 CLOSE_OPTIONS }} }, },
 
 	{"syncer", P_syncer_conf, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "rate",'r',T_rate,			EN(RATE,'k') },
-		 { "after",'a',T_after,			EN(AFTER,1) },
-		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1) },
+		 { "rate",'r',T_rate,			EN(RATE,'k',"bytes/second") },
+		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
+		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
 	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
@@ -606,15 +620,15 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const long long min = od->numeric_param.min;
 	const long long max = od->numeric_param.max;
-	const unsigned char default_unit = od->numeric_param.default_unit;
+	const unsigned char unit_prefix = od->numeric_param.unit_prefix;
 	long long l;
 	int i;
 	char unit[] = {0,0};
 
-	l = m_strtoll(arg, default_unit);
+	l = m_strtoll(arg, unit_prefix);
 
 	if (min > l || l > max) {
-		unit[0] = default_unit > 1 ? default_unit : 0;
+		unit[0] = unit_prefix > 1 ? unit_prefix : 0;
 		fprintf(stderr,"%s %s => %llu%s out of range [%llu..%llu]%s\n",
 			od->name, arg, l, unit, min, max, unit);
 		return(20);
@@ -760,7 +774,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	while(ad && ad->name) {
 		if(argc < i+1) {
 			fprintf(stderr,"Missing argument '%s'\n", ad->name);
-			print_command_usage(cm-commands, "",0);
+			print_command_usage(cm-commands, "",FULL);
 			rv=20;
 			break;
 		}
@@ -817,7 +831,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 void show_numeric(struct drbd_option *od, unsigned short* tp)
 {
 	long long val;
-	const unsigned char def_unit = od->numeric_param.default_unit;
+	const unsigned char unit_prefix = od->numeric_param.unit_prefix;
 
 	switch(tag_type(*tp++)) {
 	case TT_INTEGER:
@@ -833,10 +847,14 @@ void show_numeric(struct drbd_option *od, unsigned short* tp)
 		val=0;
 	}
 
-	if(def_unit == 1) printf("\t%-16s\t%lld",od->name,val);
-	else printf("\t%-16s\t%lld%c",od->name,val,def_unit);
+	if(unit_prefix == 1) printf("\t%-16s\t%lld",od->name,val);
+	else printf("\t%-16s\t%lld%c",od->name,val,unit_prefix);
 	if(val == (long long) od->numeric_param.def) printf(" _is_default");
-	printf(";\n");
+	if(od->numeric_param.unit) {
+		printf("; # %s\n",od->numeric_param.unit);
+	} else {
+		printf(";\n");
+	}
 }
 
 void show_handler(struct drbd_option *od, unsigned short* tp)
@@ -1348,13 +1366,78 @@ int string_opt_usage(struct drbd_option *option, char* str, int strlen)
 			option->name, option->short_name);
 }
 
-void config_usage(struct drbd_cmd *cm, int brief)
+void numeric_opt_xml(struct drbd_option *option)
+{
+	printf("\t<option name=\"%s\" type=\"numeric\">\n",option->name);
+	printf("\t\t<min>%lld</min>\n",option->numeric_param.min);
+	printf("\t\t<max>%lld</max>\n",option->numeric_param.max);
+	printf("\t\t<default>%lld</default>\n",option->numeric_param.def);
+	if(option->numeric_param.unit_prefix==1) {
+		printf("\t\t<unit_prefix>1</unit_prefix>\n");
+	} else {
+		printf("\t\t<unit_prefix>%c</unit_prefix>\n",
+		       option->numeric_param.unit_prefix);
+	}
+	if(option->numeric_param.unit) {
+		printf("\t\t<unit>%s</unit>\n",option->numeric_param.unit);
+	}
+	printf("\t</option>\n");
+}
+
+void handler_opt_xml(struct drbd_option *option)
+{
+	const char** handlers;
+	int i;
+
+	printf("\t<option name=\"%s\" type=\"handler\">\n",option->name);
+	handlers = option->handler_param.handler_names;
+	for(i=0;i<option->handler_param.number_of_handlers;i++) {
+		if(handlers[i]) {
+			printf("\t\t<handler>%s</handler>\n",handlers[i]);
+		}
+	}
+	printf("\t</option>\n");
+}
+
+void bit_opt_xml(struct drbd_option *option)
+{
+	printf("\t<option name=\"%s\" type=\"boolean\">\n",option->name);
+	printf("\t</option>\n");
+}
+
+void string_opt_xml(struct drbd_option *option)
+{
+	printf("\t<option name=\"%s\" type=\"string\">\n",option->name);
+	printf("\t</option>\n");
+}
+
+
+void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct drbd_argument *args;
 	struct drbd_option *options;
 	static char line[300];
 	int maxcol,col,prevcol,startcol,toolong;
 	char *colstr;
+
+	if(ut == XML) {
+		printf("<command name=\"%s\">\n",cm->cmd);
+		if( (args = cm->cp.args) ) {
+			while (args->name) {
+				printf("\t<argument>%s</argument>\n",
+				       args->name);
+				args++;
+			}
+		}
+
+		options = cm->cp.options;
+		while (options && options->name) {
+			options->xml_function(options);
+			options++;
+		}
+		printf("</command>\n");
+		return;
+	}
 
 	prevcol=col=0;
 	maxcol=100;
@@ -1364,8 +1447,9 @@ void config_usage(struct drbd_cmd *cm, int brief)
 	col += snprintf(line+col, maxcol-col, " %s", cm->cmd);
 
 	if( (args = cm->cp.args) ) {
-		if(brief) col += snprintf(line+col, maxcol-col, " [args...]");
-		else {
+		if(ut == BRIEF) {
+			col += snprintf(line+col, maxcol-col, " [args...]");
+		} else {
 			while (args->name) {
 				col += snprintf(line+col, maxcol-col, " %s",
 						args->name);
@@ -1381,7 +1465,7 @@ void config_usage(struct drbd_cmd *cm, int brief)
 	startcol=prevcol=col;
 
 	options = cm->cp.options;
-	if(brief) {
+	if(ut == BRIEF) {
 		if(options)
 			col += snprintf(line+col, maxcol-col, " [opts...]");
 		printf("%-40s",line);
@@ -1406,21 +1490,21 @@ void config_usage(struct drbd_cmd *cm, int brief)
 	printf("%s\n",line);
 }
 
-void get_usage(struct drbd_cmd *cm, int brief)
+void get_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
-	if(brief) {
+	if(ut == BRIEF) {
 		printf(" %-39s", cm->cmd);
 	} else {
 		printf(" %s\n", cm->cmd);
 	}
 }
 
-void events_usage(struct drbd_cmd *cm, int brief)
+void events_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct option *lo;
 	char line[41];
 
-	if(brief) {
+	if(ut == BRIEF) {
 		sprintf(line,"%s [opts...]", cm->cmd);
 		printf(" %-39s",line);
 	} else {
@@ -1434,10 +1518,10 @@ void events_usage(struct drbd_cmd *cm, int brief)
 	}
 }
 
-void print_command_usage(int i, const char *addinfo, int brief)
+void print_command_usage(int i, const char *addinfo, enum usage_type ut)
 {
-	printf("USAGE:\n");
-	commands[i].usage(commands+i,brief);
+	if(ut != XML) printf("USAGE:\n");
+	commands[i].usage(commands+i,ut);
 
 	if (addinfo) {
 		printf("%s\n",addinfo);
@@ -1456,7 +1540,7 @@ void print_usage(const char* addinfo)
 
 
 	for (i = 0; i < ARRY_SIZE(commands); i++) {
-		commands[i].usage(commands+i,1);
+		commands[i].usage(commands+i,BRIEF);
 		if(i%2==1) printf("\n");
 	}
 
@@ -1629,7 +1713,16 @@ int main(int argc, char** argv)
 	if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-')) {
 		if(argc >= 3) {
 			cmd=find_cmd_by_name(argv[2]);
-			if(cmd) print_command_usage(cmd-commands,NULL,0);
+			if(cmd) print_command_usage(cmd-commands,NULL,FULL);
+			else print_usage("unknown command");
+			exit(0);
+		}
+	}
+
+	if (argc > 1 && (!strcmp(argv[1],"xml"))) {
+		if(argc >= 3) {
+			cmd=find_cmd_by_name(argv[2]);
+			if(cmd) print_command_usage(cmd-commands,NULL,XML);
 			else print_usage("unknown command");
 			exit(0);
 		}
