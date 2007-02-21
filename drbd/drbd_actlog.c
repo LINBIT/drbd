@@ -697,7 +697,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		// In case we had IOs and they are already complete, there
 		// is not point in waiting anyways.
 		// Therefore this if() ...
-		if(atomic_read(&wc.io_done)) wait_for_completion(&wc.io_done);
+		if(atomic_read(&wc.count)) wait_for_completion(&wc.io_done);
 
 		dec_local(mdev);
 

@@ -268,8 +268,9 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 		}
 		if (!bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0)) {
 			drbd_pp_free(mdev,page);
-			ERR("alloc_ee: bio_add_page(s=%llu,ds=%u) failed\n",
-			    (unsigned long long)sector, ds);
+			ERR("alloc_ee: bio_add_page(s=%llu,"
+			    "data_size=%u,ds=%u) failed\n",
+			    (unsigned long long)sector, data_size, ds);
 			goto fail2;
 			break;
 		}
