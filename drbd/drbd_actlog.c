@@ -649,8 +649,10 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	unsigned int page_offset=PAGE_SIZE;
 	struct drbd_atodb_wait wc;
 
-	bios = kzalloc(sizeof(struct bio*) * mdev->act_log->nr_elements,
+	bios = kmalloc(sizeof(struct bio*) * mdev->act_log->nr_elements,
 		       GFP_KERNEL);
+	memset(bios,0,sizeof(struct bio*) * mdev->act_log->nr_elements);
+
 	if(!bios) {
 		drbd_al_to_on_disk_bm_slow(mdev);
 		return;
