@@ -1473,7 +1473,8 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 	case Detach:
 	case CallIOEHelper:
 		if (mdev->state.disk > Failed) {
-			_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard);
+			_drbd_set_state(_NS(mdev,disk,Failed),
+					ChgStateHard|ScheduleAfter);
 			ERR("Local IO failed. Detaching...\n");
 		}
 		break;
