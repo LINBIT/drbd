@@ -616,6 +616,17 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	if (b->merge_bvec_fn && !mdev->bc->dc.use_bmbv)
 		max_seg_s = PAGE_SIZE;
 
+	max_seg_s = min(b->max_sectors << 9 , max_seg_s);
+
+	MTRACE(TraceTypeRq,TraceLvlSummary,
+	       DUMPI(b->max_sectors);
+	       DUMPI(b->max_phys_segments);
+	       DUMPI(b->max_hw_segments);
+	       DUMPI(b->max_segment_size);
+	       DUMPI(b->hardsect_size);
+	       DUMPI(b->seg_boundary_mask);
+	       );
+
 	q->max_sectors       = max_seg_s >> 9;
 	q->max_phys_segments = max_seg_s >> PAGE_SHIFT;
 	q->max_hw_segments   = max_seg_s >> PAGE_SHIFT;
@@ -631,6 +642,15 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 
 	// workaround here:
 	if(q->max_segment_size == 0) q->max_segment_size = max_seg_s;
+
+	MTRACE(TraceTypeRq,TraceLvlSummary,
+	       DUMPI(q->max_sectors);
+	       DUMPI(q->max_phys_segments);
+	       DUMPI(q->max_hw_segments);
+	       DUMPI(q->max_segment_size);
+	       DUMPI(q->hardsect_size);
+	       DUMPI(q->seg_boundary_mask);
+	       );
 
 	if(b->merge_bvec_fn) {
 		WARN("Backing device's merge_bvec_fn() = %p\n",

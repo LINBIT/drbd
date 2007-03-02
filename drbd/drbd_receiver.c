@@ -271,6 +271,21 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 			ERR("alloc_ee: bio_add_page(s=%llu,"
 			    "data_size=%u,ds=%u) failed\n",
 			    (unsigned long long)sector, data_size, ds);
+
+			request_queue_t *q = bdev_get_queue(bio->bi_bdev);
+			if (q->merge_bvec_fn) {
+				ERR("merge_bvec_fn() = %d\n",
+				    q->merge_bvec_fn(q, bio, 
+					  &bio->bi_io_vec[bio->bi_vcnt]));
+			}
+
+			/* dump more of the bio. */
+			DUMPI(bio->bi_max_vecs);
+			DUMPI(bio->bi_vcnt);
+			DUMPI(bio->bi_size);
+			DUMPI(bio->bi_phys_segments);
+			DUMPI(bio->bi_hw_segments);
+
 			goto fail2;
 			break;
 		}
