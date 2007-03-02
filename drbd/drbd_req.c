@@ -146,7 +146,8 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 				dec_local(mdev);
 			} else {
 				WARN("Should have called drbd_al_complete_io(, %llu), "
-				     "but my Disk seems to have failed:(\n", req->sector);
+				     "but my Disk seems to have failed:(\n", 
+				     (unsigned long long) req->sector);
 			}
 		}
 	}

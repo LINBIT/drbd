@@ -372,7 +372,7 @@ static const char *error_messages[] = {
 	"(up to 2TB in case you do not have CONFIG_LBD set)"
 	"Contact office@linbit.com, if you need more.",
 	EM(MDIOError) = "IO error(s) orruced during initial access to meta-data.\n",
-	EM(MDInvalid) = "No valid meta-data signature found.\n)"
+	EM(MDInvalid) = "No valid meta-data signature found.\n"
 	"Use 'drbdadm create-md res' to initialize meta-data area.\n",
 	EM(CRAMAlgNotAvail) = "The 'cram-hmac-alg' you specified is not known in "
 	"the kernel. (maybe you need to modprobe it, or modprobe hmac?)\n",

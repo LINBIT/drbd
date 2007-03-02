@@ -228,7 +228,8 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	MTRACE(TraceTypeALExts,TraceLvlMetrics,
 	       INFO("al_begin_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
-		    sector, enr, (int)BM_SECT_TO_EXT(sector));
+		    (unsigned long long) sector, enr, 
+		    (int)BM_SECT_TO_EXT(sector));
 	       );
 
 	wait_event(mdev->al_wait, (al_ext = _al_get(mdev,enr)) );
@@ -276,7 +277,8 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	MTRACE(TraceTypeALExts,TraceLvlMetrics,
 	       INFO("al_complete_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
-		    sector, enr, (int)BM_SECT_TO_EXT(sector));
+		    (unsigned long long) sector, enr, 
+		    (int)BM_SECT_TO_EXT(sector));
 	       );
 
 	spin_lock_irqsave(&mdev->al_lock,flags);
