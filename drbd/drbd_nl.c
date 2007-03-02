@@ -616,7 +616,7 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	if (b->merge_bvec_fn && !mdev->bc->dc.use_bmbv)
 		max_seg_s = PAGE_SIZE;
 
-	max_seg_s = min(b->max_sectors << 9 , max_seg_s);
+	max_seg_s = min(b->max_sectors * b->hardsect_size, max_seg_s);
 
 	MTRACE(TraceTypeRq,TraceLvlSummary,
 	       DUMPI(b->max_sectors);
