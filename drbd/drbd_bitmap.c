@@ -244,10 +244,9 @@ int drbd_bm_init(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	D_BUG_ON(b);
-	b = kmalloc(sizeof(struct drbd_bitmap),GFP_KERNEL);
+	b = kzalloc(sizeof(struct drbd_bitmap),GFP_KERNEL);
 	if (!b)
 		return -ENOMEM;
-	memset(b,0,sizeof(*b));
 	spin_lock_init(&b->bm_lock);
 	init_MUTEX(&b->bm_change);
 	init_waitqueue_head(&b->bm_io_wait);

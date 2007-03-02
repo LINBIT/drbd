@@ -2280,9 +2280,8 @@ drbd_dev *drbd_new_device(int minor)
 	struct gendisk *disk;
 	request_queue_t *q;
 
-	mdev = kmalloc(sizeof(drbd_dev),GFP_KERNEL);
+	mdev = kzalloc(sizeof(drbd_dev),GFP_KERNEL);
 	if(!mdev) goto Enomem;
-	memset(mdev,0,sizeof(drbd_dev ));
 
 	mdev->minor = minor;
 
@@ -2325,9 +2324,8 @@ drbd_dev *drbd_new_device(int minor)
 	// no need to lock access, we are still initializing the module.
 	if (!tl_init(mdev)) goto Enomem;
 
-	mdev->app_reads_hash=kmalloc(APP_R_HSIZE*sizeof(void*),GFP_KERNEL);
+	mdev->app_reads_hash=kzalloc(APP_R_HSIZE*sizeof(void*),GFP_KERNEL);
 	if (!mdev->app_reads_hash) goto Enomem;
-	memset(mdev->app_reads_hash,0,APP_R_HSIZE*sizeof(void*));
 
 	return mdev;
 
@@ -2419,9 +2417,8 @@ int __init drbd_init(void)
 	init_waitqueue_head(&drbd_pp_wait);
 
 	drbd_proc = NULL; // play safe for drbd_cleanup
-	minor_table = kmalloc(sizeof(drbd_dev *)*minor_count,GFP_KERNEL);
+	minor_table = kzalloc(sizeof(drbd_dev *)*minor_count,GFP_KERNEL);
 	if(!minor_table) goto Enomem;
-	memset(minor_table,0,sizeof(drbd_dev *)*minor_count);
 
 	if ((err = drbd_create_mempools()))
 		goto Enomem;

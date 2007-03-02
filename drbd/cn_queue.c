@@ -49,13 +49,12 @@ static struct cn_callback_entry *cn_queue_alloc_callback_entry(char *name, struc
 {
 	struct cn_callback_entry *cbq;
 
-	cbq = kmalloc(sizeof(*cbq), GFP_KERNEL);
+	cbq = kzalloc(sizeof(*cbq), GFP_KERNEL);
 	if (!cbq) {
 		printk(KERN_ERR "Failed to create new callback queue.\n");
 		return NULL;
 	}
 
-	memset(cbq,0,sizeof(*cbq));
 	snprintf(cbq->id.name, sizeof(cbq->id.name), "%s", name);
 	memcpy(&cbq->id.id, id, sizeof(struct cb_id));
 	cbq->data.callback = callback;
@@ -138,11 +137,10 @@ struct cn_queue_dev *cn_queue_alloc_dev(char *name, struct sock *nls)
 {
 	struct cn_queue_dev *dev;
 
-	dev = kmalloc(sizeof(*dev), GFP_KERNEL);
+	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return NULL;
 
-	memset(dev,0,sizeof(*dev));
 	snprintf(dev->name, sizeof(dev->name), "%s", name);
 	atomic_set(&dev->refcnt, 0);
 	INIT_LIST_HEAD(&dev->queue_list);

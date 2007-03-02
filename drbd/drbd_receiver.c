@@ -237,6 +237,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 				     unsigned int data_size,
 				     unsigned int gfp_mask)
 {
+	request_queue_t *q;
 	struct Tl_epoch_entry* e;
 	struct bio_vec *bvec;
 	struct page *page;
@@ -272,7 +273,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 			    "data_size=%u,ds=%u) failed\n",
 			    (unsigned long long)sector, data_size, ds);
 
-			request_queue_t *q = bdev_get_queue(bio->bi_bdev);
+			q = bdev_get_queue(bio->bi_bdev);
 			if (q->merge_bvec_fn) {
 				ERR("merge_bvec_fn() = %d\n",
 				    q->merge_bvec_fn(q, bio, 
@@ -2225,7 +2226,8 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		if (mdev->state.conn == WFReportParams) {
 			/* this is first connect, or an otherwise expected
 			   param exchange.  choose the minimum */
-			p_usize = min_not_zero(mdev->bc->dc.disk_size, p_usize);
+			p_usize=min_not_zero((sector_t)mdev->bc->dc.disk_size,
+					     p_usize);
 		}
 
 		my_usize = mdev->bc->dc.disk_size;

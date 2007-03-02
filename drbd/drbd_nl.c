@@ -1104,22 +1104,20 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	ns = new_conf->max_epoch_size/8;
 	if (mdev->tl_hash_s != ns) {
-		new_tl_hash=kmalloc(ns*sizeof(void*), GFP_KERNEL);
+		new_tl_hash=kzalloc(ns*sizeof(void*), GFP_KERNEL);
 		if(!new_tl_hash) {
 			retcode=KMallocFailed;
 			goto fail;
 		}
-		memset(new_tl_hash, 0, ns*sizeof(void*));
 	}
 
 	ns = new_conf->max_buffers/8;
 	if (new_conf->two_primaries && ( mdev->ee_hash_s != ns ) ) {
-		new_ee_hash=kmalloc(ns*sizeof(void*), GFP_KERNEL);
+		new_ee_hash=kzalloc(ns*sizeof(void*), GFP_KERNEL);
 		if(!new_ee_hash) {
 			retcode=KMallocFailed;
 			goto fail;
 		}
-		memset(new_ee_hash, 0, ns*sizeof(void*));
 	}
 
 	((char*)new_conf->shared_secret)[SHARED_SECRET_MAX-1]=0;
