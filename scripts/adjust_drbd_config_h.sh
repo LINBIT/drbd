@@ -80,6 +80,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_sock_create_kern=0
   fi
+  if grep_q "dst_groups" $KDIR/include/linux/netlink.h ; then
+    have_nl_dst_groups=1
+  else
+    have_nl_dst_groups=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -99,6 +104,8 @@ perl -pe "
   { ( $have_kmem_cache_s ? '' : '//' ) . \$1}e;
  s{.*(#define DEFINE_SOCK_CREATE_KERN.*)}
   { ( $have_sock_create_kern ? '//' : '' ) . \$1}e;
+ s{.*(#define DRBD_NL_DST_GROUPS.*)}
+  { ( $have_nl_dst_groups ? '//' : '' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
