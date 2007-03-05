@@ -105,7 +105,7 @@ perl -pe "
  s{.*(#define DEFINE_SOCK_CREATE_KERN.*)}
   { ( $have_sock_create_kern ? '//' : '' ) . \$1}e;
  s{.*(#define DRBD_NL_DST_GROUPS.*)}
-  { ( $have_nl_dst_groups ? '//' : '' ) . \$1}e;
+  { ( $have_nl_dst_groups ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

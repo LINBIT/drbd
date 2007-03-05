@@ -69,4 +69,8 @@ extern const char * drbd_buildtag(void);
 // some older distribution kernels don't.
 //#define DEFINE_SOCK_CREATE_KERN
 
+// in older kernels (vanilla < 2.6.16) struct netlink_skb_parms has a
+// member called dst_groups. Later it is called dst_group (without 's').
+//#define DRBD_NL_DST_GROUPS
+
 #endif

@@ -36,7 +36,7 @@
 
 #include <net/sock.h>
 
-#ifdef NETLINK_ROUTE6
+#ifdef DRBD_NL_DST_GROUPS
    /* pre 2.6.16 */
 #  define NETLINK_GROUP(skb) NETLINK_CB(skb).dst_groups
 #else 
