@@ -1013,7 +1013,13 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		resume_next_sg(mdev);
 	}
 
-	if ( os.conn != Disconnecting && ns.conn <= Disconnecting ) {
+	// Receiver should clean up itself
+	if ( os.conn != Disconnecting && ns.conn == Disconnecting ) {
+		drbd_thread_signal(&mdev->receiver);
+	}
+
+	// Now the receiver finished cleaning up itself, it should die now
+	if ( os.conn != StandAlone && ns.conn == StandAlone ) {
 		drbd_thread_stop_nowait(&mdev->receiver);
 	}
 
@@ -1166,6 +1172,22 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 		D_ASSERT(thi->t_state == None);
 		spin_unlock(&thi->t_lock);
 	}
+}
+
+void drbd_thread_signal(struct Drbd_thread *thi)
+{
+	spin_lock(&thi->t_lock);
+
+	if (thi->t_state == None) {
+		spin_unlock(&thi->t_lock);
+		return;
+	}
+
+	if (thi->task != current) {
+		force_sig(DRBD_SIGKILL,thi->task);
+	}
+
+	spin_unlock(&thi->t_lock);
 }
 
 /* the appropriate socket mutex must be held already */

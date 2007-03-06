@@ -923,6 +923,7 @@ extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			   enum chg_state_flags);
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
+extern void drbd_thread_signal(struct Drbd_thread *thi);
 extern void drbd_free_resources(drbd_dev *mdev);
 extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
