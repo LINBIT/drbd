@@ -714,7 +714,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	nbc->lo_file = filp_open(nbc->dc.backing_dev,O_RDWR,0);
-	if (!nbc->lo_file) {
+	if (IS_ERR(nbc->lo_file)) {
+		ERR("open(\"%s\") failed with %ld\n", nbc->dc.backing_dev,
+		    PTR_ERR(nbc->lo_file));
+		nbc->lo_file=NULL;
 		retcode=LDNameInvalid;
 		goto fail;
 	}
@@ -727,8 +730,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	nbc->md_file = filp_open(nbc->dc.meta_dev,O_RDWR,0);
-
-	if (!nbc->md_file) {
+	if (IS_ERR(nbc->md_file)) {
+		ERR("open(\"%s\") failed with %ld\n", nbc->dc.meta_dev,
+		    PTR_ERR(nbc->md_file));
+		nbc->md_file=NULL;
 		retcode=MDNameInvalid;
 		goto fail;
 	}
