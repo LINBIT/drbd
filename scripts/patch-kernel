@@ -2,13 +2,13 @@
 #
 # Create a patch against a kernel tree which adds the DRBD sources.
 #
-# $Id: patch-kernel,v 1.1.2.3 2004/04/26 08:36:29 phil Exp $
-#
+# original script:
 # Copyright (C) 2003 Kees Cook, OSDL
 # kees@osdl.org, http://developer.osdl.org/kees/
 #
-# Copyright (C) 2003-2006 LINBIT Information Technologies GmbH
-# http://www.linbit.com
+# heavily modified:
+# Copyright (C) 2003-2007 LINBIT Information Technologies GmbH, Lars Ellenberg
+# lars@linbit.com, http://www.linbit.com
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -44,13 +44,13 @@ test -d "$KERNEL/Documentation" ||
 test -d "$DRBD/documentation"   ||
 	fatal "Please specify the drbd tree to use"
 
-# XXX only allow 2.6, because below we patch Kconfig files,
-#     which are non-existant for 2.4
-#     feel free to provide a patch-gen against 2.4 Configure.in ...
+# only allow 2.6
 KDIR_PATCHLEVEL=$(grep "^PATCHLEVEL = " $KERNEL/Makefile | cut -d " " -f 3)
 test "$KDIR_PATCHLEVEL" = 6 ||
 	fatal "wrong kernel version patchlevel ($KDIR_PATCHLEVEL), expected 6."
 
+test -e "$KERNEL/drivers/connector/connector.c" ||
+	fatal "this won't work: your kernel lacks the connector :("
 #
 # convert to absolute pathnames
 # maybe even do a "test -L $d && readlink $d" first?
@@ -90,23 +90,39 @@ done
 #
 # Pull in the base drbd source
 #
+include_linux="drbd.h drbd_limits.h drbd_nl.h drbd_tag_magic.h"
+drbd_source="drbd_actlog.c drbd_bitmap.c drbd_buildtag.c
+	drbd_compat_wrappers.h drbd_int.h drbd_main.c drbd_nl.c drbd_proc.c
+	drbd_receiver.c drbd_req.c drbd_req.h drbd_strings.c drbd_worker.c
+	lru_cache.c lru_cache.h"
 
 # clean it first
 make -s -C $DRBD/drbd clean
-# XXX drbd_config.h probably needs different treatment.
-cp -a $DRBD/drbd/linux/drbd{,_config}.h       $DRBD_BASE/include/linux/
-cp -a $DRBD/drbd/{*.[ch],Kconfig}             $DRBD_SUB
-# and the right in-kernel-tree Makefile
-cp -a $DRBD/drbd/Makefile-2.$KDIR_PATCHLEVEL  $DRBD_SUB/Makefile
+
+# FIXME drbd_config.h probably needs different treatment,
+# these should become Kconfig options or go away!
+cp -a $DRBD/drbd/linux/drbd_config.h	$DRBD_BASE/include/linux/
+for f in $include_linux; do
+	cp -a $DRBD/drbd/linux/$f	$DRBD_BASE/include/linux/
+done
+
+cp -a $DRBD/drbd/Kconfig		$DRBD_SUB
+for f in $drbd_source; do
+	cp -a $DRBD/drbd/$f		$DRBD_SUB
+done
+# we also need the in-kernel-tree Makefile
+# remove the trace of the connector backport
+sed -e '/^ifndef CONFIG_CONNECTOR/,/^$/d' \
+	< $DRBD/drbd/Makefile-2.6 > $DRBD_SUB/Makefile
 
 # disable __arch_um__ to_virt() hack
-sed -e 's/^#ifdef __arch_um__/#if 0/' \
+sed -e 's/^#if defined(__arch_um__).*/#if 0/' \
 	< $DRBD/drbd/drbd_receiver.c > $DRBD_SUB/drbd_receiver.c
 
 # and, in case this kernel was already patched:
 if test -e $KERNEL/include/linux/drbd.h ; then
 	$INCREMENT || fatal "drbd already in $KERNEL"
-	cp -a $KERNEL/include/linux/drbd{,_config}.h \
+	cp -a $KERNEL/include/linux/drbd*.h \
 	 $KERNEL_BASE/include/linux/
 	cp -a $KERNEL/drivers/block/drbd/{*.[ch],Makefile,Kconfig} \
 	 $KERNEL_BASE/drivers/block/drbd/
@@ -133,8 +149,6 @@ patch_Kconfig() { sed -e '
 source "drivers/block/drbd/Kconfig"\
 
 }'
-#	/^\tdepends on / s/$/ \&\& !BLK_DEV_DRBD/
-#	}'
 }
 for f in drivers/block/Kconfig arch/um/Kconfig_block ; do
 	test -e $KERNEL_BASE/$f || continue

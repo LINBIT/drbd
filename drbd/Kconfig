@@ -2,33 +2,29 @@
 # DRBD device driver configuration
 #
 config BLK_DEV_DRBD
-	tristate "DRBD Distributed replicated block device support"
+	tristate "DRBD Distributed Replicated Block Device support"
 	select INET
 	select PROC_FS
+	select CONNECTOR
 	---help---
-	  Drbd is a block device which is designed to build high availability
+	  DRBD is a block device which is designed to build high availability
 	  clusters.  This is done by mirroring a whole block device via (a
 	  dedicated) network.  You could see it as a network RAID 1.
 
-	  Each device (drbd provides more than one of these devices) has a
-	  state, which can be 'primary' or 'secondary'. On the node with the
-	  primary device the application is supposed to run and to access the
-	  device (/dev/drbdX). Every write is sent to the local 'lower level
-	  block device' and via network to the node with the device in
-	  'secondary' state.
+	  Each minor device has a state, which can be 'primary' or 'secondary'.
+	  On the node with the primary device the application is supposed to
+	  run and to access the device (/dev/drbdX). Every write is sent to the
+	  local 'lower level block device' and via network to the node with the
+	  device in 'secondary' state.
 	  The secondary device simply writes the data to its lower level block
-	  device. Reads are always carried out locally.
+	  device. Currently no read-balancing via the network is done.
 
-	  Drbd management is done through user-space tools.
+	  DRBD can also be used with "shared-disk semantics" (primary-primary),
+	  even though it is a "shared-nothing cluster".  You'd need to use a
+	  cluster file system on top of that for cache coherency.
 
-	  Historically DRBD hijacked the NBD major number (43)
-	  and device nodes (/dev/nbX).
-	  We now have an officially assigned major number (147)
-	  and /dev/drbdX.
-
-	  If for whatever weird reason you want to keep the old behaviour,
-	  you can give a "use_nbd_major" module parameter.
-
-	  http://www.drbd.org/
+	  DRBD management is done through user-space tools.
+	  For automatic failover you need a cluster manager (e.g. heartbeat).
+	  See also: http://www.drbd.org/, http://www.linux-ha.org
 
 	  If unsure, say N.
