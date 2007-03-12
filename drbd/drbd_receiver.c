@@ -1932,20 +1932,24 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 					drbd_disks_t peer_disk)
 {
-	int hg,rule_nr;
+	int hg,rule_nr=0;
 	drbd_conns_t rv = conn_mask;
 	drbd_disks_t mydisk;
 
 	mydisk = mdev->state.disk;
 	if( mydisk == Negotiating ) mydisk = mdev->new_state_tmp.disk;
 
-	hg = drbd_uuid_compare(mdev,&rule_nr);
+	// Look if a disk is inconsistent. Only if this does not find 
+	// a decission look at the UUIDs.
+	if(mydisk==Inconsistent && peer_disk>Inconsistent) hg=-1;
+	else if(mydisk>Inconsistent && peer_disk==Inconsistent) hg= 1;
+	else hg = drbd_uuid_compare(mdev,&rule_nr);
 
 	MTRACE(TraceTypeUuid,TraceLvlSummary,
 	       INFO("drbd_sync_handshake:\n");
 	       drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 	       drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
-	       INFO("uuid_compare()=%d by rule %d\n",hg,rule_nr);
+	       INFO("have_good=%d by rule %d\n",hg,rule_nr);
 	    );
 
 	if (hg == 100 || (hg == -100 && mdev->net_conf->always_asbp) ) {
@@ -1988,13 +1992,6 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 			WARN("Split-Brain detected, manually solved. Sync from %s node\n",
 			     (hg < 0) ? "peer":"this");
 		}
-	}
-
-	if (abs(hg) < 100) {
-		// This is needed in case someone does an invalidate on an
-		// disconnected node. This has priority.
-		if(mydisk==Inconsistent && peer_disk>Inconsistent) hg=-1;
-		if(mydisk>Inconsistent && peer_disk==Inconsistent) hg= 1;
 	}
 
 	if (hg == -1000) {
