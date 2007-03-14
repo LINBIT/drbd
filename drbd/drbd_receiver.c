@@ -1065,7 +1065,7 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	return ok;
 }
 
-STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
+STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size)
 {
 	struct Tl_epoch_entry *e;
 
@@ -1089,7 +1089,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector, int data_size)
 	       INFO("submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector,e->size,e);
 	       );
-	drbd_generic_make_request(WRITE,DRBD_FAULT_RS_WR,e->private_bio);
+	drbd_generic_make_request(mdev,WRITE,DRBD_FAULT_RS_WR,e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1587,7 +1587,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		    (unsigned long long)e->sector,e->size,e);
 	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
-	drbd_generic_make_request(WRITE,DRBD_FAULT_DT_WR,e->private_bio);
+	drbd_generic_make_request(mdev,WRITE,DRBD_FAULT_DT_WR,e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1683,7 +1683,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		    (unsigned long long)e->sector,e->size,e);
 	       );
 	/* FIXME actually, it could be a READA originating from the peer ... */
-	drbd_generic_make_request(READ,fault_type,e->private_bio);
+	drbd_generic_make_request(mdev,READ,fault_type,e->private_bio);
 	maybe_kick_lo(mdev);
 
 	return TRUE;

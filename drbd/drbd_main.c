@@ -96,9 +96,11 @@ module_param(allow_oos, bool,0);
 int enable_faults = 0;
 int fault_rate;
 int fault_count;
+int fault_devs;
 module_param(enable_faults,int,0664);	// bitmap of enabled faults
 module_param(fault_rate,int,0664);	// fault rate % value - applies to all enabled faults
 module_param(fault_count,int,0664);	// count of faults inserted
+module_param(fault_devs,int,0644);      // bitmap of devices to insert faults on
 #endif
 
 // module parameter, defined
@@ -2869,18 +2871,19 @@ _drbd_fault_str(unsigned int type) {
 }
 
 unsigned int
-_drbd_insert_fault(unsigned int type)
+_drbd_insert_fault(drbd_dev *mdev, unsigned int type)
 {
 	static struct fault_random_state rrs = {0,0};
 
-	unsigned int rnd = ((_drbd_fault_random(&rrs) % 100) + 1);
-	unsigned int ret = (rnd <= fault_rate);
+	unsigned int ret = (
+		(fault_devs == 0 || ((1 << mdev_to_minor(mdev)) & fault_devs) != 0) &&
+		(((_drbd_fault_random(&rrs) % 100) + 1) <= fault_rate));
 
 	if (ret) {
 		fault_count++;
 
 		if (printk_ratelimit())
-			printk(KERN_ALERT "Simulating %s failure\n", _drbd_fault_str(type));
+			WARN("***Simulating %s failure\n", _drbd_fault_str(type));
 	}
 
 	return ret;

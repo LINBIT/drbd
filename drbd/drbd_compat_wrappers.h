@@ -120,18 +120,19 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(int rw, int fault_type, struct bio *bio)
+static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_type, struct bio *bio)
 {
 	bio->bi_rw = rw; // on the receiver side, e->..rw was not yet defined.
 
 	if (!bio->bi_bdev) {
-		printk(KERN_ERR "drbd_generic_make_request: bio->bi_bdev == NULL\n");
+		printk(KERN_ERR DEVICE_NAME "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
+		       mdev_to_minor(mdev));
 		dump_stack();
 		bio_endio(bio, bio->bi_size, -ENODEV);
 		return;
 	}
 
-	if (FAULT_ACTIVE(fault_type))
+	if (FAULT_ACTIVE(mdev, fault_type))
 		bio_endio(bio,bio->bi_size,-EIO);
 	else
 		generic_make_request(bio);

@@ -34,7 +34,8 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
+STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
+				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
 				 int rw, int size)
 {
@@ -50,7 +51,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_backing_dev *bdev,
 	bio->bi_private = &event;
 	bio->bi_end_io = drbd_md_io_complete;
 
-	if (FAULT_ACTIVE((rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
+	if (FAULT_ACTIVE(mdev, (rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
 		bio_endio(bio,bio->bi_size,-EIO);
 	}
@@ -112,7 +113,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 			void *p = page_address(mdev->md_io_page);
 			void *hp = page_address(mdev->md_io_tmpp);
 
-			ok = _drbd_md_sync_page_io(bdev,iop,
+			ok = _drbd_md_sync_page_io(mdev, bdev,iop,
 						   sector,READ,hardsect);
 
 			if (unlikely(!ok)) {
@@ -137,7 +138,7 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 		     (unsigned long long)sector, rw ? "WRITE" : "READ");
 	}
 
-	ok = _drbd_md_sync_page_io(bdev,iop,sector,rw,hardsect);
+	ok = _drbd_md_sync_page_io(mdev, bdev,iop,sector,rw,hardsect);
 	if (unlikely(!ok)) {
 		ERR("drbd_md_sync_page_io(,%llus,%s) failed!\n",
 		    (unsigned long long)sector,rw ? "WRITE" : "READ");
@@ -683,7 +684,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 		/* all prepared, submit them */
 		for(i=0; bios[i]; i++) {
-			if (FAULT_ACTIVE( DRBD_FAULT_MD_WR )) {
+			if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
 				bios[i]->bi_rw = WRITE;
 				bio_endio(bios[i],bios[i]->bi_size,-EIO);
 			} else {

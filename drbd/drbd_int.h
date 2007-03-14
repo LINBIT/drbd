@@ -48,6 +48,7 @@ extern int use_nbd_major;
 #ifdef DRBD_ENABLE_FAULTS
 extern int enable_faults;
 extern int fault_rate;
+extern int fault_devs;
 #endif
 
 #include <linux/major.h>
@@ -208,12 +209,17 @@ enum {
 };
 
 #ifdef DRBD_ENABLE_FAULTS
-#define FAULT_ACTIVE(_t) \
-    (fault_rate && (enable_faults & (1<<(_t))) && _drbd_insert_fault(_t))
+extern unsigned int _drbd_insert_fault(drbd_dev *mdev, unsigned int type);
+static inline int
+drbd_insert_fault(drbd_dev *mdev, unsigned int type) {
+    return (fault_rate && 
+	    (enable_faults & (1<<type)) && 
+	    _drbd_insert_fault(mdev,type));
+}
+#define FAULT_ACTIVE(_m, _t) (drbd_insert_fault((_m),(_t)))
 
-extern unsigned int _drbd_insert_fault(unsigned int type);
 #else
-#define FAULT_ACTIVE(_t) (0)
+#define FAULT_ACTIVE(_m, _t) (0)
 #endif
 
 #include <linux/stringify.h>

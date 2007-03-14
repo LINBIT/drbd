@@ -654,7 +654,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	bio->bi_private = b;
 	bio->bi_end_io = drbd_bm_async_io_complete;
 
-	if (FAULT_ACTIVE((rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
+	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
 		bio_endio(bio,bio->bi_size,-EIO);
 	}
