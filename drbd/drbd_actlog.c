@@ -598,6 +598,8 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	bio->bi_bdev = mdev->bc->md_bdev;
 	bio->bi_sector = on_disk_sector;
 
+	bios[i] = bio;
+
 	if(*page_offset == PAGE_SIZE) {
 		np = alloc_page(__GFP_HIGHMEM);
 		/* no memory leak, bio gets cleaned up by caller */
@@ -625,7 +627,6 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	bio->bi_private = wc;
 	bio->bi_end_io = atodb_endio;
 
-	bios[i] = bio;
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
 	 * inc_local_if_state(mdev,Attaching);
