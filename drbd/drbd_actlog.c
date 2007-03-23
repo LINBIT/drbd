@@ -533,10 +533,11 @@ void drbd_al_to_on_disk_bm_slow(struct Drbd_Conf *mdev)
 			drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
 		}
 
-		lc_unlock(mdev->act_log);
-		wake_up(&mdev->al_wait);
 		dec_local(mdev);
 	} else D_ASSERT(0);
+
+	lc_unlock(mdev->act_log);
+	wake_up(&mdev->al_wait);
 }
 
 struct drbd_atodb_wait {
@@ -646,22 +647,25 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
  */
 void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 {
-	int i;
+	int i, nr_elements;
 	unsigned int enr;
 	struct bio **bios;
 	struct page *page;
 	unsigned int page_offset=PAGE_SIZE;
 	struct drbd_atodb_wait wc;
 
-	bios = kzalloc(sizeof(struct bio*) * mdev->act_log->nr_elements,
-		       GFP_KERNEL);
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+
+	nr_elements = mdev->act_log->nr_elements;
+
+	bios = kzalloc(sizeof(struct bio*) * nr_elements, GFP_KERNEL);
 
 	if(!bios) {
+		lc_unlock(mdev->act_log);
+
 		drbd_al_to_on_disk_bm_slow(mdev);
 		return;
 	}
-
-	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
 	if (inc_local_if_state(mdev,Attaching)) {
 		atomic_set(&wc.count,0);
@@ -669,7 +673,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		wc.mdev = mdev;
 		wc.error = 0;
 
-		for(i=0;i<mdev->act_log->nr_elements;i++) {
+		for(i=0;i<nr_elements;i++) {
 			enr = lc_entry(mdev->act_log,i)->lc_number;
 			if(enr == LC_FREE) continue;
 			/* next statement also does atomic_inc wc.count */
@@ -684,7 +688,8 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		wake_up(&mdev->al_wait);
 
 		/* all prepared, submit them */
-		for(i=0; bios[i]; i++) {
+		for(i=0;i<nr_elements;i++) {
+			if (bios[i]==NULL) break;
 			if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
 				bios[i]->bi_rw = WRITE;
 				bio_endio(bios[i],bios[i]->bi_size,-EIO);
@@ -718,7 +723,8 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	wake_up(&mdev->al_wait);
 
 	// free everything by calling the endio callback directly.
-	for(i=0; bios[i]; i++) {
+	for(i=0;i<nr_elements;i++) {
+		if(bios[i]==NULL) break;
 		bios[i]->bi_size=0;
 		atodb_endio(bios[i], MD_HARDSECT, 0);
 	}
