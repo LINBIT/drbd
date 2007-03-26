@@ -35,7 +35,7 @@
 #include <linux/drbd.h>
 #include <linux/blkpg.h>
 
-#include <drbd_int.h>
+#include "drbd_int.h"
 #include <linux/drbd_tag_magic.h>
 #include <linux/drbd_limits.h>
 
