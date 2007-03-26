@@ -420,8 +420,11 @@ typedef struct {
 
 /*
  * commands which share a struct:
- *   RecvAck (proto B), WriteAck (proto C) (see Drbd_BlockAck_Packet)
- *   DataRequest, RSDataRequest  (see Drbd_BlockRequest_Packet)
+ *  Drbd_BlockAck_Packet:
+ *   RecvAck (proto B), WriteAck (proto C),
+ *   DiscardAck (proto C, two-primaries conflict detection)
+ *  Drbd_BlockRequest_Packet:
+ *   DataRequest, RSDataRequest
  */
 typedef struct {
 	Drbd_Header head;
@@ -462,14 +465,10 @@ typedef struct {
 } __attribute((packed)) Drbd_HandShake_Packet;
 // 80 bytes, FIXED for the next century
 
-/* FIXME do we actually send a barrier packet with "0" as barrier number?
- * what for?
- * couldn't we send the pointer as handle as well, as we do with block_id?
- */
 typedef struct {
 	Drbd_Header head;
-	u32         barrier;   // may be 0 or a barrier number
-	u32         pad;	//make sure packet is a multiple of 8 Byte
+	u32         barrier;	// barrier number _handle_ only
+	u32         pad;	// make sure packet is a multiple of 8 Byte
 } __attribute((packed)) Drbd_Barrier_Packet;
 
 typedef struct {
