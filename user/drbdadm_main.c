@@ -94,6 +94,7 @@ int adm_syncer(struct d_resource* ,const char* );
 static int adm_up(struct d_resource* ,const char* );
 extern int adm_adjust(struct d_resource* ,const char* );
 static int adm_dump(struct d_resource* ,const char* );
+static int adm_dump_xml(struct d_resource* ,const char* );
 static int adm_wait_c(struct d_resource* ,const char* );
 static int adm_wait_ci(struct d_resource* ,const char* );
 static int sh_nop(struct d_resource* ,const char* );
@@ -214,6 +215,7 @@ struct adm_cmd cmds[] = {
   { "cstate",            adm_generic_s, 1,1,1 },
   { "dstate",            adm_generic_b, 1,1,1 },
   { "dump",              adm_dump,      1,1,1 },
+  { "dump-xml",          adm_dump_xml,  1,1,1 },
   { "create-md",         adm_create_md, 1,1,0 },
   { "show-gi",           adm_generic_b, 1,1,0 },
   { "get-gi",            adm_generic_b, 1,1,0 },
@@ -258,6 +260,47 @@ static char* esc(char* str)
       if (e-buffer >= 1022) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
     }
     *e++ = '"';
+    *e++ = '\0';
+    return buffer;
+  }
+  return str;
+}
+
+static char* escXML(char* str)
+{
+  static char buffer[1024];
+  char *ue = str, *e = buffer;
+
+  if (!str || !str[0]) {
+	return "";
+  }
+  if (strchr(str,'"') || strchr(str,'\'') || strchr(str,'<') ||
+      strchr(str,'>') || strchr(str,'&') || strchr(str,'\\')) {
+    while(*ue) {
+      if (*ue == '"' || *ue == '\\') {
+	  *e++ = '\\';
+          if (e-buffer >= 1021) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
+          *e++ = *ue++;
+      } else if (*ue == '\'' || *ue == '<' || *ue == '>' || *ue == '&') {
+          if (*ue == '\'' && e-buffer < 1017) {
+            strcpy(e, "&apos;");
+            e += 6;
+          } else if (*ue == '<' && e-buffer < 1019) {
+            strcpy(e, "&lt;");
+            e += 4;
+          } else if (*ue == '>' && e-buffer < 1019) {
+            strcpy(e, "&gt;");
+            e += 4;
+          } else if (*ue == '&' && e-buffer < 1018) {
+            strcpy(e, "&amp;");
+            e += 5;
+          } else
+            fprintf(stderr,"string too long.\n"); exit(E_syntax);
+      } else {
+          *e++ = *ue++;
+          if (e-buffer >= 1022) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
+      }
+    }
     *e++ = '\0';
     return buffer;
   }
@@ -325,6 +368,68 @@ static void dump_host_info(struct d_host_info* hi)
   --indent; printI("}\n");
 }
 
+static void dump_options_xml(char* name,struct d_option* opts)
+{
+  if(!opts) return;
+
+  printI("<section name=\"%s\">\n",name); ++indent;
+  while(opts) {
+    if(opts->value) printI("<option name=\"%s\" value=\"%s\"/>\n", opts->name, escXML(opts->value));
+    else            printI("<option name=\"%s\"/>\n", opts->name);
+    opts=opts->next;
+  }
+  --indent;
+  printI("</section>\n");
+}
+
+static void dump_global_info_xml()
+{
+  if (  !global_options.minor_count
+     && !global_options.disable_ip_verification
+     &&  global_options.dialog_refresh == 1 ) return;
+  printI("<global>"); ++indent;
+  if (global_options.disable_ip_verification)
+    printI("<disable-ip-verification/>\n");
+  if (global_options.minor_count)
+    printI("<minor-count count=\"%i\"/>\n", global_options.minor_count);
+  if (global_options.dialog_refresh != 1)
+    printI("<dialog-refresh=\"%i\"\n", global_options.dialog_refresh);
+  --indent; printI("</global>\n");
+}
+
+static void dump_common_info_xml()
+{
+  if(!common) return;
+  printI("<common>\n"); ++indent;
+  dump_options_xml("net",common->net_options);
+  dump_options_xml("disk",common->disk_options);
+  dump_options_xml("syncer",common->sync_options);
+  dump_options_xml("startup",common->startup_options);
+  dump_options_xml("handlers",common->handlers);
+  --indent; printI("</common>\n");
+}
+
+static void dump_host_info_xml(struct d_host_info* hi)
+{
+  if(!hi) {
+    printI("<!-- No host section data available. -->\n");
+    return;
+  }
+
+  printI("<host name=\"%s\">\n",escXML(hi->name)); ++indent;
+  printI("<device>%s</device>\n", escXML(hi->device));
+  printI("<disk>%s</disk>\n", escXML(hi->disk));
+  printI("<address port=\"%s\">%s</address>\n", hi->port, hi->address);
+  if (!strncmp(hi->meta_index,"flex",4))
+    printI("<flexible-meta-disk>%s</flexible-meta-disk>\n", escXML(hi->meta_disk));
+  else if (!strcmp(hi->meta_index,"internal"))
+    printI("<meta-disk>internal</meta-disk>\n");
+  else {
+    printI("<meta-disk index=\"%s\">%s</meta-disk>\n", hi->meta_index, escXML(hi->meta_disk));
+  }
+  --indent; printI("</host>\n");
+}
+
 static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printI("resource %s {\n",esc(res->name)); ++indent;
@@ -338,6 +443,24 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
   dump_options("startup",res->startup_options);
   dump_options("handlers",res->handlers);
   --indent; printf("}\n\n");
+
+  return 0;
+}
+
+static int adm_dump_xml(struct d_resource* res,const char* unused __attribute((unused)))
+{
+  printI("<resource name=\"%s\"",escXML(res->name));
+  if(res->protocol) printf(" protocol=\"%s\"",res->protocol);
+  printf(">\n"); ++indent;
+  // else if (common && common->protocol) printA("# common protocol", common->protocol);
+  dump_host_info_xml(res->me);
+  dump_host_info_xml(res->peer);
+  dump_options_xml("net",res->net_options);
+  dump_options_xml("disk",res->disk_options);
+  dump_options_xml("syncer",res->sync_options);
+  dump_options_xml("startup",res->startup_options);
+  dump_options_xml("handlers",res->handlers);
+  --indent; printI("</resource>\n");
 
   return 0;
 }
@@ -1702,7 +1825,8 @@ int main(int argc, char** argv)
 
   if(cmd->res_name_required)
     {
-      int is_dump = (cmd->function == adm_dump);
+      int is_dump_xml = (cmd->function == adm_dump_xml);
+      int is_dump = (is_dump_xml || cmd->function == adm_dump);
       if (optind + 1 > argc && !is_dump)
         print_usage_and_exit("missing arguments"); // arguments missing.
 
@@ -1719,9 +1843,15 @@ int main(int argc, char** argv)
 
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
         if (is_dump) {
-	  printf("# %s\n",config_file);
-	  dump_global_info();
-	  dump_common_info();
+          if (is_dump_xml) {
+            printf("<config file=\"%s\">\n", config_file); ++indent;
+            dump_global_info_xml();
+            dump_common_info_xml();
+          } else {
+            printf("# %s\n",config_file);
+            dump_global_info();
+            dump_common_info();
+          }
 	}
         for_each_resource(res,tmp,config) {
 	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
@@ -1729,6 +1859,9 @@ int main(int argc, char** argv)
 	    exit(E_exec_error);
 	  }
 	}
+        if (is_dump_xml) {
+            --indent; printf("</config>\n");
+        }
       } else {
 	for(i=optind;(int)i<argc;i++) {
 	  res = res_by_name(argv[i]);
