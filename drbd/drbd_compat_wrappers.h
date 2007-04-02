@@ -329,7 +329,7 @@ static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
 
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,14)
+#ifdef NEED_BACKPORT_OF_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
 	void *rv = kmalloc(size,flags);

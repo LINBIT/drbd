@@ -73,4 +73,7 @@ extern const char * drbd_buildtag(void);
 // member called dst_groups. Later it is called dst_group (without 's').
 //#define DRBD_NL_DST_GROUPS
 
+// in older kernels (vanilla < 2.6.14) is no kzalloc()
+//#define NEED_BACKPORT_OF_KZALLOC
+
 #endif
