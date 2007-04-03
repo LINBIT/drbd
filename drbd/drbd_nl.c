@@ -747,6 +747,11 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	nbc->backing_bdev = inode->i_bdev;
 	if (BD_CLAIM(nbc->backing_bdev, mdev)) {
+		printk(KERN_ERR "drbd: bd_claim(%p,%p); failed [%p;%p;%u]\n",
+		       nbc->backing_bdev, mdev, 
+		       nbc->backing_bdev->bd_holder,
+		       nbc->backing_bdev->bd_contains->bd_holder,
+		       nbc->backing_bdev->bd_holders);
 		retcode=LDMounted;
 		goto fail;
 	}
