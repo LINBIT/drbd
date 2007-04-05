@@ -2056,7 +2056,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	} else {
 		rv = Connected;
 		if(drbd_bm_total_weight(mdev)) {
-			INFO("No resync, but bits in bitmap!\n");
+			INFO("No resync, but %lu bits in bitmap!\n",
+			     drbd_bm_total_weight(mdev));
 		}
 	}
 
