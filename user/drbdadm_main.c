@@ -340,6 +340,7 @@ static void dump_common_info()
 {
   if(!common) return;
   printI("common {\n"); ++indent;
+  if(common->protocol) printA("protocol",common->protocol);
   dump_options("net",common->net_options);
   dump_options("disk",common->disk_options);
   dump_options("syncer",common->sync_options);
@@ -400,7 +401,9 @@ static void dump_global_info_xml()
 static void dump_common_info_xml()
 {
   if(!common) return;
-  printI("<common>\n"); ++indent;
+  printI("<common");
+  if(common->protocol) printf(" protocol=\"%s\"",common->protocol);
+  printf(">\n"); ++indent;
   dump_options_xml("net",common->net_options);
   dump_options_xml("disk",common->disk_options);
   dump_options_xml("syncer",common->sync_options);
