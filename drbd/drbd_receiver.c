@@ -1859,12 +1859,12 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	    peer == UUID_JUST_CREATED) return 0;
 
 	*rule_nr = 2;
-	if (self == UUID_JUST_CREATED &&
-	    peer != UUID_JUST_CREATED) return -2;
+	if ( (self == UUID_JUST_CREATED || self == (u64)0) &&
+	     peer != UUID_JUST_CREATED) return -2;
 
 	*rule_nr = 3;
-	if (self != UUID_JUST_CREATED &&
-	    peer == UUID_JUST_CREATED) return 2;
+	if ( self != UUID_JUST_CREATED &&
+	     (peer == UUID_JUST_CREATED || peer == (u64)0) ) return 2;
 
 	*rule_nr = 4;
 	if (self == peer) { // Common power [off|failure]
@@ -2052,7 +2052,6 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	if (hg > 0) { // become sync source.
 		rv = WFBitMapS;
 	} else if (hg < 0) { // become sync target
-		drbd_uuid_set(mdev,Current,mdev->p_uuid[Bitmap]);
 		rv = WFBitMapT;
 	} else {
 		rv = Connected;
@@ -2465,7 +2464,7 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
+	drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
 	_drbd_uuid_set(mdev,Bitmap,0UL);
 
 	drbd_start_resync(mdev,SyncTarget);
@@ -2509,7 +2508,6 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
-	clear_bit(CRASHED_PRIMARY, &mdev->flags); // md_write() is in drbd_start_resync.
 	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
