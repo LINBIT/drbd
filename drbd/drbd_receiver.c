@@ -3191,7 +3191,7 @@ STATIC int got_BlockAck(drbd_dev *mdev, Drbd_Header* h)
 			_req_mod(req,write_acked_by_peer,0);
 			break;
 		case RecvAck:
-			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_A);
+			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_B);
 			_req_mod(req,recv_acked_by_peer,0);
 			break;
 		case DiscardAck:
