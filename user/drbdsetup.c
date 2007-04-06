@@ -365,17 +365,17 @@ static const char *error_messages[] = {
 	EM(LDDeviceTooSmall) = "Low.dev. smaller than requested DRBD-dev. size.",
 	EM(MDDeviceTooSmall) = "Meta device too small.",
 	EM(LDNoConfig) = "You have to use the disk command first.",
-	EM(LDMounted) = "Lower device is already mounted.",
-	EM(MDMounted) = "Meta device is already mounted.",
+	EM(LDMounted) = "Lower device is already claimed. This usually means it is mounted.",
+	EM(MDMounted) = "Meta device is already claimed. This usually means it is mounted.",
 	EM(LDMDInvalid) = "Lower device / meta device / index combination invalid.",
 	EM(LDDeviceTooLarge) = "Currently we only support devices up to 3.998TB.\n"
-	"(up to 2TB in case you do not have CONFIG_LBD set)"
+	"(up to 2TB in case you do not have CONFIG_LBD set)\n"
 	"Contact office@linbit.com, if you need more.",
-	EM(MDIOError) = "IO error(s) orruced during initial access to meta-data.\n",
-	EM(MDInvalid) = "No valid meta-data signature found.\n"
-	"Use 'drbdadm create-md res' to initialize meta-data area.\n",
+	EM(MDIOError) = "IO error(s) occurred during initial access to meta-data.\n",
+	EM(MDInvalid) = "No valid meta-data signature found.\n\n"
+	"\t==> Use 'drbdadm create-md res' to initialize meta-data area. <==\n",
 	EM(CRAMAlgNotAvail) = "The 'cram-hmac-alg' you specified is not known in "
-	"the kernel. (maybe you need to modprobe it, or modprobe hmac?)\n",
+	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
 	EM(CRAMAlgNotDigest) = "The 'cram-hmac-alg' you specified is not a digest.",
 	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
 	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
@@ -386,8 +386,8 @@ static const char *error_messages[] = {
 	EM(StateNotAllowed) = "Resulting device state would be invalid",
 	EM(GotSignal) = "Interrupted by Signal",
 	EM(NoResizeDuringResync) = "Resize not allowed during resync.",
-	EM(APrimaryNodeNeeded) = "Need the a primary node to resize.",
-	EM(SyncAfterInvalid) = "The sync after minor number is invalid",
+	EM(APrimaryNodeNeeded) = "Need one Primary node to resize.",
+	EM(SyncAfterInvalid) = "The sync-after minor number is invalid",
 	EM(SyncAfterCycle) = "This would cause a sync-after dependency cycle",
 	EM(PauseFlagAlreadySet) = "Sync-pause flag is already set",
 	EM(PauseFlagAlreadyClear) = "Sync-pause flag is already cleared",
