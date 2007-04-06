@@ -2511,8 +2511,6 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
-	drbd_bm_recount_bits(mdev);
-
 	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
