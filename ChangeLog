@@ -4,6 +4,21 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0.2 (api:86/proto:86)
+--------
+ * Removed a bug that could cause an OOPS in drbd_al_to_on_disk_bm()
+ * Improved the robustness of the UUID based algorithm that decides
+   about the resync direction.
+ * Fixed the error handling in case a the open() of a backing
+   blockdevice fails.
+ * Fixed a race condition that could cause a "drbdadm disconnect" to hang.
+ * More verbosity in we can not claim a backing block device.
+ * More verbosity and paranoia in the bitmap area.
+ * On some vendor kernels 8.0.1 did not load because of kzalloc. fixed.
+ * Fault injection can now not only be turned on or off, but can be 
+   enabled on a per device basis.
+ * Fixed the scripts and files needed to build drbd into a kernel.
+
 8.0.1 (api:86/proto:86)
 --------
  * Fixed some race conditions that could trigger an OOPS when the loca disk
