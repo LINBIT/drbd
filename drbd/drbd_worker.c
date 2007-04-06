@@ -496,6 +496,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 		drbd_bm_write(mdev);
 	}
 
+	drbd_bm_recount_bits(mdev);
+
 	drbd_request_state(mdev,NS3(conn,Connected,
 				    disk,dstate,
 				    pdsk,pdstate));
@@ -830,6 +832,8 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	       INFO("Resync starting: side=%s\n",
 		    side==SyncTarget?"SyncTarget":"SyncSource");
 	    );
+
+	drbd_bm_recount_bits(mdev);
 
 	/* In case a previous resync run was aborted by an IO error... */
 	drbd_rs_cancel_all(mdev);

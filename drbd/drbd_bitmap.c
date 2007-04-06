@@ -331,6 +331,23 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
 	return bits;
 }
 
+void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	unsigned long flags, bits;
+
+	ERR_IF(!b) return;
+
+	spin_lock_irqsave(&b->bm_lock,flags);
+	bits = bm_count_bits(b,0);
+	if(bits != b->bm_set) {
+		ERR("bm_set was %lu, corrected to %lu. %s:%d\n",
+		    b->bm_set,bits,file,line);
+		b->bm_set = bits;
+	}
+	spin_unlock_irqrestore(&b->bm_lock,flags);
+}
+
 #define BM_SECTORS_PER_BIT (BM_BLOCK_SIZE/512)
 
 /*

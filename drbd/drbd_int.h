@@ -1157,6 +1157,8 @@ extern void __drbd_bm_lock    (drbd_dev *mdev, char* file, int line);
 extern void drbd_bm_unlock    (drbd_dev *mdev);
 #define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
 
+extern void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line);
+#define drbd_bm_recount_bits(mdev) _drbd_bm_recount_bits(mdev,  __FILE__, __LINE__ )
 // drbd_main.c
 
 /* needs to be included here,

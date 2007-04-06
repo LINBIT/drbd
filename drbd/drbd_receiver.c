@@ -2061,6 +2061,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		}
 	}
 
+	drbd_bm_recount_bits(mdev);
+
 	return rv;
 }
 
@@ -2509,6 +2511,8 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
+	drbd_bm_recount_bits(mdev);
+
 	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
@@ -2520,12 +2524,6 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
 		    conns_to_name(mdev->state.conn));
 	}
-
-	// We just started resync. Now we can be sure that local disk IO is okay.
-
-	/* no, actually we can't. failures happen asynchronously, anytime.
-	 * we can never be sure. disk may have failed while we where busy shaking hands...
-	 */
 
 	ok=TRUE;
  out:
