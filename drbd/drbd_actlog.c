@@ -1352,7 +1352,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 /**
  * drbd_rs_del_all: Gracefully remove all extents from the resync LRU.
- * there may be still a reference hold by someone. In that this function
+ * there may be still a reference hold by someone. In that case this function
  * returns -EAGAIN.
  * In case all elements got removed it returns zero.
  */
