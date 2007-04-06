@@ -6,6 +6,8 @@ config BLK_DEV_DRBD
 	select INET
 	select PROC_FS
 	select CONNECTOR
+	select CRYPTO
+	select CRYPTO_HMAC
 	---help---
 	  DRBD is a block device which is designed to build high availability
 	  clusters.  This is done by mirroring a whole block device via (a
