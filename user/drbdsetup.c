@@ -405,6 +405,7 @@ const char * error_to_string(int err_no)
 #undef MAX_ERROR
 
 char* cmdname = 0;
+int lock_fd;
 
 int dump_tag_list(unsigned short *tlc)
 {
@@ -1297,6 +1298,9 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	tl->drbd_p_header->flags = 0;
 	send_cn(sk_nl,tl->nl_header,(char*)tl->tag_list_cpos-(char*)tl->nl_header);
 
+	dt_unlock_drbd(lock_fd); 
+	lock_fd=0;
+
 	do {
 		gettimeofday(&before,NULL);
 		rr = receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096,timeout_ms );
@@ -1698,7 +1702,6 @@ void close_cn(int sk_nl)
 int main(int argc, char** argv)
 {
 	int minor;
-	int lock_fd;
 	struct drbd_cmd *cmd;
 	int rv=0;
 
