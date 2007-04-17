@@ -538,10 +538,10 @@
 		<varlistentry><term><option>discard-zero-changes</option></term>
 		<listitem><para>
 		In case one node did not write anything since the split
-		brain became evident, sync from the node that wrote somethin
-		to the node that did not wrote anything. In case non wrote
+		brain became evident, sync from the node that wrote something
+		to the node that did not write anything. In case none wrote
 		anything this policy uses a random decission to perform
-		an resync of 0 blocks. In case both have written something
+		a "resync" of 0 blocks. In case both have written something
 		this policy disconnects the nodes.
 		</para></listitem></varlistentry>
 
