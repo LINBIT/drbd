@@ -1298,8 +1298,8 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	tl->drbd_p_header->flags = 0;
 	send_cn(sk_nl,tl->nl_header,(char*)tl->tag_list_cpos-(char*)tl->nl_header);
 
-	dt_unlock_drbd(lock_fd); 
-	lock_fd=0;
+	dt_unlock_drbd(lock_fd);
+	lock_fd=-1;
 
 	do {
 		gettimeofday(&before,NULL);
