@@ -1100,25 +1100,22 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	// D_ASSERT(bio->bi_size <= q->max_segment_size); // wrong.
 	D_ASSERT(bio->bi_idx == 0);
 
-#if 1
 	/* to make some things easier, force allignment of requests within the
 	 * granularity of our hash tables */
 	s_enr = bio->bi_sector >> HT_SHIFT;
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> HT_SHIFT;
-#else
-	/* when not using two primaries (and not being as paranoid as lge),
-	 * actually there is no need to be as strict.
-	 * only force allignment within AL_EXTENT boundaries */
-	s_enr = bio->bi_sector >> (AL_EXTENT_SIZE_B-9);
-	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> (AL_EXTENT_SIZE_B-9);
-	D_ASSERT(e_enr >= s_enr);
-#endif
 
 	if(unlikely(s_enr != e_enr)) {
-		/* This bio crosses some boundary, so we have to split it.
-		 * [So far, only XFS is known to do this...] */
+	if (bio->bi_vcnt != 1 || bio->bi_idx != 0) {
+		/* rather error out here than BUG in bio_split */
+		ERR("bio would need to, but cannot, be split: "
+		    "(vcnt=%u,idx=%u,size=%u,sector=%llu)\n",
+		    bio->bi_vcnt, bio->bi_idx, bio->bi_size, bio->bi_sector);
+		bio_endio(bio, bio->bi_size, -EINVAL);
+		return 0;
+	} else {
+		/* This bio crosses some boundary, so we have to split it. */
 		struct bio_pair *bp;
-#if 1
 		/* works for the "do not cross hash slot boundaries" case
 		 * e.g. sector 262269, size 4096
 		 * s_enr = 262269 >> 6 = 4097
@@ -1132,16 +1129,11 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 		const int mask = sps -1;
 		const sector_t first_sectors = sps - (sect & mask);
 		bp = bio_split(bio, bio_split_pool, first_sectors);
-#else
-		/* works for the al-extent boundary case */
-		bp = bio_split(bio, bio_split_pool,
-			       (e_enr<<(AL_EXTENT_SIZE_B-9)) - bio->bi_sector);
-#endif
 		drbd_make_request_26(q,&bp->bio1);
 		drbd_make_request_26(q,&bp->bio2);
 		bio_pair_release(bp);
 		return 0;
-	}
+	}}
 
 	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,
 					bio->bi_sector,bio);
