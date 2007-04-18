@@ -266,7 +266,7 @@ static char* esc(char* str)
   return str;
 }
 
-static char* escXML(char* str)
+static char* esc_xml(char* str)
 {
   static char buffer[1024];
   char *ue = str, *e = buffer;
@@ -279,7 +279,10 @@ static char* escXML(char* str)
     while(*ue) {
       if (*ue == '"' || *ue == '\\') {
 	  *e++ = '\\';
-          if (e-buffer >= 1021) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
+          if (e-buffer >= 1021) {
+	     fprintf(stderr,"string too long.\n");
+	     exit(E_syntax);
+	  }
           *e++ = *ue++;
       } else if (*ue == '\'' || *ue == '<' || *ue == '>' || *ue == '&') {
           if (*ue == '\'' && e-buffer < 1017) {
@@ -294,11 +297,17 @@ static char* escXML(char* str)
           } else if (*ue == '&' && e-buffer < 1018) {
             strcpy(e, "&amp;");
             e += 5;
-          } else
-            fprintf(stderr,"string too long.\n"); exit(E_syntax);
+          } else {
+            fprintf(stderr,"string too long.\n");
+	    exit(E_syntax);
+	  }
+	  ue++;
       } else {
           *e++ = *ue++;
-          if (e-buffer >= 1022) { fprintf(stderr,"string too long.\n"); exit(E_syntax); }
+          if (e-buffer >= 1022) {
+	    fprintf(stderr,"string too long.\n");
+	    exit(E_syntax);
+	  }
       }
     }
     *e++ = '\0';
@@ -375,7 +384,7 @@ static void dump_options_xml(char* name,struct d_option* opts)
 
   printI("<section name=\"%s\">\n",name); ++indent;
   while(opts) {
-    if(opts->value) printI("<option name=\"%s\" value=\"%s\"/>\n", opts->name, escXML(opts->value));
+    if(opts->value) printI("<option name=\"%s\" value=\"%s\"/>\n", opts->name, esc_xml(opts->value));
     else            printI("<option name=\"%s\"/>\n", opts->name);
     opts=opts->next;
   }
@@ -419,16 +428,16 @@ static void dump_host_info_xml(struct d_host_info* hi)
     return;
   }
 
-  printI("<host name=\"%s\">\n",escXML(hi->name)); ++indent;
-  printI("<device>%s</device>\n", escXML(hi->device));
-  printI("<disk>%s</disk>\n", escXML(hi->disk));
+  printI("<host name=\"%s\">\n",esc_xml(hi->name)); ++indent;
+  printI("<device>%s</device>\n", esc_xml(hi->device));
+  printI("<disk>%s</disk>\n", esc_xml(hi->disk));
   printI("<address port=\"%s\">%s</address>\n", hi->port, hi->address);
   if (!strncmp(hi->meta_index,"flex",4))
-    printI("<flexible-meta-disk>%s</flexible-meta-disk>\n", escXML(hi->meta_disk));
+    printI("<flexible-meta-disk>%s</flexible-meta-disk>\n", esc_xml(hi->meta_disk));
   else if (!strcmp(hi->meta_index,"internal"))
     printI("<meta-disk>internal</meta-disk>\n");
   else {
-    printI("<meta-disk index=\"%s\">%s</meta-disk>\n", hi->meta_index, escXML(hi->meta_disk));
+    printI("<meta-disk index=\"%s\">%s</meta-disk>\n", hi->meta_index, esc_xml(hi->meta_disk));
   }
   --indent; printI("</host>\n");
 }
@@ -452,7 +461,7 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
 
 static int adm_dump_xml(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  printI("<resource name=\"%s\"",escXML(res->name));
+  printI("<resource name=\"%s\"",esc_xml(res->name));
   if(res->protocol) printf(" protocol=\"%s\"",res->protocol);
   printf(">\n"); ++indent;
   // else if (common && common->protocol) printA("# common protocol", common->protocol);
