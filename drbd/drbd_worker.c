@@ -106,8 +106,11 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
 	drbd_dev *mdev;
+	sector_t e_sector;
+	int e_size;
 	int do_wake;
 	int is_syncer_req;
+	int do_al_complete_io;
 
 	e = bio->bi_private;
 	mdev = e->mdev;
@@ -120,8 +123,22 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	mdev->writ_cnt += e->size >> 9;
 	is_syncer_req = is_syncer_block_id(e->block_id);
+
+	/* after we moved e to done_ee,
+	 * we may no longer access it,
+	 * it may be freed/reused already!
+	 * (as soon as we release the req_lock) */
+	e_sector = e->sector;
+	e_size = e->size;
+	do_al_complete_io = e->flags & EE_CALL_AL_COMPLETE_IO;
+
 	list_del(&e->w.list); /* has been on active_ee or sync_ee */
 	list_add_tail(&e->w.list,&mdev->done_ee);
+
+	MTRACE(TraceTypeEE,TraceLvlAll,
+	       INFO("Moved EE (WRITE) to done_ee sec=%llus size=%u ee=%p\n",
+		    (unsigned long long)e->sector,e->size,e);
+	       );
 
 	/* No hlist_del_init(&e->colision) here, we did not send the Ack yet,
 	 * neither did we wake possibly waiting conflicting requests.
@@ -137,19 +154,15 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	if (error) __drbd_chk_io_error(mdev,FALSE);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
-	if(is_syncer_req) drbd_rs_complete_io(mdev,e->sector);
+	if (is_syncer_req) drbd_rs_complete_io(mdev,e_sector);
 
 	if (do_wake) wake_up(&mdev->ee_wait);
 
-	if(e->flags & EE_CALL_AL_COMPLETE_IO) drbd_al_complete_io(mdev,e->sector);
+	if (do_al_complete_io) drbd_al_complete_io(mdev,e_sector);
 
 	wake_asender(mdev);
 	dec_local(mdev);
 
-	MTRACE(TraceTypeEE,TraceLvlAll,
-	       INFO("Moved EE (WRITE) to done_ee sec=%llus size=%u ee=%p\n",
-		    (unsigned long long)e->sector,e->size,e);
-	       );
 	return 0;
 }
 
