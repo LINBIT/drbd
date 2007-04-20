@@ -107,7 +107,6 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	struct Tl_epoch_entry *e=NULL;
 	drbd_dev *mdev;
 	sector_t e_sector;
-	int e_size;
 	int do_wake;
 	int is_syncer_req;
 	int do_al_complete_io;
@@ -129,7 +128,6 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	 * it may be freed/reused already!
 	 * (as soon as we release the req_lock) */
 	e_sector = e->sector;
-	e_size = e->size;
 	do_al_complete_io = e->flags & EE_CALL_AL_COMPLETE_IO;
 
 	list_del(&e->w.list); /* has been on active_ee or sync_ee */
