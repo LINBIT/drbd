@@ -198,7 +198,7 @@
     <title>Note</title>
     <para>
       drbdsetup is a low level tool of the DRBD program suite. It is
-      used by the datadisk and drbd scripts to communicate with
+      used by the data disk and drbd scripts to communicate with
       the device driver.
     </para>
   </refsect1>
@@ -251,7 +251,7 @@
 	The <option>-d</option> (or <option>--disk-size</option>) should
 	only be used if you wish not to use as much as possible from the
 	backing block devices.
-	If you do not use <option>-d</option> the <replaceable>device</replaceable>
+	If you do not use <option>-d</option>, the <replaceable>device</replaceable>
 	is only ready for use as soon as it was connected to its peer once.
 	(See the <option>net</option> command.)
       </para>
@@ -278,9 +278,9 @@
 	      If the driver of the <replaceable>lower_device</replaceable>
 	      reports an error to DRBD, DRBD will either pass the error
 	      to the upper layers of the operating system, call a helper
-	      program, or detaches the device from its backing storage and
+	      program, or detach the device from its backing storage and
 	      perform all futher IO by requesting it from the peer. The
-	      valid <replaceable>err_handler</replaceable> are:
+	      valid <replaceable>err_handlers</replaceable> are:
 	      <option>pass_on</option>, <option>call-local-io-error</option>
 	      and <option>detach</option>.
 	    </para>
@@ -306,21 +306,21 @@
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>resource-only</option></term>
 		<listitem><para>
-		  If a node becomes a disconnected primary it tries to outdate
+		  If a node becomes a disconnected primary. it tries to outdate
 		  the peer's disk. This is done by calling the outdate-peer
 		  handler. The handler is supposed to reach the other node over
-		  alternative communication pathes and call 'drbdadm outdate
+		  alternative communication paths and call 'drbdadm outdate
 		  res' there.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>resource-and-stonith</option></term>
 		<listitem><para>
-		  If a node becomes a disconnected primary it freezes all
+		  If a node becomes a disconnected primary, it freezes all
 		  its IO operations and calls its outdate-peer handler. The
-		  outdate-peer hander is supposed to reach the peer over
-		  alternative communicaton pathes and call 'drbdadm outdate
-		  res' there. In case it can not reach the peer it should
+		  outdate-peer handler is supposed to reach the peer over
+		  alternative communicaton paths and call 'drbdadm outdate
+		  res' there. In case it cannot reach the peer, it should
 		  stonith the peer. IO is resumed as soon as the situation
-		  is resolved. In case your handler fails you can resume
+		  is resolved. In case your handler fails, you can resume
 		  IO with the <option>resume-io</option> command.
 		</para></listitem></varlistentry>
               </variablelist>
@@ -332,18 +332,19 @@
 	  <listitem>
 	    <para>
 	      In case the backing storage's driver has a merge_bvec_fn()
-	      function (At time of writing the only known drivers which
-	      have such a function are: md (software raid driver),
-	      dm (device mapper - LVM) and DRBD itself) drbd has to
+	      function,  DRBD has to
 	      pretend that it can only process IO requests in units
-	      not lager than 4kByte.</para>
+	      not lager than 4kByte. (At time of writing the only known 
+	      drivers which
+	      have such a function are: md (software raid driver),
+	      dm (device mapper - LVM) and DRBD itself)</para>
 	    <para>
 	      To get best performance out of DRBD on top of software
 	      raid (or any other driver with a merge_bvec_fn() function)
-	      you might enable this function, iff you know for sure
+	      you might enable this function, if you know for sure
 	      that the merge_bvec_fn() function will deliver the same
 	      results on all nodes of your cluster. I.e. the physical
-	      disks of the software raid are of the exact same type.
+	      disks of the software raid are exactly of the same type.
               USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
 	  </listitem>
 	</varlistentry>
@@ -388,7 +389,7 @@
 	      If the TCP/IP connection linking a DRBD device pair is idle
 	      for more than <replaceable>time</replaceable> seconds, DRBD
 	      will generate a keep-alive packet to check if its partner is
-	      still alive. The default is 10 seconds, the unit is 1 second.
+	      still alive. The default value is 10 seconds, the unit is 1 second.
 	      </para>
 	  </listitem>
 	</varlistentry>
@@ -401,7 +402,7 @@
 	      within <replaceable>val</replaceable>
 	      10<superscript>ths</superscript> of a second, the partner node
 	      is considered dead and therefore the TCP/IP connection is
-	      abandoned. The default value is 60 = 6 seconds.
+	      abandoned. The default value is 60 (= 6 seconds).
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -418,7 +419,7 @@
 	      and secondary nodes. But keep in mind that more asynchronism
 	      is synonymous with more data loss in the case of a primary
 	      node failure. The default <replaceable>size</replaceable> is
-	      128 KB. Default unit is KB.
+	      128 KB, the default unit is KB.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -442,8 +443,8 @@
 	    <para>
 	      With this option the maximal number of write requests between
 	      two barriers is limited. Should be set to the same as
-	      <option>--max-buffers </option>. Values smaller then 100 can
-	      lead to degraded performace. The default is 2048.
+	      <option>--max-buffers </option>. Values smaller than 100 can
+	      lead to degraded performance. The default value is 2048.
 	      </para>
 	  </listitem>
 	</varlistentry>
@@ -455,7 +456,7 @@
 	      With this option the maximal number of buffer pages allocated
 	      by DRBD's receiver thread is limited. Should be set to the
 	      same as <option>--max-epoch-size </option>. Small values
-	      could lead to degraded performace. (Minimum 32) The default is
+	      could lead to degraded performance. (Minimum 32) The default value is
 	      2048.
 	    </para>
 	  </listitem>
@@ -469,7 +470,7 @@
 	      (secondary) node exceeds the unplug-watermark, we trigger
 	      the request processing of our backing storage device.
 	      Some storage controllers deliver better performance with small
-	      values, other deliver best performance when it is set to
+	      values, others deliver best performance when the value is set to
 	      the same value as max-buffers. Minimum 16, default 128, maximum
 	      131072.
 	    </para>
@@ -480,11 +481,11 @@
 	  <option>--allow-two-primaries </option></term>
 	  <listitem>
 	    <para>
-	      With this option set you might make both nodes primary. You
-	      only should use this options if you use a shared storage
+	      With this option set you may assign primary role to both nodes. You
+	      only should use this option if you use a shared storage
 	      file system on top of DRBD. At the time of writing the only
 	      ones are: OCFS2 and GFS. If you use this option with any
-	      other filesystem you are goint to crash your nodes and to
+	      other file system, you are going to crash your nodes and to
 	      corrupt your data!
 	    </para>
 	  </listitem>
@@ -494,11 +495,11 @@
 	  <option>--cram-hmac-alg </option><replaceable>alg</replaceable></term>
 	  <listitem>
 	    <para>
-	      You need to specifying the HMAC algorithm to enable peer
-	      authentication at all. It is strongly enouraged to use
+	      You need to specify the HMAC algorithm to enable peer
+	      authentication at all. You are strongly enouraged to use
 	      peer authentication.
-	      The HMAC algorithm which will be used for the challenge
-	      response authentication of the peer. You might specify any
+	      The HMAC algorithm will be used for the challenge
+	      response authentication of the peer. You may specify any
 	      digest algorithm that is named in /proc/crypto.
 	    </para>
 	  </listitem>
@@ -527,13 +528,12 @@
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>discard-younger-primary</option></term>
 		<listitem><para>
-		  Auto sync from the node that was primary before the split
-		  brain situation happened.
+		  Auto sync from the node that was primary before the split-		brain situation occurred.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>discard-older-primary</option></term>
 		<listitem><para>
 		Auto sync from the node that became primary as second during
-		the split brain situation.
+		the split-brain situation.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>discard-zero-changes</option></term>
 		<listitem><para>
@@ -573,7 +573,7 @@
 	        <varlistentry><term><option>consensus</option></term>
 		<listitem><para>
 		  Discard the version of the secondary if the outcome
-                  if the <option>after-sb-0pri</option> algorithm would also
+                  of the <option>after-sb-0pri</option> algorithm would also
 		  destroy the current secondary's data. Otherwise disconnect.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>discard-secondary</option></term>
@@ -583,14 +583,14 @@
 		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
-		  </option> algorithm. In case it decides the the current
+		  </option> algorithm. In case it decides the current
 		  secondary has the right data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
-		  </option> algorithm. In case it decides the the current
+		  </option> algorithm. In case it decides the current
 		  secondary has the right data, accept a possible instantaneous
 		  change of the primary's data.
 		</para></listitem></varlistentry>
@@ -613,14 +613,14 @@
 		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
-		  </option> algorithm. In case it decides the the current
+		  </option> algorithm. In case it decides the current
 		  secondary has the right data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
 		  Always honour the outcome of the <option>after-sb-0pri
-		  </option> algorithm. In case it decides the the current
+		  </option> algorithm. In case it decides the current
 		  secondary has the right data, accept a possible instantaneous
 		  change of the primary's data.
 		</para></listitem></varlistentry>
@@ -634,15 +634,15 @@
 	  <listitem>
 	    <para>
 	      Normally the automatic after-split-brain policies are only 
-	      used if current state of the UUIDs do not indicate the 
+	      used if current states of the UUIDs do not indicate the 
 	      presence of a third node.
 	    </para>
 	    <para>
 	      With this option you request that the automatic 
 	      after-split-brain policies are used as long as the data
 	      sets of the nodes are somehow related. This might cause
-	      a full sync, if the UUIDs indicates the presence of a third
-	      node. (Or double faults led to strange UUID sets.)
+	      a full sync, if the UUIDs indicate the presence of a third
+	      node. (Or double faults have led to strange UUID sets.)
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -659,16 +659,16 @@
 	      <option>call-pri-lost</option> and
 	      <option>violently</option>. While <option>disconnect</option>
 	      speaks for itself, with the <option>call-pri-lost</option>
-	      setting the <option>pri-lost</option> handler gets called
-	      witch is expeced to either change the role of the node to
+	      setting the <option>pri-lost</option> handler is called
+	      which is expected to either change the role of the node to
 	      secondary, or remove the node from the cluster.
 	      The default is <option>disconnect</option>.</para>
 	    <para>
 	      With the <option>violently</option> setting you allow DRBD
 	      to force a primary node into SyncTarget state. This means
-	      that with that action the data exposed by DRBD changes to
-	      the SyncSource's version of the data instantaneous.
-	      USE THIS ONLY IF YOU KNOW WHAT YOU ARE DOING.
+	      that with that action the data exposed by DRBD change to
+	      the SyncSource's version of the data instantaneously.
+	      USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -678,9 +678,8 @@
 	  <option>--ping-timeout </option><replaceable>ping_timeout</replaceable></term>
 	  <listitem>
 	    <para>
-	      The time the peer has time to answer to a keep-alive packet,
-	      it. In case the peer's reply is not received within this
-	      time period, it is considered as dead. The default is 500ms,
+	      The time the peer has to answer to a keep-alive packet. In case the peer's reply is not received within this
+	      time period, it is considered as dead. The default value is 500ms,
 	      the default unit is 100ms.
 	    </para>
 	  </listitem>
@@ -691,11 +690,10 @@
 	  <option>--discard-my-data </option></term>
 	  <listitem>
 	    <para>
-	      Use this option to manually recover from a split brain
-	      situation. In case you do not have any automatic after
-	      split brain policies selected, the nodes refuse to
+	      Use this option to manually recover from a split-brain
+	      situation. In case you do not have any automatic after-split-brain policies selected, the nodes refuse to
 	      connect. By passing this option you make a node to
-	      sync target immediatly after sucessfull connect.
+	      sync target immediately after sucessful connect.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -706,7 +704,7 @@
       <title>syncer</title>
       <indexterm><primary>drbdsetup</primary><secondary>syncer</secondary></indexterm>
       <para>
-	Changes the synchronization daemon parameters of
+	Changes the synchronisation daemon parameters of
 	<replaceable>device</replaceable> at runtime.
       </para>
       <variablelist>
@@ -716,8 +714,8 @@
 	  <listitem>
 	    <para>
 	      To ensure smooth operation of the application on top of DRBD,
-	      it is possible to limit the bandwidth which may be used by
-	      background synchronizations. The default is 250 KB/sec, the
+	      it is possible to limit the bandwidth that  may be used by
+	      background synchronisation. The default is 250 KB/sec, the
 	      default unit is KB/sec.
 	    </para>
 	  </listitem>
@@ -729,7 +727,7 @@
 	    <para>
 	      Start resync on this device only if the device with
 	      <replaceable>minor</replaceable> is already in connected
-	      state. Other wise this device wait in SyncPause state.
+	      state. Otherwise this device waits in SyncPause state.
 	  </para>
 	  </listitem>
 	</varlistentry>
@@ -741,8 +739,8 @@
 	      DRBD automatically performs hot area detection. With this
 	      parameter you control how big the hot area (=active set) can
 	      get. Each extent marks 4M of the backing storage. In case a
-	      primary node leaves the cluster unexpectedly the areas covered
-	      by the active set must be resynced upon rejoin of the failed
+	      primary node leaves the cluster unexpectedly, the areas covered
+	      by the active set must be resynced upon rejoining of the failed
 	      node. The data structure is stored in the meta-data area,
 	      therefore each change of the active set is a write operation
 	      to the meta-data device. A higher number of extents gives
@@ -758,15 +756,15 @@
       <title>primary</title>
       <indexterm><primary>drbdsetup</primary><secondary>primary</secondary></indexterm>
       <para>
-	Sets the <replaceable>device</replaceable> into primary state, this
+	Sets the <replaceable>device</replaceable> into primary role. This
 	means that applications (e.g. a file system) may open the
 	<replaceable>device</replaceable> for read and write access. Data
-	written to the <replaceable>device</replaceable> in primary state is
-	mirrored to the device in secondary state.
+	written to the <replaceable>device</replaceable> in primary role are
+	mirrored to the device in secondary role.
       </para>
       <para>
 	It is not possible to set both devices of a connected DRBD device
-	pair to primary state.
+	pair to primary role.
       </para>
       <variablelist>
 	<varlistentry>
@@ -834,11 +832,11 @@
 	  <listitem>
 	    <para>
 	      This command will fail if the
-	      <replaceable>device</replaceable> can not communicate with its
+	      <replaceable>device</replaceable> cannot communicate with its
 	      partner for <replaceable>timeout</replaceable>
-	      seconds. If the peer was working before this node got
-	      rebootet, the wfc_timeout is used. If the peer was already
-	      down before this node got rebooted, the degr_wfc_timeout
+	      seconds. If the peer was working before this node was
+	      rebooted, the wfc_timeout is used. If the peer was already
+	      down before this node was rebooted, the degr_wfc_timeout
 	      is used.
 	      The default value for <replaceable>wfc_timeout</replaceable>
 	      is 0 which means to wait forever. The default for
@@ -853,7 +851,7 @@
       <indexterm><primary>drbdsetup</primary><secondary>wait_sync</secondary></indexterm>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> leaves any
-	synchronization state and returns into connected state. The options
+	synchronisation into connected state. The options
 	are the same as with the <replaceable>wait_connect</replaceable>
 	command.
       </para>
@@ -865,7 +863,7 @@
 	Removes the information set by the <option>net</option> command
 	from the <replaceable>device</replaceable>. This means
 	that the <replaceable>device</replaceable> goes into unconnected
-	state and that it will no longer listen for incoming connections.
+	state and will no longer listen for incoming connections.
       </para>
     </refsect2>
     <refsect2>
@@ -899,7 +897,7 @@
       <title>cstate</title>
       <indexterm><primary>drbdsetup</primary><secondary>cstate</secondary></indexterm>
       <para>
-	Shows the current connection states of the
+	Shows the current connection state of the
 	<replaceable>device</replaceable>.
       </para>
     </refsect2>
@@ -907,7 +905,7 @@
       <title>dstate</title>
       <indexterm><primary>drbdsetup</primary><secondary>dstate</secondary></indexterm>
       <para>
-	Show the current state of the backing storeage devices. (local/peer)
+	Shows the current states of the backing storage devices. (local/peer)
       </para>
     </refsect2>
     <refsect2>
@@ -926,7 +924,7 @@
       <indexterm><primary>drbdsetup</primary><secondary>pause-sync</secondary></indexterm>
       <para>
         Temporarily suspend an ongoing resynchronisation by setting the local
-	pause flag. Resync only progresses if neighter the local nor the
+	pause flag. Resync only progresses if neither the local nor the
 	remote pause flag is set. It might be desirable to postpone DRBD's
 	resynchronisation after eventual resynchronisation of the backing
 	storage's RAID setup.
@@ -952,14 +950,14 @@
       <title>show-gi</title>
       <indexterm><primary>drbdsetup</primary><secondary>show-gi</secondary></indexterm>
       <para>
-        Displays the device's data generaion identifiers verbosily.
+        Displays the device's data generation identifiers verbosely.
       </para>
     </refsect2>
     <refsect2>
       <title>get-gi</title>
       <indexterm><primary>drbdsetup</primary><secondary>get-gi</secondary></indexterm>
       <para>
-        Displays the device's data generaion identifiers.
+        Displays the device's data generation identifiers.
       </para>
     </refsect2>
     <refsect2>
@@ -982,7 +980,7 @@
       <title>resume-io</title>
       <indexterm><primary>drbdsetup</primary><secondary>resume-io</secondary></indexterm>
       <para>
-	In the the outdate-peer handler fails to stonith the peer node,
+	If the outdate-peer handler fails to stonith the peer node,
 	and your <option>fencing</option> policy is set to
 	resource-and-stonith, you can unfreeze IO operations with this
 	command.
@@ -994,8 +992,8 @@
       <indexterm><primary>drbdsetup</primary><secondary>events</secondary></indexterm>
       <para>
       	Displays every state change of DRBD and all calls to helper
-	programs. This might be used to get notifies of DRBD's state
-	changes by piping the output to an other program.
+	programs. This might be used to get notified of DRBD's state
+	changes by piping the output to another program.
 
 	<variablelist>
 	  <varlistentry>
@@ -1013,7 +1011,7 @@
 	    <option>--unfiltered</option></term>
 	    <listitem>
 	      <para>
-		This is an debugging aid, and displays the content of
+		This is a debugging aid that displays the content of
 		all received netlink messages.
 	      </para>
 	    </listitem>
@@ -1026,7 +1024,7 @@
   <refsect1>
     <title>Examples</title>
       <para>
-      For examples please have a look at the
+      For examples, please have a look at the
       <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
       <citetitle>DRBD Quickstart Guide</citetitle></ulink>.
       </para>

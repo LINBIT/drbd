@@ -89,7 +89,7 @@
         <term>detach</term>
         <listitem><para>
         <indexterm><primary>drbdadm</primary><secondary>detach</secondary></indexterm>
-          Removes the backing storage device from a DRBD resources's device.
+          Removes the backing storage device from a DRBD resource's device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -105,14 +105,14 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>disconnect</secondary></indexterm>
           Removes the network configuration from the resource. The device
-	  will go into StandAllone state.
+	  will go into StandAlone state.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>syncer</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>syncer</secondary></indexterm>
-          Loads the resynchronization parameters into the device.
+          Loads the resynchronisation parameters into the device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -134,16 +134,16 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>primary</secondary></indexterm>
           Switch the resource's device into primary state. You need to do
-	  this before you may mount a filesystem onto the device.
+	  this before you mount a filesystem onto the device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>secondary</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>secondary</secondary></indexterm>
-          Brings the device back into secondary state. This is needed since in
-	  a connected DRBD device pair there might only be one of the two peers
-	  in primary state.
+          Brings the device back into secondary role. This is needed since in
+	  a connected DRBD device pair,  only one of the two peers may have
+	  primary role.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -151,7 +151,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>invalidate</secondary></indexterm>
           This forces DRBD to consider the data on the local backing
-	  storage device as out-of-sync. Therefor DRBD will copy each
+	  storage device as out-of-sync. Therefore DRBD will copy each
 	  and every block over from its peer, to bring the local storage
 	  device back in sync.
         </para></listitem>
@@ -160,7 +160,7 @@
         <term>invalidate_remote</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>invalidate_remote</secondary></indexterm>
-          This command is similar to the invalidate command, but the
+          This command is similar to the invalidate command, however, the
 	  backing storage of the peer is invalidated and hence rewritten
 	  with the data of the local node.
         </para></listitem>
@@ -169,7 +169,7 @@
         <term>resize</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>resize</secondary></indexterm>
-          DRBD will reexamine all sizing constraints, and re-size the
+          DRBD will reexamine all sizing constraints, and resize the
 	  resource's device accordingly. E.g. in case you increased the
 	  size of your backing storage devices (on both nodes of course),
 	  then DRBD will adopt to the new size after you called
@@ -180,7 +180,7 @@
         <term>create-md</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>create-md</secondary></indexterm>
-          Create-md initializes the meta data storage. This needs to be
+          Create-md initialises the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
 	  time.
         </para></listitem>
@@ -190,7 +190,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>get-gi</secondary></indexterm>
           Get-gi shows a short textual repesentation of the data generation
-	  identifier.
+	  identifiers.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
@@ -205,7 +205,7 @@
         <term>dump-md</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>dump-md</secondary></indexterm>
-          Dumps the whole contents of the meta data storage including
+          Dumps the whole contents of the meta data storage, including
 	  the stored bit-map and activity-log, in a textual representation.
         </para></listitem>
       </varlistentry>
@@ -220,7 +220,7 @@
         <term>adjust</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>adjust</secondary></indexterm>
-          Synchronizes the configuration of device with your configuration
+          Synchronises the configuration of the device with your configuration
 	  file. You should always examine the output of the dry-run
 	  mode before actually executing this command.
         </para></listitem>
@@ -244,14 +244,14 @@
         <term>cstate</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>cstate</secondary></indexterm>
-	  Shows the current connection status of the devices.
+	  Shows the current connection state of the devices.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
         <term>dump</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>dump</secondary></indexterm>
-          Just parse the configuration file and dump it to stdout. Might
+          Just parse the configuration file and dump it to stdout. May
 	  be used to check the configuration file for syntactical correctness.
         </para></listitem>
       </varlistentry>
@@ -270,7 +270,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>pause-sync</secondary></indexterm>
           Temporarily suspend an ongoing resynchronisation by setting the
-          local pause flag. Resync only progresses if neighter the local
+          local pause flag. Resync only progresses if neither the local
           nor the remote pause flag is set. It might be desirable to
           postpone DRBD's resynchronisation after eventual
           resynchronisation of the backing storage's RAID setup.
@@ -289,14 +289,14 @@
         <term>dstate</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>dstate</secondary></indexterm>
-  	  Show the current state of the backing storeage devices. (local/peer)
+  	  Show the current state of the backing storage devices. (local/peer)
         </para></listitem>
       </varlistentry>
 
       <varlistentry>
         <term>hidden-commands</term>
         <listitem><para>
-  	  Shows all on purpose undocumented commands.
+  	  Shows all commands undocumented on purpose.
         </para></listitem>
       </varlistentry>
 
