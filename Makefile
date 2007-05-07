@@ -24,6 +24,10 @@
 # TODO move some of the more cryptic bash scriptlets here into scripts/*
 # and call those from here.	-- lge
 
+# for some reason some of the commands below only work correctly in bash,
+# and not in e.g. dash. I'm too lazy to fix it to be compatible.
+SHELL=/bin/bash
+
 #PREFIX      = /usr/local
 
 SUBDIRS     = user scripts documentation drbd #testing #benchmark
