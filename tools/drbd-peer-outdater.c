@@ -1,4 +1,3 @@
-/* $Id$ */
 /* drbd-peer-outdater
  * Copyright (C) 2006-2007 LINBIT <http://www.linbit.com/>
  * Written by Rasto Levrinc <rasto@linbit.com>
@@ -20,7 +19,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include <portability.h>
+#include <lha_internal.h>
 
 #include <sys/param.h>
 
@@ -36,7 +35,7 @@
 #include <dopd.h>
 
 #define OPTARGS      "hVt:p:r:"
-#define DEFAULT_TIMEOUT 60 // timeout in seconds
+#define DEFAULT_TIMEOUT 60 /* timeout in seconds */
 
 typedef struct dop_client_s
 {
@@ -90,6 +89,7 @@ outdate_callback(IPC_Channel * server, gpointer user_data)
 	rc = strtol(rc_string, &ep, 10);
 	if (errno != 0 || *ep != EOS) {
 		fprintf(stderr, "unknown message: %s from server", rc_string);
+		client->rc = 20; /* "officially undefined", unspecified error */
 		ha_msg_del(msg);
 		if (client->mainloop != NULL &&
 		    g_main_is_running(client->mainloop))
@@ -99,8 +99,10 @@ outdate_callback(IPC_Channel * server, gpointer user_data)
 
 	ha_msg_del(msg);
 
+	/* ok, peer returned something useful */
+	client->rc = rc;
+
 	if (client->mainloop != NULL && g_main_is_running(client->mainloop)) {
-		client->rc = rc;
 		g_main_quit(client->mainloop);
 	} else
 		dop_exit(client);
@@ -193,7 +195,7 @@ main(int argc, char ** argv)
 	crm_malloc0(new_client, sizeof(dop_client_t));
 	new_client->timeout = timeout;
 	new_client->mainloop = g_main_new(FALSE);
-	new_client->rc = 5;
+	new_client->rc = 5; /* default: down/unreachable */
 
 	/* Connect to the IPC server */
 	src = init_client_ipc_comms(T_OUTDATER, outdate_callback,
@@ -201,7 +203,7 @@ main(int argc, char ** argv)
 
 	if (ipc_server == NULL) {
 		fprintf(stderr, "Could not connect to "T_OUTDATER" channel\n");
-		dop_exit(new_client); // unreachable
+		dop_exit(new_client); /* unreachable */
 	}
 
 	/* send message with drbd resource to dopd */
@@ -222,7 +224,7 @@ main(int argc, char ** argv)
 
 	g_main_run(new_client->mainloop);
 	dop_exit(new_client);
-	return 5;
+	return 20; /* not reached */
 }
 
 static void

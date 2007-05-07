@@ -1,4 +1,3 @@
-/* $Id$ */
 /* drbd outdate peer daemon
  * Copyright (C) 2006-2007 LINBIT <http://www.linbit.com/>
  * Written by Rasto Levrinc <rasto@linbit.at>
