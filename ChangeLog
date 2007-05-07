@@ -4,6 +4,16 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0.3 (api:86/proto:86)
+--------
+ * Fixed a race condition that could cause us to continue to traverse a bio
+   after it was freed. (led to an OOPS)
+ * Fixed a race condition that could cause us to use members of an ee, after
+   it was freed. (led to various weirdness)
+ * Language fixes for the man pages.
+ * The drbdsetup commands (events, wait-connect,...) release the lock now.
+ * Minor fixes and updates to the user land tools and to the peer outdater.
+
 8.0.2 (api:86/proto:86)
 --------
  * Removed a bug that could cause an OOPS in drbd_al_to_on_disk_bm()
