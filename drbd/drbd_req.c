@@ -33,6 +33,32 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
+/* outside of the ifdef
+ * because of the _print_rq_state(,FIXME) in barrier_acked */
+void _print_rq_state(drbd_request_t *req, const char *txt)
+{
+	const unsigned long s = req->rq_state;
+	drbd_dev *mdev = req->mdev;
+	const int rw = (req->master_bio == NULL ||
+			bio_data_dir(req->master_bio) == WRITE) ?
+		'W' : 'R';
+
+	INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
+	     txt, req, rw,
+	     s & RQ_LOCAL_PENDING ? 'p' : '-',
+	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
+	     s & RQ_LOCAL_OK ? 'o' : '-',
+	     s & RQ_NET_PENDING ? 'p' : '-',
+	     s & RQ_NET_QUEUED ? 'q' : '-',
+	     s & RQ_NET_SENT ? 's' : '-',
+	     s & RQ_NET_DONE ? 'd' : '-',
+	     s & RQ_NET_OK ? 'o' : '-',
+	     req->epoch,
+	     (unsigned long long)req->sector,
+	     req->size,
+	     conns_to_name(mdev->state.conn));
+}
+
 //#define VERBOSE_REQUEST_CODE
 #if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
 void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
@@ -64,30 +90,6 @@ void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 	};
 
 	INFO("_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
-}
-
-void _print_rq_state(drbd_request_t *req, const char *txt)
-{
-	const unsigned long s = req->rq_state;
-	drbd_dev *mdev = req->mdev;
-	const int rw = (req->master_bio == NULL ||
-			bio_data_dir(req->master_bio) == WRITE) ?
-		'W' : 'R';
-
-	INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
-	     txt, req, rw,
-	     s & RQ_LOCAL_PENDING ? 'p' : '-',
-	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
-	     s & RQ_LOCAL_OK ? 'o' : '-',
-	     s & RQ_NET_PENDING ? 'p' : '-',
-	     s & RQ_NET_QUEUED ? 'q' : '-',
-	     s & RQ_NET_SENT ? 's' : '-',
-	     s & RQ_NET_DONE ? 'd' : '-',
-	     s & RQ_NET_OK ? 'o' : '-',
-	     req->epoch,
-	     (unsigned long long)req->sector,
-	     req->size,
-	     conns_to_name(mdev->state.conn));
 }
 
 # ifdef ENABLE_DYNAMIC_TRACE
@@ -255,6 +257,16 @@ void _req_may_be_done(drbd_request_t *req, int error)
 	print_rq_state(req, "_req_may_be_done");
 	MUST_HOLD(&mdev->req_lock)
 
+	/* we must not complete the master bio, while it is
+	 *	still being processed by _drbd_send_zc_bio (drbd_send_dblock)
+	 *	not yet acknowledged by the peer
+	 *	not yet completed by the local io subsystem
+	 * these flags may get cleared in any order by
+	 *	the worker,
+	 *	the receiver,
+	 *	the bio_endio completion callbacks.
+	 */
+	if (s & RQ_NET_QUEUED) return;
 	if (s & RQ_NET_PENDING) return;
 	if (s & RQ_LOCAL_PENDING) return;
 
@@ -662,9 +674,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
-		if (req->rq_state & RQ_NET_SENT)
-			_req_may_be_done(req,error);
-		/* else: done by handed_over_to_network */
+		_req_may_be_done(req,error);
 		break;
 
 	case neg_acked:
@@ -673,8 +683,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		/* FIXME THINK! is it DONE now, or is it not? */
 		req->rq_state |= RQ_NET_DONE;
-		if (req->rq_state & RQ_NET_SENT)
-			_req_may_be_done(req,error);
+		_req_may_be_done(req,error);
 		/* else: done by handed_over_to_network */
 		break;
 
@@ -686,23 +695,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 			/* barrier came in before all requests have been acked.
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
-			const unsigned long s = req->rq_state;
-			INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
-			     "FIXME", req,
-			     /* in fact, it can only be a WRITE, but anyways */
-			     bio_data_dir(req->master_bio) == WRITE ? 'W' : 'R',
-			     s & RQ_LOCAL_PENDING ? 'p' : '-',
-			     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
-			     s & RQ_LOCAL_OK ? 'o' : '-',
-			     s & RQ_NET_PENDING ? 'p' : '-',
-			     s & RQ_NET_QUEUED ? 'q' : '-',
-			     s & RQ_NET_SENT ? 's' : '-',
-			     s & RQ_NET_DONE ? 'd' : '-',
-			     s & RQ_NET_OK ? 'o' : '-',
-			     req->epoch,
-			     (unsigned long long)req->sector,
-			     req->size,
-			     conns_to_name(mdev->state.conn));
+			_print_rq_state(req, "FIXME (barrier_acked but pending)");
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;
@@ -714,11 +707,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
-		/* can it happen that we receive the DataReply
-		 * before the send DataRequest function returns? */
-		if (req->rq_state & RQ_NET_SENT)
-			_req_may_be_done(req,error);
-		/* else: done by handed_over_to_network */
+		_req_may_be_done(req,error);
 		break;
 	};
 }

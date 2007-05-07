@@ -165,10 +165,16 @@ enum drbd_req_state_bits {
 	 * no longer occur. */
 	__RQ_NET_QUEUED,
 
-	/* well, actually only "handed over to the network stack" */
+	/* well, actually only "handed over to the network stack".
+	 *
+	 * TODO can potentially be dropped because of the similar meaning
+	 * of RQ_NET_SENT and ~RQ_NET_QUEUED.
+	 * however it is not exactly the same. before we drop it
+	 * we must ensure that we can tell a request with network part
+	 * from a request without, regardless of what happens to it. */
 	__RQ_NET_SENT,
 
-	/* when set, the request may be freed.
+	/* when set, the request may be freed (if RQ_NET_QUEUED is clear).
 	 * in (C) this happens when WriteAck is received,
 	 * in (B,A) when the corresponding BarrierAck is received */
 	__RQ_NET_DONE,
@@ -180,6 +186,9 @@ enum drbd_req_state_bits {
 
 	/* peer called drbd_set_in_sync() for this write */
 	__RQ_NET_SIS,
+
+	/* keep this last, its for the RQ_NET_MASK */
+	__RQ_NET_MAX,
 };
 
 #define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
@@ -195,7 +204,7 @@ enum drbd_req_state_bits {
 #define RQ_NET_OK          (1UL << __RQ_NET_OK)
 #define RQ_NET_SIS         (1UL << __RQ_NET_SIS)
 
-#define RQ_NET_MASK        (((RQ_NET_OK << 1)-1) & ~RQ_LOCAL_MASK) /* 0xf8 */
+#define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK) /* 0x1f8 */
 
 /* epoch entries */
 static inline struct hlist_head* ee_hash_slot(drbd_dev *mdev, sector_t sector)
