@@ -515,31 +515,6 @@ int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *bdev)
 	return 1;
 }
 
-void drbd_al_to_on_disk_bm_slow(struct Drbd_Conf *mdev)
-{
-	int i;
-	unsigned int enr;
-
-	WARN("Using the slow drbd_al_to_on_disk_bm()\n");
-
-	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
-
-	if (inc_local_if_state(mdev,Attaching)) {
-		for(i=0;i<mdev->act_log->nr_elements;i++) {
-			enr = lc_entry(mdev->act_log,i)->lc_number;
-			if(enr == LC_FREE) continue;
-			/* Really slow: if we have al-extents 16..19 active,
-			 * sector 4 will be written four times! Synchronous! */
-			drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
-		}
-
-		dec_local(mdev);
-	} else D_ASSERT(0);
-
-	lc_unlock(mdev->act_log);
-	wake_up(&mdev->al_wait);
-}
-
 struct drbd_atodb_wait {
 	atomic_t           count;
 	struct completion  io_done;
@@ -618,7 +593,7 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 
 	if(bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT) {
 		/* no memory leak, page gets cleaned up by caller */
-		return -EIO;
+		return -EINVAL;
 	}
 
 	if(!allocated_page) get_page(*page);
@@ -631,9 +606,8 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
 	 * inc_local_if_state(mdev,Attaching);
-	 * so just get the extra reference, so that the local_cnt 
-	 * reflects the number of pending IO requests DRBD at its
-	 * backing device.
+	 * just get the extra reference, so that the local_cnt reflects
+	 * the number of pending IO requests DRBD at its backing device.
 	 */
 	atomic_inc(&mdev->local_cnt);
 	return 0;
@@ -654,74 +628,65 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	unsigned int page_offset=PAGE_SIZE;
 	struct drbd_atodb_wait wc;
 
+	ERR_IF (!inc_local_if_state(mdev,Attaching))
+		return; /* sorry, I don't have any act_log etc... */
+
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
 	nr_elements = mdev->act_log->nr_elements;
 
 	bios = kzalloc(sizeof(struct bio*) * nr_elements, GFP_KERNEL);
+	if(!bios) goto submit_one_by_one;
 
-	if(!bios) {
-		lc_unlock(mdev->act_log);
+	atomic_set(&wc.count,0);
+	init_completion(&wc.io_done);
+	wc.mdev = mdev;
+	wc.error = 0;
 
-		drbd_al_to_on_disk_bm_slow(mdev);
-		return;
+	for(i=0;i<nr_elements;i++) {
+		enr = lc_entry(mdev->act_log,i)->lc_number;
+		if(enr == LC_FREE) continue;
+		/* next statement also does atomic_inc wc.count */
+		if(atodb_prepare_unless_covered(mdev,bios,&page,
+						&page_offset,
+						enr/AL_EXT_PER_BM_SECT,
+						&wc))
+			goto free_bios_submit_one_by_one;
 	}
 
-	if (inc_local_if_state(mdev,Attaching)) {
-		atomic_set(&wc.count,0);
-		init_completion(&wc.io_done);
-		wc.mdev = mdev;
-		wc.error = 0;
-
-		for(i=0;i<nr_elements;i++) {
-			enr = lc_entry(mdev->act_log,i)->lc_number;
-			if(enr == LC_FREE) continue;
-			/* next statement also does atomic_inc wc.count */
-			if(atodb_prepare_unless_covered(mdev,bios,&page,
-							&page_offset,
-							enr/AL_EXT_PER_BM_SECT,
-							&wc))
-				goto abort;
-		}
-
-		lc_unlock(mdev->act_log);
-		wake_up(&mdev->al_wait);
-
-		/* all prepared, submit them */
-		for(i=0;i<nr_elements;i++) {
-			if (bios[i]==NULL) break;
-			if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
-				bios[i]->bi_rw = WRITE;
-				bio_endio(bios[i],bios[i]->bi_size,-EIO);
-			} else {
-				submit_bio(WRITE, bios[i]);
-			}
-
-		}
-
-		drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
-
-		// In case we did not submit a single IO do not wait for
-		// them to complete. ( Because we would wait forever here. )
-		//
-		// In case we had IOs and they are already complete, there
-		// is not point in waiting anyways.
-		// Therefore this if() ...
-		if(atomic_read(&wc.count)) wait_for_completion(&wc.io_done);
-
-		dec_local(mdev);
-
-		if(wc.error) drbd_io_error(mdev, TRUE);
-
-	} else D_ASSERT(0);
-
-	kfree(bios);
-	return;
-
- abort:
+	/* unneccessary optimization? */
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
+	/* all prepared, submit them */
+	for(i=0;i<nr_elements;i++) {
+		if (bios[i]==NULL) break;
+		if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
+			bios[i]->bi_rw = WRITE;
+			bio_endio(bios[i],bios[i]->bi_size,-EIO);
+		} else {
+			submit_bio(WRITE, bios[i]);
+		}
+
+	}
+
+	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
+
+	// In case we did not submit a single IO do not wait for
+	// them to complete. ( Because we would wait forever here. )
+	//
+	// In case we had IOs and they are already complete, there
+	// is not point in waiting anyways.
+	// Therefore this if() ...
+	if(atomic_read(&wc.count)) wait_for_completion(&wc.io_done);
+
+	dec_local(mdev);
+
+	if(wc.error) drbd_io_error(mdev, TRUE);
+	kfree(bios);
+	return;
+
+ free_bios_submit_one_by_one:
 	// free everything by calling the endio callback directly.
 	for(i=0;i<nr_elements;i++) {
 		if(bios[i]==NULL) break;
@@ -729,9 +694,21 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		atodb_endio(bios[i], MD_HARDSECT, 0);
 	}
 	kfree(bios);
-	dec_local(mdev);
 
-	drbd_al_to_on_disk_bm_slow(mdev); //.. and take the slow path.
+ submit_one_by_one:
+	WARN("Using the slow drbd_al_to_on_disk_bm()\n");
+
+	for(i=0;i<mdev->act_log->nr_elements;i++) {
+		enr = lc_entry(mdev->act_log,i)->lc_number;
+		if(enr == LC_FREE) continue;
+		/* Really slow: if we have al-extents 16..19 active,
+		 * sector 4 will be written four times! Synchronous! */
+		drbd_bm_write_sect(mdev, enr/AL_EXT_PER_BM_SECT );
+	}
+
+	lc_unlock(mdev->act_log);
+	wake_up(&mdev->al_wait);
+	dec_local(mdev);
 }
 
 /**
