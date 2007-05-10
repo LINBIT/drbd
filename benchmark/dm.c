@@ -33,6 +33,7 @@
 #include <getopt.h>
 #include <string.h>
 #include <errno.h>
+#include <poll.h>
 
 #define min(a,b) ( (a) < (b) ? (a) : (b) )
 
@@ -101,6 +102,7 @@ void usage(char *prgname)
 		"   --o_direct          -x\n"
 		"     should be given first to affect\n"
 	        "     -i/-o given later on the command line\n"
+		"   --bandwidth         -w val byte/second \n"
 		"   --sync              -y\n"
 		"   --progress          -m\n"
 		"   --performance       -p\n"
@@ -119,6 +121,7 @@ int main(int argc, char **argv)
 	unsigned long long size = -1, rsize;
 	int in_fd = 0, out_fd = 1;
 	unsigned long buffer_size = 65536;
+	unsigned long long target_bw = 0;
 	int o_direct = 0;
 	int do_sync = 0;
 	int show_progress = 0;
@@ -139,12 +142,13 @@ int main(int argc, char **argv)
 		{"seek-output", required_argument, 0, 'l'},
 		{"size", required_argument, 0, 's'},
 		{"o_direct", no_argument, 0, 'x'},
+		{"bandwidth", required_argument, 0, 'w'},
 		{"sync", no_argument, 0, 'y'},
 		{"progress", no_argument, 0, 'm'},
 		{"performance", no_argument, 0, 'p'},
 		{"dialog", no_argument, 0, 'd'},
 		{"help", no_argument, 0, 'h'},
-		{"show-input-size", no_argument, 0, 'w'},
+		{"show-input-size", no_argument, 0, 'z'},
 		{0, 0, 0, 0}
 	};
 
@@ -152,7 +156,7 @@ int main(int argc, char **argv)
 		usage(argv[0]);
 
 	while (1) {
-		c = getopt_long(argc, argv, "i:o:b:k:l:s:xympha:dw", options, 0);
+		c = getopt_long(argc, argv, "i:o:b:k:l:s:w:xympha:dz", options, 0);
 		if (c == -1)
 			break;
 		switch (c) {
@@ -210,9 +214,13 @@ int main(int argc, char **argv)
 		case 'd':
 			dialog = 1;
 			break;
-		case 'w':
+		case 'z':
 			show_input_size = 1;
 			break;
+		case 'w':
+			target_bw = m_strtol(optarg);
+			break;
+
 		}
 	}
 
@@ -310,6 +318,35 @@ int main(int argc, char **argv)
 				last_percentage = new_percentage;
 			}
 		}
+
+		if (target_bw) {
+			gettimeofday(&tv2, NULL);
+
+			long sec = tv2.tv_sec - tv1.tv_sec;
+			long usec = tv2.tv_usec - tv1.tv_usec;
+			double bps;
+			double time_should;
+			int time_wait;
+
+			if (usec < 0) {
+				sec--;
+				usec += 1000000;
+			}
+
+			bps = ((double)(size - rsize)) /
+				(sec + ((double)usec) / 1000000);
+
+			if ( bps > target_bw ) {
+				time_should = ((double)(size - rsize)) *
+					1000 / target_bw; // mili seconds.
+
+				time_wait = (int)
+					(time_should - 
+					 (sec*1000 + ((double)usec) / 1000));
+				poll(NULL,0,time_wait);
+			}
+		}
+
 		if (ww != rr)
 			break;
 	}
