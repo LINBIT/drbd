@@ -935,15 +935,17 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* Last part of the attaching process ... */
-	if ( os.disk == Attaching && ns.disk == Negotiating ) {
+	if ( ns.conn >= Connected && 
+	     os.disk == Attaching && ns.disk == Negotiating ) {
 		drbd_send_sizes(mdev);  // to start sync...
 		drbd_send_uuids(mdev);
 		drbd_send_state(mdev);
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if (  ( os.aftr_isp != ns.aftr_isp ) ||
-	      ( os.user_isp != ns.user_isp ) ) {
+	if ( ns.conn >= Connected && 
+	     (( os.aftr_isp != ns.aftr_isp ) ||
+	      ( os.user_isp != ns.user_isp )) ) {
 		drbd_send_state(mdev);
 	}
 
