@@ -397,13 +397,13 @@ static void dump_global_info_xml()
   if (  !global_options.minor_count
      && !global_options.disable_ip_verification
      &&  global_options.dialog_refresh == 1 ) return;
-  printI("<global>"); ++indent;
+  printI("<global>\n"); ++indent;
   if (global_options.disable_ip_verification)
     printI("<disable-ip-verification/>\n");
   if (global_options.minor_count)
     printI("<minor-count count=\"%i\"/>\n", global_options.minor_count);
   if (global_options.dialog_refresh != 1)
-    printI("<dialog-refresh=\"%i\"\n", global_options.dialog_refresh);
+    printI("<dialog-refresh refresh=\"%i\"/>\n", global_options.dialog_refresh);
   --indent; printI("</global>\n");
 }
 
