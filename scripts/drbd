@@ -61,7 +61,7 @@ function adjust_with_progress
 	fi
 	IFS=$IFS_O
 	$CMD || {
-	    echo -e "\ncmd $CMD failed!"; exit 20
+	    echo -e "\ncmd $CMD failed - continuing!\n"
 	}
 	IFS=$NEWLINE
     done
