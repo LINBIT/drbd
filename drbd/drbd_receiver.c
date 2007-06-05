@@ -2390,7 +2390,7 @@ STATIC int receive_req_state(drbd_dev *mdev, Drbd_Header *h)
 STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_State_Packet *p = (Drbd_State_Packet*)h;
-	drbd_conns_t nconn;
+	drbd_conns_t nconn,oconn;
 	drbd_state_t os,ns,peer_state;
 	int rv;
 
@@ -2398,12 +2398,16 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	nconn = mdev->state.conn;
-	if (nconn == WFReportParams ) nconn = Connected;
-
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (mdev->p_uuid && mdev->state.conn <= Connected &&
+	spin_lock_irq(&mdev->req_lock);
+ retry:
+	oconn = nconn = mdev->state.conn;
+	spin_unlock_irq(&mdev->req_lock);
+
+	if (nconn == WFReportParams ) nconn = Connected;
+
+	if (mdev->p_uuid && oconn <= Connected &&
 	    inc_local_if_state(mdev,Negotiating) &&
 	    peer_state.disk >= Negotiating) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
@@ -2412,19 +2416,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		if(nconn == conn_mask) return FALSE;
 	}
 
-	if (mdev->state.conn > WFReportParams ) {
-		if( nconn > Connected && peer_state.conn <= Connected) {
-			// we want resync, peer has not yet decided to sync...
-			drbd_send_uuids(mdev);
-			drbd_send_state(mdev);
-		}
-		else if (nconn == Connected && peer_state.disk == Negotiating) {
-			// peer is waiting for us to respond...
-			drbd_send_state(mdev);
-		}
-	}
-
 	spin_lock_irq(&mdev->req_lock);
+	if( mdev->state.conn != oconn ) goto retry;
 	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
@@ -2444,6 +2437,18 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if(rv < SS_Success) {
 		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return FALSE;
+	}
+
+	if (oconn > WFReportParams ) {
+		if( nconn > Connected && peer_state.conn <= Connected) {
+			// we want resync, peer has not yet decided to sync...
+			drbd_send_uuids(mdev);
+			drbd_send_state(mdev);
+		}
+		else if (nconn == Connected && peer_state.disk == Negotiating) {
+			// peer is waiting for us to respond...
+			drbd_send_state(mdev);
+		}
 	}
 
 	mdev->net_conf->want_lose = 0;
