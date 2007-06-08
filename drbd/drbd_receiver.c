@@ -2430,9 +2430,6 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	   ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
 	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
-	if (rv==SS_Success) {
-		after_state_ch(mdev,os,ns,ChgStateVerbose | ChgStateHard);
-	}
 
 	if(rv < SS_Success) {
 		drbd_force_state(mdev,NS(conn,Disconnecting));
@@ -2449,6 +2446,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			// peer is waiting for us to respond...
 			drbd_send_state(mdev);
 		}
+	}
+
+	if (rv==SS_Success) {
+		after_state_ch(mdev,os,ns,ChgStateVerbose | ChgStateHard);
 	}
 
 	mdev->net_conf->want_lose = 0;
