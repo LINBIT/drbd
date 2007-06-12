@@ -338,7 +338,7 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "\n"
 "       +--<  Current data generation UUID  >-\n"
 "       |               +--<  Bitmap's base data generation UUID  >-\n"
-"       |               |                 +--<  younger historiy UUID  >-\n"
+"       |               |                 +--<  younger history UUID  >-\n"
 "       |               |                 |         +-<  older history  >-\n"
 "       V               V                 V         V\n");
 	dt_print_uuids(uuid, flags);
