@@ -676,12 +676,26 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	struct inode *inode, *inode2;
 	struct lru_cache* resync_lru = NULL;
 	drbd_state_t ns,os;
-	int rv;
+	int rv,ntries=0;
 
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > Diskless) {
 		retcode=HaveDiskConfig;
 		goto fail;
+	}
+
+       /* 
+        * We may have gotten here very quickly from a detach. Wait for a bit
+        * then fail.
+        */
+	while(mdev->bc != NULL) {
+		if(ntries++ >= 5) {
+			WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
+			retcode=HaveDiskConfig;
+			goto fail;
+		}
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(HZ/10);
 	}
 
 	nbc = kmalloc(sizeof(struct drbd_backing_dev),GFP_KERNEL);
