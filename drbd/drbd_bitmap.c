@@ -629,9 +629,17 @@ void drbd_bm_set_all(drbd_dev *mdev)
 int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;
+	int uptodate = bio_flagged(bio,BIO_UPTODATE);
 
 	if (bio->bi_size)
 		return 1;
+	if (!error && !uptodate) {
+		/* strange behaviour of some lower level drivers...
+		 * fail the request by clearing the uptodate flag,
+		 * but do not return any error?!
+		 * do we want to WARN() on this? */
+		error = -EIO;
+	}
 
 	if (error) {
 		/* doh. what now?

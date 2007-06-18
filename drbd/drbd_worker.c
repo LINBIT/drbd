@@ -42,7 +42,15 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
-/* I choose to have all block layer end_io handlers defined here.
+/* defined here:
+   drbd_md_io_complete
+   drbd_endio_write_sec
+   drbd_endio_read_sec
+   drbd_endio_pri
+
+ * more endio handlers:
+   atodb_endio in drbd_actlog.c
+   drbd_bm_async_io_complete in drbd_bitmap.c
 
  * For all these callbacks, note the follwing:
  * The callbacks will be called in irq context by the IDE drivers,
@@ -57,6 +65,8 @@
 int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
 	if (bio->bi_size) return 1;
+	/* error parameter ignored:
+	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
 	complete((struct completion*)bio->bi_private);
 	return 0;
@@ -70,6 +80,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
 	struct Drbd_Conf* mdev;
+	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	e = bio->bi_private;
 	mdev = e->mdev;
@@ -78,6 +89,13 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	 * we are only interested when the whole bio is finished, therefore
 	 * return as long as bio->bio_size is positive.  */
 	if (bio->bi_size) return 1;
+	if (!error && !uptodate) {
+		/* strange behaviour of some lower level drivers...
+		 * fail the request by clearing the uptodate flag,
+		 * but do not return any error?!
+		 * do we want to WARN() on this? */
+		error = -EIO;
+	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
 
@@ -110,12 +128,20 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	int do_wake;
 	int is_syncer_req;
 	int do_al_complete_io;
+	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	e = bio->bi_private;
 	mdev = e->mdev;
 
 	// see above
 	if (bio->bi_size) return 1;
+	if (!error && !uptodate) {
+		/* strange behaviour of some lower level drivers...
+		 * fail the request by clearing the uptodate flag,
+		 * but do not return any error?!
+		 * do we want to WARN() on this? */
+		error = -EIO;
+	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
 
@@ -172,9 +198,17 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_request_t *req=bio->bi_private;
 	drbd_dev *mdev = req->mdev;
 	drbd_req_event_t what;
+	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	// see above
 	if (bio->bi_size) return 1;
+	if (!error && !uptodate) {
+		/* strange behaviour of some lower level drivers...
+		 * fail the request by clearing the uptodate flag,
+		 * but do not return any error?!
+		 * do we want to WARN() on this? */
+		error = -EIO;
+	}
 
 	/* to avoid recursion in _req_mod */
 	what = error

@@ -527,8 +527,16 @@ STATIC int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
 	struct drbd_atodb_wait *wc = bio->bi_private;
 	struct Drbd_Conf *mdev=wc->mdev;
 	struct page *page;
+	int uptodate = bio_flagged(bio,BIO_UPTODATE);
 
 	if (bio->bi_size) return 1;
+	if (!error && !uptodate) {
+		/* strange behaviour of some lower level drivers...
+		 * fail the request by clearing the uptodate flag,
+		 * but do not return any error?!
+		 * do we want to WARN() on this? */
+		error = -EIO;
+	}
 
 	drbd_chk_io_error(mdev,error,TRUE);
 	if(error && wc->error == 0) wc->error=error;
