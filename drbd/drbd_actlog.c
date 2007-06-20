@@ -802,6 +802,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 		drbd_resync_finished(mdev);
 		drbd_bm_unlock(mdev);
 	}
+	drbd_bcast_sync_progress(mdev);
 
 	return 1;
 }

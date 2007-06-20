@@ -1182,6 +1182,7 @@ int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
 	char* str;
+	int synced = 0;
 
 	switch (reply->packet_type) {
 	case P_get_state:
@@ -1203,6 +1204,15 @@ int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 	case P_call_helper:
 		if(consume_tag_string(T_helper,reply->tag_list,&str)) {
 			printf("%u UH %d %s\n", seq, reply->minor, str);
+		} else fprintf(stderr,"Missing tag !?\n");
+		break;
+	case P_sync_progress:
+		if (consume_tag_int(T_sync_progress, reply->tag_list, &synced)) {
+			printf("%u SP %d %i.%i\n", 
+				seq,
+				reply->minor,
+				synced / 10,
+				synced % 10);
 		} else fprintf(stderr,"Missing tag !?\n");
 		break;
 	default:

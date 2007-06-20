@@ -90,6 +90,13 @@ PACKET(call_helper, 20,
 	STRING(		38,	T_MAY_IGNORE,	helper,		32)
 )
 
+// Tag nr 42 already allocated in drbd-8.1 development.
+// Packet numbers 21 and 22 already in drbd-8.1 development.
+
+PACKET(sync_progress, 23,
+	INTEGER(	43,	T_MAY_IGNORE,	sync_progress)
+)
+
 #undef PACKET
 #undef INTEGER
 #undef INT64

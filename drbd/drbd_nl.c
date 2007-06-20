@@ -1731,6 +1731,56 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
+void drbd_bcast_sync_progress(drbd_dev *mdev)
+{
+	char buffer[sizeof(struct cn_msg)+
+		    sizeof(struct drbd_nl_cfg_reply)+
+		    sizeof(struct sync_progress_tag_len_struct)+
+		    sizeof(short int)];
+	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	unsigned short *tl = reply->tag_list;
+	int res;
+	unsigned long rs_left;
+
+	if (inc_local(mdev)) {
+		typecheck(unsigned long, mdev->rs_total);
+
+		rs_left = drbd_bm_total_weight(mdev) - mdev->rs_failed;
+		if (rs_left > mdev->rs_total) {
+			ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+					rs_left, mdev->rs_total, mdev->rs_failed);
+			res = 1000;
+		} else {
+			res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
+		}
+		dec_local(mdev);
+		res = 1000L - res;
+		*tl++ = T_sync_progress;
+		*tl++ = sizeof(int);
+		memcpy(tl, &res, sizeof(int));
+		tl=(unsigned short*)((char*)tl + sizeof(int));
+	}
+	*tl++ = TT_END; /* Close the tag list */
+
+	cn_reply->id.idx = CN_IDX_DRBD;
+	cn_reply->id.val = CN_VAL_DRBD;
+
+	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
+	cn_reply->ack = 0; // not used here.
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
+		(int)((char*)tl - (char*)reply->tag_list);
+	cn_reply->flags = 0;
+
+	reply->packet_type = P_sync_progress;
+	reply->minor = mdev_to_minor(mdev);
+	reply->ret_code = NoError;
+
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
+
+	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+}
+
 #ifdef NETLINK_ROUTE6
 int __init cn_init(void);
 void __exit cn_fini(void);
