@@ -324,6 +324,7 @@ struct format_ops {
 	void (*show_gi) (struct md_cpu *md);
 	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
 	int (*outdate_gi) (struct md_cpu *md);
+	int (*invalidate_gi) (struct md_cpu *md);
 };
 
 void *my_mmap(const char* func, const unsigned int line, const char* what,
@@ -661,10 +662,12 @@ void m_get_gc(struct md_cpu *md);
 void m_show_gc(struct md_cpu *md);
 void m_set_gc(struct md_cpu *md, char **argv, int argc);
 int m_outdate_gc(struct md_cpu *md);
+int m_invalidate_gc(struct md_cpu *md);
 void m_get_uuid(struct md_cpu *md);
 void m_show_uuid(struct md_cpu *md);
 void m_set_uuid(struct md_cpu *md, char **argv, int argc);
 int m_outdate_uuid(struct md_cpu *md);
+int m_invalidate_uuid(struct md_cpu *md);
 
 int v06_md_close(struct format *cfg);
 int v06_md_cpu_to_disk(struct format *cfg);
@@ -705,6 +708,7 @@ struct format_ops f_ops[] = {
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
 		     .outdate_gi = m_outdate_gc,
+		     .invalidate_gi = m_invalidate_gc,
 		     },
 	[Drbd_07] = {
 		     .name = "v07",
@@ -720,6 +724,7 @@ struct format_ops f_ops[] = {
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
 		     .outdate_gi = m_outdate_gc,
+		     .invalidate_gi = m_invalidate_gc,
 		     },
 	[Drbd_08] = {
 		     .name = "v08",
@@ -735,6 +740,7 @@ struct format_ops f_ops[] = {
 		     .show_gi = m_show_uuid,
 		     .set_gi = m_set_uuid,
 		     .outdate_gi = m_outdate_uuid,
+		     .invalidate_gi = m_invalidate_uuid,
 		     },
 };
 
@@ -774,6 +780,7 @@ int meta_restore_md(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
 int meta_wipe_md(struct format *cfg, char **argv, int argc);
 int meta_outdate(struct format *cfg, char **argv, int argc);
+int meta_invalidate(struct format *cfg, char **argv, int argc);
 int meta_set_gi(struct format *cfg, char **argv, int argc);
 int meta_read_dev_uuid(struct format *cfg, char **argv, int argc);
 int meta_write_dev_uuid(struct format *cfg, char **argv, int argc);
@@ -787,6 +794,7 @@ struct meta_cmd cmds[] = {
 	{"create-md", 0, meta_create_md, 1},
 	{"wipe-md", 0, meta_wipe_md, 1},
 	{"outdate", 0, meta_outdate, 1},
+	{"invalidate", 0, meta_invalidate, 1},
 	{"dstate", 0, meta_dstate, 1},
 	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
 	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
@@ -1150,6 +1158,21 @@ int m_outdate_uuid(struct md_cpu *md)
 	return 0;
 }
 
+
+int m_invalidate_gc(struct md_cpu *md)
+{
+	md->gc[Flags] &= ~MDF_Consistent;
+
+	return 5;
+}
+
+int m_invalidate_uuid(struct md_cpu *md)
+{
+	md->flags &= ~MDF_Consistent;
+	md->flags &= ~MDF_WasUpToDate;
+
+	return 0;
+}
 
 
 /******************************************
@@ -2205,6 +2228,25 @@ int meta_outdate(struct format *cfg, char **argv __attribute((unused)), int argc
 	return err;
 }
 
+int meta_invalidate(struct format *cfg, char **argv __attribute((unused)), int argc)
+{
+	int err;
+
+	if (argc > 0) {
+		fprintf(stderr, "Ignoring additional arguments\n");
+	}
+
+	if (cfg->ops->open(cfg))
+		return -1;
+
+	cfg->ops->invalidate_gi(&cfg->md);
+	err = cfg->ops->md_cpu_to_disk(cfg);
+	err = cfg->ops->close(cfg)          || err; // <- close always
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
+}
 
 #if 0
 int meta_set_size(struct format *cfg, char **argv, int argc)

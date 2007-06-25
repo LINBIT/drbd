@@ -78,7 +78,8 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_ResyncRunning] = "Can not start resync since it is already active",
 	[-SS_AlreadyStandAlone] = "Can not disconnect a StandAlone device",
 	[-SS_CW_FailedByPeer] = "State changed was refused by peer node",
-	[-SS_CanNotOutdateDL] = "Can not outdate a diskless device",
+	[-SS_IsDiskLess] = 
+		"Device is diskless, the requesed operation requires a disk",
 	[-SS_DeviceInUse] = "Device is held open by someone"
 };
 

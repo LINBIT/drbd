@@ -584,8 +584,8 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	if( ns.conn == Disconnecting && os.conn == StandAlone)
 		rv=SS_AlreadyStandAlone;
 
-	if( ns.disk == Outdated && os.disk == Diskless)
-		rv=SS_CanNotOutdateDL;
+	if( ns.disk > Attaching && os.disk == Diskless)
+		rv=SS_IsDiskLess;
 
 	return rv;
 }
