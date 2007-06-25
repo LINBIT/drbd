@@ -39,7 +39,6 @@
 #include "drbdtool_common.h"
 
 extern FILE* yyin;
-extern struct d_resource* parse_resource(char*);
 
 static FILE *m_popen(int *pid,char** argv)
 {
@@ -184,7 +183,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	line = 1;
 	sprintf(config_file_dummy,"drbdsetup %s show", res->me->device);
 	config_file = config_file_dummy;
-	running = parse_resource(config_file_dummy);
+	running = parse_resource(config_file_dummy, 0);
 	fclose(yyin);
 	waitpid(pid,0,0);
 

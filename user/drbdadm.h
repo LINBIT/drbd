@@ -120,6 +120,14 @@ extern int adm_create_md(struct d_resource* res ,const char* cmd);
 extern void convert_discard_opt(struct d_resource* res);
 extern void convert_after_option(struct d_resource* res);
 
+enum pr_flags {
+  ThisHRequired = 1,
+  PeerHRequired = 2,
+  BothHRequired = ThisHRequired | PeerHRequired,
+  NoneHAllowed  = 4,
+};
+extern struct d_resource* parse_resource(char*, enum pr_flags);
+
 extern char* config_file;
 extern int config_valid;
 extern struct d_resource* config;

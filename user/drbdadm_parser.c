@@ -504,7 +504,7 @@ static void parse_drbdsetup_host_dump(struct d_resource* res, int local)
 	parse_host_body(host,res,0);
 }
 
-struct d_resource* parse_resource(char* res_name)
+struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
 	int token;
@@ -558,12 +558,43 @@ struct d_resource* parse_resource(char* res_name)
 			break;
 		case '}':
 		case 0:
-			return res;
+			goto exit_loop;
 		default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
 					" startup | handler",token);
 		}
 	}
+
+ exit_loop:
+	if(flags & ThisHRequired && !res->me) {
+		config_valid = 0;
+
+		fprintf(stderr,
+			"%s:%d: in resource %s, there is no host section"
+			" for this host.\n"
+			"\tMissing 'on %s {...}' ?\n",
+			config_file, c_section_start, res->name,
+			nodeinfo.nodename);
+	}
+	if(flags & PeerHRequired && !res->peer) {
+		config_valid = 0;
+
+		fprintf(stderr,
+			"%s:%d: in resource %s, there is no host section"
+			" for the peer host.\n"
+			"\tMissing 'on <peer-name> {...}' ?\n",
+			config_file, c_section_start, res->name);
+	}
+	if(flags == NoneHAllowed && ( res->me || res->peer ) ) {
+		config_valid = 0;
+
+		fprintf(stderr,
+			"%s:%d: in the %s section, there are no host sections"
+			" allowed.\n",
+			config_file, c_section_start, res->name);
+	}
+
+	return res;
 }
 
 void my_parse(void)
@@ -578,12 +609,13 @@ void my_parse(void)
 			break;
 		case TK_COMMON:
 			EXP('{');
-			common = parse_resource("common");
+			common = parse_resource("common",NoneHAllowed);
 			break;
 		case TK_RESOURCE:
 			EXP(TK_STRING);
 			EXP('{');
-			config = APPEND(config, parse_resource(yylval.txt));
+			config=APPEND(config, 
+				      parse_resource(yylval.txt,BothHRequired));
 			break;
 		case TK_SKIP:
 			parse_skip();
