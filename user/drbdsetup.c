@@ -1184,6 +1184,10 @@ int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 	char* str;
 	int synced = 0;
 
+	/* Ignore error replies */
+	if (reply->ret_code != NoError)
+		return 1;
+
 	switch (reply->packet_type) {
 	case P_get_state:
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
@@ -1219,6 +1223,8 @@ int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 		printf("%u ?? %d <other message>\n",seq, reply->minor);
 		break;
 	}
+
+	fflush(stdout);
 
 	return 1;
 }
@@ -1259,7 +1265,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct drbd_tag_list *tl;
 	struct option *lo;
 	unsigned int seq=0;
-	int sk_nl,c,cont=1,rr;
+	int sk_nl,c,cont=1,rr,i,last;
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
 	struct timeval before,after;
@@ -1318,10 +1324,21 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	timeout_ms= 1000 * (  rr ? degr_wfc_timeout : wfc_timeout) - 1;
 
 	// ask for the current state before waiting for state updates...
-	tl->drbd_p_header->packet_type = P_get_state;
-	tl->drbd_p_header->drbd_minor = minor;
-	tl->drbd_p_header->flags = 0;
-	send_cn(sk_nl,tl->nl_header,(char*)tl->tag_list_cpos-(char*)tl->nl_header);
+	if (all_devices) {
+		i = 0;
+		last = 255;
+	}
+	else {
+		i = last = minor;
+	}
+
+	while (i <= last) {
+		tl->drbd_p_header->packet_type = P_get_state;
+		tl->drbd_p_header->drbd_minor = i;
+		tl->drbd_p_header->flags = 0;
+		send_cn(sk_nl,tl->nl_header,(char*)tl->tag_list_cpos-(char*)tl->nl_header);
+		i++;
+	}
 
 	dt_unlock_drbd(lock_fd);
 	lock_fd=-1;
