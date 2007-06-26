@@ -191,6 +191,25 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Wed Jun 27 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.4-1)
+ * Fixed an OOPS in case you do an invalidate on an diskless device. And
+   made invalidates on diskless devices possible by using drbdmeta.
+ * Fix for an possbile OOPS in drbd_al_to_on_disk_bm().
+ * Fix for a possible OOPS. This issue was triggered when you do an
+   attach very soon (ms) after the disk was dropped.
+ * Fix for a race condition in receive_state(). Symptom was that the
+   resync stalls at 100% on a node.
+ * Some block devices fail requests by clearing the BIO_UOTODATE flag
+   (that is ok), but not returning an error (that is strange). 
+   We now deal with that correctly.
+ * Drbdadm's parser will now reject config files with resources with 
+   missing "on" sections. (Instead of segfaulting)
+ * Init script continues in case the setup of a single resource failes.
+ * Improvements to the "drbdsetup events" interface: Updates about
+   the resync progress and initial state of all devices if called with "-a".
+ * The benchmark/dm program can now also create curstom bandwith loads.
+
 * Mon May 7 2007 17:10:14 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.3-1)
  * Fixed a race condition that could cause us to continue to traverse a bio
