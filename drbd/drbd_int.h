@@ -51,6 +51,8 @@ extern int fault_rate;
 extern int fault_devs;
 #endif
 
+extern char usermode_helper[];
+
 #include <linux/major.h>
 #ifdef DRBD_MAJOR
 # warning "FIXME. DRBD_MAJOR is now officially defined in major.h"

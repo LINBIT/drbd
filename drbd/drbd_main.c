@@ -119,6 +119,14 @@ module_param(trace_type,int,0644);
 module_param(trace_devs,int,0644);
 #endif
 
+
+// Module parameter for setting the user mode helper program
+// to run. Default is /sbin/drbdadm
+
+char usermode_helper[80] = "/sbin/drbdadm";
+
+module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0644);
+
 // global panic flag
 volatile int drbd_did_panic = 0;
 

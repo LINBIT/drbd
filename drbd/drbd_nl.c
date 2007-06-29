@@ -164,7 +164,7 @@ void nl_trace_reply(void *data) {
 int drbd_khelper(drbd_dev *mdev, char* cmd)
 {
 	char mb[12];
-	char *argv[] = {"/sbin/drbdadm", cmd, mb, NULL };
+	char *argv[] = {usermode_helper, cmd, mb, NULL };
 	static char *envp[] = { "HOME=/",
 				"TERM=linux",
 				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
@@ -172,8 +172,10 @@ int drbd_khelper(drbd_dev *mdev, char* cmd)
 
 	snprintf(mb,12,"minor-%d",mdev_to_minor(mdev));
 
+	INFO("helper command: %s %s\n",usermode_helper,cmd);
+
 	drbd_bcast_ev_helper(mdev,cmd);
-	return call_usermodehelper("/sbin/drbdadm",argv,envp,1);
+	return call_usermodehelper(usermode_helper,argv,envp,1);
 }
 
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
