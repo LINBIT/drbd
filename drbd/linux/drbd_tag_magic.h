@@ -62,15 +62,16 @@ enum drbd_tags {
 struct tag {
 	const char* name;
 	int type_n_flags;
+	int max_len;
 };
 
 // declare tag names
 #define PACKET(name, number, fields) fields
 const struct tag tag_descriptions[] = {
-#define INTEGER(pn,pr,member)    [ pn ] = { #member, TT_INTEGER | pr },
-#define INT64(pn,pr,member)      [ pn ] = { #member, TT_INT64   | pr },
-#define BIT(pn,pr,member)        [ pn ] = { #member, TT_BIT     | pr },
-#define STRING(pn,pr,member,len) [ pn ] = { #member, TT_STRING  | pr },
+#define INTEGER(pn,pr,member)    [ pn ] = { #member, TT_INTEGER | pr, sizeof(int)   },
+#define INT64(pn,pr,member)      [ pn ] = { #member, TT_INT64   | pr, sizeof(__u64) },
+#define BIT(pn,pr,member)        [ pn ] = { #member, TT_BIT     | pr, sizeof(int)   },
+#define STRING(pn,pr,member,len) [ pn ] = { #member, TT_STRING  | pr, len           },
 #include "drbd_nl.h"
 };
 

@@ -475,6 +475,15 @@ struct drbd_tag_list *create_tag_list(int size)
 
 void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
 {
+	if(data_len > tag_descriptions[tag_number(tag)].max_len) {
+		fprintf(stderr, "The value for %s may only be %d byte long."
+			" You requested %d.\n",
+			tag_descriptions[tag_number(tag)].name,
+			tag_descriptions[tag_number(tag)].max_len,
+			data_len);
+		exit(20);
+	}
+
 	if( (tl->tag_list_cpos - tl->tag_list_start) + data_len
 	    > tl->tag_size ) {
 		fprintf(stderr, "Tag list size exceeded!\n");

@@ -80,7 +80,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 #define STRING(pn,pr,member,len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
 		 arg->member ## _len = dlen; \
-		 memcpy(arg->member,tags,dlen); \
+		 memcpy(arg->member,tags,min_t(size_t,dlen,len)); \
 		 break;
 #include "linux/drbd_nl.h"
 

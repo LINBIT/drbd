@@ -19,8 +19,8 @@ PACKET(secondary, 2, )
 
 PACKET(disk_conf, 3,
 	INT64(		2,	T_MAY_IGNORE,	disk_size)
-	STRING(		3,	T_MANDATORY,	backing_dev,	32)
-	STRING(		4,	T_MANDATORY,	meta_dev,	32)
+	STRING(		3,	T_MANDATORY,	backing_dev,	128)
+	STRING(		4,	T_MANDATORY,	meta_dev,	128)
 	INTEGER(	5,	T_MANDATORY,	meta_dev_idx)
 	INTEGER(	6,	T_MAY_IGNORE,	on_io_error)
 	INTEGER(	7,	T_MAY_IGNORE,	fencing)
