@@ -2408,8 +2408,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if (nconn == WFReportParams ) nconn = Connected;
 
 	if (mdev->p_uuid && oconn <= Connected &&
-	    inc_local_if_state(mdev,Negotiating) &&
-	    peer_state.disk >= Negotiating) {
+	    peer_state.disk >= Negotiating &&
+	    inc_local_if_state(mdev,Negotiating) ) {
 		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
 		dec_local(mdev);
 
