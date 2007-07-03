@@ -357,6 +357,7 @@ int drbd_release_ee(drbd_dev *mdev,struct list_head* list)
 	spin_lock_irq(&mdev->req_lock);
 	while(!list_empty(list)) {
 		le = list->next;
+		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
 		drbd_free_ee(mdev,e);
 		count++;
