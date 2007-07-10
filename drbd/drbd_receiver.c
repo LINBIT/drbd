@@ -2474,7 +2474,9 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
+	/* Here the _drbd_uuid_ functions are right, current should
+	   _not_ be rotated into the history */
+	_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
 	_drbd_uuid_set(mdev,Bitmap,0UL);
 
 	drbd_start_resync(mdev,SyncTarget);
