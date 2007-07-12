@@ -320,6 +320,10 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 	if (new_role == Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
+		if ( inc_local(mdev) ) {
+			mdev->bc->md.uuid[Current] &= ~(u64)1;
+			dec_local(mdev);
+		}
 	} else {
 		if(inc_net(mdev)) {
 			mdev->net_conf->want_lose = 0;
@@ -336,6 +340,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			       mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
 				drbd_uuid_new_current(mdev);
 			}
+			mdev->bc->md.uuid[Current] |=  (u64)1;
 			dec_local(mdev);
 		}
 	}
@@ -991,6 +996,13 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	drbd_bm_unlock(mdev);
+
+	if(inc_local_if_state(mdev,Attaching)) {
+		if(mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=  (u64)1;
+		else                            mdev->bc->md.uuid[Current] &= ~(u64)1;
+		dec_local(mdev);
+	}
+
 	drbd_md_sync(mdev);
 
 	reply->ret_code = retcode;
