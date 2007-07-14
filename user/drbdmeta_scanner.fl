@@ -4,44 +4,73 @@
 #include "drbdmeta_parser.h"
 
 static void unescape(void);
+static void bad_token(char*);
 
 //#define DP printf("%s ",yytext);
 #define DP
+#define CP yylval.txt=yytext
 #define YY_NO_UNPUT 1
 static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
 %}
 
 %option noyywrap
+%option yylineno
 
-WS		[ \t\n]
+/* remember to avoid backing up.
+ * tell user about bad/unexpected tokens. */
+
+OP		[{};]
+WS		[ \r\t\n]
 COMMENT		\#[^\n]*
-NUM		[0-9]{1,10}
+
+NUM		[0-9]{1,20}
+NUM_TOO_LONG	{NUM}[0-9]
+
 U64		0x[0-9A-Fa-f]{16}
 U32		0x[0-9A-Fa-f]{8}
-OP		[{};]
-STRING		\"[^\"]*\"
+INVALID_HEX	0x[0-9A-Fa-f]{0,17}
+
+STRING		\"[^\"\r\n]{1,20}\"
+EMPTY_STRING    \"\"?
+INVALID_STRING  \"[^\"\r\n]{1,20}
+
+INVALID_TOKEN	 [-_a-zA-Z0-9]{1,100}
+INVALID_CHAR    [^-_a-zA-Z0-9 \t\r\n\";{}]
 
 %%
 
-{WS}
-{COMMENT}
+{WS}		/* skip silently */
+{COMMENT}	/* skip silently */
 {OP}		DP; return yytext[0];
-{STRING}	unescape(); yylval.txt=yytext; DP; return TK_STRING;
+{STRING}	unescape(); DP; CP; return TK_STRING;
 {U64}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U64;
 {U32}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U32;
 {NUM}		yylval.u64 = strto_u64(yytext, NULL, 10); DP; return TK_NUM;
-gc		DP; return TK_GC;
-bm		DP; return TK_BM;
-uuid		DP; return TK_UUID;
-version		DP; return TK_VERSION;
-la-size-sect	DP; return TK_LA_SIZE;
-bm-byte-per-bit DP; return TK_BM_BYTE_PER_BIT;
-device-uuid	DP; return TK_DEVICE_UUID;
-times		DP; return TK_TIMES;
-flags		DP; return TK_FLAGS;
+gc		DP; CP; return TK_GC;
+bm		DP; CP; return TK_BM;
+uuid		DP; CP; return TK_UUID;
+version		DP; CP; return TK_VERSION;
+la-size-sect	DP; CP; return TK_LA_SIZE;
+bm-byte-per-bit DP; CP; return TK_BM_BYTE_PER_BIT;
+device-uuid	DP; CP; return TK_DEVICE_UUID;
+times		DP; CP; return TK_TIMES;
+flags		DP; CP; return TK_FLAGS;
+
+{INVALID_STRING} CP; bad_token("invalid string"); return TK_INVALID;
+{EMPTY_STRING}	 CP; bad_token("invalid string"); return TK_INVALID;
+{INVALID_HEX}	 CP; bad_token("invalid hex number (only 8 or 16 hex digits accepted)"); return TK_INVALID;
+{NUM_TOO_LONG}	 CP; bad_token("number too big"); return TK_INVALID;
+{INVALID_TOKEN}	 CP; bad_token("unknown token"); return TK_INVALID;
+{INVALID_CHAR}	 CP; return TK_INVALID_CHAR;
 
 %%
+
+static void bad_token(char *msg)
+{
+	fflush(stdout);
+	fprintf(stderr,"line %u: %s: %s ...\n", yylineno, msg, yytext);
+}
 
 static void unescape(void)
 {

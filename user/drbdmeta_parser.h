@@ -8,6 +8,7 @@ typedef union YYSTYPE {
 #define YY_NO_UNPUT 1
 
 extern YYSTYPE yylval;
+extern int yylineno;
 
 enum yytokentype {
 	TK_STRING = 258,
@@ -23,6 +24,8 @@ enum yytokentype {
 	TK_DEVICE_UUID,
 	TK_TIMES,
 	TK_FLAGS,
+	TK_INVALID,
+	TK_INVALID_CHAR,
 };
 
 /* avoid compiler warnings about implicit declaration */

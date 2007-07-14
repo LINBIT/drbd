@@ -45,13 +45,14 @@ drbd_strings.c: ../drbd/drbd_strings.c
 drbdadm: $(drbdadm-obj)
 	$(CC) -o $@ $^
 
+# for debugging:
+# 	LANG=C LC_ALL=C flex -d -b -s -odrbdadm_scanner.c drbdadm_scanner.fl
+
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
 drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
-	flex -odrbdmeta_scanner.c drbdmeta_scanner.fl
-
-# for debug:	flex -d -s -odrbdadm_scanner.c drbdadm_scanner.fl
+	flex -s -odrbdmeta_scanner.c drbdmeta_scanner.fl
 
 drbdsetup: $(drbdsetup-obj)
 	$(CC) -o $@ $^
