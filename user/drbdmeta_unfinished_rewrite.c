@@ -593,6 +593,7 @@ int meta_get_gi(struct format *cfg, char **argv, int argc);
 int meta_show_gi(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
 int meta_restore_md(struct format *cfg, char **argv, int argc);
+int meta_verify_dump_file(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
 int meta_wipe_md(struct format *cfg, char **argv, int argc);
 int meta_outdate(struct format *cfg, char **argv, int argc);
@@ -606,6 +607,7 @@ struct meta_cmd cmds[] = {
 	{"show-gi", 0, meta_show_gi, 1},
 	{"dump-md", 0, meta_dump_md, 1},
 	{"restore-md", "file", meta_restore_md, 1},
+	{"verify-dump", "file", meta_verify_dump_file, 1},
 	{"create-md", 0, meta_create_md, 1},
 	{"wipe-md", 0, meta_wipe_md, 1},
 	{"outdate", 0, meta_outdate, 1},
@@ -1505,15 +1507,90 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	return cfg->ops->close(cfg);
 }
 
-void md_parse_error(const char *etext)
+void md_parse_error(int expected_token, int seen_token,const char *etext)
 {
-	fprintf(stderr,"Parse error '%s' expected.",etext);
+	if (!etext) {
+		switch(expected_token) {
+		/* leading space indicates to strip off "expected" below */
+		default : etext = " invalid/unexpected token!"; break;
+		case 0  : etext = "end of file"; break;
+		case ';': etext = "semicolon (;)"; break;
+		case '{': etext = "opening brace ({)"; break;
+		case '}': etext = "closing brace (})"; break;
+		case TK_BM:
+			etext = "keyword 'bm'"; break;
+		case TK_BM_BYTE_PER_BIT:
+			etext = "keyword 'bm-byte-per-bit'"; break;
+		case TK_DEVICE_UUID:
+			etext = "keyword 'device-uuid'"; break;
+		case TK_FLAGS:
+			etext = "keyword 'flags'"; break;
+		case TK_GC:
+			etext = "keyword 'gc'"; break;
+		case TK_LA_SIZE:
+			etext = "keyword 'la-size-sect'"; break;
+		case TK_TIMES:
+			etext = "keyword 'times'"; break;
+		case TK_UUID:
+			etext = "keyword 'uuid'"; break;
+		case TK_VERSION:
+			etext = "keyword 'version'"; break;
+		case TK_NUM:
+			etext = "number ([0-9], up to 20 digits)"; break;
+		case TK_STRING:
+			etext = "short quoted string "
+			        "(\"..up to 20 characters, no newline..\")";
+				break;
+		case TK_U32:
+			etext = "an 8-digit hex number"; break;
+		case TK_U64:
+			etext = "a 16-digit hex number"; break;
+		}
+	}
+	fflush(stdout);
+	fprintf(stderr,"Parse error in line %u: %s%s",
+		yylineno, etext,
+		(etext[0] == ' ' ? ":" : " expected")
+		);
+
+	switch(seen_token) {
+	case 0:
+		fprintf(stderr, ", but end of file encountered\n"); break;
+
+	case   1 ...  58: /* ord(';') == 58 */
+	case  60 ... 122: /* ord('{') == 123 */
+	case 124:         /* ord('}') == 125 */
+	case 126 ... 257:
+		/* oopsie. these should never be returned! */
+		fprintf(stderr, "; got token value %u (this should never happen!)\n", seen_token); break;
+		break;
+
+	case TK_INVALID_CHAR:
+		fprintf(stderr,"; got invalid input character '\\x%02x' [%c]\n",
+			(unsigned char)yylval.txt[0], yylval.txt[0]);
+		break;
+	case ';': case '{': case '}':
+		fprintf(stderr, ", not '%c'\n", seen_token); break;
+	case TK_NUM:
+	case TK_U32:
+	case TK_U64:
+		fprintf(stderr, ", not some number\n"); break;
+	case TK_INVALID:
+		/* already reported by scanner */
+		fprintf(stderr,"\n"); break;
+	default:
+		fprintf(stderr, ", not '%s'\n", yylval.txt);
+	}
 	exit(10);
 }
 
-#define EXP(TOKEN) if(yylex() != TOKEN) md_parse_error( #TOKEN );
+static void EXP(int expected_token) {
+	int tok = yylex();
+	if (tok != expected_token)
+		md_parse_error(expected_token, tok, NULL);
+}
 
-int meta_restore_md(struct format *cfg, char **argv, int argc)
+int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int parse_only)
 {
 	int i,times;
 	int err;
@@ -1528,7 +1605,7 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 		}
 	}
 
-	if (!cfg->ops->open(cfg)) {
+	if (!parse_only && !cfg->ops->open(cfg)) {
 		if (!confirmed("Valid meta-data in place, overwrite?"))
 			return -1;
 	}
@@ -1572,8 +1649,19 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 	i = 0;
 	bm_on_disk_off = cfg->bm_offset;
 	while(1) {
-		switch(yylex()) {
+		int tok = yylex();
+		switch(tok) {
 		case TK_U64:
+			EXP(';');
+			/* NOTE:
+			 * even though this EXP(';'); already advanced
+			 * to the next token, yylval will *not* be updated
+			 * for * ';', so it is still valid.
+			 *
+			 * This seemed to be the least ugly way to implement a
+			 * "parse_only" functionality without ugly if-branches
+			 * or the maintenance nightmare of code duplication */
+			if (parse_only) break;
 			bm[i].le = cpu_to_le64(yylval.u64);
 			if (++i == buffer_size/sizeof(*bm)) {
 				pwrite_or_die(cfg->md_fd, on_disk_buffer,
@@ -1582,14 +1670,14 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 				bm_on_disk_off += buffer_size;
 				i = 0;
 			}
-			EXP(';');
 			break;
 		case TK_NUM:
 			EXP(TK_TIMES);
 			times = yylval.u64;
 			EXP(TK_U64);
-			value.le = cpu_to_le64(yylval.u64);
 			EXP(';');
+			if (parse_only) break;
+			value.le = cpu_to_le64(yylval.u64);
 			while(times--) {
 				bm[i] = value;
 				if (++i == buffer_size/sizeof(*bm)) {
@@ -1604,11 +1692,22 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 		case '}':
 			goto break_loop;
 		default:
-			md_parse_error("TK_U64, TK_NUM or }");
+			md_parse_error(0 /* ignored, since etext is set */,
+				tok, "repeat count, 16-digit hex number, or closing brace (})");
 			goto break_loop;
 		}
 	}
 	break_loop:
+
+	/* there should be no trailing garbage in the input file */
+	EXP(0);
+
+	if (parse_only) {
+		printf("input file parsed ok\n");
+		return 0;
+	}
+
+	/* not reached if parse_only */
 	if (i) {
 		size_t s = i * sizeof(*bm);
 		memset(bm+i, 0x00, buffer_size - s);
@@ -1631,7 +1730,15 @@ int meta_restore_md(struct format *cfg, char **argv, int argc)
 	return 0;
 }
 
-#undef EXP
+int meta_restore_md(struct format *cfg, char **argv, int argc)
+{
+	return verify_dumpfile_or_restore(cfg,argv,argc,0);
+}
+
+int meta_verify_dump_file(struct format *cfg, char **argv, int argc)
+{
+	return verify_dumpfile_or_restore(cfg,argv,argc,1);
+}
 
 void md_convert_07_to_08(struct format *cfg)
 {

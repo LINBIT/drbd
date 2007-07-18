@@ -60,9 +60,13 @@ drbdsetup: $(drbdsetup-obj)
 drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^
 
+drbdmeta_unfinished_rewrite: CFLAGS += -fno-strict-aliasing
+drbdmeta_unfinished_rewrite: drbdmeta_unfinished_rewrite.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
+	$(CC) -o $@ $^
+
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
-	rm -f drbdsetup drbdadm drbdmeta *.o
+	rm -f drbdsetup drbdadm drbdmeta drbdmeta_unfinished_rewrite *.o
 	rm -f drbd_buildtag.c drbd_strings.c
 	rm -f *~
 
@@ -95,4 +99,5 @@ drbdadm_parser.o:  drbdtool_common.h drbdadm.h ../drbd/linux/drbd_limits.h
 drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h
 drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
 drbdmeta.o:        drbdtool_common.h drbd_endian.h
+drbdmeta_unfinished_rewrite.o:        drbdtool_common.h drbd_endian.h
 drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h
