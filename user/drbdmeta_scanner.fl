@@ -24,7 +24,9 @@ OP		[{};]
 WS		[ \r\t\n]
 COMMENT		\#[^\n]*
 
-NUM		[0-9]{1,20}
+/* 1<<63 is 19 digits. has to be enough.
+ * 20 digits would risk overflow of 64bit unsigned int */
+NUM		[0-9]{1,19}
 NUM_TOO_LONG	{NUM}[0-9]
 
 U64		0x[0-9A-Fa-f]{16}
