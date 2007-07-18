@@ -1672,8 +1672,8 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			}
 			break;
 		case TK_NUM:
-			EXP(TK_TIMES);
 			times = yylval.u64;
+			EXP(TK_TIMES);
 			EXP(TK_U64);
 			EXP(';');
 			if (parse_only) break;
