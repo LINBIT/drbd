@@ -1625,6 +1625,8 @@ int main(int argc, char** argv)
   struct adm_cmd *cmd;
   struct d_resource *res,*tmp;
   char *env_drbd_nodename = NULL;
+  int is_dump_xml;
+  int is_dump;
 
   drbdsetup=NULL;
   drbdmeta=NULL;
@@ -1835,14 +1837,15 @@ int main(int argc, char** argv)
 
   uc_node(global_options.usage_count);
 
+  is_dump_xml = (cmd->function == adm_dump_xml);
+  is_dump = (is_dump_xml || cmd->function == adm_dump);
+  if (!is_dump || dry_run) expand_common();
+
   if(cmd->res_name_required)
     {
-      int is_dump_xml = (cmd->function == adm_dump_xml);
-      int is_dump = (is_dump_xml || cmd->function == adm_dump);
       if (optind + 1 > argc && !is_dump)
         print_usage_and_exit("missing arguments"); // arguments missing.
 
-      if (!is_dump || dry_run) expand_common();
       global_validate();
       if (!is_dump) {
 	if(!config_valid) exit(E_config_invalid);
