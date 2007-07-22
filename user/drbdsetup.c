@@ -1273,7 +1273,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct drbd_nl_cfg_reply *reply;
 	struct drbd_tag_list *tl;
 	struct option *lo;
-	unsigned int seq=0;
+	unsigned int b_seq=0, r_seq=0;
 	int sk_nl,c,cont=1,rr,i,last;
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
@@ -1368,8 +1368,17 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 		// dump_tag_list(reply->tag_list);
 
-		if(!unfiltered && cn_reply->seq <= seq) continue;
-		seq = cn_reply->seq;
+		/* There are two value spaces for sequence numbers. The first
+		   is the one created by this drbdsetup instance, the kernel's
+		   reply packets simply echo those sequence numbers.
+		   The second is created by the kernel's broadcast packets. */
+		if(cn_reply->ack==0) { // broadcasts
+			if(!unfiltered && cn_reply->seq <= b_seq) continue;
+			b_seq = cn_reply->seq;
+		} else { // replies to drbdsetup packes
+			if(!unfiltered && cn_reply->seq <= r_seq) continue;
+			r_seq = cn_reply->seq;
+		}
 
 		if( all_devices || minor == reply->minor ) {
 			cont=cm->ep.proc_event(cn_reply->seq, reply);
