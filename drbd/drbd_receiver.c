@@ -865,40 +865,6 @@ STATIC int drbd_recv_header(drbd_dev *mdev, Drbd_Header *h)
 	return TRUE;
 }
 
-#if 0
-STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
-{
-	int rv;
-	int epoch_size=0;
-	Drbd_Barrier_Packet *p = (Drbd_Barrier_Packet*)h;
-
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return false;
-
-	rv = drbd_recv(mdev, h->payload, h->length);
-	ERR_IF(rv != h->length) return false;
-
-	inc_unacked(mdev);
-
-	spin_lock_irq(&mdev->ee_lock);
-	if(list_empty(&mdev->active_ee)) {
-		epoch_size = mdev->epoch_size;
-		mdev->epoch_size = 0;
-	} else if (mdev->last_write_w_barrier) {
-		mdev->last_write_w_barrier->barrier_nr2 = be32_to_cpu(p->barrier);
-	} else {
-		mdev->next_barrier_nr = be32_to_cpu(p->barrier);
-	}
-	spin_unlock_irq(&mdev->ee_lock);
-
-	if(epoch_size) {
-		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
-		dec_unacked(mdev);
-	}
-
-	return rv;
-}
-#endif
-
 STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 {
 	int rv;
@@ -2157,36 +2123,8 @@ STATIC int receive_SyncParam(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC void drbd_setup_order_type(drbd_dev *mdev, int peer)
 {
-#if 0
-	int self = drbd_queue_order_type(mdev);
-	int type;
-
-	static char *order_txt[] = {
-		[QUEUE_ORDERED_NONE]  = "none - oldIDE",
-		[QUEUE_ORDERED_FLUSH] = "flush - IDE",
-		[QUEUE_ORDERED_TAG]   = "tag - TCQ",
-	};
-
-	if(self == QUEUE_ORDERED_NONE ||
-	   peer == QUEUE_ORDERED_NONE) {
-		type = QUEUE_ORDERED_NONE;
-	} else if (self == QUEUE_ORDERED_FLUSH ||
-		   peer == QUEUE_ORDERED_FLUSH) {
-		type = QUEUE_ORDERED_FLUSH;
-	} else if(self == QUEUE_ORDERED_TAG ||
-		  peer == QUEUE_ORDERED_TAG) {
-		type = QUEUE_ORDERED_TAG;
-	} else {
-		D_ASSERT(0);
-		type = QUEUE_ORDERED_NONE;
-	}
-
-	if (type != self ) {
-		INFO("Exposing an order type of '%s' to the kernel\n",
-		     order_txt[type]);
-		blk_queue_ordered(mdev->rq_queue,type);
-	}
-#endif
+	/* sorry, we currently have no working implementation
+	 * of distributed TCQ */
 }
 
 /* warn if the arguments differ by more than 12.5% */
@@ -2591,27 +2529,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
 static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
-
-#if 0
-	/* FIXME lge thinks the implementation of barrier handling via
-	 * tcq is currently broken */
-void drbd_set_recv_tcq(drbd_dev * mdev, int tcq_enabled)
-{
-// warning LGE "FIXME make drbd_cmd_handler a member of mdev"
-	if(tcq_enabled &&
-	   drbd_default_handler[Barrier] != receive_Barrier_tcq) {
-		INFO("Enabling TCQ for barrier processing on backend.\n");
-		drbd_default_handler[Barrier] = receive_Barrier_tcq;
-	}
-
-	if(!tcq_enabled &&
-	   drbd_default_handler[Barrier] != receive_Barrier_usual) {
-		INFO("Using conventional (non TCQ) barrier processing"
-		     " on backend.\n");
-		drbd_default_handler[Barrier] = receive_Barrier_usual;
-	}
-}
-#endif
 
 STATIC void drbdd(drbd_dev *mdev)
 {
