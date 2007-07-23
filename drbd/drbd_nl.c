@@ -29,6 +29,7 @@
 #include <linux/module.h>
 #include <linux/in.h>
 #include <linux/fs.h>
+#include <linux/buffer_head.h> /* for fsync_bdev */
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/connector.h>
@@ -303,7 +304,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 	if(forced) WARN("Forced to conisder local data as UpToDate!\n");
 
-	drbd_sync_me(mdev);
+	fsync_bdev(mdev->this_bdev);
 
 	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->misc_wait,
@@ -1032,7 +1033,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
-	drbd_sync_me(mdev);
+	fsync_bdev(mdev->this_bdev);
 	reply->ret_code = drbd_request_state(mdev,NS(disk,Diskless));
 
 	return 0;

@@ -42,8 +42,6 @@
 // module parameter, defined in drbd_main.c
 extern int minor_count;
 extern int allow_oos;
-extern int major_nr;
-extern int use_nbd_major;
 
 #ifdef DRBD_ENABLE_FAULTS
 extern int enable_faults;
@@ -54,13 +52,12 @@ extern int fault_devs;
 extern char usermode_helper[];
 
 #include <linux/major.h>
-#ifdef DRBD_MAJOR
-# warning "FIXME. DRBD_MAJOR is now officially defined in major.h"
+#ifndef DRBD_MAJOR
+# define DRBD_MAJOR 147
 #endif
 
 #include <linux/blkdev.h>
 #include <linux/bio.h>
-#define MAJOR_NR major_nr
 
 #undef DEVICE_NAME
 #define DEVICE_NAME "drbd"

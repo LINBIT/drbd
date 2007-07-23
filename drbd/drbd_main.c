@@ -56,10 +56,6 @@
 #include "drbd_int.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 
-/* YES. We got an official device major from lanana
- */
-#define LANANA_DRBD_MAJOR 147
-
 struct after_state_chg_work {
 	struct drbd_work w;
 	drbd_state_t os;
@@ -104,9 +100,7 @@ module_param(fault_devs,int,0644);      // bitmap of devices to insert faults on
 #endif
 
 // module parameter, defined
-int major_nr = LANANA_DRBD_MAJOR;
 int minor_count = 32;
-
 int allow_oos = 0;
 
 #ifdef ENABLE_DYNAMIC_TRACE
@@ -2302,7 +2296,7 @@ STATIC void __exit drbd_cleanup(void)
 
 	kfree(minor_table);
 
-	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
+	if (unregister_blkdev(DRBD_MAJOR, DEVICE_NAME) != 0)
 		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
 
 	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
@@ -2334,14 +2328,14 @@ drbd_dev *drbd_new_device(int minor)
 	set_disk_ro( disk, TRUE );
 
 	disk->queue = q;
-	disk->major = MAJOR_NR;
+	disk->major = DRBD_MAJOR;
 	disk->first_minor = minor;
 	disk->fops = &drbd_ops;
 	sprintf(disk->disk_name, DEVICE_NAME "%d", minor);
 	disk->private_data = mdev;
 	add_disk(disk);
 
-	mdev->this_bdev = bdget(MKDEV(MAJOR_NR,minor));
+	mdev->this_bdev = bdget(MKDEV(DRBD_MAJOR,minor));
 	// we have no partitions. we contain only ourselves.
 	mdev->this_bdev->bd_contains = mdev->this_bdev;
 
@@ -2433,11 +2427,11 @@ int __init drbd_init(void)
 		return err;
 	}
 
-	err = register_blkdev(MAJOR_NR, DEVICE_NAME);
+	err = register_blkdev(DRBD_MAJOR, DEVICE_NAME);
 	if (err) {
 		printk(KERN_ERR DEVICE_NAME
 		       ": unable to register block device major %d\n",
-		       MAJOR_NR);
+		       DRBD_MAJOR);
 		return err;
 	}
 
@@ -2478,7 +2472,7 @@ int __init drbd_init(void)
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
 	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
-	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", MAJOR_NR);
+	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", DRBD_MAJOR);
 	printk(KERN_INFO DEVICE_NAME": minor_table @ 0x%p\n", minor_table);
 
 	return 0; // Success!

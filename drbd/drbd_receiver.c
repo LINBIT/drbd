@@ -872,10 +872,10 @@ STATIC int receive_Barrier_tcq(drbd_dev *mdev, Drbd_Header* h)
 	int epoch_size=0;
 	Drbd_Barrier_Packet *p = (Drbd_Barrier_Packet*)h;
 
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return false;
 
 	rv = drbd_recv(mdev, h->payload, h->length);
-	ERR_IF(rv != h->length) return FALSE;
+	ERR_IF(rv != h->length) return false;
 
 	inc_unacked(mdev);
 

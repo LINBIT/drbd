@@ -1,7 +1,3 @@
-/*
- * FIXME this file is bound to die, renamed or included in drbd_int.h
- */
-
 #include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
 # error "use a 2.6 kernel, please"
@@ -16,8 +12,6 @@
 # define page_private(page)		((page)->private)
 # define set_page_private(page, v)	((page)->private = (v))
 #endif
-
-#include <linux/buffer_head.h> // for fsync_bdev
 
 /* see get_sb_bdev and bd_claim */
 extern char* drbd_sec_holder;
@@ -49,11 +43,6 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev,
 	/* set_capacity(mdev->this_bdev->bd_disk, size); */
 	set_capacity(mdev->vdisk,size);
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
-}
-
-static inline int drbd_sync_me(drbd_dev *mdev)
-{
-	return fsync_bdev(mdev->this_bdev);
 }
 
 #define drbd_bio_uptodate(bio) bio_flagged(bio,BIO_UPTODATE)
