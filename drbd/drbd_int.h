@@ -1165,7 +1165,7 @@ extern void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line);
 
 /* needs to be included here,
  * because of kmem_cache_t weirdness */
-#include "drbd_compat_wrappers.h"
+#include "drbd_wrappers.h"
 
 extern int minor_count;
 extern drbd_kmem_cache_t *drbd_request_cache;
