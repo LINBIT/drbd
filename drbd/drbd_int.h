@@ -1879,6 +1879,9 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 {
 	/* sorry, we currently have no working implementation
 	 * of distributed TCQ stuff */
+#ifndef QUEUE_ORDERED_NONE
+#define QUEUE_ORDERED_NONE 0
+#endif
 	return QUEUE_ORDERED_NONE;
 }
 
