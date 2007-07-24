@@ -1421,8 +1421,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 			 * but otherwise process as per normal - need to tell other
 			 * side that a full resync is required! */
 			ERR("Failed to write bitmap to disk!\n");
-		}
-		else {
+		} else {
 			drbd_md_clear_flag(mdev, MDF_FullSync);
 			drbd_md_sync(mdev);
 		}
@@ -2948,8 +2947,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 		// This results in nicely formatted output with addresses being on
 		// line size (16) byte boundaries
 		pstart = (const unsigned char *)((long)buffer & ~(LINE_SIZE-1));
-	}
-	else {
+	} else {
 		pstart = (const unsigned char *)buffer;
 	}
 
@@ -2972,8 +2970,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			pbytes += sprintf(pbytes, "%*c ", field_width, ' ');
 			pascii += sprintf(pascii, "%*c", size, ' ');
 			p += size;
-		}
-		else {
+		} else {
 			// Add hex and ascii to strings
 			int val;
 			switch (size) {

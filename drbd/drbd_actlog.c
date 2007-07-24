@@ -54,8 +54,7 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 	if (FAULT_ACTIVE(mdev, (rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
 		bio_endio(bio, bio->bi_size, -EIO);
-	}
-	else {
+	} else {
 #ifdef BIO_RW_SYNC
 		submit_bio(rw | (1 << BIO_RW_SYNC), bio);
 #else

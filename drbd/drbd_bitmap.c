@@ -682,9 +682,9 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
 		bio_endio(bio, bio->bi_size, -EIO);
-	}
-	else
+	} else {
 		submit_bio(rw, bio);
+	}
 }
 /* read one sector of the on disk bitmap into memory.
  * on disk bitmap is little endian.
