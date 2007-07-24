@@ -191,7 +191,7 @@ struct lc_element *_al_get(struct Drbd_Conf *mdev, unsigned int enr)
 
 	spin_lock_irq(&mdev->al_lock);
 	bm_ext = (struct bm_extent *) lc_find(mdev->resync, enr/AL_EXT_PER_BM_SECT);
-	if (unlikely(bm_ext!=NULL)) {
+	if (unlikely(bm_ext != NULL)) {
 		if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
 			return 0;
@@ -222,7 +222,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	struct lc_element *al_ext;
 	struct update_al_work al_work;
 
-	D_ASSERT(atomic_read(&mdev->local_cnt)>0);
+	D_ASSERT(atomic_read(&mdev->local_cnt) > 0);
 
 	MTRACE(TraceTypeALExts, TraceLvlMetrics,
 	       INFO("al_begin_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
@@ -325,14 +325,14 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 
 	mx = min_t(int, AL_EXTENTS_PT,
 		   mdev->act_log->nr_elements - mdev->al_tr_cycle);
-	for(i = 0;i<mx;i++) {
+	for(i = 0;i < mx;i++) {
 		extent_nr = lc_entry(mdev->act_log,
 				     mdev->al_tr_cycle+i)->lc_number;
 		buffer->updates[i+1].pos = cpu_to_be32(mdev->al_tr_cycle+i);
 		buffer->updates[i+1].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
-	for(;i<AL_EXTENTS_PT;i++) {
+	for(;i < AL_EXTENTS_PT;i++) {
 		buffer->updates[i+1].pos = __constant_cpu_to_be32(-1);
 		buffer->updates[i+1].extent = __constant_cpu_to_be32(LC_FREE);
 		xor_sum ^= LC_FREE;
@@ -386,7 +386,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 	rv = ( be32_to_cpu(b->magic) == DRBD_MAGIC );
 
-	for(i = 0;i<AL_EXTENTS_PT+1;i++)
+	for(i = 0;i < AL_EXTENTS_PT+1;i++)
 		xor_sum ^= be32_to_cpu(b->updates[i].extent);
 	rv &= (xor_sum == be32_to_cpu(b->xor_sum));
 
@@ -416,7 +416,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 	buffer = page_address(mdev->md_io_page);
 
 	/* Find the valid transaction in the log */
-	for(i = 0;i<=mx;i++) {
+	for(i = 0;i <= mx;i++) {
 		rv = drbd_al_read_tr(mdev, bdev, buffer, i);
 		if (rv == 0) continue;
 		if (rv == -1) {
@@ -468,7 +468,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 		   elements there might be an old version of the
 		   updated element (in slot 0). So the element in slot 0
 		   can overwrite old versions. */
-		for(j = AL_EXTENTS_PT;j>=0;j--) {
+		for(j = AL_EXTENTS_PT;j >= 0;j--) {
 			pos = be32_to_cpu(buffer->updates[j].pos);
 			extent_nr = be32_to_cpu(buffer->updates[j].extent);
 
@@ -562,7 +562,7 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	}
 
 	bio = bio_alloc(GFP_KERNEL, 1);
-	if (bio==NULL) return -ENOMEM;
+	if (bio == NULL) return -ENOMEM;
 
 	bio->bi_bdev = mdev->bc->md_bdev;
 	bio->bi_sector = on_disk_sector;
@@ -585,7 +585,7 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	kunmap(*page);
 
 	/* no memory leak, page gets cleaned up by caller */
-	if (bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT)
+	if (bio_add_page(bio, *page, MD_HARDSECT, *page_offset) != MD_HARDSECT)
 		return -EINVAL;
 
 	if (!allocated_page) get_page(*page);
@@ -635,7 +635,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	wc.mdev = mdev;
 	wc.error = 0;
 
-	for(i = 0;i<nr_elements;i++) {
+	for(i = 0;i < nr_elements;i++) {
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE) continue;
 		/* next statement also does atomic_inc wc.count */
@@ -651,8 +651,8 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	wake_up(&mdev->al_wait);
 
 	/* all prepared, submit them */
-	for(i = 0;i<nr_elements;i++) {
-		if (bios[i]==NULL) break;
+	for(i = 0;i < nr_elements;i++) {
+		if (bios[i] == NULL) break;
 		if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
 			bios[i]->bi_rw = WRITE;
 			bio_endio(bios[i], bios[i]->bi_size, -EIO);
@@ -680,8 +680,8 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
  free_bios_submit_one_by_one:
 	/* free everything by calling the endio callback directly. */
-	for(i = 0;i<nr_elements;i++) {
-		if (bios[i]==NULL) break;
+	for(i = 0;i < nr_elements;i++) {
+		if (bios[i] == NULL) break;
 		bios[i]->bi_size = 0;
 		atodb_endio(bios[i], MD_HARDSECT, 0);
 	}
@@ -690,7 +690,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
  submit_one_by_one:
 	WARN("Using the slow drbd_al_to_on_disk_bm()\n");
 
-	for(i = 0;i<mdev->act_log->nr_elements;i++) {
+	for(i = 0;i < mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE) continue;
 		/* Really slow: if we have al-extents 16..19 active,
@@ -716,7 +716,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	for(i = 0;i<mdev->act_log->nr_elements;i++) {
+	for(i = 0;i < mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE) continue;
 		add += drbd_bm_ALe_set_all(mdev, enr);
@@ -755,7 +755,7 @@ void drbd_al_shrink(struct Drbd_Conf *mdev)
 
 	D_ASSERT( test_bit(__LC_DIRTY, &mdev->act_log->flags) );
 
-	for(i = 0;i<mdev->act_log->nr_elements;i++) {
+	for(i = 0;i < mdev->act_log->nr_elements;i++) {
 		al_ext = lc_entry(mdev->act_log, i);
 		if (al_ext->lc_number == LC_FREE) continue;
 		wait_event(mdev->al_wait, _try_lc_del(mdev, al_ext));
@@ -1101,7 +1101,7 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 
 	if (test_bit(BME_LOCKED, &bm_ext->flags)) return 1;
 
-	for(i = 0;i<AL_EXT_PER_BM_SECT;i++) {
+	for(i = 0;i < AL_EXT_PER_BM_SECT;i++) {
 		sig = wait_event_interruptible( mdev->al_wait,
 				!_is_in_al(mdev, enr*AL_EXT_PER_BM_SECT+i) );
 		if (sig) {
@@ -1220,7 +1220,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	MTRACE(TraceTypeResync, TraceLvlAll,
 		INFO("checking al for %u\n", enr);
 	);
-	for (i = 0;i<AL_EXT_PER_BM_SECT;i++) {
+	for (i = 0;i < AL_EXT_PER_BM_SECT;i++) {
 		if (unlikely(al_enr+i == mdev->act_log->new_number))
 			goto try_again;
 		if (lc_is_used(mdev->act_log, al_enr+i))
@@ -1294,7 +1294,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 	if (inc_local_if_state(mdev, Failed)) {
 		/* ok, ->resync is there. */
-		for(i = 0;i<mdev->resync->nr_elements;i++) {
+		for(i = 0;i < mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
 			if (bm_ext->lce.lc_number == LC_FREE) continue;
 			bm_ext->lce.refcnt = 0; /* Rude but ok. */
@@ -1331,7 +1331,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 
 	if (inc_local_if_state(mdev, Failed)) {
 		/* ok, ->resync is there. */
-		for(i = 0;i<mdev->resync->nr_elements;i++) {
+		for(i = 0;i < mdev->resync->nr_elements;i++) {
 			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
 			if (bm_ext->lce.lc_number == LC_FREE) continue;
 			if (bm_ext->lce.lc_number == mdev->resync_wenr) {
@@ -1356,7 +1356,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 			D_ASSERT(!test_bit(BME_NO_WRITES, &bm_ext->flags));
 			lc_del(mdev->resync, &bm_ext->lce);
 		}
-		D_ASSERT(mdev->resync->used==0);
+		D_ASSERT(mdev->resync->used == 0);
 		dec_local(mdev);
 	}
 	spin_unlock_irq(&mdev->al_lock);
@@ -1414,7 +1414,7 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 	 */
 	spin_lock_irq(&mdev->al_lock);
 	for(bnr = sbnr; bnr <= ebnr; bnr++) {
-		if (drbd_bm_test_bit(mdev, bnr)>0) count++;
+	 	if (drbd_bm_test_bit(mdev, bnr) > 0) count++;
 	}
 	if (count) {
 		mdev->rs_failed += count;

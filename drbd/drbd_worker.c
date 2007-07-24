@@ -325,7 +325,7 @@ int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
-	if (atomic_read(&mdev->rs_pending_cnt)>number)
+	if (atomic_read(&mdev->rs_pending_cnt) > number)
 		goto requeue;
 	number -= atomic_read(&mdev->rs_pending_cnt);
 
@@ -339,7 +339,7 @@ int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		return 1;
 	}
 
-	for(i = 0;i<number;i++) {
+	for(i = 0;i < number;i++) {
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
@@ -506,7 +506,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 		    mdev->state.conn == PausedSyncT) {
 			if (mdev->p_uuid) {
 				int i;
-				for (i = Bitmap ; i<=History_end ; i++)
+				for (i = Bitmap ; i <= History_end ; i++)
 					_drbd_uuid_set(mdev, i, mdev->p_uuid[i]);
 				drbd_uuid_set(mdev, Bitmap, mdev->bc->md.uuid[Current]);
 				_drbd_uuid_set(mdev, Current, mdev->p_uuid[Current]);
@@ -521,7 +521,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 			/* Now the two UUID sets are equal, update what we
 			 * know of the peer. */
 			int i;
-			for (i = Current ; i<=History_end ; i++)
+			for (i = Current ; i <= History_end ; i++)
 				mdev->p_uuid[i] = mdev->bc->md.uuid[i];
 		}
 	}
@@ -868,7 +868,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
 	       INFO("Resync starting: side=%s\n",
-		    side==SyncTarget?"SyncTarget":"SyncSource");
+		    side == SyncTarget?"SyncTarget":"SyncSource");
 	    );
 
 	drbd_bm_recount_bits(mdev);

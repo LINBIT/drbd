@@ -156,7 +156,7 @@ void nl_trace_reply(void *data) {
 	printk(KERN_INFO DEVICE_NAME "%d: "
 	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
 	       nlp->minor,
-	       nlp->packet_type==P_nl_after_last_packet?
+	       nlp->packet_type == P_nl_after_last_packet?
 	           "Empty-Reply" : nl_packet_name(nlp->packet_type),
 	       nlp->packet_type,
 	       req->seq, req->ack, req->len);
@@ -582,7 +582,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	n = lc_alloc("act_log", mdev->sync_conf.al_extents,
 		     sizeof(struct lc_element), mdev);
 
-	if (n==NULL) {
+	if (n == NULL) {
 		ERR("Cannot allocate act_log lru!\n");
 		return -ENOMEM;
 	}
@@ -779,16 +779,16 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	nbc->md_bdev = inode2->i_bdev;
 	if (bd_claim(nbc->md_bdev,
-		     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
-		      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ?
+		     (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
+		      nbc->dc.meta_dev_idx == DRBD_MD_INDEX_FLEX_INT) ?
 		     (void *)mdev : (void *) drbd_m_holder )) {
 		retcode = MDMounted;
 		goto release_bdev_fail;
 	}
 
-	if ( (nbc->backing_bdev==nbc->md_bdev) !=
-	     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
-	      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ) {
+	if ( (nbc->backing_bdev == nbc->md_bdev) !=
+	     (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
+	      nbc->dc.meta_dev_idx == DRBD_MD_INDEX_FLEX_INT) ) {
 		retcode = LDMDInvalid;
 		goto release_bdev2_fail;
 	}
@@ -947,7 +947,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	if (rv==SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
+	if (rv == SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	if (rv < SS_Success)
 		goto unlock_bm;
@@ -1063,7 +1063,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 #define O_ADDR(A) (((struct sockaddr_in *)&A->peer_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A->peer_addr)->sin_port)
 	retcode = NoError;
-	for(i = 0;i<minor_count;i++) {
+	for(i = 0;i < minor_count;i++) {
 		odev = minor_to_mdev(i);
 		if (!odev || odev == mdev) continue;
 		if ( inc_net(odev)) {
@@ -1144,7 +1144,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->ping_int = new_conf->ping_int+1;
 #endif
 
-	D_ASSERT(mdev->net_conf==NULL);
+	D_ASSERT(mdev->net_conf == NULL);
 	mdev->net_conf = new_conf;
 
 	mdev->send_cnt = 0;
@@ -1209,7 +1209,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if (retcode < SS_Success) goto fail;
 
 	if ( wait_event_interruptible( mdev->misc_wait,
-				      mdev->state.conn==StandAlone) ) {
+				      mdev->state.conn == StandAlone) ) {
 		retcode = GotSignal;
 		goto fail;
 	}
@@ -1407,7 +1407,7 @@ STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	if (retcode==SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
+	if (retcode == SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	if (retcode == -999) {
 		retcode = DiskLowerThanOutdated;

@@ -991,8 +991,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
-		if (FAULT_ACTIVE(mdev, rw==WRITE ? DRBD_FAULT_DT_WR :
-				       ( rw==READ ? DRBD_FAULT_DT_RD :
+		if (FAULT_ACTIVE(mdev, rw == WRITE ? DRBD_FAULT_DT_WR :
+				       ( rw == READ ? DRBD_FAULT_DT_RD :
   				                   DRBD_FAULT_DT_RA ) ))
 			bio_endio(req->private_bio, req->private_bio->bi_size, -EIO);
 		else

@@ -932,7 +932,7 @@ int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigne
 	ERR_IF(!b->bm) return 1;
 
 	spin_lock(&b->bm_lock);
-	for (bitnr = s; bitnr <=e; bitnr++) {
+	for (bitnr = s; bitnr <= e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
 			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		} else {

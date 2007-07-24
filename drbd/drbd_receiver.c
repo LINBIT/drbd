@@ -931,7 +931,7 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 		ds -= rr;
 	}
 
-	mdev->recv_cnt+=data_size>>9;
+	mdev->recv_cnt += data_size>>9;
 	return e;
 }
 
@@ -1021,8 +1021,8 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 		/* Record failure to sync */
 		drbd_rs_failed_io(mdev, sector, e->size);
 
-		ok = drbd_send_ack(mdev, NegAck, e);
-		ok&= drbd_io_error(mdev, FALSE);
+		ok  = drbd_send_ack(mdev, NegAck, e);
+		ok &= drbd_io_error(mdev, FALSE);
 	}
 	dec_unacked(mdev);
 
@@ -1170,7 +1170,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 				e->flags & EE_MAY_SET_IN_SYNC) ?
 				RSWriteAck : WriteAck;
 			ok &= drbd_send_ack(mdev, pcmd, e);
-			if (pcmd==RSWriteAck)
+			if (pcmd == RSWriteAck)
 				drbd_set_in_sync(mdev, sector, e->size);
 		} else {
 			/* FIXME I think we should send a NegAck regardless of
@@ -1179,8 +1179,8 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 			 * NegAck is sent. basically that means that drbd_process_done_ee
 			 * may not list_del() the ee before this callback did run...
 			 * maybe even move the list_del(e) in here... */
-			ok = drbd_send_ack(mdev, NegAck, e);
-			ok&= drbd_io_error(mdev, FALSE);
+			ok  = drbd_send_ack(mdev, NegAck, e);
+			ok &= drbd_io_error(mdev, FALSE);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
 		}
@@ -1734,10 +1734,10 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 		rv = drbd_asb_recover_0p(mdev);
 		break;
 	case DiscardSecondary:
-		return mdev->state.role==Primary ? 1 : -1;
+		return mdev->state.role == Primary ? 1 : -1;
 	case CallHelper:
 		hg = drbd_asb_recover_0p(mdev);
-		if (hg == -1 && mdev->state.role==Primary) {
+		if (hg == -1 && mdev->state.role == Primary) {
 			self = drbd_set_role(mdev, Secondary, 0);
 			if (self != SS_Success) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
@@ -1856,7 +1856,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	if (self == peer) return -1;
 
 	*rule_nr = 6;
-	for ( i = History_start ; i<=History_end ; i++ ) {
+	for ( i = History_start ; i <= History_end ; i++ ) {
 		peer = mdev->p_uuid[i] & ~((u64)1);
 		if (self == peer) return -2;
 	}
@@ -1867,7 +1867,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	if (self == peer) return 1;
 
 	*rule_nr = 8;
-	for ( i = History_start ; i<=History_end ; i++ ) {
+	for ( i = History_start ; i <= History_end ; i++ ) {
 		self = mdev->bc->md.uuid[i] & ~((u64)1);
 		if (self == peer) return 2;
 	}
@@ -1878,9 +1878,9 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	if (self == peer && self != ((u64)0) ) return 100;
 
 	*rule_nr = 10;
-	for ( i = History_start ; i<=History_end ; i++ ) {
+	for ( i = History_start ; i <= History_end ; i++ ) {
 		self = mdev->p_uuid[i] & ~((u64)1);
-		for ( j = History_start ; j<=History_end ; j++ ) {
+		for ( j = History_start ; j <= History_end ; j++ ) {
 			peer = mdev->p_uuid[j] & ~((u64)1);
 			if (self == peer) return -100;
 		}
@@ -1917,8 +1917,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		return conn_mask;
 	}
 
-	if ( (mydisk==Inconsistent && peer_disk>Inconsistent) ||
-	    (peer_disk==Inconsistent && mydisk>Inconsistent) )  {
+	if ( (mydisk == Inconsistent && peer_disk > Inconsistent) ||
+	    (peer_disk == Inconsistent && mydisk > Inconsistent) )  {
 		int f = (hg == -100) || abs(hg) == 2;
 		hg = mydisk > Inconsistent ? 1 : -1;
 		if (f) hg = hg*2;
@@ -1927,7 +1927,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	}
 
 	if (hg == 100 || (hg == -100 && mdev->net_conf->always_asbp) ) {
-		int pcount = (mdev->state.role==Primary) + (peer_role==Primary);
+		int pcount = (mdev->state.role == Primary) + (peer_role == Primary);
 		int forced = (hg == -100);
 
 		switch (pcount) {
@@ -2374,7 +2374,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		}
 	}
 
-	if (rv==SS_Success)
+	if (rv == SS_Success)
 		after_state_ch(mdev, os, ns, ChgStateVerbose | ChgStateHard);
 
 	mdev->net_conf->want_lose = 0;
@@ -2432,7 +2432,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i );
 		want = num_words * sizeof(long);
 		ERR_IF(want != h->length) goto out;
-		if (want==0) break;
+		if (want == 0) break;
 		if (drbd_recv(mdev, buffer, want) != want)
 			goto out;
 
@@ -2565,7 +2565,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 	 * Application READ requests
 	 */
 	spin_lock_irq(&mdev->req_lock);
-	for(i = 0;i<APP_R_HSIZE;i++) {
+	for(i = 0;i < APP_R_HSIZE;i++) {
 		slot = mdev->app_reads_hash+i;
 		hlist_for_each_entry(req, n, slot, colision) {
 			list_add(&req->w.list, &workset);

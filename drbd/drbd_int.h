@@ -189,7 +189,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
 #define ERR_IF(exp) if (({ \
-	int _b = (exp)!=0; \
+	int _b = (exp) != 0; \
 	if (_b) ERR("%s: (" #exp ") in %s:%d\n", __func__, __FILE__, __LINE__); \
 	 _b; \
 	}))
@@ -1679,7 +1679,7 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 }
 
 #define ERR_IF_CNT_IS_NEGATIVE(which)				\
-	if (atomic_read(&mdev->which)<0)				\
+	if (atomic_read(&mdev->which) < 0)				\
 		ERR("in %s:%d: " #which " = %d < 0 !\n",	\
 		    __func__ , __LINE__ ,			\
 		    atomic_read(&mdev->which))
@@ -1761,7 +1761,7 @@ static inline void dec_local(drbd_dev* mdev)
 {
 	if (atomic_dec_and_test(&mdev->local_cnt))
 		wake_up(&mdev->misc_wait);
-	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
+	D_ASSERT(atomic_read(&mdev->local_cnt) >= 0);
 }
 /**
  * inc_local: Returns TRUE when local IO is possible. If it returns
@@ -1840,7 +1840,7 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 	int mxb = drbd_get_max_buffers(mdev);
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
-	D_ASSERT(ap_bio>=0);
+	D_ASSERT(ap_bio >= 0);
 	if (ap_bio < mxb) wake_up(&mdev->misc_wait);
 }
 

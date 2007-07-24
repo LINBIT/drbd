@@ -381,7 +381,7 @@ int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 	rv = _drbd_set_state(mdev, ns, f);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
-	if (rv==SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev, os, ns, f);
+	if (rv == SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev, os, ns, f);
 
 	return rv;
 }
@@ -414,9 +414,9 @@ set_st_err_t _req_st_cond(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 	if ( !cl_wide_st_chg(mdev, os, ns) ) rv = SS_CW_NoNeed;
 	if (!rv) {
 		rv = is_valid_state(mdev, ns);
-		if (rv==SS_Success) {
+		if (rv == SS_Success) {
 			rv = is_valid_state_transition(mdev, ns, os);
-			if (rv==SS_Success) rv = 0; /* cont waiting, otherwise fail. */
+			if (rv == SS_Success) rv = 0; /* cont waiting, otherwise fail. */
 		}
 	}
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
@@ -477,7 +477,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
-	if (rv==SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev, os, ns, f);
+	if (rv == SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev, os, ns, f);
 
 	return rv;
 }
@@ -885,8 +885,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* Lost contact to peer's copy of the data */
-	if ( (os.pdsk>=Inconsistent && os.pdsk!=DUnknown && os.pdsk!=Outdated) &&
-	     (ns.pdsk<Inconsistent || ns.pdsk==DUnknown || ns.pdsk==Outdated) ) {
+	if ( (os.pdsk >= Inconsistent && os.pdsk != DUnknown && os.pdsk != Outdated) &&
+	     (ns.pdsk < Inconsistent || ns.pdsk == DUnknown || ns.pdsk == Outdated) ) {
 		if (mdev->p_uuid) {
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
@@ -2139,7 +2139,7 @@ int drbd_create_mempools(void)
 	/* drbd's page pool */
 	spin_lock_init(&drbd_pp_lock);
 
-	for (i = 0;i< number;i++) {
+	for (i = 0;i < number;i++) {
 		page = alloc_page(GFP_HIGHUSER);
 		if (!page) goto Enomem;
 		set_page_private(page, (unsigned long)drbd_pp_pool);
@@ -2343,7 +2343,7 @@ int __init drbd_init(void)
 		return -EINVAL;
 	}
 
-	if (1 > minor_count||minor_count > 255) {
+	if (1 > minor_count || minor_count > 255) {
 		printk(KERN_ERR DEVICE_NAME
 			": invalid minor_count (%d)\n", minor_count);
 #ifdef MODULE
@@ -2632,7 +2632,7 @@ STATIC void drbd_uuid_move_history(drbd_dev *mdev)
 {
 	int i;
 
-	for ( i = History_start ; i<History_end ; i++ ) {
+	for ( i = History_start ; i < History_end ; i++ ) {
 		mdev->bc->md.uuid[i+1] = mdev->bc->md.uuid[i];
 
 		MTRACE(TraceTypeUuid, TraceLvlAll,
@@ -2696,9 +2696,9 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 
 void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 {
-	if (mdev->bc->md.uuid[Bitmap]==0 && val==0) return;
+	if (mdev->bc->md.uuid[Bitmap] == 0 && val == 0) return;
 
-	if (val==0) {
+	if (val == 0) {
 		drbd_uuid_move_history(mdev);
 		mdev->bc->md.uuid[History_start] = mdev->bc->md.uuid[Bitmap];
 		mdev->bc->md.uuid[Bitmap] = 0;
@@ -2971,7 +2971,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			pstart_va += (p-pstart);
 			pstart = p;
 			count  = 0;
-			offset+= LINE_SIZE;
+			offset += LINE_SIZE;
 
 			/* Re-init strings */
 			pbytes = bytes_str;
@@ -3159,7 +3159,7 @@ void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
 
 	INFO("%s %s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete? "<<<":">>>",
-	     bio_rw(bio)==WRITE?"Write":"Read", bio,
+	     bio_rw(bio) == WRITE?"Write":"Read", bio,
 	     complete? (drbd_bio_uptodate(bio)? "Success, ":"Failed, ") : "",
 	     bio->bi_sector << SECTOR_SHIFT,
 	     bio->bi_size);
