@@ -65,7 +65,7 @@ enum drbd_tags {
 };
 
 struct tag {
-	const char* name;
+	const char *name;
 	int type_n_flags;
 	int max_len;
 };

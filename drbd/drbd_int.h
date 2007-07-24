@@ -316,7 +316,7 @@ typedef enum {
 	HandShake  = 0xfffe  /* FIXED for the next century! */
 } Drbd_Packet_Cmd;
 
-static inline const char* cmdname(Drbd_Packet_Cmd cmd)
+static inline const char *cmdname(Drbd_Packet_Cmd cmd)
 {
 	/* THINK may need to become several global tables
 	 * when we want to support more than
@@ -812,10 +812,10 @@ struct Drbd_Conf {
 	atomic_t local_cnt;	 /* Waiting for local disk to signal completion */
 	atomic_t net_cnt;	 /* Users of net_conf */
 	spinlock_t req_lock;
-	struct drbd_barrier* unused_spare_barrier; /* for pre-allocation */
-	struct drbd_barrier* newest_barrier;
-	struct drbd_barrier* oldest_barrier;
-	struct hlist_head * tl_hash;
+	struct drbd_barrier *unused_spare_barrier; /* for pre-allocation */
+	struct drbd_barrier *newest_barrier;
+	struct drbd_barrier *oldest_barrier;
+	struct hlist_head *tl_hash;
 	unsigned int tl_hash_s;
 
 	/* blocks to sync in this run [unit BM_BLOCK_SIZE] */
@@ -834,10 +834,10 @@ struct Drbd_Conf {
 	struct Drbd_thread receiver;
 	struct Drbd_thread worker;
 	struct Drbd_thread asender;
-	struct drbd_bitmap* bitmap;
+	struct drbd_bitmap *bitmap;
 
 	/* Used to track operations of resync... */
-	struct lru_cache* resync;
+	struct lru_cache *resync;
 	/* Number of locked elements in resync LRU */
 	unsigned int resync_locked;
 	/* resync extent number waiting for application requests */
@@ -869,11 +869,11 @@ struct Drbd_Conf {
 	struct semaphore md_io_mutex;	/* protects the md_io_buffer */
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
-	struct lru_cache* act_log;	/* activity log */
+	struct lru_cache *act_log;	/* activity log */
 	unsigned int al_tr_number;
 	int al_tr_cycle;
 	int al_tr_pos;   /* position of the next transaction in the journal */
-	struct crypto_hash* cram_hmac_tfm;
+	struct crypto_hash *cram_hmac_tfm;
 	wait_queue_head_t seq_wait;
 	atomic_t packet_seq;
 	unsigned int peer_seq;
@@ -953,7 +953,7 @@ extern void tl_clear(drbd_dev *mdev);
 extern struct drbd_barrier *_tl_add_barrier(drbd_dev *, struct drbd_barrier *);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
-		     void* buf, size_t size, unsigned msg_flags);
+		     void *buf, size_t size, unsigned msg_flags);
 extern int drbd_send_protocol(drbd_dev *mdev);
 extern int drbd_send_uuids(drbd_dev *mdev);
 extern int drbd_send_sync_uuid(drbd_dev *mdev, u64 val);
@@ -967,7 +967,7 @@ extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 extern int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h, size_t size);
 extern int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
-			  char* data, size_t size);
+			  char *data, size_t size);
 extern int drbd_send_sync_param(drbd_dev *mdev, struct syncer_conf *sc);
 extern int drbd_send_b_ack(drbd_dev *mdev, u32 barrier_nr,
 			   u32 set_size);
@@ -988,13 +988,13 @@ extern int drbd_send_drequest(drbd_dev *mdev, int cmd,
 extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern int drbd_send_sr_reply(drbd_dev *mdev, int retcode);
-extern void drbd_free_bc(struct drbd_backing_dev* bc);
+extern void drbd_free_bc(struct drbd_backing_dev *bc);
 extern int drbd_io_error(drbd_dev* mdev, int forcedetach);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 extern void drbd_md_sync(drbd_dev *mdev);
-extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev * bdev);
+extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev);
 /* maybe define them below as inline? */
 extern void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
 extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
@@ -1160,21 +1160,21 @@ extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
 extern int drbd_bm_rs_done(drbd_dev *mdev);
 /* for receive_bitmap */
 extern void drbd_bm_merge_lel (drbd_dev *mdev, size_t offset, size_t number,
-				unsigned long* buffer);
+				unsigned long *buffer);
 /* for _drbd_send_bitmap and drbd_bm_write_sect */
 extern void drbd_bm_get_lel   (drbd_dev *mdev, size_t offset, size_t number,
-				unsigned long* buffer);
+				unsigned long *buffer);
 /*
  * only used by drbd_bm_read_sect
 extern void drbd_bm_set_lel   (drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long* buffer);
 */
 
-extern void __drbd_bm_lock    (drbd_dev *mdev, char* file, int line);
+extern void __drbd_bm_lock    (drbd_dev *mdev, char *file, int line);
 extern void drbd_bm_unlock    (drbd_dev *mdev);
 #define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
 
-extern void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line);
+extern void _drbd_bm_recount_bits(drbd_dev *mdev, char *file, int line);
 #define drbd_bm_recount_bits(mdev) _drbd_bm_recount_bits(mdev,	__FILE__, __LINE__ )
 /* drbd_main.c */
 
@@ -1188,7 +1188,7 @@ extern struct kmem_cache *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
 extern mempool_t *drbd_ee_mempool;
 
-extern struct page* drbd_pp_pool; /* drbd's page pool */
+extern struct page *drbd_pp_pool; /* drbd's page pool */
 extern spinlock_t   drbd_pp_lock;
 extern int	    drbd_pp_vacant;
 extern wait_queue_head_t drbd_pp_wait;
@@ -1272,11 +1272,11 @@ static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete) {
 
 /* Packet dumping support */
 extern void _dump_packet(drbd_dev *mdev, struct socket *sock,
-			 int recv, Drbd_Polymorph_Packet *p, char* file, int line);
+			 int recv, Drbd_Polymorph_Packet *p, char *file, int line);
 
 static inline void
 dump_packet(drbd_dev *mdev, struct socket *sock,
-	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
+	    int recv, Drbd_Polymorph_Packet *p, char *file, int line)
 {
 	MTRACE(TraceTypePacket, TraceLvlSummary,
 	       _dump_packet(mdev, sock, recv, p, file, line);
@@ -1300,7 +1300,7 @@ extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 
 
 /* drbd_nl.c */
-extern char* ppsize(char* buf, unsigned long long size);
+extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
 extern int drbd_determin_dev_size(drbd_dev*);
 extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
@@ -1309,7 +1309,7 @@ extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
 extern long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
-extern int drbd_khelper(drbd_dev *mdev, char* cmd);
+extern int drbd_khelper(drbd_dev *mdev, char *cmd);
 
 /* drbd_worker.c */
 extern int drbd_worker(struct Drbd_thread *thi);
@@ -1339,13 +1339,13 @@ extern int w_prev_work_done	 (drbd_dev *, struct drbd_work *, int);
 extern void resync_timer_fn(unsigned long data);
 
 /* drbd_receiver.c */
-extern int drbd_release_ee(drbd_dev* mdev, struct list_head* list);
-extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
+extern int drbd_release_ee(drbd_dev *mdev, struct list_head *list);
+extern struct Tl_epoch_entry *drbd_alloc_ee(drbd_dev *mdev,
 					    u64 id,
 					    sector_t sector,
 					    unsigned int data_size,
 					    unsigned int gfp_mask);
-extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
+extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry *e);
 extern void drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void _drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void drbd_set_recv_tcq(drbd_dev *mdev, int tcq_enabled);
@@ -1358,7 +1358,7 @@ static inline void drbd_tcp_cork(struct socket *sock)
 	int val = 1;
 
 	set_fs(KERNEL_DS);
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char*)&val, sizeof(val) );
+	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val) );
 	set_fs(oldfs);
 #else
 	tcp_sk(sock->sk)->nonagle |= TCP_NAGLE_CORK;
@@ -1372,7 +1372,7 @@ static inline void drbd_tcp_flush(struct socket *sock)
 	int val = 0;
 
 	set_fs(KERNEL_DS);
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char*)&val, sizeof(val) );
+	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val) );
 	set_fs(oldfs);
 #else
 	tcp_sk(sock->sk)->nonagle &= ~TCP_NAGLE_CORK;
@@ -1383,8 +1383,8 @@ static inline void drbd_tcp_flush(struct socket *sock)
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;
 extern struct file_operations drbd_proc_fops;
-extern const char* conns_to_name(drbd_conns_t s);
-extern const char* roles_to_name(drbd_role_t s);
+extern const char *conns_to_name(drbd_conns_t s);
+extern const char *roles_to_name(drbd_role_t s);
 
 /* drbd_actlog.c */
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
@@ -1396,10 +1396,10 @@ extern void drbd_rs_cancel_all(drbd_dev* mdev);
 extern int drbd_rs_del_all(drbd_dev* mdev);
 extern void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size);
 extern int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *);
-extern void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
+extern void __drbd_set_in_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line);
 #define drbd_set_in_sync(mdev, sector, size) \
 	__drbd_set_in_sync(mdev, sector, size, __FILE__, __LINE__ )
-extern void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line);
+extern void __drbd_set_out_of_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line);
 #define drbd_set_out_of_sync(mdev, sector, size) \
 	__drbd_set_out_of_sync(mdev, sector, size, __FILE__, __LINE__ )
 extern void drbd_al_apply_to_bm(struct Drbd_Conf *mdev);
@@ -1498,7 +1498,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error, int forcedetach)
 	}
 }
 
-static inline int semaphore_is_locked(struct semaphore* s)
+static inline int semaphore_is_locked(struct semaphore *s)
 {
 	if (!down_trylock(s)) {
 		up(s);

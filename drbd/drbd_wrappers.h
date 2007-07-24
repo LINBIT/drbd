@@ -14,7 +14,7 @@
 #endif
 
 /* see get_sb_bdev and bd_claim */
-extern char* drbd_sec_holder;
+extern char *drbd_sec_holder;
 
 /* bi_end_io handlers */
 extern int drbd_md_io_complete (struct bio *bio, unsigned int bytes_done, int error);

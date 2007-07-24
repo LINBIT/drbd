@@ -207,14 +207,14 @@ enum drbd_req_state_bits {
 #define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK) /* 0x1f8 */
 
 /* epoch entries */
-static inline struct hlist_head* ee_hash_slot(drbd_dev *mdev, sector_t sector)
+static inline struct hlist_head *ee_hash_slot(drbd_dev *mdev, sector_t sector)
 {
 	BUG_ON(mdev->ee_hash_s == 0);
 	return mdev->ee_hash + ((unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s);
 }
 
 /* transfer log (drbd_request objects) */
-static inline struct hlist_head* tl_hash_slot(drbd_dev *mdev, sector_t sector)
+static inline struct hlist_head *tl_hash_slot(drbd_dev *mdev, sector_t sector)
 {
 	BUG_ON(mdev->tl_hash_s == 0);
 	return mdev->tl_hash +
@@ -223,11 +223,11 @@ static inline struct hlist_head* tl_hash_slot(drbd_dev *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
+static inline drbd_request_t *_ack_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
 {
 	struct hlist_head *slot = tl_hash_slot(mdev, sector);
 	struct hlist_node *n;
-	drbd_request_t * req;
+	drbd_request_t *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
 		if ((unsigned long)req == (unsigned long)id) {
@@ -242,12 +242,12 @@ static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev, u64 id, sector_t se
 		}
 	}
 	ERR("_ack_id_to_req: failed to find req %p, sector %llus in list\n",
-		(void*)(unsigned long)id, (unsigned long long)sector);
+		(void *)(unsigned long)id, (unsigned long long)sector);
 	return NULL;
 }
 
 /* application reads (drbd_request objects) */
-static struct hlist_head* ar_hash_slot(drbd_dev *mdev, sector_t sector)
+static struct hlist_head *ar_hash_slot(drbd_dev *mdev, sector_t sector)
 {
 	return mdev->app_reads_hash
 		+ ((unsigned int)(sector) % APP_R_HSIZE);
@@ -255,11 +255,11 @@ static struct hlist_head* ar_hash_slot(drbd_dev *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline drbd_request_t* _ar_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
+static inline drbd_request_t *_ar_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
 {
 	struct hlist_head *slot = ar_hash_slot(mdev, sector);
 	struct hlist_node *n;
-	drbd_request_t * req;
+	drbd_request_t *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
 		if ((unsigned long)req == (unsigned long)id) {
@@ -270,7 +270,7 @@ static inline drbd_request_t* _ar_id_to_req(drbd_dev *mdev, u64 id, sector_t sec
 	return NULL;
 }
 
-static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
+static inline drbd_request_t *drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 {
 	struct bio *bio;
 	drbd_request_t *req = mempool_alloc(drbd_request_mempool, GFP_NOIO);

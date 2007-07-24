@@ -175,7 +175,7 @@ struct update_odbm_work {
 
 struct update_al_work {
 	struct drbd_work w;
-	struct lc_element * al_ext;
+	struct lc_element *al_ext;
 	struct completion event;
 	unsigned int enr;
 };
@@ -183,14 +183,14 @@ struct update_al_work {
 STATIC int w_al_write_transaction(struct Drbd_Conf *, struct drbd_work *, int);
 
 static inline
-struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
+struct lc_element *_al_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct lc_element *al_ext;
 	struct bm_extent  *bm_ext;
 	unsigned long     al_flags = 0;
 
 	spin_lock_irq(&mdev->al_lock);
-	bm_ext = (struct bm_extent*) lc_find(mdev->resync, enr/AL_EXT_PER_BM_SECT);
+	bm_ext = (struct bm_extent *) lc_find(mdev->resync, enr/AL_EXT_PER_BM_SECT);
 	if (unlikely(bm_ext!=NULL)) {
 		if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
@@ -299,15 +299,15 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 {
 	int i, n, mx;
 	unsigned int extent_nr;
-	struct al_transaction* buffer;
+	struct al_transaction *buffer;
 	sector_t sector;
 	u32 xor_sum = 0;
 
-	struct lc_element *updated = ((struct update_al_work*)w)->al_ext;
-	unsigned int new_enr = ((struct update_al_work*)w)->enr;
+	struct lc_element *updated = ((struct update_al_work *)w)->al_ext;
+	unsigned int new_enr = ((struct update_al_work *)w)->enr;
 
 	down(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
-	buffer = (struct al_transaction*)page_address(mdev->md_io_page);
+	buffer = (struct al_transaction *)page_address(mdev->md_io_page);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
@@ -357,7 +357,7 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 
 	up(&mdev->md_io_mutex);
 
-	complete(&((struct update_al_work*)w)->event);
+	complete(&((struct update_al_work *)w)->event);
 
 	return 1;
 }
@@ -370,7 +370,7 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
  */
 STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 			   struct drbd_backing_dev *bdev,
-			   struct al_transaction* b,
+			   struct al_transaction *b,
 			   int index)
 {
 	sector_t sector;
@@ -400,7 +400,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
  */
 int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 {
-	struct al_transaction* buffer;
+	struct al_transaction *buffer;
 	int from = -1, to = -1, i, cnr, overflow = 0, rv;
 	u32 from_tnr = -1, to_tnr = 0;
 	int active_extents = 0;
@@ -627,7 +627,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	nr_elements = mdev->act_log->nr_elements;
 
-	bios = kzalloc(sizeof(struct bio*) * nr_elements, GFP_KERNEL);
+	bios = kzalloc(sizeof(struct bio *) * nr_elements, GFP_KERNEL);
 	if (!bios) goto submit_one_by_one;
 
 	atomic_set(&wc.count, 0);
@@ -766,7 +766,7 @@ void drbd_al_shrink(struct Drbd_Conf *mdev)
 
 STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	struct update_odbm_work *udw = (struct update_odbm_work*)w;
+	struct update_odbm_work *udw = (struct update_odbm_work *)w;
 
 	if ( !inc_local_if_state(mdev, Attaching) ) {
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -801,8 +801,8 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev, sector_t sector,
 				      int count, int success)
 {
-	struct bm_extent* ext;
-	struct update_odbm_work * udw;
+	struct bm_extent *ext;
+	struct update_odbm_work *udw;
 
 	unsigned int enr;
 
@@ -885,7 +885,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev, sector_t sector,
  * called by worker on SyncTarget and receiver on SyncSource.
  *
  */
-void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line)
+void __drbd_set_in_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr, bnr;
@@ -963,7 +963,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line)
+void __drbd_set_out_of_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line)
 {
 	unsigned long sbnr, ebnr, lbnr;
 	sector_t esector, nr_sectors;
@@ -1015,7 +1015,7 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 }
 
 static inline
-struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
+struct bm_extent *_bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 {
 	struct bm_extent  *bm_ext;
 	int wakeup = 0;
@@ -1026,12 +1026,12 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 		spin_unlock_irq(&mdev->al_lock);
 		return NULL;
 	}
-	bm_ext = (struct bm_extent*) lc_get(mdev->resync, enr);
+	bm_ext = (struct bm_extent *) lc_get(mdev->resync, enr);
 	if (bm_ext) {
 		if (bm_ext->lce.lc_number != enr) {
 			bm_ext->rs_left = drbd_bm_e_weight(mdev, enr);
 			bm_ext->rs_failed = 0;
-			lc_changed(mdev->resync, (struct lc_element*)bm_ext);
+			lc_changed(mdev->resync, (struct lc_element *)bm_ext);
 			wakeup = 1;
 		}
 		if (bm_ext->lce.refcnt == 1) mdev->resync_locked++;
@@ -1053,7 +1053,7 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 
 static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
 {
-	struct lc_element* al_ext;
+	struct lc_element *al_ext;
 	int rv = 0;
 
 	spin_lock_irq(&mdev->al_lock);
@@ -1087,7 +1087,7 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
 int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
-	struct bm_extent* bm_ext;
+	struct bm_extent *bm_ext;
 	int i, sig;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
@@ -1135,7 +1135,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
-	struct bm_extent* bm_ext;
+	struct bm_extent *bm_ext;
 	int i;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
@@ -1162,7 +1162,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 			INFO("dropping %u, aparently got 'synced' "
 			     "by application io\n", mdev->resync_wenr);
 		);
-		bm_ext = (struct bm_extent*)lc_find(mdev->resync, mdev->resync_wenr);
+		bm_ext = (struct bm_extent *)lc_find(mdev->resync, mdev->resync_wenr);
 		if (bm_ext) {
 			D_ASSERT(!test_bit(BME_LOCKED, &bm_ext->flags));
 			D_ASSERT(test_bit(BME_NO_WRITES, &bm_ext->flags));
@@ -1174,7 +1174,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 			ALERT("LOGIC BUG\n");
 		}
 	}
-	bm_ext = (struct bm_extent*)lc_try_get(mdev->resync, enr);
+	bm_ext = (struct bm_extent *)lc_try_get(mdev->resync, enr);
 	if (bm_ext) {
 		if (test_bit(BME_LOCKED, &bm_ext->flags))
 			goto proceed;
@@ -1195,7 +1195,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	} else {
 		if (mdev->resync_locked > mdev->resync->nr_elements-3)
 			goto try_again;
-		bm_ext = (struct bm_extent*)lc_get(mdev->resync, enr);
+		bm_ext = (struct bm_extent *)lc_get(mdev->resync, enr);
 		if (!bm_ext) {
 			const unsigned long rs_flags = mdev->resync->flags;
 			if (rs_flags & LC_STARVING)
@@ -1207,7 +1207,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 		if (bm_ext->lce.lc_number != enr) {
 			bm_ext->rs_left = drbd_bm_e_weight(mdev, enr);
 			bm_ext->rs_failed = 0;
-			lc_changed(mdev->resync, (struct lc_element*)bm_ext);
+			lc_changed(mdev->resync, (struct lc_element *)bm_ext);
 			wake_up(&mdev->al_wait);
 			D_ASSERT(test_bit(BME_LOCKED, &bm_ext->flags) == 0);
 		}
@@ -1244,7 +1244,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
-	struct bm_extent* bm_ext;
+	struct bm_extent *bm_ext;
 	unsigned long flags;
 
 	MTRACE(TraceTypeResync, TraceLvlAll,
@@ -1253,7 +1253,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
 	    );
 
 	spin_lock_irqsave(&mdev->al_lock, flags);
-	bm_ext = (struct bm_extent*) lc_find(mdev->resync, enr);
+	bm_ext = (struct bm_extent *) lc_find(mdev->resync, enr);
 	if (!bm_ext) {
 		spin_unlock_irqrestore(&mdev->al_lock, flags);
 		ERR("drbd_rs_complete_io() called, but extent not found\n");
@@ -1283,7 +1283,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
  */
 void drbd_rs_cancel_all(drbd_dev* mdev)
 {
-	struct bm_extent* bm_ext;
+	struct bm_extent *bm_ext;
 	int i;
 
 	MTRACE(TraceTypeResync, TraceLvlMetrics,
@@ -1295,7 +1295,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 	if (inc_local_if_state(mdev, Failed)) {
 		/* ok, ->resync is there. */
 		for(i = 0;i<mdev->resync->nr_elements;i++) {
-			bm_ext = (struct bm_extent*) lc_entry(mdev->resync, i);
+			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
 			if (bm_ext->lce.lc_number == LC_FREE) continue;
 			bm_ext->lce.refcnt = 0; /* Rude but ok. */
 			bm_ext->rs_left = 0;
@@ -1320,7 +1320,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
  */
 int drbd_rs_del_all(drbd_dev* mdev)
 {
-	struct bm_extent* bm_ext;
+	struct bm_extent *bm_ext;
 	int i;
 
 	MTRACE(TraceTypeResync, TraceLvlMetrics,
@@ -1332,7 +1332,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 	if (inc_local_if_state(mdev, Failed)) {
 		/* ok, ->resync is there. */
 		for(i = 0;i<mdev->resync->nr_elements;i++) {
-			bm_ext = (struct bm_extent*) lc_entry(mdev->resync, i);
+			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
 			if (bm_ext->lce.lc_number == LC_FREE) continue;
 			if (bm_ext->lce.lc_number == mdev->resync_wenr) {
 				INFO("dropping %u in drbd_rs_del_all, "

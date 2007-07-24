@@ -68,7 +68,7 @@ int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 	/* error parameter ignored:
 	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
-	complete((struct completion*)bio->bi_private);
+	complete((struct completion *)bio->bi_private);
 	return 0;
 }
 
@@ -79,7 +79,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
-	struct Drbd_Conf* mdev;
+	struct Drbd_Conf *mdev;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	e = bio->bi_private;
@@ -222,9 +222,9 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	return 0;
 }
 
-int w_io_error(drbd_dev* mdev, struct drbd_work* w, int cancel)
+int w_io_error(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
-	drbd_request_t *req = (drbd_request_t*)w;
+	drbd_request_t *req = (drbd_request_t *)w;
 	int ok;
 
 	/* FIXME send a "set_out_of_sync" packet to the peer
@@ -247,9 +247,9 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w, int cancel)
 	return ok;
 }
 
-int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w, int cancel)
+int w_read_retry_remote(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
-	drbd_request_t *req = (drbd_request_t*)w;
+	drbd_request_t *req = (drbd_request_t *)w;
 
 	spin_lock_irq(&mdev->req_lock);
 	if ( cancel ||
@@ -302,7 +302,7 @@ void resync_timer_fn(unsigned long data)
 
 #define SLEEP_TIME (HZ/10)
 
-int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w, int cancel)
+int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	unsigned long bit;
 	sector_t sector;
@@ -551,7 +551,7 @@ int drbd_resync_finished(drbd_dev* mdev)
  */
 int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	int ok;
 
 	if (unlikely(cancel)) {
@@ -595,7 +595,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
  */
 int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	int ok;
 
 	if (unlikely(cancel)) {

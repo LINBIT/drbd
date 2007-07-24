@@ -120,7 +120,7 @@ void check_list(drbd_dev *mdev, struct list_head *list, char *t)
 /**
  * drbd_bp_alloc: Returns a page. Fails only if a signal comes in.
  */
-STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
+STATIC struct page *drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 {
 	unsigned long flags = 0;
 	struct page *page;
@@ -138,7 +138,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	   this is only called from drbd_alloc_ee,
 	   and that is strictly process context! */
 	if ( (page = drbd_pp_pool) ) {
-		drbd_pp_pool = (struct page*)page_private(page);
+		drbd_pp_pool = (struct page *)page_private(page);
 		drbd_pp_vacant--;
 	}
 	spin_unlock_irqrestore(&drbd_pp_lock, flags);
@@ -152,7 +152,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 		/* try the pool again, maybe the drbd_kick_lo set some free */
 		spin_lock_irqsave(&drbd_pp_lock, flags);
 		if ( (page = drbd_pp_pool) ) {
-			drbd_pp_pool = (struct page*)page_private(page);
+			drbd_pp_pool = (struct page *)page_private(page);
 			drbd_pp_vacant--;
 		}
 		spin_unlock_irqrestore(&drbd_pp_lock, flags);
@@ -231,14 +231,14 @@ You must not have the req_lock:
  drbd_wait_ee_list_empty()
 */
 
-struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
+struct Tl_epoch_entry *drbd_alloc_ee(drbd_dev *mdev,
 				     u64 id,
 				     sector_t sector,
 				     unsigned int data_size,
 				     unsigned int gfp_mask)
 {
 	request_queue_t *q;
-	struct Tl_epoch_entry* e;
+	struct Tl_epoch_entry *e;
 	struct bio_vec *bvec;
 	struct page *page;
 	struct bio *bio;
@@ -324,7 +324,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 	return NULL;
 }
 
-void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
+void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry *e)
 {
 	struct bio *bio = e->private_bio;
 	struct bio_vec *bvec;
@@ -347,10 +347,10 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 }
 
 /* currently on module unload only */
-int drbd_release_ee(drbd_dev *mdev, struct list_head* list)
+int drbd_release_ee(drbd_dev *mdev, struct list_head *list)
 {
 	int count = 0;
-	struct Tl_epoch_entry* e;
+	struct Tl_epoch_entry *e;
 	struct list_head *le;
 
 	spin_lock_irq(&mdev->req_lock);
@@ -478,7 +478,7 @@ void drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-STATIC struct socket* drbd_accept(drbd_dev *mdev, struct socket* sock)
+STATIC struct socket *drbd_accept(drbd_dev *mdev, struct socket *sock)
 {
 	struct socket *newsock;
 	int err = 0;
@@ -943,7 +943,7 @@ drbd_drain_block(drbd_dev *mdev, int data_size)
 {
 	struct page *page;
 	int rr, rv = 1;
-	void* data;
+	void *data;
 
 	page = drbd_pp_alloc(mdev, GFP_KERNEL);
 
@@ -1008,7 +1008,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
  * drbd_process_done_ee() by asender only */
 STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	sector_t sector = e->sector;
 	int ok;
 
@@ -1158,7 +1158,7 @@ STATIC int receive_RSDataReply(drbd_dev *mdev, Drbd_Header* h)
  */
 STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	sector_t sector = e->sector;
 	/* unsigned int epoch_size; */
 	int ok = 1, pcmd;
@@ -1205,7 +1205,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 STATIC int e_send_discard_ack(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	int ok = 1;
 
 	D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
@@ -1789,7 +1789,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 	return rv;
 }
 
-STATIC void drbd_uuid_dump(drbd_dev *mdev, char* text, u64* uuid)
+STATIC void drbd_uuid_dump(drbd_dev *mdev, char *text, u64 *uuid)
 {
 	INFO("%s %016llX:%016llX:%016llX:%016llX\n",
 	     text,
@@ -2556,7 +2556,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 {
 	struct hlist_head *slot;
 	struct hlist_node *n;
-	drbd_request_t * req;
+	drbd_request_t *req;
 	struct list_head *le;
 	LIST_HEAD(workset);
 	int i;
@@ -2571,7 +2571,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 			list_add(&req->w.list, &workset);
 		}
 	}
-	memset(mdev->app_reads_hash, 0, APP_R_HSIZE*sizeof(void*));
+	memset(mdev->app_reads_hash, 0, APP_R_HSIZE*sizeof(void *));
 
 	while(!list_empty(&workset)) {
 		le = workset.next;
@@ -2865,7 +2865,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	desc.flags = 0;
 
 	rv = crypto_hash_setkey(mdev->cram_hmac_tfm,
-				(u8*)mdev->net_conf->shared_secret, key_len);
+				(u8 *)mdev->net_conf->shared_secret, key_len);
 	if (rv) {
 		ERR("crypto_hash_setkey() failed with %d\n", rv);
 		rv = 0;
@@ -3317,13 +3317,13 @@ int drbd_asender(struct Drbd_thread *thi)
 			}
 			expect = asender_tbl[cmd].pkt_size;
 			ERR_IF(len != expect-sizeof(Drbd_Header)) {
-				dump_packet(mdev, mdev->meta.socket, 1, (void*)h, __FILE__, __LINE__);
+				dump_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 				DUMPI(expect);
 			}
 		}
 		if (received == expect) {
 			D_ASSERT(cmd != -1);
-			dump_packet(mdev, mdev->meta.socket, 1, (void*)h, __FILE__, __LINE__);
+			dump_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 			if (!asender_tbl[cmd].process(mdev, h)) goto err;
 
 			buf      = h;

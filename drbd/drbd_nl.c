@@ -47,7 +47,7 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 /* Generate the tag_list to struct functions */
 #define PACKET(name, number, fields) \
-int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg) \
+int name ## _from_tags (drbd_dev *mdev, unsigned short *tags, struct name *arg) \
 { \
 	int tag; \
 	int dlen; \
@@ -62,21 +62,21 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 				return 0; \
 			} \
 		} \
-		tags = (unsigned short*)((char*)tags + dlen); \
+		tags = (unsigned short *)((char *)tags + dlen); \
 	} \
 	return 1; \
 }
 #define INTEGER(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INTEGER ); */ \
-		 arg->member = *(int*)(tags); \
+		 arg->member = *(int *)(tags); \
 		 break;
 #define INT64(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INT64 ); */ \
-		 arg->member = *(u64*)(tags); \
+		 arg->member = *(u64 *)(tags); \
 		 break;
 #define BIT(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_BIT ); */ \
-		 arg->member = *(char*)(tags) ? 1 : 0; \
+		 arg->member = *(char *)(tags) ? 1 : 0; \
 		 break;
 #define STRING(pn, pr, member, len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
@@ -88,7 +88,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 /* Generate the struct to tag_list functions */
 #define PACKET(name, number, fields) \
 unsigned short* \
-name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
+name ## _to_tags (drbd_dev *mdev, struct name *arg, unsigned short *tags) \
 { \
 	fields \
 	return tags; \
@@ -97,27 +97,27 @@ name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 #define INTEGER(pn, pr, member) \
 	*tags++ = pn | pr | TT_INTEGER; \
 	*tags++ = sizeof(int); \
-	*(int*)tags = arg->member; \
-	tags = (unsigned short*)((char*)tags+sizeof(int));
+	*(int *)tags = arg->member; \
+	tags = (unsigned short *)((char *)tags+sizeof(int));
 #define INT64(pn, pr, member) \
 	*tags++ = pn | pr | TT_INT64; \
 	*tags++ = sizeof(u64); \
-	*(u64*)tags = arg->member; \
-	tags = (unsigned short*)((char*)tags+sizeof(u64));
+	*(u64 *)tags = arg->member; \
+	tags = (unsigned short *)((char *)tags+sizeof(u64));
 #define BIT(pn, pr, member) \
 	*tags++ = pn | pr | TT_BIT; \
 	*tags++ = sizeof(char); \
-	*(char*)tags = arg->member; \
-	tags = (unsigned short*)((char*)tags+sizeof(char));
+	*(char *)tags = arg->member; \
+	tags = (unsigned short *)((char *)tags+sizeof(char));
 #define STRING(pn, pr, member, len) \
 	*tags++ = pn | pr | TT_STRING; \
 	*tags++ = arg->member ## _len; \
 	memcpy(tags, arg->member, arg->member ## _len); \
-	tags = (unsigned short*)((char*)tags + arg->member ## _len);
+	tags = (unsigned short *)((char *)tags + arg->member ## _len);
 #include "linux/drbd_nl.h"
 
 extern void drbd_init_set_defaults(drbd_dev *mdev);
-void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name);
+void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
 char *nl_packet_name(int packet_type) {
@@ -139,7 +139,7 @@ char *nl_packet_name(int packet_type) {
 
 void nl_trace_packet(void *data) {
 	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
+	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
 
 	printk(KERN_INFO DEVICE_NAME "%d: "
 	       "Netlink: << %s (%d) - seq: %x, ack: %x, len: %x\n",
@@ -151,7 +151,7 @@ void nl_trace_packet(void *data) {
 
 void nl_trace_reply(void *data) {
 	struct cn_msg *req = data;
-	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply*)req->data;
+	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply *)req->data;
 
 	printk(KERN_INFO DEVICE_NAME "%d: "
 	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
@@ -162,7 +162,7 @@ void nl_trace_reply(void *data) {
 	       req->seq, req->ack, req->len);
 }
 
-int drbd_khelper(drbd_dev *mdev, char* cmd)
+int drbd_khelper(drbd_dev *mdev, char *cmd)
 {
 	char mb[12];
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
@@ -428,7 +428,7 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 	}
 }
 
-char* ppsize(char* buf, unsigned long long size)
+char *ppsize(char *buf, unsigned long long size)
 {
 	/* Needs 9 bytes at max. */
 	static char units[] = { 'K', 'M', 'G', 'T', 'P', 'E' };
@@ -444,7 +444,7 @@ char* ppsize(char* buf, unsigned long long size)
 
 /* You should call drbd_md_sync() after calling this.
  */
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
+int drbd_determin_dev_size(struct Drbd_Conf *mdev)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size;
@@ -519,7 +519,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 }
 
 sector_t
-drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
+drbd_new_dev_size(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 {
 	sector_t p_size = mdev->p_size;   /* partner's disk size. */
 	sector_t la_size = bdev->md.la_size_sect; /* last agreed size. */
@@ -673,9 +673,9 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
-	struct drbd_backing_dev* nbc = NULL; /* new_backing_conf */
+	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct inode *inode, *inode2;
-	struct lru_cache* resync_lru = NULL;
+	struct lru_cache *resync_lru = NULL;
 	drbd_state_t ns, os;
 	int rv, ntries = 0;
 
@@ -781,7 +781,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if (bd_claim(nbc->md_bdev,
 		     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
 		      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ?
-		     (void *)mdev : (void*) drbd_m_holder )) {
+		     (void *)mdev : (void *) drbd_m_holder )) {
 		retcode = MDMounted;
 		goto release_bdev_fail;
 	}
@@ -1102,7 +1102,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	ns = new_conf->max_epoch_size/8;
 	if (mdev->tl_hash_s != ns) {
-		new_tl_hash = kzalloc(ns*sizeof(void*), GFP_KERNEL);
+		new_tl_hash = kzalloc(ns*sizeof(void *), GFP_KERNEL);
 		if (!new_tl_hash) {
 			retcode = KMallocFailed;
 			goto fail;
@@ -1111,14 +1111,14 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	ns = new_conf->max_buffers/8;
 	if (new_conf->two_primaries && ( mdev->ee_hash_s != ns ) ) {
-		new_ee_hash = kzalloc(ns*sizeof(void*), GFP_KERNEL);
+		new_ee_hash = kzalloc(ns*sizeof(void *), GFP_KERNEL);
 		if (!new_ee_hash) {
 			retcode = KMallocFailed;
 			goto fail;
 		}
 	}
 
-	((char*)new_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
+	((char *)new_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
 #if 0
 	/* for the connection loss logic in drbd_recv
@@ -1441,7 +1441,7 @@ STATIC int drbd_nl_get_config(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	*tl++ = TT_END; /* Close the tag list */
 
-	return (int)((char*)tl - (char*)reply->tag_list);
+	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
 STATIC int drbd_nl_get_state(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
@@ -1451,10 +1451,10 @@ STATIC int drbd_nl_get_state(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	tl = reply->tag_list;
 
-	tl = get_state_to_tags(mdev, (struct get_state*)&mdev->state, tl);
+	tl = get_state_to_tags(mdev, (struct get_state *)&mdev->state, tl);
 	*tl++ = TT_END; /* Close the tag list */
 
-	return (int)((char*)tl - (char*)reply->tag_list);
+	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
 STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
@@ -1469,16 +1469,16 @@ STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		*tl++ = T_uuids;
 		*tl++ = UUID_SIZE*sizeof(u64);
 		memcpy(tl, mdev->bc->md.uuid, UUID_SIZE*sizeof(u64));
-		tl = (unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
+		tl = (unsigned short *)((char *)tl + UUID_SIZE*sizeof(u64));
 		dec_local(mdev);
 		*tl++ = T_uuids_flags;
 		*tl++ = sizeof(int);
 		memcpy(tl, &mdev->bc->md.flags, sizeof(int));
-		tl = (unsigned short*)((char*)tl + sizeof(int));
+		tl = (unsigned short *)((char *)tl + sizeof(int));
 	}
 	*tl++ = TT_END; /* Close the tag list */
 
-	return (int)((char*)tl - (char*)reply->tag_list);
+	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
 
@@ -1492,11 +1492,11 @@ STATIC int drbd_nl_get_timeout_flag(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	/* This is a hand crafted add tag ;) */
 	*tl++ = T_use_degraded;
 	*tl++ = sizeof(char);
-	*((char*)tl) = test_bit(USE_DEGR_WFC_T, &mdev->flags) ? 1 : 0 ;
-	tl = (unsigned short*)((char*)tl + sizeof(char));
+	*((char *)tl) = test_bit(USE_DEGR_WFC_T, &mdev->flags) ? 1 : 0 ;
+	tl = (unsigned short *)((char *)tl + sizeof(char));
 	*tl++ = TT_END;
 
-	return (int)((char*)tl - (char*)reply->tag_list);
+	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
 STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
@@ -1567,10 +1567,10 @@ static struct cn_handler_struct cnd_table[] = {
 void drbd_connector_callback(void *data)
 {
 	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
+	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
 	struct cn_handler_struct *cm;
 	struct cn_msg *cn_reply;
-	struct drbd_nl_cfg_reply* reply;
+	struct drbd_nl_cfg_reply *reply;
 	drbd_dev *mdev;
 	int retcode, rr;
 	int reply_size = sizeof(struct cn_msg)
@@ -1601,7 +1601,7 @@ void drbd_connector_callback(void *data)
 		retcode = KMallocFailed;
 		goto fail;
 	}
-	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
+	reply = (struct drbd_nl_cfg_reply *) cn_reply->data;
 
 	reply->packet_type = cm->reply_body_size ? nlp->packet_type : P_nl_after_last_packet;
 	reply->minor = nlp->drbd_minor;
@@ -1639,12 +1639,12 @@ void drbd_bcast_state(drbd_dev *mdev)
 		    sizeof(struct get_state_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 
 	/* WARN("drbd_bcast_state() got called\n"); */
 
-	tl = get_state_to_tags(mdev, (struct get_state*)&mdev->state, tl);
+	tl = get_state_to_tags(mdev, (struct get_state *)&mdev->state, tl);
 	*tl++ = TT_END; /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
@@ -1653,7 +1653,7 @@ void drbd_bcast_state(drbd_dev *mdev)
 	cn_reply->seq = atomic_add_return(1, &drbd_nl_seq);
 	cn_reply->ack = 0; /* not used here. */
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
-		(int)((char*)tl - (char*)reply->tag_list);
+		(int)((char *)tl - (char *)reply->tag_list);
 	cn_reply->flags = 0;
 
 	reply->packet_type = P_get_state;
@@ -1665,14 +1665,14 @@ void drbd_bcast_state(drbd_dev *mdev)
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
-void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
+void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
 		    sizeof(struct call_helper_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 	int str_len;
 
@@ -1682,7 +1682,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 	*tl++ = T_helper;
 	*tl++ = str_len;
 	memcpy(tl, helper_name, str_len);
-	tl = (unsigned short*)((char*)tl + str_len);
+	tl = (unsigned short *)((char *)tl + str_len);
 	*tl++ = TT_END; /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
@@ -1691,7 +1691,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 	cn_reply->seq = atomic_add_return(1, &drbd_nl_seq);
 	cn_reply->ack = 0; /* not used here. */
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
-		(int)((char*)tl - (char*)reply->tag_list);
+		(int)((char *)tl - (char *)reply->tag_list);
 	cn_reply->flags = 0;
 
 	reply->packet_type = P_call_helper;
@@ -1710,7 +1710,7 @@ void drbd_bcast_sync_progress(drbd_dev *mdev)
 		    sizeof(struct sync_progress_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 	int res;
 	unsigned long rs_left;
@@ -1731,7 +1731,7 @@ void drbd_bcast_sync_progress(drbd_dev *mdev)
 		*tl++ = T_sync_progress;
 		*tl++ = sizeof(int);
 		memcpy(tl, &res, sizeof(int));
-		tl = (unsigned short*)((char*)tl + sizeof(int));
+		tl = (unsigned short *)((char *)tl + sizeof(int));
 	}
 	*tl++ = TT_END; /* Close the tag list */
 
@@ -1741,7 +1741,7 @@ void drbd_bcast_sync_progress(drbd_dev *mdev)
 	cn_reply->seq = atomic_add_return(1, &drbd_nl_seq);
 	cn_reply->ack = 0; /* not used here. */
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
-		(int)((char*)tl - (char*)reply->tag_list);
+		(int)((char *)tl - (char *)reply->tag_list);
 	cn_reply->flags = 0;
 
 	reply->packet_type = P_sync_progress;
@@ -1794,7 +1794,7 @@ void drbd_nl_send_reply( struct cn_msg *req,
 {
 	char buffer[sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	int rr;
 
 	cn_reply->id = req->id;

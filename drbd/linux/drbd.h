@@ -222,10 +222,10 @@ typedef enum {
 } set_st_err_t;
 
 /* from drbd_strings.c */
-extern const char* conns_to_name(drbd_conns_t);
-extern const char* roles_to_name(drbd_role_t);
-extern const char* disks_to_name(drbd_disks_t);
-extern const char* set_st_err_name(set_st_err_t);
+extern const char *conns_to_name(drbd_conns_t);
+extern const char *roles_to_name(drbd_role_t);
+extern const char *disks_to_name(drbd_disks_t);
+extern const char *set_st_err_name(set_st_err_t);
 
 #ifndef BDEVNAME_SIZE
 # define BDEVNAME_SIZE 32

@@ -63,9 +63,9 @@ struct after_state_chg_work {
 	enum chg_state_flags flags;
 };
 
-int drbdd_init(struct Drbd_thread*);
-int drbd_worker(struct Drbd_thread*);
-int drbd_asender(struct Drbd_thread*);
+int drbdd_init(struct Drbd_thread *);
+int drbd_worker(struct Drbd_thread *);
+int drbd_asender(struct Drbd_thread *);
 
 int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
@@ -138,7 +138,7 @@ mempool_t *drbd_ee_mempool;
    Note: This is a single linked list, the next pointer is the private
          member of struct page.
  */
-struct page* drbd_pp_pool;
+struct page *drbd_pp_pool;
 spinlock_t   drbd_pp_lock;
 int          drbd_pp_vacant;
 wait_queue_head_t drbd_pp_wait;
@@ -788,7 +788,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 	}
 
 	if (flags & ScheduleAfter) {
-		struct after_state_chg_work* ascw;
+		struct after_state_chg_work *ascw;
 
 		ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
 		if (ascw) {
@@ -807,9 +807,9 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 
 STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	struct after_state_chg_work* ascw;
+	struct after_state_chg_work *ascw;
 
-	ascw = (struct after_state_chg_work*) w;
+	ascw = (struct after_state_chg_work *) w;
 	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
 	kfree(ascw);
 
@@ -1035,7 +1035,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 }
 
 
-STATIC int drbd_thread_setup(void* arg)
+STATIC int drbd_thread_setup(void *arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	drbd_dev *mdev = thi->mdev;
@@ -1185,7 +1185,7 @@ int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(Drbd_Header));
 
-	dump_packet(mdev, sock, 0, (void*)h, __FILE__, __LINE__);
+	dump_packet(mdev, sock, 0, (void *)h, __FILE__, __LINE__);
 	sent = drbd_send(mdev, sock, h, size, msg_flags);
 
 	ok = ( sent == size );
@@ -1224,7 +1224,7 @@ int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 	return ok;
 }
 
-int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
+int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char *data,
 		   size_t size)
 {
 	Drbd_Header h;
@@ -1237,7 +1237,7 @@ int drbd_send_cmd2(drbd_dev *mdev, Drbd_Packet_Cmd cmd, char* data,
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
-	dump_packet(mdev, mdev->data.socket, 0, (void*)&h, __FILE__, __LINE__);
+	dump_packet(mdev, mdev->data.socket, 0, (void *)&h, __FILE__, __LINE__);
 
 	ok = ( sizeof(h) == drbd_send(mdev, mdev->data.socket, &h, sizeof(h), 0) );
 	ok = ok && ( size == drbd_send(mdev, mdev->data.socket, data, size, 0) );
@@ -1381,7 +1381,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 
 	bm_words = drbd_bm_words(mdev);
 	p  = vmalloc(PAGE_SIZE); /* sleeps. cannot fail. */
-	buffer = (unsigned long*)p->payload;
+	buffer = (unsigned long *)p->payload;
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
 		drbd_bm_set_all(mdev);
@@ -1673,7 +1673,7 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 
 	p.dp_flags = cpu_to_be32(dp_flags);
-	dump_packet(mdev, mdev->data.socket, 0, (void*)&p, __FILE__, __LINE__);
+	dump_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	set_bit(UNPLUG_REMOTE, &mdev->flags);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE);
 	if (ok) {
@@ -1712,7 +1712,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
-	dump_packet(mdev, mdev->data.socket, 0, (void*)&p, __FILE__, __LINE__);
+	dump_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE);
 	if (ok) ok = _drbd_send_zc_bio(mdev, e->private_bio);
 
@@ -1737,7 +1737,7 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
  * you must have down()ed the appropriate [m]sock_mutex elsewhere!
  */
 int drbd_send(drbd_dev *mdev, struct socket *sock,
-	      void* buf, size_t size, unsigned msg_flags)
+	      void *buf, size_t size, unsigned msg_flags)
 {
 #if !HAVE_KERNEL_SENDMSG
 	mm_segment_t oldfs;
@@ -2080,7 +2080,7 @@ void drbd_destroy_mempools(void)
 
 	while(drbd_pp_pool) {
 		page = drbd_pp_pool;
-		drbd_pp_pool = (struct page*)page_private(page);
+		drbd_pp_pool = (struct page *)page_private(page);
 		__free_page(page);
 		drbd_pp_vacant--;
 	}
@@ -2314,7 +2314,7 @@ drbd_dev *drbd_new_device(int minor)
 	/* no need to lock access, we are still initializing the module. */
 	if (!tl_init(mdev)) goto Enomem;
 
-	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void*), GFP_KERNEL);
+	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void *), GFP_KERNEL);
 	if (!mdev->app_reads_hash) goto Enomem;
 
 	return mdev;
@@ -2415,7 +2415,7 @@ int __init drbd_init(void)
 	return err;
 }
 
-void drbd_free_bc(struct drbd_backing_dev* bc)
+void drbd_free_bc(struct drbd_backing_dev *bc)
 {
 	if (bc == NULL) return;
 
@@ -2478,7 +2478,7 @@ struct meta_data_on_disk {
  */
 void drbd_md_sync(drbd_dev *mdev)
 {
-	struct meta_data_on_disk * buffer;
+	struct meta_data_on_disk *buffer;
 	sector_t sector;
 	int i;
 
@@ -2548,7 +2548,7 @@ void drbd_md_sync(drbd_dev *mdev)
  */
 int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 {
-	struct meta_data_on_disk * buffer;
+	struct meta_data_on_disk *buffer;
 	int i, rv = NoError;
 
 	if (!inc_local_if_state(mdev, Attaching)) return MDIOError;
@@ -3031,7 +3031,7 @@ char *_dump_block_id(u64 block_id, char *buff) {
 
 void
 _dump_packet(drbd_dev *mdev, struct socket *sock,
-	    int recv, Drbd_Polymorph_Packet *p, char* file, int line)
+	    int recv, Drbd_Polymorph_Packet *p, char *file, int line)
 {
 	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
 	int cmd = (recv == 2) ? p->head.command : be16_to_cpu(p->head.command);

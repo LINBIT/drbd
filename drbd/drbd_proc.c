@@ -56,7 +56,7 @@ struct file_operations drbd_proc_fops = {
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
-STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
+STATIC void drbd_syncer_progress(struct Drbd_Conf *mdev, struct seq_file *seq)
 {
 	unsigned long res , db, dt, dbdt, rt, rs_left;
 
@@ -158,7 +158,7 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 }
 
 #if 0
-STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
+STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
 

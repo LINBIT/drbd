@@ -43,7 +43,7 @@
  * struct lru_cache, and the hash table slots.
  * returns pointer to a newly initialized lru_cache object with said parameters.
  */
-struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
+struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
 			   size_t e_size, void *private_p)
 {
 	unsigned long bytes;
@@ -81,12 +81,12 @@ struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
  * lc_free: Frees memory allocated by lc_alloc.
  * @lc: The lru_cache object
  */
-void lc_free(struct lru_cache* lc)
+void lc_free(struct lru_cache *lc)
 {
 	vfree(lc);
 }
 
-size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
+size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache *lc)
 {
 	/* NOTE:
 	 * total calls to lc_get are
@@ -100,7 +100,7 @@ size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
 		lc->hits, lc->misses, lc->starving, lc->dirty, lc->changed);
 }
 
-static unsigned int lc_hash_fn(struct lru_cache* lc, unsigned int enr)
+static unsigned int lc_hash_fn(struct lru_cache *lc, unsigned int enr)
 {
 	return enr % lc->nr_elements;
 }
@@ -112,7 +112,7 @@ static unsigned int lc_hash_fn(struct lru_cache* lc, unsigned int enr)
  * @lc: The lru_cache object
  * @enr: element number
  */
-struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr)
+struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr)
 {
 	struct hlist_node *n;
 	struct lc_element *e;
@@ -125,7 +125,7 @@ struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr)
 	return NULL;
 }
 
-STATIC struct lc_element * lc_evict(struct lru_cache* lc)
+STATIC struct lc_element *lc_evict(struct lru_cache *lc)
 {
 	struct list_head  *n;
 	struct lc_element *e;
@@ -147,7 +147,7 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
  * @lc: The lru_cache object
  * @e: The element to remove
  */
-void lc_del(struct lru_cache* lc, struct lc_element *e)
+void lc_del(struct lru_cache *lc, struct lc_element *e)
 {
 	/* FIXME what to do with refcnt != 0 ? */
 	PARANOIA_ENTRY();
@@ -160,7 +160,7 @@ void lc_del(struct lru_cache* lc, struct lc_element *e)
 	RETURN();
 }
 
-STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
+STATIC struct lc_element *lc_get_unused_element(struct lru_cache *lc)
 {
 	struct list_head *n;
 
@@ -171,7 +171,7 @@ STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
 	return list_entry(n, struct lc_element, list);
 }
 
-STATIC int lc_unused_element_available(struct lru_cache* lc)
+STATIC int lc_unused_element_available(struct lru_cache *lc)
 {
 	if (!list_empty(&lc->free)) return 1; /* something on the free list */
 	if (!list_empty(&lc->lru)) return 1;  /* something to evict */
@@ -207,7 +207,7 @@ STATIC int lc_unused_element_available(struct lru_cache* lc)
  * @lc: The lru_cache object
  * @enr: element number
  */
-struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
+struct lc_element *lc_get(struct lru_cache *lc, unsigned int enr)
 {
 	struct lc_element *e;
 
@@ -264,7 +264,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
  * but only gets a new reference on an existing element.
  * you either get the requested element, or NULL.
  */
-struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
+struct lc_element *lc_try_get(struct lru_cache *lc, unsigned int enr)
 {
 	struct lc_element *e;
 
@@ -286,7 +286,7 @@ struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
 	RETURN(e);
 }
 
-void lc_changed(struct lru_cache* lc, struct lc_element* e)
+void lc_changed(struct lru_cache *lc, struct lc_element *e)
 {
 	PARANOIA_ENTRY();
 	BUG_ON(e != lc->changing_element);
@@ -302,7 +302,7 @@ void lc_changed(struct lru_cache* lc, struct lc_element* e)
 }
 
 
-unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
+unsigned int lc_put(struct lru_cache *lc, struct lc_element *e)
 {
 	BUG_ON(!lc);
 	BUG_ON(!lc->nr_elements);
@@ -328,7 +328,7 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
  * @enr: element number
  * @index: The elements' position in the cache
  */
-void lc_set(struct lru_cache* lc, unsigned int enr, int index)
+void lc_set(struct lru_cache *lc, unsigned int enr, int index)
 {
 	struct lc_element *e;
 
@@ -346,7 +346,7 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 /**
  * lc_dump: Dump a complete LRU cache to seq in textual form.
  */
-void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
+void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
 	     void (*detail) (struct seq_file *, struct lc_element *) )
 {
 	unsigned int nr_elements = lc->nr_elements;

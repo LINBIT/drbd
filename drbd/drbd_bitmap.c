@@ -108,7 +108,7 @@ struct drbd_bitmap {
 #define BM_LOCKED 0
 #define BM_MD_IO_ERROR (BITS_PER_LONG-1) /* 31? 63? */
 
-void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
+void __drbd_bm_lock(drbd_dev *mdev, char *file, int line)
 {
        struct drbd_bitmap *b = mdev->bitmap;
        spin_lock_irq(&b->bm_lock);
@@ -145,7 +145,7 @@ void drbd_bm_unlock(drbd_dev *mdev)
 
 #if DUMP_MD >= 3
 /* debugging aid */
-STATIC void bm_end_info(drbd_dev *mdev, const char* where)
+STATIC void bm_end_info(drbd_dev *mdev, const char *where)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	size_t w = (b->bm_bits-1) >> LN2_BPL;
@@ -224,7 +224,7 @@ void drbd_bm_cleanup(drbd_dev *mdev)
  * this masks out the remaining bits.
  * Rerturns the number of bits cleared.
  */
-STATIC int bm_clear_surplus(struct drbd_bitmap * b)
+STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -243,7 +243,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 	return cleared;
 }
 
-STATIC void bm_set_surplus(struct drbd_bitmap * b)
+STATIC void bm_set_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -255,7 +255,7 @@ STATIC void bm_set_surplus(struct drbd_bitmap * b)
 		b->bm[w++] = ~(0UL);
 }
 
-STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
+STATIC unsigned long bm_count_bits(struct drbd_bitmap *b, int just_read)
 {
 	unsigned long *bm = b->bm;
 	unsigned long *ep = b->bm + b->bm_words;
@@ -271,7 +271,7 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
 	return bits;
 }
 
-void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
+void _drbd_bm_recount_bits(drbd_dev *mdev, char *file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long flags, bits;
@@ -430,7 +430,7 @@ size_t drbd_bm_words(drbd_dev *mdev)
  * buffer[i] is expected to be little endian unsigned long.
  */
 void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
-			unsigned long* buffer )
+			unsigned long *buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
@@ -468,7 +468,7 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
  * buffer[i] is expected to be little endian unsigned long.
  */
 void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
-		      unsigned long* buffer )
+		      unsigned long *buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
@@ -506,7 +506,7 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
  * buffer[i] will be little endian unsigned long.
  */
 void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
-		      unsigned long* buffer )
+		      unsigned long *buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
@@ -581,7 +581,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
 	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
-	struct page *page = vmalloc_to_page((char*)(b->bm) + (PAGE_SIZE*page_nr));
+	struct page *page = vmalloc_to_page((char *)(b->bm) + (PAGE_SIZE*page_nr));
 	unsigned int len;
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	on_disk_sector += ((sector_t)page_nr) << (PAGE_SHIFT-9);
@@ -1032,7 +1032,7 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 	e = min((size_t)S2W(enr+1), b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
-		const unsigned long* w = b->bm+s;
+		const unsigned long *w = b->bm+s;
 		int n = e-s;
 		while (n--) count += hweight_long(*w++);
 	} else {
@@ -1061,7 +1061,7 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 	e = min_t(size_t, s + BM_WORDS_PER_AL_EXT, b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
-		const unsigned long* w = b->bm+s;
+		const unsigned long *w = b->bm+s;
 		int n = e-s;
 		while (n--) count += hweight_long(*w++);
 		n = e-s;

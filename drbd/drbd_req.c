@@ -1058,7 +1058,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
 	unsigned int s_enr, e_enr;
-	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
+	struct Drbd_Conf *mdev = (drbd_dev*) q->queuedata;
 
 	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
 		bio_endio(bio, bio->bi_size, -EPERM);
@@ -1133,7 +1133,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
  * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 {
-	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
+	struct Drbd_Conf *mdev = (drbd_dev*) q->queuedata;
 	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; /* 32 bit */
 	unsigned int bio_size = bio->bi_size;
 	int limit, backing_limit;

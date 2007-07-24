@@ -98,50 +98,50 @@ enum {
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 
-extern struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
+extern struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
 				  size_t e_size, void *private_p);
-extern void lc_free(struct lru_cache* lc);
-extern void lc_set (struct lru_cache* lc, unsigned int enr, int index);
-extern void lc_del (struct lru_cache* lc, struct lc_element *element);
+extern void lc_free(struct lru_cache *lc);
+extern void lc_set (struct lru_cache *lc, unsigned int enr, int index);
+extern void lc_del (struct lru_cache *lc, struct lc_element *element);
 
-extern struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr);
-extern struct lc_element* lc_find(struct lru_cache* lc, unsigned int enr);
-extern struct lc_element* lc_get (struct lru_cache* lc, unsigned int enr);
-extern unsigned int       lc_put (struct lru_cache* lc, struct lc_element* e);
-extern void            lc_changed(struct lru_cache* lc, struct lc_element* e);
+extern struct lc_element *lc_try_get(struct lru_cache *lc, unsigned int enr);
+extern struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr);
+extern struct lc_element *lc_get (struct lru_cache *lc, unsigned int enr);
+extern unsigned int       lc_put (struct lru_cache *lc, struct lc_element *e);
+extern void            lc_changed(struct lru_cache *lc, struct lc_element *e);
 
 struct seq_file;
-extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache* lc);
+extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache *lc);
 
-void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
+void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
 	     void (*detail) (struct seq_file *, struct lc_element *) );
 
 /* This can be used to stop lc_get from changing the set of active elements.
  * Note that the reference counts and order on the lru list may still change.
  * returns true if we aquired the lock.
  */
-static inline int lc_try_lock(struct lru_cache* lc)
+static inline int lc_try_lock(struct lru_cache *lc)
 {
 	return !test_and_set_bit(__LC_DIRTY, &lc->flags);
 }
 
-static inline void lc_unlock(struct lru_cache* lc)
+static inline void lc_unlock(struct lru_cache *lc)
 {
 	clear_bit(__LC_DIRTY, &lc->flags);
 	smp_mb__after_clear_bit();
 }
 
-static inline int lc_is_used(struct lru_cache* lc, unsigned int enr)
+static inline int lc_is_used(struct lru_cache *lc, unsigned int enr)
 {
-	struct lc_element* e = lc_find(lc, enr);
+	struct lc_element *e = lc_find(lc, enr);
 	return (e && e->refcnt);
 }
 
 #define LC_FREE (-1U)
 
-#define lc_e_base(lc)  ((char*) ( (lc)->slot + (lc)->nr_elements ) )
-#define lc_entry(lc, i) ((struct lc_element*) \
+#define lc_e_base(lc)  ((char *) ( (lc)->slot + (lc)->nr_elements ) )
+#define lc_entry(lc, i) ((struct lc_element *) \
                        (lc_e_base(lc) + (i)*(lc)->element_size))
-#define lc_index_of(lc, e) (((char*)(e) - lc_e_base(lc))/(lc)->element_size)
+#define lc_index_of(lc, e) (((char *)(e) - lc_e_base(lc))/(lc)->element_size)
 
 #endif
