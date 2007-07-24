@@ -274,11 +274,10 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 			    (unsigned long long)sector, data_size, ds);
 
 			q = bdev_get_queue(bio->bi_bdev);
-			if (q->merge_bvec_fn) {
+			if (q->merge_bvec_fn)
 				ERR("merge_bvec_fn() = %d\n",
-				    q->merge_bvec_fn(q, bio, 
+				    q->merge_bvec_fn(q, bio,
 					  &bio->bi_io_vec[bio->bi_vcnt]));
-			}
 
 			/* dump more of the bio. */
 			DUMPI(bio->bi_max_vecs);
@@ -445,10 +444,10 @@ void _drbd_clear_done_ee(drbd_dev *mdev)
 		le = mdev->done_ee.next;
 		list_del(le);
 		e = list_entry(le, struct Tl_epoch_entry, w.list);
-		if (mdev->net_conf->wire_protocol == DRBD_PROT_C ||
-		   is_syncer_block_id(e->block_id)) {
+		if (mdev->net_conf->wire_protocol == DRBD_PROT_C
+		|| is_syncer_block_id(e->block_id))
 			++n;
-		}
+
 		if (!hlist_unhashed(&e->colision)) hlist_del_init(&e->colision);
 		drbd_free_ee(mdev, e);
 	}
@@ -693,9 +692,8 @@ STATIC Drbd_Packet_Cmd drbd_recv_fp(drbd_dev *mdev, struct socket *sock)
 
 	rr = drbd_recv_short(mdev, sock, h, sizeof(*h));
 
-	if ( rr==sizeof(*h) && h->magic==BE_DRBD_MAGIC ) {
+	if (rr == sizeof(*h) && h->magic == BE_DRBD_MAGIC)
 		return be16_to_cpu(h->command);
-	}
 
 	return 0xffff;
 }
@@ -972,10 +970,9 @@ drbd_drain_block(drbd_dev *mdev, int data_size)
  * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
 static void maybe_kick_lo(drbd_dev *mdev)
 {
-	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark ) {
-		/* FIXME hysteresis ?? */
+	/* FIXME hysteresis ?? */
+	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark)
 		drbd_kick_lo(mdev);
-	}
 }
 
 STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
@@ -1320,15 +1317,14 @@ STATIC int receive_Data(drbd_dev *mdev, Drbd_Header* h)
 	e->w.cb = e_end_block;
 
 	dp_flags = be32_to_cpu(p->dp_flags);
-	if (dp_flags & DP_HARDBARRIER) {
+	if (dp_flags & DP_HARDBARRIER)
 		e->private_bio->bi_rw |= BIO_RW_BARRIER;
-	}
-	if (dp_flags & DP_RW_SYNC) {
+
+	if (dp_flags & DP_RW_SYNC)
 		e->private_bio->bi_rw |= BIO_RW_SYNC;
-	}
-	if (dp_flags & DP_MAY_SET_IN_SYNC) {
+
+	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;
-	}
 
 	/* I'm the receiver, I do hold a net_cnt reference. */
 	if (!mdev->net_conf->two_primaries) {
@@ -1959,17 +1955,14 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	}
 
 	if (hg == -100) {
-		if (mdev->net_conf->want_lose && !(mdev->p_uuid[UUID_FLAGS]&1)){
+		if (mdev->net_conf->want_lose && !(mdev->p_uuid[UUID_FLAGS]&1))
 			hg = -1;
-		}
-		if (!mdev->net_conf->want_lose && (mdev->p_uuid[UUID_FLAGS]&1)){
+		if (!mdev->net_conf->want_lose && (mdev->p_uuid[UUID_FLAGS]&1))
 			hg = 1;
-		}
 
-		if ( abs(hg) < 100 ) {
+		if ( abs(hg) < 100 )
 			WARN("Split-Brain detected, manually solved. Sync from %s node\n",
 			     (hg < 0) ? "peer":"this");
-		}
 	}
 
 	if (hg == -100) {
@@ -2008,9 +2001,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 
 		drbd_bm_set_all(mdev);
 
-		if (unlikely(drbd_bm_write(mdev) < 0)) {
+		if (unlikely(drbd_bm_write(mdev) < 0))
 			return conn_mask;
-		}
 
 		drbd_md_clear_flag(mdev, MDF_FullSync);
 		drbd_md_sync(mdev);
@@ -2133,10 +2125,9 @@ static void warn_if_differ_considerably(drbd_dev *mdev, const char *s, sector_t 
 	sector_t d;
 	if (a == 0 || b == 0) return;
 	d = (a > b) ? (a - b) : (b - a);
-	if ( d > (a>>3) || d > (b>>3)) {
+	if ( d > (a>>3) || d > (b>>3))
 		WARN("Considerable difference in %s: %llus vs. %llus\n", s,
 		     (unsigned long long)a, (unsigned long long)b);
-	}
 }
 
 STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
@@ -2166,12 +2157,11 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		warn_if_differ_considerably(mdev, "user requested size",
 					    p_usize, mdev->bc->dc.disk_size);
 
-		if (mdev->state.conn == WFReportParams) {
-			/* this is first connect, or an otherwise expected
-			   param exchange.  choose the minimum */
+		/* if this is the first connect, or an otherwise expected
+		 * param exchange, choose the minimum */
+		if (mdev->state.conn == WFReportParams)
 			p_usize = min_not_zero((sector_t)mdev->bc->dc.disk_size,
 					     p_usize);
-		}
 
 		my_usize = mdev->bc->dc.disk_size;
 
@@ -2226,9 +2216,8 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	if (inc_local(mdev)) {
 		max_seg_s = be32_to_cpu(p->max_segment_size);
-		if (max_seg_s != mdev->rq_queue->max_segment_size) {
+		if (max_seg_s != mdev->rq_queue->max_segment_size)
 			drbd_setup_queue_param(mdev, max_seg_s);
-		}
 
 		drbd_setup_order_type(mdev, be32_to_cpu(p->queue_order_type));
 		dec_local(mdev);
@@ -2258,9 +2247,8 @@ STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 
 	p_uuid = kmalloc(sizeof(u64)*EXT_UUID_SIZE, GFP_KERNEL);
 
-	for (i = Current; i < EXT_UUID_SIZE; i++) {
+	for (i = Current; i < EXT_UUID_SIZE; i++)
 		p_uuid[i] = be64_to_cpu(p->uuid[i]);
-	}
 
 	if (mdev->p_uuid) kfree(mdev->p_uuid);
 	mdev->p_uuid = p_uuid;
@@ -2386,9 +2374,8 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		}
 	}
 
-	if (rv==SS_Success) {
+	if (rv==SS_Success)
 		after_state_ch(mdev, os, ns, ChgStateVerbose | ChgStateHard);
-	}
 
 	mdev->net_conf->want_lose = 0;
 
@@ -2695,9 +2682,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
 	}
 	spin_unlock_irq(&mdev->req_lock);
-	if (rv == SS_Success) {
+	if (rv == SS_Success)
 		after_state_ch(mdev, os, ns, ChgStateVerbose);
-	}
 
 	if (os.conn == Disconnecting) {
 		wait_event( mdev->misc_wait, atomic_read(&mdev->net_cnt) == 0 );
@@ -2988,10 +2974,9 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 
 	rv = ! memcmp(response, right_response, resp_size);
 
-	if (rv) {
+	if (rv)
 		INFO("Peer authenticated using %d bytes of '%s' HMAC\n",
 		     resp_size, mdev->net_conf->cram_hmac_alg);
-	}
 
  fail:
 	if (peers_ch) kfree(peers_ch);

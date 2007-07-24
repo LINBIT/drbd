@@ -248,13 +248,11 @@ STATIC void bm_set_surplus(struct drbd_bitmap * b)
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
 
-	if (w < b->bm_words) {
+	if (w < b->bm_words)
 		b->bm[w++] |= ~mask;
-	}
 
-	if (w < b->bm_words) {
+	if (w < b->bm_words)
 		b->bm[w++] = ~(0UL);
-	}
 }
 
 STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
@@ -555,13 +553,13 @@ int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int erro
 
 	if (bio->bi_size)
 		return 1;
-	if (!error && !uptodate) {
-		/* strange behaviour of some lower level drivers...
-		 * fail the request by clearing the uptodate flag,
-		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+
+	/* strange behaviour of some lower level drivers...
+	 * fail the request by clearing the uptodate flag,
+	 * but do not return any error?!
+	 * do we want to WARN() on this? */
+	if (!error && !uptodate)
 		error = -EIO;
-	}
 
 	if (error) {
 		/* doh. what now?
@@ -673,9 +671,8 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 		/* all pages */
 		bm = b->bm;
 	}
-	for (; bm < end; bm++) {
+	for (; bm < end; bm++)
 		*bm = cpu_to_lel(*bm);
-	}
 }
 # endif
 /* lel_to_cpu == cpu_to_lel */
@@ -707,10 +704,9 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	atomic_set(&b->bm_async_io, num_pages);
 	__clear_bit(BM_MD_IO_ERROR, &b->bm_flags);
 
-	for (i = 0; i < num_pages; i++) {
-		/* let the layers below us try to merge these bios... */
+	/* let the layers below us try to merge these bios... */
+	for (i = 0; i < num_pages; i++)
 		drbd_bm_page_io_async(mdev, b, i, rw);
-	}
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
@@ -727,7 +723,8 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	now = jiffies;
 	if (rw == WRITE) {
 		bm_lel_to_cpu(b);
-	} else /* rw == READ */ {
+	} else {
+		/* rw == READ */
 		/* just read, if neccessary adjust endianness */
 		b->bm_set = bm_count_bits(b, 1);
 		INFO("recounting of set bits took additional %lu jiffies\n",
@@ -782,9 +779,8 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev, unsigned long enr)
 	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
 			enr, offset, num_words);
 #endif
-	if (num_words < S2W(1)) {
+	if (num_words < S2W(1))
 		memset(page_address(mdev->md_io_page), 0, MD_HARDSECT);
-	}
 	drbd_bm_get_lel( mdev, offset, num_words,
 			 page_address(mdev->md_io_page) );
 	if (!drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, WRITE)) {
@@ -856,11 +852,11 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	ERR_IF(!b->bm) return i;
 
 	spin_lock_irq(&b->bm_lock);
-	if (b->bm_fo < b->bm_bits) {
+	if (b->bm_fo < b->bm_bits)
 		i = find_next_bit(b->bm, b->bm_bits, b->bm_fo);
-	} else if (b->bm_fo > b->bm_bits) {
+	else if (b->bm_fo > b->bm_bits)
 		ERR("bm_fo=%lu bm_bits=%lu\n", b->bm_fo, b->bm_bits);
-	}
+
 	if (i >= b->bm_bits) {
 		i = -1UL;
 		b->bm_fo = 0;
@@ -999,7 +995,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 		i = test_bit(bitnr, b->bm) ? 1 : 0;
 	} else if (bitnr == b->bm_bits) {
 		i = -1;
-	} else /* (bitnr > b->bm_bits) */ {
+	} else { /* (bitnr > b->bm_bits) */
 		ERR("bitnr=%lu > bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
 	}
@@ -1071,9 +1067,8 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 		n = e-s;
 		memset(b->bm+s, -1, n*sizeof(long));
 		b->bm_set += n*BITS_PER_LONG - count;
-		if (e == b->bm_words) {
+		if (e == b->bm_words)
 			b->bm_set -= bm_clear_surplus(b);
-		}
 	} else {
 		ERR("start offset (%d) too large in drbd_bm_ALe_set_all\n", s);
 	}

@@ -296,9 +296,8 @@ void resync_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	/* harmless race: list_empty outside data.work.q_lock */
-	if (list_empty(&mdev->resync_work.list) && queue) {
+	if (list_empty(&mdev->resync_work.list) && queue)
 		drbd_queue_work(&mdev->data.work, &mdev->resync_work);
-	}
 }
 
 #define SLEEP_TIME (HZ/10)
@@ -321,15 +320,13 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w, int cancel)
 		return 0;
 	}
 
-	if (mdev->state.conn != SyncTarget) {
+	if (mdev->state.conn != SyncTarget)
 		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.conn));
-	}
 
         number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
-	if (atomic_read(&mdev->rs_pending_cnt)>number) {
+	if (atomic_read(&mdev->rs_pending_cnt)>number)
 		goto requeue;
-	}
 	number -= atomic_read(&mdev->rs_pending_cnt);
 
 	if (!inc_local(mdev)) {
@@ -509,9 +506,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 		    mdev->state.conn == PausedSyncT) {
 			if (mdev->p_uuid) {
 				int i;
-				for ( i = Bitmap ; i<=History_end ; i++ ) {
+				for (i = Bitmap ; i<=History_end ; i++)
 					_drbd_uuid_set(mdev, i, mdev->p_uuid[i]);
-				}
 				drbd_uuid_set(mdev, Bitmap, mdev->bc->md.uuid[Current]);
 				_drbd_uuid_set(mdev, Current, mdev->p_uuid[Current]);
 			} else {
@@ -525,9 +521,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 			/* Now the two UUID sets are equal, update what we
 			 * know of the peer. */
 			int i;
-			for ( i = Current ; i<=History_end ; i++ ) {
+			for (i = Current ; i<=History_end ; i++)
 				mdev->p_uuid[i] = mdev->bc->md.uuid[i];
-			}
 		}
 	}
 
@@ -583,7 +578,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->req_lock);
-	if ( drbd_bio_has_active_page(e->private_bio) ) {
+	if (drbd_bio_has_active_page(e->private_bio)) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list, &mdev->net_ee);
 	} else {
@@ -639,7 +634,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->req_lock);
-	if ( drbd_bio_has_active_page(e->private_bio) ) {
+	if (drbd_bio_has_active_page(e->private_bio)) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list, &mdev->net_ee);
 	} else {
@@ -795,12 +790,12 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i = 0; i < minor_count; i++) {
-		if ( !(odev = minor_to_mdev(i)) ) continue;
-		if (! _drbd_may_sync_now(odev)) {
+		odev = minor_to_mdev(i);
+		if (!odev) continue;
+		if (!_drbd_may_sync_now(odev))
 			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1),
 						ChgStateHard|ScheduleAfter)
 				!= SS_NothingToDo ) ;
-		}
 	}
 
 	return rv;
@@ -820,11 +815,10 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	for (i = 0; i < minor_count; i++) {
 		if ( !(odev = minor_to_mdev(i)) ) continue;
 		if (odev->state.aftr_isp) {
-			if (_drbd_may_sync_now(odev)) {
+			if (_drbd_may_sync_now(odev))
 				rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 0),
 							ChgStateHard|ScheduleAfter)
 					!= SS_NothingToDo ) ;
-			}
 		}
 	}
 	return rv;
@@ -901,11 +895,10 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	ns.conn = side;
 
-	if (side == SyncTarget) {
+	if (side == SyncTarget)
 		ns.disk = Inconsistent;
-	} else /* side == SyncSource */ {
+	else /* side == SyncSource */
 		ns.pdsk = Inconsistent;
-	}
 
 	r = _drbd_set_state(mdev, ns, ChgStateVerbose);
 	ns = mdev->state;

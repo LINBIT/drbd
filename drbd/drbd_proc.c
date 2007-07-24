@@ -100,15 +100,14 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	res = 1000L - res;
 	seq_printf(seq, "sync'ed:%3lu.%lu%% ", res / 10, res % 10);
 	/* if more than 1 GB display in MB */
-	if (mdev->rs_total > 0x100000L) {
+	if (mdev->rs_total > 0x100000L)
 		seq_printf(seq, "(%lu/%lu)M\n\t",
 			    (unsigned long) Bit2KB(rs_left) >> 10,
 			    (unsigned long) Bit2KB(mdev->rs_total) >> 10 );
-	} else {
+	else
 		seq_printf(seq, "(%lu/%lu)K\n\t",
 			    (unsigned long) Bit2KB(rs_left),
 			    (unsigned long) Bit2KB(mdev->rs_total) );
-	}
 
 	/* see drivers/md/md.c
 	 * We do not want to overflow, so the order of operands and
@@ -238,15 +237,15 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			);
 		}
 		if ( mdev->state.conn == SyncSource ||
-		     mdev->state.conn == SyncTarget ) {
+		     mdev->state.conn == SyncTarget )
 			drbd_syncer_progress(mdev, seq);
-		}
-		if (mdev->resync) {
+
+		if (mdev->resync)
 			lc_printf_stats(seq, mdev->resync);
-		}
-		if (mdev->act_log) {
+
+		if (mdev->act_log)
 			lc_printf_stats(seq, mdev->act_log);
-		}
+
 #if 0
 		if (mdev->resync) {
 			lc_dump(mdev->resync, seq, "rs_left",

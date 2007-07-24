@@ -131,11 +131,11 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 	     (unsigned long long)sector, rw ? "WRITE" : "READ");
 #endif
 
-	if (sector < drbd_md_first_sector(bdev)  || sector > drbd_md_last_sector(bdev)) {
+	if (sector < drbd_md_first_sector(bdev) ||
+	    sector > drbd_md_last_sector(bdev))
 		ALERT("%s [%d]:%s(,%llus,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, rw ? "WRITE" : "READ");
-	}
 
 	ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector, rw, hardsect);
 	if (unlikely(!ok)) {
@@ -238,9 +238,8 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 		evicted = al_ext->lc_number;
 
-		if (mdev->state.conn < Connected && evicted != LC_FREE) {
-			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT );
-		}
+		if (mdev->state.conn < Connected && evicted != LC_FREE)
+			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT);
 
 		/* drbd_al_write_transaction(mdev,al_ext,enr);
 		   generic_make_request() are serialized on the
@@ -289,9 +288,8 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 		return;
 	}
 
-	if ( lc_put(mdev->act_log, extent) == 0 ) {
+	if (lc_put(mdev->act_log, extent) == 0)
 		wake_up(&mdev->al_wait);
-	}
 
 	spin_unlock_irqrestore(&mdev->al_lock, flags);
 }
@@ -351,9 +349,9 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 		drbd_io_error(mdev, TRUE);
 	}
 
-	if ( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements, AL_EXTENTS_PT) ) {
+	if (++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements, AL_EXTENTS_PT))
 		mdev->al_tr_pos = 0;
-	}
+
 	D_ASSERT(mdev->al_tr_pos < MD_AL_MAX_SIZE);
 	mdev->al_tr_number++;
 
@@ -388,9 +386,8 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 	rv = ( be32_to_cpu(b->magic) == DRBD_MAGIC );
 
-	for(i = 0;i<AL_EXTENTS_PT+1;i++) {
+	for(i = 0;i<AL_EXTENTS_PT+1;i++)
 		xor_sum ^= be32_to_cpu(b->updates[i].extent);
-	}
 	rv &= (xor_sum == be32_to_cpu(b->xor_sum));
 
 	return rv;
@@ -492,9 +489,8 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 
 	mdev->al_tr_number = to_tnr+1;
 	mdev->al_tr_pos = to;
-	if ( ++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements, AL_EXTENTS_PT) ) {
+	if (++mdev->al_tr_pos > div_ceil(mdev->act_log->nr_elements, AL_EXTENTS_PT))
 		mdev->al_tr_pos = 0;
-	}
 
 	/* ok, we are done with it */
 	up(&mdev->md_io_mutex);
@@ -520,20 +516,19 @@ STATIC int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	if (bio->bi_size) return 1;
-	if (!error && !uptodate) {
-		/* strange behaviour of some lower level drivers...
-		 * fail the request by clearing the uptodate flag,
-		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+
+	/* strange behaviour of some lower level drivers...
+	 * fail the request by clearing the uptodate flag,
+	 * but do not return any error?!
+	 * do we want to WARN() on this? */
+	if (!error && !uptodate)
 		error = -EIO;
-	}
 
 	drbd_chk_io_error(mdev, error, TRUE);
 	if (error && wc->error == 0) wc->error = error;
 
-	if (atomic_dec_and_test(&wc->count)) {
+	if (atomic_dec_and_test(&wc->count))
 		complete(&wc->io_done);
-	}
 
 	page = bio->bi_io_vec[0].bv_page;
 	if (page) put_page(page);
@@ -589,10 +584,9 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 			 kmap(*page) + *page_offset );
 	kunmap(*page);
 
-	if (bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT) {
-		/* no memory leak, page gets cleaned up by caller */
+	/* no memory leak, page gets cleaned up by caller */
+	if (bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT)
 		return -EINVAL;
-	}
 
 	if (!allocated_page) get_page(*page);
 
@@ -916,13 +910,12 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	/* we clear it (in sync).
 	 * round up start sector, round down end sector.  we make sure we only
 	 * clear full, alligned, BM_BLOCK_SIZE (4K) blocks */
-	if (unlikely(esector < BM_SECT_PER_BIT-1)) {
+	if (unlikely(esector < BM_SECT_PER_BIT-1))
 		return;
-	} else if (unlikely(esector == (nr_sectors-1))) {
+	if (unlikely(esector == (nr_sectors-1)))
 		ebnr = lbnr;
-	} else {
+	else
 		ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
-	}
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
 	MTRACE(TraceTypeResync, TraceLvlMetrics,
@@ -1049,11 +1042,9 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	if (wakeup) wake_up(&mdev->al_wait);
 
 	if (!bm_ext) {
-		if (rs_flags & LC_STARVING) {
+		if (rs_flags & LC_STARVING)
 			WARN("Have to wait for element"
 			     " (resync LRU too small?)\n");
-		}
-		/* WARN("Ongoing RS update (???)\n"); */
 		BUG_ON(rs_flags & LC_DIRTY);
 	}
 
@@ -1185,9 +1176,8 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	}
 	bm_ext = (struct bm_extent*)lc_try_get(mdev->resync, enr);
 	if (bm_ext) {
-		if (test_bit(BME_LOCKED, &bm_ext->flags)) {
+		if (test_bit(BME_LOCKED, &bm_ext->flags))
 			goto proceed;
-		}
 		if (!test_and_set_bit(BME_NO_WRITES, &bm_ext->flags)) {
 			mdev->resync_locked++;
 		} else {
@@ -1208,11 +1198,9 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 		bm_ext = (struct bm_extent*)lc_get(mdev->resync, enr);
 		if (!bm_ext) {
 			const unsigned long rs_flags = mdev->resync->flags;
-			if (rs_flags & LC_STARVING) {
+			if (rs_flags & LC_STARVING)
 				WARN("Have to wait for element"
 				     " (resync LRU too small?)\n");
-			}
-			/* WARN("Ongoing RS update (???)\n"); */
 			BUG_ON(rs_flags & LC_DIRTY);
 			goto try_again;
 		}
@@ -1410,13 +1398,12 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 	/*
 	 * round up start sector, round down end sector.  we make sure we only
 	 * handle full, alligned, BM_BLOCK_SIZE (4K) blocks */
-	if (unlikely(esector < BM_SECT_PER_BIT-1)) {
+	if (unlikely(esector < BM_SECT_PER_BIT-1))
 		return;
-	} else if (unlikely(esector == (nr_sectors-1))) {
+	if (unlikely(esector == (nr_sectors-1)))
 		ebnr = lbnr;
-	} else {
+	else
 		ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
-	}
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
 	if (sbnr > ebnr) return;

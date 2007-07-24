@@ -1608,9 +1608,8 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
-	if (test_bit(SIGNAL_ASENDER, &mdev->flags)) {
+	if (test_bit(SIGNAL_ASENDER, &mdev->flags))
 		force_sig(DRBD_SIG, mdev->asender.task);
-	}
 }
 
 static inline void request_ping(drbd_dev *mdev) {
@@ -1734,9 +1733,8 @@ static inline void inc_unacked(drbd_dev* mdev)
 
 static inline void dec_net(drbd_dev* mdev)
 {
-	if (atomic_dec_and_test(&mdev->net_cnt)) {
+	if (atomic_dec_and_test(&mdev->net_cnt))
 		wake_up(&mdev->misc_wait);
-	}
 }
 
 /**
@@ -1761,9 +1759,8 @@ static inline int inc_net(drbd_dev* mdev)
 
 static inline void dec_local(drbd_dev* mdev)
 {
-	if (atomic_dec_and_test(&mdev->local_cnt)) {
+	if (atomic_dec_and_test(&mdev->local_cnt))
 		wake_up(&mdev->misc_wait);
-	}
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
 /**
@@ -1776,9 +1773,8 @@ static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 
 	atomic_inc(&mdev->local_cnt);
 	io_allowed = (mdev->state.disk >= mins );
-	if (!io_allowed) {
+	if (!io_allowed)
 		dec_local(mdev);
-	}
 	return io_allowed;
 }
 static inline int inc_local(drbd_dev* mdev)

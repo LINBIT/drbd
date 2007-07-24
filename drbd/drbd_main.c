@@ -326,10 +326,10 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 		return 1;
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
-	if ( (send = (mdev->state.disk == Failed)) ) {
+	send = (mdev->state.disk == Failed);
+	if (send)
 		_drbd_set_state(_NS(mdev, disk, Diskless),
 				ChgStateHard|ScheduleAfter);
-	}
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	if (!send) return ok;
@@ -347,9 +347,8 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 
 	/* Releasing the backing device is done in after_state_ch() */
 
-	if (eh == CallIOEHelper) {
+	if (eh == CallIOEHelper)
 		drbd_khelper(mdev, "local-io-error");
-	}
 
 	return ok;
 }
@@ -615,17 +614,15 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 
 	/* Dissalow Network errors to configure a device's network part */
 	if ( (ns.conn >= Timeout && ns.conn <= TearDown ) &&
-	    os.conn <= Disconnecting ) {
+	    os.conn <= Disconnecting )
 		ns.conn = os.conn;
-	}
 
 	/* Dissalow network errors (+TearDown) to overwrite each other.
 	   Dissalow network errors to overwrite the Disconnecting state. */
 	if ( ( (os.conn >= Timeout && os.conn <= TearDown)
 	      || os.conn == Disconnecting ) &&
-	    ns.conn >= Timeout && ns.conn <= TearDown ) {
+	    ns.conn >= Timeout && ns.conn <= TearDown )
 		ns.conn = os.conn;
-	}
 
 	if (ns.conn < Connected) {
 		ns.peer_isp = 0;
@@ -634,9 +631,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 		     ns.pdsk < Inconsistent ) ns.pdsk = DUnknown;
 	}
 
-	if (ns.conn <= Disconnecting && ns.disk == Diskless) {
+	if (ns.conn <= Disconnecting && ns.disk == Diskless)
 		ns.pdsk = DUnknown;
-	}
 
 	if ( ns.conn > Connected && (ns.disk <= Failed || ns.pdsk <= Failed )) {
 		warn_sync_abort = 1;
@@ -661,9 +657,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 			WARN("Implicit set disk state Inconsistent!\n");
 			break;
 		}
-		if (os.disk == Outdated && ns.disk == UpToDate) {
+		if (os.disk == Outdated && ns.disk == UpToDate)
 			WARN("Implicit set disk from Outdate to UpToDate\n");
-		}
 	}
 
 	if ( ns.conn >= Connected &&
@@ -684,9 +679,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 			WARN("Implicit set pdsk Inconsistent!\n");
 			break;
 		}
-		if (os.pdsk == Outdated && ns.pdsk == UpToDate) {
+		if (os.pdsk == Outdated && ns.pdsk == UpToDate)
 			WARN("Implicit set pdsk from Outdate to UpToDate\n");
-		}
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
@@ -695,13 +689,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 		ns.pdsk = mdev->new_state_tmp.pdsk;
 	}
 
-	if (fp == Stonith) {
-		if (ns.role == Primary &&
-		   ns.conn < Connected &&
-		   ns.pdsk > Outdated ) {
+	if (fp == Stonith &&
+	    (ns.role == Primary &&
+	     ns.conn < Connected &&
+	     ns.pdsk > Outdated))
 			ns.susp = 1;
-		}
-	}
 
 	if (ns.aftr_isp || ns.peer_isp || ns.user_isp) {
 		if (ns.conn == SyncSource) ns.conn = PausedSyncS;
@@ -738,9 +730,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 		return rv;
 	}
 
-	if (warn_sync_abort) {
+	if (warn_sync_abort)
 		WARN("Resync aborted.\n");
-	}
 
 #if DUMP_MD >= 2
 	{
@@ -785,9 +776,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 	    (ns.conn == PausedSyncT || ns.conn == PausedSyncS) ) {
 		INFO("Resync suspended\n");
 		mdev->rs_mark_time = jiffies;
-		if (ns.conn == PausedSyncT) {
+		if (ns.conn == PausedSyncT)
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
-		}
 	}
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
@@ -834,9 +824,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 	if ( (os.conn != Connected && ns.conn == Connected) ) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
-		if (mdev->p_uuid) {
+		if (mdev->p_uuid)
 			mdev->p_uuid[UUID_FLAGS] &= ~((u64)2);
-		}
 	}
 
 	fp = DontCare;
@@ -925,17 +914,15 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 	if (ns.pdsk < Inconsistent) {
 		/* Diskless Peer becomes primary */
-		if (os.peer == Secondary && ns.peer == Primary) {
+		if (os.peer == Secondary && ns.peer == Primary)
 			drbd_uuid_new_current(mdev);
-		}
 		/* Diskless Peer becomes secondary */
-		if (os.peer == Primary && ns.peer == Secondary) {
+		if (os.peer == Primary && ns.peer == Secondary)
 			drbd_al_to_on_disk_bm(mdev);
-		}
 	}
 
 	/* Last part of the attaching process ... */
-	if ( ns.conn >= Connected && 
+	if ( ns.conn >= Connected &&
 	     os.disk == Attaching && ns.disk == Negotiating ) {
 		drbd_send_sizes(mdev);  /* to start sync... */
 		drbd_send_uuids(mdev);
@@ -943,17 +930,15 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if ( ns.conn >= Connected && 
+	if ( ns.conn >= Connected &&
 	     (( os.aftr_isp != ns.aftr_isp ) ||
-	      ( os.user_isp != ns.user_isp )) ) {
+	      ( os.user_isp != ns.user_isp )) )
 		drbd_send_state(mdev);
-	}
 
 	/* In case one of the isp bits got set, suspend other devices. */
 	if ( ( !os.aftr_isp && !os.peer_isp && !os.user_isp) &&
-	     ( ns.aftr_isp || ns.peer_isp || ns.user_isp) ) {
+	     ( ns.aftr_isp || ns.peer_isp || ns.user_isp) )
 		suspend_other_sg(mdev);
-	}
 
 	/* We are in the progress to start a full sync... */
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
@@ -977,7 +962,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			_drbd_set_state(_NS(mdev, conn, WFSyncUUID),
 					ChgStateVerbose | ScheduleAfter );
 			spin_unlock_irq(&mdev->req_lock);
-		} else /* StartingSyncS */ {
+		} else { /* StartingSyncS */
 			drbd_start_resync(mdev, SyncSource);
 		}
 	}
@@ -1013,35 +998,29 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	/* A resync finished or aborted, wake paused devices... */
 	if ( (os.conn > Connected && ns.conn <= Connected) ||
 	     (os.peer_isp && !ns.peer_isp) ||
-	     (os.user_isp && !ns.user_isp) ) {
+	     (os.user_isp && !ns.user_isp) )
 		resume_next_sg(mdev);
-	}
 
 	/* Receiver should clean up itself */
-	if (os.conn != Disconnecting && ns.conn == Disconnecting) {
+	if (os.conn != Disconnecting && ns.conn == Disconnecting)
 		drbd_thread_signal(&mdev->receiver);
-	}
 
 	/* Now the receiver finished cleaning up itself, it should die now */
-	if (os.conn != StandAlone && ns.conn == StandAlone) {
+	if (os.conn != StandAlone && ns.conn == StandAlone)
 		drbd_thread_stop_nowait(&mdev->receiver);
-	}
 
 	/* Upon network failure, we need to restart the receiver. */
 	if ( os.conn > TearDown &&
-	     ns.conn <= TearDown && ns.conn >= Timeout) {
+	     ns.conn <= TearDown && ns.conn >= Timeout)
 		drbd_thread_restart_nowait(&mdev->receiver);
-	}
 
-	if (os.conn == StandAlone && ns.conn == Unconnected) {
+	if (os.conn == StandAlone && ns.conn == Unconnected)
 		drbd_thread_start(&mdev->receiver);
-	}
 
 	if ( os.disk == Diskless && os.conn <= Disconnecting &&
 	     (ns.disk > Diskless || ns.conn >= Unconnected) ) {
-		if (!drbd_thread_start(&mdev->worker)) {
+		if (!drbd_thread_start(&mdev->worker))
 			module_put(THIS_MODULE);
-		}
 	}
 
 	/* FIXME what about Primary, Diskless, and then losing
@@ -1051,9 +1030,8 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	 * after which we probably won't survive the next
 	 * request from the upper layers ... BOOM again :( */
 	if ( (os.disk > Diskless || os.conn > StandAlone) &&
-	     ns.disk == Diskless && ns.conn == StandAlone ) {
+	     ns.disk == Diskless && ns.conn == StandAlone )
 		drbd_thread_stop_nowait(&mdev->worker);
-	}
 }
 
 
@@ -1187,9 +1165,8 @@ void drbd_thread_signal(struct Drbd_thread *thi)
 		return;
 	}
 
-	if (thi->task != current) {
+	if (thi->task != current)
 		force_sig(DRBD_SIGKILL, thi->task);
-	}
 
 	spin_unlock(&thi->t_lock);
 }
@@ -1212,10 +1189,9 @@ int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 	sent = drbd_send(mdev, sock, h, size, msg_flags);
 
 	ok = ( sent == size );
-	if (!ok) {
+	if (!ok)
 		ERR("short sent %s size=%d sent=%d\n",
 		    cmdname(cmd), (int)size, sent);
-	}
 	return ok;
 }
 
@@ -1238,13 +1214,12 @@ int drbd_send_cmd(drbd_dev *mdev, int use_data_socket,
 
 	/* drbd_disconnect() could have called drbd_free_sock()
 	 * while we were waiting in down()... */
-	if (likely(sock != NULL)) {
+	if (likely(sock != NULL))
 		ok = _drbd_send_cmd(mdev, sock, cmd, h, size, 0);
-	}
 
-	if (use_data_socket) {
+	if (use_data_socket)
 		up(&mdev->data.mutex);
-	} else
+	else
 		up(&mdev->meta.mutex);
 	return ok;
 }
@@ -1304,12 +1279,9 @@ int drbd_send_uuids(drbd_dev *mdev)
 
 	if (!inc_local_if_state(mdev, Negotiating)) return 1; /* ok. */
 
-	for (i = Current; i < UUID_SIZE; i++) {
-		/* FIXME howto handle diskless ? */
-		p.uuid[i] = mdev->bc
-			? cpu_to_be64(mdev->bc->md.uuid[i])
-			: 0;
-	}
+	/* FIXME howto handle diskless ? */
+	for (i = Current; i < UUID_SIZE; i++)
+		p.uuid[i] = mdev->bc ? cpu_to_be64(mdev->bc->md.uuid[i]) : 0;
 
 	mdev->comm_bm_set = drbd_bm_total_weight(mdev);
 	p.uuid[UUID_SIZE] = cpu_to_be64(mdev->comm_bm_set);
@@ -1432,9 +1404,8 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	do {
 		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i );
 		want = num_words * sizeof(long);
-		if (want) {
+		if (want)
 			drbd_bm_get_lel(mdev, bm_i, num_words, buffer);
-		}
 		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportBitMap,
 				   p, sizeof(*p) + want, 0);
 		bm_i += num_words;
@@ -1664,10 +1635,9 @@ STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 	struct bio_vec *bvec;
 	int i;
 	__bio_for_each_segment(bvec, bio, i, 0) {
-		if (! _drbd_send_page(mdev, bvec->bv_page, bvec->bv_offset,
-				      bvec->bv_len) ) {
+		if (!_drbd_send_page(mdev, bvec->bv_page,
+				     bvec->bv_offset, bvec->bv_len))
 			return 0;
-		}
 	}
 
 	return 1;
@@ -1694,27 +1664,23 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	p.seq_num  = cpu_to_be32( req->seq_num =
 				  atomic_add_return(1, &mdev->packet_seq) );
 	dp_flags = 0;
-	if (req->master_bio->bi_rw & BIO_RW_BARRIER) {
+	if (req->master_bio->bi_rw & BIO_RW_BARRIER)
 		dp_flags |= DP_HARDBARRIER;
-	}
-	if (req->master_bio->bi_rw & BIO_RW_SYNC) {
+	if (req->master_bio->bi_rw & BIO_RW_SYNC)
 		dp_flags |= DP_RW_SYNC;
-	}
 	if (mdev->state.conn >= SyncSource &&
-	   mdev->state.conn <= PausedSyncT) {
+	   mdev->state.conn <= PausedSyncT)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
-	}
 
 	p.dp_flags = cpu_to_be32(dp_flags);
 	dump_packet(mdev, mdev->data.socket, 0, (void*)&p, __FILE__, __LINE__);
 	set_bit(UNPLUG_REMOTE, &mdev->flags);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE);
 	if (ok) {
-		if (mdev->net_conf->wire_protocol == DRBD_PROT_A) {
+		if (mdev->net_conf->wire_protocol == DRBD_PROT_A)
 			ok = _drbd_send_bio(mdev, req->master_bio);
-		} else {
+		else
 			ok = _drbd_send_zc_bio(mdev, req->master_bio);
-		}
 	}
 
 	drbd_put_data_sock(mdev);
@@ -1879,11 +1845,10 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	/* to have a stable mdev->state.role and no race with updating open_cnt */
 
 	if (mdev->state.role != Primary) {
-		if (file->f_mode & FMODE_WRITE) {
+		if (file->f_mode & FMODE_WRITE)
 			rv = -EROFS;
-		} else if (!allow_oos) {
+		else if (!allow_oos)
 			rv = -EMEDIUMTYPE;
-		}
 	}
 
 	if (!rv) mdev->open_cnt++;
@@ -2388,9 +2353,8 @@ int __init drbd_init(void)
 #endif
 	}
 
-	if ( (err = drbd_nl_init()) ) {
-		return err;
-	}
+	err = drbd_nl_init();
+	if (err) return err;
 
 	err = register_blkdev(DRBD_MAJOR, DEVICE_NAME);
 	if (err) {
@@ -2680,11 +2644,10 @@ STATIC void drbd_uuid_move_history(drbd_dev *mdev)
 void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
 	if (idx == Current) {
-		if (mdev->state.role == Primary) {
+		if (mdev->state.role == Primary)
 			val |= 1;
-		} else {
+		else
 			val &= ~((u64)1);
-		}
 	}
 
 	mdev->bc->md.uuid[idx] = val;
@@ -2719,11 +2682,10 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 		);
 
 	get_random_bytes(&mdev->bc->md.uuid[Current], sizeof(u64));
-	if (mdev->state.role == Primary) {
+	if (mdev->state.role == Primary)
 		mdev->bc->md.uuid[Current] |= 1;
-	} else {
+	else
 		mdev->bc->md.uuid[Current] &= ~((u64)1);
-	}
 
 	MTRACE(TraceTypeUuid, TraceLvlSummary,
 	       drbd_print_uuid(mdev, Current);

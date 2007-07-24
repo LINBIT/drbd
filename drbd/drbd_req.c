@@ -123,14 +123,11 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 		 * (local only or remote failed).
 		 * Other places where we set out-of-sync:
 		 * READ with local io-error */
-		if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK)) {
+		if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK))
 			drbd_set_out_of_sync(mdev, req->sector, req->size);
-		}
 
-		if ( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) &&
-		    (s & RQ_NET_SIS) ) {
+		if ((s & RQ_NET_OK) && (s & RQ_LOCAL_OK) && (s & RQ_NET_SIS))
 			drbd_set_in_sync(mdev, req->sector, req->size);
-		}
 
 		/* one might be tempted to move the drbd_al_complete_io
 		 * to the local io completion callback drbd_endio_pri.
@@ -297,10 +294,9 @@ void _req_may_be_done(drbd_request_t *req, int error)
 		if (!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
 		else D_ASSERT((s & RQ_NET_MASK) == 0);
 
-		if (rw == WRITE) {
-			/* for writes we need to do some extra housekeeping */
+		/* for writes we need to do some extra housekeeping */
+		if (rw == WRITE)
 			_about_to_complete_local_write(mdev, req);
-		}
 
 		/* FIXME not yet implemented...
 		 * in case we got "suspended" (on_disconnect: freeze io)
@@ -438,9 +434,8 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 	drbd_dev *mdev = req->mdev;
 	MUST_HOLD(&mdev->req_lock);
 
-	if (error && ( bio_rw(req->master_bio) != READA ) ) {
+	if (error && (bio_rw(req->master_bio) != READA))
 		ERR("got an _req_mod() errno of %d\n", error);
-	}
 
 	print_req_mod(req, what);
 
@@ -504,9 +499,9 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		break;
 
 	case read_completed_with_error:
-		if (bio_rw(req->master_bio) != READA) {
+		if (bio_rw(req->master_bio) != READA)
 			drbd_set_out_of_sync(mdev, req->sector, req->size);
-		}
+
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
@@ -883,9 +878,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		remote = (mdev->state.pdsk == UpToDate ||
 			    ( mdev->state.pdsk == Inconsistent &&
 			      mdev->state.conn >= Connected ) );
-		if (!remote) {
+		if (!remote)
 			WARN("lost connection while grabbing the req_lock!\n");
-		}
 		if (!(local || remote)) {
 			ERR("IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&mdev->req_lock);
@@ -1050,9 +1044,8 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 	 */
 	if ( mdev->state.disk < UpToDate &&
 	     mdev->state.conn < Connected) {
-		if (DRBD_ratelimit(5*HZ, 5)) {
+		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Sorry, I have no access to good data anymore.\n");
-		}
 		/*
 		 * FIXME suspend, loop waiting on cstate wait?
 		 */

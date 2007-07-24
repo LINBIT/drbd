@@ -216,9 +216,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		drbd_request_state(mdev, NS(disk, Outdated));
 		break;
 	case 7:
-		if (fp != Stonith) {
+		if (fp != Stonith)
 			ERR("outdate-peer() = 7 && fencing != Stonith !!!\n");
-		}
 		nps = Outdated;
 		break;
 	default:
@@ -240,9 +239,8 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
-	if (new_role == Primary) {
+	if (new_role == Primary)
 		request_ping(mdev); /* Detect a dead peer ASAP */
-	}
 
 	mask.i = 0; mask.role = role_mask;
 	val.i  = 0; val.role  = new_role;
@@ -321,7 +319,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 	if (new_role == Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE );
-		if ( inc_local(mdev) ) {
+		if (inc_local(mdev)) {
 			mdev->bc->md.uuid[Current] &= ~(u64)1;
 			dec_local(mdev);
 		}
@@ -331,16 +329,12 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			dec_net(mdev);
 		}
 		set_disk_ro(mdev->vdisk, FALSE );
-		/* why?? what for??
-		mdev->this_bdev->bd_disk = mdev->vdisk;
-		 */
-
-		if ( inc_local(mdev) ) {
-			if ( ( ( mdev->state.conn < Connected ||
-				 mdev->state.pdsk <= Failed ) &&
-			       mdev->bc->md.uuid[Bitmap] == 0) || forced ) {
+		if (inc_local(mdev)) {
+			if ( ((mdev->state.conn < Connected ||
+			       mdev->state.pdsk <= Failed)
+			      && mdev->bc->md.uuid[Bitmap] == 0) || forced)
 				drbd_uuid_new_current(mdev);
-			}
+
 			mdev->bc->md.uuid[Current] |=  (u64)1;
 			dec_local(mdev);
 		}
@@ -548,17 +542,15 @@ drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
 		}
 	}
 
-	if (size == 0) {
+	if (size == 0)
 		ERR("Both nodes diskless!\n");
-	}
 
 	if (u_size) {
-		if (u_size<<1 > size) {
+		if (u_size<<1 > size)
 			ERR("Requested disk size is too big (%lu > %lu)\n",
 			    (unsigned long)u_size, (unsigned long)size>>1);
-		} else {
+		else
 			size = u_size<<1;
-		}
 	}
 
 	return size;
@@ -604,9 +596,8 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 			in_use += e->refcnt;
 		}
 	}
-	if (!in_use) {
+	if (!in_use)
 		mdev->act_log = n;
-	}
 	spin_unlock_irq(&mdev->al_lock);
 	if (in_use) {
 		ERR("Activity log still in use!\n");
@@ -663,10 +654,9 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	       DUMPI(q->seg_boundary_mask);
 	       );
 
-	if (b->merge_bvec_fn) {
+	if (b->merge_bvec_fn)
 		WARN("Backing device's merge_bvec_fn() = %p\n",
 		     b->merge_bvec_fn);
-	}
 	INFO("max_segment_size ( = BIO size ) = %u\n", q->max_segment_size);
 
 	if (q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
@@ -818,16 +808,14 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-	if ((retcode = drbd_request_state(mdev, NS(disk, Attaching))) < SS_Success ) {
+	if ((retcode = drbd_request_state(mdev, NS(disk, Attaching))) < SS_Success )
 		goto release_bdev2_fail;
-	}
 
 	drbd_md_set_sector_offsets(mdev, nbc);
 
 	retcode = drbd_md_read(mdev, nbc);
-	if (retcode != NoError) {
+	if (retcode != NoError)
 		goto force_diskless;
-	}
 
 	/* Since we are diskless, fix the AL first... */
 	if (drbd_check_al_size(mdev)) {
@@ -857,11 +845,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	nbc = NULL;
 	resync_lru = NULL;
 
-	if (drbd_md_test_flag(mdev->bc, MDF_PrimaryInd)) {
+	if (drbd_md_test_flag(mdev->bc, MDF_PrimaryInd))
 		set_bit(CRASHED_PRIMARY, &mdev->flags);
-	} else {
+	else
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
-	}
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -891,9 +878,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	if ( mdev->state.role != Primary &&
 	     drbd_md_test_flag(mdev->bc, MDF_PrimaryInd) &&
-	    !drbd_md_test_flag(mdev->bc, MDF_ConnectedInd) ) {
+	    !drbd_md_test_flag(mdev->bc, MDF_ConnectedInd) )
 		set_bit(USE_DEGR_WFC_T, &mdev->flags);
-	}
 
 	drbd_bm_lock(mdev); /* racy... */
 	drbd_determin_dev_size(mdev);
@@ -930,23 +916,20 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	   otherwise into Consistent state.
 	*/
 	if (drbd_md_test_flag(mdev->bc, MDF_Consistent)) {
-		if (drbd_md_test_flag(mdev->bc, MDF_WasUpToDate)) {
+		if (drbd_md_test_flag(mdev->bc, MDF_WasUpToDate))
 			ns.disk = Consistent;
-		} else {
+		else
 			ns.disk = Outdated;
-		}
 	} else {
 		ns.disk = Inconsistent;
 	}
 
-	if (drbd_md_test_flag(mdev->bc, MDF_PeerOutDated)) {
+	if (drbd_md_test_flag(mdev->bc, MDF_PeerOutDated))
 		ns.pdsk = Outdated;
-	}
 
 	if ( ns.disk == Consistent &&
-	    ( ns.pdsk == Outdated || mdev->bc->dc.fencing == DontCare ) ) {
+	    ( ns.pdsk == Outdated || mdev->bc->dc.fencing == DontCare ) )
 		ns.disk = UpToDate;
-	}
 
 	/* All tests on MDF_PrimaryInd, MDF_ConnectedInd,
 	   MDF_Consistent and MDF_WasUpToDate must happen before
@@ -966,9 +949,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv==SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
 
-	if (rv < SS_Success) {
+	if (rv < SS_Success)
 		goto unlock_bm;
-	}
 
 	drbd_bm_unlock(mdev);
 
@@ -1086,13 +1068,13 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		if (!odev || odev == mdev) continue;
 		if ( inc_net(odev)) {
 			if ( M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
-			    M_PORT(new_conf) == M_PORT(odev->net_conf) ) {
+			    M_PORT(new_conf) == M_PORT(odev->net_conf) )
 				retcode = LAAlreadyInUse;
-			}
+
 			if (O_ADDR(new_conf) == O_ADDR(odev->net_conf) &&
-			   O_PORT(new_conf) == O_PORT(odev->net_conf) ) {
+			   O_PORT(new_conf) == O_PORT(odev->net_conf) )
 				retcode = OAAlreadyInUse;
-			}
+
 			dec_net(odev);
 			if (retcode != NoError) goto fail;
 		}
@@ -1180,9 +1162,8 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		mdev->ee_hash = new_ee_hash;
 	}
 
-	if (mdev->cram_hmac_tfm) {
+	if (mdev->cram_hmac_tfm)
 		crypto_free_hash(mdev->cram_hmac_tfm);
-	}
 	mdev->cram_hmac_tfm = tfm;
 
 	retcode = drbd_request_state(mdev, NS(conn, Unconnected));
@@ -1217,12 +1198,12 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		/* The peer probabely wants to see us outdated. */
 		retcode = _drbd_request_state(mdev, NS2(conn, Disconnecting,
 						       disk, Outdated), 0);
-		if (retcode == SS_IsDiskLess) {
-			/* We are diskless and our peer wants to outdate us.
-			 * So, simply go away, and let the peer try to
-			 * outdate us with its 'outdate-peer' handler later. */
+
+		/* if we are diskless and our peer wants to outdate us,
+		 * simply go away, and let the peer try to outdate us with its
+		 * 'outdate-peer' handler later. */
+		if (retcode == SS_IsDiskLess)
 			retcode = drbd_request_state(mdev, NS(conn, StandAlone));
-		}
 	}
 
 	if (retcode < SS_Success) goto fail;
@@ -1419,11 +1400,11 @@ STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
-	if (mdev->state.disk < Outdated) {
+	if (mdev->state.disk < Outdated)
 		retcode = -999;
-	} else {
+	else
 		retcode = _drbd_set_state(_NS(mdev, disk, Outdated), ChgStateVerbose);
-	}
+
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 	if (retcode==SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
@@ -1638,9 +1619,9 @@ void drbd_connector_callback(void *data)
 	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
-	if (rr && rr != -ESRCH) {
+	if (rr && rr != -ESRCH)
 		printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n", rr);
-	}
+
 	kfree(cn_reply);
 	module_put(THIS_MODULE);
 	return;
@@ -1829,8 +1810,7 @@ void drbd_nl_send_reply( struct cn_msg *req,
 	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
-	if (rr && rr != -ESRCH) {
+	if (rr && rr != -ESRCH)
 		printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n", rr);
-	}
 }
 
