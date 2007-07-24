@@ -118,17 +118,17 @@ struct drbd_bitmap {
 
 #if 0 // simply disabled for now...
 #define MUST_NOT_BE_LOCKED() do {					\
-	if (test_bit(BM_LOCKED,&b->bm_flags)) {				\
-		if (DRBD_ratelimit(5*HZ,5)) {				\
+	if (test_bit(BM_LOCKED, &b->bm_flags)) {				\
+		if (DRBD_ratelimit(5*HZ, 5)) {				\
 			ERR("%s:%d: bitmap is locked by %s:%lu\n",	\
-			    __FILE__, __LINE__, b->bm_file,b->bm_line);	\
+			    __FILE__, __LINE__, b->bm_file, b->bm_line);	\
 			dump_stack();					\
 		}							\
 	}								\
 } while (0)
 #define MUST_BE_LOCKED() do {						\
-	if (!test_bit(BM_LOCKED,&b->bm_flags)) {			\
-		if (DRBD_ratelimit(5*HZ,5)) {				\
+	if (!test_bit(BM_LOCKED, &b->bm_flags)) {			\
+		if (DRBD_ratelimit(5*HZ, 5)) {				\
 			ERR("%s:%d: bitmap not locked!\n",		\
 					__FILE__, __LINE__);		\
 			dump_stack();					\
@@ -143,12 +143,12 @@ void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	spin_lock_irq(&b->bm_lock);
-	if (!__test_and_set_bit(BM_LOCKED,&b->bm_flags)) {
+	if (!__test_and_set_bit(BM_LOCKED, &b->bm_flags)) {
 		b->bm_file = file;
 		b->bm_line = line;
-	} else if (DRBD_ratelimit(5*HZ,5)) {
+	} else if (DRBD_ratelimit(5*HZ, 5)) {
 		ERR("%s:%d: bitmap already locked by %s:%lu\n",
-		    file, line, b->bm_file,b->bm_line);
+		    file, line, b->bm_file, b->bm_line);
 		/*
 		dump_stack();
 		ERR("This is no oops, but debug stack trace only.\n");
@@ -162,7 +162,7 @@ void drbd_bm_unlock(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	spin_lock_irq(&b->bm_lock);
-	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags)) {
+	if (!__test_and_clear_bit(BM_LOCKED, &mdev->bitmap->bm_flags)) {
 		ERR("bitmap not locked in bm_unlock\n");
 	} else {
 		/* FIXME if we got a "is already locked" previously,
@@ -181,8 +181,8 @@ void drbd_bm_unlock(drbd_dev *mdev)
 	D_ASSERT(b->bm_dev_capacity == drbd_get_capacity(mdev->this_bdev));	\
 	if ( (b->bm_set != mdev->rs_total) &&					\
 	     (b->bm_set != mdev->rs_left) ) {					\
-		if ( DRBD_ratelimit(5*HZ,5) ) {					\
-			ERR("%s:%d: ?? bm_set=%lu; rs_total=%lu, rs_left=%lu\n",\
+		if ( DRBD_ratelimit(5*HZ, 5) ) {					\
+			ERR("%s:%d: ?? bm_set=%lu; rs_total=%lu, rs_left=%lu\n", \
 				__FILE__ , __LINE__ ,				\
 				b->bm_set, mdev->rs_total, mdev->rs_left );	\
 		}								\
@@ -214,7 +214,7 @@ STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 
 	if (w < b->bm_words) {
 		D_ASSERT(w == b->bm_words -1);
-		INFO("bm[%d]=0x%lX\n",w,b->bm[w]);
+		INFO("bm[%d]=0x%lX\n", w, b->bm[w]);
 	}
 }
 #else
@@ -244,7 +244,7 @@ int drbd_bm_init(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	D_BUG_ON(b);
-	b = kzalloc(sizeof(struct drbd_bitmap),GFP_KERNEL);
+	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
 	if (!b)
 		return -ENOMEM;
 	spin_lock_init(&b->bm_lock);
@@ -338,14 +338,14 @@ void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
 
 	ERR_IF(!b) return;
 
-	spin_lock_irqsave(&b->bm_lock,flags);
-	bits = bm_count_bits(b,0);
+	spin_lock_irqsave(&b->bm_lock, flags);
+	bits = bm_count_bits(b, 0);
 	if (bits != b->bm_set) {
 		ERR("bm_set was %lu, corrected to %lu. %s:%d\n",
-		    b->bm_set,bits,file,line);
+		    b->bm_set, bits, file, line);
 		b->bm_set = bits;
 	}
-	spin_unlock_irqrestore(&b->bm_lock,flags);
+	spin_unlock_irqrestore(&b->bm_lock, flags);
 }
 
 #define BM_SECTORS_PER_BIT (BM_BLOCK_SIZE/512)
@@ -389,14 +389,14 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		spin_unlock_irq(&b->bm_lock);
 		goto free_obm;
 	} else {
-		bits = BM_SECT_TO_BIT(ALIGN(capacity,BM_SECTORS_PER_BIT));
+		bits = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECTORS_PER_BIT));
 
 		/* if we would use
 		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
 		   a 32bit host could present the wrong number of words
 		   to a 64bit host.
 		*/
-		words = ALIGN(bits,64) >> LN2_BPL;
+		words = ALIGN(bits, 64) >> LN2_BPL;
 
 		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
 
@@ -417,7 +417,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 			bytes = (words+1)*sizeof(long);
 			nbm = vmalloc(bytes);
 			if (!nbm) {
-				ERR("bitmap: failed to vmalloc %lu bytes\n",bytes);
+				ERR("bitmap: failed to vmalloc %lu bytes\n", bytes);
 				err = -ENOMEM;
 				goto out;
 			}
@@ -429,7 +429,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		if (obm) {
 			bm_set_surplus(b);
 			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
-			memcpy(nbm,obm,min_t(size_t,b->bm_words,words)*sizeof(long));
+			memcpy(nbm, obm, min_t(size_t, b->bm_words, words)*sizeof(long));
 		}
 		growing = words > b->bm_words;
 		if (growing) { // set all newly allocated bits
@@ -444,10 +444,10 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
-		if (!growing) b->bm_set = bm_count_bits(b,0);
+		if (!growing) b->bm_set = bm_count_bits(b, 0);
 		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
-		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
+		INFO("resync bitmap: bits=%lu words=%lu\n", bits, words);
 	}
  free_obm:
 	vfree(obm); // vfree(NULL) is noop
@@ -473,9 +473,9 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 	ERR_IF(!b) return 0;
 	// MUST_BE_LOCKED(); well. yes. but ...
 
-	spin_lock_irqsave(&b->bm_lock,flags);
+	spin_lock_irqsave(&b->bm_lock, flags);
 	s = b->bm_set;
-	spin_unlock_irqrestore(&b->bm_lock,flags);
+	spin_unlock_irqrestore(&b->bm_lock, flags);
 
 	return s;
 }
@@ -620,7 +620,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	memset(b->bm,0xff,b->bm_words*sizeof(long));
+	memset(b->bm, 0xff, b->bm_words*sizeof(long));
 	bm_clear_surplus(b);
 	b->bm_set = b->bm_bits;
 	spin_unlock_irq(&b->bm_lock);
@@ -629,7 +629,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;
-	int uptodate = bio_flagged(bio,BIO_UPTODATE);
+	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	if (bio->bi_size)
 		return 1;
@@ -646,7 +646,7 @@ int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int erro
 		 * for now, set all bits, and flag MD_IO_ERROR
 		 */
 		/* FIXME kmap_atomic memset etc. pp. */
-		__set_bit(BM_MD_IO_ERROR,&b->bm_flags);
+		__set_bit(BM_MD_IO_ERROR, &b->bm_flags);
 	}
 	if (atomic_dec_and_test(&b->bm_async_io))
 		wake_up(&b->bm_io_wait);
@@ -681,7 +681,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 
 	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
-		bio_endio(bio,bio->bi_size,-EIO);
+		bio_endio(bio, bio->bi_size, -EIO);
 	}
 	else
 		submit_bio(rw, bio);
@@ -691,7 +691,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
  * @enr is _sector_ offset from start of on disk bitmap (aka bm-extent nr).
  * returns 0 on success, -EIO on failure
  */
-int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
+int drbd_bm_read_sect(drbd_dev *mdev, unsigned long enr)
 {
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
@@ -699,7 +699,7 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 	// MUST_BE_LOCKED(); not neccessarily global ...
 
 	down(&mdev->md_io_mutex);
-	if (drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,READ)) {
+	if (drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, READ)) {
 		bm_words  = drbd_bm_words(mdev);
 		offset    = S2W(enr);	// word offset into bitmap
 		num_words = min(S2W(1), bm_words - offset);
@@ -718,7 +718,7 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
-			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
+			drbd_bm_ALe_set_all(mdev, enr*AL_EXT_PER_BM_SECT+i);
 	}
 	up(&mdev->md_io_mutex);
 	return err;
@@ -787,11 +787,11 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 	now = jiffies;
 	atomic_set(&b->bm_async_io, num_pages);
-	__clear_bit(BM_MD_IO_ERROR,&b->bm_flags);
+	__clear_bit(BM_MD_IO_ERROR, &b->bm_flags);
 
 	for (i = 0; i < num_pages; i++) {
 		/* let the layers below us try to merge these bios... */
-		drbd_bm_page_io_async(mdev,b,i,rw);
+		drbd_bm_page_io_async(mdev, b, i, rw);
 	}
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
@@ -799,7 +799,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	INFO("%s of bitmap took %lu jiffies\n",
 	     rw == READ ? "reading" : "writing", jiffies - now);
 
-	if (test_bit(BM_MD_IO_ERROR,&b->bm_flags)) {
+	if (test_bit(BM_MD_IO_ERROR, &b->bm_flags)) {
 		ALERT("we had at least one MD IO ERROR during bitmap IO\n");
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
@@ -823,7 +823,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	mdev->bitmap = b;
 
 	INFO("%s marked out-of-sync by on disk bit-map.\n",
-	     ppsize(ppb,drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
+	     ppsize(ppb, drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
 
 	return err;
 }
@@ -851,7 +851,7 @@ int drbd_bm_read(struct Drbd_Conf *mdev)
  * @enr: The _sector_ offset from the start of the bitmap.
  *
  */
-int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
+int drbd_bm_write_sect(struct Drbd_Conf *mdev, unsigned long enr)
 {
 	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	int bm_words, num_words, offset, err  = 0;
@@ -867,11 +867,11 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 			enr, offset, num_words);
 #endif
 	if (num_words < S2W(1)) {
-		memset(page_address(mdev->md_io_page),0,MD_HARDSECT);
+		memset(page_address(mdev->md_io_page), 0, MD_HARDSECT);
 	}
 	drbd_bm_get_lel( mdev, offset, num_words,
 			 page_address(mdev->md_io_page) );
-	if (!drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,WRITE)) {
+	if (!drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, WRITE)) {
 		int i;
 		err = -EIO;
 		ERR( "IO ERROR writing bitmap sector %lu "
@@ -880,7 +880,7 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
-			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
+			drbd_bm_ALe_set_all(mdev, enr*AL_EXT_PER_BM_SECT+i);
 	}
 	mdev->bm_writ_cnt++;
 	up(&mdev->md_io_mutex);
@@ -912,7 +912,7 @@ void drbd_bm_clear_all(drbd_dev *mdev)
 
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
-	memset(b->bm,0,b->bm_words*sizeof(long));
+	memset(b->bm, 0, b->bm_words*sizeof(long));
 	b->bm_set = 0;
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -948,9 +948,9 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	if (b->bm_fo < b->bm_bits) {
-		i = find_next_bit(b->bm,b->bm_bits,b->bm_fo);
+		i = find_next_bit(b->bm, b->bm_bits, b->bm_fo);
 	} else if (b->bm_fo > b->bm_bits) {
-		ERR("bm_fo=%lu bm_bits=%lu\n",b->bm_fo, b->bm_bits);
+		ERR("bm_fo=%lu bm_bits=%lu\n", b->bm_fo, b->bm_bits);
 	}
 	if (i >= b->bm_bits) {
 		i = -1UL;
@@ -1007,7 +1007,7 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 	BM_PARANOIA_CHECK();
 	MUST_NOT_BE_LOCKED();
 	ERR_IF (bitnr >= b->bm_bits) {
-		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
+		ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
 	} else {
 		i = (0 != __test_and_set_bit(bitnr, b->bm));
@@ -1032,7 +1032,7 @@ int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigne
 	MUST_NOT_BE_LOCKED();
 	for (bitnr = s; bitnr <=e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
-			ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
+			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		} else {
 			c += (0 == __test_and_set_bit(bitnr, b->bm));
 		}
@@ -1053,17 +1053,17 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 
-	spin_lock_irqsave(&b->bm_lock,flags);
+	spin_lock_irqsave(&b->bm_lock, flags);
 	BM_PARANOIA_CHECK();
 	MUST_NOT_BE_LOCKED();
 	ERR_IF (bitnr >= b->bm_bits) {
-		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
+		ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
 	} else {
 		i = (0 != __test_and_clear_bit(bitnr, b->bm));
 		b->bm_set -= i;
 	}
-	spin_unlock_irqrestore(&b->bm_lock,flags);
+	spin_unlock_irqrestore(&b->bm_lock, flags);
 
 	/* clearing bits should only take place when sync is in progress!
 	 * this is only called from drbd_set_in_sync.
@@ -1097,7 +1097,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 	} else if (bitnr == b->bm_bits) {
 		i = -1;
 	} else /* (bitnr > b->bm_bits) */ {
-		ERR("bitnr=%lu > bm_bits=%lu\n",bitnr, b->bm_bits);
+		ERR("bitnr=%lu > bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
 	}
 
@@ -1127,11 +1127,11 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
-	spin_lock_irqsave(&b->bm_lock,flags);
+	spin_lock_irqsave(&b->bm_lock, flags);
 	BM_PARANOIA_CHECK();
 
 	s = S2W(enr);
-	e = min((size_t)S2W(enr+1),b->bm_words);
+	e = min((size_t)S2W(enr+1), b->bm_words);
 	count = 0;
 	if (s < b->bm_words) {
 		const unsigned long* w = b->bm+s;
@@ -1140,7 +1140,7 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 	} else {
 		ERR("start offset (%d) too large in drbd_bm_e_weight\n", s);
 	}
-	spin_unlock_irqrestore(&b->bm_lock,flags);
+	spin_unlock_irqrestore(&b->bm_lock, flags);
 #if DUMP_MD >= 3
 	INFO("enr=%lu weight=%d e=%d s=%d\n", enr, count, e, s);
 #endif
@@ -1170,7 +1170,7 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 		int n = e-s;
 		while (n--) count += hweight_long(*w++);
 		n = e-s;
-		memset(b->bm+s,-1,n*sizeof(long));
+		memset(b->bm+s, -1, n*sizeof(long));
 		b->bm_set += n*BITS_PER_LONG - count;
 		if (e == b->bm_words) {
 			b->bm_set -= bm_clear_surplus(b);

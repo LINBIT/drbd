@@ -41,11 +41,11 @@ static inline void drbd_set_my_capacity(drbd_dev *mdev,
 					sector_t size)
 {
 	/* set_capacity(mdev->this_bdev->bd_disk, size); */
-	set_capacity(mdev->vdisk,size);
+	set_capacity(mdev->vdisk, size);
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }
 
-#define drbd_bio_uptodate(bio) bio_flagged(bio,BIO_UPTODATE)
+#define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
 
 #ifdef CONFIG_HIGHMEM
 /*
@@ -122,7 +122,7 @@ static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_t
 	}
 
 	if (FAULT_ACTIVE(mdev, fault_type))
-		bio_endio(bio,bio->bi_size,-EIO);
+		bio_endio(bio, bio->bi_size, -EIO);
 	else
 		generic_make_request(bio);
 }

@@ -223,9 +223,9 @@ static inline struct hlist_head* tl_hash_slot(drbd_dev *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev,u64 id, sector_t sector)
+static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
 {
-	struct hlist_head *slot = tl_hash_slot(mdev,sector);
+	struct hlist_head *slot = tl_hash_slot(mdev, sector);
 	struct hlist_node *n;
 	drbd_request_t * req;
 
@@ -255,9 +255,9 @@ static struct hlist_head* ar_hash_slot(drbd_dev *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline drbd_request_t* _ar_id_to_req(drbd_dev *mdev,u64 id, sector_t sector)
+static inline drbd_request_t* _ar_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
 {
-	struct hlist_head *slot = ar_hash_slot(mdev,sector);
+	struct hlist_head *slot = ar_hash_slot(mdev, sector);
 	struct hlist_node *n;
 	drbd_request_t * req;
 
@@ -296,7 +296,7 @@ static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 
 static inline void drbd_req_free(drbd_request_t *req)
 {
-	mempool_free(req,drbd_request_mempool);
+	mempool_free(req, drbd_request_mempool);
 }
 
 static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
@@ -314,7 +314,7 @@ static inline void req_mod(drbd_request_t *req, drbd_req_event_t what, int error
 {
 	drbd_dev *mdev = req->mdev;
 	spin_lock_irq(&mdev->req_lock);
-	_req_mod(req,what,error);
+	_req_mod(req, what, error);
 	spin_unlock_irq(&mdev->req_lock);
 }
 #endif

@@ -122,26 +122,26 @@ void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
  */
 static inline int lc_try_lock(struct lru_cache* lc)
 {
-	return !test_and_set_bit(__LC_DIRTY,&lc->flags);
+	return !test_and_set_bit(__LC_DIRTY, &lc->flags);
 }
 
 static inline void lc_unlock(struct lru_cache* lc)
 {
-	clear_bit(__LC_DIRTY,&lc->flags);
+	clear_bit(__LC_DIRTY, &lc->flags);
 	smp_mb__after_clear_bit();
 }
 
 static inline int lc_is_used(struct lru_cache* lc, unsigned int enr)
 {
-	struct lc_element* e = lc_find(lc,enr);
+	struct lc_element* e = lc_find(lc, enr);
 	return (e && e->refcnt);
 }
 
 #define LC_FREE (-1U)
 
 #define lc_e_base(lc)  ((char*) ( (lc)->slot + (lc)->nr_elements ) )
-#define lc_entry(lc,i) ((struct lc_element*) \
+#define lc_entry(lc, i) ((struct lc_element*) \
                        (lc_e_base(lc) + (i)*(lc)->element_size))
-#define lc_index_of(lc,e) (((char*)(e) - lc_e_base(lc))/(lc)->element_size)
+#define lc_index_of(lc, e) (((char*)(e) - lc_e_base(lc))/(lc)->element_size)
 
 #endif

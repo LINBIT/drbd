@@ -34,8 +34,8 @@
 #define STATIC static
 
 // this is developers aid only!
-#define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_PARANOIA,&lc->flags))
-#define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA,&lc->flags); smp_mb__after_clear_bit(); } while (0)
+#define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_PARANOIA, &lc->flags))
+#define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA, &lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
 /**
@@ -52,7 +52,7 @@ struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
 	int i;
 
 	BUG_ON(!e_count);
-	e_size = max(sizeof(struct lc_element),e_size);
+	e_size = max(sizeof(struct lc_element), e_size);
 	bytes  = e_size+sizeof(struct hlist_head);
 	bytes *= e_count;
 	bytes += sizeof(struct lru_cache);
@@ -68,9 +68,9 @@ struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
 		lc->lc_private       = private_p;
 		lc->name             = name;
 		for(i=0;i<e_count;i++) {
-			e = lc_entry(lc,i);
+			e = lc_entry(lc, i);
 			e->lc_number = LC_FREE;
-			list_add(&e->list,&lc->free);
+			list_add(&e->list, &lc->free);
 			// memset(,0,) did the rest of init for us
 		}
 	}
@@ -94,7 +94,7 @@ size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
 	 * misses include "dirty" count (update from an other thread in progress)
 	 * and "changed", when this in fact lead to an successful update of the cache.
 	 */
-	return seq_printf(seq,"\t%s: used:%u/%u "
+	return seq_printf(seq, "\t%s: used:%u/%u "
 		"hits:%lu misses:%lu starving:%lu dirty:%lu changed:%lu\n",
 		lc->name, lc->used, lc->nr_elements,
 		lc->hits, lc->misses, lc->starving, lc->dirty, lc->changed);
@@ -133,7 +133,7 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
 	if (list_empty(&lc->lru)) return 0;
 
 	n=lc->lru.prev;
-	e=list_entry(n, struct lc_element,list);
+	e=list_entry(n, struct lc_element, list);
 
 	list_del(&e->list);
 	hlist_del(&e->colision);
@@ -156,7 +156,7 @@ void lc_del(struct lru_cache* lc, struct lc_element *e)
 	hlist_del_init(&e->colision);
 	e->lc_number = LC_FREE;
 	e->refcnt = 0;
-	list_add(&e->list,&lc->free);
+	list_add(&e->list, &lc->free);
 	RETURN();
 }
 
@@ -168,7 +168,7 @@ STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
 
 	n=lc->free.next;
 	list_del(n);
-	return list_entry(n, struct lc_element,list);
+	return list_entry(n, struct lc_element, list);
 }
 
 STATIC int lc_unused_element_available(struct lru_cache* lc)
@@ -224,7 +224,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	if (e) {
 		++lc->hits;
 		if (e->refcnt++ == 0) lc->used++;
-		list_move(&e->list,&lc->in_use); // Not evictable...
+		list_move(&e->list, &lc->in_use); // Not evictable...
 		RETURN(e);
 	}
 
@@ -234,7 +234,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	 * the LRU element, we have to wait ...
 	 */
 	if (!lc_unused_element_available(lc)) {
-		__set_bit(__LC_STARVING,&lc->flags);
+		__set_bit(__LC_STARVING, &lc->flags);
 		RETURN(NULL);
 	}
 
@@ -242,7 +242,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	 * which then is replaced.
 	 * we need to update the cache; serialize on lc->flags & LC_DIRTY
 	 */
-	if (test_and_set_bit(__LC_DIRTY,&lc->flags)) {
+	if (test_and_set_bit(__LC_DIRTY, &lc->flags)) {
 		++lc->dirty;
 		RETURN(NULL);
 	}
@@ -250,7 +250,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_get_unused_element(lc);
 	BUG_ON(!e);
 
-	clear_bit(__LC_STARVING,&lc->flags);
+	clear_bit(__LC_STARVING, &lc->flags);
 	BUG_ON(++e->refcnt != 1);
 	lc->used++;
 
@@ -281,7 +281,7 @@ struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
 	if (e) {
 		++lc->hits;
 		if (e->refcnt++ == 0) lc->used++;
-		list_move(&e->list,&lc->in_use); // Not evictable...
+		list_move(&e->list, &lc->in_use); // Not evictable...
 	}
 	RETURN(e);
 }
@@ -292,11 +292,11 @@ void lc_changed(struct lru_cache* lc, struct lc_element* e)
 	BUG_ON(e != lc->changing_element);
 	++lc->changed;
 	e->lc_number = lc->new_number;
-	list_add(&e->list,&lc->in_use);
+	list_add(&e->list, &lc->in_use);
 	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, lc->new_number) );
 	lc->changing_element = NULL;
 	lc->new_number = -1;
-	clear_bit(__LC_DIRTY,&lc->flags);
+	clear_bit(__LC_DIRTY, &lc->flags);
 	smp_mb__after_clear_bit();
 	PARANOIA_LEAVE();
 }
@@ -312,9 +312,9 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	BUG_ON(e->refcnt == 0);
 	BUG_ON(e == lc->changing_element);
 	if (--e->refcnt == 0) {
-		list_move(&e->list,&lc->lru); // move it to the front of LRU.
+		list_move(&e->list, &lc->lru); // move it to the front of LRU.
 		lc->used--;
-		clear_bit(__LC_STARVING,&lc->flags);
+		clear_bit(__LC_STARVING, &lc->flags);
 		smp_mb__after_clear_bit();
 	}
 	RETURN(e->refcnt);
@@ -334,11 +334,11 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 
 	if (index < 0 || index >= lc->nr_elements) return;
 
-	e = lc_entry(lc,index);
+	e = lc_entry(lc, index);
 	e->lc_number = enr;
 
 	hlist_del_init(&e->colision);
-	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc,enr) );
+	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
 	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
@@ -353,16 +353,16 @@ void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
 	struct lc_element *e;
 	int i;
 
-	seq_printf(seq,"\tnn: lc_number refcnt %s\n ",utext);
+	seq_printf(seq, "\tnn: lc_number refcnt %s\n ", utext);
 	for(i=0;i<nr_elements;i++) {
-		e = lc_entry(lc,i);
+		e = lc_entry(lc, i);
 		if (e->lc_number == LC_FREE) {
-			seq_printf(seq,"\t%2d: FREE\n",i );
+			seq_printf(seq, "\t%2d: FREE\n", i );
 		} else {
-			seq_printf(seq,"\t%2d: %4u %4u    ", i,
+			seq_printf(seq, "\t%2d: %4u %4u    ", i,
 				   e->lc_number,
 				   e->refcnt );
-			detail(seq,e);
+			detail(seq, e);
 		}
 	}
 }

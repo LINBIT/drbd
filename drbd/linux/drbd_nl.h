@@ -27,7 +27,7 @@ PACKET(disk_conf, 3,
 	BIT(		37,	T_MAY_IGNORE,	use_bmbv)
 )
 
-PACKET(detach, 4,)
+PACKET(detach, 4, )
 
 PACKET(net_conf, 5,
 	STRING(		8,	T_MANDATORY,	my_addr,	128)

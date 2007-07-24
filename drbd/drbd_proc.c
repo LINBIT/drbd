@@ -98,14 +98,14 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 		seq_printf(seq, "] ");
 	}
 	res = 1000L - res;
-	seq_printf(seq,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
+	seq_printf(seq, "sync'ed:%3lu.%lu%% ", res / 10, res % 10);
 	/* if more than 1 GB display in MB */
 	if (mdev->rs_total > 0x100000L) {
-		seq_printf(seq,"(%lu/%lu)M\n\t",
+		seq_printf(seq, "(%lu/%lu)M\n\t",
 			    (unsigned long) Bit2KB(rs_left) >> 10,
 			    (unsigned long) Bit2KB(mdev->rs_total) >> 10 );
 	} else {
-		seq_printf(seq,"(%lu/%lu)K\n\t",
+		seq_printf(seq, "(%lu/%lu)K\n\t",
 			    (unsigned long) Bit2KB(rs_left),
 			    (unsigned long) Bit2KB(mdev->rs_total) );
 	}
@@ -139,7 +139,7 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
 		seq_printf(seq, " speed: %ld,%03ld",
-			dbdt/1000,dbdt % 1000);
+			dbdt/1000, dbdt % 1000);
 	else
 		seq_printf(seq, " speed: %ld", dbdt);
 
@@ -151,11 +151,11 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
 		seq_printf(seq, " (%ld,%03ld)",
-			dbdt/1000,dbdt % 1000);
+			dbdt/1000, dbdt % 1000);
 	else
 		seq_printf(seq, " (%ld)", dbdt);
 
-	seq_printf(seq," K/sec\n");
+	seq_printf(seq, " K/sec\n");
 }
 
 #if 0
@@ -163,7 +163,7 @@ STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
 
-	seq_printf(seq,"%5d %s %s\n",bme->rs_left,
+	seq_printf(seq, "%5d %s %s\n", bme->rs_left,
 		   bme->flags & BME_NO_WRITES ? "NO_WRITES" : "---------",
 		   bme->flags & BME_LOCKED ? "LOCKED" : "------"
 		   );
@@ -172,12 +172,12 @@ STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
 
 STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
-	int i,hole=0;
+	int i, hole=0;
 	const char *sn;
 	drbd_dev *mdev;
 
 	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
-		    API_VERSION,PRO_VERSION, drbd_buildtag());
+		    API_VERSION, PRO_VERSION, drbd_buildtag());
 
 	/*
 	  cs .. connection state
@@ -239,17 +239,17 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		}
 		if ( mdev->state.conn == SyncSource ||
 		     mdev->state.conn == SyncTarget ) {
-			drbd_syncer_progress(mdev,seq);
+			drbd_syncer_progress(mdev, seq);
 		}
 		if (mdev->resync) {
-			lc_printf_stats(seq,mdev->resync);
+			lc_printf_stats(seq, mdev->resync);
 		}
 		if (mdev->act_log) {
-			lc_printf_stats(seq,mdev->act_log);
+			lc_printf_stats(seq, mdev->act_log);
 		}
 #if 0
 		if (mdev->resync) {
-			lc_dump(mdev->resync,seq,"rs_left",
+			lc_dump(mdev->resync, seq, "rs_left",
 				resync_dump_detail);
 		}
 #endif
