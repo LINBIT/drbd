@@ -33,13 +33,13 @@
   Once created, the api consists of
     lc_find(,nr) -- finds the object with the given number, if present
     lc_get(,nr)  -- finds the object and increases the usage count
-                    if not present, actions are taken to make sure that
+		    if not present, actions are taken to make sure that
 		    the cache is updated, the user is notified of this by a callback.
 		    Return value is NULL in this case.
 		    As soon as the user informs the cache that it has been updated,
 		    the next lc_get on that very object number will be successfull.
     lc_put(,lc_element*)
-                 -- decreases the usage count of this object, and returns the new value.
+		 -- decreases the usage count of this object, and returns the new value.
 
     NOTE: It is the USERS responsibility to make sure that calls do not happen concurrently.
  */
@@ -60,7 +60,7 @@
 
 struct lc_element {
 	struct hlist_node colision;
-	struct list_head list;           /* LRU list or free list */
+	struct list_head list;		 /* LRU list or free list */
 	unsigned int refcnt;
 	unsigned int lc_number;
 };
@@ -107,8 +107,8 @@ extern void lc_del (struct lru_cache *lc, struct lc_element *element);
 extern struct lc_element *lc_try_get(struct lru_cache *lc, unsigned int enr);
 extern struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr);
 extern struct lc_element *lc_get (struct lru_cache *lc, unsigned int enr);
-extern unsigned int       lc_put (struct lru_cache *lc, struct lc_element *e);
-extern void            lc_changed(struct lru_cache *lc, struct lc_element *e);
+extern unsigned int	  lc_put (struct lru_cache *lc, struct lc_element *e);
+extern void	       lc_changed(struct lru_cache *lc, struct lc_element *e);
 
 struct seq_file;
 extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache *lc);
@@ -141,7 +141,7 @@ static inline int lc_is_used(struct lru_cache *lc, unsigned int enr)
 
 #define lc_e_base(lc)  ((char *) ( (lc)->slot + (lc)->nr_elements ) )
 #define lc_entry(lc, i) ((struct lc_element *) \
-                       (lc_e_base(lc) + (i)*(lc)->element_size))
+		       (lc_e_base(lc) + (i)*(lc)->element_size))
 #define lc_index_of(lc, e) (((char *)(e) - lc_e_base(lc))/(lc)->element_size)
 
 #endif

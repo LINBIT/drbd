@@ -145,7 +145,7 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 				dec_local(mdev);
 			} else {
 				WARN("Should have called drbd_al_complete_io(, %llu), "
-				     "but my Disk seems to have failed:(\n", 
+				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->sector);
 			}
 		}
@@ -439,7 +439,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 
 	print_req_mod(req, what);
 
-	switch(what) {
+	switch (what) {
 	default:
 		ERR("LOGIC BUG in %s:%u\n", __FILE__ , __LINE__ );
 		return;
@@ -912,7 +912,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
 	if (remote && mdev->unused_spare_barrier &&
-            test_and_clear_bit(ISSUE_BARRIER, &mdev->flags)) {
+	    test_and_clear_bit(ISSUE_BARRIER, &mdev->flags)) {
 		struct drbd_barrier *b = mdev->unused_spare_barrier;
 		b = _tl_add_barrier(mdev, b);
 		mdev->unused_spare_barrier = NULL;
@@ -993,7 +993,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 
 		if (FAULT_ACTIVE(mdev, rw == WRITE ? DRBD_FAULT_DT_WR :
 				       ( rw == READ ? DRBD_FAULT_DT_RD :
-  				                   DRBD_FAULT_DT_RA ) ))
+						   DRBD_FAULT_DT_RA ) ))
 			bio_endio(req->private_bio, req->private_bio->bi_size, -EIO);
 		else
 			generic_make_request(req->private_bio);
@@ -1017,7 +1017,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
  * return 1
  * otherwise return 0
  */
-static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
+static int drbd_fail_request_early(drbd_dev *mdev, int is_write)
 {
 	/* Unconfigured */
 	if (mdev->state.conn == Disconnecting &&
@@ -1058,7 +1058,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
 	unsigned int s_enr, e_enr;
-	struct Drbd_Conf *mdev = (drbd_dev*) q->queuedata;
+	struct Drbd_Conf *mdev = (drbd_dev *) q->queuedata;
 
 	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
 		bio_endio(bio, bio->bi_size, -EPERM);
@@ -1133,7 +1133,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
  * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 {
-	struct Drbd_Conf *mdev = (drbd_dev*) q->queuedata;
+	struct Drbd_Conf *mdev = (drbd_dev *) q->queuedata;
 	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; /* 32 bit */
 	unsigned int bio_size = bio->bi_size;
 	int limit, backing_limit;

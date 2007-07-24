@@ -181,7 +181,7 @@ typedef struct Drbd_Conf drbd_dev;
 
 
 #ifdef DBG_ASSERTS
-extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
+extern void drbd_assert_breakpoint(drbd_dev *, char *, char *, int );
 # define D_ASSERT(exp)	if (!(exp)) \
 	 drbd_assert_breakpoint(mdev, #exp, __FILE__, __LINE__)
 #else
@@ -598,7 +598,7 @@ static inline Drbd_thread_state get_t_state(struct Drbd_thread *thi)
  * drbd_request and Tl_epoch_entry are descendants of drbd_work.
  */
 struct drbd_work;
-typedef int (*drbd_work_cb)(drbd_dev*, struct drbd_work*, int cancel);
+typedef int (*drbd_work_cb)(drbd_dev *, struct drbd_work *, int cancel);
 struct drbd_work {
 	struct list_head list;
 	drbd_work_cb cb;
@@ -934,14 +934,14 @@ enum chg_state_flags {
 	ScheduleAfter	= 4,
 };
 
-extern int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
+extern int drbd_change_state(drbd_dev *mdev, enum chg_state_flags f,
 			     drbd_state_t mask, drbd_state_t val);
-extern void drbd_force_state(drbd_dev*, drbd_state_t, drbd_state_t);
-extern int _drbd_request_state(drbd_dev*, drbd_state_t, drbd_state_t,
+extern void drbd_force_state(drbd_dev *, drbd_state_t, drbd_state_t);
+extern int _drbd_request_state(drbd_dev *, drbd_state_t, drbd_state_t,
 			       enum chg_state_flags);
-extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
-extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
-extern void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
+extern int _drbd_set_state(drbd_dev *, drbd_state_t, enum chg_state_flags );
+extern void print_st_err(drbd_dev *, drbd_state_t, drbd_state_t, int );
+extern void after_state_ch(drbd_dev *mdev, drbd_state_t os, drbd_state_t ns,
 			   enum chg_state_flags);
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
@@ -989,7 +989,7 @@ extern int drbd_send_bitmap(drbd_dev *mdev);
 extern int _drbd_send_bitmap(drbd_dev *mdev);
 extern int drbd_send_sr_reply(drbd_dev *mdev, int retcode);
 extern void drbd_free_bc(struct drbd_backing_dev *bc);
-extern int drbd_io_error(drbd_dev* mdev, int forcedetach);
+extern int drbd_io_error(drbd_dev *mdev, int forcedetach);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
@@ -1301,8 +1301,8 @@ extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 
 /* drbd_nl.c */
 extern char *ppsize(char *buf, unsigned long long size);
-extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
-extern int drbd_determin_dev_size(drbd_dev*);
+extern sector_t drbd_new_dev_size(struct Drbd_Conf *, struct drbd_backing_dev *);
+extern int drbd_determin_dev_size(drbd_dev *);
 extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
 extern int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
@@ -1315,8 +1315,8 @@ extern int drbd_khelper(drbd_dev *mdev, char *cmd);
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sa(drbd_dev *mdev, int na);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
-extern void resume_next_sg(drbd_dev* mdev);
-extern void suspend_other_sg(drbd_dev* mdev);
+extern void resume_next_sg(drbd_dev *mdev);
+extern void suspend_other_sg(drbd_dev *mdev);
 extern int drbd_resync_finished(drbd_dev *mdev);
 /* maybe rather drbd_main.c ? */
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
@@ -1392,9 +1392,9 @@ extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern int drbd_try_rs_begin_io(struct Drbd_Conf *mdev, sector_t sector);
-extern void drbd_rs_cancel_all(drbd_dev* mdev);
-extern int drbd_rs_del_all(drbd_dev* mdev);
-extern void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size);
+extern void drbd_rs_cancel_all(drbd_dev *mdev);
+extern int drbd_rs_del_all(drbd_dev *mdev);
+extern void drbd_rs_failed_io(drbd_dev *mdev, sector_t sector, int size);
 extern int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *);
 extern void __drbd_set_in_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line);
 #define drbd_set_in_sync(mdev, sector, size) \
@@ -1424,26 +1424,26 @@ void drbd_bcast_sync_progress(drbd_dev *mdev);
 #define user_isp_mask 1
 #define aftr_isp_mask 1
 
-#define NS(T, S) ({drbd_state_t mask; mask.i = 0; mask.T = T##_mask; mask;}), \
-		({drbd_state_t val; val.i = 0; val.T = (S); val;})
+#define NS(T, S) ({drbd_state_t mask; mask.i = 0; mask.T = T##_mask; mask; }), \
+		({drbd_state_t val; val.i = 0; val.T = (S); val; })
 #define NS2(T1, S1, T2, S2) \
 		({drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
-		  mask.T2 = T2##_mask; mask;}), \
+		  mask.T2 = T2##_mask; mask; }), \
 		({drbd_state_t val; val.i = 0; val.T1 = (S1); \
-		  val.T2 = (S2); val;})
+		  val.T2 = (S2); val; })
 #define NS3(T1, S1, T2, S2, T3, S3) \
 		({drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
-		  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask;}), \
+		  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask; }), \
 		({drbd_state_t val; val.i = 0; val.T1 = (S1); \
-		  val.T2 = (S2); val.T3 = (S3); val;})
+		  val.T2 = (S2); val.T3 = (S3); val; })
 
-#define _NS(D, T, S) D, ({drbd_state_t ns; ns.i = D->state.i; ns.T = (S); ns;})
+#define _NS(D, T, S) D, ({drbd_state_t ns; ns.i = D->state.i; ns.T = (S); ns; })
 #define _NS2(D, T1, S1, T2, S2) \
 		D, ({drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
-		ns.T2 = (S2); ns;})
+		ns.T2 = (S2); ns; })
 #define _NS3(D, T1, S1, T2, S2, T3, S3) \
 		D, ({drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
-		ns.T2 = (S2); ns.T3 = (S3); ns;})
+		ns.T2 = (S2); ns.T3 = (S3); ns; })
 
 static inline void drbd_state_lock(drbd_dev *mdev)
 {
@@ -1457,7 +1457,7 @@ static inline void drbd_state_unlock(drbd_dev *mdev)
 	wake_up(&mdev->misc_wait);
 }
 
-static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
+static inline int drbd_request_state(drbd_dev *mdev, drbd_state_t mask,
 				     drbd_state_t val)
 {
 	return _drbd_request_state(mdev, mask, val, ChgStateVerbose);
@@ -1467,9 +1467,9 @@ static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
  * all io completion handlers. See also drbd_io_error().
  */
-static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
+static inline void __drbd_chk_io_error(drbd_dev *mdev, int forcedetach)
 {
-	switch(mdev->bc->dc.on_io_error) {
+	switch (mdev->bc->dc.on_io_error) {
 	case PassOn: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
 			if (printk_ratelimit())
@@ -1488,7 +1488,7 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 	}
 }
 
-static inline void drbd_chk_io_error(drbd_dev* mdev, int error, int forcedetach)
+static inline void drbd_chk_io_error(drbd_dev *mdev, int error, int forcedetach)
 {
 	if (error) {
 		unsigned long flags;
@@ -1673,7 +1673,7 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
  *  _req_mod(req, connection_lost_while_pending)
  *     [from tl_clear_barrier]
  */
-static inline void inc_ap_pending(drbd_dev* mdev)
+static inline void inc_ap_pending(drbd_dev *mdev)
 {
 	atomic_inc(&mdev->ap_pending_cnt);
 }
@@ -1685,7 +1685,7 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 		    atomic_read(&mdev->which))
 
 #define dec_ap_pending(mdev)	do {				\
-	typecheck(drbd_dev*, mdev);				\
+	typecheck(drbd_dev *, mdev);				\
 	if (atomic_dec_and_test(&mdev->ap_pending_cnt))		\
 		wake_up(&mdev->misc_wait);			\
 	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt); } while (0)
@@ -1696,13 +1696,13 @@ static inline void inc_ap_pending(drbd_dev* mdev)
  * SyncSource sends RSDataReply   (and expects WriteAck whith ID_SYNCER)
  *					   (or NegAck with ID_SYNCER)
  */
-static inline void inc_rs_pending(drbd_dev* mdev)
+static inline void inc_rs_pending(drbd_dev *mdev)
 {
 	atomic_inc(&mdev->rs_pending_cnt);
 }
 
 #define dec_rs_pending(mdev)	do {				\
-	typecheck(drbd_dev*, mdev);				\
+	typecheck(drbd_dev *, mdev);				\
 	atomic_dec(&mdev->rs_pending_cnt);			\
 	ERR_IF_CNT_IS_NEGATIVE(rs_pending_cnt); } while (0)
 
@@ -1715,23 +1715,23 @@ static inline void inc_rs_pending(drbd_dev* mdev)
  *  receive_DataRequest (receive_RSDataRequest) we need to send back Data
  *  receive_Barrier_*	we need to send a BarrierAck
  */
-static inline void inc_unacked(drbd_dev* mdev)
+static inline void inc_unacked(drbd_dev *mdev)
 {
 	atomic_inc(&mdev->unacked_cnt);
 }
 
 #define dec_unacked(mdev)	do {				\
-	typecheck(drbd_dev*, mdev);				\
+	typecheck(drbd_dev *, mdev);				\
 	atomic_dec(&mdev->unacked_cnt);				\
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
 #define sub_unacked(mdev, n)	do {				\
-	typecheck(drbd_dev*, mdev);				\
+	typecheck(drbd_dev *, mdev);				\
 	atomic_sub(n, &mdev->unacked_cnt);			\
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
 
-static inline void dec_net(drbd_dev* mdev)
+static inline void dec_net(drbd_dev *mdev)
 {
 	if (atomic_dec_and_test(&mdev->net_cnt))
 		wake_up(&mdev->misc_wait);
@@ -1741,7 +1741,7 @@ static inline void dec_net(drbd_dev* mdev)
  * inc_net: Returns TRUE when it is ok to access mdev->net_conf. You
  * should call dec_net() when finished looking at mdev->net_conf.
  */
-static inline int inc_net(drbd_dev* mdev)
+static inline int inc_net(drbd_dev *mdev)
 {
 	int have_net_conf;
 
@@ -1757,7 +1757,7 @@ static inline int inc_net(drbd_dev* mdev)
  * this is mood...
  */
 
-static inline void dec_local(drbd_dev* mdev)
+static inline void dec_local(drbd_dev *mdev)
 {
 	if (atomic_dec_and_test(&mdev->local_cnt))
 		wake_up(&mdev->misc_wait);
@@ -1767,7 +1767,7 @@ static inline void dec_local(drbd_dev* mdev)
  * inc_local: Returns TRUE when local IO is possible. If it returns
  * TRUE you should call dec_local() after IO is completed.
  */
-static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
+static inline int inc_local_if_state(drbd_dev *mdev, drbd_disks_t mins)
 {
 	int io_allowed;
 
@@ -1777,7 +1777,7 @@ static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 		dec_local(mdev);
 	return io_allowed;
 }
-static inline int inc_local(drbd_dev* mdev)
+static inline int inc_local(drbd_dev *mdev)
 {
 	return inc_local_if_state(mdev, Inconsistent);
 }
@@ -1785,7 +1785,7 @@ static inline int inc_local(drbd_dev* mdev)
 /* this throttles on-the-fly application requests
  * according to max_buffers settings;
  * maybe re-implement using semaphores? */
-static inline int drbd_get_max_buffers(drbd_dev* mdev)
+static inline int drbd_get_max_buffers(drbd_dev *mdev)
 {
 	int mxb = 1000000; /* arbitrary limit on open requests */
 	if (inc_net(mdev)) {
@@ -1795,7 +1795,7 @@ static inline int drbd_get_max_buffers(drbd_dev* mdev)
 	return mxb;
 }
 
-static inline int __inc_ap_bio_cond(drbd_dev* mdev) {
+static inline int __inc_ap_bio_cond(drbd_dev *mdev) {
 	int mxb = drbd_get_max_buffers(mdev);
 	if (mdev->state.susp) return 0;
 	if (mdev->state.conn == WFBitMapS) return 0;
@@ -1810,7 +1810,7 @@ static inline int __inc_ap_bio_cond(drbd_dev* mdev) {
 /* I'd like to use wait_event_lock_irq,
  * but I'm not sure when it got introduced,
  * and not sure when it has 3 or 4 arguments */
-static inline void inc_ap_bio(drbd_dev* mdev)
+static inline void inc_ap_bio(drbd_dev *mdev)
 {
 	/* compare with after_state_ch,
 	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
@@ -1835,7 +1835,7 @@ static inline void inc_ap_bio(drbd_dev* mdev)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-static inline void dec_ap_bio(drbd_dev* mdev)
+static inline void dec_ap_bio(drbd_dev *mdev)
 {
 	int mxb = drbd_get_max_buffers(mdev);
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
@@ -1860,7 +1860,7 @@ static inline int seq_cmp(u32 a, u32 b)
 /* CAUTION: please no side effects in arguments! */
 #define seq_max(a, b) ((u32)(seq_gt((a), (b)) ? (a) : (b)))
 
-static inline void update_peer_seq(drbd_dev* mdev, unsigned int new_seq)
+static inline void update_peer_seq(drbd_dev *mdev, unsigned int new_seq)
 {
 	unsigned int m;
 	spin_lock(&mdev->peer_seq_lock);
@@ -1870,7 +1870,7 @@ static inline void update_peer_seq(drbd_dev* mdev, unsigned int new_seq)
 	if (m == new_seq) wake_up(&mdev->seq_wait);
 }
 
-static inline int drbd_queue_order_type(drbd_dev* mdev)
+static inline int drbd_queue_order_type(drbd_dev *mdev)
 {
 	/* sorry, we currently have no working implementation
 	 * of distributed TCQ stuff */

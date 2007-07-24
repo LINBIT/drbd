@@ -213,8 +213,8 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	/* to avoid recursion in _req_mod */
 	what = error
 	       ? (bio_data_dir(bio) == WRITE)
-	         ? write_completed_with_error
-	         : read_completed_with_error
+		 ? write_completed_with_error
+		 : read_completed_with_error
 	       : completed_ok;
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	_req_mod(req, what, error);
@@ -280,7 +280,7 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 void resync_timer_fn(unsigned long data)
 {
 	unsigned long flags;
-	drbd_dev* mdev = (drbd_dev*) data;
+	drbd_dev *mdev = (drbd_dev *) data;
 	int queue;
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
@@ -323,7 +323,7 @@ int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	if (mdev->state.conn != SyncTarget)
 		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.conn));
 
-        number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
+	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
 	if (atomic_read(&mdev->rs_pending_cnt) > number)
 		goto requeue;
@@ -339,7 +339,7 @@ int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 		return 1;
 	}
 
-	for(i = 0;i < number;i++) {
+	for (i = 0; i < number; i++) {
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
@@ -451,7 +451,7 @@ int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return 1;
 }
 
-int drbd_resync_finished(drbd_dev* mdev)
+int drbd_resync_finished(drbd_dev *mdev)
 {
 	unsigned long db, dt, dbdt;
 	int dstate, pdstate;
@@ -677,7 +677,7 @@ int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	/* inc_ap_pending was done where this was queued.
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in w_clear_epoch.  */
-	ok = _drbd_send_cmd(mdev, mdev->data.socket, Barrier, (Drbd_Header*)p, sizeof(*p), 0);
+	ok = _drbd_send_cmd(mdev, mdev->data.socket, Barrier, (Drbd_Header *)p, sizeof(*p), 0);
 	drbd_put_data_sock(mdev);
 
 	return ok;
@@ -767,7 +767,7 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 {
 	drbd_dev *odev = mdev;
 
-	while(1) {
+	while (1) {
 		if (odev->sync_conf.after == -1) return 1;
 		odev = minor_to_mdev(odev->sync_conf.after);
 		ERR_IF(!odev) return 1;
@@ -824,14 +824,14 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	return rv;
 }
 
-void resume_next_sg(drbd_dev* mdev)
+void resume_next_sg(drbd_dev *mdev)
 {
 	drbd_global_lock();
 	_drbd_resume_next(mdev);
 	drbd_global_unlock();
 }
 
-void suspend_other_sg(drbd_dev* mdev)
+void suspend_other_sg(drbd_dev *mdev)
 {
 	drbd_global_lock();
 	_drbd_pause_after(mdev);
@@ -1006,7 +1006,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		list_splice_init(&mdev->data.work.q, &work_list);
 		spin_unlock_irq(&mdev->data.work.q_lock);
 
-		while(!list_empty(&work_list)) {
+		while (!list_empty(&work_list)) {
 			w = list_entry(work_list.next, struct drbd_work, list);
 			list_del_init(&w->list);
 			w->cb(mdev, w, 1);

@@ -78,29 +78,26 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_ResyncRunning] = "Can not start resync since it is already active",
 	[-SS_AlreadyStandAlone] = "Can not disconnect a StandAlone device",
 	[-SS_CW_FailedByPeer] = "State changed was refused by peer node",
-	[-SS_IsDiskLess] = 
+	[-SS_IsDiskLess] =
 		"Device is diskless, the requesed operation requires a disk",
 	[-SS_DeviceInUse] = "Device is held open by someone"
 };
 
 const char *conns_to_name(drbd_conns_t s) {
 	/* enums are unsigned... */
-	return s > PausedSyncT  ? "TOO_LARGE"
-		                : drbd_conn_s_names[s];
+	return s > PausedSyncT ? "TOO_LARGE" : drbd_conn_s_names[s];
 }
 
 const char *roles_to_name(drbd_role_t s) {
-	return s > Secondary  ? "TOO_LARGE"
-		              : drbd_role_s_names[s];
+	return s > Secondary   ? "TOO_LARGE" : drbd_role_s_names[s];
 }
 
 const char *disks_to_name(drbd_disks_t s) {
-	return s > UpToDate    ? "TOO_LARGE"
-		               : drbd_disk_s_names[s];
+	return s > UpToDate    ? "TOO_LARGE" : drbd_disk_s_names[s];
 }
 
 const char *set_st_err_name(set_st_err_t err) {
 	return err < SS_DeviceInUse ? "TOO_SMALL" :
 	       err > SS_TwoPrimaries ? "TOO_LARGE"
-		        : drbd_state_sw_errors[-err];
+			: drbd_state_sw_errors[-err];
 }

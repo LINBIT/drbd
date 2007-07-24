@@ -52,9 +52,9 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short *tags, struct name *arg) 
 	int tag; \
 	int dlen; \
 	\
-	while( (tag = *tags++) != TT_END ) { \
+	while ( (tag = *tags++) != TT_END ) { \
 		dlen = *tags++; \
-		switch( tag_number(tag) ) { \
+		switch ( tag_number(tag) ) { \
 		fields \
 		default: \
 			if (tag & T_MANDATORY) { \
@@ -157,7 +157,7 @@ void nl_trace_reply(void *data) {
 	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
 	       nlp->minor,
 	       nlp->packet_type == P_nl_after_last_packet?
-	           "Empty-Reply" : nl_packet_name(nlp->packet_type),
+		   "Empty-Reply" : nl_packet_name(nlp->packet_type),
 	       nlp->packet_type,
 	       req->seq, req->ack, req->len);
 }
@@ -199,7 +199,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	r = drbd_khelper(mdev, "outdate-peer");
 
-	switch( (r>>8) & 0xff ) {
+	switch ( (r>>8) & 0xff ) {
 	case 3: /* peer is inconsistent */
 		nps = Inconsistent;
 		break;
@@ -268,7 +268,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 			val.pdsk = nps;
 			mask.pdsk = disk_mask;
-			
+
 			continue;
 		}
 
@@ -306,7 +306,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 	/* Wait until nothing is on the fly :) */
 	if ( wait_event_interruptible( mdev->misc_wait,
-			         atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
+				 atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
 		r = GotSignal;
 		goto fail;
 	}
@@ -390,7 +390,7 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
-	switch(bdev->dc.meta_dev_idx) {
+	switch (bdev->dc.meta_dev_idx) {
 	default:
 		/* v07 style fixed size indexed meta data */
 		bdev->md.md_size_sect = MD_RESERVED_SECT;
@@ -410,7 +410,7 @@ STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
 		bdev->md.md_offset = drbd_md_ss__(mdev, bdev);
 		/* al size is still fixed */
 		bdev->md.al_offset = -MD_AL_MAX_SIZE;
-                /* LGE FIXME max size check missing. */
+		/* LGE FIXME max size check missing. */
 		/* we need (slightly less than) ~ this much bitmap sectors: */
 		md_size_sect = drbd_get_capacity(bdev->backing_bdev);
 		md_size_sect = ALIGN(md_size_sect, BM_SECT_PER_EXT);
@@ -495,7 +495,7 @@ int drbd_determin_dev_size(struct Drbd_Conf *mdev)
 
 	/* LGE: flexible device size!! is this the right thing to test? */
 	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
-		|| prev_size       != mdev->bc->md.md_size_sect;
+		|| prev_size	   != mdev->bc->md.md_size_sect;
 
 	if (md_moved) {
 		WARN("Moving meta-data.\n");
@@ -630,7 +630,7 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 	       DUMPI(b->seg_boundary_mask);
 	       );
 
-	q->max_sectors       = max_seg_s >> 9;
+	q->max_sectors	     = max_seg_s >> 9;
 	q->max_phys_segments = max_seg_s >> PAGE_SHIFT;
 	q->max_hw_segments   = max_seg_s >> PAGE_SHIFT;
 	q->max_segment_size  = max_seg_s;
@@ -685,11 +685,11 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-       /* 
-        * We may have gotten here very quickly from a detach. Wait for a bit
-        * then fail.
-        */
-	while(mdev->bc != NULL) {
+       /*
+	* We may have gotten here very quickly from a detach. Wait for a bit
+	* then fail.
+	*/
+	while (mdev->bc != NULL) {
 		if (ntries++ >= 5) {
 			WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
 			retcode = HaveDiskConfig;
@@ -763,7 +763,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	nbc->backing_bdev = inode->i_bdev;
 	if (bd_claim(nbc->backing_bdev, mdev)) {
 		printk(KERN_ERR "drbd: bd_claim(%p,%p); failed [%p;%p;%u]\n",
-		       nbc->backing_bdev, mdev, 
+		       nbc->backing_bdev, mdev,
 		       nbc->backing_bdev->bd_holder,
 		       nbc->backing_bdev->bd_contains->bd_holder,
 		       nbc->backing_bdev->bd_holders);
@@ -955,8 +955,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_bm_unlock(mdev);
 
 	if (inc_local_if_state(mdev, Attaching)) {
-		if (mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=  (u64)1;
-		else                            mdev->bc->md.uuid[Current] &= ~(u64)1;
+		if (mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=	(u64)1;
+		else				mdev->bc->md.uuid[Current] &= ~(u64)1;
 		dec_local(mdev);
 	}
 
@@ -1025,22 +1025,22 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		dec_local(mdev);
 	} else {
 		memset(new_conf, 0, sizeof(struct net_conf));
-		new_conf->timeout          = DRBD_TIMEOUT_DEF;
+		new_conf->timeout	   = DRBD_TIMEOUT_DEF;
 		new_conf->try_connect_int  = DRBD_CONNECT_INT_DEF;
-		new_conf->ping_int         = DRBD_PING_INT_DEF;
+		new_conf->ping_int	   = DRBD_PING_INT_DEF;
 		new_conf->max_epoch_size   = DRBD_MAX_EPOCH_SIZE_DEF;
-		new_conf->max_buffers      = DRBD_MAX_BUFFERS_DEF;
+		new_conf->max_buffers	   = DRBD_MAX_BUFFERS_DEF;
 		new_conf->unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF;
-		new_conf->sndbuf_size      = DRBD_SNDBUF_SIZE_DEF;
-		new_conf->ko_count         = DRBD_KO_COUNT_DEF;
-		new_conf->after_sb_0p      = DRBD_AFTER_SB_0P_DEF;
-		new_conf->after_sb_1p      = DRBD_AFTER_SB_1P_DEF;
-		new_conf->after_sb_2p      = DRBD_AFTER_SB_2P_DEF;
-		new_conf->want_lose        = 0;
+		new_conf->sndbuf_size	   = DRBD_SNDBUF_SIZE_DEF;
+		new_conf->ko_count	   = DRBD_KO_COUNT_DEF;
+		new_conf->after_sb_0p	   = DRBD_AFTER_SB_0P_DEF;
+		new_conf->after_sb_1p	   = DRBD_AFTER_SB_1P_DEF;
+		new_conf->after_sb_2p	   = DRBD_AFTER_SB_2P_DEF;
+		new_conf->want_lose	   = 0;
 		new_conf->two_primaries    = 0;
 		new_conf->wire_protocol    = DRBD_PROT_C;
-		new_conf->ping_timeo       = DRBD_PING_TIMEO_DEF;
-		new_conf->rr_conflict      = DRBD_RR_CONFLICT_DEF;
+		new_conf->ping_timeo	   = DRBD_PING_TIMEO_DEF;
+		new_conf->rr_conflict	   = DRBD_RR_CONFLICT_DEF;
 	}
 
 	if (!net_conf_from_tags(mdev, nlp->tag_list, new_conf)) {
@@ -1063,7 +1063,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 #define O_ADDR(A) (((struct sockaddr_in *)&A->peer_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A->peer_addr)->sin_port)
 	retcode = NoError;
-	for(i = 0;i < minor_count;i++) {
+	for (i = 0; i < minor_count; i++) {
 		odev = minor_to_mdev(i);
 		if (!odev || odev == mdev) continue;
 		if ( inc_net(odev)) {
@@ -1127,10 +1127,10 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	 *
 	 * XXX maybe rather store the value scaled to jiffies?
 	 * Note: MAX_SCHEDULE_TIMEOUT/HZ*HZ != MAX_SCHEDULE_TIMEOUT
-	 *       and HZ > 10; which is unlikely to change...
-	 *       Thus, if interrupted by a signal,
-	 *       sock_{send,recv}msg returns -EINTR,
-	 *       if the timeout expires, -EAGAIN.
+	 *	 and HZ > 10; which is unlikely to change...
+	 *	 Thus, if interrupted by a signal,
+	 *	 sock_{send,recv}msg returns -EINTR,
+	 *	 if the timeout expires, -EAGAIN.
 	 */
 	/* unlikely: someone disabled the timeouts ...
 	 * just put some huge values in there. */
@@ -1293,7 +1293,7 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			goto fail;
 		}
 		odev = minor_to_mdev(sc.after); /* check against loops in */
-		while(1) {
+		while (1) {
 			if (odev == mdev) {
 				retcode = SyncAfterCycle;
 				goto fail;

@@ -67,7 +67,7 @@ struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
 		lc->new_number	     = -1;
 		lc->lc_private       = private_p;
 		lc->name             = name;
-		for(i = 0;i < e_count;i++) {
+		for (i = 0; i < e_count; i++) {
 			e = lc_entry(lc, i);
 			e->lc_number = LC_FREE;
 			list_add(&e->list, &lc->free);
@@ -354,7 +354,7 @@ void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
 	int i;
 
 	seq_printf(seq, "\tnn: lc_number refcnt %s\n ", utext);
-	for(i = 0;i < nr_elements;i++) {
+	for (i = 0; i < nr_elements; i++) {
 		e = lc_entry(lc, i);
 		if (e->lc_number == LC_FREE) {
 			seq_printf(seq, "\t%2d: FREE\n", i );

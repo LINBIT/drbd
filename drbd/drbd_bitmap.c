@@ -352,7 +352,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 			spin_unlock_irq(&b->bm_lock);
 			goto out;
 		} else {
-		        /* one extra long to catch off by one errors */
+			/* one extra long to catch off by one errors */
 			bytes = (words+1)*sizeof(long);
 			nbm = vmalloc(bytes);
 			if (!nbm) {
@@ -446,7 +446,7 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 
 	spin_lock_irq(&b->bm_lock);
 	bm = b->bm + offset;
-	while(n--) {
+	while (n--) {
 		bits = hweight_long(*bm);
 		word = *bm | lel_to_cpu(*buffer++);
 		*bm++ = word;
@@ -484,7 +484,7 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 
 	spin_lock_irq(&b->bm_lock);
 	bm = b->bm + offset;
-	while(n--) {
+	while (n--) {
 		bits = hweight_long(*bm);
 		word = lel_to_cpu(*buffer++);
 		*bm++ = word;
@@ -528,7 +528,7 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 
 	spin_lock_irq(&b->bm_lock);
 	bm = b->bm + offset;
-	while(number--) *buffer++ = cpu_to_lel(*bm++);
+	while (number--) *buffer++ = cpu_to_lel(*bm++);
 	spin_unlock_irq(&b->bm_lock);
 }
 
@@ -902,9 +902,9 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
  * only called from drbd_set_out_of_sync.
  * strange_state blubber is already in place there...
 	strange_state = ( mdev->cstate  > Connected ) ||
-	                ( mdev->cstate == Connected &&
-	                 !(test_bit(DISKLESS,&mdev->flags) ||
-	                   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
+			( mdev->cstate == Connected &&
+			 !(test_bit(DISKLESS,&mdev->flags) ||
+			   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
 	if (strange_state)
 		ERR("%s in drbd_bm_set_bit\n", conns_to_name(mdev->cstate));
 */

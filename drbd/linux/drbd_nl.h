@@ -1,7 +1,7 @@
 /*
    PAKET( name,
-          TYPE ( pn, pr, member )
-          ...
+	  TYPE ( pn, pr, member )
+	  ...
    )
 
    You may never reissue one of the pn arguments

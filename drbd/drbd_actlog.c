@@ -226,7 +226,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	MTRACE(TraceTypeALExts, TraceLvlMetrics,
 	       INFO("al_begin_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
-		    (unsigned long long) sector, enr, 
+		    (unsigned long long) sector, enr,
 		    (int)BM_SECT_TO_EXT(sector));
 	       );
 
@@ -274,7 +274,7 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 
 	MTRACE(TraceTypeALExts, TraceLvlMetrics,
 	       INFO("al_complete_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
-		    (unsigned long long) sector, enr, 
+		    (unsigned long long) sector, enr,
 		    (int)BM_SECT_TO_EXT(sector));
 	       );
 
@@ -325,14 +325,14 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 
 	mx = min_t(int, AL_EXTENTS_PT,
 		   mdev->act_log->nr_elements - mdev->al_tr_cycle);
-	for(i = 0;i < mx;i++) {
+	for (i = 0; i < mx; i++) {
 		extent_nr = lc_entry(mdev->act_log,
 				     mdev->al_tr_cycle+i)->lc_number;
 		buffer->updates[i+1].pos = cpu_to_be32(mdev->al_tr_cycle+i);
 		buffer->updates[i+1].extent = cpu_to_be32(extent_nr);
 		xor_sum ^= extent_nr;
 	}
-	for(;i < AL_EXTENTS_PT;i++) {
+	for (; i < AL_EXTENTS_PT; i++) {
 		buffer->updates[i+1].pos = __constant_cpu_to_be32(-1);
 		buffer->updates[i+1].extent = __constant_cpu_to_be32(LC_FREE);
 		xor_sum ^= LC_FREE;
@@ -386,7 +386,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
 
 	rv = ( be32_to_cpu(b->magic) == DRBD_MAGIC );
 
-	for(i = 0;i < AL_EXTENTS_PT+1;i++)
+	for (i = 0; i < AL_EXTENTS_PT+1; i++)
 		xor_sum ^= be32_to_cpu(b->updates[i].extent);
 	rv &= (xor_sum == be32_to_cpu(b->xor_sum));
 
@@ -416,7 +416,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 	buffer = page_address(mdev->md_io_page);
 
 	/* Find the valid transaction in the log */
-	for(i = 0;i <= mx;i++) {
+	for (i = 0; i <= mx; i++) {
 		rv = drbd_al_read_tr(mdev, bdev, buffer, i);
 		if (rv == 0) continue;
 		if (rv == -1) {
@@ -448,7 +448,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 	/* Read the valid transactions.
 	 * INFO("Reading from %d to %d.\n",from,to); */
 	i = from;
-	while(1) {
+	while (1) {
 		int j, pos;
 		unsigned int extent_nr;
 		unsigned int trn;
@@ -468,7 +468,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 		   elements there might be an old version of the
 		   updated element (in slot 0). So the element in slot 0
 		   can overwrite old versions. */
-		for(j = AL_EXTENTS_PT;j >= 0;j--) {
+		for (j = AL_EXTENTS_PT; j >= 0; j--) {
 			pos = be32_to_cpu(buffer->updates[j].pos);
 			extent_nr = be32_to_cpu(buffer->updates[j].extent);
 
@@ -556,7 +556,7 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	int offset;
 
 	/* check if that enr is already covered by an already created bio. */
-	while( (bio = bios[i]) ) {
+	while ( (bio = bios[i]) ) {
 		if (bio->bi_sector == on_disk_sector) return 0;
 		i++;
 	}
@@ -579,7 +579,7 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	}
 
 	offset = S2W(enr);
-	drbd_bm_get_lel( mdev, offset, 
+	drbd_bm_get_lel( mdev, offset,
 			 min_t(size_t, S2W(1), drbd_bm_words(mdev) - offset),
 			 kmap(*page) + *page_offset );
 	kunmap(*page);
@@ -635,7 +635,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	wc.mdev = mdev;
 	wc.error = 0;
 
-	for(i = 0;i < nr_elements;i++) {
+	for (i = 0; i < nr_elements; i++) {
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE) continue;
 		/* next statement also does atomic_inc wc.count */
@@ -651,7 +651,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	wake_up(&mdev->al_wait);
 
 	/* all prepared, submit them */
-	for(i = 0;i < nr_elements;i++) {
+	for (i = 0; i < nr_elements; i++) {
 		if (bios[i] == NULL) break;
 		if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
 			bios[i]->bi_rw = WRITE;
@@ -680,7 +680,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
  free_bios_submit_one_by_one:
 	/* free everything by calling the endio callback directly. */
-	for(i = 0;i < nr_elements;i++) {
+	for (i = 0; i < nr_elements; i++) {
 		if (bios[i] == NULL) break;
 		bios[i]->bi_size = 0;
 		atodb_endio(bios[i], MD_HARDSECT, 0);
@@ -690,7 +690,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
  submit_one_by_one:
 	WARN("Using the slow drbd_al_to_on_disk_bm()\n");
 
-	for(i = 0;i < mdev->act_log->nr_elements;i++) {
+	for (i = 0; i < mdev->act_log->nr_elements; i++) {
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE) continue;
 		/* Really slow: if we have al-extents 16..19 active,
@@ -716,7 +716,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	for(i = 0;i < mdev->act_log->nr_elements;i++) {
+	for (i = 0; i < mdev->act_log->nr_elements; i++) {
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE) continue;
 		add += drbd_bm_ALe_set_all(mdev, enr);
@@ -755,7 +755,7 @@ void drbd_al_shrink(struct Drbd_Conf *mdev)
 
 	D_ASSERT( test_bit(__LC_DIRTY, &mdev->act_log->flags) );
 
-	for(i = 0;i < mdev->act_log->nr_elements;i++) {
+	for (i = 0; i < mdev->act_log->nr_elements; i++) {
 		al_ext = lc_entry(mdev->act_log, i);
 		if (al_ext->lc_number == LC_FREE) continue;
 		wait_event(mdev->al_wait, _try_lc_del(mdev, al_ext));
@@ -930,7 +930,7 @@ void __drbd_set_in_sync(drbd_dev *mdev, sector_t sector, int size, const char *f
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
 	spin_lock_irqsave(&mdev->al_lock, flags);
-	for(bnr = sbnr; bnr <= ebnr; bnr++) {
+	for (bnr = sbnr; bnr <= ebnr; bnr++) {
 		if (drbd_bm_clear_bit(mdev, bnr)) count++;
 	}
 	if (count) {
@@ -1051,7 +1051,7 @@ struct bm_extent *_bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	return bm_ext;
 }
 
-static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
+static inline int _is_in_al(drbd_dev *mdev, unsigned int enr)
 {
 	struct lc_element *al_ext;
 	int rv = 0;
@@ -1084,7 +1084,7 @@ static inline int _is_in_al(drbd_dev* mdev, unsigned int enr)
  * returns 1 if successful.
  * returns 0 if interrupted.
  */
-int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
+int drbd_rs_begin_io(drbd_dev *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent *bm_ext;
@@ -1101,7 +1101,7 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
 
 	if (test_bit(BME_LOCKED, &bm_ext->flags)) return 1;
 
-	for(i = 0;i < AL_EXT_PER_BM_SECT;i++) {
+	for (i = 0; i < AL_EXT_PER_BM_SECT; i++) {
 		sig = wait_event_interruptible( mdev->al_wait,
 				!_is_in_al(mdev, enr*AL_EXT_PER_BM_SECT+i) );
 		if (sig) {
@@ -1131,7 +1131,7 @@ int drbd_rs_begin_io(drbd_dev* mdev, sector_t sector)
  * returns zero if we could set BME_LOCKED and can proceed,
  * -EAGAIN if we need to try again.
  */
-int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
+int drbd_try_rs_begin_io(drbd_dev *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
@@ -1220,7 +1220,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	MTRACE(TraceTypeResync, TraceLvlAll,
 		INFO("checking al for %u\n", enr);
 	);
-	for (i = 0;i < AL_EXT_PER_BM_SECT;i++) {
+	for (i = 0; i < AL_EXT_PER_BM_SECT; i++) {
 		if (unlikely(al_enr+i == mdev->act_log->new_number))
 			goto try_again;
 		if (lc_is_used(mdev->act_log, al_enr+i))
@@ -1241,7 +1241,7 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 	return -EAGAIN;
 }
 
-void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
+void drbd_rs_complete_io(drbd_dev *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent *bm_ext;
@@ -1281,7 +1281,7 @@ void drbd_rs_complete_io(drbd_dev* mdev, sector_t sector)
  * drbd_rs_cancel_all: Removes extents from the resync LRU. Even
  * if they are BME_LOCKED.
  */
-void drbd_rs_cancel_all(drbd_dev* mdev)
+void drbd_rs_cancel_all(drbd_dev *mdev)
 {
 	struct bm_extent *bm_ext;
 	int i;
@@ -1294,7 +1294,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
 
 	if (inc_local_if_state(mdev, Failed)) {
 		/* ok, ->resync is there. */
-		for(i = 0;i < mdev->resync->nr_elements;i++) {
+		for (i = 0; i < mdev->resync->nr_elements; i++) {
 			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
 			if (bm_ext->lce.lc_number == LC_FREE) continue;
 			bm_ext->lce.refcnt = 0; /* Rude but ok. */
@@ -1318,7 +1318,7 @@ void drbd_rs_cancel_all(drbd_dev* mdev)
  * returns -EAGAIN.
  * In case all elements got removed it returns zero.
  */
-int drbd_rs_del_all(drbd_dev* mdev)
+int drbd_rs_del_all(drbd_dev *mdev)
 {
 	struct bm_extent *bm_ext;
 	int i;
@@ -1331,7 +1331,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 
 	if (inc_local_if_state(mdev, Failed)) {
 		/* ok, ->resync is there. */
-		for(i = 0;i < mdev->resync->nr_elements;i++) {
+		for (i = 0; i < mdev->resync->nr_elements; i++) {
 			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
 			if (bm_ext->lce.lc_number == LC_FREE) continue;
 			if (bm_ext->lce.lc_number == mdev->resync_wenr) {
@@ -1369,7 +1369,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
  * called on SyncTarget when resync write fails or NegRSDReply received
  *
  */
-void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
+void drbd_rs_failed_io(drbd_dev *mdev, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr, bnr;
@@ -1413,8 +1413,8 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
 	spin_lock_irq(&mdev->al_lock);
-	for(bnr = sbnr; bnr <= ebnr; bnr++) {
-	 	if (drbd_bm_test_bit(mdev, bnr) > 0) count++;
+	for (bnr = sbnr; bnr <= ebnr; bnr++) {
+		if (drbd_bm_test_bit(mdev, bnr) > 0) count++;
 	}
 	if (count) {
 		mdev->rs_failed += count;
