@@ -16,8 +16,7 @@
 /* see get_sb_bdev and bd_claim */
 extern char* drbd_sec_holder;
 
-// bi_end_io handlers
-// int (bio_end_io_t) (struct bio *, unsigned int, int);
+/* bi_end_io handlers */
 extern int drbd_md_io_complete (struct bio *bio, unsigned int bytes_done, int error);
 
 extern int drbd_endio_read_sec (struct bio *bio, unsigned int bytes_done, int error);
@@ -90,7 +89,7 @@ static inline char *drbd_bio_kmap(struct bio *bio)
 }
 static inline void drbd_bio_kunmap(struct bio *bio)
 {
-	// do nothing.
+	/* do nothing. */
 }
 #endif
 
@@ -111,7 +110,7 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
  */
 static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_type, struct bio *bio)
 {
-	bio->bi_rw = rw; // on the receiver side, e->..rw was not yet defined.
+	bio->bi_rw = rw; /* on the receiver side, e->..rw was not yet defined. */
 
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR DEVICE_NAME "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
@@ -140,7 +139,7 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	if (!blk_queue_plugged(q)) {
 		blk_plug_device(q);
 		del_timer(&q->unplug_timer);
-		// unplugging should not happen automatically...
+		/* unplugging should not happen automatically... */
 	}
 	spin_unlock_irq(q->queue_lock);
 }

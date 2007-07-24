@@ -101,7 +101,7 @@ typedef enum {
 	connection_lost_while_pending,
 	recv_acked_by_peer,
 	write_acked_by_peer,
-	write_acked_by_peer_and_sis, // and set_in_sync
+	write_acked_by_peer_and_sis, /* and set_in_sync */
 	conflict_discarded_by_peer,
 	neg_acked,
 	barrier_acked, /* in protocol A and B */

@@ -34,7 +34,7 @@
 #include <linux/wait.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
-#include <linux/mm_inline.h> // for the page_count macro on RH/Fedora
+#include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>
 
@@ -133,7 +133,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	e = bio->bi_private;
 	mdev = e->mdev;
 
-	// see above
+	/* see above */
 	if (bio->bi_size) return 1;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
@@ -200,7 +200,7 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	drbd_req_event_t what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
-	// see above
+	/* see above */
 	if (bio->bi_size) return 1;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
@@ -233,8 +233,8 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w, int cancel)
 	 * a "we are diskless" param packet anyways, and the peer
 	 * will then set the FullSync bit in the meta data ...
 	 */
-	// NOTE: mdev->bc can be NULL by the time we get here!
-	//D_ASSERT(mdev->bc->dc.on_io_error != PassOn);
+	/* NOTE: mdev->bc can be NULL by the time we get here! */
+	/* D_ASSERT(mdev->bc->dc.on_io_error != PassOn); */
 
 	/* the only way this callback is scheduled is from _req_may_be_done,
 	 * when it is done and had a local write error, see comments there */
@@ -274,7 +274,7 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	ERR_IF(cancel) return 1;
 	ERR("resync inactive, but callback triggered??\n");
-	return 1; // Simply ignore this!
+	return 1; /* Simply ignore this! */
 }
 
 void resync_timer_fn(unsigned long data)
@@ -366,7 +366,6 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w, int cancel)
 		}
 
 		if (unlikely(drbd_bm_test_bit(mdev, bit) == 0 )) {
-		      //INFO("Block got synced while in drbd_rs_begin_io()\n");
 			drbd_rs_complete_io(mdev, sector);
 			goto next_sector;
 		}
@@ -389,11 +388,11 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w, int cancel)
 			if (size + BM_BLOCK_SIZE > max_segment_size)
 				break;
 
-			// Be always aligned
+			/* Be always aligned */
 			if (sector & ((1<<(align+3))-1) )
 				break;
 
-			// do not cross extent boundaries
+			/* do not cross extent boundaries */
 			if (( (bit+1) & BM_BLOCKS_PER_BM_EXT_MASK ) == 0)
 				break;
 			/* now, is it actually dirty, after all?
@@ -461,14 +460,14 @@ int drbd_resync_finished(drbd_dev* mdev)
 	int dstate, pdstate;
 	struct drbd_work *w;
 
-	// Remove all elements from the resync LRU. Since future actions
-	// might set bits in the (main) bitmap, then the entries in the
-	// resync LRU would be wrong.
+	/* Remove all elements from the resync LRU. Since future actions
+	 * might set bits in the (main) bitmap, then the entries in the
+	 * resync LRU would be wrong. */
 	if (drbd_rs_del_all(mdev)) {
-		// In case this is not possible now, most probabely because
-		// there are RSDataReply Packets lingering on the worker's
-		// queue (or even the read operations for those packets
-		// is not finished by now).   Retry in 100ms.
+		/* In case this is not possible now, most probabely because
+		 * there are RSDataReply Packets lingering on the worker's
+		 * queue (or even the read operations for those packets
+		 * is not finished by now).   Retry in 100ms. */
 
 		drbd_kick_lo(mdev);
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -523,8 +522,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 		drbd_uuid_set_bm(mdev, 0UL);
 
 		if (mdev->p_uuid) {
-			// Now the two UUID sets are equal, update what we
-			// know of the peer.
+			/* Now the two UUID sets are equal, update what we
+			 * know of the peer. */
 			int i;
 			for ( i = Current ; i<=History_end ; i++ ) {
 				mdev->p_uuid[i] = mdev->bc->md.uuid[i];
@@ -633,7 +632,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 
 		drbd_io_error(mdev, FALSE);
 
-		// update resync data with failure
+		/* update resync data with failure */
 		drbd_rs_failed_io(mdev, e->sector, e->size);
 	}
 
@@ -1002,7 +1001,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		spin_unlock_irq(&mdev->data.work.q_lock);
 
 		if (!w->cb(mdev, w, mdev->state.conn < Connected )) {
-			//WARN("worker: a callback failed! \n");
+			/* WARN("worker: a callback failed! \n"); */
 			if (mdev->state.conn >= Connected)
 				drbd_force_state(mdev, NS(conn, NetworkFailure));
 		}

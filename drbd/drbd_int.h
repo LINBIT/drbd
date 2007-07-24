@@ -39,7 +39,7 @@
 #include <net/tcp.h>
 #include "lru_cache.h"
 
-// module parameter, defined in drbd_main.c
+/* module parameter, defined in drbd_main.c */
 extern int minor_count;
 extern int allow_oos;
 
@@ -86,13 +86,13 @@ extern char usermode_helper[];
  */
 #define DRBD_SIGKILL SIGHUP
 
+/* All EEs on the free list should have ID_VACANT (== 0)
+ * freshly allocated EEs get !ID_VACANT (== 1)
+ * so if it says "cannot dereference null pointer at adress 0x00000001",
+ * it is most likely one of these :( */
 #define ID_SYNCER (-1ULL)
-#define ID_VACANT 0	// All EEs on the free list should have this value
-			// freshly allocated EEs get !ID_VACANT (== 1)
-			// so if it says "cannot dereference null
-			// pointer at adress 0x00000001, it is most
-			// probably one of these :(
-#define is_syncer_block_id(id) ((id)==ID_SYNCER)
+#define ID_VACANT 0
+#define is_syncer_block_id(id) ((id) == ID_SYNCER)
 
 struct Drbd_Conf;
 typedef struct Drbd_Conf drbd_dev;
@@ -113,7 +113,7 @@ typedef struct Drbd_Conf drbd_dev;
  * Some Message Macros
  *************************/
 
-// handy macro: DUMPP(somepointer)
+/* handy macro: DUMPP(somepointer) */
 #define DUMPP(A)   ERR( #A " = %p in %s:%d\n", (A), __FILE__, __LINE__);
 #define DUMPLU(A)  ERR( #A " = %lu in %s:%d\n", (unsigned long)(A), __FILE__, __LINE__);
 #define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n", (unsigned long long)(A), __FILE__, __LINE__);
@@ -136,8 +136,8 @@ typedef struct Drbd_Conf drbd_dev;
 #define D_DUMPI(A)
 #endif
 
-// Info: do not remove the spaces around the "," before ##
-//	 Otherwise this is not portable from gcc-2.95 to gcc-3.3
+/* Info: do not remove the spaces around the "," before ##
+ *	 Otherwise this is not portable from gcc-2.95 to gcc-3.3 */
 #define PRINTK(level, fmt, args...) \
 	printk(level DEVICE_NAME "%d: " fmt, \
 		mdev->minor , ##args)
@@ -194,15 +194,15 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 	 _b; \
 	}))
 
-// Defines to control fault insertion
+/* Defines to control fault insertion */
 enum {
-    DRBD_FAULT_MD_WR = 0,
-    DRBD_FAULT_MD_RD,
-    DRBD_FAULT_RS_WR,
+    DRBD_FAULT_MD_WR = 0,	/* meta data write */
+    DRBD_FAULT_MD_RD,		/*           read  */
+    DRBD_FAULT_RS_WR,		/* resync          */
     DRBD_FAULT_RS_RD,
-    DRBD_FAULT_DT_WR,
+    DRBD_FAULT_DT_WR,		/* data            */
     DRBD_FAULT_DT_RD,
-    DRBD_FAULT_DT_RA,  // READA = Read ahead
+    DRBD_FAULT_DT_RA,		/* data read ahead */
 
     DRBD_FAULT_MAX,
 };
@@ -222,9 +222,9 @@ drbd_insert_fault(drbd_dev *mdev, unsigned int type) {
 #endif
 
 #include <linux/stringify.h>
-// integer division, round _UP_ to the next integer
+/* integer division, round _UP_ to the next integer */
 #define div_ceil(A, B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
-// usual integer division
+/* usual integer division */
 #define div_floor(A, B) ( (A)/(B) )
 
 /*
@@ -260,7 +260,8 @@ drbd_insert_fault(drbd_dev *mdev, unsigned int type) {
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0))
 
 /* drbd_meta-data.c (still in drbd_main.c) */
-#define DRBD_MD_MAGIC (DRBD_MAGIC+4) // 4th incarnation of the disk layout.
+/* 4th incarnation of the disk layout. */
+#define DRBD_MD_MAGIC (DRBD_MAGIC+4)
 
 extern struct Drbd_Conf **minor_table;
 
@@ -270,15 +271,15 @@ extern struct Drbd_Conf **minor_table;
 
 typedef enum {
 	Data,
-	DataReply,     // Response to DataRequest
-	RSDataReply,   // Response to RSDataRequest
+	DataReply,     /* Response to DataRequest */
+	RSDataReply,   /* Response to RSDataRequest */
 	Barrier,
 	ReportBitMap,
 	BecomeSyncTarget,
 	BecomeSyncSource,
-	UnplugRemote,  // Used at various times to hint the peer to hurry up
-	DataRequest,   // Used to ask for a data block
-	RSDataRequest, // Used to ask for a data block
+	UnplugRemote,  /* Used at various times to hint the peer */
+	DataRequest,   /* Used to ask for a data block */
+	RSDataRequest, /* Used to ask for a data block for resync */
 	SyncParam,
 	ReportProtocol,
 	ReportUUIDs,
@@ -289,29 +290,30 @@ typedef enum {
 	AuthResponse,
 	StateChgRequest,
 
-	Ping,	      // These are sent on the meta socket...
+	/* These are sent on the meta socket... */
+	Ping,
 	PingAck,
-	RecvAck,      // Used in protocol B
-	WriteAck,     // Used in protocol C
-	RSWriteAck,   // Is a WriteAck, additionally call set_in_sync().
-	DiscardAck,   // Used in protocol C, two-primaries conflict detection
-	NegAck,       // Sent if local disk is unusable
-	NegDReply,    // Local disk is broken...
-	NegRSDReply,  // Local disk is broken...
+	RecvAck,      /* Used in protocol B */
+	WriteAck,     /* Used in protocol C */
+	RSWriteAck,   /* Is a WriteAck, additionally call set_in_sync(). */
+	DiscardAck,   /* Used in proto C, two-primaries conflict detection */
+	NegAck,       /* Sent if local disk is unusable */
+	NegDReply,    /* Local disk is broken... */
+	NegRSDReply,  /* Local disk is broken... */
 	BarrierAck,
 	StateChgReply,
 
 	MAX_CMD,
-	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...
+	MayIgnore = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
 	MAX_OPT_CMD,
 
 	/* FIXME
 	 * to get a more useful error message with drbd-8 <-> drbd 0.7.x,
 	 * these could be reimplemented as special case of HandShake. */
-	HandShakeM = 0xfff1, // First Packet on the MetaSock
-	HandShakeS = 0xfff2, // First Packet on the Socket
+	HandShakeM = 0xfff1, /* First Packet on the MetaSock */
+	HandShakeS = 0xfff2, /* First Packet on the Socket */
 
-	HandShake  = 0xfffe  // FIXED for the next century!
+	HandShake  = 0xfffe  /* FIXED for the next century! */
 } Drbd_Packet_Cmd;
 
 static inline const char* cmdname(Drbd_Packet_Cmd cmd)
@@ -385,10 +387,10 @@ static inline const char* cmdname(Drbd_Packet_Cmd cmd)
 typedef struct {
 	u32	  magic;
 	u16	  command;
-	u16	  length;	// bytes of data after this header
+	u16	  length;	/* bytes of data after this header */
 	char	  payload[0];
 } __attribute((packed)) Drbd_Header;
-// 8 bytes. packet FIXED for the next century!
+/* 8 bytes. packet FIXED for the next century! */
 
 /*
  * short commands, packets without payload, plain Drbd_Header:
@@ -411,8 +413,8 @@ typedef struct {
 
 typedef struct {
 	Drbd_Header head;
-	u64	    sector;    // 64 bits sector number
-	u64	    block_id;  // Used in protocol B&C for the address of the req.
+	u64	    sector;    /* 64 bits sector number */
+	u64	    block_id;  /* to identify the request in protocol B&C */
 	u32	    seq_num;
 	u32	    dp_flags;
 } __attribute((packed)) Drbd_Data_Packet;
@@ -439,7 +441,7 @@ typedef struct {
 	u64	    sector;
 	u64	    block_id;
 	u32	    blksize;
-	u32	    pad;	//make sure packet is a multiple of 8 Byte
+	u32	    pad;	/* to multiple of 8 Byte */
 } __attribute((packed)) Drbd_BlockRequest_Packet;
 
 /*
@@ -452,7 +454,7 @@ typedef struct {
  */
 
 typedef struct {
-	Drbd_Header head;		// 8 bytes
+	Drbd_Header head;		/* 8 bytes */
 	u32	    protocol_version;
 	u32	    feature_flags;
 
@@ -462,12 +464,12 @@ typedef struct {
 
 	u64	    reserverd[8];
 } __attribute((packed)) Drbd_HandShake_Packet;
-// 80 bytes, FIXED for the next century
+/* 80 bytes, FIXED for the next century */
 
 typedef struct {
 	Drbd_Header head;
-	u32	    barrier;	// barrier number _handle_ only
-	u32	    pad;	// make sure packet is a multiple of 8 Byte
+	u32	    barrier;	/* barrier number _handle_ only */
+	u32	    pad;	/* to multiple of 8 Byte */
 } __attribute((packed)) Drbd_Barrier_Packet;
 
 typedef struct {
@@ -503,10 +505,10 @@ typedef struct {
 
 typedef struct {
 	Drbd_Header head;
-	u64	    d_size;  // size of disk
-	u64	    u_size;  // user requested size
-	u64	    c_size;  // current exported size
-	u32	    max_segment_size;  // Maximal size of a BIO
+	u64	    d_size;  /* size of disk */
+	u64	    u_size;  /* user requested size */
+	u64	    c_size;  /* current exported size */
+	u32	    max_segment_size;  /* Maximal size of a BIO */
 	u32	    queue_order_type;
 } __attribute((packed)) Drbd_Sizes_Packet;
 
@@ -628,10 +630,10 @@ struct drbd_request {
 
 struct drbd_barrier {
 	struct drbd_work w;
-	struct list_head requests; // requests before
-	struct drbd_barrier *next; // pointer to the next barrier
-	unsigned int br_number;  // the barriers identifier.
-	int n_req;	// number of requests attached before this barrier
+	struct list_head requests; /* requests before */
+	struct drbd_barrier *next; /* pointer to the next barrier */
+	unsigned int br_number;  /* the barriers identifier. */
+	int n_req;	/* number of requests attached before this barrier */
 };
 
 typedef struct drbd_request drbd_request_t;
@@ -678,30 +680,30 @@ enum {
 
 /* global flag bits */
 enum {
-	ISSUE_BARRIER,		// next Data is preceeded by a Barrier
-	SIGNAL_ASENDER,		// whether asender wants to be interrupted
-	SEND_PING,		// whether asender should send a ping asap
-	WRITE_ACK_PENDING,	// so BarrierAck won't overtake WriteAck
-	WORK_PENDING,		// completion flag for drbd_disconnect
-	STOP_SYNC_TIMER,	// tell timer to cancel itself
-	UNPLUG_QUEUED,		// only relevant with kernel 2.4
-	UNPLUG_REMOTE,		// whether sending a "UnplugRemote" makes sense
-	MD_DIRTY,		// current gen counts and flags not yet on disk
-	DISCARD_CONCURRENT,	// Set on one node, cleared on the peer!
-	USE_DEGR_WFC_T,		// Use degr-wfc-timeout instead of wfc-timeout.
-	CLUSTER_ST_CHANGE,	// Cluster wide state change going on...
+	ISSUE_BARRIER,		/* next Data is preceeded by a Barrier */
+	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
+	SEND_PING,		/* whether asender should send a ping asap */
+	WRITE_ACK_PENDING,	/* so BarrierAck won't overtake WriteAck */
+	WORK_PENDING,		/* completion flag for drbd_disconnect */
+	STOP_SYNC_TIMER,	/* tell timer to cancel itself */
+	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
+	UNPLUG_REMOTE,		/* whether sending a "UnplugRemote" makes sense */
+	MD_DIRTY,		/* current gen counts and flags not yet on disk */
+	DISCARD_CONCURRENT,	/* Set on one node, cleared on the peer! */
+	USE_DEGR_WFC_T,		/* Use degr-wfc-timeout instead of wfc-timeout. */
+	CLUSTER_ST_CHANGE,	/* Cluster wide state change going on... */
 	CL_ST_CHG_SUCCESS,
 	CL_ST_CHG_FAIL,
-	CRASHED_PRIMARY,	// This node was a crashed primary. Gets
-				// cleared when the state.conn	goes into
-				// Connected state.
-	WRITE_BM_AFTER_RESYNC	// A kmalloc() during resync failed
+	CRASHED_PRIMARY,	/* This node was a crashed primary.
+				 * Gets cleared when the state.conn
+				 * goes into Connected state. */
+	WRITE_BM_AFTER_RESYNC	/* A kmalloc() during resync failed */
 };
 
-struct drbd_bitmap; // opaque for Drbd_Conf
+struct drbd_bitmap; /* opaque for Drbd_Conf */
 
-// TODO sort members for performance
-// MAYBE group them further
+/* TODO sort members for performance
+ * MAYBE group them further */
 
 /* THINK maybe we actually want to use the default "event/%s" worker threads
  * or similar in linux 2.6, which uses per cpu data and threads.
@@ -712,8 +714,8 @@ struct drbd_bitmap; // opaque for Drbd_Conf
  */
 struct drbd_work_queue {
 	struct list_head q;
-	struct semaphore s; // producers up it, worker down()s it
-	spinlock_t q_lock;  // to protect the list.
+	struct semaphore s; /* producers up it, worker down()s it */
+	spinlock_t q_lock;  /* to protect the list. */
 };
 
 /* If Philipp agrees, we remove the "mutex", and make_request will only
@@ -725,8 +727,10 @@ struct drbd_socket {
 	struct drbd_work_queue work;
 	struct semaphore  mutex;
 	struct socket	 *socket;
-	Drbd_Polymorph_Packet sbuf;  // this way we get our
-	Drbd_Polymorph_Packet rbuf;  // send/receive buffers off the stack
+	/* this way we get our
+	 * send/receive buffers off the stack */
+	Drbd_Polymorph_Packet sbuf;
+	Drbd_Polymorph_Packet rbuf;
 };
 
 struct drbd_md {
@@ -747,7 +751,7 @@ struct drbd_md {
 	 */
 };
 
-// for sync_conf and other types...
+/* for sync_conf and other types... */
 #define PACKET(name, number, fields) struct name { fields };
 #define INTEGER(pn, pr, member) int member;
 #define INT64(pn, pr, member) __u64 member;
@@ -772,18 +776,18 @@ struct Drbd_Conf {
 	unsigned long flags;
 
 	/* configured by drbdsetup */
-	struct net_conf *net_conf; // protected by inc_net() and dec_net()
+	struct net_conf *net_conf; /* protected by inc_net() and dec_net() */
 	struct syncer_conf sync_conf;
-	struct drbd_backing_dev *bc; // protected by inc_local() dec_local()
+	struct drbd_backing_dev *bc; /* protected by inc_local() dec_local() */
 
 	sector_t p_size;     /* partner's disk size */
 	request_queue_t     *rq_queue;
 	struct block_device *this_bdev;
 	struct gendisk	    *vdisk;
 
-	struct drbd_socket data; // for data/barrier/cstate/parameter packets
-	struct drbd_socket meta; // for ping/ack (metadata) packets
-	volatile unsigned long last_received; // in jiffies, either socket
+	struct drbd_socket data; /* data/barrier/cstate/parameter packets */
+	struct drbd_socket meta; /* ping/ack (metadata) packets */
+	volatile unsigned long last_received; /* in jiffies, either socket */
 	volatile unsigned int ko_count;
 	struct drbd_work  resync_work,
 			  unplug_work,
@@ -791,77 +795,91 @@ struct Drbd_Conf {
 	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;
 
-	drbd_state_t new_state_tmp; // Used after attach while negotiating new disk state.
+	drbd_state_t new_state_tmp; /* Used after attach while negotiating new disk state. */
 	drbd_state_t state;
 	wait_queue_head_t misc_wait;
-	wait_queue_head_t state_wait;  // upon each state change.
+	wait_queue_head_t state_wait;  /* upon each state change. */
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
-	atomic_t ap_bio_cnt;	 // Requests we need to complete
-	atomic_t ap_pending_cnt; // AP data packets on the wire, ack expected
-	atomic_t rs_pending_cnt; // RS request/data packets on the wire
-	atomic_t unacked_cnt;	 // Need to send replys for
-	atomic_t local_cnt;	 // Waiting for local disk to signal completion
-	atomic_t net_cnt;	 // Users of net_conf
+	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
+	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
+	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
+	atomic_t unacked_cnt;	 /* Need to send replys for */
+	atomic_t local_cnt;	 /* Waiting for local disk to signal completion */
+	atomic_t net_cnt;	 /* Users of net_conf */
 	spinlock_t req_lock;
 	struct drbd_barrier* unused_spare_barrier; /* for pre-allocation */
 	struct drbd_barrier* newest_barrier;
 	struct drbd_barrier* oldest_barrier;
 	struct hlist_head * tl_hash;
 	unsigned int tl_hash_s;
-	// sector_t rs_left;	   // blocks not up-to-date [unit BM_BLOCK_SIZE]
-	// moved into bitmap->bm_set
-	unsigned long rs_total;    // blocks to sync in this run [unit BM_BLOCK_SIZE]
-	unsigned long rs_failed;   // number of sync IOs that failed in this run
-	unsigned long rs_start;    // Syncer's start time [unit jiffies]
-	unsigned long rs_paused;   // cumulated time in PausedSyncX state [unit jiffies]
-	unsigned long rs_mark_left;// block not up-to-date at mark [unit BM_BLOCK_SIZE]
-	unsigned long rs_mark_time;// marks's time [unit jiffies]
+
+	/* blocks to sync in this run [unit BM_BLOCK_SIZE] */
+	unsigned long rs_total;
+	/* number of sync IOs that failed in this run */
+	unsigned long rs_failed;
+	/* Syncer's start time [unit jiffies] */
+	unsigned long rs_start;
+	/* cumulated time in PausedSyncX state [unit jiffies] */
+	unsigned long rs_paused;
+	/* block not up-to-date at mark [unit BM_BLOCK_SIZE] */
+	unsigned long rs_mark_left;
+	/* marks's time [unit jiffies] */
+	unsigned long rs_mark_time;
+
 	struct Drbd_thread receiver;
 	struct Drbd_thread worker;
 	struct Drbd_thread asender;
 	struct drbd_bitmap* bitmap;
-	struct lru_cache* resync; // Used to track operations of resync...
-	unsigned int resync_locked; // Number of locked elements in resync LRU
-	unsigned int resync_wenr;   // resync extent number waiting for application requests
+
+	/* Used to track operations of resync... */
+	struct lru_cache* resync;
+	/* Number of locked elements in resync LRU */
+	unsigned int resync_locked;
+	/* resync extent number waiting for application requests */
+	unsigned int resync_wenr;
+
 	int open_cnt;
 	u64 *p_uuid;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 	unsigned int epoch_size;
-	struct list_head active_ee; // IO in progress
-	struct list_head sync_ee;   // IO in progress
-	struct list_head done_ee;   // send ack
-	struct list_head read_ee;   // IO in progress
-	struct list_head net_ee;    // zero-copy network send in progress
-	struct hlist_head * ee_hash; // is proteced by req_lock!
+	struct list_head active_ee; /* IO in progress */
+	struct list_head sync_ee;   /* IO in progress */
+	struct list_head done_ee;   /* send ack */
+	struct list_head read_ee;   /* IO in progress */
+	struct list_head net_ee;    /* zero-copy network send in progress */
+	struct hlist_head *ee_hash; /* is proteced by req_lock! */
 	unsigned int ee_hash_s;
-	struct Tl_epoch_entry * last_write_w_barrier; // ee_lock, single thread
-	int next_barrier_nr;  // ee_lock, single thread
-	struct hlist_head * app_reads_hash; // is proteced by req_lock
+
+	/* this one is protected by ee_lock, single thread */
+	struct Tl_epoch_entry *last_write_w_barrier;
+
+	int next_barrier_nr;
+	struct hlist_head *app_reads_hash; /* is proteced by req_lock */
 	struct list_head resync_reads;
 	atomic_t pp_in_use;
 	wait_queue_head_t ee_wait;
-	struct page *md_io_page;      // one page buffer for md_io
-	struct page *md_io_tmpp;     // in case hardsect != 512 [ s390 only? ]
-	struct semaphore md_io_mutex; // protects the md_io_buffer
+	struct page *md_io_page;	/* one page buffer for md_io */
+	struct page *md_io_tmpp;	/* for hardsect != 512 [s390 only?] */
+	struct semaphore md_io_mutex;	/* protects the md_io_buffer */
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
-	struct lru_cache* act_log;     // activity log
+	struct lru_cache* act_log;	/* activity log */
 	unsigned int al_tr_number;
 	int al_tr_cycle;
-	int al_tr_pos;	   // position of the next transaction in the journal
+	int al_tr_pos;   /* position of the next transaction in the journal */
 	struct crypto_hash* cram_hmac_tfm;
 	wait_queue_head_t seq_wait;
 	atomic_t packet_seq;
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
 	int minor;
-	unsigned long comm_bm_set; // communicated number of set bits.
+	unsigned long comm_bm_set; /* communicated number of set bits. */
 };
 
 static inline drbd_dev *minor_to_mdev(int minor)
@@ -908,7 +926,7 @@ static inline void drbd_put_data_sock(drbd_dev *mdev)
  * function declarations
  *************************/
 
-// drbd_main.c
+/* drbd_main.c */
 
 enum chg_state_flags {
 	ChgStateHard	= 1,
@@ -974,10 +992,10 @@ extern void drbd_free_bc(struct drbd_backing_dev* bc);
 extern int drbd_io_error(drbd_dev* mdev, int forcedetach);
 extern void drbd_mdev_cleanup(drbd_dev *mdev);
 
-// drbd_meta-data.c (still in drbd_main.c)
+/* drbd_meta-data.c (still in drbd_main.c) */
 extern void drbd_md_sync(drbd_dev *mdev);
 extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev * bdev);
-// maybe define them below as inline?
+/* maybe define them below as inline? */
 extern void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
 extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
 extern void drbd_uuid_new_current(drbd_dev *mdev);
@@ -992,18 +1010,18 @@ extern void drbd_md_mark_dirty(drbd_dev *mdev);
    * either at the end of the backing device
    * or on a seperate meta data device. */
 
-#define MD_RESERVED_SECT ( 128LU << 11 )  // 128 MB, unit sectors
-// The following numbers are sectors
-#define MD_AL_OFFSET 8	    // 8 Sectors after start of meta area
-#define MD_AL_MAX_SIZE 64   // = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage
-#define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) //Allows up to about 3.8TB
+#define MD_RESERVED_SECT ( 128LU << 11 )  /* 128 MB, unit sectors */
+/* The following numbers are sectors */
+#define MD_AL_OFFSET 8	    /* 8 Sectors after start of meta area */
+#define MD_AL_MAX_SIZE 64   /* = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage */
+#define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE) /* Allows up to about 3.8TB */
 
-#define MD_HARDSECT_B	 9     // Since the smalles IO unit is usually 512 byte
+#define MD_HARDSECT_B	 9     /* Since the smalles IO unit is usually 512 byte */
 #define MD_HARDSECT	 (1<<MD_HARDSECT_B)
 
-// activity log
-#define AL_EXTENTS_PT	 ((MD_HARDSECT-12)/8-1) // 61 ; Extents per 512B sector
-#define AL_EXTENT_SIZE_B 22	 // One extent represents 4M Storage
+/* activity log */
+#define AL_EXTENTS_PT	 ((MD_HARDSECT-12)/8-1) /* 61 ; Extents per 512B sector */
+#define AL_EXTENT_SIZE_B 22	 /* One extent represents 4M Storage */
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
 
 #if BITS_PER_LONG == 32
@@ -1018,19 +1036,19 @@ extern void drbd_md_mark_dirty(drbd_dev *mdev);
 #error "LN2 of BITS_PER_LONG unknown!"
 #endif
 
-// resync bitmap
-// 16MB sized 'bitmap extent' to track syncer usage
+/* resync bitmap */
+/* 16MB sized 'bitmap extent' to track syncer usage */
 struct bm_extent {
 	struct lc_element lce;
-	int rs_left; //number of bits set (out of sync) in this extent.
-	int rs_failed; // number of failed resync requests in this extent.
+	int rs_left; /* number of bits set (out of sync) in this extent. */
+	int rs_failed; /* number of failed resync requests in this extent. */
 	unsigned long flags;
 };
 
-#define BME_NO_WRITES  0  // bm_extent.flags: no more requests on this one!
-#define BME_LOCKED     1  // bm_extent.flags: syncer active on this one.
+#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
+#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
 
-// drbd_bitmap.c
+/* drbd_bitmap.c */
 /*
  * We need to store one bit for a block.
  * Example: 1GB disk @ 4096 byte blocks ==> we need 32 KB bitmap.
@@ -1038,11 +1056,11 @@ struct bm_extent {
  * Bit 1 ==> local node thinks this block needs to be synced.
  */
 
-#define BM_BLOCK_SIZE_B  12			 //  4k per bit
+#define BM_BLOCK_SIZE_B  12			 /* 4k per bit */
 #define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SIZE_B)
 /* (9+3) : 512 bytes @ 8 bits; representing 16M storage
  * per sector of on disk bitmap */
-#define BM_EXT_SIZE_B	 (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3 )  // = 24
+#define BM_EXT_SIZE_B	 (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3 )  /* = 24 */
 #define BM_EXT_SIZE	 (1<<BM_EXT_SIZE_B)
 
 #if (BM_EXT_SIZE_B != 24) || (BM_BLOCK_SIZE_B != 12)
@@ -1140,10 +1158,10 @@ extern unsigned long drbd_bm_find_next	 (drbd_dev *mdev);
 extern void drbd_bm_set_find(drbd_dev *mdev, unsigned long i);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
 extern int drbd_bm_rs_done(drbd_dev *mdev);
-// for receive_bitmap
+/* for receive_bitmap */
 extern void drbd_bm_merge_lel (drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long* buffer);
-// for _drbd_send_bitmap and drbd_bm_write_sect
+/* for _drbd_send_bitmap and drbd_bm_write_sect */
 extern void drbd_bm_get_lel   (drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long* buffer);
 /*
@@ -1158,7 +1176,7 @@ extern void drbd_bm_unlock    (drbd_dev *mdev);
 
 extern void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line);
 #define drbd_bm_recount_bits(mdev) _drbd_bm_recount_bits(mdev,	__FILE__, __LINE__ )
-// drbd_main.c
+/* drbd_main.c */
 
 /* needs to be included here,
  * because of kmem_cache_t weirdness */
@@ -1170,14 +1188,14 @@ extern struct kmem_cache *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
 extern mempool_t *drbd_ee_mempool;
 
-extern struct page* drbd_pp_pool; // drbd's page pool
+extern struct page* drbd_pp_pool; /* drbd's page pool */
 extern spinlock_t   drbd_pp_lock;
 extern int	    drbd_pp_vacant;
 extern wait_queue_head_t drbd_pp_wait;
 
 extern drbd_dev *drbd_new_device(int minor);
 
-// Dynamic tracing framework
+/* Dynamic tracing framework */
 #ifdef ENABLE_DYNAMIC_TRACE
 
 extern int trace_type;
@@ -1227,12 +1245,12 @@ do { \
 	} \
 } while (0)
 
-// Buffer printing support
-// DbgPrintFlags: used for Flags arg to DbgPrintBuffer
-// - DBGPRINT_BUFFADDR; if set, each line starts with the
-//	 virtual address of the line being output. If clear,
-//	 each line starts with the offset from the beginning
-//	 of the buffer.
+/* Buffer printing support
+ * DbgPrintFlags: used for Flags arg to DbgPrintBuffer
+ * - DBGPRINT_BUFFADDR; if set, each line starts with the
+ *	 virtual address of the line being output. If clear,
+ *	 each line starts with the offset from the beginning
+ *	 of the buffer. */
 typedef enum {
     DBGPRINT_BUFFADDR = 0x0001,
 }  DbgPrintFlags;
@@ -1243,7 +1261,7 @@ extern void drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			      const void *buffer, const void *buffer_va,
 			      unsigned int length);
 
-// Bio printing support
+/* Bio printing support */
 extern void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete);
 
 static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete) {
@@ -1252,7 +1270,7 @@ static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete) {
 		);
 }
 
-// Packet dumping support
+/* Packet dumping support */
 extern void _dump_packet(drbd_dev *mdev, struct socket *sock,
 			 int recv, Drbd_Polymorph_Packet *p, char* file, int line);
 
@@ -1274,14 +1292,14 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #define dump_packet(ignored...) ((void)0)
 #endif
 
-// drbd_req
+/* drbd_req */
 extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
 extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
 extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 
 
-// drbd_nl.c
+/* drbd_nl.c */
 extern char* ppsize(char* buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
 extern int drbd_determin_dev_size(drbd_dev*);
@@ -1293,17 +1311,17 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev);
 extern long drbd_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
 extern int drbd_khelper(drbd_dev *mdev, char* cmd);
 
-// drbd_worker.c
+/* drbd_worker.c */
 extern int drbd_worker(struct Drbd_thread *thi);
 extern void drbd_alter_sa(drbd_dev *mdev, int na);
 extern void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side);
 extern void resume_next_sg(drbd_dev* mdev);
 extern void suspend_other_sg(drbd_dev* mdev);
 extern int drbd_resync_finished(drbd_dev *mdev);
-// maybe rather drbd_main.c ?
+/* maybe rather drbd_main.c ? */
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 				sector_t sector, int rw);
-// worker callbacks
+/* worker callbacks */
 extern int w_req_cancel_conflict (drbd_dev *, struct drbd_work *, int);
 extern int w_read_retry_remote	 (drbd_dev *, struct drbd_work *, int);
 extern int w_e_end_data_req	 (drbd_dev *, struct drbd_work *, int);
@@ -1320,7 +1338,7 @@ extern int w_prev_work_done	 (drbd_dev *, struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 
-// drbd_receiver.c
+/* drbd_receiver.c */
 extern int drbd_release_ee(drbd_dev* mdev, struct list_head* list);
 extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 					    u64 id,
@@ -1362,13 +1380,13 @@ static inline void drbd_tcp_flush(struct socket *sock)
 #endif
 }
 
-// drbd_proc.c
+/* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;
 extern struct file_operations drbd_proc_fops;
 extern const char* conns_to_name(drbd_conns_t s);
 extern const char* roles_to_name(drbd_role_t s);
 
-// drbd_actlog.c
+/* drbd_actlog.c */
 extern void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector);
 extern void drbd_rs_complete_io(struct Drbd_Conf *mdev, sector_t sector);
@@ -1389,7 +1407,7 @@ extern void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev);
 extern void drbd_al_shrink(struct Drbd_Conf *mdev);
 
 
-// drbd_nl.c
+/* drbd_nl.c */
 
 void drbd_nl_cleanup(void);
 int __init drbd_nl_init(void);

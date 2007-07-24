@@ -26,10 +26,7 @@
 
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
-#include <linux/string.h> // for memset
-#include <linux/hardirq.h> /* for D_ASSERT(in_interrupt()) */
-
-
+#include <linux/string.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
@@ -55,9 +52,6 @@
  * or wether I want it to do all the sector<->bit calculation in here.
  */
 
-// warning LGE "verify all spin_lock_irq here, and their call path"
-// warning LGE "and change to irqsave where applicable"
-// warning LGE "so we don't accidentally nest spin_lock_irq()"
 /*
  * NOTE
  *  Access to the *bm is protected by bm_lock.
@@ -93,113 +87,61 @@ struct drbd_bitmap {
 	 * rather change the granularity to 16k or 64k or something.
 	 * (that implies other problems, however...)
 	 */
-	unsigned long bm_fo;        // next offset for drbd_bm_find_next
-	unsigned long bm_set;       // nr of set bits; THINK maybe atomic_t ?
+	unsigned long bm_fo;        /* next offset for drbd_bm_find_next */
+	unsigned long bm_set;       /* nr of set bits; THINK maybe atomic_t? */
 	unsigned long bm_bits;
 	size_t   bm_words;
 	sector_t bm_dev_capacity;
-	struct semaphore bm_change; // serializes resize operations
+	struct semaphore bm_change; /* serializes resize operations */
 
 	atomic_t bm_async_io;
 	wait_queue_head_t bm_io_wait;
 
 	unsigned long  bm_flags;
 
-	// { REMOVE
+	/* debugging aid, in case we are still racy somewhere */
 	unsigned long  bm_line;
 	char          *bm_file;
-	// }
 };
 
-// { REMOVE once we serialize all state changes properly
-#define D_BUG_ON(x)	ERR_IF(x) { dump_stack(); }
+/* definition of bits in bm_flags */
 #define BM_LOCKED 0
-#define BM_MD_IO_ERROR (BITS_PER_LONG-1) // 31? 63?
+#define BM_MD_IO_ERROR (BITS_PER_LONG-1) /* 31? 63? */
 
-#if 0 // simply disabled for now...
-#define MUST_NOT_BE_LOCKED() do {					\
-	if (test_bit(BM_LOCKED, &b->bm_flags)) {				\
-		if (DRBD_ratelimit(5*HZ, 5)) {				\
-			ERR("%s:%d: bitmap is locked by %s:%lu\n",	\
-			    __FILE__, __LINE__, b->bm_file, b->bm_line);	\
-			dump_stack();					\
-		}							\
-	}								\
-} while (0)
-#define MUST_BE_LOCKED() do {						\
-	if (!test_bit(BM_LOCKED, &b->bm_flags)) {			\
-		if (DRBD_ratelimit(5*HZ, 5)) {				\
-			ERR("%s:%d: bitmap not locked!\n",		\
-					__FILE__, __LINE__);		\
-			dump_stack();					\
-		}							\
-	}								\
-} while (0)
-#else
-#define MUST_NOT_BE_LOCKED() do {(void)b;} while (0)
-#define MUST_BE_LOCKED() do {(void)b;} while (0)
-#endif
 void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 {
-	struct drbd_bitmap *b = mdev->bitmap;
-	spin_lock_irq(&b->bm_lock);
-	if (!__test_and_set_bit(BM_LOCKED, &b->bm_flags)) {
-		b->bm_file = file;
-		b->bm_line = line;
-	} else if (DRBD_ratelimit(5*HZ, 5)) {
-		ERR("%s:%d: bitmap already locked by %s:%lu\n",
-		    file, line, b->bm_file, b->bm_line);
-		/*
-		dump_stack();
-		ERR("This is no oops, but debug stack trace only.\n");
-		ERR("If you get this often, or in reproducable situations, "
-		    "notify <drbd-devel@linbit.com>\n");
-		*/
-	}
-	spin_unlock_irq(&b->bm_lock);
-}
-void drbd_bm_unlock(drbd_dev *mdev)
-{
-	struct drbd_bitmap *b = mdev->bitmap;
-	spin_lock_irq(&b->bm_lock);
-	if (!__test_and_clear_bit(BM_LOCKED, &mdev->bitmap->bm_flags)) {
-		ERR("bitmap not locked in bm_unlock\n");
-	} else {
-		/* FIXME if we got a "is already locked" previously,
-		 * we unlock here even though we actually MUST NOT do so... */
-		b->bm_file = NULL;
-		b->bm_line = -1;
-	}
-	spin_unlock_irq(&b->bm_lock);
+       struct drbd_bitmap *b = mdev->bitmap;
+       spin_lock_irq(&b->bm_lock);
+       if (!__test_and_set_bit(BM_LOCKED, &b->bm_flags)) {
+	       b->bm_file = file;
+	       b->bm_line = line;
+       } else if (DRBD_ratelimit(5*HZ, 5)) {
+	       ERR("%s:%d: bitmap already locked by %s:%lu\n",
+		   file, line, b->bm_file, b->bm_line);
+	       /*
+	       dump_stack();
+	       ERR("This is no oops, but debug stack trace only.\n");
+	       ERR("If you get this often, or in reproducable situations, "
+		   "notify <drbd-devel@linbit.com>\n");
+	       */
+       }
+       spin_unlock_irq(&b->bm_lock);
 }
 
-#if 0
-// has been very helpful to indicate that rs_total and rs_left have been
-// used in a non-smp safe way...
-#define BM_PARANOIA_CHECK() do {						\
-	D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);				\
-	D_ASSERT(b->bm_dev_capacity == drbd_get_capacity(mdev->this_bdev));	\
-	if ( (b->bm_set != mdev->rs_total) &&					\
-	     (b->bm_set != mdev->rs_left) ) {					\
-		if ( DRBD_ratelimit(5*HZ, 5) ) {					\
-			ERR("%s:%d: ?? bm_set=%lu; rs_total=%lu, rs_left=%lu\n", \
-				__FILE__ , __LINE__ ,				\
-				b->bm_set, mdev->rs_total, mdev->rs_left );	\
-		}								\
-	}									\
-} while (0)
-#else
-#define BM_PARANOIA_CHECK() do {					\
-	D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);			\
-	if (b->bm_dev_capacity != drbd_get_capacity(mdev->this_bdev)) {	\
-		ERR("%s:%d: bm_dev_capacity:%llu drbd_get_capacity:%llu\n", \
-		__FILE__, __LINE__,					\
-		(unsigned long long) b->bm_dev_capacity,		\
-		(unsigned long long) drbd_get_capacity(mdev->this_bdev));\
-	}								\
-} while (0)
-#endif
-// }
+void drbd_bm_unlock(drbd_dev *mdev)
+{
+       struct drbd_bitmap *b = mdev->bitmap;
+       spin_lock_irq(&b->bm_lock);
+       if (!__test_and_clear_bit(BM_LOCKED, &mdev->bitmap->bm_flags)) {
+	       ERR("bitmap not locked in bm_unlock\n");
+       } else {
+	       /* FIXME if we got a "is already locked" previously,
+		* we unlock here even though we actually MUST NOT do so... */
+	       b->bm_file = NULL;
+	       b->bm_line = -1;
+       }
+       spin_unlock_irq(&b->bm_lock);
+}
 
 #if DUMP_MD >= 3
 /* debugging aid */
@@ -243,7 +185,7 @@ STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 int drbd_bm_init(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(b);
+	WARN_ON(b);
 	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
 	if (!b)
 		return -ENOMEM;
@@ -270,7 +212,7 @@ void drbd_bm_cleanup(drbd_dev *mdev)
 	/* FIXME I think we should explicitly change the device size to zero
 	 * before this...
 	 *
-	D_BUG_ON(mdev->bitmap->bm);
+	WARN_ON(mdev->bitmap->bm);
 	 */
 	vfree(mdev->bitmap->bm);
 	kfree(mdev->bitmap);
@@ -365,7 +307,6 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 	int err = 0, growing;
 
 	ERR_IF(!b) return -ENOMEM;
-	MUST_BE_LOCKED();
 
 	ERR_IF (down_trylock(&b->bm_change)) {
 		down(&b->bm_change);
@@ -424,16 +365,17 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		}
 		spin_lock_irq(&b->bm_lock);
 		obm = b->bm;
-		// brgs. move several MB within spinlock...
-		// FIXME this should go into userspace!
+		/* brgs. move several MB within spinlock...
+		 * FIXME this should go into userspace! */
 		if (obm) {
 			bm_set_surplus(b);
 			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
 			memcpy(nbm, obm, min_t(size_t, b->bm_words, words)*sizeof(long));
 		}
 		growing = words > b->bm_words;
-		if (growing) { // set all newly allocated bits
-			// start at -1, just to be sure.
+		if (growing) {
+			/* set all newly allocated bits
+			 * start at -1, just to be sure. */
 			memset( nbm + (b->bm_words?:1)-1 , 0xff,
 				(words - ((b->bm_words?:1)-1)) * sizeof(long) );
 			b->bm_set  += bits - b->bm_bits;
@@ -450,7 +392,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		INFO("resync bitmap: bits=%lu words=%lu\n", bits, words);
 	}
  free_obm:
-	vfree(obm); // vfree(NULL) is noop
+	vfree(obm); /* vfree(NULL) is noop */
  out:
 	up(&b->bm_change);
 	return err;
@@ -471,7 +413,6 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 	unsigned long flags;
 
 	ERR_IF(!b) return 0;
-	// MUST_BE_LOCKED(); well. yes. but ...
 
 	spin_lock_irqsave(&b->bm_lock, flags);
 	s = b->bm_set;
@@ -484,13 +425,6 @@ size_t drbd_bm_words(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	ERR_IF(!b) return 0;
-
-	/* FIXME
-	 * actually yes. really. otherwise it could just change its size ...
-	 * but it triggers all the time...
-	 * MUST_BE_LOCKED();
-	 */
-
 	return b->bm_words;
 }
 
@@ -508,14 +442,11 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 	if (number == 0) return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
-	D_BUG_ON(offset        >= b->bm_words);
-	D_BUG_ON(offset+number >  b->bm_words);
-	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
-
-	MUST_BE_LOCKED();
+	WARN_ON(offset        >= b->bm_words);
+	WARN_ON(offset+number >  b->bm_words);
+	WARN_ON(number > PAGE_SIZE/sizeof(long));
 
 	spin_lock_irq(&b->bm_lock);
-	// BM_PARANOIA_CHECK(); no.
 	bm = b->bm + offset;
 	while(n--) {
 		bits = hweight_long(*bm);
@@ -549,14 +480,11 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 	if (number == 0) return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
-	D_BUG_ON(offset        >= b->bm_words);
-	D_BUG_ON(offset+number >  b->bm_words);
-	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
-
-	MUST_BE_LOCKED();
+	WARN_ON(offset        >= b->bm_words);
+	WARN_ON(offset+number >  b->bm_words);
+	WARN_ON(number > PAGE_SIZE/sizeof(long));
 
 	spin_lock_irq(&b->bm_lock);
-	// BM_PARANOIA_CHECK(); no.
 	bm = b->bm + offset;
 	while(n--) {
 		bits = hweight_long(*bm);
@@ -592,7 +520,7 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 	     (offset+number >  b->bm_words) ||
 	     (number > PAGE_SIZE/sizeof(long)) ||
 	     (number <= 0) ) {
-		// yes, there is "%z", but that gives compiler warnings...
+		/* yes, there is "%z", but that gives compiler warnings... */
 		ERR("offset=%lu number=%lu bm_words=%lu\n",
 			(unsigned long)	offset,
 			(unsigned long)	number,
@@ -600,10 +528,7 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 		return;
 	}
 
-	// MUST_BE_LOCKED(); yes. but not neccessarily globally...
-
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	bm = b->bm + offset;
 	while(number--) *buffer++ = cpu_to_lel(*bm++);
 	spin_unlock_irq(&b->bm_lock);
@@ -616,10 +541,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
 
-	MUST_BE_LOCKED();
-
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	memset(b->bm, 0xff, b->bm_words*sizeof(long));
 	bm_clear_surplus(b);
 	b->bm_set = b->bm_bits;
@@ -696,12 +618,10 @@ int drbd_bm_read_sect(drbd_dev *mdev, unsigned long enr)
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
 
-	// MUST_BE_LOCKED(); not neccessarily global ...
-
 	down(&mdev->md_io_mutex);
 	if (drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, READ)) {
 		bm_words  = drbd_bm_words(mdev);
-		offset    = S2W(enr);	// word offset into bitmap
+		offset    = S2W(enr);	/* word offset into bitmap */
 		num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
 	INFO("read_sect: sector=%lus offset=%u num_words=%u\n",
@@ -770,8 +690,6 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	char ppb[10];
 	int err = 0;
 
-	MUST_BE_LOCKED();
-
 	bm_words    = drbd_bm_words(mdev);
 	num_pages = (bm_words*sizeof(long) + PAGE_SIZE-1) >> PAGE_SHIFT;
 
@@ -834,7 +752,7 @@ int drbd_bm_read(struct Drbd_Conf *mdev)
 	int err = 0;
 
 	if (b->bm) {
-	    // bitmap size > 0
+	    /* bitmap size > 0 */
 	    err = drbd_bm_rw(mdev, READ);
 
 	    if (err == 0)
@@ -856,11 +774,9 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev, unsigned long enr)
 	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	int bm_words, num_words, offset, err  = 0;
 
-	// MUST_BE_LOCKED(); not neccessarily global...
-
 	down(&mdev->md_io_mutex);
 	bm_words  = drbd_bm_words(mdev);
-	offset    = S2W(enr);	// word offset into bitmap
+	offset    = S2W(enr);	/* word offset into bitmap */
 	num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
 	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
@@ -908,10 +824,7 @@ void drbd_bm_clear_all(drbd_dev *mdev)
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
 
-	MUST_BE_LOCKED();						\
-
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	memset(b->bm, 0, b->bm_words*sizeof(long));
 	b->bm_set = 0;
 	spin_unlock_irq(&b->bm_lock);
@@ -923,10 +836,7 @@ void drbd_bm_reset_find(drbd_dev *mdev)
 
 	ERR_IF(!b) return;
 
-	MUST_BE_LOCKED();
-
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	b->bm_fo = 0;
 	spin_unlock_irq(&b->bm_lock);
 
@@ -946,7 +856,6 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	ERR_IF(!b->bm) return i;
 
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	if (b->bm_fo < b->bm_bits) {
 		i = find_next_bit(b->bm, b->bm_bits, b->bm_fo);
 	} else if (b->bm_fo > b->bm_bits) {
@@ -967,7 +876,6 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 	struct drbd_bitmap *b = mdev->bitmap;
 
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 
 	b->bm_fo = min_t(unsigned long, i, b->bm_bits);
 
@@ -980,7 +888,9 @@ int drbd_bm_rs_done(drbd_dev *mdev)
 	return mdev->bitmap->bm_fo == 0;
 }
 
-// THINK maybe the D_BUG_ON(i<0)s in set/clear/test should be not that strict?
+/*
+ * THINK maybe the WARN_ON(i<0)s in set/clear/test should be not that strict?
+ */
 
 /* returns previous bit state
  * wants bitnr, NOT sector.
@@ -1004,8 +914,6 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 */
 
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
-	MUST_NOT_BE_LOCKED();
 	ERR_IF (bitnr >= b->bm_bits) {
 		ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
@@ -1028,8 +936,6 @@ int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigne
 	ERR_IF(!b->bm) return 1;
 
 	spin_lock(&b->bm_lock);
-	BM_PARANOIA_CHECK();
-	MUST_NOT_BE_LOCKED();
 	for (bitnr = s; bitnr <=e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
 			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
@@ -1054,8 +960,6 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
 	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
-	BM_PARANOIA_CHECK();
-	MUST_NOT_BE_LOCKED();
 	ERR_IF (bitnr >= b->bm_bits) {
 		ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
@@ -1091,7 +995,6 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	if (bitnr < b->bm_bits) {
 		i = test_bit(bitnr, b->bm) ? 1 : 0;
 	} else if (bitnr == b->bm_bits) {
@@ -1128,7 +1031,6 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 	spin_lock_irqsave(&b->bm_lock, flags);
-	BM_PARANOIA_CHECK();
 
 	s = S2W(enr);
 	e = min((size_t)S2W(enr+1), b->bm_words);
@@ -1156,10 +1058,7 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 
-	MUST_BE_LOCKED();
-
 	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
 	weight = b->bm_set;
 
 	s = al_enr * BM_WORDS_PER_AL_EXT;

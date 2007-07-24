@@ -60,7 +60,7 @@
 
 struct lc_element {
 	struct hlist_node colision;
-	struct list_head list;           // LRU list or free list
+	struct list_head list;           /* LRU list or free list */
 	unsigned int refcnt;
 	unsigned int lc_number;
 };
@@ -78,17 +78,17 @@ struct lru_cache {
 	unsigned int used;
 	unsigned long flags;
 	unsigned long hits, misses, starving, dirty, changed;
-	struct lc_element *changing_element; // just for paranoia
+	struct lc_element *changing_element; /* just for paranoia */
 
 	void  *lc_private;
 	const char *name;
 
 	struct hlist_head slot[0];
-	// hash colision chains here, then element storage.
+	/* hash colision chains here, then element storage. */
 };
 
 
-// flag-bits for lru_cache
+/* flag-bits for lru_cache */
 enum {
 	__LC_PARANOIA,
 	__LC_DIRTY,

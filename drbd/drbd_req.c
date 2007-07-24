@@ -59,7 +59,7 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 	     conns_to_name(mdev->state.conn));
 }
 
-//#define VERBOSE_REQUEST_CODE
+/* #define VERBOSE_REQUEST_CODE */
 #if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
 void _print_req_mod(drbd_request_t *req, drbd_req_event_t what)
 {
@@ -727,7 +727,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	if (mdev->state.disk == UpToDate) return 1;
 	if (mdev->state.disk >= Outdated) return 0;
 	if (mdev->state.disk <  Inconsistent) return 0;
-	// state.disk == Inconsistent   We will have a look at the BitMap
+	/* state.disk == Inconsistent   We will have a look at the BitMap */
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
 
@@ -817,16 +817,13 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 				 * local io stack.
 				 */
 
-/* XXX SHARED DISK mode
- * think this over again for two primaries */
-
 				local = 0;
 				bio_put(req->private_bio);
 				req->private_bio = NULL;
 				dec_local(mdev);
 			}
 		}
-		remote = !local && mdev->state.pdsk >= UpToDate;//Consistent;
+		remote = !local && mdev->state.pdsk >= UpToDate;
 	}
 
 	/* If we have a disk, but a READA request is mapped to remote,
@@ -1028,7 +1025,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
  */
 static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 {
-	// Unconfigured
+	/* Unconfigured */
 	if (mdev->state.conn == Disconnecting &&
 	    mdev->state.disk == Diskless)
 		return 1;
@@ -1086,7 +1083,6 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	 */
 	D_ASSERT(bio->bi_size > 0);
 	D_ASSERT( (bio->bi_size & 0x1ff) == 0);
-	// D_ASSERT(bio->bi_size <= q->max_segment_size); // wrong.
 	D_ASSERT(bio->bi_idx == 0);
 
 	/* to make some things easier, force allignment of requests within the
@@ -1145,7 +1141,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 {
 	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
-	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; // 32 bit
+	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; /* 32 bit */
 	unsigned int bio_size = bio->bi_size;
 	int limit, backing_limit;
 

@@ -93,35 +93,33 @@ int enable_faults = 0;
 int fault_rate;
 int fault_count;
 int fault_devs;
-module_param(enable_faults, int, 0664);	// bitmap of enabled faults
-module_param(fault_rate, int, 0664);	// fault rate % value - applies to all enabled faults
-module_param(fault_count, int, 0664);	// count of faults inserted
-module_param(fault_devs, int, 0644);      // bitmap of devices to insert faults on
+module_param(enable_faults, int, 0664);	/* bitmap of enabled faults */
+module_param(fault_rate, int, 0664);	/* fault rate % value - applies to all enabled faults */
+module_param(fault_count, int, 0664);	/* count of faults inserted */
+module_param(fault_devs, int, 0644);	/* bitmap of devices to insert faults on */
 #endif
 
-// module parameter, defined
+/* module parameter, defined */
 int minor_count = 32;
 int allow_oos = 0;
 
 #ifdef ENABLE_DYNAMIC_TRACE
-int trace_type  = 0;	// Bitmap of trace types to enable
-int trace_level = 0;	// Current trace level
-int trace_devs  = 0;	// Bitmap of devices to trace
+int trace_type  = 0;	/* Bitmap of trace types to enable */
+int trace_level = 0;	/* Current trace level */
+int trace_devs  = 0;	/* Bitmap of devices to trace */
 
 module_param(trace_level, int, 0644);
 module_param(trace_type, int, 0644);
 module_param(trace_devs, int, 0644);
 #endif
 
-
-// Module parameter for setting the user mode helper program
-// to run. Default is /sbin/drbdadm
-
+/* Module parameter for setting the user mode helper program
+ * to run. Default is /sbin/drbdadm */
 char usermode_helper[80] = "/sbin/drbdadm";
 
 module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0644);
 
-// global panic flag
+/* global panic flag */
 volatile int drbd_did_panic = 0;
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
@@ -340,11 +338,11 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 	if (ok) WARN("Notified peer that my disk is broken.\n");
 	else ERR("Sending state in drbd_io_error() failed\n");
 
-	// Make sure we try to flush meta-data to disk - we come
-	// in here because of a local disk error so it might fail
-	// but we still need to try -- both because the error might
-	// be in the data portion of the disk and because we need
-	// to ensure the md-sync-timer is stopped if running.
+	/* Make sure we try to flush meta-data to disk - we come
+	 * in here because of a local disk error so it might fail
+	 * but we still need to try -- both because the error might
+	 * be in the data portion of the disk and because we need
+	 * to ensure the md-sync-timer is stopped if running. */
 	drbd_md_sync(mdev);
 
 	/* Releasing the backing device is done in after_state_ch() */
@@ -419,7 +417,7 @@ set_st_err_t _req_st_cond(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 		rv = is_valid_state(mdev, ns);
 		if (rv==SS_Success) {
 			rv = is_valid_state_transition(mdev, ns, os);
-			if (rv==SS_Success) rv = 0; // cont waiting, otherwise fail.
+			if (rv==SS_Success) rv = 0; /* cont waiting, otherwise fail. */
 		}
 	}
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
@@ -465,7 +463,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		wait_event(mdev->state_wait, (rv = _req_st_cond(mdev, mask, val)));
 
 		if (rv < SS_Success) {
-			// nearly dead code.
+			/* nearly dead code. */
 			drbd_state_unlock(mdev);
 			if (f & ChgStateVerbose) print_st_err(mdev, os, ns, rv);
 			return rv;
@@ -872,9 +870,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	   state change. This function might sleep */
 
 	if (fp == Stonith && ns.susp) {
-		// case1: The outdate peer handler is successfull:
-		// case2: The connection was established again:
-		if ( (os.pdsk > Outdated  && ns.pdsk <= Outdated) || // case1
+		/* case1: The outdate peer handler is successfull:
+		 * case2: The connection was established again: */
+		if ( (os.pdsk > Outdated  && ns.pdsk <= Outdated) ||
 		     (os.conn < Connected && ns.conn >= Connected) ) {
 			tl_clear(mdev);
 			spin_lock_irq(&mdev->req_lock);
@@ -883,7 +881,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 			spin_unlock_irq(&mdev->req_lock);
 		}
 	}
-	// Do not change the order of the if above and below...
+	/* Do not change the order of the if above and below... */
 	if (os.conn != WFBitMapS && ns.conn == WFBitMapS) {
 		/* compare with drbd_make_request_common,
 		 * wait_event and inc_ap_bio.
@@ -892,9 +890,9 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		wait_event(mdev->misc_wait,
 			mdev->state.conn != WFBitMapS ||
 			!atomic_read(&mdev->ap_bio_cnt));
-		drbd_bm_lock(mdev);   // {
+		drbd_bm_lock(mdev);
 		drbd_send_bitmap(mdev);
-		drbd_bm_unlock(mdev); // }
+		drbd_bm_unlock(mdev);
 	}
 
 	/* Lost contact to peer's copy of the data */
@@ -939,7 +937,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	/* Last part of the attaching process ... */
 	if ( ns.conn >= Connected && 
 	     os.disk == Attaching && ns.disk == Negotiating ) {
-		drbd_send_sizes(mdev);  // to start sync...
+		drbd_send_sizes(mdev);  /* to start sync... */
 		drbd_send_uuids(mdev);
 		drbd_send_state(mdev);
 	}
@@ -961,7 +959,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
 	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
 
-		drbd_bm_lock(mdev); // racy...
+		drbd_bm_lock(mdev); /* racy... */
 
 		drbd_md_set_flag(mdev, MDF_FullSync);
 		drbd_md_sync(mdev);
@@ -987,7 +985,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	/* We are invalidating our self... */
 	if ( os.conn < Connected && ns.conn < Connected &&
 	       os.disk > Inconsistent && ns.disk == Inconsistent ) {
-		drbd_bm_lock(mdev); // racy...
+		drbd_bm_lock(mdev); /* racy... */
 
 		drbd_md_set_flag(mdev, MDF_FullSync);
 		drbd_md_sync(mdev);
@@ -1012,24 +1010,24 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		lc_free(mdev->act_log); mdev->act_log = NULL;
 	}
 
-	// A resync finished or aborted, wake paused devices...
+	/* A resync finished or aborted, wake paused devices... */
 	if ( (os.conn > Connected && ns.conn <= Connected) ||
 	     (os.peer_isp && !ns.peer_isp) ||
 	     (os.user_isp && !ns.user_isp) ) {
 		resume_next_sg(mdev);
 	}
 
-	// Receiver should clean up itself
+	/* Receiver should clean up itself */
 	if (os.conn != Disconnecting && ns.conn == Disconnecting) {
 		drbd_thread_signal(&mdev->receiver);
 	}
 
-	// Now the receiver finished cleaning up itself, it should die now
+	/* Now the receiver finished cleaning up itself, it should die now */
 	if (os.conn != StandAlone && ns.conn == StandAlone) {
 		drbd_thread_stop_nowait(&mdev->receiver);
 	}
 
-	// Upon network failure, we need to restart the receiver.
+	/* Upon network failure, we need to restart the receiver. */
 	if ( os.conn > TearDown &&
 	     ns.conn <= TearDown && ns.conn >= Timeout) {
 		drbd_thread_restart_nowait(&mdev->receiver);
@@ -1072,7 +1070,7 @@ STATIC int drbd_thread_setup(void* arg)
 	thi->task = current;
 	smp_mb();
 	spin_unlock(&thi->t_lock);
-	complete(&thi->startstop); // notify: thi->task is set.
+	complete(&thi->startstop); /* notify: thi->task is set. */
 
 	while(1) {
 		retval = thi->function(thi);
@@ -1086,8 +1084,8 @@ STATIC int drbd_thread_setup(void* arg)
 	smp_mb();
 	spin_unlock(&thi->t_lock);
 
-	// THINK maybe two different completions?
-	complete(&thi->startstop); // notify: thi->task unset.
+	/* THINK maybe two different completions? */
+	complete(&thi->startstop); /* notify: thi->task unset. */
 
 	return retval;
 }
@@ -1121,13 +1119,13 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		D_ASSERT(thi->task == NULL);
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
-		flush_signals(current); // otherw. may get -ERESTARTNOINTR
+		flush_signals(current); /* otherw. may get -ERESTARTNOINTR */
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
 			return FALSE;
 		}
-		wait_for_completion(&thi->startstop); // waits until thi->task is set
+		wait_for_completion(&thi->startstop); /* waits until thi->task is set */
 		D_ASSERT(thi->task);
 		D_ASSERT(get_t_state(thi) == Running);
 	} else {
@@ -1304,7 +1302,7 @@ int drbd_send_uuids(drbd_dev *mdev)
 	int i;
 	u64 uuid_flags = 0;
 
-	if (!inc_local_if_state(mdev, Negotiating)) return 1; // ok.
+	if (!inc_local_if_state(mdev, Negotiating)) return 1; /* ok. */
 
 	for (i = Current; i < UUID_SIZE; i++) {
 		/* FIXME howto handle diskless ? */
@@ -1410,7 +1408,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	ERR_IF(!mdev->bitmap) return FALSE;
 
 	bm_words = drbd_bm_words(mdev);
-	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
+	p  = vmalloc(PAGE_SIZE); /* sleeps. cannot fail. */
 	buffer = (unsigned long*)p->payload;
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
@@ -1539,8 +1537,8 @@ int drbd_send_drequest(drbd_dev *mdev, int cmd,
 STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
 {
 	int drop_it;
-	// long elapsed = (long)(jiffies - mdev->last_received);
-	// DUMPLU(elapsed); // elapsed ignored for now.
+	/* long elapsed = (long)(jiffies - mdev->last_received); */
+	/* DUMPLU(elapsed); // elapsed ignored for now. */
 
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
@@ -1650,7 +1648,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 		}
 		len    -= sent;
 		offset += sent;
-		// FIXME test "last_received" ...
+		/* FIXME test "last_received" ... */
 	} while(len > 0 /* THINK && mdev->cstate >= Connected*/);
 	set_fs(oldfs);
 
@@ -1786,7 +1784,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 
 	if (!sock) return -1000;
 
-	// THINK  if (signal_pending) return ... ?
+	/* THINK  if (signal_pending) return ... ? */
 
 	iov.iov_base = buf;
 	iov.iov_len  = size;
@@ -1839,7 +1837,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 			if (DRBD_ratelimit(5*HZ, 5)) {
 				DBG("Got a signal in drbd_send(,%c,)!\n",
 				    sock == mdev->meta.socket ? 'm' : 's');
-				// dump_stack();
+				/* dump_stack(); */
 			}
 #endif
 			flush_signals(current);
@@ -1949,7 +1947,7 @@ void drbd_set_defaults(drbd_dev *mdev)
 {
 	mdev->sync_conf.after      = DRBD_AFTER_DEF;
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
-	mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_DEF; // 512 MB active set
+	mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_DEF; /* 512 MB active set */
 	mdev->state = (drbd_state_t){ { Secondary,
 					Unknown,
 					StandAlone,
@@ -1960,8 +1958,8 @@ void drbd_set_defaults(drbd_dev *mdev)
 
 void drbd_init_set_defaults(drbd_dev *mdev)
 {
-	// the memset(,0,) did most of this
-	// note: only assignments, no allocation in here
+	/* the memset(,0,) did most of this.
+	 * note: only assignments, no allocation in here */
 
 #ifdef PARANOIA
 	SET_MDEV_MAGIC(mdev);
@@ -2090,7 +2088,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	drbd_set_my_capacity(mdev, 0);
 	drbd_bm_resize(mdev, 0);
 
-	// just in case
+	/* just in case */
 	drbd_free_resources(mdev);
 
 	/*
@@ -2143,13 +2141,13 @@ int drbd_create_mempools(void)
 	const int number = (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE) * minor_count;
 	int i;
 
-	// prepare our caches and mempools
+	/* prepare our caches and mempools */
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
 	drbd_pp_pool         = NULL;
 
-	// caches
+	/* caches */
 	drbd_request_cache = drbd_kmem_cache_create(
 		"drbd_req_cache", sizeof(drbd_request_t),
 		0, 0, NULL);
@@ -2162,7 +2160,7 @@ int drbd_create_mempools(void)
 	if (drbd_ee_cache == NULL)
 		goto Enomem;
 
-	// mempools
+	/* mempools */
 	drbd_request_mempool = mempool_create( number,
 		mempool_alloc_slab, mempool_free_slab, drbd_request_cache);
 	if (drbd_request_mempool == NULL)
@@ -2173,7 +2171,7 @@ int drbd_create_mempools(void)
 	if (drbd_request_mempool == NULL)
 		goto Enomem;
 
-	// drbd's page pool
+	/* drbd's page pool */
 	spin_lock_init(&drbd_pp_lock);
 
 	for (i = 0;i< number;i++) {
@@ -2187,7 +2185,7 @@ int drbd_create_mempools(void)
 	return 0;
 
   Enomem:
-	drbd_destroy_mempools(); // in case we allocated some
+	drbd_destroy_mempools(); /* in case we allocated some */
 	return -ENOMEM;
 }
 
@@ -2335,20 +2333,20 @@ drbd_dev *drbd_new_device(int minor)
 	add_disk(disk);
 
 	mdev->this_bdev = bdget(MKDEV(DRBD_MAJOR, minor));
-	// we have no partitions. we contain only ourselves.
+	/* we have no partitions. we contain only ourselves. */
 	mdev->this_bdev->bd_contains = mdev->this_bdev;
 
 	blk_queue_make_request(q, drbd_make_request_26);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
-	q->queue_lock = &mdev->req_lock; // needed since we use
-		// plugging on a queue, that actually has no requests!
+	q->queue_lock = &mdev->req_lock; /* needed since we use */
+		/* plugging on a queue, that actually has no requests! */
 	q->unplug_fn = drbd_unplug_fn;
 
 	mdev->md_io_page = alloc_page(GFP_KERNEL);
 	if (!mdev->md_io_page) goto Enomem;
 
 	if (drbd_bm_init(mdev)) goto Enomem;
-	// no need to lock access, we are still initializing the module.
+	/* no need to lock access, we are still initializing the module. */
 	if (!tl_init(mdev)) goto Enomem;
 
 	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void*), GFP_KERNEL);
@@ -2411,7 +2409,7 @@ int __init drbd_init(void)
 
 	init_waitqueue_head(&drbd_pp_wait);
 
-	drbd_proc = NULL; // play safe for drbd_cleanup
+	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	minor_table = kzalloc(sizeof(drbd_dev *)*minor_count, GFP_KERNEL);
 	if (!minor_table) goto Enomem;
 
@@ -2442,11 +2440,11 @@ int __init drbd_init(void)
 	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", DRBD_MAJOR);
 	printk(KERN_INFO DEVICE_NAME": minor_table @ 0x%p\n", minor_table);
 
-	return 0; // Success!
+	return 0; /* Success! */
 
   Enomem:
 	drbd_cleanup();
-	if (err == -ENOMEM) // currently always the case
+	if (err == -ENOMEM) /* currently always the case */
 		printk(KERN_ERR DEVICE_NAME ": ran out of memory\n");
 	else
 		printk(KERN_ERR DEVICE_NAME ": initialization failure\n");
@@ -2494,18 +2492,18 @@ void drbd_free_resources(drbd_dev *mdev)
 /* meta data management */
 
 struct meta_data_on_disk {
-	u64 la_size;           // last agreed size.
-	u64 uuid[UUID_SIZE];   // UUIDs.
+	u64 la_size;           /* last agreed size. */
+	u64 uuid[UUID_SIZE];   /* UUIDs. */
 	u64 device_uuid;
 	u64 reserved_u64_1;
-	u32 flags;             // MDF
+	u32 flags;             /* MDF */
 	u32 magic;
 	u32 md_size_sect;
-	u32 al_offset;         // offset to this block
-	u32 al_nr_extents;     // important for restoring the AL
-	      // `-- act_log->nr_elements <-- sync_conf.al_extents
-	u32 bm_offset;         // offset to the bitmap, from here
-	u32 bm_bytes_per_bit;  // BM_BLOCK_SIZE
+	u32 al_offset;         /* offset to this block */
+	u32 al_nr_extents;     /* important for restoring the AL */
+	      /* `-- act_log->nr_elements <-- sync_conf.al_extents */
+	u32 bm_offset;         /* offset to the bitmap, from here */
+	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	u32 reserved_u32[4];
 
 } __attribute((packed));
@@ -2523,8 +2521,8 @@ void drbd_md_sync(drbd_dev *mdev)
 	if (!test_and_clear_bit(MD_DIRTY, &mdev->flags)) return;
 	del_timer(&mdev->md_sync_timer);
 
-	// We use here Failed and not Attaching because we try to write
-	// metadata even if we detach due to a disk failure!
+	/* We use here Failed and not Attaching because we try to write
+	 * metadata even if we detach due to a disk failure! */
 	if (!inc_local_if_state(mdev, Failed)) return;
 
 	INFO("Writing meta data super block now.\n");
@@ -2569,7 +2567,8 @@ void drbd_md_sync(drbd_dev *mdev)
 		drbd_io_error(mdev, TRUE);
 	}
 
-	// Update mdev->bc->md.la_size_sect, since we updated it on metadata.
+	/* Update mdev->bc->md.la_size_sect,
+	 * since we updated it on metadata. */
 	mdev->bc->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
 	up(&mdev->md_io_mutex);
@@ -2797,8 +2796,8 @@ STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)
 }
 
 #ifdef DRBD_ENABLE_FAULTS
-// Fault insertion support including random number generator shamelessly
-// stolen from kernel/rcutorture.c
+/* Fault insertion support including random number generator shamelessly
+ * stolen from kernel/rcutorture.c */
 struct fault_random_state {
 	unsigned long state;
 	unsigned long count;
@@ -2929,7 +2928,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 	const unsigned char *p;
 	int count;
 
-	// verify size parameter
+	/* verify size parameter */
 	if (size != sizeof(char) && size != sizeof(short) && size != sizeof(int)) {
 		printk(KERN_DEBUG "drbd_print_buffer: ERROR invalid size %d\n", size);
 		return;
@@ -2938,40 +2937,40 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 	sizemask = size-1;
 	field_width = size*2;
 
-	// Adjust start/end to be on appropriate boundary for size
+	/* Adjust start/end to be on appropriate boundary for size */
 	buffer = (const char *)((long)buffer & ~sizemask);
 	pend   = (const unsigned char *)(((long)buffer + length + sizemask) & ~sizemask);
 
 	if (flags & DBGPRINT_BUFFADDR) {
-		// Move start back to nearest multiple of line size if printing address
-		// This results in nicely formatted output with addresses being on
-		// line size (16) byte boundaries
+		/* Move start back to nearest multiple of line size,
+		 * if printing address. This results in nicely formatted output
+		 * with addresses being on line size (16) byte boundaries */
 		pstart = (const unsigned char *)((long)buffer & ~(LINE_SIZE-1));
 	} else {
 		pstart = (const unsigned char *)buffer;
 	}
 
-	// Set value of start VA to print if addresses asked for
+	/* Set value of start VA to print if addresses asked for */
 	pstart_va = (const unsigned char *)buffer_va - ((const unsigned char *)buffer-pstart);
 
-	// Calculate end position to nicely align right hand side
+	/* Calculate end position to nicely align right hand side */
 	pend_str = pstart + (((pend-pstart) + LINE_SIZE-1) & ~(LINE_SIZE-1));
 
-	// Init strings
+	/* Init strings */
 	*pbytes = *pascii = '\0';
 
-	// Start at beginning of first line
+	/* Start at beginning of first line */
 	p = pstart;
 	count = 0;
 
 	while (p < pend_str) {
 		if (p < (const unsigned char *)buffer || p >= pend) {
-			// Before start of buffer or after end- print spaces
+			/* Before start of buffer or after end- print spaces */
 			pbytes += sprintf(pbytes, "%*c ", field_width, ' ');
 			pascii += sprintf(pascii, "%*c", size, ' ');
 			p += size;
 		} else {
-			// Add hex and ascii to strings
+			/* Add hex and ascii to strings */
 			int val;
 			switch (size) {
 			default:
@@ -2997,7 +2996,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 		count++;
 
 		if (count == LINE_ENTRIES || p >= pend_str) {
-			// Null terminate and print record
+			/* Null terminate and print record */
 			*pascii = '\0';
 			printk(KERN_DEBUG "%s%8.8lx: %*s|%*s|\n",
 			       prefix,
@@ -3006,13 +3005,13 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			       LINE_ENTRIES*(field_width+1), bytes_str,
 			       LINE_SIZE, ascii_str);
 
-			// Move onto next line
+			/* Move onto next line */
 			pstart_va += (p-pstart);
 			pstart = p;
 			count  = 0;
 			offset+= LINE_SIZE;
 
-			// Re-init strings
+			/* Re-init strings */
 			pbytes = bytes_str;
 			pascii = ascii_str;
 			*pbytes = *pascii = '\0';
@@ -3180,7 +3179,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 	}
 }
 
-// Debug routine to dump info about bio
+/* Debug routine to dump info about bio */
 
 void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
 {

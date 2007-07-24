@@ -4,7 +4,7 @@
 #define TT_END     0
 #define TT_REMOVED 0xE000
 
-// declare packet_type enums
+/* declare packet_type enums */
 enum packet_types {
 #define PACKET(name, number, fields) P_ ## name = number,
 #define INTEGER(pn, pr, member)
@@ -15,7 +15,7 @@ enum packet_types {
 	P_nl_after_last_packet,
 };
 
-// These struct are used to deduce the size of the tag lists:
+/* These struct are used to deduce the size of the tag lists: */
 #define PACKET(name, number, fields)	\
 	struct name ## _tag_len_struct { fields };
 #define INTEGER(pn, pr, member)		\
@@ -29,7 +29,7 @@ enum packet_types {
 	int tag_and_len ## member;
 #include "linux/drbd_nl.h"
 
-// declate tag-list-sizes
+/* declate tag-list-sizes */
 const int tag_list_sizes[] = {
 #define PACKET(name, number, fields) 2 fields ,
 #define INTEGER(pn, pr, member)      +4+4
@@ -54,7 +54,7 @@ const int tag_list_sizes[] = {
 #define tag_type(T)   ((T) & TT_MASK)
 #define tag_number(T) ((T) & TN_MASK)
 
-// declare tag enums
+/* declare tag enums */
 #define PACKET(name, number, fields) fields
 enum drbd_tags {
 #define INTEGER(pn, pr, member)     T_ ## member = pn | TT_INTEGER | pr ,
@@ -70,7 +70,7 @@ struct tag {
 	int max_len;
 };
 
-// declare tag names
+/* declare tag names */
 #define PACKET(name, number, fields) fields
 const struct tag tag_descriptions[] = {
 #define INTEGER(pn, pr, member)     [ pn ] = { #member, TT_INTEGER | pr, sizeof(int)   },

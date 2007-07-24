@@ -27,13 +27,13 @@
 
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
-#include <linux/string.h> // for memset
-#include <linux/seq_file.h> // for seq_printf
+#include <linux/string.h> /* for memset */
+#include <linux/seq_file.h> /* for seq_printf */
 #include "lru_cache.h"
 
 #define STATIC static
 
-// this is developers aid only!
+/* this is developers aid only! */
 #define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_PARANOIA, &lc->flags))
 #define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA, &lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
@@ -71,7 +71,7 @@ struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
 			e = lc_entry(lc, i);
 			e->lc_number = LC_FREE;
 			list_add(&e->list, &lc->free);
-			// memset(,0,) did the rest of init for us
+			/* memset(,0,) did the rest of init for us */
 		}
 	}
 	return lc;
@@ -149,7 +149,7 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
  */
 void lc_del(struct lru_cache* lc, struct lc_element *e)
 {
-	// FIXME what to do with refcnt != 0 ?
+	/* FIXME what to do with refcnt != 0 ? */
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt);
 	list_del(&e->list);
@@ -173,8 +173,8 @@ STATIC struct lc_element* lc_get_unused_element(struct lru_cache* lc)
 
 STATIC int lc_unused_element_available(struct lru_cache* lc)
 {
-	if (!list_empty(&lc->free)) return 1; // something on the free list
-	if (!list_empty(&lc->lru)) return 1;  // something to evict
+	if (!list_empty(&lc->free)) return 1; /* something on the free list */
+	if (!list_empty(&lc->lru)) return 1;  /* something to evict */
 
 	return 0;
 }
@@ -224,7 +224,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	if (e) {
 		++lc->hits;
 		if (e->refcnt++ == 0) lc->used++;
-		list_move(&e->list, &lc->in_use); // Not evictable...
+		list_move(&e->list, &lc->in_use); /* Not evictable... */
 		RETURN(e);
 	}
 
@@ -281,7 +281,7 @@ struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
 	if (e) {
 		++lc->hits;
 		if (e->refcnt++ == 0) lc->used++;
-		list_move(&e->list, &lc->in_use); // Not evictable...
+		list_move(&e->list, &lc->in_use); /* Not evictable... */
 	}
 	RETURN(e);
 }
@@ -312,7 +312,7 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	BUG_ON(e->refcnt == 0);
 	BUG_ON(e == lc->changing_element);
 	if (--e->refcnt == 0) {
-		list_move(&e->list, &lc->lru); // move it to the front of LRU.
+		list_move(&e->list, &lc->lru); /* move it to the front of LRU. */
 		lc->used--;
 		clear_bit(__LC_STARVING, &lc->flags);
 		smp_mb__after_clear_bit();

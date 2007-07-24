@@ -73,7 +73,7 @@ enum after_sb_handler {
  * Or change the API_VERSION, too. */
 enum ret_codes {
 	RetCodeBase = 100,
-	NoError,         // 101 ...
+	NoError,         /* 101 ... */
 	LAAlreadyInUse,
 	OAAlreadyInUse,
 	LDNameInvalid,
@@ -101,7 +101,7 @@ enum ret_codes {
 	UnknownMandatoryTag,
 	MinorNotKnown,
 	StateNotAllowed,
-	GotSignal, // EINTR
+	GotSignal, /* EINTR */
 	NoResizeDuringResync,
 	APrimaryNodeNeeded,
 	SyncAfterInvalid,
@@ -123,8 +123,8 @@ enum ret_codes {
 
 typedef enum {
 	Unknown = 0,
-	Primary = 1,     // role
-	Secondary = 2,   // role
+	Primary = 1,     /* role */
+	Secondary = 2,   /* role */
 	role_mask = 3,
 } drbd_role_t;
 
@@ -139,25 +139,36 @@ typedef enum {
  */
 typedef enum {
 	StandAlone,
-	Disconnecting,  // Temporal state on the way to StandAlone.
-	Unconnected,    // >= Unconnected -> inc_net() succeeds
-	Timeout,	/// These temporal states are all used on the way
-	BrokenPipe,	/// from >= Connected to Unconnected.
-	NetworkFailure,	/// The 'disconnect reason' states
-	ProtocolError,  ///
-	TearDown,	/// I do not allow to change beween them.
+	Disconnecting,  /* Temporal state on the way to StandAlone. */
+	Unconnected,    /* >= Unconnected -> inc_net() succeeds */
+
+	/* These temporal states are all used on the way
+	 * from >= Connected to Unconnected.
+	 * The 'disconnect reason' states
+	 * I do not allow to change beween them. */
+	Timeout,
+	BrokenPipe,
+	NetworkFailure,
+	ProtocolError,
+	TearDown,
+
 	WFConnection,
-	WFReportParams, // we have a socket
-	Connected,      // we have introduced each other
-	StartingSyncS,  // starting full sync by IOCTL.
-	StartingSyncT,  // stariing full sync by IOCTL.
+	WFReportParams, /* we have a socket */
+	Connected,      /* we have introduced each other */
+	StartingSyncS,  /* starting full sync by IOCTL. */
+	StartingSyncT,  /* stariing full sync by IOCTL. */
 	WFBitMapS,
 	WFBitMapT,
 	WFSyncUUID,
-	SyncSource,     // The distance between original state and pause
-	SyncTarget,     // state must be the same for source and target. (+2)
-	PausedSyncS,    // All SyncStates are tested with this comparison
-	PausedSyncT,    // xx >= SyncSource && xx <= PausedSyncT
+
+	/* The distance between original state and pause
+	 * state must be the same for source and target. (+2)
+	 * All SyncStates are tested with this comparison
+	 * xx >= SyncSource && xx <= PausedSyncT */
+	SyncSource,
+	SyncTarget,
+	PausedSyncS,
+	PausedSyncT,
 	conn_mask = 31
 } drbd_conns_t;
 
@@ -177,16 +188,16 @@ typedef enum {
 
 typedef union {
 	struct {
-		unsigned role : 2 ;   // 3/4      primary/secondary/unknown
-		unsigned peer : 2 ;   // 3/4      primary/secondary/unknown
-		unsigned conn : 5 ;   // 17/32    cstates
-		unsigned disk : 4 ;   // 8/16     from Diskless to UpToDate
-		unsigned pdsk : 4 ;   // 8/16     from Diskless to UpToDate
-		unsigned susp : 1 ;   // 2/2      IO suspended  no/yes
-		unsigned aftr_isp : 1 ; // isp .. imposed sync pause
+		unsigned role : 2 ;   /* 3/4      primary/secondary/unknown */
+		unsigned peer : 2 ;   /* 3/4      primary/secondary/unknown */
+		unsigned conn : 5 ;   /* 17/32    cstates */
+		unsigned disk : 4 ;   /* 8/16     from Diskless to UpToDate */
+		unsigned pdsk : 4 ;   /* 8/16     from Diskless to UpToDate */
+		unsigned susp : 1 ;   /* 2/2      IO suspended  no/yes */
+		unsigned aftr_isp : 1 ; /* isp .. imposed sync pause */
 		unsigned peer_isp : 1 ;
 		unsigned user_isp : 1 ;
-		unsigned _pad : 11;   // 0        unused
+		unsigned _pad : 11;   /* 0        unused */
 	};
 	unsigned int i;
 } drbd_state_t;
@@ -196,7 +207,7 @@ typedef enum {
 	SS_CW_Success = 3,
 	SS_NothingToDo = 2,
 	SS_Success = 1,
-	SS_UnknownError = 0, // Used to sleep longer in _drbd_request_state
+	SS_UnknownError = 0, /* Used to sleep longer in _drbd_request_state */
 	SS_TwoPrimaries = -1,
 	SS_NoUpToDateDisk = -2,
 	SS_BothInconsistent = -4,
@@ -228,7 +239,7 @@ enum MetaDataFlags {
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
 	__MDF_WasUpToDate,
-	__MDF_PeerOutDated // or less/lower.
+	__MDF_PeerOutDated /* or worse (e.g. invalid). */
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
@@ -242,9 +253,9 @@ enum UuidIndex {
 	Bitmap,
 	History_start,
 	History_end,
-	UUID_SIZE,      // In the packet we store the number of dirty bits here
-	UUID_FLAGS,     // In the packet we store flags here.
-	EXT_UUID_SIZE   // Everything.
+	UUID_SIZE,      /* In the packet we store the number of dirty bits here */
+	UUID_FLAGS,     /* In the packet we store flags here. */
+	EXT_UUID_SIZE   /* Everything. */
 };
 
 #define UUID_JUST_CREATED ((__u64)4)
@@ -257,13 +268,13 @@ enum UuidIndex {
 #define DRBD_MD_INDEX_FLEX_EXT -2
 #define DRBD_MD_INDEX_FLEX_INT -3
 
-// Start of the new netlink/connector stuff
+/* Start of the new netlink/connector stuff */
 
 #define DRBD_NL_CREATE_DEVICE 0x01
 #define DRBD_NL_SET_DEFAULTS  0x02
 
-// The following line should be moved over to linux/connector.h
-// when the time comes
+/* The following line should be moved over to linux/connector.h
+ * when the time comes */
 #define CN_IDX_DRBD			0x4
 #define CN_VAL_DRBD			0x1
 
@@ -277,8 +288,8 @@ struct drbd_nl_cfg_req {
 struct drbd_nl_cfg_reply {
 	int packet_type;
 	int minor;
-	int ret_code; // enum ret_code or set_st_err_t
-	unsigned short tag_list[]; // only used with get_* calls
+	int ret_code; /* enum ret_code or set_st_err_t */
+	unsigned short tag_list[]; /* only used with get_* calls */
 };
 
 #endif
