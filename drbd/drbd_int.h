@@ -1165,8 +1165,8 @@ extern void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line);
 #include "drbd_wrappers.h"
 
 extern int minor_count;
-extern drbd_kmem_cache_t *drbd_request_cache;
-extern drbd_kmem_cache_t *drbd_ee_cache;
+extern struct kmem_cache *drbd_request_cache;
+extern struct kmem_cache *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
 extern mempool_t *drbd_ee_mempool;
 
