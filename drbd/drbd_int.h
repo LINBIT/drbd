@@ -1117,7 +1117,7 @@ struct bm_extent {
 #if DRBD_MAX_SECTORS_BM < DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_BM
-#elif ( !defined(CONFIG_LBD) ) && ( BITS_PER_LONG == 32 )
+#elif   !defined(CONFIG_LBD) && BITS_PER_LONG == 32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
@@ -1135,43 +1135,43 @@ struct bm_extent {
 /* Number of elements in the app_reads_hash */
 #define APP_R_HSIZE 15
 
-extern int  drbd_bm_init      (drbd_dev *mdev);
-extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);
-extern void drbd_bm_cleanup   (drbd_dev *mdev);
-extern void drbd_bm_set_all   (drbd_dev *mdev);
-extern void drbd_bm_clear_all (drbd_dev *mdev);
+extern int  drbd_bm_init(drbd_dev *mdev);
+extern int  drbd_bm_resize(drbd_dev *mdev, sector_t sectors);
+extern void drbd_bm_cleanup(drbd_dev *mdev);
+extern void drbd_bm_set_all(drbd_dev *mdev);
+extern void drbd_bm_clear_all(drbd_dev *mdev);
 extern void drbd_bm_reset_find(drbd_dev *mdev);
-extern int  drbd_bm_set_bit   (drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_set_bit(drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_set_bits_in_irq(
 		drbd_dev *mdev, unsigned long s, unsigned long e);
-extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
-extern int  drbd_bm_clear_bit (drbd_dev *mdev, unsigned long bitnr);
-extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
-extern int  drbd_bm_read_sect (drbd_dev *mdev, unsigned long enr);
+extern int  drbd_bm_test_bit(drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_clear_bit(drbd_dev *mdev, unsigned long bitnr);
+extern int  drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr);
+extern int  drbd_bm_read_sect(drbd_dev *mdev, unsigned long enr);
 extern int  drbd_bm_write_sect(drbd_dev *mdev, unsigned long enr);
-extern int  drbd_bm_read      (drbd_dev *mdev);
-extern int  drbd_bm_write     (drbd_dev *mdev);
-extern unsigned long drbd_bm_ALe_set_all (drbd_dev *mdev, unsigned long al_enr);
-extern size_t	     drbd_bm_words	 (drbd_dev *mdev);
-extern sector_t      drbd_bm_capacity	 (drbd_dev *mdev);
-extern unsigned long drbd_bm_find_next	 (drbd_dev *mdev);
+extern int  drbd_bm_read(drbd_dev *mdev);
+extern int  drbd_bm_write(drbd_dev *mdev);
+extern unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr);
+extern size_t	     drbd_bm_words(drbd_dev *mdev);
+extern sector_t      drbd_bm_capacity(drbd_dev *mdev);
+extern unsigned long drbd_bm_find_next(drbd_dev *mdev);
 extern void drbd_bm_set_find(drbd_dev *mdev, unsigned long i);
 extern unsigned long drbd_bm_total_weight(drbd_dev *mdev);
 extern int drbd_bm_rs_done(drbd_dev *mdev);
 /* for receive_bitmap */
-extern void drbd_bm_merge_lel (drbd_dev *mdev, size_t offset, size_t number,
+extern void drbd_bm_merge_lel(drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long *buffer);
 /* for _drbd_send_bitmap and drbd_bm_write_sect */
-extern void drbd_bm_get_lel   (drbd_dev *mdev, size_t offset, size_t number,
+extern void drbd_bm_get_lel(drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long *buffer);
 /*
  * only used by drbd_bm_read_sect
-extern void drbd_bm_set_lel   (drbd_dev *mdev, size_t offset, size_t number,
+extern void drbd_bm_set_lel(drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long* buffer);
 */
 
-extern void __drbd_bm_lock    (drbd_dev *mdev, char *file, int line);
-extern void drbd_bm_unlock    (drbd_dev *mdev);
+extern void __drbd_bm_lock(drbd_dev *mdev, char *file, int line);
+extern void drbd_bm_unlock(drbd_dev *mdev);
 #define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
 
 extern void _drbd_bm_recount_bits(drbd_dev *mdev, char *file, int line);
@@ -1323,19 +1323,19 @@ extern int drbd_resync_finished(drbd_dev *mdev);
 extern int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 				sector_t sector, int rw);
 /* worker callbacks */
-extern int w_req_cancel_conflict (drbd_dev *, struct drbd_work *, int);
-extern int w_read_retry_remote	 (drbd_dev *, struct drbd_work *, int);
-extern int w_e_end_data_req	 (drbd_dev *, struct drbd_work *, int);
-extern int w_e_end_rsdata_req	 (drbd_dev *, struct drbd_work *, int);
-extern int w_resync_inactive	 (drbd_dev *, struct drbd_work *, int);
-extern int w_resume_next_sg	 (drbd_dev *, struct drbd_work *, int);
-extern int w_io_error		 (drbd_dev *, struct drbd_work *, int);
-extern int w_send_write_hint	 (drbd_dev *, struct drbd_work *, int);
-extern int w_make_resync_request (drbd_dev *, struct drbd_work *, int);
-extern int w_send_dblock	 (drbd_dev *, struct drbd_work *, int);
-extern int w_send_barrier	 (drbd_dev *, struct drbd_work *, int);
-extern int w_send_read_req	 (drbd_dev *, struct drbd_work *, int);
-extern int w_prev_work_done	 (drbd_dev *, struct drbd_work *, int);
+extern int w_req_cancel_conflict(drbd_dev *, struct drbd_work *, int);
+extern int w_read_retry_remote(drbd_dev *, struct drbd_work *, int);
+extern int w_e_end_data_req(drbd_dev *, struct drbd_work *, int);
+extern int w_e_end_rsdata_req(drbd_dev *, struct drbd_work *, int);
+extern int w_resync_inactive(drbd_dev *, struct drbd_work *, int);
+extern int w_resume_next_sg(drbd_dev *, struct drbd_work *, int);
+extern int w_io_error(drbd_dev *, struct drbd_work *, int);
+extern int w_send_write_hint(drbd_dev *, struct drbd_work *, int);
+extern int w_make_resync_request(drbd_dev *, struct drbd_work *, int);
+extern int w_send_dblock(drbd_dev *, struct drbd_work *, int);
+extern int w_send_barrier(drbd_dev *, struct drbd_work *, int);
+extern int w_send_read_req(drbd_dev *, struct drbd_work *, int);
+extern int w_prev_work_done(drbd_dev *, struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 

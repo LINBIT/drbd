@@ -17,11 +17,11 @@
 extern char *drbd_sec_holder;
 
 /* bi_end_io handlers */
-extern int drbd_md_io_complete (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error);
 
-extern int drbd_endio_read_sec (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error);
 extern int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_endio_pri      (struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error);
 
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 {

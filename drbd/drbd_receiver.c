@@ -617,12 +617,12 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	* Make sure to use 0 as portnumber, so linux selects
 	*  a free one dynamically.
 	*/
-	memcpy (&src_in, &(mdev->net_conf->my_addr), sizeof(struct sockaddr_in));
+	memcpy(&src_in, &(mdev->net_conf->my_addr), sizeof(struct sockaddr_in));
 	src_in.sin_port = 0;
 
 	err = sock->ops->bind(sock,
 			      (struct sockaddr *) &src_in,
-			      sizeof (struct sockaddr_in));
+			      sizeof(struct sockaddr_in));
 	if (err) {
 		ERR("Unable to bind source sock (%d)\n", err);
 		sock_release(sock);

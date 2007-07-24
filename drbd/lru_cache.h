@@ -101,14 +101,14 @@ enum {
 extern struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
 				  size_t e_size, void *private_p);
 extern void lc_free(struct lru_cache *lc);
-extern void lc_set (struct lru_cache *lc, unsigned int enr, int index);
-extern void lc_del (struct lru_cache *lc, struct lc_element *element);
+extern void lc_set(struct lru_cache *lc, unsigned int enr, int index);
+extern void lc_del(struct lru_cache *lc, struct lc_element *element);
 
 extern struct lc_element *lc_try_get(struct lru_cache *lc, unsigned int enr);
 extern struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr);
-extern struct lc_element *lc_get (struct lru_cache *lc, unsigned int enr);
-extern unsigned int	  lc_put (struct lru_cache *lc, struct lc_element *e);
-extern void	       lc_changed(struct lru_cache *lc, struct lc_element *e);
+extern struct lc_element *lc_get(struct lru_cache *lc, unsigned int enr);
+extern unsigned int lc_put(struct lru_cache *lc, struct lc_element *e);
+extern void lc_changed(struct lru_cache *lc, struct lc_element *e);
 
 struct seq_file;
 extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache *lc);
