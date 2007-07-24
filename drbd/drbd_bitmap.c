@@ -212,7 +212,7 @@ STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 	INFO("bm[%d]=0x%lX\n", w, b->bm[w]);
 	w++;
 
-	if ( w < b->bm_words ) {
+	if (w < b->bm_words) {
 		D_ASSERT(w == b->bm_words -1);
 		INFO("bm[%d]=0x%lX\n",w,b->bm[w]);
 	}
@@ -288,12 +288,12 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 	size_t w = b->bm_bits >> LN2_BPL;
 	int cleared=0;
 
-	if ( w < b->bm_words ) {
+	if (w < b->bm_words) {
 		cleared = hweight_long(b->bm[w] & ~mask);
 		b->bm[w++] &= mask;
 	}
 
-	if ( w < b->bm_words ) {
+	if (w < b->bm_words) {
 		cleared += hweight_long(b->bm[w]);
 		b->bm[w++]=0;
 	}
@@ -306,11 +306,11 @@ STATIC void bm_set_surplus(struct drbd_bitmap * b)
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
 
-	if ( w < b->bm_words ) {
+	if (w < b->bm_words) {
 		b->bm[w++] |= ~mask;
 	}
 
-	if ( w < b->bm_words ) {
+	if (w < b->bm_words) {
 		b->bm[w++] = ~(0UL);
 	}
 }
@@ -340,7 +340,7 @@ void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
 
 	spin_lock_irqsave(&b->bm_lock,flags);
 	bits = bm_count_bits(b,0);
-	if(bits != b->bm_set) {
+	if (bits != b->bm_set) {
 		ERR("bm_set was %lu, corrected to %lu. %s:%d\n",
 		    b->bm_set,bits,file,line);
 		b->bm_set = bits;
@@ -400,7 +400,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 
 		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
 
-		if ( words == b->bm_words ) {
+		if (words == b->bm_words) {
 			/* optimize: capacity has changed,
 			 * but only within one long word worth of bits.
 			 * just update the bm_dev_capacity and bm_bits members.
@@ -444,7 +444,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
-		if( !growing ) b->bm_set = bm_count_bits(b,0);
+		if (!growing) b->bm_set = bm_count_bits(b,0);
 		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
@@ -699,7 +699,7 @@ int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
 	// MUST_BE_LOCKED(); not neccessarily global ...
 
 	down(&mdev->md_io_mutex);
-	if(drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,READ)) {
+	if (drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,READ)) {
 		bm_words  = drbd_bm_words(mdev);
 		offset    = S2W(enr);	// word offset into bitmap
 		num_words = min(S2W(1), bm_words - offset);
@@ -783,7 +783,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	 */
 	mdev->bitmap = NULL;
 
-	if(rw == WRITE)	bm_cpu_to_lel(b);
+	if (rw == WRITE)	bm_cpu_to_lel(b);
 
 	now = jiffies;
 	atomic_set(&b->bm_async_io, num_pages);
@@ -807,7 +807,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	}
 
 	now = jiffies;
-	if(rw == WRITE) {
+	if (rw == WRITE) {
 		bm_lel_to_cpu(b);
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */

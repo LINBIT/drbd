@@ -215,7 +215,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	BUG_ON(!lc->nr_elements);
 
 	PARANOIA_ENTRY();
-	if ( lc->flags & LC_STARVING ) {
+	if (lc->flags & LC_STARVING) {
 		++lc->starving;
 		RETURN(NULL);
 	}
@@ -223,7 +223,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++lc->hits;
-		if( e->refcnt++ == 0) lc->used++;
+		if (e->refcnt++ == 0) lc->used++;
 		list_move(&e->list,&lc->in_use); // Not evictable...
 		RETURN(e);
 	}
@@ -233,7 +233,7 @@ struct lc_element* lc_get(struct lru_cache* lc, unsigned int enr)
 	/* In case there is nothing available and we can not kick out
 	 * the LRU element, we have to wait ...
 	 */
-	if(!lc_unused_element_available(lc)) {
+	if (!lc_unused_element_available(lc)) {
 		__set_bit(__LC_STARVING,&lc->flags);
 		RETURN(NULL);
 	}
@@ -272,7 +272,7 @@ struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
 	BUG_ON(!lc->nr_elements);
 
 	PARANOIA_ENTRY();
-	if ( lc->flags & LC_STARVING ) {
+	if (lc->flags & LC_STARVING) {
 		++lc->starving;
 		RETURN(NULL);
 	}
@@ -280,7 +280,7 @@ struct lc_element* lc_try_get(struct lru_cache* lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++lc->hits;
-		if( e->refcnt++ == 0) lc->used++;
+		if (e->refcnt++ == 0) lc->used++;
 		list_move(&e->list,&lc->in_use); // Not evictable...
 	}
 	RETURN(e);
@@ -311,7 +311,7 @@ unsigned int lc_put(struct lru_cache* lc, struct lc_element* e)
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt == 0);
 	BUG_ON(e == lc->changing_element);
-	if ( --e->refcnt == 0) {
+	if (--e->refcnt == 0) {
 		list_move(&e->list,&lc->lru); // move it to the front of LRU.
 		lc->used--;
 		clear_bit(__LC_STARVING,&lc->flags);
@@ -332,7 +332,7 @@ void lc_set(struct lru_cache* lc, unsigned int enr, int index)
 {
 	struct lc_element *e;
 
-	if ( index < 0 || index >= lc->nr_elements ) return;
+	if (index < 0 || index >= lc->nr_elements) return;
 
 	e = lc_entry(lc,index);
 	e->lc_number = enr;
@@ -356,7 +356,7 @@ void lc_dump(struct lru_cache* lc, struct seq_file *seq, char* utext,
 	seq_printf(seq,"\tnn: lc_number refcnt %s\n ",utext);
 	for(i=0;i<nr_elements;i++) {
 		e = lc_entry(lc,i);
-		if( e->lc_number == LC_FREE ) {
+		if (e->lc_number == LC_FREE) {
 			seq_printf(seq,"\t%2d: FREE\n",i );
 		} else {
 			seq_printf(seq,"\t%2d: %4u %4u    ", i,

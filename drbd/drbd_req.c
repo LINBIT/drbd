@@ -127,7 +127,7 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 			drbd_set_out_of_sync(mdev,req->sector,req->size);
 		}
 
-		if( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) &&
+		if ( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) &&
 		    (s & RQ_NET_SIS) ) {
 			drbd_set_in_sync(mdev,req->sector,req->size);
 		}
@@ -388,7 +388,7 @@ STATIC int _req_conflicts(drbd_request_t *req)
 		}
 	}
 
-	if(mdev->ee_hash_s) {
+	if (mdev->ee_hash_s) {
 		/* now, check for overlapping requests with remote origin */
 		BUG_ON(mdev->ee_hash == NULL);
 #undef OVERLAPS
@@ -589,7 +589,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 
 		/* mark the current epoch as closed,
 		 * in case it outgrew the limit */
-		if( ++mdev->newest_barrier->n_req >= mdev->net_conf->max_epoch_size )
+		if (++mdev->newest_barrier->n_req >= mdev->net_conf->max_epoch_size)
 			set_bit(ISSUE_BARRIER,&mdev->flags);
 
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
@@ -871,7 +871,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	{
   allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
-		if(!b) {
+		if (!b) {
 			ERR("Failed to alloc barrier.");
 			err = -ENOMEM;
 			goto fail_and_free_req;
@@ -1076,7 +1076,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	}
 
 	/* Currently our BARRIER code is disabled. */
-	if(unlikely(bio_barrier(bio))) {
+	if (unlikely(bio_barrier(bio))) {
 		bio_endio(bio, bio->bi_size, -EOPNOTSUPP);
 		return 0;
 	}
@@ -1094,7 +1094,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 	s_enr = bio->bi_sector >> HT_SHIFT;
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> HT_SHIFT;
 
-	if(unlikely(s_enr != e_enr)) {
+	if (unlikely(s_enr != e_enr)) {
 	if (bio->bi_vcnt != 1 || bio->bi_idx != 0) {
 		/* rather error out here than BUG in bio_split */
 		ERR("bio would need to, but cannot, be split: "
@@ -1159,7 +1159,7 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 		if (limit <= bvec->bv_len) limit = bvec->bv_len;
 	} else if (limit && inc_local(mdev)) {
 		request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
-		if(b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
+		if (b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
 			backing_limit = b->merge_bvec_fn(b,bio,bvec);
 			limit = min(limit,backing_limit);
 		}

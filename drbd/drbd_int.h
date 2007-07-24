@@ -236,7 +236,7 @@ drbd_insert_fault(drbd_dev *mdev, unsigned int type) {
 #define RECALC_SIGPENDING()        recalc_sigpending();
 
 #if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if(!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
+# define MUST_HOLD(lock) if (!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
 #else
 # define MUST_HOLD(lock)
 #endif
@@ -1501,7 +1501,7 @@ static inline void drbd_chk_io_error(drbd_dev* mdev, int error, int forcedetach)
 
 static inline int semaphore_is_locked(struct semaphore* s)
 {
-	if(!down_trylock(s)) {
+	if (!down_trylock(s)) {
 		up(s);
 		return 0;
 	}
@@ -1609,7 +1609,7 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 }
 
 static inline void wake_asender(drbd_dev *mdev) {
-	if(test_bit(SIGNAL_ASENDER, &mdev->flags)) {
+	if (test_bit(SIGNAL_ASENDER, &mdev->flags)) {
 		force_sig(DRBD_SIG, mdev->asender.task);
 	}
 }
@@ -1681,14 +1681,14 @@ static inline void inc_ap_pending(drbd_dev* mdev)
 }
 
 #define ERR_IF_CNT_IS_NEGATIVE(which)				\
-	if(atomic_read(&mdev->which)<0)				\
+	if (atomic_read(&mdev->which)<0)				\
 		ERR("in %s:%d: " #which " = %d < 0 !\n",	\
 		    __func__ , __LINE__ ,			\
 		    atomic_read(&mdev->which))
 
 #define dec_ap_pending(mdev)	do {				\
 	typecheck(drbd_dev*,mdev);				\
-	if(atomic_dec_and_test(&mdev->ap_pending_cnt))		\
+	if (atomic_dec_and_test(&mdev->ap_pending_cnt))		\
 		wake_up(&mdev->misc_wait);			\
 	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt); } while (0)
 
@@ -1735,7 +1735,7 @@ static inline void inc_unacked(drbd_dev* mdev)
 
 static inline void dec_net(drbd_dev* mdev)
 {
-	if(atomic_dec_and_test(&mdev->net_cnt)) {
+	if (atomic_dec_and_test(&mdev->net_cnt)) {
 		wake_up(&mdev->misc_wait);
 	}
 }
@@ -1750,7 +1750,7 @@ static inline int inc_net(drbd_dev* mdev)
 
 	atomic_inc(&mdev->net_cnt);
 	have_net_conf = mdev->state.conn >= Unconnected;
-	if(!have_net_conf) dec_net(mdev);
+	if (!have_net_conf) dec_net(mdev);
 	return have_net_conf;
 }
 
@@ -1762,7 +1762,7 @@ static inline int inc_net(drbd_dev* mdev)
 
 static inline void dec_local(drbd_dev* mdev)
 {
-	if(atomic_dec_and_test(&mdev->local_cnt)) {
+	if (atomic_dec_and_test(&mdev->local_cnt)) {
 		wake_up(&mdev->misc_wait);
 	}
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
@@ -1777,7 +1777,7 @@ static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 
 	atomic_inc(&mdev->local_cnt);
 	io_allowed = (mdev->state.disk >= mins );
-	if( !io_allowed ) {
+	if (!io_allowed) {
 		dec_local(mdev);
 	}
 	return io_allowed;
@@ -1793,7 +1793,7 @@ static inline int inc_local(drbd_dev* mdev)
 static inline int drbd_get_max_buffers(drbd_dev* mdev)
 {
 	int mxb = 1000000; /* arbitrary limit on open requests */
-	if(inc_net(mdev)) {
+	if (inc_net(mdev)) {
 		mxb = mdev->net_conf->max_buffers;
 		dec_net(mdev);
 	}

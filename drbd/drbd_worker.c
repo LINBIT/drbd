@@ -102,7 +102,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	mdev->read_cnt += e->size >> 9;
 	list_del(&e->w.list);
-	if(list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
+	if (list_empty(&mdev->read_ee)) wake_up(&mdev->ee_wait);
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	drbd_chk_io_error(mdev,error,FALSE);
@@ -169,7 +169,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	 * done from "drbd_process_done_ee" within the appropriate w.cb
 	 * (e_end_block/e_end_resync_block) or from _drbd_clear_done_ee */
 
-	if(!is_syncer_req) mdev->epoch_size++;
+	if (!is_syncer_req) mdev->epoch_size++;
 
 	do_wake = is_syncer_req
 		? list_empty(&mdev->sync_ee)
@@ -240,10 +240,10 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 * when it is done and had a local write error, see comments there */
 	drbd_req_free(req);
 
-	if(unlikely(cancel)) return 1;
+	if (unlikely(cancel)) return 1;
 
 	ok = drbd_io_error(mdev, FALSE);
-	if(unlikely(!ok)) ERR("Sending in w_io_error() failed\n");
+	if (unlikely(!ok)) ERR("Sending in w_io_error() failed\n");
 	return ok;
 }
 
@@ -285,7 +285,7 @@ void resync_timer_fn(unsigned long data)
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 
-	if(likely(!test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags))) {
+	if (likely(!test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags))) {
 		queue=1;
 		mdev->resync_work.cb = w_make_resync_request;
 	} else {
@@ -296,7 +296,7 @@ void resync_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	/* harmless race: list_empty outside data.work.q_lock */
-	if(list_empty(&mdev->resync_work.list) && queue) {
+	if (list_empty(&mdev->resync_work.list) && queue) {
 		drbd_queue_work(&mdev->data.work,&mdev->resync_work);
 	}
 }
@@ -314,9 +314,9 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
-	if(unlikely(cancel)) return 1;
+	if (unlikely(cancel)) return 1;
 
-	if(unlikely(mdev->state.conn < Connected)) {
+	if (unlikely(mdev->state.conn < Connected)) {
 		ERR("Confused in w_make_resync_request()! cstate < Connected");
 		return 0;
 	}
@@ -332,7 +332,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 	number -= atomic_read(&mdev->rs_pending_cnt);
 
-	if(!inc_local(mdev)) {
+	if (!inc_local(mdev)) {
 		/* Since we only need to access mdev->rsync a
 		   inc_local_if_state(mdev,Failed) would be sufficient, but
 		   to continue resync with a broken disk makes no sense at
@@ -405,7 +405,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 				break;
 			bit++;
 			size += BM_BLOCK_SIZE;
-			if( (BM_BLOCK_SIZE<<align) <= size) align++;
+			if ( (BM_BLOCK_SIZE<<align) <= size) align++;
 			i++;
 		}
 		/* if we merged some,
@@ -417,7 +417,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity) size = (capacity-sector)<<9;
 		inc_rs_pending(mdev);
-		if(!drbd_send_drequest(mdev,RSDataRequest,
+		if (!drbd_send_drequest(mdev,RSDataRequest,
 				       sector,size,ID_SYNCER)) {
 			ERR("drbd_send_drequest() failed, aborting...\n");
 			dec_rs_pending(mdev);
@@ -426,7 +426,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		}
 	}
 
-	if(drbd_bm_rs_done(mdev)) {
+	if (drbd_bm_rs_done(mdev)) {
 		/* last syncer _request_ was sent,
 		 * but the RSDataReply not yet received.  sync will end (and
 		 * next sync group will resume), as soon as we receive the last
@@ -464,7 +464,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	// Remove all elements from the resync LRU. Since future actions
 	// might set bits in the (main) bitmap, then the entries in the
 	// resync LRU would be wrong.
-	if(drbd_rs_del_all(mdev)) {
+	if (drbd_rs_del_all(mdev)) {
 		// In case this is not possible now, most probabely because
 		// there are RSDataReply Packets lingering on the worker's
 		// queue (or even the read operations for those packets
@@ -474,7 +474,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(HZ / 10);
 		w = kmalloc(sizeof(struct drbd_work), GFP_ATOMIC);
-		if(w) {
+		if (w) {
 			w->cb = w_resync_finished;
 			drbd_queue_work(&mdev->data.work,w);
 			return 1;
@@ -508,7 +508,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 		if (mdev->state.conn == SyncTarget ||
 		    mdev->state.conn == PausedSyncT) {
-			if( mdev->p_uuid ) {
+			if (mdev->p_uuid) {
 				int i;
 				for ( i=Bitmap ; i<=History_end ; i++ ) {
 					_drbd_uuid_set(mdev,i,mdev->p_uuid[i]);
@@ -522,7 +522,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 		drbd_uuid_set_bm(mdev,0UL);
 
-		if ( mdev->p_uuid ) {
+		if (mdev->p_uuid) {
 			// Now the two UUID sets are equal, update what we
 			// know of the peer.
 			int i;
@@ -560,13 +560,13 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
 
-	if(unlikely(cancel)) {
+	if (unlikely(cancel)) {
 		drbd_free_ee(mdev,e);
 		dec_unacked(mdev);
 		return 1;
 	}
 
-	if(likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely(drbd_bio_uptodate(e->private_bio))) {
 		ok=drbd_send_block(mdev, DataReply, e);
 	} else {
 		if (DRBD_ratelimit(5*HZ,5))
@@ -584,7 +584,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->req_lock);
-	if( drbd_bio_has_active_page(e->private_bio) ) {
+	if ( drbd_bio_has_active_page(e->private_bio) ) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list,&mdev->net_ee);
 	} else {
@@ -592,7 +592,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
-	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");
+	if (unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
 }
 
@@ -604,18 +604,18 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	int ok;
 
-	if(unlikely(cancel)) {
+	if (unlikely(cancel)) {
 		drbd_free_ee(mdev,e);
 		dec_unacked(mdev);
 		return 1;
 	}
 
-	if(inc_local_if_state(mdev,Failed)) {
+	if (inc_local_if_state(mdev,Failed)) {
 		drbd_rs_complete_io(mdev,e->sector);
 		dec_local(mdev);
 	}
 
-	if(likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely(drbd_bio_uptodate(e->private_bio))) {
 		if (likely( mdev->state.pdsk >= Inconsistent )) {
 			inc_rs_pending(mdev);
 			ok=drbd_send_block(mdev, RSDataReply, e);
@@ -640,7 +640,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	dec_unacked(mdev);
 
 	spin_lock_irq(&mdev->req_lock);
-	if( drbd_bio_has_active_page(e->private_bio) ) {
+	if ( drbd_bio_has_active_page(e->private_bio) ) {
 		/* This might happen if sendpage() has not finished */
 		list_add_tail(&e->w.list,&mdev->net_ee);
 	} else {
@@ -648,7 +648,7 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
-	if(unlikely(!ok)) ERR("drbd_send_block() failed\n");
+	if (unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
 }
 
@@ -730,7 +730,7 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	ok = drbd_send_drequest(mdev, DataRequest, req->sector, req->size,
 				(unsigned long)req);
 
-	if(ok) {
+	if (ok) {
 		req_mod(req, handed_over_to_network, 0);
 	} else {
 		/* ?? we set Timeout or BrokenPipe in drbd_send() */
@@ -752,7 +752,7 @@ STATIC void drbd_global_lock(void)
 
 	local_irq_disable();
 	for (i=0; i < minor_count; i++) {
-		if(!(mdev = minor_to_mdev(i))) continue;
+		if (!(mdev = minor_to_mdev(i))) continue;
 		spin_lock(&mdev->req_lock);
 	}
 }
@@ -763,7 +763,7 @@ STATIC void drbd_global_unlock(void)
 	int i;
 
 	for (i=0; i < minor_count; i++) {
-		if(!(mdev = minor_to_mdev(i))) continue;
+		if (!(mdev = minor_to_mdev(i))) continue;
 		spin_unlock(&mdev->req_lock);
 	}
 	local_irq_enable();
@@ -774,10 +774,10 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
 	drbd_dev *odev = mdev;
 
 	while(1) {
-		if( odev->sync_conf.after == -1 ) return 1;
+		if (odev->sync_conf.after == -1) return 1;
 		odev = minor_to_mdev(odev->sync_conf.after);
 		ERR_IF(!odev) return 1;
-		if( (odev->state.conn >= SyncSource &&
+		if ( (odev->state.conn >= SyncSource &&
 		     odev->state.conn <= PausedSyncT) ||
 		    odev->state.aftr_isp || odev->state.peer_isp ||
 		    odev->state.user_isp ) return 0;
@@ -796,7 +796,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
-		if( !(odev = minor_to_mdev(i)) ) continue;
+		if ( !(odev = minor_to_mdev(i)) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
 			rv |= ( _drbd_set_state(_NS(odev,aftr_isp,1),
 						ChgStateHard|ScheduleAfter)
@@ -819,8 +819,8 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
-		if( !(odev = minor_to_mdev(i)) ) continue;
-		if ( odev->state.aftr_isp ) {
+		if ( !(odev = minor_to_mdev(i)) ) continue;
+		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev)) {
 				rv |= ( _drbd_set_state(_NS(odev,aftr_isp,0),
 							ChgStateHard|ScheduleAfter)
@@ -883,7 +883,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	/* In case a previous resync run was aborted by an IO error... */
 	drbd_rs_cancel_all(mdev);
 
-	if(side == SyncTarget) {
+	if (side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
 		u64 uuid;
@@ -902,7 +902,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	ns.conn = side;
 
-	if(side == SyncTarget) {
+	if (side == SyncTarget) {
 		ns.disk = Inconsistent;
 	} else /* side == SyncSource */ {
 		ns.pdsk = Inconsistent;
@@ -911,7 +911,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	r = _drbd_set_state(mdev,ns,ChgStateVerbose);
 	ns = mdev->state;
 
-	if ( r == SS_Success ) {
+	if (r == SS_Success) {
 		mdev->rs_total     =
 		mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 		mdev->rs_failed    = 0;
@@ -922,7 +922,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 	drbd_global_unlock();
 
-	if ( r == SS_Success ) {
+	if (r == SS_Success) {
 		after_state_ch(mdev,os,ns,ChgStateVerbose);
 
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
@@ -930,12 +930,12 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
 		     (unsigned long) mdev->rs_total);
 
-		if ( mdev->rs_total == 0 ) {
+		if (mdev->rs_total == 0) {
 			drbd_resync_finished(mdev);
 			return;
 		}
 
-		if( ns.conn == SyncTarget ) {
+		if (ns.conn == SyncTarget) {
 			D_ASSERT(!test_bit(STOP_SYNC_TIMER,&mdev->flags));
 			mod_timer(&mdev->resync_timer,jiffies);
 		}
@@ -955,15 +955,15 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	while (get_t_state(thi) == Running) {
 
-		if(down_trylock(&mdev->data.work.s)) {
+		if (down_trylock(&mdev->data.work.s)) {
 			down(&mdev->data.mutex);
-			if(mdev->data.socket)drbd_tcp_flush(mdev->data.socket);
+			if (mdev->data.socket)drbd_tcp_flush(mdev->data.socket);
 			up(&mdev->data.mutex);
 
 			intr = down_interruptible(&mdev->data.work.s);
 
 			down(&mdev->data.mutex);
-			if(mdev->data.socket) drbd_tcp_cork(mdev->data.socket);
+			if (mdev->data.socket) drbd_tcp_cork(mdev->data.socket);
 			up(&mdev->data.mutex);
 		}
 
@@ -1001,7 +1001,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		list_del_init(&w->list);
 		spin_unlock_irq(&mdev->data.work.q_lock);
 
-		if(!w->cb(mdev,w, mdev->state.conn < Connected )) {
+		if (!w->cb(mdev,w, mdev->state.conn < Connected )) {
 			//WARN("worker: a callback failed! \n");
 			if (mdev->state.conn >= Connected)
 				drbd_force_state(mdev,NS(conn,NetworkFailure));

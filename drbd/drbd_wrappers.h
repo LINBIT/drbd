@@ -137,7 +137,7 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 /* XXX the check on !blk_queue_plugged is redundant,
  * implicitly checked in blk_plug_device */
 
-	if(!blk_queue_plugged(q)) {
+	if (!blk_queue_plugged(q)) {
 		blk_plug_device(q);
 		del_timer(&q->unplug_timer);
 		// unplugging should not happen automatically...
