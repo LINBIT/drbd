@@ -104,9 +104,9 @@ int minor_count = 32;
 int allow_oos = 0;
 
 #ifdef ENABLE_DYNAMIC_TRACE
-int trace_type = 0;	// Bitmap of trace types to enable
-int trace_level= 0;	// Current trace level
-int trace_devs = 0;	// Bitmap of devices to trace
+int trace_type  = 0;	// Bitmap of trace types to enable
+int trace_level = 0;	// Current trace level
+int trace_devs  = 0;	// Bitmap of devices to trace
 
 module_param(trace_level, int, 0644);
 module_param(trace_type, int, 0644);
@@ -158,13 +158,13 @@ STATIC int tl_init(drbd_dev *mdev)
 {
 	struct drbd_barrier *b;
 
-	b=kmalloc(sizeof(struct drbd_barrier), GFP_KERNEL);
+	b = kmalloc(sizeof(struct drbd_barrier), GFP_KERNEL);
 	if (!b) return 0;
 	INIT_LIST_HEAD(&b->requests);
 	INIT_LIST_HEAD(&b->w.list);
-	b->next=0;
-	b->br_number=4711;
-	b->n_req=0;
+	b->next = 0;
+	b->br_number = 4711;
+	b->n_req = 0;
 
 	mdev->oldest_barrier = b;
 	mdev->newest_barrier = b;
@@ -196,8 +196,8 @@ struct drbd_barrier *_tl_add_barrier(drbd_dev *mdev, struct drbd_barrier *new)
 
 	INIT_LIST_HEAD(&new->requests);
 	INIT_LIST_HEAD(&new->w.list);
-	new->next=0;
-	new->n_req=0;
+	new->next = 0;
+	new->n_req = 0;
 
 	newest_before = mdev->newest_barrier;
 	/* never send a barrier number == 0, because that is special-cased
@@ -281,8 +281,8 @@ void tl_clear(drbd_dev *mdev)
 
 		if (b == mdev->newest_barrier) {
 			D_ASSERT(tmp == NULL);
-			b->br_number=4711;
-			b->n_req=0;
+			b->br_number = 4711;
+			b->n_req = 0;
 			INIT_LIST_HEAD(&b->requests);
 			mdev->oldest_barrier = b;
 			break;
@@ -316,7 +316,7 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 {
 	enum io_error_handler eh;
 	unsigned long flags;
-	int send, ok=1;
+	int send, ok = 1;
 
 	eh = PassOn;
 	if (inc_local_if_state(mdev, Failed)) {
@@ -410,7 +410,7 @@ set_st_err_t _req_st_cond(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 	if (test_and_clear_bit(CL_ST_CHG_FAIL, &mdev->flags))
 		return SS_CW_FailedByPeer;
 
-	rv=0;
+	rv = 0;
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
@@ -462,7 +462,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 			return rv;
 		}
 
-		wait_event(mdev->state_wait, (rv=_req_st_cond(mdev, mask, val)));
+		wait_event(mdev->state_wait, (rv = _req_st_cond(mdev, mask, val)));
 
 		if (rv < SS_Success) {
 			// nearly dead code.
@@ -530,7 +530,7 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
 	enum fencing_policy fp;
-	int rv=SS_Success;
+	int rv = SS_Success;
 
 	fp = DontCare;
 	if (inc_local(mdev)) {
@@ -541,53 +541,53 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns)
 	if (inc_net(mdev)) {
 		if ( !mdev->net_conf->two_primaries &&
 		    ns.role == Primary && ns.peer == Primary )
-			rv=SS_TwoPrimaries;
+			rv = SS_TwoPrimaries;
 		dec_net(mdev);
 	}
 
 	if (rv <= 0) /* already found a reason to abort */;
 	else if (ns.role == Secondary && mdev->open_cnt)
-		rv=SS_DeviceInUse;
+		rv = SS_DeviceInUse;
 
 	else if ( ns.role == Primary && ns.conn < Connected &&
-		 ns.disk < UpToDate ) rv=SS_NoUpToDateDisk;
+		 ns.disk < UpToDate ) rv = SS_NoUpToDateDisk;
 
 	else if ( fp >= Resource &&
 		 ns.role == Primary && ns.conn < Connected &&
-		 ns.pdsk >= DUnknown ) rv=SS_PrimaryNOP;
+		 ns.pdsk >= DUnknown ) rv = SS_PrimaryNOP;
 
 	else if ( ns.role == Primary && ns.disk <= Inconsistent &&
-		 ns.pdsk <= Inconsistent ) rv=SS_NoUpToDateDisk;
+		 ns.pdsk <= Inconsistent ) rv = SS_NoUpToDateDisk;
 
 	else if ( ns.conn > Connected &&
 		 ns.disk < UpToDate && ns.pdsk < UpToDate )
-		rv=SS_BothInconsistent;
+		rv = SS_BothInconsistent;
 
 	else if ( ns.conn > Connected &&
 		 (ns.disk == Diskless || ns.pdsk == Diskless ) )
-		rv=SS_SyncingDiskless;
+		rv = SS_SyncingDiskless;
 
 	else if ( (ns.conn == Connected ||
 		  ns.conn == WFBitMapS ||
 		  ns.conn == SyncSource ||
 		  ns.conn == PausedSyncS) &&
-		 ns.disk == Outdated ) rv=SS_ConnectedOutdates;
+		 ns.disk == Outdated ) rv = SS_ConnectedOutdates;
 
 	return rv;
 }
 
 STATIC int is_valid_state_transition(drbd_dev* mdev, drbd_state_t ns, drbd_state_t os)
 {
-	int rv=SS_Success;
+	int rv = SS_Success;
 
 	if ( (ns.conn == StartingSyncT || ns.conn == StartingSyncS ) &&
-	    os.conn > Connected) rv=SS_ResyncRunning;
+	    os.conn > Connected) rv = SS_ResyncRunning;
 
 	if (ns.conn == Disconnecting && os.conn == StandAlone)
-		rv=SS_AlreadyStandAlone;
+		rv = SS_AlreadyStandAlone;
 
 	if (ns.disk > Attaching && os.disk == Diskless)
-		rv=SS_IsDiskLess;
+		rv = SS_IsDiskLess;
 
 	return rv;
 }
@@ -595,7 +595,7 @@ STATIC int is_valid_state_transition(drbd_dev* mdev, drbd_state_t ns, drbd_state
 int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 {
 	drbd_state_t os;
-	int rv=SS_Success, warn_sync_abort=0;
+	int rv = SS_Success, warn_sync_abort = 0;
 	enum fencing_policy fp;
 
 	MUST_HOLD(&mdev->req_lock);
@@ -641,7 +641,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 	}
 
 	if ( ns.conn > Connected && (ns.disk <= Failed || ns.pdsk <= Failed )) {
-		warn_sync_abort=1;
+		warn_sync_abort = 1;
 		ns.conn = Connected;
 	}
 
@@ -706,11 +706,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 	}
 
 	if (ns.aftr_isp || ns.peer_isp || ns.user_isp) {
-		if (ns.conn == SyncSource) ns.conn=PausedSyncS;
-		if (ns.conn == SyncTarget) ns.conn=PausedSyncT;
+		if (ns.conn == SyncSource) ns.conn = PausedSyncS;
+		if (ns.conn == SyncTarget) ns.conn = PausedSyncT;
 	} else {
-		if (ns.conn == PausedSyncS) ns.conn=SyncSource;
-		if (ns.conn == PausedSyncT) ns.conn=SyncTarget;
+		if (ns.conn == PausedSyncS) ns.conn = SyncSource;
+		if (ns.conn == PausedSyncT) ns.conn = SyncTarget;
 	}
 
 	if (ns.i == os.i) return SS_NothingToDo;
@@ -748,7 +748,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags)
 	{
 	char *pbp, pb[300];
 	pbp = pb;
-	*pbp=0;
+	*pbp = 0;
 	PSC(role);
 	PSC(peer);
 	PSC(conn);
@@ -1402,7 +1402,7 @@ int drbd_send_sr_reply(drbd_dev *mdev, int retcode)
 int _drbd_send_bitmap(drbd_dev *mdev)
 {
 	int want;
-	int ok=TRUE, bm_i=0;
+	int ok = TRUE, bm_i = 0;
 	size_t bm_words, num_words;
 	unsigned long *buffer;
 	Drbd_Header *p;
@@ -1452,7 +1452,7 @@ int drbd_send_bitmap(drbd_dev *mdev)
 
 	if (!drbd_get_data_sock(mdev))
 		return 0;
-	ok=_drbd_send_bitmap(mdev);
+	ok = _drbd_send_bitmap(mdev);
 	drbd_put_data_sock(mdev);
 	return ok;
 }
@@ -1488,7 +1488,7 @@ STATIC int _drbd_send_ack(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 	p.seq_num  = cpu_to_be32(atomic_add_return(1, &mdev->packet_seq));
 
 	if (!mdev->meta.socket || mdev->state.conn < Connected) return FALSE;
-	ok=drbd_send_cmd(mdev, USE_META_SOCKET, cmd, (Drbd_Header*)&p, sizeof(p));
+	ok = drbd_send_cmd(mdev, USE_META_SOCKET, cmd, (Drbd_Header*)&p, sizeof(p));
 	return ok;
 }
 
@@ -1680,9 +1680,9 @@ STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
  */
 int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 {
-	int ok=1;
+	int ok = 1;
 	Drbd_Data_Packet p;
-	unsigned int dp_flags=0;
+	unsigned int dp_flags = 0;
 
 	if (!drbd_get_data_sock(mdev))
 		return 0;
@@ -1782,7 +1782,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	struct kvec iov;
 #endif
 	struct msghdr msg;
-	int rv, sent=0;
+	int rv, sent = 0;
 
 	if (!sock) return -1000;
 
@@ -1872,7 +1872,7 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 {
 	drbd_dev *mdev;
 	unsigned long flags;
-	int rv=0;
+	int rv = 0;
 
 	mdev = minor_to_mdev(MINOR(inode->i_rdev));
 	if (!mdev) return -ENODEV;
@@ -2176,7 +2176,7 @@ int drbd_create_mempools(void)
 	// drbd's page pool
 	spin_lock_init(&drbd_pp_lock);
 
-	for (i=0;i< number;i++) {
+	for (i = 0;i< number;i++) {
 		page = alloc_page(GFP_HIGHUSER);
 		if (!page) goto Enomem;
 		set_page_private(page, (unsigned long)drbd_pp_pool);
@@ -2217,7 +2217,7 @@ STATIC void __exit drbd_cleanup(void)
 	if (minor_table) {
 		if (drbd_proc)
 			remove_proc_entry("drbd", &proc_root);
-		i=minor_count;
+		i = minor_count;
 		while (i--) {
 			drbd_dev        *mdev  = minor_to_mdev(i);
 			struct gendisk  **disk = &mdev->vdisk;
@@ -2351,7 +2351,7 @@ drbd_dev *drbd_new_device(int minor)
 	// no need to lock access, we are still initializing the module.
 	if (!tl_init(mdev)) goto Enomem;
 
-	mdev->app_reads_hash=kzalloc(APP_R_HSIZE*sizeof(void*), GFP_KERNEL);
+	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void*), GFP_KERNEL);
 	if (!mdev->app_reads_hash) goto Enomem;
 
 	return mdev;
@@ -2487,7 +2487,7 @@ void drbd_free_resources(drbd_dev *mdev)
 	}
 	drbd_free_sock(mdev);
 	drbd_free_bc(mdev->bc);
-	mdev->bc=0;
+	mdev->bc = 0;
 }
 
 /*********************************/
@@ -2533,9 +2533,9 @@ void drbd_md_sync(drbd_dev *mdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer, 0, 512);
 
-	buffer->la_size=cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
+	buffer->la_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	for (i = Current; i < UUID_SIZE; i++)
-		buffer->uuid[i]=cpu_to_be64(mdev->bc->md.uuid[i]);
+		buffer->uuid[i] = cpu_to_be64(mdev->bc->md.uuid[i]);
 	buffer->flags = cpu_to_be32(mdev->bc->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC);
 
@@ -2634,7 +2634,7 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 
 	bdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
 	for (i = Current; i < UUID_SIZE; i++)
-		bdev->md.uuid[i]=be64_to_cpu(buffer->uuid[i]);
+		bdev->md.uuid[i] = be64_to_cpu(buffer->uuid[i]);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	mdev->sync_conf.al_extents = be32_to_cpu(buffer->al_nr_extents);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
@@ -2669,7 +2669,7 @@ STATIC void drbd_uuid_move_history(drbd_dev *mdev)
 {
 	int i;
 
-	for ( i=History_start ; i<History_end ; i++ ) {
+	for ( i = History_start ; i<History_end ; i++ ) {
 		mdev->bc->md.uuid[i+1] = mdev->bc->md.uuid[i];
 
 		MTRACE(TraceTypeUuid, TraceLvlAll,
@@ -2702,7 +2702,7 @@ void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 {
 	if (mdev->bc->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
-		mdev->bc->md.uuid[History_start]=mdev->bc->md.uuid[idx];
+		mdev->bc->md.uuid[History_start] = mdev->bc->md.uuid[idx];
 		MTRACE(TraceTypeUuid, TraceLvlMetrics,
 		       drbd_print_uuid(mdev, History_start);
 			);
@@ -2739,8 +2739,8 @@ void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
 
 	if (val==0) {
 		drbd_uuid_move_history(mdev);
-		mdev->bc->md.uuid[History_start]=mdev->bc->md.uuid[Bitmap];
-		mdev->bc->md.uuid[Bitmap]=0;
+		mdev->bc->md.uuid[History_start] = mdev->bc->md.uuid[Bitmap];
+		mdev->bc->md.uuid[Bitmap] = 0;
 
 		MTRACE(TraceTypeUuid, TraceLvlMetrics,
 		       drbd_print_uuid(mdev, History_start);
@@ -2920,8 +2920,8 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 	const unsigned char *pstart_va;
 	const unsigned char *pend;
 	char bytes_str[LINE_SIZE*3+8], ascii_str[LINE_SIZE+8];
-	char *pbytes=bytes_str, *pascii=ascii_str;
-	int  offset=0;
+	char *pbytes = bytes_str, *pascii = ascii_str;
+	int  offset = 0;
 	long sizemask;
 	int  field_width;
 	int  index;
@@ -2962,7 +2962,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 
 	// Start at beginning of first line
 	p = pstart;
-	count=0;
+	count = 0;
 
 	while (p < pend_str) {
 		if (p < (const unsigned char *)buffer || p >= pend) {
@@ -3033,7 +3033,7 @@ do { \
 
 STATIC char *dump_st(char *p, int len, drbd_state_t mask, drbd_state_t val)
 {
-	char *op=p;
+	char *op = p;
 	*p = '\0';
 	PSM(role);
 	PSM(peer);

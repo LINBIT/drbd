@@ -70,12 +70,12 @@ void drbd_assert_breakpoint(drbd_dev *mdev, char *exp,
 void check_list(drbd_dev *mdev, struct list_head *list, char *t)
 {
 	struct list_head *le, *la;
-	int forward=0, backward=0;
+	int forward = 0, backward = 0;
 
-	le=list;
+	le = list;
 	do {
-		la=le;
-		le=le->next;
+		la = le;
+		le = le->next;
 		if (le->prev != la) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: %s list fucked.\n",
@@ -90,10 +90,10 @@ void check_list(drbd_dev *mdev, struct list_head *list, char *t)
 		}
 	} while(le != list);
 
-	le=list;
+	le = list;
 	do {
-		la=le;
-		le=le->prev;
+		la = le;
+		le = le->prev;
 		if (le->next != la) {
 			printk(KERN_ERR DEVICE_NAME
 			       "%d: %s list fucked.\n",
@@ -122,7 +122,7 @@ void check_list(drbd_dev *mdev, struct list_head *list, char *t)
  */
 STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 {
-	unsigned long flags=0;
+	unsigned long flags = 0;
 	struct page *page;
 	DEFINE_WAIT(wait);
 
@@ -190,7 +190,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 
 STATIC void drbd_pp_free(drbd_dev *mdev, struct page *page)
 {
-	unsigned long flags=0;
+	unsigned long flags = 0;
 	int free_it;
 
 	spin_lock_irqsave(&drbd_pp_lock, flags);
@@ -327,7 +327,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 
 void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 {
-	struct bio *bio=e->private_bio;
+	struct bio *bio = e->private_bio;
 	struct bio_vec *bvec;
 	int i;
 
@@ -350,7 +350,7 @@ void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e)
 /* currently on module unload only */
 int drbd_release_ee(drbd_dev *mdev, struct list_head* list)
 {
-	int count=0;
+	int count = 0;
 	struct Tl_epoch_entry* e;
 	struct list_head *le;
 
@@ -400,7 +400,7 @@ STATIC int drbd_process_done_ee(drbd_dev *mdev)
 {
 	LIST_HEAD(work_list);
 	struct Tl_epoch_entry *e, *t;
-	int ok=1;
+	int ok = 1;
 	int do_clear_bit = test_bit(WRITE_ACK_PENDING, &mdev->flags);
 
 	spin_lock_irq(&mdev->req_lock);
@@ -722,8 +722,8 @@ int drbd_connect(drbd_dev *mdev)
 	msock = NULL;
 
 	do {
-		for(try=0;;) { // 3 tries, this should take less than a second!
-			s=drbd_try_connect(mdev);
+		for(try = 0;;) { // 3 tries, this should take less than a second!
+			s = drbd_try_connect(mdev);
 			if (s || ++try >= 3) break;
 			// give the other side time to call bind() & listen()
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -753,7 +753,7 @@ int drbd_connect(drbd_dev *mdev)
 
 		if (sock && msock) break;
 
-		s=drbd_wait_for_connect(mdev);
+		s = drbd_wait_for_connect(mdev);
 		if (s) {
 			switch(drbd_recv_fp(mdev, s)) {
 			case HandShakeS:
@@ -784,13 +784,13 @@ int drbd_connect(drbd_dev *mdev)
 
 	} while( !sock || !msock );
 
-	msock->sk->sk_reuse=1; /* SO_REUSEADDR */
-	sock->sk->sk_reuse=1; /* SO_REUSEADDR */
+	msock->sk->sk_reuse = 1; /* SO_REUSEADDR */
+	sock->sk->sk_reuse = 1; /* SO_REUSEADDR */
 
 	sock->sk->sk_allocation = GFP_NOIO;
 	msock->sk->sk_allocation = GFP_NOIO;
 
-	sock->sk->sk_priority=TC_PRIO_BULK;
+	sock->sk->sk_priority = TC_PRIO_BULK;
 	// FIXME fold to limits. should be done in drbd_ioctl
 	sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
 	sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
@@ -802,7 +802,7 @@ int drbd_connect(drbd_dev *mdev)
 	sock->sk->sk_rcvtimeo = 2*HZ;
 	sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 
-	msock->sk->sk_priority=TC_PRIO_INTERACTIVE;
+	msock->sk->sk_priority = TC_PRIO_INTERACTIVE;
 	msock->sk->sk_sndbuf = 2*32767;
 	msock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	msock->sk->sk_rcvtimeo = mdev->net_conf->ping_int*HZ;
@@ -828,7 +828,7 @@ int drbd_connect(drbd_dev *mdev)
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
 	atomic_set(&mdev->packet_seq, 0);
-	mdev->peer_seq=0;
+	mdev->peer_seq = 0;
 
 	drbd_thread_start(&mdev->asender);
 
@@ -944,12 +944,12 @@ STATIC int
 drbd_drain_block(drbd_dev *mdev, int data_size)
 {
 	struct page *page;
-	int rr, rv=1;
+	int rr, rv = 1;
 	void* data;
 
 	page = drbd_pp_alloc(mdev, GFP_KERNEL);
 
-	data=kmap(page);
+	data = kmap(page);
 	while(data_size) {
 		rr = drbd_recv(mdev, data, min_t(int, data_size, PAGE_SIZE));
 		if ( rr != min_t(int, data_size, PAGE_SIZE) ) {
@@ -990,7 +990,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 
 	bio_for_each_segment(bvec, bio, i) {
 		expect = min_t(int, data_size, bvec->bv_len);
-		rr=drbd_recv(mdev,
+		rr = drbd_recv(mdev,
 			     kmap(bvec->bv_page)+bvec->bv_offset,
 			     expect);
 		kunmap(bvec->bv_page);
@@ -1164,7 +1164,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
 	sector_t sector = e->sector;
 	// unsigned int epoch_size;
-	int ok=1, pcmd;
+	int ok = 1, pcmd;
 
 	if (mdev->net_conf->wire_protocol == DRBD_PROT_C) {
 		if (likely(drbd_bio_uptodate(e->private_bio))) {
@@ -1209,7 +1209,7 @@ STATIC int e_end_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 STATIC int e_send_discard_ack(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
-	int ok=1;
+	int ok = 1;
 
 	D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
 	ok = drbd_send_ack(mdev, DiscardAck, e);
@@ -1658,7 +1658,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev, Drbd_Header *h)
 
 STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 {
-	int self, peer, rv=-100;
+	int self, peer, rv = -100;
 	unsigned long ch_self, ch_peer;
 
 	self = mdev->bc->md.uuid[Bitmap] & 1;
@@ -1687,7 +1687,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 		     "Using discard-least-changes instead\n");
 	case DiscardZeroChg:
 		if (ch_peer == 0 && ch_self == 0) {
-			rv=test_bit(DISCARD_CONCURRENT, &mdev->flags) ? -1 : 1;
+			rv = test_bit(DISCARD_CONCURRENT, &mdev->flags) ? -1 : 1;
 			break;
 		} else {
 			if (ch_peer == 0) { rv =  1; break; }
@@ -1699,7 +1699,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 		else if (ch_self > ch_peer) rv =  1;
 		else /* ( ch_self == ch_peer ) */ {
 			// Well, then use something else.
-			rv=test_bit(DISCARD_CONCURRENT, &mdev->flags) ? -1 : 1;
+			rv = test_bit(DISCARD_CONCURRENT, &mdev->flags) ? -1 : 1;
 		}
 		break;
 	case DiscardLocal:
@@ -1714,7 +1714,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 
 STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 {
-	int self, peer, hg, rv=-100;
+	int self, peer, hg, rv = -100;
 
 	self = mdev->bc->md.uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
@@ -1731,8 +1731,8 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 		break;
 	case Consensus:
 		hg = drbd_asb_recover_0p(mdev);
-		if (hg == -1 && mdev->state.role==Secondary) rv=hg;
-		if (hg == 1  && mdev->state.role==Primary)   rv=hg;
+		if (hg == -1 && mdev->state.role == Secondary) rv = hg;
+		if (hg == 1  && mdev->state.role == Primary)   rv = hg;
 		break;
 	case Violently:
 		rv = drbd_asb_recover_0p(mdev);
@@ -1757,7 +1757,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 
 STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 {
-	int self, peer, hg, rv=-100;
+	int self, peer, hg, rv = -100;
 
 	self = mdev->bc->md.uuid[Bitmap] & 1;
 	peer = mdev->p_uuid[Bitmap] & 1;
@@ -1860,7 +1860,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	if (self == peer) return -1;
 
 	*rule_nr = 6;
-	for ( i=History_start ; i<=History_end ; i++ ) {
+	for ( i = History_start ; i<=History_end ; i++ ) {
 		peer = mdev->p_uuid[i] & ~((u64)1);
 		if (self == peer) return -2;
 	}
@@ -1871,7 +1871,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	if (self == peer) return 1;
 
 	*rule_nr = 8;
-	for ( i=History_start ; i<=History_end ; i++ ) {
+	for ( i = History_start ; i<=History_end ; i++ ) {
 		self = mdev->bc->md.uuid[i] & ~((u64)1);
 		if (self == peer) return 2;
 	}
@@ -1882,9 +1882,9 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
 	if (self == peer && self != ((u64)0) ) return 100;
 
 	*rule_nr = 10;
-	for ( i=History_start ; i<=History_end ; i++ ) {
+	for ( i = History_start ; i<=History_end ; i++ ) {
 		self = mdev->p_uuid[i] & ~((u64)1);
-		for ( j=History_start ; j<=History_end ; j++ ) {
+		for ( j = History_start ; j<=History_end ; j++ ) {
 			peer = mdev->p_uuid[j] & ~((u64)1);
 			if (self == peer) return -100;
 		}
@@ -1925,7 +1925,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	    (peer_disk==Inconsistent && mydisk>Inconsistent) )  {
 		int f = (hg == -100) || abs(hg) == 2;
 		hg = mydisk > Inconsistent ? 1 : -1;
-		if (f) hg=hg*2;
+		if (f) hg = hg*2;
 		INFO("Becoming sync %s due to disk states.\n",
 		     hg > 0 ? "source" : "target");
 	}
@@ -1953,7 +1953,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 				     " UUIDs where ambiguous.\n");
 				drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
 				drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
-				hg=hg*2;
+				hg = hg*2;
 			}
 		}
 	}
@@ -2150,8 +2150,8 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	p_size=be64_to_cpu(p->d_size);
-	p_usize=be64_to_cpu(p->u_size);
+	p_size = be64_to_cpu(p->d_size);
+	p_usize = be64_to_cpu(p->u_size);
 
 	if (p_size == 0 && mdev->state.disk == Diskless) {
 		ERR("some backing storage is needed\n");
@@ -2169,7 +2169,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		if (mdev->state.conn == WFReportParams) {
 			/* this is first connect, or an otherwise expected
 			   param exchange.  choose the minimum */
-			p_usize=min_not_zero((sector_t)mdev->bc->dc.disk_size,
+			p_usize = min_not_zero((sector_t)mdev->bc->dc.disk_size,
 					     p_usize);
 		}
 
@@ -2195,7 +2195,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	}
 #undef min_not_zero
 
-	mdev->p_size=p_size;
+	mdev->p_size = p_size;
 	if (inc_local(mdev)) {
 		drbd_bm_lock(mdev); // {
 		/*
@@ -2213,7 +2213,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if (mdev->p_uuid && mdev->state.conn <= Connected && inc_local(mdev)) {
-		nconn=drbd_sync_handshake(mdev, mdev->state.peer, mdev->state.pdsk);
+		nconn = drbd_sync_handshake(mdev, mdev->state.peer, mdev->state.pdsk);
 		dec_local(mdev);
 
 		if (nconn == conn_mask) return FALSE;
@@ -2349,7 +2349,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	if (mdev->p_uuid && oconn <= Connected &&
 	    peer_state.disk >= Negotiating &&
 	    inc_local_if_state(mdev, Negotiating) ) {
-		nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
+		nconn = drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
 		dec_local(mdev);
 
 		if (nconn == conn_mask) return FALSE;
@@ -2433,7 +2433,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 {
 	size_t bm_words, bm_i, want, num_words;
 	unsigned long *buffer;
-	int ok=FALSE;
+	int ok = FALSE;
 
 	drbd_bm_lock(mdev);  // {
 
@@ -2469,7 +2469,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 		    conns_to_name(mdev->state.conn));
 	}
 
-	ok=TRUE;
+	ok = TRUE;
  out:
 	drbd_bm_unlock(mdev); // }
 	vfree(buffer);
@@ -2578,7 +2578,7 @@ STATIC void drbd_fail_pending_reads(drbd_dev *mdev)
 	 * Application READ requests
 	 */
 	spin_lock_irq(&mdev->req_lock);
-	for(i=0;i<APP_R_HSIZE;i++) {
+	for(i = 0;i<APP_R_HSIZE;i++) {
 		slot = mdev->app_reads_hash+i;
 		hlist_for_each_entry(req, n, slot, colision) {
 			list_add(&req->w.list, &workset);
@@ -2601,7 +2601,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	struct drbd_work prev_work_done;
 	enum fencing_policy fp;
 	drbd_state_t os, ns;
-	int rv=SS_UnknownError;
+	int rv = SS_UnknownError;
 
 	D_ASSERT(mdev->state.conn < Connected);
 	/* FIXME verify that:
@@ -2646,8 +2646,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
            the disk-IO, while the rs_pending_cnt only tracks the blocks
 	   on the fly. */
 	drbd_rs_cancel_all(mdev);
-	mdev->rs_total=0;
-	mdev->rs_failed=0;
+	mdev->rs_total = 0;
+	mdev->rs_failed = 0;
 	atomic_set(&mdev->rs_pending_cnt, 0);
 	wake_up(&mdev->misc_wait);
 
@@ -2692,7 +2692,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		// Do not restart in case we are Disconnecting
 		ns = os;
 		ns.conn = Unconnected;
-		rv=_drbd_set_state(mdev, ns, ChgStateVerbose);
+		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv == SS_Success) {
@@ -2717,7 +2717,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 			mdev->cram_hmac_tfm = NULL;
 		}
 		kfree(mdev->net_conf);
-		mdev->net_conf=NULL;
+		mdev->net_conf = NULL;
 		drbd_request_state(mdev, NS(conn, StandAlone));
 	}
 
@@ -2875,8 +2875,8 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 	struct hash_desc desc;
 	int rv;
 
-	desc.tfm=mdev->cram_hmac_tfm;
-	desc.flags=0;
+	desc.tfm = mdev->cram_hmac_tfm;
+	desc.flags = 0;
 
 	rv = crypto_hash_setkey(mdev->cram_hmac_tfm,
 				(u8*)mdev->net_conf->shared_secret, key_len);
@@ -3242,17 +3242,17 @@ int drbd_asender(struct Drbd_thread *thi)
 	int empty;
 
 	static struct asender_cmd asender_tbl[] = {
-		[Ping]      ={ sizeof(Drbd_Header),           got_Ping },
-		[PingAck]   ={ sizeof(Drbd_Header),           got_PingAck },
-		[RecvAck]   ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
-		[WriteAck]  ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
-		[RSWriteAck]={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
-		[DiscardAck]={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
-		[NegAck]    ={ sizeof(Drbd_BlockAck_Packet),  got_NegAck },
-		[NegDReply] ={ sizeof(Drbd_BlockAck_Packet),  got_NegDReply },
-		[NegRSDReply]={sizeof(Drbd_BlockAck_Packet),  got_NegRSDReply},
-		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet), got_BarrierAck },
-		[StateChgReply]={sizeof(Drbd_RqS_Reply_Packet), got_RqSReply },
+	[Ping]          = { sizeof(Drbd_Header),            got_Ping },
+	[PingAck]       = { sizeof(Drbd_Header),            got_PingAck },
+	[RecvAck]       = { sizeof(Drbd_BlockAck_Packet),   got_BlockAck },
+	[WriteAck]      = { sizeof(Drbd_BlockAck_Packet),   got_BlockAck },
+	[RSWriteAck]    = { sizeof(Drbd_BlockAck_Packet),   got_BlockAck },
+	[DiscardAck]    = { sizeof(Drbd_BlockAck_Packet),   got_BlockAck },
+	[NegAck]        = { sizeof(Drbd_BlockAck_Packet),   got_NegAck },
+	[NegDReply]     = { sizeof(Drbd_BlockAck_Packet),   got_NegDReply },
+	[NegRSDReply]   = { sizeof(Drbd_BlockAck_Packet),   got_NegRSDReply},
+	[BarrierAck]    = { sizeof(Drbd_BarrierAck_Packet), got_BarrierAck },
+	[StateChgReply] = { sizeof(Drbd_RqS_Reply_Packet),  got_RqSReply },
 	};
 
 	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));

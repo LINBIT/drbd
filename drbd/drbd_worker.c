@@ -77,8 +77,8 @@ int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
  */
 int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
-	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
+	unsigned long flags = 0;
+	struct Tl_epoch_entry *e = NULL;
 	struct Drbd_Conf* mdev;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
@@ -121,8 +121,8 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
  */
 int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
-	unsigned long flags=0;
-	struct Tl_epoch_entry *e=NULL;
+	unsigned long flags = 0;
+	struct Tl_epoch_entry *e = NULL;
 	drbd_dev *mdev;
 	sector_t e_sector;
 	int do_wake;
@@ -195,7 +195,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags;
-	drbd_request_t *req=bio->bi_private;
+	drbd_request_t *req = bio->bi_private;
 	drbd_dev *mdev = req->mdev;
 	drbd_req_event_t what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
@@ -286,10 +286,10 @@ void resync_timer_fn(unsigned long data)
 	spin_lock_irqsave(&mdev->req_lock, flags);
 
 	if (likely(!test_and_clear_bit(STOP_SYNC_TIMER, &mdev->flags))) {
-		queue=1;
+		queue = 1;
 		mdev->resync_work.cb = w_make_resync_request;
 	} else {
-		queue=0;
+		queue = 0;
 		mdev->resync_work.cb = w_resync_inactive;
 	}
 
@@ -342,7 +342,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w, int cancel)
 		return 1;
 	}
 
-	for(i=0;i<number;i++) {
+	for(i = 0;i<number;i++) {
 
 	next_sector:
 		size = BM_BLOCK_SIZE;
@@ -384,7 +384,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w, int cancel)
 		 * "indirect" devices, this is dead code, since
 		 * q->max_segment_size will be PAGE_SIZE.
 		 */
-		align=1;
+		align = 1;
 		for (;;) {
 			if (size + BM_BLOCK_SIZE > max_segment_size)
 				break;
@@ -483,7 +483,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	}
 
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
-	if (dt <= 0) dt=1;
+	if (dt <= 0) dt = 1;
 	db = mdev->rs_total;
 	dbdt = Bit2KB(db/dt);
 	mdev->rs_paused /= HZ;
@@ -510,7 +510,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 		    mdev->state.conn == PausedSyncT) {
 			if (mdev->p_uuid) {
 				int i;
-				for ( i=Bitmap ; i<=History_end ; i++ ) {
+				for ( i = Bitmap ; i<=History_end ; i++ ) {
 					_drbd_uuid_set(mdev, i, mdev->p_uuid[i]);
 				}
 				drbd_uuid_set(mdev, Bitmap, mdev->bc->md.uuid[Current]);
@@ -526,8 +526,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 			// Now the two UUID sets are equal, update what we
 			// know of the peer.
 			int i;
-			for ( i=Current ; i<=History_end ; i++ ) {
-				mdev->p_uuid[i]=mdev->bc->md.uuid[i];
+			for ( i = Current ; i<=History_end ; i++ ) {
+				mdev->p_uuid[i] = mdev->bc->md.uuid[i];
 			}
 		}
 	}
@@ -567,13 +567,13 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	}
 
 	if (likely(drbd_bio_uptodate(e->private_bio))) {
-		ok=drbd_send_block(mdev, DataReply, e);
+		ok = drbd_send_block(mdev, DataReply, e);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Sending NegDReply. sector=%llus.\n",
 			    (unsigned long long)e->sector);
 
-		ok=drbd_send_ack(mdev, NegDReply, e);
+		ok = drbd_send_ack(mdev, NegDReply, e);
 
 		/* FIXME we should not detach for read io-errors, in particular
 		 * not now: when the peer asked us for our data, we are likely
@@ -618,18 +618,18 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	if (likely(drbd_bio_uptodate(e->private_bio))) {
 		if (likely( mdev->state.pdsk >= Inconsistent )) {
 			inc_rs_pending(mdev);
-			ok=drbd_send_block(mdev, RSDataReply, e);
+			ok = drbd_send_block(mdev, RSDataReply, e);
 		} else {
 			if (DRBD_ratelimit(5*HZ, 5))
 				ERR("Not sending RSDataReply, partner DISKLESS!\n");
-			ok=1;
+			ok = 1;
 		}
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Sending NegRSDReply. sector %llus.\n",
 			    (unsigned long long)e->sector);
 
-		ok=drbd_send_ack(mdev, NegRSDReply, e);
+		ok = drbd_send_ack(mdev, NegRSDReply, e);
 
 		drbd_io_error(mdev, FALSE);
 
@@ -663,7 +663,7 @@ int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_barrier *b = (struct drbd_barrier *)w;
 	Drbd_Barrier_Packet *p = &mdev->data.sbuf.Barrier;
-	int ok=1;
+	int ok = 1;
 
 	/* really avoid racing with tl_clear.  w.cb may have been referenced
 	 * just before it was reassigned and requeued, so double check that.
@@ -751,7 +751,7 @@ STATIC void drbd_global_lock(void)
 	int i;
 
 	local_irq_disable();
-	for (i=0; i < minor_count; i++) {
+	for (i = 0; i < minor_count; i++) {
 		if (!(mdev = minor_to_mdev(i))) continue;
 		spin_lock(&mdev->req_lock);
 	}
@@ -762,7 +762,7 @@ STATIC void drbd_global_unlock(void)
 	drbd_dev *mdev;
 	int i;
 
-	for (i=0; i < minor_count; i++) {
+	for (i = 0; i < minor_count; i++) {
 		if (!(mdev = minor_to_mdev(i))) continue;
 		spin_unlock(&mdev->req_lock);
 	}
@@ -795,7 +795,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	drbd_dev *odev;
 	int i, rv = 0;
 
-	for (i=0; i < minor_count; i++) {
+	for (i = 0; i < minor_count; i++) {
 		if ( !(odev = minor_to_mdev(i)) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
 			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1),
@@ -818,7 +818,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	drbd_dev *odev;
 	int i, rv = 0;
 
-	for (i=0; i < minor_count; i++) {
+	for (i = 0; i < minor_count; i++) {
 		if ( !(odev = minor_to_mdev(i)) ) continue;
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev)) {
@@ -871,7 +871,7 @@ void drbd_alter_sa(drbd_dev *mdev, int na)
 void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 {
 	drbd_state_t os, ns;
-	int r=0;
+	int r = 0;
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
 	       INFO("Resync starting: side=%s\n",
@@ -949,7 +949,7 @@ int drbd_worker(struct Drbd_thread *thi)
 	drbd_dev *mdev = thi->mdev;
 	struct drbd_work *w = 0;
 	LIST_HEAD(work_list);
-	int intr=0, i;
+	int intr = 0, i;
 
 	sprintf(current->comm, "drbd%d_worker", mdev_to_minor(mdev));
 

@@ -72,7 +72,7 @@ enum after_sb_handler {
 /* KEEP the order, do not delete or insert!
  * Or change the API_VERSION, too. */
 enum ret_codes {
-	RetCodeBase=100,
+	RetCodeBase = 100,
 	NoError,         // 101 ...
 	LAAlreadyInUse,
 	OAAlreadyInUse,
@@ -122,10 +122,10 @@ enum ret_codes {
 #define DRBD_PROT_C   3
 
 typedef enum {
-	Unknown=0,
-	Primary=1,     // role
-	Secondary=2,   // role
-	role_mask=3,
+	Unknown = 0,
+	Primary = 1,     // role
+	Secondary = 2,   // role
+	role_mask = 3,
 } drbd_role_t;
 
 /* The order of these constants is important.
@@ -158,7 +158,7 @@ typedef enum {
 	SyncTarget,     // state must be the same for source and target. (+2)
 	PausedSyncS,    // All SyncStates are tested with this comparison
 	PausedSyncT,    // xx >= SyncSource && xx <= PausedSyncT
-	conn_mask=31
+	conn_mask = 31
 } drbd_conns_t;
 
 typedef enum {
@@ -172,7 +172,7 @@ typedef enum {
 	DUnknown,       /* Only used for the peer, never for myself */
 	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	UpToDate,       /* Only this disk state allows applications' IO ! */
-	disk_mask=15
+	disk_mask = 15
 } drbd_disks_t;
 
 typedef union {
@@ -192,22 +192,22 @@ typedef union {
 } drbd_state_t;
 
 typedef enum {
-	SS_CW_NoNeed=4,
-	SS_CW_Success=3,
-	SS_NothingToDo=2,
-	SS_Success=1,
-	SS_UnknownError=0, // Used to sleep longer in _drbd_request_state
-	SS_TwoPrimaries=-1,
-	SS_NoUpToDateDisk=-2,
-	SS_BothInconsistent=-4,
-	SS_SyncingDiskless=-5,
-	SS_ConnectedOutdates=-6,
-	SS_PrimaryNOP=-7,
-	SS_ResyncRunning=-8,
-	SS_AlreadyStandAlone=-9,
-	SS_CW_FailedByPeer=-10,
-	SS_IsDiskLess=-11,
-	SS_DeviceInUse=-12
+	SS_CW_NoNeed = 4,
+	SS_CW_Success = 3,
+	SS_NothingToDo = 2,
+	SS_Success = 1,
+	SS_UnknownError = 0, // Used to sleep longer in _drbd_request_state
+	SS_TwoPrimaries = -1,
+	SS_NoUpToDateDisk = -2,
+	SS_BothInconsistent = -4,
+	SS_SyncingDiskless = -5,
+	SS_ConnectedOutdates = -6,
+	SS_PrimaryNOP = -7,
+	SS_ResyncRunning = -8,
+	SS_AlreadyStandAlone = -9,
+	SS_CW_FailedByPeer = -10,
+	SS_IsDiskLess = -11,
+	SS_DeviceInUse = -12
 } set_st_err_t;
 
 /* from drbd_strings.c */

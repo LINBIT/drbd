@@ -146,7 +146,7 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	/* mean speed since syncer started
 	 * we do account for PausedSync periods */
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
-	if (dt <= 0) dt=1;
+	if (dt <= 0) dt = 1;
 	db = mdev->rs_total - rs_left;
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
@@ -172,7 +172,7 @@ STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
 
 STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
-	int i, hole=0;
+	int i, hole = 0;
 	const char *sn;
 	drbd_dev *mdev;
 
@@ -195,11 +195,11 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 	for (i = 0; i < minor_count; i++) {
 		mdev = minor_to_mdev(i);
 		if (!mdev) {
-			hole=1;
+			hole = 1;
 			continue;
 		}
 		if (hole) {
-			hole=0;
+			hole = 0;
 			seq_printf( seq, "\n");
 		}
 

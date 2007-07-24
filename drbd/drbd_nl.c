@@ -197,7 +197,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	if (fp == Stonith) drbd_request_state(mdev, NS(susp, 1));
 
-	r=drbd_khelper(mdev, "outdate-peer");
+	r = drbd_khelper(mdev, "outdate-peer");
 
 	switch( (r>>8) & 0xff ) {
 	case 3: /* peer is inconsistent */
@@ -236,7 +236,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 {
-	int r=0, forced = 0, try=0;
+	int r = 0, forced = 0, try = 0;
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
@@ -373,7 +373,7 @@ STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	memset(&primary_args, 0, sizeof(struct primary));
 	if (!primary_from_tags(mdev, nlp->tag_list, &primary_args)) {
-		reply->ret_code=UnknownMandatoryTag;
+		reply->ret_code = UnknownMandatoryTag;
 		return 0;
 	}
 
@@ -458,7 +458,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	char ppb[10];
 
 	int md_moved, la_size_changed;
-	int rv=0;
+	int rv = 0;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
@@ -530,20 +530,20 @@ drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
 	sector_t la_size = bdev->md.la_size_sect; // last agreed size.
 	sector_t m_size; // my size
 	sector_t u_size = bdev->dc.disk_size; // size requested by user.
-	sector_t size=0;
+	sector_t size = 0;
 
 	m_size = drbd_get_max_capacity(bdev);
 
 	if (p_size && m_size) {
-		size=min_t(sector_t, p_size, m_size);
+		size = min_t(sector_t, p_size, m_size);
 	} else {
 		if (la_size) {
-			size=la_size;
-			if (m_size && m_size < size) size=m_size;
-			if (p_size && p_size < size) size=p_size;
+			size = la_size;
+			if (m_size && m_size < size) size = m_size;
+			if (p_size && p_size < size) size = p_size;
 		} else {
-			if (m_size) size=m_size;
-			if (p_size) size=p_size;
+			if (m_size) size = m_size;
+			if (p_size) size = p_size;
 		}
 	}
 
@@ -595,7 +595,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	}
 	spin_lock_irq(&mdev->al_lock);
 	if (t) {
-		for (i=0; i < t->nr_elements; i++) {
+		for (i = 0; i < t->nr_elements; i++) {
 			e = lc_entry(t, i);
 			if (e->refcnt)
 				ERR("refcnt(%d)==%d\n",
@@ -683,15 +683,15 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
-	struct drbd_backing_dev* nbc=NULL; // new_backing_conf
+	struct drbd_backing_dev* nbc = NULL; // new_backing_conf
 	struct inode *inode, *inode2;
 	struct lru_cache* resync_lru = NULL;
 	drbd_state_t ns, os;
-	int rv, ntries=0;
+	int rv, ntries = 0;
 
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > Diskless) {
-		retcode=HaveDiskConfig;
+		retcode = HaveDiskConfig;
 		goto fail;
 	}
 
@@ -702,7 +702,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	while(mdev->bc != NULL) {
 		if (ntries++ >= 5) {
 			WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
-			retcode=HaveDiskConfig;
+			retcode = HaveDiskConfig;
 			goto fail;
 		}
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -711,7 +711,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
-		retcode=KMallocFailed;
+		retcode = KMallocFailed;
 		goto fail;
 	}
 
@@ -726,7 +726,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	if (!disk_conf_from_tags(mdev, nlp->tag_list, &nbc->dc)) {
-		retcode=UnknownMandatoryTag;
+		retcode = UnknownMandatoryTag;
 		goto fail;
 	}
 
@@ -734,7 +734,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	nbc->md_file = NULL;
 
 	if (nbc->dc.meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
-		retcode=LDMDInvalid;
+		retcode = LDMDInvalid;
 		goto fail;
 	}
 
@@ -742,15 +742,15 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if (IS_ERR(nbc->lo_file)) {
 		ERR("open(\"%s\") failed with %ld\n", nbc->dc.backing_dev,
 		    PTR_ERR(nbc->lo_file));
-		nbc->lo_file=NULL;
-		retcode=LDNameInvalid;
+		nbc->lo_file = NULL;
+		retcode = LDNameInvalid;
 		goto fail;
 	}
 
 	inode = nbc->lo_file->f_dentry->d_inode;
 
 	if (!S_ISBLK(inode->i_mode)) {
-		retcode=LDNoBlockDev;
+		retcode = LDNoBlockDev;
 		goto fail;
 	}
 
@@ -758,15 +758,15 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if (IS_ERR(nbc->md_file)) {
 		ERR("open(\"%s\") failed with %ld\n", nbc->dc.meta_dev,
 		    PTR_ERR(nbc->md_file));
-		nbc->md_file=NULL;
-		retcode=MDNameInvalid;
+		nbc->md_file = NULL;
+		retcode = MDNameInvalid;
 		goto fail;
 	}
 
 	inode2 = nbc->md_file->f_dentry->d_inode;
 
 	if (!S_ISBLK(inode2->i_mode)) {
-		retcode=MDNoBlockDev;
+		retcode = MDNoBlockDev;
 		goto fail;
 	}
 
@@ -777,13 +777,13 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		       nbc->backing_bdev->bd_holder,
 		       nbc->backing_bdev->bd_contains->bd_holder,
 		       nbc->backing_bdev->bd_holders);
-		retcode=LDMounted;
+		retcode = LDMounted;
 		goto fail;
 	}
 
 	resync_lru = lc_alloc("resync", 31, sizeof(struct bm_extent), mdev);
 	if (!resync_lru) {
-		retcode=KMallocFailed;
+		retcode = KMallocFailed;
 		goto fail;
 	}
 
@@ -792,14 +792,14 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
 		      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ?
 		     (void *)mdev : (void*) drbd_m_holder )) {
-		retcode=MDMounted;
+		retcode = MDMounted;
 		goto release_bdev_fail;
 	}
 
 	if ( (nbc->backing_bdev==nbc->md_bdev) !=
 	     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
 	      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ) {
-		retcode=LDMDInvalid;
+		retcode = LDMDInvalid;
 		goto release_bdev2_fail;
 	}
 
@@ -1054,13 +1054,13 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	char hmac_name[HMAC_NAME_L];
 
 	if (mdev->state.conn > StandAlone) {
-		retcode=HaveNetConfig;
+		retcode = HaveNetConfig;
 		goto fail;
 	}
 
 	new_conf = kmalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_conf) {
-		retcode=KMallocFailed;
+		retcode = KMallocFailed;
 		goto fail;
 	}
 
@@ -1069,36 +1069,36 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		dec_local(mdev);
 	} else {
 		memset(new_conf, 0, sizeof(struct net_conf));
-		new_conf->timeout         = DRBD_TIMEOUT_DEF;
-		new_conf->try_connect_int = DRBD_CONNECT_INT_DEF;
-		new_conf->ping_int        = DRBD_PING_INT_DEF;
-		new_conf->max_epoch_size  = DRBD_MAX_EPOCH_SIZE_DEF;
-		new_conf->max_buffers     = DRBD_MAX_BUFFERS_DEF;
-		new_conf->unplug_watermark= DRBD_UNPLUG_WATERMARK_DEF;
-		new_conf->sndbuf_size     = DRBD_SNDBUF_SIZE_DEF;
-		new_conf->ko_count        = DRBD_KO_COUNT_DEF;
-		new_conf->after_sb_0p     = DRBD_AFTER_SB_0P_DEF;
-		new_conf->after_sb_1p     = DRBD_AFTER_SB_1P_DEF;
-		new_conf->after_sb_2p     = DRBD_AFTER_SB_2P_DEF;
-		new_conf->want_lose       = 0;
-		new_conf->two_primaries   = 0;
-		new_conf->wire_protocol   = DRBD_PROT_C;
-		new_conf->ping_timeo      = DRBD_PING_TIMEO_DEF;
-		new_conf->rr_conflict     = DRBD_RR_CONFLICT_DEF;
+		new_conf->timeout          = DRBD_TIMEOUT_DEF;
+		new_conf->try_connect_int  = DRBD_CONNECT_INT_DEF;
+		new_conf->ping_int         = DRBD_PING_INT_DEF;
+		new_conf->max_epoch_size   = DRBD_MAX_EPOCH_SIZE_DEF;
+		new_conf->max_buffers      = DRBD_MAX_BUFFERS_DEF;
+		new_conf->unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF;
+		new_conf->sndbuf_size      = DRBD_SNDBUF_SIZE_DEF;
+		new_conf->ko_count         = DRBD_KO_COUNT_DEF;
+		new_conf->after_sb_0p      = DRBD_AFTER_SB_0P_DEF;
+		new_conf->after_sb_1p      = DRBD_AFTER_SB_1P_DEF;
+		new_conf->after_sb_2p      = DRBD_AFTER_SB_2P_DEF;
+		new_conf->want_lose        = 0;
+		new_conf->two_primaries    = 0;
+		new_conf->wire_protocol    = DRBD_PROT_C;
+		new_conf->ping_timeo       = DRBD_PING_TIMEO_DEF;
+		new_conf->rr_conflict      = DRBD_RR_CONFLICT_DEF;
 	}
 
 	if (!net_conf_from_tags(mdev, nlp->tag_list, new_conf)) {
-		retcode=UnknownMandatoryTag;
+		retcode = UnknownMandatoryTag;
 		goto fail;
 	}
 
 	if (new_conf->two_primaries && (new_conf->wire_protocol != DRBD_PROT_C)) {
-		retcode=ProtocolCRequired;
+		retcode = ProtocolCRequired;
 		goto fail;
 	};
 
 	if (mdev->state.role == Primary && new_conf->want_lose) {
-		retcode=DiscardNotAllowed;
+		retcode = DiscardNotAllowed;
 		goto fail;
 	}
 
@@ -1107,17 +1107,17 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 #define O_ADDR(A) (((struct sockaddr_in *)&A->peer_addr)->sin_addr.s_addr)
 #define O_PORT(A) (((struct sockaddr_in *)&A->peer_addr)->sin_port)
 	retcode = NoError;
-	for(i=0;i<minor_count;i++) {
+	for(i = 0;i<minor_count;i++) {
 		odev = minor_to_mdev(i);
 		if (!odev || odev == mdev) continue;
 		if ( inc_net(odev)) {
 			if ( M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
 			    M_PORT(new_conf) == M_PORT(odev->net_conf) ) {
-				retcode=LAAlreadyInUse;
+				retcode = LAAlreadyInUse;
 			}
 			if (O_ADDR(new_conf) == O_ADDR(odev->net_conf) &&
 			   O_PORT(new_conf) == O_PORT(odev->net_conf) ) {
-				retcode=OAAlreadyInUse;
+				retcode = OAAlreadyInUse;
 			}
 			dec_net(odev);
 			if (retcode != NoError) goto fail;
@@ -1133,12 +1133,12 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		tfm = crypto_alloc_hash(hmac_name, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(tfm)) {
 			tfm = NULL;
-			retcode=CRAMAlgNotAvail;
+			retcode = CRAMAlgNotAvail;
 			goto fail;
 		}
 
 		if (crypto_tfm_alg_type(crypto_hash_tfm(tfm)) != CRYPTO_ALG_TYPE_HASH ) {
-			retcode=CRAMAlgNotDigest;
+			retcode = CRAMAlgNotDigest;
 			goto fail;
 		}
 	}
@@ -1146,23 +1146,23 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	ns = new_conf->max_epoch_size/8;
 	if (mdev->tl_hash_s != ns) {
-		new_tl_hash=kzalloc(ns*sizeof(void*), GFP_KERNEL);
+		new_tl_hash = kzalloc(ns*sizeof(void*), GFP_KERNEL);
 		if (!new_tl_hash) {
-			retcode=KMallocFailed;
+			retcode = KMallocFailed;
 			goto fail;
 		}
 	}
 
 	ns = new_conf->max_buffers/8;
 	if (new_conf->two_primaries && ( mdev->ee_hash_s != ns ) ) {
-		new_ee_hash=kzalloc(ns*sizeof(void*), GFP_KERNEL);
+		new_ee_hash = kzalloc(ns*sizeof(void*), GFP_KERNEL);
 		if (!new_ee_hash) {
-			retcode=KMallocFailed;
+			retcode = KMallocFailed;
 			goto fail;
 		}
 	}
 
-	((char*)new_conf->shared_secret)[SHARED_SECRET_MAX-1]=0;
+	((char*)new_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
 #if 0
 FIXME LGE
@@ -1272,11 +1272,11 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	struct resize rs;
-	int retcode=NoError;
+	int retcode = NoError;
 
 	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev, nlp->tag_list, &rs)) {
-		retcode=UnknownMandatoryTag;
+		retcode = UnknownMandatoryTag;
 		goto fail;
 	}
 
@@ -1315,7 +1315,7 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
-	int retcode=NoError;
+	int retcode = NoError;
 	struct syncer_conf sc;
 	drbd_dev *odev;
 	int err;
@@ -1329,19 +1329,19 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	if (!syncer_conf_from_tags(mdev, nlp->tag_list, &sc)) {
-		retcode=UnknownMandatoryTag;
+		retcode = UnknownMandatoryTag;
 		goto fail;
 	}
 
 	if (sc.after != -1) {
 		if ( sc.after < -1 || minor_to_mdev(sc.after) == NULL ) {
-			retcode=SyncAfterInvalid;
+			retcode = SyncAfterInvalid;
 			goto fail;
 		}
 		odev = minor_to_mdev(sc.after); // check against loops in
 		while(1) {
 			if (odev == mdev) {
-				retcode=SyncAfterCycle;
+				retcode = SyncAfterCycle;
 				goto fail;
 			}
 			if (odev->sync_conf.after == -1) break; // no cycles.
@@ -1402,7 +1402,7 @@ STATIC int drbd_nl_invalidate_peer(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
-	int retcode=NoError;
+	int retcode = NoError;
 
 	if (drbd_request_state(mdev, NS(user_isp, 1)) == SS_NothingToDo)
 		retcode = PauseFlagAlreadySet;
@@ -1414,7 +1414,7 @@ STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
-	int retcode=NoError;
+	int retcode = NoError;
 
 	if (drbd_request_state(mdev, NS(user_isp, 0)) == SS_NothingToDo)
 		retcode = PauseFlagAlreadyClear;
@@ -1515,12 +1515,12 @@ STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		*tl++ = T_uuids;
 		*tl++ = UUID_SIZE*sizeof(u64);
 		memcpy(tl, mdev->bc->md.uuid, UUID_SIZE*sizeof(u64));
-		tl=(unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
+		tl = (unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
 		dec_local(mdev);
 		*tl++ = T_uuids_flags;
 		*tl++ = sizeof(int);
 		memcpy(tl, &mdev->bc->md.flags, sizeof(int));
-		tl=(unsigned short*)((char*)tl + sizeof(int));
+		tl = (unsigned short*)((char*)tl + sizeof(int));
 	}
 	*tl++ = TT_END; /* Close the tag list */
 
@@ -1539,7 +1539,7 @@ STATIC int drbd_nl_get_timeout_flag(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	*tl++ = T_use_degraded;
 	*tl++ = sizeof(char);
 	*((char*)tl) = test_bit(USE_DEGR_WFC_T, &mdev->flags) ? 1 : 0 ;
-	tl=(unsigned short*)((char*)tl + sizeof(char));
+	tl = (unsigned short*)((char*)tl + sizeof(char));
 	*tl++ = TT_END;
 
 	return (int)((char*)tl - (char*)reply->tag_list);
@@ -1629,14 +1629,14 @@ void drbd_connector_callback(void *data)
 	}
 
 	if ( !(mdev = ensure_mdev(nlp)) ) {
-		retcode=MinorNotKnown;
+		retcode = MinorNotKnown;
 		goto fail;
 	}
 
 	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_packet(data););
 
 	if (nlp->packet_type >= P_nl_after_last_packet) {
-		retcode=UnknownNetLinkPacket;
+		retcode = UnknownNetLinkPacket;
 		goto fail;
 	}
 
@@ -1644,7 +1644,7 @@ void drbd_connector_callback(void *data)
 	reply_size += cm->reply_body_size;
 
 	if ( !(cn_reply = kmalloc(reply_size, GFP_KERNEL)) ) {
-		retcode=KMallocFailed;
+		retcode = KMallocFailed;
 		goto fail;
 	}
 	reply = (struct drbd_nl_cfg_reply*) cn_reply->data;
@@ -1728,7 +1728,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name)
 	*tl++ = T_helper;
 	*tl++ = str_len;
 	memcpy(tl, helper_name, str_len);
-	tl=(unsigned short*)((char*)tl + str_len);
+	tl = (unsigned short*)((char*)tl + str_len);
 	*tl++ = TT_END; /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
@@ -1777,7 +1777,7 @@ void drbd_bcast_sync_progress(drbd_dev *mdev)
 		*tl++ = T_sync_progress;
 		*tl++ = sizeof(int);
 		memcpy(tl, &res, sizeof(int));
-		tl=(unsigned short*)((char*)tl + sizeof(int));
+		tl = (unsigned short*)((char*)tl + sizeof(int));
 	}
 	*tl++ = TT_END; /* Close the tag list */
 

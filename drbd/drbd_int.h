@@ -171,10 +171,10 @@ typedef struct Drbd_Conf drbd_dev;
 		if (lost)					\
 			WARN("%d messages suppressed in %s:%d.\n", \
 				lost , __FILE__ , __LINE__ );	\
-		__ret=1;					\
+		__ret = 1;					\
 	} else {						\
 		missed++;					\
-		__ret=0;					\
+		__ret = 0;					\
 	}							\
 	__ret;							\
 })
@@ -1406,17 +1406,17 @@ void drbd_bcast_sync_progress(drbd_dev *mdev);
 #define user_isp_mask 1
 #define aftr_isp_mask 1
 
-#define NS(T, S) ({drbd_state_t mask; mask.i=0; mask.T = T##_mask; mask;}), \
-		({drbd_state_t val; val.i=0; val.T = (S); val;})
+#define NS(T, S) ({drbd_state_t mask; mask.i = 0; mask.T = T##_mask; mask;}), \
+		({drbd_state_t val; val.i = 0; val.T = (S); val;})
 #define NS2(T1, S1, T2, S2) \
-		({drbd_state_t mask; mask.i=0; mask.T1 = T1##_mask; \
+		({drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
 		  mask.T2 = T2##_mask; mask;}), \
-		({drbd_state_t val; val.i=0; val.T1 = (S1); \
+		({drbd_state_t val; val.i = 0; val.T1 = (S1); \
 		  val.T2 = (S2); val;})
 #define NS3(T1, S1, T2, S2, T3, S3) \
-		({drbd_state_t mask; mask.i=0; mask.T1 = T1##_mask; \
+		({drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
 		  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask;}), \
-		({drbd_state_t val; val.i=0; val.T1 = (S1); \
+		({drbd_state_t val; val.i = 0; val.T1 = (S1); \
 		  val.T2 = (S2); val.T3 = (S3); val;})
 
 #define _NS(D, T, S) D, ({drbd_state_t ns; ns.i = D->state.i; ns.T = (S); ns;})

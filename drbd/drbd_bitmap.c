@@ -286,7 +286,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
-	int cleared=0;
+	int cleared = 0;
 
 	if (w < b->bm_words) {
 		cleared = hweight_long(b->bm[w] & ~mask);
@@ -295,7 +295,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap * b)
 
 	if (w < b->bm_words) {
 		cleared += hweight_long(b->bm[w]);
-		b->bm[w++]=0;
+		b->bm[w++] = 0;
 	}
 
 	return cleared;
@@ -831,7 +831,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 int drbd_bm_read(struct Drbd_Conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	int err=0;
+	int err = 0;
 
 	if (b->bm) {
 	    // bitmap size > 0
