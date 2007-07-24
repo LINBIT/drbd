@@ -36,7 +36,7 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 }
 
 /* sets the number of 512 byte sectors of our virtual device */
-static inline void drbd_set_my_capacity(drbd_dev *mdev,
+static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 					sector_t size)
 {
 	/* set_capacity(mdev->this_bdev->bd_disk, size); */
@@ -108,7 +108,7 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_type, struct bio *bio)
+static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw, int fault_type, struct bio *bio)
 {
 	bio->bi_rw = rw; /* on the receiver side, e->..rw was not yet defined. */
 
@@ -126,7 +126,7 @@ static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_t
 		generic_make_request(bio);
 }
 
-static inline void drbd_plug_device(drbd_dev *mdev)
+static inline void drbd_plug_device(struct drbd_conf *mdev)
 {
 	request_queue_t *q;
 	q = bdev_get_queue(mdev->this_bdev);
@@ -144,7 +144,7 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	spin_unlock_irq(q->queue_lock);
 }
 
-static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
+static inline int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 {
 	struct bio_vec *bvec = bio_iovec(bio);
 	struct page *page = bvec->bv_page;

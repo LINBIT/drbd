@@ -34,10 +34,10 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
-				 struct drbd_backing_dev *bdev,
-				 struct page *page, sector_t sector,
-				 int rw, int size)
+int _drbd_md_sync_page_io(struct drbd_conf *mdev,
+			  struct drbd_backing_dev *bdev,
+			  struct page *page, sector_t sector,
+			  int rw, int size)
 {
 	struct bio *bio = bio_alloc(GFP_NOIO, 1);
 	struct completion event;
@@ -69,7 +69,7 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 	return ok;
 }
 
-int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
+int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 			 sector_t sector, int rw)
 {
 	int hardsect, mask, ok, offset = 0;
@@ -180,10 +180,10 @@ struct update_al_work {
 	unsigned int enr;
 };
 
-STATIC int w_al_write_transaction(struct Drbd_Conf *, struct drbd_work *, int);
+int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
 
 static inline
-struct lc_element *_al_get(struct Drbd_Conf *mdev, unsigned int enr)
+struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr)
 {
 	struct lc_element *al_ext;
 	struct bm_extent  *bm_ext;
@@ -216,7 +216,7 @@ struct lc_element *_al_get(struct Drbd_Conf *mdev, unsigned int enr)
 /* FIXME
  * this should be able to return failure when meta data update has failed.
  */
-void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
+void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *al_ext;
@@ -266,7 +266,7 @@ void drbd_al_begin_io(struct Drbd_Conf *mdev, sector_t sector)
 	}
 }
 
-void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
+void drbd_al_complete_io(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
 	struct lc_element *extent;
@@ -294,8 +294,8 @@ void drbd_al_complete_io(struct Drbd_Conf *mdev, sector_t sector)
 	spin_unlock_irqrestore(&mdev->al_lock, flags);
 }
 
-STATIC int
-w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
+int
+w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	int i, n, mx;
 	unsigned int extent_nr;
@@ -368,10 +368,10 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
  * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
  * record.
  */
-STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
-			   struct drbd_backing_dev *bdev,
-			   struct al_transaction *b,
-			   int index)
+int drbd_al_read_tr(struct drbd_conf *mdev,
+		    struct drbd_backing_dev *bdev,
+		    struct al_transaction *b,
+		    int index)
 {
 	sector_t sector;
 	int rv, i;
@@ -398,7 +398,7 @@ STATIC int drbd_al_read_tr(struct Drbd_Conf *mdev,
  * representation. Returns 1 on success, returns 0 when
  * reading the log failed due to IO errors.
  */
-int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
+int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 {
 	struct al_transaction *buffer;
 	int from = -1, to = -1, i, cnr, overflow = 0, rv;
@@ -504,14 +504,14 @@ int drbd_al_read_log(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
 struct drbd_atodb_wait {
 	atomic_t           count;
 	struct completion  io_done;
-	struct Drbd_Conf   *mdev;
+	struct drbd_conf   *mdev;
 	int                error;
 };
 
-STATIC int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
+int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
 {
 	struct drbd_atodb_wait *wc = bio->bi_private;
-	struct Drbd_Conf *mdev = wc->mdev;
+	struct drbd_conf *mdev = wc->mdev;
 	struct page *page;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
@@ -542,7 +542,7 @@ STATIC int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 /* activity log to on disk bitmap -- prepare bio unless that sector
  * is already covered by previously prepared bios */
-STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
+int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 			     struct bio **bios,
 			     struct page **page,
 			     unsigned int *page_offset,
@@ -611,7 +611,7 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
  * called when we detach (unconfigure) local storage,
  * or when we go from Primary to Secondary state.
  */
-void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
+void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 {
 	int i, nr_elements;
 	unsigned int enr;
@@ -707,7 +707,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
  * drbd_al_apply_to_bm: Sets the bits in the bitmap that are described
  * by the active extents of the AL.
  */
-void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
+void drbd_al_apply_to_bm(struct drbd_conf *mdev)
 {
 	unsigned int enr;
 	unsigned long add = 0;
@@ -729,7 +729,7 @@ void drbd_al_apply_to_bm(struct Drbd_Conf *mdev)
 	     ppsize(ppb, Bit2KB(add)));
 }
 
-static inline int _try_lc_del(struct Drbd_Conf *mdev, struct lc_element *al_ext)
+static inline int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 {
 	int rv;
 
@@ -748,7 +748,7 @@ static inline int _try_lc_del(struct Drbd_Conf *mdev, struct lc_element *al_ext)
  * write any transactions)
  * You need to lock mdev->act_log with lc_try_lock() / lc_unlock()
  */
-void drbd_al_shrink(struct Drbd_Conf *mdev)
+void drbd_al_shrink(struct drbd_conf *mdev)
 {
 	struct lc_element *al_ext;
 	int i;
@@ -764,7 +764,7 @@ void drbd_al_shrink(struct Drbd_Conf *mdev)
 	wake_up(&mdev->al_wait);
 }
 
-STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
+int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work *)w;
 
@@ -798,7 +798,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev, sector_t sector,
+void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				      int count, int success)
 {
 	struct bm_extent *ext;
@@ -885,7 +885,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev, sector_t sector,
  * called by worker on SyncTarget and receiver on SyncSource.
  *
  */
-void __drbd_set_in_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line)
+void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size, const char *file, const unsigned int line)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr, bnr;
@@ -963,7 +963,7 @@ void __drbd_set_in_sync(drbd_dev *mdev, sector_t sector, int size, const char *f
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-void __drbd_set_out_of_sync(drbd_dev *mdev, sector_t sector, int size, const char *file, const unsigned int line)
+void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size, const char *file, const unsigned int line)
 {
 	unsigned long sbnr, ebnr, lbnr;
 	sector_t esector, nr_sectors;
@@ -1015,7 +1015,7 @@ void __drbd_set_out_of_sync(drbd_dev *mdev, sector_t sector, int size, const cha
 }
 
 static inline
-struct bm_extent *_bme_get(struct Drbd_Conf *mdev, unsigned int enr)
+struct bm_extent *_bme_get(struct drbd_conf *mdev, unsigned int enr)
 {
 	struct bm_extent  *bm_ext;
 	int wakeup = 0;
@@ -1051,7 +1051,7 @@ struct bm_extent *_bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	return bm_ext;
 }
 
-static inline int _is_in_al(drbd_dev *mdev, unsigned int enr)
+static inline int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
 {
 	struct lc_element *al_ext;
 	int rv = 0;
@@ -1084,7 +1084,7 @@ static inline int _is_in_al(drbd_dev *mdev, unsigned int enr)
  * returns 1 if successful.
  * returns 0 if interrupted.
  */
-int drbd_rs_begin_io(drbd_dev *mdev, sector_t sector)
+int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent *bm_ext;
@@ -1131,7 +1131,7 @@ int drbd_rs_begin_io(drbd_dev *mdev, sector_t sector)
  * returns zero if we could set BME_LOCKED and can proceed,
  * -EAGAIN if we need to try again.
  */
-int drbd_try_rs_begin_io(drbd_dev *mdev, sector_t sector)
+int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
@@ -1241,7 +1241,7 @@ int drbd_try_rs_begin_io(drbd_dev *mdev, sector_t sector)
 	return -EAGAIN;
 }
 
-void drbd_rs_complete_io(drbd_dev *mdev, sector_t sector)
+void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent *bm_ext;
@@ -1281,7 +1281,7 @@ void drbd_rs_complete_io(drbd_dev *mdev, sector_t sector)
  * drbd_rs_cancel_all: Removes extents from the resync LRU. Even
  * if they are BME_LOCKED.
  */
-void drbd_rs_cancel_all(drbd_dev *mdev)
+void drbd_rs_cancel_all(struct drbd_conf *mdev)
 {
 	struct bm_extent *bm_ext;
 	int i;
@@ -1318,7 +1318,7 @@ void drbd_rs_cancel_all(drbd_dev *mdev)
  * returns -EAGAIN.
  * In case all elements got removed it returns zero.
  */
-int drbd_rs_del_all(drbd_dev *mdev)
+int drbd_rs_del_all(struct drbd_conf *mdev)
 {
 	struct bm_extent *bm_ext;
 	int i;
@@ -1369,7 +1369,7 @@ int drbd_rs_del_all(drbd_dev *mdev)
  * called on SyncTarget when resync write fails or NegRSDReply received
  *
  */
-void drbd_rs_failed_io(drbd_dev *mdev, sector_t sector, int size)
+void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr, bnr;

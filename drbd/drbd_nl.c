@@ -47,7 +47,7 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 /* Generate the tag_list to struct functions */
 #define PACKET(name, number, fields) \
-int name ## _from_tags (drbd_dev *mdev, unsigned short *tags, struct name *arg) \
+int name ## _from_tags (struct drbd_conf *mdev, unsigned short *tags, struct name *arg) \
 { \
 	int tag; \
 	int dlen; \
@@ -88,7 +88,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short *tags, struct name *arg) 
 /* Generate the struct to tag_list functions */
 #define PACKET(name, number, fields) \
 unsigned short* \
-name ## _to_tags (drbd_dev *mdev, struct name *arg, unsigned short *tags) \
+name ## _to_tags (struct drbd_conf *mdev, struct name *arg, unsigned short *tags) \
 { \
 	fields \
 	return tags; \
@@ -116,8 +116,8 @@ name ## _to_tags (drbd_dev *mdev, struct name *arg, unsigned short *tags) \
 	tags = (unsigned short *)((char *)tags + arg->member ## _len);
 #include "linux/drbd_nl.h"
 
-extern void drbd_init_set_defaults(drbd_dev *mdev);
-void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name);
+extern void drbd_init_set_defaults(struct drbd_conf *mdev);
+void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
 char *nl_packet_name(int packet_type)
@@ -165,7 +165,7 @@ void nl_trace_reply(void *data)
 	       req->seq, req->ack, req->len);
 }
 
-int drbd_khelper(drbd_dev *mdev, char *cmd)
+int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 {
 	char mb[12];
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
@@ -182,10 +182,10 @@ int drbd_khelper(drbd_dev *mdev, char *cmd)
 	return call_usermodehelper(usermode_helper, argv, envp, 1);
 }
 
-drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
+enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 {
 	int r;
-	drbd_disks_t nps;
+	enum drbd_disk_state nps;
 	enum fencing_policy fp;
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
@@ -236,11 +236,11 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 }
 
 
-int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
+int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 {
 	int r = 0, forced = 0, try = 0;
-	drbd_state_t mask, val;
-	drbd_disks_t nps;
+	union drbd_state_t mask, val;
+	enum drbd_disk_state nps;
 
 	if (new_role == Primary)
 		request_ping(mdev); /* Detect a dead peer ASAP */
@@ -363,7 +363,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 }
 
 
-STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	struct primary primary_args;
@@ -379,7 +379,7 @@ STATIC int drbd_nl_primary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_secondary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_set_role(mdev, Secondary, 0);
@@ -389,7 +389,7 @@ STATIC int drbd_nl_secondary(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 /* initializes the md.*_offset members, so we are able to find
  * the on disk meta data */
-STATIC void drbd_md_set_sector_offsets(drbd_dev *mdev,
+void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
@@ -447,7 +447,7 @@ char *ppsize(char *buf, unsigned long long size)
 
 /* You should call drbd_md_sync() after calling this.
  */
-int drbd_determin_dev_size(struct Drbd_Conf *mdev)
+int drbd_determin_dev_size(struct drbd_conf *mdev)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size;
@@ -522,7 +522,7 @@ int drbd_determin_dev_size(struct Drbd_Conf *mdev)
 }
 
 sector_t
-drbd_new_dev_size(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
+drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 {
 	sector_t p_size = mdev->p_size;   /* partner's disk size. */
 	sector_t la_size = bdev->md.la_size_sect; /* last agreed size. */
@@ -566,7 +566,7 @@ drbd_new_dev_size(struct Drbd_Conf *mdev, struct drbd_backing_dev *bdev)
  * -ENOMEM when allocation failed, and 0 on success. You should call
  * drbd_md_sync() after you called this function.
  */
-STATIC int drbd_check_al_size(drbd_dev *mdev)
+int drbd_check_al_size(struct drbd_conf *mdev)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;
@@ -613,7 +613,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	return 0;
 }
 
-void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
+void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s)
 {
 	request_queue_t * const q = mdev->rq_queue;
 	request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
@@ -672,14 +672,14 @@ void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 
 /* does always return 0;
  * interesting return code is in reply->ret_code */
-STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct inode *inode, *inode2;
 	struct lru_cache *resync_lru = NULL;
-	drbd_state_t ns, os;
+	union drbd_state_t ns, os;
 	int rv, ntries = 0;
 
 	/* if you want to reconfigure, please tear down first */
@@ -992,7 +992,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	fsync_bdev(mdev->this_bdev);
@@ -1003,7 +1003,7 @@ STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 #define HMAC_NAME_L 20
 
-STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			    struct drbd_nl_cfg_reply *reply)
 {
 	int i, ns;
@@ -1012,7 +1012,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	struct crypto_hash *tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
-	drbd_dev *odev;
+	struct drbd_conf *odev;
 	char hmac_name[HMAC_NAME_L];
 
 	if (mdev->state.conn > StandAlone) {
@@ -1187,7 +1187,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode;
@@ -1228,7 +1228,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	struct resize rs;
@@ -1272,12 +1272,12 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
 	struct syncer_conf sc;
-	drbd_dev *odev;
+	struct drbd_conf *odev;
 	int err;
 
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
@@ -1341,7 +1341,7 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_invalidate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS2(conn, StartingSyncT,
@@ -1349,7 +1349,7 @@ STATIC int drbd_nl_invalidate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_invalidate_peer(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				   struct drbd_nl_cfg_reply *reply)
 {
 
@@ -1359,7 +1359,7 @@ STATIC int drbd_nl_invalidate_peer(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1371,7 +1371,7 @@ STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1383,7 +1383,7 @@ STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_suspend_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(susp, 1));
@@ -1391,18 +1391,18 @@ STATIC int drbd_nl_suspend_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_resume_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_resume_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(susp, 0));
 	return 0;
 }
 
-STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_outdate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	int retcode;
-	drbd_state_t os, ns;
+	union drbd_state_t os, ns;
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
@@ -1427,7 +1427,7 @@ STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-STATIC int drbd_nl_get_config(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1450,7 +1450,7 @@ STATIC int drbd_nl_get_config(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-STATIC int drbd_nl_get_state(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1463,7 +1463,7 @@ STATIC int drbd_nl_get_state(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1488,7 +1488,7 @@ STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 }
 
 
-STATIC int drbd_nl_get_timeout_flag(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
+int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				    struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1505,9 +1505,9 @@ STATIC int drbd_nl_get_timeout_flag(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
+struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
-	drbd_dev *mdev;
+	struct drbd_conf *mdev;
 
 	mdev = minor_to_mdev(nlp->drbd_minor);
 
@@ -1535,7 +1535,7 @@ STATIC drbd_dev *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 }
 
 struct cn_handler_struct {
-	int (*function)(drbd_dev *,
+	int (*function)(struct drbd_conf *,
 			 struct drbd_nl_cfg_req *,
 			 struct drbd_nl_cfg_reply* );
 	int reply_body_size;
@@ -1577,7 +1577,7 @@ void drbd_connector_callback(void *data)
 	struct cn_handler_struct *cm;
 	struct cn_msg *cn_reply;
 	struct drbd_nl_cfg_reply *reply;
-	drbd_dev *mdev;
+	struct drbd_conf *mdev;
 	int retcode, rr;
 	int reply_size = sizeof(struct cn_msg)
 		+ sizeof(struct drbd_nl_cfg_reply)
@@ -1640,7 +1640,7 @@ void drbd_connector_callback(void *data)
 
 atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
 
-void drbd_bcast_state(drbd_dev *mdev)
+void drbd_bcast_state(struct drbd_conf *mdev)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
@@ -1673,7 +1673,7 @@ void drbd_bcast_state(drbd_dev *mdev)
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
-void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name)
+void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
@@ -1711,7 +1711,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name)
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
-void drbd_bcast_sync_progress(drbd_dev *mdev)
+void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+

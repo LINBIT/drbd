@@ -39,7 +39,7 @@
    Try to get the locking right :) */
 
 /*
- * Objects of type drbd_request_t do only exist on a Primary node, and are
+ * Objects of type struct drbd_request do only exist on a Primary node, and are
  * associated with IO requests originating from the block layer above us.
  *
  * There are quite a few things that may happen to a drbd request
@@ -84,7 +84,7 @@
  *  (dot -Tps2 documentation/drbd-request-state-overview.dot | display -)
  */
 
-typedef enum {
+enum drbd_req_event {
 	created,
 	to_be_send,
 	to_be_submitted,
@@ -110,7 +110,7 @@ typedef enum {
 	read_completed_with_error,
 	write_completed_with_error,
 	completed_ok,
-} drbd_req_event_t;
+};
 
 /* encoding of request states for now.  we don't actually need that many bits.
  * we don't need to do atomic bit operations either, since most of the time we
@@ -207,14 +207,14 @@ enum drbd_req_state_bits {
 #define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK) /* 0x1f8 */
 
 /* epoch entries */
-static inline struct hlist_head *ee_hash_slot(drbd_dev *mdev, sector_t sector)
+static inline struct hlist_head *ee_hash_slot(struct drbd_conf *mdev, sector_t sector)
 {
 	BUG_ON(mdev->ee_hash_s == 0);
 	return mdev->ee_hash + ((unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s);
 }
 
 /* transfer log (drbd_request objects) */
-static inline struct hlist_head *tl_hash_slot(drbd_dev *mdev, sector_t sector)
+static inline struct hlist_head *tl_hash_slot(struct drbd_conf *mdev, sector_t sector)
 {
 	BUG_ON(mdev->tl_hash_s == 0);
 	return mdev->tl_hash +
@@ -223,11 +223,11 @@ static inline struct hlist_head *tl_hash_slot(drbd_dev *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline drbd_request_t *_ack_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
+static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev, u64 id, sector_t sector)
 {
 	struct hlist_head *slot = tl_hash_slot(mdev, sector);
 	struct hlist_node *n;
-	drbd_request_t *req;
+	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
 		if ((unsigned long)req == (unsigned long)id) {
@@ -247,7 +247,7 @@ static inline drbd_request_t *_ack_id_to_req(drbd_dev *mdev, u64 id, sector_t se
 }
 
 /* application reads (drbd_request objects) */
-static struct hlist_head *ar_hash_slot(drbd_dev *mdev, sector_t sector)
+static struct hlist_head *ar_hash_slot(struct drbd_conf *mdev, sector_t sector)
 {
 	return mdev->app_reads_hash
 		+ ((unsigned int)(sector) % APP_R_HSIZE);
@@ -255,11 +255,11 @@ static struct hlist_head *ar_hash_slot(drbd_dev *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline drbd_request_t *_ar_id_to_req(drbd_dev *mdev, u64 id, sector_t sector)
+static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev, u64 id, sector_t sector)
 {
 	struct hlist_head *slot = ar_hash_slot(mdev, sector);
 	struct hlist_node *n;
-	drbd_request_t *req;
+	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
 		if ((unsigned long)req == (unsigned long)id) {
@@ -270,10 +270,10 @@ static inline drbd_request_t *_ar_id_to_req(drbd_dev *mdev, u64 id, sector_t sec
 	return NULL;
 }
 
-static inline drbd_request_t *drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
+static inline struct drbd_request *drbd_req_new(struct drbd_conf *mdev, struct bio *bio_src)
 {
 	struct bio *bio;
-	drbd_request_t *req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
+	struct drbd_request *req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
 	if (likely(req)) {
 		bio = bio_clone(bio_src, GFP_NOIO); /* XXX cannot fail?? */
 
@@ -294,7 +294,7 @@ static inline drbd_request_t *drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 	return req;
 }
 
-static inline void drbd_req_free(drbd_request_t *req)
+static inline void drbd_req_free(struct drbd_request *req)
 {
 	mempool_free(req, drbd_request_mempool);
 }
@@ -306,13 +306,13 @@ static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 
 /* aparently too large to be inlined...
  * moved to drbd_req.c */
-extern void _req_may_be_done(drbd_request_t *req, int error);
-extern void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error);
+extern void _req_may_be_done(struct drbd_request *req, int error);
+extern void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error);
 
 /* If you need it irqsave, do it your self! */
-static inline void req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
+static inline void req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	spin_lock_irq(&mdev->req_lock);
 	_req_mod(req, what, error);
 	spin_unlock_irq(&mdev->req_lock);

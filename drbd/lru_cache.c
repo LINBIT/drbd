@@ -125,7 +125,7 @@ struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr)
 	return NULL;
 }
 
-STATIC struct lc_element *lc_evict(struct lru_cache *lc)
+struct lc_element *lc_evict(struct lru_cache *lc)
 {
 	struct list_head  *n;
 	struct lc_element *e;
@@ -160,7 +160,7 @@ void lc_del(struct lru_cache *lc, struct lc_element *e)
 	RETURN();
 }
 
-STATIC struct lc_element *lc_get_unused_element(struct lru_cache *lc)
+struct lc_element *lc_get_unused_element(struct lru_cache *lc)
 {
 	struct list_head *n;
 
@@ -171,7 +171,7 @@ STATIC struct lc_element *lc_get_unused_element(struct lru_cache *lc)
 	return list_entry(n, struct lc_element, list);
 }
 
-STATIC int lc_unused_element_available(struct lru_cache *lc)
+int lc_unused_element_available(struct lru_cache *lc)
 {
 	if (!list_empty(&lc->free)) return 1; /* something on the free list */
 	if (!list_empty(&lc->lru)) return 1;  /* something to evict */

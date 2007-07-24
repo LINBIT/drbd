@@ -79,7 +79,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
-	struct Drbd_Conf *mdev;
+	struct drbd_conf *mdev;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	e = bio->bi_private;
@@ -123,7 +123,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
-	drbd_dev *mdev;
+	struct drbd_conf *mdev;
 	sector_t e_sector;
 	int do_wake;
 	int is_syncer_req;
@@ -195,9 +195,9 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 {
 	unsigned long flags;
-	drbd_request_t *req = bio->bi_private;
-	drbd_dev *mdev = req->mdev;
-	drbd_req_event_t what;
+	struct drbd_request *req = bio->bi_private;
+	struct drbd_conf *mdev = req->mdev;
+	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	/* see above */
@@ -222,9 +222,9 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	return 0;
 }
 
-int w_io_error(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	drbd_request_t *req = (drbd_request_t *)w;
+	struct drbd_request *req = (struct drbd_request *)w;
 	int ok;
 
 	/* FIXME send a "set_out_of_sync" packet to the peer
@@ -247,9 +247,9 @@ int w_io_error(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_read_retry_remote(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	drbd_request_t *req = (drbd_request_t *)w;
+	struct drbd_request *req = (struct drbd_request *)w;
 
 	spin_lock_irq(&mdev->req_lock);
 	if ( cancel ||
@@ -270,7 +270,7 @@ int w_read_retry_remote(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return w_send_read_req(mdev, w, 0);
 }
 
-int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_resync_inactive(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	ERR_IF(cancel) return 1;
 	ERR("resync inactive, but callback triggered??\n");
@@ -280,7 +280,7 @@ int w_resync_inactive(drbd_dev *mdev, struct drbd_work *w, int cancel)
 void resync_timer_fn(unsigned long data)
 {
 	unsigned long flags;
-	drbd_dev *mdev = (drbd_dev *) data;
+	struct drbd_conf *mdev = (struct drbd_conf *) data;
 	int queue;
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
@@ -302,7 +302,7 @@ void resync_timer_fn(unsigned long data)
 
 #define SLEEP_TIME (HZ/10)
 
-int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_make_resync_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	unsigned long bit;
 	sector_t sector;
@@ -441,7 +441,7 @@ int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return 1;
 }
 
-int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	kfree(w);
 
@@ -452,7 +452,7 @@ int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return 1;
 }
 
-int drbd_resync_finished(drbd_dev *mdev)
+int drbd_resync_finished(struct drbd_conf *mdev)
 {
 	unsigned long db, dt, dbdt;
 	int dstate, pdstate;
@@ -550,7 +550,7 @@ int drbd_resync_finished(drbd_dev *mdev)
 /**
  * w_e_end_data_req: Send the answer (DataReply) in response to a DataRequest.
  */
-int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	int ok;
@@ -594,7 +594,7 @@ int w_e_end_data_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 /**
  * w_e_end_rsdata_req: Send the answer (RSDataReply) to a RSDataRequest.
  */
-int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	int ok;
@@ -647,17 +647,17 @@ int w_e_end_rsdata_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_prev_work_done(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_prev_work_done(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	clear_bit(WORK_PENDING, &mdev->flags);
 	wake_up(&mdev->misc_wait);
 	return 1;
 }
 
-int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_send_barrier(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_barrier *b = (struct drbd_barrier *)w;
-	Drbd_Barrier_Packet *p = &mdev->data.sbuf.Barrier;
+	struct Drbd_Barrier_Packet *p = &mdev->data.sbuf.Barrier;
 	int ok = 1;
 
 	/* really avoid racing with tl_clear.  w.cb may have been referenced
@@ -678,13 +678,13 @@ int w_send_barrier(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	/* inc_ap_pending was done where this was queued.
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in w_clear_epoch.  */
-	ok = _drbd_send_cmd(mdev, mdev->data.socket, Barrier, (Drbd_Header *)p, sizeof(*p), 0);
+	ok = _drbd_send_cmd(mdev, mdev->data.socket, Barrier, (struct Drbd_Header *)p, sizeof(*p), 0);
 	drbd_put_data_sock(mdev);
 
 	return ok;
 }
 
-int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_send_write_hint(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	if (cancel) return 1;
 	return drbd_send_short_cmd(mdev, UnplugRemote);
@@ -693,9 +693,9 @@ int w_send_write_hint(drbd_dev *mdev, struct drbd_work *w, int cancel)
 /**
  * w_send_dblock: Send a mirrored write request.
  */
-int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_send_dblock(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	drbd_request_t *req = (drbd_request_t *)w;
+	struct drbd_request *req = (struct drbd_request *)w;
 	int ok;
 
 	if (unlikely(cancel)) {
@@ -712,9 +712,9 @@ int w_send_dblock(drbd_dev *mdev, struct drbd_work *w, int cancel)
 /**
  * w_send_read_req: Send a read requests.
  */
-int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
+int w_send_read_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	drbd_request_t *req = (drbd_request_t *)w;
+	struct drbd_request *req = (struct drbd_request *)w;
 	int ok;
 
 	if (unlikely(cancel)) {
@@ -740,9 +740,9 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-STATIC void drbd_global_lock(void)
+void drbd_global_lock(void)
 {
-	drbd_dev *mdev;
+	struct drbd_conf *mdev;
 	int i;
 
 	local_irq_disable();
@@ -754,9 +754,9 @@ STATIC void drbd_global_lock(void)
 	}
 }
 
-STATIC void drbd_global_unlock(void)
+void drbd_global_unlock(void)
 {
-	drbd_dev *mdev;
+	struct drbd_conf *mdev;
 	int i;
 
 	for (i = 0; i < minor_count; i++) {
@@ -768,9 +768,9 @@ STATIC void drbd_global_unlock(void)
 	local_irq_enable();
 }
 
-STATIC int _drbd_may_sync_now(drbd_dev *mdev)
+int _drbd_may_sync_now(struct drbd_conf *mdev)
 {
-	drbd_dev *odev = mdev;
+	struct drbd_conf *odev = mdev;
 
 	while (1) {
 		if (odev->sync_conf.after == -1) return 1;
@@ -789,9 +789,9 @@ STATIC int _drbd_may_sync_now(drbd_dev *mdev)
  * pause their resynchronisation.
  * Called from process context only ( ioctl and after_state_ch ).
  */
-STATIC int _drbd_pause_after(drbd_dev *mdev)
+int _drbd_pause_after(struct drbd_conf *mdev)
 {
-	drbd_dev *odev;
+	struct drbd_conf *odev;
 	int i, rv = 0;
 
 	for (i = 0; i < minor_count; i++) {
@@ -812,9 +812,9 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
  * process, and causes them to resume.
  * Called from process context only ( ioctl and worker ).
  */
-STATIC int _drbd_resume_next(drbd_dev *mdev)
+int _drbd_resume_next(struct drbd_conf *mdev)
 {
-	drbd_dev *odev;
+	struct drbd_conf *odev;
 	int i, rv = 0;
 
 	for (i = 0; i < minor_count; i++) {
@@ -831,21 +831,21 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	return rv;
 }
 
-void resume_next_sg(drbd_dev *mdev)
+void resume_next_sg(struct drbd_conf *mdev)
 {
 	drbd_global_lock();
 	_drbd_resume_next(mdev);
 	drbd_global_unlock();
 }
 
-void suspend_other_sg(drbd_dev *mdev)
+void suspend_other_sg(struct drbd_conf *mdev)
 {
 	drbd_global_lock();
 	_drbd_pause_after(mdev);
 	drbd_global_unlock();
 }
 
-void drbd_alter_sa(drbd_dev *mdev, int na)
+void drbd_alter_sa(struct drbd_conf *mdev, int na)
 {
 	int changes;
 
@@ -868,9 +868,9 @@ void drbd_alter_sa(drbd_dev *mdev, int na)
  * Note, this function might bring you directly into one of the
  * PausedSync* states.
  */
-void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
+void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 {
-	drbd_state_t os, ns;
+	union drbd_state_t os, ns;
 	int r = 0;
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
@@ -945,7 +945,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 int drbd_worker(struct Drbd_thread *thi)
 {
-	drbd_dev *mdev = thi->mdev;
+	struct drbd_conf *mdev = thi->mdev;
 	struct drbd_work *w = 0;
 	LIST_HEAD(work_list);
 	int intr = 0, i;

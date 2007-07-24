@@ -121,12 +121,12 @@ enum ret_codes {
 #define DRBD_PROT_B   2
 #define DRBD_PROT_C   3
 
-typedef enum {
+enum drbd_role {
 	Unknown = 0,
 	Primary = 1,     /* role */
 	Secondary = 2,   /* role */
 	role_mask = 3,
-} drbd_role_t;
+};
 
 /* The order of these constants is important.
  * The lower ones (<WFReportParams) indicate
@@ -137,7 +137,7 @@ typedef enum {
  * Skipped should be < Connected,
  * so writes on a Primary after Skipped sync are not mirrored either ?
  */
-typedef enum {
+enum drbd_conns {
 	StandAlone,
 	Disconnecting,  /* Temporal state on the way to StandAlone. */
 	Unconnected,    /* >= Unconnected -> inc_net() succeeds */
@@ -170,9 +170,9 @@ typedef enum {
 	PausedSyncS,
 	PausedSyncT,
 	conn_mask = 31
-} drbd_conns_t;
+};
 
-typedef enum {
+enum drbd_disk_state {
 	Diskless,
 	Attaching,      /* In the process of reading the meta-data */
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
@@ -184,9 +184,9 @@ typedef enum {
 	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	UpToDate,       /* Only this disk state allows applications' IO ! */
 	disk_mask = 15
-} drbd_disks_t;
+};
 
-typedef union {
+union drbd_state_t {
 	struct {
 		unsigned role : 2 ;   /* 3/4      primary/secondary/unknown */
 		unsigned peer : 2 ;   /* 3/4      primary/secondary/unknown */
@@ -200,9 +200,9 @@ typedef union {
 		unsigned _pad : 11;   /* 0        unused */
 	};
 	unsigned int i;
-} drbd_state_t;
+};
 
-typedef enum {
+enum set_st_err {
 	SS_CW_NoNeed = 4,
 	SS_CW_Success = 3,
 	SS_NothingToDo = 2,
@@ -219,13 +219,13 @@ typedef enum {
 	SS_CW_FailedByPeer = -10,
 	SS_IsDiskLess = -11,
 	SS_DeviceInUse = -12
-} set_st_err_t;
+};
 
 /* from drbd_strings.c */
-extern const char *conns_to_name(drbd_conns_t);
-extern const char *roles_to_name(drbd_role_t);
-extern const char *disks_to_name(drbd_disks_t);
-extern const char *set_st_err_name(set_st_err_t);
+extern const char *conns_to_name(enum drbd_conns);
+extern const char *roles_to_name(enum drbd_role);
+extern const char *disks_to_name(enum drbd_disk_state);
+extern const char *set_st_err_name(enum set_st_err);
 
 #ifndef BDEVNAME_SIZE
 # define BDEVNAME_SIZE 32

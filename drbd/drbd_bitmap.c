@@ -108,7 +108,7 @@ struct drbd_bitmap {
 #define BM_LOCKED 0
 #define BM_MD_IO_ERROR (BITS_PER_LONG-1) /* 31? 63? */
 
-void __drbd_bm_lock(drbd_dev *mdev, char *file, int line)
+void __drbd_bm_lock(struct drbd_conf *mdev, char *file, int line)
 {
        struct drbd_bitmap *b = mdev->bitmap;
        spin_lock_irq(&b->bm_lock);
@@ -128,7 +128,7 @@ void __drbd_bm_lock(drbd_dev *mdev, char *file, int line)
        spin_unlock_irq(&b->bm_lock);
 }
 
-void drbd_bm_unlock(drbd_dev *mdev)
+void drbd_bm_unlock(struct drbd_conf *mdev)
 {
        struct drbd_bitmap *b = mdev->bitmap;
        spin_lock_irq(&b->bm_lock);
@@ -145,7 +145,7 @@ void drbd_bm_unlock(drbd_dev *mdev)
 
 #if DUMP_MD >= 3
 /* debugging aid */
-STATIC void bm_end_info(drbd_dev *mdev, const char *where)
+void bm_end_info(struct drbd_conf *mdev, const char *where)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	size_t w = (b->bm_bits-1) >> LN2_BPL;
@@ -168,7 +168,7 @@ STATIC void bm_end_info(drbd_dev *mdev, const char *where)
 
 /*
  * actually most functions herein should take a struct drbd_bitmap*, not a
- * drbd_dev*, but for the debug macros I like to have the mdev around
+ * struct drbd_conf*, but for the debug macros I like to have the mdev around
  * to be able to report device specific.
  */
 
@@ -182,7 +182,7 @@ STATIC void bm_end_info(drbd_dev *mdev, const char *where)
  * called on driver init only. TODO call when a device is created.
  * allocates the drbd_bitmap, and stores it in mdev->bitmap.
  */
-int drbd_bm_init(drbd_dev *mdev)
+int drbd_bm_init(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	WARN_ON(b);
@@ -198,7 +198,7 @@ int drbd_bm_init(drbd_dev *mdev)
 	return 0;
 }
 
-sector_t drbd_bm_capacity(drbd_dev *mdev)
+sector_t drbd_bm_capacity(struct drbd_conf *mdev)
 {
 	ERR_IF(!mdev->bitmap) return 0;
 	return mdev->bitmap->bm_dev_capacity;
@@ -206,7 +206,7 @@ sector_t drbd_bm_capacity(drbd_dev *mdev)
 
 /* called on driver unload. TODO: call when a device is destroyed.
  */
-void drbd_bm_cleanup(drbd_dev *mdev)
+void drbd_bm_cleanup(struct drbd_conf *mdev)
 {
 	ERR_IF (!mdev->bitmap) return;
 	/* FIXME I think we should explicitly change the device size to zero
@@ -224,7 +224,7 @@ void drbd_bm_cleanup(drbd_dev *mdev)
  * this masks out the remaining bits.
  * Rerturns the number of bits cleared.
  */
-STATIC int bm_clear_surplus(struct drbd_bitmap *b)
+int bm_clear_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -243,7 +243,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 	return cleared;
 }
 
-STATIC void bm_set_surplus(struct drbd_bitmap *b)
+void bm_set_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -255,7 +255,7 @@ STATIC void bm_set_surplus(struct drbd_bitmap *b)
 		b->bm[w++] = ~(0UL);
 }
 
-STATIC unsigned long bm_count_bits(struct drbd_bitmap *b, int just_read)
+unsigned long bm_count_bits(struct drbd_bitmap *b, int just_read)
 {
 	unsigned long *bm = b->bm;
 	unsigned long *ep = b->bm + b->bm_words;
@@ -272,7 +272,7 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap *b, int just_read)
 	return bits;
 }
 
-void _drbd_bm_recount_bits(drbd_dev *mdev, char *file, int line)
+void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long flags, bits;
@@ -299,7 +299,7 @@ void _drbd_bm_recount_bits(drbd_dev *mdev, char *file, int line)
  * In case this is actually a resize, we copy the old bitmap into the new one.
  * Otherwise, the bitmap is initiallized to all bits set.
  */
-int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
+int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long bits, bytes, words, *nbm, *obm = 0;
@@ -406,7 +406,7 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
  *
  * maybe bm_set should be atomic_t ?
  */
-unsigned long drbd_bm_total_weight(drbd_dev *mdev)
+unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long s;
@@ -421,7 +421,7 @@ unsigned long drbd_bm_total_weight(drbd_dev *mdev)
 	return s;
 }
 
-size_t drbd_bm_words(drbd_dev *mdev)
+size_t drbd_bm_words(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	ERR_IF(!b) return 0;
@@ -431,7 +431,7 @@ size_t drbd_bm_words(drbd_dev *mdev)
 /* merge number words from buffer into the bitmap starting at offset.
  * buffer[i] is expected to be little endian unsigned long.
  */
-void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
+void drbd_bm_merge_lel( struct drbd_conf *mdev, size_t offset, size_t number,
 			unsigned long *buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
@@ -469,8 +469,8 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 /* copy number words from buffer into the bitmap starting at offset.
  * buffer[i] is expected to be little endian unsigned long.
  */
-void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
-		      unsigned long *buffer )
+void drbd_bm_set_lel(struct drbd_conf *mdev, size_t offset, size_t number,
+		     unsigned long *buffer)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
@@ -507,8 +507,8 @@ void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
 /* copy number words from the bitmap starting at offset into the buffer.
  * buffer[i] will be little endian unsigned long.
  */
-void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
-		      unsigned long *buffer )
+void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
+		     unsigned long *buffer )
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
@@ -535,7 +535,7 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 }
 
 /* set all bits in the bitmap */
-void drbd_bm_set_all(drbd_dev *mdev)
+void drbd_bm_set_all(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	ERR_IF(!b) return;
@@ -578,7 +578,7 @@ int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int erro
 	return 0;
 }
 
-STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
+void drbd_bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw)
 {
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
@@ -613,7 +613,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
  * @enr is _sector_ offset from start of on disk bitmap (aka bm-extent nr).
  * returns 0 on success, -EIO on failure
  */
-int drbd_bm_read_sect(drbd_dev *mdev, unsigned long enr)
+int drbd_bm_read_sect(struct drbd_conf *mdev, unsigned long enr)
 {
 	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
 	int bm_words, num_words, offset, err  = 0;
@@ -680,7 +680,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 /* lel_to_cpu == cpu_to_lel */
 # define bm_lel_to_cpu(x) bm_cpu_to_lel(x)
 
-STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
+int drbd_bm_rw(struct drbd_conf *mdev, int rw)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	/* sector_t sector; */
@@ -745,7 +745,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	return err;
 }
 
-int drbd_bm_read(struct Drbd_Conf *mdev)
+int drbd_bm_read(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int err = 0;
@@ -768,7 +768,7 @@ int drbd_bm_read(struct Drbd_Conf *mdev)
  * @enr: The _sector_ offset from the start of the bitmap.
  *
  */
-int drbd_bm_write_sect(struct Drbd_Conf *mdev, unsigned long enr)
+int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr)
 {
 	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	int bm_words, num_words, offset, err  = 0;
@@ -804,7 +804,7 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev, unsigned long enr)
 /**
  * drbd_bm_write: Write the whole bitmap to its on disk location.
  */
-int drbd_bm_write(struct Drbd_Conf *mdev)
+int drbd_bm_write(struct drbd_conf *mdev)
 {
 	int err = drbd_bm_rw(mdev, WRITE);
 
@@ -815,7 +815,7 @@ int drbd_bm_write(struct Drbd_Conf *mdev)
 }
 
 /* clear all bits in the bitmap */
-void drbd_bm_clear_all(drbd_dev *mdev)
+void drbd_bm_clear_all(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
@@ -828,7 +828,7 @@ void drbd_bm_clear_all(drbd_dev *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-void drbd_bm_reset_find(drbd_dev *mdev)
+void drbd_bm_reset_find(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
@@ -845,7 +845,7 @@ void drbd_bm_reset_find(drbd_dev *mdev)
  * should not make much difference anyways, but ...
  * this returns a bit number, NOT a sector!
  */
-unsigned long drbd_bm_find_next(drbd_dev *mdev)
+unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long i = -1UL;
@@ -869,7 +869,7 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	return i;
 }
 
-void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
+void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
@@ -881,7 +881,7 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 }
 
 
-int drbd_bm_rs_done(drbd_dev *mdev)
+int drbd_bm_rs_done(struct drbd_conf *mdev)
 {
 	return mdev->bitmap->bm_fo == 0;
 }
@@ -893,7 +893,7 @@ int drbd_bm_rs_done(drbd_dev *mdev)
 /* returns previous bit state
  * wants bitnr, NOT sector.
  */
-int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
+int drbd_bm_set_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int i;
@@ -925,7 +925,7 @@ int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
 
 /* returns number of bits actually changed (0->1)
  * wants bitnr, not sector */
-int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigned long e)
+int drbd_bm_set_bits_in_irq(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long bitnr;
@@ -949,7 +949,7 @@ int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigne
 /* returns previous bit state
  * wants bitnr, NOT sector.
  */
-int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
+int drbd_bm_clear_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long flags;
@@ -985,7 +985,7 @@ int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
  *  0 ... bit not set
  * -1 ... first out of bounds access, stop testing for bits!
  */
-int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
+int drbd_bm_test_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int i;
@@ -1020,7 +1020,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
  * reference count of some bitmap extent element from some lru instead...
  *
  */
-int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
+int drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int count, s, e;
@@ -1048,7 +1048,7 @@ int drbd_bm_e_weight(drbd_dev *mdev, unsigned long enr)
 }
 
 /* set all bits covered by the AL-extent al_enr */
-unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
+unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev, unsigned long al_enr)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long weight;

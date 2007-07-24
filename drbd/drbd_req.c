@@ -35,10 +35,10 @@
 
 /* outside of the ifdef
  * because of the _print_rq_state(,FIXME) in barrier_acked */
-void _print_rq_state(drbd_request_t *req, const char *txt)
+void _print_rq_state(struct drbd_request *req, const char *txt)
 {
 	const unsigned long s = req->rq_state;
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||
 			bio_data_dir(req->master_bio) == WRITE) ?
 		'W' : 'R';
@@ -61,9 +61,9 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 
 /* #define VERBOSE_REQUEST_CODE */
 #if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
-void _print_req_mod(drbd_request_t *req, drbd_req_event_t what)
+void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||
 			bio_data_dir(req->master_bio) == WRITE) ?
 		'W' : 'R';
@@ -105,7 +105,7 @@ void _print_req_mod(drbd_request_t *req, drbd_req_event_t what)
 #define print_req_mod(T, W)
 #endif
 
-static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
+static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
 	/* if it was a write, we may have to set the corresponding
@@ -179,10 +179,10 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 	}
 }
 
-static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
+static void _about_to_complete_local_write(struct drbd_conf *mdev, struct drbd_request *req)
 {
 	const unsigned long s = req->rq_state;
-			drbd_request_t *i;
+			struct drbd_request *i;
 			struct Tl_epoch_entry *e;
 			struct hlist_node *n;
 			struct hlist_head *slot;
@@ -237,7 +237,7 @@ static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 #undef OVERLAPS
 }
 
-static void _complete_master_bio(drbd_dev *mdev, drbd_request_t *req, int error)
+static void _complete_master_bio(struct drbd_conf *mdev, struct drbd_request *req, int error)
 {
 	dump_bio(mdev, req->master_bio, 1);
 	bio_endio(req->master_bio, req->master_bio->bi_size, error);
@@ -245,10 +245,10 @@ static void _complete_master_bio(drbd_dev *mdev, drbd_request_t *req, int error)
 	dec_ap_bio(mdev);
 }
 
-void _req_may_be_done(drbd_request_t *req, int error)
+void _req_may_be_done(struct drbd_request *req, int error)
 {
 	const unsigned long s = req->rq_state;
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	int rw;
 
 	print_rq_state(req, "_req_may_be_done");
@@ -350,12 +350,12 @@ void _req_may_be_done(drbd_request_t *req, int error)
  * second hlist_for_each_entry becomes a noop. This is even simpler than to
  * grab a reference on the net_conf, and check for the two_primaries flag...
  */
-STATIC int _req_conflicts(drbd_request_t *req)
+int _req_conflicts(struct drbd_request *req)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	const sector_t sector = req->sector;
 	const int size = req->size;
-	drbd_request_t *i;
+	struct drbd_request *i;
 	struct Tl_epoch_entry *e;
 	struct hlist_node *n;
 	struct hlist_head *slot;
@@ -431,9 +431,9 @@ STATIC int _req_conflicts(drbd_request_t *req)
  * Though I think it is likely that we break this again into many
  * static inline void _req_mod_ ## what (req) ...
  */
-void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
+void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	MUST_HOLD(&mdev->req_lock);
 
 	if (error && (bio_rw(req->master_bio) != READA))
@@ -716,7 +716,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
  *   since size may be bigger than BM_BLOCK_SIZE,
  *   we may need to check several bits.
  */
-STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
+int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr, bnr;
 	sector_t esector, nr_sectors;
@@ -758,12 +758,12 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
  * anyways, and then see that it does not work there and then.
  */
 
-STATIC int
-drbd_make_request_common(drbd_dev *mdev, int rw, int size,
+int
+drbd_make_request_common(struct drbd_conf *mdev, int rw, int size,
 			 sector_t sector, struct bio *bio)
 {
 	struct drbd_barrier *b = NULL;
-	drbd_request_t *req;
+	struct drbd_request *req;
 	int local, remote;
 	int err = -EIO;
 
@@ -1020,7 +1020,7 @@ allocate_barrier:
  * return 1
  * otherwise return 0
  */
-static int drbd_fail_request_early(drbd_dev *mdev, int is_write)
+static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 {
 	/* Unconfigured */
 	if (mdev->state.conn == Disconnecting &&
@@ -1061,7 +1061,7 @@ static int drbd_fail_request_early(drbd_dev *mdev, int is_write)
 int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 {
 	unsigned int s_enr, e_enr;
-	struct Drbd_Conf *mdev = (drbd_dev *) q->queuedata;
+	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 
 	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
 		bio_endio(bio, bio->bi_size, -EPERM);
@@ -1137,7 +1137,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
  * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 {
-	struct Drbd_Conf *mdev = (drbd_dev *) q->queuedata;
+	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; /* 32 bit */
 	unsigned int bio_size = bio->bi_size;
 	int limit, backing_limit;
