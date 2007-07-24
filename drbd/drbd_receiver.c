@@ -2657,10 +2657,8 @@ void drbd_disconnect(struct drbd_conf *mdev)
 	drbd_queue_work(&mdev->data.work, &prev_work_done);
 	wait_event(mdev->misc_wait, !test_bit(WORK_PENDING, &mdev->flags));
 
-	if (mdev->p_uuid) {
-		kfree(mdev->p_uuid);
-		mdev->p_uuid = NULL;
-	}
+	kfree(mdev->p_uuid);
+	mdev->p_uuid = NULL;
 
 	/* queue cleanup for the worker.
 	 * FIXME this should go into after_state_ch  */
@@ -2693,21 +2691,18 @@ void drbd_disconnect(struct drbd_conf *mdev)
 
 	if (os.conn == Disconnecting) {
 		wait_event( mdev->misc_wait, atomic_read(&mdev->net_cnt) == 0 );
-		if (mdev->ee_hash) {
-			kfree(mdev->ee_hash);
-			mdev->ee_hash = NULL;
-			mdev->ee_hash_s = 0;
-		}
 
-		if (mdev->tl_hash) {
-			kfree(mdev->tl_hash);
-			mdev->tl_hash = NULL;
-			mdev->tl_hash_s = 0;
-		}
-		if (mdev->cram_hmac_tfm) {
-			crypto_free_hash(mdev->cram_hmac_tfm);
-			mdev->cram_hmac_tfm = NULL;
-		}
+		kfree(mdev->ee_hash);
+		mdev->ee_hash = NULL;
+		mdev->ee_hash_s = 0;
+
+		kfree(mdev->tl_hash);
+		mdev->tl_hash = NULL;
+		mdev->tl_hash_s = 0;
+
+		crypto_free_hash(mdev->cram_hmac_tfm);
+		mdev->cram_hmac_tfm = NULL;
+
 		kfree(mdev->net_conf);
 		mdev->net_conf = NULL;
 		drbd_request_state(mdev, NS(conn, StandAlone));

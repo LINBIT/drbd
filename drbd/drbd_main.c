@@ -174,10 +174,8 @@ void tl_cleanup(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	kfree(mdev->oldest_barrier);
-	if (mdev->tl_hash) {
-		kfree(mdev->tl_hash);
-		mdev->tl_hash_s = 0;
-	}
+	kfree(mdev->tl_hash);
+	mdev->tl_hash_s = 0;
 }
 
 /**
@@ -888,10 +886,8 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os, union drbd_st
 	/* Lost contact to peer's copy of the data */
 	if ( (os.pdsk >= Inconsistent && os.pdsk != DUnknown && os.pdsk != Outdated) &&
 	     (ns.pdsk < Inconsistent || ns.pdsk == DUnknown || ns.pdsk == Outdated) ) {
-		if (mdev->p_uuid) {
-			kfree(mdev->p_uuid);
-			mdev->p_uuid = NULL;
-		}
+		kfree(mdev->p_uuid);
+		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
 			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0) {
 				/* Only do it if we have not yet done it... */
@@ -2233,26 +2229,22 @@ void __exit drbd_cleanup(void)
 			if (mdev->md_io_tmpp)
 				__free_page(mdev->md_io_tmpp);
 
-			if (mdev->act_log) lc_free(mdev->act_log);
+			if (mdev->act_log)
+				lc_free(mdev->act_log);
 
-			if (mdev->ee_hash) {
-				kfree(mdev->ee_hash);
-				mdev->ee_hash_s = 0;
-				mdev->ee_hash = NULL;
-			}
-			if (mdev->tl_hash) {
-				kfree(mdev->tl_hash);
-				mdev->tl_hash_s = 0;
-				mdev->tl_hash = NULL;
-			}
-			if (mdev->app_reads_hash) {
-				kfree(mdev->app_reads_hash);
-				mdev->app_reads_hash = NULL;
-			}
-			if (mdev->p_uuid) {
-				kfree(mdev->p_uuid);
-				mdev->p_uuid = NULL;
-			}
+			kfree(mdev->ee_hash);
+			mdev->ee_hash_s = 0;
+			mdev->ee_hash = NULL;
+
+			kfree(mdev->tl_hash);
+			mdev->tl_hash_s = 0;
+			mdev->tl_hash = NULL;
+
+			kfree(mdev->app_reads_hash);
+			mdev->app_reads_hash = NULL;
+
+			kfree(mdev->p_uuid);
+			mdev->p_uuid = NULL;
 		}
 		drbd_destroy_mempools();
 	}
