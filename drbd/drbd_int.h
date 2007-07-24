@@ -1320,25 +1320,6 @@ extern int w_prev_work_done	 (drbd_dev *, struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 
-#if 0
-#define BD_CLAIM(bdev,holder) ({					\
-	int r = bd_claim(bdev,holder);					\
-	printk(KERN_INFO "drbd: %u = bd_claim(%p,%p); [%p;%u]\n",	\
-		r, bdev, holder, bdev->bd_holder, bdev->bd_holders);	\
-	r; })
-
-#define BD_RELEASE(bdev) do {						\
-	printk(KERN_INFO "drbd: pre: bd_release(%p); [%p;%u]\n",	\
-		bdev, bdev->bd_holder, bdev->bd_holders);		\
-	bd_release(bdev);						\
-	printk(KERN_INFO "drbd: post: bd_release(%p); [%p;%u]\n",	\
-		bdev, bdev->bd_holder, bdev->bd_holders);		\
-	} while (0)
-#else
-#define BD_CLAIM(bdev,holder)	bd_claim(bdev,holder)
-#define BD_RELEASE(bdev)	bd_release(bdev)
-#endif
-
 // drbd_receiver.c
 extern int drbd_release_ee(drbd_dev* mdev, struct list_head* list);
 extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,

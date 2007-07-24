@@ -2458,8 +2458,8 @@ void drbd_free_bc(struct drbd_backing_dev* bc)
 {
 	if (bc == NULL) return;
 
-	BD_RELEASE(bc->backing_bdev);
-	BD_RELEASE(bc->md_bdev);
+	bd_release(bc->backing_bdev);
+	bd_release(bc->md_bdev);
 
 	fput(bc->lo_file);
 	fput(bc->md_file);

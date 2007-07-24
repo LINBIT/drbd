@@ -771,7 +771,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	nbc->backing_bdev = inode->i_bdev;
-	if (BD_CLAIM(nbc->backing_bdev, mdev)) {
+	if (bd_claim(nbc->backing_bdev, mdev)) {
 		printk(KERN_ERR "drbd: bd_claim(%p,%p); failed [%p;%p;%u]\n",
 		       nbc->backing_bdev, mdev, 
 		       nbc->backing_bdev->bd_holder,
@@ -788,7 +788,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	nbc->md_bdev = inode2->i_bdev;
-	if (BD_CLAIM(nbc->md_bdev,
+	if (bd_claim(nbc->md_bdev,
 		     (nbc->dc.meta_dev_idx==DRBD_MD_INDEX_INTERNAL ||
 		      nbc->dc.meta_dev_idx==DRBD_MD_INDEX_FLEX_INT) ?
 		     (void *)mdev : (void*) drbd_m_holder )) {
@@ -1015,9 +1015,9 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_force_state(mdev, NS(disk, Diskless));
 	drbd_md_sync(mdev);
  release_bdev2_fail:
-	if (nbc) BD_RELEASE(nbc->md_bdev);
+	if (nbc) bd_release(nbc->md_bdev);
  release_bdev_fail:
-	if (nbc) BD_RELEASE(nbc->backing_bdev);
+	if (nbc) bd_release(nbc->backing_bdev);
  fail:
 	if (nbc) {
 		if (nbc->lo_file) fput(nbc->lo_file);
