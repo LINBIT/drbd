@@ -411,7 +411,8 @@ int w_make_resync_request(drbd_dev *mdev, struct drbd_work *w, int cancel)
 #endif
 
 		/* adjust very last sectors, in case we are oddly sized */
-		if (sector + (size>>9) > capacity) size = (capacity-sector)<<9;
+		if (sector + (size>>9) > capacity)
+			size = (capacity-sector)<<9;
 		inc_rs_pending(mdev);
 		if (!drbd_send_drequest(mdev, RSDataRequest,
 				       sector, size, ID_SYNCER)) {
@@ -746,7 +747,9 @@ STATIC void drbd_global_lock(void)
 
 	local_irq_disable();
 	for (i = 0; i < minor_count; i++) {
-		if (!(mdev = minor_to_mdev(i))) continue;
+		mdev = minor_to_mdev(i);
+		if (!mdev)
+			continue;
 		spin_lock(&mdev->req_lock);
 	}
 }
@@ -757,7 +760,9 @@ STATIC void drbd_global_unlock(void)
 	int i;
 
 	for (i = 0; i < minor_count; i++) {
-		if (!(mdev = minor_to_mdev(i))) continue;
+		mdev = minor_to_mdev(i);
+		if (!mdev)
+			continue;
 		spin_unlock(&mdev->req_lock);
 	}
 	local_irq_enable();
@@ -813,7 +818,9 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i = 0; i < minor_count; i++) {
-		if ( !(odev = minor_to_mdev(i)) ) continue;
+		odev = minor_to_mdev(i);
+		if (!odev)
+			continue;
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
 				rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 0),

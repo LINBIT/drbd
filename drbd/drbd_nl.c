@@ -120,14 +120,15 @@ extern void drbd_init_set_defaults(drbd_dev *mdev);
 void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
-char *nl_packet_name(int packet_type) {
+char *nl_packet_name(int packet_type)
+{
 /* Generate packet type strings */
 #define PACKET(name, number, fields) \
 	[ P_ ## name ] = # name,
-#define INTEGER Argh!
-#define BIT Argh!
-#define INT64 Argh!
-#define STRING Argh!
+#define INTEGER Argh !
+#define BIT Argh !
+#define INT64 Argh !
+#define STRING Argh !
 
 	static char *nl_tag_name[P_nl_after_last_packet] = {
 #include "linux/drbd_nl.h"
@@ -137,7 +138,8 @@ char *nl_packet_name(int packet_type) {
 	    nl_tag_name[packet_type] : "*Unknown*";
 }
 
-void nl_trace_packet(void *data) {
+void nl_trace_packet(void *data)
+{
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
 
@@ -149,7 +151,8 @@ void nl_trace_packet(void *data) {
 	       req->seq, req->ack, req->len);
 }
 
-void nl_trace_reply(void *data) {
+void nl_trace_reply(void *data)
+{
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply *)req->data;
 
@@ -808,7 +811,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-	if ((retcode = drbd_request_state(mdev, NS(disk, Attaching))) < SS_Success )
+	retcode = drbd_request_state(mdev, NS(disk, Attaching));
+	if (retcode < SS_Success )
 		goto release_bdev2_fail;
 
 	drbd_md_set_sector_offsets(mdev, nbc);
@@ -955,8 +959,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_bm_unlock(mdev);
 
 	if (inc_local_if_state(mdev, Attaching)) {
-		if (mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=	(u64)1;
-		else				mdev->bc->md.uuid[Current] &= ~(u64)1;
+		if (mdev->state.role == Primary)
+			mdev->bc->md.uuid[Current] |=	(u64)1;
+		else
+			mdev->bc->md.uuid[Current] &= ~(u64)1;
 		dec_local(mdev);
 	}
 
@@ -1582,7 +1588,8 @@ void drbd_connector_callback(void *data)
 		return;
 	}
 
-	if ( !(mdev = ensure_mdev(nlp)) ) {
+	mdev = ensure_mdev(nlp);
+	if (!mdev) {
 		retcode = MinorNotKnown;
 		goto fail;
 	}
@@ -1597,7 +1604,8 @@ void drbd_connector_callback(void *data)
 	cm = cnd_table + nlp->packet_type;
 	reply_size += cm->reply_body_size;
 
-	if ( !(cn_reply = kmalloc(reply_size, GFP_KERNEL)) ) {
+	cn_reply = kmalloc(reply_size, GFP_KERNEL);
+	if (!cn_reply) {
 		retcode = KMallocFailed;
 		goto fail;
 	}
@@ -1639,7 +1647,7 @@ void drbd_bcast_state(drbd_dev *mdev)
 		    sizeof(struct get_state_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 
 	/* WARN("drbd_bcast_state() got called\n"); */
@@ -1672,7 +1680,7 @@ void drbd_bcast_ev_helper(drbd_dev *mdev, char *helper_name)
 		    sizeof(struct call_helper_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 	int str_len;
 
@@ -1710,7 +1718,7 @@ void drbd_bcast_sync_progress(drbd_dev *mdev)
 		    sizeof(struct sync_progress_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 	int res;
 	unsigned long rs_left;
@@ -1794,7 +1802,7 @@ void drbd_nl_send_reply( struct cn_msg *req,
 {
 	char buffer[sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	int rr;
 
 	cn_reply->id = req->id;

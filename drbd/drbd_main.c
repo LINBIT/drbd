@@ -89,7 +89,7 @@ module_param(minor_count, int, 0);
 module_param(allow_oos, int, 0);
 
 #ifdef DRBD_ENABLE_FAULTS
-int enable_faults = 0;
+int enable_faults;
 int fault_rate;
 int fault_count;
 int fault_devs;
@@ -101,12 +101,12 @@ module_param(fault_devs, int, 0644);	/* bitmap of devices to insert faults on */
 
 /* module parameter, defined */
 int minor_count = 32;
-int allow_oos = 0;
+int allow_oos;
 
 #ifdef ENABLE_DYNAMIC_TRACE
-int trace_type  = 0;	/* Bitmap of trace types to enable */
-int trace_level = 0;	/* Current trace level */
-int trace_devs  = 0;	/* Bitmap of devices to trace */
+int trace_type;		/* Bitmap of trace types to enable */
+int trace_level;	/* Current trace level */
+int trace_devs;		/* Bitmap of devices to trace */
 
 module_param(trace_level, int, 0644);
 module_param(trace_type, int, 0644);
@@ -125,7 +125,7 @@ volatile int drbd_did_panic = 0;
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */
-struct Drbd_Conf **minor_table = NULL;
+struct Drbd_Conf **minor_table;
 
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;
@@ -335,8 +335,10 @@ int drbd_io_error(drbd_dev *mdev, int forcedetach)
 	if (!send) return ok;
 
 	ok = drbd_send_state(mdev);
-	if (ok) WARN("Notified peer that my disk is broken.\n");
-	else ERR("Sending state in drbd_io_error() failed\n");
+	if (ok)
+		WARN("Notified peer that my disk is broken.\n");
+	else
+		ERR("Sending state in drbd_io_error() failed\n");
 
 	/* Make sure we try to flush meta-data to disk - we come
 	 * in here because of a local disk error so it might fail
@@ -443,7 +445,8 @@ int _drbd_request_state(drbd_dev *mdev, drbd_state_t mask, drbd_state_t val,
 
 	if (cl_wide_st_chg(mdev, os, ns)) {
 		rv = is_valid_state(mdev, ns);
-		if (rv == SS_Success) rv = is_valid_state_transition(mdev, ns, os);
+		if (rv == SS_Success)
+			rv = is_valid_state_transition(mdev, ns, os);
 		spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 		if (rv < SS_Success) {
@@ -722,7 +725,8 @@ int _drbd_set_state(drbd_dev *mdev, drbd_state_t ns, enum chg_state_flags flags)
 				print_st(mdev, "new", ns);
 				rv = SS_Success;
 			}
-		} else rv = is_valid_state_transition(mdev, ns, os);
+		} else
+			rv = is_valid_state_transition(mdev, ns, os);
 	}
 
 	if (rv < SS_Success) {
@@ -1098,6 +1102,8 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
 		flush_signals(current); /* otherw. may get -ERESTARTNOINTR */
+
+		/* FIXME rewrite to use kthread interface */
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
@@ -1142,7 +1148,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 		if (thi->task != current) {
 			if (wait) init_completion(&thi->startstop);
 			force_sig(DRBD_SIGKILL, thi->task);
-		} else D_ASSERT(!wait);
+		} else
+			D_ASSERT(!wait);
 	}
 	spin_unlock(&thi->t_lock);
 
@@ -1567,9 +1574,9 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 
 #ifdef SHOW_SENDPAGE_USAGE
 	unsigned long now = jiffies;
-	static unsigned long total = 0;
-	static unsigned long fallback = 0;
-	static unsigned long last_rep = 0;
+	static unsigned long total;
+	static unsigned long fallback;
+	static unsigned long last_rep;
 
 	/* report statistics every hour,
 	 * if we had at least one fallback.
@@ -1714,7 +1721,8 @@ int drbd_send_block(drbd_dev *mdev, Drbd_Packet_Cmd cmd,
 
 	dump_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE);
-	if (ok) ok = _drbd_send_zc_bio(mdev, e->private_bio);
+	if (ok)
+		ok = _drbd_send_zc_bio(mdev, e->private_bio);
 
 	drbd_put_data_sock(mdev);
 	return ok;
@@ -1913,12 +1921,8 @@ void drbd_set_defaults(drbd_dev *mdev)
 	mdev->sync_conf.after      = DRBD_AFTER_DEF;
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
 	mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_DEF; /* 512 MB active set */
-	mdev->state = (drbd_state_t){ { Secondary,
-					Unknown,
-					StandAlone,
-					Diskless,
-					DUnknown,
-					0 } };
+	mdev->state = (drbd_state_t) {
+		{ Secondary, Unknown, StandAlone, Diskless, DUnknown, 0 } };
 }
 
 void drbd_init_set_defaults(drbd_dev *mdev)
@@ -2377,7 +2381,8 @@ int __init drbd_init(void)
 	minor_table = kzalloc(sizeof(drbd_dev *)*minor_count, GFP_KERNEL);
 	if (!minor_table) goto Enomem;
 
-	if ((err = drbd_create_mempools()))
+	err = drbd_create_mempools();
+	if (err)
 		goto Enomem;
 
 #if CONFIG_PROC_FS
@@ -2556,7 +2561,7 @@ int drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev *bdev)
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
-	if ( ! drbd_md_sync_page_io(mdev, bdev, bdev->md.md_offset, READ) ) {
+	if (!drbd_md_sync_page_io(mdev, bdev, bdev->md.md_offset, READ)) {
 		/* NOTE: cant do normal error processing here as this is
 		   called BEFORE disk is attached */
 		ERR("Error while reading metadata.\n");
@@ -2824,7 +2829,8 @@ _drbd_insert_fault(drbd_dev *mdev, unsigned int type)
 
 #ifdef ENABLE_DYNAMIC_TRACE
 
-STATIC char *_drbd_uuid_str(unsigned int idx) {
+STATIC char *_drbd_uuid_str(unsigned int idx)
+{
 	static char *uuid_str[] = {
 		"Current",
 		"Bitmap",
@@ -3020,7 +3026,8 @@ do { \
 	} \
 } while (0)
 
-char *_dump_block_id(u64 block_id, char *buff) {
+char *_dump_block_id(u64 block_id, char *buff)
+{
     if (is_syncer_block_id(block_id))
 	strcpy(buff, "SyncerId");
     else

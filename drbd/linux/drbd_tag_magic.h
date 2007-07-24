@@ -32,10 +32,10 @@ enum packet_types {
 /* declate tag-list-sizes */
 const int tag_list_sizes[] = {
 #define PACKET(name, number, fields) 2 fields ,
-#define INTEGER(pn, pr, member)      +4+4
-#define INT64(pn, pr, member)        +4+8
-#define BIT(pn, pr, member)          +4+1
-#define STRING(pn, pr, member, len)  +4+len
+#define INTEGER(pn, pr, member)      + 4 + 4
+#define INT64(pn, pr, member)        + 4 + 8
+#define BIT(pn, pr, member)          + 4 + 1
+#define STRING(pn, pr, member, len)  + 4 + len
 #include "drbd_nl.h"
 };
 

@@ -1264,7 +1264,8 @@ extern void drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 /* Bio printing support */
 extern void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete);
 
-static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete) {
+static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
+{
 	MTRACE(TraceTypeRq, TraceLvlSummary,
 	       _dump_bio(mdev, bio, complete);
 		);
@@ -1607,12 +1608,14 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 	spin_unlock_irqrestore(&q->q_lock, flags);
 }
 
-static inline void wake_asender(drbd_dev *mdev) {
+static inline void wake_asender(drbd_dev *mdev)
+{
 	if (test_bit(SIGNAL_ASENDER, &mdev->flags))
 		force_sig(DRBD_SIG, mdev->asender.task);
 }
 
-static inline void request_ping(drbd_dev *mdev) {
+static inline void request_ping(drbd_dev *mdev)
+{
 	set_bit(SEND_PING, &mdev->flags);
 	wake_asender(mdev);
 }
@@ -1679,7 +1682,7 @@ static inline void inc_ap_pending(drbd_dev *mdev)
 }
 
 #define ERR_IF_CNT_IS_NEGATIVE(which)				\
-	if (atomic_read(&mdev->which) < 0)				\
+	if (atomic_read(&mdev->which) < 0)			\
 		ERR("in %s:%d: " #which " = %d < 0 !\n",	\
 		    __func__ , __LINE__ ,			\
 		    atomic_read(&mdev->which))
@@ -1795,7 +1798,8 @@ static inline int drbd_get_max_buffers(drbd_dev *mdev)
 	return mxb;
 }
 
-static inline int __inc_ap_bio_cond(drbd_dev *mdev) {
+static inline int __inc_ap_bio_cond(drbd_dev *mdev)
+{
 	int mxb = drbd_get_max_buffers(mdev);
 	if (mdev->state.susp) return 0;
 	if (mdev->state.conn == WFBitMapS) return 0;

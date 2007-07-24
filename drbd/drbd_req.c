@@ -291,8 +291,10 @@ void _req_may_be_done(drbd_request_t *req, int error)
 
 		/* remove the request from the conflict detection
 		 * respective block_id verification hash */
-		if (!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
-		else D_ASSERT((s & RQ_NET_MASK) == 0);
+		if (!hlist_unhashed(&req->colision))
+			hlist_del(&req->colision);
+		else
+			D_ASSERT((s & RQ_NET_MASK) == 0);
 
 		/* for writes we need to do some extra housekeeping */
 		if (rw == WRITE)
@@ -859,9 +861,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && remote &&
 	    mdev->unused_spare_barrier == NULL &&
-	    test_bit(ISSUE_BARRIER, &mdev->flags))
-	{
-  allocate_barrier:
+	    test_bit(ISSUE_BARRIER, &mdev->flags)) {
+allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_barrier), GFP_NOIO);
 		if (!b) {
 			ERR("Failed to alloc barrier.");
@@ -980,8 +981,10 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		if (rw == WRITE) _req_mod(req, queue_for_net_write, 0);
-		else		 _req_mod(req, queue_for_net_read, 0);
+		if (rw == WRITE)
+			_req_mod(req, queue_for_net_write, 0);
+		else
+			_req_mod(req, queue_for_net_read, 0);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 	if (b) kfree(b); /* if someone else has beaten us to it... */
@@ -1111,7 +1114,8 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 		drbd_make_request_26(q, &bp->bio2);
 		bio_pair_release(bp);
 		return 0;
-	}}
+	}
+	}
 
 	return drbd_make_request_common(mdev, bio_rw(bio), bio->bi_size,
 					bio->bi_sector, bio);

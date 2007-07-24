@@ -264,7 +264,8 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap *b, int just_read)
 	while ( bm < ep ) {
 		/* on little endian, this is *bm = *bm;
 		 * and should be optimized away by the compiler */
-		if (just_read) *bm = lel_to_cpu(*bm);
+		if (just_read)
+			*bm = lel_to_cpu(*bm);
 		bits += hweight_long(*bm++);
 	}
 
@@ -384,7 +385,8 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
-		if (!growing) b->bm_set = bm_count_bits(b, 0);
+		if (!growing)
+			b->bm_set = bm_count_bits(b, 0);
 		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n", bits, words);

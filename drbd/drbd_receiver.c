@@ -137,12 +137,14 @@ STATIC struct page *drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	   FIXME but why irq _save_ ?
 	   this is only called from drbd_alloc_ee,
 	   and that is strictly process context! */
-	if ( (page = drbd_pp_pool) ) {
+	page = drbd_pp_pool;
+	if (page) {
 		drbd_pp_pool = (struct page *)page_private(page);
 		drbd_pp_vacant--;
 	}
 	spin_unlock_irqrestore(&drbd_pp_lock, flags);
-	if (page) goto got_page;
+	if (page)
+		goto got_page;
 
 	drbd_kick_lo(mdev);
 
@@ -151,7 +153,8 @@ STATIC struct page *drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 
 		/* try the pool again, maybe the drbd_kick_lo set some free */
 		spin_lock_irqsave(&drbd_pp_lock, flags);
-		if ( (page = drbd_pp_pool) ) {
+		page = drbd_pp_pool;
+		if (page) {
 			drbd_pp_pool = (struct page *)page_private(page);
 			drbd_pp_vacant--;
 		}
@@ -163,7 +166,8 @@ STATIC struct page *drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 		 * don't wait, if none is available, though.
 		 */
 		if ( atomic_read(&mdev->pp_in_use) < mdev->net_conf->max_buffers ) {
-			if ( (page = alloc_page(GFP_TRY)) )
+			page = alloc_page(GFP_TRY);
+			if (page)
 				break;
 		}
 
@@ -617,7 +621,7 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	src_in.sin_port = 0;
 
 	err = sock->ops->bind(sock,
-			      (struct sockaddr * ) &src_in,
+			      (struct sockaddr *) &src_in,
 			      sizeof (struct sockaddr_in));
 	if (err) {
 		ERR("Unable to bind source sock (%d)\n", err);
@@ -1745,7 +1749,8 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 				WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
-		} else rv = hg;
+		} else
+			rv = hg;
 	}
 
 	return rv;
@@ -1783,7 +1788,8 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
 				WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
-		} else rv = hg;
+		} else
+			rv = hg;
 	}
 
 	return rv;
@@ -2514,7 +2520,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
-static drbd_cmd_handler_f *drbd_opt_cmd_handler = NULL;
+static drbd_cmd_handler_f *drbd_opt_cmd_handler;
 
 STATIC void drbdd(drbd_dev *mdev)
 {
@@ -2972,7 +2978,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		goto fail;
 	}
 
-	rv = ! memcmp(response, right_response, resp_size);
+	rv = !memcmp(response, right_response, resp_size);
 
 	if (rv)
 		INFO("Peer authenticated using %d bytes of '%s' HMAC\n",
