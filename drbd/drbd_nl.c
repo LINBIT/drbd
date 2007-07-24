@@ -116,7 +116,6 @@ name ## _to_tags (struct drbd_conf *mdev, struct name *arg, unsigned short *tags
 	tags = (unsigned short *)((char *)tags + arg->member ## _len);
 #include "linux/drbd_nl.h"
 
-extern void drbd_init_set_defaults(struct drbd_conf *mdev);
 void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 

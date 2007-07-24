@@ -582,7 +582,7 @@ static inline enum Drbd_thread_state get_t_state(struct Drbd_thread *thi)
 	 *	--lge */
 
 	smp_rmb();
-	return (volatile int)thi->t_state;
+	return thi->t_state;
 }
 
 
@@ -782,8 +782,8 @@ struct drbd_conf {
 
 	struct drbd_socket data; /* data/barrier/cstate/parameter packets */
 	struct drbd_socket meta; /* ping/ack (metadata) packets */
-	volatile unsigned long last_received; /* in jiffies, either socket */
-	volatile unsigned int ko_count;
+	unsigned long last_received; /* in jiffies, either socket */
+	unsigned int ko_count;
 	struct drbd_work  resync_work,
 			  unplug_work,
 			  md_sync_work;
@@ -929,6 +929,7 @@ enum chg_state_flags {
 	ScheduleAfter	= 4,
 };
 
+extern void drbd_init_set_defaults(struct drbd_conf *mdev);
 extern int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 			     union drbd_state_t mask, union drbd_state_t val);
 extern void drbd_force_state(struct drbd_conf *, union drbd_state_t, union drbd_state_t);

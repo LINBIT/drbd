@@ -119,9 +119,6 @@ char usermode_helper[80] = "/sbin/drbdadm";
 
 module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0644);
 
-/* global panic flag */
-volatile int drbd_did_panic = 0;
-
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */
@@ -1521,7 +1518,7 @@ int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
 		|| get_t_state(&mdev->asender) != Running
-		|| (volatile int)mdev->state.conn < Connected;
+		|| mdev->state.conn < Connected;
 
 	if (drop_it)
 		return TRUE;
