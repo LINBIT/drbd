@@ -90,9 +90,10 @@ size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache *lc)
 {
 	/* NOTE:
 	 * total calls to lc_get are
-	 * starving + hits + misses
-	 * misses include "dirty" count (update from an other thread in progress)
-	 * and "changed", when this in fact lead to an successful update of the cache.
+	 * (starving + hits + misses)
+	 * misses include "dirty" count (update from an other thread in
+	 * progress) and "changed", when this in fact lead to an successful
+	 * update of the cache.
 	 */
 	return seq_printf(seq, "\t%s: used:%u/%u "
 		"hits:%lu misses:%lu starving:%lu dirty:%lu changed:%lu\n",
@@ -293,7 +294,8 @@ void lc_changed(struct lru_cache *lc, struct lc_element *e)
 	++lc->changed;
 	e->lc_number = lc->new_number;
 	list_add(&e->list, &lc->in_use);
-	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, lc->new_number) );
+	hlist_add_head(&e->colision,
+		lc->slot + lc_hash_fn(lc, lc->new_number));
 	lc->changing_element = NULL;
 	lc->new_number = -1;
 	clear_bit(__LC_DIRTY, &lc->flags);
@@ -312,7 +314,8 @@ unsigned int lc_put(struct lru_cache *lc, struct lc_element *e)
 	BUG_ON(e->refcnt == 0);
 	BUG_ON(e == lc->changing_element);
 	if (--e->refcnt == 0) {
-		list_move(&e->list, &lc->lru); /* move it to the front of LRU. */
+		/* move it to the front of LRU. */
+		list_move(&e->list, &lc->lru);
 		lc->used--;
 		clear_bit(__LC_STARVING, &lc->flags);
 		smp_mb__after_clear_bit();
@@ -342,7 +345,7 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
 	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
-#if 0
+#ifdef DRBD_DUMP_RESYNC_DETAIL
 /**
  * lc_dump: Dump a complete LRU cache to seq in textual form.
  */

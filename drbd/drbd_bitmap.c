@@ -302,8 +302,10 @@ void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
 int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long bits, bytes, words, *nbm, *obm = 0;
-	int err = 0, growing;
+	unsigned long *nbm, *obm = NULL;
+	unsigned long bits, bytes, words;
+	int err = 0;
+	int growing;
 
 	ERR_IF(!b) return -ENOMEM;
 
@@ -338,7 +340,8 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		*/
 		words = ALIGN(bits, 64) >> LN2_BPL;
 
-		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
+		D_ASSERT((u64)bits <=
+			(((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
 
 		if (words == b->bm_words) {
 			/* optimize: capacity has changed,
@@ -357,7 +360,8 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 			bytes = (words+1)*sizeof(long);
 			nbm = vmalloc(bytes);
 			if (!nbm) {
-				ERR("bitmap: failed to vmalloc %lu bytes\n", bytes);
+				ERR("bitmap: failed to vmalloc %lu bytes\n",
+					bytes);
 				err = -ENOMEM;
 				goto out;
 			}
@@ -369,7 +373,8 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		if (obm) {
 			bm_set_surplus(b);
 			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
-			memcpy(nbm, obm, min_t(size_t, b->bm_words, words)*sizeof(long));
+			memcpy(nbm, obm, min_t(size_t, b->bm_words, words)
+								*sizeof(long));
 		}
 		growing = words > b->bm_words;
 		if (growing) {
@@ -548,7 +553,8 @@ void drbd_bm_set_all(struct drbd_conf *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int error)
+int drbd_bm_async_io_complete(struct bio *bio,
+	unsigned int bytes_done, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
@@ -578,17 +584,21 @@ int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int erro
 	return 0;
 }
 
-void drbd_bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw)
+void drbd_bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b,
+			   int page_nr, int rw)
 {
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
 	struct bio *bio = bio_alloc(GFP_KERNEL, 1);
-	struct page *page = vmalloc_to_page((char *)(b->bm) + (PAGE_SIZE*page_nr));
+	struct page *page = vmalloc_to_page((char *)(b->bm)
+						+ (PAGE_SIZE*page_nr));
 	unsigned int len;
-	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
+	sector_t on_disk_sector =
+		mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	on_disk_sector += ((sector_t)page_nr) << (PAGE_SHIFT-9);
 
-	/* this might happen with very small flexible external meta data device */
+	/* this might happen with very small
+	 * flexible external meta data device */
 	len = min_t(unsigned int, PAGE_SIZE,
 		(drbd_md_last_sector(mdev->bc) - on_disk_sector + 1)<<9);
 
@@ -615,8 +625,10 @@ void drbd_bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int pa
  */
 int drbd_bm_read_sect(struct drbd_conf *mdev, unsigned long enr)
 {
-	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
-	int bm_words, num_words, offset, err  = 0;
+	sector_t on_disk_sector = mdev->bc->md.md_offset
+				+ mdev->bc->md.bm_offset + enr;
+	int bm_words, num_words, offset;
+	int err = 0;
 
 	down(&mdev->md_io_mutex);
 	if (drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, READ)) {
@@ -770,8 +782,10 @@ int drbd_bm_read(struct drbd_conf *mdev)
  */
 int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr)
 {
-	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
-	int bm_words, num_words, offset, err  = 0;
+	sector_t on_disk_sector = enr + mdev->bc->md.md_offset
+				      + mdev->bc->md.bm_offset;
+	int bm_words, num_words, offset;
+	int err = 0;
 
 	down(&mdev->md_io_mutex);
 	bm_words  = drbd_bm_words(mdev);
@@ -925,7 +939,8 @@ int drbd_bm_set_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 
 /* returns number of bits actually changed (0->1)
  * wants bitnr, not sector */
-int drbd_bm_set_bits_in_irq(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
+int drbd_bm_set_bits_in_irq(struct drbd_conf *mdev,
+	const unsigned long s, const unsigned long e)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long bitnr;

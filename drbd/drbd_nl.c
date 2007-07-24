@@ -47,7 +47,8 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 /* Generate the tag_list to struct functions */
 #define PACKET(name, number, fields) \
-int name ## _from_tags (struct drbd_conf *mdev, unsigned short *tags, struct name *arg) \
+int name ## _from_tags (struct drbd_conf *mdev, \
+	unsigned short *tags, struct name *arg) \
 { \
 	int tag; \
 	int dlen; \
@@ -88,7 +89,8 @@ int name ## _from_tags (struct drbd_conf *mdev, unsigned short *tags, struct nam
 /* Generate the struct to tag_list functions */
 #define PACKET(name, number, fields) \
 unsigned short* \
-name ## _to_tags (struct drbd_conf *mdev, struct name *arg, unsigned short *tags) \
+name ## _to_tags (struct drbd_conf *mdev, \
+	struct name *arg, unsigned short *tags) \
 { \
 	fields \
 	return tags; \
@@ -208,8 +210,8 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 	case 4: /* peer is outdated */
 		nps = Outdated;
 		break;
-	case 5: /* peer was down, we will(have) create(d) a new UUID anyways... */
-		/* If we would be more strict, we would return DUnknown here. */
+	case 5: /* peer was down, we will(have) create(d) a new UUID anyways.
+		 * If we would be more strict, we would return DUnknown here. */
 		nps = Outdated;
 		break;
 	case 6: /* Peer is primary, voluntarily outdate myself */
@@ -292,11 +294,12 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 			/* Maybe the peer is detected as dead very soon... */
 			set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
-			if (try == 1) try++; /* only a single retry in this case. */
+			if (try == 1)
+				try++; /* only a single retry in this case. */
 			continue;
 		}
 		if (r < SS_Success) {
-			r = drbd_request_state(mdev, mask, val); /* Be verbose. */
+			r = drbd_request_state(mdev, mask, val);
 			if (r < SS_Success) goto fail;
 		}
 		break;
@@ -373,7 +376,8 @@ int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		return 0;
 	}
 
-	reply->ret_code = drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
+	reply->ret_code =
+		drbd_set_role(mdev, Primary, primary_args.overwrite_peer);
 
 	return 0;
 }
@@ -475,7 +479,9 @@ int drbd_determin_dev_size(struct drbd_conf *mdev)
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(mdev)>>1;
 			if (size == 0) {
-				ERR("OUT OF MEMORY! Could not allocate bitmap! Set device size => 0\n");
+				ERR("OUT OF MEMORY! "
+				    "Could not allocate bitmap! "
+				    "Set device size => 0\n");
 			} else {
 				/* FIXME this is problematic,
 				 * if we in fact are smaller now! */
@@ -514,7 +520,7 @@ int drbd_determin_dev_size(struct drbd_conf *mdev)
 			dec_local(mdev);
 		}
 	}
-  out:
+out:
 	lc_unlock(mdev->act_log);
 
 	return rv;
@@ -608,7 +614,7 @@ int drbd_check_al_size(struct drbd_conf *mdev)
 	} else {
 		if (t) lc_free(t);
 	}
-	drbd_md_mark_dirty(mdev);	/* we changed mdev->act_log->nr_elemens */
+	drbd_md_mark_dirty(mdev); /* we changed mdev->act_log->nr_elemens */
 	return 0;
 }
 
@@ -861,7 +867,8 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
 	/*
 	 * FIXME currently broken.
-	 * drbd_set_recv_tcq(mdev,drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
+	 * drbd_set_recv_tcq(mdev,
+	 *	drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
 	 */
 
 	/* If I am currently not Primary,
@@ -888,7 +895,8 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_determin_dev_size(mdev);
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
-		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
+		INFO("Assuming that all blocks are out of sync "
+		     "(aka FullSync)\n");
 		drbd_bm_set_all(mdev);
 		if (unlikely(drbd_bm_write(mdev) < 0)) {
 			retcode = MDIOError;
@@ -1053,7 +1061,8 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (new_conf->two_primaries && (new_conf->wire_protocol != DRBD_PROT_C)) {
+	if (new_conf->two_primaries
+	&& (new_conf->wire_protocol != DRBD_PROT_C)) {
 		retcode = ProtocolCRequired;
 		goto fail;
 	};
@@ -1090,7 +1099,8 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 #undef O_PORT
 
 	if (new_conf->cram_hmac_alg[0] != 0) {
-		snprintf(hmac_name, HMAC_NAME_L, "hmac(%s)", new_conf->cram_hmac_alg);
+		snprintf(hmac_name, HMAC_NAME_L, "hmac(%s)",
+			new_conf->cram_hmac_alg);
 		tfm = crypto_alloc_hash(hmac_name, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(tfm)) {
 			tfm = NULL;
@@ -1098,7 +1108,8 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(crypto_hash_tfm(tfm)) != CRYPTO_ALG_TYPE_HASH ) {
+		if (crypto_tfm_alg_type(crypto_hash_tfm(tfm))
+						!= CRYPTO_ALG_TYPE_HASH) {
 			retcode = CRAMAlgNotDigest;
 			goto fail;
 		}
@@ -1176,7 +1187,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	reply->ret_code = retcode;
 	return 0;
 
-  fail:
+fail:
 	if (tfm) crypto_free_hash(tfm);
 	if (new_tl_hash) kfree(new_tl_hash);
 	if (new_ee_hash) kfree(new_ee_hash);
@@ -1191,7 +1202,8 @@ int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode;
 
-	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), 0);	/* silently. */
+	/* silently. */
+	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), 0);
 
 	if (retcode == SS_NothingToDo) goto done;
 	else if (retcode == SS_AlreadyStandAlone) goto done;
@@ -1208,7 +1220,8 @@ int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		 * simply go away, and let the peer try to outdate us with its
 		 * 'outdate-peer' handler later. */
 		if (retcode == SS_IsDiskLess)
-			retcode = drbd_request_state(mdev, NS(conn, StandAlone));
+			retcode = drbd_request_state(mdev,
+						NS(conn, StandAlone));
 	}
 
 	if (retcode < SS_Success) goto fail;
@@ -1408,11 +1421,13 @@ int drbd_nl_outdate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	if (mdev->state.disk < Outdated)
 		retcode = -999;
 	else
-		retcode = _drbd_set_state(_NS(mdev, disk, Outdated), ChgStateVerbose);
+		retcode = _drbd_set_state(_NS(mdev, disk, Outdated),
+						ChgStateVerbose);
 
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	if (retcode == SS_Success) after_state_ch(mdev, os, ns, ChgStateVerbose);
+	if (retcode == SS_Success)
+		after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	if (retcode == -999) {
 		retcode = DiskLowerThanOutdated;
@@ -1487,8 +1502,8 @@ int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 }
 
 
-int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
-				    struct drbd_nl_cfg_reply *reply)
+int drbd_nl_get_timeout_flag(struct drbd_conf *mdev,
+	struct drbd_nl_cfg_req *nlp, struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
 
@@ -1564,8 +1579,9 @@ static struct cn_handler_struct cnd_table[] = {
 				    sizeof(struct get_state_tag_len_struct) },
 	[ P_get_uuids ]		= { &drbd_nl_get_uuids,
 				    sizeof(struct get_uuids_tag_len_struct) },
-	[ P_get_timeout_flag ]	= { &drbd_nl_get_timeout_flag,
-				    sizeof(struct get_timeout_flag_tag_len_struct)},
+	[ P_get_timeout_flag ]	=
+		{ &drbd_nl_get_timeout_flag,
+		  sizeof(struct get_timeout_flag_tag_len_struct)},
 
 };
 
@@ -1610,7 +1626,8 @@ void drbd_connector_callback(void *data)
 	}
 	reply = (struct drbd_nl_cfg_reply *) cn_reply->data;
 
-	reply->packet_type = cm->reply_body_size ? nlp->packet_type : P_nl_after_last_packet;
+	reply->packet_type =
+		cm->reply_body_size ? nlp->packet_type : P_nl_after_last_packet;
 	reply->minor = nlp->drbd_minor;
 	reply->ret_code = NoError; /* Might by modified by cm->function. */
 	/* reply->tag_list; might be modified by cm->fucntion. */
@@ -1646,7 +1663,8 @@ void drbd_bcast_state(struct drbd_conf *mdev)
 		    sizeof(struct get_state_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply =
+		(struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 
 	/* WARN("drbd_bcast_state() got called\n"); */
@@ -1679,7 +1697,8 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 		    sizeof(struct call_helper_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply =
+		(struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 	int str_len;
 
@@ -1717,7 +1736,8 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 		    sizeof(struct sync_progress_tag_len_struct)+
 		    sizeof(short int)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply =
+		(struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 	int res;
 	unsigned long rs_left;
@@ -1727,8 +1747,9 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 
 		rs_left = drbd_bm_total_weight(mdev) - mdev->rs_failed;
 		if (rs_left > mdev->rs_total) {
-			ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-					rs_left, mdev->rs_total, mdev->rs_failed);
+			ERR("logic bug? "
+			    "rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+				rs_left, mdev->rs_total, mdev->rs_failed);
 			res = 1000;
 		} else {
 			res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
@@ -1801,7 +1822,8 @@ void drbd_nl_send_reply( struct cn_msg *req,
 {
 	char buffer[sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply)];
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
-	struct drbd_nl_cfg_reply *reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+	struct drbd_nl_cfg_reply *reply =
+		(struct drbd_nl_cfg_reply *)cn_reply->data;
 	int rr;
 
 	cn_reply->id = req->id;

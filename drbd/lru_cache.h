@@ -26,22 +26,23 @@
  */
 
 /*
-  The lru_cache describes a big set of objects that are addressed
-  by an index number (=lc_number). Only a small fraction of this set
-  is present in the cache.
-  (You set the size of the cache during lc_alloc)
-  Once created, the api consists of
-    lc_find(,nr) -- finds the object with the given number, if present
-    lc_get(,nr)  -- finds the object and increases the usage count
-		    if not present, actions are taken to make sure that
-		    the cache is updated, the user is notified of this by a callback.
-		    Return value is NULL in this case.
-		    As soon as the user informs the cache that it has been updated,
-		    the next lc_get on that very object number will be successfull.
-    lc_put(,lc_element*)
-		 -- decreases the usage count of this object, and returns the new value.
-
-    NOTE: It is the USERS responsibility to make sure that calls do not happen concurrently.
+ * The lru_cache describes a big set of objects that are addressed
+ * by an index number (=lc_number). Only a small fraction of this set
+ * is present in the cache.
+ * (You set the size of the cache during lc_alloc)
+ * Once created, the api consists of
+ *   lc_find(,nr) -- finds the object with the given number, if present
+ *   lc_get(,nr)  -- finds the object and increases the usage count
+ *	if not present, actions are taken to make sure that
+ *	the cache is updated, the user is notified of this by a callback.
+ *	Return value is NULL in this case.
+ *	As soon as the user informs the cache that it has been updated,
+ *	the next lc_get on that very object number will be successfull.
+ *   lc_put(,lc_element*)
+ *     -- decreases the usage count of this object, and returns the new value.
+ *
+ * NOTE: It is the USERS responsibility
+ * to make sure that calls do not happen concurrently.
  */
 
 #ifndef LRU_CACHE_H

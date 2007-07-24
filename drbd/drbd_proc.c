@@ -157,7 +157,7 @@ void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 	seq_printf(seq, " K/sec\n");
 }
 
-#if 0
+#ifdef DRBD_DUMP_RESYNC_DETAIL
 void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
@@ -246,7 +246,7 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 		if (mdev->act_log)
 			lc_printf_stats(seq, mdev->act_log);
 
-#if 0
+#ifdef DRBD_DUMP_RESYNC_DETAIL
 		if (mdev->resync) {
 			lc_dump(mdev->resync, seq, "rs_left",
 				resync_dump_detail);

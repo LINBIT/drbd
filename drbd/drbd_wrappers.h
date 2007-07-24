@@ -17,10 +17,13 @@
 extern char *drbd_sec_holder;
 
 /* bi_end_io handlers */
-extern int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_md_io_complete(struct bio *bio,
+		unsigned int bytes_done, int error);
 
-extern int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error);
-extern int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error);
+extern int drbd_endio_read_sec(struct bio *bio,
+		unsigned int bytes_done, int error);
+extern int drbd_endio_write_sec(struct bio *bio,
+		unsigned int bytes_done, int error);
 extern int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error);
 
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
@@ -108,12 +111,15 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw, int fault_type, struct bio *bio)
+static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw,
+	int fault_type, struct bio *bio)
 {
-	bio->bi_rw = rw; /* on the receiver side, e->..rw was not yet defined. */
+	/* on the receiver side, e->..rw was not yet defined. */
+	bio->bi_rw = rw;
 
 	if (!bio->bi_bdev) {
-		printk(KERN_ERR DEVICE_NAME "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
+		printk(KERN_ERR DEVICE_NAME
+		       "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));
 		dump_stack();
 		bio_endio(bio, bio->bi_size, -ENODEV);

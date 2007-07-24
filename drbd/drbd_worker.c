@@ -266,7 +266,8 @@ int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	/* FIXME this is ugly. we should not detach for read io-error,
 	 * but try to WRITE the DataReply to the failed location,
 	 * to give the disk the chance to relocate that block */
-	drbd_io_error(mdev, FALSE); /* tries to schedule a detach and notifies peer */
+	/* try to schedule a detach and notifies peer: */
+	drbd_io_error(mdev, FALSE);
 	return w_send_read_req(mdev, w, 0);
 }
 
@@ -302,7 +303,8 @@ void resync_timer_fn(unsigned long data)
 
 #define SLEEP_TIME (HZ/10)
 
-int w_make_resync_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
+int w_make_resync_request(struct drbd_conf *mdev,
+		struct drbd_work *w, int cancel)
 {
 	unsigned long bit;
 	sector_t sector;
@@ -321,7 +323,8 @@ int w_make_resync_request(struct drbd_conf *mdev, struct drbd_work *w, int cance
 	}
 
 	if (mdev->state.conn != SyncTarget)
-		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.conn));
+		ERR("%s in w_make_resync_request\n",
+			conns_to_name(mdev->state.conn));
 
 	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
@@ -340,8 +343,7 @@ int w_make_resync_request(struct drbd_conf *mdev, struct drbd_work *w, int cance
 	}
 
 	for (i = 0; i < number; i++) {
-
-	next_sector:
+next_sector:
 		size = BM_BLOCK_SIZE;
 		/* as of now, we are the only user of drbd_bm_find_next */
 		bit  = drbd_bm_find_next(mdev);
@@ -616,7 +618,8 @@ int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			ok = drbd_send_block(mdev, RSDataReply, e);
 		} else {
 			if (DRBD_ratelimit(5*HZ, 5))
-				ERR("Not sending RSDataReply, partner DISKLESS!\n");
+				ERR("Not sending RSDataReply, "
+				    "partner DISKLESS!\n");
 			ok = 1;
 		}
 	} else {
@@ -678,7 +681,8 @@ int w_send_barrier(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	/* inc_ap_pending was done where this was queued.
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in w_clear_epoch.  */
-	ok = _drbd_send_cmd(mdev, mdev->data.socket, Barrier, (struct Drbd_Header *)p, sizeof(*p), 0);
+	ok = _drbd_send_cmd(mdev, mdev->data.socket, Barrier,
+				(struct Drbd_Header *)p, sizeof(*p), 0);
 	drbd_put_data_sock(mdev);
 
 	return ok;
@@ -823,9 +827,9 @@ int _drbd_resume_next(struct drbd_conf *mdev)
 			continue;
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
-				rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 0),
-							ChgStateHard|ScheduleAfter)
-					!= SS_NothingToDo ) ;
+				rv |= (_drbd_set_state(_NS(odev, aftr_isp, 0),
+						ChgStateHard|ScheduleAfter)
+					!= SS_NothingToDo) ;
 		}
 	}
 	return rv;
@@ -1003,7 +1007,8 @@ int drbd_worker(struct Drbd_thread *thi)
 		if (!w->cb(mdev, w, mdev->state.conn < Connected )) {
 			/* WARN("worker: a callback failed! \n"); */
 			if (mdev->state.conn >= Connected)
-				drbd_force_state(mdev, NS(conn, NetworkFailure));
+				drbd_force_state(mdev,
+						NS(conn, NetworkFailure));
 		}
 	}
 
@@ -1035,7 +1040,7 @@ int drbd_worker(struct Drbd_thread *thi)
 	 * from the times when the worker did not live as long as the
 	 * device.. */
 
-	D_ASSERT( mdev->state.disk == Diskless && mdev->state.conn == StandAlone );
+	D_ASSERT(mdev->state.disk == Diskless && mdev->state.conn == StandAlone);
 	drbd_mdev_cleanup(mdev);
 	module_put(THIS_MODULE);
 

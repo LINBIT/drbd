@@ -204,17 +204,21 @@ enum drbd_req_state_bits {
 #define RQ_NET_OK          (1UL << __RQ_NET_OK)
 #define RQ_NET_SIS         (1UL << __RQ_NET_SIS)
 
-#define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK) /* 0x1f8 */
+/* 0x1f8 */
+#define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK)
 
 /* epoch entries */
-static inline struct hlist_head *ee_hash_slot(struct drbd_conf *mdev, sector_t sector)
+static inline
+struct hlist_head *ee_hash_slot(struct drbd_conf *mdev, sector_t sector)
 {
 	BUG_ON(mdev->ee_hash_s == 0);
-	return mdev->ee_hash + ((unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s);
+	return mdev->ee_hash +
+		((unsigned int)(sector>>HT_SHIFT) % mdev->ee_hash_s);
 }
 
 /* transfer log (drbd_request objects) */
-static inline struct hlist_head *tl_hash_slot(struct drbd_conf *mdev, sector_t sector)
+static inline
+struct hlist_head *tl_hash_slot(struct drbd_conf *mdev, sector_t sector)
 {
 	BUG_ON(mdev->tl_hash_s == 0);
 	return mdev->tl_hash +
@@ -223,7 +227,8 @@ static inline struct hlist_head *tl_hash_slot(struct drbd_conf *mdev, sector_t s
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev, u64 id, sector_t sector)
+static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
+	u64 id, sector_t sector)
 {
 	struct hlist_head *slot = tl_hash_slot(mdev, sector);
 	struct hlist_node *n;
@@ -255,7 +260,8 @@ static struct hlist_head *ar_hash_slot(struct drbd_conf *mdev, sector_t sector)
 
 /* when we receive the answer for a read request,
  * verify that we actually know about it */
-static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev, u64 id, sector_t sector)
+static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev,
+	u64 id, sector_t sector)
 {
 	struct hlist_head *slot = ar_hash_slot(mdev, sector);
 	struct hlist_node *n;
@@ -270,10 +276,12 @@ static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev, u64 id,
 	return NULL;
 }
 
-static inline struct drbd_request *drbd_req_new(struct drbd_conf *mdev, struct bio *bio_src)
+static inline struct drbd_request *drbd_req_new(struct drbd_conf *mdev,
+	struct bio *bio_src)
 {
 	struct bio *bio;
-	struct drbd_request *req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
+	struct drbd_request *req =
+		mempool_alloc(drbd_request_mempool, GFP_NOIO);
 	if (likely(req)) {
 		bio = bio_clone(bio_src, GFP_NOIO); /* XXX cannot fail?? */
 
@@ -307,10 +315,12 @@ static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 /* aparently too large to be inlined...
  * moved to drbd_req.c */
 extern void _req_may_be_done(struct drbd_request *req, int error);
-extern void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error);
+extern void _req_mod(struct drbd_request *req,
+		enum drbd_req_event what, int error);
 
 /* If you need it irqsave, do it your self! */
-static inline void req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
+static inline void req_mod(struct drbd_request *req,
+		enum drbd_req_event what, int error)
 {
 	struct drbd_conf *mdev = req->mdev;
 	spin_lock_irq(&mdev->req_lock);

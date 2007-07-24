@@ -177,7 +177,7 @@ enum drbd_disk_state {
 	Attaching,      /* In the process of reading the meta-data */
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
 			/* when >= Failed it is legal to access mdev->bc */
-	Negotiating,    /* Late attaching state, we need to talk to the peer... */
+	Negotiating,    /* Late attaching state, we need to talk to the peer */
 	Inconsistent,
 	Outdated,
 	DUnknown,       /* Only used for the peer, never for myself */
@@ -253,8 +253,8 @@ enum UuidIndex {
 	Bitmap,
 	History_start,
 	History_end,
-	UUID_SIZE,      /* In the packet we store the number of dirty bits here */
-	UUID_FLAGS,     /* In the packet we store flags here. */
+	UUID_SIZE,      /* nl-packet: number of dirty bits */
+	UUID_FLAGS,     /* nl-packet: flags */
 	EXT_UUID_SIZE   /* Everything. */
 };
 
