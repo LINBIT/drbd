@@ -127,7 +127,8 @@ void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 		return;
 	}
 
-	if (!dt) dt++;
+	if (!dt)
+		dt++;
 	db = mdev->rs_mark_left - rs_left;
 	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
 
@@ -145,7 +146,8 @@ void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 	/* mean speed since syncer started
 	 * we do account for PausedSync periods */
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
-	if (dt <= 0) dt = 1;
+	if (dt <= 0)
+		dt = 1;
 	db = mdev->rs_total - rs_left;
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)

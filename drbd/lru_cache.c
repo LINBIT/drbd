@@ -121,7 +121,8 @@ struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr)
 	BUG_ON(!lc);
 	BUG_ON(!lc->nr_elements);
 	hlist_for_each_entry(e, n, lc->slot + lc_hash_fn(lc, enr), colision) {
-		if (e->lc_number == enr) return e;
+		if (e->lc_number == enr)
+			return e;
 	}
 	return NULL;
 }
@@ -224,7 +225,8 @@ struct lc_element *lc_get(struct lru_cache *lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++lc->hits;
-		if (e->refcnt++ == 0) lc->used++;
+		if (e->refcnt++ == 0)
+			lc->used++;
 		list_move(&e->list, &lc->in_use); /* Not evictable... */
 		RETURN(e);
 	}
@@ -281,7 +283,8 @@ struct lc_element *lc_try_get(struct lru_cache *lc, unsigned int enr)
 	e = lc_find(lc, enr);
 	if (e) {
 		++lc->hits;
-		if (e->refcnt++ == 0) lc->used++;
+		if (e->refcnt++ == 0)
+			lc->used++;
 		list_move(&e->list, &lc->in_use); /* Not evictable... */
 	}
 	RETURN(e);
@@ -335,7 +338,8 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
 {
 	struct lc_element *e;
 
-	if (index < 0 || index >= lc->nr_elements) return;
+	if (index < 0 || index >= lc->nr_elements)
+		return;
 
 	e = lc_entry(lc, index);
 	e->lc_number = enr;

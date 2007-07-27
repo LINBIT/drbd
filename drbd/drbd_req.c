@@ -200,7 +200,8 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 	/* we need to do the conflict detection stuff,
 	 * if we have the ee_hash (two_primaries) and
 	 * this has been on the network */
-	if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL) {
+	if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL)
+	{
 		const sector_t sector = req->sector;
 		const int size = req->size;
 
@@ -270,9 +271,12 @@ void _req_may_be_done(struct drbd_request *req, int error)
 	 *	the receiver,
 	 *	the bio_endio completion callbacks.
 	 */
-	if (s & RQ_NET_QUEUED) return;
-	if (s & RQ_NET_PENDING) return;
-	if (s & RQ_LOCAL_PENDING) return;
+	if (s & RQ_NET_QUEUED)
+		return;
+	if (s & RQ_NET_PENDING)
+		return;
+	if (s & RQ_LOCAL_PENDING)
+		return;
 
 	if (req->master_bio) {
 		/* this is data_received (remote read)
@@ -655,7 +659,8 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	case connection_lost_while_pending:
 		/* transfer log cleanup after connection loss */
 		/* assert something? */
-		if (req->rq_state & RQ_NET_PENDING) dec_ap_pending(mdev);
+		if (req->rq_state & RQ_NET_PENDING)
+			dec_ap_pending(mdev);
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_DONE;
 		/* if it is still queued, we may not complete it here.
@@ -687,7 +692,8 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 
 	case neg_acked:
 		/* assert something? */
-		if (req->rq_state & RQ_NET_PENDING) dec_ap_pending(mdev);
+		if (req->rq_state & RQ_NET_PENDING)
+			dec_ap_pending(mdev);
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		/* FIXME THINK! is it DONE now, or is it not? */
 		req->rq_state |= RQ_NET_DONE;
@@ -733,9 +739,12 @@ int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 	unsigned long sbnr, ebnr, bnr;
 	sector_t esector, nr_sectors;
 
-	if (mdev->state.disk == UpToDate) return 1;
-	if (mdev->state.disk >= Outdated) return 0;
-	if (mdev->state.disk <  Inconsistent) return 0;
+	if (mdev->state.disk == UpToDate)
+		return 1;
+	if (mdev->state.disk >= Outdated)
+		return 0;
+	if (mdev->state.disk <  Inconsistent)
+		return 0;
 	/* state.disk == Inconsistent   We will have a look at the BitMap */
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
@@ -956,8 +965,10 @@ allocate_barrier:
 
 	/* mark them early for readability.
 	 * this just sets some state flags. */
-	if (remote) _req_mod(req, to_be_send, 0);
-	if (local)  _req_mod(req, to_be_submitted, 0);
+	if (remote)
+		_req_mod(req, to_be_send, 0);
+	if (local)
+		_req_mod(req, to_be_submitted, 0);
 
 	/* check this request on the colison detection hash tables.
 	 * if we have a conflict, just complete it here.
@@ -976,7 +987,8 @@ allocate_barrier:
 			dec_local(mdev);
 			local = 0;
 		}
-		if (remote) dec_ap_pending(mdev);
+		if (remote)
+			dec_ap_pending(mdev);
 		dump_bio(mdev, req->master_bio, 1);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
 		bio_endio(req->master_bio, req->master_bio->bi_size, 0);
@@ -999,7 +1011,7 @@ allocate_barrier:
 			_req_mod(req, queue_for_net_read, 0);
 	}
 	spin_unlock_irq(&mdev->req_lock);
-	if (b) kfree(b); /* if someone else has beaten us to it... */
+	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
 		/* FIXME what ref count do we have to ensure the backing_bdev
@@ -1022,7 +1034,7 @@ allocate_barrier:
 	return 0;
 
 fail_and_free_req:
-	if (b) kfree(b);
+	kfree(b);
 	bio_endio(bio, bio->bi_size, err);
 	drbd_req_free(req);
 	return 0;
@@ -1107,7 +1119,8 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
 		/* rather error out here than BUG in bio_split */
 		ERR("bio would need to, but cannot, be split: "
 		    "(vcnt=%u,idx=%u,size=%u,sector=%llu)\n",
-		    bio->bi_vcnt, bio->bi_idx, bio->bi_size, bio->bi_sector);
+		    bio->bi_vcnt, bio->bi_idx, bio->bi_size,
+		    (unsigned long long)bio->bi_sector);
 		bio_endio(bio, bio->bi_size, -EINVAL);
 		return 0;
 	} else {
@@ -1161,9 +1174,11 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 
 	limit = DRBD_MAX_SEGMENT_SIZE
 	      - ((bio_offset & (DRBD_MAX_SEGMENT_SIZE-1)) + bio_size);
-	if (limit < 0) limit = 0;
+	if (limit < 0)
+		limit = 0;
 	if (bio_size == 0) {
-		if (limit <= bvec->bv_len) limit = bvec->bv_len;
+		if (limit <= bvec->bv_len)
+			limit = bvec->bv_len;
 	} else if (limit && inc_local(mdev)) {
 		request_queue_t * const b =
 			mdev->bc->backing_bdev->bd_disk->queue;

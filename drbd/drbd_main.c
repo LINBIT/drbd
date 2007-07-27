@@ -160,7 +160,8 @@ int tl_init(struct drbd_conf *mdev)
 	struct drbd_barrier *b;
 
 	b = kmalloc(sizeof(struct drbd_barrier), GFP_KERNEL);
-	if (!b) return 0;
+	if (!b)
+		return 0;
 	INIT_LIST_HEAD(&b->requests);
 	INIT_LIST_HEAD(&b->w.list);
 	b->next = 0;
@@ -335,7 +336,8 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 				ChgStateHard|ScheduleAfter);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
-	if (!send) return ok;
+	if (!send)
+		return ok;
 
 	ok = drbd_send_state(mdev);
 	if (ok)
@@ -461,7 +463,8 @@ int _drbd_request_state(struct drbd_conf *mdev,
 		spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 		if (rv < SS_Success) {
-			if (f & ChgStateVerbose) print_st_err(mdev, os, ns, rv);
+			if (f & ChgStateVerbose)
+				print_st_err(mdev, os, ns, rv);
 			return rv;
 		}
 
@@ -469,7 +472,8 @@ int _drbd_request_state(struct drbd_conf *mdev,
 		if ( !drbd_send_state_req(mdev, mask, val) ) {
 			drbd_state_unlock(mdev);
 			rv = SS_CW_FailedByPeer;
-			if (f & ChgStateVerbose) print_st_err(mdev, os, ns, rv);
+			if (f & ChgStateVerbose)
+				print_st_err(mdev, os, ns, rv);
 			return rv;
 		}
 
@@ -479,7 +483,8 @@ int _drbd_request_state(struct drbd_conf *mdev,
 		if (rv < SS_Success) {
 			/* nearly dead code. */
 			drbd_state_unlock(mdev);
-			if (f & ChgStateVerbose) print_st_err(mdev, os, ns, rv);
+			if (f & ChgStateVerbose)
+				print_st_err(mdev, os, ns, rv);
 			return rv;
 		}
 		spin_lock_irqsave(&mdev->req_lock, flags);
@@ -559,7 +564,8 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 		dec_net(mdev);
 	}
 
-	if (rv <= 0) /* already found a reason to abort */;
+	if (rv <= 0)
+		/* already found a reason to abort */;
 	else if (ns.role == Secondary && mdev->open_cnt)
 		rv = SS_DeviceInUse;
 
@@ -716,14 +722,19 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			ns.susp = 1;
 
 	if (ns.aftr_isp || ns.peer_isp || ns.user_isp) {
-		if (ns.conn == SyncSource) ns.conn = PausedSyncS;
-		if (ns.conn == SyncTarget) ns.conn = PausedSyncT;
+		if (ns.conn == SyncSource)
+			ns.conn = PausedSyncS;
+		if (ns.conn == SyncTarget)
+			ns.conn = PausedSyncT;
 	} else {
-		if (ns.conn == PausedSyncS) ns.conn = SyncSource;
-		if (ns.conn == PausedSyncT) ns.conn = SyncTarget;
+		if (ns.conn == PausedSyncS)
+			ns.conn = SyncSource;
+		if (ns.conn == PausedSyncT)
+			ns.conn = SyncTarget;
 	}
 
-	if (ns.i == os.i) return SS_NothingToDo;
+	if (ns.i == os.i)
+		return SS_NothingToDo;
 
 	if ( !(flags & ChgStateHard) ) {
 		/*  pre-state-change checks ; only look at ns  */
@@ -747,7 +758,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	if (rv < SS_Success) {
-		if (flags & ChgStateVerbose) print_st_err(mdev, os, ns, rv);
+		if (flags & ChgStateVerbose)
+			print_st_err(mdev, os, ns, rv);
 		return rv;
 	}
 
@@ -859,13 +871,19 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 		if (test_bit(CRASHED_PRIMARY, &mdev->flags) ||
 		    mdev->state.role == Primary ||
-		    ( mdev->state.pdsk < Inconsistent &&
-		      mdev->state.peer == Primary ) )  mdf |= MDF_PrimaryInd;
-		if (mdev->state.conn > WFReportParams) mdf |= MDF_ConnectedInd;
-		if (mdev->state.disk > Inconsistent)   mdf |= MDF_Consistent;
-		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
+		    (mdev->state.pdsk < Inconsistent &&
+		      mdev->state.peer == Primary))
+			mdf |= MDF_PrimaryInd;
+		if (mdev->state.conn > WFReportParams)
+			mdf |= MDF_ConnectedInd;
+		if (mdev->state.disk > Inconsistent)
+			mdf |= MDF_Consistent;
+		if (mdev->state.disk > Outdated)
+			mdf |= MDF_WasUpToDate;
 		if (mdev->state.pdsk <= Outdated &&
-		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;
+		    mdev->state.pdsk >= Inconsistent)
+			mdf |= MDF_PeerOutDated;
+
 		if (mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
@@ -1154,7 +1172,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 
 	if (thi->t_state == None) {
 		spin_unlock(&thi->t_lock);
-		if (restart) drbd_thread_start(thi);
+		if (restart)
+			drbd_thread_start(thi);
 		return;
 	}
 
@@ -1167,7 +1186,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 		thi->t_state = ns;
 		smp_mb();
 		if (thi->task != current) {
-			if (wait) init_completion(&thi->startstop);
+			if (wait)
+				init_completion(&thi->startstop);
 			force_sig(DRBD_SIGKILL, thi->task);
 		} else
 			D_ASSERT(!wait);
@@ -1491,7 +1511,8 @@ int _drbd_send_ack(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 	p.blksize  = blksize;
 	p.seq_num  = cpu_to_be32(atomic_add_return(1, &mdev->packet_seq));
 
-	if (!mdev->meta.socket || mdev->state.conn < Connected) return FALSE;
+	if (!mdev->meta.socket || mdev->state.conn < Connected)
+		return FALSE;
 	ok = drbd_send_cmd(mdev, USE_META_SOCKET, cmd,
 				(struct Drbd_Header *)&p, sizeof(p));
 	return ok;
@@ -1793,7 +1814,8 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 	struct msghdr msg;
 	int rv, sent = 0;
 
-	if (!sock) return -1000;
+	if (!sock)
+		return -1000;
 
 	/* THINK  if (signal_pending) return ... ? */
 
@@ -1854,7 +1876,8 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 			flush_signals(current);
 			rv = 0;
 		}
-		if (rv < 0) break;
+		if (rv < 0)
+			break;
 		sent += rv;
 		iov.iov_base += rv;
 		iov.iov_len  -= rv;
@@ -1884,7 +1907,8 @@ int drbd_open(struct inode *inode, struct file *file)
 	int rv = 0;
 
 	mdev = minor_to_mdev(MINOR(inode->i_rdev));
-	if (!mdev) return -ENODEV;
+	if (!mdev)
+		return -ENODEV;
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	/* to have a stable mdev->state.role
@@ -1897,7 +1921,8 @@ int drbd_open(struct inode *inode, struct file *file)
 			rv = -EMEDIUMTYPE;
 	}
 
-	if (!rv) mdev->open_cnt++;
+	if (!rv)
+		mdev->open_cnt++;
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	return rv;
@@ -1909,7 +1934,8 @@ int drbd_close(struct inode *inode, struct file *file)
 	struct drbd_conf *mdev;
 
 	mdev = minor_to_mdev(MINOR(inode->i_rdev));
-	if (!mdev) return -ENODEV;
+	if (!mdev)
+		return -ENODEV;
 
 	/*
 	printk(KERN_ERR DEVICE_NAME ": close(inode=%p,file=%p)"
@@ -1952,7 +1978,8 @@ void drbd_unplug_fn(request_queue_t *q)
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
-	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
+	if (mdev->state.disk >= Inconsistent)
+		drbd_kick_lo(mdev);
 }
 
 void drbd_set_defaults(struct drbd_conf *mdev)
@@ -2130,10 +2157,14 @@ void drbd_destroy_mempools(void)
 
 	/* D_ASSERT(atomic_read(&drbd_pp_vacant)==0); */
 
-	if (drbd_ee_mempool) mempool_destroy(drbd_ee_mempool);
-	if (drbd_request_mempool) mempool_destroy(drbd_request_mempool);
-	if (drbd_ee_cache) kmem_cache_destroy(drbd_ee_cache);
-	if (drbd_request_cache) kmem_cache_destroy(drbd_request_cache);
+	if (drbd_ee_mempool)
+		mempool_destroy(drbd_ee_mempool);
+	if (drbd_request_mempool)
+		mempool_destroy(drbd_request_mempool);
+	if (drbd_ee_cache)
+		kmem_cache_destroy(drbd_ee_cache);
+	if (drbd_request_cache)
+		kmem_cache_destroy(drbd_request_cache);
 
 	drbd_ee_mempool      = NULL;
 	drbd_request_mempool = NULL;
@@ -2184,7 +2215,8 @@ int drbd_create_mempools(void)
 
 	for (i = 0; i < number; i++) {
 		page = alloc_page(GFP_HIGHUSER);
-		if (!page) goto Enomem;
+		if (!page)
+			goto Enomem;
 		set_page_private(page, (unsigned long)drbd_pp_pool);
 		drbd_pp_pool = page;
 	}
@@ -2229,7 +2261,8 @@ void __exit drbd_cleanup(void)
 			struct gendisk  **disk = &mdev->vdisk;
 			request_queue_t **q    = &mdev->rq_queue;
 
-			if (!mdev) continue;
+			if (!mdev)
+				continue;
 			drbd_free_resources(mdev);
 
 			if (*disk) {
@@ -2237,30 +2270,39 @@ void __exit drbd_cleanup(void)
 				put_disk(*disk);
 				*disk = NULL;
 			}
-			if (*q) blk_put_queue(*q);
+			if (*q)
+				blk_put_queue(*q);
 			*q = NULL;
 
 			D_ASSERT(mdev->open_cnt == 0);
-			if (mdev->this_bdev) bdput(mdev->this_bdev);
+			if (mdev->this_bdev)
+				bdput(mdev->this_bdev);
 
 			tl_cleanup(mdev);
-			if (mdev->bitmap) drbd_bm_cleanup(mdev);
-			if (mdev->resync) lc_free(mdev->resync);
+			if (mdev->bitmap)
+				drbd_bm_cleanup(mdev);
+			if (mdev->resync)
+				lc_free(mdev->resync);
 
 			rr = drbd_release_ee(mdev, &mdev->active_ee);
-			if (rr) ERR("%d EEs in active list found!\n", rr);
+			if (rr)
+				ERR("%d EEs in active list found!\n", rr);
 
 			rr = drbd_release_ee(mdev, &mdev->sync_ee);
-			if (rr) ERR("%d EEs in sync list found!\n", rr);
+			if (rr)
+				ERR("%d EEs in sync list found!\n", rr);
 
 			rr = drbd_release_ee(mdev, &mdev->read_ee);
-			if (rr) ERR("%d EEs in read list found!\n", rr);
+			if (rr)
+				ERR("%d EEs in read list found!\n", rr);
 
 			rr = drbd_release_ee(mdev, &mdev->done_ee);
-			if (rr) ERR("%d EEs in done list found!\n", rr);
+			if (rr)
+				ERR("%d EEs in done list found!\n", rr);
 
 			rr = drbd_release_ee(mdev, &mdev->net_ee);
-			if (rr) ERR("%d EEs in net list found!\n", rr);
+			if (rr)
+				ERR("%d EEs in net list found!\n", rr);
 
 			ERR_IF (!list_empty(&mdev->data.work.q)) {
 				struct list_head *lp;
@@ -2310,20 +2352,23 @@ struct drbd_conf *drbd_new_device(int minor)
 	request_queue_t *q;
 
 	mdev = kzalloc(sizeof(struct drbd_conf), GFP_KERNEL);
-	if (!mdev) goto Enomem;
+	if (!mdev)
+		goto Enomem;
 
 	mdev->minor = minor;
 
 	drbd_init_set_defaults(mdev);
 
 	q = blk_alloc_queue(GFP_KERNEL);
-	if (!q) goto Enomem;
+	if (!q)
+		goto Enomem;
 	mdev->rq_queue = q;
 	q->queuedata   = mdev;
 	q->max_segment_size = DRBD_MAX_SEGMENT_SIZE;
 
 	disk = alloc_disk(1);
-	if (!disk) goto Enomem;
+	if (!disk)
+		goto Enomem;
 	mdev->vdisk = disk;
 
 	set_disk_ro( disk, TRUE );
@@ -2347,21 +2392,24 @@ struct drbd_conf *drbd_new_device(int minor)
 	q->unplug_fn = drbd_unplug_fn;
 
 	mdev->md_io_page = alloc_page(GFP_KERNEL);
-	if (!mdev->md_io_page) goto Enomem;
+	if (!mdev->md_io_page)
+		goto Enomem;
 
 	if (drbd_bm_init(mdev)) goto Enomem;
 	/* no need to lock access, we are still initializing the module. */
 	if (!tl_init(mdev)) goto Enomem;
 
 	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void *), GFP_KERNEL);
-	if (!mdev->app_reads_hash) goto Enomem;
+	if (!mdev->app_reads_hash)
+		goto Enomem;
 
 	return mdev;
 
  Enomem:
 	if (mdev) {
-		if (mdev->app_reads_hash) kfree(mdev->app_reads_hash);
-		if (mdev->md_io_page) __free_page(mdev->md_io_page);
+		kfree(mdev->app_reads_hash);
+		if (mdev->md_io_page)
+			__free_page(mdev->md_io_page);
 		kfree(mdev);
 	}
 	return NULL;
@@ -2395,7 +2443,8 @@ int __init drbd_init(void)
 	}
 
 	err = drbd_nl_init();
-	if (err) return err;
+	if (err)
+		return err;
 
 	err = register_blkdev(DRBD_MAJOR, DEVICE_NAME);
 	if (err) {
@@ -2417,7 +2466,8 @@ int __init drbd_init(void)
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	minor_table = kzalloc(sizeof(struct drbd_conf *)*minor_count,
 				GFP_KERNEL);
-	if (!minor_table) goto Enomem;
+	if (!minor_table)
+		goto Enomem;
 
 	err = drbd_create_mempools();
 	if (err)
@@ -2452,7 +2502,8 @@ int __init drbd_init(void)
 
 Enomem:
 	drbd_cleanup();
-	if (err == -ENOMEM) /* currently always the case */
+	if (err == -ENOMEM)
+		/* currently always the case */
 		printk(KERN_ERR DEVICE_NAME ": ran out of memory\n");
 	else
 		printk(KERN_ERR DEVICE_NAME ": initialization failure\n");
@@ -2461,7 +2512,8 @@ Enomem:
 
 void drbd_free_bc(struct drbd_backing_dev *bc)
 {
-	if (bc == NULL) return;
+	if (bc == NULL)
+		return;
 
 	bd_release(bc->backing_bdev);
 	bd_release(bc->md_bdev);
@@ -2731,7 +2783,8 @@ void drbd_uuid_new_current(struct drbd_conf *mdev)
 
 void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val)
 {
-	if (mdev->bc->md.uuid[Bitmap] == 0 && val == 0) return;
+	if (mdev->bc->md.uuid[Bitmap] == 0 && val == 0)
+		return;
 
 	if (val == 0) {
 		drbd_uuid_move_history(mdev);
@@ -2743,7 +2796,8 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val)
 		       drbd_print_uuid(mdev, Bitmap);
 			);
 	} else {
-		if (mdev->bc->md.uuid[Bitmap]) WARN("bm UUID already set");
+		if (mdev->bc->md.uuid[Bitmap])
+			WARN("bm UUID already set");
 
 		mdev->bc->md.uuid[Bitmap] = val;
 		mdev->bc->md.uuid[Bitmap] &= ~((u64)1);
@@ -3025,15 +3079,16 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 	}
 }
 
-#define PSM(A) \
-do { \
-	if (mask.A) { \
-		int i = snprintf(p, len, " " #A "( %s )", \
-				A##s_to_name(val.A)); \
-		if (i >= len) return op; \
-		p += i; \
-		len -= i; \
-	} \
+#define PSM(A)							\
+do {								\
+	if (mask.A) {						\
+		int i = snprintf(p, len, " " #A "( %s )",	\
+				A##s_to_name(val.A));		\
+		if (i >= len)					\
+			return op;				\
+		p += i;						\
+		len -= i;					\
+	}							\
 } while (0)
 
 char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state_t val)

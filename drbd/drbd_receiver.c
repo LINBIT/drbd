@@ -109,7 +109,8 @@ struct page *drbd_pp_alloc(struct drbd_conf *mdev, unsigned int gfp_mask)
 		}
 		spin_unlock_irqrestore(&drbd_pp_lock, flags);
 
-		if (page) break;
+		if (page)
+			break;
 
 		/* hm. pool was empty. try to allocate from kernel.
 		 * don't wait, if none is available, though.
@@ -160,7 +161,8 @@ void drbd_pp_free(struct drbd_conf *mdev, struct page *page)
 
 	atomic_dec(&mdev->pp_in_use);
 
-	if (free_it) __free_page(page);
+	if (free_it)
+		__free_page(page);
 
 	/*
 	 * FIXME
@@ -512,7 +514,8 @@ int drbd_recv(struct drbd_conf *mdev, void *buf, size_t size)
 
 	for (;;) {
 		rv = sock_recvmsg(mdev->data.socket, &msg, size, msg.msg_flags);
-		if (rv == size) break;
+		if (rv == size)
+			break;
 
 		/* Note:
 		 * ECONNRESET	other side closed the connection
@@ -539,7 +542,8 @@ int drbd_recv(struct drbd_conf *mdev, void *buf, size_t size)
 
 	set_fs(oldfs);
 
-	if (rv != size) drbd_force_state(mdev, NS(conn, BrokenPipe));
+	if (rv != size)
+		drbd_force_state(mdev, NS(conn, BrokenPipe));
 
 	return rv;
 }
@@ -680,7 +684,8 @@ int drbd_connect(struct drbd_conf *mdev)
 		for (try = 0;;) {
 			/* 3 tries, this should take less than a second! */
 			s = drbd_try_connect(mdev);
-			if (s || ++try >= 3) break;
+			if (s || ++try >= 3)
+				break;
 			/* give the other side time to call bind() & listen() */
 			set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout(HZ / 10);
@@ -707,17 +712,20 @@ int drbd_connect(struct drbd_conf *mdev)
 			}
 		}
 
-		if (sock && msock) break;
+		if (sock && msock)
+			break;
 
 		s = drbd_wait_for_connect(mdev);
 		if (s) {
 			switch (drbd_recv_fp(mdev, s)) {
 			case HandShakeS:
-				if (sock) sock_release(sock);
+				if (sock)
+					sock_release(sock);
 				sock = s;
 				break;
 			case HandShakeM:
-				if (msock) sock_release(msock);
+				if (msock)
+					sock_release(msock);
 				msock = s;
 				set_bit(DISCARD_CONCURRENT, &mdev->flags);
 				break;
@@ -727,13 +735,16 @@ int drbd_connect(struct drbd_conf *mdev)
 			}
 		}
 
-		if (mdev->state.conn <= Disconnecting) return -1;
+		if (mdev->state.conn <= Disconnecting)
+			return -1;
 		if (signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
 			if (get_t_state(&mdev->receiver) == Exiting) {
-				if (sock) sock_release(sock);
-				if (msock) sock_release(msock);
+				if (sock)
+					sock_release(sock);
+				if (msock)
+					sock_release(msock);
 				return -1;
 			}
 		}
@@ -772,7 +783,8 @@ int drbd_connect(struct drbd_conf *mdev)
 	D_ASSERT(mdev->asender.task == NULL);
 
 	h = drbd_do_handshake(mdev);
-	if (h <= 0) return h;
+	if (h <= 0)
+		return h;
 
 	if (mdev->cram_hmac_tfm) {
 		if (!drbd_do_auth(mdev)) {
@@ -874,7 +886,8 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 	int ds, i, rr;
 
 	e = drbd_alloc_ee(mdev, id, sector, data_size, GFP_KERNEL);
-	if (!e) return 0;
+	if (!e)
+		return 0;
 	bio = e->private_bio;
 	ds = data_size;
 	bio_for_each_segment(bvec, bio, i) {
@@ -994,7 +1007,8 @@ int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_size)
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev, ID_SYNCER, sector, data_size);
-	if (!e) return FALSE;
+	if (!e)
+		return FALSE;
 
 	dec_rs_pending(mdev);
 
@@ -1057,7 +1071,8 @@ int receive_DataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 	 * still no race with drbd_fail_pending_reads */
 	ok = recv_dless_read(mdev, req, sector, data_size);
 
-	if (ok) req_mod(req, data_received, 0);
+	if (ok)
+		req_mod(req, data_received, 0);
 	/* else: nothing. handled from drbd_disconnect...
 	 * I don't think we may complete this just yet
 	 * in case we are "on-disconnect: freeze" */
@@ -1098,7 +1113,8 @@ int receive_RSDataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 		 * verify there are no pending write request to that area.
 		 */
 		ok = recv_resync_read(mdev, sector, data_size);
-		if (!ok) dec_local(mdev);
+		if (!ok)
+			dec_local(mdev);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Can not write resync data to local disk.\n");
@@ -1373,7 +1389,8 @@ int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 				}
 			}
 #undef OVERLAPS
-			if (!have_conflict) break;
+			if (!have_conflict)
+				break;
 
 			/* Discard Ack only for the _first_ iteration */
 			if (first && discard && have_unacked) {
@@ -1659,15 +1676,17 @@ int drbd_asb_recover_0p(struct drbd_conf *mdev)
 			if (ch_peer == 0) { rv =  1; break; }
 			if (ch_self == 0) { rv = -1; break; }
 		}
-		if (mdev->net_conf->after_sb_0p == DiscardZeroChg) break;
+		if (mdev->net_conf->after_sb_0p == DiscardZeroChg)
+			break;
 	case DiscardLeastChg:
-		if	( ch_self < ch_peer ) rv = -1;
-		else if (ch_self > ch_peer) rv =  1;
-		else /* ( ch_self == ch_peer ) */ {
-			/* Well, then use something else. */
+		if	( ch_self < ch_peer )
+			rv = -1;
+		else if (ch_self > ch_peer)
+			rv =  1;
+		else /* ( ch_self == ch_peer ) */
+		     /* Well, then use something else. */
 			rv = test_bit(DISCARD_CONCURRENT, &mdev->flags)
 				? -1 : 1;
-		}
 		break;
 	case DiscardLocal:
 		rv = -1;
@@ -1698,8 +1717,10 @@ int drbd_asb_recover_1p(struct drbd_conf *mdev)
 		break;
 	case Consensus:
 		hg = drbd_asb_recover_0p(mdev);
-		if (hg == -1 && mdev->state.role == Secondary) rv = hg;
-		if (hg == 1  && mdev->state.role == Primary)   rv = hg;
+		if (hg == -1 && mdev->state.role == Secondary)
+			rv = hg;
+		if (hg == 1  && mdev->state.role == Primary)
+			rv = hg;
 		break;
 	case Violently:
 		rv = drbd_asb_recover_0p(mdev);
@@ -1826,23 +1847,27 @@ int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr)
 
 	*rule_nr = 5;
 	peer = mdev->p_uuid[Bitmap] & ~((u64)1);
-	if (self == peer) return -1;
+	if (self == peer)
+		return -1;
 
 	*rule_nr = 6;
 	for ( i = History_start ; i <= History_end ; i++ ) {
 		peer = mdev->p_uuid[i] & ~((u64)1);
-		if (self == peer) return -2;
+		if (self == peer)
+			return -2;
 	}
 
 	*rule_nr = 7;
 	self = mdev->bc->md.uuid[Bitmap] & ~((u64)1);
 	peer = mdev->p_uuid[Current] & ~((u64)1);
-	if (self == peer) return 1;
+	if (self == peer)
+		return 1;
 
 	*rule_nr = 8;
 	for ( i = History_start ; i <= History_end ; i++ ) {
 		self = mdev->bc->md.uuid[i] & ~((u64)1);
-		if (self == peer) return 2;
+		if (self == peer)
+			return 2;
 	}
 
 	*rule_nr = 9;
@@ -1855,7 +1880,8 @@ int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr)
 		self = mdev->p_uuid[i] & ~((u64)1);
 		for ( j = History_start ; j <= History_end ; j++ ) {
 			peer = mdev->p_uuid[j] & ~((u64)1);
-			if (self == peer) return -100;
+			if (self == peer)
+				return -100;
 		}
 	}
 
@@ -1873,7 +1899,8 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 	enum drbd_disk_state mydisk;
 
 	mydisk = mdev->state.disk;
-	if (mydisk == Negotiating) mydisk = mdev->new_state_tmp.disk;
+	if (mydisk == Negotiating)
+		mydisk = mdev->new_state_tmp.disk;
 
 	hg = drbd_uuid_compare(mdev, &rule_nr);
 
@@ -1894,7 +1921,8 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 	    (peer_disk == Inconsistent && mydisk > Inconsistent) )  {
 		int f = (hg == -100) || abs(hg) == 2;
 		hg = mydisk > Inconsistent ? 1 : -1;
-		if (f) hg = hg*2;
+		if (f)
+			hg = hg*2;
 		INFO("Becoming sync %s due to disk states.\n",
 		     hg > 0 ? "source" : "target");
 	}
@@ -2013,7 +2041,8 @@ int cmp_after_sb(enum after_sb_handler peer, enum after_sb_handler self)
 	    self == DiscardRemote || self == DiscardLocal ) return 1;
 
 	/* everything else is valid if they are equal on both sides. */
-	if (peer == self) return 0;
+	if (peer == self)
+		return 0;
 
 	/* everything es is invalid. */
 	return 1;
@@ -2100,7 +2129,8 @@ static void warn_if_differ_considerably(struct drbd_conf *mdev,
 	const char *s, sector_t a, sector_t b)
 {
 	sector_t d;
-	if (a == 0 || b == 0) return;
+	if (a == 0 || b == 0)
+		return;
 	d = (a > b) ? (a - b) : (b - a);
 	if ( d > (a>>3) || d > (b>>3))
 		WARN("Considerable difference in %s: %llus vs. %llus\n", s,
@@ -2184,7 +2214,8 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 				mdev->state.peer, mdev->state.pdsk);
 		dec_local(mdev);
 
-		if (nconn == conn_mask) return FALSE;
+		if (nconn == conn_mask)
+			return FALSE;
 
 		if (drbd_request_state(mdev, NS(conn, nconn)) < SS_Success) {
 			drbd_force_state(mdev, NS(conn, Disconnecting));
@@ -2228,7 +2259,7 @@ int receive_uuids(struct drbd_conf *mdev, struct Drbd_Header *h)
 	for (i = Current; i < EXT_UUID_SIZE; i++)
 		p_uuid[i] = be64_to_cpu(p->uuid[i]);
 
-	if (mdev->p_uuid) kfree(mdev->p_uuid);
+	kfree(mdev->p_uuid);
 	mdev->p_uuid = p_uuid;
 
 	return TRUE;
@@ -2310,7 +2341,8 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	oconn = nconn = mdev->state.conn;
 	spin_unlock_irq(&mdev->req_lock);
 
-	if (nconn == WFReportParams) nconn = Connected;
+	if (nconn == WFReportParams)
+		nconn = Connected;
 
 	if (mdev->p_uuid && oconn <= Connected &&
 	    peer_state.disk >= Negotiating &&
@@ -2319,11 +2351,13 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 				peer_state.role, peer_state.disk);
 		dec_local(mdev);
 
-		if (nconn == conn_mask) return FALSE;
+		if (nconn == conn_mask)
+			return FALSE;
 	}
 
 	spin_lock_irq(&mdev->req_lock);
-	if (mdev->state.conn != oconn) goto retry;
+	if (mdev->state.conn != oconn)
+		goto retry;
 	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
@@ -2331,9 +2365,11 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	ns.pdsk = peer_state.disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
 	if ((nconn == Connected || nconn == WFBitMapS) &&
-	   ns.disk == Negotiating ) ns.disk = UpToDate;
+	   ns.disk == Negotiating )
+		ns.disk = UpToDate;
 	if ((nconn == Connected || nconn == WFBitMapT) &&
-	   ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
+	   ns.pdsk == Negotiating )
+		ns.pdsk = UpToDate;
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose | ChgStateHard);
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -2413,7 +2449,8 @@ int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i );
 		want = num_words * sizeof(long);
 		ERR_IF(want != h->length) goto out;
-		if (want == 0) break;
+		if (want == 0)
+			break;
 		if (drbd_recv(mdev, buffer, want) != want)
 			goto out;
 
@@ -2429,7 +2466,8 @@ int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 		drbd_start_resync(mdev, SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
 		ok = drbd_send_bitmap(mdev);
-		if (!ok) goto out;
+		if (!ok)
+			goto out;
 		ok = drbd_request_state(mdev, NS(conn, WFSyncUUID));
 		D_ASSERT( ok == SS_Success );
 	} else {
@@ -2465,7 +2503,8 @@ int receive_skip(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 int receive_UnplugRemote(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
-	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
+	if (mdev->state.disk >= Inconsistent)
+		drbd_kick_lo(mdev);
 	return TRUE; /* cannot fail. */
 }
 
@@ -2749,10 +2788,12 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 	int rv;
 
 	rv = drbd_send_handshake(mdev);
-	if (!rv) goto break_c_loop;
+	if (!rv)
+		goto break_c_loop;
 
 	rv = drbd_recv_header(mdev, &p->head);
-	if (!rv) goto break_c_loop;
+	if (!rv)
+		goto break_c_loop;
 
 	if (p->head.command != HandShake) {
 		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
@@ -2855,10 +2896,12 @@ int drbd_do_auth(struct drbd_conf *mdev)
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 
 	rv = drbd_send_cmd2(mdev, AuthChallenge, my_challenge, CHALLENGE_LEN);
-	if (!rv) goto fail;
+	if (!rv)
+		goto fail;
 
 	rv = drbd_recv_header(mdev, &p);
-	if (!rv) goto fail;
+	if (!rv)
+		goto fail;
 
 	if (p.command != AuthChallenge) {
 		ERR( "expected AuthChallenge packet, received: %s (0x%04x)\n",
@@ -2908,10 +2951,12 @@ int drbd_do_auth(struct drbd_conf *mdev)
 	}
 
 	rv = drbd_send_cmd2(mdev, AuthResponse, response, resp_size);
-	if (!rv) goto fail;
+	if (!rv)
+		goto fail;
 
 	rv = drbd_recv_header(mdev, &p);
-	if (!rv) goto fail;
+	if (!rv)
+		goto fail;
 
 	if (p.command != AuthResponse) {
 		ERR( "expected AuthResponse packet, received: %s (0x%04x)\n",
@@ -2959,9 +3004,9 @@ int drbd_do_auth(struct drbd_conf *mdev)
 		     resp_size, mdev->net_conf->cram_hmac_alg);
 
  fail:
-	if (peers_ch) kfree(peers_ch);
-	if (response) kfree(response);
-	if (right_response) kfree(right_response);
+	kfree(peers_ch);
+	kfree(response);
+	kfree(right_response);
 
 	return rv;
 }
@@ -3245,7 +3290,8 @@ int drbd_asender(struct Drbd_thread *thi)
 			spin_lock_irq(&mdev->req_lock);
 			empty = list_empty(&mdev->done_ee);
 			spin_unlock_irq(&mdev->req_lock);
-			if (empty) break;
+			if (empty)
+				break;
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
 			flush_signals(current);
 		}

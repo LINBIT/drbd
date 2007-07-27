@@ -64,7 +64,8 @@
  */
 int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
 {
-	if (bio->bi_size) return 1;
+	if (bio->bi_size)
+		return 1;
 	/* error parameter ignored:
 	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
@@ -88,7 +89,8 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	/* We are called each time a part of the bio is finished, but
 	 * we are only interested when the whole bio is finished, therefore
 	 * return as long as bio->bio_size is positive.  */
-	if (bio->bi_size) return 1;
+	if (bio->bi_size)
+		return 1;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -134,7 +136,8 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	mdev = e->mdev;
 
 	/* see above */
-	if (bio->bi_size) return 1;
+	if (bio->bi_size)
+		return 1;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -169,20 +172,25 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	 * done from "drbd_process_done_ee" within the appropriate w.cb
 	 * (e_end_block/e_end_resync_block) or from _drbd_clear_done_ee */
 
-	if (!is_syncer_req) mdev->epoch_size++;
+	if (!is_syncer_req)
+		mdev->epoch_size++;
 
 	do_wake = is_syncer_req
 		? list_empty(&mdev->sync_ee)
 		: list_empty(&mdev->active_ee);
 
-	if (error) __drbd_chk_io_error(mdev, FALSE);
+	if (error)
+		__drbd_chk_io_error(mdev, FALSE);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
-	if (is_syncer_req) drbd_rs_complete_io(mdev, e_sector);
+	if (is_syncer_req)
+		drbd_rs_complete_io(mdev, e_sector);
 
-	if (do_wake) wake_up(&mdev->ee_wait);
+	if (do_wake)
+		wake_up(&mdev->ee_wait);
 
-	if (do_al_complete_io) drbd_al_complete_io(mdev, e_sector);
+	if (do_al_complete_io)
+		drbd_al_complete_io(mdev, e_sector);
 
 	wake_asender(mdev);
 	dec_local(mdev);
@@ -201,7 +209,8 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	/* see above */
-	if (bio->bi_size) return 1;
+	if (bio->bi_size)
+		return 1;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -482,7 +491,8 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	}
 
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
-	if (dt <= 0) dt = 1;
+	if (dt <= 0)
+		dt = 1;
 	db = mdev->rs_total;
 	dbdt = Bit2KB(db/dt);
 	mdev->rs_paused /= HZ;
@@ -690,7 +700,8 @@ int w_send_barrier(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 int w_send_write_hint(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	if (cancel) return 1;
+	if (cancel)
+		return 1;
 	return drbd_send_short_cmd(mdev, UnplugRemote);
 }
 
@@ -777,7 +788,8 @@ int _drbd_may_sync_now(struct drbd_conf *mdev)
 	struct drbd_conf *odev = mdev;
 
 	while (1) {
-		if (odev->sync_conf.after == -1) return 1;
+		if (odev->sync_conf.after == -1)
+			return 1;
 		odev = minor_to_mdev(odev->sync_conf.after);
 		ERR_IF(!odev) return 1;
 		if ( (odev->state.conn >= SyncSource &&
@@ -800,7 +812,8 @@ int _drbd_pause_after(struct drbd_conf *mdev)
 
 	for (i = 0; i < minor_count; i++) {
 		odev = minor_to_mdev(i);
-		if (!odev) continue;
+		if (!odev)
+			continue;
 		if (!_drbd_may_sync_now(odev))
 			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1),
 						ChgStateHard|ScheduleAfter)
@@ -960,13 +973,15 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		if (down_trylock(&mdev->data.work.s)) {
 			down(&mdev->data.mutex);
-			if (mdev->data.socket)drbd_tcp_flush(mdev->data.socket);
+			if (mdev->data.socket)
+				drbd_tcp_flush(mdev->data.socket);
 			up(&mdev->data.mutex);
 
 			intr = down_interruptible(&mdev->data.work.s);
 
 			down(&mdev->data.mutex);
-			if (mdev->data.socket) drbd_tcp_cork(mdev->data.socket);
+			if (mdev->data.socket)
+				drbd_tcp_cork(mdev->data.socket);
 			up(&mdev->data.mutex);
 		}
 

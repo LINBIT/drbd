@@ -183,11 +183,12 @@ extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int );
 # define D_ASSERT(exp)	if (!(exp)) \
 	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
-#define ERR_IF(exp) if (({ \
-	int _b = (exp) != 0; \
-	if (_b) ERR("%s: (" #exp ") in %s:%d\n", \
-		__func__, __FILE__, __LINE__); \
-	 _b; \
+#define ERR_IF(exp) if (({				\
+	int _b = (exp) != 0;				\
+	if (_b)						\
+		ERR("%s: (" #exp ") in %s:%d\n",	\
+		__func__, __FILE__, __LINE__);		\
+	 _b;						\
 	}))
 
 /* Defines to control fault insertion */
@@ -1770,7 +1771,8 @@ static inline int inc_net(struct drbd_conf *mdev)
 
 	atomic_inc(&mdev->net_cnt);
 	have_net_conf = mdev->state.conn >= Unconnected;
-	if (!have_net_conf) dec_net(mdev);
+	if (!have_net_conf)
+		dec_net(mdev);
 	return have_net_conf;
 }
 
@@ -1822,9 +1824,12 @@ static inline int drbd_get_max_buffers(struct drbd_conf *mdev)
 static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 {
 	int mxb = drbd_get_max_buffers(mdev);
-	if (mdev->state.susp) return 0;
-	if (mdev->state.conn == WFBitMapS) return 0;
-	if (mdev->state.conn == WFBitMapT) return 0;
+	if (mdev->state.susp)
+		return 0;
+	if (mdev->state.conn == WFBitMapS)
+		return 0;
+	if (mdev->state.conn == WFBitMapT)
+		return 0;
 	/* since some older kernels don't have atomic_add_unless,
 	 * and we are within the spinlock anyways, we have this workaround.  */
 	if (atomic_read(&mdev->ap_bio_cnt) > mxb) return 0;
@@ -1866,7 +1871,8 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
 	D_ASSERT(ap_bio >= 0);
-	if (ap_bio < mxb) wake_up(&mdev->misc_wait);
+	if (ap_bio < mxb)
+		wake_up(&mdev->misc_wait);
 }
 
 static inline int seq_cmp(u32 a, u32 b)
@@ -1892,7 +1898,8 @@ static inline void update_peer_seq(struct drbd_conf *mdev, unsigned int new_seq)
 	m = seq_max(mdev->peer_seq, new_seq);
 	mdev->peer_seq = m;
 	spin_unlock(&mdev->peer_seq_lock);
-	if (m == new_seq) wake_up(&mdev->seq_wait);
+	if (m == new_seq)
+		wake_up(&mdev->seq_wait);
 }
 
 static inline int drbd_queue_order_type(struct drbd_conf *mdev)

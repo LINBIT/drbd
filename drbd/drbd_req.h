@@ -235,7 +235,8 @@ static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
-		if ((unsigned long)req == (unsigned long)id) {
+		if ((unsigned long)req == (unsigned long)id)
+		{
 			if (req->sector != sector) {
 				ERR("_ack_id_to_req: found req %p but it has "
 				    "wrong sector (%llus versus %llus)\n", req,
@@ -268,7 +269,8 @@ static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev,
 	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
-		if ((unsigned long)req == (unsigned long)id) {
+		if ((unsigned long)req == (unsigned long)id)
+		{
 			D_ASSERT(req->sector == sector);
 			return req;
 		}

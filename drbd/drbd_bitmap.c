@@ -444,7 +444,8 @@ void drbd_bm_merge_lel( struct drbd_conf *mdev, size_t offset, size_t number,
 	unsigned long word, bits;
 	size_t n = number;
 
-	if (number == 0) return;
+	if (number == 0)
+		return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
 	WARN_ON(offset        >= b->bm_words);
@@ -482,7 +483,8 @@ void drbd_bm_set_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 	unsigned long word, bits;
 	size_t n = number;
 
-	if (number == 0) return;
+	if (number == 0)
+		return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
 	WARN_ON(offset        >= b->bm_words);
@@ -518,7 +520,8 @@ void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
 
-	if (number == 0) return;
+	if (number == 0)
+		return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
 	if ( (offset        >= b->bm_words) ||
@@ -712,7 +715,8 @@ int drbd_bm_rw(struct drbd_conf *mdev, int rw)
 	 */
 	mdev->bitmap = NULL;
 
-	if (rw == WRITE)	bm_cpu_to_lel(b);
+	if (rw == WRITE)
+		bm_cpu_to_lel(b);
 
 	now = jiffies;
 	atomic_set(&b->bm_async_io, num_pages);
