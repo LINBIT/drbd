@@ -325,13 +325,6 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		ERR("%s in w_make_resync_request\n", conns_to_name(mdev->state.conn));
 	}
 
-        number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
-
-	if (atomic_read(&mdev->rs_pending_cnt)>number) {
-		goto requeue;
-	}
-	number -= atomic_read(&mdev->rs_pending_cnt);
-
 	if(!inc_local(mdev)) {
 		/* Since we only need to access mdev->rsync a
 		   inc_local_if_state(mdev,Failed) would be sufficient, but
@@ -341,6 +334,14 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 		mdev->resync_work.cb = w_resync_inactive;
 		return 1;
 	}
+	/* All goto requeses have to happend after this block: inc_local() */
+
+	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
+
+	if (atomic_read(&mdev->rs_pending_cnt)>number) {
+		goto requeue;
+	}
+	number -= atomic_read(&mdev->rs_pending_cnt);
 
 	for(i=0;i<number;i++) {
 
