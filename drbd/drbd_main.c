@@ -931,15 +931,17 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		}
 	}
 
-	if( ns.pdsk < Inconsistent ) {
+	if (ns.pdsk < Inconsistent && inc_local(mdev)) {
 		/* Diskless Peer becomes primary */
-		if (os.peer == Secondary && ns.peer == Primary ) {
+		if (os.peer == Secondary && ns.peer == Primary &&
+		    mdev->bc->md.uuid[Bitmap] == 0) {
 			drbd_uuid_new_current(mdev);
 		}
 		/* Diskless Peer becomes secondary */
 		if (os.peer == Primary && ns.peer == Secondary ) {
 			drbd_al_to_on_disk_bm(mdev);
 		}
+		dec_local(mdev);
 	}
 
 	/* Last part of the attaching process ... */
