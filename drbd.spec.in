@@ -192,7 +192,7 @@ uname -r | grep BOOT ||
 
 %changelog
 * Thu Aug  2 2007 16:12:26 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.4-1)
+- drbd (8.0.5-1)
  * Changed the default behaviour of the init script. Now the init
    script terminates in case the devices refuse to because they 
    had a split brain. Introduced an option to preserve the old
