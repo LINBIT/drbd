@@ -124,7 +124,8 @@ struct drbd_cmd {
 		} gp; // for generic_get_cmd, get_usage
 		struct {
 			struct option *options;
-			int (*proc_event)();
+			int (*proc_event)(unsigned int, int, 
+					  struct drbd_nl_cfg_reply *);
 		} ep; // for events_cmd, events_usage
 	};
 };
@@ -191,9 +192,9 @@ void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
-int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
-int w_connected_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
-int w_synced_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
+int print_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+int w_connected_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+int w_synced_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 
 const char *on_error[] = {
 	[PassOn]         = "pass_on",
@@ -240,6 +241,7 @@ const char *rrcf_n[] = {
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
+	{ "wait-after-sb",no_argument,0,'w'},
 	{ 0,            0,           0,  0  }
 };
 
@@ -1187,7 +1189,8 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	return rv;
 }
 
-int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
+int print_state(unsigned int seq, int u __attribute((unused)),
+		struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
 	char* str;
@@ -1239,6 +1242,7 @@ int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 }
 
 int w_connected_state(unsigned int seq __attribute((unused)),
+		      int wait_after_sb,
 		      struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
@@ -1246,6 +1250,7 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
 			if(state.conn >= Connected) return 0;
+			if(!wait_after_sb && state.conn < Unconnected) return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
 
@@ -1253,14 +1258,15 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 }
 
 int w_synced_state(unsigned int seq __attribute((unused)),
+		   int wait_after_sb,
 		   struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			if(state.conn == Connected || state.conn < Unconnected )
-				return 0;
+			if(state.conn == Connected) return 0;
+			if(!wait_after_sb && state.conn < Unconnected) return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
 	return 1;
@@ -1278,6 +1284,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
 	struct timeval before,after;
+	int wasb=0;
 
 	lo = cm->ep.options;
 
@@ -1306,6 +1313,9 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 					DRBD_DEGR_WFC_TIMEOUT_MAX);
 				return 20;
 			}
+			break;
+		case 'w':
+			wasb=1;
 			break;
 		}
 	}
@@ -1381,7 +1391,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		}
 
 		if( all_devices || minor == reply->minor ) {
-			cont=cm->ep.proc_event(cn_reply->seq, reply);
+			cont=cm->ep.proc_event(cn_reply->seq, wasb, reply);
 		}
 	} while(cont);
 

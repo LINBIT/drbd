@@ -103,16 +103,18 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
-      <arg choice="req">wait_connect</arg>
+      <arg choice="req">wait-connect</arg>
       <arg>-t<arg choice="req"><replaceable>wfc_timeout</replaceable></arg></arg>
       <arg>-d<arg choice="req"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
+      <arg>-w</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
-      <arg choice="req">wait_sync</arg>
+      <arg choice="req">wait-sync</arg>
       <arg>-t<arg choice="req"><replaceable>wfc_timeout</replaceable></arg></arg>
       <arg>-d<arg choice="req"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
+      <arg>-w</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -817,8 +819,8 @@
       </para>
     </refsect2>
     <refsect2>
-      <title>wait_connect</title>
-      <indexterm><primary>drbdsetup</primary><secondary>wait_connect</secondary></indexterm>
+      <title>wait-connect</title>
+      <indexterm><primary>drbdsetup</primary><secondary>wait-connect</secondary></indexterm>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> can
 	communicate with its partner device.
@@ -829,6 +831,7 @@
 	  <option>--wfc-timeout <replaceable>wfc_timeout</replaceable></option></term>
 	  <term><option>-d</option>,
 	  <option>--degr-wfc-timeout <replaceable>degr_wfc_timeout</replaceable></option></term>
+	  <term><option>-w</option>, <option>--wait-after-sb</option></term>
 	  <listitem>
 	    <para>
 	      This command will fail if the
@@ -841,18 +844,22 @@
 	      The default value for <replaceable>wfc_timeout</replaceable>
 	      is 0 which means to wait forever. The default for
 	      <replaceable>degr_wfc_timeout</replaceable> is 120 seconds.
+	      In case the connection status goes down to StandAlone because
+              the peer appeared but the devices had a split brain situation,
+              the default for the command is to terminate. You can change this
+              behaviour with the <option>--wait-after-sb</option> option.
 	    </para>
 	  </listitem>
 	</varlistentry>
       </variablelist>
     </refsect2>
     <refsect2>
-      <title>wait_sync</title>
-      <indexterm><primary>drbdsetup</primary><secondary>wait_sync</secondary></indexterm>
+      <title>wait-sync</title>
+      <indexterm><primary>drbdsetup</primary><secondary>wait-sync</secondary></indexterm>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> leaves any
 	synchronisation into connected state. The options
-	are the same as with the <replaceable>wait_connect</replaceable>
+	are the same as with the <replaceable>wait-connect</replaceable>
 	command.
       </para>
     </refsect2>
