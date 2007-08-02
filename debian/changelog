@@ -1,8 +1,14 @@
+drbd8 (8.0.5-0) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Philipp Reisner <phil@linbit.com>  Thu,  2 Aug 2007 16:12:26 +0200
+
 drbd8 (8.0.4-0) unstable; urgency=low
 
   * New upstream release.
 
- -- Philipp Reisner <phil@linbit.com>  Wed, 27 Jun 2007 10:0:00 +0200
+ -- Philipp Reisner <phil@linbit.com>  Wed, 27 Jun 2007 10:00:00 +0200
 
 drbd8 (8.0.3-0) unstable; urgency=low
 

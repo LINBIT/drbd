@@ -4,6 +4,38 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0.5 (api:86/proto:86)
+--------
+ * Changed the default behaviour of the init script. Now the init
+   script terminates in case the devices refuse to because they 
+   had a split brain. Introduced an option to preserve the old
+   behaviour.
+ * Fixed a bug where the local_cnt could get imbalanced upon a 
+   state change.
+ * Fixed an bug in the UUID algorithm, that could lead to both
+   sides in cs:WFBitMapT state. It was triggered when the disk
+   on the SyncTarget gets detached and attached.
+ * Implemented proper size checking on strings that get communicated
+   with DRBD's netlink protocol.
+ * Changed the maximal length of device names from 32 characters to
+   128 characters. (udev based disk names might be very long nowadays)
+ * Fixed the after-sb-0pri policies discard-younger/discard-older
+ * When the resync speed was changed to a considerably lower 
+   value while resync was running, it could happen that we erronously
+   decremented the local_cnt too often.
+ * Fixed a bug in the UUID code, that caused drbd to erronously report 
+   a split brain after changing the role of a diskless node multiple 
+   times.
+ * Both nodes ended up in SyncSource when a state change occured on 
+   one node while the disk state on the other node is in the temporal 
+   'Negotiating' state. Fixed got fixed.
+ * drbdmeta's parse/scan code for meta-data dumps got fixed for 
+   huge devices, and an improved error reporting.
+ * Fixed a code path that should it make possible to unload the
+   module even in case some of our receive buffers leaked.
+ * The usermode helper program is now user definable. It is no
+   longer hardcoded set to 'drbdadm'.
+
 8.0.4 (api:86/proto:86)
 --------
  * Fixed an OOPS in case you do an invalidate on an diskless device. And
