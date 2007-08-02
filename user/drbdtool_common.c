@@ -53,88 +53,96 @@ const char* make_optstring(struct option *options,char startc)
   return buffer;
 }
 
+int
+new_strtoll(const char *s, const char def_unit, unsigned long long *rv)
+{
+	char unit = 0;
+	char dummy = 0;
+	int shift, c;
+
+	switch (def_unit) {
+	default:
+		return MSE_DEFAULT_UNIT;
+	case 0:
+	case 1:
+	case '1':
+		shift = 0;
+		break;
+	case 'K':
+	case 'k':
+		shift = -10;
+		break;
+	case 's':
+		shift = -9;   // sectors
+		break;
+		/*
+		  case 'M':
+		  case 'm':
+		  case 'G':
+		  case 'g':
+		*/
+	}
+	
+	if (!s || !*s) return MSE_MISSING_NUMBER;
+
+	c = sscanf(s, "%llu%c%c", rv, &unit, &dummy);
+
+	if (c != 1 && c != 2) return MSE_INVALID_NUMBER;
+
+	switch (unit) {
+	case 0:
+		return MSE_OK;
+	case 'K':
+	case 'k':
+		shift += 10;
+		break;
+	case 'M':
+	case 'm':
+		shift += 20;
+		break;
+	case 'G':
+	case 'g':
+		shift += 30;
+		break;
+	case 's':
+		shift += 9;
+		break;		
+	default:
+		return MSE_INVALID_UNIT;
+	}
+	if (*rv > (~0ULL >> shift)) return MSE_OUT_OF_RANGE;
+
+	*rv = *rv << shift;
+	return MSE_OK;
+}
+
 unsigned long long
 m_strtoll(const char *s, const char def_unit)
 {
-  unsigned long long r;
-  char unit = 0;
-  char dummy = 0;
-  int shift, c;
+	unsigned long long r;
 
-  /*
-   * paranoia
-   */
-  switch (def_unit)
-    {
-    default:
-      fprintf(stderr, "%s:%d: unexpected default unit\n", __FILE__, __LINE__);
-      exit(100);
-    case 0:
-    case 1:
-    case '1':
-      shift = 0;
-      break;
-
-    case 'K':
-    case 'k':
-      shift = -10;
-      break;
-
-    case 's':
-      shift = -9;   // sectors
-      break;
-
-      /*
-         case 'M':
-         case 'm':
-         case 'G':
-         case 'g':
-       */
-    }
-
-  if (!s || !*s)
-    {
-      fprintf(stderr, "missing number argument\n");
-      exit(100);
-    }
-
-  c = sscanf(s, "%llu%c%c", &r, &unit, &dummy);
-
-  if (c != 1 && c != 2)
-    {
-      fprintf(stderr, "%s is not a valid number\n", s);
-      exit(20);
-    }
-
-  switch (unit)
-    {
-    case 0:
-      return r;
-    case 'K':
-    case 'k':
-      shift += 10;
-      break;
-    case 'M':
-    case 'm':
-      shift += 20;
-      break;
-    case 'G':
-    case 'g':
-      shift += 30;
-      break;
-    case 's':
-      shift += 9;
-      break;
-    default:
-      fprintf(stderr, "%s is not a valid number\n", s);
-      exit(20);
-    }
-  if (r > (~0ULL >> shift))
-    {
-      fprintf(stderr, "%s: out of range\n", s);
-      exit(20);
-    }
-  return r << shift;
+	switch(new_strtoll(s, def_unit, &r)) {
+	case MSE_OK:
+		return r;
+	case MSE_DEFAULT_UNIT:
+		fprintf(stderr, "unexpected default unit: %d\n",def_unit);
+		exit(100);
+	case MSE_MISSING_NUMBER:
+		fprintf(stderr, "missing number argument\n");
+		exit(100);
+	case MSE_INVALID_NUMBER:
+		fprintf(stderr, "%s is not a valid number\n", s);
+		exit(20);
+	case MSE_INVALID_UNIT:
+		fprintf(stderr, "%s is not a valid number\n", s);
+		exit(20);
+	case MSE_OUT_OF_RANGE:
+		fprintf(stderr, "%s: out of range\n", s);
+		exit(20);
+	default:
+		fprintf(stderr, "m_stroll() is confused\n");
+		exit(20);
+	}
 }
 
 void alarm_handler(int __attribute((unused)) signo)

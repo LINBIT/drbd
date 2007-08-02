@@ -23,12 +23,22 @@ do { fprintf(stderr,fmt ": " , ##args); perror(0); } while (0)
 */
 #define PERROR(fmt, args...) fprintf(stderr, fmt ": %m\n" , ##args);
 
+enum new_strtoll_errs {
+	MSE_OK,
+	MSE_DEFAULT_UNIT,
+	MSE_MISSING_NUMBER,
+	MSE_INVALID_NUMBER,
+	MSE_INVALID_UNIT,
+	MSE_OUT_OF_RANGE,
+};
+
 struct option;
 
 extern int dt_lock_drbd(const char* device);
 extern void dt_unlock_drbd(int lock_fd);
 extern void dt_release_lockfile(int drbd_fd);
 extern int dt_minor_of_dev(const char *device);
+extern int new_strtoll(const char *s, const char def_unit, unsigned long long *rv);
 extern unsigned long long m_strtoll(const char* s,const char def_unit);
 extern const char* make_optstring(struct option *options, char startc);
 extern char* ppsize(char* buf, size_t size);
