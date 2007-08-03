@@ -191,7 +191,7 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Thu Aug  2 2007 16:12:26 +0200 Philipp Reisner <phil@linbit.com>
+* Fri Aug  3 2007 09:34:49 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.5-1)
  * Changed the default behaviour of the init script. Now the init
    script terminates in case the devices refuse to because they 
@@ -218,6 +218,8 @@ uname -r | grep BOOT ||
    'Negotiating' state. Fixed got fixed.
  * drbdmeta's parse/scan code for meta-data dumps got fixed for 
    huge devices, and an improved error reporting.
+ * drbdadm had difficulties with option values of type string that
+   start with an digit. Fixed.
  * Fixed a code path that should it make possible to unload the
    module even in case some of our receive buffers leaked.
  * The usermode helper program is now user definable. It is no
