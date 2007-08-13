@@ -954,18 +954,21 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		}
 	}
 
-	if (ns.pdsk < Inconsistent) {
+	if (ns.pdsk < Inconsistent && inc_local(mdev)) {
 		/* Diskless Peer becomes primary */
-		if (os.peer == Secondary && ns.peer == Primary)
+		if (os.peer == Secondary && ns.peer == Primary && mdev->bc->md.uuid[Bitmap] == 0)
 			drbd_uuid_new_current(mdev);
 		/* Diskless Peer becomes secondary */
 		if (os.peer == Primary && ns.peer == Secondary)
 			drbd_al_to_on_disk_bm(mdev);
+		dec_local(mdev);
 	}
 
 	/* Last part of the attaching process ... */
 	if ( ns.conn >= Connected &&
 	     os.disk == Attaching && ns.disk == Negotiating ) {
+		kfree(mdev->p_uuid); /* We expect to receive up-to-date UUIDs soon. */
+		mdev->p_uuid = NULL; /* ...to not use the old ones in the mean time */
 		drbd_send_sizes(mdev);  /* to start sync... */
 		drbd_send_uuids(mdev);
 		drbd_send_state(mdev);

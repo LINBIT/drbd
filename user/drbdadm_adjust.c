@@ -29,7 +29,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -77,12 +76,8 @@ static int ov_eq(char* val1, char* val2)
 	if(val1 == NULL && val2 == NULL) return 1;
 	if(val1 == NULL || val2 == NULL) return 0;
 
-	if(isdigit(val1[0])) {
-		v1 = m_strtoll(val1,0);
-		v2 = m_strtoll(val2,0);
-
-		return v1 == v2;
-	}
+	if(new_strtoll(val1,0,&v1) == MSE_OK &&
+	   new_strtoll(val2,0,&v2) == MSE_OK) return v1 == v2;
 
 	return !strcmp(val1,val2);
 }

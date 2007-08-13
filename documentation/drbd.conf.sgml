@@ -217,7 +217,8 @@ resource r0 {
     <manvolnum>8</manvolnum></citerefentry> for a detailed description
     of this section's parameters.
     Optional parameters:
-    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>.
+    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option> and
+    <option>wait-after-sb</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -830,6 +831,16 @@ the unit is 1 second.
   because the peer is less likely to show up in time,
   if it had been dead before.
   The default value is 60, the unit is seconds. Value 0 means unlimited.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>wait-after-sb</option></term>
+  <listitem><para>
+  By setting this option you can make the init script to continue 
+  to wait even if the device pair had a split brain situation
+  and therefore refuses to connect.
   </para>
   </listitem>
 </varlistentry>

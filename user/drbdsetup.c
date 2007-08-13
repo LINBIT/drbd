@@ -124,7 +124,8 @@ struct drbd_cmd {
 		} gp; // for generic_get_cmd, get_usage
 		struct {
 			struct option *options;
-			int (*proc_event)();
+			int (*proc_event)(unsigned int, int, 
+					  struct drbd_nl_cfg_reply *);
 		} ep; // for events_cmd, events_usage
 	};
 };
@@ -191,9 +192,9 @@ void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
-int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
-int w_connected_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
-int w_synced_state(unsigned int seq, struct drbd_nl_cfg_reply *reply);
+int print_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+int w_connected_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+int w_synced_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 
 const char *on_error[] = {
 	[PassOn]         = "pass_on",
@@ -240,6 +241,7 @@ const char *rrcf_n[] = {
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
+	{ "wait-after-sb",no_argument,0,'w'},
 	{ 0,            0,           0,  0  }
 };
 
@@ -1187,7 +1189,8 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	return rv;
 }
 
-int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
+int print_state(unsigned int seq, int u __attribute((unused)),
+		struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
 	char* str;
@@ -1239,6 +1242,7 @@ int print_state(unsigned int seq, struct drbd_nl_cfg_reply *reply)
 }
 
 int w_connected_state(unsigned int seq __attribute((unused)),
+		      int wait_after_sb,
 		      struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
@@ -1246,6 +1250,7 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
 			if(state.conn >= Connected) return 0;
+			if(!wait_after_sb && state.conn < Unconnected) return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
 
@@ -1253,14 +1258,15 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 }
 
 int w_synced_state(unsigned int seq __attribute((unused)),
+		   int wait_after_sb,
 		   struct drbd_nl_cfg_reply *reply)
 {
 	drbd_state_t state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			if(state.conn == Connected || state.conn < Unconnected )
-				return 0;
+			if(state.conn == Connected) return 0;
+			if(!wait_after_sb && state.conn < Unconnected) return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
 	return 1;
@@ -1273,11 +1279,12 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct drbd_nl_cfg_reply *reply;
 	struct drbd_tag_list *tl;
 	struct option *lo;
-	unsigned int b_seq=0, r_seq=0;
+	unsigned int seq=0;
 	int sk_nl,c,cont=1,rr,i,last;
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
 	struct timeval before,after;
+	int wasb=0;
 
 	lo = cm->ep.options;
 
@@ -1306,6 +1313,9 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 					DRBD_DEGR_WFC_TIMEOUT_MAX);
 				return 20;
 			}
+			break;
+		case 'w':
+			wasb=1;
 			break;
 		}
 	}
@@ -1368,20 +1378,11 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 		// dump_tag_list(reply->tag_list);
 
-		/* There are two value spaces for sequence numbers. The first
-		   is the one created by this drbdsetup instance, the kernel's
-		   reply packets simply echo those sequence numbers.
-		   The second is created by the kernel's broadcast packets. */
-		if(cn_reply->ack==0) { // broadcasts
-			if(!unfiltered && cn_reply->seq <= b_seq) continue;
-			b_seq = cn_reply->seq;
-		} else { // replies to drbdsetup packes
-			if(!unfiltered && cn_reply->seq <= r_seq) continue;
-			r_seq = cn_reply->seq;
-		}
+		if(!unfiltered && cn_reply->seq <= seq) continue;
+		seq = cn_reply->seq;
 
 		if( all_devices || minor == reply->minor ) {
-			cont=cm->ep.proc_event(cn_reply->seq, reply);
+			cont=cm->ep.proc_event(cn_reply->seq, wasb, reply);
 		}
 	} while(cont);
 
