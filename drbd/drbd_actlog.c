@@ -185,6 +185,8 @@ struct update_al_work {
 	struct lc_element *al_ext;
 	struct completion event;
 	unsigned int enr;
+	/* if old_enr != LC_FREE, write corresponding bitmap sector, too */
+	unsigned int old_enr;
 };
 
 int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
@@ -241,14 +243,6 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 	wait_event(mdev->al_wait, (al_ext = _al_get(mdev, enr)) );
 
 	if (al_ext->lc_number != enr) {
-		/* We have to do write an transaction to AL. */
-		unsigned int evicted;
-
-		evicted = al_ext->lc_number;
-
-		if (mdev->state.conn < Connected && evicted != LC_FREE)
-			drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT);
-
 		/* drbd_al_write_transaction(mdev,al_ext,enr);
 		   generic_make_request() are serialized on the
 		   current->bio_tail list now. Therefore we have
@@ -257,6 +251,7 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 		init_completion(&al_work.event);
 		al_work.al_ext = al_ext;
 		al_work.enr = enr;
+		al_work.old_enr = al_ext->lc_number;
 		al_work.w.cb = w_al_write_transaction;
 		drbd_queue_work_front(&mdev->data.work, &al_work.w);
 		wait_for_completion(&al_work.event);
@@ -305,14 +300,23 @@ void drbd_al_complete_io(struct drbd_conf *mdev, sector_t sector)
 int
 w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	int i, n, mx;
-	unsigned int extent_nr;
-	struct al_transaction *buffer;
-	sector_t sector;
-	u32 xor_sum = 0;
+	struct update_al_work *aw = (struct update_al_work*)w;
+	struct lc_element *updated = aw->al_ext;
+	const unsigned int new_enr = aw->enr;
+	const unsigned int evicted = aw->old_enr;
 
-	struct lc_element *updated = ((struct update_al_work *)w)->al_ext;
-	unsigned int new_enr = ((struct update_al_work *)w)->enr;
+	struct al_transaction* buffer;
+	sector_t sector;
+ 	int i,n,mx;
+ 	unsigned int extent_nr;
+ 	u32 xor_sum=0;
+
+	/* do we have to do a bitmap write, first?
+	 * TODO reduce maximum latency:
+	 * submit both bios, then wait for both,
+	 * instead of doing two synchronous sector writes. */
+	if (mdev->state.conn < Connected && evicted != LC_FREE)
+		drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT);
 
 	down(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
 	buffer = (struct al_transaction *)page_address(mdev->md_io_page);
