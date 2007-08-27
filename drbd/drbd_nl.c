@@ -144,7 +144,7 @@ void nl_trace_packet(void *data)
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
 
-	printk(KERN_INFO DEVICE_NAME "%d: "
+	printk(KERN_INFO "drbd%d: "
 	       "Netlink: << %s (%d) - seq: %x, ack: %x, len: %x\n",
 	       nlp->drbd_minor,
 	       nl_packet_name(nlp->packet_type),
@@ -157,7 +157,7 @@ void nl_trace_reply(void *data)
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply *)req->data;
 
-	printk(KERN_INFO DEVICE_NAME "%d: "
+	printk(KERN_INFO "drbd%d: "
 	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
 	       nlp->minor,
 	       nlp->packet_type == P_nl_after_last_packet?
@@ -1625,7 +1625,7 @@ void drbd_connector_callback(void *data)
 		+ sizeof(short int);
 
 	if (!try_module_get(THIS_MODULE)) {
-		printk(KERN_ERR DEVICE_NAME "try_module_get() failed!\n");
+		printk(KERN_ERR "drbd: try_module_get() failed!\n");
 		return;
 	}
 
@@ -1670,7 +1670,7 @@ void drbd_connector_callback(void *data)
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if (rr && rr != -ESRCH)
-		printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n", rr);
+		printk(KERN_INFO "drbd: cn_netlink_send()=%d\n", rr);
 
 	kfree(cn_reply);
 	module_put(THIS_MODULE);
@@ -1824,7 +1824,7 @@ int __init drbd_nl_init()
 #endif
 	err = cn_add_callback(&cn_id_drbd, "cn_drbd", &drbd_connector_callback);
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME "cn_drbd failed to register\n");
+		printk(KERN_ERR "drbd: cn_drbd failed to register\n");
 		return err;
 	}
 
@@ -1866,6 +1866,6 @@ void drbd_nl_send_reply( struct cn_msg *req,
 
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if (rr && rr != -ESRCH)
-		printk(KERN_INFO DEVICE_NAME " cn_netlink_send()=%d\n", rr);
+		printk(KERN_INFO "drbd: cn_netlink_send()=%d\n", rr);
 }
 

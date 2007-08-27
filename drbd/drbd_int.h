@@ -59,9 +59,6 @@ extern char usermode_helper[];
 #include <linux/blkdev.h>
 #include <linux/bio.h>
 
-#undef DEVICE_NAME
-#define DEVICE_NAME "drbd"
-
 // XXX do we need this?
 #ifndef TRUE
 #define TRUE 1
@@ -134,7 +131,7 @@ struct drbd_conf;
 /* Info: do not remove the spaces around the "," before ##
  *	 Otherwise this is not portable from gcc-2.95 to gcc-3.3 */
 #define PRINTK(level, fmt, args...) \
-	printk(level DEVICE_NAME "%d: " fmt, \
+	printk(level "drbd%d: " fmt, \
 		mdev->minor , ##args)
 
 #define ALERT(fmt, args...) PRINTK(KERN_ALERT, fmt , ##args)

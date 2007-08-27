@@ -1641,8 +1641,8 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	++total;
 	if (fallback && time_before(last_rep+3600*HZ, now)) {
 		last_rep = now;
-		printk(KERN_INFO DEVICE_NAME
-		       ": sendpage() omitted: %lu/%lu\n", fallback, total);
+		printk(KERN_INFO "drbd: sendpage() omitted: %lu/%lu\n",
+			fallback, total);
 	}
 #endif
 
@@ -1941,7 +1941,7 @@ int drbd_close(struct inode *inode, struct file *file)
 		return -ENODEV;
 
 	/*
-	printk(KERN_ERR DEVICE_NAME ": close(inode=%p,file=%p)"
+	printk(KERN_ERR "drbd: close(inode=%p,file=%p)"
 	       "current=%p,minor=%d,wc=%d\n", inode, file, current, minor,
 	       inode->i_writecount);
 	*/
@@ -2342,9 +2342,9 @@ void __exit drbd_cleanup(void)
 
 	kfree(minor_table);
 
-	drbd_unregister_blkdev(DRBD_MAJOR, DEVICE_NAME);
+	drbd_unregister_blkdev(DRBD_MAJOR, "drbd");
 
-	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
+	printk(KERN_INFO "drbd: module cleanup done.\n");
 }
 
 struct drbd_conf *drbd_new_device(int minor)
@@ -2379,7 +2379,7 @@ struct drbd_conf *drbd_new_device(int minor)
 	disk->major = DRBD_MAJOR;
 	disk->first_minor = minor;
 	disk->fops = &drbd_ops;
-	sprintf(disk->disk_name, DEVICE_NAME "%d", minor);
+	sprintf(disk->disk_name, "drbd%d", minor);
 	disk->private_data = mdev;
 	add_disk(disk);
 
@@ -2428,15 +2428,15 @@ int __init drbd_init(void)
 
 	/* FIXME should be a compile time assert */
 	if (sizeof(struct Drbd_HandShake_Packet) != 80) {
-		printk(KERN_ERR DEVICE_NAME
-		       ": never change the size or layout "
+		printk(KERN_ERR
+		       "drbd: never change the size or layout "
 		       "of the HandShake packet.\n");
 		return -EINVAL;
 	}
 
 	if (1 > minor_count || minor_count > 255) {
-		printk(KERN_ERR DEVICE_NAME
-			": invalid minor_count (%d)\n", minor_count);
+		printk(KERN_ERR
+			"drbd: invalid minor_count (%d)\n", minor_count);
 #ifdef MODULE
 		return -EINVAL;
 #else
@@ -2448,10 +2448,10 @@ int __init drbd_init(void)
 	if (err)
 		return err;
 
-	err = register_blkdev(DRBD_MAJOR, DEVICE_NAME);
+	err = register_blkdev(DRBD_MAJOR, "drbd");
 	if (err) {
-		printk(KERN_ERR DEVICE_NAME
-		       ": unable to register block device major %d\n",
+		printk(KERN_ERR
+		       "drbd: unable to register block device major %d\n",
 		       DRBD_MAJOR);
 		return err;
 	}
@@ -2482,7 +2482,7 @@ int __init drbd_init(void)
 	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , &proc_root);
 
 	if (!drbd_proc)	{
-		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
+		printk(KERN_ERR "drbd: unable to register proc file\n");
 		goto Enomem;
 	}
 
@@ -2492,13 +2492,13 @@ int __init drbd_init(void)
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
 
-	printk(KERN_INFO DEVICE_NAME ": initialised. "
+	printk(KERN_INFO "drbd: initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION, PRO_VERSION);
-	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
-	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n",
+	printk(KERN_INFO "drbd: %s\n", drbd_buildtag());
+	printk(KERN_INFO "drbd: registered as block device major %d\n",
 		DRBD_MAJOR);
-	printk(KERN_INFO DEVICE_NAME": minor_table @ 0x%p\n", minor_table);
+	printk(KERN_INFO "drbd: minor_table @ 0x%p\n", minor_table);
 
 	return 0; /* Success! */
 
@@ -2506,9 +2506,9 @@ Enomem:
 	drbd_cleanup();
 	if (err == -ENOMEM)
 		/* currently always the case */
-		printk(KERN_ERR DEVICE_NAME ": ran out of memory\n");
+		printk(KERN_ERR "drbd: ran out of memory\n");
 	else
-		printk(KERN_ERR DEVICE_NAME ": initialization failure\n");
+		printk(KERN_ERR "drbd: initialization failure\n");
 	return err;
 }
 

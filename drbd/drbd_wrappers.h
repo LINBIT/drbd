@@ -118,8 +118,8 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw,
 	bio->bi_rw = rw;
 
 	if (!bio->bi_bdev) {
-		printk(KERN_ERR DEVICE_NAME
-		       "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
+		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
+				"bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));
 		dump_stack();
 		bio_endio(bio, bio->bi_size, -ENODEV);
@@ -190,7 +190,7 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 {
 	int ret = unregister_blkdev(major,name);
 	if (ret)
-		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
+		printk(KERN_ERR "drbd: unregister of device failed\n");
 }
 #else
 #define drbd_unregister_blkdev unregister_blkdev
