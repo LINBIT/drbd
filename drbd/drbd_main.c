@@ -135,8 +135,8 @@ volatile int drbd_did_panic = 0;
  */
 struct Drbd_Conf **minor_table = NULL;
 
-drbd_kmem_cache_t *drbd_request_cache;
-drbd_kmem_cache_t *drbd_ee_cache;
+struct kmem_cache *drbd_request_cache;
+struct kmem_cache *drbd_ee_cache;
 mempool_t *drbd_request_mempool;
 mempool_t *drbd_ee_mempool;
 
@@ -2161,15 +2161,15 @@ int drbd_create_mempools(void)
 	drbd_pp_pool         = NULL;
 
 	// caches
-	drbd_request_cache = kmem_cache_create(
+	drbd_request_cache = drbd_kmem_cache_create(
 		"drbd_req_cache", sizeof(drbd_request_t),
-		0, 0, NULL, NULL);
+		0, 0, NULL);
 	if (drbd_request_cache == NULL)
 		goto Enomem;
 
-	drbd_ee_cache = kmem_cache_create(
+	drbd_ee_cache = drbd_kmem_cache_create(
 		"drbd_ee_cache", sizeof(struct Tl_epoch_entry),
-		0, 0, NULL, NULL);
+		0, 0, NULL);
 	if (drbd_ee_cache == NULL)
 		goto Enomem;
 

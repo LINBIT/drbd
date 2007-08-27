@@ -174,10 +174,22 @@ static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
 #endif
 
 #ifdef USE_KMEM_CACHE_S
-typedef struct kmem_cache_s drbd_kmem_cache_t;
-#else
-typedef struct kmem_cache drbd_kmem_cache_t;
+#define kmem_cache kmem_cache_s
 #endif
+
+/* dtor was removed in 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac
+ * on the way to 2.6.23 */
+static inline struct kmem_cache *
+drbd_kmem_cache_create (const char *name, size_t size, size_t align,
+        unsigned long flags,
+        void (*ctor)(void*, struct kmem_cache *, unsigned long))
+{
+	return kmem_cache_create(name, size, align, flags, ctor
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
+		, NULL
+#endif
+		);
+}
 
 #ifdef NEED_BACKPORT_OF_ATOMIC_ADD
 
