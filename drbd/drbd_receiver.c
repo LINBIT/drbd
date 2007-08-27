@@ -237,7 +237,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 				     unsigned int data_size,
 				     unsigned int gfp_mask)
 {
-	request_queue_t *q;
+	struct request_queue *q;
 	struct Tl_epoch_entry* e;
 	struct bio_vec *bvec;
 	struct page *page;

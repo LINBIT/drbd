@@ -1065,7 +1065,7 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 	return 0;
 }
 
-int drbd_make_request_26(request_queue_t *q, struct bio *bio)
+int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 {
 	unsigned int s_enr,e_enr;
 	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
@@ -1142,7 +1142,7 @@ int drbd_make_request_26(request_queue_t *q, struct bio *bio)
  */
 /* FIXME for two_primaries,
  * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
-int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
+int drbd_merge_bvec(struct request_queue *q, struct bio *bio, struct bio_vec *bvec)
 {
 	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
 	unsigned int bio_offset = (unsigned int)bio->bi_sector << 9; // 32 bit
@@ -1158,7 +1158,7 @@ int drbd_merge_bvec(request_queue_t *q, struct bio *bio, struct bio_vec *bvec)
 	if (bio_size == 0) {
 		if (limit <= bvec->bv_len) limit = bvec->bv_len;
 	} else if (limit && inc_local(mdev)) {
-		request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
+		struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;
 		if(b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
 			backing_limit = b->merge_bvec_fn(b,bio,bvec);
 			limit = min(limit,backing_limit);

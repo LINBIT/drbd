@@ -1924,7 +1924,7 @@ STATIC int drbd_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-STATIC void drbd_unplug_fn(request_queue_t *q)
+STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	drbd_dev *mdev = q->queuedata;
 
@@ -2232,7 +2232,7 @@ STATIC void __exit drbd_cleanup(void)
 		while (i--) {
 			drbd_dev        *mdev  = minor_to_mdev(i);
 			struct gendisk  **disk = &mdev->vdisk;
-			request_queue_t **q    = &mdev->rq_queue;
+			struct request_queue **q = &mdev->rq_queue;
 
 			if(!mdev) continue;
 			drbd_free_resources(mdev);
@@ -2315,7 +2315,7 @@ drbd_dev *drbd_new_device(int minor)
 {
 	drbd_dev *mdev = NULL;
 	struct gendisk *disk;
-	request_queue_t *q;
+	struct request_queue *q;
 
 	mdev = kzalloc(sizeof(drbd_dev),GFP_KERNEL);
 	if(!mdev) goto Enomem;

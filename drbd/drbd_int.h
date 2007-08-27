@@ -780,7 +780,7 @@ struct Drbd_Conf {
 	struct drbd_backing_dev *bc; // protected by inc_local() dec_local()
 
 	sector_t p_size;     /* partner's disk size */
-	request_queue_t     *rq_queue;
+	struct request_queue *rq_queue;
 	struct block_device *this_bdev;
 	struct gendisk      *vdisk;
 
@@ -1278,9 +1278,9 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #endif
 
 // drbd_req
-extern int drbd_make_request_26(request_queue_t *q, struct bio *bio);
+extern int drbd_make_request_26(struct request_queue *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
-extern int drbd_merge_bvec(request_queue_t *, struct bio *, struct bio_vec *);
+extern int drbd_merge_bvec(struct request_queue *, struct bio *, struct bio_vec *);
 extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 
 
@@ -1908,7 +1908,7 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
  * d) q->unplug_fn(q), which is what all the drivers/md/ stuff uses...
  *
  */
-static inline void drbd_blk_run_queue(request_queue_t *q)
+static inline void drbd_blk_run_queue(struct request_queue *q)
 {
 	if (q && q->unplug_fn)
 		q->unplug_fn(q);

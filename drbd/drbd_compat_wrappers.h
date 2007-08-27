@@ -140,7 +140,7 @@ static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_t
 
 static inline void drbd_plug_device(drbd_dev *mdev)
 {
-	request_queue_t *q;
+	struct request_queue *q;
 	q = bdev_get_queue(mdev->this_bdev);
 
 	spin_lock_irq(q->queue_lock);

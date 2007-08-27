@@ -619,8 +619,8 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 
 void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
 {
-	request_queue_t * const q = mdev->rq_queue;
-	request_queue_t * const b = mdev->bc->backing_bdev->bd_disk->queue;
+	struct request_queue * const q = mdev->rq_queue;
+	struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;
 	//unsigned int old_max_seg_s = q->max_segment_size;
 
 	if (b->merge_bvec_fn && !mdev->bc->dc.use_bmbv)
