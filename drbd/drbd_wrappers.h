@@ -134,7 +134,7 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw,
 
 static inline void drbd_plug_device(struct drbd_conf *mdev)
 {
-	request_queue_t *q;
+	struct request_queue *q;
 	q = bdev_get_queue(mdev->this_bdev);
 
 	spin_lock_irq(q->queue_lock);

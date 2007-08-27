@@ -1951,7 +1951,7 @@ int drbd_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-void drbd_unplug_fn(request_queue_t *q)
+void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
 
@@ -2262,7 +2262,7 @@ void __exit drbd_cleanup(void)
 		while (i--) {
 			struct drbd_conf        *mdev  = minor_to_mdev(i);
 			struct gendisk  **disk = &mdev->vdisk;
-			request_queue_t **q    = &mdev->rq_queue;
+			struct request_queue **q    = &mdev->rq_queue;
 
 			if (!mdev)
 				continue;
@@ -2351,7 +2351,7 @@ struct drbd_conf *drbd_new_device(int minor)
 {
 	struct drbd_conf *mdev = NULL;
 	struct gendisk *disk;
-	request_queue_t *q;
+	struct request_queue *q;
 
 	mdev = kzalloc(sizeof(struct drbd_conf), GFP_KERNEL);
 	if (!mdev)
