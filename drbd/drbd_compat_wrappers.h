@@ -191,6 +191,17 @@ drbd_kmem_cache_create (const char *name, size_t size, size_t align,
 		);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
+static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
+{
+	int ret = unregister_blkdev(major,name);
+	if (ret)
+		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
+}
+#else
+#define drbd_unregister_blkdev unregister_blkdev
+#endif
+
 #ifdef NEED_BACKPORT_OF_ATOMIC_ADD
 
 #if defined(__x86_64__)

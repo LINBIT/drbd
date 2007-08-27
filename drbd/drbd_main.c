@@ -2306,8 +2306,7 @@ STATIC void __exit drbd_cleanup(void)
 
 	kfree(minor_table);
 
-	if (unregister_blkdev(MAJOR_NR, DEVICE_NAME) != 0)
-		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
+	drbd_unregister_blkdev(LANANA_DRBD_MAJOR, DEVICE_NAME);
 
 	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
 }
