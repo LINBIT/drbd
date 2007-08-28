@@ -905,7 +905,7 @@ int v07_style_md_open(struct format *cfg,
 		exit(20);
 	}
 
-	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
+	if (ioctl(cfg->md_fd, BLKFLSBUF, NULL) == -1) {
 		PERROR("WARN: ioctl(,BLKFLSBUF,) failed");
 	}
 
@@ -1509,7 +1509,7 @@ int v07_md_close(struct format *cfg)
 		PERROR("fsync() failed");
 		err = -1;
 	}
-	if (ioctl(cfg->md_fd, BLKFLSBUF) == -1) {
+	if (ioctl(cfg->md_fd, BLKFLSBUF, NULL) == -1) {
 		PERROR("ioctl(,BLKFLSBUF,) failed");
 		err = -1;
 	}
