@@ -2051,12 +2051,16 @@ int cmp_after_sb(enum after_sb_handler peer, enum after_sb_handler self)
 int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	struct Drbd_Protocol_Packet *p = (struct Drbd_Protocol_Packet *)h;
+	int header_size, data_size;
 
 	int p_proto, p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
 	int p_want_lose, p_two_primaries;
+	char p_integrity_alg[SHARED_SECRET_MAX] = "";
 
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+	header_size = sizeof(*p) - sizeof(*h);
+	data_size   = h->length  - header_size;
+
+	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
 	p_proto		= be32_to_cpu(p->protocol);
@@ -2094,6 +2098,17 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (p_two_primaries != mdev->net_conf->two_primaries) {
 		ERR("incompatible setting of the two-primaries options\n");
 		goto disconnect;
+	}
+
+	if (mdev->agreed_pro_version >= 87) {
+		if (drbd_recv(mdev, integrity_alg, data_size) != data_size)
+			return FALSE;
+
+		integrity_alg[SHARED_SECRET_MAX-1]=0;
+		if(strcmp(integrity_alg, mdev->net_conf->integrity_alg)) {
+			ERR("incompatible setting of the data-integrity-alg\n");
+			goto disconnect;
+		}
 	}
 
 	return TRUE;
@@ -2740,8 +2755,8 @@ void drbd_disconnect(struct drbd_conf *mdev)
 }
 
 /*
- * we hereby assure that we always support the drbd dialects
- * PRO_VERSION and (PRO_VERSION -1), allowing for rolling upgrades
+ * We support PRO_VERSION_MIN to PRO_VERSION_MAX. The protocol version
+ * we can agree on is stored in agreed_pro_version.
  *
  * feature flags and the reserved array should be enough room for future
  * enhancements of the handshake protocol, and possible plugins...
@@ -2765,7 +2780,8 @@ int drbd_send_handshake(struct drbd_conf *mdev)
 	}
 
 	memset(p, 0, sizeof(*p));
-	p->protocol_version = cpu_to_be32(PRO_VERSION);
+	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
+	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
 	ok = _drbd_send_cmd( mdev, mdev->data.socket, HandShake,
 			     (struct Drbd_Header *)p, sizeof(*p), 0 );
 	up(&mdev->data.mutex);
@@ -2817,30 +2833,26 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 	dump_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
 			__FILE__, __LINE__);
 
-	p->protocol_version = be32_to_cpu(p->protocol_version);
+	p->protocol_min = be32_to_cpu(p->protocol_min);
+	p->protocol_max = be32_to_cpu(p->protocol_max);
+	if(p->protocol_max == 0) p->protocol_max = p->protocol_min;
 
-	if ( p->protocol_version == PRO_VERSION ||
-	     p->protocol_version == (PRO_VERSION+1) ) {
-		if (p->protocol_version == (PRO_VERSION+1)) {
-			WARN( "You should upgrade me! "
-			      "Peer wants protocol version: %u\n",
-			      p->protocol_version );
-		}
-		INFO("Handshake successful: "
-		     "DRBD Network Protocol version %u\n", PRO_VERSION);
-	} /* else if ( p->protocol_version == (PRO_VERSION-1) ) {
-		// not yet; but next time :)
-		INFO( "Handshake successful: DRBD Protocol version %u\n",
-		      (PRO_VERSION-1) );
-		... do some remapping of defaults and jump tables here ...
-	} */ else {
-		ERR( "incompatible DRBD dialects: "
-		     "I support %u, peer wants %u\n",
-		     PRO_VERSION, p->protocol_version );
-		return -1;
-	}
+	if (PRO_VERSION_MAX < p->protocol_min ) goto incompat;
+	if (PRO_VERSION_MIN > p->protocol_max ) goto incompat;
+
+	mdev->agreed_pro_version = min(PRO_VERSION_MAX,p->protocol_max);
+
+	INFO("Handshake successful: "
+	     "Agreed network protocol version %d\n", mdev->agreed_pro_version);
 
 	return 1;
+
+ incompat:
+	ERR("incompatible DRBD dialects: "
+	    "I support %d-%d, peer supports %d-%d\n",
+	    PRO_VERSION_MIN,PRO_VERSION_MAX, 
+	    p->protocol_min, p->protocol_max);
+	return -1;
 
  break_c_loop:
 	WARN( "My msock connect got accepted onto peer's sock!\n");

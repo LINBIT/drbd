@@ -34,6 +34,7 @@ PACKET(net_conf, 5,
 	STRING(		9,	T_MANDATORY,	peer_addr,	128)
 	STRING(		10,	T_MAY_IGNORE,	shared_secret,	SHARED_SECRET_MAX)
 	STRING(		11,	T_MAY_IGNORE,	cram_hmac_alg,	SHARED_SECRET_MAX)
+	STRING(		44,	T_MAY_IGNORE,	integrity_alg,	SHARED_SECRET_MAX)
 	INTEGER(	14,	T_MAY_IGNORE,	timeout)
 	INTEGER(	15,	T_MANDATORY,	wire_protocol)
 	INTEGER(	16,	T_MAY_IGNORE,	try_connect_int)

@@ -309,6 +309,7 @@ struct drbd_cmd commands[] = {
 		 { "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) },
 		 { "ping-timeout",'p',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") },
 		 { "discard-my-data",'D', T_want_lose,     EB },
+		 { "data-integrity-alg",'d', T_want_lose,     EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },

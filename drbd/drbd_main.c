@@ -1312,6 +1312,7 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 
 int drbd_send_protocol(struct drbd_conf *mdev)
 {
+	int rv;
 	struct Drbd_Protocol_Packet p;
 
 	p.protocol      = cpu_to_be32(mdev->net_conf->wire_protocol);
@@ -1321,8 +1322,16 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	p.want_lose     = cpu_to_be32(mdev->net_conf->want_lose);
 	p.two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
 
-	return drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
-			     (struct Drbd_Header *)&p, sizeof(p));
+	if (mdev->agreed_pro_version >= 87) {
+		rv = drbd_send_cmd2(mdev, USE_DATA_SOCKET, ReportProtocol,
+				    (struct Drbd_Header *)&p, sizeof(p),
+				    mdev->net_conf->integrity_alg,
+				    strlen(mdev->net_conf->integrity_alg));
+	} else { 
+		rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
+				   (struct Drbd_Header *)&p, sizeof(p));
+	}
+	return rv;
 }
 
 int drbd_send_uuids(struct drbd_conf *mdev)
@@ -3143,7 +3152,7 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 	switch (cmd) {
 	case HandShake:
 		INFOP("%s (protocol %u)\n", cmdname(cmd),
-			be32_to_cpu(p->HandShake.protocol_version));
+			be32_to_cpu(p->HandShake.protocol_min));
 		break;
 
 	case ReportBitMap: /* don't report this */

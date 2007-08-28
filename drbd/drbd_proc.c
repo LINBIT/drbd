@@ -177,8 +177,8 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 	const char *sn;
 	struct drbd_conf *mdev;
 
-	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
-		    API_VERSION, PRO_VERSION, drbd_buildtag());
+	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)\n%s\n",
+		   API_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, drbd_buildtag());
 
 	/*
 	  cs .. connection state

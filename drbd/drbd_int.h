@@ -346,7 +346,8 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[NegRSDReply]	   = "NegRSDReply",
 		[BarrierAck]	   = "BarrierAck",
 		[StateChgRequest]  = "StateChgRequest",
-		[StateChgReply]    = "StateChgReply"
+		[StateChgReply]    = "StateChgReply",
+		[IntegrityAlg]     = "IntegrityAlg"
 	};
 
 	if (Data > cmd || cmd >= MAX_CMD) {
@@ -450,14 +451,16 @@ struct Drbd_BlockRequest_Packet {
 
 struct Drbd_HandShake_Packet {
 	struct Drbd_Header head;	/* 8 bytes */
-	u32 protocol_version;
+	u32 protocol_min;
 	u32 feature_flags;
+	u32 protocol_max;
 
 	/* should be more than enough for future enhancements
 	 * for now, feature_flags and the reserverd array shall be zero.
 	 */
 
-	u64 reserverd[8];
+	u32 _pad;
+	u64 reserverd[7];
 } __attribute((packed));
 /* 80 bytes, FIXED for the next century */
 
@@ -783,6 +786,7 @@ struct drbd_conf {
 
 	struct drbd_socket data; /* data/barrier/cstate/parameter packets */
 	struct drbd_socket meta; /* ping/ack (metadata) packets */
+	int agreed_pro_version;  /* actually used protocol version */
 	unsigned long last_received; /* in jiffies, either socket */
 	unsigned int ko_count;
 	struct drbd_work  resync_work,
