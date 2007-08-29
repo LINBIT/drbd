@@ -2028,7 +2028,7 @@ void check_internal_md_flavours(struct format * cfg) {
 		DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
 
 	printf("%lld\n%lld\n%lld\n", cfg->bd_size, fixed_offset, flex_offset);
-	if (fixed_offset < (off_t)cfg->bd_size - 4096) {
+	if (0 <= fixed_offset && fixed_offset < (off_t)cfg->bd_size - 4096) {
 		/* ... v07 fixed-size internal meta data? */
 		PREAD(cfg->md_fd, on_disk_buffer, 4096, fixed_offset);
 	
