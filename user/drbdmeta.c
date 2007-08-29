@@ -273,9 +273,9 @@ struct format {
 	struct md_cpu md;
 
 	/* _byte_ offsets of our "super block" and other data, within fd */
-	u64 md_offset;
-	u64 al_offset;
-	u64 bm_offset;
+	s64 md_offset;
+	s64 al_offset;
+	s64 bm_offset;
 	size_t md_mmaped_length;
 	size_t al_mmaped_length;
 	size_t bm_mmaped_length;
@@ -684,14 +684,14 @@ int v07_md_open(struct format *cfg);
 int v07_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v07_md_initialize(struct format *cfg);
 void v07_md_erase_others(struct format *cfg);
-u64 v07_md_get_byte_offset(struct format * cfg);
+s64 v07_md_get_byte_offset(struct format * cfg);
 
 int v08_md_open(struct format *cfg);
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
 int v08_md_initialize(struct format *cfg);
 void v08_md_erase_others(struct format *cfg);
-u64 v08_md_get_byte_offset(struct format * cfg);
+s64 v08_md_get_byte_offset(struct format * cfg);
 
 struct format_ops f_ops[] = {
 	[Drbd_06] = {
@@ -881,7 +881,7 @@ void printf_bm(const le_u64 * bm, const unsigned int n)
 }
 
 int v07_style_md_open(struct format *cfg,
-		      u64 (*md_get_byte_offset) (struct format *),
+		      s64 (*md_get_byte_offset) (struct format *),
 		      size_t size)
 {
 	struct stat sb;
@@ -938,7 +938,7 @@ int v07_style_md_open(struct format *cfg,
 	// For the case that someone modified la_sect by hand..
 	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
 	     cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) &&
-	    (cfg->md.la_sect*512 > cfg->md_offset) ) {
+	    (cfg->md.la_sect*512 > (u64)cfg->md_offset) ) {
 		printf("la-size-sect was too big, fixed.\n");
 		cfg->md.la_sect = cfg->md_offset/512;
 	}
@@ -972,7 +972,7 @@ int v07_style_md_open(struct format *cfg,
 }
 
 void md_erase_sb(struct format *cfg,
-		 u64 (*md_get_byte_offset) (struct format *))
+		 s64 (*md_get_byte_offset) (struct format *))
 {
 	/* in case these are internal meta data, we need to
 	   make sure that there is no v08 superblock at the end
@@ -980,7 +980,7 @@ void md_erase_sb(struct format *cfg,
 
 	unsigned char zero_sector[512];
 	struct format cfg_f;
-	u64 offset;
+	s64 offset;
 	int bw;
 
 	if(cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
@@ -992,6 +992,8 @@ void md_erase_sb(struct format *cfg,
 		   in the front of the meta data area. */
 
 		offset = md_get_byte_offset(&cfg_f);
+		if (offset < 0)
+			return;
 		if(lseek64(cfg->md_fd, offset, SEEK_SET) == -1) {
 			PERROR("lseek64() failed");
 			exit(20);
@@ -1404,9 +1406,9 @@ int md_initialize_common(struct format *cfg)
  begin of v07 {{{
  ******************************************/
 
-u64 v07_md_get_byte_offset(struct format *cfg)
+s64 v07_md_get_byte_offset(struct format *cfg)
 {
-	u64 offset;
+	s64 offset;
 
 	switch(cfg->md_index) {
 	default: /* external, some index */
@@ -1545,9 +1547,9 @@ void v07_md_erase_others(struct format *cfg)
  begin of v08 {{{
  ******************************************/
 
-u64 v08_md_get_byte_offset(struct format *cfg)
+s64 v08_md_get_byte_offset(struct format *cfg)
 {
-	u64 offset;
+	s64 offset;
 
 	switch(cfg->md_index) {
 	default: /* external, some index */
