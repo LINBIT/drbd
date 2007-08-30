@@ -105,10 +105,13 @@ static int sh_ip(struct d_resource* ,const char* );
 static int sh_ll_dev(struct d_resource* ,const char* );
 static int sh_md_dev(struct d_resource* ,const char* );
 static int sh_md_idx(struct d_resource* ,const char* );
+static int sh_b_pri(struct d_resource* ,const char* );
 static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
 static int hidden_cmds(struct d_resource* ,const char* );
+
+static char* get_opt_val(struct d_option*,const char*,char*);
 
 static struct ifreq* get_ifreq();
 
@@ -230,6 +233,7 @@ struct adm_cmd cmds[] = {
   { "sh-md-dev",         sh_md_dev,     2,1,0 },
   { "sh-md-idx",         sh_md_idx,     2,1,0 },
   { "sh-ip",             sh_ip,         0,1,0 },
+  { "sh-b-pri",          sh_b_pri,      2,1,0 },
   { "pri-on-incon-degr", adm_khelper,   3,1,0 },
   { "pri-lost-after-sb", adm_khelper,   3,1,0 },
   { "outdate-peer",      adm_khelper,   3,1,0 },
@@ -537,6 +541,17 @@ static int sh_md_idx(struct d_resource* res,const char* unused __attribute((unus
   return 0;
 }
 
+static int sh_b_pri(struct d_resource *res,const char* unused __attribute((unused)))
+{
+  char* val;
+
+  val = get_opt_val(res->startup_options, "become-primary-on", NULL);
+  if ( val && ( !strcmp(val,nodeinfo.nodename) ||
+		!strcmp(val,"both") ) ) {
+    return adm_generic_s(res,"primary");
+  }
+  return 0;
+}
 
 static int sh_mod_parms(struct d_resource* res __attribute((unused)),const char* unused __attribute((unused)))
 {
@@ -759,6 +774,19 @@ pid_t m_system(char** argv,int flags)
     OPT=OPT->next; \
   }
 
+#define make_options_wait(OPT) \
+  while(OPT) { \
+    if(!strcmp(OPT->name,"become-primary-on")) {\
+      OPT=OPT->next; continue; \
+    } \
+    if(OPT->value) { \
+      ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
+    } else { \
+      ssprintf(argv[NA(argc)],"--%s",OPT->name); \
+    } \
+    OPT=OPT->next; \
+  }
+
 int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[MAX_ARGS];
@@ -891,8 +919,6 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   return rv;
 }
 
-static char* get_opt_val(struct d_option*,const char*,char*);
-
 static int adm_khelper(struct d_resource* res ,const char* cmd)
 {
   int rv=0;
@@ -1012,7 +1038,7 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   argv[NA(argc)]=res->me->device;
   argv[NA(argc)]="wait-connect";
   opt=res->startup_options;
-  make_options(opt);
+  make_options_wait(opt);
   argv[NA(argc)]=0;
 
   rv = m_system(argv,SLEEPS_FOREVER);
@@ -1203,7 +1229,7 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
     argv[NA(argc)]=res->me->device;
     argv[NA(argc)]="wait-connect";
     opt=res->startup_options;
-    make_options(opt);
+    make_options_wait(opt);
     argv[NA(argc)]=0;
 
     pids[i++]=m_system(argv,RETURN_PID);
@@ -1551,6 +1577,7 @@ void sanity_check_perm()
 void validate_resource(struct d_resource * res)
 {
   struct d_option* opt;
+  char *bpo;
 
   if (!res->protocol) {
     if (!common || !common->protocol) {
@@ -1606,6 +1633,16 @@ void validate_resource(struct d_resource * res)
 
   if ( (opt = find_opt(res->handlers, "outdate-peer")) ) {
     if(strstr(opt->value,"drbd-peer-outdater")) sanity_check_perm();
+  }
+
+  bpo = get_opt_val(res->startup_options, "become-primary-on", "undef");
+  opt = find_opt(res->net_options, "allow-two-primaries");
+  if(!strcmp(bpo,"both") && opt == NULL) {
+    fprintf(stderr,
+	    "In resource %s:\n"
+	    "become-primary-on is set to both, but allow-two-primaries "
+	    "is not set.\n", res->name);
+    config_valid = 0;
   }
 }
 
