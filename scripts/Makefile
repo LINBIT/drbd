@@ -62,6 +62,8 @@ install:
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
 	install -d $(PREFIX)/usr/lib/drbd
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
+	mkdir -p $(PREFIX)/etc/xen/scripts
+	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
@@ -77,4 +79,5 @@ distclean: clean
 uninstall:
 	rm $(INITD)drbd
 	rm $(PREFIX)/etc/ha.d/resource.d/drbddisk
+	rm $(PREFIX)/etc/xen/scripts/block-drbd
 	! test -L $(PREFIX)/sbin/rcdrbd || rm $(PREFIX)/sbin/rcdrbd

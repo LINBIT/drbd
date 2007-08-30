@@ -122,6 +122,7 @@ ___
 /sbin/drbdmeta
 /usr/lib/drbd/outdate-peer.sh
 /etc/ha.d/resource.d/drbddisk
+/etc/xen/scripts/block-drbd
 
 %defattr(644,root,root)
 %config(noreplace) /etc/drbd.conf
