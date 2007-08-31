@@ -4,6 +4,22 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0.6 (api:86/proto:86)
+--------
+ * Fixed DRBD to not deadlock while doing bitmap updates on Linux
+   2.6.22 and later.
+ * Make it compile on Linux-2.6.22 and later.
+ * Removed a hardcoded path to docbook DTDs from our sgml files,
+   maybe improving the situation with building the documentation.
+ * drbdmeta can now also initialize meta data on meta devices
+   smaller than 128MB.
+ * Added an explicit NULL argument to our ioctl() calls in drbdmeta.
+ * Added scripts/block-drbd, which is a nice way hand over DRBD
+   role assignment to Xen, allowing one to do Xen live migrations
+   in a sane way.
+ * Added an option to drbd.conf which instructs the init script
+   to promote DRBD devices to primary role upon machine start up.
+
 8.0.5 (api:86/proto:86)
 --------
  * Changed the default behaviour of the init script. Now the init

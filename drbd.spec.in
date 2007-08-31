@@ -192,6 +192,22 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Seg  3 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.6-1)
+ * Fixed DRBD to not deadlock while doing bitmap updates on Linux
+   2.6.22 and later.
+ * Make it compile on Linux-2.6.22 and later.
+ * Removed a hardcoded path to docbook DTDs from our sgml files,
+   maybe improving the situation with building the documentation.
+ * drbdmeta can now also initialize meta data on meta devices
+   smaller than 128MB.
+ * Added an explicit NULL argument to our ioctl() calls in drbdmeta.
+ * Added scripts/block-drbd, which is a nice way hand over DRBD
+   role assignment to Xen, allowing one to do Xen live migrations
+   in a sane way.
+ * Added an option to drbd.conf which instructs the init script
+   to promote DRBD devices to primary role upon machine start up.
+
 * Fri Aug  3 2007 09:34:49 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.5-1)
  * Changed the default behaviour of the init script. Now the init
