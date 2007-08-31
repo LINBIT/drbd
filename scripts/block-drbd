@@ -254,24 +254,24 @@ case "$command" in
         drbd_state="$(/sbin/drbdadm state $drbd_resource)"
         drbd_lstate="${drbd_state%%/*}"
         drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
-	if [ "$drbd_lstate" != 'Primary' ]; then
-	  /sbin/drbdadm primary $drbd_resource
-	fi
+        if [ "$drbd_lstate" != 'Primary' ]; then
+          /sbin/drbdadm primary $drbd_resource
+        fi
         dev=$drbd_dev
         FRONTEND_ID=$(xenstore_read "$XENBUS_PATH/frontend-id")
         FRONTEND_UUID=$(xenstore_read_default \
             "/local/domain/$FRONTEND_ID/vm" 'unknown')
         claim_lock "block"
         check_device_sharing "$dev" "$mode"
-	write_dev "$dev"
+        write_dev "$dev"
         release_lock "block"
-	exit 0
-	;;
+        exit 0
+        ;;
       "")
         claim_lock "block"
         success
         release_lock "block"
-	;;
+        ;;
     esac
     ;;
 
@@ -279,20 +279,20 @@ case "$command" in
     case $t in 
       drbd)
         p=$(xenstore_read "$XENBUS_PATH/params")
-	drbd_resource=$p
-	drbd_state="$(/sbin/drbdadm state $drbd_resource)"
-	drbd_lstate="${drbd_state%%/*}"
-	drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
+        drbd_resource=$p
+        drbd_state="$(/sbin/drbdadm state $drbd_resource)"
+        drbd_lstate="${drbd_state%%/*}"
+        drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
 
-	if [ "$drbd_lstate" != 'Secondary' ]; then
-	  /sbin/drbdadm secondary $drbd_resource
-	fi
-	exit 0
-	;;
+        if [ "$drbd_lstate" != 'Secondary' ]; then
+          /sbin/drbdadm secondary $drbd_resource
+        fi
+        exit 0
+        ;;
 
       "")
         exit 0
-	;;
+        ;;
     esac
     ;;
 
