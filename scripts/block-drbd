@@ -1,21 +1,57 @@
 #!/bin/bash
 #
-# A modified version of Xen's block script for use with DRBD.
+# Copyright (c) 2007 LINBIT Information Technologies GmbH
+# Based on the original "block" VBD script by XenSource Inc.
 #
-# The idea is to give over the role assignment of DRBD
-# devices to this script. It will promote a DRBD device to primary
-# role when the Xen DomU gets started. During a Xen live migration
-# both DRBD devices will be primary for a short time. Other
-# than that only one side of the DRBD device pair will be 
-# primary at a time.
+# This script implements the "drbd" VBD type. To use a DRBD resource
+# as a virtual block device, include a line similar to this in your
+# domU configuration:
 #
-# Syntax example for a DomU.cfg. 'r0' is the DRBD resource name.
-#  disk = [ 'drbd:r0,sda1,w' ]
+# disk = [ 'drbd:myresource,xvda1,w' ]
 #
-# Of course you have to set the "allow-two-primaries" in the
-# DRBD config.
+# This will direct Xen to put the DRBD resource named 'myresource'
+# into the Primary role, and configure it as device xvda1 in your
+# domU. You may use as many DRBD resources as you like. If you are
+# using DRBD in dual-Primary mode (available in DRBD versions 8.0 and
+# up), your DRBD-backed domU will be live migration capable. 
 #
-# By Florian Haas, LINBIT Information Technologies 2007.
+# IMPORTANT: If you run DRBD in dual-Primary mode with Xen, you MUST
+#            ensure that the only time the resource is accessed by
+#            both nodes is during domain migration. If you fire up a
+#            DRBD-backed domU simultaneously on two nodes, you WILL
+#            wreck your VBD data. DO NOT attempt to set up a live
+#            migration capable, DRBD-backed domU unless you
+#            understand these implications.
+#
+# This script will not load the DRBD kernel module for you, nor will
+# it attach, detach, connect, or disconnect your resource. The init
+# script distributed with DRBD will do that for you. Make sure it is
+# started before attempting to start a DRBD-backed domU.
+#
+# Known limitations:
+#
+# - With 'file' and 'phy' VBD's, Xen will allow one block device to be
+#   made available read-only to multiple domU's, or be mounted
+#   read-only in the dom0 and be made available read-only to
+#   domU's. This is not supported by the 'drbd' VBD type.
+# - Tested only on Debian etch with Xen 3.0.3, and on SLES 10 SP1 with
+#   Xen 3.0.4. 
+#
+# For more information about DRBD, visit http://www.drbd.org/.
+#   
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of version 2.1 of the GNU Lesser General Public
+# License as published by the Free Software Foundation.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 
 dir=$(dirname "$0")
@@ -72,12 +108,9 @@ check_sharing()
   local devmm=$(device_major_minor "$dev")
   local file
 
-  if [ "$mode" = 'w' ]
-  then
-    toskip="^$"
-  else
-    toskip="^[^ ]* [^ ]* [^ ]* ro[, ]"
-  fi
+  # Here, different from the original 'block' script, we don't check
+  # explicitly for read/write mounts. See "known limitations" above.
+  toskip="^$"
 
   for file in $(cat /proc/mounts | grep -v "$toskip" | cut -f 1 -d ' ')
   do
@@ -102,25 +135,13 @@ check_sharing()
 
       if [ "$d" = "$devmm" ]
       then
-        if [ "$mode" = 'w' ]
+        # Here, different from the original 'block' script, we don't
+        # check explicitly for read/write mounts. See "known
+        # limitations" above.
+        if ! same_vm $dom
         then
-          if ! same_vm $dom
-          then
-            echo 'guest'
-            return
-          fi
-        else
-          local m=$(xenstore_read "$base_path/$dom/$dev/mode")
-          m=$(canonicalise_mode "$m")
-
-          if [ "$m" = 'w' ]
-          then
-            if ! same_vm $dom
-            then
-              echo 'guest'
-              return
-            fi
-          fi
+          echo 'guest'
+          return
         fi
       fi
     done
