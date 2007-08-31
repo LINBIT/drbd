@@ -595,6 +595,9 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	if( ns.disk > Attaching && os.disk == Diskless)
 		rv=SS_IsDiskLess;
 
+	if ( ns.conn == WFConnection && os.conn < Unconnected )
+		rv=SS_NoNetConfig;
+
 	return rv;
 }
 

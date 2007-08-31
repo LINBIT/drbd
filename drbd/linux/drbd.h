@@ -207,7 +207,8 @@ typedef enum {
 	SS_AlreadyStandAlone=-9,
 	SS_CW_FailedByPeer=-10,
 	SS_IsDiskLess=-11,
-	SS_DeviceInUse=-12
+	SS_DeviceInUse=-12,
+	SS_NoNetConfig=-13
 } set_st_err_t;
 
 /* from drbd_strings.c */

@@ -706,16 +706,18 @@ STATIC Drbd_Packet_Cmd drbd_recv_fp(drbd_dev *mdev,struct socket *sock)
  *   0 oops, did not work out, please try again
  *  -1 peer talks different language,
  *     no point in trying again, please go standalone.
+ *  -2 We do not have a network config...
  */
 int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *s, *sock,*msock;
 	int try,h;
 
-	D_ASSERT(mdev->state.conn >= Unconnected);
 	D_ASSERT(!mdev->data.socket);
 
-	if(drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success ) return 0;
+	if (_drbd_request_state(mdev,NS(conn,WFConnection),0) < SS_Success )
+		return -2;
+
 	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
 
 	sock  = NULL;
@@ -2688,6 +2690,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	int rv=SS_UnknownError;
 
 	D_ASSERT(mdev->state.conn < Connected);
+	if (mdev->state.conn == StandAlone) return;
 	/* FIXME verify that:
 	 * the state change magic prevents us from becoming >= Connected again
 	 * while we are still cleaning up.
@@ -3102,7 +3105,7 @@ int drbdd_init(struct Drbd_thread *thi)
 			drbd_disconnect(mdev);
 			schedule_timeout(HZ);
 		}
-		if( h < 0 ) {
+		if( h == -1 ) {
 			WARN("Discarding network configuration.\n");
 			drbd_force_state(mdev,NS(conn,Disconnecting));
 		}
