@@ -34,8 +34,7 @@
 #   made available read-only to multiple domU's, or be mounted
 #   read-only in the dom0 and be made available read-only to
 #   domU's. This is not supported by the 'drbd' VBD type.
-# - Tested only on Debian etch with Xen 3.0.3, and on SLES 10 SP1 with
-#   Xen 3.0.4. 
+# - Tested, thus far, only on Debian etch with Xen 3.0.3.
 #
 # For more information about DRBD, visit http://www.drbd.org/.
 #   
