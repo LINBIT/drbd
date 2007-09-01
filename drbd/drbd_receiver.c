@@ -596,13 +596,14 @@ STATIC struct socket *drbd_try_connect(drbd_dev *mdev)
 	struct socket *sock;
 	struct sockaddr_in src_in;
 
+	if (!inc_net(mdev)) return NULL;
+
 	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err) {
+		dec_net(mdev);
 		ERR("sock_creat(..)=%d\n", err);
 		return NULL;
 	}
-
-	if(!inc_net(mdev)) return NULL;
 
 	sock->sk->sk_rcvtimeo =
 	sock->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
@@ -646,13 +647,14 @@ STATIC struct socket *drbd_wait_for_connect(drbd_dev *mdev)
 	int err;
 	struct socket *sock,*sock2;
 
+	if (!inc_net(mdev)) return NULL;
+
 	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock2);
 	if (err) {
+		dec_net(mdev);
 		ERR("sock_creat(..)=%d\n", err);
 		return NULL;
 	}
-
-	if(!inc_net(mdev)) return NULL;
 
 	sock2->sk->sk_reuse    = 1; /* SO_REUSEADDR */
 	sock2->sk->sk_rcvtimeo =
