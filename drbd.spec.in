@@ -199,12 +199,17 @@ uname -r | grep BOOT ||
  * Make it compile on Linux-2.6.22 and later.
  * Removed a hardcoded path to docbook DTDs from our sgml files,
    maybe improving the situation with building the documentation.
+ * When a drbd connect attempt gets accepted onto a other program,
+   that simply closes the socket, drbd stays for some seconds in the
+   "BrokenPipe" network state. When one removed the network
+   config during that time, drbd OOPSed. This is fixed now.
  * drbdmeta can now also initialize meta data on meta devices
    smaller than 128MB.
  * Added an explicit NULL argument to our ioctl() calls in drbdmeta.
  * Added scripts/block-drbd, which is a nice way hand over DRBD
    role assignment to Xen, allowing one to do Xen live migrations
    in a sane way.
+ * Added scripts/pretty-proc-drbd.sh
  * Added an option to drbd.conf which instructs the init script
    to promote DRBD devices to primary role upon machine start up.
 
