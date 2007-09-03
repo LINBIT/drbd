@@ -192,7 +192,7 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Fri Seg  3 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
+* Mon Sep  3 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.6-1)
  * Fixed DRBD to not deadlock while doing bitmap updates on Linux
    2.6.22 and later.
