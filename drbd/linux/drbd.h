@@ -112,6 +112,8 @@ enum ret_codes {
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
 	ProtocolCRequired,
+	IntegrityAlgNotAvail,
+	IntegrityAlgNotDigest,
 
 	/* insert new ones above this line */
 	AfterLastRetCode

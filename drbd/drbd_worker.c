@@ -287,6 +287,29 @@ int w_resync_inactive(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return 1; /* Simply ignore this! */
 }
 
+void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
+{
+	struct hash_desc desc;
+	struct scatterlist sg;
+	struct bio_vec *bvec;
+	int i;
+
+	desc.tfm=tfm;
+	desc.flags=0;
+
+	// Improve in generic Kernel ?
+	// sg and bvec have exactly the same purpose 
+
+	crypto_hash_init(&desc);
+	__bio_for_each_segment(bvec, bio, i, 0) {
+		sg.page   = bvec->bv_page;
+		sg.offset = bvec->bv_offset;
+		sg.length = bvec->bv_len;
+		crypto_hash_update(&desc,&sg,sg.length);
+	}
+	crypto_hash_final(&desc,digest);
+}
+
 void resync_timer_fn(unsigned long data)
 {
 	unsigned long flags;

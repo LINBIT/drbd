@@ -1036,6 +1036,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	enum ret_codes retcode;
 	struct net_conf *new_conf = NULL;
 	struct crypto_hash *tfm = NULL;
+	struct crypto_hash *integrity_tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
 	struct drbd_conf *odev;
@@ -1136,6 +1137,18 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		}
 	}
 
+	if (new_conf->integrity_alg[0]) {
+		integrity_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(integrity_tfm)) {
+			retcode=IntegrityAlgNotAvail;
+			goto fail;
+		}
+
+		if (crypto_tfm_alg_type(crypto_hash_tfm(integrity_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+			retcode=IntegrityAlgNotDigest;
+			goto fail;				
+		}
+	}
 
 	ns = new_conf->max_epoch_size/8;
 	if (mdev->tl_hash_s != ns) {
@@ -1203,6 +1216,20 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		crypto_free_hash(mdev->cram_hmac_tfm);
 	mdev->cram_hmac_tfm = tfm;
 
+	if (mdev->integrity_tfm) {
+		crypto_free_hash(mdev->integrity_tfm);
+		kfree(mdev->integrity_digest);
+		if (integrity_tfm) {
+			i = crypto_hash_digestsize(integrity_tfm);
+			mdev->integrity_digest = kmalloc(i, GFP_KERNEL);
+			if (!mdev->integrity_digest) {
+				retcode = KMallocFailed;
+				goto fail;
+			}
+		}
+	}
+	mdev->cram_hmac_tfm = integrity_tfm;
+
 	retcode = drbd_request_state(mdev, NS(conn, Unconnected));
 
 	reply->ret_code = retcode;
@@ -1210,6 +1237,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 fail:
 	crypto_free_hash(tfm);
+	crypto_free_hash(integrity_tfm);
 	kfree(new_tl_hash);
 	kfree(new_ee_hash);
 	kfree(new_conf);

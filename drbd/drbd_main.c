@@ -1312,25 +1312,30 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 
 int drbd_send_protocol(struct drbd_conf *mdev)
 {
-	int rv;
-	struct Drbd_Protocol_Packet p;
+	struct Drbd_Protocol_Packet *p;
+	int size,rv;
 
-	p.protocol      = cpu_to_be32(mdev->net_conf->wire_protocol);
-	p.after_sb_0p   = cpu_to_be32(mdev->net_conf->after_sb_0p);
-	p.after_sb_1p   = cpu_to_be32(mdev->net_conf->after_sb_1p);
-	p.after_sb_2p   = cpu_to_be32(mdev->net_conf->after_sb_2p);
-	p.want_lose     = cpu_to_be32(mdev->net_conf->want_lose);
-	p.two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
+	size = sizeof(struct Drbd_Protocol_Packet);
 
-	if (mdev->agreed_pro_version >= 87) {
-		rv = drbd_send_cmd2(mdev, USE_DATA_SOCKET, ReportProtocol,
-				    (struct Drbd_Header *)&p, sizeof(p),
-				    mdev->net_conf->integrity_alg,
-				    strlen(mdev->net_conf->integrity_alg));
-	} else { 
-		rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
-				   (struct Drbd_Header *)&p, sizeof(p));
-	}
+	if (mdev->agreed_pro_version >= 87)
+		size += strlen(mdev->net_conf->integrity_alg) + 1;
+
+	if ((p = kmalloc(size, GFP_KERNEL)) == NULL)
+		return 0;
+
+	p->protocol      = cpu_to_be32(mdev->net_conf->wire_protocol);
+	p->after_sb_0p   = cpu_to_be32(mdev->net_conf->after_sb_0p);
+	p->after_sb_1p   = cpu_to_be32(mdev->net_conf->after_sb_1p);
+	p->after_sb_2p   = cpu_to_be32(mdev->net_conf->after_sb_2p);
+	p->want_lose     = cpu_to_be32(mdev->net_conf->want_lose);
+	p->two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
+
+	if (mdev->agreed_pro_version >= 87)
+		strcpy(p->integrity_alg,mdev->net_conf->integrity_alg);
+
+	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
+			   (struct Drbd_Header *)p, size);
+	kfree(p);
 	return rv;
 }
 
@@ -1724,14 +1729,19 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	int ok = 1;
 	struct Drbd_Data_Packet p;
 	unsigned int dp_flags = 0;
+	void *dgb;
+	int dgs;
 
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
+	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_tfm) ? 
+		crypto_hash_digestsize(mdev->integrity_tfm) : 0;
+
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
-	p.head.length  = cpu_to_be16(sizeof(p)
-			-sizeof(struct Drbd_Header)+req->size);
+	p.head.length  = cpu_to_be16( sizeof(p)
+			-sizeof(struct Drbd_Header)+dgs+req->size);
 
 	p.sector   = cpu_to_be64(req->sector);
 	p.block_id = (unsigned long)req;
@@ -1751,6 +1761,11 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	set_bit(UNPLUG_REMOTE, &mdev->flags);
 	ok = (sizeof(p) ==
 		drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE));
+	if (ok && dgs) {
+		dgb = mdev->integrity_digest;
+		drbd_csum(mdev, mdev->integrity_tfm, req->master_bio, dgb);
+		ok = drbd_send(mdev, mdev->data.socket, dgb, dgs, MSG_MORE);
+	}
 	if (ok) {
 		if (mdev->net_conf->wire_protocol == DRBD_PROT_A)
 			ok = _drbd_send_bio(mdev, req->master_bio);
@@ -1771,11 +1786,16 @@ int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 {
 	int ok;
 	struct Drbd_Data_Packet p;
+	void *dgb;
+	int dgs;
+
+	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_tfm) ? 
+		crypto_hash_digestsize(mdev->integrity_tfm) : 0;
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
 	p.head.length  = cpu_to_be16( sizeof(p)
-			-sizeof(struct Drbd_Header) + e->size);
+			-sizeof(struct Drbd_Header) + dgs + e->size);
 
 	p.sector   = cpu_to_be64(e->sector);
 	p.block_id = e->block_id;
@@ -1791,6 +1811,11 @@ int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 	dump_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p,
 					sizeof(p), MSG_MORE);
+	if (ok && dgs) {
+		dgb = mdev->integrity_digest;
+		drbd_csum(mdev, mdev->integrity_tfm, e->private_bio, dgb);
+		ok = drbd_send(mdev, mdev->data.socket, dgb, dgs, MSG_MORE);
+	}
 	if (ok)
 		ok = _drbd_send_zc_bio(mdev, e->private_bio);
 
@@ -2345,6 +2370,8 @@ void __exit drbd_cleanup(void)
 
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
+
+			kfree(mdev->integrity_digest);
 		}
 		drbd_destroy_mempools();
 	}
@@ -2502,8 +2529,8 @@ int __init drbd_init(void)
 #endif
 
 	printk(KERN_INFO "drbd: initialised. "
-	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
-	       API_VERSION, PRO_VERSION);
+	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",
+	       API_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX);
 	printk(KERN_INFO "drbd: %s\n", drbd_buildtag());
 	printk(KERN_INFO "drbd: registered as block device major %d\n",
 		DRBD_MAJOR);

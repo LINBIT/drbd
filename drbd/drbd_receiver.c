@@ -49,13 +49,6 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
-#if defined(__arch_um__) && !defined(HAVE_UML_TO_VIRT)
-static inline void *to_virt(unsigned long phys)
-{
-	return((void *) uml_physmem + phys);
-}
-#endif
-
 #ifdef DBG_ASSERTS
 void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
 			    char *file, int line)
@@ -2101,14 +2094,15 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	if (mdev->agreed_pro_version >= 87) {
-		if (drbd_recv(mdev, integrity_alg, data_size) != data_size)
+		if (drbd_recv(mdev, p_integrity_alg, data_size) != data_size)
 			return FALSE;
 
-		integrity_alg[SHARED_SECRET_MAX-1]=0;
-		if(strcmp(integrity_alg, mdev->net_conf->integrity_alg)) {
+		p_integrity_alg[SHARED_SECRET_MAX-1]=0;
+		if(strcmp(p_integrity_alg, mdev->net_conf->integrity_alg)) {
 			ERR("incompatible setting of the data-integrity-alg\n");
 			goto disconnect;
 		}
+		WARN("data-integrity-alg: %s\n",mdev->net_conf->integrity_alg);
 	}
 
 	return TRUE;
@@ -2840,7 +2834,7 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 	if (PRO_VERSION_MAX < p->protocol_min ) goto incompat;
 	if (PRO_VERSION_MIN > p->protocol_max ) goto incompat;
 
-	mdev->agreed_pro_version = min(PRO_VERSION_MAX,p->protocol_max);
+	mdev->agreed_pro_version = min_t(int,PRO_VERSION_MAX,p->protocol_max);
 
 	INFO("Handshake successful: "
 	     "Agreed network protocol version %d\n", mdev->agreed_pro_version);

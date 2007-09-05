@@ -347,7 +347,6 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[BarrierAck]	   = "BarrierAck",
 		[StateChgRequest]  = "StateChgRequest",
 		[StateChgReply]    = "StateChgReply",
-		[IntegrityAlg]     = "IntegrityAlg"
 	};
 
 	if (Data > cmd || cmd >= MAX_CMD) {
@@ -489,6 +488,7 @@ struct Drbd_Protocol_Packet {
 	u32 after_sb_2p;
 	u32 want_lose;
 	u32 two_primaries;
+	char integrity_alg[0]; /* Since protocol version 87 and higher. */
 } __attribute((packed));
 
 struct Drbd_GenCnt_Packet {
@@ -876,6 +876,8 @@ struct drbd_conf {
 	int al_tr_cycle;
 	int al_tr_pos;   /* position of the next transaction in the journal */
 	struct crypto_hash *cram_hmac_tfm;
+	struct crypto_hash *integrity_tfm;
+	void *integrity_digest;
 	wait_queue_head_t seq_wait;
 	atomic_t packet_seq;
 	unsigned int peer_seq;
