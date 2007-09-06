@@ -876,7 +876,26 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 	struct bio_vec *bvec;
 	struct page *page;
 	struct bio *bio;
-	int ds, i, rr;
+	int dgs, ds, i, rr;
+	void *dig_in = mdev->int_dig_in;
+	void *dig_vv = mdev->int_dig_vv;
+
+	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_tfm) ? 
+		crypto_hash_digestsize(mdev->integrity_tfm) : 0;
+
+	if (dgs) {
+		rr = drbd_recv(mdev, dig_in, dgs);
+		if ( rr != dgs ) {
+			WARN("short read receiving data: read %d expected %d\n",
+			     rr, dgs);
+			return NULL;
+		}
+	}
+
+	data_size -= dgs;
+
+	ERR_IF(data_size &  0x1ff) return NULL;
+	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return NULL;
 
 	e = drbd_alloc_ee(mdev, id, sector, data_size, GFP_KERNEL);
 	if (!e)
@@ -896,6 +915,13 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 		ds -= rr;
 	}
 
+	if (dgs) {
+		drbd_csum(mdev, mdev->integrity_tfm, bio, dig_vv);
+		if (memcmp(dig_in,dig_vv,dgs)) {
+			ERR("Digest integrity check failed. Broken NICs?\n");
+			return 0;
+		}
+	}
 	mdev->recv_cnt += data_size>>9;
 	return e;
 }
@@ -945,7 +971,23 @@ int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 {
 	struct bio_vec *bvec;
 	struct bio *bio;
-	int rr, i, expect;
+	int dgs, rr, i, expect;
+	void *dig_in = mdev->int_dig_in;
+	void *dig_vv = mdev->int_dig_vv;
+
+	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_tfm) ? 
+		crypto_hash_digestsize(mdev->integrity_tfm) : 0;
+
+	if (dgs) {
+		rr = drbd_recv(mdev, dig_in, dgs);
+		if ( rr != dgs ) {
+			WARN("short read receiving data: read %d expected %d\n",
+			     rr, dgs);
+			return 0;
+		}
+	}
+
+	data_size -= dgs;
 
 	bio = req->master_bio;
 	D_ASSERT( sector == bio->bi_sector );
@@ -963,6 +1005,14 @@ int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 			return 0;
 		}
 		data_size -= rr;
+	}
+
+	if (dgs) {
+		drbd_csum(mdev, mdev->integrity_tfm, bio, dig_vv);
+		if (memcmp(dig_in,dig_vv,dgs)) {
+			ERR("Digest integrity check failed. Broken NICs?\n");
+			return 0;
+		}
 	}
 
 	D_ASSERT(data_size == 0);
@@ -1043,8 +1093,6 @@ int receive_DataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 	 * and no more than DRBD_MAX_SEGMENT_SIZE.
 	 * is this too restrictive?  */
 	ERR_IF(data_size == 0) return FALSE;
-	ERR_IF(data_size &  0x1ff) return FALSE;
-	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
@@ -1255,8 +1303,6 @@ int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	data_size   = h->length  - header_size;
 
 	ERR_IF(data_size == 0) return FALSE;
-	ERR_IF(data_size &  0x1ff) return FALSE;
-	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;

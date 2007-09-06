@@ -1762,7 +1762,7 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	ok = (sizeof(p) ==
 		drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE));
 	if (ok && dgs) {
-		dgb = mdev->integrity_digest;
+		dgb = mdev->int_dig_out;
 		drbd_csum(mdev, mdev->integrity_tfm, req->master_bio, dgb);
 		ok = drbd_send(mdev, mdev->data.socket, dgb, dgs, MSG_MORE);
 	}
@@ -1812,7 +1812,7 @@ int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p,
 					sizeof(p), MSG_MORE);
 	if (ok && dgs) {
-		dgb = mdev->integrity_digest;
+		dgb = mdev->int_dig_out;
 		drbd_csum(mdev, mdev->integrity_tfm, e->private_bio, dgb);
 		ok = drbd_send(mdev, mdev->data.socket, dgb, dgs, MSG_MORE);
 	}
@@ -2371,7 +2371,9 @@ void __exit drbd_cleanup(void)
 			kfree(mdev->p_uuid);
 			mdev->p_uuid = NULL;
 
-			kfree(mdev->integrity_digest);
+			kfree(mdev->int_dig_out);
+			kfree(mdev->int_dig_in);
+			kfree(mdev->int_dig_vv);
 		}
 		drbd_destroy_mempools();
 	}

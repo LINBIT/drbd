@@ -877,7 +877,9 @@ struct drbd_conf {
 	int al_tr_pos;   /* position of the next transaction in the journal */
 	struct crypto_hash *cram_hmac_tfm;
 	struct crypto_hash *integrity_tfm;
-	void *integrity_digest;
+	void *int_dig_out;
+	void *int_dig_in;
+	void *int_dig_vv;
 	wait_queue_head_t seq_wait;
 	atomic_t packet_seq;
 	unsigned int peer_seq;
@@ -1336,6 +1338,7 @@ extern int drbd_resync_finished(struct drbd_conf *mdev);
 /* maybe rather drbd_main.c ? */
 extern int drbd_md_sync_page_io(struct drbd_conf *mdev,
 		struct drbd_backing_dev *bdev, sector_t sector, int rw);
+void drbd_csum(struct drbd_conf *, struct crypto_hash *, struct bio *, void *);
 /* worker callbacks */
 extern int w_req_cancel_conflict(struct drbd_conf *, struct drbd_work *, int);
 extern int w_read_retry_remote(struct drbd_conf *, struct drbd_work *, int);

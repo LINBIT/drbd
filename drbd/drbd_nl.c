@@ -1218,11 +1218,23 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if (mdev->integrity_tfm) {
 		crypto_free_hash(mdev->integrity_tfm);
-		kfree(mdev->integrity_digest);
+		kfree(mdev->int_dig_out);
+		kfree(mdev->int_dig_in);
+		kfree(mdev->int_dig_vv);
 		if (integrity_tfm) {
 			i = crypto_hash_digestsize(integrity_tfm);
-			mdev->integrity_digest = kmalloc(i, GFP_KERNEL);
-			if (!mdev->integrity_digest) {
+			mdev->int_dig_out = kmalloc(i, GFP_KERNEL);
+			if (!mdev->int_dig_out) {
+				retcode = KMallocFailed;
+				goto fail;
+			}
+			mdev->int_dig_in = kmalloc(i, GFP_KERNEL);
+			if (!mdev->int_dig_in) {
+				retcode = KMallocFailed;
+				goto fail;
+			}
+			mdev->int_dig_vv = kmalloc(i, GFP_KERNEL);
+			if (!mdev->int_dig_vv) {
 				retcode = KMallocFailed;
 				goto fail;
 			}

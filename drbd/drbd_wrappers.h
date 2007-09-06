@@ -289,11 +289,20 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	// "hmac(xxx)" is in alg_name we need that xxx.
 	closing_bracket = strchr(alg_name,')');
-	if(!closing_bracket) return NULL;
-	if(closing_bracket-alg_name < 6) return NULL;
+	if(!closing_bracket) {
+		ch = kmalloc(sizeof(struct crypto_hash),GFP_KERNEL);
+		if(!ch) return ERR_PTR(-ENOMEM);
+		ch->base = crypto_alloc_tfm(alg_name, 0);
+		if (ch->base == NULL) {
+			kfree(ch);
+			return ERR_PTR(-ENOMEM);
+		}
+		return ch;
+	}
+	if(closing_bracket-alg_name < 6) return ERR_PTR(-ENOENT);
 
 	ch = kmalloc(sizeof(struct crypto_hash),GFP_KERNEL);
-	if(!ch) return NULL;
+	if(!ch) return ERR_PTR(-ENOMEM);
 
 	*closing_bracket = 0;
 	ch->base = crypto_alloc_tfm(alg_name + 5, 0);
@@ -301,7 +310,7 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	if (ch->base == NULL) {
 		kfree(ch);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	return ch;
@@ -342,6 +351,28 @@ static inline unsigned int crypto_hash_digestsize(struct crypto_hash *tfm)
 static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
 {
         return tfm->base;
+}
+
+static inline int crypto_hash_init(struct hash_desc *desc)
+{
+	crypto_digest_init(desc->tfm->base);
+	return 0;
+}
+
+static inline int crypto_hash_update(struct hash_desc *desc,
+                                     struct scatterlist *sg,
+                                     unsigned int nbytes)
+{
+        crypto_digest_update(desc->tfm->base,sg,1 /* ! */ );
+	/* ! this is not generic. Would need to convert nbytes -> nsg */
+
+	return 0;
+}
+
+static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
+{
+	crypto_digest_final(desc->tfm->base, out);
+	return 0;
 }
 
 #endif
