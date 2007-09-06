@@ -295,11 +295,11 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	// "hmac(xxx)" is in alg_name we need that xxx.
 	closing_bracket = strchr(alg_name,')');
-	if(!closing_bracket) return NULL;
-	if(closing_bracket-alg_name < 6) return NULL;
+	if(!closing_bracket) ERR_PTR(-ENOENT);
+	if(closing_bracket-alg_name < 6) return ERR_PTR(-ENOENT);
 
 	ch = kmalloc(sizeof(struct crypto_hash),GFP_KERNEL);
-	if(!ch) return NULL;
+	if(!ch) return ERR_PTR(-ENOMEM);
 
 	*closing_bracket = 0;
 	ch->base = crypto_alloc_tfm(alg_name + 5, 0);
@@ -307,7 +307,7 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	if (ch->base == NULL) {
 		kfree(ch);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	return ch;
