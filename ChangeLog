@@ -4,6 +4,22 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.1.0 (api:86/proto:86)
+--------
+ * NOT YET RELEASED
+ * this branch
+   * will not receive new features compared to 8.0,
+   * will receive any bugfixes done on 8.0.x,
+   * will receive any code changes necessary for upstream kernel inclusion
+     as done in git://git.drbd.org/home/git/linux-drbd.git for-linus,
+     while staying - in svn - compatible with older kernel versions.
+     Reference kernel versions we won't break compatibility with are
+     vanilla 2.6.16 and later, SLES9 and later, RHEL4 and later.
+     That should be sufficient to be "general linux-2.6" compatible.
+
+Changelog for fixes propagated from 8.0.x:
+------------------------------------------
+
 8.0.5 (api:86/proto:86)
 --------
  * Changed the default behaviour of the init script. Now the init
