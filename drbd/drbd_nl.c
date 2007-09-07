@@ -1240,7 +1240,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			}
 		}
 	}
-	mdev->cram_hmac_tfm = integrity_tfm;
+	mdev->integrity_tfm = integrity_tfm;
 
 	retcode = drbd_request_state(mdev, NS(conn, Unconnected));
 
