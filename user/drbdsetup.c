@@ -396,7 +396,10 @@ static const char *error_messages[] = {
 	EM(PauseFlagAlreadyClear) = "Sync-pause flag is already cleared",
 	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
 	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
-	EM(ProtocolCRequired) = "Protocol C required"
+	EM(ProtocolCRequired) = "Protocol C required",
+	EM(IntegrityAlgNotAvail) = "The 'data-integrity-alg' you specified is not known in "
+	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
+	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
