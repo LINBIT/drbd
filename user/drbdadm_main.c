@@ -1222,6 +1222,9 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
   sigaction(SIGCHLD,&sa,&so);
 
   pids = alloca( nr_resources * sizeof(pid_t) );
+  /* alloca can not fail, it can "only" overflow the stack :)
+   * but it needs to be initialized anyways! */
+  memset(pids,0,nr_resources * sizeof(pid_t));
 
   for_each_resource(res,t,config) {
     argc=0;
