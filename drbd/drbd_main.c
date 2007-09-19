@@ -610,6 +610,9 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if (ns.disk > Attaching && os.disk == Diskless)
 		rv = SS_IsDiskLess;
 
+	if ( ns.conn == WFConnection && os.conn < Unconnected )
+		rv=SS_NoNetConfig;
+
 	return rv;
 }
 

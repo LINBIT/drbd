@@ -80,7 +80,8 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_CW_FailedByPeer] = "State changed was refused by peer node",
 	[-SS_IsDiskLess] =
 		"Device is diskless, the requesed operation requires a disk",
-	[-SS_DeviceInUse] = "Device is held open by someone"
+	[-SS_DeviceInUse] = "Device is held open by someone",
+	[-SS_NoNetConfig] = "Have no net/connection configuration"
 };
 
 const char *conns_to_name(enum drbd_conns s)
@@ -101,7 +102,7 @@ const char *disks_to_name(enum drbd_disk_state s)
 
 const char *set_st_err_name(enum set_st_err err)
 {
-	return err < SS_DeviceInUse ? "TOO_SMALL" :
+	return err < SS_NoNetConfig ? "TOO_SMALL" :
 	       err > SS_TwoPrimaries ? "TOO_LARGE"
 			: drbd_state_sw_errors[-err];
 }

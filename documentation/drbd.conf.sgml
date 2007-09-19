@@ -1,4 +1,4 @@
-<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" "/usr/share/xml/docbook/schema/dtd/3/docbookx.dtd" []>
+<!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" []>
 <refentry>
 <docinfo><date>06 April 2006</date></docinfo>
 
@@ -217,8 +217,8 @@ resource r0 {
     <manvolnum>8</manvolnum></citerefentry> for a detailed description
     of this section's parameters.
     Optional parameters:
-    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option> and
-    <option>wait-after-sb</option>.
+    <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>,
+    <option>wait-after-sb</option> and <option>become-primary-on</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -841,6 +841,18 @@ the unit is 1 second.
   By setting this option you can make the init script to continue 
   to wait even if the device pair had a split brain situation
   and therefore refuses to connect.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>become-primary-on <replaceable>node-name</replaceable></option></term>
+  <listitem><para>
+  Sets on which node the device should be promoted to primary role by
+  the init script. The <replaceable>node-name</replaceable> might either
+  be a host name or the key word <option>both</option>. When this option is 
+  not set the devices stay in secondary role on both nodes. Usually
+  one deligates the role assignment to a cluster manager (e.g. heartbeat).
   </para>
   </listitem>
 </varlistentry>
