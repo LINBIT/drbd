@@ -88,7 +88,10 @@ enum yytokentype {
 	TK__MAJOR,
 	TK__MINOR,
 	TK__THIS_HOST,
-	TK__REMOTE_HOST
+	TK__REMOTE_HOST,
+	TK_PROXY,
+	TK_INSIDE,
+	TK_OUTSIDE,
 };
 
 typedef struct YYSTYPE {

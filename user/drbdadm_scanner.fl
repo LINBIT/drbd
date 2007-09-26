@@ -46,10 +46,13 @@ yes			{ DP; return TK_YES;			}
 ask			{ DP; return TK_ASK;			}
 skip			{ DP; return TK_SKIP;			}
 disk			{ DP; return TK_DISK;			}
+proxy			{ DP; return TK_PROXY;			}
+inside			{ DP; return TK_INSIDE;			}
 syncer			{ DP; return TK_SYNCER;			}
 device			{ DP; return TK_DEVICE;			}
 global			{ DP; return TK_GLOBAL;			}
 common			{ DP; return TK_COMMON;			}
+outside			{ DP; return TK_OUTSIDE;		}
 address			{ DP; return TK_ADDRESS;		}
 startup			{ DP; return TK_STARTUP;		}
 handlers		{ DP; return TK_HANDLER;		}

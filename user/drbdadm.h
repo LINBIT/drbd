@@ -63,6 +63,15 @@ struct ifi_info {
   struct ifi_info *ifi_next;    /* next ifi_info structure */
 };
 
+struct d_proxy_info
+{
+  char* name;
+  char* inside_addr;
+  char* inside_port;
+  char* outside_addr;
+  char* outside_port;
+};
+
 struct d_host_info
 {
   char* name;
@@ -74,6 +83,7 @@ struct d_host_info
   int meta_major;
   int meta_minor;
   char* meta_index;
+  struct d_proxy_info *proxy;
 };
 
 struct d_option

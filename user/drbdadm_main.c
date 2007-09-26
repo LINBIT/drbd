@@ -97,6 +97,7 @@ static int adm_dump(struct d_resource* ,const char* );
 static int adm_dump_xml(struct d_resource* ,const char* );
 static int adm_wait_c(struct d_resource* ,const char* );
 static int adm_wait_ci(struct d_resource* ,const char* );
+static int adm_proxy_up(struct d_resource* ,const char* );
 static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
@@ -130,6 +131,7 @@ int verbose;
 int do_verify_ips;
 char* drbdsetup;
 char* drbdmeta;
+char* drbd_proxy_ctl;
 char* setup_opts[10];
 int soi=0;
 volatile int alarm_raised;
@@ -189,6 +191,7 @@ struct option admopt[] = {
   { "config-file",  required_argument,0, 'c' },
   { "drbdsetup",    required_argument,0, 's' },
   { "drbdmeta",     required_argument,0, 'm' },
+  { "drbd-proxy-ctl",required_argument,0,'p' },
   { 0,              0,                0, 0   }
 };
 
@@ -222,6 +225,7 @@ struct adm_cmd cmds[] = {
   { "dump-md",           admm_generic,  1,1,0 },
   { "wait-con-int",      adm_wait_ci,   1,0,1 },
   { "hidden-commands",   hidden_cmds,   1,0,0 },
+  { "proxy-up",          adm_proxy_up,  2,1,0 },
   { "sh-nop",            sh_nop,        2,0,0 },
   { "sh-resources",      sh_resources,  2,0,0 },
   { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
@@ -358,6 +362,14 @@ static void dump_common_info()
   --indent; printf("}\n\n");
 }
 
+static void dump_proxy_info(struct d_proxy_info* pi)
+{
+  printI("proxy on %s {\n",esc(pi->name)); ++indent;
+  printI(IPFMT,"inside", pi->inside_addr, pi->inside_port);
+  printI(IPFMT,"outside", pi->outside_addr, pi->outside_port);
+  --indent; printI("}\n");
+}
+
 static void dump_host_info(struct d_host_info* hi)
 {
   if(!hi) {
@@ -375,6 +387,7 @@ static void dump_host_info(struct d_host_info* hi)
     printA("meta-disk", "internal");
   else
     printI(MDISK,"meta-disk", esc(hi->meta_disk), hi->meta_index);
+  if(hi->proxy) dump_proxy_info(hi->proxy);
   --indent; printI("}\n");
 }
 
@@ -671,7 +684,7 @@ pid_t m_system(char** argv,int flags)
 
   if(dry_run || verbose) {
     while(*cmdline) {
-      fprintf(stdout,"%s ",*cmdline++);
+      fprintf(stdout,"%s ",esc(*cmdline++));
     }
     fprintf(stdout,"\n");
     if (dry_run) return 0;
@@ -732,7 +745,7 @@ pid_t m_system(char** argv,int flags)
     if(rv >= 10 && !(flags & (DONT_REPORT_FAILED|SUPRESS_STDERR))) {
       fprintf(stderr,"Command '");
       while(*argv) {
-	fprintf(stderr,"%s",*argv++);
+	fprintf(stderr,"%s",esc(*argv++));
 	if (*argv) fputc(' ',stderr);
       }
       fprintf(stderr,"' terminated with exit code %d\n",rv);
@@ -940,7 +953,11 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
   argv[NA(argc)]=res->me->device;
   argv[NA(argc)]="net";
   ssprintf(argv[NA(argc)],"%s:%s",res->me->address,res->me->port);
-  ssprintf(argv[NA(argc)],"%s:%s",res->peer->address,res->peer->port);
+  if(res->me->proxy) {
+    ssprintf(argv[NA(argc)],"%s:%s",res->me->proxy->inside_addr,res->me->proxy->inside_port);
+  } else {
+    ssprintf(argv[NA(argc)],"%s:%s",res->peer->address,res->peer->port);
+  }
   argv[NA(argc)]=res->protocol;
 
   argv[NA(argc)]="--set-defaults";
@@ -973,6 +990,26 @@ void convert_after_option(struct d_resource* res)
     opt->value=strdup(ptr);
   }
 }
+
+static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((unused)))
+{
+  char* argv[MAX_ARGS];
+  int argc=0;
+
+  argv[NA(argc)]=drbd_proxy_ctl;
+  argv[NA(argc)]="-c";
+  ssprintf(argv[NA(argc)],
+	   "add connection %s-%s-%s %s:%s %s:%s %s:%s %s:%s",
+	   res->me->name, res->name, res->peer->name,
+	   res->me->proxy->inside_addr, res->me->proxy->inside_port,
+	   res->peer->proxy->outside_addr, res->peer->proxy->outside_port,
+	   res->me->proxy->outside_addr, res->me->proxy->outside_port,
+	   res->me->address, res->me->port);
+  argv[NA(argc)]=0;
+
+  return m_system(argv,SLEEPS_SHORT);  
+}
+
 
 int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 {
@@ -1652,6 +1689,7 @@ int main(int argc, char** argv)
     progname=argv[0];
     drbdsetup = strdup("drbdsetup");
     drbdmeta = strdup("drbdmeta");
+    drbd_proxy_ctl = strdup("drbd-proxy-ctl");
   } else {
     size_t len = strlen(argv[0]) + 1;
     ++progname;
@@ -1670,12 +1708,19 @@ int main(int argc, char** argv)
       strcpy(drbdmeta + (progname - argv[0]), "drbdmeta");
     }
 
+    len += strlen("drbd-proxy-ctl") - strlen(progname);
+    drbd_proxy_ctl = malloc(len);
+    if (drbd_proxy_ctl) {
+      strncpy(drbd_proxy_ctl, argv[0], (progname - argv[0]));
+      strcpy(drbd_proxy_ctl + (progname - argv[0]), "drbd-proxy-ctl");
+    }
+
     argv[0] = progname;
   }
 
   if(argc == 1) print_usage_and_exit("missing arguments"); // arguments missing.
 
-  if (drbdsetup == NULL || drbdmeta == NULL) {
+  if (drbdsetup == NULL || drbdmeta == NULL || drbd_proxy_ctl == NULL) {
     fprintf(stderr,"could not strdup argv[0].\n");
     exit(E_exec_error);
   }
@@ -1723,6 +1768,14 @@ int main(int argc, char** argv)
 	    pathes[0]=optarg;
 	    pathes[1]=0;
 	    find_drbdcmd(&drbdmeta,pathes);
+	  }
+	  break;
+	case 'p':
+	  {
+	    char* pathes[2];
+	    pathes[0]=optarg;
+	    pathes[1]=0;
+	    find_drbdcmd(&drbd_proxy_ctl,pathes);
 	  }
 	  break;
 	case '?':
@@ -1870,7 +1923,7 @@ int main(int argc, char** argv)
 	}
         for_each_resource(res,tmp,config) {
 	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
-	    fprintf(stderr,"drbdsetup exited with code %d\n",rv);
+	    fprintf(stderr,"command exited with code %d\n",rv);
 	    exit(E_exec_error);
 	  }
 	}
@@ -1893,7 +1946,7 @@ int main(int argc, char** argv)
       }
     } else { // Commands which do not need a resource name
       if( (rv=cmd->function(config,cmd->name)) >= 10) {
-	fprintf(stderr,"drbdsetup exited with code %d\n",rv);
+	fprintf(stderr,"command exited with code %d\n",rv);
 	exit(E_exec_error);
       }
     }

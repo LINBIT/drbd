@@ -325,6 +325,58 @@ static struct d_option *parse_options(int token_switch, int token_option)
 	}
 }
 
+static void parse_proxy_section(struct d_resource* res, struct d_host_info *host)
+{
+	struct d_proxy_info *proxy;
+	struct d_host_info *tmp;
+
+	proxy=calloc(1,sizeof(struct d_proxy_info));
+	host->proxy = proxy;
+
+	EXP(TK_ON);
+	EXP(TK_STRING);
+	proxy->name = yylval.txt;
+
+	/* TODO: This needs to get improved! This works now only for trivial two
+	   node cases! */
+	if(strcmp(proxy->name, nodeinfo.nodename) == 0 && host == res->peer) {
+		tmp = res->me;
+		res->me = res->peer;
+		res->peer = tmp;
+	}
+
+	EXP('{');
+	while (1) {
+		switch (yylex()) {
+		case TK_INSIDE:
+			EXP(TK_IPADDR);
+			proxy->inside_addr = yylval.txt;
+			EXP(':');
+			EXP(TK_INTEGER);
+			proxy->inside_port = yylval.txt;
+			EXP(';');
+			break;
+		case TK_OUTSIDE:
+			EXP(TK_IPADDR);
+			proxy->outside_addr = yylval.txt;
+			EXP(':');
+			EXP(TK_INTEGER);
+			proxy->outside_port = yylval.txt;
+			EXP(';');
+			break;
+		case '}':
+			goto break_loop;
+		default:
+			pe_expected("inside | outside");
+
+		}
+	}
+	
+ break_loop:
+	return;
+}
+
+
 static void parse_host_body(struct d_host_info *host,
 			    struct d_resource *res, int require_all)
 {
@@ -397,6 +449,9 @@ static void parse_host_body(struct d_host_info *host,
 			case ';':
 				break;
 			}
+			break;
+		case TK_PROXY:
+			parse_proxy_section(res,host);
 			break;
 		case '}':
 			goto break_loop;
