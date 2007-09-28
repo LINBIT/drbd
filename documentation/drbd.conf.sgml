@@ -203,7 +203,7 @@ resource r0 {
     <option>ko-count</option>, <option>allow-two-primaries</option>,
     <option>cram-hmac-alg</option>, <option>shared-secret</option>,
     <option>after-sb-0pri</option>, <option>after-sb-1pri</option>,
-    <option>after-sb-2pri</option>
+    <option>after-sb-2pri</option>, <option>data-integrity-alg</option>
   </para>
   </listitem>
 </varlistentry>
@@ -806,6 +806,24 @@ the unit is 1 second.
               </variablelist>
 	  </listitem>
 </varlistentry>
+
+<varlistentry>
+  <term><option>data-integrity-alg </option><replaceable>alg</replaceable></term>
+	  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>data-integrity-alg</secondary></indexterm>
+	    <para>
+	      DRBD can ensure the data integrity of the user's data on the network
+	      by comparing hash values. Normally this is ensured by the 16 bit checksums 
+	      in the headers of TCP/IP packets. Unforunately it turned out that GBit NICs 
+	      with various offloading engines might produce valid checksums for corrupted 
+	      data. Use this option during your pre-production tests, usually you
+	      want to turn it off for production to reduce CPU overhead. This option
+	      can be set to any of the kerne's data digest algorithms.
+	      By default this is not enabled.
+	    </para>
+	  </listitem>
+</varlistentry>
+
 
 <varlistentry>
   <term><option>wfc-timeout <replaceable>time</replaceable></option></term>

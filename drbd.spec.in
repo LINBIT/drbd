@@ -192,6 +192,16 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Sep 28 2007 12:15:07 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.2.0-1)
+ * Branch for new features after 8.1 and 8.0. We will do a number of
+   features that do not fiddle with the general architecture of DRBD.
+   This will be like the the current Linux-2.6 development model.
+ * Implemented the data-integrity-alg option. When this is set to
+   one of the kernel's hash algorithms, such a hash is shipped with
+   every user-data carrying packet. In case user-data is corrupted
+   on the network DRBD protests by dropping the connection.
+
 * Mon Sep  3 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.6-1)
  * Fixed DRBD to not deadlock while doing bitmap updates on Linux

@@ -53,6 +53,7 @@
       <arg>-R<arg choice="req"><replaceable>role-resync-conflict-policy</replaceable></arg></arg>
       <arg>-p<arg choice="req"><replaceable>ping_timeout</replaceable></arg></arg>
       <arg>-u<arg choice="req"><replaceable>val</replaceable></arg></arg>
+      <arg>-d<arg choice="req"><replaceable>hash_alg</replaceable></arg></arg>
 
 
     </cmdsynopsis>
@@ -671,6 +672,23 @@
 	      that with that action the data exposed by DRBD change to
 	      the SyncSource's version of the data instantaneously.
 	      USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-d</option>,
+	  <option>--data-integrity-alg </option><replaceable>hash_alg</replaceable></term>
+	  <listitem>
+	    <para>
+	      DRBD can ensure the data integrity of the user's data on the network
+	      by comparing hash values. Normally this is ensured by the 16 bit checksums 
+	      in the headers of TCP/IP packets. Unforunately it turned out that GBit NICs 
+	      with various offloading engines might produce valid checksums for corrupted 
+	      data. Use this option during your pre-production tests, usually you
+	      want to turn it off for production to reduce CPU overhead. This option
+	      can be set to any of the kerne's data digest algorithms.
+	      By default this is not enabled.
 	    </para>
 	  </listitem>
 	</varlistentry>

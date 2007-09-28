@@ -4,6 +4,16 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.2.0 (api:86/proto:86-87)
+--------
+ * Branch for new features after 8.1 and 8.0. We will do a number of
+   features that do not fiddle with the general architecture of DRBD.
+   This will be like the the current Linux-2.6 development model.
+ * Implemented the data-integrity-alg option. When this is set to
+   one of the kernel's hash algorithms, such a hash is shipped with
+   every user-data carrying packet. In case user-data is corrupted
+   on the network DRBD protests by dropping the connection.
+
 8.1.0 (api:86/proto:86)
 --------
  * NOT YET RELEASED
