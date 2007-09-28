@@ -3355,8 +3355,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	if (0) {
 err:
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
-		if (mdev->state.conn >= Connected)
-			drbd_force_state(mdev, NS(conn, NetworkFailure));
+		drbd_force_state(mdev, NS(conn, NetworkFailure));
 	}
 
 	D_ASSERT(mdev->state.conn < Connected);
