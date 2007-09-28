@@ -1041,6 +1041,9 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	struct hlist_head *new_ee_hash = NULL;
 	struct drbd_conf *odev;
 	char hmac_name[HMAC_NAME_L];
+	void *int_dig_out = NULL;
+	void *int_dig_in = NULL;
+	void *int_dig_vv = NULL;
 
 	if (mdev->state.conn > StandAlone) {
 		retcode = HaveNetConfig;
@@ -1194,6 +1197,25 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->ping_int = new_conf->ping_int+1;
 #endif
 
+	if (integrity_tfm) {
+		i = crypto_hash_digestsize(integrity_tfm);
+		int_dig_out = kmalloc(i, GFP_KERNEL);
+		if (!int_dig_out) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
+		int_dig_in = kmalloc(i, GFP_KERNEL);
+		if (!int_dig_in) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
+		int_dig_vv = kmalloc(i, GFP_KERNEL);
+		if (!int_dig_vv) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
+	}
+
 	D_ASSERT(mdev->net_conf == NULL);
 	mdev->net_conf = new_conf;
 
@@ -1218,29 +1240,15 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if (mdev->integrity_tfm) {
 		crypto_free_hash(mdev->integrity_tfm);
-		kfree(mdev->int_dig_out);
-		kfree(mdev->int_dig_in);
-		kfree(mdev->int_dig_vv);
-		if (integrity_tfm) {
-			i = crypto_hash_digestsize(integrity_tfm);
-			mdev->int_dig_out = kmalloc(i, GFP_KERNEL);
-			if (!mdev->int_dig_out) {
-				retcode = KMallocFailed;
-				goto fail;
-			}
-			mdev->int_dig_in = kmalloc(i, GFP_KERNEL);
-			if (!mdev->int_dig_in) {
-				retcode = KMallocFailed;
-				goto fail;
-			}
-			mdev->int_dig_vv = kmalloc(i, GFP_KERNEL);
-			if (!mdev->int_dig_vv) {
-				retcode = KMallocFailed;
-				goto fail;
-			}
-		}
 	}
 	mdev->integrity_tfm = integrity_tfm;
+
+	kfree(mdev->int_dig_out);
+	kfree(mdev->int_dig_in);
+	kfree(mdev->int_dig_vv);
+	mdev->int_dig_out=int_dig_out;
+	mdev->int_dig_in=int_dig_in;
+	mdev->int_dig_vv=int_dig_vv;
 
 	retcode = drbd_request_state(mdev, NS(conn, Unconnected));
 

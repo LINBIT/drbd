@@ -1134,13 +1134,6 @@ int receive_RSDataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
-	/* I expect a block to be a multiple of 512 byte,
-	 * and no more than DRBD_MAX_SEGMENT_SIZE.
-	 * is this too restrictive?  */
-	ERR_IF(data_size == 0) return FALSE;
-	ERR_IF(data_size &  0x1ff) return FALSE;
-	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return FALSE;
-
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
