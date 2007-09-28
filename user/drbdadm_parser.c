@@ -611,6 +611,11 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			check_uniq("handlers section", "%s:handlers", res->name);
 			res->handlers =  parse_options(0, TK_HANDLER_OPTION);
 			break;
+		case TK_PROXY:
+			check_uniq("proxy section", "%s:proxy", res->name);
+			res->proxy_options =  parse_options(TK_PROXY_SWITCH,
+							    TK_PROXY_OPTION);
+			break;
 		case '}':
 		case 0:
 			goto exit_loop;

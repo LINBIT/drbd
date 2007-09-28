@@ -106,6 +106,7 @@ struct d_resource
   struct d_option* sync_options;
   struct d_option* startup_options;
   struct d_option* handlers;
+  struct d_option* proxy_options;
   struct d_resource* next;
 };
 

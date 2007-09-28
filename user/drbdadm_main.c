@@ -358,6 +358,7 @@ static void dump_common_info()
   dump_options("disk",common->disk_options);
   dump_options("syncer",common->sync_options);
   dump_options("startup",common->startup_options);
+  dump_options("proxy",common->proxy_options);
   dump_options("handlers",common->handlers);
   --indent; printf("}\n\n");
 }
@@ -430,8 +431,17 @@ static void dump_common_info_xml()
   dump_options_xml("disk",common->disk_options);
   dump_options_xml("syncer",common->sync_options);
   dump_options_xml("startup",common->startup_options);
+  dump_options_xml("proxy",common->proxy_options);
   dump_options_xml("handlers",common->handlers);
   --indent; printI("</common>\n");
+}
+
+static void dump_proxy_info_xml(struct d_proxy_info* pi)
+{
+  printI("<proxy hostname=\"%s\">\n",esc_xml(pi->name)); ++indent;
+  printI("<inside port=\"%s\">%s</inside>\n", pi->inside_port, pi->inside_addr);
+  printI("<outside port=\"%s\">%s</outside>\n", pi->outside_port, pi->outside_addr);
+  --indent; printI("</proxy>\n");
 }
 
 static void dump_host_info_xml(struct d_host_info* hi)
@@ -452,6 +462,7 @@ static void dump_host_info_xml(struct d_host_info* hi)
   else {
     printI("<meta-disk index=\"%s\">%s</meta-disk>\n", hi->meta_index, esc_xml(hi->meta_disk));
   }
+  if(hi->proxy) dump_proxy_info_xml(hi->proxy);
   --indent; printI("</host>\n");
 }
 
@@ -466,6 +477,7 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
   dump_options("disk",res->disk_options);
   dump_options("syncer",res->sync_options);
   dump_options("startup",res->startup_options);
+  dump_options("proxy",res->proxy_options);
   dump_options("handlers",res->handlers);
   --indent; printf("}\n\n");
 
@@ -484,6 +496,7 @@ static int adm_dump_xml(struct d_resource* res,const char* unused __attribute((u
   dump_options_xml("disk",res->disk_options);
   dump_options_xml("syncer",res->sync_options);
   dump_options_xml("startup",res->startup_options);
+  dump_options_xml("proxy",res->proxy_options);
   dump_options_xml("handlers",res->handlers);
   --indent; printI("</resource>\n");
 
@@ -598,6 +611,7 @@ static void free_config(struct d_resource* res)
     free_options(f->disk_options);
     free_options(f->sync_options);
     free_options(f->startup_options);
+    free_options(f->proxy_options);
     free_options(f->handlers);
     free(f);
   }
@@ -606,6 +620,7 @@ static void free_config(struct d_resource* res)
     free_options(common->disk_options);
     free_options(common->sync_options);
     free_options(common->startup_options);
+    free_options(common->proxy_options);
     free_options(common->handlers);
     free(common);
   }
@@ -640,6 +655,7 @@ static void expand_common(void)
     expand_opts(common->disk_options,    &res->disk_options);
     expand_opts(common->sync_options,    &res->sync_options);
     expand_opts(common->startup_options, &res->startup_options);
+    expand_opts(common->proxy_options,   &res->proxy_options);
     expand_opts(common->handlers,        &res->handlers);
     if(common->protocol && ! res->protocol) {
       res->protocol = strdup(common->protocol);
@@ -994,7 +1010,8 @@ void convert_after_option(struct d_resource* res)
 static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((unused)))
 {
   char* argv[MAX_ARGS];
-  int argc=0;
+  int argc=0, rv;
+  struct d_option* opt;
 
   argv[NA(argc)]=drbd_proxy_ctl;
   argv[NA(argc)]="-c";
@@ -1005,6 +1022,20 @@ static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((
 	   res->peer->proxy->outside_addr, res->peer->proxy->outside_port,
 	   res->me->proxy->outside_addr, res->me->proxy->outside_port,
 	   res->me->address, res->me->port);
+  argv[NA(argc)]=0;
+
+  rv = m_system(argv,SLEEPS_SHORT);
+  if(rv != 0) return rv;
+
+  argc=0;
+  argv[NA(argc)]=drbd_proxy_ctl;
+  opt = res->proxy_options;
+  while(opt) {
+    argv[NA(argc)]="-c";
+    ssprintf(argv[NA(argc)], "set %s %s-%s-%s %s",
+	     opt->name, res->me->name, res->name, res->peer->name, opt->value);
+    opt=opt->next; 
+  }
   argv[NA(argc)]=0;
 
   return m_system(argv,SLEEPS_SHORT);  
@@ -1643,6 +1674,13 @@ void validate_resource(struct d_resource * res)
 
   if ( (opt = find_opt(res->handlers, "outdate-peer")) ) {
     if(strstr(opt->value,"drbd-peer-outdater")) sanity_check_perm();
+  }
+
+  if (( res->me->proxy == NULL ) != (res->peer->proxy == NULL)) {
+	fprintf(stderr,
+		"Incomplete proxy configuration. in resource %s.\n",
+		res->name);
+	config_valid = 0;
   }
 }
 

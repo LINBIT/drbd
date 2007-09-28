@@ -92,6 +92,9 @@ enum yytokentype {
 	TK_PROXY,
 	TK_INSIDE,
 	TK_OUTSIDE,
+	TK_MEMLIMIT,
+	TK_PROXY_OPTION,
+	TK_PROXY_SWITCH,
 };
 
 typedef struct YYSTYPE {

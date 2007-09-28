@@ -98,6 +98,7 @@ pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost	        { DP; CP; return TK_HANDLER_OPTION;     }
 outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
 local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
+memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
 {NUM}			{ DP; CP; return TK_INTEGER;		}
 {DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
