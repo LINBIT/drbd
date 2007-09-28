@@ -96,6 +96,8 @@ case "$1" in
 	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd  # for RedHat
 	echo "."
 	$DRBDADM wait-con-int # User interruptible version of wait-connect all
+
+	$DRBDADM sh-b-pri all # Become primary if configured
 	;;
     stop)
 	echo -n "Stopping all DRBD resources"

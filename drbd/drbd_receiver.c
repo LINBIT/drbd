@@ -547,13 +547,14 @@ struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	struct socket *sock;
 	struct sockaddr_in src_in;
 
+	if (!inc_net(mdev)) return NULL;
+
 	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err) {
+		dec_net(mdev);
 		ERR("sock_creat(..)=%d\n", err);
 		return NULL;
 	}
-
-	if (!inc_net(mdev)) return NULL;
 
 	sock->sk->sk_rcvtimeo =
 	sock->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
@@ -597,13 +598,14 @@ struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 	int err;
 	struct socket *sock, *sock2;
 
+	if (!inc_net(mdev)) return NULL;
+
 	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock2);
 	if (err) {
+		dec_net(mdev);
 		ERR("sock_creat(..)=%d\n", err);
 		return NULL;
 	}
-
-	if (!inc_net(mdev)) return NULL;
 
 	sock2->sk->sk_reuse    = 1; /* SO_REUSEADDR */
 	sock2->sk->sk_rcvtimeo =
@@ -657,17 +659,18 @@ enum Drbd_Packet_Cmd drbd_recv_fp(struct drbd_conf *mdev, struct socket *sock)
  *   0 oops, did not work out, please try again
  *  -1 peer talks different language,
  *     no point in trying again, please go standalone.
+ *  -2 We do not have a network config...
  */
 int drbd_connect(struct drbd_conf *mdev)
 {
 	struct socket *s, *sock, *msock;
 	int try, h;
 
-	D_ASSERT(mdev->state.conn >= Unconnected);
 	D_ASSERT(!mdev->data.socket);
 
-	if (drbd_request_state(mdev, NS(conn, WFConnection)) < SS_Success)
-		return 0;
+	if (_drbd_request_state(mdev, NS(conn, WFConnection),0) < SS_Success)
+		return -2;
+
 	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
 
 	sock  = NULL;
@@ -2668,6 +2671,7 @@ void drbd_disconnect(struct drbd_conf *mdev)
 	int rv = SS_UnknownError;
 
 	D_ASSERT(mdev->state.conn < Connected);
+	if (mdev->state.conn == StandAlone) return;
 	/* FIXME verify that:
 	 * the state change magic prevents us from becoming >= Connected again
 	 * while we are still cleaning up.
@@ -2845,11 +2849,11 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 
 	rv = drbd_send_handshake(mdev);
 	if (!rv)
-		goto break_c_loop;
+		return 0;
 
 	rv = drbd_recv_header(mdev, &p->head);
 	if (!rv)
-		goto break_c_loop;
+		return 0;
 
 	if (p->head.command != HandShake) {
 		ERR( "expected HandShake packet, received: %s (0x%04x)\n",
@@ -2893,23 +2897,6 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 	    PRO_VERSION_MIN,PRO_VERSION_MAX, 
 	    p->protocol_min, p->protocol_max);
 	return -1;
-
- break_c_loop:
-	WARN( "My msock connect got accepted onto peer's sock!\n");
-	/* In case a tcp connection set-up takes longer than
-	   connect-int, we might get into the situation that this
-	   node's msock gets connected to the peer's sock!
-
-	   To break out of this endless loop behaviour, we need to
-	   wait unti the peer's msock connect tries are over. (1 Second)
-
-	   Additionally we wait connect-int/2 to hit with our next
-	   connect try exactly in the peer's window of expectation. */
-
-	set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout(HZ + (mdev->net_conf->try_connect_int*HZ)/2);
-
-	return 0;
 }
 
 #if !defined(CONFIG_CRYPTO_HMAC) && !defined(CONFIG_CRYPTO_HMAC_MODULE)
@@ -3080,7 +3067,7 @@ int drbdd_init(struct Drbd_thread *thi)
 			drbd_disconnect(mdev);
 			schedule_timeout(HZ);
 		}
-		if (h < 0) {
+		if (h == -1) {
 			WARN("Discarding network configuration.\n");
 			drbd_force_state(mdev, NS(conn, Disconnecting));
 		}
@@ -3420,8 +3407,7 @@ int drbd_asender(struct Drbd_thread *thi)
 	if (0) {
 err:
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
-		if (mdev->state.conn >= Connected)
-			drbd_force_state(mdev, NS(conn, NetworkFailure));
+		drbd_force_state(mdev, NS(conn, NetworkFailure));
 	}
 
 	D_ASSERT(mdev->state.conn < Connected);
