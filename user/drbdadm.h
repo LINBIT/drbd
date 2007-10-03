@@ -100,6 +100,10 @@ struct d_resource
 {
   char* name;
   char* protocol;
+  char* device;     // gets propagated to host_info sections later.
+  char* disk;       // gets propagated to host_info sections later.
+  char* meta_disk;  // gets propagated to host_info sections later.
+  char* meta_index; // gets propagated to host_info sections later.
   struct d_host_info* me;
   struct d_host_info* peer;
   struct d_host_info* all_hosts;

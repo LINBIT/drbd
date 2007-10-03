@@ -295,7 +295,6 @@ static struct d_option *parse_options(int token_switch, int token_option)
 	struct d_option *options = NULL, *ro = NULL;
 	fline = line;
 
-	EXP('{');
 	while (1) {
 		token = yylex();
 		if (token == token_switch) {
@@ -367,6 +366,20 @@ static void parse_proxy_section(struct d_host_info *host)
 	return;
 }
 
+static void parse_meta_disk(char **disk, char** index)
+{
+	EXP(TK_STRING);
+	*disk = yylval.txt;
+	if (strcmp("internal", yylval.txt)) {
+		EXP('[');
+		EXP(TK_INTEGER);
+		*index = yylval.txt;
+		EXP(']');
+		EXP(';');
+	} else {
+		EXP(';');
+	}
+}
 
 static void parse_host_section(struct d_resource *res, 
 			       char *host_name, int require_all)
@@ -417,17 +430,7 @@ static void parse_host_section(struct d_resource *res,
 		case TK_META_DISK:
 			check_uniq("meta-disk statement", "%s:%s:meta-disk",
 				   res->name, host->name);
-			EXP(TK_STRING);
-			host->meta_disk = yylval.txt;
-			if (strcmp("internal", yylval.txt)) {
-				EXP('[');
-				EXP(TK_INTEGER);
-				host->meta_index = yylval.txt;
-				EXP(']');
-				EXP(';');
-			} else {
-				EXP(';');
-			}
+			parse_meta_disk(&host->meta_disk, &host->meta_index);
 			check_meta_disk(host);
 			break;
 		case TK_FLEX_META_DISK:
@@ -462,6 +465,26 @@ static void parse_host_section(struct d_resource *res,
 		}
 	}
       break_loop:
+
+	/* Inerit device, disk, meta_disk and meta_index from the resource. */
+	if(!host->disk && res->disk) {
+		host->disk = strdup(res->disk);
+		check_uniq("disk", "%s:%s:%s", "disk",
+			   host->name, host->disk);
+	}
+
+	if(!host->device && res->device) {
+		host->device = strdup(res->device);
+		check_uniq("device", "%s:%s:%s", "device",
+			   host->name, host->device);
+	}
+
+	if(!host->meta_disk && res->meta_disk) {
+		host->meta_disk = strdup(res->meta_disk);
+		if(res->meta_index) host->meta_index = strdup(res->meta_index);
+		check_meta_disk(host);
+	}
+
 	if (!require_all)
 		return;
 	if (!host->device)
@@ -541,33 +564,64 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			parse_host_section(res, strdup("_remote_host"), 0);
 			break;
 		case TK_DISK:
-			check_uniq("disk section", "%s:disk", res->name);
-			res->disk_options = parse_options(TK_DISK_SWITCH,
-							  TK_DISK_OPTION);
+			switch (token=yylex()) {
+			case TK_STRING:
+				res->disk = yylval.txt;
+				EXP(';');
+				break;
+			case '{':
+				check_uniq("disk section", "%s:disk", res->name);
+				res->disk_options = parse_options(TK_DISK_SWITCH,
+								  TK_DISK_OPTION);
+				break;
+			default: 
+				pe_expected_got( "TK_STRING | {", token);
+			}
 			break;
 		case TK_NET:
 			check_uniq("net section", "%s:net", res->name);
+			EXP('{');
 			res->net_options = parse_options(TK_NET_SWITCH,
 							 TK_NET_OPTION);
 			break;
 		case TK_SYNCER:
 			check_uniq("syncer section", "%s:syncer", res->name);
+			EXP('{');
 			res->sync_options = parse_options(TK_SYNCER_SWITCH,
 							  TK_SYNCER_OPTION);
 			break;
 		case TK_STARTUP:
 			check_uniq("startup section", "%s:startup", res->name);
+			EXP('{');
 			res->startup_options=parse_options(TK_STARTUP_SWITCH,
 							   TK_STARTUP_OPTION);
 			break;
 		case TK_HANDLER:
 			check_uniq("handlers section", "%s:handlers", res->name);
+			EXP('{');
 			res->handlers =  parse_options(0, TK_HANDLER_OPTION);
 			break;
 		case TK_PROXY:
 			check_uniq("proxy section", "%s:proxy", res->name);
+			EXP('{');
 			res->proxy_options =  parse_options(TK_PROXY_SWITCH,
 							    TK_PROXY_OPTION);
+			break;
+		case TK_DEVICE:
+			EXP(TK_STRING);
+			res->device = yylval.txt;
+			EXP(';');
+			break;
+		case TK_META_DISK:
+			parse_meta_disk(&res->meta_disk, &res->meta_index);
+			break;
+		case TK_FLEX_META_DISK:
+			EXP(TK_STRING);
+			res->meta_disk = yylval.txt;
+			if (strcmp("internal", yylval.txt)) {
+				res->meta_index = strdup("flexible");
+			}
+			EXP(';');
 			break;
 		case '}':
 		case 0:

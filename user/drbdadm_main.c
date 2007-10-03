@@ -621,6 +621,10 @@ static void free_config(struct d_resource* res)
   for_each_resource(f,t,res) {
     free(f->name);
     free(f->protocol);
+    free(f->device);
+    free(f->disk);
+    free(f->meta_disk);
+    free(f->meta_index);
     free_host_info(f->me);
     free_host_info(f->peer);
     free_options(f->net_options);
