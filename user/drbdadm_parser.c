@@ -587,6 +587,15 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		   !strcmp(host->name, "_this_host") ||
 		   ( host->proxy && 
 		     !strcmp(host->proxy->name, nodeinfo.nodename))) {
+			if(res->me) {
+				config_valid = 0;
+				fprintf(stderr,
+					"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
+					"\tThere are multiple host sections for this node.\n"
+					"\tMaybe misspelled local host name '%s'?\n",
+					config_file, c_section_start, res->name,
+						res->me->name, host->name, nodeinfo.nodename);
+			}
 			res->me = host;
 		} else {
 			/* This needs to be refined as soon as we support 

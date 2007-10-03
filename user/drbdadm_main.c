@@ -71,6 +71,7 @@ struct adm_cmd {
   unsigned int show_in_usage     :3;
   unsigned int res_name_required :1;
   unsigned int verify_ips        :1;
+  unsigned int me_is_localhost   :1;
 };
 
 struct deferred_cmd
@@ -199,52 +200,52 @@ struct option admopt[] = {
 };
 
 struct adm_cmd cmds[] = {
-/*   name, function,                  show, needs res, verify_ips */
-  { "attach",            adm_attach,    1,1,0 },
-  { "detach",            adm_generic_s, 1,1,0 },
-  { "connect",           adm_connect,   1,1,1 },
-  { "disconnect",        adm_generic_s, 1,1,0 },
-  { "up",                adm_up,        1,1,1 },
-  { "down",              adm_generic_s, 1,1,0 },
-  { "primary",           adm_generic_s, 1,1,0 },
-  { "secondary",         adm_generic_s, 1,1,0 },
-  { "invalidate",        adm_generic_b, 1,1,0 },
-  { "invalidate-remote", adm_generic_l, 1,1,1 },
-  { "outdate",           adm_generic_b, 1,1,0 },
-  { "resize",            adm_resize,    1,1,1 },
-  { "syncer",            adm_syncer,    1,1,1 },
-  { "pause-sync",        adm_generic_s, 1,1,1 },
-  { "resume-sync",       adm_generic_s, 1,1,1 },
-  { "adjust",            adm_adjust,    1,1,1 },
-  { "wait-connect",      adm_wait_c,    1,1,1 },
-  { "state",             adm_generic_s, 1,1,0 },
-  { "cstate",            adm_generic_s, 1,1,1 },
-  { "dstate",            adm_generic_b, 1,1,1 },
-  { "dump",              adm_dump,      1,1,1 },
-  { "dump-xml",          adm_dump_xml,  1,1,1 },
-  { "create-md",         adm_create_md, 1,1,0 },
-  { "show-gi",           adm_generic_b, 1,1,0 },
-  { "get-gi",            adm_generic_b, 1,1,0 },
-  { "dump-md",           admm_generic,  1,1,0 },
-  { "wait-con-int",      adm_wait_ci,   1,0,1 },
-  { "hidden-commands",   hidden_cmds,   1,0,0 },
-  { "proxy-up",          adm_proxy_up,  2,1,0 },
-  { "sh-nop",            sh_nop,        2,0,0 },
-  { "sh-resources",      sh_resources,  2,0,0 },
-  { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
-  { "sh-dev",            sh_dev,        2,1,0 },
-  { "sh-ll-dev",         sh_ll_dev,     2,1,0 },
-  { "sh-md-dev",         sh_md_dev,     2,1,0 },
-  { "sh-md-idx",         sh_md_idx,     2,1,0 },
-  { "sh-ip",             sh_ip,         0,1,0 },
-  { "sh-b-pri",          sh_b_pri,      2,1,0 },
-  { "pri-on-incon-degr", adm_khelper,   3,1,0 },
-  { "pri-lost-after-sb", adm_khelper,   3,1,0 },
-  { "outdate-peer",      adm_khelper,   3,1,0 },
-  { "local-io-error",    adm_khelper,   3,1,0 },
-  { "set-gi",            admm_generic,  4,1,0 },
-  { "suspend-io",        adm_generic_s, 4,1,0 },
-  { "resume-io",         adm_generic_s, 4,1,0 },
+/*   name, function,                  show, needs res, verify_ips, me_localhost */
+  { "attach",            adm_attach,    1,1,0,1 },
+  { "detach",            adm_generic_s, 1,1,0,1 },
+  { "connect",           adm_connect,   1,1,1,1 },
+  { "disconnect",        adm_generic_s, 1,1,0,1 },
+  { "up",                adm_up,        1,1,1,1 },
+  { "down",              adm_generic_s, 1,1,0,1 },
+  { "primary",           adm_generic_s, 1,1,0,1 },
+  { "secondary",         adm_generic_s, 1,1,0,1 },
+  { "invalidate",        adm_generic_b, 1,1,0,1 },
+  { "invalidate-remote", adm_generic_l, 1,1,1,1 },
+  { "outdate",           adm_generic_b, 1,1,0,1 },
+  { "resize",            adm_resize,    1,1,1,1 },
+  { "syncer",            adm_syncer,    1,1,1,1 },
+  { "pause-sync",        adm_generic_s, 1,1,1,1 },
+  { "resume-sync",       adm_generic_s, 1,1,1,1 },
+  { "adjust",            adm_adjust,    1,1,1,1 },
+  { "wait-connect",      adm_wait_c,    1,1,1,1 },
+  { "state",             adm_generic_s, 1,1,0,1 },
+  { "cstate",            adm_generic_s, 1,1,1,1 },
+  { "dstate",            adm_generic_b, 1,1,1,1 },
+  { "dump",              adm_dump,      1,1,1,0 },
+  { "dump-xml",          adm_dump_xml,  1,1,1,0 },
+  { "create-md",         adm_create_md, 1,1,0,1 },
+  { "show-gi",           adm_generic_b, 1,1,0,1 },
+  { "get-gi",            adm_generic_b, 1,1,0,1 },
+  { "dump-md",           admm_generic,  1,1,0,1 },
+  { "wait-con-int",      adm_wait_ci,   1,0,1,1 },
+  { "hidden-commands",   hidden_cmds,   1,0,0,0 },
+  { "proxy-up",          adm_proxy_up,  2,1,0,0 },
+  { "sh-nop",            sh_nop,        2,0,0,0 },
+  { "sh-resources",      sh_resources,  2,0,0,0 },
+  { "sh-mod-parms",      sh_mod_parms,  2,0,0,0 },
+  { "sh-dev",            sh_dev,        2,1,0,0 },
+  { "sh-ll-dev",         sh_ll_dev,     2,1,0,0 },
+  { "sh-md-dev",         sh_md_dev,     2,1,0,0 },
+  { "sh-md-idx",         sh_md_idx,     2,1,0,0 },
+  { "sh-ip",             sh_ip,         0,1,0,0 },
+  { "sh-b-pri",          sh_b_pri,      2,1,0,0 },
+  { "pri-on-incon-degr", adm_khelper,   3,1,0,1 },
+  { "pri-lost-after-sb", adm_khelper,   3,1,0,1 },
+  { "outdate-peer",      adm_khelper,   3,1,0,1 },
+  { "local-io-error",    adm_khelper,   3,1,0,1 },
+  { "set-gi",            admm_generic,  4,1,0,1 },
+  { "suspend-io",        adm_generic_s, 4,1,0,1 },
+  { "resume-io",         adm_generic_s, 4,1,0,1 },
 };
 
 /*** These functions are used to the print the config ***/
@@ -1038,6 +1039,18 @@ static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((
   char* argv[MAX_ARGS];
   int argc=0, rv;
   struct d_option* opt;
+
+  if(!res->me->proxy) {
+    fprintf(stderr,"There is no proxy config for host %s in resource %s.\n",
+	    nodeinfo.nodename, res->name);
+    exit(E_config_invalid);
+  }
+
+  if(strcmp(res->me->proxy->name,nodeinfo.nodename)) {
+    fprintf(stderr,"The proxy config in resource %s is for %s, this is %s.\n",
+	    res->name, res->me->proxy->name,nodeinfo.nodename);
+    exit(E_config_invalid);
+  }
 
   argv[NA(argc)]=drbd_proxy_ctl;
   argv[NA(argc)]="-c";
@@ -1979,12 +1992,19 @@ int main(int argc, char** argv)
 
       global_validate();
       if (!is_dump) {
-	if(!config_valid) exit(E_config_invalid);
-
         for_each_resource(res,tmp,config) {
 	  convert_after_option(res);
 	  convert_discard_opt(res);
+
+	  if(cmd->me_is_localhost) {
+	    if(strcmp(res->me->name, nodeinfo.nodename)) {
+	      fprintf(stderr,"In resource %s there is no host section for this"
+		      " host %s\n.", res->name, nodeinfo.nodename);
+	      config_valid=0;
+	    }
+	  }
 	}
+	if(!config_valid) exit(E_config_invalid);
       }
 
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
