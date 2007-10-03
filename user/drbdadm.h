@@ -84,6 +84,7 @@ struct d_host_info
   int meta_minor;
   char* meta_index;
   struct d_proxy_info *proxy;
+  struct d_host_info* next;
 };
 
 struct d_option
@@ -101,6 +102,7 @@ struct d_resource
   char* protocol;
   struct d_host_info* me;
   struct d_host_info* peer;
+  struct d_host_info* all_hosts;
   struct d_option* net_options;
   struct d_option* disk_options;
   struct d_option* sync_options;

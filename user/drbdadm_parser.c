@@ -325,10 +325,9 @@ static struct d_option *parse_options(int token_switch, int token_option)
 	}
 }
 
-static void parse_proxy_section(struct d_resource* res, struct d_host_info *host)
+static void parse_proxy_section(struct d_host_info *host)
 {
 	struct d_proxy_info *proxy;
-	struct d_host_info *tmp;
 
 	proxy=calloc(1,sizeof(struct d_proxy_info));
 	host->proxy = proxy;
@@ -336,14 +335,6 @@ static void parse_proxy_section(struct d_resource* res, struct d_host_info *host
 	EXP(TK_ON);
 	EXP(TK_STRING);
 	proxy->name = yylval.txt;
-
-	/* TODO: This needs to get improved! This works now only for trivial two
-	   node cases! */
-	if(strcmp(proxy->name, nodeinfo.nodename) == 0 && host == res->peer) {
-		tmp = res->me;
-		res->me = res->peer;
-		res->peer = tmp;
-	}
 
 	EXP('{');
 	while (1) {
@@ -377,9 +368,19 @@ static void parse_proxy_section(struct d_resource* res, struct d_host_info *host
 }
 
 
-static void parse_host_body(struct d_host_info *host,
-			    struct d_resource *res, int require_all)
+static void parse_host_section(struct d_resource *res, 
+			       char *host_name, int require_all)
 {
+	struct d_host_info *host;
+
+	c_section_start = line;
+	fline = line;
+
+	host=calloc(1,sizeof(struct d_host_info));
+	host->name = host_name;
+	check_uniq("host section", "%s: on %s", res->name, host->name);
+	res->all_hosts = APPEND(res->all_hosts, host);
+
 	EXP('{');
 	while (1) {
 		switch (yylex()) {
@@ -451,7 +452,7 @@ static void parse_host_body(struct d_host_info *host,
 			}
 			break;
 		case TK_PROXY:
-			parse_proxy_section(res,host);
+			parse_proxy_section(host);
 			break;
 		case '}':
 			goto break_loop;
@@ -509,59 +510,10 @@ void parse_skip()
 	while (level) ;
 }
 
-
-static void parse_host_section(struct d_resource* res)
-{
-	struct d_host_info *host;
-
-	c_section_start = line;
-	fline = line;
-
-	host=calloc(1,sizeof(struct d_host_info));
-	EXP(TK_STRING);
-	host->name = yylval.txt;
-
-	check_uniq("host section", "%s: on %s", res->name, host->name);
-	if(strcmp(host->name, nodeinfo.nodename) == 0) {
-		// if (res->me) die duplicate entry ... done by check_uniq above
-		res->me = host;
-	} else {
-		if (res->peer) {
-			config_valid = 0;
-			fprintf(stderr,
-		"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
-		"\tThere are multiple host sections for the peer.\n"
-		"\tMaybe misspelled local host name '%s'?\n",
-				config_file, c_section_start, res->name,
-				res->peer->name, host->name, nodeinfo.nodename);
-		}
-		res->peer = host;
-	}
-	parse_host_body(host,res,1);
-}
-
-static void parse_drbdsetup_host_dump(struct d_resource* res, int local)
-{
-	struct d_host_info *host;
-
-	c_section_start = line;
-
-	host=calloc(1,sizeof(struct d_host_info));
-
-	if(local) {
-		res->me = host;
-		host->name = strdup("_this_host");
-	} else {
-		res->peer = host;
-		host->name = strdup("_remote_host");
-	}
-
-	parse_host_body(host,res,0);
-}
-
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
+	struct d_host_info *host;
 	int token;
 
 	fline = line;
@@ -579,13 +531,14 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP(';');
 			break;
 		case TK_ON:
-			parse_host_section(res);
+			EXP(TK_STRING);
+			parse_host_section(res, yylval.txt, 1);
 			break;
 		case TK__THIS_HOST:
-			parse_drbdsetup_host_dump(res, 1);
+			parse_host_section(res, strdup("_this_host"), 0);
 			break;
 		case TK__REMOTE_HOST:
-			parse_drbdsetup_host_dump(res, 0);
+			parse_host_section(res, strdup("_remote_host"), 0);
 			break;
 		case TK_DISK:
 			check_uniq("disk section", "%s:disk", res->name);
@@ -626,6 +579,32 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	}
 
  exit_loop:
+
+	/* Determin the local host section and the peer host section. */
+	host = res->all_hosts;
+	while(host) {
+		if(!strcmp(host->name, nodeinfo.nodename) ||
+		   !strcmp(host->name, "_this_host") ||
+		   ( host->proxy && 
+		     !strcmp(host->proxy->name, nodeinfo.nodename))) {
+			res->me = host;
+		} else {
+			/* This needs to be refined as soon as we support 
+			   multiple peers in the resource section */
+			if(res->peer) {
+				config_valid = 0;
+				fprintf(stderr,
+					"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
+					"\tThere are multiple host sections for the peer.\n"
+					"\tMaybe misspelled local host name '%s'?\n",
+					config_file, c_section_start, res->name,
+						res->peer->name, host->name, nodeinfo.nodename);
+			}
+			res->peer = host;
+		}
+		host=host->next;
+	}
+
 	if(flags & ThisHRequired && !res->me) {
 		config_valid = 0;
 

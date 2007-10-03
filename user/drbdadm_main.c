@@ -1063,8 +1063,8 @@ static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((
     opt=opt->next; 
   }
   argv[NA(argc)]=0;
-
-  return m_system(argv,SLEEPS_SHORT);  
+  if(argc > 2) return m_system(argv,SLEEPS_SHORT);  
+  return rv;
 }
 
 
