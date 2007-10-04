@@ -303,7 +303,7 @@ struct __attribute__ ((packed)) md_on_disk_07 {
 	be_u64 la_kb;		/* last agreed size. */
 	be_u32 gc[GEN_CNT_SIZE];	/* generation counter */
 	be_u32 magic;
-	be_u32 md_size_sect;
+	be_u32 md_size_kb;
 	be_s32 al_offset;	/* signed sector offset to this block */
 	be_u32 al_nr_extents;	/* important for restoring the AL */
 	be_s32 bm_offset;	/* signed sector offset to the bitmap, from here */
@@ -319,7 +319,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
-	cpu->md_size_sect = be32_to_cpu(disk->md_size_sect.be);
+	cpu->md_size_sect = be32_to_cpu(disk->md_size_kb.be) << 1;
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
@@ -334,7 +334,7 @@ void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cp
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
 	disk->magic.be = cpu_to_be32(cpu->magic);
-	disk->md_size_sect.be = cpu_to_be32(cpu->md_size_sect);
+	disk->md_size_kb.be = cpu_to_be32(cpu->md_size_sect >> 1);
 	disk->al_offset.be = cpu_to_be32(cpu->al_offset);
 	disk->al_nr_extents.be = cpu_to_be32(cpu->al_nr_extents);
 	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
