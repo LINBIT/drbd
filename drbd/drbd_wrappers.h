@@ -339,7 +339,8 @@ crypto_hash_digest(struct hash_desc *desc, struct scatterlist *sg,
 
 static inline void crypto_free_hash(struct crypto_hash *tfm)
 {
-	crypto_free_tfm(tfm->base);
+	if (!tfm) return;
+	crypto_free_tfm(tfm->base); 
 	kfree(tfm);
 }
 
