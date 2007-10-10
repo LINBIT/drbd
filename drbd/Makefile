@@ -99,7 +99,7 @@ else
 .PHONY: drbd_buildtag.c
 
   drbd_buildtag.c:
-	@is_tarball=`test -e .svn/. -a -e ../.svn/. && echo false || echo true`;\
+	@is_tarball=`test -e ../.git/. && echo false || echo true`;\
 	set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
 	echo -e "const char * drbd_buildtag(void)\n{";				\
@@ -110,8 +110,10 @@ else
 	  fi;									\
 	  grep return $@ ;							\
 	else									\
-	  SVNREV=$$(svnversion -n -c ..);					\
-	  echo -e "\treturn \"SVN Revision: $${SVNREV##*:}\"";	 		\
+	  GITHEAD=$$(git-rev-parse HEAD);					\
+	  GITDIFF=$$(cd .. && git-diff --name-only HEAD | tr -s '\t\n' '  ' |	\
+	  	sed -e 's/^/ /;s/ *$$//');					\
+	  echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";	 		\
 	fi ;									\
 	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
        	mv --force $@.new $@
