@@ -37,12 +37,12 @@ REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' d
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
-# or to forcefully include the svn-last-changed-date in the tgz name:
+# or to forcefully include the FIXME to be done: latest change date;
+# for now, include the git hash of the latest commit
+# in the tgz name:
 #   make distclean doc tgz FORCE=1
 #
-REL_VERSION := $(REL_VERSION)-$(shell LANG= svn info| \
-	sed -n -e 's/^Last Changed Date: \([0-9]*\)-\([0-9]*\)-\([0-9]*\).*/\1\2\3/p' \
-	)-$(shell svnversion .)
+REL_VERSION := $(REL_VERSION)-$(shell git-rev-parse HEAD)
 endif
 
 DIST_VERSION := $(REL_VERSION)
@@ -124,10 +124,7 @@ drbd/drbd_buildtag.c:
 # update of .filelist is forced:
 .PHONY: .filelist
 .filelist:
-	@ svn info >/dev/null || { echo "you need a svn checkout to do this." ; false ; }
-	@find  $$(svn st -v | sed '/^?/d;s/^.\{8\} \+[0-9]\+ \+[0-9]\+ [a-z-]\+ *//;$(if $(PRESERVE_DEBIAN),,/^debian/d)' ) \
-	-maxdepth 0 \! -type d |\
-	sed 's#^#drbd-$(DIST_VERSION)/#' > .filelist
+	@git-ls-files | sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@find documentation -name "[^.]*.[58]" -o -name "*.html" | \
 	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
@@ -156,14 +153,13 @@ tgz: check_changelogs_up2date doc
 endif
 
 check_all_committed:
-	@$(if $(FORCE),-,)modified=`svn st -q`; 		\
+	@$(if $(FORCE),-,)modified=`git-ls-files -m -t`; 		\
 	if test -n "$$modified" ; then	\
 		echo "$$modified";	\
 	       	false;			\
 	fi
 
 prepare_release:
-	svn up
 	$(MAKE) tarball
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
