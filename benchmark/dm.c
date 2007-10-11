@@ -23,6 +23,9 @@
 #define _GNU_SOURCE
 #define _FILE_OFFSET_BITS 64
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <fcntl.h>
@@ -95,13 +98,15 @@ void usage(char *prgname)
 		"   --input-pattern val -a val \n"
 		"   --input-file val    -i val \n"
 		"   --output-file val   -o val\n"
+		"   --connect-port val  -P val\n"
+		"   --connect-ip val    -c val\n"
+		"     instead of -o you might use -P and -c\n"
 		"   --buffer-size val   -b val\n"
 		"   --seek-input val    -k val\n"
 		"   --seek-output val   -l val\n"
 		"   --size val          -s val\n"
 		"   --o_direct          -x\n"
-		"     should be given first to affect\n"
-	        "     -i/-o given later on the command line\n"
+	        "     affect -i and -o \n"
 		"   --bandwidth         -w val byte/second \n"
 		"   --sync              -y\n"
 		"   --progress          -m\n"
@@ -111,6 +116,32 @@ void usage(char *prgname)
 	exit(20);
 
 }
+
+int connect_to (char *ip, int port)
+{
+	int fd;
+	struct sockaddr_in addr;
+	int ret;
+
+	if((fd = socket (PF_INET, SOCK_STREAM, 0)) < 0) {
+		perror("socket");
+		exit(20);
+	}
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons (port);
+	if (inet_aton (ip, &addr.sin_addr) == 0) {
+		fprintf(stderr, "Error in inet_aton (%s).\n", ip);
+		close (fd);
+		exit(20);
+	}
+	if ((ret = connect (fd, (struct sockaddr*) &addr, sizeof (addr))) < 0) {
+		perror("connect");
+		close (fd);
+		exit(20);
+	}
+	return fd;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -132,11 +163,19 @@ int main(int argc, char **argv)
 	int dialog = 0, show_input_size = 0;
 	int last_percentage = 0;
 
+	char *input_file_name = NULL;
+	char *output_file_name = NULL;
+	char *connect_target = NULL;
+	int connect_port = 0;
+       
+
 	int c;
 	static struct option options[] = {
 		{"input-pattern", required_argument, 0, 'a'},
 		{"input-file", required_argument, 0, 'i'},
 		{"output-file", required_argument, 0, 'o'},
+		{"connect-ip", required_argument, 0, 'c'},
+		{"connect-port", required_argument, 0, 'P'},
 		{"buffer-size", required_argument, 0, 'b'},
 		{"seek-input", required_argument, 0, 'k'},
 		{"seek-output", required_argument, 0, 'l'},
@@ -156,29 +195,21 @@ int main(int argc, char **argv)
 		usage(argv[0]);
 
 	while (1) {
-		c = getopt_long(argc, argv, "i:o:b:k:l:s:w:xympha:dz", options, 0);
+		c = getopt_long(argc, argv, "i:o:c:P:b:k:l:s:w:xympha:dz", options, 0);
 		if (c == -1)
 			break;
 		switch (c) {
 		case 'i':
-			/* make sure you specify -x before -i,
-			 * if you mean to use O_DIRECT here! */
-			in_fd = open(optarg, O_RDONLY | (o_direct ? O_DIRECT : 0));
-			if (in_fd == -1) {
-				fprintf(stderr,
-					"Can not open input file/device\n");
-				exit(20);
-			}
+			input_file_name = optarg;
 			break;
 		case 'o':
-			out_fd =
-			    open(optarg, O_WRONLY | O_CREAT | O_TRUNC |
-					 (o_direct? O_DIRECT : 0) , 0664);
-			if (out_fd == -1) {
-				fprintf(stderr,
-					"Can not open output file/device\n");
-				exit(20);
-			}
+			output_file_name = optarg;
+			break;
+		case 'c':
+			connect_target = optarg;
+			break;
+		case 'P':
+			connect_port = m_strtol(optarg);
 			break;
 		case 'b':
 			buffer_size = m_strtol(optarg);
@@ -222,6 +253,36 @@ int main(int argc, char **argv)
 			break;
 
 		}
+	}
+
+	if( output_file_name && connect_target ) {
+		fprintf(stderr,
+			"Both connect target and an output file name given.\n"
+			"That is too much.\n");
+		exit(20);		
+	}
+
+	if(input_file_name) {
+		in_fd = open(input_file_name, O_RDONLY | (o_direct ? O_DIRECT : 0));
+		if (in_fd == -1) {
+			fprintf(stderr,
+				"Can not open input file/device\n");
+			exit(20);
+		}
+	}
+
+	if(output_file_name) {
+		out_fd = open(output_file_name, O_WRONLY | O_CREAT | O_TRUNC |
+			      (o_direct? O_DIRECT : 0) , 0664);
+		if (out_fd == -1) {
+			fprintf(stderr,
+				"Can not open output file/device\n");
+			exit(20);
+		}
+	}
+
+	if(connect_target) {
+		out_fd = connect_to (connect_target, connect_port);
 	}
 
 	(void)posix_memalign(&buffer, sysconf(_SC_PAGESIZE), buffer_size);
