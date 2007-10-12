@@ -798,6 +798,13 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
+	if (!mdev->bitmap) {
+		if(drbd_bm_init(mdev)) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
+	}
+
 	nbc->md_bdev = inode2->i_bdev;
 	if (bd_claim(nbc->md_bdev,
 		     (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
@@ -1211,6 +1218,13 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		}
 		int_dig_vv = kmalloc(i, GFP_KERNEL);
 		if (!int_dig_vv) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
+	}
+
+	if (!mdev->bitmap) {
+		if(drbd_bm_init(mdev)) {
 			retcode = KMallocFailed;
 			goto fail;
 		}

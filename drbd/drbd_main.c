@@ -2162,6 +2162,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	D_ASSERT(mdev->net_conf == NULL);
 	drbd_set_my_capacity(mdev, 0);
 	drbd_bm_resize(mdev, 0);
+	drbd_bm_cleanup(mdev);
 
 	/* just in case */
 	drbd_free_resources(mdev);
@@ -2319,8 +2320,6 @@ void __exit drbd_cleanup(void)
 				bdput(mdev->this_bdev);
 
 			tl_cleanup(mdev);
-			if (mdev->bitmap)
-				drbd_bm_cleanup(mdev);
 			if (mdev->resync)
 				lc_free(mdev->resync);
 
@@ -2438,8 +2437,6 @@ struct drbd_conf *drbd_new_device(int minor)
 	if (!mdev->md_io_page)
 		goto Enomem;
 
-	if (drbd_bm_init(mdev)) goto Enomem;
-	/* no need to lock access, we are still initializing the module. */
 	if (!tl_init(mdev)) goto Enomem;
 
 	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void *), GFP_KERNEL);
