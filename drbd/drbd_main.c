@@ -2883,7 +2883,7 @@ void md_sync_timer_fn(unsigned long data)
 
 int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	WARN("BUG! md_sync_timer expired! Worker calls drbd_md_sync().\n");
+	WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
 	drbd_md_sync(mdev);
 
 	return 1;
