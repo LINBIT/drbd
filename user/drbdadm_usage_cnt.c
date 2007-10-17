@@ -48,10 +48,17 @@
 #define HTTP_ADDR "212.69.162.23"
 #define DRBD_LIB_DIR "/var/lib/drbd"
 #define NODE_ID_FILE DRBD_LIB_DIR"/node_id"
+#define GIT_HASH_BYTE 20
+#define SVN_STYLE_OD  16
+
+struct vcs_rel {
+	u32	svn_revision;
+	char	git_hash[GIT_HASH_BYTE];
+};
 
 struct node_info {
 	u64	node_uuid;
-	u32	version_code;
+	struct vcs_rel rev;
 };
 
 struct node_info_od {
@@ -85,53 +92,93 @@ static char* slurp_proc_drbd()
 	return buffer;
 }
 
-static unsigned int extract_svn_revision(const char* text)
+void read_hex(char* dst, char* src, int dst_size, int src_size)
 {
-	char token[40];
-	unsigned int svn_rev = 0;
+	int dst_i, u, src_i=0;
+
+	for(dst_i=0;dst_i<dst_size;dst_i++) {
+		if(src[src_i] == 0) break;
+		sscanf(src+src_i,"%2x",&u);
+		dst[dst_i]=u;
+		if(++src_i >= src_size) break;
+		if(src[src_i] == 0) break;
+		if(++src_i >= src_size) break;
+        }
+}
+
+void vcs_from_str(struct vcs_rel *rel, const char *text)
+{
+	char token[80];
 	int plus=0;
-	enum { begin,f_svn,f_rev } ex=begin;
+	enum { begin,f_svn,f_rev,f_git } ex=begin;
 
 	while(sget_token(token,40,&text) != EOF) {
 		switch(ex) {
 		case begin:
 			if(!strcmp(token,"plus")) plus = 1;
 			if(!strcmp(token,"SVN"))  ex = f_svn;
+			if(!strcmp(token,"GIT-hash:"))  ex = f_git;
 			break;
 		case f_svn:
 			if(!strcmp(token,"Revision:"))  ex = f_rev;
 			break;
 		case f_rev:
-			svn_rev = atol(token);
-			goto out;
+			rel->svn_revision = atol(token) * 10;
+			if( plus ) rel->svn_revision += 1;
+			memset(rel->git_hash, 0, GIT_HASH_BYTE);
+			return;
+		case f_git:
+			read_hex(rel->git_hash, token, GIT_HASH_BYTE, strlen(token));
+			rel->svn_revision = 0;
+			return;
 		}
 	}
- out:
-	svn_rev = svn_rev * 10;
-	if( svn_rev && plus ) svn_rev += 1;
-	return svn_rev;
 }
 
-static unsigned int current_svn_revision()
+static void vcs_get_current(struct vcs_rel *rel)
 {
 	char* version_txt;
-	unsigned int svn_rev;
 
 	version_txt = slurp_proc_drbd();
 	if(version_txt) {
-		svn_rev = extract_svn_revision(version_txt);
+		vcs_from_str(rel, version_txt);
 		free(version_txt);
 	} else {
-		svn_rev = extract_svn_revision(drbd_buildtag());
+		vcs_from_str(rel, drbd_buildtag());
 	}
+}
 
-	return svn_rev;
+static int vcs_eq(struct vcs_rel *rev1, struct vcs_rel *rev2)
+{
+	if( rev1->svn_revision || rev2->svn_revision ) {
+		return rev1->svn_revision == rev2->svn_revision;
+	} else {
+		return !memcmp(rev1->git_hash,rev2->git_hash,GIT_HASH_BYTE);
+	}
+}
+
+static char *vcs_to_str(struct vcs_rel *rev)
+{
+	static char buffer[80]; // Not generic, sufficent for the purpose.
+
+	if( rev->svn_revision ) {
+		snprintf(buffer,80,"nv="U32,rev->svn_revision);
+	} else {
+		int len=20,p;
+		unsigned char *bytes;
+
+		p = sprintf(buffer,"git=");
+		bytes = rev->git_hash;
+		while(len--) p += sprintf(buffer+p,"%02x",*bytes++);
+	}
+	return buffer;
 }
 
 static void write_node_id(struct node_info *ni)
 {
 	int fd;
 	struct node_info_od on_disk;
+	int size;
 
 	fd = open(NODE_ID_FILE,O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR);
 	if( fd == -1 && errno == ENOENT) {
@@ -144,11 +191,21 @@ static void write_node_id(struct node_info *ni)
 		exit(20);
 	}
 
-	on_disk.magic           = cpu_to_be32(DRBD_MAGIC);
-	on_disk.ni.node_uuid    = cpu_to_be64(ni->node_uuid);
-	on_disk.ni.version_code = cpu_to_be32(ni->version_code);
+	if(ni->rev.svn_revision != 0) { // SVN style (old)
+		on_disk.magic               = cpu_to_be32(DRBD_MAGIC);
+		on_disk.ni.node_uuid        = cpu_to_be64(ni->node_uuid);
+		on_disk.ni.rev.svn_revision = cpu_to_be32(ni->rev.svn_revision);
+		memset(on_disk.ni.rev.git_hash,0,GIT_HASH_BYTE);
+		size = SVN_STYLE_OD;
+	} else {
+		on_disk.magic               = cpu_to_be32(DRBD_MAGIC+1);
+		on_disk.ni.node_uuid        = cpu_to_be64(ni->node_uuid);
+		on_disk.ni.rev.svn_revision = 0;
+		memcpy(on_disk.ni.rev.git_hash,ni->rev.git_hash,GIT_HASH_BYTE);
+		size = sizeof(on_disk);
+	}
 
-	if( write(fd,&on_disk, sizeof(on_disk)) != sizeof(on_disk)) {
+	if( write(fd,&on_disk, size) != size) {
 		perror("Write to "NODE_ID_FILE" failed.");
 		exit(20);
 	}
@@ -159,7 +216,7 @@ static void write_node_id(struct node_info *ni)
 
 static int read_node_id(struct node_info *ni)
 {
-	int fd;
+	int rr,fd;
 	struct node_info_od on_disk;
 
 	fd = open(NODE_ID_FILE,O_RDONLY);
@@ -167,15 +224,26 @@ static int read_node_id(struct node_info *ni)
 		return 0;
 	}
 
-	if( read(fd,&on_disk, sizeof(on_disk)) != sizeof(on_disk)) {
+	rr = read(fd,&on_disk, sizeof(on_disk)); 
+	if( rr != sizeof(on_disk) && rr != SVN_STYLE_OD ) {
 		close(fd);
 		return 0;
 	}
 
-	if ( be32_to_cpu(on_disk.magic) != DRBD_MAGIC ) return 0;
-
-	ni->node_uuid    = be64_to_cpu(on_disk.ni.node_uuid);
-	ni->version_code = be32_to_cpu(on_disk.ni.version_code);
+	switch(be32_to_cpu(on_disk.magic)) {
+	case DRBD_MAGIC:
+		ni->node_uuid    = be64_to_cpu(on_disk.ni.node_uuid);
+		ni->rev.svn_revision = be32_to_cpu(on_disk.ni.rev.svn_revision);
+		memset(ni->rev.git_hash,0,GIT_HASH_BYTE);
+		break;
+	case DRBD_MAGIC+1:
+		ni->node_uuid    = be64_to_cpu(on_disk.ni.node_uuid);
+		ni->rev.svn_revision = 0;
+		memcpy(ni->rev.git_hash,on_disk.ni.rev.git_hash,GIT_HASH_BYTE);
+		break;
+	default:
+		return 0;
+	}
 
 	close(fd);
 	return 1;
@@ -289,7 +357,7 @@ void uc_node(enum usage_count_type type)
 {
 	struct node_info ni;
 	char *req_buf;
-	u32 current;
+	struct vcs_rel current;
 	int send = 0;
 	int update = 0;
 	char answer[ANSWER_SIZE];
@@ -306,16 +374,16 @@ void uc_node(enum usage_count_type type)
 	if (getenv("INIT_VERSION")) return;
 	if (no_tty) return;
 
-	current = current_svn_revision();
+	vcs_get_current(&current);
 
 	if( ! read_node_id(&ni) ) {
 		get_random_bytes(&ni.node_uuid,sizeof(ni.node_uuid));
-		ni.version_code = current;
+		ni.rev = current;
 		send = 1;
 	} else {
 		// read_node_id() was successull
-		if (ni.version_code != current) {
-			ni.version_code = current;
+		if (!vcs_eq(&ni.rev,&current)) {
+			ni.rev = current;
 			update = 1;
 			send = 1;
 		}
@@ -337,7 +405,7 @@ void uc_node(enum usage_count_type type)
 "   how many users before you have installed this version (%s).\n"
 " * With a high counter the DRBD developers have a high motivation to\n"
 "   continue development of the software.\n\n"
-"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&nv="U32"\n\n"
+"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s\n\n"
 "In case you want to participate but know that this machines is firewalled\n"
 "simply issue the query string with your favourite web browser or wget.\n"
 "You can control all this by setting 'usage-count' in your drbd.conf.\n\n"
@@ -346,15 +414,15 @@ void uc_node(enum usage_count_type type)
 "* Enter 'no' to opt out.\n"
 "* To count this node without comment, just press [RETURN]\n",
 			update ? "an update" : "a new installation",
-			REL_VERSION,ni.node_uuid, ni.version_code);
+			REL_VERSION,ni.node_uuid, vcs_to_str(&ni.rev));
 		fgets(answer,ANSWER_SIZE,stdin);
 		if(!strcmp(answer,"no\n")) send = 0;
 		url_encode(answer,n_comment);
 	}
 
 	ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-		 "nu="U64"&nv="U32"%s%s HTTP/1.0\n\n",
-		 ni.node_uuid, ni.version_code,
+		 "nu="U64"&%s%s%s HTTP/1.0\n\n",
+		 ni.node_uuid, vcs_to_str(&ni.rev),
 		 n_comment[0] ? "&nc=" : "", n_comment);
 
 	if (send) {
