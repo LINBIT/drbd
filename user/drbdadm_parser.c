@@ -628,7 +628,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			goto exit_loop;
 		default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
-					" startup | handler",token);
+					" startup | handlers",token);
 		}
 	}
 

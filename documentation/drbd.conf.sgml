@@ -328,9 +328,9 @@ resource r0 {
 </varlistentry>
 
 <varlistentry>
-  <term><option>incon-degr-cmd <replaceable>command</replaceable></option></term>
+  <term><option>pri-on-incon-degr-cmd <replaceable>command</replaceable></option></term>
   <listitem><para>
-  <indexterm><primary>drbd.conf</primary><secondary>incon-degr-cmd</secondary></indexterm>
+  <indexterm><primary>drbd.conf</primary><secondary>pri-on-incon-degr-cmd</secondary></indexterm>
     In case a node starts up in degraded mode (degr-wfc-timeout is set) and
     its local replica of the data is inconsistent, it executes the
     <replaceable>command</replaceable>. If the command exits without
