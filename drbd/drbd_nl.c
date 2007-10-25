@@ -478,7 +478,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(mdev)>>1;
 			if (size == 0) {
-				ERR("OUT OF MEMORY! Could not allocate bitmap! Set device size => 0\n");
+				ERR("OUT OF MEMORY! Could not allocate bitmap!\n");
 			} else {
 				/* FIXME this is problematic,
 				 * if we in fact are smaller now! */
@@ -921,7 +921,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	drbd_bm_lock(mdev); // racy...
-	drbd_determin_dev_size(mdev);
+	if (drbd_determin_dev_size(mdev)) {
+		retcode = VMallocFailed;
+		goto unlock_bm;
+	}
 
 	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
@@ -1297,7 +1300,7 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	drbd_bm_lock(mdev);
-	drbd_determin_dev_size(mdev);
+	(void)drbd_determin_dev_size(mdev); /* It is ok to ignore the return value here. */
 	drbd_md_sync(mdev);
 	drbd_bm_unlock(mdev);
 	dec_local(mdev);
