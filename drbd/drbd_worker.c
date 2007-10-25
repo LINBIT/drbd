@@ -797,7 +797,8 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 	int i, rv = 0;
 
 	for (i=0; i < minor_count; i++) {
-		if( !(odev = minor_to_mdev(i)) ) continue;
+		if (!(odev = minor_to_mdev(i)) ||
+		    (odev->state.conn == StandAlone && odev->state.disk == Diskless) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
 			rv |= ( _drbd_set_state(_NS(odev,aftr_isp,1),
 						ChgStateHard|ScheduleAfter)
