@@ -397,6 +397,7 @@ static const char *error_messages[] = {
 	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
 	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
 	EM(ProtocolCRequired) = "Protocol C required",
+	EM(VMallocFailed) = "vmalloc() failed. Out of memory?",
 	EM(IntegrityAlgNotAvail) = "The 'data-integrity-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
 	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",

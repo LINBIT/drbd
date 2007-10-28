@@ -838,6 +838,8 @@ int _drbd_pause_after(struct drbd_conf *mdev)
 		odev = minor_to_mdev(i);
 		if (!odev)
 			continue;
+		if (odev->state.conn == StandAlone && odev->state.disk == Diskless)
+			continue;		
 		if (!_drbd_may_sync_now(odev))
 			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1),
 						ChgStateHard|ScheduleAfter)

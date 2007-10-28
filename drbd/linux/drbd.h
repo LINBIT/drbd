@@ -112,6 +112,7 @@ enum ret_codes {
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
 	ProtocolCRequired,
+	VMallocFailed,
 	IntegrityAlgNotAvail,
 	IntegrityAlgNotDigest,
 
