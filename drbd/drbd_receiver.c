@@ -49,13 +49,6 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
-#if defined(__arch_um__) && !defined(HAVE_UML_TO_VIRT)
-static inline void *to_virt(unsigned long phys)
-{
-	return((void *) uml_physmem + phys);
-}
-#endif
-
 #ifdef DBG_ASSERTS
 void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
 			    char *file, int line)

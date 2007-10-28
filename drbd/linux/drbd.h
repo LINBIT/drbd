@@ -112,6 +112,7 @@ enum ret_codes {
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
 	ProtocolCRequired,
+	VMallocFailed,
 
 	/* insert new ones above this line */
 	AfterLastRetCode
