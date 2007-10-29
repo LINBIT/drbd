@@ -2015,6 +2015,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 		drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
 		drbd_force_state(mdev,NS(conn,Disconnecting));
+		drbd_khelper(mdev,"split-brain");
 		return conn_mask;
 	}
 

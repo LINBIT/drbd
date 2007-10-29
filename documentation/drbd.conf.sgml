@@ -247,7 +247,7 @@ resource r0 {
     Optional parameters:
     <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
     <option>pri-lost</option>, <option>outdate-peer</option>,
-    <option>local-io-error</option>.
+    <option>local-io-error</option>, <option>split-brain</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -932,6 +932,13 @@ the unit is 1 second.
   <term><option>local-io-error <replaceable>cmd</replaceable></option></term>
   <listitem><para> DRBD got an IO error from the local IO subsystem.
   <indexterm><primary>drbd.conf</primary><secondary>local-io-error </secondary></indexterm>
+  </para></listitem> </varlistentry>
+
+<varlistentry>
+  <term><option>split-brain <replaceable>cmd</replaceable></option></term>
+  <listitem><para> DRBD detected a split brain situation. Manual recovery is necessary. 
+      This handler should alert someone on duty.
+  <indexterm><primary>drbd.conf</primary><secondary>split-brain </secondary></indexterm>
   </para></listitem> </varlistentry>
 
 </variablelist>
