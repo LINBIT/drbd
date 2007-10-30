@@ -751,11 +751,11 @@ struct drbd_md {
 };
 
 // for sync_conf and other types...
-#define PACKET(name, number, fields) struct name { fields };
-#define INTEGER(pn,pr,member) int member;
-#define INT64(pn,pr,member) __u64 member;
-#define BIT(pn,pr,member)   unsigned member : 1;
-#define STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len;
+#define NL_PACKET(name, number, fields) struct name { fields };
+#define NL_INTEGER(pn,pr,member) int member;
+#define NL_INT64(pn,pr,member) __u64 member;
+#define NL_BIT(pn,pr,member)   unsigned member : 1;
+#define NL_STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len;
 #include "linux/drbd_nl.h"
 
 struct drbd_backing_dev {

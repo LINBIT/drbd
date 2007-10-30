@@ -626,13 +626,13 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int error)
+BIO_ENDIO_FN(drbd_bm_async_io_complete)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio,BIO_UPTODATE);
 
-	if (bio->bi_size)
-		return 1;
+	BIO_ENDIO_FN_START;
+
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -653,7 +653,7 @@ int drbd_bm_async_io_complete(struct bio *bio, unsigned int bytes_done, int erro
 
 	bio_put(bio);
 
-	return 0;
+	BIO_ENDIO_FN_RETURN;
 }
 
 STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
@@ -681,7 +681,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 
 	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
-		bio_endio(bio,bio->bi_size,-EIO);
+		bio_endio(bio, -EIO);
 	}
 	else
 		submit_bio(rw, bio);

@@ -45,7 +45,7 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 
 // Generate the tag_list to struct functions
-#define PACKET(name, number, fields) \
+#define NL_PACKET(name, number, fields) \
 int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg) \
 { \
 	int tag; \
@@ -65,19 +65,19 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 	} \
 	return 1; \
 }
-#define INTEGER(pn,pr,member) \
+#define NL_INTEGER(pn,pr,member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INTEGER ); */ \
 		 arg->member = *(int*)(tags); \
 		 break;
-#define INT64(pn,pr,member) \
+#define NL_INT64(pn,pr,member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INT64 ); */ \
 		 arg->member = *(u64*)(tags); \
 		 break;
-#define BIT(pn,pr,member) \
+#define NL_BIT(pn,pr,member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_BIT ); */ \
 		 arg->member = *(char*)(tags) ? 1 : 0; \
 		 break;
-#define STRING(pn,pr,member,len) \
+#define NL_STRING(pn,pr,member,len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
 		 arg->member ## _len = dlen; \
 		 memcpy(arg->member,tags,min_t(size_t,dlen,len)); \
@@ -85,7 +85,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 #include "linux/drbd_nl.h"
 
 // Generate the struct to tag_list functions
-#define PACKET(name, number, fields) \
+#define NL_PACKET(name, number, fields) \
 unsigned short* \
 name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 { \
@@ -93,22 +93,22 @@ name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 	return tags; \
 }
 
-#define INTEGER(pn,pr,member) \
+#define NL_INTEGER(pn,pr,member) \
 	*tags++ = pn | pr | TT_INTEGER; \
 	*tags++ = sizeof(int); \
 	*(int*)tags = arg->member; \
 	tags = (unsigned short*)((char*)tags+sizeof(int));
-#define INT64(pn,pr,member) \
+#define NL_INT64(pn,pr,member) \
 	*tags++ = pn | pr | TT_INT64; \
 	*tags++ = sizeof(u64); \
 	*(u64*)tags = arg->member; \
 	tags = (unsigned short*)((char*)tags+sizeof(u64));
-#define BIT(pn,pr,member) \
+#define NL_BIT(pn,pr,member) \
 	*tags++ = pn | pr | TT_BIT; \
 	*tags++ = sizeof(char); \
 	*(char*)tags = arg->member; \
 	tags = (unsigned short*)((char*)tags+sizeof(char));
-#define STRING(pn,pr,member,len) \
+#define NL_STRING(pn,pr,member,len) \
 	*tags++ = pn | pr | TT_STRING; \
 	*tags++ = arg->member ## _len; \
 	memcpy(tags,arg->member, arg->member ## _len); \
@@ -121,12 +121,12 @@ void drbd_nl_send_reply(struct cn_msg *, int);
 
 char *nl_packet_name(int packet_type) {
 // Generate packet type strings
-#define PACKET(name, number, fields) \
+#define NL_PACKET(name, number, fields) \
 	[ P_ ## name ] = # name,
-#define INTEGER Argh!
-#define BIT Argh!
-#define INT64 Argh!
-#define STRING Argh!
+#define NL_INTEGER Argh!
+#define NL_BIT Argh!
+#define NL_INT64 Argh!
+#define NL_STRING Argh!
 
 	static char *nl_tag_name[P_nl_after_last_packet] = {
 #include "linux/drbd_nl.h"

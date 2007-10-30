@@ -3003,9 +3003,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		goto fail;
 	}
 
-	sg.page   = virt_to_page(peers_ch);
-	sg.offset = offset_in_page(peers_ch);
-	sg.length = p.length;
+	sg_set_buf(&sg, peers_ch, p.length);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if(rv) {
@@ -3048,9 +3046,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		goto fail;
 	}
 
-	sg.page   = virt_to_page(my_challenge);
-	sg.offset = offset_in_page(my_challenge);
-	sg.length = CHALLENGE_LEN;
+	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if(rv) {
