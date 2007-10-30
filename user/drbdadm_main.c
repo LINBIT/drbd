@@ -238,6 +238,8 @@ struct adm_cmd cmds[] = {
   { "pri-lost-after-sb", adm_khelper,   3,1,0 },
   { "outdate-peer",      adm_khelper,   3,1,0 },
   { "local-io-error",    adm_khelper,   3,1,0 },
+  { "pri-lost",          adm_khelper,   3,1,0 },
+  { "split-brain",       adm_khelper,   3,1,0 },
   { "set-gi",            admm_generic,  4,1,0 },
   { "suspend-io",        adm_generic_s, 4,1,0 },
   { "resume-io",         adm_generic_s, 4,1,0 },
