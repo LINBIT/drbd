@@ -2009,6 +2009,7 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 		drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
 		drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
 		drbd_force_state(mdev, NS(conn, Disconnecting));
+		drbd_khelper(mdev, "split-brain");
 		return conn_mask;
 	}
 
