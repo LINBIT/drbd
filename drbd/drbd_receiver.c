@@ -824,7 +824,7 @@ int drbd_connect(drbd_dev *mdev)
 	if ( mdev->cram_hmac_tfm ) {
 		if (!drbd_do_auth(mdev)) {
 			ERR("Authentication of peer failed\n");
-			return 0;
+			return -1;
 		}
 	}
 
