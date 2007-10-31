@@ -948,7 +948,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* Last part of the attaching process ... */
-	if ( ns.conn >= Connected && 
+	if ( ns.conn >= Connected &&
 	     os.disk == Attaching && ns.disk == Negotiating ) {
 		kfree(mdev->p_uuid); /* We expect to receive up-to-date UUIDs soon. */
 		mdev->p_uuid = NULL; /* ...to not use the old ones in the mean time */
