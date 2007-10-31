@@ -958,7 +958,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if ( ns.conn >= Connected && 
+	if ( ns.conn >= WFReportParams &&
 	     (( os.aftr_isp != ns.aftr_isp ) ||
 	      ( os.user_isp != ns.user_isp )) ) {
 		drbd_send_state(mdev);
