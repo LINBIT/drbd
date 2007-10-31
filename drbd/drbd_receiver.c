@@ -2137,15 +2137,18 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	if (mdev->agreed_pro_version >= 87) {
+		unsigned char *my_alg = mdev->net_conf->integrity_alg;
+
 		if (drbd_recv(mdev, p_integrity_alg, data_size) != data_size)
 			return FALSE;
 
 		p_integrity_alg[SHARED_SECRET_MAX-1]=0;
-		if(strcmp(p_integrity_alg, mdev->net_conf->integrity_alg)) {
+		if(strcmp(p_integrity_alg, my_alg)) {
 			ERR("incompatible setting of the data-integrity-alg\n");
 			goto disconnect;
 		}
-		WARN("data-integrity-alg: %s\n",mdev->net_conf->integrity_alg);
+		WARN("data-integrity-alg: %s\n",
+		     my_alg[0] ? my_alg : (unsigned char *)"<not-used>");
 	}
 
 	return TRUE;
