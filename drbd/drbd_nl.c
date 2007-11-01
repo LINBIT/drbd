@@ -447,9 +447,14 @@ char* ppsize(char* buf, unsigned long long size)
 	return buf;
 }
 
-/* You should call drbd_md_sync() after calling this.
+/**
+ * drbd_determin_dev_size:
+ * Evaluates all constraints and sets our correct device size.
+ * Negative return values indicate errors. 0 and positive values
+ * indicate success.
+ * You should call drbd_md_sync() after calling this function.
  */
-int drbd_determin_dev_size(struct Drbd_Conf* mdev)
+enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 {
 	sector_t prev_first_sect, prev_size; // previous meta location
 	sector_t la_size;
@@ -457,7 +462,7 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 	char ppb[10];
 
 	int md_moved, la_size_changed;
-	int rv=0;
+	int rv=unchanged;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
@@ -516,6 +521,9 @@ int drbd_determin_dev_size(struct Drbd_Conf* mdev)
 			dec_local(mdev);
 		}
 	}
+
+	if (size > la_size) rv = grew;
+	if (size < la_size) rv = shrunk;
   out:
 	lc_unlock(mdev->act_log);
 
@@ -921,7 +929,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	drbd_bm_lock(mdev); // racy...
-	if (drbd_determin_dev_size(mdev)) {
+	if (drbd_determin_dev_size(mdev) < 0) {
 		retcode = VMallocFailed;
 		goto unlock_bm;
 	}
@@ -1270,11 +1278,28 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
+void resync_after_online_grow(drbd_dev *mdev)
+{
+	int iass; /* I am sync source */
+
+	INFO("Resync of new storage after online grow\n");
+	if (mdev->state.role != mdev->state.peer)
+		iass = (mdev->state.role == Primary);
+	else
+		iass = test_bit(DISCARD_CONCURRENT,&mdev->flags);
+
+	if (iass)
+		drbd_start_resync(mdev,SyncSource);
+	else
+		drbd_request_state(mdev,NS(conn,WFSyncUUID));
+}
+
 STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	struct resize rs;
 	int retcode=NoError;
+	int dd;
 
 	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev,nlp->tag_list,&rs)) {
@@ -1300,13 +1325,20 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	drbd_bm_lock(mdev);
-	(void)drbd_determin_dev_size(mdev); /* It is ok to ignore the return value here. */
+	dd = drbd_determin_dev_size(mdev);
 	drbd_md_sync(mdev);
 	drbd_bm_unlock(mdev);
 	dec_local(mdev);
-	if (mdev->state.conn == Connected) {
-		drbd_send_uuids(mdev); // to start sync...
+	if (dd < 0) {
+		retcode = VMallocFailed;
+		goto fail;
+	}
+
+	if (mdev->state.conn == Connected && dd != unchanged) {
+		drbd_send_uuids(mdev);
 		drbd_send_sizes(mdev);
+		if (dd == grew)
+			resync_after_online_grow(mdev);
 	}
 
  fail:
