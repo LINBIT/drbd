@@ -559,11 +559,11 @@ drbd_new_dev_size(struct Drbd_Conf* mdev, struct drbd_backing_dev *bdev)
 	}
 
 	if(u_size) {
-		if(u_size<<1 > size) {
+		if(u_size > size) {
 			ERR("Requested disk size is too big (%lu > %lu)\n",
-			    (unsigned long)u_size, (unsigned long)size>>1);
+			    (unsigned long)u_size>>1, (unsigned long)size>>1);
 		} else {
-			size = u_size<<1;
+			size = u_size;
 		}
 	}
 
@@ -810,7 +810,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-	if ((drbd_get_capacity(nbc->backing_bdev)>>1) < nbc->dc.disk_size) {
+	if ((drbd_get_capacity(nbc->backing_bdev)) < nbc->dc.disk_size) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
 	}

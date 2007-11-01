@@ -18,7 +18,7 @@ NL_PACKET(primary, 1,
 NL_PACKET(secondary, 2, )
 
 NL_PACKET(disk_conf, 3,
-	NL_INT64(		2,	T_MAY_IGNORE,	disk_size)
+	NL_INT64(	2,	T_MAY_IGNORE,	disk_size)
 	NL_STRING(	3,	T_MANDATORY,	backing_dev,	128)
 	NL_STRING(	4,	T_MANDATORY,	meta_dev,	128)
 	NL_INTEGER(	5,	T_MANDATORY,	meta_dev_idx)
