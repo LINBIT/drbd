@@ -192,6 +192,21 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Nov  2 2007 13:10:27 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.7-1)
+ * Fixed drbdmeta's conversion of 07 style meta data.
+ * Handle the failure of vmalloc() in the bitmap code more gracefully.
+ * Do not pause resync on unconfigured devices.
+ * Added missing piecos of the implementation of the "pri-lost" handler.
+ * Added the "split-brain" handler.
+ * Drop the network config after failure to authenticate.
+ * Made it to compile on Linux-2.6.24-rc1.
+ * Fixed an unlikely race that could cause a device to get stuck
+   in SyncPause.
+ * Online resizing failed to start resync properly (although it
+   set up all the meta data correct). Fixed that.
+ * Minor improvements to documentation and error messages.
+
 * Mon Sep  3 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.6-1)
  * Fixed DRBD to not deadlock while doing bitmap updates on Linux
