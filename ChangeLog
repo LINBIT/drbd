@@ -4,6 +4,21 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.0.7 (api:86/proto:86)
+--------
+ * Fixed drbdmeta's conversion of 07 style meta data.
+ * Handle the failure of vmalloc() in the bitmap code more gracefully.
+ * Do not pause resync on unconfigured devices.
+ * Added missing piecos of the implementation of the "pri-lost" handler.
+ * Added the "split-brain" handler.
+ * Drop the network config after failure to authenticate.
+ * Made it to compile on Linux-2.6.24-rc1.
+ * Fixed an unlikely race that could cause a device to get stuck
+   in SyncPause.
+ * Online resizing failed to start resync properly (although it
+   set up all the meta data correct). Fixed that.
+ * Minor improvements to documentation and error messages.
+
 8.0.6 (api:86/proto:86)
 --------
  * Fixed DRBD to not deadlock while doing bitmap updates on Linux
