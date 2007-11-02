@@ -248,7 +248,7 @@ static void _complete_master_bio(struct drbd_conf *mdev,
 	struct drbd_request *req, int error)
 {
 	dump_bio(mdev, req->master_bio, 1);
-	bio_endio(req->master_bio, req->master_bio->bi_size, error);
+	bio_endio(req->master_bio, error);
 	req->master_bio = NULL;
 	dec_ap_bio(mdev);
 }
@@ -797,7 +797,7 @@ drbd_make_request_common(struct drbd_conf *mdev, int rw, int size,
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, thats not our business. */
 		ERR("could not kmalloc() req\n");
-		bio_endio(bio, bio->bi_size, -ENOMEM);
+		bio_endio(bio, -ENOMEM);
 		return 0;
 	}
 
@@ -991,7 +991,7 @@ allocate_barrier:
 			dec_ap_pending(mdev);
 		dump_bio(mdev, req->master_bio, 1);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
-		bio_endio(req->master_bio, req->master_bio->bi_size, 0);
+		bio_endio(req->master_bio, 0);
 		req->master_bio = NULL;
 		dec_ap_bio(mdev);
 		drbd_req_free(req);
@@ -1021,8 +1021,7 @@ allocate_barrier:
 		if (FAULT_ACTIVE(mdev, rw == WRITE ? DRBD_FAULT_DT_WR :
 				       ( rw == READ ? DRBD_FAULT_DT_RD :
 						   DRBD_FAULT_DT_RA ) ))
-			bio_endio(req->private_bio,
-					req->private_bio->bi_size, -EIO);
+			bio_endio(req->private_bio, -EIO);
 		else
 			generic_make_request(req->private_bio);
 	}
@@ -1035,7 +1034,7 @@ allocate_barrier:
 
 fail_and_free_req:
 	kfree(b);
-	bio_endio(bio, bio->bi_size, err);
+	bio_endio(bio, err);
 	drbd_req_free(req);
 	return 0;
 }
@@ -1092,13 +1091,13 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 
 	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
-		bio_endio(bio, bio->bi_size, -EPERM);
+		bio_endio(bio, -EPERM);
 		return 0;
 	}
 
 	/* Currently our BARRIER code is disabled. */
 	if (unlikely(bio_barrier(bio))) {
-		bio_endio(bio, bio->bi_size, -EOPNOTSUPP);
+		bio_endio(bio, -EOPNOTSUPP);
 		return 0;
 	}
 
@@ -1121,7 +1120,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		    "(vcnt=%u,idx=%u,size=%u,sector=%llu)\n",
 		    bio->bi_vcnt, bio->bi_idx, bio->bi_size,
 		    (unsigned long long)bio->bi_sector);
-		bio_endio(bio, bio->bi_size, -EINVAL);
+		bio_endio(bio, -EINVAL);
 		return 0;
 	} else {
 		/* This bio crosses some boundary, so we have to split it. */

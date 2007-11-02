@@ -765,8 +765,10 @@
 	mirrored to the device in secondary role.
       </para>
       <para>
-	It is not possible to set both devices of a connected DRBD device
-	pair to primary role.
+	Normally it is not possible to set both devices of a connected DRBD device
+	pair to primary role. By using the <option>--allow-two-primaries</option>
+	option, you override this behaviour and instruct DRBD to allow two
+	primaries.
       </para>
       <variablelist>
 	<varlistentry>

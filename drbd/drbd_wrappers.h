@@ -16,16 +16,6 @@
 /* see get_sb_bdev and bd_claim */
 extern char *drbd_sec_holder;
 
-/* bi_end_io handlers */
-extern int drbd_md_io_complete(struct bio *bio,
-		unsigned int bytes_done, int error);
-
-extern int drbd_endio_read_sec(struct bio *bio,
-		unsigned int bytes_done, int error);
-extern int drbd_endio_write_sec(struct bio *bio,
-		unsigned int bytes_done, int error);
-extern int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error);
-
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 {
 	return bdev->bd_disk->queue->hardsect_size;
@@ -108,6 +98,12 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 	return 0;
 }
 
+/* bi_end_io handlers */
+extern void drbd_md_io_complete(struct bio *bio, int error);
+extern void drbd_endio_read_sec(struct bio *bio, int error);
+extern void drbd_endio_write_sec(struct bio *bio, int error);
+extern void drbd_endio_pri(struct bio *bio, int error);
+
 /*
  * used to submit our private bio
  */
@@ -122,12 +118,12 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw,
 				"bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));
 		dump_stack();
-		bio_endio(bio, bio->bi_size, -ENODEV);
+		bio_endio(bio, -ENODEV);
 		return;
 	}
 
 	if (FAULT_ACTIVE(mdev, fault_type))
-		bio_endio(bio, bio->bi_size, -EIO);
+		bio_endio(bio, -EIO);
 	else
 		generic_make_request(bio);
 }
@@ -170,20 +166,6 @@ static inline int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 #ifdef USE_KMEM_CACHE_S
 #define kmem_cache kmem_cache_s
 #endif
-
-/* dtor was removed in 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac
- * on the way to 2.6.23 */
-static inline struct kmem_cache *
-drbd_kmem_cache_create (const char *name, size_t size, size_t align,
-        unsigned long flags,
-        void (*ctor)(void*, struct kmem_cache *, unsigned long))
-{
-	return kmem_cache_create(name, size, align, flags, ctor
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-		, NULL
-#endif
-		);
-}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 static inline void drbd_unregister_blkdev(unsigned int major, const char *name)

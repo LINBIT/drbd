@@ -785,7 +785,7 @@ int drbd_connect(struct drbd_conf *mdev)
 	if (mdev->cram_hmac_tfm) {
 		if (!drbd_do_auth(mdev)) {
 			ERR("Authentication of peer failed\n");
-			return 0;
+			return -1;
 		}
 	}
 
@@ -2140,6 +2140,7 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	unsigned int max_seg_s;
 	sector_t p_size, p_usize, my_usize;
 	enum drbd_conns nconn;
+	int dd;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
@@ -2175,10 +2176,12 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 			     (unsigned long)mdev->bc->dc.disk_size);
 		}
 
-		/* Never shrink a device with usable data. */
+		/* Never shrink a device with usable data during connect.
+		   But allow online shrinking if we are connected. */
 		if (drbd_new_dev_size(mdev, mdev->bc) <
 		   drbd_get_capacity(mdev->this_bdev) &&
-		   mdev->state.disk >= Outdated ) {
+		   mdev->state.disk >= Outdated &&
+		   mdev->state.conn < Connected ) {
 			dec_local(mdev);
 			ERR("The peer's disk size is too small!\n");
 			drbd_force_state(mdev, NS(conn, Disconnecting));
@@ -2189,18 +2192,21 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 #undef min_not_zero
 
-	mdev->p_size = p_size;
+	mdev->p_size=p_size;
 	if (inc_local(mdev)) {
 		drbd_bm_lock(mdev);
-		/*
-		 * you may get a flip-flop connection established/connection
-		 * loss, in case both really have different usize uppon first
-		 * connect!  try to solve it thus:
-		 ***/
-
-		drbd_determin_dev_size(mdev);
+		dd = drbd_determin_dev_size(mdev);
 		drbd_bm_unlock(mdev);
 		dec_local(mdev);
+		if (dd < 0) return FALSE;
+		if (dd == grew && mdev->state.conn == Connected &&
+		    mdev->state.pdsk >= Inconsistent &&
+		    mdev->state.disk >= Inconsistent) {
+			/* With disk >= Inconsistent we take care to not get
+			   here during an attach while we are connected. */
+			resync_after_online_grow(mdev);
+		}
+		drbd_md_sync(mdev);
 	} else {
 		/* I am diskless, need to accept the peer's size. */
 		drbd_set_my_capacity(mdev, p_size);
@@ -2920,9 +2926,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 		goto fail;
 	}
 
-	sg.page   = virt_to_page(peers_ch);
-	sg.offset = offset_in_page(peers_ch);
-	sg.length = p.length;
+	sg_set_buf(&sg, peers_ch, p.length);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if (rv) {
@@ -2967,9 +2971,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 		goto fail;
 	}
 
-	sg.page   = virt_to_page(my_challenge);
-	sg.offset = offset_in_page(my_challenge);
-	sg.length = CHALLENGE_LEN;
+	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if (rv) {
