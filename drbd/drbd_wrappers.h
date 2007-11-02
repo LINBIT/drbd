@@ -16,16 +16,6 @@
 /* see get_sb_bdev and bd_claim */
 extern char *drbd_sec_holder;
 
-/* bi_end_io handlers */
-extern int drbd_md_io_complete(struct bio *bio,
-		unsigned int bytes_done, int error);
-
-extern int drbd_endio_read_sec(struct bio *bio,
-		unsigned int bytes_done, int error);
-extern int drbd_endio_write_sec(struct bio *bio,
-		unsigned int bytes_done, int error);
-extern int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error);
-
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 {
 	return bdev->bd_disk->queue->hardsect_size;
@@ -108,6 +98,47 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+/* Before Linux-2.6.24 bie_endio() had the size of the bio as second argument.
+   See 6712ecf8f648118c3363c142196418f89a510b90 */
+#define bio_endio(B,E) bio_endio(B, (B)->bi_size, E)
+#define BIO_ENDIO_FN(name) int name(struct bio *bio, unsigned int bytes_done, int error)
+#define BIO_ENDIO_FN_START if (bio->bi_size) return 1
+#define BIO_ENDIO_FN_RETURN return 0
+#else
+#define BIO_ENDIO_FN(name) void name(struct bio *bio, int error)
+#define BIO_ENDIO_FN_START while(0) {}
+#define BIO_ENDIO_FN_RETURN return
+#endif
+
+// bi_end_io handlers
+extern BIO_ENDIO_FN(drbd_md_io_complete);
+extern BIO_ENDIO_FN(drbd_endio_read_sec);
+extern BIO_ENDIO_FN(drbd_endio_write_sec);
+extern BIO_ENDIO_FN(drbd_endio_pri);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
+/* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a
+   ctor and a dtor */
+#define kmem_cache_create(N,S,A,F,C) kmem_cache_create(N,S,A,F,C,NULL)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
+			      unsigned int buflen)
+{
+	sg->page   = virt_to_page(buf);
+	sg->offset = offset_in_page(buf);
+	sg->length = buflen;
+}
+
+static inline void sg_set_page(struct scatterlist *sg, struct page *page)
+{
+	sg->page   = page;
+}
+
+#endif
+
 /*
  * used to submit our private bio
  */
@@ -122,12 +153,12 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw,
 				"bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));
 		dump_stack();
-		bio_endio(bio, bio->bi_size, -ENODEV);
+		bio_endio(bio, -ENODEV);
 		return;
 	}
 
 	if (FAULT_ACTIVE(mdev, fault_type))
-		bio_endio(bio, bio->bi_size, -EIO);
+		bio_endio(bio, -EIO);
 	else
 		generic_make_request(bio);
 }
@@ -170,20 +201,6 @@ static inline int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 #ifdef USE_KMEM_CACHE_S
 #define kmem_cache kmem_cache_s
 #endif
-
-/* dtor was removed in 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac
- * on the way to 2.6.23 */
-static inline struct kmem_cache *
-drbd_kmem_cache_create (const char *name, size_t size, size_t align,
-        unsigned long flags,
-        void (*ctor)(void*, struct kmem_cache *, unsigned long))
-{
-	return kmem_cache_create(name, size, align, flags, ctor
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-		, NULL
-#endif
-		);
-}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 static inline void drbd_unregister_blkdev(unsigned int major, const char *name)

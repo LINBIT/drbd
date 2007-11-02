@@ -978,7 +978,7 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if ( ns.conn >= Connected &&
+	if ( ns.conn >= WFReportParams &&
 	     (( os.aftr_isp != ns.aftr_isp ) ||
 	      ( os.user_isp != ns.user_isp )) )
 		drbd_send_state(mdev);
@@ -2228,15 +2228,13 @@ int drbd_create_mempools(void)
 	drbd_pp_pool         = NULL;
 
 	/* caches */
-	drbd_request_cache = drbd_kmem_cache_create(
-		"drbd_req_cache", sizeof(struct drbd_request),
-		0, 0, NULL);
+	drbd_request_cache = kmem_cache_create(
+		"drbd_req_cache", sizeof(struct drbd_request), 0, 0, NULL);
 	if (drbd_request_cache == NULL)
 		goto Enomem;
 
-	drbd_ee_cache = drbd_kmem_cache_create(
-		"drbd_ee_cache", sizeof(struct Tl_epoch_entry),
-		0, 0, NULL);
+	drbd_ee_cache = kmem_cache_create(
+		"drbd_ee_cache", sizeof(struct Tl_epoch_entry), 0, 0, NULL);
 	if (drbd_ee_cache == NULL)
 		goto Enomem;
 

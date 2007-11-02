@@ -56,7 +56,7 @@ int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 
 	if (do_fail) {
 		bio->bi_rw |= rw;
-		bio_endio(bio, bio->bi_size, -EIO);
+		bio_endio(bio, -EIO);
 	} else {
 #ifdef BIO_RW_SYNC
 		submit_bio(rw | (1 << BIO_RW_SYNC), bio);
@@ -531,16 +531,14 @@ struct drbd_atodb_wait {
 	int                error;
 };
 
-int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
+BIO_ENDIO_FN(atodb_endio)
 {
 	struct drbd_atodb_wait *wc = bio->bi_private;
 	struct drbd_conf *mdev = wc->mdev;
 	struct page *page;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
-	if (bio->bi_size)
-		return 1;
-
+	BIO_ENDIO_FN_START;
 	/* strange behaviour of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
 	 * but do not return any error?!
@@ -562,7 +560,7 @@ int atodb_endio(struct bio *bio, unsigned int bytes_done, int error)
 	mdev->bm_writ_cnt++;
 	dec_local(mdev);
 
-	return 0;
+	BIO_ENDIO_FN_RETURN;
 }
 
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
@@ -690,7 +688,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 			break;
 		if (FAULT_ACTIVE( mdev, DRBD_FAULT_MD_WR )) {
 			bios[i]->bi_rw = WRITE;
-			bio_endio(bios[i], bios[i]->bi_size, -EIO);
+			bio_endio(bios[i], -EIO);
 		} else {
 			submit_bio(WRITE, bios[i]);
 		}
@@ -720,7 +718,11 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 		if (bios[i] == NULL)
 			break;
 		bios[i]->bi_size = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
 		atodb_endio(bios[i], MD_HARDSECT, 0);
+#else
+		atodb_endio(bios[i], 0);
+#endif
 	}
 	kfree(bios);
 

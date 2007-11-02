@@ -749,13 +749,12 @@ struct drbd_md {
 	 */
 };
 
-/* for sync_conf and other types... */
-#define PACKET(name, number, fields) struct name { fields };
-#define INTEGER(pn, pr, member) int member;
-#define INT64(pn, pr, member) __u64 member;
-#define BIT(pn, pr, member) unsigned member : 1;
-#define STRING(pn, pr, member, len) \
-	unsigned char member[len]; int member ## _len;
+// for sync_conf and other types...
+#define NL_PACKET(name, number, fields) struct name { fields };
+#define NL_INTEGER(pn,pr,member) int member;
+#define NL_INT64(pn,pr,member) __u64 member;
+#define NL_BIT(pn,pr,member)   unsigned member : 1;
+#define NL_STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len;
 #include "linux/drbd_nl.h"
 
 struct drbd_backing_dev {
@@ -1318,7 +1317,9 @@ extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_conf *,
 		struct drbd_backing_dev *);
-extern int drbd_determin_dev_size(struct drbd_conf *);
+enum determin_dev_size_enum { unchanged = 0, shrunk = 1, grew = 2 };
+extern enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *);
+extern void resync_after_online_grow(struct drbd_conf *);
 extern void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int);
 extern int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role,
 		int force);

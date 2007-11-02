@@ -556,15 +556,12 @@ void drbd_bm_set_all(struct drbd_conf *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-int drbd_bm_async_io_complete(struct bio *bio,
-	unsigned int bytes_done, int error)
+BIO_ENDIO_FN(drbd_bm_async_io_complete)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
-	if (bio->bi_size)
-		return 1;
-
+	BIO_ENDIO_FN_START;
 	/* strange behaviour of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
 	 * but do not return any error?!
@@ -584,7 +581,7 @@ int drbd_bm_async_io_complete(struct bio *bio,
 
 	bio_put(bio);
 
-	return 0;
+	BIO_ENDIO_FN_RETURN;
 }
 
 void drbd_bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b,
@@ -616,7 +613,7 @@ void drbd_bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b,
 
 	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
-		bio_endio(bio, bio->bi_size, -EIO);
+		bio_endio(bio, -EIO);
 	} else {
 		submit_bio(rw, bio);
 	}

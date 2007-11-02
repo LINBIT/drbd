@@ -41,7 +41,7 @@ ifneq ($(PATCHLEVEL),)
 
   include $(DRBDSRC)/Makefile-2.6
 
-  override CFLAGS += -I$(DRBDSRC)
+  override EXTRA_CFLAGS += -I$(DRBDSRC)
   # remember KERNELRELEASE for install target
   # .kernelversion can be included in Makefile as well as
   # sourced from shell
@@ -56,11 +56,11 @@ ifneq ($(PATCHLEVEL),)
    )
 else
   # called from command line in current directory
- 
+
   # for some reason some of the commands below only work correctly in bash,
   # and not in e.g. dash. I'm too lazy to fix it to be compatible.
   SHELL=/bin/bash
- 
+
   DRBDSRC := $(shell pwd)
   CONFIG_BLK_DEV_DRBD := m
   export DRBDSRC CONFIG_BLK_DEV_DRBD
@@ -116,7 +116,7 @@ else
 	  echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";	 		\
 	fi ;									\
 	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-       	mv --force $@.new $@
+	mv --force $@.new $@
 
   kbuild: drbd_buildtag.c
 	@rm -f .drbd_kernelrelease*

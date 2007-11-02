@@ -46,7 +46,7 @@ char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 
 /* Generate the tag_list to struct functions */
-#define PACKET(name, number, fields) \
+#define NL_PACKET(name, number, fields) \
 int name ## _from_tags (struct drbd_conf *mdev, \
 	unsigned short *tags, struct name *arg) \
 { \
@@ -67,27 +67,27 @@ int name ## _from_tags (struct drbd_conf *mdev, \
 	} \
 	return 1; \
 }
-#define INTEGER(pn, pr, member) \
+#define NL_INTEGER(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INTEGER ); */ \
 		 arg->member = *(int *)(tags); \
 		 break;
-#define INT64(pn, pr, member) \
+#define NL_INT64(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INT64 ); */ \
 		 arg->member = *(u64 *)(tags); \
 		 break;
-#define BIT(pn, pr, member) \
+#define NL_BIT(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_BIT ); */ \
 		 arg->member = *(char *)(tags) ? 1 : 0; \
 		 break;
-#define STRING(pn, pr, member, len) \
+#define NL_STRING(pn, pr, member, len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
 		 arg->member ## _len = dlen; \
 		 memcpy(arg->member, tags, min_t(size_t, dlen, len)); \
 		 break;
 #include "linux/drbd_nl.h"
 
-/* Generate the struct to tag_list functions */
-#define PACKET(name, number, fields) \
+// Generate the struct to tag_list functions
+#define NL_PACKET(name, number, fields) \
 unsigned short* \
 name ## _to_tags (struct drbd_conf *mdev, \
 	struct name *arg, unsigned short *tags) \
@@ -96,22 +96,22 @@ name ## _to_tags (struct drbd_conf *mdev, \
 	return tags; \
 }
 
-#define INTEGER(pn, pr, member) \
+#define NL_INTEGER(pn, pr, member) \
 	*tags++ = pn | pr | TT_INTEGER; \
 	*tags++ = sizeof(int); \
 	*(int *)tags = arg->member; \
 	tags = (unsigned short *)((char *)tags+sizeof(int));
-#define INT64(pn, pr, member) \
+#define NL_INT64(pn, pr, member) \
 	*tags++ = pn | pr | TT_INT64; \
 	*tags++ = sizeof(u64); \
 	*(u64 *)tags = arg->member; \
 	tags = (unsigned short *)((char *)tags+sizeof(u64));
-#define BIT(pn, pr, member) \
+#define NL_BIT(pn, pr, member) \
 	*tags++ = pn | pr | TT_BIT; \
 	*tags++ = sizeof(char); \
 	*(char *)tags = arg->member; \
 	tags = (unsigned short *)((char *)tags+sizeof(char));
-#define STRING(pn, pr, member, len) \
+#define NL_STRING(pn, pr, member, len) \
 	*tags++ = pn | pr | TT_STRING; \
 	*tags++ = arg->member ## _len; \
 	memcpy(tags, arg->member, arg->member ## _len); \
@@ -124,12 +124,12 @@ void drbd_nl_send_reply(struct cn_msg *, int);
 char *nl_packet_name(int packet_type)
 {
 /* Generate packet type strings */
-#define PACKET(name, number, fields) \
+#define NL_PACKET(name, number, fields) \
 	[ P_ ## name ] = # name,
-#define INTEGER Argh !
-#define BIT Argh !
-#define INT64 Argh !
-#define STRING Argh !
+#define NL_INTEGER Argh!
+#define NL_BIT Argh!
+#define NL_INT64 Argh!
+#define NL_STRING Argh!
 
 	static char *nl_tag_name[P_nl_after_last_packet] = {
 #include "linux/drbd_nl.h"
@@ -454,9 +454,14 @@ char *ppsize(char *buf, unsigned long long size)
 	return buf;
 }
 
-/* You should call drbd_md_sync() after calling this.
+/**
+ * drbd_determin_dev_size:
+ * Evaluates all constraints and sets our correct device size.
+ * Negative return values indicate errors. 0 and positive values
+ * indicate success.
+ * You should call drbd_md_sync() after calling this function.
  */
-int drbd_determin_dev_size(struct drbd_conf *mdev)
+enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size;
@@ -464,7 +469,7 @@ int drbd_determin_dev_size(struct drbd_conf *mdev)
 	char ppb[10];
 
 	int md_moved, la_size_changed;
-	int rv = 0;
+	int rv=unchanged;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
@@ -526,6 +531,9 @@ int drbd_determin_dev_size(struct drbd_conf *mdev)
 			dec_local(mdev);
 		}
 	}
+
+	if (size > la_size) rv = grew;
+	if (size < la_size) rv = shrunk;
 out:
 	lc_unlock(mdev->act_log);
 
@@ -564,11 +572,11 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		ERR("Both nodes diskless!\n");
 
 	if (u_size) {
-		if (u_size<<1 > size)
+		if (u_size > size)
 			ERR("Requested disk size is too big (%lu > %lu)\n",
-			    (unsigned long)u_size, (unsigned long)size>>1);
+			    (unsigned long)u_size>>1, (unsigned long)size>>1);
 		else
-			size = u_size<<1;
+			size = u_size;
 	}
 
 	return size;
@@ -820,7 +828,7 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-	if ((drbd_get_capacity(nbc->backing_bdev)>>1) < nbc->dc.disk_size) {
+	if ((drbd_get_capacity(nbc->backing_bdev)) < nbc->dc.disk_size) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
 	}
@@ -911,7 +919,7 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		set_bit(USE_DEGR_WFC_T, &mdev->flags);
 
 	drbd_bm_lock(mdev); /* racy... */
-	if (drbd_determin_dev_size(mdev)) {
+	if (drbd_determin_dev_size(mdev) < 0) {
 		retcode = VMallocFailed;
 		goto unlock_bm;
 	}
@@ -1328,11 +1336,28 @@ int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
+void resync_after_online_grow(struct drbd_conf *mdev)
+{
+	int iass; /* I am sync source */
+
+	INFO("Resync of new storage after online grow\n");
+	if (mdev->state.role != mdev->state.peer)
+		iass = (mdev->state.role == Primary);
+	else
+		iass = test_bit(DISCARD_CONCURRENT,&mdev->flags);
+
+	if (iass)
+		drbd_start_resync(mdev,SyncSource);
+	else
+		drbd_request_state(mdev,NS(conn,WFSyncUUID));
+}
+
 int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
-			  struct drbd_nl_cfg_reply *reply)
+		   struct drbd_nl_cfg_reply *reply)
 {
 	struct resize rs;
 	int retcode = NoError;
+	int dd;
 
 	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev, nlp->tag_list, &rs)) {
@@ -1358,13 +1383,20 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	drbd_bm_lock(mdev);
-	(void)drbd_determin_dev_size(mdev); /* It is ok to ignore the return value here. */
+	dd = drbd_determin_dev_size(mdev);
 	drbd_md_sync(mdev);
 	drbd_bm_unlock(mdev);
 	dec_local(mdev);
-	if (mdev->state.conn == Connected) {
-		drbd_send_uuids(mdev); /* to start sync... */
+	if (dd < 0) {
+		retcode = VMallocFailed;
+		goto fail;
+	}
+
+	if (mdev->state.conn == Connected && dd != unchanged) {
+		drbd_send_uuids(mdev);
 		drbd_send_sizes(mdev);
+		if (dd == grew)
+			resync_after_online_grow(mdev);
 	}
 
  fail:

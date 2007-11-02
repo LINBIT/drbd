@@ -62,21 +62,20 @@
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
-int drbd_md_io_complete(struct bio *bio, unsigned int bytes_done, int error)
+BIO_ENDIO_FN(drbd_md_io_complete)
 {
-	if (bio->bi_size)
-		return 1;
+	BIO_ENDIO_FN_START;
 	/* error parameter ignored:
 	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
 	complete((struct completion *)bio->bi_private);
-	return 0;
+	BIO_ENDIO_FN_RETURN;
 }
 
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
+BIO_ENDIO_FN(drbd_endio_read_sec)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
@@ -86,11 +85,7 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	e = bio->bi_private;
 	mdev = e->mdev;
 
-	/* We are called each time a part of the bio is finished, but
-	 * we are only interested when the whole bio is finished, therefore
-	 * return as long as bio->bio_size is positive.  */
-	if (bio->bi_size)
-		return 1;
+	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -115,13 +110,13 @@ int drbd_endio_read_sec(struct bio *bio, unsigned int bytes_done, int error)
 	       INFO("Moved EE (READ) to worker sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector, e->size, e);
 	       );
-	return 0;
+	BIO_ENDIO_FN_RETURN;
 }
 
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
+BIO_ENDIO_FN(drbd_endio_write_sec)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
@@ -135,9 +130,7 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	e = bio->bi_private;
 	mdev = e->mdev;
 
-	/* see above */
-	if (bio->bi_size)
-		return 1;
+	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -195,12 +188,12 @@ int drbd_endio_write_sec(struct bio *bio, unsigned int bytes_done, int error)
 	wake_asender(mdev);
 	dec_local(mdev);
 
-	return 0;
+	BIO_ENDIO_FN_RETURN;
 }
 
 /* read, readA or write requests on Primary comming from drbd_make_request
  */
-int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
+BIO_ENDIO_FN(drbd_endio_pri)
 {
 	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
@@ -208,9 +201,7 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
-	/* see above */
-	if (bio->bi_size)
-		return 1;
+	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -228,7 +219,8 @@ int drbd_endio_pri(struct bio *bio, unsigned int bytes_done, int error)
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	_req_mod(req, what, error);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
-	return 0;
+
+	BIO_ENDIO_FN_RETURN;
 }
 
 int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
@@ -298,11 +290,11 @@ void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio,
 	desc.flags=0;
 
 	// Improve in generic Kernel ?
-	// sg and bvec have exactly the same purpose 
+	// sg and bvec have exactly the same purpose
 
 	crypto_hash_init(&desc);
 	__bio_for_each_segment(bvec, bio, i, 0) {
-		sg.page   = bvec->bv_page;
+		sg_set_page(&sg, bvec->bv_page);
 		sg.offset = bvec->bv_offset;
 		sg.length = bvec->bv_len;
 		crypto_hash_update(&desc,&sg,sg.length);
