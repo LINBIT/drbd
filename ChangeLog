@@ -4,6 +4,17 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.2.1 (api:86/proto:86-87)
+--------
+ * Fixed the OOPS when _not_ using a shared secret on kernel 
+   before Linux-2.6.19 (=old crypto API).
+ * Support for drbd-porxy's configuration directives in drbdadm.
+ * Look for /etc/drbd-82.conf before drbd-08.conf before drbd.conf
+ * drbdadm now allowes one to move the device, disk and meta-disk
+   statements out of the host ("on") sections into the resource
+   section. This allows you to shorten your config files.
+ * Merged all changes from 8.0.6 -> 8.0.7 to 8.2
+
 8.2.0 (api:86/proto:86-87)
 --------
  * Branch for new features after 8.1 and 8.0. We will do a number of
@@ -29,6 +40,21 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+
+8.0.7 (api:86/proto:86)
+--------
+ * Fixed drbdmeta's conversion of 07 style meta data.
+ * Handle the failure of vmalloc() in the bitmap code more gracefully.
+ * Do not pause resync on unconfigured devices.
+ * Added missing piecos of the implementation of the "pri-lost" handler.
+ * Added the "split-brain" handler.
+ * Drop the network config after failure to authenticate.
+ * Made it to compile on Linux-2.6.24-rc1.
+ * Fixed an unlikely race that could cause a device to get stuck
+   in SyncPause.
+ * Online resizing failed to start resync properly (although it
+   set up all the meta data correct). Fixed that.
+ * Minor improvements to documentation and error messages.
 
 8.0.6 (api:86/proto:86)
 --------

@@ -192,6 +192,17 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Nov  2 2007 13:10:27 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.2.1-1)
+ * Fixed the OOPS when _not_ using a shared secret on kernel 
+   before Linux-2.6.19 (=old crypto API).
+ * Support for drbd-porxy's configuration directives in drbdadm.
+ * Look for /etc/drbd-82.conf before drbd-08.conf before drbd.conf
+ * drbdadm now allowes one to move the device, disk and meta-disk
+   statements out of the host ("on") sections into the resource
+   section. This allows you to shorten your config files.
+ * Merged all changes from 8.0.6 -> 8.0.7 to 8.2
+
 * Fri Sep 28 2007 12:15:07 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.0-1)
  * Branch for new features after 8.1 and 8.0. We will do a number of
