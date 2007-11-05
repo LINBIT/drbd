@@ -57,8 +57,8 @@ struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
 	bytes *= e_count;
 	bytes += sizeof(struct lru_cache);
 	lc     = vmalloc(bytes);
-	memset(lc, 0, bytes);
 	if (lc) {
+		memset(lc, 0, bytes);
 		INIT_LIST_HEAD(&lc->in_use);
 		INIT_LIST_HEAD(&lc->lru);
 		INIT_LIST_HEAD(&lc->free);
