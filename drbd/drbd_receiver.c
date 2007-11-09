@@ -2374,6 +2374,7 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	   ns.pdsk == Negotiating )
 		ns.pdsk = UpToDate;
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose | ChgStateHard);
+	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_Success) {
@@ -2704,6 +2705,7 @@ void drbd_disconnect(struct drbd_conf *mdev)
 		ns = os;
 		ns.conn = Unconnected;
 		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
+		ns = mdev->state;
 	}
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv == SS_Success)

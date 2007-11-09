@@ -1716,7 +1716,7 @@ void drbd_connector_callback(void *data)
 
 atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
 
-void drbd_bcast_state(struct drbd_conf *mdev)
+void drbd_bcast_state(struct drbd_conf *mdev, drbd_state_t state)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
@@ -1729,7 +1729,7 @@ void drbd_bcast_state(struct drbd_conf *mdev)
 
 	/* WARN("drbd_bcast_state() got called\n"); */
 
-	tl = get_state_to_tags(mdev, (struct get_state *)&mdev->state, tl);
+	tl = get_state_to_tags(mdev, (struct get_state *)&state, tl);
 	*tl++ = TT_END; /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;

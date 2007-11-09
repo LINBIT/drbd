@@ -895,7 +895,7 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	}
 
 	/* Inform userspace about the change... */
-	drbd_bcast_state(mdev);
+	drbd_bcast_state(mdev, ns);
 
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */

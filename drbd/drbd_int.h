@@ -1426,7 +1426,7 @@ extern void drbd_al_shrink(struct drbd_conf *mdev);
 
 void drbd_nl_cleanup(void);
 int __init drbd_nl_init(void);
-void drbd_bcast_state(struct drbd_conf *mdev);
+void drbd_bcast_state(struct drbd_conf *mdev, drbd_state_t state);
 void drbd_bcast_sync_progress(struct drbd_conf *mdev);
 
 /*

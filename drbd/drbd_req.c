@@ -522,10 +522,10 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
-		dec_local(mdev);
 		if (bio_rw(req->master_bio) == READA) {
 			/* it is legal to fail READA */
 			_req_may_be_done(req, error);
+			dec_local(mdev);
 			break;
 		}
 		/* else */
@@ -546,6 +546,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		 * we get back enough data to be able to clear the bits again.
 		 */
 		__drbd_chk_io_error(mdev, FALSE);
+		dec_local(mdev);
 		/* fall through: _req_mod(req,queue_for_net_read); */
 
 	case queue_for_net_read:
