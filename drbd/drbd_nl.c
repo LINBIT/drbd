@@ -1280,6 +1280,9 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 
 fail:
+	kfree(int_dig_out);
+	kfree(int_dig_in);
+	kfree(int_dig_vv);
 	crypto_free_hash(tfm);
 	crypto_free_hash(integrity_tfm);
 	kfree(new_tl_hash);
