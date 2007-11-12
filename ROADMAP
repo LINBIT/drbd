@@ -1,12 +1,50 @@
-DRBD kernel inclusion roadmap
------------------------------
+DRBD ROADMAP for 8.2
+--------------------
 
-1. fix coding style issues
+1  Online Verify.
 
-2. fix remaining macro issues
+   Release the online-verify code from drbd-plus to drbd-8.2, creating a new
+   protocol version by the way.
 
-3. fix handling of kernel threads
+2  Hot cache.
 
-4. fix handline of work queues
+   Finish the hot cache feature. With this feature enabled DRBD updates the
+   correct block caches (page cache) on the secondary node, as data gets
+   written and read on the primary.
 
-5. fix [or discuss away ;-)] anything else brought up on lkml
+   Rationale: On Database machines with huge amounts of RAM, the database
+   can only deliver reasonable performance if Linux's disk caches are hot.
+   With a conventional DRBD cluster for such a database, the performance
+   of the database is after a switchover insufficient, since the caches
+   on the secondary machine are cold.
+
+3  write quorum of 2.
+
+   There are users that want to use DRBD to mirror data but do not want
+   it to continue in case the connection to the secondary is lost. Such
+   a system is not an HA-system but an always redundant system. It should
+   freeze IO in case the connection to the secondary is lost, or the
+   the local disk gets detached. And thaw IO as soon as both pathes
+   are available again.
+
+4  Configurable write quorum weights.
+
+   For OCFS2/GFS users it makes even sense to have configurable weights
+   for the write quorum. So that one can setup a cluster in that node
+   A continues to run but node B freezes its IO when the brain splits.
+
+5  Use the kernel's write barriers
+
+   As the support for write barriers is now available  (this holds
+   true for hardware as for the Linux kernel) we should make use of
+   this.
+
+   * Use BIO_RW_BARRIER writes for updates to our meta-data-superblock.
+
+   * Use BIO_RW_BARRIER for writes to the AL.
+
+   * Implement the algorithm described in section 6 of
+     http://www.drbd.org/fileadmin/drbd/publications/drbd8.pdf .
+
+   * Delay setting of RQ_NET_DONE in the request objects until the right
+     BarrierAck comes in, also for protocol C.
