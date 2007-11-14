@@ -50,53 +50,6 @@ static inline int drbd_sync_me(drbd_dev *mdev)
 
 #define drbd_bio_uptodate(bio) bio_flagged(bio,BIO_UPTODATE)
 
-#ifdef CONFIG_HIGHMEM
-/*
- * I don't know why there is no bvec_kmap, only bvec_kmap_irq ...
- *
- * we do a sock_recvmsg into the target buffer,
- * so we obviously cannot use the bvec_kmap_irq variant.	-lge
- *
- * Most likely it is only due to performance anyways:
-  * kmap_atomic/kunmap_atomic is significantly faster than kmap/kunmap because
-  * no global lock is needed and because the kmap code must perform a global TLB
-  * invalidation when the kmap pool wraps.
-  *
-  * However when holding an atomic kmap is is not legal to sleep, so atomic
-  * kmaps are appropriate for short, tight code paths only.
- */
-static inline char *drbd_bio_kmap(struct bio *bio)
-{
-	struct bio_vec *bvec = bio_iovec(bio);
-	unsigned long addr;
-
-	addr = (unsigned long) kmap(bvec->bv_page);
-
-	if (addr & ~PAGE_MASK)
-		BUG();
-
-	return (char *) addr + bvec->bv_offset;
-}
-
-static inline void drbd_bio_kunmap(struct bio *bio)
-{
-	struct bio_vec *bvec = bio_iovec(bio);
-
-	kunmap(bvec->bv_page);
-}
-
-#else
-static inline char *drbd_bio_kmap(struct bio *bio)
-{
-	struct bio_vec *bvec = bio_iovec(bio);
-	return page_address(bvec->bv_page) + bvec->bv_offset;
-}
-static inline void drbd_bio_kunmap(struct bio *bio)
-{
-	// do nothing.
-}
-#endif
-
 static inline int drbd_bio_has_active_page(struct bio *bio)
 {
 	struct bio_vec *bvec;
