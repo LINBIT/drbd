@@ -1160,6 +1160,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	if (new_conf->integrity_alg[0]) {
 		integrity_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(integrity_tfm)) {
+			integrity_tfm = NULL;
 			retcode=IntegrityAlgNotAvail;
 			goto fail;
 		}
