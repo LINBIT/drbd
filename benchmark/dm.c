@@ -167,7 +167,6 @@ int main(int argc, char **argv)
 	char *output_file_name = NULL;
 	char *connect_target = NULL;
 	int connect_port = 0;
-       
 
 	int c;
 	static struct option options[] = {
@@ -259,7 +258,7 @@ int main(int argc, char **argv)
 		fprintf(stderr,
 			"Both connect target and an output file name given.\n"
 			"That is too much.\n");
-		exit(20);		
+		exit(20);
 	}
 
 	if(input_file_name) {
@@ -402,7 +401,7 @@ int main(int argc, char **argv)
 					1000 / target_bw; // mili seconds.
 
 				time_wait = (int)
-					(time_should - 
+					(time_should -
 					 (sec*1000 + ((double)usec) / 1000));
 				poll(NULL,0,time_wait);
 			}
