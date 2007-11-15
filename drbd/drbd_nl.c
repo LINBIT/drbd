@@ -1792,27 +1792,19 @@ void drbd_bcast_sync_progress(drbd_dev *mdev)
 	struct cn_msg *cn_reply = (struct cn_msg *) buffer;
 	struct drbd_nl_cfg_reply* reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
-	int res;
 	unsigned long rs_left;
+	unsigned int res;
 
-	if (inc_local(mdev)) {
-		typecheck(unsigned long, mdev->rs_total);
+	/* no local ref, no bitmap, no syncer progress, no broadcast. */
+	if (!inc_local(mdev))
+		return;
+	drbd_get_syncer_progress(mdev, &rs_left, &res);
+	dec_local(mdev);
 
-		rs_left = drbd_bm_total_weight(mdev) - mdev->rs_failed;
-		if (rs_left > mdev->rs_total) {
-			ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-					rs_left, mdev->rs_total, mdev->rs_failed);
-			res = 1000;
-		} else {
-			res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
-		}
-		dec_local(mdev);
-		res = 1000L - res;
-		*tl++ = T_sync_progress;
-		*tl++ = sizeof(int);
-		memcpy(tl, &res, sizeof(int));
-		tl=(unsigned short*)((char*)tl + sizeof(int));
-	}
+	*tl++ = T_sync_progress;
+	*tl++ = sizeof(int);
+	memcpy(tl, &res, sizeof(int));
+	tl=(unsigned short*)((char*)tl + sizeof(int));
 	*tl++ = TT_END; /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;

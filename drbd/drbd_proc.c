@@ -50,6 +50,7 @@ struct file_operations drbd_proc_fops = {
 	.release	= single_release,
 };
 
+
 /*lge
  * progress bars shamelessly adapted from driver/md/md.c
  * output looks like
@@ -58,47 +59,22 @@ struct file_operations drbd_proc_fops = {
  */
 STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 {
-	unsigned long res , db, dt, dbdt, rt, rs_left;
+	unsigned long db, dt, dbdt, rt, rs_left;
+	int i, x, y, res;
 
-	/* the whole sector_div thingy was wrong (did overflow,
-	 * did not use correctly typed parameters), and is not even
-	 * neccessary as long as rs_total and drbd_bm_total_weight
-	 * are both unsigned long.
-	 *
-	 * this is to break it at compile time when we change that
-	 * (we may feel 4TB maximum storage per drbd is not enough)
-	 */
-	typecheck(unsigned long, mdev->rs_total);
+	drbd_get_syncer_progress(mdev, &rs_left, &res);
 
-	/* note: both rs_total and rs_left are in bits, i.e. in
-	 * units of BM_BLOCK_SIZE.
-	 * for the percentage, we don't care. */
+	x = res/50;
+	y = 20-x;
+	seq_printf(seq, "\t[");
+	for (i = 1; i < x; i++)
+		seq_printf(seq, "=");
+	seq_printf(seq, ">");
+	for (i = 0; i < y; i++)
+		seq_printf(seq, ".");
+	seq_printf(seq, "] ");
 
-	rs_left = drbd_bm_total_weight(mdev) - mdev->rs_failed;
-	/* >> 10 to prevent overflow,
-	 * +1 to prevent division by zero */
-	if (rs_left > mdev->rs_total) {
-		/* doh. logic bug somewhere.
-		 * for now, just try to prevent in-kernel buffer overflow.
-		 */
-		ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-				rs_left, mdev->rs_total, mdev->rs_failed);
-		res = 1000;
-	} else {
-		res = (rs_left >> 10)*1000/((mdev->rs_total >> 10) + 1);
-	}
-	{
-		int i, y = res/50, x = 20-y;
-		seq_printf(seq, "\t[");
-		for (i = 1; i < x; i++)
-			seq_printf(seq, "=");
-		seq_printf(seq, ">");
-		for (i = 0; i < y; i++)
-			seq_printf(seq, ".");
-		seq_printf(seq, "] ");
-	}
-	res = 1000L - res;
-	seq_printf(seq,"sync'ed:%3lu.%lu%% ", res / 10, res % 10);
+	seq_printf(seq,"sync'ed:%3u.%u%% ", res / 10, res % 10);
 	/* if more than 1 GB display in MB */
 	if (mdev->rs_total > 0x100000L) {
 		seq_printf(seq,"(%lu/%lu)M\n\t",

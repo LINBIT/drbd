@@ -1792,6 +1792,40 @@ static inline int inc_local(drbd_dev* mdev)
 	return inc_local_if_state(mdev, Inconsistent);
 }
 
+/* you must have an "inc_local" reference */
+static inline void drbd_get_syncer_progress(drbd_dev* mdev,
+		unsigned long *bits_left, unsigned int *per_mil_done)
+{
+	/*
+	 * this is to break it at compile time when we change that
+	 * (we may feel 4TB maximum storage per drbd is not enough)
+	 */
+	typecheck(unsigned long, mdev->rs_total);
+
+	/* note: both rs_total and rs_left are in bits, i.e. in
+	 * units of BM_BLOCK_SIZE.
+	 * for the percentage, we don't care. */
+
+	*bits_left = drbd_bm_total_weight(mdev) - mdev->rs_failed;
+	/* >> 10 to prevent overflow,
+	 * +1 to prevent division by zero */
+	if (*bits_left > mdev->rs_total) {
+		/* doh. logic bug somewhere.
+		 * for now, just try to prevent in-kernel buffer overflow.
+		 */
+		ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+				*bits_left, mdev->rs_total, mdev->rs_failed);
+		*per_mil_done = 0;
+	} else {
+		/* make sure the calculation happens in long context */
+		unsigned long tmp = 1000UL -
+				(*bits_left >> 10)*1000UL
+				/ ((mdev->rs_total >> 10) + 1UL);
+		*per_mil_done = tmp;
+	}
+}
+
+
 /* this throttles on-the-fly application requests
  * according to max_buffers settings;
  * maybe re-implement using semaphores? */
