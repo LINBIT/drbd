@@ -139,6 +139,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	   and that is strictly process context! */
 	if ( (page = drbd_pp_pool) ) {
 		drbd_pp_pool = (struct page*)page_private(page);
+		set_page_private(page, 0); /* just to be polite */
 		drbd_pp_vacant--;
 	}
 	spin_unlock_irqrestore(&drbd_pp_lock,flags);
