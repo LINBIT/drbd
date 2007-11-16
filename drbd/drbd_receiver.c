@@ -2709,12 +2709,6 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
 
-	fp = DontCare;
-	if(inc_local(mdev)) {
-		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
-	}
-
 	down(&mdev->data.mutex);
 	drbd_free_sock(mdev);
 	up(&mdev->data.mutex);
@@ -2774,6 +2768,12 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 	INFO("Connection closed\n");
 
 	drbd_md_sync(mdev);
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->dc.fencing;
+		dec_local(mdev);
+	}
 
 	if ( mdev->state.role == Primary ) {
 		if( fp >= Resource &&

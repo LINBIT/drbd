@@ -598,6 +598,9 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	if ( ns.conn == WFConnection && os.conn < Unconnected )
 		rv=SS_NoNetConfig;
 
+	if ( ns.disk == Outdated && os.disk < Outdated && os.disk != Attaching)
+		rv=SS_LowerThanOutdated;
+
 	return rv;
 }
 
@@ -732,14 +735,13 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		if(rv < SS_Success) {
 			/* If the old state was illegal as well, then let
 			   this happen...*/
-
 			if( is_valid_state(mdev,os) == rv ) {
-				ERR("Forcing state change from bad state. "
+				ERR("Considering state change from bad state. "
 				    "Error would be: '%s'\n",
 				    set_st_err_name(rv));
 				print_st(mdev,"old",os);
 				print_st(mdev,"new",ns);
-				rv = SS_Success;
+				rv = is_valid_state_transition(mdev,ns,os);
 			}
 		} else rv = is_valid_state_transition(mdev,ns,os);
 	}

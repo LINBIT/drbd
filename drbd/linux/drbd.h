@@ -108,7 +108,7 @@ enum ret_codes {
 	SyncAfterCycle,
 	PauseFlagAlreadySet,
 	PauseFlagAlreadyClear,
-	DiskLowerThanOutdated,
+	DiskLowerThanOutdated, /* obsolete, now SS_LowerThanOutdated */
 	UnknownNetLinkPacket,
 	HaveNoDiskConfig,
 	ProtocolCRequired,
@@ -209,7 +209,8 @@ typedef enum {
 	SS_CW_FailedByPeer=-10,
 	SS_IsDiskLess=-11,
 	SS_DeviceInUse=-12,
-	SS_NoNetConfig=-13
+	SS_NoNetConfig=-13,
+	SS_LowerThanOutdated=-14
 } set_st_err_t;
 
 /* from drbd_strings.c */

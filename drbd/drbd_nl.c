@@ -186,13 +186,13 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
 
-	fp = DontCare;
 	if(inc_local(mdev)) {
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
+	} else {
+		WARN("Not outdating peer, since I am diskless.");
+		return mdev->state.pdsk;
 	}
-
-	D_ASSERT( fp > DontCare );
 
 	if( fp == Stonith ) drbd_request_state(mdev,NS(susp,1));
 
@@ -1475,29 +1475,7 @@ STATIC int drbd_nl_resume_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
-	int retcode;
-	drbd_state_t os,ns;
-
-	spin_lock_irq(&mdev->req_lock);
-	os = mdev->state;
-	if( mdev->state.disk < Outdated ) {
-		retcode = -999;
-	} else {
-		retcode = _drbd_set_state(_NS(mdev,disk,Outdated),ChgStateVerbose);
-	}
-	ns = mdev->state;
-	spin_unlock_irq(&mdev->req_lock);
-	if (retcode==SS_Success) after_state_ch(mdev,os,ns, ChgStateVerbose);
-
-	if( retcode == -999 ) {
-		retcode = DiskLowerThanOutdated;
-		goto fail;
-	}
-
-	drbd_md_sync(mdev);
-
- fail:
-	reply->ret_code = retcode;
+	reply->ret_code = drbd_request_state(mdev,NS(disk,Outdated));
 	return 0;
 }
 

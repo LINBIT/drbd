@@ -81,7 +81,8 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_IsDiskLess] = 
 		"Device is diskless, the requesed operation requires a disk",
 	[-SS_DeviceInUse] = "Device is held open by someone",
-	[-SS_NoNetConfig] = "Have no net/connection configuration"
+	[-SS_NoNetConfig] = "Have no net/connection configuration",
+	[-SS_LowerThanOutdated] = "Disk state is lower than outdated"
 };
 
 const char* conns_to_name(drbd_conns_t s) {
@@ -101,7 +102,7 @@ const char* disks_to_name(drbd_disks_t s) {
 }
 
 const char* set_st_err_name(set_st_err_t err) {
-	return err < SS_NoNetConfig ? "TOO_SMALL" :
+	return err < SS_LowerThanOutdated ? "TOO_SMALL" :
 	       err > SS_TwoPrimaries ? "TOO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }
