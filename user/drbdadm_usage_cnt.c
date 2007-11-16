@@ -168,7 +168,7 @@ static char *vcs_to_str(struct vcs_rel *rev)
 		unsigned char *bytes;
 
 		p = sprintf(buffer,"git=");
-		bytes = rev->git_hash;
+		bytes = (unsigned char*)rev->git_hash;
 		while(len--) p += sprintf(buffer+p,"%02x",*bytes++);
 	}
 	return buffer;
