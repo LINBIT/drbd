@@ -1,9 +1,11 @@
-.filelist
 ID
 TODO
 tags
 
-*.[ao]
+./.filelist
+./drbd_config.h
+
+*.o
 
 drbd/drbd.ko
 drbd/.drbd.ko.cmd
@@ -27,6 +29,7 @@ drbd/Module.symvers
 drbd/drbd.mod.c
 drbd/drbd_buildtag.c
 drbd/linux/drbd_config.h.orig
+
 user/drbd_buildtag.c
 user/drbd_strings.c
 user/drbdadm
@@ -34,6 +37,7 @@ user/drbdadm_scanner.c
 user/drbdmeta
 user/drbdmeta_scanner.c
 user/drbdsetup
+
 documentation/drbd.8
 documentation/drbd.conf.5
 documentation/drbdadm.8
@@ -42,4 +46,5 @@ documentation/drbdmeta.8
 documentation/drbdsetup.8
 documentation/manpage.links
 documentation/manpage.refs
-drbd_config.h
+
+benchmark/dm
