@@ -132,7 +132,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
 	 */
 
 	spin_lock_irqsave(&drbd_pp_lock,flags);
-	/* This lock needs to lock out irq because we might call drdb_pp_free()
+	/* This lock needs to lock out irq because we might call drbd_pp_free()
 	   from IRQ context.
 	   FIXME but why irq _save_ ?
 	   this is only called from drbd_alloc_ee,
