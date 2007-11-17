@@ -185,58 +185,58 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 {
 	const unsigned long s = req->rq_state;
-			drbd_request_t *i;
-			struct Tl_epoch_entry *e;
-			struct hlist_node *n;
-			struct hlist_head *slot;
+	drbd_request_t *i;
+	struct Tl_epoch_entry *e;
+	struct hlist_node *n;
+	struct hlist_head *slot;
 
-			/* before we can signal completion to the upper layers,
-			 * we may need to close the current epoch */
-			if (req->epoch == mdev->newest_barrier->br_number)
-				set_bit(ISSUE_BARRIER,&mdev->flags);
+	/* before we can signal completion to the upper layers,
+	 * we may need to close the current epoch */
+	if (req->epoch == mdev->newest_barrier->br_number)
+		set_bit(ISSUE_BARRIER,&mdev->flags);
 
-			/* we need to do the conflict detection stuff,
-			 * if we have the ee_hash (two_primaries) and
-			 * this has been on the network */
-			if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL) {
-				const sector_t sector = req->sector;
-				const int size = req->size;
+	/* we need to do the conflict detection stuff,
+	 * if we have the ee_hash (two_primaries) and
+	 * this has been on the network */
+	if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL) {
+		const sector_t sector = req->sector;
+		const int size = req->size;
 
-				/* ASSERT:
-				 * there must be no conflicting requests, since
-				 * they must have been failed on the spot */
+		/* ASSERT:
+		 * there must be no conflicting requests, since
+		 * they must have been failed on the spot */
 #define OVERLAPS overlaps(sector, size, i->sector, i->size)
-				slot = tl_hash_slot(mdev,sector);
-				hlist_for_each_entry(i, n, slot, colision) {
-					if (OVERLAPS) {
-						ALERT("LOGIC BUG: completed: %p %llus +%u; other: %p %llus +%u\n",
-						      req, (unsigned long long)sector, size,
-						      i,   (unsigned long long)i->sector, i->size);
-					}
-				}
+		slot = tl_hash_slot(mdev,sector);
+		hlist_for_each_entry(i, n, slot, colision) {
+			if (OVERLAPS) {
+				ALERT("LOGIC BUG: completed: %p %llus +%u; other: %p %llus +%u\n",
+				      req, (unsigned long long)sector, size,
+				      i,   (unsigned long long)i->sector, i->size);
+			}
+		}
 
-				/* maybe "wake" those conflicting epoch entries
-				 * that wait for this request to finish.
-				 *
-				 * currently, there can be only _one_ such ee
-				 * (well, or some more, which would be pending
-				 * DiscardAck not yet sent by the asender...),
-				 * since we block the receiver thread upon the
-				 * first conflict detection, which will wait on
-				 * misc_wait.  maybe we want to assert that?
-				 *
-				 * anyways, if we found one,
-				 * we just have to do a wake_up.  */
+		/* maybe "wake" those conflicting epoch entries
+		 * that wait for this request to finish.
+		 *
+		 * currently, there can be only _one_ such ee
+		 * (well, or some more, which would be pending
+		 * DiscardAck not yet sent by the asender...),
+		 * since we block the receiver thread upon the
+		 * first conflict detection, which will wait on
+		 * misc_wait.  maybe we want to assert that?
+		 *
+		 * anyways, if we found one,
+		 * we just have to do a wake_up.  */
 #undef OVERLAPS
 #define OVERLAPS overlaps(sector, size, e->sector, e->size)
-				slot = ee_hash_slot(mdev,req->sector);
-				hlist_for_each_entry(e, n, slot, colision) {
-					if (OVERLAPS) {
-						wake_up(&mdev->misc_wait);
-						break;
-					}
-				}
+		slot = ee_hash_slot(mdev,req->sector);
+		hlist_for_each_entry(e, n, slot, colision) {
+			if (OVERLAPS) {
+				wake_up(&mdev->misc_wait);
+				break;
 			}
+		}
+	}
 #undef OVERLAPS
 }
 
