@@ -911,7 +911,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* file, const unsigned int line)
 {
 	/* Is called from worker and receiver context _only_ */
-	unsigned long sbnr,ebnr,lbnr,bnr;
+	unsigned long sbnr,ebnr,lbnr;
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
 	int wake_up=0;
@@ -954,9 +954,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
 	spin_lock_irqsave(&mdev->al_lock,flags);
-	for(bnr=sbnr; bnr <= ebnr; bnr++) {
-		if (drbd_bm_clear_bit(mdev,bnr)) count++;
-	}
+	count = drbd_bm_clear_bits(mdev,sbnr,ebnr);
 	if (count) {
 		// we need the lock for drbd_try_clear_on_disk_bm
 		if(jiffies - mdev->rs_mark_time > HZ*10) {
@@ -1035,7 +1033,7 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */
-	drbd_bm_set_bits_in_irq(mdev,sbnr,ebnr);
+	drbd_bm_set_bits(mdev,sbnr,ebnr);
 }
 
 static inline

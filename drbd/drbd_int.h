@@ -1124,15 +1124,13 @@ extern int  drbd_bm_init      (drbd_dev *mdev);
 extern int  drbd_bm_resize    (drbd_dev *mdev, sector_t sectors);
 extern void drbd_bm_cleanup   (drbd_dev *mdev);
 extern void drbd_bm_set_all   (drbd_dev *mdev);
-extern void drbd_bm_clear_all (drbd_dev *mdev);
 extern void drbd_bm_reset_find(drbd_dev *mdev);
-extern int  drbd_bm_set_bit   (drbd_dev *mdev, unsigned long bitnr);
-extern int  drbd_bm_set_bits_in_irq(
+extern int  drbd_bm_set_bits(
+		drbd_dev *mdev, unsigned long s, unsigned long e);
+extern int  drbd_bm_clear_bits(
 		drbd_dev *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
-extern int  drbd_bm_clear_bit (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
-extern int  drbd_bm_read_sect (drbd_dev *mdev, unsigned long enr);
 extern int  drbd_bm_write_sect(drbd_dev *mdev, unsigned long enr);
 extern int  drbd_bm_read      (drbd_dev *mdev);
 extern int  drbd_bm_write     (drbd_dev *mdev);
@@ -1149,11 +1147,6 @@ extern void drbd_bm_merge_lel (drbd_dev *mdev, size_t offset, size_t number,
 // for _drbd_send_bitmap and drbd_bm_write_sect
 extern void drbd_bm_get_lel   (drbd_dev *mdev, size_t offset, size_t number,
 				unsigned long* buffer);
-/*
- * only used by drbd_bm_read_sect
-extern void drbd_bm_set_lel   (drbd_dev *mdev, size_t offset, size_t number,
-				unsigned long* buffer);
-*/
 
 extern void __drbd_bm_lock    (drbd_dev *mdev, char* file, int line);
 extern void drbd_bm_unlock    (drbd_dev *mdev);

@@ -35,35 +35,30 @@
 
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
- *
- * unfortunately this currently means that this file is not
- * yet selfcontained, because it needs to know about how to receive
- * the bitmap from the peer via the data socket.
- * This is to be solved with some sort of
- *  drbd_bm_copy(mdev,offset,size,unsigned long*) ...
 
- * Note that since find_first_bit returns int, this implementation
- * "only" supports up to 1<<(32+12) == 16 TB...  non issue, since
- * currently DRBD is limited to ca 3.8 TB storage anyways.
+ * convetion:
+ * function name drbd_bm_... => used elsewhere, "public".
+ * function name      bm_... => internal to implementation, "private".
+
+ * Note that since find_first_bit returns int, at the current granularity of
+ * the bitmap (4KB per byte), this implementation "only" supports up to
+ * 1<<(32+12) == 16 TB...
+ * other shortcomings in the meta data area may reduce this even further.
  *
  * we will eventually change the implementation to not allways hold the full
- * bitmap in memory, but only some 'lru_cache' of the on disk bitmap,
- * since vmalloc'ing mostly unused 128M is antisocial.
+ * bitmap in memory, but only some 'lru_cache' of the on disk bitmap.
 
  * THINK
  * I'm not yet sure whether this file should be bits only,
  * or wether I want it to do all the sector<->bit calculation in here.
  */
 
-// warning LGE "verify all spin_lock_irq here, and their call path"
-// warning LGE "and change to irqsave where applicable"
-// warning LGE "so we don't accidentally nest spin_lock_irq()"
 /*
  * NOTE
  *  Access to the *bm is protected by bm_lock.
  *  It is safe to read the other members within the lock.
  *
- *  drbd_bm_set_bit is called from bio_endio callbacks,
+ *  drbd_bm_set_bits is called from bio_endio callbacks,
  *  We may be called with irq already disabled,
  *  so we need spin_lock_irqsave().
  * FIXME
@@ -142,6 +137,8 @@ struct drbd_bitmap {
 void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	if (!__test_and_set_bit(BM_LOCKED,&b->bm_flags)) {
 		b->bm_file = file;
@@ -161,6 +158,7 @@ void __drbd_bm_lock(drbd_dev *mdev, char* file, int line)
 void drbd_bm_unlock(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags)) {
 		ERR("bitmap not locked in bm_unlock\n");
@@ -315,21 +313,32 @@ STATIC void bm_set_surplus(struct drbd_bitmap * b)
 	}
 }
 
-STATIC unsigned long bm_count_bits(struct drbd_bitmap * b, int just_read)
+STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endian)
 {
 	unsigned long *bm = b->bm;
 	unsigned long *ep = b->bm + b->bm_words;
 	unsigned long bits = 0;
 
 	while ( bm < ep ) {
-		/* on little endian, this is *bm = *bm;
-		 * and should be optimized away by the compiler */
-		if (just_read) *bm = lel_to_cpu(*bm);
+#ifndef __LITTLE_ENDIAN
+		if (swap_endian) *bm = lel_to_cpu(*bm);
+#endif
 		bits += hweight_long(*bm++);
 	}
 
 	return bits;
 }
+
+static inline unsigned long bm_count_bits(struct drbd_bitmap *b)
+{
+	return __bm_count_bits(b,0);
+}
+
+static inline unsigned long bm_count_bits_swap_endian(struct drbd_bitmap *b)
+{
+	return __bm_count_bits(b,1);
+}
+
 
 void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
 {
@@ -339,7 +348,7 @@ void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
 	ERR_IF(!b) return;
 
 	spin_lock_irqsave(&b->bm_lock,flags);
-	bits = bm_count_bits(b,0);
+	bits = bm_count_bits(b);
 	if(bits != b->bm_set) {
 		ERR("bm_set was %lu, corrected to %lu. %s:%d\n",
 		    b->bm_set,bits,file,line);
@@ -444,7 +453,8 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		b->bm_words = words;
 		b->bm_dev_capacity = capacity;
 		bm_clear_surplus(b);
-		if( !growing ) b->bm_set = bm_count_bits(b,0);
+		if (!growing)
+			b->bm_set = bm_count_bits(b);
 		bm_end_info(mdev, __FUNCTION__ );
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n",bits,words);
@@ -514,53 +524,13 @@ void drbd_bm_merge_lel( drbd_dev *mdev, size_t offset, size_t number,
 
 	MUST_BE_LOCKED();
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	// BM_PARANOIA_CHECK(); no.
 	bm = b->bm + offset;
 	while(n--) {
 		bits = hweight_long(*bm);
 		word = *bm | lel_to_cpu(*buffer++);
-		*bm++ = word;
-		b->bm_set += hweight_long(word) - bits;
-	}
-	/* with 32bit <-> 64bit cross-platform connect
-	 * this is only correct for current usage,
-	 * where we _know_ that we are 64 bit aligned,
-	 * and know that this function is used in this way, too...
-	 */
-	if (offset+number == b->bm_words) {
-		b->bm_set -= bm_clear_surplus(b);
-		bm_end_info(mdev, __FUNCTION__ );
-	}
-	spin_unlock_irq(&b->bm_lock);
-}
-
-/* copy number words from buffer into the bitmap starting at offset.
- * buffer[i] is expected to be little endian unsigned long.
- */
-void drbd_bm_set_lel( drbd_dev *mdev, size_t offset, size_t number,
-		      unsigned long* buffer )
-{
-	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *bm;
-	unsigned long word, bits;
-	size_t n = number;
-
-	if (number == 0) return;
-	ERR_IF(!b) return;
-	ERR_IF(!b->bm) return;
-	D_BUG_ON(offset        >= b->bm_words);
-	D_BUG_ON(offset+number >  b->bm_words);
-	D_BUG_ON(number > PAGE_SIZE/sizeof(long));
-
-	MUST_BE_LOCKED();
-
-	spin_lock_irq(&b->bm_lock);
-	// BM_PARANOIA_CHECK(); no.
-	bm = b->bm + offset;
-	while(n--) {
-		bits = hweight_long(*bm);
-		word = lel_to_cpu(*buffer++);
 		*bm++ = word;
 		b->bm_set += hweight_long(word) - bits;
 	}
@@ -602,6 +572,7 @@ void drbd_bm_get_lel( drbd_dev *mdev, size_t offset, size_t number,
 
 	// MUST_BE_LOCKED(); yes. but not neccessarily globally...
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	bm = b->bm + offset;
@@ -618,6 +589,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 
 	MUST_BE_LOCKED();
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	memset(b->bm,0xff,b->bm_words*sizeof(long));
@@ -626,7 +598,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-BIO_ENDIO_FN(drbd_bm_async_io_complete)
+BIO_ENDIO_FN(bm_async_io_complete)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio,BIO_UPTODATE);
@@ -656,7 +628,7 @@ BIO_ENDIO_FN(drbd_bm_async_io_complete)
 	BIO_ENDIO_FN_RETURN;
 }
 
-STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
+STATIC void bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
 {
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
@@ -677,7 +649,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	bio->bi_sector = on_disk_sector;
 	bio_add_page(bio, page, len, 0);
 	bio->bi_private = b;
-	bio->bi_end_io = drbd_bm_async_io_complete;
+	bio->bi_end_io = bm_async_io_complete;
 
 	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
@@ -686,51 +658,7 @@ STATIC void drbd_bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int pag
 	else
 		submit_bio(rw, bio);
 }
-/* read one sector of the on disk bitmap into memory.
- * on disk bitmap is little endian.
- * @enr is _sector_ offset from start of on disk bitmap (aka bm-extent nr).
- * returns 0 on success, -EIO on failure
- */
-int drbd_bm_read_sect(drbd_dev *mdev,unsigned long enr)
-{
-	sector_t on_disk_sector = mdev->bc->md.md_offset + mdev->bc->md.bm_offset + enr;
-	int bm_words, num_words, offset, err  = 0;
 
-	// MUST_BE_LOCKED(); not neccessarily global ...
-
-	down(&mdev->md_io_mutex);
-	if(drbd_md_sync_page_io(mdev,mdev->bc,on_disk_sector,READ)) {
-		bm_words  = drbd_bm_words(mdev);
-		offset    = S2W(enr);	// word offset into bitmap
-		num_words = min(S2W(1), bm_words - offset);
-#if DUMP_MD >= 3
-	INFO("read_sect: sector=%lus offset=%u num_words=%u\n",
-			enr, offset, num_words);
-#endif
-		drbd_bm_set_lel( mdev, offset, num_words,
-				 page_address(mdev->md_io_page) );
-	} else {
-		int i;
-		err = -EIO;
-		ERR( "IO ERROR reading bitmap sector %lu "
-		     "(meta-disk sector %llu)\n",
-		     enr, (unsigned long long)on_disk_sector );
-		drbd_chk_io_error(mdev, 1, TRUE);
-		drbd_io_error(mdev, TRUE);
-		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
-			drbd_bm_ALe_set_all(mdev,enr*AL_EXT_PER_BM_SECT+i);
-	}
-	up(&mdev->md_io_mutex);
-	return err;
-}
-
-/**
- * drbd_bm_read: Read the whole bitmap from its on disk location.
- *
- * currently only called from "drbd_ioctl_set_disk"
- * FIXME need to be able to return an error!!
- *
- */
 # if defined(__LITTLE_ENDIAN)
 	/* nothing to do, on disk == in memory */
 # define bm_cpu_to_lel(x) ((void)0)
@@ -761,7 +689,10 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 /* lel_to_cpu == cpu_to_lel */
 # define bm_lel_to_cpu(x) bm_cpu_to_lel(x)
 
-STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
+/*
+ * bm_rw: read/write the whole bitmap from/to its on disk location.
+ */
+STATIC int bm_rw(struct Drbd_Conf *mdev, int rw)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	/* sector_t sector; */
@@ -772,7 +703,7 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 	MUST_BE_LOCKED();
 
-	bm_words    = drbd_bm_words(mdev);
+	bm_words  = drbd_bm_words(mdev);
 	num_pages = (bm_words*sizeof(long) + PAGE_SIZE-1) >> PAGE_SHIFT;
 
 	/* OK, I manipulate the bitmap low level,
@@ -783,16 +714,17 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	 */
 	mdev->bitmap = NULL;
 
-	if(rw == WRITE)	bm_cpu_to_lel(b);
+	/* on disk bitmap is little endian */
+	if (rw == WRITE)
+		bm_cpu_to_lel(b);
 
 	now = jiffies;
 	atomic_set(&b->bm_async_io, num_pages);
 	__clear_bit(BM_MD_IO_ERROR,&b->bm_flags);
 
-	for (i = 0; i < num_pages; i++) {
-		/* let the layers below us try to merge these bios... */
-		drbd_bm_page_io_async(mdev,b,i,rw);
-	}
+	/* let the layers below us try to merge these bios... */
+	for (i = 0; i < num_pages; i++)
+		bm_page_io_async(mdev,b,i,rw);
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
@@ -807,14 +739,16 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 	}
 
 	now = jiffies;
-	if(rw == WRITE) {
+	if (rw == WRITE) {
+		/* swap back endianness */
 		bm_lel_to_cpu(b);
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
-		b->bm_set = bm_count_bits(b, 1);
+		b->bm_set = bm_count_bits_swap_endian(b);
 		INFO("recounting of set bits took additional %lu jiffies\n",
 		     jiffies - now);
 	}
+	now = b->bm_set;
 
 	/* ok, done,
 	 * now it is visible again
@@ -822,26 +756,40 @@ STATIC int drbd_bm_rw(struct Drbd_Conf *mdev, int rw)
 
 	mdev->bitmap = b;
 
-	INFO("%s marked out-of-sync by on disk bit-map.\n",
-	     ppsize(ppb,drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10)) );
+	INFO("%s (%lu bits) marked out-of-sync by on disk bit-map.\n",
+	     ppsize(ppb,now << (BM_BLOCK_SIZE_B-10)), now);
 
 	return err;
 }
 
+/**
+ * drbd_bm_read: Read the whole bitmap from its on disk location.
+ *
+ * currently only called from "drbd_nl_disk_conf"
+ */
 int drbd_bm_read(struct Drbd_Conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int err=0;
 
 	if (b->bm) {
-	    // bitmap size > 0
-	    err = drbd_bm_rw(mdev, READ);
+	    err = bm_rw(mdev, READ);
 
 	    if (err == 0)
 		b->bm[b->bm_words] = DRBD_MAGIC;
 	}
 
 	return err;
+}
+
+/**
+ * drbd_bm_write: Write the whole bitmap to its on disk location.
+ *
+ * called at various occasions.
+ */
+int drbd_bm_write(struct Drbd_Conf *mdev)
+{
+	return bm_rw(mdev, WRITE);
 }
 
 /**
@@ -887,36 +835,6 @@ int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
 	return err;
 }
 
-/**
- * drbd_bm_write: Write the whole bitmap to its on disk location.
- */
-int drbd_bm_write(struct Drbd_Conf *mdev)
-{
-	int err = drbd_bm_rw(mdev, WRITE);
-
-	INFO("%lu KB now marked out-of-sync by on disk bit-map.\n",
-	      drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B-10) );
-
-	return err;
-}
-
-/* clear all bits in the bitmap */
-void drbd_bm_clear_all(drbd_dev *mdev)
-{
-	struct drbd_bitmap *b = mdev->bitmap;
-
-	ERR_IF(!b) return;
-	ERR_IF(!b->bm) return;
-
-	MUST_BE_LOCKED();						\
-
-	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
-	memset(b->bm,0,b->bm_words*sizeof(long));
-	b->bm_set = 0;
-	spin_unlock_irq(&b->bm_lock);
-}
-
 void drbd_bm_reset_find(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
@@ -925,6 +843,7 @@ void drbd_bm_reset_find(drbd_dev *mdev)
 
 	MUST_BE_LOCKED();
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	b->bm_fo = 0;
@@ -945,6 +864,7 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	ERR_IF(!b) return i;
 	ERR_IF(!b->bm) return i;
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	if (b->bm_fo < b->bm_bits) {
@@ -966,6 +886,7 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 
@@ -980,108 +901,47 @@ int drbd_bm_rs_done(drbd_dev *mdev)
 	return mdev->bitmap->bm_fo == 0;
 }
 
-// THINK maybe the D_BUG_ON(i<0)s in set/clear/test should be not that strict?
-
-/* returns previous bit state
- * wants bitnr, NOT sector.
- */
-int drbd_bm_set_bit(drbd_dev *mdev, const unsigned long bitnr)
-{
-	struct drbd_bitmap *b = mdev->bitmap;
-	int i;
-	ERR_IF(!b) return 1;
-	ERR_IF(!b->bm) return 1;
-
-/*
- * only called from drbd_set_out_of_sync.
- * strange_state blubber is already in place there...
-	strange_state = ( mdev->cstate  > Connected ) ||
-	                ( mdev->cstate == Connected &&
-	                 !(test_bit(DISKLESS,&mdev->flags) ||
-	                   test_bit(PARTNER_DISKLESS,&mdev->flags)) );
-	if (strange_state)
-		ERR("%s in drbd_bm_set_bit\n", conns_to_name(mdev->cstate));
-*/
-
-	spin_lock_irq(&b->bm_lock);
-	BM_PARANOIA_CHECK();
-	MUST_NOT_BE_LOCKED();
-	ERR_IF (bitnr >= b->bm_bits) {
-		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
-		i = 0;
-	} else {
-		i = (0 != __test_and_set_bit(bitnr, b->bm));
-		b->bm_set += !i;
-	}
-	spin_unlock_irq(&b->bm_lock);
-	return i;
-}
-
-/* returns number of bits actually changed (0->1)
+/* returns number of bits actually changed.
+ * for val != 0, we change 0 -> 1, return code positiv
+ * for val == 0, we change 1 -> 0, return code negative
  * wants bitnr, not sector */
-int drbd_bm_set_bits_in_irq(drbd_dev *mdev, const unsigned long s, const unsigned long e)
+static int bm_change_bits_to(drbd_dev *mdev, const unsigned long s, const unsigned long e, int val)
 {
+	unsigned long flags;
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long bitnr;
 	int c = 0;
 	ERR_IF(!b) return 1;
 	ERR_IF(!b->bm) return 1;
 
-#if 0
-	/* hm. I assumed that, when inside of lock_irq/unlock_irq,
-	 * in_interrupt() would be true ?
-	 * how else can I assert that this called with irq disabled without using
-	 * spin_lock_irqsave? */
-	D_BUG_ON(!in_interrupt()); /* called within spin_lock_irq(&mdev->req_lock) */
-#endif
-
-	spin_lock(&b->bm_lock);
+	spin_lock_irqsave(&b->bm_lock,flags);
 	BM_PARANOIA_CHECK();
 	MUST_NOT_BE_LOCKED();
 	for (bitnr = s; bitnr <=e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
 			ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
 		} else {
-			c += (0 == __test_and_set_bit(bitnr, b->bm));
+			if (val)
+				c += (0 == __test_and_set_bit(bitnr, b->bm));
+			else
+				c -= (0 != __test_and_clear_bit(bitnr, b->bm));
 		}
 	}
 	b->bm_set += c;
-	spin_unlock(&b->bm_lock);
+	spin_unlock_irqrestore(&b->bm_lock,flags);
 	return c;
 }
 
-/* returns previous bit state
- * wants bitnr, NOT sector.
- */
-int drbd_bm_clear_bit(drbd_dev *mdev, const unsigned long bitnr)
+/* returns number of bits changed 0 -> 1 */
+int drbd_bm_set_bits(drbd_dev *mdev, const unsigned long s, const unsigned long e)
 {
-	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long flags;
-	int i;
-	ERR_IF(!b) return 0;
-	ERR_IF(!b->bm) return 0;
+	return bm_change_bits_to(mdev, s, e, 1);
+}
 
-	spin_lock_irqsave(&b->bm_lock,flags);
-	BM_PARANOIA_CHECK();
-	MUST_NOT_BE_LOCKED();
-	ERR_IF (bitnr >= b->bm_bits) {
-		ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
-		i = 0;
-	} else {
-		i = (0 != __test_and_clear_bit(bitnr, b->bm));
-		b->bm_set -= i;
-	}
-	spin_unlock_irqrestore(&b->bm_lock,flags);
-
-	/* clearing bits should only take place when sync is in progress!
-	 * this is only called from drbd_set_in_sync.
-	 * strange_state blubber is already in place there ...
-	if (i && mdev->cstate <= Connected)
-		ERR("drbd_bm_clear_bit: cleared a bitnr=%lu while %s\n",
-				bitnr, conns_to_name(mdev->cstate));
-	 */
-
-	return i;
+/* returns number of bits changed 1 -> 0 */
+int drbd_bm_clear_bits(drbd_dev *mdev, const unsigned long s, const unsigned long e)
+{
+	return -bm_change_bits_to(mdev, s, e, 0);
 }
 
 /* returns bit state
@@ -1098,6 +958,7 @@ int drbd_bm_test_bit(drbd_dev *mdev, const unsigned long bitnr)
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	if (bitnr < b->bm_bits) {
@@ -1166,6 +1027,7 @@ unsigned long drbd_bm_ALe_set_all(drbd_dev *mdev, unsigned long al_enr)
 
 	MUST_BE_LOCKED();
 
+	D_BUG_ON(irqs_disabled());
 	spin_lock_irq(&b->bm_lock);
 	BM_PARANOIA_CHECK();
 	weight = b->bm_set;
