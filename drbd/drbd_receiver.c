@@ -889,8 +889,8 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 
 	if (dgs) {
 		rr = drbd_recv(mdev, dig_in, dgs);
-		if ( rr != dgs ) {
-			WARN("short read receiving data: read %d expected %d\n",
+		if (rr != dgs) {
+			WARN("short read receiving data digest: read %d expected %d\n",
 			     rr, dgs);
 			return NULL;
 		}
@@ -985,8 +985,8 @@ int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 
 	if (dgs) {
 		rr = drbd_recv(mdev, dig_in, dgs);
-		if ( rr != dgs ) {
-			WARN("short read receiving data: read %d expected %d\n",
+		if (rr != dgs) {
+			WARN("short read receiving data reply digest: read %d expected %d\n",
 			     rr, dgs);
 			return 0;
 		}
