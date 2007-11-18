@@ -874,7 +874,7 @@ unsigned long drbd_bm_find_next(drbd_dev *mdev)
 	}
 	if (i >= b->bm_bits) {
 		i = -1UL;
-		b->bm_fo = 0;
+		/* leave b->bm_fo unchanged. */
 	} else {
 		b->bm_fo = i+1;
 	}
@@ -898,7 +898,7 @@ void drbd_bm_set_find(drbd_dev *mdev, unsigned long i)
 
 int drbd_bm_rs_done(drbd_dev *mdev)
 {
-	return mdev->bitmap->bm_fo == 0;
+	return (mdev->bitmap->bm_fo >= mdev->bitmap->bm_bits);
 }
 
 /* returns number of bits actually changed.
