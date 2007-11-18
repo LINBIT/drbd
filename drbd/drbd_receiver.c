@@ -976,8 +976,8 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 	return e;
 }
 
-/* drbd_drain_block() just takes a data block out of the socket input
- * buffer and discards ist.
+/* drbd_drain_block() just takes a data block
+ * out of the socket input buffer, and discards it.
  */
 STATIC int
 drbd_drain_block(drbd_dev *mdev, int data_size)
@@ -995,13 +995,11 @@ drbd_drain_block(drbd_dev *mdev, int data_size)
 			rv = 0;
 			WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int,data_size,PAGE_SIZE));
-			goto out;
+			break;
 		}
-
 		data_size -= rr;
 	}
 	kunmap(page);
- out:
 	drbd_pp_free(mdev,page);
 	return rv;
 }
