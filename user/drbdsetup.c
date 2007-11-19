@@ -818,6 +818,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 	if(rv == 0) {
 		//dump_tag_list(tl->tag_list_start);
+		int received;
 		sk_nl = open_cn();
 		if(sk_nl < 0) return 20;
 
@@ -825,13 +826,15 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		tl->drbd_p_header->drbd_minor = minor;
 		tl->drbd_p_header->flags = flags;
 
-		call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,RCV_SIZE,NL_TIME);
+		received = call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,RCV_SIZE,NL_TIME);
 
 		close_cn(sk_nl);
 
-		reply = (struct drbd_nl_cfg_reply *)
-			((struct cn_msg *)NLMSG_DATA(buffer))->data;
-		rv = print_config_error(reply);
+		if (received >= 0) {
+			reply = (struct drbd_nl_cfg_reply *)
+				((struct cn_msg *)NLMSG_DATA(buffer))->data;
+			rv = print_config_error(reply);
+		}
 	}
 	free_tag_list(tl);
 
