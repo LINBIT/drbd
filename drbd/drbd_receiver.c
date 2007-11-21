@@ -74,7 +74,7 @@ struct page *drbd_pp_alloc(struct drbd_conf *mdev, unsigned int gfp_mask)
 	 */
 
 	spin_lock_irqsave(&drbd_pp_lock, flags);
-	/* This lock needs to lock out irq because we might call drdb_pp_free()
+	/* This lock needs to lock out irq because we might call drbd_pp_free()
 	   from IRQ context.
 	   FIXME but why irq _save_ ?
 	   this is only called from drbd_alloc_ee,
@@ -82,6 +82,7 @@ struct page *drbd_pp_alloc(struct drbd_conf *mdev, unsigned int gfp_mask)
 	page = drbd_pp_pool;
 	if (page) {
 		drbd_pp_pool = (struct page *)page_private(page);
+		set_page_private(page, 0); /* just to be polite */
 		drbd_pp_vacant--;
 	}
 	spin_unlock_irqrestore(&drbd_pp_lock, flags);
@@ -929,8 +930,8 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 	return e;
 }
 
-/* drbd_drain_block() just takes a data block out of the socket input
- * buffer and discards ist.
+/* drbd_drain_block() just takes a data block
+ * out of the socket input buffer, and discards it.
  */
 int
 drbd_drain_block(struct drbd_conf *mdev, int data_size)
@@ -948,13 +949,11 @@ drbd_drain_block(struct drbd_conf *mdev, int data_size)
 			rv = 0;
 			WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int, data_size, PAGE_SIZE));
-			goto out;
+			break;
 		}
-
 		data_size -= rr;
 	}
 	kunmap(page);
- out:
 	drbd_pp_free(mdev, page);
 	return rv;
 }
@@ -2432,6 +2431,7 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	   ns.pdsk == Negotiating )
 		ns.pdsk = UpToDate;
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose | ChgStateHard);
+	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_Success) {
@@ -2683,12 +2683,6 @@ void drbd_disconnect(struct drbd_conf *mdev)
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
 
-	fp = DontCare;
-	if (inc_local(mdev)) {
-		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
-	}
-
 	down(&mdev->data.mutex);
 	drbd_free_sock(mdev);
 	up(&mdev->data.mutex);
@@ -2747,9 +2741,14 @@ void drbd_disconnect(struct drbd_conf *mdev)
 
 	drbd_md_sync(mdev);
 
+	fp = DontCare;
+	if (inc_local(mdev)) {
+		fp = mdev->bc->dc.fencing;
+		dec_local(mdev);
+	}
+
 	if (mdev->state.role == Primary) {
-		if ( fp >= Resource &&
-		    mdev->state.pdsk >= DUnknown ) {
+		if (fp >= Resource && mdev->state.pdsk >= DUnknown) {
 			enum drbd_disk_state nps = drbd_try_outdate_peer(mdev);
 			drbd_request_state(mdev, NS(pdsk, nps));
 		}
@@ -2762,6 +2761,7 @@ void drbd_disconnect(struct drbd_conf *mdev)
 		ns = os;
 		ns.conn = Unconnected;
 		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
+		ns = mdev->state;
 	}
 	spin_unlock_irq(&mdev->req_lock);
 	if (rv == SS_Success)

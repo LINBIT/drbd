@@ -613,6 +613,9 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if ( ns.conn == WFConnection && os.conn < Unconnected )
 		rv=SS_NoNetConfig;
 
+	if ( ns.disk == Outdated && os.disk < Outdated && os.disk != Attaching)
+		rv=SS_LowerThanOutdated;
+
 	return rv;
 }
 
@@ -749,12 +752,12 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			   this happen...*/
 
 			if ( is_valid_state(mdev, os) == rv ) {
-				ERR("Forcing state change from bad state. "
+				ERR("Considering state change from bad state. "
 				    "Error would be: '%s'\n",
 				    set_st_err_name(rv));
 				print_st(mdev, "old", os);
 				print_st(mdev, "new", ns);
-				rv = SS_Success;
+				rv = is_valid_state_transition(mdev,ns,os);
 			}
 		} else
 			rv = is_valid_state_transition(mdev, ns, os);
@@ -895,7 +898,7 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	}
 
 	/* Inform userspace about the change... */
-	drbd_bcast_state(mdev);
+	drbd_bcast_state(mdev, ns);
 
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */

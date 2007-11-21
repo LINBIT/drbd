@@ -27,7 +27,7 @@ static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 NUM		[0-9]{1,8}[MKGs]?
 SNUMB		[0-9]{1,3}
 IPV4ADDR	({SNUMB}"."){3}{SNUMB}
-WS		[ \t]
+WS		[ \t\r]
 OPCHAR		[{};\[\]:]
 DQSTRING	\"[^\"\\\n]{0,255}\"
 STRING		[a-zA-Z0-9/._-]{1,80}

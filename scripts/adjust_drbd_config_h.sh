@@ -6,7 +6,7 @@
 set -e
 sorry() {
 	cat <<___
-	Sorry, automagic adjustment of drdb_config.h failed.
+	Sorry, automagic adjustment of drbd_config.h failed.
 	For well known 2.6. kernels, no adjustment to the shipped drbd_config is necessary.
 	You need to verify it yourself.
 ___

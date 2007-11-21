@@ -33,6 +33,18 @@
 #include <linux/connector.h>
 #include <linux/delay.h>
 
+#include <linux/drbd_config.h> /* In case kzalloc() is missing. */
+
+#ifdef NEED_BACKPORT_OF_KZALLOC
+static inline void *kzalloc(size_t size, int flags)
+{
+	void *rv = kmalloc(size,flags);
+	if(rv) memset(rv,0,size);
+
+	return rv;
+}
+#endif
+
 void cn_queue_wrapper(void *data)
 {
 	struct cn_callback_data *d = data;
