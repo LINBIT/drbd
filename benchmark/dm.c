@@ -167,7 +167,6 @@ int main(int argc, char **argv)
 	char *output_file_name = NULL;
 	char *connect_target = NULL;
 	int connect_port = 0;
-       
 
 	int c;
 	static struct option options[] = {
@@ -259,11 +258,17 @@ int main(int argc, char **argv)
 		fprintf(stderr,
 			"Both connect target and an output file name given.\n"
 			"That is too much.\n");
-		exit(20);		
+		exit(20);
 	}
 
 	if(input_file_name) {
 		in_fd = open(input_file_name, O_RDONLY | (o_direct ? O_DIRECT : 0));
+		/* if EINVAL, and o_direct, try again without it! */
+		if (in_fd == -1 && errno == EINVAL && o_direct) {
+			in_fd = open(input_file_name, O_RDONLY);
+			if (in_fd >= 0)
+				fprintf(stderr, "NOT using O_DIRECT for input file %s\n", input_file_name);
+		}
 		if (in_fd == -1) {
 			fprintf(stderr,
 				"Can not open input file/device\n");
@@ -274,6 +279,12 @@ int main(int argc, char **argv)
 	if(output_file_name) {
 		out_fd = open(output_file_name, O_WRONLY | O_CREAT | O_TRUNC |
 			      (o_direct? O_DIRECT : 0) , 0664);
+		/* if EINVAL, and o_direct, try again without it! */
+		if (out_fd == -1 && errno == EINVAL && o_direct) {
+			out_fd = open(output_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+			if (out_fd >= 0)
+				fprintf(stderr, "NOT using O_DIRECT for output file %s\n", output_file_name);
+		}
 		if (out_fd == -1) {
 			fprintf(stderr,
 				"Can not open output file/device\n");
@@ -402,7 +413,7 @@ int main(int argc, char **argv)
 					1000 / target_bw; // mili seconds.
 
 				time_wait = (int)
-					(time_should - 
+					(time_should -
 					 (sec*1000 + ((double)usec) / 1000));
 				poll(NULL,0,time_wait);
 			}

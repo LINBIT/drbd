@@ -200,8 +200,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 	/* we need to do the conflict detection stuff,
 	 * if we have the ee_hash (two_primaries) and
 	 * this has been on the network */
-	if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL)
-	{
+	if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL) {
 		const sector_t sector = req->sector;
 		const int size = req->size;
 

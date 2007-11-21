@@ -77,7 +77,7 @@ $commands{'drbd_stop'} = '/etc/init.d/drbd stop';
 $commands{'drbd_restart'} = '/etc/init.d/drbd restart';
 $commands{'drbd_mount'} = 'mount /dev/{device} {mountpoint}';
 $commands{'drbd_umount'} = 'umount /dev/{device}';
-$commands{'drbd_loaded'} = 'lsmod | grep drdb';
+$commands{'drbd_loaded'} = 'lsmod | grep drbd';
 $commands{'drbd_make'} = 'drbdadm create-md {resource}';
 
 #FILESYSTEM:
