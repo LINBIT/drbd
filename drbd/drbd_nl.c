@@ -186,7 +186,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
 
-	if(inc_local(mdev)) {
+	if (inc_local_if_state(mdev,UpToDate)) {
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
