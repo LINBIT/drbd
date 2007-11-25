@@ -974,7 +974,6 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 			local = 0;
 		}
 		if (remote) dec_ap_pending(mdev);
-		dump_bio(mdev,req->master_bio,1);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
 		bio_endio(req->master_bio, 0);
 		req->master_bio = NULL;
@@ -1000,6 +999,8 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		/* FIXME what ref count do we have to ensure the backing_bdev
 		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
+
+		dump_internal_bio("Pri",mdev,rw,req->private_bio,0);
 
 		if (FAULT_ACTIVE(mdev, rw==WRITE ? DRBD_FAULT_DT_WR :
 				       ( rw==READ ? DRBD_FAULT_DT_RD :
@@ -1076,8 +1077,16 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		return 0;
 	}
 
-	/* Currently our BARRIER code is disabled. */
-	if(unlikely(bio_barrier(bio))) {
+	/* Reject barrier requests if we know the underlying device does
+	 * not support them.
+	 * XXX: Need to get this info from peer as well some how so we
+	 * XXX: reject if EITHER side/data/metadata area does not support them.
+	 *
+	 * because of those XXX, this is not yet enabled,
+	 * i.e. in drbd_init_set_defaults we set the NO_BARRIER_SUPP bit.
+	 */
+	if (unlikely(bio_barrier(bio) && test_bit(NO_BARRIER_SUPP, &mdev->flags))) {
+		/* WARN("Rejecting barrier request as underlying device does not support\n"); */
 		bio_endio(bio, -EOPNOTSUPP);
 		return 0;
 	}

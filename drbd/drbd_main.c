@@ -1727,24 +1727,27 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	p.seq_num  = cpu_to_be32( req->seq_num =
 				  atomic_add_return(1,&mdev->packet_seq) );
 	dp_flags = 0;
+
+	/* NOTE: no need to check if barriers supported here as we would
+	 *       not pass the test in make_request_common in that case
+	 */
 	if (bio_barrier(req->master_bio))
 		dp_flags |= DP_HARDBARRIER;
 	if (bio_sync(req->master_bio))
 		dp_flags |= DP_RW_SYNC;
-	if(mdev->state.conn >= SyncSource &&
-	   mdev->state.conn <= PausedSyncT)
+	if (mdev->state.conn >= SyncSource &&
+	    mdev->state.conn <= PausedSyncT)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 
 	p.dp_flags = cpu_to_be32(dp_flags);
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);
 	set_bit(UNPLUG_REMOTE,&mdev->flags);
 	ok = sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),MSG_MORE);
-	if(ok) {
-		if(mdev->net_conf->wire_protocol == DRBD_PROT_A) {
+	if (ok) {
+		if (mdev->net_conf->wire_protocol == DRBD_PROT_A)
 			ok = _drbd_send_bio(mdev,req->master_bio);
-		} else {
+		else
 			ok = _drbd_send_zc_bio(mdev,req->master_bio);
-		}
 	}
 
 	drbd_put_data_sock(mdev);
@@ -1996,6 +1999,11 @@ void drbd_init_set_defaults(drbd_dev *mdev)
 #endif
 
 	drbd_set_defaults(mdev);
+
+	/* for now, we do NOT yet support it,
+	 * even though we start some framework
+	 * to eventually support barriers */
+	set_bit(NO_BARRIER_SUPP,&mdev->flags);
 
 	atomic_set(&mdev->ap_bio_cnt,0);
 	atomic_set(&mdev->ap_pending_cnt,0);
@@ -3241,7 +3249,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 // Debug routine to dump info about bio
 
-void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
+void _dump_bio(const char *pfx, drbd_dev *mdev, int rw, struct bio *bio, int complete)
 {
 #ifdef CONFIG_LBD
 #define SECTOR_FORMAT "%Lx"
@@ -3254,16 +3262,27 @@ void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete)
 	char *faddr = (char *)(lowaddr);
 	struct bio_vec *bvec;
 	int segno;
+	int biorw, biobarrier, biosync;
 
-	INFO("%s %s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
+	rw |= bio->bi_rw;
+
+	biorw      = (rw & (RW_MASK|RWA_MASK));
+	biobarrier = (rw & (1<<BIO_RW_BARRIER));
+	biosync    = (rw & (1<<BIO_RW_SYNC));
+
+	INFO("%s %s:%s%s%s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete? "<<<":">>>",
-	     bio_rw(bio)==WRITE?"Write":"Read",bio,
+	     pfx,
+	     biorw==WRITE?"Write":"Read",
+	     biobarrier?":B":"",
+	     biosync?":S":"",
+	     bio,
 	     complete? (drbd_bio_uptodate(bio)? "Success, ":"Failed, ") : "",
 	     bio->bi_sector << SECTOR_SHIFT,
 	     bio->bi_size);
 
 	if (trace_level >= TraceLvlMetrics &&
-	    ((bio_rw(bio) == WRITE) ^ complete) ) {
+	    ((biorw == WRITE) ^ complete) ) {
 		printk(KERN_DEBUG "  ind     page   offset   length\n");
 		__bio_for_each_segment(bvec, bio, segno, 0) {
 			printk(KERN_DEBUG "  [%d] %p %8.8x %8.8x\n",segno,

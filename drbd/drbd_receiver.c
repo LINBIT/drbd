@@ -1096,6 +1096,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size)
 	       INFO("submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector,e->size,e);
 	       );
+	dump_internal_bio("Sec", mdev, WRITE, e->private_bio, 0);
 	drbd_generic_make_request(mdev, DRBD_FAULT_RS_WR, e->private_bio);
 	/* accounting done in endio */
 
@@ -1318,6 +1319,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	struct Tl_epoch_entry *e;
 	Drbd_Data_Packet *p = (Drbd_Data_Packet*)h;
 	int header_size, data_size;
+	int rw = WRITE;
 	unsigned int barrier_nr = 0;
 	unsigned int epoch_size = 0;
 	u32 dp_flags;
@@ -1362,9 +1364,9 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 
 	dp_flags = be32_to_cpu(p->dp_flags);
 	if (dp_flags & DP_HARDBARRIER)
-		e->private_bio->bi_rw |= (1 << BIO_RW_BARRIER);
+		rw |= (1<<BIO_RW_BARRIER);
 	if (dp_flags & DP_RW_SYNC)
-		e->private_bio->bi_rw |= (1 << BIO_RW_SYNC);
+		rw |= (1<<BIO_RW_SYNC);
 	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;
 
@@ -1550,7 +1552,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		} else {
 			e->barrier_nr = mdev->next_barrier_nr;
 		}
-		e->private_bio->bi_rw |= (1 << BIO_RW_BARRIER);
+		rw |= (1<<BIO_RW_BARRIER);
 		mdev->next_barrier_nr = 0;
 	}
 	list_add(&e->w.list,&mdev->active_ee);
@@ -1592,6 +1594,8 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		    (unsigned long long)e->sector,e->size,e);
 	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
+	e->private_bio->bi_rw = rw;
+	dump_internal_bio("Sec", mdev, rw, e->private_bio, 0);
 	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, e->private_bio);
 	/* accounting done in endio */
 
@@ -1691,6 +1695,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		    (unsigned long long)e->sector,e->size,e);
 	       );
 
+	dump_internal_bio("Sec", mdev, READ, e->private_bio, 0);
 	drbd_generic_make_request(mdev, fault_type, e->private_bio);
 	maybe_kick_lo(mdev);
 

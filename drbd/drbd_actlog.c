@@ -39,32 +39,57 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 				 struct page *page, sector_t sector,
 				 int rw, int size)
 {
-	struct bio *bio = bio_alloc(GFP_NOIO, 1);
-	struct completion event;
+	struct bio *bio;
+	struct drbd_md_io md_io;
 	int ok;
 
+	md_io.mdev = mdev;
+	init_completion(&md_io.event);
+	md_io.error = 0;
+
+#ifdef BIO_RW_BARRIER
+	if (rw == WRITE && !test_bit(NO_BARRIER_SUPP,&mdev->flags))
+	    rw |= (1<<BIO_RW_BARRIER);
+#endif
+#ifdef BIO_RW_SYNC
+	rw |= (1 << BIO_RW_SYNC);
+#endif
+
+ retry:
+	bio = bio_alloc(GFP_NOIO, 1);
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
 	ok = (bio_add_page(bio, page, size, 0) == size);
 	if(!ok) goto out;
-	init_completion(&event);
-	bio->bi_private = &event;
+	bio->bi_private = &md_io;
 	bio->bi_end_io = drbd_md_io_complete;
+
+	dump_internal_bio("Md",mdev,rw,bio,0);
 
 	if (FAULT_ACTIVE(mdev, (rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
 		bio_endio(bio, -EIO);
 	}
 	else {
-#ifdef BIO_RW_SYNC
-		submit_bio(rw | (1 << BIO_RW_SYNC), bio);
-#else
 		submit_bio(rw, bio);
+#ifndef BIO_RW_SYNC
 		drbd_blk_run_queue(bdev_get_queue(bdev->md_bdev));
 #endif
 	}
-	wait_for_completion(&event);
+	wait_for_completion(&md_io.event);
 	ok = test_bit(BIO_UPTODATE, &bio->bi_flags);
+
+#ifdef BIO_RW_BARRIER
+	/* check for unsupported barrier op */
+	if (unlikely(md_io.error == -EOPNOTSUPP && (rw & BIO_RW_BARRIER))) {
+		/* Try again with no barrier */
+		WARN("Barriers not supported - disabling");
+		set_bit(NO_BARRIER_SUPP,&mdev->flags);
+		rw &= ~BIO_RW_BARRIER;
+		bio_put(bio);
+		goto retry;
+	}
+#endif
  out:
 	bio_put(bio);
 	return ok;

@@ -698,7 +698,8 @@ enum {
 	CRASHED_PRIMARY,	// This node was a crashed primary. Gets
 	                        // cleared when the state.conn  goes into
 	                        // Connected state.
-	WRITE_BM_AFTER_RESYNC	// A kmalloc() during resync failed
+	WRITE_BM_AFTER_RESYNC,	// A kmalloc() during resync failed
+	NO_BARRIER_SUPP,        // underlying block device doesn't implement barriers
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf
@@ -765,6 +766,12 @@ struct drbd_backing_dev {
 	struct file *md_file;
 	struct drbd_md md;
 	struct disk_conf dc; /* The user provided config... */
+};
+
+struct drbd_md_io {
+	struct Drbd_Conf *mdev;
+	struct completion event;
+	int error;
 };
 
 struct Drbd_Conf {
@@ -1197,6 +1204,7 @@ enum {
 	TraceTypeUnplug = 0x00000020,
 	TraceTypeNl     = 0x00000040,
 	TraceTypeALExts = 0x00000080,
+	TraceTypeIntRq  = 0x00000100,
 };
 
 static inline int
@@ -1240,11 +1248,17 @@ extern void drbd_print_buffer(const char *prefix,unsigned int flags,int size,
 			      unsigned int length);
 
 // Bio printing support
-extern void _dump_bio(drbd_dev *mdev, struct bio *bio, int complete);
+extern void _dump_bio(const char *pfx, drbd_dev *mdev, int rw, struct bio *bio, int complete);
 
 static inline void dump_bio(drbd_dev *mdev, struct bio *bio, int complete) {
 	MTRACE(TraceTypeRq,TraceLvlSummary,
-	       _dump_bio(mdev, bio, complete);
+	       _dump_bio("Rq", mdev, 0, bio, complete);
+		);
+}
+
+static inline void dump_internal_bio(const char *pfx, drbd_dev *mdev, int rw, struct bio *bio, int complete) {
+	MTRACE(TraceTypeIntRq,TraceLvlSummary,
+	       _dump_bio(pfx, mdev, rw, bio, complete);
 		);
 }
 
@@ -1267,6 +1281,7 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 #define TRACE(ignored...) ((void)0)
 
 #define dump_bio(ignored...) ((void)0)
+#define dump_internal_bio(ignored...) ((void)0)
 #define dump_packet(ignored...) ((void)0)
 #endif
 
