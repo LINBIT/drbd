@@ -191,7 +191,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
 
-	if (inc_local(mdev)) {
+	if (inc_local_if_state(mdev,UpToDate)) {
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
