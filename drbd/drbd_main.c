@@ -1387,12 +1387,23 @@ int drbd_send_sizes(drbd_dev *mdev)
 
 int drbd_send_state(drbd_dev *mdev)
 {
+	struct socket *sock;
 	Drbd_State_Packet p;
+	int ok = 0;
 
-	p.state    = cpu_to_be32(mdev->state.i);
+	down(&mdev->data.mutex);
 
-	return drbd_send_cmd(mdev,USE_DATA_SOCKET,ReportState,
-			     (Drbd_Header*)&p,sizeof(p));
+	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
+	sock = mdev->data.socket;
+
+	if (likely(sock != NULL)) {
+		ok = _drbd_send_cmd(mdev, sock, ReportState,
+				    (Drbd_Header*)&p, sizeof(p), 0);
+	}
+
+	up(&mdev->data.mutex);
+
+	return ok;
 }
 
 STATIC int drbd_send_state_req(drbd_dev *mdev, drbd_state_t mask, drbd_state_t val)
