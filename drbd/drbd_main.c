@@ -805,9 +805,13 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		INFO("Syncer continues.\n");
 		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
 		if (ns.conn == SyncTarget) {
-			D_ASSERT(!test_bit(STOP_SYNC_TIMER, &mdev->flags));
-			clear_bit(STOP_SYNC_TIMER, &mdev->flags);
-			mod_timer(&mdev->resync_timer, jiffies);
+			if (!test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+				mod_timer(&mdev->resync_timer,jiffies);
+			}
+			/* This if (!test_bit) is only needed for the case
+			   that a device that has ceased to used its timer,
+			   i.e. it is already in drbd_resync_finished() gets
+			   paused and resumed. */
 		}
 	}
 

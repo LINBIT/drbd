@@ -1153,15 +1153,13 @@ extern int  drbd_bm_init(struct drbd_conf *mdev);
 extern int  drbd_bm_resize(struct drbd_conf *mdev, sector_t sectors);
 extern void drbd_bm_cleanup(struct drbd_conf *mdev);
 extern void drbd_bm_set_all(struct drbd_conf *mdev);
-extern void drbd_bm_clear_all(struct drbd_conf *mdev);
 extern void drbd_bm_reset_find(struct drbd_conf *mdev);
-extern int  drbd_bm_set_bit(struct drbd_conf *mdev, unsigned long bitnr);
-extern int  drbd_bm_set_bits_in_irq(
+extern int  drbd_bm_set_bits(
+		struct drbd_conf *mdev, unsigned long s, unsigned long e);
+extern int  drbd_bm_clear_bits(
 		struct drbd_conf *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_test_bit(struct drbd_conf *mdev, unsigned long bitnr);
-extern int  drbd_bm_clear_bit(struct drbd_conf *mdev, unsigned long bitnr);
 extern int  drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr);
-extern int  drbd_bm_read_sect(struct drbd_conf *mdev, unsigned long enr);
 extern int  drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr);
 extern int  drbd_bm_read(struct drbd_conf *mdev);
 extern int  drbd_bm_write(struct drbd_conf *mdev);
