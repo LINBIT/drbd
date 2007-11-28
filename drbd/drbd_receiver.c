@@ -922,7 +922,9 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 	if (dgs) {
 		drbd_csum(mdev, mdev->integrity_tfm, bio, dig_vv);
 		if (memcmp(dig_in,dig_vv,dgs)) {
-			ERR("Digest integrity check failed. Broken NICs?\n");
+			ERR("Digest integrity check FAILED. Broken NICs?\n");
+			drbd_bcast_ee(mdev, "digest failed",
+					dgs, dig_in, dig_vv, e);
 			drbd_free_ee(mdev, e);
 			return 0;
 		}
@@ -1013,7 +1015,7 @@ int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 	if (dgs) {
 		drbd_csum(mdev, mdev->integrity_tfm, bio, dig_vv);
 		if (memcmp(dig_in,dig_vv,dgs)) {
-			ERR("Digest integrity check failed. Broken NICs?\n");
+			ERR("Digest integrity check FAILED. Broken NICs?\n");
 			return 0;
 		}
 	}

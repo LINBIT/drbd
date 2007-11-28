@@ -124,7 +124,7 @@ struct drbd_cmd {
 		} gp; // for generic_get_cmd, get_usage
 		struct {
 			struct option *options;
-			int (*proc_event)(unsigned int, int, 
+			int (*proc_event)(unsigned int, int,
 					  struct drbd_nl_cfg_reply *);
 		} ep; // for events_cmd, events_usage
 	};
@@ -192,7 +192,7 @@ void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
-int print_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+int print_broadcast_events(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 int w_connected_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 int w_synced_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 
@@ -345,7 +345,7 @@ struct drbd_cmd commands[] = {
 			{ "unfiltered", no_argument, 0, 'u' },
 			{ "all-devices",no_argument, 0, 'a' },
 			{ 0,            0,           0,  0  } },
-		print_state } } },
+		print_broadcast_events } } },
 	{"wait-connect", 0, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_connected_state } } },
 	{"wait-sync", 0, F_EVENTS_CMD, { .ep = {
@@ -982,6 +982,32 @@ int consume_tag_int(enum drbd_tags tag, unsigned short *tlc, int* val)
 	return 0;
 }
 
+int consume_tag_u64(enum drbd_tags tag, unsigned short *tlc, unsigned long long* val)
+{
+	unsigned short *tp;
+	unsigned short len;
+	tp = look_for_tag(tlc,tag);
+	if(tp) {
+		*tp++ = TT_REMOVED;
+		len = *tp++;
+		/* check the data size.
+		 * actually it has to be long long, but I'm paranoid */
+		if (len == sizeof(int))
+			*val = *(unsigned int*)tp;
+		else if (len == sizeof(long))
+			*val = *(unsigned long *)tp;
+		else if (len == sizeof(long long))
+			*val = *(unsigned long long *)tp;
+		else {
+			fprintf(stderr, "%s: unexpected tag len: %u\n",
+					__func__ , len);
+			return 0;
+		}
+		return 1;
+	}
+	return 0;
+}
+
 int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 {
 	unsigned short *tp;
@@ -1197,8 +1223,113 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	return rv;
 }
 
-int print_state(unsigned int seq, int u __attribute((unused)),
-		struct drbd_nl_cfg_reply *reply)
+
+void print_digest(const char* label, const int len, const unsigned char *hash)
+{
+	int i;
+	printf("\t%s: ", label);
+	for (i = 0; i < len; i++)
+		printf("%02x",hash[i]);
+	printf("\n");
+}
+
+static inline char printable_or_dot(char c)
+{
+	return (' ' < c && c <= '~') ? c : '.';
+}
+
+void print_hex_line(int offset, unsigned char *data)
+{
+
+	printf(	" %04x:"
+		" %02x %02x %02x %02x %02x %02x %02x %02x "
+		" %02x %02x %02x %02x %02x %02x %02x %02x"
+		"  %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n",
+		offset,
+		data[0], data[1], data[2], data[3],
+		data[4], data[5], data[6], data[7],
+		data[8], data[9], data[10], data[11],
+		data[12], data[13], data[14], data[15],
+		printable_or_dot(data[0]), printable_or_dot(data[1]),
+		printable_or_dot(data[2]), printable_or_dot(data[3]),
+		printable_or_dot(data[4]), printable_or_dot(data[5]),
+		printable_or_dot(data[6]), printable_or_dot(data[7]),
+		printable_or_dot(data[8]), printable_or_dot(data[9]),
+		printable_or_dot(data[10]), printable_or_dot(data[11]),
+		printable_or_dot(data[12]), printable_or_dot(data[13]),
+		printable_or_dot(data[14]), printable_or_dot(data[15]));
+}
+
+/* successive identical lines are collapsed into just printing one star */
+void print_hex_dump(int len, void *data)
+{
+	int i;
+	int star = 0;
+	for (i = 0; i < len-15; i += 16) {
+		if (i == 0 || memcmp(data + i, data + i - 16, 16)) {
+			print_hex_line(i, data + i);
+			star = 0;
+		} else if (!star)  {
+			printf(" *\n");
+			star = 1;
+		}
+	}
+	/* yes, I ignore remainders of len not modulo 16 here.
+	 * so what, usage is currently to dump bios, which are
+	 * multiple of 512. */
+	/* for good measure, print the total size as offset now,
+	 * last line may have been a '*' */
+	printf(" %04x.\n", len);
+}
+
+void print_dump_ee(struct drbd_nl_cfg_reply *reply)
+{
+	unsigned long long sector = -1ULL;
+	unsigned long long block_id = 0;
+	char *reason = "UNKNOWN REASON";
+	char *dig_in = NULL;
+	char *dig_vv = NULL;
+	unsigned int dgs_in = 0, dgs_vv = 0;
+	unsigned int size = 0;
+	char *data = NULL;
+
+	if (!consume_tag_string(T_dump_ee_reason, reply->tag_list, &reason))
+		printf("\tno reason?\n");
+	if (!consume_tag_blob(T_seen_digest, reply->tag_list, &dig_in, &dgs_in))
+		printf("\tno digest in?\n");
+	if (!consume_tag_blob(T_calc_digest, reply->tag_list, &dig_vv, &dgs_vv))
+		printf("\tno digest out?\n");
+	if (!consume_tag_u64(T_ee_sector, reply->tag_list, &sector))
+		printf("\tno sector?\n");
+	if (!consume_tag_u64(T_ee_block_id, reply->tag_list, &block_id))
+		printf("\tno block_id?\n");
+	if (!consume_tag_blob(T_ee_data, reply->tag_list, &data, &size))
+		printf("\tno data?\n");
+
+	printf("\tdumping ee, reason: %s\n", reason);
+	printf("\tsector: %llu block_id: 0x%llx size: %u\n",
+			sector, block_id, size);
+	
+	/* "input sanitation". Did I mention yet that I'm paranoid? */
+	if (!data) size = 0;
+	if (!dig_in) dgs_in = 0;
+	if (!dig_vv) dgs_vv = 0;
+	if (dgs_in > SHARED_SECRET_MAX) dgs_in = SHARED_SECRET_MAX;
+	if (dgs_vv > SHARED_SECRET_MAX) dgs_vv = SHARED_SECRET_MAX;
+
+	print_digest("received digest", dgs_in, (unsigned char*)dig_in);
+	print_digest("verified digest", dgs_vv, (unsigned char*)dig_vv);
+
+	/* dump at most 32 K */
+	if (size > 0x8000) {
+		size = 0x8000;
+		printf("\tWARNING truncating data to %u!\n", 0x8000);
+	}
+	print_hex_dump(size,data);
+}
+
+int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
+			   struct drbd_nl_cfg_reply *reply)
 {
 	union drbd_state_t state;
 	char* str;
@@ -1232,12 +1363,16 @@ int print_state(unsigned int seq, int u __attribute((unused)),
 		break;
 	case P_sync_progress:
 		if (consume_tag_int(T_sync_progress, reply->tag_list, &synced)) {
-			printf("%u SP %d %i.%i\n", 
+			printf("%u SP %d %i.%i\n",
 				seq,
 				reply->minor,
 				synced / 10,
 				synced % 10);
 		} else fprintf(stderr,"Missing tag !?\n");
+		break;
+	case P_dump_ee:
+		printf("%u DE %d\n", seq, reply->minor);
+		print_dump_ee(reply);
 		break;
 	default:
 		printf("%u ?? %d <other message>\n",seq, reply->minor);
@@ -1282,7 +1417,7 @@ int w_synced_state(unsigned int seq __attribute((unused)),
 
 int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 {
-	char buffer[ 4096 ];
+	void *buffer;
 	struct cn_msg *cn_reply;
 	struct drbd_nl_cfg_reply *reply;
 	struct drbd_tag_list *tl;
@@ -1343,7 +1478,15 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	tl->drbd_p_header->drbd_minor = minor;
 	tl->drbd_p_header->flags = 0;
 
-	call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,4096,NL_TIME);
+	/* allocate 64k to be on the safe side. */
+#define NL_BUFFER_SIZE (64 << 10)
+	buffer = malloc(NL_BUFFER_SIZE);
+	if (!buffer) {
+		fprintf(stderr, "could not allocate buffer of %u bytes\n", NL_BUFFER_SIZE);
+		exit(20);
+	}
+
+	call_drbd(sk_nl,tl, buffer, NL_BUFFER_SIZE, NL_TIME);
 
 	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
@@ -1372,9 +1515,9 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 	do {
 		gettimeofday(&before,NULL);
-		rr = receive_cn(sk_nl, (struct nlmsghdr*)buffer, 4096,timeout_ms );
+		rr = receive_cn(sk_nl, buffer, NL_BUFFER_SIZE, timeout_ms);
 		gettimeofday(&after,NULL);
-		if(rr == -2) return 5; // timeout expired.
+		if(rr == -2) break; // timeout expired.
 
 		if(timeout_ms > 0 ) {
 			timeout_ms -= ( (after.tv_sec - before.tv_sec) * 1000 +
@@ -1394,9 +1537,14 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		}
 	} while(cont);
 
+	free(buffer);
+
 	close_cn(sk_nl);
 
-	return 0;
+	/* return code becomes exit code.
+	 * timeout? => exit 5
+	 * else     => exit 0 */
+	return (rr == -2) ? 5 : 0;
 }
 
 int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)

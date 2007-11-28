@@ -1758,6 +1758,61 @@ void drbd_connector_callback(void *data)
 
 atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
 
+static inline unsigned short *
+__tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data,
+	int len, int nul_terminated)
+{
+	int l = tag_descriptions[tag_number(tag)].max_len;
+	l = (len < l) ? len :  l;
+	*tl++ = tag;
+	*tl++ = len;
+	memcpy(tl, data, len);
+	/* TODO
+	 * maybe we need to add some padding to the data stream.
+	 * otherwise we may get strange effects on architectures
+	 * that require certain data types to be strictly aligned,
+	 * because now the next "unsigned short" may be misaligned. */
+	tl = (unsigned short*)((char*)tl + len);
+	if (nul_terminated)
+		*((char*)tl - 1) = 0;
+	return tl;
+}
+
+static inline unsigned short *
+tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data, int len)
+{
+	return __tl_add_blob(tl, tag, data, len, 0);
+}
+
+static inline unsigned short *
+tl_add_str(unsigned short *tl, enum drbd_tags tag, const char *str)
+{
+	return __tl_add_blob(tl, tag, str, strlen(str)+1, 0);
+}
+
+static inline unsigned short *
+tl_add_int(unsigned short *tl, enum drbd_tags tag, const void *val)
+{
+	switch(tag_type(tag)) {
+	case TT_INTEGER:
+		*tl++ = tag;
+		*tl++ = sizeof(int);
+		*(int*)tl = *(int*)val;
+		tl = (unsigned short*)((char*)tl+sizeof(int));
+		break;
+	case TT_INT64:
+		*tl++ = tag;
+		*tl++ = sizeof(u64);
+		*(u64*)tl = *(u64*)val;
+		tl = (unsigned short*)((char*)tl+sizeof(u64));
+		break;
+	default:
+		/* someone did something stupid. */
+		;
+	}
+	return tl;
+}
+
 void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state_t state)
 {
 	char buffer[sizeof(struct cn_msg)+
@@ -1829,6 +1884,77 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
 
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+}
+
+void drbd_bcast_ee(struct drbd_conf *mdev,
+		const char *reason, const int dgs,
+		const char* seen_hash, const char* calc_hash,
+		const struct Tl_epoch_entry* e)
+{
+	struct cn_msg *cn_reply;
+	struct drbd_nl_cfg_reply *reply;
+	struct bio_vec *bvec;
+	unsigned short *tl;
+	int i;
+
+	if (!e)
+		return;
+	if (!reason || !reason[0])
+		return;
+
+	/* aparently we have to memcpy twice, first to prepare the data for the
+	 * struct cn_msg, then within cn_netlink_send from the cn_msg to the
+	 * netlink skb. */
+	cn_reply = kmalloc(
+		sizeof(struct cn_msg)+
+		sizeof(struct drbd_nl_cfg_reply)+
+		sizeof(struct dump_ee_tag_len_struct)+
+		sizeof(short int)
+		, GFP_KERNEL);
+
+	if (!cn_reply) {
+		ERR("could not kmalloc buffer for drbd_bcast_ee, sector %llu, size %u\n",
+				(unsigned long long)e->sector, e->size);
+		return;
+	}
+
+	reply = (struct drbd_nl_cfg_reply*)cn_reply->data;
+	tl = reply->tag_list;
+
+	tl = tl_add_str(tl, T_dump_ee_reason, reason);
+	tl = tl_add_blob(tl, T_seen_digest, seen_hash, dgs);
+	tl = tl_add_blob(tl, T_calc_digest, calc_hash, dgs);
+	tl = tl_add_int(tl, T_ee_sector, &e->sector);
+	tl = tl_add_int(tl, T_ee_block_id, &e->block_id);
+
+	*tl++ = T_ee_data;
+	*tl++ = e->size;
+
+	__bio_for_each_segment(bvec, e->private_bio, i, 0) {
+		void *d = kmap(bvec->bv_page);
+		memcpy(tl, d + bvec->bv_offset, bvec->bv_len);
+		kunmap(bvec->bv_page);
+		tl=(unsigned short*)((char*)tl + bvec->bv_len);
+	}
+	*tl++ = TT_END; /* Close the tag list */
+
+	cn_reply->id.idx = CN_IDX_DRBD;
+	cn_reply->id.val = CN_VAL_DRBD;
+
+	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
+	cn_reply->ack = 0; // not used here.
+	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
+		(int)((char*)tl - (char*)reply->tag_list);
+	cn_reply->flags = 0;
+
+	reply->packet_type = P_dump_ee;
+	reply->minor = mdev_to_minor(mdev);
+	reply->ret_code = NoError;
+
+	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
+
+	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
+	kfree(cn_reply);
 }
 
 void drbd_bcast_sync_progress(struct drbd_conf *mdev)

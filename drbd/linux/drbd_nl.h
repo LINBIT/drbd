@@ -97,6 +97,15 @@ NL_PACKET(sync_progress, 23,
 	NL_INTEGER(	43,	T_MAY_IGNORE,	sync_progress)
 )
 
+NL_PACKET(dump_ee, 24,
+	NL_STRING(	45,	T_MAY_IGNORE,	dump_ee_reason, 32)
+	NL_STRING(	46,	T_MAY_IGNORE,	seen_digest, SHARED_SECRET_MAX)
+	NL_STRING(	47,	T_MAY_IGNORE,	calc_digest, SHARED_SECRET_MAX)
+	NL_INT64(	48,	T_MAY_IGNORE,	ee_sector)
+	NL_INT64(	49,	T_MAY_IGNORE,	ee_block_id)
+	NL_STRING(	50,	T_MAY_IGNORE,	ee_data,	32 << 10)
+)
+
 #undef NL_PACKET
 #undef NL_INTEGER
 #undef NL_INT64

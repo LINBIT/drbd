@@ -1435,6 +1435,10 @@ void drbd_nl_cleanup(void);
 int __init drbd_nl_init(void);
 void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state_t);
 void drbd_bcast_sync_progress(struct drbd_conf *mdev);
+void drbd_bcast_ee(struct drbd_conf *mdev,
+		const char *reason, const int dgs,
+		const char* seen_hash, const char* calc_hash,
+		const struct Tl_epoch_entry* e);
 
 /*
  * inline helper functions
