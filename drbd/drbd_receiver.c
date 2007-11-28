@@ -923,6 +923,7 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size)
 		drbd_csum(mdev, mdev->integrity_tfm, bio, dig_vv);
 		if (memcmp(dig_in,dig_vv,dgs)) {
 			ERR("Digest integrity check failed. Broken NICs?\n");
+			drbd_free_ee(mdev, e);
 			return 0;
 		}
 	}
