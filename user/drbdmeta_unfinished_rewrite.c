@@ -361,6 +361,8 @@ int is_valid_md(int f,
 	case DRBD_MD_INDEX_FLEX_EXT:
 		if (md->al_offset != MD_AL_OFFSET_07) {
 			fprintf(stderr, "%s Magic number (al_offset) not found\n", v);
+			fprintf(stderr, "\texpected: %d, found %d\n",
+				MD_AL_OFFSET_07, md->al_offset);
 			return 0;
 		}
 		if (md->bm_offset != MD_BM_OFFSET_07) {
@@ -1831,6 +1833,11 @@ void md_convert_08_to_07(struct format *cfg)
 		"Be prepared to manually intervene!\n");
 	/* FIXME put some more helpful text here, indicating what exactly is to
 	 * be done to make this work as expected. */
+
+	/* unconditionally re-initialize offsets,
+	 * not necessary if fixed size external,
+	 * necessary if flex external or internal */
+	re_initialize_md_offsets(cfg);
 
 	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
