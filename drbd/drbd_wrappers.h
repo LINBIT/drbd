@@ -77,18 +77,21 @@ extern BIO_ENDIO_FN(drbd_endio_pri);
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+static inline void sg_set_page(struct scatterlist *sg, struct page *page,
+			       unsigned int len, unsigned int offset)
+{
+	sg->page   = page;
+	sg->offset = offset;
+        sg->length = len;
+}
+
 static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 			      unsigned int buflen)
 {
-	sg->page   = virt_to_page(buf);
-	sg->offset = offset_in_page(buf);
-	sg->length = buflen;
+	sg_set_page(sg, virt_to_page(buf), buflen, offset_in_page(buf));
 }
 
-static inline void sg_set_page(struct scatterlist *sg, struct page *page)
-{
-	sg->page   = page;
-}
+#define sg_init_table(S,N) ({})
 
 #endif
 

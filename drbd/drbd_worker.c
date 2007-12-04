@@ -289,14 +289,11 @@ void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio,
 	desc.tfm=tfm;
 	desc.flags=0;
 
-	// Improve in generic Kernel ?
-	// sg and bvec have exactly the same purpose
-
+	sg_init_table(&sg, 1);
 	crypto_hash_init(&desc);
+
 	__bio_for_each_segment(bvec, bio, i, 0) {
-		sg_set_page(&sg, bvec->bv_page);
-		sg.offset = bvec->bv_offset;
-		sg.length = bvec->bv_len;
+		sg_set_page(&sg, bvec->bv_page, bvec->bv_offset, bvec->bv_len);
 		crypto_hash_update(&desc,&sg,sg.length);
 	}
 	crypto_hash_final(&desc,digest);
