@@ -1823,8 +1823,8 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
-	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_tfm) ? 
-		crypto_hash_digestsize(mdev->integrity_tfm) : 0;
+	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_w_tfm) ?
+		crypto_hash_digestsize(mdev->integrity_w_tfm) : 0;
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
@@ -1851,7 +1851,7 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 		drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE));
 	if (ok && dgs) {
 		dgb = mdev->int_dig_out;
-		drbd_csum(mdev, mdev->integrity_tfm, req->master_bio, dgb);
+		drbd_csum(mdev, mdev->integrity_w_tfm, req->master_bio, dgb);
 		ok = drbd_send(mdev, mdev->data.socket, dgb, dgs, MSG_MORE);
 	}
 	if (ok) {
@@ -1877,8 +1877,8 @@ int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 	void *dgb;
 	int dgs;
 
-	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_tfm) ? 
-		crypto_hash_digestsize(mdev->integrity_tfm) : 0;
+	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_w_tfm) ?
+		crypto_hash_digestsize(mdev->integrity_w_tfm) : 0;
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
@@ -1901,7 +1901,7 @@ int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 					sizeof(p), MSG_MORE);
 	if (ok && dgs) {
 		dgb = mdev->int_dig_out;
-		drbd_csum(mdev, mdev->integrity_tfm, e->private_bio, dgb);
+		drbd_csum(mdev, mdev->integrity_w_tfm, e->private_bio, dgb);
 		ok = drbd_send(mdev, mdev->data.socket, dgb, dgs, MSG_MORE);
 	}
 	if (ok)
@@ -2667,10 +2667,12 @@ void drbd_free_sock(struct drbd_conf *mdev)
 
 void drbd_free_resources(struct drbd_conf *mdev)
 {
-	if (mdev->cram_hmac_tfm) {
-		crypto_free_hash(mdev->cram_hmac_tfm);
-		mdev->cram_hmac_tfm = NULL;
-	}
+	crypto_free_hash(mdev->cram_hmac_tfm);
+	mdev->cram_hmac_tfm = NULL;
+	crypto_free_hash(mdev->integrity_w_tfm);
+	mdev->integrity_w_tfm=NULL;
+	crypto_free_hash(mdev->integrity_r_tfm);
+	mdev->integrity_r_tfm=NULL;
 	drbd_free_sock(mdev);
 	drbd_free_bc(mdev->bc);
 	mdev->bc = 0;

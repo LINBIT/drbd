@@ -1053,7 +1053,8 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	enum ret_codes retcode;
 	struct net_conf *new_conf = NULL;
 	struct crypto_hash *tfm = NULL;
-	struct crypto_hash *integrity_tfm = NULL;
+	struct crypto_hash *integrity_w_tfm = NULL;
+	struct crypto_hash *integrity_r_tfm = NULL;
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
 	struct drbd_conf *odev;
@@ -1158,16 +1159,23 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	if (new_conf->integrity_alg[0]) {
-		integrity_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
-		if (IS_ERR(integrity_tfm)) {
-			integrity_tfm = NULL;
+		integrity_w_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(integrity_w_tfm)) {
+			integrity_w_tfm = NULL;
 			retcode=IntegrityAlgNotAvail;
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(crypto_hash_tfm(integrity_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+		if (crypto_tfm_alg_type(crypto_hash_tfm(integrity_w_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
 			retcode=IntegrityAlgNotDigest;
 			goto fail;				
+		}
+
+		integrity_r_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(integrity_r_tfm)) {
+			integrity_r_tfm = NULL;
+			retcode=IntegrityAlgNotAvail;
+			goto fail;
 		}
 	}
 
@@ -1215,8 +1223,8 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->ping_int = new_conf->ping_int+1;
 #endif
 
-	if (integrity_tfm) {
-		i = crypto_hash_digestsize(integrity_tfm);
+	if (integrity_w_tfm) {
+		i = crypto_hash_digestsize(integrity_w_tfm);
 		int_dig_out = kmalloc(i, GFP_KERNEL);
 		if (!int_dig_out) {
 			retcode = KMallocFailed;
@@ -1263,10 +1271,15 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		crypto_free_hash(mdev->cram_hmac_tfm);
 	mdev->cram_hmac_tfm = tfm;
 
-	if (mdev->integrity_tfm) {
-		crypto_free_hash(mdev->integrity_tfm);
+	if (mdev->integrity_w_tfm) {
+		crypto_free_hash(mdev->integrity_w_tfm);
 	}
-	mdev->integrity_tfm = integrity_tfm;
+	mdev->integrity_w_tfm = integrity_w_tfm;
+
+	if (mdev->integrity_r_tfm) {
+		crypto_free_hash(mdev->integrity_r_tfm);
+	}
+	mdev->integrity_r_tfm = integrity_r_tfm;
 
 	kfree(mdev->int_dig_out);
 	kfree(mdev->int_dig_in);
@@ -1285,7 +1298,8 @@ fail:
 	kfree(int_dig_in);
 	kfree(int_dig_vv);
 	crypto_free_hash(tfm);
-	crypto_free_hash(integrity_tfm);
+	crypto_free_hash(integrity_w_tfm);
+	crypto_free_hash(integrity_r_tfm);
 	kfree(new_tl_hash);
 	kfree(new_ee_hash);
 	kfree(new_conf);

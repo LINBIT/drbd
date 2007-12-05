@@ -901,7 +901,8 @@ struct drbd_conf {
 	int al_tr_cycle;
 	int al_tr_pos;   /* position of the next transaction in the journal */
 	struct crypto_hash *cram_hmac_tfm;
-	struct crypto_hash *integrity_tfm;
+	struct crypto_hash *integrity_w_tfm; /* to be used by the worker thread */
+	struct crypto_hash *integrity_r_tfm; /* to be used by the receiver thread */
 	void *int_dig_out;
 	void *int_dig_in;
 	void *int_dig_vv;

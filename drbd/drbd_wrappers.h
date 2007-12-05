@@ -82,7 +82,7 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 {
 	sg->page   = page;
 	sg->offset = offset;
-        sg->length = len;
+	sg->length = len;
 }
 
 static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
