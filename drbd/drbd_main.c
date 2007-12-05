@@ -600,10 +600,6 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 
 	else if( (ns.conn == VerifyS ||
 		  ns.conn == VerifyT) &&
-		  mdev->state.conn < Connected ) rv=SS_NeedConnection;
-
-	else if( (ns.conn == VerifyS ||
-		  ns.conn == VerifyT) &&
 		  mdev->agreed_pro_version < 88) rv = SS_NotSupported;
 
 	return rv;
@@ -628,6 +624,9 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 
 	if ( ns.disk == Outdated && os.disk < Outdated && os.disk != Attaching)
 		rv=SS_LowerThanOutdated;
+
+	if( (ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected )
+		rv=SS_NeedConnection;
 
 	return rv;
 }
@@ -2183,6 +2182,8 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	drbd_thread_init(mdev, &mdev->receiver, drbdd_init);
 	drbd_thread_init(mdev, &mdev->worker, drbd_worker);
 	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
+
+	mdev->agreed_pro_version = PRO_VERSION_MAX;
 
 #ifdef __arch_um__
 	INFO("mdev = 0x%p\n", mdev);
