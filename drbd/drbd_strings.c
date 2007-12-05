@@ -45,6 +45,8 @@ static const char *drbd_conn_s_names[] = {
 	[WFSyncUUID]     = "WFSyncUUID",
 	[SyncSource]     = "SyncSource",
 	[SyncTarget]     = "SyncTarget",
+        [VerifyS]        = "VerifyS",
+        [VerifyT]        = "VerifyT",
 	[PausedSyncS]    = "PausedSyncS",
 	[PausedSyncT]    = "PausedSyncT"
 };
@@ -82,6 +84,8 @@ static const char *drbd_state_sw_errors[] = {
 		"Device is diskless, the requesed operation requires a disk",
 	[-SS_DeviceInUse] = "Device is held open by someone",
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
+        [-SS_NoVerifyAlg] = "Need a verify algorithm to start online verify",
+        [-SS_NeedConnection] = "Need a connection to start online verify",
 	[-SS_LowerThanOutdated] = "Disk state is lower than outdated"
 };
 

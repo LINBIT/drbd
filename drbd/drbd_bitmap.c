@@ -442,6 +442,15 @@ size_t drbd_bm_words(struct drbd_conf *mdev)
 	return b->bm_words;
 }
 
+unsigned long drbd_bm_bits(struct drbd_conf *mdev)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	ERR_IF(!b) return 0;
+
+	return b->bm_bits;
+}
+
+
 /* merge number words from buffer into the bitmap starting at offset.
  * buffer[i] is expected to be little endian unsigned long.
  */

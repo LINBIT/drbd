@@ -117,7 +117,16 @@ enum ret_codes {
 	IntegrityAlgNotDigest,
 
 	/* insert new ones above this line */
-	AfterLastRetCode
+	AfterLastRetCode,
+
+        PlusRetCodeBase = 10000,
+        CSUMSAlgNotAvail = PlusRetCodeBase,
+        CSUMSAlgNotDigest,
+        VERIFYAlgNotAvail,
+        VERIFYAlgNotDigest,
+        CSUMSResyncRunning,
+        VERIFYIsRunning,
+        AfterLastPlusRetCode,
 };
 
 #define DRBD_PROT_A   1
@@ -170,6 +179,8 @@ enum drbd_conns {
 	 * xx >= SyncSource && xx <= PausedSyncT */
 	SyncSource,
 	SyncTarget,
+        VerifyS,
+        VerifyT,
 	PausedSyncS,
 	PausedSyncT,
 	conn_mask = 31
@@ -223,7 +234,9 @@ enum set_st_err {
 	SS_IsDiskLess = -11,
 	SS_DeviceInUse = -12,
 	SS_NoNetConfig = -13,
-	SS_LowerThanOutdated = -14
+        SS_NoVerifyAlg=-14,
+        SS_NeedConnection=-15,
+        SS_LowerThanOutdated=-16
 };
 
 /* from drbd_strings.c */

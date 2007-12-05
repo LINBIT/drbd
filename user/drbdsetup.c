@@ -324,6 +324,7 @@ struct drbd_cmd commands[] = {
 		 { "rate",'r',T_rate,			EN(RATE,'k',"bytes/second") },
 		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1,NULL) },
+                 { "verify-alg", 'v',T_verify_alg,      ES },
 		 CLOSE_OPTIONS }} }, },
 
 	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
@@ -333,6 +334,7 @@ struct drbd_cmd commands[] = {
 	{"suspend-io", P_suspend_io, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"resume-io", P_resume_io, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"outdate", P_outdate, F_CONFIG_CMD, {{ NULL, NULL }} },
+        {"verify", P_start_ov, F_CONFIG_CMD, {{NULL, NULL}} },
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
 	{"state", P_get_state, F_GET_CMD, { .gp={ state_scmd} } },
 	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
@@ -401,6 +403,9 @@ static const char *error_messages[] = {
 	EM(IntegrityAlgNotAvail) = "The 'data-integrity-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
 	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",
+        EM(VERIFYAlgNotAvail) = "VERIFYAlgNotAvail",
+        EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
+        EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
@@ -751,7 +756,7 @@ int print_config_error( struct drbd_nl_cfg_reply *reply)
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
 	     ( err_no > SS_CW_NoNeed || err_no < SS_LowerThanOutdated) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
-			"You should updated the drbd userland tools.\n",err_no);
+			"You should update the drbd userland tools.\n",err_no);
 		rv = 20;
 	} else {
 		if(err_no > RetCodeBase ) {

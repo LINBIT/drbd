@@ -87,6 +87,10 @@ extern char usermode_helper[];
  * freshly allocated EEs get !ID_VACANT (== 1)
  * so if it says "cannot dereference null pointer at adress 0x00000001",
  * it is most likely one of these :( */
+
+#define ID_IN_SYNC      (4711ULL)
+#define ID_OUT_OF_SYNC  (4712ULL)
+
 #define ID_SYNCER (-1ULL)
 #define ID_VACANT 0
 #define is_syncer_block_id(id) ((id) == ID_SYNCER)
@@ -298,6 +302,10 @@ enum Drbd_Packet_Cmd {
 	BarrierAck,
 	StateChgReply,
 
+        OVRequest,
+        OVReply,
+        OVResult,
+
 	MAX_CMD,
 	MayIgnore = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
 	MAX_OPT_CMD,
@@ -347,6 +355,9 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[BarrierAck]	   = "BarrierAck",
 		[StateChgRequest]  = "StateChgRequest",
 		[StateChgReply]    = "StateChgReply",
+                [OVRequest]        = "OVRequest",
+                [OVReply]          = "OVReply",
+                [OVResult]         = "OVResult",
 	};
 
 	if (Data > cmd || cmd >= MAX_CMD) {
@@ -666,6 +677,11 @@ struct Tl_epoch_entry {
 	u64    block_id;
 };
 
+struct digest_info {
+        int digest_size;
+        void *digest;
+};
+
 /* ee flag bits */
 enum {
 	__EE_CALL_AL_COMPLETE_IO,
@@ -831,6 +847,16 @@ struct drbd_conf {
 	unsigned long rs_mark_left;
 	/* marks's time [unit jiffies] */
 	unsigned long rs_mark_time;
+        /* skipped because csum was equeal [unit BM_BLOCK_SIZE] ?? not needed for online verify */
+//        unsigned long rs_same_csum;
+
+
+        sector_t ov_position;
+        sector_t ov_last_oos_start; /* Start sector of out of sync range */
+        sector_t ov_last_oos_size;  /* size of out-of-sync range in sectors */
+        unsigned long ov_left;
+ //       struct crypto_hash *csums_tfm;  /* ?? not needed for online verify */
+        struct crypto_hash *verify_tfm;
 
 	struct Drbd_thread receiver;
 	struct Drbd_thread worker;
@@ -988,6 +1014,8 @@ extern int drbd_send_ack_rp(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 			struct Drbd_BlockRequest_Packet *rp);
 extern int drbd_send_ack_dp(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 			struct Drbd_Data_Packet *dp);
+extern int drbd_send_ack_ex(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
+                            sector_t sector, int blksize, u64 block_id);
 extern int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 			int offset, size_t size);
 extern int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
@@ -997,6 +1025,12 @@ extern int _drbd_send_barrier(struct drbd_conf *mdev,
 			struct drbd_barrier *barrier);
 extern int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 			      sector_t sector, int size, u64 block_id);
+extern int drbd_send_drequest_csum(struct drbd_conf *mdev,
+                                   sector_t sector,int size,
+                                   void *digest, int digest_size,
+                                   enum Drbd_Packet_Cmd cmd);
+extern int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size);
+
 extern int drbd_send_bitmap(struct drbd_conf *mdev);
 extern int _drbd_send_bitmap(struct drbd_conf *mdev);
 extern int drbd_send_sr_reply(struct drbd_conf *mdev, int retcode);
@@ -1166,6 +1200,7 @@ extern int  drbd_bm_write(struct drbd_conf *mdev);
 extern unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev,
 		unsigned long al_enr);
 extern size_t	     drbd_bm_words(struct drbd_conf *mdev);
+extern unsigned long drbd_bm_bits(struct drbd_conf *mdev);
 extern sector_t      drbd_bm_capacity(struct drbd_conf *mdev);
 extern unsigned long drbd_bm_find_next(struct drbd_conf *mdev);
 extern void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i);
@@ -1337,12 +1372,28 @@ extern int drbd_resync_finished(struct drbd_conf *mdev);
 /* maybe rather drbd_main.c ? */
 extern int drbd_md_sync_page_io(struct drbd_conf *mdev,
 		struct drbd_backing_dev *bdev, sector_t sector, int rw);
+extern void drbd_ov_oos_found(struct drbd_conf*, sector_t, int);
+
+static inline void ov_oos_print(struct drbd_conf *mdev)
+{
+        if (mdev->ov_last_oos_size) {
+                ERR("Out of sync: start=%llu, size=%lu (sectors)\n",
+                     (unsigned long long)mdev->ov_last_oos_start,
+                     (unsigned long)mdev->ov_last_oos_size);
+        }
+        mdev->ov_last_oos_size=0;
+}
+
+
 void drbd_csum(struct drbd_conf *, struct crypto_hash *, struct bio *, void *);
 /* worker callbacks */
 extern int w_req_cancel_conflict(struct drbd_conf *, struct drbd_work *, int);
 extern int w_read_retry_remote(struct drbd_conf *, struct drbd_work *, int);
 extern int w_e_end_data_req(struct drbd_conf *, struct drbd_work *, int);
 extern int w_e_end_rsdata_req(struct drbd_conf *, struct drbd_work *, int);
+extern int w_e_end_ov_reply(struct drbd_conf *, struct drbd_work *, int);
+extern int w_e_end_ov_req(struct drbd_conf *, struct drbd_work *, int);
+extern int w_ov_finished(struct drbd_conf *, struct drbd_work *, int);
 extern int w_resync_inactive(struct drbd_conf *, struct drbd_work *, int);
 extern int w_resume_next_sg(struct drbd_conf *, struct drbd_work *, int);
 extern int w_io_error(struct drbd_conf *, struct drbd_work *, int);

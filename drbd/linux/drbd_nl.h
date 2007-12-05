@@ -63,6 +63,7 @@ NL_PACKET(syncer_conf, 8,
 	NL_INTEGER(	30,	T_MAY_IGNORE,	rate)
 	NL_INTEGER(	31,	T_MAY_IGNORE,	after)
 	NL_INTEGER(	32,	T_MAY_IGNORE,	al_extents)
+        NL_STRING(      102,    T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
 )
 
 NL_PACKET(invalidate, 9, )
@@ -104,6 +105,11 @@ NL_PACKET(dump_ee, 24,
 	NL_INT64(	48,	T_MAY_IGNORE,	ee_sector)
 	NL_INT64(	49,	T_MAY_IGNORE,	ee_block_id)
 	NL_STRING(	50,	T_MAY_IGNORE,	ee_data,	32 << 10)
+)
+
+/* ?? 101 is also used by license ... */
+
+NL_PACKET(start_ov, 101,
 )
 
 #undef NL_PACKET

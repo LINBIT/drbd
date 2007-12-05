@@ -373,7 +373,8 @@ int cl_wide_st_chg(struct drbd_conf *mdev,
 		   ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
 		   ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ||
 		   ( os.disk != Diskless && ns.disk == Diskless ) ) ) ||
-		(os.conn >= Connected && ns.conn == Disconnecting);
+                (os.conn >= Connected && ns.conn == Disconnecting) ||
+                (os.conn == Connected && ns.conn == VerifyS);
 }
 
 int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
@@ -592,6 +593,14 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 		  ns.conn == SyncSource ||
 		  ns.conn == PausedSyncS) &&
 		 ns.disk == Outdated ) rv = SS_ConnectedOutdates;
+
+        else if( (ns.conn == VerifyS ||
+                  ns.conn == VerifyT) &&
+                  mdev->sync_conf.verify_alg[0] == 0 ) rv=SS_NoVerifyAlg;
+
+        else if( (ns.conn == VerifyS ||
+                  ns.conn == VerifyT) &&
+                 ns.conn < Connected ) rv=SS_NeedConnection;
 
 	return rv;
 }
@@ -822,6 +831,21 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		if (ns.conn == PausedSyncT)
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
 	}
+
+        if (os.conn == Connected &&
+            (ns.conn == VerifyS || ns.conn == VerifyT )) {
+                mdev->ov_position = 0;
+                mdev->ov_left  =
+                mdev->rs_total =
+                mdev->rs_mark_left = drbd_bm_bits(mdev);
+                mdev->rs_start     =
+                mdev->rs_mark_time = jiffies;
+                mdev->ov_last_oos_size = 0;
+                mdev->ov_last_oos_start = 0;
+                if(ns.conn == VerifyS) {
+                        mod_timer(&mdev->resync_timer,jiffies);
+                }
+        }
 
 	if ( os.disk == Diskless && os.conn == StandAlone &&
 	     (ns.disk > Diskless || ns.conn >= Unconnected) ) {
@@ -1571,6 +1595,18 @@ int drbd_send_ack(struct drbd_conf *mdev,
 			      e->block_id);
 }
 
+int drbd_send_ack_ex(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
+                     sector_t sector, int blksize, u64 block_id)
+{
+   /* This function misuses the block_id field to signal if the blocks
+      are is sync or not. */
+        return _drbd_send_ack(mdev,cmd,
+                              cpu_to_be64(sector),
+                              cpu_to_be32(blksize),
+                              cpu_to_be64(block_id));
+}
+
+
 int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 		       sector_t sector, int size, u64 block_id)
 {
@@ -1587,6 +1623,48 @@ int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 				(struct Drbd_Header *)&p, sizeof(p));
 	return ok;
 }
+
+
+int drbd_send_drequest_csum(struct drbd_conf *mdev,
+                            sector_t sector,int size,
+                            void *digest, int digest_size,
+                            enum Drbd_Packet_Cmd cmd)
+{
+        int ok;
+        struct Drbd_BlockRequest_Packet p;
+
+        p.sector   = cpu_to_be64(sector);
+        p.block_id = BE_DRBD_MAGIC + 0xbeef;
+        p.blksize  = cpu_to_be32(size);
+
+        p.head.magic   = BE_DRBD_MAGIC;
+        p.head.command = cpu_to_be16(cmd);
+        p.head.length  = cpu_to_be16( sizeof(p)-sizeof(struct Drbd_Header) + digest_size );
+
+        down(&mdev->data.mutex);
+
+        ok = ( sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),0) );
+        ok = ok&& ( digest_size == drbd_send(mdev,mdev->data.socket,digest,digest_size,0) );
+
+        up(&mdev->data.mutex);
+
+        return ok;
+}
+
+int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
+{
+        int ok;
+        struct Drbd_BlockRequest_Packet p;
+
+        p.sector   = cpu_to_be64(sector);
+        p.block_id = BE_DRBD_MAGIC + 0xbabe;
+        p.blksize  = cpu_to_be32(size);
+
+        ok = drbd_send_cmd(mdev,USE_DATA_SOCKET, OVRequest,
+                           (struct Drbd_Header*)&p,sizeof(p));
+        return ok;
+}
+
 
 /* called on sndtimeo
  * returns FALSE if we should retry,
@@ -2105,6 +2183,7 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 #ifdef __arch_um__
 	INFO("mdev = 0x%p\n", mdev);
 #endif
+        mdev->resync_wenr = LC_FREE;
 }
 
 void drbd_mdev_cleanup(struct drbd_conf *mdev)
@@ -2151,6 +2230,10 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 
 	drbd_thread_stop(&mdev->receiver);
 
+        if (mdev->verify_tfm) {
+                crypto_free_hash(mdev->verify_tfm);
+                mdev->verify_tfm=NULL;
+        }
 	/* no need to lock it, I'm the only thread alive */
 	if (mdev->epoch_size !=  0)
 		ERR("epoch_size:%d\n", mdev->epoch_size);

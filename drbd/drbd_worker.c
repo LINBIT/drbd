@@ -279,7 +279,7 @@ int w_resync_inactive(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return 1; /* Simply ignore this! */
 }
 
-void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
+STATIC void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
 {
 	struct hash_desc desc;
 	struct scatterlist sg;
@@ -299,6 +299,9 @@ void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio,
 	crypto_hash_final(&desc,digest);
 }
 
+int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work* w,int cancel);
+
+
 void resync_timer_fn(unsigned long data)
 {
 	unsigned long flags;
@@ -309,7 +312,9 @@ void resync_timer_fn(unsigned long data)
 
 	if (likely(!test_and_clear_bit(STOP_SYNC_TIMER, &mdev->flags))) {
 		queue = 1;
-		mdev->resync_work.cb = w_make_resync_request;
+                if(mdev->state.conn == VerifyS ) {
+                        mdev->resync_work.cb = w_make_ov_request;
+                } else mdev->resync_work.cb = w_make_resync_request;
 	} else {
 		queue = 0;
 		mdev->resync_work.cb = w_resync_inactive;
@@ -465,6 +470,65 @@ next_sector:
 	return 1;
 }
 
+int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work* w,int cancel)
+{
+        int number,i,size;
+        sector_t sector;
+        const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
+
+        if(unlikely(cancel)) return 1;
+
+        if (unlikely(mdev->state.conn < Connected)) {
+                ERR("Confused in w_make_ov_request()! cstate < Connected");
+                return 0;
+        }
+
+        number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
+        if (atomic_read(&mdev->rs_pending_cnt)>number) {
+                goto requeue;
+        }
+        number -= atomic_read(&mdev->rs_pending_cnt);
+
+        sector = mdev->ov_position;
+        for(i=0;i<number;i++) {
+                size = BM_BLOCK_SIZE;
+
+                if (drbd_try_rs_begin_io(mdev, sector)) {
+                        mdev->ov_position = sector;
+                        goto requeue;
+                }
+
+                if (sector + (size>>9) > capacity) size = (capacity-sector)<<9;
+
+                inc_rs_pending(mdev);
+                if(!drbd_send_ov_request(mdev, sector, size)) {
+                        dec_rs_pending(mdev);
+                        return 0;
+                }
+                sector += BM_SECT_PER_BIT;
+                if(sector >= capacity) {
+                        mdev->resync_work.cb = w_resync_inactive;
+
+                        return 1;
+                }
+        }
+        mdev->ov_position = sector;
+
+ requeue:
+        mod_timer(&mdev->resync_timer, jiffies + SLEEP_TIME);
+        return 1;
+}
+
+
+int w_ov_finished(struct drbd_conf *mdev, struct drbd_work* w,int cancel)
+{
+        kfree(w);
+        ov_oos_print(mdev);
+        drbd_resync_finished(mdev);
+
+        return 1;
+}
+
 int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	kfree(w);
@@ -509,10 +573,31 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	db = mdev->rs_total;
 	dbdt = Bit2KB(db/dt);
 	mdev->rs_paused /= HZ;
-	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
-	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
+        INFO("%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
+             (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT) ?
+             "Online verify ": "Resync",
+             dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
-	D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
+        if (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT) {
+                if(drbd_bm_total_weight(mdev)) {
+                        ALERT("Online verify found %lu %dk block out of sync!\n",
+                              drbd_bm_total_weight(mdev),BM_BLOCK_SIZE/1024);
+                        drbd_khelper(mdev,"out-of-sync");
+                }
+        } else {
+#if 0
+                if(mdev->csums_tfm && mdev->rs_total) {
+                        INFO("%lu%% had equal check sums, eliminated: %luK; "
+                             "transferred %luK total %luK\n",
+                             /* FIXME warning this may overflow somewhen! */
+                             (mdev->rs_same_csum*100) / mdev->rs_total,
+                             Bit2KB(mdev->rs_same_csum),
+                             Bit2KB(mdev->rs_total - mdev->rs_same_csum),
+                             Bit2KB(mdev->rs_total));
+                }
+#endif
+                D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
+        }
 
 	if (mdev->rs_failed) {
 		INFO("            %lu failed blocks\n", mdev->rs_failed);
@@ -557,7 +642,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	mdev->rs_paused = 0;
 
 	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC, &mdev->flags)) {
-		WARN("Writing the whole bitmap, due to failed kmalloc\n");
+                WARN("Writing the whole bitmap.\n");
 		drbd_bm_write(mdev);
 	}
 
@@ -672,6 +757,113 @@ int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (unlikely(!ok)) ERR("drbd_send_block() failed\n");
 	return ok;
 }
+
+
+int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
+{
+        struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+        int digest_size;
+        void *digest;
+        int ok=1;
+
+        drbd_rs_complete_io(mdev,e->sector);
+
+        if(unlikely(cancel)) {
+                drbd_free_ee(mdev,e);
+                dec_unacked(mdev);
+                return 1;
+        }
+
+        if(likely(drbd_bio_uptodate(e->private_bio))) {
+                digest_size = crypto_hash_digestsize(mdev->verify_tfm);
+                digest = kmalloc(digest_size,GFP_KERNEL);
+                if(digest) {
+                        drbd_csum(mdev,mdev->verify_tfm,e->private_bio,digest);
+                        ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
+                                                     digest, digest_size, OVReply);
+                        if (ok) inc_rs_pending(mdev);
+                        kfree(digest);
+                }
+        }
+
+        dec_unacked(mdev);
+
+        spin_lock_irq(&mdev->req_lock);
+        drbd_free_ee(mdev,e);
+        spin_unlock_irq(&mdev->req_lock);
+
+        return ok;
+}
+
+void drbd_ov_oos_found(struct drbd_conf *mdev, sector_t sector, int size)
+{
+        if (mdev->ov_last_oos_start + mdev->ov_last_oos_size == sector) {
+                mdev->ov_last_oos_size += size>>9;
+        } else {
+                mdev->ov_last_oos_start = sector;
+                mdev->ov_last_oos_size = size>>9;
+        }
+        drbd_set_out_of_sync(mdev, sector, size);
+        set_bit(WRITE_BM_AFTER_RESYNC, &mdev->flags);
+}
+
+int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
+{
+        struct Tl_epoch_entry *e = (struct Tl_epoch_entry*)w;
+        struct digest_info *di;
+        int digest_size;
+        void *digest;
+        int ok,eq=0;
+
+        drbd_rs_complete_io(mdev,e->sector);
+
+        if(unlikely(cancel)) {
+                drbd_free_ee(mdev,e);
+                dec_unacked(mdev);
+                return 1;
+        }
+
+        di = (struct digest_info *)(unsigned long)e->block_id;
+
+        if(likely(drbd_bio_uptodate(e->private_bio))) {
+                digest_size = crypto_hash_digestsize(mdev->verify_tfm);
+                digest = kmalloc(digest_size,GFP_KERNEL);
+                if(digest) {
+                        drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
+
+                        D_ASSERT(digest_size == di->digest_size);
+                        eq = !memcmp(digest, di->digest, digest_size);
+                        kfree(digest);
+                }
+        } else {
+                ok=drbd_send_ack(mdev,NegRSDReply,e);
+                if (DRBD_ratelimit(5*HZ,5))
+                        ERR("Sending NegDReply. I guess it gets messy.\n");
+                drbd_io_error(mdev, FALSE);
+        }
+
+        dec_unacked(mdev);
+
+        kfree(di);
+
+        if (!eq) drbd_ov_oos_found(mdev,e->sector,e->size);
+        else ov_oos_print(mdev);
+
+        ok = drbd_send_ack_ex(mdev,OVResult,e->sector,e->size,
+                              eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
+
+        spin_lock_irq(&mdev->req_lock);
+        drbd_free_ee(mdev,e);
+        spin_unlock_irq(&mdev->req_lock);
+
+        if( --mdev->ov_left == 0 ) {
+                ov_oos_print(mdev);
+                drbd_resync_finished(mdev);
+        }
+
+        return ok;
+}
+
 
 int w_prev_work_done(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {

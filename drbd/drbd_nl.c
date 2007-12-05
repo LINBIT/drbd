@@ -1415,6 +1415,8 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	struct syncer_conf sc;
 	struct drbd_conf *odev;
 	int err;
+        struct crypto_hash *verify_tfm = NULL;
+        int ovr; /* online verify running */
 
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
 
@@ -1446,6 +1448,29 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		}
 	}
 
+        ovr = (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT);
+
+        if (ovr) {
+                if (strcmp(sc.verify_alg, mdev->sync_conf.verify_alg)) {
+                        retcode = VERIFYIsRunning;
+                        goto fail;
+                }
+        }
+
+        if (!ovr && sc.verify_alg[0]) {
+                verify_tfm = crypto_alloc_hash(sc.verify_alg, 0, CRYPTO_ALG_ASYNC);
+                if (IS_ERR(verify_tfm)) {
+                        verify_tfm = NULL;
+                        retcode=VERIFYAlgNotAvail;
+                        goto fail;
+                }
+
+                if (crypto_tfm_alg_type(crypto_hash_tfm(verify_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+                        retcode=VERIFYAlgNotDigest;
+                        goto fail;
+                }
+        }
+
 	ERR_IF (sc.rate < 1) sc.rate = 1;
 	ERR_IF (sc.al_extents < 7) sc.al_extents = 127; /* arbitrary minimum */
 #define AL_MAX ((MD_AL_MAX_SIZE-1) * AL_EXTENTS_PT)
@@ -1456,6 +1481,12 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 #undef AL_MAX
 
 	mdev->sync_conf = sc;
+
+        if (!ovr) {
+                if (mdev->verify_tfm) crypto_free_hash(mdev->verify_tfm);
+                mdev->verify_tfm=verify_tfm;
+                verify_tfm=NULL;
+        }
 
 	if (inc_local(mdev)) {
 		err = drbd_check_al_size(mdev);
@@ -1473,7 +1504,8 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	drbd_alter_sa(mdev, sc.after);
 
- fail:
+fail:
+        if(verify_tfm) crypto_free_hash(verify_tfm);
 	reply->ret_code = retcode;
 	return 0;
 }
@@ -1620,6 +1652,15 @@ int drbd_nl_get_timeout_flag(struct drbd_conf *mdev,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
+STATIC int drbd_nl_start_ov(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+                                    struct drbd_nl_cfg_reply *reply)
+{
+        reply->ret_code = drbd_request_state(mdev,NS(conn,VerifyS));
+
+        return 0;
+}
+
+
 struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
 	struct drbd_conf *mdev;
@@ -1684,7 +1725,7 @@ static struct cn_handler_struct cnd_table[] = {
 	[ P_get_timeout_flag ]	=
 		{ &drbd_nl_get_timeout_flag,
 		  sizeof(struct get_timeout_flag_tag_len_struct)},
-
+        [ P_start_ov ]          = { &drbd_nl_start_ov,          0 },
 };
 
 void drbd_connector_callback(void *data)

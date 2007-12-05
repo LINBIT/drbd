@@ -1414,7 +1414,6 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 				spin_unlock_irq(&mdev->al_lock);
 				return -EAGAIN;
 			}
-			D_ASSERT(bm_ext->rs_left == 0);
 			D_ASSERT(!test_bit(BME_LOCKED, &bm_ext->flags));
 			D_ASSERT(!test_bit(BME_NO_WRITES, &bm_ext->flags));
 			lc_del(mdev->resync, &bm_ext->lce);

@@ -229,6 +229,7 @@ struct adm_cmd cmds[] = {
   { "dump-md",           admm_generic,  1,1,0,1 },
   { "wait-con-int",      adm_wait_ci,   1,0,1,1 },
   { "hidden-commands",   hidden_cmds,   1,0,0,0 },
+  { "verify",            adm_generic_s, 1,1,0,0 },
   { "proxy-up",          adm_proxy_up,  2,1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0,0 },
   { "sh-resources",      sh_resources,  2,0,0,0 },
