@@ -236,7 +236,8 @@ enum set_st_err {
 	SS_NoNetConfig = -13,
         SS_NoVerifyAlg=-14,
         SS_NeedConnection=-15,
-        SS_LowerThanOutdated=-16
+        SS_LowerThanOutdated=-16,
+	SS_NotSupported=-17
 };
 
 /* from drbd_strings.c */

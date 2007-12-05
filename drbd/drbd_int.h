@@ -847,15 +847,12 @@ struct drbd_conf {
 	unsigned long rs_mark_left;
 	/* marks's time [unit jiffies] */
 	unsigned long rs_mark_time;
-        /* skipped because csum was equeal [unit BM_BLOCK_SIZE] ?? not needed for online verify */
-//        unsigned long rs_same_csum;
 
 
         sector_t ov_position;
         sector_t ov_last_oos_start; /* Start sector of out of sync range */
         sector_t ov_last_oos_size;  /* size of out-of-sync range in sectors */
         unsigned long ov_left;
- //       struct crypto_hash *csums_tfm;  /* ?? not needed for online verify */
         struct crypto_hash *verify_tfm;
 
 	struct Drbd_thread receiver;

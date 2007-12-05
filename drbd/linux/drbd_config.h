@@ -22,10 +22,10 @@
 
 extern const char *drbd_buildtag(void);
 
-#define REL_VERSION "8.2.1"
-#define API_VERSION 86
+#define REL_VERSION "8.2.2"
+#define API_VERSION 88
 #define PRO_VERSION_MIN 86
-#define PRO_VERSION_MAX 87
+#define PRO_VERSION_MAX 88
 
 /* no static functs, improves quality of OOPS traces
  */

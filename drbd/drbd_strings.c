@@ -86,7 +86,8 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
         [-SS_NoVerifyAlg] = "Need a verify algorithm to start online verify",
         [-SS_NeedConnection] = "Need a connection to start online verify",
-	[-SS_LowerThanOutdated] = "Disk state is lower than outdated"
+	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
+	[-SS_NotSupported] = "Peer does not support protocol"
 };
 
 const char *conns_to_name(enum drbd_conns s)
@@ -107,7 +108,7 @@ const char *disks_to_name(enum drbd_disk_state s)
 
 const char *set_st_err_name(enum set_st_err err)
 {
-	return err < SS_LowerThanOutdated ? "TOO_SMALL" :
+	return err < SS_NotSupported ? "TOO_SMALL" :
 	       err > SS_TwoPrimaries ? "TOO_LARGE"
 			: drbd_state_sw_errors[-err];
 }

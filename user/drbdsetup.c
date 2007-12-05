@@ -754,7 +754,7 @@ int print_config_error( struct drbd_nl_cfg_reply *reply)
 	if (err_no == SS_Success) return rv;
 
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
-	     ( err_no > SS_CW_NoNeed || err_no < SS_LowerThanOutdated) ) {
+	     ( err_no > SS_CW_NoNeed || err_no < SS_NotSupported) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should update the drbd userland tools.\n",err_no);
 		rv = 20;

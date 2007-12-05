@@ -1598,11 +1598,6 @@ int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		(struct Drbd_BlockRequest_Packet *)h;
         const int brps = sizeof(*p)-sizeof(*h);
 
-printk("h->length: %d sizeof(*p)-sizeof(*h): %d\n", h->length, sizeof(*p)-sizeof(*h));
-/*
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-*/
-
 	if (drbd_recv(mdev, h->payload, brps) != brps)
 		return FALSE;
 
