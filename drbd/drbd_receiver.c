@@ -3012,6 +3012,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 		goto fail;
 	}
 
+	sg_init_table(&sg, 1);
 	sg_set_buf(&sg, peers_ch, p.length);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
