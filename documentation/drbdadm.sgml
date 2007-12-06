@@ -266,6 +266,16 @@
       </varlistentry>
 
       <varlistentry>
+        <term>verify</term>
+        <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>verify</secondary></indexterm>
+           Starts online verify. During online verify, data on 
+           both nodes is compared for inconsitency. See 
+	   /proc/drbd for online verify progress.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term>pause-sync</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>pause-sync</secondary></indexterm>
