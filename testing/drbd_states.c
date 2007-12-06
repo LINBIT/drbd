@@ -37,7 +37,7 @@ STATIC int pre_state_checks(drbd_dev* mdev, drbd_state_t ns)
 	int rv=SS_Success;
 
 /*
- 	fp = DontCare;
+	fp = DontCare;
 	if(inc_local(mdev)) {
 		fp = mdev->bc->fencing;
 		dec_local(mdev);

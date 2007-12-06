@@ -209,7 +209,7 @@ const char *fencing_n[] = {
 };
 
 const char *asb0p_n[] = {
-        [Disconnect]        = "disconnect",
+	[Disconnect]        = "disconnect",
 	[DiscardYoungerPri] = "discard-younger-primary",
 	[DiscardOlderPri]   = "discard-older-primary",
 	[DiscardZeroChg]    = "discard-zero-changes",
@@ -265,7 +265,7 @@ struct drbd_cmd commands[] = {
 	{"primary", P_primary, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "overwrite-data-of-peer",'o',T_overwrite_peer, EB   },
-                 CLOSE_OPTIONS }} }, },
+		 CLOSE_OPTIONS }} }, },
 
 	{"secondary", P_secondary, F_CONFIG_CMD, {{NULL, NULL}} },
 
@@ -289,7 +289,7 @@ struct drbd_cmd commands[] = {
 		 { "local_addr",	T_my_addr,	conv_address },
 		 { "remote_addr",	T_peer_addr,	conv_address },
 		 { "protocol",		T_wire_protocol,conv_protocol },
- 		 { NULL,                0,           	NULL}, },
+		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
 		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") },
 		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) },
@@ -324,7 +324,7 @@ struct drbd_cmd commands[] = {
 		 { "rate",'r',T_rate,			EN(RATE,'k',"bytes/second") },
 		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1,NULL) },
-                 { "verify-alg", 'v',T_verify_alg,      ES },
+		 { "verify-alg", 'v',T_verify_alg,      ES },
 		 CLOSE_OPTIONS }} }, },
 
 	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
@@ -334,7 +334,7 @@ struct drbd_cmd commands[] = {
 	{"suspend-io", P_suspend_io, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"resume-io", P_resume_io, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"outdate", P_outdate, F_CONFIG_CMD, {{ NULL, NULL }} },
-        {"verify", P_start_ov, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"verify", P_start_ov, F_CONFIG_CMD, {{NULL, NULL}} },
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
 	{"state", P_get_state, F_GET_CMD, { .gp={ state_scmd} } },
 	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
@@ -403,9 +403,9 @@ static const char *error_messages[] = {
 	EM(IntegrityAlgNotAvail) = "The 'data-integrity-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
 	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",
-        EM(VERIFYAlgNotAvail) = "VERIFYAlgNotAvail",
-        EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
-        EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
+	EM(VERIFYAlgNotAvail) = "VERIFYAlgNotAvail",
+	EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
+	EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)

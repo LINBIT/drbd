@@ -356,7 +356,7 @@ int my_munmap(const char* what, void **start, size_t *length) {
 	int ret = 0;
 	void *_start = start ? *start : NULL;
 	size_t _length = length ? *length : 0;
-        _length = PAGE_ALIGN(_length) + (((unsigned long)_start & ~PAGE_MASK) ? PAGE_SIZE : 0);
+	_length = PAGE_ALIGN(_length) + (((unsigned long)_start & ~PAGE_MASK) ? PAGE_SIZE : 0);
 	_start = (void*)(((unsigned long)_start) & (PAGE_MASK));
 	if (_start) {
 		// fprintf(stderr,"munmap %p %lu\n",_start,(unsigned long)_length);
@@ -815,19 +815,19 @@ int confirmed(const char *text)
 	size_t n = 0;
 	int ok;
 
-        printf("\n%s\n", text);
+	printf("\n%s\n", text);
 
-        if (force) {
-            printf("*** confirmation forced via --force option ***\n");
-            ok = 1;
-        }
-        else {
-            printf("[need to type '%s' to confirm] ", yes);
-            ok = getline(&answer,&n,stdin) == N &&
-                strncmp(answer,yes,N-1) == 0;
-            if (answer) free(answer);
-            printf("\n");
-        }
+	if (force) {
+	    printf("*** confirmation forced via --force option ***\n");
+	    ok = 1;
+	}
+	else {
+	    printf("[need to type '%s' to confirm] ", yes);
+	    ok = getline(&answer,&n,stdin) == N &&
+		strncmp(answer,yes,N-1) == 0;
+	    if (answer) free(answer);
+	    printf("\n");
+	}
 	return ok;
 }
 
@@ -1808,7 +1808,7 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 			etext = "number ([0-9], up to 20 digits)"; break;
 		case TK_STRING:
 			etext = "short quoted string "
-			        "(\"..up to 20 characters, no newline..\")";
+				"(\"..up to 20 characters, no newline..\")";
 				break;
 		case TK_U32:
 			etext = "an 8-digit hex number"; break;
@@ -2576,13 +2576,13 @@ int main(int argc, char **argv)
 #if 1
 	if (sizeof(struct md_on_disk_07) != 4096) {
 		fprintf(stderr, "Where did you get this broken build!?\n"
-			        "sizeof(md_on_disk_07) == %lu, should be 4096\n",
+				"sizeof(md_on_disk_07) == %lu, should be 4096\n",
 				(unsigned long)sizeof(struct md_on_disk_07));
 		exit(111);
 	}
 	if (sizeof(struct md_on_disk_08) != 4096) {
 		fprintf(stderr, "Where did you get this broken build!?\n"
-			        "sizeof(md_on_disk_08) == %lu, should be 4096\n",
+				"sizeof(md_on_disk_08) == %lu, should be 4096\n",
 				(unsigned long)sizeof(struct md_on_disk_08));
 		exit(111);
 	}
@@ -2608,25 +2608,25 @@ int main(int argc, char **argv)
 	if (argc < 4)
 		print_usage_and_exit();
 
-        /* Check for options (e.g. --force) */
-        while (1) {
-            int c = getopt_long(argc,argv,make_optstring(metaopt,0),metaopt,0);
+	/* Check for options (e.g. --force) */
+	while (1) {
+	    int c = getopt_long(argc,argv,make_optstring(metaopt,0),metaopt,0);
 
-            if (c == -1)
-                break;
+	    if (c == -1)
+		break;
 
-            switch (c) {
-            case 'f':
-                force = 1;
-                break;
-            default:
-                print_usage_and_exit();
-                break;
-            }
-        }
+	    switch (c) {
+	    case 'f':
+		force = 1;
+		break;
+	    default:
+		print_usage_and_exit();
+		break;
+	    }
+	}
 
-        // Next argument to process is specified by optind...
-        ai = optind;
+	// Next argument to process is specified by optind...
+	ai = optind;
 
 	/* FIXME should have a "drbd_cfg_new" and a "drbd_cfg_free"
 	 * function, maybe even a "get" and "put" ?

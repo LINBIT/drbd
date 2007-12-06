@@ -175,17 +175,17 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 
 static __inline__ int atomic_add_return(int i, atomic_t *v)
 {
-        int __i = i;
-        __asm__ __volatile__(
-                LOCK_PREFIX "xaddl %0, %1;"
-                :"=r"(i)
-                :"m"(v->counter), "0"(i));
-        return i + __i;
+	int __i = i;
+	__asm__ __volatile__(
+		LOCK_PREFIX "xaddl %0, %1;"
+		:"=r"(i)
+		:"m"(v->counter), "0"(i));
+	return i + __i;
 }
 
 static __inline__ int atomic_sub_return(int i, atomic_t *v)
 {
-        return atomic_add_return(-i,v);
+	return atomic_add_return(-i,v);
 }
 
 #define atomic_inc_return(v)  (atomic_add_return(1,v))
@@ -195,33 +195,33 @@ static __inline__ int atomic_sub_return(int i, atomic_t *v)
 
 static __inline__ int atomic_add_return(int i, atomic_t *v)
 {
-        int __i;
+	int __i;
 #ifdef CONFIG_M386
-        unsigned long flags;
-        if(unlikely(boot_cpu_data.x86==3))
-                goto no_xadd;
+	unsigned long flags;
+	if(unlikely(boot_cpu_data.x86==3))
+		goto no_xadd;
 #endif
-        /* Modern 486+ processor */
-        __i = i;
-        __asm__ __volatile__(
-                LOCK_PREFIX "xaddl %0, %1;"
-                :"=r"(i)
-                :"m"(v->counter), "0"(i));
-        return i + __i;
+	/* Modern 486+ processor */
+	__i = i;
+	__asm__ __volatile__(
+		LOCK_PREFIX "xaddl %0, %1;"
+		:"=r"(i)
+		:"m"(v->counter), "0"(i));
+	return i + __i;
 
 #ifdef CONFIG_M386
 no_xadd: /* Legacy 386 processor */
-        local_irq_save(flags);
-        __i = atomic_read(v);
-        atomic_set(v, i + __i);
-        local_irq_restore(flags);
-        return i + __i;
+	local_irq_save(flags);
+	__i = atomic_read(v);
+	atomic_set(v, i + __i);
+	local_irq_restore(flags);
+	return i + __i;
 #endif
 }
 
 static __inline__ int atomic_sub_return(int i, atomic_t *v)
 {
-        return atomic_add_return(-i,v);
+	return atomic_add_return(-i,v);
 }
 
 #define atomic_inc_return(v)  (atomic_add_return(1,v))
@@ -244,14 +244,14 @@ static __inline__ int atomic_sub_return(int i, atomic_t *v)
 #define CRYPTO_ALG_TYPE_HASH CRYPTO_ALG_TYPE_DIGEST
 
 struct crypto_hash {
-        struct crypto_tfm *base;
+	struct crypto_tfm *base;
 	const u8 *key;
 	int keylen;
 };
 
 struct hash_desc {
-        struct crypto_hash *tfm;
-        u32 flags;
+	struct crypto_hash *tfm;
+	u32 flags;
 };
 
 static inline struct crypto_hash *
@@ -324,7 +324,7 @@ static inline unsigned int crypto_hash_digestsize(struct crypto_hash *tfm)
 
 static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
 {
-        return tfm->base;
+	return tfm->base;
 }
 
 static inline int crypto_hash_init(struct hash_desc *desc)
@@ -334,10 +334,10 @@ static inline int crypto_hash_init(struct hash_desc *desc)
 }
 
 static inline int crypto_hash_update(struct hash_desc *desc,
-                                     struct scatterlist *sg,
-                                     unsigned int nbytes)
+				     struct scatterlist *sg,
+				     unsigned int nbytes)
 {
-        crypto_digest_update(desc->tfm->base,sg,1 /* ! */ );
+	crypto_digest_update(desc->tfm->base,sg,1 /* ! */ );
 	/* ! this is not generic. Would need to convert nbytes -> nsg */
 
 	return 0;

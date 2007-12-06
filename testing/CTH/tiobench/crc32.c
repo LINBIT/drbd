@@ -80,7 +80,7 @@ unsigned long crc32(  const void* buffer,
       const unsigned char* cp = (const unsigned char*)buffer;
 
       while (length--)
-        crc = (crc << 8) ^ crctab[((crc >> 24) ^ *(cp++)) & 0xFF];
+	crc = (crc << 8) ^ crctab[((crc >> 24) ^ *(cp++)) & 0xFF];
 
       return crc;
 }

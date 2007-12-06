@@ -291,32 +291,32 @@ static char* esc_xml(char* str)
     while(*ue) {
       if (*ue == '"' || *ue == '\\') {
 	  *e++ = '\\';
-          if (e-buffer >= 1021) {
+	  if (e-buffer >= 1021) {
 	     fprintf(stderr,"string too long.\n");
 	     exit(E_syntax);
 	  }
-          *e++ = *ue++;
+	  *e++ = *ue++;
       } else if (*ue == '\'' || *ue == '<' || *ue == '>' || *ue == '&') {
-          if (*ue == '\'' && e-buffer < 1017) {
-            strcpy(e, "&apos;");
-            e += 6;
-          } else if (*ue == '<' && e-buffer < 1019) {
-            strcpy(e, "&lt;");
-            e += 4;
-          } else if (*ue == '>' && e-buffer < 1019) {
-            strcpy(e, "&gt;");
-            e += 4;
-          } else if (*ue == '&' && e-buffer < 1018) {
-            strcpy(e, "&amp;");
-            e += 5;
-          } else {
-            fprintf(stderr,"string too long.\n");
+	  if (*ue == '\'' && e-buffer < 1017) {
+	    strcpy(e, "&apos;");
+	    e += 6;
+	  } else if (*ue == '<' && e-buffer < 1019) {
+	    strcpy(e, "&lt;");
+	    e += 4;
+	  } else if (*ue == '>' && e-buffer < 1019) {
+	    strcpy(e, "&gt;");
+	    e += 4;
+	  } else if (*ue == '&' && e-buffer < 1018) {
+	    strcpy(e, "&amp;");
+	    e += 5;
+	  } else {
+	    fprintf(stderr,"string too long.\n");
 	    exit(E_syntax);
 	  }
 	  ue++;
       } else {
-          *e++ = *ue++;
-          if (e-buffer >= 1022) {
+	  *e++ = *ue++;
+	  if (e-buffer >= 1022) {
 	    fprintf(stderr,"string too long.\n");
 	    exit(E_syntax);
 	  }
@@ -1777,8 +1777,8 @@ int main(int argc, char** argv)
     strncpy(nodeinfo.nodename,env_drbd_nodename,sizeof(nodeinfo.nodename)-1);
     nodeinfo.nodename[sizeof(nodeinfo.nodename)-1] = 0;
     fprintf(stderr, "\n"
-            "   found __DRBD_NODE__ in environment\n"
-            "   PRETENDING that I am >>%s<<\n\n",nodeinfo.nodename);
+	    "   found __DRBD_NODE__ in environment\n"
+	    "   PRETENDING that I am >>%s<<\n\n",nodeinfo.nodename);
   }
 
   /* in case drbdadm is called with an absolut or relative pathname
@@ -1996,11 +1996,11 @@ int main(int argc, char** argv)
   if(cmd->res_name_required)
     {
       if (optind + 1 > argc && !is_dump)
-        print_usage_and_exit("missing arguments"); // arguments missing.
+	print_usage_and_exit("missing arguments"); // arguments missing.
 
       global_validate();
       if (!is_dump) {
-        for_each_resource(res,tmp,config) {
+	for_each_resource(res,tmp,config) {
 	  convert_after_option(res);
 	  convert_discard_opt(res);
 
@@ -2016,26 +2016,26 @@ int main(int argc, char** argv)
       }
 
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
-        if (is_dump) {
-          if (is_dump_xml) {
-            printf("<config file=\"%s\">\n", config_file); ++indent;
-            dump_global_info_xml();
-            dump_common_info_xml();
-          } else {
-            printf("# %s\n",config_file);
-            dump_global_info();
-            dump_common_info();
-          }
+	if (is_dump) {
+	  if (is_dump_xml) {
+	    printf("<config file=\"%s\">\n", config_file); ++indent;
+	    dump_global_info_xml();
+	    dump_common_info_xml();
+	  } else {
+	    printf("# %s\n",config_file);
+	    dump_global_info();
+	    dump_common_info();
+	  }
 	}
-        for_each_resource(res,tmp,config) {
+	for_each_resource(res,tmp,config) {
 	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
 	    fprintf(stderr,"command exited with code %d\n",rv);
 	    exit(E_exec_error);
 	  }
 	}
-        if (is_dump_xml) {
-            --indent; printf("</config>\n");
-        }
+	if (is_dump_xml) {
+	    --indent; printf("</config>\n");
+	}
       } else {
 	for(i=optind;(int)i<argc;i++) {
 	  res = res_by_name(argv[i]);

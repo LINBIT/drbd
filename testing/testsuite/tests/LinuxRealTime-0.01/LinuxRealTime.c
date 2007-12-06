@@ -192,7 +192,7 @@ SWIG_TypeCheck(const char *c, swig_type_info *ty) {
       /* Move s to the top of the linked list */
       s->prev->next = s->next;
       if (s->next) {
-        s->next->prev = s->prev;
+	s->next->prev = s->prev;
       }
       /* Insert s as second element in the list */
       s->next = ty->next;
@@ -285,9 +285,9 @@ SWIG_TypeClientDataTL(swig_type_info *tl, swig_type_info *ti, void *clientdata) 
     if (!equiv->converter) {
       tc = tl;
       while (tc) {
-        if ((strcmp(tc->name, equiv->name) == 0))
-          SWIG_TypeClientDataTL(tl,tc,clientdata);
-        tc = tc->prev;
+	if ((strcmp(tc->name, equiv->name) == 0))
+	  SWIG_TypeClientDataTL(tl,tc,clientdata);
+	tc = tc->prev;
       }
     }
     equiv = equiv->next;
@@ -354,9 +354,9 @@ SWIG_PropagateClientDataTL(swig_type_info *tl, swig_type_info *type) {
     if (!equiv->converter) {
       tc = tl;
       while (tc) {
-        if ((strcmp(tc->name, equiv->name) == 0) && !tc->clientdata)
-          SWIG_TypeClientDataTL(tl,tc, type->clientdata);
-        tc = tc->prev;
+	if ((strcmp(tc->name, equiv->name) == 0) && !tc->clientdata)
+	  SWIG_TypeClientDataTL(tl,tc, type->clientdata);
+	tc = tc->prev;
       }
     }
     equiv = equiv->next;
@@ -700,7 +700,7 @@ SWIG_Perl_TypeCheckRV(SWIG_MAYBE_PERL_OBJECT SV *rv, swig_type_info *ty) {
       /* Move s to the top of the linked list */
       s->prev->next = s->next;
       if (s->next) {
-        s->next->prev = s->prev;
+	s->next->prev = s->prev;
       }
       /* Insert s as second element in the list */
       s->next = ty->next;
@@ -732,15 +732,15 @@ SWIG_Perl_ConvertPtr(SWIG_MAYBE_PERL_OBJECT SV *sv, void **ptr, swig_type_info *
     if ((SvTYPE(tsv) == SVt_PVHV)) {
       MAGIC *mg;
       if (SvMAGICAL(tsv)) {
-        mg = mg_find(tsv,'P');
-        if (mg) {
-          sv = mg->mg_obj;
-          if (sv_isobject(sv)) {
-            tmp = SvIV((SV*)SvRV(sv));
-          }
-        }
+	mg = mg_find(tsv,'P');
+	if (mg) {
+	  sv = mg->mg_obj;
+	  if (sv_isobject(sv)) {
+	    tmp = SvIV((SV*)SvRV(sv));
+	  }
+	}
       } else {
-        return -1;
+	return -1;
       }
     } else {
       tmp = SvIV((SV*)SvRV(sv));
@@ -791,7 +791,7 @@ SWIG_Perl_MakePtr(SWIG_MAYBE_PERL_OBJECT SV *sv, void *ptr, swig_type_info *t, i
       HV *hv;
       GV *gv=*(GV**)hv_fetch(stash, "OWNER", 5, TRUE);
       if (!isGV(gv))
-        gv_init(gv, stash, "OWNER", 5, FALSE);
+	gv_init(gv, stash, "OWNER", 5, FALSE);
       hv=GvHVn(gv);
       hv_store_ent(hv, obj, newSViv(1), 0);
     }
@@ -1044,20 +1044,20 @@ extern "C" {
 #endif
 XS(_wrap_setRealTime) {
     {
-        int arg1 ;
-        int argvi = 0;
-        dXSARGS;
-        
-        if ((items < 1) || (items > 1)) {
-            SWIG_croak("Usage: setRealTime(prio);");
-        }
-        arg1 = (int) SvIV(ST(0));
-        setRealTime(arg1);
-        
-        
-        XSRETURN(argvi);
-        fail:
-        ;
+	int arg1 ;
+	int argvi = 0;
+	dXSARGS;
+	
+	if ((items < 1) || (items > 1)) {
+	    SWIG_croak("Usage: setRealTime(prio);");
+	}
+	arg1 = (int) SvIV(ST(0));
+	setRealTime(arg1);
+	
+	
+	XSRETURN(argvi);
+	fail:
+	;
     }
     croak(Nullch);
 }
@@ -1104,11 +1104,11 @@ SWIG_Perl_LookupTypePointer(swig_type_info **type_list_handle) {
     /* first check if module already created */
     type_pointer = SWIG_Perl_GetTypeListHandle();
     if (type_pointer) {
-        return type_pointer;
+	return type_pointer;
     } else {
-        /* create a new module and variable */
-        SWIG_Perl_SetTypeListHandle(type_list_handle);
-        return type_list_handle;
+	/* create a new module and variable */
+	SWIG_Perl_SetTypeListHandle(type_list_handle);
+	return type_list_handle;
     }
 }
 
@@ -1122,54 +1122,54 @@ XS(SWIG_init) {
     int i;
     static int _init = 0;
     if (!_init) {
-        swig_type_list_handle = SWIG_Perl_LookupTypePointer(swig_type_list_handle);
-        for (i = 0; swig_types_initial[i]; i++) {
-            swig_types[i] = SWIG_TypeRegister(swig_types_initial[i]);
-        }	
-        _init = 1;
+	swig_type_list_handle = SWIG_Perl_LookupTypePointer(swig_type_list_handle);
+	for (i = 0; swig_types_initial[i]; i++) {
+	    swig_types[i] = SWIG_TypeRegister(swig_types_initial[i]);
+	}	
+	_init = 1;
     }
     
     /* Install commands */
     for (i = 0; swig_commands[i].name; i++) {
-        newXS((char*) swig_commands[i].name,swig_commands[i].wrapper, (char*)__FILE__);
+	newXS((char*) swig_commands[i].name,swig_commands[i].wrapper, (char*)__FILE__);
     }
     
     /* Install variables */
     for (i = 0; swig_variables[i].name; i++) {
-        SV *sv;
-        sv = perl_get_sv((char*) swig_variables[i].name, TRUE | 0x2);
-        if (swig_variables[i].type) {
-            SWIG_MakePtr(sv,(void *)1, *swig_variables[i].type,0);
-        } else {
-            sv_setiv(sv,(IV) 0);
-        }
-        swig_create_magic(sv, (char *) swig_variables[i].name, swig_variables[i].set, swig_variables[i].get); 
+	SV *sv;
+	sv = perl_get_sv((char*) swig_variables[i].name, TRUE | 0x2);
+	if (swig_variables[i].type) {
+	    SWIG_MakePtr(sv,(void *)1, *swig_variables[i].type,0);
+	} else {
+	    sv_setiv(sv,(IV) 0);
+	}
+	swig_create_magic(sv, (char *) swig_variables[i].name, swig_variables[i].set, swig_variables[i].get); 
     }
     
     /* Install constant */
     for (i = 0; swig_constants[i].type; i++) {
-        SV *sv;
-        sv = perl_get_sv((char*)swig_constants[i].name, TRUE | 0x2);
-        switch(swig_constants[i].type) {
-            case SWIG_INT:
-            sv_setiv(sv, (IV) swig_constants[i].lvalue);
-            break;
-            case SWIG_FLOAT:
-            sv_setnv(sv, (double) swig_constants[i].dvalue);
-            break;
-            case SWIG_STRING:
-            sv_setpv(sv, (char *) swig_constants[i].pvalue);
-            break;
-            case SWIG_POINTER:
-            SWIG_MakePtr(sv, swig_constants[i].pvalue, *(swig_constants[i].ptype),0);
-            break;
-            case SWIG_BINARY:
-            SWIG_MakePackedObj(sv, swig_constants[i].pvalue, swig_constants[i].lvalue, *(swig_constants[i].ptype));
-            break;
-            default:
-            break;
-        }
-        SvREADONLY_on(sv);
+	SV *sv;
+	sv = perl_get_sv((char*)swig_constants[i].name, TRUE | 0x2);
+	switch(swig_constants[i].type) {
+	    case SWIG_INT:
+	    sv_setiv(sv, (IV) swig_constants[i].lvalue);
+	    break;
+	    case SWIG_FLOAT:
+	    sv_setnv(sv, (double) swig_constants[i].dvalue);
+	    break;
+	    case SWIG_STRING:
+	    sv_setpv(sv, (char *) swig_constants[i].pvalue);
+	    break;
+	    case SWIG_POINTER:
+	    SWIG_MakePtr(sv, swig_constants[i].pvalue, *(swig_constants[i].ptype),0);
+	    break;
+	    case SWIG_BINARY:
+	    SWIG_MakePackedObj(sv, swig_constants[i].pvalue, swig_constants[i].lvalue, *(swig_constants[i].ptype));
+	    break;
+	    default:
+	    break;
+	}
+	SvREADONLY_on(sv);
     }
     
     ST(0) = &PL_sv_yes;

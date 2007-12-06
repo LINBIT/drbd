@@ -63,7 +63,7 @@ NL_PACKET(syncer_conf, 8,
 	NL_INTEGER(	30,	T_MAY_IGNORE,	rate)
 	NL_INTEGER(	31,	T_MAY_IGNORE,	after)
 	NL_INTEGER(	32,	T_MAY_IGNORE,	al_extents)
-        NL_STRING(      102,    T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
+	NL_STRING(      102,    T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
 )
 
 NL_PACKET(invalidate, 9, )

@@ -218,15 +218,15 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 		     mdev->state.conn == SyncTarget )
 			drbd_syncer_progress(mdev, seq);
 
-                if ( mdev->state.conn == VerifyS ||
-                     mdev->state.conn == VerifyT ) {
-                        seq_printf(seq,"\t%3d%% oos:%lu  %lu / %lu \n",
-                                   (int)((mdev->rs_total-mdev->ov_left) /
-                                         (mdev->rs_total/100+1)),
-                                   drbd_bm_total_weight(mdev),
-                                   mdev->rs_total - mdev->ov_left,
-                                   mdev->rs_total);
-                }
+		if ( mdev->state.conn == VerifyS ||
+		     mdev->state.conn == VerifyT ) {
+			seq_printf(seq,"\t%3d%% oos:%lu  %lu / %lu \n",
+				   (int)((mdev->rs_total-mdev->ov_left) /
+					 (mdev->rs_total/100+1)),
+				   drbd_bm_total_weight(mdev),
+				   mdev->rs_total - mdev->ov_left,
+				   mdev->rs_total);
+		}
 
 		if (mdev->resync)
 			lc_printf_stats(seq, mdev->resync);

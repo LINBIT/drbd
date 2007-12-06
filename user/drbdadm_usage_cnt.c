@@ -103,7 +103,7 @@ void read_hex(char* dst, char* src, int dst_size, int src_size)
 		if(++src_i >= src_size) break;
 		if(src[src_i] == 0) break;
 		if(++src_i >= src_size) break;
-        }
+	}
 }
 
 void vcs_from_str(struct vcs_rel *rel, const char *text)

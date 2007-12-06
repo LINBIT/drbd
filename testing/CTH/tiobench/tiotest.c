@@ -35,7 +35,7 @@ static void * aligned_alloc(ssize_t size)
 {
 	caddr_t a;
 	a = mmap((caddr_t )0, size, 
-	         PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+		 PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 	if (a == MAP_FAILED)
 		return NULL;
 	return a;
@@ -153,7 +153,7 @@ void parse_args( ArgumentOptions* args, int argc, char *argv[] )
 			checkIntZero(args->numRandomOps, "Wrong number of random I/O operations\n");
 			break;
 	    
-	    	case 'L':
+		case 'L':
 			args->showLatency = FALSE;
 			break;
 	    
@@ -417,21 +417,21 @@ void do_tests( ThreadTest *thisTest )
 	/*
 	  Write testing 
 	*/
-    	if (args.testsToRun[WRITE_TEST])
+	if (args.testsToRun[WRITE_TEST])
 		do_test( thisTest, WRITE_TEST, args.sequentialWriting,
 			timeWrite,  "Waiting write threads to finish...");
 
 	/*
 	  RandomWrite testing 
 	*/
-    	if (args.testsToRun[RANDOM_WRITE_TEST])
+	if (args.testsToRun[RANDOM_WRITE_TEST])
 		do_test( thisTest, RANDOM_WRITE_TEST, FALSE, timeRandomWrite,
 			"Waiting random write threads to finish...");
 
 	/*
 	  Read testing 
 	*/
-    	if (args.testsToRun[READ_TEST])
+	if (args.testsToRun[READ_TEST])
 		do_test( thisTest, READ_TEST, FALSE, timeRead,
 			"Waiting read threads to finish..." );
 

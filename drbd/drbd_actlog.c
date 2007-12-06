@@ -307,9 +307,9 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 
 	struct al_transaction* buffer;
 	sector_t sector;
- 	int i,n,mx;
- 	unsigned int extent_nr;
- 	u32 xor_sum=0;
+	int i,n,mx;
+	unsigned int extent_nr;
+	u32 xor_sum=0;
 
 	/* do we have to do a bitmap write, first?
 	 * TODO reduce maximum latency:

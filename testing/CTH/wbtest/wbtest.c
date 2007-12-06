@@ -301,7 +301,7 @@ void parse_options(int argc, char *argv[])
 			"/tmp/wbtest-vLog-%u-%u",
 			(unsigned int)t, getpid());
 		fd = open(Log_fname, O_WRONLY | O_CREAT | O_EXCL | O_APPEND,
-		          S_IRUSR | S_IWUSR);
+			  S_IRUSR | S_IWUSR);
 		assert(-1 != fd); // if this was a real program, retry!
 		Log_fp = fdopen(fd, "a");
 	}

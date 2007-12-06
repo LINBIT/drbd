@@ -1591,12 +1591,12 @@ int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	struct Tl_epoch_entry *e;
-        struct digest_info *di;
+	struct digest_info *di;
 	int size,digest_size;
 	unsigned int fault_type;
 	struct Drbd_BlockRequest_Packet *p =
 		(struct Drbd_BlockRequest_Packet *)h;
-        const int brps = sizeof(*p)-sizeof(*h);
+	const int brps = sizeof(*p)-sizeof(*h);
 
 	if (drbd_recv(mdev, h->payload, brps) != brps)
 		return FALSE;
@@ -1655,51 +1655,51 @@ int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		}
 		break;
 
-        case OVReply:
-                fault_type = DRBD_FAULT_RS_RD;
-                digest_size = h->length - brps ;
-                di = kmalloc(sizeof(*di) + digest_size ,GFP_KERNEL);
-                if(!di) {
-                        drbd_free_ee(mdev,e);
-                        return 0;
-                }
+	case OVReply:
+		fault_type = DRBD_FAULT_RS_RD;
+		digest_size = h->length - brps ;
+		di = kmalloc(sizeof(*di) + digest_size ,GFP_KERNEL);
+		if(!di) {
+			drbd_free_ee(mdev,e);
+			return 0;
+		}
 
-                di->digest_size = digest_size;
-                di->digest = (((char *)di)+sizeof(struct digest_info));
+		di->digest_size = digest_size;
+		di->digest = (((char *)di)+sizeof(struct digest_info));
 
-                if (drbd_recv(mdev, di->digest, digest_size) != digest_size) {
-                        drbd_free_ee(mdev,e);
-                        kfree(di);
-                        return FALSE;
-                }
+		if (drbd_recv(mdev, di->digest, digest_size) != digest_size) {
+			drbd_free_ee(mdev,e);
+			kfree(di);
+			return FALSE;
+		}
 
-                e->block_id = (u64)(unsigned long)di;
-                e->w.cb = w_e_end_ov_reply;
-                dec_rs_pending(mdev);
-                break;
+		e->block_id = (u64)(unsigned long)di;
+		e->w.cb = w_e_end_ov_reply;
+		dec_rs_pending(mdev);
+		break;
 
-        case OVRequest:
-                e->w.cb = w_e_end_ov_req;
-                fault_type = DRBD_FAULT_RS_RD;
-                /* Eventually this should become asynchrously. Currently it
-                 * blocks the whole receiver just to delay the reading of a
-                 * resync data block.
-                 * the drbd_work_queue mechanism is made for this...
-                 */
-                if (!drbd_rs_begin_io(mdev,sector)) {
-                        /* we have been interrupted,
-                         * probably connection lost! */
-                        D_ASSERT(signal_pending(current));
-                        dec_local(mdev);
-                        drbd_free_ee(mdev,e);
-                        return 0;
-                }
-                break;
+	case OVRequest:
+		e->w.cb = w_e_end_ov_req;
+		fault_type = DRBD_FAULT_RS_RD;
+		/* Eventually this should become asynchrously. Currently it
+		 * blocks the whole receiver just to delay the reading of a
+		 * resync data block.
+		 * the drbd_work_queue mechanism is made for this...
+		 */
+		if (!drbd_rs_begin_io(mdev,sector)) {
+			/* we have been interrupted,
+			 * probably connection lost! */
+			D_ASSERT(signal_pending(current));
+			dec_local(mdev);
+			drbd_free_ee(mdev,e);
+			return 0;
+		}
+		break;
 
 
 	default:; /* avoid compiler warning */
-                ERR("unexpected command (%s) in receive_DataRequest\n",
-                    cmdname(h->command));
+		ERR("unexpected command (%s) in receive_DataRequest\n",
+		    cmdname(h->command));
 		fault_type = DRBD_FAULT_MAX;
 	}
 
@@ -2387,7 +2387,7 @@ union drbd_state_t convert_state(union drbd_state_t ps)
 		[StartingSyncS] = StartingSyncT,
 		[StartingSyncT] = StartingSyncS,
 		[Disconnecting] = TearDown, /* NetworkFailure, */
-                [VerifyS]       = VerifyT,
+		[VerifyS]       = VerifyT,
 		[conn_mask]   = conn_mask,
 	};
 
@@ -2640,8 +2640,8 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportState]	   = receive_state,
 	[StateChgRequest]  = receive_req_state,
 	[ReportSyncUUID]   = receive_sync_uuid,
-        [OVRequest]        = receive_DataRequest,
-        [OVReply]          = receive_DataRequest,
+	[OVRequest]        = receive_DataRequest,
+	[OVReply]          = receive_DataRequest,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
@@ -3326,31 +3326,31 @@ int got_BarrierAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 {
-        struct Drbd_BlockAck_Packet *p = (struct Drbd_BlockAck_Packet*)h;
-        struct drbd_work* w;
-        sector_t sector;
-        int size;
+	struct Drbd_BlockAck_Packet *p = (struct Drbd_BlockAck_Packet*)h;
+	struct drbd_work* w;
+	sector_t sector;
+	int size;
 
-        sector = be64_to_cpu(p->sector);
-        size = be32_to_cpu(p->blksize);
+	sector = be64_to_cpu(p->sector);
+	size = be32_to_cpu(p->blksize);
 
-        if(be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC) {
-                drbd_ov_oos_found(mdev,sector,size);
-        } else ov_oos_print(mdev);
+	if(be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC) {
+		drbd_ov_oos_found(mdev,sector,size);
+	} else ov_oos_print(mdev);
 
-        dec_rs_pending(mdev);
+	dec_rs_pending(mdev);
 
-        if( --mdev->ov_left == 0 ) {
-                w=kmalloc(sizeof(w),GFP_KERNEL);
-                if(w) {
-                        w->cb = w_ov_finished;
-                        drbd_queue_work_front(&mdev->data.work,w);
-                } else {
-                        ERR("kmalloc(w) failed.");
-                        drbd_resync_finished(mdev);
-                }
-        }
-        return TRUE;
+	if( --mdev->ov_left == 0 ) {
+		w=kmalloc(sizeof(w),GFP_KERNEL);
+		if(w) {
+			w->cb = w_ov_finished;
+			drbd_queue_work_front(&mdev->data.work,w);
+		} else {
+			ERR("kmalloc(w) failed.");
+			drbd_resync_finished(mdev);
+		}
+	}
+	return TRUE;
 }
 
 
@@ -3383,7 +3383,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		{ sizeof(struct Drbd_BlockAck_Packet), got_NegDReply },
 	[NegRSDReply]	=
 		{ sizeof(struct Drbd_BlockAck_Packet), got_NegRSDReply},
-        [OVResult]  = { sizeof(struct Drbd_BlockAck_Packet),  got_OVResult },
+	[OVResult]  = { sizeof(struct Drbd_BlockAck_Packet),  got_OVResult },
 
 	[BarrierAck]	=
 		{ sizeof(struct Drbd_BarrierAck_Packet), got_BarrierAck },

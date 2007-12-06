@@ -302,9 +302,9 @@ enum Drbd_Packet_Cmd {
 	BarrierAck,
 	StateChgReply,
 
-        OVRequest,
-        OVReply,
-        OVResult,
+	OVRequest,
+	OVReply,
+	OVResult,
 
 	MAX_CMD,
 	MayIgnore = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
@@ -355,9 +355,9 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[BarrierAck]	   = "BarrierAck",
 		[StateChgRequest]  = "StateChgRequest",
 		[StateChgReply]    = "StateChgReply",
-                [OVRequest]        = "OVRequest",
-                [OVReply]          = "OVReply",
-                [OVResult]         = "OVResult",
+		[OVRequest]        = "OVRequest",
+		[OVReply]          = "OVReply",
+		[OVResult]         = "OVResult",
 	};
 
 	if (Data > cmd || cmd >= MAX_CMD) {
@@ -678,8 +678,8 @@ struct Tl_epoch_entry {
 };
 
 struct digest_info {
-        int digest_size;
-        void *digest;
+	int digest_size;
+	void *digest;
 };
 
 /* ee flag bits */
@@ -849,11 +849,11 @@ struct drbd_conf {
 	unsigned long rs_mark_time;
 
 
-        sector_t ov_position;
-        sector_t ov_last_oos_start; /* Start sector of out of sync range */
-        sector_t ov_last_oos_size;  /* size of out-of-sync range in sectors */
-        unsigned long ov_left;
-        struct crypto_hash *verify_tfm;
+	sector_t ov_position;
+	sector_t ov_last_oos_start; /* Start sector of out of sync range */
+	sector_t ov_last_oos_size;  /* size of out-of-sync range in sectors */
+	unsigned long ov_left;
+	struct crypto_hash *verify_tfm;
 
 	struct Drbd_thread receiver;
 	struct Drbd_thread worker;
@@ -1013,7 +1013,7 @@ extern int drbd_send_ack_rp(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 extern int drbd_send_ack_dp(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 			struct Drbd_Data_Packet *dp);
 extern int drbd_send_ack_ex(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
-                            sector_t sector, int blksize, u64 block_id);
+			    sector_t sector, int blksize, u64 block_id);
 extern int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 			int offset, size_t size);
 extern int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
@@ -1024,9 +1024,9 @@ extern int _drbd_send_barrier(struct drbd_conf *mdev,
 extern int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 			      sector_t sector, int size, u64 block_id);
 extern int drbd_send_drequest_csum(struct drbd_conf *mdev,
-                                   sector_t sector,int size,
-                                   void *digest, int digest_size,
-                                   enum Drbd_Packet_Cmd cmd);
+				   sector_t sector,int size,
+				   void *digest, int digest_size,
+				   enum Drbd_Packet_Cmd cmd);
 extern int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size);
 
 extern int drbd_send_bitmap(struct drbd_conf *mdev);
@@ -1374,12 +1374,12 @@ extern void drbd_ov_oos_found(struct drbd_conf*, sector_t, int);
 
 static inline void ov_oos_print(struct drbd_conf *mdev)
 {
-        if (mdev->ov_last_oos_size) {
-                ERR("Out of sync: start=%llu, size=%lu (sectors)\n",
-                     (unsigned long long)mdev->ov_last_oos_start,
-                     (unsigned long)mdev->ov_last_oos_size);
-        }
-        mdev->ov_last_oos_size=0;
+	if (mdev->ov_last_oos_size) {
+		ERR("Out of sync: start=%llu, size=%lu (sectors)\n",
+		     (unsigned long long)mdev->ov_last_oos_start,
+		     (unsigned long)mdev->ov_last_oos_size);
+	}
+	mdev->ov_last_oos_size=0;
 }
 
 
