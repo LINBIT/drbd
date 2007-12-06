@@ -64,7 +64,7 @@ void* wd_thread(void *arg)
 	double avg_write_duration;
 
 	enum { IO_RUNNING, IO_BLOCKED } io_state = IO_RUNNING;
-	
+
 	while(1) {
 		usleep(monitor_time); // sleep some milliseconds
 
@@ -211,7 +211,7 @@ int main(int argc, char** argv)
 			record_nr,
 			write_duration_us/1000,
 			(write_duration_us%1000)/10);
-		
+
 		if(fflush(record_f)) { // flush it from glibc to the kernel.
 			perror("fflush:");
 			return 10;
@@ -230,8 +230,8 @@ int main(int argc, char** argv)
 			if(write_duration_us < min_wd) min_wd = write_duration_us;
 			if(write_duration_us > max_wd) max_wd = write_duration_us;
 
-			avg_write_duration = 
-				(avg_write_duration * avg_wd_nr + 
+			avg_write_duration =
+				(avg_write_duration * avg_wd_nr +
 				 write_duration_us) / (++avg_wd_nr);
 		}
 
