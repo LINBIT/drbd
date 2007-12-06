@@ -108,8 +108,6 @@ NL_PACKET(dump_ee, 24,
 	NL_STRING(	50,	T_MAY_IGNORE,	ee_data,	32 << 10)
 )
 
-/* ?? 101 is also used by license ... */
-
 NL_PACKET(start_ov, 101,
 )
 

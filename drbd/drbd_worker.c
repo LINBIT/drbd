@@ -585,17 +585,6 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 			drbd_khelper(mdev,"out-of-sync");
 		}
 	} else {
-#if 0
-		if(mdev->csums_tfm && mdev->rs_total) {
-			INFO("%lu%% had equal check sums, eliminated: %luK; "
-			     "transferred %luK total %luK\n",
-			     /* FIXME warning this may overflow somewhen! */
-			     (mdev->rs_same_csum*100) / mdev->rs_total,
-			     Bit2KB(mdev->rs_same_csum),
-			     Bit2KB(mdev->rs_total - mdev->rs_same_csum),
-			     Bit2KB(mdev->rs_total));
-		}
-#endif
 		D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
 	}
 

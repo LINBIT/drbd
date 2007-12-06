@@ -1268,18 +1268,13 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		mdev->ee_hash = new_ee_hash;
 	}
 
-	if (mdev->cram_hmac_tfm)
-		crypto_free_hash(mdev->cram_hmac_tfm);
+	crypto_free_hash(mdev->cram_hmac_tfm);
 	mdev->cram_hmac_tfm = tfm;
 
-	if (mdev->integrity_w_tfm) {
-		crypto_free_hash(mdev->integrity_w_tfm);
-	}
+	crypto_free_hash(mdev->integrity_w_tfm);
 	mdev->integrity_w_tfm = integrity_w_tfm;
 
-	if (mdev->integrity_r_tfm) {
-		crypto_free_hash(mdev->integrity_r_tfm);
-	}
+	crypto_free_hash(mdev->integrity_r_tfm);
 	mdev->integrity_r_tfm = integrity_r_tfm;
 
 	kfree(mdev->int_dig_out);
@@ -1508,7 +1503,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->sync_conf = sc;
 
 	if (!ovr) {
-		if (mdev->verify_tfm) crypto_free_hash(mdev->verify_tfm);
+		crypto_free_hash(mdev->verify_tfm);
 		mdev->verify_tfm=verify_tfm;
 		verify_tfm=NULL;
 	}
@@ -1538,7 +1533,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 fail:
-	if(verify_tfm) crypto_free_hash(verify_tfm);
+	crypto_free_hash(verify_tfm);
 	reply->ret_code = retcode;
 	return 0;
 }
