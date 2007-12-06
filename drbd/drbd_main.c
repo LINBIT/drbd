@@ -1138,11 +1138,13 @@ int drbd_thread_setup(void *arg)
 		thi->t_state = Running;
 	}
 
+	mutex_lock(&thi->task_mutex);
 	spin_lock(&thi->t_lock);
 	thi->task = NULL;
 	thi->t_state = None;
 	smp_mb();
 	spin_unlock(&thi->t_lock);
+	mutex_unlock(&thi->task_mutex);
 
 	/* THINK maybe two different completions? */
 	complete(&thi->startstop); /* notify: thi->task unset. */
@@ -1158,6 +1160,7 @@ void drbd_thread_init(struct drbd_conf *mdev, struct Drbd_thread *thi,
 	thi->t_state = None;
 	thi->function = func;
 	thi->mdev = mdev;
+	mutex_init(&thi->task_mutex);
 }
 
 int drbd_thread_start(struct Drbd_thread *thi)
@@ -1288,14 +1291,10 @@ void drbd_thread_set_cpu(struct Drbd_thread *thi, cpumask_t cpu_mask)
 {
 	struct task_struct *p;
 
-	spin_lock(&thi->t_lock);
+	mutex_lock(&thi->task_mutex);
 	p = thi->task;
-	if (p) {
-		get_task_struct(p);
-		spin_unlock(&thi->t_lock);
-		set_cpus_allowed(p, cpu_mask);
-		put_task_struct(p);
-	} else spin_unlock(&thi->t_lock);
+	if (p) set_cpus_allowed(p, cpu_mask);
+	mutex_unlock(&this->task_mutex);
 }
 
 #endif

@@ -587,6 +587,7 @@ struct Drbd_thread {
 	enum Drbd_thread_state t_state;
 	int (*function) (struct Drbd_thread *);
 	struct drbd_conf *mdev;
+	struct mutex task_mutex;
 };
 
 static inline enum Drbd_thread_state get_t_state(struct Drbd_thread *thi)
