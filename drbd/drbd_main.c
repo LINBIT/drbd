@@ -805,7 +805,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		INFO("Syncer continues.\n");
 		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
 		if (ns.conn == SyncTarget) {
-			if (!test_bit(STOP_SYNC_TIMER,&mdev->flags)) {
+			if (!test_and_clear_bit(STOP_SYNC_TIMER,&mdev->flags)) {
 				mod_timer(&mdev->resync_timer,jiffies);
 			}
 			/* This if (!test_bit) is only needed for the case
@@ -1402,12 +1402,23 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 
 int drbd_send_state(struct drbd_conf *mdev)
 {
+	struct socket *sock;
 	struct Drbd_State_Packet p;
+	int ok = 0;
 
-	p.state    = cpu_to_be32(mdev->state.i);
+	down(&mdev->data.mutex);
 
-	return drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportState,
-			     (struct Drbd_Header *)&p, sizeof(p));
+	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
+	sock = mdev->data.socket;
+
+	if (likely(sock != NULL)) {
+		ok = _drbd_send_cmd(mdev, sock, ReportState,
+				    (struct Drbd_Header*)&p, sizeof(p), 0);
+	}
+
+	up(&mdev->data.mutex);
+
+	return ok;
 }
 
 int drbd_send_state_req(struct drbd_conf *mdev,
