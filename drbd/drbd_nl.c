@@ -35,6 +35,7 @@
 #include <linux/connector.h>
 #include <linux/drbd.h>
 #include <linux/blkpg.h>
+#include <linux/cpumask.h>
 
 #include "drbd_int.h"
 #include <linux/drbd_tag_magic.h>
@@ -1431,6 +1432,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	int err;
 	struct crypto_hash *verify_tfm = NULL;
 	int ovr; /* online verify running */
+	cpumask_t n_cpu_mask = CPU_MASK_NONE;
 
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
 
@@ -1485,6 +1487,15 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		}
 	}
 
+	if (sc.cpu_mask[0] != 0) {
+		err = __bitmap_parse(sc.cpu_mask, 32, 0, n_cpu_mask.bits, NR_CPUS);
+		if (err) {
+			WARN("__bitmap_parse() failed with %d\n", err);
+			retcode = CPUMaskParseFailed;
+			goto fail;
+		}
+	}
+
 	ERR_IF (sc.rate < 1) sc.rate = 1;
 	ERR_IF (sc.al_extents < 7) sc.al_extents = 127; /* arbitrary minimum */
 #define AL_MAX ((MD_AL_MAX_SIZE-1) * AL_EXTENTS_PT)
@@ -1517,6 +1528,14 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		drbd_send_sync_param(mdev, &sc);
 
 	drbd_alter_sa(mdev, sc.after);
+
+	if (!cpus_equal(mdev->cpu_mask, n_cpu_mask)) {
+		mdev->cpu_mask = n_cpu_mask;
+		n_cpu_mask = drbd_calc_cpu_mask(mdev);
+		drbd_thread_set_cpu(&mdev->receiver, n_cpu_mask);
+		drbd_thread_set_cpu(&mdev->worker, n_cpu_mask);
+		drbd_thread_set_cpu(&mdev->asender, n_cpu_mask);
+	}
 
 fail:
 	if(verify_tfm) crypto_free_hash(verify_tfm);

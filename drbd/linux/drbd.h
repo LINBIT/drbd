@@ -115,6 +115,7 @@ enum ret_codes {
 	VMallocFailed,
 	IntegrityAlgNotAvail,
 	IntegrityAlgNotDigest,
+	CPUMaskParseFailed,
 
 	/* insert new ones above this line */
 	AfterLastRetCode,

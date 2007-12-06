@@ -64,6 +64,7 @@
       <arg>-a<arg choice="req"><replaceable>dev_minor</replaceable></arg></arg>
       <arg>-r<arg choice="req"><replaceable>rate</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>extents</replaceable></arg></arg>
+      <arg>-c<arg choice="req"><replaceable>cpu-mask</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -767,6 +768,18 @@
 	      longer resync times but less updates to the meta-data. The
 	      default number of <replaceable>extents</replaceable> is
 	      127. (Minimum: 7, Maximum: 3843)
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
+	  <term><option>-c</option>,
+	  <option>--cpu-mask <replaceable>cpu-mask</replaceable></option></term>
+	  <listitem>
+	    <para>
+	      Sets the cpu-affinity-mask for DRBD's kernel threads of this
+	      device. The default value of <replaceable>cpu-mask</replaceable> is
+	      0, which means that DRBD's kernel threads should be spread over
+	      all CPUs of the machine.
 	    </para>
 	  </listitem>
 	</varlistentry>

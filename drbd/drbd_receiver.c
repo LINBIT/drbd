@@ -3108,7 +3108,7 @@ int drbdd_init(struct Drbd_thread *thi)
 	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
-
+	set_cpus_allowed(current, drbd_calc_cpu_mask(mdev));
 	INFO("receiver (re)started\n");
 
 	do {
@@ -3395,6 +3395,8 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
+
+	set_cpus_allowed(current, drbd_calc_cpu_mask(mdev));
 
 	while (get_t_state(thi) == Running) {
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {

@@ -909,6 +909,7 @@ struct drbd_conf {
 	spinlock_t peer_seq_lock;
 	int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
+	cpumask_t cpu_mask;
 };
 
 static inline struct drbd_conf *minor_to_mdev(int minor)
@@ -979,6 +980,13 @@ extern void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_thread_signal(struct Drbd_thread *thi);
+#ifdef CONFIG_SMP
+extern void drbd_thread_set_cpu(struct Drbd_thread *thi, cpumask_t cpu_mask);
+extern cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev);
+#else
+#define drbd_thread_set_cpu(A,B) ({})
+#define drbd_calc_cpu_mask(A) CPU_MASK_ALL
+#endif
 extern void drbd_free_resources(struct drbd_conf *mdev);
 extern void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		       unsigned int set_size);

@@ -1,3 +1,5 @@
+#include <linux/ctype.h>
+
 #include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
 # error "use a 2.6 kernel, please"
@@ -358,5 +360,84 @@ static inline void *kzalloc(size_t size, int flags)
 	if(rv) memset(rv,0,size);
 
 	return rv;
+}
+#endif
+
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+#define __bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK) \
+	backport_bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK)
+
+#define CHUNKSZ                         32
+#define nbits_to_hold_value(val)        fls(val)
+#define unhex(c)                        (isdigit(c) ? (c - '0') : (toupper(c) - 'A' + 10))
+
+static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
+		int is_user, unsigned long *maskp,
+		int nmaskbits)
+{
+	int c, old_c, totaldigits, ndigits, nchunks, nbits;
+	u32 chunk;
+	const char __user *ubuf = buf;
+
+	bitmap_zero(maskp, nmaskbits);
+
+	nchunks = nbits = totaldigits = c = 0;
+	do {
+		chunk = ndigits = 0;
+
+		/* Get the next chunk of the bitmap */
+		while (buflen) {
+			old_c = c;
+			if (is_user) {
+				if (__get_user(c, ubuf++))
+					return -EFAULT;
+			}
+			else
+				c = *buf++;
+			buflen--;
+			if (isspace(c))
+				continue;
+
+			/*
+			 * If the last character was a space and the current
+			 * character isn't '\0', we've got embedded whitespace.
+			 * This is a no-no, so throw an error.
+			 */
+			if (totaldigits && c && isspace(old_c))
+				return -EINVAL;
+
+			/* A '\0' or a ',' signal the end of the chunk */
+			if (c == '\0' || c == ',')
+				break;
+
+			if (!isxdigit(c))
+				return -EINVAL;
+
+			/*
+			 * Make sure there are at least 4 free bits in 'chunk'.
+			 * If not, this hexdigit will overflow 'chunk', so
+			 * throw an error.
+			 */
+			if (chunk & ~((1UL << (CHUNKSZ - 4)) - 1))
+				return -EOVERFLOW;
+
+			chunk = (chunk << 4) | unhex(c);
+			ndigits++; totaldigits++;
+		}
+		if (ndigits == 0)
+			return -EINVAL;
+		if (nchunks == 0 && chunk == 0)
+			continue;
+
+		__bitmap_shift_left(maskp, maskp, CHUNKSZ, nmaskbits);
+		*maskp |= chunk;
+		nchunks++;
+		nbits += (nchunks == 1) ? nbits_to_hold_value(chunk) : CHUNKSZ;
+		if (nbits > nmaskbits)
+			return -EOVERFLOW;
+	} while (buflen && c == ',');
+
+	return 0;
 }
 #endif

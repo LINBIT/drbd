@@ -325,6 +325,7 @@ struct drbd_cmd commands[] = {
 		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1,NULL) },
 		 { "verify-alg", 'v',T_verify_alg,      ES },
+		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 CLOSE_OPTIONS }} }, },
 
 	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
@@ -403,6 +404,7 @@ static const char *error_messages[] = {
 	EM(IntegrityAlgNotAvail) = "The 'data-integrity-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
 	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",
+	EM(CPUMaskParseFailed) = "Invalid cpu-mask.",
 	EM(VERIFYAlgNotAvail) = "VERIFYAlgNotAvail",
 	EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
 	EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",

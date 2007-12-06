@@ -1259,6 +1259,47 @@ void drbd_thread_signal(struct Drbd_thread *thi)
 	spin_unlock(&thi->t_lock);
 }
 
+#ifdef CONFIG_SMP
+/**
+ * drbd_calc_cpu_mask: Generates CPU masks, sprad over all CPUs.
+ * Forces all threads of a device onto the same CPU. This is benificial for
+ * DRBD's performance. May be overwritten by user's configuration.
+ */
+cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev)
+{
+	int sv, cpu;
+	cpumask_t av_cpu_m;
+
+	if (cpus_weight(mdev->cpu_mask))
+		return mdev->cpu_mask;
+
+	av_cpu_m = cpu_online_map;
+	sv = mdev_to_minor(mdev) % cpus_weight(av_cpu_m);
+
+	for_each_cpu_mask(cpu, av_cpu_m) {
+		if (sv-- == 0)
+			return cpumask_of_cpu(cpu);
+	}
+
+	return CPU_MASK_ALL; /* Never reached. */
+}
+
+void drbd_thread_set_cpu(struct Drbd_thread *thi, cpumask_t cpu_mask)
+{
+	struct task_struct *p;
+
+	spin_lock(&thi->t_lock);
+	p = thi->task;
+	if (p) {
+		get_task_struct(p);
+		spin_unlock(&thi->t_lock);
+		set_cpus_allowed(p, cpu_mask);
+		put_task_struct(p);
+	} else spin_unlock(&thi->t_lock);
+}
+
+#endif
+
 /* the appropriate socket mutex must be held already */
 int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
 			  enum Drbd_Packet_Cmd cmd, struct Drbd_Header *h,

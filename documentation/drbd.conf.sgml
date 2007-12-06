@@ -233,7 +233,8 @@ resource r0 {
     <manvolnum>8</manvolnum></citerefentry> for a detailed description
     of this section's parameters.
     Optional parameters:
-    <option>rate</option>, <option>after</option>, <option>al-extents</option>.
+    <option>rate</option>, <option>after</option>, <option>al-extents</option>,
+    <option>cpu-mask</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -912,6 +913,17 @@ the unit is 1 second.
   longer resync times but less updates to the meta-data. The
   default number of <replaceable>extents</replaceable> is
   127. (Minimum: 7, Maximum: 3843)
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>cpu-mask <replaceable>cpu-mask</replaceable></option></term>
+  <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>cpu-mask </secondary></indexterm>
+  Sets the cpu-affinity-mask for DRBD's kernel threads of this device. The
+  default value of <replaceable>cpu-mask</replaceable> is 0, which means
+  that DRBD's kernel threads should be spread over all CPUs of the machine.
   </para>
   </listitem>
 </varlistentry>
