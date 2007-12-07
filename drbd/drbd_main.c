@@ -596,7 +596,8 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 
 	else if( (ns.conn == VerifyS ||
 		  ns.conn == VerifyT) &&
-		  mdev->sync_conf.verify_alg[0] == 0 ) rv=SS_NoVerifyAlg;
+		  ((mdev->sync_conf == NULL) ||
+                   (mdev->sync_conf.verify_alg[0] == 0)) rv=SS_NoVerifyAlg;
 
 	else if( (ns.conn == VerifyS ||
 		  ns.conn == VerifyT) &&
