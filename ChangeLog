@@ -10,6 +10,8 @@ Latest:
    interrupts by accident)
  * Fixed a endian issue in the wirte protocol. C bit-fields are
    might by layed out differently on little/big endian machines.
+ * Drbdadm's adjust forgot sometimes to adjust options values that
+   where inherited from the common section, fixed that.
  * Removed dopd. It gets (and should be) shipped with heartbeat.
  * When peer authentication is enabled, you could trick drbd to send
    a state report packet before it authenticated itself. Fixed that.
