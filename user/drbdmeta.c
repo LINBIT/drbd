@@ -347,7 +347,7 @@ int is_valid_md(int f,
 	u64 md_size_sect;
 	char *v = (f == Drbd_07) ? "v07" : "v08";
 	const unsigned int magic = (f == Drbd_07) ? DRBD_MD_MAGIC_07 : DRBD_MD_MAGIC_08;
-	
+
 
 	ASSERT(f == Drbd_07 || f == Drbd_08);
 
@@ -1821,7 +1821,7 @@ void md_convert_07_to_08(struct format *cfg)
 	if (!is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
 		exit(111);
-	}	
+	}
 }
 
 void md_convert_08_to_07(struct format *cfg)
@@ -1864,7 +1864,7 @@ void md_convert_08_to_07(struct format *cfg)
 	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
 		exit(111);
-	}	
+	}
 }
 
 /* if on the physical device we find some data we can interpret,
@@ -2196,7 +2196,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * to avoid the situation where we would have "valid" meta data blocks
 	 * of different versions at different offsets, we also need to check
 	 * the other format, and the other offset.
-	 * 
+	 *
 	 * on a request to create v07 fixed-size internal meta data, we also
 	 * check flex-internal v08 [and v07 (plus)] at the other offset.
 	 *
