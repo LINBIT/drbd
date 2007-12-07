@@ -596,8 +596,7 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 
 	else if( (ns.conn == VerifyS ||
 		  ns.conn == VerifyT) &&
-		  ((mdev->sync_conf == NULL) ||
-                   (mdev->sync_conf.verify_alg[0] == 0)) rv=SS_NoVerifyAlg;
+                  (mdev->sync_conf.verify_alg[0] == 0)) rv=SS_NoVerifyAlg;
 
 	else if( (ns.conn == VerifyS ||
 		  ns.conn == VerifyT) &&
@@ -1395,8 +1394,13 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 
 	size = sizeof(struct Drbd_Protocol_Packet);
 
-	if (mdev->agreed_pro_version >= 87)
+	if (mdev->agreed_pro_version == 87) {
 		size += strlen(mdev->net_conf->integrity_alg) + 1;
+	}
+	if (mdev->agreed_pro_version == 88) {
+		size += SHARED_SECRET_MAX;
+		size += strlen(mdev->sync_conf.verify_alg) + 1;
+	}
 
 	if ((p = kmalloc(size, GFP_KERNEL)) == NULL)
 		return 0;
@@ -1408,8 +1412,12 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	p->want_lose     = cpu_to_be32(mdev->net_conf->want_lose);
 	p->two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
 
-	if (mdev->agreed_pro_version >= 87)
-		strcpy(p->integrity_alg,mdev->net_conf->integrity_alg);
+	if (mdev->agreed_pro_version >= 87) {
+		strncpy(p->integrity_alg, mdev->net_conf->integrity_alg, SHARED_SECRET_MAX-1);
+		if (mdev->agreed_pro_version >= 88) {
+			strncpy(p->online_verify_alg, mdev->sync_conf.verify_alg, SHARED_SECRET_MAX-1);
+		}
+	}
 
 	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
 			   (struct Drbd_Header *)p, size);

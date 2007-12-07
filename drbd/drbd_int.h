@@ -499,7 +499,12 @@ struct Drbd_Protocol_Packet {
 	u32 after_sb_2p;
 	u32 want_lose;
 	u32 two_primaries;
-	char integrity_alg[0]; /* Since protocol version 87 and higher. */
+
+              /* Since protocol version 87 and higher. */
+	char integrity_alg[SHARED_SECRET_MAX];
+
+	      /* Since protocol version 88 and higher. */
+	char online_verify_alg[0];
 } __attribute((packed));
 
 struct Drbd_GenCnt_Packet {
@@ -848,7 +853,6 @@ struct drbd_conf {
 	unsigned long rs_mark_left;
 	/* marks's time [unit jiffies] */
 	unsigned long rs_mark_time;
-
 
 	sector_t ov_position;
 	sector_t ov_last_oos_start; /* Start sector of out of sync range */

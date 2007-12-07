@@ -2141,8 +2141,9 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	int p_proto, p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
 	int p_want_lose, p_two_primaries;
 	char p_integrity_alg[SHARED_SECRET_MAX] = "";
+	char p_verify_alg[SHARED_SECRET_MAX] = "";
 
-	header_size = sizeof(*p) - sizeof(*h);
+	header_size = sizeof(*p) - sizeof(*h) - SHARED_SECRET_MAX;
 	data_size   = h->length  - header_size;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
@@ -2188,21 +2189,38 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (mdev->agreed_pro_version >= 87) {
 		unsigned char *my_alg = mdev->net_conf->integrity_alg;
 
+		if (mdev->agreed_pro_version >= 88) {
+			data_size = SHARED_SECRET_MAX;
+		}
 		if (drbd_recv(mdev, p_integrity_alg, data_size) != data_size)
 			return FALSE;
 
 		p_integrity_alg[SHARED_SECRET_MAX-1]=0;
+
 		if(strcmp(p_integrity_alg, my_alg)) {
 			ERR("incompatible setting of the data-integrity-alg\n");
 			goto disconnect;
 		}
 		WARN("data-integrity-alg: %s\n",
 		     my_alg[0] ? my_alg : (unsigned char *)"<not-used>");
+
+		if (mdev->agreed_pro_version >= 88) {
+			unsigned char *my_verify_alg = mdev->sync_conf.verify_alg;
+
+			data_size   = h->length - header_size - SHARED_SECRET_MAX;
+			if (drbd_recv(mdev, p_verify_alg, data_size) != data_size)
+				return FALSE;
+
+			if (strcmp(p_verify_alg, my_verify_alg) != 0) {
+				ERR("incompatible setting of the online-verify-alg\n");
+				goto disconnect;
+			}
+		}
 	}
 
 	return TRUE;
 
- disconnect:
+disconnect:
 	drbd_force_state(mdev, NS(conn, Disconnecting));
 	return FALSE;
 }
