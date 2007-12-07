@@ -29,14 +29,27 @@
 
 #ifdef __KERNEL__
 #include <linux/types.h>
+#include <asm/byteorder.h>
 #else
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <limits.h>
+
+/* Altough the Linux source code makes a difference between 
+   generic endiness and the bitfields' endianess, there is no
+   architecture as of Linux-2.6.24-rc4 where the bitfileds' endianess
+   does not match the generic endianess. */
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#define __LITTLE_ENDIAN_BITFIELD
+#elif __BYTE_ORDER == __BIG_ENDIAN
+#define __BIG_ENDIAN_BITFIELD
+#else
+# error "sorry, weird endianness on this box"
 #endif
 
-#include <asm/types.h>
-#include <asm/byteorder.h>
+#endif
+
 
 enum io_error_handler {
 	PassOn, /* FIXME should the better be named "Ignore"? */
