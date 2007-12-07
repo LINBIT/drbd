@@ -127,6 +127,7 @@ enum pr_flags {
   NoneHAllowed  = 4,
 };
 extern struct d_resource* parse_resource(char*, enum pr_flags);
+extern struct d_option *new_opt(char *name, char *value);
 
 extern char* config_file;
 extern int config_valid;

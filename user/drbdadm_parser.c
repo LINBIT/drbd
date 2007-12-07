@@ -150,7 +150,7 @@ void range_check(const enum range_checks what, const char *name,
 	}
 }
 
-static struct d_option *new_opt(char *name, char *value)
+struct d_option *new_opt(char *name, char *value)
 {
 	struct d_option *cn = malloc(sizeof(struct d_option));
 
