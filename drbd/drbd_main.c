@@ -1294,7 +1294,7 @@ void drbd_thread_set_cpu(struct Drbd_thread *thi, cpumask_t cpu_mask)
 	mutex_lock(&thi->task_mutex);
 	p = thi->task;
 	if (p) set_cpus_allowed(p, cpu_mask);
-	mutex_unlock(&this->task_mutex);
+	mutex_unlock(&thi->task_mutex);
 }
 
 #endif
