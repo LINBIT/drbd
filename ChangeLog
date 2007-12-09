@@ -4,6 +4,18 @@ Latest:
  Cumulative changes since last tarball.
  For even more detail, use "svn log" and "svn diff".
 
+8.2.2 (api:86/proto:86-88)
+--------
+ * Fixed the data-integrity feature to also work for the two-
+   primaries mode correct.
+ * Dropped the online-verify feature from DRBD+ into drbd-8.2
+ * Significant performance improvement: Implemented sane default
+   CPU bindings (affinity mask) of threads, and added the tuning
+   option 'cpu-mask'.
+ * A completely new drbdmeta. This one should finally do all
+   conversion cases from drbd-0.7 to drbd-8.x metadata correct.
+ * Merged all changes from 8.0.7 -> 8.0.8 to 8.2
+
 8.2.1 (api:86/proto:86-87)
 --------
  * Fixed the OOPS when _not_ using a shared secret on kernel 
