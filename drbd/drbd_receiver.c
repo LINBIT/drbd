@@ -775,8 +775,6 @@ int drbd_connect(struct drbd_conf *mdev)
 	mdev->meta.socket = msock;
 	mdev->last_received = jiffies;
 
-	if (drbd_request_state(mdev, NS(conn, WFReportParams)) < SS_Success)
-		return 0;
 	D_ASSERT(mdev->asender.task == NULL);
 
 	h = drbd_do_handshake(mdev);
@@ -784,11 +782,15 @@ int drbd_connect(struct drbd_conf *mdev)
 		return h;
 
 	if (mdev->cram_hmac_tfm) {
+		/* drbd_request_state(mdev, NS(conn, WFAuth)); */
 		if (!drbd_do_auth(mdev)) {
 			ERR("Authentication of peer failed\n");
 			return -1;
 		}
 	}
+
+	if (drbd_request_state(mdev, NS(conn, WFReportParams)) < SS_Success)
+		return 0;
 
 	sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;

@@ -229,7 +229,6 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 	default:
 		/* The script is broken ... */
 		nps = DUnknown;
-		drbd_request_state(mdev, NS(disk, Outdated));
 		ERR("outdate-peer helper broken, returned %d \n", (r>>8)&0xff);
 		return nps;
 	}

@@ -657,9 +657,7 @@ static void expand_opts(struct d_option* co, struct d_option** opts)
   while(co) {
     if(!find_opt(*opts,co->name)) {
       // prepend new item to opts
-      no = malloc(sizeof(struct d_option));
-      no->name = strdup(co->name);
-      no->value = co->value ? strdup(co->value) : NULL ;
+      no = new_opt(strdup(co->name), co->value ? strdup(co->value) : NULL);
       no->next = *opts;
       *opts = no;
     }

@@ -361,6 +361,8 @@ int is_valid_md(int f,
 	case DRBD_MD_INDEX_FLEX_EXT:
 		if (md->al_offset != MD_AL_OFFSET_07) {
 			fprintf(stderr, "%s Magic number (al_offset) not found\n", v);
+			fprintf(stderr, "\texpected: %d, found %d\n",
+				MD_AL_OFFSET_07, md->al_offset);
 			return 0;
 		}
 		if (md->bm_offset != MD_BM_OFFSET_07) {
@@ -371,6 +373,8 @@ int is_valid_md(int f,
 	case DRBD_MD_INDEX_FLEX_INT:
 		if (md->al_offset != -MD_AL_MAX_SECT_07) {
 			fprintf(stderr, "%s Magic number (al_offset) not found\n", v);
+			fprintf(stderr, "\texpected: %d, found %d\n",
+				-MD_AL_MAX_SECT_07, md->al_offset);
 			return 0;
 		}
 
@@ -941,14 +945,9 @@ int v06_md_initialize(struct format *cfg)
   }}} end of v06
  ******************************************/
 
-int md_initialize_common(struct format *cfg)
+void re_initialize_md_offsets(struct format *cfg)
 {
 	u64 md_size_sect;
-
-	/* no need to re-initialize the offset of md
-	 * FIXME we need to, if we convert, or resize, in case we allow/implement that...
-	 */
-
 	switch(cfg->md_index) {
 	default:
 		cfg->md.md_size_sect = MD_RESERVED_SECT_07;
@@ -985,6 +984,16 @@ int md_initialize_common(struct format *cfg)
 		cfg->md.bm_offset = -md_size_sect + MD_AL_OFFSET_07;
 		break;
 	}
+}
+
+/* DOES DISK WRITES!! */
+int md_initialize_common(struct format *cfg)
+{
+	/* no need to re-initialize the offset of md
+	 * FIXME we need to, if we convert, or resize, in case we allow/implement that...
+	 */
+	re_initialize_md_offsets(cfg);
+
 	cfg->md.al_nr_extents = 257;	/* arbitrary. */
 	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 
@@ -1742,7 +1751,7 @@ int meta_verify_dump_file(struct format *cfg, char **argv, int argc)
 
 void md_convert_07_to_08(struct format *cfg)
 {
-	int i,j=1;
+	int i,j;
 	/*
 	 * FIXME
 	 * what about the Bitmap, and the Activity Log?
@@ -1777,12 +1786,16 @@ void md_convert_07_to_08(struct format *cfg)
 		       & 0xffff) << 16 |
 		(u64)0xbabe;
 	cfg->md.uuid[Bitmap] = (u64)0;
-	if (cfg->bits_set) i = Bitmap;
-	else i = History_start;
-	for ( ; i<=History_end ; i++ ) {
+
+	for (i = cfg->bits_set ? Bitmap : History_start, j = 1;
+		i <= History_end ; i++, j++)
 		cfg->md.uuid[i] = cfg->md.uuid[Current] - j*0x10000;
-		j++;
-	}
+
+	/* unconditionally re-initialize offsets,
+	 * not necessary if fixed size external,
+	 * necessary if flex external or internal */
+	re_initialize_md_offsets(cfg);
+
 	if (!is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
 		exit(111);
@@ -1820,6 +1833,11 @@ void md_convert_08_to_07(struct format *cfg)
 		"Be prepared to manually intervene!\n");
 	/* FIXME put some more helpful text here, indicating what exactly is to
 	 * be done to make this work as expected. */
+
+	/* unconditionally re-initialize offsets,
+	 * not necessary if fixed size external,
+	 * necessary if flex external or internal */
+	re_initialize_md_offsets(cfg);
 
 	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
@@ -2169,8 +2187,9 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 		check_internal_md_flavours(cfg);
 
 	printf("Writing meta data...\n");
-	if (!cfg->md.magic) /* initialize unless converted */
+	if (!cfg->md.magic) /* not converted: initialize */
 		err = cfg->ops->md_initialize(cfg);
+	/* FIXME else converted: so init or bring over al and bitmap */
 	err = err || cfg->ops->md_cpu_to_disk(cfg); // <- short circuit
 	err = cfg->ops->close(cfg)          || err; // <- close always
 	if (err)

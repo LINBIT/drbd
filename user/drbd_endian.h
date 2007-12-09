@@ -71,12 +71,6 @@
 })
 
 /*
- * no architecture-specific optimization is supplied here.
- * I still wonder why we should not use <asm/byteorder.h>,
- * but so be it.
- */
-
-/*
  * linux/byteorder/little_endian.h
  * linux/byteorder/big_endian.h
  */
@@ -193,6 +187,4 @@ static inline unsigned long hweight_long(unsigned long w)
 # error "sorry, unsupported word length on this box"
 #endif
 
-
 #endif
-

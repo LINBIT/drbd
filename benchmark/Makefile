@@ -1,10 +1,13 @@
 CFLAGS=-Wall
 
-all: dm
+all: dm io-latency-test
+
+io-latency-test: io-latency-test.c
+	$(CC) -pthread -o $@ $^
 
 install:
 
 clean:
-	rm -f dm
+	rm -f dm io-latency-test
 
 distclean: clean

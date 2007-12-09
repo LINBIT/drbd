@@ -26,7 +26,7 @@ Latest:
    on the network DRBD protests by dropping the connection.
 
 8.1.0 (api:86/proto:86)
---------
+=======
  * NOT YET RELEASED
  * this branch
    * will not receive new features compared to 8.0,
@@ -40,6 +40,26 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+=======
+8.0.8 (api:86/proto:86)
+--------
+ * Improvements to the bitmap code. (The old code might reenabled
+   interrupts by accident)
+ * Fixed a endian issue in the wirte protocol. C bit-fields are
+   might by layed out differently on little/big endian machines.
+ * Drbdadm's adjust forgot sometimes to adjust options values that
+   where inherited from the common section, fixed that.
+ * Removed dopd. It gets (and should be) shipped with heartbeat.
+ * When peer authentication is enabled, you could trick drbd to send
+   a state report packet before it authenticated itself. Fixed that.
+ * Added robustness to resync pause/continue.
+ * Drbdsetup should not report a random error if no netlink
+   answer is received from the drbd module.
+ * Fixes to error code pathes. ( drbd_drain_block() and lc_alloc() )
+ * Fixed a possible OOPS in case one manages to loose disk and
+   network concurrently. (iSCSI disk and network over same switch)
+ * Fixed the broadcasting of state change events to userspace.
+>>>>>>> drbd-8.0:ChangeLog
 
 8.0.7 (api:86/proto:86)
 --------
