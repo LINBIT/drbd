@@ -109,10 +109,8 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(drbd_dev *mdev, int rw, int fault_type, struct bio *bio)
+static inline void drbd_generic_make_request(drbd_dev *mdev, int fault_type, struct bio *bio)
 {
-	bio->bi_rw = rw; // on the receiver side, e->..rw was not yet defined.
-
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR DEVICE_NAME "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));

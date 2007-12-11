@@ -1081,6 +1081,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size)
 	dec_rs_pending(mdev);
 
 	e->private_bio->bi_end_io = drbd_endio_write_sec;
+	e->private_bio->bi_rw = WRITE;
 	e->w.cb = e_end_resync_block;
 
 	inc_unacked(mdev);
@@ -1095,7 +1096,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size)
 	       INFO("submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector,e->size,e);
 	       );
-	drbd_generic_make_request(mdev,WRITE,DRBD_FAULT_RS_WR,e->private_bio);
+	drbd_generic_make_request(mdev, DRBD_FAULT_RS_WR, e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1356,18 +1357,16 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	}
 
 	e->private_bio->bi_end_io = drbd_endio_write_sec;
+	e->private_bio->bi_rw = WRITE;
 	e->w.cb = e_end_block;
 
 	dp_flags = be32_to_cpu(p->dp_flags);
-	if ( dp_flags & DP_HARDBARRIER ) {
-		e->private_bio->bi_rw |= BIO_RW_BARRIER;
-	}
-	if ( dp_flags & DP_RW_SYNC ) {
-		e->private_bio->bi_rw |= BIO_RW_SYNC;
-	}
-	if ( dp_flags & DP_MAY_SET_IN_SYNC ) {
+	if (dp_flags & DP_HARDBARRIER)
+		e->private_bio->bi_rw |= (1 << BIO_RW_BARRIER);
+	if (dp_flags & DP_RW_SYNC)
+		e->private_bio->bi_rw |= (1 << BIO_RW_SYNC);
+	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;
-	}
 
 	/* I'm the receiver, I do hold a net_cnt reference. */
 	if (!mdev->net_conf->two_primaries) {
@@ -1551,7 +1550,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		} else {
 			e->barrier_nr = mdev->next_barrier_nr;
 		}
-		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+		e->private_bio->bi_rw |= (1 << BIO_RW_BARRIER);
 		mdev->next_barrier_nr = 0;
 	}
 	list_add(&e->w.list,&mdev->active_ee);
@@ -1593,7 +1592,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 		    (unsigned long long)e->sector,e->size,e);
 	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
-	drbd_generic_make_request(mdev,WRITE,DRBD_FAULT_DT_WR,e->private_bio);
+	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1650,6 +1649,9 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		return FALSE;
 	}
 
+	/* FIXME actually, it could be a READA originating from the peer,
+	 * also it could have set some flags (e.g. BIO_RW_SYNC) ... */
+	e->private_bio->bi_rw = READ;
 	e->private_bio->bi_end_io = drbd_endio_read_sec;
 
 	switch (h->command) {
@@ -1688,8 +1690,8 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	       INFO("submit EE READ sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector,e->size,e);
 	       );
-	/* FIXME actually, it could be a READA originating from the peer ... */
-	drbd_generic_make_request(mdev,READ,fault_type,e->private_bio);
+
+	drbd_generic_make_request(mdev, fault_type, e->private_bio);
 	maybe_kick_lo(mdev);
 
 	return TRUE;

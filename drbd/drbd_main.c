@@ -1727,16 +1727,13 @@ int drbd_send_dblock(drbd_dev *mdev, drbd_request_t *req)
 	p.seq_num  = cpu_to_be32( req->seq_num =
 				  atomic_add_return(1,&mdev->packet_seq) );
 	dp_flags = 0;
-	if(req->master_bio->bi_rw & BIO_RW_BARRIER) {
+	if (bio_barrier(req->master_bio))
 		dp_flags |= DP_HARDBARRIER;
-	}
-	if(req->master_bio->bi_rw & BIO_RW_SYNC) {
+	if (bio_sync(req->master_bio))
 		dp_flags |= DP_RW_SYNC;
-	}
 	if(mdev->state.conn >= SyncSource &&
-	   mdev->state.conn <= PausedSyncT) {
+	   mdev->state.conn <= PausedSyncT)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
-	}
 
 	p.dp_flags = cpu_to_be32(dp_flags);
 	dump_packet(mdev,mdev->data.socket,0,(void*)&p, __FILE__, __LINE__);

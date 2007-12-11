@@ -678,7 +678,6 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 		} else {
 			submit_bio(WRITE, bios[i]);
 		}
-
 	}
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
