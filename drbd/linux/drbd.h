@@ -27,6 +27,8 @@
 #define DRBD_H
 #include <linux/drbd_config.h>
 
+#include <asm/types.h>
+
 #ifdef __KERNEL__
 #include <linux/types.h>
 #include <asm/byteorder.h>
