@@ -1373,7 +1373,8 @@ int md_initialize_common(struct format *cfg)
 	/* THINK
 	 * do we really need to initialize the bitmap? */
 #ifdef DONT_INITIALIZE_BITMAP
-	fprintf(stderr,"NOT initialized bitmap (%u KB)\n", (cfg->bm_mmaped_length>>10));
+	fprintf(stderr, "NOT initialized bitmap (%u KB)\n",
+		(unsigned int)(cfg->bm_mmaped_length>>10));
 #else
 	{
 		const size_t bm_bytes = cfg->bm_mmaped_length;

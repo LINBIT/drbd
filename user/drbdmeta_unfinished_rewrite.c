@@ -1189,7 +1189,7 @@ int v07_style_md_open(struct format *cfg)
 	cfg->bd_size = bdev_size(cfg->md_fd);
 	if ((cfg->bd_size >> 9) < MD_BM_OFFSET_07) {
 		fprintf(stderr, "%s is only %llu bytes. That's not enough.\n",
-			cfg->md_device_name, cfg->bd_size);
+			cfg->md_device_name, (unsigned long long)cfg->bd_size);
 		exit(10);
 	}
 	cfg->md_offset =
@@ -1200,7 +1200,7 @@ int v07_style_md_open(struct format *cfg)
 			"byte offset %lld, but %s is only %llu bytes.\n",
 			(signed long long)cfg->md_offset,
 			cfg->md_device_name,
-			cfg->bd_size);
+			(unsigned long long)cfg->bd_size);
 		exit(10);
 	}
 
@@ -2006,9 +2006,9 @@ void check_for_existing_data(struct format *cfg)
 			     cfg->bm_offset )) >> 10;
 #undef min
 
-		printf("md_offset %llu\n", cfg->md_offset);
-		printf("al_offset %llu\n", cfg->al_offset);
-		printf("bm_offset %llu\n", cfg->bm_offset);
+		printf("md_offset %llu\n", (unsigned long long)cfg->md_offset);
+		printf("al_offset %llu\n", (unsigned long long)cfg->al_offset);
+		printf("bm_offset %llu\n", (unsigned long long)cfg->bm_offset);
 
 		/* looks like file system data */
 		printf("which uses "U64" kB\n", fs_kB);
@@ -2045,7 +2045,10 @@ void check_internal_md_flavours(struct format * cfg) {
 	flex_offset = v07_style_md_get_byte_offset(
 		DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
 
-	printf("%lld\n%lld\n%lld\n", cfg->bd_size, fixed_offset, flex_offset);
+	printf("%lld\n%lld\n%lld\n",
+		(unsigned long long)cfg->bd_size,
+		(unsigned long long)fixed_offset,
+		(unsigned long long)flex_offset);
 	if (0 <= fixed_offset && fixed_offset < (off_t)cfg->bd_size - 4096) {
 		/* ... v07 fixed-size internal meta data? */
 		PREAD(cfg->md_fd, on_disk_buffer, 4096, fixed_offset);
@@ -2082,17 +2085,17 @@ void check_internal_md_flavours(struct format * cfg) {
 	if (have_fixed_v07) {
 		fprintf(stderr, "There apears to be a v07 fixed-size internal meta data block\n"
 				"already in place on %s at byte offset %llu\n",
-				cfg->md_device_name, fixed_offset);
+				cfg->md_device_name, (unsigned long long)fixed_offset);
 	}
 	if (have_flex_v07) {
 		fprintf(stderr, "There apears to be a v07(plus) flexible-size internal meta data block\n"
 				"already in place on %s at byte offset %llu",
-		cfg->md_device_name, flex_offset);
+		cfg->md_device_name, (unsigned long long)flex_offset);
 	}
 	if (have_flex_v08) {
 		fprintf(stderr, "There apears to be a v08 flexible-size internal meta data block\n"
 				"already in place on %s at byte offset %llu",
-		cfg->md_device_name, flex_offset);
+		cfg->md_device_name, (unsigned long long)flex_offset);
 	}
 
 	if (have_fixed_v07 && have_flex_v07) {
