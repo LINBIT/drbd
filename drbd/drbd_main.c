@@ -3249,7 +3249,7 @@ _dump_packet(drbd_dev *mdev, struct socket *sock,
 
 // Debug routine to dump info about bio
 
-void _dump_bio(const char *pfx, drbd_dev *mdev, int rw, struct bio *bio, int complete)
+void _dump_bio(const char *pfx, drbd_dev *mdev, struct bio *bio, int complete)
 {
 #ifdef CONFIG_LBD
 #define SECTOR_FORMAT "%Lx"
@@ -3262,13 +3262,11 @@ void _dump_bio(const char *pfx, drbd_dev *mdev, int rw, struct bio *bio, int com
 	char *faddr = (char *)(lowaddr);
 	struct bio_vec *bvec;
 	int segno;
-	int biorw, biobarrier, biosync;
 
-	rw |= bio->bi_rw;
-
-	biorw      = (rw & (RW_MASK|RWA_MASK));
-	biobarrier = (rw & (1<<BIO_RW_BARRIER));
-	biosync    = (rw & (1<<BIO_RW_SYNC));
+	const int rw = bio->bi_rw;
+	const int biorw      = (rw & (RW_MASK|RWA_MASK));
+	const int biobarrier = (rw & (1<<BIO_RW_BARRIER));
+	const int biosync    = (rw & (1<<BIO_RW_SYNC));
 
 	INFO("%s %s:%s%s%s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete? "<<<":">>>",

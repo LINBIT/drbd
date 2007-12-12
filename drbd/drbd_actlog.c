@@ -59,11 +59,11 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 	if(!ok) goto out;
 	bio->bi_private = &md_io;
 	bio->bi_end_io = drbd_md_io_complete;
+	bio->bi_rw = rw;
 
-	dump_internal_bio("Md",mdev,rw,bio,0);
+	dump_internal_bio("Md", mdev, bio, 0);
 
 	if (FAULT_ACTIVE(mdev, (rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
-		bio->bi_rw |= rw;
 		bio_endio(bio, -EIO);
 	} else {
 		submit_bio(rw, bio);

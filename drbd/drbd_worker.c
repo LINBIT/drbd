@@ -74,7 +74,7 @@ BIO_ENDIO_FN(drbd_md_io_complete)
 
 	md_io->error = error;
 
-	dump_internal_bio("Md", md_io->mdev, 0, bio, 1);
+	dump_internal_bio("Md", md_io->mdev, bio, 1);
 
 	complete(&md_io->event);
 	BIO_ENDIO_FN_RETURN;
@@ -107,7 +107,7 @@ BIO_ENDIO_FN(drbd_endio_read_sec)
 
 	D_ASSERT(e->block_id != ID_VACANT);
 
-	dump_internal_bio("Sec", mdev, 0, bio, 1);
+	dump_internal_bio("Sec", mdev, bio, 1);
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	mdev->read_cnt += e->size >> 9;
@@ -154,7 +154,7 @@ BIO_ENDIO_FN(drbd_endio_write_sec)
 
 	D_ASSERT(e->block_id != ID_VACANT);
 
-	dump_internal_bio("Sec", mdev, 0, bio, 1);
+	dump_internal_bio("Sec", mdev, bio, 1);
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	mdev->writ_cnt += e->size >> 9;
@@ -221,7 +221,7 @@ BIO_ENDIO_FN(drbd_endio_pri)
 		error = -EIO;
 	}
 
-	dump_internal_bio("Pri", mdev, 0, bio, 1);
+	dump_internal_bio("Pri", mdev, bio, 1);
 
 	/* to avoid recursion in _req_mod */
 	what = error

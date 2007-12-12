@@ -1096,7 +1096,7 @@ STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size)
 	       INFO("submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector,e->size,e);
 	       );
-	dump_internal_bio("Sec", mdev, WRITE, e->private_bio, 0);
+	dump_internal_bio("Sec", mdev, e->private_bio, 0);
 	drbd_generic_make_request(mdev, DRBD_FAULT_RS_WR, e->private_bio);
 	/* accounting done in endio */
 
@@ -1595,7 +1595,7 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
 	e->private_bio->bi_rw = rw;
-	dump_internal_bio("Sec", mdev, rw, e->private_bio, 0);
+	dump_internal_bio("Sec", mdev, e->private_bio, 0);
 	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, e->private_bio);
 	/* accounting done in endio */
 
@@ -1695,7 +1695,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 		    (unsigned long long)e->sector,e->size,e);
 	       );
 
-	dump_internal_bio("Sec", mdev, READ, e->private_bio, 0);
+	dump_internal_bio("Sec", mdev, e->private_bio, 0);
 	drbd_generic_make_request(mdev, fault_type, e->private_bio);
 	maybe_kick_lo(mdev);
 

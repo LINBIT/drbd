@@ -242,7 +242,7 @@ static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 
 static void _complete_master_bio(drbd_dev *mdev, drbd_request_t *req, int error)
 {
-	dump_bio(mdev,req->master_bio,1);
+	dump_bio(mdev, req->master_bio, 1);
 	bio_endio(req->master_bio, error);
 	req->master_bio = NULL;
 	dec_ap_bio(mdev);
@@ -763,9 +763,11 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
  */
 
 STATIC int
-drbd_make_request_common(drbd_dev *mdev, int rw, int size,
-			 sector_t sector, struct bio *bio)
+drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 {
+	const int rw = bio_rw(bio);
+	const int size = bio->bi_size;
+	const sector_t sector = bio->bi_sector;
 	struct drbd_barrier *b = NULL;
 	drbd_request_t *req;
 	int local, remote;
@@ -784,7 +786,7 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		return 0;
 	}
 
-	dump_bio(mdev,bio,0);
+	dump_bio(mdev, bio, 0);
 
 	local = inc_local(mdev);
 	if (!local) {
@@ -1000,11 +1002,11 @@ drbd_make_request_common(drbd_dev *mdev, int rw, int size,
 		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
-		dump_internal_bio("Pri",mdev,rw,req->private_bio,0);
+		dump_internal_bio("Pri", mdev, req->private_bio, 0);
 
 		if (FAULT_ACTIVE(mdev, rw==WRITE ? DRBD_FAULT_DT_WR :
-				       ( rw==READ ? DRBD_FAULT_DT_RD :
-  				                   DRBD_FAULT_DT_RA ) ))
+				       (rw==READ ? DRBD_FAULT_DT_RD :
+				                   DRBD_FAULT_DT_RA) ))
 			bio_endio(req->private_bio, -EIO);
 		else
 			generic_make_request(req->private_bio);
@@ -1135,8 +1137,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		return 0;
 	}}
 
-	return drbd_make_request_common(mdev,bio_rw(bio),bio->bi_size,
-					bio->bi_sector,bio);
+	return drbd_make_request_common(mdev,bio);
 }
 
 /* This is called by bio_add_page().  With this function we reduce
