@@ -1392,7 +1392,9 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	struct Drbd_Protocol_Packet *p;
 	int size,rv;
 
-	size = sizeof(struct Drbd_Protocol_Packet);
+	size = 32;   /* minimum length as of protocol 86.
+	                This is sizeof(struct Drbd_Protocol_Packet)
+			without the strings. */
 
 	if (mdev->agreed_pro_version == 87) {
 		size += strlen(mdev->net_conf->integrity_alg) + 1;
