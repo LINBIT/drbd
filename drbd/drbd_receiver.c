@@ -2212,7 +2212,8 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 				return FALSE;
 
 			if (strcmp(p_verify_alg, my_verify_alg) != 0) {
-				ERR("incompatible setting of the online-verify-alg\n");
+				ERR("incompatible setting of the online-verify-alg (me: %s peer: %s)\n", 
+					my_verify_alg, p_verify_alg);
 				goto disconnect;
 			}
 		}
