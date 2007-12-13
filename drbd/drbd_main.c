@@ -339,9 +339,11 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 
 	if(!send) return ok;
 
-	ok = drbd_send_state(mdev);
-	if (ok) WARN("Notified peer that my disk is broken.\n");
-	else ERR("Sending state in drbd_io_error() failed\n");
+	if (mdev->state.conn >= Connected) {
+		ok = drbd_send_state(mdev);
+		if (ok) WARN("Notified peer that my disk is broken.\n");
+		else ERR("Sending state in drbd_io_error() failed\n");
+	}
 
 	// Make sure we try to flush meta-data to disk - we come
 	// in here because of a local disk error so it might fail
@@ -961,7 +963,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if ( ns.conn >= WFReportParams &&
+	if ( ns.conn >= Connected &&
 	     (( os.aftr_isp != ns.aftr_isp ) ||
 	      ( os.user_isp != ns.user_isp )) ) {
 		drbd_send_state(mdev);
@@ -971,6 +973,12 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	if ( ( !os.aftr_isp && !os.peer_isp && !os.user_isp) &&
 	     ( ns.aftr_isp || ns.peer_isp || ns.user_isp) ) {
 		suspend_other_sg(mdev);
+	}
+
+	/* Make sure the peer gets informed about eventual state
+	   changes (ISP bits) while we were in WFReportParams. */
+	if (os.conn == WFReportParams && ns.conn >= Connected) {
+		drbd_send_state(mdev);
 	}
 
 	/* We are in the progress to start a full sync... */
@@ -1382,6 +1390,13 @@ int drbd_send_sizes(drbd_dev *mdev)
 	return ok;
 }
 
+/**
+ * drbd_send_state:
+ * Informs the peer about our state. Only call it when
+ * mdev->state.conn >= Connected (I.e. you may not call it while in
+ * WFReportParams. Though there is one valid and necessary exception,
+ * drbd_connect() calls drbd_send_state() while in it WFReportParams.
+ */
 int drbd_send_state(drbd_dev *mdev)
 {
 	struct socket *sock;
