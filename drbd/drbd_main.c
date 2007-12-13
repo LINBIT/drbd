@@ -221,10 +221,7 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 
 	b = mdev->oldest_barrier;
 
-	/* in protocol C this list should be empty,
-	 * unless there is local io pending.
-	 * in protocol A and B, this should not be empty, even though the
-	 * master_bio's could already been completed.  */
+	/* Clean up list of requests processed during current epoch */
 	list_for_each_safe(le, tle, &b->requests) {
 		r = list_entry(le, struct drbd_request, tl_requests);
 		_req_mod(r, barrier_acked, 0);
