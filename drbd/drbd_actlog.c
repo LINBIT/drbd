@@ -1004,34 +1004,21 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	unsigned long sbnr,ebnr,lbnr;
 	sector_t esector, nr_sectors;
 
-	/*  Find codepoints that call set_out_of_sync()
-	unsigned long flags;
-	unsigned int enr;
-	struct bm_extent* ext;
-
-	if(inc_local(mdev)) {
-		enr = BM_SECT_TO_EXT(sector);
-		spin_lock_irqsave(&mdev->al_lock,flags);
-		ext = (struct bm_extent *) lc_find(mdev->resync,enr);
-		if (ext) {
-			WARN("BAD! things will happen, find this.\n");
-			dump_stack();
-		}
-		spin_unlock_irqrestore(&mdev->al_lock,flags);
-		dec_local(mdev);
-	}
-	*/
-
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("sector: %llus, size: %d\n",(unsigned long long)sector,size);
 		return;
 	}
 
+	if (!inc_local(mdev))
+		return; /* no disk, no metadata, no bitmap to set bits in */
+
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
 
-	ERR_IF(sector >= nr_sectors) return;
-	ERR_IF(esector >= nr_sectors) esector = (nr_sectors-1);
+	ERR_IF(sector >= nr_sectors)
+		goto out;
+	ERR_IF(esector >= nr_sectors)
+		esector = (nr_sectors-1);
 
 	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
 
@@ -1048,6 +1035,9 @@ void __drbd_set_out_of_sync(drbd_dev* mdev, sector_t sector, int size, const cha
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */
 	drbd_bm_set_bits(mdev,sbnr,ebnr);
+
+out:
+	dec_local(mdev);
 }
 
 static inline
