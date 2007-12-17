@@ -1415,9 +1415,9 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	p->two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
 
 	if (mdev->agreed_pro_version >= 87) {
-		strncpy(p->integrity_alg, mdev->net_conf->integrity_alg, SHARED_SECRET_MAX-1);
+		strcpy(p->integrity_alg, mdev->net_conf->integrity_alg);
 		if (mdev->agreed_pro_version >= 88) {
-			strncpy(p->online_verify_alg, mdev->sync_conf.verify_alg, SHARED_SECRET_MAX-1);
+			strcpy(p->online_verify_alg,mdev->sync_conf.verify_alg);
 		}
 	}
 
