@@ -75,6 +75,8 @@ int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
 STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused);
+STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
+			   enum chg_state_flags flags);
 STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 
@@ -340,8 +342,7 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
-		_drbd_set_state(_NS(mdev,disk,Diskless),
-				ChgStateHard|ScheduleAfter);
+		_drbd_set_state(_NS(mdev,disk,Diskless),ChgStateHard);
 	}
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
@@ -397,14 +398,13 @@ int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 	rv = _drbd_set_state(mdev, ns, f);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-	if (rv==SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev,os,ns,f);
 
 	return rv;
 }
 
 void drbd_force_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 {
-	drbd_change_state(mdev,ChgStateHard,mask,val);
+	drbd_change_state(mdev,ChgStateVerbose|ChgStateHard,mask,val);
 }
 
 STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns);
@@ -444,7 +444,6 @@ set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
  * _drbd_request_state:
  * This function is the most gracefull way to change state. For some state
  * transition this function even does a cluster wide transaction.
- * It has a cousin named drbd_request_state(), which is always verbose.
  */
 int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		       enum chg_state_flags f)
@@ -492,8 +491,6 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	rv = _drbd_set_state(mdev, ns, f);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
-
-	if (rv==SS_Success && !(f&ScheduleAfter)) after_state_ch(mdev,os,ns,f);
 
 	return rv;
 }
@@ -616,6 +613,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	drbd_state_t os;
 	int rv=SS_Success, warn_sync_abort=0;
 	enum fencing_policy fp;
+	struct after_state_chg_work* ascw;
 
 	MUST_HOLD(&mdev->req_lock);
 
@@ -814,67 +812,10 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		}
 	}
 
-	if ( os.disk == Diskless && os.conn == StandAlone &&
-	     (ns.disk > Diskless || ns.conn >= Unconnected) ) {
-		int i;
-		i = try_module_get(THIS_MODULE);
-		D_ASSERT(i);
-	}
-
-	/* Peer was forced UpToDate & Primary, consider to resync */
-	if (os.disk == Inconsistent && os.pdsk == Inconsistent &&
-	    os.peer == Secondary && ns.peer == Primary)
-		set_bit(CONSIDER_RESYNC, &mdev->flags);
-
-	if( flags & ScheduleAfter ) {
-		struct after_state_chg_work* ascw;
-
-		ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
-		if(ascw) {
-			ascw->os = os;
-			ascw->ns = ns;
-			ascw->flags = flags;
-			ascw->w.cb = w_after_state_ch;
-			drbd_queue_work(&mdev->data.work,&ascw->w);
-		} else {
-			WARN("Could not kmalloc an ascw\n");
-		}
-	}
-
-	return rv;
-}
-
-STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
-{
-	struct after_state_chg_work* ascw;
-
-	ascw = (struct after_state_chg_work*) w;
-	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
-	kfree(ascw);
-
-	return 1;
-}
-
-void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
-		    enum chg_state_flags flags)
-{
-	enum fencing_policy fp;
-	u32 mdf;
-
-	if ( (os.conn != Connected && ns.conn == Connected) ) {
-		clear_bit(CRASHED_PRIMARY, &mdev->flags);
-		if( mdev->p_uuid ) {
-			mdev->p_uuid[UUID_FLAGS] &= ~((u64)2);
-		}
-	}
-
-	fp = DontCare;
 	if(inc_local(mdev)) {
-		fp = mdev->bc->dc.fencing;
-
-		mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
-					     MDF_ConnectedInd|MDF_WasUpToDate|
-					     MDF_PeerOutDated );
+		u32 mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
+						 MDF_ConnectedInd|MDF_WasUpToDate|
+						 MDF_PeerOutDated );
 
 		if (test_bit(CRASHED_PRIMARY,&mdev->flags) ||
 		    mdev->state.role == Primary ||
@@ -892,6 +833,57 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		dec_local(mdev);
 	}
 
+	/* Peer was forced UpToDate & Primary, consider to resync */
+	if (os.disk == Inconsistent && os.pdsk == Inconsistent &&
+	    os.peer == Secondary && ns.peer == Primary)
+		set_bit(CONSIDER_RESYNC, &mdev->flags);
+
+	/* Make sure worker thread is running -- this is a NOP if it is already running */
+	drbd_thread_start(&mdev->worker);
+
+	ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
+	if(ascw) {
+	    ascw->os = os;
+	    ascw->ns = ns;
+	    ascw->flags = flags;
+	    ascw->w.cb = w_after_state_ch;
+	    drbd_queue_work(&mdev->data.work,&ascw->w);
+	} else {
+	    WARN("Could not kmalloc an ascw\n");
+	}
+
+	return rv;
+}
+
+STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
+{
+	struct after_state_chg_work* ascw;
+
+	ascw = (struct after_state_chg_work*) w;
+	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
+	kfree(ascw);
+
+	return 1;
+}
+
+STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
+			   enum chg_state_flags flags)
+{
+	enum fencing_policy fp;
+
+	if ( (os.conn != Connected && ns.conn == Connected) ) {
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+		if( mdev->p_uuid ) {
+			mdev->p_uuid[UUID_FLAGS] &= ~((u64)2);
+		}
+	}
+
+	fp = DontCare;
+	if(inc_local(mdev)) {
+		fp = mdev->bc->dc.fencing;
+		dec_local(mdev);
+	}
+
 	/* Inform userspace about the change... */
 	drbd_bcast_state(mdev, ns);
 
@@ -905,8 +897,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		     (os.conn < Connected && ns.conn >= Connected) ) {
 			tl_clear(mdev);
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev,susp,0),
-					ChgStateVerbose | ScheduleAfter );
+			_drbd_set_state(_NS(mdev,susp,0),ChgStateVerbose);
 			spin_unlock_irq(&mdev->req_lock);
 		}
 	}
@@ -1013,8 +1004,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 		if (ns.conn == StartingSyncT) {
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev,conn,WFSyncUUID),
-					ChgStateVerbose | ScheduleAfter );
+			_drbd_set_state(_NS(mdev,conn,WFSyncUUID),ChgStateVerbose);
 			spin_unlock_irq(&mdev->req_lock);
 		} else /* StartingSyncS */ {
 			drbd_start_resync(mdev,SyncSource);
@@ -1061,7 +1051,7 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_thread_signal(&mdev->receiver);
 	}
 
-	// Now the receiver finished cleaning up itself, it should die now
+	// Now the receiver finished cleaning up itself, it should die
 	if ( os.conn != StandAlone && ns.conn == StandAlone ) {
 		drbd_thread_stop_nowait(&mdev->receiver);
 	}
@@ -1072,25 +1062,14 @@ void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
+	// Upon network connection, we need to start the received
 	if ( os.conn == StandAlone && ns.conn == Unconnected) {
 		drbd_thread_start(&mdev->receiver);
 	}
 
-	if ( os.disk == Diskless && os.conn <= Disconnecting &&
-	     (ns.disk > Diskless || ns.conn >= Unconnected) ) {
-		if(!drbd_thread_start(&mdev->worker)) {
-			module_put(THIS_MODULE);
-		}
-	}
-
-	/* FIXME what about Primary, Diskless, and then losing
-	 * the connection? since we survive that "somehow",
-	 * maybe we may not stop the worker yet,
-	 * since that would call drbd_mdev_cleanup.
-	 * after which we probably won't survive the next
-	 * request from the upper layers ... BOOM again :( */
-	if ( (os.disk > Diskless || os.conn > StandAlone) &&
-	     ns.disk == Diskless && ns.conn == StandAlone ) {
+	// Terminate worker thread if we are unconfigured - it will be
+	// restarted as needed...
+	if (ns.disk == Diskless && ns.conn == StandAlone) {
 		drbd_thread_stop_nowait(&mdev->worker);
 	}
 }
@@ -1126,6 +1105,13 @@ STATIC int drbd_thread_setup(void* arg)
 	// THINK maybe two different completions?
 	complete(&thi->startstop); // notify: thi->task unset.
 
+	INFO("Terminating %s thread\n",
+	     thi == &mdev->receiver ? "receiver" :
+	     thi == &mdev->asender  ? "asender"  :
+	     thi == &mdev->worker   ? "worker"   : "NONSENSE");
+
+	// Release mod reference taken when thread was started
+	module_put(THIS_MODULE);
 	return retval;
 }
 
@@ -1146,25 +1132,36 @@ int drbd_thread_start(struct Drbd_thread *thi)
 
 	spin_lock(&thi->t_lock);
 
-	/* INFO("drbd_thread_start: %s [%d]: %s %d -> Running\n",
-	     current->comm, current->pid,
-	     thi == &mdev->receiver ? "receiver" :
-             thi == &mdev->asender  ? "asender"  :
-             thi == &mdev->worker   ? "worker"   : "NONSENSE",
-	     thi->t_state); */
-
 	if (thi->t_state == None) {
+		INFO("Starting %s thread (from %s [%d])\n",
+		     thi == &mdev->receiver ? "receiver" :
+		     thi == &mdev->asender  ? "asender"  :
+		     thi == &mdev->worker   ? "worker"   : "NONSENSE",
+		     current->comm, current->pid);
+
+		// Get ref on module for thread - this is released when thread exits
+		if (!try_module_get(THIS_MODULE)) {
+			ERR("Failed to get module reference in drbd_thread_start\n");
+			spin_unlock(&thi->t_lock);
+			return FALSE;
+		}
+
 		init_completion(&thi->startstop);
 		D_ASSERT(thi->task == NULL);
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
+
 		flush_signals(current); // otherw. may get -ERESTARTNOINTR
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
+
+			module_put(THIS_MODULE);
 			return FALSE;
 		}
+
 		wait_for_completion(&thi->startstop); // waits until thi->task is set
+
 		D_ASSERT(thi->task);
 		D_ASSERT(get_t_state(thi) == Running);
 	} else {

@@ -718,7 +718,7 @@ int drbd_connect(drbd_dev *mdev)
 
 	D_ASSERT(!mdev->data.socket);
 
-	if (_drbd_request_state(mdev,NS(conn,WFConnection),0) < SS_Success )
+	if (_drbd_request_state(mdev,NS(conn,WFConnection),ChgStateVerbose) < SS_Success )
 		return -2;
 
 	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
@@ -822,14 +822,14 @@ int drbd_connect(drbd_dev *mdev)
 	if (h <= 0) return h;
 
 	if ( mdev->cram_hmac_tfm ) {
-		/* drbd_request_state(mdev, NS(conn, WFAuth)); */
+		/* _drbd_request_state(mdev, NS(conn, WFAuth), ChgStateVerbose); */
 		if (!drbd_do_auth(mdev)) {
 			ERR("Authentication of peer failed\n");
 			return -1;
 		}
 	}
 
-	if (drbd_request_state(mdev, NS(conn, WFReportParams)) < SS_Success) return 0;
+	if (_drbd_request_state(mdev, NS(conn, WFReportParams),ChgStateVerbose) < SS_Success) return 0;
 
 	sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
@@ -2300,7 +2300,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 		if(nconn == conn_mask) return FALSE;
 
-		if(drbd_request_state(mdev,NS(conn,nconn)) < SS_Success) {
+		if(_drbd_request_state(mdev,NS(conn,nconn),ChgStateVerbose) < SS_Success) {
 			drbd_force_state(mdev,NS(conn,Disconnecting));
 			return FALSE;
 		}
@@ -2417,7 +2417,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_State_Packet *p = (Drbd_State_Packet*)h;
 	drbd_conns_t nconn,oconn;
-	drbd_state_t os,ns,peer_state;
+	drbd_state_t ns,peer_state;
 	int rv;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -2453,7 +2453,6 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	spin_lock_irq(&mdev->req_lock);
 	if( mdev->state.conn != oconn ) goto retry;
 	clear_bit(CONSIDER_RESYNC, &mdev->flags);
-	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
 	ns.peer = peer_state.role;
@@ -2463,7 +2462,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	   ns.disk == Negotiating ) ns.disk = UpToDate;
 	if((nconn == Connected || nconn == WFBitMapT) &&
 	   ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
-	rv = _drbd_set_state(mdev,ns,ChgStateVerbose | ChgStateHard);
+	rv = _drbd_set_state(mdev,ns,ChgStateVerbose|ChgStateHard);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -2482,10 +2481,6 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			// peer is waiting for us to respond...
 			drbd_send_state(mdev);
 		}
-	}
-
-	if (rv==SS_Success) {
-		after_state_ch(mdev,os,ns,ChgStateVerbose | ChgStateHard);
 	}
 
 	mdev->net_conf->want_lose = 0;
@@ -2560,7 +2555,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	} else if (mdev->state.conn == WFBitMapT) {
 		ok = drbd_send_bitmap(mdev);
 		if (!ok) goto out;
-		ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
+		ok = _drbd_request_state(mdev,NS(conn,WFSyncUUID),ChgStateVerbose);
 		D_ASSERT( ok == SS_Success );
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
@@ -2802,7 +2797,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		if( fp >= Resource &&
 		    mdev->state.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
-			drbd_request_state(mdev,NS(pdsk,nps));
+			_drbd_request_state(mdev,NS(pdsk,nps),ChgStateVerbose);
 		}
 	}
 
@@ -2813,12 +2808,8 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		ns = os;
 		ns.conn = Unconnected;
 		rv=_drbd_set_state(mdev,ns,ChgStateVerbose);
-		ns = mdev->state;
 	}
 	spin_unlock_irq(&mdev->req_lock);
-	if (rv == SS_Success) {
-		after_state_ch(mdev,os,ns,ChgStateVerbose);
-	}
 
 	if(os.conn == Disconnecting) {
 		wait_event( mdev->misc_wait,atomic_read(&mdev->net_cnt) == 0 );
@@ -2839,7 +2830,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		}
 		kfree(mdev->net_conf);
 		mdev->net_conf=NULL;
-		drbd_request_state(mdev, NS(conn,StandAlone));
+		_drbd_request_state(mdev, NS(conn,StandAlone),ChgStateVerbose);
 	}
 
 	/* they do trigger all the time.

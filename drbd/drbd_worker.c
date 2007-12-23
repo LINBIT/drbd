@@ -557,9 +557,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	drbd_bm_recount_bits(mdev);
 
-	drbd_request_state(mdev,NS3(conn,Connected,
-				    disk,dstate,
-				    pdsk,pdstate));
+	_drbd_request_state(mdev,NS3(conn,Connected,disk,dstate,pdsk,pdstate),ChgStateVerbose);
 
 	drbd_md_sync(mdev);
 
@@ -813,8 +811,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 		if (!(odev = minor_to_mdev(i)) ||
 		    (odev->state.conn == StandAlone && odev->state.disk == Diskless) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
-			rv |= ( _drbd_set_state(_NS(odev,aftr_isp,1),
-						ChgStateHard|ScheduleAfter)
+			rv |= ( _drbd_set_state(_NS(odev,aftr_isp,1),ChgStateHard)
 				!= SS_NothingToDo ) ;
 		}
 	}
@@ -837,8 +834,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 		if( !(odev = minor_to_mdev(i)) ) continue;
 		if ( odev->state.aftr_isp ) {
 			if (_drbd_may_sync_now(odev)) {
-				rv |= ( _drbd_set_state(_NS(odev,aftr_isp,0),
-							ChgStateHard|ScheduleAfter)
+				rv |= ( _drbd_set_state(_NS(odev,aftr_isp,0),ChgStateHard)
 					!= SS_NothingToDo ) ;
 			}
 		}
@@ -885,7 +881,7 @@ void drbd_alter_sa(drbd_dev *mdev, int na)
  */
 void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 {
-	drbd_state_t os,ns;
+	drbd_state_t ns;
 	int r=0;
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
@@ -911,7 +907,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 
 	drbd_global_lock();
-	ns = os = mdev->state;
+	ns = mdev->state;
 
 	ns.aftr_isp = !_drbd_may_sync_now(mdev);
 
@@ -938,8 +934,6 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	drbd_global_unlock();
 
 	if ( r == SS_Success ) {
-		after_state_ch(mdev,os,ns,ChgStateVerbose);
-
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     conns_to_name(ns.conn),
 		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
@@ -1053,7 +1047,6 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	D_ASSERT( mdev->state.disk == Diskless && mdev->state.conn == StandAlone );
 	drbd_mdev_cleanup(mdev);
-	module_put(THIS_MODULE);
 
 	INFO("worker terminated\n");
 
