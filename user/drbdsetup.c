@@ -132,7 +132,7 @@ struct drbd_cmd {
 
 
 // Connector functions
-#define NL_TIME 10000
+#define NL_TIME 60000
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
 int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
@@ -1656,8 +1656,13 @@ int open_cn()
 	if (err == -1) {
 		err = errno;
 		perror("bind() failed");
-		if(err == ENOENT) {
-			fprintf(stderr,"DRBD driver not present in the kernel?\n");
+		switch(err) {
+		case ENOENT:
+			fprintf(stderr,"Connector module not loaded? Try 'modprobe cn'.\n");
+			break;
+		case EPERM:
+			fprintf(stderr,"Missing privileges? You should run this as root.\n");
+			break;
 		}
 		return -1;
 	}
@@ -1773,6 +1778,32 @@ void close_cn(int sk_nl)
 	close(sk_nl);
 }
 
+void ensure_drbd_driver_is_present(void)
+{
+	struct drbd_tag_list *tl;
+	char buffer[4096];
+	int sk_nl, rr;
+
+	sk_nl = open_cn();
+	/* Might print:
+	   Missing privileges? You should run this as root.
+	   Connector module not loaded? try 'modprobe cn'. */
+	if (sk_nl < 0) exit(20);
+
+	tl = create_tag_list(2);
+	add_tag(tl, TT_END, NULL, 0); // close the tag list
+
+	tl->drbd_p_header->packet_type = P_get_state;
+	tl->drbd_p_header->drbd_minor = 0;
+	tl->drbd_p_header->flags = 0;
+
+	rr = call_drbd(sk_nl, tl, (struct nlmsghdr*)buffer, 4096, 500);
+	/* Might print: (after 500ms)
+	   No response from the DRBD driver! Is the module loaded? */
+	close_cn(sk_nl);
+	if (rr == -2) exit(20);
+}
+
 int main(int argc, char** argv)
 {
 	int minor;
@@ -1808,6 +1839,8 @@ int main(int argc, char** argv)
 	if (argc < 3) print_usage(argc==1 ? 0 : " Insufficient arguments");
 
 	cmd=find_cmd_by_name(argv[2]);
+
+	ensure_drbd_driver_is_present();
 
 	if(cmd) {
 		lock_fd = dt_lock_drbd(argv[1]);
