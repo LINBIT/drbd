@@ -132,7 +132,7 @@ struct drbd_cmd {
 
 
 // Connector functions
-#define NL_TIME 60000
+#define NL_TIME (COMM_TIMEOUT*1000)
 int open_cn();
 int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
 int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
