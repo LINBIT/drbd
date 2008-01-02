@@ -577,6 +577,11 @@ union Drbd_Polymorph_Packet {
 } __attribute((packed));
 
 /**********************************************************************/
+#ifdef NEED_BACKPORT_OF_MUTEX
+struct mutex {
+	struct semaphore sem;
+};
+#endif
 
 enum Drbd_thread_state {
 	None,
@@ -746,7 +751,7 @@ struct drbd_work_queue {
 struct drbd_socket {
 	struct drbd_work_queue work;
 	struct semaphore  mutex;
-	struct socket	 *socket;
+	struct socket    *socket;
 	/* this way we get our
 	 * send/receive buffers off the stack */
 	union Drbd_Polymorph_Packet sbuf;

@@ -64,7 +64,7 @@ extern const char *drbd_buildtag(void);
 
 /* RedHat's 2.6.9 kernels have the gfp_t type. Mainline has this feature
  * since 2.6.16. If you build for RedHat enable the line below. */
-#define KERNEL_HAS_GFP_T
+//#define KERNEL_HAS_GFP_T
 
 /* kernel.org has atomic_add_return since 2.6.10. some vendor kernels
  * have it backported, though. Others don't. */
@@ -73,7 +73,7 @@ extern const char *drbd_buildtag(void);
 /* 2.6.something has deprecated kmem_cache_t
  * some older still use it.
  * some have it defined as struct kmem_cache_s, some as struct kmem_cache */
-//#define USE_KMEM_CACHE_S
+#define USE_KMEM_CACHE_S
 
 /* 2.6.something has sock_create_kern (SE-linux security context stuff)
  * some older distribution kernels don't. */
@@ -81,9 +81,12 @@ extern const char *drbd_buildtag(void);
 
 /* in older kernels (vanilla < 2.6.16) struct netlink_skb_parms has a
  * member called dst_groups. Later it is called dst_group (without 's'). */
-//#define DRBD_NL_DST_GROUPS
+#define DRBD_NL_DST_GROUPS
 
 /* in older kernels (vanilla < 2.6.14) is no kzalloc() */
-//#define NEED_BACKPORT_OF_KZALLOC
+#define NEED_BACKPORT_OF_KZALLOC
+
+/* need backport of mutex */
+#define NEED_BACKPORT_OF_MUTEX
 
 #endif
