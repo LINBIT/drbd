@@ -2067,8 +2067,8 @@ void check_internal_md_flavours(struct format * cfg) {
 	flex_offset = v07_style_md_get_byte_offset(
 		DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
 
-	printf("%lld\n%lld\n%lld\n", (long long unsigned)cfg->bd_size,
-	       (long long unsigned)fixed_offset, (long long unsigned)flex_offset);
+	/* printf("%lld\n%lld\n%lld\n", (long long unsigned)cfg->bd_size,
+	   (long long unsigned)fixed_offset, (long long unsigned)flex_offset); */
 	if (0 <= fixed_offset && fixed_offset < (off_t)cfg->bd_size - 4096) {
 		/* ... v07 fixed-size internal meta data? */
 		PREAD(cfg->md_fd, on_disk_buffer, 4096, fixed_offset);
@@ -2211,8 +2211,8 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 
 	printf("Writing meta data...\n");
 	if (!cfg->md.magic) /* not converted: initialize */
-		err = cfg->ops->md_initialize(cfg);
-	/* FIXME else converted: so init or bring over al and bitmap */
+		err = cfg->ops->md_initialize(cfg); /* Clears on disk AL implicitly */
+	/* otherwise, AL and bitmap are compatible between 07 and 08 */
 	err = err || cfg->ops->md_cpu_to_disk(cfg); // <- short circuit
 	err = cfg->ops->close(cfg)          || err; // <- close always
 	if (err)
