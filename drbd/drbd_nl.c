@@ -850,6 +850,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
+	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
+
 	if((retcode = drbd_request_state(mdev,NS(disk,Attaching))) < SS_Success ) {
 		goto release_bdev2_fail;
 	}
@@ -1301,6 +1303,7 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	struct resize rs;
 	int retcode=NoError;
+	int ldsc = 0; /* local disk size changed */
 	int dd;
 
 	memset(&rs, 0, sizeof(struct resize));
@@ -1325,6 +1328,11 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
+	if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
+		mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+		ldsc = 1;
+	}
+
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	drbd_bm_lock(mdev);
 	dd = drbd_determin_dev_size(mdev);
@@ -1336,7 +1344,7 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (mdev->state.conn == Connected && dd != unchanged) {
+	if (mdev->state.conn == Connected && ( dd != unchanged || ldsc) ) {
 		drbd_send_uuids(mdev);
 		drbd_send_sizes(mdev);
 		if (dd == grew)

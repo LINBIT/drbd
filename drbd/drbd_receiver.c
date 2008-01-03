@@ -2219,6 +2219,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
 	unsigned int max_seg_s;
 	sector_t p_size, p_usize, my_usize;
+	int ldsc = 0; /* local disk size changed */
 	drbd_conns_t nconn;
 	int dd;
 
@@ -2306,6 +2307,11 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	}
 
 	if(inc_local(mdev)) {
+		if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
+			mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+			ldsc = 1;
+		}
+
 		max_seg_s = be32_to_cpu(p->max_segment_size);
 		if( max_seg_s != mdev->rq_queue->max_segment_size ) {
 			drbd_setup_queue_param(mdev, max_seg_s);
@@ -2317,7 +2323,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	if (mdev->state.conn > WFReportParams ) {
 		if( be64_to_cpu(p->c_size) !=
-		    drbd_get_capacity(mdev->this_bdev) ) {
+		    drbd_get_capacity(mdev->this_bdev) || ldsc ) {
 			// we have different sizes, probabely peer
 			// needs to know my new size...
 			drbd_send_sizes(mdev);

@@ -767,6 +767,7 @@ struct drbd_backing_dev {
 	struct file *md_file;
 	struct drbd_md md;
 	struct disk_conf dc; /* The user provided config... */
+	sector_t known_size;
 };
 
 struct drbd_md_io {
