@@ -843,6 +843,8 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
+	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
+
 	retcode = drbd_request_state(mdev, NS(disk, Attaching));
 	if (retcode < SS_Success )
 		goto release_bdev2_fail;
@@ -1003,6 +1005,9 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			mdev->bc->md.uuid[Current] &= ~(u64)1;
 		dec_local(mdev);
 	}
+
+	/* Force meta data to be written to ensure we determine if barriers are supported */
+	drbd_md_mark_dirty(mdev);
 
 	drbd_md_sync(mdev);
 
@@ -1370,6 +1375,7 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	struct resize rs;
 	int retcode = NoError;
+	int ldsc = 0; /* local disk size changed */
 	int dd;
 
 	memset(&rs, 0, sizeof(struct resize));
@@ -1394,6 +1400,11 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
+	if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
+		mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+		ldsc = 1;
+	}
+
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	drbd_bm_lock(mdev);
 	dd = drbd_determin_dev_size(mdev);
@@ -1405,7 +1416,7 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (mdev->state.conn == Connected && dd != unchanged) {
+	if (mdev->state.conn == Connected && ( dd != unchanged || ldsc) ) {
 		drbd_send_uuids(mdev);
 		drbd_send_sizes(mdev);
 		if (dd == grew)

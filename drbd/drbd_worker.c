@@ -64,11 +64,21 @@
  */
 BIO_ENDIO_FN(drbd_md_io_complete)
 {
+	struct drbd_md_io *md_io;
+
 	BIO_ENDIO_FN_START;
+
 	/* error parameter ignored:
 	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
-	complete((struct completion *)bio->bi_private);
+	md_io = (struct drbd_md_io *)bio->bi_private;
+
+	md_io->error = error;
+
+	dump_internal_bio("Md", md_io->mdev, bio, 1);
+
+	complete(&md_io->event);
+
 	BIO_ENDIO_FN_RETURN;
 }
 
@@ -95,6 +105,8 @@ BIO_ENDIO_FN(drbd_endio_read_sec)
 	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
+
+	dump_internal_bio("Sec", mdev, bio, 1);
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	mdev->read_cnt += e->size >> 9;
@@ -140,6 +152,8 @@ BIO_ENDIO_FN(drbd_endio_write_sec)
 	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
+
+	dump_internal_bio("Sec", mdev, bio, 1);
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	mdev->writ_cnt += e->size >> 9;
@@ -209,6 +223,8 @@ BIO_ENDIO_FN(drbd_endio_pri)
 		 * do we want to WARN() on this? */
 		error = -EIO;
 	}
+
+	dump_internal_bio("Pri", mdev, bio, 1);
 
 	/* to avoid recursion in _req_mod */
 	what = error

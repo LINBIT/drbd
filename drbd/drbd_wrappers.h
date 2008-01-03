@@ -100,12 +100,9 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(struct drbd_conf *mdev, int rw,
-	int fault_type, struct bio *bio)
+static inline void drbd_generic_make_request(struct drbd_conf *mdev,
+					     int fault_type, struct bio *bio)
 {
-	/* on the receiver side, e->..rw was not yet defined. */
-	bio->bi_rw = rw;
-
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
 				"bio->bi_bdev == NULL\n",
