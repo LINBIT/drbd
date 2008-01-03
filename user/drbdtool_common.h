@@ -6,6 +6,7 @@
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
+#define COMM_TIMEOUT 120
 
 /* MetaDataIndex for v06 / v07 style meta data blocks */
 enum MetaDataIndex {

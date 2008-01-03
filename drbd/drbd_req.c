@@ -673,12 +673,23 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	case write_acked_by_peer_and_sis:
 		req->rq_state |= RQ_NET_SIS;
 	case conflict_discarded_by_peer:
-		/* interesstingly, this is the same thing! */
-	case write_acked_by_peer:
-		/* assert something? */
-		/* protocol C; successfully written on peer */
+		/* for discarded conflicting writes of multiple primarys,
+		 * there is no need to keep anything in the tl, potential
+		 * node crashes are covered by the activity log. */
 		req->rq_state |= RQ_NET_DONE;
-		/* rest is the same as for: */
+		/* fall through */
+	case write_acked_by_peer:
+		/* protocol C; successfully written on peer.
+		 * Nothing to do here.
+		 * We want to keep the tl in place for all protocols, to cater
+		 * for volatile write-back caches on lower level devices.
+		 *
+		 * A barrier request is expected to have forced all prior
+		 * requests onto stable storage, so completion of a barrier
+		 * request could set NET_DONE right here, and not wait for the
+		 * BarrierAck, but that is an unecessary optimisation. */
+
+		/* this makes it effectively the same as for: */
 	case recv_acked_by_peer:
 		/* protocol B; pretends to be sucessfully written on peer.
 		 * see also notes above in handed_over_to_network about
@@ -702,9 +713,6 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		break;
 
 	case barrier_acked:
-		/* can even happen for protocol C,
-		 * when local io is still pending.
-		 * in which case it does nothing. */
 		if (req->rq_state & RQ_NET_PENDING) {
 			/* barrier came in before all requests have been acked.
 			 * this is bad, because if the connection is lost now,
@@ -780,9 +788,11 @@ int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
  */
 
 int
-drbd_make_request_common(struct drbd_conf *mdev, int rw, int size,
-			 sector_t sector, struct bio *bio)
+drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 {
+	const int rw = bio_rw(bio);
+	const int size = bio->bi_size;
+	const sector_t sector = bio->bi_sector;
 	struct drbd_barrier *b = NULL;
 	struct drbd_request *req;
 	int local, remote;
@@ -989,7 +999,6 @@ allocate_barrier:
 		}
 		if (remote)
 			dec_ap_pending(mdev);
-		dump_bio(mdev, req->master_bio, 1);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
 		bio_endio(req->master_bio, 0);
 		req->master_bio = NULL;
@@ -1018,9 +1027,11 @@ allocate_barrier:
 		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
-		if (FAULT_ACTIVE(mdev, rw == WRITE ? DRBD_FAULT_DT_WR :
-				       ( rw == READ ? DRBD_FAULT_DT_RD :
-						   DRBD_FAULT_DT_RA ) ))
+		dump_internal_bio("Pri", mdev, req->private_bio, 0);
+
+		if (FAULT_ACTIVE(mdev, rw==WRITE ? DRBD_FAULT_DT_WR :
+				       (rw==READ ? DRBD_FAULT_DT_RD :
+				                   DRBD_FAULT_DT_RA) ))
 			bio_endio(req->private_bio, -EIO);
 		else
 			generic_make_request(req->private_bio);
@@ -1095,8 +1106,16 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		return 0;
 	}
 
-	/* Currently our BARRIER code is disabled. */
-	if (unlikely(bio_barrier(bio))) {
+	/* Reject barrier requests if we know the underlying device does
+	 * not support them.
+	 * XXX: Need to get this info from peer as well some how so we
+	 * XXX: reject if EITHER side/data/metadata area does not support them.
+	 *
+	 * because of those XXX, this is not yet enabled,
+	 * i.e. in drbd_init_set_defaults we set the NO_BARRIER_SUPP bit.
+	 */
+	if (unlikely(bio_barrier(bio) && test_bit(NO_BARRIER_SUPP, &mdev->flags))) {
+		/* WARN("Rejecting barrier request as underlying device does not support\n"); */
 		bio_endio(bio, -EOPNOTSUPP);
 		return 0;
 	}
@@ -1145,8 +1164,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	}
 	}
 
-	return drbd_make_request_common(mdev, bio_rw(bio), bio->bi_size,
-					bio->bi_sector, bio);
+	return drbd_make_request_common(mdev,bio);
 }
 
 /* This is called by bio_add_page().  With this function we reduce

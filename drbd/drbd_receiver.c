@@ -1010,6 +1010,7 @@ int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_size)
 	dec_rs_pending(mdev);
 
 	e->private_bio->bi_end_io = drbd_endio_write_sec;
+	e->private_bio->bi_rw = WRITE;
 	e->w.cb = e_end_resync_block;
 
 	inc_unacked(mdev);
@@ -1024,8 +1025,8 @@ int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_size)
 	       INFO("submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector, e->size, e);
 	       );
-	drbd_generic_make_request(mdev, WRITE, DRBD_FAULT_RS_WR,
-					e->private_bio);
+	dump_internal_bio("Sec", mdev, e->private_bio, 0);
+	drbd_generic_make_request(mdev, DRBD_FAULT_RS_WR, e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1250,6 +1251,7 @@ int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	struct Tl_epoch_entry *e;
 	struct Drbd_Data_Packet *p = (struct Drbd_Data_Packet *)h;
 	int header_size, data_size;
+	int rw = WRITE;
 	unsigned int barrier_nr = 0;
 	unsigned int epoch_size = 0;
 	u32 dp_flags;
@@ -1290,15 +1292,14 @@ int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	e->private_bio->bi_end_io = drbd_endio_write_sec;
+	e->private_bio->bi_rw = WRITE;
 	e->w.cb = e_end_block;
 
 	dp_flags = be32_to_cpu(p->dp_flags);
 	if (dp_flags & DP_HARDBARRIER)
-		e->private_bio->bi_rw |= BIO_RW_BARRIER;
-
+		rw |= (1<<BIO_RW_BARRIER);
 	if (dp_flags & DP_RW_SYNC)
-		e->private_bio->bi_rw |= BIO_RW_SYNC;
-
+		rw |= (1<<BIO_RW_SYNC);
 	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;
 
@@ -1487,7 +1488,7 @@ int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		} else {
 			e->barrier_nr = mdev->next_barrier_nr;
 		}
-		e->private_bio->bi_rw |= BIO_RW_BARRIER;
+		rw |= (1<<BIO_RW_BARRIER);
 		mdev->next_barrier_nr = 0;
 	}
 	list_add(&e->w.list, &mdev->active_ee);
@@ -1530,8 +1531,9 @@ int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		    (unsigned long long)e->sector, e->size, e);
 	       );
 	/* FIXME drbd_al_begin_io in case we have two primaries... */
-	drbd_generic_make_request(mdev, WRITE, DRBD_FAULT_DT_WR,
-					e->private_bio);
+	e->private_bio->bi_rw = rw;
+	dump_internal_bio("Sec", mdev, e->private_bio, 0);
+	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, e->private_bio);
 	/* accounting done in endio */
 
 	maybe_kick_lo(mdev);
@@ -1590,6 +1592,9 @@ int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		return FALSE;
 	}
 
+	/* FIXME actually, it could be a READA originating from the peer,
+	 * also it could have set some flags (e.g. BIO_RW_SYNC) ... */
+	e->private_bio->bi_rw = READ;
 	e->private_bio->bi_end_io = drbd_endio_read_sec;
 
 	switch (h->command) {
@@ -1628,8 +1633,9 @@ int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 	       INFO("submit EE READ sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector, e->size, e);
 	       );
-	/* FIXME actually, it could be a READA originating from the peer ... */
-	drbd_generic_make_request(mdev, READ, fault_type, e->private_bio);
+
+	dump_internal_bio("Sec", mdev, e->private_bio, 0);
+	drbd_generic_make_request(mdev, fault_type, e->private_bio);
 	maybe_kick_lo(mdev);
 
 	return TRUE;
@@ -2140,6 +2146,7 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	struct Drbd_Sizes_Packet *p = (struct Drbd_Sizes_Packet *)h;
 	unsigned int max_seg_s;
 	sector_t p_size, p_usize, my_usize;
+	int ldsc = 0; /* local disk size changed */
 	enum drbd_conns nconn;
 	int dd;
 
@@ -2228,6 +2235,11 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	if (inc_local(mdev)) {
+		if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
+			mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+			ldsc = 1;
+		}
+
 		max_seg_s = be32_to_cpu(p->max_segment_size);
 		if (max_seg_s != mdev->rq_queue->max_segment_size)
 			drbd_setup_queue_param(mdev, max_seg_s);
@@ -2238,7 +2250,7 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	if (mdev->state.conn > WFReportParams) {
 		if ( be64_to_cpu(p->c_size) !=
-		    drbd_get_capacity(mdev->this_bdev) ) {
+		    drbd_get_capacity(mdev->this_bdev) || ldsc ) {
 			/* we have different sizes, probabely peer
 			 * needs to know my new size... */
 			drbd_send_sizes(mdev);
@@ -2348,20 +2360,27 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (nconn == WFReportParams)
 		nconn = Connected;
 
-	if (mdev->p_uuid && oconn <= Connected &&
-	    peer_state.disk >= Negotiating &&
+	if (mdev->p_uuid && peer_state.disk >= Negotiating &&
 	    inc_local_if_state(mdev, Negotiating) ) {
-		nconn = drbd_sync_handshake(mdev,
-				peer_state.role, peer_state.disk);
-		dec_local(mdev);
+		int cr; /* consider resync */
 
-		if (nconn == conn_mask)
-			return FALSE;
+		cr  = (oconn < Connected);
+		cr |= (oconn == Connected &&
+		       (peer_state.disk == Negotiating ||
+			mdev->state.disk == Negotiating));
+		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags); /* peer forced */
+		cr |= (oconn == Connected && peer_state.conn > Connected);
+
+		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
+
+		dec_local(mdev);
+		if(nconn == conn_mask) return FALSE;
 	}
 
 	spin_lock_irq(&mdev->req_lock);
 	if (mdev->state.conn != oconn)
 		goto retry;
+	clear_bit(CONSIDER_RESYNC, &mdev->flags);
 	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;

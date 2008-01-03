@@ -223,10 +223,7 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	b = mdev->oldest_barrier;
 	mdev->oldest_barrier = b->next;
 
-	/* in protocol C this list should be empty,
-	 * unless there is local io pending.
-	 * in protocol A and B, this should not be empty, even though the
-	 * master_bio's could already been completed.  */
+	/* Clean up list of requests processed during current epoch */
 	list_for_each_safe(le, tle, &b->requests) {
 		r = list_entry(le, struct drbd_request, tl_requests);
 		_req_mod(r, barrier_acked, 0);
@@ -339,11 +336,11 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 	if (!send)
 		return ok;
 
-	ok = drbd_send_state(mdev);
-	if (ok)
-		WARN("Notified peer that my disk is broken.\n");
-	else
-		ERR("Sending state in drbd_io_error() failed\n");
+	if (mdev->state.conn >= Connected) {
+		ok = drbd_send_state(mdev);
+		if (ok) WARN("Notified peer that my disk is broken.\n");
+		else ERR("Sending state in drbd_io_error() failed\n");
+	}
 
 	/* Make sure we try to flush meta-data to disk - we come
 	 * in here because of a local disk error so it might fail
@@ -830,6 +827,11 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		D_ASSERT(i);
 	}
 
+	/* Peer was forced UpToDate & Primary, consider to resync */
+	if (os.disk == Inconsistent && os.pdsk == Inconsistent &&
+	    os.peer == Secondary && ns.peer == Primary)
+		set_bit(CONSIDER_RESYNC, &mdev->flags);
+
 	if (flags & ScheduleAfter) {
 		struct after_state_chg_work *ascw;
 
@@ -985,7 +987,7 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if ( ns.conn >= WFReportParams &&
+	if ( ns.conn >= Connected &&
 	     (( os.aftr_isp != ns.aftr_isp ) ||
 	      ( os.user_isp != ns.user_isp )) )
 		drbd_send_state(mdev);
@@ -994,6 +996,12 @@ void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	if ( ( !os.aftr_isp && !os.peer_isp && !os.user_isp) &&
 	     ( ns.aftr_isp || ns.peer_isp || ns.user_isp) )
 		suspend_other_sg(mdev);
+
+	/* Make sure the peer gets informed about eventual state
+	   changes (ISP bits) while we were in WFReportParams. */
+	if (os.conn == WFReportParams && ns.conn >= Connected) {
+		drbd_send_state(mdev);
+	}
 
 	/* We are in the progress to start a full sync... */
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
@@ -1400,6 +1408,13 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 	return ok;
 }
 
+/**
+ * drbd_send_state:
+ * Informs the peer about our state. Only call it when
+ * mdev->state.conn >= Connected (I.e. you may not call it while in
+ * WFReportParams. Though there is one valid and necessary exception,
+ * drbd_connect() calls drbd_send_state() while in it WFReportParams.
+ */
 int drbd_send_state(struct drbd_conf *mdev)
 {
 	struct socket *sock;
@@ -1750,12 +1765,16 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	p.seq_num  = cpu_to_be32( req->seq_num =
 				  atomic_add_return(1, &mdev->packet_seq) );
 	dp_flags = 0;
-	if (req->master_bio->bi_rw & BIO_RW_BARRIER)
+
+	/* NOTE: no need to check if barriers supported here as we would
+	 *       not pass the test in make_request_common in that case
+	 */
+	if (bio_barrier(req->master_bio))
 		dp_flags |= DP_HARDBARRIER;
-	if (req->master_bio->bi_rw & BIO_RW_SYNC)
+	if (bio_sync(req->master_bio))
 		dp_flags |= DP_RW_SYNC;
 	if (mdev->state.conn >= SyncSource &&
-	   mdev->state.conn <= PausedSyncT)
+	    mdev->state.conn <= PausedSyncT)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 
 	p.dp_flags = cpu_to_be32(dp_flags);
@@ -2025,6 +2044,11 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 #endif
 
 	drbd_set_defaults(mdev);
+
+	/* for now, we do NOT yet support it,
+	 * even though we start some framework
+	 * to eventually support barriers */
+	set_bit(NO_BARRIER_SUPP, &mdev->flags);
 
 	atomic_set(&mdev->ap_bio_cnt, 0);
 	atomic_set(&mdev->ap_pending_cnt, 0);
@@ -3270,7 +3294,7 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 
 /* Debug routine to dump info about bio */
 
-void _dump_bio(struct drbd_conf *mdev, struct bio *bio, int complete)
+void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete)
 {
 #ifdef CONFIG_LBD
 #define SECTOR_FORMAT "%Lx"
@@ -3284,15 +3308,24 @@ void _dump_bio(struct drbd_conf *mdev, struct bio *bio, int complete)
 	struct bio_vec *bvec;
 	int segno;
 
-	INFO("%s %s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
+	const int rw = bio->bi_rw;
+	const int biorw      = (rw & (RW_MASK|RWA_MASK));
+	const int biobarrier = (rw & (1<<BIO_RW_BARRIER));
+	const int biosync    = (rw & (1<<BIO_RW_SYNC));
+
+	INFO("%s %s:%s%s%s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete? "<<<":">>>",
-	     bio_rw(bio) == WRITE?"Write":"Read", bio,
+	     pfx,
+	     biorw==WRITE?"Write":"Read",
+	     biobarrier?":B":"",
+	     biosync?":S":"",
+	     bio,
 	     complete? (drbd_bio_uptodate(bio)? "Success, ":"Failed, ") : "",
 	     bio->bi_sector << SECTOR_SHIFT,
 	     bio->bi_size);
 
 	if (trace_level >= TraceLvlMetrics &&
-	    ((bio_rw(bio) == WRITE) ^ complete) ) {
+	    ((biorw == WRITE) ^ complete) ) {
 		printk(KERN_DEBUG "  ind     page   offset   length\n");
 		__bio_for_each_segment(bvec, bio, segno, 0) {
 			printk(KERN_DEBUG "  [%d] %p %8.8x %8.8x\n", segno,

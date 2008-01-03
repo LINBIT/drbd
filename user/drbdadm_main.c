@@ -203,8 +203,8 @@ struct adm_cmd cmds[] = {
   { "disconnect",        adm_generic_s, 1,1,0 },
   { "up",                adm_up,        1,1,1 },
   { "down",              adm_generic_s, 1,1,0 },
-  { "primary",           adm_generic_s, 1,1,0 },
-  { "secondary",         adm_generic_s, 1,1,0 },
+  { "primary",           adm_generic_l, 1,1,0 },
+  { "secondary",         adm_generic_l, 1,1,0 },
   { "invalidate",        adm_generic_b, 1,1,0 },
   { "invalidate-remote", adm_generic_l, 1,1,1 },
   { "outdate",           adm_generic_b, 1,1,0 },
@@ -710,7 +710,7 @@ pid_t m_system(char** argv,int flags)
     alarm_raised=0;
     switch(flags & SLEEPS_MASK) {
     case SLEEPS_SHORT:     timeout = 5; break;
-    case SLEEPS_LONG:      timeout = 120; break;
+    case SLEEPS_LONG:      timeout = COMM_TIMEOUT+1; break;
     case SLEEPS_VERY_LONG: timeout = 600; break;
     default:
 	fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__);
