@@ -813,6 +813,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		D_ASSERT(i);
 	}
 
+	/* Peer was forced UpToDate & Primary, consider to resync */
+	if (os.disk == Inconsistent && os.pdsk == Inconsistent &&
+	    os.peer == Secondary && ns.peer == Primary)
+		set_bit(CONSIDER_RESYNC, &mdev->flags);
+
 	if( flags & ScheduleAfter ) {
 		struct after_state_chg_work* ascw;
 

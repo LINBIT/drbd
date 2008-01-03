@@ -700,6 +700,7 @@ enum {
 	                        // Connected state.
 	WRITE_BM_AFTER_RESYNC,	// A kmalloc() during resync failed
 	NO_BARRIER_SUPP,        // underlying block device doesn't implement barriers
+	CONSIDER_RESYNC,
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

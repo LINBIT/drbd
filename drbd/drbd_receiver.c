@@ -2427,20 +2427,26 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	if (nconn == WFReportParams ) nconn = Connected;
 
-	if (mdev->p_uuid &&
-	    (oconn < Connected ||
-	     (oconn == Connected &&
-	      (peer_state.disk == Negotiating || mdev->state.disk == Negotiating))) &&
-	    peer_state.disk >= Negotiating &&
+	if (mdev->p_uuid && peer_state.disk >= Negotiating &&
 	    inc_local_if_state(mdev,Negotiating) ) {
-		nconn=drbd_sync_handshake(mdev,peer_state.role,peer_state.disk);
-		dec_local(mdev);
+		int cr; /* consider resync */
 
+		cr  = (oconn < Connected);
+		cr |= (oconn == Connected &&
+		       (peer_state.disk == Negotiating ||
+			mdev->state.disk == Negotiating));
+		cr |= test_bit(CONSIDER_RESYNC,&mdev->flags); /* peer forced */
+		cr |= (oconn == Connected && peer_state.conn > Connected);
+
+		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
+
+		dec_local(mdev);
 		if(nconn == conn_mask) return FALSE;
 	}
 
 	spin_lock_irq(&mdev->req_lock);
 	if( mdev->state.conn != oconn ) goto retry;
+	clear_bit(CONSIDER_RESYNC, &mdev->flags);
 	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
