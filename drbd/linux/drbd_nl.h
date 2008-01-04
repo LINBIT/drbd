@@ -63,7 +63,7 @@ NL_PACKET(syncer_conf, 8,
 	NL_INTEGER(	30,	T_MAY_IGNORE,	rate)
 	NL_INTEGER(	31,	T_MAY_IGNORE,	after)
 	NL_INTEGER(	32,	T_MAY_IGNORE,	al_extents)
-	NL_STRING(      102,    T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
+	NL_STRING(      52,     T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
 	NL_STRING(      51,     T_MAY_IGNORE,   cpu_mask,       32)
 )
 
@@ -108,7 +108,7 @@ NL_PACKET(dump_ee, 24,
 	NL_STRING(	50,	T_MAY_IGNORE,	ee_data,	32 << 10)
 )
 
-NL_PACKET(start_ov, 101,
+NL_PACKET(start_ov, 25,
 )
 
 #undef NL_PACKET

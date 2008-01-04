@@ -132,18 +132,15 @@ enum ret_codes {
 	IntegrityAlgNotAvail,
 	IntegrityAlgNotDigest,
 	CPUMaskParseFailed,
-
-	/* insert new ones above this line */
-	AfterLastRetCode,
-
-	PlusRetCodeBase = 10000,
-	CSUMSAlgNotAvail = PlusRetCodeBase,
+	CSUMSAlgNotAvail,
 	CSUMSAlgNotDigest,
 	VERIFYAlgNotAvail,
 	VERIFYAlgNotDigest,
 	CSUMSResyncRunning,
 	VERIFYIsRunning,
-	AfterLastPlusRetCode,
+
+	/* insert new ones above this line */
+	AfterLastRetCode,
 };
 
 #define DRBD_PROT_A   1
