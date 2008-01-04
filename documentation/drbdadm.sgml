@@ -157,9 +157,9 @@
         </para></listitem>
       </varlistentry>
       <varlistentry>
-        <term>invalidate_remote</term>
+        <term>invalidate-remote</term>
         <listitem><para>
-	<indexterm><primary>drbdadm</primary><secondary>invalidate_remote</secondary></indexterm>
+	<indexterm><primary>drbdadm</primary><secondary>invalidate-remote</secondary></indexterm>
           This command is similar to the invalidate command, however, the
 	  backing storage of the peer is invalidated and hence rewritten
 	  with the data of the local node.

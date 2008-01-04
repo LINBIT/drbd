@@ -100,7 +100,7 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
-      <arg choice="req">invalidate_remote</arg>
+      <arg choice="req">invalidate-remote</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -843,8 +843,8 @@
       </para>
     </refsect2>
     <refsect2>
-      <title>invalidate_remote</title>
-      <indexterm><primary>drbdsetup</primary><secondary>invalidate_remote</secondary></indexterm>
+      <title>invalidate-remote</title>
+      <indexterm><primary>drbdsetup</primary><secondary>invalidate-remote</secondary></indexterm>
       <para>
 	This forces the local device of a pair of connected DRBD devices
 	into SyncSource state, which means that all data blocks of the
