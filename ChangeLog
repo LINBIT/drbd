@@ -1,8 +1,6 @@
 Latest:
 ------
- ChangeLog last updated: $LastChangedRev$ $LastChangedDate$
- Cumulative changes since last tarball.
- For even more detail, use "svn log" and "svn diff".
+ For even more detail, use "git log" or visit http://git.drbd.org/.
 
 8.0.8 (api:86/proto:86)
 --------
