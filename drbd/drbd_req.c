@@ -673,23 +673,12 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	case write_acked_by_peer_and_sis:
 		req->rq_state |= RQ_NET_SIS;
 	case conflict_discarded_by_peer:
-		/* for discarded conflicting writes of multiple primarys,
-		 * there is no need to keep anything in the tl, potential
-		 * node crashes are covered by the activity log. */
-		req->rq_state |= RQ_NET_DONE;
-		/* fall through */
+		/* interesstingly, this is the same thing! */
 	case write_acked_by_peer:
-		/* protocol C; successfully written on peer.
-		 * Nothing to do here.
-		 * We want to keep the tl in place for all protocols, to cater
-		 * for volatile write-back caches on lower level devices.
-		 *
-		 * A barrier request is expected to have forced all prior
-		 * requests onto stable storage, so completion of a barrier
-		 * request could set NET_DONE right here, and not wait for the
-		 * BarrierAck, but that is an unecessary optimisation. */
-
-		/* this makes it effectively the same as for: */
+		/* assert something? */
+		/* protocol C; successfully written on peer */
+		req->rq_state |= RQ_NET_DONE;
+		/* rest is the same as for: */
 	case recv_acked_by_peer:
 		/* protocol B; pretends to be sucessfully written on peer.
 		 * see also notes above in handed_over_to_network about
@@ -713,6 +702,9 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		break;
 
 	case barrier_acked:
+		/* can even happen for protocol C,
+		 * when local io is still pending.
+		 * in which case it does nothing. */
 		if (req->rq_state & RQ_NET_PENDING) {
 			/* barrier came in before all requests have been acked.
 			 * this is bad, because if the connection is lost now,
