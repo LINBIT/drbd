@@ -1056,6 +1056,9 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	reply = (struct drbd_nl_cfg_reply *)
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
 
+	if (reply->ret_code != NoError)
+		return print_config_error(reply);
+
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
 
 	if(dump_tag_list(reply->tag_list)) {
