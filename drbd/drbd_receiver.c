@@ -2143,13 +2143,11 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	struct Drbd_Protocol_Packet *p = (struct Drbd_Protocol_Packet *)h;
 	int header_size, data_size;
-
 	int p_proto, p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
 	int p_want_lose, p_two_primaries;
-	char p_integrity_alg[SHARED_SECRET_MAX] = "";
-	char p_verify_alg[SHARED_SECRET_MAX] = "";
+	char p_integrity_alg[SHARED_SECRET_MAX];
 
-	header_size = sizeof(*p) - sizeof(*h) - SHARED_SECRET_MAX;
+	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
@@ -2195,34 +2193,16 @@ int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (mdev->agreed_pro_version >= 87) {
 		unsigned char *my_alg = mdev->net_conf->integrity_alg;
 
-		if (mdev->agreed_pro_version >= 88) {
-			data_size = SHARED_SECRET_MAX;
-		}
 		if (drbd_recv(mdev, p_integrity_alg, data_size) != data_size)
 			return FALSE;
 
-		p_integrity_alg[SHARED_SECRET_MAX-1]=0;
-
-		if(strcmp(p_integrity_alg, my_alg)) {
+		p_integrity_alg[SHARED_SECRET_MAX-1] = 0;
+		if (strcmp(p_integrity_alg, my_alg)) {
 			ERR("incompatible setting of the data-integrity-alg\n");
 			goto disconnect;
 		}
-		WARN("data-integrity-alg: %s\n",
+		INFO("data-integrity-alg: %s\n",
 		     my_alg[0] ? my_alg : (unsigned char *)"<not-used>");
-
-		if (mdev->agreed_pro_version >= 88) {
-			unsigned char *my_verify_alg = mdev->sync_conf.verify_alg;
-
-			data_size   = h->length - header_size - SHARED_SECRET_MAX;
-			if (drbd_recv(mdev, p_verify_alg, data_size) != data_size)
-				return FALSE;
-
-			if (strcmp(p_verify_alg, my_verify_alg) != 0) {
-				ERR("incompatible setting of the online-verify-alg (me: %s peer: %s)\n", 
-					my_verify_alg, p_verify_alg);
-				goto disconnect;
-			}
-		}
 	}
 
 	return TRUE;
@@ -2236,13 +2216,53 @@ int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int ok = TRUE;
 	struct Drbd_SyncParam_Packet *p = (struct Drbd_SyncParam_Packet *)h;
+	int header_size, data_size;
+	char p_verify_alg[SHARED_SECRET_MAX];
+	struct crypto_hash *verify_tfm = NULL, *old_verify_tfm;
 
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-	if (drbd_recv(mdev, h->payload, h->length) != h->length)
+	header_size = sizeof(*p) - sizeof(*h);
+	data_size   = h->length  - header_size;
+
+	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
-	/* XXX harmless race with ioctl ... */
 	mdev->sync_conf.rate	  = be32_to_cpu(p->rate);
+
+	if (mdev->agreed_pro_version >= 88) {
+
+		if (drbd_recv(mdev, p_verify_alg, data_size) != data_size)
+			return FALSE;
+
+		p_verify_alg[SHARED_SECRET_MAX-1] = 0;
+		if (strcpy(mdev->sync_conf.verify_alg, p_verify_alg)) {
+			if (strlen(p_verify_alg)) {
+				verify_tfm = crypto_alloc_hash(p_verify_alg, 0,
+							       CRYPTO_ALG_ASYNC);
+				if (IS_ERR(verify_tfm)) {
+					ERR("Can not allocate \"%s\" as verify-alg\n",
+					    p_verify_alg);
+					return FALSE;
+				}
+
+				if (crypto_tfm_alg_type(crypto_hash_tfm(verify_tfm)) !=
+				    CRYPTO_ALG_TYPE_DIGEST) {
+					crypto_free_hash(verify_tfm);
+					ERR("\"%s\" is not a digest (verify-alg)\n",
+					    p_verify_alg);
+					return FALSE;
+				}
+			}
+
+			spin_lock(&mdev->peer_seq_lock);
+			/* lock against drbd_nl_syncer_conf() */
+			strcpy(mdev->sync_conf.verify_alg, p_verify_alg);
+			old_verify_tfm = mdev->verify_tfm;
+			mdev->verify_tfm = verify_tfm;
+			spin_unlock(&mdev->peer_seq_lock);
+
+			crypto_free_hash(old_verify_tfm);
+		}
+	}
 
 	return ok;
 }

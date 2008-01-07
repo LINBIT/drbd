@@ -1435,7 +1435,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	struct syncer_conf sc;
 	struct drbd_conf *odev;
 	int err;
-	struct crypto_hash *verify_tfm = NULL;
+	struct crypto_hash *verify_tfm = NULL, *old_verify_tfm = NULL;
 	int ovr; /* online verify running */
 	cpumask_t n_cpu_mask = CPU_MASK_NONE;
 
@@ -1510,13 +1510,17 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 #undef AL_MAX
 
+	spin_lock(&mdev->peer_seq_lock);
+	/* lock against receive_SyncParam() */
 	mdev->sync_conf = sc;
-
 	if (!ovr) {
-		crypto_free_hash(mdev->verify_tfm);
-		mdev->verify_tfm=verify_tfm;
-		verify_tfm=NULL;
+		old_verify_tfm = mdev->verify_tfm;
+		mdev->verify_tfm = verify_tfm;
+		verify_tfm = NULL;
 	}
+	spin_unlock(&mdev->peer_seq_lock);
+
+	crypto_free_hash(old_verify_tfm);
 
 	if (inc_local(mdev)) {
 		err = drbd_check_al_size(mdev);

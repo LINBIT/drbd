@@ -489,6 +489,9 @@ struct Drbd_BarrierAck_Packet {
 struct Drbd_SyncParam_Packet {
 	struct Drbd_Header head;
 	u32 rate;
+
+	      /* Since protocol version 88 and higher. */
+	char online_verify_alg[0];
 } __attribute((packed));
 
 struct Drbd_Protocol_Packet {
@@ -501,10 +504,8 @@ struct Drbd_Protocol_Packet {
 	u32 two_primaries;
 
               /* Since protocol version 87 and higher. */
-	char integrity_alg[SHARED_SECRET_MAX];
+	char integrity_alg[0];
 
-	      /* Since protocol version 88 and higher. */
-	char online_verify_alg[0];
 } __attribute((packed));
 
 struct Drbd_GenCnt_Packet {

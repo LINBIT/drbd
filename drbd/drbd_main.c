@@ -1390,12 +1390,27 @@ int drbd_send_cmd2(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd, char *data,
 
 int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 {
-	struct Drbd_SyncParam_Packet p;
+	struct Drbd_SyncParam_Packet *p;
+	int size, rv;
 
-	p.rate      = cpu_to_be32(sc->rate);
+	size = sizeof(struct Drbd_SyncParam_Packet);
 
-	return drbd_send_cmd(mdev, USE_DATA_SOCKET, SyncParam,
-				(struct Drbd_Header *)&p, sizeof(p));
+	if (mdev->agreed_pro_version >= 88)
+		size += strlen(mdev->sync_conf.verify_alg) + 1;
+
+	p = kmalloc(size, GFP_KERNEL);
+	if (p == NULL)
+		return 0;
+
+	p->rate      = cpu_to_be32(sc->rate);
+
+	if (mdev->agreed_pro_version >= 88)
+		strcpy(p->online_verify_alg,mdev->sync_conf.verify_alg);
+
+	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, SyncParam,
+			   (struct Drbd_Header *)p, size);
+	kfree(p);
+	return rv;
 }
 
 int drbd_send_protocol(struct drbd_conf *mdev)
@@ -1403,17 +1418,10 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	struct Drbd_Protocol_Packet *p;
 	int size,rv;
 
-	size = 32;   /* minimum length as of protocol 86.
-	                This is sizeof(struct Drbd_Protocol_Packet)
-			without the strings. */
+	size = sizeof(struct Drbd_Protocol_Packet);
 
-	if (mdev->agreed_pro_version == 87) {
+	if (mdev->agreed_pro_version >= 87)
 		size += strlen(mdev->net_conf->integrity_alg) + 1;
-	}
-	if (mdev->agreed_pro_version == 88) {
-		size += SHARED_SECRET_MAX;
-		size += strlen(mdev->sync_conf.verify_alg) + 1;
-	}
 
 	if ((p = kmalloc(size, GFP_KERNEL)) == NULL)
 		return 0;
@@ -1425,12 +1433,8 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	p->want_lose     = cpu_to_be32(mdev->net_conf->want_lose);
 	p->two_primaries = cpu_to_be32(mdev->net_conf->two_primaries);
 
-	if (mdev->agreed_pro_version >= 87) {
+	if (mdev->agreed_pro_version >= 87)
 		strcpy(p->integrity_alg, mdev->net_conf->integrity_alg);
-		if (mdev->agreed_pro_version >= 88) {
-			strcpy(p->online_verify_alg,mdev->sync_conf.verify_alg);
-		}
-	}
 
 	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
 			   (struct Drbd_Header *)p, size);
