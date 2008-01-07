@@ -91,7 +91,7 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     need_backport_of_kzalloc=1
   fi
-  if test -e $KDIR/include/linux/mutex.h ; then
+  if grep_q "struct mutex" $KDIR/include/linux/mutex.h ; then
     need_backport_of_mutex=0
   else
     need_backport_of_mutex=1

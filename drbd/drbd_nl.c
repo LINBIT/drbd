@@ -1494,7 +1494,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	if (sc.cpu_mask[0] != 0) {
-		err = __bitmap_parse(sc.cpu_mask, 32, 0, n_cpu_mask.bits, NR_CPUS);
+		err = __bitmap_parse(sc.cpu_mask, 32, 0, (unsigned long *)&n_cpu_mask, NR_CPUS);
 		if (err) {
 			WARN("__bitmap_parse() failed with %d\n", err);
 			retcode = CPUMaskParseFailed;

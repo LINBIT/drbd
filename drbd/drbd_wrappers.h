@@ -427,7 +427,7 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 		if (nchunks == 0 && chunk == 0)
 			continue;
 
-		__bitmap_shift_left(maskp, maskp, CHUNKSZ, nmaskbits);
+		bitmap_shift_left(maskp, maskp, CHUNKSZ, nmaskbits);
 		*maskp |= chunk;
 		nchunks++;
 		nbits += (nchunks == 1) ? nbits_to_hold_value(chunk) : CHUNKSZ;
