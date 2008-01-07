@@ -1442,6 +1442,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
 
 	if (nlp->flags & DRBD_NL_SET_DEFAULTS) {
+		memset(&sc, 0, sizeof(struct syncer_conf));
 		sc.rate       = DRBD_RATE_DEF;
 		sc.after      = DRBD_AFTER_DEF;
 		sc.al_extents = DRBD_AL_EXTENTS_DEF;
