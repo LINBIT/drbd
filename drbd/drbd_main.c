@@ -1332,11 +1332,13 @@ int drbd_send_protocol(drbd_dev *mdev)
 			     (Drbd_Header*)&p,sizeof(p));
 }
 
-int drbd_send_uuids(drbd_dev *mdev)
+/* Hold sock mutex before calling this */
+int _drbd_send_uuids(drbd_dev *mdev)
 {
 	Drbd_GenCnt_Packet p;
-	int i;
+	int i, ok=0;
 	u64 uuid_flags = 0;
+	struct socket *sock = mdev->data.socket;
 
 	if(!inc_local_if_state(mdev,Negotiating)) return 1; // ok.
 
@@ -1355,8 +1357,21 @@ int drbd_send_uuids(drbd_dev *mdev)
 
 	dec_local(mdev);
 
-	return drbd_send_cmd(mdev,USE_DATA_SOCKET,ReportUUIDs,
-			     (Drbd_Header*)&p,sizeof(p));
+	if (likely(sock != NULL))
+		ok = _drbd_send_cmd(mdev, sock, ReportUUIDs,
+				   (Drbd_Header*)&p, sizeof(p), 0);
+
+	return ok;
+}
+
+int drbd_send_uuids(drbd_dev *mdev)
+{
+	int ok;
+	down(&mdev->data.mutex);
+	ok = _drbd_send_uuids(mdev);
+	up(&mdev->data.mutex);
+
+	return ok;
 }
 
 int drbd_send_sync_uuid(drbd_dev *mdev, u64 val)
@@ -1400,6 +1415,22 @@ int drbd_send_sizes(drbd_dev *mdev)
 	return ok;
 }
 
+/* Hold socket mutex before calling this */
+int _drbd_send_state(drbd_dev *mdev)
+{
+	struct socket *sock = mdev->data.socket;
+	Drbd_State_Packet p;
+	int ok = 0;
+
+	p.state    = cpu_to_be32(mdev->state.i);
+
+	if (likely(sock != NULL))
+		ok = _drbd_send_cmd(mdev, sock, ReportState,
+				   (Drbd_Header*)&p, sizeof(p), 0);
+
+	return ok;
+}
+
 /**
  * drbd_send_state:
  * Informs the peer about our state. Only call it when
@@ -1409,20 +1440,10 @@ int drbd_send_sizes(drbd_dev *mdev)
  */
 int drbd_send_state(drbd_dev *mdev)
 {
-	struct socket *sock;
-	Drbd_State_Packet p;
-	int ok = 0;
+	int ok;
 
 	down(&mdev->data.mutex);
-
-	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
-	sock = mdev->data.socket;
-
-	if (likely(sock != NULL)) {
-		ok = _drbd_send_cmd(mdev, sock, ReportState,
-				    (Drbd_Header*)&p, sizeof(p), 0);
-	}
-
+	ok = _drbd_send_state(mdev);
 	up(&mdev->data.mutex);
 
 	return ok;

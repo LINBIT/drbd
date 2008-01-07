@@ -951,9 +951,11 @@ extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
 extern int drbd_send_protocol(drbd_dev *mdev);
+extern int _drbd_send_uuids(drbd_dev *mdev);
 extern int drbd_send_uuids(drbd_dev *mdev);
 extern int drbd_send_sync_uuid(drbd_dev *mdev, u64 val);
 extern int drbd_send_sizes(drbd_dev *mdev);
+extern int _drbd_send_state(drbd_dev *mdev);
 extern int drbd_send_state(drbd_dev *mdev);
 extern int _drbd_send_cmd(drbd_dev *mdev, struct socket *sock,
 			  Drbd_Packet_Cmd cmd, Drbd_Header *h,

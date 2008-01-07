@@ -2463,9 +2463,14 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	drbd_state_t ns,peer_state;
 	int rv;
 
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	/**
+	 * Ensure no other thread sends state whilst we are running
+	 **/
+	down(&mdev->data.mutex);
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) goto fail;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
-		return FALSE;
+		goto fail;
 
 	peer_state.i = be32_to_cpu(p->state);
 
@@ -2490,7 +2495,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
 
 		dec_local(mdev);
-		if(nconn == conn_mask) return FALSE;
+		if(nconn == conn_mask) goto fail;
 	}
 
 	spin_lock_irq(&mdev->req_lock);
@@ -2511,18 +2516,18 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	if(rv < SS_Success) {
 		drbd_force_state(mdev,NS(conn,Disconnecting));
-		return FALSE;
+		goto fail;
 	}
 
 	if (oconn > WFReportParams ) {
 		if( nconn > Connected && peer_state.conn <= Connected) {
 			// we want resync, peer has not yet decided to sync...
-			drbd_send_uuids(mdev);
-			drbd_send_state(mdev);
+			_drbd_send_uuids(mdev);
+			_drbd_send_state(mdev);
 		}
 		else if (nconn == Connected && peer_state.disk == Negotiating) {
 			// peer is waiting for us to respond...
-			drbd_send_state(mdev);
+			_drbd_send_state(mdev);
 		}
 	}
 
@@ -2531,7 +2536,11 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	/* FIXME assertion for (gencounts do not diverge) */
 	drbd_md_sync(mdev); // update connected indicator, la_size, ...
 
+	up(&mdev->data.mutex);
 	return TRUE;
+ fail:
+	up(&mdev->data.mutex);
+	return FALSE;
 }
 
 STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
