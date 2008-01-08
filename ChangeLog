@@ -5,8 +5,8 @@ Latest:
 8.2.2 (api:86/proto:86-88)
 --------
  * Released the online-verify feature from DRBD+ into drbd-8.2
- * Fixed the data-integrity feature to also work correctly
-   for the two-primaries mode.
+ * Fixed the data-integrity-alg feature to work correctly
+   in 'allow-two-primaries' mode.
  * Significant latency improvement: Implemented sane default
    CPU bindings (affinity mask) of threads, and added the tuning
    option 'cpu-mask'.
@@ -18,9 +18,9 @@ Latest:
 --------
  * Fixed the OOPS when _not_ using a shared secret on kernel 
    before Linux-2.6.19 (=old crypto API).
- * Support for drbd-porxy's configuration directives in drbdadm.
+ * Support for drbd-proxy's configuration directives in drbdadm.
  * Look for /etc/drbd-82.conf before drbd-08.conf before drbd.conf
- * drbdadm now allowes one to move the device, disk and meta-disk
+ * drbdadm now allows one to move the device, disk and meta-disk
    statements out of the host ("on") sections into the resource
    section. This allows you to shorten your config files.
  * Merged all changes from 8.0.6 -> 8.0.7 to 8.2
@@ -40,7 +40,7 @@ Latest:
  * NOT YET RELEASED
  * this branch
    * will not receive new features compared to 8.0,
-   * will receive any bugfixes done on 8.0.x,
+   * will receive any bug fixes done on 8.0.x,
    * will receive any code changes necessary for upstream kernel inclusion.
 
 Changelog for fixes propagated from 8.0.x:
@@ -48,10 +48,10 @@ Changelog for fixes propagated from 8.0.x:
 
 8.0.8 (api:86/proto:86)
 --------
- * Improvements to the bitmap code. (The old code might reenabled
+ * Improvements to the bitmap code. (The old code might re-enable
    interrupts by accident)
- * Fixed a endian issue in the wirte protocol. C bit-fields are
-   might by layed out differently on little/big endian machines.
+ * Fixed a endianness issue in the write protocol. C bit-fields are
+   might by laid out differently on little/big endian machines.
  * Drbdadm's adjust forgot sometimes to adjust options values that
    where inherited from the common section, fixed that.
  * Removed dopd. It gets (and should be) shipped with heartbeat.
@@ -60,7 +60,7 @@ Changelog for fixes propagated from 8.0.x:
  * Added robustness to resync pause/continue.
  * Drbdsetup should not report a random error if no netlink
    answer is received from the drbd module.
- * Fixes to error code pathes. ( drbd_drain_block() and lc_alloc() )
+ * Fixes to error code paths. ( drbd_drain_block() and lc_alloc() )
  * Fixed a possible OOPS in case one manages to loose disk and
    network concurrently. (iSCSI disk and network over same switch)
  * Fixed the broadcasting of state change events to userspace.
@@ -70,7 +70,7 @@ Changelog for fixes propagated from 8.0.x:
  * Fixed drbdmeta's conversion of 07 style meta data.
  * Handle the failure of vmalloc() in the bitmap code more gracefully.
  * Do not pause resync on unconfigured devices.
- * Added missing piecos of the implementation of the "pri-lost" handler.
+ * Added missing pieces of the implementation of the "pri-lost" handler.
  * Added the "split-brain" handler.
  * Drop the network config after failure to authenticate.
  * Made it to compile on Linux-2.6.24-rc1.
@@ -85,7 +85,7 @@ Changelog for fixes propagated from 8.0.x:
  * Fixed DRBD to not deadlock while doing bitmap updates on Linux
    2.6.22 and later.
  * Make it compile on Linux-2.6.22 and later.
- * Removed a hardcoded path to docbook DTDs from our sgml files,
+ * Removed a hard coded path to docbook DTDs from our SGML files,
    maybe improving the situation with building the documentation.
  * When a drbd connect attempt gets accepted onto a other program,
    that simply closes the socket, drbd stays for some seconds in the
@@ -103,10 +103,10 @@ Changelog for fixes propagated from 8.0.x:
 
 8.0.5 (api:86/proto:86)
 --------
- * Changed the default behaviour of the init script. Now the init
+ * Changed the default behavior of the init script. Now the init
    script terminates in case the devices refuse to because they 
    had a split brain. Introduced an option to preserve the old
-   behaviour.
+   behavior.
  * Fixed a bug where the local_cnt could get imbalanced upon a 
    state change.
  * Fixed an bug in the UUID algorithm, that could lead to both
@@ -118,12 +118,12 @@ Changelog for fixes propagated from 8.0.x:
    128 characters. (udev based disk names might be very long nowadays)
  * Fixed the after-sb-0pri policies discard-younger/discard-older
  * When the resync speed was changed to a considerably lower 
-   value while resync was running, it could happen that we erronously
+   value while resync was running, it could happen that we erroneously
    decremented the local_cnt too often.
- * Fixed a bug in the UUID code, that caused drbd to erronously report 
+ * Fixed a bug in the UUID code, that caused drbd to erroneously report 
    a split brain after changing the role of a diskless node multiple 
    times.
- * Both nodes ended up in SyncSource when a state change occured on 
+ * Both nodes ended up in SyncSource when a state change occurred on 
    one node while the disk state on the other node is in the temporal 
    'Negotiating' state. Fixed got fixed.
  * drbdmeta's parse/scan code for meta-data dumps got fixed for 
@@ -139,20 +139,20 @@ Changelog for fixes propagated from 8.0.x:
 --------
  * Fixed an OOPS in case you do an invalidate on an diskless device. And
    made invalidates on diskless devices possible by using drbdmeta.
- * Fix for an possbile OOPS in drbd_al_to_on_disk_bm().
+ * Fix for an possible OOPS in drbd_al_to_on_disk_bm().
  * Fix for a possible OOPS. This issue was triggered when you do an
    attach very soon (ms) after the disk was dropped.
  * Fix for a race condition in receive_state(). Symptom was that the
    resync stalls at 100% on a node.
- * Some block devices fail requests by clearing the BIO_UOTODATE flag
+ * Some block devices fail requests by clearing the BIO_UPTODATE flag
    (that is ok), but not returning an error (that is strange). 
    We now deal with that correctly.
  * Drbdadm's parser will now reject config files with resources with 
    missing "on" sections. (Instead of segfaulting)
- * Init script continues in case the setup of a single resource failes.
+ * Init script continues in case the setup of a single resource fails.
  * Improvements to the "drbdsetup events" interface: Updates about
    the resync progress and initial state of all devices if called with "-a".
- * The benchmark/dm program can now also create curstom bandwith loads.
+ * The benchmark/dm program can now also create custom bandwidth loads.
 
 8.0.3 (api:86/proto:86)
 --------
@@ -170,7 +170,7 @@ Changelog for fixes propagated from 8.0.x:
  * Improved the robustness of the UUID based algorithm that decides
    about the resync direction.
  * Fixed the error handling in case a the open() of a backing
-   blockdevice fails.
+   block device fails.
  * Fixed a race condition that could cause a "drbdadm disconnect" to hang.
  * More verbosity in we can not claim a backing block device.
  * More verbosity and paranoia in the bitmap area.
@@ -181,17 +181,17 @@ Changelog for fixes propagated from 8.0.x:
 
 8.0.1 (api:86/proto:86)
 --------
- * Fixed some race conditions that could trigger an OOPS when the loca disk
-   failes and DRBD detaches itself from the failing disk.
+ * Fixed some race conditions that could trigger an OOPS when the local disk
+   fails and DRBD detaches itself from the failing disk.
  * Added a missing call to drbd_try_outdate_peer().
  * LVM's LVs expose ambiguous queue settings. When a RAID-0 (md) PV is
    used the present a segment size of 64k but at the same time allow only
-   8 sectors. Fixed DRBD to deal with that fact corretly.
+   8 sectors. Fixed DRBD to deal with that fact correctly.
  * New option "always-asbp" to also use the after-after-split-brain-policy
    handlers, even it is not possible to determine from the UUIDs that
    the data of the two nodes was related in the past.
  * More verbosity in case a bio_add_page() fails.
- * Replaced kmalloc()/memset() with kzmalloc(), and a wrapper for older kernls
+ * Replaced kmalloc()/memset() with kzmalloc(), and a wrapper for older kernels
  * A fast version of drbd_al_to_on_disk_bm(). This is necessary for short
    (even sub-second) switchover times while having large "al-extents" settings.
  * Fixed drbdadm's array overflows (of on stack objects)
@@ -201,18 +201,18 @@ Changelog for fixes propagated from 8.0.x:
 
 8.0.0 (api:86/proto:86)
 --------
- * No effecitve changes to rc2.
+ * No effective changes to rc2.
 
 8.0rc2 (api:86/proto:86)
 --------
- * Added the well known automagiacally adjust drbd_config.h to
+ * Added the well known automagically adjust drbd_config.h to
    make drbd compile on every by vendor's backports defaced 
    kernel. ( Linux-2.6.x only of course )
  * Fixed races with starting and finishing resync processes 
    while heavy application IO is going on.
  * Ported DRBD to the new crypto API (and added a emulation of the
    now API on top of the old one for older 2.6.x kernels)
- * Code to perform better on ethernet networks with jumbo
+ * Code to perform better on Ethernet networks with jumbo
    frames.
  * Bugfixes to our request code (race conditions).
  * Every error code that is returned by drbdsetup has a 
@@ -221,9 +221,9 @@ Changelog for fixes propagated from 8.0.x:
 8.0rc1 (api:86/proto:85)
 --------
  * The drbd-peer-outdater got updated to work in multi node heartbeat
-   clusters. (But we still not suceeded to get this into Heartbeat's
+   clusters. (But we still not succeeded to get this into Heartbeat's
    repository accepted.)
- * Fixed resync decission after a crash in a pri-pri cluster.
+ * Fixed resync decision after a crash in a pri-pri cluster.
  * Implemented the ping-timeout option for "sub-second" failover clusters.
  * Implemented all the "violently" options in the reconnect handling.
  * Updated man pages of drbd.conf and drbdsetup.
@@ -253,17 +253,17 @@ Changelog for fixes propagated from 8.0.x:
 8.0pre4 (api:83/proto:82)
 --------
  * Added the "drbd-peer-outdater" heartbeat plugin.
- * New ("cluster wide") state changes. (Cluster wide serialisation of
-   major state changes, like becomming primary, invalidateing a disk etc...)
+ * New ("cluster wide") state changes. (Cluster wide serialization of
+   major state changes, like becoming primary, invalidating a disk etc...)
  * Write requests are now sent by the worker instead out of the process's
    context that calls make_request().
  * The worker thread no longer gets restarted upon loss of connection.
- * A testsuite developed by students of 'FH Hagenberg' was added.
+ * A test suite developed by students of 'FH Hagenberg' was added.
 
 8.0pre3 (api:82/proto:80)
 --------
  * Now it works on device mapper (LVM) as well as on "real" block devices.
- * Finally (after years) a sane "drbdadm adjust" imprementation, which is
+ * Finally (after years) a sane "drbdadm adjust" implementation, which is
    really really robust.
  * Fixes for 64bit kernel / 32 bit userland environments
  * Fixes in the sys-v init script
@@ -274,7 +274,7 @@ Changelog for fixes propagated from 8.0.x:
 --------
  * removed the "on-disconnect" and "split-brain-fix" config options and
    added the "fencing" config option instead.
- * Updated all manpages to cover drbd-8.0
+ * Updated all man pages to cover drbd-8.0
  * /proc/drbd shows the whole drbd_state_t, as well the logging of state
    changes shows every field of drbd_state_t now.
  * Deactivated most of the TCQ code for now, since it changed again
@@ -301,8 +301,8 @@ Changelog for fixes propagated from 8.0.x:
  * A Warning if the disk sizes are more than 10% different.
  * A connection teardown packet to differentiate between a crash
    of the peer and a peer that is shut down gracefully.
- * External imposable SyncPause states, to serialize DRBD's resynchronisation
-   with the resynchronisation of backing storage's RAID configurations.
+ * External imposable SyncPause states, to serialize DRBD's resynchronization
+   with the resynchronization of backing storage's RAID configurations.
  * Backing storage can be hot added to disk less nodes.
  * Prepared for advanced integration to Heartbeat-2.0
  * Changed internal APIs so that missed writes of the meta-data super
