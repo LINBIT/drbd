@@ -195,8 +195,8 @@ uname -r | grep BOOT ||
 * Mon Jan  7 2008 15:27:53 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.2-1)
  * Released the online-verify feature from DRBD+ into drbd-8.2
- * Fixed the data-integrity feature to also work correctly
-   for the two-primaries mode.
+ * Fixed the data-integrity-alg feature to work correctly
+   in 'allow-two-primaries' mode.
  * Significant latency improvement: Implemented sane default
    CPU bindings (affinity mask) of threads, and added the tuning
    option 'cpu-mask'.
