@@ -2,7 +2,7 @@
 #
 # This file is part of DRBD by Philipp Reisner & Lars Ellenberg.
 #
-# Copright 2001-2007 LINBIT Information Technologies
+# Copright 2001-2008 LINBIT Information Technologies
 # Philipp Reisner, Lars Ellenberg
 #
 # drbd is free software; you can redistribute it and/or modify
