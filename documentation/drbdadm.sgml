@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" []>
 <refentry>
-  <docinfo><date>09 Feb 2004</date></docinfo>
+  <docinfo><date>08 Jan 2008</date></docinfo>
 
   <refmeta>
     <refentrytitle>drbdadm</refentrytitle>
@@ -82,7 +82,6 @@
         <term>attach</term>
         <listitem><para>
           Attaches a local backing block device to the DRBD resource's device.
-	  In file system language this would be the mount operation.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
@@ -105,7 +104,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>disconnect</secondary></indexterm>
           Removes the network configuration from the resource. The device
-	  will go into StandAlone state.
+	  will then go into StandAlone state.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -134,7 +133,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>primary</secondary></indexterm>
           Switch the resource's device into primary state. You need to do
-	  this before you mount a filesystem onto the device.
+	  this before any access to the device, such as creating or mounting a file system.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -143,14 +142,15 @@
 	<indexterm><primary>drbdadm</primary><secondary>secondary</secondary></indexterm>
           Brings the device back into secondary role. This is needed since in
 	  a connected DRBD device pair,  only one of the two peers may have
-	  primary role.
+	  primary role (except if allow-two-primaries is explicitly set in
+	  the configuration file).
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>invalidate</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>invalidate</secondary></indexterm>
-          This forces DRBD to consider the data on the local backing
+          Forces DRBD to consider the data on the <emphasis>local</emphasis> backing
 	  storage device as out-of-sync. Therefore DRBD will copy each
 	  and every block over from its peer, to bring the local storage
 	  device back in sync.
@@ -161,7 +161,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>invalidate-remote</secondary></indexterm>
           This command is similar to the invalidate command, however, the
-	  backing storage of the peer is invalidated and hence rewritten
+	  <emphasis>peer's</emphasis> backing storage is invalidated and hence rewritten
 	  with the data of the local node.
         </para></listitem>
       </varlistentry>
@@ -169,18 +169,18 @@
         <term>resize</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>resize</secondary></indexterm>
-          DRBD will reexamine all sizing constraints, and resize the
-	  resource's device accordingly. E.g. in case you increased the
+          Causes DRBD to re-examine all sizing constraints, and resize the
+	  resource's device accordingly. For example in case you increased the
 	  size of your backing storage devices (on both nodes of course),
 	  then DRBD will adopt to the new size after you called
-	  this command on _both_ nodes.
+	  this command on <emphasis>both</emphasis> nodes.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term>create-md</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>create-md</secondary></indexterm>
-          Create-md initialises the meta data storage. This needs to be
+          Initializes the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
 	  time.
         </para></listitem>
@@ -189,7 +189,7 @@
         <term>get-gi</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>get-gi</secondary></indexterm>
-          Get-gi shows a short textual repesentation of the data generation
+          Shows a short textual repesentation of the data generation
 	  identifiers.
 	</para></listitem>
       </varlistentry>
@@ -197,7 +197,7 @@
         <term>show-gi</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>show-gi</secondary></indexterm>
-	  Show-gi prints a textual representation of the data generation
+	  Prints a textual representation of the data generation
 	  identifiers including explanatory information.
         </para></listitem>
       </varlistentry>
@@ -220,7 +220,7 @@
         <term>adjust</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>adjust</secondary></indexterm>
-          Synchronises the configuration of the device with your configuration
+          Synchronizes the configuration of the device with your configuration
 	  file. You should always examine the output of the dry-run
 	  mode before actually executing this command.
         </para></listitem>
@@ -237,7 +237,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>state</secondary></indexterm>
 	  Shows the current states of the devices (local/peer).
-	  E.g. primary/secondary
+	  E.g. Primary/Secondary
 	</para></listitem>
       </varlistentry>
       <varlistentry>
@@ -270,7 +270,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>verify</secondary></indexterm>
            Starts online verify. During online verify, data on 
-           both nodes is compared for inconsitency. See 
+           both nodes is compared for inconsistency. See 
 	   /proc/drbd for online verify progress.
         </para></listitem>
       </varlistentry>
@@ -279,10 +279,10 @@
         <term>pause-sync</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>pause-sync</secondary></indexterm>
-          Temporarily suspend an ongoing resynchronisation by setting the
+          Temporarily suspend an ongoing resynchronization by setting the
           local pause flag. Resync only progresses if neither the local
           nor the remote pause flag is set. It might be desirable to
-          postpone DRBD's resynchronisation after eventual
+          postpone DRBD's resynchronisation until after any
           resynchronisation of the backing storage's RAID setup.
         </para></listitem>
       </varlistentry>
@@ -333,7 +333,7 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-Copyright 2001-2007 LINBIT Information Technologies,
+Copyright 2001-2008 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
@@ -353,7 +353,7 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
       <citerefentry><refentrytitle>drbdmeta</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
       <ulink url="http://www.drbd.org/">
-      <citetitle>DRBD Homepage</citetitle></ulink>
+      <citetitle>DRBD project web site</citetitle></ulink>
     </para>
   </refsect1>
 </refentry>
