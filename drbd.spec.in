@@ -194,15 +194,15 @@ uname -r | grep BOOT ||
 %changelog
 * Mon Jan  7 2008 15:27:53 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.2-1)
- * Fixed the data-integrity feature to also work for the two-
-   primaries mode correct.
- * Dropped the online-verify feature from DRBD+ into drbd-8.2
- * Significant performance improvement: Implemented sane default 
+ * Released the online-verify feature from DRBD+ into drbd-8.2
+ * Fixed the data-integrity feature to also work correctly
+   for the two-primaries mode.
+ * Significant latency improvement: Implemented sane default
    CPU bindings (affinity mask) of threads, and added the tuning
    option 'cpu-mask'.
- * A completely new drbdmeta. This one should finally do all 
-   conversion cases from drbd-0.7 to drbd-8.x metadata correct.
- * Merged all changes from 8.0.7 -> 8.0.8 to 8.2
+ * A completely new drbdmeta - finally dealing with
+   all drbd-0.7 to drbd-8.x conversion cases correctly.
+ * Merged all changes from 8.0.7 -> 8.0.8 into 8.2
 
 * Fri Nov  2 2007 13:10:27 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.1-1)
