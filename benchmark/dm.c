@@ -1,7 +1,7 @@
 /*
    dm.c
 
-   Copright 2001-2007 LINBIT Information Technologies
+   Copright 2001-2008 LINBIT Information Technologies
    Philipp Reisner, Lars Ellenberg
 
    dm is free software; you can redistribute it and/or modify

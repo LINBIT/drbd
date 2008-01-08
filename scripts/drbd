@@ -3,7 +3,7 @@
 # chkconfig: 345 70 8
 # description: Loads and unloads the drbd module
 #
-# Copright 2001-2007 LINBIT Information Technologies
+# Copright 2001-2008 LINBIT Information Technologies
 # Philipp Reisner, Lars Ellenberg
 #
 ### BEGIN INIT INFO
