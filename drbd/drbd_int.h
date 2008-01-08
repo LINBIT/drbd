@@ -36,6 +36,7 @@
 #include <linux/slab.h>
 #include <linux/crypto.h>
 #include <linux/tcp.h>
+#include <linux/mutex.h>
 #include <net/tcp.h>
 #include "lru_cache.h"
 
@@ -578,12 +579,6 @@ union Drbd_Polymorph_Packet {
 } __attribute((packed));
 
 /**********************************************************************/
-#ifdef NEED_BACKPORT_OF_MUTEX
-struct mutex {
-	struct semaphore sem;
-};
-#endif
-
 enum Drbd_thread_state {
 	None,
 	Running,

@@ -86,7 +86,4 @@ extern const char *drbd_buildtag(void);
 /* in older kernels (vanilla < 2.6.14) is no kzalloc() */
 //#define NEED_BACKPORT_OF_KZALLOC
 
-/* need backport of mutex */
-//#define NEED_BACKPORT_OF_MUTEX
-
 #endif

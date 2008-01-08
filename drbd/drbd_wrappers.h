@@ -439,21 +439,3 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 }
 #endif
 
-#ifdef NEED_BACKPORT_OF_MUTEX
-/* The wrapper of 'struct mutex' is in drbd_int.h
- */
-static inline void mutex_init(struct mutex *m)
-{
-	sema_init(&m->sem, 0);
-}
-
-static inline void mutex_lock(struct mutex *m)
-{
-	down(&m->sem);
-}
-
-static inline void mutex_unlock(struct mutex *m)
-{
-	up(&m->sem);
-}
-#endif

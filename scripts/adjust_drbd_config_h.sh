@@ -91,11 +91,6 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     need_backport_of_kzalloc=1
   fi
-  if grep_q "struct mutex" $KDIR/include/linux/mutex.h ; then
-    need_backport_of_mutex=0
-  else
-    need_backport_of_mutex=1
-  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -119,8 +114,6 @@ perl -pe "
   { ( $have_nl_dst_groups ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BACKPORT_OF_KZALLOC.*)}
   { ( $need_backport_of_kzalloc ? '' : '//' ) . \$1}e;
- s{.*(#define NEED_BACKPORT_OF_MUTEX.*)}
-  { ( $need_backport_of_mutex ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
