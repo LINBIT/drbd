@@ -111,7 +111,7 @@
         <term>syncer</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>syncer</secondary></indexterm>
-          Loads the resynchronisation parameters into the device.
+          Loads the resynchronization parameters into the device.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -189,7 +189,7 @@
         <term>get-gi</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>get-gi</secondary></indexterm>
-          Shows a short textual repesentation of the data generation
+          Shows a short textual representation of the data generation
 	  identifiers.
 	</para></listitem>
       </varlistentry>
@@ -261,7 +261,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>outdate</secondary></indexterm>
           Used to mark the node's data as outdated. Usually used by the
-	  peer's oudate-peer handler.
+	  peer's outdate-peer handler.
         </para></listitem>
       </varlistentry>
 
@@ -282,8 +282,8 @@
           Temporarily suspend an ongoing resynchronization by setting the
           local pause flag. Resync only progresses if neither the local
           nor the remote pause flag is set. It might be desirable to
-          postpone DRBD's resynchronisation until after any
-          resynchronisation of the backing storage's RAID setup.
+          postpone DRBD's resynchronization until after any
+          resynchronization of the backing storage's RAID setup.
         </para></listitem>
       </varlistentry>
 
@@ -315,7 +315,7 @@
   <refsect1>
     <title>Version</title>
     <simpara>
-      This document is correct for version 8.0 the DRBD distribution.
+      This document is correct for version 8.2.2 of the DRBD distribution.
     </simpara>
   </refsect1>
 

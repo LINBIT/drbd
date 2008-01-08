@@ -38,8 +38,8 @@
     In order to use <option>/etc/init.d/drbd</option> you must define
     a resource, a host, and any other configuration options in the drbd
     configuration file.  See <option>/etc/drbd.conf</option> for details.
-    If <replaceable>resource</replaceable> is omited, then all of the
-    resouces listed in the config file are configured.
+    If <replaceable>resource</replaceable> is omitted, then all of the
+    resources listed in the config file are configured.
   </para>
   <para>
     This script might ask you <quote>Do you want to abort waiting for
@@ -53,7 +53,7 @@
 
 <refsect1>
   <title>Version</title>
-  <simpara>This document is correct for version 0.7.20 of the DRBD distribution.
+  <simpara>This document is correct for version 8.2.2 of the DRBD distribution.
   </simpara>
 </refsect1>
 
@@ -75,7 +75,7 @@
 <refsect1>
   <title>Copyright</title>
   <simpara>
-Copyright 2001-2007 LINBIT Information Technologies,
+Copyright 2001-2008 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

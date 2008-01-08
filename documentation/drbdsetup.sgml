@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" []>
 <refentry>
-  <docinfo><date>30 March 2006</date></docinfo>
+  <docinfo><date>08 January 2008</date></docinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -283,7 +283,7 @@
 	      reports an error to DRBD, DRBD will either pass the error
 	      to the upper layers of the operating system, call a helper
 	      program, or detach the device from its backing storage and
-	      perform all futher IO by requesting it from the peer. The
+	      perform all further IO by requesting it from the peer. The
 	      valid <replaceable>err_handlers</replaceable> are:
 	      <option>pass_on</option>, <option>call-local-io-error</option>
 	      and <option>detach</option>.
@@ -306,7 +306,7 @@
             <variablelist>
               <varlistentry><term><option>dont-care</option></term>
 	        <listitem><para>
-		  This is the default policy. No fencing actions are untertaken.
+		  This is the default policy. No fencing actions are undertaken.
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>resource-only</option></term>
 		<listitem><para>
@@ -321,7 +321,7 @@
 		  If a node becomes a disconnected primary, it freezes all
 		  its IO operations and calls its outdate-peer handler. The
 		  outdate-peer handler is supposed to reach the peer over
-		  alternative communicaton paths and call 'drbdadm outdate
+		  alternative communication paths and call 'drbdadm outdate
 		  res' there. In case it cannot reach the peer, it should
 		  stonith the peer. IO is resumed as soon as the situation
 		  is resolved. In case your handler fails, you can resume
@@ -500,7 +500,7 @@
 	  <listitem>
 	    <para>
 	      You need to specify the HMAC algorithm to enable peer
-	      authentication at all. You are strongly enouraged to use
+	      authentication at all. You are strongly encouraged to use
 	      peer authentication.
 	      The HMAC algorithm will be used for the challenge
 	      response authentication of the peer. You may specify any
@@ -528,11 +528,11 @@
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>discard-younger-primary</option></term>
 		<listitem><para>
-		  Auto sync from the node that was primary before the split-		brain situation occurred.
+		  Auto sync from the node that was primary before the split-brain situation occurred.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>discard-older-primary</option></term>
 		<listitem><para>
@@ -544,7 +544,7 @@
 		In case one node did not write anything since the split
 		brain became evident, sync from the node that wrote something
 		to the node that did not write anything. In case none wrote
-		anything this policy uses a random decission to perform
+		anything this policy uses a random decision to perform
 		a "resync" of 0 blocks. In case both have written something
 		this policy disconnects the nodes.
 		</para></listitem></varlistentry>
@@ -572,7 +572,7 @@
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>consensus</option></term>
 		<listitem><para>
@@ -586,14 +586,14 @@
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
-		  Always honour the outcome of the <option>after-sb-0pri
+		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
 		  secondary has the right data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
-		  Always honour the outcome of the <option>after-sb-0pri
+		  Always Honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
 		  secondary has the right data, accept a possible instantaneous
 		  change of the primary's data.
@@ -612,18 +612,18 @@
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
-		  Always honour the outcome of the <option>after-sb-0pri
+		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
 		  secondary has the right data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
-		  Always honour the outcome of the <option>after-sb-0pri
+		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
 		  secondary has the right data, accept a possible instantaneous
 		  change of the primary's data.
@@ -656,8 +656,8 @@
 	  <option>--rr-conflict </option><replaceable>role-resync-conflict-policy</replaceable></term>
 	  <listitem>
 	    <para>
-	      This option sets DRBD's behaviour when DRBD deduces from its
-	      meta data that a resynchronisation is needed, and the SyncTarget
+	      This option sets DRBD's behavior when DRBD deduces from its
+	      meta data that a resynchronization is needed, and the SyncTarget
 	      node is already primary. The possible settings are:
 	      <option>disconnect</option>,
 	      <option>call-pri-lost</option> and
@@ -684,11 +684,11 @@
 	    <para>
 	      DRBD can ensure the data integrity of the user's data on the network
 	      by comparing hash values. Normally this is ensured by the 16 bit checksums 
-	      in the headers of TCP/IP packets. Unforunately it turned out that GBit NICs 
+	      in the headers of TCP/IP packets. Unfortunately it turned out that GBit NICs 
 	      with various offloading engines might produce valid checksums for corrupted 
 	      data. Use this option during your pre-production tests, usually you
 	      want to turn it off for production to reduce CPU overhead. This option
-	      can be set to any of the kerne's data digest algorithms.
+	      can be set to any of the kernel's data digest algorithms.
 	      By default this is not enabled.
 	    </para>
 	  </listitem>
@@ -714,7 +714,7 @@
 	      Use this option to manually recover from a split-brain
 	      situation. In case you do not have any automatic after-split-brain policies selected, the nodes refuse to
 	      connect. By passing this option you make a node to
-	      sync target immediately after sucessful connect.
+	      sync target immediately after successful connect.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -725,7 +725,7 @@
       <title>syncer</title>
       <indexterm><primary>drbdsetup</primary><secondary>syncer</secondary></indexterm>
       <para>
-	Changes the synchronisation daemon parameters of
+	Changes the synchronization daemon parameters of
 	<replaceable>device</replaceable> at runtime.
       </para>
       <variablelist>
@@ -736,7 +736,7 @@
 	    <para>
 	      To ensure smooth operation of the application on top of DRBD,
 	      it is possible to limit the bandwidth that  may be used by
-	      background synchronisation. The default is 250 KB/sec, the
+	      background synchronization. The default is 250 KB/sec, the
 	      default unit is KB/sec.
 	    </para>
 	  </listitem>
@@ -798,7 +798,7 @@
       <para>
 	Normally it is not possible to set both devices of a connected DRBD device
 	pair to primary role. By using the <option>--allow-two-primaries</option>
-	option, you override this behaviour and instruct DRBD to allow two
+	option, you override this behavior and instruct DRBD to allow two
 	primaries.
       </para>
       <variablelist>
@@ -880,7 +880,7 @@
 	      In case the connection status goes down to StandAlone because
               the peer appeared but the devices had a split brain situation,
               the default for the command is to terminate. You can change this
-              behaviour with the <option>--wait-after-sb</option> option.
+              behavior with the <option>--wait-after-sb</option> option.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -891,7 +891,7 @@
       <indexterm><primary>drbdsetup</primary><secondary>wait-sync</secondary></indexterm>
       <para>
 	Returns as soon as the <replaceable>device</replaceable> leaves any
-	synchronisation into connected state. The options
+	synchronization into connected state. The options
 	are the same as with the <replaceable>wait-connect</replaceable>
 	command.
       </para>
@@ -963,10 +963,10 @@
       <title>pause-sync</title>
       <indexterm><primary>drbdsetup</primary><secondary>pause-sync</secondary></indexterm>
       <para>
-        Temporarily suspend an ongoing resynchronisation by setting the local
+        Temporarily suspend an ongoing resynchronization by setting the local
 	pause flag. Resync only progresses if neither the local nor the
 	remote pause flag is set. It might be desirable to postpone DRBD's
-	resynchronisation after eventual resynchronisation of the backing
+	resynchronization after eventual resynchronization of the backing
 	storage's RAID setup.
       </para>
     </refsect2>
@@ -982,7 +982,7 @@
       <indexterm><primary>drbdsetup</primary><secondary>outdate</secondary></indexterm>
       <para>
         Mark the data on the local backing storage as outdated. An outdated
-	device refuses to become primary. This is used in conjuction with
+	device refuses to become primary. This is used in conjunction with
 	<option>fencing</option> and by the peer's outdate-peer handler.
       </para>
     </refsect2>
@@ -1072,7 +1072,7 @@
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document is for version 8.0 of the DRBD distribution.
+    <simpara>This document is correct for version 8.2.2 of the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -1090,7 +1090,7 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-Copyright 2001-2007 LINBIT Information Technologies,
+Copyright 2001-2008 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

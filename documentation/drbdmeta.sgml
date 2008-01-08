@@ -36,7 +36,7 @@
     </para>
     <para>
       This command only works if the DRBD resource is currently down,
-      or at least detached from its backing stoage. The first parameter
+      or at least detached from its backing storage. The first parameter
       is the device node associated to the resource. With the second
       parameter you select which the version of the meta data. Currently
       all major DRBD releases (0.6, 0.7 and 0.8) are supported.
@@ -49,7 +49,7 @@
         <term>create-md</term>
         <listitem><para>
 	<indexterm><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
-          Create-md initialises the meta data storage. This needs to be
+          Create-md initializes the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
 	  time. In case there is already a meta data signature of an
 	  older format in place, drbdmeta will ask you if it should
@@ -60,7 +60,7 @@
         <term>get-gi</term>
         <listitem><para>
 	<indexterm><primary>drbdmeta</primary><secondary>get-gi</secondary></indexterm>
-          Get-gi shows a short textual repesentation of the data generation
+          Get-gi shows a short textual representation of the data generation
 	  identifier. In version 0.6 and 0.7 these are generation counters,
 	  while in version 0.8 it is a set of UUIDs.
 	</para></listitem>
@@ -105,7 +105,7 @@
   <refsect1>
     <title>Expert's commands</title>
     <para>
-      Drbdmeta allows you to modifiy the meta data as well. This is
+      Drbdmeta allows you to modify the meta data as well. This is
       intentionally omitted for the command's usage output, since you
       should only use it if you really know what you are doing.
       By setting the generation identifiers to wrong values, you
@@ -137,7 +137,7 @@
   <refsect1>
     <title>Version</title>
     <simpara>
-      This document is correct for version 8.0 of the DRBD distribution.
+      This document is correct for version 8.2.2 of the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -155,7 +155,7 @@
   <refsect1>
     <title>Copyright</title>
     <simpara>
-Copyright 2001-2007 LINBIT Information Technologies,
+Copyright 2001-2008 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
