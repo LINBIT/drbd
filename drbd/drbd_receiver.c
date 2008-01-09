@@ -3295,7 +3295,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			spin_lock_irq(&mdev->req_lock);
 			empty = list_empty(&mdev->done_ee);
 			spin_unlock_irq(&mdev->req_lock);
-			if (empty)
+			if (empty && !test_bit(WRITE_ACK_PENDING, &mdev->flags))
 				break;
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
 			flush_signals(current);
