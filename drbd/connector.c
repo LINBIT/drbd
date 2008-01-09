@@ -39,7 +39,7 @@
 #ifdef DRBD_NL_DST_GROUPS
    /* pre 2.6.16 */
 #  define NETLINK_GROUP(skb) NETLINK_CB(skb).dst_groups
-#else 
+#else
 #  define NETLINK_GROUP(skb) NETLINK_CB(skb).dst_group
 #endif
 
@@ -458,10 +458,16 @@ int __init cn_init(void)
 	dev->id.idx = cn_idx;
 	dev->id.val = cn_val;
 
-#ifdef NETLINK_ROUTE6 
-	/* pre 2.6.16 */
+#ifdef DRBD_NL_DST_GROUPS
+	/* history of upstream commits between kernel.org 2.6.13 and 2.6.14-rc1:
+	 * 4fdb3bb723db469717c6d38fda667d8b0fa86ebd 2005-08-10 adds module parameter
+	 * d629b836d151d43332492651dd841d32e57ebe3b 2005-08-15 renames dst_groups to dst_group
+	 * 066286071d3542243baa68166acb779187c848b3 2005-08-15 adds groups parameter
+	 * so it is not exactly correct to trigger on the rename dst_groups to dst_group,
+	 * but sufficiently close.
+	 */
 	dev->nls = netlink_kernel_create(NETLINK_CONNECTOR,dev->input);
-#else 
+#else
 	dev->nls = netlink_kernel_create(NETLINK_CONNECTOR,
 					 CN_NETLINK_USERS + 0xf,
 					 dev->input, THIS_MODULE);
