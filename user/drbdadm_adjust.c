@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -39,13 +40,23 @@
 
 extern FILE* yyin;
 
+/* drbdsetup show might complain that the device minor does
+   not exist at all. Redirect stderr to /dev/null therefore.
+ */
 static FILE *m_popen(int *pid,char** argv)
 {
 	int mpid;
 	int pipes[2];
+	int dev_null;
 
 	if(pipe(pipes)) {
 		perror("Creation of pipes failed");
+		exit(E_exec_error);
+	}
+
+	dev_null = open("/dev/null", O_WRONLY);
+	if (dev_null == -1) {
+		perror("Opening /dev/null failed");
 		exit(E_exec_error);
 	}
 
@@ -56,14 +67,17 @@ static FILE *m_popen(int *pid,char** argv)
 	}
 	if(mpid == 0) {
 		close(pipes[0]); // close reading end
-		dup2(pipes[1],1); // 1 = stdout
+		dup2(pipes[1], fileno(stdout));
 		close(pipes[1]);
+		dup2(dev_null, fileno(stderr));
+		close(dev_null);
 		execvp(argv[0],argv);
 		fprintf(stderr,"Can not exec");
 		exit(E_exec_error);
 	}
 
 	close(pipes[1]); // close writing end
+	close(dev_null);
 	*pid=mpid;
 	return fdopen(pipes[0],"r");
 }
