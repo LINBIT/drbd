@@ -192,8 +192,8 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Mon Jan  7 2008 15:27:53 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.2-1)
+* Wed Jan  9 2008 15:27:53 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.2.3-1)
  * Released the online-verify feature from DRBD+ into drbd-8.2
  * Fixed the data-integrity-alg feature to work correctly
    in 'allow-two-primaries' mode.

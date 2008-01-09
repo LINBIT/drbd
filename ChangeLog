@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.2.2 (api:86/proto:86-88)
+8.2.3 (api:86/proto:86-88)
 --------
  * Released the online-verify feature from DRBD+ into drbd-8.2
  * Fixed the data-integrity-alg feature to work correctly
