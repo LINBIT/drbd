@@ -9,7 +9,7 @@
 
 <refnamediv>
  <refname>/etc/ha.d/resource.d/drbddisk</refname>
- <refpurpose>Script to mark devices as primary and mount filesystems</refpurpose>
+ <refpurpose>Script to mark devices as primary and mount file systems</refpurpose>
 </refnamediv>
 
 <refsynopsisdiv>

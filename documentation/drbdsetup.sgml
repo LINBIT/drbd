@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//Davenport//DTD DocBook V3.0//EN" []>
 <refentry>
-  <docinfo><date>08 January 2008</date></docinfo>
+  <docinfo><date>09 January 2008</date></docinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -64,6 +64,7 @@
       <arg>-a<arg choice="req"><replaceable>dev_minor</replaceable></arg></arg>
       <arg>-r<arg choice="req"><replaceable>rate</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>extents</replaceable></arg></arg>
+      <arg>-v<arg choice="req"><replaceable>hash-alg</replaceable></arg></arg>
       <arg>-c<arg choice="req"><replaceable>cpu-mask</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
@@ -91,6 +92,11 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">secondary</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">verify</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -419,8 +425,8 @@
 	      secondary node, which are not yet acknowledged (from a network
 	      point of view) by the secondary node. When using protocol A,
 	      it might be necessary to increase the size of this data
-	      structure in order to increase asynchronism between primary
-	      and secondary nodes. But keep in mind that more asynchronism
+	      structure in order to increase asynchronicity between primary
+	      and secondary nodes. But keep in mind that more asynchronicity
 	      is synonymous with more data loss in the case of a primary
 	      node failure. The default <replaceable>size</replaceable> is
 	      128 KB, the default unit is KB.
@@ -689,7 +695,9 @@
 	      data. Use this option during your pre-production tests, usually you
 	      want to turn it off for production to reduce CPU overhead. This option
 	      can be set to any of the kernel's data digest algorithms.
-	      By default this is not enabled.
+              In a typical kernel configuration you should have
+              at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
+              available. By default this is not enabled.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -772,6 +780,24 @@
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
+	  <term><option>-v</option>,
+	  <option>--verify-alg <replaceable>hash-alg</replaceable></option></term>
+	  <listitem>
+	    <para>
+              During online verification (as initiated by the 
+              <command>verify</command> sub-command),
+              rather than doing a bit-wise comparison, DRBD applies a hash function 
+              to the contents of every block being verified, and compares that
+              hash with the peer. This option defines the hash algorithm being
+              used for that purpose. It can be set to any of the kernel's data 
+              digest algorithms. In a typical kernel configuration you should have
+              at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
+              available. By default this is not enabled; you must set this
+              option explicitly in order to be able to use on-line device verification.
+	    </para>
+	  </listitem>
+	</varlistentry>
+	<varlistentry>
 	  <term><option>-c</option>,
 	  <option>--cpu-mask <replaceable>cpu-mask</replaceable></option></term>
 	  <listitem>
@@ -827,6 +853,24 @@
       <para>
 	It is however, possible that both devices of a connected DRBD device
 	pair are in secondary state.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>verify</title>
+      <indexterm><primary>drbdsetup</primary><secondary>verify</secondary></indexterm>
+      <para>
+        This initiates on-line device verification. During on-line verification,
+        the contents of every block on the local node are compared to those on
+        the peer node. Device verification progress can be monitored via
+        <filename>/proc/drbd</filename>.
+        Any blocks whose content differs from that of the corresponding block
+        on the peer node will be marked out-of-sync in DRBD's on-disk bitmap; they
+        are <emphasis>not</emphasis> brought back in sync automatically. To
+        do that, simply disconnect and reconnect the resource.
+      </para>
+      <para>
+	This command will fail if the <replaceable>device</replaceable> is
+	not part of a connected device pair.
       </para>
     </refsect2>
     <refsect2>
@@ -1066,7 +1110,7 @@
       <para>
       For examples, please have a look at the
       <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
-      <citetitle>DRBD Quickstart Guide</citetitle></ulink>.
+      <citetitle>DRBD Quick Start Guide</citetitle></ulink>.
       </para>
   </refsect1>
 

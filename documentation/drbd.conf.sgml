@@ -64,7 +64,7 @@ resource r0 {
  There may be multiple resource sections in a single drbd.conf file.
  For more examples, please have a look at the
  <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
- <citetitle>DRBD Quickstart Guide</citetitle></ulink>.
+ <citetitle>DRBD Quick start Guide</citetitle></ulink>.
  </para>
 </refsect1>
 <refsect1>
@@ -818,9 +818,11 @@ the unit is 1 second.
 	      in the headers of TCP/IP packets. Unfortunately it turned out that GBit NICs 
 	      with various offloading engines might produce valid checksums for corrupted 
 	      data. Use this option during your pre-production tests, usually you
-	      want to turn it off for production to reduce CPU overhead. This option
-	      can be set to any of the kernel's data digest algorithms.
-	      By default this is not enabled.
+	      want to turn it off for production to reduce CPU overhead.
+              This option can be set to any of the kernel's data digest algorithms.
+              In a typical kernel configuration you should have
+              at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
+              available. By default this is not enabled.
 	    </para>
 	  </listitem>
 </varlistentry>
@@ -914,6 +916,21 @@ the unit is 1 second.
   default number of <replaceable>extents</replaceable> is
   127. (Minimum: 7, Maximum: 3843)
   </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>verify-alg <replaceable>hash-alg</replaceable></option></term>
+  <listitem><para>During online verification (as initiated by the
+  <command>verify</command> sub-command),
+  rather than doing a bit-wise comparison, DRBD applies a hash function
+  to the contents of every block being verified, and compares that
+  hash with the peer. This option defines the hash algorithm being
+  used for that purpose. It can be set to any of the kernel's data
+  digest algorithms. In a typical kernel configuration you should have
+  at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
+  available. By default this is not enabled; you must set this
+  option explicitly in order to be able to use on-line device verification.</para>
   </listitem>
 </varlistentry>
 

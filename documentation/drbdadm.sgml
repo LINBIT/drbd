@@ -271,7 +271,10 @@
 	<indexterm><primary>drbdadm</primary><secondary>verify</secondary></indexterm>
            Starts online verify. During online verify, data on 
            both nodes is compared for inconsistency. See 
-	   /proc/drbd for online verify progress.
+   	   <filename>/proc/drbd</filename> for online verify progress. If out-of-sync
+           blocks are found, they are <emphasis>not</emphasis> resynchronized
+           automatically. To do that, <command>disconnect</command> and 
+           <command>connect</command> the resource when verification has completed. 
         </para></listitem>
       </varlistentry>
 
