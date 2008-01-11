@@ -192,6 +192,12 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Fri Jan 11 2008 13:37:50 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.2.4-1)
+ * Fixed the online-verify and data-integrity-alg features.
+   While preparing DRBD for Linux-2.6.24 a bug was introduced
+   that rendered most digest based functionality in DRBD useless.
+
 * Wed Jan  9 2008 15:27:53 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.3-1)
  * Released the online-verify feature from DRBD+ into drbd-8.2

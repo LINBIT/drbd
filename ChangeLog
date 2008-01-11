@@ -2,6 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.2.4 (api:86/proto:86-88)
+--------
+ * Fixed the online-verify and data-integrity-alg features.
+   While preparing DRBD for Linux-2.6.24 a bug was introduced
+   that rendered most digest based functionality in DRBD useless.
+
 8.2.3 (api:86/proto:86-88)
 --------
  * Released the online-verify feature from DRBD+ into drbd-8.2
