@@ -309,10 +309,10 @@ STATIC void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bi
 	crypto_hash_init(&desc);
 
 	__bio_for_each_segment(bvec, bio, i, 0) {
-		sg_set_page(&sg, bvec->bv_page, bvec->bv_offset, bvec->bv_len);
-		crypto_hash_update(&desc,&sg,sg.length);
+		sg_set_page(&sg, bvec->bv_page, bvec->bv_len, bvec->bv_offset);
+		crypto_hash_update(&desc, &sg, sg.length);
 	}
-	crypto_hash_final(&desc,digest);
+	crypto_hash_final(&desc, digest);
 }
 
 int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work* w,int cancel);
