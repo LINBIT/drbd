@@ -143,19 +143,6 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 	spin_unlock_irq(q->queue_lock);
 }
 
-static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
-{
-	struct bio_vec *bvec = bio_iovec(bio);
-	struct page *page = bvec->bv_page;
-	size_t size = bvec->bv_len;
-	int offset = bvec->bv_offset;
-	int ret;
-
-	ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
-	kunmap(page);
-	return ret;
-}
-
 #ifdef DEFINE_SOCK_CREATE_KERN
 #define sock_create_kern sock_create
 #endif

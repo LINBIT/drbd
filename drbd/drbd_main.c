@@ -1709,7 +1709,19 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 	return ok;
 }
 
-STATIC int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
+static inline int _drbd_send_bio(drbd_dev *mdev, struct bio *bio)
+{
+	struct bio_vec *bvec;
+	int i;
+	__bio_for_each_segment(bvec, bio, i, 0) {
+		if (!_drbd_no_send_page(mdev, bvec->bv_page,
+				     bvec->bv_offset, bvec->bv_len))
+			return 0;
+	}
+	return 1;
+}
+
+static inline int _drbd_send_zc_bio(drbd_dev *mdev, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;
