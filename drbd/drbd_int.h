@@ -681,7 +681,7 @@ enum {
 
 /* global flag bits */
 enum {
-	ISSUE_BARRIER,		// next Data is preceeded by a Barrier
+	CREATE_BARRIER,		// next write has to create a new drbd_barrier
 	SIGNAL_ASENDER,		// whether asender wants to be interrupted
 	SEND_PING,		// whether asender should send a ping asap
 	WRITE_ACK_PENDING,	// so BarrierAck won't overtake WriteAck
@@ -944,7 +944,7 @@ extern void drbd_free_resources(drbd_dev *mdev);
 extern void tl_release(drbd_dev *mdev,unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(drbd_dev *mdev);
-extern struct drbd_barrier *_tl_add_barrier(drbd_dev *,struct drbd_barrier *);
+extern void _tl_add_barrier(drbd_dev *, struct drbd_barrier *);
 extern void drbd_free_sock(drbd_dev *mdev);
 extern int drbd_send(drbd_dev *mdev, struct socket *sock,
 		     void* buf, size_t size, unsigned msg_flags);
