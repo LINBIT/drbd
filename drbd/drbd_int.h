@@ -193,7 +193,7 @@ extern void drbd_assert_breakpoint(drbd_dev*, char *, char *, int );
 #endif
 #define ERR_IF(exp) if (({ \
 	int _b = (exp)!=0; \
-	if (_b) ERR("%s: (" #exp ") in %s:%d\n", __func__, __FILE__,__LINE__); \
+	if (_b) ERR("%s: (%s) in %s:%d\n", __func__, #exp, __FILE__,__LINE__); \
 	 _b; \
 	}))
 
