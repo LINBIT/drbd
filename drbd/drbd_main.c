@@ -3380,8 +3380,9 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 
 	switch (cmd) {
 	case HandShake:
-		INFOP("%s (protocol %u)\n", cmdname(cmd),
-			be32_to_cpu(p->HandShake.protocol_min));
+		INFOP("%s (protocol %u-%u)\n", cmdname(cmd),
+			be32_to_cpu(p->HandShake.protocol_min),
+			be32_to_cpu(p->HandShake.protocol_max));
 		break;
 
 	case ReportBitMap: /* don't report this */
