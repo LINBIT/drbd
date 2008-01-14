@@ -900,7 +900,7 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
   allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
 		if(!b) {
-			ERR("Failed to alloc barrier.");
+			ERR("Failed to alloc barrier.\n");
 			err = -ENOMEM;
 			goto fail_and_free_req;
 		}
