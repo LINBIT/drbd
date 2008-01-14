@@ -2167,8 +2167,16 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 		fprintf(stderr, "Ignoring additional arguments\n");
 	}
 
-	if (cfg->ops->open(cfg)) /* reset cfg->md if not valid */
+	if (cfg->ops->open(cfg)) {
+		/* reset cfg->md if not valid */
 		memset(&cfg->md, 0, sizeof(cfg->md));
+
+		/* Maybe this should be done unconditionally, outside the diff?
+		 * Maybe we want to use some library that provides detection of
+		 * fs/partition/usage types? */
+		check_for_existing_data(cfg);
+	}
+
 
 	/* the offset of v07 fixed-size internal meta data is different from
 	 * the offset of the flexible-size v07 ("plus") and v08 (default)
