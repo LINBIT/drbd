@@ -404,7 +404,7 @@ int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 
 void drbd_force_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val)
 {
-	drbd_change_state(mdev,ChgStateVerbose|ChgStateHard,mask,val);
+	drbd_change_state(mdev, ChgStateHard, mask, val);
 }
 
 STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns);
@@ -838,18 +838,28 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 	    os.peer == Secondary && ns.peer == Primary)
 		set_bit(CONSIDER_RESYNC, &mdev->flags);
 
-	/* Make sure worker thread is running -- this is a NOP if it is already running */
-	drbd_thread_start(&mdev->worker);
+	// Receiver should clean up itself
+	if (os.conn != Disconnecting && ns.conn == Disconnecting)
+		drbd_thread_signal(&mdev->receiver);
+
+	// Now the receiver finished cleaning up itself, it should die
+	if (os.conn != StandAlone && ns.conn == StandAlone)
+		drbd_thread_stop_nowait(&mdev->receiver);
+
+	// Upon network failure, we need to restart the receiver.
+	if (os.conn > TearDown &&
+	    ns.conn <= TearDown && ns.conn >= Timeout)
+		drbd_thread_restart_nowait(&mdev->receiver);
 
 	ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
-	if(ascw) {
-	    ascw->os = os;
-	    ascw->ns = ns;
-	    ascw->flags = flags;
-	    ascw->w.cb = w_after_state_ch;
-	    drbd_queue_work(&mdev->data.work,&ascw->w);
+	if (ascw) {
+		ascw->os = os;
+		ascw->ns = ns;
+		ascw->flags = flags;
+		ascw->w.cb = w_after_state_ch;
+		drbd_queue_work(&mdev->data.work, &ascw->w);
 	} else {
-	    WARN("Could not kmalloc an ascw\n");
+		WARN("Could not kmalloc an ascw\n");
 	}
 
 	return rv;
@@ -1044,22 +1054,6 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 	     (os.peer_isp && !ns.peer_isp) ||
 	     (os.user_isp && !ns.user_isp) ) {
 		resume_next_sg(mdev);
-	}
-
-	// Receiver should clean up itself
-	if ( os.conn != Disconnecting && ns.conn == Disconnecting ) {
-		drbd_thread_signal(&mdev->receiver);
-	}
-
-	// Now the receiver finished cleaning up itself, it should die
-	if ( os.conn != StandAlone && ns.conn == StandAlone ) {
-		drbd_thread_stop_nowait(&mdev->receiver);
-	}
-
-	// Upon network failure, we need to restart the receiver.
-	if ( os.conn > TearDown &&
-	     ns.conn <= TearDown && ns.conn >= Timeout) {
-		drbd_thread_restart_nowait(&mdev->receiver);
 	}
 
 	// Upon network connection, we need to start the received

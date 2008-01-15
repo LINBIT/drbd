@@ -856,6 +856,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
+	drbd_thread_start(&mdev->worker);
 	drbd_md_set_sector_offsets(mdev,nbc);
 
 	retcode = drbd_md_read(mdev,nbc);
@@ -1226,6 +1227,9 @@ FIXME LGE
 	mdev->cram_hmac_tfm = tfm;
 
 	retcode = _drbd_request_state(mdev,NS(conn,Unconnected),ChgStateVerbose);
+
+	if (retcode >= SS_Success)
+		drbd_thread_start(&mdev->worker);
 
 	reply->ret_code = retcode;
 	return 0;
