@@ -444,6 +444,7 @@ set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
  * _drbd_request_state:
  * This function is the most gracefull way to change state. For some state
  * transition this function even does a cluster wide transaction.
+ * It has a cousin named drbd_request_state(), which is always verbose.
  */
 int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		       enum chg_state_flags f)

@@ -1470,6 +1470,12 @@ static inline void drbd_state_unlock(drbd_dev *mdev)
 	wake_up(&mdev->misc_wait);
 }
 
+static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
+				     drbd_state_t val)
+{
+	return _drbd_request_state(mdev, mask, val, ChgStateVerbose);
+}
+
 /**
  * drbd_chk_io_error: Handles the on_io_error setting, should be called from
  * all io completion handlers. See also drbd_io_error().

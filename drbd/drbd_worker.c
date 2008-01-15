@@ -557,7 +557,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	drbd_bm_recount_bits(mdev);
 
-	_drbd_request_state(mdev,NS3(conn,Connected,disk,dstate,pdsk,pdstate),ChgStateVerbose);
+	drbd_request_state(mdev,NS3(conn,Connected,
+				    disk,dstate,
+				    pdsk,pdstate));
 
 	drbd_md_sync(mdev);
 

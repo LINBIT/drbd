@@ -194,7 +194,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		return mdev->state.pdsk;
 	}
 
-	if( fp == Stonith ) _drbd_request_state(mdev,NS(susp,1),ChgStateVerbose);
+	if( fp == Stonith ) drbd_request_state(mdev,NS(susp,1));
 
 	r=drbd_khelper(mdev,"outdate-peer");
 
@@ -212,7 +212,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 	case 6: /* Peer is primary, voluntarily outdate myself */
 		WARN("Peer is primary, outdating myself.\n");
 		nps = DUnknown;
-		_drbd_request_state(mdev,NS(disk,Outdated),ChgStateVerbose);
+		drbd_request_state(mdev,NS(disk,Outdated));
 		break;
 	case 7:
 		if( fp != Stonith ) {
@@ -268,7 +268,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 			val.pdsk = nps;
 			mask.pdsk = disk_mask;
-			
+
 			continue;
 		}
 
@@ -294,7 +294,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			continue;
 		}
 		if ( r < SS_Success ) {
-			r = _drbd_request_state(mdev,mask,val,ChgStateVerbose); // Be verbose.
+			r = drbd_request_state(mdev,mask,val); // Be verbose.
 			if( r < SS_Success ) goto fail;
 		}
 		break;
@@ -852,7 +852,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
 
-	if((retcode = _drbd_request_state(mdev,NS(disk,Attaching),ChgStateVerbose)) < SS_Success ) {
+	if((retcode = drbd_request_state(mdev,NS(disk,Attaching))) < SS_Success ) {
 		goto release_bdev2_fail;
 	}
 
@@ -988,7 +988,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	/* All tests on MDF_PrimaryInd, MDF_ConnectedInd,
 	   MDF_Consistent and MDF_WasUpToDate must happen before
-	   this point, because _drbd_request_state() modifies these
+	   this point, because drbd_request_state() modifies these
 	   flags. */
 
 	/* In case we are Connected postpone any desicion on the new disk
@@ -1048,7 +1048,7 @@ STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	drbd_sync_me(mdev);
-	reply->ret_code = _drbd_request_state(mdev,NS(disk,Diskless),ChgStateVerbose);
+	reply->ret_code = drbd_request_state(mdev,NS(disk,Diskless));
 
 	return 0;
 }
@@ -1226,7 +1226,7 @@ FIXME LGE
 	}
 	mdev->cram_hmac_tfm = tfm;
 
-	retcode = _drbd_request_state(mdev,NS(conn,Unconnected),ChgStateVerbose);
+	retcode = drbd_request_state(mdev,NS(conn,Unconnected));
 
 	if (retcode >= SS_Success)
 		drbd_thread_start(&mdev->worker);
@@ -1254,8 +1254,9 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if ( retcode == SS_NothingToDo ) goto done;
 	else if ( retcode == SS_AlreadyStandAlone ) goto done;
 	else if ( retcode == SS_PrimaryNOP ) {
-		// Our state checking code wants to see the peer outdated.
-		retcode = _drbd_request_state(mdev,NS2(conn,Disconnecting,pdsk,Outdated),ChgStateVerbose);
+		// Our statche checking code wants to see the peer outdated.
+		retcode = drbd_request_state(mdev,NS2(conn,Disconnecting,
+						      pdsk,Outdated));
 	} else if (retcode == SS_CW_FailedByPeer) {
 		// The peer probabely wants to see us outdated.
 		retcode = _drbd_request_state(mdev,NS2(conn,Disconnecting,
@@ -1264,7 +1265,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			// We are diskless and our peer wants to outdate us.
 			// So, simply go away, and let the peer try to
 			// outdate us with its 'outdate-peer' handler later.
-			retcode = _drbd_request_state(mdev,NS(conn,StandAlone),ChgStateVerbose);
+			retcode = drbd_request_state(mdev,NS(conn,StandAlone));
 		}
 	}
 
@@ -1297,7 +1298,7 @@ void resync_after_online_grow(drbd_dev *mdev)
 	if (iass)
 		drbd_start_resync(mdev,SyncSource);
 	else
-		_drbd_request_state(mdev,NS(conn,WFSyncUUID),ChgStateVerbose);
+		drbd_request_state(mdev,NS(conn,WFSyncUUID));
 }
 
 STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
@@ -1430,8 +1431,8 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_invalidate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = _drbd_request_state(mdev,NS2(conn,StartingSyncT,disk,Inconsistent),
-					      ChgStateVerbose);
+	reply->ret_code = drbd_request_state(mdev,NS2(conn,StartingSyncT,
+						      disk,Inconsistent));
 	return 0;
 }
 
@@ -1439,8 +1440,8 @@ STATIC int drbd_nl_invalidate_peer(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 				   struct drbd_nl_cfg_reply *reply)
 {
 
-	reply->ret_code = _drbd_request_state(mdev,NS2(conn,StartingSyncS,pdsk,Inconsistent),
-					      ChgStateVerbose);
+	reply->ret_code = drbd_request_state(mdev,NS2(conn,StartingSyncS,
+						      pdsk,Inconsistent));
 
 	return 0;
 }
@@ -1450,7 +1451,7 @@ STATIC int drbd_nl_pause_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode=NoError;
 
-	if(_drbd_request_state(mdev,NS(user_isp,1),ChgStateVerbose) == SS_NothingToDo)
+	if(drbd_request_state(mdev,NS(user_isp,1)) == SS_NothingToDo)
 		retcode = PauseFlagAlreadySet;
 
 	reply->ret_code = retcode;
@@ -1462,7 +1463,7 @@ STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode=NoError;
 
-	if(_drbd_request_state(mdev,NS(user_isp,0),ChgStateVerbose) == SS_NothingToDo)
+	if(drbd_request_state(mdev,NS(user_isp,0)) == SS_NothingToDo)
 		retcode = PauseFlagAlreadyClear;
 
 	reply->ret_code = retcode;
@@ -1472,7 +1473,7 @@ STATIC int drbd_nl_resume_sync(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_suspend_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = _drbd_request_state(mdev,NS(susp,1),ChgStateVerbose);
+	reply->ret_code = drbd_request_state(mdev,NS(susp,1));
 
 	return 0;
 }
@@ -1480,14 +1481,14 @@ STATIC int drbd_nl_suspend_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_resume_io(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = _drbd_request_state(mdev,NS(susp,0),ChgStateVerbose);
+	reply->ret_code = drbd_request_state(mdev,NS(susp,0));
 	return 0;
 }
 
 STATIC int drbd_nl_outdate(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = _drbd_request_state(mdev,NS(disk,Outdated),ChgStateVerbose);
+	reply->ret_code = drbd_request_state(mdev,NS(disk,Outdated));
 	return 0;
 }
 

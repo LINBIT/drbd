@@ -718,7 +718,7 @@ int drbd_connect(drbd_dev *mdev)
 
 	D_ASSERT(!mdev->data.socket);
 
-	if (_drbd_request_state(mdev,NS(conn,WFConnection),ChgStateVerbose) < SS_Success )
+	if (drbd_request_state(mdev,NS(conn,WFConnection)) < SS_Success )
 		return -2;
 
 	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
@@ -822,14 +822,14 @@ int drbd_connect(drbd_dev *mdev)
 	if (h <= 0) return h;
 
 	if ( mdev->cram_hmac_tfm ) {
-		/* _drbd_request_state(mdev, NS(conn, WFAuth), ChgStateVerbose); */
+		/* drbd_request_state(mdev, NS(conn, WFAuth)); */
 		if (!drbd_do_auth(mdev)) {
 			ERR("Authentication of peer failed\n");
 			return -1;
 		}
 	}
 
-	if (_drbd_request_state(mdev, NS(conn, WFReportParams),ChgStateVerbose) < SS_Success) return 0;
+	if (drbd_request_state(mdev, NS(conn, WFReportParams)) < SS_Success) return 0;
 
 	sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
@@ -2300,7 +2300,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 		if(nconn == conn_mask) return FALSE;
 
-		if(_drbd_request_state(mdev,NS(conn,nconn),ChgStateVerbose) < SS_Success) {
+		if(drbd_request_state(mdev,NS(conn,nconn)) < SS_Success) {
 			drbd_force_state(mdev,NS(conn,Disconnecting));
 			return FALSE;
 		}
@@ -2555,7 +2555,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	} else if (mdev->state.conn == WFBitMapT) {
 		ok = drbd_send_bitmap(mdev);
 		if (!ok) goto out;
-		ok = _drbd_request_state(mdev,NS(conn,WFSyncUUID),ChgStateVerbose);
+		ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
 		D_ASSERT( ok == SS_Success );
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
@@ -2797,7 +2797,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		if( fp >= Resource &&
 		    mdev->state.pdsk >= DUnknown ) {
 			drbd_disks_t nps = drbd_try_outdate_peer(mdev);
-			_drbd_request_state(mdev,NS(pdsk,nps),ChgStateVerbose);
+			drbd_request_state(mdev,NS(pdsk,nps));
 		}
 	}
 
@@ -2830,7 +2830,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		}
 		kfree(mdev->net_conf);
 		mdev->net_conf=NULL;
-		_drbd_request_state(mdev, NS(conn,StandAlone),ChgStateVerbose);
+		drbd_request_state(mdev, NS(conn,StandAlone));
 	}
 
 	/* they do trigger all the time.
