@@ -181,10 +181,9 @@ extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int );
 	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
 #define ERR_IF(exp) if (({				\
-	int _b = (exp) != 0;				\
-	if (_b)						\
-		ERR("%s: (" #exp ") in %s:%d\n",	\
-		__func__, __FILE__, __LINE__);		\
+	int _b = (exp)!=0;				\
+	if (_b) ERR("%s: (%s) in %s:%d\n",		\
+		__func__, #exp, __FILE__,__LINE__);	\
 	 _b;						\
 	}))
 
@@ -675,7 +674,7 @@ enum {
 
 /* global flag bits */
 enum {
-	ISSUE_BARRIER,		/* next Data is preceeded by a Barrier */
+	CREATE_BARRIER,		/* next Data is preceeded by a Barrier */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	SEND_PING,		/* whether asender should send a ping asap */
 	WRITE_ACK_PENDING,	/* so BarrierAck won't overtake WriteAck */
@@ -960,8 +959,7 @@ extern void drbd_free_resources(struct drbd_conf *mdev);
 extern void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct drbd_conf *mdev);
-extern struct drbd_barrier *_tl_add_barrier(struct drbd_conf *,
-			struct drbd_barrier *);
+extern void _tl_add_barrier(struct drbd_conf *, struct drbd_barrier *);
 extern void drbd_free_sock(struct drbd_conf *mdev);
 extern int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 			void *buf, size_t size, unsigned msg_flags);

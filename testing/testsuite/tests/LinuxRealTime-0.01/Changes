@@ -1,6 +1,0 @@
-Revision history for Perl extension LinuxRealTime.
-
-0.01  Sun Aug 14 19:54:56 2005
-	- original version; created by h2xs 1.23 with options
-		-A -X -n LinuxRealTime
-

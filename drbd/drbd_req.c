@@ -183,6 +183,24 @@ static void _req_is_done(struct drbd_conf *mdev,
 	}
 }
 
+static void queue_barrier(struct drbd_conf *mdev)
+{
+	struct drbd_barrier *b;
+
+	if (test_bit(CREATE_BARRIER, &mdev->flags))
+		return;
+
+	b = mdev->newest_barrier;
+	b->w.cb = w_send_barrier;
+	/* inc_ap_pending done here, so we won't
+	 * get imbalanced on connection loss.
+	 * dec_ap_pending will be done in got_BarrierAck
+	 * or (on connection loss) in tl_clear.  */
+	inc_ap_pending(mdev);
+	drbd_queue_work(&mdev->data.work, &b->w);
+	set_bit(CREATE_BARRIER, &mdev->flags);
+}
+
 static void _about_to_complete_local_write(struct drbd_conf *mdev,
 	struct drbd_request *req)
 {
@@ -195,7 +213,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 	/* before we can signal completion to the upper layers,
 	 * we may need to close the current epoch */
 	if (req->epoch == mdev->newest_barrier->br_number)
-		set_bit(ISSUE_BARRIER, &mdev->flags);
+		queue_barrier(mdev);
 
 	/* we need to do the conflict detection stuff,
 	 * if we have the ee_hash (two_primaries) and
@@ -593,16 +611,15 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 
 		/* see drbd_make_request_common,
 		 * just after it grabs the req_lock */
-		D_ASSERT(test_bit(ISSUE_BARRIER, &mdev->flags) == 0);
+		D_ASSERT(test_bit(CREATE_BARRIER, &mdev->flags) == 0);
 
 		req->epoch = mdev->newest_barrier->br_number;
 		list_add_tail(&req->tl_requests,
 				&mdev->newest_barrier->requests);
 
-		/* mark the current epoch as closed,
-		 * in case it outgrew the limit */
+		/* close the epoch, in case it outgrew the limit */
 		if (++mdev->newest_barrier->n_req >= mdev->net_conf->max_epoch_size)
-			set_bit(ISSUE_BARRIER, &mdev->flags);
+			queue_barrier(mdev);
 
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
@@ -892,11 +909,11 @@ drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && remote &&
 	    mdev->unused_spare_barrier == NULL &&
-	    test_bit(ISSUE_BARRIER, &mdev->flags)) {
+	    test_bit(CREATE_BARRIER, &mdev->flags)) {
 allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_barrier), GFP_NOIO);
 		if (!b) {
-			ERR("Failed to alloc barrier.");
+			ERR("Failed to alloc barrier.\n");
 			err = -ENOMEM;
 			goto fail_and_free_req;
 		}
@@ -925,7 +942,7 @@ allocate_barrier:
 	}
 	if (rw == WRITE && remote &&
 	    mdev->unused_spare_barrier == NULL &&
-	    test_bit(ISSUE_BARRIER, &mdev->flags)) {
+	    test_bit(CREATE_BARRIER, &mdev->flags)) {
 		/* someone closed the current epoch
 		 * while we were grabbing the spinlock */
 		spin_unlock_irq(&mdev->req_lock);
@@ -944,20 +961,13 @@ allocate_barrier:
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
 	if (remote && mdev->unused_spare_barrier &&
-	    test_and_clear_bit(ISSUE_BARRIER, &mdev->flags)) {
+            test_and_clear_bit(CREATE_BARRIER, &mdev->flags)) {
 		struct drbd_barrier *b = mdev->unused_spare_barrier;
-		b = _tl_add_barrier(mdev, b);
+		_tl_add_barrier(mdev, b);
 		mdev->unused_spare_barrier = NULL;
-		b->w.cb =  w_send_barrier;
-		/* inc_ap_pending done here, so we won't
-		 * get imbalanced on connection loss.
-		 * dec_ap_pending will be done in got_BarrierAck
-		 * or (on connection loss) in tl_clear.  */
-		inc_ap_pending(mdev);
-		drbd_queue_work(&mdev->data.work, &b->w);
 	} else {
 		D_ASSERT(!(remote && rw == WRITE &&
-			   test_bit(ISSUE_BARRIER, &mdev->flags)));
+			   test_bit(CREATE_BARRIER, &mdev->flags)));
 	}
 
 	/* NOTE
