@@ -86,8 +86,8 @@ MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
 MODULE_PARM_DESC(allow_oos, "DONT USE!");
 /* thanks to these macros, if compiled into the kernel (not-module),
  * this becomes the boot parameter drbd.minor_count */
-module_param(minor_count, int, 0);
-module_param(allow_oos, int, 0);
+module_param(minor_count, int,0444);
+module_param(allow_oos, bool,0);
 
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults;
@@ -187,11 +187,8 @@ void tl_cleanup(struct drbd_conf *mdev)
 
 /**
  * _tl_add_barrier: Adds a barrier to the TL.
- * It returns the previously newest barrier
- * (not the just created barrier) to the caller.
  */
-struct drbd_barrier *_tl_add_barrier(struct drbd_conf *mdev,
-	struct drbd_barrier *new)
+void _tl_add_barrier(struct drbd_conf *mdev, struct drbd_barrier *new)
 {
 	struct drbd_barrier *newest_before;
 
@@ -204,24 +201,23 @@ struct drbd_barrier *_tl_add_barrier(struct drbd_conf *mdev,
 	/* never send a barrier number == 0, because that is special-cased
 	 * when using TCQ for our write ordering code */
 	new->br_number = (newest_before->br_number+1) ?: 1;
-	mdev->newest_barrier->next = new;
-	mdev->newest_barrier = new;
-
-	return newest_before;
+	if (mdev->newest_barrier != new) {
+		mdev->newest_barrier->next = new;
+		mdev->newest_barrier = new;
+	}
 }
 
 /* when we receive a barrier ack */
 void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		       unsigned int set_size)
 {
-	struct drbd_barrier *b;
+	struct drbd_barrier *b, *nob; /* next old barrier */
 	struct list_head *le, *tle;
 	struct drbd_request *r;
 
 	spin_lock_irq(&mdev->req_lock);
 
 	b = mdev->oldest_barrier;
-	mdev->oldest_barrier = b->next;
 
 	/* in protocol C this list should be empty,
 	 * unless there is local io pending.
@@ -235,8 +231,6 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	/* There could be requests on the list waiting for completion
 	   of the write to the local disk, to avoid corruptions of
 	   slab's data structures we have to remove the lists head */
-
-	spin_unlock_irq(&mdev->req_lock);
 
 	D_ASSERT(b->br_number == barrier_nr);
 	D_ASSERT(b->n_req == set_size);
@@ -252,7 +246,20 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	}
 #endif
 
-	kfree(b);
+	nob = b->next;
+	if (test_and_clear_bit(CREATE_BARRIER, &mdev->flags)) {
+		_tl_add_barrier(mdev, b);
+		if (nob)
+			mdev->oldest_barrier = nob;
+		/* if nob == NULL b was the only barrier, and becomes the new
+		   barrer. Threfore mdev->oldest_barrier points already to b */
+	} else {
+		D_ASSERT(nob != NULL);
+		mdev->oldest_barrier = nob;
+		kfree(b);
+	}
+
+	spin_unlock_irq(&mdev->req_lock);
 }
 
 
