@@ -510,7 +510,7 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
 }
 
 STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
-			   void *buf, size_t size)
+			   void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
@@ -525,7 +525,7 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
 	iov.iov_base = buf;
 	msg.msg_name = NULL;
 	msg.msg_namelen = 0;
-	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
+	msg.msg_flags = flags ? flags : MSG_WAITALL | MSG_NOSIGNAL;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -694,13 +694,34 @@ STATIC Drbd_Packet_Cmd drbd_recv_fp(drbd_dev *mdev,struct socket *sock)
 	Drbd_Header *h = (Drbd_Header *) &mdev->data.sbuf.head;
 	int rr;
 
-	rr = drbd_recv_short(mdev, sock, h, sizeof(*h));
+	rr = drbd_recv_short(mdev, sock, h, sizeof(*h), 0);
 
-	if( rr==sizeof(*h) && h->magic==BE_DRBD_MAGIC ) {
+	if (rr == sizeof(*h) && h->magic == BE_DRBD_MAGIC)
 		return be16_to_cpu(h->command);
-	}
 
 	return 0xffff;
+}
+
+/**
+ * drbd_socket_okay:
+ * Tests if the connection behind the socket still exists. If not it frees
+ * the socket.
+ */
+STATIC int drbd_socket_okay(drbd_dev *mdev, struct socket **sock)
+{
+	int rr;
+	char tb[4];
+
+	rr = drbd_recv_short(mdev, *sock, tb, 4, MSG_DONTWAIT | MSG_PEEK);
+
+	INFO("drbd_socket_okay: rr = %d\n",rr);
+	if (rr > 0 || rr == -EAGAIN) {
+		return TRUE;
+	} else {
+		sock_release(*sock);
+		*sock = NULL;
+		return FALSE;
+	}
 }
 
 /*
@@ -713,8 +734,8 @@ STATIC Drbd_Packet_Cmd drbd_recv_fp(drbd_dev *mdev,struct socket *sock)
  */
 int drbd_connect(drbd_dev *mdev)
 {
-	struct socket *s, *sock,*msock;
-	int try,h;
+	struct socket *s, *sock, *msock;
+	int try, h, ok;
 
 	D_ASSERT(!mdev->data.socket);
 
@@ -738,28 +759,28 @@ int drbd_connect(drbd_dev *mdev)
 			schedule_timeout(HZ / 10);
 		}
 
-		if(s) {
-			if( !sock ) {
-				if( drbd_send_fp(mdev, s, HandShakeS) ) {
-					sock = s;
-					s = NULL;
-				}
-			} else if( !msock ) {
-				if( drbd_send_fp(mdev, s, HandShakeM) ) {
-					msock = s;
-					s = NULL;
-				}
+		if (s) {
+			if (!sock) {
+				drbd_send_fp(mdev, s, HandShakeS);
+				sock = s;
+				s = NULL;
+			} else if (!msock) {
+				drbd_send_fp(mdev, s, HandShakeM);
+				msock = s;
+				s = NULL;
 			} else {
 				ERR("Logic error in drbd_connect()\n");
 				return -1;
 			}
-			if(s) {
-				ERR("Error during sending initial packet.\n");
-				sock_release(s);
-			}
 		}
 
-		if(sock && msock) break;
+		if (sock && msock) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout(HZ / 10);
+			ok = drbd_socket_okay(mdev, &sock);
+			ok = drbd_socket_okay(mdev, &msock) && ok;
+			if (ok) break;
+		}
 
 		s=drbd_wait_for_connect(mdev);
 		if(s) {
@@ -790,10 +811,15 @@ int drbd_connect(drbd_dev *mdev)
 			}
 		}
 
-	} while( !sock || !msock );
+		if (sock && msock) {
+			ok = drbd_socket_okay(mdev, &sock);
+			ok = drbd_socket_okay(mdev, &msock) && ok;
+			if (ok) break;
+		}
+	} while (1);
 
-	msock->sk->sk_reuse=1; /* SO_REUSEADDR */
-	sock->sk->sk_reuse=1; /* SO_REUSEADDR */
+	msock->sk->sk_reuse = 1; /* SO_REUSEADDR */
+	sock->sk->sk_reuse = 1; /* SO_REUSEADDR */
 
 	sock->sk->sk_allocation = GFP_NOIO;
 	msock->sk->sk_allocation = GFP_NOIO;
@@ -3395,7 +3421,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		drbd_tcp_flush(mdev->meta.socket);
 
 		rv = drbd_recv_short(mdev, mdev->meta.socket,
-				     buf,expect-received);
+				     buf, expect-received, 0);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 		flush_signals(current);
