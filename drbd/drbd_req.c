@@ -186,6 +186,11 @@ static void queue_barrier(drbd_dev *mdev)
 {
 	struct drbd_barrier *b;
 
+	/* We are within the req_lock. Once we queued the barrier for sending,
+	 * we set the CREATE_BARRIER bit. It is cleared as soon as a new
+	 * barrier/epoch object is added. This is the only place this bit is
+	 * set. It indicates that the barrier for this epoch is already queued,
+	 * and no new epoch has been created yet. */
 	if (test_bit(CREATE_BARRIER, &mdev->flags))
 		return;
 
