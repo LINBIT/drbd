@@ -697,13 +697,18 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 
-	// In case we did not submit a single IO do not wait for
-	// them to complete. ( Because we would wait forever here. )
-	//
-	// In case we had IOs and they are already complete, there
-	// is not point in waiting anyways.
-	// Therefore this if() ...
-	if(atomic_read(&wc.count)) wait_for_completion(&wc.io_done);
+	/* In case we did not submit a single IO do not wait for
+	 * them to complete. ( Because we would wait forever here. )
+	 *
+	 * In case we had IOs and they are already complete, there
+	 * is not point in waiting anyways.
+	 * Therefore this if () ... */
+	if (atomic_read(&wc.count)) {
+		wait_for_completion(&wc.io_done);
+		/* flush bitmap to stable storage */
+		if (!test_bit(MD_NO_BARRIER,&mdev->flags))
+			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+	}
 
 	dec_local(mdev);
 
