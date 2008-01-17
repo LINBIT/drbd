@@ -22,6 +22,16 @@ else
   CMD="$1"
 fi
 
+## EXIT CODES
+# since this is a "legacy heartbeat R1 resource agent" script,
+# exit codes actually do not matter that much as long as we conform to
+#  http://wiki.linux-ha.org/HeartbeatResourceAgent
+# but it does not hurt to conform to lsb init-script exit codes,
+# where we can.
+#  http://refspecs.linux-foundation.org/LSB_3.1.0/
+#	LSB-Core-generic/LSB-Core-generic/iniscrptact.html
+####
+
 case "$CMD" in
     start)
 	# try several times, in case heartbeat deadtime
@@ -29,13 +39,33 @@ case "$CMD" in
 	try=6
 	while true; do
 		$DRBDADM primary $RES && break
-		let "--try" || exit 20
+		let "--try" || exit 1 # LSB generic error
 		sleep 1
 	done
 	;;
     stop)
-	# exec, so the exit code of drbdadm propagates
-	exec $DRBDADM secondary $RES
+	$DRBDADM secondary $RES
+	ex=$?
+	case $ex in
+	0)
+		exit 0
+		;;
+	11)
+		# see drbdadm_main.c adm_generic and m_system
+		# as well as drbdsetup.c:
+		# in fact a state change was attempted, but failed.
+		echo >&2 "$DRBDADM secondary $RES: exit code $ex, mapping to 1"
+		exit 1 # LSB generic error
+		;;
+	*)
+		# other error, may be syntax error in config file,
+		# anything else: to not confuse heartbeat further,
+		# and avoid reboot due so "failed stop recovery",
+		# pretend that we succeeded in stopping this.
+		echo >&2 "$DRBDADM secondary $RES: exit code $ex, mapping to 0"
+		exit 0
+		;;
+	esac
 	;;
     status)
 	if [ "$RES" = "all" ]; then
@@ -44,13 +74,20 @@ case "$CMD" in
 	fi
 	ST=$( $DRBDADM state $RES )
 	STATE=${ST%/*}
-	if [ "$STATE" = "Primary" ]; then
-	    echo "running"
-	elif [ "$STATE" = "Secondary" ]; then
-	    echo "stopped"
-	else
-	    echo "$ST"
-	fi
+	case $STATE in
+		Primary)
+			echo "running (Primary)"
+			exit 0 # LSB status "service is OK"
+			;;
+		Secondary|Unconfigured)
+			echo "stopped ($STATE)" ;;
+		"")
+			echo "stopped" ;;
+		*)
+			# unexpected. whatever...
+			echo "stopped ($ST)" ;;
+	esac
+	exit 3 # LSB status "service is not running"
 	;;
     *)
 	echo "Usage: drbddisk [resource] {start|stop|status}"

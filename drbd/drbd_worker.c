@@ -815,7 +815,7 @@ int _drbd_pause_after(struct drbd_conf *mdev)
 			continue;		
 		if (!_drbd_may_sync_now(odev))
 			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1),
-						ChgStateHard|ScheduleAfter)
+						ChgStateHard)
 				!= SS_NothingToDo ) ;
 	}
 
@@ -840,7 +840,7 @@ int _drbd_resume_next(struct drbd_conf *mdev)
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
 				rv |= (_drbd_set_state(_NS(odev, aftr_isp, 0),
-						ChgStateHard|ScheduleAfter)
+						ChgStateHard)
 					!= SS_NothingToDo) ;
 		}
 	}
@@ -886,7 +886,7 @@ void drbd_alter_sa(struct drbd_conf *mdev, int na)
  */
 void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 {
-	union drbd_state_t os, ns;
+	union drbd_state_t ns;
 	int r = 0;
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
@@ -912,7 +912,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	}
 
 	drbd_global_lock();
-	ns = os = mdev->state;
+	ns = mdev->state;
 
 	ns.aftr_isp = !_drbd_may_sync_now(mdev);
 
@@ -938,8 +938,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	drbd_global_unlock();
 
 	if (r == SS_Success) {
-		after_state_ch(mdev, os, ns, ChgStateVerbose);
-
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     conns_to_name(ns.conn),
 		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
@@ -1056,7 +1054,6 @@ int drbd_worker(struct Drbd_thread *thi)
 
 	D_ASSERT(mdev->state.disk == Diskless && mdev->state.conn == StandAlone);
 	drbd_mdev_cleanup(mdev);
-	module_put(THIS_MODULE);
 
 	INFO("worker terminated\n");
 

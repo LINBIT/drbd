@@ -308,7 +308,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	}
 
 	if (forced)
-		WARN("Forced to conisder local data as UpToDate!\n");
+		WARN("Forced to consider local data as UpToDate!\n");
 
 	fsync_bdev(mdev->this_bdev);
 
@@ -841,6 +841,7 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	if (retcode < SS_Success )
 		goto release_bdev2_fail;
 
+	drbd_thread_start(&mdev->worker);
 	drbd_md_set_sector_offsets(mdev, nbc);
 
 	retcode = drbd_md_read(mdev, nbc);
@@ -982,8 +983,6 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
-	if (rv == SS_Success)
-		after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	if (rv < SS_Success)
 		goto unlock_bm;
@@ -1218,6 +1217,9 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->cram_hmac_tfm = tfm;
 
 	retcode = drbd_request_state(mdev, NS(conn, Unconnected));
+
+	if (retcode >= SS_Success)
+		drbd_thread_start(&mdev->worker);
 
 	reply->ret_code = retcode;
 	return 0;
