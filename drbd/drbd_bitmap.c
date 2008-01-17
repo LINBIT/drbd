@@ -742,6 +742,9 @@ STATIC int bm_rw(struct Drbd_Conf *mdev, int rw)
 	if (rw == WRITE) {
 		/* swap back endianness */
 		bm_lel_to_cpu(b);
+		/* flush bitmap to stable storage */
+		if (!test_bit(MD_NO_BARRIER,&mdev->flags))
+			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
 		b->bm_set = bm_count_bits_swap_endian(b);

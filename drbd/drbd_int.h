@@ -701,6 +701,11 @@ enum {
 	WRITE_BM_AFTER_RESYNC,	// A kmalloc() during resync failed
 	NO_BARRIER_SUPP,        // underlying block device doesn't implement barriers
 	CONSIDER_RESYNC,
+
+	LL_DEV_NO_FLUSH,	/* blkdev_issue_flush does not work,
+				   so don't even try */
+	MD_NO_BARRIER,		/* meta data device does not support barriers,
+				   so don't even try */
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

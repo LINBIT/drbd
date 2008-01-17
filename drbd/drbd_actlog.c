@@ -47,7 +47,7 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 	init_completion(&md_io.event);
 	md_io.error = 0;
 
-	if (rw == WRITE && !test_bit(NO_BARRIER_SUPP,&mdev->flags))
+	if (rw == WRITE && !test_bit(MD_NO_BARRIER, &mdev->flags))
 	    rw |= (1<<BIO_RW_BARRIER);
 	rw |= (1 << BIO_RW_SYNC);
 
@@ -56,27 +56,27 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
 	ok = (bio_add_page(bio, page, size, 0) == size);
-	if(!ok) goto out;
+	if (!ok)
+		goto out;
 	bio->bi_private = &md_io;
 	bio->bi_end_io = drbd_md_io_complete;
 	bio->bi_rw = rw;
 
 	dump_internal_bio("Md", mdev, bio, 0);
 
-	if (FAULT_ACTIVE(mdev, (rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
+	if (FAULT_ACTIVE(mdev, (rw & WRITE)? DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD))
 		bio_endio(bio, -EIO);
-	} else {
+	else
 		submit_bio(rw, bio);
-	}
 	wait_for_completion(&md_io.event);
-	ok = test_bit(BIO_UPTODATE, &bio->bi_flags);
+	ok = bio_flagged(bio, BIO_UPTODATE);
 
 	/* check for unsupported barrier op */
-	if (unlikely(md_io.error == -EOPNOTSUPP && (rw & BIO_RW_BARRIER))) {
+	if (unlikely(md_io.error == -EOPNOTSUPP && bio_barrier(bio))) {
 		/* Try again with no barrier */
-		WARN("Barriers not supported - disabling");
-		set_bit(NO_BARRIER_SUPP,&mdev->flags);
-		rw &= ~BIO_RW_BARRIER;
+		WARN("Barriers not supported on meta data device - disabling");
+		set_bit(MD_NO_BARRIER,&mdev->flags);
+		rw &= ~(1 << BIO_RW_BARRIER);
 		bio_put(bio);
 		goto retry;
 	}

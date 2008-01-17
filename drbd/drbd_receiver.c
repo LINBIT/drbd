@@ -928,6 +928,20 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->req_lock);
 
+	/* BarrierAck may imply that the corresponding extent is dropped from
+	 * the activity log, which means it would not be resynced in case the
+	 * Primary crashes now.
+	 * Just waiting for write_completion is not enough,
+	 * better flush to make sure it is all on stable storage. */
+	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && inc_local(mdev)) {
+		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
+		dec_local(mdev);
+		if (rv == -EOPNOTSUPP) /* don't try again */
+			set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
+		if (rv)
+			ERR("local disk flush failed with status %d\n",rv);
+	}
+
 	/* FIXME CAUTION! receiver thread sending via msock.
 	 * to make sure this BarrierAck will not be received before the asender
 	 * had a chance to send all the write acks corresponding to this epoch,
