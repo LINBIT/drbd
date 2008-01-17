@@ -677,8 +677,10 @@ int bm_rw(struct drbd_conf *mdev, int rw)
 	if (rw == WRITE) {
 		/* swap back endianness */
 		bm_lel_to_cpu(b);
-	} else {
-		/* rw == READ */
+		/* flush bitmap to stable storage */
+		if (!test_bit(MD_NO_BARRIER,&mdev->flags))
+			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
 		b->bm_set = bm_count_bits_swap_endian(b);
 		INFO("recounting of set bits took additional %lu jiffies\n",

@@ -691,7 +691,7 @@ int drbd_connect(struct drbd_conf *mdev)
 
 	D_ASSERT(!mdev->data.socket);
 
-	if (_drbd_request_state(mdev, NS(conn, WFConnection),0) < SS_Success)
+	if (drbd_request_state(mdev, NS(conn, WFConnection)) < SS_Success )
 		return -2;
 
 	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
@@ -880,6 +880,20 @@ int receive_Barrier_no_tcq(struct drbd_conf *mdev, struct Drbd_Header *h)
 	epoch_size = mdev->epoch_size;
 	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->req_lock);
+
+	/* BarrierAck may imply that the corresponding extent is dropped from
+	 * the activity log, which means it would not be resynced in case the
+	 * Primary crashes now.
+	 * Just waiting for write_completion is not enough,
+	 * better flush to make sure it is all on stable storage. */
+	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && inc_local(mdev)) {
+		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
+		dec_local(mdev);
+		if (rv == -EOPNOTSUPP) /* don't try again */
+			set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
+		if (rv)
+			ERR("local disk flush failed with status %d\n",rv);
+	}
 
 	/* FIXME CAUTION! receiver thread sending via msock.
 	 * to make sure this BarrierAck will not be received before the asender
@@ -2514,7 +2528,7 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	struct Drbd_State_Packet *p = (struct Drbd_State_Packet *)h;
 	enum drbd_conns nconn, oconn;
-	union drbd_state_t os, ns, peer_state;
+	union drbd_state_t ns, peer_state;
 	int rv;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
@@ -2552,7 +2566,6 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (mdev->state.conn != oconn)
 		goto retry;
 	clear_bit(CONSIDER_RESYNC, &mdev->flags);
-	os = mdev->state;
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
 	ns.peer = peer_state.role;
@@ -2584,9 +2597,6 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 			drbd_send_state(mdev);
 		}
 	}
-
-	if (rv == SS_Success)
-		after_state_ch(mdev, os, ns, ChgStateVerbose | ChgStateHard);
 
 	mdev->net_conf->want_lose = 0;
 
@@ -2897,11 +2907,8 @@ void drbd_disconnect(struct drbd_conf *mdev)
 		ns = os;
 		ns.conn = Unconnected;
 		rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
-		ns = mdev->state;
 	}
 	spin_unlock_irq(&mdev->req_lock);
-	if (rv == SS_Success)
-		after_state_ch(mdev, os, ns, ChgStateVerbose);
 
 	if (os.conn == Disconnecting) {
 		wait_event( mdev->misc_wait, atomic_read(&mdev->net_cnt) == 0 );

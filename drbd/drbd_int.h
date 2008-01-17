@@ -720,6 +720,11 @@ enum {
 	WRITE_BM_AFTER_RESYNC,	/* A kmalloc() during resync failed */
 	NO_BARRIER_SUPP,	/* underlying block device doesn't implement barriers */
 	CONSIDER_RESYNC,
+
+	LL_DEV_NO_FLUSH,	/* blkdev_issue_flush does not work,
+				   so don't even try */
+	MD_NO_BARRIER,		/* meta data device does not support barriers,
+				   so don't even try */
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -975,7 +980,6 @@ static inline void drbd_put_data_sock(struct drbd_conf *mdev)
 enum chg_state_flags {
 	ChgStateHard	= 1,
 	ChgStateVerbose = 2,
-	ScheduleAfter	= 4,
 };
 
 extern void drbd_init_set_defaults(struct drbd_conf *mdev);
@@ -989,8 +993,6 @@ extern int _drbd_set_state(struct drbd_conf *, union drbd_state_t,
 			enum chg_state_flags );
 extern void print_st_err(struct drbd_conf *, union drbd_state_t,
 			union drbd_state_t, int );
-extern void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
-			union drbd_state_t ns, enum chg_state_flags);
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_thread_signal(struct Drbd_thread *thi);
@@ -1587,8 +1589,7 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 	case Detach:
 	case CallIOEHelper:
 		if (mdev->state.disk > Failed) {
-			_drbd_set_state(_NS(mdev, disk, Failed),
-					ChgStateHard|ScheduleAfter);
+			_drbd_set_state(_NS(mdev, disk, Failed), ChgStateHard);
 			ERR("Local IO failed. Detaching...\n");
 		}
 		break;
