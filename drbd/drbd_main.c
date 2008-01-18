@@ -1286,7 +1286,9 @@ cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev)
 			return cpumask_of_cpu(cpu);
 	}
 
-	return CPU_MASK_ALL; /* Never reached. */
+	/* some kernel versions "forget" to add the (cpumask_t) typecast
+	 * to that macro, which results in "parse error before '{'" ;-> */
+	return (cpumask_t) CPU_MASK_ALL; /* Never reached. */
 }
 
 void drbd_thread_set_cpu(struct Drbd_thread *thi, cpumask_t cpu_mask)
