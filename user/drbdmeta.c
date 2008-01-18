@@ -1130,6 +1130,7 @@ void printf_bm(struct format *cfg)
 	le_u64 cw; /* current word for rll encoding */
 	const unsigned int n = cfg->bm_bytes/sizeof(*bm);
 	unsigned int count = 0;
+	unsigned int bits_set = 0;
 	unsigned int n_buffer = 0;
 	unsigned int r; /* real offset */
 	unsigned int i; /* in-buffer offset */
@@ -1170,6 +1171,7 @@ void printf_bm(struct format *cfg)
 			if (count) {
 				printf(" %u times 0x"X64(016)";",
 				       count, le64_to_cpu(cw.le));
+				bits_set += count * generic_hweight64(cw.le);
 				count = 0;
 				continue;
 			}
@@ -1177,8 +1179,10 @@ void printf_bm(struct format *cfg)
 		ASSERT(i < n_buffer);
 		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
 		r++; i++;
+		bits_set += generic_hweight64(bm[i].le);
 	}
 	printf("\n}\n");
+	cfg->bits_set = bits_set;
 }
 
 int v07_style_md_open(struct format *cfg)
@@ -1527,8 +1531,8 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 			       cfg->md.device_uuid);
 		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
-		printf("# bits-set %u;\n", cfg->bits_set);
 		printf_bm(cfg);
+		printf("# bits-set %u;\n", cfg->bits_set);
 	}
 
 	/* MAYBE dump activity log?
