@@ -215,7 +215,8 @@ static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 
 	/* before we can signal completion to the upper layers,
 	 * we may need to close the current epoch */
-	if (req->epoch == mdev->newest_barrier->br_number)
+	if (mdev->state.conn >= Connected &&
+	    req->epoch == mdev->newest_barrier->br_number)
 		queue_barrier(mdev);
 
 	/* we need to do the conflict detection stuff,

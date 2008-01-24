@@ -277,6 +277,7 @@ void tl_clear(drbd_dev *mdev)
 	WARN("tl_clear()\n");
 
 	spin_lock_irq(&mdev->req_lock);
+
 	b = mdev->oldest_barrier;
 	while ( b ) {
 		struct list_head *le, *tle;
@@ -310,6 +311,10 @@ void tl_clear(drbd_dev *mdev)
 	}
 	D_ASSERT(mdev->newest_barrier == mdev->oldest_barrier);
 	D_ASSERT(mdev->newest_barrier->br_number == 4711);
+
+	/* ensure bit indicating barrier is required is clear */
+	clear_bit(CREATE_BARRIER, &mdev->flags);
+
 	spin_unlock_irq(&mdev->req_lock);
 }
 
