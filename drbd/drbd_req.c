@@ -611,14 +611,19 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		req->epoch = mdev->newest_barrier->br_number;
 		list_add_tail(&req->tl_requests,&mdev->newest_barrier->requests);
 
-		/* close the epoch, in case it outgrew the limit */
-		if( ++mdev->newest_barrier->n_req >= mdev->net_conf->max_epoch_size )
-			queue_barrier(mdev);
+		/* increment size of current epoch */
+		mdev->newest_barrier->n_req++;
 
+		/* queue work item to send data */
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb =  w_send_dblock;
 		drbd_queue_work(&mdev->data.work, &req->w);
+
+		/* close the epoch, in case it outgrew the limit */
+		if (mdev->newest_barrier->n_req >= mdev->net_conf->max_epoch_size)
+			queue_barrier(mdev);
+
 		break;
 
 	/* FIXME
