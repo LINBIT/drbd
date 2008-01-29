@@ -997,9 +997,11 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		dec_local(mdev);
 	}
 
-	/* Force meta data to be written to ensure we determine if barriers are supported */
+	/* Reset the "barriers don't work" bits here, then force meta data to
+	 * be written, to ensure we determine if barriers are supported. */
+	clear_bit(LL_DEV_NO_FLUSH,&mdev->flags);
+	clear_bit(MD_NO_BARRIER,&mdev->flags);
 	drbd_md_mark_dirty(mdev);
-
 	drbd_md_sync(mdev);
 
 	reply->ret_code = retcode;

@@ -669,6 +669,9 @@ int drbd_connect(struct drbd_conf *mdev)
 
 	D_ASSERT(!mdev->data.socket);
 
+	if (test_and_clear_bit(CREATE_BARRIER, &mdev->flags))
+		ERR("CREATE_BARRIER flag was set in drbd_connect - now cleared!\n");
+
 	if (drbd_request_state(mdev, NS(conn, WFConnection)) < SS_Success )
 		return -2;
 

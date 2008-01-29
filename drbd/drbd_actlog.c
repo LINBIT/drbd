@@ -74,7 +74,7 @@ int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	/* check for unsupported barrier op */
 	if (unlikely(md_io.error == -EOPNOTSUPP && bio_barrier(bio))) {
 		/* Try again with no barrier */
-		WARN("Barriers not supported on meta data device - disabling");
+		WARN("Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_BARRIER,&mdev->flags);
 		rw &= ~(1 << BIO_RW_BARRIER);
 		bio_put(bio);
@@ -712,7 +712,12 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 	 * In case we had IOs and they are already complete, there
 	 * is not point in waiting anyways.
 	 * Therefore this if () ... */
-	if (atomic_read(&wc.count)) wait_for_completion(&wc.io_done);
+	if (atomic_read(&wc.count)) {
+		wait_for_completion(&wc.io_done);
+		/* flush bitmap to stable storage */
+		if (!test_bit(MD_NO_BARRIER, &mdev->flags))
+			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+	}
 
 	dec_local(mdev);
 
