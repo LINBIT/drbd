@@ -11,7 +11,7 @@ struct mutex {
 
 static inline void mutex_init(struct mutex *m)
 {
-	sema_init(&m->sem, 0);
+	sema_init(&m->sem, 1);
 }
 
 static inline void mutex_lock(struct mutex *m)
