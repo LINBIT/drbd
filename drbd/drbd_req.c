@@ -758,7 +758,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
  */
 STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 {
-	unsigned long sbnr,ebnr,bnr;
+	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
 
 	if (mdev->state.disk == UpToDate) return 1;

@@ -1409,7 +1409,7 @@ int drbd_rs_del_all(drbd_dev* mdev)
 void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
-	unsigned long sbnr,ebnr,lbnr,bnr;
+	unsigned long sbnr, ebnr, lbnr;
 	unsigned long count;
 	sector_t esector, nr_sectors;
 	int wake_up=0;

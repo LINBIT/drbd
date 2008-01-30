@@ -994,7 +994,7 @@ int drbd_bm_count_bits(drbd_dev *mdev, const unsigned long s, const unsigned lon
 		ERR_IF (bitnr >= b->bm_bits) {
 			ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
 		} else {
-			c += (0 != __test_bit(bitnr, b->bm));
+			c += (0 != test_bit(bitnr, b->bm));
 		}
 	}
 	spin_unlock_irqrestore(&b->bm_lock,flags);
