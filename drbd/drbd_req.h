@@ -221,7 +221,7 @@ static inline struct hlist_head* tl_hash_slot(drbd_dev *mdev, sector_t sector)
 		((unsigned int)(sector>>HT_SHIFT) % mdev->tl_hash_s);
 }
 
-/* when we receive the answer for a read request,
+/* when we receive the ACK for a write request,
  * verify that we actually know about it */
 static inline drbd_request_t* _ack_id_to_req(drbd_dev *mdev,u64 id, sector_t sector)
 {

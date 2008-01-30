@@ -3260,6 +3260,7 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 
 		drbd_rs_failed_io(mdev, sector, size);
 	} else {
+		spin_lock_irq(&mdev->req_lock);
 		req = _ack_id_to_req(mdev, p->block_id, sector);
 
 		if (unlikely(!req)) {
@@ -3268,7 +3269,8 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 			return FALSE;
 		}
 
-		req_mod(req, neg_acked, 0);
+		_req_mod(req, neg_acked, 0);
+		spin_unlock_irq(&mdev->req_lock);
 	}
 
 	return TRUE;
