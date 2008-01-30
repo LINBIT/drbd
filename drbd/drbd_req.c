@@ -774,10 +774,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	for (bnr = sbnr; bnr <= ebnr; bnr++) {
-		if (drbd_bm_test_bit(mdev,bnr)) return 0;
-	}
-	return 1;
+	return (0 == drbd_bm_count_bits(mdev,sbnr,ebnr));
 }
 
 /*
