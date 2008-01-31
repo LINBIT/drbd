@@ -1442,10 +1442,15 @@ int drbd_send_state(drbd_dev *mdev)
 {
 	int ok;
 
+	/* Grab state lock so we wont send state if we're in the middle
+	 * of a cluster wide state change on another thread */
+	drbd_state_lock(mdev);
+
 	down(&mdev->data.mutex);
 	ok = _drbd_send_state(mdev);
 	up(&mdev->data.mutex);
 
+	drbd_state_unlock(mdev);
 	return ok;
 }
 
