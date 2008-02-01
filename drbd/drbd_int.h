@@ -292,7 +292,8 @@ typedef enum {
 	AuthResponse,
 	StateChgRequest,
 
-	Ping,         // These are sent on the meta socket...
+	FIRST_ASENDER_CMD,
+	Ping = FIRST_ASENDER_CMD,
 	PingAck,
 	RecvAck,      // Used in protocol B
 	WriteAck,     // Used in protocol C
@@ -303,6 +304,7 @@ typedef enum {
 	NegRSDReply,  // Local disk is broken...
 	BarrierAck,
 	StateChgReply,
+	LAST_ASENDER_CMD = StateChgReply,
 
 	MAX_CMD,
 	MayIgnore = 0x100, // Flag only to test if (cmd > MayIgnore) ...

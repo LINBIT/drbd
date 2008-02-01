@@ -3375,18 +3375,9 @@ struct asender_cmd {
 	int (*process)(drbd_dev *mdev, Drbd_Header* h);
 };
 
-int drbd_asender(struct Drbd_thread *thi)
+
+static struct asender_cmd* get_asender_cmd(int cmd)
 {
-	drbd_dev *mdev = thi->mdev;
-	Drbd_Header *h = &mdev->meta.rbuf.head;
-
-	int rv,len;
-	void *buf    = h;
-	int received = 0;
-	int expect   = sizeof(Drbd_Header);
-	int cmd      = -1;
-	int empty;
-
 	static struct asender_cmd asender_tbl[] = {
 		[Ping]      ={ sizeof(Drbd_Header),           got_Ping },
 		[PingAck]   ={ sizeof(Drbd_Header),           got_PingAck },
@@ -3399,7 +3390,26 @@ int drbd_asender(struct Drbd_thread *thi)
 		[NegRSDReply]={sizeof(Drbd_BlockAck_Packet),  got_NegRSDReply},
 		[BarrierAck]={ sizeof(Drbd_BarrierAck_Packet),got_BarrierAck },
 		[StateChgReply]={sizeof(Drbd_RqS_Reply_Packet),got_RqSReply },
+		[MAX_CMD] = { 0, NULL },
 	};
+	if (cmd < FIRST_ASENDER_CMD)
+		return NULL;
+	if (cmd > LAST_ASENDER_CMD)
+		return NULL;
+	return &asender_tbl[cmd];
+}
+
+int drbd_asender(struct Drbd_thread *thi)
+{
+	drbd_dev *mdev = thi->mdev;
+	Drbd_Header *h = &mdev->meta.rbuf.head;
+	struct asender_cmd *cmd = NULL;
+
+	int rv,len;
+	void *buf    = h;
+	int received = 0;
+	int expect   = sizeof(Drbd_Header);
+	int empty;
 
 	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));
 
@@ -3468,37 +3478,55 @@ int drbd_asender(struct Drbd_thread *thi)
 			goto err;
 		}
 
-		if (received == expect && cmd == -1 ) {
-			cmd = be16_to_cpu(h->command);
-			len = be16_to_cpu(h->length);
+		if (received == expect && cmd == NULL ) {
 			if (unlikely( h->magic != BE_DRBD_MAGIC )) {
 				ERR("magic?? on meta m: 0x%lx c: %d l: %d\n",
 				    (long)be32_to_cpu(h->magic),
 				    h->command, h->length);
+				cmd = (void*) -1UL; /* so it will reconnect */
 				goto err;
 			}
-			expect = asender_tbl[cmd].pkt_size;
+			cmd = get_asender_cmd(be16_to_cpu(h->command));
+			len = be16_to_cpu(h->length);
+			if (unlikely(cmd == NULL)) {
+				ERR("unknown command?? on meta m: 0x%lx c: %d l: %d\n",
+				    (long)be32_to_cpu(h->magic),
+				    h->command, h->length);
+				goto err;
+			}
+			expect = cmd->pkt_size;
 			ERR_IF(len != expect-sizeof(Drbd_Header)) {
 				dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
 				DUMPI(expect);
+				goto err;
 			}
 		}
-		if(received == expect) {
-			D_ASSERT(cmd != -1);
+		if (received == expect) {
+			D_ASSERT(cmd != NULL);
 			dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
-			if(!asender_tbl[cmd].process(mdev,h)) goto err;
+			if (!cmd->process(mdev,h)) goto err;
 
 			buf      = h;
 			received = 0;
 			expect   = sizeof(Drbd_Header);
-			cmd      = -1;
+			cmd      = NULL;
 		}
 	} //while
 
 	if(0) {
 	err:
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
-		drbd_force_state(mdev,NS(conn,NetworkFailure));
+		/* If cmd is set, we had an unexpected magic or header length,
+		 * or a problem processing the command.
+		 * We try to reconnect, and see if that helps.
+		 *
+		 * If the magic was ok, but the cmd is unknown,
+		 * the wire protocols seem to be not compatible after all,
+		 * even though the handshake worked out ok.
+		 * Which means either we screwed up,
+		 * or someone does something nasty on purpose.
+		 * In that case reconnecting won't help. */
+		drbd_force_state(mdev,NS(conn, cmd ? NetworkFailure : Disconnecting));
 	}
 
 	D_ASSERT(mdev->state.conn < Connected);
