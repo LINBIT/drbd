@@ -2652,16 +2652,11 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[Data]             = receive_Data,
 	[DataReply]        = receive_DataReply,
 	[RSDataReply]      = receive_RSDataReply,
-	[RecvAck]          = NULL, // via msock: got_RecvAck,
-	[WriteAck]         = NULL, // via msock: got_WriteAck,
 	[Barrier]          = receive_Barrier_no_tcq,
-	[BarrierAck]       = NULL, // via msock: got_BarrierAck,
 	[ReportBitMap]     = receive_bitmap,
-	[Ping]             = NULL, // via msock: got_Ping,
-	[PingAck]          = NULL, // via msock: got_PingAck,
 	[UnplugRemote]     = receive_UnplugRemote,
 	[DataRequest]      = receive_DataRequest,
-	[RSDataRequest]    = receive_DataRequest, //receive_RSDataRequest,
+	[RSDataRequest]    = receive_DataRequest,
 	[SyncParam]        = receive_SyncParam,
 	[ReportProtocol]   = receive_protocol,
 	[ReportUUIDs]      = receive_uuids,
@@ -2669,6 +2664,9 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportState]      = receive_state,
 	[StateChgRequest]  = receive_req_state,
 	[ReportSyncUUID]   = receive_sync_uuid,
+	/* anything missing from this table is in
+	 * the asender_tbl, see get_asender_cmd */
+	[MAX_CMD]	   = NULL,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
@@ -3379,6 +3377,9 @@ struct asender_cmd {
 static struct asender_cmd* get_asender_cmd(int cmd)
 {
 	static struct asender_cmd asender_tbl[] = {
+		/* anything missing from this table is in
+		 * the drbd_cmd_handler (drbd_default_handler) table,
+		 * see the beginning of drbdd() */
 		[Ping]      ={ sizeof(Drbd_Header),           got_Ping },
 		[PingAck]   ={ sizeof(Drbd_Header),           got_PingAck },
 		[RecvAck]   ={ sizeof(Drbd_BlockAck_Packet),  got_BlockAck },
@@ -3526,6 +3527,9 @@ int drbd_asender(struct Drbd_thread *thi)
 		 * Which means either we screwed up,
 		 * or someone does something nasty on purpose.
 		 * In that case reconnecting won't help. */
+
+		/* FIXME some of these are not NetworkFailure,
+		 * but should rather be ProtocolError */
 		drbd_force_state(mdev,NS(conn, cmd ? NetworkFailure : Disconnecting));
 	}
 
