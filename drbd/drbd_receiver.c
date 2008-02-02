@@ -45,6 +45,7 @@
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 #include <linux/random.h>
+#include <linux/scatterlist.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
 #include "drbd_req.h"
