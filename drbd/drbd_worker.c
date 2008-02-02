@@ -771,8 +771,6 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	void *digest;
 	int ok=1;
 
-	drbd_rs_complete_io(mdev,e->sector);
-
 	if(unlikely(cancel)) {
 		drbd_free_ee(mdev,e);
 		dec_unacked(mdev);

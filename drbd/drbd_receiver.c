@@ -3434,6 +3434,7 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 		drbd_ov_oos_found(mdev,sector,size);
 	} else ov_oos_print(mdev);
 
+	drbd_rs_complete_io(mdev, sector);
 	dec_rs_pending(mdev);
 
 	if( --mdev->ov_left == 0 ) {
