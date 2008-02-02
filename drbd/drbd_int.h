@@ -289,8 +289,8 @@ enum Drbd_Packet_Cmd {
 	AuthResponse,
 	StateChgRequest,
 
-	/* These are sent on the meta socket... */
-	Ping,
+	FIRST_ASENDER_CMD,
+	Ping = FIRST_ASENDER_CMD,
 	PingAck,
 	RecvAck,      /* Used in protocol B */
 	WriteAck,     /* Used in protocol C */
@@ -301,6 +301,7 @@ enum Drbd_Packet_Cmd {
 	NegRSDReply,  /* Local disk is broken... */
 	BarrierAck,
 	StateChgReply,
+	LAST_ASENDER_CMD = StateChgReply,
 
 	OVRequest,
 	OVReply,
@@ -1012,9 +1013,11 @@ extern void drbd_free_sock(struct drbd_conf *mdev);
 extern int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 			void *buf, size_t size, unsigned msg_flags);
 extern int drbd_send_protocol(struct drbd_conf *mdev);
+extern int _drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val);
 extern int drbd_send_sizes(struct drbd_conf *mdev);
+extern int _drbd_send_state(struct drbd_conf *mdev);
 extern int drbd_send_state(struct drbd_conf *mdev);
 extern int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
 			enum Drbd_Packet_Cmd cmd, struct Drbd_Header *h,
@@ -1241,6 +1244,7 @@ extern void drbd_bm_unlock(struct drbd_conf *mdev);
 extern void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line);
 #define drbd_bm_recount_bits(mdev) \
 	_drbd_bm_recount_bits(mdev, __FILE__, __LINE__ )
+extern int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e);
 /* drbd_main.c */
 
 /* needs to be included here,
@@ -1379,7 +1383,7 @@ extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_conf *,
 		struct drbd_backing_dev *);
-enum determin_dev_size_enum { unchanged = 0, shrunk = 1, grew = 2 };
+enum determin_dev_size_enum { dev_size_error = -1, unchanged = 0, shrunk = 1, grew = 2 };
 extern enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *);
 extern void resync_after_online_grow(struct drbd_conf *);
 extern void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int);

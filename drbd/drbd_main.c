@@ -1437,11 +1437,13 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	return rv;
 }
 
-int drbd_send_uuids(struct drbd_conf *mdev)
+/* Hold sock mutex before calling this */
+int _drbd_send_uuids(struct drbd_conf *mdev)
 {
 	struct Drbd_GenCnt_Packet p;
-	int i;
+	int i, ok = 0;
 	u64 uuid_flags = 0;
+	struct socket *sock = mdev->data.socket;
 
 	if (!inc_local_if_state(mdev, Negotiating)) return 1; /* ok. */
 
@@ -1457,8 +1459,21 @@ int drbd_send_uuids(struct drbd_conf *mdev)
 
 	dec_local(mdev);
 
-	return drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportUUIDs,
-			     (struct Drbd_Header *)&p, sizeof(p));
+	if (likely(sock != NULL))
+		ok = _drbd_send_cmd(mdev, sock, ReportUUIDs,
+				   (struct Drbd_Header*)&p, sizeof(p), 0);
+
+	return ok;
+}
+
+int drbd_send_uuids(struct drbd_conf *mdev)
+{
+	int ok;
+	down(&mdev->data.mutex);
+	ok = _drbd_send_uuids(mdev);
+	up(&mdev->data.mutex);
+
+	return ok;
 }
 
 int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val)
@@ -1502,6 +1517,22 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 	return ok;
 }
 
+/* Hold socket mutex before calling this */
+int _drbd_send_state(struct drbd_conf *mdev)
+{
+	struct socket *sock = mdev->data.socket;
+	struct Drbd_State_Packet p;
+	int ok = 0;
+
+	p.state    = cpu_to_be32(mdev->state.i);
+
+	if (likely(sock != NULL))
+		ok = _drbd_send_cmd(mdev, sock, ReportState,
+				   (struct Drbd_Header*)&p, sizeof(p), 0);
+
+	return ok;
+}
+
 /**
  * drbd_send_state:
  * Informs the peer about our state. Only call it when
@@ -1511,22 +1542,17 @@ int drbd_send_sizes(struct drbd_conf *mdev)
  */
 int drbd_send_state(struct drbd_conf *mdev)
 {
-	struct socket *sock;
-	struct Drbd_State_Packet p;
-	int ok = 0;
+	int ok;
+
+	/* Grab state lock so we wont send state if we're in the middle
+	 * of a cluster wide state change on another thread */
+	drbd_state_lock(mdev);
 
 	down(&mdev->data.mutex);
-
-	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
-	sock = mdev->data.socket;
-
-	if (likely(sock != NULL)) {
-		ok = _drbd_send_cmd(mdev, sock, ReportState,
-				    (struct Drbd_Header*)&p, sizeof(p), 0);
-	}
-
+	ok = _drbd_send_state(mdev);
 	up(&mdev->data.mutex);
 
+	drbd_state_unlock(mdev);
 	return ok;
 }
 

@@ -891,6 +891,7 @@ void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				     ext->rs_failed, count);
 				dump_stack();
 				/* FIXME brrrgs. should never happen! */
+				lc_put(mdev->resync, &ext->lce);
 				drbd_force_state(mdev, NS(conn, Disconnecting));
 				return;
 			}
@@ -1453,8 +1454,8 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
-	unsigned long sbnr, ebnr, lbnr, bnr;
-	unsigned long count = 0;
+	unsigned long sbnr, ebnr, lbnr;
+	unsigned long count;
 	sector_t esector, nr_sectors;
 	int wake_up = 0;
 
@@ -1495,9 +1496,7 @@ void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
 	spin_lock_irq(&mdev->al_lock);
-	for (bnr = sbnr; bnr <= ebnr; bnr++) {
-		if (drbd_bm_test_bit(mdev, bnr) > 0) count++;
-	}
+	count = drbd_bm_count_bits(mdev, sbnr, ebnr);
 	if (count) {
 		mdev->rs_failed += count;
 
