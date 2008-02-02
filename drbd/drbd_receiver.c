@@ -459,7 +459,7 @@ out:
 }
 
 int drbd_recv_short(struct drbd_conf *mdev, struct socket *sock,
-			   void *buf, size_t size)
+		    void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
@@ -474,7 +474,7 @@ int drbd_recv_short(struct drbd_conf *mdev, struct socket *sock,
 	iov.iov_base = buf;
 	msg.msg_name = NULL;
 	msg.msg_namelen = 0;
-	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
+	msg.msg_flags = flags ? flags : MSG_WAITALL | MSG_NOSIGNAL;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -646,12 +646,34 @@ enum Drbd_Packet_Cmd drbd_recv_fp(struct drbd_conf *mdev, struct socket *sock)
 	struct Drbd_Header *h = (struct Drbd_Header *) &mdev->data.sbuf.head;
 	int rr;
 
-	rr = drbd_recv_short(mdev, sock, h, sizeof(*h));
+	rr = drbd_recv_short(mdev, sock, h, sizeof(*h), 0);
 
 	if (rr == sizeof(*h) && h->magic == BE_DRBD_MAGIC)
 		return be16_to_cpu(h->command);
 
 	return 0xffff;
+}
+
+/**
+ * drbd_socket_okay:
+ * Tests if the connection behind the socket still exists. If not it frees
+ * the socket.
+ */
+STATIC int drbd_socket_okay(drbd_dev *mdev, struct socket **sock)
+{
+	int rr;
+	char tb[4];
+
+	rr = drbd_recv_short(mdev, *sock, tb, 4, MSG_DONTWAIT | MSG_PEEK);
+
+	INFO("drbd_socket_okay: rr = %d\n",rr);
+	if (rr > 0 || rr == -EAGAIN) {
+		return TRUE;
+	} else {
+		sock_release(*sock);
+		*sock = NULL;
+		return FALSE;
+	}
 }
 
 /*
@@ -665,7 +687,7 @@ enum Drbd_Packet_Cmd drbd_recv_fp(struct drbd_conf *mdev, struct socket *sock)
 int drbd_connect(struct drbd_conf *mdev)
 {
 	struct socket *s, *sock, *msock;
-	int try, h;
+	int try, h, ok;
 
 	D_ASSERT(!mdev->data.socket);
 
@@ -693,27 +715,26 @@ int drbd_connect(struct drbd_conf *mdev)
 
 		if (s) {
 			if (!sock) {
-				if ( drbd_send_fp(mdev, s, HandShakeS) ) {
-					sock = s;
-					s = NULL;
-				}
+				drbd_send_fp(mdev, s, HandShakeS);
+				sock = s;
+				s = NULL;
 			} else if (!msock) {
-				if ( drbd_send_fp(mdev, s, HandShakeM) ) {
-					msock = s;
-					s = NULL;
-				}
+				drbd_send_fp(mdev, s, HandShakeM);
+				msock = s;
+				s = NULL;
 			} else {
 				ERR("Logic error in drbd_connect()\n");
 				return -1;
 			}
-			if (s) {
-				ERR("Error during sending initial packet.\n");
-				sock_release(s);
-			}
 		}
 
-		if (sock && msock)
-			break;
+		if (sock && msock) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout(HZ / 10);
+			ok = drbd_socket_okay(mdev, &sock);
+			ok = drbd_socket_okay(mdev, &msock) && ok;
+			if (ok) break;
+		}
 
 		s = drbd_wait_for_connect(mdev);
 		if (s) {
@@ -749,7 +770,12 @@ int drbd_connect(struct drbd_conf *mdev)
 			}
 		}
 
-	} while ( !sock || !msock );
+		if (sock && msock) {
+			ok = drbd_socket_okay(mdev, &sock);
+			ok = drbd_socket_okay(mdev, &msock) && ok;
+			if (ok) break;
+		}
+	} while (1);
 
 	msock->sk->sk_reuse = 1; /* SO_REUSEADDR */
 	sock->sk->sk_reuse = 1; /* SO_REUSEADDR */
@@ -2165,7 +2191,6 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	sector_t p_size, p_usize, my_usize;
 	int ldsc = 0; /* local disk size changed */
 	enum drbd_conns nconn;
-	int dd;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
@@ -2219,11 +2244,12 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	mdev->p_size=p_size;
 	if (inc_local(mdev)) {
+		enum determin_dev_size_enum dd;
 		drbd_bm_lock(mdev);
 		dd = drbd_determin_dev_size(mdev);
 		drbd_bm_unlock(mdev);
 		dec_local(mdev);
-		if (dd < 0) return FALSE;
+		if (dd == dev_size_error) return FALSE;
 		if (dd == grew && mdev->state.conn == Connected &&
 		    mdev->state.pdsk >= Inconsistent &&
 		    mdev->state.disk >= Inconsistent) {
@@ -2363,9 +2389,14 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	union drbd_state_t ns, peer_state;
 	int rv;
 
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
+	/**
+	 * Ensure no other thread sends state whilst we are running
+	 **/
+	down(&mdev->data.mutex);
+
+	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) goto fail;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
-		return FALSE;
+		goto fail;
 
 	peer_state.i = be32_to_cpu(p->state);
 
@@ -2391,7 +2422,7 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
 
 		dec_local(mdev);
-		if(nconn == conn_mask) return FALSE;
+		if(nconn == conn_mask) goto fail;
 	}
 
 	spin_lock_irq(&mdev->req_lock);
@@ -2415,18 +2446,18 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	if (rv < SS_Success) {
 		drbd_force_state(mdev, NS(conn, Disconnecting));
-		return FALSE;
+		goto fail;
 	}
 
 	if (oconn > WFReportParams) {
 		if (nconn > Connected && peer_state.conn <= Connected) {
 			/* we want resync, peer has not yet decided to sync */
-			drbd_send_uuids(mdev);
-			drbd_send_state(mdev);
+			_drbd_send_uuids(mdev);
+			_drbd_send_state(mdev);
 		} else if (nconn == Connected &&
 					peer_state.disk == Negotiating) {
 			/* peer is waiting for us to respond... */
-			drbd_send_state(mdev);
+			_drbd_send_state(mdev);
 		}
 	}
 
@@ -2435,7 +2466,11 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	/* FIXME assertion for (gencounts do not diverge) */
 	drbd_md_sync(mdev); /* update connected indicator, la_size, ... */
 
+	up(&mdev->data.mutex);
 	return TRUE;
+ fail:
+	up(&mdev->data.mutex);
+	return FALSE;
 }
 
 int receive_sync_uuid(struct drbd_conf *mdev, struct Drbd_Header *h)
@@ -2551,16 +2586,11 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[Data]		   = receive_Data,
 	[DataReply]	   = receive_DataReply,
 	[RSDataReply]	   = receive_RSDataReply,
-	[RecvAck]	   = NULL, /* via msock: got_RecvAck, */
-	[WriteAck]	   = NULL, /* via msock: got_WriteAck, */
 	[Barrier]	   = receive_Barrier_no_tcq,
-	[BarrierAck]	   = NULL, /* via msock: got_BarrierAck, */
 	[ReportBitMap]	   = receive_bitmap,
-	[Ping]		   = NULL, /* via msock: got_Ping, */
-	[PingAck]	   = NULL, /* via msock: got_PingAck, */
 	[UnplugRemote]	   = receive_UnplugRemote,
 	[DataRequest]	   = receive_DataRequest,
-	[RSDataRequest]    = receive_DataRequest, /* receive_RSDataRequest, */
+	[RSDataRequest]    = receive_DataRequest,
 	[SyncParam]	   = receive_SyncParam,
 	[ReportProtocol]   = receive_protocol,
 	[ReportUUIDs]	   = receive_uuids,
@@ -2568,6 +2598,9 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportState]	   = receive_state,
 	[StateChgRequest]  = receive_req_state,
 	[ReportSyncUUID]   = receive_sync_uuid,
+	/* anything missing from this table is in
+	 * the asender_tbl, see get_asender_cmd */
+	[MAX_CMD]	   = NULL,
 };
 
 static drbd_cmd_handler_f *drbd_cmd_handler = drbd_default_handler;
@@ -3176,6 +3209,7 @@ int got_NegAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 		drbd_rs_failed_io(mdev, sector, size);
 	} else {
+		spin_lock_irq(&mdev->req_lock);
 		req = _ack_id_to_req(mdev, p->block_id, sector);
 
 		if (unlikely(!req)) {
@@ -3184,7 +3218,8 @@ int got_NegAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 			return FALSE;
 		}
 
-		req_mod(req, neg_acked, 0);
+		_req_mod(req, neg_acked, 0);
+		spin_unlock_irq(&mdev->req_lock);
 	}
 
 	return TRUE;
@@ -3254,19 +3289,12 @@ struct asender_cmd {
 	int (*process)(struct drbd_conf *mdev, struct Drbd_Header *h);
 };
 
-int drbd_asender(struct Drbd_thread *thi)
+static struct asender_cmd* get_asender_cmd(int cmd)
 {
-	struct drbd_conf *mdev = thi->mdev;
-	struct Drbd_Header *h = &mdev->meta.rbuf.head;
-
-	int rv, len;
-	void *buf    = h;
-	int received = 0;
-	int expect   = sizeof(struct Drbd_Header);
-	int cmd      = -1;
-	int empty;
-
 	static struct asender_cmd asender_tbl[] = {
+		/* anything missing from this table is in
+		 * the drbd_cmd_handler (drbd_default_handler) table,
+		 * see the beginning of drbdd() */
 	[Ping]		= { sizeof(struct Drbd_Header), got_Ping },
 	[PingAck]	= { sizeof(struct Drbd_Header),	got_PingAck },
 	[RecvAck]	= { sizeof(struct Drbd_BlockAck_Packet), got_BlockAck },
@@ -3283,6 +3311,24 @@ int drbd_asender(struct Drbd_thread *thi)
 	[StateChgReply] =
 		{ sizeof(struct Drbd_RqS_Reply_Packet), got_RqSReply },
 	};
+	if (cmd < FIRST_ASENDER_CMD)
+		return NULL;
+	if (cmd > LAST_ASENDER_CMD)
+		return NULL;
+	return &asender_tbl[cmd];
+}
+
+int drbd_asender(struct Drbd_thread *thi)
+{
+	drbd_dev *mdev = thi->mdev;
+	Drbd_Header *h = &mdev->meta.rbuf.head;
+	struct asender_cmd *cmd = NULL;
+
+	int rv,len;
+	void *buf    = h;
+	int received = 0;
+	int expect   = sizeof(Drbd_Header);
+	int empty;
 
 	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));
 
@@ -3313,7 +3359,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		drbd_tcp_flush(mdev->meta.socket);
 
 		rv = drbd_recv_short(mdev, mdev->meta.socket,
-				     buf, expect-received);
+				     buf, expect-received, 0);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 		flush_signals(current);
@@ -3351,39 +3397,58 @@ int drbd_asender(struct Drbd_thread *thi)
 			goto err;
 		}
 
-		if (received == expect && cmd == -1) {
-			cmd = be16_to_cpu(h->command);
-			len = be16_to_cpu(h->length);
+		if (received == expect && cmd == NULL ) {
 			if (unlikely( h->magic != BE_DRBD_MAGIC )) {
 				ERR("magic?? on meta m: 0x%lx c: %d l: %d\n",
 				    (long)be32_to_cpu(h->magic),
 				    h->command, h->length);
+				cmd = (void*) -1UL; /* so it will reconnect */
 				goto err;
 			}
-			expect = asender_tbl[cmd].pkt_size;
-			ERR_IF(len != expect-sizeof(struct Drbd_Header)) {
-				dump_packet(mdev, mdev->meta.socket, 1,
-					(void *)h, __FILE__, __LINE__);
+			cmd = get_asender_cmd(be16_to_cpu(h->command));
+			len = be16_to_cpu(h->length);
+			if (unlikely(cmd == NULL)) {
+				ERR("unknown command?? on meta m: 0x%lx c: %d l: %d\n",
+				    (long)be32_to_cpu(h->magic),
+				    h->command, h->length);
+				goto err;
+			}
+			expect = cmd->pkt_size;
+			ERR_IF(len != expect-sizeof(Drbd_Header)) {
+				dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
 				DUMPI(expect);
+				goto err;
 			}
 		}
 		if (received == expect) {
-			D_ASSERT(cmd != -1);
-			dump_packet(mdev, mdev->meta.socket, 1, (void *)h,
-					__FILE__, __LINE__);
-			if (!asender_tbl[cmd].process(mdev, h)) goto err;
+			D_ASSERT(cmd != NULL);
+			dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
+			if (!cmd->process(mdev,h)) goto err;
 
 			buf	 = h;
 			received = 0;
 			expect	 = sizeof(struct Drbd_Header);
-			cmd	 = -1;
+			cmd	 = NULL;
 		}
 	}
 
 	if (0) {
 err:
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
-		drbd_force_state(mdev, NS(conn, NetworkFailure));
+		/* If cmd is set, we had an unexpected magic or header length,
+		 * or a problem processing the command.
+		 * We try to reconnect, and see if that helps.
+		 *
+		 * If the magic was ok, but the cmd is unknown,
+		 * the wire protocols seem to be not compatible after all,
+		 * even though the handshake worked out ok.
+		 * Which means either we screwed up,
+		 * or someone does something nasty on purpose.
+		 * In that case reconnecting won't help. */
+
+		/* FIXME some of these are not NetworkFailure,
+		 * but should rather be ProtocolError */
+		drbd_force_state(mdev, NS(conn, cmd ? NetworkFailure : Disconnecting));
 	}
 
 	D_ASSERT(mdev->state.conn < Connected);

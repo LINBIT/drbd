@@ -1938,7 +1938,7 @@ int main(int argc, char** argv)
       }
     }
 
-  run_dcmds();
+  rv |= run_dcmds();
 
   free_config(config);
 

@@ -772,7 +772,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
  */
 int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 {
-	unsigned long sbnr, ebnr, bnr;
+	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
 
 	if (mdev->state.disk == UpToDate)
@@ -791,10 +791,7 @@ int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	for (bnr = sbnr; bnr <= ebnr; bnr++) {
-		if (drbd_bm_test_bit(mdev, bnr)) return 0;
-	}
-	return 1;
+	return (0 == drbd_bm_count_bits(mdev, sbnr, ebnr));
 }
 
 /*

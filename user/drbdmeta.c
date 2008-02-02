@@ -26,15 +26,18 @@
 /* have the <sys/....h> first, otherwise you get e.g. "redefined" types from
  * sys/types.h and other weird stuff */
 
-#define DONT_INITIALIZE_BITMAP
+#define INITIALIZE_BITMAP 0
 
 #define _GNU_SOURCE
+#define _XOPEN_SOURCE 600
+#define _FILE_OFFSET_BITS 64
 #define __USE_LARGEFILE64
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
+#include <sys/utsname.h>
+#include <sys/time.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -43,6 +46,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include <linux/drbd.h>		/* only use DRBD_MAGIC from here! */
 #include <linux/fs.h>           /* for BLKFLSBUF */
@@ -61,12 +65,7 @@ struct option metaopt[] = {
     { NULL,     0,              0, 0 },
 };
 
-#define PAGE_SIZE  getpagesize()
-#define PAGE_MASK  (~(PAGE_SIZE-1))
-#define PAGE_ALIGN(addr)	(((addr)+PAGE_SIZE-1)&PAGE_MASK)
-
 /* FIXME? should use sector_t and off_t, not long/u64 ... */
-/* FIXME? rename open -> mmap, close -> munmap */
 
 /* Note RETURN VALUES:
  * exit code convention: int vXY_something() and meta_blah return some negative
@@ -77,6 +76,16 @@ struct option metaopt[] = {
  *
  * AND, the exit codes should follow some defined scheme.
  */
+
+#if 0
+#define ASSERT(x) ((void)(0))
+#else
+#define ASSERT(x) do { if (!(x)) {			\
+	fprintf(stderr, "%s:%u:%s: ASSERT(%s) failed.\n",	\
+		__FILE__ , __LINE__ , __func__ , #x );		\
+	abort(); }						\
+	} while (0)
+#endif
 
 /*
  * FIXME
@@ -116,7 +125,7 @@ struct option metaopt[] = {
  */
 
 /* reiserfs sb offset is 64k plus */
-#define HOW_MUCH (65*1024)
+#define SO_MUCH (65*1024)
 
 /*
  * I think this block of declarations and definitions should be
@@ -147,76 +156,21 @@ struct option metaopt[] = {
  */
 
 /*
- * A word about mmap.
- * The reason to use it is that I do not want to malloc 128MB just to
- * read() and then count the bits, especially not within uml.
- * the resulting program code is simpler, too.
- * BUT we have to be carefull not to accidentally touch that memory region,
- * because it would change the on-disk content.
- * We must check for out-of-band access anyways.
- *
- * BTW, mmap needs to be PAGE_SIZE alligned.  The length is uncritical, though:
- * it is silently aligned (rounded up) within the syscall.
- * The offset has to be alligned in the code.
- * Since there are different architectures with a variety of PAGE_SIZE:
- *      4K (arm, h8300, i386, m32r, m68k, m68knommu, mips, parisc, ppc,
- *          ppc64, s390, sh, sh64, sparc, um, v850, x86_64)
- *      8K (alpha, cris, m68k, mips, sparc, sparc64)
- *     16K (arm26, mips)
- *     32K (arm26)
- *     64K (mips, sparc64)
- *    512K (sparc64)
- *   4M(!) (sparc64)
- *   others (?)
- * we use wrapper functions for mmap/munmap here.
- *
- * I chose to have three different mmap'ed areas, because when we move to
- * more flexible layout, this is more flexible, too.
- *
- * The al-sectors can then be indexed directly:
- *   extent = be32_to_cpu(on_disk.al[7].updates[7].extent.be);
- *
- * similar the bitmap:
- *   test_bit(bitnr & (BITS_PER_LONG-1),
- *            le_long_to_cpu(on_disk.bm[bitnr>>BITS_PER_LONG].le));
- *
- *   when counting the bits only, we can ignore endianness.  well, strictly
- *   speaking, we'd need to verify the very last word for oob bits.
- *
+ * global vaiables and data types
  */
 
+const size_t buffer_size = 128*1024;
+size_t pagesize; /* = sysconf(_SC_PAGESIZE) */
+void *on_disk_buffer = NULL;
+int global_argc;
+char **global_argv;
 
-#define MMAP(a,b,c,d,e,f) my_mmap( __func__, __LINE__ , #a, b,c,d,e,f)
-#define MUNMAP(a,b)	  my_munmap(#a, (void**)&a, &b)
-#if 0
-#define MEMSET(a,b,c) do {				\
-    fprintf(stderr,"%s:%u: memset(%s=%p,0x%02x,%lu)\n", \
-	__func__ , __LINE__ ,				\
-	#a, a,b,(unsigned long)c);			\
-	memset(a,b,c);					\
-} while (0)
-#else
-char * last_memset_func = NULL;
-unsigned int last_memset_line = 0;
-void * last_memset_target = NULL;
-size_t last_memset_n = 0;
-#define MEMSET(a,b,c) do {		\
-	last_memset_func = (char*)__func__;	\
-	last_memset_line = __LINE__;	\
-	last_memset_target = a;\
-	last_memset_n = c;		\
-	memset(a,b,c);			\
-} while (0)
-#endif
-
-unsigned long count_bits(const unsigned long *w, const size_t nr_long_words)
-{
-	unsigned long bits = 0;
-	size_t i;
-	for (i = 0; i < nr_long_words; i++)
-		bits += hweight_long(w[i]);
-	return bits;
-}
+enum Known_Formats {
+	Drbd_06,
+	Drbd_07,
+	Drbd_08,
+	Drbd_Unknown,
+};
 
 /* let gcc help us get it right.
  * some explicit endian types */
@@ -269,43 +223,21 @@ struct format {
 	int md_index;
 	unsigned int bm_bytes;
 	unsigned int bits_set;	/* 32 bit should be enough. @4k ==> 16TB */
+	int bits_counted:1;
 
 	struct md_cpu md;
 
 	/* _byte_ offsets of our "super block" and other data, within fd */
-	s64 md_offset;
-	s64 al_offset;
-	s64 bm_offset;
-	size_t md_mmaped_length;
-	size_t al_mmaped_length;
-	size_t bm_mmaped_length;
-	size_t ll_mmaped_length;
+	u64 md_offset;
+	u64 al_offset;
+	u64 bm_offset;
 
-	struct {
-		/* "super block", fixed 4096 byte for the next century */
-		union {
-			void *md;
-			struct md_on_disk_06 *md6;
-			struct md_on_disk_07 *md7;
-			struct md_on_disk_08 *md8;
-		};
-
-		/* variable size; well, in 07 it is fixed 64*512 byte,
-		 * which may be partially unused */
-		struct al_on_disk_sector *al;
-
-		/* variable size; well, in 07 it is fixed (256-64-8)*512 byte
-		 * which may be partially unused
-		 * use le_ulong for now. */
-		le_ulong *bm;
-
-		/* to check for existing data on physical devices */
-		void *ll_data;
-	} on_disk;
+	/* convenience */
+	u64 bd_size; /* size of block device for internal meta data */
 };
 
 /* - parse is expected to exit() if it does not work out.
- * - open is expected to mmap the respective on_disk members,
+ * - open is expected to read the respective on_disk members,
  *   and copy the "superblock" meta data into the struct mem_cpu
  * FIXME describe rest of them, and when they should exit,
  * return error or success.
@@ -319,54 +251,12 @@ struct format_ops {
 	int (*md_initialize) (struct format *);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
-	void (*md_erase_other_sbs) (struct format *);
 	void (*get_gi) (struct md_cpu *md);
 	void (*show_gi) (struct md_cpu *md);
 	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
 	int (*outdate_gi) (struct md_cpu *md);
 	int (*invalidate_gi) (struct md_cpu *md);
 };
-
-void *my_mmap(const char* func, const unsigned int line, const char* what,
-	size_t length, int prot , int flags, int fd, __off64_t offset)
-{
-    void *p;
-    u64 have = bdev_size(fd);
-    u64 want = offset + length;
-    if (want > have) {
-	fprintf(stderr,"%s:%u: device too small (want %llu; have %llu)\n",
-		func, line,
-		(unsigned long long)want, (unsigned long long)have);
-	exit(20);
-    }
-    /*
-    fprintf(stderr,"%s:%u: mmap %llu offset %llu\n", func, line,
-	    (unsigned long long)length, (unsigned long long)offset);
-    */
-    length = PAGE_ALIGN(length) + ((offset & ~PAGE_MASK) ? PAGE_SIZE : 0);
-    p = mmap64(NULL, length, prot, flags, fd, offset & PAGE_MASK);
-    // fprintf(stderr,"mmap %s: %p %lu @%lu\n",what, p,(unsigned long)length, (unsigned long) (offset & PAGE_MASK));
-    if (p == MAP_FAILED) {
-	PERROR("%s:%u: mmap(%s) failed", func, line, what);
-	exit(20);
-    }
-    return p + (offset & ~PAGE_MASK);
-}
-int my_munmap(const char* what, void **start, size_t *length) {
-	int ret = 0;
-	void *_start = start ? *start : NULL;
-	size_t _length = length ? *length : 0;
-        _length = PAGE_ALIGN(_length) + (((unsigned long)_start & ~PAGE_MASK) ? PAGE_SIZE : 0);
-	_start = (void*)(((unsigned long)_start) & (PAGE_MASK));
-	if (_start) {
-		// fprintf(stderr,"munmap %p %lu\n",_start,(unsigned long)_length);
-		ret = munmap(_start, _length);
-		*start = NULL;
-		*length = 0;
-	}
-	if (ret) PERROR("munmap(%s) failed",what);
-	return ret;
-}
 
 /*
  * -- DRBD 0.6 --------------------------------------
@@ -381,7 +271,7 @@ void md_disk_06_to_cpu(struct md_cpu *cpu, const struct md_on_disk_06 *disk)
 {
 	int i;
 
-	MEMSET(cpu, 0, sizeof(*cpu));
+	memset(cpu, 0, sizeof(*cpu));
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
@@ -424,7 +314,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 {
 	int i;
 
-	MEMSET(cpu, 0, sizeof(*cpu));
+	memset(cpu, 0, sizeof(*cpu));
 	cpu->la_sect = be64_to_cpu(disk->la_kb.be) << 1;
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
@@ -436,7 +326,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->bm_bytes_per_bit = 4096;
 }
 
-void md_cpu_to_disk_07(struct md_on_disk_07 *disk, struct md_cpu *cpu)
+void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cpu)
 {
 	int i;
 
@@ -448,53 +338,65 @@ void md_cpu_to_disk_07(struct md_on_disk_07 *disk, struct md_cpu *cpu)
 	disk->al_offset.be = cpu_to_be32(cpu->al_offset);
 	disk->al_nr_extents.be = cpu_to_be32(cpu->al_nr_extents);
 	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
-	MEMSET(disk->reserved, 0, sizeof(disk->reserved));
+	memset(disk->reserved, 0, sizeof(disk->reserved));
 }
 
-int v07_validate_md(struct format *cfg)
+int is_valid_md(int f,
+	const struct md_cpu const *md, const int md_index, const u64 ll_size)
 {
 	u64 md_size_sect;
+	char *v = (f == Drbd_07) ? "v07" : "v08";
+	const unsigned int magic = (f == Drbd_07) ? DRBD_MD_MAGIC_07 : DRBD_MD_MAGIC_08;
 
-	if (cfg->md.magic != DRBD_MD_MAGIC_07) {
-		fprintf(stderr, "v07 Magic number not found\n");
-		return -1;
+
+	ASSERT(f == Drbd_07 || f == Drbd_08);
+
+	if (md->magic != magic) {
+		fprintf(stderr, "%s Magic number not found\n", v);
+		return 0;
 	}
 
-	switch(cfg->md_index) {
+	switch(md_index) {
 	default:
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_EXT:
-		if (cfg->md.al_offset != MD_AL_OFFSET_07) {
-			fprintf(stderr, "v07 Magic number (al_offset) not found\n");
-			return -1;
+		if (md->al_offset != MD_AL_OFFSET_07) {
+			fprintf(stderr, "%s Magic number (al_offset) not found\n", v);
+			fprintf(stderr, "\texpected: %d, found %d\n",
+				MD_AL_OFFSET_07, md->al_offset);
+			return 0;
 		}
-		if (cfg->md.bm_offset != MD_BM_OFFSET_07) {
-			fprintf(stderr, "v07 Magic number (bm_offset) not found\n");
-			return -1;
+		if (md->bm_offset != MD_BM_OFFSET_07) {
+			fprintf(stderr, "%s Magic number (bm_offset) not found\n", v);
+			return 0;
 		}
 		break;
 	case DRBD_MD_INDEX_FLEX_INT:
-		if (cfg->md.al_offset != -MD_AL_MAX_SECT_07) {
-			fprintf(stderr, "v07 Magic number (al_offset) not found\n");
-			return -1;
+		if (md->al_offset != -MD_AL_MAX_SECT_07) {
+			fprintf(stderr, "%s Magic number (al_offset) not found\n", v);
+			fprintf(stderr, "\texpected: %d, found %d\n",
+				-MD_AL_MAX_SECT_07, md->al_offset);
+			return 0;
 		}
 
 		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = (bdev_size(cfg->md_fd) + (1UL<<24)-1) >> 24; /* BM_EXT_SIZE_B */
-		md_size_sect = (md_size_sect + 7) & ~7ULL;             /* align on 4K blocks */
+		md_size_sect = (ll_size + (1UL<<24)-1) >> 24; /* BM_EXT_SIZE_B */
+		md_size_sect = (md_size_sect + 7) & ~7ULL;    /* align on 4K blocks */
 		/* plus the "drbd meta data super block",
 		 * and the activity log; unit still sectors */
 		md_size_sect += MD_BM_OFFSET_07;
 
-		if (cfg->md.bm_offset != -(s64)md_size_sect + MD_AL_OFFSET_07) {
+		if (md->bm_offset != -(s64)md_size_sect + MD_AL_OFFSET_07) {
 			fprintf(stderr, "strange bm_offset %d (expected: "D64")\n",
-					cfg->md.bm_offset, -(s64)md_size_sect + MD_AL_OFFSET_07);
-			return -1;
+					md->bm_offset, -(s64)md_size_sect + MD_AL_OFFSET_07);
+			return 0;
 		};
-		if (cfg->md.md_size_sect != md_size_sect) {
+		if (md->md_size_sect != md_size_sect) {
 			fprintf(stderr, "strange md_size_sect %u (expected: "U64")\n",
-					cfg->md.md_size_sect, md_size_sect);
-			// return -1; not an error, was inconsistently implemented.
+					md->md_size_sect, md_size_sect);
+			if (f == Drbd_08) return 0;
+			/* else not an error,
+			 * was inconsistently implemented in v07 */
 		}
 		break;
 	}
@@ -505,7 +407,7 @@ int v07_validate_md(struct format *cfg)
 	 * ...
 	 */
 
-	return 0;
+	return 1; /* VALID */
 }
 
 /*
@@ -557,7 +459,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 {
 	int i;
 
-	MEMSET(cpu, 0, sizeof(*cpu));
+	memset(cpu, 0, sizeof(*cpu));
 	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
 	for ( i=Current ; i<UUID_SIZE ; i++ )
 		cpu->uuid[i] = be64_to_cpu(disk->uuid[i].be);
@@ -586,76 +488,8 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	disk->al_nr_extents.be = cpu_to_be32(cpu->al_nr_extents);
 	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
 	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
-	MEMSET(disk->reserved, 0, sizeof(disk->reserved));
+	memset(disk->reserved, 0, sizeof(disk->reserved));
 }
-
-int v08_validate_md(struct format *cfg)
-{
-	u64 md_size_sect;
-
-	if (cfg->md.magic != DRBD_MD_MAGIC_08) {
-		fprintf(stderr, "v08 Magic number not found\n");
-		return -1;
-	}
-
-	switch(cfg->md_index) {
-	default:
-	case DRBD_MD_INDEX_INTERNAL:
-	case DRBD_MD_INDEX_FLEX_EXT:
-		if (cfg->md.al_offset != MD_AL_OFFSET_07) {
-			fprintf(stderr, "v08 Magic number (al_offset) not found\n");
-			return -1;
-		}
-		if (cfg->md.bm_offset != MD_BM_OFFSET_07) {
-			fprintf(stderr, "v08 Magic number (bm_offset) not found\n");
-			return -1;
-		}
-		break;
-	case DRBD_MD_INDEX_FLEX_INT:
-		if (cfg->md.al_offset != -MD_AL_MAX_SECT_07) {
-			fprintf(stderr, "v08 Magic number (al_offset) not found\n");
-			return -1;
-		}
-
-		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = (bdev_size(cfg->md_fd) + (1UL<<24)-1) >> 24; /* BM_EXT_SIZE_B */
-		md_size_sect = (md_size_sect + 7) & ~7ULL;             /* align on 4K blocks */
-		/* plus the "drbd meta data super block",
-		 * and the activity log; unit still sectors */
-		md_size_sect += MD_BM_OFFSET_07;
-
-		if (cfg->md.bm_offset != -(s64)md_size_sect + MD_AL_OFFSET_07) {
-			fprintf(stderr, "strange bm_offset %d (expected: "D64")\n",
-					cfg->md.bm_offset, -(s64)md_size_sect + MD_AL_OFFSET_07);
-			return -1;
-		};
-		if (cfg->md.md_size_sect != md_size_sect) {
-			fprintf(stderr, "strange md_size_sect %u (expected: "U64")\n",
-					cfg->md.md_size_sect, md_size_sect);
-			return -1;
-		}
-		break;
-	}
-
-	/* fixme consistency check, la_size < ll_device_size,
-	 * no overlap with internal meta data,
-	 * no overlap of flexible meta data offsets/sizes
-	 * ...
-	 */
-
-	return 0;
-}
-
-/*
- * global vaiables
- */
-
-enum Known_Formats {
-	Drbd_06,
-	Drbd_07,
-	Drbd_08,
-	Drbd_Unknown,
-};
 
 /* pre declarations */
 void m_get_gc(struct md_cpu *md);
@@ -669,29 +503,24 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc);
 int m_outdate_uuid(struct md_cpu *md);
 int m_invalidate_uuid(struct md_cpu *md);
 
-int v06_md_close(struct format *cfg);
+int generic_md_close(struct format *cfg);
+
 int v06_md_cpu_to_disk(struct format *cfg);
 int v06_md_disk_to_cpu(struct format *cfg);
 int v06_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v06_md_open(struct format *cfg);
 int v06_md_initialize(struct format *cfg);
-void v06_md_erase_others(struct format *cfg);
 
-int v07_md_close(struct format *cfg);
 int v07_md_cpu_to_disk(struct format *cfg);
 int v07_md_disk_to_cpu(struct format *cfg);
-int v07_md_open(struct format *cfg);
 int v07_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v07_md_initialize(struct format *cfg);
-void v07_md_erase_others(struct format *cfg);
-s64 v07_md_get_byte_offset(struct format * cfg);
 
-int v08_md_open(struct format *cfg);
+int v07_style_md_open(struct format *cfg); /* also v08 */
+
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
 int v08_md_initialize(struct format *cfg);
-void v08_md_erase_others(struct format *cfg);
-s64 v08_md_get_byte_offset(struct format * cfg);
 
 struct format_ops f_ops[] = {
 	[Drbd_06] = {
@@ -699,11 +528,10 @@ struct format_ops f_ops[] = {
 		     .args = (char *[]){"minor", NULL},
 		     .parse = v06_parse,
 		     .open = v06_md_open,
-		     .close = v06_md_close,
+		     .close = generic_md_close,
 		     .md_initialize = v06_md_initialize,
 		     .md_disk_to_cpu = v06_md_disk_to_cpu,
 		     .md_cpu_to_disk = v06_md_cpu_to_disk,
-		     .md_erase_other_sbs = v06_md_erase_others,
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
@@ -714,12 +542,11 @@ struct format_ops f_ops[] = {
 		     .name = "v07",
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
-		     .open = v07_md_open,
-		     .close = v07_md_close,
+		     .open = v07_style_md_open,
+		     .close = generic_md_close,
 		     .md_initialize = v07_md_initialize,
 		     .md_disk_to_cpu = v07_md_disk_to_cpu,
 		     .md_cpu_to_disk = v07_md_cpu_to_disk,
-		     .md_erase_other_sbs = v07_md_erase_others,
 		     .get_gi = m_get_gc,
 		     .show_gi = m_show_gc,
 		     .set_gi = m_set_gc,
@@ -730,12 +557,11 @@ struct format_ops f_ops[] = {
 		     .name = "v08",
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
-		     .open = v08_md_open,
-		     .close = v07_md_close,
+		     .open = v07_style_md_open,
+		     .close = generic_md_close,
 		     .md_initialize = v08_md_initialize,
 		     .md_disk_to_cpu = v08_md_disk_to_cpu,
 		     .md_cpu_to_disk = v08_md_cpu_to_disk,
-		     .md_erase_other_sbs = v08_md_erase_others,
 		     .get_gi = m_get_uuid,
 		     .show_gi = m_show_uuid,
 		     .set_gi = m_set_uuid,
@@ -807,6 +633,42 @@ struct meta_cmd cmds[] = {
  * generic helpers
  */
 
+#define PREAD(a,b,c,d) pread_or_die((a),(b),(c),(d), __func__ )
+#define PWRITE(a,b,c,d) pwrite_or_die((a),(b),(c),(d), __func__ )
+/* Do we want to exit() right here,
+ * or do we want to duplicate the error handling everywhere? */
+void pread_or_die(int fd, void *buf, size_t count, off_t offset, const char* tag)
+{
+	ssize_t c = pread(fd, buf, count, offset);
+	//printf("pread(%u,...,%lu,%llu)\n", fd, (unsigned long)count, (unsigned long long)offset);
+	if (c < 0) {
+		fprintf(stderr,"pread in %s failed: %s\n",
+			tag, strerror(errno));
+		exit(10);
+	} else if ((size_t)c != count) {
+		fprintf(stderr,"confused in %s: expected to read %d bytes,"
+			" actually read %d\n",
+			tag, (int)count, (int)c);
+		exit(10);
+	}
+}
+
+void pwrite_or_die(int fd, const void *buf, size_t count, off_t offset, const char* tag)
+{
+	ssize_t c = pwrite(fd, buf, count, offset);
+	//printf("pwrite(%u,...,%lu,%llu)\n", fd, (unsigned long)count, (unsigned long long)offset);
+	if (c < 0) {
+		fprintf(stderr,"pwrite in %s failed: %s\n",
+			tag, strerror(errno));
+		exit(10);
+	} else if ((size_t)c != count) {
+		/* FIXME we might just now have corrupted the on-disk data */
+		fprintf(stderr,"confused in %s: expected to write %d bytes,"
+			" actually wrote %d\n", tag, (int)count, (int)c);
+		exit(10);
+	}
+}
+
 int confirmed(const char *text)
 {
 	const char yes[] = "yes";
@@ -815,195 +677,20 @@ int confirmed(const char *text)
 	size_t n = 0;
 	int ok;
 
-        printf("\n%s\n", text);
+	printf("\n%s\n", text);
 
-        if (force) {
-            printf("*** confirmation forced via --force option ***\n");
-            ok = 1;
-        }
-        else {
-            printf("[need to type '%s' to confirm] ", yes);
-            ok = getline(&answer,&n,stdin) == N &&
-                strncmp(answer,yes,N-1) == 0;
-            if (answer) free(answer);
-            printf("\n");
-        }
+	if (force) {
+	    printf("*** confirmation forced via --force option ***\n");
+	    ok = 1;
+	}
+	else {
+	    printf("[need to type '%s' to confirm] ", yes);
+	    ok = getline(&answer,&n,stdin) == N &&
+		strncmp(answer,yes,N-1) == 0;
+	    if (answer) free(answer);
+	    printf("\n");
+	}
 	return ok;
-}
-
-unsigned long bm_words(u64 sectors, int bytes_per_bit)
-{
-	unsigned long long bits;
-	unsigned long long words;
-
-	bits = ALIGN(sectors, 8) / (bytes_per_bit / 512);
-	words = ALIGN(bits, 64) >> LN2_BPL;
-
-	return words;
-}
-
-static void printf_bm_eol(unsigned int i)
-{
-	if ((i & 31) == 0)
-		printf("\n   # at %llukB\n   ", (256LLU * i));
-	else
-		printf("\n   ");
-}
-
-/* le_u64, because we want to be able to hexdump it reliably
- * regardless of sizeof(long) */
-void printf_bm(const le_u64 * bm, const unsigned int n)
-{
-	unsigned int i;
-	unsigned int j;
-
-	printf("bm {");
-	for (i = 0; i < n; i++) {
-		if ((i & 3) == 0) {
-			printf_bm_eol(i);
-
-			// RLL encoding
-			for (j = i+1; j < n; j++) {
-				if(bm[i].le != bm[j].le) break;
-			}
-			j &= ~3; // round down to a multiple of 4
-			if (j-i > 4 && i > 1) {
-				printf(" %d times 0x"X64(016)";",
-				       j-i, le64_to_cpu(bm[i].le));
-				i = j;
-
-				printf_bm_eol(i);
-			}
-		}
-		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
-	}
-	printf("\n}\n");
-}
-
-int v07_style_md_open(struct format *cfg,
-		      s64 (*md_get_byte_offset) (struct format *),
-		      size_t size)
-{
-	struct stat sb;
-	unsigned long words;
-
-	cfg->md_fd = open(cfg->md_device_name, O_RDWR);
-
-	if (cfg->md_fd == -1) {
-		PERROR("open(%s) failed", cfg->md_device_name);
-		exit(20);
-	}
-
-	if (fstat(cfg->md_fd, &sb)) {
-		PERROR("fstat(%s) failed", cfg->md_device_name);
-		exit(20);
-	}
-
-	if (!S_ISBLK(sb.st_mode)) {
-		fprintf(stderr, "'%s' is not a block device!\n",
-			cfg->md_device_name);
-		exit(20);
-	}
-
-	if (ioctl(cfg->md_fd, BLKFLSBUF, NULL) == -1) {
-		PERROR("WARN: ioctl(,BLKFLSBUF,) failed");
-	}
-
-	cfg->md_offset = md_get_byte_offset(cfg);
-	// fprintf(stderr,"offset: "U64"\n", cfg->md_offset);
-
-	cfg->md_mmaped_length = size;
-	cfg->on_disk.md =
-	    MMAP(cfg->on_disk.md, cfg->md_mmaped_length, PROT_READ | PROT_WRITE, MAP_SHARED, cfg->md_fd,
-		 cfg->md_offset);
-
-	/* in case this is internal meta data, mmap first <some>KB of device,
-	 * so we can try and detect existing file systems on the physical
-	 * device, and warn about that.
-	 */
-	if (cfg->md_index == DRBD_MD_INDEX_INTERNAL) {
-		cfg->ll_mmaped_length = HOW_MUCH;
-		cfg->on_disk.ll_data =
-		    MMAP(cfg->on_disk.ll_data, cfg->ll_mmaped_length, PROT_READ | PROT_WRITE, MAP_SHARED,
-			 cfg->md_fd, 0);
-	}
-
-	if (cfg->ops->md_disk_to_cpu(cfg)) {
-		return -1;
-	}
-
-	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
-	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
-
-	// For the case that someone modified la_sect by hand..
-	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
-	     cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) &&
-	    (cfg->md.la_sect*512 > (u64)cfg->md_offset) ) {
-		printf("la-size-sect was too big, fixed.\n");
-		cfg->md.la_sect = cfg->md_offset/512;
-	}
-	if(cfg->md.bm_bytes_per_bit == 0 ) {
-		printf("bm-byte-per-bit was 0, fixed. (Set to 4096)\n");
-		cfg->md.bm_bytes_per_bit = 4096;
-	}
-	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
-	cfg->bm_bytes = words * sizeof(long);
-
-	cfg->bm_mmaped_length=(u64)(cfg->md.md_size_sect-MD_BM_OFFSET_07)*512;
-
-	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-	//fprintf(stderr,"bm_mmaped_length: %lu\n",(unsigned long)cfg->bm_mmaped_length);
-
-	cfg->al_mmaped_length = MD_AL_MAX_SECT_07 * 512;
-	cfg->on_disk.al =
-	    MMAP(cfg->on_disk.al, cfg->al_mmaped_length, PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->md_fd, cfg->al_offset);
-
-	cfg->on_disk.bm = MMAP(cfg->on_disk.bm, cfg->bm_mmaped_length, PROT_READ | PROT_WRITE,
-			       MAP_SHARED, cfg->md_fd, cfg->bm_offset);
-
-	cfg->bits_set =
-	    count_bits((const unsigned long *)cfg->on_disk.bm, words);
-
-	/* FIXME paranoia verify that unused bits and words are unset... */
-
-	return 0;
-}
-
-void md_erase_sb(struct format *cfg,
-		 s64 (*md_get_byte_offset) (struct format *))
-{
-	/* in case these are internal meta data, we need to
-	   make sure that there is no v08 superblock at the end
-	   of the meta data area. */
-
-	unsigned char zero_sector[512];
-	struct format cfg_f;
-	s64 offset;
-	int bw;
-
-	if(cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
-	   cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) {
-		memset(zero_sector,0,512);
-		cfg_f = *cfg;
-		cfg_f.md_index = DRBD_MD_INDEX_INTERNAL;
-		/* Need to set it to INTERNAL, to hit the superblock
-		   in the front of the meta data area. */
-
-		offset = md_get_byte_offset(&cfg_f);
-		if (offset < 0)
-			return;
-		if(lseek64(cfg->md_fd, offset, SEEK_SET) == -1) {
-			PERROR("lseek64() failed");
-			exit(20);
-		}
-
-		if( (bw=write(cfg->md_fd,zero_sector,512)) != 512) {
-			PERROR("write() returned %d",bw);
-			exit(20);
-		}
-	}
 }
 
 void m_get_gc(struct md_cpu *md)
@@ -1162,7 +849,6 @@ int m_outdate_uuid(struct md_cpu *md)
 	return 0;
 }
 
-
 int m_invalidate_gc(struct md_cpu *md)
 {
 	md->gc[Flags] &= ~MDF_Consistent;
@@ -1185,26 +871,19 @@ int m_invalidate_uuid(struct md_cpu *md)
 
 int v06_md_disk_to_cpu(struct format *cfg)
 {
-	md_disk_06_to_cpu(&cfg->md, cfg->on_disk.md6);
+	PREAD(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_06), cfg->md_offset);
+	md_disk_06_to_cpu(&cfg->md, (struct md_on_disk_06*)on_disk_buffer);
 	return v06_validate_md(cfg);
 }
 
 int v06_md_cpu_to_disk(struct format *cfg)
 {
-	int err;
 	if (v06_validate_md(cfg))
 		return -1;
-	if (!cfg->on_disk.md6) {
-		fprintf(stderr, "BUG: on-disk-md not mapped\n");
-		exit(30);
-	}
-	md_cpu_to_disk_06(cfg->on_disk.md6, &cfg->md);
-	err = msync(cfg->on_disk.md6, sizeof(*cfg->on_disk.md6),
-		    MS_SYNC | MS_INVALIDATE);
-	if (err) {
-		PERROR("msync(on_disk_md)");
-		return -1;
-	};
+	md_cpu_to_disk_06(on_disk_buffer, &cfg->md);
+	PWRITE(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_06), cfg->md_offset);
 	return 0;
 }
 
@@ -1257,11 +936,6 @@ int v06_md_open(struct format *cfg)
 		return -1;
 	}
 
-	cfg->md_mmaped_length = sizeof(struct md_on_disk_06);
-	cfg->on_disk.md =
-	    MMAP(cfg->on_disk.md, cfg->md_mmaped_length, PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->md_fd, 0);
-
 	if (cfg->ops->md_disk_to_cpu(cfg)) {
 		return -1;
 	}
@@ -1269,13 +943,13 @@ int v06_md_open(struct format *cfg)
 	return 0;
 }
 
-int v06_md_close(struct format *cfg)
+int generic_md_close(struct format *cfg)
 {
-	int err = 0;
-	if (MUNMAP(cfg->on_disk.md6, cfg->md_mmaped_length)) err++;
-	if (fsync(cfg->md_fd) == -1) err++, PERROR("fsync() failed");
-	if (close(cfg->md_fd))       err++, PERROR("close() failed");
-	return (err != 0);
+	if (close(cfg->md_fd)) {
+		PERROR("close() failed");
+		return -1;
+	}
+	return 0;
 }
 
 int v06_md_initialize(struct format *cfg)
@@ -1289,26 +963,13 @@ int v06_md_initialize(struct format *cfg)
 	return 0;
 }
 
-void v06_md_erase_others(struct format *cfg __attribute((unused)))
-{
-	/* nothing to do */
-}
-
 /******************************************
   }}} end of v06
  ******************************************/
 
-int md_initialize_common(struct format *cfg)
+void re_initialize_md_offsets(struct format *cfg)
 {
 	u64 md_size_sect;
-
-	/* no need to re-initialize the offset of md
-	 * FIXME we need to, if we convert, or resize, in case we allow/implement that...
-	 */
-	/* but we need to re-map al and bm. */
-	MUNMAP(cfg->on_disk.al, cfg->al_mmaped_length);
-	MUNMAP(cfg->on_disk.bm, cfg->bm_mmaped_length);
-
 	switch(cfg->md_index) {
 	default:
 		cfg->md.md_size_sect = MD_RESERVED_SECT_07;
@@ -1345,12 +1006,20 @@ int md_initialize_common(struct format *cfg)
 		cfg->md.bm_offset = -md_size_sect + MD_AL_OFFSET_07;
 		break;
 	}
-	cfg->md.al_nr_extents = 257;	/* arbitrary. */
-	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
-	cfg->bm_mmaped_length = ((u64)cfg->md.md_size_sect - MD_BM_OFFSET_07)*512;
-
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
+}
+
+/* MAYBE DOES DISK WRITES!! */
+int md_initialize_common(struct format *cfg, int do_disk_writes)
+{
+	/* no need to re-initialize the offset of md
+	 * FIXME we need to, if we convert, or resize, in case we allow/implement that...
+	 */
+	re_initialize_md_offsets(cfg);
+
+	cfg->md.al_nr_extents = 257;	/* arbitrary. */
+	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 
 	//fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
 	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
@@ -1358,48 +1027,51 @@ int md_initialize_common(struct format *cfg)
 	//fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
 	//fprintf(stderr,"bm_mmaped_length: %lu\n", (unsigned long)cfg->bm_mmaped_length);
 
-	cfg->al_mmaped_length = MD_AL_MAX_SECT_07 * 512;
-	cfg->on_disk.al =
-	    MMAP(cfg->on_disk_al, cfg->al_mmaped_length, PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->md_fd, cfg->al_offset);
-
-	cfg->on_disk.bm =
-	    MMAP(cfg->on_disk.bm, cfg->bm_mmaped_length, PROT_READ | PROT_WRITE,
-		 MAP_SHARED, cfg->md_fd, cfg->bm_offset);
+	if (!do_disk_writes)
+		return 0;
 
 	/* do you want to initilize al to something more usefull? */
 	printf("initialising activity log\n");
-	MEMSET(cfg->on_disk.al, 0x00, MD_AL_MAX_SECT_07*512);
+	if (MD_AL_MAX_SECT_07*512 > buffer_size) {
+		fprintf(stderr, "%s:%u: LOGIC BUG\n" , __FILE__ , __LINE__ );
+		exit(111);
+	}
+	memset(on_disk_buffer, 0x00, MD_AL_MAX_SECT_07*512);
+	pwrite_or_die(cfg->md_fd, on_disk_buffer, MD_AL_MAX_SECT_07*512, cfg->al_offset,
+		"md_initialize_common:AL");
+
 	/* THINK
 	 * do we really need to initialize the bitmap? */
-#ifdef DONT_INITIALIZE_BITMAP
-	fprintf(stderr, "NOT initialized bitmap (%u KB)\n",
-		(unsigned int)(cfg->bm_mmaped_length>>10));
-#else
-	{
-		const size_t bm_bytes = cfg->bm_mmaped_length;
-#if 1
-		const size_t chunk   = (1UL << 12);
-		size_t i;
+	if (INITIALIZE_BITMAP) {
+		/* need to sector-align this for O_DIRECT. to be
+		 * generic, maybe we even need to PAGE align it? */
+		const size_t bm_bytes = ALIGN(cfg->bm_bytes, 512);
+		size_t i = bm_bytes;
+		off_t bm_on_disk_off = cfg->bm_offset;
 		unsigned int percent_done = 0;
 		unsigned int percent_last_report = 0;
-		fprintf(stderr,"initialising bitmap (%u KB)\n", (unsigned int)(bm_bytes>>10));
-		/* give some progress */
-		for (i = 0; i < bm_bytes; i += chunk) {
-			MEMSET((char*)cfg->on_disk.bm+i, 0xff, chunk);
-			percent_done = i/((bm_bytes/100)?:1);
+		size_t chunk;
+		fprintf(stderr,"initialising bitmap (%u KB)\n",
+			(unsigned int)(bm_bytes>>10));
+
+		memset(on_disk_buffer, 0xff, buffer_size);
+		while (i) {
+			chunk = buffer_size < i ? buffer_size : i;
+			pwrite_or_die(cfg->md_fd, on_disk_buffer,
+				chunk, bm_on_disk_off,
+				"md_initialize_common:BM");
+			bm_on_disk_off += chunk;
+			i -= chunk;
+			percent_done = 100*(bm_bytes-i)/bm_bytes;
 			if (percent_done != percent_last_report) {
 				fprintf(stderr,"\r%u%%", percent_done);
 				percent_last_report = percent_done;
 			}
 		}
 		fprintf(stderr,"\r100%%\n");
-#else
-		printf("initialising bitmap (%u KB)\n", (bm_bytes>>10));
-		MEMSET((void*)cfg->on_disk.bm, 0xff, bm_bytes);
-#endif
+	} else {
+		fprintf(stderr,"NOT initialized bitmap\n");
 	}
-#endif
 	return 0;
 }
 
@@ -1407,54 +1079,210 @@ int md_initialize_common(struct format *cfg)
  begin of v07 {{{
  ******************************************/
 
-s64 v07_md_get_byte_offset(struct format *cfg)
+u64 v07_style_md_get_byte_offset(const int idx, const u64 bd_size)
 {
-	s64 offset;
+	u64 offset;
 
-	switch(cfg->md_index) {
+	switch(idx) {
 	default: /* external, some index */
-		offset = MD_RESERVED_SECT_07 * cfg->md_index * 512;
+		offset = MD_RESERVED_SECT_07 * idx * 512;
 		break;
 	case DRBD_MD_INDEX_INTERNAL:
-		offset = (bdev_size(cfg->md_fd) & ~((1LLU << 12) - 1))
+		offset = (bd_size & ~4095LLU)
 		    - MD_RESERVED_SECT_07 * 512;
 		break;
 	case DRBD_MD_INDEX_FLEX_INT:
 		/* sizeof(struct md_on_disk_07) == 4k
 		 * position: last 4k aligned block of 4k size */
-		offset  = bdev_size(cfg->md_fd) - (1LLU << 12);
-		offset &= ~((1LLU << 12) - 1);
+		offset  = bd_size - 4096LLU;
+		offset &= ~4095LLU;
 		break;
 	case DRBD_MD_INDEX_FLEX_EXT:
 		offset = 0;
 		break;
 	}
-
 	return offset;
+}
+
+unsigned long bm_words(u64 sectors, int bytes_per_bit)
+{
+	unsigned long long bits;
+	unsigned long long words;
+
+	bits = ALIGN(sectors, 8) / (bytes_per_bit / 512);
+	words = ALIGN(bits, 64) >> LN2_BPL;
+
+	return words;
+}
+
+static void printf_bm_eol(unsigned int i)
+{
+	if ((i & 31) == 0)
+		printf("\n   # at %llukB\n   ", (256LLU * i));
+	else
+		printf("\n   ");
+}
+
+/* le_u64, because we want to be able to hexdump it reliably
+ * regardless of sizeof(long) */
+void printf_bm(struct format *cfg)
+{
+	off_t bm_on_disk_off = cfg->bm_offset;
+	le_u64 const *bm = on_disk_buffer;
+	le_u64 cw; /* current word for rll encoding */
+	const unsigned int n = cfg->bm_bytes/sizeof(*bm);
+	unsigned int count = 0;
+	unsigned int bits_set = 0;
+	unsigned int n_buffer = 0;
+	unsigned int r; /* real offset */
+	unsigned int i; /* in-buffer offset */
+	unsigned int j;
+
+	i=0; r=0;
+	cw.le = 0; /* silence compiler warning */
+	printf("bm {");
+	while (r < n) {
+		/* need to read on first iteration,
+		 * and on buffer wrap */
+		if (r*sizeof(*bm) % buffer_size == 0) {
+			size_t chunk = ALIGN( (n-r)*sizeof(*bm), 512 );
+			if (chunk > buffer_size) chunk = buffer_size;
+			ASSERT(chunk);
+			pread_or_die(cfg->md_fd, on_disk_buffer,
+				chunk, bm_on_disk_off, "printf_bm");
+			bm_on_disk_off += chunk;
+			i = 0;
+			n_buffer = chunk/sizeof(*bm);
+		}
+		ASSERT(i < n_buffer);
+		if (count == 0) cw = bm[i];
+		if ((i & 3) == 0) {
+			if (!count) printf_bm_eol(r);
+
+			for (j = i+1; j < n_buffer; j++) {
+				if(cw.le != bm[j].le) break;
+			}
+			j &= ~3; // round down to a multiple of 4
+			unsigned int tmp = (j-i);
+			if (tmp > 4) {
+				count += tmp;
+				r += tmp;
+				i = j;
+				if (j == n_buffer && r < n) continue;
+			}
+			if (count) {
+				printf(" %u times 0x"X64(016)";",
+				       count, le64_to_cpu(cw.le));
+				bits_set += count * generic_hweight64(cw.le);
+				count = 0;
+				continue;
+			}
+		}
+		ASSERT(i < n_buffer);
+		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
+		r++; i++;
+		bits_set += generic_hweight64(bm[i].le);
+	}
+	printf("\n}\n");
+	cfg->bits_set = bits_set;
+}
+
+int v07_style_md_open(struct format *cfg)
+{
+	struct stat sb;
+	unsigned long words;
+
+	cfg->md_fd = open(cfg->md_device_name, O_RDWR | O_DIRECT);
+
+	if (cfg->md_fd == -1) {
+		PERROR("open(%s) failed", cfg->md_device_name);
+		exit(20);
+	}
+
+	if (fstat(cfg->md_fd, &sb)) {
+		PERROR("fstat(%s) failed", cfg->md_device_name);
+		exit(20);
+	}
+
+	if (!S_ISBLK(sb.st_mode)) {
+		fprintf(stderr, "'%s' is not a block device!\n",
+			cfg->md_device_name);
+		exit(20);
+	}
+
+	if (is_v08(cfg)) {
+		ASSERT(cfg->md_index != DRBD_MD_INDEX_INTERNAL);
+	}
+
+	cfg->bd_size = bdev_size(cfg->md_fd);
+	if ((cfg->bd_size >> 9) < MD_BM_OFFSET_07) {
+		fprintf(stderr, "%s is only %llu bytes. That's not enough.\n",
+			cfg->md_device_name, (long long unsigned)cfg->bd_size);
+		exit(10);
+	}
+	cfg->md_offset =
+		v07_style_md_get_byte_offset(cfg->md_index, cfg->bd_size);
+	if (cfg->md_offset > cfg->bd_size - 4096) {
+		fprintf(stderr,
+			"Device too small: expecting meta data block at\n"
+			"byte offset %lld, but %s is only %llu bytes.\n",
+			(signed long long)cfg->md_offset,
+			cfg->md_device_name,
+			(long long unsigned)cfg->bd_size);
+		exit(10);
+	}
+
+	if (cfg->ops->md_disk_to_cpu(cfg)) {
+		/* no valid meta data found.  but we want to initialize
+		 * al_offset and bm_offset anyways, so check_for_existing_data
+		 * has something to work with. */
+		re_initialize_md_offsets(cfg);
+		return -1;
+	}
+
+	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
+	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
+
+	// For the case that someone modified la_sect by hand..
+	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
+	     cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) &&
+	    (cfg->md.la_sect*512 > cfg->md_offset) ) {
+		printf("la-size-sect was too big, fixed.\n");
+		cfg->md.la_sect = cfg->md_offset/512;
+	}
+	if(cfg->md.bm_bytes_per_bit == 0 ) {
+		printf("bm-byte-per-bit was 0, fixed. (Set to 4096)\n");
+		cfg->md.bm_bytes_per_bit = 4096;
+	}
+	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
+	cfg->bm_bytes = words * sizeof(long);
+
+	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
+	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+
+	cfg->bits_set = -1U;
+
+	/* FIXME paranoia verify that unused bits and words are unset... */
+	/* FIXME paranoia verify that unused bits and words are unset... */
+
+	return 0;
 }
 
 int v07_md_disk_to_cpu(struct format *cfg)
 {
-	md_disk_07_to_cpu(&cfg->md, cfg->on_disk.md7);
-	return v07_validate_md(cfg);
+	PREAD(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_07), cfg->md_offset);
+	md_disk_07_to_cpu(&cfg->md, (struct md_on_disk_07*)on_disk_buffer);
+	return !is_valid_md(Drbd_07,&cfg->md, cfg->md_index, cfg->bd_size);
 }
 
 int v07_md_cpu_to_disk(struct format *cfg)
 {
-	int err;
-	if (v07_validate_md(cfg))
+	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size))
 		return -1;
-	if (!cfg->on_disk.md7) {
-		fprintf(stderr, "BUG: on-disk-md not mapped\n");
-		return -1;
-	}
-	md_cpu_to_disk_07(cfg->on_disk.md7, &cfg->md);
-	err = msync(cfg->on_disk.md7, sizeof(*cfg->on_disk.md7),
-		    MS_SYNC | MS_INVALIDATE);
-	if (err) {
-		PERROR("msync(on_disk_md)");
-		return -1;
-	};
+	md_cpu_to_disk_07(on_disk_buffer, &cfg->md);
+	PWRITE(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_07), cfg->md_offset);
 	return 0;
 }
 
@@ -1493,38 +1321,10 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 	return 0;
 }
 
-int v07_md_open(struct format *cfg)
+int _v07_md_initialize(struct format *cfg, int do_disk_writes)
 {
-	return v07_style_md_open(cfg,
-				 &v07_md_get_byte_offset,
-				 sizeof(struct md_on_disk_07));
-}
+	memset(&cfg->md, 0, sizeof(cfg->md));
 
-int v07_md_close(struct format *cfg)
-{
-	int err = 0;
-	err = MUNMAP(cfg->on_disk.ll_data, cfg->ll_mmaped_length)
-	    | /* bitwise, not short circuit */
-	      MUNMAP(cfg->on_disk.bm, cfg->bm_mmaped_length)
-	    | MUNMAP(cfg->on_disk.al, cfg->al_mmaped_length)
-	    | MUNMAP(cfg->on_disk.md, cfg->md_mmaped_length);
-	if (fsync(cfg->md_fd) == -1) {
-		PERROR("fsync() failed");
-		err = -1;
-	}
-	if (ioctl(cfg->md_fd, BLKFLSBUF, NULL) == -1) {
-		PERROR("ioctl(,BLKFLSBUF,) failed");
-		err = -1;
-	}
-	if (close(cfg->md_fd)) {
-		PERROR("close() failed");
-		err = -1;
-	}
-	return (err != 0);
-}
-
-int v07_md_initialize(struct format *cfg)
-{
 	cfg->md.la_sect = 0;
 	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
@@ -1533,12 +1333,12 @@ int v07_md_initialize(struct format *cfg)
 	cfg->md.gc[ArbitraryCnt] = 1;
 	cfg->md.magic = DRBD_MD_MAGIC_07;
 
-	return md_initialize_common(cfg);
+	return md_initialize_common(cfg, do_disk_writes);
 }
 
-void v07_md_erase_others(struct format *cfg)
+int v07_md_initialize(struct format *cfg)
 {
-	md_erase_sb(cfg,&v08_md_get_byte_offset);
+	return _v07_md_initialize(cfg, 1);
 }
 
 /******************************************
@@ -1548,64 +1348,29 @@ void v07_md_erase_others(struct format *cfg)
  begin of v08 {{{
  ******************************************/
 
-s64 v08_md_get_byte_offset(struct format *cfg)
-{
-	s64 offset;
-
-	switch(cfg->md_index) {
-	default: /* external, some index */
-		offset = MD_RESERVED_SECT_07 * cfg->md_index * 512;
-		break;
-	case DRBD_MD_INDEX_INTERNAL:
-	case DRBD_MD_INDEX_FLEX_INT:
-		/* sizeof(struct md_on_disk_07) == 4k
-		 * position: last 4k aligned block of 4k size */
-		offset  = bdev_size(cfg->md_fd) - (1LLU << 12);
-		offset &= ~((1LLU << 12) - 1);
-		break;
-	case DRBD_MD_INDEX_FLEX_EXT:
-		offset = 0;
-		break;
-	}
-
-	return offset;
-}
-
 int v08_md_disk_to_cpu(struct format *cfg)
 {
-	md_disk_08_to_cpu(&cfg->md, cfg->on_disk.md8);
-	return v08_validate_md(cfg);
+	PREAD(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_08), cfg->md_offset);
+	md_disk_08_to_cpu(&cfg->md, (struct md_on_disk_08*)on_disk_buffer);
+	return !is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size);
 }
 
 int v08_md_cpu_to_disk(struct format *cfg)
 {
-	int err;
-	if (v08_validate_md(cfg))
+	if (!is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size))
 		return -1;
-	if (!cfg->on_disk.md8) {
-		fprintf(stderr, "BUG: on-disk-md not mapped\n");
-		return -1;
-	}
-	md_cpu_to_disk_08(cfg->on_disk.md8, &cfg->md);
-	err = msync(cfg->on_disk.md8, sizeof(*cfg->on_disk.md8),
-		    MS_SYNC | MS_INVALIDATE);
-	if (err) {
-		PERROR("msync(on_disk_md)");
-		return -1;
-	};
+	md_cpu_to_disk_08((struct md_on_disk_08 *)on_disk_buffer, &cfg->md);
+	PWRITE(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_08), cfg->md_offset);
 	return 0;
 }
 
-int v08_md_open(struct format *cfg)
-{
-	return v07_style_md_open(cfg,
-				 &v08_md_get_byte_offset,
-				 sizeof(struct md_on_disk_08));
-}
-
-int v08_md_initialize(struct format *cfg)
+int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 {
 	size_t i;
+
+	memset(&cfg->md, 0, sizeof(cfg->md));
 
 	cfg->md.la_sect = 0;
 	cfg->md.uuid[Current] = UUID_JUST_CREATED;
@@ -1616,12 +1381,12 @@ int v08_md_initialize(struct format *cfg)
 	cfg->md.flags = 0;
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
-	return md_initialize_common(cfg);
+	return md_initialize_common(cfg, do_disk_writes);
 }
 
-void v08_md_erase_others(struct format *cfg)
+int v08_md_initialize(struct format *cfg)
 {
-	md_erase_sb(cfg,&v07_md_get_byte_offset);
+	return _v08_md_initialize(cfg, 1);
 }
 
 /******************************************
@@ -1727,6 +1492,23 @@ int meta_set_gi(struct format *cfg, char **argv, int argc)
 	return err;
 }
 
+void print_dump_header()
+{
+	char time_str[60];
+	struct utsname nodeinfo;
+	time_t t = time(NULL);
+	int i;
+
+	strftime(time_str, sizeof(time_str), "%F %T %z [%s]", localtime(&t));
+	uname(&nodeinfo);
+	printf("# DRBD meta data dump\n# %s\n# %s>",
+		time_str, nodeinfo.nodename);
+
+	for (i=0; i < global_argc; i++)
+		printf(" %s",global_argv[i]);
+	printf("\n#\n\n");
+}
+
 int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	int i;
@@ -1738,7 +1520,13 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	if (cfg->ops->open(cfg))
 		return -1;
 
+	print_dump_header();
 	printf("version \"%s\";\n\n", cfg->ops->name);
+	printf("# md_size_sect %llu\n", (long long unsigned)cfg->md.md_size_sect);
+	printf("# md_offset %llu\n", (long long unsigned)cfg->md_offset);
+	printf("# al_offset %llu\n", (long long unsigned)cfg->al_offset);
+	printf("# bm_offset %llu\n\n", (long long unsigned)cfg->bm_offset);
+
 	if (format_version(cfg) < Drbd_08) {
 		printf("gc {\n   ");
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
@@ -1764,10 +1552,8 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 			       cfg->md.device_uuid);
 		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
+		printf_bm(cfg);
 		printf("# bits-set %u;\n", cfg->bits_set);
-		if (cfg->on_disk.bm)
-			printf_bm((le_u64 *) cfg->on_disk.bm,
-				  cfg->bm_bytes / sizeof(le_u64));
 	}
 
 	/* MAYBE dump activity log?
@@ -1809,7 +1595,7 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 			etext = "number ([0-9], up to 20 digits)"; break;
 		case TK_STRING:
 			etext = "short quoted string "
-			        "(\"..up to 20 characters, no newline..\")";
+				"(\"..up to 20 characters, no newline..\")";
 				break;
 		case TK_U32:
 			etext = "an 8-digit hex number"; break;
@@ -1860,10 +1646,13 @@ static void EXP(int expected_token) {
 		md_parse_error(expected_token, tok, NULL);
 }
 
+void check_for_existing_data(struct format *cfg);
+
 int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int parse_only)
 {
 	int i,times;
 	int err;
+	off_t bm_on_disk_off;
 	le_u64 *bm, value;
 
 	if (argc > 0) {
@@ -1874,9 +1663,20 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		}
 	}
 
-	if (!parse_only && !cfg->ops->open(cfg)) {
-		if (!confirmed("Valid meta-data in place, overwrite?"))
-			return -1;
+	if (!parse_only) {
+		if (!cfg->ops->open(cfg)) {
+			if (!confirmed("Valid meta-data in place, overwrite?"))
+				return -1;
+		} else {
+			check_for_existing_data(cfg);
+
+			ASSERT(!is_v06(cfg));
+		}
+		fprintf(stderr, "reinitialising\n");
+		if (is_v07(cfg))
+			_v07_md_initialize(cfg,0);
+		else
+			_v08_md_initialize(cfg,0);
 	}
 
 	EXP(TK_VERSION); EXP(TK_STRING);
@@ -1914,8 +1714,9 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		cfg->md.bm_bytes_per_bit = 4096;
 	}
 	EXP(TK_BM); EXP('{');
-	bm = (le_u64 *)cfg->on_disk.bm;
+	bm = (le_u64 *)on_disk_buffer;
 	i = 0;
+	bm_on_disk_off = cfg->bm_offset;
 	while(1) {
 		int tok = yylex();
 		switch(tok) {
@@ -1931,7 +1732,13 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			 * or the maintenance nightmare of code duplication */
 			if (parse_only) break;
 			bm[i].le = cpu_to_le64(yylval.u64);
-			i++;
+			if (++i == buffer_size/sizeof(*bm)) {
+				pwrite_or_die(cfg->md_fd, on_disk_buffer,
+					buffer_size, bm_on_disk_off,
+					"meta_restore_md:TK_U64");
+				bm_on_disk_off += buffer_size;
+				i = 0;
+			}
 			break;
 		case TK_NUM:
 			times = yylval.u64;
@@ -1940,7 +1747,16 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			EXP(';');
 			if (parse_only) break;
 			value.le = cpu_to_le64(yylval.u64);
-			while(times--) bm[i++] = value;
+			while(times--) {
+				bm[i] = value;
+				if (++i == buffer_size/sizeof(*bm)) {
+					pwrite_or_die(cfg->md_fd, on_disk_buffer,
+						buffer_size, bm_on_disk_off,
+						"meta_restore_md:TK_NUM");
+					bm_on_disk_off += buffer_size;
+					i = 0;
+				}
+			}
 			break;
 		case '}':
 			goto break_loop;
@@ -1958,6 +1774,17 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	if (parse_only) {
 		printf("input file parsed ok\n");
 		return 0;
+	}
+
+	/* not reached if parse_only */
+	if (i) {
+		size_t s = i * sizeof(*bm);
+		memset(bm+i, 0x00, buffer_size - s);
+		/* need to sector-align this for O_DIRECT. to be
+		 * generic, maybe we even need to PAGE align it? */
+		s = ALIGN(s, 512);
+		pwrite_or_die(cfg->md_fd, on_disk_buffer,
+			s, bm_on_disk_off, "meta_restore_md");
 	}
 
 	err = cfg->ops->md_cpu_to_disk(cfg);
@@ -1982,22 +1809,36 @@ int meta_verify_dump_file(struct format *cfg, char **argv, int argc)
 	return verify_dumpfile_or_restore(cfg,argv,argc,1);
 }
 
-int md_convert_07_to_08(struct format *cfg)
+void md_convert_07_to_08(struct format *cfg)
 {
-	int i,j=1;
-	int err;
-	/* Note that al and bm are not touched!
-	 * (they are currently not even mmaped)
+	int i,j;
+	/*
+	 * FIXME
+	 * what about the Bitmap, and the Activity Log?
+	 * how to bring them over for internal meta data?
 	 *
-	 * KB <-> sectors is done in the md disk<->cpu functions.
-	 * We only need to adjust the magic here. */
+	 * maybe just refuse to convert anything that is not
+	 * "clean"? how to detect that?
+	 *
+	 * FIXME: if I am a crashed Primary, or Inconsistent,
+	 * or Want-Full-Sync or the like,
+	 * refuse, and indicate how to solve this */
+
 	printf("Converting meta data...\n");
+
+	//if (!cfg->bits_counted) count_bits(cfg);
+	/* FIXME:
+	 * if this is "internal" meta data, and I have bits set,
+	 * either move the bitmap into the newly expected place,
+	 * or refuse, and indicate how to solve this */
+
+	/* KB <-> sectors is done in the md disk<->cpu functions.
+	 * We only need to adjust the magic here. */
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
 	// The MDF Flags are (nearly) the same in 07 and 08
 	cfg->md.flags = cfg->md.gc[Flags];
-	/*
-	 */
+
 	cfg->md.uuid[Current] =
 		(u64)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
 		(u64)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
@@ -2005,43 +1846,63 @@ int md_convert_07_to_08(struct format *cfg)
 		       & 0xffff) << 16 |
 		(u64)0xbabe;
 	cfg->md.uuid[Bitmap] = (u64)0;
-	if (cfg->bits_set) i = Bitmap;
-	else i = History_start;
-	for ( ; i<=History_end ; i++ ) {
-		cfg->md.uuid[i] = cfg->md.uuid[Current] - j*0x10000;
-		j++;
-	}
 
-	err = cfg->ops->md_cpu_to_disk(cfg);
-	err = cfg->ops->close(cfg) || err;
-	if (err) {
-		fprintf(stderr, "conversion failed\n");
-		return -1;
+	for (i = cfg->bits_set ? Bitmap : History_start, j = 1;
+		i <= History_end ; i++, j++)
+		cfg->md.uuid[i] = cfg->md.uuid[Current] - j*0x10000;
+
+	/* unconditionally re-initialize offsets,
+	 * not necessary if fixed size external,
+	 * necessary if flex external or internal */
+	re_initialize_md_offsets(cfg);
+
+	if (!is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size)) {
+		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
+		exit(111);
 	}
-	printf("Successfully converted v07 meta data to v08 format.\n");
-	return 0;
 }
 
-int md_convert_08_to_07(struct format *cfg)
+void md_convert_08_to_07(struct format *cfg)
 {
-	/* Note that al and bm are not touched!
-	 * (they are currently not even mmaped)
+	/*
+	 * FIXME
+	 * what about the Bitmap, and the Activity Log?
+	 * how to bring them over for internal meta data?
 	 *
-	 * KB <-> sectors is done in the md disk<->cpu functions.
-	 * We only need to adjust the magic here. */
-	int err;
+	 * maybe just refuse to convert anything that is not
+	 * "clean"? how to detect that?
+	 *
+	 * FIXME: if I am a crashed Primary, or Inconsistent,
+	 * or Want-Full-Sync or the like,
+	 * refuse, and indicate how to solve this */
+
 	printf("Converting meta data...\n");
+	//if (!cfg->bits_counted) count_bits(cfg);
+	/* FIXME:
+	 * if this is "internal" meta data, and I have bits set,
+	 * either move the bitmap into the newly expected place,
+	 * or refuse, and indicate how to solve this */
+
+	/* KB <-> sectors is done in the md disk<->cpu functions.
+	 * We only need to adjust the magic here. */
 	cfg->md.magic = DRBD_MD_MAGIC_07;
-	// somehow generate GCs in a sane way
-	err = cfg->ops->md_cpu_to_disk(cfg);
-	err = cfg->ops->close(cfg) || err;
-	if (err) {
-		fprintf(stderr, "conversion failed\n");
-		return -1;
+
+	/* FIXME somehow generate GCs in a sane way */
+	/* FIXME convert the flags? */
+	printf("Conversion v08 -> v07 is BROKEN!\n"
+		"Be prepared to manually intervene!\n");
+	/* FIXME put some more helpful text here, indicating what exactly is to
+	 * be done to make this work as expected. */
+
+	/* unconditionally re-initialize offsets,
+	 * not necessary if fixed size external,
+	 * necessary if flex external or internal */
+	re_initialize_md_offsets(cfg);
+
+	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size)) {
+		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
+		exit(111);
 	}
-	printf("Conversion Currently BROKEN!\n");
-	//printf("Successfully converted v08 meta data to v07 format.\n");
-	return 0;
 }
 
 /* if on the physical device we find some data we can interpret,
@@ -2141,17 +2002,16 @@ int may_be_LVM(const char *data, struct fstype_s *f)
 
 void check_for_existing_data(struct format *cfg)
 {
-	const char *data = cfg->on_disk.ll_data;
 	struct fstype_s f;
 	size_t i;
-	if (data == NULL)
-		return;
 
-	for (i = 0; i < HOW_MUCH/sizeof(long); i++) {
-		if (((long*)(data))[i] != 0LU) break;
+	PREAD(cfg->md_fd, on_disk_buffer, SO_MUCH, 0);
+
+	for (i = 0; i < SO_MUCH/sizeof(long); i++) {
+		if (((long*)(on_disk_buffer))[i] != 0LU) break;
 	}
 	/* all zeros? no message */
-	if (i == HOW_MUCH/sizeof(long)) return;
+	if (i == SO_MUCH/sizeof(long)) return;
 
 	f.type = "some data";
 	f.bnum = 0;
@@ -2161,17 +2021,39 @@ void check_for_existing_data(struct format *cfg)
  */
 
 	(void)(
-	may_be_swap     (data,&f) ||
-	may_be_LVM      (data,&f) ||
+	may_be_swap     (on_disk_buffer,&f) ||
+	may_be_LVM      (on_disk_buffer,&f) ||
 
-	may_be_extX     (data,&f) ||
-	may_be_xfs      (data,&f) ||
-	may_be_jfs      (data,&f) ||
-	may_be_reiserfs (data,&f)
+	may_be_extX     (on_disk_buffer,&f) ||
+	may_be_xfs      (on_disk_buffer,&f) ||
+	may_be_jfs      (on_disk_buffer,&f) ||
+	may_be_reiserfs (on_disk_buffer,&f)
 	);
+
+	/* FIXME
+	 * some of the messages below only make sense for internal meta data.
+	 * for external meta data, we now only checked the meta-disk.
+	 * we should still check the actual lower level storage area for
+	 * existing data, too, and give apropriate warnings when it would
+	 * appear to be truncated by too small external meta data */
+
+	printf("md_offset %llu\n", (long long unsigned)cfg->md_offset);
+	printf("al_offset %llu\n", (long long unsigned)cfg->al_offset);
+	printf("bm_offset %llu\n", (long long unsigned)cfg->bm_offset);
 
 	printf("\nFound %s ", f.type);
 	if (f.bnum) {
+		if (cfg->md_index >= 0 ||
+		    cfg->md_index == DRBD_MD_INDEX_FLEX_EXT) {
+			printf(
+"\nThis would corrupt existing data.\n"
+"If you want me to do this, you need to zero out the first part\n"
+"of the device (destroy the content).\n"
+"You should be very sure that you mean it.\n"
+"Operation refused.\n\n");
+			exit(40); /* FIXME sane exit code! */
+		}
+
 		/* FIXME overflow check missing!
 		 * relevant for ln2(bsize) + ln2(bnum) >= 64, thus only for
 		 * device sizes of more than several exa byte.
@@ -2192,21 +2074,12 @@ void check_for_existing_data(struct format *cfg)
 			exit(40); /* FIXME sane exit code! */
 		}
 
-#if 0
 #define min(x,y) ((x) < (y) ? (x) : (y))
 		max_usable_kB =
 			min( cfg->md_offset,
 			min( cfg->al_offset,
 			     cfg->bm_offset )) >> 10;
 #undef min
-
-		printf("md_offset %llu\n", cfg->md_offset);
-		printf("al_offset %llu\n", cfg->al_offset);
-		printf("bm_offset %llu\n", cfg->bm_offset);
-#else
-		/* for now (we still have no flexible size meta data) */
-		max_usable_kB = cfg->md_offset >> 10;
-#endif
 
 		/* looks like file system data */
 		printf("which uses "U64" kB\n", fs_kB);
@@ -2224,60 +2097,239 @@ void check_for_existing_data(struct format *cfg)
 			exit(40); /* FIXME sane exit code! */
 		}
 	}
+	if (!confirmed(" ==> This might destroy existing data! <==\n\n"
+			"Do you want to proceed?")) {
+		printf("Operation cancelled.\n");
+		exit(1); // 1 to avoid online resource counting
+	}
+}
+
+void check_internal_md_flavours(struct format * cfg) {
+	struct md_cpu md_07;
+	struct md_cpu md_07p;
+	struct md_cpu md_08;
+	off_t fixed_offset, flex_offset;
+	int have_fixed_v07 = 0;
+	int have_flex_v07  = 0;
+	int have_flex_v08  = 0;
+
+	ASSERT( cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
+		cfg->md_index == DRBD_MD_INDEX_FLEX_INT );
+
+	fixed_offset = v07_style_md_get_byte_offset(
+		DRBD_MD_INDEX_INTERNAL, cfg->bd_size);
+	flex_offset = v07_style_md_get_byte_offset(
+		DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
+
+	/* printf("%lld\n%lld\n%lld\n", (long long unsigned)cfg->bd_size,
+	   (long long unsigned)fixed_offset, (long long unsigned)flex_offset); */
+	if (0 <= fixed_offset && fixed_offset < (off_t)cfg->bd_size - 4096) {
+		/* ... v07 fixed-size internal meta data? */
+		PREAD(cfg->md_fd, on_disk_buffer, 4096, fixed_offset);
+
+		md_disk_07_to_cpu(&md_07,
+			(struct md_on_disk_07*)on_disk_buffer);
+		have_fixed_v07 = is_valid_md(Drbd_07,
+			&md_07, DRBD_MD_INDEX_INTERNAL, cfg->bd_size);
+	}
+
+	PREAD(cfg->md_fd, on_disk_buffer, 4096, flex_offset);
+
+	/* ... v07 (plus) flex-internal meta data? */
+	md_disk_07_to_cpu(&md_07p, (struct md_on_disk_07*)on_disk_buffer);
+	have_flex_v07 = is_valid_md(Drbd_07,
+		&md_07p, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
+
+	/* ... v08 flex-internal meta data?
+	 * (same offset, same on disk data) */
+	md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
+	have_flex_v08 = is_valid_md(Drbd_08,
+		&md_08, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
+
+	if (!(have_fixed_v07 || have_flex_v07 || have_flex_v08))
+		return;
+
+	ASSERT(have_flex_v07 == 0 || have_flex_v08 == 0); /* :-) */
+
+	fprintf(stderr, "You want me to create a %s%s style %s internal meta data block.\n",
+		cfg->ops->name,
+		(is_v07(cfg) && cfg->md_index == DRBD_MD_INDEX_FLEX_INT) ? "(plus)" : "",
+		cfg->md_index == DRBD_MD_INDEX_FLEX_INT ? "flexible-size" : "fixed-size");
+
+	if (have_fixed_v07) {
+		fprintf(stderr, "There apears to be a v07 fixed-size internal meta data block\n"
+				"already in place on %s at byte offset %llu\n",
+				cfg->md_device_name, (long long unsigned)fixed_offset);
+	}
+	if (have_flex_v07) {
+		fprintf(stderr, "There apears to be a v07(plus) flexible-size internal meta data block\n"
+				"already in place on %s at byte offset %llu",
+		cfg->md_device_name, (long long unsigned)flex_offset);
+	}
+	if (have_flex_v08) {
+		fprintf(stderr, "There apears to be a v08 flexible-size internal meta data block\n"
+				"already in place on %s at byte offset %llu",
+		cfg->md_device_name, (long long unsigned)flex_offset);
+	}
+
+	if (have_fixed_v07 && have_flex_v07) {
+		fprintf(stderr, "Don't know what to do now. If you want this to work,\n"
+				"Please wipe out at least one of these.\n");
+		exit(10);
+	}
+
+	if (is_v08(cfg)) {
+		if (have_flex_v08) {
+			if (!confirmed("Do you really want to overwrite the existing v08 meta-data?")) {
+				printf("Operation cancelled.\n");
+				exit(1); // 1 to avoid online resource counting
+			}
+			/* no need to wipe flex offset,
+			 * will be overwritten with new data */
+			have_flex_v08 = 0;
+		}
+		if ( (have_fixed_v07||have_flex_v07) ) {
+			if (confirmed("Convert the existing v07 meta-data to v08?")) {
+				cfg->md = have_fixed_v07 ? md_07 : md_07p;
+				md_convert_07_to_08(cfg);
+				/* goto wipe; */
+			} else if (!confirmed("So you want me to wipe out the v07 meta-data?")) {
+				printf("Operation cancelled.\n");
+				exit(1); // 1 to avoid online resource counting
+			}
+		}
+	} else { /* is_v07(cfg) */
+		if (have_fixed_v07 || have_flex_v07) {
+			if (!confirmed("Do you really want to overwrite the existing v07 meta-data?")) {
+				printf("Operation cancelled.\n");
+				exit(1); // 1 to avoid online resource counting
+			}
+			/* no need to wipe the requested flavour,
+			 * will be overwritten with new data */
+			if (cfg->md_index == DRBD_MD_INDEX_INTERNAL)
+				have_fixed_v07 = 0;
+			else
+				have_flex_v07 = 0;
+		}
+		if (have_flex_v08) {
+			if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
+				cfg->md = md_08;
+				md_convert_08_to_07(cfg);
+				if (cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
+					have_flex_v08 = 0;
+				/* goto wipe; */
+			}
+		}
+	}
+
+ /* wipe: */
+	memset(on_disk_buffer, 0x00, 4096);
+	if (have_fixed_v07) {
+		pwrite_or_die(cfg->md_fd, on_disk_buffer, 4096, fixed_offset,
+			"wipe fixed-size v07 internal md");
+	}
+	if (have_flex_v08 || have_flex_v07)
+		pwrite_or_die(cfg->md_fd, on_disk_buffer, 4096, flex_offset,
+			"wipe flexible-size internal md");
+}
+
+void check_external_md_flavours(struct format * cfg) {
+	struct md_cpu md_07;
+	struct md_cpu md_08;
+
+	ASSERT( cfg->md_index >= 0 ||
+		cfg->md_index == DRBD_MD_INDEX_FLEX_EXT );
+
+	if (cfg->md.magic) {
+		if (!confirmed("Valid meta data seems to be in place.\n"
+				"Do you really want to overwrite?")) {
+			printf("Operation cancelled.\n");
+			exit(1);
+		}
+		cfg->md.magic = 0; /* will be re-initialized below */
+		return;
+	}
+	PREAD(cfg->md_fd, on_disk_buffer, 4096, cfg->md_offset);
+	if (is_v08(cfg)) {
+		md_disk_07_to_cpu(&md_07, (struct md_on_disk_07*)on_disk_buffer);
+		if (!is_valid_md(Drbd_07, &md_07, cfg->md_index, cfg->bd_size))
+			return;
+		if (confirmed("Valid v07 meta-data found, convert to v08?")) {
+			cfg->md = md_07;
+			md_convert_07_to_08(cfg);
+			return;
+		}
+		if (!confirmed("So you want me to replace the v07 meta-data\n"
+				"with newly initialized v08 meta-data?")) {
+			printf("Operation cancelled.\n");
+			exit(1);
+		}
+	} else if (is_v07(cfg)) {
+		md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
+		if (!is_valid_md(Drbd_08, &md_08, cfg->md_index, cfg->bd_size))
+			return;
+		if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
+			cfg->md = md_08;
+			md_convert_08_to_07(cfg);
+			return;
+		}
+		if (!confirmed("So you want me to replace the v08 meta-data\n"
+				"with newly initialized v07 meta-data?")) {
+			printf("Operation cancelled.\n");
+			exit(1);
+		}
+	}
 }
 
 int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
-	int virgin, err;
+	int err = 0;
+
 	if (argc > 0) {
 		fprintf(stderr, "Ignoring additional arguments\n");
 	}
 
-	virgin = cfg->ops->open(cfg);
-	if (virgin && is_v08(cfg)) {
-		/* wrong format. if we want to create a v08,
-		 * we might have a v07 in place.
-		 * if so, maybe just convert.
-		 */
-		virgin = v07_md_disk_to_cpu(cfg);
-		if (!virgin) {
-			if (confirmed("Valid v07 meta-data found, convert to v08?"))
-				return md_convert_07_to_08(cfg);
-		}
-	}
-	if (virgin && is_v07(cfg)) {
-		/* don't just overwrite existing v08 with v07
-		 */
-		virgin = v08_md_disk_to_cpu(cfg);
-		if (!virgin) {
-			if (confirmed("Valid v08 meta-data found, convert back to v07?"))
-				return md_convert_08_to_07(cfg);
-		}
-	}
+	/* if cfg->md is not valid, reset it */
+	if (cfg->ops->open(cfg))
+		memset(&cfg->md, 0, sizeof(cfg->md));
 
-	if (!virgin) {
-		if (!confirmed("Valid meta-data already in place, recreate new?")) {
-			printf("Operation cancelled.\n");
-			exit(1); // 1 to avoid online resource counting
-		}
-	} else {
-		printf("About to create a new drbd meta data block\non %s.\n",
-				cfg->md_device_name);
-		check_for_existing_data(cfg);
+	/* Maybe we want to use some library that provides detection of
+	 * fs/partition/usage types? */
+	check_for_existing_data(cfg);
 
-		if (!confirmed(" ==> This might destroy existing data! <==\n\n"
-				"Do you want to proceed?")) {
-			printf("Operation cancelled.\n");
-			exit(1); // 1 to avoid online resource counting
-		}
-	}
+	/* the offset of v07 fixed-size internal meta data is different from
+	 * the offset of the flexible-size v07 ("plus") and v08 (default)
+	 * internal meta data.
+	 * to avoid the situation where we would have "valid" meta data blocks
+	 * of different versions at different offsets, we also need to check
+	 * the other format, and the other offset.
+	 *
+	 * on a request to create v07 fixed-size internal meta data, we also
+	 * check flex-internal v08 [and v07 (plus)] at the other offset.
+	 *
+	 * on a request to create v08 flex-internal meta data (or v07 plus, for
+	 * that matter), we also check the same offset for the respective other
+	 * flex-internal format version, as well as the v07 fixed-size internal
+	 * meta data offset for its flavour of meta data.
+	 */
+	if (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
+	    cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
+		check_internal_md_flavours(cfg);
+	else
+	       check_external_md_flavours(cfg);
 
-	cfg->ops->md_erase_other_sbs(cfg);
-	printf("Creating meta data...\n");
-	MEMSET(&cfg->md, 0, sizeof(cfg->md));
-	err = cfg->ops->md_initialize(cfg);
+	printf("Writing meta data...\n");
+	if (!cfg->md.magic) /* not converted: initialize */
+		err = cfg->ops->md_initialize(cfg); /* Clears on disk AL implicitly */
+	/* FIXME
+	 * if this converted fixed-size 128MB internal meta data
+	 * to flexible size, we'd need to move the AL and bitmap
+	 * over to the new location!
+	 * But the upgrade procedure in such case is documented to first get
+	 * the previous DRBD into "clean" Connected Secondary/Secondary, so AL
+	 * and bitmap should be empty anyways.
+	 */
 	err = err || cfg->ops->md_cpu_to_disk(cfg); // <- short circuit
-	//fprintf(stderr,"munmap... fsync...\n");
 	err = cfg->ops->close(cfg)          || err; // <- close always
 	if (err)
 		fprintf(stderr, "operation failed\n");
@@ -2300,8 +2352,14 @@ int meta_wipe_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		return 0;
 	}
 
+	if (!confirmed("Do you really want to wipe out the DRBD meta data?")) {
+		printf("Operation cancelled.\n");
+		exit(1);
+	}
+
 	printf("Wiping meta data...\n");
-	MEMSET(cfg->on_disk.md, 0, 4096);
+	memset(on_disk_buffer, 0, 4096);
+	PWRITE(cfg->md_fd, on_disk_buffer, 4096, cfg->md_offset);
 
 	err = cfg->ops->close(cfg);
 	if (err)
@@ -2355,80 +2413,6 @@ int meta_invalidate(struct format *cfg, char **argv __attribute((unused)), int a
 
 	return err;
 }
-
-#if 0
-int meta_set_size(struct format *cfg, char **argv, int argc)
-{
-	struct md_cpu tmp;
-	unsigned long long kB, ll_kB;
-	int err;
-	char **str;
-
-#warning	"sorry, not yet correctly implemented"
-	fprintf(stderr,	"sorry, not yet correctly implemented\n");
-	exit(30);
-	if (argc > 1) {
-		fprintf(stderr, "Ignoring additional arguments\n");
-	}
-	if (argc < 1) {
-		fprintf(stderr, "Required Argument missing\n");
-		exit(10);
-	}
-
-	if (cfg->ops->open(cfg))
-		return -1;
-
-	ll_kB = bdev_size(cfg->drbd_fd) >> 10;
-
-	/* FIXME make flexible for v08
-	 * new method vXY_max_dev_sect? */
-	if (cfg->md_index == -1) {
-		if (ll_kB < (MD_RESERVED_SECT_07>>1)) {
-			fprintf(stderr, "device too small for internal meta data\n");
-			exit(20);
-		}
-		ll_kB = ALIGN(ll_kB,4) - (MD_RESERVED_SECT_07 >> 1);
-	}
-
-	kB = m_strtoll(argv[0],'k');
-	if (kB > ll_kB) {
-		fprintf(stderr,
-			"%s out of range, maximum available %llukB.\n",
-			argv[0], ll_kB);
-		exit(20);
-	}
-	tmp = cfg->md;
-	tmp.la_sect = kB<<1;
-
-	printf("available   %llukB\n", ll_kB);
-	printf("previously  %llukB\n", cfg->md.la_sect>>1);
-	printf("size set to %llukB\n", kB);
-
-	if (!confirmed("Write new size to disk?")) {
-		printf("Operation cancelled.\n");
-		exit(0);
-	}
-
-	if (cfg->on_disk.bm) {
-		u64 a,b,ll;
-		a = cfg->md.la_sect;
-		b = tmp.la_sect;
-		/* convert sectors to bit numbers */
-		a >>= 8;
-		b = (b+7) >> 8;
-		if (b > a) {
-			/* first word */
-		}
-	}
-	cfg->md = tmp;
-	err = cfg->ops->md_cpu_to_disk(cfg);
-	err = cfg->ops->close(cfg) || err;
-	if (err)
-		fprintf(stderr, "update failed\n");
-
-	return err;
-}
-#endif
 
 int meta_read_dev_uuid(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
@@ -2498,7 +2482,7 @@ void print_usage_and_exit()
 		       cmds[i].args ? cmds[i].args : "");
 	}
 
-	exit(0);
+	exit(20);
 }
 
 int parse_format(struct format *cfg, char **argv, int argc, int *ai)
@@ -2551,19 +2535,30 @@ int is_attached(int minor)
 	return rv;
 }
 
-struct sigaction sa;
-static void signal_handler(int signo)
+/* CALL ONLY ONCE as long as on_disk_buffer is global! */
+struct format *new_cfg()
 {
-	fflush(stdout);
-	fprintf(stderr,"%s\nThis feels like a bug.\n",
-		(signo == SIGBUS)
-		? "SIGBUS: out of band access to the mmaped area!"
-		: "SIGSEGV!");
-	fprintf(stderr,"debug hint: last memset: %s:%u: @%p %llu\n"
-		"Sorry.\n",
-		last_memset_func, last_memset_line,
-		last_memset_target, (unsigned long long)last_memset_n);
-	exit(128 | signo);
+	int err;
+	struct format *cfg;
+
+	errno = 0;
+	pagesize = sysconf(_SC_PAGESIZE);
+	if (errno) {
+		perror("could not determine pagesize");
+		exit(20);
+	}
+	cfg = calloc(1, sizeof(struct format));
+	if (!cfg) {
+		fprintf(stderr, "could not calloc() cfg\n");
+		exit(20);
+	}
+	err = posix_memalign(&on_disk_buffer,pagesize,
+		(buffer_size+pagesize-1)/pagesize*pagesize);
+	if (err) {
+		fprintf(stderr, "could not posix_memalign() on_disk_buffer\n");
+		exit(20);
+	}
+	return cfg;
 }
 
 int main(int argc, char **argv)
@@ -2577,13 +2572,13 @@ int main(int argc, char **argv)
 #if 1
 	if (sizeof(struct md_on_disk_07) != 4096) {
 		fprintf(stderr, "Where did you get this broken build!?\n"
-			        "sizeof(md_on_disk_07) == %lu, should be 4096\n",
+				"sizeof(md_on_disk_07) == %lu, should be 4096\n",
 				(unsigned long)sizeof(struct md_on_disk_07));
 		exit(111);
 	}
 	if (sizeof(struct md_on_disk_08) != 4096) {
 		fprintf(stderr, "Where did you get this broken build!?\n"
-			        "sizeof(md_on_disk_08) == %lu, should be 4096\n",
+				"sizeof(md_on_disk_08) == %lu, should be 4096\n",
 				(unsigned long)sizeof(struct md_on_disk_08));
 		exit(111);
 	}
@@ -2596,10 +2591,6 @@ int main(int argc, char **argv)
 #endif
 #endif
 
-	sa.sa_handler=&signal_handler;
-	sigemptyset(&sa.sa_mask);
-	sigaction(SIGBUS,&sa,NULL);
-	sigaction(SIGSEGV,&sa,NULL);
 	if ((progname = strrchr(argv[0], '/'))) {
 		argv[0] = ++progname;
 	} else {
@@ -2609,30 +2600,31 @@ int main(int argc, char **argv)
 	if (argc < 4)
 		print_usage_and_exit();
 
-        /* Check for options (e.g. --force) */
-        while (1) {
-            int c = getopt_long(argc,argv,make_optstring(metaopt,0),metaopt,0);
+	/* so dump_md can write a nice header */
+	global_argc = argc;
+	global_argv = argv;
 
-            if (c == -1)
-                break;
+	/* Check for options (e.g. --force) */
+	while (1) {
+	    int c = getopt_long(argc,argv,make_optstring(metaopt,0),metaopt,0);
 
-            switch (c) {
-            case 'f':
-                force = 1;
-                break;
-            default:
-                print_usage_and_exit();
-                break;
-            }
-        }
+	    if (c == -1)
+		break;
 
-        // Next argument to process is specified by optind...
-        ai = optind;
+	    switch (c) {
+	    case 'f':
+		force = 1;
+		break;
+	    default:
+		print_usage_and_exit();
+		break;
+	    }
+	}
 
-	/* FIXME should have a "drbd_cfg_new" and a "drbd_cfg_free"
-	 * function, maybe even a "get" and "put" ?
-	 */
-	cfg = calloc(1, sizeof(struct format));
+	// Next argument to process is specified by optind...
+	ai = optind;
+
+	cfg = new_cfg();
 	cfg->drbd_dev_name = argv[ai++];
 
 	if (parse_format(cfg, argv + ai, argc - ai, &ai)) {

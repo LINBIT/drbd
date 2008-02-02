@@ -871,12 +871,13 @@ int drbd_bm_clear_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
  */
 int drbd_bm_test_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 {
+	unsigned long flags;
 	struct drbd_bitmap *b = mdev->bitmap;
 	int i;
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 
-	spin_lock_irq(&b->bm_lock);
+	spin_lock_irqsave(&b->bm_lock, flags);
 	if (bitnr < b->bm_bits) {
 		i = test_bit(bitnr, b->bm) ? 1 : 0;
 	} else if (bitnr == b->bm_bits) {
@@ -886,9 +887,32 @@ int drbd_bm_test_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 		i = 0;
 	}
 
-	spin_unlock_irq(&b->bm_lock);
+	spin_unlock_irqrestore(&b->bm_lock, flags);
 	return i;
 }
+
+/* returns number of bits set */
+int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
+{
+	unsigned long flags;
+	struct drbd_bitmap *b = mdev->bitmap;
+	unsigned long bitnr;
+	int c = 0;
+	ERR_IF(!b) return 1;
+	ERR_IF(!b->bm) return 1;
+
+	spin_lock_irqsave(&b->bm_lock,flags);
+	for (bitnr = s; bitnr <=e; bitnr++) {
+		ERR_IF (bitnr >= b->bm_bits) {
+			ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
+		} else {
+			c += (0 != test_bit(bitnr, b->bm));
+		}
+	}
+	spin_unlock_irqrestore(&b->bm_lock,flags);
+	return c;
+}
+
 
 /* inherently racy...
  * return value may be already out-of-date when this function returns.
