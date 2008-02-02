@@ -1304,7 +1304,7 @@ extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 // drbd_nl.c
 extern char* ppsize(char* buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
-enum determin_dev_size_enum { unchanged = 0, shrunk = 1, grew = 2 };
+enum determin_dev_size_enum { dev_size_error = -1, unchanged = 0, shrunk = 1, grew = 2 };
 extern enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev*);
 extern void resync_after_online_grow(drbd_dev *mdev);
 extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);

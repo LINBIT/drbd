@@ -461,7 +461,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 	char ppb[10];
 
 	int md_moved, la_size_changed;
-	int rv=unchanged;
+	enum determin_dev_size_enum rv=unchanged;
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
@@ -490,7 +490,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 				    "Leaving size unchanged at size = %lu KB\n",
 				    (unsigned long)size);
 			}
-			rv = err;
+			rv = dev_size_error;
 		}
 		// racy, see comments above.
 		drbd_set_my_capacity(mdev,size);
@@ -498,7 +498,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 		INFO("size = %s (%llu KB)\n",ppsize(ppb,size>>1),
 		     (unsigned long long)size>>1);
 	}
-	if (rv < 0) goto out;
+	if (rv == dev_size_error) goto out;
 
 	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
 
@@ -931,7 +931,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	drbd_bm_lock(mdev); // racy...
-	if (drbd_determin_dev_size(mdev) < 0) {
+	if (drbd_determin_dev_size(mdev) == dev_size_error) {
 		retcode = VMallocFailed;
 		goto unlock_bm;
 	}
@@ -1309,7 +1309,7 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	struct resize rs;
 	int retcode=NoError;
 	int ldsc = 0; /* local disk size changed */
-	int dd;
+	enum determin_dev_size_enum dd;
 
 	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev,nlp->tag_list,&rs)) {
@@ -1344,7 +1344,7 @@ STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_md_sync(mdev);
 	drbd_bm_unlock(mdev);
 	dec_local(mdev);
-	if (dd < 0) {
+	if (dd == dev_size_error) {
 		retcode = VMallocFailed;
 		goto fail;
 	}

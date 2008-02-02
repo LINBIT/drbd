@@ -2264,7 +2264,6 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	sector_t p_size, p_usize, my_usize;
 	int ldsc = 0; /* local disk size changed */
 	drbd_conns_t nconn;
-	int dd;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
@@ -2319,11 +2318,12 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	mdev->p_size=p_size;
 	if(inc_local(mdev)) {
+		enum determin_dev_size_enum dd;
 		drbd_bm_lock(mdev); // {
 		dd = drbd_determin_dev_size(mdev);
 		drbd_bm_unlock(mdev); // }
 		dec_local(mdev);
-		if (dd < 0) return FALSE;
+		if (dd == dev_size_error) return FALSE;
 		if (dd == grew && mdev->state.conn == Connected &&
 		    mdev->state.pdsk >= Inconsistent &&
 		    mdev->state.disk >= Inconsistent) {
