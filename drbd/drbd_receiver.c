@@ -660,7 +660,7 @@ enum Drbd_Packet_Cmd drbd_recv_fp(struct drbd_conf *mdev, struct socket *sock)
  * Tests if the connection behind the socket still exists. If not it frees
  * the socket.
  */
-STATIC int drbd_socket_okay(drbd_dev *mdev, struct socket **sock)
+static int drbd_socket_okay(struct drbd_conf *mdev, struct socket **sock)
 {
 	int rr;
 	char tb[4];
@@ -3321,14 +3321,14 @@ static struct asender_cmd* get_asender_cmd(int cmd)
 
 int drbd_asender(struct Drbd_thread *thi)
 {
-	drbd_dev *mdev = thi->mdev;
-	Drbd_Header *h = &mdev->meta.rbuf.head;
+	struct drbd_conf *mdev = thi->mdev;
+	struct Drbd_Header *h = &mdev->meta.rbuf.head;
 	struct asender_cmd *cmd = NULL;
 
 	int rv,len;
 	void *buf    = h;
 	int received = 0;
-	int expect   = sizeof(Drbd_Header);
+	int expect   = sizeof(struct Drbd_Header);
 	int empty;
 
 	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));
@@ -3415,7 +3415,7 @@ int drbd_asender(struct Drbd_thread *thi)
 				goto err;
 			}
 			expect = cmd->pkt_size;
-			ERR_IF(len != expect-sizeof(Drbd_Header)) {
+			ERR_IF(len != expect-sizeof(struct Drbd_Header)) {
 				dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
 				DUMPI(expect);
 				goto err;

@@ -1364,12 +1364,12 @@ int _drbd_send_uuids(struct drbd_conf *mdev)
 
 	if (likely(sock != NULL))
 		ok = _drbd_send_cmd(mdev, sock, ReportUUIDs,
-				   (Drbd_Header*)&p, sizeof(p), 0);
+				   (struct Drbd_Header*)&p, sizeof(p), 0);
 
 	return ok;
 }
 
-int drbd_send_uuids(drbd_dev *mdev)
+int drbd_send_uuids(struct drbd_conf *mdev)
 {
 	int ok;
 	down(&mdev->data.mutex);
@@ -1421,17 +1421,17 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 }
 
 /* Hold socket mutex before calling this */
-int _drbd_send_state(drbd_dev *mdev)
+int _drbd_send_state(struct drbd_conf *mdev)
 {
 	struct socket *sock = mdev->data.socket;
-	Drbd_State_Packet p;
+	struct Drbd_State_Packet p;
 	int ok = 0;
 
 	p.state    = cpu_to_be32(mdev->state.i);
 
 	if (likely(sock != NULL))
 		ok = _drbd_send_cmd(mdev, sock, ReportState,
-				   (Drbd_Header*)&p, sizeof(p), 0);
+				   (struct Drbd_Header*)&p, sizeof(p), 0);
 
 	return ok;
 }
