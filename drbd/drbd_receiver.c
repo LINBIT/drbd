@@ -3430,18 +3430,18 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 
-	if(be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC) {
-		drbd_ov_oos_found(mdev,sector,size);
+	if (be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC) {
+		drbd_ov_oos_found(mdev, sector, size);
 	} else ov_oos_print(mdev);
 
 	drbd_rs_complete_io(mdev, sector);
 	dec_rs_pending(mdev);
 
-	if( --mdev->ov_left == 0 ) {
-		w=kmalloc(sizeof(w),GFP_KERNEL);
-		if(w) {
+	if (--mdev->ov_left == 0) {
+		w = kmalloc(sizeof(w), GFP_KERNEL);
+		if (w) {
 			w->cb = w_ov_finished;
-			drbd_queue_work_front(&mdev->data.work,w);
+			drbd_queue_work_front(&mdev->data.work, w);
 		} else {
 			ERR("kmalloc(w) failed.");
 			drbd_resync_finished(mdev);
