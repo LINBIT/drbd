@@ -37,6 +37,7 @@
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#include <linux/scatterlist.h>
 
 #include <linux/drbd.h>
 #include "drbd_int.h"

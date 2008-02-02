@@ -68,7 +68,7 @@ extern const char *drbd_buildtag(void);
 
 /* kernel.org has atomic_add_return since 2.6.10. some vendor kernels
  * have it backported, though. Others don't. */
-#define NEED_BACKPORT_OF_ATOMIC_ADD
+//#define NEED_BACKPORT_OF_ATOMIC_ADD
 
 /* 2.6.something has deprecated kmem_cache_t
  * some older still use it.
