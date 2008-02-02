@@ -868,6 +868,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				     ext->lce.lc_number, ext->rs_left, ext->rs_failed, count);
 				dump_stack();
 				// FIXME brrrgs. should never happen!
+				lc_put(mdev->resync, &ext->lce);
 				drbd_force_state(mdev,NS(conn,Disconnecting));
 				return;
 			}
