@@ -1034,8 +1034,10 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
 			    const char *file, const unsigned int line)
 {
-	unsigned long sbnr, ebnr, lbnr;
+	unsigned long sbnr, ebnr, lbnr, flags;
 	sector_t esector, nr_sectors;
+	unsigned int enr, count;
+	struct bm_extent* ext;
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("sector: %llus, size: %d\n",
@@ -1069,7 +1071,17 @@ void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
 
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */
-	drbd_bm_set_bits(mdev, sbnr, ebnr);
+	spin_lock_irqsave(&mdev->al_lock, flags);
+	count = drbd_bm_set_bits(mdev, sbnr, ebnr);
+
+	enr = BM_SECT_TO_EXT(sector);
+	ext = (struct bm_extent *) lc_get(mdev->resync, enr);
+	if (ext) {
+		if (ext->lce.lc_number == enr)
+			ext->rs_left += count;
+		lc_put(mdev->resync, &ext->lce);
+	}
+	spin_unlock_irqrestore(&mdev->al_lock, flags);
 
 out:
 	dec_local(mdev);
