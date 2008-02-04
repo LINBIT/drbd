@@ -715,7 +715,6 @@ STATIC int drbd_socket_okay(drbd_dev *mdev, struct socket **sock)
 
 	rr = drbd_recv_short(mdev, *sock, tb, 4, MSG_DONTWAIT | MSG_PEEK);
 
-	INFO("drbd_socket_okay: rr = %d\n",rr);
 	if (rr > 0 || rr == -EAGAIN) {
 		return TRUE;
 	} else {
