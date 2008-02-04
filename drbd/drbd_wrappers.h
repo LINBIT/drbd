@@ -87,13 +87,15 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 	sg->length = len;
 }
 
+#define sg_init_table(S,N) ({})
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
 static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 			      unsigned int buflen)
 {
 	sg_set_page(sg, virt_to_page(buf), buflen, offset_in_page(buf));
 }
-
-#define sg_init_table(S,N) ({})
+#endif
 
 #endif
 
