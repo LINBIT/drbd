@@ -999,6 +999,7 @@ extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev * bdev);
 extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val);
 extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
 extern void drbd_uuid_new_current(drbd_dev *mdev);
+extern void _drbd_uuid_new_current(drbd_dev *mdev);
 extern void drbd_uuid_set_bm(drbd_dev *mdev, u64 val);
 extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
 extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
