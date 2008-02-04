@@ -852,6 +852,7 @@ int m_outdate_uuid(struct md_cpu *md)
 int m_invalidate_gc(struct md_cpu *md)
 {
 	md->gc[Flags] &= ~MDF_Consistent;
+	md->gc[Flags] |= MDF_FullSync;
 
 	return 5;
 }
@@ -860,6 +861,7 @@ int m_invalidate_uuid(struct md_cpu *md)
 {
 	md->flags &= ~MDF_Consistent;
 	md->flags &= ~MDF_WasUpToDate;
+	md->flags |= MDF_FullSync;
 
 	return 0;
 }

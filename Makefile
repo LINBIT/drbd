@@ -31,7 +31,7 @@ SHELL=/bin/bash
 #PREFIX      = /usr/local
 
 SUBDIRS     = user scripts documentation drbd #testing #benchmark
-ALLSUBDIRS  = user scripts benchmark documentation drbd testing
+ALLSUBDIRS  = user scripts benchmark documentation drbd #testing
 
 REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 ifdef FORCE
