@@ -192,6 +192,22 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Mon Feb  4 2008 11:17:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.9-1)
+ * In case our backing devices support write barriers and cache
+   flushes, we use these means to ensure data integrity in
+   the presence of volatile disk write caches and power outages.
+ * Fixed DRBD to no longer log
+   "Sync bitmap getting lost (drbd_bm_set_bits_in_irq: (!b->bm))"
+   endlessly after the local disk was lost.
+ * Fixed protocol A for BIOs larger than the page size. If you
+   hit the bug, DBBD would simply lose connection.
+ * Changed state processing so that state changes visible
+   via the drbdsetup events interface are always in the right order.
+ * Made drbddisk's exit codes more LSB compliant.
+ * Back-ported the new drbdmeta to drbd-8.0 (from drbd-8.2).
+ * More robustness to the code that establishes connections.
+
 * Fri Dec  6 2007 14:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.8-1)
  * Improvements to the bitmap code. (The old code might reenabled
