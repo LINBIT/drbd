@@ -3421,7 +3421,7 @@ int drbd_asender(struct Drbd_thread *thi)
 
 	while (get_t_state(thi) == Running) {
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
-			ERR_IF(!drbd_send_ping(mdev)) goto err;
+			ERR_IF(!drbd_send_ping(mdev)) goto reconnect;
 			mdev->meta.socket->sk->sk_rcvtimeo =
 				mdev->net_conf->ping_timeo*HZ/10;
 		}
@@ -3429,7 +3429,7 @@ int drbd_asender(struct Drbd_thread *thi)
 		while(1) {
 			if (!drbd_process_done_ee(mdev)) {
 				ERR("process_done_ee() = NOT_OK\n");
-				goto err;
+				goto reconnect;
 			}
 			set_bit(SIGNAL_ASENDER, &mdev->flags);
 			spin_lock_irq(&mdev->req_lock);
@@ -3465,12 +3465,12 @@ int drbd_asender(struct Drbd_thread *thi)
 			buf      += rv;
 		} else if (rv == 0) {
 			ERR("meta connection shut down by peer.\n");
-			goto err;
+			goto reconnect;
 		} else if (rv == -EAGAIN) {
 			if( mdev->meta.socket->sk->sk_rcvtimeo ==
 			    mdev->net_conf->ping_timeo*HZ/10 ) {
 				ERR("PingAck did not arrive in time.\n");
-				goto err;
+				goto reconnect;
 			}
 			set_bit(SEND_PING,&mdev->flags);
 			continue;
@@ -3478,7 +3478,7 @@ int drbd_asender(struct Drbd_thread *thi)
 			continue;
 		} else {
 			ERR("sock_recvmsg returned %d\n", rv);
-			goto err;
+			goto reconnect;
 		}
 
 		if (received == expect && cmd == NULL ) {
@@ -3486,8 +3486,7 @@ int drbd_asender(struct Drbd_thread *thi)
 				ERR("magic?? on meta m: 0x%lx c: %d l: %d\n",
 				    (long)be32_to_cpu(h->magic),
 				    h->command, h->length);
-				cmd = (void*) -1UL; /* so it will reconnect */
-				goto err;
+				goto reconnect;
 			}
 			cmd = get_asender_cmd(be16_to_cpu(h->command));
 			len = be16_to_cpu(h->length);
@@ -3495,19 +3494,19 @@ int drbd_asender(struct Drbd_thread *thi)
 				ERR("unknown command?? on meta m: 0x%lx c: %d l: %d\n",
 				    (long)be32_to_cpu(h->magic),
 				    h->command, h->length);
-				goto err;
+				goto disconnect;
 			}
 			expect = cmd->pkt_size;
 			ERR_IF(len != expect-sizeof(Drbd_Header)) {
 				dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
 				DUMPI(expect);
-				goto err;
+				goto reconnect;
 			}
 		}
 		if (received == expect) {
 			D_ASSERT(cmd != NULL);
 			dump_packet(mdev,mdev->meta.socket,1,(void*)h, __FILE__, __LINE__);
-			if (!cmd->process(mdev,h)) goto err;
+			if (!cmd->process(mdev,h)) goto reconnect;
 
 			buf      = h;
 			received = 0;
@@ -3516,24 +3515,15 @@ int drbd_asender(struct Drbd_thread *thi)
 		}
 	} //while
 
-	if(0) {
-	err:
-		clear_bit(SIGNAL_ASENDER, &mdev->flags);
-		/* If cmd is set, we had an unexpected magic or header length,
-		 * or a problem processing the command.
-		 * We try to reconnect, and see if that helps.
-		 *
-		 * If the magic was ok, but the cmd is unknown,
-		 * the wire protocols seem to be not compatible after all,
-		 * even though the handshake worked out ok.
-		 * Which means either we screwed up,
-		 * or someone does something nasty on purpose.
-		 * In that case reconnecting won't help. */
-
-		/* FIXME some of these are not NetworkFailure,
-		 * but should rather be ProtocolError */
-		drbd_force_state(mdev,NS(conn, cmd ? NetworkFailure : Disconnecting));
+	if (0) {
+	reconnect:
+		drbd_force_state(mdev,NS(conn, NetworkFailure));
 	}
+	if (0) {
+	disconnect:
+		drbd_force_state(mdev,NS(conn, Disconnecting));
+	}
+	clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 	D_ASSERT(mdev->state.conn < Connected);
 	INFO("asender terminated\n");
