@@ -234,7 +234,7 @@ resource r0 {
     of this section's parameters.
     Optional parameters:
     <option>rate</option>, <option>after</option>, <option>al-extents</option>,
-    <option>cpu-mask</option>.
+    <option>cpu-mask</option> and <option>verify-alg</option>.
   </para>
   </listitem>
 </varlistentry>
