@@ -85,7 +85,7 @@ drbd_pretty_status()
 	   sed -e 's/|/_/g' \
 	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#')
 	(
-	echo m:res cs st ds mountpoint fstype
+	echo m:res cs st ds mounted fstype
 	join -a1 \
 		<(sed -e "1,2d" \
 		      -e "$sed_script" \
@@ -93,6 +93,7 @@ drbd_pretty_status()
 		      -e 's/^\(.* \)cs:\([^ ]* \)st:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
 		      -e 's/^ *[0-9]\+:/??not-found??&/;' \
 		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
+		      -e 's/^\(.\[.*\)\(sync.ed:\)/... ... \2/;/^.finish:/d;' \
 		      < /proc/drbd) \
 		<(join -1 2 -2 1 -o 1.1,2.2,2.3 \
 			<(drbdadm sh-dev all | cat -n | sort -k2,2) \
