@@ -253,8 +253,6 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	 * when it is done and had a local write error, see comments there */
 	drbd_req_free(req);
 
-	if(unlikely(cancel)) return 1;
-
 	ok = drbd_io_error(mdev, FALSE);
 	if(unlikely(!ok)) ERR("Sending in w_io_error() failed\n");
 	return ok;
@@ -263,6 +261,11 @@ int w_io_error(drbd_dev* mdev, struct drbd_work* w,int cancel)
 int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 {
 	drbd_request_t *req = (drbd_request_t*)w;
+
+	/* FIXME this is ugly. we should not detach for read io-error,
+	 * but try to WRITE the DataReply to the failed location,
+	 * to give the disk the chance to relocate that block */
+	drbd_io_error(mdev,FALSE); /* tries to schedule a detach and notifies peer */
 
 	spin_lock_irq(&mdev->req_lock);
 	if ( cancel ||
@@ -276,10 +279,6 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
-	/* FIXME this is ugly. we should not detach for read io-error,
-	 * but try to WRITE the DataReply to the failed location,
-	 * to give the disk the chance to relocate that block */
-	drbd_io_error(mdev,FALSE); /* tries to schedule a detach and notifies peer */
 	return w_send_read_req(mdev,w,0);
 }
 
