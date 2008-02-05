@@ -46,24 +46,22 @@ function adjust_with_progress
     NEWLINE='
 '
     IFS=$NEWLINE
-    local D=0
-    local S=0
-    local N=0
+    local res
 
-    COMMANDS=`$DRBDADM -d adjust all` || exit 20
+    COMMANDS=`$DRBDADM -d -n res adjust all` || exit 20
     echo -n "[ "
 
     for CMD in $COMMANDS; do
-	if echo $CMD | grep -q disk; then echo -n "d$D "; D=$(( D+1 ));
-	elif echo $CMD | grep -q syncer; then echo -n "s$S "; S=$(( S+1 ));
-	elif echo $CMD | grep -q net; then echo -n "n$N "; N=$(( N+1 ));
-	else echo echo -n ".. ";
+	case "$CMD" in
+		res=*)		eval "$CMD";;
+		*\ disk\ *)	echo -n "d($res) " ;;
+	       	*\ syncer\ *)	echo -n "s($res) " ;;
+	       	*\ net\ *)	echo -n "n($res) " ;;
+		*)		echo ".. " ;;
+	esac
+	if ! eval "$CMD"; then
+	    echo -e "\n[$res] cmd $CMD failed - continuing!\n "
 	fi
-	IFS=$IFS_O
-	$CMD || {
-	    echo -e "\ncmd $CMD failed - continuing!\n"
-	}
-	IFS=$NEWLINE
     done
     echo -n "]"
 
