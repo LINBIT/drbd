@@ -671,6 +671,40 @@ static void alarm_handler(int __attribute((unused)) signo)
   alarm_raised=1;
 }
 
+static inline const char* shell_escape(char* s)
+{
+	/* ugly static buffer. so what. */
+	static char buffer[1024];
+	char *c = buffer;
+
+	if (s == NULL)
+		return s;
+
+	while (1) {
+		if (buffer + sizeof(buffer) < c+2)
+			break;
+
+		switch(*s) {
+		case 0: /* terminator */
+			break;
+		/* set of 'clean' characters */
+		case '%': case '+': case '-': case '.': case '/':
+		case '0' ... '9':
+		case ':': case '=': case '@':
+		case 'A' ... 'Z':
+		case '_':
+		case 'a' ... 'z':
+			break;
+		/* escape everything else */
+		default:
+			*c++ = '\\';
+		}
+		*c++ = *s++;
+	}
+	*c = '\0';
+	return buffer;
+}
+
 pid_t m_system(char** argv,int flags)
 {
   pid_t pid;
@@ -686,7 +720,7 @@ pid_t m_system(char** argv,int flags)
 
   if(dry_run || verbose) {
     while(*cmdline) {
-      fprintf(stdout,"%s ",*cmdline++);
+      fprintf(stdout,"%s ", shell_escape(*cmdline++));
     }
     fprintf(stdout,"\n");
     if (dry_run) return 0;
