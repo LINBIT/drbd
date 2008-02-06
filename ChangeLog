@@ -22,11 +22,15 @@ Changelog for fixes propagated from 8.0.x:
    endlessly after the local disk was lost.
  * Fixed protocol A for BIOs larger than the page size. If you
    hit the bug, DBBD would simply lose connection.
+ * Don't accidentally truncate the device in case a secondary with
+   a too small disk gets connected.
  * Changed state processing so that state changes visible
    via the drbdsetup events interface are always in the right order.
  * Made drbddisk's exit codes more LSB compliant.
  * Back-ported the new drbdmeta to drbd-8.0 (from drbd-8.2).
  * More robustness to the code that establishes connections.
+ * Made '/etc/init.d/drbd status' to print a nice overview.
+ * Made it to compile on Linux-2.6.24.
 
 8.0.8 (api:86/proto:86)
 --------

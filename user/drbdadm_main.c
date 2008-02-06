@@ -133,6 +133,7 @@ int verbose;
 int do_verify_ips;
 char* drbdsetup;
 char* drbdmeta;
+char* sh_varname = NULL;
 char* setup_opts[10];
 int soi=0;
 volatile int alarm_raised;
@@ -192,6 +193,7 @@ struct option admopt[] = {
   { "config-file",  required_argument,0, 'c' },
   { "drbdsetup",    required_argument,0, 's' },
   { "drbdmeta",     required_argument,0, 'm' },
+  { "sh-varname",   required_argument,0, 'n' },
   { 0,              0,                0, 0   }
 };
 
@@ -671,7 +673,41 @@ static void alarm_handler(int __attribute((unused)) signo)
   alarm_raised=1;
 }
 
-pid_t m_system(char** argv,int flags)
+static inline const char* shell_escape(char* s)
+{
+	/* ugly static buffer. so what. */
+	static char buffer[1024];
+	char *c = buffer;
+
+	if (s == NULL)
+		return s;
+
+	while (1) {
+		if (buffer + sizeof(buffer) < c+2)
+			break;
+
+		switch(*s) {
+		case 0: /* terminator */
+			break;
+		/* set of 'clean' characters */
+		case '%': case '+': case '-': case '.': case '/':
+		case '0' ... '9':
+		case ':': case '=': case '@':
+		case 'A' ... 'Z':
+		case '_':
+		case 'a' ... 'z':
+			break;
+		/* escape everything else */
+		default:
+			*c++ = '\\';
+		}
+		*c++ = *s++;
+	}
+	*c = '\0';
+	return buffer;
+}
+
+pid_t m_system(char** argv, int flags, struct d_resource *res)
 {
   pid_t pid;
   int status,rv=-1;
@@ -685,8 +721,10 @@ pid_t m_system(char** argv,int flags)
   sa.sa_flags=0;
 
   if(dry_run || verbose) {
+    if (sh_varname && *cmdline)
+      fprintf(stdout,"%s=%s\n", sh_varname, shell_escape(res->name));
     while(*cmdline) {
-      fprintf(stdout,"%s ",*cmdline++);
+      fprintf(stdout,"%s ", shell_escape(*cmdline++));
     }
     fprintf(stdout,"\n");
     if (dry_run) return 0;
@@ -809,7 +847,7 @@ int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
   make_options(opt);
   argv[NA(argc)]=0;
 
-  return m_system(argv,SLEEPS_LONG);
+  return m_system(argv, SLEEPS_LONG, res);
 }
 
 struct d_option* find_opt(struct d_option* base,char* name)
@@ -839,7 +877,7 @@ int adm_resize(struct d_resource* res,const char* unused __attribute((unused)))
   }
   argv[NA(argc)]=0;
 
-  return m_system(argv,SLEEPS_SHORT);
+  return m_system(argv, SLEEPS_SHORT, res);
 }
 
 int _admm_generic(struct d_resource* res ,const char* cmd, int flags)
@@ -871,7 +909,7 @@ int _admm_generic(struct d_resource* res ,const char* cmd, int flags)
 
   argv[NA(argc)]=0;
 
-  return m_system(argv,flags);
+  return m_system(argv, flags, res);
 }
 
 static int admm_generic(struct d_resource* res ,const char* cmd)
@@ -892,7 +930,7 @@ static int adm_generic(struct d_resource* res,const char* cmd,int flags)
   }
   argv[NA(argc)]=0;
 
-  return m_system(argv,flags);
+  return m_system(argv, flags, res);
 }
 
 int adm_generic_s(struct d_resource* res,const char* cmd)
@@ -930,7 +968,7 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
 
   if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
     argv[2]=sh_cmd;
-    rv = m_system(argv,SLEEPS_VERY_LONG);
+    rv = m_system(argv, SLEEPS_VERY_LONG, res);
   }
   return rv;
 }
@@ -980,7 +1018,7 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 
   argv[NA(argc)]=0;
 
-  return m_system(argv,SLEEPS_SHORT);
+  return m_system(argv, SLEEPS_SHORT, res);
 }
 
 struct d_resource* res_by_name(const char *name);
@@ -1016,7 +1054,7 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
   make_options(opt);
   argv[NA(argc)]=0;
 
-  return m_system(argv,SLEEPS_SHORT);
+  return m_system(argv, SLEEPS_SHORT, res);
 }
 
 static int adm_up(struct d_resource* res,const char* unused __attribute((unused)))
@@ -1041,7 +1079,7 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   make_options_wait(opt);
   argv[NA(argc)]=0;
 
-  rv = m_system(argv,SLEEPS_FOREVER);
+  rv = m_system(argv, SLEEPS_FOREVER, res);
 
   return rv;
 }
@@ -1235,7 +1273,7 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
     make_options_wait(opt);
     argv[NA(argc)]=0;
 
-    pids[i++]=m_system(argv,RETURN_PID);
+    pids[i++]=m_system(argv, RETURN_PID, res);
   }
 
   wtime = global_options.dialog_refresh ?: -1;
@@ -1763,6 +1801,29 @@ int main(int argc, char** argv)
 	    pathes[0]=optarg;
 	    pathes[1]=0;
 	    find_drbdcmd(&drbdmeta,pathes);
+	  }
+	  break;
+	case 'n':
+	  {
+	    char *c;
+            int shell_var_name_ok = 1;
+	    for (c = optarg; *c && shell_var_name_ok; c++) {
+	      switch(*c) {
+		case 'a' ... 'z':
+                case 'A' ... 'Z':
+                case '0' ... '9':
+                case '_':
+                  break;
+                default:
+                  shell_var_name_ok = 0;
+              }
+            }
+            if (shell_var_name_ok)
+              sh_varname = optarg;
+            else
+              fprintf(stderr,"ignored --sh-varname=%s: "
+                  "contains suspect characters, allowed set is [a-zA-Z0-9_]\n",
+                  optarg);
 	  }
 	  break;
 	case '?':

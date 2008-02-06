@@ -105,7 +105,7 @@ extern int adm_resize(struct d_resource* ,const char* );
 extern int adm_syncer(struct d_resource* ,const char* );
 extern int adm_generic_s(struct d_resource* ,const char* );
 extern int _admm_generic(struct d_resource* ,const char*, int flags);
-extern int m_system(char**,int );
+extern int m_system(char**, int, struct d_resource*);
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
 extern int check_uniq(const char* what, const char *fmt, ...);

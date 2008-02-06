@@ -570,6 +570,13 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		 */
 		__drbd_chk_io_error(mdev, FALSE);
 		dec_local(mdev);
+		/* NOTE: if we have no connection,
+		 * or know the peer has no good data either,
+		 * then we don't actually need to "queue_for_net_read",
+		 * but we do so anyways, since the drbd_io_error()
+		 * and the potential state change to "Diskless"
+		 * needs to be done from process context */
+
 		/* fall through: _req_mod(req,queue_for_net_read); */
 
 	case queue_for_net_read:
@@ -643,7 +650,10 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	 * we may not finish the request just yet.
 	 */
 	case send_canceled:
-		/* for the request, this is the same thing */
+		/* may be a write, may be a remote read */
+		if (req->rq_state & RQ_NET_PENDING) dec_ap_pending(mdev);
+		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
+		/* fall through */
 	case send_failed:
 		/* real cleanup will be done from tl_clear.  just update flags
 		 * so it is no longer marked as on the worker queue */

@@ -1424,8 +1424,11 @@ int meta_show_gi(struct format *cfg, char **argv __attribute((unused)), int argc
 	if (cfg->md.la_sect) {
 		printf("last agreed size: %s\n",
 		       ppsize(ppb, cfg->md.la_sect >> 1));
+#if 0
+		/* FIXME implement count_bits() */
 		printf("%u bits set in the bitmap [ %s out of sync ]\n",
 		       cfg->bits_set, ppsize(ppb, cfg->bits_set * 4));
+#endif
 	} else {
 		printf("zero size device -- never seen peer yet?\n");
 	}
