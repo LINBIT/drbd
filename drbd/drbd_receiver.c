@@ -2302,7 +2302,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 		if( mdev->bc->dc.disk_size != p_usize ) {
 			mdev->bc->dc.disk_size = p_usize;
-			INFO("Peer sets u_size to %lu KB\n",
+			INFO("Peer sets u_size to %lu sectors\n",
 			     (unsigned long)mdev->bc->dc.disk_size);
 		}
 
