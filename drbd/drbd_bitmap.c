@@ -984,6 +984,11 @@ int drbd_bm_count_bits(drbd_dev *mdev, const unsigned long s, const unsigned lon
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long bitnr;
 	int c = 0;
+
+	/* If this is called without a bitmap, that is a bug.  But just to be
+	 * robust in case we screwed up elsewhere, in that case pretend there
+	 * was one dirty bit in the requested area, so we won't try to do a
+	 * local read there (no bitmap probably implies no disk) */
 	ERR_IF(!b) return 1;
 	ERR_IF(!b->bm) return 1;
 
