@@ -91,6 +91,7 @@ drbd_pretty_status()
 		      -e "$sed_script" \
 		      -e '/^ *[0-9]\+: cs:Unconfigured/d;' \
 		      -e 's/^\(.* \)cs:\([^ ]* \)st:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
+		      -e 's/^\(.* \)cs:\([^ ]*\)$/\1\2/' \
 		      -e 's/^ *[0-9]\+:/??not-found??&/;' \
 		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
 		      -e 's/^\(.\[.*\)\(sync.ed:\)/... ... \2/;/^.finish:/d;' \
