@@ -46,28 +46,62 @@ function adjust_with_progress
     NEWLINE='
 '
     IFS=$NEWLINE
-    local D=0
-    local S=0
-    local N=0
+    local res
 
-    COMMANDS=`$DRBDADM -d adjust all` || exit 20
+    COMMANDS=`$DRBDADM -d -n res adjust all` || exit 20
     echo -n "[ "
 
     for CMD in $COMMANDS; do
-	if echo $CMD | grep -q disk; then echo -n "d$D "; D=$(( D+1 ));
-	elif echo $CMD | grep -q syncer; then echo -n "s$S "; S=$(( S+1 ));
-	elif echo $CMD | grep -q net; then echo -n "n$N "; N=$(( N+1 ));
-	else echo echo -n ".. ";
+	case "$CMD" in
+		res=*)		eval "$CMD";;
+		*\ disk\ *)	echo -n "d($res) " ;;
+		*\ syncer\ *)	echo -n "s($res) " ;;
+		*\ net\ *)	echo -n "n($res) " ;;
+		*)		echo ".. " ;;
+	esac
+	if ! eval "$CMD"; then
+	    echo -e "\n[$res] cmd $CMD failed - continuing!\n "
 	fi
-	IFS=$IFS_O
-	$CMD || {
-	    echo -e "\ncmd $CMD failed - continuing!\n"
-	}
-	IFS=$NEWLINE
     done
     echo -n "]"
 
     IFS=$IFS_O
+}
+
+drbd_pretty_status()
+{
+	# add resource names
+	if ! type paste &> /dev/null ||
+	   ! type join &> /dev/null ||
+	   ! type sed &> /dev/null ||
+	   ! type column &> /dev/null ; then
+		cat /proc/drbd
+		return
+	fi
+	sed -e '2q' < /proc/drbd;
+	sed_script=$(
+	   paste <(drbdadm sh-dev all | cat -n) \
+		 <(drbdadm sh-resources| tr ' ' '\n')  |
+	   sed -e 's/|/_/g' \
+	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#')
+	(
+	echo m:res cs st ds mounted fstype
+	join -a1 \
+		<(sed -e "1,2d" \
+		      -e "$sed_script" \
+		      -e '/^ *[0-9]\+: cs:Unconfigured/d;' \
+		      -e 's/^\(.* \)cs:\([^ ]* \)st:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
+		      -e 's/^\(.* \)cs:\([^ ]*\)$/\1\2/' \
+		      -e 's/^ *[0-9]\+:/??not-found??&/;' \
+		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
+		      -e 's/^\(.\[.*\)\(sync.ed:\)/... ... \2/;/^.finish:/d;' \
+		      < /proc/drbd) \
+		<(join -1 2 -2 1 -o 1.1,2.2,2.3 \
+			<(drbdadm sh-dev all | cat -n | sort -k2,2) \
+			<(sort < /proc/mounts ) |
+			sort -n) |
+		cut -d' ' -f2-5,8-
+	) | column -t
 }
 
 # Just in case drbdadm want to display any errors in the configuration
@@ -93,7 +127,7 @@ case "$1" in
 	    done
 	done
 
-	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd  # for RedHat
+	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd	# for RedHat
 	echo "."
 	$DRBDADM wait-con-int # User interruptible version of wait-connect all
 
@@ -113,7 +147,7 @@ case "$1" in
 	# so: put some "OK" in the output.
 	if [ -e $PROC_DRBD ]; then
 	    echo "drbd driver loaded OK; device status:"
-	    cat $PROC_DRBD
+	    drbd_pretty_status $PROC_DRBD
 	    exit 0
 	else
 	    echo >&2 "drbd not loaded"

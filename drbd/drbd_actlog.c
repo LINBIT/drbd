@@ -559,6 +559,7 @@ BIO_ENDIO_FN(atodb_endio)
 	if (!error && !uptodate)
 		error = -EIO;
 
+	/* corresponding drbd_io_error is in drbd_al_to_on_disk_bm */
 	drbd_chk_io_error(mdev, error, TRUE);
 	if (error && wc->error == 0)
 		wc->error = error;

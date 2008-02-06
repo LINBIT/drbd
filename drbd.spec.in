@@ -192,7 +192,8 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Mon Feb  4 2008 11:17:00 +0200 Philipp Reisner <phil@linbit.com>
+
+* Mon Feb  6 2008 12:17:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.5-1)
  * Fixed a race between online-verify and application writes.
    It caused drbd to report false positives, and very likely

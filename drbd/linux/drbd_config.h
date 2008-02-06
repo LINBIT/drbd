@@ -86,4 +86,8 @@ extern const char *drbd_buildtag(void);
 /* in older kernels (vanilla < 2.6.14) is no kzalloc() */
 //#define NEED_BACKPORT_OF_KZALLOC
 
+// some vendor kernels have it, some don't
+//#define NEED_SG_SET_BUF
+#define HAVE_LINUX_SCATTERLIST_H
+
 #endif
