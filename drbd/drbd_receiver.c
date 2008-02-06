@@ -2280,6 +2280,10 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		return FALSE;
 	}
 
+	/* just store the peer's disk size for now.
+	 * we still need to figure out wether we accept that. */
+	mdev->p_size=p_size;
+
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
 	if(inc_local(mdev)) {
 		warn_if_differ_considerably(mdev, "lower level device sizes",
@@ -2318,7 +2322,6 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	}
 #undef min_not_zero
 
-	mdev->p_size=p_size;
 	if(inc_local(mdev)) {
 		enum determin_dev_size_enum dd;
 		drbd_bm_lock(mdev); // {
