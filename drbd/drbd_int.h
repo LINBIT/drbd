@@ -305,7 +305,7 @@ enum Drbd_Packet_Cmd {
 
 	OVRequest,
 	OVReply,
-	OVResult,
+	OVResult, // Exception to the FIRST/LAST ASENDER_CMD
 
 	MAX_CMD,
 	MayIgnore = 0x100, /* Flag to test if (cmd > MayIgnore) ... */

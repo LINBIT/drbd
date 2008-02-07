@@ -3494,6 +3494,8 @@ static struct asender_cmd* get_asender_cmd(int cmd)
 	[StateChgReply] =
 		{ sizeof(struct Drbd_RqS_Reply_Packet), got_RqSReply },
 	};
+	if (cmd == OVResult)
+		return &asender_tbl[cmd];
 	if (cmd < FIRST_ASENDER_CMD)
 		return NULL;
 	if (cmd > LAST_ASENDER_CMD)
