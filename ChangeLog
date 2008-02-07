@@ -7,7 +7,7 @@ Latest:
  * Fixed a race between online-verify and application writes.
    It caused drbd to report false positives, and very likely
    deadlocked immediately afterwards.
- * Merged all changes from 8.0.8 -> 8.0.9 into 8.2
+ * Merged all changes from 8.0.8 -> 8.0.10 into 8.2
 
 8.2.4 (api:86/proto:86-88)
 --------
@@ -58,6 +58,12 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+8.0.10 (api:86/proto:86)
+--------
+ * Fixed a race condition in the disconnect code path that could cause
+   the pending count to not return to zero. This means that the
+   next role change will block forever.
+
 8.0.9 (api:86/proto:86)
 --------
  * In case our backing devices support write barriers and cache
