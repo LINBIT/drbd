@@ -192,6 +192,12 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Thu Feb  7 2008 11:48:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.10-1)
+ * Fixed a race condition in the disconnect code path that could cause
+   the pending count to not return to zero. This means that the
+   next role change will block forever.
+
 * Mon Feb  6 2008 12:17:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.9-1)
  * In case our backing devices support write barriers and cache

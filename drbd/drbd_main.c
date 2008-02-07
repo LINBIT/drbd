@@ -196,6 +196,7 @@ void _tl_add_barrier(struct drbd_conf *mdev, struct drbd_barrier *new)
 
 	INIT_LIST_HEAD(&new->requests);
 	INIT_LIST_HEAD(&new->w.list);
+	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 	new->next = 0;
 	new->n_req = 0;
 
@@ -287,21 +288,26 @@ void tl_clear(struct drbd_conf *mdev)
 		 * in case local io is still pending */
 		list_del(&b->requests);
 
+		/* dec_ap_pending corresponding to queue_barrier.
+		 * the newest barrier may not have been queued yet,
+		 * in which case w.cb is still NULL. */
+		if (b->w.cb != NULL)
+			dec_ap_pending(mdev);
+
 		if (b == mdev->newest_barrier) {
+			/* recycle, but reinit! */
 			D_ASSERT(tmp == NULL);
+			INIT_LIST_HEAD(&b->requests);
+			INIT_LIST_HEAD(&b->w.list);
+			b->w.cb = NULL;
 			b->br_number = 4711;
 			b->n_req = 0;
-			INIT_LIST_HEAD(&b->requests);
+
 			mdev->oldest_barrier = b;
 			break;
 		}
 		kfree(b);
 		b = tmp;
-		/* dec_ap_pending corresponding to _drbd_send_barrier;
-		 * note: the barrier for the current epoch (newest_barrier)
-		 * has not been sent yet, so we don't dec_ap_pending for it
-		 * here, either */
-		dec_ap_pending(mdev);
 	}
 	D_ASSERT(mdev->newest_barrier == mdev->oldest_barrier);
 	D_ASSERT(mdev->newest_barrier->br_number == 4711);
