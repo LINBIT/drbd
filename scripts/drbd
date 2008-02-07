@@ -94,7 +94,7 @@ drbd_pretty_status()
 		      -e '/^ *[0-9]\+: cs:Unconfigured/d;' \
 		      -e 's/^\(.* \)cs:\([^ ]* \)st:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
 		      -e 's/^\(.* \)cs:\([^ ]*\)$/\1\2/' \
-		      -e 's/^ *[0-9]\+:/??not-found??&/;' \
+		      -e 's/^ *[0-9]\+:/ x &??not-found??/;' \
 		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
 		      -e 's/^\(.\[.*\)\(sync.ed:\)/... ... \2/;/^.finish:/d;' \
 		      < "$proc_drbd" | tr -s '\t ' '  ' 
@@ -105,6 +105,13 @@ drbd_pretty_status()
 			<(sort < /proc/mounts ) |
 			sort -n | tr -s '\t ' '  ' | sed -e 's/^ *//'
 	}
+	# echo "=== p ==="
+	# p
+	# echo "=== m ==="
+	# m
+	# echo "========="
+	# join -a1 <(p) <(m)
+	# echo "========="
 	(
 	echo m:res cs st ds p mounted fstype
 	join -a1 <(p) <(m) | cut -d' ' -f2-6,8-
