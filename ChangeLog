@@ -2,6 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.0.10 (api:86/proto:86)
+--------
+ * Fixed a race condition in the disconnect code path that could cause
+   the pending count to not return to zero. This means that the
+   next role change will block forever.
+
 8.0.9 (api:86/proto:86)
 --------
  * In case our backing devices support write barriers and cache
