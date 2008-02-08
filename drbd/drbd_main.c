@@ -170,9 +170,10 @@ STATIC int tl_init(drbd_dev *mdev)
 	if(!b) return 0;
 	INIT_LIST_HEAD(&b->requests);
 	INIT_LIST_HEAD(&b->w.list);
-	b->next=0;
-	b->br_number=4711;
-	b->n_req=0;
+	b->next = 0;
+	b->br_number = 4711;
+	b->n_req = 0;
+	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 
 	mdev->oldest_barrier = b;
 	mdev->newest_barrier = b;
