@@ -1077,12 +1077,9 @@ void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
 	count = drbd_bm_set_bits(mdev, sbnr, ebnr);
 
 	enr = BM_SECT_TO_EXT(sector);
-	ext = (struct bm_extent *) lc_get(mdev->resync, enr);
-	if (ext) {
-		if (ext->lce.lc_number == enr)
-			ext->rs_left += count;
-		lc_put(mdev->resync, &ext->lce);
-	}
+	ext = (struct bm_extent *) lc_find(mdev->resync, enr);
+	if (ext)
+		ext->rs_left += count;
 	spin_unlock_irqrestore(&mdev->al_lock, flags);
 
 out:
