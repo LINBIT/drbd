@@ -169,6 +169,7 @@ int tl_init(struct drbd_conf *mdev)
 	b->next = 0;
 	b->br_number = 4711;
 	b->n_req = 0;
+	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 
 	mdev->oldest_barrier = b;
 	mdev->newest_barrier = b;
