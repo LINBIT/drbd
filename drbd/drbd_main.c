@@ -188,6 +188,7 @@ STATIC void tl_cleanup(drbd_dev *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	kfree(mdev->oldest_barrier);
+	kfree(mdev->unused_spare_barrier);
 	if(mdev->tl_hash) {
 		kfree(mdev->tl_hash);
 		mdev->tl_hash_s = 0;
