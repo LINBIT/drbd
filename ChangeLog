@@ -7,6 +7,10 @@ Latest:
  * Fixed a race between online-verify and application writes.
    It caused drbd to report false positives, and very likely
    deadlocked immediately afterwards.
+ * When DRBD is build for kernels older than 2.6.16 mutexes are
+   provided by a wrapper include file which is shipped with DRBD.
+   We had a bug in there that caused one of DRBD's threads to
+   lockup after the first connection loss. Fixed.
  * Merged all changes from 8.0.8 -> 8.0.11 into 8.2
 
 8.2.4 (api:86/proto:86-88)
