@@ -2176,7 +2176,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	 * oldest_barrier
 	 */
 
-	drbd_thread_stop(&mdev->receiver);
+	D_ASSERT(mdev->receiver.t_state == None);
 
 	/* no need to lock it, I'm the only thread alive */
 	if ( mdev->epoch_size !=  0)
