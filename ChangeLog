@@ -12,6 +12,16 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+
+8.0.11 (api:86/proto:86)
+--------
+ * If we had no IO while a device was connected it could happen that
+   the pending count was erroneously decreased to -1 at disconnect.
+   Fixed.
+ * Fixed a race that could deadlock worker and receiver while
+   disconnecting a diskless node from a primary peer.
+ * Fixed a minimal meory leak, upon each module unload of DRBD.
+
 8.0.10 (api:86/proto:86)
 --------
  * Fixed a race condition in the disconnect code path that could cause
