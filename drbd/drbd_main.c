@@ -184,6 +184,7 @@ void tl_cleanup(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	kfree(mdev->oldest_barrier);
+	kfree(mdev->unused_spare_barrier);
 	kfree(mdev->tl_hash);
 	mdev->tl_hash_s = 0;
 }
@@ -2370,7 +2371,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	 * oldest_barrier
 	 */
 
-	drbd_thread_stop(&mdev->receiver);
+	D_ASSERT(mdev->receiver.t_state == None);
 
 	if (mdev->verify_tfm) {
 		crypto_free_hash(mdev->verify_tfm);

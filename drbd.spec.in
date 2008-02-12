@@ -192,12 +192,12 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Thu Feb  7 2008 11:48:00 +0200 Philipp Reisner <phil@linbit.com>
+* Tue Feb 12 2008 13:37:59 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.5-1)
  * Fixed a race between online-verify and application writes.
    It caused drbd to report false positives, and very likely
    deadlocked immediately afterwards.
- * Merged all changes from 8.0.8 -> 8.0.10 into 8.2
+ * Merged all changes from 8.0.8 -> 8.0.11 into 8.2
 
 * Fri Jan 11 2008 13:37:50 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.4-1)

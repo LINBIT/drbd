@@ -1336,9 +1336,11 @@ int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		/* if we are diskless and our peer wants to outdate us,
 		 * simply go away, and let the peer try to outdate us with its
 		 * 'outdate-peer' handler later. */
-		if (retcode == SS_IsDiskLess)
-			retcode = drbd_request_state(mdev,
-						NS(conn, StandAlone));
+		if (retcode == SS_IsDiskLess || retcode == SS_LowerThanOutdated) {
+			drbd_force_state(mdev, NS(conn, Disconnecting));
+			retcode = SS_Success;
+		}
+
 	}
 
 	if (retcode < SS_Success)
