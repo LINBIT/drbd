@@ -817,13 +817,15 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	void *digest;
 	int ok,eq=0;
 
-	drbd_rs_complete_io(mdev,e->sector);
-
 	if(unlikely(cancel)) {
 		drbd_free_ee(mdev,e);
 		dec_unacked(mdev);
 		return 1;
 	}
+
+	/* after "cancel", because after drbd_disconnect/drbd_rs_cancel_all
+	 * the resync lru has been cleaned up already */
+	drbd_rs_complete_io(mdev,e->sector);
 
 	di = (struct digest_info *)(unsigned long)e->block_id;
 
