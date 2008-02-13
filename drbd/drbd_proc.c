@@ -220,7 +220,7 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 
 		if ( mdev->state.conn == VerifyS ||
 		     mdev->state.conn == VerifyT ) {
-			seq_printf(seq,"\t%3d%% oos:%lu  %lu / %lu \n",
+			seq_printf(seq,"\t%3d%% oos:%lu  %lu/%lu\n",
 				   (int)((mdev->rs_total-mdev->ov_left) /
 					 (mdev->rs_total/100+1)),
 				   drbd_bm_total_weight(mdev),

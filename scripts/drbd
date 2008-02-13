@@ -97,6 +97,7 @@ drbd_pretty_status()
 		      -e 's/^ *[0-9]\+:/ x &??not-found??/;' \
 		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
 		      -e 's/^\(.\[.*\)\(sync.ed:\)/... ... \2/;/^.finish:/d;' \
+		      -e 's/^\(.[0-9 %]*oos:\)/... ... \1/' \
 		      < "$proc_drbd" | tr -s '\t ' '  ' 
 	}
 	m() {
