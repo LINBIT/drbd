@@ -641,6 +641,9 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if( (ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected )
 		rv=SS_NeedConnection;
 
+	if ((ns.conn == VerifyS || ns.conn == VerifyT) && os.conn > Connected )
+		rv = SS_ResyncRunning;
+
 	return rv;
 }
 
