@@ -2191,6 +2191,7 @@ void check_internal_md_flavours(struct format * cfg) {
 			}
 			/* no need to wipe flex offset,
 			 * will be overwritten with new data */
+			cfg->md.magic = 0;
 			have_flex_v08 = 0;
 		}
 		if ( (have_fixed_v07||have_flex_v07) ) {
@@ -2211,6 +2212,7 @@ void check_internal_md_flavours(struct format * cfg) {
 			}
 			/* no need to wipe the requested flavour,
 			 * will be overwritten with new data */
+			cfg->md.magic = 0;
 			if (cfg->md_index == DRBD_MD_INDEX_INTERNAL)
 				have_fixed_v07 = 0;
 			else
@@ -2321,7 +2323,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	    cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
 		check_internal_md_flavours(cfg);
 	else
-	       check_external_md_flavours(cfg);
+		check_external_md_flavours(cfg);
 
 	printf("Writing meta data...\n");
 	if (!cfg->md.magic) /* not converted: initialize */
