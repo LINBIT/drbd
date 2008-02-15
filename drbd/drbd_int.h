@@ -1843,10 +1843,14 @@ static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
 	/* >> 10 to prevent overflow,
 	 * +1 to prevent division by zero */
 	if (*bits_left > mdev->rs_total) {
-		/* doh. logic bug somewhere.
-		 * for now, just try to prevent in-kernel buffer overflow.
+		/* doh. maybe a logic bug somewhere.
+		 * may also be just a race condition
+		 * between this and a disconnect during sync.
+		 * for now, just prevent in-kernel buffer overflow.
 		 */
-		ERR("logic bug? rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+		smp_rmb();
+		WARN("cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+				conns_to_name(mdev->state.conn),
 				*bits_left, mdev->rs_total, mdev->rs_failed);
 		*per_mil_done = 0;
 	} else {
