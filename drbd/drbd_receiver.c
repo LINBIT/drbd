@@ -2301,6 +2301,7 @@ int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 			spin_lock(&mdev->peer_seq_lock);
 			/* lock against drbd_nl_syncer_conf() */
 			strcpy(mdev->sync_conf.verify_alg, p_verify_alg);
+			mdev->sync_conf.verify_alg_len = strlen(p_verify_alg) + 1;
 			old_verify_tfm = mdev->verify_tfm;
 			mdev->verify_tfm = verify_tfm;
 			spin_unlock(&mdev->peer_seq_lock);
