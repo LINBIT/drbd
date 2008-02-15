@@ -1501,6 +1501,17 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
+	if (rr) {
+		if (0 < wfc_timeout &&
+		      (wfc_timeout < degr_wfc_timeout
+				  || degr_wfc_timeout == 0)) {
+			degr_wfc_timeout = wfc_timeout;
+			fprintf(stderr, "degr-wfc-timeout has to be shorter than wfc-timeout\n"
+					"degr-wfc-timeout implicitly set to wfc-timeout (%ds)\n",
+					degr_wfc_timeout);
+		}
+	}
+
 	timeout_ms= 1000 * (  rr ? degr_wfc_timeout : wfc_timeout) - 1;
 
 	// ask for the current state before waiting for state updates...
