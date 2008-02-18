@@ -37,7 +37,9 @@
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#ifdef HAVE_LINUX_SCATTERLIST_H
 #include <linux/scatterlist.h>
+#endif
 
 #include <linux/drbd.h>
 #include "drbd_int.h"
