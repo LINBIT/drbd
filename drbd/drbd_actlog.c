@@ -825,9 +825,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 	if(drbd_bm_total_weight(mdev) <= mdev->rs_failed &&
 	   ( mdev->state.conn == SyncSource || mdev->state.conn == SyncTarget ||
 	     mdev->state.conn == PausedSyncS || mdev->state.conn == PausedSyncT ) ) {
-		drbd_bm_lock(mdev);
 		drbd_resync_finished(mdev);
-		drbd_bm_unlock(mdev);
 	}
 	drbd_bcast_sync_progress(mdev);
 

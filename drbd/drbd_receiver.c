@@ -2095,17 +2095,8 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	}
 
 	if (abs(hg) >= 2) {
-		drbd_md_set_flag(mdev,MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_set_all(mdev);
-
-		if (unlikely(drbd_bm_write(mdev) < 0)) {
+		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write))
 			return conn_mask;
-		}
-
-		drbd_md_clear_flag(mdev,MDF_FullSync);
-		drbd_md_sync(mdev);
 	}
 
 	if (hg > 0) { // become sync source.
@@ -2324,9 +2315,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 
 	if(inc_local(mdev)) {
 		enum determin_dev_size_enum dd;
-		drbd_bm_lock(mdev); // {
 		dd = drbd_determin_dev_size(mdev);
-		drbd_bm_unlock(mdev); // }
 		dec_local(mdev);
 		if (dd == dev_size_error) return FALSE;
 		if (dd == grew && mdev->state.conn == Connected &&
@@ -2587,6 +2576,8 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	unsigned long *buffer;
 	int ok=FALSE;
 
+	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
+
 	drbd_bm_lock(mdev);  // {
 
 	bm_words = drbd_bm_words(mdev);
@@ -2612,7 +2603,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev,SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
-		ok = drbd_send_bitmap(mdev);
+		ok = !drbd_send_bitmap(mdev);
 		if (!ok) goto out;
 		ok = drbd_request_state(mdev,NS(conn,WFSyncUUID));
 		D_ASSERT( ok == SS_Success );
@@ -2624,6 +2615,7 @@ STATIC int receive_bitmap(drbd_dev *mdev, Drbd_Header *h)
 	ok=TRUE;
  out:
 	drbd_bm_unlock(mdev); // }
+
 	vfree(buffer);
 	return ok;
 }

@@ -461,9 +461,7 @@ int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	kfree(w);
 
-	drbd_bm_lock(mdev);
 	drbd_resync_finished(mdev);
-	drbd_bm_unlock(mdev);
 
 	return 1;
 }
@@ -551,7 +549,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags)) {
 		WARN("Writing the whole bitmap, due to failed kmalloc\n");
-		drbd_bm_write(mdev);
+		drbd_queue_bitmap_io(mdev, &drbd_bm_write, NULL);
 	}
 
 	drbd_bm_recount_bits(mdev);
