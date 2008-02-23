@@ -496,14 +496,16 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
 			return rv;
 		}
+
 		spin_lock_irqsave(&mdev->req_lock,flags);
 		os = mdev->state;
 		ns.i = (os.i & ~mask.i) | val.i;
+		rv = _drbd_set_state(mdev, ns, f);
 		drbd_state_unlock(mdev);
+	} else {
+		rv = _drbd_set_state(mdev, ns, f);
 	}
 
-	rv = _drbd_set_state(mdev, ns, f);
-	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
 	return rv;
