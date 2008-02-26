@@ -560,7 +560,7 @@ int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 int drbd_resync_finished(struct drbd_conf *mdev)
 {
 	unsigned long db, dt, dbdt;
-	int dstate, pdstate;
+	int dstate, pdstate, art;
 	struct drbd_work *w;
 
 	/* Remove all elements from the resync LRU. Since future actions
@@ -654,11 +654,16 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 
 	drbd_bm_recount_bits(mdev);
 
+	art = mdev->state.conn == SyncTarget || mdev->state.conn == PausedSyncT;
+
 	drbd_request_state(mdev, NS3(conn, Connected,
 				    disk, dstate,
 				    pdsk, pdstate));
 
 	drbd_md_sync(mdev);
+
+	if (art)
+		drbd_khelper(mdev, "after-resync-target");
 
 	return 1;
 }
@@ -1114,6 +1119,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	drbd_rs_cancel_all(mdev);
 
 	if (side == SyncTarget) {
+		drbd_khelper(mdev, "before-resync-target");
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
 		u64 uuid;

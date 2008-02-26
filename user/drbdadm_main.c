@@ -248,6 +248,8 @@ struct adm_cmd cmds[] = {
   { "local-io-error",    adm_khelper,   3,1,0,1 },
   { "pri-lost",          adm_khelper,   3,1,0,1 },
   { "split-brain",       adm_khelper,   3,1,0,1 },
+  { "before-resync-target",adm_khelper,   3,1,0,1 },
+  { "after-resync-target",adm_khelper,   3,1,0,1 },
   { "set-gi",            admm_generic,  4,1,0,1 },
   { "suspend-io",        adm_generic_s, 4,1,0,1 },
   { "resume-io",         adm_generic_s, 4,1,0,1 },

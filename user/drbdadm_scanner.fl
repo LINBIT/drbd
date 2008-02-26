@@ -102,6 +102,8 @@ pri-lost		{ DP; CP; return TK_HANDLER_OPTION;     }
 split-brain		{ DP; CP; return TK_HANDLER_OPTION;     }
 outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
 local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
+before-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
+after-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
 memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
 read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
 out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }

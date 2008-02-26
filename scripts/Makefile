@@ -62,6 +62,9 @@ install:
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
 	install -d $(PREFIX)/usr/lib/drbd
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
+	install -m 755 snapshot-resync-target-lvm.sh $(PREFIX)/usr/lib/drbd
+	( cd $(PREFIX)/usr/lib/drbd ;\
+	  ln -s snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh )
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
 ifeq ($(DIST),suselike)

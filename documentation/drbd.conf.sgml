@@ -248,7 +248,8 @@ resource r0 {
     Optional parameters:
     <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
     <option>pri-lost</option>, <option>outdate-peer</option>,
-    <option>local-io-error</option>, <option>split-brain</option>.
+    <option>local-io-error</option>, <option>split-brain</option>,
+    <option>before-resync-target</option>, <option>after-resync-target</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -986,6 +987,23 @@ the unit is 1 second.
   <listitem><para> DRBD detected a split brain situation. Manual recovery is necessary. 
       This handler should alert someone on duty.
   <indexterm><primary>drbd.conf</primary><secondary>split-brain </secondary></indexterm>
+  </para></listitem> </varlistentry>
+
+<varlistentry>
+  <term><option>before-resync-target <replaceable>cmd</replaceable></option></term>
+  <listitem><para>DRBD calls this handler just before a resync beginns on the node
+      that becomes resync target. It might be used to take a snapshot of the
+      backing block device.
+  <indexterm><primary>drbd.conf</primary><secondary>before-resync-target </secondary></indexterm>
+  </para></listitem> </varlistentry>
+
+<varlistentry>
+  <term><option>after-resync-target <replaceable>cmd</replaceable></option></term>
+  <listitem><para>DRBD calls this handler just after a resync operation finished on the
+      node which's disk just became consistent after beeing inconsistent for the
+      duration of the resync. It might be used to remove a snapshot of the backing device 
+      that was created by the <option>before-resync-target</option> handler.
+  <indexterm><primary>drbd.conf</primary><secondary>after-resync-target </secondary></indexterm>
   </para></listitem> </varlistentry>
 
 </variablelist>
