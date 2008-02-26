@@ -189,7 +189,7 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf( seq,
 			   "%2d: cs:%s st:%s/%s ds:%s/%s %c %c%c%c%c\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
-			   "lo:%d pe:%d ua:%d ap:%d\n",
+			   "lo:%d pe:%d ua:%d ap:%d",
 			   i, sn,
 			   roles_to_name(mdev->state.role),
 			   roles_to_name(mdev->state.peer),
@@ -213,6 +213,8 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 			   atomic_read(&mdev->unacked_cnt),
 			   atomic_read(&mdev->ap_bio_cnt)
 			);
+			seq_printf(seq, " oos:%lu\n",
+				   drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B - 10));
 		}
 		if ( mdev->state.conn == SyncSource ||
 		     mdev->state.conn == SyncTarget )
@@ -220,10 +222,9 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 
 		if ( mdev->state.conn == VerifyS ||
 		     mdev->state.conn == VerifyT ) {
-			seq_printf(seq,"\t%3d%% oos:%lu  %lu/%lu\n",
+			seq_printf(seq,"\t%3d%%      %lu/%lu\n",
 				   (int)((mdev->rs_total-mdev->ov_left) /
 					 (mdev->rs_total/100+1)),
-				   drbd_bm_total_weight(mdev),
 				   mdev->rs_total - mdev->ov_left,
 				   mdev->rs_total);
 		}
