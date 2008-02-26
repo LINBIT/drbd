@@ -228,11 +228,13 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 				   mdev->rs_total);
 		}
 
+#if 0
 		if (mdev->resync)
 			lc_printf_stats(seq, mdev->resync);
 
 		if (mdev->act_log)
 			lc_printf_stats(seq, mdev->act_log);
+#endif
 
 #ifdef DRBD_DUMP_RESYNC_DETAIL
 		if (mdev->resync) {
