@@ -37,12 +37,16 @@
 #include <stdlib.h>
 #define _GNU_SOURCE
 #include <getopt.h>
+#include <math.h>
 
 #define MONITOR_TIME 300000
 // Check every 300 milliseconds. (3.33 times per second)
 
 #define RECORD_TIME 20000
 // Try to write a record every 20 milliseconds (50 per second)
+
+#define PERCENTILE 90
+
 
 unsigned int monitor_time=MONITOR_TIME;
 unsigned int record_time=RECORD_TIME;
@@ -121,6 +125,14 @@ void usage(char *prgname)
 	exit(20);
 }
 
+int cmp_int(const void *v1, const void *v2)
+{
+	const int *i1 = (int *) v1;
+	const int *i2 = (int *) v2;
+
+	return *i1 == *i2 ? 0 : ( *i1 < *i2 ? -1 : +1 );
+}
+
 int main(int argc, char** argv)
 {
 	pthread_t watch_dog;
@@ -133,6 +145,11 @@ int main(int argc, char** argv)
 	int min_wd=(1<<30), max_wd=0;
 	double avg_write_duration;
 	int avg_wd_nr=0,c;
+	int *all_write_durations = NULL;
+
+	int median=0;
+	double std_deviation=0;
+	int rp;
 
 	struct shared_data data;
 
@@ -171,6 +188,14 @@ int main(int argc, char** argv)
 		fprintf(stderr,"Failed to open '%s' for writing\n",
 			argv[optind]);
 		return 10;
+	}
+
+	if (records) {
+		all_write_durations = calloc(records, sizeof(int));
+		if (all_write_durations == NULL) {
+			fprintf(stderr, "Malloc failed\n");
+			return 10;
+		}
 	}
 
 	printf("\n"
@@ -226,13 +251,16 @@ int main(int argc, char** argv)
 			( (then_tv.tv_sec  - now_tv.tv_sec ) * 1000000 +
 			  (then_tv.tv_usec - now_tv.tv_usec) );
 
-		if(write_duration_us < monitor_time) {
+		if (write_duration_us < monitor_time) {
 			if(write_duration_us < min_wd) min_wd = write_duration_us;
 			if(write_duration_us > max_wd) max_wd = write_duration_us;
 
 			avg_write_duration =
 				(avg_write_duration * avg_wd_nr +
 				 write_duration_us) / (++avg_wd_nr);
+
+			if (all_write_durations)
+				all_write_durations[record_nr] = write_duration_us;
 		}
 
 		pthread_mutex_lock(&data.mutex);
@@ -253,13 +281,35 @@ int main(int argc, char** argv)
 
 	pthread_join(watch_dog,NULL);
 
+	if (all_write_durations) {
+		qsort(all_write_durations, records, sizeof(int), &cmp_int);
+
+		median = all_write_durations[records/2];
+		printf("median = %5.2f\n", (double)median/1000);
+
+		rp = records * (100-PERCENTILE) / 100;
+
+		for (record_nr = rp/2;
+		     record_nr < records - rp/2;
+		     record_nr++) {
+			/* printf("records[%lu] = %5.2f \n", record_nr,
+			   (double)all_write_durations[record_nr]/1000); */
+			std_deviation += pow((double)(all_write_durations[record_nr] - median)/1000, 2);
+		}
+
+		std_deviation = sqrt(std_deviation / (records - rp) );
+	}
+
 	printf( "STATS:\n"
-		"  Records written: %lu\n"
-		"  Average write duration: %.2fms\n"
-		"  Longest write duration (<%dms): %.2fms\n"
-		"  Shortest write duration: %.2fms\n",
-		records,
-		avg_write_duration/1000,
-		monitor_time/1000,(double)max_wd/1000,
-		(double)min_wd/1000);
+		"  +---------------------------------< records written [ 1 ]\n"
+		"  |      +----------------------------< average (arithmetic) [ ms ]\n"
+		"  |      |      +-----------------------< shortes write [ ms ]\n"
+		"  |      |      |      +------------------< longes write (<%dms) [ ms ]\n"
+		"  |      |      |      |      +-------------< %d%% percentile median [ ms ]\n"
+		"  |      |      |      |      |      +--------< %d%% percentile standard deviation [ ms ]\n"
+		"  ^      ^      ^      ^      ^      ^\n"
+                " %4lu, %5.2f, %5.2f, %5.2f, %5.2f, %5.2f\n",
+		monitor_time/1000, PERCENTILE, PERCENTILE, records, avg_write_duration/1000,
+		(double)min_wd/1000, (double)max_wd/1000, (double)median/1000, std_deviation);
 }
+
