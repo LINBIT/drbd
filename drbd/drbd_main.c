@@ -1342,6 +1342,7 @@ int _drbd_send_uuids(drbd_dev *mdev)
 	p.uuid[UUID_SIZE] = cpu_to_be64(mdev->comm_bm_set);
 	uuid_flags |= mdev->net_conf->want_lose ? 1 : 0;
 	uuid_flags |= test_bit(CRASHED_PRIMARY, &mdev->flags) ? 2 : 0;
+	uuid_flags |= mdev->new_state_tmp.disk == Inconsistent ? 4 : 0;
 	p.uuid[UUID_FLAGS] = cpu_to_be64(uuid_flags);
 
 	dec_local(mdev);

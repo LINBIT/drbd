@@ -2007,8 +2007,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	    );
 
 	if (hg == -1000) {
-		ALERT("Unrelated data, dropping connection!\n");
-		drbd_force_state(mdev,NS(conn,Disconnecting));
+		ALERT("Unrelated data, aborting!\n");
 		return conn_mask;
 	}
 
@@ -2064,17 +2063,15 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	}
 
 	if (hg == -100) {
-		ALERT("Split-Brain detected, dropping connection!\n");
+		ALERT("Split-Brain detected, aborting!\n");
 		drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 		drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
-		drbd_force_state(mdev,NS(conn,Disconnecting));
 		drbd_khelper(mdev,"split-brain");
 		return conn_mask;
 	}
 
 	if (hg > 0 && mydisk <= Inconsistent ) {
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
-		drbd_force_state(mdev,NS(conn,Disconnecting));
 		return conn_mask;
 	}
 
@@ -2086,7 +2083,6 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 			// fall through
 		case Disconnect:
 			ERR("I shall become SyncTarget, but I am primary!\n");
-			drbd_force_state(mdev,NS(conn,Disconnecting));
 			return conn_mask;
 		case Violently:
 			WARN("Becoming SyncTarget, violating the stable-data"
@@ -2335,7 +2331,10 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		nconn=drbd_sync_handshake(mdev,mdev->state.peer,mdev->state.pdsk);
 		dec_local(mdev);
 
-		if(nconn == conn_mask) return FALSE;
+		if (nconn == conn_mask) {
+			drbd_force_state(mdev, NS(conn, Disconnecting));
+			return FALSE;
+		}
 
 		if(drbd_request_state(mdev,NS(conn,nconn)) < SS_Success) {
 			drbd_force_state(mdev,NS(conn,Disconnecting));
@@ -2455,6 +2454,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	Drbd_State_Packet *p = (Drbd_State_Packet*)h;
 	drbd_conns_t nconn,oconn;
 	drbd_state_t ns,peer_state;
+	drbd_disks_t real_peer_disk;
 	int rv;
 
 	/**
@@ -2488,10 +2488,28 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 		cr |= ((oconn == WFBitMapS || oconn == WFBitMapT) &&
 		       peer_state.disk == UpToDate &&  mdev->state.disk == UpToDate);
 
-		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
+		real_peer_disk = peer_state.disk;
+		if (peer_state.disk == Negotiating) {
+			real_peer_disk = mdev->p_uuid[UUID_FLAGS] & 4 ? Inconsistent : Consistent;
+			INFO("read peer disk state = %s\n",disks_to_name(real_peer_disk));
+		}
+
+		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);
 
 		dec_local(mdev);
-		if(nconn == conn_mask) goto fail;
+		if (nconn == conn_mask) {
+			if (mdev->state.disk == Negotiating) {
+				drbd_force_state(mdev, NS(disk, Diskless));
+				nconn = Connected;
+			} else if (peer_state.disk == Negotiating) {
+				ERR("Disk attach process on the peer node was aborted.\n");
+				peer_state.disk = Diskless;
+			} else {
+				D_ASSERT(oconn == WFReportParams);
+				drbd_force_state(mdev, NS(conn, Disconnecting));
+				goto fail;
+			}
+		}
 	}
 
 	spin_lock_irq(&mdev->req_lock);
