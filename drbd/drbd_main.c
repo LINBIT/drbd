@@ -114,10 +114,12 @@ int allow_oos;
 int trace_type;		/* Bitmap of trace types to enable */
 int trace_level;	/* Current trace level */
 int trace_devs;		/* Bitmap of devices to trace */
+int proc_details;       /* Detail level in proc drbd*/
 
 module_param(trace_level, int, 0644);
 module_param(trace_type, int, 0644);
 module_param(trace_devs, int, 0644);
+module_param(proc_details, int, 0644);
 #endif
 
 /* Module parameter for setting the user mode helper program

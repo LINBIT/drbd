@@ -349,7 +349,6 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
 	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
-#ifdef DRBD_DUMP_RESYNC_DETAIL
 /**
  * lc_dump: Dump a complete LRU cache to seq in textual form.
  */
@@ -374,4 +373,3 @@ void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
 	}
 }
 
-#endif

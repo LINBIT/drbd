@@ -1268,6 +1268,7 @@ extern struct drbd_conf *drbd_new_device(int minor);
 /* Dynamic tracing framework */
 #ifdef ENABLE_DYNAMIC_TRACE
 
+extern int proc_details;
 extern int trace_type;
 extern int trace_devs;
 extern int trace_level;

@@ -135,7 +135,7 @@ void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 	seq_printf(seq, " K/sec\n");
 }
 
-#ifdef DRBD_DUMP_RESYNC_DETAIL
+#ifdef ENABLE_DYNAMIC_TRACE
 void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
@@ -229,21 +229,22 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 				   mdev->rs_total);
 		}
 
-#if 0
-		if (mdev->resync)
-			lc_printf_stats(seq, mdev->resync);
+#ifdef ENABLE_DYNAMIC_TRACE
+		if (proc_details >= 1) {
+			if (mdev->resync)
+				lc_printf_stats(seq, mdev->resync);
 
-		if (mdev->act_log)
-			lc_printf_stats(seq, mdev->act_log);
-#endif
+			if (mdev->act_log)
+				lc_printf_stats(seq, mdev->act_log);
+		}
 
-#ifdef DRBD_DUMP_RESYNC_DETAIL
-		if (mdev->resync) {
-			lc_dump(mdev->resync, seq, "rs_left",
-				resync_dump_detail);
+		if (proc_details >= 2) {
+			if (mdev->resync) {
+				lc_dump(mdev->resync, seq, "rs_left",
+					resync_dump_detail);
+			}
 		}
 #endif
-
 	}
 
 	return 0;
