@@ -1416,12 +1416,12 @@ int _drbd_send_state(struct drbd_conf *mdev)
 	struct Drbd_State_Packet p;
 	int ok = 0;
 
+	down(&mdev->data.mutex);
 	p.state    = cpu_to_be32(mdev->state.i);
-
 	if (likely(sock != NULL))
 		ok = _drbd_send_cmd(mdev, sock, ReportState,
 				   (struct Drbd_Header*)&p, sizeof(p), 0);
-
+	up(&mdev->data.mutex);
 	return ok;
 }
 
@@ -1440,9 +1440,7 @@ int drbd_send_state(struct drbd_conf *mdev)
 	 * of a cluster wide state change on another thread */
 	drbd_state_lock(mdev);
 
-	down(&mdev->data.mutex);
 	ok = _drbd_send_state(mdev);
-	up(&mdev->data.mutex);
 
 	drbd_state_unlock(mdev);
 	return ok;
