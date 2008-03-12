@@ -225,6 +225,7 @@ struct adm_cmd cmds[] = {
   { "show-gi",           adm_generic_b, 1,1,0 },
   { "get-gi",            adm_generic_b, 1,1,0 },
   { "dump-md",           admm_generic,  1,1,0 },
+  { "wipe-md",           admm_generic,  1,1,0 },
   { "wait-con-int",      adm_wait_ci,   1,0,1 },
   { "hidden-commands",   hidden_cmds,   1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0 },

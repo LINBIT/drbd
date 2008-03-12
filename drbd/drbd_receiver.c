@@ -1960,8 +1960,7 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 	    );
 
 	if (hg == -1000) {
-		ALERT("Unrelated data, dropping connection!\n");
-		drbd_force_state(mdev, NS(conn, Disconnecting));
+		ALERT("Unrelated data, aborting!\n");
 		return conn_mask;
 	}
 
@@ -2021,14 +2020,12 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 		ALERT("Split-Brain detected, dropping connection!\n");
 		drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
 		drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
-		drbd_force_state(mdev, NS(conn, Disconnecting));
 		drbd_khelper(mdev, "split-brain");
 		return conn_mask;
 	}
 
 	if (hg > 0 && mydisk <= Inconsistent) {
 		ERR("I shall become SyncSource, but I am inconsistent!\n");
-		drbd_force_state(mdev, NS(conn, Disconnecting));
 		return conn_mask;
 	}
 
@@ -2040,7 +2037,6 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 			/* fall through */
 		case Disconnect:
 			ERR("I shall become SyncTarget, but I am primary!\n");
-			drbd_force_state(mdev, NS(conn, Disconnecting));
 			return conn_mask;
 		case Violently:
 			WARN("Becoming SyncTarget, violating the stable-data"
@@ -2049,16 +2045,8 @@ enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev,
 	}
 
 	if (abs(hg) >= 2) {
-		drbd_md_set_flag(mdev, MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_set_all(mdev);
-
-		if (unlikely(drbd_bm_write(mdev) < 0))
+		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write))
 			return conn_mask;
-
-		drbd_md_clear_flag(mdev, MDF_FullSync);
-		drbd_md_sync(mdev);
 	}
 
 	if (hg > 0) { /* become sync source. */
@@ -2250,9 +2238,7 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	if (inc_local(mdev)) {
 		enum determin_dev_size_enum dd;
-		drbd_bm_lock(mdev);
 		dd = drbd_determin_dev_size(mdev);
-		drbd_bm_unlock(mdev);
 		dec_local(mdev);
 		if (dd == dev_size_error) return FALSE;
 		if (dd == grew && mdev->state.conn == Connected &&
@@ -2273,8 +2259,10 @@ int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 				mdev->state.peer, mdev->state.pdsk);
 		dec_local(mdev);
 
-		if (nconn == conn_mask)
+		if (nconn == conn_mask) {
+			drbd_force_state(mdev, NS(conn, Disconnecting));
 			return FALSE;
+		}
 
 		if (drbd_request_state(mdev, NS(conn, nconn)) < SS_Success) {
 			drbd_force_state(mdev, NS(conn, Disconnecting));
@@ -2392,6 +2380,7 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	struct Drbd_State_Packet *p = (struct Drbd_State_Packet *)h;
 	enum drbd_conns nconn, oconn;
 	union drbd_state_t ns, peer_state;
+	enum drbd_disk_state real_peer_disk;
 	int rv;
 
 	/**
@@ -2423,11 +2412,31 @@ int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 			mdev->state.disk == Negotiating));
 		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags); /* peer forced */
 		cr |= (oconn == Connected && peer_state.conn > Connected);
+		cr |= ((oconn == WFBitMapS || oconn == WFBitMapT) &&
+		       peer_state.disk == UpToDate &&  mdev->state.disk == UpToDate);
 
-		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, peer_state.disk);
+		real_peer_disk = peer_state.disk;
+		if (peer_state.disk == Negotiating) {
+			real_peer_disk = mdev->p_uuid[UUID_FLAGS] & 4 ? Inconsistent : Consistent;
+			INFO("read peer disk state = %s\n",disks_to_name(real_peer_disk));
+		}
+
+		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);
 
 		dec_local(mdev);
-		if(nconn == conn_mask) goto fail;
+		if (nconn == conn_mask) {
+			if (mdev->state.disk == Negotiating) {
+				drbd_force_state(mdev, NS(disk, Diskless));
+				nconn = Connected;
+			} else if (peer_state.disk == Negotiating) {
+				ERR("Disk attach process on the peer node was aborted.\n");
+				peer_state.disk = Diskless;
+			} else {
+				D_ASSERT(oconn == WFReportParams);
+				drbd_force_state(mdev, NS(conn, Disconnecting));
+				goto fail;
+			}
+		}
 	}
 
 	spin_lock_irq(&mdev->req_lock);
@@ -2516,6 +2525,8 @@ int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 	unsigned long *buffer;
 	int ok = FALSE;
 
+	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
+
 	drbd_bm_lock(mdev);
 
 	bm_words = drbd_bm_words(mdev);
@@ -2542,9 +2553,8 @@ int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (mdev->state.conn == WFBitMapS) {
 		drbd_start_resync(mdev, SyncSource);
 	} else if (mdev->state.conn == WFBitMapT) {
-		ok = drbd_send_bitmap(mdev);
-		if (!ok)
-			goto out;
+		ok = !drbd_send_bitmap(mdev);
+		if (!ok) goto out;
 		ok = drbd_request_state(mdev, NS(conn, WFSyncUUID));
 		D_ASSERT( ok == SS_Success );
 	} else {

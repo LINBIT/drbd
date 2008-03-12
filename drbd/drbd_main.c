@@ -506,11 +506,12 @@ int _drbd_request_state(struct drbd_conf *mdev,
 		spin_lock_irqsave(&mdev->req_lock, flags);
 		os = mdev->state;
 		ns.i = (os.i & ~mask.i) | val.i;
+		rv = _drbd_set_state(mdev, ns, f);
 		drbd_state_unlock(mdev);
+	} else {
+		rv = _drbd_set_state(mdev, ns, f);
 	}
 
-	rv = _drbd_set_state(mdev, ns, f);
-	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	return rv;
@@ -901,6 +902,24 @@ int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	return 1;
 }
 
+static void abw_start_sync(struct drbd_conf *mdev, int rv)
+{
+	if (rv) {
+		ERR("Writing the bitmap failed not starting resync.\n");
+		drbd_request_state(mdev, NS(conn, Connected));
+		return;
+	}
+
+	switch (mdev->state.conn) {
+	case StartingSyncT:
+		drbd_request_state(mdev, NS(conn, WFSyncUUID));
+		break;
+	case StartingSyncS:
+		drbd_start_resync(mdev, SyncSource);
+		break;
+	}
+}
+
 static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			   union drbd_state_t ns, enum chg_state_flags flags)
 {
@@ -936,18 +955,8 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		}
 	}
 	/* Do not change the order of the if above and below... */
-	if (os.conn != WFBitMapS && ns.conn == WFBitMapS) {
-		/* compare with drbd_make_request_common,
-		 * wait_event and inc_ap_bio.
-		 * Note: we may lose connection whilst waiting here.
-		 * no worries though, should work out ok... */
-		wait_event(mdev->misc_wait,
-			mdev->state.conn != WFBitMapS ||
-			!atomic_read(&mdev->ap_bio_cnt));
-		drbd_bm_lock(mdev);
-		drbd_send_bitmap(mdev);
-		drbd_bm_unlock(mdev);
-	}
+	if (os.conn != WFBitMapS && ns.conn == WFBitMapS)
+		drbd_queue_bitmap_io(mdev, &drbd_send_bitmap, NULL);
 
 	/* Lost contact to peer's copy of the data */
 	if ( (os.pdsk >= Inconsistent &&
@@ -1021,46 +1030,13 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* We are in the progress to start a full sync... */
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
-	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
-
-		drbd_bm_lock(mdev); /* racy... */
-
-		drbd_md_set_flag(mdev, MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
-
-		drbd_md_clear_flag(mdev, MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_unlock(mdev);
-
-		if (ns.conn == StartingSyncT) {
-			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev, conn, WFSyncUUID), ChgStateVerbose);
-			spin_unlock_irq(&mdev->req_lock);
-		} else { /* StartingSyncS */
-			drbd_start_resync(mdev, SyncSource);
-		}
-	}
+	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) )
+		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync);
 
 	/* We are invalidating our self... */
 	if ( os.conn < Connected && ns.conn < Connected &&
-	       os.disk > Inconsistent && ns.disk == Inconsistent ) {
-		drbd_bm_lock(mdev); /* racy... */
-
-		drbd_md_set_flag(mdev, MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
-
-		drbd_md_clear_flag(mdev, MDF_FullSync);
-		drbd_md_sync(mdev);
-
-		drbd_bm_unlock(mdev);
-	}
+	       os.disk > Inconsistent && ns.disk == Inconsistent )
+		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL);
 
 	if (os.disk > Diskless && ns.disk == Diskless) {
 		/* since inc_local() only works as long as disk>=Inconsistent,
@@ -1370,6 +1346,7 @@ int _drbd_send_uuids(struct drbd_conf *mdev)
 	p.uuid[UUID_SIZE] = cpu_to_be64(mdev->comm_bm_set);
 	uuid_flags |= mdev->net_conf->want_lose ? 1 : 0;
 	uuid_flags |= test_bit(CRASHED_PRIMARY, &mdev->flags) ? 2 : 0;
+	uuid_flags |= mdev->new_state_tmp.disk == Inconsistent ? 4 : 0;
 	p.uuid[UUID_FLAGS] = cpu_to_be64(uuid_flags);
 
 	dec_local(mdev);
@@ -1512,12 +1489,10 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
 		drbd_bm_set_all(mdev);
-		drbd_bm_write(mdev);
-
-		/* if write_bm did fail, Leave full sync flag set in Meta Data
-		 * but otherwise process as per normal - need to tell other
-		 * side that a full resync is required! */
-		if (unlikely(mdev->state.disk <= Failed)) {
+		if (drbd_bm_write(mdev)) {
+			/* write_bm did fail! Leave full sync flag set in Meta Data
+			 * but otherwise process as per normal - need to tell other
+			 * side that a full resync is required! */
 			ERR("Failed to write bitmap to disk!\n");
 		} else {
 			drbd_md_clear_flag(mdev, MDF_FullSync);
@@ -1545,13 +1520,13 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 
 int drbd_send_bitmap(struct drbd_conf *mdev)
 {
-	int ok;
+	int err;
 
 	if (!drbd_get_data_sock(mdev))
-		return 0;
-	ok = _drbd_send_bitmap(mdev);
+		return -1;
+	err = !_drbd_send_bitmap(mdev);
 	drbd_put_data_sock(mdev);
-	return ok;
+	return err;
 }
 
 int drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
@@ -2929,6 +2904,103 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val)
 	drbd_md_mark_dirty(mdev);
 }
 
+/**
+ * drbd_bmio_set_n_write:
+ * Is an io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io() that sets
+ * all bits in the bitmap and writes the whole bitmap to stable storage.
+ */
+int drbd_bmio_set_n_write(struct drbd_conf *mdev)
+{
+	int rv;
+
+	drbd_md_set_flag(mdev,MDF_FullSync);
+	drbd_md_sync(mdev);
+	drbd_bm_set_all(mdev);
+
+	rv = drbd_bm_write(mdev);
+
+	if (!rv) {
+		drbd_md_clear_flag(mdev,MDF_FullSync);
+		drbd_md_sync(mdev);
+	}
+
+	return rv;
+}
+
+STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+{
+	struct bm_io_work *work = (struct bm_io_work *)w;
+	int rv;
+
+	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)==0);
+
+	drbd_bm_lock(mdev);
+	rv = work->io_fn(mdev);
+	drbd_bm_unlock(mdev);
+
+	clear_bit(BITMAP_IO, &mdev->flags);
+	wake_up(&mdev->misc_wait);
+
+        if (work->done) work->done(mdev, rv);
+
+	return 1;
+}
+
+/**
+ * drbd_queue_bitmap_io:
+ * Queues an IO operation on the whole bitmap.
+ * While IO on the bitmap happens we freeze appliation IO thus we ensure
+ * that drbd_set_out_of_sync() can not be called. This function might be
+ * called from the worker thread and other contexts.
+ */
+void drbd_queue_bitmap_io(struct drbd_conf *mdev,
+			  int (*io_fn)(struct drbd_conf *),
+			  void (*done)(struct drbd_conf *, int))
+{
+	unsigned long flags;
+
+	D_ASSERT(!test_bit(BITMAP_IO, &mdev->flags));
+
+	mdev->bm_io_work.w.cb = w_bitmap_io;
+	mdev->bm_io_work.io_fn = io_fn;
+	mdev->bm_io_work.done = done;
+
+	spin_lock_irqsave(&mdev->req_lock, flags);
+	clear_bit(BITMAP_IO_QUEUED, &mdev->flags);
+	set_bit(BITMAP_IO, &mdev->flags);
+	if (atomic_read(&mdev->ap_bio_cnt) == 0) {
+		set_bit(BITMAP_IO_QUEUED, &mdev->flags);
+		drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
+	}
+	spin_unlock_irqrestore(&mdev->req_lock, flags);
+}
+
+/**
+ * drbd_bitmap_io:
+ * Does an IO operation on the bitmap, freezing application IO while that
+ * IO operations runs. This functions might not be called from the context
+ * of the worker thread.
+ */
+int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *))
+{
+	int rv;
+
+	D_ASSERT(current != mdev->worker.task);
+	D_ASSERT(!test_bit(BITMAP_IO, &mdev->flags));
+
+	set_bit(BITMAP_IO_QUEUED, &mdev->flags);
+	set_bit(BITMAP_IO, &mdev->flags);
+	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
+
+	drbd_bm_lock(mdev);
+	rv = io_fn(mdev);
+	drbd_bm_unlock(mdev);
+
+	clear_bit(BITMAP_IO, &mdev->flags);
+	wake_up(&mdev->misc_wait);
+
+	return rv;
+}
 
 void drbd_md_set_flag(struct drbd_conf *mdev, int flag)
 {

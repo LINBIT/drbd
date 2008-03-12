@@ -525,7 +525,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev)
 			drbd_al_shrink(mdev);
 			/* All extents inactive now...
 			 * write bitmap, then mdev->la_size to disk */
-			rv = drbd_bm_write(mdev);
+			rv = drbd_bitmap_io(mdev, &drbd_bm_write);
 			drbd_md_mark_dirty(mdev);
 			dec_local(mdev);
 		}
@@ -913,25 +913,22 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	    !drbd_md_test_flag(mdev->bc, MDF_ConnectedInd) )
 		set_bit(USE_DEGR_WFC_T, &mdev->flags);
 
-	drbd_bm_lock(mdev); /* racy... */
 	if (drbd_determin_dev_size(mdev) == dev_size_error) {
 		retcode = VMallocFailed;
-		goto unlock_bm;
+		goto force_diskless;
 	}
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync "
 		     "(aka FullSync)\n");
-		drbd_bm_set_all(mdev);
-		if (unlikely(drbd_bm_write(mdev) < 0)) {
+		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write)) {
 			retcode = MDIOError;
-			goto unlock_bm;
+			goto force_diskless;
 		}
-		drbd_md_clear_flag(mdev, MDF_FullSync);
 	} else {
-		if (unlikely(drbd_bm_read(mdev) < 0)) {
+		if (drbd_bitmap_io(mdev, &drbd_bm_read) < 0) {
 			retcode = MDIOError;
-			goto unlock_bm;
+			goto force_diskless;
 		}
 	}
 
@@ -985,13 +982,11 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_Success)
-		goto unlock_bm;
-
-	drbd_bm_unlock(mdev);
+		goto force_diskless;
 
 	if (inc_local_if_state(mdev, Attaching)) {
 		if (mdev->state.role == Primary)
-			mdev->bc->md.uuid[Current] |=	(u64)1;
+			mdev->bc->md.uuid[Current] |=  (u64)1;
 		else
 			mdev->bc->md.uuid[Current] &= ~(u64)1;
 		dec_local(mdev);
@@ -1007,8 +1002,6 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	reply->ret_code = retcode;
 	return 0;
 
- unlock_bm:
-	drbd_bm_unlock(mdev);
  force_diskless:
 	drbd_force_state(mdev, NS(disk, Diskless));
 	drbd_md_sync(mdev);
@@ -1336,10 +1329,8 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
-	drbd_bm_lock(mdev);
 	dd = drbd_determin_dev_size(mdev);
 	drbd_md_sync(mdev);
-	drbd_bm_unlock(mdev);
 	dec_local(mdev);
 	if (dd == dev_size_error) {
 		retcode = VMallocFailed;
