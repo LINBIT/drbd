@@ -844,9 +844,7 @@ int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		switch (mdev->state.conn) {
 		case SyncSource:  case SyncTarget:
 		case PausedSyncS: case PausedSyncT:
-			drbd_bm_lock(mdev);
 			drbd_resync_finished(mdev);
-			drbd_bm_unlock(mdev);
 		default: /* nothing to do */;
 		}
 	}
@@ -1245,7 +1243,8 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 			D_ASSERT(test_bit(BME_NO_WRITES, &bm_ext->flags));
 			clear_bit(BME_NO_WRITES, &bm_ext->flags);
 			mdev->resync_wenr = LC_FREE;
-			lc_put(mdev->resync, &bm_ext->lce);
+			if (lc_put(mdev->resync, &bm_ext->lce) == 0)
+				mdev->resync_locked--;
 			wake_up(&mdev->al_wait);
 		} else {
 			ALERT("LOGIC BUG\n");
@@ -1270,8 +1269,12 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		}
 		goto check_al;
 	} else {
-		if (mdev->resync_locked > mdev->resync->nr_elements-3)
+		if (mdev->resync_locked > mdev->resync->nr_elements-3) {
+			MTRACE(TraceTypeResync, TraceLvlAll,
+				INFO("resync_locked = %u!\n", mdev->resync_locked);
+			);
 			goto try_again;
+		}
 		bm_ext = (struct bm_extent *)lc_get(mdev->resync, enr);
 		if (!bm_ext) {
 			const unsigned long rs_flags = mdev->resync->flags;

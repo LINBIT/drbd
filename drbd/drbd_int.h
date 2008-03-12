@@ -726,6 +726,8 @@ enum {
 				   so don't even try */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
+	BITMAP_IO,		/* Let user IO drain */
+	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -801,6 +803,12 @@ struct drbd_md_io {
 	struct drbd_conf *mdev;
 	struct completion event;
 	int error;
+};
+
+struct bm_io_work {
+	struct drbd_work w;
+	int (*io_fn)(struct drbd_conf *mdev);
+	void (*done)(struct drbd_conf *mdev, int rv);
 };
 
 struct drbd_conf {
@@ -930,6 +938,7 @@ struct drbd_conf {
 	int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	cpumask_t cpu_mask;
+	struct bm_io_work bm_io_work;
 };
 
 static inline struct drbd_conf *minor_to_mdev(int minor)
@@ -1075,6 +1084,12 @@ extern void drbd_md_set_flag(struct drbd_conf *mdev, int flags);
 extern void drbd_md_clear_flag(struct drbd_conf *mdev, int flags);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
 extern void drbd_md_mark_dirty(struct drbd_conf *mdev);
+extern void drbd_queue_bitmap_io(struct drbd_conf *mdev,
+				 int (*io_fn)(struct drbd_conf *),
+				 void (*done)(struct drbd_conf *, int));
+extern int drbd_bmio_set_n_write(struct drbd_conf *mdev);
+extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *));
+
 
 /* Meta data layout
    We reserve a 128MB Block (4k aligned)
@@ -1958,13 +1973,20 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 	int mxb = drbd_get_max_buffers(mdev);
 	if (mdev->state.susp)
 		return 0;
+	/* Do not remove the following two, they are still necessary, even in
+	   the presence of the BITMAP_IO flag, since they ensure that between
+	   drbd_send_bitmap() and receive_bitmap() nothing gets modified in
+	   the bitmap */
 	if (mdev->state.conn == WFBitMapS)
 		return 0;
 	if (mdev->state.conn == WFBitMapT)
 		return 0;
 	/* since some older kernels don't have atomic_add_unless,
 	 * and we are within the spinlock anyways, we have this workaround.  */
-	if (atomic_read(&mdev->ap_bio_cnt) > mxb) return 0;
+	if (atomic_read(&mdev->ap_bio_cnt) > mxb)
+		return 0;
+	if (test_bit(BITMAP_IO, &mdev->flags))
+		return 0;
 	atomic_inc(&mdev->ap_bio_cnt);
 	return 1;
 }
@@ -2005,6 +2027,10 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 	D_ASSERT(ap_bio >= 0);
 	if (ap_bio < mxb)
 		wake_up(&mdev->misc_wait);
+	if (ap_bio == 0 && test_bit(BITMAP_IO, &mdev->flags)) {
+		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
+			drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
+	}
 }
 
 static inline int seq_cmp(u32 a, u32 b)
