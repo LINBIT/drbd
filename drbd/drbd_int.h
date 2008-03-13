@@ -1876,14 +1876,18 @@ static inline int drbd_get_max_buffers(drbd_dev* mdev)
 }
 
 static inline int __inc_ap_bio_cond(drbd_dev* mdev) {
+	const unsigned int cs = mdev->state.conn;
+	const unsigned int ds = mdev->state.disk;
 	int mxb = drbd_get_max_buffers(mdev);
 	if (mdev->state.susp) return 0;
-	/* Do not remove the following two, they are still necessary, even in
-	   the presence of the BITMAP_IO flag, since they ensure that between
-	   drbd_send_bitmap() and receive_bitmap() nothing gets modified in
-	   the bitmap */
-	if (mdev->state.conn == WFBitMapS) return 0;
-	if (mdev->state.conn == WFBitMapT) return 0;
+
+	/* to avoid deadlock or bitmap corruption, we need to lock out
+	 * application io during attaching and bitmap exchange */
+	if (Attaching <= ds && ds <= Negotiating)
+		return 0;
+	if (cs == WFBitMapS || cs == WFBitMapT || cs == WFReportParams)
+		return 0;
+
 	/* since some older kernels don't have atomic_add_unless,
 	 * and we are within the spinlock anyways, we have this workaround.  */
 	if (atomic_read(&mdev->ap_bio_cnt) > mxb) return 0;
