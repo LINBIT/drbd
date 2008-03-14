@@ -323,3 +323,8 @@ static inline void *kzalloc(size_t size, int flags)
 	return rv;
 }
 #endif
+
+#ifndef __CHECKER__
+# undef __cond_lock
+# define __cond_lock(x,c) (c)
+#endif

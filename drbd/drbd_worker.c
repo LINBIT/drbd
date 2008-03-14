@@ -83,7 +83,7 @@ BIO_ENDIO_FN(drbd_md_io_complete)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-BIO_ENDIO_FN(drbd_endio_read_sec)
+BIO_ENDIO_FN(drbd_endio_read_sec) __releases(local)
 {
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
@@ -129,7 +129,7 @@ BIO_ENDIO_FN(drbd_endio_read_sec)
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-BIO_ENDIO_FN(drbd_endio_write_sec)
+BIO_ENDIO_FN(drbd_endio_write_sec) __releases(local)
 {
 	unsigned long flags=0;
 	struct Tl_epoch_entry *e=NULL;
