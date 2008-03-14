@@ -35,7 +35,7 @@
 
 /* outside of the ifdef
  * because of the _print_rq_state(,FIXME) in barrier_acked */
-void _print_rq_state(drbd_request_t *req, const char *txt)
+STATIC void _print_rq_state(drbd_request_t *req, const char *txt)
 {
 	const unsigned long s = req->rq_state;
 	drbd_dev *mdev = req->mdev;
@@ -61,7 +61,7 @@ void _print_rq_state(drbd_request_t *req, const char *txt)
 
 //#define VERBOSE_REQUEST_CODE
 #if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
-void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
+STATIC void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 {
 	drbd_dev *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||

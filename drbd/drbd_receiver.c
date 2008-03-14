@@ -123,7 +123,7 @@ void check_list(drbd_dev *mdev,struct list_head *list,char *t)
 /**
  * drbd_bp_alloc: Returns a page. Fails only if a signal comes in.
  */
-STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, unsigned int gfp_mask)
+STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, gfp_t gfp_mask)
 {
 	unsigned long flags=0;
 	struct page *page;
@@ -239,7 +239,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 				     u64 id,
 				     sector_t sector,
 				     unsigned int data_size,
-				     unsigned int gfp_mask)
+				     gfp_t gfp_mask)
 {
 	struct request_queue *q;
 	struct Tl_epoch_entry* e;
@@ -509,7 +509,7 @@ STATIC struct socket* drbd_accept(drbd_dev *mdev,struct socket* sock)
       out:
 	if(err != -EAGAIN && err != -EINTR)
 		ERR("accept failed! %d\n", err);
-	return 0;
+	return NULL;
 }
 
 STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
@@ -540,7 +540,7 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
 	return rv;
 }
 
-int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
+STATIC int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 {
 	mm_segment_t oldfs;
 	struct iovec iov;
@@ -734,7 +734,7 @@ STATIC int drbd_socket_okay(drbd_dev *mdev, struct socket **sock)
  *     no point in trying again, please go standalone.
  *  -2 We do not have a network config...
  */
-int drbd_connect(drbd_dev *mdev)
+STATIC int drbd_connect(drbd_dev *mdev)
 {
 	struct socket *s, *sock, *msock;
 	int try, h, ok;
@@ -1003,7 +1003,7 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 	int ds,i,rr;
 
 	e = drbd_alloc_ee(mdev,id,sector,data_size,GFP_KERNEL);
-	if(!e) return 0;
+	if(!e) return NULL;
 	bio = e->private_bio;
 	ds = data_size;
 	bio_for_each_segment(bvec, bio, i) {
@@ -1014,7 +1014,7 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
 			drbd_free_ee(mdev,e);
 			WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int,ds,PAGE_SIZE));
-			return 0;
+			return NULL;
 		}
 		ds -= rr;
 	}
@@ -2924,7 +2924,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
  *
  * for now, they are expected to be zero, but ignored.
  */
-int drbd_send_handshake(drbd_dev *mdev)
+STATIC int drbd_send_handshake(drbd_dev *mdev)
 {
 	// ASSERT current == mdev->receiver ...
 	Drbd_HandShake_Packet *p = &mdev->data.sbuf.HandShake;
@@ -3161,7 +3161,7 @@ STATIC int drbd_do_auth(drbd_dev *mdev)
 }
 #endif
 
-int drbdd_init(struct Drbd_thread *thi)
+STATIC int drbdd_init(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
 	int minor = mdev_to_minor(mdev);
@@ -3417,7 +3417,7 @@ static struct asender_cmd* get_asender_cmd(int cmd)
 	return &asender_tbl[cmd];
 }
 
-int drbd_asender(struct Drbd_thread *thi)
+STATIC int drbd_asender(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
 	Drbd_Header *h = &mdev->meta.rbuf.head;

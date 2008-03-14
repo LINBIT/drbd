@@ -289,7 +289,7 @@ static inline drbd_request_t* drbd_req_new(drbd_dev *mdev, struct bio *bio_src)
 
 		bio->bi_private  = req;
 		bio->bi_end_io   = drbd_endio_pri;
-		bio->bi_next    = 0;
+		bio->bi_next     = NULL;
 	}
 	return req;
 }

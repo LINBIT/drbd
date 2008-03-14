@@ -97,7 +97,7 @@ module_param(allow_oos, bool,0);
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults = 0;
 int fault_rate;
-int fault_count;
+static int fault_count;
 int fault_devs;
 module_param(enable_faults,int,0664);	// bitmap of enabled faults
 module_param(fault_rate,int,0664);	// fault rate % value - applies to all enabled faults
@@ -128,9 +128,6 @@ module_param(trace_devs,int,0644);
 char usermode_helper[80] = "/sbin/drbdadm";
 
 module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0644);
-
-// global panic flag
-volatile int drbd_did_panic = 0;
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
@@ -170,7 +167,7 @@ STATIC int tl_init(drbd_dev *mdev)
 	if(!b) return 0;
 	INIT_LIST_HEAD(&b->requests);
 	INIT_LIST_HEAD(&b->w.list);
-	b->next = 0;
+	b->next = NULL;
 	b->br_number = 4711;
 	b->n_req = 0;
 	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
@@ -205,7 +202,7 @@ void _tl_add_barrier(drbd_dev *mdev, struct drbd_barrier *new)
 	INIT_LIST_HEAD(&new->requests);
 	INIT_LIST_HEAD(&new->w.list);
 	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
-	new->next=0;
+	new->next = NULL;
 	new->n_req=0;
 
 	newest_before = mdev->newest_barrier;
@@ -424,7 +421,7 @@ STATIC int is_valid_state(drbd_dev* mdev, drbd_state_t ns);
 STATIC int is_valid_state_transition(drbd_dev*, drbd_state_t, drbd_state_t);
 STATIC int drbd_send_state_req(drbd_dev *, drbd_state_t, drbd_state_t);
 
-set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
+STATIC set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t val)
 {
 	drbd_state_t os,ns;
 	unsigned long flags;
@@ -1648,7 +1645,7 @@ STATIC int we_should_drop_the_connection(drbd_dev *mdev, struct socket *sock)
    XFS seems to have problems, still, it submits pages with page_count == 0!
    As a workaround, we disable sendpage on pages with page_count == 0 or PageSlab.
 */
-int _drbd_no_send_page(drbd_dev *mdev, struct page *page,
+STATIC int _drbd_no_send_page(drbd_dev *mdev, struct page *page,
                    int offset, size_t size)
 {
        int ret;
@@ -1871,7 +1868,7 @@ int drbd_send(drbd_dev *mdev, struct socket *sock,
 	iov.iov_base = buf;
 	iov.iov_len  = size;
 
-	msg.msg_name       = 0;
+	msg.msg_name       = NULL;
 	msg.msg_namelen    = 0;
 #if !HAVE_KERNEL_SENDMSG
 	msg.msg_iov        = &iov;
@@ -2025,7 +2022,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 	if(mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
 }
 
-void drbd_set_defaults(drbd_dev *mdev)
+STATIC void drbd_set_defaults(drbd_dev *mdev)
 {
 	mdev->sync_conf.after      = DRBD_AFTER_DEF;
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
@@ -2038,7 +2035,7 @@ void drbd_set_defaults(drbd_dev *mdev)
 					0 } };
 }
 
-void drbd_init_set_defaults(drbd_dev *mdev)
+STATIC void drbd_init_set_defaults(drbd_dev *mdev)
 {
 	// the memset(,0,) did most of this
 	// note: only assignments, no allocation in here
@@ -2196,7 +2193,7 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 }
 
 
-void drbd_destroy_mempools(void)
+STATIC void drbd_destroy_mempools(void)
 {
 	struct page *page;
 
@@ -2222,7 +2219,7 @@ void drbd_destroy_mempools(void)
 	return;
 }
 
-int drbd_create_mempools(void)
+STATIC int drbd_create_mempools(void)
 {
 	struct page *page;
 	const int number = (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE) * minor_count;
@@ -2584,11 +2581,11 @@ void drbd_free_sock(drbd_dev *mdev)
 {
 	if (mdev->data.socket) {
 		sock_release(mdev->data.socket);
-		mdev->data.socket = 0;
+		mdev->data.socket = NULL;
 	}
 	if (mdev->meta.socket) {
 		sock_release(mdev->meta.socket);
-		mdev->meta.socket = 0;
+		mdev->meta.socket = NULL;
 	}
 }
 
@@ -2601,7 +2598,7 @@ void drbd_free_resources(drbd_dev *mdev)
 	}
 	drbd_free_sock(mdev);
 	drbd_free_bc(mdev->bc);
-	mdev->bc=0;
+	mdev->bc = NULL;
 }
 
 /*********************************/
@@ -3300,7 +3297,7 @@ do { \
 	} \
 } while (0)
 
-char *_dump_block_id(u64 block_id, char *buff) {
+STATIC char *_dump_block_id(u64 block_id, char *buff) {
     if (is_syncer_block_id(block_id))
 	strcpy(buff,"SyncerId");
     else

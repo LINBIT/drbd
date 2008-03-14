@@ -1383,7 +1383,7 @@ extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 					    u64 id,
 					    sector_t sector,
 					    unsigned int data_size,
-					    unsigned int gfp_mask);
+					    gfp_t gfp_mask);
 extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
 extern void drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void _drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);

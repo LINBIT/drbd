@@ -457,7 +457,7 @@ int w_make_resync_request(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	return 1;
 }
 
-int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
+STATIC int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
 {
 	kfree(w);
 
@@ -955,7 +955,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 int drbd_worker(struct Drbd_thread *thi)
 {
 	drbd_dev *mdev = thi->mdev;
-	struct drbd_work *w = 0;
+	struct drbd_work *w = NULL;
 	LIST_HEAD(work_list);
 	int intr=0,i;
 
@@ -988,7 +988,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		   the entry from the list. The cleanup code takes care of
 		   this...   */
 
-		w = 0;
+		w = NULL;
 		spin_lock_irq(&mdev->data.work.q_lock);
 		ERR_IF(list_empty(&mdev->data.work.q)) {
 			/* something terribly wrong in our logic.

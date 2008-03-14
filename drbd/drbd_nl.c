@@ -40,13 +40,11 @@
 #include <linux/drbd_limits.h>
 
 /* see get_sb_bdev and bd_claim */
-char *drbd_d_holder = "Hands off! this is DRBD's data storage device.";
-char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
-
+static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 // Generate the tag_list to struct functions
 #define NL_PACKET(name, number, fields) \
-int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg) \
+STATIC int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg) \
 { \
 	int tag; \
 	int dlen; \
@@ -86,7 +84,7 @@ int name ## _from_tags (drbd_dev *mdev, unsigned short* tags, struct name * arg)
 
 // Generate the struct to tag_list functions
 #define NL_PACKET(name, number, fields) \
-unsigned short* \
+STATIC unsigned short* \
 name ## _to_tags (drbd_dev *mdev, struct name * arg, unsigned short* tags) \
 { \
 	fields \
@@ -119,7 +117,7 @@ extern void drbd_init_set_defaults(drbd_dev *mdev);
 void drbd_bcast_ev_helper(drbd_dev *mdev, char* helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
-char *nl_packet_name(int packet_type) {
+STATIC char *nl_packet_name(int packet_type) {
 // Generate packet type strings
 #define NL_PACKET(name, number, fields) \
 	[ P_ ## name ] = # name,
@@ -136,7 +134,7 @@ char *nl_packet_name(int packet_type) {
 	    nl_tag_name[packet_type] : "*Unknown*";
 }
 
-void nl_trace_packet(void *data) {
+STATIC void nl_trace_packet(void *data) {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
 
@@ -148,7 +146,7 @@ void nl_trace_packet(void *data) {
 	       req->seq, req->ack, req->len);
 }
 
-void nl_trace_reply(void *data) {
+STATIC void nl_trace_reply(void *data) {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply*)req->data;
 
@@ -1628,7 +1626,7 @@ static struct cn_handler_struct cnd_table[] = {
 
 };
 
-void drbd_connector_callback(void *data)
+STATIC void drbd_connector_callback(void *data)
 {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req*)req->data;
@@ -1694,7 +1692,7 @@ void drbd_connector_callback(void *data)
 	module_put(THIS_MODULE);
 }
 
-atomic_t drbd_nl_seq = ATOMIC_INIT(2); // two.
+static atomic_t drbd_nl_seq = ATOMIC_INIT(2); // two.
 
 void drbd_bcast_state(drbd_dev *mdev, drbd_state_t state)
 {
@@ -1814,7 +1812,7 @@ int __init cn_init(void);
 void __exit cn_fini(void);
 #endif
 
-int __init drbd_nl_init()
+int __init drbd_nl_init(void)
 {
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 	int err;
@@ -1833,7 +1831,7 @@ int __init drbd_nl_init()
 	return 0;
 }
 
-void drbd_nl_cleanup()
+void drbd_nl_cleanup(void)
 {
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 

@@ -188,7 +188,7 @@ struct __attribute__((packed)) al_transaction {
 struct update_odbm_work {
 	struct drbd_work w;
 	unsigned int enr;
-} ;
+};
 
 struct update_al_work {
 	struct drbd_work w;
@@ -214,7 +214,7 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 		if(test_bit(BME_NO_WRITES,&bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
 			//INFO("Delaying app write until sync read is done\n");
-			return 0;
+			return NULL;
 		}
 	}
 	al_ext   = lc_get(mdev->act_log,enr);

@@ -130,7 +130,7 @@ STATIC struct lc_element * lc_evict(struct lru_cache* lc)
 	struct list_head  *n;
 	struct lc_element *e;
 
-	if (list_empty(&lc->lru)) return 0;
+	if (list_empty(&lc->lru)) return NULL;
 
 	n=lc->lru.prev;
 	e=list_entry(n, struct lc_element,list);

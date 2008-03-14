@@ -370,7 +370,7 @@ void _drbd_bm_recount_bits(drbd_dev *mdev, char* file, int line)
 int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long bits, bytes, words, *nbm, *obm = 0;
+	unsigned long bits, bytes, words, *nbm, *obm = NULL;
 	int err = 0, growing;
 
 	ERR_IF(!b) return -ENOMEM;
@@ -598,7 +598,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-BIO_ENDIO_FN(bm_async_io_complete)
+STATIC BIO_ENDIO_FN(bm_async_io_complete)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio,BIO_UPTODATE);
