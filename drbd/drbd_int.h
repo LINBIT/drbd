@@ -1791,24 +1791,24 @@ static inline int inc_net(drbd_dev* mdev)
 	return have_net_conf;
 }
 
-/* strictly speaking,
- * these would have to hold the req_lock while looking at
- * the disk state. But since we cannot submit within a spinlock,
- * this is mood...
+/**
+ * inc_local: Returns TRUE when local IO is possible. If it returns
+ * TRUE you should call dec_local() after IO is completed.
  */
+#define dec_local(M) ({ __release(local); _dec_local(M); })
+#define inc_local_if_state(M,MINS) __cond_lock(local, _inc_local_if_state(M,MINS))
+#define inc_local(M) __cond_lock(local, _inc_local_if_state(M,Inconsistent))
 
-static inline void dec_local(drbd_dev* mdev)
+#ifndef __CHECKER__
+static inline void _dec_local(drbd_dev* mdev)
 {
 	if(atomic_dec_and_test(&mdev->local_cnt)) {
 		wake_up(&mdev->misc_wait);
 	}
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
-/**
- * inc_local: Returns TRUE when local IO is possible. If it returns
- * TRUE you should call dec_local() after IO is completed.
- */
-static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
+
+static inline int _inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 {
 	int io_allowed;
 
@@ -1819,10 +1819,10 @@ static inline int inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 	}
 	return io_allowed;
 }
-static inline int inc_local(drbd_dev* mdev)
-{
-	return inc_local_if_state(mdev, Inconsistent);
-}
+#else
+extern void _dec_local(drbd_dev* mdev);
+extern int _inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins);
+#endif
 
 /* you must have an "inc_local" reference */
 static inline void drbd_get_syncer_progress(drbd_dev* mdev,
