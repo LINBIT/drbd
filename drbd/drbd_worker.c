@@ -756,28 +756,32 @@ int w_send_read_req(drbd_dev *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-STATIC void drbd_global_lock(void)
+STATIC void drbd_global_lock(void) __acquires(drbd_global_lock)
 {
 	drbd_dev *mdev;
 	int i;
 
+	__acquire(drbd_global_lock);
 	local_irq_disable();
 	for (i=0; i < minor_count; i++) {
 		if(!(mdev = minor_to_mdev(i))) continue;
 		spin_lock(&mdev->req_lock);
+		__release(&mdev->req_lock); /* annihilate the spin_lock's annotation here */
 	}
 }
 
-STATIC void drbd_global_unlock(void)
+STATIC void drbd_global_unlock(void) __releases(drbd_global_lock)
 {
 	drbd_dev *mdev;
 	int i;
 
 	for (i=0; i < minor_count; i++) {
 		if(!(mdev = minor_to_mdev(i))) continue;
+		__acquire(&mdev->req_lock);
 		spin_unlock(&mdev->req_lock);
 	}
 	local_irq_enable();
+	__release(drbd_global_lock);
 }
 
 STATIC int _drbd_may_sync_now(drbd_dev *mdev)
