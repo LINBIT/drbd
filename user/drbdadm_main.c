@@ -683,13 +683,11 @@ static inline const char* shell_escape(char* s)
 	if (s == NULL)
 		return s;
 
-	while (1) {
+	while (*s) {
 		if (buffer + sizeof(buffer) < c+2)
 			break;
 
 		switch(*s) {
-		case 0: /* terminator */
-			goto eos;
 		/* set of 'clean' characters */
 		case '%': case '+': case '-': case '.': case '/':
 		case '0' ... '9':
@@ -704,7 +702,6 @@ static inline const char* shell_escape(char* s)
 		}
 		*c++ = *s++;
 	}
-eos:
 	*c = '\0';
 	return buffer;
 }
