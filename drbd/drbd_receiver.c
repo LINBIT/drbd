@@ -1342,11 +1342,11 @@ static int drbd_wait_peer_seq(drbd_dev *mdev, const u32 packet_seq)
 		prepare_to_wait(&mdev->seq_wait,&wait,TASK_INTERRUPTIBLE);
 		if (seq_le(packet_seq,mdev->peer_seq+1))
 			break;
-		spin_unlock(&mdev->peer_seq_lock);
 		if (signal_pending(current)) {
 			ret = -ERESTARTSYS;
 			break;
 		}
+		spin_unlock(&mdev->peer_seq_lock);
 		schedule();
 		spin_lock(&mdev->peer_seq_lock);
 	}
