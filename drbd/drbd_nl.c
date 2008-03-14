@@ -1072,7 +1072,7 @@ STATIC int drbd_nl_net_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if( !(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_net(mdev)) {
 		memcpy(new_conf,mdev->net_conf,sizeof(struct net_conf));
-		dec_local(mdev);
+		dec_net(mdev);
 	} else {
 		memset(new_conf,0,sizeof(struct net_conf));
 		new_conf->timeout         = DRBD_TIMEOUT_DEF;
