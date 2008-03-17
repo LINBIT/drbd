@@ -1116,12 +1116,15 @@ STATIC int e_end_resync_block(drbd_dev *mdev, struct drbd_work *w, int unused)
 	return ok;
 }
 
-STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size)
+STATIC int recv_resync_read(drbd_dev *mdev,sector_t sector,int data_size) __releases(local)
 {
 	struct Tl_epoch_entry *e;
 
 	e = read_in_block(mdev,ID_SYNCER,sector,data_size);
-	if(!e) return FALSE;
+	if(!e) {
+		dec_local(mdev);
+		return FALSE;
+	}
 
 	dec_rs_pending(mdev);
 
@@ -1217,16 +1220,12 @@ STATIC int receive_RSDataReply(drbd_dev *mdev,Drbd_Header* h)
 	D_ASSERT(p->block_id == ID_SYNCER);
 
 	if(inc_local(mdev)) {
-		/* data is submitted to disk within recv_resync_read.
-		 * corresponding dec_local done below on error,
-		 * or in drbd_endio_write_sec. */
 		/* FIXME paranoia:
 		 * verify that the corresponding bit is set.
 		 * in case we are Primary SyncTarget,
 		 * verify there are no pending write request to that area.
 		 */
 		ok = recv_resync_read(mdev,sector,data_size);
-		if (!ok) dec_local(mdev);
 	} else {
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Can not write resync data to local disk.\n");

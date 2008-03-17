@@ -1795,19 +1795,19 @@ static inline int inc_net(drbd_dev* mdev)
  * inc_local: Returns TRUE when local IO is possible. If it returns
  * TRUE you should call dec_local() after IO is completed.
  */
-#define dec_local(M) ({ __release(local); _dec_local(M); })
 #define inc_local_if_state(M,MINS) __cond_lock(local, _inc_local_if_state(M,MINS))
 #define inc_local(M) __cond_lock(local, _inc_local_if_state(M,Inconsistent))
 
-#ifndef __CHECKER__
-static inline void _dec_local(drbd_dev* mdev)
+static inline void dec_local(drbd_dev* mdev)
 {
+	__release(local);
 	if(atomic_dec_and_test(&mdev->local_cnt)) {
 		wake_up(&mdev->misc_wait);
 	}
 	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
 }
 
+#ifndef __CHECKER__
 static inline int _inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 {
 	int io_allowed;
@@ -1820,7 +1820,6 @@ static inline int _inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 	return io_allowed;
 }
 #else
-extern void _dec_local(drbd_dev* mdev);
 extern int _inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins);
 #endif
 

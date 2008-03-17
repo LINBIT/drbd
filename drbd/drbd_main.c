@@ -159,17 +159,9 @@ STATIC struct block_device_operations drbd_ops = {
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 #ifdef __CHECKER__
-/* When checking with sparse, and these two are inline functions, sparse will
-   give tons of false positives. When they are real functions sparse works.
+/* When checking with sparse, and this is an inline function, sparse will
+   give tons of false positives. When this is a real functions sparse works.
  */
-void _dec_local(drbd_dev* mdev)
-{
-	if(atomic_dec_and_test(&mdev->local_cnt)) {
-		wake_up(&mdev->misc_wait);
-	}
-	D_ASSERT(atomic_read(&mdev->local_cnt)>=0);
-}
-
 int _inc_local_if_state(drbd_dev* mdev, drbd_disks_t mins)
 {
 	int io_allowed;

@@ -67,6 +67,7 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
    See 6712ecf8f648118c3363c142196418f89a510b90 */
 #define bio_endio(B,E) bio_endio(B, (B)->bi_size, E)
 #define BIO_ENDIO_FN(name) int name(struct bio *bio, unsigned int bytes_done, int error)
+
 #define BIO_ENDIO_FN_START if (bio->bi_size) return 1
 #define BIO_ENDIO_FN_RETURN return 0
 #else
@@ -113,6 +114,7 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
  */
 static inline void drbd_generic_make_request(drbd_dev *mdev, int fault_type, struct bio *bio)
 {
+	__release(local);
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR DEVICE_NAME "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));
