@@ -217,18 +217,12 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		     mdev->state.conn == SyncTarget ) {
 			drbd_syncer_progress(mdev,seq);
 		}
-		if(mdev->resync) {
-			lc_printf_stats(seq,mdev->resync);
+
+		if (inc_local_if_state(mdev, Attaching)) {
+			lc_printf_stats(seq, mdev->resync);
+			lc_printf_stats(seq, mdev->act_log);
+			dec_local(mdev);
 		}
-		if(mdev->act_log) {
-			lc_printf_stats(seq,mdev->act_log);
-		}
-#if 0
-		if(mdev->resync) {
-			lc_dump(mdev->resync,seq,"rs_left",
-				resync_dump_detail);
-		}
-#endif
 
 	}
 
