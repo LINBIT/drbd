@@ -461,9 +461,6 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 	int md_moved, la_size_changed;
 	enum determin_dev_size_enum rv=unchanged;
 
-	if (!inc_local_if_state(mdev, Attaching))
-		return dev_size_error;
-
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
 	prev_first_sect = drbd_md_first_sector(mdev->bc);
@@ -522,7 +519,6 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 	if (size < la_size) rv = shrunk;
   out:
 	lc_unlock(mdev->act_log);
-	dec_local(mdev);
 
 	return rv;
 }
@@ -854,30 +850,34 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
+	if (!inc_local_if_state(mdev, Attaching)) {
+		goto force_diskless;
+	}
+
 	drbd_thread_start(&mdev->worker);
 	drbd_md_set_sector_offsets(mdev,nbc);
 
 	retcode = drbd_md_read(mdev,nbc);
 	if ( retcode != NoError ) {
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	// Since we are diskless, fix the AL first...
 	if (drbd_check_al_size(mdev)) {
 		retcode = KMallocFailed;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	// Prevent shrinking of consistent devices !
 	if(drbd_md_test_flag(nbc,MDF_Consistent) &&
 	   drbd_new_dev_size(mdev,nbc) < nbc->md.la_size_sect) {
 		retcode = LDDeviceTooSmall;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	if(!drbd_al_read_log(mdev,nbc)) {
 		retcode = MDIOError;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	/* Point of no return reached.
@@ -930,19 +930,19 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if (drbd_determin_dev_size(mdev) == dev_size_error) {
 		retcode = VMallocFailed;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
 		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write)) {
 			retcode = MDIOError;
-			goto force_diskless;
+			goto force_diskless_dec;
 		}
 	} else {
 		if (drbd_bitmap_io(mdev, &drbd_bm_read) < 0) {
 			retcode = MDIOError;
-			goto force_diskless;
+			goto force_diskless_dec;
 		}
 	}
 
@@ -999,14 +999,11 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_Success) {
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
-	if(inc_local_if_state(mdev,Attaching)) {
-		if(mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=  (u64)1;
-		else                            mdev->bc->md.uuid[Current] &= ~(u64)1;
-		dec_local(mdev);
-	}
+	if(mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=  (u64)1;
+	else                            mdev->bc->md.uuid[Current] &= ~(u64)1;
 
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
@@ -1015,9 +1012,12 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	drbd_md_mark_dirty(mdev);
 	drbd_md_sync(mdev);
 
+	dec_local(mdev);
 	reply->ret_code = retcode;
 	return 0;
 
+ force_diskless_dec:
+	dec_local(mdev);
  force_diskless:
 	drbd_force_state(mdev,NS(disk,Diskless));
 	drbd_md_sync(mdev);
