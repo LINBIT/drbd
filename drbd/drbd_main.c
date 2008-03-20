@@ -1053,9 +1053,13 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		   not increase... It will reach zero */
 		wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
-		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
-		lc_free(mdev->resync);  mdev->resync = NULL;
-		lc_free(mdev->act_log); mdev->act_log = NULL;
+		lc_free(mdev->resync);
+		mdev->resync = NULL;
+		lc_free(mdev->act_log);
+		mdev->act_log = NULL;
+		drbd_free_bc(mdev->bc);
+		wmb(); /* see begin of drbd_nl_disk_conf() */
+		mdev->bc = NULL;
 	}
 
 	// A resync finished or aborted, wake paused devices...
