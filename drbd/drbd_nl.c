@@ -461,6 +461,9 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 	int md_moved, la_size_changed;
 	enum determin_dev_size_enum rv=unchanged;
 
+	if (!inc_local_if_state(mdev, Attaching))
+		return dev_size_error;
+
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
 	prev_first_sect = drbd_md_first_sector(mdev->bc);
@@ -510,18 +513,16 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 	}
 
 	if ( la_size_changed || md_moved ) {
-		if( inc_local_if_state(mdev,Attaching) ) {
-			drbd_al_shrink(mdev); // All extents inactive.
-			rv = drbd_bitmap_io(mdev, &drbd_bm_write);
-			drbd_md_mark_dirty(mdev);
-			dec_local(mdev);
-		}
+		drbd_al_shrink(mdev); /* All extents inactive. */
+		rv = drbd_bitmap_io(mdev, &drbd_bm_write);
+		drbd_md_mark_dirty(mdev);
 	}
 
 	if (size > la_size) rv = grew;
 	if (size < la_size) rv = shrunk;
   out:
 	lc_unlock(mdev->act_log);
+	dec_local(mdev);
 
 	return rv;
 }
@@ -698,7 +699,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-       /* 
+       /*
         * We may have gotten here very quickly from a detach. Wait for a bit
         * then fail.
         */

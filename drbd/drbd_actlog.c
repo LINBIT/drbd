@@ -811,7 +811,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work*)w;
 
-	if( !inc_local_if_state(mdev,Attaching) ) {
+	if (!inc_local(mdev)) {
 		if (DRBD_ratelimit(5*HZ,5))
 			WARN("Can not update on disk bitmap, local IO disabled.\n");
 		return 1;
@@ -985,7 +985,7 @@ void __drbd_set_in_sync(drbd_dev* mdev, sector_t sector, int size, const char* f
 				mdev->rs_mark_left =drbd_bm_total_weight(mdev);
 			}
 		}
-		if( inc_local_if_state(mdev,Attaching) ) {
+		if (inc_local(mdev)) {
 			drbd_try_clear_on_disk_bm(mdev,sector,count,TRUE);
 			dec_local(mdev);
 		}
@@ -1460,7 +1460,7 @@ void drbd_rs_failed_io(drbd_dev* mdev, sector_t sector, int size)
 	if (count) {
 		mdev->rs_failed += count;
 
-		if( inc_local_if_state(mdev,Attaching) ) {
+		if (inc_local(mdev)) {
 			drbd_try_clear_on_disk_bm(mdev,sector,count,FALSE);
 			dec_local(mdev);
 		}

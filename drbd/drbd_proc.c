@@ -218,7 +218,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			drbd_syncer_progress(mdev,seq);
 		}
 
-		if (inc_local_if_state(mdev, Attaching)) {
+		if (inc_local_if_state(mdev, Failed)) {
 			lc_printf_stats(seq, mdev->resync);
 			lc_printf_stats(seq, mdev->act_log);
 			dec_local(mdev);
