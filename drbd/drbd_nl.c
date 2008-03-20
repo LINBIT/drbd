@@ -1265,8 +1265,10 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if( retcode < SS_Success ) goto fail;
 
-	if( wait_event_interruptible( mdev->misc_wait,
-				      mdev->state.conn==StandAlone) ) {
+	if (wait_event_interruptible(mdev->misc_wait,
+				     mdev->state.conn != Disconnecting) ) {
+		/* Do not test for mdev->state.conn == StandAlone, since
+		   someone else might connect us in the mean time! */
 		retcode = GotSignal;
 		goto fail;
 	}
