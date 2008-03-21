@@ -519,6 +519,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
 	if (size < la_size) rv = shrunk;
   out:
 	lc_unlock(mdev->act_log);
+	wake_up(&mdev->al_wait);
 
 	return rv;
 }
@@ -1402,7 +1403,12 @@ STATIC int drbd_nl_syncer_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->sync_conf = sc;
 
 	if(inc_local(mdev)) {
+		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+		drbd_al_shrink(mdev);
 		err = drbd_check_al_size(mdev);
+		lc_unlock(mdev->act_log);
+		wake_up(&mdev->al_wait);
+
 		dec_local(mdev);
 		drbd_md_sync(mdev);
 
