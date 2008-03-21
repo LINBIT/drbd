@@ -558,14 +558,15 @@ STATIC BIO_ENDIO_FN(atodb_endio)
 
 	/* corresponding drbd_io_error is in drbd_al_to_on_disk_bm */
 	drbd_chk_io_error(mdev,error,TRUE);
-	if(error && wc->error == 0) wc->error=error;
+	if (error && wc->error == 0)
+		wc->error=error;
 
 	if (atomic_dec_and_test(&wc->count)) {
 		complete(&wc->io_done);
 	}
 
 	page = bio->bi_io_vec[0].bv_page;
-	if(page) put_page(page);
+	put_page(page);
 	bio_put(bio);
 	mdev->bm_writ_cnt++;
 	dec_local(mdev);
@@ -578,57 +579,63 @@ STATIC BIO_ENDIO_FN(atodb_endio)
  * is already covered by previously prepared bios */
 STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 			     struct bio **bios,
-			     struct page **page,
-			     unsigned int *page_offset,
 			     unsigned int enr,
 			     struct drbd_atodb_wait *wc)
 {
-	int i=0,allocated_page=0;
 	struct bio *bio;
-	struct page *np;
-	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
+	struct page *page;
+	sector_t on_disk_sector = enr + mdev->bc->md.md_offset
+				      + mdev->bc->md.bm_offset;
+	unsigned int page_offset = PAGE_SIZE;
 	int offset;
+	int i = 0;
+	int err = -ENOMEM;
 
-	// check if that enr is already covered by an already created bio.
-	while( (bio=bios[i]) ) {
-		if(bio->bi_sector == on_disk_sector) return 0;
+	/* Check if that enr is already covered by an already created bio.
+	 * Caution, bios[] is not NULL terminated,
+	 * but only initialized to all NULL.
+	 * For completely scattered activity log,
+	 * the last invocation iterates over all bios,
+	 * and finds the last NULL entry.
+	 */
+	while ( (bio = bios[i]) ) {
+		if (bio->bi_sector == on_disk_sector)
+			return 0;
 		i++;
 	}
+	/* bios[i] == NULL, the next not yet used slot */
 
 	bio = bio_alloc(GFP_KERNEL, 1);
-	if(bio==NULL) return -ENOMEM;
+	if (bio == NULL)
+		return -ENOMEM;
 
-	bio->bi_bdev = mdev->bc->md_bdev;
-	bio->bi_sector = on_disk_sector;
-
-	bios[i] = bio;
-
-	if(*page_offset == PAGE_SIZE) {
-		np = alloc_page(__GFP_HIGHMEM);
-		/* no memory leak, bio gets cleaned up by caller */
-		if(np == NULL) return -ENOMEM;
-		*page = np;
-		*page_offset = 0;
-		allocated_page=1;
+	if (i > 0) {
+		const struct bio_vec *prev_bv = bios[i-1]->bi_io_vec;
+		page_offset = prev_bv->bv_offset + prev_bv->bv_len;
+		page = prev_bv->bv_page;
+	}
+	if (page_offset == PAGE_SIZE) {
+		page = alloc_page(__GFP_HIGHMEM);
+		if (page == NULL)
+			goto out_bio_put;
+		page_offset = 0;
+	} else {
+		get_page(page);
 	}
 
 	offset = S2W(enr);
-	drbd_bm_get_lel( mdev, offset, 
-			 min_t(size_t,S2W(1), drbd_bm_words(mdev) - offset),
-			 kmap(*page) + *page_offset );
-	kunmap(*page);
-
-	if(bio_add_page(bio, *page, MD_HARDSECT, *page_offset)!=MD_HARDSECT) {
-		/* no memory leak, page gets cleaned up by caller */
-		return -EINVAL;
-	}
-
-	if(!allocated_page) get_page(*page);
-
-	*page_offset += MD_HARDSECT;
+	drbd_bm_get_lel( mdev, offset,
+			 min_t(size_t, S2W(1), drbd_bm_words(mdev) - offset),
+			 kmap(page) + page_offset );
+	kunmap(page);
 
 	bio->bi_private = wc;
 	bio->bi_end_io = atodb_endio;
+	bio->bi_bdev = mdev->bc->md_bdev;
+	bio->bi_sector = on_disk_sector;
+
+	if (bio_add_page(bio, page, MD_HARDSECT, page_offset) != MD_HARDSECT)
+		goto out_put_page;
 
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
@@ -637,7 +644,17 @@ STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 	 * the number of pending IO requests DRBD at its backing device.
 	 */
 	atomic_inc(&mdev->local_cnt);
+
+	bios[i] = bio;
+
 	return 0;
+
+out_put_page:
+	err = -EINVAL;
+	put_page(page);
+out_bio_put:
+	bio_put(bio);
+	return err;
 }
 
 /**
@@ -651,11 +668,9 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	int i, nr_elements;
 	unsigned int enr;
 	struct bio **bios;
-	struct page *page;
-	unsigned int page_offset=PAGE_SIZE;
 	struct drbd_atodb_wait wc;
 
-	ERR_IF (!inc_local_if_state(mdev,Attaching))
+	ERR_IF (!inc_local_if_state(mdev, Attaching))
 		return; /* sorry, I don't have any act_log etc... */
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -670,12 +685,12 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	wc.mdev = mdev;
 	wc.error = 0;
 
-	for(i=0;i<nr_elements;i++) {
-		enr = lc_entry(mdev->act_log,i)->lc_number;
-		if(enr == LC_FREE) continue;
-		/* next statement also does atomic_inc wc.count */
-		if(atodb_prepare_unless_covered(mdev,bios,&page,
-						&page_offset,
+	for (i = 0; i < nr_elements; i++) {
+		enr = lc_entry(mdev->act_log, i)->lc_number;
+		if (enr == LC_FREE)
+			continue;
+		/* next statement also does atomic_inc wc.count and local_cnt */
+		if (atodb_prepare_unless_covered(mdev, bios,
 						enr/AL_EXT_PER_BM_SECT,
 						&wc))
 			goto free_bios_submit_one_by_one;
@@ -718,16 +733,9 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	return;
 
  free_bios_submit_one_by_one:
-	// free everything by calling the endio callback directly.
-	for(i=0;i<nr_elements;i++) {
-		if(bios[i]==NULL) break;
-		bios[i]->bi_size=0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-		atodb_endio(bios[i], MD_HARDSECT, 0);
-#else
-		atodb_endio(bios[i], 0);
-#endif
-	}
+	/* free everything by calling the endio callback directly. */
+	for (i = 0; i < nr_elements && bios[i]; i++)
+		bio_endio(bios[i], 0);
 	kfree(bios);
 
  submit_one_by_one:
