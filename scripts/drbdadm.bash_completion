@@ -1,0 +1,132 @@
+#
+# /etc/bash_completion.d/drbdadm
+#
+# Bash completion for the drbdadm top-level management application, drbdadm.
+#
+# If you have bash completion enabled, this module will
+#
+# - provide tab completion for drbdadm sub-commands (up, down, primary,
+#   secondary etc.),
+#
+# - try to detect your current resource state and provide appropriate
+#   command completion for the sub-command you provided. For example,
+#   when if you have entered the "primary" sub-command, it will list
+#   only those resources that are currently in the Secondary role.
+#
+# This module does NOT guarantee that the DRBD state engine will in
+# fact agree to do what you ask it to. For example, resources that are
+# currently Primary and not connected are not excluded from the
+# completion list for the "detach" sub-command.
+#
+# Also, this module does not support completion of drbdsetup command
+# options passed via drbdadm using the "--" mechanism, such as "--
+# --discard-my-data".
+#
+# Finally, this module is only capable of parsing resources correctly
+# if you are using the default location for your DRBD configuration
+# file (/etc/drbd.conf).
+
+__drbdadm_all_resources() {
+	# Detects all resources currently listed in drbd.conf
+	local resources="$(drbdadm sh-resources) all"
+	COMPREPLY=( $(compgen -W "$resources" -- "$current") )
+}
+
+__drbdadm_resources_by_status() {
+	# Detects only those resources that match a particular status
+	status_type="$1"
+	shift 1
+	status_filter="$*"
+	local resources="$(drbdadm sh-resources)"
+	local filtered_resources
+	for res in $resources; do
+		local resource_status="$(drbdadm $status_type $res)"
+		local i
+		for i in $status_filter; do
+			if [ "${resource_status%%/*}" = $i ]; then
+				filtered_resources="$filtered_resources $res"
+			fi
+		done
+	done
+	COMPREPLY=( $(compgen -W "$filtered_resources" -- "$current") )
+}
+
+__drbdadm_commands() {
+	# Lists drbdadm sub-commands
+	local commands='attach detach connect disconnect up down primary secondary invalidate invalidate-remote outdate verify syncer pause-sync resume-sync resize adjust wait-connect state cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help hidden-commands'
+	COMPREPLY=( $(compgen -W "$commands" -- "$current") )
+}
+
+__drbdadm_options() {
+	# Lists global drbdadm options
+	local options='-d --dry-run -v --verbose'
+	COMPREPLY=( $(compgen -W "$options" -- "$current") )
+}
+
+__drbdadm_drbdsetup_options() {
+	# Lists those drbdadm options that are in fact options for drbdsetup,
+	# and which are passed though using "--" syntax
+	local drbdsetup_options='-D --discard-my-data -o --overwrite-data-of-peer'
+	COMPREPLY=( $(compgen -W "$drbdsetup_options" -- "$current") )
+}
+
+_drbdadm() {
+	local current previous resources
+	current=${COMP_WORDS[COMP_CWORD]}
+	previous=${COMP_WORDS[COMP_CWORD-1]}
+	resources="$(drbdadm sh-resources)"
+
+	case "$previous" in
+		drbdadm)
+			case "$current" in
+				-*)
+					__drbdadm_options
+					;;
+				*)
+					__drbdadm_commands
+					;;
+			esac
+			;;
+		--)
+			__drbdadm_drbdsetup_options
+			;;
+		-D|--discard-my-data)
+			COMPREPLY=( $(compgen -W "connect" -- "$current") )
+			;;
+		-o|--overwrite-data-of-peer)
+			COMPREPLY=( $(compgen -W "primary" -- "$current") )
+			;;
+		-*)
+			__drbdadm_commands
+			;;
+		primary)
+			__drbdadm_resources_by_status "state" "Secondary"
+			;;
+		secondary)
+			__drbdadm_resources_by_status "state" "Primary"
+			;;
+		detach)
+			__drbdadm_resources_by_status "dstate" "UpToDate" "Inconsistent" "Outdated"
+			;;
+		outdate)
+			__drbdadm_resources_by_status "dstate" "UpToDate"
+			;;
+		attach|up)
+			__drbdadm_resources_by_status "dstate" "Diskless"
+			;;
+		connect)
+			__drbdadm_resources_by_status "cstate" "StandAlone"
+			;;
+		invalidate-remote)
+			__drbdadm_resources_by_status "cstate" "Connected"
+			;;
+		disconnect)
+			__drbdadm_resources_by_status "cstate" "Connected" "WFConnection"
+			;;
+		*) 
+			__drbdadm_all_resources
+			;;
+	esac
+}
+
+complete -o default -F _drbdadm drbdadm

@@ -67,6 +67,7 @@ install:
 	  ln -sf snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh )
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
+	install -m 644 drbdadm.bash_completion $(PREFIX)/etc/bash_completion.d/drbdadm
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
@@ -83,4 +84,5 @@ uninstall:
 	rm $(INITD)drbd
 	rm $(PREFIX)/etc/ha.d/resource.d/drbddisk
 	rm $(PREFIX)/etc/xen/scripts/block-drbd
+	rm $(PREFIX)/etc/bash_completion.d/drbdadm
 	! test -L $(PREFIX)/sbin/rcdrbd || rm $(PREFIX)/sbin/rcdrbd
