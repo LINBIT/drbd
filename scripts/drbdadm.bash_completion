@@ -108,16 +108,25 @@ _drbdadm() {
 			__drbdadm_resources_by_status "dstate" "UpToDate"
 			;;
 		attach|up)
-			__drbdadm_resources_by_status "dstate" "Diskless"
+			__drbdadm_resources_by_status "dstate" "Diskless" "Unconfigured"
 			;;
 		connect)
-			__drbdadm_resources_by_status "cstate" "StandAlone"
+			__drbdadm_resources_by_status "cstate" "StandAlone" "Unconfigured"
 			;;
 		invalidate-remote)
 			__drbdadm_resources_by_status "cstate" "Connected"
 			;;
 		disconnect)
 			__drbdadm_resources_by_status "cstate" "Connected" "WFConnection"
+			;;
+		verify)
+			__drbdadm_resources_by_status "cstate" "Connected"
+			;;
+		pause-sync)
+			__drbdadm_resources_by_status "cstate" "SyncSource" "SyncTarget"
+			;;
+		resume-sync)
+			__drbdadm_resources_by_status "cstate" "PausedSyncS" "PausedSyncT"
 			;;
 		*) 
 			__drbdadm_all_resources
