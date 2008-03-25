@@ -2523,7 +2523,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	   ns.disk == Negotiating ) ns.disk = UpToDate;
 	if((nconn == Connected || nconn == WFBitMapT) &&
 	   ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
-	rv = _drbd_set_state(mdev,ns,ChgStateVerbose|ChgStateHard);
+	rv = _drbd_set_state(mdev, ns, ChgStateVerbose|ChgStateHard, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -2873,7 +2873,7 @@ STATIC void drbd_disconnect(drbd_dev *mdev)
 		// Do not restart in case we are Disconnecting
 		ns = os;
 		ns.conn = Unconnected;
-		rv=_drbd_set_state(mdev,ns,ChgStateVerbose);
+		rv=_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 

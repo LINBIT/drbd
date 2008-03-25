@@ -554,11 +554,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	drbd_bm_recount_bits(mdev);
 
-	drbd_request_state(mdev,NS3(conn,Connected,
-				    disk,dstate,
-				    pdsk,pdstate));
-
-	drbd_md_sync(mdev);
+	_drbd_request_state(mdev, NS3(conn, Connected,
+				      disk, dstate,
+				      pdsk, pdstate), ChgStateVerbose);
 
 	return 1;
 }
@@ -814,7 +812,7 @@ STATIC int _drbd_pause_after(drbd_dev *mdev)
 		if (!(odev = minor_to_mdev(i)) ||
 		    (odev->state.conn == StandAlone && odev->state.disk == Diskless) ) continue;
 		if (! _drbd_may_sync_now(odev)) {
-			rv |= ( _drbd_set_state(_NS(odev,aftr_isp,1),ChgStateHard)
+			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1), ChgStateHard, NULL)
 				!= SS_NothingToDo ) ;
 		}
 	}
@@ -837,7 +835,7 @@ STATIC int _drbd_resume_next(drbd_dev *mdev)
 		if( !(odev = minor_to_mdev(i)) ) continue;
 		if ( odev->state.aftr_isp ) {
 			if (_drbd_may_sync_now(odev)) {
-				rv |= ( _drbd_set_state(_NS(odev,aftr_isp,0),ChgStateHard)
+				rv |= ( _drbd_set_state(_NS(odev,aftr_isp,0),ChgStateHard,NULL)
 					!= SS_NothingToDo ) ;
 			}
 		}
@@ -922,7 +920,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		ns.pdsk = Inconsistent;
 	}
 
-	r = _drbd_set_state(mdev,ns,ChgStateVerbose);
+	r = _drbd_set_state(mdev,ns,ChgStateVerbose,NULL);
 	ns = mdev->state;
 
 	if ( r == SS_Success ) {

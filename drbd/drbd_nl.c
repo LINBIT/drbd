@@ -244,7 +244,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	val.i  = 0; val.role  = new_role;
 
 	while (try++ < 3) {
-		r = _drbd_request_state(mdev,mask,val,0);
+		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
 		if( r == SS_NoUpToDateDisk && force &&
 		    ( mdev->state.disk == Inconsistent ||
 		      mdev->state.disk == Outdated ) ) {
@@ -847,9 +847,9 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
 
-	if((retcode = drbd_request_state(mdev,NS(disk,Attaching))) < SS_Success ) {
+	retcode = _drbd_request_state(mdev, NS(disk, Attaching), ChgStateVerbose);
+	if (retcode < SS_Success )
 		goto release_bdev2_fail;
-	}
 
 	if (!inc_local_if_state(mdev, Attaching)) {
 		goto force_diskless;
@@ -995,7 +995,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		ns.disk = Negotiating;
 	}
 
-	rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
+	rv = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -1043,6 +1043,9 @@ STATIC int drbd_nl_detach(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	drbd_sync_me(mdev);
 	reply->ret_code = drbd_request_state(mdev,NS(disk,Diskless));
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(HZ/20); /* 50ms; Time for worker to finally terminate */
 
 	return 0;
 }
@@ -1220,8 +1223,7 @@ FIXME LGE
 	}
 	mdev->cram_hmac_tfm = tfm;
 
-	retcode = drbd_request_state(mdev,NS(conn,Unconnected));
-
+	retcode = _drbd_request_state(mdev, NS(conn, Unconnected), ChgStateVerbose);
 	if (retcode >= SS_Success)
 		drbd_thread_start(&mdev->worker);
 
@@ -1243,7 +1245,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode;
 
-	retcode = _drbd_request_state(mdev,NS(conn,Disconnecting),0);	// silently.
+	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), ChgWaitComplete);
 
 	if ( retcode == SS_NothingToDo ) goto done;
 	else if ( retcode == SS_AlreadyStandAlone ) goto done;
@@ -1253,8 +1255,9 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 						      pdsk,Outdated));
 	} else if (retcode == SS_CW_FailedByPeer) {
 		// The peer probabely wants to see us outdated.
-		retcode = _drbd_request_state(mdev,NS2(conn,Disconnecting,
-						       disk,Outdated),0);
+		retcode = _drbd_request_state(mdev, NS2(conn, Disconnecting,
+							disk, Outdated),
+					      ChgWaitComplete);
 		if (retcode == SS_IsDiskLess || retcode == SS_LowerThanOutdated) {
 			// We are diskless and our peer wants to outdate us.
 			// So, simply go away, and let the peer try to

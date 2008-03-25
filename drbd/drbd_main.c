@@ -65,6 +65,7 @@ struct after_state_chg_work {
 	drbd_state_t os;
 	drbd_state_t ns;
 	enum chg_state_flags flags;
+	struct completion *done;
 };
 
 int drbdd_init(struct Drbd_thread*);
@@ -371,7 +372,7 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	if( (send = (mdev->state.disk == Failed)) ) {
-		_drbd_set_state(_NS(mdev,disk,Diskless),ChgStateHard);
+		_drbd_set_state(_NS(mdev, disk, Diskless), ChgStateHard, NULL);
 	}
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
@@ -424,7 +425,7 @@ int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
-	rv = _drbd_set_state(mdev, ns, f);
+	rv = _drbd_set_state(mdev, ns, f, NULL);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
@@ -478,9 +479,12 @@ STATIC set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t 
 int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		       enum chg_state_flags f)
 {
+	struct completion done;
 	unsigned long flags;
 	drbd_state_t os,ns;
 	int rv;
+
+	init_completion(&done);
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	os = mdev->state;
@@ -516,17 +520,21 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		spin_lock_irqsave(&mdev->req_lock,flags);
 		os = mdev->state;
 		ns.i = (os.i & ~mask.i) | val.i;
-		rv = _drbd_set_state(mdev, ns, f);
+		rv = _drbd_set_state(mdev, ns, f, &done);
 		drbd_state_unlock(mdev);
 	} else {
-		rv = _drbd_set_state(mdev, ns, f);
+		rv = _drbd_set_state(mdev, ns, f, &done);
 	}
 
 	spin_unlock_irqrestore(&mdev->req_lock,flags);
 
+	if (f & ChgWaitComplete && rv == SS_Success) {
+		D_ASSERT(current != mdev->worker.task);
+		wait_for_completion(&done);
+	}
+
 	return rv;
 }
-
 
 STATIC void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 {
@@ -640,7 +648,8 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	return rv;
 }
 
-int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
+int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
+		    struct completion *done)
 {
 	drbd_state_t os;
 	int rv=SS_Success, warn_sync_abort=0;
@@ -889,6 +898,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns,enum chg_state_flags flags)
 		ascw->ns = ns;
 		ascw->flags = flags;
 		ascw->w.cb = w_after_state_ch;
+		ascw->done = done;
 		drbd_queue_work(&mdev->data.work, &ascw->w);
 	} else {
 		WARN("Could not kmalloc an ascw\n");
@@ -903,6 +913,10 @@ STATIC int w_after_state_ch(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	ascw = (struct after_state_chg_work*) w;
 	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
+	if (ascw->flags & ChgWaitComplete) {
+		D_ASSERT(ascw->done != NULL);
+		complete(ascw->done);
+	}
 	kfree(ascw);
 
 	return 1;
@@ -957,7 +971,7 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		     (os.conn < Connected && ns.conn >= Connected) ) {
 			tl_clear(mdev);
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev,susp,0),ChgStateVerbose);
+			_drbd_set_state(_NS(mdev, susp, 0), ChgStateVerbose, NULL);
 			spin_unlock_irq(&mdev->req_lock);
 		}
 	}

@@ -941,6 +941,7 @@ static inline void drbd_put_data_sock(drbd_dev *mdev)
 enum chg_state_flags {
 	ChgStateHard    = 1,
 	ChgStateVerbose = 2,
+	ChgWaitComplete = 4
 };
 
 extern int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
@@ -948,7 +949,8 @@ extern int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
 extern void drbd_force_state(drbd_dev*, drbd_state_t, drbd_state_t);
 extern int _drbd_request_state(drbd_dev*, drbd_state_t, drbd_state_t,
 			       enum chg_state_flags);
-extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags );
+extern int _drbd_set_state(drbd_dev*, drbd_state_t, enum chg_state_flags,
+			   struct completion *done);
 extern void print_st_err(drbd_dev*, drbd_state_t, drbd_state_t, int );
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
@@ -1498,7 +1500,7 @@ static inline void drbd_state_unlock(drbd_dev *mdev)
 static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
 				     drbd_state_t val)
 {
-	return _drbd_request_state(mdev, mask, val, ChgStateVerbose);
+	return _drbd_request_state(mdev, mask, val, ChgStateVerbose + ChgWaitComplete);
 }
 
 /**
@@ -1518,7 +1520,7 @@ static inline void __drbd_chk_io_error(drbd_dev* mdev, int forcedetach)
 	case Detach:
 	case CallIOEHelper:
 		if (mdev->state.disk > Failed) {
-			_drbd_set_state(_NS(mdev,disk,Failed),ChgStateHard);
+			_drbd_set_state(_NS(mdev, disk,Failed), ChgStateHard, NULL);
 			ERR("Local IO failed. Detaching...\n");
 		}
 		break;
