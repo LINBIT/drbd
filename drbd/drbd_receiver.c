@@ -2387,6 +2387,19 @@ STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 	if ( mdev->p_uuid ) kfree(mdev->p_uuid);
 	mdev->p_uuid = p_uuid;
 
+	if (mdev->state.conn < Connected &&
+	    mdev->state.disk < Outdated &&
+	    mdev->state.role == Primary &&
+	    (mdev->ed_uuid & ~((u64)1)) != (p_uuid[Current] & ~((u64)1))) {
+		ERR("Can only connect to data with current UUID=%016llX\n",
+		    (unsigned long long)mdev->ed_uuid);
+		drbd_force_state(mdev,NS(conn,Disconnecting));
+		return FALSE;
+	}
+
+	if (mdev->state.conn >= Connected && mdev->state.disk < Inconsistent)
+		drbd_set_ed_uuid(mdev, p_uuid[Current]);
+
 	return TRUE;
 }
 

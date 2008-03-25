@@ -871,6 +871,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
 		}
+		if (os.disk < Consistent && ns.disk >= Consistent)
+			drbd_set_ed_uuid(mdev, mdev->bc->md.uuid[Current]);
 		dec_local(mdev);
 	}
 
@@ -999,6 +1001,7 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 				/* A FullSync is required after a
 				   primary detached from its disk! */
 				_drbd_uuid_new_current(mdev);
+				drbd_send_uuids(mdev);
 			}
 			dec_local(mdev);
 		}
@@ -2818,6 +2821,7 @@ void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 		} else {
 			val &= ~((u64)1);
 		}
+		drbd_set_ed_uuid(mdev, val);
 	}
 
 	mdev->bc->md.uuid[idx] = val;
@@ -2872,6 +2876,8 @@ void _drbd_uuid_new_current(drbd_dev *mdev)
  */
 void drbd_uuid_new_current(drbd_dev *mdev)
 {
+	u64 val;
+
 	INFO("Creating new current UUID\n");
 	D_ASSERT(mdev->bc->md.uuid[Bitmap] == 0);
 	mdev->bc->md.uuid[Bitmap] = mdev->bc->md.uuid[Current];
@@ -2879,18 +2885,8 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 	       drbd_print_uuid(mdev,Bitmap);
 		);
 
-	get_random_bytes(&mdev->bc->md.uuid[Current], sizeof(u64));
-	if (mdev->state.role == Primary) {
-		mdev->bc->md.uuid[Current] |= 1;
-	} else {
-		mdev->bc->md.uuid[Current] &= ~((u64)1);
-	}
-
-	MTRACE(TraceTypeUuid,TraceLvlSummary,
-	       drbd_print_uuid(mdev,Current);
-		);
-
-	drbd_md_mark_dirty(mdev);
+	get_random_bytes(&val, sizeof(u64));
+	_drbd_uuid_set(mdev, Current, val);
 }
 
 void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)

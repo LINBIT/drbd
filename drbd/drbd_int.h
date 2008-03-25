@@ -890,6 +890,7 @@ struct Drbd_Conf {
 	int minor;
 	unsigned long comm_bm_set; // communicated number of set bits.
 	struct bm_io_work bm_io_work;
+	u64 ed_uuid; /* UUID of the exposed data */
 };
 
 static inline drbd_dev *minor_to_mdev(int minor)
@@ -930,7 +931,6 @@ static inline void drbd_put_data_sock(drbd_dev *mdev)
 {
 	up(&mdev->data.mutex);
 }
-
 
 /*
  * function declarations
@@ -1935,6 +1935,15 @@ static inline void dec_ap_bio(drbd_dev* mdev)
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
 			drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
 	}
+}
+
+static inline void drbd_set_ed_uuid(drbd_dev *mdev, u64 val)
+{
+	mdev->ed_uuid = val;
+
+	MTRACE(TraceTypeUuid,TraceLvlMetrics,
+	       INFO(" exposed data uuid now %016llX\n",val);
+		);
 }
 
 static inline int seq_cmp(u32 a, u32 b)

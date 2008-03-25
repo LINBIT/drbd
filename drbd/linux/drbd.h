@@ -138,6 +138,7 @@ enum ret_codes {
 	VERIFYAlgNotDigest,	/* DRBD 8.2 only */
 	CSUMSResyncRunning,	/* DRBD 8.2 only */
 	VERIFYIsRunning,	/* DRBD 8.2 only */
+	DataOfWrongCurrent,
 
 	/* insert new ones above this line */
 	AfterLastRetCode

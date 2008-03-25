@@ -774,7 +774,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	nbc->backing_bdev = inode->i_bdev;
 	if (BD_CLAIM(nbc->backing_bdev, mdev)) {
 		printk(KERN_ERR "drbd: bd_claim(%p,%p); failed [%p;%p;%u]\n",
-		       nbc->backing_bdev, mdev, 
+		       nbc->backing_bdev, mdev,
 		       nbc->backing_bdev->bd_holder,
 		       nbc->backing_bdev->bd_contains->bd_holder,
 		       nbc->backing_bdev->bd_holders);
@@ -860,6 +860,15 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	retcode = drbd_md_read(mdev,nbc);
 	if ( retcode != NoError ) {
+		goto force_diskless_dec;
+	}
+
+	if (mdev->state.conn < Connected &&
+	    mdev->state.role == Primary &&
+	    (mdev->ed_uuid & ~((u64)1)) != (nbc->md.uuid[Current] & ~((u64)1))) {
+		ERR("Can only attach to data with current UUID=%016llX\n",
+		    (unsigned long long)mdev->ed_uuid);
+		retcode = DataOfWrongCurrent;
 		goto force_diskless_dec;
 	}
 
@@ -1544,11 +1553,11 @@ STATIC int drbd_nl_get_uuids(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		*tl++ = UUID_SIZE*sizeof(u64);
 		memcpy(tl,mdev->bc->md.uuid,UUID_SIZE*sizeof(u64));
 		tl=(unsigned short*)((char*)tl + UUID_SIZE*sizeof(u64));
-		dec_local(mdev);
 		*tl++ = T_uuids_flags;
 		*tl++ = sizeof(int);
 		memcpy(tl,&mdev->bc->md.flags,sizeof(int));
 		tl=(unsigned short*)((char*)tl + sizeof(int));
+		dec_local(mdev);
 	}
 	*tl++ = TT_END; /* Close the tag list */
 

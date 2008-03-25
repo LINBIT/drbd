@@ -396,7 +396,8 @@ static const char *error_messages[] = {
 	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
 	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
 	EM(ProtocolCRequired) = "Protocol C required",
-	EM(VMallocFailed) = "vmalloc() failed. Out of memory?"
+	EM(VMallocFailed) = "vmalloc() failed. Out of memory?",
+	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
