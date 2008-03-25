@@ -18,10 +18,6 @@
 # currently Primary and not connected are not excluded from the
 # completion list for the "detach" sub-command.
 #
-# Also, this module does not support completion of drbdsetup command
-# options passed via drbdadm using the "--" mechanism, such as "--
-# --discard-my-data".
-#
 # Finally, this module is only capable of parsing resources correctly
 # if you are using the default location for your DRBD configuration
 # file (/etc/drbd.conf).
