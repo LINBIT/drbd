@@ -129,6 +129,15 @@ enum ret_codes {
 	HaveNoDiskConfig,
 	ProtocolCRequired,
 	VMallocFailed,
+	IntegrityAlgNotAvail,	/* DRBD 8.2 only */
+	IntegrityAlgNotDigest,	/* DRBD 8.2 only */
+	CPUMaskParseFailed,	/* DRBD 8.2 only */
+	CSUMSAlgNotAvail,	/* DRBD 8.2 only */
+	CSUMSAlgNotDigest,	/* DRBD 8.2 only */
+	VERIFYAlgNotAvail,	/* DRBD 8.2 only */
+	VERIFYAlgNotDigest,	/* DRBD 8.2 only */
+	CSUMSResyncRunning,	/* DRBD 8.2 only */
+	VERIFYIsRunning,	/* DRBD 8.2 only */
 
 	/* insert new ones above this line */
 	AfterLastRetCode
