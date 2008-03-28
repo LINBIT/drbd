@@ -182,7 +182,8 @@ resource r0 {
     <manvolnum>8</manvolnum></citerefentry> for detailed description of
     the parameters.
     Optional parameter: <option>on-io-error</option>,
-    <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>.
+    <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>,
+    <option>no-disk-flushes</option>, <option>no-md-flushes</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -500,6 +501,37 @@ resource r0 {
       deliver the same results on all nodes of your cluster. I.e. the
       physical disks of the software raid are of exactly the same type.  USE
       THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>no-disk-flushes</option></term>
+  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>no-disk-flushes</secondary></indexterm>
+    <para>
+      In case you are sure that your storage subsystem has battery
+      backed up RAM and you know from measurements that it really honors
+      flush instructions by flushing data out from its non volatile
+      write cache to disk, you have double security. You might then
+      reduce this to single security by disabling disk flushes with
+      this option. It might improve performance in this case.</para>
+    <para>
+      If you use this option on plain disk drives, which have have
+      volatile write caches (enabled by default), you are at risk to
+      loose your data with every power loss. ONLY USE THIS OPTIOIN IF
+      YOU UNDERSTAND EACH AND EVERY STATEMENT OF THESE TWO PARAGRAPHS.
+      </para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>no-md-flushes</option></term>
+  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>no-md-flushes</secondary></indexterm>
+    <para>
+      Disables the use of disk flushes and barrier BIOs when accessing
+      the meta data device. See the notes on <option>no-disk-flushes</option>.
+    </para>
    </listitem>
 </varlistentry>
 

@@ -350,6 +350,41 @@
               USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
 	  </listitem>
 	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-i</option>,
+	  <option>--no-disk-flushes</option></term>
+	  <listitem>
+	        <para>
+                  In case you are sure that your storage subsystem has
+		  battery backed up RAM and you know from measurements that
+		  it really honors flush instructions by flushing data out
+		  from its non volatile write cache to disk, you have double
+		  security. You might then reduce this to single security by
+		  disabling disk flushes with this option. It might improve
+		  performance in this case.</para>
+		<para>
+		  If you use this option on plain disk drives, which have
+		  have volatile write caches (enabled by default), you are
+		  at risk to loose your data with every power loss. ONLY USE
+		  THIS OPTIOIN IF YOU UNDERSTAND EACH AND EVERY STATEMENT OF
+		  THESE TWO PARAGRAPHS.
+		</para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-m</option>,
+	  <option>--no-md-flushes</option></term>
+	  <listitem>
+	        <para>
+		  Disables the use of disk flushes and barrier BIOs when
+		  accessing the meta data device. See the notes
+		  on <option>--no-disk-flushes</option>.
+		</para>
+	  </listitem>
+	</varlistentry>
+
       </variablelist>
     </refsect2>
     <refsect2>
