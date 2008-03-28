@@ -1502,18 +1502,21 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
 	buffer = (unsigned long*)p->payload;
 
-	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
-		drbd_bm_set_all(mdev);
-		if (drbd_bm_write(mdev)) {
-			/* write_bm did fail! Leave full sync flag set in Meta Data
-			 * but otherwise process as per normal - need to tell other
-			 * side that a full resync is required! */
-			ERR("Failed to write bitmap to disk!\n");
+	if (inc_local(mdev)) {
+		if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
+			drbd_bm_set_all(mdev);
+			if (drbd_bm_write(mdev)) {
+				/* write_bm did fail! Leave full sync flag set in Meta Data
+				 * but otherwise process as per normal - need to tell other
+				 * side that a full resync is required! */
+				ERR("Failed to write bitmap to disk!\n");
+			}
+			else {
+				drbd_md_clear_flag(mdev,MDF_FullSync);
+				drbd_md_sync(mdev);
+			}
 		}
-		else {
-			drbd_md_clear_flag(mdev,MDF_FullSync);
-			drbd_md_sync(mdev);
-		}
+		dec_local(mdev);
 	}
 
 	/*
@@ -2922,17 +2925,21 @@ void drbd_uuid_set_bm(drbd_dev *mdev, u64 val) __must_hold(local)
  */
 int drbd_bmio_set_n_write(drbd_dev *mdev)
 {
-	int rv;
+	int rv = -EIO;
 
-	drbd_md_set_flag(mdev,MDF_FullSync);
-	drbd_md_sync(mdev);
-	drbd_bm_set_all(mdev);
-
-	rv = drbd_bm_write(mdev);
-
-	if (!rv) {
-		drbd_md_clear_flag(mdev,MDF_FullSync);
+	if (inc_local(mdev)) {
+		drbd_md_set_flag(mdev,MDF_FullSync);
 		drbd_md_sync(mdev);
+		drbd_bm_set_all(mdev);
+
+		rv = drbd_bm_write(mdev);
+
+		if (!rv) {
+			drbd_md_clear_flag(mdev,MDF_FullSync);
+			drbd_md_sync(mdev);
+		}
+
+		dec_local(mdev);
 	}
 
 	return rv;

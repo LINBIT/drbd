@@ -2298,10 +2298,10 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 		   drbd_get_capacity(mdev->this_bdev) &&
 		   mdev->state.disk >= Outdated &&
 		   mdev->state.conn < Connected ) {
-			dec_local(mdev);
 			ERR("The peer's disk size is too small!\n");
 			drbd_force_state(mdev,NS(conn,Disconnecting));
 			mdev->bc->dc.disk_size = my_usize;
+			dec_local(mdev);
 			return FALSE;
 		}
 		dec_local(mdev);
@@ -2584,10 +2584,14 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 
 	/* Here the _drbd_uuid_ functions are right, current should
 	   _not_ be rotated into the history */
-	_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
-	_drbd_uuid_set(mdev,Bitmap,0UL);
+	if (inc_local(mdev)) {
+		_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
+		_drbd_uuid_set(mdev,Bitmap,0UL);
 
-	drbd_start_resync(mdev,SyncTarget);
+		drbd_start_resync(mdev,SyncTarget);
+
+		dec_local(mdev);
+	}
 
 	return TRUE;
 }

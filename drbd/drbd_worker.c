@@ -503,6 +503,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 
 	D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
 
+	if (!inc_local(mdev))
+		return 1;
+
 	if (mdev->rs_failed) {
 		INFO("            %lu failed blocks\n",mdev->rs_failed);
 
@@ -553,6 +556,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	}
 
 	drbd_bm_recount_bits(mdev);
+	dec_local(mdev);
 
 	_drbd_request_state(mdev, NS3(conn, Connected,
 				      disk, dstate,
