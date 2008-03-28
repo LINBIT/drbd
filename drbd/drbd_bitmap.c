@@ -241,7 +241,7 @@ STATIC void bm_end_info(drbd_dev *mdev, const char* where)
 int drbd_bm_init(drbd_dev *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	D_BUG_ON(b);
+	D_BUG_ON(b != NULL);
 	b = kzalloc(sizeof(struct drbd_bitmap),GFP_KERNEL);
 	if (!b)
 		return -ENOMEM;
@@ -407,7 +407,10 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		*/
 		words = ALIGN(bits,64) >> LN2_BPL;
 
-		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
+		if (inc_local(mdev)) {
+			D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
+			dec_local(mdev);
+		}
 
 		if ( words == b->bm_words ) {
 			/* optimize: capacity has changed,

@@ -1074,9 +1074,9 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		mdev->resync = NULL;
 		lc_free(mdev->act_log);
 		mdev->act_log = NULL;
-		drbd_free_bc(mdev->bc);
+		__no_warn(local, drbd_free_bc(mdev->bc););
 		wmb(); /* see begin of drbd_nl_disk_conf() */
-		mdev->bc = NULL;
+		__no_warn(local, mdev->bc = NULL;);
 	}
 
 	// A resync finished or aborted, wake paused devices...
@@ -2624,8 +2624,9 @@ void drbd_free_resources(drbd_dev *mdev)
 		mdev->cram_hmac_tfm = NULL;
 	}
 	drbd_free_sock(mdev);
-	drbd_free_bc(mdev->bc);
-	mdev->bc = NULL;
+	__no_warn(local,
+		  drbd_free_bc(mdev->bc);
+		  mdev->bc = NULL;);
 }
 
 /*********************************/

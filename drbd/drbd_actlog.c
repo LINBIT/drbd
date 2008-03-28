@@ -322,6 +322,11 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 	unsigned int extent_nr;
 	u32 xor_sum=0;
 
+	if (!inc_local(mdev)) {
+		ERR("inc_local() failed in w_al_write_transaction\n");
+		complete(&((struct update_al_work*)w)->event);
+		return 1;
+	}
 	/* do we have to do a bitmap write, first?
 	 * TODO reduce maximum latency:
 	 * submit both bios, then wait for both,
@@ -383,6 +388,7 @@ w_al_write_transaction(struct Drbd_Conf *mdev, struct drbd_work *w, int unused)
 	up(&mdev->md_io_mutex);
 
 	complete(&((struct update_al_work*)w)->event);
+	dec_local(mdev);
 
 	return 1;
 }

@@ -700,7 +700,10 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
         * We may have gotten here very quickly from a detach. Wait for a bit
         * then fail.
         */
-	while(mdev->bc != NULL) {
+	while (1) {
+		__no_warn(local, nbc = mdev->bc; );
+		if (nbc == NULL)
+			break;
 		if(ntries++ >= 5) {
 			WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
 			retcode=HaveDiskConfig;
