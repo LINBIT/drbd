@@ -25,6 +25,8 @@ NL_PACKET(disk_conf, 3,
 	NL_INTEGER(	6,	T_MAY_IGNORE,	on_io_error)
 	NL_INTEGER(	7,	T_MAY_IGNORE,	fencing)
 	NL_BIT(		37,	T_MAY_IGNORE,	use_bmbv)
+	NL_BIT(		53,	T_MAY_IGNORE,	no_disk_flush)
+	NL_BIT(		54,	T_MAY_IGNORE,	no_md_flush)
 )
 
 NL_PACKET(detach, 4,)

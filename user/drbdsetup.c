@@ -280,6 +280,8 @@ struct drbd_cmd commands[] = {
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
 		 { "use-bmbv",'b',	T_use_bmbv,     EB },
+		 { "no-disk-flushes",'i',T_no_disk_flush,EB },
+		 { "no-md-flushes",'m', T_no_md_flush,  EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },

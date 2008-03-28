@@ -893,6 +893,18 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto force_diskless_dec;
 	}
 
+	/* Reset the "barriers don't work" bits here, then force meta data to
+	 * be written, to ensure we determine if barriers are supported. */
+	if (nbc->dc.no_disk_flush)
+		set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
+	else
+		clear_bit(LL_DEV_NO_FLUSH, &mdev->flags);
+
+	if (nbc->dc.no_md_flush)
+		set_bit(MD_NO_BARRIER, &mdev->flags);
+	else
+		clear_bit(MD_NO_BARRIER, &mdev->flags);
+
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
 	 * now mdev takes over responsibility, and the state engine should
@@ -1018,10 +1030,6 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	if(mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=  (u64)1;
 	else                            mdev->bc->md.uuid[Current] &= ~(u64)1;
 
-	/* Reset the "barriers don't work" bits here, then force meta data to
-	 * be written, to ensure we determine if barriers are supported. */
-	clear_bit(LL_DEV_NO_FLUSH,&mdev->flags);
-	clear_bit(MD_NO_BARRIER,&mdev->flags);
 	drbd_md_mark_dirty(mdev);
 	drbd_md_sync(mdev);
 
