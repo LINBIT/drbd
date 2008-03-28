@@ -451,7 +451,7 @@ char* ppsize(char* buf, unsigned long long size)
  * indicate success.
  * You should call drbd_md_sync() after calling this function.
  */
-enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev)
+enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev) __must_hold(local)
 {
 	sector_t prev_first_sect, prev_size; // previous meta location
 	sector_t la_size;
@@ -619,7 +619,7 @@ STATIC int drbd_check_al_size(drbd_dev *mdev)
 	return 0;
 }
 
-void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s)
+void drbd_setup_queue_param(drbd_dev *mdev, unsigned int max_seg_s) __must_hold(local)
 {
 	struct request_queue * const q = mdev->rq_queue;
 	struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;

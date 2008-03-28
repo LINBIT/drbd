@@ -2800,7 +2800,7 @@ void drbd_md_mark_dirty(drbd_dev *mdev)
 }
 
 
-STATIC void drbd_uuid_move_history(drbd_dev *mdev)
+STATIC void drbd_uuid_move_history(drbd_dev *mdev) __must_hold(local)
 {
 	int i;
 
@@ -2813,7 +2813,7 @@ STATIC void drbd_uuid_move_history(drbd_dev *mdev)
 	}
 }
 
-void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
+void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val) __must_hold(local)
 {
 	if(idx == Current) {
 		if (mdev->state.role == Primary) {
@@ -2834,7 +2834,7 @@ void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
 }
 
 
-void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
+void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val) __must_hold(local)
 {
 	if(mdev->bc->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
@@ -2853,7 +2853,7 @@ void drbd_uuid_set(drbd_dev *mdev, int idx, u64 val)
  * sync upon next connect. Aditionally the full sync is also requested
  * by the FullSync bit.
  */
-void _drbd_uuid_new_current(drbd_dev *mdev)
+void _drbd_uuid_new_current(drbd_dev *mdev) __must_hold(local)
 {
 	u64 uuid;
 
@@ -2874,7 +2874,7 @@ void _drbd_uuid_new_current(drbd_dev *mdev)
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
  */
-void drbd_uuid_new_current(drbd_dev *mdev)
+void drbd_uuid_new_current(drbd_dev *mdev) __must_hold(local)
 {
 	u64 val;
 
@@ -2889,7 +2889,7 @@ void drbd_uuid_new_current(drbd_dev *mdev)
 	_drbd_uuid_set(mdev, Current, val);
 }
 
-void drbd_uuid_set_bm(drbd_dev *mdev, u64 val)
+void drbd_uuid_set_bm(drbd_dev *mdev, u64 val) __must_hold(local)
 {
 	if( mdev->bc->md.uuid[Bitmap]==0 && val==0 ) return;
 
@@ -3013,7 +3013,7 @@ int drbd_bitmap_io(drbd_dev *mdev, int (*io_fn)(drbd_dev *))
 	return rv;
 }
 
-void drbd_md_set_flag(drbd_dev *mdev, int flag)
+void drbd_md_set_flag(drbd_dev *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
 	if ( (mdev->bc->md.flags & flag) != flag) {
@@ -3021,7 +3021,7 @@ void drbd_md_set_flag(drbd_dev *mdev, int flag)
 		mdev->bc->md.flags |= flag;
 	}
 }
-void drbd_md_clear_flag(drbd_dev *mdev, int flag)
+void drbd_md_clear_flag(drbd_dev *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
 	if ( (mdev->bc->md.flags & flag) != 0 ) {
@@ -3130,8 +3130,8 @@ STATIC char *_drbd_uuid_str(unsigned int idx) {
 }
 
 /* Pretty print a UUID value */
-void
-drbd_print_uuid(drbd_dev *mdev, unsigned int idx) {
+void drbd_print_uuid(drbd_dev *mdev, unsigned int idx) __must_hold(local)
+{
 	INFO(" uuid[%s] now %016llX\n",_drbd_uuid_str(idx),mdev->bc->md.uuid[idx]);
 }
 

@@ -239,7 +239,7 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 				     u64 id,
 				     sector_t sector,
 				     unsigned int data_size,
-				     gfp_t gfp_mask)
+				     gfp_t gfp_mask) __must_hold(local)
 {
 	struct request_queue *q;
 	struct Tl_epoch_entry* e;
@@ -994,7 +994,7 @@ STATIC int receive_Barrier_no_tcq(drbd_dev *mdev, Drbd_Header* h)
 /* used from receive_RSDataReply (recv_resync_read)
  * and from receive_Data */
 STATIC struct Tl_epoch_entry *
-read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size)
+read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size) __must_hold(loca)
 {
 	struct Tl_epoch_entry *e;
 	struct bio_vec *bvec;
@@ -1746,7 +1746,7 @@ STATIC int receive_DataRequest(drbd_dev *mdev,Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
+STATIC int drbd_asb_recover_0p(drbd_dev *mdev) __must_hold(local)
 {
 	int self, peer, rv=-100;
 	unsigned long ch_self, ch_peer;
@@ -1802,7 +1802,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev)
 	return rv;
 }
 
-STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
+STATIC int drbd_asb_recover_1p(drbd_dev *mdev) __must_hold(local)
 {
 	int self, peer, hg, rv=-100;
 
@@ -1845,7 +1845,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev)
 	return rv;
 }
 
-STATIC int drbd_asb_recover_2p(drbd_dev *mdev)
+STATIC int drbd_asb_recover_2p(drbd_dev *mdev) __must_hold(local)
 {
 	int self, peer, hg, rv=-100;
 
@@ -1903,7 +1903,7 @@ STATIC void drbd_uuid_dump(drbd_dev *mdev,char* text,u64* uuid)
  -100   after split brain, disconnect
 -1000   unrelated data
  */
-STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
+STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr) __must_hold(local)
 {
 	u64 self, peer;
 	int i,j;
@@ -1987,7 +1987,7 @@ STATIC int drbd_uuid_compare(drbd_dev *mdev, int *rule_nr)
    conn_mask (-1) on failure.
  */
 STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
-					drbd_disks_t peer_disk)
+					drbd_disks_t peer_disk) __must_hold(local)
 {
 	int hg,rule_nr;
 	drbd_conns_t rv = conn_mask;

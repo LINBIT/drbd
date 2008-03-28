@@ -628,7 +628,7 @@ STATIC BIO_ENDIO_FN(bm_async_io_complete)
 	BIO_ENDIO_FN_RETURN;
 }
 
-STATIC void bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw)
+STATIC void bm_page_io_async(drbd_dev *mdev, struct drbd_bitmap *b, int page_nr, int rw) __must_hold(local)
 {
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
@@ -692,7 +692,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 /*
  * bm_rw: read/write the whole bitmap from/to its on disk location.
  */
-STATIC int bm_rw(struct Drbd_Conf *mdev, int rw)
+STATIC int bm_rw(struct Drbd_Conf *mdev, int rw) __must_hold(local)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	/* sector_t sector; */
@@ -770,7 +770,7 @@ STATIC int bm_rw(struct Drbd_Conf *mdev, int rw)
  *
  * currently only called from "drbd_nl_disk_conf"
  */
-int drbd_bm_read(struct Drbd_Conf *mdev)
+int drbd_bm_read(struct Drbd_Conf *mdev) __must_hold(local)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int err=0;
@@ -790,7 +790,7 @@ int drbd_bm_read(struct Drbd_Conf *mdev)
  *
  * called at various occasions.
  */
-int drbd_bm_write(struct Drbd_Conf *mdev)
+int drbd_bm_write(struct Drbd_Conf *mdev) __must_hold(local)
 {
 	return bm_rw(mdev, WRITE);
 }
@@ -802,7 +802,7 @@ int drbd_bm_write(struct Drbd_Conf *mdev)
  * @enr: The _sector_ offset from the start of the bitmap.
  *
  */
-int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr)
+int drbd_bm_write_sect(struct Drbd_Conf *mdev,unsigned long enr) __must_hold(local)
 {
 	sector_t on_disk_sector = enr + mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
 	int bm_words, num_words, offset, err  = 0;

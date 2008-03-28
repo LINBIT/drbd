@@ -580,7 +580,7 @@ STATIC BIO_ENDIO_FN(atodb_endio)
 STATIC int atodb_prepare_unless_covered(struct Drbd_Conf *mdev,
 			     struct bio **bios,
 			     unsigned int enr,
-			     struct drbd_atodb_wait *wc)
+			     struct drbd_atodb_wait *wc) __must_hold(local)
 {
 	struct bio *bio;
 	struct page *page;

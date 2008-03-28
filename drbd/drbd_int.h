@@ -39,6 +39,20 @@
 #include <net/tcp.h>
 #include "lru_cache.h"
 
+#ifdef __CHECKER__
+# define __protected_by(x)       __attribute__((require_context(x,1,999,2)))
+# define __protected_read_by(x)  __attribute__((require_context(x,1,999,0)))
+# define __protected_write_by(x) __attribute__((require_context(x,1,999,1)))
+# define __must_hold(x)       __attribute__((context(x,1,1), require_context(x,1,999,3)))
+#else
+# define __protected_by(x)
+# define __protected_read_by(x)
+# define __protected_write_by(x)
+# define __must_hold(x)
+#endif
+
+#define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
+
 // module parameter, defined in drbd_main.c
 extern int minor_count;
 extern int allow_oos;
@@ -801,7 +815,7 @@ struct Drbd_Conf {
 	/* configured by drbdsetup */
 	struct net_conf *net_conf; // protected by inc_net() and dec_net()
 	struct syncer_conf sync_conf;
-	struct drbd_backing_dev *bc; // protected by inc_local() dec_local()
+	struct drbd_backing_dev *bc __protected_by(local);
 
 	sector_t p_size;     /* partner's disk size */
 	struct request_queue *rq_queue;
@@ -1006,13 +1020,13 @@ extern void drbd_mdev_cleanup(drbd_dev *mdev);
 extern void drbd_md_sync(drbd_dev *mdev);
 extern int  drbd_md_read(drbd_dev *mdev, struct drbd_backing_dev * bdev);
 // maybe define them below as inline?
-extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val);
-extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val);
-extern void drbd_uuid_new_current(drbd_dev *mdev);
-extern void _drbd_uuid_new_current(drbd_dev *mdev);
-extern void drbd_uuid_set_bm(drbd_dev *mdev, u64 val);
-extern void drbd_md_set_flag(drbd_dev *mdev, int flags);
-extern void drbd_md_clear_flag(drbd_dev *mdev, int flags);
+extern void drbd_uuid_set(drbd_dev *mdev,int idx, u64 val) __must_hold(local);
+extern void _drbd_uuid_set(drbd_dev *mdev, int idx, u64 val) __must_hold(local);
+extern void drbd_uuid_new_current(drbd_dev *mdev) __must_hold(local);
+extern void _drbd_uuid_new_current(drbd_dev *mdev) __must_hold(local);
+extern void drbd_uuid_set_bm(drbd_dev *mdev, u64 val) __must_hold(local);
+extern void drbd_md_set_flag(drbd_dev *mdev, int flags) __must_hold(local);
+extern void drbd_md_clear_flag(drbd_dev *mdev, int flags) __must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
 extern void drbd_md_mark_dirty(drbd_dev *mdev);
 extern void drbd_queue_bitmap_io(drbd_dev *mdev,
@@ -1163,9 +1177,9 @@ extern int  drbd_bm_clear_bits(
 		drbd_dev *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_test_bit  (drbd_dev *mdev, unsigned long bitnr);
 extern int  drbd_bm_e_weight  (drbd_dev *mdev, unsigned long enr);
-extern int  drbd_bm_write_sect(drbd_dev *mdev, unsigned long enr);
-extern int  drbd_bm_read      (drbd_dev *mdev);
-extern int  drbd_bm_write     (drbd_dev *mdev);
+extern int  drbd_bm_write_sect(drbd_dev *mdev, unsigned long enr) __must_hold(local);
+extern int  drbd_bm_read      (drbd_dev *mdev) __must_hold(local);
+extern int  drbd_bm_write     (drbd_dev *mdev) __must_hold(local);
 extern unsigned long drbd_bm_ALe_set_all (drbd_dev *mdev, unsigned long al_enr);
 extern size_t        drbd_bm_words       (drbd_dev *mdev);
 extern sector_t      drbd_bm_capacity    (drbd_dev *mdev);
@@ -1322,9 +1336,9 @@ extern int is_valid_ar_handle(drbd_request_t *, sector_t);
 extern char* ppsize(char* buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct Drbd_Conf*, struct drbd_backing_dev*);
 enum determin_dev_size_enum { dev_size_error = -1, unchanged = 0, shrunk = 1, grew = 2 };
-extern enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev*);
+extern enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev*) __must_hold(local);
 extern void resync_after_online_grow(drbd_dev *mdev);
-extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int);
+extern void drbd_setup_queue_param(drbd_dev *mdev, unsigned int) __must_hold(local);
 extern int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg);
@@ -1384,7 +1398,7 @@ extern struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 					    u64 id,
 					    sector_t sector,
 					    unsigned int data_size,
-					    gfp_t gfp_mask);
+					    gfp_t gfp_mask) __must_hold(local);
 extern void drbd_free_ee(drbd_dev *mdev, struct Tl_epoch_entry* e);
 extern void drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
 extern void _drbd_wait_ee_list_empty(drbd_dev *mdev, struct list_head *head);
