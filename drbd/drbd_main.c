@@ -928,13 +928,13 @@ STATIC void abw_start_sync(drbd_dev* mdev, int rv)
 {
 	if (rv) {
 		ERR("Writing the bitmap failed not starting resync.\n");
-		drbd_request_state(mdev, NS(conn, Connected));
+		_drbd_request_state(mdev, NS(conn, Connected), ChgStateVerbose);
 		return;
 	}
 
 	switch (mdev->state.conn) {
 	case StartingSyncT:
-		drbd_request_state(mdev, NS(conn, WFSyncUUID));
+		_drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose);
 		break;
 	case StartingSyncS:
 		drbd_start_resync(mdev, SyncSource);
