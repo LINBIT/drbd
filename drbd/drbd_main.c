@@ -2928,15 +2928,15 @@ int drbd_bmio_set_n_write(drbd_dev *mdev)
 {
 	int rv = -EIO;
 
-	if (inc_local(mdev)) {
-		drbd_md_set_flag(mdev,MDF_FullSync);
+	if (inc_local_if_state(mdev, Attaching)) {
+		drbd_md_set_flag(mdev, MDF_FullSync);
 		drbd_md_sync(mdev);
 		drbd_bm_set_all(mdev);
 
 		rv = drbd_bm_write(mdev);
 
 		if (!rv) {
-			drbd_md_clear_flag(mdev,MDF_FullSync);
+			drbd_md_clear_flag(mdev, MDF_FullSync);
 			drbd_md_sync(mdev);
 		}
 
