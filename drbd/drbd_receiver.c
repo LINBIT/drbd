@@ -2497,8 +2497,6 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			mdev->state.disk == Negotiating));
 		cr |= test_bit(CONSIDER_RESYNC,&mdev->flags); /* peer forced */
 		cr |= (oconn == Connected && peer_state.conn > Connected);
-		cr |= ((oconn == WFBitMapS || oconn == WFBitMapT) &&
-		       peer_state.disk == UpToDate &&  mdev->state.disk == UpToDate);
 
 		real_peer_disk = peer_state.disk;
 		if (peer_state.disk == Negotiating) {
