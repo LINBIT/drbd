@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
 <refentry>
-<docinfo><date>06 April 2006</date></docinfo>
+<docinfo><date>31 March 2008</date></docinfo>
 
 <refmeta>
  <refentrytitle>drbd.conf</refentrytitle>
@@ -16,7 +16,7 @@
  <title>Introduction</title>
  <para>
  The file <option>/etc/drbd.conf</option> is read by
- <option>drbdaddm</option>.
+ <option>drbdadm</option>.
  </para>
  <para>
  The file format was designed as to allow to have
@@ -35,36 +35,36 @@ resource r0 {
 		cram-hmac-alg sha1;
 		shared-secret "FooFunFactory";
 	}
-	on thost1 {
+	on alice {
 		device    /dev/drbd1;
-		disk      /dev/hda7;
+		disk      /dev/sda7;
 		address   10.1.1.31:7789;
-		meta-disk  internal;
+		meta-disk internal;
 	}
-	on thost2 {
+	on bob {
 		device    /dev/drbd1;
-		disk      /dev/hda7;
+		disk      /dev/sda7;
 		address   10.1.1.32:7789;
-		meta-disk  internal;
+		meta-disk internal;
 	}
 }
 </programlisting>
 </example>
- In this example there is a single DRBD resource (called r0) which uses
+ In this example, there is a single DRBD resource (called r0) which uses
  protocol C for the connection between its devices.
  The device which runs
- on host <replaceable>thost1</replaceable> uses
+ on host <replaceable>alice</replaceable> uses
  <replaceable>/dev/drbd1</replaceable> as devices for its application, and
- <replaceable>/dev/hda7</replaceable> as low-level storage for the data.
+ <replaceable>/dev/sda7</replaceable> as low-level storage for the data.
  The IP addresses are used to specify the networking interfaces to be used.
- An eventually running resyncprocess should use about 10MByte/second of IO
+ An eventually running resync process should use about 10MByte/second of IO
  bandwidth.
  </para>
  <para>
  There may be multiple resource sections in a single drbd.conf file.
  For more examples, please have a look at the
- <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
- <citetitle>DRBD Quickstart Guide</citetitle></ulink>.
+ <ulink url="http://www.drbd.org/users-guide/">
+ <citetitle>DRBD User's Guide</citetitle></ulink>.
  </para>
 </refsect1>
 <refsect1>
@@ -130,7 +130,7 @@ resource r0 {
   <term><option>common</option></term>
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>common</secondary></indexterm>
-    All resources interhit the options set in this section.
+    All resources inherit the options set in this section.
     The common section might have 
     a <option>startup</option>,
     a <option>syncer</option>,
@@ -164,7 +164,7 @@ resource r0 {
     Carries the necessary configuration parameters for a DRBD
     device of the enclosing resource.
     <replaceable>host-name</replaceable> is mandatory and must match the
-    linux hostname (uname -n) of one of the nodes.
+    Linux host name (uname -n) of one of the nodes.
     Required parameters in this section: <option>device</option>,
     <option>disk</option>, <option>address</option>, <option>meta-disk</option>,
     <option>flexible-meta-disk</option>.
@@ -228,7 +228,7 @@ resource r0 {
   <term><option>syncer</option></term>
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>syncer</secondary></indexterm>
-    This section is used to fine tune the synchronisation daemon
+    This section is used to fine tune the synchronization daemon
     for the device. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry> for a detailed description
@@ -281,7 +281,7 @@ resource r0 {
   <indexterm><primary>drbd.conf</primary><secondary>dialog-refresh </secondary></indexterm>
     <replaceable>time</replaceable> may be 0 or a positive number.
   </para>
-  <para>The user dialogue redraws the second count every
+  <para>The user dialog redraws the second count every
    <replaceable>time</replaceable> seconds (or does no redraws if
    <replaceable>time</replaceable> is 0). The default value is 1.</para>
    </listitem>
@@ -411,14 +411,14 @@ resource r0 {
   <para>
    You can use a single block <replaceable>device</replaceable> to store
    meta-data of multiple DRBD devices.
-   E.g. use meta-disk /dev/hde6[0]; and meta-disk /dev/hde6[1];
+   E.g. use meta-disk /dev/sde6[0]; and meta-disk /dev/sde6[1];
    for two different resources. In this case the meta-disk
    would need to be at least 256 MB in size.
   </para>
 
   <para>
    With the <option>flexible-meta-disk</option> keyword you specify
-   a block device as meta-data storage. You usually use this whith LVM,
+   a block device as meta-data storage. You usually use this with LVM,
    which allows you to have many variable sized block devices.
    The required size of the meta-disk block device is
    36kB + Backing-Storage-size / 32k. Round this number to the next 4kb
@@ -474,7 +474,7 @@ resource r0 {
 	If a node becomes a disconnected primary, it freezes all
 	its IO operations and calls its outdate-peer handler. The
 	outdate-peer handler is supposed to reach the peer over
-	alternative communicaton paths and call 'drbdadm outdate
+	alternative communication paths and call 'drbdadm outdate
 	res' there. In case it cannot reach the peer it should
 	stonith the peer. IO is resumed as soon as the situation
 	is resolved. In case your handler fails, you can resume
@@ -495,12 +495,14 @@ resource r0 {
       are: md (software raid driver), dm (device mapper - LVM) and DRBD
       itself)</para>
     <para>
-      To get best performance out of DRBD on top of software raid (or any
+      To get best performance out of DRBD on top of software RAID (or any
       other driver with a merge_bvec_fn() function) you might enable this
       function, if you know for sure that the merge_bvec_fn() function will
       deliver the same results on all nodes of your cluster. I.e. the
-      physical disks of the software raid are of exactly the same type.  USE
-      THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
+      physical disks of the software RAID are of exactly the same
+      type. <emphasis>Use this option only if you know what you are
+      doing.</emphasis>
+    </para>
    </listitem>
 </varlistentry>
 
@@ -509,17 +511,18 @@ resource r0 {
   <listitem>
   <indexterm><primary>drbd.conf</primary><secondary>no-disk-flushes</secondary></indexterm>
     <para>
-      In case you are sure that your storage subsystem has battery
-      backed up RAM and you know from measurements that it really honors
-      flush instructions by flushing data out from its non volatile
-      write cache to disk, you have double security. You might then
-      reduce this to single security by disabling disk flushes with
-      this option. It might improve performance in this case.</para>
+      In case you are sure that your storage subsystem has
+      battery-backed write cache, and you know from measurements that it
+      really honors flush instructions by flushing data out from its
+      non-volatile write cache to disk, you have double security. You might then
+      reduce this to single security by disabling forced disk flushes with this
+      option. It might improve performance in this case.</para>
     <para>
-      If you use this option on plain disk drives, which have have
-      volatile write caches (enabled by default), you are at risk to
-      loose your data with every power loss. ONLY USE THIS OPTIOIN IF
-      YOU UNDERSTAND EACH AND EVERY STATEMENT OF THESE TWO PARAGRAPHS.
+      If you use this option on plain disk drives, which have
+      volatile write caches (enabled by default), you are at risk to lose
+      your data with every power loss. <emphasis>Only use this option of you
+      understand each and every statement in these two
+      paragraphs.</emphasis>
       </para>
    </listitem>
 </varlistentry>
@@ -597,7 +600,7 @@ the unit is 1 second.
   <indexterm><primary>drbd.conf</primary><secondary>max-buffers </secondary></indexterm>
   Maximum number of requests to be allocated by DRBD. Unit is PAGE_SIZE,
   which is 4 KB on most systems.
-  The minimum is hardcoded to 32 (=128 KB).
+  The minimum is hard coded to 32 (=128 KB).
   For high-performance installations it might help, if you
   increase that number. These buffers are used to hold
   data blocks while they are written to disk.
@@ -658,7 +661,7 @@ the unit is 1 second.
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>cram-hmac-alg</secondary></indexterm>
     You need to specify the HMAC algorithm to enable peer authentication
-    at all. You are strongly enouraged to use peer authentication. The HMAC
+    at all. You are strongly encouraged to use peer authentication. The HMAC
     algorithm will be used for the challenge response authentication
     of the peer. You may specify any digest algorithm that is named in
     /proc/crypto.
@@ -683,7 +686,7 @@ the unit is 1 second.
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>discard-younger-primary</option></term>
 		<listitem><para>
@@ -699,7 +702,7 @@ the unit is 1 second.
 		In case one node did not write anything since the split
 		brain became evident, sync from the node that wrote something
 		to the node that did not write anything. In case none wrote
-		anything this policy uses a random decission to perform
+		anything this policy uses a random decision to perform
 		a "resync" of 0 blocks. In case both have written something
 		this policy disconnects the nodes.
 		</para></listitem></varlistentry>
@@ -727,7 +730,7 @@ the unit is 1 second.
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>consensus</option></term>
 		<listitem><para>
@@ -751,7 +754,7 @@ the unit is 1 second.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>call-pri-lost-after-sb</option></term>
 		<listitem><para>
-		  Always honour the outcome of the <option>after-sb-0pri
+		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
 		  secondary has the right data, it calls the "pri-lost-after-sb"
 		  handler on the current primary.
@@ -770,7 +773,7 @@ the unit is 1 second.
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
               <varlistentry><term><option>violently-as0p</option></term>
 	        <listitem><para>
@@ -821,13 +824,13 @@ the unit is 1 second.
             <variablelist>
               <varlistentry><term><option>disconnect</option></term>
 	        <listitem><para>
-		  No automatic resynchronisation, simply disconnect.
+		  No automatic resynchronization, simply disconnect.
 		</para></listitem></varlistentry>
               <varlistentry><term><option>violently</option></term>
 	        <listitem><para>
                    Sync to the primary node is allowed, violating the
     	           assumption that data on a block device are stable for one
-    	           of the nodes. DANGEROUS, DO NOT USE.
+    	           of the nodes. <emphasis>Dangerous, do not use.</emphasis>
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>call-pri-lost</option></term>
 		<listitem><para>
@@ -884,7 +887,7 @@ the unit is 1 second.
   the init script. The <replaceable>node-name</replaceable> might either
   be a host name or the key word <option>both</option>. When this option is 
   not set the devices stay in secondary role on both nodes. Usually
-  one deligates the role assignment to a cluster manager (e.g. heartbeat).
+  one delegates the role assignment to a cluster manager (e.g. heartbeat).
   </para>
   </listitem>
 </varlistentry>
@@ -895,7 +898,7 @@ the unit is 1 second.
   <indexterm><primary>drbd.conf</primary><secondary>rate </secondary></indexterm>
   To ensure a smooth operation of the application on top of DRBD,
   it is possible to limit the bandwidth which may be used by
-  background synchronisations. The default is 250 KB/sec, the
+  background synchronizations. The default is 250 KB/sec, the
   default unit is KB/sec. Optional suffixes K, M, G are allowed.
   </para>
   </listitem>
@@ -905,10 +908,10 @@ the unit is 1 second.
   <term><option>after <replaceable>res-name</replaceable></option></term>
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>after </secondary></indexterm>
-  By default, resynchronisation of all devices would run in parallel.
-  By defining a sync-after dependency, the resynchronisation of this
+  By default, resynchronization of all devices would run in parallel.
+  By defining a sync-after dependency, the resynchronization of this
   resource will start only if the resource <replaceable>res-name</replaceable>
-  is already in connected state (= finished its resynchronisation).
+  is already in connected state (= finished its resynchronization).
   </para></listitem>
 </varlistentry>
 
@@ -978,7 +981,7 @@ the unit is 1 second.
 </refsect1>
 <refsect1>
 <title>Version</title>
-<simpara>This document was revised version 8.0 of the DRBD distribution.
+<simpara>This document was revised for version 8.0.12 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>
@@ -1009,11 +1012,13 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     <citerefentry><refentrytitle>drbddisk</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdsetup</refentrytitle>
-    <manvolnum>8</manvolnum></citerefentry>
+    <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdadm</refentrytitle>
-    <manvolnum>8</manvolnum></citerefentry>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <ulink url="http://www.drbd.org/users-guide/">
+    <citetitle>DRBD User's Guide</citetitle></ulink>,
     <ulink url="http://www.drbd.org/">
-    <citetitle>DRBD Homepage</citetitle></ulink>
+    <citetitle>DRBD web site</citetitle></ulink>
 </para>
 </refsect1>
 </refentry>
