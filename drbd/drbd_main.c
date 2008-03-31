@@ -1056,13 +1056,17 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 
 	/* We are in the progress to start a full sync... */
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
-	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) )
+	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
+		INFO("Queueing bitmap io: about to start a forced full sync\n");
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync);
+	}
 
 	/* We are invalidating our self... */
 	if ( os.conn < Connected && ns.conn < Connected &&
-	       os.disk > Inconsistent && ns.disk == Inconsistent )
+	       os.disk > Inconsistent && ns.disk == Inconsistent ) {
+		INFO("Queueing bitmap io: invalidate forced full sync\n");
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL);
+	}
 
 	if ( os.disk > Diskless && ns.disk == Diskless ) {
 		/* since inc_local() only works as long as disk>=Inconsistent,
@@ -1504,6 +1508,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 
 	if (inc_local(mdev)) {
 		if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
+			INFO("Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(mdev);
 			if (drbd_bm_write(mdev)) {
 				/* write_bm did fail! Leave full sync flag set in Meta Data

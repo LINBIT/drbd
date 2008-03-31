@@ -2090,6 +2090,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 	}
 
 	if (abs(hg) >= 2) {
+		INFO("Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
 		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write))
 			return conn_mask;
 	}

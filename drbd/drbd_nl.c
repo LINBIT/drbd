@@ -511,6 +511,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev) __must_hold(l
 
 	if ( la_size_changed || md_moved ) {
 		drbd_al_shrink(mdev); /* All extents inactive. */
+		INFO("Writing the whole bitmap, size changed\n");
 		rv = drbd_bitmap_io(mdev, &drbd_bm_write);
 		drbd_md_mark_dirty(mdev);
 	}
