@@ -184,11 +184,11 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
 
-	if (inc_local_if_state(mdev,UpToDate)) {
+	if (inc_local_if_state(mdev, Consistent)) {
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
-		WARN("Not outdating peer, since I am diskless.");
+		WARN("Not outdating peer, I'm not even Consitent myself.\n");
 		return mdev->state.pdsk;
 	}
 
