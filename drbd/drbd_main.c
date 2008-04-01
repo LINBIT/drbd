@@ -706,8 +706,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 		ns.conn = Connected;
 	}
 
-	if( ns.conn >= Connected &&
-	    ( ns.disk == Consistent || ns.disk == Outdated ) ) {
+	if (ns.conn != os.conn && ns.conn >= Connected &&
+	    (ns.disk == Consistent || ns.disk == Outdated)) {
 		switch(ns.conn) {
 		case WFBitMapT:
 		case PausedSyncT:
@@ -729,8 +729,8 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 		}
 	}
 
-	if( ns.conn >= Connected &&
-	    ( ns.pdsk == Consistent || ns.pdsk == Outdated ) ) {
+	if (ns.conn != os.conn && ns.conn >= Connected &&
+	    (ns.pdsk == Consistent || ns.pdsk == Outdated)) {
 		switch(ns.conn) {
 		case Connected:
 		case WFBitMapT:
