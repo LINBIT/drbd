@@ -124,7 +124,7 @@ struct drbd_cmd {
 		} gp; // for generic_get_cmd, get_usage
 		struct {
 			struct option *options;
-			int (*proc_event)(unsigned int, int, 
+			int (*proc_event)(unsigned int, int,
 					  struct drbd_nl_cfg_reply *);
 		} ep; // for events_cmd, events_usage
 	};
@@ -739,9 +739,8 @@ struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 	return NULL;
 }
 
-int print_config_error( struct drbd_nl_cfg_reply *reply)
+int print_config_error(int err_no)
 {
-	int err_no = reply->ret_code;
 	int rv=0;
 
 	if (err_no == NoError) return rv;
@@ -836,7 +835,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		if (received >= 0) {
 			reply = (struct drbd_nl_cfg_reply *)
 				((struct cn_msg *)NLMSG_DATA(buffer))->data;
-			rv = print_config_error(reply);
+			rv = reply->ret_code;
 		}
 	}
 	free_tag_list(tl);
@@ -1023,7 +1022,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
 
 	if (reply->ret_code != NoError)
-		return print_config_error(reply);
+		return reply->ret_code;
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
 
@@ -1183,6 +1182,7 @@ static struct drbd_cmd *find_cmd_by_name(const char* name)
 int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	int rv;
+	int success;
 
 	if(argc > 1) {
 		fprintf(stderr,"Ignoring excess arguments\n");
@@ -1190,13 +1190,15 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 	cm = find_cmd_by_name("secondary");
 	rv = cm->function(cm,minor,argc,argv);
-	if( rv ) return rv;
+	if (rv == MinorNotKnown)
+		return SS_NothingToDo;
+	success = (rv >= SS_Success && rv < RetCodeBase) || rv == NoError;
+	if (!success)
+		return rv;
 	cm = find_cmd_by_name("disconnect");
 	cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");
-	rv |= cm->function(cm,minor,argc,argv);
-
-	return rv;
+	return cm->function(cm,minor,argc,argv);
 }
 
 int print_state(unsigned int seq, int u __attribute((unused)),
@@ -1864,7 +1866,7 @@ int main(int argc, char** argv)
 		minor=dt_minor_of_dev(argv[1]);
 		// by passing argc-2, argv+2 the function has the command name
 		// in argv[0], e.g. "syncer"
-		rv = cmd->function(cmd,minor,argc-2,argv+2);
+		rv = print_config_error(cmd->function(cmd,minor,argc-2,argv+2));
 		dt_unlock_drbd(lock_fd);
 	} else {
 		print_usage("invalid command");
