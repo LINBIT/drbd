@@ -645,6 +645,9 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 	if ( ns.disk == Outdated && os.disk < Outdated && os.disk != Attaching)
 		rv=SS_LowerThanOutdated;
 
+	if (ns.conn == Disconnecting && os.conn == Unconnected)
+		rv = SS_IsUnconnected;
+
 	return rv;
 }
 

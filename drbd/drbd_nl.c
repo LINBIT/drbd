@@ -1266,7 +1266,9 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode;
 
-	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), ChgWaitComplete);
+	wait_event(mdev->state_wait,
+		   (retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), ChgWaitComplete))
+		   != SS_IsUnconnected);
 
 	if ( retcode == SS_NothingToDo ) goto done;
 	else if ( retcode == SS_AlreadyStandAlone ) goto done;
@@ -1290,7 +1292,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if( retcode < SS_Success ) goto fail;
 
-	if (wait_event_interruptible(mdev->misc_wait,
+	if (wait_event_interruptible(mdev->state_wait,
 				     mdev->state.conn != Disconnecting) ) {
 		/* Do not test for mdev->state.conn == StandAlone, since
 		   someone else might connect us in the mean time! */

@@ -259,7 +259,8 @@ typedef enum {
 	SS_IsDiskLess=-11,
 	SS_DeviceInUse=-12,
 	SS_NoNetConfig=-13,
-	SS_LowerThanOutdated=-14
+	SS_LowerThanOutdated=-14,
+	SS_IsUnconnected=-15,  /* Can not disconnect, wait longer */
 } set_st_err_t;
 
 /* from drbd_strings.c */

@@ -82,7 +82,8 @@ static const char *drbd_state_sw_errors[] = {
 		"Device is diskless, the requesed operation requires a disk",
 	[-SS_DeviceInUse] = "Device is held open by someone",
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
-	[-SS_LowerThanOutdated] = "Disk state is lower than outdated"
+	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
+	[-SS_IsUnconnected] = "Unconnected -> Disconnecting is forbidden, try later"
 };
 
 const char* conns_to_name(drbd_conns_t s) {
