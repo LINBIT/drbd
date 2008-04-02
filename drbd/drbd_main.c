@@ -470,14 +470,8 @@ STATIC set_st_err_t _req_st_cond(drbd_dev* mdev,drbd_state_t mask, drbd_state_t 
 	return rv;
 }
 
-/**
- * _drbd_request_state:
- * This function is the most gracefull way to change state. For some state
- * transition this function even does a cluster wide transaction.
- * It has a cousin named drbd_request_state(), which is always verbose.
- */
-int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
-		       enum chg_state_flags f)
+STATIC int drbd_req_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
+			  enum chg_state_flags f)
 {
 	struct completion done;
 	unsigned long flags;
@@ -485,6 +479,9 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 	int rv;
 
 	init_completion(&done);
+
+	if (f & ChgSerialize)
+		mutex_lock(&mdev->state_mutex);
 
 	spin_lock_irqsave(&mdev->req_lock,flags);
 	os = mdev->state;
@@ -497,7 +494,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 
 		if( rv < SS_Success ) {
 			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
-			return rv;
+			goto abort;
 		}
 
 		drbd_state_lock(mdev);
@@ -505,7 +502,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 			drbd_state_unlock(mdev);
 			rv = SS_CW_FailedByPeer;
 			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
-			return rv;
+			goto abort;
 		}
 
 		wait_event(mdev->state_wait,(rv=_req_st_cond(mdev,mask,val)));
@@ -514,7 +511,7 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 			// nearly dead code.
 			drbd_state_unlock(mdev);
 			if( f & ChgStateVerbose ) print_st_err(mdev,os,ns,rv);
-			return rv;
+			goto abort;
 		}
 
 		spin_lock_irqsave(&mdev->req_lock,flags);
@@ -533,8 +530,30 @@ int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
 		wait_for_completion(&done);
 	}
 
+  abort:
+	if (f & ChgSerialize)
+		mutex_unlock(&mdev->state_mutex);
+
 	return rv;
 }
+
+/**
+ * _drbd_request_state:
+ * This function is the most gracefull way to change state. For some state
+ * transition this function even does a cluster wide transaction.
+ * It has a cousin named drbd_request_state(), which is always verbose.
+ */
+int _drbd_request_state(drbd_dev* mdev, drbd_state_t mask, drbd_state_t val,
+			enum chg_state_flags f)
+{
+	int rv;
+
+	wait_event(mdev->state_wait,
+		   (rv = drbd_req_state(mdev, mask, val, f)) != SS_InTransientState);
+
+	return rv;
+}
+
 
 STATIC void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 {
@@ -554,6 +573,7 @@ STATIC void print_st(drbd_dev* mdev, char *name, drbd_state_t ns)
 
 void print_st_err(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns, int err)
 {
+	if (err == SS_InTransientState) return;
 	ERR("State change failed: %s\n",set_st_err_name(err));
 	print_st(mdev," state",os);
 	print_st(mdev,"wanted",ns);
@@ -646,7 +666,10 @@ STATIC int is_valid_state_transition(drbd_dev* mdev,drbd_state_t ns,drbd_state_t
 		rv=SS_LowerThanOutdated;
 
 	if (ns.conn == Disconnecting && os.conn == Unconnected)
-		rv = SS_IsUnconnected;
+		rv = SS_InTransientState;
+
+	if (ns.conn == os.conn && ns.conn == WFReportParams)
+		rv = SS_InTransientState;
 
 	return rv;
 }
@@ -2100,6 +2123,7 @@ STATIC void drbd_init_set_defaults(drbd_dev *mdev)
 	init_MUTEX(&mdev->meta.mutex);
 	sema_init(&mdev->data.work.s,0);
 	sema_init(&mdev->meta.work.s,0);
+	mutex_init(&mdev->state_mutex);
 
 	spin_lock_init(&mdev->data.work.q_lock);
 	spin_lock_init(&mdev->meta.work.q_lock);

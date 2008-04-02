@@ -36,6 +36,7 @@
 #include <linux/slab.h>
 #include <linux/crypto.h>
 #include <linux/tcp.h>
+#include <linux/mutex.h>
 #include <net/tcp.h>
 #include "lru_cache.h"
 
@@ -905,6 +906,7 @@ struct Drbd_Conf {
 	unsigned long comm_bm_set; // communicated number of set bits.
 	struct bm_io_work bm_io_work;
 	u64 ed_uuid; /* UUID of the exposed data */
+	struct mutex state_mutex;
 };
 
 static inline drbd_dev *minor_to_mdev(int minor)
@@ -955,7 +957,9 @@ static inline void drbd_put_data_sock(drbd_dev *mdev)
 enum chg_state_flags {
 	ChgStateHard    = 1,
 	ChgStateVerbose = 2,
-	ChgWaitComplete = 4
+	ChgWaitComplete = 4,
+	ChgSerialize    = 8,
+	ChgOrdered      = ChgWaitComplete + ChgSerialize,
 };
 
 extern int drbd_change_state(drbd_dev* mdev, enum chg_state_flags f,
@@ -1514,7 +1518,7 @@ static inline void drbd_state_unlock(drbd_dev *mdev)
 static inline int drbd_request_state(drbd_dev* mdev, drbd_state_t mask,
 				     drbd_state_t val)
 {
-	return _drbd_request_state(mdev, mask, val, ChgStateVerbose + ChgWaitComplete);
+	return _drbd_request_state(mdev, mask, val, ChgStateVerbose + ChgOrdered);
 }
 
 /**

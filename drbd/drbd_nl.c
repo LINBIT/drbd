@@ -240,6 +240,8 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 		request_ping(mdev); // Detect a dead peer ASAP
 	}
 
+	mutex_lock(&mdev->state_mutex);
+
 	mask.i = 0; mask.role = role_mask;
 	val.i  = 0; val.role  = new_role;
 
@@ -292,7 +294,8 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			continue;
 		}
 		if ( r < SS_Success ) {
-			r = drbd_request_state(mdev,mask,val); // Be verbose.
+			r = _drbd_request_state(mdev, mask, val,
+						ChgStateVerbose + ChgWaitComplete);
 			if( r < SS_Success ) goto fail;
 		}
 		break;
@@ -303,11 +306,7 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	drbd_sync_me(mdev);
 
 	/* Wait until nothing is on the fly :) */
-	if ( wait_event_interruptible( mdev->misc_wait,
-			         atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
-		r = GotSignal;
-		goto fail;
-	}
+	wait_event(mdev->misc_wait, atomic_read(&mdev->ap_pending_cnt) == 0);
 
 	/* FIXME RACE here: if our direct user is not using bd_claim (i.e.
 	 *  not a filesystem) since cstate might still be >= Connected, new
@@ -355,9 +354,8 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 
 	drbd_md_sync(mdev);
 
-	return r;
-
  fail:
+	mutex_unlock(&mdev->state_mutex);
 	return r;
 }
 
@@ -1266,9 +1264,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	int retcode;
 
-	wait_event(mdev->state_wait,
-		   (retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), ChgWaitComplete))
-		   != SS_IsUnconnected);
+	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), ChgOrdered);
 
 	if ( retcode == SS_NothingToDo ) goto done;
 	else if ( retcode == SS_AlreadyStandAlone ) goto done;
@@ -1280,7 +1276,7 @@ STATIC int drbd_nl_disconnect(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		// The peer probabely wants to see us outdated.
 		retcode = _drbd_request_state(mdev, NS2(conn, Disconnecting,
 							disk, Outdated),
-					      ChgWaitComplete);
+					      ChgOrdered);
 		if (retcode == SS_IsDiskLess || retcode == SS_LowerThanOutdated) {
 			// We are diskless and our peer wants to outdate us.
 			// So, simply go away, and let the peer try to

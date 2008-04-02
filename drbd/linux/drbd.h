@@ -260,7 +260,7 @@ typedef enum {
 	SS_DeviceInUse=-12,
 	SS_NoNetConfig=-13,
 	SS_LowerThanOutdated=-14,
-	SS_IsUnconnected=-15,  /* Can not disconnect, wait longer */
+	SS_InTransientState=-15,  /* Retry after the next state change */
 } set_st_err_t;
 
 /* from drbd_strings.c */

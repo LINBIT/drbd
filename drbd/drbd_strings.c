@@ -83,7 +83,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_DeviceInUse] = "Device is held open by someone",
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
 	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
-	[-SS_IsUnconnected] = "Unconnected -> Disconnecting is forbidden, try later"
+	[-SS_InTransientState] = "In transient state, retry after next state change"
 };
 
 const char* conns_to_name(drbd_conns_t s) {
