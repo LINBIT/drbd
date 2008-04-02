@@ -776,9 +776,17 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
-	if (ns.conn < Connected && ns.disk == Negotiating ) {
-		ns.disk = mdev->new_state_tmp.disk;
-		ns.pdsk = mdev->new_state_tmp.pdsk;
+	if (ns.conn < Connected && ns.disk == Negotiating &&
+	    inc_local_if_state(mdev, Negotiating)) {
+		if (mdev->ed_uuid == mdev->bc->md.uuid[Current]) {
+			ns.disk = mdev->new_state_tmp.disk;
+			ns.pdsk = mdev->new_state_tmp.pdsk;
+		} else {
+			ALERT("Connection lost while negotiating, no data!\n");
+			ns.disk = Diskless;
+			ns.pdsk = DUnknown;
+		}
+		dec_local(mdev);
 	}
 
 	if( fp == Stonith ) {
