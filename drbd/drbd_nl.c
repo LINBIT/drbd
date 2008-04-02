@@ -188,7 +188,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
-		WARN("Not outdating peer, I'm not even Consitent myself.\n");
+		WARN("Not outdating peer, I'm not even Consistent myself.\n");
 		return mdev->state.pdsk;
 	}
 
