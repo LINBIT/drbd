@@ -434,7 +434,8 @@ char* ppsize(char* buf, unsigned long long size)
 	static char units[] = { 'K','M','G','T','P','E' };
 	int base = 0;
 	while (size >= 10000 ) {
-		size = size >> 10;
+		/* shift + round */
+		size = (size >> 10) + !!(size & (1<<9));
 		base++;
 	}
 	sprintf(buf,"%lu %cB",(long)size,units[base]);
