@@ -469,8 +469,13 @@ STATIC int w_resync_finished(drbd_dev *mdev, struct drbd_work *w, int cancel)
 int drbd_resync_finished(drbd_dev* mdev)
 {
 	unsigned long db,dt,dbdt;
-	int dstate, pdstate;
+	drbd_state_t os, ns;
 	struct drbd_work *w;
+
+	/* drbd_resync_finished() might be called multiple times, if
+	   the bitmap becomes cleared by app IO writes. */
+	if (test_and_set_bit(RESYNC_FINISHED, &mdev->flags))
+		return 1;
 
 	// Remove all elements from the resync LRU. Since future actions
 	// might set bits in the (main) bitmap, then the entries in the
@@ -498,30 +503,35 @@ int drbd_resync_finished(drbd_dev* mdev)
 	db = mdev->rs_total;
 	dbdt = Bit2KB(db/dt);
 	mdev->rs_paused /= HZ;
+
+	if (!inc_local(mdev))
+		goto out;
+
 	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
-	D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
-
-	if (!inc_local(mdev))
-		return 1;
-
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+	ns = os;
+	if (os.conn > Connected) {
+		D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
+		ns.conn = Connected;
+	}
 	if (mdev->rs_failed) {
 		INFO("            %lu failed blocks\n",mdev->rs_failed);
 
-		if (mdev->state.conn == SyncTarget ||
-		    mdev->state.conn == PausedSyncT) {
-			dstate = Inconsistent;
-			pdstate = UpToDate;
+		if (os.conn == SyncTarget || os.conn == PausedSyncT) {
+			ns.disk = Inconsistent;
+			ns.pdsk = UpToDate;
 		} else {
-			dstate = UpToDate;
-			pdstate = Inconsistent;
+			ns.disk = UpToDate;
+			ns.pdsk = Inconsistent;
 		}
 	} else {
-		dstate = pdstate = UpToDate;
+		ns.disk = UpToDate;
+		ns.pdsk = UpToDate;
 
-		if (mdev->state.conn == SyncTarget ||
-		    mdev->state.conn == PausedSyncT) {
+		if (os.conn == SyncTarget || os.conn == PausedSyncT) {
 			if( mdev->p_uuid ) {
 				int i;
 				for ( i=Bitmap ; i<=History_end ; i++ ) {
@@ -546,6 +556,10 @@ int drbd_resync_finished(drbd_dev* mdev)
 		}
 	}
 
+	_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+	spin_unlock_irq(&mdev->req_lock);
+	dec_local(mdev);
+  out:
 	mdev->rs_total  = 0;
 	mdev->rs_failed = 0;
 	mdev->rs_paused = 0;
@@ -556,11 +570,8 @@ int drbd_resync_finished(drbd_dev* mdev)
 	}
 
 	drbd_bm_recount_bits(mdev);
-	dec_local(mdev);
 
-	_drbd_request_state(mdev, NS3(conn, Connected,
-				      disk, dstate,
-				      pdsk, pdstate), ChgStateVerbose);
+	clear_bit(RESYNC_FINISHED, &mdev->flags);
 
 	return 1;
 }
