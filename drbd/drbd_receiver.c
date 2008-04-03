@@ -2583,14 +2583,15 @@ STATIC int receive_sync_uuid(drbd_dev *mdev, Drbd_Header *h)
 
 	/* Here the _drbd_uuid_ functions are right, current should
 	   _not_ be rotated into the history */
-	if (inc_local(mdev)) {
+	if (inc_local_if_state(mdev, Negotiating)) {
 		_drbd_uuid_set(mdev,Current,be64_to_cpu(p->uuid));
 		_drbd_uuid_set(mdev,Bitmap,0UL);
 
 		drbd_start_resync(mdev,SyncTarget);
 
 		dec_local(mdev);
-	}
+	} else
+		ERR("Ignoring SyncUUID packet!\n");
 
 	return TRUE;
 }
