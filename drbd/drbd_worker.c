@@ -910,6 +910,8 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	/* In case a previous resync run was aborted by an IO error... */
 	drbd_rs_cancel_all(mdev);
 
+	drbd_state_lock(mdev);
+
 	if(side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
@@ -938,6 +940,9 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	r = _drbd_set_state(mdev,ns,ChgStateVerbose,NULL);
 	ns = mdev->state;
 
+	if (ns.conn < Connected)
+		r = SS_UnknownError;
+
 	if ( r == SS_Success ) {
 		mdev->rs_total     =
 		mdev->rs_mark_left = drbd_bm_total_weight(mdev);
@@ -948,6 +953,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 		_drbd_pause_after(mdev);
 	}
 	drbd_global_unlock();
+	drbd_state_unlock(mdev);
 
 	if ( r == SS_Success ) {
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
