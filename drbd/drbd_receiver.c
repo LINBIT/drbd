@@ -2473,7 +2473,7 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	/**
 	 * Ensure no other thread sends state whilst we are running
 	 **/
-	drbd_state_lock(mdev);
+	down(&mdev->data.mutex);
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) goto fail;
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
@@ -2561,10 +2561,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	/* FIXME assertion for (gencounts do not diverge) */
 	drbd_md_sync(mdev); // update connected indicator, la_size, ...
 
-	drbd_state_unlock(mdev);
+	up(&mdev->data.mutex);
 	return TRUE;
  fail:
-	drbd_state_unlock(mdev);
+	up(&mdev->data.mutex);
 	return FALSE;
 }
 
