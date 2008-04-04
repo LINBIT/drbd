@@ -83,7 +83,8 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_DeviceInUse] = "Device is held open by someone",
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
 	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
-	[-SS_InTransientState] = "In transient state, retry after next state change"
+	[-SS_InTransientState] = "In transient state, retry after next state change",
+	[-SS_ConcurrentStChg] = "Concurrent state changes detected and aborted"
 };
 
 const char* conns_to_name(drbd_conns_t s) {

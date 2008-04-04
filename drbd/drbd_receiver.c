@@ -2447,14 +2447,16 @@ STATIC int receive_req_state(drbd_dev *mdev, Drbd_Header *h)
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
 
-	if (test_bit(DISCARD_CONCURRENT,&mdev->flags)) drbd_state_lock(mdev);
+	if (test_bit(DISCARD_CONCURRENT, &mdev->flags) &&
+	    test_bit(CLUSTER_ST_CHANGE, &mdev->flags)) {
+		drbd_send_sr_reply(mdev, SS_ConcurrentStChg);
+		return TRUE;
+	}
 
 	mask = convert_state(mask);
 	val = convert_state(val);
 
 	rv = drbd_change_state(mdev,ChgStateVerbose,mask,val);
-
-	if (test_bit(DISCARD_CONCURRENT,&mdev->flags)) drbd_state_unlock(mdev);
 
 	drbd_send_sr_reply(mdev,rv);
 	drbd_md_sync(mdev);

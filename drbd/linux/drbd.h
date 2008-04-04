@@ -261,6 +261,7 @@ typedef enum {
 	SS_NoNetConfig=-13,
 	SS_LowerThanOutdated=-14,
 	SS_InTransientState=-15,  /* Retry after the next state change */
+	SS_ConcurrentStChg=-16,   /* Concurrent cluster side state change! */
 } set_st_err_t;
 
 /* from drbd_strings.c */
