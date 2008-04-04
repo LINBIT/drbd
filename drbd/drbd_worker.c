@@ -472,11 +472,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 	drbd_state_t os, ns;
 	struct drbd_work *w;
 
-	/* drbd_resync_finished() might be called multiple times, if
-	   the bitmap becomes cleared by app IO writes. */
-	if (test_and_set_bit(RESYNC_FINISHED, &mdev->flags))
-		return 1;
-
 	// Remove all elements from the resync LRU. Since future actions
 	// might set bits in the (main) bitmap, then the entries in the
 	// resync LRU would be wrong.
@@ -498,6 +493,11 @@ int drbd_resync_finished(drbd_dev* mdev)
 		ERR("Warn failed to drbd_rs_del_all() and to kmalloc(w).\n");
 	}
 
+	/* drbd_resync_finished() might be called multiple times, if
+	   the bitmap becomes cleared by app IO writes. */
+	if (test_and_set_bit(RESYNC_FINISHED, &mdev->flags))
+		return 1;
+
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0) dt=1;
 	db = mdev->rs_total;
@@ -507,16 +507,20 @@ int drbd_resync_finished(drbd_dev* mdev)
 	if (!inc_local(mdev))
 		goto out;
 
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+
+	if (os.conn < Connected)
+		goto out_unlock;
+
+	ns = os;
+	ns.conn = Connected;
+
 	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
-	spin_lock_irq(&mdev->req_lock);
-	os = mdev->state;
-	ns = os;
-	if (os.conn > Connected) {
-		D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
-		ns.conn = Connected;
-	}
+	D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
+
 	if (mdev->rs_failed) {
 		INFO("            %lu failed blocks\n",mdev->rs_failed);
 
@@ -557,6 +561,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	}
 
 	_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+  out_unlock:
 	spin_unlock_irq(&mdev->req_lock);
 	dec_local(mdev);
   out:
