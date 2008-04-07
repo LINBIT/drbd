@@ -96,8 +96,9 @@ struct cn_ctl_msg {
 #ifdef __KERNEL__
 #include <linux/drbd_config.h>
 
-#if !defined(KERNEL_HAS_GFP_T)
-typedef unsigned int gfp_t;
+#ifndef KERNEL_HAS_GFP_T
+#define KERNEL_HAS_GFP_T
+typedef unsigned gfp_t;
 #endif
 
 #include <asm/atomic.h>

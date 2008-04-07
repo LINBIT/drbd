@@ -330,3 +330,8 @@ static inline void *kzalloc(size_t size, int flags)
 # undef __cond_lock
 # define __cond_lock(x,c) (c)
 #endif
+
+#ifndef KERNEL_HAS_GFP_T
+#define KERNEL_HAS_GFP_T
+typedef unsigned gfp_t;
+#endif
