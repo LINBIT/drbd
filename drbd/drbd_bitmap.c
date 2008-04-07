@@ -223,7 +223,7 @@ void drbd_bm_cleanup(struct drbd_conf *mdev)
  * this masks out the remaining bits.
  * Rerturns the number of bits cleared.
  */
-int bm_clear_surplus(struct drbd_bitmap *b)
+STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -242,7 +242,7 @@ int bm_clear_surplus(struct drbd_bitmap *b)
 	return cleared;
 }
 
-void bm_set_surplus(struct drbd_bitmap *b)
+STATIC void bm_set_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -526,7 +526,7 @@ void drbd_bm_set_all(struct drbd_conf *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-void bm_async_io_complete(struct bio *bio, int error)
+STATIC void bm_async_io_complete(struct bio *bio, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
@@ -552,7 +552,7 @@ void bm_async_io_complete(struct bio *bio, int error)
 	bio_put(bio);
 }
 
-void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw) __must_hold(local)
+STATIC void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw) __must_hold(local)
 {
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
@@ -618,7 +618,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 /*
  * bm_rw: read/write the whole bitmap from/to its on disk location.
  */
-int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
+STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	/* sector_t sector; */

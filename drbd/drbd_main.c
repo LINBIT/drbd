@@ -176,7 +176,7 @@ int _inc_local_if_state(struct drbd_conf* mdev, enum drbd_disk_state mins)
 #endif
 
 /************************* The transfer log start */
-int tl_init(struct drbd_conf *mdev)
+STATIC int tl_init(struct drbd_conf *mdev)
 {
 	struct drbd_barrier *b;
 
@@ -199,7 +199,7 @@ int tl_init(struct drbd_conf *mdev)
 	return 1;
 }
 
-void tl_cleanup(struct drbd_conf *mdev)
+STATIC void tl_cleanup(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	kfree(mdev->oldest_barrier);
@@ -402,8 +402,8 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
  * Returns TRUE if this state change should be preformed as a cluster wide
  * transaction. Of course it returns 0 as soon as the connection is lost.
  */
-int cl_wide_st_chg(struct drbd_conf *mdev,
-	union drbd_state_t os, union drbd_state_t ns)
+STATIC int cl_wide_st_chg(struct drbd_conf *mdev,
+			  union drbd_state_t os, union drbd_state_t ns)
 {
 	return ( os.conn >= Connected && ns.conn >= Connected &&
 		 ( ( os.role != Primary && ns.role == Primary ) ||
@@ -442,8 +442,8 @@ int is_valid_state_transition(struct drbd_conf *,
 int drbd_send_state_req(struct drbd_conf *,
 	union drbd_state_t, union drbd_state_t);
 
-enum set_st_err _req_st_cond(struct drbd_conf *mdev,
-			     union drbd_state_t mask, union drbd_state_t val)
+STATIC enum set_st_err _req_st_cond(struct drbd_conf *mdev,
+				    union drbd_state_t mask, union drbd_state_t val)
 {
 	union drbd_state_t os, ns;
 	unsigned long flags;
@@ -479,9 +479,9 @@ enum set_st_err _req_st_cond(struct drbd_conf *mdev,
  * transition this function even does a cluster wide transaction.
  * It has a cousin named drbd_request_state(), which is always verbose.
  */
-int drbd_req_state(struct drbd_conf *mdev,
-		   union drbd_state_t mask, union drbd_state_t val,
-		   enum chg_state_flags f)
+STATIC int drbd_req_state(struct drbd_conf *mdev,
+			  union drbd_state_t mask, union drbd_state_t val,
+			  enum chg_state_flags f)
 {
 	struct completion done;
 	unsigned long flags;
@@ -569,7 +569,7 @@ int _drbd_request_state(struct drbd_conf *mdev,	union drbd_state_t mask,
 }
 
 
-void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
+STATIC void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
 {
 	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    name,
@@ -1153,7 +1153,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 }
 
 
-int drbd_thread_setup(void *arg)
+STATIC int drbd_thread_setup(void *arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	struct drbd_conf *mdev = thi->mdev;
@@ -1193,7 +1193,7 @@ int drbd_thread_setup(void *arg)
 	return retval;
 }
 
-void drbd_thread_init(struct drbd_conf *mdev, struct Drbd_thread *thi,
+STATIC void drbd_thread_init(struct drbd_conf *mdev, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
 	spin_lock_init(&thi->t_lock);
@@ -1603,7 +1603,7 @@ int drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
  * This helper function expects the sector and block_id parameter already
  * in big endian!
  */
-int _drbd_send_ack(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
+STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 			  u64 sector,
 			  u32 blksize,
 			  u64 block_id)
@@ -1670,7 +1670,7 @@ int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
  * returns FALSE if we should retry,
  * TRUE if we think connection is dead
  */
-int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
+STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
 {
 	int drop_it;
 	/* long elapsed = (long)(jiffies - mdev->last_received); */
@@ -1715,7 +1715,7 @@ int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
+STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 		   int offset, size_t size)
 {
        int ret;
@@ -2069,7 +2069,7 @@ int drbd_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-void drbd_unplug_fn(struct request_queue *q)
+STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
 
@@ -2103,7 +2103,7 @@ void drbd_unplug_fn(struct request_queue *q)
 		drbd_kick_lo(mdev);
 }
 
-void drbd_set_defaults(struct drbd_conf *mdev)
+STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 {
 	mdev->sync_conf.after      = DRBD_AFTER_DEF;
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
@@ -2354,7 +2354,7 @@ Enomem:
 	return -ENOMEM;
 }
 
-int drbd_notify_sys(struct notifier_block *this, unsigned long code,
+STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	void *unused)
 {
 	/* just so we have it.  you never know what interessting things we
@@ -2364,7 +2364,7 @@ int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	return NOTIFY_DONE;
 }
 
-struct notifier_block drbd_notifier = {
+STATIC struct notifier_block drbd_notifier = {
 	.notifier_call = drbd_notify_sys,
 };
 
@@ -2840,7 +2840,7 @@ void drbd_md_mark_dirty(struct drbd_conf *mdev)
 }
 
 
-void drbd_uuid_move_history(struct drbd_conf *mdev) __must_hold(local)
+STATIC void drbd_uuid_move_history(struct drbd_conf *mdev) __must_hold(local)
 {
 	int i;
 
@@ -3112,7 +3112,7 @@ struct fault_random_state {
  * Crude but fast random-number generator.  Uses a linear congruential
  * generator, with occasional help from get_random_bytes().
  */
-unsigned long
+STATIC unsigned long
 _drbd_fault_random(struct fault_random_state *rsp)
 {
 	long refresh;
@@ -3126,7 +3126,7 @@ _drbd_fault_random(struct fault_random_state *rsp)
 	return swahw32(rsp->state);
 }
 
-char *
+STATIC char *
 _drbd_fault_str(unsigned int type) {
 	static char *_faults[] = {
 		"Meta-data write",
@@ -3165,7 +3165,7 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type)
 
 #ifdef ENABLE_DYNAMIC_TRACE
 
-char *_drbd_uuid_str(unsigned int idx)
+STATIC char *_drbd_uuid_str(unsigned int idx)
 {
 	static char *uuid_str[] = {
 		"Current",
@@ -3341,7 +3341,7 @@ do {								\
 	}							\
 } while (0)
 
-char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state_t val)
+STATIC char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state_t val)
 {
 	char *op = p;
 	*p = '\0';
@@ -3369,7 +3369,7 @@ do { \
 	} \
 } while (0)
 
-char *_dump_block_id(u64 block_id, char *buff)
+STATIC char *_dump_block_id(u64 block_id, char *buff)
 {
     if (is_syncer_block_id(block_id))
 	strcpy(buff, "SyncerId");

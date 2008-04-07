@@ -125,7 +125,11 @@ extern char usermode_helper[];
 
 struct drbd_conf;
 
-#define STATIC
+#ifdef DBG_ALL_SYMBOLS
+# define STATIC
+#else
+# define STATIC static
+#endif
 
 #ifdef PARANOIA
 # define PARANOIA_BUG_ON(x) BUG_ON(x)

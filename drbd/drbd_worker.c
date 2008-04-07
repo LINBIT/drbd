@@ -798,7 +798,7 @@ STATIC void drbd_global_unlock(void) __releases(drbd_global_lock)
 	__release(drbd_global_lock);
 }
 
-int _drbd_may_sync_now(struct drbd_conf *mdev)
+STATIC int _drbd_may_sync_now(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev = mdev;
 
@@ -820,7 +820,7 @@ int _drbd_may_sync_now(struct drbd_conf *mdev)
  * pause their resynchronisation.
  * Called from process context only ( ioctl and after_state_ch ).
  */
-int _drbd_pause_after(struct drbd_conf *mdev)
+STATIC int _drbd_pause_after(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev;
 	int i, rv = 0;
@@ -845,7 +845,7 @@ int _drbd_pause_after(struct drbd_conf *mdev)
  * process, and causes them to resume.
  * Called from process context only ( ioctl and worker ).
  */
-int _drbd_resume_next(struct drbd_conf *mdev)
+STATIC int _drbd_resume_next(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev;
 	int i, rv = 0;

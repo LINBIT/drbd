@@ -366,7 +366,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 }
 
 
-int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	struct primary primary_args;
@@ -383,7 +383,7 @@ int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_set_role(mdev, Secondary, 0);
@@ -393,7 +393,7 @@ int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 /* initializes the md.*_offset members, so we are able to find
  * the on disk meta data */
-void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
+STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
@@ -582,7 +582,7 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
  * -ENOMEM when allocation failed, and 0 on success. You should call
  * drbd_md_sync() after you called this function.
  */
-int drbd_check_al_size(struct drbd_conf *mdev)
+STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;
@@ -690,7 +690,7 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 
 /* does always return 0;
  * interesting return code is in reply->ret_code */
-int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
@@ -1042,7 +1042,7 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	fsync_bdev(mdev->this_bdev);
@@ -1056,7 +1056,7 @@ int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 #define HMAC_NAME_L 20
 
-int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			    struct drbd_nl_cfg_reply *reply)
 {
 	int i, ns;
@@ -1247,7 +1247,7 @@ fail:
 	return 0;
 }
 
-int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode;
@@ -1309,8 +1309,8 @@ void resync_after_online_grow(struct drbd_conf *mdev)
 		drbd_request_state(mdev,NS(conn,WFSyncUUID));
 }
 
-int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
-		   struct drbd_nl_cfg_reply *reply)
+STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+			  struct drbd_nl_cfg_reply *reply)
 {
 	struct resize rs;
 	int retcode = NoError;
@@ -1365,7 +1365,7 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1440,7 +1440,7 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS2(conn, StartingSyncT,
@@ -1448,7 +1448,7 @@ int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				   struct drbd_nl_cfg_reply *reply)
 {
 
@@ -1458,7 +1458,7 @@ int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1470,7 +1470,7 @@ int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1482,7 +1482,7 @@ int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(susp, 1));
@@ -1490,21 +1490,21 @@ int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_resume_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_resume_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(susp, 0));
 	return 0;
 }
 
-int drbd_nl_outdate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_outdate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev,NS(disk,Outdated));
 	return 0;
 }
 
-int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1527,7 +1527,7 @@ int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1540,7 +1540,7 @@ int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1565,8 +1565,8 @@ int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 }
 
 
-int drbd_nl_get_timeout_flag(struct drbd_conf *mdev,
-	struct drbd_nl_cfg_req *nlp, struct drbd_nl_cfg_reply *reply)
+STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+				    struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
 
@@ -1582,7 +1582,7 @@ int drbd_nl_get_timeout_flag(struct drbd_conf *mdev,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
+STATIC struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
 	struct drbd_conf *mdev;
 

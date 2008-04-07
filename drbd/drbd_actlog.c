@@ -34,10 +34,10 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-int _drbd_md_sync_page_io(struct drbd_conf *mdev,
-			  struct drbd_backing_dev *bdev,
-			  struct page *page, sector_t sector,
-			  int rw, int size)
+STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
+				 struct drbd_backing_dev *bdev,
+				 struct page *page, sector_t sector,
+				 int rw, int size)
 {
 	struct bio *bio;
 	struct drbd_md_io md_io;
@@ -398,10 +398,10 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
  * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
  * record.
  */
-int drbd_al_read_tr(struct drbd_conf *mdev,
-		    struct drbd_backing_dev *bdev,
-		    struct al_transaction *b,
-		    int index)
+STATIC int drbd_al_read_tr(struct drbd_conf *mdev,
+			   struct drbd_backing_dev *bdev,
+			   struct al_transaction *b,
+			   int index)
 {
 	sector_t sector;
 	int rv, i;
@@ -550,7 +550,7 @@ struct drbd_atodb_wait {
 	int                error;
 };
 
-void atodb_endio(struct bio *bio, int error)
+STATIC void atodb_endio(struct bio *bio, int error)
 {
 	struct drbd_atodb_wait *wc = bio->bi_private;
 	struct drbd_conf *mdev = wc->mdev;
@@ -582,10 +582,10 @@ void atodb_endio(struct bio *bio, int error)
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 /* activity log to on disk bitmap -- prepare bio unless that sector
  * is already covered by previously prepared bios */
-int atodb_prepare_unless_covered(struct drbd_conf *mdev,
-			     struct bio **bios,
-			     unsigned int enr,
-			     struct drbd_atodb_wait *wc) __must_hold(local)
+STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
+					struct bio **bios,
+					unsigned int enr,
+					struct drbd_atodb_wait *wc) __must_hold(local)
 {
 	struct bio *bio;
 	struct page *page;
@@ -829,7 +829,7 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 	wake_up(&mdev->al_wait);
 }
 
-int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work *)w;
 
@@ -864,7 +864,7 @@ int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
+STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				      int count, int success)
 {
 	struct bm_extent *ext;
