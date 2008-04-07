@@ -742,7 +742,6 @@ enum {
 				   so don't even try */
 	BITMAP_IO,		/* Let user IO drain */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
-	RESYNC_FINISHED,
 };
 
 struct drbd_bitmap; // opaque for Drbd_Conf

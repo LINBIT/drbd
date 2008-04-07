@@ -493,11 +493,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 		ERR("Warn failed to drbd_rs_del_all() and to kmalloc(w).\n");
 	}
 
-	/* drbd_resync_finished() might be called multiple times, if
-	   the bitmap becomes cleared by app IO writes. */
-	if (test_and_set_bit(RESYNC_FINISHED, &mdev->flags))
-		return 1;
-
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0) dt=1;
 	db = mdev->rs_total;
@@ -510,7 +505,9 @@ int drbd_resync_finished(drbd_dev* mdev)
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
 
-	if (os.conn < Connected)
+	/* This protects us against multiple calls (that can happen in the presence
+	   of application IO), and against connectivity loss just before we arrive here. */
+	if (os.conn <= Connected)
 		goto out_unlock;
 
 	ns = os;
@@ -575,8 +572,6 @@ int drbd_resync_finished(drbd_dev* mdev)
 	}
 
 	drbd_bm_recount_bits(mdev);
-
-	clear_bit(RESYNC_FINISHED, &mdev->flags);
 
 	return 1;
 }
