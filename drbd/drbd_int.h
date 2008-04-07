@@ -41,10 +41,10 @@
 #include "lru_cache.h"
 
 #ifdef __CHECKER__
-# define __protected_by(x)       __attribute__((require_context(x,1,999,2)))
-# define __protected_read_by(x)  __attribute__((require_context(x,1,999,0)))
-# define __protected_write_by(x) __attribute__((require_context(x,1,999,1)))
-# define __must_hold(x)       __attribute__((context(x,1,1), require_context(x,1,999,3)))
+# define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
+# define __protected_read_by(x)  __attribute__((require_context(x,1,999,"read")))
+# define __protected_write_by(x) __attribute__((require_context(x,1,999,"write")))
+# define __must_hold(x)       __attribute__((context(x,1,1), require_context(x,1,999,"call")))
 #else
 # define __protected_by(x)
 # define __protected_read_by(x)
@@ -53,6 +53,23 @@
 #endif
 
 #define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
+
+/* Compatibility for older kernels */
+#ifndef __acquires
+# ifdef __CHECKER__
+#  define __acquires(x)	__attribute__((context(x,0,1)))
+#  define __releases(x)	__attribute__((context(x,1,0)))
+#  define __acquire(x)	__context__(x,1)
+#  define __release(x)	__context__(x,-1)
+#  define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
+# else
+#  define __acquires(x)
+#  define __releases(x)
+#  define __acquire(x)	(void)0
+#  define __release(x)	(void)0
+#  define __cond_lock(x,c) (c)
+# endif
+#endif
 
 // module parameter, defined in drbd_main.c
 extern int minor_count;
