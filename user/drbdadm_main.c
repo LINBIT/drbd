@@ -683,13 +683,11 @@ static inline const char* shell_escape(char* s)
 	if (s == NULL)
 		return s;
 
-	while (1) {
+	while (*s) {
 		if (buffer + sizeof(buffer) < c+2)
 			break;
 
 		switch(*s) {
-		case 0: /* terminator */
-			break;
 		/* set of 'clean' characters */
 		case '%': case '+': case '-': case '.': case '/':
 		case '0' ... '9':
@@ -1562,22 +1560,27 @@ int check_uniq(const char* what, const char *fmt, ...)
 int sanity_check_abs_cmd(char* cmd_name)
 {
   struct stat sb;
-  int err;
 
-  if ( (err=stat(cmd_name,&sb)) ) {
+  if (stat(cmd_name,&sb)) {
+    /* If stat fails, just ignore this sanity check,
+     * we are still iterating over $PATH probably. */
     return 0;
   }
 
   if(!sb.st_mode&S_ISUID || sb.st_mode&S_IXOTH || sb.st_gid==0) {
-    fprintf(stderr,"WARN:\n"
-	    "  You are using the 'drbd-peer-outdater' as outdate-peer program.\n"
-	    "  If you use that mechanism the dopd heartbeat plugin program needs\n"
-	    "  to be able to call drbdsetup and drbdmeta with root privileges.\n\n"
-	    "  You need to fix this with these commands:\n"
-	    "  chgrp haclient %s\n"
-	    "  chmod o-x %s\n"
-	    "  chmod u+s %s\n\n\n",
-	    cmd_name,cmd_name,cmd_name);
+    static int did_header = 0;
+    if (!did_header)
+      fprintf(stderr,
+	"WARN:\n"
+	"  You are using the 'drbd-peer-outdater' as outdate-peer program.\n"
+	"  If you use that mechanism the dopd heartbeat plugin program needs\n"
+	"  to be able to call drbdsetup and drbdmeta with root privileges.\n\n"
+	"  You need to fix this with these commands:\n");
+    did_header = 1;
+    fprintf(stderr,
+	"  chgrp haclient %s\n"
+	"  chmod o-x %s\n"
+	"  chmod u+s %s\n\n", cmd_name, cmd_name, cmd_name);
   }
   return 1;
 }
@@ -1606,14 +1609,53 @@ void sanity_check_cmd(char* cmd_name)
   }
 }
 
+/* if the config file is not readable by haclient,
+ * dopd cannot work.
+ * NOTE: we assume that any gid != 0 will be the group dopd will run as,
+ * typically haclient. */
+void sanity_check_conf(char *c)
+{
+	struct stat sb;
+
+	/* if we cannot stat the config file,
+	* we have other things to worry about. */
+	if (stat(c,&sb))
+		return;
+
+	/* permissions are funny: if it is world readable,
+	 * but not group readable, and it belongs to my group,
+	 * I am denied access.
+	 * For the file to be readable by dopd (hacluster:haclient),
+	 * it is not enough to be world readable. */
+
+	/* ok if world readable, and NOT group haclient (see NOTE above) */
+	if (sb.st_mode & S_IROTH && sb.st_gid == 0)
+		return;
+
+	/* ok if group readable, and group haclient (see NOTE above) */
+	if (sb.st_mode & S_IRGRP && sb.st_gid != 0)
+		return;
+
+	fprintf(stderr,
+		"WARN:\n"
+		"  You are using the 'drbd-peer-outdater' as outdate-peer program.\n"
+		"  If you use that mechanism the dopd heartbeat plugin program needs\n"
+		"  to be able to read the drbd.config file.\n\n"
+		"  You need to fix this with these commands:\n"
+		"  chgrp haclient %s\n"
+		"  chmod g+r %s\n\n", c, c);
+}
+
 void sanity_check_perm()
 {
   static int checked=0;
-
-  if(checked) return;
+  if (checked)
+	  return;
 
   sanity_check_cmd(drbdsetup);
   sanity_check_cmd(drbdmeta);
+  sanity_check_conf(config_file);
+  checked = 1;
 }
 
 void validate_resource(struct d_resource * res)

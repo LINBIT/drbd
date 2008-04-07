@@ -82,7 +82,9 @@ static const char *drbd_state_sw_errors[] = {
 		"Device is diskless, the requesed operation requires a disk",
 	[-SS_DeviceInUse] = "Device is held open by someone",
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
-	[-SS_LowerThanOutdated] = "Disk state is lower than outdated"
+	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
+	[-SS_InTransientState] = "In transient state, retry after next state change",
+	[-SS_ConcurrentStChg] = "Concurrent state changes detected and aborted"
 };
 
 const char *conns_to_name(enum drbd_conns s)

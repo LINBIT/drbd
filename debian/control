@@ -3,7 +3,7 @@ Section: admin
 Priority: extra
 Maintainer: Cyril Bouthors <cyril@bouthors.org>
 Uploaders: David Krovich <dkrovich@csee.wvu.edu>, Philipp Hug <debian@hug.cx>
-Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, bison, flex, dpatch
+Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, flex, dpatch
 Standards-Version: 3.6.2.1
 
 Package: drbd8-utils

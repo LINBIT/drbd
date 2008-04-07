@@ -36,8 +36,40 @@
 #include <linux/slab.h>
 #include <linux/crypto.h>
 #include <linux/tcp.h>
+#include <linux/mutex.h>
 #include <net/tcp.h>
 #include "lru_cache.h"
+
+#ifdef __CHECKER__
+# define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
+# define __protected_read_by(x)  __attribute__((require_context(x,1,999,"read")))
+# define __protected_write_by(x) __attribute__((require_context(x,1,999,"write")))
+# define __must_hold(x)       __attribute__((context(x,1,1), require_context(x,1,999,"call")))
+#else
+# define __protected_by(x)
+# define __protected_read_by(x)
+# define __protected_write_by(x)
+# define __must_hold(x)
+#endif
+
+#define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
+
+/* Compatibility for older kernels */
+#ifndef __acquires
+# ifdef __CHECKER__
+#  define __acquires(x)	__attribute__((context(x,0,1)))
+#  define __releases(x)	__attribute__((context(x,1,0)))
+#  define __acquire(x)	__context__(x,1)
+#  define __release(x)	__context__(x,-1)
+#  define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
+# else
+#  define __acquires(x)
+#  define __releases(x)
+#  define __acquire(x)	(void)0
+#  define __release(x)	(void)0
+#  define __cond_lock(x,c) (c)
+# endif
+#endif
 
 /* module parameter, defined in drbd_main.c */
 extern int minor_count;
@@ -702,6 +734,7 @@ enum {
 				   so don't even try */
 	BITMAP_IO,		/* Let user IO drain */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
+	RESYNC_FINISHED,
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -795,7 +828,7 @@ struct drbd_conf {
 	/* configured by drbdsetup */
 	struct net_conf *net_conf; /* protected by inc_net() and dec_net() */
 	struct syncer_conf sync_conf;
-	struct drbd_backing_dev *bc; /* protected by inc_local() dec_local() */
+	struct drbd_backing_dev *bc __protected_by(local);
 
 	sector_t p_size;     /* partner's disk size */
 	struct request_queue *rq_queue;
@@ -900,6 +933,8 @@ struct drbd_conf {
 	int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	struct bm_io_work bm_io_work;
+	u64 ed_uuid; /* UUID of the exposed data */
+	struct mutex state_mutex;
 };
 
 static inline struct drbd_conf *minor_to_mdev(int minor)
@@ -941,7 +976,6 @@ static inline void drbd_put_data_sock(struct drbd_conf *mdev)
 	up(&mdev->data.mutex);
 }
 
-
 /*
  * function declarations
  *************************/
@@ -951,6 +985,9 @@ static inline void drbd_put_data_sock(struct drbd_conf *mdev)
 enum chg_state_flags {
 	ChgStateHard	= 1,
 	ChgStateVerbose = 2,
+	ChgWaitComplete = 4,
+	ChgSerialize    = 8,
+	ChgOrdered      = ChgWaitComplete + ChgSerialize,
 };
 
 extern void drbd_init_set_defaults(struct drbd_conf *mdev);
@@ -961,12 +998,11 @@ extern void drbd_force_state(struct drbd_conf *, union drbd_state_t,
 extern int _drbd_request_state(struct drbd_conf *, union drbd_state_t,
 			union drbd_state_t, enum chg_state_flags);
 extern int _drbd_set_state(struct drbd_conf *, union drbd_state_t,
-			enum chg_state_flags );
+			   enum chg_state_flags, struct completion *done);
 extern void print_st_err(struct drbd_conf *, union drbd_state_t,
 			union drbd_state_t, int );
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
-extern void drbd_thread_signal(struct Drbd_thread *thi);
 extern void drbd_free_resources(struct drbd_conf *mdev);
 extern void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		       unsigned int set_size);
@@ -1021,13 +1057,13 @@ extern void drbd_mdev_cleanup(struct drbd_conf *mdev);
 extern void drbd_md_sync(struct drbd_conf *mdev);
 extern int  drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev);
 /* maybe define them below as inline? */
-extern void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val);
-extern void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val);
-extern void drbd_uuid_new_current(struct drbd_conf *mdev);
-extern void _drbd_uuid_new_current(struct drbd_conf *mdev);
-extern void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val);
-extern void drbd_md_set_flag(struct drbd_conf *mdev, int flags);
-extern void drbd_md_clear_flag(struct drbd_conf *mdev, int flags);
+extern void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local);
+extern void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local);
+extern void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local);
+extern void _drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local);
+extern void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local);
+extern void drbd_md_set_flag(struct drbd_conf *mdev, int flags) __must_hold(local);
+extern void drbd_md_clear_flag(struct drbd_conf *mdev, int flags)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
 extern void drbd_md_mark_dirty(struct drbd_conf *mdev);
 extern void drbd_queue_bitmap_io(struct drbd_conf *mdev,
@@ -1180,9 +1216,9 @@ extern int  drbd_bm_clear_bits(
 		struct drbd_conf *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_test_bit(struct drbd_conf *mdev, unsigned long bitnr);
 extern int  drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr);
-extern int  drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr);
-extern int  drbd_bm_read(struct drbd_conf *mdev);
-extern int  drbd_bm_write(struct drbd_conf *mdev);
+extern int  drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(local);
+extern int  drbd_bm_read(struct drbd_conf *mdev) __must_hold(local);
+extern int  drbd_bm_write(struct drbd_conf *mdev) __must_hold(local);
 extern unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev,
 		unsigned long al_enr);
 extern size_t	     drbd_bm_words(struct drbd_conf *mdev);
@@ -1345,9 +1381,9 @@ extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_conf *,
 		struct drbd_backing_dev *);
 enum determin_dev_size_enum { dev_size_error = -1, unchanged = 0, shrunk = 1, grew = 2 };
-extern enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *);
+extern enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_conf *);
-extern void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int);
+extern void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int) __must_hold(local);
 extern int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role,
 		int force);
 extern int drbd_ioctl(struct inode *inode, struct file *file,
@@ -1389,7 +1425,7 @@ extern struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 					    u64 id,
 					    sector_t sector,
 					    unsigned int data_size,
-					    unsigned int gfp_mask);
+					    gfp_t gfp_mask) __must_hold(local);
 extern void drbd_free_ee(struct drbd_conf *mdev, struct Tl_epoch_entry *e);
 extern void drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 		struct list_head *head);
@@ -1513,7 +1549,7 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
 				     union drbd_state_t mask,
 				     union drbd_state_t val)
 {
-	return _drbd_request_state(mdev, mask, val, ChgStateVerbose);
+	return _drbd_request_state(mdev, mask, val, ChgStateVerbose + ChgOrdered);
 }
 
 /**
@@ -1533,7 +1569,7 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 	case Detach:
 	case CallIOEHelper:
 		if (mdev->state.disk > Failed) {
-			_drbd_set_state(_NS(mdev, disk, Failed), ChgStateHard);
+			_drbd_set_state(_NS(mdev, disk, Failed), ChgStateHard, NULL);
 			ERR("Local IO failed. Detaching...\n");
 		}
 		break;
@@ -1808,24 +1844,23 @@ static inline int inc_net(struct drbd_conf *mdev)
 	return have_net_conf;
 }
 
-/* strictly speaking,
- * these would have to hold the req_lock while looking at
- * the disk state. But since we cannot submit within a spinlock,
- * this is mood...
- */
-
-static inline void dec_local(struct drbd_conf *mdev)
-{
-	if (atomic_dec_and_test(&mdev->local_cnt))
-		wake_up(&mdev->misc_wait);
-	D_ASSERT(atomic_read(&mdev->local_cnt) >= 0);
-}
 /**
  * inc_local: Returns TRUE when local IO is possible. If it returns
  * TRUE you should call dec_local() after IO is completed.
  */
-static inline int inc_local_if_state(struct drbd_conf *mdev,
-	enum drbd_disk_state mins)
+#define inc_local_if_state(M,MINS) __cond_lock(local, _inc_local_if_state(M,MINS))
+#define inc_local(M) __cond_lock(local, _inc_local_if_state(M,Inconsistent))
+
+static inline void dec_local(struct drbd_conf *mdev)
+{
+	__release(local);
+	if (atomic_dec_and_test(&mdev->local_cnt))
+		wake_up(&mdev->misc_wait);
+	D_ASSERT(atomic_read(&mdev->local_cnt) >= 0);
+}
+
+#ifndef __CHECKER__
+static inline int _inc_local_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
 {
 	int io_allowed;
 
@@ -1835,10 +1870,9 @@ static inline int inc_local_if_state(struct drbd_conf *mdev,
 		dec_local(mdev);
 	return io_allowed;
 }
-static inline int inc_local(struct drbd_conf *mdev)
-{
-	return inc_local_if_state(mdev, Inconsistent);
-}
+#else
+extern int _inc_local_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins);
+#endif
 
 /* you must have an "inc_local" reference */
 static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
@@ -1893,17 +1927,18 @@ static inline int drbd_get_max_buffers(struct drbd_conf *mdev)
 
 static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 {
+	const unsigned int cs = mdev->state.conn;
+	const unsigned int ds = mdev->state.disk;
 	int mxb = drbd_get_max_buffers(mdev);
 	if (mdev->state.susp)
 		return 0;
-	/* Do not remove the following two, they are still necessary, even in
-	   the presence of the BITMAP_IO flag, since they ensure that between
-	   drbd_send_bitmap() and receive_bitmap() nothing gets modified in
-	   the bitmap */
-	if (mdev->state.conn == WFBitMapS)
+	/* to avoid deadlock or bitmap corruption, we need to lock out
+	 * application io during attaching and bitmap exchange */
+	if (Attaching <= ds && ds <= Negotiating)
 		return 0;
-	if (mdev->state.conn == WFBitMapT)
+	if (cs == WFBitMapS || cs == WFBitMapT || cs == WFReportParams)
 		return 0;
+
 	/* since some older kernels don't have atomic_add_unless,
 	 * and we are within the spinlock anyways, we have this workaround.  */
 	if (atomic_read(&mdev->ap_bio_cnt) > mxb)
@@ -1954,6 +1989,15 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
 			drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
 	}
+}
+
+static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
+{
+	mdev->ed_uuid = val;
+
+	MTRACE(TraceTypeUuid,TraceLvlMetrics,
+	       INFO(" exposed data uuid now %016llX\n",val);
+		);
 }
 
 static inline int seq_cmp(u32 a, u32 b)
@@ -2015,15 +2059,9 @@ static inline void drbd_blk_run_queue(struct request_queue *q)
 
 static inline void drbd_kick_lo(struct drbd_conf *mdev)
 {
-	if (!mdev->bc->backing_bdev) {
-		if (DRBD_ratelimit(5*HZ, 5)) {
-			ERR("backing_bdev==NULL in drbd_kick_lo! "
-			    "The following call trace is for "
-			    "debuggin purposes only. Don't worry.\n");
-			dump_stack();
-		}
-	} else {
+	if (inc_local(mdev)) {
 		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
+		dec_local(mdev);
 	}
 }
 #endif

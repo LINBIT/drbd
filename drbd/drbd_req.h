@@ -299,7 +299,7 @@ static inline struct drbd_request *drbd_req_new(struct drbd_conf *mdev,
 
 		bio->bi_private  = req;
 		bio->bi_end_io   = drbd_endio_pri;
-		bio->bi_next    = 0;
+		bio->bi_next     = NULL;
 	}
 	return req;
 }

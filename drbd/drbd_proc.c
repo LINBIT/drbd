@@ -218,18 +218,11 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 		     mdev->state.conn == SyncTarget )
 			drbd_syncer_progress(mdev, seq);
 
-		if (mdev->resync)
+		if (inc_local_if_state(mdev, Failed)) {
 			lc_printf_stats(seq, mdev->resync);
-
-		if (mdev->act_log)
 			lc_printf_stats(seq, mdev->act_log);
-
-#ifdef DRBD_DUMP_RESYNC_DETAIL
-		if (mdev->resync) {
-			lc_dump(mdev->resync, seq, "rs_left",
-				resync_dump_detail);
+			dec_local(mdev);
 		}
-#endif
 
 	}
 

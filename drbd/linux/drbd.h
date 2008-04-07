@@ -129,6 +129,16 @@ enum ret_codes {
 	HaveNoDiskConfig,
 	ProtocolCRequired,
 	VMallocFailed,
+	IntegrityAlgNotAvail,	/* DRBD 8.2 only */
+	IntegrityAlgNotDigest,	/* DRBD 8.2 only */
+	CPUMaskParseFailed,	/* DRBD 8.2 only */
+	CSUMSAlgNotAvail,	/* DRBD 8.2 only */
+	CSUMSAlgNotDigest,	/* DRBD 8.2 only */
+	VERIFYAlgNotAvail,	/* DRBD 8.2 only */
+	VERIFYAlgNotDigest,	/* DRBD 8.2 only */
+	CSUMSResyncRunning,	/* DRBD 8.2 only */
+	VERIFYIsRunning,	/* DRBD 8.2 only */
+	DataOfWrongCurrent,
 
 	/* insert new ones above this line */
 	AfterLastRetCode
@@ -260,7 +270,9 @@ enum set_st_err {
 	SS_IsDiskLess = -11,
 	SS_DeviceInUse = -12,
 	SS_NoNetConfig = -13,
-	SS_LowerThanOutdated = -14
+	SS_LowerThanOutdated = -14,
+	SS_InTransientState = -15,  /* Retry after the next state change */
+	SS_ConcurrentStChg = -16,   /* Concurrent cluster side state change! */
 };
 
 /* from drbd_strings.c */

@@ -63,6 +63,7 @@ extern void drbd_endio_pri(struct bio *bio, int error);
 static inline void drbd_generic_make_request(struct drbd_conf *mdev,
 					     int fault_type, struct bio *bio)
 {
+	__release(local);
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
 				"bio->bi_bdev == NULL\n",
@@ -273,4 +274,14 @@ static inline void *kzalloc(size_t size, int flags)
 
 	return rv;
 }
+#endif
+
+#ifndef __CHECKER__
+# undef __cond_lock
+# define __cond_lock(x,c) (c)
+#endif
+
+#ifndef KERNEL_HAS_GFP_T
+#define KERNEL_HAS_GFP_T
+typedef unsigned gfp_t;
 #endif

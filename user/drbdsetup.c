@@ -60,9 +60,9 @@
 #endif
 
 enum usage_type {
-  BRIEF,
-  FULL,
-  XML,
+	BRIEF,
+	FULL,
+	XML,
 };
 
 struct drbd_tag_list {
@@ -124,7 +124,7 @@ struct drbd_cmd {
 		} gp; // for generic_get_cmd, get_usage
 		struct {
 			struct option *options;
-			int (*proc_event)(unsigned int, int, 
+			int (*proc_event)(unsigned int, int,
 					  struct drbd_nl_cfg_reply *);
 		} ep; // for events_cmd, events_usage
 	};
@@ -280,6 +280,8 @@ struct drbd_cmd commands[] = {
 		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
 		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
 		 { "use-bmbv",'b',	T_use_bmbv,     EB },
+		 { "no-disk-flushes",'i',T_no_disk_flush,EB },
+		 { "no-md-flushes",'m', T_no_md_flush,  EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },
@@ -351,6 +353,8 @@ struct drbd_cmd commands[] = {
 		wait_cmds_options, w_synced_state } } },
 };
 
+#define OTHER_ERROR 900
+
 #define EM(C) [ C - RetCodeBase ]
 
 static const char *error_messages[] = {
@@ -396,7 +400,8 @@ static const char *error_messages[] = {
 	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
 	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
 	EM(ProtocolCRequired) = "Protocol C required",
-	EM(VMallocFailed) = "vmalloc() failed. Out of memory?"
+	EM(VMallocFailed) = "vmalloc() failed. Out of memory?",
+	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
@@ -626,7 +631,7 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 
 	add_tag(tl,od->tag,&bit,sizeof(bit));
 
-	return 0;
+	return NoError;
 }
 
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
@@ -644,7 +649,7 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 		unit[0] = unit_prefix > 1 ? unit_prefix : 0;
 		fprintf(stderr,"%s %s => %llu%s out of range [%llu..%llu]%s\n",
 			od->name, arg, l, unit, min, max, unit);
-		return(20);
+		return OTHER_ERROR;
 	}
 
 	switch(tag_type(od->tag)) {
@@ -658,7 +663,7 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	default:
 		fprintf(stderr, "internal error in conv_numeric()\n");
 	}
-	return 0;
+	return NoError;
 
 }
 
@@ -672,19 +677,19 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 		if(handler_names[i]==NULL) continue;
 		if(strcmp(arg,handler_names[i])==0) {
 			add_tag(tl,od->tag,&i,sizeof(i));
-			return 0;
+			return NoError;
 		}
 	}
 
 	fprintf(stderr, "Handler not known\n");
-	return 20;
+	return OTHER_ERROR;
 }
 
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	add_tag(tl,od->tag,arg,strlen(arg)+1);
 
-	return 0;
+	return NoError;
 }
 
 struct option *	make_longoptions(struct drbd_option* od)
@@ -736,13 +741,14 @@ struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 	return NULL;
 }
 
-int print_config_error( struct drbd_nl_cfg_reply *reply)
+int print_config_error(int err_no)
 {
-	int err_no = reply->ret_code;
 	int rv=0;
 
-	if (err_no == NoError) return rv;
-	if (err_no == SS_Success) return rv;
+	if (err_no == NoError || err_no == SS_Success)
+		return 0;
+	if (err_no == OTHER_ERROR)
+		return 20;
 
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
 	     ( err_no > SS_CW_NoNeed || err_no < SS_LowerThanOutdated) ) {
@@ -771,7 +777,7 @@ int print_config_error( struct drbd_nl_cfg_reply *reply)
 
 #define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
 
-int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
 	struct drbd_nl_cfg_reply *reply;
@@ -779,7 +785,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	struct drbd_option *od;
 	struct option *lo;
 	struct drbd_tag_list *tl;
-	int c,i=1,rv=0,sk_nl;
+	int c,i=1,rv=NoError,sk_nl;
 	int flags=0;
 
 	tl = create_tag_list(4096);
@@ -792,7 +798,8 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			break;
 		}
 		rv |= ad->convert_function(ad,tl,argv[i++]);
-		if(rv) break;
+		if (rv != NoError)
+			break;
 		ad++;
 	}
 
@@ -811,16 +818,18 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 				rv=20;
 			}
 		}
-		if(rv) break;
+		if (rv != NoError)
+			break;
 	}
 
 	add_tag(tl,TT_END,NULL,0); // close the tag list
 
-	if(rv == 0) {
+	if(rv == NoError) {
 		//dump_tag_list(tl->tag_list_start);
 		int received;
 		sk_nl = open_cn();
-		if(sk_nl < 0) return 20;
+		if(sk_nl < 0)
+			return OTHER_ERROR;
 
 		tl->drbd_p_header->packet_type = cm->packet_id;
 		tl->drbd_p_header->drbd_minor = minor;
@@ -833,12 +842,17 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		if (received >= 0) {
 			reply = (struct drbd_nl_cfg_reply *)
 				((struct cn_msg *)NLMSG_DATA(buffer))->data;
-			rv = print_config_error(reply);
+			rv = reply->ret_code;
 		}
 	}
 	free_tag_list(tl);
 
 	return rv;
+}
+
+int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+{
+	return print_config_error(_generic_config_cmd(cm, minor, argc, argv));
 }
 
 #define ASSERT(exp) if (!(exp)) \
@@ -1020,7 +1034,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
 
 	if (reply->ret_code != NoError)
-		return print_config_error(reply);
+		return print_config_error(reply->ret_code);
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
 
@@ -1180,20 +1194,23 @@ static struct drbd_cmd *find_cmd_by_name(const char* name)
 int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	int rv;
+	int success;
 
 	if(argc > 1) {
 		fprintf(stderr,"Ignoring excess arguments\n");
 	}
 
 	cm = find_cmd_by_name("secondary");
-	rv = cm->function(cm,minor,argc,argv);
-	if( rv ) return rv;
+	rv = _generic_config_cmd(cm, minor, argc, argv); // No error messages
+	if (rv == MinorNotKnown)
+		return 0;
+	success = (rv >= SS_Success && rv < RetCodeBase) || rv == NoError;
+	if (!success)
+		return print_config_error(rv);
 	cm = find_cmd_by_name("disconnect");
 	cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");
-	rv |= cm->function(cm,minor,argc,argv);
-
-	return rv;
+	return cm->function(cm,minor,argc,argv);
 }
 
 int print_state(unsigned int seq, int u __attribute((unused)),

@@ -81,7 +81,7 @@ void drbd_md_io_complete(struct bio *bio, int error)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-void drbd_endio_read_sec(struct bio *bio, int error)
+void drbd_endio_read_sec(struct bio *bio, int error) __releases(local)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
@@ -122,7 +122,7 @@ void drbd_endio_read_sec(struct bio *bio, int error)
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-void drbd_endio_write_sec(struct bio *bio, int error)
+void drbd_endio_write_sec(struct bio *bio, int error) __releases(local)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
@@ -447,7 +447,7 @@ next_sector:
 	return 1;
 }
 
-int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
+STATIC int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	kfree(w);
 
@@ -458,8 +458,8 @@ int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 int drbd_resync_finished(struct drbd_conf *mdev)
 {
-	unsigned long db, dt, dbdt;
-	int dstate, pdstate;
+	unsigned long db,dt,dbdt;
+	union drbd_state_t os, ns;
 	struct drbd_work *w;
 
 	/* Remove all elements from the resync LRU. Since future actions
@@ -483,12 +483,30 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 		ERR("Warn failed to drbd_rs_del_all() and to kmalloc(w).\n");
 	}
 
+	/* drbd_resync_finished() might be called multiple times, if
+	   the bitmap becomes cleared by app IO writes. */
+	if (test_and_set_bit(RESYNC_FINISHED, &mdev->flags))
+		return 1;
+
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0)
 		dt = 1;
 	db = mdev->rs_total;
 	dbdt = Bit2KB(db/dt);
 	mdev->rs_paused /= HZ;
+
+	if (!inc_local(mdev))
+		goto out;
+
+	spin_lock_irq(&mdev->req_lock);
+	os = mdev->state;
+
+	if (os.conn < Connected)
+		goto out_unlock;
+
+	ns = os;
+	ns.conn = Connected;
+
 	INFO("Resync done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
@@ -497,19 +515,18 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	if (mdev->rs_failed) {
 		INFO("            %lu failed blocks\n", mdev->rs_failed);
 
-		if (mdev->state.conn == SyncTarget ||
-		    mdev->state.conn == PausedSyncT) {
-			dstate = Inconsistent;
-			pdstate = UpToDate;
+		if (os.conn == SyncTarget || os.conn == PausedSyncT) {
+			ns.disk = Inconsistent;
+			ns.pdsk = UpToDate;
 		} else {
-			dstate = UpToDate;
-			pdstate = Inconsistent;
+			ns.disk = UpToDate;
+			ns.pdsk = Inconsistent;
 		}
 	} else {
-		dstate = pdstate = UpToDate;
+		ns.disk = UpToDate;
+		ns.pdsk = UpToDate;
 
-		if (mdev->state.conn == SyncTarget ||
-		    mdev->state.conn == PausedSyncT) {
+		if (os.conn == SyncTarget || os.conn == PausedSyncT) {
 			if (mdev->p_uuid) {
 				int i;
 				for (i = Bitmap ; i <= History_end ; i++)
@@ -532,6 +549,11 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 		}
 	}
 
+	_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+  out_unlock:
+	spin_unlock_irq(&mdev->req_lock);
+	dec_local(mdev);
+  out:
 	mdev->rs_total  = 0;
 	mdev->rs_failed = 0;
 	mdev->rs_paused = 0;
@@ -543,11 +565,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 
 	drbd_bm_recount_bits(mdev);
 
-	drbd_request_state(mdev, NS3(conn, Connected,
-				    disk, dstate,
-				    pdsk, pdstate));
-
-	drbd_md_sync(mdev);
+	clear_bit(RESYNC_FINISHED, &mdev->flags);
 
 	return 1;
 }
@@ -748,21 +766,23 @@ int w_send_read_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-void drbd_global_lock(void)
+STATIC void drbd_global_lock(void) __acquires(drbd_global_lock)
 {
 	struct drbd_conf *mdev;
 	int i;
 
+	__acquire(drbd_global_lock);
 	local_irq_disable();
 	for (i = 0; i < minor_count; i++) {
 		mdev = minor_to_mdev(i);
 		if (!mdev)
 			continue;
 		spin_lock(&mdev->req_lock);
+		__release(&mdev->req_lock); /* annihilate the spin_lock's annotation here */
 	}
 }
 
-void drbd_global_unlock(void)
+STATIC void drbd_global_unlock(void) __releases(drbd_global_lock)
 {
 	struct drbd_conf *mdev;
 	int i;
@@ -771,9 +791,11 @@ void drbd_global_unlock(void)
 		mdev = minor_to_mdev(i);
 		if (!mdev)
 			continue;
+		__acquire(&mdev->req_lock);
 		spin_unlock(&mdev->req_lock);
 	}
 	local_irq_enable();
+	__release(drbd_global_lock);
 }
 
 int _drbd_may_sync_now(struct drbd_conf *mdev)
@@ -808,10 +830,9 @@ int _drbd_pause_after(struct drbd_conf *mdev)
 		if (!odev)
 			continue;
 		if (odev->state.conn == StandAlone && odev->state.disk == Diskless)
-			continue;		
+			continue;
 		if (!_drbd_may_sync_now(odev))
-			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1),
-						ChgStateHard)
+			rv |= ( _drbd_set_state(_NS(odev, aftr_isp, 1), ChgStateHard, NULL)
 				!= SS_NothingToDo ) ;
 	}
 
@@ -836,7 +857,7 @@ int _drbd_resume_next(struct drbd_conf *mdev)
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
 				rv |= (_drbd_set_state(_NS(odev, aftr_isp, 0),
-						ChgStateHard)
+						       ChgStateHard, NULL)
 					!= SS_NothingToDo) ;
 		}
 	}
@@ -895,6 +916,8 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	/* In case a previous resync run was aborted by an IO error... */
 	drbd_rs_cancel_all(mdev);
 
+	drbd_state_lock(mdev);
+
 	if (side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
@@ -919,8 +942,11 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	else /* side == SyncSource */
 		ns.pdsk = Inconsistent;
 
-	r = _drbd_set_state(mdev, ns, ChgStateVerbose);
+	r = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	ns = mdev->state;
+
+	if (ns.conn < Connected)
+		r = SS_UnknownError;
 
 	if (r == SS_Success) {
 		mdev->rs_total     =
@@ -932,6 +958,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		_drbd_pause_after(mdev);
 	}
 	drbd_global_unlock();
+	drbd_state_unlock(mdev);
 
 	if (r == SS_Success) {
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
@@ -956,7 +983,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 int drbd_worker(struct Drbd_thread *thi)
 {
 	struct drbd_conf *mdev = thi->mdev;
-	struct drbd_work *w = 0;
+	struct drbd_work *w = NULL;
 	LIST_HEAD(work_list);
 	int intr = 0, i;
 
@@ -991,7 +1018,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		   the entry from the list. The cleanup code takes care of
 		   this...   */
 
-		w = 0;
+		w = NULL;
 		spin_lock_irq(&mdev->data.work.q_lock);
 		ERR_IF(list_empty(&mdev->data.work.q)) {
 			/* something terribly wrong in our logic.

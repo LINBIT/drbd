@@ -1,8 +1,14 @@
 #!/bin/sh
 set -e
 
-if [ "`uname -r`" = _KVERS_ ] ; then
-   depmod -a &
+SYSTEMMAP=/boot/System.map-_KVERS_
+
+if [ -f $SYSTEMMAP ]
+then
+    depmod -ae -F $SYSTEMMAP _KVERS_
+elif [ "`uname -r`" = "_KVERS_" ]
+then
+    depmod -a &
 fi
 
 #DEBHELPER#
