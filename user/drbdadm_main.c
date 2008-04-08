@@ -710,6 +710,7 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
 {
   pid_t pid;
   int status,rv=-1;
+  int timeout = 0;
   char **cmdline = argv;
 
   struct sigaction so;
@@ -742,7 +743,6 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
   }
 
   if( flags & SLEEPS_FINITE ) {
-    int timeout;
     sigaction(SIGALRM,&sa,&so);
     alarm_raised=0;
     switch(flags & SLEEPS_MASK) {
@@ -764,8 +764,10 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
     if (waitpid(pid, &status, 0) == -1) {
       if (errno != EINTR) break;
       if (alarm_raised) {
-	fprintf(stderr,"Child process does not terminate!\nExiting.\n");
-	exit(E_exec_error);
+	alarm(0);
+	sigaction(SIGALRM,&so,NULL);
+	rv = 0x100;
+	break;
       } else {
 	fprintf(stderr,"logic bug in %s:%d\n",__FILE__,__LINE__);
 	exit(E_exec_error);
@@ -778,16 +780,19 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
     }
   }
 
-  if( flags & SLEEPS_FINITE ) {
-    alarm(0);
-    sigaction(SIGALRM,&so,NULL);
-    if(rv >= 10 && !(flags & (DONT_REPORT_FAILED|SUPRESS_STDERR))) {
+  if (flags & SLEEPS_FINITE) {
+    if (rv >= 10 && !(flags & (DONT_REPORT_FAILED|SUPRESS_STDERR))) {
       fprintf(stderr,"Command '");
-      while(*argv) {
-	fprintf(stderr,"%s",*argv++);
-	if (*argv) fputc(' ',stderr);
+      for (cmdline = argv; *cmdline; cmdline++) {
+	fprintf(stderr, "%s", *cmdline);
+	if (cmdline[1]) fputc(' ',stderr);
       }
-      fprintf(stderr,"' terminated with exit code %d\n",rv);
+      if (alarm_raised) {
+	fprintf(stderr,"' did not terminate within %u seconds\n", timeout);
+	exit(E_exec_error);
+      } else {
+	fprintf(stderr,"' terminated with exit code %d\n",rv);
+      }
     }
   }
 
