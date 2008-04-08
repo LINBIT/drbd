@@ -192,7 +192,8 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 		return mdev->state.pdsk;
 	}
 
-	if( fp == Stonith ) drbd_request_state(mdev,NS(susp,1));
+	if (fp == Stonith)
+		_drbd_request_state(mdev, NS(susp,1), ChgWaitComplete);
 
 	r=drbd_khelper(mdev,"outdate-peer");
 
@@ -210,7 +211,7 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 	case 6: /* Peer is primary, voluntarily outdate myself */
 		WARN("Peer is primary, outdating myself.\n");
 		nps = DUnknown;
-		drbd_request_state(mdev,NS(disk,Outdated));
+		_drbd_request_state(mdev, NS(disk, Outdated), ChgWaitComplete);
 		break;
 	case 7:
 		if( fp != Stonith ) {
