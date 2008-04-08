@@ -241,20 +241,22 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 {
-	int r=0,forced = 0, try=0;
+	const int max_tries = 4;
+	int r = 0;
+	int try = 0;
+	int forced = 0;
 	drbd_state_t mask, val;
 	drbd_disks_t nps;
 
-	if ( new_role == Primary ) {
-		request_ping(mdev); // Detect a dead peer ASAP
-	}
+	if (new_role == Primary)
+		request_ping(mdev); /* Detect a dead peer ASAP */
 
 	mutex_lock(&mdev->state_mutex);
 
 	mask.i = 0; mask.role = role_mask;
 	val.i  = 0; val.role  = new_role;
 
-	while (try++ < 4) {
+	while (try++ < max_tries) {
 		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
 
 		/* in case we first succeeded to outdate,
@@ -305,10 +307,12 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 			continue;
 		}
 		if( r == SS_TwoPrimaries ) {
-			// Maybe the peer is detected as dead very soon...
+			/* Maybe the peer is detected as dead very soon...
+			   retry at most once more in this case. */
 			set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
-			if(try == 1) try++; // only a single retry in this case.
+			if (try < max_tries)
+				try = max_tries -1;
 			continue;
 		}
 		if ( r < SS_Success ) {
