@@ -178,6 +178,7 @@ int drbd_khelper(drbd_dev *mdev, char* cmd)
 
 drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 {
+	char *ex_to_string;
 	int r;
 	drbd_disks_t nps;
 	enum fencing_policy fp;
@@ -197,36 +198,43 @@ drbd_disks_t drbd_try_outdate_peer(drbd_dev *mdev)
 
 	r=drbd_khelper(mdev,"outdate-peer");
 
-	switch( (r>>8) & 0xff ) {
-	case 3: /* peer is inconsistent */
+	switch ((r>>8) & 0xff) {
+	case 3:
+		ex_to_string = "peer is inconsistent or worse";
 		nps = Inconsistent;
 		break;
-	case 4: /* peer is outdated */
+	case 4:
+		ex_to_string = "peer is outdated";
 		nps = Outdated;
 		break;
 	case 5: /* peer was down, we will(have) create(d) a new UUID anyways... */
 		/* If we would be more strict, we would return DUnknown here. */
+		ex_to_string = "peer is unreachable, assumed to be dead";
 		nps = Outdated;
 		break;
-	case 6: /* Peer is primary, voluntarily outdate myself */
+	case 6: /* Peer is primary, voluntarily outdate myself.
+		 * This is useful when an unconnected Secondary is asked to
+		 * become Primary, but findes the other peer being active. */
+		ex_to_string = "peer is active";
 		WARN("Peer is primary, outdating myself.\n");
 		nps = DUnknown;
 		_drbd_request_state(mdev, NS(disk, Outdated), ChgWaitComplete);
 		break;
 	case 7:
-		if( fp != Stonith ) {
+		if (fp != Stonith)
 			ERR("outdate-peer() = 7 && fencing != Stonith !!!\n");
-		}
+		ex_to_string = "peer was stonithed";
 		nps = Outdated;
 		break;
 	default:
 		/* The script is broken ... */
 		nps = DUnknown;
-		ERR("outdate-peer helper broken, returned %d \n",(r>>8)&0xff);
+		ERR("outdate-peer helper broken, returned %d\n",(r>>8)&0xff);
 		return nps;
 	}
 
-	INFO("outdate-peer helper returned %d \n",(r>>8)&0xff);
+	INFO("outdate-peer helper returned %d (%s)\n",
+			(r>>8) & 0xff, ex_to_string);
 	return nps;
 }
 
