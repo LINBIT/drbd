@@ -952,10 +952,12 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   int rv;
 
   rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
-  if(rv == 17) return rv;
-  // 17 returned by drbdsetup outdate, if it is already primary.
+  /* 17: drbdsetup outdate, but is primary and thus cannot be outdated.
+   *  5: drbdsetup outdate, and is inconsistent or worse anyways */
+  if (rv == 17 || rv == 5)
+    return rv;
 
-  if( rv || dry_run ) {
+  if (rv || dry_run) {
     rv = admm_generic(res,cmd);
   }
   return rv;

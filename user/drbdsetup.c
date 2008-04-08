@@ -772,7 +772,15 @@ int print_config_error(int err_no)
 		} else {
 			fprintf(stderr,"%s: State change failed: (%d) %s\n",
 				devname, err_no, set_st_err_name(err_no));
-			rv = 11;
+			if (err_no == SS_NoUpToDateDisk) {
+				/* am Primary, cannot outdate */
+				rv = 17;
+			} else if (err_no == SS_LowerThanOutdated) {
+				/* was inconsistent anyways */
+				rv = 5;
+			} else {
+				rv = 11;
+			}
 		}
 	}
 	return rv;
