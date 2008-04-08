@@ -192,6 +192,26 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Tue Apr 8 2008 16:18:34 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.12rc1-1)
+ * Corrected lock-out of application IO during bitmap IO.
+   (Only triggered issues with multi-terrabyte volumes)
+ * If an attach would causes a split-brain,
+   abort the attach, do not drop the connection
+ * A node without data (no disk, no connection) only accepts data
+   (attach or connect) if that data maches the last-known data
+ * Fixed various race conditions between state transitions
+ * Various bugfixes to issues found by using the sparse tool
+ * Corrected the exit codes of drbdsetup/drbdadm to match
+   the expectations of dopd (drbd-outdate-peer-daemon)
+ * Corrected the online changing of the number of AL extents while
+   application IO is in flight.
+ * Two new config options no-disk-flushes and no-md-flushes to disable
+   the use of io subsystem flushes and barrier BIOs.
+ * drbdsetup /dev/drbdX down no longer fails for non-existing minors
+ * Added wipe-md to drbdadm
+
+%changelog
 * Tue Feb 12 2008 11:49:59 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.11-1)
  * If we had no IO while a device was connected it could happen that
