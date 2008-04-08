@@ -242,26 +242,29 @@ typedef union {
 } drbd_state_t;
 
 typedef enum {
-	SS_CW_NoNeed=4,
-	SS_CW_Success=3,
-	SS_NothingToDo=2,
-	SS_Success=1,
-	SS_UnknownError=0, // Used to sleep longer in _drbd_request_state
-	SS_TwoPrimaries=-1,
-	SS_NoUpToDateDisk=-2,
-	SS_BothInconsistent=-4,
-	SS_SyncingDiskless=-5,
-	SS_ConnectedOutdates=-6,
-	SS_PrimaryNOP=-7,
-	SS_ResyncRunning=-8,
-	SS_AlreadyStandAlone=-9,
-	SS_CW_FailedByPeer=-10,
-	SS_IsDiskLess=-11,
-	SS_DeviceInUse=-12,
-	SS_NoNetConfig=-13,
-	SS_LowerThanOutdated=-14,
-	SS_InTransientState=-15,  /* Retry after the next state change */
-	SS_ConcurrentStChg=-16,   /* Concurrent cluster side state change! */
+	SS_CW_NoNeed = 4,
+	SS_CW_Success = 3,
+	SS_NothingToDo = 2,
+	SS_Success = 1,
+	SS_UnknownError = 0, // Used to sleep longer in _drbd_request_state
+	SS_TwoPrimaries = -1,
+	SS_NoUpToDateDisk = -2,
+	SS_BothInconsistent = -4,
+	SS_SyncingDiskless = -5,
+	SS_ConnectedOutdates = -6,
+	SS_PrimaryNOP = -7,
+	SS_ResyncRunning = -8,
+	SS_AlreadyStandAlone = -9,
+	SS_CW_FailedByPeer = -10,
+	SS_IsDiskLess = -11,
+	SS_DeviceInUse = -12,
+	SS_NoNetConfig = -13,
+	SS_NoVerifyAlg = -14,       /* drbd-8.2 only */
+	SS_NeedConnection = -15,    /* drbd-8.2 only */
+	SS_LowerThanOutdated = -16,
+	SS_NotSupported = -17,      /* drbd-8.2 only */
+	SS_InTransientState = -18,  /* Retry after the next state change */
+	SS_ConcurrentStChg = -19,   /* Concurrent cluster side state change! */
 } set_st_err_t;
 
 /* from drbd_strings.c */
