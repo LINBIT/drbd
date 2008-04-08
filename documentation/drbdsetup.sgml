@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
 <refentry>
-  <docinfo><date>09 January 2008</date></docinfo>
+  <docinfo><date>31 March 2008</date></docinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -358,6 +358,40 @@
               USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
 	  </listitem>
 	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-i</option>,
+	  <option>--no-disk-flushes</option></term>
+	  <listitem>
+	    <para>
+      In case you are sure that your storage subsystem has
+      battery-backed write cache, and you know from measurements that it
+      really honors flush instructions by flushing data out from its
+      non-volatile write cache to disk, you have double security. You might then
+      reduce this to single security by disabling forced disk flushes with this
+      option. It might improve performance in this case.</para>
+	    <para>
+      If you use this option on plain disk drives, which have
+      volatile write caches (enabled by default), you are at risk to lose
+      your data with every power loss. <emphasis>Only use this option of you
+      understand each and every statement in these two
+      paragraphs.</emphasis>
+      </para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-m</option>,
+	  <option>--no-md-flushes</option></term>
+	  <listitem>
+	        <para>
+		  Disables the use of disk flushes and barrier BIOs when
+		  accessing the meta data device. See the notes
+		  on <option>--no-disk-flushes</option>.
+		</para>
+	  </listitem>
+	</varlistentry>
+
       </variablelist>
     </refsect2>
     <refsect2>
@@ -599,7 +633,7 @@
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>violently-as0p</option></term>
 		<listitem><para>
-		  Always Honor the outcome of the <option>after-sb-0pri
+		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
 		  secondary has the right data, accept a possible instantaneous
 		  change of the primary's data.
@@ -1109,14 +1143,14 @@
     <title>Examples</title>
       <para>
       For examples, please have a look at the
-      <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
-      <citetitle>DRBD Quick Start Guide</citetitle></ulink>.
+      <ulink url="http://www.drbd.org/users-guide/">
+      <citetitle>DRBD User's Guide</citetitle></ulink>.
       </para>
   </refsect1>
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document is correct for version 8.2.2 of the DRBD distribution.
+    <simpara>This document was revised for version 8.2.6 of the DRBD distribution.
     </simpara>
   </refsect1>
 
@@ -1151,8 +1185,10 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
       <manvolnum>8</manvolnum></citerefentry>
       <citerefentry><refentrytitle>drbdadm</refentrytitle>
       <manvolnum>8</manvolnum></citerefentry>
+      <ulink url="http://www.drbd.org/users-guide/">
+      <citetitle>DRBD User's Guide</citetitle></ulink>,
       <ulink url="http://www.drbd.org/">
-      <citetitle>DRBD Homepage</citetitle></ulink>
+      <citetitle>DRBD web site</citetitle></ulink>
     </para>
   </refsect1>
 </refentry>

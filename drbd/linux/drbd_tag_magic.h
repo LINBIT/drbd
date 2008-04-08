@@ -30,7 +30,7 @@ enum packet_types {
 #include "linux/drbd_nl.h"
 
 /* declate tag-list-sizes */
-const int tag_list_sizes[] = {
+static const int tag_list_sizes[] = {
 #define NL_PACKET(name, number, fields) 2 fields ,
 #define NL_INTEGER(pn, pr, member)      + 4 + 4
 #define NL_INT64(pn, pr, member)        + 4 + 8
@@ -72,7 +72,7 @@ struct tag {
 
 /* declare tag names */
 #define NL_PACKET(name, number, fields) fields
-const struct tag tag_descriptions[] = {
+static const struct tag tag_descriptions[] = {
 #define NL_INTEGER(pn, pr, member)     [ pn ] = { #member, TT_INTEGER | pr, sizeof(int)   },
 #define NL_INT64(pn, pr, member)       [ pn ] = { #member, TT_INT64   | pr, sizeof(__u64) },
 #define NL_BIT(pn, pr, member)         [ pn ] = { #member, TT_BIT     | pr, sizeof(int)   },

@@ -15,8 +15,11 @@
 #include <ctype.h>
 #include <linux/drbd.h>
 #include <linux/fs.h>           /* for BLKGETSIZE64 */
+#include <string.h>
 
 #include "drbdtool_common.h"
+
+#define LANANA_DRBD_MAJOR 147	/* we should get this into linux/major.h */
 
 char* ppsize(char* buf, size_t size)
 {
@@ -216,10 +219,12 @@ int dt_minor_of_dev(const char *device)
 
 		c=device;
 		while(*c) {
-			if(isdigit(*c)) return strtol(c,NULL,10);
+			if(isdigit(*c))
+				return strtol(c,NULL,10);
 			c++;
 		}
-		return 0;
+		/* if there is not even a digit in that name, fail. */
+		return -1;
 	}
 
 	return minor(sb.st_rdev);
@@ -234,19 +239,38 @@ int dt_lock_drbd(const char* device)
 	int dev_major,dev_minor;
 
 	dev_major = 147; //LANANA_DRBD_MAJOR;
-	if( !stat(device, &drbd_stat) ) {
-
-		if(!S_ISBLK(drbd_stat.st_mode)) {
+	if (!stat(device, &drbd_stat)) {
+		if (!S_ISBLK(drbd_stat.st_mode)) {
 			fprintf(stderr, "%s is not a block device!\n", device);
 			exit(20);
 		}
 
 		dev_major = major(drbd_stat.st_rdev);
 
-		/* FIXME maybe check the major number, too?
-		 * you cannot be paranoid enough...
-		 * either NBD [43], or DRBD [147] (enforce for v08)
-		 */
+		if (dev_major != LANANA_DRBD_MAJOR) {
+			fprintf(stderr, "%s does not appear to be a DRBD (major %u, expected %u)!\n",
+					device, dev_major, LANANA_DRBD_MAJOR);
+			exit(20);
+		}
+	} else {
+		/* See also dt_minor_of_dev(),
+		 * maybe we are about to create it?
+		 * But warn people which expect drbdsetup to behave like
+		 * "drbdsetup cute_name attach", it is
+		 * "drbdsetup /dev/drbd# attach". */
+		if (0 < strncmp("/dev/drbd0",device,10) ||
+		    0 > strncmp("/dev/drbd9",device,10))
+		{
+			/* warn only, don't fail, there may be a reason to not
+			 * use this device naming convention.
+			 *
+			 * but people expecting to be able to use arbitrary
+			 * names for device names, just because we default to
+			 * drbd0, should be made aware of their error. */
+			fprintf(stderr,
+				"We expect our device names to be named\n"
+				"/dev/drbd<minor-number>, not %s\n", device);
+		}
 	}
 
 
@@ -271,6 +295,12 @@ int dt_lock_drbd(const char* device)
 	 */
 
 	dev_minor = dt_minor_of_dev(device);
+	if (dev_minor < 0) {
+		fprintf(stderr,
+			"Could not determine device minor number of '%s'.\n"
+			"Try /dev/drbd<minor-number> instead.\n", device);
+		exit(20);
+	}
 	snprintf(lfname,39,"/var/lock/drbd-%d-%d",dev_major,dev_minor);
 
 	lfd = get_fd_lockfile_timeout(lfname,1);

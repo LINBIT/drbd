@@ -42,13 +42,11 @@
 #include <linux/drbd_limits.h>
 
 /* see get_sb_bdev and bd_claim */
-char *drbd_d_holder = "Hands off! this is DRBD's data storage device.";
-char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
-
+static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 /* Generate the tag_list to struct functions */
 #define NL_PACKET(name, number, fields) \
-int name ## _from_tags (struct drbd_conf *mdev, \
+STATIC int name ## _from_tags (struct drbd_conf *mdev, \
 	unsigned short *tags, struct name *arg) \
 { \
 	int tag; \
@@ -89,7 +87,7 @@ int name ## _from_tags (struct drbd_conf *mdev, \
 
 // Generate the struct to tag_list functions
 #define NL_PACKET(name, number, fields) \
-unsigned short* \
+STATIC unsigned short* \
 name ## _to_tags (struct drbd_conf *mdev, \
 	struct name *arg, unsigned short *tags) \
 { \
@@ -122,7 +120,7 @@ name ## _to_tags (struct drbd_conf *mdev, \
 void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
-char *nl_packet_name(int packet_type)
+STATIC char *nl_packet_name(int packet_type)
 {
 /* Generate packet type strings */
 #define NL_PACKET(name, number, fields) \
@@ -140,7 +138,7 @@ char *nl_packet_name(int packet_type)
 	    nl_tag_name[packet_type] : "*Unknown*";
 }
 
-void nl_trace_packet(void *data)
+STATIC void nl_trace_packet(void *data)
 {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
@@ -153,7 +151,7 @@ void nl_trace_packet(void *data)
 	       req->seq, req->ack, req->len);
 }
 
-void nl_trace_reply(void *data)
+STATIC void nl_trace_reply(void *data)
 {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply *)req->data;
@@ -192,11 +190,11 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 
 	D_ASSERT(mdev->state.pdsk == DUnknown);
 
-	if (inc_local_if_state(mdev,UpToDate)) {
+	if (inc_local_if_state(mdev, Consistent)) {
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
-		WARN("Not outdating peer, since I am diskless.");
+		WARN("Not outdating peer, I'm not even Consistent myself.\n");
 		return mdev->state.pdsk;
 	}
 
@@ -247,12 +245,14 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	if (new_role == Primary)
 		request_ping(mdev); /* Detect a dead peer ASAP */
 
+	mutex_lock(&mdev->state_mutex);
+
 	mask.i = 0; mask.role = role_mask;
 	val.i  = 0; val.role  = new_role;
 
 	while (try++ < 3) {
-		r = _drbd_request_state(mdev, mask, val, 0);
-		if ( r == SS_NoUpToDateDisk && force &&
+		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
+		if (r == SS_NoUpToDateDisk && force &&
 		    ( mdev->state.disk == Inconsistent ||
 		      mdev->state.disk == Outdated ) ) {
 			mask.disk = disk_mask;
@@ -301,7 +301,8 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 			continue;
 		}
 		if (r < SS_Success) {
-			r = drbd_request_state(mdev, mask, val);
+			r = _drbd_request_state(mdev, mask, val,
+						ChgStateVerbose + ChgWaitComplete);
 			if (r < SS_Success)
 				goto fail;
 		}
@@ -314,11 +315,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	fsync_bdev(mdev->this_bdev);
 
 	/* Wait until nothing is on the fly :) */
-	if ( wait_event_interruptible( mdev->misc_wait,
-				 atomic_read(&mdev->ap_pending_cnt) == 0 ) ) {
-		r = GotSignal;
-		goto fail;
-	}
+	wait_event(mdev->misc_wait, atomic_read(&mdev->ap_pending_cnt) == 0);
 
 	/* FIXME RACE here: if our direct user is not using bd_claim (i.e.
 	 *  not a filesystem) since cstate might still be >= Connected, new
@@ -364,14 +361,13 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 
 	drbd_md_sync(mdev);
 
-	return r;
-
  fail:
+	mutex_unlock(&mdev->state_mutex);
 	return r;
 }
 
 
-int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	struct primary primary_args;
@@ -388,7 +384,7 @@ int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_set_role(mdev, Secondary, 0);
@@ -398,7 +394,7 @@ int drbd_nl_secondary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 /* initializes the md.*_offset members, so we are able to find
  * the on disk meta data */
-void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
+STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
@@ -446,7 +442,8 @@ char *ppsize(char *buf, unsigned long long size)
 	static char units[] = { 'K', 'M', 'G', 'T', 'P', 'E' };
 	int base = 0;
 	while (size >= 10000 ) {
-		size = size >> 10;
+		/* shift + round */
+		size = (size >> 10) + !!(size & (1<<9));
 		base++;
 	}
 	sprintf(buf, "%lu %cB", (long)size, units[base]);
@@ -461,7 +458,7 @@ char *ppsize(char *buf, unsigned long long size)
  * indicate success.
  * You should call drbd_md_sync() after calling this function.
  */
-enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev)
+enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __must_hold(local)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size;
@@ -522,20 +519,17 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev)
 	}
 
 	if (la_size_changed || md_moved) {
-		if ( inc_local_if_state(mdev, Attaching) ) {
-			drbd_al_shrink(mdev);
-			/* All extents inactive now...
-			 * write bitmap, then mdev->la_size to disk */
-			rv = drbd_bitmap_io(mdev, &drbd_bm_write);
-			drbd_md_mark_dirty(mdev);
-			dec_local(mdev);
-		}
+		drbd_al_shrink(mdev); /* All extents inactive. */
+		INFO("Writing the whole bitmap, size changed\n");
+		rv = drbd_bitmap_io(mdev, &drbd_bm_write);
+		drbd_md_mark_dirty(mdev);
 	}
 
 	if (size > la_size) rv = grew;
 	if (size < la_size) rv = shrunk;
 out:
 	lc_unlock(mdev->act_log);
+	wake_up(&mdev->al_wait);
 
 	return rv;
 }
@@ -589,7 +583,7 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
  * -ENOMEM when allocation failed, and 0 on success. You should call
  * drbd_md_sync() after you called this function.
  */
-int drbd_check_al_size(struct drbd_conf *mdev)
+STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;
@@ -637,7 +631,7 @@ int drbd_check_al_size(struct drbd_conf *mdev)
 	return 0;
 }
 
-void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s)
+void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __must_hold(local)
 {
 	struct request_queue * const q = mdev->rq_queue;
 	struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;
@@ -697,7 +691,7 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s)
 
 /* does always return 0;
  * interesting return code is in reply->ret_code */
-int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
@@ -714,10 +708,13 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
        /*
-	* We may have gotten here very quickly from a detach. Wait for a bit
-	* then fail.
-	*/
-	while (mdev->bc != NULL) {
+        * We may have gotten here very quickly from a detach. Wait for a bit
+        * then fail.
+        */
+	while (1) {
+		__no_warn(local, nbc = mdev->bc; );
+		if (nbc == NULL)
+			break;
 		if (ntries++ >= 5) {
 			WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
 			retcode = HaveDiskConfig;
@@ -845,9 +842,13 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
 
-	retcode = drbd_request_state(mdev, NS(disk, Attaching));
+	retcode = _drbd_request_state(mdev, NS(disk, Attaching), ChgStateVerbose);
 	if (retcode < SS_Success )
 		goto release_bdev2_fail;
+
+	if (!inc_local_if_state(mdev, Attaching)) {
+		goto force_diskless;
+	}
 
 	drbd_thread_start(&mdev->worker);
 	drbd_md_set_sector_offsets(mdev, nbc);
@@ -856,23 +857,44 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	if (retcode != NoError)
 		goto force_diskless;
 
+	if (mdev->state.conn < Connected &&
+	    mdev->state.role == Primary &&
+	    (mdev->ed_uuid & ~((u64)1)) != (nbc->md.uuid[Current] & ~((u64)1))) {
+		ERR("Can only attach to data with current UUID=%016llX\n",
+		    (unsigned long long)mdev->ed_uuid);
+		retcode = DataOfWrongCurrent;
+		goto force_diskless_dec;
+	}
+
 	/* Since we are diskless, fix the AL first... */
 	if (drbd_check_al_size(mdev)) {
 		retcode = KMallocFailed;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(nbc, MDF_Consistent) &&
 	   drbd_new_dev_size(mdev, nbc) < nbc->md.la_size_sect) {
 		retcode = LDDeviceTooSmall;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	if (!drbd_al_read_log(mdev, nbc)) {
 		retcode = MDIOError;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
+
+	/* Reset the "barriers don't work" bits here, then force meta data to
+	 * be written, to ensure we determine if barriers are supported. */
+	if (nbc->dc.no_disk_flush)
+		set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
+	else
+		clear_bit(LL_DEV_NO_FLUSH, &mdev->flags);
+
+	if (nbc->dc.no_md_flush)
+		set_bit(MD_NO_BARRIER, &mdev->flags);
+	else
+		clear_bit(MD_NO_BARRIER, &mdev->flags);
 
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
@@ -923,7 +945,7 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if (drbd_determin_dev_size(mdev) == dev_size_error) {
 		retcode = VMallocFailed;
-		goto force_diskless;
+		goto force_diskless_dec;
 	}
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
@@ -931,12 +953,12 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		     "(aka FullSync)\n");
 		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write)) {
 			retcode = MDIOError;
-			goto force_diskless;
+			goto force_diskless_dec;
 		}
 	} else {
 		if (drbd_bitmap_io(mdev, &drbd_bm_read) < 0) {
 			retcode = MDIOError;
-			goto force_diskless;
+			goto force_diskless_dec;
 		}
 	}
 
@@ -985,31 +1007,25 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		ns.disk = Negotiating;
 	}
 
-	rv = _drbd_set_state(mdev, ns, ChgStateVerbose);
+	rv = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_Success)
-		goto force_diskless;
+		goto force_diskless_dec;
 
-	if (inc_local_if_state(mdev, Attaching)) {
-		if (mdev->state.role == Primary)
-			mdev->bc->md.uuid[Current] |=  (u64)1;
-		else
-			mdev->bc->md.uuid[Current] &= ~(u64)1;
-		dec_local(mdev);
-	}
+	if(mdev->state.role == Primary) mdev->bc->md.uuid[Current] |=  (u64)1;
+	else                            mdev->bc->md.uuid[Current] &= ~(u64)1;
 
-	/* Reset the "barriers don't work" bits here, then force meta data to
-	 * be written, to ensure we determine if barriers are supported. */
-	clear_bit(LL_DEV_NO_FLUSH,&mdev->flags);
-	clear_bit(MD_NO_BARRIER,&mdev->flags);
 	drbd_md_mark_dirty(mdev);
 	drbd_md_sync(mdev);
 
+	dec_local(mdev);
 	reply->ret_code = retcode;
 	return 0;
 
+ force_diskless_dec:
+	dec_local(mdev);
  force_diskless:
 	drbd_force_state(mdev, NS(disk, Diskless));
 	drbd_md_sync(mdev);
@@ -1034,18 +1050,21 @@ int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			  struct drbd_nl_cfg_reply *reply)
 {
 	fsync_bdev(mdev->this_bdev);
 	reply->ret_code = drbd_request_state(mdev, NS(disk, Diskless));
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(HZ/20); /* 50ms; Time for worker to finally terminate */
 
 	return 0;
 }
 
 #define HMAC_NAME_L 20
 
-int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			    struct drbd_nl_cfg_reply *reply)
 {
 	int i, ns;
@@ -1075,7 +1094,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	if ( !(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_net(mdev)) {
 		memcpy(new_conf, mdev->net_conf, sizeof(struct net_conf));
-		dec_local(mdev);
+		dec_net(mdev);
 	} else {
 		memset(new_conf, 0, sizeof(struct net_conf));
 		new_conf->timeout	   = DRBD_TIMEOUT_DEF;
@@ -1282,8 +1301,7 @@ int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->int_dig_in=int_dig_in;
 	mdev->int_dig_vv=int_dig_vv;
 
-	retcode = drbd_request_state(mdev, NS(conn, Unconnected));
-
+	retcode = _drbd_request_state(mdev, NS(conn, Unconnected), ChgStateVerbose);
 	if (retcode >= SS_Success)
 		drbd_thread_start(&mdev->worker);
 
@@ -1305,13 +1323,12 @@ fail:
 	return 0;
 }
 
-int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode;
 
-	/* silently. */
-	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), 0);
+	retcode = _drbd_request_state(mdev, NS(conn, Disconnecting), ChgOrdered);
 
 	if (retcode == SS_NothingToDo)
 		goto done;
@@ -1324,11 +1341,8 @@ int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	} else if (retcode == SS_CW_FailedByPeer) {
 		/* The peer probabely wants to see us outdated. */
 		retcode = _drbd_request_state(mdev, NS2(conn, Disconnecting,
-						       disk, Outdated), 0);
-
-		/* if we are diskless and our peer wants to outdate us,
-		 * simply go away, and let the peer try to outdate us with its
-		 * 'outdate-peer' handler later. */
+							disk, Outdated),
+					      ChgOrdered);
 		if (retcode == SS_IsDiskLess || retcode == SS_LowerThanOutdated) {
 			drbd_force_state(mdev, NS(conn, Disconnecting));
 			retcode = SS_Success;
@@ -1339,8 +1353,10 @@ int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	if (retcode < SS_Success)
 		goto fail;
 
-	if ( wait_event_interruptible( mdev->misc_wait,
-				      mdev->state.conn == StandAlone) ) {
+	if (wait_event_interruptible(mdev->state_wait,
+				     mdev->state.conn != Disconnecting) ) {
+		/* Do not test for mdev->state.conn == StandAlone, since
+		   someone else might connect us in the mean time! */
 		retcode = GotSignal;
 		goto fail;
 	}
@@ -1369,8 +1385,8 @@ void resync_after_online_grow(struct drbd_conf *mdev)
 		drbd_request_state(mdev,NS(conn,WFSyncUUID));
 }
 
-int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
-		   struct drbd_nl_cfg_reply *reply)
+STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+			  struct drbd_nl_cfg_reply *reply)
 {
 	struct resize rs;
 	int retcode = NoError;
@@ -1425,7 +1441,7 @@ int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1521,7 +1537,12 @@ int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	crypto_free_hash(old_verify_tfm);
 
 	if (inc_local(mdev)) {
+		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+		drbd_al_shrink(mdev);
 		err = drbd_check_al_size(mdev);
+		lc_unlock(mdev->act_log);
+		wake_up(&mdev->al_wait);
+
 		dec_local(mdev);
 		drbd_md_sync(mdev);
 
@@ -1550,7 +1571,7 @@ fail:
 	return 0;
 }
 
-int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS2(conn, StartingSyncT,
@@ -1558,7 +1579,7 @@ int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				   struct drbd_nl_cfg_reply *reply)
 {
 
@@ -1568,7 +1589,7 @@ int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1580,7 +1601,7 @@ int drbd_nl_pause_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
@@ -1592,7 +1613,7 @@ int drbd_nl_resume_sync(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(susp, 1));
@@ -1600,21 +1621,21 @@ int drbd_nl_suspend_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-int drbd_nl_resume_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_resume_io(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(susp, 0));
 	return 0;
 }
 
-int drbd_nl_outdate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_outdate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	reply->ret_code = drbd_request_state(mdev, NS(disk, Outdated));
 	return 0;
 }
 
-int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			   struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1637,7 +1658,7 @@ int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1650,7 +1671,7 @@ int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
@@ -1663,11 +1684,11 @@ int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		*tl++ = UUID_SIZE*sizeof(u64);
 		memcpy(tl, mdev->bc->md.uuid, UUID_SIZE*sizeof(u64));
 		tl = (unsigned short *)((char *)tl + UUID_SIZE*sizeof(u64));
-		dec_local(mdev);
 		*tl++ = T_uuids_flags;
 		*tl++ = sizeof(int);
 		memcpy(tl, &mdev->bc->md.flags, sizeof(int));
 		tl = (unsigned short *)((char *)tl + sizeof(int));
+		dec_local(mdev);
 	}
 	*tl++ = TT_END; /* Close the tag list */
 
@@ -1675,8 +1696,8 @@ int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 }
 
 
-int drbd_nl_get_timeout_flag(struct drbd_conf *mdev,
-	struct drbd_nl_cfg_req *nlp, struct drbd_nl_cfg_reply *reply)
+STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+				    struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
 
@@ -1701,7 +1722,7 @@ STATIC int drbd_nl_start_ov(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 }
 
 
-struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
+STATIC struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
 	struct drbd_conf *mdev;
 
@@ -1768,7 +1789,7 @@ static struct cn_handler_struct cnd_table[] = {
 	[ P_start_ov ]          = { &drbd_nl_start_ov,          0 },
 };
 
-void drbd_connector_callback(void *data)
+STATIC void drbd_connector_callback(void *data)
 {
 	struct cn_msg *req = data;
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
@@ -1837,7 +1858,7 @@ void drbd_connector_callback(void *data)
 	module_put(THIS_MODULE);
 }
 
-atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
+static atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
 
 static inline unsigned short *
 __tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data,
@@ -2086,7 +2107,7 @@ int __init cn_init(void);
 void __exit cn_fini(void);
 #endif
 
-int __init drbd_nl_init()
+int __init drbd_nl_init(void)
 {
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 	int err;
@@ -2105,7 +2126,7 @@ int __init drbd_nl_init()
 	return 0;
 }
 
-void drbd_nl_cleanup()
+void drbd_nl_cleanup(void)
 {
 	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
 

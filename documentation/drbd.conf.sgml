@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
 <refentry>
-<docinfo><date>06 April 2006</date></docinfo>
+<docinfo><date>31 March 2008</date></docinfo>
 
 <refmeta>
  <refentrytitle>drbd.conf</refentrytitle>
@@ -35,27 +35,27 @@ resource r0 {
 		cram-hmac-alg sha1;
 		shared-secret "FooFunFactory";
 	}
-	on thost1 {
+	on alice {
 		device    /dev/drbd1;
-		disk      /dev/hda7;
+		disk      /dev/sda7;
 		address   10.1.1.31:7789;
-		meta-disk  internal;
+		meta-disk internal;
 	}
-	on thost2 {
+	on bob {
 		device    /dev/drbd1;
-		disk      /dev/hda7;
+		disk      /dev/sda7;
 		address   10.1.1.32:7789;
-		meta-disk  internal;
+		meta-disk internal;
 	}
 }
 </programlisting>
 </example>
- In this example there is a single DRBD resource (called r0) which uses
+ In this example, there is a single DRBD resource (called r0) which uses
  protocol C for the connection between its devices.
  The device which runs
- on host <replaceable>thost1</replaceable> uses
+ on host <replaceable>alice</replaceable> uses
  <replaceable>/dev/drbd1</replaceable> as devices for its application, and
- <replaceable>/dev/hda7</replaceable> as low-level storage for the data.
+ <replaceable>/dev/sda7</replaceable> as low-level storage for the data.
  The IP addresses are used to specify the networking interfaces to be used.
  An eventually running resync process should use about 10MByte/second of IO
  bandwidth.
@@ -63,8 +63,8 @@ resource r0 {
  <para>
  There may be multiple resource sections in a single drbd.conf file.
  For more examples, please have a look at the
- <ulink url="http://www.linux-ha.org/DRBD/QuickStart07">
- <citetitle>DRBD Quick start Guide</citetitle></ulink>.
+ <ulink url="http://www.drbd.org/users-guide/">
+ <citetitle>DRBD User's Guide</citetitle></ulink>.
  </para>
 </refsect1>
 <refsect1>
@@ -164,7 +164,7 @@ resource r0 {
     Carries the necessary configuration parameters for a DRBD
     device of the enclosing resource.
     <replaceable>host-name</replaceable> is mandatory and must match the
-    Linux hostname (uname -n) of one of the nodes.
+    Linux host name (uname -n) of one of the nodes.
     Required parameters in this section: <option>device</option>,
     <option>disk</option>, <option>address</option>, <option>meta-disk</option>,
     <option>flexible-meta-disk</option>.
@@ -182,7 +182,8 @@ resource r0 {
     <manvolnum>8</manvolnum></citerefentry> for detailed description of
     the parameters.
     Optional parameter: <option>on-io-error</option>,
-    <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>.
+    <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>,
+    <option>no-disk-flushes</option>, <option>no-md-flushes</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -412,7 +413,7 @@ resource r0 {
   <para>
    You can use a single block <replaceable>device</replaceable> to store
    meta-data of multiple DRBD devices.
-   E.g. use meta-disk /dev/hde6[0]; and meta-disk /dev/hde6[1];
+   E.g. use meta-disk /dev/sde6[0]; and meta-disk /dev/sde6[1];
    for two different resources. In this case the meta-disk
    would need to be at least 256 MB in size.
   </para>
@@ -496,12 +497,46 @@ resource r0 {
       are: md (software raid driver), dm (device mapper - LVM) and DRBD
       itself)</para>
     <para>
-      To get best performance out of DRBD on top of software raid (or any
+      To get best performance out of DRBD on top of software RAID (or any
       other driver with a merge_bvec_fn() function) you might enable this
       function, if you know for sure that the merge_bvec_fn() function will
       deliver the same results on all nodes of your cluster. I.e. the
-      physical disks of the software raid are of exactly the same type.  USE
-      THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
+      physical disks of the software RAID are of exactly the same
+      type. <emphasis>Use this option only if you know what you are
+      doing.</emphasis>
+    </para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>no-disk-flushes</option></term>
+  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>no-disk-flushes</secondary></indexterm>
+    <para>
+      In case you are sure that your storage subsystem has
+      battery-backed write cache, and you know from measurements that it
+      really honors flush instructions by flushing data out from its
+      non-volatile write cache to disk, you have double security. You might then
+      reduce this to single security by disabling forced disk flushes with this
+      option. It might improve performance in this case.</para>
+    <para>
+      If you use this option on plain disk drives, which have
+      volatile write caches (enabled by default), you are at risk to lose
+      your data with every power loss. <emphasis>Only use this option of you
+      understand each and every statement in these two
+      paragraphs.</emphasis>
+      </para>
+   </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>no-md-flushes</option></term>
+  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>no-md-flushes</secondary></indexterm>
+    <para>
+      Disables the use of disk flushes and barrier BIOs when accessing
+      the meta data device. See the notes on <option>no-disk-flushes</option>.
+    </para>
    </listitem>
 </varlistentry>
 
@@ -797,7 +832,7 @@ the unit is 1 second.
 	        <listitem><para>
                    Sync to the primary node is allowed, violating the
     	           assumption that data on a block device are stable for one
-    	           of the nodes. DANGEROUS, DO NOT USE.
+    	           of the nodes. <emphasis>Dangerous, do not use.</emphasis>
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>call-pri-lost</option></term>
 		<listitem><para>
@@ -1011,7 +1046,7 @@ the unit is 1 second.
 </refsect1>
 <refsect1>
 <title>Version</title>
-<simpara>This document was revised version 8.0 of the DRBD distribution.
+<simpara>This document was revised for version 8.0.12 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>
@@ -1042,11 +1077,13 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     <citerefentry><refentrytitle>drbddisk</refentrytitle>
     <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdsetup</refentrytitle>
-    <manvolnum>8</manvolnum></citerefentry>
+    <manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdadm</refentrytitle>
-    <manvolnum>8</manvolnum></citerefentry>
+    <manvolnum>8</manvolnum></citerefentry>,
+    <ulink url="http://www.drbd.org/users-guide/">
+    <citetitle>DRBD User's Guide</citetitle></ulink>,
     <ulink url="http://www.drbd.org/">
-    <citetitle>DRBD Homepage</citetitle></ulink>
+    <citetitle>DRBD web site</citetitle></ulink>
 </para>
 </refsect1>
 </refentry>

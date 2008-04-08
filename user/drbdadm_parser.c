@@ -413,6 +413,11 @@ static void parse_host_section(struct d_resource *res,
 			host->device = yylval.txt;
 			check_uniq("device", "%s:%s:%s", "device",
 				   host->name, yylval.txt);
+			if (dt_minor_of_dev(host->device) < 0) {
+				fprintf(stderr, "%s:%d: cannot determine minor number of %s\n",
+					config_file, line, host->device);
+				config_valid = 0;
+			}
 			EXP(';');
 			break;
 		case TK_ADDRESS:

@@ -138,6 +138,7 @@ enum ret_codes {
 	VERIFYAlgNotDigest,
 	CSUMSResyncRunning,
 	VERIFYIsRunning,
+	DataOfWrongCurrent,
 
 	/* insert new ones above this line */
 	AfterLastRetCode,
@@ -271,10 +272,12 @@ enum set_st_err {
 	SS_IsDiskLess = -11,
 	SS_DeviceInUse = -12,
 	SS_NoNetConfig = -13,
-	SS_NoVerifyAlg=-14,
-	SS_NeedConnection=-15,
-	SS_LowerThanOutdated=-16,
-	SS_NotSupported=-17
+	SS_NoVerifyAlg = -14,
+	SS_NeedConnection = -15,
+	SS_LowerThanOutdated = -16,
+	SS_NotSupported = -17,
+	SS_InTransientState = -18,  /* Retry after the next state change */
+	SS_ConcurrentStChg = -19,   /* Concurrent cluster side state change! */
 };
 
 /* from drbd_strings.c */

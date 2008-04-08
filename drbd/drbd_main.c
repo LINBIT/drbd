@@ -61,6 +61,7 @@ struct after_state_chg_work {
 	union drbd_state_t os;
 	union drbd_state_t ns;
 	enum chg_state_flags flags;
+	struct completion *done;
 };
 
 int drbdd_init(struct Drbd_thread *);
@@ -94,7 +95,7 @@ module_param(allow_oos, bool,0);
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults;
 int fault_rate;
-int fault_count;
+static int fault_count;
 int fault_devs;
 /* bitmap of enabled faults */
 module_param(enable_faults, int, 0664);
@@ -126,8 +127,7 @@ module_param(proc_details, int, 0644);
  * to run. Default is /sbin/drbdadm */
 char usermode_helper[80] = "/sbin/drbdadm";
 
-module_param_string(usermode_helper, usermode_helper,
-	sizeof(usermode_helper), 0644);
+module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0644);
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
@@ -158,8 +158,27 @@ struct block_device_operations drbd_ops = {
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
+#ifdef __CHECKER__
+/* When checking with sparse, and this is an inline function, sparse will
+   give tons of false positives. When this is a real functions sparse works.
+ */
+int _inc_local_if_state(struct drbd_conf* mdev, enum drbd_disk_state mins)
+{
+	int io_allowed;
+
+	atomic_inc(&mdev->local_cnt);
+	io_allowed = (mdev->state.disk >= mins );
+	if( !io_allowed ) {
+		if(atomic_dec_and_test(&mdev->local_cnt))
+			wake_up(&mdev->misc_wait);
+	}
+	return io_allowed;
+}
+
+#endif
+
 /************************* The transfer log start */
-int tl_init(struct drbd_conf *mdev)
+STATIC int tl_init(struct drbd_conf *mdev)
 {
 	struct drbd_barrier *b;
 
@@ -168,7 +187,7 @@ int tl_init(struct drbd_conf *mdev)
 		return 0;
 	INIT_LIST_HEAD(&b->requests);
 	INIT_LIST_HEAD(&b->w.list);
-	b->next = 0;
+	b->next = NULL;
 	b->br_number = 4711;
 	b->n_req = 0;
 	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
@@ -182,7 +201,7 @@ int tl_init(struct drbd_conf *mdev)
 	return 1;
 }
 
-void tl_cleanup(struct drbd_conf *mdev)
+STATIC void tl_cleanup(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	kfree(mdev->oldest_barrier);
@@ -201,7 +220,7 @@ void _tl_add_barrier(struct drbd_conf *mdev, struct drbd_barrier *new)
 	INIT_LIST_HEAD(&new->requests);
 	INIT_LIST_HEAD(&new->w.list);
 	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
-	new->next = 0;
+	new->next = NULL;
 	new->n_req = 0;
 
 	newest_before = mdev->newest_barrier;
@@ -353,7 +372,7 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	send = (mdev->state.disk == Failed);
 	if (send)
-		_drbd_set_state(_NS(mdev, disk, Diskless), ChgStateHard);
+		_drbd_set_state(_NS(mdev, disk, Diskless), ChgStateHard, NULL);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	if (!send)
@@ -385,8 +404,8 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
  * Returns TRUE if this state change should be preformed as a cluster wide
  * transaction. Of course it returns 0 as soon as the connection is lost.
  */
-int cl_wide_st_chg(struct drbd_conf *mdev,
-	union drbd_state_t os, union drbd_state_t ns)
+STATIC int cl_wide_st_chg(struct drbd_conf *mdev,
+			  union drbd_state_t os, union drbd_state_t ns)
 {
 	return ( os.conn >= Connected && ns.conn >= Connected &&
 		 ( ( os.role != Primary && ns.role == Primary ) ||
@@ -407,7 +426,7 @@ int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
-	rv = _drbd_set_state(mdev, ns, f);
+	rv = _drbd_set_state(mdev, ns, f, NULL);
 	ns = mdev->state;
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
@@ -426,8 +445,8 @@ int is_valid_state_transition(struct drbd_conf *,
 int drbd_send_state_req(struct drbd_conf *,
 	union drbd_state_t, union drbd_state_t);
 
-enum set_st_err _req_st_cond(struct drbd_conf *mdev,
-	union drbd_state_t mask, union drbd_state_t val)
+STATIC enum set_st_err _req_st_cond(struct drbd_conf *mdev,
+				    union drbd_state_t mask, union drbd_state_t val)
 {
 	union drbd_state_t os, ns;
 	unsigned long flags;
@@ -463,15 +482,21 @@ enum set_st_err _req_st_cond(struct drbd_conf *mdev,
  * transition this function even does a cluster wide transaction.
  * It has a cousin named drbd_request_state(), which is always verbose.
  */
-int _drbd_request_state(struct drbd_conf *mdev,
-	union drbd_state_t mask, union drbd_state_t val,
-		       enum chg_state_flags f)
+STATIC int drbd_req_state(struct drbd_conf *mdev,
+			  union drbd_state_t mask, union drbd_state_t val,
+			  enum chg_state_flags f)
 {
+	struct completion done;
 	unsigned long flags;
 	union drbd_state_t os, ns;
 	int rv;
 
-	spin_lock_irqsave(&mdev->req_lock, flags);
+	init_completion(&done);
+
+	if (f & ChgSerialize)
+		mutex_lock(&mdev->state_mutex);
+
+	spin_lock_irqsave(&mdev->req_lock,flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
 
@@ -484,7 +509,7 @@ int _drbd_request_state(struct drbd_conf *mdev,
 		if (rv < SS_Success) {
 			if (f & ChgStateVerbose)
 				print_st_err(mdev, os, ns, rv);
-			return rv;
+			goto abort;
 		}
 
 		drbd_state_lock(mdev);
@@ -493,7 +518,7 @@ int _drbd_request_state(struct drbd_conf *mdev,
 			rv = SS_CW_FailedByPeer;
 			if (f & ChgStateVerbose)
 				print_st_err(mdev, os, ns, rv);
-			return rv;
+			goto abort;
 		}
 
 		wait_event(mdev->state_wait,
@@ -504,24 +529,50 @@ int _drbd_request_state(struct drbd_conf *mdev,
 			drbd_state_unlock(mdev);
 			if (f & ChgStateVerbose)
 				print_st_err(mdev, os, ns, rv);
-			return rv;
+			goto abort;
 		}
 		spin_lock_irqsave(&mdev->req_lock, flags);
 		os = mdev->state;
 		ns.i = (os.i & ~mask.i) | val.i;
-		rv = _drbd_set_state(mdev, ns, f);
+		rv = _drbd_set_state(mdev, ns, f, &done);
 		drbd_state_unlock(mdev);
 	} else {
-		rv = _drbd_set_state(mdev, ns, f);
+		rv = _drbd_set_state(mdev, ns, f, &done);
 	}
 
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
+
+	if (f & ChgWaitComplete && rv == SS_Success) {
+		D_ASSERT(current != mdev->worker.task);
+		wait_for_completion(&done);
+	}
+
+  abort:
+	if (f & ChgSerialize)
+		mutex_unlock(&mdev->state_mutex);
+
+	return rv;
+}
+
+/**
+ * _drbd_request_state:
+ * This function is the most gracefull way to change state. For some state
+ * transition this function even does a cluster wide transaction.
+ * It has a cousin named drbd_request_state(), which is always verbose.
+ */
+int _drbd_request_state(struct drbd_conf *mdev,	union drbd_state_t mask,
+			union drbd_state_t val,	enum chg_state_flags f)
+{
+	int rv;
+
+	wait_event(mdev->state_wait,
+		   (rv = drbd_req_state(mdev, mask, val, f)) != SS_InTransientState);
 
 	return rv;
 }
 
 
-void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
+STATIC void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
 {
 	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    name,
@@ -540,6 +591,8 @@ void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
 void print_st_err(struct drbd_conf *mdev,
 	union drbd_state_t os, union drbd_state_t ns, int err)
 {
+	if (err == SS_InTransientState)
+		return;
 	ERR("State change failed: %s\n", set_st_err_name(err));
 	print_st(mdev, " state", os);
 	print_st(mdev, "wanted", ns);
@@ -641,6 +694,12 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if ( ns.disk == Outdated && os.disk < Outdated && os.disk != Attaching)
 		rv=SS_LowerThanOutdated;
 
+	if (ns.conn == Disconnecting && os.conn == Unconnected)
+		rv = SS_InTransientState;
+
+	if (ns.conn == os.conn && ns.conn == WFReportParams)
+		rv = SS_InTransientState;
+
 	if( (ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected )
 		rv=SS_NeedConnection;
 
@@ -652,7 +711,8 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 }
 
 int _drbd_set_state(struct drbd_conf *mdev,
-	union drbd_state_t ns, enum chg_state_flags flags)
+		    union drbd_state_t ns, enum chg_state_flags flags,
+		    struct completion *done)
 {
 	union drbd_state_t os;
 	int rv = SS_Success;
@@ -682,11 +742,12 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	    os.conn <= Disconnecting )
 		ns.conn = os.conn;
 
-	/* Dissalow network errors (+TearDown) to overwrite each other.
-	   Dissalow network errors to overwrite the Disconnecting state. */
-	if ( ( (os.conn >= Timeout && os.conn <= TearDown)
-	      || os.conn == Disconnecting ) &&
-	    ns.conn >= Timeout && ns.conn <= TearDown )
+	/* After a network error (+TearDown) only Unconnected can follow */
+	if (os.conn >= Timeout && os.conn <= TearDown && ns.conn != Unconnected)
+		ns.conn = os.conn;
+
+	/* After Disconnecting only StandAlone may follow */
+	if (os.conn == Disconnecting && ns.conn != StandAlone)
 		ns.conn = os.conn;
 
 	if (ns.conn < Connected) {
@@ -704,9 +765,9 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		ns.conn = Connected;
 	}
 
-	if ( ns.conn >= Connected &&
-	    ( ns.disk == Consistent || ns.disk == Outdated ) ) {
-		switch (ns.conn) {
+	if (ns.conn != os.conn && ns.conn >= Connected &&
+	    (ns.disk == Consistent || ns.disk == Outdated)) {
+		switch(ns.conn) {
 		case WFBitMapT:
 		case PausedSyncT:
 			ns.disk = Outdated;
@@ -726,9 +787,9 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			WARN("Implicit set disk from Outdate to UpToDate\n");
 	}
 
-	if ( ns.conn >= Connected &&
-	    ( ns.pdsk == Consistent || ns.pdsk == Outdated ) ) {
-		switch (ns.conn) {
+	if (ns.conn != os.conn && ns.conn >= Connected &&
+	    (ns.pdsk == Consistent || ns.pdsk == Outdated)) {
+		switch(ns.conn) {
 		case Connected:
 		case WFBitMapT:
 		case PausedSyncT:
@@ -749,9 +810,17 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
-	if (ns.conn < Connected && ns.disk == Negotiating) {
-		ns.disk = mdev->new_state_tmp.disk;
-		ns.pdsk = mdev->new_state_tmp.pdsk;
+	if (ns.conn < Connected && ns.disk == Negotiating &&
+	    inc_local_if_state(mdev, Negotiating)) {
+		if (mdev->ed_uuid == mdev->bc->md.uuid[Current]) {
+			ns.disk = mdev->new_state_tmp.disk;
+			ns.pdsk = mdev->new_state_tmp.pdsk;
+		} else {
+			ALERT("Connection lost while negotiating, no data!\n");
+			ns.disk = Diskless;
+			ns.pdsk = DUnknown;
+		}
+		dec_local(mdev);
 	}
 
 	if (fp == Stonith &&
@@ -888,6 +957,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
 		}
+		if (os.disk < Consistent && ns.disk >= Consistent)
+			drbd_set_ed_uuid(mdev, mdev->bc->md.uuid[Current]);
 		dec_local(mdev);
 	}
 
@@ -898,7 +969,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 
 	/* Receiver should clean up itself */
 	if (os.conn != Disconnecting && ns.conn == Disconnecting)
-		drbd_thread_signal(&mdev->receiver);
+		drbd_thread_stop_nowait(&mdev->receiver);
 
 	/* Now the receiver finished cleaning up itself, it should die */
 	if (os.conn != StandAlone && ns.conn == StandAlone)
@@ -915,6 +986,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		ascw->ns = ns;
 		ascw->flags = flags;
 		ascw->w.cb = w_after_state_ch;
+		ascw->done = done;
 		drbd_queue_work(&mdev->data.work, &ascw->w);
 	} else {
 		WARN("Could not kmalloc an ascw\n");
@@ -929,6 +1001,10 @@ int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 
 	ascw = (struct after_state_chg_work *) w;
 	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
+	if (ascw->flags & ChgWaitComplete) {
+		D_ASSERT(ascw->done != NULL);
+		complete(ascw->done);
+	}
 	kfree(ascw);
 
 	return 1;
@@ -938,13 +1014,13 @@ static void abw_start_sync(struct drbd_conf *mdev, int rv)
 {
 	if (rv) {
 		ERR("Writing the bitmap failed not starting resync.\n");
-		drbd_request_state(mdev, NS(conn, Connected));
+		_drbd_request_state(mdev, NS(conn, Connected), ChgStateVerbose);
 		return;
 	}
 
 	switch (mdev->state.conn) {
 	case StartingSyncT:
-		drbd_request_state(mdev, NS(conn, WFSyncUUID));
+		_drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose);
 		break;
 	case StartingSyncS:
 		drbd_start_resync(mdev, SyncSource);
@@ -982,7 +1058,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		     (os.conn < Connected && ns.conn >= Connected) ) {
 			tl_clear(mdev);
 			spin_lock_irq(&mdev->req_lock);
-			_drbd_set_state(_NS(mdev, susp, 0), ChgStateVerbose);
+			_drbd_set_state(_NS(mdev, susp, 0), ChgStateVerbose, NULL);
 			spin_unlock_irq(&mdev->req_lock);
 		}
 	}
@@ -1011,6 +1087,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 				/* A FullSync is required after a
 				   primary detached from its disk! */
 				_drbd_uuid_new_current(mdev);
+				drbd_send_uuids(mdev);
 			}
 			dec_local(mdev);
 		}
@@ -1062,13 +1139,17 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* We are in the progress to start a full sync... */
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
-	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) )
+	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
+		INFO("Queueing bitmap io: about to start a forced full sync\n");
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync);
+	}
 
 	/* We are invalidating our self... */
 	if ( os.conn < Connected && ns.conn < Connected &&
-	       os.disk > Inconsistent && ns.disk == Inconsistent )
+	       os.disk > Inconsistent && ns.disk == Inconsistent ) {
+		INFO("Queueing bitmap io: invalidate forced full sync\n");
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL);
+	}
 
 	if (os.disk > Diskless && ns.disk == Diskless) {
 		/* since inc_local() only works as long as disk>=Inconsistent,
@@ -1076,9 +1157,13 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		   not increase... It will reach zero */
 		wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
-		drbd_free_bc(mdev->bc);	mdev->bc = NULL;
-		lc_free(mdev->resync);  mdev->resync = NULL;
-		lc_free(mdev->act_log); mdev->act_log = NULL;
+		lc_free(mdev->resync);
+		mdev->resync = NULL;
+		lc_free(mdev->act_log);
+		mdev->act_log = NULL;
+		__no_warn(local, drbd_free_bc(mdev->bc););
+		wmb(); /* see begin of drbd_nl_disk_conf() */
+		__no_warn(local, mdev->bc = NULL;);
 	}
 
 	/* A resync finished or aborted, wake paused devices... */
@@ -1100,7 +1185,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 }
 
 
-int drbd_thread_setup(void *arg)
+STATIC int drbd_thread_setup(void *arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	struct drbd_conf *mdev = thi->mdev;
@@ -1142,7 +1227,7 @@ int drbd_thread_setup(void *arg)
 	return retval;
 }
 
-void drbd_thread_init(struct drbd_conf *mdev, struct Drbd_thread *thi,
+STATIC void drbd_thread_init(struct drbd_conf *mdev, struct Drbd_thread *thi,
 		      int (*func) (struct Drbd_thread *))
 {
 	spin_lock_init(&thi->t_lock);
@@ -1243,21 +1328,6 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 		D_ASSERT(thi->t_state == None);
 		spin_unlock(&thi->t_lock);
 	}
-}
-
-void drbd_thread_signal(struct Drbd_thread *thi)
-{
-	spin_lock(&thi->t_lock);
-
-	if (thi->t_state == None) {
-		spin_unlock(&thi->t_lock);
-		return;
-	}
-
-	if (thi->task != current)
-		force_sig(DRBD_SIGKILL, thi->task);
-
-	spin_unlock(&thi->t_lock);
 }
 
 #ifdef CONFIG_SMP
@@ -1431,15 +1501,15 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	return rv;
 }
 
-/* Hold sock mutex before calling this */
-int _drbd_send_uuids(struct drbd_conf *mdev)
+int drbd_send_uuids(struct drbd_conf *mdev)
 {
 	struct Drbd_GenCnt_Packet p;
-	int i, ok = 0;
-	u64 uuid_flags = 0;
-	struct socket *sock = mdev->data.socket;
+	int i;
 
-	if (!inc_local_if_state(mdev, Negotiating)) return 1; /* ok. */
+	u64 uuid_flags = 0;
+
+	if (!inc_local_if_state(mdev, Negotiating))
+		return 1;
 
 	/* FIXME howto handle diskless ? */
 	for (i = Current; i < UUID_SIZE; i++)
@@ -1454,21 +1524,8 @@ int _drbd_send_uuids(struct drbd_conf *mdev)
 
 	dec_local(mdev);
 
-	if (likely(sock != NULL))
-		ok = _drbd_send_cmd(mdev, sock, ReportUUIDs,
-				   (struct Drbd_Header*)&p, sizeof(p), 0);
-
-	return ok;
-}
-
-int drbd_send_uuids(struct drbd_conf *mdev)
-{
-	int ok;
-	down(&mdev->data.mutex);
-	ok = _drbd_send_uuids(mdev);
-	up(&mdev->data.mutex);
-
-	return ok;
+	return drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportUUIDs,
+			     (struct Drbd_Header*)&p, sizeof(p));
 }
 
 int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val)
@@ -1512,22 +1569,6 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 	return ok;
 }
 
-/* Hold socket mutex before calling this */
-int _drbd_send_state(struct drbd_conf *mdev)
-{
-	struct socket *sock = mdev->data.socket;
-	struct Drbd_State_Packet p;
-	int ok = 0;
-
-	down(&mdev->data.mutex);
-	p.state    = cpu_to_be32(mdev->state.i);
-	if (likely(sock != NULL))
-		ok = _drbd_send_cmd(mdev, sock, ReportState,
-				   (struct Drbd_Header*)&p, sizeof(p), 0);
-	up(&mdev->data.mutex);
-	return ok;
-}
-
 /**
  * drbd_send_state:
  * Informs the peer about our state. Only call it when
@@ -1537,13 +1578,25 @@ int _drbd_send_state(struct drbd_conf *mdev)
  */
 int drbd_send_state(struct drbd_conf *mdev)
 {
-	int ok;
+	struct socket *sock;
+	struct Drbd_State_Packet p;
+	int ok = 0;
 
 	/* Grab state lock so we wont send state if we're in the middle
 	 * of a cluster wide state change on another thread */
 	drbd_state_lock(mdev);
 
-	ok = _drbd_send_state(mdev);
+	down(&mdev->data.mutex);
+
+	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
+	sock = mdev->data.socket;
+
+	if (likely(sock != NULL)) {
+		ok = _drbd_send_cmd(mdev, sock, ReportState,
+				    (struct Drbd_Header*)&p, sizeof(p), 0);
+	}
+
+	up(&mdev->data.mutex);
 
 	drbd_state_unlock(mdev);
 	return ok;
@@ -1588,17 +1641,22 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 	p  = vmalloc(PAGE_SIZE); /* sleeps. cannot fail. */
 	buffer = (unsigned long *)p->payload;
 
-	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
-		drbd_bm_set_all(mdev);
-		if (drbd_bm_write(mdev)) {
-			/* write_bm did fail! Leave full sync flag set in Meta Data
-			 * but otherwise process as per normal - need to tell other
-			 * side that a full resync is required! */
-			ERR("Failed to write bitmap to disk!\n");
-		} else {
-			drbd_md_clear_flag(mdev, MDF_FullSync);
-			drbd_md_sync(mdev);
+	if (inc_local(mdev)) {
+		if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
+			INFO("Writing the whole bitmap, MDF_FullSync was set.\n");
+			drbd_bm_set_all(mdev);
+			if (drbd_bm_write(mdev)) {
+				/* write_bm did fail! Leave full sync flag set in Meta Data
+				 * but otherwise process as per normal - need to tell other
+				 * side that a full resync is required! */
+				ERR("Failed to write bitmap to disk!\n");
+			}
+			else {
+				drbd_md_clear_flag(mdev,MDF_FullSync);
+				drbd_md_sync(mdev);
+			}
 		}
+		dec_local(mdev);
 	}
 
 	/*
@@ -1648,7 +1706,7 @@ int drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
  * This helper function expects the sector and block_id parameter already
  * in big endian!
  */
-int _drbd_send_ack(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
+STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 			  u64 sector,
 			  u32 blksize,
 			  u64 block_id)
@@ -1769,7 +1827,7 @@ int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
  * returns FALSE if we should retry,
  * TRUE if we think connection is dead
  */
-int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
+STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
 {
 	int drop_it;
 	/* long elapsed = (long)(jiffies - mdev->last_received); */
@@ -1814,7 +1872,7 @@ int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
+STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 		   int offset, size_t size)
 {
        int ret;
@@ -2062,7 +2120,7 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 	iov.iov_base = buf;
 	iov.iov_len  = size;
 
-	msg.msg_name       = 0;
+	msg.msg_name       = NULL;
 	msg.msg_namelen    = 0;
 #if !HAVE_KERNEL_SENDMSG
 	msg.msg_iov        = &iov;
@@ -2188,7 +2246,7 @@ int drbd_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-void drbd_unplug_fn(struct request_queue *q)
+STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
 
@@ -2222,7 +2280,7 @@ void drbd_unplug_fn(struct request_queue *q)
 		drbd_kick_lo(mdev);
 }
 
-void drbd_set_defaults(struct drbd_conf *mdev)
+STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 {
 	mdev->sync_conf.after      = DRBD_AFTER_DEF;
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
@@ -2261,6 +2319,7 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	init_MUTEX(&mdev->meta.mutex);
 	sema_init(&mdev->data.work.s, 0);
 	sema_init(&mdev->meta.work.s, 0);
+	mutex_init(&mdev->state_mutex);
 
 	spin_lock_init(&mdev->data.work.q_lock);
 	spin_lock_init(&mdev->meta.work.q_lock);
@@ -2397,7 +2456,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 }
 
 
-void drbd_destroy_mempools(void)
+STATIC void drbd_destroy_mempools(void)
 {
 	struct page *page;
 
@@ -2427,7 +2486,7 @@ void drbd_destroy_mempools(void)
 	return;
 }
 
-int drbd_create_mempools(void)
+STATIC int drbd_create_mempools(void)
 {
 	struct page *page;
 	const int number = (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE) * minor_count;
@@ -2480,7 +2539,7 @@ Enomem:
 	return -ENOMEM;
 }
 
-int drbd_notify_sys(struct notifier_block *this, unsigned long code,
+STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	void *unused)
 {
 	/* just so we have it.  you never know what interessting things we
@@ -2490,7 +2549,7 @@ int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	return NOTIFY_DONE;
 }
 
-struct notifier_block drbd_notifier = {
+STATIC struct notifier_block drbd_notifier = {
 	.notifier_call = drbd_notify_sys,
 };
 
@@ -2778,11 +2837,11 @@ void drbd_free_sock(struct drbd_conf *mdev)
 {
 	if (mdev->data.socket) {
 		sock_release(mdev->data.socket);
-		mdev->data.socket = 0;
+		mdev->data.socket = NULL;
 	}
 	if (mdev->meta.socket) {
 		sock_release(mdev->meta.socket);
-		mdev->meta.socket = 0;
+		mdev->meta.socket = NULL;
 	}
 }
 
@@ -2796,8 +2855,9 @@ void drbd_free_resources(struct drbd_conf *mdev)
 	crypto_free_hash(mdev->integrity_r_tfm);
 	mdev->integrity_r_tfm=NULL;
 	drbd_free_sock(mdev);
-	drbd_free_bc(mdev->bc);
-	mdev->bc = 0;
+	__no_warn(local,
+		  drbd_free_bc(mdev->bc);
+		  mdev->bc = NULL;);
 }
 
 /*********************************/
@@ -2967,7 +3027,7 @@ void drbd_md_mark_dirty(struct drbd_conf *mdev)
 }
 
 
-void drbd_uuid_move_history(struct drbd_conf *mdev)
+STATIC void drbd_uuid_move_history(struct drbd_conf *mdev) __must_hold(local)
 {
 	int i;
 
@@ -2980,13 +3040,15 @@ void drbd_uuid_move_history(struct drbd_conf *mdev)
 	}
 }
 
-void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val)
+void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 {
 	if (idx == Current) {
 		if (mdev->state.role == Primary)
 			val |= 1;
 		else
 			val &= ~((u64)1);
+
+		drbd_set_ed_uuid(mdev, val);
 	}
 
 	mdev->bc->md.uuid[idx] = val;
@@ -2999,7 +3061,7 @@ void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val)
 }
 
 
-void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val)
+void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 {
 	if (mdev->bc->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
@@ -3018,7 +3080,7 @@ void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val)
  * sync upon next connect. Aditionally the full sync is also requested
  * by the FullSync bit.
  */
-void _drbd_uuid_new_current(struct drbd_conf *mdev)
+void _drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 {
 	u64 uuid;
 
@@ -3039,8 +3101,10 @@ void _drbd_uuid_new_current(struct drbd_conf *mdev)
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
  */
-void drbd_uuid_new_current(struct drbd_conf *mdev)
+void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 {
+	u64 val;
+
 	INFO("Creating new current UUID\n");
 	D_ASSERT(mdev->bc->md.uuid[Bitmap] == 0);
 	mdev->bc->md.uuid[Bitmap] = mdev->bc->md.uuid[Current];
@@ -3048,20 +3112,11 @@ void drbd_uuid_new_current(struct drbd_conf *mdev)
 	       drbd_print_uuid(mdev, Bitmap);
 		);
 
-	get_random_bytes(&mdev->bc->md.uuid[Current], sizeof(u64));
-	if (mdev->state.role == Primary)
-		mdev->bc->md.uuid[Current] |= 1;
-	else
-		mdev->bc->md.uuid[Current] &= ~((u64)1);
-
-	MTRACE(TraceTypeUuid, TraceLvlSummary,
-	       drbd_print_uuid(mdev, Current);
-		);
-
-	drbd_md_mark_dirty(mdev);
+	get_random_bytes(&val, sizeof(u64));
+	_drbd_uuid_set(mdev, Current, val);
 }
 
-void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val)
+void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 {
 	if (mdev->bc->md.uuid[Bitmap] == 0 && val == 0)
 		return;
@@ -3096,17 +3151,21 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val)
  */
 int drbd_bmio_set_n_write(struct drbd_conf *mdev)
 {
-	int rv;
+	int rv = -EIO;
 
-	drbd_md_set_flag(mdev,MDF_FullSync);
-	drbd_md_sync(mdev);
-	drbd_bm_set_all(mdev);
-
-	rv = drbd_bm_write(mdev);
-
-	if (!rv) {
-		drbd_md_clear_flag(mdev,MDF_FullSync);
+	if (inc_local_if_state(mdev, Attaching)) {
+		drbd_md_set_flag(mdev, MDF_FullSync);
 		drbd_md_sync(mdev);
+		drbd_bm_set_all(mdev);
+
+		rv = drbd_bm_write(mdev);
+
+		if (!rv) {
+			drbd_md_clear_flag(mdev, MDF_FullSync);
+			drbd_md_sync(mdev);
+		}
+
+		dec_local(mdev);
 	}
 
 	return rv;
@@ -3187,7 +3246,7 @@ int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *))
 	return rv;
 }
 
-void drbd_md_set_flag(struct drbd_conf *mdev, int flag)
+void drbd_md_set_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
 	if ( (mdev->bc->md.flags & flag) != flag) {
@@ -3195,7 +3254,8 @@ void drbd_md_set_flag(struct drbd_conf *mdev, int flag)
 		mdev->bc->md.flags |= flag;
 	}
 }
-void drbd_md_clear_flag(struct drbd_conf *mdev, int flag)
+
+void drbd_md_clear_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
 	if ( (mdev->bc->md.flags & flag) != 0 ) {
@@ -3239,7 +3299,7 @@ struct fault_random_state {
  * Crude but fast random-number generator.  Uses a linear congruential
  * generator, with occasional help from get_random_bytes().
  */
-unsigned long
+STATIC unsigned long
 _drbd_fault_random(struct fault_random_state *rsp)
 {
 	long refresh;
@@ -3253,7 +3313,7 @@ _drbd_fault_random(struct fault_random_state *rsp)
 	return swahw32(rsp->state);
 }
 
-char *
+STATIC char *
 _drbd_fault_str(unsigned int type) {
 	static char *_faults[] = {
 		"Meta-data write",
@@ -3292,7 +3352,7 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type)
 
 #ifdef ENABLE_DYNAMIC_TRACE
 
-char *_drbd_uuid_str(unsigned int idx)
+STATIC char *_drbd_uuid_str(unsigned int idx)
 {
 	static char *uuid_str[] = {
 		"Current",
@@ -3307,8 +3367,8 @@ char *_drbd_uuid_str(unsigned int idx)
 }
 
 /* Pretty print a UUID value */
-void
-drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) {
+void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) __must_hold(local)
+{
 	INFO(" uuid[%s] now %016llX\n",
 		_drbd_uuid_str(idx), mdev->bc->md.uuid[idx]);
 }
@@ -3468,7 +3528,7 @@ do {								\
 	}							\
 } while (0)
 
-char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state_t val)
+STATIC char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state_t val)
 {
 	char *op = p;
 	*p = '\0';
@@ -3496,7 +3556,7 @@ do { \
 	} \
 } while (0)
 
-char *_dump_block_id(u64 block_id, char *buff)
+STATIC char *_dump_block_id(u64 block_id, char *buff)
 {
     if (is_syncer_block_id(block_id))
 	strcpy(buff, "SyncerId");

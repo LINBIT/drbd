@@ -86,8 +86,10 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_NoNetConfig] = "Have no net/connection configuration",
 	[-SS_NoVerifyAlg] = "Need a verify algorithm to start online verify",
 	[-SS_NeedConnection] = "Need a connection to start online verify",
+	[-SS_NotSupported] = "Peer does not support protocol",
 	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
-	[-SS_NotSupported] = "Peer does not support protocol"
+	[-SS_InTransientState] = "In transient state, retry after next state change",
+	[-SS_ConcurrentStChg] = "Concurrent state changes detected and aborted",
 };
 
 const char *conns_to_name(enum drbd_conns s)

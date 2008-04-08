@@ -27,13 +27,9 @@ extern const char *drbd_buildtag(void);
 #define PRO_VERSION_MIN 86
 #define PRO_VERSION_MAX 88
 
-/* no static functs, improves quality of OOPS traces
- */
-#define DBG_ALL_SYMBOLS
-
-/* enables MUST_HOLD macro (assertions for spinlocks)
-#define DBG_SPINLOCKS
- */
+#ifndef __CHECKER__   /* for a sparse run, we need all STATICs */
+#define DBG_ALL_SYMBOLS /* no static functs, improves quality of OOPS traces */
+#endif
 
 /* drbd_assert_breakpoint() function
 #define DBG_ASSERTS

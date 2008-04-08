@@ -184,7 +184,7 @@ void bm_end_info(struct drbd_conf *mdev, const char *where)
 int drbd_bm_init(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	WARN_ON(b);
+	WARN_ON(b != NULL);
 	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
 	if (!b)
 		return -ENOMEM;
@@ -223,7 +223,7 @@ void drbd_bm_cleanup(struct drbd_conf *mdev)
  * this masks out the remaining bits.
  * Rerturns the number of bits cleared.
  */
-int bm_clear_surplus(struct drbd_bitmap *b)
+STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -242,7 +242,7 @@ int bm_clear_surplus(struct drbd_bitmap *b)
 	return cleared;
 }
 
-void bm_set_surplus(struct drbd_bitmap *b)
+STATIC void bm_set_surplus(struct drbd_bitmap *b)
 {
 	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
 	size_t w = b->bm_bits >> LN2_BPL;
@@ -311,10 +311,8 @@ void _drbd_bm_recount_bits(struct drbd_conf *mdev, char* file, int line)
 int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long *nbm, *obm = NULL;
-	unsigned long bits, bytes, words;
-	int err = 0;
-	int growing;
+	unsigned long bits, bytes, words, *nbm, *obm = NULL;
+	int err = 0, growing;
 
 	ERR_IF(!b) return -ENOMEM;
 
@@ -349,8 +347,10 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		*/
 		words = ALIGN(bits, 64) >> LN2_BPL;
 
-		D_ASSERT((u64)bits <=
-			(((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
+		if (inc_local(mdev)) {
+			D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
+			dec_local(mdev);
+		}
 
 		if (words == b->bm_words) {
 			/* optimize: capacity has changed,
@@ -535,7 +535,7 @@ void drbd_bm_set_all(struct drbd_conf *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-BIO_ENDIO_FN(bm_async_io_complete)
+STATIC BIO_ENDIO_FN(bm_async_io_complete)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
@@ -563,7 +563,7 @@ BIO_ENDIO_FN(bm_async_io_complete)
 	BIO_ENDIO_FN_RETURN;
 }
 
-void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw)
+STATIC void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw) __must_hold(local)
 {
 	/* we are process context. we always get a bio */
 	/* THINK: do we need GFP_NOIO here? */
@@ -629,7 +629,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 /*
  * bm_rw: read/write the whole bitmap from/to its on disk location.
  */
-int bm_rw(struct drbd_conf *mdev, int rw)
+STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	/* sector_t sector; */
@@ -705,7 +705,7 @@ int bm_rw(struct drbd_conf *mdev, int rw)
  *
  * currently only called from "drbd_nl_disk_conf"
  */
-int drbd_bm_read(struct drbd_conf *mdev)
+int drbd_bm_read(struct drbd_conf *mdev) __must_hold(local)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	int err = 0;
@@ -726,7 +726,7 @@ int drbd_bm_read(struct drbd_conf *mdev)
  *
  * called at various occasions.
  */
-int drbd_bm_write(struct drbd_conf *mdev)
+int drbd_bm_write(struct drbd_conf *mdev) __must_hold(local)
 {
 	return bm_rw(mdev, WRITE);
 }
@@ -738,7 +738,7 @@ int drbd_bm_write(struct drbd_conf *mdev)
  * @enr: The _sector_ offset from the start of the bitmap.
  *
  */
-int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr)
+int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(local)
 {
 	sector_t on_disk_sector = enr + mdev->bc->md.md_offset
 				      + mdev->bc->md.bm_offset;

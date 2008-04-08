@@ -57,7 +57,7 @@ struct file_operations drbd_proc_fops = {
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
-void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
+STATIC void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 {
 	unsigned long db, dt, dbdt, rt, rs_left;
 	int i, x, y, res;
@@ -147,7 +147,7 @@ void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 }
 #endif
 
-int drbd_seq_show(struct seq_file *seq, void *v)
+STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
 	int i, hole = 0;
 	const char *sn;
@@ -230,12 +230,10 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 		}
 
 #ifdef ENABLE_DYNAMIC_TRACE
-		if (proc_details >= 1) {
-			if (mdev->resync)
-				lc_printf_stats(seq, mdev->resync);
-
-			if (mdev->act_log)
-				lc_printf_stats(seq, mdev->act_log);
+		if (proc_details >= 1 && inc_local_if_state(mdev, Failed)) {
+			lc_printf_stats(seq, mdev->resync);
+			lc_printf_stats(seq, mdev->act_log);
+			dec_local(mdev);
 		}
 
 		if (proc_details >= 2) {

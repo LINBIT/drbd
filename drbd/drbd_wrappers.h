@@ -105,6 +105,7 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 static inline void drbd_generic_make_request(struct drbd_conf *mdev,
 					     int fault_type, struct bio *bio)
 {
+	__release(local);
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
 				"bio->bi_bdev == NULL\n",
@@ -428,3 +429,12 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 }
 #endif
 
+#ifndef __CHECKER__
+# undef __cond_lock
+# define __cond_lock(x,c) (c)
+#endif
+
+#ifndef KERNEL_HAS_GFP_T
+#define KERNEL_HAS_GFP_T
+typedef unsigned gfp_t;
+#endif

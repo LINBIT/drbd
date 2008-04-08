@@ -35,7 +35,7 @@
 
 /* outside of the ifdef
  * because of the _print_rq_state(,FIXME) in barrier_acked */
-void _print_rq_state(struct drbd_request *req, const char *txt)
+STATIC void _print_rq_state(struct drbd_request *req, const char *txt)
 {
 	const unsigned long s = req->rq_state;
 	struct drbd_conf *mdev = req->mdev;
@@ -61,7 +61,7 @@ void _print_rq_state(struct drbd_request *req, const char *txt)
 
 /* #define VERBOSE_REQUEST_CODE */
 #if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
-void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
+STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 {
 	struct drbd_conf *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||
@@ -384,7 +384,7 @@ void _req_may_be_done(struct drbd_request *req, int error)
  * second hlist_for_each_entry becomes a noop. This is even simpler than to
  * grab a reference on the net_conf, and check for the two_primaries flag...
  */
-int _req_conflicts(struct drbd_request *req)
+STATIC int _req_conflicts(struct drbd_request *req)
 {
 	struct drbd_conf *mdev = req->mdev;
 	const sector_t sector = req->sector;
@@ -780,7 +780,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
  *   since size may be bigger than BM_BLOCK_SIZE,
  *   we may need to check several bits.
  */
-int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
+STATIC int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
@@ -822,8 +822,7 @@ int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
  * just try anyways, and then see that it does not work there and then.
  */
 
-int
-drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
+STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 {
 	const int rw = bio_rw(bio);
 	const int size = bio->bi_size;

@@ -34,10 +34,10 @@
  * ;)
  * this is mostly from drivers/md/md.c
  */
-int _drbd_md_sync_page_io(struct drbd_conf *mdev,
-			  struct drbd_backing_dev *bdev,
-			  struct page *page, sector_t sector,
-			  int rw, int size)
+STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
+				 struct drbd_backing_dev *bdev,
+				 struct page *page, sector_t sector,
+				 int rw, int size)
 {
 	struct bio *bio;
 	struct drbd_md_io md_io;
@@ -191,7 +191,7 @@ struct __attribute__((packed)) al_transaction {
 struct update_odbm_work {
 	struct drbd_work w;
 	unsigned int enr;
-} ;
+};
 
 struct update_al_work {
 	struct drbd_work w;
@@ -217,7 +217,7 @@ struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr)
 	if (unlikely(bm_ext != NULL)) {
 		if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
 			spin_unlock_irq(&mdev->al_lock);
-			return 0;
+			return NULL;
 		}
 	}
 	al_ext   = lc_get(mdev->act_log, enr);
@@ -324,6 +324,11 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	unsigned int extent_nr;
 	u32 xor_sum=0;
 
+	if (!inc_local(mdev)) {
+		ERR("inc_local() failed in w_al_write_transaction\n");
+		complete(&((struct update_al_work*)w)->event);
+		return 1;
+	}
 	/* do we have to do a bitmap write, first?
 	 * TODO reduce maximum latency:
 	 * submit both bios, then wait for both,
@@ -382,6 +387,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	up(&mdev->md_io_mutex);
 
 	complete(&((struct update_al_work *)w)->event);
+	dec_local(mdev);
 
 	return 1;
 }
@@ -392,10 +398,10 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
  * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
  * record.
  */
-int drbd_al_read_tr(struct drbd_conf *mdev,
-		    struct drbd_backing_dev *bdev,
-		    struct al_transaction *b,
-		    int index)
+STATIC int drbd_al_read_tr(struct drbd_conf *mdev,
+			   struct drbd_backing_dev *bdev,
+			   struct al_transaction *b,
+			   int index)
 {
 	sector_t sector;
 	int rv, i;
@@ -544,7 +550,7 @@ struct drbd_atodb_wait {
 	int                error;
 };
 
-BIO_ENDIO_FN(atodb_endio)
+STATIC BIO_ENDIO_FN(atodb_endio)
 {
 	struct drbd_atodb_wait *wc = bio->bi_private;
 	struct drbd_conf *mdev = wc->mdev;
@@ -568,8 +574,7 @@ BIO_ENDIO_FN(atodb_endio)
 		complete(&wc->io_done);
 
 	page = bio->bi_io_vec[0].bv_page;
-	if (page)
-		put_page(page);
+	put_page(page);
 	bio_put(bio);
 	mdev->bm_writ_cnt++;
 	dec_local(mdev);
@@ -580,64 +585,65 @@ BIO_ENDIO_FN(atodb_endio)
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 /* activity log to on disk bitmap -- prepare bio unless that sector
  * is already covered by previously prepared bios */
-int atodb_prepare_unless_covered(struct drbd_conf *mdev,
-			     struct bio **bios,
-			     struct page **page,
-			     unsigned int *page_offset,
-			     unsigned int enr,
-			     struct drbd_atodb_wait *wc)
+STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
+					struct bio **bios,
+					unsigned int enr,
+					struct drbd_atodb_wait *wc) __must_hold(local)
 {
 	struct bio *bio;
-	struct page *np;
+	struct page *page;
 	sector_t on_disk_sector = enr + mdev->bc->md.md_offset
 				      + mdev->bc->md.bm_offset;
+	unsigned int page_offset = PAGE_SIZE;
 	int offset;
 	int i = 0;
-	int allocated_page = 0;
+	int err = -ENOMEM;
 
-	/* check if that enr is already covered by an already created bio. */
+	/* Check if that enr is already covered by an already created bio.
+	 * Caution, bios[] is not NULL terminated,
+	 * but only initialized to all NULL.
+	 * For completely scattered activity log,
+	 * the last invocation iterates over all bios,
+	 * and finds the last NULL entry.
+	 */
 	while ( (bio = bios[i]) ) {
 		if (bio->bi_sector == on_disk_sector)
 			return 0;
 		i++;
 	}
+	/* bios[i] == NULL, the next not yet used slot */
 
 	bio = bio_alloc(GFP_KERNEL, 1);
 	if (bio == NULL)
 		return -ENOMEM;
 
-	bio->bi_bdev = mdev->bc->md_bdev;
-	bio->bi_sector = on_disk_sector;
-
-	bios[i] = bio;
-
-	if (*page_offset == PAGE_SIZE) {
-		np = alloc_page(__GFP_HIGHMEM);
-		/* no memory leak, bio gets cleaned up by caller */
-		if (np == NULL)
-			return -ENOMEM;
-		*page = np;
-		*page_offset = 0;
-		allocated_page = 1;
+	if (i > 0) {
+		const struct bio_vec *prev_bv = bios[i-1]->bi_io_vec;
+		page_offset = prev_bv->bv_offset + prev_bv->bv_len;
+		page = prev_bv->bv_page;
+	}
+	if (page_offset == PAGE_SIZE) {
+		page = alloc_page(__GFP_HIGHMEM);
+		if (page == NULL)
+			goto out_bio_put;
+		page_offset = 0;
+	} else {
+		get_page(page);
 	}
 
 	offset = S2W(enr);
 	drbd_bm_get_lel( mdev, offset,
 			 min_t(size_t, S2W(1), drbd_bm_words(mdev) - offset),
-			 kmap(*page) + *page_offset );
-	kunmap(*page);
-
-	/* no memory leak, page gets cleaned up by caller */
-	if (bio_add_page(bio, *page, MD_HARDSECT, *page_offset) != MD_HARDSECT)
-		return -EINVAL;
-
-	if (!allocated_page)
-		get_page(*page);
-
-	*page_offset += MD_HARDSECT;
+			 kmap(page) + page_offset );
+	kunmap(page);
 
 	bio->bi_private = wc;
 	bio->bi_end_io = atodb_endio;
+	bio->bi_bdev = mdev->bc->md_bdev;
+	bio->bi_sector = on_disk_sector;
+
+	if (bio_add_page(bio, page, MD_HARDSECT, page_offset) != MD_HARDSECT)
+		goto out_put_page;
 
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
@@ -646,7 +652,17 @@ int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 	 * the number of pending IO requests DRBD at its backing device.
 	 */
 	atomic_inc(&mdev->local_cnt);
+
+	bios[i] = bio;
+
 	return 0;
+
+out_put_page:
+	err = -EINVAL;
+	put_page(page);
+out_bio_put:
+	bio_put(bio);
+	return err;
 }
 
 /**
@@ -660,8 +676,6 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 	int i, nr_elements;
 	unsigned int enr;
 	struct bio **bios;
-	struct page *page;
-	unsigned int page_offset = PAGE_SIZE;
 	struct drbd_atodb_wait wc;
 
 	ERR_IF (!inc_local_if_state(mdev, Attaching))
@@ -684,9 +698,8 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 		enr = lc_entry(mdev->act_log, i)->lc_number;
 		if (enr == LC_FREE)
 			continue;
-		/* next statement also does atomic_inc wc.count */
-		if (atodb_prepare_unless_covered(mdev, bios, &page,
-						&page_offset,
+		/* next statement also does atomic_inc wc.count and local_cnt */
+		if (atodb_prepare_unless_covered(mdev, bios,
 						enr/AL_EXT_PER_BM_SECT,
 						&wc))
 			goto free_bios_submit_one_by_one;
@@ -732,16 +745,9 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 
  free_bios_submit_one_by_one:
 	/* free everything by calling the endio callback directly. */
-	for (i = 0; i < nr_elements; i++) {
-		if (bios[i] == NULL)
-			break;
-		bios[i]->bi_size = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-		atodb_endio(bios[i], MD_HARDSECT, 0);
-#else
-		atodb_endio(bios[i], 0);
-#endif
-	}
+	for (i = 0; i < nr_elements && bios[i]; i++)
+		bio_endio(bios[i], 0);
+
 	kfree(bios);
 
  submit_one_by_one:
@@ -797,7 +803,10 @@ static inline int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 	if (likely(rv)) lc_del(mdev->act_log, al_ext);
 	spin_unlock_irq(&mdev->al_lock);
 
-	if (unlikely(!rv)) INFO("Waiting for extent in drbd_al_shrink()\n");
+	MTRACE(TraceTypeALExts,TraceLvlMetrics,
+	       if(unlikely(!rv))
+		       INFO("Waiting for extent in drbd_al_shrink()\n");
+	       );
 
 	return rv;
 }
@@ -824,14 +833,13 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 	wake_up(&mdev->al_wait);
 }
 
-int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = (struct update_odbm_work *)w;
 
-	if ( !inc_local_if_state(mdev, Attaching) ) {
+	if (!inc_local(mdev)) {
 		if (DRBD_ratelimit(5*HZ, 5))
-			WARN("Can not update on disk bitmap, "
-			     "local IO disabled.\n");
+			WARN("Can not update on disk bitmap, local IO disabled.\n");
 		return 1;
 	}
 
@@ -860,7 +868,7 @@ int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
+STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				      int count, int success)
 {
 	struct bm_extent *ext;
@@ -1010,7 +1018,7 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 				mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 			}
 		}
-		if ( inc_local_if_state(mdev, Attaching) ) {
+		if (inc_local(mdev)) {
 			drbd_try_clear_on_disk_bm(mdev, sector, count, TRUE);
 			dec_local(mdev);
 		}
@@ -1501,7 +1509,7 @@ void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 	if (count) {
 		mdev->rs_failed += count;
 
-		if ( inc_local_if_state(mdev, Attaching) ) {
+		if (inc_local(mdev)) {
 			drbd_try_clear_on_disk_bm(mdev, sector, count, FALSE);
 			dec_local(mdev);
 		}
