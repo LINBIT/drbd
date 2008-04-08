@@ -254,8 +254,17 @@ int drbd_set_role(drbd_dev *mdev, drbd_role_t new_role, int force)
 	mask.i = 0; mask.role = role_mask;
 	val.i  = 0; val.role  = new_role;
 
-	while (try++ < 3) {
+	while (try++ < 4) {
 		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
+
+		/* in case we first succeeded to outdate,
+		 * but now suddenly could establish a connection */
+		if (r == SS_CW_FailedByPeer && mask.pdsk != 0) {
+			val.pdsk = 0;
+			mask.pdsk = 0;
+			continue;
+		}
+
 		if( r == SS_NoUpToDateDisk && force &&
 		    ( mdev->state.disk == Inconsistent ||
 		      mdev->state.disk == Outdated ) ) {
