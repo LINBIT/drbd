@@ -516,25 +516,20 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
 			   void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
-	struct iovec iov;
-	struct msghdr msg;
+	struct kvec iov = {
+		.iov_base = buf,
+		.iov_len = size,
+	};
+	struct msghdr msg = {
+		.msg_iovlen = 1,
+		.msg_iov = (struct iovec *)&iov,
+		.msg_flags = (flags ? flags : MSG_WAITALL | MSG_NOSIGNAL)
+	};
 	int rv;
-
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_iovlen = 1;
-	msg.msg_iov = &iov;
-	iov.iov_len = size;
-	iov.iov_base = buf;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_flags = flags ? flags : MSG_WAITALL | MSG_NOSIGNAL;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
-
 	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
-
 	set_fs(oldfs);
 
 	return rv;
@@ -543,19 +538,16 @@ STATIC int drbd_recv_short(drbd_dev *mdev, struct socket *sock,
 STATIC int drbd_recv(drbd_dev *mdev,void *buf, size_t size)
 {
 	mm_segment_t oldfs;
-	struct iovec iov;
-	struct msghdr msg;
+	struct kvec iov = {
+		.iov_base = buf,
+		.iov_len = size,
+	};
+	struct msghdr msg = {
+		.msg_iovlen = 1,
+		.msg_iov = (struct iovec *)&iov,
+		.msg_flags = MSG_WAITALL | MSG_NOSIGNAL
+	};
 	int rv;
-
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_iovlen = 1;
-	msg.msg_iov = &iov;
-	iov.iov_len = size;
-	iov.iov_base = buf;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
