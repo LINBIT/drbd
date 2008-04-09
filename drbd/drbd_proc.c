@@ -60,7 +60,8 @@ struct file_operations drbd_proc_fops = {
 STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 {
 	unsigned long db, dt, dbdt, rt, rs_left;
-	int i, x, y, res;
+	unsigned int res;
+	int i, x, y;
 
 	drbd_get_syncer_progress(mdev, &rs_left, &res);
 
