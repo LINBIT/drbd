@@ -601,7 +601,7 @@ void drbd_bm_set_all(drbd_dev *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-STATIC BIO_ENDIO_FN(bm_async_io_complete)
+static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio,BIO_UPTODATE);

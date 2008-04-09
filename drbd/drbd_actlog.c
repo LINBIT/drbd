@@ -546,7 +546,7 @@ struct drbd_atodb_wait {
 	int                error;
 };
 
-STATIC BIO_ENDIO_FN(atodb_endio)
+STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_atodb_wait *wc = bio->bi_private;
 	struct Drbd_Conf *mdev=wc->mdev;
