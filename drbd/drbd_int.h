@@ -1998,7 +1998,8 @@ static inline int drbd_queue_order_type(drbd_dev* mdev)
 # define QUEUE_ORDERED_NONE 0
 # define QUEUE_ORDERED_TAG 1
 # define QUEUE_ORDERED_FLUSH 2
-# warning "TCQ code disabled at compile time."
+/* # warning "TCQ code disabled at compile time."
+ * no need to warn about, this is all dead code anyways. */
 	rv = QUEUE_ORDERED_NONE; // Kernels before 2.6.12 had not had TCQ support.
 #endif
 	return rv;
