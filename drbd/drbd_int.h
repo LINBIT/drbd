@@ -1426,31 +1426,14 @@ extern void _drbd_clear_done_ee(drbd_dev *mdev);
 
 static inline void drbd_tcp_cork(struct socket *sock)
 {
-#if 1
-	mm_segment_t oldfs = get_fs();
-	int val = 1;
-
-	set_fs(KERNEL_DS);
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char*)&val, sizeof(val) );
-	set_fs(oldfs);
-#else
-	tcp_sk(sock->sk)->nonagle |= TCP_NAGLE_CORK;
-#endif
+	int __user val = 1;
+	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
 }
 
 static inline void drbd_tcp_flush(struct socket *sock)
 {
-#if 1
-	mm_segment_t oldfs = get_fs();
-	int val = 0;
-
-	set_fs(KERNEL_DS);
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char*)&val, sizeof(val) );
-	set_fs(oldfs);
-#else
-	tcp_sk(sock->sk)->nonagle &= ~TCP_NAGLE_CORK;
-	tcp_push_pending_frames(sock->sk, tcp_sk(sock->sk));
-#endif
+	int __user val = 0;
+	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
 }
 
 // drbd_proc.c
