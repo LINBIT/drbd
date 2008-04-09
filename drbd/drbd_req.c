@@ -968,8 +968,7 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 	 * barrier packet, this request is queued within the same spinlock. */
 	if (remote && mdev->unused_spare_barrier &&
             test_and_clear_bit(CREATE_BARRIER, &mdev->flags)) {
-		struct drbd_barrier *b = mdev->unused_spare_barrier;
-		_tl_add_barrier(mdev, b);
+		_tl_add_barrier(mdev, mdev->unused_spare_barrier);
 		mdev->unused_spare_barrier = NULL;
 	} else {
 		D_ASSERT(!(remote && rw == WRITE &&

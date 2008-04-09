@@ -1412,7 +1412,6 @@ STATIC int receive_Data(drbd_dev *mdev,Drbd_Header* h)
 	} else {
 		/* don't get the req_lock yet,
 		 * we may sleep in drbd_wait_peer_seq */
-		const sector_t sector = e->sector;
 		const int size = e->size;
 		const int discard = test_bit(DISCARD_CONCURRENT,&mdev->flags);
 		DEFINE_WAIT(wait);
@@ -3304,7 +3303,6 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	if(is_syncer_block_id(p->block_id)) {
-		sector_t sector = be64_to_cpu(p->sector);
 		int size = be32_to_cpu(p->blksize);
 
 		dec_rs_pending(mdev);
