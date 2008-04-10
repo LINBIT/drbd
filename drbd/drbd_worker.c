@@ -912,6 +912,11 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	drbd_state_lock(mdev);
 
+	if (!inc_local(mdev)) {
+		drbd_state_unlock(mdev);
+		return;
+	}
+
 	if(side == SyncTarget) {
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
@@ -954,6 +959,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 	}
 	drbd_global_unlock();
 	drbd_state_unlock(mdev);
+	dec_local(mdev);
 
 	if ( r == SS_Success ) {
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
