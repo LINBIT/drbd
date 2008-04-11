@@ -764,16 +764,9 @@ int print_config_error(int err_no)
 		return 20;
 
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
-<<<<<<< HEAD:user/drbdsetup.c
 	     ( err_no > SS_CW_NoNeed || err_no < SS_NotSupported) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should update the drbd userland tools.\n",err_no);
-=======
-	     ( err_no > SS_CW_NoNeed || err_no < SS_LowerThanOutdated) ) {
-		fprintf(stderr,"%s: Error code %d unknown.\n"
-			"You should updated the drbd userland tools.\n",
-			devname, err_no);
->>>>>>> drbd-8.1:user/drbdsetup.c
 		rv = 20;
 	} else {
 		if(err_no > RetCodeBase ) {
