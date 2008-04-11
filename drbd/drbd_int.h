@@ -1493,13 +1493,13 @@ void drbd_bcast_sync_progress(drbd_dev *mdev);
                 ({drbd_state_t val; val.i=0; val.T1 = (S1); \
                   val.T2 = (S2); val.T3 = (S3); val;})
 
-#define _NS(D,T,S) D,({drbd_state_t ns; ns.i = D->state.i; ns.T = (S); ns;})
+#define _NS(D,T,S) D,({drbd_state_t __ns; __ns.i = D->state.i; __ns.T = (S); __ns;})
 #define _NS2(D,T1,S1,T2,S2) \
-                D,({drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
-                ns.T2 = (S2); ns;})
+                D,({drbd_state_t __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
+                __ns.T2 = (S2); __ns;})
 #define _NS3(D,T1,S1,T2,S2,T3,S3) \
-                D,({drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
-                ns.T2 = (S2); ns.T3 = (S3); ns;})
+                D,({drbd_state_t __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
+                __ns.T2 = (S2); __ns.T3 = (S3); __ns;})
 
 static inline void drbd_state_lock(drbd_dev *mdev)
 {
