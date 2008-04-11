@@ -62,6 +62,25 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+8.0.12rc1 (api:86/proto:86)
+--------
+ * Corrected lock-out of application IO during bitmap IO.
+   (Only triggered issues with multi-terrabyte volumes)
+ * If an attach would causes a split-brain,
+   abort the attach, do not drop the connection
+ * A node without data (no disk, no connection) only accepts data
+   (attach or connect) if that data matches the last-known data
+ * Fixed various race conditions between state transitions
+ * Various bugfixes to issues found by using the sparse tool
+ * Corrected the exit codes of drbdsetup/drbdadm to match
+   the expectations of dopd (drbd-outdate-peer-daemon)
+ * Corrected the online changing of the number of AL extents while
+   application IO is in flight.
+ * Two new config options no-disk-flushes and no-md-flushes to disable
+   the use of io subsystem flushes and barrier BIOs.
+ * drbdsetup /dev/drbdX down no longer fails for non-existing minors
+ * Added wipe-md to drbdadm
+>>>>>>> drbd-8.0:ChangeLog
 
 8.0.11 (api:86/proto:86)
 --------

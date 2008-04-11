@@ -423,7 +423,8 @@ const char * error_to_string(int err_no)
 }
 #undef MAX_ERROR
 
-char* cmdname = 0;
+char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
+char *devname = NULL; /* "/dev/drbd12" for reporting in print_config_error */
 int lock_fd;
 
 int dump_tag_list(unsigned short *tlc)
@@ -752,6 +753,7 @@ struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 	return NULL;
 }
 
+/* prepends global devname to output (if any) */
 int print_config_error(int err_no)
 {
 	int rv=0;
@@ -762,25 +764,40 @@ int print_config_error(int err_no)
 		return 20;
 
 	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
+<<<<<<< HEAD:user/drbdsetup.c
 	     ( err_no > SS_CW_NoNeed || err_no < SS_NotSupported) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should update the drbd userland tools.\n",err_no);
+=======
+	     ( err_no > SS_CW_NoNeed || err_no < SS_LowerThanOutdated) ) {
+		fprintf(stderr,"%s: Error code %d unknown.\n"
+			"You should updated the drbd userland tools.\n",
+			devname, err_no);
+>>>>>>> drbd-8.1:user/drbdsetup.c
 		rv = 20;
 	} else {
 		if(err_no > RetCodeBase ) {
-			fprintf(stderr,"Failure: (%d) %s\n",err_no,
-					error_to_string(err_no));
+			fprintf(stderr,"%s: Failure: (%d) %s\n",
+				devname, err_no, error_to_string(err_no));
 			rv = 10;
 		} else if (err_no == SS_UnknownError) {
-			fprintf(stderr,"State change failed: (%d)"
-				"unknown error.\n", err_no);
+			fprintf(stderr,"%s: State change failed: (%d)"
+				"unknown error.\n", devname, err_no);
 			rv = 11;
 		} else if (err_no > SS_TwoPrimaries) {
 			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success...
 		} else {
-			fprintf(stderr,"State change failed: (%d) %s\n",
-				err_no, set_st_err_name(err_no));
-			rv = 11;
+			fprintf(stderr,"%s: State change failed: (%d) %s\n",
+				devname, err_no, set_st_err_name(err_no));
+			if (err_no == SS_NoUpToDateDisk) {
+				/* am Primary, cannot outdate */
+				rv = 17;
+			} else if (err_no == SS_LowerThanOutdated) {
+				/* was inconsistent anyways */
+				rv = 5;
+			} else {
+				rv = 11;
+			}
 		}
 	}
 	return rv;
@@ -2026,6 +2043,8 @@ int main(int argc, char** argv)
 	if(cmd) {
 		lock_fd = dt_lock_drbd(argv[1]);
 		minor=dt_minor_of_dev(argv[1]);
+		/* maybe rather canonicalize, using asprintf? */
+		devname = argv[1];
 		// by passing argc-2, argv+2 the function has the command name
 		// in argv[0], e.g. "syncer"
 		rv = cmd->function(cmd,minor,argc-2,argv+2);

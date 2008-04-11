@@ -184,6 +184,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 
 enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 {
+	char *ex_to_string;
 	int r;
 	enum drbd_disk_state nps;
 	enum fencing_policy fp;
@@ -199,46 +200,57 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 	}
 
 	if (fp == Stonith)
-		drbd_request_state(mdev, NS(susp, 1));
+		_drbd_request_state(mdev, NS(susp,1), ChgWaitComplete);
 
 	r = drbd_khelper(mdev, "outdate-peer");
 
-	switch ( (r>>8) & 0xff ) {
+	switch ((r>>8) & 0xff) {
 	case 3: /* peer is inconsistent */
+		ex_to_string = "peer is inconsistent or worse";
 		nps = Inconsistent;
 		break;
-	case 4: /* peer is outdated */
+	case 4:
+		ex_to_string = "peer is outdated";
 		nps = Outdated;
 		break;
-	case 5: /* peer was down, we will(have) create(d) a new UUID anyways.
-		 * If we would be more strict, we would return DUnknown here. */
+	case 5: /* peer was down, we will(have) create(d) a new UUID anyways... */
+		/* If we would be more strict, we would return DUnknown here. */
+		ex_to_string = "peer is unreachable, assumed to be dead";
 		nps = Outdated;
 		break;
-	case 6: /* Peer is primary, voluntarily outdate myself */
+	case 6: /* Peer is primary, voluntarily outdate myself.
+		 * This is useful when an unconnected Secondary is asked to
+		 * become Primary, but findes the other peer being active. */
+		ex_to_string = "peer is active";
 		WARN("Peer is primary, outdating myself.\n");
 		nps = DUnknown;
-		drbd_request_state(mdev, NS(disk, Outdated));
+		_drbd_request_state(mdev, NS(disk, Outdated), ChgWaitComplete);
 		break;
 	case 7:
 		if (fp != Stonith)
 			ERR("outdate-peer() = 7 && fencing != Stonith !!!\n");
+		ex_to_string = "peer was stonithed";
 		nps = Outdated;
 		break;
 	default:
 		/* The script is broken ... */
 		nps = DUnknown;
-		ERR("outdate-peer helper broken, returned %d \n", (r>>8)&0xff);
+		ERR("outdate-peer helper broken, returned %d\n", (r>>8)&0xff);
 		return nps;
 	}
 
-	INFO("outdate-peer helper returned %d \n", (r>>8)&0xff);
+	INFO("outdate-peer helper returned %d (%s)\n",
+			(r>>8) & 0xff, ex_to_string);
 	return nps;
 }
 
 
 int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 {
-	int r = 0, forced = 0, try = 0;
+	const int max_tries = 4;
+	int r = 0;
+	int try = 0;
+	int forced = 0;
 	union drbd_state_t mask, val;
 	enum drbd_disk_state nps;
 
@@ -250,9 +262,18 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	mask.i = 0; mask.role = role_mask;
 	val.i  = 0; val.role  = new_role;
 
-	while (try++ < 3) {
+	while (try++ < max_tries) {
 		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
-		if (r == SS_NoUpToDateDisk && force &&
+
+		/* in case we first succeeded to outdate,
+		 * but now suddenly could establish a connection */
+		if (r == SS_CW_FailedByPeer && mask.pdsk != 0) {
+			val.pdsk = 0;
+			mask.pdsk = 0;
+			continue;
+		}
+
+		if( r == SS_NoUpToDateDisk && force &&
 		    ( mdev->state.disk == Inconsistent ||
 		      mdev->state.disk == Outdated ) ) {
 			mask.disk = disk_mask;
@@ -293,11 +314,12 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 			continue;
 		}
 		if (r == SS_TwoPrimaries) {
-			/* Maybe the peer is detected as dead very soon... */
+			/* Maybe the peer is detected as dead very soon...
+			   retry at most once more in this case. */
 			set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
-			if (try == 1)
-				try++; /* only a single retry in this case. */
+			if (try < max_tries)
+				try = max_tries -1;
 			continue;
 		}
 		if (r < SS_Success) {
@@ -855,7 +877,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	retcode = drbd_md_read(mdev, nbc);
 	if (retcode != NoError)
-		goto force_diskless;
+		goto force_diskless_dec;
 
 	if (mdev->state.conn < Connected &&
 	    mdev->state.role == Primary &&

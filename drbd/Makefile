@@ -80,7 +80,7 @@ else
     $(error "won't compile with this kernel version")
   endif
 
-  .PHONY: drbd.o default all greeting clean kbuild install dep
+  .PHONY: drbd.o default all greeting clean kbuild install dep tags
 
   drbd.o: greeting kbuild
   default: drbd.o
@@ -148,6 +148,11 @@ else
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
   distclean: clean
+
+  tags:
+	ctags -R -I__initdata,__exitdata,__acquires,__releases \
+		-I __must_hold,__protected_by,__protected_read_by,__protected_write_by \
+		-I BIO_ENDIO_ARGS
 
   ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE

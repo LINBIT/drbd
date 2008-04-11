@@ -465,25 +465,20 @@ STATIC int drbd_recv_short(struct drbd_conf *mdev, struct socket *sock,
 		    void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
-	struct iovec iov;
-	struct msghdr msg;
+	struct kvec iov = {
+		.iov_base = buf,
+		.iov_len = size,
+	};
+	struct msghdr msg = {
+		.msg_iovlen = 1,
+		.msg_iov = (struct iovec *)&iov,
+		.msg_flags = (flags ? flags : MSG_WAITALL | MSG_NOSIGNAL)
+	};
 	int rv;
-
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_iovlen = 1;
-	msg.msg_iov = &iov;
-	iov.iov_len = size;
-	iov.iov_base = buf;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_flags = flags ? flags : MSG_WAITALL | MSG_NOSIGNAL;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
-
 	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
-
 	set_fs(oldfs);
 
 	return rv;
@@ -492,19 +487,16 @@ STATIC int drbd_recv_short(struct drbd_conf *mdev, struct socket *sock,
 STATIC int drbd_recv(struct drbd_conf *mdev, void *buf, size_t size)
 {
 	mm_segment_t oldfs;
-	struct iovec iov;
-	struct msghdr msg;
+	struct kvec iov = {
+		.iov_base = buf,
+		.iov_len = size,
+	};
+	struct msghdr msg = {
+		.msg_iovlen = 1,
+		.msg_iov = (struct iovec *)&iov,
+		.msg_flags = MSG_WAITALL | MSG_NOSIGNAL
+	};
 	int rv;
-
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_iovlen = 1;
-	msg.msg_iov = &iov;
-	iov.iov_len = size;
-	iov.iov_base = buf;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_flags = MSG_WAITALL | MSG_NOSIGNAL;
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -1395,7 +1387,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	} else {
 		/* don't get the req_lock yet,
 		 * we may sleep in drbd_wait_peer_seq */
-		const sector_t sector = e->sector;
 		const int size = e->size;
 		const int discard = test_bit(DISCARD_CONCURRENT, &mdev->flags);
 		DEFINE_WAIT(wait);
@@ -3373,7 +3364,6 @@ STATIC int got_NegAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
 	if (is_syncer_block_id(p->block_id)) {
-		sector_t sector = be64_to_cpu(p->sector);
 		int size = be32_to_cpu(p->blksize);
 
 		dec_rs_pending(mdev);

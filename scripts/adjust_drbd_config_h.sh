@@ -65,6 +65,7 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
     $O/include/asm/arch/atomic.h \
     $O/include2/asm/atomic.h \
     $O/include/asm/atomic_32.h \
+    $O/include2/asm/atomic_32.h \
     $O/include/asm/arch/atomic_32.h
   do
     if grep_q "atomic_add_return" $f; then

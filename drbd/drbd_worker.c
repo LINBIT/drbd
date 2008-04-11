@@ -583,11 +583,6 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 		ERR("Warn failed to drbd_rs_del_all() and to kmalloc(w).\n");
 	}
 
-	/* drbd_resync_finished() might be called multiple times, if
-	   the bitmap becomes cleared by app IO writes. */
-	if (test_and_set_bit(RESYNC_FINISHED, &mdev->flags))
-		return 1;
-
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0)
 		dt = 1;
@@ -601,7 +596,9 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;
 
-	if (os.conn < Connected)
+	/* This protects us against multiple calls (that can happen in the presence
+	   of application IO), and against connectivity loss just before we arrive here. */
+	if (os.conn <= Connected)
 		goto out_unlock;
 
 	ns = os;
@@ -676,8 +673,6 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	}
 
 	drbd_bm_recount_bits(mdev);
-
-	clear_bit(RESYNC_FINISHED, &mdev->flags);
 
 	if (art)
 		drbd_khelper(mdev, "after-resync-target");
@@ -1140,6 +1135,11 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 
 	drbd_state_lock(mdev);
 
+	if (!inc_local(mdev)) {
+		drbd_state_unlock(mdev);
+		return;
+	}
+
 	if (side == SyncTarget) {
 		drbd_khelper(mdev, "before-resync-target");
 		drbd_bm_reset_find(mdev);
@@ -1182,6 +1182,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	}
 	drbd_global_unlock();
 	drbd_state_unlock(mdev);
+	dec_local(mdev);
 
 	if (r == SS_Success) {
 		INFO("Began resync as %s (will sync %lu KB [%lu bits set]).\n",
