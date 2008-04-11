@@ -433,14 +433,16 @@ void uc_node(enum usage_count_type type)
 "  --==  Thank you for participating in the global usage survey  ==--\n"
 "The server's response is:\n\n");
 		make_get_request(req_buf);
-		fprintf(stderr,
+		if (type == UC_ASK) {
+			fprintf(stderr,
 "\n"
 "In the future drbdadm will only contact "HTTP_HOST" when you update\n"
 "DRBD or when you use 'drbdadm create-md'. Of course it will continue\n"
 "to ask you for confirmation as long as 'usage-count' is at its default\n"
 "value of 'ask'.\n\n"
 "Just press [enter] to continue: ");
-		fgets(answer,9,stdin);
+			fgets(answer,9,stdin);
+		}
 	}
 }
 

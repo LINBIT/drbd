@@ -54,23 +54,6 @@
 
 #define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
 
-/* Compatibility for older kernels */
-#ifndef __acquires
-# ifdef __CHECKER__
-#  define __acquires(x)	__attribute__((context(x,0,1)))
-#  define __releases(x)	__attribute__((context(x,1,0)))
-#  define __acquire(x)	__context__(x,1)
-#  define __release(x)	__context__(x,-1)
-#  define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
-# else
-#  define __acquires(x)
-#  define __releases(x)
-#  define __acquire(x)	(void)0
-#  define __release(x)	(void)0
-#  define __cond_lock(x,c) (c)
-# endif
-#endif
-
 /* module parameter, defined in drbd_main.c */
 extern int minor_count;
 extern int allow_oos;
@@ -738,7 +721,6 @@ enum {
 				   so don't even try */
 	BITMAP_IO,		/* Let user IO drain */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
-	RESYNC_FINISHED,
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -1440,31 +1422,14 @@ extern void _drbd_clear_done_ee(struct drbd_conf *mdev);
 
 static inline void drbd_tcp_cork(struct socket *sock)
 {
-#if 1
-	mm_segment_t oldfs = get_fs();
-	int val = 1;
-
-	set_fs(KERNEL_DS);
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val) );
-	set_fs(oldfs);
-#else
-	tcp_sk(sock->sk)->nonagle |= TCP_NAGLE_CORK;
-#endif
+	int __user val = 1;
+	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
 }
 
 static inline void drbd_tcp_flush(struct socket *sock)
 {
-#if 1
-	mm_segment_t oldfs = get_fs();
-	int val = 0;
-
-	set_fs(KERNEL_DS);
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val) );
-	set_fs(oldfs);
-#else
-	tcp_sk(sock->sk)->nonagle &= ~TCP_NAGLE_CORK;
-	tcp_push_pending_frames(sock->sk, tcp_sk(sock->sk));
-#endif
+	int __user val = 0;
+	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
 }
 
 /* drbd_proc.c */
@@ -1529,13 +1494,13 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev);
 	  val.T2 = (S2); val.T3 = (S3); val; })
 
 #define _NS(D, T, S) \
-	D, ({ union drbd_state_t ns; ns.i = D->state.i; ns.T = (S); ns; })
+	D, ({ union drbd_state_t __ns; __ns.i = D->state.i; __ns.T = (S); __ns; })
 #define _NS2(D, T1, S1, T2, S2) \
-	D, ({ union drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
-	ns.T2 = (S2); ns; })
+	D, ({ union drbd_state_t __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
+	__ns.T2 = (S2); __ns; })
 #define _NS3(D, T1, S1, T2, S2, T3, S3) \
-	D, ({ union drbd_state_t ns; ns.i = D->state.i; ns.T1 = (S1); \
-	ns.T2 = (S2); ns.T3 = (S3); ns; })
+	D, ({ union drbd_state_t __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
+	__ns.T2 = (S2); __ns.T3 = (S3); __ns; })
 
 static inline void drbd_state_lock(struct drbd_conf *mdev)
 {

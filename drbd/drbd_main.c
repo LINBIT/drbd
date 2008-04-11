@@ -148,7 +148,7 @@ spinlock_t   drbd_pp_lock;
 int          drbd_pp_vacant;
 wait_queue_head_t drbd_pp_wait;
 
-struct block_device_operations drbd_ops = {
+STATIC struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_close,
@@ -2369,7 +2369,7 @@ STATIC struct notifier_block drbd_notifier = {
 };
 
 
-void __exit drbd_cleanup(void)
+STATIC void __exit drbd_cleanup(void)
 {
 	int i, rr;
 
