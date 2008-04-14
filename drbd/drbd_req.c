@@ -105,6 +105,30 @@ STATIC void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 #define print_req_mod(T,W)
 #endif
 
+/* Update disk stats at start of I/O request */
+static inline void _drbd_start_io_acct(drbd_dev *mdev, drbd_request_t *req, struct bio *bio)
+{
+	const int rw = bio_data_dir(bio);
+
+	MUST_HOLD(&mdev->req_lock)
+	__disk_stat_inc(mdev->vdisk, ios[rw]);
+	__disk_stat_add(mdev->vdisk, sectors[rw], bio_sectors(bio));
+	disk_round_stats(mdev->vdisk);
+	mdev->vdisk->in_flight++;
+}
+
+/* Update disk stats when completing request upwards */
+static inline void _drbd_end_io_acct(drbd_dev *mdev, drbd_request_t *req)
+{
+	int rw = bio_data_dir(req->master_bio);
+	unsigned long duration = jiffies - req->start_time;
+
+	MUST_HOLD(&mdev->req_lock)
+	__disk_stat_add(mdev->vdisk, ticks[rw], duration);
+	disk_round_stats(mdev->vdisk);
+	mdev->vdisk->in_flight--;
+}
+
 static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
@@ -334,6 +358,9 @@ void _req_may_be_done(drbd_request_t *req, int error)
 		 * up here anyways during the freeze ...
 		 * then again, if it is a READ, it is not in the TL at all.
 		 * is it still leagal to complete a READ during freeze? */
+
+		/* Update disk stats */
+		_drbd_end_io_acct(mdev, req);
 
 		_complete_master_bio(mdev,req,
 			  ok ? 0 : ( error ? error : -EIO ) );
@@ -956,6 +983,9 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 	}
 
 
+	/* Update disk stats */
+	_drbd_start_io_acct(mdev, req, bio);
+
 	/* _maybe_start_new_epoch(mdev);
 	 * If we need to generate a write barrier packet, we have to add the
 	 * new epoch (barrier) object, and queue the barrier packet for sending,
@@ -1011,6 +1041,7 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 			local = 0;
 		}
 		if (remote) dec_ap_pending(mdev);
+		_drbd_end_io_acct(mdev, req);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
 		bio_endio(req->master_bio, 0);
 		req->master_bio = NULL;
