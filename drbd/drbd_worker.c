@@ -912,7 +912,7 @@ void drbd_start_resync(drbd_dev *mdev, drbd_conns_t side)
 
 	drbd_state_lock(mdev);
 
-	if (!inc_local(mdev)) {
+	if (!inc_local_if_state(mdev, Negotiating)) {
 		drbd_state_unlock(mdev);
 		return;
 	}
