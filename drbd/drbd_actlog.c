@@ -1069,7 +1069,7 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 	unsigned long     rs_flags;
 
 	spin_lock_irq(&mdev->al_lock);
-	if (mdev->resync_locked > mdev->resync->nr_elements-3) {
+	if (mdev->resync_locked > mdev->resync->nr_elements/2) {
 		spin_unlock_irq(&mdev->al_lock);
 		return NULL;
 	}
