@@ -1047,7 +1047,7 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 		req->master_bio = NULL;
 		dec_ap_bio(mdev);
 		drbd_req_free(req);
-		local = remote = 0;
+		remote = 0;
 	}
 
 	/* NOTE remote first: to get the concurrent write detection right,
@@ -1064,8 +1064,6 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 	if (b) kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
-		/* FIXME what ref count do we have to ensure the backing_bdev
-		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
 		dump_internal_bio("Pri", mdev, req->private_bio, 0);
