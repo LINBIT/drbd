@@ -38,6 +38,37 @@
 #define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA,&lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
+static inline size_t size_of_lc(unsigned int e_count, size_t e_size)
+{
+	return sizeof(struct lru_cache)
+	     + e_count * (e_size + sizeof(struct hlist_head));
+}
+
+static inline void lc_init(struct lru_cache *lc,
+		const size_t bytes, const char *name,
+		const unsigned int e_count, const size_t e_size,
+		void *private_p)
+{
+	struct lc_element *e;
+	unsigned int i;
+
+	memset(lc, 0, bytes);
+	INIT_LIST_HEAD(&lc->in_use);
+	INIT_LIST_HEAD(&lc->lru);
+	INIT_LIST_HEAD(&lc->free);
+	lc->element_size = e_size;
+	lc->nr_elements  = e_count;
+	lc->new_number	 = -1;
+	lc->lc_private   = private_p;
+	lc->name         = name;
+	for (i = 0; i < e_count; i++) {
+		e = lc_entry(lc, i);
+		e->lc_number = LC_FREE;
+		list_add(&e->list, &lc->free);
+		// memset(,0,) did the rest of init for us
+	}
+}
+
 /**
  * lc_alloc: allocates memory for @e_count objects of @e_size bytes plus the
  * struct lru_cache, and the hash table slots.
@@ -46,34 +77,15 @@
 struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
 			   size_t e_size, void *private_p)
 {
-	unsigned long bytes;
 	struct lru_cache   *lc;
-	struct lc_element *e;
-	int i;
+	size_t bytes;
 
 	BUG_ON(!e_count);
 	e_size = max(sizeof(struct lc_element),e_size);
-	bytes  = e_size+sizeof(struct hlist_head);
-	bytes *= e_count;
-	bytes += sizeof(struct lru_cache);
-	lc     = vmalloc(bytes);
-	if (lc) {
-		memset(lc, 0, bytes);
-		INIT_LIST_HEAD(&lc->in_use);
-		INIT_LIST_HEAD(&lc->lru);
-		INIT_LIST_HEAD(&lc->free);
-		lc->element_size     = e_size;
-		lc->nr_elements      = e_count;
-		lc->new_number	     = -1;
-		lc->lc_private       = private_p;
-		lc->name             = name;
-		for(i=0;i<e_count;i++) {
-			e = lc_entry(lc,i);
-			e->lc_number = LC_FREE;
-			list_add(&e->list,&lc->free);
-			// memset(,0,) did the rest of init for us
-		}
-	}
+	bytes = size_of_lc(e_count, e_size);
+	lc = vmalloc(bytes);
+	if (lc)
+		lc_init(lc, bytes, name, e_count, e_size, private_p);
 	return lc;
 }
 
@@ -84,6 +96,17 @@ struct lru_cache* lc_alloc(const char *name, unsigned int e_count,
 void lc_free(struct lru_cache* lc)
 {
 	vfree(lc);
+}
+
+/**
+ * lc_reset: does a full reset for @lc and the hash table slots.
+ * It is roughly the equivalent of re-allocating a fresh lru_cache object,
+ * basically a short cut to lc_free(lc); lc = lc_alloc(...);
+ */
+void lc_reset(struct lru_cache *lc)
+{
+	lc_init(lc, size_of_lc(lc->nr_elements, lc->element_size), lc->name,
+			lc->nr_elements, lc->element_size, lc->lc_private);
 }
 
 size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
