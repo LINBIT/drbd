@@ -192,8 +192,8 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Tue Apr 8 2008 16:18:34 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.12rc1-1)
+* Tue Apr 17 2008 16:31134 -0800 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.12rc2-1)
  * Corrected lock-out of application IO during bitmap IO.
    (Only triggered issues with multi-terrabyte volumes)
  * If an attach would causes a split-brain,
@@ -208,6 +208,8 @@ uname -r | grep BOOT ||
    application IO is in flight.
  * Two new config options no-disk-flushes and no-md-flushes to disable
    the use of io subsystem flushes and barrier BIOs.
+ * Add support for standard disk stats to DRBD devices
+ * Work on stalling issues of the resync process
  * drbdsetup /dev/drbdX down no longer fails for non-existing minors
  * Added wipe-md to drbdadm
 
