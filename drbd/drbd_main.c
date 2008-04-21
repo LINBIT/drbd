@@ -2357,7 +2357,7 @@ STATIC void __exit drbd_cleanup(void)
 				put_disk(*disk);
 				*disk = NULL;
 			}
-			if (*q) blk_put_queue(*q);
+			if (*q) blk_cleanup_queue(*q);
 			*q = NULL;
 
 			D_ASSERT(mdev->open_cnt == 0);
