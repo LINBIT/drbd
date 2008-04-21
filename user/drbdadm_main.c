@@ -99,6 +99,7 @@ static int adm_wait_c(struct d_resource* ,const char* );
 static int adm_wait_ci(struct d_resource* ,const char* );
 static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
+static int sh_resource(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
 static int sh_ip(struct d_resource* ,const char* );
@@ -230,6 +231,7 @@ struct adm_cmd cmds[] = {
   { "hidden-commands",   hidden_cmds,   1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0 },
   { "sh-resources",      sh_resources,  2,0,0 },
+  { "sh-resource",       sh_resource,   2,1,0 },
   { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
   { "sh-dev",            sh_dev,        2,1,0 },
   { "sh-ll-dev",         sh_ll_dev,     2,1,0 },
@@ -502,6 +504,13 @@ static int sh_resources(struct d_resource* ignored __attribute((unused)),const c
     first=0;
   }
   printf("\n");
+
+  return 0;
+}
+
+static int sh_resource(struct d_resource* res,const char* unused __attribute((unused)))
+{
+  printf("%s\n",res->name);
 
   return 0;
 }
