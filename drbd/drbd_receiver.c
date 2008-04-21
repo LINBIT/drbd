@@ -2469,6 +2469,12 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 
 	peer_state.i = be32_to_cpu(p->state);
 
+	real_peer_disk = peer_state.disk;
+	if (peer_state.disk == Negotiating) {
+		real_peer_disk = mdev->p_uuid[UUID_FLAGS] & 4 ? Inconsistent : Consistent;
+		INFO("real peer disk state = %s\n", disks_to_name(real_peer_disk));
+	}
+
 	spin_lock_irq(&mdev->req_lock);
  retry:
 	oconn = nconn = mdev->state.conn;
@@ -2486,12 +2492,6 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 			mdev->state.disk == Negotiating));
 		cr |= test_bit(CONSIDER_RESYNC,&mdev->flags); /* peer forced */
 		cr |= (oconn == Connected && peer_state.conn > Connected);
-
-		real_peer_disk = peer_state.disk;
-		if (peer_state.disk == Negotiating) {
-			real_peer_disk = mdev->p_uuid[UUID_FLAGS] & 4 ? Inconsistent : Consistent;
-			INFO("read peer disk state = %s\n",disks_to_name(real_peer_disk));
-		}
 
 		if (cr) nconn=drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);
 
@@ -2517,12 +2517,10 @@ STATIC int receive_state(drbd_dev *mdev, Drbd_Header *h)
 	ns.i = mdev->state.i;
 	ns.conn = nconn;
 	ns.peer = peer_state.role;
-	ns.pdsk = peer_state.disk;
+	ns.pdsk = real_peer_disk;
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
-	if((nconn == Connected || nconn == WFBitMapS) &&
-	   ns.disk == Negotiating ) ns.disk = UpToDate;
-	if((nconn == Connected || nconn == WFBitMapT) &&
-	   ns.pdsk == Negotiating ) ns.pdsk = UpToDate;
+	if ((nconn == Connected || nconn == WFBitMapS) && ns.disk == Negotiating)
+		ns.disk = mdev->new_state_tmp.disk;
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose|ChgStateHard, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
