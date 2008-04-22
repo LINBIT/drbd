@@ -1,3 +1,21 @@
-drbd        the currently maintained drbd sys-v stype init script
-drbddisk    the currently maintained resource script for heartbaet
-filesystem  taken for the heartbeat package
+drbd
+	drbd sys-v type init script
+drbd.gentoo
+	gentoo specific variation of the same
+drbddisk
+	resource script for heartbaet (haresources style)
+block-drbd
+	xen "drbd" vbd type implementation
+outdate-peer.sh
+	example implementation of the outdate-peer mechanism using ssh
+drbd.conf
+	commented example configuration
+drbd-overview.pl
+	consolidates /proc/drbd, /etc/drbd.conf, xm list, lvs, df
+pretty-proc-drbd.sh
+	example how to pretty-print (optionally with color) /proc/drbd
+
+build helpers:
+  get_uts_release.sh
+  adjust_drbd_config_h.sh 
+  patch-kernel
