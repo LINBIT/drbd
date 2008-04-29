@@ -101,6 +101,7 @@ static int adm_wait_ci(struct d_resource* ,const char* );
 static int adm_proxy_up(struct d_resource* ,const char* );
 static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
+static int sh_resource(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
 static int sh_ip(struct d_resource* ,const char* );
@@ -533,6 +534,13 @@ static int sh_resources(struct d_resource* ignored __attribute((unused)),const c
     first=0;
   }
   printf("\n");
+
+  return 0;
+}
+
+static int sh_resource(struct d_resource* res,const char* unused __attribute((unused)))
+{
+  printf("%s\n",res->name);
 
   return 0;
 }
@@ -990,10 +998,18 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   int rv;
 
   rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
-  /* 17: drbdsetup outdate, but is primary and thus cannot be outdated.
-   *  5: drbdsetup outdate, and is inconsistent or worse anyways */
-  if (rv == 17 || rv == 5)
+  /* special cases for outdate:
+   * 17: drbdsetup outdate, but is primary and thus cannot be outdated.
+   *  5: drbdsetup outdate, and is inconsistent or worse anyways. */
+  if (rv == 17)
     return rv;
+
+  if (rv == 5) {
+    /* That might mean it is diskless. */
+    rv = admm_generic(res,cmd);
+    if (rv) rv = 5;
+    return rv;
+  }
 
   if (rv || dry_run) {
     rv = admm_generic(res,cmd);

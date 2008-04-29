@@ -818,7 +818,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
-	resync_lru = lc_alloc("resync", 31, sizeof(struct bm_extent), mdev);
+	resync_lru = lc_alloc("resync", 61, sizeof(struct bm_extent), mdev);
 	if (!resync_lru) {
 		retcode = KMallocFailed;
 		goto fail;

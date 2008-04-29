@@ -52,17 +52,10 @@ Latest:
    every user-data carrying packet. In case user-data is corrupted
    on the network DRBD protests by dropping the connection.
 
-8.1.0 (api:86/proto:86)
---------
- * NOT YET RELEASED
- * this branch
-   * will not receive new features compared to 8.0,
-   * will receive any bug fixes done on 8.0.x,
-   * will receive any code changes necessary for upstream kernel inclusion.
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
-8.0.12rc1 (api:86/proto:86)
+8.0.12 (api:86/proto:86)
 --------
  * Corrected lock-out of application IO during bitmap IO.
    (Only triggered issues with multi-terrabyte volumes)
@@ -78,9 +71,11 @@ Changelog for fixes propagated from 8.0.x:
    application IO is in flight.
  * Two new config options no-disk-flushes and no-md-flushes to disable
    the use of io subsystem flushes and barrier BIOs.
+ * Make it compile on Linux-2.6.25
+ * Support for standard disk stats
+ * Work on stalling issues of the resync process
  * drbdsetup /dev/drbdX down no longer fails for non-existing minors
  * Added wipe-md to drbdadm
->>>>>>> drbd-8.0:ChangeLog
 
 8.0.11 (api:86/proto:86)
 --------

@@ -108,8 +108,31 @@ STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 #define print_req_mod(T, W)
 #endif
 
-static void _req_is_done(struct drbd_conf *mdev,
-	struct drbd_request *req, const int rw)
+/* Update disk stats at start of I/O request */
+static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
+{
+	const int rw = bio_data_dir(bio);
+
+	MUST_HOLD(&mdev->req_lock)
+	__disk_stat_inc(mdev->vdisk, ios[rw]);
+	__disk_stat_add(mdev->vdisk, sectors[rw], bio_sectors(bio));
+	disk_round_stats(mdev->vdisk);
+	mdev->vdisk->in_flight++;
+}
+
+/* Update disk stats when completing request upwards */
+static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
+{
+	int rw = bio_data_dir(req->master_bio);
+	unsigned long duration = jiffies - req->start_time;
+
+	MUST_HOLD(&mdev->req_lock)
+	__disk_stat_add(mdev->vdisk, ticks[rw], duration);
+	disk_round_stats(mdev->vdisk);
+	mdev->vdisk->in_flight--;
+}
+
+static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
 	/* if it was a write, we may have to set the corresponding
@@ -343,8 +366,11 @@ void _req_may_be_done(struct drbd_request *req, int error)
 		 * then again, if it is a READ, it is not in the TL at all.
 		 * is it still leagal to complete a READ during freeze? */
 
-		_complete_master_bio(mdev, req,
-			  ok ? 0 : ( error ? error : -EIO ) );
+		/* Update disk stats */
+		_drbd_end_io_acct(mdev, req);
+
+		_complete_master_bio(mdev,req,
+				     ok ? 0 : ( error ? error : -EIO ) );
 	} else {
 		/* only WRITE requests can end up here without a master_bio */
 		rw = WRITE;
@@ -967,6 +993,9 @@ allocate_barrier:
 	}
 
 
+	/* Update disk stats */
+	_drbd_start_io_acct(mdev, req, bio);
+
 	/* _maybe_start_new_epoch(mdev);
 	 * If we need to generate a write barrier packet, we have to add the
 	 * new epoch (barrier) object, and queue the barrier packet for sending,
@@ -1025,12 +1054,13 @@ allocate_barrier:
 		}
 		if (remote)
 			dec_ap_pending(mdev);
+		_drbd_end_io_acct(mdev, req);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
 		bio_endio(req->master_bio, 0);
 		req->master_bio = NULL;
 		dec_ap_bio(mdev);
 		drbd_req_free(req);
-		local = remote = 0;
+		remote = 0;
 	}
 
 	/* NOTE remote first: to get the concurrent write detection right,
@@ -1049,8 +1079,6 @@ allocate_barrier:
 	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
-		/* FIXME what ref count do we have to ensure the backing_bdev
-		 * was not detached below us? */
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
 		dump_internal_bio("Pri", mdev, req->private_bio, 0);

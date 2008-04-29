@@ -112,11 +112,11 @@ drbd_pretty_status()
 	# echo "=== m ==="
 	# m
 	# echo "========="
-	# join -a1 <(p) <(m)
+	# join -a1 <(p|sort) <(m|sort)
 	# echo "========="
 	(
 	echo m:res cs st ds p mounted fstype
-	join -a1 <(p) <(m) | cut -d' ' -f2-6,8-
+	join -a1 <(p|sort) <(m|sort) | cut -d' ' -f2-6,8- | sort -k1,1n -k2,2
 	) | column -t
 }
 
@@ -163,7 +163,7 @@ case "$1" in
 	# so: put some "OK" in the output.
 	if [ -e $PROC_DRBD ]; then
 	    echo "drbd driver loaded OK; device status:"
-	    drbd_pretty_status $PROC_DRBD
+	    drbd_pretty_status $PROC_DRBD 2>/dev/null
 	    exit 0
 	else
 	    echo >&2 "drbd not loaded"

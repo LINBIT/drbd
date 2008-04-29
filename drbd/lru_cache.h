@@ -101,6 +101,7 @@ enum {
 
 extern struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
 				  size_t e_size, void *private_p);
+extern void lc_reset(struct lru_cache *lc);
 extern void lc_free(struct lru_cache *lc);
 extern void lc_set(struct lru_cache *lc, unsigned int enr, int index);
 extern void lc_del(struct lru_cache *lc, struct lc_element *element);
