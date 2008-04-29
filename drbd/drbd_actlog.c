@@ -1087,7 +1087,7 @@ struct bm_extent *_bme_get(struct drbd_conf *mdev, unsigned int enr)
 	unsigned long     rs_flags;
 
 	spin_lock_irq(&mdev->al_lock);
-	if (mdev->resync_locked > mdev->resync->nr_elements-3) {
+	if (mdev->resync_locked > mdev->resync->nr_elements/2) {
 		spin_unlock_irq(&mdev->al_lock);
 		return NULL;
 	}
@@ -1360,28 +1360,14 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
  */
 void drbd_rs_cancel_all(struct drbd_conf *mdev)
 {
-	struct bm_extent *bm_ext;
-	int i;
-
 	MTRACE(TraceTypeResync, TraceLvlMetrics,
 	       INFO("drbd_rs_cancel_all\n");
 	    );
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if (inc_local_if_state(mdev, Failed)) {
-		/* ok, ->resync is there. */
-		for (i = 0; i < mdev->resync->nr_elements; i++) {
-			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
-			if (bm_ext->lce.lc_number == LC_FREE)
-				continue;
-			bm_ext->lce.refcnt = 0; /* Rude but ok. */
-			bm_ext->rs_left = 0;
-			clear_bit(BME_LOCKED, &bm_ext->flags);
-			clear_bit(BME_NO_WRITES, &bm_ext->flags);
-			lc_del(mdev->resync, &bm_ext->lce);
-		}
-		mdev->resync->used = 0;
+	if (inc_local_if_state(mdev,Failed)) { /* Makes sure ->resync is there. */
+		lc_reset(mdev->resync);
 		dec_local(mdev);
 	}
 	mdev->resync_locked = 0;

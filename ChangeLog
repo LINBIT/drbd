@@ -2,6 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+<<<<<<< HEAD:ChangeLog
 8.1.0 (api:86/proto:86)
 --------
  * NOT YET RELEASED
@@ -13,6 +14,9 @@ Latest:
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
 8.0.12rc1 (api:86/proto:86)
+=======
+8.0.12 (api:86/proto:86)
+>>>>>>> drbd-8.0:ChangeLog
 --------
  * Corrected lock-out of application IO during bitmap IO.
    (Only triggered issues with multi-terrabyte volumes)
@@ -28,6 +32,9 @@ Changelog for fixes propagated from 8.0.x:
    application IO is in flight.
  * Two new config options no-disk-flushes and no-md-flushes to disable
    the use of io subsystem flushes and barrier BIOs.
+ * Make it compile on Linux-2.6.25
+ * Support for standard disk stats
+ * Work on stalling issues of the resync process
  * drbdsetup /dev/drbdX down no longer fails for non-existing minors
  * Added wipe-md to drbdadm
 >>>>>>> drbd-8.0:ChangeLog

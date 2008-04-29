@@ -2369,7 +2369,7 @@ STATIC struct notifier_block drbd_notifier = {
 };
 
 
-STATIC void __exit drbd_cleanup(void)
+STATIC void drbd_cleanup(void)
 {
 	int i, rr;
 
@@ -2396,7 +2396,7 @@ STATIC void __exit drbd_cleanup(void)
 				*disk = NULL;
 			}
 			if (*q)
-				blk_put_queue(*q);
+				blk_cleanup_queue(*q);
 			*q = NULL;
 
 			D_ASSERT(mdev->open_cnt == 0);

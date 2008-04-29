@@ -99,6 +99,7 @@ static int adm_wait_c(struct d_resource* ,const char* );
 static int adm_wait_ci(struct d_resource* ,const char* );
 static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
+static int sh_resource(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
 static int sh_ip(struct d_resource* ,const char* );
@@ -230,6 +231,7 @@ struct adm_cmd cmds[] = {
   { "hidden-commands",   hidden_cmds,   1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0 },
   { "sh-resources",      sh_resources,  2,0,0 },
+  { "sh-resource",       sh_resource,   2,1,0 },
   { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
   { "sh-dev",            sh_dev,        2,1,0 },
   { "sh-ll-dev",         sh_ll_dev,     2,1,0 },
@@ -502,6 +504,13 @@ static int sh_resources(struct d_resource* ignored __attribute((unused)),const c
     first=0;
   }
   printf("\n");
+
+  return 0;
+}
+
+static int sh_resource(struct d_resource* res,const char* unused __attribute((unused)))
+{
+  printf("%s\n",res->name);
 
   return 0;
 }
@@ -952,10 +961,18 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
   int rv;
 
   rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
-  /* 17: drbdsetup outdate, but is primary and thus cannot be outdated.
-   *  5: drbdsetup outdate, and is inconsistent or worse anyways */
-  if (rv == 17 || rv == 5)
+  /* special cases for outdate:
+   * 17: drbdsetup outdate, but is primary and thus cannot be outdated.
+   *  5: drbdsetup outdate, and is inconsistent or worse anyways. */
+  if (rv == 17)
     return rv;
+
+  if (rv == 5) {
+    /* That might mean it is diskless. */
+    rv = admm_generic(res,cmd);
+    if (rv) rv = 5;
+    return rv;
+  }
 
   if (rv || dry_run) {
     rv = admm_generic(res,cmd);

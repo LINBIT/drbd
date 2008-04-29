@@ -640,6 +640,7 @@ struct drbd_request {
 	struct bio *master_bio;       /* master bio pointer */
 	unsigned long rq_state; /* see comments above _req_mod() */
 	int seq_num;
+	unsigned long start_time;
 };
 
 struct drbd_barrier {
