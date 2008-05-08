@@ -1982,7 +1982,7 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 	 * application io during attaching and bitmap exchange */
 	if (Attaching <= ds && ds <= Negotiating)
 		return 0;
-	if (cs == WFBitMapS || cs == WFBitMapT || cs == WFReportParams)
+	if (cs == WFBitMapS || cs == WFBitMapT || cs == WFReportParams || cs == WFSyncUUID)
 		return 0;
 
 	/* since some older kernels don't have atomic_add_unless,

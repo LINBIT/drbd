@@ -121,6 +121,8 @@ ___
 /sbin/drbdadm
 /sbin/drbdmeta
 /usr/lib/drbd/outdate-peer.sh
+/usr/lib/drbd/snapshot-resync-target-lvm.sh
+/usr/lib/drbd/unsnapshot-resync-target-lvm.sh
 /etc/ha.d/resource.d/drbddisk
 /etc/xen/scripts/block-drbd
 

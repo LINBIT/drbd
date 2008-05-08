@@ -1121,7 +1121,7 @@ void drbd_alter_sa(struct drbd_conf *mdev, int na)
 void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 {
 	union drbd_state_t ns;
-	int r = 0;
+	int r;
 
 	MTRACE(TraceTypeResync, TraceLvlSummary,
 	       INFO("Resync starting: side=%s\n",
@@ -1133,6 +1133,20 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	/* In case a previous resync run was aborted by an IO error... */
 	drbd_rs_cancel_all(mdev);
 
+	if (side == SyncTarget) {
+		/* Since application IO was locked out during WFBitMapT and
+		   WFSyncUUID we are still unmodified. Before going to SyncTarget
+		   we check that we might make the data inconsistent. */
+		r = drbd_khelper(mdev, "before-resync-target");
+		r = (r >> 8) & 0xff;
+		if (r > 0) {
+			INFO("before-resync-target handler returned %d, "
+			     "dropping connection.\n", r);
+			drbd_force_state(mdev, NS(conn, Disconnecting));
+			return;
+		}
+	}
+
 	drbd_state_lock(mdev);
 
 	if (!inc_local_if_state(mdev, Negotiating)) {
@@ -1141,7 +1155,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	}
 
 	if (side == SyncTarget) {
-		drbd_khelper(mdev, "before-resync-target");
 		drbd_bm_reset_find(mdev);
 	} else /* side == SyncSource */ {
 		u64 uuid;
