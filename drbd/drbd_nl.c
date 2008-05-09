@@ -1596,8 +1596,26 @@ fail:
 STATIC int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = drbd_request_state(mdev, NS2(conn, StartingSyncT,
-						      disk, Inconsistent));
+	int retcode;
+
+	retcode = _drbd_request_state(mdev, NS(conn, StartingSyncT), ChgOrdered);
+
+	if (retcode < SS_Success && retcode != SS_NeedConnection)
+		retcode = drbd_request_state(mdev, NS(conn, StartingSyncT));
+
+	while (retcode == SS_NeedConnection) {
+		spin_lock_irq(&mdev->req_lock);
+		if (mdev->state.conn < Connected)
+			retcode = _drbd_set_state(_NS(mdev, disk, Inconsistent), ChgStateVerbose, NULL);
+		spin_unlock_irq(&mdev->req_lock);
+
+		if (retcode != SS_NeedConnection)
+			break;
+
+		retcode = drbd_request_state(mdev, NS(conn, StartingSyncT));
+	}
+
+	reply->ret_code = retcode;
 	return 0;
 }
 
@@ -1605,8 +1623,7 @@ STATIC int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_re
 				   struct drbd_nl_cfg_reply *reply)
 {
 
-	reply->ret_code = drbd_request_state(mdev, NS2(conn, StartingSyncS,
-						      pdsk, Inconsistent));
+	reply->ret_code = drbd_request_state(mdev, NS(conn, StartingSyncS));
 
 	return 0;
 }

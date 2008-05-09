@@ -707,6 +707,10 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	    ns.conn != os.conn && os.conn > Connected)
 		rv = SS_ResyncRunning;
 
+	if ((ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
+	    os.conn < Connected)
+		rv = SS_NeedConnection;
+
 	return rv;
 }
 
@@ -730,12 +734,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		dec_local(mdev);
 	}
 
-	/* Early state sanitising. Dissalow the invalidate ioctl to connect  */
-	if ( (ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
-		os.conn < Connected ) {
-		ns.conn = os.conn;
-		ns.pdsk = os.pdsk;
-	}
+	/* Early state sanitising. */
 
 	/* Dissalow Network errors to configure a device's network part */
 	if ( (ns.conn >= Timeout && ns.conn <= TearDown ) &&
@@ -760,7 +759,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	if (ns.conn <= Disconnecting && ns.disk == Diskless)
 		ns.pdsk = DUnknown;
 
-	if ( ns.conn > Connected && (ns.disk <= Failed || ns.pdsk <= Failed )) {
+	if (os.conn > Connected && ns.conn > Connected &&
+	     (ns.disk <= Failed || ns.pdsk <= Failed )) {
 		warn_sync_abort = 1;
 		ns.conn = Connected;
 	}
