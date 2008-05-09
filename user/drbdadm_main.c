@@ -113,6 +113,7 @@ static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
 static int hidden_cmds(struct d_resource* ,const char* );
+static int adm_outdate(struct d_resource* res,const char* cmd);
 
 static char* get_opt_val(struct d_option*,const char*,char*);
 
@@ -214,7 +215,7 @@ struct adm_cmd cmds[] = {
   { "secondary",         adm_generic_l, 1,1,0,1 },
   { "invalidate",        adm_generic_b, 1,1,0,1 },
   { "invalidate-remote", adm_generic_l, 1,1,1,1 },
-  { "outdate",           adm_generic_b, 1,1,0,1 },
+  { "outdate",           adm_outdate,   1,1,0,1 },
   { "resize",            adm_resize,    1,1,1,1 },
   { "syncer",            adm_syncer,    1,1,1,1 },
   { "pause-sync",        adm_generic_s, 1,1,1,1 },
@@ -993,7 +994,7 @@ int adm_generic_l(struct d_resource* res,const char* cmd)
   return adm_generic(res,cmd,SLEEPS_LONG);
 }
 
-static int adm_generic_b(struct d_resource* res,const char* cmd)
+static int adm_outdate(struct d_resource* res,const char* cmd)
 {
   int rv;
 
@@ -1010,6 +1011,18 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
     if (rv) rv = 5;
     return rv;
   }
+
+  if (rv || dry_run) {
+    rv = admm_generic(res,cmd);
+  }
+  return rv;
+}
+
+static int adm_generic_b(struct d_resource* res,const char* cmd)
+{
+  int rv;
+
+  rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
 
   if (rv || dry_run) {
     rv = admm_generic(res,cmd);
