@@ -275,7 +275,9 @@
            blocks are found, they are <emphasis>not</emphasis> resynchronized
            automatically. To do that, <command>disconnect</command> and 
            <command>connect</command> the resource when verification has completed. 
-        </para></listitem>
+        </para>
+	  <para>See also the notes on data integrity on the drbd.conf manpage.</para>
+	</listitem>
       </varlistentry>
 
       <varlistentry>

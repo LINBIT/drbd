@@ -724,15 +724,13 @@
 	    <para>
 	      DRBD can ensure the data integrity of the user's data on the network
 	      by comparing hash values. Normally this is ensured by the 16 bit checksums 
-	      in the headers of TCP/IP packets. Unfortunately it turned out that GBit NICs 
-	      with various offloading engines might produce valid checksums for corrupted 
-	      data. Use this option during your pre-production tests, usually you
-	      want to turn it off for production to reduce CPU overhead. This option
+	      in the headers of TCP/IP packets. This option
 	      can be set to any of the kernel's data digest algorithms.
               In a typical kernel configuration you should have
               at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
               available. By default this is not enabled.
 	    </para>
+	    <para>See also the notes on data integrity on the drbd.conf manpage.</para>
 	  </listitem>
 	</varlistentry>
 
@@ -829,6 +827,7 @@
               available. By default this is not enabled; you must set this
               option explicitly in order to be able to use on-line device verification.
 	    </para>
+	    <para>See also the notes on data integrity on the drbd.conf manpage.</para>
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
@@ -906,6 +905,7 @@
 	This command will fail if the <replaceable>device</replaceable> is
 	not part of a connected device pair.
       </para>
+      <para>See also the notes on data integrity on the drbd.conf manpage.</para>
     </refsect2>
     <refsect2>
       <title>invalidate</title>

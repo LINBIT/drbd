@@ -851,15 +851,12 @@ the unit is 1 second.
 	    <para>
 	      DRBD can ensure the data integrity of the user's data on the network
 	      by comparing hash values. Normally this is ensured by the 16 bit checksums 
-	      in the headers of TCP/IP packets. Unfortunately it turned out that GBit NICs 
-	      with various offloading engines might produce valid checksums for corrupted 
-	      data. Use this option during your pre-production tests, usually you
-	      want to turn it off for production to reduce CPU overhead.
-              This option can be set to any of the kernel's data digest algorithms.
+	      in the headers of TCP/IP packets.</para>
+	    <para>This option can be set to any of the kernel's data digest algorithms.
               In a typical kernel configuration you should have
               at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
-              available. By default this is not enabled.
-	    </para>
+              available. By default this is not enabled.</para>
+	    <para>See also the notes on data integrity.<para>
 	  </listitem>
 </varlistentry>
 
@@ -967,6 +964,7 @@ the unit is 1 second.
   at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
   available. By default this is not enabled; you must set this
   option explicitly in order to be able to use on-line device verification.</para>
+  <para>See also the notes on data integrity.<para>
   </listitem>
 </varlistentry>
 
@@ -1044,6 +1042,31 @@ the unit is 1 second.
 </variablelist>
 </refsect2>
 </refsect1>
+
+<refsect1 id="data-integrity">
+<title>Notes on data integrity</title>
+<para>There are two independent methods in DRBD to ensure the integrity of
+the mirrored data. The online-verify mechanism and the <option>data-integrity-alg</option>
+of the <option>network</option> section.</para>
+<para>Both mechanisms might deliver false positives if the user of DRBD modifies the
+data which gets written to disk while the transfer goes on. Currently the swap code and
+ReiserFS are known to do so. In both cases this is not a problem, because when the
+initiator of the data transfer does this it already knows that that data block will
+not be part of an on disk data structure.
+</para>
+<para>The most recent (2007) example of systematically corruption was an
+issue with the TCP offloading engine and the driver of a certain type
+of GBit NIC. The actual corruption happened on the DMA transfer from
+core memory to the card. Since the TCP checksum gets calculated on the card
+this type of corruption stays undetected as long as you do not use
+either the online <option>verify</option> or the data-integrity-alg.
+</para>
+<para>We suggest to use the <option>data-integrity-alg</option> only during a
+pre-production phase due to its CPU costs. Further we suggest to do online
+<option>verify</option> runs regularly e.g. once a month during low load period.
+</para>
+</refsect1>
+
 <refsect1>
 <title>Version</title>
 <simpara>This document was revised for version 8.0.12 of the DRBD distribution.
