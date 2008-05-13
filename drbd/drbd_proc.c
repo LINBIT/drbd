@@ -137,7 +137,7 @@ STATIC void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 }
 
 #ifdef ENABLE_DYNAMIC_TRACE
-void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
+STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
 

@@ -965,7 +965,7 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 			drbd_bcast_ee(mdev, "digest failed",
 					dgs, dig_in, dig_vv, e);
 			drbd_free_ee(mdev, e);
-			return 0;
+			return NULL;
 		}
 	}
 	mdev->recv_cnt += data_size>>9;
@@ -1702,6 +1702,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		digest_size = h->length - brps ;
 		di = kmalloc(sizeof(*di) + digest_size ,GFP_KERNEL);
 		if(!di) {
+			dec_local(mdev);
 			drbd_free_ee(mdev,e);
 			return 0;
 		}
@@ -1710,6 +1711,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		di->digest = (((char *)di)+sizeof(struct digest_info));
 
 		if (drbd_recv(mdev, di->digest, digest_size) != digest_size) {
+			dec_local(mdev);
 			drbd_free_ee(mdev,e);
 			kfree(di);
 			return FALSE;
