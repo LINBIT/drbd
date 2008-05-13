@@ -11,12 +11,13 @@
 # exit code != 0. So be carefull with the exit code!
 #
 
-logger -s -t drbd-snapshot "$0 invoked for $DRBD_RESOURCE"
+exec > >( logger -s -t "$0[$$]" -p local5.info ) 2>&1
+echo "invoked for $DRBD_RESOURCE"
 
 TEMP=$(getopt -o p:a:n --long percent:,additional:,disconnect-on-error -- "$@")
 
 if [ $? != 0 ]; then
-	logger -s -t drbd-snapshot "getopt failed"
+	echo "getopt failed"
 	exit 0
 fi
 
@@ -57,11 +58,10 @@ fi
 
 if [[ $0 == *unsnapshot* ]]; then
 	VG_PATH=${BACKING_BDEV%/*}
-	LOG_MSG=$(lvremove -f ${VG_PATH}/${SNAP_NAME})
-	logger -s -t drbd-snapshot $LOG_MSG
+	lvremove -f ${VG_PATH}/${SNAP_NAME}
 	exit 0
 else
-	LOG_MSG=$(
+	(
 		set -e
 		DRBD_DEV=$(drbdadm sh-dev $DRBD_RESOURCE)
 		DRBD_MINOR=${DRBD_DEV##/dev/drbd}
@@ -70,10 +70,9 @@ else
 		_BDS=$(blockdev --getsize64 $BACKING_BDEV)
 		BACKING=$((_BDS / 1024)) # unit KiB
 		SNAP_SIZE=$((OUT_OF_SYNC + SNAP_ADDITIONAL + BACKING * SNAP_PERC / 100))
-		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $BACKING_BDEV 2>&1
+		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $BACKING_BDEV
 	)
 	RV=$?
-	logger -s -t drbd-snapshot "$LOG_MSG"
 	[ $DISCONNECT_ON_ERROR = 0 ] && exit 0
 	exit $RV
 fi
