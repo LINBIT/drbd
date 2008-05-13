@@ -13,7 +13,7 @@
 
 if [ -z "$DRBD_RESOURCE" ]; then
 	echo "DRBD_RESOURCE not set. This script is supposed to"
-	echo "bet called by drbdadm as handler script"
+	echo "get called by drbdadm as a handler script"
 	exit 0
 fi
 

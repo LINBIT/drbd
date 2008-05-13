@@ -2,6 +2,23 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.2.6rc1 (api:86/proto:86-88)
+--------
+ * The details of the LRU data structures is now hidden from
+   /proc/drbd but can be re-enabled by echoing 1 to
+   /sys/module/drbd/parameters/proc_details
+ * Bash completion support for drbdadm (Installs on all distributions
+   but RedHat, since they lack the /etc/bash_completion.d directory)
+ * Fixed the out-of-sync handler it never fired.
+ * Added the before-resync-target handler, and a default
+   implementation of a handler that snapshots the target
+   of a resynchronisation in case it is a LVM2 logic volume.
+ * Improved error messages and documentation in regards to
+   false positives of online verify and data-integrity-alg
+   mechanisms in the presence of ReiserFS or the Linux
+   swap code.
+ * Merged all changes from 8.0.11 -> 8.0.12 into 8.2
+
 8.2.5 (api:86/proto:86-88)
 --------
  * Fixed a race between online-verify and application writes.

@@ -194,10 +194,22 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Fri Apr 11 2008 13:18:35 +0200 Philipp Reisner <phil@linbit.com>
+* Wed May 14 2008 11:55:24 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.6rc1-1)
+ * The details of the LRU data structures is now hidden from
+   /proc/drbd but can be re-enabled by echoing 1 to
+   /sys/module/drbd/parameters/proc_details
+ * Bash completion support for drbdadm (Installs on all distributions
+   but RedHat, since they lack the /etc/bash_completion.d directory)
+ * Fixed the out-of-sync handler it never fired.
+ * Added the before-resync-target handler, and a default
+   implementation of a handler that snapshots the target
+   of a resynchronisation in case it is a LVM2 logic volume.
+ * Improved error messages and documentation in regards to
+   false positives of online verify and data-integrity-alg
+   mechanisms in the presence of ReiserFS or the Linux
+   swap code.
  * Merged all changes from 8.0.11 -> 8.0.12 into 8.2
- * To be written
 
 * Tue Feb 12 2008 13:37:59 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.5-1)
