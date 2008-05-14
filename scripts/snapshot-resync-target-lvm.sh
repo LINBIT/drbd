@@ -11,7 +11,7 @@
 # exit code != 0. So be carefull with the exit code!
 #
 
-exec > >( logger -s -t "$0[$$]" -p local5.info ) 2>&1
+exec > >( logger -s -t "$0[$$]" -p local5.info 2>/dev/null ) 2>&1
 echo "invoked for $DRBD_RESOURCE"
 
 TEMP=$(getopt -o p:a:n --long percent:,additional:,disconnect-on-error -- "$@")
