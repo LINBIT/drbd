@@ -11,10 +11,16 @@
 # exit code != 0. So be carefull with the exit code!
 #
 
+if [ -z "$DRBD_RESOURCE" ]; then
+	echo "DRBD_RESOURCE not set. This script is supposed to"
+	echo "bet called by drbdadm as handler script"
+	exit 0
+fi
+
 exec > >( logger -s -t "$0[$$]" -p local5.info 2>/dev/null ) 2>&1
 echo "invoked for $DRBD_RESOURCE"
 
-TEMP=$(getopt -o p:a:n --long percent:,additional:,disconnect-on-error -- "$@")
+TEMP=$(getopt -o p:a:nv --long percent:,additional:,disconnect-on-error,verbose -- "$@")
 
 if [ $? != 0 ]; then
 	echo "getopt failed"
@@ -27,6 +33,8 @@ lvdisplay $BACKING_BDEV > /dev/null || exit 0 # not a LV
 SNAP_PERC=10
 SNAP_ADDITIONAL=10240
 DISCONNECT_ON_ERROR=0
+LVC_OPTIONS=""
+BE_VERBOSE=0
 SNAP_NAME=${BACKING_BDEV##*/}-before-resync
 DEFAULTFILE="/etc/default/drbd-snapshot"
 
@@ -45,6 +53,10 @@ while true; do
 			DISCONNECT_ON_ERROR=1
 			shift
 			;;
+		-v|--verbose)
+			BE_VERBOSE=1
+			shift
+			;;
 		--)
 			shift
 			break
@@ -52,17 +64,21 @@ while true; do
 	esac
 done
 
+LVC_OPTIONS="$@"
+
 if [ -f $DEFAULTFILE ]; then
 	. $DEFAULTFILE
 fi
 
 if [[ $0 == *unsnapshot* ]]; then
+	[ $BE_VERBOSE = 1 ] && set -x
 	VG_PATH=${BACKING_BDEV%/*}
 	lvremove -f ${VG_PATH}/${SNAP_NAME}
 	exit 0
 else
 	(
 		set -e
+		[ $BE_VERBOSE = 1 ] && set -x
 		DRBD_DEV=$(drbdadm sh-dev $DRBD_RESOURCE)
 		DRBD_MINOR=${DRBD_DEV##/dev/drbd}
 		_OOS=$(cat /proc/drbd | grep -A 2 ${DRBD_MINOR}: | tr ' ' '\n' | grep oos)
@@ -70,7 +86,7 @@ else
 		_BDS=$(blockdev --getsize64 $BACKING_BDEV)
 		BACKING=$((_BDS / 1024)) # unit KiB
 		SNAP_SIZE=$((OUT_OF_SYNC + SNAP_ADDITIONAL + BACKING * SNAP_PERC / 100))
-		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $BACKING_BDEV
+		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $LVC_OPTIONS $BACKING_BDEV
 	)
 	RV=$?
 	[ $DISCONNECT_ON_ERROR = 0 ] && exit 0
