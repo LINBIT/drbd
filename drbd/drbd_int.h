@@ -54,6 +54,23 @@
 
 #define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
 
+/* Compatibility for older kernels */
+#ifndef __acquires
+# ifdef __CHECKER__
+#  define __acquires(x) __attribute__((context(x,0,1)))
+#  define __releases(x) __attribute__((context(x,1,0)))
+#  define __acquire(x)  __context__(x,1)
+#  define __release(x)  __context__(x,-1)
+#  define __cond_lock(x,c)      ((c) ? ({ __acquire(x); 1; }) : 0)
+# else
+#  define __acquires(x)
+#  define __releases(x)
+#  define __acquire(x)  (void)0
+#  define __release(x)  (void)0
+#  define __cond_lock(x,c) (c)
+# endif
+#endif
+
 /* module parameter, defined in drbd_main.c */
 extern int minor_count;
 extern int allow_oos;
