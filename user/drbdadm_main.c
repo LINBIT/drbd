@@ -238,6 +238,7 @@ struct adm_cmd cmds[] = {
   { "proxy-up",          adm_proxy_up,  2,1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0,0 },
   { "sh-resources",      sh_resources,  2,0,0,0 },
+  { "sh-resource",       sh_resource,   2,1,0,0 },
   { "sh-mod-parms",      sh_mod_parms,  2,0,0,0 },
   { "sh-dev",            sh_dev,        2,1,0,0 },
   { "sh-ll-dev",         sh_ll_dev,     2,1,0,0 },
