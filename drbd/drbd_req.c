@@ -1234,7 +1234,8 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 }
 
 /* This is called by bio_add_page().  With this function we reduce
- * the number of BIOs that span over multiple AL_EXTENTs.
+ * the number of BIOs that span over multiple DRBD_MAX_SEGMENT_SIZEs
+ * units (was AL_EXTENTs).
  *
  * we do the calculation within the lower 32bit of the byte offsets,
  * since we don't care for actual offset, but only check whether it
@@ -1245,8 +1246,6 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
  * cross extent boundaries.  those are dealt with (bio_split) in
  * drbd_make_request_26.
  */
-/* FIXME for two_primaries,
- * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(struct request_queue *q, struct bio *bio, struct bio_vec *bvec)
 {
 	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;

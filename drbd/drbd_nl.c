@@ -760,6 +760,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
 		nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
 		nbc->dc.fencing     = DRBD_FENCING_DEF;
+		nbc->dc.max_bio_size= DRBD_MAX_BIO_SIZE_DEF;
 	}
 
 	if (!disk_conf_from_tags(mdev, nlp->tag_list, &nbc->dc)) {
@@ -938,7 +939,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	mdev->read_cnt = 0;
 	mdev->writ_cnt = 0;
 
-	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
+	drbd_setup_queue_param(mdev, mdev->bc->dc.max_bio_size);
 	/*
 	 * FIXME currently broken.
 	 * drbd_set_recv_tcq(mdev,
