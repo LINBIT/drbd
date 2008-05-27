@@ -682,7 +682,12 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 		}
 	}
 
-	fprintf(stderr, "Handler not known\n");
+	fprintf(stderr, "%s-handler '%s' not known\n", od->name, arg);
+	fprintf(stderr, "known %s-handlers:\n", od->name);
+	for (i = 0; i < number_of_handlers; i++) {
+		if (handler_names[i])
+			printf("\t%s\n", handler_names[i]);
+	}
 	return OTHER_ERROR;
 }
 
