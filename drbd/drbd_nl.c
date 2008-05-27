@@ -674,8 +674,8 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	       );
 
 	q->max_sectors	     = max_seg_s >> 9;
-	q->max_phys_segments = max_seg_s >> PAGE_SHIFT;
-	q->max_hw_segments   = max_seg_s >> PAGE_SHIFT;
+	q->max_phys_segments = MAX_PHYS_SEGMENTS;
+	q->max_hw_segments   = MAX_HW_SEGMENTS;
 	q->max_segment_size  = max_seg_s;
 	q->hardsect_size     = 512;
 	q->seg_boundary_mask = PAGE_SIZE-1;
