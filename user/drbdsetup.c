@@ -826,13 +826,20 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 	lo = make_longoptions(cm->cp.options);
 	opterr=0;
-	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
 		od = find_opt_by_short_name(cm->cp.options,c);
 		if(od) rv |= od->convert_function(od,tl,optarg);
 		else {
 			if(c=='(') flags |= DRBD_NL_SET_DEFAULTS;
 			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
 			else {
+				if (c == ':') {
+					fprintf(stderr,
+						"%s %s: option '%s' requires an argument\n",
+						cmdname, argv[0], argv[optind-1]);
+					rv = OTHER_ERROR;
+					goto error;
+				}
 				fprintf(stderr,
 					"%s %s: unrecognized option '%s'\n",
 					cmdname, argv[0], argv[optind-1]);
