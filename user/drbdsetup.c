@@ -811,6 +811,14 @@ void warn_missing_required_arg(char **argv)
 		cmdname, argv[0], argv[optind - 1]);
 }
 
+void warn_print_excess_args(int argc, char **argv, int i)
+{
+	fprintf(stderr, "Ignoring excess arguments:");
+	for (; i < argc; i++)
+		fprintf(stderr, " %s", argv[i]);
+	printf("\n");
+}
+
 int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
@@ -821,6 +829,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	struct drbd_tag_list *tl;
 	int c,i=1,rv=NoError,sk_nl;
 	int flags=0;
+	int n_args;
 
 	tl = create_tag_list(4096);
 
@@ -836,6 +845,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			goto error;
 		ad++;
 	}
+	n_args = i - 1;
 
 	lo = make_longoptions(cm->cp.options);
 	opterr=0;
@@ -859,6 +869,11 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		if (rv != NoError)
 			goto error;
 	}
+
+	/* argc should be cmd + n options + n args;
+	 * if it is more, we did not understand some */
+	if (n_args + optind < argc)
+		warn_print_excess_args(argc, argv, optind + n_args);
 
 	add_tag(tl,TT_END,NULL,0); // close the tag list
 
@@ -1054,9 +1069,8 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	struct drbd_nl_cfg_reply *reply;
 	int sk_nl,rv;
 
-	if(argc > 1) {
-		fprintf(stderr,"Ignoring excess arguments\n");
-	}
+	if (argc > 1)
+		warn_print_excess_args(argc, argv, 1);
 
 	tl = create_tag_list(2);
 	add_tag(tl,TT_END,NULL,0); // close the tag list
@@ -1392,9 +1406,8 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		}
 	}
 
-	if(optind > argc) {
-		fprintf(stderr,"Ignoring excess arguments\n");
-	}
+	if (optind < argc)
+		warn_print_excess_args(argc, argv, optind);
 
 	tl = create_tag_list(2);
 	add_tag(tl,TT_END,NULL,0); // close the tag list
