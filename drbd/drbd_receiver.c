@@ -2415,9 +2415,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 			ldsc = 1;
 		}
 
-		max_seg_s = min_t(unsigned int,
-				  be32_to_cpu(p->max_segment_size),
-				  mdev->bc->dc.max_bio_size);
+		max_seg_s = be32_to_cpu(p->max_segment_size);
 		if (max_seg_s != mdev->rq_queue->max_segment_size)
 			drbd_setup_queue_param(mdev, max_seg_s);
 

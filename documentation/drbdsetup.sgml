@@ -395,12 +395,13 @@
 
 <varlistentry>
   <term><option>-s</option>,
-	<option>--max-bio-size</option></term>
+	<option>--max-bio-bvecs</option></term>
   <listitem>
     <para>
       In some special circumstances the device mapper stack manages to
       pass BIOs to DRBD that violate the constraints that are set forth
-      by DRBD's merge_bvec() function. A known example is:
+      by DRBD's merge_bvec() function and which have more than one bvec.
+      A known example is:
       phys-disk -> DRBD -> LVM -> Xen -> missaligned partition (63) -> DomU FS.
       Then you might see "bio would need to, but cannot, be split:" in
       the Dom0's kernel log. </para>
@@ -411,13 +412,11 @@
       to start the first partition at an odd number (63). Therefore
       most distribution's install helpers for virtual linux machines will
       end up with missaligned partitions.
-      The second best workaround is to limit DRBD's max segment size
-      (= max-bio-size) to 4096 byte. Might cost a bit of performance.</para>
+      The second best workaround is to limit DRBD's max bvecs per BIO
+      (= max-bio-bvecs) to 1. Might cost performance.</para>
     <para>
-      The default unit of <option>max-bio-size</option> is byte, the default
-      value is 32768 (=32k). The actual used max bio size is reported in the
-      kernel's log and might be smaller due to constraints of the backing
-      block device.
+      The default value of <option>max-bio-bvecs</option> is 0, which means that
+      there is no user imposed limitation.
     </para>
    </listitem>
 </varlistentry>

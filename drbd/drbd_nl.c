@@ -658,6 +658,7 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	struct request_queue * const q = mdev->rq_queue;
 	struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;
 	/* unsigned int old_max_seg_s = q->max_segment_size; */
+	int max_segments = mdev->bc->dc.max_bio_bvecs;
 
 	if (b->merge_bvec_fn && !mdev->bc->dc.use_bmbv)
 		max_seg_s = PAGE_SIZE;
@@ -674,8 +675,13 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	       );
 
 	q->max_sectors	     = max_seg_s >> 9;
-	q->max_phys_segments = MAX_PHYS_SEGMENTS;
-	q->max_hw_segments   = MAX_HW_SEGMENTS;
+	if (max_segments) {
+		q->max_phys_segments = max_segments;
+		q->max_hw_segments   = max_segments;
+	} else {
+		q->max_phys_segments = MAX_PHYS_SEGMENTS;
+		q->max_hw_segments   = MAX_HW_SEGMENTS;
+	}
 	q->max_segment_size  = max_seg_s;
 	q->hardsect_size     = 512;
 	q->seg_boundary_mask = PAGE_SIZE-1;
@@ -760,7 +766,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
 		nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
 		nbc->dc.fencing     = DRBD_FENCING_DEF;
-		nbc->dc.max_bio_size= DRBD_MAX_BIO_SIZE_DEF;
+		nbc->dc.max_bio_bvecs= DRBD_MAX_BIO_BVECS_DEF;
 	}
 
 	if (!disk_conf_from_tags(mdev, nlp->tag_list, &nbc->dc)) {
@@ -939,7 +945,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	mdev->read_cnt = 0;
 	mdev->writ_cnt = 0;
 
-	drbd_setup_queue_param(mdev, mdev->bc->dc.max_bio_size);
+	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
 	/*
 	 * FIXME currently broken.
 	 * drbd_set_recv_tcq(mdev,

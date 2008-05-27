@@ -282,7 +282,7 @@ struct drbd_cmd commands[] = {
 		 { "use-bmbv",'b',	T_use_bmbv,     EB },
 		 { "no-disk-flushes",'i',T_no_disk_flush,EB },
 		 { "no-md-flushes",'m', T_no_md_flush,  EB },
-		 { "max-bio-size",'s',	T_max_bio_size,	EN(MAX_BIO_SIZE,1,"bytes") },
+		 { "max-bio-bvecs",'s',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
 	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },

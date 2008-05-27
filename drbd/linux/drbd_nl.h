@@ -27,7 +27,8 @@ NL_PACKET(disk_conf, 3,
 	NL_BIT(		37,	T_MAY_IGNORE,	use_bmbv)
 	NL_BIT(		53,	T_MAY_IGNORE,	no_disk_flush)
 	NL_BIT(		54,	T_MAY_IGNORE,	no_md_flush)
-	NL_INTEGER(	55,	T_MAY_IGNORE,	max_bio_size)
+	  /*  55 max_bio_size was available in 8.2.6rc2 */
+	NL_INTEGER(	56,	T_MAY_IGNORE,	max_bio_bvecs)
 )
 
 NL_PACKET(detach, 4, )
