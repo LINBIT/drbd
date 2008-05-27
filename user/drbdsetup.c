@@ -414,6 +414,7 @@ const char * error_to_string(int err_no)
 
 char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 char *devname = NULL; /* "/dev/drbd12" for reporting in print_config_error */
+int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
 
 int dump_tag_list(unsigned short *tlc)
@@ -819,6 +820,25 @@ void warn_print_excess_args(int argc, char **argv, int i)
 	printf("\n");
 }
 
+void dump_argv(int argc, char **argv, int first_non_option, int n_known_args)
+{
+	int i;
+	if (!debug_dump_argv)
+		return;
+	printf(",-- ARGV dump (optind %d, known_args %d, argc %u):\n",
+		first_non_option, n_known_args, argc);
+	for (i = 0; i < argc; i++) {
+		if (i == 1)
+			puts("-- consumed options:");
+		if (i == first_non_option)
+			puts("-- known args:");
+		if (i == (first_non_option + n_known_args))
+			puts("-- unexpected args:");
+		printf("| %2u: %s\n", i, argv[i]);
+	}
+	printf("`--\n");
+}
+
 int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
@@ -874,6 +894,8 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	 * if it is more, we did not understand some */
 	if (n_args + optind < argc)
 		warn_print_excess_args(argc, argv, optind + n_args);
+
+	dump_argv(argc, argv, optind, i - 1);
 
 	add_tag(tl,TT_END,NULL,0); // close the tag list
 
@@ -1071,6 +1093,8 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 
 	if (argc > 1)
 		warn_print_excess_args(argc, argv, 1);
+
+	dump_argv(argc, argv, 1, 0);
 
 	tl = create_tag_list(2);
 	add_tag(tl,TT_END,NULL,0); // close the tag list
@@ -1408,6 +1432,8 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 	if (optind < argc)
 		warn_print_excess_args(argc, argv, optind);
+
+	dump_argv(argc, argv, optind, 0);
 
 	tl = create_tag_list(2);
 	add_tag(tl,TT_END,NULL,0); // close the tag list
@@ -1918,6 +1944,10 @@ int main(int argc, char** argv)
 			exit(0);
 		}
 	}
+
+	/* it is enough to set it, value is ignored */
+	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
+		debug_dump_argv = 1;
 
 	if (argc > 1 && (!strcmp(argv[1],"xml"))) {
 		if(argc >= 3) {
