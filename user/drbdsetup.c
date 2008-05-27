@@ -798,6 +798,19 @@ int print_config_error(int err_no)
 
 #define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
 
+/* cmdname and optind are global variables */
+void warn_unrecognized_option(char **argv)
+{
+	fprintf(stderr, "%s %s: unrecognized option '%s'\n",
+		cmdname, argv[0], argv[optind - 1]);
+}
+
+void warn_missing_required_arg(char **argv)
+{
+	fprintf(stderr, "%s %s: option '%s' requires an argument\n",
+		cmdname, argv[0], argv[optind - 1]);
+}
+
 int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
@@ -834,15 +847,11 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
 			else {
 				if (c == ':') {
-					fprintf(stderr,
-						"%s %s: option '%s' requires an argument\n",
-						cmdname, argv[0], argv[optind-1]);
+					warn_missing_required_arg(argv);
 					rv = OTHER_ERROR;
 					goto error;
 				}
-				fprintf(stderr,
-					"%s %s: unrecognized option '%s'\n",
-					cmdname, argv[0], argv[optind-1]);
+				warn_unrecognized_option(argv);
 				rv = OTHER_ERROR;
 				goto error;
 			}
@@ -1344,8 +1353,15 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 	lo = cm->ep.options;
 
-	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
 		switch(c) {
+		default:
+		case '?':
+			warn_unrecognized_option(argv);
+			return 20;
+		case ':':
+			warn_missing_required_arg(argv);
+			return 20;
 		case 'u': unfiltered=1; break;
 		case 'a': all_devices=1; break;
 		case 't':
