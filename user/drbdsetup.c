@@ -700,7 +700,10 @@ int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 
 struct option *	make_longoptions(struct drbd_option* od)
 {
-	static struct option buffer[20];
+	/* room for up to N options,
+	 * plus set-defaults, create-device, and the terminating NULL */
+	const int N = 20;
+	static struct option buffer[N+3];
 	int i=0;
 
 	while(od && od->name) {
@@ -709,8 +712,10 @@ struct option *	make_longoptions(struct drbd_option* od)
 			no_argument : required_argument ;
 		buffer[i].flag = NULL;
 		buffer[i].val = od->short_name;
-		if(i++ == 20) {
+		if (i++ == N) {
+			/* we must not leave this loop with i > N */
 			fprintf(stderr,"buffer in make_longoptions to small.\n");
+			abort();
 		}
 		od++;
 	}
