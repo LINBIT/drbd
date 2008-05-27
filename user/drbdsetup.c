@@ -414,6 +414,7 @@ const char * error_to_string(int err_no)
 
 char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 char *devname = NULL; /* "/dev/drbd12" for reporting in print_config_error */
+int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
 
 int dump_tag_list(unsigned short *tlc)
@@ -518,24 +519,24 @@ int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg
 
 	if ((device_fd = open(arg,O_RDWR))==-1) {
 		PERROR("Can not open device '%s'", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	if ( (err=fstat(device_fd, &sb)) ) {
 		PERROR("fstat(%s) failed", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	if(!S_ISBLK(sb.st_mode)) {
 		fprintf(stderr, "%s is not a block device!\n", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	close(device_fd);
 
 	add_tag(tl,ad->tag,arg,strlen(arg)+1); // include the null byte.
 
-	return 0;
+	return NoError;
 }
 
 int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -548,7 +549,7 @@ int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&idx,sizeof(idx));
 
-	return 0;
+	return NoError;
 }
 
 const char* addr_part(const char* s)
@@ -603,7 +604,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&addr,addr_len);
 
-	return 0;
+	return NoError;
 }
 
 int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -618,12 +619,12 @@ int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 		prot=DRBD_PROT_C;
 	} else {
 		fprintf(stderr, "'%s' is no valid protocol.\n", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	add_tag(tl,ad->tag,&prot,sizeof(prot));
 
-	return 0;
+	return NoError;
 }
 
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attribute((unused)))
@@ -682,7 +683,12 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 		}
 	}
 
-	fprintf(stderr, "Handler not known\n");
+	fprintf(stderr, "%s-handler '%s' not known\n", od->name, arg);
+	fprintf(stderr, "known %s-handlers:\n", od->name);
+	for (i = 0; i < number_of_handlers; i++) {
+		if (handler_names[i])
+			printf("\t%s\n", handler_names[i]);
+	}
 	return OTHER_ERROR;
 }
 
@@ -695,7 +701,10 @@ int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 
 struct option *	make_longoptions(struct drbd_option* od)
 {
-	static struct option buffer[20];
+	/* room for up to N options,
+	 * plus set-defaults, create-device, and the terminating NULL */
+	const int N = 20;
+	static struct option buffer[N+3];
 	int i=0;
 
 	while(od && od->name) {
@@ -704,8 +713,10 @@ struct option *	make_longoptions(struct drbd_option* od)
 			no_argument : required_argument ;
 		buffer[i].flag = NULL;
 		buffer[i].val = od->short_name;
-		if(i++ == 20) {
+		if (i++ == N) {
+			/* we must not leave this loop with i > N */
 			fprintf(stderr,"buffer in make_longoptions to small.\n");
+			abort();
 		}
 		od++;
 	}
@@ -788,6 +799,46 @@ int print_config_error(int err_no)
 
 #define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
 
+/* cmdname and optind are global variables */
+void warn_unrecognized_option(char **argv)
+{
+	fprintf(stderr, "%s %s: unrecognized option '%s'\n",
+		cmdname, argv[0], argv[optind - 1]);
+}
+
+void warn_missing_required_arg(char **argv)
+{
+	fprintf(stderr, "%s %s: option '%s' requires an argument\n",
+		cmdname, argv[0], argv[optind - 1]);
+}
+
+void warn_print_excess_args(int argc, char **argv, int i)
+{
+	fprintf(stderr, "Ignoring excess arguments:");
+	for (; i < argc; i++)
+		fprintf(stderr, " %s", argv[i]);
+	printf("\n");
+}
+
+void dump_argv(int argc, char **argv, int first_non_option, int n_known_args)
+{
+	int i;
+	if (!debug_dump_argv)
+		return;
+	printf(",-- ARGV dump (optind %d, known_args %d, argc %u):\n",
+		first_non_option, n_known_args, argc);
+	for (i = 0; i < argc; i++) {
+		if (i == 1)
+			puts("-- consumed options:");
+		if (i == first_non_option)
+			puts("-- known args:");
+		if (i == (first_non_option + n_known_args))
+			puts("-- unexpected args:");
+		printf("| %2u: %s\n", i, argv[i]);
+	}
+	printf("`--\n");
+}
+
 int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
@@ -798,6 +849,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	struct drbd_tag_list *tl;
 	int c,i=1,rv=NoError,sk_nl;
 	int flags=0;
+	int n_args;
 
 	tl = create_tag_list(4096);
 
@@ -805,33 +857,45 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		if(argc < i+1) {
 			fprintf(stderr,"Missing argument '%s'\n", ad->name);
 			print_command_usage(cm-commands, "",FULL);
-			rv=20;
-			break;
+			rv = OTHER_ERROR;
+			goto error;
 		}
 		rv |= ad->convert_function(ad,tl,argv[i++]);
 		if (rv != NoError)
-			break;
+			goto error;
 		ad++;
 	}
+	n_args = i - 1;
 
 	lo = make_longoptions(cm->cp.options);
 	opterr=0;
-	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
 		od = find_opt_by_short_name(cm->cp.options,c);
 		if(od) rv |= od->convert_function(od,tl,optarg);
 		else {
 			if(c=='(') flags |= DRBD_NL_SET_DEFAULTS;
 			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
 			else {
-				fprintf(stderr,
-					"%s: unrecognized option '%s'\n",
-					cmdname, argv[optind-1]);
-				rv=20;
+				if (c == ':') {
+					warn_missing_required_arg(argv);
+					rv = OTHER_ERROR;
+					goto error;
+				}
+				warn_unrecognized_option(argv);
+				rv = OTHER_ERROR;
+				goto error;
 			}
 		}
 		if (rv != NoError)
-			break;
+			goto error;
 	}
+
+	/* argc should be cmd + n options + n args;
+	 * if it is more, we did not understand some */
+	if (n_args + optind < argc)
+		warn_print_excess_args(argc, argv, optind + n_args);
+
+	dump_argv(argc, argv, optind, i - 1);
 
 	add_tag(tl,TT_END,NULL,0); // close the tag list
 
@@ -839,8 +903,10 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		//dump_tag_list(tl->tag_list_start);
 		int received;
 		sk_nl = open_cn();
-		if(sk_nl < 0)
-			return OTHER_ERROR;
+		if (sk_nl < 0) {
+			rv = OTHER_ERROR;
+			goto error;
+		}
 
 		tl->drbd_p_header->packet_type = cm->packet_id;
 		tl->drbd_p_header->drbd_minor = minor;
@@ -856,6 +922,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			rv = reply->ret_code;
 		}
 	}
+error:
 	free_tag_list(tl);
 
 	return rv;
@@ -1024,9 +1091,10 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	struct drbd_nl_cfg_reply *reply;
 	int sk_nl,rv;
 
-	if(argc > 1) {
-		fprintf(stderr,"Ignoring excess arguments\n");
-	}
+	if (argc > 1)
+		warn_print_excess_args(argc, argv, 1);
+
+	dump_argv(argc, argv, 1, 0);
 
 	tl = create_tag_list(2);
 	add_tag(tl,TT_END,NULL,0); // close the tag list
@@ -1323,8 +1391,15 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 
 	lo = cm->ep.options;
 
-	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
 		switch(c) {
+		default:
+		case '?':
+			warn_unrecognized_option(argv);
+			return 20;
+		case ':':
+			warn_missing_required_arg(argv);
+			return 20;
 		case 'u': unfiltered=1; break;
 		case 'a': all_devices=1; break;
 		case 't':
@@ -1355,9 +1430,10 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		}
 	}
 
-	if(optind > argc) {
-		fprintf(stderr,"Ignoring excess arguments\n");
-	}
+	if (optind < argc)
+		warn_print_excess_args(argc, argv, optind);
+
+	dump_argv(argc, argv, optind, 0);
 
 	tl = create_tag_list(2);
 	add_tag(tl,TT_END,NULL,0); // close the tag list
@@ -1859,6 +1935,10 @@ int main(int argc, char** argv)
 			exit(0);
 		}
 	}
+
+	/* it is enough to set it, value is ignored */
+	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
+		debug_dump_argv = 1;
 
 	if (argc > 1 && (!strcmp(argv[1],"xml"))) {
 		if(argc >= 3) {

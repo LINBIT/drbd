@@ -397,21 +397,21 @@ void uc_node(enum usage_count_type type)
 "\n"
 "\t\t--== This is %s of DRBD ==--\n"
 "Please take part in the global DRBD usage count at http://"HTTP_HOST".\n\n"
-"The conter works completely anonymous. A random number gets created on\n"
-"you machine, and that randomer number (as identifier for this machine) and\n"
-"DRBD's version number are sent to "HTTP_HOST".\n\n"
-"The benifits for you are:\n"
-" * As a respose to your data, the server ("HTTP_HOST") will tell you\n"
+"The counter works anonymously. It creates a random number to identify\n"
+"your machine and sends that random number, along with \n"
+"DRBD's version number, to "HTTP_HOST".\n\n"
+"The benefits for you are:\n"
+" * In response to your submission, the server ("HTTP_HOST") will tell you\n"
 "   how many users before you have installed this version (%s).\n"
-" * With a high counter the DRBD developers have a high motivation to\n"
-"   continue development of the software.\n\n"
+" * With a high counter LINBIT has a strong motivation to\n"
+"   continue funding DRBD's development.\n\n"
 "http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s\n\n"
-"In case you want to participate but know that this machines is firewalled\n"
-"simply issue the query string with your favourite web browser or wget.\n"
-"You can control all this by setting 'usage-count' in your drbd.conf.\n\n"
+"In case you want to participate but know that this machine is firewalled,\n"
+"simply issue the query string with your favorite web browser or wget.\n"
+"You can control all of this by setting 'usage-count' in your drbd.conf.\n\n"
 "* You may enter a free form comment about your machine, that gets\n"
 "  used on "HTTP_HOST" instead of the big random number.\n"
-"* Enter 'no' to opt out.\n"
+"* If you wish to opt out entirely, simply enter 'no'.\n"
 "* To count this node without comment, just press [RETURN]\n",
 			update ? "an update" : "a new installation",
 			REL_VERSION,ni.node_uuid, vcs_to_str(&ni.rev));
@@ -436,11 +436,11 @@ void uc_node(enum usage_count_type type)
 		if (type == UC_ASK) {
 			fprintf(stderr,
 "\n"
-"In the future drbdadm will only contact "HTTP_HOST" when you update\n"
+"From now on, drbdadm will contact "HTTP_HOST" only when you update\n"
 "DRBD or when you use 'drbdadm create-md'. Of course it will continue\n"
 "to ask you for confirmation as long as 'usage-count' is at its default\n"
 "value of 'ask'.\n\n"
-"Just press [enter] to continue: ");
+"Just press [RETURN] to continue: ");
 			fgets(answer,9,stdin);
 		}
 	}
@@ -523,12 +523,14 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 			fprintf(stderr,
 "\n"
 "\t\t--== Creating metadata ==--\n"
-"As with nodes we count the total number of devices mirrored by DRBD at\n"
+"As with nodes, we count the total number of devices mirrored by DRBD at\n"
 "at http://"HTTP_HOST".\n\n"
-"The counter works completely anonymous. A random number gets created for\n"
-"this device, and that randomer number and the devices size will be sent.\n\n"
+"The counter works anonymously. It creates a random number to identify\n"
+"the device and sends that random number, along with \n"
+"DRBD's version number, to "HTTP_HOST".\n\n"
 "http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&ru="U64"&rs="U64"\n\n"
-"Enter 'no' to opt out, or just press [return] to continue:",
+"* If you wish to opt out entirely, simply enter 'no'.\n"
+"* To continue, just press [RETURN]\n",
 				ni.node_uuid,device_uuid,device_size
 				);
 		fgets(answer,ANSWER_SIZE,stdin);
