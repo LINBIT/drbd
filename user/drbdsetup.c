@@ -518,24 +518,24 @@ int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg
 
 	if ((device_fd = open(arg,O_RDWR))==-1) {
 		PERROR("Can not open device '%s'", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	if ( (err=fstat(device_fd, &sb)) ) {
 		PERROR("fstat(%s) failed", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	if(!S_ISBLK(sb.st_mode)) {
 		fprintf(stderr, "%s is not a block device!\n", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	close(device_fd);
 
 	add_tag(tl,ad->tag,arg,strlen(arg)+1); // include the null byte.
 
-	return 0;
+	return NoError;
 }
 
 int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -548,7 +548,7 @@ int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&idx,sizeof(idx));
 
-	return 0;
+	return NoError;
 }
 
 const char* addr_part(const char* s)
@@ -603,7 +603,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&addr,addr_len);
 
-	return 0;
+	return NoError;
 }
 
 int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -618,12 +618,12 @@ int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 		prot=DRBD_PROT_C;
 	} else {
 		fprintf(stderr, "'%s' is no valid protocol.\n", arg);
-		return 20;
+		return OTHER_ERROR;
 	}
 
 	add_tag(tl,ad->tag,&prot,sizeof(prot));
 
-	return 0;
+	return NoError;
 }
 
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attribute((unused)))
@@ -815,12 +815,12 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		if(argc < i+1) {
 			fprintf(stderr,"Missing argument '%s'\n", ad->name);
 			print_command_usage(cm-commands, "",FULL);
-			rv=20;
-			break;
+			rv = OTHER_ERROR;
+			goto error;
 		}
 		rv |= ad->convert_function(ad,tl,argv[i++]);
 		if (rv != NoError)
-			break;
+			goto error;
 		ad++;
 	}
 
@@ -834,13 +834,14 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
 			else {
 				fprintf(stderr,
-					"%s: unrecognized option '%s'\n",
-					cmdname, argv[optind-1]);
-				rv=20;
+					"%s %s: unrecognized option '%s'\n",
+					cmdname, argv[0], argv[optind-1]);
+				rv = OTHER_ERROR;
+				goto error;
 			}
 		}
 		if (rv != NoError)
-			break;
+			goto error;
 	}
 
 	add_tag(tl,TT_END,NULL,0); // close the tag list
@@ -849,8 +850,10 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 		//dump_tag_list(tl->tag_list_start);
 		int received;
 		sk_nl = open_cn();
-		if(sk_nl < 0)
-			return OTHER_ERROR;
+		if (sk_nl < 0) {
+			rv = OTHER_ERROR;
+			goto error;
+		}
 
 		tl->drbd_p_header->packet_type = cm->packet_id;
 		tl->drbd_p_header->drbd_minor = minor;
@@ -866,6 +869,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			rv = reply->ret_code;
 		}
 	}
+error:
 	free_tag_list(tl);
 
 	return rv;
