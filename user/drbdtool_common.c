@@ -38,12 +38,10 @@ char* ppsize(char* buf, size_t size)
 const char* make_optstring(struct option *options,char startc)
 {
   static char buffer[200];
-  static struct option* buffer_valid_for=NULL;
   struct option *opt;
   char *c;
 
-  if(options==buffer_valid_for) return buffer;
-  opt=buffer_valid_for=options;
+  opt = options;
   c=buffer;
   if(startc) *c++=startc;
   while(opt->name)
