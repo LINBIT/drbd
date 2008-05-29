@@ -17,7 +17,8 @@ if [ -z "$DRBD_RESOURCE" ]; then
 	exit 0
 fi
 
-exec > >( logger -s -t "$0[$$]" -p local5.info 2>/dev/null ) 2>&1
+PROG=$(basename $0)
+exec > >(exec 2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
 echo "invoked for $DRBD_RESOURCE"
 
 TEMP=$(getopt -o p:a:nv --long percent:,additional:,disconnect-on-error,verbose -- "$@")
