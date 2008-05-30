@@ -173,7 +173,9 @@
 	  resource's device accordingly. For example in case you increased the
 	  size of your backing storage devices (on both nodes of course),
 	  then DRBD will adopt to the new size after you called
-	  this command on <emphasis>both</emphasis> nodes.
+	  this command on one of your nodes. Since new storage space must be
+          synchronised this command only works if there is at least one primary
+          node present.
         </para></listitem>
       </varlistentry>
       <varlistentry>
