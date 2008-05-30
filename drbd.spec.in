@@ -196,8 +196,8 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Wed May 24 2008 20:58:58 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.6rc2-1)
+* Fri May 30 2008 09:51:15 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.2.6-1)
  * The details of the LRU data structures is now hidden from
    /proc/drbd but can be re-enabled by echoing 1 to
    /sys/module/drbd/parameters/proc_details
@@ -211,9 +211,11 @@ uname -r | grep BOOT ||
    false positives of online verify and data-integrity-alg
    mechanisms in the presence of ReiserFS or the Linux
    swap code.
- * Added the max-bio-size option to workaround issues in
+ * Added the max-bio-bvecs option to workaround issues in
    a stack of DRBD/LVM/Xen.
  * Merged all changes from 8.0.11 -> 8.0.12 into 8.2
+ * Fixed online resizing in case it is triggered from the
+   secondary node.
 
 * Tue Feb 12 2008 13:37:59 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.5-1)
