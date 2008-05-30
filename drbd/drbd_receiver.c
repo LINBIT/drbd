@@ -2240,6 +2240,7 @@ static void warn_if_differ_considerably(drbd_dev *mdev, const char *s, sector_t 
 STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 {
 	Drbd_Sizes_Packet *p = (Drbd_Sizes_Packet*)h;
+	enum determin_dev_size_enum dd = unchanged;
 	unsigned int max_seg_s;
 	sector_t p_size, p_usize, my_usize;
 	int ldsc = 0; /* local disk size changed */
@@ -2300,18 +2301,10 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 	}
 #undef min_not_zero
 
-	if(inc_local(mdev)) {
-		enum determin_dev_size_enum dd;
+	if (inc_local(mdev)) {
 		dd = drbd_determin_dev_size(mdev);
 		dec_local(mdev);
 		if (dd == dev_size_error) return FALSE;
-		if (dd == grew && mdev->state.conn == Connected &&
-		    mdev->state.pdsk >= Inconsistent &&
-		    mdev->state.disk >= Inconsistent) {
-			/* With disk >= Inconsistent we take care to not get
-			   here during an attach while we are connected. */
-			resync_after_online_grow(mdev);
-		}
 		drbd_md_sync(mdev);
 	} else {
 		// I am diskless, need to accept the peer's size.
@@ -2354,6 +2347,13 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 			// we have different sizes, probabely peer
 			// needs to know my new size...
 			drbd_send_sizes(mdev);
+		}
+		if (dd == grew && mdev->state.conn == Connected &&
+		    mdev->state.pdsk >= Inconsistent &&
+		    mdev->state.disk >= Inconsistent) {
+			/* With disk >= Inconsistent we take care to not get
+			   here during an attach while we are connected. */
+			resync_after_online_grow(mdev);
 		}
 	}
 
