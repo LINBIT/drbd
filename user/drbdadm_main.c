@@ -99,6 +99,7 @@ static int adm_dump_xml(struct d_resource* ,const char* );
 static int adm_wait_c(struct d_resource* ,const char* );
 static int adm_wait_ci(struct d_resource* ,const char* );
 static int adm_proxy_up(struct d_resource* ,const char* );
+static int adm_proxy_down(struct d_resource* ,const char* );
 static int sh_nop(struct d_resource* ,const char* );
 static int sh_resources(struct d_resource* ,const char* );
 static int sh_resource(struct d_resource* ,const char* );
@@ -236,6 +237,7 @@ struct adm_cmd cmds[] = {
   { "hidden-commands",   hidden_cmds,   1,0,0,0 },
   { "verify",            adm_generic_s, 1,1,0,0 },
   { "proxy-up",          adm_proxy_up,  2,1,0,0 },
+  { "proxy-down",        adm_proxy_down,2,1,0,0 },
   { "sh-nop",            sh_nop,        2,0,0,0 },
   { "sh-resources",      sh_resources,  2,0,0,0 },
   { "sh-resource",       sh_resource,   2,1,0,0 },
@@ -1116,7 +1118,7 @@ void convert_after_option(struct d_resource* res)
   }
 }
 
-static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((unused)))
+static int do_proxy(struct d_resource* res, int do_up)
 {
   char* argv[MAX_ARGS];
   int argc=0, rv;
@@ -1136,17 +1138,25 @@ static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((
 
   argv[NA(argc)]=drbd_proxy_ctl;
   argv[NA(argc)]="-c";
-  ssprintf(argv[NA(argc)],
-	   "add connection %s-%s-%s %s:%s %s:%s %s:%s %s:%s",
-	   res->me->name, res->name, res->peer->name,
-	   res->me->proxy->inside_addr, res->me->proxy->inside_port,
-	   res->peer->proxy->outside_addr, res->peer->proxy->outside_port,
-	   res->me->proxy->outside_addr, res->me->proxy->outside_port,
-	   res->me->address, res->me->port);
+  if (do_up) {
+    ssprintf(argv[NA(argc)],
+	     "add connection %s-%s-%s %s:%s %s:%s %s:%s %s:%s",
+	     res->me->name, res->name, res->peer->name,
+	     res->me->proxy->inside_addr, res->me->proxy->inside_port,
+	     res->peer->proxy->outside_addr, res->peer->proxy->outside_port,
+	     res->me->proxy->outside_addr, res->me->proxy->outside_port,
+	     res->me->address, res->me->port);
+  } else {
+    ssprintf(argv[NA(argc)],
+             "del connection %s-%s-%s",
+	     res->me->name, res->name, res->peer->name);
+  }
   argv[NA(argc)]=0;
 
   rv = m_system(argv, SLEEPS_SHORT, res);
   if(rv != 0) return rv;
+
+  if (!do_up) return rv;
 
   argc=0;
   argv[NA(argc)]=drbd_proxy_ctl;
@@ -1155,13 +1165,24 @@ static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((
     argv[NA(argc)]="-c";
     ssprintf(argv[NA(argc)], "set %s %s-%s-%s %s",
 	     opt->name, res->me->name, res->name, res->peer->name, opt->value);
-    opt=opt->next; 
+    opt=opt->next;
   }
   argv[NA(argc)]=0;
-  if(argc > 2) return m_system(argv, SLEEPS_SHORT, res);  
+  if(argc > 2) return m_system(argv, SLEEPS_SHORT, res);
   return rv;
 }
 
+
+static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((unused)))
+{
+  return do_proxy(res, 1);
+}
+
+
+static int adm_proxy_down(struct d_resource* res, const char* unused __attribute((unused)))
+{
+  return do_proxy(res, 0);
+}
 
 int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 {
