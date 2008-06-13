@@ -136,6 +136,7 @@ int no_tty;
 int dry_run;
 int verbose;
 int do_verify_ips;
+int all_resources=0; /* drbdadm was called with "all" instead of an resource name */
 char* drbdsetup;
 char* drbdmeta;
 char* drbd_proxy_ctl;
@@ -1125,15 +1126,17 @@ static int do_proxy(struct d_resource* res, int do_up)
   struct d_option* opt;
 
   if(!res->me->proxy) {
+    if (all_resources) return 0;
     fprintf(stderr,"There is no proxy config for host %s in resource %s.\n",
 	    nodeinfo.nodename, res->name);
-    return 0;  /* TODO: Think about better retcode. This means that error is ignored now. */
+    exit(E_config_invalid);
   }
 
   if(strcmp(res->me->proxy->name,nodeinfo.nodename)) {
+    if (all_resources) return 0;
     fprintf(stderr,"The proxy config in resource %s is for %s, this is %s.\n",
 	    res->name, res->me->proxy->name,nodeinfo.nodename);
-    return 0;  /* TODO: Think about better retcode. This means that error is ignored now. */
+    exit(E_config_invalid);
   }
 
   argv[NA(argc)]=drbd_proxy_ctl;
@@ -2179,6 +2182,7 @@ int main(int argc, char** argv)
       }
 
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
+	all_resources=1;
 	if (is_dump) {
 	  if (is_dump_xml) {
 	    printf("<config file=\"%s\">\n", config_file); ++indent;
