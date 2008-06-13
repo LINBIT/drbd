@@ -1125,13 +1125,13 @@ static int adm_proxy_up(struct d_resource* res, const char* unused __attribute((
   if(!res->me->proxy) {
     fprintf(stderr,"There is no proxy config for host %s in resource %s.\n",
 	    nodeinfo.nodename, res->name);
-    exit(E_config_invalid);
+    return 0;  /* TODO: Think about better retcode. This means that error is ignored now. */
   }
 
   if(strcmp(res->me->proxy->name,nodeinfo.nodename)) {
     fprintf(stderr,"The proxy config in resource %s is for %s, this is %s.\n",
 	    res->name, res->me->proxy->name,nodeinfo.nodename);
-    exit(E_config_invalid);
+    return 0;  /* TODO: Think about better retcode. This means that error is ignored now. */
   }
 
   argv[NA(argc)]=drbd_proxy_ctl;
