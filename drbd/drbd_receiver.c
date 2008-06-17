@@ -256,7 +256,6 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	e->block_id = id;
 	INIT_HLIST_NODE(&e->colision);
 	e->barrier_nr = 0;
-	e->barrier_nr2 = 0;
 	e->flags = 0;
 
 	MTRACE(TraceTypeEE, TraceLvlAll,
@@ -342,7 +341,7 @@ STATIC void reclaim_net_ee(struct drbd_conf *mdev)
 /*
  * This function is called from _asender only_
  * but see also comments in _req_mod(,barrier_acked)
- * and receive_Barrier_no_tcq.
+ * and receive_Barrier.
  *
  * Move entries from net_ee to done_ee, if ready.
  * Grab done_ee, call all callbacks, free the entries.
@@ -856,7 +855,7 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int receive_Barrier_no_tcq(struct drbd_conf *mdev, struct Drbd_Header *h)
+STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int rv;
 	int epoch_size;
@@ -1332,8 +1331,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	struct Drbd_Data_Packet *p = (struct Drbd_Data_Packet *)h;
 	int header_size, data_size;
 	int rw = WRITE;
-	unsigned int barrier_nr = 0;
-	unsigned int epoch_size = 0;
 	u32 dp_flags;
 
 	/* FIXME merge this code dups into some helper function */
@@ -1543,42 +1540,8 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	 * uses epoch counters per reorder domain.
 	 */
 
-	/* when using tcq:
-	 * if we got a barrier packet before, but at that time the active_ee
-	 * was not yet empty, we just "remembered" this barrier request.
-	 *
-	 * if this is the first data packet since that barrier, maybe meanwhile
-	 * all previously active writes have been completed?
-	 * if so, send the b_ack right now
-	 * (though, maybe rather move it into the e_end_block callback,
-	 * where it would be sent as soon as possible).
-	 *
-	 * otherwise, tag the write with the barrier number, so it
-	 * will trigger the b_ack before its own ack.
-	 */
-	if (mdev->next_barrier_nr) {
-		/* only when using TCQ */
-		if (list_empty(&mdev->active_ee)) {
-			barrier_nr = mdev->next_barrier_nr;
-			epoch_size = mdev->epoch_size;
-			mdev->epoch_size = 0;
-		} else {
-			e->barrier_nr = mdev->next_barrier_nr;
-		}
-		rw |= (1<<BIO_RW_BARRIER);
-		mdev->next_barrier_nr = 0;
-	}
 	list_add(&e->w.list, &mdev->active_ee);
 	spin_unlock_irq(&mdev->req_lock);
-
-	if (barrier_nr) {
-		/* only when using TCQ
-		 * maybe rather move it into the e_end_block callback,
-		 * where it would be sent as soon as possible).
-		 */
-		(void)drbd_send_b_ack(mdev,
-					cpu_to_be32(barrier_nr), epoch_size);
-	}
 
 	switch (mdev->net_conf->wire_protocol) {
 	case DRBD_PROT_C:
@@ -2747,7 +2710,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[Data]		   = receive_Data,
 	[DataReply]	   = receive_DataReply,
 	[RSDataReply]	   = receive_RSDataReply,
-	[Barrier]	   = receive_Barrier_no_tcq,
+	[Barrier]	   = receive_Barrier,
 	[ReportBitMap]	   = receive_bitmap,
 	[UnplugRemote]	   = receive_UnplugRemote,
 	[DataRequest]	   = receive_DataRequest,

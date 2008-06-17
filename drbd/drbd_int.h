@@ -709,13 +709,6 @@ struct Tl_epoch_entry {
 	/* up to here, the struct layout is identical to drbd_request;
 	 * we might be able to use that to our advantage...  */
 
-	unsigned int barrier_nr2;
-	/* If we issue the bio with BIO_RW_BARRIER we have to
-	   send a barrier ACK before we send the ACK to this
-	   write. We store the barrier number in here.
-	   In case the barrier after this write has been coalesced
-	   as well, we set it's barrier_nr into barrier_nr2 */
-
 	unsigned int flags;
 	u64    block_id;
 };
