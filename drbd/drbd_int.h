@@ -236,6 +236,7 @@ enum {
     DRBD_FAULT_DT_WR,		/* data            */
     DRBD_FAULT_DT_RD,
     DRBD_FAULT_DT_RA,		/* data read ahead */
+    DRBD_FAULT_DT_BR,           /* data barrier    */
 
     DRBD_FAULT_MAX,
 };
@@ -723,10 +724,12 @@ enum {
 	__EE_CALL_AL_COMPLETE_IO,
 	__EE_CONFLICT_PENDING,
 	__EE_MAY_SET_IN_SYNC,
+	__EE_IS_BARRIER,
 };
 #define EE_CALL_AL_COMPLETE_IO (1<<__EE_CALL_AL_COMPLETE_IO)
 #define EE_CONFLICT_PENDING    (1<<__EE_CONFLICT_PENDING)
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
+#define EE_IS_BARRIER          (1<<__EE_IS_BARRIER)
 
 /* global flag bits */
 enum {
@@ -753,6 +756,7 @@ enum {
 
 	LL_DEV_NO_FLUSH,	/* blkdev_issue_flush does not work,
 				   so don't even try */
+	LL_DEV_BARRIERS_SUPP,   /* We know that barriers are working here */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	BITMAP_IO,		/* Let user IO drain */

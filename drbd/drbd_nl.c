@@ -925,6 +925,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	else
 		clear_bit(MD_NO_BARRIER, &mdev->flags);
 
+	clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
 	 * now mdev takes over responsibility, and the state engine should

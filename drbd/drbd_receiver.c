@@ -855,11 +855,22 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
+/* e_end_barrier() is called via drbd_process_done_ee().
+ * this means this function only runs in the asender thread
+ */
+STATIC int e_end_barrier(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+{
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
+
+	return drbd_send_b_ack(mdev, e->barrier_nr, (u32)e->block_id);
+}
+
 STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int rv;
 	int epoch_size;
 	struct Drbd_Barrier_Packet *p = (struct Drbd_Barrier_Packet *)h;
+	struct Tl_epoch_entry * e;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
@@ -871,24 +882,48 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (mdev->net_conf->wire_protocol != DRBD_PROT_C)
 		drbd_kick_lo(mdev);
 
+	/* BarrierAck may imply that the corresponding extent is dropped from
+	 * the activity log, which means it would not be resynced in case the
+	 * Primary crashes now.
+	 * Therefore we must send the barrier_ack after the barrier request was
+	 * completed. */
+	if (test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags) && inc_local(mdev)) {
+		e = drbd_alloc_ee(mdev, 4711, 0, 0, GFP_KERNEL);
+		if (!e) {
+			dec_local(mdev);
+			return FALSE;
+		}
+		e->private_bio->bi_end_io = drbd_endio_write_sec;
+		e->private_bio->bi_rw = 1 << BIO_RW_BARRIER;
+		e->w.cb = e_end_barrier;
+		e->barrier_nr = p->barrier;
+		e->flags = EE_IS_BARRIER;
+
+		drbd_generic_make_request(mdev, DRBD_FAULT_DT_BR, e->private_bio);
+
+		/* We will send the barrier ACK, when it was completed... */
+		if (!bio_flagged(e->private_bio, BIO_EOPNOTSUPP))
+			return TRUE;
+
+		WARN("The disk disk suddenly no longer supports BIO_RW_BARRIER\n");
+		clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
+	}
+
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 	epoch_size = mdev->epoch_size;
 	mdev->epoch_size = 0;
 	spin_unlock_irq(&mdev->req_lock);
 
-	/* BarrierAck may imply that the corresponding extent is dropped from
-	 * the activity log, which means it would not be resynced in case the
-	 * Primary crashes now.
-	 * Just waiting for write_completion is not enough,
-	 * better flush to make sure it is all on stable storage. */
 	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && inc_local(mdev)) {
 		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
 		dec_local(mdev);
-		if (rv == -EOPNOTSUPP) /* don't try again */
-			set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
-		if (rv)
+		if (rv) {
+			if (rv == -EOPNOTSUPP) /* don't try again */
+				set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
 			ERR("local disk flush failed with status %d\n",rv);
+		} else
+			set_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
 	}
 
 	/* FIXME CAUTION! receiver thread sending via msock.
@@ -1206,9 +1241,6 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 /* e_end_block() is called via drbd_process_done_ee().
  * this means this function only runs in the asender thread
- *
- * for a broken example implementation of the TCQ barrier version of
- * e_end_block see older revisions...
  */
 STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
