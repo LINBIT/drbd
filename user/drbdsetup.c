@@ -871,7 +871,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			rv = OTHER_ERROR;
 			goto error;
 		}
-		rv |= ad->convert_function(ad,tl,argv[i++]);
+		rv = ad->convert_function(ad,tl,argv[i++]);
 		if (rv != NoError)
 			goto error;
 		ad++;
@@ -882,7 +882,8 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	opterr=0;
 	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
 		od = find_opt_by_short_name(cm->cp.options,c);
-		if(od) rv |= od->convert_function(od,tl,optarg);
+		if (od)
+			rv = od->convert_function(od,tl,optarg);
 		else {
 			if(c=='(') flags |= DRBD_NL_SET_DEFAULTS;
 			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
