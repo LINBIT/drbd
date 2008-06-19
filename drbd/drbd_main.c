@@ -2327,6 +2327,7 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	spin_lock_init(&mdev->al_lock);
 	spin_lock_init(&mdev->req_lock);
 	spin_lock_init(&mdev->peer_seq_lock);
+	spin_lock_init(&mdev->epoch_lock);
 
 	INIT_LIST_HEAD(&mdev->active_ee);
 	INIT_LIST_HEAD(&mdev->sync_ee);
@@ -2416,8 +2417,8 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 		mdev->verify_tfm=NULL;
 	}
 	/* no need to lock it, I'm the only thread alive */
-	if (mdev->epoch_size !=  0)
-		ERR("epoch_size:%d\n", mdev->epoch_size);
+	if (atomic_read(&mdev->current_epoch->epoch_size) !=  0)
+		ERR("epoch_size:%d\n", atomic_read(&mdev->current_epoch->epoch_size));
 	mdev->al_writ_cnt  =
 	mdev->bm_writ_cnt  =
 	mdev->read_cnt     =
@@ -2645,6 +2646,8 @@ STATIC void drbd_cleanup(void)
 			kfree(mdev->int_dig_out);
 			kfree(mdev->int_dig_in);
 			kfree(mdev->int_dig_vv);
+
+			kfree(mdev->current_epoch);
 		}
 		drbd_destroy_mempools();
 	}
@@ -2712,6 +2715,10 @@ struct drbd_conf *drbd_new_device(int minor)
 	if (!mdev->app_reads_hash)
 		goto Enomem;
 
+	mdev->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
+	INIT_LIST_HEAD(&mdev->current_epoch->list);
+	mdev->epochs = 1;
+
 	return mdev;
 
  Enomem:
@@ -2719,6 +2726,7 @@ struct drbd_conf *drbd_new_device(int minor)
 		kfree(mdev->app_reads_hash);
 		if (mdev->md_io_page)
 			__free_page(mdev->md_io_page);
+		kfree(mdev->current_epoch);
 		kfree(mdev);
 	}
 	return NULL;

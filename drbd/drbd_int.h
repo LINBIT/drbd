@@ -236,7 +236,6 @@ enum {
     DRBD_FAULT_DT_WR,		/* data            */
     DRBD_FAULT_DT_RD,
     DRBD_FAULT_DT_RA,		/* data read ahead */
-    DRBD_FAULT_DT_BR,           /* data barrier    */
 
     DRBD_FAULT_MAX,
 };
@@ -698,6 +697,22 @@ struct drbd_request;
    read_ee   .. [RS]DataRequest being read
 */
 
+struct drbd_epoch {
+	struct list_head list;
+	unsigned int barrier_nr;
+	atomic_t epoch_size; /* increased on every request added. */
+	atomic_t active;     /* increased on every req. added, and dec on every finished. */
+	unsigned long flags;
+};
+
+/* drbd_epoch flag bits */
+enum {
+	DE_BARRIER_IN_NEXT_EPOCH_ISSUED,
+	DE_BARRIER_IN_NEXT_EPOCH_DONE,
+	DE_CONTAINS_A_BARRIER,
+	DE_HAVE_BARRIER_NUMBER,
+};
+
 struct Tl_epoch_entry {
 	struct drbd_work    w;
 	struct drbd_conf *mdev;
@@ -705,7 +720,7 @@ struct Tl_epoch_entry {
 	struct hlist_node colision;
 	sector_t sector;
 	unsigned int size;
-	unsigned int barrier_nr;
+	struct drbd_epoch *epoch;
 
 	/* up to here, the struct layout is identical to drbd_request;
 	 * we might be able to use that to our advantage...  */
@@ -736,7 +751,6 @@ enum {
 	CREATE_BARRIER,		/* next Data is preceeded by a Barrier */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	SEND_PING,		/* whether asender should send a ping asap */
-	WRITE_ACK_PENDING,	/* so BarrierAck won't overtake WriteAck */
 	WORK_PENDING,		/* completion flag for drbd_disconnect */
 	STOP_SYNC_TIMER,	/* tell timer to cancel itself */
 	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
@@ -932,7 +946,9 @@ struct drbd_conf {
 	u64 *p_uuid;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
-	unsigned int epoch_size;
+	struct drbd_epoch *current_epoch;
+	spinlock_t epoch_lock;
+	unsigned int epochs;
 	struct list_head active_ee; /* IO in progress */
 	struct list_head sync_ee;   /* IO in progress */
 	struct list_head done_ee;   /* send ack */

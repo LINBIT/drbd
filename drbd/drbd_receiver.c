@@ -255,7 +255,7 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	e->private_bio = bio;
 	e->block_id = id;
 	INIT_HLIST_NODE(&e->colision);
-	e->barrier_nr = 0;
+	e->epoch = NULL;
 	e->flags = 0;
 
 	MTRACE(TraceTypeEE, TraceLvlAll,
@@ -352,7 +352,6 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	LIST_HEAD(work_list);
 	struct Tl_epoch_entry *e, *t;
 	int ok = 1;
-	int do_clear_bit = test_bit(WRITE_ACK_PENDING, &mdev->flags);
 
 	spin_lock_irq(&mdev->req_lock);
 	reclaim_net_ee(mdev);
@@ -372,8 +371,6 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 		if (e->w.cb(mdev, &e->w, 0) == 0) ok = 0;
 		drbd_free_ee(mdev, e);
 	}
-	if (do_clear_bit)
-		clear_bit(WRITE_ACK_PENDING, &mdev->flags);
 	wake_up(&mdev->ee_wait);
 
 	return ok;
@@ -401,6 +398,8 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 			++n;
 
 		if (!hlist_unhashed(&e->colision)) hlist_del_init(&e->colision);
+		if (atomic_dec_and_test(&e->epoch->active))
+			drbd_may_finish_epoch(mdev, e->epoch);
 		drbd_free_ee(mdev, e);
 	}
 
@@ -855,22 +854,62 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
-/* e_end_barrier() is called via drbd_process_done_ee().
- * this means this function only runs in the asender thread
+/*
+ * We may close an epoch (and send the barrier ACK back) when the first request
+ * of the next epoch (which carries the BIO_RW_BARRIER flag) is done, or when
+ * all my requests are done. In the second case the request with the BIO_RW_BARRIER
+ * will be issued in the future.
+ * Returns 1 it the epoch was recycled. I.e. mdev->current_epoch now points to a new clean epoch.
  */
-STATIC int e_end_barrier(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int drbd_may_finish_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
+	int finish, free=0, epoch_size=0;
 
-	return drbd_send_b_ack(mdev, e->barrier_nr, (u32)e->block_id);
+	/* The case !test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) is the
+	   only shortcomming of the implementation so far. This means that all requests
+	   in the epoch where already completely transfered to the device, and we had no
+	   subsequent request on which to which we could have added the BIO_RW_BARRIER flag.
+
+	   The current implementation then closes the epoch and sends the barrier ack.
+
+	   The perfect solution would be to issue an blkdev_flush then and send the barrier
+	   ack after that flush completed.
+	*/
+	spin_lock(&mdev->epoch_lock);
+	finish = atomic_read(&epoch->epoch_size) != 0 &&
+		atomic_read(&epoch->active) == 0 &&
+		( test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
+		  !test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) ) &&
+		test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
+	if (finish) {
+		epoch_size = atomic_read(&epoch->epoch_size);
+		if (mdev->current_epoch != epoch) {
+			list_del(&epoch->list);
+			free = 1;
+			mdev->epochs--;
+		} else {
+			epoch->flags = 0;
+			atomic_set(&epoch->epoch_size, 0);
+			atomic_set(&epoch->active, 0);
+		}
+	}
+	spin_unlock(&mdev->epoch_lock);
+
+	if (finish) {
+		if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
+			dec_unacked(mdev);
+		if (free)
+			kfree(epoch);
+
+		return !free;
+	}
+	return 0;
 }
 
 STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int rv;
-	int epoch_size;
 	struct Drbd_Barrier_Packet *p = (struct Drbd_Barrier_Packet *)h;
-	struct Tl_epoch_entry * e;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
@@ -882,38 +921,43 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (mdev->net_conf->wire_protocol != DRBD_PROT_C)
 		drbd_kick_lo(mdev);
 
+	mdev->current_epoch->barrier_nr = p->barrier;
+	set_bit(DE_HAVE_BARRIER_NUMBER, &mdev->current_epoch->flags);
+
 	/* BarrierAck may imply that the corresponding extent is dropped from
 	 * the activity log, which means it would not be resynced in case the
 	 * Primary crashes now.
 	 * Therefore we must send the barrier_ack after the barrier request was
 	 * completed. */
-	if (test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags) && inc_local(mdev)) {
-		e = drbd_alloc_ee(mdev, 4711, 0, 0, GFP_KERNEL);
-		if (!e) {
-			dec_local(mdev);
-			return FALSE;
-		}
-		e->private_bio->bi_end_io = drbd_endio_write_sec;
-		e->private_bio->bi_rw = 1 << BIO_RW_BARRIER;
-		e->w.cb = e_end_barrier;
-		e->barrier_nr = p->barrier;
-		e->flags = EE_IS_BARRIER;
+	if (test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags)) {
+		struct drbd_epoch *epoch;
 
-		drbd_generic_make_request(mdev, DRBD_FAULT_DT_BR, e->private_bio);
-
-		/* We will send the barrier ACK, when it was completed... */
-		if (!bio_flagged(e->private_bio, BIO_EOPNOTSUPP))
+		if (drbd_may_finish_epoch(mdev, mdev->current_epoch))
 			return TRUE;
 
-		WARN("The disk disk suddenly no longer supports BIO_RW_BARRIER\n");
-		clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
+		epoch = kmalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
+		if (!epoch) {
+			ERR("Allocation of an epoch failed\n");
+			return FALSE;
+		}
+
+		epoch->flags = 0;
+		atomic_set(&epoch->epoch_size, 0);
+		atomic_set(&epoch->active, 0);
+
+		spin_lock(&mdev->epoch_lock);
+		list_add_tail(&epoch->list, &mdev->current_epoch->list);
+		mdev->current_epoch = epoch;
+		mdev->epochs++;
+		spin_unlock(&mdev->epoch_lock);
+
+		return TRUE;
 	}
 
-	spin_lock_irq(&mdev->req_lock);
-	_drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
-	epoch_size = mdev->epoch_size;
-	mdev->epoch_size = 0;
-	spin_unlock_irq(&mdev->req_lock);
+	/* We plan to issue a flush */
+	set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
+
+	drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 
 	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && inc_local(mdev)) {
 		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
@@ -926,22 +970,11 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 			set_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
 	}
 
-	/* FIXME CAUTION! receiver thread sending via msock.
-	 * to make sure this BarrierAck will not be received before the asender
-	 * had a chance to send all the write acks corresponding to this epoch,
-	 * wait_for that bit to clear... */
-	set_bit(WRITE_ACK_PENDING, &mdev->flags);
 	wake_asender(mdev);
-	rv = wait_event_interruptible(mdev->ee_wait,
-			      !test_bit(WRITE_ACK_PENDING, &mdev->flags));
+	set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &mdev->current_epoch->flags);
+	drbd_may_finish_epoch(mdev, mdev->current_epoch);
 
-	if (rv == 0 && mdev->state.conn >= Connected)
-		rv = drbd_send_b_ack(mdev, p->barrier, epoch_size);
-	else
-		rv = 0;
-	dec_unacked(mdev);
-
-	return rv;
+	return TRUE;
 }
 
 /* used from receive_RSDataReply (recv_resync_read)
@@ -1246,8 +1279,16 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	sector_t sector = e->sector;
-	/* unsigned int epoch_size; */
+	struct drbd_epoch *epoch;
 	int ok = 1, pcmd;
+
+	if (e->flags & EE_IS_BARRIER) {
+		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
+		if (epoch != e->epoch) {
+			set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
+			drbd_may_finish_epoch(mdev, epoch);
+		}
+	}
 
 	if (mdev->net_conf->wire_protocol == DRBD_PROT_C) {
 		if (likely(drbd_bio_uptodate(e->private_bio))) {
@@ -1286,6 +1327,9 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	} else {
 		D_ASSERT(hlist_unhashed(&e->colision));
 	}
+
+	if (atomic_dec_and_test(&e->epoch->active))
+		drbd_may_finish_epoch(mdev, e->epoch);
 
 	return ok;
 }
@@ -1387,7 +1431,8 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		spin_unlock(&mdev->peer_seq_lock);
 
 		drbd_send_ack_dp(mdev, NegAck, p);
-		mdev->epoch_size++; /* spin lock ? */
+		atomic_inc(&mdev->current_epoch->epoch_size);
+		drbd_may_finish_epoch(mdev, mdev->current_epoch);
 		return drbd_drain_block(mdev, data_size);
 	}
 
@@ -1399,8 +1444,34 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	e->private_bio->bi_end_io = drbd_endio_write_sec;
-	e->private_bio->bi_rw = WRITE;
 	e->w.cb = e_end_block;
+
+	spin_lock(&mdev->epoch_lock);
+	e->epoch = mdev->current_epoch;
+	atomic_inc(&e->epoch->epoch_size);
+	atomic_inc(&e->epoch->active);
+
+	if (test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags) && atomic_read(&e->epoch->epoch_size) == 1) {
+		struct drbd_epoch *epoch;
+		/* Issue a barrier if we start a new epoch, and the previous epoch
+		   was not a epoch containing a single request which already was
+		   a Barrier. */
+		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
+		if (epoch == e->epoch) {
+			set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
+			rw |= (1<<BIO_RW_BARRIER);
+			e->flags |= EE_IS_BARRIER;
+		} else {
+			if (atomic_read(&epoch->epoch_size) > 1 ||
+			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
+				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
+				set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
+				rw |= (1<<BIO_RW_BARRIER);
+				e->flags |= EE_IS_BARRIER;
+			}
+		}
+	}
+	spin_unlock(&mdev->epoch_lock);
 
 	dp_flags = be32_to_cpu(p->dp_flags);
 	if (dp_flags & DP_HARDBARRIER)
@@ -1501,7 +1572,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 				ALERT("Concurrent write! [DISCARD BY FLAG] sec=%llus\n",
 				     (unsigned long long)sector);
 				inc_unacked(mdev);
-				mdev->epoch_size++;
 				e->w.cb = e_send_discard_ack;
 				list_add_tail(&e->w.list, &mdev->done_ee);
 
@@ -1540,37 +1610,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		}
 		finish_wait(&mdev->misc_wait, &wait);
 	}
-
-	/* when using TCQ:
-	 * note that, when using tagged command queuing, we may
-	 * have more than one reorder domain "active" at a time.
-	 *
-	 * THINK:
-	 * do we have any guarantees that we get the completion
-	 * events of the different reorder domains in order?
-	 * or does the api only "guarantee" that the events
-	 * _happened_ in order, but eventually the completion
-	 * callbacks are shuffeled again?
-	 *
-	 * note that I wonder about the order in which the
-	 * callbacks are run, I am reasonable confident that the
-	 * actual completion happens in order.
-	 *
-	 * - can it happen that the tagged write completion is
-	 *   called even though not all of the writes before it
-	 *   have run their completion callback?
-	 * - can it happen that some completion callback of some
-	 *   write after the tagged one is run, even though the
-	 *   callback of the tagged one itself is still pending?
-	 *
-	 * if this can happen, we either need to drop our "debug
-	 * assertion" about the epoch size and just trust our code
-	 * and the layers below us (nah, won't do that).
-	 *
-	 * or we need to replace the "active_ee" list by some sort
-	 * of "transfer log" on the receiving side, too, which
-	 * uses epoch counters per reorder domain.
-	 */
 
 	list_add(&e->w.list, &mdev->active_ee);
 	spin_unlock_irq(&mdev->req_lock);
@@ -2962,7 +3001,8 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	D_ASSERT(list_empty(&mdev->done_ee));
 
 	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
-	mdev->epoch_size = 0;
+	atomic_set(&mdev->current_epoch->epoch_size, 0);
+	D_ASSERT(list_empty(&mdev->current_epoch->list));
 }
 
 /*
@@ -3543,7 +3583,7 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 			spin_lock_irq(&mdev->req_lock);
 			empty = list_empty(&mdev->done_ee);
 			spin_unlock_irq(&mdev->req_lock);
-			if (empty && !test_bit(WRITE_ACK_PENDING, &mdev->flags))
+			if (empty)
 				break;
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
 			flush_signals(current);

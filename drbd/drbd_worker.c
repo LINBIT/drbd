@@ -147,19 +147,20 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 
 	BIO_ENDIO_FN_START;
 
-	if (bio_flagged(e->private_bio, BIO_EOPNOTSUPP) &&
-	    e->flags & EE_IS_BARRIER &&
-	    test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags)) {
-		ERR("The disk dropped BIO_RW_BARRIER support, use no-disk-flushes!\n");
-		clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
-	}
-
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
 		 * do we want to WARN() on this? */
 		error = -EIO;
+	}
+
+	if (error && e->flags & EE_IS_BARRIER &&
+	    test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags)) {
+		/* This seems to be device mappers behaviour! */
+		ERR("The disk dropped BIO_RW_BARRIER support, use no-disk-flushes!\n");
+		clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
+		set_bit(LL_DEV_NO_FLUSH, &mdev->flags); /* TODO, can not go mainline like this */
 	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
@@ -189,12 +190,6 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 	 * neither did we wake possibly waiting conflicting requests.
 	 * done from "drbd_process_done_ee" within the appropriate w.cb
 	 * (e_end_block/e_end_resync_block) or from _drbd_clear_done_ee */
-
-	if (e->flags & EE_IS_BARRIER) {
-		e->block_id = mdev->epoch_size;
-		mdev->epoch_size = 0;
-	} else if (!is_syncer_req)
-		mdev->epoch_size++;
 
 	do_wake = is_syncer_req
 		? list_empty(&mdev->sync_ee)

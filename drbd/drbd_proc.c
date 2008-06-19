@@ -190,7 +190,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf( seq,
 			   "%2d: cs:%s st:%s/%s ds:%s/%s %c %c%c%c%c\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
-			   "lo:%d pe:%d ua:%d ap:%d",
+			   "lo:%d pe:%d ua:%d ap:%d ep:%d",
 			   i, sn,
 			   roles_to_name(mdev->state.role),
 			   roles_to_name(mdev->state.peer),
@@ -212,7 +212,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   atomic_read(&mdev->ap_pending_cnt) +
 			   atomic_read(&mdev->rs_pending_cnt),
 			   atomic_read(&mdev->unacked_cnt),
-			   atomic_read(&mdev->ap_bio_cnt)
+			   atomic_read(&mdev->ap_bio_cnt),
+			   mdev->epochs
 			);
 			seq_printf(seq, " oos:%lu\n",
 				   drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B - 10));
