@@ -958,8 +958,8 @@
 	This causes DRBD to reexamine the size of the
 	<replaceable>device</replaceable>'s backing storage device.  To
 	actually do online growing you need to extend the backing storages
-	on both devices and call the <option>resize</option> command on both
-	nodes.
+	on both devices and call the <option>resize</option> command one of
+        your nodes.
       </para>
     </refsect2>
     <refsect2>

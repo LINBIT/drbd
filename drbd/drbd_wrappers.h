@@ -182,7 +182,7 @@ static __inline__ int atomic_sub_return(int i, atomic_t *v)
 
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+#if !defined(CRYPTO_ALG_ASYNC)
 /* With Linux-2.6.19 the crypto API changed! */
 /* This is not a generic backport of the new api, it just implements
    the corner case of "hmac(xxx)".  */
