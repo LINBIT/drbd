@@ -154,6 +154,13 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 	const char *sn;
 	struct drbd_conf *mdev;
 
+	static char write_ordering_chars[] = {
+		[WO_none] = 'n',
+		[WO_drain_io] = 'd',
+		[WO_bdev_flush] = 'f',
+		[WO_bio_barrier] = 'b',
+	};
+
 	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)\n%s\n",
 		   API_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, drbd_buildtag());
 
@@ -190,7 +197,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf( seq,
 			   "%2d: cs:%s st:%s/%s ds:%s/%s %c %c%c%c%c\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
-			   "lo:%d pe:%d ua:%d ap:%d ep:%d",
+			   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
 			   i, sn,
 			   roles_to_name(mdev->state.role),
 			   roles_to_name(mdev->state.peer),
@@ -213,7 +220,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   atomic_read(&mdev->rs_pending_cnt),
 			   atomic_read(&mdev->unacked_cnt),
 			   atomic_read(&mdev->ap_bio_cnt),
-			   mdev->epochs
+			   mdev->epochs,
+			   write_ordering_chars[mdev->write_ordering]
 			);
 			seq_printf(seq, " oos:%lu\n",
 				   drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B - 10));

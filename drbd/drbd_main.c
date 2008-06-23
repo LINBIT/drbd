@@ -2361,7 +2361,7 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	drbd_thread_init(mdev, &mdev->asender, drbd_asender);
 
 	mdev->agreed_pro_version = PRO_VERSION_MAX;
-
+	mdev->write_ordering = WO_bio_barrier;
 #ifdef __arch_um__
 	INFO("mdev = 0x%p\n", mdev);
 #endif

@@ -768,9 +768,6 @@ enum {
 	NO_BARRIER_SUPP,	/* underlying block device doesn't implement barriers */
 	CONSIDER_RESYNC,
 
-	LL_DEV_NO_FLUSH,	/* blkdev_issue_flush does not work,
-				   so don't even try */
-	LL_DEV_BARRIERS_SUPP,   /* We know that barriers are working here */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	BITMAP_IO,		/* Let user IO drain */
@@ -856,6 +853,13 @@ struct bm_io_work {
 	struct drbd_work w;
 	int (*io_fn)(struct drbd_conf *mdev);
 	void (*done)(struct drbd_conf *mdev, int rv);
+};
+
+enum write_ordering_e {
+	WO_none,
+	WO_drain_io,
+	WO_bdev_flush,
+	WO_bio_barrier
 };
 
 struct drbd_conf {
@@ -949,6 +953,7 @@ struct drbd_conf {
 	struct drbd_epoch *current_epoch;
 	spinlock_t epoch_lock;
 	unsigned int epochs;
+	enum write_ordering_e write_ordering;
 	struct list_head active_ee; /* IO in progress */
 	struct list_head sync_ee;   /* IO in progress */
 	struct list_head done_ee;   /* send ack */
@@ -1505,6 +1510,7 @@ extern int w_send_dblock(struct drbd_conf *, struct drbd_work *, int);
 extern int w_send_barrier(struct drbd_conf *, struct drbd_work *, int);
 extern int w_send_read_req(struct drbd_conf *, struct drbd_work *, int);
 extern int w_prev_work_done(struct drbd_conf *, struct drbd_work *, int);
+extern int w_e_reissue(struct drbd_conf *, struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 
@@ -1534,6 +1540,8 @@ static inline void drbd_tcp_flush(struct socket *sock)
 	int __user val = 0;
 	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
 }
+
+void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;

@@ -915,17 +915,11 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
-	if (nbc->dc.no_disk_flush)
-		set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
-	else
-		clear_bit(LL_DEV_NO_FLUSH, &mdev->flags);
-
 	if (nbc->dc.no_md_flush)
 		set_bit(MD_NO_BARRIER, &mdev->flags);
 	else
 		clear_bit(MD_NO_BARRIER, &mdev->flags);
 
-	clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
 	 * now mdev takes over responsibility, and the state engine should
@@ -935,6 +929,9 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	mdev->resync = resync_lru;
 	nbc = NULL;
 	resync_lru = NULL;
+
+	mdev->write_ordering = WO_bio_barrier;
+	drbd_bump_write_ordering(mdev, WO_bio_barrier);
 
 	if (drbd_md_test_flag(mdev->bc, MDF_PrimaryInd))
 		set_bit(CRASHED_PRIMARY, &mdev->flags);

@@ -155,12 +155,15 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 		error = -EIO;
 	}
 
-	if (error && e->flags & EE_IS_BARRIER &&
-	    test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags)) {
-		/* This seems to be device mappers behaviour! */
-		ERR("The disk dropped BIO_RW_BARRIER support, use no-disk-flushes!\n");
-		clear_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
-		set_bit(LL_DEV_NO_FLUSH, &mdev->flags); /* TODO, can not go mainline like this */
+	/* error == -ENOTSUPP would be a better test, but due to device mapper... */
+	if (error && e->flags & EE_IS_BARRIER) {
+		spin_lock_irqsave(&mdev->req_lock, flags);
+		list_del(&e->w.list);
+		e->w.cb = w_e_reissue;
+		__release(local); /* Actually happens in w_e_reissue. */
+		spin_unlock_irqrestore(&mdev->req_lock, flags);
+		drbd_queue_work(&mdev->data.work, &e->w);
+		BIO_ENDIO_FN_RETURN;
 	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
@@ -197,7 +200,7 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 
 	if (error)
 		__drbd_chk_io_error(mdev, FALSE);
-	spin_unlock_irqrestore(&mdev->req_lock, flags);
+ 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	if (is_syncer_req)
 		drbd_rs_complete_io(mdev, e_sector);

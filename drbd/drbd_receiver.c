@@ -52,6 +52,27 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
+struct flush_work {
+	struct drbd_work w;
+	struct drbd_epoch *epoch;
+};
+
+enum epoch_event {
+	EV_put,
+	EV_got_barrier_nr,
+	EV_barrier_done,
+	EV_became_last,
+};
+
+enum finish_epoch {
+	FE_still_live,
+	FE_destroyed,
+	FE_recycled,
+};
+
+STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
+STATIC int e_end_block(struct drbd_conf *, struct drbd_work *, int);
+
 #ifdef DBG_ASSERTS
 void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
 			    char *file, int line)
@@ -398,8 +419,7 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 			++n;
 
 		if (!hlist_unhashed(&e->colision)) hlist_del_init(&e->colision);
-		if (atomic_dec_and_test(&e->epoch->active))
-			drbd_may_finish_epoch(mdev, e->epoch);
+		drbd_may_finish_epoch(mdev, e->epoch, EV_put);
 		drbd_free_ee(mdev, e);
 	}
 
@@ -854,43 +874,88 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
-/*
- * We may close an epoch (and send the barrier ACK back) when the first request
- * of the next epoch (which carries the BIO_RW_BARRIER flag) is done, or when
- * all my requests are done. In the second case the request with the BIO_RW_BARRIER
- * will be issued in the future.
- * Returns 1 it the epoch was recycled. I.e. mdev->current_epoch now points to a new clean epoch.
+/**
+ * w_flush: Checks if an epoch can be closed and therefore might
+ * close and/or free the epoch object.
  */
-STATIC int drbd_may_finish_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
+STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	int finish, free=0, epoch_size=0;
+	struct flush_work *fw = (struct flush_work *)w;
+	struct drbd_epoch *epoch = fw->epoch;
+	int rv;
 
-	/* The case !test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) is the
-	   only shortcomming of the implementation so far. This means that all requests
-	   in the epoch where already completely transfered to the device, and we had no
-	   subsequent request on which to which we could have added the BIO_RW_BARRIER flag.
+	kfree(w);
 
-	   The current implementation then closes the epoch and sends the barrier ack.
+	if (drbd_may_finish_epoch(mdev, epoch, EV_put) != FE_still_live)
+		return 1;
 
-	   The perfect solution would be to issue an blkdev_flush then and send the barrier
-	   ack after that flush completed.
-	*/
+	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) && inc_local(mdev)) {
+		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
+		if (rv) {
+			ERR("w_flush: local disk flush failed with status %d \n",rv);
+			if (rv == -EOPNOTSUPP)
+				drbd_bump_write_ordering(mdev, WO_drain_io);
+		}
+		dec_local(mdev);
+		drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
+	}
+
+	return 1;
+}
+
+/**
+ * drbd_may_finish_epoch: Checks if an epoch can be closed and therefore might
+ * close and/or free the epoch object.
+ */
+STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
+					       struct drbd_epoch *epoch,
+					       enum epoch_event ev)
+{
+	int finish = 0, free = 0, epoch_size = 0, schedule_flush = 0;
+	struct drbd_epoch *next_epoch = NULL;
+
 	spin_lock(&mdev->epoch_lock);
-	finish = atomic_read(&epoch->epoch_size) != 0 &&
-		atomic_read(&epoch->active) == 0 &&
-		( test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
-		  !test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) ) &&
-		test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
+
+	switch (ev) {
+	case EV_put:
+		atomic_dec(&epoch->active);
+		break;
+	case EV_got_barrier_nr:
+		set_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
+		break;
+	case EV_barrier_done:
+		set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
+		break;
+	case EV_became_last:
+		/* nothing to do*/
+		break;
+	}
+
+	if (atomic_read(&epoch->epoch_size) != 0 &&
+	    atomic_read(&epoch->active) == 0 &&
+	    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) &&
+	    epoch->list.prev == &mdev->current_epoch->list) {
+		/* Nearly all conditions are met to finish that epoch... */
+		if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
+		    mdev->write_ordering == WO_none)
+			finish = 1;
+		else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
+			 mdev->write_ordering == WO_bio_barrier) {
+			atomic_inc(&epoch->active);
+			schedule_flush = 1;
+		}
+	}
 	if (finish) {
 		epoch_size = atomic_read(&epoch->epoch_size);
 		if (mdev->current_epoch != epoch) {
+			next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
 			list_del(&epoch->list);
 			free = 1;
 			mdev->epochs--;
 		} else {
 			epoch->flags = 0;
 			atomic_set(&epoch->epoch_size, 0);
-			atomic_set(&epoch->active, 0);
+			/* atomic_set(&epoch->active, 0); is alrady zero */
 		}
 	}
 	spin_unlock(&mdev->epoch_lock);
@@ -898,18 +963,112 @@ STATIC int drbd_may_finish_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoc
 	if (finish) {
 		if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
 			dec_unacked(mdev);
-		if (free)
-			kfree(epoch);
 
-		return !free;
+		if (next_epoch)
+			drbd_may_finish_epoch(mdev, next_epoch, EV_became_last);
+
+		if (free) {
+			kfree(epoch);
+			return FE_destroyed;
+		}
+
+		return FE_recycled;
 	}
-	return 0;
+
+	if (schedule_flush) {
+		struct flush_work *fw;
+		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
+		if (fw) {
+			fw->w.cb = w_flush;
+			fw->epoch = epoch;
+			drbd_queue_work(&mdev->data.work, &fw->w);
+		} else {
+			WARN("Could not kmalloc a flush_work obj\n");
+			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
+			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
+		}
+	}
+
+	return FE_still_live;
+}
+
+/**
+ * drbd_bump_write_ordering: It turned out that the current mdev->write_ordering
+ * method does not work on the backing block device. Try the next allowed method.
+ */
+void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) __must_hold(local)
+{
+	enum write_ordering_e pwo;
+	static char *write_ordering_str[] = {
+		[WO_none] = "none",
+		[WO_drain_io] = "drain",
+		[WO_bdev_flush] = "flush",
+		[WO_bio_barrier] = "barrier",
+	};
+
+	spin_lock(&mdev->epoch_lock);
+	pwo = mdev->write_ordering;
+	mdev->write_ordering = min(pwo, wo);
+	switch (mdev->write_ordering) {
+	case WO_bio_barrier:
+		if (mdev->bc->dc.no_disk_barrier)
+			mdev->write_ordering = WO_bdev_flush;
+	case WO_bdev_flush:
+		if (mdev->bc->dc.no_disk_flush)
+			mdev->write_ordering = WO_drain_io;
+	case WO_drain_io:
+		if (mdev->bc->dc.no_disk_drain)
+			mdev->write_ordering = WO_none;
+	case WO_none:
+		break;
+	}
+	spin_unlock(&mdev->epoch_lock);
+	if (pwo != mdev->write_ordering)
+		INFO("Method to ensure write ordering: %s\n", write_ordering_str[mdev->write_ordering]);
+}
+
+
+/**
+ * w_e_reissue: In case the IO subsystem delivered an error for an BIO with the
+ * BIO_RW_BARRIER flag set, retry that bio without the barrier flag set.
+ */
+int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __releases(local)
+{
+	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
+	struct bio* bio = e->private_bio;
+	struct drbd_epoch *epoch;
+
+	drbd_bump_write_ordering(mdev, WO_bdev_flush); /* to endio callback ?*/
+
+	e->flags &= ~EE_IS_BARRIER; /* This is no longer a barrier request. */
+	spin_lock(&mdev->epoch_lock);
+	epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
+	spin_unlock(&mdev->epoch_lock);
+	if (epoch != e->epoch)
+		clear_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
+
+	bio->bi_sector = e->sector;
+	bio->bi_flags = 1UL << BIO_UPTODATE;
+	bio->bi_rw &= ~(1UL<<BIO_RW_BARRIER);
+	/* bio->bi_vcnt; */
+	bio->bi_idx = 0;
+	/* bio->bi_phys_segments; */
+	/* bio->bi_hw_segments; */
+	bio->bi_size = e->size;
+	/* bio->bi_hw_front_size */
+	/* bio->bi_hw_back_size */
+
+	e->w.cb = e_end_block;
+	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, bio);
+
+	return 1;
 }
 
 STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int rv;
 	struct Drbd_Barrier_Packet *p = (struct Drbd_Barrier_Packet *)h;
+	struct drbd_epoch *epoch;
 
 	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
 
@@ -922,57 +1081,68 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 		drbd_kick_lo(mdev);
 
 	mdev->current_epoch->barrier_nr = p->barrier;
-	set_bit(DE_HAVE_BARRIER_NUMBER, &mdev->current_epoch->flags);
+	rv = drbd_may_finish_epoch(mdev, mdev->current_epoch, EV_got_barrier_nr);
 
 	/* BarrierAck may imply that the corresponding extent is dropped from
 	 * the activity log, which means it would not be resynced in case the
 	 * Primary crashes now.
 	 * Therefore we must send the barrier_ack after the barrier request was
 	 * completed. */
-	if (test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags)) {
-		struct drbd_epoch *epoch;
-
-		if (drbd_may_finish_epoch(mdev, mdev->current_epoch))
+	switch (mdev->write_ordering) {
+	case WO_bio_barrier:
+	case WO_none:
+		if ( rv == FE_recycled)
 			return TRUE;
 
-		epoch = kmalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
-		if (!epoch) {
-			ERR("Allocation of an epoch failed\n");
-			return FALSE;
+		break;
+
+	case WO_bdev_flush:
+	case WO_drain_io:
+		D_ASSERT(rv == FE_still_live);
+		set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
+
+		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
+
+		if (mdev->write_ordering == WO_bdev_flush && inc_local(mdev)) {
+			rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
+			if (rv) {
+				ERR("local disk flush failed with status %d\n",rv);
+				if (rv == -EOPNOTSUPP)
+					drbd_bump_write_ordering(mdev, WO_drain_io);
+			}
+			dec_local(mdev);
 		}
 
-		epoch->flags = 0;
-		atomic_set(&epoch->epoch_size, 0);
-		atomic_set(&epoch->active, 0);
+		rv = drbd_may_finish_epoch(mdev, mdev->current_epoch, EV_barrier_done);
+		if (rv == FE_recycled)
+			return TRUE;
 
-		spin_lock(&mdev->epoch_lock);
-		list_add_tail(&epoch->list, &mdev->current_epoch->list);
+		/* The asender will send all the ACKs and barrier ACKs out, since
+		   all EEs moved from the active_ee to the done_ee. We need to
+		   provide a new epoch object for the EEs that come in soon */
+		break;
+	}
+
+	epoch = kmalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
+	if (!epoch) {
+		ERR("Allocation of an epoch failed\n");
+		return FALSE;
+	}
+
+	epoch->flags = 0;
+	atomic_set(&epoch->epoch_size, 0);
+	atomic_set(&epoch->active, 0);
+
+	spin_lock(&mdev->epoch_lock);
+	if (atomic_read(&mdev->current_epoch->epoch_size)) {
+		list_add(&epoch->list, &mdev->current_epoch->list);
 		mdev->current_epoch = epoch;
 		mdev->epochs++;
-		spin_unlock(&mdev->epoch_lock);
-
-		return TRUE;
+	} else {
+		/* The current_epoch got recycled while we allocated this one... */
+		kfree(epoch);
 	}
-
-	/* We plan to issue a flush */
-	set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
-
-	drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
-
-	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && inc_local(mdev)) {
-		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
-		dec_local(mdev);
-		if (rv) {
-			if (rv == -EOPNOTSUPP) /* don't try again */
-				set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
-			ERR("local disk flush failed with status %d\n",rv);
-		} else
-			set_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags);
-	}
-
-	wake_asender(mdev);
-	set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &mdev->current_epoch->flags);
-	drbd_may_finish_epoch(mdev, mdev->current_epoch);
+	spin_unlock(&mdev->epoch_lock);
 
 	return TRUE;
 }
@@ -1283,10 +1453,11 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	int ok = 1, pcmd;
 
 	if (e->flags & EE_IS_BARRIER) {
+		spin_lock(&mdev->epoch_lock);
 		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
+		spin_unlock(&mdev->epoch_lock);
 		if (epoch != e->epoch) {
-			set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
-			drbd_may_finish_epoch(mdev, epoch);
+			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
 		}
 	}
 
@@ -1328,8 +1499,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		D_ASSERT(hlist_unhashed(&e->colision));
 	}
 
-	if (atomic_dec_and_test(&e->epoch->active))
-		drbd_may_finish_epoch(mdev, e->epoch);
+	drbd_may_finish_epoch(mdev, e->epoch, EV_put);
 
 	return ok;
 }
@@ -1432,7 +1602,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 		drbd_send_ack_dp(mdev, NegAck, p);
 		atomic_inc(&mdev->current_epoch->epoch_size);
-		drbd_may_finish_epoch(mdev, mdev->current_epoch);
 		return drbd_drain_block(mdev, data_size);
 	}
 
@@ -1451,7 +1620,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	atomic_inc(&e->epoch->epoch_size);
 	atomic_inc(&e->epoch->active);
 
-	if (test_bit(LL_DEV_BARRIERS_SUPP, &mdev->flags) && atomic_read(&e->epoch->epoch_size) == 1) {
+	if (mdev->write_ordering == WO_bio_barrier && atomic_read(&e->epoch->epoch_size) == 1) {
 		struct drbd_epoch *epoch;
 		/* Issue a barrier if we start a new epoch, and the previous epoch
 		   was not a epoch containing a single request which already was
