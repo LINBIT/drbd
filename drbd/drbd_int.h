@@ -1363,6 +1363,7 @@ enum {
 	TraceTypeNl	= 0x00000040,
 	TraceTypeALExts = 0x00000080,
 	TraceTypeIntRq  = 0x00000100,
+	TraceTypeEpochs = 0x00000200,
 };
 
 static inline int

@@ -952,6 +952,10 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			list_del(&epoch->list);
 			free = 1;
 			mdev->epochs--;
+			MTRACE(TraceTypeEpochs, TraceLvlAll,
+			       INFO("Freeing epoch %p { nr=%d size=%d } nr_epochs=%d\n",
+				    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
+				);
 		} else {
 			epoch->flags = 0;
 			atomic_set(&epoch->epoch_size, 0);
@@ -1138,6 +1142,9 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 		list_add(&epoch->list, &mdev->current_epoch->list);
 		mdev->current_epoch = epoch;
 		mdev->epochs++;
+		MTRACE(TraceTypeEpochs, TraceLvlAll,
+		       INFO("Allocating epoch %p nr_epochs=%d\n", epoch, mdev->epochs);
+			);
 	} else {
 		/* The current_epoch got recycled while we allocated this one... */
 		kfree(epoch);
