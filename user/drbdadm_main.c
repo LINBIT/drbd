@@ -558,11 +558,19 @@ static int sh_md_idx(struct d_resource* res,const char* unused __attribute((unus
 static int sh_b_pri(struct d_resource *res,const char* unused __attribute((unused)))
 {
   char* val;
+  int i, rv;
 
   val = get_opt_val(res->startup_options, "become-primary-on", NULL);
   if ( val && ( !strcmp(val,nodeinfo.nodename) ||
 		!strcmp(val,"both") ) ) {
-    return adm_generic_s(res,"primary");
+    /* Opon connect resync starts, and both sides become primary at the same time.
+       One's try might be declined since an other state transition happens. Retry. */
+    for (i=0; i<5; i++) {
+      rv = adm_generic_s(res,"primary");
+      if (rv == 0) return rv;
+      sleep(1);
+    }
+    return rv;
   }
   return 0;
 }
