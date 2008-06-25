@@ -105,7 +105,7 @@ const char *disks_to_name(enum drbd_disk_state s)
 
 const char *set_st_err_name(enum set_st_err err)
 {
-	return err < SS_LowerThanOutdated ? "TOO_SMALL" :
+	return err <= SS_AfterLastError ? "TOO_SMALL" :
 	       err > SS_TwoPrimaries ? "TOO_LARGE"
 			: drbd_state_sw_errors[-err];
 }

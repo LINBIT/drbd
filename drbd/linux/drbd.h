@@ -276,8 +276,8 @@ enum set_st_err {
 	SS_NotSupported = -17,      /* drbd-8.2 only */
 	SS_InTransientState = -18,  /* Retry after the next state change */
 	SS_ConcurrentStChg = -19,   /* Concurrent cluster side state change! */
+	SS_AfterLastError = -20,    /* Keep this at bottom */
 };
-
 
 /* from drbd_strings.c */
 extern const char *conns_to_name(enum drbd_conns);
