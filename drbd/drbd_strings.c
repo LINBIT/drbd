@@ -104,7 +104,7 @@ const char* disks_to_name(drbd_disks_t s) {
 }
 
 const char* set_st_err_name(set_st_err_t err) {
-	return err < SS_LowerThanOutdated ? "TOO_SMALL" :
+	return err <= SS_AfterLastError ? "TOO_SMALL" :
 	       err > SS_TwoPrimaries ? "TOO_LARGE"
 		        : drbd_state_sw_errors[-err];
 }

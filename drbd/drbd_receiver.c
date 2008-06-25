@@ -3215,8 +3215,8 @@ STATIC int got_RqSReply(drbd_dev *mdev, Drbd_Header* h)
 		set_bit(CL_ST_CHG_SUCCESS,&mdev->flags);
 	} else {
 		set_bit(CL_ST_CHG_FAIL,&mdev->flags);
-		ERR("Requested state change failed by peer: %s\n",
-		    set_st_err_name(retcode));
+		ERR("Requested state change failed by peer: %s (%d)\n",
+		    set_st_err_name(retcode), retcode);
 	}
 	wake_up(&mdev->state_wait);
 

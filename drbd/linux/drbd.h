@@ -265,6 +265,7 @@ typedef enum {
 	SS_NotSupported = -17,      /* drbd-8.2 only */
 	SS_InTransientState = -18,  /* Retry after the next state change */
 	SS_ConcurrentStChg = -19,   /* Concurrent cluster side state change! */
+	SS_AfterLastError = -20,    /* Keep this at bottom */
 } set_st_err_t;
 
 /* from drbd_strings.c */
