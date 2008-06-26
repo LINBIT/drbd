@@ -2911,7 +2911,8 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 	} else if (mdev->state.conn == WFBitMapT) {
 		ok = !drbd_send_bitmap(mdev);
 		if (!ok) goto out;
-		ok = drbd_request_state(mdev, NS(conn, WFSyncUUID));
+		/* Omit ChgOrdered with this state transition to avoid deadlocks. */
+		ok = _drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose);
 		D_ASSERT( ok == SS_Success );
 	} else {
 		ERR("unexpected cstate (%s) in receive_bitmap\n",
