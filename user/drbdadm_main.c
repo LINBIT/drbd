@@ -68,8 +68,17 @@ char* progname;
 struct adm_cmd {
   const char* name;
   int (* function)(struct d_resource*,const char* );
+  /* which level this command is for.
+   * 0: don't show this command, ever
+   * 1: normal administrative commands, shown in normal help
+   * 2-4: shown on "drbdadm hidden-commands"
+   * 2: usefull for shell scripts
+   * 3: callbacks potentially called from kernel module on certain events
+   * 4: advanced, experts and developers only */
   unsigned int show_in_usage     :3;
+  /* if set, command requires an explicit resource name */
   unsigned int res_name_required :1;
+  /* error out if the ip specified is not available/active now */
   unsigned int verify_ips        :1;
 };
 
@@ -111,6 +120,7 @@ static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
 static int hidden_cmds(struct d_resource* ,const char* );
+static int adm_outdate(struct d_resource* ,const char* );
 
 static char* get_opt_val(struct d_option*,const char*,char*);
 
@@ -198,56 +208,108 @@ struct option admopt[] = {
   { 0,              0,                0, 0   }
 };
 
+/* DRBD adm_cmd flags shortcuts,
+ * to avoid merge conflicts and unreadable diffs
+ * when we add the next flag */
+
+#define DRBD_acf1_default		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,
+
+#define DRBD_acf1_defnet		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 1,
+
+#define DRBD_acf3_handler		\
+	.show_in_usage = 3,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,
+
+#define DRBD_acf4_advanced		\
+	.show_in_usage = 4,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,
+
+#define DRBD_acf1_dump			\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 1,
+
+#define DRBD_acf2_shell			\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,
+
+#define DRBD_acf2_gen_shell		\
+	.show_in_usage = 2,		\
+	.res_name_required = 0,		\
+	.verify_ips = 0,
+
 struct adm_cmd cmds[] = {
-/*   name, function,                  show, needs res, verify_ips */
-  { "attach",            adm_attach,    1,1,0 },
-  { "detach",            adm_generic_s, 1,1,0 },
-  { "connect",           adm_connect,   1,1,1 },
-  { "disconnect",        adm_generic_s, 1,1,0 },
-  { "up",                adm_up,        1,1,1 },
-  { "down",              adm_generic_s, 1,1,0 },
-  { "primary",           adm_generic_l, 1,1,0 },
-  { "secondary",         adm_generic_l, 1,1,0 },
-  { "invalidate",        adm_generic_b, 1,1,0 },
-  { "invalidate-remote", adm_generic_l, 1,1,1 },
-  { "outdate",           adm_generic_b, 1,1,0 },
-  { "resize",            adm_resize,    1,1,1 },
-  { "syncer",            adm_syncer,    1,1,1 },
-  { "pause-sync",        adm_generic_s, 1,1,1 },
-  { "resume-sync",       adm_generic_s, 1,1,1 },
-  { "adjust",            adm_adjust,    1,1,1 },
-  { "wait-connect",      adm_wait_c,    1,1,1 },
-  { "state",             adm_generic_s, 1,1,0 },
-  { "cstate",            adm_generic_s, 1,1,0 },
-  { "dstate",            adm_generic_b, 1,1,0 },
-  { "dump",              adm_dump,      1,1,1 },
-  { "dump-xml",          adm_dump_xml,  1,1,1 },
-  { "create-md",         adm_create_md, 1,1,0 },
-  { "show-gi",           adm_generic_b, 1,1,0 },
-  { "get-gi",            adm_generic_b, 1,1,0 },
-  { "dump-md",           admm_generic,  1,1,0 },
-  { "wipe-md",           admm_generic,  1,1,0 },
-  { "wait-con-int",      adm_wait_ci,   1,0,1 },
-  { "hidden-commands",   hidden_cmds,   1,0,0 },
-  { "sh-nop",            sh_nop,        2,0,0 },
-  { "sh-resources",      sh_resources,  2,0,0 },
-  { "sh-resource",       sh_resource,   2,1,0 },
-  { "sh-mod-parms",      sh_mod_parms,  2,0,0 },
-  { "sh-dev",            sh_dev,        2,1,0 },
-  { "sh-ll-dev",         sh_ll_dev,     2,1,0 },
-  { "sh-md-dev",         sh_md_dev,     2,1,0 },
-  { "sh-md-idx",         sh_md_idx,     2,1,0 },
-  { "sh-ip",             sh_ip,         0,1,0 },
-  { "sh-b-pri",          sh_b_pri,      2,1,0 },
-  { "pri-on-incon-degr", adm_khelper,   3,1,0 },
-  { "pri-lost-after-sb", adm_khelper,   3,1,0 },
-  { "outdate-peer",      adm_khelper,   3,1,0 },
-  { "local-io-error",    adm_khelper,   3,1,0 },
-  { "pri-lost",          adm_khelper,   3,1,0 },
-  { "split-brain",       adm_khelper,   3,1,0 },
-  { "set-gi",            admm_generic,  4,1,0 },
-  { "suspend-io",        adm_generic_s, 4,1,0 },
-  { "resume-io",         adm_generic_s, 4,1,0 },
+        /*  name, function, flags
+	 *  sort order:
+	 *  - normal config commands,
+	 *  - normal meta data manipulation
+	 *  - sh-*
+	 *  - handler
+	 *  - advanced
+	 ***/
+        { "attach",                adm_attach,      DRBD_acf1_default   },
+        { "detach",                adm_generic_s,   DRBD_acf1_default   },
+        { "connect",               adm_connect,     DRBD_acf1_defnet    },
+        { "disconnect",            adm_generic_s,   DRBD_acf1_default   },
+        { "up",                    adm_up,          DRBD_acf1_defnet    },
+        { "down",                  adm_generic_s,   DRBD_acf1_default   },
+        { "primary",               adm_generic_l,   DRBD_acf1_default   },
+        { "secondary",             adm_generic_l,   DRBD_acf1_default   },
+        { "invalidate",            adm_generic_b,   DRBD_acf1_default   },
+        { "invalidate-remote",     adm_generic_l,   DRBD_acf1_defnet    },
+        { "outdate",               adm_outdate,     DRBD_acf1_default   },
+        { "resize",                adm_resize,      DRBD_acf1_defnet    },
+        { "syncer",                adm_syncer,      DRBD_acf1_defnet    },
+        { "pause-sync",            adm_generic_s,   DRBD_acf1_defnet    },
+        { "resume-sync",           adm_generic_s,   DRBD_acf1_defnet    },
+        { "adjust",                adm_adjust,      DRBD_acf1_defnet    },
+        { "wait-connect",          adm_wait_c,      DRBD_acf1_defnet    },
+        { "wait-con-int",          adm_wait_ci,
+		.show_in_usage = 1, .verify_ips = 1, },
+        { "state",                 adm_generic_s,   DRBD_acf1_default   },
+        { "cstate",                adm_generic_s,   DRBD_acf1_default   },
+        { "dstate",                adm_generic_b,   DRBD_acf1_default   },
+
+        { "dump",                  adm_dump,        DRBD_acf1_dump      },
+        { "dump-xml",              adm_dump_xml,    DRBD_acf1_dump      },
+
+        { "create-md",             adm_create_md,   DRBD_acf1_default   },
+        { "show-gi",               adm_generic_b,   DRBD_acf1_default   },
+        { "get-gi",                adm_generic_b,   DRBD_acf1_default   },
+        { "dump-md",               admm_generic,    DRBD_acf1_default   },
+        { "wipe-md",               admm_generic,    DRBD_acf1_default   },
+        { "hidden-commands",       hidden_cmds,     .show_in_usage = 1, },
+
+        { "sh-nop",                sh_nop,          DRBD_acf2_gen_shell },
+        { "sh-resources",          sh_resources,    DRBD_acf2_gen_shell },
+        { "sh-resource",           sh_resource,     DRBD_acf2_shell     },
+        { "sh-mod-parms",          sh_mod_parms,    DRBD_acf2_gen_shell },
+        { "sh-dev",                sh_dev,          DRBD_acf2_shell     },
+        { "sh-ll-dev",             sh_ll_dev,       DRBD_acf2_shell     },
+        { "sh-md-dev",             sh_md_dev,       DRBD_acf2_shell     },
+        { "sh-md-idx",             sh_md_idx,       DRBD_acf2_shell     },
+        { "sh-ip",                 sh_ip,           DRBD_acf2_shell     },
+        { "sh-b-pri",              sh_b_pri,        DRBD_acf2_shell     },
+
+        { "pri-on-incon-degr",     adm_khelper,     DRBD_acf3_handler   },
+        { "pri-lost-after-sb",     adm_khelper,     DRBD_acf3_handler   },
+        { "outdate-peer",          adm_khelper,     DRBD_acf3_handler   },
+        { "local-io-error",        adm_khelper,     DRBD_acf3_handler   },
+        { "pri-lost",              adm_khelper,     DRBD_acf3_handler   },
+        { "split-brain",           adm_khelper,     DRBD_acf3_handler   },
+
+        { "suspend-io",            adm_generic_s,   DRBD_acf4_advanced  },
+        { "resume-io",             adm_generic_s,   DRBD_acf4_advanced  },
+        { "set-gi",                admm_generic,    DRBD_acf4_advanced  },
 };
 
 /*** These functions are used to the print the config ***/
@@ -964,7 +1026,7 @@ int adm_generic_l(struct d_resource* res,const char* cmd)
   return adm_generic(res,cmd,SLEEPS_LONG);
 }
 
-static int adm_generic_b(struct d_resource* res,const char* cmd)
+static int adm_outdate(struct d_resource* res,const char* cmd)
 {
   int rv;
 
@@ -981,6 +1043,18 @@ static int adm_generic_b(struct d_resource* res,const char* cmd)
     if (rv) rv = 5;
     return rv;
   }
+
+  if (rv || dry_run) {
+    rv = admm_generic(res,cmd);
+  }
+  return rv;
+}
+
+static int adm_generic_b(struct d_resource* res,const char* cmd)
+{
+  int rv;
+
+  rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
 
   if (rv || dry_run) {
     rv = admm_generic(res,cmd);
