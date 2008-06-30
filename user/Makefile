@@ -27,7 +27,7 @@ drbdsetup drbdmeta: CFLAGS += -fno-strict-aliasing
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
-	      drbd_buildtag.o
+	      drbd_buildtag.o drbdadm_minor_table.o
 
 drbdsetup-obj = drbdsetup.o drbdtool_common.o drbd_buildtag.o \
 	        drbd_strings.o

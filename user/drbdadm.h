@@ -137,6 +137,10 @@ extern int adm_create_md(struct d_resource* res ,const char* cmd);
 extern void convert_discard_opt(struct d_resource* res);
 extern void convert_after_option(struct d_resource* res);
 
+/* See drbdadm_minor_table.c */
+extern int register_minor(int minor, const char *path);
+extern char *lookup_minor(int minor);
+
 enum pr_flags {
   ThisHRequired = 1,
   PeerHRequired = 2,

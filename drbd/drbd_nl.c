@@ -176,7 +176,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 
 	snprintf(mb, 12, "minor-%d", mdev_to_minor(mdev));
 
-	INFO("helper command: %s %s\n", usermode_helper, cmd);
+	INFO("helper command: %s %s %s\n", usermode_helper, cmd, mb);
 
 	drbd_bcast_ev_helper(mdev, cmd);
 	return call_usermodehelper(usermode_helper, argv, envp, 1);

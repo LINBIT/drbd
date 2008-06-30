@@ -82,6 +82,11 @@ struct adm_cmd {
   unsigned int verify_ips        :1;
   /* error out, if there is no "on $NODENAME" section for me */
   unsigned int me_is_localhost   :1;
+  /* if set, use the "cache" in /var/lib/drbd to figure out
+   * which config file to use.
+   * This is necessary for handlers (callbacks from kernel) to work
+   * when using "drbdadm -c /some/other/config/file" */
+  unsigned int use_cached_config_file :1;
 };
 
 struct deferred_cmd
@@ -235,7 +240,8 @@ struct option admopt[] = {
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
-	.me_is_localhost = 1,
+	.me_is_localhost = 1,		\
+	.use_cached_config_file = 1,
 
 #define DRBD_acf4_advanced		\
 	.show_in_usage = 4,		\
@@ -1309,13 +1315,19 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   return rv;
 }
 
+static int minor_by_id(const char *id)
+{
+  if(strncmp(id,"minor-",6)) return -1;
+  return m_strtoll(id+6,1);
+}
+
 struct d_resource* res_by_minor(const char *id)
 {
   struct d_resource *res,*t;
   int mm;
-  if(strncmp(id,"minor-",6)) return NULL;
 
-  mm = m_strtoll(id+6,1);
+  mm = minor_by_id(id);
+  if (mm < 0) return NULL;
 
   for_each_resource(res,t,config) {
     if( mm == dt_minor_of_dev(res->me->device)) return res;
@@ -2160,6 +2172,30 @@ int main(int argc, char** argv)
   do_verify_ips = cmd->verify_ips;
 
   if (!config_file) {
+    if(cmd->use_cached_config_file) {
+      int minor;
+      if (optind < argc) {
+        minor = minor_by_id(argv[optind]);
+        if (minor>=0) {
+          config_file = lookup_minor(minor);
+          if(config_file==NULL) {
+            fprintf(stderr, "Don't know which config file belongs to minor %d, trying default ones...\n", minor);
+          } else {
+            yyin = fopen(config_file,"r");
+            if (yyin == NULL) {
+              fprintf(stderr, "Couldn't open file %s for reading, reason %s, trying default config file...\n", config_file, strerror(errno));
+            } else {
+              goto have_config_file;
+            }
+          }
+        } else {
+          fprintf(stderr, "Couldn't find minor from id %s, expecting minor-<minor> as id. Trying default minor file\n", argv[optind]);
+        }
+      } else {
+        fprintf(stderr, "No resource name given, trying default config files.\n");
+      }
+    }
+
     i=0;
     do {
       yyin = fopen(conf_file[i],"r");
@@ -2174,6 +2210,7 @@ int main(int argc, char** argv)
     perror("");
     exit(E_config_invalid);
   }
+have_config_file:
 
   /*
    * for check_uniq: check uniqueness of
@@ -2275,6 +2312,7 @@ int main(int argc, char** argv)
 	    fprintf(stderr,"command exited with code %d\n",rv);
 	    exit(E_exec_error);
 	  }
+          register_minor(dt_minor_of_dev(res->me->device), config_file);
 	}
 	if (is_dump_xml) {
 	    --indent; printf("</config>\n");
@@ -2291,6 +2329,7 @@ int main(int argc, char** argv)
 	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(rv);
 	  }
+          register_minor(dt_minor_of_dev(res->me->device), config_file);
 	}
       }
     } else { // Commands which do not need a resource name
