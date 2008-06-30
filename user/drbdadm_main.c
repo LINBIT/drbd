@@ -141,6 +141,7 @@ int line=1;
 int fline, c_resource_start;
 struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 char *config_file = NULL;
+char *config_save = NULL;
 struct d_resource* config = NULL;
 struct d_resource* common = NULL;
 struct ifreq *ifreq_list = NULL;
@@ -2211,6 +2212,10 @@ int main(int argc, char** argv)
     exit(E_config_invalid);
   }
 have_config_file:
+  /* for error-reporting reasons config_file may be re-assigned by adm_adjust,
+   * we need the current value for register_minor, though.
+   * save that. */
+  config_save = config_file;
 
   /*
    * for check_uniq: check uniqueness of
@@ -2312,7 +2317,7 @@ have_config_file:
 	    fprintf(stderr,"command exited with code %d\n",rv);
 	    exit(E_exec_error);
 	  }
-          register_minor(dt_minor_of_dev(res->me->device), config_file);
+          register_minor(dt_minor_of_dev(res->me->device), config_save);
 	}
 	if (is_dump_xml) {
 	    --indent; printf("</config>\n");
@@ -2329,7 +2334,7 @@ have_config_file:
 	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(rv);
 	  }
-          register_minor(dt_minor_of_dev(res->me->device), config_file);
+          register_minor(dt_minor_of_dev(res->me->device), config_save);
 	}
       }
     } else { // Commands which do not need a resource name
