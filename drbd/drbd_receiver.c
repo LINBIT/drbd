@@ -2731,6 +2731,7 @@ STATIC int receive_req_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	mask = convert_state(mask);
 	val = convert_state(val);
 
+	DRBD_STATE_DEBUG_INIT_VAL(val);
 	rv = drbd_change_state(mdev, ChgStateVerbose, mask, val);
 
 	drbd_send_sr_reply(mdev,rv);

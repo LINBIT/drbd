@@ -263,6 +263,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	val.i  = 0; val.role  = new_role;
 
 	while (try++ < max_tries) {
+		DRBD_STATE_DEBUG_INIT_VAL(val);
 		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
 
 		/* in case we first succeeded to outdate,
@@ -323,6 +324,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 			continue;
 		}
 		if (r < SS_Success) {
+			DRBD_STATE_DEBUG_INIT_VAL(val);
 			r = _drbd_request_state(mdev, mask, val,
 						ChgStateVerbose + ChgWaitComplete);
 			if (r < SS_Success)
@@ -1213,7 +1215,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 		if (crypto_tfm_alg_type(crypto_hash_tfm(integrity_w_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
 			retcode=IntegrityAlgNotDigest;
-			goto fail;				
+			goto fail;
 		}
 
 		integrity_r_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);

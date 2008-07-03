@@ -250,6 +250,13 @@ union drbd_state_t {
 #else
 # error "this endianess is not supported"
 #endif
+#ifndef DRBD_DEBUG_STATE_CHANGES
+#define DRBD_DEBUG_STATE_CHANGES 0
+#endif
+#if DRBD_DEBUG_STATE_CHANGES
+		unsigned int line;
+		const char *func;
+#endif
 	};
 	unsigned int i;
 };

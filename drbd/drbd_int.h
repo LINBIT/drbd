@@ -1595,18 +1595,25 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 #define user_isp_mask 1
 #define aftr_isp_mask 1
 
+/* drbd state debug */
+#if DRBD_DEBUG_STATE_CHANGES
+#define DRBD_STATE_DEBUG_INIT_VAL(s) ({ (s).line = __LINE__; (s).func = __func__; })
+#else
+#define DRBD_STATE_DEBUG_INIT_VAL(s) do { } while (0)
+#endif
+
 #define NS(T, S) \
 	({ union drbd_state_t mask; mask.i = 0; mask.T = T##_mask; mask; }), \
-	({ union drbd_state_t val; val.i = 0; val.T = (S); val; })
+	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T = (S); val; })
 #define NS2(T1, S1, T2, S2) \
 	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
 	  mask.T2 = T2##_mask; mask; }), \
-	({ union drbd_state_t val; val.i = 0; val.T1 = (S1); \
+	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val; })
 #define NS3(T1, S1, T2, S2, T3, S3) \
 	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
 	  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask; }), \
-	({ union drbd_state_t val; val.i = 0; val.T1 = (S1); \
+	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val.T3 = (S3); val; })
 
 #define _NS(D, T, S) \
