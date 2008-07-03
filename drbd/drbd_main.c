@@ -1311,9 +1311,11 @@ int drbd_thread_start(struct Drbd_thread *thi)
 	int pid;
 	struct drbd_conf *mdev = thi->mdev;
 
+ retry:
 	spin_lock(&thi->t_lock);
 
-	if (thi->t_state == None) {
+	switch (thi->t_state) {
+	case None:
 		INFO("Starting %s thread (from %s [%d])\n",
 		     thi == &mdev->receiver ? "receiver" :
 		     thi == &mdev->asender  ? "asender"  :
@@ -1345,8 +1347,16 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		wait_for_completion(&thi->startstop);
 		D_ASSERT(thi->task);
 		D_ASSERT(get_t_state(thi) == Running);
-	} else {
+		break;
+	case Exiting:
 		spin_unlock(&thi->t_lock);
+		wait_for_completion(&thi->startstop);
+		goto retry;
+		break;
+	case Running:
+	case Restarting:
+		spin_unlock(&thi->t_lock);
+		break;
 	}
 
 	return TRUE;
@@ -1379,9 +1389,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 
 		thi->t_state = ns;
 		smp_mb();
+		init_completion(&thi->startstop);
 		if (thi->task != current) {
-			if (wait)
-				init_completion(&thi->startstop);
 			force_sig(DRBD_SIGKILL, thi->task);
 		} else
 			D_ASSERT(!wait);
