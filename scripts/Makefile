@@ -49,6 +49,12 @@ ifeq ($(INITD),)
    $(warning setting INITD=$(INITD) according to LSB)
 endif
 
+ifeq ($(DIST),suselike)
+   COMPLETION=drbdadm.sh
+else
+   COMPLETION=drbdadm
+endif
+
 all:
 
 install:
@@ -69,7 +75,7 @@ install:
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
 ifneq ($(DIST),redhat)
 	mkdir -p $(PREFIX)/etc/bash_completion.d
-	install -m 644 drbdadm.bash_completion $(PREFIX)/etc/bash_completion.d/drbdadm
+	install -m 644 drbdadm.bash_completion $(PREFIX)/etc/bash_completion.d/$(COMPLETION)
 endif
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
