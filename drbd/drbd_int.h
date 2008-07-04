@@ -1530,16 +1530,39 @@ extern void _drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 extern void drbd_set_recv_tcq(struct drbd_conf *mdev, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_conf *mdev);
 
+/* yes, there is kernel_setsockopt, but only since 2.6.18. we don't need to
+ * mess with get_fs/set_fs, we know we are KERNEL_DS always. */
+static inline int drbd_setsockopt(struct socket *sock, int level, int optname,
+			char *optval, int optlen)
+{
+	int err;
+	if (level == SOL_SOCKET)
+		err = sock_setsockopt(sock, level, optname, optval, optlen);
+	else
+		err = sock->ops->setsockopt(sock, level, optname, optval,
+					    optlen);
+	return err;
+}
+
 static inline void drbd_tcp_cork(struct socket *sock)
 {
 	int __user val = 1;
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
+	(void) drbd_setsockopt(sock, SOL_TCP, TCP_CORK,
+			(char __user *)&val, sizeof(val) );
 }
 
-static inline void drbd_tcp_flush(struct socket *sock)
+static inline void drbd_tcp_uncork(struct socket *sock)
 {
 	int __user val = 0;
-	tcp_setsockopt(sock->sk, SOL_TCP, TCP_CORK, (char __user *)&val, sizeof(val) );
+	(void) drbd_setsockopt(sock, SOL_TCP, TCP_CORK,
+			(char __user *)&val, sizeof(val) );
+}
+
+static inline void drbd_tcp_nodelay(struct socket *sock)
+{
+	int __user val = 1;
+	(void) drbd_setsockopt(sock, SOL_TCP, TCP_NODELAY,
+			(char __user *)&val, sizeof(val) );
 }
 
 void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo);
