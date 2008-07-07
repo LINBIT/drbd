@@ -124,8 +124,10 @@ struct option metaopt[] = {
  * and blaming us...
  */
 
-/* reiserfs sb offset is 64k plus */
-#define SO_MUCH (65*1024)
+/* reiserfs sb offset is 64k plus
+ * align it to 4k, in case someone has unusual hard sect size (!= 512),
+ * otherwise direct io will fail with EINVAL */
+#define SO_MUCH (68*1024)
 
 /*
  * I think this block of declarations and definitions should be
