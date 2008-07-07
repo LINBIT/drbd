@@ -1994,6 +1994,7 @@ int main(int argc, char** argv)
   char *env_drbd_nodename = NULL;
   int is_dump_xml;
   int is_dump;
+  int do_register_minor = 0;
 
   drbdsetup=NULL;
   drbdmeta=NULL;
@@ -2196,6 +2197,7 @@ int main(int argc, char** argv)
       }
     }
 
+    do_register_minor = 1;
     i=0;
     do {
       yyin = fopen(conf_file[i],"r");
@@ -2275,6 +2277,7 @@ have_config_file:
   is_dump_xml = (cmd->function == adm_dump_xml);
   is_dump = (is_dump_xml || cmd->function == adm_dump);
   if (!is_dump || dry_run) expand_common();
+  if (is_dump || dry_run) do_register_minor = 0;
 
   if(cmd->res_name_required)
     {
@@ -2316,7 +2319,8 @@ have_config_file:
 	    fprintf(stderr,"command exited with code %d\n",rv);
 	    exit(E_exec_error);
 	  }
-          register_minor(dt_minor_of_dev(res->me->device), config_save);
+	  if (do_register_minor)
+            register_minor(dt_minor_of_dev(res->me->device), config_save);
 	}
 	if (is_dump_xml) {
 	    --indent; printf("</config>\n");
@@ -2333,7 +2337,8 @@ have_config_file:
 	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(rv);
 	  }
-          register_minor(dt_minor_of_dev(res->me->device), config_save);
+	  if (do_register_minor)
+            register_minor(dt_minor_of_dev(res->me->device), config_save);
 	}
       }
     } else { // Commands which do not need a resource name
