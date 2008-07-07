@@ -352,18 +352,18 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 			dec_local(mdev);
 		}
 
+		growing = bits > b->bm_bits;
 		if (words == b->bm_words) {
 			/* optimize: capacity has changed,
-			 * but only within one long word worth of bits.
-			 * just update the bm_dev_capacity and bm_bits members.
-			 */
+			 * but only within one ulong64 word worth of bits.
+			 * no allocation needed, just update the
+			 * bm_dev_capacity and bm_bits members,
+			 * and set the new bits, if any */
 			spin_lock_irq(&b->bm_lock);
-			b->bm_bits    = bits;
-			b->bm_dev_capacity = capacity;
-			b->bm_set -= bm_clear_surplus(b);
-			bm_end_info(mdev, __FUNCTION__ );
-			spin_unlock_irq(&b->bm_lock);
-			goto out;
+			bm_set_surplus(b);
+			if (growing)
+				b->bm_set += bits - b->bm_bits;
+			goto done;
 		} else {
 			/* one extra long to catch off by one errors */
 			bytes = (words+1)*sizeof(long);
@@ -387,7 +387,6 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 			memcpy(nbm, obm, min_t(size_t, b->bm_words, words)
 								*sizeof(long));
 		}
-		growing = words > b->bm_words;
 		if (growing) {
 			/* set all newly allocated bits */
 			memset( nbm + b->bm_words, 0xff,
@@ -400,8 +399,9 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		}
 		nbm[words] = DRBD_MAGIC;
 		b->bm = nbm;
-		b->bm_bits  = bits;
 		b->bm_words = words;
+ done:
+		b->bm_bits = bits;
 		b->bm_dev_capacity = capacity;
 		/* finally clear possibly only partially used last words */
 		bm_clear_surplus(b);
