@@ -1,5 +1,5 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
-<refentry>
+<refentry id="re-drbdadm">
   <docinfo><date>08 Jan 2008</date></docinfo>
 
   <refmeta>
