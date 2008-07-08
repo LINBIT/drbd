@@ -1151,6 +1151,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->wire_protocol    = DRBD_PROT_C;
 		new_conf->ping_timeo	   = DRBD_PING_TIMEO_DEF;
 		new_conf->rr_conflict	   = DRBD_RR_CONFLICT_DEF;
+		new_conf->addr_family      = AF_INET;
 	}
 
 	if (!net_conf_from_tags(mdev, nlp->tag_list, new_conf)) {

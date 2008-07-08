@@ -569,7 +569,8 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	if (!inc_net(mdev)) return NULL;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(PF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	err = sock_create_kern(mdev->net_conf->addr_family,
+		SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err < 0) {
 		sock = NULL;
 		goto out;
@@ -640,7 +641,8 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 	if (!inc_net(mdev)) return NULL;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(PF_INET, SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(mdev->net_conf->addr_family,
+		SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		goto out;

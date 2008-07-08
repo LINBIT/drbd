@@ -54,6 +54,7 @@ NL_PACKET(net_conf, 5,
 	NL_INTEGER(	26,	T_MAY_IGNORE,	after_sb_2p)
 	NL_INTEGER(	39,	T_MAY_IGNORE,	rr_conflict)
 	NL_INTEGER(	40,	T_MAY_IGNORE,	ping_timeo)
+	NL_INTEGER(	59,	T_MAY_IGNORE,	addr_family)
 	NL_BIT(		27,	T_MAY_IGNORE,	want_lose)
 	NL_BIT(		28,	T_MAY_IGNORE,	two_primaries)
 	NL_BIT(		41,	T_MAY_IGNORE,	always_asbp)

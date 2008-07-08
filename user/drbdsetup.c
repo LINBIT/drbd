@@ -159,12 +159,14 @@ int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
 int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
 int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
 int string_opt_usage(struct drbd_option *option, char* str, int strlen);
+int af_opt_usage(struct drbd_option *option, char* str, int strlen);
 
 // sub usage function for config_usage as xml
 void numeric_opt_xml(struct drbd_option *option);
 void handler_opt_xml(struct drbd_option *option);
 void bit_opt_xml(struct drbd_option *option);
 void string_opt_xml(struct drbd_option *option);
+void af_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -184,12 +186,14 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+int conv_af(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 
 // show functions for options (used by show_scmd)
 void show_numeric(struct drbd_option *od, unsigned short* tp);
 void show_handler(struct drbd_option *od, unsigned short* tp);
 void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
+void show_af(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
 int print_broadcast_events(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
@@ -296,6 +300,8 @@ struct drbd_cmd commands[] = {
 		 { "protocol",		T_wire_protocol,conv_protocol },
 		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
+		 { "addr-family",'f',	T_addr_family,
+			conv_af, show_af, af_opt_usage, af_opt_xml, { } },
 		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") },
 		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) },
 		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) },
@@ -650,6 +656,52 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 	return NoError;
 }
 
+#define PROC_NET_AF_SCI_FAMILY "/proc/net/af_sci/family"
+/* if present, read and convert to int */
+int get_af_sci()
+{
+	int af = AF_INET;
+	int fd = open(PROC_NET_AF_SCI_FAMILY, O_RDONLY);
+	int c;
+	char buf[16];
+	if (fd < 0) {
+		fprintf(stderr, "open(" PROC_NET_AF_SCI_FAMILY ") "
+				"failed: %m\nfalling back to default IPv4\n");
+		return af;
+	}
+	c = read(fd, buf, sizeof(buf)-1);
+	close(fd);
+	if (c > 0) {
+		buf[c] = 0;
+		if (buf[c-1] == '\n')
+			buf[c-1] = 0;
+		af = m_strtoll(buf,1);
+	} else {
+		fprintf(stderr, "read(" PROC_NET_AF_SCI_FAMILY ") "
+				"failed: %m\nfalling back to default IPv4\n");
+	}
+	return af;
+}
+
+int conv_af(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+{
+	if (!strcasecmp("sci", arg)) {
+		int af = get_af_sci();
+		if (af != AF_INET)
+			add_tag(tl,od->tag,&af,sizeof(af));
+		/* else: just don't add the tag in that case */
+	} else if (!strcasecmp("ipv4", arg)) {
+		/* default, just don't add the tag. */
+	} else {
+		/* unknown */
+		fprintf(stderr, "%s %s: unsupported address family\n",
+				od->name, arg);
+		return OTHER_ERROR;
+	}
+
+	return NoError;
+}
+
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const long long min = od->numeric_param.min;
@@ -949,6 +1001,27 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 #define ASSERT(exp) if (!(exp)) \
 		fprintf(stderr,"ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__);
+
+void show_af(struct drbd_option *od, unsigned short* tp)
+{
+	int af_sci = get_af_sci();
+	int val;
+	const char *msg;
+
+	ASSERT(tag_type(*tp++) == TT_INTEGER);
+	ASSERT( *tp++ == sizeof(int) );
+	val = *(int*)tp;
+
+	msg = (val == af_sci) ? "sci" :
+	      (val == AF_INET) ? "IPv4" :
+	      "UNKNOWN";
+	printf("\t%-16s\t%s", od->name, msg);
+	if (val == AF_INET) printf(" _is_default");
+	if (val != AF_INET && val != af_sci)
+		printf("; # %u ??\n", val);
+	else
+		printf(";\n");
+}
 
 void show_numeric(struct drbd_option *od, unsigned short* tp)
 {
@@ -1675,6 +1748,12 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	return (rr == -2) ? 5 : 0;
 }
 
+int af_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str,strlen," [{--%s|-%c} {IPv4|SCI}]",
+			option->name, option->short_name);
+}
+
 int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	return snprintf(str,strlen," [{--%s|-%c} %lld ... %lld]",
@@ -1713,6 +1792,14 @@ int string_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	return snprintf(str,strlen," [{--%s|-%c} <str>]",
 			option->name, option->short_name);
+}
+
+void af_opt_xml(struct drbd_option *option)
+{
+	printf("\t<option name=\"%s\" type=\"addrfamily\">\n",option->name);
+	printf("\t\t<addrfamily>%s</addrfamily>\n", "IPv4");
+	printf("\t\t<addrfamily>%s</addrfamily>\n", "SCI");
+	printf("\t</option>\n");
 }
 
 void numeric_opt_xml(struct drbd_option *option)
