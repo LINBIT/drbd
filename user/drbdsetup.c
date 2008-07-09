@@ -283,7 +283,7 @@ struct drbd_cmd commands[] = {
 		 { "use-bmbv",'b',	T_use_bmbv,     EB },
 		 { "no-disk-barrier",'a',T_no_disk_barrier,EB },
 		 { "no-disk-flushes",'i',T_no_disk_flush,EB },
-		 { "no-disk-drain",'d', T_no_disk_drain,EB },
+		 { "no-disk-drain",'D', T_no_disk_drain,EB },
 		 { "no-md-flushes",'m', T_no_md_flush,  EB },
 		 { "max-bio-bvecs",'s',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
