@@ -48,6 +48,8 @@
 #include <fcntl.h>
 #include <time.h>
 
+#include <linux/major.h>
+#include <linux/kdev_t.h>
 #include <linux/drbd.h>		/* only use DRBD_MAGIC from here! */
 #include <linux/fs.h>           /* for BLKFLSBUF */
 
@@ -165,6 +167,7 @@ struct option metaopt[] = {
 
 const size_t buffer_size = 128*1024;
 size_t pagesize; /* = sysconf(_SC_PAGESIZE) */
+int opened_odirect = 1;
 void *on_disk_buffer = NULL;
 int global_argc;
 char **global_argv;
@@ -1223,10 +1226,21 @@ int v07_style_md_open(struct format *cfg)
 	unsigned long words;
 	unsigned long hard_sect_size = 0;
 	int ioctl_err;
+	int open_flags = O_RDWR | O_SYNC | O_DIRECT;
 
-	cfg->md_fd = open(cfg->md_device_name, O_RDWR | O_DIRECT);
+ retry:
+	cfg->md_fd = open(cfg->md_device_name, open_flags );
 
 	if (cfg->md_fd == -1) {
+		if (errno == EINVAL && (open_flags & O_DIRECT)) {
+			/* shoo. O_DIRECT is not supported?
+			 * retry, but remember this, so we can
+			 * BLKFLSBUF appropriately */
+			fprintf(stderr, "could not open with O_DIRECT, retrying without\n");
+			open_flags &= ~O_DIRECT;
+			opened_odirect = 0;
+			goto retry;
+		}
 		PERROR("open(%s) failed", cfg->md_device_name);
 		exit(20);
 	}
@@ -1273,6 +1287,16 @@ int v07_style_md_open(struct format *cfg)
 			cfg->md_device_name,
 			(long long unsigned)cfg->bd_size);
 		exit(10);
+	}
+
+	if (!opened_odirect &&
+	    (MAJOR(sb.st_rdev) != RAMDISK_MAJOR)) {
+		ioctl_err = ioctl(cfg->md_fd, BLKFLSBUF);
+		/* report error, but otherwise ignore.  we could not open
+		 * O_DIRECT, it is a "strange" device anyways. */
+		if (ioctl_err)
+			fprintf(stderr, "ioctl(md_fd, BLKFLSBUF) returned %d, "
+					"we may read stale data\n", ioctl_err);
 	}
 
 	if (cfg->ops->md_disk_to_cpu(cfg)) {
