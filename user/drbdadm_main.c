@@ -54,6 +54,8 @@ static int indent = 0;
 #define INDENT_WIDTH 4
 #define BFMT  "%s;\n"
 #define IPFMT "%-16s %s:%s;\n"
+#define IPV4FMT "%-16s %s %s:%s;\n"
+#define IPV6FMT "%-16s %s [%s]:%s;\n"
 #define MDISK "%-16s %s [%s];\n"
 #define FMDISK "%-16s %s;\n"
 #define printI(fmt, args... ) printf("%*s" fmt,INDENT_WIDTH * indent,"" , ## args )
@@ -457,11 +459,19 @@ static void dump_common_info()
   --indent; printf("}\n\n");
 }
 
+static void dump_address(char* name, char* addr, char* port, char* af)
+{
+  if (!strcmp(af, "ipv6"))
+    printI(IPV6FMT, name, af, addr, port);
+  else
+    printI(IPV4FMT, name, af, addr, port);
+}
+
 static void dump_proxy_info(struct d_proxy_info* pi)
 {
   printI("proxy on %s {\n",esc(pi->name)); ++indent;
-  printI(IPFMT,"inside", pi->inside_addr, pi->inside_port);
-  printI(IPFMT,"outside", pi->outside_addr, pi->outside_port);
+  dump_address("inside", pi->inside_addr, pi->inside_port, pi->inside_af);
+  dump_address("outside", pi->outside_addr, pi->outside_port, pi->outside_af);
   --indent; printI("}\n");
 }
 
@@ -475,7 +485,7 @@ static void dump_host_info(struct d_host_info* hi)
   printI("on %s {\n",esc(hi->name)); ++indent;
   printA("device", esc(hi->device));
   printA("disk"  , esc(hi->disk));
-  printI(IPFMT,"address"   , hi->address, hi->port);
+  dump_address("address", hi->address, hi->port, hi->address_family);
   if (!strncmp(hi->meta_index,"flex",4))
     printI(FMDISK,"flexible-meta-disk", esc(hi->meta_disk));
   else if (!strcmp(hi->meta_index,"internal"))
@@ -533,8 +543,8 @@ static void dump_common_info_xml()
 static void dump_proxy_info_xml(struct d_proxy_info* pi)
 {
   printI("<proxy hostname=\"%s\">\n",esc_xml(pi->name)); ++indent;
-  printI("<inside port=\"%s\">%s</inside>\n", pi->inside_port, pi->inside_addr);
-  printI("<outside port=\"%s\">%s</outside>\n", pi->outside_port, pi->outside_addr);
+  printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside_af, pi->inside_port, pi->inside_addr);
+  printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n", pi->outside_af, pi->outside_port, pi->outside_addr);
   --indent; printI("</proxy>\n");
 }
 
@@ -548,7 +558,7 @@ static void dump_host_info_xml(struct d_host_info* hi)
   printI("<host name=\"%s\">\n",esc_xml(hi->name)); ++indent;
   printI("<device>%s</device>\n", esc_xml(hi->device));
   printI("<disk>%s</disk>\n", esc_xml(hi->disk));
-  printI("<address port=\"%s\">%s</address>\n", hi->port, hi->address);
+  printI("<address family=\"%s\" port=\"%s\">%s</address>\n", hi->address_family, hi->port, hi->address);
   if (!strncmp(hi->meta_index,"flex",4))
     printI("<flexible-meta-disk>%s</flexible-meta-disk>\n", esc_xml(hi->meta_disk));
   else if (!strcmp(hi->meta_index,"internal"))
@@ -702,6 +712,7 @@ static void free_host_info(struct d_host_info* hi)
   free(hi->device);
   free(hi->disk);
   free(hi->address);
+  free(hi->address_family);
   free(hi->port);
   free(hi->meta_disk);
   free(hi->meta_index);
@@ -962,6 +973,13 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
     OPT=OPT->next; \
   }
 
+#define make_address(ADDR, PORT, AF)		\
+  if (strcmp(AF, "ipv4")) { \
+    ssprintf(argv[NA(argc)],"%s:%s:%s", AF, ADDR, PORT); \
+  } else { \
+    ssprintf(argv[NA(argc)],"%s:%s", ADDR, PORT); \
+  }
+
 int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[MAX_ARGS];
@@ -1163,11 +1181,11 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
   argv[NA(argc)]=drbdsetup;
   argv[NA(argc)]=res->me->device;
   argv[NA(argc)]="net";
-  ssprintf(argv[NA(argc)],"%s:%s",res->me->address,res->me->port);
+  make_address(res->me->address, res->me->port, res->me->address_family);
   if(res->me->proxy) {
-    ssprintf(argv[NA(argc)],"%s:%s",res->me->proxy->inside_addr,res->me->proxy->inside_port);
+    make_address(res->me->proxy->inside_addr, res->me->proxy->inside_port, res->me->proxy->inside_af);
   } else {
-    ssprintf(argv[NA(argc)],"%s:%s",res->peer->address,res->peer->port);
+    make_address(res->peer->address, res->peer->port, res->peer->address_family);
   }
   argv[NA(argc)]=res->protocol;
 

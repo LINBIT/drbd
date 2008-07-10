@@ -159,14 +159,12 @@ int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
 int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
 int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
 int string_opt_usage(struct drbd_option *option, char* str, int strlen);
-int af_opt_usage(struct drbd_option *option, char* str, int strlen);
 
 // sub usage function for config_usage as xml
 void numeric_opt_xml(struct drbd_option *option);
 void handler_opt_xml(struct drbd_option *option);
 void bit_opt_xml(struct drbd_option *option);
 void string_opt_xml(struct drbd_option *option);
-void af_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -186,14 +184,12 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_af(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 
 // show functions for options (used by show_scmd)
 void show_numeric(struct drbd_option *od, unsigned short* tp);
 void show_handler(struct drbd_option *od, unsigned short* tp);
 void show_bit(struct drbd_option *od, unsigned short* tp);
 void show_string(struct drbd_option *od, unsigned short* tp);
-void show_af(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
 int print_broadcast_events(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
@@ -300,8 +296,6 @@ struct drbd_cmd commands[] = {
 		 { "protocol",		T_wire_protocol,conv_protocol },
 		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
-		 { "addr-family",'f',	T_addr_family,
-			conv_af, show_af, af_opt_usage, af_opt_xml, { } },
 		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") },
 		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) },
 		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) },
@@ -597,6 +591,24 @@ int port_part(const char* s)
 	return 7788;
 }
 
+void resolv6(char *name, struct in6_addr *addr)
+{
+	int rv;
+	struct hostent *he;
+
+	rv = inet_pton(AF_INET6, name, addr);
+	if (rv > 0)
+		return;
+	else if (rv == 0) {
+		he = gethostbyname2(name, AF_INET6);
+		if (!he) {
+			PERROR("can not resolv the hostname");
+			exit(20);
+		}
+		memcpy(addr, he->h_addr_list[0], sizeof(struct in6_addr));
+	}
+}
+
 unsigned long resolv(const char* name)
 {
 	unsigned long retval;
@@ -613,16 +625,72 @@ unsigned long resolv(const char* name)
 	return retval;
 }
 
+int get_af_sci();
+
+static void split_address(char* text, int *af, char** address, int* port)
+{
+	static struct { char* text; int af; } afs[] = {
+		{ "ipv4:", AF_INET  },
+		{ "ipv6:", AF_INET6 },
+		{ "sci:",  -1 },
+	};
+
+	unsigned int i;
+	char *b;
+
+	*af=AF_INET;
+	*address = text;
+	for (i=0; i<ARRY_SIZE(afs); i++) {
+		if (!strncmp(text, afs[i].text, strlen(afs[i].text))) {
+			*af = afs[i].af;
+			*address = text + strlen(afs[i].text);
+			break;
+		}
+	}
+	if (*af == -1)
+		*af = get_af_sci();
+
+	b=strrchr(text,':');
+	if (b) {
+		*b = 0;
+		*port = m_strtoll(b+1,1);
+	} else
+		*port = 7788;
+}
+
 int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 {
+	static int mind_af_set = 0;
 	struct sockaddr_in addr;
-	int addr_len = sizeof(struct sockaddr_in);
+	struct sockaddr_in6 addr6;
+	int af, port;
+	char *address, bit=1;
 
-	addr.sin_port = htons(port_part(arg));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = resolv(addr_part(arg));
+	split_address(arg, &af, &address, &port);
 
-	add_tag(tl,ad->tag,&addr,addr_len);
+	/* The mind_af tag is mandatory. I.e. the module may not silently ignore it.
+	   That means that an older DRBD module must fail the operation since it does
+	   not know the mind_af tag. We set it in case we use an other AF then AF_INET,
+	   so that the alternate AF is not silently ignored by the DRBD module */
+	if (af != AF_INET && !mind_af_set) {
+		add_tag(tl,T_mind_af,&bit,sizeof(bit));
+		mind_af_set=1;
+	}
+
+	if (af == AF_INET6) {
+		memset(&addr6, 0, sizeof(struct sockaddr_in6));
+		addr6.sin6_port = htons(port);
+		addr6.sin6_family = AF_INET6;
+		resolv6(address, &addr6.sin6_addr);
+		/* addr6.sin6_len = sizeof(addr6); */
+		add_tag(tl,ad->tag,&addr6,sizeof(addr6));
+	} else {
+		/* AF_INET and AF_SCI */
+		addr.sin_port = htons(port);
+		addr.sin_family = af;
+		addr.sin_addr.s_addr = resolv(address);
+		add_tag(tl,ad->tag,&addr,sizeof(addr));
+	}
 
 	return NoError;
 }
@@ -660,17 +728,21 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 /* if present, read and convert to int */
 int get_af_sci()
 {
-	int af = AF_INET;
-	int fd = open(PROC_NET_AF_SCI_FAMILY, O_RDONLY);
-	int c;
 	char buf[16];
+	int c, fd;
+	static int af = -1;
+
+	if (af > 0)
+		return af;
+
+	fd = open(PROC_NET_AF_SCI_FAMILY, O_RDONLY);
 	if (fd < 0) {
 		fprintf(stderr, "open(" PROC_NET_AF_SCI_FAMILY ") "
-				"failed: %m\nfalling back to default IPv4\n");
+				"failed: %m\n assuming AF_SCI = 27\n");
+		af = 27;
 		return af;
 	}
 	c = read(fd, buf, sizeof(buf)-1);
-	close(fd);
 	if (c > 0) {
 		buf[c] = 0;
 		if (buf[c-1] == '\n')
@@ -678,28 +750,11 @@ int get_af_sci()
 		af = m_strtoll(buf,1);
 	} else {
 		fprintf(stderr, "read(" PROC_NET_AF_SCI_FAMILY ") "
-				"failed: %m\nfalling back to default IPv4\n");
+				"failed: %m\n assuming AF_SCI = 27\n");
+		af = 27;
 	}
+	close(fd);
 	return af;
-}
-
-int conv_af(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
-{
-	if (!strcasecmp("sci", arg)) {
-		int af = get_af_sci();
-		if (af != AF_INET)
-			add_tag(tl,od->tag,&af,sizeof(af));
-		/* else: just don't add the tag in that case */
-	} else if (!strcasecmp("ipv4", arg)) {
-		/* default, just don't add the tag. */
-	} else {
-		/* unknown */
-		fprintf(stderr, "%s %s: unsupported address family\n",
-				od->name, arg);
-		return OTHER_ERROR;
-	}
-
-	return NoError;
 }
 
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
@@ -1238,11 +1293,47 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	return rv;
 }
 
+char *af_to_str(int af)
+{
+	if (af == AF_INET)
+		return "ipv4";
+	else if (af == AF_INET6)
+		return "ipv6";
+	else if (af == get_af_sci())
+		return "sci";
+	else return "unknown";
+}
+
+void show_address(void* address, int addr_len)
+{
+	struct sockaddr     *addr;
+	struct sockaddr_in  *addr4;
+	struct sockaddr_in6 *addr6;
+	char buffer[INET6_ADDRSTRLEN];
+
+	addr = (struct sockaddr *)address;
+	if (addr->sa_family == AF_INET || addr->sa_family == get_af_sci()) {
+		addr4 = (struct sockaddr_in *)address;
+		printf("\taddress\t\t\t%s %s:%d;\n",
+		       af_to_str(addr4->sin_family),
+		       inet_ntoa(addr4->sin_addr),
+		       ntohs(addr4->sin_port));
+	} else if (addr->sa_family == AF_INET6) {
+		addr6 = (struct sockaddr_in6 *)address;
+		printf("\taddress\t\t\t%s [%s]:%d;\n",
+		       af_to_str(addr6->sin6_family),
+		       inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer, INET6_ADDRSTRLEN),
+		       ntohs(addr6->sin6_port));
+	} else {
+		printf("\taddress\t\t\t[unknown af=%d, len=%d]\n", addr->sa_family, addr_len);
+	}
+}
+
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
 	int idx;
 	char *str, *backing_dev, *address;
-	struct sockaddr_in *addr;
+	unsigned int addr_len;
 
 	// find all commands that have options and print those...
 	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {
@@ -1255,7 +1346,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 		printf("protocol %c;\n",'A'+idx-1);
 	backing_dev = address = NULL;
 	consume_tag_string(T_backing_dev,rtl,&backing_dev);
-	consume_tag_string(T_my_addr,rtl,&address);
+	consume_tag_blob(T_my_addr, rtl, &address, &addr_len);
 	if(backing_dev || address) {
 		printf("_this_host {\n");
 		printf("\tdevice\t\t\t\"/dev/drbd%d\";\n",minor);
@@ -1274,25 +1365,19 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 			default:
 				printf("\tmeta-disk\t\t\"%s\" [ %d ];\n",str,
 				       idx);
-			}
+			 }
 		}
-		if(address) {
-			addr = (struct sockaddr_in *)address;
-			printf("\taddress\t\t\t%s:%d;\n",
-			       inet_ntoa(addr->sin_addr),
-			       ntohs(addr->sin_port));
-		}
+		if(address)
+			show_address(address, addr_len);
 		printf("}\n");
 	}
 
-	if(consume_tag_string(T_peer_addr,rtl,&str)) {
+	if(consume_tag_blob(T_peer_addr, rtl, &address, &addr_len)) {
 		printf("_remote_host {\n");
-		addr = (struct sockaddr_in *)str;
-		printf("\taddress\t\t\t%s:%d;\n",
-		       inet_ntoa(addr->sin_addr),
-		       ntohs(addr->sin_port));
+		show_address(address, addr_len);
 		printf("}\n");
 	}
+	consume_tag_bit(T_mind_af, rtl, &idx); /* consume it, its value has no relevance */
 
 	return 0;
 }

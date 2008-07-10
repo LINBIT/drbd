@@ -29,6 +29,8 @@ static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 NUM		[0-9]{1,8}[MKGs]?
 SNUMB		[0-9]{1,3}
 IPV4ADDR	({SNUMB}"."){3}{SNUMB}
+HEX4            [0-9a-fA-F]{1,4}
+IPV6ADDR	((({HEX4}":"){0,5}{HEX4})?":"{HEX4}?":"({HEX4}(":"{HEX4}){0,5})?)|("::"[fF]{4}":"{IPV4ADDR})
 WS		[ \t\r]
 OPCHAR		[{};\[\]:]
 DQSTRING	\"([^\"\\\n]|\\[^\n]){0,255}\"
@@ -71,6 +73,9 @@ usage-count 		{ DP; return TK_USAGE_COUNT;		}
 _is_default 		{ DP; return TK__IS_DEFAULT;		}
 _this_host 		{ DP; return TK__THIS_HOST;		}
 _remote_host 		{ DP; return TK__REMOTE_HOST;		}
+sci			{ DP; CP; return TK_SCI;		}
+ipv4			{ DP; CP; return TK_IPV4;		}
+ipv6			{ DP; CP; return TK_IPV6;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
 fencing			{ DP; CP; return TK_DISK_OPTION;	}
@@ -117,6 +122,7 @@ memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
 read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
 out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
+{IPV6ADDR}		{ DP; CP; return TK_IPADDR6;		}
 {NUM}			{ DP; CP; return TK_INTEGER;		}
 {DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
 {STRING}		{ DP; CP; return TK_STRING;		}

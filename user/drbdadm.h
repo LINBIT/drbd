@@ -68,8 +68,10 @@ struct d_proxy_info
   char* name;
   char* inside_addr;
   char* inside_port;
+  char* inside_af;
   char* outside_addr;
   char* outside_port;
+  char* outside_af;
 };
 
 struct d_host_info
@@ -80,6 +82,7 @@ struct d_host_info
   char* address;
   char* port;
   char* meta_disk;
+  char* address_family;
   int meta_major;
   int meta_minor;
   char* meta_index;

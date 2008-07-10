@@ -106,6 +106,12 @@ enum yytokentype {
 	TK_ERR_STRING_TOO_LONG,
 	TK_ERR_DQSTRING_TOO_LONG,
 	TK_ERR_DQSTRING,
+	TK_SCI,
+	TK_IPV4,
+
+	/* 310 */
+	TK_IPV6,
+	TK_IPADDR6,
 };
 
 typedef struct YYSTYPE {

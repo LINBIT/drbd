@@ -134,10 +134,12 @@ static int addr_equal(struct d_resource* conf, struct d_resource* running)
 	if (conf->peer == NULL && running->peer == NULL) return 1;
 	if (conf->peer == NULL || running->peer == NULL) return 0;
 
-	return !strcmp(conf->me->address,  running->me->address) &&
-		!strcmp(conf->me->port,     running->me->port) &&
-		!strcmp(conf->peer->address,running->peer->address) &&
-		!strcmp(conf->peer->port,   running->peer->port) ;
+	return  !strcmp(conf->me->address,          running->me->address) &&
+		!strcmp(conf->me->port,             running->me->port) &&
+	        !strcmp(conf->me->address_family,   running->me->address_family) &&
+		!strcmp(conf->peer->address,        running->peer->address) &&
+		!strcmp(conf->peer->port,           running->peer->port) &&
+		!strcmp(conf->peer->address_family, running->peer->address_family);
 }
 
 static int proto_equal(struct d_resource* conf, struct d_resource* running)

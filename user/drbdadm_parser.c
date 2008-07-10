@@ -354,6 +354,41 @@ static struct d_option *parse_options(int token_switch, int token_option)
 	}
 }
 
+static void parse_address(char** addr, char** port, char** af)
+{
+	switch(yylex()) {
+	case TK_SCI:
+	case TK_IPV4:
+		*af = yylval.txt;
+		EXP(TK_IPADDR);
+		break;
+	case TK_IPV6:
+		*af = yylval.txt;
+		EXP('[');
+		EXP(TK_IPADDR6);
+		break;
+	case TK_IPADDR:
+		*af = strdup("ipv4");
+		break;
+	case '[': /* Allow the omission of the ipv6 keyword */
+		EXP(TK_IPADDR6);
+		*af = strdup("ipv6");
+		break;
+	default:
+		pe_expected("sci | ipv4 | ipv6 | <ipv4 address> | <ipv6 address>");
+	}
+
+	*addr = yylval.txt;
+	if (!strcmp(*af, "ipv6"))
+		EXP(']');
+	EXP(':');
+	EXP(TK_INTEGER);
+	*port = yylval.txt;
+	range_check(R_PORT, "port", yylval.txt);
+	check_uniq("IP", "%s:%s", *addr, *port);
+	EXP(';');
+}
+
 static void parse_proxy_section(struct d_host_info *host)
 {
 	struct d_proxy_info *proxy;
@@ -369,20 +404,10 @@ static void parse_proxy_section(struct d_host_info *host)
 	while (1) {
 		switch (yylex()) {
 		case TK_INSIDE:
-			EXP(TK_IPADDR);
-			proxy->inside_addr = yylval.txt;
-			EXP(':');
-			EXP(TK_INTEGER);
-			proxy->inside_port = yylval.txt;
-			EXP(';');
+			parse_address(&proxy->inside_addr, &proxy->inside_port, &proxy->inside_af);
 			break;
 		case TK_OUTSIDE:
-			EXP(TK_IPADDR);
-			proxy->outside_addr = yylval.txt;
-			EXP(':');
-			EXP(TK_INTEGER);
-			proxy->outside_port = yylval.txt;
-			EXP(';');
+			parse_address(&proxy->outside_addr, &proxy->outside_port, &proxy->outside_af);
 			break;
 		case '}':
 			goto break_loop;
@@ -391,7 +416,7 @@ static void parse_proxy_section(struct d_host_info *host)
 
 		}
 	}
-	
+
  break_loop:
 	return;
 }
@@ -411,7 +436,7 @@ static void parse_meta_disk(char **disk, char** index)
 	}
 }
 
-static void parse_host_section(struct d_resource *res, 
+static void parse_host_section(struct d_resource *res,
 			       char *host_name, int require_all)
 {
 	struct d_host_info *host;
@@ -453,14 +478,8 @@ static void parse_host_section(struct d_resource *res,
 		case TK_ADDRESS:
 			check_uniq("address statement", "%s:%s:address",
 				   res->name, host->name);
-			EXP(TK_IPADDR);
-			host->address = yylval.txt;
-			EXP(':');
-			EXP(TK_INTEGER);
-			host->port = yylval.txt;
-			range_check(R_PORT, "port", yylval.txt);
-			check_uniq("IP", "%s:%s", host->address, host->port);
-			EXP(';');
+			parse_address(&host->address, &host->port, &host->address_family);
+			range_check(R_PORT, "port", host->port);
 			break;
 		case TK_META_DISK:
 			check_uniq("meta-disk statement", "%s:%s:meta-disk",

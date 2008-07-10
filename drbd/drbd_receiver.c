@@ -558,18 +558,37 @@ STATIC int drbd_recv(struct drbd_conf *mdev, void *buf, size_t size)
 	return rv;
 }
 
+/* Copies the socket address and sets the port to 0 */
+STATIC void prepare_addr(struct sockaddr* addr, struct sockaddr* original)
+{
+	int family = original->sa_family;
+	int size;
+
+	if (family == AF_INET6)
+		size = sizeof(struct sockaddr_in6);
+	else
+		size = sizeof(struct sockaddr_in); /* AF_INET & AF_SCI */
+
+	memcpy(addr, original, size);
+
+	if (family == AF_INET6)
+		((struct sockaddr_in6 *)addr)->sin6_port = 0;
+	else
+		((struct sockaddr_in *)addr)->sin_port = 0; /* AF_INET & AF_SCI */
+}
+
 STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 {
 	const char *what;
 	struct socket *sock;
-	struct sockaddr_in src_in;
+	struct sockaddr_in6 src_in6;
 	int err;
 	int disconnect_on_error = 1;
 
 	if (!inc_net(mdev)) return NULL;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(mdev->net_conf->addr_family,
+	err = sock_create_kern(((struct sockaddr *)mdev->net_conf->my_addr)->sa_family,
 		SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err < 0) {
 		sock = NULL;
@@ -586,12 +605,10 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	* Make sure to use 0 as portnumber, so linux selects
 	*  a free one dynamically.
 	*/
-	memcpy(&src_in, &(mdev->net_conf->my_addr), sizeof(struct sockaddr_in));
-	src_in.sin_port = 0;
-
+	prepare_addr((struct sockaddr *)&src_in6, (struct sockaddr *)mdev->net_conf->my_addr);
 	what = "bind";
 	err = sock->ops->bind(sock,
-			      (struct sockaddr *) &src_in,
+			      (struct sockaddr *) &src_in6,
 			      sizeof(struct sockaddr_in));
 	if (err < 0)
 		goto out;
@@ -641,7 +658,7 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 	if (!inc_net(mdev)) return NULL;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(mdev->net_conf->addr_family,
+	err = sock_create_kern(((struct sockaddr *)mdev->net_conf->my_addr)->sa_family,
 		SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
