@@ -370,12 +370,12 @@ static void parse_address(char** addr, char** port, char** af)
 	case TK_IPADDR:
 		*af = strdup("ipv4");
 		break;
-	case '[': /* Allow the omission of the ipv6 keyword */
+	/* case '[': // Do not foster people's laziness ;)
 		EXP(TK_IPADDR6);
 		*af = strdup("ipv6");
-		break;
+		break; */
 	default:
-		pe_expected("sci | ipv4 | ipv6 | <ipv4 address> | <ipv6 address>");
+		pe_expected("sci | ipv4 | ipv6 | <ipv4 address> ");
 	}
 
 	*addr = yylval.txt;

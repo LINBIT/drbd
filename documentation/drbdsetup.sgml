@@ -31,8 +31,10 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">net</arg>
+      <arg><replaceable>af:</replaceable></arg>
       <arg choice="req"><replaceable>local_addr</replaceable></arg>
       <arg><replaceable>:port</replaceable></arg>
+      <arg><replaceable>af:</replaceable></arg>
       <arg choice="req"><replaceable>remote_addr</replaceable></arg>
       <arg><replaceable>:port</replaceable></arg>
       <arg choice="req"><replaceable>protocol</replaceable></arg>
@@ -428,9 +430,12 @@
       <indexterm><primary>drbdsetup</primary><secondary>net</secondary></indexterm>
       <para>
 	Sets up the <replaceable>device</replaceable> to listen on
-	<replaceable>local_addr:port</replaceable> for incoming connections
-	and to try to connect to <replaceable>remote_addr:port</replaceable>.
+	<replaceable>af:local_addr:port</replaceable> for incoming connections
+	and to try to connect to <replaceable>af:remote_addr:port</replaceable>.
 	If <replaceable>port</replaceable> is omitted, 7788 is used as default.
+        If <replaceable>af</replaceable> is omitted <option>ipv4</option> gets
+        used. Other supported address families are <option>ipv6</option> and
+        <option>sci</option> for Dolphin Interconnect Solutions' "super sockets".
       </para>
       <para>
 	On the TCP/IP link the specified <replaceable>protocol</replaceable>

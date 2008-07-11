@@ -380,13 +380,15 @@ resource r0 {
 </varlistentry>
 
 <varlistentry>
-  <term><option>address <replaceable>IP:port</replaceable></option></term>
+  <term><option>address <replaceable>AF IP:port</replaceable></option></term>
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>address</secondary></indexterm>
     A resource needs one <replaceable>IP</replaceable> address per device,
-    which is used to wait for
-    incoming connections from the partner device respectively to reach
-    the partner device.
+    which is used to wait for incoming connections from the partner device 
+    respectively to reach the partner device. <replaceable>AF</replaceable>
+    must be one of <option>ipv4</option>, <option>ipv6</option> or <option>sci</option>.
+    It may be ommited for IPv4 addresses. The actual IPv6 address that follows
+    the <option>ipv6</option> keyword must be placed inside brackets.
   </para>
   <para>
     Each DRBD resource needs a TCP <replaceable>port</replaceable>

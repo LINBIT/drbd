@@ -141,6 +141,7 @@ int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 void close_cn(int sk_nl);
 
 // other functions
+int get_af_sci(int warn);
 void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
@@ -291,8 +292,8 @@ struct drbd_cmd commands[] = {
 
 	{"net", P_net_conf, F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
-		 { "local_addr",	T_my_addr,	conv_address },
-		 { "remote_addr",	T_peer_addr,	conv_address },
+		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
+		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
 		 { "protocol",		T_wire_protocol,conv_protocol },
 		 { NULL,                0,           	NULL}, },
 	 (struct drbd_option[]) {
@@ -625,8 +626,6 @@ unsigned long resolv(const char* name)
 	return retval;
 }
 
-int get_af_sci();
-
 static void split_address(char* text, int *af, char** address, int* port)
 {
 	static struct { char* text; int af; } afs[] = {
@@ -648,7 +647,7 @@ static void split_address(char* text, int *af, char** address, int* port)
 		}
 	}
 	if (*af == -1)
-		*af = get_af_sci();
+		*af = get_af_sci(1);
 
 	b=strrchr(text,':');
 	if (b) {
@@ -724,9 +723,10 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 	return NoError;
 }
 
+/* It will only print the WARNING if the warn flag is set
+   with the _first_ call! */
 #define PROC_NET_AF_SCI_FAMILY "/proc/net/af_sci/family"
-/* if present, read and convert to int */
-int get_af_sci()
+int get_af_sci(int warn)
 {
 	char buf[16];
 	int c, fd;
@@ -737,8 +737,10 @@ int get_af_sci()
 
 	fd = open(PROC_NET_AF_SCI_FAMILY, O_RDONLY);
 	if (fd < 0) {
-		fprintf(stderr, "open(" PROC_NET_AF_SCI_FAMILY ") "
-				"failed: %m\n assuming AF_SCI = 27\n");
+		if (warn)
+			fprintf(stderr, "open(" PROC_NET_AF_SCI_FAMILY ") "
+				"failed: %m\n WARNING: assuming AF_SCI = 27. "
+				"Socket creation will probabely fail.\n");
 		af = 27;
 		return af;
 	}
@@ -749,8 +751,10 @@ int get_af_sci()
 			buf[c-1] = 0;
 		af = m_strtoll(buf,1);
 	} else {
-		fprintf(stderr, "read(" PROC_NET_AF_SCI_FAMILY ") "
-				"failed: %m\n assuming AF_SCI = 27\n");
+		if (warn)
+			fprintf(stderr, "read(" PROC_NET_AF_SCI_FAMILY ") "
+				"failed: %m\n WARNING: assuming AF_SCI = 27. "
+				"Socket creation will probabely fail.\n");
 		af = 27;
 	}
 	close(fd);
@@ -820,11 +824,12 @@ int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	return NoError;
 }
 
+
 struct option *	make_longoptions(struct drbd_option* od)
 {
 	/* room for up to N options,
 	 * plus set-defaults, create-device, and the terminating NULL */
-	const int N = 20;
+#define N 20
 	static struct option buffer[N+3];
 	int i=0;
 
@@ -841,6 +846,7 @@ struct option *	make_longoptions(struct drbd_option* od)
 		}
 		od++;
 	}
+#undef N
 
 	// The two omnipresent options:
 	buffer[i].name = "set-defaults";
@@ -1059,7 +1065,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 void show_af(struct drbd_option *od, unsigned short* tp)
 {
-	int af_sci = get_af_sci();
+	int af_sci = get_af_sci(0);
 	int val;
 	const char *msg;
 
@@ -1299,7 +1305,7 @@ char *af_to_str(int af)
 		return "ipv4";
 	else if (af == AF_INET6)
 		return "ipv6";
-	else if (af == get_af_sci())
+	else if (af == get_af_sci(0))
 		return "sci";
 	else return "unknown";
 }
@@ -1312,7 +1318,7 @@ void show_address(void* address, int addr_len)
 	char buffer[INET6_ADDRSTRLEN];
 
 	addr = (struct sockaddr *)address;
-	if (addr->sa_family == AF_INET || addr->sa_family == get_af_sci()) {
+	if (addr->sa_family == AF_INET || addr->sa_family == get_af_sci(0)) {
 		addr4 = (struct sockaddr_in *)address;
 		printf("\taddress\t\t\t%s %s:%d;\n",
 		       af_to_str(addr4->sin_family),
@@ -1831,12 +1837,6 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	 * timeout? => exit 5
 	 * else     => exit 0 */
 	return (rr == -2) ? 5 : 0;
-}
-
-int af_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	return snprintf(str,strlen," [{--%s|-%c} {IPv4|SCI}]",
-			option->name, option->short_name);
 }
 
 int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
