@@ -1716,7 +1716,7 @@ static struct ifreq * get_ifreq(void)
   return ifc.ifc_req;
 }
 
-int have_ip(const char *ip)
+int have_ip_ipv4(const char *ip)
 {
   struct ifreq *ifr;
   struct in_addr query_addr;
@@ -1726,7 +1726,7 @@ int have_ip(const char *ip)
   if (!ifreq_list) ifreq_list = get_ifreq();
 
   for (ifr = ifreq_list; ifr && ifr->ifr_name[0] != 0; ifr++) {
-    /* currently we only support AF_INET */
+    /* SIOCGIFCONF only supports AF_INET */
     struct sockaddr_in * list_addr = (struct sockaddr_in *)&ifr->ifr_addr;
     if (ifr->ifr_addr.sa_family != AF_INET)
       continue;
@@ -1736,12 +1736,53 @@ int have_ip(const char *ip)
   return 0;
 }
 
+int have_ip_ipv6(const char *ip)
+{
+  FILE *if_inet6;
+  struct in6_addr addr6, query_addr;
+  unsigned int b[4];
+  char name[20];
+  int i;
+
+  if (inet_pton(AF_INET6, ip, &query_addr) <= 0)
+    return 0;
+
+#define PROC_IF_INET6 "/proc/net/if_inet6"
+  if_inet6 = fopen(PROC_IF_INET6,"r");
+  if (!if_inet6) {
+    perror("open of " PROC_IF_INET6 "failed:");
+    return 0;
+  }
+
+  while(fscanf(if_inet6, X32(08)X32(08)X32(08)X32(08)" %*02x %*02x %*02x %*02x %s",b,b+1,b+2,b+3,name)>0) {
+    for (i=0; i<4; i++)
+      addr6.s6_addr32[i] = cpu_to_be32(b[i]);
+
+    if (memcmp(&query_addr, &addr6, sizeof(struct in6_addr))==0) {
+	fclose(if_inet6);
+	return 1;
+    }
+  }
+  fclose(if_inet6);
+  return 0;
+}
+
+int have_ip(const char *af, const char *ip)
+{
+  if (!strcmp(af, "ipv4"))
+    return have_ip_ipv4(ip);
+  else if (!strcmp(af, "ipv6"))
+    return have_ip_ipv6(ip);
+
+  return 1; /* SCI */
+}
+
 void verify_ips(struct d_resource *res)
 {
   if (global_options.disable_ip_verification) return;
   if (dry_run == 1 || do_verify_ips == 0) return;
 
-  if (! have_ip(res->me->address)) {
+  if (! have_ip(res->me->address_family, res->me->address)) {
     ENTRY e, *ep;
     e.key = e.data = ep = NULL;
     asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
