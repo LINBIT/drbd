@@ -62,6 +62,7 @@ enum epoch_event {
 	EV_got_barrier_nr,
 	EV_barrier_done,
 	EV_became_last,
+	EV_cleanup = 32, /* used as flag */
 };
 
 enum finish_epoch {
@@ -419,7 +420,8 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 			++n;
 
 		if (!hlist_unhashed(&e->colision)) hlist_del_init(&e->colision);
-		drbd_may_finish_epoch(mdev, e->epoch, EV_put);
+		if (e->epoch)
+			drbd_may_finish_epoch(mdev, e->epoch, EV_put + EV_cleanup);
 		drbd_free_ee(mdev, e);
 	}
 
@@ -973,7 +975,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 
 	spin_lock(&mdev->epoch_lock);
 
-	switch (ev) {
+	switch (ev & ~EV_cleanup) {
 	case EV_put:
 		atomic_dec(&epoch->active);
 		break;
@@ -994,7 +996,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 	    epoch->list.prev == &mdev->current_epoch->list) {
 		/* Nearly all conditions are met to finish that epoch... */
 		if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
-		    mdev->write_ordering == WO_none)
+		    mdev->write_ordering == WO_none ||
+		    ev & EV_cleanup)
 			finish = 1;
 		else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
 			 mdev->write_ordering == WO_bio_barrier) {
@@ -1022,11 +1025,12 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 	spin_unlock(&mdev->epoch_lock);
 
 	if (finish) {
-		if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
-			dec_unacked(mdev);
+		if ( ! (ev & EV_cleanup) )
+			if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
+				dec_unacked(mdev);
 
 		if (next_epoch)
-			drbd_may_finish_epoch(mdev, next_epoch, EV_became_last);
+			drbd_may_finish_epoch(mdev, next_epoch, EV_became_last | (ev & EV_cleanup));
 
 		if (free) {
 			kfree(epoch);
