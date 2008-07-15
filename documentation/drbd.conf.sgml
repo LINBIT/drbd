@@ -205,7 +205,8 @@ resource r0 {
     <option>ko-count</option>, <option>allow-two-primaries</option>,
     <option>cram-hmac-alg</option>, <option>shared-secret</option>,
     <option>after-sb-0pri</option>, <option>after-sb-1pri</option>,
-    <option>after-sb-2pri</option>, <option>data-integrity-alg</option>
+    <option>after-sb-2pri</option>, <option>data-integrity-alg</option>,
+    <option>no-tcp-cork</option>
   </para>
   </listitem>
 </varlistentry>
@@ -888,6 +889,20 @@ the unit is 1 second.
               at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
               available. By default this is not enabled.</para>
 	    <para>See also the notes on data integrity.<para>
+	  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>no-tcp-cork</option></term>
+	  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>no-tcp-cork</secondary></indexterm>
+	    <para>
+	      DRBD usually uses the TCP socket option TCP_CORK to hint to the network
+              stack when it can expect more data, and when it should flush out what it
+              has in its send queue. It turned out that there is at lease one network
+              stack that performs worse when one uses this hinting method. Therefore
+              we introducted this option, which disable the setting and clearing of
+              the TCP_CORK socket option by DRBD.</para>
 	  </listitem>
 </varlistentry>
 

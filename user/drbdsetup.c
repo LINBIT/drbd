@@ -316,6 +316,7 @@ struct drbd_cmd commands[] = {
 		 { "ping-timeout",'p',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") },
 		 { "discard-my-data",'D', T_want_lose,     EB },
 		 { "data-integrity-alg",'d', T_integrity_alg,     ES },
+		 { "no-tcp-cork",'o',   T_no_cork,         EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },

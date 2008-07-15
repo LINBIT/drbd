@@ -1240,14 +1240,14 @@ int drbd_worker(struct Drbd_thread *thi)
 
 		if (down_trylock(&mdev->data.work.s)) {
 			down(&mdev->data.mutex);
-			if (mdev->data.socket)
+			if (mdev->data.socket && !mdev->net_conf->no_cork)
 				drbd_tcp_uncork(mdev->data.socket);
 			up(&mdev->data.mutex);
 
 			intr = down_interruptible(&mdev->data.work.s);
 
 			down(&mdev->data.mutex);
-			if (mdev->data.socket)
+			if (mdev->data.socket  && !mdev->net_conf->no_cork)
 				drbd_tcp_cork(mdev->data.socket);
 			up(&mdev->data.mutex);
 		}

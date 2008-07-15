@@ -3813,7 +3813,8 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 				mdev->net_conf->ping_timeo*HZ/10;
 		}
 
-		drbd_tcp_cork(mdev->meta.socket);
+		if (!mdev->net_conf->no_cork)
+			drbd_tcp_cork(mdev->meta.socket);
 		while (1) {
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
 			flush_signals(current);
@@ -3832,7 +3833,8 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 			if (empty)
 				break;
 		}
-		drbd_tcp_uncork(mdev->meta.socket);
+		if (!mdev->net_conf->no_cork)
+			drbd_tcp_uncork(mdev->meta.socket);
 
 		/* short circuit, recv_msg would return EINTR anyways. */
 		if (signal_pending(current))
