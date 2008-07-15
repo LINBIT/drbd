@@ -2183,6 +2183,10 @@ STATIC int drbd_asb_recover_2p(struct drbd_conf *mdev) __must_hold(local)
 
 STATIC void drbd_uuid_dump(struct drbd_conf *mdev, char *text, u64 *uuid)
 {
+	if (!uuid) {
+		INFO("%s uuid info vanished while I was looking!\n", text);
+		return;
+	}
 	INFO("%s %016llX:%016llX:%016llX:%016llX\n",
 	     text,
 	     uuid[Current],

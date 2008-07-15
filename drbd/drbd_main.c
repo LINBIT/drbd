@@ -1141,6 +1141,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	&&   (ns.pdsk < Inconsistent ||
 	      ns.pdsk == DUnknown ||
 	      ns.pdsk == Outdated) ) {
+		/* FIXME race with drbd_sync_handshake accessing this! */
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
