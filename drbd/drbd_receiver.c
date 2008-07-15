@@ -3052,6 +3052,7 @@ STATIC void drbdd(struct drbd_conf *mdev)
 	struct Drbd_Header *header = &mdev->data.rbuf.head;
 
 	while (get_t_state(&mdev->receiver) == Running) {
+		drbd_thread_current_set_cpu(mdev);
 		if (!drbd_recv_header(mdev, header))
 			break;
 
@@ -3505,7 +3506,6 @@ STATIC int drbdd_init(struct Drbd_thread *thi)
 	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
-	set_cpus_allowed(current, drbd_calc_cpu_mask(mdev));
 	INFO("receiver (re)started\n");
 
 	do {
@@ -3528,16 +3528,6 @@ STATIC int drbdd_init(struct Drbd_thread *thi)
 	}
 
 	drbd_disconnect(mdev);
-
-	/* Ensure that the thread state fits to our connection state. */
-	if (mdev->state.conn == Unconnected) {
-		ERR_IF( mdev->receiver.t_state != Restarting )
-			drbd_thread_restart_nowait(&mdev->receiver);
-	} else if (mdev->state.conn == StandAlone) {
-		ERR_IF( mdev->receiver.t_state != Exiting )
-			drbd_thread_stop_nowait(&mdev->receiver);
-	}
-
 	INFO("receiver terminated\n");
 	return 0;
 }
@@ -3808,9 +3798,8 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
 
-	set_cpus_allowed(current, drbd_calc_cpu_mask(mdev));
-
 	while (get_t_state(thi) == Running) {
+		drbd_thread_current_set_cpu(mdev);
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
 			ERR_IF(!drbd_send_ping(mdev)) goto reconnect;
 			mdev->meta.socket->sk->sk_rcvtimeo =

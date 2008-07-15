@@ -1597,10 +1597,10 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 
 	if (!cpus_equal(mdev->cpu_mask, n_cpu_mask)) {
 		mdev->cpu_mask = n_cpu_mask;
-		n_cpu_mask = drbd_calc_cpu_mask(mdev);
-		drbd_thread_set_cpu(&mdev->receiver, n_cpu_mask);
-		drbd_thread_set_cpu(&mdev->worker, n_cpu_mask);
-		drbd_thread_set_cpu(&mdev->asender, n_cpu_mask);
+		mdev->cpu_mask = drbd_calc_cpu_mask(mdev);
+		mdev->receiver.reset_cpu_mask = 1;
+		mdev->asender.reset_cpu_mask = 1;
+		mdev->worker.reset_cpu_mask = 1;
 	}
 
 fail:

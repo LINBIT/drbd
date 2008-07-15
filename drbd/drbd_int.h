@@ -628,7 +628,7 @@ struct Drbd_thread {
 	enum Drbd_thread_state t_state;
 	int (*function) (struct Drbd_thread *);
 	struct drbd_conf *mdev;
-	struct mutex task_mutex;
+	int reset_cpu_mask;
 };
 
 static inline enum Drbd_thread_state get_t_state(struct Drbd_thread *thi)
@@ -1064,7 +1064,7 @@ extern void print_st_err(struct drbd_conf *, union drbd_state_t,
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 #ifdef CONFIG_SMP
-extern void drbd_thread_set_cpu(struct Drbd_thread *thi, cpumask_t cpu_mask);
+extern void drbd_thread_current_set_cpu(struct drbd_conf *mdev);
 extern cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev);
 #else
 #define drbd_thread_set_cpu(A,B) ({})
