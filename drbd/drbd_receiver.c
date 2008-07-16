@@ -3338,16 +3338,11 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 		return FALSE;
 	}
 
-	/* FIXME explicitly warn if protocol != C */
-
-	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
-	    (unsigned long long)sector,be32_to_cpu(p->blksize));
-
 	_req_mod(req, neg_acked, 0);
 	spin_unlock_irq(&mdev->req_lock);
 
-// warning LGE "ugly and wrong"
-	drbd_khelper(mdev,"pri-on-incon-degr");
+	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
+	    (unsigned long long)sector, be32_to_cpu(p->blksize));
 
 	return TRUE;
 }

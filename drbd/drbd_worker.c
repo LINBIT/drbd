@@ -273,7 +273,6 @@ int w_read_retry_remote(drbd_dev* mdev, struct drbd_work* w,int cancel)
 	     mdev->state.pdsk <= Inconsistent ) {
 		_req_mod(req, send_canceled, 0); /* FIXME freeze? ... */
 		spin_unlock_irq(&mdev->req_lock);
-		drbd_khelper(mdev,"pri-on-incon-degr"); /* FIXME REALLY? */
 		ALERT("WE ARE LOST. Local IO failure, no peer.\n");
 		return 1;
 	}
