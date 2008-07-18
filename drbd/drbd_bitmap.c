@@ -412,18 +412,18 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 			dec_local(mdev);
 		}
 
-		if ( words == b->bm_words ) {
+		growing = bits > b->bm_bits;
+		if (words == b->bm_words) {
 			/* optimize: capacity has changed,
-			 * but only within one long word worth of bits.
-			 * just update the bm_dev_capacity and bm_bits members.
-			 */
+			 * but only within one ulong64 word worth of bits.
+			 * no allocation needed, just update the
+			 * bm_dev_capacity and bm_bits members,
+			 * and set the new bits, if any */
 			spin_lock_irq(&b->bm_lock);
-			b->bm_bits    = bits;
-			b->bm_dev_capacity = capacity;
-			b->bm_set -= bm_clear_surplus(b);
-			bm_end_info(mdev, __FUNCTION__ );
-			spin_unlock_irq(&b->bm_lock);
-			goto out;
+			bm_set_surplus(b);
+			if (growing)
+				b->bm_set += bits - b->bm_bits;
+			goto done;
 		} else {
 		        /* one extra long to catch off by one errors */
 			bytes = (words+1)*sizeof(long);
@@ -439,22 +439,29 @@ int drbd_bm_resize(drbd_dev *mdev, sector_t capacity)
 		// brgs. move several MB within spinlock...
 		// FIXME this should go into userspace!
 		if (obm) {
+			/* adjust for possibly partially used
+			 * last word of old bitmap. */
 			bm_set_surplus(b);
 			D_ASSERT(b->bm[b->bm_words] == DRBD_MAGIC);
 			memcpy(nbm,obm,min_t(size_t,b->bm_words,words)*sizeof(long));
 		}
-		growing = words > b->bm_words;
-		if (growing) { // set all newly allocated bits
-			// start at -1, just to be sure.
-			memset( nbm + (b->bm_words?:1)-1 , 0xff,
-				(words - ((b->bm_words?:1)-1)) * sizeof(long) );
+		if (growing) {
+			/* set all newly allocated bits */
+			memset( nbm + b->bm_words, 0xff,
+				(words - b->bm_words) * sizeof(long) );
+			/* yes, I know, this is not the same number as was set by this memset.
+			 * bm_set_surplus above before the memcpy,
+			 * and bm_clear_surplus below after the new assignments
+			 * make sure that this is indeed the amount of newly set bits */
 			b->bm_set  += bits - b->bm_bits;
 		}
 		nbm[words] = DRBD_MAGIC;
 		b->bm = nbm;
-		b->bm_bits  = bits;
 		b->bm_words = words;
+ done:
+		b->bm_bits = bits;
 		b->bm_dev_capacity = capacity;
+		/* finally clear possibly only partially used last words */
 		bm_clear_surplus(b);
 		if (!growing)
 			b->bm_set = bm_count_bits(b);
