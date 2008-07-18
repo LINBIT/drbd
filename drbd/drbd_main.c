@@ -1116,6 +1116,10 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	/* Inform userspace about the change... */
 	drbd_bcast_state(mdev, ns);
 
+	if (!(os.role == Primary && os.disk < UpToDate && os.pdsk < UpToDate) &&
+	    (ns.role == Primary && ns.disk < UpToDate && ns.pdsk < UpToDate))
+		drbd_khelper(mdev, "pri-on-incon-degr");
+
 	/* Here we have the actions that are performed after a
 	   state change. This function might sleep */
 
