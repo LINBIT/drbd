@@ -60,6 +60,7 @@ NL_PACKET(net_conf, 5,
 	NL_BIT(		28,	T_MAY_IGNORE,	two_primaries)
 	NL_BIT(		41,	T_MAY_IGNORE,	always_asbp)
 	NL_BIT(		61,	T_MAY_IGNORE,	no_cork)
+	NL_BIT(		62,	T_MANDATORY,	auto_sndbuf_size)
 )
 
 NL_PACKET(disconnect, 6, )
