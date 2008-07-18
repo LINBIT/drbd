@@ -1,0 +1,38 @@
+#!/bin/sh
+# When uninstalling on Ubuntu 8.x, we must ensure that we restore the
+# drbd.ko found in linux-ubuntu-modules (hardy) and linux-image
+# (intrepid).
+set -e
+
+[ -e /etc/lsb-release ] || exit 0
+
+. /etc/lsb-release
+if [ "$DISTRIB_ID" = "Ubuntu" ]; then
+    case "$DISTRIB_RELEASE" in
+	"8.04")
+	    divert="yes"
+	    original_drbdko="/lib/modules/_KVERS_/ubuntu/block/drbd/drbd.ko"
+	    ;;
+	"8.10")
+	    divert="yes"
+	    original_drbdko="/lib/modules/_KVERS_/kernel/ubuntu/drbd/drbd.ko"
+	    ;;
+    esac
+    if [ "$divert" = "yes" ]; then
+	dpkg-divert --remove --rename \
+	    --package drbd8-module-_KVERS_ \
+	    ${original_drbdko}
+    fi
+fi
+
+SYSTEMMAP=/boot/System.map-_KVERS_
+
+if [ -f $SYSTEMMAP ]
+then
+    depmod -ae -F $SYSTEMMAP _KVERS_
+elif [ "`uname -r`" = "_KVERS_" ]
+then
+    depmod -a &
+fi
+
+#DEBHELPER#
