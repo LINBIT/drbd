@@ -48,6 +48,8 @@
 #include <fcntl.h>
 #include <time.h>
 
+#include <linux/major.h>
+#include <linux/kdev_t.h>
 #include <linux/drbd.h>		/* only use DRBD_MAGIC from here! */
 #include <linux/fs.h>           /* for BLKFLSBUF */
 
@@ -59,9 +61,11 @@ extern FILE* yyin;
 YYSTYPE yylval;
 
 int     force = 0;
+int	verbose = 0;
 
 struct option metaopt[] = {
     { "force",  no_argument,    0, 'f' },
+    { "verbose",  no_argument,    0, 'v' },
     { NULL,     0,              0, 0 },
 };
 
@@ -124,8 +128,10 @@ struct option metaopt[] = {
  * and blaming us...
  */
 
-/* reiserfs sb offset is 64k plus */
-#define SO_MUCH (65*1024)
+/* reiserfs sb offset is 64k plus
+ * align it to 4k, in case someone has unusual hard sect size (!= 512),
+ * otherwise direct io will fail with EINVAL */
+#define SO_MUCH (68*1024)
 
 /*
  * I think this block of declarations and definitions should be
@@ -161,6 +167,7 @@ struct option metaopt[] = {
 
 const size_t buffer_size = 128*1024;
 size_t pagesize; /* = sysconf(_SC_PAGESIZE) */
+int opened_odirect = 1;
 void *on_disk_buffer = NULL;
 int global_argc;
 char **global_argv;
@@ -218,6 +225,8 @@ struct format {
 	int drbd_fd;		/* no longer used!   */
 	int ll_fd;		/* not yet used here */
 	int md_fd;
+	int md_hard_sect_size;
+
 
 	/* unused in 06 */
 	int md_index;
@@ -352,7 +361,8 @@ int is_valid_md(int f,
 	ASSERT(f == Drbd_07 || f == Drbd_08);
 
 	if (md->magic != magic) {
-		fprintf(stderr, "%s Magic number not found\n", v);
+		if (verbose >= 1)
+			fprintf(stderr, "%s Magic number not found\n", v);
 		return 0;
 	}
 
@@ -640,9 +650,17 @@ struct meta_cmd cmds[] = {
 void pread_or_die(int fd, void *buf, size_t count, off_t offset, const char* tag)
 {
 	ssize_t c = pread(fd, buf, count, offset);
-	//printf("pread(%u,...,%lu,%llu)\n", fd, (unsigned long)count, (unsigned long long)offset);
+	if (verbose >= 2) {
+		fprintf(stderr, " %-26s: pread(%u, ...,%6lu,%12llu)\n", tag,
+			fd, (unsigned long)count, (unsigned long long)offset);
+		if (count & ((1<<12)-1))
+			fprintf(stderr, "\tcount will cause EINVAL on hard sect size != 512\n");
+		if (offset & ((1<<12)-1))
+			fprintf(stderr, "\toffset will cause EINVAL on hard sect size != 512\n");
+	}
 	if (c < 0) {
-		fprintf(stderr,"pread in %s failed: %s\n",
+		fprintf(stderr,"pread(%u,...,%lu,%llu) in %s failed: %s\n",
+			fd, (unsigned long)count, (unsigned long long)offset,
 			tag, strerror(errno));
 		exit(10);
 	} else if ((size_t)c != count) {
@@ -656,9 +674,17 @@ void pread_or_die(int fd, void *buf, size_t count, off_t offset, const char* tag
 void pwrite_or_die(int fd, const void *buf, size_t count, off_t offset, const char* tag)
 {
 	ssize_t c = pwrite(fd, buf, count, offset);
-	//printf("pwrite(%u,...,%lu,%llu)\n", fd, (unsigned long)count, (unsigned long long)offset);
+	if (verbose >= 2) {
+		fprintf(stderr, " %-26s: pwrite(%u, ...,%6lu,%12llu)\n", tag,
+			fd, (unsigned long)count, (unsigned long long)offset);
+		if (count & ((1<<12)-1))
+			fprintf(stderr, "\tcount will cause EINVAL on hard sect size != 512\n");
+		if (offset & ((1<<12)-1))
+			fprintf(stderr, "\toffset will cause EINVAL on hard sect size != 512\n");
+	}
 	if (c < 0) {
-		fprintf(stderr,"pwrite in %s failed: %s\n",
+		fprintf(stderr,"pwrite(%u,...,%lu,%llu) in %s failed: %s\n",
+			fd, (unsigned long)count, (unsigned long long)offset,
 			tag, strerror(errno));
 		exit(10);
 	} else if ((size_t)c != count) {
@@ -1023,11 +1049,12 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 	cfg->md.al_nr_extents = 257;	/* arbitrary. */
 	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 
-	//fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
-	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-	//fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
-	//fprintf(stderr,"bm_mmaped_length: %lu\n", (unsigned long)cfg->bm_mmaped_length);
+	if (verbose >= 2) {
+		fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
+		fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
+		fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+		fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
+	}
 
 	if (!do_disk_writes)
 		return 0;
@@ -1045,9 +1072,13 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 	/* THINK
 	 * do we really need to initialize the bitmap? */
 	if (INITIALIZE_BITMAP) {
-		/* need to sector-align this for O_DIRECT. to be
-		 * generic, maybe we even need to PAGE align it? */
-		const size_t bm_bytes = ALIGN(cfg->bm_bytes, 512);
+		/* need to sector-align this for O_DIRECT.
+		 * "sector" here means hard-sect size, which may be != 512.
+		 * Note that even though ALIGN does round up, for sector sizes
+		 * of 512, 1024, 2048, 4096 Bytes, this will be fully within
+		 * the claimed meta data area, since we already align all
+		 * "interessting" parts of that to 4kB */
+		const size_t bm_bytes = ALIGN(cfg->bm_bytes, cfg->md_hard_sect_size);
 		size_t i = bm_bytes;
 		off_t bm_on_disk_off = cfg->bm_offset;
 		unsigned int percent_done = 0;
@@ -1147,7 +1178,7 @@ void printf_bm(struct format *cfg)
 		/* need to read on first iteration,
 		 * and on buffer wrap */
 		if (r*sizeof(*bm) % buffer_size == 0) {
-			size_t chunk = ALIGN( (n-r)*sizeof(*bm), 512 );
+			size_t chunk = ALIGN( (n-r)*sizeof(*bm), cfg->md_hard_sect_size );
 			if (chunk > buffer_size) chunk = buffer_size;
 			ASSERT(chunk);
 			pread_or_die(cfg->md_fd, on_disk_buffer,
@@ -1193,10 +1224,23 @@ int v07_style_md_open(struct format *cfg)
 {
 	struct stat sb;
 	unsigned long words;
+	unsigned long hard_sect_size = 0;
+	int ioctl_err;
+	int open_flags = O_RDWR | O_SYNC | O_DIRECT;
 
-	cfg->md_fd = open(cfg->md_device_name, O_RDWR | O_DIRECT);
+ retry:
+	cfg->md_fd = open(cfg->md_device_name, open_flags );
 
 	if (cfg->md_fd == -1) {
+		if (errno == EINVAL && (open_flags & O_DIRECT)) {
+			/* shoo. O_DIRECT is not supported?
+			 * retry, but remember this, so we can
+			 * BLKFLSBUF appropriately */
+			fprintf(stderr, "could not open with O_DIRECT, retrying without\n");
+			open_flags &= ~O_DIRECT;
+			opened_odirect = 0;
+			goto retry;
+		}
 		PERROR("open(%s) failed", cfg->md_device_name);
 		exit(20);
 	}
@@ -1215,6 +1259,17 @@ int v07_style_md_open(struct format *cfg)
 	if (is_v08(cfg)) {
 		ASSERT(cfg->md_index != DRBD_MD_INDEX_INTERNAL);
 	}
+	ioctl_err = ioctl(cfg->md_fd, BLKSSZGET, &hard_sect_size);
+	if (ioctl_err) {
+		fprintf(stderr, "ioctl(md_fd, BLKSSZGET) returned %d, "
+			"assuming hard_sect_size is 512 Byte\n", ioctl_err);
+		cfg->md_hard_sect_size = 512;
+	} else {
+		cfg->md_hard_sect_size = hard_sect_size;
+		if (verbose >= 2)
+			fprintf(stderr, "hard_sect_size is %d Byte\n",
+				cfg->md_hard_sect_size);
+	}
 
 	cfg->bd_size = bdev_size(cfg->md_fd);
 	if ((cfg->bd_size >> 9) < MD_BM_OFFSET_07) {
@@ -1232,6 +1287,16 @@ int v07_style_md_open(struct format *cfg)
 			cfg->md_device_name,
 			(long long unsigned)cfg->bd_size);
 		exit(10);
+	}
+
+	if (!opened_odirect &&
+	    (MAJOR(sb.st_rdev) != RAMDISK_MAJOR)) {
+		ioctl_err = ioctl(cfg->md_fd, BLKFLSBUF);
+		/* report error, but otherwise ignore.  we could not open
+		 * O_DIRECT, it is a "strange" device anyways. */
+		if (ioctl_err)
+			fprintf(stderr, "ioctl(md_fd, BLKFLSBUF) returned %d, "
+					"we may read stale data\n", ioctl_err);
 	}
 
 	if (cfg->ops->md_disk_to_cpu(cfg)) {
@@ -1787,7 +1852,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		memset(bm+i, 0x00, buffer_size - s);
 		/* need to sector-align this for O_DIRECT. to be
 		 * generic, maybe we even need to PAGE align it? */
-		s = ALIGN(s, 512);
+		s = ALIGN(s, cfg->md_hard_sect_size);
 		pwrite_or_die(cfg->md_fd, on_disk_buffer,
 			s, bm_on_disk_off, "meta_restore_md");
 	}
@@ -2621,6 +2686,9 @@ int main(int argc, char **argv)
 	    switch (c) {
 	    case 'f':
 		force = 1;
+		break;
+	    case 'v':
+		verbose++;
 		break;
 	    default:
 		print_usage_and_exit();

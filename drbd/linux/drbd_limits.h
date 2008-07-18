@@ -65,7 +65,7 @@
 #define DRBD_MAX_EPOCH_SIZE_DEF 2048
 
   /* I don't think that a tcp send buffer of more than 10M is usefull */
-#define DRBD_SNDBUF_SIZE_MIN  1
+#define DRBD_SNDBUF_SIZE_MIN  0
 #define DRBD_SNDBUF_SIZE_MAX  10000000
 #define DRBD_SNDBUF_SIZE_DEF  (2*65535)
 

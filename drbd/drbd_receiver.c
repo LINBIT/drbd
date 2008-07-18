@@ -432,33 +432,36 @@ void drbd_wait_ee_list_empty(struct drbd_conf *mdev, struct list_head *head)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-STATIC struct socket *drbd_accept(struct drbd_conf *mdev, struct socket *sock)
+/* see also kernel_accept; which is only present since 2.6.18.
+ * also we want to log which part of it failed, exactly */
+STATIC int drbd_accept(struct drbd_conf *mdev, const char **what,
+		struct socket *sock, struct socket **newsock)
 {
-	struct socket *newsock;
+	struct sock *sk = sock->sk;
 	int err = 0;
 
+	*what = "listen";
 	err = sock->ops->listen(sock, 5);
-	if (err)
-		goto out;
-
-	if (sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &newsock))
-		goto out;
-
-	newsock->type = sock->type;
-	newsock->ops  = sock->ops;
-
-	err = newsock->ops->accept(sock, newsock, 0);
 	if (err < 0)
-		goto out_release;
+		goto out;
 
-	return newsock;
+	*what = "sock_create_lite";
+	err = sock_create_lite(sk->sk_family, sk->sk_type, sk->sk_protocol,
+			       newsock);
+	if (err < 0)
+		goto out;
 
-out_release:
-	sock_release(newsock);
+	*what = "accept";
+	err = sock->ops->accept(sock, *newsock, 0);
+	if (err < 0) {
+		sock_release(*newsock);
+		*newsock = NULL;
+		goto out;
+	}
+	(*newsock)->ops  = sock->ops;
+
 out:
-	if (err != -EAGAIN && err != -EINTR)
-		ERR("accept failed! %d\n", err);
-	return NULL;
+	return err;
 }
 
 STATIC int drbd_recv_short(struct drbd_conf *mdev, struct socket *sock,
@@ -539,17 +542,19 @@ STATIC int drbd_recv(struct drbd_conf *mdev, void *buf, size_t size)
 
 STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 {
-	int err;
+	const char *what;
 	struct socket *sock;
 	struct sockaddr_in src_in;
+	int err;
+	int disconnect_on_error = 1;
 
 	if (!inc_net(mdev)) return NULL;
 
-	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
-	if (err) {
-		dec_net(mdev);
-		ERR("sock_creat(..)=%d\n", err);
-		return NULL;
+	what = "sock_create_kern";
+	err = sock_create_kern(PF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	if (err < 0) {
+		sock = NULL;
+		goto out;
 	}
 
 	sock->sk->sk_rcvtimeo =
@@ -565,26 +570,45 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	memcpy(&src_in, &(mdev->net_conf->my_addr), sizeof(struct sockaddr_in));
 	src_in.sin_port = 0;
 
+	what = "bind";
 	err = sock->ops->bind(sock,
 			      (struct sockaddr *) &src_in,
 			      sizeof(struct sockaddr_in));
-	if (err) {
-		ERR("Unable to bind source sock (%d)\n", err);
-		sock_release(sock);
-		sock = NULL;
-		dec_net(mdev);
-		return sock;
-	}
+	if (err < 0)
+		goto out;
 
+	/* connect may fail, peer not yet available.
+	 * stay WFConnection, don't go Disconnecting! */
+	disconnect_on_error = 0;
+	what = "connect";
 	err = sock->ops->connect(sock,
 				 (struct sockaddr *)mdev->net_conf->peer_addr,
 				 mdev->net_conf->peer_addr_len, 0);
 
-	if (err) {
-		sock_release(sock);
-		sock = NULL;
+out:
+	if (err < 0) {
+		if (sock) {
+			sock_release(sock);
+			sock = NULL;
+		}
+		switch (-err) {
+			/* timeout, busy, signal pending */
+		case ETIMEDOUT: case EAGAIN:
+		case EINTR: case ERESTARTSYS:
+			/* peer not (yet) available, network problem */
+		case ECONNREFUSED: case ENETUNREACH:
+#if 0
+			DBG("%s failure ignored, err = %d\n",
+					what, err);
+#endif
+			disconnect_on_error = 0;
+			break;
+		default:
+			ERR("%s failed, err = %d\n", what, err);
+		}
+		if (disconnect_on_error)
+			drbd_force_state(mdev, NS(conn, Disconnecting));
 	}
-
 	dec_net(mdev);
 	return sock;
 }
@@ -592,37 +616,49 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 {
 	int err;
-	struct socket *sock, *sock2;
+	struct socket *s_estab = NULL, *s_listen;
+	const char *what;
 
 	if (!inc_net(mdev)) return NULL;
 
-	err = sock_create_kern(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock2);
+	what = "sock_create_kern";
+	err = sock_create_kern(PF_INET, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
-		dec_net(mdev);
-		ERR("sock_creat(..)=%d\n", err);
-		return NULL;
+		s_listen = NULL;
+		goto out;
 	}
 
-	sock2->sk->sk_reuse    = 1; /* SO_REUSEADDR */
-	sock2->sk->sk_rcvtimeo =
-	sock2->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
+	s_listen->sk->sk_reuse    = 1; /* SO_REUSEADDR */
+	s_listen->sk->sk_rcvtimeo =
+	s_listen->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
 
-	err = sock2->ops->bind(sock2,
+	what = "bind";
+	err = s_listen->ops->bind(s_listen,
 			      (struct sockaddr *) mdev->net_conf->my_addr,
 			      mdev->net_conf->my_addr_len);
+	if (err < 0)
+		goto out;
+
+	err = drbd_accept(mdev, &what, s_listen, &s_estab);
+
+out:
+	if (s_listen)
+		sock_release(s_listen);
+	if (err < 0) {
+		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
+			ERR("%s failed, err = %d\n", what, err);
+			drbd_force_state(mdev, NS(conn, Disconnecting));
+		}
+#if 0
+		else {
+			DBG("%s failure ignored, err = %d, not Disconnecting\n",
+					what, err);
+		}
+#endif
+	}
 	dec_net(mdev);
 
-	if (err) {
-		ERR("Unable to bind sock2 (%d)\n", err);
-		sock_release(sock2);
-		drbd_force_state(mdev, NS(conn, Disconnecting));
-		return NULL;
-	}
-
-	sock = drbd_accept(mdev, sock2);
-	sock_release(sock2);
-
-	return sock;
+	return s_estab;
 }
 
 int drbd_do_handshake(struct drbd_conf *mdev);
@@ -777,22 +813,37 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 	sock->sk->sk_allocation = GFP_NOIO;
 	msock->sk->sk_allocation = GFP_NOIO;
 
-	sock->sk->sk_priority = TC_PRIO_BULK;
-	/* FIXME fold to limits. should be done in drbd_ioctl */
-	sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
-	sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
+	sock->sk->sk_priority = TC_PRIO_INTERACTIVE_BULK;
+	msock->sk->sk_priority = TC_PRIO_INTERACTIVE;
+
+	if (mdev->net_conf->sndbuf_size) {
+		/* FIXME fold to limits. should be done in drbd_ioctl */
+		/* this is setsockopt SO_SNDBUFFORCE and SO_RCVBUFFORCE,
+		 * done directly. */
+		sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
+		sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
+		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
+	}
+
+#if 0 /* don't pin the msock bufsize, autotuning should work better */
+	msock->sk->sk_sndbuf = 2*32767;
+	msock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
+#endif
+
 	/* NOT YET ...
 	 * sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	 * sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 	 * first set it to the HandShake timeout, wich is hardcoded for now: */
 	sock->sk->sk_sndtimeo =
 	sock->sk->sk_rcvtimeo = 2*HZ;
-	sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 
-	msock->sk->sk_priority = TC_PRIO_INTERACTIVE;
-	msock->sk->sk_sndbuf = 2*32767;
 	msock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	msock->sk->sk_rcvtimeo = mdev->net_conf->ping_int*HZ;
+
+	/* we don't want delays.
+	 * we use TCP_CORK where apropriate, though */
+	drbd_tcp_nodelay(sock);
+	drbd_tcp_nodelay(msock);
 
 	mdev->data.socket = sock;
 	mdev->meta.socket = msock;
@@ -1823,6 +1874,10 @@ STATIC int drbd_asb_recover_2p(struct drbd_conf *mdev) __must_hold(local)
 
 STATIC void drbd_uuid_dump(struct drbd_conf *mdev, char *text, u64 *uuid)
 {
+	if (!uuid) {
+		INFO("%s uuid info vanished while I was looking!\n", text);
+		return;
+	}
 	INFO("%s %016llX:%016llX:%016llX:%016llX\n",
 	     text,
 	     uuid[Current],
@@ -3349,29 +3404,36 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 				mdev->net_conf->ping_timeo*HZ/10;
 		}
 
+		drbd_tcp_cork(mdev->meta.socket);
 		while (1) {
+			clear_bit(SIGNAL_ASENDER, &mdev->flags);
+			flush_signals(current);
 			if (!drbd_process_done_ee(mdev)) {
 				ERR("process_done_ee() = NOT_OK\n");
 				goto reconnect;
 			}
+			/* to avoid race with newly queued ACKs */
 			set_bit(SIGNAL_ASENDER, &mdev->flags);
 			spin_lock_irq(&mdev->req_lock);
 			empty = list_empty(&mdev->done_ee);
 			spin_unlock_irq(&mdev->req_lock);
+			/* new ack may have been queued right here,
+			 * but then there is also a signal pending,
+			 * and we start over... */
 			if (empty && !test_bit(WRITE_ACK_PENDING, &mdev->flags))
 				break;
-			clear_bit(SIGNAL_ASENDER, &mdev->flags);
-			flush_signals(current);
 		}
-		drbd_tcp_flush(mdev->meta.socket);
+		drbd_tcp_uncork(mdev->meta.socket);
+
+		/* short circuit, recv_msg would return EINTR anyways. */
+		if (signal_pending(current))
+			continue;
 
 		rv = drbd_recv_short(mdev, mdev->meta.socket,
 				     buf, expect-received, 0);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
 		flush_signals(current);
-
-		drbd_tcp_cork(mdev->meta.socket);
 
 		/* Note:
 		 * -EINTR	 (on meta) we got a signal

@@ -1045,6 +1045,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	&&   (ns.pdsk < Inconsistent ||
 	      ns.pdsk == DUnknown ||
 	      ns.pdsk == Outdated) ) {
+		/* FIXME race with drbd_sync_handshake accessing this! */
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
@@ -1162,6 +1163,10 @@ STATIC int drbd_thread_setup(void *arg)
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	struct drbd_conf *mdev = thi->mdev;
 	int retval;
+	const char *me =
+		thi == &mdev->receiver ? "receiver" :
+		thi == &mdev->asender  ? "asender"  :
+		thi == &mdev->worker   ? "worker"   : "NONSENSE";
 
 	daemonize("drbd_thread");
 	D_ASSERT(get_t_state(thi) == Running);
@@ -1172,13 +1177,28 @@ STATIC int drbd_thread_setup(void *arg)
 	spin_unlock(&thi->t_lock);
 	complete(&thi->startstop); /* notify: thi->task is set. */
 
-	while (1) {
-		retval = thi->function(thi);
-		if (get_t_state(thi) != Restarting) break;
-		thi->t_state = Running;
-	}
+restart:
+	retval = thi->function(thi);
 
 	spin_lock(&thi->t_lock);
+
+	/* if the receiver has been "Exiting", the last thing it did
+	 * was set the conn state to "StandAlone",
+	 * if now a re-connect request comes in, conn state goes Unconnected,
+	 * and receiver thread will be "started".
+	 * drbd_thread_start needs to set "Restarting" in that case.
+	 * t_state check and assignement needs to be within the same spinlock,
+	 * so either thread_start sees Exiting, and can remap to Restarting,
+	 * or thread_start see None, and can proceed as normal.
+	 */
+
+	if (thi->t_state == Restarting) {
+		INFO("Restarting %s thread\n", me);
+		thi->t_state = Running;
+		spin_unlock(&thi->t_lock);
+		goto restart;
+	}
+
 	thi->task = NULL;
 	thi->t_state = None;
 	smp_mb();
@@ -1187,12 +1207,9 @@ STATIC int drbd_thread_setup(void *arg)
 	/* THINK maybe two different completions? */
 	complete(&thi->startstop); /* notify: thi->task unset. */
 
-	INFO("Terminating %s thread\n",
-	     thi == &mdev->receiver ? "receiver" :
-	     thi == &mdev->asender  ? "asender"  :
-	     thi == &mdev->worker   ? "worker"   : "NONSENSE");
+	INFO("Terminating %s thread\n", me);
 
-	// Release mod reference taken when thread was started
+	/* Release mod reference taken when thread was started */
 	module_put(THIS_MODULE);
 	return retval;
 }
@@ -1211,15 +1228,17 @@ int drbd_thread_start(struct Drbd_thread *thi)
 {
 	int pid;
 	struct drbd_conf *mdev = thi->mdev;
+	const char *me =
+		thi == &mdev->receiver ? "receiver" :
+		thi == &mdev->asender  ? "asender"  :
+		thi == &mdev->worker   ? "worker"   : "NONSENSE";
 
 	spin_lock(&thi->t_lock);
 
-	if (thi->t_state == None) {
+	switch (thi->t_state) {
+	case None:
 		INFO("Starting %s thread (from %s [%d])\n",
-		     thi == &mdev->receiver ? "receiver" :
-		     thi == &mdev->asender  ? "asender"  :
-		     thi == &mdev->worker   ? "worker"   : "NONSENSE",
-		     current->comm, current->pid);
+				me, current->comm, current->pid);
 
 		/* Get ref on module for thread - this is released when thread exits */
 		if (!try_module_get(THIS_MODULE)) {
@@ -1246,8 +1265,15 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		wait_for_completion(&thi->startstop);
 		D_ASSERT(thi->task);
 		D_ASSERT(get_t_state(thi) == Running);
-	} else {
+		break;
+	case Exiting:
+		thi->t_state = Restarting;
+		INFO("Restarting %s thread (from %s [%d])\n",
+				me, current->comm, current->pid);
+	case Running:
+	case Restarting:
 		spin_unlock(&thi->t_lock);
+		break;
 	}
 
 	return TRUE;

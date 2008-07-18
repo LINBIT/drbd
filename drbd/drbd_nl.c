@@ -168,6 +168,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 {
 	char mb[12];
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
+	int ret;
 	static char *envp[] = { "HOME=/",
 				"TERM=linux",
 				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
@@ -178,7 +179,15 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	INFO("helper command: %s %s\n", usermode_helper, cmd);
 
 	drbd_bcast_ev_helper(mdev, cmd);
-	return call_usermodehelper(usermode_helper, argv, envp, 1);
+	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
+	if (ret)
+		WARN("helper command: %s %s %s exit code %d\n",
+				usermode_helper, cmd, mb, ret);
+	else
+		INFO("helper command: %s %s %s exit code %d\n",
+				usermode_helper, cmd, mb, ret);
+
+	return ret;
 }
 
 enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
