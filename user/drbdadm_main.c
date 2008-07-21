@@ -1817,9 +1817,8 @@ void validate_resource(struct d_resource * res)
       }
     }
   }
-  if (res->me && res->peer) {
-    verify_ips(res);
-  }
+  /* IP verification (check for existence)
+   * moved to just before command execution */
 
   if ( (opt = find_opt(res->handlers, "outdate-peer")) ) {
     if(strstr(opt->value,"drbd-peer-outdater")) sanity_check_perm();
@@ -2106,7 +2105,16 @@ int main(int argc, char** argv)
 	}
       }
 
+      /* either no resorce arguments at all,
+       * but command is dump / dump-xml, so implitict "all",
+       * or an explicit "all" argument is given */
       if ( optind==argc || !strcmp(argv[optind],"all") ) {
+	/* verify ips first, for all of them */
+        for_each_resource(res,tmp,config) {
+	  verify_ips(res);
+	}
+	if (!is_dump && !config_valid)
+	  exit(E_config_invalid);
         if (is_dump) {
           if (is_dump_xml) {
             printf("<config file=\"%s\">\n", config_file); ++indent;
@@ -2135,6 +2143,9 @@ int main(int argc, char** argv)
 	    fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
 	    exit(E_usage);
 	  }
+	  verify_ips(res);
+	  if (!is_dump && !config_valid)
+            exit(E_config_invalid);
 	  if( (rv=cmd->function(res,cmd->name)) >= 20 ) {
 	    fprintf(stderr,"drbdadm aborting\n");
 	    exit(rv);
