@@ -6,6 +6,8 @@
 #include "drbdadm.h"
 
 void long_string(char* text);
+void long_dqstring(char* text);
+void err_dqstring(char* text);
 static void unescape(void);
 
 #if 0
@@ -29,7 +31,9 @@ SNUMB		[0-9]{1,3}
 IPV4ADDR	({SNUMB}"."){3}{SNUMB}
 WS		[ \t\r]
 OPCHAR		[{};\[\]:]
-DQSTRING	\"[^\"\\\n]{0,255}\"
+DQSTRING	\"([^\"\\\n]|\\[^\n]){0,255}\"
+LONG_DQSTRING	\"([^\"\\\n]|\\[^\n]){255}.
+ERR_DQSTRING	\"([^\"\\\n]|\\[^\n]){0,255}[\\\n]
 STRING		[a-zA-Z0-9/._-]{1,80}
 LONG_STRING	[a-zA-Z0-9/._-]{81}
 
@@ -102,18 +106,13 @@ local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
 {NUM}			{ DP; CP; return TK_INTEGER;		}
 {DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
 {STRING}		{ DP; CP; return TK_STRING;		}
-{LONG_STRING}		{ long_string( yylval.txt ); 		}
+{LONG_STRING}		{ return TK_ERR_STRING_TOO_LONG;	}
+{LONG_DQSTRING}		{ return TK_ERR_DQSTRING_TOO_LONG;	}
+{ERR_DQSTRING}		{ return TK_ERR_DQSTRING;		}
 .			{ DP; return TK_ELSE;			}
 
 %%
 
-
-
-void long_string(char* text)
-{
-  fprintf(stderr,"Too long token '%s' in line %d.\n",text,line);
-  exit(2);
-}
 
 static void unescape(void)
 {

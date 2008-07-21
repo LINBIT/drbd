@@ -196,42 +196,72 @@ void check_meta_disk(struct d_host_info *host)
 	}
 }
 
-#define EXP(TOKEN1)						\
-({ 								\
-	int token;						\
-	token = yylex();					\
-	if(token != TOKEN1)					\
-		pe_expected_got( #TOKEN1, token);		\
-	token;							\
-})
-
-#define EXP2(TOKEN1,TOKEN2)						\
-({ 									\
-	int token;							\
-	token = yylex();						\
-	if(token != TOKEN1 && token != TOKEN2)				\
-		pe_expected_got( #TOKEN1 "|" # TOKEN2, token);		\
-	token;								\
-})
-
 static void pe_expected(const char *exp)
 {
+	const char *s = yytext;
 	fprintf(stderr, "%s:%u: Parse error: '%s' expected,\n\t"
-		"but got '%s'\n", config_file, line, exp, yytext);
+		"but got '%.20s%s'\n", config_file, line, exp, s,
+		strlen(s) > 20 ? "..." : "");
+	exit(E_config_invalid);
+}
+
+static void check_string_error(int got)
+{
+	const char *msg;
+	switch(got) {
+	case TK_ERR_STRING_TOO_LONG:
+		msg = "Token too long";
+		break;
+	case TK_ERR_DQSTRING_TOO_LONG:
+		msg = "Double quoted string too long";
+		break;
+	case TK_ERR_DQSTRING:
+		msg = "Unterminated double quoted string\n  we don't allow embeded newlines\n ";
+		break;
+	default:
+		return;
+	}
+	fprintf(stderr,"%s:%u: %s >>>%.20s...<<<\n", config_file, line, msg, yytext);
 	exit(E_config_invalid);
 }
 
 static void pe_expected_got(const char *exp, int got)
 {
 	static char tmp[2] = "\0";
+	const char *s = yytext;
 	if (exp[0] == '\'' && exp[1] && exp[2] == '\'' && exp[3] == 0) {
 		tmp[0] = exp[1];
 	}
 	fprintf(stderr, "%s:%u: Parse error: '%s' expected,\n\t"
-		"but got '%s' (TK %d)\n",
+		"but got '%.20s%s' (TK %d)\n",
 		config_file, line,
-		tmp[0] ? tmp : exp, yytext, got);
+		tmp[0] ? tmp : exp, s, strlen(s) > 20 ? "..." : "", got);
 	exit(E_config_invalid);
+}
+
+#define EXP(TOKEN1)						\
+({								\
+	int token;						\
+	token = yylex();					\
+	if (token != TOKEN1) {					\
+		if (TOKEN1 == TK_STRING)			\
+			check_string_error(token);		\
+		pe_expected_got( #TOKEN1, token);		\
+	}							\
+	token;							\
+})
+
+static void expect_STRING_or_INT(void)
+{
+	int token = yylex();
+	switch(token) {
+	case TK_INTEGER:
+	case TK_STRING:
+		return;
+	default:
+		check_string_error(token);
+		pe_expected_got("TK_STRING | TK_INTEGER", token);
+	}
 }
 
 static void parse_global(void)
@@ -303,7 +333,7 @@ static struct d_option *parse_options(int token_switch, int token_option)
 		} else if (token == token_option) {
 			opt_name = yylval.txt;
 			rc = yylval.rc;
-			EXP2(TK_STRING, TK_INTEGER);
+			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
 			ro = new_opt(opt_name, yylval.txt);
 			options = APPEND(options, ro);
@@ -426,15 +456,18 @@ static void parse_host_body(struct d_host_info *host,
 void parse_skip()
 {
 	int level;
+	int token;
 	fline = line;
 
-	switch (yylex()) {
+	token = yylex();
+	switch (token) {
 	case TK_STRING:
 		EXP('{');
 		break;
 	case '{':
 		break;
 	default:
+		check_string_error(token);
 		pe_expected("[ some_text ] {");
 	}
 
