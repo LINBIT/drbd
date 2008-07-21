@@ -1067,7 +1067,7 @@ extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_thread_current_set_cpu(struct drbd_conf *mdev);
 extern cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev);
 #else
-#define drbd_thread_current_set_cpu(A,B) ({})
+#define drbd_thread_current_set_cpu(A) ({})
 #define drbd_calc_cpu_mask(A) CPU_MASK_ALL
 #endif
 extern void drbd_free_resources(struct drbd_conf *mdev);

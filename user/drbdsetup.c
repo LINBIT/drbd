@@ -669,7 +669,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	struct sockaddr_in addr;
 	struct sockaddr_in6 addr6;
 	int af, port;
-	char *address, bit=1;
+	char *address, bit=0;
 
 	split_address(arg, &af, &address, &port);
 
@@ -771,7 +771,7 @@ int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	int err = conv_numeric(od, tl, arg);
 	long long l = m_strtoll(arg, 0);
-	char bit = 1;
+	char bit = 0;
 
 	if (err != NoError || l != 0)
 		return err;
