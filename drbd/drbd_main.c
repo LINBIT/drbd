@@ -2374,8 +2374,8 @@ STATIC void drbd_cleanup(void)
 
 	if (minor_table) {
 		if (drbd_proc)
-			remove_proc_entry("drbd",&proc_root);
-		i=minor_count;
+			remove_proc_entry("drbd", NULL);
+		i = minor_count;
 		while (i--) {
 			drbd_dev        *mdev  = minor_to_mdev(i);
 			struct gendisk  **disk = &mdev->vdisk;
@@ -2611,7 +2611,7 @@ int __init drbd_init(void)
 	/*
 	 * register with procfs
 	 */
-	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , &proc_root);
+	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , NULL);
 
 	if (!drbd_proc)	{
 		printk(KERN_ERR DEVICE_NAME": unable to register proc file\n");
